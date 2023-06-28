@@ -11,7 +11,7 @@ import (
 )
 
 func TestGenerateLeaderSchedule(t *testing.T) {
-	// Initialize fork heights.
+	// Initialize balance model fork heights.
 	setBalanceModelBlockHeights()
 	defer resetBalanceModelBlockHeights()
 
@@ -19,8 +19,8 @@ func TestGenerateLeaderSchedule(t *testing.T) {
 	chain, params, db := NewLowDifficultyBlockchain(t)
 	mempool, miner := NewTestMiner(t, chain, params, true)
 
-	// Initialize PoS txn types block height.
-	params.ForkHeights.ProofOfStakeNewTxnTypesBlockHeight = uint32(1)
+	// Initialize PoS fork height.
+	params.ForkHeights.ProofOfStake1StateSetupBlockHeight = uint32(1)
 	GlobalDeSoParams.EncoderMigrationHeights = GetEncoderMigrationHeights(&params.ForkHeights)
 	GlobalDeSoParams.EncoderMigrationHeightsList = GetEncoderMigrationHeightsList(&params.ForkHeights)
 
@@ -73,11 +73,11 @@ func TestGenerateLeaderSchedule(t *testing.T) {
 		require.NoError(t, err)
 
 		// Validator registers.
-		votingPublicKey, votingSignature := _generateVotingPublicKeyAndSignature(t, pkBytes, blockHeight)
+		votingPublicKey, votingAuthorization := _generateVotingPublicKeyAndAuthorization(t, pkBytes)
 		registerMetadata := &RegisterAsValidatorMetadata{
-			Domains:                  [][]byte{[]byte(fmt.Sprintf("https://%s.com", publicKey))},
-			VotingPublicKey:          votingPublicKey,
-			VotingPublicKeySignature: votingSignature,
+			Domains:             [][]byte{[]byte(fmt.Sprintf("https://%s.com", publicKey))},
+			VotingPublicKey:     votingPublicKey,
+			VotingAuthorization: votingAuthorization,
 		}
 		_, err = _submitRegisterAsValidatorTxn(testMeta, publicKey, privateKey, registerMetadata, nil, true)
 		require.NoError(t, err)
@@ -124,18 +124,14 @@ func TestGenerateLeaderSchedule(t *testing.T) {
 	require.NoError(t, tmpUtxoView.FlushToDb(blockHeight))
 
 	{
-		// ParamUpdater set min fee rate
+		// ParamUpdater set MinFeeRateNanos.
 		params.ExtraRegtestParamUpdaterKeys[MakePkMapKey(paramUpdaterPkBytes)] = true
-		_updateGlobalParamsEntryWithTestMeta(
+		_updateGlobalParamsEntryWithExtraData(
 			testMeta,
 			testMeta.feeRateNanosPerKb,
 			paramUpdaterPub,
 			paramUpdaterPriv,
-			-1,
-			int64(testMeta.feeRateNanosPerKb),
-			-1,
-			-1,
-			-1,
+			map[string][]byte{},
 		)
 	}
 	{
@@ -246,8 +242,8 @@ func TestGenerateLeaderSchedule(t *testing.T) {
 		testGenerateLeaderSchedule([]*PKID{m3PKID, m5PKID, m6PKID, m4PKID, m2PKID, m1PKID, m0PKID})
 	}
 	{
-		// Test changing params.LeaderScheduleMaxNumValidators.
-		params.LeaderScheduleMaxNumValidators = 5
+		// Test changing LeaderScheduleMaxNumValidators.
+		params.DefaultLeaderScheduleMaxNumValidators = 5
 		leaderSchedule, err := newUtxoView().GenerateLeaderSchedule()
 		require.NoError(t, err)
 		require.Len(t, leaderSchedule, 5)

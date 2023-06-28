@@ -133,6 +133,23 @@ type UtxoView struct {
 	// Current RandomSeedHash
 	CurrentRandomSeedHash *RandomSeedHash
 
+	// SnapshotGlobalParamEntries is a map of SnapshotAtEpochNumber to a GlobalParamsEntry.
+	// It contains the snapshot value of the GlobalParamsEntry at the given SnapshotAtEpochNumber.
+	SnapshotGlobalParamEntries map[uint64]*GlobalParamsEntry
+
+	// SnapshotValidatorEntries is a map of <SnapshotAtEpochNumber, ValidatorPKID> to a ValidatorEntry.
+	// It contains the snapshot value of a ValidatorEntry at the given SnapshotAtEpochNumber.
+	SnapshotValidatorEntries map[SnapshotValidatorMapKey]*ValidatorEntry
+
+	// SnapshotGlobalActiveStakeAmountNanos is a map of SnapshotAtEpochNumber to a GlobalActiveStakeAmountNanos.
+	// It contains the snapshot value of the GlobalActiveStakeAmountNanos at the given SnapshotAtEpochNumber.
+	SnapshotGlobalActiveStakeAmountNanos map[uint64]*uint256.Int
+
+	// SnapshotLeaderSchedule is a map of <SnapshotAtEpochNumber, LeaderIndex> to a ValidatorPKID.
+	// It contains the PKID of the validator at the given index in the leader schedule
+	// generated at the given SnapshotAtEpochNumber.
+	SnapshotLeaderSchedule map[SnapshotLeaderScheduleMapKey]*PKID
+
 	// The hash of the tip the view is currently referencing. Mainly used
 	// for error-checking when doing a bulk operation on the view.
 	TipHash *BlockHash
@@ -238,6 +255,18 @@ func (bav *UtxoView) _ResetViewMappingsAfterFlush() {
 
 	// CurrentEpochEntry
 	bav.CurrentEpochEntry = nil
+
+	// SnapshotGlobalParamEntries
+	bav.SnapshotGlobalParamEntries = make(map[uint64]*GlobalParamsEntry)
+
+	// SnapshotValidatorEntries
+	bav.SnapshotValidatorEntries = make(map[SnapshotValidatorMapKey]*ValidatorEntry)
+
+	// SnapshotGlobalActiveStakeAmountNanos
+	bav.SnapshotGlobalActiveStakeAmountNanos = make(map[uint64]*uint256.Int)
+
+	// SnapshotLeaderSchedule
+	bav.SnapshotLeaderSchedule = make(map[SnapshotLeaderScheduleMapKey]*PKID)
 }
 
 func (bav *UtxoView) CopyUtxoView() (*UtxoView, error) {
@@ -525,6 +554,26 @@ func (bav *UtxoView) CopyUtxoView() (*UtxoView, error) {
 		newView.CurrentRandomSeedHash = bav.CurrentRandomSeedHash.Copy()
 	}
 
+	// Copy the SnapshotGlobalParamEntries
+	for epochNumber, globalParamsEntry := range bav.SnapshotGlobalParamEntries {
+		newView.SnapshotGlobalParamEntries[epochNumber] = globalParamsEntry.Copy()
+	}
+
+	// Copy the SnapshotValidatorEntries
+	for mapKey, validatorEntry := range bav.SnapshotValidatorEntries {
+		newView.SnapshotValidatorEntries[mapKey] = validatorEntry.Copy()
+	}
+
+	// Copy the SnapshotGlobalActiveStakeAmountNanos
+	for epochNumber, globalActiveStakeAmountNanos := range bav.SnapshotGlobalActiveStakeAmountNanos {
+		newView.SnapshotGlobalActiveStakeAmountNanos[epochNumber] = globalActiveStakeAmountNanos.Clone()
+	}
+
+	// Copy the SnapshotLeaderSchedule
+	for mapKey, validatorPKID := range bav.SnapshotLeaderSchedule {
+		newView.SnapshotLeaderSchedule[mapKey] = validatorPKID.NewPKID()
+	}
+
 	return newView, nil
 }
 
@@ -557,7 +606,10 @@ func NewUtxoView(
 	// not concern itself with the header chain (see comment on GetBestHash for more
 	// info on that).
 	if view.Postgres != nil {
-		view.TipHash = view.Postgres.GetChain(MAIN_CHAIN).TipHash
+		pgChain := view.Postgres.GetChain(MAIN_CHAIN)
+		if pgChain != nil {
+			view.TipHash = view.Postgres.GetChain(MAIN_CHAIN).TipHash
+		}
 	} else {
 		view.TipHash = DbGetBestHash(view.Handle, view.Snapshot, ChainTypeDeSoBlock /* don't get the header chain */)
 	}
@@ -2963,6 +3015,44 @@ func (bav *UtxoView) _connectUpdateGlobalParams(
 		newGlobalParamsEntry.MaxNonceExpirationBlockHeightOffset = newMaxNonceExpirationBlockHeightOffset
 	}
 
+	if blockHeight >= bav.Params.ForkHeights.ProofOfStake1StateSetupBlockHeight {
+		var bytesRead int
+		if len(extraData[StakeLockupEpochDurationKey]) > 0 {
+			newGlobalParamsEntry.StakeLockupEpochDuration, bytesRead = Uvarint(extraData[StakeLockupEpochDurationKey])
+			if bytesRead <= 0 {
+				return 0, 0, nil, fmt.Errorf("_connectUpdateGlobalParams: unable to decode StakeLockupEpochDuration as uint64")
+			}
+		}
+		if len(extraData[ValidatorJailEpochDurationKey]) > 0 {
+			newGlobalParamsEntry.ValidatorJailEpochDuration, bytesRead = Uvarint(extraData[ValidatorJailEpochDurationKey])
+			if bytesRead <= 0 {
+				return 0, 0, nil, fmt.Errorf("_connectUpdateGlobalParams: unable to decode ValidatorJailEpochDuration as uint64")
+			}
+		}
+		if len(extraData[LeaderScheduleMaxNumValidatorsKey]) > 0 {
+			newGlobalParamsEntry.LeaderScheduleMaxNumValidators, bytesRead = Uvarint(extraData[LeaderScheduleMaxNumValidatorsKey])
+			if bytesRead <= 0 {
+				return 0, 0, nil, fmt.Errorf("_connectUpdateGlobalParams: unable to decode LeaderScheduleMaxNumValidators as uint64")
+			}
+		}
+		if len(extraData[EpochDurationNumBlocksKey]) > 0 {
+			newGlobalParamsEntry.EpochDurationNumBlocks, bytesRead = Uvarint(extraData[EpochDurationNumBlocksKey])
+			if bytesRead <= 0 {
+				return 0, 0, nil, fmt.Errorf("_connectUpdateGlobalParams: unable to decode EpochDurationNumBlocks as uint64")
+			}
+		}
+		if len(extraData[JailInactiveValidatorGracePeriodEpochsKey]) > 0 {
+			newGlobalParamsEntry.JailInactiveValidatorGracePeriodEpochs, bytesRead = Uvarint(
+				extraData[JailInactiveValidatorGracePeriodEpochsKey],
+			)
+			if bytesRead <= 0 {
+				return 0, 0, nil, fmt.Errorf(
+					"_connectUpdateGlobalParams: unable to decode JailInactiveValidatorGracePeriodEpochs as uint64",
+				)
+			}
+		}
+	}
+
 	var newForbiddenPubKeyEntry *ForbiddenPubKeyEntry
 	var prevForbiddenPubKeyEntry *ForbiddenPubKeyEntry
 	var forbiddenPubKey []byte
@@ -3509,6 +3599,31 @@ func (bav *UtxoView) ConnectBlock(
 	}
 
 	blockHeader := desoBlock.Header
+	var blockRewardOutputPublicKey *btcec.PublicKey
+	// If the block height is greater than or equal to the block reward patch height,
+	// we will verify that there is only one block reward output and we'll parse
+	// that public key
+	if blockHeight >= uint64(bav.Params.ForkHeights.BlockRewardPatchBlockHeight) {
+		// Make sure the block has transactions
+		if len(desoBlock.Txns) == 0 {
+			return nil, errors.Wrap(RuleErrorNoTxns, "ConnectBlock: Block has no transactions")
+		}
+		// Make sure the first transaction is a block reward.
+		if desoBlock.Txns[0].TxnMeta.GetTxnType() != TxnTypeBlockReward {
+			return nil, errors.Wrap(RuleErrorFirstTxnMustBeBlockReward, "ConnectBlock: First transaction in block is not a block reward")
+		}
+		// Ensure that the block reward transaction has exactly one output.
+		if len(desoBlock.Txns[0].TxOutputs) != 1 {
+			return nil, errors.Wrap(RuleErrorBlockRewardTxnMustHaveOneOutput, "ConnectBlock: Block reward transaction must have exactly one output")
+		}
+		var err error
+		blockRewardOutputPublicKey, err =
+			btcec.ParsePubKey(desoBlock.Txns[0].TxOutputs[0].PublicKey, btcec.S256())
+		if err != nil {
+			return nil, fmt.Errorf("ConnectBlock: Problem parsing block reward public key: %v", err)
+		}
+	}
+
 	// Loop through all the transactions and validate them using the view. Also
 	// keep track of the total fees throughout.
 	var totalFees uint64
@@ -3531,13 +3646,29 @@ func (bav *UtxoView) ConnectBlock(
 			return nil, errors.Wrapf(err, "ConnectBlock: error connecting txn #%d", txIndex)
 		}
 
-		// Add the fees from this txn to the total fees. If any overflow occurs
-		// mark the block as invalid and return a rule error. Note that block reward
-		// txns should count as having zero fees.
-		if totalFees > (math.MaxUint64 - currentFees) {
-			return nil, RuleErrorTxnOutputWithInvalidAmount
+		// After the block reward patch block height, we only include fees from transactions
+		// where the transactor is not the block reward output public key. This prevents
+		// the block reward output public key from being able to get their transactions
+		// included in blocks for free.
+		includeFeesInBlockReward := true
+		if blockHeight >= uint64(bav.Params.ForkHeights.BlockRewardPatchBlockHeight) &&
+			txn.TxnMeta.GetTxnType() != TxnTypeBlockReward {
+			transactorPubKey, err := btcec.ParsePubKey(txn.PublicKey, btcec.S256())
+			if err != nil {
+				return nil, fmt.Errorf("ConnectBlock: Problem parsing transactor public key: %v", err)
+			}
+			includeFeesInBlockReward = !transactorPubKey.IsEqual(blockRewardOutputPublicKey)
 		}
-		totalFees += currentFees
+
+		if includeFeesInBlockReward {
+			// Add the fees from this txn to the total fees. If any overflow occurs
+			// mark the block as invalid and return a rule error. Note that block reward
+			// txns should count as having zero fees.
+			if totalFees > (math.MaxUint64 - currentFees) {
+				return nil, RuleErrorTxnOutputWithInvalidAmount
+			}
+			totalFees += currentFees
+		}
 
 		// Add the utxo operations to our list for all the txns.
 		utxoOps = append(utxoOps, utxoOpsForTxn)
@@ -4035,6 +4166,13 @@ func (bav *UtxoView) GetUnspentUtxoEntrysForPublicKey(pkBytes []byte) ([]*UtxoEn
 	return utxoEntriesToReturn, nil
 }
 
+// GetSpendableDeSoBalanceNanosForPublicKey gets the current spendable balance for the
+// provided public key. It only considers the last block as immature currently and
+// instead of the configured number of immature block rewards. Additionally, using the
+// tipHash of the view only gives us access to the previous block, not the current block,
+// so we are unable to mark the current block reward as immature.
+// However, this bug does not introduce a security issue and is addressed with the BlockRewardPatch fork,
+// but should be fixed soon.
 func (bav *UtxoView) GetSpendableDeSoBalanceNanosForPublicKey(pkBytes []byte,
 	tipHeight uint32) (_spendableBalance uint64, _err error) {
 	// In order to get the spendable balance, we need to account for any immature block rewards.
@@ -4045,10 +4183,17 @@ func (bav *UtxoView) GetSpendableDeSoBalanceNanosForPublicKey(pkBytes []byte,
 	immatureBlockRewards := uint64(0)
 
 	if bav.Postgres != nil {
+		// Note: badger is only getting the block reward for the previous block, so we make postgres
+		// do the same thing. This is not ideal, but it is the simplest way to get the same behavior
+		// and we will address the issue soon.
 		// Filter out immature block rewards in postgres. UtxoType needs to be set correctly when importing blocks
 		var startHeight uint32
-		if tipHeight > numImmatureBlocks {
-			startHeight = tipHeight - numImmatureBlocks
+		if tipHeight > 0 {
+			startHeight = tipHeight - 1
+		}
+		// This is a special case to support tests where the number of immature blocks is 0.
+		if numImmatureBlocks == 0 {
+			startHeight = tipHeight
 		}
 		outputs := bav.Postgres.GetBlockRewardsForPublicKey(NewPublicKey(pkBytes), startHeight, tipHeight)
 
@@ -4084,6 +4229,11 @@ func (bav *UtxoView) GetSpendableDeSoBalanceNanosForPublicKey(pkBytes []byte,
 				return 0, errors.Wrapf(err, "GetSpendableDeSoBalanceNanosForPublicKey: Problem adding "+
 					"block reward (%d) to immature block rewards (%d)", blockRewardForPK, immatureBlockRewards)
 			}
+			// TODO: This is the specific line that causes the bug. We should be using blockNode.Header.PrevBlockHash
+			// instead. We are not serializing the Parent attribute when the block node is put into the DB,
+			// but we do have the header. As a result, this condition always evaluates to false and thus
+			// we only process the block reward for the previous block instead of all immature block rewards
+			// as defined by the params.
 			if blockNode.Parent != nil {
 				nextBlockHash = blockNode.Parent.Hash
 			} else {

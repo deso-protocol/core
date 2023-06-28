@@ -2,7 +2,7 @@ FROM alpine:latest AS core
 
 RUN apk update
 RUN apk upgrade
-RUN apk add --update bash cmake git gcc g++ make vips vips-dev
+RUN apk add --update bash cmake g++ gcc git make vips vips-dev
 
 COPY --from=golang:1.20-alpine /usr/local/go/ /usr/local/go/
 ENV PATH="/usr/local/go/bin:${PATH}"
@@ -14,17 +14,17 @@ COPY go.sum .
 
 RUN go mod download
 
-COPY scripts/install-relic.sh .
-RUN ./install-relic.sh
-
 COPY bls       bls
 COPY cmd       cmd
 COPY desohash  desohash
 COPY lib       lib
 COPY migrate   migrate
 COPY utils     utils
+COPY scripts   scripts
 COPY test_data test_data
 COPY main.go   .
+
+RUN ./scripts/install-relic.sh
 
 # build backend
 RUN GOOS=linux go build -mod=mod -a -installsuffix cgo -o bin/core main.go

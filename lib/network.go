@@ -5707,7 +5707,7 @@ type TransactionSpendingLimit struct {
 	//   - AssociationOperation: one of { Any, Create, Delete }
 	AssociationLimitMap map[AssociationLimitKey]uint64
 
-	// ===== ENCODER MIGRATION ProofOfStakeNewTxnTypesMigration =====
+	// ===== ENCODER MIGRATION ProofOfStake1StateSetupMigration =====
 	// ValidatorPKID || StakerPKID to amount of stake-able $DESO.
 	// Note that this is not a limit on the number of Stake txns that
 	// this derived key can perform but instead a limit on the amount
@@ -6274,7 +6274,7 @@ func (tsl *TransactionSpendingLimit) ToBytes(blockHeight uint64) ([]byte, error)
 	}
 
 	// StakeLimitMap, UnstakeLimitMap, and UnlockStakeLimitMap, gated by the encoder migration.
-	if MigrationTriggered(blockHeight, ProofOfStakeNewTxnTypesMigration) {
+	if MigrationTriggered(blockHeight, ProofOfStake1StateSetupMigration) {
 		// StakeLimitMap
 		stakeLimitMapLength := uint64(len(tsl.StakeLimitMap))
 		data = append(data, UintToBuf(stakeLimitMapLength)...)
@@ -6549,7 +6549,7 @@ func (tsl *TransactionSpendingLimit) FromBytes(blockHeight uint64, rr *bytes.Rea
 	}
 
 	// StakeLimitMap, UnstakeLimitMap, and UnlockStakeLimitMap, gated by the encoder migration.
-	if MigrationTriggered(blockHeight, ProofOfStakeNewTxnTypesMigration) {
+	if MigrationTriggered(blockHeight, ProofOfStake1StateSetupMigration) {
 		// StakeLimitMap
 		stakeLimitMapLen, err := ReadUvarint(rr)
 		if err != nil {
