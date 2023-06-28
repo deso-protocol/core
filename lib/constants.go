@@ -627,6 +627,14 @@ type DeSoParams struct {
 	// that are included when generating a new Proof-of-Stake leader schedule.
 	DefaultLeaderScheduleMaxNumValidators uint64
 
+	// DefaultValidatorSetMaxNumValidators is the default maximum number of validators
+	// that are included in the validator set for any given epoch.
+	DefaultValidatorSetMaxNumValidators uint64
+
+	// DefaultStakingRewardDistributionMaxNumStakers is the default number of stake entries
+	// that are included in the staking reward distribution in each epoch.
+	DefaultStakingRewardDistributionMaxNumStakers uint64
+
 	// DefaultEpochDurationNumBlocks is the default number of blocks included in one epoch.
 	DefaultEpochDurationNumBlocks uint64
 
@@ -1024,6 +1032,12 @@ var DeSoMainnetParams = DeSoParams{
 	// The max number of validators included in a leader schedule.
 	DefaultLeaderScheduleMaxNumValidators: uint64(100),
 
+	// The max number of validators included in a validator set for any given epoch.
+	DefaultValidatorSetMaxNumValidators: uint64(1000),
+
+	// The max number of stakers included in a staking rewards distribution every epoch.
+	DefaultStakingRewardDistributionMaxNumStakers: uint64(10000),
+
 	// The number of blocks in one epoch
 	DefaultEpochDurationNumBlocks: uint64(3600),
 
@@ -1273,6 +1287,12 @@ var DeSoTestnetParams = DeSoParams{
 	// The max number of validators included in a leader schedule.
 	DefaultLeaderScheduleMaxNumValidators: uint64(100),
 
+	// The max number of validators included in a validator set for any given epoch.
+	DefaultValidatorSetMaxNumValidators: uint64(1000),
+
+	// The max number of stakers included in a staking rewards distribution every epoch.
+	DefaultStakingRewardDistributionMaxNumStakers: uint64(10000),
+
 	// The number of blocks in one epoch
 	DefaultEpochDurationNumBlocks: uint64(3600),
 
@@ -1326,6 +1346,8 @@ const (
 	StakeLockupEpochDurationKey               = "StakeLockupEpochDuration"
 	ValidatorJailEpochDurationKey             = "ValidatorJailEpochDuration"
 	LeaderScheduleMaxNumValidatorsKey         = "LeaderScheduleMaxNumValidators"
+	ValidatorSetMaxNumValidatorsKey           = "ValidatorSetMaxNumValidators"
+	StakingRewardDistributionMaxNumStakersKey = "StakingRewardDistributionMaxNumStakers"
 	EpochDurationNumBlocksKey                 = "EpochDurationNumBlocks"
 	JailInactiveValidatorGracePeriodEpochsKey = "JailInactiveValidatorGracePeriodEpochs"
 

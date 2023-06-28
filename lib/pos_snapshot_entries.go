@@ -3,12 +3,13 @@ package lib
 import (
 	"bytes"
 	"fmt"
+	"math"
+	"sort"
+
 	"github.com/dgraph-io/badger/v3"
 	"github.com/golang/glog"
 	"github.com/holiman/uint256"
 	"github.com/pkg/errors"
-	"math"
-	"sort"
 )
 
 const SnapshotLookbackNumEpochs uint64 = 2
@@ -96,6 +97,12 @@ func _mergeGlobalParamEntryDefaults(bav *UtxoView, globalParamsEntry *GlobalPara
 	}
 	if globalParamsEntryCopy.LeaderScheduleMaxNumValidators == 0 {
 		globalParamsEntryCopy.LeaderScheduleMaxNumValidators = bav.Params.DefaultLeaderScheduleMaxNumValidators
+	}
+	if globalParamsEntryCopy.ValidatorSetMaxNumValidators == 0 {
+		globalParamsEntryCopy.ValidatorSetMaxNumValidators = bav.Params.DefaultValidatorSetMaxNumValidators
+	}
+	if globalParamsEntryCopy.StakingRewardDistributionMaxNumStakers == 0 {
+		globalParamsEntryCopy.StakingRewardDistributionMaxNumStakers = bav.Params.DefaultStakingRewardDistributionMaxNumStakers
 	}
 	if globalParamsEntryCopy.EpochDurationNumBlocks == 0 {
 		globalParamsEntryCopy.EpochDurationNumBlocks = bav.Params.DefaultEpochDurationNumBlocks
