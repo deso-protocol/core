@@ -17,7 +17,7 @@ import (
 
 	"github.com/btcsuite/btcd/wire"
 	"github.com/bxcodec/faker"
-	"github.com/deso-protocol/core/utils/bitset"
+	"github.com/deso-protocol/core/collections/bitset"
 	merkletree "github.com/deso-protocol/go-merkle-tree"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"

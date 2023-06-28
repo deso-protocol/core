@@ -13,15 +13,15 @@ COPY go.sum .
 
 RUN go mod download
 
-COPY bls       bls
-COPY cmd       cmd
-COPY desohash  desohash
-COPY lib       lib
-COPY migrate   migrate
-COPY utils     utils
-COPY scripts   scripts
-COPY test_data test_data
-COPY main.go   .
+COPY bls         bls
+COPY cmd         cmd
+COPY collections collections
+COPY desohash    desohash
+COPY lib         lib
+COPY migrate     migrate
+COPY scripts     scripts
+COPY test_data   test_data
+COPY main.go     .
 
 RUN ./scripts/install-relic.sh
 
