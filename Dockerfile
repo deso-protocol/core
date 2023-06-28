@@ -15,7 +15,7 @@ RUN go mod download
 
 COPY bls         bls
 COPY cmd         cmd
-COPY collections utils
+COPY collections collections
 COPY desohash    desohash
 COPY lib         lib
 COPY migrate     migrate
