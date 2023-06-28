@@ -3,12 +3,13 @@ package lib
 import (
 	"encoding/hex"
 	"fmt"
-	"github.com/btcsuite/btcd/wire"
-	"github.com/tyler-smith/go-bip39"
 	"math"
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/btcsuite/btcd/wire"
+	"github.com/tyler-smith/go-bip39"
 
 	"github.com/deso-protocol/go-deadlock"
 
@@ -516,8 +517,8 @@ func (desoBlockProducer *DeSoBlockProducer) SignBlock(blockFound *MsgDeSoBlock) 
 	// If we get here, we now have a valid signature for the block.
 
 	// Embed the signature into the block.
-	blockFound.BlockProducerInfo = &BlockProducerInfo{
-		PublicKey: desoBlockProducer.blockProducerPrivateKey.PubKey().SerializeCompressed(),
+	blockFound.BlockProducerInfo = &MsgDeSoBlockProducerInfo{
+		PublicKey: NewPublicKey(desoBlockProducer.blockProducerPrivateKey.PubKey().SerializeCompressed()),
 		Signature: signature,
 	}
 

@@ -140,6 +140,22 @@ const (
 	MsgValidatorTimeoutVersion0 MsgValidatorTimeoutVersion = 0
 )
 
+// Versioning for the BlockProducerInfo field included in MsgDeSoBlock. This type alias
+// is equivalent to a uint8, and supports the same byte encoders/decoders.
+type MsgDeSoBlockProducerInfoVersion = byte
+
+const (
+	// This represents the original schema for the BlockProducerInfo field included in
+	// Proof of Work blocks. The original schema  did not have versioning, so we use a default
+	// version value of 0 to denote this. The original schema only contains the block producer's
+	// ECDSA public key and ECDSA signature of the block.
+	MsgDeSoBlockProducerInfoVersion0 MsgDeSoBlockProducerInfoVersion = 0
+	// This version is introduced starting with Proof of Stake blocks. It adds versioning to the
+	// BlockProducerInfo schema, and adds two new fields for the block producer's BLS public key
+	// and BLS partial signature for the block.
+	MsgDeSoBlockProducerInfoVersion1 MsgDeSoBlockProducerInfoVersion = 1
+)
+
 var (
 	MaxUint256, _ = uint256.FromHex("0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff")
 
