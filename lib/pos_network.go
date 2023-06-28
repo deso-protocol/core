@@ -282,20 +282,25 @@ type QuorumCertificate struct {
 	ValidatorsVoteAggregatedSignature *AggregatedBLSSignature
 }
 
-// Performs a deep equality check between two QuorumCertificates, and returns
-// true if the values of the two are identical.
+// Performs a deep equality check between two QuorumCertificates, and returns true
+// if the two are fully initialized and have identical values. In all other cases,
+// it return false.
 func (qc *QuorumCertificate) Eq(other *QuorumCertificate) bool {
-	if qc == nil && other == nil {
-		return true
-	}
-
-	if (qc == nil) != (other == nil) {
+	if qc == nil || other == nil {
 		return false
 	}
 
-	return bytes.Equal(qc.BlockHash.ToBytes(), other.BlockHash.ToBytes()) &&
-		qc.ProposedInView == other.ProposedInView &&
-		qc.ValidatorsVoteAggregatedSignature.Eq(other.ValidatorsVoteAggregatedSignature)
+	qcEncodedBytes, err := qc.ToBytes()
+	if err != nil {
+		return false
+	}
+
+	otherEncodedBytes, err := other.ToBytes()
+	if err != nil {
+		return false
+	}
+
+	return bytes.Equal(qcEncodedBytes, otherEncodedBytes)
 }
 
 func (qc *QuorumCertificate) ToBytes() ([]byte, error) {
@@ -355,20 +360,25 @@ type AggregatedBLSSignature struct {
 	Signature   *bls.Signature
 }
 
+// Performs a deep equality check between two AggregatedBLSSignatures, and returns true
+// if the two are fully initialized and have identical values. In all other cases,
+// it return false.
 func (sig *AggregatedBLSSignature) Eq(other *AggregatedBLSSignature) bool {
-	if sig == nil && other == nil {
-		return true
-	}
-
-	if (sig == nil) != (other == nil) {
+	if sig == nil || other == nil {
 		return false
 	}
 
-	if !sig.Signature.Eq(other.Signature) {
+	sigEncodedBytes, err := sig.ToBytes()
+	if err != nil {
 		return false
 	}
 
-	return bytes.Equal(sig.SignersList.ToBytes(), other.SignersList.ToBytes())
+	otherEncodedBytes, err := other.ToBytes()
+	if err != nil {
+		return false
+	}
+
+	return bytes.Equal(sigEncodedBytes, otherEncodedBytes)
 }
 
 func (sig *AggregatedBLSSignature) ToBytes() ([]byte, error) {
@@ -441,42 +451,27 @@ type TimeoutAggregateQuorumCertificate struct {
 	ValidatorsTimeoutAggregatedSignature *AggregatedBLSSignature
 }
 
-// Performs a deep equality check between two TimeoutAggregateQuorumCertificate, and
-// returns true if the values of the two are identical.
+// Performs a deep equality check between two TimeoutAggregateQuorumCertificates, and
+// returns true if the two are fully initialized and have identical values. In all other
+// cases, it return false.
 func (aggQC *TimeoutAggregateQuorumCertificate) Eq(
 	other *TimeoutAggregateQuorumCertificate,
 ) bool {
-	if aggQC == nil && other == nil {
-		return true
-	}
-
-	if (aggQC == nil) != (other == nil) {
+	if aggQC == nil || other == nil {
 		return false
 	}
 
-	if len(aggQC.ValidatorsTimeoutHighQCViews) != len(other.ValidatorsTimeoutHighQCViews) {
+	aggQcEncodedBytes, err := aggQC.ToBytes()
+	if err != nil {
 		return false
 	}
 
-	if aggQC.TimedOutView != other.TimedOutView {
+	otherEncodedBytes, err := other.ToBytes()
+	if err != nil {
 		return false
 	}
 
-	if !aggQC.ValidatorsHighQC.Eq(other.ValidatorsHighQC) {
-		return false
-	}
-
-	if !aggQC.ValidatorsTimeoutAggregatedSignature.Eq(other.ValidatorsTimeoutAggregatedSignature) {
-		return false
-	}
-
-	for i := 0; i < len(aggQC.ValidatorsTimeoutHighQCViews); i++ {
-		if aggQC.ValidatorsTimeoutHighQCViews[i] != other.ValidatorsTimeoutHighQCViews[i] {
-			return false
-		}
-	}
-
-	return true
+	return bytes.Equal(aggQcEncodedBytes, otherEncodedBytes)
 }
 
 func (aggQC *TimeoutAggregateQuorumCertificate) ToBytes() ([]byte, error) {
