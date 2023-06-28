@@ -69,6 +69,9 @@ func (b *Bitset) Size() int {
 // This function returns the byte slice:
 // - [00000001, 00000111]
 func (b *Bitset) ToBytes() []byte {
+	if b == nil || b.store == nil {
+		return []byte{}
+	}
 	return b.store.Bytes()
 }
 
