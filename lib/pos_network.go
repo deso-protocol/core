@@ -282,20 +282,25 @@ type QuorumCertificate struct {
 	ValidatorsVoteAggregatedSignature *AggregatedBLSSignature
 }
 
-// Performs a deep equality check between two QuorumCertificates, and returns
-// true if the values of the two are identical.
+// Performs a deep equality check between two QuorumCertificates, and returns true
+// if the two are fully initialized and have identical values. In all other cases,
+// it return false.
 func (qc *QuorumCertificate) Eq(other *QuorumCertificate) bool {
-	if qc == nil && other == nil {
-		return true
-	}
-
-	if (qc == nil) != (other == nil) {
+	if qc == nil || other == nil {
 		return false
 	}
 
-	return bytes.Equal(qc.BlockHash.ToBytes(), other.BlockHash.ToBytes()) &&
-		qc.ProposedInView == other.ProposedInView &&
-		qc.ValidatorsVoteAggregatedSignature.Eq(other.ValidatorsVoteAggregatedSignature)
+	qcEncodedBytes, err := qc.ToBytes()
+	if err != nil {
+		return false
+	}
+
+	otherEncodedBytes, err := other.ToBytes()
+	if err != nil {
+		return false
+	}
+
+	return bytes.Equal(qcEncodedBytes, otherEncodedBytes)
 }
 
 func (qc *QuorumCertificate) ToBytes() ([]byte, error) {
@@ -348,27 +353,36 @@ func DecodeQuorumCertificate(rr io.Reader) (*QuorumCertificate, error) {
 // This is an aggregated BLS signature from a set of validators. Each validator's
 // presence in the signature is denoted in the provided signers list. I.e. if the
 // list's value at index 0 is 1, then the validator identified by that index is
-// present in the aggregated signature. The indices of all validators are expected
-// to be known by the caller.
+// present in the aggregated signature.
+//
+// The validators in the signers list will match the ordering of active validators
+// in descending order of stake for the relevant view's epoch. I.e. index 0 will
+// correspond to the highest-staked active validator in the epoch, index 1 will
+// correspond to the second-highest-staked active validator, ...
 type AggregatedBLSSignature struct {
 	SignersList *bitset.Bitset
 	Signature   *bls.Signature
 }
 
+// Performs a deep equality check between two AggregatedBLSSignatures, and returns true
+// if the two are fully initialized and have identical values. In all other cases,
+// it return false.
 func (sig *AggregatedBLSSignature) Eq(other *AggregatedBLSSignature) bool {
-	if sig == nil && other == nil {
-		return true
-	}
-
-	if (sig == nil) != (other == nil) {
+	if sig == nil || other == nil {
 		return false
 	}
 
-	if !sig.Signature.Eq(other.Signature) {
+	sigEncodedBytes, err := sig.ToBytes()
+	if err != nil {
 		return false
 	}
 
-	return bytes.Equal(sig.SignersList.ToBytes(), other.SignersList.ToBytes())
+	otherEncodedBytes, err := other.ToBytes()
+	if err != nil {
+		return false
+	}
+
+	return bytes.Equal(sigEncodedBytes, otherEncodedBytes)
 }
 
 func (sig *AggregatedBLSSignature) ToBytes() ([]byte, error) {
@@ -434,49 +448,34 @@ type TimeoutAggregateQuorumCertificate struct {
 	//
 	// The ordering of high QC views and validators in the aggregate signature will
 	// match the ordering of active validators in descending order of stake for the
-	// current view's epoch. I.e. index 0 will correspond to the highest-staked active
+	// timed out view's epoch. I.e. index 0 will correspond to the highest-staked active
 	// validator in the epoch, index 1 will correspond to the second-highest-staked active
 	// validator, ...
 	ValidatorsTimeoutHighQCViews         []uint64
 	ValidatorsTimeoutAggregatedSignature *AggregatedBLSSignature
 }
 
-// Performs a deep equality check between two TimeoutAggregateQuorumCertificate, and
-// returns true if the values of the two are identical.
+// Performs a deep equality check between two TimeoutAggregateQuorumCertificates, and
+// returns true if the two are fully initialized and have identical values. In all other
+// cases, it return false.
 func (aggQC *TimeoutAggregateQuorumCertificate) Eq(
 	other *TimeoutAggregateQuorumCertificate,
 ) bool {
-	if aggQC == nil && other == nil {
-		return true
-	}
-
-	if (aggQC == nil) != (other == nil) {
+	if aggQC == nil || other == nil {
 		return false
 	}
 
-	if len(aggQC.ValidatorsTimeoutHighQCViews) != len(other.ValidatorsTimeoutHighQCViews) {
+	aggQcEncodedBytes, err := aggQC.ToBytes()
+	if err != nil {
 		return false
 	}
 
-	if aggQC.TimedOutView != other.TimedOutView {
+	otherEncodedBytes, err := other.ToBytes()
+	if err != nil {
 		return false
 	}
 
-	if !aggQC.ValidatorsHighQC.Eq(other.ValidatorsHighQC) {
-		return false
-	}
-
-	if !aggQC.ValidatorsTimeoutAggregatedSignature.Eq(other.ValidatorsTimeoutAggregatedSignature) {
-		return false
-	}
-
-	for i := 0; i < len(aggQC.ValidatorsTimeoutHighQCViews); i++ {
-		if aggQC.ValidatorsTimeoutHighQCViews[i] != other.ValidatorsTimeoutHighQCViews[i] {
-			return false
-		}
-	}
-
-	return true
+	return bytes.Equal(aggQcEncodedBytes, otherEncodedBytes)
 }
 
 func (aggQC *TimeoutAggregateQuorumCertificate) ToBytes() ([]byte, error) {
