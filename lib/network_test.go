@@ -132,8 +132,9 @@ func createTestBlockHeaderVersion2(t *testing.T) *MsgDeSoHeader {
 		TstampSecs:            uint64(1678943210),
 		Height:                uint64(1321012345),
 		// Nonce and ExtraNonce are unused and set to 0 starting in version 2.
-		Nonce:      uint64(0),
-		ExtraNonce: uint64(0),
+		Nonce:          uint64(0),
+		ExtraNonce:     uint64(0),
+		ProposedInView: uint64(1432101234),
 		// Use real signatures and public keys for the PoS fields
 		ValidatorsVoteQC: &QuorumCertificate{
 			BlockHash:      &testBlockHash,
@@ -220,7 +221,7 @@ func TestHeaderConversionAndReadWriteMessage(t *testing.T) {
 		assert.NoError(err)
 		assert.Equal(hdrPayload, data)
 
-		assert.Equalf(9, reflect.TypeOf(expectedBlockHeader).Elem().NumField(),
+		assert.Equalf(10, reflect.TypeOf(expectedBlockHeader).Elem().NumField(),
 			"Number of fields in HEADER message is different from expected. "+
 				"Did you add a new field? If so, make sure the serialization code "+
 				"works, add the new field to the test case, and fix this error.")
