@@ -108,19 +108,20 @@ const (
 	// It includes several changes to the header format:
 	// - Nonce field is deprecated
 	// - ExtraNonce field is deprecated
+	// - ProposedInView field is added
 	// - ValidatorsVoteQC field is added
 	// - ValidatorsTimeoutAggregateQC field is added
 	//
 	// This format change is a breaking change that is not backwards-compatible with
 	// versions 0 and 1.
 	HeaderVersion2 = MsgDeSoHeaderVersion(2)
+	// TODO: rename this "CurrentHeaderVersion" to "LatestProofOfWorkHeaderVersion". Note,
+	// doing so will be a breaking change for 3rd party applications that import core and
+	// use this constant.
+	//
 	// This CurrentHeaderVersion is an implicit version type that represents the latest
 	// backwards compatible Proof of Work header format. This value is now locked to
 	// HeaderVersion1 since versions 2 and onwards will be used for Proof of Stake formats.
-	//
-	// TODO: rename this constant to "LatestProofOfWorkHeaderVersion". Note, doing so will
-	// be a breaking change for 3rd party applications that import core and use this
-	// constant.
 	CurrentHeaderVersion = HeaderVersion1
 )
 

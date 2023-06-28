@@ -2391,7 +2391,7 @@ type MsgDeSoBlockProducerInfo struct {
 // MsgDeSoBlockProducerInfo.Serialize_Legacy() method instead.
 func (bpi *MsgDeSoBlockProducerInfo) ToBytes() ([]byte, error) {
 	// Only support byte encoding for BlockProducerInfo version 1. All later versions will
-	// need custom encoding.
+	// need differ in format, so their encoding can be implemented then.
 	if bpi.Version != MsgDeSoBlockProducerInfoVersion1 {
 		return nil, fmt.Errorf("MsgDeSoBlockProducerInfo.ToBytes: BlockProducerInfo version %d not supported", bpi.Version)
 	}
@@ -2424,7 +2424,7 @@ func (bpi *MsgDeSoBlockProducerInfo) ToBytes() ([]byte, error) {
 	return encodedBytes, nil
 }
 
-// Byte decoder for the MsgDeSoBlockProducerInfo, with support for versioning. The encoder only
+// Byte decoder for the MsgDeSoBlockProducerInfo with support for versioning. The decoder only
 // supports MsgDeSoBlockProducerInfo version 1 and above. For the legacy version 0, use the
 // MsgDeSoBlockProducerInfo.Deserialize_Legacy() method instead.
 func (bpi *MsgDeSoBlockProducerInfo) FromBytes(rr *bytes.Reader) error {
@@ -2437,7 +2437,7 @@ func (bpi *MsgDeSoBlockProducerInfo) FromBytes(rr *bytes.Reader) error {
 	}
 
 	// Only support byte decoding for BlockProducerInfo version 1. All later versions will
-	// need custom decoding.
+	// need differ in format, so their decoding can be implemented then.
 	if bpi.Version != MsgDeSoBlockProducerInfoVersion1 {
 		return fmt.Errorf("MsgDeSoBlockProducerInfo.FromBytes: BlockProducerInfo version %d not supported", bpi.Version)
 	}
@@ -2551,20 +2551,19 @@ type MsgDeSoBlock struct {
 	Header *MsgDeSoHeader
 	Txns   []*MsgDeSoTxn
 
-	// This MsgDeSoBlockProducerInfo field describes the producer of the block and their signature
-	// for the block.
+	// This field describes the producer of the block and their signature for the block.
 	//
-	// In Proof of Work blocks, this field is optional and provides the producer of the block
-	// the ability to sign the block with their private key. Doing this proves that this block
+	// In Proof of Work blocks, the field is optional and provides the producer of the block
+	// the ability to sign the block with its ECDSA private key. Doing this proves that this block
 	// was produced by a particular entity, which can be useful for nodes that want to restrict
 	// who they accept blocks from.
 	//
 	// In Proof of Stake blocks, this field is required and serves two purposes:
-	// 1. It allows the block producer to sign its block with its ECDSA or BLS private key.
+	// 1. It allows the block producer to sign the block with its BLS private key.
 	// This allows validators to verify that the block was produced by the expected leader for the
 	// current block height and view.
 	// 2. It contains the block producer's BLS partial signature, which acts as their vote on the
-	// block. This way, its vote can be aggregated into a QC by the next block proposer in the leader
+	// block. This way, the vote can be aggregated into a QC by the next block proposer in the leader
 	// schedule.
 	BlockProducerInfo *MsgDeSoBlockProducerInfo
 }

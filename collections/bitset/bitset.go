@@ -6,12 +6,11 @@ import (
 
 // A Bitset is an ordered list of bits with arbitrary length. It uses
 // the built-in big.Int as the underlying storage scheme. The big.Int maintains
-// an ordered bit list and provides an interface where we can flip each bit
-// individually. The Bitset acts as a wrapper and provides boolean Get and Set
-// functions on top.
+// an ordered list of bits and provides an interface where we can flip each bit
+// individually. The Bitset type acts as a wrapper and a clean interface on top.
 //
 // We implement a custom Bitset data structure using Big.Int rather than using
-// an off-the-shelf solution because we need to support byte encoding and decoding,
+// an off-the-shelf solution because we need to support byte encoding and decoding
 // with known endianness. Out of the box, the built-in big.Int supports individual
 // bit operations, safe indexing & boundary checks, dynamic resizing, and big
 // endian byte encoding/decoding. It allows us to implement a straightforward
@@ -21,17 +20,20 @@ type Bitset struct {
 	store *big.Int
 }
 
-// Initializes a new Bitset with zero value for all indices.
+// Initializes a new Bitset with zero value for all bits.
 func NewBitset() *Bitset {
 	return &Bitset{
 		store: big.NewInt(0),
 	}
 }
 
+// Gets the value of the bit at the given index.
 func (b *Bitset) Get(index int) bool {
 	return b.store.Bit(index) == 1
 }
 
+// Set the value of the bit at the given index, and returns the updated Bitset
+// for method chaining.
 func (b *Bitset) Set(index int, newValue bool) *Bitset {
 	booleanValue := uint(0)
 	if newValue {
