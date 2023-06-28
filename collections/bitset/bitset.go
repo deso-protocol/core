@@ -48,6 +48,12 @@ func (b *Bitset) Set(index int, newValue bool) *Bitset {
 //
 // This also means that the highest index set to true is b.Size() - 1.
 // All indices beyond are implicitly false.
+//
+// Example:
+// Given a sequence of values 11 values:
+// - [true, true, true, false, false, false, false, false, true, false, false]
+// This function returns a size of 9. The highest index set to true is 8, and
+// all other indices beyond are implicitly false.
 func (b *Bitset) Size() int {
 	return b.store.BitLen()
 }
@@ -56,6 +62,12 @@ func (b *Bitset) Size() int {
 // byte slice. The output is compressed such that if the underlying
 // big.Int had zeros at the highest bits, they will be removed
 // from the output.
+//
+// Example:
+// Given a sequence of values 11 values:
+// - [true, true, true, false, false, false, false, false, true, false, false]
+// This function returns the byte slice:
+// - [00000001, 00000111]
 func (b *Bitset) ToBytes() []byte {
 	return b.store.Bytes()
 }
