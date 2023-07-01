@@ -399,7 +399,8 @@ func listenForBlockHeight(t *testing.T, node *cmd.Node, height uint32, signal ch
 	}()
 }
 
-// listenForBlockHeight busy-waits until the node's block tip reaches provided height.
+// disconnectAtBlockHeight busy-waits until the node's block tip reaches provided height, and then disconnects
+// from the provided bridge.
 func disconnectAtBlockHeight(t *testing.T, syncingNode *cmd.Node, bridge *ConnectionBridge, height uint32) {
 	listener := make(chan bool)
 	listenForBlockHeight(t, syncingNode, height, listener)
