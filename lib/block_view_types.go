@@ -3764,7 +3764,9 @@ type GlobalParamsEntry struct {
 	// The maximum number of NFT copies that are allowed to be minted.
 	MaxCopiesPerNFT uint64
 
-	// The new minimum fee the network will accept
+	// MinimumNetworkFeeNanosPerKB is the minimal fee rate in DeSo nanos per KB a transaction can have.
+	// If a transaction has a lower fee than MinimumNetworkFeeNanosPerKB, it will be
+	// rejected by the node's mempool.
 	MinimumNetworkFeeNanosPerKB uint64
 
 	// MaxNonceExpirationBlockHeightOffset is maximum value nodes will
@@ -3773,17 +3775,11 @@ type GlobalParamsEntry struct {
 	// transaction.
 	MaxNonceExpirationBlockHeightOffset uint64
 
-	// TODO: Properly handle the newly added GlobalParamsEntry fields
-	// FeeBucketBaseRateNanosPerKB is the minimal FeeRatePerKB a transaction can have.
-	// If a transaction has a lower fee than FeeBucketBaseRateNanosPerKB, it will be
-	// rejected by the node's mempool.
-	FeeBucketBaseRateNanosPerKB uint64
-
-	// FeeBucketRateMultiplierBasisPoints is the rate of growth of the fee bucket ranges.
-	// The multiplier is given as basis points. For example a value of 1000 means
-	// that the fee bucket ranges will grow by 10% each time. If, let's say, we start with
-	// FeeBucketBaseRateNanosPerKB of 1000 nanos, then the first bucket will be [1000, 1099],
-	// the second bucket will be [1100, 1209], the third bucket will be [1210, 1330], etc.
+	// FeeBucketRateMultiplierBasisPoints is the rate of growth of the fee bucket ranges. This is part of the new
+	// PoS Mempool. The multiplier is given as basis points. For example a value of 1000 means that the fee bucket
+	// ranges will grow by 10% each time. If, let's say, we start with MinimumNetworkFeeNanosPerKB of 1000 nanos,
+	// then the first bucket will be [1000, 1099], the second bucket will be [1100, 1209], the third bucket will
+	// be [1210, 1330], etc.
 	FeeBucketRateMultiplierBasisPoints uint64
 }
 
@@ -3799,7 +3795,6 @@ func (gp *GlobalParamsEntry) RawEncodeWithoutMetadata(blockHeight uint64, skipMe
 		data = append(data, UintToBuf(gp.MaxNonceExpirationBlockHeightOffset)...)
 	}
 	if MigrationTriggered(blockHeight, ProofOfStakeNewTxnTypesMigration) {
-		data = append(data, UintToBuf(gp.FeeBucketBaseRateNanosPerKB)...)
 		data = append(data, UintToBuf(gp.FeeBucketRateMultiplierBasisPoints)...)
 	}
 	return data
@@ -3835,10 +3830,6 @@ func (gp *GlobalParamsEntry) RawDecodeWithoutMetadata(blockHeight uint64, rr *by
 		}
 	}
 	if MigrationTriggered(blockHeight, ProofOfStakeNewTxnTypesMigration) {
-		gp.FeeBucketBaseRateNanosPerKB, err = ReadUvarint(rr)
-		if err != nil {
-			return errors.Wrapf(err, "GlobalParamsEntry.Decode: Problem reading FeeBucketBaseRateNanosPerKB")
-		}
 		gp.FeeBucketRateMultiplierBasisPoints, err = ReadUvarint(rr)
 		if err != nil {
 			return errors.Wrapf(err, "GlobalParamsEntry.Decode: Problem reading FeeBucketRateMultiplierBasisPoints")
@@ -3855,15 +3846,15 @@ func (gp *GlobalParamsEntry) GetEncoderType() EncoderType {
 	return EncoderTypeGlobalParamsEntry
 }
 
-// computeFeeBucketBaseAndMultiplier takes the fee base rate and multiplier for the GlobalParamsEntry,
-// and returns them as big.Floats.
-func (gp *GlobalParamsEntry) computeFeeBucketBaseAndMultiplier() (
-	_baseRate *big.Float, _bucketMultiplier *big.Float) {
+// ComputeFeeTimeBucketMinimumFeeAndMultiplier takes the MinimumNetworkFeeNanosPerKB and FeeBucketRateMultiplierBasisPoints for
+// the GlobalParamsEntry, and returns them as big.Floats.
+func (gp *GlobalParamsEntry) ComputeFeeTimeBucketMinimumFeeAndMultiplier() (
+	_minimumRate *big.Float, _bucketMultiplier *big.Float) {
 
-	feeBucketBaseRateNanos := NewFloat().SetUint64(gp.FeeBucketBaseRateNanosPerKB)
+	minimumNetworkFeeNanosPerKB := NewFloat().SetUint64(gp.MinimumNetworkFeeNanosPerKB)
 	feeBucketMultiplier := NewFloat().SetUint64(10000 + gp.FeeBucketRateMultiplierBasisPoints)
 	feeBucketMultiplier.Quo(feeBucketMultiplier, NewFloat().SetUint64(10000))
-	return feeBucketBaseRateNanos, feeBucketMultiplier
+	return minimumNetworkFeeNanosPerKB, feeBucketMultiplier
 }
 
 // This struct holds info on a readers interactions (e.g. likes) with a post.

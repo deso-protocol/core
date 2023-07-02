@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"github.com/emirpasic/gods/sets/treeset"
 	"github.com/golang/glog"
+	"github.com/pkg/errors"
+	"math"
 	"math/big"
 )
 
@@ -17,138 +19,147 @@ import (
 // fee-time. The TransactionRegister doesn't perform any validation on the transactions, it just accepts the provided
 // MempoolTx and adds it to the appropriate FeeTimeBucket.
 type TransactionRegister struct {
-	// timeBucketSet is a set of FeeTimeBucket objects. The set is ordered by the FeeTimeBucket's ranges, based on FeeTimeBucketComparator.
-	timeBucketSet *treeset.Set
-	// timeBucketIndex is a map of FeeTimeBucket indices to FeeTimeBucket objects. It is used to quickly find a FeeTimeBucket given its index.
-	timeBucketIndex map[int]*FeeTimeBucket
-	// txnMembership is a map of transaction hashes. It is used to determine existence of a transaction in the register.
-	txnMembership map[BlockHash]struct{}
+	// feeTimeBucketSet is a set of FeeTimeBucket objects. The set is ordered by the FeeTimeBucket's ranges, based on FeeTimeBucketComparator.
+	feeTimeBucketSet *treeset.Set
+	// feeTimeBucketIndexMap is a map of FeeTimeBucket indices to FeeTimeBucket objects. It is used to quickly find a FeeTimeBucket
+	// given its index. Note that using a map here is preferable over e.g. a slice, since the index of a FeeTimeBucket is
+	// not necessarily its position in the set.
+	feeTimeBucketIndexMap map[uint32]*FeeTimeBucket
+	// txnMembership is a set of transaction hashes. It is used to determine existence of a transaction in the register.
+	txnMembership *Set[BlockHash]
 	// totalTxnSize is the total size of all transactions in the register.
 	totalTxnSize uint64
 
 	params *DeSoParams
 
-	// feeBucketBaseRateNanosPerKB is the base fee rate for the lowest fee FeeTimeBucket. This value corresponds to
-	// GlobalParamsEntry's FeeBucketBaseRateNanosPerKB.
-	feeBucketBaseRateNanosPerKB *big.Float
+	// minimumNetworkFeeNanosPerKB is the base fee rate for the lowest fee FeeTimeBucket. This value corresponds to
+	// GlobalParamsEntry's MinimumNetworkFeeNanosPerKB.
+	minimumNetworkFeeNanosPerKB *big.Float
 	// feeBucketRateMultiplierBasisPoints is the fee rate multiplier for FeeTimeBucket objects. This value corresponds to
 	// GlobalParamsEntry's FeeBucketRateMultiplierBasisPoints.
 	feeBucketRateMultiplierBasisPoints *big.Float
 }
 
 func NewTransactionRegister(params *DeSoParams, globalParams *GlobalParamsEntry) *TransactionRegister {
-	timeBucketSet := treeset.NewWith(FeeTimeBucketComparator)
-	baseRate, bucketMultiplier := globalParams.computeFeeBucketBaseAndMultiplier()
+	feeTimeBucketSet := treeset.NewWith(FeeTimeBucketComparator)
+	minNetworkFee, bucketMultiplier := globalParams.ComputeFeeTimeBucketMinimumFeeAndMultiplier()
 
 	return &TransactionRegister{
-		timeBucketSet:                      timeBucketSet,
-		timeBucketIndex:                    make(map[int]*FeeTimeBucket),
-		txnMembership:                      map[BlockHash]struct{}{},
+		feeTimeBucketSet:                   feeTimeBucketSet,
+		feeTimeBucketIndexMap:              make(map[uint32]*FeeTimeBucket),
+		txnMembership:                      NewSet([]BlockHash{}),
 		totalTxnSize:                       0,
 		params:                             params,
-		feeBucketBaseRateNanosPerKB:        baseRate,
+		minimumNetworkFeeNanosPerKB:        minNetworkFee,
 		feeBucketRateMultiplierBasisPoints: bucketMultiplier,
 	}
 }
 
 // FeeTimeBucketComparator is a comparator function for FeeTimeBucket objects. It is used to order FeeTimeBucket objects
-// in the TransactionRegister's timeBucketSet based on fee ranges (higher fee ranges are ordered first).
+// in the TransactionRegister's feeTimeBucketSet based on fee ranges (higher fee ranges are ordered first).
 func FeeTimeBucketComparator(a, b interface{}) int {
-	aVal := a.(*FeeTimeBucket)
-	bVal := b.(*FeeTimeBucket)
+	aVal, aOk := a.(*FeeTimeBucket)
+	bVal, bOk := b.(*FeeTimeBucket)
+	if !aOk || !bOk {
+		glog.Error(CLog(Red, "FeeTimeBucketComparator: Invalid types. This is BAD NEWS, we should never get here."))
+		return 0
+	}
 
 	// Determine the FeeTimeBucket with a higher fee range. We can easily find out by comparing FeeTimeBucket minFeeNanosPerKB.
 	if aVal.minFeeNanosPerKB < bVal.minFeeNanosPerKB {
 		return 1
 	} else if aVal.minFeeNanosPerKB > bVal.minFeeNanosPerKB {
 		return -1
-	} else {
-		return 0
 	}
+
+	return 0
 }
 
 // AddTransaction adds a transaction to the register. If the transaction already exists in the register, or its size
-// exceeds the maximum mempool capacity, it is not added.
-func (tr *TransactionRegister) AddTransaction(txn *MempoolTx) bool {
-	if txn.Hash == nil {
-		return false
+// exceeds the maximum mempool capacity, it is not added. Returns nil when transaction was successfully added to the
+// register, or an error otherwise.
+func (tr *TransactionRegister) AddTransaction(txn *MempoolTx) error {
+	if txn == nil || txn.Hash == nil {
+		return fmt.Errorf("TransactionRegister.AddTransaction: Transaction or transaction hash is nil")
 	}
 
-	if _, ok := tr.txnMembership[*txn.Hash]; ok {
-		return false
+	if tr.txnMembership.Includes(*txn.Hash) {
+		return fmt.Errorf("TransactionRegister.AddTransaction: Transaction already exists in register")
 	}
 
 	// If the transaction overflows the maximum mempool size, reject it.
-	if tr.totalTxnSize+txn.TxSizeBytes > tr.params.MaxMempoolPosSizeBytes {
-		return false
+	if tr.totalTxnSize+txn.TxSizeBytes > tr.params.MaxMempoolPosSizeBytes || tr.totalTxnSize > math.MaxUint64-txn.TxSizeBytes {
+		return fmt.Errorf("TransactionRegister.AddTransaction: Transaction size exceeds maximum mempool size")
 	}
 
 	// Determine the index of the bucket based on the transaction's fee rate.
-	bucketIndex := ComputeTimeBucketIndexFromFeePerKBNanos(txn.FeePerKB, tr.feeBucketBaseRateNanosPerKB,
+	bucketIndex := ComputeFeeTimeBucketIndexFromFeePerKBNanos(txn.FeePerKB, tr.minimumNetworkFeeNanosPerKB,
 		tr.feeBucketRateMultiplierBasisPoints)
-	if bucket, exists := tr.timeBucketIndex[bucketIndex]; exists {
+	if bucket, exists := tr.feeTimeBucketIndexMap[bucketIndex]; exists {
 		// If the bucket already exists, add the transaction to it.
 		if err := bucket.AddTransaction(txn); err != nil {
-			glog.Errorf("TransactionRegister.AddTransaction: Error adding transaction to bucket: %v", err)
-			return false
+			return errors.Wrapf(err, "TransactionRegister.AddTransaction: Error adding transaction to bucket: ")
 		}
 	} else {
 		// If the bucket doesn't exist, create it and add the transaction to it.
-		newBucket := NewTimeBucket(bucketIndex, tr.feeBucketBaseRateNanosPerKB,
+		newBucket := NewFeeTimeBucket(bucketIndex, tr.minimumNetworkFeeNanosPerKB,
 			tr.feeBucketRateMultiplierBasisPoints)
 		if err := newBucket.AddTransaction(txn); err != nil {
-			glog.Errorf("TransactionRegister.AddTransaction: Error adding transaction to bucket: %v", err)
-			return false
+			return errors.Wrapf(err, "TransactionRegister.AddTransaction: Error adding transaction to bucket: %v", err)
 		}
-		tr.timeBucketSet.Add(newBucket)
-		tr.timeBucketIndex[bucketIndex] = newBucket
+		tr.feeTimeBucketSet.Add(newBucket)
+		tr.feeTimeBucketIndexMap[bucketIndex] = newBucket
 	}
 
 	tr.totalTxnSize += txn.TxSizeBytes
-	tr.txnMembership[*txn.Hash] = struct{}{}
-	return true
+	tr.txnMembership.Add(*txn.Hash)
+	return nil
 }
 
-// RemoveTransaction removes a transaction from the register.
-func (tr *TransactionRegister) RemoveTransaction(txn *MempoolTx) bool {
-	if _, ok := tr.txnMembership[*txn.Hash]; !ok {
-		return false
+// RemoveTransaction removes a transaction from the register. If the transaction does not exist in the register, or its
+// size exceeds the current register size (which should never happen), it is not removed. Returns nil when transaction
+// was successfully removed from the register, or an error otherwise.
+func (tr *TransactionRegister) RemoveTransaction(txn *MempoolTx) error {
+	if txn == nil || txn.Hash == nil {
+		return fmt.Errorf("TransactionRegister.RemoveTransaction: Transaction or transaction hash is nil")
+	}
+
+	if !tr.txnMembership.Includes(*txn.Hash) {
+		return fmt.Errorf("TransactionRegister.RemoveTransaction: Transaction does not exist in register")
+	}
+
+	if tr.totalTxnSize < txn.TxSizeBytes {
+		return fmt.Errorf("TransactionRegister.RemoveTransaction: Transaction size exceeds total mempool size")
 	}
 
 	// Determine the index of the bucket based on the transaction's fee rate.
-	bucketIndex := ComputeTimeBucketIndexFromFeePerKBNanos(txn.FeePerKB, tr.feeBucketBaseRateNanosPerKB,
+	bucketIndex := ComputeFeeTimeBucketIndexFromFeePerKBNanos(txn.FeePerKB, tr.minimumNetworkFeeNanosPerKB,
 		tr.feeBucketRateMultiplierBasisPoints)
 	// Remove the transaction from the bucket.
-	if bucket, exists := tr.timeBucketIndex[bucketIndex]; exists {
+	if bucket, exists := tr.feeTimeBucketIndexMap[bucketIndex]; exists {
 		bucket.RemoveTransaction(txn)
 		// If the bucket becomes empty, remove it from the TransactionRegister.
 		if bucket.Empty() {
-			tr.timeBucketSet.Remove(bucket)
-			delete(tr.timeBucketIndex, bucketIndex)
+			tr.feeTimeBucketSet.Remove(bucket)
+			delete(tr.feeTimeBucketIndexMap, bucketIndex)
 		}
 	}
 
-	delete(tr.txnMembership, *txn.Hash)
+	tr.txnMembership.Remove(*txn.Hash)
 	tr.totalTxnSize -= txn.TxSizeBytes
-	return true
+	return nil
 }
 
 func (tr *TransactionRegister) Empty() bool {
-	return tr.timeBucketSet.Empty()
-}
-
-// GetIterator returns an iterator over the FeeTimeBucket objects in the TransactionRegister. The iterator goes through
-// all FeeTimeBucket objects as ordered by FeeTimeBucketComparator.
-func (tr *TransactionRegister) GetIterator() treeset.Iterator {
-	return tr.timeBucketSet.Iterator()
+	return tr.feeTimeBucketSet.Empty()
 }
 
 // GetFeeTimeIterator returns an iterator over the transactions in the register. The iterator goes through all transactions
 // as ordered by Fee-Time.
 func (tr *TransactionRegister) GetFeeTimeIterator() *FeeTimeIterator {
 	return &FeeTimeIterator{
-		initialized:        false,
-		timeBucketIterator: tr.timeBucketSet.Iterator(),
+		initialized:    false,
+		bucketIterator: tr.feeTimeBucketSet.Iterator(),
 	}
 }
 
@@ -167,8 +178,8 @@ func (tr *TransactionRegister) GetFeeTimeTransactions() []*MempoolTx {
 // FeeTimeIterator is an iterator over the transactions in a TransactionRegister. The iterator goes through all transactions
 // as ordered by Fee-Time.
 type FeeTimeIterator struct {
-	// timeBucketIterator is an iterator over the FeeTimeBucket objects in the TransactionRegister.
-	timeBucketIterator treeset.Iterator
+	// bucketIterator is an iterator over the FeeTimeBucket objects in the TransactionRegister.
+	bucketIterator treeset.Iterator
 	// mempoolTxIterator is an iterator over the transactions in the current FeeTimeBucket.
 	mempoolTxIterator treeset.Iterator
 	// initialized is set to true when the iterator is pointing at a transactions.
@@ -178,38 +189,43 @@ type FeeTimeIterator struct {
 // Next moves the FeeTimeIterator to the next transaction. It returns true if the iterator is pointing at a transaction
 // after the move, and false otherwise.
 func (fti *FeeTimeIterator) Next() bool {
-	timeBucketNext := false
+	hasNextMempoolTxn := false
 
-	// If the iterator is not initialized, we will make it advance the timeBucketIterator and mempoolTxIterator.
+	// If the iterator is not initialized, we will make it advance the bucketIterator and the mempoolTxIterator.
 	if !fti.initialized {
-		timeBucketNext = false
+		hasNextMempoolTxn = false
 		fti.initialized = true
 	} else {
 		// If the iterator is initialized, we will first see if there are more transactions in the current FeeTimeBucket.
 		// We do this by advancing the mempoolTxIterator and checking if it is pointing at a transaction.
-		timeBucketNext = fti.mempoolTxIterator.Next()
+		hasNextMempoolTxn = fti.mempoolTxIterator.Next()
 	}
 
-	if !timeBucketNext {
-		// If there are no more transactions in the current FeeTimeBucket, we will advance the timeBucketIterator.
-		if !fti.timeBucketIterator.Next() {
-			// If there are no more FeeTimeBucket objects in the TransactionRegister, we are done.
-			return false
-		}
-
-		// If there are more FeeTimeBucket objects in the TransactionRegister, we will advance the mempoolTxIterator
-		// to the first transaction in the next FeeTimeBucket.
-		if timeBucketVal, ok := fti.timeBucketIterator.Value().(*FeeTimeBucket); ok {
-			fti.mempoolTxIterator = timeBucketVal.txnsSet.Iterator()
-			// We will advance the mempoolTxIterator to the first transaction in the new FeeTimeBucket.
-			if !fti.mempoolTxIterator.Next() {
-				// This shouldn't happen, but if it does, we've reached the end of the TransactionRegister.
-				return false
-			}
-		} else {
-			return false
-		}
+	// If we've successfully advanced mempoolTxIterator for the current FeeTimeBucket, we are done.
+	if hasNextMempoolTxn {
+		return true
 	}
+
+	// If there are no more transactions in the current FeeTimeBucket, we will advance the bucketIterator.
+	if !fti.bucketIterator.Next() {
+		// If there are no more FeeTimeBucket objects in the TransactionRegister, we are done.
+		return false
+	}
+
+	// If there are more FeeTimeBucket objects in the TransactionRegister, we will advance the mempoolTxIterator
+	// to the first transaction in the next FeeTimeBucket. First, we fetch the newly pointed-at FeeTimeBucket.
+	nextFeeTimeBucket, ok := fti.bucketIterator.Value().(*FeeTimeBucket)
+	if !ok {
+		return false
+	}
+
+	// We will set the mempoolTxIterator to point at the first transaction in the new FeeTimeBucket.
+	fti.mempoolTxIterator = nextFeeTimeBucket.txnsSet.Iterator()
+	if !fti.mempoolTxIterator.Next() {
+		// This shouldn't happen, but if it does, we've reached the end of the TransactionRegister.
+		return false
+	}
+
 	return true
 }
 
@@ -221,9 +237,8 @@ func (fti *FeeTimeIterator) Value() (*MempoolTx, bool) {
 
 	if txn, ok := fti.mempoolTxIterator.Value().(*MempoolTx); ok {
 		return txn, true
-	} else {
-		return nil, false
 	}
+	return nil, false
 }
 
 // ========================
@@ -238,20 +253,18 @@ type FeeTimeBucket struct {
 	// minFeeNanosPerKB is the minimum fee rate (inclusive) accepted by the FeeTimeBucket, in nanos per KB.
 	minFeeNanosPerKB uint64
 	// maxFeeNanosPerKB is the maximum fee rate (inclusive) accepted by the FeeTimeBucket, in nanos per KB. It's worth
-	// noting that the maximum fee rate is always 1 below the minimum fee rate of the next FeeTimeBucket.
+	// noting that the maximum fee rate is always 1 below the minimum fee rate of the FeeTimeBucket with index+1.
 	maxFeeNanosPerKB uint64
 	// index is the fee range index of the FeeTimeBucket.
-	index int
-
-	globalParams *GlobalParamsEntry
+	index uint32
 }
 
-func NewTimeBucket(index int, feeBucketBaseRateNanosPerKB *big.Float,
+func NewFeeTimeBucket(index uint32, minimumNetworkFeeNanosPerKB *big.Float,
 	feeBucketRateMultiplierBasisPoints *big.Float) *FeeTimeBucket {
 
 	txnsSet := treeset.NewWith(MempoolTxTimeOrderComparator)
-	minFeeNanosPerKB, maxFeeNanosPerKB := ComputeTimeBucketRangeFromIndex(index,
-		feeBucketBaseRateNanosPerKB, feeBucketRateMultiplierBasisPoints)
+	minFeeNanosPerKB, maxFeeNanosPerKB := ComputeFeeTimeBucketRangeFromIndex(index,
+		minimumNetworkFeeNanosPerKB, feeBucketRateMultiplierBasisPoints)
 	return &FeeTimeBucket{
 		minFeeNanosPerKB: minFeeNanosPerKB,
 		maxFeeNanosPerKB: maxFeeNanosPerKB,
@@ -264,31 +277,36 @@ func NewTimeBucket(index int, feeBucketBaseRateNanosPerKB *big.Float,
 // orders the transactions by smallest timestamp. In case of a tie, transactions are ordered by greatest fee rate. Finally,
 // in case of another tie, transactions are ordered by their hash.
 func MempoolTxTimeOrderComparator(a, b interface{}) int {
-	aVal := a.(*MempoolTx)
-	bVal := b.(*MempoolTx)
+	aVal, aOk := a.(*MempoolTx)
+	bVal, bOk := b.(*MempoolTx)
+	if !aOk || !bOk {
+		glog.Error(CLog(Red, "MempoolTxTimeOrderComparator: Invalid types. This is BAD NEWS, we should never get here."))
+		return 0
+	}
 
-	if aVal.Added.UnixNano() > bVal.Added.UnixNano() {
+	if aVal.Added.UnixMicro() > bVal.Added.UnixMicro() {
 		return 1
-	} else if aVal.Added.UnixNano() < bVal.Added.UnixNano() {
+	} else if aVal.Added.UnixMicro() < bVal.Added.UnixMicro() {
 		return -1
 	} else if aVal.FeePerKB < bVal.FeePerKB {
 		return 1
 	} else if aVal.FeePerKB > bVal.FeePerKB {
 		return -1
-	} else {
-		return HashToBigint(aVal.Hash).Cmp(HashToBigint(bVal.Hash))
 	}
+	// If the timestamps and fee rates are the same, we order by the transaction hash.
+	return HashToBigint(aVal.Hash).Cmp(HashToBigint(bVal.Hash))
 }
 
 // AddTransaction adds a transaction to the FeeTimeBucket. It returns an error if the transaction is outside the
 // FeeTimeBucket's fee range, or if the transaction hash is nil.
 func (tb *FeeTimeBucket) AddTransaction(txn *MempoolTx) error {
-	if txn.Hash == nil {
-		return fmt.Errorf("transaction hash is nil")
+	if txn == nil || txn.Hash == nil {
+		return fmt.Errorf("FeeTimeBucket.AddTransaction: Transaction or transaction hash is nil")
 	}
 
 	if tb.minFeeNanosPerKB > txn.FeePerKB || tb.maxFeeNanosPerKB < txn.FeePerKB {
-		return fmt.Errorf("transaction fee %d outside of bucket range [%d, %d]", txn.FeePerKB, tb.minFeeNanosPerKB, tb.maxFeeNanosPerKB)
+		return fmt.Errorf("FeeTimeBucket.AddTransaction: Transaction fee %d outside of bucket range [%d, %d]",
+			txn.FeePerKB, tb.minFeeNanosPerKB, tb.maxFeeNanosPerKB)
 	}
 
 	tb.txnsSet.Add(txn)
@@ -326,72 +344,73 @@ func (tb *FeeTimeBucket) GetTransactions() []*MempoolTx {
 //	Fee-Time Bucket Math
 //============================================
 
-// computeTimeBucketMinFromIndex takes a fee range index, feeBucketBaseRateNanos, and feeBucketMultiplier, and uses them to
+// ComputeFeeTimeBucketMinFromIndex takes a fee range index, minimumNetworkFeeNanosPerKB, and feeBucketMultiplier, and uses them to
 // return the minimum fee rate of this fee range.
-func computeTimeBucketMinFromIndex(index int, feeBucketBaseRateNanos *big.Float, feeBucketMultiplier *big.Float) uint64 {
-	// The first fee range has a fee rate of feeBucketBaseRateNanos.
+func ComputeFeeTimeBucketMinFromIndex(index uint32, minimumNetworkFeeNanosPerKB *big.Float, feeBucketMultiplier *big.Float) uint64 {
+	// The first fee range has a fee rate of minimumNetworkFeeNanosPerKB.
 	if index == 0 {
-		fee, _ := feeBucketBaseRateNanos.Uint64()
+		fee, _ := minimumNetworkFeeNanosPerKB.Uint64()
 		return fee
 	}
 
-	// Compute feeBucketBaseRateNanos * feeBucketMultiplier^index.
-	pow := NewFloat().SetInt(big.NewInt(int64(index)))
+	// Compute minimumNetworkFeeNanosPerKB * feeBucketMultiplier^index.
+	pow := NewFloat().SetUint64(uint64(index))
 	multiplier := BigFloatPow(feeBucketMultiplier, pow)
-	fee := NewFloat().Mul(feeBucketBaseRateNanos, multiplier)
+	fee := NewFloat().Mul(minimumNetworkFeeNanosPerKB, multiplier)
 
 	feeUint64, _ := fee.Uint64()
 	return feeUint64
 }
 
-// ComputeTimeBucketRangeFromIndex takes a fee range index, feeBucketBaseRateNanos, and feeBucketMultiplier, and returns the
+// ComputeFeeTimeBucketRangeFromIndex takes a fee range index, minimumNetworkFeeNanosPerKB, and feeBucketMultiplier, and returns the
 // [minFeeNanosPerKB, maxFeeNanosPerKB] of the fee range.
-func ComputeTimeBucketRangeFromIndex(index int, feeBucketBaseRateNanos *big.Float, feeBucketMultiplier *big.Float) (
+func ComputeFeeTimeBucketRangeFromIndex(index uint32, minimumNetworkFeeNanosPerKB *big.Float, feeBucketMultiplier *big.Float) (
 	_minFeeNanosPerKB uint64, _maxFeeNanosPerKB uint64) {
 
-	minFeeNanosPerKB := computeTimeBucketMinFromIndex(index, feeBucketBaseRateNanos, feeBucketMultiplier)
-	maxFeeNanosPerKB := computeTimeBucketMinFromIndex(index+1, feeBucketBaseRateNanos, feeBucketMultiplier) - 1
+	minFeeNanosPerKB := ComputeFeeTimeBucketMinFromIndex(index, minimumNetworkFeeNanosPerKB, feeBucketMultiplier)
+	maxFeeNanosPerKB := ComputeFeeTimeBucketMinFromIndex(index+1, minimumNetworkFeeNanosPerKB, feeBucketMultiplier) - 1
 	return minFeeNanosPerKB, maxFeeNanosPerKB
 }
 
-// ComputeTimeBucketIndexFromFeePerKBNanos takes a fee rate, feeBucketBaseRateNanos, and feeBucketMultiplier, and
+// ComputeFeeTimeBucketIndexFromFeePerKBNanos takes a fee rate, minimumNetworkFeeNanosPerKB, and feeBucketMultiplier, and
 // returns the fee range index.
-func ComputeTimeBucketIndexFromFeePerKBNanos(feePerKBNanos uint64, feeBucketBaseRateNanos *big.Float,
-	feeBucketMultiplier *big.Float) int {
+func ComputeFeeTimeBucketIndexFromFeePerKBNanos(feePerKBNanos uint64, minimumNetworkFeeNanosPerKB *big.Float,
+	feeBucketMultiplier *big.Float) uint32 {
 
 	// Compute the fee time bucket index for the fee rate. We can compute the index as follows:
-	// feePerKBNanos = feeBucketBaseRateNanos * feeBucketMultiplier ^ index
-	// log(feePerKBNanos) = log(feeBucketBaseRateNanos) + index * log(feeBucketMultiplier^index)
-	// index = (log(feePerKBNanos) - log(feeBucketBaseRateNanos)) / log(feeBucketMultiplier).
+	// feePerKBNanos = minimumNetworkFeeNanosPerKB * feeBucketMultiplier ^ index
+	// log(feePerKBNanos) = log(minimumNetworkFeeNanosPerKB) + index * log(feeBucketMultiplier^index)
+	// index = (log(feePerKBNanos) - log(minimumNetworkFeeNanosPerKB)) / log(feeBucketMultiplier).
 
 	feeFloat := NewFloat().SetUint64(feePerKBNanos)
 	// If the fee is less than the base rate, return 0.
-	if feeFloat.Cmp(feeBucketBaseRateNanos) < 0 {
+	if feeFloat.Cmp(minimumNetworkFeeNanosPerKB) < 0 {
 		return 0
 	}
 
 	logFeeFloat := BigFloatLog(feeFloat)
-	logBaseRate := BigFloatLog(feeBucketBaseRateNanos)
+	logBaseRate := BigFloatLog(minimumNetworkFeeNanosPerKB)
 	logMultiplier := BigFloatLog(feeBucketMultiplier)
 	subFee := Sub(logFeeFloat, logBaseRate)
 	divFee := Div(subFee, logMultiplier)
 	feeTimeBucketIndexUint64, _ := divFee.Uint64()
-	feeTimeBucketIndex := int(feeTimeBucketIndexUint64)
+	feeTimeBucketIndex := uint32(feeTimeBucketIndexUint64)
 	if feeTimeBucketIndex < 0 {
 		return 0
 	}
 
 	// Now verify that float precision hasn't caused us to be off by one.
-	if computeTimeBucketMinFromIndex(feeTimeBucketIndex,
-		feeBucketBaseRateNanos, feeBucketMultiplier) > feePerKBNanos {
-		// If this condition is true, then the computed index is overestimated by 1.
+	// If this condition is true, then the computed index is overestimated by 1.
+	if ComputeFeeTimeBucketMinFromIndex(feeTimeBucketIndex, minimumNetworkFeeNanosPerKB, feeBucketMultiplier) > feePerKBNanos {
 		return feeTimeBucketIndex - 1
-	} else if computeTimeBucketMinFromIndex(feeTimeBucketIndex+1,
-		feeBucketBaseRateNanos, feeBucketMultiplier) <= feePerKBNanos {
-		// This condition gets triggered exactly on fee bucket boundaries, i.e. when feePerKBNanos = FeeMax for some bucket.
-		// The float rounding makes the number slightly smaller like 5.9999999991 instead of 6.0.
-		return feeTimeBucketIndex + 1
-	} else {
-		return feeTimeBucketIndex
 	}
+
+	// This condition gets triggered exactly on fee bucket boundaries, i.e. when feePerKBNanos = FeeMax for some bucket.
+	// The float rounding makes the number slightly smaller like 5.9999999991 instead of 6.0.
+	if ComputeFeeTimeBucketMinFromIndex(feeTimeBucketIndex+1, minimumNetworkFeeNanosPerKB, feeBucketMultiplier) <= feePerKBNanos {
+		return feeTimeBucketIndex + 1
+	}
+
+	// If we get here, then the computed index is correct.
+	return feeTimeBucketIndex
 }
