@@ -21,10 +21,10 @@ import (
 type TransactionRegister struct {
 	// feeTimeBucketSet is a set of FeeTimeBucket objects. The set is ordered by the FeeTimeBucket's ranges, based on FeeTimeBucketComparator.
 	feeTimeBucketSet *treeset.Set
-	// feeTimeBucketMinFeeMap is a map of FeeTimeBucket minimum fees to FeeTimeBucket objects. It is used to quickly find
+	// feeTimeBucketsByMinFeeMap is a map of FeeTimeBucket minimum fees to FeeTimeBucket objects. It is used to quickly find
 	// a FeeTimeBucket given its fee. Note that using a map here is preferable over e.g. a slice, since the index of a
 	// FeeTimeBucket is not necessarily its position in the set.
-	feeTimeBucketMinFeeMap map[uint64]*FeeTimeBucket
+	feeTimeBucketsByMinFeeMap map[uint64]*FeeTimeBucket
 	// txnMembership is a set of transaction hashes. It is used to determine existence of a transaction in the register.
 	txnMembership *Set[BlockHash]
 	// totalTxnSize is the total size of all transactions in the register.
@@ -46,7 +46,7 @@ func NewTransactionRegister(params *DeSoParams, globalParams *GlobalParamsEntry)
 
 	return &TransactionRegister{
 		feeTimeBucketSet:                   feeTimeBucketSet,
-		feeTimeBucketMinFeeMap:             make(map[uint64]*FeeTimeBucket),
+		feeTimeBucketsByMinFeeMap:          make(map[uint64]*FeeTimeBucket),
 		txnMembership:                      NewSet([]BlockHash{}),
 		totalTxnSize:                       0,
 		params:                             params,
@@ -95,7 +95,7 @@ func (tr *TransactionRegister) AddTransaction(txn *MempoolTx) error {
 	// Determine the index of the bucket based on the transaction's fee rate.
 	bucketMinFeeNanosPerKb, bucketMaxFeeNanosPerKB := ComputeFeeTimeBucketRangeFromFeeNanosPerKB(txn.FeePerKB,
 		tr.minimumNetworkFeeNanosPerKB, tr.feeBucketRateMultiplierBasisPoints)
-	if bucket, exists := tr.feeTimeBucketMinFeeMap[bucketMinFeeNanosPerKb]; exists {
+	if bucket, exists := tr.feeTimeBucketsByMinFeeMap[bucketMinFeeNanosPerKb]; exists {
 		// If the bucket already exists, add the transaction to it.
 		if err := bucket.AddTransaction(txn); err != nil {
 			return errors.Wrapf(err, "TransactionRegister.AddTransaction: Error adding transaction to bucket: ")
@@ -107,7 +107,7 @@ func (tr *TransactionRegister) AddTransaction(txn *MempoolTx) error {
 			return errors.Wrapf(err, "TransactionRegister.AddTransaction: Error adding transaction to bucket: %v", err)
 		}
 		tr.feeTimeBucketSet.Add(newBucket)
-		tr.feeTimeBucketMinFeeMap[bucketMinFeeNanosPerKb] = newBucket
+		tr.feeTimeBucketsByMinFeeMap[bucketMinFeeNanosPerKb] = newBucket
 	}
 
 	tr.totalTxnSize += txn.TxSizeBytes
@@ -135,12 +135,12 @@ func (tr *TransactionRegister) RemoveTransaction(txn *MempoolTx) error {
 	bucketMinFeeNanosPerKb, _ := ComputeFeeTimeBucketRangeFromFeeNanosPerKB(txn.FeePerKB,
 		tr.minimumNetworkFeeNanosPerKB, tr.feeBucketRateMultiplierBasisPoints)
 	// Remove the transaction from the bucket.
-	if bucket, exists := tr.feeTimeBucketMinFeeMap[bucketMinFeeNanosPerKb]; exists {
+	if bucket, exists := tr.feeTimeBucketsByMinFeeMap[bucketMinFeeNanosPerKb]; exists {
 		bucket.RemoveTransaction(txn)
 		// If the bucket becomes empty, remove it from the TransactionRegister.
 		if bucket.Empty() {
 			tr.feeTimeBucketSet.Remove(bucket)
-			delete(tr.feeTimeBucketMinFeeMap, bucketMinFeeNanosPerKb)
+			delete(tr.feeTimeBucketsByMinFeeMap, bucketMinFeeNanosPerKb)
 		}
 	}
 
