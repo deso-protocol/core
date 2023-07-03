@@ -151,14 +151,14 @@ func _testSortMempoolTxnsByFeeTime(txnPool []*MempoolTx, globalParams *GlobalPar
 			timeBucketI := _testMapMempoolTxnToTimeBucket(txnPool[i], globalParams)
 			timeBucketJ := _testMapMempoolTxnToTimeBucket(txnPool[j], globalParams)
 
-			feeComparison := FeeTimeBucketComparator(timeBucketI, timeBucketJ)
+			feeComparison := feeTimeBucketComparator(timeBucketI, timeBucketJ)
 			if feeComparison == 1 {
 				return false
 			} else if feeComparison == -1 {
 				return true
 			}
 
-			timeComparison := MempoolTxTimeOrderComparator(txnPool[i], txnPool[j])
+			timeComparison := mempoolTxTimeOrderComparator(txnPool[i], txnPool[j])
 			if timeComparison == 1 {
 				return false
 			} else if timeComparison == -1 {
@@ -168,7 +168,7 @@ func _testSortMempoolTxnsByFeeTime(txnPool []*MempoolTx, globalParams *GlobalPar
 		})
 	} else {
 		sort.Slice(txnPool, func(i, j int) bool {
-			timeComparison := MempoolTxTimeOrderComparator(txnPool[i], txnPool[j])
+			timeComparison := mempoolTxTimeOrderComparator(txnPool[i], txnPool[j])
 			if timeComparison == 1 {
 				return false
 			} else if timeComparison == -1 {

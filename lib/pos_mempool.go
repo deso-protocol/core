@@ -19,10 +19,10 @@ import (
 // fee-time. The TransactionRegister doesn't perform any validation on the transactions, it just accepts the provided
 // MempoolTx and adds it to the appropriate FeeTimeBucket.
 type TransactionRegister struct {
-	// feeTimeBucketSet is a set of FeeTimeBucket objects. The set is ordered by the FeeTimeBucket's ranges, based on FeeTimeBucketComparator.
+	// feeTimeBucketSet is a set of FeeTimeBucket objects. The set is ordered by the FeeTimeBucket's ranges, based on feeTimeBucketComparator.
 	feeTimeBucketSet *treeset.Set
 	// feeTimeBucketsByMinFeeMap is a map of FeeTimeBucket minimum fees to FeeTimeBucket objects. It is used to quickly find
-	// a FeeTimeBucket given its fee. Note that using a map here is preferable over e.g. a slice, since the index of a
+	// a FeeTimeBucket given its min fee. Note that using a map here is preferable over e.g. a slice, since the index of a
 	// FeeTimeBucket is not necessarily its position in the set.
 	feeTimeBucketsByMinFeeMap map[uint64]*FeeTimeBucket
 	// txnMembership is a set of transaction hashes. It is used to determine existence of a transaction in the register.
@@ -41,7 +41,7 @@ type TransactionRegister struct {
 }
 
 func NewTransactionRegister(params *DeSoParams, globalParams *GlobalParamsEntry) *TransactionRegister {
-	feeTimeBucketSet := treeset.NewWith(FeeTimeBucketComparator)
+	feeTimeBucketSet := treeset.NewWith(feeTimeBucketComparator)
 	minNetworkFee, bucketMultiplier := globalParams.ComputeFeeTimeBucketMinimumFeeAndMultiplier()
 
 	return &TransactionRegister{
@@ -55,13 +55,13 @@ func NewTransactionRegister(params *DeSoParams, globalParams *GlobalParamsEntry)
 	}
 }
 
-// FeeTimeBucketComparator is a comparator function for FeeTimeBucket objects. It is used to order FeeTimeBucket objects
+// feeTimeBucketComparator is a comparator function for FeeTimeBucket objects. It is used to order FeeTimeBucket objects
 // in the TransactionRegister's feeTimeBucketSet based on fee ranges (higher fee ranges are ordered first).
-func FeeTimeBucketComparator(a, b interface{}) int {
+func feeTimeBucketComparator(a, b interface{}) int {
 	aVal, aOk := a.(*FeeTimeBucket)
 	bVal, bOk := b.(*FeeTimeBucket)
 	if !aOk || !bOk {
-		glog.Error(CLog(Red, "FeeTimeBucketComparator: Invalid types. This is BAD NEWS, we should never get here."))
+		glog.Error(CLog(Red, "feeTimeBucketComparator: Invalid types. This is BAD NEWS, we should never get here."))
 		return 0
 	}
 
@@ -92,7 +92,7 @@ func (tr *TransactionRegister) AddTransaction(txn *MempoolTx) error {
 		return fmt.Errorf("TransactionRegister.AddTransaction: Transaction size exceeds maximum mempool size")
 	}
 
-	// Determine the index of the bucket based on the transaction's fee rate.
+	// Determine the min fee of the bucket based on the transaction's fee rate.
 	bucketMinFeeNanosPerKb, bucketMaxFeeNanosPerKB := ComputeFeeTimeBucketRangeFromFeeNanosPerKB(txn.FeePerKB,
 		tr.minimumNetworkFeeNanosPerKB, tr.feeBucketRateMultiplierBasisPoints)
 	if bucket, exists := tr.feeTimeBucketsByMinFeeMap[bucketMinFeeNanosPerKb]; exists {
@@ -258,7 +258,7 @@ type FeeTimeBucket struct {
 
 func NewFeeTimeBucket(minFeeNanosPerKB uint64, maxFeeNanosPerKB uint64) *FeeTimeBucket {
 
-	txnsSet := treeset.NewWith(MempoolTxTimeOrderComparator)
+	txnsSet := treeset.NewWith(mempoolTxTimeOrderComparator)
 	return &FeeTimeBucket{
 		minFeeNanosPerKB: minFeeNanosPerKB,
 		maxFeeNanosPerKB: maxFeeNanosPerKB,
@@ -266,14 +266,14 @@ func NewFeeTimeBucket(minFeeNanosPerKB uint64, maxFeeNanosPerKB uint64) *FeeTime
 	}
 }
 
-// MempoolTxTimeOrderComparator is a comparator function for MempoolTx transactions stored inside a FeeTimeBucket. The comparator
+// mempoolTxTimeOrderComparator is a comparator function for MempoolTx transactions stored inside a FeeTimeBucket. The comparator
 // orders the transactions by smallest timestamp. In case of a tie, transactions are ordered by greatest fee rate. Finally,
 // in case of another tie, transactions are ordered by their hash.
-func MempoolTxTimeOrderComparator(a, b interface{}) int {
+func mempoolTxTimeOrderComparator(a, b interface{}) int {
 	aVal, aOk := a.(*MempoolTx)
 	bVal, bOk := b.(*MempoolTx)
 	if !aOk || !bOk {
-		glog.Error(CLog(Red, "MempoolTxTimeOrderComparator: Invalid types. This is BAD NEWS, we should never get here."))
+		glog.Error(CLog(Red, "mempoolTxTimeOrderComparator: Invalid types. This is BAD NEWS, we should never get here."))
 		return 0
 	}
 
@@ -321,7 +321,7 @@ func (tb *FeeTimeBucket) GetIterator() treeset.Iterator {
 }
 
 // GetTransactions returns a slice of MempoolTx inside the FeeTimeBucket. The slice is ordered according to the
-// MempoolTxTimeOrderComparator.
+// mempoolTxTimeOrderComparator.
 func (tb *FeeTimeBucket) GetTransactions() []*MempoolTx {
 	txns := []*MempoolTx{}
 	it := tb.GetIterator()
