@@ -58,7 +58,7 @@ func TestTransactionRegisterBasic(t *testing.T) {
 	)
 }
 
-func TestTimeBucketRemove(t *testing.T) {
+func TestFeeTimeBucketRemove(t *testing.T) {
 	seed := int64(44)
 	testCases := 1000
 	indexRange := 100
@@ -73,7 +73,8 @@ func TestTimeBucketRemove(t *testing.T) {
 	txnPool := _testGetRandomMempoolTxns(rand, feeMin, feeMax, timestampRange, testCases)
 
 	// Create new FeeBucket and add the txn pool
-	timeBucket := NewFeeTimeBucket(randomIndex, baseRate, bucketMultiplier)
+	bucketFeeMin, bucketFeeMax := ComputeFeeTimeBucketRangeFromIndex(randomIndex, baseRate, bucketMultiplier)
+	timeBucket := NewFeeTimeBucket(bucketFeeMin, bucketFeeMax)
 	_testBucketStandardRemoveTest(t, txnPool, globalParams, false,
 		func(tx *MempoolTx) {
 			require.Equal(nil, timeBucket.AddTransaction(tx))
@@ -90,7 +91,7 @@ func TestTimeBucketRemove(t *testing.T) {
 	)
 }
 
-func TestTimeBucketBasic(t *testing.T) {
+func TestFeeTimeBucketBasic(t *testing.T) {
 	seed := int64(33)
 	testCases := 1000
 	indexRange := 100
@@ -105,7 +106,8 @@ func TestTimeBucketBasic(t *testing.T) {
 	txnPool := _testGetRandomMempoolTxns(rand, feeMin, feeMax, timestampRange, testCases)
 
 	// Create new FeeBucket and add the txn pool
-	timeBucket := NewFeeTimeBucket(randomIndex, baseRate, bucketMultiplier)
+	bucketFeeMin, bucketFeeMax := ComputeFeeTimeBucketRangeFromIndex(randomIndex, baseRate, bucketMultiplier)
+	timeBucket := NewFeeTimeBucket(bucketFeeMin, bucketFeeMax)
 	_testBucketStandardAddTest(t, txnPool, globalParams, true,
 		func(tx *MempoolTx) {
 			require.Equal(nil, timeBucket.AddTransaction(tx))
@@ -138,8 +140,9 @@ func _testGetRandomMempoolTxns(rand *rand.Rand, feeMin uint64, feeMax uint64, ti
 
 func _testMapMempoolTxnToTimeBucket(txn *MempoolTx, globalParams *GlobalParamsEntry) *FeeTimeBucket {
 	baseRate, bucketMultiplier := globalParams.ComputeFeeTimeBucketMinimumFeeAndMultiplier()
-	timeBucketIndex := ComputeFeeTimeBucketIndexFromFeePerKBNanos(txn.FeePerKB, baseRate, bucketMultiplier)
-	return NewFeeTimeBucket(timeBucketIndex, baseRate, bucketMultiplier)
+	timeBucketIndex := ComputeFeeTimeBucketIndexFromFeeNanosPerKB(txn.FeePerKB, baseRate, bucketMultiplier)
+	bucketFeeMin, bucketFeeMax := ComputeFeeTimeBucketRangeFromIndex(timeBucketIndex, baseRate, bucketMultiplier)
+	return NewFeeTimeBucket(bucketFeeMin, bucketFeeMax)
 }
 
 func _testSortMempoolTxnsByFeeTime(txnPool []*MempoolTx, globalParams *GlobalParamsEntry, timeOnly bool) []*MempoolTx {
@@ -289,7 +292,7 @@ func TestComputeFeeBucketWithFee(t *testing.T) {
 	require := require.New(t)
 	_ = require
 	for ii := uint64(1000); ii < 100000; ii++ {
-		n := ComputeFeeTimeBucketIndexFromFeePerKBNanos(ii, baseRate, bucketMultiplier)
+		n := ComputeFeeTimeBucketIndexFromFeeNanosPerKB(ii, baseRate, bucketMultiplier)
 		require.True(verifyFeeBucket(n, ii))
 	}
 }

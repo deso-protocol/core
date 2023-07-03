@@ -21,10 +21,10 @@ import (
 type TransactionRegister struct {
 	// feeTimeBucketSet is a set of FeeTimeBucket objects. The set is ordered by the FeeTimeBucket's ranges, based on FeeTimeBucketComparator.
 	feeTimeBucketSet *treeset.Set
-	// feeTimeBucketIndexMap is a map of FeeTimeBucket indices to FeeTimeBucket objects. It is used to quickly find a FeeTimeBucket
-	// given its index. Note that using a map here is preferable over e.g. a slice, since the index of a FeeTimeBucket is
-	// not necessarily its position in the set.
-	feeTimeBucketIndexMap map[uint32]*FeeTimeBucket
+	// feeTimeBucketMinFeeMap is a map of FeeTimeBucket minimum fees to FeeTimeBucket objects. It is used to quickly find
+	// a FeeTimeBucket given its fee. Note that using a map here is preferable over e.g. a slice, since the index of a
+	// FeeTimeBucket is not necessarily its position in the set.
+	feeTimeBucketMinFeeMap map[uint64]*FeeTimeBucket
 	// txnMembership is a set of transaction hashes. It is used to determine existence of a transaction in the register.
 	txnMembership *Set[BlockHash]
 	// totalTxnSize is the total size of all transactions in the register.
@@ -46,7 +46,7 @@ func NewTransactionRegister(params *DeSoParams, globalParams *GlobalParamsEntry)
 
 	return &TransactionRegister{
 		feeTimeBucketSet:                   feeTimeBucketSet,
-		feeTimeBucketIndexMap:              make(map[uint32]*FeeTimeBucket),
+		feeTimeBucketMinFeeMap:             make(map[uint64]*FeeTimeBucket),
 		txnMembership:                      NewSet([]BlockHash{}),
 		totalTxnSize:                       0,
 		params:                             params,
@@ -93,22 +93,21 @@ func (tr *TransactionRegister) AddTransaction(txn *MempoolTx) error {
 	}
 
 	// Determine the index of the bucket based on the transaction's fee rate.
-	bucketIndex := ComputeFeeTimeBucketIndexFromFeePerKBNanos(txn.FeePerKB, tr.minimumNetworkFeeNanosPerKB,
-		tr.feeBucketRateMultiplierBasisPoints)
-	if bucket, exists := tr.feeTimeBucketIndexMap[bucketIndex]; exists {
+	bucketMinFeeNanosPerKb, bucketMaxFeeNanosPerKB := ComputeFeeTimeBucketRangeFromFeeNanosPerKB(txn.FeePerKB,
+		tr.minimumNetworkFeeNanosPerKB, tr.feeBucketRateMultiplierBasisPoints)
+	if bucket, exists := tr.feeTimeBucketMinFeeMap[bucketMinFeeNanosPerKb]; exists {
 		// If the bucket already exists, add the transaction to it.
 		if err := bucket.AddTransaction(txn); err != nil {
 			return errors.Wrapf(err, "TransactionRegister.AddTransaction: Error adding transaction to bucket: ")
 		}
 	} else {
 		// If the bucket doesn't exist, create it and add the transaction to it.
-		newBucket := NewFeeTimeBucket(bucketIndex, tr.minimumNetworkFeeNanosPerKB,
-			tr.feeBucketRateMultiplierBasisPoints)
+		newBucket := NewFeeTimeBucket(bucketMinFeeNanosPerKb, bucketMaxFeeNanosPerKB)
 		if err := newBucket.AddTransaction(txn); err != nil {
 			return errors.Wrapf(err, "TransactionRegister.AddTransaction: Error adding transaction to bucket: %v", err)
 		}
 		tr.feeTimeBucketSet.Add(newBucket)
-		tr.feeTimeBucketIndexMap[bucketIndex] = newBucket
+		tr.feeTimeBucketMinFeeMap[bucketMinFeeNanosPerKb] = newBucket
 	}
 
 	tr.totalTxnSize += txn.TxSizeBytes
@@ -133,15 +132,15 @@ func (tr *TransactionRegister) RemoveTransaction(txn *MempoolTx) error {
 	}
 
 	// Determine the index of the bucket based on the transaction's fee rate.
-	bucketIndex := ComputeFeeTimeBucketIndexFromFeePerKBNanos(txn.FeePerKB, tr.minimumNetworkFeeNanosPerKB,
-		tr.feeBucketRateMultiplierBasisPoints)
+	bucketMinFeeNanosPerKb, _ := ComputeFeeTimeBucketRangeFromFeeNanosPerKB(txn.FeePerKB,
+		tr.minimumNetworkFeeNanosPerKB, tr.feeBucketRateMultiplierBasisPoints)
 	// Remove the transaction from the bucket.
-	if bucket, exists := tr.feeTimeBucketIndexMap[bucketIndex]; exists {
+	if bucket, exists := tr.feeTimeBucketMinFeeMap[bucketMinFeeNanosPerKb]; exists {
 		bucket.RemoveTransaction(txn)
 		// If the bucket becomes empty, remove it from the TransactionRegister.
 		if bucket.Empty() {
 			tr.feeTimeBucketSet.Remove(bucket)
-			delete(tr.feeTimeBucketIndexMap, bucketIndex)
+			delete(tr.feeTimeBucketMinFeeMap, bucketMinFeeNanosPerKb)
 		}
 	}
 
@@ -255,20 +254,14 @@ type FeeTimeBucket struct {
 	// maxFeeNanosPerKB is the maximum fee rate (inclusive) accepted by the FeeTimeBucket, in nanos per KB. It's worth
 	// noting that the maximum fee rate is always 1 below the minimum fee rate of the FeeTimeBucket with index+1.
 	maxFeeNanosPerKB uint64
-	// index is the fee range index of the FeeTimeBucket.
-	index uint32
 }
 
-func NewFeeTimeBucket(index uint32, minimumNetworkFeeNanosPerKB *big.Float,
-	feeBucketRateMultiplierBasisPoints *big.Float) *FeeTimeBucket {
+func NewFeeTimeBucket(minFeeNanosPerKB uint64, maxFeeNanosPerKB uint64) *FeeTimeBucket {
 
 	txnsSet := treeset.NewWith(MempoolTxTimeOrderComparator)
-	minFeeNanosPerKB, maxFeeNanosPerKB := ComputeFeeTimeBucketRangeFromIndex(index,
-		minimumNetworkFeeNanosPerKB, feeBucketRateMultiplierBasisPoints)
 	return &FeeTimeBucket{
 		minFeeNanosPerKB: minFeeNanosPerKB,
 		maxFeeNanosPerKB: maxFeeNanosPerKB,
-		index:            index,
 		txnsSet:          txnsSet,
 	}
 }
@@ -344,6 +337,25 @@ func (tb *FeeTimeBucket) GetTransactions() []*MempoolTx {
 //	Fee-Time Bucket Math
 //============================================
 
+// ComputeFeeTimeBucketRangeFromFeeNanosPerKB takes a fee rate, minimumNetworkFeeNanosPerKB, and feeBucketMultiplier,
+// and returns the [minFeeNanosPerKB, maxFeeNanosPerKB] of the fee range.
+func ComputeFeeTimeBucketRangeFromFeeNanosPerKB(feeNanosPerKB uint64, minimumNetworkFeeNanosPerKB *big.Float,
+	feeBucketMultiplier *big.Float) (uint64, uint64) {
+
+	bucketIndex := ComputeFeeTimeBucketIndexFromFeeNanosPerKB(feeNanosPerKB, minimumNetworkFeeNanosPerKB, feeBucketMultiplier)
+	return ComputeFeeTimeBucketRangeFromIndex(bucketIndex, minimumNetworkFeeNanosPerKB, feeBucketMultiplier)
+}
+
+// ComputeFeeTimeBucketRangeFromIndex takes a fee range index, minimumNetworkFeeNanosPerKB, and feeBucketMultiplier, and returns the
+// [minFeeNanosPerKB, maxFeeNanosPerKB] of the fee range.
+func ComputeFeeTimeBucketRangeFromIndex(index uint32, minimumNetworkFeeNanosPerKB *big.Float, feeBucketMultiplier *big.Float) (
+	_minFeeNanosPerKB uint64, _maxFeeNanosPerKB uint64) {
+
+	minFeeNanosPerKB := ComputeFeeTimeBucketMinFromIndex(index, minimumNetworkFeeNanosPerKB, feeBucketMultiplier)
+	maxFeeNanosPerKB := ComputeFeeTimeBucketMinFromIndex(index+1, minimumNetworkFeeNanosPerKB, feeBucketMultiplier) - 1
+	return minFeeNanosPerKB, maxFeeNanosPerKB
+}
+
 // ComputeFeeTimeBucketMinFromIndex takes a fee range index, minimumNetworkFeeNanosPerKB, and feeBucketMultiplier, and uses them to
 // return the minimum fee rate of this fee range.
 func ComputeFeeTimeBucketMinFromIndex(index uint32, minimumNetworkFeeNanosPerKB *big.Float, feeBucketMultiplier *big.Float) uint64 {
@@ -362,27 +374,17 @@ func ComputeFeeTimeBucketMinFromIndex(index uint32, minimumNetworkFeeNanosPerKB 
 	return feeUint64
 }
 
-// ComputeFeeTimeBucketRangeFromIndex takes a fee range index, minimumNetworkFeeNanosPerKB, and feeBucketMultiplier, and returns the
-// [minFeeNanosPerKB, maxFeeNanosPerKB] of the fee range.
-func ComputeFeeTimeBucketRangeFromIndex(index uint32, minimumNetworkFeeNanosPerKB *big.Float, feeBucketMultiplier *big.Float) (
-	_minFeeNanosPerKB uint64, _maxFeeNanosPerKB uint64) {
-
-	minFeeNanosPerKB := ComputeFeeTimeBucketMinFromIndex(index, minimumNetworkFeeNanosPerKB, feeBucketMultiplier)
-	maxFeeNanosPerKB := ComputeFeeTimeBucketMinFromIndex(index+1, minimumNetworkFeeNanosPerKB, feeBucketMultiplier) - 1
-	return minFeeNanosPerKB, maxFeeNanosPerKB
-}
-
-// ComputeFeeTimeBucketIndexFromFeePerKBNanos takes a fee rate, minimumNetworkFeeNanosPerKB, and feeBucketMultiplier, and
+// ComputeFeeTimeBucketIndexFromFeeNanosPerKB takes a fee rate, minimumNetworkFeeNanosPerKB, and feeBucketMultiplier, and
 // returns the fee range index.
-func ComputeFeeTimeBucketIndexFromFeePerKBNanos(feePerKBNanos uint64, minimumNetworkFeeNanosPerKB *big.Float,
+func ComputeFeeTimeBucketIndexFromFeeNanosPerKB(feeNanosPerKB uint64, minimumNetworkFeeNanosPerKB *big.Float,
 	feeBucketMultiplier *big.Float) uint32 {
 
 	// Compute the fee time bucket index for the fee rate. We can compute the index as follows:
-	// feePerKBNanos = minimumNetworkFeeNanosPerKB * feeBucketMultiplier ^ index
-	// log(feePerKBNanos) = log(minimumNetworkFeeNanosPerKB) + index * log(feeBucketMultiplier^index)
-	// index = (log(feePerKBNanos) - log(minimumNetworkFeeNanosPerKB)) / log(feeBucketMultiplier).
+	// feeNanosPerKB = minimumNetworkFeeNanosPerKB * feeBucketMultiplier ^ index
+	// log(feeNanosPerKB) = log(minimumNetworkFeeNanosPerKB) + index * log(feeBucketMultiplier^index)
+	// index = (log(feeNanosPerKB) - log(minimumNetworkFeeNanosPerKB)) / log(feeBucketMultiplier).
 
-	feeFloat := NewFloat().SetUint64(feePerKBNanos)
+	feeFloat := NewFloat().SetUint64(feeNanosPerKB)
 	// If the fee is less than the base rate, return 0.
 	if feeFloat.Cmp(minimumNetworkFeeNanosPerKB) < 0 {
 		return 0
@@ -401,13 +403,13 @@ func ComputeFeeTimeBucketIndexFromFeePerKBNanos(feePerKBNanos uint64, minimumNet
 
 	// Now verify that float precision hasn't caused us to be off by one.
 	// If this condition is true, then the computed index is overestimated by 1.
-	if ComputeFeeTimeBucketMinFromIndex(feeTimeBucketIndex, minimumNetworkFeeNanosPerKB, feeBucketMultiplier) > feePerKBNanos {
+	if ComputeFeeTimeBucketMinFromIndex(feeTimeBucketIndex, minimumNetworkFeeNanosPerKB, feeBucketMultiplier) > feeNanosPerKB {
 		return feeTimeBucketIndex - 1
 	}
 
-	// This condition gets triggered exactly on fee bucket boundaries, i.e. when feePerKBNanos = FeeMax for some bucket.
+	// This condition gets triggered exactly on fee bucket boundaries, i.e. when feeNanosPerKB = FeeMax for some bucket.
 	// The float rounding makes the number slightly smaller like 5.9999999991 instead of 6.0.
-	if ComputeFeeTimeBucketMinFromIndex(feeTimeBucketIndex+1, minimumNetworkFeeNanosPerKB, feeBucketMultiplier) <= feePerKBNanos {
+	if ComputeFeeTimeBucketMinFromIndex(feeTimeBucketIndex+1, minimumNetworkFeeNanosPerKB, feeBucketMultiplier) <= feeNanosPerKB {
 		return feeTimeBucketIndex + 1
 	}
 
