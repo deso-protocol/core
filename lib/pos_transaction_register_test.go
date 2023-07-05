@@ -196,8 +196,6 @@ func _testSortMempoolTxnsByFeeTime(txnPool []*MempoolTx, globalParams *GlobalPar
 			timeComparison := mempoolTxTimeOrderComparator(txnPool[i], txnPool[j])
 			if timeComparison == 1 {
 				return false
-			} else if timeComparison == -1 {
-				return true
 			}
 			return true
 		})
@@ -206,8 +204,6 @@ func _testSortMempoolTxnsByFeeTime(txnPool []*MempoolTx, globalParams *GlobalPar
 			timeComparison := mempoolTxTimeOrderComparator(txnPool[i], txnPool[j])
 			if timeComparison == 1 {
 				return false
-			} else if timeComparison == -1 {
-				return true
 			}
 			return true
 		})

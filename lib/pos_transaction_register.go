@@ -86,27 +86,39 @@ func (tr *TransactionRegister) AddTransaction(txn *MempoolTx) error {
 		return fmt.Errorf("TransactionRegister.AddTransaction: Transaction already exists in register")
 	}
 
+	// If the transaction is too large, reject it.
+	if tr.totalTxnSize > math.MaxUint64-txn.TxSizeBytes {
+		return fmt.Errorf("TransactionRegister.AddTransaction: Transaction size overflows uint64. Txn size %v, "+
+			"total size %v", txn.TxSizeBytes, tr.totalTxnSize)
+	}
+
 	// If the transaction overflows the maximum mempool size, reject it.
-	if tr.totalTxnSize+txn.TxSizeBytes > tr.params.MaxMempoolPosSizeBytes || tr.totalTxnSize > math.MaxUint64-txn.TxSizeBytes {
+	if tr.totalTxnSize+txn.TxSizeBytes > tr.params.MaxMempoolPosSizeBytes {
 		return fmt.Errorf("TransactionRegister.AddTransaction: Transaction size exceeds maximum mempool size")
 	}
 
 	// Determine the min fee of the bucket based on the transaction's fee rate.
 	bucketMinFeeNanosPerKb, bucketMaxFeeNanosPerKB := computeFeeTimeBucketRangeFromFeeNanosPerKB(txn.FeePerKB,
 		tr.minimumNetworkFeeNanosPerKB, tr.feeBucketRateMultiplierBasisPoints)
-	if bucket, exists := tr.feeTimeBucketsByMinFeeMap[bucketMinFeeNanosPerKb]; exists {
-		// If the bucket already exists, add the transaction to it.
-		if err := bucket.AddTransaction(txn); err != nil {
-			return errors.Wrapf(err, "TransactionRegister.AddTransaction: Error adding transaction to bucket: ")
-		}
-	} else {
+	// Lookup the bucket in the map.
+	bucket, bucketExists := tr.feeTimeBucketsByMinFeeMap[bucketMinFeeNanosPerKb]
+	if !bucketExists {
 		// If the bucket doesn't exist, create it and add the transaction to it.
-		newBucket := NewFeeTimeBucket(bucketMinFeeNanosPerKb, bucketMaxFeeNanosPerKB)
-		if err := newBucket.AddTransaction(txn); err != nil {
+		bucket = NewFeeTimeBucket(bucketMinFeeNanosPerKb, bucketMaxFeeNanosPerKB)
+		if err := bucket.AddTransaction(txn); err != nil {
 			return errors.Wrapf(err, "TransactionRegister.AddTransaction: Error adding transaction to bucket: %v", err)
 		}
-		tr.feeTimeBucketSet.Add(newBucket)
-		tr.feeTimeBucketsByMinFeeMap[bucketMinFeeNanosPerKb] = newBucket
+	}
+
+	// Add the transaction to the bucket.
+	if err := bucket.AddTransaction(txn); err != nil {
+		return errors.Wrapf(err, "TransactionRegister.AddTransaction: Error adding transaction to bucket: ")
+	}
+
+	if !bucketExists {
+		// If the bucket didn't exist, add it to the set and the map.
+		tr.feeTimeBucketSet.Add(bucket)
+		tr.feeTimeBucketsByMinFeeMap[bucketMinFeeNanosPerKb] = bucket
 	}
 
 	tr.totalTxnSize += txn.TxSizeBytes
