@@ -62,7 +62,7 @@ func VerifyAggregateSignatureMultiplePayloads(publicKeys []*PublicKey, signature
 		flowPublicKeys = append(flowPublicKeys, publicKey.flowPublicKey)
 	}
 	var hashingAlgorithms []hash.Hasher
-	for _, _ = range publicKeys {
+	for ii := 0; ii < len(publicKeys); ii++ {
 		hashingAlgorithms = append(hashingAlgorithms, hashingAlgorithm)
 	}
 	return flowCrypto.VerifyBLSSignatureManyMessages(flowPublicKeys, signature.flowSignature, payloadsBytes, hashingAlgorithms)
