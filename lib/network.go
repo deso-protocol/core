@@ -2124,7 +2124,7 @@ func (msg *MsgDeSoHeader) EncodeHeaderVersion2(preSignature bool) ([]byte, error
 	if msg.ProposerVotingPublicKey == nil {
 		return nil, fmt.Errorf("EncodeHeaderVersion2: ProposerVotingPublicKey must be non-nil")
 	}
-	retBytes = append(retBytes, msg.ProposerVotingPublicKey.ToBytes()...)
+	retBytes = append(retBytes, EncodeBLSPublicKey(msg.ProposerVotingPublicKey)...)
 
 	// ProposedInView
 	retBytes = append(retBytes, UintToBuf(msg.ProposedInView)...)
@@ -2578,11 +2578,17 @@ func (msg *MsgDeSoBlock) EncodeBlockVersion1(preSignature bool) ([]byte, error) 
 	return data, nil
 }
 
+func (msg *MsgDeSoBlock) EncodeBlockVersion2(preSignature bool) ([]byte, error) {
+	return msg.EncodeBlockCommmon(preSignature)
+}
+
 func (msg *MsgDeSoBlock) ToBytes(preSignature bool) ([]byte, error) {
 	if msg.Header.Version == HeaderVersion0 {
 		return msg.EncodeBlockVersion0(preSignature)
 	} else if msg.Header.Version == HeaderVersion1 {
 		return msg.EncodeBlockVersion1(preSignature)
+	} else if msg.Header.Version == HeaderVersion2 {
+		return msg.EncodeBlockVersion2(preSignature)
 	} else {
 		return nil, fmt.Errorf("MsgDeSoBlock.ToBytes: Error encoding version: %v", msg.Header.Version)
 	}
