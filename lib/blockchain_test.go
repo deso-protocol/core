@@ -4,6 +4,8 @@ import (
 	"encoding/hex"
 	"flag"
 	"fmt"
+	embeddedpostgres "github.com/fergusstrange/embedded-postgres"
+	"github.com/go-pg/pg/v10"
 	"log"
 	"math/big"
 	"math/rand"
@@ -11,9 +13,6 @@ import (
 	"runtime"
 	"testing"
 	"time"
-
-	embeddedpostgres "github.com/fergusstrange/embedded-postgres"
-	"github.com/go-pg/pg/v10"
 
 	chainlib "github.com/btcsuite/btcd/blockchain"
 	"github.com/btcsuite/btcd/btcec"
@@ -1652,12 +1651,12 @@ func TestBadBlockSignature(t *testing.T) {
 
 	// Since MineAndProcesssSingleBlock returns a valid block above, we can play with its
 	// signature and re-process the block to see what happens.
-	blockProducerInfoCopy := &MsgDeSoBlockProducerInfo{Signature: &btcec.Signature{}}
-	blockProducerInfoCopy.PublicKey = NewPublicKey(finalBlock1.BlockProducerInfo.PublicKey[:])
+	blockProducerInfoCopy := &BlockProducerInfo{Signature: &btcec.Signature{}}
+	blockProducerInfoCopy.PublicKey = append([]byte{}, finalBlock1.BlockProducerInfo.PublicKey...)
 	*blockProducerInfoCopy.Signature = *finalBlock1.BlockProducerInfo.Signature
 
 	// A bad signature with the right public key should fail.
-	finalBlock1.BlockProducerInfo.PublicKey = NewPublicKey(senderPkBytes)
+	finalBlock1.BlockProducerInfo.PublicKey = senderPkBytes
 	_, _, err = chain.ProcessBlock(finalBlock1, true)
 	require.Error(err)
 	require.Contains(err.Error(), RuleErrorInvalidBlockProducerSIgnature)
@@ -1665,7 +1664,7 @@ func TestBadBlockSignature(t *testing.T) {
 	// A signature that's outright missing should fail
 	blockSignerPkBytes, _, err := Base58CheckDecode(blockSignerPk)
 	require.NoError(err)
-	finalBlock1.BlockProducerInfo.PublicKey = NewPublicKey(blockSignerPkBytes)
+	finalBlock1.BlockProducerInfo.PublicKey = blockSignerPkBytes
 	finalBlock1.BlockProducerInfo.Signature = nil
 	_, _, err = chain.ProcessBlock(finalBlock1, true)
 	require.Error(err)

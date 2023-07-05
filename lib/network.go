@@ -23,7 +23,6 @@ import (
 	"github.com/btcsuite/btcd/wire"
 	"github.com/davecgh/go-spew/spew"
 	decredEC "github.com/decred/dcrd/dcrec/secp256k1/v4/ecdsa"
-	"github.com/deso-protocol/core/bls"
 	merkletree "github.com/deso-protocol/go-merkle-tree"
 	"github.com/ethereum/go-ethereum/crypto/ecies"
 	"github.com/holiman/uint256"
@@ -2367,112 +2366,15 @@ func (msg *MsgDeSoHeader) String() string {
 // BLOCK Message
 // ==================================================================
 
-type MsgDeSoBlockProducerInfo struct {
-	Version MsgDeSoBlockProducerInfoVersion
-
-	// ECDSA public key for the block producer.
-	PublicKey *PublicKey
-	// The block producer's ECDSA signature for the block. This field is used in
-	// MsgDeSoBlockProducerInfo version 0, and is deprecated from version 1 onwards.
+type BlockProducerInfo struct {
+	PublicKey []byte
 	Signature *btcec.Signature
-
-	// The BLS public key of the validator who constructed this block. This field is
-	// populated starting in MsgDeSoBlockProducerInfo version 1.
-	VotingPublicKey *bls.PublicKey
-	// The validator's partial BLS signature of the (ProposedInView, BlockHash) pair
-	// for enclosing block. This signature proves the validator proposed the block,
-	// and also acts as the validator's vote for this block. This filed is only populated
-	// starting in MsgDeSoBlockProducerInfo version 1.
-	VotePartialSignature *bls.Signature
 }
 
-// Byte encoder for the MsgDeSoBlockProducerInfo with support for versioning. The encoder only
-// supports MsgDeSoBlockProducerInfo version 1 and above. For the legacy version 0, use the
-// MsgDeSoBlockProducerInfo.Serialize_Legacy() method instead.
-func (bpi *MsgDeSoBlockProducerInfo) ToBytes() ([]byte, error) {
-	// Only support byte encoding for BlockProducerInfo version 1. All later versions will
-	// need differ in format, so their encoding can be implemented then.
-	if bpi.Version != MsgDeSoBlockProducerInfoVersion1 {
-		return nil, fmt.Errorf("MsgDeSoBlockProducerInfo.ToBytes: BlockProducerInfo version %d not supported", bpi.Version)
-	}
-
-	encodedBytes := []byte{}
-
-	// Required Version field
-	encodedBytes = append(encodedBytes, bpi.Version)
-
-	// Required ECDSA PublicKey
-	if bpi.PublicKey == nil {
-		return nil, fmt.Errorf("MsgDeSoBlockProducerInfo.ToBytes: PublicKey is required")
-	}
-	encodedBytes = append(encodedBytes, bpi.PublicKey.ToBytes()...)
-
-	// The ECDSA Signature is redundant, and is removed in MsgDeSoBlockProducerInfo version 1 and above
-
-	// Voting BLS PublicKey
-	if bpi.VotingPublicKey == nil {
-		return nil, fmt.Errorf("MsgDeSoBlockProducerInfo.ToBytes: VotingPublicKey is required")
-	}
-	encodedBytes = append(encodedBytes, EncodeByteArray(bpi.VotingPublicKey.ToBytes())...)
-
-	// Vote BLS Partial Signature
-	if bpi.VotePartialSignature == nil {
-		return nil, fmt.Errorf("MsgDeSoBlockProducerInfo.ToBytes: VotePartialSignature is required")
-	}
-	encodedBytes = append(encodedBytes, EncodeByteArray(bpi.VotePartialSignature.ToBytes())...)
-
-	return encodedBytes, nil
-}
-
-// Byte decoder for the MsgDeSoBlockProducerInfo with support for versioning. The decoder only
-// supports MsgDeSoBlockProducerInfo version 1 and above. For the legacy version 0, use the
-// MsgDeSoBlockProducerInfo.Deserialize_Legacy() method instead.
-func (bpi *MsgDeSoBlockProducerInfo) FromBytes(rr *bytes.Reader) error {
-	var err error
-
-	// Required Version field
-	bpi.Version, err = rr.ReadByte()
-	if err != nil {
-		return errors.Wrapf(err, "MsgDeSoBlockProducerInfo.FromBytes: Problem reading Version")
-	}
-
-	// Only support byte decoding for BlockProducerInfo version 1. All later versions will
-	// need differ in format, so their decoding can be implemented then.
-	if bpi.Version != MsgDeSoBlockProducerInfoVersion1 {
-		return fmt.Errorf("MsgDeSoBlockProducerInfo.FromBytes: BlockProducerInfo version %d not supported", bpi.Version)
-	}
-
-	// Required ECDSA PublicKey
-	bpi.PublicKey, err = ReadPublicKey(rr)
-	if err != nil {
-		return errors.Wrapf(err, "MsgDeSoBlockProducerInfo.FromBytes: Problem reading PublicKey")
-	}
-
-	// The ECDSA Signature is redundant, and is removed in MsgDeSoBlockProducerInfo version 1 and above
-	// so we skip it here.
-
-	// Voting BLS PublicKey
-	bpi.VotingPublicKey, err = DecodeBLSPublicKey(rr)
-	if err != nil {
-		return errors.Wrapf(err, "MsgDeSoBlockProducerInfo.FromBytes: Problem reading VotingPublicKey")
-	}
-
-	// Vote BLS Partial Signature
-	bpi.VotePartialSignature, err = DecodeBLSSignature(rr)
-	if err != nil {
-		return errors.Wrapf(err, "MsgDeSoBlockProducerInfo.FromBytes: Problem reading VotePartialSignature")
-	}
-
-	return nil
-}
-
-// Legacy byte encoder for MsgDeSoBlockProducerInfo with no support for versioning.
-// It encodes just the public key and signature according to the legacy encoding
-// format.
-func (bpi *MsgDeSoBlockProducerInfo) Serialize_Legacy() []byte {
+func (bpi *BlockProducerInfo) Serialize() []byte {
 	data := []byte{}
 	data = append(data, UintToBuf(uint64(len(bpi.PublicKey)))...)
-	data = append(data, bpi.PublicKey.ToBytes()...)
+	data = append(data, bpi.PublicKey...)
 
 	sigBytes := []byte{}
 	if bpi.Signature != nil {
@@ -2484,47 +2386,46 @@ func (bpi *MsgDeSoBlockProducerInfo) Serialize_Legacy() []byte {
 	return data
 }
 
-// Legacy byte decoder for MsgDeSoBlockProducerInfo with no support for versioning.
-// It decodes the public key and signature according to the legacy encoding
-// format and then sets the version to 0.
-func (bpi *MsgDeSoBlockProducerInfo) Deserialize_Legacy(data []byte) error {
-	ret := &MsgDeSoBlockProducerInfo{}
+func (bpi *BlockProducerInfo) Deserialize(data []byte) error {
+	ret := &BlockProducerInfo{}
 	rr := bytes.NewReader(data)
-
-	// Set the version to 0 since this is the legacy format.
-	ret.Version = MsgDeSoBlockProducerInfoVersion0
 
 	// De-serialize the public key.
 	{
 		pkLen, err := ReadUvarint(rr)
 		if err != nil {
-			return errors.Wrapf(err, "MsgDeSoBlockProducerInfo.Deserialize: Error reading public key len")
+			return errors.Wrapf(err, "BlockProducerInfo.Deserialize: Error reading public key len")
 		}
 		if pkLen > MaxMessagePayload {
-			return errors.Wrapf(err, "MsgDeSoBlockProducerInfo.Deserialize: pkLen too long: %v", pkLen)
+			return errors.Wrapf(err, "BlockProducerInfo.Deserialize: pkLen too long: %v", pkLen)
 		}
-		ret.PublicKey, err = ReadPublicKey(rr)
+		pkBytes, err := SafeMakeSliceWithLength[byte](pkLen)
 		if err != nil {
-			return errors.Wrapf(err, "MsgDeSoBlockProducerInfo.Deserialize: Error reading public key: ")
+			return errors.Wrapf(err, "BlockProducerInfo.Deserialize: Problem making slice for pkBytes")
 		}
+		_, err = io.ReadFull(rr, pkBytes)
+		if err != nil {
+			return errors.Wrapf(err, "BlockProducerInfo.Deserialize: Error reading public key: ")
+		}
+		ret.PublicKey = pkBytes
 	}
 
 	// De-serialize the signature.
 	{
 		sigLen, err := ReadUvarint(rr)
 		if err != nil {
-			return errors.Wrapf(err, "MsgDeSoBlockProducerInfo.Deserialize: Error reading signature len")
+			return errors.Wrapf(err, "BlockProducerInfo.Deserialize: Error reading signature len")
 		}
 		if sigLen > MaxMessagePayload {
-			return errors.Wrapf(err, "MsgDeSoBlockProducerInfo.Deserialize: signature len too long: %v", sigLen)
+			return errors.Wrapf(err, "BlockProducerInfo.Deserialize: signature len too long: %v", sigLen)
 		}
 		sigBytes, err := SafeMakeSliceWithLength[byte](sigLen)
 		if err != nil {
-			return errors.Wrapf(err, "MsgDeSoBlockProducerInfo.Deserialize: Problem making slice for sigBytes")
+			return errors.Wrapf(err, "BlockProducerInfo.Deserialize: Problem making slice for sigBytes")
 		}
 		_, err = io.ReadFull(rr, sigBytes)
 		if err != nil {
-			return errors.Wrapf(err, "MsgDeSoBlockProducerInfo.Deserialize: Error reading signature: ")
+			return errors.Wrapf(err, "BlockProducerInfo.Deserialize: Error reading signature: ")
 		}
 		ret.Signature = nil
 		if sigLen > 0 {
@@ -2540,32 +2441,22 @@ func (bpi *MsgDeSoBlockProducerInfo) Deserialize_Legacy(data []byte) error {
 	return nil
 }
 
-func (bpi *MsgDeSoBlockProducerInfo) String() string {
+func (bpi *BlockProducerInfo) String() string {
 	if bpi == nil || len(bpi.PublicKey) == 0 {
 		return "Signer Key: NONE"
 	}
-	return fmt.Sprintf("Signer Key: %v", PkToStringMainnet(bpi.PublicKey.ToBytes()))
+	return fmt.Sprintf("Signer Key: %v", PkToStringMainnet(bpi.PublicKey))
 }
 
 type MsgDeSoBlock struct {
 	Header *MsgDeSoHeader
 	Txns   []*MsgDeSoTxn
 
-	// This field describes the producer of the block and their signature for the block.
-	//
-	// In Proof of Work blocks, the field is optional and provides the producer of the block
-	// the ability to sign the block with its ECDSA private key. Doing this proves that this block
-	// was produced by a particular entity, which can be useful for nodes that want to restrict
-	// who they accept blocks from.
-	//
-	// In Proof of Stake blocks, this field is required and serves two purposes:
-	// 1. It allows the block producer to sign the block with its BLS private key.
-	// This allows validators to verify that the block was produced by the expected leader for the
-	// current block height and view.
-	// 2. It contains the block producer's BLS partial signature, which acts as their vote on the
-	// block. This way, the vote can be aggregated into a QC by the next block proposer in the leader
-	// schedule.
-	BlockProducerInfo *MsgDeSoBlockProducerInfo
+	// This field is optional and provides the producer of the block the ability to sign it
+	// with their private key. Doing this proves that this block was produced by a particular
+	// entity, which can be useful for nodes that want to restrict who they accept blocks
+	// from.
+	BlockProducerInfo *BlockProducerInfo
 }
 
 func (msg *MsgDeSoBlock) EncodeBlockCommmon(preSignature bool) ([]byte, error) {
@@ -2610,7 +2501,7 @@ func (msg *MsgDeSoBlock) EncodeBlockVersion1(preSignature bool) ([]byte, error) 
 	// BlockProducerInfo
 	blockProducerInfoBytes := []byte{}
 	if msg.BlockProducerInfo != nil {
-		blockProducerInfoBytes = msg.BlockProducerInfo.Serialize_Legacy()
+		blockProducerInfoBytes = msg.BlockProducerInfo.Serialize()
 	}
 	data = append(data, UintToBuf(uint64(len(blockProducerInfoBytes)))...)
 	data = append(data, blockProducerInfoBytes...)
@@ -2618,33 +2509,11 @@ func (msg *MsgDeSoBlock) EncodeBlockVersion1(preSignature bool) ([]byte, error) 
 	return data, nil
 }
 
-func (msg *MsgDeSoBlock) EncodeBlockVersion2(preSignature bool) ([]byte, error) {
-	// Encode MsgDeSoHeader and []*MsgDeSoTxn
-	encodedBytes, err := msg.EncodeBlockCommmon(preSignature)
-	if err != nil {
-		return nil, err
-	}
-
-	// Encode BlockProducerInfo
-	if msg.BlockProducerInfo == nil {
-		return nil, fmt.Errorf("MsgDeSoBlock.EncodeBlockVersion2: BlockProducerInfo should not be nil")
-	}
-	blockProducerInfoBytes, err := msg.BlockProducerInfo.ToBytes()
-	if err != nil {
-		return nil, errors.Wrapf(err, "MsgDeSoBlock.EncodeBlockVersion2: Problem encoding BlockProducerInfo")
-	}
-	encodedBytes = append(encodedBytes, EncodeByteArray(blockProducerInfoBytes)...)
-
-	return encodedBytes, nil
-}
-
 func (msg *MsgDeSoBlock) ToBytes(preSignature bool) ([]byte, error) {
 	if msg.Header.Version == HeaderVersion0 {
 		return msg.EncodeBlockVersion0(preSignature)
 	} else if msg.Header.Version == HeaderVersion1 {
 		return msg.EncodeBlockVersion1(preSignature)
-	} else if msg.Header.Version == HeaderVersion2 {
-		return msg.EncodeBlockVersion2(preSignature)
 	} else {
 		return nil, fmt.Errorf("MsgDeSoBlock.ToBytes: Error encoding version: %v", msg.Header.Version)
 	}
@@ -2707,21 +2576,15 @@ func (msg *MsgDeSoBlock) FromBytes(data []byte) error {
 		ret.Txns = append(ret.Txns, currentTxn)
 	}
 
-	// Version 0 blocks have no BlockProducerInfo attached to them. We can exit early here.
-	if ret.Header.Version == HeaderVersion0 {
-		*msg = *ret
-		return nil
-	}
-
-	// Starting with version 1, all block versions have a BlockProducerInfo length encoded.
-	blockProducerInfoLen, err := ReadUvarint(rr)
-	if err != nil {
-		return errors.Wrapf(err, "MsgDeSoBlock.FromBytes: Error decoding header length")
-	}
-
+	// Version 1 blocks have a BlockProducerInfo attached to them that
+	// must be read. If this is not a Version 1 block, then the BlockProducerInfo
+	// remains nil.
 	if ret.Header.Version == HeaderVersion1 {
-		// All version 1 blocks have an optional BlockProducerInfo attached.
-		var blockProducerInfo *MsgDeSoBlockProducerInfo
+		blockProducerInfoLen, err := ReadUvarint(rr)
+		if err != nil {
+			return errors.Wrapf(err, "MsgDeSoBlock.FromBytes: Error decoding header length")
+		}
+		var blockProducerInfo *BlockProducerInfo
 		if blockProducerInfoLen > 0 {
 			if blockProducerInfoLen > MaxMessagePayload {
 				return fmt.Errorf("MsgDeSoBlock.FromBytes: Header length %d longer "+
@@ -2735,32 +2598,12 @@ func (msg *MsgDeSoBlock) FromBytes(data []byte) error {
 			if err != nil {
 				return errors.Wrapf(err, "MsgDeSoBlock.FromBytes: Problem reading header")
 			}
-			blockProducerInfo = &MsgDeSoBlockProducerInfo{}
-			if err = blockProducerInfo.Deserialize_Legacy(blockProducerInfoBytes); err != nil {
+			blockProducerInfo = &BlockProducerInfo{}
+			if err = blockProducerInfo.Deserialize(blockProducerInfoBytes); err != nil {
 				return errors.Wrapf(err, "MsgDeSoBlock.FromBytes: Error deserializing block producer info")
 			}
 			ret.BlockProducerInfo = blockProducerInfo
 		}
-	} else if ret.Header.Version == HeaderVersion2 {
-		// All version 2 blocks have a required BlockProducerInfo field.
-
-		// Verify the length for the BlockProducerInfo.
-		if blockProducerInfoLen > MaxMessagePayload {
-			return fmt.Errorf("MsgDeSoBlock.FromBytes: BlockProducerInfo length %d longer "+
-				"than max %d", blockProducerInfoLen, MaxMessagePayload)
-		}
-
-		// BlockProducerInfo is a required field for block header version 2 and later. Otherwise,
-		// the block is considered malformed.
-		if blockProducerInfoLen == 0 {
-			return fmt.Errorf("MsgDeSoBlock.FromBytes: BlockProducerInfo length cannot be zero")
-		}
-
-		blockProducerInfo := &MsgDeSoBlockProducerInfo{}
-		if blockProducerInfo.FromBytes(rr); err != nil {
-			return errors.Wrapf(err, "MsgDeSoBlock.FromBytes: Error decoding BlockProducerInfo")
-		}
-		ret.BlockProducerInfo = blockProducerInfo
 	}
 
 	*msg = *ret

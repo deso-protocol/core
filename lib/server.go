@@ -1795,8 +1795,7 @@ func (srv *Server) _handleBlock(pp *Peer, blk *MsgDeSoBlock) {
 	if len(srv.blockchain.trustedBlockProducerPublicKeys) > 0 && blockHeader.Height >= srv.blockchain.trustedBlockProducerStartHeight {
 		if blk.BlockProducerInfo != nil {
 			_, entryExists := srv.mempool.readOnlyUtxoView.ForbiddenPubKeyToForbiddenPubKeyEntry[MakePkMapKey(
-				blk.BlockProducerInfo.PublicKey.ToBytes(),
-			)]
+				blk.BlockProducerInfo.PublicKey)]
 			if entryExists {
 				srv._logAndDisconnectPeer(pp, blk, "Got forbidden block signature public key.")
 				return
