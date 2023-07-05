@@ -163,17 +163,6 @@ func createTestBlockHeaderVersion2(t *testing.T) *MsgDeSoHeader {
 	}
 }
 
-func createTestBlockProducerInfoVersion1(t *testing.T) *MsgDeSoBlockProducerInfo {
-	testBLSPublicKey, testBLSSignature := _generateValidatorVotingPublicKeyAndSignature(t)
-
-	return &MsgDeSoBlockProducerInfo{
-		Version:              1,
-		PublicKey:            NewPublicKey(pkForTesting1),
-		VotingPublicKey:      testBLSPublicKey,
-		VotePartialSignature: testBLSSignature,
-	}
-}
-
 func TestHeaderConversionAndReadWriteMessage(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
@@ -339,14 +328,14 @@ var expectedBlock = &MsgDeSoBlock{
 	Header: expectedBlockHeaderVersion1,
 	Txns:   expectedTransactions(true), // originally was effectively false
 
-	BlockProducerInfo: &MsgDeSoBlockProducerInfo{
-		PublicKey: NewPublicKey([]byte{
+	BlockProducerInfo: &BlockProducerInfo{
+		PublicKey: []byte{
 			// random bytes
 			0x41, 0x42, 0x43, 0x44, 0x45, 0x46, 0x47, 0x48, 0x49, 0x30,
 			0x31, 0x32, 0x33, 0x34, 0x35, 0x36, 0x37, 0x38, 0x39, 0x10,
 			0x21, 0x22, 0x23, 0x24, 0x25, 0x26, 0x27, 0x28, 0x29, 0x30,
 			0x21, 0x22, 0x23,
-		}),
+		},
 	},
 }
 
@@ -496,30 +485,6 @@ var expectedV0Header = &MsgDeSoHeader{
 	TstampSecs: uint64(0x70717273),
 	Height:     uint64(99999),
 	Nonce:      uint64(123456),
-}
-
-func TestSerializeBlockVersion2(t *testing.T) {
-	assert := assert.New(t)
-	require := require.New(t)
-	_ = assert
-	_ = require
-
-	originalBlock := &MsgDeSoBlock{
-		Header:            createTestBlockHeaderVersion2(t),
-		BlockProducerInfo: createTestBlockProducerInfoVersion1(t),
-	}
-
-	encodedBytes, err := originalBlock.ToBytes(false)
-	require.NoError(err)
-
-	decodedBlock := NewMessage(MsgTypeBlock).(*MsgDeSoBlock)
-	err = decodedBlock.FromBytes(encodedBytes)
-	require.NoError(err)
-
-	assert.Equal(originalBlock.Header.Version, decodedBlock.Header.Version)
-	assert.Equal(originalBlock.BlockProducerInfo.PublicKey, decodedBlock.BlockProducerInfo.PublicKey)
-	assert.True(originalBlock.BlockProducerInfo.VotingPublicKey.Eq(decodedBlock.BlockProducerInfo.VotingPublicKey))
-	assert.True(originalBlock.BlockProducerInfo.VotePartialSignature.Eq(decodedBlock.BlockProducerInfo.VotePartialSignature))
 }
 
 func TestBlockSerialize(t *testing.T) {

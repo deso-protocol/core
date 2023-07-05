@@ -5,6 +5,7 @@ import (
 	"container/list"
 	"encoding/hex"
 	"fmt"
+	"github.com/holiman/uint256"
 	"math"
 	"math/big"
 	"reflect"
@@ -12,8 +13,6 @@ import (
 	"sort"
 	"strings"
 	"time"
-
-	"github.com/holiman/uint256"
 
 	btcdchain "github.com/btcsuite/btcd/blockchain"
 	chainlib "github.com/btcsuite/btcd/blockchain"
@@ -1831,35 +1830,35 @@ func (bc *Blockchain) ProcessBlock(desoBlock *MsgDeSoBlock, verifySignatures boo
 			}
 
 			// Verify that the public key is in the allowed set.
-			if _, exists := bc.trustedBlockProducerPublicKeys[MakePkMapKey(publicKey.ToBytes())]; !exists {
+			if _, exists := bc.trustedBlockProducerPublicKeys[MakePkMapKey(publicKey)]; !exists {
 				return false, false, errors.Wrapf(RuleErrorBlockProducerPublicKeyNotInWhitelist,
 					"ProcessBlock: Block producer public key %v is not in the allowed list of "+
-						"--trusted_block_producer_public_keys: %v.", PkToStringBoth(publicKey.ToBytes()),
+						"--trusted_block_producer_public_keys: %v.", PkToStringBoth(publicKey),
 					bc.trustedBlockProducerPublicKeys)
 			}
 
 			// Verify that the public key has not been forbidden.
-			dbEntry := DbGetForbiddenBlockSignaturePubKey(bc.db, bc.snapshot, publicKey.ToBytes())
+			dbEntry := DbGetForbiddenBlockSignaturePubKey(bc.db, bc.snapshot, publicKey)
 			if dbEntry != nil {
 				return false, false, errors.Wrapf(RuleErrorForbiddenBlockProducerPublicKey,
-					"ProcessBlock: Block producer public key %v is forbidden", PkToStringBoth(publicKey.ToBytes()))
+					"ProcessBlock: Block producer public key %v is forbidden", PkToStringBoth(publicKey))
 			}
 
 			// At this point we are confident that we have a valid public key that is
 			// trusted.
 
 			signature := desoBlock.BlockProducerInfo.Signature
-			pkObj, err := btcec.ParsePubKey(publicKey.ToBytes(), btcec.S256())
+			pkObj, err := btcec.ParsePubKey(publicKey, btcec.S256())
 			if err != nil {
 				return false, false, errors.Wrapf(err,
 					"ProcessBlock: Error parsing block producer public key: %v.",
-					PkToStringBoth(publicKey.ToBytes()))
+					PkToStringBoth(publicKey))
 			}
 			if !signature.Verify(blockHash[:], pkObj) {
 				return false, false, errors.Wrapf(RuleErrorInvalidBlockProducerSIgnature,
 					"ProcessBlock: Error validating signature %v for public key %v: %v.",
 					hex.EncodeToString(signature.Serialize()),
-					PkToStringBoth(publicKey.ToBytes()),
+					PkToStringBoth(publicKey),
 					err)
 			}
 		}
