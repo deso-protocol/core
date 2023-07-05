@@ -8,6 +8,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"strings"
 
 	flowCrypto "github.com/onflow/flow-go/crypto"
@@ -46,10 +47,7 @@ func AggregateSignatures(signatures []*Signature) (*Signature, error) {
 // true if every bls.PublicKey in the slice signed the payload. The input bls.Signature is the aggregate
 // signature of each of their respective bls.Signatures for that payload.
 func VerifyAggregateSignatureSinglePayload(publicKeys []*PublicKey, signature *Signature, payloadBytes []byte) (bool, error) {
-	var flowPublicKeys []flowCrypto.PublicKey
-	for _, publicKey := range publicKeys {
-		flowPublicKeys = append(flowPublicKeys, publicKey.flowPublicKey)
-	}
+	flowPublicKeys := extractFlowPublicKeys(publicKeys)
 	return flowCrypto.VerifyBLSSignatureOneMessage(flowPublicKeys, signature.flowSignature, payloadBytes, hashingAlgorithm)
 }
 
@@ -57,14 +55,17 @@ func VerifyAggregateSignatureSinglePayload(publicKeys []*PublicKey, signature *S
 // It returns true if each bls.PublicKey at index i has signed its respective payload at index i in the payloads slice.
 // The input bls.Signature is the aggregate signature of each public key's partial bls.Signatures for its respective payload.
 func VerifyAggregateSignatureMultiplePayloads(publicKeys []*PublicKey, signature *Signature, payloadsBytes [][]byte) (bool, error) {
-	var flowPublicKeys []flowCrypto.PublicKey
-	for _, publicKey := range publicKeys {
-		flowPublicKeys = append(flowPublicKeys, publicKey.flowPublicKey)
+	if len(publicKeys) != len(payloadsBytes) {
+		return false, fmt.Errorf("number of public keys %d does not equal number of payloads %d", len(publicKeys), len(payloadsBytes))
 	}
+
+	flowPublicKeys := extractFlowPublicKeys(publicKeys)
+
 	var hashingAlgorithms []hash.Hasher
 	for ii := 0; ii < len(publicKeys); ii++ {
 		hashingAlgorithms = append(hashingAlgorithms, hashingAlgorithm)
 	}
+
 	return flowCrypto.VerifyBLSSignatureManyMessages(flowPublicKeys, signature.flowSignature, payloadsBytes, hashingAlgorithms)
 }
 
@@ -334,4 +335,12 @@ func (signature *Signature) Copy() *Signature {
 	return &Signature{
 		flowSignature: append([]byte{}, signature.flowSignature.Bytes()...),
 	}
+}
+
+func extractFlowPublicKeys(publicKeys []*PublicKey) []flowCrypto.PublicKey {
+	flowPublicKeys := make([]flowCrypto.PublicKey, len(publicKeys))
+	for i, publicKey := range publicKeys {
+		flowPublicKeys[i] = publicKey.flowPublicKey
+	}
+	return flowPublicKeys
 }
