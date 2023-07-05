@@ -2423,6 +2423,11 @@ func (msg *MsgDeSoHeader) Hash() (*BlockHash, error) {
 		return nil, errors.Wrap(err, "MsgDeSoHeader.Hash: ")
 	}
 
+	// TODO: Do we need a specialized hash function for Proof of Stake
+	// block headers starting with HeaderVersion 2? A simple SHA256 hash
+	// seems like it would be sufficient. The network no longer needs
+	// miners. The use of ASICs to mine blocks is no longer a consideration,
+	// so we should be able to simplify the hash function used.
 	return ProofOfWorkHash(headerBytes, msg.Version), nil
 }
 
