@@ -2413,22 +2413,31 @@ func (msg *MsgDeSoHeader) GetMsgType() MsgType {
 	return MsgTypeHeader
 }
 
-// Hash is a helper function to compute a hash of the header. Note that the header
-// hash is special in that we always hash it using the ProofOfWorkHash rather than
-// Sha256DoubleHash.
+// Hash is a helper function to compute a hash of the header. For Proof of Work
+// blocks headers, which have header version 0 or 1, this uses the specialized
+// ProofOfWorkHash, which mining difficulty and hardware into consideration.
+//
+// For For Proof of Stake block headers, which start header versions 2, the
+// it uses the simpler Sha256DoubleHash function.
 func (msg *MsgDeSoHeader) Hash() (*BlockHash, error) {
-	preSignature := false
-	headerBytes, err := msg.ToBytes(preSignature)
+	// The preSignature flag is unused during byte encoding in
+	// in header versions 0 and 1. We set it to true to ensure that
+	// it's forward compatible for versions 2 and beyond.
+	headerBytes, err := msg.ToBytes(true)
 	if err != nil {
 		return nil, errors.Wrap(err, "MsgDeSoHeader.Hash: ")
 	}
 
-	// TODO: Do we need a specialized hash function for Proof of Stake
-	// block headers starting with HeaderVersion 2? A simple SHA256 hash
-	// seems like it would be sufficient. The network no longer needs
-	// miners. The use of ASICs to mine blocks is no longer a consideration,
-	// so we should be able to simplify the hash function used.
-	return ProofOfWorkHash(headerBytes, msg.Version), nil
+	// Compute the specialized PoW hash for header versions 0 and 1.
+	if msg.Version == HeaderVersion0 || msg.Version == HeaderVersion1 {
+		return ProofOfWorkHash(headerBytes, msg.Version), nil
+	}
+
+	// TODO: Do we need a new specialized hash function for Proof of Stake
+	// block headers? A simple SHA256 hash seems like it would be sufficient.
+	// The use of ASICS is no longer a consideration, so we should be able to
+	// simplify the hash function used.
+	return Sha256DoubleHash(headerBytes), nil
 }
 
 func (msg *MsgDeSoHeader) String() string {
