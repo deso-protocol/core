@@ -8,7 +8,11 @@ func AggregateSignatures(signatures []*Signature) (*Signature, error) {
 	panic(BLSNoRelicError)
 }
 
-func VerifyAggregateSignature(publicKeys []*PublicKey, signature *Signature, payloadBytes []byte) (bool, error) {
+func VerifyAggregateSignatureSinglePayload(publicKeys []*PublicKey, signature *Signature, payloadBytes []byte) (bool, error) {
+	panic(BLSNoRelicError)
+}
+
+func VerifyAggregateSignatureMultiplePayloads(publicKeys []*PublicKey, signature *Signature, payloadsBytes [][]byte) (bool, error) {
 	panic(BLSNoRelicError)
 }
 
