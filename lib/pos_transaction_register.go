@@ -26,11 +26,10 @@ type TransactionRegister struct {
 	feeTimeBucketsByMinFeeMap map[uint64]*FeeTimeBucket
 	// txnMembership is a set of transaction hashes. It is used to determine existence of a transaction in the register.
 	txnMembership *Set[BlockHash]
-	// totalTxnSizeBytes is the total size of all transactions in the register.
-	totalTxnSizeBytes uint64
-	// maxTxnSizeBytes is the maximum size of a transaction in the register.
-	maxTxnSizeBytes uint64
-
+	// totalTxnsSizeBytes is the total size of all transactions in the register.
+	totalTxnsSizeBytes uint64
+	// maxTxnsSizeBytes is the maximum size of a transaction in the register.
+	maxTxnsSizeBytes uint64
 	// minimumNetworkFeeNanosPerKB is the base fee rate for the lowest fee FeeTimeBucket. This value corresponds to
 	// GlobalParamsEntry's MinimumNetworkFeeNanosPerKB.
 	minimumNetworkFeeNanosPerKB *big.Float
@@ -47,8 +46,8 @@ func NewTransactionRegister(params *DeSoParams, globalParams *GlobalParamsEntry)
 		feeTimeBucketSet:                   feeTimeBucketSet,
 		feeTimeBucketsByMinFeeMap:          make(map[uint64]*FeeTimeBucket),
 		txnMembership:                      NewSet([]BlockHash{}),
-		totalTxnSizeBytes:                  0,
-		maxTxnSizeBytes:                    params.MaxMempoolPosSizeBytes,
+		totalTxnsSizeBytes:                 0,
+		maxTxnsSizeBytes:                   params.MaxMempoolPosSizeBytes,
 		minimumNetworkFeeNanosPerKB:        minNetworkFee,
 		feeBucketRateMultiplierBasisPoints: bucketMultiplier,
 	}
@@ -87,13 +86,13 @@ func (tr *TransactionRegister) AddTransaction(txn *MempoolTx) error {
 	}
 
 	// If the transaction is too large, reject it.
-	if tr.totalTxnSizeBytes > math.MaxUint64-txn.TxSizeBytes {
+	if tr.totalTxnsSizeBytes > math.MaxUint64-txn.TxSizeBytes {
 		return fmt.Errorf("TransactionRegister.AddTransaction: Transaction size overflows uint64. Txn size %v, "+
-			"total size %v", txn.TxSizeBytes, tr.totalTxnSizeBytes)
+			"total size %v", txn.TxSizeBytes, tr.totalTxnsSizeBytes)
 	}
 
 	// If the transaction overflows the maximum mempool size, reject it.
-	if tr.totalTxnSizeBytes+txn.TxSizeBytes > tr.maxTxnSizeBytes {
+	if tr.totalTxnsSizeBytes+txn.TxSizeBytes > tr.maxTxnsSizeBytes {
 		return fmt.Errorf("TransactionRegister.AddTransaction: Transaction size exceeds maximum mempool size")
 	}
 
@@ -121,7 +120,7 @@ func (tr *TransactionRegister) AddTransaction(txn *MempoolTx) error {
 		tr.feeTimeBucketsByMinFeeMap[bucketMinFeeNanosPerKb] = bucket
 	}
 
-	tr.totalTxnSizeBytes += txn.TxSizeBytes
+	tr.totalTxnsSizeBytes += txn.TxSizeBytes
 	tr.txnMembership.Add(*txn.Hash)
 	return nil
 }
@@ -139,9 +138,9 @@ func (tr *TransactionRegister) RemoveTransaction(txn *MempoolTx) error {
 			"exist in the register", txn.Hash.String())
 	}
 
-	if tr.totalTxnSizeBytes < txn.TxSizeBytes {
+	if tr.totalTxnsSizeBytes < txn.TxSizeBytes {
 		return fmt.Errorf("TransactionRegister.RemoveTransaction: Transaction with transaction hash %v size %v "+
-			"exceeds total mempool size %v", txn.Hash.String(), txn.TxSizeBytes, tr.totalTxnSizeBytes)
+			"exceeds total mempool size %v", txn.Hash.String(), txn.TxSizeBytes, tr.totalTxnsSizeBytes)
 	}
 
 	// Determine the min fee of the bucket based on the transaction's fee rate.
@@ -158,7 +157,7 @@ func (tr *TransactionRegister) RemoveTransaction(txn *MempoolTx) error {
 	}
 
 	tr.txnMembership.Remove(*txn.Hash)
-	tr.totalTxnSizeBytes -= txn.TxSizeBytes
+	tr.totalTxnsSizeBytes -= txn.TxSizeBytes
 	return nil
 }
 
