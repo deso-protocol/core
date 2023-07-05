@@ -14,18 +14,18 @@ import (
 	"github.com/onflow/flow-go/crypto/hash"
 )
 
-// The SigningAlgorithm for BLS keys is BLSBLS12381 which is BLS on the BLS 12-381 curve.
+// The signingAlgorithm for BLS keys is BLSBLS12381 which is BLS on the BLS 12-381 curve.
 // This is the only supported BLS signing algorithm in the flowCrypto package.
 // BLS is used such that we can aggregate signatures into one signature.
-const SigningAlgorithm = flowCrypto.BLSBLS12381
+const signingAlgorithm = flowCrypto.BLSBLS12381
 
-// The HashingAlgorithm for BLS keys is the following. This algorithm is used to hash input data onto the
+// The hashingAlgorithm for BLS keys is the following. This algorithm is used to hash input data onto the
 // BLS 12-381 curve for generating signatures. The returned instance is a Hasher and can be used to
 // generate BLS signatures with the Sign() method. This is the only supported BLS Hasher in the flowCrypto
 // package. The input domainTag is a separation tag that defines the protocol and its subdomain. Such tag
 // should be of the format: <protocol>-V<xx>-CS<yy>-with- where <protocol> is the name of the protocol,
 // <xx> the protocol version number, and <yy> the index of the ciphersuite in the protocol.
-var HashingAlgorithm = flowCrypto.NewExpandMsgXOFKMAC128("deso-V1-CS01-with-")
+var hashingAlgorithm = flowCrypto.NewExpandMsgXOFKMAC128("deso-V1-CS01-with-")
 
 // AggregateSignatures takes in an input slice of bls.Signatures and aggregates them
 // into a single bls.Signature. The assumption is that each of the input bls.Signatures
@@ -50,7 +50,7 @@ func VerifyAggregateSignatureSinglePayload(publicKeys []*PublicKey, signature *S
 	for _, publicKey := range publicKeys {
 		flowPublicKeys = append(flowPublicKeys, publicKey.flowPublicKey)
 	}
-	return flowCrypto.VerifyBLSSignatureOneMessage(flowPublicKeys, signature.flowSignature, payloadBytes, HashingAlgorithm)
+	return flowCrypto.VerifyBLSSignatureOneMessage(flowPublicKeys, signature.flowSignature, payloadBytes, hashingAlgorithm)
 }
 
 // VerifyAggregateSignatureMultiplePayloads takes in a slice of bls.PublicKeys, a bls.Signature, and a slice of payloads.
@@ -63,7 +63,7 @@ func VerifyAggregateSignatureMultiplePayloads(publicKeys []*PublicKey, signature
 	}
 	var hashingAlgorithms []hash.Hasher
 	for _, _ = range publicKeys {
-		hashingAlgorithms = append(hashingAlgorithms, HashingAlgorithm)
+		hashingAlgorithms = append(hashingAlgorithms, hashingAlgorithm)
 	}
 	return flowCrypto.VerifyBLSSignatureManyMessages(flowPublicKeys, signature.flowSignature, payloadsBytes, hashingAlgorithms)
 }
@@ -82,7 +82,7 @@ func NewPrivateKey() (*PrivateKey, error) {
 	if err != nil {
 		return nil, err
 	}
-	flowPrivateKey, err := flowCrypto.GeneratePrivateKey(SigningAlgorithm, randomBytes)
+	flowPrivateKey, err := flowCrypto.GeneratePrivateKey(signingAlgorithm, randomBytes)
 	if err != nil {
 		return nil, err
 	}
@@ -93,7 +93,7 @@ func (privateKey *PrivateKey) Sign(payloadBytes []byte) (*Signature, error) {
 	if privateKey == nil || privateKey.flowPrivateKey == nil {
 		return nil, errors.New("PrivateKey is nil")
 	}
-	flowSignature, err := privateKey.flowPrivateKey.Sign(payloadBytes, HashingAlgorithm)
+	flowSignature, err := privateKey.flowPrivateKey.Sign(payloadBytes, hashingAlgorithm)
 	if err != nil {
 		return nil, err
 	}
@@ -126,7 +126,7 @@ func (privateKey *PrivateKey) FromString(privateKeyString string) (*PrivateKey, 
 		return nil, err
 	}
 	// Convert from byte slice to bls.PrivateKey.
-	privateKey.flowPrivateKey, err = flowCrypto.DecodePrivateKey(SigningAlgorithm, privateKeyBytes)
+	privateKey.flowPrivateKey, err = flowCrypto.DecodePrivateKey(signingAlgorithm, privateKeyBytes)
 	return privateKey, err
 }
 
@@ -171,7 +171,7 @@ func (publicKey *PublicKey) Verify(signature *Signature, input []byte) (bool, er
 	if publicKey == nil || publicKey.flowPublicKey == nil {
 		return false, errors.New("bls.PublicKey is nil")
 	}
-	return publicKey.flowPublicKey.Verify(signature.flowSignature, input, HashingAlgorithm)
+	return publicKey.flowPublicKey.Verify(signature.flowSignature, input, hashingAlgorithm)
 }
 
 func (publicKey *PublicKey) ToBytes() []byte {
@@ -187,7 +187,7 @@ func (publicKey *PublicKey) FromBytes(publicKeyBytes []byte) (*PublicKey, error)
 		return nil, nil
 	}
 	var err error
-	publicKey.flowPublicKey, err = flowCrypto.DecodePublicKey(SigningAlgorithm, publicKeyBytes)
+	publicKey.flowPublicKey, err = flowCrypto.DecodePublicKey(signingAlgorithm, publicKeyBytes)
 	return publicKey, err
 }
 
@@ -210,7 +210,7 @@ func (publicKey *PublicKey) FromString(publicKeyString string) (*PublicKey, erro
 		return nil, err
 	}
 	// Convert from byte slice to bls.PublicKey.
-	publicKey.flowPublicKey, err = flowCrypto.DecodePublicKey(SigningAlgorithm, publicKeyBytes)
+	publicKey.flowPublicKey, err = flowCrypto.DecodePublicKey(signingAlgorithm, publicKeyBytes)
 	return publicKey, err
 }
 
