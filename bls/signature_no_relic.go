@@ -12,6 +12,10 @@ func VerifyAggregateSignature(publicKeys []*PublicKey, signature *Signature, pay
 	panic(BLSNoRelicError)
 }
 
+func VerifyMultiPayloadAggregateSignature(publicKeys []*PublicKey, signature *Signature, payloadsBytes [][]byte) (bool, error) {
+	panic(BLSNoRelicError)
+}
+
 //
 // TYPES: PrivateKey
 //

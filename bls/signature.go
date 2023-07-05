@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	flowCrypto "github.com/onflow/flow-go/crypto"
+	"github.com/onflow/flow-go/crypto/hash"
 )
 
 // The SigningAlgorithm for BLS keys is BLSBLS12381 which is BLS on the BLS 12-381 curve.
@@ -41,7 +42,7 @@ func AggregateSignatures(signatures []*Signature) (*Signature, error) {
 	return &Signature{flowSignature: aggregateFlowSignature}, nil
 }
 
-// VerifyAggregateSignature takes in a slice of bls.PublicKeys, a bls.Signature, and a payload and returns
+// VerifyAggregateSignature takes in a slice of bls.PublicKeys, a bls.Signature, and a single payload and returns
 // true if every bls.PublicKey in the slice signed the payload. The input bls.Signature is the aggregate
 // signature of each of their respective bls.Signatures for that payload.
 func VerifyAggregateSignature(publicKeys []*PublicKey, signature *Signature, payloadBytes []byte) (bool, error) {
@@ -50,6 +51,21 @@ func VerifyAggregateSignature(publicKeys []*PublicKey, signature *Signature, pay
 		flowPublicKeys = append(flowPublicKeys, publicKey.flowPublicKey)
 	}
 	return flowCrypto.VerifyBLSSignatureOneMessage(flowPublicKeys, signature.flowSignature, payloadBytes, HashingAlgorithm)
+}
+
+// VerifyMultiPayloadAggregateSignature takes in a slice of bls.PublicKeys, a bls.Signature, and a slice of payloads.
+// It returns true if each bls.PublicKey at index i has signed its respective payload at index i in the payloads slice.
+// The input bls.Signature is the aggregate signature of each public key's partial bls.Signatures for its respective payload.
+func VerifyMultiPayloadAggregateSignature(publicKeys []*PublicKey, signature *Signature, payloadsBytes [][]byte) (bool, error) {
+	var flowPublicKeys []flowCrypto.PublicKey
+	for _, publicKey := range publicKeys {
+		flowPublicKeys = append(flowPublicKeys, publicKey.flowPublicKey)
+	}
+	var hashingAlgorithms []hash.Hasher
+	for _, _ = range publicKeys {
+		hashingAlgorithms = append(hashingAlgorithms, HashingAlgorithm)
+	}
+	return flowCrypto.VerifyBLSSignatureManyMessages(flowPublicKeys, signature.flowSignature, payloadsBytes, hashingAlgorithms)
 }
 
 //
