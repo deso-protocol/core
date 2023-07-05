@@ -2107,7 +2107,7 @@ func (msg *MsgDeSoHeader) EncodeHeaderVersion2(preSignature bool) ([]byte, error
 	retBytes = append(retBytes, UintToBuf(msg.TstampSecs)...)
 
 	// Height: similar to the field above, this field can be encoded to take
-	// up the full 64 bits now that MsgDeSoHeader version 2 does not need to
+	// up to the full 64 bits now that MsgDeSoHeader version 2 does not need to
 	// be backwards compatible.
 	retBytes = append(retBytes, UintToBuf(msg.Height)...)
 
@@ -2415,10 +2415,10 @@ func (msg *MsgDeSoHeader) GetMsgType() MsgType {
 
 // Hash is a helper function to compute a hash of the header. For Proof of Work
 // blocks headers, which have header version 0 or 1, this uses the specialized
-// ProofOfWorkHash, which mining difficulty and hardware into consideration.
+// ProofOfWorkHash, which takes mining difficulty and hardware into consideration.
 //
-// For For Proof of Stake block headers, which start header versions 2, the
-// it uses the simpler Sha256DoubleHash function.
+// For Proof of Stake block headers, which start header versions 2, it uses the
+// simpler Sha256DoubleHash function.
 func (msg *MsgDeSoHeader) Hash() (*BlockHash, error) {
 	// The preSignature flag is unused during byte encoding in
 	// in header versions 0 and 1. We set it to true to ensure that
@@ -2597,13 +2597,14 @@ func (msg *MsgDeSoBlock) EncodeBlockVersion2(preSignature bool) ([]byte, error) 
 }
 
 func (msg *MsgDeSoBlock) ToBytes(preSignature bool) ([]byte, error) {
-	if msg.Header.Version == HeaderVersion0 {
+	switch msg.Header.Version {
+	case HeaderVersion0:
 		return msg.EncodeBlockVersion0(preSignature)
-	} else if msg.Header.Version == HeaderVersion1 {
+	case HeaderVersion1:
 		return msg.EncodeBlockVersion1(preSignature)
-	} else if msg.Header.Version == HeaderVersion2 {
+	case HeaderVersion2:
 		return msg.EncodeBlockVersion2(preSignature)
-	} else {
+	default:
 		return nil, fmt.Errorf("MsgDeSoBlock.ToBytes: Error encoding version: %v", msg.Header.Version)
 	}
 }
