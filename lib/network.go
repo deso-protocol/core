@@ -23,6 +23,7 @@ import (
 	"github.com/btcsuite/btcd/wire"
 	"github.com/davecgh/go-spew/spew"
 	decredEC "github.com/decred/dcrd/dcrec/secp256k1/v4/ecdsa"
+	"github.com/deso-protocol/core/bls"
 	merkletree "github.com/deso-protocol/go-merkle-tree"
 	"github.com/ethereum/go-ethereum/crypto/ecies"
 	"github.com/holiman/uint256"
@@ -1911,29 +1912,46 @@ type MsgDeSoHeader struct {
 	// event that ASICs become powerful enough to have birthday problems in the future.
 	ExtraNonce uint64
 
-	// ProposedInView is only used for Proof of Stake blocks, and will only be populated
-	// in MsgDeSoHeader versions 2 and higher. For all earlier version, this field will
-	// default to zero.
+	// ProposerPublicKey is only used for Proof of Stake blocks, starting with MsgDeSoHeader
+	// version 2. For all earlier versions, this field will default to nil.
+	//
+	// The ECDSA public key of the block proposer.
+	ProposerPublicKey *PublicKey
+
+	// ProposerVotingPublicKey is only used for Proof of Stake blocks, starting with
+	// MsgDeSoHeader version 2. For all earlier versions, this field will default to nil.
+	//
+	// The BLS public key of the block proposer.
+	ProposerVotingPublicKey *bls.PublicKey
+
+	// ProposedInView is only used for Proof of Stake blocks, starting with MsgDeSoHeader
+	// version 2. For all earlier versions, this field will default to nil.
 	//
 	// Denotes the view in which this block was proposed.
 	ProposedInView uint64
 
-	// ValidatorsVoteQC is only used for Proof of Stake blocks, and will only be
-	// populated in MsgDeSoHeader versions 2 and higher. For all earlier version, this
-	// field will be null.
+	// ValidatorsVoteQC is only used for Proof of Stake blocks, starting with MsgDeSoHeader
+	// version 2. For all earlier versions, this field will default to nil.
 	//
 	// This corresponds to QC containing votes from 2/3 of validators for weighted by stake.
 	ValidatorsVoteQC *QuorumCertificate
 
-	// ValidatorsTimeoutAggregateQC is only used for Proof of Stake blocks, and will only be
-	// populated in MsgDeSoHeader versions 2 and higher. For all earlier version, this field
-	// will be null.
+	// ValidatorsTimeoutAggregateQC is only used for Proof of Stake blocks, starting with
+	// MsgDeSoHeader version 2. For all earlier versions, this field will default to nil.
 	//
 	// In the event of a timeout, this field will contain the aggregate QC constructed from
 	// timeout messages from 2/3 of validators weighted by stake, and proves that they have
 	// time out. This value is set to null in normal cases where a regular block vote has
 	// taken place.
 	ValidatorsTimeoutAggregateQC *TimeoutAggregateQuorumCertificate
+
+	// ProposerVotePartialSignature is only used for Proof of Stake blocks, starting with
+	// MsgDeSoHeader version 2. For all earlier versions, this field will default to nil.
+	//
+	// The block proposer's partial BLS signature of the (ProposedInView, BlockHash) pair
+	// for the block. This signature proves that particular node proposed the block, and
+	// also acts as the block proposer's validator vote for the block.
+	ProposerVotePartialSignature *bls.Signature
 }
 
 func HeaderSizeBytes() int {
@@ -2096,6 +2114,18 @@ func (msg *MsgDeSoHeader) EncodeHeaderVersion2(preSignature bool) ([]byte, error
 	// The Nonce and ExtraNonce fields are unused in version 2. We skip them
 	// during both encoding and decoding.
 
+	// ProposerPublicKey
+	if msg.ProposerPublicKey == nil {
+		return nil, fmt.Errorf("EncodeHeaderVersion2: ProposerPublicKey must be non-nil")
+	}
+	retBytes = append(retBytes, msg.ProposerPublicKey.ToBytes()...)
+
+	// ProposerVotingPublicKey
+	if msg.ProposerVotingPublicKey == nil {
+		return nil, fmt.Errorf("EncodeHeaderVersion2: ProposerVotingPublicKey must be non-nil")
+	}
+	retBytes = append(retBytes, msg.ProposerVotingPublicKey.ToBytes()...)
+
 	// ProposedInView
 	retBytes = append(retBytes, UintToBuf(msg.ProposedInView)...)
 
@@ -2118,6 +2148,20 @@ func (msg *MsgDeSoHeader) EncodeHeaderVersion2(preSignature bool) ([]byte, error
 		return nil, errors.Wrapf(err, "EncodeHeaderVersion2: error encoding ValidatorsTimeoutAggregateQC")
 	}
 	retBytes = append(retBytes, encodedValidatorsTimeoutAggregateQC...)
+
+	// ProposerVotePartialSignature: we encode the signature if it's present and the preSignature
+	// is set to false. Otherwise, we encode an empty byte array as a placeholder. Any byte encoded
+	// output from this function must be decodable by the DecodeHeaderVersion2 function.
+	proposerSignatureBytes := []byte{}
+	if !preSignature {
+		// If the encoding is intended to include the signature, then the signature must
+		// be non-nil.
+		if msg.ProposerVotePartialSignature == nil {
+			return nil, fmt.Errorf("EncodeHeaderVersion2: ProposerVotePartialSignature must be non-nil")
+		}
+		proposerSignatureBytes = msg.ProposerVotePartialSignature.ToBytes()
+	}
+	retBytes = append(retBytes, EncodeByteArray(proposerSignatureBytes)...)
 
 	return retBytes, nil
 }
@@ -2277,6 +2321,18 @@ func DecodeHeaderVersion2(rr io.Reader) (*MsgDeSoHeader, error) {
 	retHeader.Nonce = 0
 	retHeader.ExtraNonce = 0
 
+	// ProposerPublicKey
+	retHeader.ProposerPublicKey, err = ReadPublicKey(rr)
+	if err != nil {
+		return nil, errors.Wrapf(err, "MsgDeSoHeader.FromBytes: Problem decoding ProposerPublicKey")
+	}
+
+	// ProposerVotingPublicKey
+	retHeader.ProposerVotingPublicKey, err = DecodeBLSPublicKey(rr)
+	if err != nil {
+		return nil, errors.Wrapf(err, "MsgDeSoHeader.FromBytes: Problem decoding ProposerVotingPublicKey")
+	}
+
 	// ProposedInView
 	retHeader.ProposedInView, err = ReadUvarint(rr)
 	if err != nil {
@@ -2293,6 +2349,19 @@ func DecodeHeaderVersion2(rr io.Reader) (*MsgDeSoHeader, error) {
 	retHeader.ValidatorsTimeoutAggregateQC = &TimeoutAggregateQuorumCertificate{}
 	if err = retHeader.ValidatorsTimeoutAggregateQC.FromBytes(rr); err != nil {
 		return nil, errors.Wrapf(err, "MsgDeSoHeader.FromBytes: Problem decoding ValidatorsTimeoutAggregateQC")
+	}
+
+	// ProposerVotePartialSignature: we decode the signature if it's present in the byte encoding.
+	// If it's not present, then we set the signature to nil.
+	proposerSignatureBytes, err := DecodeByteArray(rr)
+	if err != nil {
+		return nil, errors.Wrapf(err, "MsgDeSoHeader.FromBytes: Problem decoding ProposerVotePartialSignature")
+	}
+	if len(proposerSignatureBytes) != 0 {
+		retHeader.ProposerVotePartialSignature, err = (&bls.Signature{}).FromBytes(proposerSignatureBytes)
+		if err != nil {
+			return nil, errors.Wrapf(err, "MsgDeSoHeader.FromBytes: Problem decoding ProposerVotePartialSignature")
+		}
 	}
 
 	return retHeader, nil
