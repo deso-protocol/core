@@ -220,6 +220,37 @@ func TestHeaderConversionAndReadWriteMessage(t *testing.T) {
 	}
 }
 
+func TestHeaderVersion2SignatureByteEncoding(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	_ = assert
+	_ = require
+
+	expectedBlockHeader := createTestBlockHeaderVersion2(t)
+
+	preSignatureBytes, err := expectedBlockHeader.ToBytes(true)
+	require.NoError(err)
+	require.NotZero(preSignatureBytes)
+
+	postSignatureBytes, err := expectedBlockHeader.ToBytes(false)
+	require.NoError(err)
+	require.NotZero(postSignatureBytes)
+
+	// The length of the post-signature bytes will always be equal to the length of the
+	// pre-signature bytes + the length of the signature. This is always the case for the
+	// following reason:
+	// - The end of the pre-signature bytes have a []byte{0} appended to them to indicate
+	//   that the signature is not present.
+	// - The end of the post-signature bytes have []byte{len(signature)} + signature.ToBytes()
+	//   appended, which encode the signature.
+	// The difference in length between the two will always be the length of the signature, which
+	// is a fixed size 32 byte BLS signature.
+	require.Equal(
+		len(postSignatureBytes),
+		len(preSignatureBytes)+len(expectedBlockHeader.ProposerVotePartialSignature.ToBytes()),
+	)
+}
+
 func TestGetHeadersSerialization(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
