@@ -1241,7 +1241,7 @@ func (op *UtxoOperation) RawEncodeWithoutMetadata(blockHeight uint64, skipMetada
 		}
 	}
 
-	if MigrationTriggered(blockHeight, ProofOfStakeNewTxnTypesMigration) {
+	if MigrationTriggered(blockHeight, ProofOfStake1StateSetupMigration) {
 		// PrevValidatorEntry
 		data = append(data, EncodeToBytes(blockHeight, op.PrevValidatorEntry, skipMetadata...)...)
 
@@ -1870,7 +1870,7 @@ func (op *UtxoOperation) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.
 		}
 	}
 
-	if MigrationTriggered(blockHeight, ProofOfStakeNewTxnTypesMigration) {
+	if MigrationTriggered(blockHeight, ProofOfStake1StateSetupMigration) {
 		// PrevValidatorEntry
 		if op.PrevValidatorEntry, err = DecodeDeSoEncoder(&ValidatorEntry{}, rr); err != nil {
 			return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading PrevValidatorEntry: ")
@@ -1900,7 +1900,7 @@ func (op *UtxoOperation) GetVersionByte(blockHeight uint64) byte {
 		blockHeight,
 		AssociationsAndAccessGroupsMigration,
 		BalanceModelMigration,
-		ProofOfStakeNewTxnTypesMigration,
+		ProofOfStake1StateSetupMigration,
 	)
 }
 
@@ -3775,12 +3775,49 @@ type GlobalParamsEntry struct {
 	// transaction.
 	MaxNonceExpirationBlockHeightOffset uint64
 
+	// StakeLockupEpochDuration is the number of epochs that a
+	// user must wait before unlocking their unstaked stake.
+	StakeLockupEpochDuration uint64
+
+	// ValidatorJailEpochDuration is the number of epochs that a validator must
+	// wait after being jailed before submitting an UnjailValidator txn.
+	ValidatorJailEpochDuration uint64
+
+	// LeaderScheduleMaxNumValidators is the maximum number of validators that
+	// are included when generating a new Proof-of-Stake leader schedule.
+	LeaderScheduleMaxNumValidators uint64
+
+	// EpochDurationNumBlocks is the number of blocks included in one epoch.
+	EpochDurationNumBlocks uint64
+
+	// JailInactiveValidatorGracePeriodEpochs is the number of epochs we
+	// allow a validator to be inactive for (neither voting nor proposing
+	// blocks) before they are jailed.
+	JailInactiveValidatorGracePeriodEpochs uint64
+
 	// FeeBucketRateMultiplierBasisPoints is the rate of growth of the fee bucket ranges. This is part of the new
 	// PoS Mempool. The multiplier is given as basis points. For example a value of 1000 means that the fee bucket
 	// ranges will grow by 10% each time. If, let's say, we start with MinimumNetworkFeeNanosPerKB of 1000 nanos,
 	// then the first bucket will be [1000, 1099], the second bucket will be [1100, 1209], the third bucket will
 	// be [1210, 1330], etc.
 	FeeBucketRateMultiplierBasisPoints uint64
+}
+
+func (gp *GlobalParamsEntry) Copy() *GlobalParamsEntry {
+	return &GlobalParamsEntry{
+		USDCentsPerBitcoin:                     gp.USDCentsPerBitcoin,
+		CreateProfileFeeNanos:                  gp.CreateProfileFeeNanos,
+		CreateNFTFeeNanos:                      gp.CreateNFTFeeNanos,
+		MaxCopiesPerNFT:                        gp.MaxCopiesPerNFT,
+		MinimumNetworkFeeNanosPerKB:            gp.MinimumNetworkFeeNanosPerKB,
+		MaxNonceExpirationBlockHeightOffset:    gp.MaxNonceExpirationBlockHeightOffset,
+		StakeLockupEpochDuration:               gp.StakeLockupEpochDuration,
+		ValidatorJailEpochDuration:             gp.ValidatorJailEpochDuration,
+		LeaderScheduleMaxNumValidators:         gp.LeaderScheduleMaxNumValidators,
+		EpochDurationNumBlocks:                 gp.EpochDurationNumBlocks,
+		JailInactiveValidatorGracePeriodEpochs: gp.JailInactiveValidatorGracePeriodEpochs,
+		FeeBucketRateMultiplierBasisPoints:     gp.FeeBucketRateMultiplierBasisPoints,
+	}
 }
 
 func (gp *GlobalParamsEntry) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte {
@@ -3794,7 +3831,12 @@ func (gp *GlobalParamsEntry) RawEncodeWithoutMetadata(blockHeight uint64, skipMe
 	if MigrationTriggered(blockHeight, BalanceModelMigration) {
 		data = append(data, UintToBuf(gp.MaxNonceExpirationBlockHeightOffset)...)
 	}
-	if MigrationTriggered(blockHeight, ProofOfStakeNewTxnTypesMigration) {
+	if MigrationTriggered(blockHeight, ProofOfStake1StateSetupMigration) {
+		data = append(data, UintToBuf(gp.StakeLockupEpochDuration)...)
+		data = append(data, UintToBuf(gp.ValidatorJailEpochDuration)...)
+		data = append(data, UintToBuf(gp.LeaderScheduleMaxNumValidators)...)
+		data = append(data, UintToBuf(gp.EpochDurationNumBlocks)...)
+		data = append(data, UintToBuf(gp.JailInactiveValidatorGracePeriodEpochs)...)
 		data = append(data, UintToBuf(gp.FeeBucketRateMultiplierBasisPoints)...)
 	}
 	return data
@@ -3829,7 +3871,27 @@ func (gp *GlobalParamsEntry) RawDecodeWithoutMetadata(blockHeight uint64, rr *by
 			return errors.Wrapf(err, "GlobalParamsEntry.Decode: Problem reading MaxNonceExpirationBlockHeightOffset")
 		}
 	}
-	if MigrationTriggered(blockHeight, ProofOfStakeNewTxnTypesMigration) {
+	if MigrationTriggered(blockHeight, ProofOfStake1StateSetupMigration) {
+		gp.StakeLockupEpochDuration, err = ReadUvarint(rr)
+		if err != nil {
+			return errors.Wrapf(err, "GlobalParamsEntry.Decode: Problem reading StakeLockupEpochDuration: ")
+		}
+		gp.ValidatorJailEpochDuration, err = ReadUvarint(rr)
+		if err != nil {
+			return errors.Wrapf(err, "GlobalParamsEntry.Decode: Problem reading ValidatorJailEpochDuration: ")
+		}
+		gp.LeaderScheduleMaxNumValidators, err = ReadUvarint(rr)
+		if err != nil {
+			return errors.Wrapf(err, "GlobalParamsEntry.Decode: Problem reading LeaderScheduleMaxNumValidators: ")
+		}
+		gp.EpochDurationNumBlocks, err = ReadUvarint(rr)
+		if err != nil {
+			return errors.Wrapf(err, "GlobalParamsEntry.Decode: Problem reading EpochDurationNumBlocks: ")
+		}
+		gp.JailInactiveValidatorGracePeriodEpochs, err = ReadUvarint(rr)
+		if err != nil {
+			return errors.Wrapf(err, "GlobalParamsEntry.Decode: Problem reading JailInactiveValidatorGracePeriodEpochs: ")
+		}
 		gp.FeeBucketRateMultiplierBasisPoints, err = ReadUvarint(rr)
 		if err != nil {
 			return errors.Wrapf(err, "GlobalParamsEntry.Decode: Problem reading FeeBucketRateMultiplierBasisPoints")
@@ -3839,7 +3901,7 @@ func (gp *GlobalParamsEntry) RawDecodeWithoutMetadata(blockHeight uint64, rr *by
 }
 
 func (gp *GlobalParamsEntry) GetVersionByte(blockHeight uint64) byte {
-	return GetMigrationVersion(blockHeight, BalanceModelMigration, ProofOfStakeNewTxnTypesMigration)
+	return GetMigrationVersion(blockHeight, BalanceModelMigration, ProofOfStake1StateSetupMigration)
 }
 
 func (gp *GlobalParamsEntry) GetEncoderType() EncoderType {

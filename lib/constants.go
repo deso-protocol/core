@@ -276,10 +276,20 @@ type ForkHeights struct {
 	// that are in the block.
 	BlockRewardPatchBlockHeight uint32
 
-	// ProofOfStakeNewTxnTypesBlockHeight defines the height at which we introduced the
-	// new txn types to support Proof of Stake. These txns include: RegisterAsValidator,
-	// UnregisterAsValidator, Stake, Unstake, and UnlockStake.
-	ProofOfStakeNewTxnTypesBlockHeight uint32
+	// ProofOfStake1StateSetupBlockHeight defines the height at which we introduced all
+	// changes to set up the prerequisite state for cutting over to PoS consensus. These
+	// changes include, for example, introducing the new PoS txn types, consensus params,
+	// leader schedule generation, and snapshotting.
+	//
+	// The ProofOfStake1StateSetupBlockHeight needs to be set before the
+	// ProofOfStake2ConsensusCutoverBlockHeight so that we allow time for validators to
+	// register, stake to be assigned, and the validator set, consensus params, and
+	// leader schedule snapshots to be generated in advance.
+	ProofOfStake1StateSetupBlockHeight uint32
+
+	// ProofOfStake2ConsensusCutoverBlockHeight defines the height at which we cut over
+	// from PoW consensus to PoS consensus.
+	ProofOfStake2ConsensusCutoverBlockHeight uint32
 
 	// Be sure to update EncoderMigrationHeights as well via
 	// GetEncoderMigrationHeights if you're modifying schema.
@@ -345,7 +355,7 @@ const (
 	UnlimitedDerivedKeysMigration        MigrationName = "UnlimitedDerivedKeysMigration"
 	AssociationsAndAccessGroupsMigration MigrationName = "AssociationsAndAccessGroupsMigration"
 	BalanceModelMigration                MigrationName = "BalanceModelMigration"
-	ProofOfStakeNewTxnTypesMigration     MigrationName = "ProofOfStakeNewTxnTypesMigration"
+	ProofOfStake1StateSetupMigration     MigrationName = "ProofOfStake1StateSetupMigration"
 )
 
 type EncoderMigrationHeights struct {
@@ -360,8 +370,8 @@ type EncoderMigrationHeights struct {
 	// This coincides with the BalanceModel block
 	BalanceModel MigrationHeight
 
-	// This coincides with the ProofOfStakeNewTxnTypesBlockHeight
-	ProofOfStakeNewTxnTypesMigration MigrationHeight
+	// This coincides with the ProofOfStake1StateSetupBlockHeight
+	ProofOfStake1StateSetupMigration MigrationHeight
 }
 
 func GetEncoderMigrationHeights(forkHeights *ForkHeights) *EncoderMigrationHeights {
@@ -386,13 +396,14 @@ func GetEncoderMigrationHeights(forkHeights *ForkHeights) *EncoderMigrationHeigh
 			Height:  uint64(forkHeights.BalanceModelBlockHeight),
 			Name:    BalanceModelMigration,
 		},
-		ProofOfStakeNewTxnTypesMigration: MigrationHeight{
+		ProofOfStake1StateSetupMigration: MigrationHeight{
 			Version: 4,
-			Height:  uint64(forkHeights.ProofOfStakeNewTxnTypesBlockHeight),
-			Name:    ProofOfStakeNewTxnTypesMigration,
+			Height:  uint64(forkHeights.ProofOfStake1StateSetupBlockHeight),
+			Name:    ProofOfStake1StateSetupMigration,
 		},
 	}
 }
+
 func GetEncoderMigrationHeightsList(forkHeights *ForkHeights) (
 	_migrationHeightsList []*MigrationHeight) {
 
@@ -603,20 +614,26 @@ type DeSoParams struct {
 	// attack the bancor curve to any meaningful measure.
 	CreatorCoinAutoSellThresholdNanos uint64
 
-	// StakeLockupEpochDuration is the number of epochs that a
-	// user must wait before unlocking their unstaked stake.
-	// TODO: Move this to GlobalParamsEntry.
-	StakeLockupEpochDuration uint64
+	// DefaultStakeLockupEpochDuration is the default number of epochs
+	// that a user must wait before unlocking their unstaked stake.
+	DefaultStakeLockupEpochDuration uint64
 
-	// ValidatorJailEpochDuration is the number of epochs that a validator must
-	// wait after being jailed before submitting an UnjailValidator txn.
-	// TODO: Move this to GlobalParamsEntry.
-	ValidatorJailEpochDuration uint64
+	// DefaultValidatorJailEpochDuration is the default number of epochs
+	// that a validator must wait after being jailed before submitting
+	// an UnjailValidator txn.
+	DefaultValidatorJailEpochDuration uint64
 
-	// LeaderScheduleMaxNumValidators is the maximum number of validators that
-	// are included when generating a new Proof-of-Stake leader schedule.
-	// TODO: Move this to GlobalParamsEntry.
-	LeaderScheduleMaxNumValidators uint64
+	// DefaultLeaderScheduleMaxNumValidators is the default maximum number of validators
+	// that are included when generating a new Proof-of-Stake leader schedule.
+	DefaultLeaderScheduleMaxNumValidators uint64
+
+	// DefaultEpochDurationNumBlocks is the default number of blocks included in one epoch.
+	DefaultEpochDurationNumBlocks uint64
+
+	// DefaultJailInactiveValidatorGracePeriodEpochs is the default number of epochs
+	// we allow a validator to be inactive for (neither voting nor proposing blocks)
+	// before they are jailed.
+	DefaultJailInactiveValidatorGracePeriodEpochs uint64
 
 	ForkHeights ForkHeights
 
@@ -654,7 +671,10 @@ var RegtestForkHeights = ForkHeights{
 	// For convenience, we set the block height to 1 since the
 	// genesis block was created using the utxo model.
 	BalanceModelBlockHeight:            uint32(1),
-	ProofOfStakeNewTxnTypesBlockHeight: uint32(1),
+	ProofOfStake1StateSetupBlockHeight: uint32(1),
+
+	// FIXME: set to real block height when ready
+	ProofOfStake2ConsensusCutoverBlockHeight: uint32(math.MaxUint32),
 
 	BlockRewardPatchBlockHeight: uint32(0),
 
@@ -810,7 +830,10 @@ var MainnetForkHeights = ForkHeights{
 	BalanceModelBlockHeight: uint32(226839),
 
 	// FIXME: set to real block height when ready
-	ProofOfStakeNewTxnTypesBlockHeight: uint32(math.MaxUint32),
+	ProofOfStake1StateSetupBlockHeight: uint32(math.MaxUint32),
+
+	// FIXME: set to real block height when ready
+	ProofOfStake2ConsensusCutoverBlockHeight: uint32(math.MaxUint32),
 
 	// Be sure to update EncoderMigrationHeights as well via
 	// GetEncoderMigrationHeights if you're modifying schema.
@@ -996,13 +1019,19 @@ var DeSoMainnetParams = DeSoParams{
 	CreatorCoinAutoSellThresholdNanos: uint64(10),
 
 	// Unstaked stake can be unlocked after a minimum of N elapsed epochs.
-	StakeLockupEpochDuration: uint64(3),
+	DefaultStakeLockupEpochDuration: uint64(3),
 
 	// Jailed validators can be unjailed after a minimum of N elapsed epochs.
-	ValidatorJailEpochDuration: uint64(3),
+	DefaultValidatorJailEpochDuration: uint64(3),
 
 	// The max number of validators included in a leader schedule.
-	LeaderScheduleMaxNumValidators: uint64(100),
+	DefaultLeaderScheduleMaxNumValidators: uint64(100),
+
+	// The number of blocks in one epoch
+	DefaultEpochDurationNumBlocks: uint64(3600),
+
+	// The number of epochs before an inactive validator is jailed
+	DefaultJailInactiveValidatorGracePeriodEpochs: uint64(48),
 
 	ForkHeights:                 MainnetForkHeights,
 	EncoderMigrationHeights:     GetEncoderMigrationHeights(&MainnetForkHeights),
@@ -1090,7 +1119,10 @@ var TestnetForkHeights = ForkHeights{
 	BlockRewardPatchBlockHeight: uint32(729753),
 
 	// FIXME: set to real block height when ready
-	ProofOfStakeNewTxnTypesBlockHeight: uint32(math.MaxUint32),
+	ProofOfStake1StateSetupBlockHeight: uint32(math.MaxUint32),
+
+	// FIXME: set to real block height when ready
+	ProofOfStake2ConsensusCutoverBlockHeight: uint32(math.MaxUint32),
 
 	// Be sure to update EncoderMigrationHeights as well via
 	// GetEncoderMigrationHeights if you're modifying schema.
@@ -1238,13 +1270,19 @@ var DeSoTestnetParams = DeSoParams{
 	CreatorCoinAutoSellThresholdNanos: uint64(10),
 
 	// Unstaked stake can be unlocked after a minimum of N elapsed epochs.
-	StakeLockupEpochDuration: uint64(3),
+	DefaultStakeLockupEpochDuration: uint64(3),
 
 	// Jailed validators can be unjailed after a minimum of N elapsed epochs.
-	ValidatorJailEpochDuration: uint64(3),
+	DefaultValidatorJailEpochDuration: uint64(3),
 
 	// The max number of validators included in a leader schedule.
-	LeaderScheduleMaxNumValidators: uint64(100),
+	DefaultLeaderScheduleMaxNumValidators: uint64(100),
+
+	// The number of blocks in one epoch
+	DefaultEpochDurationNumBlocks: uint64(3600),
+
+	// The number of epochs before an inactive validator is jailed
+	DefaultJailInactiveValidatorGracePeriodEpochs: uint64(48),
 
 	ForkHeights:                 TestnetForkHeights,
 	EncoderMigrationHeights:     GetEncoderMigrationHeights(&TestnetForkHeights),
@@ -1285,13 +1323,18 @@ const (
 	IsFrozenKey = "IsFrozen"
 
 	// Keys for a GlobalParamUpdate transaction's extra data map.
-	USDCentsPerBitcoinKey                  = "USDCentsPerBitcoin"
-	MinNetworkFeeNanosPerKBKey             = "MinNetworkFeeNanosPerKB"
-	CreateProfileFeeNanosKey               = "CreateProfileFeeNanos"
-	CreateNFTFeeNanosKey                   = "CreateNFTFeeNanos"
-	MaxCopiesPerNFTKey                     = "MaxCopiesPerNFT"
-	MaxNonceExpirationBlockHeightOffsetKey = "MaxNonceExpirationBlockHeightOffset"
-	ForbiddenBlockSignaturePubKeyKey       = "ForbiddenBlockSignaturePubKey"
+	USDCentsPerBitcoinKey                     = "USDCentsPerBitcoin"
+	MinNetworkFeeNanosPerKBKey                = "MinNetworkFeeNanosPerKB"
+	CreateProfileFeeNanosKey                  = "CreateProfileFeeNanos"
+	CreateNFTFeeNanosKey                      = "CreateNFTFeeNanos"
+	MaxCopiesPerNFTKey                        = "MaxCopiesPerNFT"
+	MaxNonceExpirationBlockHeightOffsetKey    = "MaxNonceExpirationBlockHeightOffset"
+	ForbiddenBlockSignaturePubKeyKey          = "ForbiddenBlockSignaturePubKey"
+	StakeLockupEpochDurationKey               = "StakeLockupEpochDuration"
+	ValidatorJailEpochDurationKey             = "ValidatorJailEpochDuration"
+	LeaderScheduleMaxNumValidatorsKey         = "LeaderScheduleMaxNumValidators"
+	EpochDurationNumBlocksKey                 = "EpochDurationNumBlocks"
+	JailInactiveValidatorGracePeriodEpochsKey = "JailInactiveValidatorGracePeriodEpochs"
 
 	DiamondLevelKey    = "DiamondLevel"
 	DiamondPostHashKey = "DiamondPostHash"

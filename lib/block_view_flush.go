@@ -161,6 +161,18 @@ func (bav *UtxoView) FlushToDbWithTxn(txn *badger.Txn, blockHeight uint64) error
 	if err := bav._flushCurrentRandomSeedHashToDbWithTxn(txn, blockHeight); err != nil {
 		return err
 	}
+	if err := bav._flushSnapshotGlobalParamsEntryToDbWithTxn(txn, blockHeight); err != nil {
+		return err
+	}
+	if err := bav._flushSnapshotValidatorEntriesToDbWithTxn(txn, blockHeight); err != nil {
+		return err
+	}
+	if err := bav._flushSnapshotGlobalActiveStakeAmountNanosToDbWithTxn(txn, blockHeight); err != nil {
+		return err
+	}
+	if err := bav._flushSnapshotLeaderScheduleToDbWithTxn(txn, blockHeight); err != nil {
+		return err
+	}
 	return nil
 }
 

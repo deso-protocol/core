@@ -74,7 +74,7 @@ func setBalanceModelBlockHeights() {
 	DeSoTestnetParams.ForkHeights.ExtraDataOnEntriesBlockHeight = 0
 	DeSoTestnetParams.ForkHeights.AssociationsAndAccessGroupsBlockHeight = 0
 	DeSoTestnetParams.ForkHeights.BalanceModelBlockHeight = 1
-	DeSoTestnetParams.ForkHeights.ProofOfStakeNewTxnTypesBlockHeight = 1
+	DeSoTestnetParams.ForkHeights.ProofOfStake1StateSetupBlockHeight = 1
 	DeSoTestnetParams.EncoderMigrationHeights = GetEncoderMigrationHeights(&DeSoTestnetParams.ForkHeights)
 	DeSoTestnetParams.EncoderMigrationHeightsList = GetEncoderMigrationHeightsList(&DeSoTestnetParams.ForkHeights)
 	GlobalDeSoParams = DeSoTestnetParams
@@ -88,7 +88,7 @@ func resetBalanceModelBlockHeights() {
 	DeSoTestnetParams.ForkHeights.ExtraDataOnEntriesBlockHeight = 1000000
 	DeSoTestnetParams.ForkHeights.AssociationsAndAccessGroupsBlockHeight = 1000000
 	DeSoTestnetParams.ForkHeights.BalanceModelBlockHeight = 1000000
-	DeSoTestnetParams.ForkHeights.ProofOfStakeNewTxnTypesBlockHeight = 1000000
+	DeSoTestnetParams.ForkHeights.ProofOfStake1StateSetupBlockHeight = 1000000
 	DeSoTestnetParams.EncoderMigrationHeights = GetEncoderMigrationHeights(&DeSoTestnetParams.ForkHeights)
 	DeSoTestnetParams.EncoderMigrationHeightsList = GetEncoderMigrationHeightsList(&DeSoTestnetParams.ForkHeights)
 	GlobalDeSoParams = DeSoTestnetParams
@@ -920,7 +920,7 @@ func _updateGlobalParamsEntry(t *testing.T, chain *Blockchain, db *badger.DB,
 	_utxoOps []*UtxoOperation, _txn *MsgDeSoTxn, _height uint32, _err error) {
 	return _updateGlobalParamsEntryWithMempool(t, chain, db, params, feeRateNanosPerKB, updaterPkBase58Check,
 		updaterPrivBase58Check, usdCentsPerBitcoin, minimumNetworkFeesNanosPerKB, createProfileFeeNanos,
-		createNFTFeeNanos, maxCopiesPerNFT, -1, flushToDb, nil)
+		createNFTFeeNanos, maxCopiesPerNFT, -1, map[string][]byte{}, flushToDb, nil)
 }
 
 func _updateGlobalParamsEntryWithMaxNonceExpirationBlockHeightOffset(t *testing.T, chain *Blockchain, db *badger.DB,
@@ -930,14 +930,14 @@ func _updateGlobalParamsEntryWithMaxNonceExpirationBlockHeightOffset(t *testing.
 	_utxoOps []*UtxoOperation, _txn *MsgDeSoTxn, _height uint32, _err error) {
 	return _updateGlobalParamsEntryWithMempool(t, chain, db, params, feeRateNanosPerKB, updaterPkBase58Check,
 		updaterPrivBase58Check, usdCentsPerBitcoin, minimumNetworkFeesNanosPerKB, createProfileFeeNanos,
-		createNFTFeeNanos, maxCopiesPerNFT, maxNonceExpirationBlockHeightOffset, flushToDb, nil)
+		createNFTFeeNanos, maxCopiesPerNFT, maxNonceExpirationBlockHeightOffset, map[string][]byte{}, flushToDb, nil)
 }
 
 func _updateGlobalParamsEntryWithMempool(t *testing.T, chain *Blockchain, db *badger.DB,
 	params *DeSoParams, feeRateNanosPerKB uint64, updaterPkBase58Check string,
 	updaterPrivBase58Check string, usdCentsPerBitcoin int64, minimumNetworkFeesNanosPerKB int64,
 	createProfileFeeNanos int64, createNFTFeeNanos int64, maxCopiesPerNFT int64, maxNonceExpirationBlockHeightOffset int64,
-	flushToDb bool, mempool *DeSoMempool) (
+	extraData map[string][]byte, flushToDb bool, mempool *DeSoMempool) (
 	_utxoOps []*UtxoOperation, _txn *MsgDeSoTxn, _height uint32, _err error) {
 
 	assert := assert.New(t)
@@ -957,6 +957,7 @@ func _updateGlobalParamsEntryWithMempool(t *testing.T, chain *Blockchain, db *ba
 		minimumNetworkFeesNanosPerKB,
 		nil,
 		maxNonceExpirationBlockHeightOffset,
+		extraData,
 		feeRateNanosPerKB,
 		mempool,
 		[]*DeSoOutput{})
@@ -1017,7 +1018,6 @@ func _updateGlobalParamsEntryWithTestMeta(
 	createNFTFeeNanos int64,
 	maxCopiesPerNFT int64,
 ) {
-
 	testMeta.expectedSenderBalances = append(
 		testMeta.expectedSenderBalances,
 		_getBalance(testMeta.t, testMeta.chain, nil, updaterPkBase58Check))
@@ -1033,6 +1033,37 @@ func _updateGlobalParamsEntryWithTestMeta(
 		createNFTFeeNanos,
 		maxCopiesPerNFT,
 		-1,
+		map[string][]byte{},
+		true,
+		testMeta.mempool) /*flushToDB*/
+	require.NoError(testMeta.t, err)
+	testMeta.txnOps = append(testMeta.txnOps, currentOps)
+	testMeta.txns = append(testMeta.txns, currentTxn)
+}
+
+func _updateGlobalParamsEntryWithExtraData(
+	testMeta *TestMeta,
+	feeRateNanosPerKB uint64,
+	updaterPkBase58Check string,
+	updaterPrivBase58Check string,
+	extraData map[string][]byte,
+) {
+	testMeta.expectedSenderBalances = append(
+		testMeta.expectedSenderBalances,
+		_getBalance(testMeta.t, testMeta.chain, nil, updaterPkBase58Check))
+
+	currentOps, currentTxn, _, err := _updateGlobalParamsEntryWithMempool(
+		testMeta.t, testMeta.chain, testMeta.db, testMeta.params,
+		feeRateNanosPerKB,
+		updaterPkBase58Check,
+		updaterPrivBase58Check,
+		-1,
+		int64(feeRateNanosPerKB),
+		-1,
+		-1,
+		-1,
+		-1,
+		extraData,
 		true,
 		testMeta.mempool) /*flushToDB*/
 	require.NoError(testMeta.t, err)
@@ -1067,6 +1098,7 @@ func _updateGlobalParamsEntryWithMaxNonceExpirationBlockHeightOffsetAndTestMeta(
 		createNFTFeeNanos,
 		maxCopiesPerNFT,
 		maxNonceExpirationBlockHeightOffset,
+		map[string][]byte{},
 		true,
 		testMeta.mempool) /*flushToDB*/
 	require.NoError(testMeta.t, err)

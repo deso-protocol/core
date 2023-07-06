@@ -457,6 +457,7 @@ func _doTxnWithBlockHeight(
 			minNetworkFeeNanosPerKB,
 			nil,
 			-1,
+			map[string][]byte{},
 			feeRateNanosPerKB,
 			testMeta.mempool,
 			nil,
@@ -877,7 +878,7 @@ func TestBalanceModelAuthorizeDerivedKey(t *testing.T) {
 	// We need to set the block height here to 7 so that encoder migrations have the proper version and heights.
 	// Otherwise, the access groups and associations migrations do not run when encoding Utxo Operations.
 	DeSoTestnetParams.ForkHeights.BalanceModelBlockHeight = 7
-	DeSoTestnetParams.ForkHeights.ProofOfStakeNewTxnTypesBlockHeight = 7
+	DeSoTestnetParams.ForkHeights.ProofOfStake1StateSetupBlockHeight = 7
 	TestAuthorizeDerivedKeyWithTransactionSpendingLimitsAccessGroups(t)
 }
 
