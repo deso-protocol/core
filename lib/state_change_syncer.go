@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/binary"
 	"fmt"
+	"github.com/deso-protocol/go-deadlock"
 	"github.com/golang/glog"
 	"github.com/google/uuid"
 	"github.com/pkg/errors"
@@ -258,20 +259,25 @@ func NewStateChangeSyncer(stateChangeFilePath string, nodeSyncType NodeSyncType)
 		glog.Fatalf("Error getting stateChangeMempoolFileInfo: %v", err)
 	}
 
-	// TODO: Check if the state change file is empty. If not, BlocksyncCompleteEntriesFlushed should be true.
+	// Check if the state change file is empty. If not, BlocksyncCompleteEntriesFlushed should be true.
+	blocksyncCompleteEntriesFlushed := false
+	if stateChangeFileInfo.Size() > 0 {
+		blocksyncCompleteEntriesFlushed = true
+	}
 
 	return &StateChangeSyncer{
-		StateChangeFile:             stateChangeFile,
-		StateChangeIndexFile:        stateChangeIndexFile,
-		StateChangeFileSize:         uint64(stateChangeFileInfo.Size()),
-		StateChangeMempoolFile:      stateChangeMempoolFile,
-		StateChangeMempoolIndexFile: stateChangeMempoolIndexFile,
-		StateChangeMempoolFileSize:  uint64(stateChangeMempoolFileInfo.Size()),
-		UnflushedBytes:              make(map[uuid.UUID]UnflushedStateSyncerBytes),
-		MempoolKeyValueMap:          make(map[string][]byte),
-		MempoolFlushKeySet:          make(map[string]bool),
-		StateSyncerMutex:            &sync.Mutex{},
-		SyncType:                    nodeSyncType,
+		StateChangeFile:                 stateChangeFile,
+		StateChangeIndexFile:            stateChangeIndexFile,
+		StateChangeFileSize:             uint64(stateChangeFileInfo.Size()),
+		StateChangeMempoolFile:          stateChangeMempoolFile,
+		StateChangeMempoolIndexFile:     stateChangeMempoolIndexFile,
+		StateChangeMempoolFileSize:      uint64(stateChangeMempoolFileInfo.Size()),
+		UnflushedBytes:                  make(map[uuid.UUID]UnflushedStateSyncerBytes),
+		MempoolKeyValueMap:              make(map[string][]byte),
+		MempoolFlushKeySet:              make(map[string]bool),
+		StateSyncerMutex:                &sync.Mutex{},
+		SyncType:                        nodeSyncType,
+		BlocksyncCompleteEntriesFlushed: blocksyncCompleteEntriesFlushed,
 	}
 }
 
@@ -649,7 +655,6 @@ func (stateChangeSyncer *StateChangeSyncer) StartMempoolSyncRoutine(server *Serv
 		for server.mempool == nil || server.blockchain.chainState() != SyncStateFullyCurrent {
 			time.Sleep(1000 * time.Millisecond)
 		}
-		fmt.Printf("\n\n*****STARTING THE MEMPOOL SYNC****\n")
 		if !stateChangeSyncer.BlocksyncCompleteEntriesFlushed && stateChangeSyncer.SyncType == NodeSyncTypeBlockSync {
 			stateChangeSyncer.FlushAllEntriesToFile(server)
 		}
@@ -668,11 +673,12 @@ func (stateChangeSyncer *StateChangeSyncer) StartMempoolSyncRoutine(server *Serv
 }
 
 func (stateChangeSyncer *StateChangeSyncer) FlushAllEntriesToFile(server *Server) error {
+	deadlock.Opts.DeadlockTimeout = 100 * time.Minute
 	// Lock the blockchain so that nothing shifts under our feet while dumping the current state to the state change file.
 	server.blockchain.ChainLock.Lock()
 	defer server.blockchain.ChainLock.Unlock()
 
-	fmt.Printf("\n\n*****FLUSHING ALL ENTRIES TO FILE****\n")
+	fmt.Printf("Flushing all block-synced entries to state chnage file.\n")
 	// Allow the state change syncer to flush entries to file.
 	stateChangeSyncer.BlocksyncCompleteEntriesFlushed = true
 
@@ -690,7 +696,7 @@ func (stateChangeSyncer *StateChangeSyncer) FlushAllEntriesToFile(server *Server
 			// Create a flush ID for this chunk.
 			dbFlushId := uuid.New()
 			// Fetch the batch from main DB records with a batch size of about snap.BatchSize.
-			dbBatchEntries, chunkFull, err = DBIteratePrefixKeys(server.blockchain.db, prefix, lastReceivedKey, SnapshotBatchSize)
+			dbBatchEntries, chunkFull, err = DBIteratePrefixKeys(server.blockchain.db, prefix, lastReceivedKey, SnapshotBatchSize/10)
 			if err != nil {
 				return errors.Wrapf(err, "StateChangeSyncer.FlushAllEntriesToFile: ")
 			}
@@ -717,5 +723,7 @@ func (stateChangeSyncer *StateChangeSyncer) FlushAllEntriesToFile(server *Server
 	}
 	// Mark the blocksync complete entries as flushed.
 	stateChangeSyncer.BlocksyncCompleteEntriesFlushed = true
+	// TODO: Move this to a defer up top.
+	deadlock.Opts.DeadlockTimeout = 10 * time.Minute
 	return nil
 }
