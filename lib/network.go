@@ -23,6 +23,7 @@ import (
 	"github.com/btcsuite/btcd/wire"
 	"github.com/davecgh/go-spew/spew"
 	decredEC "github.com/decred/dcrd/dcrec/secp256k1/v4/ecdsa"
+	"github.com/deso-protocol/core/bls"
 	merkletree "github.com/deso-protocol/go-merkle-tree"
 	"github.com/ethereum/go-ethereum/crypto/ecies"
 	"github.com/holiman/uint256"
@@ -1892,9 +1893,8 @@ type MsgDeSoHeader struct {
 	// The height of the block this header corresponds to.
 	Height uint64
 
-	// Nonce is only used for Proof of Work blocks, and will only be populated
-	// in MsgDeSoHeader versions 0 and 1. For all later versions, this field will
-	// default to a value of zero.
+	// Nonce is only used for Proof of Work blocks, with MsgDeSoHeader versions 0 and 1.
+	// For all later versions, this field will default to a value of zero.
 	//
 	// The nonce that is used by miners in order to produce valid blocks.
 	//
@@ -1903,37 +1903,53 @@ type MsgDeSoHeader struct {
 	// no longer needed since HeaderVersion1 upgraded the nonce to 64 bits from 32 bits.
 	Nonce uint64
 
-	// ExtraNonce is only used for Proof of Work blocks, and will only be populated
-	// in MsgDeSoHeader versions 0 and 1. For all later versions, this field will
-	// default to zero.
+	// ExtraNonce is only used for Proof of Work blocks, with MsgDeSoHeader versions 0 and 1.
+	// For all later versions, this field will default to zero.
 	//
 	// An extra nonce that can be used to provide *even more* entropy for miners, in the
 	// event that ASICs become powerful enough to have birthday problems in the future.
 	ExtraNonce uint64
 
-	// ProposedInView is only used for Proof of Stake blocks, and will only be populated
-	// in MsgDeSoHeader versions 2 and higher. For all earlier version, this field will
-	// default to zero.
+	// ProposerPublicKey is only used for Proof of Stake blocks, starting with MsgDeSoHeader
+	// version 2. For all earlier versions, this field will default to nil.
 	//
-	// Denotes the view in which this block was proposed.
+	// The ECDSA public key of the validator who proposed this block.
+	ProposerPublicKey *PublicKey
+
+	// ProposerVotingPublicKey is only used for Proof of Stake blocks, starting with
+	// MsgDeSoHeader version 2. For all earlier versions, this field will default to nil.
+	//
+	// The BLS public key of the validator who proposed this block.
+	ProposerVotingPublicKey *bls.PublicKey
+
+	// ProposedInView is only used for Proof of Stake blocks, starting with MsgDeSoHeader
+	// version 2. For all earlier versions, this field will default to nil.
+	//
+	// The view in which this block was proposed.
 	ProposedInView uint64
 
-	// ValidatorsVoteQC is only used for Proof of Stake blocks, and will only be
-	// populated in MsgDeSoHeader versions 2 and higher. For all earlier version, this
-	// field will be null.
+	// ValidatorsVoteQC is only used for Proof of Stake blocks, starting with MsgDeSoHeader
+	// version 2. For all earlier versions, this field will default to nil.
 	//
-	// This corresponds to QC containing votes from 2/3 of validators for weighted by stake.
+	// This is a QC containing votes from 2/3 of validators weighted by stake.
 	ValidatorsVoteQC *QuorumCertificate
 
-	// ValidatorsTimeoutAggregateQC is only used for Proof of Stake blocks, and will only be
-	// populated in MsgDeSoHeader versions 2 and higher. For all earlier version, this field
-	// will be null.
+	// ValidatorsTimeoutAggregateQC is only used for Proof of Stake blocks, starting with
+	// MsgDeSoHeader version 2. For all earlier versions, this field will default to nil.
 	//
 	// In the event of a timeout, this field will contain the aggregate QC constructed from
 	// timeout messages from 2/3 of validators weighted by stake, and proves that they have
-	// time out. This value is set to null in normal cases where a regular block vote has
+	// timed out. This value is set to null in normal cases where a regular block vote has
 	// taken place.
 	ValidatorsTimeoutAggregateQC *TimeoutAggregateQuorumCertificate
+
+	// ProposerVotePartialSignature is only used for Proof of Stake blocks, starting with
+	// MsgDeSoHeader version 2. For all earlier versions, this field will default to nil.
+	//
+	// The block proposer's partial BLS signature of the (ProposedInView, BlockHash) pair
+	// for the block. This signature proves that a particular validator proposed the block,
+	// and also acts as the proposer's vote for the block.
+	ProposerVotePartialSignature *bls.Signature
 }
 
 func HeaderSizeBytes() int {
@@ -2090,11 +2106,25 @@ func (msg *MsgDeSoHeader) EncodeHeaderVersion2(preSignature bool) ([]byte, error
 	// that MsgDeSoHeader version 2 does not need to be backwards compatible.
 	retBytes = append(retBytes, UintToBuf(msg.TstampSecs)...)
 
-	// Height
+	// Height: similar to the field above, this field can be encoded to take
+	// up to the full 64 bits now that MsgDeSoHeader version 2 does not need to
+	// be backwards compatible.
 	retBytes = append(retBytes, UintToBuf(msg.Height)...)
 
 	// The Nonce and ExtraNonce fields are unused in version 2. We skip them
 	// during both encoding and decoding.
+
+	// ProposerPublicKey
+	if msg.ProposerPublicKey == nil {
+		return nil, fmt.Errorf("EncodeHeaderVersion2: ProposerPublicKey must be non-nil")
+	}
+	retBytes = append(retBytes, msg.ProposerPublicKey.ToBytes()...)
+
+	// ProposerVotingPublicKey
+	if msg.ProposerVotingPublicKey == nil {
+		return nil, fmt.Errorf("EncodeHeaderVersion2: ProposerVotingPublicKey must be non-nil")
+	}
+	retBytes = append(retBytes, EncodeBLSPublicKey(msg.ProposerVotingPublicKey)...)
 
 	// ProposedInView
 	retBytes = append(retBytes, UintToBuf(msg.ProposedInView)...)
@@ -2119,11 +2149,25 @@ func (msg *MsgDeSoHeader) EncodeHeaderVersion2(preSignature bool) ([]byte, error
 	}
 	retBytes = append(retBytes, encodedValidatorsTimeoutAggregateQC...)
 
+	// ProposerVotePartialSignature: we encode the signature if it's present and the preSignature
+	// flag is set to false. Otherwise, we encode an empty byte array as a placeholder. Note, any
+	// byte encoded output from this function must be decodable by the DecodeHeaderVersion2
+	// function.
+	proposerSignatureBytes := []byte{}
+	if !preSignature {
+		// If the the preSignature flag is set to false, then the caller intends to encode the signature.
+		// The signature must be non-nil.
+		if msg.ProposerVotePartialSignature == nil {
+			return nil, fmt.Errorf("EncodeHeaderVersion2: ProposerVotePartialSignature must be non-nil")
+		}
+		proposerSignatureBytes = msg.ProposerVotePartialSignature.ToBytes()
+	}
+	retBytes = append(retBytes, EncodeByteArray(proposerSignatureBytes)...)
+
 	return retBytes, nil
 }
 
 func (msg *MsgDeSoHeader) ToBytes(preSignature bool) ([]byte, error) {
-
 	// Depending on the version, we decode the header differently.
 	if msg.Version == HeaderVersion0 {
 		return msg.EncodeHeaderVersion0(preSignature)
@@ -2277,6 +2321,18 @@ func DecodeHeaderVersion2(rr io.Reader) (*MsgDeSoHeader, error) {
 	retHeader.Nonce = 0
 	retHeader.ExtraNonce = 0
 
+	// ProposerPublicKey
+	retHeader.ProposerPublicKey, err = ReadPublicKey(rr)
+	if err != nil {
+		return nil, errors.Wrapf(err, "MsgDeSoHeader.FromBytes: Problem decoding ProposerPublicKey")
+	}
+
+	// ProposerVotingPublicKey
+	retHeader.ProposerVotingPublicKey, err = DecodeBLSPublicKey(rr)
+	if err != nil {
+		return nil, errors.Wrapf(err, "MsgDeSoHeader.FromBytes: Problem decoding ProposerVotingPublicKey")
+	}
+
 	// ProposedInView
 	retHeader.ProposedInView, err = ReadUvarint(rr)
 	if err != nil {
@@ -2293,6 +2349,19 @@ func DecodeHeaderVersion2(rr io.Reader) (*MsgDeSoHeader, error) {
 	retHeader.ValidatorsTimeoutAggregateQC = &TimeoutAggregateQuorumCertificate{}
 	if err = retHeader.ValidatorsTimeoutAggregateQC.FromBytes(rr); err != nil {
 		return nil, errors.Wrapf(err, "MsgDeSoHeader.FromBytes: Problem decoding ValidatorsTimeoutAggregateQC")
+	}
+
+	// ProposerVotePartialSignature: we decode the signature if it's present in the byte encoding.
+	// If it's not present, then we set the signature to nil.
+	proposerSignatureBytes, err := DecodeByteArray(rr)
+	if err != nil {
+		return nil, errors.Wrapf(err, "MsgDeSoHeader.FromBytes: Problem decoding ProposerVotePartialSignature")
+	}
+	if len(proposerSignatureBytes) != 0 {
+		retHeader.ProposerVotePartialSignature, err = (&bls.Signature{}).FromBytes(proposerSignatureBytes)
+		if err != nil {
+			return nil, errors.Wrapf(err, "MsgDeSoHeader.FromBytes: Problem decoding ProposerVotePartialSignature")
+		}
 	}
 
 	return retHeader, nil
@@ -2344,17 +2413,31 @@ func (msg *MsgDeSoHeader) GetMsgType() MsgType {
 	return MsgTypeHeader
 }
 
-// Hash is a helper function to compute a hash of the header. Note that the header
-// hash is special in that we always hash it using the ProofOfWorkHash rather than
-// Sha256DoubleHash.
+// Hash is a helper function to compute a hash of the header. For Proof of Work
+// blocks headers, which have header version 0 or 1, this uses the specialized
+// ProofOfWorkHash, which takes mining difficulty and hardware into consideration.
+//
+// For Proof of Stake block headers, which start header versions 2, it uses the
+// simpler Sha256DoubleHash function.
 func (msg *MsgDeSoHeader) Hash() (*BlockHash, error) {
-	preSignature := false
-	headerBytes, err := msg.ToBytes(preSignature)
+	// The preSignature flag is unused during byte encoding in
+	// in header versions 0 and 1. We set it to true to ensure that
+	// it's forward compatible for versions 2 and beyond.
+	headerBytes, err := msg.ToBytes(true)
 	if err != nil {
 		return nil, errors.Wrap(err, "MsgDeSoHeader.Hash: ")
 	}
 
-	return ProofOfWorkHash(headerBytes, msg.Version), nil
+	// Compute the specialized PoW hash for header versions 0 and 1.
+	if msg.Version == HeaderVersion0 || msg.Version == HeaderVersion1 {
+		return ProofOfWorkHash(headerBytes, msg.Version), nil
+	}
+
+	// TODO: Do we need a new specialized hash function for Proof of Stake
+	// block headers? A simple SHA256 hash seems like it would be sufficient.
+	// The use of ASICS is no longer a consideration, so we should be able to
+	// simplify the hash function used.
+	return Sha256DoubleHash(headerBytes), nil
 }
 
 func (msg *MsgDeSoHeader) String() string {
@@ -2509,12 +2592,19 @@ func (msg *MsgDeSoBlock) EncodeBlockVersion1(preSignature bool) ([]byte, error) 
 	return data, nil
 }
 
+func (msg *MsgDeSoBlock) EncodeBlockVersion2(preSignature bool) ([]byte, error) {
+	return msg.EncodeBlockCommmon(preSignature)
+}
+
 func (msg *MsgDeSoBlock) ToBytes(preSignature bool) ([]byte, error) {
-	if msg.Header.Version == HeaderVersion0 {
+	switch msg.Header.Version {
+	case HeaderVersion0:
 		return msg.EncodeBlockVersion0(preSignature)
-	} else if msg.Header.Version == HeaderVersion1 {
+	case HeaderVersion1:
 		return msg.EncodeBlockVersion1(preSignature)
-	} else {
+	case HeaderVersion2:
+		return msg.EncodeBlockVersion2(preSignature)
+	default:
 		return nil, fmt.Errorf("MsgDeSoBlock.ToBytes: Error encoding version: %v", msg.Header.Version)
 	}
 }
