@@ -251,6 +251,28 @@ func TestHeaderVersion2SignatureByteEncoding(t *testing.T) {
 	)
 }
 
+func TestHeaderVersion2Hash(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	_ = assert
+	_ = require
+
+	expectedBlockHeader := createTestBlockHeaderVersion2(t)
+
+	headerHash, err := expectedBlockHeader.Hash()
+	require.NoError(err)
+	require.NotZero(len(headerHash))
+
+	preSignatureBytes, err := expectedBlockHeader.ToBytes(true)
+	require.NoError(err)
+	require.NotZero(preSignatureBytes)
+
+	// Re-compute the expected hash manually and make sure it's using Sha256DoubleHash
+	// as expected.
+	expectedHeaderHash := Sha256DoubleHash(preSignatureBytes)
+	require.Equal(expectedHeaderHash[:], headerHash[:])
+}
+
 func TestGetHeadersSerialization(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
