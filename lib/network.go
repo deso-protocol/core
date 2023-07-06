@@ -2102,7 +2102,7 @@ func (msg *MsgDeSoHeader) EncodeHeaderVersion2(preSignature bool) ([]byte, error
 	}
 	retBytes = append(retBytes, transactionMerkleRoot[:]...)
 
-	// TstampSecs: this field can be encoded to take up the full 64 bits now
+	// TstampSecs: this field can be encoded to take up to the full 64 bits now
 	// that MsgDeSoHeader version 2 does not need to be backwards compatible.
 	retBytes = append(retBytes, UintToBuf(msg.TstampSecs)...)
 
@@ -2150,9 +2150,10 @@ func (msg *MsgDeSoHeader) EncodeHeaderVersion2(preSignature bool) ([]byte, error
 	retBytes = append(retBytes, encodedValidatorsTimeoutAggregateQC...)
 
 	// ProposerVotePartialSignature: we encode the signature if it's present and the preSignature
-	// flag is set to false. Otherwise, we encode an empty byte array as a placeholder. Note, any
-	// byte encoded output from this function must be decodable by the DecodeHeaderVersion2
-	// function.
+	// flag is set to false. Otherwise, we encode an empty byte array as a placeholder. The placeholder
+	// ensures, that the DecodeHeaderVersion2 function can properly recognize encoding where a signature
+	// isn't populated. It ensures that every possible output from EncodeHeaderVersion2 can be decoded by
+	// DecodeHeaderVersion2.
 	proposerSignatureBytes := []byte{}
 	if !preSignature {
 		// If the the preSignature flag is set to false, then the caller intends to encode the signature.

@@ -60,7 +60,7 @@ func (b *Bitset) Size() int {
 	return b.store.BitLen()
 }
 
-// Return the absolute value of the underlying the BigSet as a big-endian
+// Return the absolute value of the underlying the BigInt as a big-endian
 // byte slice. The output is compressed such that if the underlying
 // big.Int had zeros at the highest bits, they will be removed
 // from the output.

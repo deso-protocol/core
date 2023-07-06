@@ -15,6 +15,12 @@ import (
 // ==================================================================
 
 type MsgDeSoValidatorVote struct {
+	// We use the MsgVersion field to determine how to encode and decode this message to
+	// bytes when sending it over the wire. Note, when receiving a message for a peer,
+	// we won't always know the block height ahead of time, so we can't rely on block
+	// height gating or encoder migrations to determine how to decode the message. So,
+	// we rely on a separate message version field whose sole purpose to define how to
+	// encode and decode the message.
 	MsgVersion MsgValidatorVoteVersion
 
 	// The ECDSA public key for the validator who constructed this vote message.
@@ -136,6 +142,12 @@ func (msg *MsgDeSoValidatorVote) FromBytes(data []byte) error {
 // ==================================================================
 
 type MsgDeSoValidatorTimeout struct {
+	// We use the MsgVersion field to determine how to encode and decode this message to
+	// bytes when sending it over the wire. Note, when receiving a message for a peer,
+	// we won't always know the block height ahead of time, so we can't rely on block
+	// height gating or encoder migrations to determine how to decode the message. So,
+	// we rely on a separate message version field whose sole purpose to define how to
+	// encode and decode the message.
 	MsgVersion MsgValidatorTimeoutVersion
 
 	// The ECDSA public key for the validator who constructed this timeout message.

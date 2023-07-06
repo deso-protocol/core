@@ -108,9 +108,12 @@ const (
 	// It includes several changes to the header format:
 	// - Nonce field is deprecated
 	// - ExtraNonce field is deprecated
+	// - ProposerPublicKey field is added
+	// - ProposerVotingPublicKey field is added
 	// - ProposedInView field is added
 	// - ValidatorsVoteQC field is added
 	// - ValidatorsTimeoutAggregateQC field is added
+	// - ProposerVotePartialSignature field is added
 	//
 	// This format change is a breaking change that is not backwards-compatible with
 	// versions 0 and 1.
