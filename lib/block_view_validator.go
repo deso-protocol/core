@@ -1937,7 +1937,7 @@ func (bav *UtxoView) GetGlobalActiveStakeAmountNanos() (*uint256.Int, error) {
 	return globalActiveStakeAmountNanos, nil
 }
 
-func (bav *UtxoView) JailInactiveValidators(blockHeight uint64) error {
+func (bav *UtxoView) JailAllInactiveValidators(blockHeight uint64) error {
 	// First, iterate through all of the !isDeleted ValidatorEntries in the UtxoView and
 	// jail any that are inactive.
 	var utxoViewValidatorPKIDs []*PKID
@@ -1951,7 +1951,7 @@ func (bav *UtxoView) JailInactiveValidators(blockHeight uint64) error {
 		if err != nil {
 			return errors.Wrapf(
 				err,
-				"JailInactiveValidators: problem determining if should jail validator %v: ",
+				"JailAllInactiveValidators: problem determining if should jail validator %v: ",
 				validatorEntry.ValidatorPKID,
 			)
 		}
@@ -1960,7 +1960,7 @@ func (bav *UtxoView) JailInactiveValidators(blockHeight uint64) error {
 		if shouldJailValidator {
 			if err = bav.JailValidator(validatorEntry); err != nil {
 				return errors.Wrapf(
-					err, "JailInactiveValidators: problem jailing validator %v: ", validatorEntry.ValidatorPKID,
+					err, "JailAllInactiveValidators: problem jailing validator %v: ", validatorEntry.ValidatorPKID,
 				)
 			}
 		}
@@ -1972,27 +1972,27 @@ func (bav *UtxoView) JailInactiveValidators(blockHeight uint64) error {
 	// Second, iterate through all the ValidatorEntries in the db and jail any that are inactive.
 	dbValidatorEntries, err := DBEnumerateAllCurrentValidators(bav.Handle, utxoViewValidatorPKIDs)
 	if err != nil {
-		return errors.Wrapf(err, "JailInactiveValidators: problem retrieving ValidatorEntries: ")
+		return errors.Wrapf(err, "JailAllInactiveValidators: problem retrieving ValidatorEntries: ")
 	}
 
 	for _, validatorEntry := range dbValidatorEntries {
-
 		// Check if we should jail the validator.
 		shouldJailValidator, err := bav.ShouldJailValidator(validatorEntry, blockHeight)
 		if err != nil {
 			return errors.Wrapf(
-				err, "JailInactiveValidators: problem determining if should jail validator %v: ", validatorEntry.ValidatorPKID,
+				err, "JailAllInactiveValidators: problem determining if should jail validator %v: ", validatorEntry.ValidatorPKID,
 			)
 		}
 		// Jail them if so.
 		if shouldJailValidator {
 			if err = bav.JailValidator(validatorEntry); err != nil {
 				return errors.Wrapf(
-					err, "JailInactiveValidators: problem jailing validator %v: ", validatorEntry.ValidatorPKID,
+					err, "JailAllInactiveValidators: problem jailing validator %v: ", validatorEntry.ValidatorPKID,
 				)
 			}
 		}
 	}
+
 	return nil
 }
 

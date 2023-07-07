@@ -4,9 +4,10 @@ package lib
 
 import (
 	"fmt"
+	"testing"
+
 	"github.com/holiman/uint256"
 	"github.com/stretchr/testify/require"
-	"testing"
 )
 
 func TestIsLastBlockInCurrentEpoch(t *testing.T) {

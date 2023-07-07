@@ -27,15 +27,23 @@ func (bav *UtxoView) IsLastBlockInCurrentEpoch(blockHeight uint64) (bool, error)
 	return currentEpochEntry.FinalBlockHeight == blockHeight, nil
 }
 
-// RunEpochCompleteHook performs all of the necessary end-of-epoch operations, when connecting the final
-// block of a epoch. Order of operations:
+// RunEpochCompleteHook performs all of the end-of-epoch operations when connecting the final
+// block of a epoch. There epoch completion has two steps.
+//
+// Step 1: Create snapshots of current state. Snapshotting operations here should only create new
+// snapshot state. They should have no other side effects that mutate the existing state of the view.
 // 1. Snapshot the current GlobalParamsEntry.
-// 2. Jail all inactive validators from the current snapshot validator set.
-// 3. Snapshot the current validator set.
-// 4. Snapshot the current GlobalActiveStakeAmountNanos.
-// 5. Generate + snapshot a leader schedule.
-// 6. Compute the final block height for the next epoch.
-// 7. Transition CurrentEpochEntry to the next epoch.
+// 2. Snapshot the current validator set.
+// 3. Snapshot the current GlobalActiveStakeAmountNanos.
+// 4. Snapshot the leader schedule.
+//
+// Step 2: Transition to the next epoch. This runs all state-mutating operations that need to be run for
+// the epoch transition. We always perform state-mutating operations after creating snapshots. This way,
+// the snapshot created at the end of epoch n always reflects the state of the view at the end of epoch n.
+// And it does not reflect the state changes that occur AFTER epoch n ends and before epoch n-1 BEGINS.
+// 1. Jail all inactive validators from the current snapshot validator set.
+// 2. Compute the final block height for the next epoch.
+// 3. Transition CurrentEpochEntry to the next epoch.
 func (bav *UtxoView) RunEpochCompleteHook(blockHeight uint64) error {
 	// Rolls-over the current epoch into a new one. Handles the associated snapshotting + accounting.
 
@@ -63,13 +71,6 @@ func (bav *UtxoView) RunEpochCompleteHook(blockHeight uint64) error {
 
 	// Snapshot the current GlobalParamsEntry.
 	bav._setSnapshotGlobalParamsEntry(bav.GlobalParamsEntry, currentEpochEntry.EpochNumber)
-
-	// Jail all inactive validators from the current snapshot validator set. This is an O(n) operation
-	// that loops through all validators and jails them if they are inactive. A jailed validator should be
-	// considered jailed in the next epoch we are transition into.
-	if err = bav.JailInactiveValidators(blockHeight); err != nil {
-		return errors.Wrapf(err, "RunEpochCompleteHook: problem jailing inactive validators: ")
-	}
 
 	// Snapshot the current ValidatorEntries. This loops through all validators to snapshot them in O(n).
 	if err = bav.SnapshotCurrentValidators(currentEpochEntry.EpochNumber, blockHeight); err != nil {
@@ -101,6 +102,13 @@ func (bav *UtxoView) RunEpochCompleteHook(blockHeight uint64) error {
 	snapshotGlobalParamsEntry, err := bav.GetSnapshotGlobalParamsEntry()
 	if err != nil {
 		return errors.Wrapf(err, "RunEpochCompleteHook: problem retrieving SnapshotGlobalParamsEntry: ")
+	}
+
+	// Jail all inactive validators from the current snapshot validator set. This is an O(n) operation
+	// that loops through all validators and jails them if they are inactive. A jailed validator should be
+	// considered jailed in the next epoch we are transition into.
+	if err = bav.JailAllInactiveValidators(blockHeight); err != nil {
+		return errors.Wrapf(err, "RunEpochCompleteHook: problem jailing all inactive validators: ")
 	}
 
 	// Calculate the NextEpochFinalBlockHeight.
