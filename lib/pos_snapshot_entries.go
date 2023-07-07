@@ -371,9 +371,8 @@ func DBKeyForSnapshotValidatorByPKID(validatorEntry *ValidatorEntry, snapshotAtE
 }
 
 func DBKeyForSnapshotValidatorByStake(validatorEntry *ValidatorEntry, snapshotAtEpochNumber uint64) []byte {
-	key := append([]byte{}, Prefixes.PrefixSnapshotValidatorByStatusAndStake...)
+	key := append([]byte{}, Prefixes.PrefixSnapshotValidatorByStake...)
 	key = append(key, EncodeUint64(snapshotAtEpochNumber)...)
-	key = append(key, EncodeUint8(uint8(validatorEntry.Status()))...)
 	key = append(key, FixedWidthEncodeUint256(validatorEntry.TotalStakeAmountNanos)...)
 	key = append(key, validatorEntry.ValidatorPKID.ToBytes()...)
 	return key
@@ -431,9 +430,8 @@ func DBGetSnapshotTopActiveValidatorsByStake(
 	}
 
 	// Retrieve top N active ValidatorEntry keys by stake.
-	key := append([]byte{}, Prefixes.PrefixSnapshotValidatorByStatusAndStake...)
+	key := append([]byte{}, Prefixes.PrefixSnapshotValidatorByStake...)
 	key = append(key, EncodeUint64(snapshotAtEpochNumber)...)
-	key = append(key, EncodeUint8(uint8(ValidatorStatusActive))...)
 	keysFound, _, err := EnumerateKeysForPrefixWithLimitOffsetOrder(
 		handle, key, int(limit), nil, true, validatorKeysToSkip,
 	)

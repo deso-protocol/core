@@ -538,9 +538,9 @@ type DBPrefixes struct {
 	PrefixSnapshotValidatorByPKID []byte `prefix_id:"[86]" is_state:"true"`
 
 	// PrefixSnapshotValidatorByStatusAndStake: Retrieve stake-ordered active ValidatorEntries by SnapshotAtEpochNumber.
-	// Prefix, <SnapshotAtEpochNumber uint64>, <Status uint8>, <TotalStakeAmountNanos *uint256.Int>, <ValidatorPKID [33]byte> -> nil
+	// Prefix, <SnapshotAtEpochNumber uint64>, <TotalStakeAmountNanos *uint256.Int>, <ValidatorPKID [33]byte> -> nil
 	// Note: we parse the ValidatorPKID from the key and the value is nil to save space.
-	PrefixSnapshotValidatorByStatusAndStake []byte `prefix_id:"[87]" is_state:"true"`
+	PrefixSnapshotValidatorByStake []byte `prefix_id:"[87]" is_state:"true"`
 
 	// PrefixSnapshotGlobalActiveStakeAmountNanos: Retrieve a snapshot GlobalActiveStakeAmountNanos by SnapshotAtEpochNumber.
 	// Prefix, <SnapshotAtEpochNumber uint64> -> *uint256.Int
@@ -779,7 +779,7 @@ func StatePrefixToDeSoEncoder(prefix []byte) (_isEncoder bool, _encoder DeSoEnco
 	} else if bytes.Equal(prefix, Prefixes.PrefixSnapshotValidatorByPKID) {
 		// prefix_id:"[86]"
 		return true, &ValidatorEntry{}
-	} else if bytes.Equal(prefix, Prefixes.PrefixSnapshotValidatorByStatusAndStake) {
+	} else if bytes.Equal(prefix, Prefixes.PrefixSnapshotValidatorByStake) {
 		// prefix_id:"[87]"
 		return false, nil
 	} else if bytes.Equal(prefix, Prefixes.PrefixSnapshotGlobalActiveStakeAmountNanos) {
