@@ -502,8 +502,8 @@ func TestRunEpochCompleteHook(t *testing.T) {
 		_runOnEpochCompleteHook()
 
 		// In epoch 14, all current registered validators have Status = Jailed.
-		// In snapshot 12, the validator set is empty because snapshot registered validators
-		// have Status = Jailed.
+		// In snapshot 12, the validator set is empty because all validators have Status = Jailed.
+
 		require.Equal(t, getCurrentEpochNumber(), 14)
 		require.Empty(t, getNumCurrentActiveValidators())
 		require.Empty(t, getNumSnapshotActiveValidators())

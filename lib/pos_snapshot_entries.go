@@ -249,7 +249,7 @@ func (bav *UtxoView) GetSnapshotValidatorSetByStake(limit uint64) ([]*ValidatorE
 	// Pull top N active ValidatorEntries from the database (not present in the UtxoView).
 	// Note that we will skip validators that are present in the view because we pass
 	// utxoViewValidatorEntries to the function.
-	dbValidatorEntries, err := DBGetSnapshotValidatorSetByStake(
+	dbValidatorEntries, err := DBGetSnapshotTopActiveValidatorsByStake(
 		bav.Handle, bav.Snapshot, limit, snapshotAtEpochNumber, utxoViewValidatorEntries,
 	)
 	if err != nil {
@@ -415,7 +415,7 @@ func DBGetSnapshotValidatorByPKIDWithTxn(
 	return validatorEntry, nil
 }
 
-func DBGetSnapshotValidatorSetByStake(
+func DBGetSnapshotTopActiveValidatorsByStake(
 	handle *badger.DB,
 	snap *Snapshot,
 	limit uint64,
@@ -438,7 +438,7 @@ func DBGetSnapshotValidatorSetByStake(
 		handle, key, int(limit), nil, true, validatorKeysToSkip,
 	)
 	if err != nil {
-		return nil, errors.Wrapf(err, "DBGetSnapshotValidatorSetByStake: problem retrieving top validators: ")
+		return nil, errors.Wrapf(err, "DBGetSnapshotTopActiveValidatorsByStake: problem retrieving top validators: ")
 	}
 
 	// For each key found, parse the ValidatorPKID from the key,
@@ -449,12 +449,12 @@ func DBGetSnapshotValidatorSetByStake(
 		// Convert PKIDBytes to PKID.
 		validatorPKID := &PKID{}
 		if err = validatorPKID.FromBytes(bytes.NewReader(validatorPKIDBytes)); err != nil {
-			return nil, errors.Wrapf(err, "DBGetSnapshotValidatorSetByStake: problem reading ValidatorPKID: ")
+			return nil, errors.Wrapf(err, "DBGetSnapshotTopActiveValidatorsByStake: problem reading ValidatorPKID: ")
 		}
 		// Retrieve ValidatorEntry by PKID.
 		validatorEntry, err := DBGetSnapshotValidatorByPKID(handle, snap, validatorPKID, snapshotAtEpochNumber)
 		if err != nil {
-			return nil, errors.Wrapf(err, "DBGetSnapshotValidatorSetByStake: problem retrieving validator by PKID: ")
+			return nil, errors.Wrapf(err, "DBGetSnapshotTopActiveValidatorsByStake: problem retrieving validator by PKID: ")
 		}
 		validatorEntries = append(validatorEntries, validatorEntry)
 	}
