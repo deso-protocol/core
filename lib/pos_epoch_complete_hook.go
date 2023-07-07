@@ -69,17 +69,13 @@ func (bav *UtxoView) RunEpochCompleteHook(blockHeight uint64) error {
 		return errors.New("RunEpochCompleteHook: CurrentEpochEntry is nil, this should never happen")
 	}
 
+	currentGlobalParamsEntry := bav.GetCurrentGlobalParamsEntry()
+
 	// Snapshot the current GlobalParamsEntry.
 	bav._setSnapshotGlobalParamsEntry(bav.GlobalParamsEntry, currentEpochEntry.EpochNumber)
 
-	// Retrieve the SnapshotGlobalParamsEntry.EpochDurationNumBlocks.
-	snapshotGlobalParamsEntry, err := bav.GetSnapshotGlobalParamsEntry()
-	if err != nil {
-		return errors.Wrapf(err, "RunEpochCompleteHook: problem retrieving SnapshotGlobalParamsEntry: ")
-	}
-
 	// Snapshot the current top n active validators as the current validator set.
-	validatorSet, err := bav.GetTopActiveValidatorsByStake(snapshotGlobalParamsEntry.ValidatorSetMaxNumValidators)
+	validatorSet, err := bav.GetTopActiveValidatorsByStake(currentGlobalParamsEntry.ValidatorSetMaxNumValidators)
 	if err != nil {
 		return errors.Wrapf(err, "RunEpochCompleteHook: error retrieving top ValidatorEntries: ")
 	}
@@ -113,6 +109,12 @@ func (bav *UtxoView) RunEpochCompleteHook(blockHeight uint64) error {
 	// considered jailed in the next epoch we are transition into.
 	if err = bav.JailAllInactiveValidators(blockHeight); err != nil {
 		return errors.Wrapf(err, "RunEpochCompleteHook: problem jailing all inactive validators: ")
+	}
+
+	// Retrieve the SnapshotGlobalParamsEntry.
+	snapshotGlobalParamsEntry, err := bav.GetSnapshotGlobalParamsEntry()
+	if err != nil {
+		return errors.Wrapf(err, "RunEpochCompleteHook: problem retrieving SnapshotGlobalParamsEntry: ")
 	}
 
 	// Calculate the NextEpochFinalBlockHeight.

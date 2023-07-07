@@ -232,12 +232,13 @@ func (bav *UtxoView) GetSnapshotValidatorByPKID(pkid *PKID) (*ValidatorEntry, er
 	return validatorEntry, nil
 }
 
-func (bav *UtxoView) GetSnapshotTopActiveValidatorsByStake(limit uint64) ([]*ValidatorEntry, error) {
+func (bav *UtxoView) GetSnapshotValidatorSetByStake(limit uint64) ([]*ValidatorEntry, error) {
 	// Calculate the SnapshotEpochNumber.
 	snapshotAtEpochNumber, err := bav.GetSnapshotEpochNumber()
 	if err != nil {
-		return nil, errors.Wrapf(err, "GetSnapshotTopActiveValidatorsByStake: problem calculating SnapshotEpochNumber: ")
+		return nil, errors.Wrapf(err, "GetSnapshotValidatorSetByStake: problem calculating SnapshotEpochNumber: ")
 	}
+
 	// Create a slice of all UtxoView ValidatorEntries to prevent pulling them from the db.
 	var utxoViewValidatorEntries []*ValidatorEntry
 	for mapKey, validatorEntry := range bav.SnapshotValidatorEntries {
@@ -248,11 +249,11 @@ func (bav *UtxoView) GetSnapshotTopActiveValidatorsByStake(limit uint64) ([]*Val
 	// Pull top N active ValidatorEntries from the database (not present in the UtxoView).
 	// Note that we will skip validators that are present in the view because we pass
 	// utxoViewValidatorEntries to the function.
-	dbValidatorEntries, err := DBGetSnapshotTopActiveValidatorsByStake(
+	dbValidatorEntries, err := DBGetSnapshotValidatorSetByStake(
 		bav.Handle, bav.Snapshot, limit, snapshotAtEpochNumber, utxoViewValidatorEntries,
 	)
 	if err != nil {
-		return nil, errors.Wrapf(err, "GetSnapshotTopActiveValidatorsByStake: error retrieving entries from db: ")
+		return nil, errors.Wrapf(err, "GetSnapshotValidatorSetByStake: error retrieving entries from db: ")
 	}
 	// Cache top N active ValidatorEntries from the db in the UtxoView.
 	for _, validatorEntry := range dbValidatorEntries {
@@ -414,7 +415,7 @@ func DBGetSnapshotValidatorByPKIDWithTxn(
 	return validatorEntry, nil
 }
 
-func DBGetSnapshotTopActiveValidatorsByStake(
+func DBGetSnapshotValidatorSetByStake(
 	handle *badger.DB,
 	snap *Snapshot,
 	limit uint64,
@@ -437,7 +438,7 @@ func DBGetSnapshotTopActiveValidatorsByStake(
 		handle, key, int(limit), nil, true, validatorKeysToSkip,
 	)
 	if err != nil {
-		return nil, errors.Wrapf(err, "DBGetSnapshotTopActiveValidatorsByStake: problem retrieving top validators: ")
+		return nil, errors.Wrapf(err, "DBGetSnapshotValidatorSetByStake: problem retrieving top validators: ")
 	}
 
 	// For each key found, parse the ValidatorPKID from the key,
@@ -448,12 +449,12 @@ func DBGetSnapshotTopActiveValidatorsByStake(
 		// Convert PKIDBytes to PKID.
 		validatorPKID := &PKID{}
 		if err = validatorPKID.FromBytes(bytes.NewReader(validatorPKIDBytes)); err != nil {
-			return nil, errors.Wrapf(err, "DBGetSnapshotTopActiveValidatorsByStake: problem reading ValidatorPKID: ")
+			return nil, errors.Wrapf(err, "DBGetSnapshotValidatorSetByStake: problem reading ValidatorPKID: ")
 		}
 		// Retrieve ValidatorEntry by PKID.
 		validatorEntry, err := DBGetSnapshotValidatorByPKID(handle, snap, validatorPKID, snapshotAtEpochNumber)
 		if err != nil {
-			return nil, errors.Wrapf(err, "DBGetSnapshotTopActiveValidatorsByStake: problem retrieving validator by PKID: ")
+			return nil, errors.Wrapf(err, "DBGetSnapshotValidatorSetByStake: problem retrieving validator by PKID: ")
 		}
 		validatorEntries = append(validatorEntries, validatorEntry)
 	}
