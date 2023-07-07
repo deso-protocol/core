@@ -1,8 +1,9 @@
 package lib
 
 import (
-	"github.com/pkg/errors"
 	"math"
+
+	"github.com/pkg/errors"
 )
 
 func (bav *UtxoView) IsLastBlockInCurrentEpoch(blockHeight uint64) (bool, error) {
@@ -26,6 +27,15 @@ func (bav *UtxoView) IsLastBlockInCurrentEpoch(blockHeight uint64) (bool, error)
 	return currentEpochEntry.FinalBlockHeight == blockHeight, nil
 }
 
+// RunEpochCompleteHook performs all of the necessary end-of-epoch operations, when connecting the final
+// block of a epoch. Order of operations:
+// 1. Snapshot the current GlobalParamsEntry.
+// 2. Jail all inactive validators from the current snapshot validator set.
+// 3. Snapshot the current validator set.
+// 4. Snapshot the current GlobalActiveStakeAmountNanos.
+// 5. Generate + snapshot a leader schedule.
+// 6. Compute the final block height for the next epoch.
+// 7. Transition CurrentEpochEntry to the next epoch.
 func (bav *UtxoView) RunEpochCompleteHook(blockHeight uint64) error {
 	// Rolls-over the current epoch into a new one. Handles the associated snapshotting + accounting.
 
@@ -54,10 +64,14 @@ func (bav *UtxoView) RunEpochCompleteHook(blockHeight uint64) error {
 	// Snapshot the current GlobalParamsEntry.
 	bav._setSnapshotGlobalParamsEntry(bav.GlobalParamsEntry, currentEpochEntry.EpochNumber)
 
-	// Snapshot the current ValidatorEntries. This loops through all validators to snapshot them in O(N).
-	// To save on runtime, in this loop we also check if we should jail each validator and jail them if so.
-	// We optionally jail a validator after we snapshot them. A jailed validator should be considered jailed
-	// in the new epoch starting after this OnEpochCompleteHook, and not the previous epoch which is snapshot.
+	// Jail all inactive validators from the current snapshot validator set. This is an O(n) operation
+	// that loops through all validators and jails them if they are inactive. A jailed validator should be
+	// considered jailed in the next epoch we are transition into.
+	if err = bav.JailInactiveValidators(blockHeight); err != nil {
+		return errors.Wrapf(err, "RunEpochCompleteHook: problem jailing inactive validators: ")
+	}
+
+	// Snapshot the current ValidatorEntries. This loops through all validators to snapshot them in O(n).
 	if err = bav.SnapshotCurrentValidators(currentEpochEntry.EpochNumber, blockHeight); err != nil {
 		return errors.Wrapf(err, "RunEpochCompleteHook: problem snapshotting validators: ")
 	}
