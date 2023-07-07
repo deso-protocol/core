@@ -206,30 +206,6 @@ type SnapshotValidatorMapKey struct {
 	ValidatorPKID         PKID
 }
 
-func (bav *UtxoView) SnapshotCurrentValidators(snapshotAtEpochNumber uint64, blockHeight uint64) error {
-	// First, snapshot any !isDeleted ValidatorEntries in the UtxoView.
-	var utxoViewValidatorPKIDs []*PKID
-	for _, validatorEntry := range bav.ValidatorPKIDToValidatorEntry {
-		if !validatorEntry.isDeleted {
-			// We only want to snapshot !isDeleted ValidatorEntries.
-			bav._setSnapshotValidatorEntry(validatorEntry, snapshotAtEpochNumber)
-		}
-
-		// We don't want to retrieve any ValidatorEntries from the db that are present in the UtxoView.
-		utxoViewValidatorPKIDs = append(utxoViewValidatorPKIDs, validatorEntry.ValidatorPKID)
-	}
-	// Second, snapshot the ValidatorEntries in the db (skipping any in the UtxoView).
-	dbValidatorEntries, err := DBEnumerateAllCurrentValidators(bav.Handle, utxoViewValidatorPKIDs)
-	if err != nil {
-		return errors.Wrapf(err, "SnapshotValidators: problem retrieving ValidatorEntries: ")
-	}
-	for _, validatorEntry := range dbValidatorEntries {
-		bav._setSnapshotValidatorEntry(validatorEntry, snapshotAtEpochNumber)
-
-	}
-	return nil
-}
-
 func (bav *UtxoView) GetSnapshotValidatorByPKID(pkid *PKID) (*ValidatorEntry, error) {
 	// Calculate the SnapshotEpochNumber.
 	snapshotAtEpochNumber, err := bav.GetSnapshotEpochNumber()

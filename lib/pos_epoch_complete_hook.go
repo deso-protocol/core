@@ -72,9 +72,19 @@ func (bav *UtxoView) RunEpochCompleteHook(blockHeight uint64) error {
 	// Snapshot the current GlobalParamsEntry.
 	bav._setSnapshotGlobalParamsEntry(bav.GlobalParamsEntry, currentEpochEntry.EpochNumber)
 
-	// Snapshot the current ValidatorEntries. This loops through all validators to snapshot them in O(n).
-	if err = bav.SnapshotCurrentValidators(currentEpochEntry.EpochNumber, blockHeight); err != nil {
-		return errors.Wrapf(err, "RunEpochCompleteHook: problem snapshotting validators: ")
+	// Retrieve the SnapshotGlobalParamsEntry.EpochDurationNumBlocks.
+	snapshotGlobalParamsEntry, err := bav.GetSnapshotGlobalParamsEntry()
+	if err != nil {
+		return errors.Wrapf(err, "RunEpochCompleteHook: problem retrieving SnapshotGlobalParamsEntry: ")
+	}
+
+	// Snapshot the current top n active validators as the current validator set.
+	validatorSet, err := bav.GetTopActiveValidatorsByStake(snapshotGlobalParamsEntry.ValidatorSetMaxNumValidators)
+	if err != nil {
+		return errors.Wrapf(err, "RunEpochCompleteHook: error retrieving top ValidatorEntries: ")
+	}
+	for _, validatorEntry := range validatorSet {
+		bav._setSnapshotValidatorEntry(validatorEntry, currentEpochEntry.EpochNumber)
 	}
 
 	// Snapshot the current GlobalActiveStakeAmountNanos.
@@ -97,12 +107,6 @@ func (bav *UtxoView) RunEpochCompleteHook(blockHeight uint64) error {
 	}
 
 	// TODO: Delete old snapshots that are no longer used.
-
-	// Retrieve the SnapshotGlobalParamsEntry.EpochDurationNumBlocks.
-	snapshotGlobalParamsEntry, err := bav.GetSnapshotGlobalParamsEntry()
-	if err != nil {
-		return errors.Wrapf(err, "RunEpochCompleteHook: problem retrieving SnapshotGlobalParamsEntry: ")
-	}
 
 	// Jail all inactive validators from the current snapshot validator set. This is an O(n) operation
 	// that loops through all validators and jails them if they are inactive. A jailed validator should be
