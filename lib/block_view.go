@@ -3035,6 +3035,18 @@ func (bav *UtxoView) _connectUpdateGlobalParams(
 				return 0, 0, nil, fmt.Errorf("_connectUpdateGlobalParams: unable to decode LeaderScheduleMaxNumValidators as uint64")
 			}
 		}
+		if len(extraData[ValidatorSetMaxNumValidatorsKey]) > 0 {
+			newGlobalParamsEntry.ValidatorSetMaxNumValidators, bytesRead = Uvarint(extraData[ValidatorSetMaxNumValidatorsKey])
+			if bytesRead <= 0 {
+				return 0, 0, nil, fmt.Errorf("_connectUpdateGlobalParams: unable to decode ValidatorSetMaxNumValidators as uint64")
+			}
+		}
+		if len(extraData[StakingRewardDistributionMaxNumStakersKey]) > 0 {
+			newGlobalParamsEntry.StakingRewardDistributionMaxNumStakers, bytesRead = Uvarint(extraData[StakingRewardDistributionMaxNumStakersKey])
+			if bytesRead <= 0 {
+				return 0, 0, nil, fmt.Errorf("_connectUpdateGlobalParams: unable to decode StakingRewardDistributionMaxNumStakers as uint64")
+			}
+		}
 		if len(extraData[EpochDurationNumBlocksKey]) > 0 {
 			newGlobalParamsEntry.EpochDurationNumBlocks, bytesRead = Uvarint(extraData[EpochDurationNumBlocksKey])
 			if bytesRead <= 0 {
