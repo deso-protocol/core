@@ -2251,12 +2251,27 @@ func DecodeBLSPublicKey(rr io.Reader) (*bls.PublicKey, error) {
 	return (&bls.PublicKey{}).FromBytes(publicKeyBytes)
 }
 
+// EncodeOptionalBLSSignature is defined explicitly as a wrapper encoding function
+// that has known behavior for nil values. It will always have the following behavior:
+//   - If blsSignature is nil, then it returns []byte{0} as a placeholder
+//   - If the blsSignature is not nil, then it returns
+//     []byte{len(blsSignatureBytes), blsSignatureBytes...}
+func EncodeOptionalBLSSignature(blsSignature *bls.Signature) []byte {
+	return EncodeBLSSignature(blsSignature)
+}
+
 func EncodeBLSSignature(blsSignature *bls.Signature) []byte {
 	var blsSignatureBytes []byte
 	if blsSignature != nil {
 		blsSignatureBytes = blsSignature.ToBytes()
 	}
 	return EncodeByteArray(blsSignatureBytes)
+}
+
+// DecodeOptionalBLSSignature is defined explicitly as a bijective decoding function
+// for EncodeOptionalBLSSignature above.
+func DecodeOptionalBLSSignature(rr io.Reader) (*bls.Signature, error) {
+	return DecodeBLSSignature(rr)
 }
 
 func DecodeBLSSignature(rr io.Reader) (*bls.Signature, error) {

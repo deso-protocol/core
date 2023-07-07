@@ -2149,21 +2149,21 @@ func (msg *MsgDeSoHeader) EncodeHeaderVersion2(preSignature bool) ([]byte, error
 	}
 	retBytes = append(retBytes, encodedValidatorsTimeoutAggregateQC...)
 
+	// If preSignature=false, then the ProposerVotePartialSignature must be populated.
+	if !preSignature && msg.ProposerVotePartialSignature == nil {
+		return nil, fmt.Errorf("EncodeHeaderVersion2: ProposerVotePartialSignature must be non-nil when preSignature=false")
+	}
+
 	// ProposerVotePartialSignature: we encode the signature if it's present and the preSignature
 	// flag is set to false. Otherwise, we encode an empty byte array as a placeholder. The placeholder
-	// ensures, that the DecodeHeaderVersion2 function can properly recognize encoding where a signature
+	// ensures that the DecodeHeaderVersion2 function can properly recognize encodings where the signature
 	// isn't populated. It ensures that every possible output from EncodeHeaderVersion2 can be decoded by
 	// DecodeHeaderVersion2.
-	proposerSignatureBytes := []byte{}
-	if !preSignature {
-		// If the the preSignature flag is set to false, then the caller intends to encode the signature.
-		// The signature must be non-nil.
-		if msg.ProposerVotePartialSignature == nil {
-			return nil, fmt.Errorf("EncodeHeaderVersion2: ProposerVotePartialSignature must be non-nil")
-		}
-		proposerSignatureBytes = msg.ProposerVotePartialSignature.ToBytes()
+	if preSignature {
+		retBytes = append(retBytes, EncodeOptionalBLSSignature(nil)...)
+	} else {
+		retBytes = append(retBytes, EncodeOptionalBLSSignature(msg.ProposerVotePartialSignature)...)
 	}
-	retBytes = append(retBytes, EncodeByteArray(proposerSignatureBytes)...)
 
 	return retBytes, nil
 }
@@ -2354,15 +2354,9 @@ func DecodeHeaderVersion2(rr io.Reader) (*MsgDeSoHeader, error) {
 
 	// ProposerVotePartialSignature: we decode the signature if it's present in the byte encoding.
 	// If it's not present, then we set the signature to nil.
-	proposerSignatureBytes, err := DecodeByteArray(rr)
+	retHeader.ProposerVotePartialSignature, err = DecodeOptionalBLSSignature(rr)
 	if err != nil {
 		return nil, errors.Wrapf(err, "MsgDeSoHeader.FromBytes: Problem decoding ProposerVotePartialSignature")
-	}
-	if len(proposerSignatureBytes) != 0 {
-		retHeader.ProposerVotePartialSignature, err = (&bls.Signature{}).FromBytes(proposerSignatureBytes)
-		if err != nil {
-			return nil, errors.Wrapf(err, "MsgDeSoHeader.FromBytes: Problem decoding ProposerVotePartialSignature")
-		}
 	}
 
 	return retHeader, nil
