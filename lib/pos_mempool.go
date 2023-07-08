@@ -2,90 +2,82 @@ package lib
 
 import (
 	"github.com/pkg/errors"
-	"math"
 	"time"
 )
 
-type DeSoMempoolPos struct {
+type PosMempool struct {
 	bc           *Blockchain
 	txnRegister  *TransactionRegister
 	globalParams *GlobalParamsEntry
+	ledger       *PosMempoolLedger
 
-	reservedBalances map[PublicKey]uint64
+	latestBlockView *UtxoView
+	latestBlockNode *BlockNode
 }
 
-func NewDeSoMempoolPos(bc *Blockchain) *DeSoMempoolPos {
+func NewDeSoMempoolPos(bc *Blockchain) *PosMempool {
 	// TODO: Think about how to handle global params.
 	globalParams := DbGetGlobalParamsEntry(bc.db, bc.snapshot)
 
-	return &DeSoMempoolPos{
-		bc:               bc,
-		txnRegister:      NewTransactionRegister(bc.params, globalParams),
-		globalParams:     globalParams,
-		reservedBalances: make(map[PublicKey]uint64),
+	return &PosMempool{
+		bc:           bc,
+		txnRegister:  NewTransactionRegister(bc.params, globalParams),
+		globalParams: globalParams,
+		ledger:       NewPosMempoolLedger(),
 	}
 }
 
-func (dmp *DeSoMempoolPos) AddTransaction(txn *MsgDeSoTxn, blockHeight uint64, utxoView *UtxoView) error {
+func (dmp *PosMempool) AddTransaction(txn *MsgDeSoTxn) error {
+	userPk := NewPublicKey(txn.PublicKey)
+	txnFee := txn.TxnFeeNanos
+	latestBlockHeight := dmp.latestBlockNode.Height
+
 	// First, validate that the transaction is properly formatted.
-	if err := txn.ValidateTransactionSanityBalanceModel(blockHeight, dmp.bc.params, dmp.globalParams); err != nil {
-		return errors.Wrapf(err, "DeSoMempoolPos.AddTransaction: ")
+	txnValidator := NewMsgDeSoTxnValidator(txn, dmp.bc.params, dmp.globalParams)
+	if err := txnValidator.ValidateTransactionSanityBalanceModel(uint64(latestBlockHeight)); err != nil {
+		return errors.Wrapf(err, "PosMempool.AddTransaction: Problem validating transaction sanity")
 	}
 
 	// Validate that the user has enough balance to cover the transaction fees.
-	userPk := NewPublicKey(txn.PublicKey)
-	txnFee := txn.TxnFeeNanos
-	reservedBalance, exists := dmp.reservedBalances[*userPk]
-
-	// Check for reserved balance overflow.
-	if exists && txnFee > math.MaxUint64-reservedBalance {
-		return errors.Errorf("DeSoMempoolPos.AddTransaction: Reserved balance overflow")
-	}
-	newReservedBalance := reservedBalance + txnFee
-	spendableBalanceNanos, err := utxoView.GetSpendableDeSoBalanceNanosForPublicKey(txn.PublicKey, uint32(blockHeight))
-	if err != nil {
-		return errors.Wrapf(err, "DeSoMempoolPos.AddTransaction: ")
-	}
-	if newReservedBalance > spendableBalanceNanos {
-		return errors.Errorf("DeSoMempoolPos.AddTransaction: Not enough balance to cover txn fees "+
-			"(newReservedBalance: %d, spendableBalanceNanos: %d)", newReservedBalance, spendableBalanceNanos)
+	if err := dmp.ledger.CheckBalanceIncrease(*userPk, txnFee, dmp.latestBlockView, latestBlockHeight); err != nil {
+		return errors.Wrapf(err, "PosMempool.AddTransaction: Problem checking balance increase for transaction with"+
+			"hash %v, fee %v", txn.Hash(), txnFee)
 	}
 
 	// Check transaction signature
-	if _, err = utxoView._verifySignature(txn, uint32(blockHeight)); err != nil {
-		return errors.Wrapf(err, "DeSoMempoolPos.AddTransaction: Signature validation failed")
+	if _, err := dmp.latestBlockView._verifySignature(txn, latestBlockHeight); err != nil {
+		return errors.Wrapf(err, "PosMempool.AddTransaction: Signature validation failed")
 	}
 
 	// Construct the MempoolTx from the MsgDeSoTxn.
-	mempoolTx, err := NewMempoolTx(txn, blockHeight)
+	mempoolTx, err := NewMempoolTx(txn, uint64(latestBlockHeight))
 	if err != nil {
-		return errors.Wrapf(err, "DeSoMempoolPos.AddTransaction: Problem constructing MempoolTx")
+		return errors.Wrapf(err, "PosMempool.AddTransaction: Problem constructing MempoolTx")
 	}
 
 	if err = dmp.txnRegister.AddTransaction(mempoolTx); err != nil {
-		return errors.Wrapf(err, "DeSoMempoolPos.AddTransaction: Problem adding txn to register")
+		return errors.Wrapf(err, "PosMempool.AddTransaction: Problem adding txn to register")
 	}
 
-	// If we get here, this means the transaction was successfully added to the mempool. We update the reserved balance to
-	// include the newly added transaction's fee.
-	dmp.reservedBalances[*userPk] = newReservedBalance
+	// We update the reserved balance to include the newly added transaction's fee.
+	dmp.ledger.IncreaseBalance(*userPk, txnFee)
 
 	return nil
 }
 
-func (dmp *DeSoMempoolPos) RemoveTransaction(txn *MempoolTx) error {
+func (dmp *PosMempool) RemoveTransaction(txn *MempoolTx) error {
 	// First, sanity check our reserved balance.
 	userPk := NewPublicKey(txn.Tx.PublicKey)
-	reservedBalance := dmp.reservedBalances[*userPk]
-	if txn.Fee > reservedBalance {
-		return errors.Errorf("DeSoMempoolPos.RemoveTransaction: Fee exceeds reserved balance")
+	if err := dmp.ledger.CheckBalanceDecrease(*userPk, txn.Fee); err != nil {
+		return errors.Wrapf(err, "PosMempool.RemoveTransaction: Problem checking balance decrease")
 	}
 
 	// Remove the transaction from the register.
 	if err := dmp.txnRegister.RemoveTransaction(txn); err != nil {
-		return errors.Wrapf(err, "DeSoMempoolPos.RemoveTransaction: Problem removing txn from register")
+		return errors.Wrapf(err, "PosMempool.RemoveTransaction: Problem removing txn from register")
 	}
-	dmp.reservedBalances[*userPk] = reservedBalance - txn.Fee
+
+	dmp.ledger.DecreaseBalance(*userPk, txn.Fee)
 
 	return nil
 }
@@ -93,17 +85,17 @@ func (dmp *DeSoMempoolPos) RemoveTransaction(txn *MempoolTx) error {
 func NewMempoolTx(txn *MsgDeSoTxn, blockHeight uint64) (*MempoolTx, error) {
 	txnBytes, err := txn.ToBytes(false)
 	if err != nil {
-		return nil, errors.Wrapf(err, "DeSoMempoolPos.GetMempoolTx: Problem serializing txn")
+		return nil, errors.Wrapf(err, "PosMempool.GetMempoolTx: Problem serializing txn")
 	}
 	serializedLen := uint64(len(txnBytes))
 
 	txnHash := txn.Hash()
 	if txnHash == nil {
-		return nil, errors.Errorf("DeSoMempoolPos.GetMempoolTx: Problem hashing txn")
+		return nil, errors.Errorf("PosMempool.GetMempoolTx: Problem hashing txn")
 	}
 	feePerKb, err := txn.ComputeFeePerKB()
 	if err != nil {
-		return nil, errors.Wrapf(err, "DeSoMempoolPos.GetMempoolTx: Problem computing fee per KB")
+		return nil, errors.Wrapf(err, "PosMempool.GetMempoolTx: Problem computing fee per KB")
 	}
 
 	return &MempoolTx{
