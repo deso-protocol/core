@@ -6,8 +6,9 @@ import (
 	"bytes"
 	"crypto/rand"
 	"encoding/json"
-	"github.com/stretchr/testify/require"
 	"testing"
+
+	"github.com/stretchr/testify/require"
 )
 
 func TestVerifyingBLSSignatures(t *testing.T) {
@@ -45,7 +46,7 @@ func TestVerifyingBLSSignatures(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, isVerified)
 
-	// Test AggregateSignatures() and VerifyAggregateSignature().
+	// Test AggregateSignatures() and VerifyAggregateSignatureSinglePayload().
 	// 1. PrivateKey1 signs a random payload.
 	randomPayload3 := _generateRandomBytes(t, 256)
 	blsSignature1, err = blsPrivateKey1.Sign(randomPayload3)
@@ -57,22 +58,59 @@ func TestVerifyingBLSSignatures(t *testing.T) {
 	aggregateSignature, err := AggregateSignatures([]*Signature{blsSignature1, blsSignature2})
 	require.NoError(t, err)
 	// 4. Verify the AggregateSignature.
-	isVerified, err = VerifyAggregateSignature(
+	isVerified, err = VerifyAggregateSignatureSinglePayload(
 		[]*PublicKey{blsPublicKey1, blsPublicKey2}, aggregateSignature, randomPayload3,
 	)
 	require.NoError(t, err)
 	require.True(t, isVerified)
 	// 5. Verify PrivateKey1's signature doesn't work on its own.
-	isVerified, err = VerifyAggregateSignature([]*PublicKey{blsPublicKey1}, aggregateSignature, randomPayload3)
+	isVerified, err = VerifyAggregateSignatureSinglePayload([]*PublicKey{blsPublicKey1}, aggregateSignature, randomPayload3)
 	require.NoError(t, err)
 	require.False(t, isVerified)
 	// 6. Verify PrivateKey2's signature doesn't work on its own.
-	isVerified, err = VerifyAggregateSignature([]*PublicKey{blsPublicKey2}, aggregateSignature, randomPayload3)
+	isVerified, err = VerifyAggregateSignatureSinglePayload([]*PublicKey{blsPublicKey2}, aggregateSignature, randomPayload3)
 	require.NoError(t, err)
 	require.False(t, isVerified)
 	// 7. Verify the AggregateSignature doesn't work on a different payload.
-	isVerified, err = VerifyAggregateSignature(
+	isVerified, err = VerifyAggregateSignatureSinglePayload(
 		[]*PublicKey{blsPublicKey1, blsPublicKey2}, aggregateSignature, randomPayload1,
+	)
+	require.NoError(t, err)
+	require.False(t, isVerified)
+
+	// Test AggregateSignatures() and VerifyMultiPayloadAggregateSignature() on different payloads.
+	// 1. PrivateKey1 signs a random payload.
+	randomPayload4 := _generateRandomBytes(t, 256)
+	blsSignature1, err = blsPrivateKey1.Sign(randomPayload4)
+	require.NoError(t, err)
+	// 2. PrivateKey2 signs a different random payload.
+	randomPayload5 := _generateRandomBytes(t, 256)
+	blsSignature2, err = blsPrivateKey2.Sign(randomPayload5)
+	require.NoError(t, err)
+	// 3. Aggregate their signatures.
+	aggregateSignature, err = AggregateSignatures([]*Signature{blsSignature1, blsSignature2})
+	require.NoError(t, err)
+	// 4. Verify the AggregateSignature on the different payloads.
+	isVerified, err = VerifyAggregateSignatureMultiplePayloads(
+		[]*PublicKey{blsPublicKey1, blsPublicKey2}, aggregateSignature, [][]byte{randomPayload4, randomPayload5},
+	)
+	require.NoError(t, err)
+	require.True(t, isVerified)
+	// 5. Verify PrivateKey1's signature doesn't work on its own.
+	isVerified, err = VerifyAggregateSignatureMultiplePayloads(
+		[]*PublicKey{blsPublicKey1}, aggregateSignature, [][]byte{randomPayload4},
+	)
+	require.NoError(t, err)
+	require.False(t, isVerified)
+	// 6. Verify PrivateKey2's signature doesn't work on its own.
+	isVerified, err = VerifyAggregateSignatureMultiplePayloads(
+		[]*PublicKey{blsPublicKey2}, aggregateSignature, [][]byte{randomPayload5},
+	)
+	require.NoError(t, err)
+	require.False(t, isVerified)
+	// 7. Verify the AggregateSignature doesn't work on different ordering of payloads.
+	isVerified, err = VerifyAggregateSignatureMultiplePayloads(
+		[]*PublicKey{blsPublicKey1, blsPublicKey2}, aggregateSignature, [][]byte{randomPayload5, randomPayload4},
 	)
 	require.NoError(t, err)
 	require.False(t, isVerified)
