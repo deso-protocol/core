@@ -2124,7 +2124,7 @@ func (bav *UtxoView) CreateUnjailValidatorTxindexMetadata(
 	return &UnjailValidatorTxindexMetadata{}, affectedPublicKeys
 }
 
-func SumValidatorStakeAmountNanos(validatorEntries []*ValidatorEntry) *uint256.Int {
+func SumValidatorEntriesTotalStakeAmountNanos(validatorEntries []*ValidatorEntry) *uint256.Int {
 	totalStakeAmountNanos := uint256.NewInt()
 	for _, validatorEntry := range validatorEntries {
 		totalStakeAmountNanos.Add(totalStakeAmountNanos, validatorEntry.TotalStakeAmountNanos)

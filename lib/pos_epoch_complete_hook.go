@@ -84,7 +84,7 @@ func (bav *UtxoView) RunEpochCompleteHook(blockHeight uint64) error {
 	}
 
 	// Snapshot the current validator set's total stake.
-	globalActiveStakeAmountNanos := SumValidatorStakeAmountNanos(validatorSet)
+	globalActiveStakeAmountNanos := SumValidatorEntriesTotalStakeAmountNanos(validatorSet)
 	bav._setSnapshotGlobalActiveStakeAmountNanos(globalActiveStakeAmountNanos, currentEpochEntry.EpochNumber)
 
 	// Generate + snapshot a leader schedule.
