@@ -557,10 +557,6 @@ func DBKeyForValidatorByStake(validatorEntry *ValidatorEntry) []byte {
 	return key
 }
 
-func DBKeyForGlobalActiveStakeAmountNanos() []byte {
-	return append([]byte{}, Prefixes.PrefixGlobalActiveStakeAmountNanos...)
-}
-
 func DBGetValidatorByPKID(handle *badger.DB, snap *Snapshot, pkid *PKID) (*ValidatorEntry, error) {
 	var ret *ValidatorEntry
 	err := handle.View(func(txn *badger.Txn) error {
@@ -637,38 +633,6 @@ func DBGetTopActiveValidatorsByStake(
 	return validatorEntries, nil
 }
 
-func DBGetGlobalActiveStakeAmountNanos(handle *badger.DB, snap *Snapshot) (*uint256.Int, error) {
-	var ret *uint256.Int
-	err := handle.View(func(txn *badger.Txn) error {
-		var innerErr error
-		ret, innerErr = DBGetGlobalActiveStakeAmountNanosWithTxn(txn, snap)
-		return innerErr
-	})
-	return ret, err
-}
-
-func DBGetGlobalActiveStakeAmountNanosWithTxn(txn *badger.Txn, snap *Snapshot) (*uint256.Int, error) {
-	// Retrieve from db.
-	key := DBKeyForGlobalActiveStakeAmountNanos()
-	globalActiveStakeAmountNanosBytes, err := DBGetWithTxn(txn, snap, key)
-	if err != nil {
-		// We don't want to error if the key isn't found. Instead, return nil.
-		if err == badger.ErrKeyNotFound {
-			return nil, nil
-		}
-		return nil, errors.Wrapf(err, "DBGetGlobalActiveStakeAmountNanosWithTxn: problem retrieving value")
-	}
-
-	// Decode from bytes.
-	var globalActiveStakeAmountNanos *uint256.Int
-	rr := bytes.NewReader(globalActiveStakeAmountNanosBytes)
-	globalActiveStakeAmountNanos, err = VariableDecodeUint256(rr)
-	if err != nil {
-		return nil, errors.Wrapf(err, "DBGetGlobalActiveStakeAmountNanosWithTxn: problem decoding value")
-	}
-	return globalActiveStakeAmountNanos, nil
-}
-
 func DBPutValidatorWithTxn(
 	txn *badger.Txn,
 	snap *Snapshot,
@@ -739,21 +703,6 @@ func DBDeleteValidatorWithTxn(txn *badger.Txn, snap *Snapshot, validatorPKID *PK
 	}
 
 	return nil
-}
-
-func DBPutGlobalActiveStakeAmountNanosWithTxn(
-	txn *badger.Txn,
-	snap *Snapshot,
-	globalActiveStakeAmountNanos *uint256.Int,
-	blockHeight uint64,
-) error {
-	if globalActiveStakeAmountNanos == nil {
-		// This should never happen but is a sanity check.
-		glog.Errorf("DBPutGlobalActiveStakeAmountNanosWithTxn: called with nil GlobalActiveStakeAmountNanos")
-		return nil
-	}
-	key := DBKeyForGlobalActiveStakeAmountNanos()
-	return DBSetWithTxn(txn, snap, key, VariableEncodeUint256(globalActiveStakeAmountNanos))
 }
 
 //
