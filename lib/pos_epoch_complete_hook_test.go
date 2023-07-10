@@ -159,10 +159,10 @@ func TestRunEpochCompleteHook(t *testing.T) {
 		require.NoError(t, err)
 		require.Empty(t, validatorEntries)
 
-		// Test SnapshotGlobalActiveStakeAmountNanos is zero.
-		snapshotGlobalActiveStakeAmountNanos, err := utxoView().GetSnapshotGlobalActiveStakeAmountNanos()
+		// Test SnapshotValidatorSetTotalStakeAmountNanos is zero.
+		snapshotValidatorSetTotalStakeAmountNanos, err := utxoView().GetSnapshotValidatorSetTotalStakeAmountNanos()
 		require.NoError(t, err)
-		require.True(t, snapshotGlobalActiveStakeAmountNanos.IsZero())
+		require.True(t, snapshotValidatorSetTotalStakeAmountNanos.IsZero())
 
 		// Test SnapshotLeaderSchedule is nil.
 		for index := range validatorPKIDs {
@@ -311,10 +311,10 @@ func TestRunEpochCompleteHook(t *testing.T) {
 		require.Equal(t, validatorEntries[0].TotalStakeAmountNanos, uint256.NewInt().SetUint64(700))
 		require.Equal(t, validatorEntries[6].TotalStakeAmountNanos, uint256.NewInt().SetUint64(100))
 
-		// Test SnapshotGlobalActiveStakeAmountNanos is populated.
-		snapshotGlobalActiveStakeAmountNanos, err := utxoView().GetSnapshotGlobalActiveStakeAmountNanos()
+		// Test SnapshotValidatorSetTotalStakeAmountNanos is populated.
+		snapshotValidatorSetTotalStakeAmountNanos, err := utxoView().GetSnapshotValidatorSetTotalStakeAmountNanos()
 		require.NoError(t, err)
-		require.Equal(t, snapshotGlobalActiveStakeAmountNanos, uint256.NewInt().SetUint64(2800))
+		require.Equal(t, snapshotValidatorSetTotalStakeAmountNanos, uint256.NewInt().SetUint64(2800))
 
 		// Test SnapshotLeaderSchedule is populated.
 		for index := range validatorPKIDs {
