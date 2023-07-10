@@ -7,6 +7,7 @@ import (
 	"github.com/pkg/errors"
 	"math"
 	"math/big"
+	"sync"
 )
 
 // ========================
@@ -19,6 +20,7 @@ import (
 // fee-time. The TransactionRegister doesn't perform any validation on the transactions, it just accepts the provided
 // MempoolTx and adds it to the appropriate FeeTimeBucket.
 type TransactionRegister struct {
+	mut sync.RWMutex
 	// feeTimeBucketSet is a set of FeeTimeBucket objects. The set is ordered by the FeeTimeBucket's ranges, based on feeTimeBucketComparator.
 	feeTimeBucketSet *treeset.Set
 	// feeTimeBucketsByMinFeeMap is a map of FeeTimeBucket minimum fees to FeeTimeBucket objects. It is used to quickly find
@@ -28,8 +30,6 @@ type TransactionRegister struct {
 	txnMembership *Set[BlockHash]
 	// totalTxnsSizeBytes is the total size of all transactions in the register.
 	totalTxnsSizeBytes uint64
-	// maxTxnsSizeBytes is the maximum size of a transaction in the register.
-	maxTxnsSizeBytes uint64
 	// minimumNetworkFeeNanosPerKB is the base fee rate for the lowest fee FeeTimeBucket. This value corresponds to
 	// GlobalParamsEntry's MinimumNetworkFeeNanosPerKB.
 	minimumNetworkFeeNanosPerKB *big.Float
@@ -38,7 +38,7 @@ type TransactionRegister struct {
 	feeBucketRateMultiplierBasisPoints *big.Float
 }
 
-func NewTransactionRegister(params *DeSoParams, globalParams *GlobalParamsEntry) *TransactionRegister {
+func NewTransactionRegister(globalParams *GlobalParamsEntry) *TransactionRegister {
 	feeTimeBucketSet := treeset.NewWith(feeTimeBucketComparator)
 	minNetworkFee, bucketMultiplier := globalParams.ComputeFeeTimeBucketMinimumFeeAndMultiplier()
 
@@ -47,7 +47,6 @@ func NewTransactionRegister(params *DeSoParams, globalParams *GlobalParamsEntry)
 		feeTimeBucketsByMinFeeMap:          make(map[uint64]*FeeTimeBucket),
 		txnMembership:                      NewSet([]BlockHash{}),
 		totalTxnsSizeBytes:                 0,
-		maxTxnsSizeBytes:                   params.MaxMempoolPosSizeBytes,
 		minimumNetworkFeeNanosPerKB:        minNetworkFee,
 		feeBucketRateMultiplierBasisPoints: bucketMultiplier,
 	}
@@ -77,6 +76,9 @@ func feeTimeBucketComparator(a, b interface{}) int {
 // exceeds the maximum mempool capacity, it is not added. Returns nil when transaction was successfully added to the
 // register, or an error otherwise.
 func (tr *TransactionRegister) AddTransaction(txn *MempoolTx) error {
+	tr.mut.Lock()
+	defer tr.mut.Unlock()
+
 	if txn == nil || txn.Hash == nil {
 		return fmt.Errorf("TransactionRegister.AddTransaction: Transaction or transaction hash is nil")
 	}
@@ -89,11 +91,6 @@ func (tr *TransactionRegister) AddTransaction(txn *MempoolTx) error {
 	if tr.totalTxnsSizeBytes > math.MaxUint64-txn.TxSizeBytes {
 		return fmt.Errorf("TransactionRegister.AddTransaction: Transaction size overflows uint64. Txn size %v, "+
 			"total size %v", txn.TxSizeBytes, tr.totalTxnsSizeBytes)
-	}
-
-	// If the transaction overflows the maximum mempool size, reject it.
-	if tr.totalTxnsSizeBytes+txn.TxSizeBytes > tr.maxTxnsSizeBytes {
-		return fmt.Errorf("TransactionRegister.AddTransaction: Transaction size exceeds maximum mempool size")
 	}
 
 	// Determine the min fee of the bucket based on the transaction's fee rate.
@@ -129,6 +126,9 @@ func (tr *TransactionRegister) AddTransaction(txn *MempoolTx) error {
 // size exceeds the current register size (which should never happen), it is not removed. Returns nil when transaction
 // was successfully removed from the register, or an error otherwise.
 func (tr *TransactionRegister) RemoveTransaction(txn *MempoolTx) error {
+	tr.mut.Lock()
+	defer tr.mut.Unlock()
+
 	if txn == nil || txn.Hash == nil {
 		return fmt.Errorf("TransactionRegister.RemoveTransaction: Transaction or transaction hash is nil")
 	}
@@ -148,11 +148,15 @@ func (tr *TransactionRegister) RemoveTransaction(txn *MempoolTx) error {
 		tr.minimumNetworkFeeNanosPerKB, tr.feeBucketRateMultiplierBasisPoints)
 	// Remove the transaction from the bucket.
 	if bucket, exists := tr.feeTimeBucketsByMinFeeMap[bucketMinFeeNanosPerKb]; exists {
+		if bucket.minFeeNanosPerKB != bucketMinFeeNanosPerKb {
+			return fmt.Errorf("TransactionRegister.RemoveTransaction: Bucket min fee %v does not match "+
+				"bucketMinFeeNanosPerKb %v", bucket.minFeeNanosPerKB, bucketMinFeeNanosPerKb)
+		}
+
 		bucket.RemoveTransaction(txn)
 		// If the bucket becomes empty, remove it from the TransactionRegister.
 		if bucket.Empty() {
-			tr.feeTimeBucketSet.Remove(bucket)
-			delete(tr.feeTimeBucketsByMinFeeMap, bucketMinFeeNanosPerKb)
+			tr.removeBucket(bucket)
 		}
 	}
 
@@ -161,14 +165,35 @@ func (tr *TransactionRegister) RemoveTransaction(txn *MempoolTx) error {
 	return nil
 }
 
+func (tr *TransactionRegister) removeBucket(bucket *FeeTimeBucket) {
+	tr.feeTimeBucketSet.Remove(bucket)
+	bucket.Clear()
+	delete(tr.feeTimeBucketsByMinFeeMap, bucket.minFeeNanosPerKB)
+}
+
 func (tr *TransactionRegister) Empty() bool {
 	return tr.feeTimeBucketSet.Empty()
+}
+
+func (tr *TransactionRegister) Size() uint64 {
+	return tr.totalTxnsSizeBytes
+}
+
+func (tr *TransactionRegister) Clear() {
+	tr.mut.Lock()
+	defer tr.mut.Unlock()
+
+	tr.feeTimeBucketSet.Clear()
+	tr.feeTimeBucketsByMinFeeMap = make(map[uint64]*FeeTimeBucket)
+	tr.txnMembership = NewSet([]BlockHash{})
+	tr.totalTxnsSizeBytes = 0
 }
 
 // GetFeeTimeIterator returns an iterator over the transactions in the register. The iterator goes through all transactions
 // as ordered by Fee-Time.
 func (tr *TransactionRegister) GetFeeTimeIterator() *FeeTimeIterator {
 	return &FeeTimeIterator{
+		mut:               &tr.mut,
 		bucketIterator:    tr.feeTimeBucketSet.Iterator(),
 		mempoolTxIterator: nil,
 	}
@@ -186,9 +211,63 @@ func (tr *TransactionRegister) GetFeeTimeTransactions() []*MempoolTx {
 	return txns
 }
 
+// Prune removes transactions from the register until a desired amount of space is freed.
+func (tr *TransactionRegister) Prune(minBytesPruned uint64) error {
+	tr.mut.Lock()
+	defer tr.mut.Unlock()
+
+	// If the register is empty, return.
+	if tr.Empty() {
+		return nil
+	}
+
+	prunedBytes := uint64(0)
+	transactionToPrune := []*MempoolTx{}
+
+	it := tr.feeTimeBucketSet.Iterator()
+	it.End()
+	for it.Prev() {
+		bucket, ok := it.Value().(*FeeTimeBucket)
+		if !ok {
+			return fmt.Errorf("TransactionRegister.Prune: Error casting value of FeeTimeBucket")
+		}
+
+		bucketIt := bucket.GetIterator()
+		bucketIt.End()
+		for bucketIt.Prev() {
+			txn, ok := bucketIt.Value().(*MempoolTx)
+			if !ok {
+				return fmt.Errorf("TransactionRegister.Prune: Error casting value of MempoolTx")
+			}
+			if prunedBytes > math.MaxUint64+txn.TxSizeBytes {
+				return fmt.Errorf("TransactionRegister.Prune: Error pruning %v bytes from register: "+
+					"prunedBytes %v exceeds max uint64", minBytesPruned, prunedBytes)
+			}
+			if prunedBytes+txn.TxSizeBytes <= minBytesPruned {
+				transactionToPrune = append(transactionToPrune, txn)
+				prunedBytes += txn.TxSizeBytes
+				continue
+			}
+			break
+		}
+
+		if prunedBytes >= minBytesPruned {
+			break
+		}
+	}
+
+	for _, txn := range transactionToPrune {
+		if err := tr.RemoveTransaction(txn); err != nil {
+			return errors.Wrapf(err, "TransactionRegister.Prune: Error removing transaction %v", txn.Hash.String())
+		}
+	}
+	return nil
+}
+
 // FeeTimeIterator is an iterator over the transactions in a TransactionRegister. The iterator goes through all transactions
 // as ordered by Fee-Time.
 type FeeTimeIterator struct {
+	mut *sync.RWMutex
 	// bucketIterator is an iterator over the FeeTimeBucket objects in the TransactionRegister.
 	bucketIterator treeset.Iterator
 	// mempoolTxIterator is an iterator over the transactions in the current FeeTimeBucket. It is nil if the iterator
@@ -199,6 +278,9 @@ type FeeTimeIterator struct {
 // Next moves the FeeTimeIterator to the next transaction. It returns true if the iterator is pointing at a transaction
 // after the move, and false otherwise.
 func (fti *FeeTimeIterator) Next() bool {
+	fti.mut.RLock()
+	defer fti.mut.RUnlock()
+
 	// If the iterator is uninitialized, then mempoolTxIterator is nil. In this case, we will first advance the
 	// bucketIterator to the first FeeTime bucket, and then initialize mempoolTxIterator to point at the first transaction
 	// in the bucket.
@@ -233,6 +315,9 @@ func (fti *FeeTimeIterator) Next() bool {
 
 // Value returns the transaction that the iterator is pointing at.
 func (fti *FeeTimeIterator) Value() (*MempoolTx, bool) {
+	fti.mut.RLock()
+	defer fti.mut.RUnlock()
+
 	if !fti.Initialized() {
 		return nil, false
 	}
@@ -254,6 +339,8 @@ func (fti *FeeTimeIterator) Initialized() bool {
 
 // FeeTimeBucket is a data structure storing MempoolTx with similar fee rates.
 type FeeTimeBucket struct {
+	mut sync.RWMutex
+
 	// txnsSet is a set of MempoolTx transactions stored in the FeeTimeBucket.
 	txnsSet *treeset.Set
 	// minFeeNanosPerKB is the minimum fee rate (inclusive) accepted by the FeeTimeBucket, in nanos per KB.
@@ -261,15 +348,18 @@ type FeeTimeBucket struct {
 	// maxFeeNanosPerKB is the maximum fee rate (inclusive) accepted by the FeeTimeBucket, in nanos per KB. It's worth
 	// noting that the maximum fee rate is always 1 below the minimum fee rate of the FeeTimeBucket with exponent+1.
 	maxFeeNanosPerKB uint64
+	// totalTxnsSizeBytes is the total size of all transactions in the FeeTimeBucket, in bytes.
+	totalTxnsSizeBytes uint64
 }
 
 func NewFeeTimeBucket(minFeeNanosPerKB uint64, maxFeeNanosPerKB uint64) *FeeTimeBucket {
 
 	txnsSet := treeset.NewWith(mempoolTxTimeOrderComparator)
 	return &FeeTimeBucket{
-		minFeeNanosPerKB: minFeeNanosPerKB,
-		maxFeeNanosPerKB: maxFeeNanosPerKB,
-		txnsSet:          txnsSet,
+		minFeeNanosPerKB:   minFeeNanosPerKB,
+		maxFeeNanosPerKB:   maxFeeNanosPerKB,
+		totalTxnsSizeBytes: 0,
+		txnsSet:            txnsSet,
 	}
 }
 
@@ -300,8 +390,16 @@ func mempoolTxTimeOrderComparator(a, b interface{}) int {
 // AddTransaction adds a transaction to the FeeTimeBucket. It returns an error if the transaction is outside the
 // FeeTimeBucket's fee range, or if the transaction hash is nil.
 func (tb *FeeTimeBucket) AddTransaction(txn *MempoolTx) error {
+	tb.mut.Lock()
+	defer tb.mut.Unlock()
+
 	if txn == nil || txn.Hash == nil {
 		return fmt.Errorf("FeeTimeBucket.AddTransaction: Transaction or transaction hash is nil")
+	}
+
+	if tb.totalTxnsSizeBytes > math.MaxUint64-txn.TxSizeBytes {
+		return fmt.Errorf("FeeTimeBucket.AddTransaction: Transaction size %d would overflow bucket size %d",
+			txn.TxSizeBytes, tb.totalTxnsSizeBytes)
 	}
 
 	if tb.minFeeNanosPerKB > txn.FeePerKB || tb.maxFeeNanosPerKB < txn.FeePerKB {
@@ -310,12 +408,17 @@ func (tb *FeeTimeBucket) AddTransaction(txn *MempoolTx) error {
 	}
 
 	tb.txnsSet.Add(txn)
+	tb.totalTxnsSizeBytes += txn.TxSizeBytes
 	return nil
 }
 
 // RemoveTransaction removes a transaction from the FeeTimeBucket.
 func (tb *FeeTimeBucket) RemoveTransaction(txn *MempoolTx) {
+	tb.mut.Lock()
+	defer tb.mut.Unlock()
+
 	tb.txnsSet.Remove(txn)
+	tb.totalTxnsSizeBytes -= txn.TxSizeBytes
 }
 
 func (tb *FeeTimeBucket) Empty() bool {
@@ -338,6 +441,19 @@ func (tb *FeeTimeBucket) GetTransactions() []*MempoolTx {
 		}
 	}
 	return txns
+}
+
+func (tb *FeeTimeBucket) Size() uint64 {
+	return tb.totalTxnsSizeBytes
+}
+
+func (tb *FeeTimeBucket) Clear() {
+	tb.mut.Lock()
+	defer tb.mut.Unlock()
+
+	tb.txnsSet.Clear()
+	tb.txnsSet = treeset.NewWith(mempoolTxTimeOrderComparator)
+	tb.totalTxnsSizeBytes = 0
 }
 
 //============================================

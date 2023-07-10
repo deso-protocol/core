@@ -13,7 +13,7 @@ func TestSanityCheckTransactionRegister(t *testing.T) {
 	require := require.New(t)
 
 	// Empty TransactionRegister
-	txnRegister := NewTransactionRegister(&DeSoTestnetParams, _testGetDefaultGlobalParams())
+	txnRegister := NewTransactionRegister(_testGetDefaultGlobalParams())
 	require.Equal(true, txnRegister.Empty())
 	it := txnRegister.GetFeeTimeIterator()
 	require.Equal(false, it.Next())
@@ -35,7 +35,7 @@ func TestSanityCheckTransactionRegister(t *testing.T) {
 
 	// TransactionRegister with no transactions and a single empty FeeTimeBucket.
 	// This should never happen but let's see what happens.
-	txnRegister = NewTransactionRegister(&DeSoTestnetParams, _testGetDefaultGlobalParams())
+	txnRegister = NewTransactionRegister(_testGetDefaultGlobalParams())
 	emptyFeeTimeBucket := NewFeeTimeBucket(0, 1000)
 	txnRegister.feeTimeBucketSet.Add(emptyFeeTimeBucket)
 	txnRegister.feeTimeBucketsByMinFeeMap[0] = emptyFeeTimeBucket
@@ -54,7 +54,7 @@ func TestTransactionRegisterWithRemoves(t *testing.T) {
 	globalParams := _testGetDefaultGlobalParams()
 	txnPool := _testGetRandomMempoolTxns(rand, globalParams.MinimumNetworkFeeNanosPerKB, feeRange, timestampRange, testCases)
 
-	txnRegister := NewTransactionRegister(&DeSoTestnetParams, globalParams)
+	txnRegister := NewTransactionRegister(globalParams)
 	_testBucketStandardRemoveTest(t, txnPool, globalParams, false,
 		func(tx *MempoolTx) {
 			require.Nil(txnRegister.AddTransaction(tx))
@@ -82,7 +82,7 @@ func TestTransactionRegisterBasic(t *testing.T) {
 	globalParams := _testGetDefaultGlobalParams()
 	txnPool := _testGetRandomMempoolTxns(rand, globalParams.MinimumNetworkFeeNanosPerKB, feeRange, timestampRange, testCases)
 
-	txnRegister := NewTransactionRegister(&DeSoTestnetParams, globalParams)
+	txnRegister := NewTransactionRegister(globalParams)
 	_testBucketStandardAddTest(t, txnPool, globalParams, false,
 		func(tx *MempoolTx) {
 			require.Nil(txnRegister.AddTransaction(tx))

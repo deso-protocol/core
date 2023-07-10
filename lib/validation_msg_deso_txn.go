@@ -8,16 +8,16 @@ import (
 )
 
 type MsgDeSoTxnValidator struct {
-	*DeSoParams
-	*GlobalParamsEntry
-	txn *MsgDeSoTxn
+	params       *DeSoParams
+	globalParams *GlobalParamsEntry
+	txn          *MsgDeSoTxn
 }
 
 func NewMsgDeSoTxnValidator(txn *MsgDeSoTxn, params *DeSoParams, globalParams *GlobalParamsEntry) *MsgDeSoTxnValidator {
 	return &MsgDeSoTxnValidator{
-		DeSoParams:        params,
-		GlobalParamsEntry: globalParams,
-		txn:               txn,
+		params:       params,
+		globalParams: globalParams,
+		txn:          txn,
 	}
 }
 
@@ -70,9 +70,9 @@ func (m *MsgDeSoTxnValidator) ValidateEncoding() error {
 
 	// TODO: Do we want a separate parameter for transaction size? Should it be a part of GlobalDeSoParams?
 	// Validate transaction size
-	if uint64(len(txnBytes)) > m.MaxBlockSizeBytes/2 {
+	if uint64(len(txnBytes)) > m.params.MaxBlockSizeBytes/2 {
 		return errors.Wrapf(RuleErrorTxnTooBig, "ValidateEncoding: Transaction size %d is greater than "+
-			"MaxBlockSizeBytes/2 %d", len(txnBytes), m.MaxBlockSizeBytes/2)
+			"MaxBlockSizeBytes/2 %d", len(txnBytes), m.params.MaxBlockSizeBytes/2)
 	}
 	if uint64(len(txnBytes)) > MaxUnconnectedTxSizeBytes {
 		return errors.Wrapf(TxErrorTooLarge, "ValidateEncoding: Transaction size %d is greater than "+
@@ -121,8 +121,8 @@ func (m *MsgDeSoTxnValidator) ValidateFormatBalanceModel(blockHeight uint64) err
 	if m.txn.TxnNonce.ExpirationBlockHeight < blockHeight {
 		return errors.Wrapf(TxErrorNonceExpired, "ValidateFormatBalanceModel: Transaction nonce has expired")
 	}
-	if m.MaxNonceExpirationBlockHeightOffset != 0 &&
-		m.txn.TxnNonce.ExpirationBlockHeight > blockHeight+m.MaxNonceExpirationBlockHeightOffset {
+	if m.globalParams.MaxNonceExpirationBlockHeightOffset != 0 &&
+		m.txn.TxnNonce.ExpirationBlockHeight > blockHeight+m.globalParams.MaxNonceExpirationBlockHeightOffset {
 		return errors.Wrapf(TxErrorNonceExpirationBlockHeightOffsetExceeded, "ValidateFormatBalanceModel: Transaction "+
 			"nonce expiration block height offset exceeded")
 	}
@@ -164,9 +164,9 @@ func (m *MsgDeSoTxnValidator) ValidateMinimalNetworkFee() error {
 	if err != nil {
 		return errors.Wrapf(err, "ValidateTransactionSanityBalanceModel: Problem computing fee per KB")
 	}
-	if feeNanosPerKb < m.MinimumNetworkFeeNanosPerKB {
+	if feeNanosPerKb < m.globalParams.MinimumNetworkFeeNanosPerKB {
 		return errors.Wrapf(RuleErrorTxnFeeBelowNetworkMinimum, "ValidateTransactionSanityBalanceModel: Transaction fee "+
-			"per KB %d is less than the network minimum %d", feeNanosPerKb, m.MinimumNetworkFeeNanosPerKB)
+			"per KB %d is less than the network minimum %d", feeNanosPerKb, m.globalParams.MinimumNetworkFeeNanosPerKB)
 	}
 	return nil
 }

@@ -1,52 +1,46 @@
 package lib
 
 import (
+	"github.com/golang/glog"
 	"github.com/pkg/errors"
-	"time"
+	"sync"
+)
+
+const (
+	MempoolPruneFactor = 20
 )
 
 type PosMempool struct {
-	bc           *Blockchain
-	txnRegister  *TransactionRegister
+	sync.RWMutex
+
+	params       *DeSoParams
 	globalParams *GlobalParamsEntry
-	ledger       *PosMempoolLedger
+
+	txnRegister *TransactionRegister
+	ledger      *PosMempoolLedger
 
 	latestBlockView *UtxoView
 	latestBlockNode *BlockNode
 }
 
-func NewDeSoMempoolPos(bc *Blockchain) *PosMempool {
-	// TODO: Think about how to handle global params.
-	globalParams := DbGetGlobalParamsEntry(bc.db, bc.snapshot)
-
+func NewDeSoMempoolPos(params *DeSoParams, globalParams *GlobalParamsEntry) *PosMempool {
 	return &PosMempool{
-		bc:           bc,
-		txnRegister:  NewTransactionRegister(bc.params, globalParams),
+		txnRegister:  NewTransactionRegister(globalParams),
+		params:       params,
 		globalParams: globalParams,
 		ledger:       NewPosMempoolLedger(),
 	}
 }
 
-func (dmp *PosMempool) AddTransaction(txn *MsgDeSoTxn) error {
-	userPk := NewPublicKey(txn.PublicKey)
-	txnFee := txn.TxnFeeNanos
+// ProcessMsgDeSoTxn validates a MsgDeSoTxn transaction and adds it to the mempool if it is valid.
+// If the mempool overflows as a result of adding the transaction, the mempool is pruned.
+func (dmp *PosMempool) ProcessMsgDeSoTxn(txn *MsgDeSoTxn) error {
 	latestBlockHeight := dmp.latestBlockNode.Height
 
-	// First, validate that the transaction is properly formatted.
-	txnValidator := NewMsgDeSoTxnValidator(txn, dmp.bc.params, dmp.globalParams)
+	// First, validate that the transaction is properly formatted according to BalanceModel.
+	txnValidator := NewMsgDeSoTxnValidator(txn, dmp.params, dmp.globalParams)
 	if err := txnValidator.ValidateTransactionSanityBalanceModel(uint64(latestBlockHeight)); err != nil {
 		return errors.Wrapf(err, "PosMempool.AddTransaction: Problem validating transaction sanity")
-	}
-
-	// Validate that the user has enough balance to cover the transaction fees.
-	if err := dmp.ledger.CheckBalanceIncrease(*userPk, txnFee, dmp.latestBlockView, latestBlockHeight); err != nil {
-		return errors.Wrapf(err, "PosMempool.AddTransaction: Problem checking balance increase for transaction with"+
-			"hash %v, fee %v", txn.Hash(), txnFee)
-	}
-
-	// Check transaction signature
-	if _, err := dmp.latestBlockView._verifySignature(txn, latestBlockHeight); err != nil {
-		return errors.Wrapf(err, "PosMempool.AddTransaction: Signature validation failed")
 	}
 
 	// Construct the MempoolTx from the MsgDeSoTxn.
@@ -55,7 +49,34 @@ func (dmp *PosMempool) AddTransaction(txn *MsgDeSoTxn) error {
 		return errors.Wrapf(err, "PosMempool.AddTransaction: Problem constructing MempoolTx")
 	}
 
-	if err = dmp.txnRegister.AddTransaction(mempoolTx); err != nil {
+	// Check transaction signature
+	if _, err := dmp.latestBlockView.VerifySignature(txn, latestBlockHeight); err != nil {
+		return errors.Wrapf(err, "PosMempool.AddTransaction: Signature validation failed")
+	}
+
+	// Add the transaction to the mempool.
+	if err := dmp.AddTransaction(mempoolTx); err != nil {
+		return errors.Wrapf(err, "PosMempool.AddTransaction: Problem adding transaction to mempool")
+	}
+	return nil
+}
+
+func (dmp *PosMempool) AddTransaction(txn *MempoolTx) error {
+	dmp.Lock()
+	defer dmp.prune()
+	defer dmp.Unlock()
+
+	userPk := NewPublicKey(txn.Tx.PublicKey)
+	txnFee := txn.Tx.TxnFeeNanos
+	latestBlockHeight := dmp.latestBlockNode.Height
+
+	// Validate that the user has enough balance to cover the transaction fees.
+	if err := dmp.ledger.CheckBalanceIncrease(*userPk, txnFee, dmp.latestBlockView, latestBlockHeight); err != nil {
+		return errors.Wrapf(err, "PosMempool.AddTransaction: Problem checking balance increase for transaction with"+
+			"hash %v, fee %v", txn.Tx.Hash(), txnFee)
+	}
+
+	if err := dmp.txnRegister.AddTransaction(txn); err != nil {
 		return errors.Wrapf(err, "PosMempool.AddTransaction: Problem adding txn to register")
 	}
 
@@ -66,6 +87,9 @@ func (dmp *PosMempool) AddTransaction(txn *MsgDeSoTxn) error {
 }
 
 func (dmp *PosMempool) RemoveTransaction(txn *MempoolTx) error {
+	dmp.Lock()
+	defer dmp.Unlock()
+
 	// First, sanity check our reserved balance.
 	userPk := NewPublicKey(txn.Tx.PublicKey)
 	if err := dmp.ledger.CheckBalanceDecrease(*userPk, txn.Fee); err != nil {
@@ -82,29 +106,60 @@ func (dmp *PosMempool) RemoveTransaction(txn *MempoolTx) error {
 	return nil
 }
 
-func NewMempoolTx(txn *MsgDeSoTxn, blockHeight uint64) (*MempoolTx, error) {
-	txnBytes, err := txn.ToBytes(false)
-	if err != nil {
-		return nil, errors.Wrapf(err, "PosMempool.GetMempoolTx: Problem serializing txn")
-	}
-	serializedLen := uint64(len(txnBytes))
+func (dmp *PosMempool) GetIterator() *FeeTimeIterator {
+	dmp.RLock()
+	defer dmp.RUnlock()
 
-	txnHash := txn.Hash()
-	if txnHash == nil {
-		return nil, errors.Errorf("PosMempool.GetMempoolTx: Problem hashing txn")
-	}
-	feePerKb, err := txn.ComputeFeePerKB()
-	if err != nil {
-		return nil, errors.Wrapf(err, "PosMempool.GetMempoolTx: Problem computing fee per KB")
-	}
-
-	return &MempoolTx{
-		Tx:          txn,
-		Hash:        txnHash,
-		TxSizeBytes: serializedLen,
-		Added:       time.Now(),
-		Height:      uint32(blockHeight),
-		Fee:         txn.TxnFeeNanos,
-		FeePerKB:    feePerKb,
-	}, nil
+	return dmp.txnRegister.GetFeeTimeIterator()
 }
+
+func (dmp *PosMempool) GetTransactions() []*MempoolTx {
+	dmp.RLock()
+	defer dmp.RUnlock()
+
+	return dmp.txnRegister.GetFeeTimeTransactions()
+}
+
+func (dmp *PosMempool) prune() error {
+	dmp.Lock()
+	defer dmp.Unlock()
+
+	if dmp.txnRegister.Size() < dmp.params.MaxMempoolPosSizeBytes {
+		return nil
+	}
+
+	pruneSizeBytes := dmp.params.MaxMempoolPosSizeBytes / MempoolPruneFactor
+	if err := dmp.txnRegister.Prune(pruneSizeBytes); err != nil {
+		return errors.Wrapf(err, "PosMempool.prune: Problem pruning mempool")
+	}
+	return nil
+}
+
+func (dmp *PosMempool) UpdateLatestBlock(blockView *UtxoView, blockNode *BlockNode) {
+	dmp.Lock()
+	defer dmp.Unlock()
+
+	dmp.latestBlockView = blockView
+	dmp.latestBlockNode = blockNode
+}
+
+func (dmp *PosMempool) UpdateGlobalParams(globalParams *GlobalParamsEntry) {
+	dmp.Lock()
+	defer dmp.Unlock()
+
+	dmp.globalParams = globalParams
+	mempoolTxns := dmp.txnRegister.GetFeeTimeTransactions()
+	newRegister := NewTransactionRegister(dmp.globalParams)
+	for _, mempoolTx := range mempoolTxns {
+		if err := newRegister.AddTransaction(mempoolTx); err != nil {
+			// FIXME: Do we want to do something else other than log here? If updating global params means that some transactions
+			// 	are no longer accepted by the TransactionRegister, we should probably just drop these transactions.
+			glog.Errorf("PosMempool.UpdateGlobalParams: Problem adding txn with hash %v to new register: %v",
+				mempoolTx.Hash.String(), err)
+		}
+	}
+	dmp.txnRegister.Clear()
+	dmp.txnRegister = newRegister
+}
+
+// Create a DB persister
