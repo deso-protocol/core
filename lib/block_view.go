@@ -118,9 +118,6 @@ type UtxoView struct {
 	// Validator mappings
 	ValidatorPKIDToValidatorEntry map[PKID]*ValidatorEntry
 
-	// The global active stake is the sum of all stake across validators who have Status = Active.
-	GlobalActiveStakeAmountNanos *uint256.Int
-
 	// Stake mappings
 	StakeMapKeyToStakeEntry map[StakeMapKey]*StakeEntry
 
@@ -242,11 +239,6 @@ func (bav *UtxoView) _ResetViewMappingsAfterFlush() {
 
 	// ValidatorEntries
 	bav.ValidatorPKIDToValidatorEntry = make(map[PKID]*ValidatorEntry)
-
-	// Global active stake across validators. We deliberately want this to initialize to nil and not zero
-	// since a zero value will overwrite an existing GlobalActiveStakeAmountNanos value in the db, whereas
-	// a nil GlobalActiveStakeAmountNanos value signifies that this value was never set.
-	bav.GlobalActiveStakeAmountNanos = nil
 
 	// StakeEntries
 	bav.StakeMapKeyToStakeEntry = make(map[StakeMapKey]*StakeEntry)
@@ -524,11 +516,6 @@ func (bav *UtxoView) CopyUtxoView() (*UtxoView, error) {
 	newView.ValidatorPKIDToValidatorEntry = make(map[PKID]*ValidatorEntry, len(bav.ValidatorPKIDToValidatorEntry))
 	for entryKey, entry := range bav.ValidatorPKIDToValidatorEntry {
 		newView.ValidatorPKIDToValidatorEntry[entryKey] = entry.Copy()
-	}
-
-	// Copy the GlobalActiveStakeAmountNanos.
-	if bav.GlobalActiveStakeAmountNanos != nil {
-		newView.GlobalActiveStakeAmountNanos = bav.GlobalActiveStakeAmountNanos.Clone()
 	}
 
 	// Copy the StakeEntries

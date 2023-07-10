@@ -1919,24 +1919,6 @@ func (bav *UtxoView) GetTopActiveValidatorsByStake(limit uint64) ([]*ValidatorEn
 	return validatorEntries[0:upperBound], nil
 }
 
-func (bav *UtxoView) GetGlobalActiveStakeAmountNanos() (*uint256.Int, error) {
-	// Read the GlobalActiveStakeAmountNanos from the UtxoView.
-	if bav.GlobalActiveStakeAmountNanos != nil {
-		return bav.GlobalActiveStakeAmountNanos.Clone(), nil
-	}
-	// If not set, read the GlobalActiveStakeAmountNanos from the db.
-	globalActiveStakeAmountNanos, err := DBGetGlobalActiveStakeAmountNanos(bav.Handle, bav.Snapshot)
-	if err != nil {
-		return nil, errors.Wrapf(err, "UtxoView.GetGlobalActiveStakeAmountNanos: ")
-	}
-	if globalActiveStakeAmountNanos == nil {
-		globalActiveStakeAmountNanos = uint256.NewInt()
-	}
-	// Cache the GlobalActiveStakeAmountNanos from the db in the UtxoView.
-	bav._setGlobalActiveStakeAmountNanos(globalActiveStakeAmountNanos)
-	return globalActiveStakeAmountNanos, nil
-}
-
 func (bav *UtxoView) JailAllInactiveValidators(blockHeight uint64) error {
 	// First, iterate through all of the !isDeleted ValidatorEntries in the UtxoView and
 	// jail any that are inactive.
@@ -2125,15 +2107,6 @@ func (bav *UtxoView) _deleteValidatorEntryMappings(validatorEntry *ValidatorEntr
 	tombstoneEntry.isDeleted = true
 	// Set the mappings to the point to the tombstone entry.
 	bav._setValidatorEntryMappings(&tombstoneEntry)
-}
-
-func (bav *UtxoView) _setGlobalActiveStakeAmountNanos(globalActiveStakeAmountNanos *uint256.Int) {
-	// This function shouldn't be called with nil.
-	if globalActiveStakeAmountNanos == nil {
-		glog.Errorf("_setGlobalActiveStakeAmountNanos: called with nil entry, this should never happen")
-		return
-	}
-	bav.GlobalActiveStakeAmountNanos = globalActiveStakeAmountNanos.Clone()
 }
 
 func (bav *UtxoView) _flushValidatorEntriesToDbWithTxn(txn *badger.Txn, blockHeight uint64) error {
