@@ -1937,6 +1937,72 @@ func (bav *UtxoView) GetGlobalActiveStakeAmountNanos() (*uint256.Int, error) {
 	return globalActiveStakeAmountNanos, nil
 }
 
+func (bav *UtxoView) JailAllInactiveValidators(blockHeight uint64) error {
+	// First, iterate through all of the !isDeleted ValidatorEntries in the UtxoView and
+	// jail any that are inactive.
+	var utxoViewValidatorPKIDs []*PKID
+	for _, validatorEntry := range bav.ValidatorPKIDToValidatorEntry {
+		// We don't want to retrieve any ValidatorEntries from the db that are present in the UtxoView.
+		utxoViewValidatorPKIDs = append(utxoViewValidatorPKIDs, validatorEntry.ValidatorPKID)
+
+		if validatorEntry.isDeleted {
+			continue
+		}
+
+		// Check if we should jail the validator.
+		shouldJailValidator, err := bav.ShouldJailValidator(validatorEntry, blockHeight)
+		if err != nil {
+			return errors.Wrapf(
+				err,
+				"JailAllInactiveValidators: problem determining if should jail validator %v: ",
+				validatorEntry.ValidatorPKID,
+			)
+		}
+
+		// If this validator should not be jailed, continue to the next validator.
+		if !shouldJailValidator {
+			continue
+		}
+
+		// If we get here, then the validator should be jailed.
+		if err = bav.JailValidator(validatorEntry); err != nil {
+			return errors.Wrapf(
+				err, "JailAllInactiveValidators: problem jailing validator %v: ", validatorEntry.ValidatorPKID,
+			)
+		}
+	}
+
+	// Second, iterate through all the ValidatorEntries in the db and jail any that are inactive.
+	dbValidatorEntries, err := DBEnumerateAllCurrentValidators(bav.Handle, utxoViewValidatorPKIDs)
+	if err != nil {
+		return errors.Wrapf(err, "JailAllInactiveValidators: problem retrieving ValidatorEntries: ")
+	}
+
+	for _, validatorEntry := range dbValidatorEntries {
+		// Check if we should jail the validator.
+		shouldJailValidator, err := bav.ShouldJailValidator(validatorEntry, blockHeight)
+		if err != nil {
+			return errors.Wrapf(
+				err, "JailAllInactiveValidators: problem determining if should jail validator %v: ", validatorEntry.ValidatorPKID,
+			)
+		}
+
+		// If this validator should not be jailed, continue to the next validator.
+		if !shouldJailValidator {
+			continue
+		}
+
+		// If we get here, then the validator should be jailed.
+		if err = bav.JailValidator(validatorEntry); err != nil {
+			return errors.Wrapf(
+				err, "JailAllInactiveValidators: problem jailing validator %v: ", validatorEntry.ValidatorPKID,
+			)
+		}
+	}
+
+	return nil
+}
+
 func (bav *UtxoView) ShouldJailValidator(validatorEntry *ValidatorEntry, blockHeight uint64) (bool, error) {
 	// Return false if we haven't switched from PoW to PoS yet. Otherwise,
 	// there would be an edge case where all validators will get jailed

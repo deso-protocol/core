@@ -213,25 +213,8 @@ func (bav *UtxoView) SnapshotCurrentValidators(snapshotAtEpochNumber uint64, blo
 		if !validatorEntry.isDeleted {
 			// We only want to snapshot !isDeleted ValidatorEntries.
 			bav._setSnapshotValidatorEntry(validatorEntry, snapshotAtEpochNumber)
-
-			// Check if we should jail the validator.
-			shouldJailValidator, err := bav.ShouldJailValidator(validatorEntry, blockHeight)
-			if err != nil {
-				return errors.Wrapf(
-					err,
-					"SnapshotValidators: problem determining if should jail validator %v: ",
-					validatorEntry.ValidatorPKID,
-				)
-			}
-			// Jail them if so.
-			if shouldJailValidator {
-				if err = bav.JailValidator(validatorEntry); err != nil {
-					return errors.Wrapf(
-						err, "SnapshotValidators: problem jailing validator %v: ", validatorEntry.ValidatorPKID,
-					)
-				}
-			}
 		}
+
 		// We don't want to retrieve any ValidatorEntries from the db that are present in the UtxoView.
 		utxoViewValidatorPKIDs = append(utxoViewValidatorPKIDs, validatorEntry.ValidatorPKID)
 	}
@@ -243,21 +226,6 @@ func (bav *UtxoView) SnapshotCurrentValidators(snapshotAtEpochNumber uint64, blo
 	for _, validatorEntry := range dbValidatorEntries {
 		bav._setSnapshotValidatorEntry(validatorEntry, snapshotAtEpochNumber)
 
-		// Check if we should jail the validator.
-		shouldJailValidator, err := bav.ShouldJailValidator(validatorEntry, blockHeight)
-		if err != nil {
-			return errors.Wrapf(
-				err, "SnapshotValidators: problem determining if should jail validator %v: ", validatorEntry.ValidatorPKID,
-			)
-		}
-		// Jail them if so.
-		if shouldJailValidator {
-			if err = bav.JailValidator(validatorEntry); err != nil {
-				return errors.Wrapf(
-					err, "SnapshotValidators: problem jailing validator %v: ", validatorEntry.ValidatorPKID,
-				)
-			}
-		}
 	}
 	return nil
 }
