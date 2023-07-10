@@ -1942,6 +1942,9 @@ func (bav *UtxoView) JailAllInactiveValidators(blockHeight uint64) error {
 	// jail any that are inactive.
 	var utxoViewValidatorPKIDs []*PKID
 	for _, validatorEntry := range bav.ValidatorPKIDToValidatorEntry {
+		// We don't want to retrieve any ValidatorEntries from the db that are present in the UtxoView.
+		utxoViewValidatorPKIDs = append(utxoViewValidatorPKIDs, validatorEntry.ValidatorPKID)
+
 		if validatorEntry.isDeleted {
 			continue
 		}
@@ -1957,16 +1960,15 @@ func (bav *UtxoView) JailAllInactiveValidators(blockHeight uint64) error {
 		}
 
 		// Jail them if so.
-		if shouldJailValidator {
-			if err = bav.JailValidator(validatorEntry); err != nil {
-				return errors.Wrapf(
-					err, "JailAllInactiveValidators: problem jailing validator %v: ", validatorEntry.ValidatorPKID,
-				)
-			}
+		if !shouldJailValidator {
+			continue
 		}
 
-		// We don't want to retrieve any ValidatorEntries from the db that are present in the UtxoView.
-		utxoViewValidatorPKIDs = append(utxoViewValidatorPKIDs, validatorEntry.ValidatorPKID)
+		if err = bav.JailValidator(validatorEntry); err != nil {
+			return errors.Wrapf(
+				err, "JailAllInactiveValidators: problem jailing validator %v: ", validatorEntry.ValidatorPKID,
+			)
+		}
 	}
 
 	// Second, iterate through all the ValidatorEntries in the db and jail any that are inactive.
@@ -1984,12 +1986,14 @@ func (bav *UtxoView) JailAllInactiveValidators(blockHeight uint64) error {
 			)
 		}
 		// Jail them if so.
-		if shouldJailValidator {
-			if err = bav.JailValidator(validatorEntry); err != nil {
-				return errors.Wrapf(
-					err, "JailAllInactiveValidators: problem jailing validator %v: ", validatorEntry.ValidatorPKID,
-				)
-			}
+		if !shouldJailValidator {
+			continue
+		}
+
+		if err = bav.JailValidator(validatorEntry); err != nil {
+			return errors.Wrapf(
+				err, "JailAllInactiveValidators: problem jailing validator %v: ", validatorEntry.ValidatorPKID,
+			)
 		}
 	}
 
