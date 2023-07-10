@@ -1959,11 +1959,12 @@ func (bav *UtxoView) JailAllInactiveValidators(blockHeight uint64) error {
 			)
 		}
 
-		// Jail them if so.
+		// If this validator should not be jailed, continue to the next validator.
 		if !shouldJailValidator {
 			continue
 		}
 
+		// If we get here, then the validator should be jailed.
 		if err = bav.JailValidator(validatorEntry); err != nil {
 			return errors.Wrapf(
 				err, "JailAllInactiveValidators: problem jailing validator %v: ", validatorEntry.ValidatorPKID,
@@ -1985,11 +1986,13 @@ func (bav *UtxoView) JailAllInactiveValidators(blockHeight uint64) error {
 				err, "JailAllInactiveValidators: problem determining if should jail validator %v: ", validatorEntry.ValidatorPKID,
 			)
 		}
-		// Jail them if so.
+
+		// If this validator should not be jailed, continue to the next validator.
 		if !shouldJailValidator {
 			continue
 		}
 
+		// If we get here, then the validator should be jailed.
 		if err = bav.JailValidator(validatorEntry); err != nil {
 			return errors.Wrapf(
 				err, "JailAllInactiveValidators: problem jailing validator %v: ", validatorEntry.ValidatorPKID,
