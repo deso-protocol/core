@@ -533,14 +533,16 @@ type DBPrefixes struct {
 	// Prefix, <SnapshotAtEpochNumber uint64> -> *GlobalParamsEntry
 	PrefixSnapshotGlobalParamsEntry []byte `prefix_id:"[85]" is_state:"true"`
 
-	// PrefixSnapshotValidatorByPKID: Retrieve a snapshot ValidatorEntry by <SnapshotAtEpochNumber, PKID>.
+	// PrefixSnapshotValidatorSetByPKID: Retrieve a ValidatorEntry from a snapshot validator set by
+	// <SnapshotAtEpochNumber, PKID>.
 	// Prefix, <SnapshotAtEpochNumber uint64>, <ValidatorPKID [33]byte> -> *ValidatorEntry
-	PrefixSnapshotValidatorByPKID []byte `prefix_id:"[86]" is_state:"true"`
+	PrefixSnapshotValidatorSetByPKID []byte `prefix_id:"[86]" is_state:"true"`
 
-	// PrefixSnapshotValidatorByStatusAndStake: Retrieve stake-ordered active ValidatorEntries by SnapshotAtEpochNumber.
+	// PrefixSnapshotValidatorSetByStake: Retrieve stake-ordered ValidatorEntries from a snapshot validator set
+	// by SnapshotAtEpochNumber.
 	// Prefix, <SnapshotAtEpochNumber uint64>, <TotalStakeAmountNanos *uint256.Int>, <ValidatorPKID [33]byte> -> nil
 	// Note: we parse the ValidatorPKID from the key and the value is nil to save space.
-	PrefixSnapshotValidatorByStake []byte `prefix_id:"[87]" is_state:"true"`
+	PrefixSnapshotValidatorSetByStake []byte `prefix_id:"[87]" is_state:"true"`
 
 	// PrefixSnapshotGlobalActiveStakeAmountNanos: Retrieve a snapshot GlobalActiveStakeAmountNanos by SnapshotAtEpochNumber.
 	// Prefix, <SnapshotAtEpochNumber uint64> -> *uint256.Int
@@ -776,10 +778,10 @@ func StatePrefixToDeSoEncoder(prefix []byte) (_isEncoder bool, _encoder DeSoEnco
 	} else if bytes.Equal(prefix, Prefixes.PrefixSnapshotGlobalParamsEntry) {
 		// prefix_id:"[85]"
 		return true, &GlobalParamsEntry{}
-	} else if bytes.Equal(prefix, Prefixes.PrefixSnapshotValidatorByPKID) {
+	} else if bytes.Equal(prefix, Prefixes.PrefixSnapshotValidatorSetByPKID) {
 		// prefix_id:"[86]"
 		return true, &ValidatorEntry{}
-	} else if bytes.Equal(prefix, Prefixes.PrefixSnapshotValidatorByStake) {
+	} else if bytes.Equal(prefix, Prefixes.PrefixSnapshotValidatorSetByStake) {
 		// prefix_id:"[87]"
 		return false, nil
 	} else if bytes.Equal(prefix, Prefixes.PrefixSnapshotGlobalActiveStakeAmountNanos) {

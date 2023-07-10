@@ -140,7 +140,7 @@ type UtxoView struct {
 	// SnapshotValidatorSet is a map of <SnapshotAtEpochNumber, ValidatorPKID> to a ValidatorEntry.
 	// It contains the snapshot value of every ValidatorEntry that makes up the validator set at
 	// the given SnapshotAtEpochNumber.
-	SnapshotValidatorSet map[SnapshotValidatorMapKey]*ValidatorEntry
+	SnapshotValidatorSet map[SnapshotValidatorSetMapKey]*ValidatorEntry
 
 	// SnapshotGlobalActiveStakeAmountNanos is a map of SnapshotAtEpochNumber to a GlobalActiveStakeAmountNanos.
 	// It contains the snapshot value of the GlobalActiveStakeAmountNanos at the given SnapshotAtEpochNumber.
@@ -261,7 +261,7 @@ func (bav *UtxoView) _ResetViewMappingsAfterFlush() {
 	bav.SnapshotGlobalParamEntries = make(map[uint64]*GlobalParamsEntry)
 
 	// SnapshotValidatorSet
-	bav.SnapshotValidatorSet = make(map[SnapshotValidatorMapKey]*ValidatorEntry)
+	bav.SnapshotValidatorSet = make(map[SnapshotValidatorSetMapKey]*ValidatorEntry)
 
 	// SnapshotGlobalActiveStakeAmountNanos
 	bav.SnapshotGlobalActiveStakeAmountNanos = make(map[uint64]*uint256.Int)
