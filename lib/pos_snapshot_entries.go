@@ -206,30 +206,6 @@ type SnapshotValidatorMapKey struct {
 	ValidatorPKID         PKID
 }
 
-func (bav *UtxoView) SnapshotCurrentValidators(snapshotAtEpochNumber uint64, blockHeight uint64) error {
-	// First, snapshot any !isDeleted ValidatorEntries in the UtxoView.
-	var utxoViewValidatorPKIDs []*PKID
-	for _, validatorEntry := range bav.ValidatorPKIDToValidatorEntry {
-		if !validatorEntry.isDeleted {
-			// We only want to snapshot !isDeleted ValidatorEntries.
-			bav._setSnapshotValidatorEntry(validatorEntry, snapshotAtEpochNumber)
-		}
-
-		// We don't want to retrieve any ValidatorEntries from the db that are present in the UtxoView.
-		utxoViewValidatorPKIDs = append(utxoViewValidatorPKIDs, validatorEntry.ValidatorPKID)
-	}
-	// Second, snapshot the ValidatorEntries in the db (skipping any in the UtxoView).
-	dbValidatorEntries, err := DBEnumerateAllCurrentValidators(bav.Handle, utxoViewValidatorPKIDs)
-	if err != nil {
-		return errors.Wrapf(err, "SnapshotValidators: problem retrieving ValidatorEntries: ")
-	}
-	for _, validatorEntry := range dbValidatorEntries {
-		bav._setSnapshotValidatorEntry(validatorEntry, snapshotAtEpochNumber)
-
-	}
-	return nil
-}
-
 func (bav *UtxoView) GetSnapshotValidatorByPKID(pkid *PKID) (*ValidatorEntry, error) {
 	// Calculate the SnapshotEpochNumber.
 	snapshotAtEpochNumber, err := bav.GetSnapshotEpochNumber()
@@ -256,12 +232,13 @@ func (bav *UtxoView) GetSnapshotValidatorByPKID(pkid *PKID) (*ValidatorEntry, er
 	return validatorEntry, nil
 }
 
-func (bav *UtxoView) GetSnapshotTopActiveValidatorsByStake(limit uint64) ([]*ValidatorEntry, error) {
+func (bav *UtxoView) GetSnapshotValidatorSetByStake(limit uint64) ([]*ValidatorEntry, error) {
 	// Calculate the SnapshotEpochNumber.
 	snapshotAtEpochNumber, err := bav.GetSnapshotEpochNumber()
 	if err != nil {
-		return nil, errors.Wrapf(err, "GetSnapshotTopActiveValidatorsByStake: problem calculating SnapshotEpochNumber: ")
+		return nil, errors.Wrapf(err, "GetSnapshotValidatorSetByStake: problem calculating SnapshotEpochNumber: ")
 	}
+
 	// Create a slice of all UtxoView ValidatorEntries to prevent pulling them from the db.
 	var utxoViewValidatorEntries []*ValidatorEntry
 	for mapKey, validatorEntry := range bav.SnapshotValidatorEntries {
@@ -276,7 +253,7 @@ func (bav *UtxoView) GetSnapshotTopActiveValidatorsByStake(limit uint64) ([]*Val
 		bav.Handle, bav.Snapshot, limit, snapshotAtEpochNumber, utxoViewValidatorEntries,
 	)
 	if err != nil {
-		return nil, errors.Wrapf(err, "GetSnapshotTopActiveValidatorsByStake: error retrieving entries from db: ")
+		return nil, errors.Wrapf(err, "GetSnapshotValidatorSetByStake: error retrieving entries from db: ")
 	}
 	// Cache top N active ValidatorEntries from the db in the UtxoView.
 	for _, validatorEntry := range dbValidatorEntries {
@@ -394,9 +371,8 @@ func DBKeyForSnapshotValidatorByPKID(validatorEntry *ValidatorEntry, snapshotAtE
 }
 
 func DBKeyForSnapshotValidatorByStake(validatorEntry *ValidatorEntry, snapshotAtEpochNumber uint64) []byte {
-	key := append([]byte{}, Prefixes.PrefixSnapshotValidatorByStatusAndStake...)
+	key := append([]byte{}, Prefixes.PrefixSnapshotValidatorByStake...)
 	key = append(key, EncodeUint64(snapshotAtEpochNumber)...)
-	key = append(key, EncodeUint8(uint8(validatorEntry.Status()))...)
 	key = append(key, FixedWidthEncodeUint256(validatorEntry.TotalStakeAmountNanos)...)
 	key = append(key, validatorEntry.ValidatorPKID.ToBytes()...)
 	return key
@@ -454,9 +430,8 @@ func DBGetSnapshotTopActiveValidatorsByStake(
 	}
 
 	// Retrieve top N active ValidatorEntry keys by stake.
-	key := append([]byte{}, Prefixes.PrefixSnapshotValidatorByStatusAndStake...)
+	key := append([]byte{}, Prefixes.PrefixSnapshotValidatorByStake...)
 	key = append(key, EncodeUint64(snapshotAtEpochNumber)...)
-	key = append(key, EncodeUint8(uint8(ValidatorStatusActive))...)
 	keysFound, _, err := EnumerateKeysForPrefixWithLimitOffsetOrder(
 		handle, key, int(limit), nil, true, validatorKeysToSkip,
 	)

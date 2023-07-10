@@ -155,7 +155,7 @@ func TestRunEpochCompleteHook(t *testing.T) {
 		}
 
 		// Test SnapshotTopActiveValidatorsByStake is empty.
-		validatorEntries, err := utxoView().GetSnapshotTopActiveValidatorsByStake(10)
+		validatorEntries, err := utxoView().GetSnapshotValidatorSetByStake(10)
 		require.NoError(t, err)
 		require.Empty(t, validatorEntries)
 
@@ -303,7 +303,7 @@ func TestRunEpochCompleteHook(t *testing.T) {
 		}
 
 		// Test SnapshotTopActiveValidatorsByStake is populated.
-		validatorEntries, err := utxoView().GetSnapshotTopActiveValidatorsByStake(10)
+		validatorEntries, err := utxoView().GetSnapshotValidatorSetByStake(10)
 		require.NoError(t, err)
 		require.Len(t, validatorEntries, 7)
 		require.Equal(t, validatorEntries[0].ValidatorPKID, m6PKID)
@@ -397,7 +397,7 @@ func TestRunEpochCompleteHook(t *testing.T) {
 		// Test snapshotting changing validator set.
 
 		// m0 unregisters as a validator.
-		snapshotValidatorEntries, err := utxoView().GetSnapshotTopActiveValidatorsByStake(10)
+		snapshotValidatorEntries, err := utxoView().GetSnapshotValidatorSetByStake(10)
 		require.NoError(t, err)
 		require.Len(t, snapshotValidatorEntries, 7)
 
@@ -408,7 +408,7 @@ func TestRunEpochCompleteHook(t *testing.T) {
 		_runOnEpochCompleteHook()
 
 		// m0 is still in the snapshot validator set.
-		snapshotValidatorEntries, err = utxoView().GetSnapshotTopActiveValidatorsByStake(10)
+		snapshotValidatorEntries, err = utxoView().GetSnapshotValidatorSetByStake(10)
 		require.NoError(t, err)
 		require.Len(t, snapshotValidatorEntries, 7)
 
@@ -416,7 +416,7 @@ func TestRunEpochCompleteHook(t *testing.T) {
 		_runOnEpochCompleteHook()
 
 		// m0 is dropped from the snapshot validator set.
-		snapshotValidatorEntries, err = utxoView().GetSnapshotTopActiveValidatorsByStake(10)
+		snapshotValidatorEntries, err = utxoView().GetSnapshotValidatorSetByStake(10)
 		require.NoError(t, err)
 		require.Len(t, snapshotValidatorEntries, 6)
 	}
@@ -446,7 +446,7 @@ func TestRunEpochCompleteHook(t *testing.T) {
 		}
 
 		getNumSnapshotActiveValidators := func() int {
-			snapshotValidatorEntries, err := utxoView().GetSnapshotTopActiveValidatorsByStake(10)
+			snapshotValidatorEntries, err := utxoView().GetSnapshotValidatorSetByStake(10)
 			require.NoError(t, err)
 			return len(snapshotValidatorEntries)
 		}
@@ -455,12 +455,6 @@ func TestRunEpochCompleteHook(t *testing.T) {
 			validatorEntry, err := utxoView().GetValidatorByPKID(validatorPKID)
 			require.NoError(t, err)
 			return validatorEntry
-		}
-
-		getSnapshotValidator := func(validatorPKID *PKID) *ValidatorEntry {
-			snapshotValidatorEntry, err := utxoView().GetSnapshotValidatorByPKID(validatorPKID)
-			require.NoError(t, err)
-			return snapshotValidatorEntry
 		}
 
 		// In epoch 9, all registered validators have Status = Active.
@@ -508,11 +502,10 @@ func TestRunEpochCompleteHook(t *testing.T) {
 		_runOnEpochCompleteHook()
 
 		// In epoch 14, all current registered validators have Status = Jailed.
-		// In snapshot 12, all snapshot registered validators have Status = Jailed.
+		// In snapshot 12, the validator set is empty because all validators have Status = Jailed.
+
 		require.Equal(t, getCurrentEpochNumber(), 14)
 		require.Empty(t, getNumCurrentActiveValidators())
 		require.Empty(t, getNumSnapshotActiveValidators())
-		require.Equal(t, getSnapshotValidator(m6PKID).Status(), ValidatorStatusJailed)
-		require.Equal(t, getSnapshotValidator(m6PKID).JailedAtEpochNumber, uint64(11))
 	}
 }

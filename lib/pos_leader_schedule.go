@@ -2,6 +2,7 @@ package lib
 
 import (
 	"crypto/sha256"
+
 	"github.com/holiman/uint256"
 	"github.com/pkg/errors"
 )
@@ -14,13 +15,10 @@ func (bav *UtxoView) GenerateLeaderSchedule() ([]*PKID, error) {
 	}
 
 	// Retrieve the SnapshotGlobalParamsEntry.LeaderScheduleMaxNumValidators.
-	snapshotGlobalParamsEntry, err := bav.GetSnapshotGlobalParamsEntry()
-	if err != nil {
-		return nil, errors.Wrapf(err, "UtxoView.GenerateLeaderSchedule: error retrieving SnapshotGlobalParamsEntry: ")
-	}
+	currentGlobalParamsEntry := bav.GetCurrentGlobalParamsEntry()
 
 	// Retrieve top, active validators ordered by stake.
-	validatorEntries, err := bav.GetTopActiveValidatorsByStake(snapshotGlobalParamsEntry.LeaderScheduleMaxNumValidators)
+	validatorEntries, err := bav.GetTopActiveValidatorsByStake(currentGlobalParamsEntry.LeaderScheduleMaxNumValidators)
 	if err != nil {
 		return nil, errors.Wrapf(err, "UtxoView.GenerateLeaderSchedule: error retrieving top ValidatorEntries: ")
 	}
