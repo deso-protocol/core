@@ -40,7 +40,7 @@ func (bav *UtxoView) IsLastBlockInCurrentEpoch(blockHeight uint64) (bool, error)
 // Step 2: Transition to the next epoch. This runs all state-mutating operations that need to be run for
 // the epoch transition. We always perform state-mutating operations after creating snapshots. This way,
 // the snapshot created at the end of epoch n always reflects the state of the view at the end of epoch n.
-// And it does not reflect the state changes that occur AFTER epoch n ends and before epoch n-1 BEGINS.
+// And it does not reflect the state changes that occur AFTER epoch n ends and before epoch n+1 BEGINS.
 // 1. Jail all inactive validators from the current snapshot validator set.
 // 2. Compute the final block height for the next epoch.
 // 3. Transition CurrentEpochEntry to the next epoch.
