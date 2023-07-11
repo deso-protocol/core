@@ -165,7 +165,7 @@ func (bav *UtxoView) FlushToDbWithTxn(txn *badger.Txn, blockHeight uint64) error
 	if err := bav._flushSnapshotValidatorSetToDbWithTxn(txn, blockHeight); err != nil {
 		return err
 	}
-	if err := bav._flushSnapshotGlobalActiveStakeAmountNanosToDbWithTxn(txn, blockHeight); err != nil {
+	if err := bav._flushSnapshotValidatorSetTotalStakeAmountNanosToDbWithTxn(txn, blockHeight); err != nil {
 		return err
 	}
 	if err := bav._flushSnapshotLeaderScheduleToDbWithTxn(txn, blockHeight); err != nil {
