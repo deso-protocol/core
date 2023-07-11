@@ -184,7 +184,7 @@ func AppendToMemLog(t *testing.T, prefix string) {
 	f, err := os.OpenFile("mem.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err == nil {
 		defer f.Close()
-		if _, err := f.WriteString(fmt.Sprintf("%s\t%s\tMemory Usage\t%v\n", prefix, t.Name(), float64(mem.Alloc)/float64(1e9))); err != nil {
+		if _, err := f.WriteString(fmt.Sprintf("%s\t%s\tMemory Usage\t%v\tTotal Alloc\t%v\n", prefix, t.Name(), float64(mem.Alloc)/float64(1e9), float64(mem.TotalAlloc)/float64(1e9))); err != nil {
 			log.Println(err)
 		}
 	}
@@ -246,7 +246,7 @@ func NewLowDifficultyBlockchainWithParamsAndDb(t *testing.T, params *DeSoParams,
 	// key have some DeSo
 	var snap *Snapshot
 	if !usePostgres {
-		snap, err, _ = NewSnapshot(db, dbDir, SnapshotBlockHeightPeriod, false, false, &testParams, false)
+		snap, err, _ = NewSnapshot(db, dbDir, SnapshotBlockHeightPeriod, false, false, &testParams, false, true)
 		if err != nil {
 			log.Fatal(err)
 		}
@@ -333,7 +333,7 @@ func NewTestMiner(t *testing.T, chain *Blockchain, params *DeSoParams, isSender 
 	mempool := NewDeSoMempool(
 		chain, 0, /* rateLimitFeeRateNanosPerKB */
 		0 /* minFeeRateNanosPerKB */, "", true,
-		"" /*dataDir*/, "")
+		"" /*dataDir*/, "", true)
 	minerPubKeys := []string{}
 	if isSender {
 		minerPubKeys = append(minerPubKeys, senderPkString)
