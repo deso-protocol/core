@@ -418,7 +418,7 @@ func (tes *transactionTestSuite) InitializeChainAndGetTestMeta(useBadger bool, u
 			pgPort = config.testPostgresPort
 		}
 		chain, params, embpg = NewLowDifficultyBlockchainWithParamsAndDb(tes.t, &DeSoTestnetParams,
-			true, pgPort)
+			true, pgPort, false)
 		mempool, miner = NewTestMiner(config.t, chain, params, true /*isSender*/)
 		pg = chain.postgres
 		db = chain.db
@@ -1431,7 +1431,7 @@ func TestUpdateGlobalParams(t *testing.T) {
 		txn := _assembleBasicTransferTxnFullySigned(t, chain, 200, 200, m0Pub, moneyPkString, m0Priv, mempool)
 		txn.TxnNonce.ExpirationBlockHeight = uint64(chain.blockTip().Height + 1 + 5001)
 		_signTxn(t, txn, m0Priv)
-		newMP := NewDeSoMempool(chain, 0, 0, "", true, "", "")
+		newMP := NewDeSoMempool(chain, 0, 0, "", true, "", "", true)
 		_, _, err = newMP.TryAcceptTransaction(txn, false, false)
 		require.Error(err)
 		require.Contains(err.Error(), TxErrorNonceExpirationBlockHeightOffsetExceeded)

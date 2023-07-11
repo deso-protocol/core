@@ -77,7 +77,7 @@ func GetTestBadgerDb() (_db *badger.DB, _dir string) {
 	}
 
 	// Open a badgerdb in a temporary directory.
-	opts := PerformanceBadgerOptions(dir)
+	opts := DefaultBadgerOptions(dir)
 	opts.Dir = dir
 	opts.ValueDir = dir
 	// Turn off logging for tests.
@@ -196,7 +196,7 @@ func TestInitDbWithGenesisBlock(t *testing.T) {
 	db, _ := GetTestBadgerDb()
 	defer CleanUpBadger(db)
 
-	err := InitDbWithDeSoGenesisBlock(&DeSoTestnetParams, db, nil, nil)
+	err := InitDbWithDeSoGenesisBlock(&DeSoTestnetParams, db, nil, nil, nil)
 	require.NoError(err)
 
 	// Check the block index.
