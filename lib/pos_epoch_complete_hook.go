@@ -83,7 +83,8 @@ func (bav *UtxoView) RunEpochCompleteHook(blockHeight uint64) error {
 		bav._setSnapshotValidatorSetEntry(validatorEntry, currentEpochEntry.EpochNumber)
 	}
 
-	// Snapshot the current validator set's total stake.
+	// Snapshot the current validator set's total stake. Note, the validator set is already filtered to the top n
+	// active validators for the epoch. The total stake is the sum of all of the active validators' stakes.
 	globalActiveStakeAmountNanos := SumValidatorEntriesTotalStakeAmountNanos(validatorSet)
 	bav._setSnapshotGlobalActiveStakeAmountNanos(globalActiveStakeAmountNanos, currentEpochEntry.EpochNumber)
 
