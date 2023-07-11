@@ -80,7 +80,7 @@ func (bav *UtxoView) RunEpochCompleteHook(blockHeight uint64) error {
 		return errors.Wrapf(err, "RunEpochCompleteHook: error retrieving top ValidatorEntries: ")
 	}
 	for _, validatorEntry := range validatorSet {
-		bav._setSnapshotValidatorEntry(validatorEntry, currentEpochEntry.EpochNumber)
+		bav._setSnapshotValidatorSetEntry(validatorEntry, currentEpochEntry.EpochNumber)
 	}
 
 	// Snapshot the current GlobalActiveStakeAmountNanos.

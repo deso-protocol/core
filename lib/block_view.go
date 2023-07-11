@@ -137,9 +137,10 @@ type UtxoView struct {
 	// It contains the snapshot value of the GlobalParamsEntry at the given SnapshotAtEpochNumber.
 	SnapshotGlobalParamEntries map[uint64]*GlobalParamsEntry
 
-	// SnapshotValidatorEntries is a map of <SnapshotAtEpochNumber, ValidatorPKID> to a ValidatorEntry.
-	// It contains the snapshot value of a ValidatorEntry at the given SnapshotAtEpochNumber.
-	SnapshotValidatorEntries map[SnapshotValidatorMapKey]*ValidatorEntry
+	// SnapshotValidatorSet is a map of <SnapshotAtEpochNumber, ValidatorPKID> to a ValidatorEntry.
+	// It contains the snapshot value of every ValidatorEntry that makes up the validator set at
+	// the given SnapshotAtEpochNumber.
+	SnapshotValidatorSet map[SnapshotValidatorSetMapKey]*ValidatorEntry
 
 	// SnapshotGlobalActiveStakeAmountNanos is a map of SnapshotAtEpochNumber to a GlobalActiveStakeAmountNanos.
 	// It contains the snapshot value of the GlobalActiveStakeAmountNanos at the given SnapshotAtEpochNumber.
@@ -259,8 +260,8 @@ func (bav *UtxoView) _ResetViewMappingsAfterFlush() {
 	// SnapshotGlobalParamEntries
 	bav.SnapshotGlobalParamEntries = make(map[uint64]*GlobalParamsEntry)
 
-	// SnapshotValidatorEntries
-	bav.SnapshotValidatorEntries = make(map[SnapshotValidatorMapKey]*ValidatorEntry)
+	// SnapshotValidatorSet
+	bav.SnapshotValidatorSet = make(map[SnapshotValidatorSetMapKey]*ValidatorEntry)
 
 	// SnapshotGlobalActiveStakeAmountNanos
 	bav.SnapshotGlobalActiveStakeAmountNanos = make(map[uint64]*uint256.Int)
@@ -559,9 +560,9 @@ func (bav *UtxoView) CopyUtxoView() (*UtxoView, error) {
 		newView.SnapshotGlobalParamEntries[epochNumber] = globalParamsEntry.Copy()
 	}
 
-	// Copy the SnapshotValidatorEntries
-	for mapKey, validatorEntry := range bav.SnapshotValidatorEntries {
-		newView.SnapshotValidatorEntries[mapKey] = validatorEntry.Copy()
+	// Copy the SnapshotValidatorSet
+	for mapKey, validatorEntry := range bav.SnapshotValidatorSet {
+		newView.SnapshotValidatorSet[mapKey] = validatorEntry.Copy()
 	}
 
 	// Copy the SnapshotGlobalActiveStakeAmountNanos
