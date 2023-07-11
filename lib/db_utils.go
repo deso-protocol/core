@@ -9663,6 +9663,10 @@ func PerformanceBadgerOptions(dir string) badger.Options {
 	return opts
 }
 
+func DefaultBadgerOptions(dir string) badger.Options {
+	return badger.DefaultOptions(dir)
+}
+
 // ---------------------------------------------
 // Associations
 // ---------------------------------------------
