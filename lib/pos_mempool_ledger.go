@@ -67,3 +67,11 @@ func (pml *PosMempoolLedger) DecreaseBalance(publicKey PublicKey, amount uint64)
 
 	pml.reservedBalances[publicKey] = reservedBalance - amount
 }
+
+func (pml *PosMempoolLedger) GetReservedBalance(publicKey PublicKey) uint64 {
+	reservedBalance, exists := pml.reservedBalances[publicKey]
+	if !exists {
+		return 0
+	}
+	return reservedBalance
+}

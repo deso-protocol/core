@@ -63,7 +63,7 @@ func (dmp *PosMempool) ProcessMsgDeSoTxn(txn *MsgDeSoTxn) error {
 
 func (dmp *PosMempool) AddTransaction(txn *MempoolTx) error {
 	dmp.Lock()
-	defer dmp.prune()
+	defer GlogIfError(dmp.prune(), "PosMempool.AddTransaction: Problem pruning mempool")
 	defer dmp.Unlock()
 
 	userPk := NewPublicKey(txn.Tx.PublicKey)
@@ -129,9 +129,12 @@ func (dmp *PosMempool) prune() error {
 	}
 
 	pruneSizeBytes := dmp.params.MaxMempoolPosSizeBytes / MempoolPruneFactor
-	if err := dmp.txnRegister.Prune(pruneSizeBytes); err != nil {
+	prunedTxns, err := dmp.txnRegister.Prune(pruneSizeBytes)
+	if err != nil {
 		return errors.Wrapf(err, "PosMempool.prune: Problem pruning mempool")
 	}
+	// TODO: Log pruned txns
+	_ = prunedTxns
 	return nil
 }
 
@@ -152,8 +155,9 @@ func (dmp *PosMempool) UpdateGlobalParams(globalParams *GlobalParamsEntry) {
 	newRegister := NewTransactionRegister(dmp.globalParams)
 	for _, mempoolTx := range mempoolTxns {
 		if err := newRegister.AddTransaction(mempoolTx); err != nil {
-			// FIXME: Do we want to do something else other than log here? If updating global params means that some transactions
-			// 	are no longer accepted by the TransactionRegister, we should probably just drop these transactions.
+			// FIXME: Updating global params can mean that some transaction are no longer accepted in the new
+			// 	TransactionRegister. What should we do with these txns? Currently, we just log an error. Maybe we
+			//	 should make it a single, lower-priority log message containing hashes of all dropped txns.
 			glog.Errorf("PosMempool.UpdateGlobalParams: Problem adding txn with hash %v to new register: %v",
 				mempoolTx.Hash.String(), err)
 		}

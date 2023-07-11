@@ -212,24 +212,24 @@ func (tr *TransactionRegister) GetFeeTimeTransactions() []*MempoolTx {
 }
 
 // Prune removes transactions from the register until a desired amount of space is freed.
-func (tr *TransactionRegister) Prune(minBytesPruned uint64) error {
+func (tr *TransactionRegister) Prune(minBytesPruned uint64) (_prunedTxns []*MempoolTx, _err error) {
 	tr.mut.Lock()
 	defer tr.mut.Unlock()
 
 	// If the register is empty, return.
 	if tr.Empty() {
-		return nil
+		return nil, nil
 	}
 
 	prunedBytes := uint64(0)
-	transactionToPrune := []*MempoolTx{}
+	prunedTxns := []*MempoolTx{}
 
 	it := tr.feeTimeBucketSet.Iterator()
 	it.End()
 	for it.Prev() {
 		bucket, ok := it.Value().(*FeeTimeBucket)
 		if !ok {
-			return fmt.Errorf("TransactionRegister.Prune: Error casting value of FeeTimeBucket")
+			return nil, fmt.Errorf("TransactionRegister.Prune: Error casting value of FeeTimeBucket")
 		}
 
 		bucketIt := bucket.GetIterator()
@@ -237,14 +237,14 @@ func (tr *TransactionRegister) Prune(minBytesPruned uint64) error {
 		for bucketIt.Prev() {
 			txn, ok := bucketIt.Value().(*MempoolTx)
 			if !ok {
-				return fmt.Errorf("TransactionRegister.Prune: Error casting value of MempoolTx")
+				return nil, fmt.Errorf("TransactionRegister.Prune: Error casting value of MempoolTx")
 			}
 			if prunedBytes > math.MaxUint64+txn.TxSizeBytes {
-				return fmt.Errorf("TransactionRegister.Prune: Error pruning %v bytes from register: "+
+				return nil, fmt.Errorf("TransactionRegister.Prune: Error pruning %v bytes from register: "+
 					"prunedBytes %v exceeds max uint64", minBytesPruned, prunedBytes)
 			}
 			if prunedBytes+txn.TxSizeBytes <= minBytesPruned {
-				transactionToPrune = append(transactionToPrune, txn)
+				prunedTxns = append(prunedTxns, txn)
 				prunedBytes += txn.TxSizeBytes
 				continue
 			}
@@ -256,12 +256,12 @@ func (tr *TransactionRegister) Prune(minBytesPruned uint64) error {
 		}
 	}
 
-	for _, txn := range transactionToPrune {
+	for _, txn := range prunedTxns {
 		if err := tr.RemoveTransaction(txn); err != nil {
-			return errors.Wrapf(err, "TransactionRegister.Prune: Error removing transaction %v", txn.Hash.String())
+			return nil, errors.Wrapf(err, "TransactionRegister.Prune: Error removing transaction %v", txn.Hash.String())
 		}
 	}
-	return nil
+	return prunedTxns, nil
 }
 
 // FeeTimeIterator is an iterator over the transactions in a TransactionRegister. The iterator goes through all transactions
