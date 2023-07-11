@@ -1226,23 +1226,6 @@ func (bav *UtxoView) _connectStake(
 	// 4. Set the new ValidatorEntry.
 	bav._setValidatorEntryMappings(currentValidatorEntry)
 
-	// Increase the GlobalActiveStakeAmountNanos if the validator is active.
-	var prevGlobalActiveStakeAmountNanos *uint256.Int
-	if currentValidatorEntry.Status() == ValidatorStatusActive {
-		// Retrieve the existing GlobalActiveStakeAmountNanos.
-		// The PrevGlobalActiveStakeAmountNanos will be restored if we disconnect this transaction.
-		prevGlobalActiveStakeAmountNanos, err = bav.GetGlobalActiveStakeAmountNanos()
-		if err != nil {
-			return 0, 0, nil, errors.Wrapf(err, "_connectStake: error retrieving GlobalActiveStakeAmountNanos: ")
-		}
-		globalActiveStakeAmountNanos, err := SafeUint256().Add(prevGlobalActiveStakeAmountNanos, txMeta.StakeAmountNanos)
-		if err != nil {
-			return 0, 0, nil, errors.Wrapf(err, "_connectStake: error adding StakeAmountNanos to GlobalActiveStakeAmountNanos: ")
-		}
-		// Set the new GlobalActiveStakeAmountNanos.
-		bav._setGlobalActiveStakeAmountNanos(globalActiveStakeAmountNanos)
-	}
-
 	// Add the StakeAmountNanos to TotalOutput. The coins being staked are already
 	// part of the TotalInput. But they are not burned, so they are an implicit
 	// output even though they do not go to a specific public key's balance.
@@ -1253,10 +1236,9 @@ func (bav *UtxoView) _connectStake(
 
 	// Create a UTXO operation
 	utxoOpForTxn := &UtxoOperation{
-		Type:                             OperationTypeStake,
-		PrevValidatorEntry:               prevValidatorEntry,
-		PrevGlobalActiveStakeAmountNanos: prevGlobalActiveStakeAmountNanos,
-		PrevStakeEntries:                 prevStakeEntries,
+		Type:               OperationTypeStake,
+		PrevValidatorEntry: prevValidatorEntry,
+		PrevStakeEntries:   prevStakeEntries,
 	}
 	if err = bav.SanityCheckStakeTxn(
 		transactorPKIDEntry.PKID, utxoOpForTxn, txMeta.StakeAmountNanos, txn.TxnFeeNanos, prevBalanceNanos,
@@ -1339,11 +1321,6 @@ func (bav *UtxoView) _disconnectStake(
 		return fmt.Errorf("_disconnectStake: more than one prev StakeEntry found for %v", currentTxn.PublicKey)
 	} else if len(operationData.PrevStakeEntries) == 1 {
 		bav._setStakeEntryMappings(operationData.PrevStakeEntries[0])
-	}
-
-	// Restore the PrevGlobalActiveStakeAmountNanos, if exists.
-	if operationData.PrevGlobalActiveStakeAmountNanos != nil {
-		bav._setGlobalActiveStakeAmountNanos(operationData.PrevGlobalActiveStakeAmountNanos)
 	}
 
 	// Disconnect the BasicTransfer. Disconnecting the BasicTransfer also returns
@@ -1466,22 +1443,6 @@ func (bav *UtxoView) _connectUnstake(
 	// 4. Set the new ValidatorEntry.
 	bav._setValidatorEntryMappings(currentValidatorEntry)
 
-	// Decrease the GlobalActiveStakeAmountNanos if the validator is active.
-	var prevGlobalActiveStakeAmountNanos *uint256.Int
-	if currentValidatorEntry.Status() == ValidatorStatusActive {
-		// 1. Retrieve the existing GlobalActiveStakeAmountNanos. This will be restored if we disconnect this txn.
-		prevGlobalActiveStakeAmountNanos, err = bav.GetGlobalActiveStakeAmountNanos()
-		if err != nil {
-			return 0, 0, nil, errors.Wrapf(err, "_connectUnstake: error retrieving GlobalActiveStakeAmountNanos: ")
-		}
-		globalActiveStakeAmountNanos, err := SafeUint256().Sub(prevGlobalActiveStakeAmountNanos, txMeta.UnstakeAmountNanos)
-		if err != nil {
-			return 0, 0, nil, errors.Wrapf(err, "_connectUnstake: error subtracting UnstakeAmountNanos from GlobalActiveStakeAmountNanos: ")
-		}
-		// 2. Set the new GlobalActiveStakeAmountNanos.
-		bav._setGlobalActiveStakeAmountNanos(globalActiveStakeAmountNanos)
-	}
-
 	// Retrieve the CurrentEpochNumber.
 	currentEpochNumber, err := bav.GetCurrentEpochNumber()
 	if err != nil {
@@ -1532,11 +1493,10 @@ func (bav *UtxoView) _connectUnstake(
 
 	// Create a UTXO operation.
 	utxoOpForTxn := &UtxoOperation{
-		Type:                             OperationTypeUnstake,
-		PrevValidatorEntry:               prevValidatorEntry,
-		PrevGlobalActiveStakeAmountNanos: prevGlobalActiveStakeAmountNanos,
-		PrevStakeEntries:                 prevStakeEntries,
-		PrevLockedStakeEntries:           prevLockedStakeEntries,
+		Type:                   OperationTypeUnstake,
+		PrevValidatorEntry:     prevValidatorEntry,
+		PrevStakeEntries:       prevStakeEntries,
+		PrevLockedStakeEntries: prevLockedStakeEntries,
 	}
 	if err = bav.SanityCheckUnstakeTxn(transactorPKIDEntry.PKID, utxoOpForTxn, txMeta.UnstakeAmountNanos); err != nil {
 		return 0, 0, nil, errors.Wrapf(err, "_connectUnstake: ")
@@ -1619,11 +1579,6 @@ func (bav *UtxoView) _disconnectUnstake(
 		return fmt.Errorf("_disconnectUnstake: more than one prev StakeEntry found for %v", currentTxn.PublicKey)
 	}
 	bav._setStakeEntryMappings(operationData.PrevStakeEntries[0])
-
-	// Restore the PrevGlobalActiveStakeAmountNanos, if exists.
-	if operationData.PrevGlobalActiveStakeAmountNanos != nil {
-		bav._setGlobalActiveStakeAmountNanos(operationData.PrevGlobalActiveStakeAmountNanos)
-	}
 
 	// Retrieve the CurrentEpochNumber.
 	currentEpochNumber, err := bav.GetCurrentEpochNumber()
@@ -2045,28 +2000,6 @@ func (bav *UtxoView) SanityCheckStakeTxn(
 		return errors.New("SanityCheckStakeTxn: StakeAmountNanos increase does not match")
 	}
 
-	// Validate GlobalActiveStakeAmountNanos increase if validator is active.
-	if currentValidatorEntry.Status() == ValidatorStatusActive {
-		if utxoOp.PrevGlobalActiveStakeAmountNanos == nil {
-			return errors.New("SanityCheckStakeTxn: nil PrevGlobalActiveStakeAmountNanos provided")
-		}
-		currentGlobalActiveStakeAmountNanos, err := bav.GetGlobalActiveStakeAmountNanos()
-		if err != nil {
-			return errors.Wrapf(err, "SanityCheckStakeTxn: error retrieving CurrentGlobalActiveStakeAmountNanos: ")
-		}
-		globalActiveStakeAmountNanosIncrease, err := SafeUint256().Sub(
-			currentGlobalActiveStakeAmountNanos, utxoOp.PrevGlobalActiveStakeAmountNanos,
-		)
-		if err != nil {
-			return errors.Wrapf(err, "SanityCheckStakeTxn: error calculating GlobalActiveStakeAmountNanos increase: ")
-		}
-		if !globalActiveStakeAmountNanosIncrease.Eq(amountNanos) {
-			return errors.New("SanityCheckStakeTxn: GlobalActiveStakeAmountNanos increase does not match")
-		}
-	} else if utxoOp.PrevGlobalActiveStakeAmountNanos != nil {
-		return errors.New("SanityCheckStakeTxn: non-nil PrevGlobalActiveStakeAmountNanos provided for inactive validator, this should never happen")
-	}
-
 	// Validate TransactorBalance decrease.
 	// PrevTransactorBalanceNanos = CurrentTransactorBalanceNanos + AmountNanos + FeeNanos
 	// PrevTransactorBalanceNanos - CurrentTransactorBalanceNanos - FeeNanos = AmountNanos
@@ -2160,29 +2093,6 @@ func (bav *UtxoView) SanityCheckUnstakeTxn(transactorPKID *PKID, utxoOp *UtxoOpe
 	}
 	if !lockedStakeEntryLockedAmountNanosIncrease.Eq(amountNanos) {
 		return errors.New("SanityCheckUnstakeTxn: LockedAmountNanos increase does not match")
-	}
-
-	// Validate GlobalActiveStakeAmountNanos decrease if validator is active.
-	if currentValidatorEntry.Status() == ValidatorStatusActive {
-		if utxoOp.PrevGlobalActiveStakeAmountNanos == nil {
-			return errors.New("SanityCheckUnstakeTxn: nil PrevGlobalActiveStakeAmountNanos provided")
-		}
-		currentGlobalActiveStakeAmountNanos, err := bav.GetGlobalActiveStakeAmountNanos()
-		if err != nil {
-			return errors.Wrapf(err, "SanityCheckUnstakeTxn: error retrieving CurrentGlobalActiveStakeAmountNanos: ")
-		}
-		if currentGlobalActiveStakeAmountNanos == nil {
-			return errors.New("SanityCheckUnstakeTxn: no CurrentGlobalActiveStakeAmountNanos found")
-		}
-		globalActiveStakeAmountNanosDecrease, err := SafeUint256().Sub(utxoOp.PrevGlobalActiveStakeAmountNanos, currentGlobalActiveStakeAmountNanos)
-		if err != nil {
-			return errors.Wrapf(err, "SanityCheckUnstakeTxn: error calculating GlobalActiveStakeAmountNanos decrease: ")
-		}
-		if !globalActiveStakeAmountNanosDecrease.Eq(amountNanos) {
-			return errors.New("SanityCheckUnstakeTxn: GlobalActiveStakeAmountNanos decrease does not match")
-		}
-	} else if utxoOp.PrevGlobalActiveStakeAmountNanos != nil {
-		return errors.New("SanityCheckUnstakeTxn: non-nil PrevGlobalActiveStakeAmountNanos provided for inactive validator, this should never happen")
 	}
 
 	return nil

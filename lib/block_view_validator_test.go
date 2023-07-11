@@ -24,7 +24,6 @@ func _testValidatorRegistration(t *testing.T, flushToDB bool) {
 	var registerMetadata *RegisterAsValidatorMetadata
 	var validatorEntry *ValidatorEntry
 	var validatorEntries []*ValidatorEntry
-	var globalActiveStakeAmountNanos *uint256.Int
 	var err error
 
 	// Initialize balance model fork heights.
@@ -229,12 +228,6 @@ func _testValidatorRegistration(t *testing.T, flushToDB bool) {
 		require.Empty(t, validatorEntries)
 	}
 	{
-		// Query: retrieve GlobalActiveStakeAmountNanos
-		globalActiveStakeAmountNanos, err = utxoView().GetGlobalActiveStakeAmountNanos()
-		require.NoError(t, err)
-		require.Equal(t, globalActiveStakeAmountNanos, uint256.NewInt())
-	}
-	{
 		// Happy path: update a validator
 		votingPublicKey, votingAuthorization := _generateVotingPublicKeyAndAuthorization(t, m0PkBytes)
 		registerMetadata = &RegisterAsValidatorMetadata{
@@ -286,12 +279,6 @@ func _testValidatorRegistration(t *testing.T, flushToDB bool) {
 		validatorEntries, err = utxoView().GetTopActiveValidatorsByStake(1)
 		require.NoError(t, err)
 		require.Empty(t, validatorEntries)
-	}
-	{
-		// Query: retrieve GlobalActiveStakeAmountNanos
-		globalActiveStakeAmountNanos, err = utxoView().GetGlobalActiveStakeAmountNanos()
-		require.NoError(t, err)
-		require.Equal(t, globalActiveStakeAmountNanos, uint256.NewInt())
 	}
 
 	// Flush mempool to the db and test rollbacks.
@@ -1300,7 +1287,6 @@ func _testUnregisterAsValidator(t *testing.T, flushToDB bool) {
 	var stakeEntry *StakeEntry
 	var lockedStakeEntry *LockedStakeEntry
 	_ = lockedStakeEntry
-	var globalActiveStakeAmountNanos *uint256.Int
 	var err error
 
 	// Initialize balance model fork heights.
@@ -1392,10 +1378,6 @@ func _testUnregisterAsValidator(t *testing.T, flushToDB bool) {
 		require.NoError(t, err)
 		require.NotNil(t, stakeEntry)
 		require.Equal(t, stakeEntry.StakeAmountNanos, uint256.NewInt().SetUint64(600))
-
-		globalActiveStakeAmountNanos, err = utxoView().GetGlobalActiveStakeAmountNanos()
-		require.NoError(t, err)
-		require.Equal(t, globalActiveStakeAmountNanos, uint256.NewInt().SetUint64(600))
 	}
 	{
 		// m1 stakes with m0.
@@ -1412,10 +1394,6 @@ func _testUnregisterAsValidator(t *testing.T, flushToDB bool) {
 		require.NoError(t, err)
 		require.NotNil(t, stakeEntry)
 		require.Equal(t, stakeEntry.StakeAmountNanos, uint256.NewInt().SetUint64(400))
-
-		globalActiveStakeAmountNanos, err = utxoView().GetGlobalActiveStakeAmountNanos()
-		require.NoError(t, err)
-		require.Equal(t, globalActiveStakeAmountNanos, uint256.NewInt().SetUint64(1000))
 	}
 	{
 		// m1 partially unstakes with m0.
@@ -1438,11 +1416,6 @@ func _testUnregisterAsValidator(t *testing.T, flushToDB bool) {
 		require.NoError(t, err)
 		require.NotNil(t, lockedStakeEntry)
 		require.Equal(t, lockedStakeEntry.LockedAmountNanos, uint256.NewInt().SetUint64(100))
-
-		// GlobalActiveStakeAmountNanos is updated.
-		globalActiveStakeAmountNanos, err = utxoView().GetGlobalActiveStakeAmountNanos()
-		require.NoError(t, err)
-		require.Equal(t, globalActiveStakeAmountNanos, uint256.NewInt().SetUint64(900))
 	}
 	{
 		// m0 unregisters as a validator.
@@ -1475,11 +1448,6 @@ func _testUnregisterAsValidator(t *testing.T, flushToDB bool) {
 		require.NoError(t, err)
 		require.NotNil(t, lockedStakeEntry)
 		require.Equal(t, lockedStakeEntry.LockedAmountNanos, uint256.NewInt().SetUint64(400))
-
-		// GlobalActiveStakeAmountNanos is updated.
-		globalActiveStakeAmountNanos, err = utxoView().GetGlobalActiveStakeAmountNanos()
-		require.NoError(t, err)
-		require.Equal(t, globalActiveStakeAmountNanos, uint256.NewInt())
 	}
 
 	// Flush mempool to the db and test rollbacks.
