@@ -3,6 +3,7 @@
 package lib
 
 import (
+	"bytes"
 	"errors"
 	"math"
 	"testing"
@@ -1651,6 +1652,166 @@ func TestStakingWithDerivedKey(t *testing.T) {
 	// Flush mempool to the db and test rollbacks.
 	require.NoError(t, mempool.universalUtxoView.FlushToDb(blockHeight))
 	_executeAllTestRollbackAndFlush(testMeta)
+}
+
+func TestGetTopStakesByStakeAmount(t *testing.T) {
+	_testGetTopStakesByStakeAmount(t, false)
+	_testGetTopStakesByStakeAmount(t, true)
+}
+
+func _testGetTopStakesByStakeAmount(t *testing.T, flushToDB bool) {
+	// Initialize balance model fork heights.
+	setBalanceModelBlockHeights(t)
+
+	// Initialize test chain and miner.
+	chain, params, db := NewLowDifficultyBlockchain(t)
+	mempool, miner := NewTestMiner(t, chain, params, true)
+
+	// Initialize PoS fork height.
+	params.ForkHeights.ProofOfStake1StateSetupBlockHeight = uint32(1)
+	GlobalDeSoParams.EncoderMigrationHeights = GetEncoderMigrationHeights(&params.ForkHeights)
+	GlobalDeSoParams.EncoderMigrationHeightsList = GetEncoderMigrationHeightsList(&params.ForkHeights)
+
+	// Mine a few blocks to give the senderPkString some money.
+	for ii := 0; ii < 10; ii++ {
+		_, err := miner.MineAndProcessSingleBlock(0, mempool)
+		require.NoError(t, err)
+	}
+
+	// We build the testMeta obj after mining blocks so that we save the correct block height.
+	blockHeight := uint64(chain.blockTip().Height) + 1
+	testMeta := &TestMeta{
+		t:                 t,
+		chain:             chain,
+		params:            params,
+		db:                db,
+		mempool:           mempool,
+		miner:             miner,
+		savedHeight:       uint32(blockHeight),
+		feeRateNanosPerKb: uint64(101),
+	}
+
+	_registerOrTransferWithTestMeta(testMeta, "m0", senderPkString, m0Pub, senderPrivString, 1e3)
+	_registerOrTransferWithTestMeta(testMeta, "m1", senderPkString, m1Pub, senderPrivString, 1e3)
+	_registerOrTransferWithTestMeta(testMeta, "m2", senderPkString, m2Pub, senderPrivString, 1e3)
+	_registerOrTransferWithTestMeta(testMeta, "m3", senderPkString, m3Pub, senderPrivString, 1e3)
+	_registerOrTransferWithTestMeta(testMeta, "m4", senderPkString, m4Pub, senderPrivString, 1e3)
+	_registerOrTransferWithTestMeta(testMeta, "", senderPkString, paramUpdaterPub, senderPrivString, 1e3)
+
+	m0PKID := DBGetPKIDEntryForPublicKey(db, chain.snapshot, m0PkBytes).PKID
+	m1PKID := DBGetPKIDEntryForPublicKey(db, chain.snapshot, m1PkBytes).PKID
+	m2PKID := DBGetPKIDEntryForPublicKey(db, chain.snapshot, m2PkBytes).PKID
+	m3PKID := DBGetPKIDEntryForPublicKey(db, chain.snapshot, m3PkBytes).PKID
+	m4PKID := DBGetPKIDEntryForPublicKey(db, chain.snapshot, m4PkBytes).PKID
+
+	// Helper utils
+	utxoView := func() *UtxoView {
+		newUtxoView, err := mempool.GetAugmentedUniversalView()
+		require.NoError(t, err)
+		return newUtxoView
+	}
+
+	constructAndSubmitRegisterValidatorTxn := func(validatorPk string, validatorPriv string, validatorPkBytes []byte, domain string) {
+		votingPublicKey, votingAuthorization := _generateVotingPublicKeyAndAuthorization(t, validatorPkBytes)
+		registerAsValidatorMetadata := &RegisterAsValidatorMetadata{
+			Domains:             [][]byte{[]byte(domain)},
+			VotingPublicKey:     votingPublicKey,
+			VotingAuthorization: votingAuthorization,
+		}
+		_, err := _submitRegisterAsValidatorTxn(testMeta, validatorPk, validatorPriv, registerAsValidatorMetadata, nil, flushToDB)
+		require.NoError(t, err)
+	}
+
+	constructAndSubmitStakeTxn := func(stakerPk string, stakerPriv string, validatorPkBytes []byte, amountNanos uint64) {
+		stakeMetadata := &StakeMetadata{
+			ValidatorPublicKey: NewPublicKey(validatorPkBytes),
+			RestakeRewards:     false,
+			StakeAmountNanos:   uint256.NewInt().SetUint64(amountNanos),
+		}
+		_, err := _submitStakeTxn(testMeta, stakerPk, stakerPriv, stakeMetadata, nil, flushToDB)
+		require.NoError(t, err)
+	}
+
+	{
+		// m0 and m1 register as validators.
+		constructAndSubmitRegisterValidatorTxn(m0Pub, m0Priv, m0PkBytes, "https://example.com")
+		constructAndSubmitRegisterValidatorTxn(m1Pub, m1Priv, m1PkBytes, "https://example2.com")
+	}
+
+	{
+		// m0 stakes 100 nanos to themselves.
+		constructAndSubmitStakeTxn(m0Pub, m0Priv, m0PkBytes, 100)
+		// m0 stakes 200 nanos to m1.
+		constructAndSubmitStakeTxn(m0Pub, m0Priv, m1PkBytes, 200)
+
+		// m1 stakes 110 nanos to m0.
+		constructAndSubmitStakeTxn(m1Pub, m1Priv, m0PkBytes, 110)
+		// m1 stakes 210 nanos to themselves.
+		constructAndSubmitStakeTxn(m1Pub, m1Priv, m1PkBytes, 210)
+
+		// m2 stakes 120 nanos to m0.
+		constructAndSubmitStakeTxn(m2Pub, m2Priv, m0PkBytes, 120)
+		// m2 stakes 220 nanos to m1.
+		constructAndSubmitStakeTxn(m2Pub, m2Priv, m1PkBytes, 220)
+
+		// m3 stakes 130 nanos to m0.
+		constructAndSubmitStakeTxn(m3Pub, m3Priv, m0PkBytes, 130)
+		// m3 stakes 230 nanos to m1.
+		constructAndSubmitStakeTxn(m3Pub, m3Priv, m1PkBytes, 230)
+
+		// m4 stakes 100 nanos to m0.
+		constructAndSubmitStakeTxn(m4Pub, m4Priv, m0PkBytes, 100)
+		// m4 stakes 200 nanos to m1.
+		constructAndSubmitStakeTxn(m4Pub, m4Priv, m1PkBytes, 200)
+	}
+
+	{
+		// Verify when query limit 3 is lower than number of stake entries 10.
+
+		topStakeEntries, err := utxoView().GetTopStakesByStakeAmount(3)
+		require.NoError(t, err)
+		require.Equal(t, 3, len(topStakeEntries))
+	}
+
+	{
+		// Verify when query limit 1000 is higher than number of stake entries 10.
+
+		topStakeEntries, err := utxoView().GetTopStakesByStakeAmount(1000)
+		require.NoError(t, err)
+		require.Equal(t, 10, len(topStakeEntries))
+	}
+
+	{
+		// Verify ordering of top 5 stake entries, which includes breaking ties.
+
+		topStakeEntries, err := utxoView().GetTopStakesByStakeAmount(6)
+		require.NoError(t, err)
+		require.Equal(t, 6, len(topStakeEntries))
+
+		require.Equal(t, uint64(230), topStakeEntries[0].StakeAmountNanos.Uint64())
+		require.True(t, bytes.Equal(m1PKID.ToBytes(), topStakeEntries[0].ValidatorPKID.ToBytes()))
+		require.True(t, bytes.Equal(m3PKID.ToBytes(), topStakeEntries[0].StakerPKID.ToBytes()))
+
+		require.Equal(t, uint64(220), topStakeEntries[1].StakeAmountNanos.Uint64())
+		require.True(t, bytes.Equal(m1PKID.ToBytes(), topStakeEntries[1].ValidatorPKID.ToBytes()))
+		require.True(t, bytes.Equal(m2PKID.ToBytes(), topStakeEntries[1].StakerPKID.ToBytes()))
+
+		require.Equal(t, uint64(210), topStakeEntries[2].StakeAmountNanos.Uint64())
+		require.True(t, bytes.Equal(m1PKID.ToBytes(), topStakeEntries[2].ValidatorPKID.ToBytes()))
+		require.True(t, bytes.Equal(m1PKID.ToBytes(), topStakeEntries[2].StakerPKID.ToBytes()))
+
+		require.Equal(t, uint64(200), topStakeEntries[3].StakeAmountNanos.Uint64())
+		require.True(t, bytes.Equal(m1PKID.ToBytes(), topStakeEntries[3].ValidatorPKID.ToBytes()))
+		require.True(t, bytes.Equal(m0PKID.ToBytes(), topStakeEntries[3].StakerPKID.ToBytes()))
+
+		require.Equal(t, uint64(200), topStakeEntries[4].StakeAmountNanos.Uint64())
+		require.True(t, bytes.Equal(m1PKID.ToBytes(), topStakeEntries[4].ValidatorPKID.ToBytes()))
+		require.True(t, bytes.Equal(m4PKID.ToBytes(), topStakeEntries[4].StakerPKID.ToBytes()))
+
+		require.Equal(t, uint64(130), topStakeEntries[5].StakeAmountNanos.Uint64())
+		require.True(t, bytes.Equal(m0PKID.ToBytes(), topStakeEntries[5].ValidatorPKID.ToBytes()))
+		require.True(t, bytes.Equal(m3PKID.ToBytes(), topStakeEntries[5].StakerPKID.ToBytes()))
+	}
 }
 
 func TestGetLockedStakeEntriesInRange(t *testing.T) {
