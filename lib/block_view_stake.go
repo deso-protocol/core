@@ -564,7 +564,7 @@ func DBKeyForStakeByStakeAmount(stakeEntry *StakeEntry) []byte {
 	data = append(data, VariableEncodeUint256(stakeEntry.StakeAmountNanos)...)
 	data = append(data, stakeEntry.ValidatorPKID.ToBytes()...)
 	data = append(data, stakeEntry.StakerPKID.ToBytes()...)
-	return nil
+	return data
 }
 
 func DBKeyForLockedStakeByValidatorAndStakerAndLockedAt(lockedStakeEntry *LockedStakeEntry) []byte {
@@ -803,7 +803,6 @@ func DBGetLockedStakeEntriesInRangeWithTxn(
 	return lockedStakeEntries, nil
 }
 
-// TODO: @tholonious
 func DBPutStakeEntryWithTxn(
 	txn *badger.Txn,
 	snap *Snapshot,
@@ -854,7 +853,6 @@ func DBPutLockedStakeEntryWithTxn(
 	return nil
 }
 
-// TODO: @tholonious
 func DBDeleteStakeEntryWithTxn(
 	txn *badger.Txn,
 	snap *Snapshot,
@@ -872,6 +870,11 @@ func DBDeleteStakeEntryWithTxn(
 	if err != nil {
 		return errors.Wrapf(err, "DBDeleteStakeEntryWithTxn: problem retrieving "+
 			"StakeEntry for ValidatorPKID %v and StakerPKID %v: ", validatorPKID, stakerPKID)
+	}
+
+	// If the StakeEntry doesn't exist in the DB, then there's nothing to delete. Exit early.
+	if stakeEntry == nil {
+		return nil
 	}
 
 	// Delete StakeEntry from PrefixStakeByValidatorByStaker.
@@ -2441,7 +2444,6 @@ func (bav *UtxoView) _deleteLockedStakeEntryMappings(lockedStakeEntry *LockedSta
 	bav._setLockedStakeEntryMappings(&tombstoneEntry)
 }
 
-// TODO: @tholonious
 func (bav *UtxoView) _flushStakeEntriesToDbWithTxn(txn *badger.Txn, blockHeight uint64) error {
 	// Delete all entries in the UtxoView map.
 	for mapKeyIter, entryIter := range bav.StakeMapKeyToStakeEntry {
