@@ -1487,7 +1487,6 @@ func (srv *Server) _startSync() {
 
 	srv.SyncPeer = bestPeer
 
-	fmt.Printf("\nBefore start mempool sync routine\n")
 	// Initialize state syncer mempool job, if needed.
 	if srv.stateChangeSyncer != nil {
 		srv.stateChangeSyncer.StartMempoolSyncRoutine(srv)

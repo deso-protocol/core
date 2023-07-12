@@ -865,7 +865,10 @@ func isStateKey(key []byte) bool {
 	return exists && isState
 }
 
-// isStateKey checks if a key is a state-related key.
+// isCoreStateKey checks if a key prefix has a "core state" annotation.
+// The data stored in these keys represents all unique entries stored on the deso blockchain.
+// These entries are emitted by state syncer to a log file, which can be consumed to populate other data stores, power
+// explorers, etc.
 func isCoreStateKey(key []byte) bool {
 	if MaxPrefixLen > 1 {
 		panic(any(fmt.Errorf("this function only works if MaxPrefixLen is 1 but currently MaxPrefixLen=(%v)", MaxPrefixLen)))

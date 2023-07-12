@@ -34,7 +34,6 @@ func (bav *UtxoView) FlushToDb(blockHeight uint64) error {
 	// is consistent with the view regardless of whether or not the view is flushed or
 	// not.
 	bav._ResetViewMappingsAfterFlush()
-	fmt.Printf("\n\nResetting mappings")
 
 	return nil
 }

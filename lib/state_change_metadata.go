@@ -71,12 +71,11 @@ func (creatorCoinSCM *CreatorCoinStateChangeMetadata) RawEncodeWithoutMetadata(b
 }
 
 func (creatorCoinSCM *CreatorCoinStateChangeMetadata) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.Reader) error {
-	entry := &ProfileEntry{}
-	if exist, err := DecodeFromBytes(entry, rr); exist && err == nil {
-		creatorCoinSCM.ProfileEntry = entry
-	} else if err != nil {
+	var err error
+	if creatorCoinSCM.ProfileEntry, err = DecodeDeSoEncoder(&ProfileEntry{}, rr); err != nil {
 		return errors.Wrapf(err, "CreatorCoinStateChangeMetadata.Decode: Problem reading ProfileEntry")
 	}
+
 	return nil
 }
 
@@ -99,11 +98,9 @@ func (ccTransferSCM *CCTransferStateChangeMetadata) RawEncodeWithoutMetadata(blo
 }
 
 func (ccTransferSCM *CCTransferStateChangeMetadata) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.Reader) error {
-	entry := &ProfileEntry{}
-	if exist, err := DecodeFromBytes(entry, rr); exist && err == nil {
-		ccTransferSCM.CreatorProfileEntry = entry
-	} else if err != nil {
-		return errors.Wrapf(err, "CCTransferStateChangeMetadata.Decode: Problem reading CreatorProfileEntry")
+	var err error
+	if ccTransferSCM.CreatorProfileEntry, err = DecodeDeSoEncoder(&ProfileEntry{}, rr); err != nil {
+		return errors.Wrapf(err, "CCTransferStateChangeMetadata.Decode: Problem reading ProfileEntry")
 	}
 	return nil
 }
@@ -128,39 +125,25 @@ func (submitPostSCM *SubmitPostStateChangeMetadata) RawEncodeWithoutMetadata(blo
 	data = append(data, EncodeToBytes(blockHeight, submitPostSCM.RepostPostEntry, skipMetadata...)...)
 	// Encode the number of profiles mentioned.
 	data = append(data, UintToBuf(uint64(len(submitPostSCM.ProfilesMentioned)))...)
-	for _, profileMention := range submitPostSCM.ProfilesMentioned {
-		data = append(data, EncodeToBytes(blockHeight, profileMention, skipMetadata...)...)
-	}
+
+	data = append(data, EncodeDeSoEncoderSlice(submitPostSCM.ProfilesMentioned, blockHeight, skipMetadata...)...)
+
 	return data
 }
 
 func (submitPostSCM *SubmitPostStateChangeMetadata) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.Reader) error {
-	postEntry := &PostEntry{}
-	if exist, err := DecodeFromBytes(postEntry, rr); exist && err == nil {
-		submitPostSCM.PostEntry = postEntry
-	} else if err != nil {
+	var err error
+
+	if submitPostSCM.PostEntry, err = DecodeDeSoEncoder(&PostEntry{}, rr); err != nil {
 		return errors.Wrapf(err, "SubmitPostStateChangeMetadata.Decode: Problem reading PostEntry")
 	}
 
-	repostEntry := &PostEntry{}
-	if exist, err := DecodeFromBytes(repostEntry, rr); exist && err == nil {
-		submitPostSCM.RepostPostEntry = repostEntry
-	} else if err != nil {
+	if submitPostSCM.RepostPostEntry, err = DecodeDeSoEncoder(&PostEntry{}, rr); err != nil {
 		return errors.Wrapf(err, "SubmitPostStateChangeMetadata.Decode: Problem reading RepostPostEntry")
 	}
 
-	profileMentionCount, err := ReadUvarint(rr)
-	if err != nil {
-		return errors.Wrapf(err, "SubmitPostStateChangeMetadata.Decode: Problem reading ProfileMentionCount")
-	}
-	submitPostSCM.ProfilesMentioned = make([]*ProfileEntry, profileMentionCount)
-	for ii := uint64(0); ii < profileMentionCount; ii++ {
-		profileMention := &ProfileEntry{}
-		if exist, err := DecodeFromBytes(profileMention, rr); exist && err == nil {
-			submitPostSCM.ProfilesMentioned[ii] = profileMention
-		} else if err != nil {
-			return errors.Wrapf(err, "SubmitPostStateChangeMetadata.Decode: Problem reading ProfileMention")
-		}
+	if submitPostSCM.ProfilesMentioned, err = DecodeDeSoEncoderSlice[*ProfileEntry](rr); err != nil {
+		return errors.Wrapf(err, "SubmitPostStateChangeMetadata.Decode: Problem reading ProfileMention")
 	}
 
 	return nil
@@ -185,12 +168,11 @@ func (likeSCM *LikeStateChangeMetadata) RawEncodeWithoutMetadata(blockHeight uin
 }
 
 func (likeSCM *LikeStateChangeMetadata) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.Reader) error {
-	postEntry := &PostEntry{}
-	if exist, err := DecodeFromBytes(postEntry, rr); exist && err == nil {
-		likeSCM.LikedPostEntry = postEntry
-	} else if err != nil {
+	var err error
+	if likeSCM.LikedPostEntry, err = DecodeDeSoEncoder(&PostEntry{}, rr); err != nil {
 		return errors.Wrapf(err, "LikeStateChangeMetadata.Decode: Problem reading LikedPostEntry")
 	}
+
 	return nil
 }
 
@@ -215,17 +197,12 @@ func (swapIdSCM *SwapIdentityStateChangeMetadata) RawEncodeWithoutMetadata(block
 }
 
 func (swapIdSCM *SwapIdentityStateChangeMetadata) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.Reader) error {
-	fromProfile := &ProfileEntry{}
-	if exist, err := DecodeFromBytes(fromProfile, rr); exist && err == nil {
-		swapIdSCM.FromProfile = fromProfile
-	} else if err != nil {
+	var err error
+	if swapIdSCM.FromProfile, err = DecodeDeSoEncoder(&ProfileEntry{}, rr); err != nil {
 		return errors.Wrapf(err, "SwapIdentityStateChangeMetadata.Decode: Problem reading FromProfile")
 	}
 
-	toProfile := &ProfileEntry{}
-	if exist, err := DecodeFromBytes(toProfile, rr); exist && err == nil {
-		swapIdSCM.ToProfile = toProfile
-	} else if err != nil {
+	if swapIdSCM.ToProfile, err = DecodeDeSoEncoder(&ProfileEntry{}, rr); err != nil {
 		return errors.Wrapf(err, "SwapIdentityStateChangeMetadata.Decode: Problem reading ToProfile")
 	}
 
@@ -253,10 +230,8 @@ func (nftBidSCM *NFTBidStateChangeMetadata) RawEncodeWithoutMetadata(blockHeight
 }
 
 func (nftBidSCM *NFTBidStateChangeMetadata) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.Reader) error {
-	postEntry := &PostEntry{}
-	if exist, err := DecodeFromBytes(postEntry, rr); exist && err == nil {
-		nftBidSCM.PostEntry = postEntry
-	} else if err != nil {
+	var err error
+	if nftBidSCM.PostEntry, err = DecodeDeSoEncoder(&PostEntry{}, rr); err != nil {
 		return errors.Wrapf(err, "NFTBidStateChangeMetadata.Decode: Problem reading PostEntry")
 	}
 
@@ -359,11 +334,9 @@ func (updateNFTSCM *UpdateNFTStateChangeMetadata) RawEncodeWithoutMetadata(block
 }
 
 func (updateNFTSCM *UpdateNFTStateChangeMetadata) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.Reader) error {
-	nftPostEntry := &PostEntry{}
-	if exist, err := DecodeFromBytes(nftPostEntry, rr); exist && err == nil {
-		updateNFTSCM.NFTPostEntry = nftPostEntry
-	} else if err != nil {
-		return errors.Wrapf(err, "UpdateNFTStateChangeMetadata.Decode: Problem reading NFTPostEntry")
+	var err error
+	if updateNFTSCM.NFTPostEntry, err = DecodeDeSoEncoder(&PostEntry{}, rr); err != nil {
+		return errors.Wrapf(err, "UpdateNFTStateChangeMetadata.Decode: Problem reading PostEntry")
 	}
 
 	additionalDESORoyaltiesMap, err := DecodeStringUint64MapFromBytes(rr)
@@ -400,11 +373,9 @@ func (daoCoinSCM *DAOCoinStateChangeMetadata) RawEncodeWithoutMetadata(blockHeig
 }
 
 func (daoCoinSCM *DAOCoinStateChangeMetadata) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.Reader) error {
-	creatorProfileEntry := &ProfileEntry{}
-	if exist, err := DecodeFromBytes(creatorProfileEntry, rr); exist && err == nil {
-		daoCoinSCM.CreatorProfileEntry = creatorProfileEntry
-	} else if err != nil {
-		return errors.Wrapf(err, "DAOCoinStateChangeMetadata.Decode: Problem reading CreatorProfileEntry")
+	var err error
+	if daoCoinSCM.CreatorProfileEntry, err = DecodeDeSoEncoder(&ProfileEntry{}, rr); err != nil {
+		return errors.Wrapf(err, "DAOCoinStateChangeMetadata.Decode: Problem reading ProfileEntry")
 	}
 
 	return nil
@@ -429,11 +400,9 @@ func (daoCoinTransferSCM *DAOCoinTransferStateChangeMetadata) RawEncodeWithoutMe
 }
 
 func (daoCoinTransferSCM *DAOCoinTransferStateChangeMetadata) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.Reader) error {
-	creatorProfileEntry := &ProfileEntry{}
-	if exist, err := DecodeFromBytes(creatorProfileEntry, rr); exist && err == nil {
-		daoCoinTransferSCM.CreatorProfileEntry = creatorProfileEntry
-	} else if err != nil {
-		return errors.Wrapf(err, "DAOCoinTransferStateChangeMetadata.Decode: Problem reading CreatorProfileEntry")
+	var err error
+	if daoCoinTransferSCM.CreatorProfileEntry, err = DecodeDeSoEncoder(&ProfileEntry{}, rr); err != nil {
+		return errors.Wrapf(err, "DAOCoinTransferStateChangeMetadata.Decode: Problem reading ProfileEntry")
 	}
 
 	return nil
@@ -463,19 +432,9 @@ func (daoCoinLimitOrderSCM *DAOCoinLimitOrderStateChangeMetadata) RawEncodeWitho
 }
 
 func (daoCoinLimitOrderSCM *DAOCoinLimitOrderStateChangeMetadata) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.Reader) error {
-	// Decode the number of filled DAO coin limit orders.
-	numFilledDAOCoinLimitOrders, err := ReadUvarint(rr)
-	if err != nil {
-		return errors.Wrapf(err, "DAOCoinLimitOrderStateChangeMetadata.Decode: Problem reading numFilledDAOCoinLimitOrders")
-	}
-	// Decode each filled DAO coin limit order.
-	for ii := uint64(0); ii < numFilledDAOCoinLimitOrders; ii++ {
-		filledDAOCoinLimitOrderMetadata := &FilledDAOCoinLimitOrderMetadata{}
-		if exist, err := DecodeFromBytes(filledDAOCoinLimitOrderMetadata, rr); exist && err == nil {
-			daoCoinLimitOrderSCM.FilledDAOCoinLimitOrdersMetadata = append(daoCoinLimitOrderSCM.FilledDAOCoinLimitOrdersMetadata, filledDAOCoinLimitOrderMetadata)
-		} else if err != nil {
-			return errors.Wrapf(err, "DAOCoinLimitOrderStateChangeMetadata.Decode: Problem reading filledDAOCoinLimitOrderMetadata")
-		}
+	var err error
+	if daoCoinLimitOrderSCM.FilledDAOCoinLimitOrdersMetadata, err = DecodeDeSoEncoderSlice[*FilledDAOCoinLimitOrderMetadata](rr); err != nil {
+		return errors.Wrapf(err, "DAOCoinLimitOrderStateChangeMetadata.Decode: Problem reading FilledDAOCoinLimitOrderMetadata")
 	}
 
 	return nil
@@ -534,12 +493,11 @@ func (createPostAssociationSCM *CreatePostAssociationStateChangeMetadata) RawEnc
 }
 
 func (createPostAssociationSCM *CreatePostAssociationStateChangeMetadata) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.Reader) error {
-	postEntry := &PostEntry{}
-	if exist, err := DecodeFromBytes(postEntry, rr); exist && err == nil {
-		createPostAssociationSCM.PostEntry = postEntry
-	} else if err != nil {
+	var err error
+	if createPostAssociationSCM.PostEntry, err = DecodeDeSoEncoder(&PostEntry{}, rr); err != nil {
 		return errors.Wrapf(err, "CreatePostAssociationStateChangeMetadata.Decode: Problem reading PostEntry")
 	}
+
 	return nil
 }
 
@@ -569,12 +527,11 @@ func (deletePostAssociationSCM *DeletePostAssociationStateChangeMetadata) RawDec
 		return errors.Wrapf(err, "DeletePostAssociationStateChangeMetadata.Decode: Problem reading AppPublicKeyBase58Check")
 	}
 	deletePostAssociationSCM.AppPublicKeyBase58Check = string(appPublicKeyBytes)
-	postEntry := &PostEntry{}
-	if exist, err := DecodeFromBytes(postEntry, rr); exist && err == nil {
-		deletePostAssociationSCM.PostEntry = postEntry
-	} else if err != nil {
+
+	if deletePostAssociationSCM.PostEntry, err = DecodeDeSoEncoder(&PostEntry{}, rr); err != nil {
 		return errors.Wrapf(err, "DeletePostAssociationStateChangeMetadata.Decode: Problem reading PostEntry")
 	}
+
 	return nil
 }
 

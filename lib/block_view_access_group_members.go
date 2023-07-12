@@ -475,17 +475,17 @@ func (bav *UtxoView) _connectAccessGroupMembers(
 	// Determine the operation that we want to perform on the access group members.
 	switch txMeta.AccessGroupMemberOperationType {
 	case AccessGroupMemberOperationTypeAdd:
-		if err := bav._setUtxoViewMappingsForAccessGroupMemberOperationAdd(txMeta, uint64(blockHeight), txHash); err != nil {
+		if err := bav._setUtxoViewMappingsForAccessGroupMemberOperationAdd(txMeta, uint64(blockHeight)); err != nil {
 			return 0, 0, nil, errors.Wrapf(err, "_connectAccessGroupMembers: Problem adding access group members.")
 		}
 
 	case AccessGroupMemberOperationTypeRemove:
-		if prevAccessGroupMemberEntries, err = bav._setUtxoViewMappingsForAccessGroupMemberOperationRemove(txMeta, uint64(blockHeight), txHash); err != nil {
+		if prevAccessGroupMemberEntries, err = bav._setUtxoViewMappingsForAccessGroupMemberOperationRemove(txMeta, uint64(blockHeight)); err != nil {
 			return 0, 0, nil, errors.Wrapf(err, "_connectAccessGroupMembers: Problem removing access group members.")
 		}
 
 	case AccessGroupMemberOperationTypeUpdate:
-		if prevAccessGroupMemberEntries, err = bav._setUtxoViewMappingsForAccessGroupMemberOperationUpdate(txMeta, uint64(blockHeight), txHash); err != nil {
+		if prevAccessGroupMemberEntries, err = bav._setUtxoViewMappingsForAccessGroupMemberOperationUpdate(txMeta, uint64(blockHeight)); err != nil {
 			return 0, 0, nil, errors.Wrapf(err, "_connectAccessGroupMembers: Problem updating access group members.")
 		}
 
@@ -681,7 +681,7 @@ func (bav *UtxoView) _disconnectAccessGroupMembers(
 }
 
 func (bav *UtxoView) _setUtxoViewMappingsForAccessGroupMemberOperationAdd(txMeta *AccessGroupMembersMetadata,
-	blockHeight uint64, txHash *BlockHash) error {
+	blockHeight uint64) error {
 
 	// Sanity-check that all information about access group members in txMeta is correct.
 	if txMeta.AccessGroupMemberOperationType != AccessGroupMemberOperationTypeAdd {
@@ -744,7 +744,7 @@ func (bav *UtxoView) _setUtxoViewMappingsForAccessGroupMemberOperationAdd(txMeta
 }
 
 func (bav *UtxoView) _setUtxoViewMappingsForAccessGroupMemberOperationRemove(txMeta *AccessGroupMembersMetadata,
-	blockHeight uint64, txHash *BlockHash) (_prevAccessGroupMemberEntries []*AccessGroupMemberEntry, _err error) {
+	blockHeight uint64) (_prevAccessGroupMemberEntries []*AccessGroupMemberEntry, _err error) {
 
 	// Sanity-check that the operation type is correct.
 	if txMeta.AccessGroupMemberOperationType != AccessGroupMemberOperationTypeRemove {
@@ -825,7 +825,7 @@ func (bav *UtxoView) _setUtxoViewMappingsForAccessGroupMemberOperationRemove(txM
 }
 
 func (bav *UtxoView) _setUtxoViewMappingsForAccessGroupMemberOperationUpdate(txMeta *AccessGroupMembersMetadata,
-	blockHeight uint64, txHash *BlockHash) (_prevAccessGroupMemberEntries []*AccessGroupMemberEntry, _err error) {
+	blockHeight uint64) (_prevAccessGroupMemberEntries []*AccessGroupMemberEntry, _err error) {
 
 	// Sanity-check that the operation type is correct.
 	if txMeta.AccessGroupMemberOperationType != AccessGroupMemberOperationTypeUpdate {

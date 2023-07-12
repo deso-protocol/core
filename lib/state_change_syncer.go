@@ -336,8 +336,6 @@ func (stateChangeSyncer *StateChangeSyncer) _handleStateSyncerOperation(event *S
 		// If the event flush ID is nil, then we need to use the global mempool flush ID.
 		if event.FlushId == uuid.Nil {
 			flushId = stateChangeSyncer.MempoolFlushId
-		} else {
-			flushId = event.FlushId
 		}
 
 		// The current state of the tracked mempool is stored in the MempoolKeyValueMap. If this entry is already in there
@@ -364,8 +362,6 @@ func (stateChangeSyncer *StateChangeSyncer) _handleStateSyncerOperation(event *S
 		// If the flush ID is nil, then we need to use the global block sync flush ID.
 		if event.FlushId == uuid.Nil {
 			flushId = stateChangeSyncer.BlockSyncFlushId
-		} else {
-			flushId = event.FlushId
 		}
 	}
 
