@@ -547,16 +547,24 @@ func (txindexMetadata *UnlockStakeTxindexMetadata) GetEncoderType() EncoderType 
 // DB UTILS
 //
 
-func DBKeyForStakeByValidatorAndStaker(stakeEntry *StakeEntry) []byte {
-	data := DBKeyForStakeByValidator(stakeEntry)
-	data = append(data, stakeEntry.StakerPKID.ToBytes()...)
+func DBKeyForStakeByValidatorAndStaker(validatorPKID *PKID, stakerPKID *PKID) []byte {
+	data := DBKeyForStakeByValidator(validatorPKID)
+	data = append(data, stakerPKID.ToBytes()...)
 	return data
 }
 
-func DBKeyForStakeByValidator(stakeEntry *StakeEntry) []byte {
+func DBKeyForStakeByValidator(validatorPKID *PKID) []byte {
 	data := append([]byte{}, Prefixes.PrefixStakeByValidatorAndStaker...)
-	data = append(data, stakeEntry.ValidatorPKID.ToBytes()...)
+	data = append(data, validatorPKID.ToBytes()...)
 	return data
+}
+
+func DBKeyForStakeByStakeAmount(stakeEntry *StakeEntry) []byte {
+	data := append([]byte{}, Prefixes.PrefixStakeByStakeAmount...)
+	data = append(data, VariableEncodeUint256(stakeEntry.StakeAmountNanos)...)
+	data = append(data, stakeEntry.ValidatorPKID.ToBytes()...)
+	data = append(data, stakeEntry.StakerPKID.ToBytes()...)
+	return nil
 }
 
 func DBKeyForLockedStakeByValidatorAndStakerAndLockedAt(lockedStakeEntry *LockedStakeEntry) []byte {
@@ -594,7 +602,7 @@ func DBGetStakeEntryWithTxn(
 	stakerPKID *PKID,
 ) (*StakeEntry, error) {
 	// Retrieve StakeEntry from db.
-	key := DBKeyForStakeByValidatorAndStaker(&StakeEntry{ValidatorPKID: validatorPKID, StakerPKID: stakerPKID})
+	key := DBKeyForStakeByValidatorAndStaker(validatorPKID, stakerPKID)
 	stakeEntryBytes, err := DBGetWithTxn(txn, snap, key)
 	if err != nil {
 		// We don't want to error if the key isn't found. Instead, return nil.
@@ -615,7 +623,7 @@ func DBGetStakeEntryWithTxn(
 
 func DBGetStakeEntriesForValidatorPKID(handle *badger.DB, snap *Snapshot, validatorPKID *PKID) ([]*StakeEntry, error) {
 	// Retrieve StakeEntries from db.
-	prefix := DBKeyForStakeByValidator(&StakeEntry{ValidatorPKID: validatorPKID})
+	prefix := DBKeyForStakeByValidator(validatorPKID)
 	_, valsFound, err := EnumerateKeysForPrefixWithLimitOffsetOrder(
 		handle, prefix, 0, nil, false, NewSet([]string{}),
 	)
@@ -644,16 +652,16 @@ func DBValidatorHasDelegatedStake(
 ) (bool, error) {
 	// Skip any stake the validator has assigned to himself (if exists).
 	skipKeys := NewSet([]string{
-		string(DBKeyForStakeByValidatorAndStaker(&StakeEntry{ValidatorPKID: validatorPKID, StakerPKID: validatorPKID})),
+		string(DBKeyForStakeByValidatorAndStaker(validatorPKID, validatorPKID)),
 	})
 
 	// Skip any StakeEntries deleted in the UtxoView.
 	for _, utxoDeletedStakeEntry := range utxoDeletedStakeEntries {
-		skipKeys.Add(string(DBKeyForStakeByValidatorAndStaker(utxoDeletedStakeEntry)))
+		skipKeys.Add(string(DBKeyForStakeByValidatorAndStaker(utxoDeletedStakeEntry.ValidatorPKID, utxoDeletedStakeEntry.StakerPKID)))
 	}
 
 	// Scan for any delegated StakeEntries (limiting to at most one row).
-	prefix := DBKeyForStakeByValidator(&StakeEntry{ValidatorPKID: validatorPKID})
+	prefix := DBKeyForStakeByValidator(validatorPKID)
 	keysFound, _, err := EnumerateKeysForPrefixWithLimitOffsetOrder(
 		handle, prefix, 1, nil, false, skipKeys,
 	)
@@ -795,6 +803,7 @@ func DBGetLockedStakeEntriesInRangeWithTxn(
 	return lockedStakeEntries, nil
 }
 
+// TODO: @tholonious
 func DBPutStakeEntryWithTxn(
 	txn *badger.Txn,
 	snap *Snapshot,
@@ -806,10 +815,18 @@ func DBPutStakeEntryWithTxn(
 	}
 
 	// Set StakeEntry in PrefixStakeByValidatorByStaker.
-	key := DBKeyForStakeByValidatorAndStaker(stakeEntry)
-	if err := DBSetWithTxn(txn, snap, key, EncodeToBytes(blockHeight, stakeEntry)); err != nil {
+	stakeByValidatorAndStakerKey := DBKeyForStakeByValidatorAndStaker(stakeEntry.ValidatorPKID, stakeEntry.StakerPKID)
+	if err := DBSetWithTxn(txn, snap, stakeByValidatorAndStakerKey, EncodeToBytes(blockHeight, stakeEntry)); err != nil {
 		return errors.Wrapf(
 			err, "DBPutStakeEntryWithTxn: problem storing StakeEntry in index PrefixStakeByValidatorByStaker: ",
+		)
+	}
+
+	// Set StakeEntry in PrefixStakeByStakeAmount.
+	stakeByStakeAmountKey := DBKeyForStakeByStakeAmount(stakeEntry)
+	if err := DBSetWithTxn(txn, snap, stakeByStakeAmountKey, nil); err != nil {
+		return errors.Wrapf(
+			err, "DBPutStakeEntryWithTxn: problem storing StakeEntry in index PrefixStakeByStakeAmount: ",
 		)
 	}
 
@@ -837,21 +854,39 @@ func DBPutLockedStakeEntryWithTxn(
 	return nil
 }
 
+// TODO: @tholonious
 func DBDeleteStakeEntryWithTxn(
 	txn *badger.Txn,
 	snap *Snapshot,
-	stakeEntry *StakeEntry,
+	validatorPKID *PKID,
+	stakerPKID *PKID,
 	blockHeight uint64,
 ) error {
-	if stakeEntry == nil {
+	if validatorPKID == nil || stakerPKID == nil {
 		return nil
 	}
 
+	// Look up the existing StakeEntry in the db using the validator and staker PKIDs.
+	// We need to use this stakeEntry's values to delete all corresponding indexes.
+	stakeEntry, err := DBGetStakeEntryWithTxn(txn, snap, validatorPKID, stakerPKID)
+	if err != nil {
+		return errors.Wrapf(err, "DBDeleteStakeEntryWithTxn: problem retrieving "+
+			"StakeEntry for ValidatorPKID %v and StakerPKID %v: ", validatorPKID, stakerPKID)
+	}
+
 	// Delete StakeEntry from PrefixStakeByValidatorByStaker.
-	key := DBKeyForStakeByValidatorAndStaker(stakeEntry)
-	if err := DBDeleteWithTxn(txn, snap, key); err != nil {
+	stakeByValidatorAndStakerKey := DBKeyForStakeByValidatorAndStaker(validatorPKID, stakerPKID)
+	if err := DBDeleteWithTxn(txn, snap, stakeByValidatorAndStakerKey); err != nil {
 		return errors.Wrapf(
 			err, "DBDeleteStakeEntryWithTxn: problem deleting StakeEntry from index PrefixStakeByValidatorByStaker: ",
+		)
+	}
+
+	// Delete the StakeEntry from PrefixStakeByStakeAmount.
+	stakeByStakeAmountKey := DBKeyForStakeByStakeAmount(stakeEntry)
+	if err := DBDeleteWithTxn(txn, snap, stakeByStakeAmountKey); err != nil {
+		return errors.Wrapf(
+			err, "DBDeleteStakeEntryWithTxn: problem deleting StakeEntry from index PrefixStakeByStakeAmount: ",
 		)
 	}
 
@@ -2406,6 +2441,7 @@ func (bav *UtxoView) _deleteLockedStakeEntryMappings(lockedStakeEntry *LockedSta
 	bav._setLockedStakeEntryMappings(&tombstoneEntry)
 }
 
+// TODO: @tholonious
 func (bav *UtxoView) _flushStakeEntriesToDbWithTxn(txn *badger.Txn, blockHeight uint64) error {
 	// Delete all entries in the UtxoView map.
 	for mapKeyIter, entryIter := range bav.StakeMapKeyToStakeEntry {
@@ -2425,7 +2461,7 @@ func (bav *UtxoView) _flushStakeEntriesToDbWithTxn(txn *badger.Txn, blockHeight 
 
 		// Delete the existing mappings in the db for this MapKey. They will be
 		// re-added if the corresponding entry in-memory has isDeleted=false.
-		if err := DBDeleteStakeEntryWithTxn(txn, bav.Snapshot, &entry, blockHeight); err != nil {
+		if err := DBDeleteStakeEntryWithTxn(txn, bav.Snapshot, entry.ValidatorPKID, entry.StakerPKID, blockHeight); err != nil {
 			return errors.Wrapf(err, "_flushStakeEntriesToDbWithTxn: ")
 		}
 	}
