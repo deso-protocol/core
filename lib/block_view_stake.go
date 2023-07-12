@@ -1852,13 +1852,11 @@ func (bav *UtxoView) IsValidStakeMetadata(transactorPkBytes []byte, metadata *St
 		return errors.Wrapf(RuleErrorInvalidStakeValidatorDisabledDelegatedStake, "UtxoView.IsValidStakeMetadata: ")
 	}
 
-	// Validate 0 < StakeAmountNanos <= transactor's DESO Balance. We ignore
+	// Validate 0 <= StakeAmountNanos <= transactor's DESO Balance. We ignore
 	// the txn fees in this check. The StakeAmountNanos will be validated to
 	// be less than the transactor's DESO balance net of txn fees in the call
 	// to connectBasicTransferWithExtraSpend.
-	if metadata.StakeAmountNanos == nil ||
-		metadata.StakeAmountNanos.IsZero() ||
-		!metadata.StakeAmountNanos.IsUint64() {
+	if metadata.StakeAmountNanos == nil || !metadata.StakeAmountNanos.IsUint64() {
 		return errors.Wrapf(RuleErrorInvalidStakeAmountNanos, "UtxoView.IsValidStakeMetadata: ")
 	}
 	transactorDeSoBalanceNanos, err := bav.GetSpendableDeSoBalanceNanosForPublicKey(transactorPkBytes, blockHeight-1)
