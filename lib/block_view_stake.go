@@ -561,7 +561,7 @@ func DBKeyForStakeByValidator(validatorPKID *PKID) []byte {
 
 func DBKeyForStakeByStakeAmount(stakeEntry *StakeEntry) []byte {
 	data := append([]byte{}, Prefixes.PrefixStakeByStakeAmount...)
-	data = append(data, VariableEncodeUint256(stakeEntry.StakeAmountNanos)...)
+	data = append(data, FixedWidthEncodeUint256(stakeEntry.StakeAmountNanos)...)
 	data = append(data, stakeEntry.ValidatorPKID.ToBytes()...)
 	data = append(data, stakeEntry.StakerPKID.ToBytes()...)
 	return data
