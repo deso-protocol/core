@@ -376,7 +376,7 @@ func NewServer(
 	archivalMode := false
 	if _hyperSync {
 		_snapshot, err, shouldRestart = NewSnapshot(_db, _dataDir, _snapshotBlockHeightPeriod,
-			false, false, _params, _disableEncoderMigrations)
+			false, false, _params, _disableEncoderMigrations, false)
 		if err != nil {
 			panic(err)
 		}
@@ -446,7 +446,7 @@ func NewServer(
 	// blocks.
 	_mempool := NewDeSoMempool(_chain, _rateLimitFeerateNanosPerKB,
 		_minFeeRateNanosPerKB, _blockCypherAPIKey, _runReadOnlyUtxoViewUpdater, _dataDir,
-		_mempoolDumpDir)
+		_mempoolDumpDir, false)
 
 	// Useful for debugging. Every second, it outputs the contents of the mempool
 	// and the contents of the addrmanager.

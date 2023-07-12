@@ -184,7 +184,7 @@ func AppendToMemLog(t *testing.T, prefix string) {
 	f, err := os.OpenFile("mem.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err == nil {
 		defer f.Close()
-		if _, err := f.WriteString(fmt.Sprintf("%s\t%s\tMemory Usage\t%v\n", prefix, t.Name(), float64(mem.Alloc)/float64(1e9))); err != nil {
+		if _, err := f.WriteString(fmt.Sprintf("%s\t%s\tMemory Usage\t%v\tTotal Alloc\t%v\n", prefix, t.Name(), float64(mem.Alloc)/float64(1e9), float64(mem.TotalAlloc)/float64(1e9))); err != nil {
 			log.Println(err)
 		}
 	}
@@ -205,11 +205,11 @@ func NewLowDifficultyBlockchainWithParams(t *testing.T, params *DeSoParams) (
 	// Set the number of txns per view regeneration to one while creating the txns
 	ReadOnlyUtxoViewRegenerationIntervalTxns = 1
 
-	chain, params, _ := NewLowDifficultyBlockchainWithParamsAndDb(t, params, len(os.Getenv("POSTGRES_URI")) > 0, 0)
+	chain, params, _ := NewLowDifficultyBlockchainWithParamsAndDb(t, params, len(os.Getenv("POSTGRES_URI")) > 0, 0, false)
 	return chain, params, chain.db
 }
 
-func NewLowDifficultyBlockchainWithParamsAndDb(t *testing.T, params *DeSoParams, usePostgres bool, postgresPort uint32) (
+func NewLowDifficultyBlockchainWithParamsAndDb(t *testing.T, params *DeSoParams, usePostgres bool, postgresPort uint32, useProvidedParams bool) (
 	*Blockchain, *DeSoParams, *embeddedpostgres.EmbeddedPostgres) {
 	TestDeSoEncoderSetup(t)
 	AppendToMemLog(t, "START")
@@ -237,13 +237,16 @@ func NewLowDifficultyBlockchainWithParamsAndDb(t *testing.T, params *DeSoParams,
 	}
 
 	timesource := chainlib.NewMedianTime()
-	testParams := NewTestParams(params)
+	testParams := *params
+	if !useProvidedParams {
+		testParams = NewTestParams(params)
+	}
 
 	// Temporarily modify the seed balances to make a specific public
 	// key have some DeSo
 	var snap *Snapshot
 	if !usePostgres {
-		snap, err, _ = NewSnapshot(db, dbDir, SnapshotBlockHeightPeriod, false, false, &testParams, false)
+		snap, err, _ = NewSnapshot(db, dbDir, SnapshotBlockHeightPeriod, false, false, &testParams, false, true)
 		if err != nil {
 			log.Fatal(err)
 		}
@@ -259,6 +262,12 @@ func NewLowDifficultyBlockchainWithParamsAndDb(t *testing.T, params *DeSoParams,
 		if snap != nil {
 			snap.Stop()
 			CleanUpBadger(snap.SnapshotDb)
+		}
+		if embpg != nil {
+			err = embpg.Stop()
+			if err != nil {
+				glog.Errorf("Error stopping embedded pg: %v", err)
+			}
 		}
 		CleanUpBadger(db)
 		TestDeSoEncoderShutdown(t)
@@ -324,7 +333,7 @@ func NewTestMiner(t *testing.T, chain *Blockchain, params *DeSoParams, isSender 
 	mempool := NewDeSoMempool(
 		chain, 0, /* rateLimitFeeRateNanosPerKB */
 		0 /* minFeeRateNanosPerKB */, "", true,
-		"" /*dataDir*/, "")
+		"" /*dataDir*/, "", true)
 	minerPubKeys := []string{}
 	if isSender {
 		minerPubKeys = append(minerPubKeys, senderPkString)
@@ -1741,4 +1750,17 @@ func TestForbiddenBlockSignaturePubKey(t *testing.T) {
 	_, err = miner.MineAndProcessSingleBlock(0 /*threadIndex*/, mempool)
 	require.Error(err)
 	require.Contains(err.Error(), RuleErrorForbiddenBlockProducerPublicKey)
+}
+
+func TestPGGenesisBlock(t *testing.T) {
+	// We skip this test in buildkite CI, but include it in GH actions postgres testing.
+	// Comment out this conditional to test locally.
+	if len(os.Getenv("POSTGRES_URI")) == 0 {
+		return
+	}
+	chain, params, _ := NewLowDifficultyBlockchainWithParamsAndDb(t, &DeSoTestnetParams, true, 5435, true)
+	for _, seedBalance := range params.SeedBalances {
+		bal := chain.postgres.GetBalance(NewPublicKey(seedBalance.PublicKey))
+		require.Equal(t, bal, seedBalance.AmountNanos)
+	}
 }

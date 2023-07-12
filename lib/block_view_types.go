@@ -4722,6 +4722,43 @@ func DecodeByteArray(reader io.Reader) ([]byte, error) {
 	}
 }
 
+func EncodeUint64Array(uint64s []uint64) []byte {
+	var data []byte
+
+	data = append(data, UintToBuf(uint64(len(uint64s)))...)
+	for _, uint64 := range uint64s {
+		data = append(data, UintToBuf(uint64)...)
+	}
+
+	return data
+}
+
+func DecodeUint64Array(reader io.Reader) ([]uint64, error) {
+	arrLen, err := ReadUvarint(reader)
+	if err != nil {
+		return nil, errors.Wrapf(err, "DecodeUint64Array: Problem reading array length")
+	}
+
+	if arrLen == 0 {
+		return nil, nil
+	}
+
+	var result []uint64
+	result, err = SafeMakeSliceWithLength[uint64](arrLen)
+	if err != nil {
+		return nil, errors.Wrapf(err, "DecodeUint64Array: Problem creating slice")
+	}
+
+	for ii := uint64(0); ii < arrLen; ii++ {
+		result[ii], err = ReadUvarint(reader)
+		if err != nil {
+			return nil, errors.Wrapf(err, "DecodeUint64Array: Problem reading uint64")
+		}
+	}
+
+	return result, nil
+}
+
 func EncodePKIDuint64Map(pkidMap map[PKID]uint64) []byte {
 	var data []byte
 

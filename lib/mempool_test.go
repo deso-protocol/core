@@ -54,7 +54,7 @@ func TestMempoolLongChainOfDependencies(t *testing.T) {
 	mp := NewDeSoMempool(
 		chain, 0, /* rateLimitFeeRateNanosPerKB */
 		0 /* minFeeRateNanosPerKB */, "", true,
-		"" /*dataDir*/, "")
+		"" /*dataDir*/, "", true)
 	_, err := mp.processTransaction(txn1, false /*allowUnconnectedTxn*/, false /*rateLimit*/, 0 /*peerID*/, true /*verifySignatures*/)
 	require.NoError(err)
 
@@ -118,7 +118,7 @@ func TestMempoolRateLimit(t *testing.T) {
 	mpNoMinFees := NewDeSoMempool(
 		chain, 0, /* rateLimitFeeRateNanosPerKB */
 		0 /* minFeeRateNanosPerKB */, "", true,
-		"" /*dataDir*/, "")
+		"" /*dataDir*/, "", true)
 
 	// Create a transaction that sends 1 DeSo to the recipient as its
 	// zeroth output.
@@ -134,7 +134,7 @@ func TestMempoolRateLimit(t *testing.T) {
 	mpWithMinFee := NewDeSoMempool(
 		chain, 0, /* rateLimitFeeRateNanosPerKB */
 		100 /* minFeeRateNanosPerKB */, "", true,
-		"" /*dataDir*/, "")
+		"" /*dataDir*/, "", true)
 	_, err = mpWithMinFee.processTransaction(txn1, false /*allowUnconnectedTxn*/, true /*rateLimit*/, 0 /*peerID*/, false /*verifySignatures*/)
 	require.Error(err)
 	require.Contains(err.Error(), TxErrorInsufficientFeeMinFee)
@@ -183,7 +183,7 @@ func TestMempoolRateLimit(t *testing.T) {
 	mpWithRateLimit := NewDeSoMempool(
 		chain, 100, /* rateLimitFeeRateNanosPerKB */
 		0 /* minFeeRateNanosPerKB */, "", true,
-		"" /*dataDir*/, "")
+		"" /*dataDir*/, "", true)
 	processingErrors := []error{}
 	for _, txn := range txnsCreated {
 		_, err := mpWithRateLimit.processTransaction(txn, false /*allowUnconnectedTxn*/, true /*rateLimit*/, 0 /*peerID*/, false /*verifySignatures*/)
@@ -311,7 +311,7 @@ func TestMempoolAugmentedUtxoViewTransactionChain(t *testing.T) {
 	mp := NewDeSoMempool(
 		chain, 0, /* rateLimitFeeRateNanosPerKB */
 		0 /* minFeeRateNanosPerKB */, "", true,
-		"" /*dataDir*/, "")
+		"" /*dataDir*/, "", true)
 
 	// Process the first transaction.
 	mempoolTx1, err := mp.processTransaction(txn1, false /*allowUnconnectedTxn*/, false /*rateLimit*/, 0 /*peerID*/, true /*verifySignatures*/)
