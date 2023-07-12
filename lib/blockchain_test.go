@@ -259,6 +259,7 @@ func NewLowDifficultyBlockchainWithParamsAndDb(t *testing.T, params *DeSoParams,
 
 	t.Cleanup(func() {
 		AppendToMemLog(t, "CLEANUP_START")
+		TestDeSoEncoderShutdown(t)
 		if snap != nil {
 			snap.Stop()
 			CleanUpBadger(snap.SnapshotDb)
@@ -270,7 +271,6 @@ func NewLowDifficultyBlockchainWithParamsAndDb(t *testing.T, params *DeSoParams,
 			}
 		}
 		CleanUpBadger(db)
-		TestDeSoEncoderShutdown(t)
 		AppendToMemLog(t, "CLEANUP_END")
 	})
 
@@ -444,8 +444,8 @@ func _getBalanceWithView(t *testing.T, chain *Blockchain, utxoView *UtxoView, pk
 }
 
 func TestBalanceModelBlockTests(t *testing.T) {
-	setBalanceModelBlockHeights()
-	defer resetBalanceModelBlockHeights()
+	setBalanceModelBlockHeights(t)
+
 	TestBasicTransferReorg(t)
 	TestProcessBlockConnectBlocks(t)
 	TestProcessHeaderskReorgBlocks(t)
@@ -456,8 +456,8 @@ func TestBalanceModelBlockTests(t *testing.T) {
 }
 
 func TestBalanceModelBlockTests2(t *testing.T) {
-	setBalanceModelBlockHeights()
-	defer resetBalanceModelBlockHeights()
+	setBalanceModelBlockHeights(t)
+
 	TestCalcNextDifficultyTargetHalvingDoublingHitLimit(t)
 	TestCalcNextDifficultyTargetHittingLimitsSlow(t)
 	TestCalcNextDifficultyTargetHittingLimitsFast(t)
@@ -465,8 +465,8 @@ func TestBalanceModelBlockTests2(t *testing.T) {
 }
 
 func TestBalanceModelBlockTests3(t *testing.T) {
-	setBalanceModelBlockHeights()
-	defer resetBalanceModelBlockHeights()
+	setBalanceModelBlockHeights(t)
+
 	TestCalcNextDifficultyTargetSlightlyOff(t)
 	TestBadMerkleRoot(t)
 	TestBadBlockSignature(t)

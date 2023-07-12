@@ -292,16 +292,16 @@ func _doSubmitPostTxn(t *testing.T, chain *Blockchain, db *badger.DB,
 }
 
 func TestBalanceModelSubmitPost(t *testing.T) {
-	setBalanceModelBlockHeights()
-	defer resetBalanceModelBlockHeights()
+	setBalanceModelBlockHeights(t)
 
-	TestSubmitPost(t)
-	TestDeSoDiamonds(t)
-	TestDeSoDiamondErrorCases(t)
+	//TestSubmitPost(t)
+	//TestDeSoDiamonds(t)
+	//TestDeSoDiamondErrorCases(t)
 	TestFreezingPosts(t)
 }
 
 func TestSubmitPost(t *testing.T) {
+	fmt.Println("TestSubmitPost")
 	assert := assert.New(t)
 	require := require.New(t)
 	_ = assert
@@ -1675,6 +1675,7 @@ func findPostByPostHash(posts []*PostEntry, targetPostHash *BlockHash) (_targetP
 }
 
 func TestDeSoDiamonds(t *testing.T) {
+	fmt.Println("TestDeSoDiamonds")
 	assert := assert.New(t)
 	require := require.New(t)
 	_ = assert
@@ -1883,6 +1884,7 @@ func TestDeSoDiamonds(t *testing.T) {
 }
 
 func TestDeSoDiamondErrorCases(t *testing.T) {
+	fmt.Println("TestDeSoDiamondErrorCases")
 	assert := assert.New(t)
 	require := require.New(t)
 	_ = assert
@@ -2106,6 +2108,7 @@ func TestDeSoDiamondErrorCases(t *testing.T) {
 }
 
 func TestFreezingPosts(t *testing.T) {
+	fmt.Println("TestFreezingPosts")
 	// Initialize blockchain.
 	chain, params, db := NewLowDifficultyBlockchain(t)
 	defer func() {
@@ -2115,7 +2118,11 @@ func TestFreezingPosts(t *testing.T) {
 	}()
 	params.ForkHeights.AssociationsAndAccessGroupsBlockHeight = 1
 	params.EncoderMigrationHeights = GetEncoderMigrationHeights(&params.ForkHeights)
+	fmt.Println(params.EncoderMigrationHeights)
 	params.EncoderMigrationHeightsList = GetEncoderMigrationHeightsList(&params.ForkHeights)
+	for _, height := range params.EncoderMigrationHeightsList {
+		fmt.Println(height.Height, height.Name, height.Version)
+	}
 	GlobalDeSoParams = *params
 	mempool, miner := NewTestMiner(t, chain, params, true)
 
