@@ -690,7 +690,7 @@ func DBGetTopStakesByStakeAmount(
 		// Retrieve StakeEntry from db.
 		stakeEntry, err := DBGetStakeEntry(handle, snap, validatorPKID, stakerPKID)
 		if err != nil {
-			return nil, errors.Wrapf(err, "DBGetTopActiveValidatorsByStake: problem retrieving stake entry: ")
+			return nil, errors.Wrapf(err, "DBGetTopStakesByStakeAmount: problem retrieving stake entry: ")
 		}
 		stakeEntries = append(stakeEntries, stakeEntry)
 	}
@@ -2344,6 +2344,7 @@ func (bav *UtxoView) GetTopStakesByStakeAmount(limit uint64) ([]*StakeEntry, err
 	if limit == uint64(0) {
 		return []*StakeEntry{}, nil
 	}
+
 	// Create a slice of UtxoViewStakeEntries. We want to skip pulling these from the database in
 	// case they have been updated in the UtxoView and the changes have not yet flushed to the database.
 	// Updates to a StakeEntry could include adding/removing stake or being deleted which would
@@ -2354,6 +2355,7 @@ func (bav *UtxoView) GetTopStakesByStakeAmount(limit uint64) ([]*StakeEntry, err
 	for _, stakeEntry := range bav.StakeMapKeyToStakeEntry {
 		utxoViewStakeEntries = append(utxoViewStakeEntries, stakeEntry)
 	}
+
 	// Pull top N StakeEntries from the database (not present in the UtxoView).
 	// Note that we will skip stakers that are present in the view because we pass
 	// utxoViewStakeEntries to the function.
