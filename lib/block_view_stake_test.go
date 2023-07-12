@@ -125,6 +125,7 @@ func _testStaking(t *testing.T, flushToDB bool) {
 
 		stakeMetadata := &StakeMetadata{
 			ValidatorPublicKey: NewPublicKey(m0PkBytes),
+			RestakeRewards:     false,
 			StakeAmountNanos:   uint256.NewInt().SetUint64(100),
 		}
 		_, err = _submitStakeTxn(
@@ -141,6 +142,7 @@ func _testStaking(t *testing.T, flushToDB bool) {
 		// RuleErrorInvalidValidatorPKID
 		stakeMetadata := &StakeMetadata{
 			ValidatorPublicKey: NewPublicKey(m2PkBytes),
+			RestakeRewards:     false,
 			StakeAmountNanos:   uint256.NewInt(),
 		}
 		_, err = _submitStakeTxn(
@@ -153,6 +155,7 @@ func _testStaking(t *testing.T, flushToDB bool) {
 		// RuleErrorInvalidStakeAmountNanos
 		stakeMetadata := &StakeMetadata{
 			ValidatorPublicKey: NewPublicKey(m0PkBytes),
+			RestakeRewards:     false,
 			StakeAmountNanos:   nil,
 		}
 		_, err = _submitStakeTxn(
@@ -189,6 +192,7 @@ func _testStaking(t *testing.T, flushToDB bool) {
 		// RuleErrorInvalidStakeInsufficientBalance
 		stakeMetadata := &StakeMetadata{
 			ValidatorPublicKey: NewPublicKey(m0PkBytes),
+			RestakeRewards:     false,
 			StakeAmountNanos:   uint256.NewInt().SetUint64(math.MaxUint64),
 		}
 		_, err = _submitStakeTxn(
@@ -202,6 +206,7 @@ func _testStaking(t *testing.T, flushToDB bool) {
 		m1OldDESOBalanceNanos := getDESOBalanceNanos(m1PkBytes)
 		stakeMetadata := &StakeMetadata{
 			ValidatorPublicKey: NewPublicKey(m0PkBytes),
+			RestakeRewards:     false,
 			StakeAmountNanos:   uint256.NewInt().SetUint64(100),
 		}
 		extraData := map[string][]byte{"TestKey": []byte("TestValue")}
@@ -214,6 +219,7 @@ func _testStaking(t *testing.T, flushToDB bool) {
 		stakeEntry, err := utxoView().GetStakeEntry(m0PKID, m1PKID)
 		require.NoError(t, err)
 		require.NotNil(t, stakeEntry)
+		require.False(t, stakeEntry.RestakeRewards)
 		require.Equal(t, stakeEntry.StakeAmountNanos, uint256.NewInt().SetUint64(100))
 		require.Equal(t, stakeEntry.ExtraData["TestKey"], []byte("TestValue"))
 
@@ -232,6 +238,7 @@ func _testStaking(t *testing.T, flushToDB bool) {
 		m1OldDESOBalanceNanos := getDESOBalanceNanos(m1PkBytes)
 		stakeMetadata := &StakeMetadata{
 			ValidatorPublicKey: NewPublicKey(m0PkBytes),
+			RestakeRewards:     false,
 			StakeAmountNanos:   uint256.NewInt().SetUint64(50),
 		}
 		extraData := map[string][]byte{"TestKey": []byte("TestValue2")}
@@ -244,10 +251,45 @@ func _testStaking(t *testing.T, flushToDB bool) {
 		stakeEntry, err := utxoView().GetStakeEntry(m0PKID, m1PKID)
 		require.NoError(t, err)
 		require.NotNil(t, stakeEntry)
+		require.False(t, stakeEntry.RestakeRewards)
 		require.Equal(t, stakeEntry.StakeAmountNanos, uint256.NewInt().SetUint64(150))
 		require.Equal(t, stakeEntry.ExtraData["TestKey"], []byte("TestValue2"))
 
 		// Verify ValidatorEntry.TotalStakeAmountNanos.
+		validatorEntry, err := utxoView().GetValidatorByPKID(m0PKID)
+		require.NoError(t, err)
+		require.NotNil(t, validatorEntry)
+		require.Equal(t, validatorEntry.TotalStakeAmountNanos, uint256.NewInt().SetUint64(150))
+
+		// Verify m1's DESO balance decreases by StakeAmountNanos (net of fees).
+		m1NewDESOBalanceNanos := getDESOBalanceNanos(m1PkBytes)
+		require.Equal(t, m1OldDESOBalanceNanos-feeNanos-stakeMetadata.StakeAmountNanos.Uint64(), m1NewDESOBalanceNanos)
+	}
+	{
+		// m1 changes the RestakeRewards flag on their stake with m0.
+		m1OldDESOBalanceNanos := getDESOBalanceNanos(m1PkBytes)
+		stakeMetadata := &StakeMetadata{
+			ValidatorPublicKey: NewPublicKey(m0PkBytes),
+			RestakeRewards:     true,
+			StakeAmountNanos:   uint256.NewInt(),
+		}
+		extraData := map[string][]byte{"TestKey": []byte("TestValue2")}
+		feeNanos, err := _submitStakeTxn(
+			testMeta, m1Pub, m1Priv, stakeMetadata, extraData, flushToDB,
+		)
+		require.NoError(t, err)
+
+		// Verify the StakeEntry.StakeAmountNanos does not change.
+		stakeEntry, err := utxoView().GetStakeEntry(m0PKID, m1PKID)
+		require.NoError(t, err)
+		require.NotNil(t, stakeEntry)
+		require.Equal(t, stakeEntry.StakeAmountNanos, uint256.NewInt().SetUint64(150))
+		require.Equal(t, stakeEntry.ExtraData["TestKey"], []byte("TestValue2"))
+
+		// Verify the StakeEntry.RestakeRewards flag is updated to true.
+		require.True(t, stakeEntry.RestakeRewards)
+
+		// Verify the ValidatorEntry.TotalStakeAmountNanos does not change.
 		validatorEntry, err := utxoView().GetValidatorByPKID(m0PKID)
 		require.NoError(t, err)
 		require.NotNil(t, validatorEntry)

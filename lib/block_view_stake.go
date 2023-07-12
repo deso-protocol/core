@@ -35,6 +35,7 @@ import (
 type StakeEntry struct {
 	StakerPKID       *PKID
 	ValidatorPKID    *PKID
+	RestakeRewards   bool
 	StakeAmountNanos *uint256.Int
 	ExtraData        map[string][]byte
 	isDeleted        bool
@@ -49,6 +50,7 @@ func (stakeEntry *StakeEntry) Copy() *StakeEntry {
 	return &StakeEntry{
 		StakerPKID:       stakeEntry.StakerPKID.NewPKID(),
 		ValidatorPKID:    stakeEntry.ValidatorPKID.NewPKID(),
+		RestakeRewards:   stakeEntry.RestakeRewards,
 		StakeAmountNanos: stakeEntry.StakeAmountNanos.Clone(),
 		ExtraData:        copyExtraData(stakeEntry.ExtraData),
 		isDeleted:        stakeEntry.isDeleted,
@@ -70,6 +72,7 @@ func (stakeEntry *StakeEntry) RawEncodeWithoutMetadata(blockHeight uint64, skipM
 	var data []byte
 	data = append(data, EncodeToBytes(blockHeight, stakeEntry.StakerPKID, skipMetadata...)...)
 	data = append(data, EncodeToBytes(blockHeight, stakeEntry.ValidatorPKID, skipMetadata...)...)
+	data = append(data, BoolToByte(stakeEntry.RestakeRewards))
 	data = append(data, VariableEncodeUint256(stakeEntry.StakeAmountNanos)...)
 	data = append(data, EncodeExtraData(stakeEntry.ExtraData)...)
 	return data
@@ -88,6 +91,12 @@ func (stakeEntry *StakeEntry) RawDecodeWithoutMetadata(blockHeight uint64, rr *b
 	stakeEntry.ValidatorPKID, err = DecodeDeSoEncoder(&PKID{}, rr)
 	if err != nil {
 		return errors.Wrapf(err, "StakeEntry.Decode: Problem reading ValidatorPKID: ")
+	}
+
+	// RestakeRewards
+	stakeEntry.RestakeRewards, err = ReadBoolByte(rr)
+	if err != nil {
+		return errors.Wrapf(err, "StakeEntry.Decode: Problem reading RestakeRewards")
 	}
 
 	// StakeAmountNanos
@@ -215,6 +224,7 @@ func (lockedStakeEntry *LockedStakeEntry) GetEncoderType() EncoderType {
 
 type StakeMetadata struct {
 	ValidatorPublicKey *PublicKey
+	RestakeRewards     bool
 	StakeAmountNanos   *uint256.Int
 }
 
@@ -225,6 +235,7 @@ func (txnData *StakeMetadata) GetTxnType() TxnType {
 func (txnData *StakeMetadata) ToBytes(preSignature bool) ([]byte, error) {
 	var data []byte
 	data = append(data, EncodeByteArray(txnData.ValidatorPublicKey.ToBytes())...)
+	data = append(data, BoolToByte(txnData.RestakeRewards))
 	data = append(data, VariableEncodeUint256(txnData.StakeAmountNanos)...)
 	return data, nil
 }
@@ -238,6 +249,12 @@ func (txnData *StakeMetadata) FromBytes(data []byte) error {
 		return errors.Wrapf(err, "StakeMetadata.FromBytes: Problem reading ValidatorPublicKey: ")
 	}
 	txnData.ValidatorPublicKey = NewPublicKey(validatorPublicKeyBytes)
+
+	// RestakeRewards
+	txnData.RestakeRewards, err = ReadBoolByte(rr)
+	if err != nil {
+		return errors.Wrapf(err, "StakeMetadata.FromBytes: Problem reading RestakeRewards: ")
+	}
 
 	// StakeAmountNanos
 	txnData.StakeAmountNanos, err = VariableDecodeUint256(rr)
@@ -353,6 +370,7 @@ func (txnData *UnlockStakeMetadata) New() DeSoTxnMetadata {
 type StakeTxindexMetadata struct {
 	StakerPublicKeyBase58Check    string
 	ValidatorPublicKeyBase58Check string
+	RestakeRewards                bool
 	StakeAmountNanos              *uint256.Int
 }
 
@@ -360,6 +378,7 @@ func (txindexMetadata *StakeTxindexMetadata) RawEncodeWithoutMetadata(blockHeigh
 	var data []byte
 	data = append(data, EncodeByteArray([]byte(txindexMetadata.StakerPublicKeyBase58Check))...)
 	data = append(data, EncodeByteArray([]byte(txindexMetadata.ValidatorPublicKeyBase58Check))...)
+	data = append(data, BoolToByte(txindexMetadata.RestakeRewards))
 	data = append(data, VariableEncodeUint256(txindexMetadata.StakeAmountNanos)...)
 	return data
 }
@@ -380,6 +399,12 @@ func (txindexMetadata *StakeTxindexMetadata) RawDecodeWithoutMetadata(blockHeigh
 		return errors.Wrapf(err, "StakeTxindexMetadata.Decode: Problem reading ValidatorPublicKeyBase58Check: ")
 	}
 	txindexMetadata.ValidatorPublicKeyBase58Check = string(validatorPublicKeyBase58CheckBytes)
+
+	// RestakeRewards
+	txindexMetadata.RestakeRewards, err = ReadBoolByte(rr)
+	if err != nil {
+		return errors.Wrapf(err, "StakeTxindexMetadata.Decode: Problem reading RestakeRewards: ")
+	}
 
 	// StakeAmountNanos
 	txindexMetadata.StakeAmountNanos, err = VariableDecodeUint256(rr)
@@ -1202,6 +1227,7 @@ func (bav *UtxoView) _connectStake(
 	currentStakeEntry := &StakeEntry{
 		StakerPKID:       transactorPKIDEntry.PKID,
 		ValidatorPKID:    prevValidatorEntry.ValidatorPKID,
+		RestakeRewards:   txMeta.RestakeRewards,
 		StakeAmountNanos: stakeAmountNanos,
 		ExtraData:        mergeExtraData(prevExtraData, txn.ExtraData),
 	}
@@ -1826,13 +1852,11 @@ func (bav *UtxoView) IsValidStakeMetadata(transactorPkBytes []byte, metadata *St
 		return errors.Wrapf(RuleErrorInvalidStakeValidatorDisabledDelegatedStake, "UtxoView.IsValidStakeMetadata: ")
 	}
 
-	// Validate 0 < StakeAmountNanos <= transactor's DESO Balance. We ignore
+	// Validate 0 <= StakeAmountNanos <= transactor's DESO Balance. We ignore
 	// the txn fees in this check. The StakeAmountNanos will be validated to
 	// be less than the transactor's DESO balance net of txn fees in the call
 	// to connectBasicTransferWithExtraSpend.
-	if metadata.StakeAmountNanos == nil ||
-		metadata.StakeAmountNanos.IsZero() ||
-		!metadata.StakeAmountNanos.IsUint64() {
+	if metadata.StakeAmountNanos == nil || !metadata.StakeAmountNanos.IsUint64() {
 		return errors.Wrapf(RuleErrorInvalidStakeAmountNanos, "UtxoView.IsValidStakeMetadata: ")
 	}
 	transactorDeSoBalanceNanos, err := bav.GetSpendableDeSoBalanceNanosForPublicKey(transactorPkBytes, blockHeight-1)
@@ -1841,6 +1865,16 @@ func (bav *UtxoView) IsValidStakeMetadata(transactorPkBytes []byte, metadata *St
 	}
 	if uint256.NewInt().SetUint64(transactorDeSoBalanceNanos).Cmp(metadata.StakeAmountNanos) < 0 {
 		return errors.Wrapf(RuleErrorInvalidStakeInsufficientBalance, "UtxoView.IsValidStakeMetadata: ")
+	}
+
+	// Validate StakeAmountNanos > 0 when this is the first stake operation where the transactor is staking
+	// to the validator. It should not be possible for a validator to stake 0 DESO to a validator.
+	stakeEntry, err := bav.GetStakeEntry(validatorEntry.ValidatorPKID, transactorPKIDEntry.PKID)
+	if err != nil {
+		return errors.Wrapf(err, "UtxoView.IsValidStakeMetadata: ")
+	}
+	if stakeEntry == nil && metadata.StakeAmountNanos.IsZero() {
+		return errors.Wrapf(RuleErrorInvalidStakeAmountNanos, "UtxoView.IsValidStakeMetadata: ")
 	}
 
 	return nil
