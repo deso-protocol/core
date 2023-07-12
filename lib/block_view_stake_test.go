@@ -168,6 +168,18 @@ func _testStaking(t *testing.T, flushToDB bool) {
 		// RuleErrorInvalidStakeAmountNanos
 		stakeMetadata := &StakeMetadata{
 			ValidatorPublicKey: NewPublicKey(m0PkBytes),
+			StakeAmountNanos:   uint256.NewInt(),
+		}
+		_, err = _submitStakeTxn(
+			testMeta, m1Pub, m1Priv, stakeMetadata, nil, flushToDB,
+		)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), RuleErrorInvalidStakeAmountNanos)
+	}
+	{
+		// RuleErrorInvalidStakeAmountNanos
+		stakeMetadata := &StakeMetadata{
+			ValidatorPublicKey: NewPublicKey(m0PkBytes),
 			StakeAmountNanos:   MaxUint256,
 		}
 		_, err = _submitStakeTxn(

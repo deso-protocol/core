@@ -1867,6 +1867,16 @@ func (bav *UtxoView) IsValidStakeMetadata(transactorPkBytes []byte, metadata *St
 		return errors.Wrapf(RuleErrorInvalidStakeInsufficientBalance, "UtxoView.IsValidStakeMetadata: ")
 	}
 
+	// Validate StakeAmountNanos > 0 when this is the first stake operation where the transactor is staking
+	// to the validator. It should not be possible for a validator to stake 0 DESO to a validator.
+	stakeEntry, err := bav.GetStakeEntry(validatorEntry.ValidatorPKID, transactorPKIDEntry.PKID)
+	if err != nil {
+		return errors.Wrapf(err, "UtxoView.IsValidStakeMetadata: ")
+	}
+	if stakeEntry == nil && metadata.StakeAmountNanos.IsZero() {
+		return errors.Wrapf(RuleErrorInvalidStakeAmountNanos, "UtxoView.IsValidStakeMetadata: ")
+	}
+
 	return nil
 }
 
