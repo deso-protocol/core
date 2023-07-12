@@ -307,8 +307,8 @@ const TestDeSoEncoderRetries = 3
 
 func TestDeSoEncoderSetup(t *testing.T) {
 	EncodeToBytesImpl = func(blockHeight uint64, encoder DeSoEncoder, skipMetadata ...bool) []byte {
-		encodingBytes := encodeToBytes(blockHeight, encoder, skipMetadata...)
 		versionByte := encoder.GetVersionByte(blockHeight)
+		encodingBytes := encodeToBytes(blockHeight, encoder, skipMetadata...)
 		// Check for deterministic encoding, try re-encoding the same encoder a couple of times and compare it with
 		// the original bytes.
 		{
@@ -317,7 +317,7 @@ func TestDeSoEncoderSetup(t *testing.T) {
 				reEncodingBytes := encodeToBytes(blockHeight, encoder, skipMetadata...)
 				if !bytes.Equal(encodingBytes, reEncodingBytes) {
 					t.Fatalf("EncodeToBytes: Found non-deterministic encoding for a DeSoEncoder. Attempted "+
-						"encoder type (%v), version byte (%v) (%v) at block height (%v).\n "+
+						"encoder type (%v), version byte (original: %v, reEncoding: %v) at block height (%v).\n "+
 						"First encoding: (%v)\n"+"Second encoding: (%v)\n",
 						encoder.GetEncoderType(), versionByte, newVersionByte,
 						blockHeight, hex.EncodeToString(encodingBytes), hex.EncodeToString(reEncodingBytes))
