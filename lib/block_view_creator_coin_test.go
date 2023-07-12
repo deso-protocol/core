@@ -792,8 +792,7 @@ func _helpTestCreatorCoinBuySell(
 }
 
 func TestBalanceModelCreatorCoins(t *testing.T) {
-	setBalanceModelBlockHeights()
-	defer resetBalanceModelBlockHeights()
+	setBalanceModelBlockHeights(t)
 
 	TestCreatorCoinWithDiamonds(t)
 	TestCreatorCoinWithDiamondsFailureCases(t)
@@ -803,8 +802,7 @@ func TestBalanceModelCreatorCoins(t *testing.T) {
 }
 
 func TestBalanceModelCreatorCoins2(t *testing.T) {
-	setBalanceModelBlockHeights()
-	defer resetBalanceModelBlockHeights()
+	setBalanceModelBlockHeights(t)
 
 	TestCreatorCoinTransferWithSwapIdentity(t)
 	TestCreatorCoinTransferWithSmallBalancesLeftOver(t)
@@ -814,8 +812,7 @@ func TestBalanceModelCreatorCoins2(t *testing.T) {
 }
 
 func TestBalanceModelCreatorCoins3(t *testing.T) {
-	setBalanceModelBlockHeights()
-	defer resetBalanceModelBlockHeights()
+	setBalanceModelBlockHeights(t)
 
 	TestCreatorCoinBuySellSimple_DeSoFounderReward(t)
 	TestCreatorCoinSelfBuying_DeSoAndCreatorCoinFounderReward(t)
@@ -825,8 +822,7 @@ func TestBalanceModelCreatorCoins3(t *testing.T) {
 }
 
 func TestBalanceModelCreatorCoins4(t *testing.T) {
-	setBalanceModelBlockHeights()
-	defer resetBalanceModelBlockHeights()
+	setBalanceModelBlockHeights(t)
 
 	TestCreatorCoinLargeFounderRewardBuySellAmounts(t)
 	TestCreatorCoinAroundThresholdBuySellAmounts(t)

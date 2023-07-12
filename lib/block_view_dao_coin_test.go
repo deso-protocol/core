@@ -175,8 +175,7 @@ func _daoCoinTransferTxnWithTestMeta(
 }
 
 func TestBalanceModelDAOCoins(t *testing.T) {
-	setBalanceModelBlockHeights()
-	defer resetBalanceModelBlockHeights()
+	setBalanceModelBlockHeights(t)
 
 	TestDAOCoinBasic(t)
 }

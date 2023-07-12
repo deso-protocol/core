@@ -13,8 +13,7 @@ import (
 )
 
 func TestBalanceModelDAOCoinLimitOrders(t *testing.T) {
-	setBalanceModelBlockHeights()
-	defer resetBalanceModelBlockHeights()
+	setBalanceModelBlockHeights(t)
 
 	TestZeroCostOrderEdgeCaseDAOCoinLimitOrder(t)
 	TestDAOCoinLimitOrder(t)

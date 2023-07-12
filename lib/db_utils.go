@@ -9849,7 +9849,9 @@ func PerformanceBadgerOptions(dir string) badger.Options {
 }
 
 func DefaultBadgerOptions(dir string) badger.Options {
-	return badger.DefaultOptions(dir)
+	opts := badger.DefaultOptions(dir)
+	opts.Logger = nil
+	return opts
 }
 
 // ---------------------------------------------
