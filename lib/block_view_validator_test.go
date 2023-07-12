@@ -27,8 +27,7 @@ func _testValidatorRegistration(t *testing.T, flushToDB bool) {
 	var err error
 
 	// Initialize balance model fork heights.
-	setBalanceModelBlockHeights()
-	defer resetBalanceModelBlockHeights()
+	setBalanceModelBlockHeights(t)
 
 	// Initialize test chain and miner.
 	chain, params, db := NewLowDifficultyBlockchain(t)
@@ -406,8 +405,7 @@ func TestValidatorRegistrationWithDerivedKey(t *testing.T) {
 	var err error
 
 	// Initialize balance model fork heights.
-	setBalanceModelBlockHeights()
-	defer resetBalanceModelBlockHeights()
+	setBalanceModelBlockHeights(t)
 
 	// Initialize test chain and miner.
 	chain, params, db := NewLowDifficultyBlockchain(t)
@@ -673,8 +671,7 @@ func _testGetTopActiveValidatorsByStake(t *testing.T, flushToDB bool) {
 	var err error
 
 	// Initialize balance model fork heights.
-	setBalanceModelBlockHeights()
-	defer resetBalanceModelBlockHeights()
+	setBalanceModelBlockHeights(t)
 
 	// Initialize test chain and miner.
 	chain, params, db := NewLowDifficultyBlockchain(t)
@@ -1106,8 +1103,7 @@ func _testUpdatingValidatorDisableDelegatedStake(t *testing.T, flushToDB bool) {
 	var err error
 
 	// Initialize balance model fork heights.
-	setBalanceModelBlockHeights()
-	defer resetBalanceModelBlockHeights()
+	setBalanceModelBlockHeights(t)
 
 	// Initialize test chain and miner.
 	chain, params, db := NewLowDifficultyBlockchain(t)
@@ -1290,8 +1286,7 @@ func _testUnregisterAsValidator(t *testing.T, flushToDB bool) {
 	var err error
 
 	// Initialize balance model fork heights.
-	setBalanceModelBlockHeights()
-	defer resetBalanceModelBlockHeights()
+	setBalanceModelBlockHeights(t)
 
 	// Initialize test chain and miner.
 	chain, params, db := NewLowDifficultyBlockchain(t)
@@ -1465,8 +1460,7 @@ func _testUnjailValidator(t *testing.T, flushToDB bool) {
 	var err error
 
 	// Initialize balance model fork heights.
-	setBalanceModelBlockHeights()
-	defer resetBalanceModelBlockHeights()
+	setBalanceModelBlockHeights(t)
 
 	// Initialize test chain and miner.
 	chain, params, db := NewLowDifficultyBlockchain(t)
@@ -1679,8 +1673,7 @@ func TestUnjailValidatorWithDerivedKey(t *testing.T) {
 	var err error
 
 	// Initialize balance model fork heights.
-	setBalanceModelBlockHeights()
-	defer resetBalanceModelBlockHeights()
+	setBalanceModelBlockHeights(t)
 
 	// Initialize test chain and miner.
 	chain, params, db := NewLowDifficultyBlockchain(t)

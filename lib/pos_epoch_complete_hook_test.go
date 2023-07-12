@@ -14,8 +14,7 @@ func TestIsLastBlockInCurrentEpoch(t *testing.T) {
 	var isLastBlockInCurrentEpoch bool
 
 	// Initialize balance model fork heights.
-	setBalanceModelBlockHeights()
-	defer resetBalanceModelBlockHeights()
+	setBalanceModelBlockHeights(t)
 
 	// Initialize test chain and miner.
 	chain, params, db := NewLowDifficultyBlockchain(t)
@@ -55,8 +54,7 @@ func TestIsLastBlockInCurrentEpoch(t *testing.T) {
 
 func TestRunEpochCompleteHook(t *testing.T) {
 	// Initialize balance model fork heights.
-	setBalanceModelBlockHeights()
-	defer resetBalanceModelBlockHeights()
+	setBalanceModelBlockHeights(t)
 
 	// Initialize test chain and miner.
 	chain, params, db := NewLowDifficultyBlockchain(t)
