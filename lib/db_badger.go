@@ -74,7 +74,7 @@ func NewBadgerTransaction(txn *badger.Txn) *BadgerTransaction {
 }
 
 func (btx *BadgerTransaction) Set(key []byte, value []byte, ctx Context) error {
-	prefixedKey, err := badgerContextGetPrefixedKey(key, ctx)
+	prefixedKey, err := castBadgerContextAndGetPrefixedKey(key, ctx)
 	if err != nil {
 		return errors.Wrapf(err, "Set:")
 	}
@@ -82,7 +82,7 @@ func (btx *BadgerTransaction) Set(key []byte, value []byte, ctx Context) error {
 }
 
 func (btx *BadgerTransaction) Delete(key []byte, ctx Context) error {
-	prefixedKey, err := badgerContextGetPrefixedKey(key, ctx)
+	prefixedKey, err := castBadgerContextAndGetPrefixedKey(key, ctx)
 	if err != nil {
 		return errors.Wrapf(err, "Delete:")
 	}
@@ -91,7 +91,7 @@ func (btx *BadgerTransaction) Delete(key []byte, ctx Context) error {
 
 func (btx *BadgerTransaction) Get(key []byte, ctx Context) ([]byte, error) {
 	var value []byte
-	prefixedKey, err := badgerContextGetPrefixedKey(key, ctx)
+	prefixedKey, err := castBadgerContextAndGetPrefixedKey(key, ctx)
 	if err != nil {
 		return nil, errors.Wrapf(err, "Get:")
 	}
@@ -167,7 +167,7 @@ func (bc *BadgerContext) DatabaseId() DatabaseId {
 	return BADGERDB
 }
 
-func badgerContextGetPrefixedKey(key []byte, ctx Context) (_prefixedKey []byte, _err error) {
+func castBadgerContextAndGetPrefixedKey(key []byte, ctx Context) (_prefixedKey []byte, _err error) {
 	badgerCtx, err := AssertDatabaseContext[*BadgerContext](ctx, BADGERDB)
 	if err != nil {
 		return nil, err

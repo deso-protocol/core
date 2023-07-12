@@ -37,8 +37,14 @@ func TestBolt25MB(t *testing.T) {
 	defer db.Cleanup()
 	defer db.Close()
 
-	boltCtx := db.GetContext([]byte("TestBucket"))
-	Generic25MBBatchTest(db, boltCtx, t)
+	ctx := db.GetContext([]byte("TestBucket"))
+	Generic25MBBatchTest(db, ctx, t)
+
+	// Test nested context
+	boltCtx, err := AssertDatabaseContext[*BoltContext](ctx, BOLTDB)
+	require.NoError(err)
+	boltNestedCtx := NewBoltNestedContext([]byte("NestedBucket"), boltCtx)
+	Generic25MBBatchTest(db, boltNestedCtx, t)
 }
 
 func TestBadger25MB(t *testing.T) {
