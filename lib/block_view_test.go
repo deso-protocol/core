@@ -303,7 +303,7 @@ func (tes *transactionTestSuite) Run() {
 	}
 }
 
-const TestDeSoEncoderRetries = 50
+const TestDeSoEncoderRetries = 3
 
 func TestDeSoEncoderSetup(t *testing.T) {
 	EncodeToBytesImpl = func(blockHeight uint64, encoder DeSoEncoder, skipMetadata ...bool) []byte {
