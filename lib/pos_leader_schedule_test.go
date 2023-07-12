@@ -5,15 +5,15 @@ package lib
 import (
 	"crypto/sha256"
 	"fmt"
+	"testing"
+
 	"github.com/holiman/uint256"
 	"github.com/stretchr/testify/require"
-	"testing"
 )
 
 func TestGenerateLeaderSchedule(t *testing.T) {
 	// Initialize balance model fork heights.
-	setBalanceModelBlockHeights()
-	defer resetBalanceModelBlockHeights()
+	setBalanceModelBlockHeights(t)
 
 	// Initialize test chain and miner.
 	chain, params, db := NewLowDifficultyBlockchain(t)
