@@ -457,7 +457,6 @@ func GetMigrationVersion(blockHeight uint64, appliedMigrationNames ...MigrationN
 			}
 		}
 	}
-
 	return maxMigrationVersion
 }
 

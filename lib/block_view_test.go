@@ -66,7 +66,7 @@ var (
 	paramUpdaterPkBytes, _, _ = Base58CheckDecode(paramUpdaterPub)
 )
 
-func setBalanceModelBlockHeights() {
+func setBalanceModelBlockHeights(t *testing.T) {
 	DeSoTestnetParams.ForkHeights.NFTTransferOrBurnAndDerivedKeysBlockHeight = 0
 	DeSoTestnetParams.ForkHeights.DerivedKeySetSpendingLimitsBlockHeight = 0
 	DeSoTestnetParams.ForkHeights.DerivedKeyTrackSpendingLimitsBlockHeight = 0
@@ -77,6 +77,8 @@ func setBalanceModelBlockHeights() {
 	DeSoTestnetParams.EncoderMigrationHeights = GetEncoderMigrationHeights(&DeSoTestnetParams.ForkHeights)
 	DeSoTestnetParams.EncoderMigrationHeightsList = GetEncoderMigrationHeightsList(&DeSoTestnetParams.ForkHeights)
 	GlobalDeSoParams = DeSoTestnetParams
+
+	t.Cleanup(resetBalanceModelBlockHeights)
 }
 
 func resetBalanceModelBlockHeights() {
@@ -305,18 +307,19 @@ const TestDeSoEncoderRetries = 3
 
 func TestDeSoEncoderSetup(t *testing.T) {
 	EncodeToBytesImpl = func(blockHeight uint64, encoder DeSoEncoder, skipMetadata ...bool) []byte {
+		versionByte := encoder.GetVersionByte(blockHeight)
 		encodingBytes := encodeToBytes(blockHeight, encoder, skipMetadata...)
-
 		// Check for deterministic encoding, try re-encoding the same encoder a couple of times and compare it with
 		// the original bytes.
 		{
 			for ii := 0; ii < TestDeSoEncoderRetries; ii++ {
+				newVersionByte := encoder.GetVersionByte(blockHeight)
 				reEncodingBytes := encodeToBytes(blockHeight, encoder, skipMetadata...)
 				if !bytes.Equal(encodingBytes, reEncodingBytes) {
 					t.Fatalf("EncodeToBytes: Found non-deterministic encoding for a DeSoEncoder. Attempted "+
-						"encoder type (%v), version byte (%v) at block height (%v).\n "+
+						"encoder type (%v), version byte (original: %v, reEncoding: %v) at block height (%v).\n "+
 						"First encoding: (%v)\n"+"Second encoding: (%v)\n",
-						encoder.GetEncoderType(), encoder.GetVersionByte(blockHeight),
+						encoder.GetEncoderType(), versionByte, newVersionByte,
 						blockHeight, hex.EncodeToString(encodingBytes), hex.EncodeToString(reEncodingBytes))
 				}
 			}
@@ -1209,8 +1212,7 @@ func _connectBlockThenDisconnectBlockAndFlush(testMeta *TestMeta) {
 }
 
 func TestBalanceModelUpdateGlobalParams(t *testing.T) {
-	setBalanceModelBlockHeights()
-	defer resetBalanceModelBlockHeights()
+	setBalanceModelBlockHeights(t)
 
 	TestUpdateGlobalParams(t)
 }
@@ -1428,8 +1430,7 @@ func TestUpdateGlobalParams(t *testing.T) {
 }
 
 func TestBalanceModelBasicTransfers(t *testing.T) {
-	setBalanceModelBlockHeights()
-	defer resetBalanceModelBlockHeights()
+	setBalanceModelBlockHeights(t)
 
 	TestBasicTransfer(t)
 	TestBasicTransferSignatures(t)

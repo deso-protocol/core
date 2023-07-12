@@ -292,8 +292,7 @@ func _doSubmitPostTxn(t *testing.T, chain *Blockchain, db *badger.DB,
 }
 
 func TestBalanceModelSubmitPost(t *testing.T) {
-	setBalanceModelBlockHeights()
-	defer resetBalanceModelBlockHeights()
+	setBalanceModelBlockHeights(t)
 
 	TestSubmitPost(t)
 	TestDeSoDiamonds(t)
