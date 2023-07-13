@@ -567,6 +567,24 @@ func DBKeyForStakeByStakeAmount(stakeEntry *StakeEntry) []byte {
 	return data
 }
 
+func GetValidatorPKIDFromDBKeyForStakeByStakeAmount(key []byte) (*PKID, error) {
+	validatorPKIDBytes := key[len(key)-(PublicKeyLenCompressed*2) : len(key)-PublicKeyLenCompressed]
+	validatorPKID := PKID{}
+	if err := validatorPKID.FromBytes(bytes.NewReader(validatorPKIDBytes)); err != nil {
+		return nil, errors.Wrapf(err, "GetValidatorPKIDFromDBKeyForStakeByStakeAmount: ")
+	}
+	return &validatorPKID, nil
+}
+
+func GetStakerPKIDFromDBKeyForStakeByStakeAmount(key []byte) (*PKID, error) {
+	stakerPKIDBytes := key[len(key)-(PublicKeyLenCompressed):]
+	stakerPKID := PKID{}
+	if err := stakerPKID.FromBytes(bytes.NewReader(stakerPKIDBytes)); err != nil {
+		return nil, errors.Wrapf(err, "GetStakerPKIDFromDBKeyForStakeByStakeAmount: ")
+	}
+	return &stakerPKID, nil
+}
+
 func DBKeyForLockedStakeByValidatorAndStakerAndLockedAt(lockedStakeEntry *LockedStakeEntry) []byte {
 	data := DBPrefixKeyForLockedStakeByValidatorAndStaker(lockedStakeEntry)
 	data = append(data, EncodeUint64(lockedStakeEntry.LockedAtEpochNumber)...)
@@ -667,23 +685,17 @@ func DBGetTopStakesByStakeAmount(
 		return nil, errors.Wrapf(err, "DBGetTopStakesByStakeAmount: problem retrieving top stakes: ")
 	}
 
-	// For each key found, parse the staker PKID and validator PKID from the key, then retrieve the StakeEntry.
+	// For each key found, parse the staker PKID and validator PKID from the key, then retrieve the StakeEntry.:len(keyFound)-PublicKeyLenCompressed
 	for _, keyFound := range keysFound {
-		// Parse the validator PKID bytes from the key. The ValidatorPKID is the second to last last component of the key.
-		validatorPKIDBytes := keyFound[len(keyFound)-(PublicKeyLenCompressed*2):]
-
-		// Parse the staker PKID bytes from the key. It's the last component of the key.
-		stakerPKIDBytes := keyFound[len(keyFound)-PublicKeyLenCompressed:]
-
-		// Convert the validator PKID bytes to PKID.
-		validatorPKID := &PKID{}
-		if err = validatorPKID.FromBytes(bytes.NewReader(validatorPKIDBytes)); err != nil {
+		// Extract the validator PKID from the key.
+		validatorPKID, err := GetValidatorPKIDFromDBKeyForStakeByStakeAmount(keyFound)
+		if err != nil {
 			return nil, errors.Wrapf(err, "DBGetTopStakesByStakeAmount: problem reading ValidatorPKID: ")
 		}
 
-		// Convert the staker PKID bytes to PKID.
-		stakerPKID := &PKID{}
-		if err = stakerPKID.FromBytes(bytes.NewReader(stakerPKIDBytes)); err != nil {
+		// Extract the staker PKID from the key.
+		stakerPKID, err := GetStakerPKIDFromDBKeyForStakeByStakeAmount(keyFound)
+		if err != nil {
 			return nil, errors.Wrapf(err, "DBGetTopStakesByStakeAmount: problem reading StakerPKID: ")
 		}
 
@@ -2348,7 +2360,7 @@ func (bav *UtxoView) GetTopStakesByStakeAmount(limit uint64) ([]*StakeEntry, err
 	// Create a slice of UtxoViewStakeEntries. We want to skip pulling these from the database in
 	// case they have been updated in the UtxoView and the changes have not yet flushed to the database.
 	// Updates to a StakeEntry could include adding/removing stake or being deleted which would
-	// impact our ordering. We pull N StakeEntry not present in the UtxoView from the database
+	// impact our ordering. We pull N StakeEntries not present in the UtxoView from the database
 	// then sort the UtxoViewStakeEntry and DatabaseStakeEntry together to find the top N
 	// StakeEntry by stake across both the UtxoView and database.
 	var utxoViewStakeEntries []*StakeEntry
@@ -2369,7 +2381,7 @@ func (bav *UtxoView) GetTopStakesByStakeAmount(limit uint64) ([]*StakeEntry, err
 		// We only pull StakeEntries from the db that are not present in the
 		// UtxoView. As a sanity check, we double-check that the StakeEntry
 		// is not already in the UtxoView here.
-		stakeMapKey := StakeMapKey{ValidatorPKID: *stakeEntry.ValidatorPKID, StakerPKID: *stakeEntry.StakerPKID}
+		stakeMapKey := stakeEntry.ToMapKey()
 		if _, exists := bav.StakeMapKeyToStakeEntry[stakeMapKey]; !exists {
 			bav._setStakeEntryMappings(stakeEntry)
 		}
@@ -2384,7 +2396,7 @@ func (bav *UtxoView) GetTopStakesByStakeAmount(limit uint64) ([]*StakeEntry, err
 	}
 
 	// Sort the StakeEntries by StakeAmountNanos DESC.
-	sort.SliceStable(stakeEntries, func(ii, jj int) bool {
+	sort.Slice(stakeEntries, func(ii, jj int) bool {
 		stakeCmp := stakeEntries[ii].StakeAmountNanos.Cmp(stakeEntries[jj].StakeAmountNanos)
 		if stakeCmp != 0 {
 			return stakeCmp > 0
