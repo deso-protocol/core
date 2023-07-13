@@ -3,9 +3,12 @@ package lib
 import (
 	"github.com/pkg/errors"
 	"math"
+	"sync"
 )
 
 type PosMempoolLedger struct {
+	sync.RWMutex
+
 	reservedBalances map[PublicKey]uint64
 }
 
@@ -16,6 +19,9 @@ func NewPosMempoolLedger() *PosMempoolLedger {
 }
 
 func (pml *PosMempoolLedger) CheckBalanceIncrease(publicKey PublicKey, amount uint64, blockView *UtxoView, blockHeight uint32) error {
+	pml.RLock()
+	defer pml.RUnlock()
+
 	reservedBalance, exists := pml.reservedBalances[publicKey]
 
 	// Check for reserved balance overflow.
@@ -36,6 +42,9 @@ func (pml *PosMempoolLedger) CheckBalanceIncrease(publicKey PublicKey, amount ui
 }
 
 func (pml *PosMempoolLedger) CheckBalanceDecrease(publicKey PublicKey, amount uint64) error {
+	pml.RLock()
+	defer pml.RUnlock()
+
 	reservedBalance, exists := pml.reservedBalances[publicKey]
 	if !exists {
 		return errors.Errorf("CheckBalanceDecrease: No reserved balance for public key")
@@ -47,6 +56,9 @@ func (pml *PosMempoolLedger) CheckBalanceDecrease(publicKey PublicKey, amount ui
 }
 
 func (pml *PosMempoolLedger) IncreaseBalance(publicKey PublicKey, amount uint64) {
+	pml.Lock()
+	defer pml.Unlock()
+
 	reservedBalance, exists := pml.reservedBalances[publicKey]
 	if !exists {
 		pml.reservedBalances[publicKey] = amount
@@ -56,6 +68,9 @@ func (pml *PosMempoolLedger) IncreaseBalance(publicKey PublicKey, amount uint64)
 }
 
 func (pml *PosMempoolLedger) DecreaseBalance(publicKey PublicKey, amount uint64) {
+	pml.Lock()
+	defer pml.Unlock()
+
 	reservedBalance, exists := pml.reservedBalances[publicKey]
 	if !exists {
 		return
@@ -69,9 +84,19 @@ func (pml *PosMempoolLedger) DecreaseBalance(publicKey PublicKey, amount uint64)
 }
 
 func (pml *PosMempoolLedger) GetReservedBalance(publicKey PublicKey) uint64 {
+	pml.RLock()
+	defer pml.RUnlock()
+
 	reservedBalance, exists := pml.reservedBalances[publicKey]
 	if !exists {
 		return 0
 	}
 	return reservedBalance
+}
+
+func (pml *PosMempoolLedger) Reset() {
+	pml.Lock()
+	defer pml.Unlock()
+
+	pml.reservedBalances = make(map[PublicKey]uint64)
 }

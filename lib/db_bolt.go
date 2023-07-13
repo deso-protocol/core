@@ -44,11 +44,18 @@ func (bdb *BoltDatabase) Update(ctx Context, fn func(Transaction, Context) error
 	})
 }
 
+func (bdb *BoltDatabase) View(ctx Context, fn func(Transaction, Context) error) error {
+	return bdb.db.View(func(tx *bolt.Tx) error {
+		T := NewBoltTransaction(tx)
+		return fn(T, ctx)
+	})
+}
+
 func (bdb *BoltDatabase) Close() error {
 	return bdb.db.Close()
 }
 
-func (bdb *BoltDatabase) Cleanup() error {
+func (bdb *BoltDatabase) Erase() error {
 	return os.RemoveAll(bdb.dir)
 }
 
@@ -97,7 +104,7 @@ func (bt *BoltTransaction) Get(key []byte, ctx Context) ([]byte, error) {
 }
 
 func (bt *BoltTransaction) GetIterator(ctx Context) (Iterator, error) {
-	boltCtx, err := AssertDatabaseContext[*BoltContext](ctx, BOLTDB)
+	boltCtx, err := AssertContext[*BoltContext](ctx, BOLTDB)
 	if err != nil {
 		return nil, errors.Wrapf(err, "Set:")
 	}
@@ -187,8 +194,12 @@ func NewBoltNestedContext(bucketId []byte, parent *BoltContext) *BoltContext {
 	}
 }
 
-func (bc *BoltContext) DatabaseId() DatabaseId {
+func (bc *BoltContext) Id() DatabaseId {
 	return BOLTDB
+}
+
+func (bc *BoltContext) NestContext(bucketId []byte) Context {
+	return NewBoltNestedContext(bucketId, bc)
 }
 
 func (bc *BoltContext) GetNestedBucket(txn *bolt.Tx) (*bolt.Bucket, error) {
@@ -212,7 +223,7 @@ func (bc *BoltContext) GetNestedBucket(txn *bolt.Tx) (*bolt.Bucket, error) {
 }
 
 func castBoltContextAndGetBucket(tx *bolt.Tx, ctx Context) (*bolt.Bucket, error) {
-	boltCtx, err := AssertDatabaseContext[*BoltContext](ctx, BOLTDB)
+	boltCtx, err := AssertContext[*BoltContext](ctx, BOLTDB)
 	if err != nil {
 		return nil, errors.Wrapf(err, "Set:")
 	}

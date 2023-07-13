@@ -3,6 +3,7 @@ package lib
 import (
 	"github.com/golang/glog"
 	"github.com/pkg/errors"
+	"path/filepath"
 	"sync"
 )
 
@@ -15,21 +16,73 @@ type PosMempool struct {
 
 	params       *DeSoParams
 	globalParams *GlobalParamsEntry
+	dir          string
+	dbCtx        *DatabaseContext
 
 	txnRegister *TransactionRegister
 	ledger      *PosMempoolLedger
+	persister   *MempoolPersister
+
+	eventManager *EventManager
+	emitEvents   bool
 
 	latestBlockView *UtxoView
 	latestBlockNode *BlockNode
 }
 
-func NewDeSoMempoolPos(params *DeSoParams, globalParams *GlobalParamsEntry) *PosMempool {
+func NewDeSoMempoolPos(params *DeSoParams, globalParams *GlobalParamsEntry, dir string, eventManager *EventManager) *PosMempool {
 	return &PosMempool{
-		txnRegister:  NewTransactionRegister(globalParams),
 		params:       params,
 		globalParams: globalParams,
-		ledger:       NewPosMempoolLedger(),
+		dir:          dir,
+		eventManager: eventManager,
+		emitEvents:   false,
 	}
+}
+
+func (dmp *PosMempool) Start() error {
+	mempoolDirectory := filepath.Join(dmp.dir, "mempool")
+	db := NewBadgerDatabase(mempoolDirectory)
+	if err := db.Setup(); err != nil {
+		return errors.Wrapf(err, "PosMempool.Start: Problem setting up database")
+	}
+	ctx := db.GetContext([]byte{})
+	dbCtx := NewDatabaseContext(db, ctx)
+	dmp.dbCtx = dbCtx
+
+	// Create the transaction register and ledger
+	dmp.txnRegister = NewTransactionRegister(dmp.globalParams)
+	dmp.ledger = NewPosMempoolLedger()
+
+	// Load transactions from the persister
+	dmp.persister = NewMempoolPersister(dmp.dbCtx)
+	txns, err := dmp.persister.RetrieveTransactions()
+	if err != nil {
+		return errors.Wrapf(err, "PosMempool.Start: Problem retrieving transactions from persister")
+	}
+	for _, txn := range txns {
+		if err := dmp.AddTransaction(txn); err != nil {
+			// TODO: Should we return an error here.
+			glog.Errorf("PosMempool.Start: Problem adding transaction with hash (%v) from persister: %v",
+				txn.Hash, err)
+		}
+	}
+
+	dmp.emitEvents = true
+	dmp.persister.Start()
+
+	return nil
+}
+
+func (dmp *PosMempool) Stop() {
+	if err := dmp.persister.Stop(); err != nil {
+		glog.Errorf("PosMempool.Stop: Problem stopping persister: %v", err)
+	}
+	if err := dmp.dbCtx.Close(); err != nil {
+		glog.Errorf("PosMempool.Stop: Problem closing database: %v", err)
+	}
+	dmp.txnRegister.Reset()
+	dmp.ledger.Reset()
 }
 
 // ProcessMsgDeSoTxn validates a MsgDeSoTxn transaction and adds it to the mempool if it is valid.
@@ -83,6 +136,14 @@ func (dmp *PosMempool) AddTransaction(txn *MempoolTx) error {
 	// We update the reserved balance to include the newly added transaction's fee.
 	dmp.ledger.IncreaseBalance(*userPk, txnFee)
 
+	if dmp.emitEvents {
+		event := &MempoolEvent{
+			Txn:  txn,
+			Type: MempoolEventAdd,
+		}
+		dmp.eventManager.mempoolEvent(event)
+	}
+
 	return nil
 }
 
@@ -102,6 +163,14 @@ func (dmp *PosMempool) RemoveTransaction(txn *MempoolTx) error {
 	}
 
 	dmp.ledger.DecreaseBalance(*userPk, txn.Fee)
+
+	if dmp.emitEvents {
+		event := &MempoolEvent{
+			Txn:  txn,
+			Type: MempoolEventRemove,
+		}
+		dmp.eventManager.mempoolEvent(event)
+	}
 
 	return nil
 }
@@ -162,8 +231,6 @@ func (dmp *PosMempool) UpdateGlobalParams(globalParams *GlobalParamsEntry) {
 				mempoolTx.Hash.String(), err)
 		}
 	}
-	dmp.txnRegister.Clear()
+	dmp.txnRegister.Reset()
 	dmp.txnRegister = newRegister
 }
-
-// Create a DB persister

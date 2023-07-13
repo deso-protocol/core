@@ -1,6 +1,7 @@
 package lib
 
 import (
+	"bytes"
 	"fmt"
 	"github.com/pkg/errors"
 	"time"
@@ -38,10 +39,6 @@ type MempoolTx struct {
 	index int
 }
 
-func (mempoolTx *MempoolTx) String() string {
-	return fmt.Sprintf("< Added: %v, index: %d, Fee: %d, Type: %v, Hash: %v", mempoolTx.Added, mempoolTx.index, mempoolTx.Fee, mempoolTx.Tx.TxnMeta.GetTxnType(), mempoolTx.Hash)
-}
-
 func NewMempoolTx(txn *MsgDeSoTxn, blockHeight uint64) (*MempoolTx, error) {
 	txnBytes, err := txn.ToBytes(false)
 	if err != nil {
@@ -67,4 +64,61 @@ func NewMempoolTx(txn *MsgDeSoTxn, blockHeight uint64) (*MempoolTx, error) {
 		Fee:         txn.TxnFeeNanos,
 		FeePerKB:    feePerKb,
 	}, nil
+}
+
+func (mempoolTx *MempoolTx) String() string {
+	return fmt.Sprintf("< Added: %v, index: %d, Fee: %d, Type: %v, Hash: %v", mempoolTx.Added, mempoolTx.index, mempoolTx.Fee, mempoolTx.Tx.TxnMeta.GetTxnType(), mempoolTx.Hash)
+}
+
+func (mempoolTx *MempoolTx) GetTimestamp() uint64 {
+	return uint64(mempoolTx.Added.UnixMicro())
+}
+
+func (mempoolTx *MempoolTx) ToBytes() ([]byte, error) {
+	var data []byte
+
+	txnBytes, err := mempoolTx.Tx.ToBytes(false)
+	if err != nil {
+		return nil, errors.Wrapf(err, "MempoolTx.Encode: Problem serializing txn")
+	}
+	data = append(data, EncodeByteArray(txnBytes)...)
+	data = append(data, UintToBuf(uint64(mempoolTx.Height))...)
+	data = append(data, UintToBuf(mempoolTx.GetTimestamp())...)
+	return data, nil
+}
+
+func (mempoolTx *MempoolTx) FromBytes(rr *bytes.Reader) error {
+	if mempoolTx == nil {
+		return errors.New("MempoolTx.Decode: mempoolTx is nil")
+	}
+
+	// Decode the transaction
+	var txn *MsgDeSoTxn
+	txnBytes, err := DecodeByteArray(rr)
+	if err != nil {
+		return errors.Wrapf(err, "MempoolTx.Decode: Problem reading txnBytes")
+	}
+	err = txn.FromBytes(txnBytes)
+	if err != nil {
+		return errors.Wrapf(err, "MempoolTx.Decode: Problem deserializing txn")
+	}
+
+	// Decode the height
+	height, err := ReadUvarint(rr)
+	if err != nil {
+		return errors.Wrapf(err, "MempoolTx.Decode: Problem reading height")
+	}
+
+	// Create a new MempoolTx
+	newTxn, err := NewMempoolTx(txn, height)
+	*mempoolTx = *newTxn
+
+	// Decode the timestamp
+	timestamp, err := ReadUvarint(rr)
+	if err != nil {
+		return errors.Wrapf(err, "MempoolTx.Decode: Problem reading timestamp")
+	}
+	mempoolTx.Added = time.UnixMicro(int64(timestamp))
+
+	return nil
 }

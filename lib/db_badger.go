@@ -49,11 +49,18 @@ func (bdb *BadgerDatabase) Update(ctx Context, fn func(Transaction, Context) err
 	})
 }
 
+func (bdb *BadgerDatabase) View(ctx Context, fn func(Transaction, Context) error) error {
+	return bdb.db.View(func(txn *badger.Txn) error {
+		T := NewBadgerTransaction(txn)
+		return fn(T, ctx)
+	})
+}
+
 func (bdb *BadgerDatabase) Close() error {
 	return bdb.db.Close()
 }
 
-func (bdb *BadgerDatabase) Cleanup() error {
+func (bdb *BadgerDatabase) Erase() error {
 	return os.RemoveAll(bdb.opts.Dir)
 }
 
@@ -103,7 +110,7 @@ func (btx *BadgerTransaction) Get(key []byte, ctx Context) ([]byte, error) {
 }
 
 func (btx *BadgerTransaction) GetIterator(ctx Context) (Iterator, error) {
-	badgerCtx, err := AssertDatabaseContext[*BadgerContext](ctx, BADGERDB)
+	badgerCtx, err := AssertContext[*BadgerContext](ctx, BADGERDB)
 	if err != nil {
 		return nil, err
 	}
@@ -163,12 +170,21 @@ func NewBadgerContext(prefix []byte) *BadgerContext {
 	return &BadgerContext{prefix: prefix}
 }
 
-func (bc *BadgerContext) DatabaseId() DatabaseId {
+func NewBadgerNestedContext(prefix []byte, parent *BadgerContext) *BadgerContext {
+	prefixedPrefix := append(parent.prefix, prefix...)
+	return NewBadgerContext(prefixedPrefix)
+}
+
+func (bc *BadgerContext) Id() DatabaseId {
 	return BADGERDB
 }
 
+func (bc *BadgerContext) NestContext(prefixId []byte) Context {
+	return NewBadgerNestedContext(prefixId, bc)
+}
+
 func castBadgerContextAndGetPrefixedKey(key []byte, ctx Context) (_prefixedKey []byte, _err error) {
-	badgerCtx, err := AssertDatabaseContext[*BadgerContext](ctx, BADGERDB)
+	badgerCtx, err := AssertContext[*BadgerContext](ctx, BADGERDB)
 	if err != nil {
 		return nil, err
 	}

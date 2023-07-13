@@ -41,7 +41,6 @@ type TransactionRegister struct {
 func NewTransactionRegister(globalParams *GlobalParamsEntry) *TransactionRegister {
 	feeTimeBucketSet := treeset.NewWith(feeTimeBucketComparator)
 	minNetworkFee, bucketMultiplier := globalParams.ComputeFeeTimeBucketMinimumFeeAndMultiplier()
-
 	return &TransactionRegister{
 		feeTimeBucketSet:                   feeTimeBucketSet,
 		feeTimeBucketsByMinFeeMap:          make(map[uint64]*FeeTimeBucket),
@@ -179,7 +178,7 @@ func (tr *TransactionRegister) Size() uint64 {
 	return tr.totalTxnsSizeBytes
 }
 
-func (tr *TransactionRegister) Clear() {
+func (tr *TransactionRegister) Reset() {
 	tr.mut.Lock()
 	defer tr.mut.Unlock()
 
@@ -374,9 +373,9 @@ func mempoolTxTimeOrderComparator(a, b interface{}) int {
 		return 0
 	}
 
-	if aVal.Added.UnixMicro() > bVal.Added.UnixMicro() {
+	if aVal.GetTimestamp() > bVal.GetTimestamp() {
 		return 1
-	} else if aVal.Added.UnixMicro() < bVal.Added.UnixMicro() {
+	} else if aVal.GetTimestamp() < bVal.GetTimestamp() {
 		return -1
 	} else if aVal.FeePerKB < bVal.FeePerKB {
 		return 1
