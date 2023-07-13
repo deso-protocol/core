@@ -704,12 +704,17 @@ func (s *SnapshotStakeEntry) Copy() *SnapshotStakeEntry {
 	}
 }
 
-// TODO: @tholonious
 func (bav *UtxoView) _setSnapshotStakingRewardsRecipient(snapshotStakeEntry *SnapshotStakeEntry, snapshotAtEpochNumber uint64) {
 	if snapshotStakeEntry == nil {
 		glog.Errorf("_setSnapshotStakingRewardsRecipient: called with nil snapshotStakeEntry, this should never happen")
 		return
 	}
+	mapKey := SnapshotStakeMapKey{
+		SnapshotAtEpochNumber: snapshotAtEpochNumber,
+		ValidatorPKID:         *snapshotStakeEntry.ValidatorPKID,
+		StakerPKID:            *snapshotStakeEntry.StakerPKID,
+	}
+	bav.SnapshotStakingRewardRecipients[mapKey] = snapshotStakeEntry.Copy()
 }
 
 // TODO: @tholonious
@@ -728,34 +733,65 @@ func DBGetSnapshotTopStakingRewardRecipientEntriesByStakeAmount(
 	return nil, nil
 }
 
-// TODO: @tholonious
 func (bav *UtxoView) _flushSnapshotStakingRewardRecipientEntriesToDbWithTxn(txn *badger.Txn, blockHeight uint64) error {
+	for mapKey, snapshotStakeEntry := range bav.SnapshotStakingRewardRecipients {
+		if snapshotStakeEntry == nil {
+			return fmt.Errorf(
+				"_flushSnapshotStakingRewardRecipientEntriesToDbWithTxn: found nil snapshotStakeEntry for EpochNumber %d, this should never happen",
+				mapKey.SnapshotAtEpochNumber,
+			)
+		}
+		if err := DBPutSnapshotStakingRewardRecipientWithTxn(
+			txn, bav.Snapshot, snapshotStakeEntry, mapKey.SnapshotAtEpochNumber, blockHeight,
+		); err != nil {
+			return errors.Wrapf(
+				err,
+				"_flushSnapshotStakingRewardRecipientEntriesToDbWithTxn: problem setting snapshotStakeEntry for SnapshotAtEpochNumber %d: ",
+				mapKey.SnapshotAtEpochNumber,
+			)
+		}
+	}
 	return nil
 }
 
-// TODO: @tholonious
 func DBPutSnapshotStakingRewardRecipientWithTxn(
 	txn *badger.Txn,
 	snap *Snapshot,
 	snapshotStakeEntry *SnapshotStakeEntry,
+	snapshotAtEpochNumber uint64,
 	blockHeight uint64,
 ) error {
+	if snapshotStakeEntry == nil {
+		// This should never happen but is a sanity check.
+		glog.Errorf("DBPutSnapshotStakingRewardRecipientWithTxn: called with nil snapshotStakeEntry, this should never happen")
+		return nil
+	}
+	key := DBKeyForSnapshotStakingRewardRecipientByStakeAmount(snapshotStakeEntry, snapshotAtEpochNumber)
+	if err := DBSetWithTxn(txn, snap, key, nil); err != nil {
+		return errors.Wrapf(
+			err,
+			"DBPutSnapshotStakingRewardRecipientWithTxn: problem putting snapshotStakeEntry in the SnapshotLeaderSchedule index: ",
+		)
+	}
 	return nil
 }
 
-// TODO: @tholonious
-func DBDeleteSnapshotStakingRewardRecipientEntryWithTxn(
-	txn *badger.Txn,
-	snap *Snapshot,
+func DBKeyForSnapshotStakingRewardRecipientByStakeAmount(
 	snapshotStakeEntry *SnapshotStakeEntry,
-	blockHeight uint64,
-) error {
-	return nil
+	snapshotAtEpochNumber uint64,
+) []byte {
+	data := append([]byte{}, Prefixes.PrefixSnapshotStakingRewardRecipientByStakeAmount...)
+	data = append(data, EncodeUint64(snapshotAtEpochNumber)...)
+	data = append(data, FixedWidthEncodeUint256(snapshotStakeEntry.StakeAmountNanos)...)
+	data = append(data, snapshotStakeEntry.ValidatorPKID.ToBytes()...)
+	data = append(data, snapshotStakeEntry.StakerPKID.ToBytes()...)
+	return data
 }
 
-// TODO: @tholonious
-func DBKeyForSnapshotStakingRewardRecipientByStakeAmount(stakeEntry *StakeEntry) []byte {
-	return nil
+func DBKeyForSnapshotStakingRewardRecipientAtEpochNumber(snapshotAtEpochNumber uint64) []byte {
+	data := append([]byte{}, Prefixes.PrefixSnapshotStakingRewardRecipientByStakeAmount...)
+	data = append(data, EncodeUint64(snapshotAtEpochNumber)...)
+	return data
 }
 
 //
