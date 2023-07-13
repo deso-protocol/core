@@ -2414,7 +2414,7 @@ func (bav *UtxoView) GetTopStakesByStakeAmount(limit uint64) ([]*StakeEntry, err
 		bav._setStakeEntryMappings(stakeEntry)
 	}
 
-	// Pull !isDeleted, StakeEntries from the UtxoView.
+	// Pull !isDeleted StakeEntries with non-zero stake from the UtxoView.
 	var stakeEntries []*StakeEntry
 	for _, stakeEntry := range bav.StakeMapKeyToStakeEntry {
 		if !stakeEntry.isDeleted && !stakeEntry.StakeAmountNanos.IsZero() {
