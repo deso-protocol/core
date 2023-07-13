@@ -549,19 +549,19 @@ func DBKeyForValidatorByPKID(validatorEntry *ValidatorEntry) []byte {
 	return key
 }
 
-func DBKeyForValidatorByStatusAndStake(validatorEntry *ValidatorEntry) []byte {
-	key := append([]byte{}, Prefixes.PrefixValidatorByStatusAndStake...)
+func DBKeyForValidatorByStatusAndStakeAmount(validatorEntry *ValidatorEntry) []byte {
+	key := append([]byte{}, Prefixes.PrefixValidatorByStatusAndStakeAmount...)
 	key = append(key, EncodeUint8(uint8(validatorEntry.Status()))...)
 	key = append(key, FixedWidthEncodeUint256(validatorEntry.TotalStakeAmountNanos)...)
 	key = append(key, validatorEntry.ValidatorPKID.ToBytes()...)
 	return key
 }
 
-func GetValidatorPKIDFromDBKeyForValidatorByStatusAndStake(key []byte) (*PKID, error) {
+func GetValidatorPKIDFromDBKeyForValidatorByStatusAndStakeAmount(key []byte) (*PKID, error) {
 	validatorPKIDBytes := key[len(key)-PublicKeyLenCompressed:]
 	validatorPKID := PKID{}
 	if err := validatorPKID.FromBytes(bytes.NewReader(validatorPKIDBytes)); err != nil {
-		return nil, errors.Wrapf(err, "GetValidatorPKIDFromDBKeyForValidatorByStatusAndStake: problem reading ValidatorPKID: ")
+		return nil, errors.Wrapf(err, "GetValidatorPKIDFromDBKeyForValidatorByStatusAndStakeAmount: problem reading ValidatorPKID: ")
 	}
 	return &validatorPKID, nil
 }
@@ -613,7 +613,7 @@ func DBGetTopActiveValidatorsByStake(
 
 	// Define a function to filter out validators PKIDs we want to skip while seeking through the DB.
 	canSkipValidatorInBadgerSeek := func(badgerKey []byte) bool {
-		validatorPKID, err := GetValidatorPKIDFromDBKeyForValidatorByStatusAndStake(badgerKey)
+		validatorPKID, err := GetValidatorPKIDFromDBKeyForValidatorByStatusAndStakeAmount(badgerKey)
 		if err != nil {
 			// We return false here to be safe. Once the seek has completed, we attempt to parse the
 			// keys a second time below. Any failures there will result in an error that we can propagate
@@ -624,7 +624,7 @@ func DBGetTopActiveValidatorsByStake(
 	}
 
 	// Retrieve top N active ValidatorEntry keys by stake.
-	key := append([]byte{}, Prefixes.PrefixValidatorByStatusAndStake...)
+	key := append([]byte{}, Prefixes.PrefixValidatorByStatusAndStakeAmount...)
 	key = append(key, EncodeUint8(uint8(ValidatorStatusActive))...)
 	keysFound, _, err := EnumerateKeysForPrefixWithLimitOffsetOrderAndSkipFunc(
 		handle, key, int(limit), nil, true, canSkipValidatorInBadgerSeek,
@@ -636,7 +636,7 @@ func DBGetTopActiveValidatorsByStake(
 	// For each key found, parse the ValidatorPKID from the key,
 	// then retrieve the ValidatorEntry by the ValidatorPKID.
 	for _, keyFound := range keysFound {
-		validatorPKID, err := GetValidatorPKIDFromDBKeyForValidatorByStatusAndStake(keyFound)
+		validatorPKID, err := GetValidatorPKIDFromDBKeyForValidatorByStatusAndStakeAmount(keyFound)
 		if err != nil {
 			return nil, errors.Wrapf(err, "DBGetTopActiveValidatorsByStake: problem reading ValidatorPKID: ")
 		}
@@ -671,12 +671,12 @@ func DBPutValidatorWithTxn(
 		)
 	}
 
-	// Set ValidatorEntry key in PrefixValidatorByStatusAndStake. The value should be nil.
+	// Set ValidatorEntry key in PrefixValidatorByStatusAndStakeAmount. The value should be nil.
 	// We parse the ValidatorPKID from the key for this index.
-	key = DBKeyForValidatorByStatusAndStake(validatorEntry)
+	key = DBKeyForValidatorByStatusAndStakeAmount(validatorEntry)
 	if err := DBSetWithTxn(txn, snap, key, nil); err != nil {
 		return errors.Wrapf(
-			err, "DBPutValidatorWithTxn: problem storing ValidatorEntry in index PrefixValidatorByStatusAndStake",
+			err, "DBPutValidatorWithTxn: problem storing ValidatorEntry in index PrefixValidatorByStatusAndStakeAmount",
 		)
 	}
 
@@ -712,11 +712,11 @@ func DBDeleteValidatorWithTxn(txn *badger.Txn, snap *Snapshot, validatorPKID *PK
 		)
 	}
 
-	// Delete ValidatorEntry.PKID from PrefixValidatorByStatusAndStake.
-	key = DBKeyForValidatorByStatusAndStake(validatorEntry)
+	// Delete ValidatorEntry.PKID from PrefixValidatorByStatusAndStakeAmount.
+	key = DBKeyForValidatorByStatusAndStakeAmount(validatorEntry)
 	if err := DBDeleteWithTxn(txn, snap, key); err != nil {
 		return errors.Wrapf(
-			err, "DBDeleteValidatorWithTxn: problem deleting ValidatorEntry from index PrefixValidatorByStatusAndStake",
+			err, "DBDeleteValidatorWithTxn: problem deleting ValidatorEntry from index PrefixValidatorByStatusAndStakeAmount",
 		)
 	}
 
