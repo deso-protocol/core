@@ -481,10 +481,10 @@ type DBPrefixes struct {
 	// Prefix, <ValidatorPKID [33]byte> -> ValidatorEntry
 	PrefixValidatorByPKID []byte `prefix_id:"[78]" is_state:"true"`
 
-	// PrefixValidatorByStatusAndStake: Retrieve the top N active validators by stake.
+	// PrefixValidatorByStatusAndStakeAmount: Retrieve the top N active validators by stake.
 	// Prefix, <Status uint8>, <TotalStakeAmountNanos *uint256.Int>, <ValidatorPKID [33]byte> -> nil
 	// Note that we save space by storing a nil value and parsing the ValidatorPKID from the key.
-	PrefixValidatorByStatusAndStake []byte `prefix_id:"[79]" is_state:"true"`
+	PrefixValidatorByStatusAndStakeAmount []byte `prefix_id:"[79]" is_state:"true"`
 
 	// PrefixStakeByValidatorAndStaker: Retrieve a StakeEntry.
 	// Prefix, <ValidatorPKID [33]byte>, <StakerPKID [33]byte> -> StakeEntry
@@ -538,11 +538,11 @@ type DBPrefixes struct {
 	// Prefix, <SnapshotAtEpochNumber uint64>, <ValidatorPKID [33]byte> -> *ValidatorEntry
 	PrefixSnapshotValidatorSetByPKID []byte `prefix_id:"[86]" is_state:"true"`
 
-	// PrefixSnapshotValidatorSetByStake: Retrieve stake-ordered ValidatorEntries from a snapshot validator set
+	// PrefixSnapshotValidatorSetByStakeAmount: Retrieve stake-ordered ValidatorEntries from a snapshot validator set
 	// by SnapshotAtEpochNumber.
 	// Prefix, <SnapshotAtEpochNumber uint64>, <TotalStakeAmountNanos *uint256.Int>, <ValidatorPKID [33]byte> -> nil
 	// Note: we parse the ValidatorPKID from the key and the value is nil to save space.
-	PrefixSnapshotValidatorSetByStake []byte `prefix_id:"[87]" is_state:"true"`
+	PrefixSnapshotValidatorSetByStakeAmount []byte `prefix_id:"[87]" is_state:"true"`
 
 	// PrefixSnapshotValidatorSetTotalStakeAmountNanos: Retrieve a snapshot of the validator set's total amount of
 	// staked DESO by SnapshotAtEpochNumber.
@@ -758,7 +758,7 @@ func StatePrefixToDeSoEncoder(prefix []byte) (_isEncoder bool, _encoder DeSoEnco
 	} else if bytes.Equal(prefix, Prefixes.PrefixValidatorByPKID) {
 		// prefix_id:"[78]"
 		return true, &ValidatorEntry{}
-	} else if bytes.Equal(prefix, Prefixes.PrefixValidatorByStatusAndStake) {
+	} else if bytes.Equal(prefix, Prefixes.PrefixValidatorByStatusAndStakeAmount) {
 		// prefix_id:"[79]"
 		return false, nil
 	} else if bytes.Equal(prefix, Prefixes.PrefixStakeByValidatorAndStaker) {
@@ -782,7 +782,7 @@ func StatePrefixToDeSoEncoder(prefix []byte) (_isEncoder bool, _encoder DeSoEnco
 	} else if bytes.Equal(prefix, Prefixes.PrefixSnapshotValidatorSetByPKID) {
 		// prefix_id:"[86]"
 		return true, &ValidatorEntry{}
-	} else if bytes.Equal(prefix, Prefixes.PrefixSnapshotValidatorSetByStake) {
+	} else if bytes.Equal(prefix, Prefixes.PrefixSnapshotValidatorSetByStakeAmount) {
 		// prefix_id:"[87]"
 		return false, nil
 	} else if bytes.Equal(prefix, Prefixes.PrefixSnapshotValidatorSetTotalStakeAmountNanos) {

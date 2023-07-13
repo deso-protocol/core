@@ -232,7 +232,7 @@ func (bav *UtxoView) GetSnapshotValidatorSetEntryByPKID(pkid *PKID) (*ValidatorE
 	return validatorEntry, nil
 }
 
-func (bav *UtxoView) GetSnapshotValidatorSetByStake(limit uint64) ([]*ValidatorEntry, error) {
+func (bav *UtxoView) GetSnapshotValidatorSetByStakeAmount(limit uint64) ([]*ValidatorEntry, error) {
 	// Calculate the SnapshotEpochNumber.
 	snapshotAtEpochNumber, err := bav.GetSnapshotEpochNumber()
 	if err != nil {
@@ -249,7 +249,7 @@ func (bav *UtxoView) GetSnapshotValidatorSetByStake(limit uint64) ([]*ValidatorE
 	// Pull top N ValidatorEntries from the database (not present in the UtxoView).
 	// Note that we will skip validators that are present in the view because we pass
 	// utxoViewValidatorEntries to the function.
-	dbValidatorEntries, err := DBGetSnapshotValidatorSetByStake(
+	dbValidatorEntries, err := DBGetSnapshotValidatorSetByStakeAmount(
 		bav.Handle, bav.Snapshot, limit, snapshotAtEpochNumber, utxoViewValidatorEntries,
 	)
 	if err != nil {
@@ -370,8 +370,8 @@ func DBKeyForSnapshotValidatorSetByPKID(validatorEntry *ValidatorEntry, snapshot
 	return key
 }
 
-func DBKeyForSnapshotValidatorSetByStake(validatorEntry *ValidatorEntry, snapshotAtEpochNumber uint64) []byte {
-	key := append([]byte{}, Prefixes.PrefixSnapshotValidatorSetByStake...)
+func DBKeyForSnapshotValidatorSetByStakeAmount(validatorEntry *ValidatorEntry, snapshotAtEpochNumber uint64) []byte {
+	key := append([]byte{}, Prefixes.PrefixSnapshotValidatorSetByStakeAmount...)
 	key = append(key, EncodeUint64(snapshotAtEpochNumber)...)
 	key = append(key, FixedWidthEncodeUint256(validatorEntry.TotalStakeAmountNanos)...)
 	key = append(key, validatorEntry.ValidatorPKID.ToBytes()...)
@@ -414,7 +414,7 @@ func DBGetSnapshotValidatorSetEntryByPKIDWithTxn(
 	return validatorEntry, nil
 }
 
-func DBGetSnapshotValidatorSetByStake(
+func DBGetSnapshotValidatorSetByStakeAmount(
 	handle *badger.DB,
 	snap *Snapshot,
 	limit uint64,
@@ -426,17 +426,17 @@ func DBGetSnapshotValidatorSetByStake(
 	// Convert ValidatorEntriesToSkip to ValidatorEntryKeysToSkip.
 	validatorKeysToSkip := NewSet([]string{})
 	for _, validatorEntryToSkip := range validatorEntriesToSkip {
-		validatorKeysToSkip.Add(string(DBKeyForSnapshotValidatorSetByStake(validatorEntryToSkip, snapshotAtEpochNumber)))
+		validatorKeysToSkip.Add(string(DBKeyForSnapshotValidatorSetByStakeAmount(validatorEntryToSkip, snapshotAtEpochNumber)))
 	}
 
 	// Retrieve top N active ValidatorEntry keys by stake.
-	key := append([]byte{}, Prefixes.PrefixSnapshotValidatorSetByStake...)
+	key := append([]byte{}, Prefixes.PrefixSnapshotValidatorSetByStakeAmount...)
 	key = append(key, EncodeUint64(snapshotAtEpochNumber)...)
 	keysFound, _, err := EnumerateKeysForPrefixWithLimitOffsetOrder(
 		handle, key, int(limit), nil, true, validatorKeysToSkip,
 	)
 	if err != nil {
-		return nil, errors.Wrapf(err, "DBGetSnapshotValidatorSetByStake: problem retrieving top validators: ")
+		return nil, errors.Wrapf(err, "DBGetSnapshotValidatorSetByStakeAmount: problem retrieving top validators: ")
 	}
 
 	// For each key found, parse the ValidatorPKID from the key,
@@ -447,12 +447,12 @@ func DBGetSnapshotValidatorSetByStake(
 		// Convert PKIDBytes to PKID.
 		validatorPKID := &PKID{}
 		if err = validatorPKID.FromBytes(bytes.NewReader(validatorPKIDBytes)); err != nil {
-			return nil, errors.Wrapf(err, "DBGetSnapshotValidatorSetByStake: problem reading ValidatorPKID: ")
+			return nil, errors.Wrapf(err, "DBGetSnapshotValidatorSetByStakeAmount: problem reading ValidatorPKID: ")
 		}
 		// Retrieve ValidatorEntry by PKID.
 		validatorEntry, err := DBGetSnapshotValidatorSetEntryByPKID(handle, snap, validatorPKID, snapshotAtEpochNumber)
 		if err != nil {
-			return nil, errors.Wrapf(err, "DBGetSnapshotValidatorSetByStake: problem retrieving validator by PKID: ")
+			return nil, errors.Wrapf(err, "DBGetSnapshotValidatorSetByStakeAmount: problem retrieving validator by PKID: ")
 		}
 		validatorEntries = append(validatorEntries, validatorEntry)
 	}
@@ -482,8 +482,8 @@ func DBPutSnapshotValidatorSetEntryWithTxn(
 		)
 	}
 
-	// Put the ValidatorPKID in the SnapshotValidatorByStatusAndStake index.
-	key = DBKeyForSnapshotValidatorSetByStake(validatorEntry, snapshotAtEpochNumber)
+	// Put the ValidatorPKID in the SnapshotValidatorByStatusAndStakeAmount index.
+	key = DBKeyForSnapshotValidatorSetByStakeAmount(validatorEntry, snapshotAtEpochNumber)
 	if err := DBSetWithTxn(txn, snap, key, EncodeToBytes(blockHeight, validatorEntry.ValidatorPKID)); err != nil {
 		return errors.Wrapf(
 			err,
@@ -525,11 +525,11 @@ func DBDeleteSnapshotValidatorSetEntryWithTxn(
 		)
 	}
 
-	// Delete ValidatorEntry.PKID from PrefixSnapshotValidatorByStatusAndStake.
-	key = DBKeyForSnapshotValidatorSetByStake(snapshotValidatorSetEntry, snapshotAtEpochNumber)
+	// Delete ValidatorEntry.PKID from PrefixSnapshotValidatorByStatusAndStakeAmount.
+	key = DBKeyForSnapshotValidatorSetByStakeAmount(snapshotValidatorSetEntry, snapshotAtEpochNumber)
 	if err = DBDeleteWithTxn(txn, snap, key); err != nil {
 		return errors.Wrapf(
-			err, "DBDeleteSnapshotValidatorSetEntryWithTxn: problem deleting ValidatorEntry from index PrefixSnapshotValidatorByStatusAndStake",
+			err, "DBDeleteSnapshotValidatorSetEntryWithTxn: problem deleting ValidatorEntry from index PrefixSnapshotValidatorByStatusAndStakeAmount",
 		)
 	}
 

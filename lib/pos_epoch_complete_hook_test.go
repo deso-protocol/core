@@ -153,7 +153,7 @@ func TestRunEpochCompleteHook(t *testing.T) {
 		}
 
 		// Test SnapshotTopActiveValidatorsByStake is empty.
-		validatorEntries, err := utxoView().GetSnapshotValidatorSetByStake(10)
+		validatorEntries, err := utxoView().GetSnapshotValidatorSetByStakeAmount(10)
 		require.NoError(t, err)
 		require.Empty(t, validatorEntries)
 
@@ -301,7 +301,7 @@ func TestRunEpochCompleteHook(t *testing.T) {
 		}
 
 		// Test SnapshotTopActiveValidatorsByStake is populated.
-		validatorEntries, err := utxoView().GetSnapshotValidatorSetByStake(10)
+		validatorEntries, err := utxoView().GetSnapshotValidatorSetByStakeAmount(10)
 		require.NoError(t, err)
 		require.Len(t, validatorEntries, 7)
 		require.Equal(t, validatorEntries[0].ValidatorPKID, m6PKID)
@@ -395,7 +395,7 @@ func TestRunEpochCompleteHook(t *testing.T) {
 		// Test snapshotting changing validator set.
 
 		// m0 unregisters as a validator.
-		snapshotValidatorSet, err := utxoView().GetSnapshotValidatorSetByStake(10)
+		snapshotValidatorSet, err := utxoView().GetSnapshotValidatorSetByStakeAmount(10)
 		require.NoError(t, err)
 		require.Len(t, snapshotValidatorSet, 7)
 
@@ -406,7 +406,7 @@ func TestRunEpochCompleteHook(t *testing.T) {
 		_runOnEpochCompleteHook()
 
 		// m0 is still in the snapshot validator set.
-		snapshotValidatorSet, err = utxoView().GetSnapshotValidatorSetByStake(10)
+		snapshotValidatorSet, err = utxoView().GetSnapshotValidatorSetByStakeAmount(10)
 		require.NoError(t, err)
 		require.Len(t, snapshotValidatorSet, 7)
 
@@ -414,7 +414,7 @@ func TestRunEpochCompleteHook(t *testing.T) {
 		_runOnEpochCompleteHook()
 
 		// m0 is dropped from the snapshot validator set.
-		snapshotValidatorSet, err = utxoView().GetSnapshotValidatorSetByStake(10)
+		snapshotValidatorSet, err = utxoView().GetSnapshotValidatorSetByStakeAmount(10)
 		require.NoError(t, err)
 		require.Len(t, snapshotValidatorSet, 6)
 	}
@@ -444,7 +444,7 @@ func TestRunEpochCompleteHook(t *testing.T) {
 		}
 
 		getNumSnapshotActiveValidators := func() int {
-			snapshotValidatorSet, err := utxoView().GetSnapshotValidatorSetByStake(10)
+			snapshotValidatorSet, err := utxoView().GetSnapshotValidatorSetByStakeAmount(10)
 			require.NoError(t, err)
 			return len(snapshotValidatorSet)
 		}
