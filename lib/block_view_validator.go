@@ -611,9 +611,13 @@ func DBGetTopActiveValidatorsByStake(
 		validatorPKIDsToSkip.Add(*validatorEntryToSkip.ValidatorPKID)
 	}
 
+	// Define a function to filter out validators PKIDs we want to skip while seeking through the DB.
 	canSkipValidatorInBadgerSeek := func(badgerKey []byte) bool {
 		validatorPKID, err := GetValidatorPKIDFromDBKeyForValidatorByStatusAndStake(badgerKey)
 		if err != nil {
+			// We return false here to be safe. Once the seek has completed, we attempt to parse the
+			// keys a second time below. Any failures there will result in an error that we can propagate
+			// to the caller.
 			return false
 		}
 		return validatorPKIDsToSkip.Includes(*validatorPKID)
