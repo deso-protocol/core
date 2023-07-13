@@ -613,6 +613,15 @@ func DBGetStakeEntry(
 	return ret, err
 }
 
+// TODO: @tholonious
+func DBGetSnapshotTopStakingRewardRecipientsByStakeAmount(
+	handle *badger.DB,
+	snap *Snapshot,
+	limit uint64,
+) ([]*StakeEntry, error) {
+	return nil, nil
+}
+
 func DBGetStakeEntryWithTxn(
 	txn *badger.Txn,
 	snap *Snapshot,
@@ -921,6 +930,16 @@ func DBPutStakeEntryWithTxn(
 	return nil
 }
 
+// TODO: @tholonious
+func DBPutSnapshotStakingRewardRecipientWithTxn(
+	txn *badger.Txn,
+	snap *Snapshot,
+	stakeEntry *StakeEntry,
+	blockHeight uint64,
+) error {
+	return nil
+}
+
 func DBPutLockedStakeEntryWithTxn(
 	txn *badger.Txn,
 	snap *Snapshot,
@@ -982,6 +1001,16 @@ func DBDeleteStakeEntryWithTxn(
 		)
 	}
 
+	return nil
+}
+
+// TODO: @tholonious
+func DBDeleteSnapshotStakingRewardRecipientWithTxn(
+	txn *badger.Txn,
+	snap *Snapshot,
+	stakeEntry *StakeEntry,
+	blockHeight uint64,
+) error {
 	return nil
 }
 
