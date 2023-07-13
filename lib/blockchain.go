@@ -2177,17 +2177,18 @@ func (bc *Blockchain) ProcessBlock(desoBlock *MsgDeSoBlock, verifySignatures boo
 
 				// Write the utxo operations for this block to the db so we can have the
 				// ability to roll it back in the future.
-				if innerErr := PutUtxoOperationsForBlockWithTxn(txn, bc.snapshot, blockHeight, blockHash, utxoOpsForBlock, bc.eventManager); innerErr != nil {
+				var innerErr error
+				if innerErr = PutUtxoOperationsForBlockWithTxn(txn, bc.snapshot, blockHeight, blockHash, utxoOpsForBlock, bc.eventManager); innerErr != nil {
 					return errors.Wrapf(innerErr, "ProcessBlock: Problem writing utxo operations to db on simple add to tip")
 				}
 				bc.timer.End("Blockchain.ProcessBlock: Transactions Db snapshot & operations")
-				if innerErr := bc.blockView.FlushToDbWithTxn(txn, blockHeight); innerErr != nil {
+				if innerErr = bc.blockView.FlushToDbWithTxn(txn, blockHeight); innerErr != nil {
 					return errors.Wrapf(innerErr, "ProcessBlock: Problem writing utxo view to db on simple add to tip")
 				}
 				if bc.eventManager != nil && !bc.blockView.IsMempoolView {
 					bc.eventManager.stateSyncerFlushed(&StateSyncerFlushedEvent{
 						FlushId:   uuid.Nil,
-						Succeeded: err == nil,
+						Succeeded: innerErr == nil,
 					})
 				}
 
