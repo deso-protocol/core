@@ -9826,6 +9826,34 @@ func StartDBSummarySnapshots(db *badger.DB) {
 	}()
 }
 
+const (
+	// PerformanceMemTableSize is 3072 MB. Increases the maximum
+	// amount of data we can commit in a single transaction.
+	PerformanceMemTableSize = 3072 << 20
+
+	// PerformanceLogValueSize is 256 MB.
+	PerformanceLogValueSize = 256 << 20
+)
+
+// PerformanceBadgerOptions are performance geared
+// BadgerDB options that use much more RAM than the
+// default settings.
+func PerformanceBadgerOptions(dir string) badger.Options {
+	opts := badger.DefaultOptions(dir)
+
+	// Use an extended table size for larger commits.
+	opts.MemTableSize = PerformanceMemTableSize
+	opts.ValueLogFileSize = PerformanceLogValueSize
+
+	return opts
+}
+
+func DefaultBadgerOptions(dir string) badger.Options {
+	opts := badger.DefaultOptions(dir)
+	opts.Logger = nil
+	return opts
+}
+
 // ---------------------------------------------
 // Associations
 // ---------------------------------------------

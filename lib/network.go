@@ -3779,24 +3779,6 @@ func (msg *MsgDeSoTxn) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
-func (txn *MsgDeSoTxn) ComputeFeePerKB() (uint64, error) {
-	txBytes, err := txn.ToBytes(false)
-	if err != nil {
-		return 0, errors.Wrapf(err, "ComputeFeePerKB: Problem converting txn to bytes")
-	}
-	serializedLen := uint64(len(txBytes))
-	if serializedLen == 0 {
-		return 0, fmt.Errorf("ComputeFeePerKB: Txn has zero length")
-	}
-
-	fees := txn.TxnFeeNanos
-	if fees != ((fees * 1000) / 1000) {
-		return 0, errors.Wrapf(RuleErrorOverflowDetectedInFeeRateCalculation, "ComputeFeePerKB: Overflow detected in fee rate calculation")
-	}
-
-	return (fees * 1000) / serializedLen, nil
-}
-
 // ==================================================================
 // BasicTransferMetadata
 // ==================================================================
