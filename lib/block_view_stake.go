@@ -2380,12 +2380,13 @@ func (bav *UtxoView) GetTopStakesByStakeAmount(limit uint64) ([]*StakeEntry, err
 		return []*StakeEntry{}, nil
 	}
 
-	// Create a slice of UtxoViewStakeEntries. We want to skip pulling these from the database in
-	// case they have been updated in the UtxoView and the changes have not yet flushed to the database.
-	// Updates to a StakeEntry could include adding/removing stake or being deleted which would
-	// impact our ordering. We pull N StakeEntries not present in the UtxoView from the database
-	// then sort the UtxoViewStakeEntry and DatabaseStakeEntry together to find the top N
-	// StakeEntry by stake across both the UtxoView and database.
+	// Create a slice of UtxoViewStakeEntries. We want to skip pulling these from the database for two
+	// reasons:
+	// 1. It's possible that they have been updated in the UtxoView and the changes have not yet flushed
+	// to the database.
+	// 2. By skipping these entries from the DB seek, we ensure that the DB seek always returns the top n
+	// entries not found in the UtxoView. When we merge the entries from the UtxoView and the DB, this
+	// guarantee that the top n entries will exist in the merged set of entries.
 	var utxoViewStakeEntries []*StakeEntry
 	for _, stakeEntry := range bav.StakeMapKeyToStakeEntry {
 		utxoViewStakeEntries = append(utxoViewStakeEntries, stakeEntry)
@@ -2401,13 +2402,16 @@ func (bav *UtxoView) GetTopStakesByStakeAmount(limit uint64) ([]*StakeEntry, err
 
 	// Cache top N StakeEntries from the db in the UtxoView.
 	for _, stakeEntry := range dbStakeEntries {
-		// We only pull StakeEntries from the db that are not present in the
-		// UtxoView. As a sanity check, we double-check that the StakeEntry
-		// is not already in the UtxoView here.
 		stakeMapKey := stakeEntry.ToMapKey()
-		if _, exists := bav.StakeMapKeyToStakeEntry[stakeMapKey]; !exists {
-			bav._setStakeEntryMappings(stakeEntry)
+		// If the utxoViewStakeEntries have been properly skipped when doing the DB seek, then there
+		// should be no duplicates here. We perform a sanity check to ensure that is the case. If we
+		// find duplicates here, then something is wrong. It would unsafe to continue as it may result
+		// in an invalid ordering of stakes.
+		if _, exists := bav.StakeMapKeyToStakeEntry[stakeMapKey]; exists {
+			return nil, fmt.Errorf("UtxoView.GetTopStakesByStakeAmount: duplicate StakeEntry returned from the DB: %v", stakeEntry)
 		}
+
+		bav._setStakeEntryMappings(stakeEntry)
 	}
 
 	// Pull !isDeleted, StakeEntries from the UtxoView.
