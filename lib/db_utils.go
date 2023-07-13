@@ -5096,7 +5096,7 @@ func DbBulkDeleteHeightHashToNodeInfo(handle *badger.DB, snap *Snapshot,
 // InitDbWithGenesisBlock initializes the database to contain only the genesis
 // block.
 func InitDbWithDeSoGenesisBlock(params *DeSoParams, handle *badger.DB,
-	eventManager *EventManager, snap *Snapshot) error {
+	eventManager *EventManager, snap *Snapshot, postgres *Postgres) error {
 	// Construct a node for the genesis block. Its height is zero and it has
 	// no parents. Its difficulty should be set to the initial
 	// difficulty specified in the parameters and it should be assumed to be
@@ -5154,7 +5154,7 @@ func InitDbWithDeSoGenesisBlock(params *DeSoParams, handle *badger.DB,
 	// think things are initialized because we set the best block hash at the
 	// top. We should fix this at some point so that an error in this step
 	// wipes out the best hash.
-	utxoView, err := NewUtxoView(handle, params, nil, snap)
+	utxoView, err := NewUtxoView(handle, params, postgres, snap)
 	if err != nil {
 		return fmt.Errorf(
 			"InitDbWithDeSoGenesisBlock: Error initializing UtxoView")
@@ -5224,7 +5224,6 @@ func InitDbWithDeSoGenesisBlock(params *DeSoParams, handle *badger.DB,
 			UtxoOps:  utxoOpsForBlock,
 		})
 	}
-
 	// Flush all the data in the view.
 	err = utxoView.FlushToDb(0)
 	if err != nil {
@@ -9846,6 +9845,12 @@ func PerformanceBadgerOptions(dir string) badger.Options {
 	opts.MemTableSize = PerformanceMemTableSize
 	opts.ValueLogFileSize = PerformanceLogValueSize
 
+	return opts
+}
+
+func DefaultBadgerOptions(dir string) badger.Options {
+	opts := badger.DefaultOptions(dir)
+	opts.Logger = nil
 	return opts
 }
 

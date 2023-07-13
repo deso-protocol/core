@@ -151,7 +151,7 @@ func TestComputeMaxTPS(t *testing.T) {
 	newMP := NewDeSoMempool(mempool.bc, 0, /* rateLimitFeeRateNanosPerKB */
 		0, /* minFeeRateNanosPerKB */
 		"" /*blockCypherAPIKey*/, false,
-		"" /*dataDir*/, "")
+		"" /*dataDir*/, "", true)
 	mempool.resetPool(newMP)
 	{
 		timeStart := time.Now()

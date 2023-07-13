@@ -85,9 +85,11 @@ const (
 	NetworkType_TESTNET NetworkType = 2
 )
 
+type MsgDeSoHeaderVersion = uint32
+
 const (
 	// This is the header version that the blockchain started with.
-	HeaderVersion0 = uint32(0)
+	HeaderVersion0 = MsgDeSoHeaderVersion(0)
 	// This version made several changes to the previous header encoding format:
 	// - The Nonce field was expanded to 64 bits
 	// - Another ExtraNonce field was added to provide *another* 64 bits of entropy,
@@ -101,8 +103,45 @@ const (
 	//
 	// At the time of this writing, the intent is to deploy it in a backwards-compatible
 	// fashion, with the eventual goal of phasing out blocks with the previous version.
-	HeaderVersion1       = uint32(1)
+	HeaderVersion1 = MsgDeSoHeaderVersion(1)
+	// This version introduces the transition from Proof of Work to Proof of Stake blocks.
+	// It includes several changes to the header format:
+	// - Nonce field is deprecated
+	// - ExtraNonce field is deprecated
+	// - ProposerPublicKey field is added
+	// - ProposerVotingPublicKey field is added
+	// - ProposedInView field is added
+	// - ValidatorsVoteQC field is added
+	// - ValidatorsTimeoutAggregateQC field is added
+	// - ProposerVotePartialSignature field is added
+	//
+	// This format change is a breaking change that is not backwards-compatible with
+	// versions 0 and 1.
+	HeaderVersion2 = MsgDeSoHeaderVersion(2)
+	// TODO: rename this "CurrentHeaderVersion" to "LatestProofOfWorkHeaderVersion". Note,
+	// doing so will be a breaking change for 3rd party applications that import core and
+	// use this constant.
+	//
+	// This CurrentHeaderVersion is an implicit version type that represents the latest
+	// backwards compatible Proof of Work header format. This value is now locked to
+	// HeaderVersion1 since versions 2 and onwards will be used for Proof of Stake formats.
 	CurrentHeaderVersion = HeaderVersion1
+)
+
+// Versioning for the MsgValidatorVote message type. This type alias is equivalent
+// to a uint8, and supports the same byte encoders/decoders.
+type MsgValidatorVoteVersion = byte
+
+const (
+	MsgValidatorVoteVersion0 MsgValidatorVoteVersion = 0
+)
+
+// Versioning for the MsgValidatorTimeout message type. This type alias is equivalent
+// to a uint8, and supports the same byte encoders/decoders.
+type MsgValidatorTimeoutVersion = byte
+
+const (
+	MsgValidatorTimeoutVersion0 MsgValidatorTimeoutVersion = 0
 )
 
 var (
