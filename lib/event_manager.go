@@ -3,7 +3,6 @@ package lib
 type TransactionEventFunc func(event *TransactionEvent)
 type BlockEventFunc func(event *BlockEvent)
 type SnapshotCompletedEventFunc func()
-type MempoolEventFunc func(event *MempoolEvent)
 
 type TransactionEvent struct {
 	Txn     *MsgDeSoTxn
@@ -22,18 +21,12 @@ type BlockEvent struct {
 	UtxoOps  [][]*UtxoOperation
 }
 
-type MempoolEvent struct {
-	Txn  *MempoolTx
-	Type MempoolEventType
-}
-
 type EventManager struct {
 	transactionConnectedHandlers []TransactionEventFunc
 	blockConnectedHandlers       []BlockEventFunc
 	blockDisconnectedHandlers    []BlockEventFunc
 	blockAcceptedHandlers        []BlockEventFunc
 	snapshotCompletedHandlers    []SnapshotCompletedEventFunc
-	mempoolTransactionHandlers   []MempoolEventFunc
 }
 
 func NewEventManager() *EventManager {
@@ -86,16 +79,6 @@ func (em *EventManager) OnBlockAccepted(handler BlockEventFunc) {
 
 func (em *EventManager) blockAccepted(event *BlockEvent) {
 	for _, handler := range em.blockAcceptedHandlers {
-		handler(event)
-	}
-}
-
-func (em *EventManager) OnMempoolEvent(handler MempoolEventFunc) {
-	em.mempoolTransactionHandlers = append(em.mempoolTransactionHandlers, handler)
-}
-
-func (em *EventManager) mempoolEvent(event *MempoolEvent) {
-	for _, handler := range em.mempoolTransactionHandlers {
 		handler(event)
 	}
 }
