@@ -557,6 +557,15 @@ func DBKeyForValidatorByStatusAndStake(validatorEntry *ValidatorEntry) []byte {
 	return key
 }
 
+func GetValidatorPKIDFromDBKeyForValidatorByStatusAndStake(key []byte) (*PKID, error) {
+	validatorPKIDBytes := key[len(key)-PublicKeyLenCompressed:]
+	validatorPKID := PKID{}
+	if err := validatorPKID.FromBytes(bytes.NewReader(validatorPKIDBytes)); err != nil {
+		return nil, errors.Wrapf(err, "GetValidatorPKIDFromDBKeyForValidatorByStatusAndStake: problem reading ValidatorPKID: ")
+	}
+	return &validatorPKID, nil
+}
+
 func DBGetValidatorByPKID(handle *badger.DB, snap *Snapshot, pkid *PKID) (*ValidatorEntry, error) {
 	var ret *ValidatorEntry
 	err := handle.View(func(txn *badger.Txn) error {
@@ -596,17 +605,25 @@ func DBGetTopActiveValidatorsByStake(
 ) ([]*ValidatorEntry, error) {
 	var validatorEntries []*ValidatorEntry
 
-	// Convert ValidatorEntriesToSkip to ValidatorEntryKeysToSkip.
-	validatorKeysToSkip := NewSet([]string{})
+	// Convert validatorEntriesToSkip to the ValidatorPKIDs we need to skip.
+	validatorPKIDsToSkip := NewSet([]PKID{})
 	for _, validatorEntryToSkip := range validatorEntriesToSkip {
-		validatorKeysToSkip.Add(string(DBKeyForValidatorByStatusAndStake(validatorEntryToSkip)))
+		validatorPKIDsToSkip.Add(*validatorEntryToSkip.ValidatorPKID)
+	}
+
+	canSkipValidatorInBadgerSeek := func(badgerKey []byte) bool {
+		validatorPKID, err := GetValidatorPKIDFromDBKeyForValidatorByStatusAndStake(badgerKey)
+		if err != nil {
+			return false
+		}
+		return validatorPKIDsToSkip.Includes(*validatorPKID)
 	}
 
 	// Retrieve top N active ValidatorEntry keys by stake.
 	key := append([]byte{}, Prefixes.PrefixValidatorByStatusAndStake...)
 	key = append(key, EncodeUint8(uint8(ValidatorStatusActive))...)
-	keysFound, _, err := EnumerateKeysForPrefixWithLimitOffsetOrder(
-		handle, key, int(limit), nil, true, validatorKeysToSkip,
+	keysFound, _, err := EnumerateKeysForPrefixWithLimitOffsetOrderAndSkipFunc(
+		handle, key, int(limit), nil, true, canSkipValidatorInBadgerSeek,
 	)
 	if err != nil {
 		return nil, errors.Wrapf(err, "DBGetTopActiveValidatorsByStake: problem retrieving top validators: ")
@@ -615,11 +632,8 @@ func DBGetTopActiveValidatorsByStake(
 	// For each key found, parse the ValidatorPKID from the key,
 	// then retrieve the ValidatorEntry by the ValidatorPKID.
 	for _, keyFound := range keysFound {
-		// Parse the PKIDBytes from the key. The ValidatorPKID is the last component of the key.
-		validatorPKIDBytes := keyFound[len(keyFound)-PublicKeyLenCompressed:]
-		// Convert PKIDBytes to PKID.
-		validatorPKID := &PKID{}
-		if err = validatorPKID.FromBytes(bytes.NewReader(validatorPKIDBytes)); err != nil {
+		validatorPKID, err := GetValidatorPKIDFromDBKeyForValidatorByStatusAndStake(keyFound)
+		if err != nil {
 			return nil, errors.Wrapf(err, "DBGetTopActiveValidatorsByStake: problem reading ValidatorPKID: ")
 		}
 		// Retrieve ValidatorEntry by PKID.
