@@ -670,9 +670,9 @@ type DeSoParams struct {
 	// that are included in the validator set for any given epoch.
 	DefaultValidatorSetMaxNumValidators uint64
 
-	// DefaultStakingRewardDistributionMaxNumStakes is the default number of stake entries
+	// DefaultStakingRewardDistributionMaxNumStakers is the default number of stake entries
 	// that are included in the staking reward distribution in each epoch.
-	DefaultStakingRewardDistributionMaxNumStakes uint64
+	DefaultStakingRewardDistributionMaxNumStakers uint64
 
 	// DefaultEpochDurationNumBlocks is the default number of blocks included in one epoch.
 	DefaultEpochDurationNumBlocks uint64
@@ -1075,7 +1075,7 @@ var DeSoMainnetParams = DeSoParams{
 	DefaultValidatorSetMaxNumValidators: uint64(1000),
 
 	// The max number of stakers included in a staking rewards distribution every epoch.
-	DefaultStakingRewardDistributionMaxNumStakes: uint64(10000),
+	DefaultStakingRewardDistributionMaxNumStakers: uint64(10000),
 
 	// The number of blocks in one epoch
 	DefaultEpochDurationNumBlocks: uint64(3600),
@@ -1330,7 +1330,7 @@ var DeSoTestnetParams = DeSoParams{
 	DefaultValidatorSetMaxNumValidators: uint64(1000),
 
 	// The max number of stakers included in a staking rewards distribution every epoch.
-	DefaultStakingRewardDistributionMaxNumStakes: uint64(10000),
+	DefaultStakingRewardDistributionMaxNumStakers: uint64(10000),
 
 	// The number of blocks in one epoch
 	DefaultEpochDurationNumBlocks: uint64(3600),
@@ -1386,7 +1386,7 @@ const (
 	ValidatorJailEpochDurationKey             = "ValidatorJailEpochDuration"
 	LeaderScheduleMaxNumValidatorsKey         = "LeaderScheduleMaxNumValidators"
 	ValidatorSetMaxNumValidatorsKey           = "ValidatorSetMaxNumValidators"
-	StakingRewardDistributionMaxNumStakesKey  = "StakingRewardDistributionMaxNumStakes"
+	StakingRewardDistributionMaxNumStakersKey = "StakingRewardDistributionMaxNumStakers"
 	EpochDurationNumBlocksKey                 = "EpochDurationNumBlocks"
 	JailInactiveValidatorGracePeriodEpochsKey = "JailInactiveValidatorGracePeriodEpochs"
 
