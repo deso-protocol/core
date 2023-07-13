@@ -10784,7 +10784,7 @@ func EnumerateKeysForPrefixWithLimitOffsetOrder(
 	dbErr := db.View(func(txn *badger.Txn) error {
 		var err error
 		keysFound, valsFound, err = _enumerateKeysForPrefixWithLimitOffsetOrderWithTxn(
-			txn, prefix, limit, lastSeenKey, sortDescending, skipKeys,
+			txn, prefix, limit, lastSeenKey, sortDescending, _setMembershipCheckFunc(skipKeys),
 		)
 		return err
 	})
@@ -10798,13 +10798,41 @@ func EnumerateKeysForPrefixWithLimitOffsetOrder(
 	return keysFound, valsFound, nil
 }
 
+func EnumerateKeysForPrefixWithLimitOffsetOrderAndSkipFunc(
+	db *badger.DB,
+	prefix []byte,
+	limit int,
+	lastSeenKey []byte,
+	sortDescending bool,
+	canSkipKey func([]byte) bool,
+) ([][]byte, [][]byte, error) {
+	keysFound := [][]byte{}
+	valsFound := [][]byte{}
+
+	dbErr := db.View(func(txn *badger.Txn) error {
+		var err error
+		keysFound, valsFound, err = _enumerateKeysForPrefixWithLimitOffsetOrderWithTxn(
+			txn, prefix, limit, lastSeenKey, sortDescending, canSkipKey,
+		)
+		return err
+	})
+	if dbErr != nil {
+		return nil, nil, errors.Wrapf(
+			dbErr,
+			"EnumerateKeysForPrefixWithLimitOffsetOrderAndSkipFunc: problem fetching keys and values from db: ",
+		)
+	}
+
+	return keysFound, valsFound, nil
+}
+
 func _enumerateKeysForPrefixWithLimitOffsetOrderWithTxn(
 	txn *badger.Txn,
 	prefix []byte,
 	limit int,
 	lastSeenKey []byte,
 	sortDescending bool,
-	skipKeys *Set[string],
+	canSkipKey func([]byte) bool,
 ) ([][]byte, [][]byte, error) {
 	keysFound := [][]byte{}
 	valsFound := [][]byte{}
@@ -10846,8 +10874,8 @@ func _enumerateKeysForPrefixWithLimitOffsetOrderWithTxn(
 			}
 			haveSeenLastSeenKey = true
 		}
-		// Skip if key is included in the set of skipKeys.
-		if skipKeys.Includes(string(key)) {
+		// Skip if key can be skipped.
+		if canSkipKey(key) {
 			continue
 		}
 		// Copy key.
@@ -10863,4 +10891,10 @@ func _enumerateKeysForPrefixWithLimitOffsetOrderWithTxn(
 		valsFound = append(valsFound, valCopy)
 	}
 	return keysFound, valsFound, nil
+}
+
+func _setMembershipCheckFunc(set *Set[string]) func([]byte) bool {
+	return func(key []byte) bool {
+		return set.Includes(string(key))
+	}
 }
