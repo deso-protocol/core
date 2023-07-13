@@ -670,16 +670,39 @@ func DBGetTopStakesByStakeAmount(
 ) ([]*StakeEntry, error) {
 	var stakeEntries []*StakeEntry
 
-	// Convert StakeEntriesToSkip to StakeEntryKeysToSkip.
-	stakeEntryKeysToSkip := NewSet([]string{})
+	// Convert StakeEntriesToSkip to StakeMapKey we need to skip. We use StakeMapKey
+	// here because we need to skip each StakeEntry based on both its ValidatorPKID and
+	// StakerPKID.
+	stakeMapKeysToSkip := NewSet([]StakeMapKey{})
 	for _, stakeEntryToSkip := range stakeEntriesToSkip {
-		stakeEntryKeysToSkip.Add(string(DBKeyForStakeByStakeAmount(stakeEntryToSkip)))
+		stakeMapKeysToSkip.Add(stakeEntryToSkip.ToMapKey())
+	}
+
+	// Define a function to filter out ValidatorPKID-StakerPKID pairs that we want to skip
+	// while seeking through the DB.
+	canSkipValidatorPKIDAndStakerPKIDInBadgerSeek := func(badgerKey []byte) bool {
+		// Parse both the validator PKID and staker PKID from the key. Just to be safe, we return false if
+		// we fail to parse them. Once the seek has completed, we attempt to parse all of the same keys a
+		// second time below. Any failures there will result in an error that we can propagate to the caller.
+		validatorPKID, err := GetValidatorPKIDFromDBKeyForStakeByStakeAmount(badgerKey)
+		if err != nil {
+			return false
+		}
+		stakerPKID, err := GetStakerPKIDFromDBKeyForStakeByStakeAmount(badgerKey)
+		if err != nil {
+			return false
+		}
+
+		return stakeMapKeysToSkip.Includes(StakeMapKey{
+			ValidatorPKID: *validatorPKID,
+			StakerPKID:    *stakerPKID,
+		})
 	}
 
 	// Retrieve top N StakeEntry keys by stake amount.
 	key := append([]byte{}, Prefixes.PrefixStakeByStakeAmount...)
-	keysFound, _, err := EnumerateKeysForPrefixWithLimitOffsetOrder(
-		handle, key, int(limit), nil, true, stakeEntryKeysToSkip,
+	keysFound, _, err := EnumerateKeysForPrefixWithLimitOffsetOrderAndSkipFunc(
+		handle, key, int(limit), nil, true, canSkipValidatorPKIDAndStakerPKIDInBadgerSeek,
 	)
 	if err != nil {
 		return nil, errors.Wrapf(err, "DBGetTopStakesByStakeAmount: problem retrieving top stakes: ")
