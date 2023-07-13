@@ -676,6 +676,89 @@ func DBPutSnapshotValidatorSetTotalStakeAmountNanosWithTxn(
 }
 
 //
+// SnapshotStakingRewardRecipient
+//
+
+type SnapshotStakeMapKey struct {
+	SnapshotAtEpochNumber uint64
+	ValidatorPKID         PKID
+	StakerPKID            PKID
+}
+
+// TODO: @tholonious
+// This is a bare bones in-memory only construct used to capture the ValidatorPKID, StakerPKID, and
+// StakeAmountNanos from a StakeEntry that has been snapshot. We define a new type here rather than
+// re-using the StakeEntry type to reduce the risk of bugs. The StakeEntry type has additional fields
+// (ex: RestakeRewards, ExtraData) that are not snapshotted.
+type SnapshotStakeEntry struct {
+	StakerPKID       *PKID
+	ValidatorPKID    *PKID
+	StakeAmountNanos *uint256.Int
+}
+
+func (s *SnapshotStakeEntry) Copy() *SnapshotStakeEntry {
+	return &SnapshotStakeEntry{
+		StakerPKID:       s.StakerPKID.NewPKID(),
+		ValidatorPKID:    s.ValidatorPKID.NewPKID(),
+		StakeAmountNanos: s.StakeAmountNanos.Clone(),
+	}
+}
+
+// TODO: @tholonious
+func (bav *UtxoView) _setSnapshotStakingRewardsRecipient(snapshotStakeEntry *SnapshotStakeEntry, snapshotAtEpochNumber uint64) {
+	if snapshotStakeEntry == nil {
+		glog.Errorf("_setSnapshotStakingRewardsRecipient: called with nil snapshotStakeEntry, this should never happen")
+		return
+	}
+}
+
+// TODO: @tholonious
+func (bav *UtxoView) GetSnapshotTopStakingRewardsRecipientsByStakeAmount(
+	limit uint64,
+) ([]*SnapshotStakeEntry, error) {
+	return nil, nil
+}
+
+// TODO: @tholonious
+func DBGetSnapshotTopStakingRewardRecipientEntriesByStakeAmount(
+	handle *badger.DB,
+	snap *Snapshot,
+	limit uint64,
+) ([]*SnapshotStakeEntry, error) {
+	return nil, nil
+}
+
+// TODO: @tholonious
+func (bav *UtxoView) _flushSnapshotStakingRewardRecipientEntriesToDbWithTxn(txn *badger.Txn, blockHeight uint64) error {
+	return nil
+}
+
+// TODO: @tholonious
+func DBPutSnapshotStakingRewardRecipientWithTxn(
+	txn *badger.Txn,
+	snap *Snapshot,
+	snapshotStakeEntry *SnapshotStakeEntry,
+	blockHeight uint64,
+) error {
+	return nil
+}
+
+// TODO: @tholonious
+func DBDeleteSnapshotStakingRewardRecipientEntryWithTxn(
+	txn *badger.Txn,
+	snap *Snapshot,
+	snapshotStakeEntry *SnapshotStakeEntry,
+	blockHeight uint64,
+) error {
+	return nil
+}
+
+// TODO: @tholonious
+func DBKeyForSnapshotStakingRewardRecipientByStakeAmount(stakeEntry *StakeEntry) []byte {
+	return nil
+}
+
+//
 // SnapshotLeaderScheduleValidator
 //
 

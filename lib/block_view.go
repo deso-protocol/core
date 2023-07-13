@@ -150,7 +150,7 @@ type UtxoView struct {
 	SnapshotLeaderSchedule map[SnapshotLeaderScheduleMapKey]*PKID
 
 	// TODO: @tholonious
-	SnapshotStakingRewardRecipientsByStakeAmount map[SnapshotStakeMapKey]*SnapshotStakingRewardRecipientEntry
+	SnapshotStakingRewardRecipients map[SnapshotStakeMapKey]*SnapshotStakeEntry
 
 	// The hash of the tip the view is currently referencing. Mainly used
 	// for error-checking when doing a bulk operation on the view.
@@ -266,7 +266,7 @@ func (bav *UtxoView) _ResetViewMappingsAfterFlush() {
 	bav.SnapshotLeaderSchedule = make(map[SnapshotLeaderScheduleMapKey]*PKID)
 
 	// TODO: @tholonious
-	bav.SnapshotStakingRewardRecipientsByStakeAmount = make(map[SnapshotStakeMapKey]*SnapshotStakingRewardRecipientEntry)
+	bav.SnapshotStakingRewardRecipients = make(map[SnapshotStakeMapKey]*SnapshotStakeEntry)
 }
 
 func (bav *UtxoView) CopyUtxoView() (*UtxoView, error) {
@@ -570,8 +570,8 @@ func (bav *UtxoView) CopyUtxoView() (*UtxoView, error) {
 	}
 
 	// TODO: @tholonious
-	for mapKey, snapshotStakingRewardRecipient := range bav.SnapshotStakingRewardRecipientsByStakeAmount {
-		newView.SnapshotStakingRewardRecipientsByStakeAmount[mapKey] = snapshotStakingRewardRecipient.Copy()
+	for mapKey, snapshotStakingRewardRecipient := range bav.SnapshotStakingRewardRecipients {
+		newView.SnapshotStakingRewardRecipients[mapKey] = snapshotStakingRewardRecipient.Copy()
 	}
 
 	return newView, nil

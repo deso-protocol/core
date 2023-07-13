@@ -123,35 +123,6 @@ func (stakeEntry *StakeEntry) GetEncoderType() EncoderType {
 }
 
 //
-// TYPES: SnapshotStakingRewardRecipient
-//
-
-type SnapshotStakeMapKey struct {
-	SnapshotAtEpochNumber uint64
-	ValidatorPKID         PKID
-	StakerPKID            PKID
-}
-
-// TODO: @tholonious
-// This is a bare bones in-memory only construct used to capture the ValidatorPKID, StakerPKID, and
-// StakeAmountNanos from a StakeEntry that has been snapshot, and is eligible to receive staking
-// rewards. We define a new type here rather than re-using the StakeEntry type to reduce the risk of
-// bugs. The StakeEntry type has additional fields (ex: RestakeRewards, ExtraData) that are not snapshotted.
-type SnapshotStakingRewardRecipientEntry struct {
-	StakerPKID       *PKID
-	ValidatorPKID    *PKID
-	StakeAmountNanos *uint256.Int
-}
-
-func (s *SnapshotStakingRewardRecipientEntry) Copy() *SnapshotStakingRewardRecipientEntry {
-	return &SnapshotStakingRewardRecipientEntry{
-		StakerPKID:       s.StakerPKID.NewPKID(),
-		ValidatorPKID:    s.ValidatorPKID.NewPKID(),
-		StakeAmountNanos: s.StakeAmountNanos.Clone(),
-	}
-}
-
-//
 // TYPES: LockedStakeEntry
 //
 
@@ -614,11 +585,6 @@ func GetStakerPKIDFromDBKeyForStakeByStakeAmount(key []byte) (*PKID, error) {
 	return &stakerPKID, nil
 }
 
-// TODO: @tholonious
-func DBKeyForSnapshotStakingRewardRecipientByStakeAmount(stakeEntry *StakeEntry) []byte {
-	return nil
-}
-
 func DBKeyForLockedStakeByValidatorAndStakerAndLockedAt(lockedStakeEntry *LockedStakeEntry) []byte {
 	data := DBPrefixKeyForLockedStakeByValidatorAndStaker(lockedStakeEntry)
 	data = append(data, EncodeUint64(lockedStakeEntry.LockedAtEpochNumber)...)
@@ -645,15 +611,6 @@ func DBGetStakeEntry(
 		return innerErr
 	})
 	return ret, err
-}
-
-// TODO: @tholonious
-func DBGetSnapshotTopStakingRewardRecipientEntriesByStakeAmount(
-	handle *badger.DB,
-	snap *Snapshot,
-	limit uint64,
-) ([]*StakeEntry, error) {
-	return nil, nil
 }
 
 func DBGetStakeEntryWithTxn(
@@ -964,16 +921,6 @@ func DBPutStakeEntryWithTxn(
 	return nil
 }
 
-// TODO: @tholonious
-func DBPutSnapshotStakingRewardRecipientWithTxn(
-	txn *badger.Txn,
-	snap *Snapshot,
-	stakeEntry *StakeEntry,
-	blockHeight uint64,
-) error {
-	return nil
-}
-
 func DBPutLockedStakeEntryWithTxn(
 	txn *badger.Txn,
 	snap *Snapshot,
@@ -1035,16 +982,6 @@ func DBDeleteStakeEntryWithTxn(
 		)
 	}
 
-	return nil
-}
-
-// TODO: @tholonious
-func DBDeleteSnapshotStakingRewardRecipientEntryWithTxn(
-	txn *badger.Txn,
-	snap *Snapshot,
-	stakeEntry *StakeEntry,
-	blockHeight uint64,
-) error {
 	return nil
 }
 
@@ -2542,13 +2479,6 @@ func (bav *UtxoView) ValidatorHasDelegatedStake(validatorPKID *PKID) (bool, erro
 	return DBValidatorHasDelegatedStake(bav.Handle, bav.Snapshot, validatorPKID, utxoDeletedStakeEntries)
 }
 
-// TODO: @tholonious
-func (bav *UtxoView) GetSnapshotTopStakingRewardsRecipientsByStakeAmount(
-	limit uint64,
-) ([]*SnapshotStakingRewardRecipientEntry, error) {
-	return nil, nil
-}
-
 func (bav *UtxoView) GetLockedStakeEntry(
 	validatorPKID *PKID,
 	stakerPKID *PKID,
@@ -2721,11 +2651,6 @@ func (bav *UtxoView) _flushStakeEntriesToDbWithTxn(txn *badger.Txn, blockHeight 
 		}
 	}
 
-	return nil
-}
-
-// TODO: @tholonious
-func (bav *UtxoView) _flushSnapshotStakingRewardRecipientEntriesToDbWithTxn(txn *badger.Txn, blockHeight uint64) error {
 	return nil
 }
 
