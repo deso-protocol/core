@@ -685,11 +685,11 @@ type SnapshotStakeMapKey struct {
 	StakerPKID            PKID
 }
 
-// TODO: @tholonious
-// This is a bare bones in-memory only construct used to capture the ValidatorPKID, StakerPKID, and
-// StakeAmountNanos from a StakeEntry that has been snapshot. We define a new type here rather than
-// re-using the StakeEntry type to reduce the risk of bugs. The StakeEntry type has additional fields
-// (ex: RestakeRewards, ExtraData) that are not snapshotted.
+// This is a bare bones in-memory only construct used to capture the ValidatorPKID,
+// StakerPKID, and StakeAmountNanos from a StakeEntry that has been snapshot. We
+// define a new type here rather than re-using the StakeEntry type to reduce the risk
+// of bugs. The StakeEntry type has additional fields (ex: RestakeRewards, ExtraData)
+// that are not snapshotted.
 type SnapshotStakeEntry struct {
 	SnapshotAtEpochNumber uint64
 	StakerPKID            *PKID
@@ -713,9 +713,9 @@ func (s *SnapshotStakeEntry) ToMapKey() *SnapshotStakeMapKey {
 	}
 }
 
-func (bav *UtxoView) _setSnapshotStakesToReward(snapshotStakeEntry *SnapshotStakeEntry, snapshotAtEpochNumber uint64) {
+func (bav *UtxoView) _setSnapshotStakeToReward(snapshotStakeEntry *SnapshotStakeEntry) {
 	if snapshotStakeEntry == nil {
-		glog.Errorf("_setSnapshotStakesToReward: called with nil snapshotStakeEntry, this should never happen")
+		glog.Errorf("_setSnapshotStakeToReward: called with nil snapshotStakeEntry")
 		return
 	}
 	bav.SnapshotStakesToReward[*snapshotStakeEntry.ToMapKey()] = snapshotStakeEntry.Copy()
@@ -737,42 +737,30 @@ func DBGetSnapshotTopStakesToRewardByStakeAmount(
 ) ([]*SnapshotStakeEntry, error) {
 	var snapshotStakeEntries []*SnapshotStakeEntry
 
-	// Convert SnapshotStakeEntriesToSkip to StakeMapKey we need to skip.
-	snapshotStakeMapKeysToSkip := NewSet([]SnapshotStakeMapKey{})
+	// Convert SnapshotStakeEntriesToSkip to the StakeMapKey we need to skip.
+	snapshotStakeKeysToSkip := NewSet([]string{})
 	for _, snapshotStakeEntryToSkip := range snapshotStakeEntriesToSkip {
-		snapshotStakeMapKeysToSkip.Add(*snapshotStakeEntryToSkip.ToMapKey())
-	}
-
-	// Define a function to filter out keys we want to skip while seeking through the DB.
-	canSkipKeysInBadgerSeek := func(badgerKey []byte) bool {
-		if snapshotStakeMapKeysToSkip.Size() == 0 {
-			return false
-		}
-
-		// Parse both the SnapshotStakeEntry from the key. Just to be safe, we return false if we fail to
-		// parse them. Once the seek has completed, we attempt to parse all of the same keys a second time below.
-		snapshotStakeEntry, err := DecodeSnapshotStakeToRewardByStakeAmountFromDBKey(badgerKey)
-		if err != nil {
-			return false
-		}
-
-		return snapshotStakeMapKeysToSkip.Includes(*snapshotStakeEntry.ToMapKey())
+		snapshotStakeKeysToSkip.Add(
+			string(DBKeyForSnapshotStakeToRewardByStakeAmount(snapshotStakeEntryToSkip)),
+		)
 	}
 
 	// Retrieve top N SnapshotStakeEntry keys by stake amount.
 	key := DBKeyForSnapshotStakeToRewardAtEpochNumber(snapshotAtEpochNumber)
-	keysFound, _, err := EnumerateKeysForPrefixWithLimitOffsetOrderAndSkipFunc(
-		handle, key, int(limit), nil, true, canSkipKeysInBadgerSeek,
+	keysFound, _, err := EnumerateKeysForPrefixWithLimitOffsetOrder(
+		handle, key, int(limit), nil, true, snapshotStakeKeysToSkip,
 	)
 	if err != nil {
-		return nil, errors.Wrapf(err, "DBGetSnapshotTopStakesToRewardByStakeAmount: problem retrieving top stakes: ")
+		return nil, errors.Wrapf(err, "DBGetSnapshotTopStakesToRewardByStakeAmount:"+
+			" problem retrieving top stakes: ")
 	}
 
 	// For each key found, parse the SnapshotStakeEntry from the key.
 	for _, keyFound := range keysFound {
-		snapshotStakeEntry, err := DecodeSnapshotStakeToRewardByStakeAmountFromDBKey(keyFound)
+		snapshotStakeEntry, err := DecodeSnapshotStakeToRewardFromDBKey(keyFound)
 		if err != nil {
-			return nil, errors.Wrapf(err, "DBGetSnapshotTopStakesToRewardByStakeAmount: problem reading SnapshotStakeEntry: ")
+			return nil, errors.Wrapf(err, "DBGetSnapshotTopStakesToRewardByStakeAmount:"+
+				" problem reading SnapshotStakeEntry: ")
 		}
 
 		snapshotStakeEntries = append(snapshotStakeEntries, snapshotStakeEntry)
@@ -785,14 +773,16 @@ func (bav *UtxoView) _flushSnapshotStakesToRewardToDbWithTxn(txn *badger.Txn, bl
 	for mapKey, snapshotStakeEntry := range bav.SnapshotStakesToReward {
 		if snapshotStakeEntry == nil {
 			return fmt.Errorf(
-				"_flushSnapshotStakesToRewardToDbWithTxn: found nil snapshotStakeEntry for EpochNumber %d, this should never happen",
+				"_flushSnapshotStakesToRewardToDbWithTxn: found nil snapshotStakeEntry for"+
+					" EpochNumber %d, this should never happen",
 				mapKey.SnapshotAtEpochNumber,
 			)
 		}
 		if err := DBPutSnapshotStakeToRewardWithTxn(txn, bav.Snapshot, snapshotStakeEntry, blockHeight); err != nil {
 			return errors.Wrapf(
 				err,
-				"_flushSnapshotStakesToRewardToDbWithTxn: problem setting snapshotStakeEntry for SnapshotAtEpochNumber %d: ",
+				"_flushSnapshotStakesToRewardToDbWithTxn: problem setting snapshotStakeEntry"+
+					" for SnapshotAtEpochNumber %d: ",
 				mapKey.SnapshotAtEpochNumber,
 			)
 		}
@@ -808,14 +798,15 @@ func DBPutSnapshotStakeToRewardWithTxn(
 ) error {
 	if snapshotStakeEntry == nil {
 		// This should never happen but is a sanity check.
-		glog.Errorf("DBPutSnapshotStakeToRewardWithTxn: called with nil snapshotStakeEntry, this should never happen")
+		glog.Errorf("DBPutSnapshotStakeToRewardWithTxn: called with nil snapshotStakeEntry")
 		return nil
 	}
 	key := DBKeyForSnapshotStakeToRewardByStakeAmount(snapshotStakeEntry)
 	if err := DBSetWithTxn(txn, snap, key, nil); err != nil {
 		return errors.Wrapf(
 			err,
-			"DBPutSnapshotStakeToRewardWithTxn: problem putting snapshotStakeEntry in the SnapshotLeaderSchedule index: ",
+			"DBPutSnapshotStakeToRewardWithTxn: problem putting snapshotStakeEntry in the"+
+				" SnapshotLeaderSchedule index: ",
 		)
 	}
 	return nil
@@ -830,13 +821,13 @@ func DBKeyForSnapshotStakeToRewardByStakeAmount(snapshotStakeEntry *SnapshotStak
 	return data
 }
 
-func DecodeSnapshotStakeToRewardByStakeAmountFromDBKey(key []byte) (*SnapshotStakeEntry, error) {
+func DecodeSnapshotStakeToRewardFromDBKey(stakeToRewardByStakeAmountDBKey []byte) (*SnapshotStakeEntry, error) {
 	var err error
-	rr := bytes.NewReader(key)
+	rr := bytes.NewReader(stakeToRewardByStakeAmountDBKey)
 
 	// Seek past the prefix.
 	if _, err := rr.Seek(int64(len(Prefixes.PrefixSnapshotStakeToRewardByStakeAmount)), 0); err != nil {
-		return nil, errors.Wrapf(err, "DecodeSnapshotStakeToRewardByStakeAmountFromDBKey: Unable to skip past the prefix")
+		return nil, errors.Wrapf(err, "DecodeSnapshotStakeToRewardFromDBKey: Unable to skip past the prefix")
 	}
 
 	decodedOutput := &SnapshotStakeEntry{}
@@ -844,20 +835,20 @@ func DecodeSnapshotStakeToRewardByStakeAmountFromDBKey(key []byte) (*SnapshotSta
 	// The next 8 bytes are guaranteed to be the snapshotAtEpochNumber, since they are fixed-width.
 	snapshotAtEpochNumberBytes := make([]byte, 8)
 	if _, err := rr.Read(snapshotAtEpochNumberBytes); err != nil {
-		return nil, errors.Wrapf(err, "DecodeSnapshotStakeToRewardByStakeAmountFromDBKey: Unable to read SnapshotAtEpochNumber")
+		return nil, errors.Wrapf(err, "DecodeSnapshotStakeToRewardFromDBKey: Unable to read SnapshotAtEpochNumber")
 	}
 	decodedOutput.SnapshotAtEpochNumber = DecodeUint64(snapshotAtEpochNumberBytes)
 
 	if decodedOutput.StakeAmountNanos, err = FixedWidthDecodeUint256(rr); err != nil {
-		return nil, errors.Wrapf(err, "DecodeSnapshotStakeToRewardByStakeAmountFromDBKey: Unable to read StakeAmountNanos")
+		return nil, errors.Wrapf(err, "DecodeSnapshotStakeToRewardFromDBKey: Unable to read StakeAmountNanos")
 	}
 
 	if err := decodedOutput.ValidatorPKID.FromBytes(rr); err != nil {
-		return nil, errors.Wrapf(err, "DecodeSnapshotStakeToRewardByStakeAmountFromDBKey: unable to read ValidatorPKID")
+		return nil, errors.Wrapf(err, "DecodeSnapshotStakeToRewardFromDBKey: unable to read ValidatorPKID")
 	}
 
 	if err := decodedOutput.StakerPKID.FromBytes(rr); err != nil {
-		return nil, errors.Wrapf(err, "DecodeSnapshotStakeToRewardByStakeAmountFromDBKey: unable to read StakerPKID")
+		return nil, errors.Wrapf(err, "DecodeSnapshotStakeToRewardFromDBKey: unable to read StakerPKID")
 	}
 
 	return decodedOutput, nil
