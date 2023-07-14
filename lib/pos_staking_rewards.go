@@ -69,19 +69,19 @@ func (bav *UtxoView) DistributeStakingRewardsToSnapshotStakes() error {
 		// At this point, there are three possible cases:
 		// 1. The staker still exists and wants to restake their rewards.
 		// 2. The staker still exists and does not want to restake their rewards.
-		// 3. The staker has since unstaked since the snapshot was taken. The staker no longer
-		// exists.
+		// 3. The staker has unstaked since the snapshot was taken. They no longer have a
+		// StakeEntry. Their stake is currently in lockup.
 
 		// For case 1, we distribute the rewards by adding them to the staker's staked amount.
 		if stakeEntry != nil && stakeEntry.RestakeRewards {
 			stakeEntry.StakeAmountNanos.Add(stakeEntry.StakeAmountNanos, rewardAmount)
+			bav._setStakeEntryMappings(stakeEntry)
 			continue
 		}
 
-		// For cases 2 and 3, we know that the staker no longer wants to maintain their stake, so
-		// we add the rewards to their DESO wallet balance. They're still eligible to receive
-		// rewards because the validator they had staked to was part of the validator set for the
-		// snapshot epoch. Their stake at the time was used to secure the network.
+		// For cases 2 and 3, the staker no longer wants their rewards restaked. The staker is still
+		// eligible to receive rewards because the validator they had staked to was part of the validator
+		// set for the snapshot epoch. Their stake at the time was used to secure the network.
 
 		stakerPublicKey := bav.GetPublicKeyForPKID(snapshotStakeEntry.StakerPKID)
 

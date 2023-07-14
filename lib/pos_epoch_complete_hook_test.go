@@ -110,7 +110,7 @@ func TestRunEpochCompleteHook(t *testing.T) {
 		return newUtxoView
 	}
 
-	_registerAndStake := func(publicKey string, privateKey string, stakeAmountNanos uint64) {
+	_registerAndStake := func(publicKey string, privateKey string, stakeAmountNanos uint64, restakeRewards bool) {
 		// Convert PublicKeyBase58Check to PublicKeyBytes.
 		pkBytes, _, err := Base58CheckDecode(publicKey)
 		require.NoError(t, err)
@@ -125,12 +125,9 @@ func TestRunEpochCompleteHook(t *testing.T) {
 		_, err = _submitRegisterAsValidatorTxn(testMeta, publicKey, privateKey, registerMetadata, nil, true)
 		require.NoError(t, err)
 
-		// Validator stakes to himself.
-		if stakeAmountNanos == 0 {
-			return
-		}
 		stakeMetadata := &StakeMetadata{
 			ValidatorPublicKey: NewPublicKey(pkBytes),
+			RestakeRewards:     restakeRewards,
 			StakeAmountNanos:   uint256.NewInt().SetUint64(stakeAmountNanos),
 		}
 		_, err = _submitStakeTxn(testMeta, publicKey, privateKey, stakeMetadata, nil, true)
@@ -256,13 +253,13 @@ func TestRunEpochCompleteHook(t *testing.T) {
 	}
 	{
 		// All validators register + stake to themselves.
-		_registerAndStake(m0Pub, m0Priv, 100)
-		_registerAndStake(m1Pub, m1Priv, 200)
-		_registerAndStake(m2Pub, m2Priv, 300)
-		_registerAndStake(m3Pub, m3Priv, 400)
-		_registerAndStake(m4Pub, m4Priv, 500)
-		_registerAndStake(m5Pub, m5Priv, 600)
-		_registerAndStake(m6Pub, m6Priv, 700)
+		_registerAndStake(m0Pub, m0Priv, 100, false)
+		_registerAndStake(m1Pub, m1Priv, 200, false)
+		_registerAndStake(m2Pub, m2Priv, 300, false)
+		_registerAndStake(m3Pub, m3Priv, 400, false)
+		_registerAndStake(m4Pub, m4Priv, 500, false)
+		_registerAndStake(m5Pub, m5Priv, 600, false)
+		_registerAndStake(m6Pub, m6Priv, 700, false)
 
 		validatorEntries, err := utxoView().GetTopActiveValidatorsByStakeAmount(10)
 		require.NoError(t, err)
@@ -339,13 +336,13 @@ func TestRunEpochCompleteHook(t *testing.T) {
 		}
 
 		// Test GetSnapshotStakesToRewardByStakeAmount is populated.
-		stakeEntries, err := utxoView().GetSnapshotStakesToRewardByStakeAmount(10)
+		snapshotStakeEntries, err := utxoView().GetSnapshotStakesToRewardByStakeAmount(10)
 		require.NoError(t, err)
-		require.Len(t, stakeEntries, 7)
-		require.Equal(t, stakeEntries[0].StakerPKID, m6PKID)
-		require.Equal(t, stakeEntries[6].StakerPKID, m0PKID)
-		require.Equal(t, stakeEntries[0].StakeAmountNanos, uint256.NewInt().SetUint64(700))
-		require.Equal(t, stakeEntries[6].StakeAmountNanos, uint256.NewInt().SetUint64(100))
+		require.Len(t, snapshotStakeEntries, 7)
+		require.Equal(t, snapshotStakeEntries[0].StakerPKID, m6PKID)
+		require.Equal(t, snapshotStakeEntries[6].StakerPKID, m0PKID)
+		require.Equal(t, snapshotStakeEntries[0].StakeAmountNanos, uint256.NewInt().SetUint64(700))
+		require.Equal(t, snapshotStakeEntries[6].StakeAmountNanos, uint256.NewInt().SetUint64(100))
 	}
 	{
 		// Test snapshotting changing stake.
@@ -357,7 +354,7 @@ func TestRunEpochCompleteHook(t *testing.T) {
 		require.Equal(t, validatorEntry.TotalStakeAmountNanos.Uint64(), uint64(600))
 
 		// m5 stakes another 200.
-		_registerAndStake(m5Pub, m5Priv, 200)
+		_registerAndStake(m5Pub, m5Priv, 200, false)
 
 		// m5 has 800 staked.
 		validatorEntry, err = utxoView().GetValidatorByPKID(m5PKID)
@@ -465,6 +462,52 @@ func TestRunEpochCompleteHook(t *testing.T) {
 		require.Len(t, snapshotStakeEntries, 6)
 	}
 	{
+		// Test staking rewards distribution with RestakeRewards enabled.
+
+		// m6 now has a 14333333578 nano balance from staking rewards so far.
+		balance, err := utxoView().GetDeSoBalanceNanosForPublicKey(m6PkBytes)
+		require.NoError(t, err)
+		require.Equal(t, balance, uint64(14333333578))
+
+		// Run OnEpochCompleteHook().
+		_runOnEpochCompleteHook()
+
+		// m6 now has 16747126681 after the most recent's epoch's staking rewards.
+		balance, err = utxoView().GetDeSoBalanceNanosForPublicKey(m6PkBytes)
+		require.NoError(t, err)
+		require.Equal(t, balance, uint64(16747126681))
+	}
+	{
+		// Test staking rewards distribution with RestakeRewards enabled.
+
+		// m6 has 700 nanos staked.
+		stakeEntry, err := utxoView().GetStakeEntry(m6PKID, m6PKID)
+		require.NoError(t, err)
+		require.Equal(t, stakeEntry.StakeAmountNanos, uint256.NewInt().SetUint64(700))
+
+		// m6 sets their RestakeRewards flag to true.
+		_registerAndStake(m6Pub, m6Priv, 0, true)
+
+		// m6's wallet balance is 16747126627 after they submit their stake transaction.
+		balance, err := utxoView().GetDeSoBalanceNanosForPublicKey(m6PkBytes)
+		require.NoError(t, err)
+		require.Equal(t, balance, uint64(0x3e634df63))
+
+		// Run OnEpochCompleteHook().
+		_runOnEpochCompleteHook()
+
+		// m6 has 2413793803 staked now a after their staking rewards were restaked.
+		stakeEntry, err = utxoView().GetStakeEntry(m6PKID, m6PKID)
+		require.NoError(t, err)
+		require.Equal(t, stakeEntry.StakeAmountNanos, uint256.NewInt().SetUint64(2413793803))
+
+		// m6's wallet balance has not changed from has 16747126627 now that their rewards
+		// were restaked.
+		balance, err = utxoView().GetDeSoBalanceNanosForPublicKey(m6PkBytes)
+		require.NoError(t, err)
+		require.Equal(t, balance, uint64(0x3e634df63))
+	}
+	{
 		// Test jailing inactive validators.
 		//
 		// The CurrentEpochNumber is 9. All validators were last active in epoch 1
@@ -512,26 +555,6 @@ func TestRunEpochCompleteHook(t *testing.T) {
 			require.NoError(t, err)
 			return len(snapshotStakeEntries)
 		}
-
-		// In epoch 9, all registered validators have Status = Active.
-		require.Equal(t, getCurrentEpochNumber(), 9)
-		require.Equal(t, getNumCurrentActiveValidators(), 6)
-		require.Equal(t, getNumSnapshotActiveValidators(), 6)
-		require.Equal(t, getNumStakes(), 6)
-		require.Equal(t, getNumSnapshotStakes(), 6)
-
-		// Run OnEpochCompleteHook().
-		_runOnEpochCompleteHook()
-
-		// In epoch 10, all registered validators have Status = Active.
-		require.Equal(t, getCurrentEpochNumber(), 10)
-		require.Equal(t, getNumCurrentActiveValidators(), 6)
-		require.Equal(t, getNumSnapshotActiveValidators(), 6)
-		require.Equal(t, getNumStakes(), 6)
-		require.Equal(t, getNumSnapshotStakes(), 6)
-
-		// Run OnEpochCompleteHook().
-		_runOnEpochCompleteHook()
 
 		// In epoch 11, all registered validators have Status = Active.
 		require.Equal(t, getCurrentEpochNumber(), 11)
