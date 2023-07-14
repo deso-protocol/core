@@ -721,14 +721,89 @@ func (bav *UtxoView) _setSnapshotStakeToReward(snapshotStakeEntry *SnapshotStake
 	bav.SnapshotStakesToReward[*snapshotStakeEntry.ToMapKey()] = snapshotStakeEntry.Copy()
 }
 
-// TODO: @tholonious
-func (bav *UtxoView) GetSnapshotTopStakesToRewardByStakeAmount(
+// GetSnapshotStakesToRewardByStakeAmount returns the top N SnapshotStakeEntries that are eligible
+// to receive block rewards for the current snapshot epoch. The entries are sorted by stake amount
+// in descending order.
+func (bav *UtxoView) GetSnapshotStakesToRewardByStakeAmount(
 	limit uint64,
 ) ([]*SnapshotStakeEntry, error) {
-	return nil, nil
+	// Calculate the SnapshotEpochNumber.
+	snapshotAtEpochNumber, err := bav.GetSnapshotEpochNumber()
+	if err != nil {
+		return nil, errors.Wrapf(err, "GetSnapshotStakesToRewardByStakeAmount: problem calculating SnapshotEpochNumber: ")
+	}
+
+	// Create a slice of all UtxoView StakeSnapshotEntries to prevent pulling them from the db.
+	var utxoViewSnapshotStakeEntries []*SnapshotStakeEntry
+	for mapKey, stakeEntry := range bav.SnapshotStakesToReward {
+		if mapKey.SnapshotAtEpochNumber == snapshotAtEpochNumber {
+			utxoViewSnapshotStakeEntries = append(utxoViewSnapshotStakeEntries, stakeEntry)
+		}
+	}
+
+	// Pull top N SnapshotStakeEntries from the database (not present in the UtxoView).
+	dbSnapshotStakeEntries, err := DBGetSnapshotStakesToRewardByStakeAmount(
+		bav.Handle, bav.Snapshot, limit, snapshotAtEpochNumber, utxoViewSnapshotStakeEntries,
+	)
+	if err != nil {
+		return nil, errors.Wrapf(err, "GetSnapshotStakesToRewardByStakeAmount: error retrieving entries from db: ")
+	}
+
+	// Cache the SnapshotStakeEntries from the db in the UtxoView.
+	for _, snapshotStakeEntry := range dbSnapshotStakeEntries {
+		mapKey := snapshotStakeEntry.ToMapKey()
+		if _, exists := bav.SnapshotStakesToReward[*mapKey]; exists {
+			// We should never see duplicate entries from the db that are already in the UtxoView. This is a
+			// sign of a bug and that the utxoViewSnapshotStakeEntries isn't being used correctly.
+			return nil, fmt.Errorf("GetSnapshotStakesToRewardByStakeAmount: db returned a SnapshotStakeEntry" +
+				" that already exists in the UtxoView")
+		}
+
+		bav._setSnapshotStakeToReward(snapshotStakeEntry)
+	}
+
+	// Pull SnapshotStakeEntries from the UtxoView with stake > 0. All entries should have > 0 stake to begin
+	// with, but we filter here again just in case.
+	var mergedSnapshotStakeEntries []*SnapshotStakeEntry
+	for mapKey, snapshotStakeEntry := range bav.SnapshotStakesToReward {
+		if mapKey.SnapshotAtEpochNumber == snapshotAtEpochNumber &&
+			!snapshotStakeEntry.StakeAmountNanos.IsZero() {
+			mergedSnapshotStakeEntries = append(mergedSnapshotStakeEntries, snapshotStakeEntry)
+		}
+	}
+
+	// Sort the SnapshotStakeEntries DESC by StakeAmountNanos.
+	sort.Slice(mergedSnapshotStakeEntries, func(ii, jj int) bool {
+		stakeAmountCmp := mergedSnapshotStakeEntries[ii].StakeAmountNanos.Cmp(
+			mergedSnapshotStakeEntries[jj].StakeAmountNanos,
+		)
+		if stakeAmountCmp != 0 {
+			return stakeAmountCmp > 0
+		}
+
+		validatorPKIDCmp := bytes.Compare(
+			mergedSnapshotStakeEntries[ii].ValidatorPKID.ToBytes(),
+			mergedSnapshotStakeEntries[jj].ValidatorPKID.ToBytes(),
+		)
+		if validatorPKIDCmp != 0 {
+			return validatorPKIDCmp > 0
+		}
+
+		return bytes.Compare(
+			mergedSnapshotStakeEntries[ii].StakerPKID.ToBytes(),
+			mergedSnapshotStakeEntries[jj].StakerPKID.ToBytes(),
+		) > 0
+	})
+
+	// Return top N.
+	upperBound := limit
+	if uint64(len(mergedSnapshotStakeEntries)) < upperBound {
+		upperBound = uint64(len(mergedSnapshotStakeEntries))
+	}
+	return mergedSnapshotStakeEntries[0:upperBound], nil
 }
 
-func DBGetSnapshotTopStakesToRewardByStakeAmount(
+func DBGetSnapshotStakesToRewardByStakeAmount(
 	handle *badger.DB,
 	snap *Snapshot,
 	limit uint64,
