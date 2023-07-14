@@ -721,16 +721,16 @@ func (bav *UtxoView) _setSnapshotStakeToReward(snapshotStakeEntry *SnapshotStake
 	bav.SnapshotStakesToReward[*snapshotStakeEntry.ToMapKey()] = snapshotStakeEntry.Copy()
 }
 
-// GetSnapshotStakesToRewardByStakeAmount returns the top N SnapshotStakeEntries that are eligible
+// GetSnapshotTopStakesToRewardByStakeAmount returns the top N SnapshotStakeEntries that are eligible
 // to receive block rewards for the current snapshot epoch. The entries are sorted by stake amount
 // in descending order.
-func (bav *UtxoView) GetSnapshotStakesToRewardByStakeAmount(
+func (bav *UtxoView) GetSnapshotTopStakesToRewardByStakeAmount(
 	limit uint64,
 ) ([]*SnapshotStakeEntry, error) {
 	// Calculate the SnapshotEpochNumber.
 	snapshotAtEpochNumber, err := bav.GetSnapshotEpochNumber()
 	if err != nil {
-		return nil, errors.Wrapf(err, "GetSnapshotStakesToRewardByStakeAmount: problem calculating SnapshotEpochNumber: ")
+		return nil, errors.Wrapf(err, "GetSnapshotTopStakesToRewardByStakeAmount: problem calculating SnapshotEpochNumber: ")
 	}
 
 	// Create a slice of all UtxoView StakeSnapshotEntries to prevent pulling them from the db.
@@ -742,11 +742,11 @@ func (bav *UtxoView) GetSnapshotStakesToRewardByStakeAmount(
 	}
 
 	// Pull top N SnapshotStakeEntries from the database (not present in the UtxoView).
-	dbSnapshotStakeEntries, err := DBGetSnapshotStakesToRewardByStakeAmount(
+	dbSnapshotStakeEntries, err := DBGetSnapshotTopStakesToRewardByStakeAmount(
 		bav.Handle, bav.Snapshot, limit, snapshotAtEpochNumber, utxoViewSnapshotStakeEntries,
 	)
 	if err != nil {
-		return nil, errors.Wrapf(err, "GetSnapshotStakesToRewardByStakeAmount: error retrieving entries from db: ")
+		return nil, errors.Wrapf(err, "GetSnapshotTopStakesToRewardByStakeAmount: error retrieving entries from db: ")
 	}
 
 	// Cache the SnapshotStakeEntries from the db in the UtxoView.
@@ -755,7 +755,7 @@ func (bav *UtxoView) GetSnapshotStakesToRewardByStakeAmount(
 		if _, exists := bav.SnapshotStakesToReward[*mapKey]; exists {
 			// We should never see duplicate entries from the db that are already in the UtxoView. This is a
 			// sign of a bug and that the utxoViewSnapshotStakeEntries isn't being used correctly.
-			return nil, fmt.Errorf("GetSnapshotStakesToRewardByStakeAmount: db returned a SnapshotStakeEntry" +
+			return nil, fmt.Errorf("GetSnapshotTopStakesToRewardByStakeAmount: db returned a SnapshotStakeEntry" +
 				" that already exists in the UtxoView")
 		}
 
@@ -803,7 +803,7 @@ func (bav *UtxoView) GetSnapshotStakesToRewardByStakeAmount(
 	return mergedSnapshotStakeEntries[0:upperBound], nil
 }
 
-func DBGetSnapshotStakesToRewardByStakeAmount(
+func DBGetSnapshotTopStakesToRewardByStakeAmount(
 	handle *badger.DB,
 	snap *Snapshot,
 	limit uint64,
