@@ -101,8 +101,8 @@ func _mergeGlobalParamEntryDefaults(bav *UtxoView, globalParamsEntry *GlobalPara
 	if globalParamsEntryCopy.ValidatorSetMaxNumValidators == 0 {
 		globalParamsEntryCopy.ValidatorSetMaxNumValidators = bav.Params.DefaultValidatorSetMaxNumValidators
 	}
-	if globalParamsEntryCopy.StakingRewardDistributionMaxNumStakers == 0 {
-		globalParamsEntryCopy.StakingRewardDistributionMaxNumStakers = bav.Params.DefaultStakingRewardDistributionMaxNumStakers
+	if globalParamsEntryCopy.StakingRewardsMaxNumStakes == 0 {
+		globalParamsEntryCopy.StakingRewardsMaxNumStakes = bav.Params.DefaultStakingRewardsMaxNumStakes
 	}
 	if globalParamsEntryCopy.EpochDurationNumBlocks == 0 {
 		globalParamsEntryCopy.EpochDurationNumBlocks = bav.Params.DefaultEpochDurationNumBlocks
