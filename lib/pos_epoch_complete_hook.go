@@ -34,8 +34,9 @@ func (bav *UtxoView) IsLastBlockInCurrentEpoch(blockHeight uint64) (bool, error)
 // snapshot state. They should have no other side effects that mutate the existing state of the view.
 // 1. Snapshot the current GlobalParamsEntry.
 // 2. Snapshot the current validator set.
-// 3. Snapshot the current GlobalActiveStakeAmountNanos.
+// 3. Snapshot the current validator set's TotalStakeAmountNanos.
 // 4. Snapshot the leader schedule.
+// 5. Snapshot the current top N stake entries, who will receive staking rewards.
 //
 // Step 2: Transition to the next epoch. This runs all state-mutating operations that need to be run for
 // the epoch transition. We always perform state-mutating operations after creating snapshots. This way,
@@ -98,6 +99,21 @@ func (bav *UtxoView) RunEpochCompleteHook(blockHeight uint64) error {
 			return errors.Errorf("RunEpochCompleteHook: LeaderIndex %d overflows uint16", index)
 		}
 		bav._setSnapshotLeaderScheduleValidator(validatorPKID, uint16(index), currentEpochEntry.EpochNumber)
+	}
+
+	// Snapshot the current top n stake entries.
+	topStakeEntries, err := bav.GetTopStakesByStakeAmount(currentGlobalParamsEntry.StakingRewardDistributionMaxNumStakers)
+	if err != nil {
+		return errors.Wrapf(err, "RunEpochCompleteHook: error retrieving top StakeEntries: ")
+	}
+	for _, stakeEntry := range topStakeEntries {
+		snapshotStakeEntry := SnapshotStakeEntry{
+			SnapshotAtEpochNumber: currentEpochEntry.EpochNumber,
+			ValidatorPKID:         stakeEntry.ValidatorPKID,
+			StakerPKID:            stakeEntry.StakerPKID,
+			StakeAmountNanos:      stakeEntry.StakeAmountNanos,
+		}
+		bav._setSnapshotStakeToReward(&snapshotStakeEntry)
 	}
 
 	// TODO: Delete old snapshots that are no longer used.
