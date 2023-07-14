@@ -147,7 +147,9 @@ func (bav *UtxoView) RunEpochCompleteHook(blockHeight uint64) error {
 
 	// Reward all snapshotted stakes from the current snapshot validator set. This is an O(n) operation
 	// that loops through all of the snapshotted stakes and rewards them.
-	snapshotStakesToReward, err := bav.GetSnapshotStakesToRewardByStakeAmount()
+	if err = bav.DistributeStakingRewardsToSnapshotStakes(); err != nil {
+		return errors.Wrapf(err, "RunEpochCompleteHook: problem rewarding snapshot stakes: ")
+	}
 
 	// Calculate the NextEpochFinalBlockHeight.
 	nextEpochFinalBlockHeight, err := SafeUint64().Add(blockHeight, snapshotGlobalParamsEntry.EpochDurationNumBlocks)
