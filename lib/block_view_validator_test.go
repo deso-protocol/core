@@ -222,7 +222,7 @@ func _testValidatorRegistration(t *testing.T, flushToDB bool) {
 	{
 		// Query: retrieve top active ValidatorEntries by stake.
 		// Should be empty since m0's TotalStakeAmountNanos is zero.
-		validatorEntries, err = utxoView().GetTopActiveValidatorsByStake(1)
+		validatorEntries, err = utxoView().GetTopActiveValidatorsByStakeAmount(1)
 		require.NoError(t, err)
 		require.Empty(t, validatorEntries)
 	}
@@ -275,7 +275,7 @@ func _testValidatorRegistration(t *testing.T, flushToDB bool) {
 	}
 	{
 		// Query: retrieve top active ValidatorEntries by stake
-		validatorEntries, err = utxoView().GetTopActiveValidatorsByStake(1)
+		validatorEntries, err = utxoView().GetTopActiveValidatorsByStakeAmount(1)
 		require.NoError(t, err)
 		require.Empty(t, validatorEntries)
 	}
@@ -661,12 +661,12 @@ func TestValidatorRegistrationWithDerivedKey(t *testing.T) {
 	_executeAllTestRollbackAndFlush(testMeta)
 }
 
-func TestGetTopActiveValidatorsByStake(t *testing.T) {
-	_testGetTopActiveValidatorsByStake(t, false)
-	_testGetTopActiveValidatorsByStake(t, true)
+func TestGetTopActiveValidatorsByStakeAmount(t *testing.T) {
+	_testGetTopActiveValidatorsByStakeAmount(t, false)
+	_testGetTopActiveValidatorsByStakeAmount(t, true)
 }
 
-func _testGetTopActiveValidatorsByStake(t *testing.T, flushToDB bool) {
+func _testGetTopActiveValidatorsByStakeAmount(t *testing.T, flushToDB bool) {
 	var validatorEntries []*ValidatorEntry
 	var err error
 
@@ -741,7 +741,7 @@ func _testGetTopActiveValidatorsByStake(t *testing.T, flushToDB bool) {
 		require.NoError(t, err)
 
 		// Verify top validators is empty since m0's TotalStakeAmountNanos is zero.
-		validatorEntries, err = utxoView().GetTopActiveValidatorsByStake(10)
+		validatorEntries, err = utxoView().GetTopActiveValidatorsByStakeAmount(10)
 		require.NoError(t, err)
 		require.Empty(t, validatorEntries)
 	}
@@ -757,7 +757,7 @@ func _testGetTopActiveValidatorsByStake(t *testing.T, flushToDB bool) {
 		require.NoError(t, err)
 
 		// Verify top validators is empty since both validators' TotalStakeAmountNanos are zero.
-		validatorEntries, err = utxoView().GetTopActiveValidatorsByStake(10)
+		validatorEntries, err = utxoView().GetTopActiveValidatorsByStakeAmount(10)
 		require.NoError(t, err)
 		require.Empty(t, validatorEntries)
 	}
@@ -773,7 +773,7 @@ func _testGetTopActiveValidatorsByStake(t *testing.T, flushToDB bool) {
 		require.NoError(t, err)
 
 		// Verify top validators is empty since all three validators' TotalStakeAmountNanos are zero.
-		validatorEntries, err = utxoView().GetTopActiveValidatorsByStake(10)
+		validatorEntries, err = utxoView().GetTopActiveValidatorsByStakeAmount(10)
 		require.NoError(t, err)
 		require.Empty(t, validatorEntries)
 	}
@@ -803,7 +803,7 @@ func _testGetTopActiveValidatorsByStake(t *testing.T, flushToDB bool) {
 		require.NoError(t, err)
 
 		// Verify top validators.
-		validatorEntries, err = utxoView().GetTopActiveValidatorsByStake(10)
+		validatorEntries, err = utxoView().GetTopActiveValidatorsByStakeAmount(10)
 		require.NoError(t, err)
 		require.Len(t, validatorEntries, 3)
 		require.Equal(t, validatorEntries[0].ValidatorPKID, m2PKID)
@@ -822,7 +822,7 @@ func _testGetTopActiveValidatorsByStake(t *testing.T, flushToDB bool) {
 		_, err = _submitUnstakeTxn(testMeta, m3Pub, m3Priv, unstakeMetadata, nil, flushToDB)
 
 		// Verify top validators.
-		validatorEntries, err = utxoView().GetTopActiveValidatorsByStake(10)
+		validatorEntries, err = utxoView().GetTopActiveValidatorsByStakeAmount(10)
 		require.NoError(t, err)
 		require.Len(t, validatorEntries, 3)
 		require.Equal(t, validatorEntries[0].ValidatorPKID, m2PKID)
@@ -841,7 +841,7 @@ func _testGetTopActiveValidatorsByStake(t *testing.T, flushToDB bool) {
 		_, err = _submitUnstakeTxn(testMeta, m3Pub, m3Priv, unstakeMetadata, nil, flushToDB)
 
 		// Verify top validators.
-		validatorEntries, err = utxoView().GetTopActiveValidatorsByStake(10)
+		validatorEntries, err = utxoView().GetTopActiveValidatorsByStakeAmount(10)
 		require.NoError(t, err)
 		require.Len(t, validatorEntries, 2)
 		require.Equal(t, validatorEntries[0].ValidatorPKID, m2PKID)
@@ -855,7 +855,7 @@ func _testGetTopActiveValidatorsByStake(t *testing.T, flushToDB bool) {
 		require.NoError(t, err)
 
 		// Verify top validators.
-		validatorEntries, err = utxoView().GetTopActiveValidatorsByStake(10)
+		validatorEntries, err = utxoView().GetTopActiveValidatorsByStakeAmount(10)
 		require.NoError(t, err)
 		require.Len(t, validatorEntries, 1)
 		require.Equal(t, validatorEntries[0].ValidatorPKID, m0PKID)
@@ -871,7 +871,7 @@ func _testGetTopActiveValidatorsByStake(t *testing.T, flushToDB bool) {
 		require.NoError(t, err)
 
 		// Verify top validators.
-		validatorEntries, err = utxoView().GetTopActiveValidatorsByStake(10)
+		validatorEntries, err = utxoView().GetTopActiveValidatorsByStakeAmount(10)
 		require.NoError(t, err)
 		require.Len(t, validatorEntries, 2)
 		require.Equal(t, validatorEntries[0].ValidatorPKID, m1PKID)
@@ -889,7 +889,7 @@ func _testGetTopActiveValidatorsByStake(t *testing.T, flushToDB bool) {
 		require.NoError(t, err)
 
 		// Verify top validators.
-		validatorEntries, err = utxoView().GetTopActiveValidatorsByStake(10)
+		validatorEntries, err = utxoView().GetTopActiveValidatorsByStakeAmount(10)
 		require.NoError(t, err)
 		require.Len(t, validatorEntries, 2)
 		require.Equal(t, validatorEntries[0].ValidatorPKID, m1PKID)
@@ -899,7 +899,7 @@ func _testGetTopActiveValidatorsByStake(t *testing.T, flushToDB bool) {
 	}
 	{
 		// Verify top validators with LIMIT.
-		validatorEntries, err = utxoView().GetTopActiveValidatorsByStake(1)
+		validatorEntries, err = utxoView().GetTopActiveValidatorsByStakeAmount(1)
 		require.NoError(t, err)
 		require.Len(t, validatorEntries, 1)
 		require.Equal(t, validatorEntries[0].ValidatorPKID, m1PKID)
@@ -1081,7 +1081,7 @@ func TestGetTopActiveValidatorsByStakeMergingDbAndUtxoView(t *testing.T) {
 	)
 
 	// Fetch TopActiveValidatorsByStake merging ValidatorEntries from the db and UtxoView.
-	validatorEntries, err := utxoView.GetTopActiveValidatorsByStake(6)
+	validatorEntries, err := utxoView.GetTopActiveValidatorsByStakeAmount(6)
 	require.NoError(t, err)
 	require.Len(t, validatorEntries, 3)
 	require.Equal(t, validatorEntries[0].ValidatorPKID, m2PKID)

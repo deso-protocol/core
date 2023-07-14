@@ -264,7 +264,7 @@ func TestRunEpochCompleteHook(t *testing.T) {
 		_registerAndStake(m5Pub, m5Priv, 600)
 		_registerAndStake(m6Pub, m6Priv, 700)
 
-		validatorEntries, err := utxoView().GetTopActiveValidatorsByStake(10)
+		validatorEntries, err := utxoView().GetTopActiveValidatorsByStakeAmount(10)
 		require.NoError(t, err)
 		require.Len(t, validatorEntries, 7)
 
@@ -484,7 +484,7 @@ func TestRunEpochCompleteHook(t *testing.T) {
 		}
 
 		getNumCurrentActiveValidators := func() int {
-			validatorEntries, err := utxoView().GetTopActiveValidatorsByStake(10)
+			validatorEntries, err := utxoView().GetTopActiveValidatorsByStakeAmount(10)
 			require.NoError(t, err)
 			return len(validatorEntries)
 		}
