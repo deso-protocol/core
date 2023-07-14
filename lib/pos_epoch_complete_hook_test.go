@@ -550,6 +550,7 @@ func TestRunEpochCompleteHook(t *testing.T) {
 		require.Equal(t, getNumSnapshotActiveValidators(), 6)
 		require.Equal(t, getNumStakes(), 6)
 		require.Equal(t, getNumSnapshotStakes(), 6)
+
 		require.Equal(t, getCurrentValidator(m6PKID).Status(), ValidatorStatusJailed)
 		require.Equal(t, getCurrentValidator(m6PKID).JailedAtEpochNumber, uint64(11))
 
@@ -574,6 +575,6 @@ func TestRunEpochCompleteHook(t *testing.T) {
 		require.Empty(t, getNumCurrentActiveValidators())
 		require.Empty(t, getNumSnapshotActiveValidators())
 		require.Equal(t, getNumStakes(), 6)
-		require.Equal(t, getNumSnapshotStakes(), 6)
+		require.Empty(t, getNumSnapshotStakes())
 	}
 }

@@ -3,6 +3,7 @@ package lib
 import (
 	"math"
 
+	"github.com/deso-protocol/core/collections"
 	"github.com/pkg/errors"
 )
 
@@ -106,7 +107,19 @@ func (bav *UtxoView) RunEpochCompleteHook(blockHeight uint64) error {
 	if err != nil {
 		return errors.Wrapf(err, "RunEpochCompleteHook: error retrieving top StakeEntries: ")
 	}
-	for _, stakeEntry := range topStakeEntries {
+
+	// Filter out the top n stake entries by the current validator set. We do not want to reward
+	// stakes that are not in the validator set.
+	validatorSetPKIDs := NewSet([]PKID{})
+	for _, validatorEntry := range validatorSet {
+		validatorSetPKIDs.Add(*validatorEntry.ValidatorPKID)
+	}
+	topStakesInValidatorSet := collections.SliceFilter(topStakeEntries, func(s *StakeEntry) bool {
+		return validatorSetPKIDs.Includes(*s.ValidatorPKID)
+	})
+
+	// Snapshot only the top n stake entries that are in the validator set.
+	for _, stakeEntry := range topStakesInValidatorSet {
 		snapshotStakeEntry := SnapshotStakeEntry{
 			SnapshotAtEpochNumber: currentEpochEntry.EpochNumber,
 			ValidatorPKID:         stakeEntry.ValidatorPKID,
