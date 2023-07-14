@@ -171,8 +171,8 @@ func TestRunEpochCompleteHook(t *testing.T) {
 	}
 
 	_assertEmptyStakeSnapshots := func() {
-		// Test GetSnapshotTopStakesToRewardByStakeAmount is empty.
-		stakeEntries, err := utxoView().GetSnapshotTopStakesToRewardByStakeAmount(10)
+		// Test GetSnapshotStakesToRewardByStakeAmount is empty.
+		stakeEntries, err := utxoView().GetSnapshotStakesToRewardByStakeAmount(10)
 		require.NoError(t, err)
 		require.Empty(t, stakeEntries)
 	}
@@ -338,8 +338,8 @@ func TestRunEpochCompleteHook(t *testing.T) {
 			require.NotNil(t, snapshotLeaderScheduleValidator)
 		}
 
-		// Test SnapshotStakesToRewardByStakeAmount is populated.
-		stakeEntries, err := utxoView().GetSnapshotTopStakesToRewardByStakeAmount(10)
+		// Test GetSnapshotStakesToRewardByStakeAmount is populated.
+		stakeEntries, err := utxoView().GetSnapshotStakesToRewardByStakeAmount(10)
 		require.NoError(t, err)
 		require.Len(t, stakeEntries, 7)
 		require.Equal(t, stakeEntries[0].StakerPKID, m6PKID)
@@ -374,7 +374,7 @@ func TestRunEpochCompleteHook(t *testing.T) {
 		require.NotNil(t, validatorEntry)
 		require.Equal(t, validatorEntry.TotalStakeAmountNanos.Uint64(), uint64(600))
 
-		snapshotStakeEntries, err := utxoView().GetSnapshotTopStakesToRewardByStakeAmount(10)
+		snapshotStakeEntries, err := utxoView().GetSnapshotStakesToRewardByStakeAmount(10)
 		require.NoError(t, err)
 		require.Len(t, snapshotStakeEntries, 7)
 		require.Equal(t, snapshotStakeEntries[1].StakerPKID, m5PKID)
@@ -389,7 +389,7 @@ func TestRunEpochCompleteHook(t *testing.T) {
 		require.NotNil(t, validatorEntry)
 		require.Equal(t, validatorEntry.TotalStakeAmountNanos.Uint64(), uint64(800))
 
-		snapshotStakeEntries, err = utxoView().GetSnapshotTopStakesToRewardByStakeAmount(10)
+		snapshotStakeEntries, err = utxoView().GetSnapshotStakesToRewardByStakeAmount(10)
 		require.NoError(t, err)
 		require.Len(t, snapshotStakeEntries, 7)
 		require.Equal(t, snapshotStakeEntries[0].StakerPKID, m5PKID)
@@ -448,7 +448,7 @@ func TestRunEpochCompleteHook(t *testing.T) {
 		require.NoError(t, err)
 		require.Len(t, snapshotValidatorSet, 7)
 
-		snapshotStakeEntries, err := utxoView().GetSnapshotTopStakesToRewardByStakeAmount(10)
+		snapshotStakeEntries, err := utxoView().GetSnapshotStakesToRewardByStakeAmount(10)
 		require.NoError(t, err)
 		require.Len(t, snapshotStakeEntries, 7)
 
@@ -460,7 +460,7 @@ func TestRunEpochCompleteHook(t *testing.T) {
 		require.NoError(t, err)
 		require.Len(t, snapshotValidatorSet, 6)
 
-		snapshotStakeEntries, err = utxoView().GetSnapshotTopStakesToRewardByStakeAmount(10)
+		snapshotStakeEntries, err = utxoView().GetSnapshotStakesToRewardByStakeAmount(10)
 		require.NoError(t, err)
 		require.Len(t, snapshotStakeEntries, 6)
 	}
@@ -508,7 +508,7 @@ func TestRunEpochCompleteHook(t *testing.T) {
 		}
 
 		getNumSnapshotStakes := func() int {
-			snapshotStakeEntries, err := utxoView().GetSnapshotTopStakesToRewardByStakeAmount(10)
+			snapshotStakeEntries, err := utxoView().GetSnapshotStakesToRewardByStakeAmount(10)
 			require.NoError(t, err)
 			return len(snapshotStakeEntries)
 		}

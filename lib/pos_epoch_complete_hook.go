@@ -108,8 +108,8 @@ func (bav *UtxoView) RunEpochCompleteHook(blockHeight uint64) error {
 		return errors.Wrapf(err, "RunEpochCompleteHook: error retrieving top StakeEntries: ")
 	}
 
-	// Filter out the top n stake entries by the current validator set. We do not want to reward
-	// stakes that are not in the validator set.
+	// Filter the top n stake entries by the current validator set. We do not want to reward
+	// stakes that are not in the current validator set.
 	validatorSetPKIDs := NewSet([]PKID{})
 	for _, validatorEntry := range validatorSet {
 		validatorSetPKIDs.Add(*validatorEntry.ValidatorPKID)
