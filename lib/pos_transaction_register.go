@@ -20,7 +20,7 @@ import (
 // fee-time. The TransactionRegister doesn't perform any validation on the transactions, it just accepts the provided
 // MempoolTx and adds it to the appropriate FeeTimeBucket.
 type TransactionRegister struct {
-	mut sync.RWMutex
+	sync.RWMutex
 	// feeTimeBucketSet is a set of FeeTimeBucket objects. The set is ordered by the FeeTimeBucket's ranges, based on feeTimeBucketComparator.
 	feeTimeBucketSet *treeset.Set
 	// feeTimeBucketsByMinFeeMap is a map of FeeTimeBucket minimum fees to FeeTimeBucket objects. It is used to quickly find
@@ -75,8 +75,8 @@ func feeTimeBucketComparator(a, b interface{}) int {
 // exceeds the maximum mempool capacity, it is not added. Returns nil when transaction was successfully added to the
 // register, or an error otherwise.
 func (tr *TransactionRegister) AddTransaction(txn *MempoolTx) error {
-	tr.mut.Lock()
-	defer tr.mut.Unlock()
+	tr.Lock()
+	defer tr.Unlock()
 
 	return tr.addTransactionNoLock(txn)
 }
@@ -129,8 +129,8 @@ func (tr *TransactionRegister) addTransactionNoLock(txn *MempoolTx) error {
 // size exceeds the current register size (which should never happen), it is not removed. Returns nil when transaction
 // was successfully removed from the register, or an error otherwise.
 func (tr *TransactionRegister) RemoveTransaction(txn *MempoolTx) error {
-	tr.mut.Lock()
-	defer tr.mut.Unlock()
+	tr.Lock()
+	defer tr.Unlock()
 
 	return tr.removeTransactionNoLock(txn)
 }
@@ -187,8 +187,8 @@ func (tr *TransactionRegister) Size() uint64 {
 }
 
 func (tr *TransactionRegister) Reset() {
-	tr.mut.Lock()
-	defer tr.mut.Unlock()
+	tr.Lock()
+	defer tr.Unlock()
 
 	tr.feeTimeBucketSet.Clear()
 	tr.feeTimeBucketsByMinFeeMap = make(map[uint64]*FeeTimeBucket)
@@ -199,8 +199,8 @@ func (tr *TransactionRegister) Reset() {
 // GetFeeTimeIterator returns an iterator over the transactions in the register. The iterator goes through all transactions
 // as ordered by Fee-Time.
 func (tr *TransactionRegister) GetFeeTimeIterator() *FeeTimeIterator {
-	tr.mut.RLock()
-	defer tr.mut.RUnlock()
+	tr.RLock()
+	defer tr.RUnlock()
 
 	return &FeeTimeIterator{
 		bucketIterator:    tr.feeTimeBucketSet.Iterator(),
@@ -210,8 +210,8 @@ func (tr *TransactionRegister) GetFeeTimeIterator() *FeeTimeIterator {
 
 // GetFeeTimeTransactions returns all transactions in the register ordered by Fee-Time.
 func (tr *TransactionRegister) GetFeeTimeTransactions() []*MempoolTx {
-	tr.mut.RLock()
-	defer tr.mut.RUnlock()
+	tr.RLock()
+	defer tr.RUnlock()
 
 	txns := []*MempoolTx{}
 	it := tr.GetFeeTimeIterator()
@@ -227,8 +227,8 @@ func (tr *TransactionRegister) GetFeeTimeTransactions() []*MempoolTx {
 // transactions are ordered by lowest-to-highest priority, i.e. first transaction will have the smallest fee, last
 // transaction will have the highest fee. Returns nil if no transactions were pruned, or an error otherwise.
 func (tr *TransactionRegister) Prune(minBytesPruned uint64) (_prunedTxns []*MempoolTx, _err error) {
-	tr.mut.Lock()
-	defer tr.mut.Unlock()
+	tr.Lock()
+	defer tr.Unlock()
 
 	// If the minimum number of bytes to prune is 0, return.
 	if minBytesPruned == 0 {
@@ -359,7 +359,7 @@ func (fti *FeeTimeIterator) Initialized() bool {
 
 // FeeTimeBucket is a data structure storing MempoolTx with similar fee rates.
 type FeeTimeBucket struct {
-	mut sync.RWMutex
+	sync.RWMutex
 
 	// txnsSet is a set of MempoolTx transactions stored in the FeeTimeBucket.
 	txnsSet *treeset.Set
@@ -410,8 +410,8 @@ func mempoolTxTimeOrderComparator(a, b interface{}) int {
 // AddTransaction adds a transaction to the FeeTimeBucket. It returns an error if the transaction is outside the
 // FeeTimeBucket's fee range, or if the transaction hash is nil.
 func (tb *FeeTimeBucket) AddTransaction(txn *MempoolTx) error {
-	tb.mut.Lock()
-	defer tb.mut.Unlock()
+	tb.Lock()
+	defer tb.Unlock()
 
 	if txn == nil || txn.Hash == nil {
 		return fmt.Errorf("FeeTimeBucket.AddTransaction: Transaction or transaction hash is nil")
@@ -434,8 +434,8 @@ func (tb *FeeTimeBucket) AddTransaction(txn *MempoolTx) error {
 
 // RemoveTransaction removes a transaction from the FeeTimeBucket.
 func (tb *FeeTimeBucket) RemoveTransaction(txn *MempoolTx) {
-	tb.mut.Lock()
-	defer tb.mut.Unlock()
+	tb.Lock()
+	defer tb.Unlock()
 
 	tb.txnsSet.Remove(txn)
 	tb.totalTxnsSizeBytes -= txn.TxSizeBytes
@@ -468,8 +468,8 @@ func (tb *FeeTimeBucket) Size() uint64 {
 }
 
 func (tb *FeeTimeBucket) Clear() {
-	tb.mut.Lock()
-	defer tb.mut.Unlock()
+	tb.Lock()
+	defer tb.Unlock()
 
 	tb.txnsSet.Clear()
 	tb.txnsSet = treeset.NewWith(mempoolTxTimeOrderComparator)
