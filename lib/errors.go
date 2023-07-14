@@ -2,6 +2,7 @@ package lib
 
 import (
 	"fmt"
+	"github.com/golang/glog"
 	"reflect"
 	"strings"
 
@@ -555,4 +556,10 @@ func AssertDependencyStructFieldNumbers[T any](obj T, num int) {
 func GetNumberOfStructFields[T any](obj T) int {
 	objElements := reflect.ValueOf(obj).Elem()
 	return objElements.NumField()
+}
+
+func GlogIfError(err error, format string, args ...interface{}) {
+	if err != nil {
+		glog.Errorf(format, args...)
+	}
 }
