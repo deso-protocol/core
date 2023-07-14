@@ -78,6 +78,10 @@ func (tr *TransactionRegister) AddTransaction(txn *MempoolTx) error {
 	tr.mut.Lock()
 	defer tr.mut.Unlock()
 
+	return tr.addTransactionNoLock(txn)
+}
+
+func (tr *TransactionRegister) addTransactionNoLock(txn *MempoolTx) error {
 	if txn == nil || txn.Hash == nil {
 		return fmt.Errorf("TransactionRegister.AddTransaction: Transaction or transaction hash is nil")
 	}
@@ -128,6 +132,10 @@ func (tr *TransactionRegister) RemoveTransaction(txn *MempoolTx) error {
 	tr.mut.Lock()
 	defer tr.mut.Unlock()
 
+	return tr.removeTransactionNoLock(txn)
+}
+
+func (tr *TransactionRegister) removeTransactionNoLock(txn *MempoolTx) error {
 	if txn == nil || txn.Hash == nil {
 		return fmt.Errorf("TransactionRegister.RemoveTransaction: Transaction or transaction hash is nil")
 	}
@@ -191,8 +199,10 @@ func (tr *TransactionRegister) Reset() {
 // GetFeeTimeIterator returns an iterator over the transactions in the register. The iterator goes through all transactions
 // as ordered by Fee-Time.
 func (tr *TransactionRegister) GetFeeTimeIterator() *FeeTimeIterator {
+	tr.mut.RLock()
+	defer tr.mut.RUnlock()
+
 	return &FeeTimeIterator{
-		mut:               &tr.mut,
 		bucketIterator:    tr.feeTimeBucketSet.Iterator(),
 		mempoolTxIterator: nil,
 	}
@@ -200,6 +210,9 @@ func (tr *TransactionRegister) GetFeeTimeIterator() *FeeTimeIterator {
 
 // GetFeeTimeTransactions returns all transactions in the register ordered by Fee-Time.
 func (tr *TransactionRegister) GetFeeTimeTransactions() []*MempoolTx {
+	tr.mut.RLock()
+	defer tr.mut.RUnlock()
+
 	txns := []*MempoolTx{}
 	it := tr.GetFeeTimeIterator()
 	for it.Next() {
@@ -210,10 +223,17 @@ func (tr *TransactionRegister) GetFeeTimeTransactions() []*MempoolTx {
 	return txns
 }
 
-// Prune removes transactions from the register until a desired amount of space is freed.
+// Prune removes transactions from the end of the register until a desired amount of space is freed. The returned
+// transactions are ordered by lowest-to-highest priority, i.e. first transaction will have the smallest fee, last
+// transaction will have the highest fee. Returns nil if no transactions were pruned, or an error otherwise.
 func (tr *TransactionRegister) Prune(minBytesPruned uint64) (_prunedTxns []*MempoolTx, _err error) {
 	tr.mut.Lock()
 	defer tr.mut.Unlock()
+
+	// If the minimum number of bytes to prune is 0, return.
+	if minBytesPruned == 0 {
+		return nil, nil
+	}
 
 	// If the register is empty, return.
 	if tr.Empty() {
@@ -223,14 +243,18 @@ func (tr *TransactionRegister) Prune(minBytesPruned uint64) (_prunedTxns []*Memp
 	prunedBytes := uint64(0)
 	prunedTxns := []*MempoolTx{}
 
+	// Find the FeeTime bucket at the end of the Set. It'll have the smallest fee among the buckets in the register.
 	it := tr.feeTimeBucketSet.Iterator()
 	it.End()
+	// Iterate through the buckets in reverse order so that we drop transactions ordered by least-to-highest priority.
 	for it.Prev() {
 		bucket, ok := it.Value().(*FeeTimeBucket)
 		if !ok {
 			return nil, fmt.Errorf("TransactionRegister.Prune: Error casting value of FeeTimeBucket")
 		}
 
+		// Iterate through the transactions in the current FeeTime bucket. We iterate in reverse order, starting from the
+		// end, so that we drop transactions ordered by least-to-highest priority.
 		bucketIt := bucket.GetIterator()
 		bucketIt.End()
 		for bucketIt.Prev() {
@@ -238,25 +262,29 @@ func (tr *TransactionRegister) Prune(minBytesPruned uint64) (_prunedTxns []*Memp
 			if !ok {
 				return nil, fmt.Errorf("TransactionRegister.Prune: Error casting value of MempoolTx")
 			}
-			if prunedBytes > math.MaxUint64+txn.TxSizeBytes {
+			// Make sure that, somehow, the number of pruned bytes doesn't overflow uint64.
+			if prunedBytes > math.MaxUint64-txn.TxSizeBytes {
 				return nil, fmt.Errorf("TransactionRegister.Prune: Error pruning %v bytes from register: "+
 					"prunedBytes %v exceeds max uint64", minBytesPruned, prunedBytes)
 			}
-			if prunedBytes+txn.TxSizeBytes <= minBytesPruned {
-				prunedTxns = append(prunedTxns, txn)
-				prunedBytes += txn.TxSizeBytes
-				continue
+			// Add the transaction to the prunedTxns list.
+			prunedTxns = append(prunedTxns, txn)
+			prunedBytes += txn.TxSizeBytes
+			// If we've pruned sufficiently many bytes, we can break.
+			if prunedBytes >= minBytesPruned {
+				break
 			}
-			break
 		}
 
+		// If we've pruned sufficiently many bytes, we can break.
 		if prunedBytes >= minBytesPruned {
 			break
 		}
 	}
 
+	// Remove the transactions from prunedTxns.
 	for _, txn := range prunedTxns {
-		if err := tr.RemoveTransaction(txn); err != nil {
+		if err := tr.removeTransactionNoLock(txn); err != nil {
 			return nil, errors.Wrapf(err, "TransactionRegister.Prune: Error removing transaction %v", txn.Hash.String())
 		}
 	}
@@ -266,7 +294,6 @@ func (tr *TransactionRegister) Prune(minBytesPruned uint64) (_prunedTxns []*Memp
 // FeeTimeIterator is an iterator over the transactions in a TransactionRegister. The iterator goes through all transactions
 // as ordered by Fee-Time.
 type FeeTimeIterator struct {
-	mut *sync.RWMutex
 	// bucketIterator is an iterator over the FeeTimeBucket objects in the TransactionRegister.
 	bucketIterator treeset.Iterator
 	// mempoolTxIterator is an iterator over the transactions in the current FeeTimeBucket. It is nil if the iterator
@@ -277,9 +304,6 @@ type FeeTimeIterator struct {
 // Next moves the FeeTimeIterator to the next transaction. It returns true if the iterator is pointing at a transaction
 // after the move, and false otherwise.
 func (fti *FeeTimeIterator) Next() bool {
-	fti.mut.RLock()
-	defer fti.mut.RUnlock()
-
 	// If the iterator is uninitialized, then mempoolTxIterator is nil. In this case, we will first advance the
 	// bucketIterator to the first FeeTime bucket, and then initialize mempoolTxIterator to point at the first transaction
 	// in the bucket.
@@ -314,9 +338,6 @@ func (fti *FeeTimeIterator) Next() bool {
 
 // Value returns the transaction that the iterator is pointing at.
 func (fti *FeeTimeIterator) Value() (*MempoolTx, bool) {
-	fti.mut.RLock()
-	defer fti.mut.RUnlock()
-
 	if !fti.Initialized() {
 		return nil, false
 	}

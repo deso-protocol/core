@@ -3,6 +3,7 @@ package lib
 import (
 	"bytes"
 	"github.com/stretchr/testify/require"
+	"math"
 	"math/rand"
 	"sort"
 	"testing"
@@ -43,6 +44,129 @@ func TestSanityCheckTransactionRegister(t *testing.T) {
 	require.Equal(false, newIt.Next())
 }
 
+func TestTransactionRegisterPrune(t *testing.T) {
+	seed := int64(111)
+	testCases := 1000
+	feeRange := uint64(10000)
+	timestampRange := uint64(10000)
+
+	require := require.New(t)
+	rand := rand.New(rand.NewSource(seed))
+	globalParams := _testGetDefaultGlobalParams()
+	txnPool := _testGetRandomMempoolTxns(rand, globalParams.MinimumNetworkFeeNanosPerKB, feeRange, 1000, timestampRange, testCases)
+
+	txnRegister := NewTransactionRegister(globalParams)
+	totalSize := uint64(0)
+	for _, tx := range txnPool {
+		require.Nil(txnRegister.AddTransaction(tx))
+		totalSize += tx.TxSizeBytes
+	}
+
+	// Try pruning 0 bytes
+	txns, err := txnRegister.Prune(0)
+	require.Nil(err)
+	require.Equal(0, len(txns))
+
+	// Remove a single transaction
+	txns, err = txnRegister.Prune(1)
+	require.Nil(err)
+	require.Equal(1, len(txns))
+	totalSize -= txns[0].TxSizeBytes
+	require.Equal(totalSize, txnRegister.totalTxnsSizeBytes)
+
+	sortedTxns := _testSortMempoolTxnsByFeeTime(txnPool, globalParams, false)
+	lastTxn := sortedTxns[len(sortedTxns)-1]
+	require.Equal(true, bytes.Equal(lastTxn.Hash[:], txns[0].Hash[:]))
+	sortedTxns = sortedTxns[:len(sortedTxns)-1]
+	registerTxns := txnRegister.GetFeeTimeTransactions()
+	require.Equal(len(sortedTxns), len(registerTxns))
+	for ii := 0; ii < len(sortedTxns); ii++ {
+		require.Equal(true, bytes.Equal(sortedTxns[ii].Hash[:], registerTxns[ii].Hash[:]))
+	}
+
+	// Remove 10 transactions
+	last10Txns := sortedTxns[len(sortedTxns)-10:]
+	last10TxnsByteSize := uint64(0)
+	for _, txn := range last10Txns {
+		last10TxnsByteSize += txn.TxSizeBytes
+	}
+
+	txns, err = txnRegister.Prune(last10TxnsByteSize)
+	require.Nil(err)
+	require.Equal(10, len(txns))
+	totalSize -= last10TxnsByteSize
+	require.Equal(totalSize, txnRegister.totalTxnsSizeBytes)
+
+	for ii := len(sortedTxns) - 1; ii >= len(sortedTxns)-10; ii-- {
+		require.Equal(true, bytes.Equal(sortedTxns[ii].Hash[:], txns[len(sortedTxns)-1-ii].Hash[:]))
+	}
+	sortedTxns = sortedTxns[:len(sortedTxns)-10]
+	registerTxns = txnRegister.GetFeeTimeTransactions()
+	require.Equal(len(sortedTxns), len(registerTxns))
+	for ii := 0; ii < len(sortedTxns); ii++ {
+		require.Equal(true, bytes.Equal(sortedTxns[ii].Hash[:], registerTxns[ii].Hash[:]))
+	}
+
+	// Remove all but 1 transaction
+	firstTxn := sortedTxns[0]
+	txns, err = txnRegister.Prune(totalSize - firstTxn.TxSizeBytes)
+	require.Nil(err)
+	require.Equal(len(sortedTxns)-1, len(txns))
+	require.Equal(firstTxn.TxSizeBytes, txnRegister.totalTxnsSizeBytes)
+	totalSize = firstTxn.TxSizeBytes
+	for ii := len(sortedTxns) - 1; ii >= 1; ii-- {
+		require.Equal(true, bytes.Equal(sortedTxns[ii].Hash[:], txns[len(sortedTxns)-1-ii].Hash[:]))
+	}
+	sortedTxns = sortedTxns[:1]
+	registerTxns = txnRegister.GetFeeTimeTransactions()
+	require.Equal(len(sortedTxns), len(registerTxns))
+	for ii := 0; ii < len(sortedTxns); ii++ {
+		require.Equal(true, bytes.Equal(sortedTxns[ii].Hash[:], registerTxns[ii].Hash[:]))
+	}
+
+	// Remove the last transaction
+	txns, err = txnRegister.Prune(1)
+	require.Nil(err)
+	require.Equal(1, len(txns))
+	require.Equal(uint64(0), txnRegister.totalTxnsSizeBytes)
+	require.Equal(0, len(txnRegister.GetFeeTimeTransactions()))
+	require.Equal(true, bytes.Equal(firstTxn.Hash[:], txns[0].Hash[:]))
+
+	// Try pruning empty register
+	txns, err = txnRegister.Prune(1)
+	require.Nil(err)
+	require.Equal(0, len(txns))
+
+	// Re-add all transactions
+	totalSize = 0
+	for _, tx := range txnPool {
+		require.Nil(txnRegister.AddTransaction(tx))
+		totalSize += tx.TxSizeBytes
+	}
+	require.Equal(totalSize, txnRegister.totalTxnsSizeBytes)
+
+	// Remove all transactions
+	txns, err = txnRegister.Prune(totalSize)
+	require.Nil(err)
+	require.Equal(len(txnPool), len(txns))
+	require.Equal(uint64(0), txnRegister.totalTxnsSizeBytes)
+	require.Equal(0, len(txnRegister.GetFeeTimeTransactions()))
+
+	// Re-add all transactions again
+	totalSize = 0
+	for _, tx := range txnPool {
+		require.Nil(txnRegister.AddTransaction(tx))
+		totalSize += tx.TxSizeBytes
+	}
+
+	// Remove all transactions with higher min byte count
+	txns, err = txnRegister.Prune(math.MaxUint64)
+	require.Nil(err)
+	require.Equal(len(txnPool), len(txns))
+	require.Equal(uint64(0), txnRegister.totalTxnsSizeBytes)
+	require.Equal(0, len(txnRegister.GetFeeTimeTransactions()))
+}
+
 func TestTransactionRegisterWithRemoves(t *testing.T) {
 	seed := int64(88)
 	testCases := 1000
@@ -52,7 +176,7 @@ func TestTransactionRegisterWithRemoves(t *testing.T) {
 	require := require.New(t)
 	rand := rand.New(rand.NewSource(seed))
 	globalParams := _testGetDefaultGlobalParams()
-	txnPool := _testGetRandomMempoolTxns(rand, globalParams.MinimumNetworkFeeNanosPerKB, feeRange, timestampRange, testCases)
+	txnPool := _testGetRandomMempoolTxns(rand, globalParams.MinimumNetworkFeeNanosPerKB, feeRange, 1000, timestampRange, testCases)
 
 	txnRegister := NewTransactionRegister(globalParams)
 	_testBucketStandardRemoveTest(t, txnPool, globalParams, false,
@@ -80,7 +204,7 @@ func TestTransactionRegisterBasic(t *testing.T) {
 	require := require.New(t)
 	rand := rand.New(rand.NewSource(seed))
 	globalParams := _testGetDefaultGlobalParams()
-	txnPool := _testGetRandomMempoolTxns(rand, globalParams.MinimumNetworkFeeNanosPerKB, feeRange, timestampRange, testCases)
+	txnPool := _testGetRandomMempoolTxns(rand, globalParams.MinimumNetworkFeeNanosPerKB, feeRange, 1000, timestampRange, testCases)
 
 	txnRegister := NewTransactionRegister(globalParams)
 	_testBucketStandardAddTest(t, txnPool, globalParams, false,
@@ -105,7 +229,7 @@ func TestFeeTimeBucketRemove(t *testing.T) {
 	randomExponent := uint32(rand.Intn(exponentRange))
 	baseRate, bucketMultiplier := globalParams.ComputeFeeTimeBucketMinimumFeeAndMultiplier()
 	feeMin, feeMax := computeFeeTimeBucketRangeFromExponent(randomExponent, baseRate, bucketMultiplier)
-	txnPool := _testGetRandomMempoolTxns(rand, feeMin, feeMax, timestampRange, testCases)
+	txnPool := _testGetRandomMempoolTxns(rand, feeMin, feeMax, 1000, timestampRange, testCases)
 
 	// Create new FeeBucket and add the txn pool
 	bucketFeeMin, bucketFeeMax := computeFeeTimeBucketRangeFromExponent(randomExponent, baseRate, bucketMultiplier)
@@ -138,7 +262,7 @@ func TestFeeTimeBucketBasic(t *testing.T) {
 	randomExponent := uint32(rand.Intn(exponentRange))
 	baseRate, bucketMultiplier := globalParams.ComputeFeeTimeBucketMinimumFeeAndMultiplier()
 	feeMin, feeMax := computeFeeTimeBucketRangeFromExponent(randomExponent, baseRate, bucketMultiplier)
-	txnPool := _testGetRandomMempoolTxns(rand, feeMin, feeMax, timestampRange, testCases)
+	txnPool := _testGetRandomMempoolTxns(rand, feeMin, feeMax, 1000, timestampRange, testCases)
 
 	// Create new FeeBucket and add the txn pool
 	bucketFeeMin, bucketFeeMax := computeFeeTimeBucketRangeFromExponent(randomExponent, baseRate, bucketMultiplier)
@@ -161,13 +285,14 @@ func _testGetDefaultGlobalParams() *GlobalParamsEntry {
 	return &globalParams
 }
 
-func _testGetRandomMempoolTxns(rand *rand.Rand, feeMin uint64, feeMax uint64, timestampRange uint64, numTxns int) []*MempoolTx {
+func _testGetRandomMempoolTxns(rand *rand.Rand, feeMin uint64, feeMax uint64, sizeMax uint64, timestampRange uint64, numTxns int) []*MempoolTx {
 	txnPool := []*MempoolTx{}
 	for ii := 0; ii < numTxns; ii++ {
 		txnPool = append(txnPool, &MempoolTx{
-			FeePerKB: rand.Uint64()%(feeMax-feeMin) + feeMin,
-			Added:    time.UnixMicro(int64(rand.Uint64() % timestampRange)),
-			Hash:     NewBlockHash(RandomBytes(32)),
+			FeePerKB:    rand.Uint64()%(feeMax-feeMin) + feeMin,
+			Added:       time.UnixMicro(int64(rand.Uint64() % timestampRange)),
+			Hash:        NewBlockHash(RandomBytes(32)),
+			TxSizeBytes: 1 + rand.Uint64()%sizeMax,
 		})
 	}
 	return txnPool
