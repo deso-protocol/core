@@ -44,6 +44,7 @@ func (bav *UtxoView) IsLastBlockInCurrentEpoch(blockHeight uint64) (bool, error)
 // the snapshot created at the end of epoch n always reflects the state of the view at the end of epoch n.
 // And it does not reflect the state changes that occur AFTER epoch n ends and before epoch n+1 BEGINS.
 // 1. Jail all inactive validators from the current snapshot validator set.
+// 2. Reward all snapshotted stakes from the current snapshot validator set.
 // 2. Compute the final block height for the next epoch.
 // 3. Transition CurrentEpochEntry to the next epoch.
 func (bav *UtxoView) RunEpochCompleteHook(blockHeight uint64) error {
@@ -143,6 +144,10 @@ func (bav *UtxoView) RunEpochCompleteHook(blockHeight uint64) error {
 	if err = bav.JailAllInactiveValidators(blockHeight); err != nil {
 		return errors.Wrapf(err, "RunEpochCompleteHook: problem jailing all inactive validators: ")
 	}
+
+	// Reward all snapshotted stakes from the current snapshot validator set. This is an O(n) operation
+	// that loops through all of the snapshotted stakes and rewards them.
+	snapshotStakesToReward, err := bav.GetSnapshotStakesToRewardByStakeAmount()
 
 	// Calculate the NextEpochFinalBlockHeight.
 	nextEpochFinalBlockHeight, err := SafeUint64().Add(blockHeight, snapshotGlobalParamsEntry.EpochDurationNumBlocks)
