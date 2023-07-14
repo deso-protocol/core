@@ -152,7 +152,7 @@ func TestRunEpochCompleteHook(t *testing.T) {
 			require.Nil(t, snapshotValidatorSetEntry)
 		}
 
-		// Test SnapshotTopActiveValidatorsByStake is empty.
+		// Test GetSnapshotValidatorSetByStakeAmount is empty.
 		validatorEntries, err := utxoView().GetSnapshotValidatorSetByStakeAmount(10)
 		require.NoError(t, err)
 		require.Empty(t, validatorEntries)
@@ -168,6 +168,13 @@ func TestRunEpochCompleteHook(t *testing.T) {
 			require.NoError(t, err)
 			require.Nil(t, snapshotLeaderScheduleValidator)
 		}
+	}
+
+	_assertEmptyStakeSnapshots := func() {
+		// Test GetSnapshotStakesToRewardByStakeAmount is empty.
+		stakeEntries, err := utxoView().GetSnapshotStakesToRewardByStakeAmount(10)
+		require.NoError(t, err)
+		require.Empty(t, stakeEntries)
 	}
 
 	// Seed a CurrentEpochEntry.
@@ -220,6 +227,8 @@ func TestRunEpochCompleteHook(t *testing.T) {
 		require.Equal(t, snapshotGlobalParamsEntry.ValidatorJailEpochDuration, uint64(3))
 
 		_assertEmptyValidatorSnapshots()
+
+		_assertEmptyStakeSnapshots()
 	}
 	{
 		// Test RunOnEpochCompleteHook() with no validators or stakers.
@@ -242,6 +251,8 @@ func TestRunEpochCompleteHook(t *testing.T) {
 		require.Equal(t, snapshotGlobalParamsEntry.ValidatorJailEpochDuration, uint64(4))
 
 		_assertEmptyValidatorSnapshots()
+
+		_assertEmptyStakeSnapshots()
 	}
 	{
 		// All validators register + stake to themselves.
@@ -256,6 +267,10 @@ func TestRunEpochCompleteHook(t *testing.T) {
 		validatorEntries, err := utxoView().GetTopActiveValidatorsByStake(10)
 		require.NoError(t, err)
 		require.Len(t, validatorEntries, 7)
+
+		stakeEntries, err := utxoView().GetTopStakesByStakeAmount(10)
+		require.NoError(t, err)
+		require.Len(t, stakeEntries, 7)
 	}
 	{
 		// Test RunOnEpochCompleteHook().
@@ -275,6 +290,8 @@ func TestRunEpochCompleteHook(t *testing.T) {
 		require.Equal(t, snapshotGlobalParamsEntry.ValidatorJailEpochDuration, uint64(4))
 
 		_assertEmptyValidatorSnapshots()
+
+		_assertEmptyStakeSnapshots()
 	}
 	{
 		// Test RunOnEpochCompleteHook().
@@ -300,7 +317,7 @@ func TestRunEpochCompleteHook(t *testing.T) {
 			require.NotNil(t, snapshotValidatorSetEntry)
 		}
 
-		// Test SnapshotTopActiveValidatorsByStake is populated.
+		// Test GetSnapshotValidatorSetByStakeAmount is populated.
 		validatorEntries, err := utxoView().GetSnapshotValidatorSetByStakeAmount(10)
 		require.NoError(t, err)
 		require.Len(t, validatorEntries, 7)
@@ -320,6 +337,15 @@ func TestRunEpochCompleteHook(t *testing.T) {
 			require.NoError(t, err)
 			require.NotNil(t, snapshotLeaderScheduleValidator)
 		}
+
+		// Test SnapshotStakesToRewardByStakeAmount is populated.
+		stakeEntries, err := utxoView().GetSnapshotStakesToRewardByStakeAmount(10)
+		require.NoError(t, err)
+		require.Len(t, stakeEntries, 7)
+		require.Equal(t, stakeEntries[0].StakerPKID, m6PKID)
+		require.Equal(t, stakeEntries[6].StakerPKID, m0PKID)
+		require.Equal(t, stakeEntries[0].StakeAmountNanos, uint256.NewInt().SetUint64(700))
+		require.Equal(t, stakeEntries[6].StakeAmountNanos, uint256.NewInt().SetUint64(100))
 	}
 	{
 		// Test snapshotting changing stake.
@@ -348,6 +374,12 @@ func TestRunEpochCompleteHook(t *testing.T) {
 		require.NotNil(t, validatorEntry)
 		require.Equal(t, validatorEntry.TotalStakeAmountNanos.Uint64(), uint64(600))
 
+		snapshotStakeEntries, err := utxoView().GetSnapshotStakesToRewardByStakeAmount(10)
+		require.NoError(t, err)
+		require.Len(t, snapshotStakeEntries, 7)
+		require.Equal(t, snapshotStakeEntries[1].StakerPKID, m5PKID)
+		require.Equal(t, snapshotStakeEntries[1].StakeAmountNanos, uint256.NewInt().SetUint64(600))
+
 		// Run OnEpochCompleteHook().
 		_runOnEpochCompleteHook()
 
@@ -356,6 +388,12 @@ func TestRunEpochCompleteHook(t *testing.T) {
 		require.NoError(t, err)
 		require.NotNil(t, validatorEntry)
 		require.Equal(t, validatorEntry.TotalStakeAmountNanos.Uint64(), uint64(800))
+
+		snapshotStakeEntries, err = utxoView().GetSnapshotStakesToRewardByStakeAmount(10)
+		require.NoError(t, err)
+		require.Len(t, snapshotStakeEntries, 7)
+		require.Equal(t, snapshotStakeEntries[0].StakerPKID, m5PKID)
+		require.Equal(t, snapshotStakeEntries[0].StakeAmountNanos, uint256.NewInt().SetUint64(800))
 	}
 	{
 		// Test snapshotting changing GlobalParams.
@@ -410,6 +448,10 @@ func TestRunEpochCompleteHook(t *testing.T) {
 		require.NoError(t, err)
 		require.Len(t, snapshotValidatorSet, 7)
 
+		snapshotStakeEntries, err := utxoView().GetSnapshotStakesToRewardByStakeAmount(10)
+		require.NoError(t, err)
+		require.Len(t, snapshotStakeEntries, 7)
+
 		// Run OnEpochCompleteHook().
 		_runOnEpochCompleteHook()
 
@@ -417,6 +459,10 @@ func TestRunEpochCompleteHook(t *testing.T) {
 		snapshotValidatorSet, err = utxoView().GetSnapshotValidatorSetByStakeAmount(10)
 		require.NoError(t, err)
 		require.Len(t, snapshotValidatorSet, 6)
+
+		snapshotStakeEntries, err = utxoView().GetSnapshotStakesToRewardByStakeAmount(10)
+		require.NoError(t, err)
+		require.Len(t, snapshotStakeEntries, 6)
 	}
 	{
 		// Test jailing inactive validators.
@@ -455,10 +501,24 @@ func TestRunEpochCompleteHook(t *testing.T) {
 			return validatorEntry
 		}
 
+		getNumStakes := func() int {
+			stakeEntries, err := utxoView().GetTopStakesByStakeAmount(10)
+			require.NoError(t, err)
+			return len(stakeEntries)
+		}
+
+		getNumSnapshotStakes := func() int {
+			snapshotStakeEntries, err := utxoView().GetSnapshotStakesToRewardByStakeAmount(10)
+			require.NoError(t, err)
+			return len(snapshotStakeEntries)
+		}
+
 		// In epoch 9, all registered validators have Status = Active.
 		require.Equal(t, getCurrentEpochNumber(), 9)
 		require.Equal(t, getNumCurrentActiveValidators(), 6)
 		require.Equal(t, getNumSnapshotActiveValidators(), 6)
+		require.Equal(t, getNumStakes(), 6)
+		require.Equal(t, getNumSnapshotStakes(), 6)
 
 		// Run OnEpochCompleteHook().
 		_runOnEpochCompleteHook()
@@ -467,6 +527,8 @@ func TestRunEpochCompleteHook(t *testing.T) {
 		require.Equal(t, getCurrentEpochNumber(), 10)
 		require.Equal(t, getNumCurrentActiveValidators(), 6)
 		require.Equal(t, getNumSnapshotActiveValidators(), 6)
+		require.Equal(t, getNumStakes(), 6)
+		require.Equal(t, getNumSnapshotStakes(), 6)
 
 		// Run OnEpochCompleteHook().
 		_runOnEpochCompleteHook()
@@ -475,6 +537,8 @@ func TestRunEpochCompleteHook(t *testing.T) {
 		require.Equal(t, getCurrentEpochNumber(), 11)
 		require.Equal(t, getNumCurrentActiveValidators(), 6)
 		require.Equal(t, getNumSnapshotActiveValidators(), 6)
+		require.Equal(t, getNumStakes(), 6)
+		require.Equal(t, getNumSnapshotStakes(), 6)
 
 		// Run OnEpochCompleteHook().
 		_runOnEpochCompleteHook()
@@ -484,6 +548,8 @@ func TestRunEpochCompleteHook(t *testing.T) {
 		require.Equal(t, getCurrentEpochNumber(), 12)
 		require.Empty(t, getNumCurrentActiveValidators())
 		require.Equal(t, getNumSnapshotActiveValidators(), 6)
+		require.Equal(t, getNumStakes(), 6)
+		require.Equal(t, getNumSnapshotStakes(), 6)
 		require.Equal(t, getCurrentValidator(m6PKID).Status(), ValidatorStatusJailed)
 		require.Equal(t, getCurrentValidator(m6PKID).JailedAtEpochNumber, uint64(11))
 
@@ -495,6 +561,8 @@ func TestRunEpochCompleteHook(t *testing.T) {
 		require.Equal(t, getCurrentEpochNumber(), 13)
 		require.Empty(t, getNumCurrentActiveValidators())
 		require.Equal(t, getNumSnapshotActiveValidators(), 6)
+		require.Equal(t, getNumStakes(), 6)
+		require.Equal(t, getNumSnapshotStakes(), 6)
 
 		// Run OnEpochCompleteHook().
 		_runOnEpochCompleteHook()
@@ -505,5 +573,7 @@ func TestRunEpochCompleteHook(t *testing.T) {
 		require.Equal(t, getCurrentEpochNumber(), 14)
 		require.Empty(t, getNumCurrentActiveValidators())
 		require.Empty(t, getNumSnapshotActiveValidators())
+		require.Equal(t, getNumStakes(), 6)
+		require.Equal(t, getNumSnapshotStakes(), 6)
 	}
 }

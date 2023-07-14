@@ -699,9 +699,10 @@ type SnapshotStakeEntry struct {
 
 func (s *SnapshotStakeEntry) Copy() *SnapshotStakeEntry {
 	return &SnapshotStakeEntry{
-		StakerPKID:       s.StakerPKID.NewPKID(),
-		ValidatorPKID:    s.ValidatorPKID.NewPKID(),
-		StakeAmountNanos: s.StakeAmountNanos.Clone(),
+		SnapshotAtEpochNumber: s.SnapshotAtEpochNumber,
+		StakerPKID:            s.StakerPKID.NewPKID(),
+		ValidatorPKID:         s.ValidatorPKID.NewPKID(),
+		StakeAmountNanos:      s.StakeAmountNanos.Clone(),
 	}
 }
 
@@ -721,16 +722,16 @@ func (bav *UtxoView) _setSnapshotStakeToReward(snapshotStakeEntry *SnapshotStake
 	bav.SnapshotStakesToReward[*snapshotStakeEntry.ToMapKey()] = snapshotStakeEntry.Copy()
 }
 
-// GetSnapshotTopStakesToRewardByStakeAmount returns the top N SnapshotStakeEntries that are eligible
+// GetSnapshotStakesToRewardByStakeAmount returns the top N SnapshotStakeEntries that are eligible
 // to receive block rewards for the current snapshot epoch. The entries are sorted by stake amount
 // in descending order.
-func (bav *UtxoView) GetSnapshotTopStakesToRewardByStakeAmount(
+func (bav *UtxoView) GetSnapshotStakesToRewardByStakeAmount(
 	limit uint64,
 ) ([]*SnapshotStakeEntry, error) {
 	// Calculate the SnapshotEpochNumber.
 	snapshotAtEpochNumber, err := bav.GetSnapshotEpochNumber()
 	if err != nil {
-		return nil, errors.Wrapf(err, "GetSnapshotTopStakesToRewardByStakeAmount: problem calculating SnapshotEpochNumber: ")
+		return nil, errors.Wrapf(err, "GetSnapshotStakesToRewardByStakeAmount: problem calculating SnapshotEpochNumber: ")
 	}
 
 	// Create a slice of all UtxoView StakeSnapshotEntries to prevent pulling them from the db.
@@ -742,11 +743,11 @@ func (bav *UtxoView) GetSnapshotTopStakesToRewardByStakeAmount(
 	}
 
 	// Pull top N SnapshotStakeEntries from the database (not present in the UtxoView).
-	dbSnapshotStakeEntries, err := DBGetSnapshotTopStakesToRewardByStakeAmount(
+	dbSnapshotStakeEntries, err := DBGetSnapshotStakesToRewardByStakeAmount(
 		bav.Handle, bav.Snapshot, limit, snapshotAtEpochNumber, utxoViewSnapshotStakeEntries,
 	)
 	if err != nil {
-		return nil, errors.Wrapf(err, "GetSnapshotTopStakesToRewardByStakeAmount: error retrieving entries from db: ")
+		return nil, errors.Wrapf(err, "GetSnapshotStakesToRewardByStakeAmount: error retrieving entries from db: ")
 	}
 
 	// Cache the SnapshotStakeEntries from the db in the UtxoView.
@@ -755,7 +756,7 @@ func (bav *UtxoView) GetSnapshotTopStakesToRewardByStakeAmount(
 		if _, exists := bav.SnapshotStakesToReward[*mapKey]; exists {
 			// We should never see duplicate entries from the db that are already in the UtxoView. This is a
 			// sign of a bug and that the utxoViewSnapshotStakeEntries isn't being used correctly.
-			return nil, fmt.Errorf("GetSnapshotTopStakesToRewardByStakeAmount: db returned a SnapshotStakeEntry" +
+			return nil, fmt.Errorf("GetSnapshotStakesToRewardByStakeAmount: db returned a SnapshotStakeEntry" +
 				" that already exists in the UtxoView")
 		}
 
@@ -803,7 +804,7 @@ func (bav *UtxoView) GetSnapshotTopStakesToRewardByStakeAmount(
 	return mergedSnapshotStakeEntries[0:upperBound], nil
 }
 
-func DBGetSnapshotTopStakesToRewardByStakeAmount(
+func DBGetSnapshotStakesToRewardByStakeAmount(
 	handle *badger.DB,
 	snap *Snapshot,
 	limit uint64,
@@ -826,7 +827,7 @@ func DBGetSnapshotTopStakesToRewardByStakeAmount(
 		handle, key, int(limit), nil, true, snapshotStakeKeysToSkip,
 	)
 	if err != nil {
-		return nil, errors.Wrapf(err, "DBGetSnapshotTopStakesToRewardByStakeAmount:"+
+		return nil, errors.Wrapf(err, "DBGetSnapshotStakesToRewardByStakeAmount:"+
 			" problem retrieving top stakes: ")
 	}
 
@@ -834,7 +835,7 @@ func DBGetSnapshotTopStakesToRewardByStakeAmount(
 	for _, keyFound := range keysFound {
 		snapshotStakeEntry, err := DecodeSnapshotStakeToRewardFromDBKey(keyFound)
 		if err != nil {
-			return nil, errors.Wrapf(err, "DBGetSnapshotTopStakesToRewardByStakeAmount:"+
+			return nil, errors.Wrapf(err, "DBGetSnapshotStakesToRewardByStakeAmount:"+
 				" problem reading SnapshotStakeEntry: ")
 		}
 
@@ -918,10 +919,12 @@ func DecodeSnapshotStakeToRewardFromDBKey(stakeToRewardByStakeAmountDBKey []byte
 		return nil, errors.Wrapf(err, "DecodeSnapshotStakeToRewardFromDBKey: Unable to read StakeAmountNanos")
 	}
 
+	decodedOutput.ValidatorPKID = &PKID{}
 	if err := decodedOutput.ValidatorPKID.FromBytes(rr); err != nil {
 		return nil, errors.Wrapf(err, "DecodeSnapshotStakeToRewardFromDBKey: unable to read ValidatorPKID")
 	}
 
+	decodedOutput.StakerPKID = &PKID{}
 	if err := decodedOutput.StakerPKID.FromBytes(rr); err != nil {
 		return nil, errors.Wrapf(err, "DecodeSnapshotStakeToRewardFromDBKey: unable to read StakerPKID")
 	}
