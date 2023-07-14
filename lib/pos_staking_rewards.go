@@ -94,13 +94,13 @@ func (bav *UtxoView) DistributeStakingRewardsToSnapshotStakes() error {
 	return nil
 }
 
-// This function is a placeholder that rewards a constant 1 DESO in staking rewards per epoch.
+// This function is a placeholder that rewards a constant 10 DESO in staking rewards per epoch.
 // The staking rewards will be a function of the burn maximizing fee, which has not been
 // implemented yet.
 //
 // TODO: Replace this function once BMF and staking rewards math are complete.
 func (bav *UtxoView) _placeholderGetStakingRewardsPerEpoch() *uint256.Int {
-	return uint256.NewInt().SetUint64(1e9)
+	return uint256.NewInt().SetUint64(1e10)
 }
 
 // _computeRewardAmount uses integer math to compute the reward amount for each staker rounded down to
