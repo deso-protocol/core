@@ -373,9 +373,9 @@ func mempoolTxTimeOrderComparator(a, b interface{}) int {
 		return 0
 	}
 
-	if aVal.GetTimestamp() > bVal.GetTimestamp() {
+	if aVal.Added.UnixMicro() > bVal.Added.UnixMicro() {
 		return 1
-	} else if aVal.GetTimestamp() < bVal.GetTimestamp() {
+	} else if aVal.Added.UnixMicro() < bVal.Added.UnixMicro() {
 		return -1
 	} else if aVal.FeePerKB < bVal.FeePerKB {
 		return 1
