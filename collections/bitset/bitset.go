@@ -49,7 +49,7 @@ func (b *Bitset) Set(index int, newValue bool) *Bitset {
 // big.Int.
 //
 // This also means that the highest index set to true is b.Size() - 1.
-// All indices beyond are implicitly false.
+// All higher indices beyond are implicitly false.
 //
 // Example:
 // Given a sequence of values 11 values:
