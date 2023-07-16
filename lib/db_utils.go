@@ -1511,8 +1511,7 @@ func _decodeDbKeyForPublicKeyToDeSoBalanceNanosMapping(key []byte, value []byte)
 		balanceNanos = DecodeUint64(value)
 	}
 	balanceEntry := &DeSoBalanceEntry{}
-	balanceEntry.PKID = &PKID{}
-	copy(balanceEntry.PKID[:], key[1:])
+	balanceEntry.PublicKey = key[1:]
 	balanceEntry.BalanceNanos = balanceNanos
 	return balanceEntry, nil
 }

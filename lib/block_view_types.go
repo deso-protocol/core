@@ -3571,7 +3571,7 @@ func (fe *FollowEntry) GetEncoderType() EncoderType {
 
 // DeSoBalanceEntry stores the user's pkid and their corresponding DeSo balance nanos.
 type DeSoBalanceEntry struct {
-	PKID         *PKID
+	PublicKey    []byte
 	BalanceNanos uint64
 
 	// Whether or not this entry is deleted in the view.
@@ -3584,17 +3584,16 @@ func (desoBalanceEntry *DeSoBalanceEntry) IsDeleted() bool {
 
 func (desoBalanceEntry *DeSoBalanceEntry) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte {
 	var data []byte
-	data = append(data, EncodeToBytes(blockHeight, desoBalanceEntry.PKID, skipMetadata...)...)
+	data = append(data, EncodeByteArray(desoBalanceEntry.PublicKey)...)
 	data = append(data, UintToBuf(desoBalanceEntry.BalanceNanos)...)
 	return data
 }
 
 func (desoBalanceEntry *DeSoBalanceEntry) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.Reader) error {
-	balancePKID := &PKID{}
-	if exist, err := DecodeFromBytes(balancePKID, rr); exist && err == nil {
-		desoBalanceEntry.PKID = balancePKID
-	} else if err != nil {
-		return errors.Wrapf(err, "DesoBalanceEntry.Decode: Problem reading PKID")
+	var err error
+	desoBalanceEntry.PublicKey, err = DecodeByteArray(rr)
+	if err != nil {
+		return errors.Wrapf(err, "DesoBalanceEntry.Decode: Problem reading PublicKey")
 	}
 
 	balanceNanos, err := ReadUvarint(rr)

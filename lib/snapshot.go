@@ -271,6 +271,11 @@ type Snapshot struct {
 	// schedule actions such as ancestral records updates, checksum computation, snapshot operations.
 	OperationChannel *SnapshotOperationChannel
 
+	// operationQueueSemaphore is used to limit the number of operations that can be enqueued to the
+	// OperationChannel. This is done to prevent the channel from growing too large and consuming too
+	// much memory.
+	operationQueueSemaphore chan struct{}
+
 	// Checksum allows us to confirm integrity of the state so that when we're syncing with peers,
 	// we are confident that data wasn't tampered with.
 	Checksum *StateChecksum
@@ -395,6 +400,10 @@ func NewSnapshot(mainDb *badger.DB, mainDbDirectory string, snapshotBlockHeightP
 	timer := &Timer{}
 	timer.Initialize()
 
+	// Limit the number of items stored in the OperationChannel. Because the snapshot chunks are 100MB each,
+	// this limits the number of operations stored at one time to 20GB.
+	const maxOperationQueueSize = 20
+
 	// Set the snapshot.
 	snap := &Snapshot{
 		SnapshotDb:                   snapshotDb,
@@ -403,6 +412,7 @@ func NewSnapshot(mainDb *badger.DB, mainDbDirectory string, snapshotBlockHeightP
 		AncestralFlushCounter:        uint64(0),
 		SnapshotBlockHeightPeriod:    snapshotBlockHeightPeriod,
 		OperationChannel:             operationChannel,
+		operationQueueSemaphore:      make(chan struct{}, maxOperationQueueSize),
 		Checksum:                     checksum,
 		Migrations:                   migrations,
 		CurrentEpochSnapshotMetadata: metadata,
@@ -447,6 +457,8 @@ func (snap *Snapshot) Run() {
 				operation.blockHeight); err != nil {
 				glog.Errorf("Snapshot.Run: Problem adding snapshot chunk to the db")
 			}
+			// Free up a slot in the operationQueueSemaphore, now that a chunk has been processed.
+			<-snap.operationQueueSemaphore
 
 		case SnapshotOperationChecksumAdd:
 			if err := snap.Checksum.AddOrRemoveBytesWithMigrations(operation.checksumKey, operation.checksumValue,
