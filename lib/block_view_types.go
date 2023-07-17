@@ -3777,10 +3777,10 @@ type GlobalParamsEntry struct {
 	// consensus.
 	ValidatorSetMaxNumValidators uint64
 
-	// StakingRewardDistributionMaxNumStakers is the maximum number of stake entries
-	// that are eligible to receive block rewards every epoch in the Proof-of-Stake
+	// StakingRewardsMaxNumStakes is the maximum number of stake entries that are
+	// eligible to receive block rewards every epoch in the Proof-of-Stake
 	// consensus.
-	StakingRewardDistributionMaxNumStakers uint64
+	StakingRewardsMaxNumStakes uint64
 
 	// EpochDurationNumBlocks is the number of blocks included in one epoch.
 	EpochDurationNumBlocks uint64
@@ -3803,7 +3803,7 @@ func (gp *GlobalParamsEntry) Copy() *GlobalParamsEntry {
 		ValidatorJailEpochDuration:             gp.ValidatorJailEpochDuration,
 		LeaderScheduleMaxNumValidators:         gp.LeaderScheduleMaxNumValidators,
 		ValidatorSetMaxNumValidators:           gp.ValidatorSetMaxNumValidators,
-		StakingRewardDistributionMaxNumStakers: gp.StakingRewardDistributionMaxNumStakers,
+		StakingRewardsMaxNumStakes:             gp.StakingRewardsMaxNumStakes,
 		EpochDurationNumBlocks:                 gp.EpochDurationNumBlocks,
 		JailInactiveValidatorGracePeriodEpochs: gp.JailInactiveValidatorGracePeriodEpochs,
 	}
@@ -3825,7 +3825,7 @@ func (gp *GlobalParamsEntry) RawEncodeWithoutMetadata(blockHeight uint64, skipMe
 		data = append(data, UintToBuf(gp.ValidatorJailEpochDuration)...)
 		data = append(data, UintToBuf(gp.LeaderScheduleMaxNumValidators)...)
 		data = append(data, UintToBuf(gp.ValidatorSetMaxNumValidators)...)
-		data = append(data, UintToBuf(gp.StakingRewardDistributionMaxNumStakers)...)
+		data = append(data, UintToBuf(gp.StakingRewardsMaxNumStakes)...)
 		data = append(data, UintToBuf(gp.EpochDurationNumBlocks)...)
 		data = append(data, UintToBuf(gp.JailInactiveValidatorGracePeriodEpochs)...)
 	}
@@ -3878,9 +3878,9 @@ func (gp *GlobalParamsEntry) RawDecodeWithoutMetadata(blockHeight uint64, rr *by
 		if err != nil {
 			return errors.Wrapf(err, "GlobalParamsEntry.Decode: Problem reading ValidatorSetMaxNumValidators: ")
 		}
-		gp.StakingRewardDistributionMaxNumStakers, err = ReadUvarint(rr)
+		gp.StakingRewardsMaxNumStakes, err = ReadUvarint(rr)
 		if err != nil {
-			return errors.Wrapf(err, "GlobalParamsEntry.Decode: Problem reading StakingRewardDistributionMaxNumStakers: ")
+			return errors.Wrapf(err, "GlobalParamsEntry.Decode: Problem reading StakingRewardsMaxNumStakes: ")
 		}
 		gp.EpochDurationNumBlocks, err = ReadUvarint(rr)
 		if err != nil {

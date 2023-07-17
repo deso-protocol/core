@@ -103,7 +103,7 @@ func (bav *UtxoView) RunEpochCompleteHook(blockHeight uint64) error {
 	}
 
 	// Snapshot the current top n stake entries.
-	topStakeEntries, err := bav.GetTopStakesByStakeAmount(currentGlobalParamsEntry.StakingRewardDistributionMaxNumStakers)
+	topStakeEntries, err := bav.GetTopStakesByStakeAmount(currentGlobalParamsEntry.StakingRewardsMaxNumStakes)
 	if err != nil {
 		return errors.Wrapf(err, "RunEpochCompleteHook: error retrieving top StakeEntries: ")
 	}
