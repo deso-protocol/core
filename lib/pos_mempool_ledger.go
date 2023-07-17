@@ -6,22 +6,23 @@ import (
 	"sync"
 )
 
-// BalanceLedger is a simple in-memory ledger of reserved balances for user public keys. The entries in the ledger can be
-// increased or decreased, as long as user's reserved balance doesn't exceed the user's spendable balance. It allows for checking
-// whether a balance can be safely increased without going over the user's spendable balance. It also allows for
-// increasing and decreasing balances.
+// BalanceLedger is a simple in-memory ledger of reserved balances for user public keys. The values in the ledger can be
+// increased or decreased, as long as user's reserved balance doesn't exceed the user's spendable balance.
 type BalanceLedger struct {
 	sync.RWMutex
 
+	// Map of public keys to reserved balances in nanos.
 	reservedBalancesNanos map[PublicKey]uint64
 }
 
-func NewPosMempoolLedger() *BalanceLedger {
+func NewBalanceLedger() *BalanceLedger {
 	return &BalanceLedger{
 		reservedBalancesNanos: make(map[PublicKey]uint64),
 	}
 }
 
+// CheckBalanceIncrease checks if the user's reserved balance can be increased by the given amount. If the user's
+// reserved balance + amountNanos is less than their spendableBalanceNanos, the increase is allowed. Otherwise, an error is returned.
 func (pml *BalanceLedger) CheckBalanceIncrease(publicKey PublicKey, amountNanos uint64, spendableBalanceNanos uint64) error {
 	pml.RLock()
 	defer pml.RUnlock()
@@ -41,7 +42,9 @@ func (pml *BalanceLedger) CheckBalanceIncrease(publicKey PublicKey, amountNanos 
 	return nil
 }
 
-func (pml *BalanceLedger) CheckBalanceDecrease(publicKey PublicKey, amount uint64) error {
+// CheckBalanceDecrease checks if the user's reserved balance can be decreased by the given amount. If the user's
+// reserved balance is greater or equal to the amountNanos, the decrease is allowed. Otherwise, an error is returned.
+func (pml *BalanceLedger) CheckBalanceDecrease(publicKey PublicKey, amountNanos uint64) error {
 	pml.RLock()
 	defer pml.RUnlock()
 
@@ -49,24 +52,22 @@ func (pml *BalanceLedger) CheckBalanceDecrease(publicKey PublicKey, amount uint6
 	if !exists {
 		return errors.Errorf("CheckBalanceDecrease: No reserved balance for public key")
 	}
-	if amount > reservedBalance {
+	if amountNanos > reservedBalance {
 		return errors.Errorf("CheckBalanceDecrease: Amount exceeds reserved balance")
 	}
 	return nil
 }
 
+// IncreaseBalance increases the user's reserved balance by the given amount.
 func (pml *BalanceLedger) IncreaseBalance(publicKey PublicKey, amount uint64) {
 	pml.Lock()
 	defer pml.Unlock()
 
-	reservedBalance, exists := pml.reservedBalancesNanos[publicKey]
-	if !exists {
-		pml.reservedBalancesNanos[publicKey] = amount
-		return
-	}
+	reservedBalance, _ := pml.reservedBalancesNanos[publicKey]
 	pml.reservedBalancesNanos[publicKey] = reservedBalance + amount
 }
 
+// DecreaseBalance decreases the user's reserved balance by the given amount.
 func (pml *BalanceLedger) DecreaseBalance(publicKey PublicKey, amount uint64) {
 	pml.Lock()
 	defer pml.Unlock()
@@ -83,14 +84,12 @@ func (pml *BalanceLedger) DecreaseBalance(publicKey PublicKey, amount uint64) {
 	pml.reservedBalancesNanos[publicKey] = reservedBalance - amount
 }
 
-func (pml *BalanceLedger) GetReservedBalance(publicKey PublicKey) uint64 {
+// GetReservedBalanceNanos returns the user's reserved balance in nanos.
+func (pml *BalanceLedger) GetReservedBalanceNanos(publicKey PublicKey) uint64 {
 	pml.RLock()
 	defer pml.RUnlock()
 
-	reservedBalance, exists := pml.reservedBalancesNanos[publicKey]
-	if !exists {
-		return 0
-	}
+	reservedBalance, _ := pml.reservedBalancesNanos[publicKey]
 	return reservedBalance
 }
 
