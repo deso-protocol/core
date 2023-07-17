@@ -78,8 +78,15 @@ func (bav *UtxoView) DistributeStakingRewardsToSnapshotStakes() ([]*UtxoOperatio
 
 		// For case 1, we distribute the rewards by adding them to the staker's staked amount.
 		if stakeEntry != nil && stakeEntry.RestakeRewards {
+			utxoOp := &UtxoOperation{
+				Type:             OperationTypeStake,
+				PrevStakeEntries: []*StakeEntry{stakeEntry.Copy()},
+			}
+
 			stakeEntry.StakeAmountNanos.Add(stakeEntry.StakeAmountNanos, rewardAmount)
 			bav._setStakeEntryMappings(stakeEntry)
+
+			utxoOps = append(utxoOps, utxoOp)
 			continue
 		}
 
