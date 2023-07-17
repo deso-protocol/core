@@ -77,7 +77,7 @@ func (bav *UtxoView) RunEpochCompleteHook(blockHeight uint64) error {
 	bav._setSnapshotGlobalParamsEntry(bav.GlobalParamsEntry, currentEpochEntry.EpochNumber)
 
 	// Snapshot the current top n active validators as the current validator set.
-	validatorSet, err := bav.GetTopActiveValidatorsByStake(currentGlobalParamsEntry.ValidatorSetMaxNumValidators)
+	validatorSet, err := bav.GetTopActiveValidatorsByStakeAmount(currentGlobalParamsEntry.ValidatorSetMaxNumValidators)
 	if err != nil {
 		return errors.Wrapf(err, "RunEpochCompleteHook: error retrieving top ValidatorEntries: ")
 	}

@@ -597,7 +597,7 @@ func DBGetValidatorByPKIDWithTxn(txn *badger.Txn, snap *Snapshot, pkid *PKID) (*
 	return validatorEntry, nil
 }
 
-func DBGetTopActiveValidatorsByStake(
+func DBGetTopActiveValidatorsByStakeAmount(
 	handle *badger.DB,
 	snap *Snapshot,
 	limit uint64,
@@ -630,7 +630,7 @@ func DBGetTopActiveValidatorsByStake(
 		handle, key, int(limit), nil, true, canSkipValidatorInBadgerSeek,
 	)
 	if err != nil {
-		return nil, errors.Wrapf(err, "DBGetTopActiveValidatorsByStake: problem retrieving top validators: ")
+		return nil, errors.Wrapf(err, "DBGetTopActiveValidatorsByStakeAmount: problem retrieving top validators: ")
 	}
 
 	// For each key found, parse the ValidatorPKID from the key,
@@ -638,12 +638,12 @@ func DBGetTopActiveValidatorsByStake(
 	for _, keyFound := range keysFound {
 		validatorPKID, err := GetValidatorPKIDFromDBKeyForValidatorByStatusAndStakeAmount(keyFound)
 		if err != nil {
-			return nil, errors.Wrapf(err, "DBGetTopActiveValidatorsByStake: problem reading ValidatorPKID: ")
+			return nil, errors.Wrapf(err, "DBGetTopActiveValidatorsByStakeAmount: problem reading ValidatorPKID: ")
 		}
 		// Retrieve ValidatorEntry by PKID.
 		validatorEntry, err := DBGetValidatorByPKID(handle, snap, validatorPKID)
 		if err != nil {
-			return nil, errors.Wrapf(err, "DBGetTopActiveValidatorsByStake: problem retrieving validator by PKID: ")
+			return nil, errors.Wrapf(err, "DBGetTopActiveValidatorsByStakeAmount: problem retrieving validator by PKID: ")
 		}
 		validatorEntries = append(validatorEntries, validatorEntry)
 	}
@@ -1759,7 +1759,7 @@ func (bav *UtxoView) GetValidatorByPublicKey(validatorPublicKey *PublicKey) (*Va
 	return validatorEntry, nil
 }
 
-func (bav *UtxoView) GetTopActiveValidatorsByStake(limit uint64) ([]*ValidatorEntry, error) {
+func (bav *UtxoView) GetTopActiveValidatorsByStakeAmount(limit uint64) ([]*ValidatorEntry, error) {
 	// Validate limit param.
 	if limit == uint64(0) {
 		return []*ValidatorEntry{}, nil
@@ -1777,9 +1777,9 @@ func (bav *UtxoView) GetTopActiveValidatorsByStake(limit uint64) ([]*ValidatorEn
 	// Pull top N active ValidatorEntries from the database (not present in the UtxoView).
 	// Note that we will skip validators that are present in the view because we pass
 	// utxoViewValidatorEntries to the function.
-	dbValidatorEntries, err := DBGetTopActiveValidatorsByStake(bav.Handle, bav.Snapshot, limit, utxoViewValidatorEntries)
+	dbValidatorEntries, err := DBGetTopActiveValidatorsByStakeAmount(bav.Handle, bav.Snapshot, limit, utxoViewValidatorEntries)
 	if err != nil {
-		return nil, errors.Wrapf(err, "UtxoView.GetTopActiveValidatorsByStake: error retrieving entries from db: ")
+		return nil, errors.Wrapf(err, "UtxoView.GetTopActiveValidatorsByStakeAmount: error retrieving entries from db: ")
 	}
 	// Cache top N active ValidatorEntries from the db in the UtxoView.
 	for _, validatorEntry := range dbValidatorEntries {
