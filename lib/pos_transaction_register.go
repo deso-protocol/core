@@ -1,6 +1,7 @@
 package lib
 
 import (
+	"bytes"
 	"fmt"
 	"github.com/emirpasic/gods/sets/treeset"
 	"github.com/golang/glog"
@@ -18,7 +19,7 @@ import (
 // the Fee-Time ordering of transactions. The operations supported by the register are: adding a transaction, removing
 // a transaction, iterating through all transactions in fee-time order, and retrieving all transactions ordered in
 // fee-time. The TransactionRegister doesn't perform any validation on the transactions, it just accepts the provided
-// MempoolTx and adds it to the appropriate FeeTimeBucket.
+// MempoolTx and adds it to the appropriate FeeTimeBucket. The structure is thread safe.
 type TransactionRegister struct {
 	sync.RWMutex
 	// feeTimeBucketSet is a set of FeeTimeBucket objects. The set is ordered by the FeeTimeBucket's ranges, based on feeTimeBucketComparator.
@@ -87,7 +88,7 @@ func (tr *TransactionRegister) addTransactionNoLock(txn *MempoolTx) error {
 	}
 
 	if tr.txnMembership.Includes(*txn.Hash) {
-		return fmt.Errorf("TransactionRegister.AddTransaction: Transaction already exists in register")
+		return nil
 	}
 
 	// If the transaction is too large, reject it.
@@ -104,9 +105,6 @@ func (tr *TransactionRegister) addTransactionNoLock(txn *MempoolTx) error {
 	if !bucketExists {
 		// If the bucket doesn't exist, create it and add the transaction to it.
 		bucket = NewFeeTimeBucket(bucketMinFeeNanosPerKb, bucketMaxFeeNanosPerKB)
-		if err := bucket.AddTransaction(txn); err != nil {
-			return errors.Wrapf(err, "TransactionRegister.AddTransaction: Error adding transaction to bucket: %v", err)
-		}
 	}
 
 	// Add the transaction to the bucket.
@@ -141,8 +139,7 @@ func (tr *TransactionRegister) removeTransactionNoLock(txn *MempoolTx) error {
 	}
 
 	if !tr.txnMembership.Includes(*txn.Hash) {
-		return fmt.Errorf("TransactionRegister.RemoveTransaction: Transaction with transaction hash %v does not "+
-			"exist in the register", txn.Hash.String())
+		return nil
 	}
 
 	if tr.totalTxnsSizeBytes < txn.TxSizeBytes {
@@ -179,11 +176,28 @@ func (tr *TransactionRegister) removeBucket(bucket *FeeTimeBucket) {
 }
 
 func (tr *TransactionRegister) Empty() bool {
+	tr.RLock()
+	defer tr.RUnlock()
+
 	return tr.feeTimeBucketSet.Empty()
 }
 
 func (tr *TransactionRegister) Size() uint64 {
+	tr.RLock()
+	defer tr.RUnlock()
+
 	return tr.totalTxnsSizeBytes
+}
+
+func (tr *TransactionRegister) Includes(txn *MempoolTx) bool {
+	tr.RLock()
+	defer tr.RUnlock()
+
+	if txn == nil || txn.Hash == nil {
+		return false
+	}
+
+	return tr.txnMembership.Includes(*txn.Hash)
 }
 
 func (tr *TransactionRegister) Reset() {
@@ -223,20 +237,41 @@ func (tr *TransactionRegister) GetFeeTimeTransactions() []*MempoolTx {
 	return txns
 }
 
-// Prune removes transactions from the end of the register until a desired amount of space is freed. The returned
-// transactions are ordered by lowest-to-highest priority, i.e. first transaction will have the smallest fee, last
-// transaction will have the highest fee. Returns nil if no transactions were pruned, or an error otherwise.
-func (tr *TransactionRegister) Prune(minBytesPruned uint64) (_prunedTxns []*MempoolTx, _err error) {
+// PruneToSize removes transactions from the end of the register until the size of the register shrinks to the desired
+// number. The returned transactions are ordered by lowest-to-highest priority, i.e. first transaction will have the
+// smallest fee, last transaction will have the highest fee. Returns no error if no transactions were pruned.
+func (tr *TransactionRegister) PruneToSize(maxSizeBytes uint64) (_prunedTxns []*MempoolTx, _err error) {
 	tr.Lock()
 	defer tr.Unlock()
 
-	// If the minimum number of bytes to prune is 0, return.
-	if minBytesPruned == 0 {
+	// If the maximum number of bytes is greater or equal to the current size of the register, return.
+	if maxSizeBytes >= tr.totalTxnsSizeBytes {
 		return nil, nil
 	}
 
 	// If the register is empty, return.
-	if tr.Empty() {
+	if tr.feeTimeBucketSet.Empty() {
+		return nil, nil
+	}
+
+	// Determine how many bytes we need to prune, and get the transactions to prune.
+	minPrunedBytes := tr.totalTxnsSizeBytes - maxSizeBytes
+	prunedTxns, err := tr.getTransactionsToPrune(minPrunedBytes)
+	if err != nil {
+		return nil, errors.Wrapf(err, "TransactionRegister.PruneToSize: Error getting transactions to prune")
+	}
+
+	// Remove the transactions from prunedTxns.
+	for _, txn := range prunedTxns {
+		if err := tr.removeTransactionNoLock(txn); err != nil {
+			return nil, errors.Wrapf(err, "TransactionRegister.PruneToSize: Error removing transaction %v", txn.Hash.String())
+		}
+	}
+	return prunedTxns, nil
+}
+
+func (tr *TransactionRegister) getTransactionsToPrune(minPrunedBytes uint64) (_prunedTxns []*MempoolTx, _err error) {
+	if minPrunedBytes == 0 {
 		return nil, nil
 	}
 
@@ -250,7 +285,8 @@ func (tr *TransactionRegister) Prune(minBytesPruned uint64) (_prunedTxns []*Memp
 	for it.Prev() {
 		bucket, ok := it.Value().(*FeeTimeBucket)
 		if !ok {
-			return nil, fmt.Errorf("TransactionRegister.Prune: Error casting value of FeeTimeBucket")
+			return nil, fmt.Errorf("TransactionRegister.getTransactionsToPrune: " +
+				"Error casting value of FeeTimeBucket")
 		}
 
 		// Iterate through the transactions in the current FeeTime bucket. We iterate in reverse order, starting from the
@@ -260,34 +296,29 @@ func (tr *TransactionRegister) Prune(minBytesPruned uint64) (_prunedTxns []*Memp
 		for bucketIt.Prev() {
 			txn, ok := bucketIt.Value().(*MempoolTx)
 			if !ok {
-				return nil, fmt.Errorf("TransactionRegister.Prune: Error casting value of MempoolTx")
+				return nil, fmt.Errorf("TransactionRegister.getTransactionsToPrune: " +
+					"Error casting value of MempoolTx")
 			}
 			// Make sure that, somehow, the number of pruned bytes doesn't overflow uint64.
 			if prunedBytes > math.MaxUint64-txn.TxSizeBytes {
-				return nil, fmt.Errorf("TransactionRegister.Prune: Error pruning %v bytes from register: "+
-					"prunedBytes %v exceeds max uint64", minBytesPruned, prunedBytes)
+				return nil, fmt.Errorf("TransactionRegister.getTransactionsToPrune: "+
+					"Error pruning %v bytes from register: prunedBytes %v exceeds max uint64", minPrunedBytes, prunedBytes)
 			}
 			// Add the transaction to the prunedTxns list.
 			prunedTxns = append(prunedTxns, txn)
 			prunedBytes += txn.TxSizeBytes
 			// If we've pruned sufficiently many bytes, we can break.
-			if prunedBytes >= minBytesPruned {
+			if prunedBytes >= minPrunedBytes {
 				break
 			}
 		}
 
 		// If we've pruned sufficiently many bytes, we can break.
-		if prunedBytes >= minBytesPruned {
+		if prunedBytes >= minPrunedBytes {
 			break
 		}
 	}
 
-	// Remove the transactions from prunedTxns.
-	for _, txn := range prunedTxns {
-		if err := tr.removeTransactionNoLock(txn); err != nil {
-			return nil, errors.Wrapf(err, "TransactionRegister.Prune: Error removing transaction %v", txn.Hash.String())
-		}
-	}
 	return prunedTxns, nil
 }
 
@@ -357,12 +388,19 @@ func (fti *FeeTimeIterator) Initialized() bool {
 //	FeeTimeBucket
 // ========================
 
-// FeeTimeBucket is a data structure storing MempoolTx with similar fee rates.
+// FeeTimeBucket is a data structure storing MempoolTx with similar fee rates. The structure is thread safe.
+// The transactions accepted by the FeeTimeBucket must have a fee rate above or equal to the configured minFeeNanosPerKB,
+// and below or equal to the configured maxFeeNanosPerKB. The transactions are stored in a treeset, which orders the
+// transactions by timestamp. The earliest timestamp is at the front of the txnsSet, and the latest timestamp is at the
+// back of the txnsSet. In case of a timestamp tie, the transactions are ordered by greatest fee rate first. If a tie
+// still exists, the transactions are ordered by greatest lexicographic transaction hash first.
 type FeeTimeBucket struct {
 	sync.RWMutex
 
 	// txnsSet is a set of MempoolTx transactions stored in the FeeTimeBucket.
 	txnsSet *treeset.Set
+	// txnMembership is a set of transaction hashes. It is used to determine existence of a transaction in the register.
+	txnMembership *Set[BlockHash]
 	// minFeeNanosPerKB is the minimum fee rate (inclusive) accepted by the FeeTimeBucket, in nanos per KB.
 	minFeeNanosPerKB uint64
 	// maxFeeNanosPerKB is the maximum fee rate (inclusive) accepted by the FeeTimeBucket, in nanos per KB. It's worth
@@ -380,6 +418,7 @@ func NewFeeTimeBucket(minFeeNanosPerKB uint64, maxFeeNanosPerKB uint64) *FeeTime
 		maxFeeNanosPerKB:   maxFeeNanosPerKB,
 		totalTxnsSizeBytes: 0,
 		txnsSet:            txnsSet,
+		txnMembership:      NewSet([]BlockHash{}),
 	}
 }
 
@@ -404,7 +443,7 @@ func mempoolTxTimeOrderComparator(a, b interface{}) int {
 		return -1
 	}
 	// If the timestamps and fee rates are the same, we order by the transaction hash.
-	return HashToBigint(aVal.Hash).Cmp(HashToBigint(bVal.Hash))
+	return bytes.Compare(aVal.Hash[:], bVal.Hash[:])
 }
 
 // AddTransaction adds a transaction to the FeeTimeBucket. It returns an error if the transaction is outside the
@@ -415,6 +454,10 @@ func (tb *FeeTimeBucket) AddTransaction(txn *MempoolTx) error {
 
 	if txn == nil || txn.Hash == nil {
 		return fmt.Errorf("FeeTimeBucket.AddTransaction: Transaction or transaction hash is nil")
+	}
+
+	if tb.txnMembership.Includes(*txn.Hash) {
+		return nil
 	}
 
 	if tb.totalTxnsSizeBytes > math.MaxUint64-txn.TxSizeBytes {
@@ -428,6 +471,7 @@ func (tb *FeeTimeBucket) AddTransaction(txn *MempoolTx) error {
 	}
 
 	tb.txnsSet.Add(txn)
+	tb.txnMembership.Add(*txn.Hash)
 	tb.totalTxnsSizeBytes += txn.TxSizeBytes
 	return nil
 }
@@ -437,22 +481,40 @@ func (tb *FeeTimeBucket) RemoveTransaction(txn *MempoolTx) {
 	tb.Lock()
 	defer tb.Unlock()
 
+	if txn == nil || txn.Hash == nil {
+		return
+	}
+
+	if !tb.txnMembership.Includes(*txn.Hash) {
+		return
+	}
+
 	tb.txnsSet.Remove(txn)
+	tb.txnMembership.Remove(*txn.Hash)
 	tb.totalTxnsSizeBytes -= txn.TxSizeBytes
 }
 
 func (tb *FeeTimeBucket) Empty() bool {
+	tb.RLock()
+	defer tb.RUnlock()
+
 	return tb.txnsSet.Empty()
 }
 
 // GetIterator returns an iterator over the MempoolTx inside the FeeTimeBucket.
 func (tb *FeeTimeBucket) GetIterator() treeset.Iterator {
+	tb.RLock()
+	defer tb.RUnlock()
+
 	return tb.txnsSet.Iterator()
 }
 
 // GetTransactions returns a slice of MempoolTx inside the FeeTimeBucket. The slice is ordered according to the
 // mempoolTxTimeOrderComparator.
 func (tb *FeeTimeBucket) GetTransactions() []*MempoolTx {
+	tb.RLock()
+	defer tb.RUnlock()
+
 	txns := []*MempoolTx{}
 	it := tb.GetIterator()
 	for it.Next() {
@@ -464,7 +526,21 @@ func (tb *FeeTimeBucket) GetTransactions() []*MempoolTx {
 }
 
 func (tb *FeeTimeBucket) Size() uint64 {
+	tb.RLock()
+	defer tb.RUnlock()
+
 	return tb.totalTxnsSizeBytes
+}
+
+func (tb *FeeTimeBucket) Includes(txn *MempoolTx) bool {
+	tb.RLock()
+	defer tb.RUnlock()
+
+	if txn == nil || txn.Hash == nil {
+		return false
+	}
+
+	return tb.txnMembership.Includes(*txn.Hash)
 }
 
 func (tb *FeeTimeBucket) Clear() {
@@ -472,7 +548,7 @@ func (tb *FeeTimeBucket) Clear() {
 	defer tb.Unlock()
 
 	tb.txnsSet.Clear()
-	tb.txnsSet = treeset.NewWith(mempoolTxTimeOrderComparator)
+	tb.txnMembership = NewSet([]BlockHash{})
 	tb.totalTxnsSizeBytes = 0
 }
 
