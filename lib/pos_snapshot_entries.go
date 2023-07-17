@@ -686,7 +686,7 @@ type SnapshotStakeMapKey struct {
 }
 
 // This is a bare bones in-memory only construct used to capture the ValidatorPKID,
-// StakerPKID, and StakeAmountNanos from a StakeEntry that has been snapshot. We
+// StakerPKID, and StakeAmountNanos from a StakeEntry that has been snapshotted. We
 // define a new type here rather than re-using the StakeEntry type to reduce the risk
 // of bugs. The StakeEntry type has additional fields (ex: RestakeRewards, ExtraData)
 // that are not snapshotted.
