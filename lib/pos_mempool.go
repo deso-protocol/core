@@ -7,10 +7,6 @@ import (
 	"sync"
 )
 
-const (
-	MempoolPruneFactor = 20
-)
-
 type PosMempool struct {
 	sync.RWMutex
 
@@ -20,7 +16,7 @@ type PosMempool struct {
 	dbCtx        *DatabaseContext
 
 	txnRegister *TransactionRegister
-	ledger      *PosMempoolLedger
+	ledger      *BalanceLedger
 	persister   *MempoolPersister
 
 	eventManager *EventManager
@@ -124,7 +120,11 @@ func (dmp *PosMempool) AddTransaction(txn *MempoolTx) error {
 	latestBlockHeight := dmp.latestBlockNode.Height
 
 	// Validate that the user has enough balance to cover the transaction fees.
-	if err := dmp.ledger.CheckBalanceIncrease(*userPk, txnFee, dmp.latestBlockView, latestBlockHeight); err != nil {
+	spendableBalanceNanos, err := dmp.latestBlockView.GetSpendableDeSoBalanceNanosForPublicKey(userPk.ToBytes(), latestBlockHeight)
+	if err != nil {
+		return errors.Wrapf(err, "CheckBalanceIncrease: Problem getting spendable balance")
+	}
+	if err := dmp.ledger.CheckBalanceIncrease(*userPk, txnFee, spendableBalanceNanos); err != nil {
 		return errors.Wrapf(err, "PosMempool.AddTransaction: Problem checking balance increase for transaction with"+
 			"hash %v, fee %v", txn.Tx.Hash(), txnFee)
 	}
@@ -197,8 +197,7 @@ func (dmp *PosMempool) prune() error {
 		return nil
 	}
 
-	pruneSizeBytes := dmp.params.MaxMempoolPosSizeBytes / MempoolPruneFactor
-	prunedTxns, err := dmp.txnRegister.Prune(pruneSizeBytes)
+	prunedTxns, err := dmp.txnRegister.PruneToSize(dmp.params.MaxMempoolPosSizeBytes)
 	if err != nil {
 		return errors.Wrapf(err, "PosMempool.prune: Problem pruning mempool")
 	}
