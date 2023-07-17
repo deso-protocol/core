@@ -171,6 +171,9 @@ func (bav *UtxoView) FlushToDbWithTxn(txn *badger.Txn, blockHeight uint64) error
 	if err := bav._flushSnapshotLeaderScheduleToDbWithTxn(txn, blockHeight); err != nil {
 		return err
 	}
+	if err := bav._flushSnapshotStakesToRewardToDbWithTxn(txn, blockHeight); err != nil {
+		return err
+	}
 	return nil
 }
 
