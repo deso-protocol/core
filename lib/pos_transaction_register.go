@@ -114,8 +114,7 @@ func (tr *TransactionRegister) addTransactionNoLock(txn *MempoolTx) error {
 
 	if !bucketExists {
 		// If the bucket didn't exist, add it to the set and the map.
-		tr.feeTimeBucketSet.Add(bucket)
-		tr.feeTimeBucketsByMinFeeMap[bucketMinFeeNanosPerKb] = bucket
+		tr.addBucket(bucket)
 	}
 
 	tr.totalTxnsSizeBytes += txn.TxSizeBytes
@@ -169,7 +168,20 @@ func (tr *TransactionRegister) removeTransactionNoLock(txn *MempoolTx) error {
 	return nil
 }
 
+func (tr *TransactionRegister) addBucket(bucket *FeeTimeBucket) {
+	if bucket == nil {
+		return
+	}
+
+	tr.feeTimeBucketSet.Add(bucket)
+	tr.feeTimeBucketsByMinFeeMap[bucket.minFeeNanosPerKB] = bucket
+}
+
 func (tr *TransactionRegister) removeBucket(bucket *FeeTimeBucket) {
+	if bucket == nil {
+		return
+	}
+
 	tr.feeTimeBucketSet.Remove(bucket)
 	bucket.Clear()
 	delete(tr.feeTimeBucketsByMinFeeMap, bucket.minFeeNanosPerKB)
@@ -254,7 +266,7 @@ func (tr *TransactionRegister) PruneToSize(maxSizeBytes uint64) (_prunedTxns []*
 		return nil, nil
 	}
 
-	// Determine how many bytes we need to prune, and get the transactions to prune.
+	// Determine how many bytes we need to prune and get the transactions to prune.
 	minPrunedBytes := tr.totalTxnsSizeBytes - maxSizeBytes
 	prunedTxns, err := tr.getTransactionsToPrune(minPrunedBytes)
 	if err != nil {
