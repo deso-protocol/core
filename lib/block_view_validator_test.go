@@ -1846,8 +1846,7 @@ func TestUnjailValidatorWithDerivedKey(t *testing.T) {
 		// Jail the sender.
 		tmpUtxoView, err := NewUtxoView(db, params, chain.postgres, chain.snapshot)
 		require.NoError(t, err)
-		err = tmpUtxoView.JailValidator(validatorEntry)
-		require.NoError(t, err)
+		require.NoError(t, tmpUtxoView.JailValidator(validatorEntry))
 		require.NoError(t, tmpUtxoView.FlushToDb(blockHeight))
 
 		// Delete sender's ValidatorEntry from the UtxoView so that it is read from the db.
