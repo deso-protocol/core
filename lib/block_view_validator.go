@@ -1816,65 +1816,53 @@ func (bav *UtxoView) GetTopActiveValidatorsByStakeAmount(limit uint64) ([]*Valid
 	return validatorEntries[0:upperBound], nil
 }
 
-func (bav *UtxoView) JailAllInactiveValidators(blockHeight uint64) error {
-	// First, iterate through all of the !isDeleted ValidatorEntries in the UtxoView and
-	// jail any that are inactive.
-	var utxoViewValidatorPKIDs []*PKID
-	for _, validatorEntry := range bav.ValidatorPKIDToValidatorEntry {
-		// We don't want to retrieve any ValidatorEntries from the db that are present in the UtxoView.
-		utxoViewValidatorPKIDs = append(utxoViewValidatorPKIDs, validatorEntry.ValidatorPKID)
-
-		if validatorEntry.isDeleted {
-			continue
-		}
-
-		// Check if we should jail the validator.
-		shouldJailValidator, err := bav.ShouldJailValidator(validatorEntry, blockHeight)
-		if err != nil {
-			return errors.Wrapf(
-				err,
-				"JailAllInactiveValidators: problem determining if should jail validator %v: ",
-				validatorEntry.ValidatorPKID,
-			)
-		}
-
-		// If this validator should not be jailed, continue to the next validator.
-		if !shouldJailValidator {
-			continue
-		}
-
-		// If we get here, then the validator should be jailed.
-		if err = bav.JailValidator(validatorEntry); err != nil {
-			return errors.Wrapf(
-				err, "JailAllInactiveValidators: problem jailing validator %v: ", validatorEntry.ValidatorPKID,
-			)
-		}
+func (bav *UtxoView) JailInactiveSnapshotValidators(blockHeight uint64) error {
+	// Check if we have switched from PoW to PoS yet. If we have not, then the PoS consensus
+	// has not started. We don't want to jail any validators until they have had the opportunity
+	// to participate in the consensus and are known to be inactive.
+	if blockHeight < uint64(bav.Params.ForkHeights.ProofOfStake2ConsensusCutoverBlockHeight) {
+		return nil
 	}
 
-	// Second, iterate through all the ValidatorEntries in the db and jail any that are inactive.
-	dbValidatorEntries, err := DBEnumerateAllCurrentValidators(bav.Handle, utxoViewValidatorPKIDs)
+	snapshotGlobalParams, err := bav.GetSnapshotGlobalParamsEntry()
 	if err != nil {
-		return errors.Wrapf(err, "JailAllInactiveValidators: problem retrieving ValidatorEntries: ")
+		return errors.Wrapf(err, "UtxoView.JailInactiveSnapshotValidators: ")
 	}
 
-	for _, validatorEntry := range dbValidatorEntries {
-		// Check if we should jail the validator.
-		shouldJailValidator, err := bav.ShouldJailValidator(validatorEntry, blockHeight)
+	// Get the current snapshot validator set. These are the only validator what were
+	// able to participate in consensus for the current epoch. Only the inactive validators
+	// from this set can be jailed.
+	snapshotValidatorSet, err := bav.GetSnapshotValidatorSetByStakeAmount(
+		// The max size of the validator set is captured via the global params. This is the same
+		// param used to define the size of the validator set when first snapshotting it.
+		snapshotGlobalParams.ValidatorSetMaxNumValidators,
+	)
+
+	// Iterate through all of the validators in the snapshot validator set and jail any inactive ones.
+	for _, snapshotValidatorEntry := range snapshotValidatorSet {
+		currentValidatorEntry, err := bav.GetValidatorByPKID(snapshotValidatorEntry.ValidatorPKID)
 		if err != nil {
-			return errors.Wrapf(
-				err, "JailAllInactiveValidators: problem determining if should jail validator %v: ", validatorEntry.ValidatorPKID,
-			)
+			return errors.Wrapf(err, "UtxoView.JailInactiveSnapshotValidators: ")
 		}
 
-		// If this validator should not be jailed, continue to the next validator.
+		if currentValidatorEntry == nil || currentValidatorEntry.isDeleted {
+			// If the validator doesn't exist or has just been deleted, we don't need to do anything.
+			continue
+		}
+
+		shouldJailValidator, err := bav.ShouldJailValidator(currentValidatorEntry, blockHeight)
+		if err != nil {
+			return errors.Wrapf(err, "UtxoView.JailInactiveSnapshotValidators: ")
+		}
+
 		if !shouldJailValidator {
 			continue
 		}
 
 		// If we get here, then the validator should be jailed.
-		if err = bav.JailValidator(validatorEntry); err != nil {
+		if err = bav.JailValidator(currentValidatorEntry); err != nil {
 			return errors.Wrapf(
-				err, "JailAllInactiveValidators: problem jailing validator %v: ", validatorEntry.ValidatorPKID,
+				err, "UtxoView.JailInactiveSnapshotValidators: problem jailing validator %v: ", currentValidatorEntry.ValidatorPKID,
 			)
 		}
 	}
@@ -1883,20 +1871,6 @@ func (bav *UtxoView) JailAllInactiveValidators(blockHeight uint64) error {
 }
 
 func (bav *UtxoView) ShouldJailValidator(validatorEntry *ValidatorEntry, blockHeight uint64) (bool, error) {
-	// Return false if we haven't switched from PoW to PoS yet. Otherwise,
-	// there would be an edge case where all validators will get jailed
-	// after we deploy the StateSetup block height, but before we deploy
-	// the ConsensusCutover block height.
-	//
-	// We do another check below to make sure enough blocks have passed even
-	// after we cut-over to PoS, but since this check is so quick to perform,
-	// we keep this one here as well, since this will catch all OnEpochCompleteHooks
-	// after the StateSetup block height and before the CutoverConsensus block height
-	// and saves us a few look-ups and computations.
-	if blockHeight < uint64(bav.Params.ForkHeights.ProofOfStake2ConsensusCutoverBlockHeight) {
-		return false, nil
-	}
-
 	// Return false if the validator is already jailed. We do not want to jail
 	// them again as we want to retain their original JailedAtEpochNumber so
 	// that they can eventually unjail themselves.
