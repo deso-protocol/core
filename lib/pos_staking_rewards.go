@@ -48,6 +48,7 @@ func (bav *UtxoView) DistributeStakingRewardsToSnapshotStakes() ([]*UtxoOperatio
 	// Create a list of UtxoOperations to return. This will be populated with all of the operations in which
 	// we distributed rewards to stakers.
 	utxoOps := []*UtxoOperation{}
+	prevStakeEntries := []*StakeEntry{}
 
 	// Loop through all of the snapshot stakes and reward them.
 	for _, snapshotStakeEntry := range snapshotStakesToReward {
@@ -78,15 +79,11 @@ func (bav *UtxoView) DistributeStakingRewardsToSnapshotStakes() ([]*UtxoOperatio
 
 		// For case 1, we distribute the rewards by adding them to the staker's staked amount.
 		if stakeEntry != nil && stakeEntry.RestakeRewards {
-			utxoOp := &UtxoOperation{
-				Type:             OperationTypeStake,
-				PrevStakeEntries: []*StakeEntry{stakeEntry.Copy()},
-			}
+			prevStakeEntries = append(prevStakeEntries, stakeEntry.Copy())
 
 			stakeEntry.StakeAmountNanos.Add(stakeEntry.StakeAmountNanos, rewardAmount)
 			bav._setStakeEntryMappings(stakeEntry)
 
-			utxoOps = append(utxoOps, utxoOp)
 			continue
 		}
 
@@ -104,7 +101,15 @@ func (bav *UtxoView) DistributeStakingRewardsToSnapshotStakes() ([]*UtxoOperatio
 		utxoOps = append(utxoOps, utxoOp)
 	}
 
-	return nil, nil
+	// Merge all UtxoOps. The order doesn't matter here since the total reward distribution per staker
+	// is independent of the order in which the stakes are processed.
+	prevStakeEntriesUtxoOp := &UtxoOperation{
+		Type:             OperationTypeStake,
+		PrevStakeEntries: prevStakeEntries,
+	}
+	utxoOps = append(utxoOps, prevStakeEntriesUtxoOp)
+
+	return utxoOps, nil
 }
 
 // This function is a placeholder that rewards a constant 10 DESO in staking rewards per epoch.
