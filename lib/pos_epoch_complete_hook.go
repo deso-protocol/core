@@ -29,26 +29,26 @@ func (bav *UtxoView) IsLastBlockInCurrentEpoch(blockHeight uint64) (bool, error)
 }
 
 // RunEpochCompleteHook performs all of the end-of-epoch operations when connecting the final
-// block of a epoch. The epoch completion has three steps.
+// block of a epoch. The epoch completion hook has three steps.
 //
 // Step 1: Run all state-mutating operations that need to be run when completing an epoch. We always
 // perform state-mutating operations before creating snapshots. This way, the snapshot created at the
 // end of epoch n always reflects the state of the view at the end of epoch n after all state-mutating
 // operations have been applied in the epoch.
-// 1. Jail all inactive validators from the current snapshot validator set.
-// 2. Reward all snapshotted stakes from the current snapshot validator set.
+// - Jail all inactive validators from the current snapshot validator set.
+// - Reward all snapshotted stakes from the current snapshot validator set.
 //
 // Step 2: Create snapshots of the current state. Snapshotting operations here should only create new
 // snapshot state. They should have no other side effects that mutate the existing state of the view.
-// 1. Snapshot the current GlobalParamsEntry.
-// 2. Snapshot the current validator set.
-// 3. Snapshot the current validator set's TotalStakeAmountNanos.
-// 4. Snapshot the leader schedule.
-// 5. Snapshot the current top N stake entries, who will receive staking rewards.
+// - Snapshot the current GlobalParamsEntry.
+// - Snapshot the current validator set.
+// - Snapshot the current validator set's TotalStakeAmountNanos.
+// - Snapshot the leader schedule.
+// - Snapshot the current top N stake entries, who will receive staking rewards.
 //
 // Step 3: Roll over to the next epoch.
-// 1. Compute the final block height for the next epoch.
-// 2. Update CurrentEpochEntry to the next epoch's.
+// - Compute the final block height for the next epoch.
+// - Update CurrentEpochEntry to the next epoch's.
 func (bav *UtxoView) RunEpochCompleteHook(blockHeight uint64) error {
 	// Sanity-check that the current block is the last block in the current epoch.
 	//
@@ -62,7 +62,7 @@ func (bav *UtxoView) RunEpochCompleteHook(blockHeight uint64) error {
 		return errors.New("RunEpochCompleteHook: called before current epoch is complete, this should never happen")
 	}
 
-	// -------------------------------- Run all State Mutating Operations --------------------------------
+	// -------------------------------- Run All State Mutating Operations --------------------------------
 
 	// Jail all inactive validators from the current snapshot validator set. This is an O(n) operation
 	// that loops through all active unjailed validators from current epoch's snapshot validator set
@@ -81,7 +81,7 @@ func (bav *UtxoView) RunEpochCompleteHook(blockHeight uint64) error {
 		return errors.Wrapf(err, "RunEpochCompleteHook: problem rewarding snapshot stakes: ")
 	}
 
-	// --------------------------------- Run all Snapshotting Operations ---------------------------------
+	// --------------------------------- Run All Snapshotting Operations ---------------------------------
 
 	// Retrieve the CurrentEpochEntry.
 	currentEpochEntry, err := bav.GetCurrentEpochEntry()
