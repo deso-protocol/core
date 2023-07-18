@@ -132,6 +132,9 @@ func (stateChangeEntry *StateChangeEntry) RawDecodeWithoutMetadata(blockHeight u
 		return errors.Wrapf(err, "StateChangeEntry.RawDecodeWithoutMetadata: error decoding encoder")
 	}
 
+	// Store the encoder bytes.
+	stateChangeEntry.EncoderBytes = EncodeToBytes(blockHeight, encoder)
+
 	// Decode the ancestral record bytes.
 	ancestralRecord := stateChangeEntry.EncoderType.New()
 	if exist, err := DecodeFromBytes(ancestralRecord, rr); exist && err == nil {
