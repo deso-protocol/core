@@ -377,7 +377,7 @@ func (txnData *UnlockStakeMetadata) New() DeSoTxnMetadata {
 type StakeTxindexMetadata struct {
 	StakerPublicKeyBase58Check    string
 	ValidatorPublicKeyBase58Check string
-	RestakeRewards                bool
+	RewardMethod                  StakeRewardMethod
 	StakeAmountNanos              *uint256.Int
 }
 
@@ -385,7 +385,7 @@ func (txindexMetadata *StakeTxindexMetadata) RawEncodeWithoutMetadata(blockHeigh
 	var data []byte
 	data = append(data, EncodeByteArray([]byte(txindexMetadata.StakerPublicKeyBase58Check))...)
 	data = append(data, EncodeByteArray([]byte(txindexMetadata.ValidatorPublicKeyBase58Check))...)
-	data = append(data, BoolToByte(txindexMetadata.RestakeRewards))
+	data = append(data, txindexMetadata.RewardMethod)
 	data = append(data, VariableEncodeUint256(txindexMetadata.StakeAmountNanos)...)
 	return data
 }
@@ -407,10 +407,10 @@ func (txindexMetadata *StakeTxindexMetadata) RawDecodeWithoutMetadata(blockHeigh
 	}
 	txindexMetadata.ValidatorPublicKeyBase58Check = string(validatorPublicKeyBase58CheckBytes)
 
-	// RestakeRewards
-	txindexMetadata.RestakeRewards, err = ReadBoolByte(rr)
+	// RewardMethod
+	txindexMetadata.RewardMethod, err = rr.ReadByte()
 	if err != nil {
-		return errors.Wrapf(err, "StakeTxindexMetadata.Decode: Problem reading RestakeRewards: ")
+		return errors.Wrapf(err, "StakeTxindexMetadata.Decode: Problem reading RewardMethod: ")
 	}
 
 	// StakeAmountNanos

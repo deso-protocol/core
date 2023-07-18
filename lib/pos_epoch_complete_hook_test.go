@@ -467,7 +467,7 @@ func TestRunEpochCompleteHook(t *testing.T) {
 		require.Len(t, snapshotStakeEntries, 6)
 	}
 	{
-		// Test staking rewards distribution with RestakeRewards enabled.
+		// Test staking rewards distribution with restaking enabled.
 
 		// m6 now has a 14333333578 nano balance from staking rewards so far.
 		balance, err := utxoView().GetDeSoBalanceNanosForPublicKey(m6PkBytes)
@@ -483,14 +483,14 @@ func TestRunEpochCompleteHook(t *testing.T) {
 		require.Equal(t, balance, uint64(16747126681))
 	}
 	{
-		// Test staking rewards distribution with RestakeRewards enabled.
+		// Test staking rewards distribution with restaking enabled.
 
 		// m6 has 700 nanos staked.
 		stakeEntry, err := utxoView().GetStakeEntry(m6PKID, m6PKID)
 		require.NoError(t, err)
 		require.Equal(t, stakeEntry.StakeAmountNanos, uint256.NewInt().SetUint64(700))
 
-		// m6 sets their RestakeRewards flag to true.
+		// m6 enables restaking.
 		_registerAndStake(m6Pub, m6Priv, 0, true)
 
 		// m6's wallet balance is 16747126627 after they submit their stake transaction.

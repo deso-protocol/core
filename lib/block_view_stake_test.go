@@ -281,7 +281,7 @@ func _testStaking(t *testing.T, flushToDB bool) {
 		require.Equal(t, m1OldDESOBalanceNanos-feeNanos-stakeMetadata.StakeAmountNanos.Uint64(), m1NewDESOBalanceNanos)
 	}
 	{
-		// m1 changes the RestakeRewards flag on their stake with m0.
+		// m1 changes the RewardMethod value on their stake with m0.
 		m1OldDESOBalanceNanos := getDESOBalanceNanos(m1PkBytes)
 		stakeMetadata := &StakeMetadata{
 			ValidatorPublicKey: NewPublicKey(m0PkBytes),
