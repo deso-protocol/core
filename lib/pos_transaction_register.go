@@ -250,8 +250,9 @@ func (tr *TransactionRegister) GetFeeTimeTransactions() []*MempoolTx {
 }
 
 // PruneToSize removes transactions from the end of the register until the size of the register shrinks to the desired
-// number. The returned transactions are ordered by lowest-to-highest priority, i.e. first transaction will have the
-// smallest fee, last transaction will have the highest fee. Returns no error if no transactions were pruned.
+// number of bytes. The returned transactions, _prunedTxns, are ordered by lowest-to-highest priority, i.e. first
+// transaction will have the smallest fee, last transaction will have the highest fee. Returns _err = nil if no
+// transactions were pruned.
 func (tr *TransactionRegister) PruneToSize(maxSizeBytes uint64) (_prunedTxns []*MempoolTx, _err error) {
 	tr.Lock()
 	defer tr.Unlock()
@@ -311,26 +312,18 @@ func (tr *TransactionRegister) getTransactionsToPrune(minPrunedBytes uint64) (_p
 				return nil, fmt.Errorf("TransactionRegister.getTransactionsToPrune: " +
 					"Error casting value of MempoolTx")
 			}
-			// Make sure that, somehow, the number of pruned bytes doesn't overflow uint64.
-			if prunedBytes > math.MaxUint64-txn.TxSizeBytes {
-				return nil, fmt.Errorf("TransactionRegister.getTransactionsToPrune: "+
-					"Error pruning %v bytes from register: prunedBytes %v exceeds max uint64", minPrunedBytes, prunedBytes)
-			}
 			// Add the transaction to the prunedTxns list.
 			prunedTxns = append(prunedTxns, txn)
 			prunedBytes += txn.TxSizeBytes
-			// If we've pruned sufficiently many bytes, we can break.
+			// If we've pruned sufficiently many bytes, we can return early.
 			if prunedBytes >= minPrunedBytes {
-				break
+				return prunedTxns, nil
 			}
-		}
-
-		// If we've pruned sufficiently many bytes, we can break.
-		if prunedBytes >= minPrunedBytes {
-			break
 		}
 	}
 
+	// If we reach this point, it means that we've iterated through the entire TransactionRegister and have no remaining
+	// transactions to prune. We can return the txns we've found so far.
 	return prunedTxns, nil
 }
 
