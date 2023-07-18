@@ -125,7 +125,7 @@ func _testStaking(t *testing.T, flushToDB bool) {
 
 		stakeMetadata := &StakeMetadata{
 			ValidatorPublicKey: NewPublicKey(m0PkBytes),
-			RewardMethod:       StakeRewardMethodPayToBalance,
+			RewardMethod:       StakingRewardMethodPayToBalance,
 			StakeAmountNanos:   uint256.NewInt().SetUint64(100),
 		}
 		_, err = _submitStakeTxn(
@@ -142,7 +142,7 @@ func _testStaking(t *testing.T, flushToDB bool) {
 		// RuleErrorInvalidValidatorPKID
 		stakeMetadata := &StakeMetadata{
 			ValidatorPublicKey: NewPublicKey(m2PkBytes),
-			RewardMethod:       StakeRewardMethodPayToBalance,
+			RewardMethod:       StakingRewardMethodPayToBalance,
 			StakeAmountNanos:   uint256.NewInt(),
 		}
 		_, err = _submitStakeTxn(
@@ -152,7 +152,7 @@ func _testStaking(t *testing.T, flushToDB bool) {
 		require.Contains(t, err.Error(), RuleErrorInvalidValidatorPKID)
 	}
 	{
-		// RuleErrorInvalidStakeRewardMethod
+		// RuleErrorInvalidStakingRewardMethod
 		stakeMetadata := &StakeMetadata{
 			ValidatorPublicKey: NewPublicKey(m0PkBytes),
 			RewardMethod:       99,
@@ -162,13 +162,13 @@ func _testStaking(t *testing.T, flushToDB bool) {
 			testMeta, m1Pub, m1Priv, stakeMetadata, nil, flushToDB,
 		)
 		require.Error(t, err)
-		require.Contains(t, err.Error(), RuleErrorInvalidStakeRewardMethod)
+		require.Contains(t, err.Error(), RuleErrorInvalidStakingRewardMethod)
 	}
 	{
 		// RuleErrorInvalidStakeAmountNanos
 		stakeMetadata := &StakeMetadata{
 			ValidatorPublicKey: NewPublicKey(m0PkBytes),
-			RewardMethod:       StakeRewardMethodPayToBalance,
+			RewardMethod:       StakingRewardMethodPayToBalance,
 			StakeAmountNanos:   nil,
 		}
 		_, err = _submitStakeTxn(
@@ -181,7 +181,7 @@ func _testStaking(t *testing.T, flushToDB bool) {
 		// RuleErrorInvalidStakeAmountNanos
 		stakeMetadata := &StakeMetadata{
 			ValidatorPublicKey: NewPublicKey(m0PkBytes),
-			RewardMethod:       StakeRewardMethodPayToBalance,
+			RewardMethod:       StakingRewardMethodPayToBalance,
 			StakeAmountNanos:   uint256.NewInt(),
 		}
 		_, err = _submitStakeTxn(
@@ -194,7 +194,7 @@ func _testStaking(t *testing.T, flushToDB bool) {
 		// RuleErrorInvalidStakeAmountNanos
 		stakeMetadata := &StakeMetadata{
 			ValidatorPublicKey: NewPublicKey(m0PkBytes),
-			RewardMethod:       StakeRewardMethodPayToBalance,
+			RewardMethod:       StakingRewardMethodPayToBalance,
 			StakeAmountNanos:   MaxUint256,
 		}
 		_, err = _submitStakeTxn(
@@ -207,7 +207,7 @@ func _testStaking(t *testing.T, flushToDB bool) {
 		// RuleErrorInvalidStakeInsufficientBalance
 		stakeMetadata := &StakeMetadata{
 			ValidatorPublicKey: NewPublicKey(m0PkBytes),
-			RewardMethod:       StakeRewardMethodPayToBalance,
+			RewardMethod:       StakingRewardMethodPayToBalance,
 			StakeAmountNanos:   uint256.NewInt().SetUint64(math.MaxUint64),
 		}
 		_, err = _submitStakeTxn(
@@ -221,7 +221,7 @@ func _testStaking(t *testing.T, flushToDB bool) {
 		m1OldDESOBalanceNanos := getDESOBalanceNanos(m1PkBytes)
 		stakeMetadata := &StakeMetadata{
 			ValidatorPublicKey: NewPublicKey(m0PkBytes),
-			RewardMethod:       StakeRewardMethodPayToBalance,
+			RewardMethod:       StakingRewardMethodPayToBalance,
 			StakeAmountNanos:   uint256.NewInt().SetUint64(100),
 		}
 		extraData := map[string][]byte{"TestKey": []byte("TestValue")}
@@ -234,7 +234,7 @@ func _testStaking(t *testing.T, flushToDB bool) {
 		stakeEntry, err := utxoView().GetStakeEntry(m0PKID, m1PKID)
 		require.NoError(t, err)
 		require.NotNil(t, stakeEntry)
-		require.Equal(t, stakeEntry.RewardMethod, StakeRewardMethodPayToBalance)
+		require.Equal(t, stakeEntry.RewardMethod, StakingRewardMethodPayToBalance)
 		require.Equal(t, stakeEntry.StakeAmountNanos, uint256.NewInt().SetUint64(100))
 		require.Equal(t, stakeEntry.ExtraData["TestKey"], []byte("TestValue"))
 
@@ -253,7 +253,7 @@ func _testStaking(t *testing.T, flushToDB bool) {
 		m1OldDESOBalanceNanos := getDESOBalanceNanos(m1PkBytes)
 		stakeMetadata := &StakeMetadata{
 			ValidatorPublicKey: NewPublicKey(m0PkBytes),
-			RewardMethod:       StakeRewardMethodPayToBalance,
+			RewardMethod:       StakingRewardMethodPayToBalance,
 			StakeAmountNanos:   uint256.NewInt().SetUint64(50),
 		}
 		extraData := map[string][]byte{"TestKey": []byte("TestValue2")}
@@ -266,7 +266,7 @@ func _testStaking(t *testing.T, flushToDB bool) {
 		stakeEntry, err := utxoView().GetStakeEntry(m0PKID, m1PKID)
 		require.NoError(t, err)
 		require.NotNil(t, stakeEntry)
-		require.Equal(t, stakeEntry.RewardMethod, StakeRewardMethodPayToBalance)
+		require.Equal(t, stakeEntry.RewardMethod, StakingRewardMethodPayToBalance)
 		require.Equal(t, stakeEntry.StakeAmountNanos, uint256.NewInt().SetUint64(150))
 		require.Equal(t, stakeEntry.ExtraData["TestKey"], []byte("TestValue2"))
 
@@ -285,7 +285,7 @@ func _testStaking(t *testing.T, flushToDB bool) {
 		m1OldDESOBalanceNanos := getDESOBalanceNanos(m1PkBytes)
 		stakeMetadata := &StakeMetadata{
 			ValidatorPublicKey: NewPublicKey(m0PkBytes),
-			RewardMethod:       StakeRewardMethodRestake,
+			RewardMethod:       StakingRewardMethodRestake,
 			StakeAmountNanos:   uint256.NewInt(),
 		}
 		extraData := map[string][]byte{"TestKey": []byte("TestValue2")}
@@ -301,8 +301,8 @@ func _testStaking(t *testing.T, flushToDB bool) {
 		require.Equal(t, stakeEntry.StakeAmountNanos, uint256.NewInt().SetUint64(150))
 		require.Equal(t, stakeEntry.ExtraData["TestKey"], []byte("TestValue2"))
 
-		// Verify the StakeEntry.RewardMethod has changed to StakeRewardMethodRestake.
-		require.Equal(t, stakeEntry.RewardMethod, StakeRewardMethodRestake)
+		// Verify the StakeEntry.RewardMethod has changed to StakingRewardMethodRestake.
+		require.Equal(t, stakeEntry.RewardMethod, StakingRewardMethodRestake)
 
 		// Verify the ValidatorEntry.TotalStakeAmountNanos does not change.
 		validatorEntry, err := utxoView().GetValidatorByPKID(m0PKID)
@@ -1740,7 +1740,7 @@ func _testGetTopStakesByStakeAmount(t *testing.T, flushToDB bool) {
 	constructAndSubmitStakeTxn := func(stakerPk string, stakerPriv string, validatorPkBytes []byte, amountNanos uint64) {
 		stakeMetadata := &StakeMetadata{
 			ValidatorPublicKey: NewPublicKey(validatorPkBytes),
-			RewardMethod:       StakeRewardMethodPayToBalance,
+			RewardMethod:       StakingRewardMethodPayToBalance,
 			StakeAmountNanos:   uint256.NewInt().SetUint64(amountNanos),
 		}
 		_, err := _submitStakeTxn(testMeta, stakerPk, stakerPriv, stakeMetadata, nil, flushToDB)

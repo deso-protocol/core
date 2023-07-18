@@ -32,17 +32,17 @@ import (
 // TYPES: StakeEntry
 //
 
-type StakeRewardMethod = uint8
+type StakingRewardMethod = uint8
 
 const (
-	StakeRewardMethodPayToBalance StakeRewardMethod = iota
-	StakeRewardMethodRestake      StakeRewardMethod = 1
+	StakingRewardMethodPayToBalance StakingRewardMethod = iota
+	StakingRewardMethodRestake      StakingRewardMethod = 1
 )
 
 type StakeEntry struct {
 	StakerPKID       *PKID
 	ValidatorPKID    *PKID
-	RewardMethod     StakeRewardMethod
+	RewardMethod     StakingRewardMethod
 	StakeAmountNanos *uint256.Int
 	ExtraData        map[string][]byte
 	isDeleted        bool
@@ -231,7 +231,7 @@ func (lockedStakeEntry *LockedStakeEntry) GetEncoderType() EncoderType {
 
 type StakeMetadata struct {
 	ValidatorPublicKey *PublicKey
-	RewardMethod       StakeRewardMethod
+	RewardMethod       StakingRewardMethod
 	StakeAmountNanos   *uint256.Int
 }
 
@@ -377,7 +377,7 @@ func (txnData *UnlockStakeMetadata) New() DeSoTxnMetadata {
 type StakeTxindexMetadata struct {
 	StakerPublicKeyBase58Check    string
 	ValidatorPublicKeyBase58Check string
-	RewardMethod                  StakeRewardMethod
+	RewardMethod                  StakingRewardMethod
 	StakeAmountNanos              *uint256.Int
 }
 
@@ -1987,8 +1987,8 @@ func (bav *UtxoView) IsValidStakeMetadata(transactorPkBytes []byte, metadata *St
 	}
 
 	// Validate RewardMethod.
-	if metadata.RewardMethod != StakeRewardMethodPayToBalance && metadata.RewardMethod != StakeRewardMethodRestake {
-		return errors.Wrapf(RuleErrorInvalidStakeRewardMethod, "UtxoView.IsValidStakeMetadata: ")
+	if metadata.RewardMethod != StakingRewardMethodPayToBalance && metadata.RewardMethod != StakingRewardMethodRestake {
+		return errors.Wrapf(RuleErrorInvalidStakingRewardMethod, "UtxoView.IsValidStakeMetadata: ")
 	}
 
 	// Validate 0 <= StakeAmountNanos <= transactor's DESO Balance. We ignore
@@ -3104,7 +3104,7 @@ func (bav *UtxoView) IsValidStakeLimitKey(transactorPublicKeyBytes []byte, stake
 //
 
 const RuleErrorInvalidStakerPKID RuleError = "RuleErrorInvalidStakerPKID"
-const RuleErrorInvalidStakeRewardMethod RuleError = "RuleErrorInvalidStakeRewardMethod"
+const RuleErrorInvalidStakingRewardMethod RuleError = "RuleErrorInvalidStakingRewardMethod"
 const RuleErrorInvalidStakeAmountNanos RuleError = "RuleErrorInvalidStakeAmountNanos"
 const RuleErrorInvalidStakeInsufficientBalance RuleError = "RuleErrorInvalidStakeInsufficientBalance"
 const RuleErrorInvalidStakeValidatorDisabledDelegatedStake RuleError = "RuleErrorInvalidStakeValidatorDisabledDelegatedStake"
