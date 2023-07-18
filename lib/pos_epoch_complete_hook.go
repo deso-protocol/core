@@ -29,9 +29,16 @@ func (bav *UtxoView) IsLastBlockInCurrentEpoch(blockHeight uint64) (bool, error)
 }
 
 // RunEpochCompleteHook performs all of the end-of-epoch operations when connecting the final
-// block of a epoch. There epoch completion has two steps.
+// block of a epoch. The epoch completion has three steps.
 //
-// Step 1: Create snapshots of current state. Snapshotting operations here should only create new
+// Step 1: Run all state-mutating operations that need to be run when completing an epoch. We always
+// perform state-mutating operations before creating snapshots. This way, the snapshot created at the
+// end of epoch n always reflects the state of the view at the end of epoch n after all state-mutating
+// operations have been applied in the epoch.
+// 1. Jail all inactive validators from the current snapshot validator set.
+// 2. Reward all snapshotted stakes from the current snapshot validator set.
+//
+// Step 2: Create snapshots of the current state. Snapshotting operations here should only create new
 // snapshot state. They should have no other side effects that mutate the existing state of the view.
 // 1. Snapshot the current GlobalParamsEntry.
 // 2. Snapshot the current validator set.
@@ -39,22 +46,14 @@ func (bav *UtxoView) IsLastBlockInCurrentEpoch(blockHeight uint64) (bool, error)
 // 4. Snapshot the leader schedule.
 // 5. Snapshot the current top N stake entries, who will receive staking rewards.
 //
-// Step 2: Transition to the next epoch. This runs all state-mutating operations that need to be run for
-// the epoch transition. We always perform state-mutating operations after creating snapshots. This way,
-// the snapshot created at the end of epoch n always reflects the state of the view at the end of epoch n.
-// And it does not reflect the state changes that occur AFTER epoch n ends and before epoch n+1 BEGINS.
-// 1. Jail all inactive validators from the current snapshot validator set.
-// 2. Reward all snapshotted stakes from the current snapshot validator set.
-// 3. Compute the final block height for the next epoch.
-// 4. Transition CurrentEpochEntry to the next epoch.
+// Step 3: Roll over to the next epoch.
+// 1. Compute the final block height for the next epoch.
+// 2. Update CurrentEpochEntry to the next epoch's.
 func (bav *UtxoView) RunEpochCompleteHook(blockHeight uint64) error {
-	// Rolls-over the current epoch into a new one. Handles the associated snapshotting + accounting.
-
 	// Sanity-check that the current block is the last block in the current epoch.
 	//
-	// Note that this will also return true if we're currently at the
-	// ProofOfStake1StateSetupBlockHeight so that we can run the hook for the first time
-	// to initialize the CurrentEpochEntry.
+	// Note that this will also return true if we're currently at the ProofOfStake1StateSetupBlockHeight
+	// so that we can run the hook for the first time to initialize the CurrentEpochEntry.
 	isLastBlockInCurrentEpoch, err := bav.IsLastBlockInCurrentEpoch(blockHeight)
 	if err != nil {
 		return errors.Wrapf(err, "RunEpochCompleteHook: ")
@@ -62,6 +61,27 @@ func (bav *UtxoView) RunEpochCompleteHook(blockHeight uint64) error {
 	if !isLastBlockInCurrentEpoch {
 		return errors.New("RunEpochCompleteHook: called before current epoch is complete, this should never happen")
 	}
+
+	// -------------------------------- Run all State Mutating Operations --------------------------------
+
+	// Jail all inactive validators from the current snapshot validator set. This is an O(n) operation
+	// that loops through all active unjailed validators from current epoch's snapshot validator set
+	// and jails them if they have been inactive.
+	//
+	// Note, this this will only run if we are past the ProofOfStake2ConsensusCutoverBlockHeight fork height.
+	if err = bav.JailInactiveSnapshotValidators(blockHeight); err != nil {
+		return errors.Wrapf(err, "RunEpochCompleteHook: problem jailing all inactive validators: ")
+	}
+
+	// Reward all snapshotted stakes from the current snapshot validator set. This is an O(n) operation
+	// that loops through all of the snapshotted stakes and rewards them.
+	//
+	// Note, this this will only run if we are past the ProofOfStake2ConsensusCutoverBlockHeight fork height.
+	if err = bav.DistributeStakingRewardsToSnapshotStakes(blockHeight); err != nil {
+		return errors.Wrapf(err, "RunEpochCompleteHook: problem rewarding snapshot stakes: ")
+	}
+
+	// --------------------------------- Run all Snapshotting Operations ---------------------------------
 
 	// Retrieve the CurrentEpochEntry.
 	currentEpochEntry, err := bav.GetCurrentEpochEntry()
@@ -72,39 +92,86 @@ func (bav *UtxoView) RunEpochCompleteHook(blockHeight uint64) error {
 		return errors.New("RunEpochCompleteHook: CurrentEpochEntry is nil, this should never happen")
 	}
 
-	currentGlobalParamsEntry := bav.GetCurrentGlobalParamsEntry()
-
 	// Snapshot the current GlobalParamsEntry.
-	bav._setSnapshotGlobalParamsEntry(bav.GlobalParamsEntry, currentEpochEntry.EpochNumber)
+	bav._setSnapshotGlobalParamsEntry(bav.GetCurrentGlobalParamsEntry(), currentEpochEntry.EpochNumber)
 
-	// Snapshot the current top n active validators as the current validator set.
-	validatorSet, err := bav.GetTopActiveValidatorsByStakeAmount(currentGlobalParamsEntry.ValidatorSetMaxNumValidators)
+	// Snapshot the current validator set.
+	validatorSet, err := bav.generateAndSnapshotValidatorSet(currentEpochEntry.EpochNumber)
 	if err != nil {
-		return errors.Wrapf(err, "RunEpochCompleteHook: error retrieving top ValidatorEntries: ")
+		return errors.Wrapf(err, "RunEpochCompleteHook: problem snapshotting validator set: ")
+	}
+
+	// Snapshot a randomly generated leader schedule.
+	if err = bav.generateAndSnapshotLeaderSchedule(currentEpochEntry.EpochNumber); err != nil {
+		return errors.Wrapf(err, "RunEpochCompleteHook: problem snapshotting leader schedule: ")
+	}
+
+	// Snapshot the current top n stake entries as the stakes to reward.
+	if err = bav.generateAndSnapshotStakesToReward(currentEpochEntry.EpochNumber, validatorSet); err != nil {
+		return errors.Wrapf(err, "RunEpochCompleteHook: problem snapshotting stakes to reward: ")
+	}
+
+	// ----------------------------------- Roll Over to The Next Epoch -----------------------------------
+
+	// Retrieve the SnapshotGlobalParamsEntry.
+	snapshotGlobalParamsEntry, err := bav.GetSnapshotGlobalParamsEntry()
+	if err != nil {
+		return errors.Wrapf(err, "RunEpochCompleteHook: problem retrieving SnapshotGlobalParamsEntry: ")
+	}
+
+	// Calculate the NextEpochFinalBlockHeight.
+	nextEpochFinalBlockHeight, err := SafeUint64().Add(blockHeight, snapshotGlobalParamsEntry.EpochDurationNumBlocks)
+	if err != nil {
+		return errors.Wrapf(err, "RunEpochCompleteHook: problem calculating NextEpochFinalBlockHeight: ")
+	}
+
+	// Roll-over a new epoch by setting a new CurrentEpochEntry.
+	nextEpochEntry := &EpochEntry{
+		EpochNumber:      currentEpochEntry.EpochNumber + 1,
+		FinalBlockHeight: nextEpochFinalBlockHeight,
+	}
+	bav._setCurrentEpochEntry(nextEpochEntry)
+
+	return nil
+}
+
+func (bav *UtxoView) generateAndSnapshotValidatorSet(epochNumber uint64) ([]*ValidatorEntry, error) {
+	// Snapshot the current top n active validators as the current validator set.
+	validatorSet, err := bav.GetTopActiveValidatorsByStakeAmount(
+		bav.GetCurrentGlobalParamsEntry().ValidatorSetMaxNumValidators,
+	)
+	if err != nil {
+		return nil, errors.Wrapf(err, "generateAndSnapshotValidatorSet: error retrieving top ValidatorEntries: ")
 	}
 	for _, validatorEntry := range validatorSet {
-		bav._setSnapshotValidatorSetEntry(validatorEntry, currentEpochEntry.EpochNumber)
+		bav._setSnapshotValidatorSetEntry(validatorEntry, epochNumber)
 	}
 
 	// Snapshot the current validator set's total stake. Note, the validator set is already filtered to the top n
 	// active validators for the epoch. The total stake is the sum of all of the active validators' stakes.
 	globalActiveStakeAmountNanos := SumValidatorEntriesTotalStakeAmountNanos(validatorSet)
-	bav._setSnapshotValidatorSetTotalStakeAmountNanos(globalActiveStakeAmountNanos, currentEpochEntry.EpochNumber)
+	bav._setSnapshotValidatorSetTotalStakeAmountNanos(globalActiveStakeAmountNanos, epochNumber)
 
+	return validatorSet, nil
+}
+
+func (bav *UtxoView) generateAndSnapshotLeaderSchedule(epochNumber uint64) error {
 	// Generate + snapshot a leader schedule.
 	leaderSchedule, err := bav.GenerateLeaderSchedule()
 	if err != nil {
-		return errors.Wrapf(err, "RunEpochCompleteHook: problem generating leader schedule: ")
+		return errors.Wrapf(err, "generateAndSnapshotLeaderSchedule: problem generating leader schedule: ")
 	}
 	for index, validatorPKID := range leaderSchedule {
 		if index > math.MaxUint16 {
-			return errors.Errorf("RunEpochCompleteHook: LeaderIndex %d overflows uint16", index)
+			return errors.Errorf("generateAndSnapshotLeaderSchedule: LeaderIndex %d overflows uint16", index)
 		}
-		bav._setSnapshotLeaderScheduleValidator(validatorPKID, uint16(index), currentEpochEntry.EpochNumber)
+		bav._setSnapshotLeaderScheduleValidator(validatorPKID, uint16(index), epochNumber)
 	}
+}
 
+func (bav *UtxoView) generateAndSnapshotStakesToReward(epochNumber uint64, validatorSet []*ValidatorEntry) error {
 	// Snapshot the current top n stake entries.
-	topStakeEntries, err := bav.GetTopStakesByStakeAmount(currentGlobalParamsEntry.StakingRewardsMaxNumStakes)
+	topStakeEntries, err := bav.GetTopStakesByStakeAmount(bav.GetCurrentGlobalParamsEntry().StakingRewardsMaxNumStakes)
 	if err != nil {
 		return errors.Wrapf(err, "RunEpochCompleteHook: error retrieving top StakeEntries: ")
 	}
@@ -122,47 +189,13 @@ func (bav *UtxoView) RunEpochCompleteHook(blockHeight uint64) error {
 	// Snapshot only the top n stake entries that are in the validator set.
 	for _, stakeEntry := range topStakesInValidatorSet {
 		snapshotStakeEntry := SnapshotStakeEntry{
-			SnapshotAtEpochNumber: currentEpochEntry.EpochNumber,
+			SnapshotAtEpochNumber: epochNumber,
 			ValidatorPKID:         stakeEntry.ValidatorPKID,
 			StakerPKID:            stakeEntry.StakerPKID,
 			StakeAmountNanos:      stakeEntry.StakeAmountNanos,
 		}
 		bav._setSnapshotStakeToReward(&snapshotStakeEntry)
 	}
-
-	// TODO: Delete old snapshots that are no longer used.
-
-	// Retrieve the SnapshotGlobalParamsEntry.
-	snapshotGlobalParamsEntry, err := bav.GetSnapshotGlobalParamsEntry()
-	if err != nil {
-		return errors.Wrapf(err, "RunEpochCompleteHook: problem retrieving SnapshotGlobalParamsEntry: ")
-	}
-
-	// Jail all inactive validators from the current snapshot validator set. This is an O(n) operation
-	// that loops through all validators and jails them if they are inactive. A jailed validator should be
-	// considered jailed in the next epoch we are transition into.
-	if err = bav.JailInactiveSnapshotValidators(blockHeight); err != nil {
-		return errors.Wrapf(err, "RunEpochCompleteHook: problem jailing all inactive validators: ")
-	}
-
-	// Reward all snapshotted stakes from the current snapshot validator set. This is an O(n) operation
-	// that loops through all of the snapshotted stakes and rewards them.
-	if err = bav.DistributeStakingRewardsToSnapshotStakes(blockHeight); err != nil {
-		return errors.Wrapf(err, "RunEpochCompleteHook: problem rewarding snapshot stakes: ")
-	}
-
-	// Calculate the NextEpochFinalBlockHeight.
-	nextEpochFinalBlockHeight, err := SafeUint64().Add(blockHeight, snapshotGlobalParamsEntry.EpochDurationNumBlocks)
-	if err != nil {
-		return errors.Wrapf(err, "RunEpochCompleteHook: problem calculating NextEpochFinalBlockHeight: ")
-	}
-
-	// Roll-over a new epoch by setting a new CurrentEpochEntry.
-	nextEpochEntry := &EpochEntry{
-		EpochNumber:      currentEpochEntry.EpochNumber + 1,
-		FinalBlockHeight: nextEpochFinalBlockHeight,
-	}
-	bav._setCurrentEpochEntry(nextEpochEntry)
 
 	return nil
 }
