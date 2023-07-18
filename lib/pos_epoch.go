@@ -2,10 +2,11 @@ package lib
 
 import (
 	"bytes"
+	"math"
+
 	"github.com/dgraph-io/badger/v3"
 	"github.com/golang/glog"
 	"github.com/pkg/errors"
-	"math"
 )
 
 //
@@ -84,6 +85,9 @@ func (bav *UtxoView) GetCurrentEpochEntry() (*EpochEntry, error) {
 
 	// If still not found, return the GenesisEpochEntry. This will be the
 	// case prior to the first execution of the OnEpochCompleteHook.
+	//
+	// TODO: Should FinalBlockHeight be ProofOfStake1StateSetupBlockHeight for epoch 0?
+	// The fork height is exactly when epoch 0 ends. Epoch 1 begins at the following height.
 	return &EpochEntry{EpochNumber: 0, FinalBlockHeight: math.MaxUint64}, nil
 }
 

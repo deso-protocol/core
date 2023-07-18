@@ -62,72 +62,96 @@ func (bav *UtxoView) RunEpochCompleteHook(blockHeight uint64) error {
 		return errors.New("RunEpochCompleteHook: called before current epoch is complete, this should never happen")
 	}
 
-	// -------------------------------- Run All State Mutating Operations --------------------------------
+	// Retrieve the CurrentEpochEntry.
+	currentEpochEntry, err := bav.GetCurrentEpochEntry()
+	if err != nil {
+		return errors.Wrapf(err, "runEpochCompleteSnapshotGeneration: problem retrieving CurrentEpochEntry: ")
+	}
+	if currentEpochEntry == nil {
+		return errors.New("runEpochCompleteSnapshotGeneration: CurrentEpochEntry is nil, this should never happen")
+	}
 
+	// Step 1: Run All State Mutating Operations
+	if err := bav.runEpochCompleteStateMutations(blockHeight); err != nil {
+		return errors.Wrapf(err, "RunEpochCompleteHook: ")
+	}
+
+	// Step 2: Run All Snapshotting Operations
+	if err := bav.runEpochCompleteSnapshotGeneration(currentEpochEntry.EpochNumber); err != nil {
+		return errors.Wrapf(err, "RunEpochCompleteHook: ")
+	}
+
+	// Step 3: Roll Over to The Next Epoch
+	if err := bav.runEpochCompleteEpochRollover(currentEpochEntry.EpochNumber, blockHeight); err != nil {
+		return errors.Wrapf(err, "RunEpochCompleteHook: ")
+	}
+
+	return nil
+}
+
+// Runs all state-mutating operations required when completing an epoch.
+func (bav *UtxoView) runEpochCompleteStateMutations(blockHeight uint64) error {
 	// Jail all inactive validators from the current snapshot validator set. This is an O(n) operation
 	// that loops through all active unjailed validators from current epoch's snapshot validator set
 	// and jails them if they have been inactive.
 	//
 	// Note, this this will only run if we are past the ProofOfStake2ConsensusCutoverBlockHeight fork height.
-	if err = bav.JailInactiveSnapshotValidators(blockHeight); err != nil {
-		return errors.Wrapf(err, "RunEpochCompleteHook: problem jailing all inactive validators: ")
+	if err := bav.JailInactiveSnapshotValidators(blockHeight); err != nil {
+		return errors.Wrapf(err, "runEpochCompleteStateMutations: problem jailing all inactive validators: ")
 	}
 
 	// Reward all snapshotted stakes from the current snapshot validator set. This is an O(n) operation
 	// that loops through all of the snapshotted stakes and rewards them.
 	//
 	// Note, this this will only run if we are past the ProofOfStake2ConsensusCutoverBlockHeight fork height.
-	if err = bav.DistributeStakingRewardsToSnapshotStakes(blockHeight); err != nil {
-		return errors.Wrapf(err, "RunEpochCompleteHook: problem rewarding snapshot stakes: ")
+	if err := bav.DistributeStakingRewardsToSnapshotStakes(blockHeight); err != nil {
+		return errors.Wrapf(err, "runEpochCompleteStateMutations: problem rewarding snapshot stakes: ")
 	}
 
-	// --------------------------------- Run All Snapshotting Operations ---------------------------------
+	return nil
+}
 
-	// Retrieve the CurrentEpochEntry.
-	currentEpochEntry, err := bav.GetCurrentEpochEntry()
-	if err != nil {
-		return errors.Wrapf(err, "RunEpochCompleteHook: problem retrieving CurrentEpochEntry: ")
-	}
-	if currentEpochEntry == nil {
-		return errors.New("RunEpochCompleteHook: CurrentEpochEntry is nil, this should never happen")
-	}
-
+// Generates all required snapshots for the current epoch.
+func (bav *UtxoView) runEpochCompleteSnapshotGeneration(epochNumber uint64) error {
 	// Snapshot the current GlobalParamsEntry.
-	bav._setSnapshotGlobalParamsEntry(bav.GetCurrentGlobalParamsEntry(), currentEpochEntry.EpochNumber)
+	bav._setSnapshotGlobalParamsEntry(bav.GetCurrentGlobalParamsEntry(), epochNumber)
 
 	// Snapshot the current top m validators as the validator set.
-	validatorSet, err := bav.generateAndSnapshotValidatorSet(currentEpochEntry.EpochNumber)
+	validatorSet, err := bav.generateAndSnapshotValidatorSet(epochNumber)
 	if err != nil {
-		return errors.Wrapf(err, "RunEpochCompleteHook: problem snapshotting validator set: ")
+		return errors.Wrapf(err, "runEpochCompleteSnapshotGeneration: problem snapshotting validator set: ")
 	}
 
 	// Snapshot a randomly generated leader schedule.
-	if err = bav.generateAndSnapshotLeaderSchedule(currentEpochEntry.EpochNumber); err != nil {
-		return errors.Wrapf(err, "RunEpochCompleteHook: problem snapshotting leader schedule: ")
+	if err = bav.generateAndSnapshotLeaderSchedule(epochNumber); err != nil {
+		return errors.Wrapf(err, "runEpochCompleteSnapshotGeneration: problem snapshotting leader schedule: ")
 	}
 
 	// Snapshot the current top n stake entries as the stakes to reward.
-	if err = bav.generateAndSnapshotStakesToReward(currentEpochEntry.EpochNumber, validatorSet); err != nil {
-		return errors.Wrapf(err, "RunEpochCompleteHook: problem snapshotting stakes to reward: ")
+	if err = bav.generateAndSnapshotStakesToReward(epochNumber, validatorSet); err != nil {
+		return errors.Wrapf(err, "runEpochCompleteSnapshotGeneration: problem snapshotting stakes to reward: ")
 	}
 
-	// ----------------------------------- Roll Over to The Next Epoch -----------------------------------
+	return nil
+}
 
+// Updates the currentEpochEntry to the next epoch's.
+func (bav *UtxoView) runEpochCompleteEpochRollover(epochNumber uint64, blockHeight uint64) error {
 	// Retrieve the SnapshotGlobalParamsEntry.
 	snapshotGlobalParamsEntry, err := bav.GetSnapshotGlobalParamsEntry()
 	if err != nil {
-		return errors.Wrapf(err, "RunEpochCompleteHook: problem retrieving SnapshotGlobalParamsEntry: ")
+		return errors.Wrapf(err, "runEpochCompleteEpochRollover: problem retrieving SnapshotGlobalParamsEntry: ")
 	}
 
 	// Calculate the NextEpochFinalBlockHeight.
 	nextEpochFinalBlockHeight, err := SafeUint64().Add(blockHeight, snapshotGlobalParamsEntry.EpochDurationNumBlocks)
 	if err != nil {
-		return errors.Wrapf(err, "RunEpochCompleteHook: problem calculating NextEpochFinalBlockHeight: ")
+		return errors.Wrapf(err, "runEpochCompleteEpochRollover: problem calculating NextEpochFinalBlockHeight: ")
 	}
 
 	// Roll-over a new epoch by setting a new CurrentEpochEntry.
 	nextEpochEntry := &EpochEntry{
-		EpochNumber:      currentEpochEntry.EpochNumber + 1,
+		EpochNumber:      epochNumber + 1,
 		FinalBlockHeight: nextEpochFinalBlockHeight,
 	}
 	bav._setCurrentEpochEntry(nextEpochEntry)
