@@ -141,7 +141,7 @@ func (bav *UtxoView) RunEpochCompleteHook(blockHeight uint64) error {
 	// Jail all inactive validators from the current snapshot validator set. This is an O(n) operation
 	// that loops through all validators and jails them if they are inactive. A jailed validator should be
 	// considered jailed in the next epoch we are transition into.
-	if err = bav.JailInactiveSnapshotValidators(blockHeight); err != nil {
+	if err = bav.JailAllInactiveValidators(blockHeight); err != nil {
 		return errors.Wrapf(err, "RunEpochCompleteHook: problem jailing all inactive validators: ")
 	}
 
