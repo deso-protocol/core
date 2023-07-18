@@ -532,7 +532,7 @@ func TestRunEpochCompleteHook(t *testing.T) {
 			return len(validatorEntries)
 		}
 
-		getNumSnapshotActiveValidators := func() int {
+		getNumSnapshotValidatorSet := func() int {
 			snapshotValidatorSet, err := utxoView().GetSnapshotValidatorSetByStakeAmount(10)
 			require.NoError(t, err)
 			return len(snapshotValidatorSet)
@@ -559,7 +559,7 @@ func TestRunEpochCompleteHook(t *testing.T) {
 		// In epoch 11, all registered validators have Status = Active.
 		require.Equal(t, getCurrentEpochNumber(), 11)
 		require.Equal(t, getNumCurrentActiveValidators(), 6)
-		require.Equal(t, getNumSnapshotActiveValidators(), 6)
+		require.Equal(t, getNumSnapshotValidatorSet(), 6)
 		require.Equal(t, getNumStakes(), 6)
 		require.Equal(t, getNumSnapshotStakes(), 6)
 
@@ -567,10 +567,10 @@ func TestRunEpochCompleteHook(t *testing.T) {
 		_runOnEpochCompleteHook()
 
 		// In epoch 12, all current registered validators have Status = Jailed.
-		// In snapshot 10, all snapshot registered validators have Status = Active.
+		// In snapshot 10, all snapshot validators have Status = Active.
 		require.Equal(t, getCurrentEpochNumber(), 12)
 		require.Empty(t, getNumCurrentActiveValidators())
-		require.Equal(t, getNumSnapshotActiveValidators(), 6)
+		require.Equal(t, getNumSnapshotValidatorSet(), 6)
 		require.Equal(t, getNumStakes(), 6)
 		require.Equal(t, getNumSnapshotStakes(), 6)
 
@@ -581,12 +581,12 @@ func TestRunEpochCompleteHook(t *testing.T) {
 		_runOnEpochCompleteHook()
 
 		// In epoch 13, all current registered validators have Status = Jailed.
-		// In snapshot 11, all snapshot registered validators have Status = Active.
+		// In snapshot 11, the validator set is empty because all validators have Status = Jailed.
 		require.Equal(t, getCurrentEpochNumber(), 13)
 		require.Empty(t, getNumCurrentActiveValidators())
-		require.Equal(t, getNumSnapshotActiveValidators(), 6)
+		require.Empty(t, getNumSnapshotValidatorSet())
 		require.Equal(t, getNumStakes(), 6)
-		require.Equal(t, getNumSnapshotStakes(), 6)
+		require.Empty(t, getNumSnapshotStakes())
 
 		// Run OnEpochCompleteHook().
 		_runOnEpochCompleteHook()
@@ -596,7 +596,7 @@ func TestRunEpochCompleteHook(t *testing.T) {
 
 		require.Equal(t, getCurrentEpochNumber(), 14)
 		require.Empty(t, getNumCurrentActiveValidators())
-		require.Empty(t, getNumSnapshotActiveValidators())
+		require.Empty(t, getNumSnapshotValidatorSet())
 		require.Equal(t, getNumStakes(), 6)
 		require.Empty(t, getNumSnapshotStakes())
 	}

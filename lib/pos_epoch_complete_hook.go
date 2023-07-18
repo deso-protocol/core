@@ -95,7 +95,7 @@ func (bav *UtxoView) RunEpochCompleteHook(blockHeight uint64) error {
 	// Snapshot the current GlobalParamsEntry.
 	bav._setSnapshotGlobalParamsEntry(bav.GetCurrentGlobalParamsEntry(), currentEpochEntry.EpochNumber)
 
-	// Snapshot the current validator set.
+	// Snapshot the current top m validators as the validator set.
 	validatorSet, err := bav.generateAndSnapshotValidatorSet(currentEpochEntry.EpochNumber)
 	if err != nil {
 		return errors.Wrapf(err, "RunEpochCompleteHook: problem snapshotting validator set: ")
@@ -136,7 +136,7 @@ func (bav *UtxoView) RunEpochCompleteHook(blockHeight uint64) error {
 }
 
 func (bav *UtxoView) generateAndSnapshotValidatorSet(epochNumber uint64) ([]*ValidatorEntry, error) {
-	// Snapshot the current top n active validators as the current validator set.
+	// Snapshot the current top n active validators as the validator set.
 	validatorSet, err := bav.GetTopActiveValidatorsByStakeAmount(
 		bav.GetCurrentGlobalParamsEntry().ValidatorSetMaxNumValidators,
 	)
@@ -149,35 +149,38 @@ func (bav *UtxoView) generateAndSnapshotValidatorSet(epochNumber uint64) ([]*Val
 
 	// Snapshot the current validator set's total stake. Note, the validator set is already filtered to the top n
 	// active validators for the epoch. The total stake is the sum of all of the active validators' stakes.
-	globalActiveStakeAmountNanos := SumValidatorEntriesTotalStakeAmountNanos(validatorSet)
-	bav._setSnapshotValidatorSetTotalStakeAmountNanos(globalActiveStakeAmountNanos, epochNumber)
+	validatorSetTotalStakeAmountNanos := SumValidatorEntriesTotalStakeAmountNanos(validatorSet)
+	bav._setSnapshotValidatorSetTotalStakeAmountNanos(validatorSetTotalStakeAmountNanos, epochNumber)
 
 	return validatorSet, nil
 }
 
 func (bav *UtxoView) generateAndSnapshotLeaderSchedule(epochNumber uint64) error {
-	// Generate + snapshot a leader schedule.
+	// Generate a random leader schedule and snapshot it.
 	leaderSchedule, err := bav.GenerateLeaderSchedule()
 	if err != nil {
 		return errors.Wrapf(err, "generateAndSnapshotLeaderSchedule: problem generating leader schedule: ")
 	}
+
 	for index, validatorPKID := range leaderSchedule {
 		if index > math.MaxUint16 {
 			return errors.Errorf("generateAndSnapshotLeaderSchedule: LeaderIndex %d overflows uint16", index)
 		}
 		bav._setSnapshotLeaderScheduleValidator(validatorPKID, uint16(index), epochNumber)
 	}
+
+	return nil
 }
 
 func (bav *UtxoView) generateAndSnapshotStakesToReward(epochNumber uint64, validatorSet []*ValidatorEntry) error {
-	// Snapshot the current top n stake entries.
+	// Fetch the current top n stake entries.
 	topStakeEntries, err := bav.GetTopStakesByStakeAmount(bav.GetCurrentGlobalParamsEntry().StakingRewardsMaxNumStakes)
 	if err != nil {
 		return errors.Wrapf(err, "RunEpochCompleteHook: error retrieving top StakeEntries: ")
 	}
 
-	// Filter the top n stake entries by the current validator set. We do not want to reward
-	// stakes that are not in the current validator set.
+	// Filter the top n stake entries by the current validator set. We do not want to reward stakes that are
+	// not in the current validator set, so we pre-filter them here before snapshotting them.
 	validatorSetPKIDs := NewSet([]PKID{})
 	for _, validatorEntry := range validatorSet {
 		validatorSetPKIDs.Add(*validatorEntry.ValidatorPKID)
@@ -186,7 +189,7 @@ func (bav *UtxoView) generateAndSnapshotStakesToReward(epochNumber uint64, valid
 		return validatorSetPKIDs.Includes(*s.ValidatorPKID)
 	})
 
-	// Snapshot only the top n stake entries that are in the validator set.
+	// Snapshot only the top m stake entries that are in the validator set.
 	for _, stakeEntry := range topStakesInValidatorSet {
 		snapshotStakeEntry := SnapshotStakeEntry{
 			SnapshotAtEpochNumber: epochNumber,
