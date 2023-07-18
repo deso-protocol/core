@@ -79,7 +79,7 @@ func (bav *UtxoView) DistributeStakingRewardsToSnapshotStakes(blockHeight uint64
 		// StakeEntry. Their stake is currently in lockup.
 
 		// For case 1, we distribute the rewards by adding them to the staker's staked amount.
-		if stakeEntry != nil && stakeEntry.RestakeRewards {
+		if stakeEntry != nil && stakeEntry.RewardMethod == StakeRewardMethodRestake {
 			stakeEntry.StakeAmountNanos.Add(stakeEntry.StakeAmountNanos, rewardAmount)
 			bav._setStakeEntryMappings(stakeEntry)
 

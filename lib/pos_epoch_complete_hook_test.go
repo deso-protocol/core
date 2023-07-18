@@ -125,9 +125,14 @@ func TestRunEpochCompleteHook(t *testing.T) {
 		_, err = _submitRegisterAsValidatorTxn(testMeta, publicKey, privateKey, registerMetadata, nil, true)
 		require.NoError(t, err)
 
+		rewardMethod := StakeRewardMethodPayToBalance
+		if restakeRewards {
+			rewardMethod = StakeRewardMethodRestake
+		}
+
 		stakeMetadata := &StakeMetadata{
 			ValidatorPublicKey: NewPublicKey(pkBytes),
-			RestakeRewards:     restakeRewards,
+			RewardMethod:       rewardMethod,
 			StakeAmountNanos:   uint256.NewInt().SetUint64(stakeAmountNanos),
 		}
 		_, err = _submitStakeTxn(testMeta, publicKey, privateKey, stakeMetadata, nil, true)
