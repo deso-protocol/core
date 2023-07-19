@@ -1204,7 +1204,7 @@ func TestAuthorizeDerivedKeyBasic(t *testing.T) {
 		for ii, currentTxn := range testTxns {
 			mempoolTxsAdded, err := mempool.processTransaction(
 				currentTxn, true /*allowUnconnectedTxn*/, true /*rateLimit*/, 0, /*peerID*/
-				true /*verifySignatures*/, false /*emitTxStateChange*/)
+				true /*verifySignatures*/)
 			require.NoErrorf(err, "mempool index %v", ii)
 			require.Equal(1, len(mempoolTxsAdded))
 		}
@@ -1255,7 +1255,7 @@ func TestAuthorizeDerivedKeyBasic(t *testing.T) {
 		for ii, currentTxn := range testTxns {
 			mempoolTxsAdded, err := mempool.processTransaction(
 				currentTxn, true /*allowUnconnectedTxn*/, true /*rateLimit*/, 0, /*peerID*/
-				true /*verifySignatures*/, false /*emitTxStateChange*/)
+				true /*verifySignatures*/)
 			require.NoErrorf(err, "mempool index %v", ii)
 			require.Equal(1, len(mempoolTxsAdded))
 		}
@@ -1429,7 +1429,7 @@ func TestAuthorizeDerivedKeyBasic(t *testing.T) {
 		for ii, currentTxn := range testTxns {
 			mempoolTxsAdded, err := mempool.processTransaction(
 				currentTxn, true /*allowUnconnectedTxn*/, true /*rateLimit*/, 0, /*peerID*/
-				true /*verifySignatures*/, false /*emitTxStateChange*/)
+				true /*verifySignatures*/)
 			require.NoErrorf(err, "mempool index %v", ii)
 			require.Equal(1, len(mempoolTxsAdded))
 		}
@@ -1578,7 +1578,7 @@ func TestAuthorizeDerivedKeyBasic(t *testing.T) {
 		for ii, currentTxn := range testTxns {
 			mempoolTxsAdded, err := mempool.processTransaction(
 				currentTxn, true /*allowUnconnectedTxn*/, true /*rateLimit*/, 0, /*peerID*/
-				true /*verifySignatures*/, false /*emitTxStateChange*/)
+				true /*verifySignatures*/)
 			require.NoErrorf(err, "mempool index %v", ii)
 			require.Equal(1, len(mempoolTxsAdded))
 		}
@@ -2058,7 +2058,7 @@ func TestAuthorizeDerivedKeyBasicWithTransactionLimits(t *testing.T) {
 		for ii, currentTxn := range testTxns {
 			mempoolTxsAdded, err := mempool.processTransaction(
 				currentTxn, true /*allowUnconnectedTxn*/, true /*rateLimit*/, 0, /*peerID*/
-				true /*verifySignatures*/, false /*emitTxStateChange*/)
+				true /*verifySignatures*/)
 			require.NoErrorf(err, "mempool index %v", ii)
 			require.Equal(1, len(mempoolTxsAdded))
 		}
@@ -2109,7 +2109,7 @@ func TestAuthorizeDerivedKeyBasicWithTransactionLimits(t *testing.T) {
 		for ii, currentTxn := range testTxns {
 			mempoolTxsAdded, err := mempool.processTransaction(
 				currentTxn, true /*allowUnconnectedTxn*/, true /*rateLimit*/, 0, /*peerID*/
-				true /*verifySignatures*/, false /*emitTxStateChange*/)
+				true /*verifySignatures*/)
 			require.NoErrorf(err, "mempool index %v", ii)
 			require.Equal(1, len(mempoolTxsAdded))
 		}
@@ -2318,7 +2318,7 @@ func TestAuthorizeDerivedKeyBasicWithTransactionLimits(t *testing.T) {
 		for ii, currentTxn := range testTxns {
 			mempoolTxsAdded, err := mempool.processTransaction(
 				currentTxn, true /*allowUnconnectedTxn*/, true /*rateLimit*/, 0, /*peerID*/
-				true /*verifySignatures*/, false /*emitTxStateChange*/)
+				true /*verifySignatures*/)
 			require.NoErrorf(err, "mempool index %v", ii)
 			require.Equal(1, len(mempoolTxsAdded))
 		}
@@ -2467,7 +2467,7 @@ func TestAuthorizeDerivedKeyBasicWithTransactionLimits(t *testing.T) {
 		for ii, currentTxn := range testTxns {
 			mempoolTxsAdded, err := mempool.processTransaction(
 				currentTxn, true /*allowUnconnectedTxn*/, true /*rateLimit*/, 0, /*peerID*/
-				true /*verifySignatures*/, false /*emitTxStateChange*/)
+				true /*verifySignatures*/)
 			require.NoErrorf(err, "mempool index %v", ii)
 			require.Equal(1, len(mempoolTxsAdded))
 		}

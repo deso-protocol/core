@@ -56,7 +56,7 @@ func TestMempoolLongChainOfDependencies(t *testing.T) {
 		0 /* minFeeRateNanosPerKB */, "", true,
 		"" /*dataDir*/, "")
 	_, err := mp.processTransaction(txn1, false /*allowUnconnectedTxn*/, false, /*rateLimit*/
-		0 /*peerID*/, true /*verifySignatures*/, false /*EmitTxStateChange*/)
+		0 /*peerID*/, true /*verifySignatures*/)
 	require.NoError(err)
 
 	prevTxn := txn1
@@ -88,7 +88,7 @@ func TestMempoolLongChainOfDependencies(t *testing.T) {
 		//_signTxn(t, newTxn, false [>isSender is false since this is the recipient<])
 
 		_, err := mp.processTransaction(newTxn, false /*allowUnconnectedTxn*/, false, /*rateLimit*/
-			0 /*peerID*/, false /*verifySignatures*/, false /*EmitTxStateChange*/)
+			0 /*peerID*/, false /*verifySignatures*/)
 		require.NoErrorf(err, "Error processing txn %d", ii)
 
 		prevTxn = newTxn
@@ -129,8 +129,7 @@ func TestMempoolRateLimit(t *testing.T) {
 
 	// Validate this txn with the no-fee mempool.
 	_, err := mpNoMinFees.processTransaction(txn1, false, /*allowUnconnectedTxn*/
-		false /*rateLimit*/, 0 /*peerID*/, true, /*verifySignatures*/
-		false /*EmitTxStateChange*/)
+		false /*rateLimit*/, 0 /*peerID*/, true /*verifySignatures*/)
 	require.NoError(err)
 
 	// If we set a min fee, the transactions should just be immediately rejected
@@ -140,14 +139,13 @@ func TestMempoolRateLimit(t *testing.T) {
 		100 /* minFeeRateNanosPerKB */, "", true,
 		"" /*dataDir*/, "")
 	_, err = mpWithMinFee.processTransaction(txn1, false, /*allowUnconnectedTxn*/
-		true /*rateLimit*/, 0 /*peerID*/, false, /*verifySignatures*/
-		false /*EmitTxStateChange*/)
+		true /*rateLimit*/, 0 /*peerID*/, false /*verifySignatures*/)
 	require.Error(err)
 	require.Contains(err.Error(), TxErrorInsufficientFeeMinFee)
 
 	// It shoud be accepted if we set rateLimit to false.
 	_, err = mpWithMinFee.processTransaction(txn1, false, /*allowUnconnectedTxn*/
-		false /*rateLimit*/, 0 /*peerID*/, false /*verifySignatures*/, false /*EmitTxStateChange*/)
+		false /*rateLimit*/, 0 /*peerID*/, false /*verifySignatures*/)
 	require.NoError(err)
 
 	txnsCreated := []*MsgDeSoTxn{txn1}
@@ -178,7 +176,7 @@ func TestMempoolRateLimit(t *testing.T) {
 		//_signTxn(t, newTxn, false [>isSender is false since this is the recipient<])
 
 		_, err := mpNoMinFees.processTransaction(newTxn, false, /*allowUnconnectedTxn*/
-			false /*rateLimit*/, 0 /*peerID*/, false /*verifySignatures*/, false /*EmitTxStateChange*/)
+			false /*rateLimit*/, 0 /*peerID*/, false /*verifySignatures*/)
 		require.NoErrorf(err, "Error processing txn %d", ii)
 
 		txnsCreated = append(txnsCreated, newTxn)
@@ -195,8 +193,7 @@ func TestMempoolRateLimit(t *testing.T) {
 	processingErrors := []error{}
 	for _, txn := range txnsCreated {
 		_, err := mpWithRateLimit.processTransaction(txn, false, /*allowUnconnectedTxn*/
-			true /*rateLimit*/, 0 /*peerID*/, false, /*verifySignatures*/
-			false /*EmitTxStateChange*/)
+			true /*rateLimit*/, 0 /*peerID*/, false /*verifySignatures*/)
 		processingErrors = append(processingErrors, err)
 	}
 
@@ -325,8 +322,7 @@ func TestMempoolAugmentedUtxoViewTransactionChain(t *testing.T) {
 
 	// Process the first transaction.
 	mempoolTx1, err := mp.processTransaction(txn1, false, /*allowUnconnectedTxn*/
-		false /*rateLimit*/, 0 /*peerID*/, true, /*verifySignatures*/
-		false /*EmitTxStateChange*/)
+		false /*rateLimit*/, 0 /*peerID*/, true /*verifySignatures*/)
 	require.NoError(err)
 	{
 		// Verify the augmented UtxoView has the change output from the
@@ -362,8 +358,7 @@ func TestMempoolAugmentedUtxoViewTransactionChain(t *testing.T) {
 
 	// Process the second transaction, which is dependent on the first.
 	mempoolTx2, err := mp.processTransaction(txn2, false, /*allowUnconnectedTxn*/
-		false /*rateLimit*/, 0 /*peerID*/, true, /*verifySignatures*/
-		false /*EmitTxStateChange*/)
+		false /*rateLimit*/, 0 /*peerID*/, true /*verifySignatures*/)
 	require.NoError(err)
 	{
 		// Verify the augmented UtxoView has the change output from the second
@@ -382,8 +377,7 @@ func TestMempoolAugmentedUtxoViewTransactionChain(t *testing.T) {
 
 	// Process the third transaction, which is dependent on the second.
 	mempoolTx3, err := mp.processTransaction(txn3, false, /*allowUnconnectedTxn*/
-		false /*rateLimit*/, 0 /*peerID*/, true, /*verifySignatures*/
-		false /*EmitTxStateChange*/)
+		false /*rateLimit*/, 0 /*peerID*/, true /*verifySignatures*/)
 	require.NoError(err)
 	{
 		// Verify the augmented UtxoView has the change output from the third
@@ -402,8 +396,7 @@ func TestMempoolAugmentedUtxoViewTransactionChain(t *testing.T) {
 
 	// Process the fourth transaction, which is dependent on the first and second.
 	mempoolTx4, err := mp.processTransaction(txn4, false, /*allowUnconnectedTxn*/
-		false /*rateLimit*/, 0 /*peerID*/, true, /*verifySignatures*/
-		false /*EmitTxStateChange*/)
+		false /*rateLimit*/, 0 /*peerID*/, true /*verifySignatures*/)
 	require.NoError(err)
 	{
 		// When we lookup the utxos for the sender we should now have two, one

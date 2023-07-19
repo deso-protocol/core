@@ -271,7 +271,7 @@ func TestUtxoEntryEncodeDecode(t *testing.T) {
 	{
 		mempoolTxs, err := mempool.processTransaction(
 			burnTxn1, true /*allowUnconnectedTxn*/, true /*rateLimit*/, 0, /*peerID*/
-			true /*verifySignatures*/, false /*EmitTxStateChange*/)
+			true /*verifySignatures*/)
 		require.NoError(err)
 		require.Equal(1, len(mempoolTxs))
 		require.Equal(1, len(mempool.poolMap))
@@ -290,7 +290,7 @@ func TestUtxoEntryEncodeDecode(t *testing.T) {
 	{
 		mempoolTxsAdded, err := mempool.processTransaction(
 			burnTxn2, true /*allowUnconnectedTxn*/, true /*rateLimit*/, 0, /*peerID*/
-			true /*verifySignatures*/, false /*EmitTxStateChange*/)
+			true /*verifySignatures*/)
 		require.NoError(err)
 		require.Equal(1, len(mempoolTxsAdded))
 		require.Equal(2, len(mempool.poolMap))

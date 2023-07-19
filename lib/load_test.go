@@ -158,7 +158,7 @@ func TestComputeMaxTPS(t *testing.T) {
 		for _, tx := range txns {
 			mempoolTxsAdded, err := mempool.processTransaction(
 				tx, true /*allowUnconnectedTxn*/, false /*rateLimit*/, 0, /*peerID*/
-				false /*verifySignatures*/, false /*EmitTxStateChange*/)
+				false /*verifySignatures*/)
 			require.NoError(err)
 			require.Equal(1, len(mempoolTxsAdded))
 		}

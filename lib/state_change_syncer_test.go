@@ -44,8 +44,6 @@ func TestStateChangeEntryEncoder(t *testing.T) {
 		KeyBytes:      []byte{1, 2, 3},
 		Encoder:       postEntry,
 		EncoderType:   postEntry.GetEncoderType(),
-		IsMempoolTx:   true,
-		IsDisconnect:  false,
 	}
 
 	stateChangeEntryBytes := EncodeToBytes(0, stateChangeEntry)
@@ -56,8 +54,6 @@ func TestStateChangeEntryEncoder(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, exists)
 	require.Equal(t, stateChangeEntry.EncoderType, stateChangeEntryDecoded.EncoderType)
-	require.Equal(t, stateChangeEntry.IsMempoolTx, stateChangeEntryDecoded.IsMempoolTx)
-	require.Equal(t, stateChangeEntry.IsDisconnect, stateChangeEntryDecoded.IsDisconnect)
 	require.Equal(t, stateChangeEntry.KeyBytes, stateChangeEntryDecoded.KeyBytes)
 	require.Equal(t, stateChangeEntry.OperationType, stateChangeEntryDecoded.OperationType)
 	require.Equal(t, &stateChangeEntry.Encoder, &stateChangeEntryDecoded.Encoder)

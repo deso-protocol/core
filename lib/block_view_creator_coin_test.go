@@ -670,7 +670,7 @@ func _helpTestCreatorCoinBuySell(
 		for ii, currentTxn := range testTxns {
 			mempoolTxsAdded, err := mempool.processTransaction(
 				currentTxn, true /*allowUnconnectedTxn*/, true /*rateLimit*/, 0, /*peerID*/
-				true /*verifySignatures*/, false /*EmitTxStateChange*/)
+				true /*verifySignatures*/)
 			require.NoErrorf(err, "mempool index %v", ii)
 			require.Equal(1, len(mempoolTxsAdded))
 
@@ -705,7 +705,7 @@ func _helpTestCreatorCoinBuySell(
 		for _, burnTxn := range testTxns {
 			mempoolTxsAdded, err := mempool.processTransaction(
 				burnTxn, true /*allowUnconnectedTxn*/, true /*rateLimit*/, 0, /*peerID*/
-				true /*verifySignatures*/, false /*EmitTxStateChange*/)
+				true /*verifySignatures*/)
 			require.NoError(err)
 			require.Equal(1, len(mempoolTxsAdded))
 		}
@@ -1380,7 +1380,7 @@ func TestCreatorCoinWithDiamondsFailureCases(t *testing.T) {
 				utxoView.ConnectTransaction(txn, txHash, getTxnSize(*txn), blockHeight, true /*verifySignature*/, false /*ignoreUtxos*/)
 			require.NoError(err)
 			_, err = mempool.processTransaction(txn, false, false, 0,
-				false, false /*EmitTxStateChange*/)
+				false)
 			require.NoError(err)
 		}
 		// Now do a transaction with the same number of Diamonds
