@@ -32,10 +32,17 @@ import (
 // TYPES: StakeEntry
 //
 
+type StakingRewardMethod = uint8
+
+const (
+	StakingRewardMethodPayToBalance StakingRewardMethod = iota
+	StakingRewardMethodRestake      StakingRewardMethod = 1
+)
+
 type StakeEntry struct {
 	StakerPKID       *PKID
 	ValidatorPKID    *PKID
-	RestakeRewards   bool
+	RewardMethod     StakingRewardMethod
 	StakeAmountNanos *uint256.Int
 	ExtraData        map[string][]byte
 	isDeleted        bool
@@ -50,7 +57,7 @@ func (stakeEntry *StakeEntry) Copy() *StakeEntry {
 	return &StakeEntry{
 		StakerPKID:       stakeEntry.StakerPKID.NewPKID(),
 		ValidatorPKID:    stakeEntry.ValidatorPKID.NewPKID(),
-		RestakeRewards:   stakeEntry.RestakeRewards,
+		RewardMethod:     stakeEntry.RewardMethod,
 		StakeAmountNanos: stakeEntry.StakeAmountNanos.Clone(),
 		ExtraData:        copyExtraData(stakeEntry.ExtraData),
 		isDeleted:        stakeEntry.isDeleted,
@@ -72,7 +79,7 @@ func (stakeEntry *StakeEntry) RawEncodeWithoutMetadata(blockHeight uint64, skipM
 	var data []byte
 	data = append(data, EncodeToBytes(blockHeight, stakeEntry.StakerPKID, skipMetadata...)...)
 	data = append(data, EncodeToBytes(blockHeight, stakeEntry.ValidatorPKID, skipMetadata...)...)
-	data = append(data, BoolToByte(stakeEntry.RestakeRewards))
+	data = append(data, stakeEntry.RewardMethod)
 	data = append(data, VariableEncodeUint256(stakeEntry.StakeAmountNanos)...)
 	data = append(data, EncodeExtraData(stakeEntry.ExtraData)...)
 	return data
@@ -93,10 +100,10 @@ func (stakeEntry *StakeEntry) RawDecodeWithoutMetadata(blockHeight uint64, rr *b
 		return errors.Wrapf(err, "StakeEntry.Decode: Problem reading ValidatorPKID: ")
 	}
 
-	// RestakeRewards
-	stakeEntry.RestakeRewards, err = ReadBoolByte(rr)
+	// RewardMethod
+	stakeEntry.RewardMethod, err = rr.ReadByte()
 	if err != nil {
-		return errors.Wrapf(err, "StakeEntry.Decode: Problem reading RestakeRewards")
+		return errors.Wrapf(err, "StakeEntry.Decode: Problem reading RewardMethod")
 	}
 
 	// StakeAmountNanos
@@ -224,7 +231,7 @@ func (lockedStakeEntry *LockedStakeEntry) GetEncoderType() EncoderType {
 
 type StakeMetadata struct {
 	ValidatorPublicKey *PublicKey
-	RestakeRewards     bool
+	RewardMethod       StakingRewardMethod
 	StakeAmountNanos   *uint256.Int
 }
 
@@ -235,7 +242,7 @@ func (txnData *StakeMetadata) GetTxnType() TxnType {
 func (txnData *StakeMetadata) ToBytes(preSignature bool) ([]byte, error) {
 	var data []byte
 	data = append(data, EncodeByteArray(txnData.ValidatorPublicKey.ToBytes())...)
-	data = append(data, BoolToByte(txnData.RestakeRewards))
+	data = append(data, txnData.RewardMethod)
 	data = append(data, VariableEncodeUint256(txnData.StakeAmountNanos)...)
 	return data, nil
 }
@@ -250,10 +257,10 @@ func (txnData *StakeMetadata) FromBytes(data []byte) error {
 	}
 	txnData.ValidatorPublicKey = NewPublicKey(validatorPublicKeyBytes)
 
-	// RestakeRewards
-	txnData.RestakeRewards, err = ReadBoolByte(rr)
+	// RewardMethod
+	txnData.RewardMethod, err = rr.ReadByte()
 	if err != nil {
-		return errors.Wrapf(err, "StakeMetadata.FromBytes: Problem reading RestakeRewards: ")
+		return errors.Wrapf(err, "StakeMetadata.FromBytes: Problem reading RewardMethod: ")
 	}
 
 	// StakeAmountNanos
@@ -370,7 +377,7 @@ func (txnData *UnlockStakeMetadata) New() DeSoTxnMetadata {
 type StakeTxindexMetadata struct {
 	StakerPublicKeyBase58Check    string
 	ValidatorPublicKeyBase58Check string
-	RestakeRewards                bool
+	RewardMethod                  StakingRewardMethod
 	StakeAmountNanos              *uint256.Int
 }
 
@@ -378,7 +385,7 @@ func (txindexMetadata *StakeTxindexMetadata) RawEncodeWithoutMetadata(blockHeigh
 	var data []byte
 	data = append(data, EncodeByteArray([]byte(txindexMetadata.StakerPublicKeyBase58Check))...)
 	data = append(data, EncodeByteArray([]byte(txindexMetadata.ValidatorPublicKeyBase58Check))...)
-	data = append(data, BoolToByte(txindexMetadata.RestakeRewards))
+	data = append(data, txindexMetadata.RewardMethod)
 	data = append(data, VariableEncodeUint256(txindexMetadata.StakeAmountNanos)...)
 	return data
 }
@@ -400,10 +407,10 @@ func (txindexMetadata *StakeTxindexMetadata) RawDecodeWithoutMetadata(blockHeigh
 	}
 	txindexMetadata.ValidatorPublicKeyBase58Check = string(validatorPublicKeyBase58CheckBytes)
 
-	// RestakeRewards
-	txindexMetadata.RestakeRewards, err = ReadBoolByte(rr)
+	// RewardMethod
+	txindexMetadata.RewardMethod, err = rr.ReadByte()
 	if err != nil {
-		return errors.Wrapf(err, "StakeTxindexMetadata.Decode: Problem reading RestakeRewards: ")
+		return errors.Wrapf(err, "StakeTxindexMetadata.Decode: Problem reading RewardMethod: ")
 	}
 
 	// StakeAmountNanos
@@ -1354,7 +1361,7 @@ func (bav *UtxoView) _connectStake(
 	currentStakeEntry := &StakeEntry{
 		StakerPKID:       transactorPKIDEntry.PKID,
 		ValidatorPKID:    prevValidatorEntry.ValidatorPKID,
-		RestakeRewards:   txMeta.RestakeRewards,
+		RewardMethod:     txMeta.RewardMethod,
 		StakeAmountNanos: stakeAmountNanos,
 		ExtraData:        mergeExtraData(prevExtraData, txn.ExtraData),
 	}
@@ -1977,6 +1984,11 @@ func (bav *UtxoView) IsValidStakeMetadata(transactorPkBytes []byte, metadata *St
 	}
 	if !transactorPKIDEntry.PKID.Eq(validatorEntry.ValidatorPKID) && validatorEntry.DisableDelegatedStake {
 		return errors.Wrapf(RuleErrorInvalidStakeValidatorDisabledDelegatedStake, "UtxoView.IsValidStakeMetadata: ")
+	}
+
+	// Validate RewardMethod.
+	if metadata.RewardMethod != StakingRewardMethodPayToBalance && metadata.RewardMethod != StakingRewardMethodRestake {
+		return errors.Wrapf(RuleErrorInvalidStakingRewardMethod, "UtxoView.IsValidStakeMetadata: ")
 	}
 
 	// Validate 0 <= StakeAmountNanos <= transactor's DESO Balance. We ignore
@@ -3092,6 +3104,7 @@ func (bav *UtxoView) IsValidStakeLimitKey(transactorPublicKeyBytes []byte, stake
 //
 
 const RuleErrorInvalidStakerPKID RuleError = "RuleErrorInvalidStakerPKID"
+const RuleErrorInvalidStakingRewardMethod RuleError = "RuleErrorInvalidStakingRewardMethod"
 const RuleErrorInvalidStakeAmountNanos RuleError = "RuleErrorInvalidStakeAmountNanos"
 const RuleErrorInvalidStakeInsufficientBalance RuleError = "RuleErrorInvalidStakeInsufficientBalance"
 const RuleErrorInvalidStakeValidatorDisabledDelegatedStake RuleError = "RuleErrorInvalidStakeValidatorDisabledDelegatedStake"
