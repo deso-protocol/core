@@ -32,8 +32,7 @@ func (data *AccessGroupTestData) GetInputType() transactionTestInputType {
 }
 
 func TestBalanceModelAccessGroups(t *testing.T) {
-	setBalanceModelBlockHeights()
-	defer resetBalanceModelBlockHeights()
+	setBalanceModelBlockHeights(t)
 
 	TestAccessGroup(t)
 	TestAccessGroupTxnWithDerivedKey(t)
@@ -493,8 +492,7 @@ func _customCreateAccessGroupTxn(
 
 func TestAccessGroupTxnWithDerivedKey(t *testing.T) {
 	// Initialize fork heights.
-	setBalanceModelBlockHeights()
-	defer resetBalanceModelBlockHeights()
+	setBalanceModelBlockHeights(t)
 
 	// Initialize test chain and miner.
 	var err error

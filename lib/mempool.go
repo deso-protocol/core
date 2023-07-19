@@ -255,6 +255,17 @@ type DeSoMempool struct {
 	// We pass a copy of the data dir flag to the tx pool so that we can instantiate
 	// temp badger db instances and dump mempool txns to them.
 	dataDir string
+
+	// set to true for tests. This lowers the memory requirements of the mempool
+	// by using DefaultBadgerOptions instead of PerformanceBadgerOptions.
+	useDefaultBadgerOptions bool
+}
+
+func (mp *DeSoMempool) getBadgerOptions(dir string) badger.Options {
+	if mp.useDefaultBadgerOptions {
+		return DefaultBadgerOptions(dir)
+	}
+	return PerformanceBadgerOptions(dir)
 }
 
 // See comment on RemoveUnconnectedTxn. The mempool lock must be called for writing
@@ -321,6 +332,7 @@ func (mp *DeSoMempool) resetPool(newPool *DeSoMempool) {
 	mp.backupUniversalUtxoView = newPool.backupUniversalUtxoView
 	mp.universalUtxoView = newPool.universalUtxoView
 	mp.universalTransactionList = newPool.universalTransactionList
+	mp.useDefaultBadgerOptions = newPool.useDefaultBadgerOptions
 
 	// We don't adjust blockCypherAPIKey or blockCypherCheckDoubleSpendChan
 	// since those should be unaffected
@@ -381,7 +393,7 @@ func (mp *DeSoMempool) UpdateAfterConnectBlock(blk *MsgDeSoBlock) (_txnsAddedToM
 		0,     /* minFeeRateNanosPerKB */
 		"",    /*blockCypherAPIKey*/
 		false, /*runReadOnlyViewUpdater*/
-		"" /*dataDir*/, "")
+		"" /*dataDir*/, "", mp.useDefaultBadgerOptions)
 
 	// Get all the transactions from the old pool object.
 	oldMempoolTxns, oldUnconnectedTxns, err := mp._getTransactionsOrderedByTimeAdded()
@@ -485,7 +497,7 @@ func (mp *DeSoMempool) UpdateAfterDisconnectBlock(blk *MsgDeSoBlock) {
 	newPool := NewDeSoMempool(mp.bc, 0, /* rateLimitFeeRateNanosPerKB */
 		0, /* minFeeRateNanosPerKB */
 		"" /*blockCypherAPIKey*/, false,
-		"" /*dataDir*/, "")
+		"" /*dataDir*/, "", mp.useDefaultBadgerOptions)
 
 	// Add the transactions from the block to the new pool (except for the block reward,
 	// which should always be the first transaction). Break out if we encounter
@@ -767,7 +779,7 @@ func (mp *DeSoMempool) OpenTempDBAndDumpTxns() error {
 	if err != nil {
 		return fmt.Errorf("OpenTempDBAndDumpTxns: Error making top-level dir: %v", err)
 	}
-	tempMempoolDBOpts := PerformanceBadgerOptions(tempMempoolDBDir)
+	tempMempoolDBOpts := mp.getBadgerOptions(tempMempoolDBDir)
 	tempMempoolDBOpts.ValueDir = tempMempoolDBDir
 	tempMempoolDB, err := badger.Open(tempMempoolDBOpts)
 	if err != nil {
@@ -2360,7 +2372,7 @@ func (mp *DeSoMempool) inefficientRemoveTransaction(tx *MsgDeSoTxn) {
 	newPool := NewDeSoMempool(mp.bc, 0, /* rateLimitFeeRateNanosPerKB */
 		0, /* minFeeRateNanosPerKB */
 		"" /*blockCypherAPIKey*/, false,
-		"" /*dataDir*/, "")
+		"" /*dataDir*/, "", mp.useDefaultBadgerOptions)
 	// At this point the block txns have been added to the new pool. Now we need to
 	// add the txns from the original pool. Start by fetching them in slice form.
 	oldMempoolTxns, oldUnconnectedTxns, err := mp._getTransactionsOrderedByTimeAdded()
@@ -2534,7 +2546,7 @@ func (mp *DeSoMempool) LoadTxnsFromDB() {
 	}
 
 	// If we make it this far, we found a mempool dump to load.  Woohoo!
-	tempMempoolDBOpts := PerformanceBadgerOptions(savedTxnsDir)
+	tempMempoolDBOpts := mp.getBadgerOptions(savedTxnsDir)
 	tempMempoolDBOpts.ValueDir = savedTxnsDir
 	glog.Infof("LoadTxnsFrom: Opening new temp db %v", savedTxnsDir)
 	tempMempoolDB, err := badger.Open(tempMempoolDBOpts)
@@ -2572,7 +2584,7 @@ func (mp *DeSoMempool) Stop() {
 // Create a new pool with no transactions in it.
 func NewDeSoMempool(_bc *Blockchain, _rateLimitFeerateNanosPerKB uint64,
 	_minFeerateNanosPerKB uint64, _blockCypherAPIKey string,
-	_runReadOnlyViewUpdater bool, _dataDir string, _mempoolDumpDir string) *DeSoMempool {
+	_runReadOnlyViewUpdater bool, _dataDir string, _mempoolDumpDir string, useDefaultBadgerOptions bool) *DeSoMempool {
 
 	utxoView, _ := NewUtxoView(_bc.db, _bc.params, _bc.postgres, _bc.snapshot, _bc.eventManager)
 	backupUtxoView, _ := NewUtxoView(_bc.db, _bc.params, _bc.postgres, _bc.snapshot, _bc.eventManager)
@@ -2596,6 +2608,7 @@ func NewDeSoMempool(_bc *Blockchain, _rateLimitFeerateNanosPerKB uint64,
 		readOnlyUniversalTransactionMap: make(map[BlockHash]*MempoolTx),
 		readOnlyOutpoints:               make(map[UtxoKey]*MsgDeSoTxn),
 		dataDir:                         _dataDir,
+		useDefaultBadgerOptions:         useDefaultBadgerOptions,
 	}
 
 	if newPool.mempoolDir != "" {

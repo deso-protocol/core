@@ -68,8 +68,7 @@ func _doLikeTxn(t *testing.T, chain *Blockchain, db *badger.DB,
 }
 
 func TestBalanceModelLikes(t *testing.T) {
-	setBalanceModelBlockHeights()
-	defer resetBalanceModelBlockHeights()
+	setBalanceModelBlockHeights(t)
 
 	TestLikeTxns(t)
 }

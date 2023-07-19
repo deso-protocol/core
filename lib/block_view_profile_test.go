@@ -217,8 +217,7 @@ const (
 )
 
 func TestBalanceModelUpdateProfile(t *testing.T) {
-	setBalanceModelBlockHeights()
-	defer resetBalanceModelBlockHeights()
+	setBalanceModelBlockHeights(t)
 
 	TestUpdateProfile(t)
 	TestSpamUpdateProfile(t)
@@ -226,8 +225,7 @@ func TestBalanceModelUpdateProfile(t *testing.T) {
 }
 
 func TestBalanceModelSwapIdentity(t *testing.T) {
-	setBalanceModelBlockHeights()
-	defer resetBalanceModelBlockHeights()
+	setBalanceModelBlockHeights(t)
 
 	TestSwapIdentityNOOPCreatorCoinBuySimple(t)
 	TestSwapIdentityCreatorCoinBuySimple(t)

@@ -315,11 +315,14 @@ type Snapshot struct {
 
 // NewSnapshot creates a new snapshot instance.
 func NewSnapshot(mainDb *badger.DB, mainDbDirectory string, snapshotBlockHeightPeriod uint64, isTxIndex bool,
-	disableChecksum bool, params *DeSoParams, disableMigrations bool, eventManager *EventManager) (_snap *Snapshot, _err error, _shouldRestart bool) {
+	disableChecksum bool, params *DeSoParams, disableMigrations bool, useDefaultBadgerOptions bool, eventManager *EventManager) (_snap *Snapshot, _err error, _shouldRestart bool) {
 
 	// Initialize the ancestral records database
 	snapshotDirectory := filepath.Join(GetBadgerDbPath(mainDbDirectory), "snapshot")
-	snapshotOpts := badger.DefaultOptions(snapshotDirectory)
+	snapshotOpts := DefaultBadgerOptions(snapshotDirectory)
+	if useDefaultBadgerOptions {
+		snapshotOpts = DefaultBadgerOptions(snapshotDirectory)
+	}
 	snapshotOpts.ValueDir = GetBadgerDbPath(snapshotDirectory)
 	snapshotDb, err := badger.Open(snapshotOpts)
 	if err != nil {

@@ -11,8 +11,7 @@ import (
 )
 
 func TestBalanceModelAssociations(t *testing.T) {
-	setBalanceModelBlockHeights()
-	defer resetBalanceModelBlockHeights()
+	setBalanceModelBlockHeights(t)
 
 	TestAssociations(t)
 }
@@ -47,6 +46,11 @@ func _testAssociations(t *testing.T, flushToDB bool) {
 
 	// Initialize test chain and miner.
 	chain, params, db := NewLowDifficultyBlockchain(t)
+	defer func() {
+		if chain.postgres != nil {
+			require.NoError(t, ResetPostgres(chain.postgres))
+		}
+	}()
 	mempool, miner := NewTestMiner(t, chain, params, true)
 	params.ForkHeights.AssociationsAndAccessGroupsBlockHeight = uint32(0)
 	GlobalDeSoParams.EncoderMigrationHeights = GetEncoderMigrationHeights(&params.ForkHeights)
@@ -2204,6 +2208,11 @@ func _testAssociationsWithDerivedKey(t *testing.T) {
 
 	// Initialize test chain and miner.
 	chain, params, db := NewLowDifficultyBlockchain(t)
+	defer func() {
+		if chain.postgres != nil {
+			require.NoError(t, ResetPostgres(chain.postgres))
+		}
+	}()
 	mempool, miner := NewTestMiner(t, chain, params, true)
 
 	// Initialize fork heights.

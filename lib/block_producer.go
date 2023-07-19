@@ -280,6 +280,13 @@ func (desoBlockProducer *DeSoBlockProducer) _getBlockTemplate(publicKey []byte) 
 		return nil, nil, nil, fmt.Errorf(
 			"DeSoBlockProducer._getBlockTemplate: Error generating UtxoView to compute txn fees: %v", err)
 	}
+
+	// Parse the public key that should be used for the block reward.
+	blockRewardOutputPublicKey, err := btcec.ParsePubKey(blockRewardOutput.PublicKey, btcec.S256())
+	if err != nil {
+		return nil, nil, nil, errors.Wrapf(err, "DeSoBlockProducer._getBlockTemplate: problem parsing block reward output public key: ")
+	}
+
 	// Skip the block reward, which is the first txn in the block.
 	for _, txnInBlock := range blockRet.Txns[1:] {
 		var feeNanos uint64
@@ -289,10 +296,31 @@ func (desoBlockProducer *DeSoBlockProducer) _getBlockTemplate(publicKey []byte) 
 				"DeSoBlockProducer._getBlockTemplate: Error attaching txn to UtxoView for computed block: %v", err)
 		}
 
-		// Add the fee to the block reward output as we go. Note this has some risk of
-		// increasing the size of the block by one byte, but it seems like this is an
-		// extreme edge case that goes away as soon as the function is called again.
-		totalFeeNanos += feeNanos
+		includeFeesInBlockReward := true
+		if blockRet.Header.Height >= uint64(desoBlockProducer.params.ForkHeights.BlockRewardPatchBlockHeight) {
+			// Parse the transactor's public key to compare with the block reward output public key.
+			transactorPublicKey, err := btcec.ParsePubKey(txnInBlock.PublicKey, btcec.S256())
+			if err != nil {
+				return nil, nil, nil, errors.Wrapf(err, "DeSoBlockProducer._getBlockTemplate: problem parsing transactor public key: ")
+			}
+			includeFeesInBlockReward = !transactorPublicKey.IsEqual(blockRewardOutputPublicKey)
+		}
+
+		// If the transactor is not the block reward output (or we're before the BlockRewardPatchBlockHeight),
+		// add the fee to the total.
+		// We exclude fees from transactions where the block reward output public key
+		// is the same as the transactor public key to prevent the block reward output
+		// public key from getting free transaction fees.
+		if includeFeesInBlockReward {
+			// Check for overflow
+			if totalFeeNanos > math.MaxUint64-feeNanos {
+				return nil, nil, nil, fmt.Errorf("DeSoBlockProducer._getBlockTemplate: Total fee overflowed uint64")
+			}
+			// Add the fee to the block reward output as we go. Note this has some risk of
+			// increasing the size of the block by one byte, but it seems like this is an
+			// extreme edge case that goes away as soon as the function is called again.
+			totalFeeNanos += feeNanos
+		}
 	}
 
 	// Now that the total fees have been computed, set the value of the block reward
@@ -401,6 +429,34 @@ func (desoBlockProducer *DeSoBlockProducer) AddBlockTemplate(block *MsgDeSoBlock
 	}
 }
 
+func RecomputeBlockRewardWithBlockRewardOutputPublicKey(block *MsgDeSoBlock, blockRewardOutputPublicKeyBytes []byte) (*MsgDeSoBlock, error) {
+	blockRewardOutputPublicKey, err := btcec.ParsePubKey(blockRewardOutputPublicKeyBytes, btcec.S256())
+	if err != nil {
+		return nil, errors.Wrap(
+			fmt.Errorf("RecomputeBlockRewardWithBlockRewardOutpubPublicKey: Problem parsing block reward output public key: %v", err), "")
+	}
+
+	// Find all transactions in block that have transactor == block reward output public key
+	// and sum fees to calculate the block reward
+	totalFees := uint64(0)
+	for _, txn := range block.Txns[1:] {
+		transactorPublicKey, err := btcec.ParsePubKey(txn.PublicKey, btcec.S256())
+		if err != nil {
+			glog.Errorf("DeSoMiner._startThread: Error parsing transactor public key: %v", err)
+			continue
+		}
+		if !transactorPublicKey.IsEqual(blockRewardOutputPublicKey) {
+			totalFees, err = SafeUint64().Add(totalFees, txn.TxnFeeNanos)
+			if err != nil {
+				glog.Errorf("DeSoMiner._startThread: Error adding txn fee: %v", err)
+				continue
+			}
+		}
+	}
+	block.Txns[0].TxOutputs[0].AmountNanos = CalcBlockRewardNanos(uint32(block.Header.Height)) + totalFees
+	return block, nil
+}
+
 func (blockProducer *DeSoBlockProducer) GetHeadersAndExtraDatas(
 	publicKeyBytes []byte, numHeaders int64, headerVersion uint32) (
 	_blockID string, _headers [][]byte, _extraNonces []uint64, _diffTarget *BlockHash, _err error) {
@@ -429,7 +485,11 @@ func (blockProducer *DeSoBlockProducer) GetHeadersAndExtraDatas(
 
 	// Swap out the public key in the block
 	latestBLockCopy.Txns[0].TxOutputs[0].PublicKey = publicKeyBytes
-
+	latestBLockCopy, err = RecomputeBlockRewardWithBlockRewardOutputPublicKey(latestBLockCopy, publicKeyBytes)
+	if err != nil {
+		return "", nil, nil, nil, errors.Wrap(
+			fmt.Errorf("GetBlockTemplate: Problem recomputing block reward: %v", err), "")
+	}
 	headers := [][]byte{}
 	extraNonces := []uint64{}
 

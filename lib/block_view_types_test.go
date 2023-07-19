@@ -259,7 +259,7 @@ func TestUtxoEntryEncodeDecode(t *testing.T) {
 	newMP := NewDeSoMempool(chain, 0, /* rateLimitFeeRateNanosPerKB */
 		0, /* minFeeRateNanosPerKB */
 		"" /*blockCypherAPIKey*/, false,
-		"" /*dataDir*/, "")
+		"" /*dataDir*/, "", true)
 	mempool.resetPool(newMP)
 
 	// Validating the first Bitcoin burn transaction via a UtxoView should

@@ -114,8 +114,7 @@ func _privateMessageWithExtraData(t *testing.T, chain *Blockchain, db *badger.DB
 }
 
 func TestBalanceModelPrivateMessages(t *testing.T) {
-	setBalanceModelBlockHeights()
-	defer resetBalanceModelBlockHeights()
+	setBalanceModelBlockHeights(t)
 
 	TestPrivateMessages(t)
 	TestMessagingKeys(t)

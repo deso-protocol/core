@@ -13,8 +13,7 @@ import (
 )
 
 func TestBalanceModelDAOCoinLimitOrders(t *testing.T) {
-	setBalanceModelBlockHeights()
-	defer resetBalanceModelBlockHeights()
+	setBalanceModelBlockHeights(t)
 
 	TestZeroCostOrderEdgeCaseDAOCoinLimitOrder(t)
 	TestDAOCoinLimitOrder(t)
@@ -617,6 +616,11 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 	// Initialize test chain and miner.
 	require := require.New(t)
 	chain, params, db := NewLowDifficultyBlockchain(t)
+	defer func() {
+		if chain.postgres != nil {
+			require.NoError(ResetPostgres(chain.postgres))
+		}
+	}()
 	mempool, miner := NewTestMiner(t, chain, params, true)
 
 	params.ForkHeights.DAOCoinBlockHeight = uint32(0)
