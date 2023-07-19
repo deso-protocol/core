@@ -34,6 +34,8 @@ import (
 // TYPES: ValidatorEntry
 //
 
+const MaxDelegatedStakeCommissionBasisPoints = uint64(10000) // 100% commission
+
 type ValidatorEntry struct {
 	// The ValidatorPKID is the primary key for a ValidatorEntry. It is the PKID
 	// for the transactor who registered the validator. A user's PKID can only
@@ -49,6 +51,12 @@ type ValidatorEntry struct {
 	// stake with themselves, but all other users will receive an error if they
 	// try to stake with this validator.
 	DisableDelegatedStake bool
+	// DelegatedStakeCommissionBasisPoints determines the percentage of
+	// staking rewards that the validator takes as a commission for delegated stake.
+	// For example, if a stake delegator has 5 DESO in staking rewards and the validator's
+	// commission is 10%, then the validator receives 0.5 DESO and the stake delegator receives
+	// 4.5 DESO.
+	DelegatedStakeCommissionBasisPoints uint64
 	// The VotingPublicKey is a BLS PublicKey that is used in consensus messages.
 	// A validator signs consensus messages with their VotingPrivateKey and then
 	// other validators can reliably prove the message came from this validator
@@ -119,16 +127,17 @@ func (validatorEntry *ValidatorEntry) Copy() *ValidatorEntry {
 
 	// Return new ValidatorEntry.
 	return &ValidatorEntry{
-		ValidatorPKID:           validatorEntry.ValidatorPKID.NewPKID(),
-		Domains:                 domainsCopy,
-		DisableDelegatedStake:   validatorEntry.DisableDelegatedStake,
-		VotingPublicKey:         validatorEntry.VotingPublicKey.Copy(),
-		VotingAuthorization:     validatorEntry.VotingAuthorization.Copy(),
-		TotalStakeAmountNanos:   validatorEntry.TotalStakeAmountNanos.Clone(),
-		LastActiveAtEpochNumber: validatorEntry.LastActiveAtEpochNumber,
-		JailedAtEpochNumber:     validatorEntry.JailedAtEpochNumber,
-		ExtraData:               copyExtraData(validatorEntry.ExtraData),
-		isDeleted:               validatorEntry.isDeleted,
+		ValidatorPKID:                       validatorEntry.ValidatorPKID.NewPKID(),
+		Domains:                             domainsCopy,
+		DisableDelegatedStake:               validatorEntry.DisableDelegatedStake,
+		DelegatedStakeCommissionBasisPoints: validatorEntry.DelegatedStakeCommissionBasisPoints,
+		VotingPublicKey:                     validatorEntry.VotingPublicKey.Copy(),
+		VotingAuthorization:                 validatorEntry.VotingAuthorization.Copy(),
+		TotalStakeAmountNanos:               validatorEntry.TotalStakeAmountNanos.Clone(),
+		LastActiveAtEpochNumber:             validatorEntry.LastActiveAtEpochNumber,
+		JailedAtEpochNumber:                 validatorEntry.JailedAtEpochNumber,
+		ExtraData:                           copyExtraData(validatorEntry.ExtraData),
+		isDeleted:                           validatorEntry.isDeleted,
 	}
 }
 
@@ -143,6 +152,7 @@ func (validatorEntry *ValidatorEntry) RawEncodeWithoutMetadata(blockHeight uint6
 	}
 
 	data = append(data, BoolToByte(validatorEntry.DisableDelegatedStake))
+	data = append(data, UintToBuf(validatorEntry.DelegatedStakeCommissionBasisPoints)...)
 	data = append(data, EncodeBLSPublicKey(validatorEntry.VotingPublicKey)...)
 	data = append(data, EncodeBLSSignature(validatorEntry.VotingAuthorization)...)
 	data = append(data, VariableEncodeUint256(validatorEntry.TotalStakeAmountNanos)...)
@@ -178,6 +188,12 @@ func (validatorEntry *ValidatorEntry) RawDecodeWithoutMetadata(blockHeight uint6
 	validatorEntry.DisableDelegatedStake, err = ReadBoolByte(rr)
 	if err != nil {
 		return errors.Wrapf(err, "ValidatorEntry.Decode: Problem reading DisableDelegatedStake: ")
+	}
+
+	// DelegatedStakeCommissionBasisPoints
+	validatorEntry.DelegatedStakeCommissionBasisPoints, err = ReadUvarint(rr)
+	if err != nil {
+		return errors.Wrapf(err, "ValidatorEntry.Decode: Problem reading DelegatedStakeCommissionBasisPoints: ")
 	}
 
 	// VotingPublicKey
@@ -232,10 +248,11 @@ func (validatorEntry *ValidatorEntry) GetEncoderType() EncoderType {
 //
 
 type RegisterAsValidatorMetadata struct {
-	Domains               [][]byte
-	DisableDelegatedStake bool
-	VotingPublicKey       *bls.PublicKey
-	VotingAuthorization   *bls.Signature
+	Domains                             [][]byte
+	DisableDelegatedStake               bool
+	DelegatedStakeCommissionBasisPoints uint64
+	VotingPublicKey                     *bls.PublicKey
+	VotingAuthorization                 *bls.Signature
 }
 
 func (txnData *RegisterAsValidatorMetadata) GetTxnType() TxnType {
@@ -252,6 +269,7 @@ func (txnData *RegisterAsValidatorMetadata) ToBytes(preSignature bool) ([]byte, 
 	}
 
 	data = append(data, BoolToByte(txnData.DisableDelegatedStake))
+	data = append(data, UintToBuf(txnData.DelegatedStakeCommissionBasisPoints)...)
 	data = append(data, EncodeBLSPublicKey(txnData.VotingPublicKey)...)
 	data = append(data, EncodeBLSSignature(txnData.VotingAuthorization)...)
 	return data, nil
@@ -277,6 +295,12 @@ func (txnData *RegisterAsValidatorMetadata) FromBytes(data []byte) error {
 	txnData.DisableDelegatedStake, err = ReadBoolByte(rr)
 	if err != nil {
 		return errors.Wrapf(err, "RegisterAsValidatorMetadata.FromBytes: Problem reading DisableDelegatedStake: ")
+	}
+
+	// DelegatedStakeCommissionBasisPoints
+	txnData.DelegatedStakeCommissionBasisPoints, err = ReadUvarint(rr)
+	if err != nil {
+		return errors.Wrapf(err, "RegisterAsValidatorMetadata.FromBytes: Problem reading DelegatedStakeCommissionBasisPoints: ")
 	}
 
 	// VotingPublicKey
@@ -347,11 +371,12 @@ func (txnData *UnjailValidatorMetadata) New() DeSoTxnMetadata {
 //
 
 type RegisterAsValidatorTxindexMetadata struct {
-	ValidatorPublicKeyBase58Check string
-	Domains                       []string
-	DisableDelegatedStake         bool
-	VotingPublicKey               string
-	VotingAuthorization           string
+	ValidatorPublicKeyBase58Check       string
+	Domains                             []string
+	DisableDelegatedStake               bool
+	DelegatedStakeCommissionBasisPoints uint64
+	VotingPublicKey                     string
+	VotingAuthorization                 string
 }
 
 func (txindexMetadata *RegisterAsValidatorTxindexMetadata) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte {
@@ -365,6 +390,7 @@ func (txindexMetadata *RegisterAsValidatorTxindexMetadata) RawEncodeWithoutMetad
 	}
 
 	data = append(data, BoolToByte(txindexMetadata.DisableDelegatedStake))
+	data = append(data, UintToBuf(txindexMetadata.DelegatedStakeCommissionBasisPoints)...)
 	data = append(data, EncodeByteArray([]byte(txindexMetadata.VotingPublicKey))...)
 	data = append(data, EncodeByteArray([]byte(txindexMetadata.VotingAuthorization))...)
 	return data
@@ -397,6 +423,12 @@ func (txindexMetadata *RegisterAsValidatorTxindexMetadata) RawDecodeWithoutMetad
 	txindexMetadata.DisableDelegatedStake, err = ReadBoolByte(rr)
 	if err != nil {
 		return errors.Wrapf(err, "RegisterAsValidatorTxindexMetadata.Decode: Problem reading DisableDelegatedStake: ")
+	}
+
+	// DelegatedStakeCommissionBasisPoints
+	txindexMetadata.DelegatedStakeCommissionBasisPoints, err = ReadUvarint(rr)
+	if err != nil {
+		return errors.Wrapf(err, "RegisterAsValidatorTxindexMetadata.Decode: Problem reading DelegatedStakeCommissionBasisPoints: ")
 	}
 
 	// VotingPublicKey
@@ -1065,14 +1097,15 @@ func (bav *UtxoView) _connectRegisterAsValidator(
 		ValidatorPKID: transactorPKIDEntry.PKID,
 		// Note: if someone is updating their ValidatorEntry, they need to include
 		// all domains. The Domains field is not appended to. It is overwritten.
-		Domains:                 txMeta.Domains,
-		DisableDelegatedStake:   txMeta.DisableDelegatedStake,
-		VotingPublicKey:         txMeta.VotingPublicKey,
-		VotingAuthorization:     txMeta.VotingAuthorization,
-		TotalStakeAmountNanos:   totalStakeAmountNanos,
-		LastActiveAtEpochNumber: lastActiveAtEpochNumber,
-		JailedAtEpochNumber:     jailedAtEpochNumber,
-		ExtraData:               mergeExtraData(prevExtraData, txn.ExtraData),
+		Domains:                             txMeta.Domains,
+		DisableDelegatedStake:               txMeta.DisableDelegatedStake,
+		DelegatedStakeCommissionBasisPoints: txMeta.DelegatedStakeCommissionBasisPoints,
+		VotingPublicKey:                     txMeta.VotingPublicKey,
+		VotingAuthorization:                 txMeta.VotingAuthorization,
+		TotalStakeAmountNanos:               totalStakeAmountNanos,
+		LastActiveAtEpochNumber:             lastActiveAtEpochNumber,
+		JailedAtEpochNumber:                 jailedAtEpochNumber,
+		ExtraData:                           mergeExtraData(prevExtraData, txn.ExtraData),
 	}
 	// Set the ValidatorEntry.
 	bav._setValidatorEntryMappings(currentValidatorEntry)
@@ -1552,6 +1585,11 @@ func (bav *UtxoView) IsValidRegisterAsValidatorMetadata(
 	}
 	if len(NewSet(domainStrings).ToSlice()) != len(domainStrings) {
 		return errors.Wrapf(RuleErrorValidatorDuplicateDomains, "UtxoView.IsValidRegisterAsValidatorMetadata: ")
+	}
+
+	// Validate DelegatedStakeCommissionBasisPoints.
+	if metadata.DelegatedStakeCommissionBasisPoints > MaxDelegatedStakeCommissionBasisPoints {
+		return errors.Wrapf(RuleErrorValidatorInvalidCommissionBasisPoints, "UtxoView.IsValidRegisterAsValidatorMetadata: ")
 	}
 
 	// Validate VotingPublicKey.
@@ -2228,6 +2266,7 @@ const RuleErrorValidatorNoDomains RuleError = "RuleErrorValidatorNoDomains"
 const RuleErrorValidatorTooManyDomains RuleError = "RuleErrorValidatorTooManyDomains"
 const RuleErrorValidatorInvalidDomain RuleError = "RuleErrorValidatorInvalidDomain"
 const RuleErrorValidatorDuplicateDomains RuleError = "RuleErrorValidatorDuplicateDomains"
+const RuleErrorValidatorInvalidCommissionBasisPoints RuleError = "RuleErrorValidatorInvalidCommissionBasisPoints"
 const RuleErrorValidatorNotFound RuleError = "RuleErrorValidatorNotFound"
 const RuleErrorValidatorMissingVotingPublicKey RuleError = "RuleErrorValidatorMissingVotingPublicKey"
 const RuleErrorValidatorMissingVotingAuthorization RuleError = "RuleErrorValidatorMissingVotingAuthorization"
