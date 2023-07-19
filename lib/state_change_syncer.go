@@ -720,9 +720,7 @@ func (stateChangeSyncer *StateChangeSyncer) FlushAllEntriesToFile(server *Server
 			})
 		}
 	}
-	// Mark the blocksync complete entries as flushed.
-	stateChangeSyncer.BlocksyncCompleteEntriesFlushed = true
-	// TODO: Move this to a defer up top.
+	// Reset the deadpool timeout to the default amount
 	deadlock.Opts.DeadlockTimeout = 10 * time.Minute
 	return nil
 }

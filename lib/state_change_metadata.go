@@ -123,8 +123,6 @@ func (submitPostSCM *SubmitPostStateChangeMetadata) RawEncodeWithoutMetadata(blo
 	var data []byte
 	data = append(data, EncodeToBytes(blockHeight, submitPostSCM.PostEntry, skipMetadata...)...)
 	data = append(data, EncodeToBytes(blockHeight, submitPostSCM.RepostPostEntry, skipMetadata...)...)
-	// Encode the number of profiles mentioned.
-	data = append(data, UintToBuf(uint64(len(submitPostSCM.ProfilesMentioned)))...)
 
 	data = append(data, EncodeDeSoEncoderSlice(submitPostSCM.ProfilesMentioned, blockHeight, skipMetadata...)...)
 
