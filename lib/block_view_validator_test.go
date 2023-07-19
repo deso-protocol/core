@@ -100,6 +100,20 @@ func _testValidatorRegistration(t *testing.T, flushToDB bool) {
 		GlobalDeSoParams.EncoderMigrationHeightsList = GetEncoderMigrationHeightsList(&params.ForkHeights)
 	}
 	{
+		// RuleErrorValidatorInvalidCommissionBasisPoints
+		votingPublicKey, votingAuthorization := _generateVotingPublicKeyAndAuthorization(t, m0PkBytes)
+		registerMetadata = &RegisterAsValidatorMetadata{
+			Domains:                             [][]byte{[]byte("https://example.com")},
+			DisableDelegatedStake:               true,
+			DelegatedStakeCommissionBasisPoints: MaxDelegatedStakeCommissionBasisPoints + 1,
+			VotingPublicKey:                     votingPublicKey,
+			VotingAuthorization:                 votingAuthorization,
+		}
+		_, err = _submitRegisterAsValidatorTxn(testMeta, m0Pub, m0Priv, registerMetadata, nil, flushToDB)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), RuleErrorValidatorInvalidCommissionBasisPoints)
+	}
+	{
 		// RuleErrorValidatorNoDomains
 		registerMetadata = &RegisterAsValidatorMetadata{
 			Domains:               [][]byte{},
