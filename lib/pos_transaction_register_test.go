@@ -27,7 +27,7 @@ func TestSanityCheckTransactionRegister(t *testing.T) {
 	}
 	require.Nil(txnRegister.AddTransaction(txn))
 	require.Equal(false, txnRegister.Empty())
-	require.Equal(1, len(txnRegister.GetFeeTimeTransactions()))
+	require.Len(txnRegister.GetFeeTimeTransactions(), 1)
 	require.Equal(true, txnRegister.Includes(txn))
 	it = txnRegister.GetFeeTimeIterator()
 	require.Equal(true, it.Next())
@@ -35,7 +35,7 @@ func TestSanityCheckTransactionRegister(t *testing.T) {
 	require.Equal(true, ok)
 	require.Equal(true, bytes.Equal(txn.Hash[:], recTxn.Hash[:]))
 	require.Nil(txnRegister.RemoveTransaction(recTxn))
-	require.Equal(0, len(txnRegister.GetFeeTimeTransactions()))
+	require.Len(txnRegister.GetFeeTimeTransactions(), 0)
 	require.Equal(true, txnRegister.Empty())
 
 	// TransactionRegister with no transactions and a single empty FeeTimeBucket.
@@ -46,7 +46,7 @@ func TestSanityCheckTransactionRegister(t *testing.T) {
 	txnRegister.feeTimeBucketsByMinFeeMap[0] = emptyFeeTimeBucket
 	newIt := txnRegister.GetFeeTimeIterator()
 	require.Equal(false, newIt.Next())
-	require.Equal(0, len(txnRegister.GetFeeTimeTransactions()))
+	require.Len(txnRegister.GetFeeTimeTransactions(), 0)
 
 	// Remove non-existing transaction from empty TransactionRegister.
 	txn2 := &MempoolTx{
@@ -55,14 +55,14 @@ func TestSanityCheckTransactionRegister(t *testing.T) {
 		Hash:     NewBlockHash(RandomBytes(32)),
 	}
 	require.Nil(txnRegister.RemoveTransaction(txn2))
-	require.Equal(0, len(txnRegister.GetFeeTimeTransactions()))
+	require.Len(txnRegister.GetFeeTimeTransactions(), 0)
 
 	// Remove non-existing transaction from non-empty TransactionRegister.
 	require.NoError(txnRegister.AddTransaction(txn))
-	require.Equal(1, len(txnRegister.GetFeeTimeTransactions()))
+	require.Len(txnRegister.GetFeeTimeTransactions(), 1)
 	require.Equal(true, txnRegister.Includes(txn))
 	require.Nil(txnRegister.RemoveTransaction(txn2))
-	require.Equal(1, len(txnRegister.GetFeeTimeTransactions()))
+	require.Len(txnRegister.GetFeeTimeTransactions(), 1)
 	require.Equal(true, txnRegister.Includes(txn))
 	require.Equal(false, txnRegister.Includes(txn2))
 	require.Equal(true, bytes.Equal(txnRegister.GetFeeTimeTransactions()[0].Hash[:], txn.Hash[:]))
@@ -73,7 +73,7 @@ func TestSanityCheckFeeTimeBucket(t *testing.T) {
 
 	// Empty FeeTimeBucket
 	feeTimeBucket := NewFeeTimeBucket(100000, 110000)
-	require.Equal(0, len(feeTimeBucket.GetTransactions()))
+	require.Len(feeTimeBucket.GetTransactions(), 0)
 	require.Equal(uint64(0), feeTimeBucket.totalTxnsSizeBytes)
 	require.Equal(true, feeTimeBucket.Empty())
 
@@ -86,13 +86,13 @@ func TestSanityCheckFeeTimeBucket(t *testing.T) {
 	}
 
 	require.Nil(feeTimeBucket.AddTransaction(txn))
-	require.Equal(1, len(feeTimeBucket.GetTransactions()))
+	require.Len(feeTimeBucket.GetTransactions(), 1)
 	require.Equal(txn.TxSizeBytes, feeTimeBucket.totalTxnsSizeBytes)
 	require.Equal(false, feeTimeBucket.Empty())
 
 	// Try adding the same transaction again.
 	require.Nil(feeTimeBucket.AddTransaction(txn))
-	require.Equal(1, len(feeTimeBucket.GetTransactions()))
+	require.Len(feeTimeBucket.GetTransactions(), 1)
 	require.Equal(txn.TxSizeBytes, feeTimeBucket.totalTxnsSizeBytes)
 	require.Equal(false, feeTimeBucket.Empty())
 
@@ -103,7 +103,7 @@ func TestSanityCheckFeeTimeBucket(t *testing.T) {
 		Hash:     NewBlockHash(RandomBytes(32)),
 	}
 	feeTimeBucket.RemoveTransaction(txn2)
-	require.Equal(1, len(feeTimeBucket.GetTransactions()))
+	require.Len(feeTimeBucket.GetTransactions(), 1)
 	require.Equal(txn.TxSizeBytes, feeTimeBucket.totalTxnsSizeBytes)
 	require.Equal(false, feeTimeBucket.Empty())
 	require.Equal(true, feeTimeBucket.Includes(txn))
@@ -111,7 +111,7 @@ func TestSanityCheckFeeTimeBucket(t *testing.T) {
 
 	// Remove existing transactions from FeeTimeBucket.
 	feeTimeBucket.RemoveTransaction(txn)
-	require.Equal(0, len(feeTimeBucket.GetTransactions()))
+	require.Len(feeTimeBucket.GetTransactions(), 0)
 	require.Equal(uint64(0), feeTimeBucket.totalTxnsSizeBytes)
 	require.Equal(true, feeTimeBucket.Empty())
 	require.Equal(false, feeTimeBucket.Includes(txn))
@@ -119,7 +119,7 @@ func TestSanityCheckFeeTimeBucket(t *testing.T) {
 
 	// Remove non-existing transaction from empty FeeTimeBucket.
 	feeTimeBucket.RemoveTransaction(txn2)
-	require.Equal(0, len(feeTimeBucket.GetTransactions()))
+	require.Len(feeTimeBucket.GetTransactions(), 0)
 	require.Equal(uint64(0), feeTimeBucket.totalTxnsSizeBytes)
 	require.Equal(true, feeTimeBucket.Empty())
 	require.Equal(false, feeTimeBucket.Includes(txn))
@@ -147,12 +147,12 @@ func TestTransactionRegisterPrune(t *testing.T) {
 	// Try pruning 0 bytes
 	txns, err := txnRegister.PruneToSize(txnRegister.totalTxnsSizeBytes)
 	require.Nil(err)
-	require.Equal(0, len(txns))
+	require.Len(txns, 0)
 
 	// Remove a single transaction
 	txns, err = txnRegister.PruneToSize(txnRegister.totalTxnsSizeBytes - 1)
 	require.Nil(err)
-	require.Equal(1, len(txns))
+	require.Len(txns, 1)
 	totalSize -= txns[0].TxSizeBytes
 	require.Equal(totalSize, txnRegister.totalTxnsSizeBytes)
 
@@ -209,7 +209,7 @@ func TestTransactionRegisterPrune(t *testing.T) {
 	// Remove the last transaction
 	txns, err = txnRegister.PruneToSize(txnRegister.totalTxnsSizeBytes - 1)
 	require.Nil(err)
-	require.Equal(1, len(txns))
+	require.Len(txns, 1)
 	require.Equal(uint64(0), txnRegister.totalTxnsSizeBytes)
 	require.Equal(0, len(txnRegister.GetFeeTimeTransactions()))
 	require.Equal(true, bytes.Equal(firstTxn.Hash[:], txns[0].Hash[:]))
@@ -217,7 +217,7 @@ func TestTransactionRegisterPrune(t *testing.T) {
 	// Try pruning empty register
 	txns, err = txnRegister.PruneToSize(txnRegister.totalTxnsSizeBytes - 1)
 	require.Nil(err)
-	require.Equal(0, len(txns))
+	require.Len(txns, 0)
 
 	// Re-add all transactions
 	totalSize = 0
@@ -244,7 +244,7 @@ func TestTransactionRegisterPrune(t *testing.T) {
 	// Remove all transactions with higher min byte count
 	txns, err = txnRegister.PruneToSize(math.MaxUint64)
 	require.Nil(err)
-	require.Equal(0, len(txns))
+	require.Len(txns, 0)
 	require.Equal(len(txnPool), len(txnRegister.GetFeeTimeTransactions()))
 }
 

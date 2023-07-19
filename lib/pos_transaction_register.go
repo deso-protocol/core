@@ -114,7 +114,7 @@ func (tr *TransactionRegister) addTransactionNoLock(txn *MempoolTx) error {
 
 	if !bucketExists {
 		// If the bucket didn't exist, add it to the set and the map.
-		tr.addBucket(bucket)
+		tr.addBucketNoLock(bucket)
 	}
 
 	tr.totalTxnsSizeBytes += txn.TxSizeBytes
@@ -159,7 +159,7 @@ func (tr *TransactionRegister) removeTransactionNoLock(txn *MempoolTx) error {
 		bucket.RemoveTransaction(txn)
 		// If the bucket becomes empty, remove it from the TransactionRegister.
 		if bucket.Empty() {
-			tr.removeBucket(bucket)
+			tr.removeBucketNoLock(bucket)
 		}
 	}
 
@@ -168,7 +168,7 @@ func (tr *TransactionRegister) removeTransactionNoLock(txn *MempoolTx) error {
 	return nil
 }
 
-func (tr *TransactionRegister) addBucket(bucket *FeeTimeBucket) {
+func (tr *TransactionRegister) addBucketNoLock(bucket *FeeTimeBucket) {
 	if bucket == nil {
 		return
 	}
@@ -177,7 +177,7 @@ func (tr *TransactionRegister) addBucket(bucket *FeeTimeBucket) {
 	tr.feeTimeBucketsByMinFeeMap[bucket.minFeeNanosPerKB] = bucket
 }
 
-func (tr *TransactionRegister) removeBucket(bucket *FeeTimeBucket) {
+func (tr *TransactionRegister) removeBucketNoLock(bucket *FeeTimeBucket) {
 	if bucket == nil {
 		return
 	}
