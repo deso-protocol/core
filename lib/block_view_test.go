@@ -2102,7 +2102,7 @@ func TestBlockRewardPatch(t *testing.T) {
 		txHashes, err := ComputeTransactionHashes(blkToMine.Txns)
 		require.NoError(t, err)
 		blkToMine.Header.Nonce = bestNonce
-		utxoView, _ := NewUtxoView(db, params, chain.postgres, chain.snapshot)
+		utxoView, _ := NewUtxoView(db, params, chain.postgres, chain.snapshot, nil)
 		_, err = utxoView.ConnectBlock(blkToMine, txHashes, true, nil, uint64(chain.blockTip().Height+1))
 		require.Error(t, err)
 		require.Contains(t, err.Error(), RuleErrorBlockRewardTxnMustHaveOneOutput)
@@ -2136,7 +2136,7 @@ func TestBlockRewardPatch(t *testing.T) {
 			chain.AddInputsAndChangeToTransaction(txn, testMeta.feeRateNanosPerKb, nil)
 		require.NoError(t, err)
 		_signTxn(t, txn, senderPrivString)
-		utxoView, err := NewUtxoView(db, params, chain.postgres, chain.snapshot)
+		utxoView, err := NewUtxoView(db, params, chain.postgres, chain.snapshot, nil)
 		require.NoError(t, err)
 		_, _, _, fees, err := utxoView._connectTransaction(txn, txn.Hash(), getTxnSize(*txn), chain.blockTip().Height+1, true, false)
 		require.NoError(t, err)
@@ -2151,12 +2151,12 @@ func TestBlockRewardPatch(t *testing.T) {
 		txHashes, err := ComputeTransactionHashes(blkToMine.Txns)
 		require.NoError(t, err)
 		blkToMine.Header.Nonce = bestNonce
-		utxoView, err = NewUtxoView(db, params, chain.postgres, chain.snapshot)
+		utxoView, err = NewUtxoView(db, params, chain.postgres, chain.snapshot, nil)
 		require.NoError(t, err)
 		_, err = utxoView.ConnectBlock(blkToMine, txHashes, true, nil, uint64(chain.blockTip().Height+1))
 		require.Contains(t, err.Error(), RuleErrorBlockRewardExceedsMaxAllowed)
 
-		utxoView, err = NewUtxoView(db, params, chain.postgres, chain.snapshot)
+		utxoView, err = NewUtxoView(db, params, chain.postgres, chain.snapshot, nil)
 		require.NoError(t, err)
 		// Reduce fees and try again, should succeed.
 		blkToMine.Txns[0].TxOutputs[0].AmountNanos -= fees
