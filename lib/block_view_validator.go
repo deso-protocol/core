@@ -52,10 +52,10 @@ type ValidatorEntry struct {
 	// try to stake with this validator.
 	DisableDelegatedStake bool
 	// DelegatedStakeCommissionBasisPoints determines the percentage of
-	// staking rewards that the validator takes as a commission for delegated stake.
-	// For example, if a stake delegator has 5 DESO in staking rewards and the validator's
-	// commission is 10%, then the validator receives 0.5 DESO and the stake delegator receives
-	// 4.5 DESO.
+	// staking rewards that the validator takes as commission from its stake delegators'
+	// rewards. For example, if a stake delegator has 5 DESO in staking rewards and the
+	// validator's commission rate is 10%, then the validator receives 0.5 DESO and the
+	// stake delegator receives 4.5 DESO.
 	DelegatedStakeCommissionBasisPoints uint64
 	// The VotingPublicKey is a BLS PublicKey that is used in consensus messages.
 	// A validator signs consensus messages with their VotingPrivateKey and then
