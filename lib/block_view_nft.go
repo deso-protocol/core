@@ -1810,8 +1810,11 @@ func (bav *UtxoView) _connectNFTBid(
 
 		// Track state change details.
 		stateChangeMetadata := &NFTBidStateChangeMetadata{
-			PostEntry:                 postEntry,
-			OwnerPublicKeyBase58Check: PkToString(bav.GetPublicKeyForPKID(nftEntry.OwnerPKID), bav.Params),
+			PostEntry: postEntry,
+		}
+
+		if nftEntry != nil {
+			stateChangeMetadata.OwnerPublicKeyBase58Check = PkToString(bav.GetPublicKeyForPKID(nftEntry.OwnerPKID), bav.Params)
 		}
 
 		// Add an operation to the list at the end indicating we've connected an NFT bid.
