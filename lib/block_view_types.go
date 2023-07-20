@@ -3785,10 +3785,10 @@ type GlobalParamsEntry struct {
 	// StakingRewardInterestRatePerEpochScaled1e9 determines the interest rate that
 	// stakers receive on their stake every epoch in the Proof-of-Stake consensus.
 	// This value is defined as a scaled fixed-point number such that it has a high
-	// enough resolution to capture small interest rates or interest rates for short
-	// epoch durations. The scaling factor is 1e18. Examples:
-	// - An interest rate of 1% corresponds to a value of 0.01 * 1e9
-	// - An interest rate of 100% corresponds to a value of 1.0 * 1e9
+	// enough resolution to capture small interest rates. The scaling factor is 1e9.
+	// Examples:
+	// - An interest rate of 1% per epoch corresponds to a value of 0.01 * 1e9
+	// - An interest rate of 100% per epoch corresponds to a value of 1.0 * 1e9
 	StakingRewardInterestRatePerEpochScaled1e9 uint64
 
 	// EpochDurationNumBlocks is the number of blocks included in one epoch.
