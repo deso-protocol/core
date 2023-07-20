@@ -6,96 +6,105 @@ import (
 	"sync"
 )
 
-// BalanceLedger is a simple in-memory ledger of reserved balances for user public keys. The values in the ledger can be
-// increased or decreased, as long as user's reserved balance doesn't exceed the user's spendable balance.
+// BalanceLedger is a simple in-memory ledger of balances for user public keys. The balances in the ledger can be
+// increased or decreased, as long as user's new balance doesn't exceed the user's total max balance.
 type BalanceLedger struct {
 	sync.RWMutex
 
-	// Map of public keys to reserved balances in nanos.
-	reservedBalancesNanos map[PublicKey]uint64
+	// Map of public keys to balances.
+	balances map[PublicKey]uint64
 }
 
 func NewBalanceLedger() *BalanceLedger {
 	return &BalanceLedger{
-		reservedBalancesNanos: make(map[PublicKey]uint64),
+		balances: make(map[PublicKey]uint64),
 	}
 }
 
-// CheckBalanceIncrease checks if the user's reserved balance can be increased by the given amount. If the user's
-// reserved balance + amountNanos is less than their spendableBalanceNanos, the increase is allowed. Otherwise, an error is returned.
-func (pml *BalanceLedger) CheckBalanceIncrease(publicKey PublicKey, amountNanos uint64, spendableBalanceNanos uint64) error {
-	pml.RLock()
-	defer pml.RUnlock()
+// CheckBalanceIncrease checks if the user's balance can be increased by the given amount. If the user's balance + amount
+// is less or equal than the provided maxBalance, the increase is allowed. Otherwise, an error is returned.
+func (bl *BalanceLedger) CheckBalanceIncrease(publicKey PublicKey, amount uint64, maxBalance uint64) error {
+	bl.RLock()
+	defer bl.RUnlock()
 
-	reservedBalance, exists := pml.reservedBalancesNanos[publicKey]
+	balance, exists := bl.balances[publicKey]
 
-	// Check for reserved balance overflow.
-	if exists && amountNanos > math.MaxUint64-reservedBalance {
-		return errors.Errorf("CheckBalanceIncrease: Reserved balance overflow")
+	// Check for balance overflow.
+	if exists && amount > math.MaxUint64-balance {
+		return errors.Errorf("CheckBalanceIncrease: balance overflow")
 	}
 
-	newReservedBalance := reservedBalance + amountNanos
-	if newReservedBalance > spendableBalanceNanos {
+	newBalance := balance + amount
+	if newBalance > maxBalance {
 		return errors.Errorf("PosMempool.AddTransaction: Not enough balance to cover txn fees "+
-			"(newReservedBalance: %d, spendableBalanceNanos: %d)", newReservedBalance, spendableBalanceNanos)
+			"(newBalance: %d, maxBalance: %d)", newBalance, maxBalance)
 	}
 	return nil
 }
 
-// CheckBalanceDecrease checks if the user's reserved balance can be decreased by the given amount. If the user's
-// reserved balance is greater or equal to the amountNanos, the decrease is allowed. Otherwise, an error is returned.
-func (pml *BalanceLedger) CheckBalanceDecrease(publicKey PublicKey, amountNanos uint64) error {
-	pml.RLock()
-	defer pml.RUnlock()
+// CheckBalanceDecrease checks if the user's balance can be decreased by the given amount. If the user's balance is
+// greater or equal to the amount, the decrease is allowed. Otherwise, an error is returned.
+func (bl *BalanceLedger) CheckBalanceDecrease(publicKey PublicKey, amountNanos uint64) error {
+	bl.RLock()
+	defer bl.RUnlock()
 
-	reservedBalance, exists := pml.reservedBalancesNanos[publicKey]
+	balance, exists := bl.balances[publicKey]
 	if !exists {
-		return errors.Errorf("CheckBalanceDecrease: No reserved balance for public key")
+		return errors.Errorf("CheckBalanceDecrease: No balance for public key")
 	}
-	if amountNanos > reservedBalance {
-		return errors.Errorf("CheckBalanceDecrease: Amount exceeds reserved balance")
+	if amountNanos > balance {
+		return errors.Errorf("CheckBalanceDecrease: Amount exceeds current balance")
 	}
 	return nil
 }
 
-// IncreaseBalance increases the user's reserved balance by the given amount.
-func (pml *BalanceLedger) IncreaseBalance(publicKey PublicKey, amount uint64) {
-	pml.Lock()
-	defer pml.Unlock()
+// IncreaseBalance increases the user's balance by the given amount. CheckBalanceIncrease should be called before
+// calling this function to ensure the increase is allowed.
+func (bl *BalanceLedger) IncreaseBalance(publicKey PublicKey, amount uint64) {
+	bl.Lock()
+	defer bl.Unlock()
 
-	reservedBalance, _ := pml.reservedBalancesNanos[publicKey]
-	pml.reservedBalancesNanos[publicKey] = reservedBalance + amount
+	balance, _ := bl.balances[publicKey]
+	// Check for balance overflow.
+	if amount > math.MaxUint64-balance {
+		bl.balances[publicKey] = math.MaxUint64
+		return
+	}
+
+	bl.balances[publicKey] = balance + amount
 }
 
-// DecreaseBalance decreases the user's reserved balance by the given amount.
-func (pml *BalanceLedger) DecreaseBalance(publicKey PublicKey, amount uint64) {
-	pml.Lock()
-	defer pml.Unlock()
+// DecreaseBalance decreases the user's balance by the given amount. CheckBalanceDecrease should be called before
+// calling this function to ensure the decrease is allowed.
+func (bl *BalanceLedger) DecreaseBalance(publicKey PublicKey, amount uint64) {
+	bl.Lock()
+	defer bl.Unlock()
 
-	reservedBalance, exists := pml.reservedBalancesNanos[publicKey]
+	balance, exists := bl.balances[publicKey]
 	if !exists {
 		return
 	}
-	if amount > reservedBalance {
-		pml.reservedBalancesNanos[publicKey] = 0
+	// Check for balance underflow.
+	if amount > balance {
+		delete(bl.balances, publicKey)
 		return
 	}
 
-	pml.reservedBalancesNanos[publicKey] = reservedBalance - amount
+	bl.balances[publicKey] = balance - amount
 }
 
-// GetReservedBalanceNanos returns the user's reserved balance in nanos.
-func (pml *BalanceLedger) GetReservedBalanceNanos(publicKey PublicKey) uint64 {
-	pml.RLock()
-	defer pml.RUnlock()
+// GetBalance returns the user's balance in nanos.
+func (bl *BalanceLedger) GetBalance(publicKey PublicKey) uint64 {
+	bl.RLock()
+	defer bl.RUnlock()
 
-	reservedBalance, _ := pml.reservedBalancesNanos[publicKey]
-	return reservedBalance
+	balance, _ := bl.balances[publicKey]
+	return balance
 }
 
-func (pml *BalanceLedger) Reset() {
-	pml.Lock()
-	defer pml.Unlock()
+func (bl *BalanceLedger) Reset() {
+	bl.Lock()
+	defer bl.Unlock()
 
-	pml.reservedBalancesNanos = make(map[PublicKey]uint64)
+	bl.balances = make(map[PublicKey]uint64)
 }
