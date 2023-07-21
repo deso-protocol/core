@@ -21,9 +21,9 @@ func NewBalanceLedger() *BalanceLedger {
 	}
 }
 
-// CheckBalanceIncrease checks if the user's balance can be increased by the given amount. If the user's balance + amount
+// CanIncreaseBalance checks if the user's balance can be increased by the given amount. If the user's balance + amount
 // is less or equal than the provided maxBalance, the increase is allowed. Otherwise, an error is returned.
-func (bl *BalanceLedger) CheckBalanceIncrease(publicKey PublicKey, amount uint64, maxBalance uint64) error {
+func (bl *BalanceLedger) CanIncreaseBalance(publicKey PublicKey, amount uint64, maxBalance uint64) error {
 	bl.RLock()
 	defer bl.RUnlock()
 
@@ -31,34 +31,34 @@ func (bl *BalanceLedger) CheckBalanceIncrease(publicKey PublicKey, amount uint64
 
 	// Check for balance overflow.
 	if exists && amount > math.MaxUint64-balance {
-		return errors.Errorf("CheckBalanceIncrease: balance overflow")
+		return errors.Errorf("CanIncreaseBalance: balance overflow")
 	}
 
 	newBalance := balance + amount
 	if newBalance > maxBalance {
-		return errors.Errorf("PosMempool.AddTransaction: Not enough balance to cover txn fees "+
+		return errors.Errorf("CanIncreaseBalance: Not enough balance to cover txn fees "+
 			"(newBalance: %d, maxBalance: %d)", newBalance, maxBalance)
 	}
 	return nil
 }
 
-// CheckBalanceDecrease checks if the user's balance can be decreased by the given amount. If the user's balance is
+// CanDecreaseBalance checks if the user's balance can be decreased by the given amount. If the user's balance is
 // greater or equal to the amount, the decrease is allowed. Otherwise, an error is returned.
-func (bl *BalanceLedger) CheckBalanceDecrease(publicKey PublicKey, amountNanos uint64) error {
+func (bl *BalanceLedger) CanDecreaseBalance(publicKey PublicKey, amountNanos uint64) error {
 	bl.RLock()
 	defer bl.RUnlock()
 
 	balance, exists := bl.balances[publicKey]
 	if !exists {
-		return errors.Errorf("CheckBalanceDecrease: No balance for public key")
+		return errors.Errorf("CanDecreaseBalance: No balance for public key")
 	}
 	if amountNanos > balance {
-		return errors.Errorf("CheckBalanceDecrease: Amount exceeds current balance")
+		return errors.Errorf("CanDecreaseBalance: Amount exceeds current balance")
 	}
 	return nil
 }
 
-// IncreaseBalance increases the user's balance by the given amount. CheckBalanceIncrease should be called before
+// IncreaseBalance increases the user's balance by the given amount. CanIncreaseBalance should be called before
 // calling this function to ensure the increase is allowed.
 func (bl *BalanceLedger) IncreaseBalance(publicKey PublicKey, amount uint64) {
 	bl.Lock()
@@ -74,7 +74,7 @@ func (bl *BalanceLedger) IncreaseBalance(publicKey PublicKey, amount uint64) {
 	bl.balances[publicKey] = balance + amount
 }
 
-// DecreaseBalance decreases the user's balance by the given amount. CheckBalanceDecrease should be called before
+// DecreaseBalance decreases the user's balance by the given amount. CanDecreaseBalance should be called before
 // calling this function to ensure the decrease is allowed.
 func (bl *BalanceLedger) DecreaseBalance(publicKey PublicKey, amount uint64) {
 	bl.Lock()
