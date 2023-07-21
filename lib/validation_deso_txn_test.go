@@ -115,6 +115,10 @@ func TestValidateDeSoTxnMinimalNetworkFee(t *testing.T) {
 	txn1 := txns[0]
 	txn1.TxnFeeNanos = math.MaxUint64 / 999
 	require.Contains(ValidateDeSoTxnMinimalNetworkFee(txn1, &globalParams).Error(), RuleErrorOverflowDetectedInFeeRateCalculation)
+
+	txn2 := txns[1]
+	txn2.Signature.Sign = nil
+	require.Error(ValidateDeSoTxnMinimalNetworkFee(txn2, &globalParams))
 }
 
 func TestValidateDeSoTxnSanityBalanceModel(t *testing.T) {
