@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"fmt"
 	"github.com/pkg/errors"
-	"math"
 )
 
 // ValidateDeSoTxnSanityBalanceModel performs a variety of sanity checks to ensure transaction is correctly formatted
@@ -137,7 +136,7 @@ func ValidateDeSoTxnFormatBalanceModel(txn *MsgDeSoTxn, blockHeight uint64, glob
 		// Check that this output doesn't overflow the total as a sanity
 		// check. This is frankly impossible since our maximum limit is
 		// not close to the max size of a uint64 but check it nevertheless.
-		if totalOutNanos >= math.MaxUint64-txout.AmountNanos {
+		if _, err := SafeUint64().Add(totalOutNanos, txout.AmountNanos); err != nil {
 			return errors.Wrapf(RuleErrorOutputOverflowsTotal, "ValidateDeSoTxnFormatBalanceModel: Output amount %d "+
 				"overflows total %d", txout.AmountNanos, totalOutNanos)
 		}
