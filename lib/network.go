@@ -1889,9 +1889,9 @@ type MsgDeSoHeader struct {
 	// The unix timestamp (in seconds) specifying when this block was
 	TstampSecs uint64
 
-	// TODO: Add a new TimeStampNanoSecs field that will have nanosecond resolution.
+	// TODO: Add a new TstampNanoSecs field that will have nanosecond resolution.
 	// For backwards compatibility with the existing backends and frontends, we will keep
-	// the existing TstampSecs and populate it as TimeStampNanoSecs / 1e9 when decoding block
+	// the existing TstampSecs and populate it as TstampNanoSecs / 1e9 when decoding block
 	// headers from bytes.
 
 	// The height of the block this header corresponds to.
