@@ -74,6 +74,8 @@ func TestRunEpochCompleteHook(t *testing.T) {
 
 	// We build the testMeta obj after mining blocks so that we save the correct block height.
 	blockHeight := uint64(chain.blockTip().Height) + 1
+	blockTimestampNanoSecs := (chain.blockTip().Header.TstampSecs * 1e9) + 1e9 // 1 second after the last block.
+
 	testMeta := &TestMeta{
 		t:                 t,
 		chain:             chain,
@@ -142,7 +144,8 @@ func TestRunEpochCompleteHook(t *testing.T) {
 	_runOnEpochCompleteHook := func() {
 		tmpUtxoView := utxoView()
 		blockHeight += 1
-		require.NoError(t, tmpUtxoView.RunEpochCompleteHook(blockHeight))
+		blockTimestampNanoSecs += 1e9
+		require.NoError(t, tmpUtxoView.RunEpochCompleteHook(blockHeight, blockTimestampNanoSecs))
 		require.NoError(t, tmpUtxoView.FlushToDb(blockHeight))
 	}
 

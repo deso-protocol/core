@@ -1890,6 +1890,11 @@ type MsgDeSoHeader struct {
 	// mined.
 	TstampSecs uint64
 
+	// TODO: Add a new TstampNanoSecs field that will have nanosecond resolution.
+	// For backwards compatibility with the existing backends and frontends, we will keep
+	// the existing TstampSecs and populate it as TstampNanoSecs / 1e9 when decoding block
+	// headers from bytes.
+
 	// The height of the block this header corresponds to.
 	Height uint64
 

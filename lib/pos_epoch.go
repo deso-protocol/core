@@ -16,12 +16,18 @@ import (
 type EpochEntry struct {
 	EpochNumber      uint64
 	FinalBlockHeight uint64
+
+	// This captures the on-chain timestamp when this epoch entry was created. This does not
+	// represent the first block of the epoch, but rather when this epoch transition was triggered,
+	// at the end of the previous epoch.
+	CreatedAtBlockTimestampNanoSecs uint64
 }
 
 func (epochEntry *EpochEntry) Copy() *EpochEntry {
 	return &EpochEntry{
-		EpochNumber:      epochEntry.EpochNumber,
-		FinalBlockHeight: epochEntry.FinalBlockHeight,
+		EpochNumber:                     epochEntry.EpochNumber,
+		FinalBlockHeight:                epochEntry.FinalBlockHeight,
+		CreatedAtBlockTimestampNanoSecs: epochEntry.CreatedAtBlockTimestampNanoSecs,
 	}
 }
 
@@ -29,6 +35,7 @@ func (epochEntry *EpochEntry) RawEncodeWithoutMetadata(blockHeight uint64, skipM
 	var data []byte
 	data = append(data, UintToBuf(epochEntry.EpochNumber)...)
 	data = append(data, UintToBuf(epochEntry.FinalBlockHeight)...)
+	data = append(data, UintToBuf(epochEntry.CreatedAtBlockTimestampNanoSecs)...)
 	return data
 }
 
@@ -45,6 +52,12 @@ func (epochEntry *EpochEntry) RawDecodeWithoutMetadata(blockHeight uint64, rr *b
 	epochEntry.FinalBlockHeight, err = ReadUvarint(rr)
 	if err != nil {
 		return errors.Wrapf(err, "EpochEntry.Decode: Problem reading FinalBlockHeight: ")
+	}
+
+	// CreatedAtBlockTimestampNanoSecs
+	epochEntry.CreatedAtBlockTimestampNanoSecs, err = ReadUvarint(rr)
+	if err != nil {
+		return errors.Wrapf(err, "EpochEntry.Decode: Problem reading CreatedAtBlockTimestampNanoSecs: ")
 	}
 
 	return err
@@ -87,8 +100,13 @@ func (bav *UtxoView) GetCurrentEpochEntry() (*EpochEntry, error) {
 	// case prior to the first execution of the OnEpochCompleteHook.
 	//
 	// TODO: Should FinalBlockHeight be ProofOfStake1StateSetupBlockHeight for epoch 0?
-	// The fork height is exactly when epoch 0 ends. Epoch 1 begins at the following height.
-	return &EpochEntry{EpochNumber: 0, FinalBlockHeight: math.MaxUint64}, nil
+	// The fork height is exactly when epoch 0 ends. Epoch 1 begins at the next height.
+	genesisEpochEntry := &EpochEntry{
+		EpochNumber:                     0,
+		FinalBlockHeight:                math.MaxUint64,
+		CreatedAtBlockTimestampNanoSecs: 0,
+	}
+	return genesisEpochEntry, nil
 }
 
 func (bav *UtxoView) GetCurrentEpochNumber() (uint64, error) {
