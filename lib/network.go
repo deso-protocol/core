@@ -3779,6 +3779,30 @@ func (msg *MsgDeSoTxn) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
+// ComputeFeeRatePerKBNanos computes the fee rate per KB for a signed transaction. This function should not be used for
+// unsigned transactions because the fee rate will not be accurate.
+func (txn *MsgDeSoTxn) ComputeFeeRatePerKBNanos() (uint64, error) {
+	if txn.Signature.Sign == nil {
+		return 0, fmt.Errorf("ComputeFeeRatePerKBNanos: Cannot compute fee rate for unsigned txn")
+	}
+
+	txBytes, err := txn.ToBytes(false)
+	if err != nil {
+		return 0, errors.Wrapf(err, "ComputeFeeRatePerKBNanos: Problem converting txn to bytes")
+	}
+	serializedLen := uint64(len(txBytes))
+	if serializedLen == 0 {
+		return 0, fmt.Errorf("ComputeFeeRatePerKBNanos: Txn has zero length")
+	}
+
+	fees := txn.TxnFeeNanos
+	if fees != ((fees * 1000) / 1000) {
+		return 0, errors.Wrapf(RuleErrorOverflowDetectedInFeeRateCalculation, "ComputeFeeRatePerKBNanos: Overflow detected in fee rate calculation")
+	}
+
+	return (fees * 1000) / serializedLen, nil
+}
+
 // ==================================================================
 // BasicTransferMetadata
 // ==================================================================
