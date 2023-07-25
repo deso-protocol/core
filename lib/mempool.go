@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/btcsuite/btcutil"
+	"github.com/deso-protocol/core/storage"
 	"github.com/gernest/mention"
 	"log"
 	"math"
@@ -263,9 +264,9 @@ type DeSoMempool struct {
 
 func (mp *DeSoMempool) getBadgerOptions(dir string) badger.Options {
 	if mp.useDefaultBadgerOptions {
-		return DefaultBadgerOptions(dir)
+		return storage.DefaultBadgerOptions(dir)
 	}
-	return PerformanceBadgerOptions(dir)
+	return storage.PerformanceBadgerOptions(dir)
 }
 
 // See comment on RemoveUnconnectedTxn. The mempool lock must be called for writing
@@ -393,7 +394,7 @@ func (mp *DeSoMempool) UpdateAfterConnectBlock(blk *MsgDeSoBlock) (_txnsAddedToM
 		0,     /* minFeeRateNanosPerKB */
 		"",    /*blockCypherAPIKey*/
 		false, /*runReadOnlyViewUpdater*/
-		"" /*dataDir*/, "", mp.useDefaultBadgerOptions)
+		""     /*dataDir*/, "", mp.useDefaultBadgerOptions)
 
 	// Get all the transactions from the old pool object.
 	oldMempoolTxns, oldUnconnectedTxns, err := mp._getTransactionsOrderedByTimeAdded()

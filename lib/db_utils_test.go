@@ -2,6 +2,7 @@ package lib
 
 import (
 	"bytes"
+	"github.com/deso-protocol/core/storage"
 	"io/ioutil"
 	"log"
 	"math"
@@ -77,7 +78,7 @@ func GetTestBadgerDb() (_db *badger.DB, _dir string) {
 	}
 
 	// Open a badgerdb in a temporary directory.
-	opts := DefaultBadgerOptions(dir)
+	opts := storage.DefaultBadgerOptions(dir)
 	opts.Dir = dir
 	opts.ValueDir = dir
 	// Turn off logging for tests.
