@@ -55,7 +55,3 @@ func (cdb *DatabaseContext) Erase() error {
 func (cdb *DatabaseContext) Id() DatabaseId {
 	return cdb.Db.Id()
 }
-
-func (cdb *DatabaseContext) NestContext(localId []byte) Context {
-	return cdb.Ctx.NestContext(localId)
-}

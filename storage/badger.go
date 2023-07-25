@@ -195,17 +195,8 @@ func NewBadgerContext(prefix []byte, useWriteBatch bool) *BadgerContext {
 	}
 }
 
-func NewBadgerNestedContext(prefix []byte, parent *BadgerContext) *BadgerContext {
-	prefixedPrefix := append(parent.prefix, prefix...)
-	return NewBadgerContext(prefixedPrefix, parent.useWriteBatch)
-}
-
 func (bc *BadgerContext) Id() DatabaseId {
 	return BADGERDB
-}
-
-func (bc *BadgerContext) NestContext(prefixId []byte) Context {
-	return NewBadgerNestedContext(prefixId, bc)
 }
 
 func castBadgerContextAndGetPrefixedKey(key []byte, ctx Context) (_prefixedKey []byte, _err error) {

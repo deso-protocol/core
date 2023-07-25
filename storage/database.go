@@ -95,7 +95,6 @@ type Iterator interface {
 // Context can be instantiated using the GetContext() method on the Database by passing a byte slice id.
 type Context interface {
 	Id() DatabaseId
-	NestContext(contextId []byte) Context
 }
 
 func AssertContext[C any](ctx Context, id DatabaseId) (C, error) {
