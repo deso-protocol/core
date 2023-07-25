@@ -10,13 +10,6 @@ import (
 	"testing"
 )
 
-const (
-	MB25                     = 25000000
-	NumKeys25MBBatch         = 250
-	NumRemoveKeys25MBBatch   = 20
-	NumRetrieveKeys25MBBatch = 20
-)
-
 type TestConfig struct {
 	// BatchSizeBytes is the size of the batch in bytes.
 	BatchSizeBytes int
@@ -67,7 +60,12 @@ func RandomBytes(numBytes int32) []byte {
 }
 
 // TestBadger_Default_Experiment_10MB_Batch is a BadgerDB test in which we write 10MB of data to the database.
-// In the test, we perform identical operations as in TestBolt_Experiment_10MB_Batch.
+// In the test, we:
+// 		1. Write 100 equal size KV items to the database.
+// 		2. Remove 20 items from the database.
+// 		3. Retrieve 20 items from the database.
+// 		4. Iterate over 20 items in the database.
+// 		5. Iterate over all items in the database.
 func TestBadger_Default_Experiment_10MB_Batch(t *testing.T) {
 	require := require.New(t)
 
@@ -93,7 +91,7 @@ func TestBadger_Default_Experiment_10MB_Batch(t *testing.T) {
 }
 
 // TestBadger_Performance_Experiment_10MB_Batch is a BadgerDB test in which we write 10MB of data to the database.
-// In the test, we perform identical operations as in TestBolt_Experiment_10MB_Batch.
+// In the test, we perform identical operations as in TestBadger_Default_Experiment_10MB_Batch.
 func TestBadger_Performance_Experiment_10MB_Batch(t *testing.T) {
 	require := require.New(t)
 
@@ -119,7 +117,7 @@ func TestBadger_Performance_Experiment_10MB_Batch(t *testing.T) {
 }
 
 // TestBadger_Performance_Experiment_25MB_Batch is a BadgerDB test in which we write 25MB of data to the database.
-// In the test, we perform identical operations as in TestBolt_Experiment_10MB_Batch. This experiment uses the
+// In the test, we perform identical operations as in TestBadger_Default_Experiment_10MB_Batch. This experiment uses the
 // "Performance" Badger config.
 func TestBadger_Performance_Experiment_25MB_Batch(t *testing.T) {
 	require := require.New(t)
@@ -146,7 +144,7 @@ func TestBadger_Performance_Experiment_25MB_Batch(t *testing.T) {
 }
 
 // TestBadger_Performance_Experiment_100MB_Batch is a BadgerDB test in which we write 100MB of data to the database.
-// In the test, we perform identical operations as in TestBolt_Experiment_10MB_Batch. This experiment uses the
+// In the test, we perform identical operations as in TestBadger_Default_Experiment_10MB_Batch. This experiment uses the
 // "Performance" Badger config.
 func TestBadger_Performance_Experiment_100MB_Batch(t *testing.T) {
 	require := require.New(t)
@@ -173,7 +171,7 @@ func TestBadger_Performance_Experiment_100MB_Batch(t *testing.T) {
 }
 
 // TestBadger_Default_WriteBatch_Experiment_10MB_Batch is a BadgerDB test in which we write 10MB of data to the database.
-// In the test, we perform identical operations as in TestBolt_Experiment_10MB_Batch. This experiment uses the
+// In the test, we perform identical operations as in TestBadger_Default_Experiment_10MB_Batch. This experiment uses the
 // "Default" Badger config, and Badger's WriteBatch.
 func TestBadger_Default_WriteBatch_Experiment_10MB_Batch(t *testing.T) {
 	require := require.New(t)
@@ -200,7 +198,7 @@ func TestBadger_Default_WriteBatch_Experiment_10MB_Batch(t *testing.T) {
 }
 
 // TestBadger_Default_WriteBatch_Experiment_25MB_Batch is a BadgerDB test in which we write 25MB of data to the database.
-// In the test, we perform identical operations as in TestBolt_Experiment_10MB_Batch. This experiment uses the
+// In the test, we perform identical operations as in TestBadger_Default_Experiment_10MB_Batch. This experiment uses the
 // "Default" Badger config, and Badger's WriteBatch.
 func TestBadger_Default_WriteBatch_Experiment_25MB_Batch(t *testing.T) {
 	require := require.New(t)
@@ -227,7 +225,7 @@ func TestBadger_Default_WriteBatch_Experiment_25MB_Batch(t *testing.T) {
 }
 
 // TestBadger_Default_WriteBatch_Experiment_100MB_Batch is a BadgerDB test in which we write 100MB of data to the database.
-// In the test, we perform identical operations as in TestBolt_Experiment_10MB_Batch. This experiment uses the
+// In the test, we perform identical operations as in TestBadger_Default_Experiment_10MB_Batch. This experiment uses the
 // "Default" Badger config, and Badger's WriteBatch.
 func TestBadger_Default_WriteBatch_Experiment_100MB_Batch(t *testing.T) {
 	require := require.New(t)
@@ -254,7 +252,7 @@ func TestBadger_Default_WriteBatch_Experiment_100MB_Batch(t *testing.T) {
 }
 
 // TestBadger_Performance_WriteBatch_Experiment_10MB_Batch is a BadgerDB test in which we write 10MB of data to the database.
-// In the test, we perform identical operations as in TestBolt_Experiment_10MB_Batch. This experiment uses the
+// In the test, we perform identical operations as in TestBadger_Default_Experiment_10MB_Batch. This experiment uses the
 // "Performance" Badger config, and Badger's WriteBatch.
 func TestBadger_Performance_WriteBatch_Experiment_10MB_Batch(t *testing.T) {
 	require := require.New(t)
@@ -281,7 +279,7 @@ func TestBadger_Performance_WriteBatch_Experiment_10MB_Batch(t *testing.T) {
 }
 
 // TestBadger_Performance_WriteBatch_Experiment_25MB_Batch is a BadgerDB test in which we write 25MB of data to the database.
-// In the test, we perform identical operations as in TestBolt_Experiment_10MB_Batch. This experiment uses the
+// In the test, we perform identical operations as in TestBadger_Default_Experiment_10MB_Batch. This experiment uses the
 // "Performance" Badger config, and Badger's WriteBatch.
 func TestBadger_Performance_WriteBatch_Experiment_25MB_Batch(t *testing.T) {
 	require := require.New(t)
@@ -308,7 +306,7 @@ func TestBadger_Performance_WriteBatch_Experiment_25MB_Batch(t *testing.T) {
 }
 
 // TestBadger_Performance_WriteBatch_Experiment_100MB_Batch is a BadgerDB test in which we write 100MB of data to the database.
-// In the test, we perform identical operations as in TestBolt_Experiment_10MB_Batch. This experiment uses the
+// In the test, we perform identical operations as in TestBadger_Default_Experiment_10MB_Batch. This experiment uses the
 // "Performance" Badger config, and Badger's WriteBatch.
 func TestBadger_Performance_WriteBatch_Experiment_100MB_Batch(t *testing.T) {
 	require := require.New(t)
