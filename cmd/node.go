@@ -4,6 +4,7 @@ import (
 	"encoding/hex"
 	"flag"
 	"fmt"
+	"github.com/deso-protocol/core/storage"
 	"net"
 	"os"
 	"os/signal"
@@ -141,7 +142,7 @@ func (node *Node) Start(exitChannels ...*chan struct{}) {
 
 	// Setup chain database
 	dbDir := lib.GetBadgerDbPath(node.Config.DataDirectory)
-	opts := lib.PerformanceBadgerOptions(dbDir)
+	opts := storage.PerformanceBadgerOptions(dbDir)
 	opts.ValueDir = dbDir
 	node.ChainDB, err = badger.Open(opts)
 	if err != nil {
