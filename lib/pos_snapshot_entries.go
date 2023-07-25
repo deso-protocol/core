@@ -104,8 +104,8 @@ func _mergeGlobalParamEntryDefaults(bav *UtxoView, globalParamsEntry *GlobalPara
 	if globalParamsEntryCopy.StakingRewardsMaxNumStakes == 0 {
 		globalParamsEntryCopy.StakingRewardsMaxNumStakes = bav.Params.DefaultStakingRewardsMaxNumStakes
 	}
-	if globalParamsEntryCopy.StakingRewardInterestRatePerEpochScaled1e9 == 0 {
-		globalParamsEntryCopy.StakingRewardInterestRatePerEpochScaled1e9 = bav.Params.DefaultStakingRewardInterestRatePerEpochScaled1e9
+	if globalParamsEntryCopy.StakingRewardsAPYBasisPoints == 0 {
+		globalParamsEntryCopy.StakingRewardsAPYBasisPoints = bav.Params.DefaultStakingRewardsAPYBasisPoints
 	}
 	if globalParamsEntryCopy.EpochDurationNumBlocks == 0 {
 		globalParamsEntryCopy.EpochDurationNumBlocks = bav.Params.DefaultEpochDurationNumBlocks

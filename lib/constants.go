@@ -674,9 +674,9 @@ type DeSoParams struct {
 	// that are included in the staking reward distribution in each epoch.
 	DefaultStakingRewardsMaxNumStakes uint64
 
-	// DefaultStakingRewardInterestRatePerEpochScaled1e9 is the default scaled interest rate
+	// DefaultStakingRewardsAPYBasisPoints is the default scaled interest rate
 	// that is applied to all stake entries in the staking reward distribution in each epoch.
-	DefaultStakingRewardInterestRatePerEpochScaled1e9 uint64
+	DefaultStakingRewardsAPYBasisPoints uint64
 
 	// DefaultEpochDurationNumBlocks is the default number of blocks included in one epoch.
 	DefaultEpochDurationNumBlocks uint64
@@ -1081,8 +1081,8 @@ var DeSoMainnetParams = DeSoParams{
 	// The max number of stakes included in a staking rewards distribution every epoch.
 	DefaultStakingRewardsMaxNumStakes: uint64(10000),
 
-	// Staking reward interest rate is defaulted to 0% to be safe.
-	DefaultStakingRewardInterestRatePerEpochScaled1e9: uint64(0),
+	// Staking reward APY is defaulted to 0% to be safe.
+	DefaultStakingRewardsAPYBasisPoints: uint64(0),
 
 	// The number of blocks in one epoch
 	DefaultEpochDurationNumBlocks: uint64(3600),
@@ -1339,8 +1339,8 @@ var DeSoTestnetParams = DeSoParams{
 	// The max number of stakes included in a staking rewards distribution every epoch.
 	DefaultStakingRewardsMaxNumStakes: uint64(10000),
 
-	// Staking reward interest rate is defaulted to 0% to be safe.
-	DefaultStakingRewardInterestRatePerEpochScaled1e9: uint64(0),
+	// Staking reward APY is defaulted to 0% to be safe.
+	DefaultStakingRewardsAPYBasisPoints: uint64(0),
 
 	// The number of blocks in one epoch
 	DefaultEpochDurationNumBlocks: uint64(3600),
@@ -1385,21 +1385,21 @@ const (
 	IsFrozenKey = "IsFrozen"
 
 	// Keys for a GlobalParamUpdate transaction's extra data map.
-	USDCentsPerBitcoinKey                         = "USDCentsPerBitcoin"
-	MinNetworkFeeNanosPerKBKey                    = "MinNetworkFeeNanosPerKB"
-	CreateProfileFeeNanosKey                      = "CreateProfileFeeNanos"
-	CreateNFTFeeNanosKey                          = "CreateNFTFeeNanos"
-	MaxCopiesPerNFTKey                            = "MaxCopiesPerNFT"
-	MaxNonceExpirationBlockHeightOffsetKey        = "MaxNonceExpirationBlockHeightOffset"
-	ForbiddenBlockSignaturePubKeyKey              = "ForbiddenBlockSignaturePubKey"
-	StakeLockupEpochDurationKey                   = "StakeLockupEpochDuration"
-	ValidatorJailEpochDurationKey                 = "ValidatorJailEpochDuration"
-	LeaderScheduleMaxNumValidatorsKey             = "LeaderScheduleMaxNumValidators"
-	ValidatorSetMaxNumValidatorsKey               = "ValidatorSetMaxNumValidators"
-	StakingRewardsMaxNumStakesKey                 = "StakingRewardsMaxNumStakes"
-	StakingRewardInterestRatePerEpochScaled1e9Key = "StakingRewardInterestRatePerEpochScaled1e9"
-	EpochDurationNumBlocksKey                     = "EpochDurationNumBlocks"
-	JailInactiveValidatorGracePeriodEpochsKey     = "JailInactiveValidatorGracePeriodEpochs"
+	USDCentsPerBitcoinKey                     = "USDCentsPerBitcoin"
+	MinNetworkFeeNanosPerKBKey                = "MinNetworkFeeNanosPerKB"
+	CreateProfileFeeNanosKey                  = "CreateProfileFeeNanos"
+	CreateNFTFeeNanosKey                      = "CreateNFTFeeNanos"
+	MaxCopiesPerNFTKey                        = "MaxCopiesPerNFT"
+	MaxNonceExpirationBlockHeightOffsetKey    = "MaxNonceExpirationBlockHeightOffset"
+	ForbiddenBlockSignaturePubKeyKey          = "ForbiddenBlockSignaturePubKey"
+	StakeLockupEpochDurationKey               = "StakeLockupEpochDuration"
+	ValidatorJailEpochDurationKey             = "ValidatorJailEpochDuration"
+	LeaderScheduleMaxNumValidatorsKey         = "LeaderScheduleMaxNumValidators"
+	ValidatorSetMaxNumValidatorsKey           = "ValidatorSetMaxNumValidators"
+	StakingRewardsMaxNumStakesKey             = "StakingRewardsMaxNumStakes"
+	StakingRewardsAPYBasisPointsKey           = "StakingRewardsAPYBasisPoints"
+	EpochDurationNumBlocksKey                 = "EpochDurationNumBlocks"
+	JailInactiveValidatorGracePeriodEpochsKey = "JailInactiveValidatorGracePeriodEpochs"
 
 	DiamondLevelKey    = "DiamondLevel"
 	DiamondPostHashKey = "DiamondPostHash"

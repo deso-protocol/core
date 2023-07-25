@@ -3782,14 +3782,12 @@ type GlobalParamsEntry struct {
 	// consensus.
 	StakingRewardsMaxNumStakes uint64
 
-	// StakingRewardInterestRatePerEpochScaled1e9 determines the interest rate that
-	// stakers receive on their stake every epoch in the Proof-of-Stake consensus.
-	// This value is defined as a scaled fixed-point number such that it has a high
-	// enough resolution to capture small interest rates. The scaling factor is 1e9.
-	// Examples:
-	// - An interest rate of 1% per epoch corresponds to a value of 0.01 * 1e9
-	// - An interest rate of 100% per epoch corresponds to a value of 1.0 * 1e9
-	StakingRewardInterestRatePerEpochScaled1e9 uint64
+	// StakingRewardsAPYBasisPoints determines the annual interest rate that stakers
+	// receive on their stake in the Proof-of-Stake consensus. Stake rewards are paid
+	// out at the end of every epoch based on the APY. The APY is configured as basis
+	// points. Example:
+	// - An APY of 5% corresponds to a value of 0.05 * 10000 = 500 basis points
+	StakingRewardsAPYBasisPoints uint64
 
 	// EpochDurationNumBlocks is the number of blocks included in one epoch.
 	EpochDurationNumBlocks uint64
@@ -3802,20 +3800,20 @@ type GlobalParamsEntry struct {
 
 func (gp *GlobalParamsEntry) Copy() *GlobalParamsEntry {
 	return &GlobalParamsEntry{
-		USDCentsPerBitcoin:                         gp.USDCentsPerBitcoin,
-		CreateProfileFeeNanos:                      gp.CreateProfileFeeNanos,
-		CreateNFTFeeNanos:                          gp.CreateNFTFeeNanos,
-		MaxCopiesPerNFT:                            gp.MaxCopiesPerNFT,
-		MinimumNetworkFeeNanosPerKB:                gp.MinimumNetworkFeeNanosPerKB,
-		MaxNonceExpirationBlockHeightOffset:        gp.MaxNonceExpirationBlockHeightOffset,
-		StakeLockupEpochDuration:                   gp.StakeLockupEpochDuration,
-		ValidatorJailEpochDuration:                 gp.ValidatorJailEpochDuration,
-		LeaderScheduleMaxNumValidators:             gp.LeaderScheduleMaxNumValidators,
-		ValidatorSetMaxNumValidators:               gp.ValidatorSetMaxNumValidators,
-		StakingRewardsMaxNumStakes:                 gp.StakingRewardsMaxNumStakes,
-		StakingRewardInterestRatePerEpochScaled1e9: gp.StakingRewardInterestRatePerEpochScaled1e9,
-		EpochDurationNumBlocks:                     gp.EpochDurationNumBlocks,
-		JailInactiveValidatorGracePeriodEpochs:     gp.JailInactiveValidatorGracePeriodEpochs,
+		USDCentsPerBitcoin:                     gp.USDCentsPerBitcoin,
+		CreateProfileFeeNanos:                  gp.CreateProfileFeeNanos,
+		CreateNFTFeeNanos:                      gp.CreateNFTFeeNanos,
+		MaxCopiesPerNFT:                        gp.MaxCopiesPerNFT,
+		MinimumNetworkFeeNanosPerKB:            gp.MinimumNetworkFeeNanosPerKB,
+		MaxNonceExpirationBlockHeightOffset:    gp.MaxNonceExpirationBlockHeightOffset,
+		StakeLockupEpochDuration:               gp.StakeLockupEpochDuration,
+		ValidatorJailEpochDuration:             gp.ValidatorJailEpochDuration,
+		LeaderScheduleMaxNumValidators:         gp.LeaderScheduleMaxNumValidators,
+		ValidatorSetMaxNumValidators:           gp.ValidatorSetMaxNumValidators,
+		StakingRewardsMaxNumStakes:             gp.StakingRewardsMaxNumStakes,
+		StakingRewardsAPYBasisPoints:           gp.StakingRewardsAPYBasisPoints,
+		EpochDurationNumBlocks:                 gp.EpochDurationNumBlocks,
+		JailInactiveValidatorGracePeriodEpochs: gp.JailInactiveValidatorGracePeriodEpochs,
 	}
 }
 
@@ -3836,7 +3834,7 @@ func (gp *GlobalParamsEntry) RawEncodeWithoutMetadata(blockHeight uint64, skipMe
 		data = append(data, UintToBuf(gp.LeaderScheduleMaxNumValidators)...)
 		data = append(data, UintToBuf(gp.ValidatorSetMaxNumValidators)...)
 		data = append(data, UintToBuf(gp.StakingRewardsMaxNumStakes)...)
-		data = append(data, UintToBuf(gp.StakingRewardInterestRatePerEpochScaled1e9)...)
+		data = append(data, UintToBuf(gp.StakingRewardsAPYBasisPoints)...)
 		data = append(data, UintToBuf(gp.EpochDurationNumBlocks)...)
 		data = append(data, UintToBuf(gp.JailInactiveValidatorGracePeriodEpochs)...)
 	}
@@ -3893,9 +3891,9 @@ func (gp *GlobalParamsEntry) RawDecodeWithoutMetadata(blockHeight uint64, rr *by
 		if err != nil {
 			return errors.Wrapf(err, "GlobalParamsEntry.Decode: Problem reading StakingRewardsMaxNumStakes: ")
 		}
-		gp.StakingRewardInterestRatePerEpochScaled1e9, err = ReadUvarint(rr)
+		gp.StakingRewardsAPYBasisPoints, err = ReadUvarint(rr)
 		if err != nil {
-			return errors.Wrapf(err, "GlobalParamsEntry.Decode: Problem reading StakingRewardInterestRatePerEpochScaled1e9: ")
+			return errors.Wrapf(err, "GlobalParamsEntry.Decode: Problem reading StakingRewardsAPYBasisPoints: ")
 		}
 		gp.EpochDurationNumBlocks, err = ReadUvarint(rr)
 		if err != nil {
