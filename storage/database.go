@@ -9,6 +9,7 @@ type DatabaseId byte
 
 const (
 	BADGERDB DatabaseId = 0
+	BOLTDB   DatabaseId = 1
 )
 
 type Database interface {
