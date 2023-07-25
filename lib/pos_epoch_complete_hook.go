@@ -82,7 +82,7 @@ func (bav *UtxoView) RunEpochCompleteHook(blockHeight uint64, blockTimestampNano
 	}
 
 	// Step 3: Roll Over to The Next Epoch
-	if err := bav.runEpochCompleteEpochRollover(currentEpochEntry.EpochNumber, blockHeight); err != nil {
+	if err := bav.runEpochCompleteEpochRollover(currentEpochEntry.EpochNumber, blockHeight, blockTimestampNanoSecs); err != nil {
 		return errors.Wrapf(err, "RunEpochCompleteHook: ")
 	}
 
@@ -136,7 +136,7 @@ func (bav *UtxoView) runEpochCompleteSnapshotGeneration(epochNumber uint64) erro
 }
 
 // Updates the currentEpochEntry to the next epoch's.
-func (bav *UtxoView) runEpochCompleteEpochRollover(epochNumber uint64, blockHeight uint64) error {
+func (bav *UtxoView) runEpochCompleteEpochRollover(epochNumber uint64, blockHeight uint64, blockTimestampNanoSecs uint64) error {
 	// Retrieve the SnapshotGlobalParamsEntry.
 	snapshotGlobalParamsEntry, err := bav.GetSnapshotGlobalParamsEntry()
 	if err != nil {
@@ -151,8 +151,9 @@ func (bav *UtxoView) runEpochCompleteEpochRollover(epochNumber uint64, blockHeig
 
 	// Roll-over a new epoch by setting a new CurrentEpochEntry.
 	nextEpochEntry := &EpochEntry{
-		EpochNumber:      epochNumber + 1,
-		FinalBlockHeight: nextEpochFinalBlockHeight,
+		EpochNumber:                     epochNumber + 1,
+		FinalBlockHeight:                nextEpochFinalBlockHeight,
+		CreatedAtBlockTimestampNanoSecs: blockTimestampNanoSecs,
 	}
 	bav._setCurrentEpochEntry(nextEpochEntry)
 
