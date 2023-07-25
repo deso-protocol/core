@@ -100,6 +100,8 @@ func ValidateDeSoTxnPublicKey(txn *MsgDeSoTxn) error {
 
 // ValidateDeSoTxnFormatBalanceModel validates that the transaction is correctly formatted according to the balance model.
 func ValidateDeSoTxnFormatBalanceModel(txn *MsgDeSoTxn, blockHeight uint64, globalParams *GlobalParamsEntry) error {
+	var err error
+
 	// Validate transaction version
 	if txn.TxnVersion == DeSoTxnVersion0 {
 		return fmt.Errorf("ValidateDeSoTxnFormatBalanceModel: DeSoTxnVersion0 is outdated in balance model")
@@ -136,7 +138,7 @@ func ValidateDeSoTxnFormatBalanceModel(txn *MsgDeSoTxn, blockHeight uint64, glob
 		// Check that this output doesn't overflow the total as a sanity
 		// check. This is frankly impossible since our maximum limit is
 		// not close to the max size of a uint64 but check it nevertheless.
-		if _, err := SafeUint64().Add(totalOutNanos, txout.AmountNanos); err != nil {
+		if totalOutNanos, err = SafeUint64().Add(totalOutNanos, txout.AmountNanos); err != nil {
 			return errors.Wrapf(RuleErrorOutputOverflowsTotal, "ValidateDeSoTxnFormatBalanceModel: Output amount %d "+
 				"overflows total %d", txout.AmountNanos, totalOutNanos)
 		}
