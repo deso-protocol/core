@@ -21,6 +21,7 @@ COPY desohash    desohash
 COPY lib         lib
 COPY migrate     migrate
 COPY scripts     scripts
+COPY storage     storage
 COPY test_data   test_data
 COPY main.go     .
 
