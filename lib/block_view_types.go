@@ -3782,6 +3782,13 @@ type GlobalParamsEntry struct {
 	// consensus.
 	StakingRewardsMaxNumStakes uint64
 
+	// StakingRewardsAPYBasisPoints determines the annual interest rate that stakers
+	// receive on their stake in the Proof-of-Stake consensus. Stake rewards are paid
+	// out at the end of every epoch based on the APY. The APY is configured as basis
+	// points. Example:
+	// - An APY of 5% corresponds to a value of 0.05 * 10000 = 500 basis points
+	StakingRewardsAPYBasisPoints uint64
+
 	// EpochDurationNumBlocks is the number of blocks included in one epoch.
 	EpochDurationNumBlocks uint64
 
@@ -3804,6 +3811,7 @@ func (gp *GlobalParamsEntry) Copy() *GlobalParamsEntry {
 		LeaderScheduleMaxNumValidators:         gp.LeaderScheduleMaxNumValidators,
 		ValidatorSetMaxNumValidators:           gp.ValidatorSetMaxNumValidators,
 		StakingRewardsMaxNumStakes:             gp.StakingRewardsMaxNumStakes,
+		StakingRewardsAPYBasisPoints:           gp.StakingRewardsAPYBasisPoints,
 		EpochDurationNumBlocks:                 gp.EpochDurationNumBlocks,
 		JailInactiveValidatorGracePeriodEpochs: gp.JailInactiveValidatorGracePeriodEpochs,
 	}
@@ -3826,6 +3834,7 @@ func (gp *GlobalParamsEntry) RawEncodeWithoutMetadata(blockHeight uint64, skipMe
 		data = append(data, UintToBuf(gp.LeaderScheduleMaxNumValidators)...)
 		data = append(data, UintToBuf(gp.ValidatorSetMaxNumValidators)...)
 		data = append(data, UintToBuf(gp.StakingRewardsMaxNumStakes)...)
+		data = append(data, UintToBuf(gp.StakingRewardsAPYBasisPoints)...)
 		data = append(data, UintToBuf(gp.EpochDurationNumBlocks)...)
 		data = append(data, UintToBuf(gp.JailInactiveValidatorGracePeriodEpochs)...)
 	}
@@ -3881,6 +3890,10 @@ func (gp *GlobalParamsEntry) RawDecodeWithoutMetadata(blockHeight uint64, rr *by
 		gp.StakingRewardsMaxNumStakes, err = ReadUvarint(rr)
 		if err != nil {
 			return errors.Wrapf(err, "GlobalParamsEntry.Decode: Problem reading StakingRewardsMaxNumStakes: ")
+		}
+		gp.StakingRewardsAPYBasisPoints, err = ReadUvarint(rr)
+		if err != nil {
+			return errors.Wrapf(err, "GlobalParamsEntry.Decode: Problem reading StakingRewardsAPYBasisPoints: ")
 		}
 		gp.EpochDurationNumBlocks, err = ReadUvarint(rr)
 		if err != nil {

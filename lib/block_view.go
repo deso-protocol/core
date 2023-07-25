@@ -3049,6 +3049,12 @@ func (bav *UtxoView) _connectUpdateGlobalParams(
 				return 0, 0, nil, fmt.Errorf("_connectUpdateGlobalParams: unable to decode StakingRewardsMaxNumStakes as uint64")
 			}
 		}
+		if len(extraData[StakingRewardsAPYBasisPointsKey]) > 0 {
+			newGlobalParamsEntry.StakingRewardsAPYBasisPoints, bytesRead = Uvarint(extraData[StakingRewardsAPYBasisPointsKey])
+			if bytesRead <= 0 {
+				return 0, 0, nil, fmt.Errorf("_connectUpdateGlobalParams: unable to decode StakingRewardsAPYBasisPoints as uint64")
+			}
+		}
 		if len(extraData[EpochDurationNumBlocksKey]) > 0 {
 			newGlobalParamsEntry.EpochDurationNumBlocks, bytesRead = Uvarint(extraData[EpochDurationNumBlocksKey])
 			if bytesRead <= 0 {
