@@ -61,11 +61,11 @@ func RandomBytes(numBytes int32) []byte {
 
 // TestBadger_Default_Experiment_10MB_Batch is a BadgerDB test in which we write 10MB of data to the database.
 // In the test, we:
-// 		1. Write 100 equal size KV items to the database.
-// 		2. Remove 20 items from the database.
-// 		3. Retrieve 20 items from the database.
-// 		4. Iterate over 20 items in the database.
-// 		5. Iterate over all items in the database.
+//  1. Write 100 equal size KV items to the database.
+//  2. Remove 20 items from the database.
+//  3. Retrieve 20 items from the database.
+//  4. Iterate over 20 items in the database.
+//  5. Iterate over all items in the database.
 func TestBadger_Default_Experiment_10MB_Batch(t *testing.T) {
 	require := require.New(t)
 

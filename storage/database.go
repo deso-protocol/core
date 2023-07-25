@@ -35,7 +35,6 @@ const (
 // And, for completeness, the Database interface has these miscellaneous methods:
 // - GetContext() - used to get a Context instance
 // - Id()         - used to get the database id
-//
 type Database interface {
 	Setup() error
 	GetContext(id []byte) Context
@@ -63,17 +62,19 @@ type Transaction interface {
 // Iterator is a unified interface for database iterators. The current implementation only supports forward iteration.
 // The Iterator instance must always be initialized with a Context instance, which can be passed down from the Database
 // Update or View. When using the Iterator, the following assumptions must be followed:
-// 		Assumption #1: Newly initialized Iterator always points to nil. Calling Next() moves the iterator to the first key-value pair.
-// 		Assumption #2: Next() returns false whenever all keys have been exhausted in the current Context.
-// 		Assumption #3: Close() must be called after the iterator is no longer needed.
+//
+//	Assumption #1: Newly initialized Iterator always points to nil. Calling Next() moves the iterator to the first key-value pair.
+//	Assumption #2: Next() returns false whenever all keys have been exhausted in the current Context.
+//	Assumption #3: Close() must be called after the iterator is no longer needed.
 //
 // This assumption enables the following for-loop usage pattern for the Iterator:
-// 		defer it.Close()
-//		for it.Next() {
-// 			key := it.Key()
-// 			value, err := it.Value()
-// 			...
-// 		}
+//
+//	defer it.Close()
+//	for it.Next() {
+//		key := it.Key()
+//		value, err := it.Value()
+//		...
+//	}
 //
 // The Iterator interface consists of basic iterator methods such as:
 // - GetContext() - used to get the current Context
@@ -81,7 +82,6 @@ type Transaction interface {
 // - Key()        - used to get the current key
 // - Next()       - used to advance the iterator
 // - Close()      - used to close the iterator
-//
 type Iterator interface {
 	GetContext() Context
 	Value() ([]byte, error)
