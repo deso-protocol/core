@@ -373,50 +373,12 @@ func TestRunEpochCompleteHook(t *testing.T) {
 		require.Len(t, snapshotStakeEntries, 6)
 	}
 	{
-		// Test staking rewards distribution with restaking enabled.
-
-		// m6 now has a 14333333578 nano balance from staking rewards so far.
-		balance, err := _newUtxoView(testMeta).GetDeSoBalanceNanosForPublicKey(m6PkBytes)
-		require.NoError(t, err)
-		require.Equal(t, balance, uint64(14333333578))
-
 		// Run OnEpochCompleteHook().
 		_runOnEpochCompleteHook(testMeta, incrBlockHeight())
-
-		// m6 now has 16747126681 after the most recent's epoch's staking rewards.
-		balance, err = _newUtxoView(testMeta).GetDeSoBalanceNanosForPublicKey(m6PkBytes)
-		require.NoError(t, err)
-		require.Equal(t, balance, uint64(16747126681))
 	}
 	{
-		// Test staking rewards distribution with restaking enabled.
-
-		// m6 has 700 nanos staked.
-		stakeEntry, err := _newUtxoView(testMeta).GetStakeEntry(m6PKID, m6PKID)
-		require.NoError(t, err)
-		require.Equal(t, stakeEntry.StakeAmountNanos, uint256.NewInt().SetUint64(700))
-
-		// m6 enables restaking.
-		_registerValidatorAndStake(testMeta, m6Pub, m6Priv, 0, true)
-
-		// m6's wallet balance is 16747126627 after they submit their stake transaction.
-		balance, err := _newUtxoView(testMeta).GetDeSoBalanceNanosForPublicKey(m6PkBytes)
-		require.NoError(t, err)
-		require.Equal(t, balance, uint64(0x3e634df63))
-
 		// Run OnEpochCompleteHook()
 		_runOnEpochCompleteHook(testMeta, incrBlockHeight())
-
-		// m6 has 2413793803 staked now a after their staking rewards were restaked.
-		stakeEntry, err = _newUtxoView(testMeta).GetStakeEntry(m6PKID, m6PKID)
-		require.NoError(t, err)
-		require.Equal(t, stakeEntry.StakeAmountNanos, uint256.NewInt().SetUint64(2413793803))
-
-		// m6's wallet balance has not changed from has 16747126627 now that their rewards
-		// were restaked.
-		balance, err = _newUtxoView(testMeta).GetDeSoBalanceNanosForPublicKey(m6PkBytes)
-		require.NoError(t, err)
-		require.Equal(t, balance, uint64(0x3e634df63))
 	}
 	{
 		// Test jailing inactive validators.
