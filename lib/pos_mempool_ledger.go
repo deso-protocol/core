@@ -93,7 +93,7 @@ func (bl *BalanceLedger) DecreaseBalance(publicKey PublicKey, amount uint64) {
 	bl.balances[publicKey] = balance - amount
 }
 
-// GetBalance returns the user's balance in nanos.
+// GetBalance returns the user's balance.
 func (bl *BalanceLedger) GetBalance(publicKey PublicKey) uint64 {
 	bl.RLock()
 	defer bl.RUnlock()
