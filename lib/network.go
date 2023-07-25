@@ -1887,6 +1887,7 @@ type MsgDeSoHeader struct {
 	TransactionMerkleRoot *BlockHash
 
 	// The unix timestamp (in seconds) specifying when this block was
+	// mined.
 	TstampSecs uint64
 
 	// TODO: Add a new TstampNanoSecs field that will have nanosecond resolution.
