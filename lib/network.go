@@ -1887,12 +1887,12 @@ type MsgDeSoHeader struct {
 	TransactionMerkleRoot *BlockHash
 
 	// The unix timestamp (in seconds) specifying when this block was
-	// mined.
-	//
-	// TODO: Migrate TstampSecs to nanosecond resolution. This can retroactively be done
-	// for legacy MsgDeSoHeader versions 0 & 1 by scaling the value by 1e9, when encoding/decoding
-	// it to bytes. The new replacement field can be called TimestampNanoSecs
 	TstampSecs uint64
+
+	// TODO: Add a new TimeStampNanoSecs field that will have nanosecond resolution.
+	// For backwards compatibility with the existing backends and frontends, we will keep
+	// the existing TstampSecs and populate it as TimeStampNanoSecs / 1e9 when decoding block
+	// headers from bytes.
 
 	// The height of the block this header corresponds to.
 	Height uint64
