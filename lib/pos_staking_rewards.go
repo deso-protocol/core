@@ -7,12 +7,30 @@ import (
 	"github.com/pkg/errors"
 )
 
-func (bav *UtxoView) DistributeStakingRewardsToSnapshotStakes(blockHeight uint64) error {
+func (bav *UtxoView) DistributeStakingRewardsToSnapshotStakes(blockHeight uint64, blockTimestampNanoSecs uint64) error {
 	// Check if we have switched from PoW to PoS yet. If we have not, then the PoS consensus
 	// has not started yet. We don't want to distribute any staking rewards until the PoS consensus begins.
 	if blockHeight < uint64(bav.Params.ForkHeights.ProofOfStake2ConsensusCutoverBlockHeight) {
 		return nil
 	}
+
+	// Retrieve the current EpochEntry.
+	currentEpochEntry, err := bav.GetCurrentEpochEntry()
+	if err != nil {
+		return errors.Wrapf(err, "DistributeStakingRewardsToSnapshotStakes: problem retrieving current EpochEntry: ")
+	}
+
+	// Check if the current epoch's timestamp is somehow greater than the block timestamp. This should never as long
+	// as timestamps are moving forward when connecting each block.
+	if currentEpochEntry.CreatedAtBlockTimestampNanoSecs >= blockTimestampNanoSecs {
+		return errors.Errorf("DistributeStakingRewardsToSnapshotStakes: current EpochEntry's CreatedAtBlockTimestampNanoSecs "+
+			"(%d) is >= the blockTimestampNanoSecs (%d)", currentEpochEntry.CreatedAtBlockTimestampNanoSecs, blockTimestampNanoSecs)
+	}
+
+	// Compute the amount of time that has elapsed since the current epoch started. As long as the elapsed time is > 0,
+	// the fraction of the year will be > 0 as well.
+	elapsedTimeNanoSecs := blockTimestampNanoSecs - currentEpochEntry.CreatedAtBlockTimestampNanoSecs
+	elapsedFractionOfYear := computeFractionOfYearAsFloat(elapsedTimeNanoSecs)
 
 	// Retrieve the SnapshotGlobalParamsEntry.
 	snapshotGlobalParamsEntry, err := bav.GetSnapshotGlobalParamsEntry()
@@ -20,19 +38,18 @@ func (bav *UtxoView) DistributeStakingRewardsToSnapshotStakes(blockHeight uint64
 		return errors.Wrapf(err, "DistributeStakingRewardsToSnapshotStakes: problem retrieving SnapshotGlobalParamsEntry: ")
 	}
 
-	// Fetch the per-epoch interest rate for staking rewards.
-	interestRateScaled := snapshotGlobalParamsEntry.StakingRewardInterestRatePerEpochScaled1e9
-	if interestRateScaled == 0 {
-		// If the interest rate is zero or not yet defined, then there are no staking rewards to distribute.
+	// Fetch the staking rewards APY.
+	apyBasisPoints := snapshotGlobalParamsEntry.StakingRewardsAPYBasisPoints
+	if apyBasisPoints == 0 {
+		// If the APY is zero or not yet defined, then there are no staking rewards to distribute.
 		return nil
 	}
 
-	// Convert the interest rate from a scaled integer to a float. During the conversion, the interest rate
+	// Convert the APY from a scaled integer to a float. During the conversion, the interest rate
 	// is scaled down. Examples:
-	// - a scaled interest rate of 0.1 * 1e9 is converted to a float of 0.1
-	// - a scaled interest rate of 0.01 * 1e9 is converted to a float of 0.01
+	// - a APY basis points value of 526 is converted to a float of 0.0526
 	// As long as the scaled interest rate is > 0, the converted float is guaranteed to be non-zero as well.
-	interestRateAsFloat := convertScaledInterestRateToFloat(interestRateScaled)
+	apy := convertAPYBasisPointsToFloat(apyBasisPoints)
 
 	// We reward all snapshotted stakes from the current snapshot validator set. This is an O(n) operation
 	// that loops through all of the snapshotted stakes and rewards them one by one.
@@ -51,7 +68,7 @@ func (bav *UtxoView) DistributeStakingRewardsToSnapshotStakes(blockHeight uint64
 	for _, snapshotStakeEntry := range snapshotStakesToReward {
 
 		// Compute the staker's portion of the staking reward, and the validator's commission.
-		stakerReward, validatorCommission, err := bav.computeStakerRewardAndValidatorCommission(snapshotStakeEntry, interestRateAsFloat)
+		stakerReward, validatorCommission, err := bav.computeStakerRewardAndValidatorCommission(snapshotStakeEntry, elapsedFractionOfYear, apy)
 		if err != nil {
 			return errors.Wrapf(err, "DistributeStakingRewardsToSnapshotStakes: problem computing staker reward and validator commission: ")
 		}
@@ -81,7 +98,8 @@ func (bav *UtxoView) DistributeStakingRewardsToSnapshotStakes(blockHeight uint64
 
 func (bav *UtxoView) computeStakerRewardAndValidatorCommission(
 	snapshotStakeEntry *SnapshotStakeEntry,
-	interestRateAsFloat *big.Float,
+	elapsedFractionOfYear *big.Float,
+	apy *big.Float,
 ) (
 	_stakerReward uint64,
 	_validatorCommission uint64,
@@ -91,7 +109,7 @@ func (bav *UtxoView) computeStakerRewardAndValidatorCommission(
 	// so we can do the remainder of the math using integer operations. This is the only operation where
 	// we need float math.
 	stakerReward := convertBigFloatToBigInt(
-		computeStakingReward(snapshotStakeEntry.StakeAmountNanos, interestRateAsFloat),
+		computeStakingReward(snapshotStakeEntry.StakeAmountNanos, elapsedFractionOfYear, apy),
 	)
 
 	// If the reward is 0, then there's nothing to be done. In practice, the reward should never be < 0
@@ -181,27 +199,38 @@ func (bav *UtxoView) distributeStakingReward(validatorPKID *PKID, stakerPKID *PK
 }
 
 func (bav *UtxoView) distributeValidatorCommission(validatorPKID *PKID, commissionAmount uint64) error {
-	// Here we treat the validator's commission identically to staking rewards. We view commissions as another source of staking rewards
-	// that validators have received by staking to themselves. This has a few advantages:
-	// 1. It gives validators an opt-in feature to restake their commissions. This is useful for validators that want to maximize their
-	// staking rewards over the long run. Validators can opt out of it by disabling reward restaking on their own StakeEntry.
-	// 2. It simplifies the validator commission distribution code path by re-using the same code path for distributing staking
-	// rewards when the validator has staked to themselves.
+	// Here, we treat the validator's commission identically to staking rewards. We view commissions as another source of staking
+	// rewards that validators receive at the end of each epoch. And these commissions are eligible to be restaked if the validator
+	// desires. To determine whether to re-stake commissions or pay out the commissions to the validator's wallet, we rely on the
+	// validators own StakeEntry where they have staked to themselves, and the RewardMethod flag on the entry. The logic works as follows:
+	// - If the validator has staked to themselves, and they have reward restaking enabled, then their commissions are restaked.
+	// - If the validator has not staked to themselves, or they have reward restaking disabled, then their commissions are paid out
+	//   to their wallet.
+	//
+	// This approach has a few advantages:
+	// 1. It gives validators an easy opt-in feature to restake their commissions. This is useful for validators that want to maximize
+	// their staking rewards over the long run. Validators can opt out of it by disabling reward restaking on their own StakeEntry.
+	// 2. It simplifies the validator commission distribution code by re-using the same code path for distributing staking
+	// rewards. By requiring the validator to already have a StakeEntry for themselves if/ want to restake their commissions,
+	// this approach allows us to avoid manually creating a StakeEntry for the validator specifically for restaking commissions.
 	//
 	// TODO: The downside of the above is that it couples the restaking behavior for validator commissions and the validator's own
-	// staking reward. This seems fine though, as it is unlikely that a validator will want to restake only a subtset of their rewards.
-	// If the above isn't desired the behavior, then we can alternatively pay out validator's commission directly to their wallet.
+	// staking reward. This seems fine though, as it is unlikely that a validator will want to restake to themselves, but only want
+	// their staking rewards to be restaked and not their commissions.
+	//
+	// If the above isn't desired the behavior, then we can alternatively always pay out validator's commission directly to their wallet.
 	return bav.distributeStakingReward(validatorPKID, validatorPKID, commissionAmount)
 }
 
 const (
-	_basisPointsScalingFactor               = uint64(10000)      // 1e4
-	_stakingRewardInterestRateScalingFactor = uint64(1000000000) // 1e9
+	_basisPoints     = uint64(10000)                    // 1e4
+	_nanoSecsPerYear = uint64(365) * 24 * 60 * 60 * 1e9 // 365 days * 24 hours * 60 minutes * 60 seconds * 1e9 nanoseconds
 )
 
 var (
-	_basisPointsScalingFactorAsInt                 = big.NewInt(int64(_basisPointsScalingFactor))
-	_stakingRewardInterestRateScalingFactorAsFloat = NewFloat().SetUint64(_stakingRewardInterestRateScalingFactor)
+	_basisPointsAsInt       = big.NewInt(int64(_basisPoints))
+	_basisPointsAsFloat     = NewFloat().SetUint64(_basisPoints)
+	_nanoSecsPerYearAsFloat = NewFloat().SetUint64(_nanoSecsPerYear)
 )
 
 func convertBigFloatToBigInt(float *big.Float) *big.Int {
@@ -209,17 +238,27 @@ func convertBigFloatToBigInt(float *big.Float) *big.Int {
 	return floatAsInt
 }
 
-func convertScaledInterestRateToFloat(scaledInterestRate uint64) *big.Float {
-	scaledInterestRateFloat := NewFloat().SetUint64(scaledInterestRate)
-	return scaledInterestRateFloat.Quo(scaledInterestRateFloat, _stakingRewardInterestRateScalingFactorAsFloat)
+func convertAPYBasisPointsToFloat(apyBasisPoints uint64) *big.Float {
+	apyBasisPointsAsFloat := NewFloat().SetUint64(apyBasisPoints)
+	return apyBasisPointsAsFloat.Quo(apyBasisPointsAsFloat, _basisPointsAsFloat)
 }
 
-func computeStakingReward(stakeAmount *uint256.Int, interestRate *big.Float) *big.Float {
+func computeFractionOfYearAsFloat(nanoSecs uint64) *big.Float {
+	nanoSecsAsFloat := NewFloat().SetUint64(nanoSecs)
+	return nanoSecsAsFloat.Quo(nanoSecsAsFloat, _nanoSecsPerYearAsFloat)
+}
+
+// computeStakingReward uses float math to compute the compound interest on the staker's stake amount based on the
+// elapsed time since the last staking reward and the APY. It produces the result for: stakeAmount * (apy ^ (elapsedTime / 1 year))
+func computeStakingReward(stakeAmount *uint256.Int, elapsedFractionOfYear *big.Float, apy *big.Float) *big.Float {
 	stakeAmountFloat := NewFloat().SetInt(stakeAmount.ToBig())
+	interestRate := NewFloat().Mul(elapsedFractionOfYear, apy)
 	return BigFloatPow(stakeAmountFloat, interestRate)
 }
 
+// computeValidatorCommission uses integer math to compute the validator's commission amount based on the staker's reward
+// amount and the validator's commission rate. It produces the result for: floor((stakerReward * validatorCommissionBasisPoints) / 1e4)
 func computeValidatorCommission(stakerReward *big.Int, validatorCommissionBasisPoints uint64) *big.Int {
 	scaledStakerReward := big.NewInt(0).Mul(stakerReward, big.NewInt(int64(validatorCommissionBasisPoints)))
-	return scaledStakerReward.Div(scaledStakerReward, _basisPointsScalingFactorAsInt)
+	return scaledStakerReward.Div(scaledStakerReward, _basisPointsAsInt)
 }
