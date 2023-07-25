@@ -1,4 +1,4 @@
-package lib
+package storage
 
 import (
 	"github.com/boltdb/bolt"
@@ -39,14 +39,14 @@ func (bdb *BoltDatabase) GetContext(id []byte) Context {
 
 func (bdb *BoltDatabase) Update(ctx Context, fn func(Transaction, Context) error) error {
 	return bdb.db.Update(func(tx *bolt.Tx) error {
-		T := NewBoltTransaction(tx)
+		T := NewBoltTransaction(tx, false)
 		return fn(T, ctx)
 	})
 }
 
 func (bdb *BoltDatabase) View(ctx Context, fn func(Transaction, Context) error) error {
-	return bdb.db.View(func(tx *bolt.Tx) error {
-		T := NewBoltTransaction(tx)
+	return bdb.db.Update(func(tx *bolt.Tx) error {
+		T := NewBoltTransaction(tx, true)
 		return fn(T, ctx)
 	})
 }
@@ -68,16 +68,22 @@ func (bdb *BoltDatabase) Id() DatabaseId {
 // ==========================
 
 type BoltTransaction struct {
-	tx *bolt.Tx
+	tx       *bolt.Tx
+	readOnly bool
 }
 
-func NewBoltTransaction(tx *bolt.Tx) *BoltTransaction {
+func NewBoltTransaction(tx *bolt.Tx, readOnly bool) *BoltTransaction {
 	return &BoltTransaction{
-		tx: tx,
+		tx:       tx,
+		readOnly: readOnly,
 	}
 }
 
 func (bt *BoltTransaction) Set(key []byte, value []byte, ctx Context) error {
+	if bt.readOnly {
+		return errors.New("Set: Transaction is read-only")
+	}
+
 	bucket, err := castBoltContextAndGetBucket(bt.tx, ctx)
 	if err != nil {
 		return errors.Wrap(err, "Set:")
@@ -86,6 +92,10 @@ func (bt *BoltTransaction) Set(key []byte, value []byte, ctx Context) error {
 }
 
 func (bt *BoltTransaction) Delete(key []byte, ctx Context) error {
+	if bt.readOnly {
+		return errors.New("Delete: Transaction is read-only")
+	}
+
 	bucket, err := castBoltContextAndGetBucket(bt.tx, ctx)
 	if err != nil {
 		return errors.Wrap(err, "Delete:")

@@ -1,4 +1,4 @@
-package lib
+package storage
 
 import (
 	"github.com/dgraph-io/badger/v3"
@@ -17,15 +17,16 @@ const (
 )
 
 type BadgerDatabase struct {
-	db   *badger.DB
-	opts badger.Options
+	db            *badger.DB
+	opts          badger.Options
+	useWriteBatch bool
 }
 
-func NewBadgerDatabase(dir string) *BadgerDatabase {
-	opts := PerformanceBadgerOptions(dir)
+func NewBadgerDatabase(opts badger.Options, useWriteBatch bool) *BadgerDatabase {
 	return &BadgerDatabase{
-		db:   nil,
-		opts: opts,
+		db:            nil,
+		opts:          opts,
+		useWriteBatch: useWriteBatch,
 	}
 }
 
@@ -39,19 +40,26 @@ func (bdb *BadgerDatabase) Setup() error {
 }
 
 func (bdb *BadgerDatabase) GetContext(id []byte) Context {
-	return NewBadgerContext(id)
+	return NewBadgerContext(id, bdb.useWriteBatch)
 }
 
 func (bdb *BadgerDatabase) Update(ctx Context, fn func(Transaction, Context) error) error {
+	var wb *badger.WriteBatch
+	if bdb.useWriteBatch {
+		wb = bdb.db.NewWriteBatch()
+		defer wb.Cancel()
+		defer wb.Flush()
+	}
+
 	return bdb.db.Update(func(txn *badger.Txn) error {
-		T := NewBadgerTransaction(txn)
+		T := NewBadgerTransaction(txn, wb)
 		return fn(T, ctx)
 	})
 }
 
 func (bdb *BadgerDatabase) View(ctx Context, fn func(Transaction, Context) error) error {
 	return bdb.db.View(func(txn *badger.Txn) error {
-		T := NewBadgerTransaction(txn)
+		T := NewBadgerTransaction(txn, nil)
 		return fn(T, ctx)
 	})
 }
@@ -74,16 +82,24 @@ func (bdb *BadgerDatabase) Id() DatabaseId {
 
 type BadgerTransaction struct {
 	txn *badger.Txn
+	wb  *badger.WriteBatch
 }
 
-func NewBadgerTransaction(txn *badger.Txn) *BadgerTransaction {
-	return &BadgerTransaction{txn: txn}
+func NewBadgerTransaction(txn *badger.Txn, wb *badger.WriteBatch) *BadgerTransaction {
+	return &BadgerTransaction{
+		txn: txn,
+		wb:  wb,
+	}
 }
 
 func (btx *BadgerTransaction) Set(key []byte, value []byte, ctx Context) error {
 	prefixedKey, err := castBadgerContextAndGetPrefixedKey(key, ctx)
 	if err != nil {
 		return errors.Wrapf(err, "Set:")
+	}
+
+	if btx.wb != nil {
+		return btx.wb.Set(prefixedKey, value)
 	}
 	return btx.txn.Set(prefixedKey, value)
 }
@@ -92,6 +108,10 @@ func (btx *BadgerTransaction) Delete(key []byte, ctx Context) error {
 	prefixedKey, err := castBadgerContextAndGetPrefixedKey(key, ctx)
 	if err != nil {
 		return errors.Wrapf(err, "Delete:")
+	}
+
+	if btx.wb != nil {
+		return btx.wb.Delete(prefixedKey)
 	}
 	return btx.txn.Delete(prefixedKey)
 }
@@ -102,6 +122,7 @@ func (btx *BadgerTransaction) Get(key []byte, ctx Context) ([]byte, error) {
 	if err != nil {
 		return nil, errors.Wrapf(err, "Get:")
 	}
+
 	item, err := btx.txn.Get(prefixedKey)
 	if err != nil {
 		return value, errors.Wrapf(err, "Get:")
@@ -163,16 +184,20 @@ func (bit *BadgerIterator) Close() {
 // ==========================
 
 type BadgerContext struct {
-	prefix []byte
+	prefix        []byte
+	useWriteBatch bool
 }
 
-func NewBadgerContext(prefix []byte) *BadgerContext {
-	return &BadgerContext{prefix: prefix}
+func NewBadgerContext(prefix []byte, useWriteBatch bool) *BadgerContext {
+	return &BadgerContext{
+		prefix:        prefix,
+		useWriteBatch: useWriteBatch,
+	}
 }
 
 func NewBadgerNestedContext(prefix []byte, parent *BadgerContext) *BadgerContext {
 	prefixedPrefix := append(parent.prefix, prefix...)
-	return NewBadgerContext(prefixedPrefix)
+	return NewBadgerContext(prefixedPrefix, parent.useWriteBatch)
 }
 
 func (bc *BadgerContext) Id() DatabaseId {
@@ -208,6 +233,7 @@ func PerformanceBadgerOptions(dir string) badger.Options {
 
 func DefaultBadgerOptions(dir string) badger.Options {
 	opts := badger.DefaultOptions(dir)
+
 	opts.Logger = nil
 	return opts
 }
