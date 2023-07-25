@@ -2,6 +2,7 @@ package lib
 
 import (
 	"bytes"
+	"github.com/deso-protocol/core/storage"
 	"github.com/golang/glog"
 	"github.com/pkg/errors"
 	"sync"
@@ -33,12 +34,12 @@ type MempoolPersister struct {
 	stopGroup sync.WaitGroup
 
 	status      MempoolPersisterStatus
-	dbCtx       *DatabaseContext
+	dbCtx       *storage.DatabaseContext
 	eventQueue  chan *MempoolEvent
 	updateBatch []*MempoolEvent
 }
 
-func NewMempoolPersister(dbCtx *DatabaseContext) *MempoolPersister {
+func NewMempoolPersister(dbCtx *storage.DatabaseContext) *MempoolPersister {
 	return &MempoolPersister{
 		status:     MempoolPersisterStatusNotRunning,
 		dbCtx:      dbCtx,
@@ -91,8 +92,8 @@ func (mp *MempoolPersister) PersistBatch() error {
 		return nil
 	}
 
-	localContext := mp.dbCtx.NestContext([]byte(DbMempoolContextId))
-	err := mp.dbCtx.Update(localContext, func(txn Transaction, ctx Context) error {
+	localContext := mp.dbCtx.GetContext([]byte(DbMempoolContextId))
+	err := mp.dbCtx.Update(localContext, func(txn storage.Transaction, ctx storage.Context) error {
 		for _, event := range mp.updateBatch {
 			if event.Txn == nil || event.Txn.Hash == nil {
 				continue
@@ -124,9 +125,8 @@ func (mp *MempoolPersister) RetrieveTransactions() ([]*MempoolTx, error) {
 	defer mp.Unlock()
 
 	var mempoolTxns []*MempoolTx
-	localContext := mp.dbCtx.NestContext([]byte(DbMempoolContextId))
-
-	err := mp.dbCtx.View(localContext, func(txn Transaction, ctx Context) error {
+	localContext := mp.dbCtx.GetContext([]byte(DbMempoolContextId))
+	err := mp.dbCtx.View(localContext, func(txn storage.Transaction, ctx storage.Context) error {
 		iter, err := txn.GetIterator(ctx)
 		if err != nil {
 			return errors.Wrapf(err, "MempoolPersister: Error retrieving iterator")
