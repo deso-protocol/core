@@ -482,6 +482,9 @@ const (
 	RuleErrorNonceExpired                        RuleError = "RuleErrorNonceExpired"
 	RuleErrorBalanceChangeGreaterThanZero        RuleError = "RuleErrorBalanceChangeGreaterThanZero"
 
+	// EpochCompleteHook
+	RuleErrorBlockTimestampBeforeEpochStartTimestamp RuleError = "RuleErrorBlockTimestampBeforeEpochStartTimestamp"
+
 	HeaderErrorDuplicateHeader                                                   RuleError = "HeaderErrorDuplicateHeader"
 	HeaderErrorNilPrevHash                                                       RuleError = "HeaderErrorNilPrevHash"
 	HeaderErrorInvalidParent                                                     RuleError = "HeaderErrorInvalidParent"

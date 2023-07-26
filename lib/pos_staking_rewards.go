@@ -20,11 +20,10 @@ func (bav *UtxoView) DistributeStakingRewardsToSnapshotStakes(blockHeight uint64
 		return errors.Wrapf(err, "DistributeStakingRewardsToSnapshotStakes: problem retrieving current EpochEntry: ")
 	}
 
-	// Check if the current epoch's timestamp is somehow greater than the block timestamp. This should never as long
+	// Check if the current epoch's timestamp is somehow greater than the block timestamp. This should never happen as long
 	// as timestamps are moving forward when connecting each block.
 	if currentEpochEntry.CreatedAtBlockTimestampNanoSecs >= blockTimestampNanoSecs {
-		return errors.Errorf("DistributeStakingRewardsToSnapshotStakes: current EpochEntry's CreatedAtBlockTimestampNanoSecs "+
-			"(%d) is >= the blockTimestampNanoSecs (%d)", currentEpochEntry.CreatedAtBlockTimestampNanoSecs, blockTimestampNanoSecs)
+		return errors.Wrapf(RuleErrorBlockTimestampBeforeEpochStartTimestamp, "DistributeStakingRewardsToSnapshotStakes: ")
 	}
 
 	// Compute the amount of time that has elapsed since the current epoch started. As long as the elapsed time is > 0,
@@ -73,7 +72,7 @@ func (bav *UtxoView) DistributeStakingRewardsToSnapshotStakes(blockHeight uint64
 			return errors.Wrapf(err, "DistributeStakingRewardsToSnapshotStakes: problem computing staker reward and validator commission: ")
 		}
 
-		// If either the staker reward or the validator commission is zero, then there's nothing to be done. Move on to the next staker.
+		// If both the staker reward and the validator commission are zero, then there's nothing to be done. Move on to the next staker.
 		if stakerReward == 0 && validatorCommission == 0 {
 			continue
 		}
@@ -256,8 +255,8 @@ func computeStakingReward(stakeAmount *uint256.Int, elapsedFractionOfYear *big.F
 	stakeAmountFloat := NewFloat().SetInt(stakeAmount.ToBig())
 	growthExponent := NewFloat().Mul(elapsedFractionOfYear, apy)           // apy * elapsedTime / 1 year
 	growthMultiplier := BigFloatPow(bigE, growthExponent)                  // e ^ (apy * elapsedTime / 1 year)
-	finalStakeAmount := NewFloat().Mul(stakeAmountFloat, growthMultiplier) // stakeAmount * [e ^ (apy * elapsedTime / 1 year) - 1]
-	return finalStakeAmount.Sub(finalStakeAmount, stakeAmountFloat)        // stakeAmount * [e ^ (apy * elapsedTime / 1 year) - 1]
+	finalStakeAmount := NewFloat().Mul(stakeAmountFloat, growthMultiplier) // stakeAmount * [e ^ (apy * elapsedTime / 1 year)]
+	return finalStakeAmount.Sub(finalStakeAmount, stakeAmountFloat)        // stakeAmount * [e ^ (apy * elapsedTime / 1 year)] - stakeAmount
 }
 
 // computeValidatorCommission uses integer math to compute the validator's commission amount based on the staker's
