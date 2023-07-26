@@ -81,6 +81,8 @@ func (bav *UtxoView) RunEpochCompleteHook(blockHeight uint64, blockTimestampNano
 		return errors.Wrapf(err, "RunEpochCompleteHook: ")
 	}
 
+	// TODO: Evict old snapshots when safe to do so.
+
 	// Step 3: Roll Over to The Next Epoch
 	if err := bav.runEpochCompleteEpochRollover(currentEpochEntry.EpochNumber, blockHeight, blockTimestampNanoSecs); err != nil {
 		return errors.Wrapf(err, "RunEpochCompleteHook: ")
@@ -96,7 +98,7 @@ func (bav *UtxoView) runEpochCompleteStateMutations(blockHeight uint64) error {
 	// and jails them if they have been inactive.
 	//
 	// Note, this this will only run if we are past the ProofOfStake2ConsensusCutoverBlockHeight fork height.
-	if err := bav.JailInactiveSnapshotValidators(blockHeight); err != nil {
+	if err := bav.JailAllInactiveSnapshotValidators(blockHeight); err != nil {
 		return errors.Wrapf(err, "runEpochCompleteStateMutations: problem jailing all inactive validators: ")
 	}
 
@@ -198,7 +200,11 @@ func (bav *UtxoView) generateAndSnapshotLeaderSchedule(epochNumber uint64) error
 }
 
 func (bav *UtxoView) generateAndSnapshotStakesToReward(epochNumber uint64, validatorSet []*ValidatorEntry) error {
-	// Fetch the current top n stake entries.
+	// Fetch the current top n stake entries. Note, this query will return the top n stake entries regardless of whether
+	// or not they are in the active validator set of the epoch. By not filtering the stake entries while seeking through
+	// the DB, we guarantee that we will at most seek through n stake entries. This avoids the edge cases where the global
+	// set of stake entries is very large, and as a result of additional filters in the seek, we end up seeking through
+	// the entire global set.
 	topStakeEntries, err := bav.GetTopStakesByStakeAmount(bav.GetCurrentGlobalParamsEntry().StakingRewardsMaxNumStakes)
 	if err != nil {
 		return errors.Wrapf(err, "RunEpochCompleteHook: error retrieving top StakeEntries: ")

@@ -685,8 +685,10 @@ func DBGetTopStakesByStakeAmount(
 		stakeMapKeysToSkip.Add(stakeEntryToSkip.ToMapKey())
 	}
 
-	// Define a function to filter out ValidatorPKID-StakerPKID pairs that we want to skip
-	// while seeking through the DB.
+	// Define a function to filter out ValidatorPKID-StakerPKID pairs that we want to skip while
+	// seeking through the DB. We can't simply pass in the exact keys from the UtxoView that we
+	// need to skip through because it's possible that the stake entries (and their stake amounts)
+	// have changed in the UtxoView, and no longer match the stake amounts in the DB used to index them.
 	canSkipValidatorPKIDAndStakerPKIDInBadgerSeek := func(badgerKey []byte) bool {
 		// Parse both the validator PKID and staker PKID from the key. Just to be safe, we return false if
 		// we fail to parse them. Once the seek has completed, we attempt to parse all of the same keys a
@@ -961,7 +963,8 @@ func DBDeleteStakeEntryWithTxn(
 	}
 
 	// Look up the existing StakeEntry in the db using the validator and staker PKIDs.
-	// We need to use this stakeEntry's values to delete all corresponding indexes.
+	// We need to use the stakeEntry's current values from the DB to delete it from all
+	// indexes that store it.
 	stakeEntry, err := DBGetStakeEntryWithTxn(txn, snap, validatorPKID, stakerPKID)
 	if err != nil {
 		return errors.Wrapf(err, "DBDeleteStakeEntryWithTxn: problem retrieving "+

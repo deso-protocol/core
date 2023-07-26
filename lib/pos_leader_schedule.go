@@ -14,7 +14,8 @@ func (bav *UtxoView) GenerateLeaderSchedule() ([]*PKID, error) {
 		return nil, errors.Wrapf(err, "UtxoView.GenerateLeaderSchedule: error retrieving CurrentRandomSeedHash: ")
 	}
 
-	// Retrieve the SnapshotGlobalParamsEntry.LeaderScheduleMaxNumValidators.
+	// Retrieve the SnapshotGlobalParamsEntry.LeaderScheduleMaxNumValidators. Note, we are safe to use the
+	// currentGlobalParamsEntry.LeaderScheduleMaxNumValidators here since we are creating a new snapshot.
 	currentGlobalParamsEntry := bav.GetCurrentGlobalParamsEntry()
 
 	// Retrieve top, active validators ordered by stake.
