@@ -1854,7 +1854,7 @@ func (bav *UtxoView) GetTopActiveValidatorsByStakeAmount(limit uint64) ([]*Valid
 	return validatorEntries[0:upperBound], nil
 }
 
-func (bav *UtxoView) JailInactiveSnapshotValidators(blockHeight uint64) error {
+func (bav *UtxoView) JailAllInactiveSnapshotValidators(blockHeight uint64) error {
 	// Check if we have switched from PoW to PoS yet. If we have not, then the PoS consensus
 	// has not started. We don't want to jail any validators until they have had the opportunity
 	// to participate in the consensus and are known to be inactive.
@@ -1864,7 +1864,7 @@ func (bav *UtxoView) JailInactiveSnapshotValidators(blockHeight uint64) error {
 
 	snapshotGlobalParams, err := bav.GetSnapshotGlobalParamsEntry()
 	if err != nil {
-		return errors.Wrapf(err, "UtxoView.JailInactiveSnapshotValidators: ")
+		return errors.Wrapf(err, "UtxoView.JailAllInactiveSnapshotValidators: error retrieving SnapshotGlobalParamsEntry: ")
 	}
 
 	// Get the current snapshot validator set. These are the only validator what were
@@ -1880,7 +1880,7 @@ func (bav *UtxoView) JailInactiveSnapshotValidators(blockHeight uint64) error {
 	for _, snapshotValidatorEntry := range snapshotValidatorSet {
 		currentValidatorEntry, err := bav.GetValidatorByPKID(snapshotValidatorEntry.ValidatorPKID)
 		if err != nil {
-			return errors.Wrapf(err, "UtxoView.JailInactiveSnapshotValidators: ")
+			return errors.Wrapf(err, "UtxoView.JailAllInactiveSnapshotValidators: error retrieving ValidatorEntry by PKID: ")
 		}
 
 		if currentValidatorEntry == nil || currentValidatorEntry.isDeleted {
@@ -1890,7 +1890,7 @@ func (bav *UtxoView) JailInactiveSnapshotValidators(blockHeight uint64) error {
 
 		shouldJailValidator, err := bav.ShouldJailValidator(currentValidatorEntry, blockHeight)
 		if err != nil {
-			return errors.Wrapf(err, "UtxoView.JailInactiveSnapshotValidators: ")
+			return errors.Wrapf(err, "UtxoView.JailAllInactiveSnapshotValidators: error checking if validator should be jailed: ")
 		}
 
 		if !shouldJailValidator {
@@ -1900,7 +1900,7 @@ func (bav *UtxoView) JailInactiveSnapshotValidators(blockHeight uint64) error {
 		// If we get here, then the validator should be jailed.
 		if err = bav.JailValidator(currentValidatorEntry); err != nil {
 			return errors.Wrapf(
-				err, "UtxoView.JailInactiveSnapshotValidators: problem jailing validator %v: ", currentValidatorEntry.ValidatorPKID,
+				err, "UtxoView.JailAllInactiveSnapshotValidators: error jailing validator %v: ", currentValidatorEntry.ValidatorPKID,
 			)
 		}
 	}

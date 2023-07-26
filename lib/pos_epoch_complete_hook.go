@@ -96,7 +96,7 @@ func (bav *UtxoView) runEpochCompleteStateMutations(blockHeight uint64) error {
 	// and jails them if they have been inactive.
 	//
 	// Note, this this will only run if we are past the ProofOfStake2ConsensusCutoverBlockHeight fork height.
-	if err := bav.JailInactiveSnapshotValidators(blockHeight); err != nil {
+	if err := bav.JailAllInactiveSnapshotValidators(blockHeight); err != nil {
 		return errors.Wrapf(err, "runEpochCompleteStateMutations: problem jailing all inactive validators: ")
 	}
 
