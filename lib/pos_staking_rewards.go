@@ -186,7 +186,7 @@ func (bav *UtxoView) distributeStakingReward(validatorPKID *PKID, stakerPKID *PK
 		return nil
 	}
 
-	// For cases 2 and 3, the staker no longer wants their rewards restaked. The staker is still
+	// For cases 2 and 3, the staker does not want their rewards restaked. The staker is still
 	// eligible to receive rewards because their stake was used to secure the network. So we pay out
 	// the rewards directly to the staker's wallet.
 
@@ -215,8 +215,8 @@ func (bav *UtxoView) distributeValidatorCommission(validatorPKID *PKID, commissi
 	// this approach allows us to avoid manually creating new StakeEntries for the validator specifically for restaking commissions.
 	//
 	// TODO: The downside of the above is that it couples the restaking behavior for validator commissions and the validator's own
-	// staking reward. This seems fine though, as it is unlikely that a validator will want to restake to themselves, but only want
-	// their staking rewards to be restaked and not their commissions.
+	// staking reward. This is fine though, because if the validator wants to restake their own rewards but not their commissions, then
+	// they can stake to themselves using a separate wallet and only enable reward restaking for that StakeEntry.
 	//
 	// If the above isn't desired the behavior, then we can alternatively always pay out validator's commission directly to their wallet.
 	return bav.distributeStakingReward(validatorPKID, validatorPKID, commissionAmount)
@@ -251,20 +251,20 @@ func computeFractionOfYearAsFloat(nanoSecs uint64) *big.Float {
 // computeStakingReward uses float math to compute the compound interest on the stake amounts based on the
 // elapsed time since the last staking reward distribution and the APY.
 //
-// It produces the result for: stakeAmount * (e ^ (apy * elapsedTime / 1 year)) - stakeAmount
+// It produces the result for: stakeAmount * [e ^ (apy * elapsedTime / 1 year) - 1]
 func computeStakingReward(stakeAmount *uint256.Int, elapsedFractionOfYear *big.Float, apy *big.Float) *big.Float {
 	stakeAmountFloat := NewFloat().SetInt(stakeAmount.ToBig())
 	growthExponent := NewFloat().Mul(elapsedFractionOfYear, apy)           // apy * elapsedTime / 1 year
 	growthMultiplier := BigFloatPow(bigE, growthExponent)                  // e ^ (apy * elapsedTime / 1 year)
-	finalStakeAmount := NewFloat().Mul(stakeAmountFloat, growthMultiplier) // stakeAmount * (e ^ (apy * elapsedTime / 1 year))
-	return finalStakeAmount.Sub(finalStakeAmount, stakeAmountFloat)        // stakeAmount * (e ^ (apy * elapsedTime / 1 year)) - stakeAmount
+	finalStakeAmount := NewFloat().Mul(stakeAmountFloat, growthMultiplier) // stakeAmount * [e ^ (apy * elapsedTime / 1 year) - 1]
+	return finalStakeAmount.Sub(finalStakeAmount, stakeAmountFloat)        // stakeAmount * [e ^ (apy * elapsedTime / 1 year) - 1]
 }
 
 // computeValidatorCommission uses integer math to compute the validator's commission amount based on the staker's
 // reward amount and the validator's commission rate. Wherever possible, we rely on integer math so that rounding
 // errors are simpler to reason through.
 //
-// It produces the integer result for: floor((stakerReward * validatorCommissionBasisPoints) / 1e4)
+// It produces the integer result for: floor[(stakerReward * validatorCommissionBasisPoints) / 1e4]
 func computeValidatorCommission(stakerReward *big.Int, validatorCommissionBasisPoints uint64) *big.Int {
 	scaledStakerReward := big.NewInt(0).Mul(stakerReward, big.NewInt(int64(validatorCommissionBasisPoints)))
 	return scaledStakerReward.Div(scaledStakerReward, _basisPointsAsInt)
