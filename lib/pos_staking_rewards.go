@@ -74,7 +74,7 @@ func (bav *UtxoView) DistributeStakingRewardsToSnapshotStakes(blockHeight uint64
 		}
 
 		// If either the staker reward or the validator commission is zero, then there's nothing to be done. Move on to the next staker.
-		if stakerReward == 0 || validatorCommission == 0 {
+		if stakerReward == 0 && validatorCommission == 0 {
 			continue
 		}
 
@@ -248,16 +248,23 @@ func computeFractionOfYearAsFloat(nanoSecs uint64) *big.Float {
 	return nanoSecsAsFloat.Quo(nanoSecsAsFloat, _nanoSecsPerYearAsFloat)
 }
 
-// computeStakingReward uses float math to compute the compound interest on the staker's stake amount based on the
-// elapsed time since the last staking reward and the APY. It produces the result for: stakeAmount * (apy ^ (elapsedTime / 1 year))
+// computeStakingReward uses float math to compute the compound interest on the stake amounts based on the
+// elapsed time since the last staking reward distribution and the APY.
+//
+// It produces the result for: stakeAmount * (e ^ (apy * elapsedTime / 1 year)) - stakeAmount
 func computeStakingReward(stakeAmount *uint256.Int, elapsedFractionOfYear *big.Float, apy *big.Float) *big.Float {
 	stakeAmountFloat := NewFloat().SetInt(stakeAmount.ToBig())
-	interestRate := NewFloat().Mul(elapsedFractionOfYear, apy)
-	return BigFloatPow(stakeAmountFloat, interestRate)
+	growthExponent := NewFloat().Mul(elapsedFractionOfYear, apy)           // apy * elapsedTime / 1 year
+	growthMultiplier := BigFloatPow(bigE, growthExponent)                  // e ^ (apy * elapsedTime / 1 year)
+	finalStakeAmount := NewFloat().Mul(stakeAmountFloat, growthMultiplier) // stakeAmount * (e ^ (apy * elapsedTime / 1 year))
+	return finalStakeAmount.Sub(finalStakeAmount, stakeAmountFloat)        // stakeAmount * (e ^ (apy * elapsedTime / 1 year)) - stakeAmount
 }
 
-// computeValidatorCommission uses integer math to compute the validator's commission amount based on the staker's reward
-// amount and the validator's commission rate. It produces the result for: floor((stakerReward * validatorCommissionBasisPoints) / 1e4)
+// computeValidatorCommission uses integer math to compute the validator's commission amount based on the staker's
+// reward amount and the validator's commission rate. Wherever possible, we rely on integer math so that rounding
+// errors are simpler to reason through.
+//
+// It produces the integer result for: floor((stakerReward * validatorCommissionBasisPoints) / 1e4)
 func computeValidatorCommission(stakerReward *big.Int, validatorCommissionBasisPoints uint64) *big.Int {
 	scaledStakerReward := big.NewInt(0).Mul(stakerReward, big.NewInt(int64(validatorCommissionBasisPoints)))
 	return scaledStakerReward.Div(scaledStakerReward, _basisPointsAsInt)
