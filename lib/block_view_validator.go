@@ -644,6 +644,9 @@ func DBGetTopActiveValidatorsByStakeAmount(
 	}
 
 	// Define a function to filter out validators PKIDs we want to skip while seeking through the DB.
+	// We can't simply pass in the exact keys from the UtxoView that we need to skip through because
+	// it's possible that the validator entries (and their total stake amounts) have changed in the
+	// UtxoView, and no longer match the stake amounts in the DB used to index them.
 	canSkipValidatorInBadgerSeek := func(badgerKey []byte) bool {
 		validatorPKID, err := GetValidatorPKIDFromDBKeyForValidatorByStatusAndStakeAmount(badgerKey)
 		if err != nil {

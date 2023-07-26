@@ -18,8 +18,8 @@ type EpochEntry struct {
 	FinalBlockHeight uint64
 
 	// This captures the on-chain timestamp when this epoch entry was created. This does not
-	// represent the first block of the epoch, but rather when this epoch transition was triggered,
-	// at the end of the previous epoch.
+	// represent the timestamp for first block of the epoch, but rather when this epoch entry
+	// was created during that epoch transition at the end of the previous epoch.
 	CreatedAtBlockTimestampNanoSecs uint64
 }
 
@@ -100,7 +100,8 @@ func (bav *UtxoView) GetCurrentEpochEntry() (*EpochEntry, error) {
 	// case prior to the first execution of the OnEpochCompleteHook.
 	//
 	// TODO: Should FinalBlockHeight be ProofOfStake1StateSetupBlockHeight for epoch 0?
-	// The fork height is exactly when epoch 0 ends. Epoch 1 begins at the next height.
+	// The ProofOfStake1StateSetupBlockHeight fork height is exactly when epoch 0 ends.
+	// Epoch 1 begins at the next height.
 	genesisEpochEntry := &EpochEntry{
 		EpochNumber:                     0,
 		FinalBlockHeight:                math.MaxUint64,
