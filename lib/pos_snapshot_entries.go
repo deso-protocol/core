@@ -855,8 +855,8 @@ func (bav *UtxoView) _flushSnapshotStakesToRewardToDbWithTxn(txn *badger.Txn, bl
 	// values for snapshotStakeEntry in order to delete it from the DB. If we want to follow the DELETE -> PUT, we'll
 	// need to seek through ALL keys in the index and delete them first. This is not ideal.
 	//
-	// Omitting the DELETE here fine however, because the snapshotStakeEntries that are written when committing the final
-	// block of an epoch will always be identical, and are never overwritten.
+	// Omitting the DELETE here is fine in practice because the snapshotStakeEntries that are written when committing
+	// the final block of an epoch will always be identical, and are never overwritten.
 
 	for mapKey, snapshotStakeEntry := range bav.SnapshotStakesToReward {
 		if snapshotStakeEntry == nil {
