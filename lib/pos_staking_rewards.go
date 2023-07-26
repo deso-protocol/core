@@ -211,8 +211,8 @@ func (bav *UtxoView) distributeValidatorCommission(validatorPKID *PKID, commissi
 	// 1. It gives validators an easy opt-in feature to restake their commissions. This is useful for validators that want to maximize
 	// their staking rewards over the long run. Validators can opt out of it by disabling reward restaking on their own StakeEntry.
 	// 2. It simplifies the validator commission distribution code by re-using the same code path for distributing staking
-	// rewards. By requiring the validator to already have a StakeEntry for themselves if/ want to restake their commissions,
-	// this approach allows us to avoid manually creating a StakeEntry for the validator specifically for restaking commissions.
+	// rewards. By requiring the validator to already have a StakeEntry for themselves if they want to restake their commissions,
+	// this approach allows us to avoid manually creating new StakeEntries for the validator specifically for restaking commissions.
 	//
 	// TODO: The downside of the above is that it couples the restaking behavior for validator commissions and the validator's own
 	// staking reward. This seems fine though, as it is unlikely that a validator will want to restake to themselves, but only want
