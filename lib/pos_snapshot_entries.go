@@ -341,7 +341,7 @@ func (bav *UtxoView) _flushSnapshotValidatorSetToDbWithTxn(txn *badger.Txn, bloc
 		}
 	}
 
-	// Set all !isDeleted SnapshotValidatorSet into the db from the UtxoView.
+	// Put all !isDeleted SnapshotValidatorSet entry into the db from the UtxoView.
 	for mapKey, validatorEntry := range bav.SnapshotValidatorSet {
 		if validatorEntry == nil {
 			return fmt.Errorf(
@@ -849,6 +849,15 @@ func DBGetSnapshotStakesToRewardByStakeAmount(
 }
 
 func (bav *UtxoView) _flushSnapshotStakesToRewardToDbWithTxn(txn *badger.Txn, blockHeight uint64) error {
+	// Note: the typical DELETE -> PUT pattern we follow in other _flush functions to update re-indexed keys
+	// will not work here because the SnapshotStakeToRewardByStakeAmount index has all of the information about
+	// the snapshot stake entry in the key. We would need to know the DB stakerPKID, validatorPKID, and stakeAmount
+	// values for snapshotStakeEntry in order to delete it from the DB. If we want to follow the DELETE -> PUT, we'll
+	// need to seek through ALL keys in the index and delete them first. This is not ideal.
+	//
+	// Omitting the DELETE here fine however, because the snapshotStakeEntries that are written when committing the final
+	// block of an epoch will always be identical, and are never overwritten.
+
 	for mapKey, snapshotStakeEntry := range bav.SnapshotStakesToReward {
 		if snapshotStakeEntry == nil {
 			return fmt.Errorf(
