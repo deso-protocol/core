@@ -248,14 +248,14 @@ func TestRunEpochCompleteHook(t *testing.T) {
 		}
 
 		// Test GetSnapshotStakesToRewardByStakeAmount is populated.
-		snapshotStakeEntries, err := _newUtxoView(testMeta).GetAllSnapshotStakesToReward()
+		stakeEntries, err := _newUtxoView(testMeta).GetAllSnapshotStakesToReward()
 		require.NoError(t, err)
-		_sortStakeEntriesByStakeAmount(snapshotStakeEntries)
-		require.Len(t, snapshotStakeEntries, 7)
-		require.Equal(t, snapshotStakeEntries[0].StakerPKID, m6PKID)
-		require.Equal(t, snapshotStakeEntries[6].StakerPKID, m0PKID)
-		require.Equal(t, snapshotStakeEntries[0].StakeAmountNanos, uint256.NewInt().SetUint64(700))
-		require.Equal(t, snapshotStakeEntries[6].StakeAmountNanos, uint256.NewInt().SetUint64(100))
+		_sortStakeEntriesByStakeAmount(stakeEntries)
+		require.Len(t, stakeEntries, 7)
+		require.Equal(t, stakeEntries[0].StakerPKID, m6PKID)
+		require.Equal(t, stakeEntries[6].StakerPKID, m0PKID)
+		require.Equal(t, stakeEntries[0].StakeAmountNanos, uint256.NewInt().SetUint64(700))
+		require.Equal(t, stakeEntries[6].StakeAmountNanos, uint256.NewInt().SetUint64(100))
 	}
 	{
 		// Test snapshotting changing stake.
@@ -284,12 +284,12 @@ func TestRunEpochCompleteHook(t *testing.T) {
 		require.NotNil(t, validatorEntry)
 		require.Equal(t, validatorEntry.TotalStakeAmountNanos.Uint64(), uint64(600))
 
-		snapshotStakeEntries, err := _newUtxoView(testMeta).GetAllSnapshotStakesToReward()
+		stakeEntries, err := _newUtxoView(testMeta).GetAllSnapshotStakesToReward()
 		require.NoError(t, err)
-		_sortStakeEntriesByStakeAmount(snapshotStakeEntries)
-		require.Len(t, snapshotStakeEntries, 7)
-		require.Equal(t, snapshotStakeEntries[1].StakerPKID, m5PKID)
-		require.Equal(t, snapshotStakeEntries[1].StakeAmountNanos, uint256.NewInt().SetUint64(600))
+		_sortStakeEntriesByStakeAmount(stakeEntries)
+		require.Len(t, stakeEntries, 7)
+		require.Equal(t, stakeEntries[1].StakerPKID, m5PKID)
+		require.Equal(t, stakeEntries[1].StakeAmountNanos, uint256.NewInt().SetUint64(600))
 
 		// Run OnEpochCompleteHook().
 		_runOnEpochCompleteHook(testMeta, incrBlockHeight())
@@ -300,12 +300,12 @@ func TestRunEpochCompleteHook(t *testing.T) {
 		require.NotNil(t, validatorEntry)
 		require.Equal(t, validatorEntry.TotalStakeAmountNanos.Uint64(), uint64(800))
 
-		snapshotStakeEntries, err = _newUtxoView(testMeta).GetAllSnapshotStakesToReward()
+		stakeEntries, err = _newUtxoView(testMeta).GetAllSnapshotStakesToReward()
 		require.NoError(t, err)
-		_sortStakeEntriesByStakeAmount(snapshotStakeEntries)
-		require.Len(t, snapshotStakeEntries, 7)
-		require.Equal(t, snapshotStakeEntries[0].StakerPKID, m5PKID)
-		require.Equal(t, snapshotStakeEntries[0].StakeAmountNanos, uint256.NewInt().SetUint64(800))
+		_sortStakeEntriesByStakeAmount(stakeEntries)
+		require.Len(t, stakeEntries, 7)
+		require.Equal(t, stakeEntries[0].StakerPKID, m5PKID)
+		require.Equal(t, stakeEntries[0].StakeAmountNanos, uint256.NewInt().SetUint64(800))
 	}
 	{
 		// Test snapshotting changing GlobalParams.

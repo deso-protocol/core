@@ -746,7 +746,7 @@ func (bav *UtxoView) GetAllSnapshotStakesToReward() ([]*StakeEntry, error) {
 		if _, exists := bav.SnapshotStakesToReward[*mapKey]; exists {
 			// We should never see duplicate entries from the db that are already in the UtxoView. This is a
 			// sign of a bug and that the utxoViewStakeEntries isn't being used correctly.
-			return nil, fmt.Errorf("GetAllSnapshotStakesToReward: db returned a SnapshotStakeEntry" +
+			return nil, fmt.Errorf("GetAllSnapshotStakesToReward: db returned a snapshot StakeEntry" +
 				" that already exists in the UtxoView")
 		}
 
@@ -756,10 +756,9 @@ func (bav *UtxoView) GetAllSnapshotStakesToReward() ([]*StakeEntry, error) {
 	// Pull snapshot StakeEntries from the UtxoView with stake > 0. All entries should have > 0 stake to begin
 	// with, but we filter here again just in case.
 	var mergedStakeEntries []*StakeEntry
-	for mapKey, snapshotStakeEntry := range bav.SnapshotStakesToReward {
-		if mapKey.SnapshotAtEpochNumber == snapshotAtEpochNumber &&
-			!snapshotStakeEntry.StakeAmountNanos.IsZero() {
-			mergedStakeEntries = append(mergedStakeEntries, snapshotStakeEntry)
+	for mapKey, stakeEntry := range bav.SnapshotStakesToReward {
+		if mapKey.SnapshotAtEpochNumber == snapshotAtEpochNumber && !stakeEntry.StakeAmountNanos.IsZero() {
+			mergedStakeEntries = append(mergedStakeEntries, stakeEntry)
 		}
 	}
 
