@@ -316,7 +316,7 @@ func NewSnapshot(mainDb *badger.DB, mainDbDirectory string, snapshotBlockHeightP
 
 	// Initialize the ancestral records database
 	snapshotDirectory := filepath.Join(GetBadgerDbPath(mainDbDirectory), "snapshot")
-	snapshotOpts := PerformanceBadgerOptions(snapshotDirectory)
+	snapshotOpts := DefaultBadgerOptions(snapshotDirectory)
 	if useDefaultBadgerOptions {
 		snapshotOpts = DefaultBadgerOptions(snapshotDirectory)
 	}
