@@ -222,13 +222,7 @@ func (bav *UtxoView) generateAndSnapshotStakesToReward(epochNumber uint64, valid
 
 	// Snapshot only the top m stake entries that are in the validator set.
 	for _, stakeEntry := range topStakesInValidatorSet {
-		snapshotStakeEntry := SnapshotStakeEntry{
-			SnapshotAtEpochNumber: epochNumber,
-			ValidatorPKID:         stakeEntry.ValidatorPKID,
-			StakerPKID:            stakeEntry.StakerPKID,
-			StakeAmountNanos:      stakeEntry.StakeAmountNanos,
-		}
-		bav._setSnapshotStakeToReward(&snapshotStakeEntry)
+		bav._setSnapshotStakeToReward(stakeEntry.Copy(), epochNumber)
 	}
 
 	return nil
