@@ -4,6 +4,7 @@ package lib
 
 import (
 	"fmt"
+	"sort"
 	"testing"
 
 	"github.com/holiman/uint256"
@@ -247,8 +248,9 @@ func TestRunEpochCompleteHook(t *testing.T) {
 		}
 
 		// Test GetSnapshotStakesToRewardByStakeAmount is populated.
-		snapshotStakeEntries, err := _newUtxoView(testMeta).GetSnapshotStakesToRewardByStakeAmount(10)
+		snapshotStakeEntries, err := _newUtxoView(testMeta).GetAllSnapshotStakesToReward()
 		require.NoError(t, err)
+		_sortStakeEntriesByStakeAmount(snapshotStakeEntries)
 		require.Len(t, snapshotStakeEntries, 7)
 		require.Equal(t, snapshotStakeEntries[0].StakerPKID, m6PKID)
 		require.Equal(t, snapshotStakeEntries[6].StakerPKID, m0PKID)
@@ -282,8 +284,9 @@ func TestRunEpochCompleteHook(t *testing.T) {
 		require.NotNil(t, validatorEntry)
 		require.Equal(t, validatorEntry.TotalStakeAmountNanos.Uint64(), uint64(600))
 
-		snapshotStakeEntries, err := _newUtxoView(testMeta).GetSnapshotStakesToRewardByStakeAmount(10)
+		snapshotStakeEntries, err := _newUtxoView(testMeta).GetAllSnapshotStakesToReward()
 		require.NoError(t, err)
+		_sortStakeEntriesByStakeAmount(snapshotStakeEntries)
 		require.Len(t, snapshotStakeEntries, 7)
 		require.Equal(t, snapshotStakeEntries[1].StakerPKID, m5PKID)
 		require.Equal(t, snapshotStakeEntries[1].StakeAmountNanos, uint256.NewInt().SetUint64(600))
@@ -297,8 +300,9 @@ func TestRunEpochCompleteHook(t *testing.T) {
 		require.NotNil(t, validatorEntry)
 		require.Equal(t, validatorEntry.TotalStakeAmountNanos.Uint64(), uint64(800))
 
-		snapshotStakeEntries, err = _newUtxoView(testMeta).GetSnapshotStakesToRewardByStakeAmount(10)
+		snapshotStakeEntries, err = _newUtxoView(testMeta).GetAllSnapshotStakesToReward()
 		require.NoError(t, err)
+		_sortStakeEntriesByStakeAmount(snapshotStakeEntries)
 		require.Len(t, snapshotStakeEntries, 7)
 		require.Equal(t, snapshotStakeEntries[0].StakerPKID, m5PKID)
 		require.Equal(t, snapshotStakeEntries[0].StakeAmountNanos, uint256.NewInt().SetUint64(800))
@@ -356,7 +360,7 @@ func TestRunEpochCompleteHook(t *testing.T) {
 		require.NoError(t, err)
 		require.Len(t, snapshotValidatorSet, 7)
 
-		snapshotStakeEntries, err := _newUtxoView(testMeta).GetSnapshotStakesToRewardByStakeAmount(10)
+		snapshotStakeEntries, err := _newUtxoView(testMeta).GetAllSnapshotStakesToReward()
 		require.NoError(t, err)
 		require.Len(t, snapshotStakeEntries, 7)
 
@@ -368,7 +372,7 @@ func TestRunEpochCompleteHook(t *testing.T) {
 		require.NoError(t, err)
 		require.Len(t, snapshotValidatorSet, 6)
 
-		snapshotStakeEntries, err = _newUtxoView(testMeta).GetSnapshotStakesToRewardByStakeAmount(10)
+		snapshotStakeEntries, err = _newUtxoView(testMeta).GetAllSnapshotStakesToReward()
 		require.NoError(t, err)
 		require.Len(t, snapshotStakeEntries, 6)
 	}
@@ -424,7 +428,7 @@ func TestRunEpochCompleteHook(t *testing.T) {
 		}
 
 		getNumSnapshotStakes := func() int {
-			snapshotStakeEntries, err := _newUtxoView(testMeta).GetSnapshotStakesToRewardByStakeAmount(10)
+			snapshotStakeEntries, err := _newUtxoView(testMeta).GetAllSnapshotStakesToReward()
 			require.NoError(t, err)
 			return len(snapshotStakeEntries)
 		}
@@ -575,7 +579,13 @@ func _assertEmptyValidatorSnapshots(testMeta *TestMeta) {
 
 func _assertEmptyStakeSnapshots(testMeta *TestMeta) {
 	// Test GetSnapshotStakesToRewardByStakeAmount is empty.
-	stakeEntries, err := _newUtxoView(testMeta).GetSnapshotStakesToRewardByStakeAmount(100)
+	stakeEntries, err := _newUtxoView(testMeta).GetAllSnapshotStakesToReward()
 	require.NoError(testMeta.t, err)
 	require.Empty(testMeta.t, stakeEntries)
+}
+
+func _sortStakeEntriesByStakeAmount(stakeEntries []*StakeEntry) {
+	sort.Slice(stakeEntries, func(ii, jj int) bool {
+		return stakeEntries[ii].StakeAmountNanos.Cmp(stakeEntries[jj].StakeAmountNanos) > 0
+	})
 }

@@ -553,8 +553,8 @@ type DBPrefixes struct {
 	// Prefix, <SnapshotAtEpochNumber uint64>, <LeaderIndex uint16> -> ValidatorPKID
 	PrefixSnapshotLeaderSchedule []byte `prefix_id:"[89]" is_state:"true"`
 
-	// PrefixSnapshotStakeToRewardByValidatorAndStaker: Retrieves snapshotted StakeEntries that can receive staking rewards
-	// for an epoch.
+	// PrefixSnapshotStakeToRewardByValidatorAndStaker: Retrieves snapshotted StakeEntries that are eligible to
+	// receive staking rewards for an epoch. StakeEntries can be retrieved by ValidatorPKID and StakerPKID.
 	// Prefix, <SnapshotAtEpochNumber>, <ValidatorPKID [33]byte>, <StakerPKID [33]byte> -> *StakeEntry
 	// Note, we parse the ValidatorPKID and StakerPKID from the key.
 	PrefixSnapshotStakeToRewardByValidatorAndStaker []byte `prefix_id:"[90]" is_state:"true"`

@@ -696,12 +696,12 @@ func NewSnapshotStakeMapKey(stakeEntry *StakeEntry, snapshotAtEpochNumber uint64
 	}
 }
 
-func (bav *UtxoView) _setSnapshotStakeToReward(stakeEntry *StakeEntry, epochNumber uint64) {
+func (bav *UtxoView) _setSnapshotStakeToReward(stakeEntry *StakeEntry, snapshotAtEpochNumber uint64) {
 	if stakeEntry == nil {
 		glog.Errorf("_setSnapshotStakeToReward: called with nil stakeEntry")
 		return
 	}
-	bav.SnapshotStakesToReward[*NewSnapshotStakeMapKey(stakeEntry, epochNumber)] = stakeEntry.Copy()
+	bav.SnapshotStakesToReward[*NewSnapshotStakeMapKey(stakeEntry, snapshotAtEpochNumber)] = stakeEntry.Copy()
 }
 
 // GetSnapshotStakesToReward returns all snapshotted StakeEntries that are eligible to receive staking
@@ -725,50 +725,50 @@ func (bav *UtxoView) GetAllSnapshotStakesToReward() ([]*StakeEntry, error) {
 	}
 
 	// Create a slice of all UtxoView snapshot StakeEntries to prevent pulling them from the db.
-	var utxoViewSnapshotStakeEntries []*StakeEntry
+	var utxoViewStakeEntries []*StakeEntry
 	for mapKey, stakeEntry := range bav.SnapshotStakesToReward {
 		if mapKey.SnapshotAtEpochNumber == snapshotAtEpochNumber {
-			utxoViewSnapshotStakeEntries = append(utxoViewSnapshotStakeEntries, stakeEntry)
+			utxoViewStakeEntries = append(utxoViewStakeEntries, stakeEntry)
 		}
 	}
 
 	// Pull top N snapshot StakeEntries from the database (not present in the UtxoView).
-	dbSnapshotStakeEntries, err := DBGetSnapshotStakesToReward(
-		bav.Handle, bav.Snapshot, maxNumSnapshotStakes, snapshotAtEpochNumber, utxoViewSnapshotStakeEntries,
+	dbStakeEntries, err := DBGetSnapshotStakesToReward(
+		bav.Handle, bav.Snapshot, maxNumSnapshotStakes, snapshotAtEpochNumber, utxoViewStakeEntries,
 	)
 	if err != nil {
 		return nil, errors.Wrapf(err, "GetAllSnapshotStakesToReward: error retrieving entries from db: ")
 	}
 
 	// Cache the snapshot StakeEntries from the db in the UtxoView.
-	for _, snapshotStakeEntry := range dbSnapshotStakeEntries {
-		mapKey := NewSnapshotStakeMapKey(snapshotStakeEntry, snapshotAtEpochNumber)
+	for _, stakeEntry := range dbStakeEntries {
+		mapKey := NewSnapshotStakeMapKey(stakeEntry, snapshotAtEpochNumber)
 		if _, exists := bav.SnapshotStakesToReward[*mapKey]; exists {
 			// We should never see duplicate entries from the db that are already in the UtxoView. This is a
-			// sign of a bug and that the utxoViewSnapshotStakeEntries isn't being used correctly.
+			// sign of a bug and that the utxoViewStakeEntries isn't being used correctly.
 			return nil, fmt.Errorf("GetAllSnapshotStakesToReward: db returned a SnapshotStakeEntry" +
 				" that already exists in the UtxoView")
 		}
 
-		bav._setSnapshotStakeToReward(snapshotStakeEntry, snapshotAtEpochNumber)
+		bav._setSnapshotStakeToReward(stakeEntry, snapshotAtEpochNumber)
 	}
 
 	// Pull snapshot StakeEntries from the UtxoView with stake > 0. All entries should have > 0 stake to begin
 	// with, but we filter here again just in case.
-	var mergedSnapshotStakeEntries []*StakeEntry
+	var mergedStakeEntries []*StakeEntry
 	for mapKey, snapshotStakeEntry := range bav.SnapshotStakesToReward {
 		if mapKey.SnapshotAtEpochNumber == snapshotAtEpochNumber &&
 			!snapshotStakeEntry.StakeAmountNanos.IsZero() {
-			mergedSnapshotStakeEntries = append(mergedSnapshotStakeEntries, snapshotStakeEntry)
+			mergedStakeEntries = append(mergedStakeEntries, snapshotStakeEntry)
 		}
 	}
 
 	// Return top N.
 	upperBound := maxNumSnapshotStakes
-	if uint64(len(mergedSnapshotStakeEntries)) < upperBound {
-		upperBound = uint64(len(mergedSnapshotStakeEntries))
+	if uint64(len(mergedStakeEntries)) < upperBound {
+		upperBound = uint64(len(mergedStakeEntries))
 	}
-	return mergedSnapshotStakeEntries[0:upperBound], nil
+	return mergedStakeEntries[0:upperBound], nil
 }
 
 func DBGetSnapshotStakesToReward(
@@ -779,9 +779,9 @@ func DBGetSnapshotStakesToReward(
 	stakeEntriesToSkip []*StakeEntry,
 ) ([]*StakeEntry, error) {
 	// Convert StakeEntriesToSkip to the SnapshotStakeMapKeys we need to skip.
-	stakeMapKeysToSkip := NewSet([]string{})
+	snapshotStakeDBKeysToSkip := NewSet([]string{})
 	for _, stakeEntryToSkip := range stakeEntriesToSkip {
-		stakeMapKeysToSkip.Add(
+		snapshotStakeDBKeysToSkip.Add(
 			string(DBKeyForSnapshotStakeToRewardByValidatorAndStaker(
 				snapshotAtEpochNumber,
 				stakeEntryToSkip.ValidatorPKID,
@@ -793,7 +793,7 @@ func DBGetSnapshotStakesToReward(
 	// Retrieve the snapshot StakeEntries from the DB.
 	prefix := DBKeyForSnapshotStakeToRewardAtEpochNumber(snapshotAtEpochNumber)
 	_, valsFound, err := EnumerateKeysForPrefixWithLimitOffsetOrder(
-		handle, prefix, int(limit), nil, true, stakeMapKeysToSkip,
+		handle, prefix, int(limit), nil, true, snapshotStakeDBKeysToSkip,
 	)
 	if err != nil {
 		return nil, errors.Wrapf(err, "DBGetSnapshotStakesToReward:"+
@@ -814,22 +814,29 @@ func DBGetSnapshotStakesToReward(
 }
 
 func (bav *UtxoView) _flushSnapshotStakesToRewardToDbWithTxn(txn *badger.Txn, blockHeight uint64) error {
-	// Delete all entries in the UtxoView map.
-	for mapKey, stakeEntry := range bav.SnapshotStakesToReward {
-		if stakeEntry == nil {
+	// Delete all snapshot StakeEntries in the UtxoView map.
+	for mapKeyIter, stakeEntryIter := range bav.SnapshotStakesToReward {
+		// Make a copy of the iterators since we make references to them below.
+		mapKey := mapKeyIter
+		stakeEntry := *stakeEntryIter
+
+		// Sanity-check that the entry matches the map key.
+		// TODO: Do we really need this check? We should be fine trusting the contents of the view without it.
+		mapKeyFromEntry := *NewSnapshotStakeMapKey(&stakeEntry, mapKey.SnapshotAtEpochNumber)
+		if mapKeyFromEntry != mapKey {
 			return fmt.Errorf(
-				"_flushSnapshotStakesToRewardToDbWithTxn: found nil stakeEntry for"+
-					" EpochNumber %d, this should never happen",
-				mapKey.SnapshotAtEpochNumber,
+				"_flushSnapshotStakesToRewardToDbWithTxn: snapshot StakeEntry key %v doesn't match MapKey %v",
+				&mapKeyFromEntry,
+				&mapKey,
 			)
 		}
 
-		// Delete the existing mappings in the db for this MapKey. They will be
+		// Delete the existing mappings in the db for this map key. They will be
 		// re-added if the corresponding entry in-memory has isDeleted=false.
 		if err := DBDeleteSnapshotStakeToRewardWithTxn(
 			txn, bav.Snapshot, stakeEntry.ValidatorPKID, stakeEntry.StakerPKID, mapKey.SnapshotAtEpochNumber, blockHeight,
 		); err != nil {
-			return errors.Wrapf(err, "_flushStakeEntriesToDbWithTxn: ")
+			return errors.Wrapf(err, "_flushSnapshotStakesToRewardToDbWithTxn: ")
 		}
 	}
 
@@ -838,12 +845,13 @@ func (bav *UtxoView) _flushSnapshotStakesToRewardToDbWithTxn(txn *badger.Txn, bl
 			// Skip any deleted StakeEntries.
 			continue
 		}
+
 		if err := DBPutSnapshotStakeToRewardWithTxn(
 			txn, bav.Snapshot, stakeEntry, mapKey.SnapshotAtEpochNumber, blockHeight,
 		); err != nil {
 			return errors.Wrapf(
 				err,
-				"_flushSnapshotStakesToRewardToDbWithTxn: problem setting stakeEntry"+
+				"_flushSnapshotStakesToRewardToDbWithTxn: problem setting snapshot stakeEntry"+
 					" for SnapshotAtEpochNumber %d: ",
 				mapKey.SnapshotAtEpochNumber,
 			)
@@ -864,11 +872,11 @@ func DBDeleteSnapshotStakeToRewardWithTxn(
 		return nil
 	}
 
-	// Delete StakeEntry from PrefixStakeByValidatorByStaker.
+	// Delete the snapshot StakeEntry from PrefixSnapshotStakeToRewardByValidatorByStaker.
 	stakeByValidatorAndStakerKey := DBKeyForSnapshotStakeToRewardByValidatorAndStaker(snapshotAtEpochNumber, validatorPKID, stakerPKID)
 	if err := DBDeleteWithTxn(txn, snap, stakeByValidatorAndStakerKey); err != nil {
 		return errors.Wrapf(
-			err, "DBDeleteSnapshotStakeToRewardWithTxn: problem deleting StakeEntry from index PrefixStakeByValidatorByStaker: ",
+			err, "DBDeleteSnapshotStakeToRewardWithTxn: problem deleting snapshot StakeEntry from index PrefixSnapshotStakeToRewardByValidatorByStaker: ",
 		)
 	}
 
@@ -889,11 +897,10 @@ func DBPutSnapshotStakeToRewardWithTxn(
 	}
 
 	dbKey := DBKeyForSnapshotStakeToRewardByValidatorAndStaker(snapshotAtEpochNumber, stakeEntry.ValidatorPKID, stakeEntry.StakerPKID)
-	if err := DBSetWithTxn(txn, snap, dbKey, nil); err != nil {
+	if err := DBSetWithTxn(txn, snap, dbKey, EncodeToBytes(blockHeight, stakeEntry)); err != nil {
 		return errors.Wrapf(
 			err,
-			"DBPutSnapshotStakeToRewardWithTxn: problem putting stakeEntry in the"+
-				" SnapshotStakeToRewardByValidatorAndStaker index: ",
+			"DBPutSnapshotStakeToRewardWithTxn: problem putting snapshot stakeEntry in the SnapshotStakeToRewardByValidatorAndStaker index: ",
 		)
 	}
 	return nil
