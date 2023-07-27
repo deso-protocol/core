@@ -52,20 +52,21 @@ func (bav *UtxoView) GetCurrentGlobalParamsEntry() *GlobalParamsEntry {
 	return _mergeGlobalParamEntryDefaults(bav, bav.GlobalParamsEntry)
 }
 
-// GetSnapshotGlobalParamsEntry retrieves a snapshot of the GlobalParamsEntry from n epochs ago. If a
-// snapshot does not exist for that epoch, it will return the default values. We snapshot GlobalParams with
-// to make sure that the validator set in the PoS consensus is in agreement ahead of time on the params used
-// for an epoch long before that epoch begins. Snapshot GlobalParams are only appropriate to use in two scenarios:
+// GetSnapshotGlobalParamsEntry retrieves a snapshot of the GlobalParamsEntry from n epochs ago. If a snapshot
+// does not exist for that epoch, it will return the default values. We snapshot GlobalParams to make sure that
+// the validator set in the PoS consensus is in agreement ahead of time on the params used for an epoch long
+// before that epoch begins. Snapshot GlobalParams are only appropriate to use in two scenarios:
 //   - In the PoS consensus logic run by validators for block proposal, voting, and timeouts; validators need to
 //     be in agreement on the size of the validator set, leader schedule, stakes to reward, and epoch duration.
 //   - When transitioning to a new epoch, we use the snapshot GlobalParams to determine the length of the next
 //     epoch. All validators need to be in agreement ahead of time on what length of the next epoch will be before
 //     the epoch begins.
 //
-// For all other uses, the CurrentGlobalParamsEntry is appropriate to use. This includes all transaction connect
-// logic and end of epoch operations that affect the current validator entries and stake entries BEFORE they are
+// For all other uses, only the CurrentGlobalParamsEntry is appropriate to use. This includes all transaction connect
+// logic and end of epoch operations that mutate the validator entries and stake entries BEFORE they are
 // snapshotted. This approach ensures that whenever we create a snapshot of the validator set, leader schedule,
-// and stakes to reward, the GlobalParams used to create the snapshots are snapshotted along with them.
+// and stakes to reward... the GlobalParams used to create the snapshots are snapshotted along with that data, and
+// live alongside them.
 func (bav *UtxoView) GetSnapshotGlobalParamsEntry() (*GlobalParamsEntry, error) {
 	// Calculate the SnapshotEpochNumber.
 	snapshotAtEpochNumber, err := bav.GetSnapshotEpochNumber()
