@@ -59,29 +59,34 @@ func (bav *UtxoView) DistributeStakingRewardsToSnapshotStakes(blockHeight uint64
 
 	// Loop through all of the snapshot stakes; distribute staking rewards to the staker and commissions to
 	// their validator.
-	for _, snapshotStakeEntry := range snapshotStakesToReward {
-
+	for _, stakeEntry := range snapshotStakesToReward {
 		// Compute the staker's portion of the staking reward, and the validator's commission.
-		stakerReward, validatorCommission, err := bav.computeStakerRewardAndValidatorCommission(snapshotStakeEntry, elapsedFractionOfYear, apy)
+		stakerRewardNanos, validatorCommissionNanos, err := bav.computeStakerRewardAndValidatorCommission(
+			stakeEntry, elapsedFractionOfYear, apy,
+		)
 		if err != nil {
-			return errors.Wrapf(err, "DistributeStakingRewardsToSnapshotStakes: problem computing staker reward and validator commission: ")
+			return errors.Wrapf(
+				err,
+				"DistributeStakingRewardsToSnapshotStakes: problem computing staker reward and validator commission: ",
+			)
 		}
 
-		// If both the staker reward and the validator commission are zero, then there's nothing to be done. Move on to the next staker.
-		if stakerReward == 0 && validatorCommission == 0 {
+		// If both the staker reward and the validator commission are zero, then there's nothing to be done.
+		// Move on to the next staker.
+		if stakerRewardNanos == 0 && validatorCommissionNanos == 0 {
 			continue
 		}
 
 		// Reward the staker their portion of the staking reward.
-		if stakerReward > 0 {
-			if err = bav.distributeStakingReward(snapshotStakeEntry.ValidatorPKID, snapshotStakeEntry.StakerPKID, stakerReward); err != nil {
+		if stakerRewardNanos > 0 {
+			if err = bav.distributeStakingReward(stakeEntry.ValidatorPKID, stakeEntry.StakerPKID, stakerRewardNanos); err != nil {
 				return errors.Wrapf(err, "DistributeStakingRewardsToSnapshotStakes: problem distributing staker reward: ")
 			}
 		}
 
 		// Reward the validator their commission from the staking reward.
-		if validatorCommission > 0 {
-			if err = bav.distributeValidatorCommission(snapshotStakeEntry.ValidatorPKID, validatorCommission); err != nil {
+		if validatorCommissionNanos > 0 {
+			if err = bav.distributeValidatorCommission(stakeEntry.ValidatorPKID, validatorCommissionNanos); err != nil {
 				return errors.Wrapf(err, "DistributeStakingRewardsToSnapshotStakes: problem distributing validator commission reward: ")
 			}
 		}
@@ -95,21 +100,21 @@ func (bav *UtxoView) computeStakerRewardAndValidatorCommission(
 	elapsedFractionOfYear *big.Float,
 	apy *big.Float,
 ) (
-	_stakerReward uint64,
-	_validatorCommission uint64,
+	_stakerRewardNanos uint64,
+	_validatorCommissionNanos uint64,
 	_err error,
 ) {
 	// Compute the staker's reward amount using a big float math, and immediately convert it to big int
 	// so we can do the remainder of the math using integer operations. This is the only operation where
 	// we need float math.
-	stakerReward := convertBigFloatToBigInt(
+	stakerRewardNanos := convertBigFloatToBigInt(
 		computeStakingReward(snapshotStakeEntry.StakeAmountNanos, elapsedFractionOfYear, apy),
 	)
 
 	// If the reward is 0, then there's nothing to be done. In practice, the reward should never be < 0
 	// either, but we check for it here in case it resulted from a rounding error. Either way, we're
 	// safe to exit early here.
-	if stakerReward.Sign() <= 0 {
+	if stakerRewardNanos.Sign() <= 0 {
 		return 0, 0, nil
 	}
 
@@ -117,7 +122,7 @@ func (bav *UtxoView) computeStakerRewardAndValidatorCommission(
 	// distribute the rewards to them, and how to distribute the validator's commissions.
 
 	// Compute the validator's commission and deduct it from the staker's reward.
-	validatorCommission := big.NewInt(0)
+	validatorCommissionNanos := big.NewInt(0)
 
 	// We only compute validator commission if the staker had delegated stake to another validator. If the staker
 	// staked to themselves, then there's no reason to compute the validator commission.
@@ -138,29 +143,35 @@ func (bav *UtxoView) computeStakerRewardAndValidatorCommission(
 		if validatorEntry.DelegatedStakeCommissionBasisPoints > 0 {
 			// We use integer math to compute the validator's commission. The commission is computed as:
 			// floor(stakerReward * validatorCommissionBasisPoints / 10000)
-			validatorCommission = computeValidatorCommission(stakerReward, validatorEntry.DelegatedStakeCommissionBasisPoints)
+			validatorCommissionNanos = computeValidatorCommission(
+				stakerRewardNanos, validatorEntry.DelegatedStakeCommissionBasisPoints,
+			)
 
-			if validatorCommission.Cmp(stakerReward) > 0 {
+			if validatorCommissionNanos.Cmp(stakerRewardNanos) > 0 {
 				// This should never happen. If the validator's commission is greater than the total staker reward amount,
 				// then something has gone wrong.
-				return 0, 0, errors.Errorf("computeStakerRewardAndValidatorCommission: validator commission is greater than staker reward amount")
+				return 0, 0, errors.Errorf(
+					"computeStakerRewardAndValidatorCommission: validator commission is greater than staker reward amount",
+				)
 			}
 
 			// Subtract out the validator commission from the staker's reward.
-			stakerReward.Sub(stakerReward, validatorCommission)
+			stakerRewardNanos.Sub(stakerRewardNanos, validatorCommissionNanos)
 		}
 	}
 
 	// At this point, we have the staker's reward and the validator's commission. We need to convert them
 	// to uint64s and return them.
-	if !stakerReward.IsUint64() || !validatorCommission.IsUint64() {
-		return 0, 0, errors.Errorf("computeStakerRewardAndValidatorCommission: staker reward or validator commission is not a uint64")
+	if !stakerRewardNanos.IsUint64() || !validatorCommissionNanos.IsUint64() {
+		return 0, 0, errors.Errorf(
+			"computeStakerRewardAndValidatorCommission: staker reward or validator commission is not a uint64",
+		)
 	}
 
-	return stakerReward.Uint64(), validatorCommission.Uint64(), nil
+	return stakerRewardNanos.Uint64(), validatorCommissionNanos.Uint64(), nil
 }
 
-func (bav *UtxoView) distributeStakingReward(validatorPKID *PKID, stakerPKID *PKID, rewardAmount uint64) error {
+func (bav *UtxoView) distributeStakingReward(validatorPKID *PKID, stakerPKID *PKID, rewardNanos uint64) error {
 	// Fetch the staker's latest StakeEntry.
 	stakeEntry, err := bav.GetStakeEntry(validatorPKID, stakerPKID)
 	if err != nil {
@@ -174,7 +185,7 @@ func (bav *UtxoView) distributeStakingReward(validatorPKID *PKID, stakerPKID *PK
 
 	// For case 1, we distribute the rewards by adding them to the staker's staked amount.
 	if stakeEntry != nil && stakeEntry.RewardMethod == StakingRewardMethodRestake {
-		stakeEntry.StakeAmountNanos.Add(stakeEntry.StakeAmountNanos, uint256.NewInt().SetUint64(rewardAmount))
+		stakeEntry.StakeAmountNanos.Add(stakeEntry.StakeAmountNanos, uint256.NewInt().SetUint64(rewardNanos))
 		bav._setStakeEntryMappings(stakeEntry)
 
 		return nil
@@ -185,14 +196,14 @@ func (bav *UtxoView) distributeStakingReward(validatorPKID *PKID, stakerPKID *PK
 	// the rewards directly to the staker's wallet.
 
 	stakerPublicKey := bav.GetPublicKeyForPKID(stakerPKID)
-	if _, err = bav._addBalance(rewardAmount, stakerPublicKey); err != nil {
+	if _, err = bav._addBalance(rewardNanos, stakerPublicKey); err != nil {
 		return errors.Wrapf(err, "distributeStakingReward: problem adding rewards to staker's DESO balance: ")
 	}
 
 	return nil
 }
 
-func (bav *UtxoView) distributeValidatorCommission(validatorPKID *PKID, commissionAmount uint64) error {
+func (bav *UtxoView) distributeValidatorCommission(validatorPKID *PKID, commissionNanos uint64) error {
 	// Here, we treat the validator's commission identically to staking rewards. We view commissions as another source of staking
 	// rewards that validators receive at the end of each epoch. And these commissions are eligible to be restaked if the validator
 	// desires. To determine whether to re-stake commissions or pay out the commissions to the validator's wallet, we rely on the
@@ -213,7 +224,7 @@ func (bav *UtxoView) distributeValidatorCommission(validatorPKID *PKID, commissi
 	// they can stake to themselves using a separate wallet and only enable reward restaking for that StakeEntry.
 	//
 	// If the above isn't desired the behavior, then we can alternatively always pay out validator's commission directly to their wallet.
-	return bav.distributeStakingReward(validatorPKID, validatorPKID, commissionAmount)
+	return bav.distributeStakingReward(validatorPKID, validatorPKID, commissionNanos)
 }
 
 const (
@@ -246,12 +257,12 @@ func computeFractionOfYearAsFloat(nanoSecs uint64) *big.Float {
 // elapsed time since the last staking reward distribution and the APY.
 //
 // It produces the result for: stakeAmount * [e ^ (apy * elapsedTime / 1 year) - 1]
-func computeStakingReward(stakeAmount *uint256.Int, elapsedFractionOfYear *big.Float, apy *big.Float) *big.Float {
-	stakeAmountFloat := NewFloat().SetInt(stakeAmount.ToBig())
-	growthExponent := NewFloat().Mul(elapsedFractionOfYear, apy)           // apy * elapsedTime / 1 year
-	growthMultiplier := BigFloatPow(bigE, growthExponent)                  // e ^ (apy * elapsedTime / 1 year)
-	finalStakeAmount := NewFloat().Mul(stakeAmountFloat, growthMultiplier) // stakeAmount * [e ^ (apy * elapsedTime / 1 year)]
-	return finalStakeAmount.Sub(finalStakeAmount, stakeAmountFloat)        // stakeAmount * [e ^ (apy * elapsedTime / 1 year)] - stakeAmount
+func computeStakingReward(stakeAmountNanos *uint256.Int, elapsedFractionOfYear *big.Float, apy *big.Float) *big.Float {
+	stakeAmountFloat := NewFloat().SetInt(stakeAmountNanos.ToBig())
+	growthExponent := NewFloat().Mul(elapsedFractionOfYear, apy)                // apy * elapsedTime / 1 year
+	growthMultiplier := BigFloatPow(bigE, growthExponent)                       // e ^ (apy * elapsedTime / 1 year)
+	finalStakeAmountNanos := NewFloat().Mul(stakeAmountFloat, growthMultiplier) // stakeAmount * [e ^ (apy * elapsedTime / 1 year)]
+	return finalStakeAmountNanos.Sub(finalStakeAmountNanos, stakeAmountFloat)   // stakeAmount * [e ^ (apy * elapsedTime / 1 year) - 1]
 }
 
 // computeValidatorCommission uses integer math to compute the validator's commission amount based on the staker's
@@ -259,7 +270,7 @@ func computeStakingReward(stakeAmount *uint256.Int, elapsedFractionOfYear *big.F
 // errors are simpler to reason through.
 //
 // It produces the integer result for: floor[(stakerReward * validatorCommissionBasisPoints) / 1e4]
-func computeValidatorCommission(stakerReward *big.Int, validatorCommissionBasisPoints uint64) *big.Int {
-	scaledStakerReward := big.NewInt(0).Mul(stakerReward, big.NewInt(int64(validatorCommissionBasisPoints)))
+func computeValidatorCommission(stakerRewardNanos *big.Int, validatorCommissionBasisPoints uint64) *big.Int {
+	scaledStakerReward := big.NewInt(0).Mul(stakerRewardNanos, big.NewInt(int64(validatorCommissionBasisPoints)))
 	return scaledStakerReward.Div(scaledStakerReward, _basisPointsAsInt)
 }
