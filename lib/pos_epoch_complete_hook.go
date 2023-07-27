@@ -139,7 +139,10 @@ func (bav *UtxoView) runEpochCompleteSnapshotGeneration(epochNumber uint64) erro
 
 // Updates the currentEpochEntry to the next epoch's.
 func (bav *UtxoView) runEpochCompleteEpochRollover(epochNumber uint64, blockHeight uint64, blockTimestampNanoSecs uint64) error {
-	// Retrieve the SnapshotGlobalParamsEntry.
+	// Retrieve the SnapshotGlobalParamsEntry to determine the next epoch's final block height. We use the
+	// snapshot global params here because the next epoch begin immediately, and its length is used in the PoS
+	// consensus. The validator set for the next epoch needs to be in agreement on the length of the epoch
+	// before the epoch begins.
 	snapshotGlobalParamsEntry, err := bav.GetSnapshotGlobalParamsEntry()
 	if err != nil {
 		return errors.Wrapf(err, "runEpochCompleteEpochRollover: problem retrieving SnapshotGlobalParamsEntry: ")
