@@ -150,9 +150,8 @@ type UtxoView struct {
 	SnapshotLeaderSchedule map[SnapshotLeaderScheduleMapKey]*PKID
 
 	// SnapshotStakesToReward is a map of <SnapshotAtEpochNumber, ValidatorPKID, StakerPKID>
-	// to a SnapshotStakeEntry. It contains a trimmed down struct with the ValidatorPKID, StakerPKID, and
-	// StakeAmount values of a StakeEntry that has been snapshotted at a given SnapshotAtEpochNumber.
-	SnapshotStakesToReward map[SnapshotStakeMapKey]*SnapshotStakeEntry
+	// to a snapshotted StakeEntry for the ValidatorPKID and StakerPKID pair at a given SnapshotAtEpochNumber.
+	SnapshotStakesToReward map[SnapshotStakeMapKey]*StakeEntry
 
 	// The hash of the tip the view is currently referencing. Mainly used
 	// for error-checking when doing a bulk operation on the view.
@@ -268,7 +267,7 @@ func (bav *UtxoView) _ResetViewMappingsAfterFlush() {
 	bav.SnapshotLeaderSchedule = make(map[SnapshotLeaderScheduleMapKey]*PKID)
 
 	// SnapshotStakesToReward
-	bav.SnapshotStakesToReward = make(map[SnapshotStakeMapKey]*SnapshotStakeEntry)
+	bav.SnapshotStakesToReward = make(map[SnapshotStakeMapKey]*StakeEntry)
 }
 
 func (bav *UtxoView) CopyUtxoView() (*UtxoView, error) {

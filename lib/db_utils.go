@@ -553,9 +553,10 @@ type DBPrefixes struct {
 	// Prefix, <SnapshotAtEpochNumber uint64>, <LeaderIndex uint16> -> ValidatorPKID
 	PrefixSnapshotLeaderSchedule []byte `prefix_id:"[89]" is_state:"true"`
 
-	// PrefixSnapshotStakeToRewardByStakeAmount: Retrieves snapshotted StakeEntries that can receive staking rewards for an epoch.
-	// Prefix, <SnapshotAtEpochNumber>, <ValidatorPKID [33]byte>, <StakerPKID [33]byte> -> <StakeAmountNanos *uint256.Int>
-	// Note, we parse the ValidatorPKID and StakerPKID from the key. The value is set to the StakeAmountNanos to save space.
+	// PrefixSnapshotStakeToRewardByValidatorAndStaker: Retrieves snapshotted StakeEntries that can receive staking rewards
+	// for an epoch.
+	// Prefix, <SnapshotAtEpochNumber>, <ValidatorPKID [33]byte>, <StakerPKID [33]byte> -> *StakeEntry
+	// Note, we parse the ValidatorPKID and StakerPKID from the key.
 	PrefixSnapshotStakeToRewardByValidatorAndStaker []byte `prefix_id:"[90]" is_state:"true"`
 
 	// NEXT_TAG: 91
@@ -796,9 +797,9 @@ func StatePrefixToDeSoEncoder(prefix []byte) (_isEncoder bool, _encoder DeSoEnco
 	} else if bytes.Equal(prefix, Prefixes.PrefixSnapshotLeaderSchedule) {
 		// prefix_id:"[89]"
 		return true, &PKID{}
-	} else if bytes.Equal(prefix, Prefixes.PrefixSnapshotStakeToRewardByStakeAmount) {
+	} else if bytes.Equal(prefix, Prefixes.PrefixSnapshotStakeToRewardByValidatorAndStaker) {
 		// prefix_id:"[90]"
-		return false, nil
+		return true, &StakeEntry{}
 	}
 
 	return true, nil
