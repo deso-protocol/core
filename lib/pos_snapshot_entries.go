@@ -688,8 +688,8 @@ type SnapshotStakeMapKey struct {
 	StakerPKID            PKID
 }
 
-func NewSnapshotStakeMapKey(stakeEntry *StakeEntry, snapshotAtEpochNumber uint64) *SnapshotStakeMapKey {
-	return &SnapshotStakeMapKey{
+func NewSnapshotStakeMapKey(stakeEntry *StakeEntry, snapshotAtEpochNumber uint64) SnapshotStakeMapKey {
+	return SnapshotStakeMapKey{
 		SnapshotAtEpochNumber: snapshotAtEpochNumber,
 		ValidatorPKID:         *stakeEntry.ValidatorPKID,
 		StakerPKID:            *stakeEntry.StakerPKID,
@@ -701,7 +701,7 @@ func (bav *UtxoView) _setSnapshotStakeToReward(stakeEntry *StakeEntry, snapshotA
 		glog.Errorf("_setSnapshotStakeToReward: called with nil stakeEntry")
 		return
 	}
-	bav.SnapshotStakesToReward[*NewSnapshotStakeMapKey(stakeEntry, snapshotAtEpochNumber)] = stakeEntry.Copy()
+	bav.SnapshotStakesToReward[NewSnapshotStakeMapKey(stakeEntry, snapshotAtEpochNumber)] = stakeEntry.Copy()
 }
 
 // GetSnapshotStakesToReward returns all snapshotted StakeEntries that are eligible to receive staking
@@ -743,7 +743,7 @@ func (bav *UtxoView) GetAllSnapshotStakesToReward() ([]*StakeEntry, error) {
 	// Cache the snapshot StakeEntries from the db in the UtxoView.
 	for _, stakeEntry := range dbStakeEntries {
 		mapKey := NewSnapshotStakeMapKey(stakeEntry, snapshotAtEpochNumber)
-		if _, exists := bav.SnapshotStakesToReward[*mapKey]; exists {
+		if _, exists := bav.SnapshotStakesToReward[mapKey]; exists {
 			// We should never see duplicate entries from the db that are already in the UtxoView. This is a
 			// sign of a bug and that the utxoViewStakeEntries isn't being used correctly.
 			return nil, fmt.Errorf("GetAllSnapshotStakesToReward: db returned a snapshot StakeEntry" +
@@ -820,8 +820,7 @@ func (bav *UtxoView) _flushSnapshotStakesToRewardToDbWithTxn(txn *badger.Txn, bl
 		stakeEntry := *stakeEntryIter
 
 		// Sanity-check that the entry matches the map key.
-		// TODO: Do we really need this check? We should be fine trusting the contents of the view without it.
-		mapKeyFromEntry := *NewSnapshotStakeMapKey(&stakeEntry, mapKey.SnapshotAtEpochNumber)
+		mapKeyFromEntry := NewSnapshotStakeMapKey(&stakeEntry, mapKey.SnapshotAtEpochNumber)
 		if mapKeyFromEntry != mapKey {
 			return fmt.Errorf(
 				"_flushSnapshotStakesToRewardToDbWithTxn: snapshot StakeEntry key %v doesn't match MapKey %v",
