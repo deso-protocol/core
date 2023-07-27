@@ -1683,15 +1683,14 @@ func (bav *UtxoView) IsValidUnjailValidatorMetadata(transactorPublicKey []byte) 
 		return errors.Wrapf(err, "UtxoView.IsValidUnjailValidatorMetadata: error retrieving CurrentEpochNumber: ")
 	}
 
-	// Retrieve the SnapshotGlobalParamsEntry.ValidatorJailEpochDuration.
-	snapshotGlobalParamsEntry, err := bav.GetSnapshotGlobalParamsEntry()
-	if err != nil {
-		return errors.Wrapf(err, "UtxoView.IsValidUnjailValidatorMetadata: error retrieving SnapshotGlobalParamsEntry: ")
-	}
+	// Retrieve the ValidatorJailEpochDuration from the current global params. We use the current global params
+	// here because this txn only affects the current validator entries, and not the snapshotted validator set
+	// used in the PoS consensus.
+	currentGlobalParamsEntry := bav.GetCurrentGlobalParamsEntry()
 
 	// Calculate UnjailableAtEpochNumber.
 	unjailableAtEpochNumber, err := SafeUint64().Add(
-		validatorEntry.JailedAtEpochNumber, snapshotGlobalParamsEntry.ValidatorJailEpochDuration,
+		validatorEntry.JailedAtEpochNumber, currentGlobalParamsEntry.ValidatorJailEpochDuration,
 	)
 	if err != nil {
 		return errors.Wrapf(err, "UtxoView.IsValidUnjailValidatorMetadata: error calculating UnjailableAtEpochNumber: ")
@@ -1865,6 +1864,9 @@ func (bav *UtxoView) JailAllInactiveSnapshotValidators(blockHeight uint64) error
 		return nil
 	}
 
+	// Fetch the size of the validator set from the snapshot global params. We use the snapshot
+	// global params here because the size of the snapshot validator set used in consensus is
+	// stored as a snapshotted as part of the global params when created the snapshot validator set.
 	snapshotGlobalParams, err := bav.GetSnapshotGlobalParamsEntry()
 	if err != nil {
 		return errors.Wrapf(err, "UtxoView.JailAllInactiveSnapshotValidators: error retrieving SnapshotGlobalParamsEntry: ")
@@ -1922,10 +1924,9 @@ func (bav *UtxoView) ShouldJailValidator(validatorEntry *ValidatorEntry, blockHe
 	// Retrieve the SnapshotGlobalParamsEntry:
 	//   - JailInactiveValidatorGracePeriodEpochs
 	//   - EpochDurationNumBlocks
-	snapshotGlobalParamsEntry, err := bav.GetSnapshotGlobalParamsEntry()
-	if err != nil {
-		return false, errors.Wrapf(err, "UtxoView.ShouldJailValidator: error retrieving SnapshotGlobalParamsEntry: ")
-	}
+	// We use the current global params here instead of the snapshot global params here because the jailing operation
+	// is performed on the validator entries, not the snapshot validator set. It does not affect the PoS consensus.
+	currentGlobalParamsEntry := bav.GetCurrentGlobalParamsEntry()
 
 	// Calculate if enough blocks have passed since cutting over to PoS to start jailing validators.
 	// We want to allow a buffer after we cut-over to PoS to allow validators enough time to vote.
@@ -1934,8 +1935,8 @@ func (bav *UtxoView) ShouldJailValidator(validatorEntry *ValidatorEntry, blockHe
 	//
 	// StartJailingBlockHeight = ConsensusCutoverBlockHeight + (JailInactiveValidatorGracePeriodEpochs * EpochDurationNumBlocks)
 	startJailingGracePeriodBlocks, err := SafeUint64().Mul(
-		snapshotGlobalParamsEntry.JailInactiveValidatorGracePeriodEpochs,
-		snapshotGlobalParamsEntry.EpochDurationNumBlocks,
+		currentGlobalParamsEntry.JailInactiveValidatorGracePeriodEpochs,
+		currentGlobalParamsEntry.EpochDurationNumBlocks,
 	)
 	if err != nil {
 		return false, errors.Wrapf(err, "UtxoView.ShouldJailValidator: error calculating StartJailingGracePeriod: ")
@@ -1958,7 +1959,7 @@ func (bav *UtxoView) ShouldJailValidator(validatorEntry *ValidatorEntry, blockHe
 
 	// Calculate the JailAtEpochNumber.
 	jailAtEpochNumber, err := SafeUint64().Add(
-		validatorEntry.LastActiveAtEpochNumber, snapshotGlobalParamsEntry.JailInactiveValidatorGracePeriodEpochs,
+		validatorEntry.LastActiveAtEpochNumber, currentGlobalParamsEntry.JailInactiveValidatorGracePeriodEpochs,
 	)
 	if err != nil {
 		return false, errors.Wrapf(err, "UtxoView.ShouldJailValidator: error calculating JailAtEpochNumber: ")

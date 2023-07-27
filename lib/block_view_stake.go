@@ -2085,15 +2085,14 @@ func (bav *UtxoView) IsValidUnlockStakeMetadata(transactorPkBytes []byte, metada
 		return errors.Wrapf(err, "UtxoView.IsValidUnlockStakeMetadata: error retrieving CurrentEpochNumber: ")
 	}
 
-	// Retrieve the SnapshotGlobalParamsEntry.StakeLockupEpochDuration.
-	snapshotGlobalParamsEntry, err := bav.GetSnapshotGlobalParamsEntry()
-	if err != nil {
-		return errors.Wrapf(err, "UtxoView.IsValidUnlockStakeMetadata: error retrieving SnapshotGlobalParamsEntry: ")
-	}
+	// Retrieve the StakeLockupEpochDuration from the current global params. It's safe to use the current global
+	// params here because the changes made to locked stake only affect the current LockedStakeEntries and do
+	// not affect the PoS consensus that requires stakes to be snapshotted two epochs ahead of time.
+	currentGlobalParamsEntry := bav.GetCurrentGlobalParamsEntry()
 
 	// Calculate UnlockableAtEpochNumber.
 	unlockableAtEpochNumber, err := SafeUint64().Add(
-		metadata.EndEpochNumber, snapshotGlobalParamsEntry.StakeLockupEpochDuration,
+		metadata.EndEpochNumber, currentGlobalParamsEntry.StakeLockupEpochDuration,
 	)
 	if err != nil {
 		return errors.Wrapf(err, "UtxoView.IsValidUnlockStakeMetadata: error calculating UnlockableAtEpochNumber: ")
