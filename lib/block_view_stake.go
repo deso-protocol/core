@@ -2086,8 +2086,8 @@ func (bav *UtxoView) IsValidUnlockStakeMetadata(transactorPkBytes []byte, metada
 	}
 
 	// Retrieve the StakeLockupEpochDuration from the current global params. It's safe to use the current global
-	// params here because the changes made to locked stake only affect the current LockedStakeEntries and do
-	// not affect the PoS consensus that requires stakes to be snapshotted two epochs ahead of time.
+	// params here because the changes made to locked stake do not affect the PoS consensus until they are
+	// snapshotted.
 	currentGlobalParamsEntry := bav.GetCurrentGlobalParamsEntry()
 
 	// Calculate UnlockableAtEpochNumber.

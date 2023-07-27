@@ -1683,9 +1683,9 @@ func (bav *UtxoView) IsValidUnjailValidatorMetadata(transactorPublicKey []byte) 
 		return errors.Wrapf(err, "UtxoView.IsValidUnjailValidatorMetadata: error retrieving CurrentEpochNumber: ")
 	}
 
-	// Retrieve the ValidatorJailEpochDuration from the current global params. We use the current global params
-	// here because this txn only affects the current validator entries, and not the snapshotted validator set
-	// used in the PoS consensus.
+	// Retrieve the ValidatorJailEpochDuration from the current global params. It's safe to use the current global
+	// params here because the changes made to locked stake do not affect the PoS consensus until they are
+	// snapshotted.
 	currentGlobalParamsEntry := bav.GetCurrentGlobalParamsEntry()
 
 	// Calculate UnjailableAtEpochNumber.
@@ -1864,9 +1864,9 @@ func (bav *UtxoView) JailAllInactiveSnapshotValidators(blockHeight uint64) error
 		return nil
 	}
 
-	// Fetch the size of the validator set from the snapshot global params. We use the snapshot
-	// global params here because the size of the snapshot validator set used in consensus is
-	// stored as a snapshotted as part of the global params when created the snapshot validator set.
+	// Fetch the ValidatorSetMaxNumValidators from the snapshot global params. We use the snapshot global
+	// params here because the value used to snapshot the size of the validator set was snapshotted along
+	// with the validator set.
 	snapshotGlobalParams, err := bav.GetSnapshotGlobalParamsEntry()
 	if err != nil {
 		return errors.Wrapf(err, "UtxoView.JailAllInactiveSnapshotValidators: error retrieving SnapshotGlobalParamsEntry: ")
@@ -1921,11 +1921,11 @@ func (bav *UtxoView) ShouldJailValidator(validatorEntry *ValidatorEntry, blockHe
 		return false, nil
 	}
 
-	// Retrieve the SnapshotGlobalParamsEntry:
+	// Retrieve the current GlobalParamsEntry. It's safe to use the current global params here because the
+	// jailing operations made here does not affect the PoS consensus until they are snapshotted and used in
+	// consensus n epochs later. The two params we care about here are:
 	//   - JailInactiveValidatorGracePeriodEpochs
 	//   - EpochDurationNumBlocks
-	// We use the current global params here instead of the snapshot global params here because the jailing operation
-	// is performed on the validator entries, not the snapshot validator set. It does not affect the PoS consensus.
 	currentGlobalParamsEntry := bav.GetCurrentGlobalParamsEntry()
 
 	// Calculate if enough blocks have passed since cutting over to PoS to start jailing validators.
