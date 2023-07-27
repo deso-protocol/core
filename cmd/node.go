@@ -141,7 +141,7 @@ func (node *Node) Start(exitChannels ...*chan struct{}) {
 
 	// Setup chain database
 	dbDir := lib.GetBadgerDbPath(node.Config.DataDirectory)
-	opts := lib.DefaultBadgerOptions(dbDir)
+	opts := lib.PerformanceBadgerOptions(dbDir)
 	opts.ValueDir = dbDir
 	node.ChainDB, err = badger.Open(opts)
 	if err != nil {
