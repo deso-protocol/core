@@ -31,14 +31,9 @@ func (bav *UtxoView) DistributeStakingRewardsToSnapshotStakes(blockHeight uint64
 	elapsedTimeNanoSecs := blockTimestampNanoSecs - currentEpochEntry.CreatedAtBlockTimestampNanoSecs
 	elapsedFractionOfYear := computeFractionOfYearAsFloat(elapsedTimeNanoSecs)
 
-	// Retrieve the SnapshotGlobalParamsEntry.
-	snapshotGlobalParamsEntry, err := bav.GetSnapshotGlobalParamsEntry()
-	if err != nil {
-		return errors.Wrapf(err, "DistributeStakingRewardsToSnapshotStakes: problem retrieving SnapshotGlobalParamsEntry: ")
-	}
-
-	// Fetch the staking rewards APY.
-	apyBasisPoints := snapshotGlobalParamsEntry.StakingRewardsAPYBasisPoints
+	// Fetch the staking rewards APY. It is safe to use the APY from the current global params because the staking
+	// distribution made here do not affect the PoS consensus until they are snapshotted.
+	apyBasisPoints := bav.GetCurrentGlobalParamsEntry().StakingRewardsAPYBasisPoints
 	if apyBasisPoints == 0 {
 		// If the APY is zero or not yet defined, then there are no staking rewards to distribute.
 		return nil
@@ -52,7 +47,7 @@ func (bav *UtxoView) DistributeStakingRewardsToSnapshotStakes(blockHeight uint64
 
 	// We reward all snapshotted stakes from the current snapshot validator set. This is an O(n) operation
 	// that loops through all of the snapshotted stakes and rewards them one by one.
-	snapshotStakesToReward, err := bav.GetSnapshotStakesToRewardByStakeAmount(snapshotGlobalParamsEntry.StakingRewardsMaxNumStakes)
+	snapshotStakesToReward, err := bav.GetAllSnapshotStakesToReward()
 	if err != nil {
 		return errors.Wrapf(err, "DistributeStakingRewardsToSnapshotStakes: problem retrieving snapshot stakes to reward: ")
 	}
@@ -96,7 +91,7 @@ func (bav *UtxoView) DistributeStakingRewardsToSnapshotStakes(blockHeight uint64
 }
 
 func (bav *UtxoView) computeStakerRewardAndValidatorCommission(
-	snapshotStakeEntry *SnapshotStakeEntry,
+	snapshotStakeEntry *StakeEntry,
 	elapsedFractionOfYear *big.Float,
 	apy *big.Float,
 ) (

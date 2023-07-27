@@ -586,8 +586,9 @@ func TestStakingRewardDistribution(t *testing.T) {
 		require.Equal(t, m3Balance, uint64(932))
 
 		// Test that snapshot stakes have been created.
-		snapshotStakeEntries, err := _newUtxoView(testMeta).GetSnapshotStakesToRewardByStakeAmount(10)
+		snapshotStakeEntries, err := _newUtxoView(testMeta).GetAllSnapshotStakesToReward()
 		require.NoError(t, err)
+		_sortStakeEntriesByStakeAmount(snapshotStakeEntries)
 		require.Len(t, snapshotStakeEntries, 4)
 		require.Equal(t, snapshotStakeEntries[0].StakerPKID, m0PKID)
 		require.Equal(t, snapshotStakeEntries[0].StakeAmountNanos, uint256.NewInt().SetUint64(400))
@@ -697,8 +698,9 @@ func TestStakingRewardDistribution(t *testing.T) {
 
 	{
 		// Test that snapshot stakes have not changed.
-		snapshotStakeEntries, err := _newUtxoView(testMeta).GetSnapshotStakesToRewardByStakeAmount(10)
+		snapshotStakeEntries, err := _newUtxoView(testMeta).GetAllSnapshotStakesToReward()
 		require.NoError(t, err)
+		_sortStakeEntriesByStakeAmount(snapshotStakeEntries)
 		require.Len(t, snapshotStakeEntries, 4)
 		require.Equal(t, snapshotStakeEntries[0].StakerPKID, m0PKID)
 		require.Equal(t, snapshotStakeEntries[0].StakeAmountNanos, uint256.NewInt().SetUint64(400))
@@ -719,8 +721,9 @@ func TestStakingRewardDistribution(t *testing.T) {
 		// Test that the current epoch's snapshot stakes now reflect the rewards that were
 		// restaked at the end of epoch n-2.
 
-		snapshotStakeEntries, err := _newUtxoView(testMeta).GetSnapshotStakesToRewardByStakeAmount(10)
+		snapshotStakeEntries, err := _newUtxoView(testMeta).GetAllSnapshotStakesToReward()
 		require.NoError(t, err)
+		_sortStakeEntriesByStakeAmount(snapshotStakeEntries)
 		require.Len(t, snapshotStakeEntries, 4)
 		require.Equal(t, snapshotStakeEntries[0].StakerPKID, m0PKID)
 		require.Equal(t, snapshotStakeEntries[0].StakeAmountNanos, uint256.NewInt().SetUint64(444))
