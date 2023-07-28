@@ -50,7 +50,7 @@ func NewMempoolTx(txn *MsgDeSoTxn, blockHeight uint64) (*MempoolTx, error) {
 	if txnHash == nil {
 		return nil, errors.Errorf("PosMempool.GetMempoolTx: Problem hashing txn")
 	}
-	feePerKb, err := txn.ComputeFeePerKB()
+	feePerKb, err := txn.ComputeFeeRatePerKBNanos()
 	if err != nil {
 		return nil, errors.Wrapf(err, "PosMempool.GetMempoolTx: Problem computing fee per KB")
 	}
@@ -93,7 +93,7 @@ func (mempoolTx *MempoolTx) FromBytes(rr *bytes.Reader) error {
 	}
 
 	// Decode the transaction
-	var txn *MsgDeSoTxn
+	txn := &MsgDeSoTxn{}
 	txnBytes, err := DecodeByteArray(rr)
 	if err != nil {
 		return errors.Wrapf(err, "MempoolTx.Decode: Problem reading txnBytes")

@@ -10,7 +10,7 @@ import (
 )
 
 const (
-	DbMempoolContextId = "mempool-transactions"
+	DbMempoolContextId = "transactions"
 	eventQueueSize     = 10000
 )
 
@@ -29,28 +29,46 @@ const (
 	MempoolPersisterStatusNotRunning
 )
 
+// MempoolPersister is responsible for persisting transactions in the mempool to the database. Whenever a transaction is
+// added or removed from the mempool, the MempoolPersister is notified via the OnMempoolEvent callback. The Persister
+// will then add the event to a queue. Periodically, the transaction queue is flushed to the database and all the cached
+// transactions are persisted.
 type MempoolPersister struct {
 	sync.Mutex
-	stopGroup sync.WaitGroup
+	stopGroup  sync.WaitGroup
+	startGroup sync.WaitGroup
 
-	status      MempoolPersisterStatus
-	dbCtx       *storage.DatabaseContext
-	eventQueue  chan *MempoolEvent
-	updateBatch []*MempoolEvent
+	frequencyMilliseconds int
+	status                MempoolPersisterStatus
+	dbCtx                 *storage.DatabaseContext
+	eventQueue            chan *MempoolEvent
+	updateBatch           []*MempoolEvent
 }
 
-func NewMempoolPersister(dbCtx *storage.DatabaseContext) *MempoolPersister {
+func NewMempoolPersister(dbCtx *storage.DatabaseContext, frequencyMilliseconds int) *MempoolPersister {
 	return &MempoolPersister{
-		status:     MempoolPersisterStatusNotRunning,
-		dbCtx:      dbCtx,
-		eventQueue: make(chan *MempoolEvent, eventQueueSize),
+		frequencyMilliseconds: frequencyMilliseconds,
+		status:                MempoolPersisterStatusNotRunning,
+		dbCtx:                 dbCtx,
+		eventQueue:            make(chan *MempoolEvent, eventQueueSize),
 	}
 }
 
 func (mp *MempoolPersister) Start() {
-	mp.Reset()
+	if mp.status == MempoolPersisterStatusRunning {
+		return
+	}
+
+	mp.reset()
 	mp.stopGroup.Add(1)
+	mp.startGroup.Add(1)
+	go mp.run()
+	mp.startGroup.Wait()
 	mp.status = MempoolPersisterStatusRunning
+}
+
+func (mp *MempoolPersister) run() {
+	mp.startGroup.Done()
 	for {
 		select {
 		case event := <-mp.eventQueue:
@@ -65,26 +83,35 @@ func (mp *MempoolPersister) Start() {
 				mp.stopGroup.Done()
 				return
 			}
+			continue
 
-		case <-time.After(30 * time.Second):
-			if err := mp.PersistBatch(); err != nil {
+		case <-time.After(time.Duration(mp.frequencyMilliseconds) * time.Millisecond):
+			if err := mp.persistBatch(); err != nil {
 				glog.Errorf("MempoolPersister: Error persisting batch: %v", err)
 			}
+			continue
 		}
 	}
 }
 
 func (mp *MempoolPersister) Stop() error {
+	if mp.status == MempoolPersisterStatusNotRunning {
+		return nil
+	}
 	mp.eventQueue <- &MempoolEvent{Type: MempoolEventExit}
 	mp.stopGroup.Wait()
-	if err := mp.PersistBatch(); err != nil {
+	if err := mp.persistBatch(); err != nil {
 		return errors.Wrapf(err, "MempoolPersister: Error persisting batch")
 	}
-	mp.Reset()
+	mp.reset()
 	return nil
 }
 
-func (mp *MempoolPersister) PersistBatch() error {
+func (mp *MempoolPersister) persistBatch() error {
+	if mp.status == MempoolPersisterStatusNotRunning {
+		return nil
+	}
+
 	mp.Lock()
 	defer mp.Unlock()
 
@@ -104,10 +131,15 @@ func (mp *MempoolPersister) PersistBatch() error {
 				continue
 			}
 
-			if event.Type == MempoolEventAdd {
-				txn.Set(key, value, ctx)
-			} else if event.Type == MempoolEventRemove {
-				txn.Delete(key, ctx)
+			switch event.Type {
+			case MempoolEventAdd:
+				if err := txn.Set(key, value, ctx); err != nil {
+					glog.Errorf("MempoolPersister: Error setting key: %v", err)
+				}
+			case MempoolEventRemove:
+				if err := txn.Delete(key, ctx); err != nil {
+					glog.Errorf("MempoolPersister: Error deleting key: %v", err)
+				}
 			}
 		}
 		return nil
@@ -121,6 +153,10 @@ func (mp *MempoolPersister) PersistBatch() error {
 }
 
 func (mp *MempoolPersister) RetrieveTransactions() ([]*MempoolTx, error) {
+	if mp.status == MempoolPersisterStatusNotRunning {
+		return nil, errors.Wrapf(MempoolErrorNotRunning, "MempoolPersister: Cannot retrieve transactions while running")
+	}
+
 	mp.Lock()
 	defer mp.Unlock()
 
@@ -160,7 +196,7 @@ func (mp *MempoolPersister) OnMempoolEvent(event *MempoolEvent) {
 	mp.eventQueue <- event
 }
 
-func (mp *MempoolPersister) Reset() {
+func (mp *MempoolPersister) reset() {
 	mp.Lock()
 	defer mp.Unlock()
 

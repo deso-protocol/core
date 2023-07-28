@@ -2,6 +2,7 @@ package lib
 
 import (
 	"bytes"
+	"github.com/btcsuite/btcd/btcec"
 	"github.com/stretchr/testify/require"
 	"math"
 	"math/rand"
@@ -369,8 +370,24 @@ func _testGetDefaultGlobalParams() *GlobalParamsEntry {
 func _testGetRandomMempoolTxns(rand *rand.Rand, feeMin uint64, feeMax uint64, sizeMax uint64, timestampRange uint64, numTxns int) []*MempoolTx {
 	txnPool := []*MempoolTx{}
 	for ii := 0; ii < numTxns; ii++ {
+		randPriv, _ := btcec.NewPrivateKey(btcec.S256())
+		randMsg := RandomBytes(32)
+		randSig, _ := randPriv.Sign(randMsg)
+		fee := rand.Uint64()%(feeMax-feeMin) + feeMin
+
 		txnPool = append(txnPool, &MempoolTx{
-			FeePerKB:    rand.Uint64()%(feeMax-feeMin) + feeMin,
+			Tx: &MsgDeSoTxn{
+				TxnVersion: DeSoTxnVersion1,
+				TxnMeta:    &BasicTransferMetadata{},
+				Signature: DeSoSignature{
+					Sign:          randSig,
+					RecoveryId:    0,
+					IsRecoverable: false,
+				},
+				TxnFeeNanos: fee,
+				TxnNonce:    &DeSoNonce{},
+			},
+			FeePerKB:    fee,
 			Added:       time.UnixMicro(int64(rand.Uint64() % timestampRange)),
 			Hash:        NewBlockHash(RandomBytes(32)),
 			TxSizeBytes: 1 + rand.Uint64()%sizeMax,
