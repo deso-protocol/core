@@ -146,14 +146,16 @@ func (btx *BadgerTransaction) GetIterator(ctx Context) (Iterator, error) {
 // ==========================
 
 type BadgerIterator struct {
-	it  *badger.Iterator
-	ctx *BadgerContext
+	it          *badger.Iterator
+	ctx         *BadgerContext
+	initialized bool
 }
 
 func NewBadgerIterator(it *badger.Iterator, ctx *BadgerContext) *BadgerIterator {
 	return &BadgerIterator{
-		it:  it,
-		ctx: ctx,
+		it:          it,
+		ctx:         ctx,
+		initialized: false,
 	}
 }
 
@@ -171,6 +173,11 @@ func (bit *BadgerIterator) Key() []byte {
 }
 
 func (bit *BadgerIterator) Next() bool {
+	if !bit.initialized {
+		bit.initialized = true
+		return bit.it.Valid()
+	}
+
 	bit.it.Next()
 	return bit.it.ValidForPrefix(bit.ctx.prefix)
 }
