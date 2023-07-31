@@ -719,7 +719,7 @@ func (bav *UtxoView) _setSnapshotStakeToReward(stakeEntry *StakeEntry, snapshotA
 	bav.SnapshotStakesToReward[NewSnapshotStakeMapKey(stakeEntry, snapshotAtEpochNumber)] = stakeEntry.Copy()
 }
 
-// GetSnapshotStakesToReward returns all snapshotted StakeEntries that are eligible to receive staking
+// GetAllSnapshotStakesToReward returns all snapshotted StakeEntries that are eligible to receive staking
 // rewards for the current snapshot epoch. The order of the returned entries is arbitrary.
 func (bav *UtxoView) GetAllSnapshotStakesToReward() ([]*StakeEntry, error) {
 	snapshotGlobalParams, err := bav.GetSnapshotGlobalParamsEntry()
@@ -768,21 +768,23 @@ func (bav *UtxoView) GetAllSnapshotStakesToReward() ([]*StakeEntry, error) {
 		bav._setSnapshotStakeToReward(stakeEntry, snapshotAtEpochNumber)
 	}
 
-	// Pull snapshot StakeEntries from the UtxoView with stake > 0. All entries should have > 0 stake to begin
-	// with, but we filter here again just in case.
+	// Pull all non-deleted snapshot StakeEntries from the UtxoView with stake > 0.
 	var mergedStakeEntries []*StakeEntry
 	for mapKey, stakeEntry := range bav.SnapshotStakesToReward {
-		if mapKey.SnapshotAtEpochNumber == snapshotAtEpochNumber && !stakeEntry.StakeAmountNanos.IsZero() {
-			mergedStakeEntries = append(mergedStakeEntries, stakeEntry)
+		if stakeEntry.isDeleted {
+			// Skip any deleted StakeEntries.
+			continue
 		}
+
+		// All entries should have > 0 stake to begin with, but we filter here again just in case.
+		if mapKey.SnapshotAtEpochNumber != snapshotAtEpochNumber || stakeEntry.StakeAmountNanos.IsZero() {
+			continue
+		}
+
+		mergedStakeEntries = append(mergedStakeEntries, stakeEntry)
 	}
 
-	// Return top N.
-	upperBound := maxNumSnapshotStakes
-	if uint64(len(mergedStakeEntries)) < upperBound {
-		upperBound = uint64(len(mergedStakeEntries))
-	}
-	return mergedStakeEntries[0:upperBound], nil
+	return mergedStakeEntries, nil
 }
 
 func DBGetSnapshotStakesToReward(

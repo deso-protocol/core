@@ -54,7 +54,6 @@ func TestIsLastBlockInCurrentEpoch(t *testing.T) {
 }
 
 func TestRunEpochCompleteHook(t *testing.T) {
-
 	// Initialize test chain, miner, and testMeta
 	testMeta := _setUpMinerAndTestMetaForEpochCompleteTest(t)
 
@@ -90,9 +89,6 @@ func TestRunEpochCompleteHook(t *testing.T) {
 
 	// For these tests, we set each epoch duration to only one block.
 	testMeta.params.DefaultEpochDurationNumBlocks = uint64(1)
-
-	// We set the default staking rewards APY to 10%
-	testMeta.params.DefaultStakingRewardsAPYBasisPoints = uint64(1000)
 
 	{
 		// ParamUpdater set MinFeeRateNanos, ValidatorJailEpochDuration,
@@ -165,13 +161,13 @@ func TestRunEpochCompleteHook(t *testing.T) {
 	}
 	{
 		// All validators register + stake to themselves.
-		_registerValidatorAndStake(testMeta, m0Pub, m0Priv, 100, false)
-		_registerValidatorAndStake(testMeta, m1Pub, m1Priv, 200, false)
-		_registerValidatorAndStake(testMeta, m2Pub, m2Priv, 300, false)
-		_registerValidatorAndStake(testMeta, m3Pub, m3Priv, 400, false)
-		_registerValidatorAndStake(testMeta, m4Pub, m4Priv, 500, false)
-		_registerValidatorAndStake(testMeta, m5Pub, m5Priv, 600, false)
-		_registerValidatorAndStake(testMeta, m6Pub, m6Priv, 700, false)
+		_registerValidatorAndStake(testMeta, m0Pub, m0Priv, 0, 100, false)
+		_registerValidatorAndStake(testMeta, m1Pub, m1Priv, 0, 200, false)
+		_registerValidatorAndStake(testMeta, m2Pub, m2Priv, 0, 300, false)
+		_registerValidatorAndStake(testMeta, m3Pub, m3Priv, 0, 400, false)
+		_registerValidatorAndStake(testMeta, m4Pub, m4Priv, 0, 500, false)
+		_registerValidatorAndStake(testMeta, m5Pub, m5Priv, 0, 600, false)
+		_registerValidatorAndStake(testMeta, m6Pub, m6Priv, 0, 700, false)
 
 		validatorEntries, err := _newUtxoView(testMeta).GetTopActiveValidatorsByStakeAmount(10)
 		require.NoError(t, err)
@@ -267,7 +263,7 @@ func TestRunEpochCompleteHook(t *testing.T) {
 		require.Equal(t, validatorEntry.TotalStakeAmountNanos.Uint64(), uint64(600))
 
 		// m5 stakes another 200.
-		_registerValidatorAndStake(testMeta, m5Pub, m5Priv, 200, false)
+		_registerValidatorAndStake(testMeta, m5Pub, m5Priv, 0, 200, false)
 
 		// m5 has 800 staked.
 		validatorEntry, err = _newUtxoView(testMeta).GetValidatorByPKID(m5PKID)
@@ -479,6 +475,268 @@ func TestRunEpochCompleteHook(t *testing.T) {
 	}
 }
 
+func TestStakingRewardDistribution(t *testing.T) {
+	// Initialize test chain, miner, and testMeta
+	testMeta := _setUpMinerAndTestMetaForEpochCompleteTest(t)
+
+	_registerOrTransferWithTestMeta(testMeta, "m0", senderPkString, m0Pub, senderPrivString, 1e3)
+	_registerOrTransferWithTestMeta(testMeta, "m1", senderPkString, m1Pub, senderPrivString, 1e3)
+	_registerOrTransferWithTestMeta(testMeta, "m2", senderPkString, m2Pub, senderPrivString, 1e3)
+	_registerOrTransferWithTestMeta(testMeta, "m3", senderPkString, m3Pub, senderPrivString, 1e3)
+
+	_registerOrTransferWithTestMeta(testMeta, "", senderPkString, paramUpdaterPub, senderPrivString, 1e3)
+
+	m0PKID := DBGetPKIDEntryForPublicKey(testMeta.db, testMeta.chain.snapshot, m0PkBytes).PKID
+	m1PKID := DBGetPKIDEntryForPublicKey(testMeta.db, testMeta.chain.snapshot, m1PkBytes).PKID
+	m2PKID := DBGetPKIDEntryForPublicKey(testMeta.db, testMeta.chain.snapshot, m2PkBytes).PKID
+	m3PKID := DBGetPKIDEntryForPublicKey(testMeta.db, testMeta.chain.snapshot, m3PkBytes).PKID
+
+	blockHeight := uint64(testMeta.chain.blockTip().Height) + 1
+	incrBlockHeight := func() uint64 {
+		blockHeight += 1
+		return blockHeight
+	}
+
+	// Seed a CurrentEpochEntry.
+	tmpUtxoView := _newUtxoView(testMeta)
+	tmpUtxoView._setCurrentEpochEntry(&EpochEntry{EpochNumber: 2, FinalBlockHeight: blockHeight + 1})
+	require.NoError(t, tmpUtxoView.FlushToDb(blockHeight))
+
+	// For these tests, we set each epoch duration to only one block.
+	testMeta.params.DefaultEpochDurationNumBlocks = uint64(1)
+
+	// We set the default staking rewards APY to 10%
+	testMeta.params.DefaultStakingRewardsAPYBasisPoints = uint64(1000)
+
+	// Two validators register + stake to themselves.
+	_registerValidatorAndStake(testMeta, m0Pub, m0Priv, 2000, 400, true)  // 20% commission rate, 400 nano stake
+	_registerValidatorAndStake(testMeta, m1Pub, m1Priv, 2000, 200, false) // 20% commission rate, 200 nano stake
+
+	// Two stakers delegate their stake to the validators.
+	_stakeToValidator(testMeta, m2Pub, m2Priv, m0Pub, 100, true) // 100 nano stake
+	_stakeToValidator(testMeta, m3Pub, m3Priv, m1Pub, 50, false) // 50 nano stake
+
+	{
+		// Verify the validators and their total stakes.
+		validatorEntries, err := _newUtxoView(testMeta).GetTopActiveValidatorsByStakeAmount(10)
+		require.NoError(t, err)
+		require.Len(t, validatorEntries, 2)
+
+		// Validator m0 has 500 nanos staked in total: 400 staked by itself and 100 delegated by m2.
+		require.Equal(t, validatorEntries[0].ValidatorPKID, m0PKID)
+		require.Equal(t, validatorEntries[0].TotalStakeAmountNanos, uint256.NewInt().SetUint64(500))
+
+		// Validator m1 has 250 nanos staked in total: 200 staked by itself and 50 delegated by m3.
+		require.Equal(t, validatorEntries[1].ValidatorPKID, m1PKID)
+		require.Equal(t, validatorEntries[1].TotalStakeAmountNanos, uint256.NewInt().SetUint64(250))
+	}
+
+	{
+		// Verify the stakers' stakes.
+		stakeEntries, err := _newUtxoView(testMeta).GetTopStakesByStakeAmount(10)
+		require.NoError(t, err)
+		require.Len(t, stakeEntries, 4)
+
+		require.Equal(t, stakeEntries[0].StakerPKID, m0PKID)
+		require.Equal(t, stakeEntries[0].StakeAmountNanos, uint256.NewInt().SetUint64(400))
+		require.Equal(t, stakeEntries[1].StakerPKID, m1PKID)
+		require.Equal(t, stakeEntries[1].StakeAmountNanos, uint256.NewInt().SetUint64(200))
+		require.Equal(t, stakeEntries[2].StakerPKID, m2PKID)
+		require.Equal(t, stakeEntries[2].StakeAmountNanos, uint256.NewInt().SetUint64(100))
+		require.Equal(t, stakeEntries[3].StakerPKID, m3PKID)
+		require.Equal(t, stakeEntries[3].StakeAmountNanos, uint256.NewInt().SetUint64(50))
+	}
+
+	{
+		// Run OnEpochCompleteHook().
+		_runOnEpochCompleteHook(testMeta, incrBlockHeight())
+	}
+
+	{
+		// Run OnEpochCompleteHook().
+		_runOnEpochCompleteHook(testMeta, incrBlockHeight())
+	}
+
+	{
+		// Test that the stakes are unchanged.
+		stakeEntries, err := _newUtxoView(testMeta).GetTopStakesByStakeAmount(10)
+		require.NoError(t, err)
+		require.Len(t, stakeEntries, 4)
+		require.Equal(t, stakeEntries[0].StakerPKID, m0PKID)
+		require.Equal(t, stakeEntries[0].StakeAmountNanos, uint256.NewInt().SetUint64(400))
+		require.Equal(t, stakeEntries[1].StakerPKID, m1PKID)
+		require.Equal(t, stakeEntries[1].StakeAmountNanos, uint256.NewInt().SetUint64(200))
+		require.Equal(t, stakeEntries[2].StakerPKID, m2PKID)
+		require.Equal(t, stakeEntries[2].StakeAmountNanos, uint256.NewInt().SetUint64(100))
+		require.Equal(t, stakeEntries[3].StakerPKID, m3PKID)
+		require.Equal(t, stakeEntries[3].StakeAmountNanos, uint256.NewInt().SetUint64(50))
+
+		// Test that DESO wallet balances are unchanged.
+		m0Balance, err := _newUtxoView(testMeta).GetDeSoBalanceNanosForPublicKey(m0PkBytes)
+		require.NoError(t, err)
+		require.Equal(t, m0Balance, uint64(546))
+		m1Balance, err := _newUtxoView(testMeta).GetDeSoBalanceNanosForPublicKey(m1PkBytes)
+		require.NoError(t, err)
+		require.Equal(t, m1Balance, uint64(746))
+		m2Balance, err := _newUtxoView(testMeta).GetDeSoBalanceNanosForPublicKey(m2PkBytes)
+		require.NoError(t, err)
+		require.Equal(t, m2Balance, uint64(882))
+		m3Balance, err := _newUtxoView(testMeta).GetDeSoBalanceNanosForPublicKey(m3PkBytes)
+		require.NoError(t, err)
+		require.Equal(t, m3Balance, uint64(932))
+
+		// Test that snapshot stakes have been created.
+		snapshotStakeEntries, err := _newUtxoView(testMeta).GetAllSnapshotStakesToReward()
+		require.NoError(t, err)
+		_sortStakeEntriesByStakeAmount(snapshotStakeEntries)
+		require.Len(t, snapshotStakeEntries, 4)
+		require.Equal(t, snapshotStakeEntries[0].StakerPKID, m0PKID)
+		require.Equal(t, snapshotStakeEntries[0].StakeAmountNanos, uint256.NewInt().SetUint64(400))
+		require.Equal(t, snapshotStakeEntries[1].StakerPKID, m1PKID)
+		require.Equal(t, snapshotStakeEntries[1].StakeAmountNanos, uint256.NewInt().SetUint64(200))
+		require.Equal(t, snapshotStakeEntries[2].StakerPKID, m2PKID)
+		require.Equal(t, snapshotStakeEntries[2].StakeAmountNanos, uint256.NewInt().SetUint64(100))
+		require.Equal(t, snapshotStakeEntries[3].StakerPKID, m3PKID)
+		require.Equal(t, snapshotStakeEntries[3].StakeAmountNanos, uint256.NewInt().SetUint64(50))
+	}
+
+	{
+		// Run OnEpochCompleteHook().
+		_runOnEpochCompleteHook(testMeta, incrBlockHeight())
+	}
+
+	{
+		// This is the first epoch where staking rewards have been distributed. The nominal interest
+		// rate for staking rewards is 10% APY. Exactly 1 year's worth of time has passed since the
+		// previous epoch.
+
+		// Test that the number of stakes is unchanged.
+		stakeEntries, err := _newUtxoView(testMeta).GetTopStakesByStakeAmount(10)
+		require.NoError(t, err)
+		require.Len(t, stakeEntries, 4)
+
+		// Test reward computation and restaking for m0:
+		// - m0's original stake was 400 nanos
+		// - m0 had 100 nanos delegated to it
+		// - m0's commission rate is 20%
+		// - all rewards for m0 will be restaked
+		//
+		// Reward Computations:
+		// - m0's reward from its own stake is: 400 * [e^0.1 - 1] = 42 nanos
+		// - m0's reward from delegated stake is: 100 * [e^0.1 - 1] * 0.2 = 2 nanos
+		//
+		// Final stake amount:
+		// - m0's final stake is: 400 + 42 + 2 = 444 nanos
+		require.Equal(t, stakeEntries[0].StakerPKID, m0PKID)
+		require.Equal(t, stakeEntries[0].StakeAmountNanos, uint256.NewInt().SetUint64(444))
+
+		// Test that m0's DESO wallet balance is unchanged.
+		m0Balance, err := _newUtxoView(testMeta).GetDeSoBalanceNanosForPublicKey(m0PkBytes)
+		require.NoError(t, err)
+		require.Equal(t, m0Balance, uint64(546))
+
+		// Test reward computation for m1:
+		// - m1's original stake was 200 nanos
+		// - m1 had 50 nanos delegated to it
+		// - m1's original DESO wallet balance was 746 nanos
+		// - m1's commission rate is 10%
+		// - all rewards for m1 will be paid out to its DESO wallet
+		//
+		// Reward Computations:
+		// - m1's reward from its own stake is: 200 * [e^0.1 - 1] = 21 nanos
+		// - m1's reward from delegated stake is: 50 * [e^0.1 - 1] * 0.2 = 1 nano
+		//
+		// Final DESO wallet balance:
+		// - m1's final DESO wallet balance is: 746 + 21 + 1 = 768 nanos
+		m1Balance, err := _newUtxoView(testMeta).GetDeSoBalanceNanosForPublicKey(m1PkBytes)
+		require.NoError(t, err)
+		require.Equal(t, m1Balance, uint64(768))
+
+		// Test that m1's stake is unchanged.
+		require.Equal(t, stakeEntries[1].StakerPKID, m1PKID)
+		require.Equal(t, stakeEntries[1].StakeAmountNanos, uint256.NewInt().SetUint64(200))
+
+		// Test reward computation and restaking for m2:
+		// - m2's original stake was 100 nanos
+		// - m2's validator m0 has a commission rate of 20%
+		// - m2's rewards will be restaked
+		//
+		// Reward Computations:
+		// - m2's total reward for its stake is: 100 * [e^0.1 - 1] = 10 nanos
+		// - m2's reward lost to m0's commission is: 10 nanos * 0.2 = 2 nanos
+		//
+		// Final stake amount:
+		// - m2's final stake is: 100 + 10 - 2 = 108 nanos
+		require.Equal(t, stakeEntries[2].StakerPKID, m2PKID)
+		require.Equal(t, stakeEntries[2].StakeAmountNanos, uint256.NewInt().SetUint64(108))
+
+		// Test that m2's DESO wallet balance is unchanged.
+		m2Balance, err := _newUtxoView(testMeta).GetDeSoBalanceNanosForPublicKey(m2PkBytes)
+		require.NoError(t, err)
+		require.Equal(t, m2Balance, uint64(882))
+
+		// Test reward computation for m3:
+		// - m2's original stake was 50 nanos
+		// - m2's validator m1 has a commission rate of 20%
+		// - m2's original DESO wallet balance was 932 nanos
+		// - m2's rewards will be paid out to its DESO wallet
+		//
+		// Reward Computations:
+		// - m2's total reward for its stake is 50 * [e^0.1 - 1] = 5 nanos
+		// - m2's reward lost to m1's commission is: 5 nanos * 0.2 = 1 nano
+		//
+		// Final DESO wallet balance:
+		// - m2's final DESO wallet balance is: 932 + 5 - 1 = 936 nanos
+		m3Balance, err := _newUtxoView(testMeta).GetDeSoBalanceNanosForPublicKey(m3PkBytes)
+		require.NoError(t, err)
+		require.Equal(t, m3Balance, uint64(936))
+
+		// Test that m3's stake is unchanged.
+		require.Equal(t, stakeEntries[3].StakerPKID, m3PKID)
+		require.Equal(t, stakeEntries[3].StakeAmountNanos, uint256.NewInt().SetUint64(50))
+	}
+
+	{
+		// Test that snapshot stakes have not changed.
+		snapshotStakeEntries, err := _newUtxoView(testMeta).GetAllSnapshotStakesToReward()
+		require.NoError(t, err)
+		_sortStakeEntriesByStakeAmount(snapshotStakeEntries)
+		require.Len(t, snapshotStakeEntries, 4)
+		require.Equal(t, snapshotStakeEntries[0].StakerPKID, m0PKID)
+		require.Equal(t, snapshotStakeEntries[0].StakeAmountNanos, uint256.NewInt().SetUint64(400))
+		require.Equal(t, snapshotStakeEntries[1].StakerPKID, m1PKID)
+		require.Equal(t, snapshotStakeEntries[1].StakeAmountNanos, uint256.NewInt().SetUint64(200))
+		require.Equal(t, snapshotStakeEntries[2].StakerPKID, m2PKID)
+		require.Equal(t, snapshotStakeEntries[2].StakeAmountNanos, uint256.NewInt().SetUint64(100))
+		require.Equal(t, snapshotStakeEntries[3].StakerPKID, m3PKID)
+		require.Equal(t, snapshotStakeEntries[3].StakeAmountNanos, uint256.NewInt().SetUint64(50))
+	}
+
+	{
+		// Run OnEpochCompleteHook().
+		_runOnEpochCompleteHook(testMeta, incrBlockHeight())
+	}
+
+	{
+		// Test that the current epoch's snapshot stakes now reflect the rewards that were
+		// restaked at the end of epoch n-2.
+
+		snapshotStakeEntries, err := _newUtxoView(testMeta).GetAllSnapshotStakesToReward()
+		require.NoError(t, err)
+		_sortStakeEntriesByStakeAmount(snapshotStakeEntries)
+		require.Len(t, snapshotStakeEntries, 4)
+		require.Equal(t, snapshotStakeEntries[0].StakerPKID, m0PKID)
+		require.Equal(t, snapshotStakeEntries[0].StakeAmountNanos, uint256.NewInt().SetUint64(444))
+		require.Equal(t, snapshotStakeEntries[1].StakerPKID, m1PKID)
+		require.Equal(t, snapshotStakeEntries[1].StakeAmountNanos, uint256.NewInt().SetUint64(200))
+		require.Equal(t, snapshotStakeEntries[2].StakerPKID, m2PKID)
+		require.Equal(t, snapshotStakeEntries[2].StakeAmountNanos, uint256.NewInt().SetUint64(108))
+		require.Equal(t, snapshotStakeEntries[3].StakerPKID, m3PKID)
+		require.Equal(t, snapshotStakeEntries[3].StakeAmountNanos, uint256.NewInt().SetUint64(50))
+	}
+
+}
+
 func _setUpMinerAndTestMetaForEpochCompleteTest(t *testing.T) *TestMeta {
 	// Initialize balance model fork heights.
 	setBalanceModelBlockHeights(t)
@@ -514,7 +772,14 @@ func _setUpMinerAndTestMetaForEpochCompleteTest(t *testing.T) *TestMeta {
 	}
 }
 
-func _registerValidatorAndStake(testMeta *TestMeta, publicKey string, privateKey string, stakeAmountNanos uint64, restakeRewards bool) {
+func _registerValidatorAndStake(
+	testMeta *TestMeta,
+	publicKey string,
+	privateKey string,
+	commissionBasisPoints uint64,
+	stakeAmountNanos uint64,
+	restakeRewards bool,
+) {
 	// Convert PublicKeyBase58Check to PublicKeyBytes.
 	pkBytes, _, err := Base58CheckDecode(publicKey)
 	require.NoError(testMeta.t, err)
@@ -522,11 +787,27 @@ func _registerValidatorAndStake(testMeta *TestMeta, publicKey string, privateKey
 	// Validator registers.
 	votingPublicKey, votingAuthorization := _generateVotingPublicKeyAndAuthorization(testMeta.t, pkBytes)
 	registerMetadata := &RegisterAsValidatorMetadata{
-		Domains:             [][]byte{[]byte(fmt.Sprintf("https://%s.com", publicKey))},
-		VotingPublicKey:     votingPublicKey,
-		VotingAuthorization: votingAuthorization,
+		Domains:                             [][]byte{[]byte(fmt.Sprintf("https://%s.com", publicKey))},
+		VotingPublicKey:                     votingPublicKey,
+		DelegatedStakeCommissionBasisPoints: commissionBasisPoints,
+		VotingAuthorization:                 votingAuthorization,
 	}
 	_, err = _submitRegisterAsValidatorTxn(testMeta, publicKey, privateKey, registerMetadata, nil, true)
+	require.NoError(testMeta.t, err)
+
+	_stakeToValidator(testMeta, publicKey, privateKey, publicKey, stakeAmountNanos, restakeRewards)
+}
+
+func _stakeToValidator(
+	testMeta *TestMeta,
+	stakerPubKey string,
+	stakerPrivKey string,
+	validatorPubKey string,
+	stakeAmountNanos uint64,
+	restakeRewards bool,
+) {
+	// Convert ValidatorPublicKeyBase58Check to ValidatorPublicKeyBytes.
+	validatorPkBytes, _, err := Base58CheckDecode(validatorPubKey)
 	require.NoError(testMeta.t, err)
 
 	rewardMethod := StakingRewardMethodPayToBalance
@@ -535,11 +816,11 @@ func _registerValidatorAndStake(testMeta *TestMeta, publicKey string, privateKey
 	}
 
 	stakeMetadata := &StakeMetadata{
-		ValidatorPublicKey: NewPublicKey(pkBytes),
+		ValidatorPublicKey: NewPublicKey(validatorPkBytes),
 		RewardMethod:       rewardMethod,
 		StakeAmountNanos:   uint256.NewInt().SetUint64(stakeAmountNanos),
 	}
-	_, err = _submitStakeTxn(testMeta, publicKey, privateKey, stakeMetadata, nil, true)
+	_, err = _submitStakeTxn(testMeta, stakerPubKey, stakerPrivKey, stakeMetadata, nil, true)
 	require.NoError(testMeta.t, err)
 }
 

@@ -2,10 +2,11 @@ package lib
 
 import (
 	"fmt"
-	"github.com/btcsuite/btcd/btcec"
-	"github.com/holiman/uint256"
 	"math"
 	"math/big"
+
+	"github.com/btcsuite/btcd/btcec"
+	"github.com/holiman/uint256"
 )
 
 // This library implements basic float functions using big.Float objects.
@@ -99,6 +100,7 @@ var (
 	bigOne            = NewFloat().SetUint64(1)
 	bigTwo            = NewFloat().SetUint64(2)
 	bigSqrt2Over2     = NewFloat().Quo(bigSqrt2, bigTwo)
+	bigE              = NewFloat().SetFloat64(2.71828182845904523536028747135266249775724709369995957496696763)
 
 	// Constants for BigFloatExpMulti
 	bigP1 = NewFloat().SetFloat64(1.66666666666666657415e-01)  /* 0x3FC55555; 0x55555555 */
