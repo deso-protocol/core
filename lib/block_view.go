@@ -3042,6 +3042,13 @@ func (bav *UtxoView) _connectUpdateGlobalParams(
 				return 0, 0, nil, fmt.Errorf("_connectUpdateGlobalParams: unable to decode ValidatorSetMaxNumValidators as uint64")
 			}
 		}
+
+		// Cross-validate the new LeaderScheduleMaxNumValidators and ValidatorSetMaxNumValidators values. The size of the
+		// leader schedule must be less than or equal to the size of the validator set.
+		if newGlobalParamsEntry.ValidatorSetMaxNumValidators < newGlobalParamsEntry.LeaderScheduleMaxNumValidators {
+			return 0, 0, nil, fmt.Errorf("_connectUpdateGlobalParams: ValidatorSetMaxNumValidators must be >= LeaderScheduleMaxNumValidators")
+		}
+
 		if len(extraData[StakingRewardsMaxNumStakesKey]) > 0 {
 			newGlobalParamsEntry.StakingRewardsMaxNumStakes, bytesRead = Uvarint(extraData[StakingRewardsMaxNumStakesKey])
 			if bytesRead <= 0 {
