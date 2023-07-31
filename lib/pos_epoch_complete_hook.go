@@ -72,7 +72,7 @@ func (bav *UtxoView) RunEpochCompleteHook(blockHeight uint64, blockTimestampNano
 	}
 
 	// Step 1: Run All State Mutating Operations
-	if err := bav.runEpochCompleteStateMutations(blockHeight, blockTimestampNanoSecs); err != nil {
+	if err := bav.runEpochCompleteStateTransition(blockHeight, blockTimestampNanoSecs); err != nil {
 		return errors.Wrapf(err, "RunEpochCompleteHook: ")
 	}
 
@@ -92,14 +92,14 @@ func (bav *UtxoView) RunEpochCompleteHook(blockHeight uint64, blockTimestampNano
 }
 
 // Runs all state-mutating operations required when completing an epoch.
-func (bav *UtxoView) runEpochCompleteStateMutations(blockHeight uint64, blockTimestampNanoSecs uint64) error {
+func (bav *UtxoView) runEpochCompleteStateTransition(blockHeight uint64, blockTimestampNanoSecs uint64) error {
 	// Jail all inactive validators from the current snapshot validator set. This is an O(n) operation
 	// that loops through all active unjailed validators from current epoch's snapshot validator set
 	// and jails them if they have been inactive.
 	//
 	// Note, this this will only run if we are past the ProofOfStake2ConsensusCutoverBlockHeight fork height.
 	if err := bav.JailAllInactiveSnapshotValidators(blockHeight); err != nil {
-		return errors.Wrapf(err, "runEpochCompleteStateMutations: problem jailing all inactive validators: ")
+		return errors.Wrapf(err, "runEpochCompleteStateTransition: problem jailing all inactive validators: ")
 	}
 
 	// Reward all snapshotted stakes from the current snapshot validator set. This is an O(n) operation
@@ -107,7 +107,7 @@ func (bav *UtxoView) runEpochCompleteStateMutations(blockHeight uint64, blockTim
 	//
 	// Note, this this will only run if we are past the ProofOfStake2ConsensusCutoverBlockHeight fork height.
 	if err := bav.DistributeStakingRewardsToSnapshotStakes(blockHeight, blockTimestampNanoSecs); err != nil {
-		return errors.Wrapf(err, "runEpochCompleteStateMutations: problem rewarding snapshot stakes: ")
+		return errors.Wrapf(err, "runEpochCompleteStateTransition: problem rewarding snapshot stakes: ")
 	}
 
 	return nil

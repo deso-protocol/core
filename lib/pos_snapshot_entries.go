@@ -719,7 +719,7 @@ func (bav *UtxoView) _setSnapshotStakeToReward(stakeEntry *StakeEntry, snapshotA
 	bav.SnapshotStakesToReward[NewSnapshotStakeMapKey(stakeEntry, snapshotAtEpochNumber)] = stakeEntry.Copy()
 }
 
-// GetSnapshotStakesToReward returns all snapshotted StakeEntries that are eligible to receive staking
+// GetAllSnapshotStakesToReward returns all snapshotted StakeEntries that are eligible to receive staking
 // rewards for the current snapshot epoch. The order of the returned entries is arbitrary.
 func (bav *UtxoView) GetAllSnapshotStakesToReward() ([]*StakeEntry, error) {
 	snapshotGlobalParams, err := bav.GetSnapshotGlobalParamsEntry()

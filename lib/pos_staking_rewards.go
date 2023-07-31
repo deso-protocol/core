@@ -59,10 +59,16 @@ func (bav *UtxoView) DistributeStakingRewardsToSnapshotStakes(blockHeight uint64
 
 	// Loop through all of the snapshot stakes; distribute staking rewards to the staker and commissions to
 	// their validator.
-	for _, stakeEntry := range snapshotStakesToReward {
+	for _, snapshotStakeEntry := range snapshotStakesToReward {
+		if snapshotStakeEntry == nil {
+			// This should never happen. If we encounter a nil entry, then the setter for UtxoView.SnapshotStakesToReward
+			// is unexpectedly setting nil values. We just skip such values here.
+			continue
+		}
+
 		// Compute the staker's portion of the staking reward, and the validator's commission.
 		stakerRewardNanos, validatorCommissionNanos, err := bav.computeStakerRewardAndValidatorCommission(
-			stakeEntry, elapsedFractionOfYear, apy,
+			snapshotStakeEntry, elapsedFractionOfYear, apy,
 		)
 		if err != nil {
 			return errors.Wrapf(
@@ -79,14 +85,14 @@ func (bav *UtxoView) DistributeStakingRewardsToSnapshotStakes(blockHeight uint64
 
 		// Reward the staker their portion of the staking reward.
 		if stakerRewardNanos > 0 {
-			if err = bav.distributeStakingReward(stakeEntry.ValidatorPKID, stakeEntry.StakerPKID, stakerRewardNanos); err != nil {
+			if err = bav.distributeStakingReward(snapshotStakeEntry.ValidatorPKID, snapshotStakeEntry.StakerPKID, stakerRewardNanos); err != nil {
 				return errors.Wrapf(err, "DistributeStakingRewardsToSnapshotStakes: problem distributing staker reward: ")
 			}
 		}
 
 		// Reward the validator their commission from the staking reward.
 		if validatorCommissionNanos > 0 {
-			if err = bav.distributeValidatorCommission(stakeEntry.ValidatorPKID, validatorCommissionNanos); err != nil {
+			if err = bav.distributeValidatorCommission(snapshotStakeEntry.ValidatorPKID, validatorCommissionNanos); err != nil {
 				return errors.Wrapf(err, "DistributeStakingRewardsToSnapshotStakes: problem distributing validator commission reward: ")
 			}
 		}
@@ -114,7 +120,7 @@ func (bav *UtxoView) computeStakerRewardAndValidatorCommission(
 	// If the reward is 0, then there's nothing to be done. In practice, the reward should never be < 0
 	// either, but we check for it here in case it resulted from a rounding error. Either way, we're
 	// safe to exit early here.
-	if stakerRewardNanos.Sign() <= 0 {
+	if stakerRewardNanos == nil || stakerRewardNanos.Sign() <= 0 {
 		return 0, 0, nil
 	}
 
@@ -155,7 +161,7 @@ func (bav *UtxoView) computeStakerRewardAndValidatorCommission(
 				)
 			}
 
-			// Subtract out the validator commission from the staker's reward.
+			// Deduct the validator commission from the staker's reward.
 			stakerRewardNanos.Sub(stakerRewardNanos, validatorCommissionNanos)
 		}
 	}
