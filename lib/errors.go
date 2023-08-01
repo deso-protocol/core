@@ -224,6 +224,7 @@ const (
 	RuleErrorUserNotAuthorizedToUpdateExchangeRate      RuleError = "RuleErrorUserNotAuthorizedToUpdateExchangeRate"
 	RuleErrorUserNotAuthorizedToUpdateGlobalParams      RuleError = "RuleErrorUserNotAuthorizedToUpdateGlobalParams"
 	RuleErrorUserOutputMustBeNonzero                    RuleError = "RuleErrorUserOutputMustBeNonzero"
+	RuleErrorLeaderScheduleSizeExceedsValidatorSetSize  RuleError = "RuleErrorLeaderScheduleSizeExceedsValidatorSetSize"
 
 	// DeSo Diamonds
 	RuleErrorBasicTransferHasDiamondPostHashWithoutDiamondLevel   RuleError = "RuleErrorBasicTransferHasDiamondPostHashWithoutDiamondLevel"
