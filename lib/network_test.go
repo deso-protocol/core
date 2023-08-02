@@ -130,6 +130,7 @@ func createTestBlockHeaderVersion2(t *testing.T) *MsgDeSoHeader {
 		PrevBlockHash:         &testBlockHash,
 		TransactionMerkleRoot: &testMerkleRoot,
 		TstampSecs:            uint64(1678943210),
+		TstampNanoSecs:        uint64(1678943210) * NanoSecondsPerSecond,
 		Height:                uint64(1321012345),
 		// Nonce and ExtraNonce are unused and set to 0 starting in version 2.
 		Nonce:                   uint64(0),
@@ -213,7 +214,7 @@ func TestHeaderConversionAndReadWriteMessage(t *testing.T) {
 		assert.NoError(err)
 		assert.Equal(hdrPayload, data)
 
-		assert.Equalf(13, reflect.TypeOf(expectedBlockHeader).Elem().NumField(),
+		assert.Equalf(14, reflect.TypeOf(expectedBlockHeader).Elem().NumField(),
 			"Number of fields in HEADER message is different from expected. "+
 				"Did you add a new field? If so, make sure the serialization code "+
 				"works, add the new field to the test case, and fix this error.")

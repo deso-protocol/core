@@ -1886,9 +1886,13 @@ type MsgDeSoHeader struct {
 	// The merkle root of all the transactions contained within the block.
 	TransactionMerkleRoot *BlockHash
 
-	// The unix timestamp (in seconds) specifying when this block was
-	// mined.
+	// The unix timestamp (in seconds) specifying when this block was produced. This
+	// field is deprecated after header beginning with MsgDeSoHeaderVersion2, but
+	// will temporarily remain populated for backwards compatibility.
 	TstampSecs uint64
+
+	// The unix timestamp (in nano-seconds) specifying when this block was produced.
+	TstampNanoSecs uint64
 
 	// The height of the block this header corresponds to.
 	Height uint64
@@ -2102,9 +2106,9 @@ func (msg *MsgDeSoHeader) EncodeHeaderVersion2(preSignature bool) ([]byte, error
 	}
 	retBytes = append(retBytes, transactionMerkleRoot[:]...)
 
-	// TstampSecs: this field can be encoded to take up to the full 64 bits now
+	// TstampNanosSecs: this field can be encoded to take up to the full 64 bits now
 	// that MsgDeSoHeader version 2 does not need to be backwards compatible.
-	retBytes = append(retBytes, UintToBuf(msg.TstampSecs)...)
+	retBytes = append(retBytes, UintToBuf(msg.TstampNanoSecs)...)
 
 	// Height: similar to the field above, this field can be encoded to take
 	// up to the full 64 bits now that MsgDeSoHeader version 2 does not need to
@@ -2305,11 +2309,12 @@ func DecodeHeaderVersion2(rr io.Reader) (*MsgDeSoHeader, error) {
 		return nil, errors.Wrapf(err, "MsgDeSoHeader.FromBytes: Problem decoding TransactionMerkleRoot")
 	}
 
-	// TstampSecs
-	retHeader.TstampSecs, err = ReadUvarint(rr)
+	// TstampNanoSecs
+	retHeader.TstampNanoSecs, err = ReadUvarint(rr)
 	if err != nil {
-		return nil, errors.Wrapf(err, "MsgDeSoHeader.FromBytes: Problem decoding TstampSecs")
+		return nil, errors.Wrapf(err, "MsgDeSoHeader.FromBytes: Problem decoding TstampNanoSecs")
 	}
+	retHeader.TstampSecs = retHeader.TstampNanoSecs / NanoSecondsPerSecond
 
 	// Height
 	retHeader.Height, err = ReadUvarint(rr)

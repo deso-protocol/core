@@ -50,6 +50,11 @@ const (
 	NodeErase
 )
 
+// Time constants
+const (
+	NanoSecondsPerSecond = uint64(1000000000)
+)
+
 // Snapshot constants
 const (
 	// GetSnapshotTimeout is used in Peer when we fetch a snapshot chunk, and we need to retry.
