@@ -1289,11 +1289,9 @@ func (postgres *Postgres) UpsertBlockTx(tx *pg.Tx, blockNode *BlockNode) error {
 
 		TxMerkleRoot: blockNode.Header.TransactionMerkleRoot,
 		Version:      blockNode.Header.Version,
-		// TODO: Does it matter that the postgres block timestamps are now in nanoseconds?
-		// Postgres in its current form should be deprecated by the time this matters.
-		Timestamp:  blockNode.Header.TstampNanoSecs,
-		Nonce:      blockNode.Header.Nonce,
-		ExtraNonce: blockNode.Header.ExtraNonce,
+		Timestamp:    blockNode.Header.TstampNanoSecs,
+		Nonce:        blockNode.Header.Nonce,
+		ExtraNonce:   blockNode.Header.ExtraNonce,
 	}
 
 	// The genesis block has a nil parent
