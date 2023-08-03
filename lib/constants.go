@@ -50,6 +50,19 @@ const (
 	NodeErase
 )
 
+// Time constants
+const (
+	NanoSecondsPerSecond = uint64(1000000000)
+)
+
+func SecondsToNanoSeconds(secs uint64) uint64 {
+	return secs * NanoSecondsPerSecond
+}
+
+func NanoSecondsToSeconds(nanos uint64) uint64 {
+	return nanos / NanoSecondsPerSecond
+}
+
 // Snapshot constants
 const (
 	// GetSnapshotTimeout is used in Peer when we fetch a snapshot chunk, and we need to retry.
@@ -762,7 +775,7 @@ var (
 			Version:               0,
 			PrevBlockHash:         &BlockHash{},
 			TransactionMerkleRoot: mustDecodeHexBlockHash("4b71d103dd6fff1bd6110bc8ed0a2f3118bbe29a67e45c6c7d97546ad126906f"),
-			TstampSecs:            uint64(1610948544),
+			TstampNanoSecs:        SecondsToNanoSeconds(1610948544),
 			Height:                uint64(0),
 			Nonce:                 uint64(0),
 		},
@@ -946,8 +959,8 @@ var DeSoMainnetParams = DeSoParams{
 		big.NewInt(0),
 		// We are bastardizing the DeSo header to store Bitcoin information here.
 		&MsgDeSoHeader{
-			TstampSecs: 1602950620,
-			Height:     0,
+			TstampNanoSecs: SecondsToNanoSeconds(1602950620),
+			Height:         0,
 		},
 		StatusBitcoinHeaderValidated,
 	),
@@ -1194,8 +1207,8 @@ var DeSoTestnetParams = DeSoParams{
 		big.NewInt(0),
 		// We are bastardizing the DeSo header to store Bitcoin information here.
 		&MsgDeSoHeader{
-			TstampSecs: 1607659152,
-			Height:     0,
+			TstampNanoSecs: SecondsToNanoSeconds(1607659152),
+			Height:         0,
 		},
 		StatusBitcoinHeaderValidated,
 	),

@@ -1886,9 +1886,13 @@ type MsgDeSoHeader struct {
 	// The merkle root of all the transactions contained within the block.
 	TransactionMerkleRoot *BlockHash
 
-	// The unix timestamp (in seconds) specifying when this block was
-	// mined.
-	TstampSecs uint64
+	// The original TstampSecs struct field is deprecated and replaced by the higher resolution
+	// TstampNanoSecs field. The deprecation is backwards compatible for all existing header
+	// versions and byte encodings. To read or write timestamps with the old 1-second resolution,
+	// use the SetTstampSecs() and GetTstampSecs() public methods.
+
+	// The unix timestamp (in nanoseconds) specifying when this block was produced.
+	TstampNanoSecs uint64
 
 	// The height of the block this header corresponds to.
 	Height uint64
@@ -1958,6 +1962,14 @@ func HeaderSizeBytes() int {
 	return len(headerBytes)
 }
 
+func (msg *MsgDeSoHeader) SetTstampSecs(tstampSecs uint64) {
+	msg.TstampNanoSecs = SecondsToNanoSeconds(tstampSecs)
+}
+
+func (msg *MsgDeSoHeader) GetTstampSecs() uint64 {
+	return NanoSecondsToSeconds(msg.TstampNanoSecs)
+}
+
 func (msg *MsgDeSoHeader) EncodeHeaderVersion0(preSignature bool) ([]byte, error) {
 	retBytes := []byte{}
 
@@ -1985,7 +1997,7 @@ func (msg *MsgDeSoHeader) EncodeHeaderVersion0(preSignature bool) ([]byte, error
 	// TstampSecs
 	{
 		scratchBytes := [4]byte{}
-		binary.LittleEndian.PutUint32(scratchBytes[:], uint32(msg.TstampSecs))
+		binary.LittleEndian.PutUint32(scratchBytes[:], uint32(msg.GetTstampSecs()))
 		retBytes = append(retBytes, scratchBytes[:]...)
 	}
 
@@ -2034,13 +2046,13 @@ func (msg *MsgDeSoHeader) EncodeHeaderVersion1(preSignature bool) ([]byte, error
 	// TstampSecs
 	{
 		scratchBytes := [8]byte{}
-		binary.BigEndian.PutUint64(scratchBytes[:], msg.TstampSecs)
+		binary.BigEndian.PutUint64(scratchBytes[:], msg.GetTstampSecs())
 		retBytes = append(retBytes, scratchBytes[:]...)
 
 		// TODO: Don't allow this field to exceed 32-bits for now. This will
 		// adjust once other parts of the code are fixed to handle the wider
 		// type.
-		if msg.TstampSecs > math.MaxUint32 {
+		if msg.GetTstampSecs() > math.MaxUint32 {
 			return nil, fmt.Errorf("EncodeHeaderVersion1: TstampSecs not yet allowed " +
 				"to exceed max uint32. This will be fixed in the future")
 		}
@@ -2102,9 +2114,9 @@ func (msg *MsgDeSoHeader) EncodeHeaderVersion2(preSignature bool) ([]byte, error
 	}
 	retBytes = append(retBytes, transactionMerkleRoot[:]...)
 
-	// TstampSecs: this field can be encoded to take up to the full 64 bits now
+	// TstampNanosSecs: this field can be encoded to take up to the full 64 bits now
 	// that MsgDeSoHeader version 2 does not need to be backwards compatible.
-	retBytes = append(retBytes, UintToBuf(msg.TstampSecs)...)
+	retBytes = append(retBytes, UintToBuf(msg.TstampNanoSecs)...)
 
 	// Height: similar to the field above, this field can be encoded to take
 	// up to the full 64 bits now that MsgDeSoHeader version 2 does not need to
@@ -2206,7 +2218,7 @@ func DecodeHeaderVersion0(rr io.Reader) (*MsgDeSoHeader, error) {
 		if err != nil {
 			return nil, errors.Wrapf(err, "MsgDeSoHeader.FromBytes: Problem decoding TstampSecs")
 		}
-		retHeader.TstampSecs = uint64(binary.LittleEndian.Uint32(scratchBytes[:]))
+		retHeader.SetTstampSecs(uint64(binary.LittleEndian.Uint32(scratchBytes[:])))
 	}
 
 	// Height
@@ -2254,7 +2266,7 @@ func DecodeHeaderVersion1(rr io.Reader) (*MsgDeSoHeader, error) {
 		if err != nil {
 			return nil, errors.Wrapf(err, "MsgDeSoHeader.FromBytes: Problem decoding TstampSecs")
 		}
-		retHeader.TstampSecs = binary.BigEndian.Uint64(scratchBytes[:])
+		retHeader.SetTstampSecs(binary.BigEndian.Uint64(scratchBytes[:]))
 	}
 
 	// Height
@@ -2305,10 +2317,10 @@ func DecodeHeaderVersion2(rr io.Reader) (*MsgDeSoHeader, error) {
 		return nil, errors.Wrapf(err, "MsgDeSoHeader.FromBytes: Problem decoding TransactionMerkleRoot")
 	}
 
-	// TstampSecs
-	retHeader.TstampSecs, err = ReadUvarint(rr)
+	// TstampNanoSecs
+	retHeader.TstampNanoSecs, err = ReadUvarint(rr)
 	if err != nil {
-		return nil, errors.Wrapf(err, "MsgDeSoHeader.FromBytes: Problem decoding TstampSecs")
+		return nil, errors.Wrapf(err, "MsgDeSoHeader.FromBytes: Problem decoding TstampNanoSecs")
 	}
 
 	// Height

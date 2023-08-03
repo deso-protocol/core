@@ -5,7 +5,6 @@ import (
 	"container/list"
 	"encoding/hex"
 	"fmt"
-	"github.com/holiman/uint256"
 	"math"
 	"math/big"
 	"reflect"
@@ -13,6 +12,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/holiman/uint256"
 
 	btcdchain "github.com/btcsuite/btcd/blockchain"
 	chainlib "github.com/btcsuite/btcd/blockchain"
@@ -278,7 +279,7 @@ func (nn *BlockNode) String() string {
 	}
 	tstamp := uint32(0)
 	if nn.Header != nil {
-		tstamp = uint32(nn.Header.TstampSecs)
+		tstamp = uint32(nn.Header.GetTstampSecs())
 	}
 	return fmt.Sprintf("< TstampSecs: %d, Height: %d, Hash: %s, ParentHash %s, Status: %s, CumWork: %v>",
 		tstamp, nn.Header.Height, nn.Hash, parentHash, nn.Status, nn.CumWork)
@@ -373,7 +374,7 @@ func CalcNextDifficultyTarget(
 			firstNodeHeight, lastNode.Height)
 	}
 
-	actualTimeDiffSecs := int64(lastNode.Header.TstampSecs - firstNode.Header.TstampSecs)
+	actualTimeDiffSecs := int64(lastNode.Header.GetTstampSecs() - firstNode.Header.GetTstampSecs())
 	clippedTimeDiffSecs := actualTimeDiffSecs
 	if actualTimeDiffSecs < minRetargetTimeSecs {
 		clippedTimeDiffSecs = minRetargetTimeSecs
@@ -1063,7 +1064,7 @@ func (bc *Blockchain) isTipCurrent(tip *BlockNode) bool {
 
 	// Not current if the tip has a timestamp older than the maximum
 	// tip age.
-	tipTime := time.Unix(int64(tip.Header.TstampSecs), 0)
+	tipTime := time.Unix(int64(tip.Header.GetTstampSecs()), 0)
 	oldestAllowedTipTime := bc.timeSource.AdjustedTime().Add(-1 * bc.params.MaxTipAge)
 
 	return !tipTime.Before(oldestAllowedTipTime)
@@ -1618,11 +1619,11 @@ func (bc *Blockchain) processHeader(blockHeader *MsgDeSoHeader, headerHash *Bloc
 	// seen before.
 
 	// Reject the header if it is more than N seconds in the future.
-	tstampDiff := int64(blockHeader.TstampSecs) - bc.timeSource.AdjustedTime().Unix()
+	tstampDiff := int64(blockHeader.GetTstampSecs()) - bc.timeSource.AdjustedTime().Unix()
 	if tstampDiff > int64(bc.params.MaxTstampOffsetSeconds) {
 		glog.V(1).Infof("HeaderErrorBlockTooFarInTheFuture: tstampDiff %d > "+
 			"MaxTstampOffsetSeconds %d. blockHeader.TstampSecs=%d; adjustedTime=%d",
-			tstampDiff, bc.params.MaxTstampOffsetSeconds, blockHeader.TstampSecs,
+			tstampDiff, bc.params.MaxTstampOffsetSeconds, blockHeader.GetTstampSecs(),
 			bc.timeSource.AdjustedTime().Unix())
 		return false, false, HeaderErrorBlockTooFarInTheFuture
 	}
@@ -1684,11 +1685,11 @@ func (bc *Blockchain) processHeader(blockHeader *MsgDeSoHeader, headerHash *Bloc
 	// TODO: Consider a per-block difficulty adjustment scheme like Ethereum has.
 	// This commentary is useful to consider with regard to that:
 	//   https://github.com/zawy12/difficulty-algorithms/issues/45
-	if blockHeader.TstampSecs <= parentHeader.TstampSecs {
+	if blockHeader.GetTstampSecs() <= parentHeader.GetTstampSecs() {
 		glog.Warningf("processHeader: Rejecting header because timestamp %v is "+
 			"before timestamp of previous block %v",
-			time.Unix(int64(blockHeader.TstampSecs), 0),
-			time.Unix(int64(parentHeader.TstampSecs), 0))
+			time.Unix(int64(blockHeader.GetTstampSecs()), 0),
+			time.Unix(int64(parentHeader.GetTstampSecs()), 0))
 		return false, false, HeaderErrorTimestampTooEarly
 	}
 
