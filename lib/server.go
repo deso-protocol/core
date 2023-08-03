@@ -60,6 +60,10 @@ type Server struct {
 	eventManager  *EventManager
 	TxIndex       *TXIndex
 
+	// PoS Components
+	blockProposer *BlockProposer
+	paceMaker     *PaceMaker
+
 	// All messages received from peers get sent from the ConnectionManager to the
 	// Server through this channel.
 	//
@@ -2157,41 +2161,72 @@ func (srv *Server) _handlePeerMessages(serverMessage *ServerMessage) {
 	}
 }
 
-// Note that messageHandler is single-threaded and so all of the handle* functions
-// it calls can assume they can access the Server's variables without concurrency
-// issues.
-func (srv *Server) messageHandler() {
+// _startConsensusEventLoop contains the top-level event loop to run both the PoW and PoS consensus. It is
+// single-threaded to ensure that concurrent event do not conflict with each other. It's role is to guarantee
+// single threaded processing and act as an entry point for consensus events. It does minimal validation on its
+// own.
+//
+// For the PoW consensus:
+// - It solely handles messages from the network and handles them as they come in
+//
+// For the PoS consensus:
+// - It listens all peer messages from the network and handles them as they come in. For simplicity, this includes
+// control messages from peer, proposed blocks from peers, votes/timeouts, block requests, mempool requests from
+// syncing peers
+// - It listens to the block proposal trigger from the block proposer module, and kicks off block construction and
+// broadcasting
+// - It listens to consensus timeouts from the Pacemaker module, and kicks off the consensus timeout logic
+func (srv *Server) _startConsensusEventLoop() {
 	for {
 		// This is used instead of the shouldQuit control message exist mechanism below. shouldQuit will be true only
 		// when all incoming messages have been processed, on the other hand this shutdown will quit immediately.
 		if atomic.LoadInt32(&srv.shutdown) >= 1 {
 			break
 		}
-		serverMessage := <-srv.incomingMessages
-		glog.V(2).Infof("Server.messageHandler: Handling message of type %v from Peer %v",
-			serverMessage.Msg.GetMsgType(), serverMessage.Peer)
 
-		// If the message is an addr message we handle it independent of whether or
-		// not the BitcoinManager is synced.
-		if serverMessage.Msg.GetMsgType() == MsgTypeAddr {
-			srv._handleAddrMessage(serverMessage.Peer, serverMessage.Msg.(*MsgDeSoAddr))
-			continue
-		}
-		// If the message is a GetAddr message we handle it independent of whether or
-		// not the BitcoinManager is synced.
-		if serverMessage.Msg.GetMsgType() == MsgTypeGetAddr {
-			srv._handleGetAddrMessage(serverMessage.Peer, serverMessage.Msg.(*MsgDeSoGetAddr))
-			continue
-		}
+		select {
+		case serverMessage2 := <-srv.incomingMessages:
+			{
+				// We are able to propose the next block
 
-		srv._handlePeerMessages(serverMessage)
+			}
 
-		// Always check for and handle control messages regardless of whether the
-		// BitcoinManager is synced. Note that we filter control messages out in a
-		// Peer's inHandler so any control message we get at this point should be bona fide.
-		shouldQuit := srv._handleControlMessages(serverMessage)
-		if shouldQuit {
-			break
+		case serverMessage2 := <-srv.incomingMessages:
+			{
+				// The current consensus view has timed out
+
+			}
+
+		case serverMessage := <-srv.incomingMessages:
+			{
+				// There is an incoming network message from a peer
+
+				glog.V(2).Infof("Server.messageHandler: Handling message of type %v from Peer %v",
+					serverMessage.Msg.GetMsgType(), serverMessage.Peer)
+
+				// If the message is an addr message we handle it independent of whether or
+				// not the BitcoinManager is synced.
+				if serverMessage.Msg.GetMsgType() == MsgTypeAddr {
+					srv._handleAddrMessage(serverMessage.Peer, serverMessage.Msg.(*MsgDeSoAddr))
+					continue
+				}
+				// If the message is a GetAddr message we handle it independent of whether or
+				// not the BitcoinManager is synced.
+				if serverMessage.Msg.GetMsgType() == MsgTypeGetAddr {
+					srv._handleGetAddrMessage(serverMessage.Peer, serverMessage.Msg.(*MsgDeSoGetAddr))
+					continue
+				}
+
+				srv._handlePeerMessages(serverMessage)
+
+				// Always check for and handle control messages regardless of whether the
+				// BitcoinManager is synced. Note that we filter control messages out in a
+				// Peer's inHandler so any control message we get at this point should be bona fide.
+				shouldQuit := srv._handleControlMessages(serverMessage)
+				if shouldQuit {
+					break
+				}
+			}
 		}
 	}
 
@@ -2372,7 +2407,7 @@ func (srv *Server) Start() {
 	// finds some Peers.
 	glog.Info("Server.Start: Starting Server")
 	srv.waitGroup.Add(1)
-	go srv.messageHandler()
+	go srv._startConsensusEventLoop()
 
 	go srv._startAddressRelayer()
 
