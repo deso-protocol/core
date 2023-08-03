@@ -3,12 +3,13 @@ package lib
 import (
 	"encoding/hex"
 	"fmt"
-	"github.com/btcsuite/btcd/wire"
-	"github.com/tyler-smith/go-bip39"
 	"math"
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/btcsuite/btcd/wire"
+	"github.com/tyler-smith/go-bip39"
 
 	"github.com/deso-protocol/go-deadlock"
 
@@ -114,10 +115,10 @@ func (desoBlockProducer *DeSoBlockProducer) _updateBlockTimestamp(blk *MsgDeSoBl
 	// block's timestamp instead. We do this because consensus rules require a
 	// monotonically increasing timestamp.
 	blockTstamp := uint32(desoBlockProducer.chain.timeSource.AdjustedTime().Unix())
-	if blockTstamp <= uint32(lastNode.Header.TstampSecs) {
-		blockTstamp = uint32(lastNode.Header.TstampSecs) + 1
+	if blockTstamp <= uint32(lastNode.Header.GetTstampSecs()) {
+		blockTstamp = uint32(lastNode.Header.GetTstampSecs()) + 1
 	}
-	blk.Header.TstampSecs = uint64(blockTstamp)
+	blk.Header.SetTstampSecs(uint64(blockTstamp))
 }
 
 func (desoBlockProducer *DeSoBlockProducer) _getBlockTemplate(publicKey []byte) (
@@ -425,8 +426,8 @@ func (desoBlockProducer *DeSoBlockProducer) AddBlockTemplate(block *MsgDeSoBlock
 		minTstamp := uint32(math.MaxUint32)
 		var oldestBlockHash *BlockHash
 		for _, cachedBlock := range desoBlockProducer.recentBlockTemplatesProduced {
-			if uint32(cachedBlock.Header.TstampSecs) < minTstamp {
-				minTstamp = uint32(cachedBlock.Header.TstampSecs)
+			if uint32(cachedBlock.Header.GetTstampSecs()) < minTstamp {
+				minTstamp = uint32(cachedBlock.Header.GetTstampSecs())
 				oldestBlockHash, _ = cachedBlock.Header.Hash()
 			}
 		}

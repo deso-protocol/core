@@ -100,10 +100,10 @@ var expectedBlockHeaderVersion1 = &MsgDeSoHeader{
 		0x64, 0x65,
 	},
 	// Use full uint64 values to make sure serialization and de-serialization work
-	TstampSecs: uint64(1678943210),
-	Height:     uint64(1321012345),
-	Nonce:      uint64(12345678901234),
-	ExtraNonce: uint64(101234123456789),
+	TstampNanoSecs: SecondsToNanoSeconds(1678943210),
+	Height:         uint64(1321012345),
+	Nonce:          uint64(12345678901234),
+	ExtraNonce:     uint64(101234123456789),
 }
 
 // Creates fully formatted a PoS block header with random signatures
@@ -129,8 +129,7 @@ func createTestBlockHeaderVersion2(t *testing.T) *MsgDeSoHeader {
 		Version:               2,
 		PrevBlockHash:         &testBlockHash,
 		TransactionMerkleRoot: &testMerkleRoot,
-		TstampSecs:            uint64(1678943210),
-		TstampNanoSecs:        uint64(1678943210) * NanoSecondsPerSecond,
+		TstampNanoSecs:        SecondsToNanoSeconds(1678943210),
 		Height:                uint64(1321012345),
 		// Nonce and ExtraNonce are unused and set to 0 starting in version 2.
 		Nonce:                   uint64(0),
@@ -214,7 +213,7 @@ func TestHeaderConversionAndReadWriteMessage(t *testing.T) {
 		assert.NoError(err)
 		assert.Equal(hdrPayload, data)
 
-		assert.Equalf(14, reflect.TypeOf(expectedBlockHeader).Elem().NumField(),
+		assert.Equalf(13, reflect.TypeOf(expectedBlockHeader).Elem().NumField(),
 			"Number of fields in HEADER message is different from expected. "+
 				"Did you add a new field? If so, make sure the serialization code "+
 				"works, add the new field to the test case, and fix this error.")
@@ -539,9 +538,9 @@ var expectedV0Header = &MsgDeSoHeader{
 		0x54, 0x55, 0x56, 0x57, 0x58, 0x59, 0x60, 0x61, 0x62, 0x63,
 		0x64, 0x65,
 	},
-	TstampSecs: uint64(0x70717273),
-	Height:     uint64(99999),
-	Nonce:      uint64(123456),
+	TstampNanoSecs: SecondsToNanoSeconds(0x70717273),
+	Height:         uint64(99999),
+	Nonce:          uint64(123456),
 }
 
 func TestBlockSerialize(t *testing.T) {
