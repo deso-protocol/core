@@ -79,7 +79,6 @@ func (mp *MempoolPersister) run() {
 				mp.Unlock()
 
 			case MempoolEventExit:
-				mp.status = MempoolPersisterStatusNotRunning
 				mp.stopGroup.Done()
 				return
 			}
@@ -104,6 +103,7 @@ func (mp *MempoolPersister) Stop() error {
 		return errors.Wrapf(err, "MempoolPersister: Error persisting batch")
 	}
 	mp.reset()
+	mp.status = MempoolPersisterStatusNotRunning
 	return nil
 }
 
