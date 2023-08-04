@@ -1,19 +1,28 @@
 package lib
 
 import (
+	"github.com/deso-protocol/core/storage"
 	"github.com/golang/glog"
 	"github.com/pkg/errors"
 	"path/filepath"
 	"sync"
 )
 
+type PosMempoolStatus int
+
+const (
+	PosMempoolStatusRunning PosMempoolStatus = iota
+	PosMempoolStatusNotRunning
+)
+
 type PosMempool struct {
 	sync.RWMutex
 
+	status       PosMempoolStatus
 	params       *DeSoParams
 	globalParams *GlobalParamsEntry
 	dir          string
-	dbCtx        *DatabaseContext
+	dbCtx        *storage.DatabaseContext
 
 	txnRegister *TransactionRegister
 	ledger      *BalanceLedger
@@ -26,32 +35,43 @@ type PosMempool struct {
 	latestBlockNode *BlockNode
 }
 
-func NewDeSoMempoolPos(params *DeSoParams, globalParams *GlobalParamsEntry, dir string, eventManager *EventManager) *PosMempool {
+func NewDeSoMempoolPos(params *DeSoParams, globalParams *GlobalParamsEntry, latestBlockView *UtxoView,
+	latestBlockNode *BlockNode, dir string, eventManager *EventManager) *PosMempool {
 	return &PosMempool{
-		params:       params,
-		globalParams: globalParams,
-		dir:          dir,
-		eventManager: eventManager,
-		emitEvents:   false,
+		status:          PosMempoolStatusNotRunning,
+		params:          params,
+		globalParams:    globalParams,
+		dir:             dir,
+		eventManager:    eventManager,
+		emitEvents:      false,
+		latestBlockView: latestBlockView,
+		latestBlockNode: latestBlockNode,
 	}
 }
 
 func (dmp *PosMempool) Start() error {
+	if dmp.status == PosMempoolStatusRunning {
+		return nil
+	}
+
 	mempoolDirectory := filepath.Join(dmp.dir, "mempool")
-	db := NewBadgerDatabase(mempoolDirectory)
+	opts := storage.DefaultBadgerOptions(mempoolDirectory)
+	db := storage.NewBadgerDatabase(opts, true)
 	if err := db.Setup(); err != nil {
 		return errors.Wrapf(err, "PosMempool.Start: Problem setting up database")
 	}
 	ctx := db.GetContext([]byte{})
-	dbCtx := NewDatabaseContext(db, ctx)
+	dbCtx := storage.NewDatabaseContext(db, ctx)
 	dmp.dbCtx = dbCtx
 
 	// Create the transaction register and ledger
 	dmp.txnRegister = NewTransactionRegister(dmp.globalParams)
-	dmp.ledger = NewPosMempoolLedger()
+	dmp.ledger = NewBalanceLedger()
 
 	// Load transactions from the persister
-	dmp.persister = NewMempoolPersister(dmp.dbCtx)
+	dmp.persister = NewMempoolPersister(dmp.dbCtx, 30000)
+	dmp.eventManager.OnMempoolEvent(dmp.persister.OnMempoolEvent)
+	dmp.persister.Start()
 	txns, err := dmp.persister.RetrieveTransactions()
 	if err != nil {
 		return errors.Wrapf(err, "PosMempool.Start: Problem retrieving transactions from persister")
@@ -63,14 +83,17 @@ func (dmp *PosMempool) Start() error {
 				txn.Hash, err)
 		}
 	}
-
 	dmp.emitEvents = true
-	dmp.persister.Start()
+	dmp.status = PosMempoolStatusRunning
 
 	return nil
 }
 
 func (dmp *PosMempool) Stop() {
+	if dmp.status == PosMempoolStatusNotRunning {
+		return
+	}
+
 	if err := dmp.persister.Stop(); err != nil {
 		glog.Errorf("PosMempool.Stop: Problem stopping persister: %v", err)
 	}
@@ -79,16 +102,21 @@ func (dmp *PosMempool) Stop() {
 	}
 	dmp.txnRegister.Reset()
 	dmp.ledger.Reset()
+
+	dmp.status = PosMempoolStatusNotRunning
 }
 
 // ProcessMsgDeSoTxn validates a MsgDeSoTxn transaction and adds it to the mempool if it is valid.
 // If the mempool overflows as a result of adding the transaction, the mempool is pruned.
 func (dmp *PosMempool) ProcessMsgDeSoTxn(txn *MsgDeSoTxn) error {
+	if dmp.status == PosMempoolStatusNotRunning {
+		return errors.Wrapf(MempoolErrorNotRunning, "PosMempool.ProcessMsgDeSoTxn: ")
+	}
+
 	latestBlockHeight := dmp.latestBlockNode.Height
 
 	// First, validate that the transaction is properly formatted according to BalanceModel.
-	txnValidator := NewMsgDeSoTxnValidator(txn, dmp.params, dmp.globalParams)
-	if err := txnValidator.ValidateTransactionSanityBalanceModel(uint64(latestBlockHeight)); err != nil {
+	if err := ValidateDeSoTxnSanityBalanceModel(txn, uint64(latestBlockHeight), dmp.params, dmp.globalParams); err != nil {
 		return errors.Wrapf(err, "PosMempool.AddTransaction: Problem validating transaction sanity")
 	}
 
@@ -112,9 +140,13 @@ func (dmp *PosMempool) ProcessMsgDeSoTxn(txn *MsgDeSoTxn) error {
 
 func (dmp *PosMempool) AddTransaction(txn *MempoolTx) error {
 	dmp.Lock()
-	defer GlogIfError(dmp.prune(), "PosMempool.AddTransaction: Problem pruning mempool")
+	defer dmp.prune()
 	defer dmp.Unlock()
 
+	return dmp.addTransactionNoLock(txn)
+}
+
+func (dmp *PosMempool) addTransactionNoLock(txn *MempoolTx) error {
 	userPk := NewPublicKey(txn.Tx.PublicKey)
 	txnFee := txn.Tx.TxnFeeNanos
 	latestBlockHeight := dmp.latestBlockNode.Height
@@ -124,7 +156,7 @@ func (dmp *PosMempool) AddTransaction(txn *MempoolTx) error {
 	if err != nil {
 		return errors.Wrapf(err, "CheckBalanceIncrease: Problem getting spendable balance")
 	}
-	if err := dmp.ledger.CheckBalanceIncrease(*userPk, txnFee, spendableBalanceNanos); err != nil {
+	if err := dmp.ledger.CanIncreaseBalance(*userPk, txnFee, spendableBalanceNanos); err != nil {
 		return errors.Wrapf(err, "PosMempool.AddTransaction: Problem checking balance increase for transaction with"+
 			"hash %v, fee %v", txn.Tx.Hash(), txnFee)
 	}
@@ -151,9 +183,13 @@ func (dmp *PosMempool) RemoveTransaction(txn *MempoolTx) error {
 	dmp.Lock()
 	defer dmp.Unlock()
 
+	return dmp.removeTransactionNoLock(txn)
+}
+
+func (dmp *PosMempool) removeTransactionNoLock(txn *MempoolTx) error {
 	// First, sanity check our reserved balance.
 	userPk := NewPublicKey(txn.Tx.PublicKey)
-	if err := dmp.ledger.CheckBalanceDecrease(*userPk, txn.Fee); err != nil {
+	if err := dmp.ledger.CanDecreaseBalance(*userPk, txn.Fee); err != nil {
 		return errors.Wrapf(err, "PosMempool.RemoveTransaction: Problem checking balance decrease")
 	}
 
@@ -201,8 +237,11 @@ func (dmp *PosMempool) prune() error {
 	if err != nil {
 		return errors.Wrapf(err, "PosMempool.prune: Problem pruning mempool")
 	}
-	// TODO: Log pruned txns
-	_ = prunedTxns
+	for _, prunedTxn := range prunedTxns {
+		if err := dmp.removeTransactionNoLock(prunedTxn); err != nil {
+			glog.Errorf("PosMempool.prune: Problem removing transaction from mempool: %v", err)
+		}
+	}
 	return nil
 }
 
