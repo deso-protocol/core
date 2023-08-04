@@ -3968,8 +3968,8 @@ func (bav *UtxoView) GetSpendableDeSoBalanceNanosForPublicKey(pkBytes []byte,
 			blockNode := GetHeightHashToNodeInfo(bav.Handle, bav.Snapshot, tipHeight, nextBlockHash, false)
 			if blockNode == nil {
 				return 0, fmt.Errorf(
-					"GetSpendableDeSoBalanceNanosForPublicKey: Problem getting block for blockhash %s at height %d",
-					nextBlockHash.String(), tipHeight)
+					"GetSpendableDeSoBalanceNanosForPublicKey: Problem getting block for blockhash %s",
+					nextBlockHash.String())
 			}
 			blockRewardForPK, err := DbGetBlockRewardForPublicKeyBlockHash(bav.Handle, bav.Snapshot, pkBytes, nextBlockHash)
 			if err != nil {

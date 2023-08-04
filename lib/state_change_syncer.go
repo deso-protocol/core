@@ -617,6 +617,11 @@ func (stateChangeSyncer *StateChangeSyncer) SyncMempoolToStateSyncer(server *Ser
 		BlockSyncFlushId: originalCommittedFlushId,
 	})
 
+	mempoolTxUtxoView, err := NewUtxoView(server.blockchain.db, server.blockchain.params, server.blockchain.postgres, nil, &mempoolEventManager)
+	if err != nil {
+		return false, errors.Wrapf(err, "StateChangeSyncer.SyncMempoolToStateSyncer: CreateMempoolTxUtxoView: ")
+	}
+
 	// Loop through all the transactions in the mempool and connect them and their utxo ops to the mempool view.
 	mempoolTxns, _, err := server.mempool._getTransactionsOrderedByTimeAdded()
 	if err != nil {
@@ -628,7 +633,7 @@ func (stateChangeSyncer *StateChangeSyncer) SyncMempoolToStateSyncer(server *Ser
 		return false, errors.Wrapf(err, "StateChangeSyncer.SyncMempoolToStateSyncer: ")
 	}
 	for _, mempoolTx := range mempoolTxns {
-		utxoOpsForTxn, _, _, _, err := mempoolUtxoView.ConnectTransaction(
+		utxoOpsForTxn, _, _, _, err := mempoolTxUtxoView.ConnectTransaction(
 			mempoolTx.Tx, mempoolTx.Hash, 0, uint32(blockHeight+1), false, false /*ignoreUtxos*/)
 		if err != nil {
 			return false, errors.Wrapf(err, "StateChangeSyncer.SyncMempoolToStateSyncer ConnectTransaction: ")
