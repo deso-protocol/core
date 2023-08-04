@@ -565,6 +565,7 @@ func (stateChangeSyncer *StateChangeSyncer) FlushTransactionsToFile(event *State
 // in the mempool state change file. It also loops through all unconnected transactions and their associated
 // utxo ops and adds them to the mempool state change file.
 func (stateChangeSyncer *StateChangeSyncer) SyncMempoolToStateSyncer(server *Server) (bool, error) {
+
 	originalCommittedFlushId := stateChangeSyncer.BlockSyncFlushId
 
 	if server.mempool.stopped {
@@ -579,9 +580,18 @@ func (stateChangeSyncer *StateChangeSyncer) SyncMempoolToStateSyncer(server *Ser
 	if err != nil {
 		return false, errors.Wrapf(err, "StateChangeSyncer.SyncMempoolToStateSyncer: ")
 	}
+
+	// Create a copy of the event manager
+	mempoolEventManager := *mempoolUtxoView.EventManager
+
+	mempoolEventManager.OnStateSyncerOperation(stateChangeSyncer._handleStateSyncerOperation)
+	mempoolEventManager.OnStateSyncerFlushed(stateChangeSyncer._handleStateSyncerFlush)
+	mempoolEventManager.isMempoolManager = true
+
 	// Kill the snapshot so that it doesn't affect the original snapshot.
 	mempoolUtxoView.Snapshot = nil
-	mempoolUtxoView.IsMempoolView = true
+
+	mempoolUtxoView.TipHash = server.blockchain.bestChain[len(server.blockchain.bestChain)-1].Hash
 
 	// A new transaction is created so that we can simulate writes to the db without actually writing to the db.
 	// Using the transaction here rather than a stubbed badger db allows the process to query the db for any entries
@@ -607,10 +617,19 @@ func (stateChangeSyncer *StateChangeSyncer) SyncMempoolToStateSyncer(server *Ser
 		BlockSyncFlushId: originalCommittedFlushId,
 	})
 
-	// Loop through all the unconnected transactions in the mempool and connect them and their utxo ops to the mempool view.
-	for txHash, unconnectedTxn := range server.mempool.unconnectedTxns {
+	// Loop through all the transactions in the mempool and connect them and their utxo ops to the mempool view.
+	mempoolTxns, _, err := server.mempool._getTransactionsOrderedByTimeAdded()
+	if err != nil {
+		mempoolUtxoView.EventManager.stateSyncerFlushed(&StateSyncerFlushedEvent{
+			FlushId:        uuid.Nil,
+			Succeeded:      false,
+			IsMempoolFlush: true,
+		})
+		return false, errors.Wrapf(err, "StateChangeSyncer.SyncMempoolToStateSyncer: ")
+	}
+	for _, mempoolTx := range mempoolTxns {
 		utxoOpsForTxn, _, _, _, err := mempoolUtxoView.ConnectTransaction(
-			unconnectedTxn.tx, &txHash, 0, uint32(blockHeight), false, false /*ignoreUtxos*/)
+			mempoolTx.Tx, mempoolTx.Hash, 0, uint32(blockHeight+1), false, false /*ignoreUtxos*/)
 		if err != nil {
 			return false, errors.Wrapf(err, "StateChangeSyncer.SyncMempoolToStateSyncer ConnectTransaction: ")
 		}
@@ -619,8 +638,8 @@ func (stateChangeSyncer *StateChangeSyncer) SyncMempoolToStateSyncer(server *Ser
 		mempoolUtxoView.EventManager.stateSyncerOperation(&StateSyncerOperationEvent{
 			StateChangeEntry: &StateChangeEntry{
 				OperationType: DbOperationTypeUpsert,
-				KeyBytes:      TxnHashToTxnKey(&txHash),
-				EncoderBytes:  EncodeToBytes(blockHeight, unconnectedTxn.tx, false),
+				KeyBytes:      TxnHashToTxnKey(mempoolTx.Hash),
+				EncoderBytes:  EncodeToBytes(blockHeight, mempoolTx.Tx, false),
 			},
 			FlushId:      uuid.Nil,
 			IsMempoolTxn: true,
@@ -637,7 +656,7 @@ func (stateChangeSyncer *StateChangeSyncer) SyncMempoolToStateSyncer(server *Ser
 		mempoolUtxoView.EventManager.stateSyncerOperation(&StateSyncerOperationEvent{
 			StateChangeEntry: &StateChangeEntry{
 				OperationType: DbOperationTypeUpsert,
-				KeyBytes:      _DbKeyForTxnUtxoOps(&txHash),
+				KeyBytes:      _DbKeyForTxnUtxoOps(mempoolTx.Hash),
 				EncoderBytes:  EncodeToBytes(blockHeight, utxoOpBundle, false),
 			},
 			FlushId:      uuid.Nil,
@@ -652,7 +671,7 @@ func (stateChangeSyncer *StateChangeSyncer) StartMempoolSyncRoutine(server *Serv
 	go func() {
 		// Wait for mempool to be initialized.
 		for server.mempool == nil || server.blockchain.chainState() != SyncStateFullyCurrent {
-			time.Sleep(1000 * time.Millisecond)
+			time.Sleep(15000 * time.Millisecond)
 		}
 		if !stateChangeSyncer.BlocksyncCompleteEntriesFlushed && stateChangeSyncer.SyncType == NodeSyncTypeBlockSync {
 			stateChangeSyncer.FlushAllEntriesToFile(server)
@@ -677,7 +696,7 @@ func (stateChangeSyncer *StateChangeSyncer) FlushAllEntriesToFile(server *Server
 	server.blockchain.ChainLock.Lock()
 	defer server.blockchain.ChainLock.Unlock()
 
-	fmt.Printf("Flushing all block-synced entries to state chnage file.\n")
+	fmt.Printf("Flushing all block-synced entries to state change file.\n")
 	// Allow the state change syncer to flush entries to file.
 	stateChangeSyncer.BlocksyncCompleteEntriesFlushed = true
 

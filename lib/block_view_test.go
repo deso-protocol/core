@@ -753,7 +753,7 @@ func (tes *transactionTestSuite) testDisconnectBlock(tm *transactionTestMeta, te
 	// Delete the utxo operations for the blocks we're detaching since we don't need them anymore.
 	require.NoError(tm.db.Update(func(txn *badger.Txn) error {
 		require.NoError(DeleteUtxoOperationsForBlockWithTxn(txn, nil, lastBlockHash, nil, false))
-		require.NoError(DeleteBlockRewardWithTxn(txn, nil, lastBlock, nil, false, false))
+		require.NoError(DeleteBlockRewardWithTxn(txn, nil, lastBlock, nil, false))
 		return nil
 	}))
 

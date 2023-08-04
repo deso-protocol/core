@@ -454,6 +454,9 @@ func (snap *Snapshot) Run() {
 			snap.SnapshotProcessBlock(operation.blockNode)
 
 		case SnapshotOperationProcessChunk:
+			// If operationQueueSemaphore is full, we are already storing too many chunks in memory. Block the thread while
+			// we wait for the queue to clear up.
+			snap.operationQueueSemaphore <- struct{}{}
 			glog.V(1).Infof("Snapshot.Run: Number of operations in the operation channel (%v)",
 				snap.OperationChannel.GetStatus())
 			if err := snap.SetSnapshotChunk(operation.mainDb, operation.mainDbMutex, operation.snapshotChunk,

@@ -310,69 +310,59 @@ func TestPrivateMessages(t *testing.T) {
 	}
 
 	// pk1 -> pk2: message1Str, tstamp1
-	require.NoError(DBPutMessageEntry(
-		db, nil, 0, MessageKey{
-			PublicKey:   *NewPublicKey(pk1),
-			TstampNanos: tstamp1,
-		}, message1, nil, false))
+	require.NoError(DBPutMessageEntry(db, nil, 0, MessageKey{
+		PublicKey:   *NewPublicKey(pk1),
+		TstampNanos: tstamp1,
+	}, message1, nil))
 	// same message but also store for pk2
-	require.NoError(DBPutMessageEntry(
-		db, nil, 0, MessageKey{
-			PublicKey:   *NewPublicKey(pk2),
-			TstampNanos: tstamp1,
-		}, message1, nil, false))
+	require.NoError(DBPutMessageEntry(db, nil, 0, MessageKey{
+		PublicKey:   *NewPublicKey(pk2),
+		TstampNanos: tstamp1,
+	}, message1, nil))
 
 	// pk2 -> pk1: message2Str, tstamp2
-	require.NoError(DBPutMessageEntry(
-		db, nil, 0, MessageKey{
-			PublicKey:   *NewPublicKey(pk2),
-			TstampNanos: tstamp2,
-		}, message2, nil, false))
+	require.NoError(DBPutMessageEntry(db, nil, 0, MessageKey{
+		PublicKey:   *NewPublicKey(pk2),
+		TstampNanos: tstamp2,
+	}, message2, nil))
 	// same message but also store for pk1
-	require.NoError(DBPutMessageEntry(
-		db, nil, 0, MessageKey{
-			PublicKey:   *NewPublicKey(pk1),
-			TstampNanos: tstamp2,
-		}, message2, nil, false))
+	require.NoError(DBPutMessageEntry(db, nil, 0, MessageKey{
+		PublicKey:   *NewPublicKey(pk1),
+		TstampNanos: tstamp2,
+	}, message2, nil))
 
 	// pk3 -> pk1: message3Str, tstamp3
-	require.NoError(DBPutMessageEntry(
-		db, nil, 0, MessageKey{
-			PublicKey:   *NewPublicKey(pk3),
-			TstampNanos: tstamp3,
-		}, message3, nil, false))
+	require.NoError(DBPutMessageEntry(db, nil, 0, MessageKey{
+		PublicKey:   *NewPublicKey(pk3),
+		TstampNanos: tstamp3,
+	}, message3, nil))
 	// same message but also store for pk1
-	require.NoError(DBPutMessageEntry(
-		db, nil, 0, MessageKey{
-			PublicKey:   *NewPublicKey(pk1),
-			TstampNanos: tstamp3,
-		}, message3, nil, false))
+	require.NoError(DBPutMessageEntry(db, nil, 0, MessageKey{
+		PublicKey:   *NewPublicKey(pk1),
+		TstampNanos: tstamp3,
+	}, message3, nil))
 
 	// pk2 -> pk1: message4Str, tstamp4
-	require.NoError(DBPutMessageEntry(
-		db, nil, 0, MessageKey{
-			PublicKey:   *NewPublicKey(pk2),
-			TstampNanos: tstamp4,
-		}, message4, nil, false))
+	require.NoError(DBPutMessageEntry(db, nil, 0, MessageKey{
+		PublicKey:   *NewPublicKey(pk2),
+		TstampNanos: tstamp4,
+	}, message4, nil))
 	// same message but also store for pk1
-	require.NoError(DBPutMessageEntry(
-		db, nil, 0, MessageKey{
-			PublicKey:   *NewPublicKey(pk1),
-			TstampNanos: tstamp4,
-		}, message4, nil, false))
+	require.NoError(DBPutMessageEntry(db, nil, 0, MessageKey{
+		PublicKey:   *NewPublicKey(pk1),
+		TstampNanos: tstamp4,
+	}, message4, nil))
 
 	// pk1 -> pk3: message5Str, tstamp5
-	require.NoError(DBPutMessageEntry(
-		db, nil, 0, MessageKey{
-			PublicKey:   *NewPublicKey(pk1),
-			TstampNanos: tstamp5,
-		}, message5, nil, false))
+	require.NoError(DBPutMessageEntry(db, nil, 0, MessageKey{
+		PublicKey:   *NewPublicKey(pk1),
+		TstampNanos: tstamp5,
+	}, message5, nil))
 	// same message but also store for pk3
-	require.NoError(DBPutMessageEntry(
-		db, nil, 0, MessageKey{
-			PublicKey:   *NewPublicKey(pk3),
-			TstampNanos: tstamp5,
-		}, message5, nil, false))
+	require.NoError(DBPutMessageEntry(db, nil, 0, MessageKey{
+		PublicKey:   *NewPublicKey(pk3),
+		TstampNanos: tstamp5,
+	}, message5, nil))
 
 	// Fetch message3 directly using both public keys.
 	{
@@ -422,8 +412,8 @@ func TestPrivateMessages(t *testing.T) {
 	}
 
 	// Delete message3
-	require.NoError(DBDeleteMessageEntryMappings(db, nil, pk1, tstamp3, nil, false, false))
-	require.NoError(DBDeleteMessageEntryMappings(db, nil, pk3, tstamp3, nil, false, false))
+	require.NoError(DBDeleteMessageEntryMappings(db, nil, pk1, tstamp3, nil, false))
+	require.NoError(DBDeleteMessageEntryMappings(db, nil, pk3, tstamp3, nil, false))
 
 	// Now all the messages returned should exclude message3
 	{
@@ -458,17 +448,17 @@ func TestPrivateMessages(t *testing.T) {
 
 	// Delete all remaining messages
 	// message1
-	require.NoError(DBDeleteMessageEntryMappings(db, nil, pk2, tstamp1, nil, false, false))
-	require.NoError(DBDeleteMessageEntryMappings(db, nil, pk1, tstamp1, nil, false, false))
+	require.NoError(DBDeleteMessageEntryMappings(db, nil, pk2, tstamp1, nil, false))
+	require.NoError(DBDeleteMessageEntryMappings(db, nil, pk1, tstamp1, nil, false))
 	// message2
-	require.NoError(DBDeleteMessageEntryMappings(db, nil, pk1, tstamp2, nil, false, false))
-	require.NoError(DBDeleteMessageEntryMappings(db, nil, pk2, tstamp2, nil, false, false))
+	require.NoError(DBDeleteMessageEntryMappings(db, nil, pk1, tstamp2, nil, false))
+	require.NoError(DBDeleteMessageEntryMappings(db, nil, pk2, tstamp2, nil, false))
 	// message4
-	require.NoError(DBDeleteMessageEntryMappings(db, nil, pk2, tstamp4, nil, false, false))
-	require.NoError(DBDeleteMessageEntryMappings(db, nil, pk1, tstamp4, nil, false, false))
+	require.NoError(DBDeleteMessageEntryMappings(db, nil, pk2, tstamp4, nil, false))
+	require.NoError(DBDeleteMessageEntryMappings(db, nil, pk1, tstamp4, nil, false))
 	// message5
-	require.NoError(DBDeleteMessageEntryMappings(db, nil, pk1, tstamp5, nil, false, false))
-	require.NoError(DBDeleteMessageEntryMappings(db, nil, pk3, tstamp5, nil, false, false))
+	require.NoError(DBDeleteMessageEntryMappings(db, nil, pk1, tstamp5, nil, false))
+	require.NoError(DBDeleteMessageEntryMappings(db, nil, pk3, tstamp5, nil, false))
 
 	// Now all public keys should have zero messages.
 	{
@@ -517,15 +507,15 @@ func TestFollows(t *testing.T) {
 
 	// PK2 follows everyone. Make sure "get" works properly.
 	require.Nil(DbGetFollowerToFollowedMapping(db, nil, pkid2, pkid1))
-	require.NoError(DbPutFollowMappings(db, nil, pkid2, pkid1, nil, false))
+	require.NoError(DbPutFollowMappings(db, nil, pkid2, pkid1, nil))
 	require.NotNil(DbGetFollowerToFollowedMapping(db, nil, pkid2, pkid1))
 	require.Nil(DbGetFollowerToFollowedMapping(db, nil, pkid2, pkid3))
-	require.NoError(DbPutFollowMappings(db, nil, pkid2, pkid3, nil, false))
+	require.NoError(DbPutFollowMappings(db, nil, pkid2, pkid3, nil))
 	require.NotNil(DbGetFollowerToFollowedMapping(db, nil, pkid2, pkid3))
 
 	// pkid3 only follows pkid1. Make sure "get" works properly.
 	require.Nil(DbGetFollowerToFollowedMapping(db, nil, pkid3, pkid1))
-	require.NoError(DbPutFollowMappings(db, nil, pkid3, pkid1, nil, false))
+	require.NoError(DbPutFollowMappings(db, nil, pkid3, pkid1, nil))
 	require.NotNil(DbGetFollowerToFollowedMapping(db, nil, pkid3, pkid1))
 
 	// Check PK1's followers.
@@ -579,8 +569,8 @@ func TestFollows(t *testing.T) {
 	}
 
 	// Delete PK2's follows.
-	require.NoError(DbDeleteFollowMappings(db, nil, pkid2, pkid1, nil, false, false))
-	require.NoError(DbDeleteFollowMappings(db, nil, pkid2, pkid3, nil, false, false))
+	require.NoError(DbDeleteFollowMappings(db, nil, pkid2, pkid1, nil, false))
+	require.NoError(DbDeleteFollowMappings(db, nil, pkid2, pkid3, nil, false))
 
 	// Check PK2's follows were actually deleted.
 	{

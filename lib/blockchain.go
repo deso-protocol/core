@@ -2187,7 +2187,7 @@ func (bc *Blockchain) ProcessBlock(desoBlock *MsgDeSoBlock, verifySignatures boo
 				if innerErr = bc.blockView.FlushToDbWithTxn(txn, blockHeight); innerErr != nil {
 					return errors.Wrapf(innerErr, "ProcessBlock: Problem writing utxo view to db on simple add to tip")
 				}
-				if bc.eventManager != nil && !bc.blockView.IsMempoolView {
+				if bc.eventManager != nil && !bc.eventManager.isMempoolManager {
 					bc.eventManager.stateSyncerFlushed(&StateSyncerFlushedEvent{
 						FlushId:   uuid.Nil,
 						Succeeded: innerErr == nil,
@@ -2592,7 +2592,7 @@ func (bc *Blockchain) DisconnectBlocksToHeight(blockHeight uint64, snap *Snapsho
 					"at height: (%v)", hash, node.Height)
 			}
 			if blockToDetach != nil {
-				if err = DeleteBlockReward(bc.db, snap, blockToDetach, bc.eventManager, true, false); err != nil {
+				if err = DeleteBlockReward(bc.db, snap, blockToDetach, bc.eventManager, true); err != nil {
 					return errors.Wrapf(err, "DisconnectBlocksToHeight: Problem deleting block reward with hash: "+
 						"(%v) and at height: (%v)", hash, node.Height)
 				}
@@ -2658,7 +2658,7 @@ func (bc *Blockchain) DisconnectBlocksToHeight(blockHeight uint64, snap *Snapsho
 				return errors.Wrapf(err, "DisconnectBlocksToHeight: Problem deleting utxo operations for block")
 			}
 
-			if err := DeleteBlockRewardWithTxn(txn, snap, blockToDetach, bc.eventManager, true, false); err != nil {
+			if err := DeleteBlockRewardWithTxn(txn, snap, blockToDetach, bc.eventManager, true); err != nil {
 				return errors.Wrapf(err, "DisconnectBlocksToHeight: Problem deleting block reward")
 			}
 

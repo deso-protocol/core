@@ -58,6 +58,7 @@ type EventManager struct {
 	blockDisconnectedHandlers    []BlockEventFunc
 	blockAcceptedHandlers        []BlockEventFunc
 	snapshotCompletedHandlers    []SnapshotCompletedEventFunc
+	isMempoolManager             bool
 }
 
 func NewEventManager() *EventManager {

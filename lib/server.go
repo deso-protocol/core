@@ -679,9 +679,7 @@ func (srv *Server) GetSnapshot(pp *Peer) {
 			return
 		}
 	}
-	// If operationQueueSemaphore is full, we are already storing too many chunks in memory. Block the thread while
-	// we wait for the queue to clear up.
-	srv.snapshot.operationQueueSemaphore <- struct{}{}
+
 	// Now send a message to the peer to fetch the snapshot chunk.
 	pp.AddDeSoMessage(&MsgDeSoGetSnapshot{
 		SnapshotStartKey: lastReceivedKey,

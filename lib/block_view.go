@@ -122,8 +122,6 @@ type UtxoView struct {
 	Params       *DeSoParams
 	Snapshot     *Snapshot
 	EventManager *EventManager
-
-	IsMempoolView bool
 }
 
 // Assumes the db Handle is already set on the view, but otherwise the
@@ -3970,8 +3968,8 @@ func (bav *UtxoView) GetSpendableDeSoBalanceNanosForPublicKey(pkBytes []byte,
 			blockNode := GetHeightHashToNodeInfo(bav.Handle, bav.Snapshot, tipHeight, nextBlockHash, false)
 			if blockNode == nil {
 				return 0, fmt.Errorf(
-					"GetSpendableDeSoBalanceNanosForPublicKey: Problem getting block for blockhash %s",
-					nextBlockHash.String())
+					"GetSpendableDeSoBalanceNanosForPublicKey: Problem getting block for blockhash %s at height %d",
+					nextBlockHash.String(), tipHeight)
 			}
 			blockRewardForPK, err := DbGetBlockRewardForPublicKeyBlockHash(bav.Handle, bav.Snapshot, pkBytes, nextBlockHash)
 			if err != nil {
