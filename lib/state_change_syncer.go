@@ -581,12 +581,17 @@ func (stateChangeSyncer *StateChangeSyncer) SyncMempoolToStateSyncer(server *Ser
 		return false, errors.Wrapf(err, "StateChangeSyncer.SyncMempoolToStateSyncer: ")
 	}
 
-	// Create a copy of the event manager
+	// Create a copy of the event manager, assign it to this utxo view.
 	mempoolEventManager := *mempoolUtxoView.EventManager
 
+	// Reset event manager handlers
+	mempoolEventManager.stateSyncerOperationHandlers = nil
+	mempoolEventManager.stateSyncerFlushedHandlers = nil
 	mempoolEventManager.OnStateSyncerOperation(stateChangeSyncer._handleStateSyncerOperation)
 	mempoolEventManager.OnStateSyncerFlushed(stateChangeSyncer._handleStateSyncerFlush)
+
 	mempoolEventManager.isMempoolManager = true
+	mempoolUtxoView.EventManager = &mempoolEventManager
 
 	// Kill the snapshot so that it doesn't affect the original snapshot.
 	mempoolUtxoView.Snapshot = nil
@@ -610,12 +615,6 @@ func (stateChangeSyncer *StateChangeSyncer) SyncMempoolToStateSyncer(server *Ser
 		})
 		return false, errors.Wrapf(err, "StateChangeSyncer.SyncMempoolToStateSyncer: ")
 	}
-	mempoolUtxoView.EventManager.stateSyncerFlushed(&StateSyncerFlushedEvent{
-		FlushId:          uuid.Nil,
-		Succeeded:        true,
-		IsMempoolFlush:   true,
-		BlockSyncFlushId: originalCommittedFlushId,
-	})
 
 	mempoolTxUtxoView, err := NewUtxoView(server.blockchain.db, server.blockchain.params, server.blockchain.postgres, nil, &mempoolEventManager)
 	if err != nil {
@@ -668,6 +667,13 @@ func (stateChangeSyncer *StateChangeSyncer) SyncMempoolToStateSyncer(server *Ser
 			IsMempoolTxn: true,
 		})
 	}
+
+	mempoolUtxoView.EventManager.stateSyncerFlushed(&StateSyncerFlushedEvent{
+		FlushId:          uuid.Nil,
+		Succeeded:        true,
+		IsMempoolFlush:   true,
+		BlockSyncFlushId: originalCommittedFlushId,
+	})
 
 	return false, nil
 }
