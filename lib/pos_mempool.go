@@ -250,11 +250,11 @@ func (dmp *PosMempool) removeTransactionNoLock(txn *MempoolTx) error {
 // GetIterator returns an iterator for the mempool transactions. The iterator can be used to peek transactions in the
 // mempool ordered by the Fee-Time algorithm. Transactions can be fetched with the following pattern:
 //
-//		for it.Next() {
-//			if txn, ok := it.Value(); ok {
-//				// Do something with txn.
-//			}
+//	for it.Next() {
+//		if txn, ok := it.Value(); ok {
+//			// Do something with txn.
 //		}
+//	}
 //
 // Note that the iteration pattern is not thread-safe. Another lock should be used to ensure thread-safety.
 func (dmp *PosMempool) GetIterator() *FeeTimeIterator {
