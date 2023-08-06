@@ -20,7 +20,7 @@ func TestPosMempoolStart(t *testing.T) {
 
 	eventManager := NewEventManager()
 
-	mempool := NewDeSoMempoolPos(&params, globalParams, nil, nil, dir, eventManager)
+	mempool := NewPosMempool(&params, globalParams, nil, nil, dir, eventManager)
 	require.NoError(mempool.Start())
 	require.Equal(PosMempoolStatusRunning, mempool.status)
 	mempool.Stop()
@@ -66,7 +66,7 @@ func TestPosMempoolRestartWithTransactions(t *testing.T) {
 
 	eventManager := NewEventManager()
 
-	mempool := NewDeSoMempoolPos(params, globalParams, latestBlockView, latestBlockNode, dir, eventManager)
+	mempool := NewPosMempool(params, globalParams, latestBlockView, latestBlockNode, dir, eventManager)
 	require.NoError(mempool.Start())
 	require.Equal(PosMempoolStatusRunning, mempool.status)
 
@@ -97,7 +97,7 @@ func TestPosMempoolRestartWithTransactions(t *testing.T) {
 	require.Equal(2, len(poolTxns))
 	mempool.Stop()
 
-	newPool := NewDeSoMempoolPos(params, globalParams, latestBlockView, latestBlockNode, dir, eventManager)
+	newPool := NewPosMempool(params, globalParams, latestBlockView, latestBlockNode, dir, eventManager)
 	require.NoError(newPool.Start())
 	require.Equal(PosMempoolStatusRunning, newPool.status)
 	newPoolTxns := newPool.GetTransactions()
