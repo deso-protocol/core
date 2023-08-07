@@ -6,7 +6,6 @@ import (
 	"github.com/golang/glog"
 	"github.com/stretchr/testify/require"
 	"math"
-	"os"
 	"testing"
 )
 
@@ -59,284 +58,11 @@ func RandomBytes(numBytes int32) []byte {
 	return randomBytes
 }
 
-// TestBadger_Default_Experiment_10MB_Batch is a BadgerDB test in which we write 10MB of data to the database.
-// In the test, we:
-//  1. Write 100 equal size KV items to the database.
-//  2. Remove 20 items from the database.
-//  3. Retrieve 20 items from the database.
-//  4. Iterate over 20 items in the database.
-//  5. Iterate over all items in the database.
-func TestBadger_Default_Experiment_10MB_Batch(t *testing.T) {
-	require := require.New(t)
-
-	testConfig := &TestConfig{
-		BatchSizeBytes:      10000000,
-		BatchSizeItems:      100,
-		BatchItemsRemoved:   20,
-		BatchItemsRetrieved: 20,
-		BatchItemsIterated:  20,
-	}
-	dir, err := os.MkdirTemp("", "badgerdb-default-10mb")
-	t.Logf("BadgerDB directory: %s\nIt should be automatically removed at the end of the test", dir)
-	require.NoError(err)
-
-	opts := DefaultBadgerOptions(dir)
-	db := NewBadgerDatabase(opts, false)
-	require.NoError(db.Setup())
-	defer db.Erase()
-	defer db.Close()
-
-	badgerCtx := db.GetContext([]byte{})
-	GenericTest(db, badgerCtx, testConfig, t)
-}
-
-// TestBadger_Performance_Experiment_10MB_Batch is a BadgerDB test in which we write 10MB of data to the database.
-// In the test, we perform identical operations as in TestBadger_Default_Experiment_10MB_Batch.
-func TestBadger_Performance_Experiment_10MB_Batch(t *testing.T) {
-	require := require.New(t)
-
-	testConfig := &TestConfig{
-		BatchSizeBytes:      10000000,
-		BatchSizeItems:      100,
-		BatchItemsRemoved:   20,
-		BatchItemsRetrieved: 20,
-		BatchItemsIterated:  20,
-	}
-	dir, err := os.MkdirTemp("", "badgerdb-performance-10mb")
-	t.Logf("BadgerDB directory: %s\nIt should be automatically removed at the end of the test", dir)
-	require.NoError(err)
-
-	opts := PerformanceBadgerOptions(dir)
-	db := NewBadgerDatabase(opts, false)
-	require.NoError(db.Setup())
-	defer db.Erase()
-	defer db.Close()
-
-	badgerCtx := db.GetContext([]byte{})
-	GenericTest(db, badgerCtx, testConfig, t)
-}
-
-// TestBadger_Performance_Experiment_25MB_Batch is a BadgerDB test in which we write 25MB of data to the database.
-// In the test, we perform identical operations as in TestBadger_Default_Experiment_10MB_Batch. This experiment uses the
-// "Performance" Badger config.
-func TestBadger_Performance_Experiment_25MB_Batch(t *testing.T) {
-	require := require.New(t)
-
-	testConfig := &TestConfig{
-		BatchSizeBytes:      25000000,
-		BatchSizeItems:      250,
-		BatchItemsRemoved:   20,
-		BatchItemsRetrieved: 20,
-		BatchItemsIterated:  20,
-	}
-	dir, err := os.MkdirTemp("", "badgerdb-performance-25mb")
-	t.Logf("BadgerDB directory: %s\nIt should be automatically removed at the end of the test", dir)
-	require.NoError(err)
-
-	opts := PerformanceBadgerOptions(dir)
-	db := NewBadgerDatabase(opts, false)
-	require.NoError(db.Setup())
-	defer db.Erase()
-	defer db.Close()
-
-	badgerCtx := db.GetContext([]byte{})
-	GenericTest(db, badgerCtx, testConfig, t)
-}
-
-// TestBadger_Performance_Experiment_100MB_Batch is a BadgerDB test in which we write 100MB of data to the database.
-// In the test, we perform identical operations as in TestBadger_Default_Experiment_10MB_Batch. This experiment uses the
-// "Performance" Badger config.
-func TestBadger_Performance_Experiment_100MB_Batch(t *testing.T) {
-	require := require.New(t)
-
-	testConfig := &TestConfig{
-		BatchSizeBytes:      100000000,
-		BatchSizeItems:      1000,
-		BatchItemsRemoved:   20,
-		BatchItemsRetrieved: 20,
-		BatchItemsIterated:  20,
-	}
-	dir, err := os.MkdirTemp("", "badgerdb-performance-100mb")
-	t.Logf("BadgerDB directory: %s\nIt should be automatically removed at the end of the test", dir)
-	require.NoError(err)
-
-	opts := PerformanceBadgerOptions(dir)
-	db := NewBadgerDatabase(opts, false)
-	require.NoError(db.Setup())
-	defer db.Erase()
-	defer db.Close()
-
-	badgerCtx := db.GetContext([]byte{})
-	GenericTest(db, badgerCtx, testConfig, t)
-}
-
-// TestBadger_Default_WriteBatch_Experiment_10MB_Batch is a BadgerDB test in which we write 10MB of data to the database.
-// In the test, we perform identical operations as in TestBadger_Default_Experiment_10MB_Batch. This experiment uses the
-// "Default" Badger config, and Badger's WriteBatch.
-func TestBadger_Default_WriteBatch_Experiment_10MB_Batch(t *testing.T) {
-	require := require.New(t)
-
-	testConfig := &TestConfig{
-		BatchSizeBytes:      10000000,
-		BatchSizeItems:      100,
-		BatchItemsRemoved:   20,
-		BatchItemsRetrieved: 20,
-		BatchItemsIterated:  20,
-	}
-	dir, err := os.MkdirTemp("", "badgerdb-default-writebatch-10mb")
-	t.Logf("BadgerDB directory: %s\nIt should be automatically removed at the end of the test", dir)
-	require.NoError(err)
-
-	opts := DefaultBadgerOptions(dir)
-	db := NewBadgerDatabase(opts, true)
-	require.NoError(db.Setup())
-	defer db.Erase()
-	defer db.Close()
-
-	badgerCtx := db.GetContext([]byte{})
-	GenericTest(db, badgerCtx, testConfig, t)
-}
-
-// TestBadger_Default_WriteBatch_Experiment_25MB_Batch is a BadgerDB test in which we write 25MB of data to the database.
-// In the test, we perform identical operations as in TestBadger_Default_Experiment_10MB_Batch. This experiment uses the
-// "Default" Badger config, and Badger's WriteBatch.
-func TestBadger_Default_WriteBatch_Experiment_25MB_Batch(t *testing.T) {
-	require := require.New(t)
-
-	testConfig := &TestConfig{
-		BatchSizeBytes:      25000000,
-		BatchSizeItems:      250,
-		BatchItemsRemoved:   20,
-		BatchItemsRetrieved: 20,
-		BatchItemsIterated:  20,
-	}
-	dir, err := os.MkdirTemp("", "badgerdb-default-writebatch-25mb")
-	t.Logf("BadgerDB directory: %s\nIt should be automatically removed at the end of the test", dir)
-	require.NoError(err)
-
-	opts := DefaultBadgerOptions(dir)
-	db := NewBadgerDatabase(opts, true)
-	require.NoError(db.Setup())
-	defer db.Erase()
-	defer db.Close()
-
-	badgerCtx := db.GetContext([]byte{})
-	GenericTest(db, badgerCtx, testConfig, t)
-}
-
-// TestBadger_Default_WriteBatch_Experiment_100MB_Batch is a BadgerDB test in which we write 100MB of data to the database.
-// In the test, we perform identical operations as in TestBadger_Default_Experiment_10MB_Batch. This experiment uses the
-// "Default" Badger config, and Badger's WriteBatch.
-func TestBadger_Default_WriteBatch_Experiment_100MB_Batch(t *testing.T) {
-	require := require.New(t)
-
-	testConfig := &TestConfig{
-		BatchSizeBytes:      100000000,
-		BatchSizeItems:      1000,
-		BatchItemsRemoved:   20,
-		BatchItemsRetrieved: 20,
-		BatchItemsIterated:  20,
-	}
-	dir, err := os.MkdirTemp("", "badgerdb-default-writebatch-100mb")
-	t.Logf("BadgerDB directory: %s\nIt should be automatically removed at the end of the test", dir)
-	require.NoError(err)
-
-	opts := DefaultBadgerOptions(dir)
-	db := NewBadgerDatabase(opts, true)
-	require.NoError(db.Setup())
-	defer db.Erase()
-	defer db.Close()
-
-	badgerCtx := db.GetContext([]byte{})
-	GenericTest(db, badgerCtx, testConfig, t)
-}
-
-// TestBadger_Performance_WriteBatch_Experiment_10MB_Batch is a BadgerDB test in which we write 10MB of data to the database.
-// In the test, we perform identical operations as in TestBadger_Default_Experiment_10MB_Batch. This experiment uses the
-// "Performance" Badger config, and Badger's WriteBatch.
-func TestBadger_Performance_WriteBatch_Experiment_10MB_Batch(t *testing.T) {
-	require := require.New(t)
-
-	testConfig := &TestConfig{
-		BatchSizeBytes:      10000000,
-		BatchSizeItems:      100,
-		BatchItemsRemoved:   20,
-		BatchItemsRetrieved: 20,
-		BatchItemsIterated:  20,
-	}
-	dir, err := os.MkdirTemp("", "badgerdb-performance-writebatch-10mb")
-	t.Logf("BadgerDB directory: %s\nIt should be automatically removed at the end of the test", dir)
-	require.NoError(err)
-
-	opts := PerformanceBadgerOptions(dir)
-	db := NewBadgerDatabase(opts, true)
-	require.NoError(db.Setup())
-	defer db.Erase()
-	defer db.Close()
-
-	badgerCtx := db.GetContext([]byte{})
-	GenericTest(db, badgerCtx, testConfig, t)
-}
-
-// TestBadger_Performance_WriteBatch_Experiment_25MB_Batch is a BadgerDB test in which we write 25MB of data to the database.
-// In the test, we perform identical operations as in TestBadger_Default_Experiment_10MB_Batch. This experiment uses the
-// "Performance" Badger config, and Badger's WriteBatch.
-func TestBadger_Performance_WriteBatch_Experiment_25MB_Batch(t *testing.T) {
-	require := require.New(t)
-
-	testConfig := &TestConfig{
-		BatchSizeBytes:      25000000,
-		BatchSizeItems:      250,
-		BatchItemsRemoved:   20,
-		BatchItemsRetrieved: 20,
-		BatchItemsIterated:  20,
-	}
-	dir, err := os.MkdirTemp("", "badgerdb-performance-writebatch-25mb")
-	t.Logf("BadgerDB directory: %s\nIt should be automatically removed at the end of the test", dir)
-	require.NoError(err)
-
-	opts := PerformanceBadgerOptions(dir)
-	db := NewBadgerDatabase(opts, true)
-	require.NoError(db.Setup())
-	defer db.Erase()
-	defer db.Close()
-
-	badgerCtx := db.GetContext([]byte{})
-	GenericTest(db, badgerCtx, testConfig, t)
-}
-
-// TestBadger_Performance_WriteBatch_Experiment_100MB_Batch is a BadgerDB test in which we write 100MB of data to the database.
-// In the test, we perform identical operations as in TestBadger_Default_Experiment_10MB_Batch. This experiment uses the
-// "Performance" Badger config, and Badger's WriteBatch.
-func TestBadger_Performance_WriteBatch_Experiment_100MB_Batch(t *testing.T) {
-	require := require.New(t)
-
-	testConfig := &TestConfig{
-		BatchSizeBytes:      100000000,
-		BatchSizeItems:      1000,
-		BatchItemsRemoved:   20,
-		BatchItemsRetrieved: 20,
-		BatchItemsIterated:  20,
-	}
-	dir, err := os.MkdirTemp("", "badgerdb-performance-writebatch-100mb")
-	t.Logf("BadgerDB directory: %s\nIt should be automatically removed at the end of the test", dir)
-	require.NoError(err)
-
-	opts := PerformanceBadgerOptions(dir)
-	db := NewBadgerDatabase(opts, true)
-	require.NoError(db.Setup())
-	defer db.Erase()
-	defer db.Close()
-
-	badgerCtx := db.GetContext([]byte{})
-	GenericTest(db, badgerCtx, testConfig, t)
-}
-
-func GenericTest(db Database, ctx Context, config *TestConfig, t *testing.T) {
+func GenericTest(db Database, config *TestConfig, t *testing.T) {
 	require := require.New(t)
 
 	// Generate data and store it in the DB
-	kvMap := WriteToDb(db, ctx, config, t)
+	kvMap := WriteToDb(db, config, t)
 
 	// Choose keys to remove and keys to retrieve
 	removedKeys := []Key{}
@@ -352,27 +78,27 @@ func GenericTest(db Database, ctx Context, config *TestConfig, t *testing.T) {
 	}
 
 	// Delete keys from DB and confirm they are deleted.
-	DeleteFromDB(db, removedKeys, ctx, t)
-	deletedValues := GetFromDb(db, removedKeys, ctx, t)
+	DeleteFromDB(db, removedKeys, t)
+	deletedValues := GetFromDb(db, removedKeys, t)
 	for _, val := range deletedValues {
 		require.Nil(val)
 	}
 
 	// Retrieve keys from DB and confirm they match the original values.
-	retrievedValues := GetFromDb(db, retrievedKeys, ctx, t)
+	retrievedValues := GetFromDb(db, retrievedKeys, t)
 	for i, val := range retrievedValues {
 		require.Equal(kvMap[retrievedKeys[i]], val)
 	}
 
 	// Iterate over a couple values from the DB and confirm they match the original values.
-	kv := IterateWithLimit(db, ctx, config, t)
+	kv := IterateWithLimit(db, config, t)
 	for _, val := range kv {
 		require.Equal(kvMap[val.Key], val.Value)
 	}
 	require.Equal(true, ValidateKeyValueOrder(kv))
 
 	// Now iterate over all values from the DB and confirm they match the original values.
-	kv = IterateWithNoLimit(db, ctx, t)
+	kv = IterateWithNoLimit(db, t)
 	for _, val := range kv {
 		require.Equal(kvMap[val.Key], val.Value)
 	}
@@ -388,7 +114,7 @@ func ValidateKeyValueOrder(kv []*KeyValue) bool {
 	return true
 }
 
-func WriteToDb(db Database, ctx Context, config *TestConfig, t *testing.T) (_kv map[Key][]byte) {
+func WriteToDb(db Database, config *TestConfig, t *testing.T) (_kv map[Key][]byte) {
 	require := require.New(t)
 	kvMap := make(map[Key][]byte)
 	valueLenght := int32(config.BatchSizeBytes / config.BatchSizeItems)
@@ -399,9 +125,9 @@ func WriteToDb(db Database, ctx Context, config *TestConfig, t *testing.T) (_kv 
 		kvMap[keyHash] = RandomBytes(valueLenght)
 	}
 
-	require.NoError(db.Update(ctx, func(tx Transaction, ctx Context) error {
+	require.NoError(db.Update(func(tx Transaction) error {
 		for key, val := range kvMap {
-			if err := tx.Set(key.Bytes(), val, ctx); err != nil {
+			if err := tx.Set(key.Bytes(), val); err != nil {
 				return err
 			}
 		}
@@ -410,11 +136,11 @@ func WriteToDb(db Database, ctx Context, config *TestConfig, t *testing.T) (_kv 
 	return kvMap
 }
 
-func DeleteFromDB(db Database, keys []Key, ctx Context, t *testing.T) {
+func DeleteFromDB(db Database, keys []Key, t *testing.T) {
 	require := require.New(t)
-	require.NoError(db.Update(ctx, func(tx Transaction, ctx Context) error {
+	require.NoError(db.Update(func(tx Transaction) error {
 		for _, key := range keys {
-			if err := tx.Delete(key.Bytes(), ctx); err != nil {
+			if err := tx.Delete(key.Bytes()); err != nil {
 				return err
 			}
 		}
@@ -422,12 +148,12 @@ func DeleteFromDB(db Database, keys []Key, ctx Context, t *testing.T) {
 	}))
 }
 
-func GetFromDb(db Database, keys []Key, ctx Context, t *testing.T) [][]byte {
+func GetFromDb(db Database, keys []Key, t *testing.T) [][]byte {
 	require := require.New(t)
 	var values [][]byte
-	require.NoError(db.Update(ctx, func(tx Transaction, ctx Context) error {
+	require.NoError(db.Update(func(tx Transaction) error {
 		for _, key := range keys {
-			val, err := tx.Get(key.Bytes(), ctx)
+			val, err := tx.Get(key.Bytes())
 			if err != nil {
 				val = nil
 			}
@@ -438,12 +164,12 @@ func GetFromDb(db Database, keys []Key, ctx Context, t *testing.T) [][]byte {
 	return values
 }
 
-func IterateWithLimit(db Database, ctx Context, config *TestConfig, t *testing.T) (_kv []*KeyValue) {
+func IterateWithLimit(db Database, config *TestConfig, t *testing.T) (_kv []*KeyValue) {
 	require := require.New(t)
 	iterationCount := 0
 	kv := []*KeyValue{}
-	require.NoError(db.Update(ctx, func(tx Transaction, ctx Context) error {
-		it, err := tx.GetIterator(ctx)
+	require.NoError(db.Update(func(tx Transaction) error {
+		it, err := tx.GetIterator([]byte{})
 		require.NoError(err)
 		defer it.Close()
 		for it.Next() {
@@ -463,9 +189,9 @@ func IterateWithLimit(db Database, ctx Context, config *TestConfig, t *testing.T
 	return kv
 }
 
-func IterateWithNoLimit(db Database, ctx Context, t *testing.T) (_kv []*KeyValue) {
+func IterateWithNoLimit(db Database, t *testing.T) (_kv []*KeyValue) {
 	testConfig := &TestConfig{
 		BatchItemsIterated: math.MaxInt32,
 	}
-	return IterateWithLimit(db, ctx, testConfig, t)
+	return IterateWithLimit(db, testConfig, t)
 }
