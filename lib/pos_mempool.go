@@ -48,8 +48,9 @@ type PosMempool struct {
 	// is equipped with UpdateGlobalParams method to handle upgrading GlobalParamsEntry.
 	globalParams *GlobalParamsEntry
 	// dir of the directory where the database should be stored.
-	dir   string
-	dbCtx *storage.DatabaseContext
+	dir string
+	// db is the database that the mempool will use to persist transactions.
+	db storage.Database
 
 	// txnRegister is the in-memory data structure keeping track of the transactions in the mempool. The TransactionRegister
 	// is responsible for ordering transactions by the Fee-Time algorithm.
@@ -100,21 +101,19 @@ func (dmp *PosMempool) Start() error {
 	if err := db.Setup(); err != nil {
 		return errors.Wrapf(err, "PosMempool.Start: Problem setting up database")
 	}
-	ctx := db.GetContext([]byte{})
-	dbCtx := storage.NewDatabaseContext(db, ctx)
-	dmp.dbCtx = dbCtx
+	dmp.db = db
 
 	// Create the transaction register and ledger
 	dmp.txnRegister = NewTransactionRegister(dmp.globalParams)
 	dmp.ledger = NewBalanceLedger()
 
 	// Create the persister
-	dmp.persister = NewMempoolPersister(dmp.dbCtx, 30000)
+	dmp.persister = NewMempoolPersister(dmp.db, 30000)
 	dmp.eventManager.OnMempoolEvent(dmp.persister.OnMempoolEvent)
 
 	// Start the persister and retrieve transactions from the database.
 	dmp.persister.Start()
-	txns, err := dmp.persister.RetrieveTransactions()
+	txns, err := dmp.persister.GetPersistedTransactions()
 	if err != nil {
 		return errors.Wrapf(err, "PosMempool.Start: Problem retrieving transactions from persister")
 	}
@@ -141,7 +140,7 @@ func (dmp *PosMempool) Stop() {
 	if err := dmp.persister.Stop(); err != nil {
 		glog.Errorf("PosMempool.Stop: Problem stopping persister: %v", err)
 	}
-	if err := dmp.dbCtx.Close(); err != nil {
+	if err := dmp.db.Close(); err != nil {
 		glog.Errorf("PosMempool.Stop: Problem closing database: %v", err)
 	}
 	// Reset the transaction register and the ledger.
