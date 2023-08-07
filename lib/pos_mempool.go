@@ -16,6 +16,26 @@ const (
 	PosMempoolStatusNotRunning
 )
 
+type Mempool interface {
+	Start() error
+	Stop()
+	IsRunning() bool
+	ProcessMsgDeSoTxn(msg *MsgDeSoTxn) error
+	AddTransaction(txn *MempoolTx) error
+	RemoveTransaction(txn *MempoolTx) error
+	GetTransaction(txHash *BlockHash) *MempoolTx
+	GetTransactions() []*MempoolTx
+	GetIterator() MempoolIterator
+	UpdateLatestBlock(blockView *UtxoView, blockNode *BlockNode)
+	UpdateGlobalParams(globalParams *GlobalParamsEntry)
+}
+
+type MempoolIterator interface {
+	Next() bool
+	Value() (*MempoolTx, bool)
+	Initialized() bool
+}
+
 // PosMempool is used by the node to keep track of uncommitted transactions. The main responsibilities of the PosMempool
 // include addition/removal of transactions, back up of transaction to database, and retrieval of transactions ordered
 // by Fee-Time algorithm. More on the Fee-Time algorithm can be found in the documentation of TransactionRegister.
@@ -101,7 +121,7 @@ func (dmp *PosMempool) Start() error {
 	// We set the emitEvents flag to false so that we don't emit events when adding transactions from the persister.
 	dmp.emitEvents = false
 	for _, txn := range txns {
-		if err := dmp.AddTransaction(txn); err != nil {
+		if err := dmp.addTransactionNoLock(txn); err != nil {
 			glog.Errorf("PosMempool.Start: Problem adding transaction with hash (%v) from persister: %v",
 				txn.Hash, err)
 		}
@@ -130,6 +150,10 @@ func (dmp *PosMempool) Stop() {
 
 	dmp.emitEvents = false
 	dmp.status = PosMempoolStatusNotRunning
+}
+
+func (dmp *PosMempool) IsRunning() bool {
+	return dmp.status == PosMempoolStatusRunning
 }
 
 // ProcessMsgDeSoTxn validates a MsgDeSoTxn transaction and adds it to the mempool if it is valid.
@@ -165,6 +189,10 @@ func (dmp *PosMempool) ProcessMsgDeSoTxn(txn *MsgDeSoTxn) error {
 
 // AddTransaction is the main function for adding a new transaction to the mempool.
 func (dmp *PosMempool) AddTransaction(txn *MempoolTx) error {
+	if dmp.status == PosMempoolStatusNotRunning {
+		return errors.Wrapf(MempoolErrorNotRunning, "PosMempool.AddTransaction: ")
+	}
+
 	dmp.Lock()
 	defer dmp.Unlock()
 
@@ -218,6 +246,10 @@ func (dmp *PosMempool) addTransactionNoLock(txn *MempoolTx) error {
 
 // RemoveTransaction is the main function for removing a transaction from the mempool.
 func (dmp *PosMempool) RemoveTransaction(txn *MempoolTx) error {
+	if dmp.status == PosMempoolStatusNotRunning {
+		return errors.Wrapf(MempoolErrorNotRunning, "PosMempool.RemoveTransaction: ")
+	}
+
 	dmp.Lock()
 	defer dmp.Unlock()
 
@@ -247,6 +279,30 @@ func (dmp *PosMempool) removeTransactionNoLock(txn *MempoolTx) error {
 	return nil
 }
 
+// GetTransaction returns the transaction with the given hash if it exists in the mempool. This function is thread-safe.
+func (dmp *PosMempool) GetTransaction(txHash *BlockHash) *MempoolTx {
+	if dmp.status == PosMempoolStatusNotRunning {
+		return nil
+	}
+
+	dmp.RLock()
+	defer dmp.RUnlock()
+
+	return dmp.txnRegister.GetTransaction(txHash)
+}
+
+// GetTransactions returns all transactions in the mempool ordered by the Fee-Time algorithm. This function is thread-safe.
+func (dmp *PosMempool) GetTransactions() []*MempoolTx {
+	if dmp.status == PosMempoolStatusNotRunning {
+		return nil
+	}
+
+	dmp.RLock()
+	defer dmp.RUnlock()
+
+	return dmp.txnRegister.GetFeeTimeTransactions()
+}
+
 // GetIterator returns an iterator for the mempool transactions. The iterator can be used to peek transactions in the
 // mempool ordered by the Fee-Time algorithm. Transactions can be fetched with the following pattern:
 //
@@ -257,19 +313,15 @@ func (dmp *PosMempool) removeTransactionNoLock(txn *MempoolTx) error {
 //	}
 //
 // Note that the iteration pattern is not thread-safe. Another lock should be used to ensure thread-safety.
-func (dmp *PosMempool) GetIterator() *FeeTimeIterator {
+func (dmp *PosMempool) GetIterator() MempoolIterator {
+	if dmp.status == PosMempoolStatusNotRunning {
+		return nil
+	}
+
 	dmp.RLock()
 	defer dmp.RUnlock()
 
 	return dmp.txnRegister.GetFeeTimeIterator()
-}
-
-// GetTransactions returns all transactions in the mempool ordered by the Fee-Time algorithm. This function is thread-safe.
-func (dmp *PosMempool) GetTransactions() []*MempoolTx {
-	dmp.RLock()
-	defer dmp.RUnlock()
-
-	return dmp.txnRegister.GetFeeTimeTransactions()
 }
 
 // pruneNoLock removes transactions from the mempool until the mempool size is below the maximum allowed size. The transactions
@@ -294,6 +346,10 @@ func (dmp *PosMempool) pruneNoLock() error {
 
 // UpdateLatestBlock updates the latest block view and latest block node in the mempool.
 func (dmp *PosMempool) UpdateLatestBlock(blockView *UtxoView, blockNode *BlockNode) {
+	if dmp.status == PosMempoolStatusNotRunning {
+		return
+	}
+
 	dmp.Lock()
 	defer dmp.Unlock()
 
@@ -306,6 +362,10 @@ func (dmp *PosMempool) UpdateLatestBlock(blockView *UtxoView, blockNode *BlockNo
 // new minimum will be removed from the mempool. To safely handle this, this method re-creates the TransactionRegister
 // with the new global params and re-adds all transactions in the mempool to the new register.
 func (dmp *PosMempool) UpdateGlobalParams(globalParams *GlobalParamsEntry) {
+	if dmp.status == PosMempoolStatusNotRunning {
+		return
+	}
+
 	dmp.Lock()
 	defer dmp.Unlock()
 
