@@ -18,9 +18,7 @@ func TestPosMempoolStart(t *testing.T) {
 	t.Logf("BadgerDB directory: %s\nIt should be automatically removed at the end of the test", dir)
 	defer os.RemoveAll(dir)
 
-	eventManager := NewEventManager()
-
-	mempool := NewPosMempool(&params, globalParams, nil, nil, dir, eventManager)
+	mempool := NewPosMempool(&params, globalParams, nil, nil, dir)
 	require.NoError(mempool.Start())
 	require.Equal(PosMempoolStatusRunning, mempool.status)
 	mempool.Stop()
@@ -64,9 +62,7 @@ func TestPosMempoolRestartWithTransactions(t *testing.T) {
 	t.Logf("BadgerDB directory: %s\nIt should be automatically removed at the end of the test", dir)
 	defer os.RemoveAll(dir)
 
-	eventManager := NewEventManager()
-
-	mempool := NewPosMempool(params, globalParams, latestBlockView, latestBlockNode, dir, eventManager)
+	mempool := NewPosMempool(params, globalParams, latestBlockView, latestBlockNode, dir)
 	require.NoError(mempool.Start())
 	require.Equal(PosMempoolStatusRunning, mempool.status)
 
@@ -97,7 +93,7 @@ func TestPosMempoolRestartWithTransactions(t *testing.T) {
 	require.Equal(2, len(poolTxns))
 	mempool.Stop()
 
-	newPool := NewPosMempool(params, globalParams, latestBlockView, latestBlockNode, dir, eventManager)
+	newPool := NewPosMempool(params, globalParams, latestBlockView, latestBlockNode, dir)
 	require.NoError(newPool.Start())
 	require.Equal(PosMempoolStatusRunning, newPool.status)
 	newPoolTxns := newPool.GetTransactions()

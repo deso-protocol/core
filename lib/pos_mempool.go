@@ -1,7 +1,7 @@
 package lib
 
 import (
-	"github.com/deso-protocol/core/storage"
+	"github.com/dgraph-io/badger/v3"
 	"github.com/golang/glog"
 	"github.com/pkg/errors"
 	"path/filepath"
@@ -50,7 +50,7 @@ type PosMempool struct {
 	// dir of the directory where the database should be stored.
 	dir string
 	// db is the database that the mempool will use to persist transactions.
-	db storage.Database
+	db *badger.DB
 
 	// txnRegister is the in-memory data structure keeping track of the transactions in the mempool. The TransactionRegister
 	// is responsible for ordering transactions by the Fee-Time algorithm.
@@ -60,11 +60,10 @@ type PosMempool struct {
 	ledger *BalanceLedger
 	// persister is responsible for interfacing with the database. The persister backs up mempool transactions so not to
 	// lose them when node reboots. The persister also retrieves transactions from the database when the node starts up.
-	// The persister runs on its dedicated thread and eventManager is used to notify the persister thread whenever
+	// The persister runs on its dedicated thread and events are used to notify the persister thread whenever
 	// transactions are added/removed from the mempool. The persister thread then updates the database accordingly.
-	persister    *MempoolPersister
-	eventManager *EventManager
-	emitEvents   bool
+	persister  *MempoolPersister
+	emitEvents bool
 
 	// latestBlockView is used to check if a transaction is valid before being added to the mempool. The latestBlockView
 	// checks if the transaction has a valid signature and if the transaction's sender has enough funds to cover the fee.
@@ -76,13 +75,12 @@ type PosMempool struct {
 }
 
 func NewPosMempool(params *DeSoParams, globalParams *GlobalParamsEntry, latestBlockView *UtxoView,
-	latestBlockNode *BlockNode, dir string, eventManager *EventManager) *PosMempool {
+	latestBlockNode *BlockNode, dir string) *PosMempool {
 	return &PosMempool{
 		status:          PosMempoolStatusNotRunning,
 		params:          params,
 		globalParams:    globalParams,
 		dir:             dir,
-		eventManager:    eventManager,
 		emitEvents:      false,
 		latestBlockView: latestBlockView,
 		latestBlockNode: latestBlockNode,
@@ -90,15 +88,15 @@ func NewPosMempool(params *DeSoParams, globalParams *GlobalParamsEntry, latestBl
 }
 
 func (dmp *PosMempool) Start() error {
-	if dmp.status == PosMempoolStatusRunning {
+	if dmp.IsRunning() {
 		return nil
 	}
 
 	// Setup the database.
 	mempoolDirectory := filepath.Join(dmp.dir, "mempool")
-	opts := storage.DefaultBadgerOptions(mempoolDirectory)
-	db := storage.NewBadgerDatabase(opts, true)
-	if err := db.Setup(); err != nil {
+	opts := DefaultBadgerOptions(mempoolDirectory)
+	db, err := badger.Open(opts)
+	if err != nil {
 		return errors.Wrapf(err, "PosMempool.Start: Problem setting up database")
 	}
 	dmp.db = db
@@ -109,7 +107,6 @@ func (dmp *PosMempool) Start() error {
 
 	// Create the persister
 	dmp.persister = NewMempoolPersister(dmp.db, 30000)
-	dmp.eventManager.OnMempoolEvent(dmp.persister.OnMempoolEvent)
 
 	// Start the persister and retrieve transactions from the database.
 	dmp.persister.Start()
@@ -132,7 +129,7 @@ func (dmp *PosMempool) Start() error {
 }
 
 func (dmp *PosMempool) Stop() {
-	if dmp.status == PosMempoolStatusNotRunning {
+	if !dmp.IsRunning() {
 		return
 	}
 
@@ -158,7 +155,7 @@ func (dmp *PosMempool) IsRunning() bool {
 // ProcessMsgDeSoTxn validates a MsgDeSoTxn transaction and adds it to the mempool if it is valid.
 // If the mempool overflows as a result of adding the transaction, the mempool is pruned.
 func (dmp *PosMempool) ProcessMsgDeSoTxn(txn *MsgDeSoTxn) error {
-	if dmp.status == PosMempoolStatusNotRunning {
+	if !dmp.IsRunning() {
 		return errors.Wrapf(MempoolErrorNotRunning, "PosMempool.ProcessMsgDeSoTxn: ")
 	}
 
@@ -188,7 +185,7 @@ func (dmp *PosMempool) ProcessMsgDeSoTxn(txn *MsgDeSoTxn) error {
 
 // AddTransaction is the main function for adding a new transaction to the mempool.
 func (dmp *PosMempool) AddTransaction(txn *MempoolTx) error {
-	if dmp.status == PosMempoolStatusNotRunning {
+	if !dmp.IsRunning() {
 		return errors.Wrapf(MempoolErrorNotRunning, "PosMempool.AddTransaction: ")
 	}
 
@@ -237,7 +234,7 @@ func (dmp *PosMempool) addTransactionNoLock(txn *MempoolTx) error {
 			Txn:  txn,
 			Type: MempoolEventAdd,
 		}
-		dmp.eventManager.mempoolEvent(event)
+		dmp.persister.EnqueueEvent(event)
 	}
 
 	return nil
@@ -245,7 +242,7 @@ func (dmp *PosMempool) addTransactionNoLock(txn *MempoolTx) error {
 
 // RemoveTransaction is the main function for removing a transaction from the mempool.
 func (dmp *PosMempool) RemoveTransaction(txn *MempoolTx) error {
-	if dmp.status == PosMempoolStatusNotRunning {
+	if !dmp.IsRunning() {
 		return errors.Wrapf(MempoolErrorNotRunning, "PosMempool.RemoveTransaction: ")
 	}
 
@@ -272,7 +269,7 @@ func (dmp *PosMempool) removeTransactionNoLock(txn *MempoolTx) error {
 			Txn:  txn,
 			Type: MempoolEventRemove,
 		}
-		dmp.eventManager.mempoolEvent(event)
+		dmp.persister.EnqueueEvent(event)
 	}
 
 	return nil
@@ -280,7 +277,7 @@ func (dmp *PosMempool) removeTransactionNoLock(txn *MempoolTx) error {
 
 // GetTransaction returns the transaction with the given hash if it exists in the mempool. This function is thread-safe.
 func (dmp *PosMempool) GetTransaction(txHash *BlockHash) *MempoolTx {
-	if dmp.status == PosMempoolStatusNotRunning {
+	if !dmp.IsRunning() {
 		return nil
 	}
 
@@ -292,7 +289,7 @@ func (dmp *PosMempool) GetTransaction(txHash *BlockHash) *MempoolTx {
 
 // GetTransactions returns all transactions in the mempool ordered by the Fee-Time algorithm. This function is thread-safe.
 func (dmp *PosMempool) GetTransactions() []*MempoolTx {
-	if dmp.status == PosMempoolStatusNotRunning {
+	if !dmp.IsRunning() {
 		return nil
 	}
 
@@ -313,7 +310,7 @@ func (dmp *PosMempool) GetTransactions() []*MempoolTx {
 //
 // Note that the iteration pattern is not thread-safe. Another lock should be used to ensure thread-safety.
 func (dmp *PosMempool) GetIterator() MempoolIterator {
-	if dmp.status == PosMempoolStatusNotRunning {
+	if !dmp.IsRunning() {
 		return nil
 	}
 
@@ -345,7 +342,7 @@ func (dmp *PosMempool) pruneNoLock() error {
 
 // UpdateLatestBlock updates the latest block view and latest block node in the mempool.
 func (dmp *PosMempool) UpdateLatestBlock(blockView *UtxoView, blockNode *BlockNode) {
-	if dmp.status == PosMempoolStatusNotRunning {
+	if !dmp.IsRunning() {
 		return
 	}
 
@@ -361,7 +358,7 @@ func (dmp *PosMempool) UpdateLatestBlock(blockView *UtxoView, blockNode *BlockNo
 // new minimum will be removed from the mempool. To safely handle this, this method re-creates the TransactionRegister
 // with the new global params and re-adds all transactions in the mempool to the new register.
 func (dmp *PosMempool) UpdateGlobalParams(globalParams *GlobalParamsEntry) {
-	if dmp.status == PosMempoolStatusNotRunning {
+	if !dmp.IsRunning() {
 		return
 	}
 
