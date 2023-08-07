@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"github.com/cloudflare/circl/group"
 	"github.com/decred/dcrd/lru"
-	"github.com/deso-protocol/core/storage"
 	"github.com/deso-protocol/go-deadlock"
 	"github.com/dgraph-io/badger/v3"
 	"github.com/fatih/color"
@@ -312,9 +311,9 @@ func NewSnapshot(mainDb *badger.DB, mainDbDirectory string, snapshotBlockHeightP
 
 	// Initialize the ancestral records database
 	snapshotDirectory := filepath.Join(GetBadgerDbPath(mainDbDirectory), "snapshot")
-	snapshotOpts := storage.PerformanceBadgerOptions(snapshotDirectory)
+	snapshotOpts := PerformanceBadgerOptions(snapshotDirectory)
 	if useDefaultBadgerOptions {
-		snapshotOpts = storage.DefaultBadgerOptions(snapshotDirectory)
+		snapshotOpts = DefaultBadgerOptions(snapshotDirectory)
 	}
 	snapshotOpts.ValueDir = GetBadgerDbPath(snapshotDirectory)
 	snapshotDb, err := badger.Open(snapshotOpts)

@@ -3,7 +3,6 @@ package lib
 import (
 	"encoding/hex"
 	"fmt"
-	"github.com/deso-protocol/core/storage"
 	"github.com/dgraph-io/badger/v3"
 	"path/filepath"
 	"reflect"
@@ -42,7 +41,7 @@ func NewTXIndex(coreChain *Blockchain, params *DeSoParams, dataDirectory string)
 	_txindex *TXIndex, _error error) {
 	// Initialize database
 	txIndexDir := filepath.Join(GetBadgerDbPath(dataDirectory), "txindex")
-	txIndexOpts := storage.PerformanceBadgerOptions(txIndexDir)
+	txIndexOpts := PerformanceBadgerOptions(txIndexDir)
 	txIndexOpts.ValueDir = GetBadgerDbPath(txIndexDir)
 	glog.Infof("TxIndex BadgerDB Dir: %v", txIndexOpts.Dir)
 	glog.Infof("TxIndex BadgerDB ValueDir: %v", txIndexOpts.ValueDir)

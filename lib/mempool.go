@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/btcsuite/btcutil"
-	"github.com/deso-protocol/core/storage"
 	"github.com/gernest/mention"
 	"log"
 	"math"
@@ -264,9 +263,9 @@ type DeSoMempool struct {
 
 func (mp *DeSoMempool) getBadgerOptions(dir string) badger.Options {
 	if mp.useDefaultBadgerOptions {
-		return storage.DefaultBadgerOptions(dir)
+		return DefaultBadgerOptions(dir)
 	}
-	return storage.PerformanceBadgerOptions(dir)
+	return PerformanceBadgerOptions(dir)
 }
 
 // See comment on RemoveUnconnectedTxn. The mempool lock must be called for writing

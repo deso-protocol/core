@@ -21,7 +21,6 @@ COPY desohash    desohash
 COPY lib         lib
 COPY migrate     migrate
 COPY scripts     scripts
-COPY storage     storage
 COPY test_data   test_data
 COPY main.go     .
 
@@ -30,5 +29,4 @@ RUN ./scripts/install-relic.sh
 # build backend
 RUN GOOS=linux go build -mod=mod -a -installsuffix cgo -o bin/core main.go
 
-ENTRYPOINT ["go", "test", "-tags", "relic", "-v", "github.com/deso-protocol/core/bls", "github.com/deso-protocol/core/lib", \
-    "github.com/deso-protocol/core/storage"]
+ENTRYPOINT ["go", "test", "-tags", "relic", "-v", "github.com/deso-protocol/core/bls", "github.com/deso-protocol/core/lib"]
