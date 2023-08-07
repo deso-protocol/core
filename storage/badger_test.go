@@ -1,6 +1,7 @@
 package storage
 
 import (
+	"github.com/dgraph-io/badger/v3"
 	"github.com/stretchr/testify/require"
 	"os"
 	"testing"
@@ -28,17 +29,21 @@ func TestBadger_Default_Generic(t *testing.T) {
 	require.NoError(err)
 
 	opts := DefaultBadgerOptions(dir)
-	db := NewBadgerDatabase(opts, false)
+	_doBadgerTest(t, testConfig, opts, false)
+	_doBadgerTest(t, testConfig, opts, true)
+
+	opts = PerformanceBadgerOptions(dir)
+	_doBadgerTest(t, testConfig, opts, false)
+	_doBadgerTest(t, testConfig, opts, true)
+}
+
+func _doBadgerTest(t *testing.T, testConfig *TestConfig, opts badger.Options, useWriteBatch bool) {
+	require := require.New(t)
+
+	db := NewBadgerDatabase(opts, useWriteBatch)
 	require.NoError(db.Setup())
 
 	GenericTest(db, testConfig, t)
-	db.Close()
-	db.Erase()
-
-	db = NewBadgerDatabase(opts, true)
-	require.NoError(db.Setup())
-
-	GenericTest(db, testConfig, t)
-	db.Close()
-	db.Erase()
+	require.NoError(db.Close())
+	require.NoError(db.Erase())
 }

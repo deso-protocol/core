@@ -19,16 +19,12 @@ const (
 // - Setup() - used to initialize the database
 // - Close() - used to close the database
 // - Erase() - used to erase the database
-//
-// And, for completeness, the Database interface has this miscellaneous method:
-// - Id() - used to get the database id
 type Database interface {
 	Setup() error
 	Update(func(Transaction) error) error
 	View(func(Transaction) error) error
 	Close() error
 	Erase() error
-	Id() DatabaseId
 }
 
 // Transaction is a unified interface for database transactions inside a Database Update or View callback. It's a simple

@@ -3,7 +3,6 @@ package storage
 import (
 	"github.com/dgraph-io/badger/v3"
 	"github.com/pkg/errors"
-	"log"
 	"os"
 )
 
@@ -33,7 +32,7 @@ func NewBadgerDatabase(opts badger.Options, useWriteBatch bool) *BadgerDatabase 
 func (bdb *BadgerDatabase) Setup() error {
 	db, err := badger.Open(bdb.opts)
 	if err != nil {
-		log.Fatal(err)
+		return errors.Wrapf(err, "Setup:")
 	}
 	bdb.db = db
 	return nil
@@ -43,14 +42,24 @@ func (bdb *BadgerDatabase) Update(fn func(Transaction) error) error {
 	var wb *badger.WriteBatch
 	if bdb.useWriteBatch {
 		wb = bdb.db.NewWriteBatch()
-		defer wb.Cancel()
-		defer wb.Flush()
 	}
 
-	return bdb.db.Update(func(txn *badger.Txn) error {
+	err := bdb.db.Update(func(txn *badger.Txn) error {
 		T := NewBadgerTransaction(txn, wb)
 		return fn(T)
 	})
+	if err != nil {
+		return errors.Wrapf(err, "Update:")
+	}
+
+	if bdb.useWriteBatch {
+		err = wb.Flush()
+		if err != nil {
+			return errors.Wrapf(err, "Update: Problem flushing write batch")
+		}
+		wb.Cancel()
+	}
+	return nil
 }
 
 func (bdb *BadgerDatabase) View(fn func(Transaction) error) error {
@@ -66,10 +75,6 @@ func (bdb *BadgerDatabase) Close() error {
 
 func (bdb *BadgerDatabase) Erase() error {
 	return os.RemoveAll(bdb.opts.Dir)
-}
-
-func (bdb *BadgerDatabase) Id() DatabaseId {
-	return BADGERDB
 }
 
 // ==========================
