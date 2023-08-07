@@ -34,10 +34,7 @@ func TestMempoolPersister(t *testing.T) {
 	defer db.Erase()
 	defer db.Close()
 
-	ctx := db.GetContext(nil)
-	dbCtx := storage.NewDatabaseContext(db, ctx)
-
-	mempoolPersister := NewMempoolPersister(dbCtx, 100)
+	mempoolPersister := NewMempoolPersister(db, 100)
 
 	// Start the mempool persister.
 	mempoolPersister.Start()
@@ -58,7 +55,7 @@ func TestMempoolPersister(t *testing.T) {
 	}
 
 	waitForPersisterToProcessEventQueue(mempoolPersister)
-	retrievedTxns, err := mempoolPersister.RetrieveTransactions()
+	retrievedTxns, err := mempoolPersister.GetPersistedTransactions()
 	require.NoError(err)
 	require.Equal(len(txnPool), len(retrievedTxns))
 
@@ -72,7 +69,7 @@ func TestMempoolPersister(t *testing.T) {
 	}
 
 	waitForPersisterToProcessEventQueue(mempoolPersister)
-	retrievedTxns, err = mempoolPersister.RetrieveTransactions()
+	retrievedTxns, err = mempoolPersister.GetPersistedTransactions()
 	require.NoError(err)
 	require.Equal(len(txnPool), len(retrievedTxns))
 
@@ -86,7 +83,7 @@ func TestMempoolPersister(t *testing.T) {
 	}
 
 	waitForPersisterToProcessEventQueue(mempoolPersister)
-	retrievedTxns, err = mempoolPersister.RetrieveTransactions()
+	retrievedTxns, err = mempoolPersister.GetPersistedTransactions()
 	require.NoError(err)
 	require.Equal(len(txnPool)-addRemoveCases, len(retrievedTxns))
 
@@ -106,7 +103,7 @@ func TestMempoolPersister(t *testing.T) {
 	}
 
 	waitForPersisterToProcessEventQueue(mempoolPersister)
-	retrievedTxns, err = mempoolPersister.RetrieveTransactions()
+	retrievedTxns, err = mempoolPersister.GetPersistedTransactions()
 	require.NoError(err)
 	require.Equal(len(txnPool)-addRemoveCases, len(retrievedTxns))
 }
@@ -133,10 +130,7 @@ func TestMempoolPersisterRestart(t *testing.T) {
 	db := storage.NewBadgerDatabase(opts, false)
 	require.NoError(db.Setup())
 
-	ctx := db.GetContext(nil)
-	dbCtx := storage.NewDatabaseContext(db, ctx)
-
-	mempoolPersister := NewMempoolPersister(dbCtx, 100)
+	mempoolPersister := NewMempoolPersister(db, 100)
 
 	// Start the mempool persister.
 	mempoolPersister.Start()
@@ -155,7 +149,7 @@ func TestMempoolPersisterRestart(t *testing.T) {
 	}
 
 	waitForPersisterToProcessEventQueue(mempoolPersister)
-	retrievedTxns, err := mempoolPersister.RetrieveTransactions()
+	retrievedTxns, err := mempoolPersister.GetPersistedTransactions()
 	require.NoError(err)
 	require.Equal(len(txnPool), len(retrievedTxns))
 
@@ -163,7 +157,7 @@ func TestMempoolPersisterRestart(t *testing.T) {
 	require.NoError(mempoolPersister.Stop())
 
 	// Make sure we get an error retrieving transactions on stopped persister.
-	_, err = mempoolPersister.RetrieveTransactions()
+	_, err = mempoolPersister.GetPersistedTransactions()
 	require.Contains(err.Error(), MempoolErrorNotRunning.Error())
 
 	// Reopen the db.
@@ -174,7 +168,7 @@ func TestMempoolPersisterRestart(t *testing.T) {
 	mempoolPersister.Start()
 
 	// Make sure we can retrieve the transactions again.
-	retrievedTxns, err = mempoolPersister.RetrieveTransactions()
+	retrievedTxns, err = mempoolPersister.GetPersistedTransactions()
 	require.NoError(err)
 	require.Equal(len(txnPool), len(retrievedTxns))
 

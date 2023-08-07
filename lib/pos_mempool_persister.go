@@ -36,28 +36,30 @@ const (
 type MempoolPersister struct {
 	sync.Mutex
 	status MempoolPersisterStatus
-	dbCtx  *storage.DatabaseContext
+
+	// db is the database that the persister will write transactions to.
+	db storage.Database
 
 	// stopGroup and startGroup are used to manage the synchronization of the run loop.
 	stopGroup  sync.WaitGroup
 	startGroup sync.WaitGroup
 
-	// frequencyMilliseconds is the time frequency at which the persister will flush the transaction queue to the database.
-	frequencyMilliseconds int
+	// batchPersistFrequencyMilliseconds is the time frequency at which the persister will flush the transaction queue to the database.
+	batchPersistFrequencyMilliseconds int
 	// eventQueue is used to queue up transactions to be persisted. The queue receives events from the OnMempoolEvent,
 	// which is called whenever a transaction is added or removed from the mempool.
 	eventQueue chan *MempoolEvent
 	// updateBatch is used to cache transactions that need to be persisted to the database. The batch is flushed to the
-	// database periodically based on the frequencyMilliseconds.
+	// database periodically based on the batchPersistFrequencyMilliseconds.
 	updateBatch []*MempoolEvent
 }
 
-func NewMempoolPersister(dbCtx *storage.DatabaseContext, frequencyMilliseconds int) *MempoolPersister {
+func NewMempoolPersister(db storage.Database, batchPersistFrequencyMilliseconds int) *MempoolPersister {
 	return &MempoolPersister{
-		frequencyMilliseconds: frequencyMilliseconds,
-		status:                MempoolPersisterStatusNotRunning,
-		dbCtx:                 dbCtx,
-		eventQueue:            make(chan *MempoolEvent, eventQueueSize),
+		batchPersistFrequencyMilliseconds: batchPersistFrequencyMilliseconds,
+		status:                            MempoolPersisterStatusNotRunning,
+		db:                                db,
+		eventQueue:                        make(chan *MempoolEvent, eventQueueSize),
 	}
 }
 
@@ -95,12 +97,13 @@ func (mp *MempoolPersister) run() {
 				mp.Unlock()
 
 			case MempoolEventExit:
+				close(mp.eventQueue)
 				mp.stopGroup.Done()
 				return
 			}
 			continue
 
-		case <-time.After(time.Duration(mp.frequencyMilliseconds) * time.Millisecond):
+		case <-time.After(time.Duration(mp.batchPersistFrequencyMilliseconds) * time.Millisecond):
 			if err := mp.persistBatch(); err != nil {
 				glog.Errorf("MempoolPersister: Error persisting batch: %v", err)
 			}
@@ -144,8 +147,7 @@ func (mp *MempoolPersister) persistBatch() error {
 		return nil
 	}
 
-	localContext := mp.dbCtx.GetContext([]byte(DbMempoolContextId))
-	err := mp.dbCtx.Update(localContext, func(txn storage.Transaction, ctx storage.Context) error {
+	err := mp.db.Update(func(txn storage.Transaction) error {
 		for _, event := range mp.updateBatch {
 			if event.Txn == nil || event.Txn.Hash == nil {
 				continue
@@ -161,11 +163,11 @@ func (mp *MempoolPersister) persistBatch() error {
 			// Set or delete a record based on the event type.
 			switch event.Type {
 			case MempoolEventAdd:
-				if err := txn.Set(key, value, ctx); err != nil {
+				if err := txn.Set(key, value); err != nil {
 					glog.Errorf("MempoolPersister: Error setting key: %v", err)
 				}
 			case MempoolEventRemove:
-				if err := txn.Delete(key, ctx); err != nil {
+				if err := txn.Delete(key); err != nil {
 					glog.Errorf("MempoolPersister: Error deleting key: %v", err)
 				}
 			}
@@ -180,9 +182,9 @@ func (mp *MempoolPersister) persistBatch() error {
 	return nil
 }
 
-// RetrieveTransactions is used to retrieve all transactions from the database. It will return an error if the persister
+// GetPersistedTransactions is used to retrieve all transactions from the database. It will return an error if the persister
 // is not currently running or if there was an issue retrieving the transactions.
-func (mp *MempoolPersister) RetrieveTransactions() ([]*MempoolTx, error) {
+func (mp *MempoolPersister) GetPersistedTransactions() ([]*MempoolTx, error) {
 	if mp.status == MempoolPersisterStatusNotRunning {
 		return nil, errors.Wrapf(MempoolErrorNotRunning, "MempoolPersister: Cannot retrieve transactions while running")
 	}
@@ -191,10 +193,9 @@ func (mp *MempoolPersister) RetrieveTransactions() ([]*MempoolTx, error) {
 	defer mp.Unlock()
 
 	var mempoolTxns []*MempoolTx
-	localContext := mp.dbCtx.GetContext([]byte(DbMempoolContextId))
-	err := mp.dbCtx.View(localContext, func(txn storage.Transaction, ctx storage.Context) error {
+	err := mp.db.View(func(txn storage.Transaction) error {
 		// Iterate through the transaction records in the database.
-		iter, err := txn.GetIterator(ctx)
+		iter, err := txn.GetIterator([]byte{})
 		if err != nil {
 			return errors.Wrapf(err, "MempoolPersister: Error retrieving iterator")
 		}

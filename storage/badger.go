@@ -38,11 +38,7 @@ func (bdb *BadgerDatabase) Setup() error {
 	return nil
 }
 
-func (bdb *BadgerDatabase) GetContext(id []byte) Context {
-	return NewBadgerContext(id, bdb.useWriteBatch)
-}
-
-func (bdb *BadgerDatabase) Update(ctx Context, fn func(Transaction, Context) error) error {
+func (bdb *BadgerDatabase) Update(fn func(Transaction) error) error {
 	var wb *badger.WriteBatch
 	if bdb.useWriteBatch {
 		wb = bdb.db.NewWriteBatch()
@@ -50,7 +46,7 @@ func (bdb *BadgerDatabase) Update(ctx Context, fn func(Transaction, Context) err
 
 	err := bdb.db.Update(func(txn *badger.Txn) error {
 		T := NewBadgerTransaction(txn, wb)
-		return fn(T, ctx)
+		return fn(T)
 	})
 	if err != nil {
 		return errors.Wrapf(err, "Update:")
@@ -66,10 +62,10 @@ func (bdb *BadgerDatabase) Update(ctx Context, fn func(Transaction, Context) err
 	return nil
 }
 
-func (bdb *BadgerDatabase) View(ctx Context, fn func(Transaction, Context) error) error {
+func (bdb *BadgerDatabase) View(fn func(Transaction) error) error {
 	return bdb.db.View(func(txn *badger.Txn) error {
 		T := NewBadgerTransaction(txn, nil)
-		return fn(T, ctx)
+		return fn(T)
 	})
 }
 
@@ -97,53 +93,35 @@ func NewBadgerTransaction(txn *badger.Txn, wb *badger.WriteBatch) *BadgerTransac
 	}
 }
 
-func (btx *BadgerTransaction) Set(key []byte, value []byte, ctx Context) error {
-	prefixedKey, err := castBadgerContextAndGetPrefixedKey(key, ctx)
-	if err != nil {
-		return errors.Wrapf(err, "Set:")
-	}
-
+func (btx *BadgerTransaction) Set(key []byte, value []byte) error {
 	if btx.wb != nil {
-		return btx.wb.Set(prefixedKey, value)
+		return btx.wb.Set(key, value)
 	}
-	return btx.txn.Set(prefixedKey, value)
+	return btx.txn.Set(key, value)
 }
 
-func (btx *BadgerTransaction) Delete(key []byte, ctx Context) error {
-	prefixedKey, err := castBadgerContextAndGetPrefixedKey(key, ctx)
-	if err != nil {
-		return errors.Wrapf(err, "Delete:")
-	}
-
+func (btx *BadgerTransaction) Delete(key []byte) error {
 	if btx.wb != nil {
-		return btx.wb.Delete(prefixedKey)
+		return btx.wb.Delete(key)
 	}
-	return btx.txn.Delete(prefixedKey)
+	return btx.txn.Delete(key)
 }
 
-func (btx *BadgerTransaction) Get(key []byte, ctx Context) ([]byte, error) {
+func (btx *BadgerTransaction) Get(key []byte) ([]byte, error) {
 	var value []byte
-	prefixedKey, err := castBadgerContextAndGetPrefixedKey(key, ctx)
-	if err != nil {
-		return nil, errors.Wrapf(err, "Get:")
-	}
 
-	item, err := btx.txn.Get(prefixedKey)
+	item, err := btx.txn.Get(key)
 	if err != nil {
 		return value, errors.Wrapf(err, "Get:")
 	}
 	return item.ValueCopy(nil)
 }
 
-func (btx *BadgerTransaction) GetIterator(ctx Context) (Iterator, error) {
-	badgerCtx, err := AssertContext[*BadgerContext](ctx, BADGERDB)
-	if err != nil {
-		return nil, err
-	}
+func (btx *BadgerTransaction) GetIterator(prefix []byte) (Iterator, error) {
 	opts := badger.DefaultIteratorOptions
 	it := btx.txn.NewIterator(opts)
-	it.Seek(badgerCtx.prefix)
-	return NewBadgerIterator(it, badgerCtx), nil
+	it.Seek(prefix)
+	return NewBadgerIterator(it, prefix), nil
 }
 
 // ==========================
@@ -152,20 +130,16 @@ func (btx *BadgerTransaction) GetIterator(ctx Context) (Iterator, error) {
 
 type BadgerIterator struct {
 	it          *badger.Iterator
-	ctx         *BadgerContext
+	prefix      []byte
 	initialized bool
 }
 
-func NewBadgerIterator(it *badger.Iterator, ctx *BadgerContext) *BadgerIterator {
+func NewBadgerIterator(it *badger.Iterator, prefix []byte) *BadgerIterator {
 	return &BadgerIterator{
 		it:          it,
-		ctx:         ctx,
+		prefix:      prefix,
 		initialized: false,
 	}
-}
-
-func (bit *BadgerIterator) GetContext() Context {
-	return bit.ctx
 }
 
 func (bit *BadgerIterator) Value() ([]byte, error) {
@@ -184,41 +158,11 @@ func (bit *BadgerIterator) Next() bool {
 	}
 
 	bit.it.Next()
-	return bit.it.ValidForPrefix(bit.ctx.prefix)
+	return bit.it.ValidForPrefix(bit.prefix)
 }
 
 func (bit *BadgerIterator) Close() {
 	bit.it.Close()
-}
-
-// ==========================
-// BadgerContext
-// ==========================
-
-type BadgerContext struct {
-	prefix        []byte
-	useWriteBatch bool
-}
-
-func NewBadgerContext(prefix []byte, useWriteBatch bool) *BadgerContext {
-	return &BadgerContext{
-		prefix:        prefix,
-		useWriteBatch: useWriteBatch,
-	}
-}
-
-func (bc *BadgerContext) Id() DatabaseId {
-	return BADGERDB
-}
-
-func castBadgerContextAndGetPrefixedKey(key []byte, ctx Context) (_prefixedKey []byte, _err error) {
-	badgerCtx, err := AssertContext[*BadgerContext](ctx, BADGERDB)
-	if err != nil {
-		return nil, err
-	}
-
-	prefixedKey := append(badgerCtx.prefix, key...)
-	return prefixedKey, nil
 }
 
 // PerformanceBadgerOptions are performance geared
