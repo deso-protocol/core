@@ -2,7 +2,7 @@ package lib
 
 import (
 	"bytes"
-	"github.com/deso-protocol/core/storage"
+	"github.com/dgraph-io/badger/v3"
 	"github.com/golang/glog"
 	"github.com/pkg/errors"
 	"sync"
@@ -29,8 +29,13 @@ const (
 	MempoolPersisterStatusNotRunning
 )
 
+type MempoolEvent struct {
+	Txn  *MempoolTx
+	Type MempoolEventType
+}
+
 // MempoolPersister is responsible for persisting transactions in the mempool to the database. Whenever a transaction is
-// added or removed from the mempool, the MempoolPersister is notified via the OnMempoolEvent callback. The Persister
+// added or removed from the mempool, the MempoolPersister is notified via the EnqueueEvent callback. The Persister
 // will then add the event to a queue. Periodically, the transaction queue is flushed to the database and all the cached
 // transactions are persisted. To achieve this, the persister runs its own goroutine.
 type MempoolPersister struct {
@@ -38,7 +43,7 @@ type MempoolPersister struct {
 	status MempoolPersisterStatus
 
 	// db is the database that the persister will write transactions to.
-	db storage.Database
+	db *badger.DB
 
 	// stopGroup and startGroup are used to manage the synchronization of the run loop.
 	stopGroup  sync.WaitGroup
@@ -46,7 +51,7 @@ type MempoolPersister struct {
 
 	// batchPersistFrequencyMilliseconds is the time frequency at which the persister will flush the transaction queue to the database.
 	batchPersistFrequencyMilliseconds int
-	// eventQueue is used to queue up transactions to be persisted. The queue receives events from the OnMempoolEvent,
+	// eventQueue is used to queue up transactions to be persisted. The queue receives events from the EnqueueEvent,
 	// which is called whenever a transaction is added or removed from the mempool.
 	eventQueue chan *MempoolEvent
 	// updateBatch is used to cache transactions that need to be persisted to the database. The batch is flushed to the
@@ -54,7 +59,7 @@ type MempoolPersister struct {
 	updateBatch []*MempoolEvent
 }
 
-func NewMempoolPersister(db storage.Database, batchPersistFrequencyMilliseconds int) *MempoolPersister {
+func NewMempoolPersister(db *badger.DB, batchPersistFrequencyMilliseconds int) *MempoolPersister {
 	return &MempoolPersister{
 		batchPersistFrequencyMilliseconds: batchPersistFrequencyMilliseconds,
 		status:                            MempoolPersisterStatusNotRunning,
@@ -72,7 +77,8 @@ func (mp *MempoolPersister) Start() {
 	// Make sure the persister is cleared before starting.
 	mp.reset()
 	// We use syncGroups to synchronize the persister thread. The stop group is used to wait for the persister to stop
-	// the run loop. The start group is used to wait for the persister goroutine allocation.
+	// the run loop. The start group is used to wait for the persister goroutine allocation. Note that the startGroup is
+	// used to ensure that the run() goroutine has been allocated a thread before returning from Start().
 	mp.stopGroup.Add(1)
 	mp.startGroup.Add(1)
 	// Run the persister in a goroutine.
@@ -147,38 +153,40 @@ func (mp *MempoolPersister) persistBatch() error {
 		return nil
 	}
 
-	err := mp.db.Update(func(txn storage.Transaction) error {
-		for _, event := range mp.updateBatch {
-			if event.Txn == nil || event.Txn.Hash == nil {
-				continue
-			}
-			// The transactions are stored in a KV database. The key is the transaction hash and the value is the
-			// serialized transaction.
-			key := event.Txn.Hash.ToBytes()
-			value, err := event.Txn.ToBytes()
-			if err != nil {
-				continue
-			}
+	wb := mp.db.NewWriteBatch()
+	defer wb.Cancel()
 
-			// Set or delete a record based on the event type.
-			switch event.Type {
-			case MempoolEventAdd:
-				if err := txn.Set(key, value); err != nil {
-					glog.Errorf("MempoolPersister: Error setting key: %v", err)
-				}
-			case MempoolEventRemove:
-				if err := txn.Delete(key); err != nil {
-					glog.Errorf("MempoolPersister: Error deleting key: %v", err)
-				}
+	for _, event := range mp.updateBatch {
+		if event.Txn == nil || event.Txn.Hash == nil {
+			continue
+		}
+		// The transactions are stored in a KV database. The key is the transaction hash and the value is the
+		// serialized transaction.
+		key := event.Txn.Hash.ToBytes()
+		value, err := event.Txn.ToBytes()
+		if err != nil {
+			continue
+		}
+
+		// Set or delete a record based on the event type.
+		switch event.Type {
+		case MempoolEventAdd:
+			if err := wb.Set(key, value); err != nil {
+				glog.Errorf("MempoolPersister: Error setting key: %v", err)
+			}
+		case MempoolEventRemove:
+			if err := wb.Delete(key); err != nil {
+				glog.Errorf("MempoolPersister: Error deleting key: %v", err)
 			}
 		}
-		return nil
-	})
-	mp.updateBatch = nil
-
+	}
+	err := wb.Flush()
 	if err != nil {
 		return errors.Wrapf(err, "MempoolPersister: Error persisting batch")
 	}
+
+	mp.updateBatch = nil
+
 	return nil
 }
 
@@ -193,15 +201,13 @@ func (mp *MempoolPersister) GetPersistedTransactions() ([]*MempoolTx, error) {
 	defer mp.Unlock()
 
 	var mempoolTxns []*MempoolTx
-	err := mp.db.View(func(txn storage.Transaction) error {
+	err := mp.db.View(func(txn *badger.Txn) error {
 		// Iterate through the transaction records in the database.
-		iter, err := txn.GetIterator([]byte{})
-		if err != nil {
-			return errors.Wrapf(err, "MempoolPersister: Error retrieving iterator")
-		}
+		iter := txn.NewIterator(badger.DefaultIteratorOptions)
 		defer iter.Close()
-		for iter.Next() {
-			txnBytes, err := iter.Value()
+		for iter.Seek([]byte{}); iter.Valid(); iter.Next() {
+			item := iter.Item()
+			txnBytes, err := item.ValueCopy(nil)
 			if err != nil {
 				return errors.Wrapf(err, "MempoolPersister: Error retrieving value")
 			}
@@ -221,8 +227,8 @@ func (mp *MempoolPersister) GetPersistedTransactions() ([]*MempoolTx, error) {
 	return mempoolTxns, nil
 }
 
-// OnMempoolEvent is used to add a transaction event to the eventQueue.
-func (mp *MempoolPersister) OnMempoolEvent(event *MempoolEvent) {
+// EnqueueEvent is used to add a transaction event to the eventQueue.
+func (mp *MempoolPersister) EnqueueEvent(event *MempoolEvent) {
 	if mp.eventQueue == nil {
 		return
 	}

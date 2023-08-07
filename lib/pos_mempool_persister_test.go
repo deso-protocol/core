@@ -1,7 +1,7 @@
 package lib
 
 import (
-	"github.com/deso-protocol/core/storage"
+	"github.com/dgraph-io/badger/v3"
 	"github.com/stretchr/testify/require"
 	"math/rand"
 	"os"
@@ -28,20 +28,16 @@ func TestMempoolPersister(t *testing.T) {
 	t.Logf("BadgerDB directory: %s\nIt should be automatically removed at the end of the test", dir)
 	require.NoError(err)
 
-	opts := storage.DefaultBadgerOptions(dir)
-	db := storage.NewBadgerDatabase(opts, false)
-	require.NoError(db.Setup())
-	defer db.Erase()
+	opts := DefaultBadgerOptions(dir)
+	db, err := badger.Open(opts)
+	require.NoError(err)
+	defer os.RemoveAll(dir)
 	defer db.Close()
 
 	mempoolPersister := NewMempoolPersister(db, 100)
 
 	// Start the mempool persister.
 	mempoolPersister.Start()
-
-	// Create an event manager
-	eventManager := NewEventManager()
-	eventManager.OnMempoolEvent(mempoolPersister.OnMempoolEvent)
 
 	defer mempoolPersister.Stop()
 
@@ -51,7 +47,7 @@ func TestMempoolPersister(t *testing.T) {
 			Txn:  txn,
 			Type: MempoolEventAdd,
 		}
-		eventManager.mempoolEvent(event)
+		mempoolPersister.EnqueueEvent(event)
 	}
 
 	waitForPersisterToProcessEventQueue(mempoolPersister)
@@ -65,7 +61,7 @@ func TestMempoolPersister(t *testing.T) {
 			Txn:  txnPool[ii],
 			Type: MempoolEventAdd,
 		}
-		eventManager.mempoolEvent(event)
+		mempoolPersister.EnqueueEvent(event)
 	}
 
 	waitForPersisterToProcessEventQueue(mempoolPersister)
@@ -79,7 +75,7 @@ func TestMempoolPersister(t *testing.T) {
 			Txn:  txnPool[ii],
 			Type: MempoolEventRemove,
 		}
-		eventManager.mempoolEvent(event)
+		mempoolPersister.EnqueueEvent(event)
 	}
 
 	waitForPersisterToProcessEventQueue(mempoolPersister)
@@ -93,13 +89,13 @@ func TestMempoolPersister(t *testing.T) {
 			Txn:  txnPool[ii],
 			Type: MempoolEventAdd,
 		}
-		eventManager.mempoolEvent(event)
+		mempoolPersister.EnqueueEvent(event)
 
 		event2 := &MempoolEvent{
 			Txn:  txnPool[ii],
 			Type: MempoolEventRemove,
 		}
-		eventManager.mempoolEvent(event2)
+		mempoolPersister.EnqueueEvent(event2)
 	}
 
 	waitForPersisterToProcessEventQueue(mempoolPersister)
@@ -126,18 +122,14 @@ func TestMempoolPersisterRestart(t *testing.T) {
 	t.Logf("BadgerDB directory: %s\nIt should be automatically removed at the end of the test", dir)
 	require.NoError(err)
 
-	opts := storage.DefaultBadgerOptions(dir)
-	db := storage.NewBadgerDatabase(opts, false)
-	require.NoError(db.Setup())
+	opts := DefaultBadgerOptions(dir)
+	db, err := badger.Open(opts)
+	require.NoError(err)
 
 	mempoolPersister := NewMempoolPersister(db, 100)
 
 	// Start the mempool persister.
 	mempoolPersister.Start()
-
-	// Create an event manager
-	eventManager := NewEventManager()
-	eventManager.OnMempoolEvent(mempoolPersister.OnMempoolEvent)
 
 	// Add all the transactions to the mempool.
 	for _, txn := range txnPool {
@@ -145,7 +137,7 @@ func TestMempoolPersisterRestart(t *testing.T) {
 			Txn:  txn,
 			Type: MempoolEventAdd,
 		}
-		eventManager.mempoolEvent(event)
+		mempoolPersister.EnqueueEvent(event)
 	}
 
 	waitForPersisterToProcessEventQueue(mempoolPersister)
@@ -162,7 +154,9 @@ func TestMempoolPersisterRestart(t *testing.T) {
 
 	// Reopen the db.
 	require.NoError(db.Close())
-	require.NoError(db.Setup())
+	db, err = badger.Open(opts)
+	require.NoError(err)
+	mempoolPersister = NewMempoolPersister(db, 100)
 
 	// Restart the mempool persister.
 	mempoolPersister.Start()
@@ -173,7 +167,7 @@ func TestMempoolPersisterRestart(t *testing.T) {
 	require.Equal(len(txnPool), len(retrievedTxns))
 
 	require.NoError(db.Close())
-	require.NoError(db.Erase())
+	require.NoError(os.RemoveAll(dir))
 }
 
 func waitForPersisterToProcessEventQueue(mempoolPersister *MempoolPersister) {
