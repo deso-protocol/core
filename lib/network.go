@@ -3138,7 +3138,7 @@ func (msg *MsgDeSoTxn) ToBytes(preSignature bool) ([]byte, error) {
 func (msg *MsgDeSoTxn) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte {
 	txnBytes, err := msg.ToBytes(false /*preSignature*/)
 	if err != nil {
-		glog.Errorf("MsgDeSoTxn.RawEncodeWithoutMetadata: Problem encoding block: %v", err)
+		glog.Errorf("MsgDeSoTxn.RawEncodeWithoutMetadata: Problem encoding transaction: %v", err)
 	}
 	return EncodeByteArray(txnBytes)
 }

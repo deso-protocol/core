@@ -110,11 +110,16 @@ const (
 	EncoderTypeDmThreadEntry                     EncoderType = 37
 	EncoderTypeDeSoNonce                         EncoderType = 38
 	EncoderTypeTransactorNonceEntry              EncoderType = 39
-	EncoderTypeStateChangeEntry                  EncoderType = 40
-	EncoderTypeFollowEntry                       EncoderType = 41
-	EncoderTypeDeSoBalanceEntry                  EncoderType = 42
-	EncoderTypeBlock                             EncoderType = 43
-	EncoderTypeTxn                               EncoderType = 44
+	// EncoderTypeStateChangeEntry represents a state change to a DeSo encoder entry.
+	EncoderTypeStateChangeEntry EncoderType = 40
+	// EncoderTypeFollowEntry represents a follow relationship between two pkids.
+	EncoderTypeFollowEntry EncoderType = 41
+	// EncoderTypeDeSoBalanceEntry represents a balance of DeSo for a particular public key.
+	EncoderTypeDeSoBalanceEntry EncoderType = 42
+	// EncoderTypeBlock represents a block in the blockchain, including all transactions in said block.
+	EncoderTypeBlock EncoderType = 43
+	// EncoderTypeTxn represents a transaction in the blockchain.
+	EncoderTypeTxn EncoderType = 44
 
 	// EncoderTypeEndBlockView encoder type should be at the end and is used for automated tests.
 	EncoderTypeEndBlockView EncoderType = 45

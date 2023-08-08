@@ -18,6 +18,13 @@ func TestEmptyTypeEncoders(t *testing.T) {
 
 	// And now try to encode/decode for the empty encoders.
 	for _, testType := range testCases {
+		if testType.GetEncoderType() == EncoderTypeBlock {
+			testType = &MsgDeSoBlock{Header: &MsgDeSoHeader{}}
+		} else if testType.GetEncoderType() == EncoderTypeTxn {
+			testType = &MsgDeSoTxn{
+				TxnMeta: &BasicTransferMetadata{},
+			}
+		}
 		testBytes := EncodeToBytes(0, testType)
 		rr := bytes.NewReader(testBytes)
 		exists, err := DecodeFromBytes(testType, rr)
@@ -44,7 +51,24 @@ func TestRandomTypeEncoders(t *testing.T) {
 	// Make sure the encoder migration for v3 messages is tested.
 	GlobalDeSoParams.ForkHeights = RegtestForkHeights
 	for ii := range encodeCases {
+		// State change entry encoder is tested separately in TestStateChangeEntryEncoder.
+		if encodeCases[ii].GetEncoderType() == EncoderTypeStateChangeEntry {
+			continue
+		}
 		gofakeit.Struct(encodeCases[ii])
+		// Only certain block and transaction configurations are valid, so they are hardcoded here.
+		// Block and transaction serialization is tested extensively in network_test.go.
+		if encodeCases[ii].GetEncoderType() == EncoderTypeBlock {
+			encodeCases[ii] = &MsgDeSoBlock{Header: &MsgDeSoHeader{}}
+			decodeCases[ii] = &MsgDeSoBlock{Header: &MsgDeSoHeader{}}
+		} else if encodeCases[ii].GetEncoderType() == EncoderTypeTxn {
+			encodeCases[ii] = &MsgDeSoTxn{
+				TxnMeta: &BasicTransferMetadata{},
+			}
+			decodeCases[ii] = &MsgDeSoTxn{
+				TxnMeta: &BasicTransferMetadata{},
+			}
+		}
 		encodedBytes := EncodeToBytes(0, encodeCases[ii])
 		rr := bytes.NewReader(encodedBytes)
 		exists, err := DecodeFromBytes(decodeCases[ii], rr)

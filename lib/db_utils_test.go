@@ -1,6 +1,7 @@
 package lib
 
 import (
+	"fmt"
 	"io/ioutil"
 	"log"
 	"math/big"
@@ -18,7 +19,8 @@ func TestStatePrefixToDeSoEncoder(t *testing.T) {
 	for prefixByte, isState := range StatePrefixes.StatePrefixesMap {
 		prefix := []byte{prefixByte}
 		isEncoder, encoder := StatePrefixToDeSoEncoder(prefix)
-		if isState {
+		isCoreState := isCoreStateKey(prefix)
+		if isState || isCoreState {
 			if isEncoder && encoder == nil {
 				t.Fatalf("State prefix (%v) mapped to an incorrect encoder, isEncoder is true and encoder is nil", prefix)
 			} else if !isEncoder && encoder != nil {
@@ -26,6 +28,7 @@ func TestStatePrefixToDeSoEncoder(t *testing.T) {
 			}
 		} else {
 			if !isEncoder || (isEncoder && encoder != nil) {
+				fmt.Printf("Is encoder: %v, encoder: %+v\n", isEncoder, encoder)
 				t.Fatalf("Non-state prefix (%v) mapped to an incorrect encoder", prefix)
 			}
 		}

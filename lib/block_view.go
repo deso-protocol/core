@@ -117,10 +117,22 @@ type UtxoView struct {
 	// for error-checking when doing a bulk operation on the view.
 	TipHash *BlockHash
 
-	Handle       *badger.DB
-	Postgres     *Postgres
-	Params       *DeSoParams
-	Snapshot     *Snapshot
+	// Handle is a pointer to the badger database. This is the primary data store
+	// for entries and messages on the DeSo blockchain.
+	Handle *badger.DB
+
+	// Postgres is a pointer to the Postgres database. This is an alternative data store
+	// to the badger database that has previously been used.
+	Postgres *Postgres
+
+	// DeSoParams is a struct that contains all of the parameters that
+	// define how the DeSo blockchain operates. It is set once at startup
+	// and then never changed.
+	Params *DeSoParams
+
+	// Snapshot tracks the current state of the hypersyncing database.
+	Snapshot *Snapshot
+	// EventManager is used to emit callbacks when certain actions are triggered.
 	EventManager *EventManager
 }
 

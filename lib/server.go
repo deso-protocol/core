@@ -368,17 +368,17 @@ func NewServer(
 	eventManager *EventManager,
 	_nodeMessageChan chan NodeMessage,
 	_forceChecksum bool,
-	_stateChangeFilePath string) (
+	_stateChangeDir string) (
 	_srv *Server, _err error, _shouldRestart bool) {
 
 	var err error
 
 	// Only initialize state change syncer if the directories are defined.
 	var stateChangeSyncer *StateChangeSyncer
-	if _stateChangeFilePath != "" {
+	if _stateChangeDir != "" {
 		// Create the state change syncer to handle syncing state changes to disk, and assign some of its methods
 		// to the event manager.
-		stateChangeSyncer = NewStateChangeSyncer(_stateChangeFilePath, _syncType)
+		stateChangeSyncer = NewStateChangeSyncer(_stateChangeDir, _syncType)
 		eventManager.OnStateSyncerOperation(stateChangeSyncer._handleStateSyncerOperation)
 		eventManager.OnStateSyncerFlushed(stateChangeSyncer._handleStateSyncerFlush)
 	}

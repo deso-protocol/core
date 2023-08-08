@@ -66,7 +66,7 @@ type Config struct {
 	TimeEvents            bool
 
 	// State Syncer
-	StateChangeFilePath string
+	StateChangeDir string
 }
 
 func LoadConfig() *Config {
@@ -148,7 +148,7 @@ func LoadConfig() *Config {
 	config.TimeEvents = viper.GetBool("time-events")
 
 	// State Syncer
-	config.StateChangeFilePath = viper.GetString("state-change-file-path")
+	config.StateChangeDir = viper.GetString("state-change-dir")
 
 	return &config
 }
