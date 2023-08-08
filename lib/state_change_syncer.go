@@ -373,6 +373,13 @@ func (stateChangeSyncer *StateChangeSyncer) _handleStateSyncerOperation(event *S
 		// Create key for op + key map
 		txKey := createMempoolTxKey(stateChangeEntry.OperationType, stateChangeEntry.KeyBytes)
 
+		// Track the key in the MempoolFlushKeySet.
+		if stateChangeEntry.OperationType == DbOperationTypeDelete {
+			delete(stateChangeSyncer.MempoolFlushKeySet, txKey)
+		} else {
+			stateChangeSyncer.MempoolFlushKeySet[txKey] = true
+		}
+
 		// Check to see if the key is in the map, and if the value is the same as the value in the event.
 		if valueBytes, ok := stateChangeSyncer.MempoolKeyValueMap[txKey]; ok && bytes.Equal(valueBytes, event.StateChangeEntry.EncoderBytes) {
 			// If the key is in the map, and the entry bytes are the same as those that are already tracked by state syncer,
@@ -380,13 +387,11 @@ func (stateChangeSyncer *StateChangeSyncer) _handleStateSyncerOperation(event *S
 			return
 		}
 
-		// Add or remove from our tracking maps based on operation types.
+		// Track the key and value if this is a new entry to the mempool.
 		if stateChangeEntry.OperationType == DbOperationTypeDelete {
 			delete(stateChangeSyncer.MempoolKeyValueMap, txKey)
-			delete(stateChangeSyncer.MempoolFlushKeySet, txKey)
 		} else {
 			stateChangeSyncer.MempoolKeyValueMap[txKey] = event.StateChangeEntry.EncoderBytes
-			stateChangeSyncer.MempoolFlushKeySet[txKey] = true
 		}
 	} else {
 		// If the flush ID is nil, then we need to use the global block sync flush ID.
@@ -664,6 +669,7 @@ func (stateChangeSyncer *StateChangeSyncer) SyncMempoolToStateSyncer(server *Ser
 		})
 		return false, errors.Wrapf(err, "StateChangeSyncer.SyncMempoolToStateSyncer: ")
 	}
+
 	for _, mempoolTx := range mempoolTxns {
 		utxoOpsForTxn, _, _, _, err := mempoolTxUtxoView.ConnectTransaction(
 			mempoolTx.Tx, mempoolTx.Hash, 0, uint32(blockHeight+1), false, false /*ignoreUtxos*/)
@@ -733,7 +739,7 @@ func (stateChangeSyncer *StateChangeSyncer) StartMempoolSyncRoutine(server *Serv
 		mempoolClosed := server.mempool.stopped
 		for !mempoolClosed {
 			// Sleep for a short while to avoid a tight loop.
-			time.Sleep(1000 * time.Millisecond)
+			time.Sleep(100 * time.Millisecond)
 			var err error
 			// If the mempool is not empty, sync the mempool to the state syncer.
 			mempoolClosed, err = stateChangeSyncer.SyncMempoolToStateSyncer(server)
