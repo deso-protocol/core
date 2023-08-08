@@ -455,7 +455,7 @@ func (stateChangeSyncer *StateChangeSyncer) _handleStateSyncerFlush(event *State
 		// This would mean that an entry was ejected from the mempool.
 		// When this happens, we need to reset the mempool and start from scratch, so that the consumer can revert the
 		// mempool transactions it currently has and sync the mempool from scratch.
-		for key, _ := range stateChangeSyncer.MempoolKeyValueMap {
+		for key := range stateChangeSyncer.MempoolKeyValueMap {
 			// If any of the keys that the mempool is currently tracking weren't included in the flush, the state syncer
 			// mempool is bad and needs to be reset.
 			if _, ok := stateChangeSyncer.MempoolFlushKeySet[key]; !ok {
