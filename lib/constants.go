@@ -1110,7 +1110,7 @@ var DeSoMainnetParams = DeSoParams{
 	EncoderMigrationHeights:     GetEncoderMigrationHeights(&MainnetForkHeights),
 	EncoderMigrationHeightsList: GetEncoderMigrationHeightsList(&MainnetForkHeights),
 
-	MaxMempoolPosSizeBytes: 3 << 30, // 3GB
+	MaxMempoolPosSizeBytes: 3 << 30, // 3Gb
 }
 
 func mustDecodeHexBlockHashBitcoin(ss string) *BlockHash {
@@ -1370,7 +1370,7 @@ var DeSoTestnetParams = DeSoParams{
 	EncoderMigrationHeights:     GetEncoderMigrationHeights(&TestnetForkHeights),
 	EncoderMigrationHeightsList: GetEncoderMigrationHeightsList(&TestnetForkHeights),
 
-	MaxMempoolPosSizeBytes: 3 << 30, // 3GB
+	MaxMempoolPosSizeBytes: 3 << 30, // 3Gb
 }
 
 // GetDataDir gets the user data directory where we store files
