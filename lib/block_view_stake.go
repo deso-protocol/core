@@ -35,7 +35,7 @@ import (
 type StakingRewardMethod = uint8
 
 const (
-	StakingRewardMethodPayToBalance StakingRewardMethod = iota
+	StakingRewardMethodPayToBalance StakingRewardMethod = 0
 	StakingRewardMethodRestake      StakingRewardMethod = 1
 )
 

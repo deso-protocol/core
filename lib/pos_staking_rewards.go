@@ -140,7 +140,7 @@ func (bav *UtxoView) computeStakerRewardAndValidatorCommission(
 		if err != nil {
 			return 0, 0, errors.Wrapf(err, "computeStakerRewardAndValidatorCommission: problem fetching validator entry: ")
 		}
-		if validatorEntry == nil {
+		if validatorEntry == nil || validatorEntry.isDeleted {
 			// This should never happen. If we can't find the validator, then something is wrong. It's safest to error
 			// and return early here.
 			return 0, 0, errors.Errorf("computeStakerRewardAndValidatorCommission: validator entry should never be nil")
@@ -162,7 +162,7 @@ func (bav *UtxoView) computeStakerRewardAndValidatorCommission(
 			}
 
 			// Deduct the validator commission from the staker's reward.
-			stakerRewardNanos.Sub(stakerRewardNanos, validatorCommissionNanos)
+			stakerRewardNanos = big.NewInt(0).Sub(stakerRewardNanos, validatorCommissionNanos)
 		}
 	}
 
@@ -191,7 +191,7 @@ func (bav *UtxoView) distributeStakingReward(validatorPKID *PKID, stakerPKID *PK
 
 	// For case 1, we distribute the rewards by adding them to the staker's staked amount.
 	if stakeEntry != nil && stakeEntry.RewardMethod == StakingRewardMethodRestake {
-		stakeEntry.StakeAmountNanos.Add(stakeEntry.StakeAmountNanos, uint256.NewInt().SetUint64(rewardNanos))
+		stakeEntry.StakeAmountNanos = uint256.NewInt().Add(stakeEntry.StakeAmountNanos, uint256.NewInt().SetUint64(rewardNanos))
 		bav._setStakeEntryMappings(stakeEntry)
 
 		return nil
@@ -251,12 +251,12 @@ func convertBigFloatToBigInt(float *big.Float) *big.Int {
 
 func convertAPYBasisPointsToFloat(apyBasisPoints uint64) *big.Float {
 	apyBasisPointsAsFloat := NewFloat().SetUint64(apyBasisPoints)
-	return apyBasisPointsAsFloat.Quo(apyBasisPointsAsFloat, _basisPointsAsFloat)
+	return NewFloat().Quo(apyBasisPointsAsFloat, _basisPointsAsFloat)
 }
 
 func computeFractionOfYearAsFloat(nanoSecs uint64) *big.Float {
 	nanoSecsAsFloat := NewFloat().SetUint64(nanoSecs)
-	return nanoSecsAsFloat.Quo(nanoSecsAsFloat, _nanoSecsPerYearAsFloat)
+	return NewFloat().Quo(nanoSecsAsFloat, _nanoSecsPerYearAsFloat)
 }
 
 // computeStakingReward uses float math to compute the compound interest on the stake amounts based on the
@@ -265,10 +265,14 @@ func computeFractionOfYearAsFloat(nanoSecs uint64) *big.Float {
 // It produces the result for: stakeAmount * [e ^ (apy * elapsedTime / 1 year) - 1]
 func computeStakingReward(stakeAmountNanos *uint256.Int, elapsedFractionOfYear *big.Float, apy *big.Float) *big.Float {
 	stakeAmountFloat := NewFloat().SetInt(stakeAmountNanos.ToBig())
-	growthExponent := NewFloat().Mul(elapsedFractionOfYear, apy)                // apy * elapsedTime / 1 year
-	growthMultiplier := BigFloatPow(bigE, growthExponent)                       // e ^ (apy * elapsedTime / 1 year)
-	finalStakeAmountNanos := NewFloat().Mul(stakeAmountFloat, growthMultiplier) // stakeAmount * [e ^ (apy * elapsedTime / 1 year)]
-	return finalStakeAmountNanos.Sub(finalStakeAmountNanos, stakeAmountFloat)   // stakeAmount * [e ^ (apy * elapsedTime / 1 year) - 1]
+	growthExponent := NewFloat().Mul(elapsedFractionOfYear, apy)                 // apy * elapsedTime / 1 year
+	growthMultiplier := BigFloatExp(growthExponent)                              // e ^ (apy * elapsedTime / 1 year)
+	finalStakeAmountNanos := NewFloat().Mul(stakeAmountFloat, growthMultiplier)  // stakeAmount * [e ^ (apy * elapsedTime / 1 year)]
+	rewardAmountNanos := NewFloat().Sub(finalStakeAmountNanos, stakeAmountFloat) // stakeAmount * [e ^ (apy * elapsedTime / 1 year) - 1]
+	if rewardAmountNanos.Sign() < 0 {
+		return NewFloat() // This should not be possible, but we clamp the result to zero just in case.
+	}
+	return rewardAmountNanos
 }
 
 // computeValidatorCommission uses integer math to compute the validator's commission amount based on the staker's
@@ -278,5 +282,5 @@ func computeStakingReward(stakeAmountNanos *uint256.Int, elapsedFractionOfYear *
 // It produces the integer result for: floor[(stakerReward * validatorCommissionBasisPoints) / 1e4]
 func computeValidatorCommission(stakerRewardNanos *big.Int, validatorCommissionBasisPoints uint64) *big.Int {
 	scaledStakerReward := big.NewInt(0).Mul(stakerRewardNanos, big.NewInt(int64(validatorCommissionBasisPoints)))
-	return scaledStakerReward.Div(scaledStakerReward, _basisPointsAsInt)
+	return big.NewInt(0).Div(scaledStakerReward, _basisPointsAsInt)
 }

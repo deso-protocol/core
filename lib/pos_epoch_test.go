@@ -1,7 +1,6 @@
 package lib
 
 import (
-	"math"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -31,7 +30,7 @@ func TestCurrentEpoch(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, epochEntry)
 	require.Equal(t, epochEntry.EpochNumber, uint64(0))
-	require.Equal(t, epochEntry.FinalBlockHeight, uint64(math.MaxUint64))
+	require.Equal(t, epochEntry.FinalBlockHeight, uint64(utxoView.Params.ForkHeights.ProofOfStake1StateSetupBlockHeight))
 
 	// Set the CurrentEpoch.
 	epochEntry = &EpochEntry{
