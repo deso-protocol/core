@@ -1,11 +1,9 @@
 package collections
 
-func SliceFilter[T any](slice []T, filterFn func(T) bool) []T {
-	var result []T
+func TransformSlice[TInput any, TOutput any](slice []TInput, transformFn func(TInput) TOutput) []TOutput {
+	var result []TOutput
 	for _, val := range slice {
-		if filterFn(val) {
-			result = append(result, val)
-		}
+		result = append(result, transformFn(val))
 	}
 	return result
 }
