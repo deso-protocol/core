@@ -669,10 +669,11 @@ func DBGetStakeEntriesForValidatorPKID(handle *badger.DB, snap *Snapshot, valida
 	return stakeEntries, nil
 }
 
-func DBGetTopStakesByStakeAmount(
+func DBGetTopStakesForValidatorsByStakeAmount(
 	handle *badger.DB,
 	snap *Snapshot,
 	limit uint64,
+	validatorPKIDsToInclude *Set[PKID],
 	stakeEntriesToSkip []*StakeEntry,
 ) ([]*StakeEntry, error) {
 	var stakeEntries []*StakeEntry
@@ -697,6 +698,11 @@ func DBGetTopStakesByStakeAmount(
 		if err != nil {
 			return false
 		}
+
+		if !validatorPKIDsToInclude.Includes(*validatorPKID) {
+			return true
+		}
+
 		stakerPKID, err := GetStakerPKIDFromDBKeyForStakeByStakeAmount(badgerKey)
 		if err != nil {
 			return false
@@ -714,7 +720,7 @@ func DBGetTopStakesByStakeAmount(
 		handle, key, int(limit), nil, true, canSkipValidatorPKIDAndStakerPKIDInBadgerSeek,
 	)
 	if err != nil {
-		return nil, errors.Wrapf(err, "DBGetTopStakesByStakeAmount: problem retrieving top stakes: ")
+		return nil, errors.Wrapf(err, "DBGetTopStakesForValidatorsByStakeAmount: problem retrieving top stakes: ")
 	}
 
 	// For each key found, parse the staker PKID and validator PKID from the key, then retrieve the StakeEntry.:len(keyFound)-PublicKeyLenCompressed
@@ -722,19 +728,19 @@ func DBGetTopStakesByStakeAmount(
 		// Extract the validator PKID from the key.
 		validatorPKID, err := GetValidatorPKIDFromDBKeyForStakeByStakeAmount(keyFound)
 		if err != nil {
-			return nil, errors.Wrapf(err, "DBGetTopStakesByStakeAmount: problem reading ValidatorPKID: ")
+			return nil, errors.Wrapf(err, "DBGetTopStakesForValidatorsByStakeAmount: problem reading ValidatorPKID: ")
 		}
 
 		// Extract the staker PKID from the key.
 		stakerPKID, err := GetStakerPKIDFromDBKeyForStakeByStakeAmount(keyFound)
 		if err != nil {
-			return nil, errors.Wrapf(err, "DBGetTopStakesByStakeAmount: problem reading StakerPKID: ")
+			return nil, errors.Wrapf(err, "DBGetTopStakesForValidatorsByStakeAmount: problem reading StakerPKID: ")
 		}
 
 		// Retrieve StakeEntry from db.
 		stakeEntry, err := DBGetStakeEntry(handle, snap, validatorPKID, stakerPKID)
 		if err != nil {
-			return nil, errors.Wrapf(err, "DBGetTopStakesByStakeAmount: problem retrieving stake entry: ")
+			return nil, errors.Wrapf(err, "DBGetTopStakesForValidatorsByStakeAmount: problem retrieving stake entry: ")
 		}
 		stakeEntries = append(stakeEntries, stakeEntry)
 	}
@@ -2388,9 +2394,15 @@ func (bav *UtxoView) GetStakeEntriesForValidatorPKID(validatorPKID *PKID) ([]*St
 	return stakeEntries, nil
 }
 
-func (bav *UtxoView) GetTopStakesByStakeAmount(limit uint64) ([]*StakeEntry, error) {
-	// Validate limit param.
-	if limit == uint64(0) {
+// GetTopStakesForValidatorsByStakeAmount fetches the top n StakeEntries sorted by stake amount for
+// the given validators. The validatorPKIDs and limit parameters are strictly respected. If either has
+// 0 size, then no StakeEntries are returned.
+func (bav *UtxoView) GetTopStakesForValidatorsByStakeAmount(
+	validatorPKIDs []*PKID,
+	limit uint64,
+) ([]*StakeEntry, error) {
+	// Validate validator PKIDs and limit params.
+	if len(validatorPKIDs) == 0 || limit == uint64(0) {
 		return []*StakeEntry{}, nil
 	}
 
@@ -2406,15 +2418,27 @@ func (bav *UtxoView) GetTopStakesByStakeAmount(limit uint64) ([]*StakeEntry, err
 		utxoViewStakeEntries = append(utxoViewStakeEntries, stakeEntry)
 	}
 
+	// Convert the validatorPKIDs to a set for easy lookup.
+	validatorPKIDsToInclude := NewSet([]PKID{})
+	for _, validatorPKID := range validatorPKIDs {
+		validatorPKIDsToInclude.Add(*validatorPKID)
+	}
+
 	// Pull top N StakeEntries from the database (not present in the UtxoView).
 	// Note that we will skip stakers that are present in the view because we pass
 	// utxoViewStakeEntries to the function.
-	dbStakeEntries, err := DBGetTopStakesByStakeAmount(bav.Handle, bav.Snapshot, limit, utxoViewStakeEntries)
+	dbStakeEntries, err := DBGetTopStakesForValidatorsByStakeAmount(
+		bav.Handle,
+		bav.Snapshot,
+		limit,
+		validatorPKIDsToInclude,
+		utxoViewStakeEntries,
+	)
 	if err != nil {
-		return nil, errors.Wrapf(err, "UtxoView.GetTopStakesByStakeAmount: error retrieving stake entries from db: ")
+		return nil, errors.Wrapf(err, "UtxoView.GetTopStakesForValidatorsByStakeAmount: error retrieving stake entries from db: ")
 	}
 
-	// Cache top N StakeEntries from the db in the UtxoView.
+	// Cache StakeEntries from the db in the UtxoView.
 	for _, stakeEntry := range dbStakeEntries {
 		stakeMapKey := stakeEntry.ToMapKey()
 		// If the utxoViewStakeEntries have been properly skipped when doing the DB seek, then there
@@ -2422,18 +2446,22 @@ func (bav *UtxoView) GetTopStakesByStakeAmount(limit uint64) ([]*StakeEntry, err
 		// find duplicates here, then something is wrong. It would unsafe to continue as it may result
 		// in an invalid ordering of stakes.
 		if _, exists := bav.StakeMapKeyToStakeEntry[stakeMapKey]; exists {
-			return nil, fmt.Errorf("UtxoView.GetTopStakesByStakeAmount: duplicate StakeEntry returned from the DB: %v", stakeEntry)
+			return nil, fmt.Errorf("UtxoView.GetTopStakesForValidatorsByStakeAmount: duplicate StakeEntry returned from the DB: %v", stakeEntry)
 		}
 
 		bav._setStakeEntryMappings(stakeEntry)
 	}
 
-	// Pull !isDeleted StakeEntries with non-zero stake from the UtxoView.
+	// Pull !isDeleted StakeEntries that have staked to the desired validators and have non-zero stake.
 	var stakeEntries []*StakeEntry
 	for _, stakeEntry := range bav.StakeMapKeyToStakeEntry {
-		if !stakeEntry.isDeleted && !stakeEntry.StakeAmountNanos.IsZero() {
-			stakeEntries = append(stakeEntries, stakeEntry)
+		if stakeEntry.isDeleted || stakeEntry.StakeAmountNanos.IsZero() {
+			continue
 		}
+		if !validatorPKIDsToInclude.Includes(*stakeEntry.ValidatorPKID) {
+			continue
+		}
+		stakeEntries = append(stakeEntries, stakeEntry)
 	}
 
 	// Sort the StakeEntries by StakeAmountNanos DESC.

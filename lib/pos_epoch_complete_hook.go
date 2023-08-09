@@ -203,28 +203,23 @@ func (bav *UtxoView) generateAndSnapshotLeaderSchedule(epochNumber uint64) error
 }
 
 func (bav *UtxoView) generateAndSnapshotStakesToReward(epochNumber uint64, validatorSet []*ValidatorEntry) error {
-	// Fetch the current top n stake entries. Note, this query will return the top n stake entries regardless of whether
-	// or not they are in the active validator set of the epoch. By not filtering the stake entries while seeking through
-	// the DB, we guarantee that we will at most seek through n stake entries. This avoids the edge cases where the global
-	// set of stake entries is very large, and as a result of additional filters in the seek, we end up seeking through
-	// the entire global set.
-	topStakeEntries, err := bav.GetTopStakesByStakeAmount(bav.GetCurrentGlobalParamsEntry().StakingRewardsMaxNumStakes)
+	// Fetch the validator set's PKIDs so we can filter the top stakes by the current validator set.
+	validatorSetPKIDs := collections.TransformSlice(validatorSet, func(validatorEntry *ValidatorEntry) *PKID {
+		return validatorEntry.ValidatorPKID
+	})
+
+	// Fetch the current top n stake entries. This query is guaranteed to return the top n stake entries that have
+	// staked to the validator set.
+	topStakeEntries, err := bav.GetTopStakesForValidatorsByStakeAmount(
+		validatorSetPKIDs,
+		bav.GetCurrentGlobalParamsEntry().StakingRewardsMaxNumStakes,
+	)
 	if err != nil {
 		return errors.Wrapf(err, "RunEpochCompleteHook: error retrieving top StakeEntries: ")
 	}
 
-	// Filter the top n stake entries by the current validator set. We do not want to reward stakes that are
-	// not in the current validator set, so we pre-filter them here before snapshotting them.
-	validatorSetPKIDs := NewSet([]PKID{})
-	for _, validatorEntry := range validatorSet {
-		validatorSetPKIDs.Add(*validatorEntry.ValidatorPKID)
-	}
-	topStakesInValidatorSet := collections.SliceFilter(topStakeEntries, func(s *StakeEntry) bool {
-		return validatorSetPKIDs.Includes(*s.ValidatorPKID)
-	})
-
 	// Snapshot only the top m stake entries that are in the validator set.
-	for _, stakeEntry := range topStakesInValidatorSet {
+	for _, stakeEntry := range topStakeEntries {
 		bav._setSnapshotStakeToReward(stakeEntry.Copy(), epochNumber)
 	}
 

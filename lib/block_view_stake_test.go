@@ -1753,6 +1753,9 @@ func _testGetTopStakesByStakeAmount(t *testing.T, flushToDB bool) {
 		constructAndSubmitRegisterValidatorTxn(m1Pub, m1Priv, m1PkBytes, "https://example2.com")
 	}
 
+	// Cache the validator set for easy access.
+	validatorPKIDs := []*PKID{m0PKID, m1PKID}
+
 	{
 		// m0 stakes 100 nanos to themselves.
 		constructAndSubmitStakeTxn(m0Pub, m0Priv, m0PkBytes, 100)
@@ -1783,7 +1786,7 @@ func _testGetTopStakesByStakeAmount(t *testing.T, flushToDB bool) {
 	{
 		// Verify when query limit 3 is lower than number of stake entries 10.
 
-		topStakeEntries, err := utxoView().GetTopStakesByStakeAmount(3)
+		topStakeEntries, err := utxoView().GetTopStakesForValidatorsByStakeAmount(validatorPKIDs, 3)
 		require.NoError(t, err)
 		require.Equal(t, 3, len(topStakeEntries))
 	}
@@ -1791,7 +1794,7 @@ func _testGetTopStakesByStakeAmount(t *testing.T, flushToDB bool) {
 	{
 		// Verify when query limit 1000 is higher than number of stake entries 10.
 
-		topStakeEntries, err := utxoView().GetTopStakesByStakeAmount(1000)
+		topStakeEntries, err := utxoView().GetTopStakesForValidatorsByStakeAmount(validatorPKIDs, 1000)
 		require.NoError(t, err)
 		require.Equal(t, 10, len(topStakeEntries))
 	}
@@ -1799,7 +1802,7 @@ func _testGetTopStakesByStakeAmount(t *testing.T, flushToDB bool) {
 	{
 		// Verify ordering of top 5 stake entries, which includes breaking ties.
 
-		topStakeEntries, err := utxoView().GetTopStakesByStakeAmount(6)
+		topStakeEntries, err := utxoView().GetTopStakesForValidatorsByStakeAmount(validatorPKIDs, 6)
 		require.NoError(t, err)
 		require.Equal(t, 6, len(topStakeEntries))
 

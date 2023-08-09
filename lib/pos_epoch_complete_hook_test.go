@@ -173,7 +173,7 @@ func TestRunEpochCompleteHook(t *testing.T) {
 		require.NoError(t, err)
 		require.Len(t, validatorEntries, 7)
 
-		stakeEntries, err := _newUtxoView(testMeta).GetTopStakesByStakeAmount(10)
+		stakeEntries, err := _newUtxoView(testMeta).GetTopStakesForValidatorsByStakeAmount(validatorPKIDs, 10)
 		require.NoError(t, err)
 		require.Len(t, stakeEntries, 7)
 	}
@@ -418,7 +418,7 @@ func TestRunEpochCompleteHook(t *testing.T) {
 		}
 
 		getNumStakes := func() int {
-			stakeEntries, err := _newUtxoView(testMeta).GetTopStakesByStakeAmount(10)
+			stakeEntries, err := _newUtxoView(testMeta).GetTopStakesForValidatorsByStakeAmount(validatorPKIDs, 10)
 			require.NoError(t, err)
 			return len(stakeEntries)
 		}
@@ -512,6 +512,9 @@ func TestStakingRewardDistribution(t *testing.T) {
 	_registerValidatorAndStake(testMeta, m0Pub, m0Priv, 2000, 400, true)  // 20% commission rate, 400 nano stake
 	_registerValidatorAndStake(testMeta, m1Pub, m1Priv, 2000, 200, false) // 20% commission rate, 200 nano stake
 
+	// Cache the validator PKIDs.
+	validatorPKIDs := []*PKID{m0PKID, m1PKID}
+
 	// Two stakers delegate their stake to the validators.
 	_stakeToValidator(testMeta, m2Pub, m2Priv, m0Pub, 100, true) // 100 nano stake
 	_stakeToValidator(testMeta, m3Pub, m3Priv, m1Pub, 50, false) // 50 nano stake
@@ -533,7 +536,7 @@ func TestStakingRewardDistribution(t *testing.T) {
 
 	{
 		// Verify the stakers' stakes.
-		stakeEntries, err := _newUtxoView(testMeta).GetTopStakesByStakeAmount(10)
+		stakeEntries, err := _newUtxoView(testMeta).GetTopStakesForValidatorsByStakeAmount(validatorPKIDs, 10)
 		require.NoError(t, err)
 		require.Len(t, stakeEntries, 4)
 
@@ -559,7 +562,7 @@ func TestStakingRewardDistribution(t *testing.T) {
 
 	{
 		// Test that the stakes are unchanged.
-		stakeEntries, err := _newUtxoView(testMeta).GetTopStakesByStakeAmount(10)
+		stakeEntries, err := _newUtxoView(testMeta).GetTopStakesForValidatorsByStakeAmount(validatorPKIDs, 10)
 		require.NoError(t, err)
 		require.Len(t, stakeEntries, 4)
 		require.Equal(t, stakeEntries[0].StakerPKID, m0PKID)
@@ -611,7 +614,7 @@ func TestStakingRewardDistribution(t *testing.T) {
 		// previous epoch.
 
 		// Test that the number of stakes is unchanged.
-		stakeEntries, err := _newUtxoView(testMeta).GetTopStakesByStakeAmount(10)
+		stakeEntries, err := _newUtxoView(testMeta).GetTopStakesForValidatorsByStakeAmount(validatorPKIDs, 10)
 		require.NoError(t, err)
 		require.Len(t, stakeEntries, 4)
 
