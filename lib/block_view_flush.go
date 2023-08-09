@@ -2,11 +2,12 @@ package lib
 
 import (
 	"fmt"
+	"reflect"
+
 	"github.com/btcsuite/btcd/btcec"
 	"github.com/dgraph-io/badger/v3"
 	"github.com/golang/glog"
 	"github.com/pkg/errors"
-	"reflect"
 )
 
 func (bav *UtxoView) FlushToDb(blockHeight uint64) error {
@@ -143,9 +144,6 @@ func (bav *UtxoView) FlushToDbWithTxn(txn *badger.Txn, blockHeight uint64) error
 	if err := bav._flushValidatorEntriesToDbWithTxn(txn, blockHeight); err != nil {
 		return err
 	}
-	if err := bav._flushGlobalActiveStakeAmountNanosToDbWithTxn(txn, blockHeight); err != nil {
-		return err
-	}
 	if err := bav._flushStakeEntriesToDbWithTxn(txn, blockHeight); err != nil {
 		return err
 	}
@@ -164,13 +162,16 @@ func (bav *UtxoView) FlushToDbWithTxn(txn *badger.Txn, blockHeight uint64) error
 	if err := bav._flushSnapshotGlobalParamsEntryToDbWithTxn(txn, blockHeight); err != nil {
 		return err
 	}
-	if err := bav._flushSnapshotValidatorEntriesToDbWithTxn(txn, blockHeight); err != nil {
+	if err := bav._flushSnapshotValidatorSetToDbWithTxn(txn, blockHeight); err != nil {
 		return err
 	}
-	if err := bav._flushSnapshotGlobalActiveStakeAmountNanosToDbWithTxn(txn, blockHeight); err != nil {
+	if err := bav._flushSnapshotValidatorSetTotalStakeAmountNanosToDbWithTxn(txn, blockHeight); err != nil {
 		return err
 	}
 	if err := bav._flushSnapshotLeaderScheduleToDbWithTxn(txn, blockHeight); err != nil {
+		return err
+	}
+	if err := bav._flushSnapshotStakesToRewardToDbWithTxn(txn, blockHeight); err != nil {
 		return err
 	}
 	return nil

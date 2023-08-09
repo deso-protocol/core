@@ -4,18 +4,19 @@ import (
 	"bytes"
 	"encoding/hex"
 	"fmt"
-	"github.com/btcsuite/btcd/btcec"
-	"github.com/btcsuite/btcd/wire"
-	merkletree "github.com/deso-protocol/go-merkle-tree"
-	"github.com/dgraph-io/badger/v3"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 	"io/ioutil"
 	"math/big"
 	"os"
 	"strconv"
 	"strings"
 	"testing"
+
+	"github.com/btcsuite/btcd/btcec"
+	"github.com/btcsuite/btcd/wire"
+	merkletree "github.com/deso-protocol/go-merkle-tree"
+	"github.com/dgraph-io/badger/v3"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 const (
@@ -58,8 +59,8 @@ func GetTestParamsCopy(
 		big.NewInt(0),
 		// We are bastardizing the DeSo header to store Bitcoin information here.
 		&MsgDeSoHeader{
-			TstampSecs: uint64(startHeader.Timestamp.Unix()),
-			Height:     0,
+			TstampNanoSecs: SecondsToNanoSeconds(uint64(startHeader.Timestamp.Unix())),
+			Height:         0,
 		},
 		StatusBitcoinHeaderValidated,
 	)

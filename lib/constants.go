@@ -50,6 +50,19 @@ const (
 	NodeErase
 )
 
+// Time constants
+const (
+	NanoSecondsPerSecond = uint64(1000000000)
+)
+
+func SecondsToNanoSeconds(secs uint64) uint64 {
+	return secs * NanoSecondsPerSecond
+}
+
+func NanoSecondsToSeconds(nanos uint64) uint64 {
+	return nanos / NanoSecondsPerSecond
+}
+
 // Snapshot constants
 const (
 	// GetSnapshotTimeout is used in Peer when we fetch a snapshot chunk, and we need to retry.
@@ -666,6 +679,18 @@ type DeSoParams struct {
 	// that are included when generating a new Proof-of-Stake leader schedule.
 	DefaultLeaderScheduleMaxNumValidators uint64
 
+	// DefaultValidatorSetMaxNumValidators is the default maximum number of validators
+	// that are included in the validator set for any given epoch.
+	DefaultValidatorSetMaxNumValidators uint64
+
+	// DefaultStakingRewardsMaxNumStakes is the default number of stake entries
+	// that are included in the staking reward distribution in each epoch.
+	DefaultStakingRewardsMaxNumStakes uint64
+
+	// DefaultStakingRewardsAPYBasisPoints is the default scaled interest rate
+	// that is applied to all stake entries in the staking reward distribution in each epoch.
+	DefaultStakingRewardsAPYBasisPoints uint64
+
 	// DefaultEpochDurationNumBlocks is the default number of blocks included in one epoch.
 	DefaultEpochDurationNumBlocks uint64
 
@@ -765,7 +790,7 @@ var (
 			Version:               0,
 			PrevBlockHash:         &BlockHash{},
 			TransactionMerkleRoot: mustDecodeHexBlockHash("4b71d103dd6fff1bd6110bc8ed0a2f3118bbe29a67e45c6c7d97546ad126906f"),
-			TstampSecs:            uint64(1610948544),
+			TstampNanoSecs:        SecondsToNanoSeconds(1610948544),
 			Height:                uint64(0),
 			Nonce:                 uint64(0),
 		},
@@ -949,8 +974,8 @@ var DeSoMainnetParams = DeSoParams{
 		big.NewInt(0),
 		// We are bastardizing the DeSo header to store Bitcoin information here.
 		&MsgDeSoHeader{
-			TstampSecs: 1602950620,
-			Height:     0,
+			TstampNanoSecs: SecondsToNanoSeconds(1602950620),
+			Height:         0,
 		},
 		StatusBitcoinHeaderValidated,
 	),
@@ -1065,6 +1090,15 @@ var DeSoMainnetParams = DeSoParams{
 
 	// The max number of validators included in a leader schedule.
 	DefaultLeaderScheduleMaxNumValidators: uint64(100),
+
+	// The max number of validators included in a validator set for any given epoch.
+	DefaultValidatorSetMaxNumValidators: uint64(1000),
+
+	// The max number of stakes included in a staking rewards distribution every epoch.
+	DefaultStakingRewardsMaxNumStakes: uint64(10000),
+
+	// Staking reward APY is defaulted to 0% to be safe.
+	DefaultStakingRewardsAPYBasisPoints: uint64(0),
 
 	// The number of blocks in one epoch
 	DefaultEpochDurationNumBlocks: uint64(3600),
@@ -1199,8 +1233,8 @@ var DeSoTestnetParams = DeSoParams{
 		big.NewInt(0),
 		// We are bastardizing the DeSo header to store Bitcoin information here.
 		&MsgDeSoHeader{
-			TstampSecs: 1607659152,
-			Height:     0,
+			TstampNanoSecs: SecondsToNanoSeconds(1607659152),
+			Height:         0,
 		},
 		StatusBitcoinHeaderValidated,
 	),
@@ -1317,6 +1351,15 @@ var DeSoTestnetParams = DeSoParams{
 	// The max number of validators included in a leader schedule.
 	DefaultLeaderScheduleMaxNumValidators: uint64(100),
 
+	// The max number of validators included in a validator set for any given epoch.
+	DefaultValidatorSetMaxNumValidators: uint64(1000),
+
+	// The max number of stakes included in a staking rewards distribution every epoch.
+	DefaultStakingRewardsMaxNumStakes: uint64(10000),
+
+	// Staking reward APY is defaulted to 0% to be safe.
+	DefaultStakingRewardsAPYBasisPoints: uint64(0),
+
 	// The number of blocks in one epoch
 	DefaultEpochDurationNumBlocks: uint64(3600),
 
@@ -1372,6 +1415,9 @@ const (
 	StakeLockupEpochDurationKey               = "StakeLockupEpochDuration"
 	ValidatorJailEpochDurationKey             = "ValidatorJailEpochDuration"
 	LeaderScheduleMaxNumValidatorsKey         = "LeaderScheduleMaxNumValidators"
+	ValidatorSetMaxNumValidatorsKey           = "ValidatorSetMaxNumValidators"
+	StakingRewardsMaxNumStakesKey             = "StakingRewardsMaxNumStakes"
+	StakingRewardsAPYBasisPointsKey           = "StakingRewardsAPYBasisPoints"
 	EpochDurationNumBlocksKey                 = "EpochDurationNumBlocks"
 	JailInactiveValidatorGracePeriodEpochsKey = "JailInactiveValidatorGracePeriodEpochs"
 

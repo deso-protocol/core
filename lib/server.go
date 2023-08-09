@@ -657,7 +657,9 @@ func (srv *Server) GetSnapshot(pp *Peer) {
 			return
 		}
 	}
-
+	// If operationQueueSemaphore is full, we are already storing too many chunks in memory. Block the thread while
+	// we wait for the queue to clear up.
+	srv.snapshot.operationQueueSemaphore <- struct{}{}
 	// Now send a message to the peer to fetch the snapshot chunk.
 	pp.AddDeSoMessage(&MsgDeSoGetSnapshot{
 		SnapshotStartKey: lastReceivedKey,
@@ -858,7 +860,7 @@ func (srv *Server) _handleHeaderBundle(pp *Peer, msg *MsgDeSoHeaderBundle) {
 			glog.V(1).Infof("Server._handleHeaderBundle: Disconnecting from peer %v because "+
 				"we have exhausted their headers but our tip is still only "+
 				"at time=%v height=%d", pp,
-				time.Unix(int64(srv.blockchain.headerTip().Header.TstampSecs), 0),
+				time.Unix(int64(srv.blockchain.headerTip().Header.GetTstampSecs()), 0),
 				srv.blockchain.headerTip().Header.Height)
 			pp.Disconnect()
 			return

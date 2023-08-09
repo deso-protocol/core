@@ -481,18 +481,18 @@ type DBPrefixes struct {
 	// Prefix, <ValidatorPKID [33]byte> -> ValidatorEntry
 	PrefixValidatorByPKID []byte `prefix_id:"[78]" is_state:"true"`
 
-	// PrefixValidatorByStatusAndStake: Retrieve the top N active validators by stake.
+	// PrefixValidatorByStatusAndStakeAmount: Retrieve the top N active validators by stake.
 	// Prefix, <Status uint8>, <TotalStakeAmountNanos *uint256.Int>, <ValidatorPKID [33]byte> -> nil
 	// Note that we save space by storing a nil value and parsing the ValidatorPKID from the key.
-	PrefixValidatorByStatusAndStake []byte `prefix_id:"[79]" is_state:"true"`
-
-	// PrefixGlobalActiveStakeAmountNanos: Retrieve the cumulative stake across all validators.
-	// Prefix -> *uint256.Int
-	PrefixGlobalActiveStakeAmountNanos []byte `prefix_id:"[80]" is_state:"true"`
+	PrefixValidatorByStatusAndStakeAmount []byte `prefix_id:"[79]" is_state:"true"`
 
 	// PrefixStakeByValidatorAndStaker: Retrieve a StakeEntry.
 	// Prefix, <ValidatorPKID [33]byte>, <StakerPKID [33]byte> -> StakeEntry
-	PrefixStakeByValidatorAndStaker []byte `prefix_id:"[81]" is_state:"true"`
+	PrefixStakeByValidatorAndStaker []byte `prefix_id:"[80]" is_state:"true"`
+
+	// PrefixStakeByStakeAmount: Retrieve the top N stake entries by stake amount.
+	// Prefix, <TotalStakeAmountNanos *uint256.Int>, <ValidatorPKID [33]byte>, <StakerPKID [33]byte> -> nil
+	PrefixStakeByStakeAmount []byte `prefix_id:"[81]" is_state:"true"`
 
 	// PrefixLockedStakeByValidatorAndStakerAndLockedAt: Retrieve a LockedStakeEntry.
 	// Prefix, <ValidatorPKID [33]byte>, <StakerPKID [33]byte>, <LockedAtEpochNumber uint64> -> LockedStakeEntry
@@ -533,24 +533,33 @@ type DBPrefixes struct {
 	// Prefix, <SnapshotAtEpochNumber uint64> -> *GlobalParamsEntry
 	PrefixSnapshotGlobalParamsEntry []byte `prefix_id:"[85]" is_state:"true"`
 
-	// PrefixSnapshotValidatorByPKID: Retrieve a snapshot ValidatorEntry by <SnapshotAtEpochNumber, PKID>.
+	// PrefixSnapshotValidatorSetByPKID: Retrieve a ValidatorEntry from a snapshot validator set by
+	// <SnapshotAtEpochNumber, PKID>.
 	// Prefix, <SnapshotAtEpochNumber uint64>, <ValidatorPKID [33]byte> -> *ValidatorEntry
-	PrefixSnapshotValidatorByPKID []byte `prefix_id:"[86]" is_state:"true"`
+	PrefixSnapshotValidatorSetByPKID []byte `prefix_id:"[86]" is_state:"true"`
 
-	// PrefixSnapshotValidatorByStatusAndStake: Retrieve stake-ordered active ValidatorEntries by SnapshotAtEpochNumber.
-	// Prefix, <SnapshotAtEpochNumber uint64>, <Status uint8>, <TotalStakeAmountNanos *uint256.Int>, <ValidatorPKID [33]byte> -> nil
+	// PrefixSnapshotValidatorSetByStakeAmount: Retrieve stake-ordered ValidatorEntries from a snapshot validator set
+	// by SnapshotAtEpochNumber.
+	// Prefix, <SnapshotAtEpochNumber uint64>, <TotalStakeAmountNanos *uint256.Int>, <ValidatorPKID [33]byte> -> nil
 	// Note: we parse the ValidatorPKID from the key and the value is nil to save space.
-	PrefixSnapshotValidatorByStatusAndStake []byte `prefix_id:"[87]" is_state:"true"`
+	PrefixSnapshotValidatorSetByStakeAmount []byte `prefix_id:"[87]" is_state:"true"`
 
-	// PrefixSnapshotGlobalActiveStakeAmountNanos: Retrieve a snapshot GlobalActiveStakeAmountNanos by SnapshotAtEpochNumber.
+	// PrefixSnapshotValidatorSetTotalStakeAmountNanos: Retrieve a snapshot of the validator set's total amount of
+	// staked DESO by SnapshotAtEpochNumber.
 	// Prefix, <SnapshotAtEpochNumber uint64> -> *uint256.Int
-	PrefixSnapshotGlobalActiveStakeAmountNanos []byte `prefix_id:"[88]" is_state:"true"`
+	PrefixSnapshotValidatorSetTotalStakeAmountNanos []byte `prefix_id:"[88]" is_state:"true"`
 
 	// PrefixSnapshotLeaderSchedule: Retrieve a ValidatorPKID by <SnapshotAtEpochNumber, LeaderIndex>.
 	// Prefix, <SnapshotAtEpochNumber uint64>, <LeaderIndex uint16> -> ValidatorPKID
 	PrefixSnapshotLeaderSchedule []byte `prefix_id:"[89]" is_state:"true"`
 
-	// NEXT_TAG: 90
+	// PrefixSnapshotStakeToRewardByValidatorAndStaker: Retrieves snapshotted StakeEntries that are eligible to
+	// receive staking rewards for an epoch. StakeEntries can be retrieved by ValidatorPKID and StakerPKID.
+	// Prefix, <SnapshotAtEpochNumber>, <ValidatorPKID [33]byte>, <StakerPKID [33]byte> -> *StakeEntry
+	// Note, we parse the ValidatorPKID and StakerPKID from the key.
+	PrefixSnapshotStakeToRewardByValidatorAndStaker []byte `prefix_id:"[90]" is_state:"true"`
+
+	// NEXT_TAG: 91
 }
 
 // StatePrefixToDeSoEncoder maps each state prefix to a DeSoEncoder type that is stored under that prefix.
@@ -755,15 +764,15 @@ func StatePrefixToDeSoEncoder(prefix []byte) (_isEncoder bool, _encoder DeSoEnco
 	} else if bytes.Equal(prefix, Prefixes.PrefixValidatorByPKID) {
 		// prefix_id:"[78]"
 		return true, &ValidatorEntry{}
-	} else if bytes.Equal(prefix, Prefixes.PrefixValidatorByStatusAndStake) {
+	} else if bytes.Equal(prefix, Prefixes.PrefixValidatorByStatusAndStakeAmount) {
 		// prefix_id:"[79]"
 		return false, nil
-	} else if bytes.Equal(prefix, Prefixes.PrefixGlobalActiveStakeAmountNanos) {
-		// prefix_id:"[80]"
-		return false, nil
 	} else if bytes.Equal(prefix, Prefixes.PrefixStakeByValidatorAndStaker) {
-		// prefix_id:"[81]"
+		// prefix_id:"[80]"
 		return true, &StakeEntry{}
+	} else if bytes.Equal(prefix, Prefixes.PrefixStakeByStakeAmount) {
+		// prefix_id:"[81]"
+		return false, nil
 	} else if bytes.Equal(prefix, Prefixes.PrefixLockedStakeByValidatorAndStakerAndLockedAt) {
 		// prefix_id:"[82]"
 		return true, &LockedStakeEntry{}
@@ -776,18 +785,21 @@ func StatePrefixToDeSoEncoder(prefix []byte) (_isEncoder bool, _encoder DeSoEnco
 	} else if bytes.Equal(prefix, Prefixes.PrefixSnapshotGlobalParamsEntry) {
 		// prefix_id:"[85]"
 		return true, &GlobalParamsEntry{}
-	} else if bytes.Equal(prefix, Prefixes.PrefixSnapshotValidatorByPKID) {
+	} else if bytes.Equal(prefix, Prefixes.PrefixSnapshotValidatorSetByPKID) {
 		// prefix_id:"[86]"
 		return true, &ValidatorEntry{}
-	} else if bytes.Equal(prefix, Prefixes.PrefixSnapshotValidatorByStatusAndStake) {
+	} else if bytes.Equal(prefix, Prefixes.PrefixSnapshotValidatorSetByStakeAmount) {
 		// prefix_id:"[87]"
 		return false, nil
-	} else if bytes.Equal(prefix, Prefixes.PrefixSnapshotGlobalActiveStakeAmountNanos) {
+	} else if bytes.Equal(prefix, Prefixes.PrefixSnapshotValidatorSetTotalStakeAmountNanos) {
 		// prefix_id:"[88]"
 		return false, nil
 	} else if bytes.Equal(prefix, Prefixes.PrefixSnapshotLeaderSchedule) {
 		// prefix_id:"[89]"
 		return true, &PKID{}
+	} else if bytes.Equal(prefix, Prefixes.PrefixSnapshotStakeToRewardByValidatorAndStaker) {
+		// prefix_id:"[90]"
+		return true, &StakeEntry{}
 	}
 
 	return true, nil
@@ -10781,7 +10793,7 @@ func EnumerateKeysForPrefixWithLimitOffsetOrder(
 	dbErr := db.View(func(txn *badger.Txn) error {
 		var err error
 		keysFound, valsFound, err = _enumerateKeysForPrefixWithLimitOffsetOrderWithTxn(
-			txn, prefix, limit, lastSeenKey, sortDescending, skipKeys,
+			txn, prefix, limit, lastSeenKey, sortDescending, _setMembershipCheckFunc(skipKeys),
 		)
 		return err
 	})
@@ -10795,13 +10807,41 @@ func EnumerateKeysForPrefixWithLimitOffsetOrder(
 	return keysFound, valsFound, nil
 }
 
+func EnumerateKeysForPrefixWithLimitOffsetOrderAndSkipFunc(
+	db *badger.DB,
+	prefix []byte,
+	limit int,
+	lastSeenKey []byte,
+	sortDescending bool,
+	canSkipKey func([]byte) bool,
+) ([][]byte, [][]byte, error) {
+	keysFound := [][]byte{}
+	valsFound := [][]byte{}
+
+	dbErr := db.View(func(txn *badger.Txn) error {
+		var err error
+		keysFound, valsFound, err = _enumerateKeysForPrefixWithLimitOffsetOrderWithTxn(
+			txn, prefix, limit, lastSeenKey, sortDescending, canSkipKey,
+		)
+		return err
+	})
+	if dbErr != nil {
+		return nil, nil, errors.Wrapf(
+			dbErr,
+			"EnumerateKeysForPrefixWithLimitOffsetOrderAndSkipFunc: problem fetching keys and values from db: ",
+		)
+	}
+
+	return keysFound, valsFound, nil
+}
+
 func _enumerateKeysForPrefixWithLimitOffsetOrderWithTxn(
 	txn *badger.Txn,
 	prefix []byte,
 	limit int,
 	lastSeenKey []byte,
 	sortDescending bool,
-	skipKeys *Set[string],
+	canSkipKey func([]byte) bool,
 ) ([][]byte, [][]byte, error) {
 	keysFound := [][]byte{}
 	valsFound := [][]byte{}
@@ -10843,8 +10883,8 @@ func _enumerateKeysForPrefixWithLimitOffsetOrderWithTxn(
 			}
 			haveSeenLastSeenKey = true
 		}
-		// Skip if key is included in the set of skipKeys.
-		if skipKeys.Includes(string(key)) {
+		// Skip if key can be skipped.
+		if canSkipKey(key) {
 			continue
 		}
 		// Copy key.
@@ -10860,4 +10900,10 @@ func _enumerateKeysForPrefixWithLimitOffsetOrderWithTxn(
 		valsFound = append(valsFound, valCopy)
 	}
 	return keysFound, valsFound, nil
+}
+
+func _setMembershipCheckFunc(set *Set[string]) func([]byte) bool {
+	return func(key []byte) bool {
+		return set.Includes(string(key))
+	}
 }
