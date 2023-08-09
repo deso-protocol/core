@@ -858,7 +858,7 @@ func (srv *Server) _handleHeaderBundle(pp *Peer, msg *MsgDeSoHeaderBundle) {
 			glog.V(1).Infof("Server._handleHeaderBundle: Disconnecting from peer %v because "+
 				"we have exhausted their headers but our tip is still only "+
 				"at time=%v height=%d", pp,
-				time.Unix(int64(srv.blockchain.headerTip().Header.TstampSecs), 0),
+				time.Unix(int64(srv.blockchain.headerTip().Header.GetTstampSecs()), 0),
 				srv.blockchain.headerTip().Header.Height)
 			pp.Disconnect()
 			return

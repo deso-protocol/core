@@ -100,10 +100,10 @@ var expectedBlockHeaderVersion1 = &MsgDeSoHeader{
 		0x64, 0x65,
 	},
 	// Use full uint64 values to make sure serialization and de-serialization work
-	TstampSecs: uint64(1678943210),
-	Height:     uint64(1321012345),
-	Nonce:      uint64(12345678901234),
-	ExtraNonce: uint64(101234123456789),
+	TstampNanoSecs: SecondsToNanoSeconds(1678943210),
+	Height:         uint64(1321012345),
+	Nonce:          uint64(12345678901234),
+	ExtraNonce:     uint64(101234123456789),
 }
 
 // Creates fully formatted a PoS block header with random signatures
@@ -121,6 +121,12 @@ func createTestBlockHeaderVersion2(t *testing.T) *MsgDeSoHeader {
 		0x54, 0x55, 0x56, 0x57, 0x58, 0x59, 0x60, 0x61, 0x62, 0x63,
 		0x64, 0x65,
 	}
+	testRandomSeedHash := RandomSeedHash{
+		0x00, 0x36, 0x36, 0x37, 0x38, 0x39, 0x40, 0x41, 0x42, 0x43,
+		0x44, 0x45, 0x46, 0x47, 0x48, 0x49, 0x50, 0x51, 0x52, 0x53,
+		0x54, 0x55, 0x56, 0x57, 0x58, 0x59, 0x60, 0x61, 0x62, 0x63,
+		0x64, 0x65,
+	}
 
 	testBitset := bitset.NewBitset().Set(0, true).Set(3, true)
 	testBLSPublicKey, testBLSSignature := _generateValidatorVotingPublicKeyAndSignature(t)
@@ -129,13 +135,14 @@ func createTestBlockHeaderVersion2(t *testing.T) *MsgDeSoHeader {
 		Version:               2,
 		PrevBlockHash:         &testBlockHash,
 		TransactionMerkleRoot: &testMerkleRoot,
-		TstampSecs:            uint64(1678943210),
+		TstampNanoSecs:        SecondsToNanoSeconds(1678943210),
 		Height:                uint64(1321012345),
 		// Nonce and ExtraNonce are unused and set to 0 starting in version 2.
 		Nonce:                   uint64(0),
 		ExtraNonce:              uint64(0),
 		ProposerPublicKey:       NewPublicKey(pkForTesting1),
 		ProposerVotingPublicKey: testBLSPublicKey,
+		ProposerRandomSeedHash:  &testRandomSeedHash,
 		ProposedInView:          uint64(1432101234),
 		// Use real signatures and public keys for the PoS fields
 		ValidatorsVoteQC: &QuorumCertificate{
@@ -213,7 +220,7 @@ func TestHeaderConversionAndReadWriteMessage(t *testing.T) {
 		assert.NoError(err)
 		assert.Equal(hdrPayload, data)
 
-		assert.Equalf(13, reflect.TypeOf(expectedBlockHeader).Elem().NumField(),
+		assert.Equalf(14, reflect.TypeOf(expectedBlockHeader).Elem().NumField(),
 			"Number of fields in HEADER message is different from expected. "+
 				"Did you add a new field? If so, make sure the serialization code "+
 				"works, add the new field to the test case, and fix this error.")
@@ -538,9 +545,9 @@ var expectedV0Header = &MsgDeSoHeader{
 		0x54, 0x55, 0x56, 0x57, 0x58, 0x59, 0x60, 0x61, 0x62, 0x63,
 		0x64, 0x65,
 	},
-	TstampSecs: uint64(0x70717273),
-	Height:     uint64(99999),
-	Nonce:      uint64(123456),
+	TstampNanoSecs: SecondsToNanoSeconds(0x70717273),
+	Height:         uint64(99999),
+	Nonce:          uint64(123456),
 }
 
 func TestBlockSerialize(t *testing.T) {
