@@ -912,10 +912,6 @@ type UtxoOperation struct {
 	// register, unregister, stake, or unstake txn.
 	PrevValidatorEntry *ValidatorEntry
 
-	// PrevGlobalActiveStakeAmountNanos is the previous GlobalActiveStakeAmountNanos
-	// prior to a stake or unstake operation txn.
-	PrevGlobalActiveStakeAmountNanos *uint256.Int
-
 	// PrevStakeEntries is a slice of StakeEntries prior to
 	// a register, unregister, stake, or unstake txn.
 	PrevStakeEntries []*StakeEntry
@@ -1243,9 +1239,6 @@ func (op *UtxoOperation) RawEncodeWithoutMetadata(blockHeight uint64, skipMetada
 	if MigrationTriggered(blockHeight, ProofOfStake1StateSetupMigration) {
 		// PrevValidatorEntry
 		data = append(data, EncodeToBytes(blockHeight, op.PrevValidatorEntry, skipMetadata...)...)
-
-		// PrevGlobalActiveStakeAmountNanos
-		data = append(data, VariableEncodeUint256(op.PrevGlobalActiveStakeAmountNanos)...)
 
 		// PrevStakeEntries
 		data = append(data, EncodeDeSoEncoderSlice(op.PrevStakeEntries, blockHeight, skipMetadata...)...)
@@ -1873,11 +1866,6 @@ func (op *UtxoOperation) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.
 		// PrevValidatorEntry
 		if op.PrevValidatorEntry, err = DecodeDeSoEncoder(&ValidatorEntry{}, rr); err != nil {
 			return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading PrevValidatorEntry: ")
-		}
-
-		// PrevGlobalActiveStakeAmountNanos
-		if op.PrevGlobalActiveStakeAmountNanos, err = VariableDecodeUint256(rr); err != nil {
-			return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading PrevGlobalActiveStakeAmountNanos: ")
 		}
 
 		// PrevStakeEntries
@@ -3784,6 +3772,23 @@ type GlobalParamsEntry struct {
 	// are included when generating a new Proof-of-Stake leader schedule.
 	LeaderScheduleMaxNumValidators uint64
 
+	// ValidatorSetMaxNumValidators is the maximum number of validators that
+	// are included in the active validator set every epoch in the Proof-of-Stake
+	// consensus.
+	ValidatorSetMaxNumValidators uint64
+
+	// StakingRewardsMaxNumStakes is the maximum number of stake entries that are
+	// eligible to receive block rewards every epoch in the Proof-of-Stake
+	// consensus.
+	StakingRewardsMaxNumStakes uint64
+
+	// StakingRewardsAPYBasisPoints determines the annual interest rate that stakers
+	// receive on their stake in the Proof-of-Stake consensus. Stake rewards are paid
+	// out at the end of every epoch based on the APY. The APY is configured as basis
+	// points. Example:
+	// - An APY of 5% corresponds to a value of 0.05 * 10000 = 500 basis points
+	StakingRewardsAPYBasisPoints uint64
+
 	// EpochDurationNumBlocks is the number of blocks included in one epoch.
 	EpochDurationNumBlocks uint64
 
@@ -3804,6 +3809,9 @@ func (gp *GlobalParamsEntry) Copy() *GlobalParamsEntry {
 		StakeLockupEpochDuration:               gp.StakeLockupEpochDuration,
 		ValidatorJailEpochDuration:             gp.ValidatorJailEpochDuration,
 		LeaderScheduleMaxNumValidators:         gp.LeaderScheduleMaxNumValidators,
+		ValidatorSetMaxNumValidators:           gp.ValidatorSetMaxNumValidators,
+		StakingRewardsMaxNumStakes:             gp.StakingRewardsMaxNumStakes,
+		StakingRewardsAPYBasisPoints:           gp.StakingRewardsAPYBasisPoints,
 		EpochDurationNumBlocks:                 gp.EpochDurationNumBlocks,
 		JailInactiveValidatorGracePeriodEpochs: gp.JailInactiveValidatorGracePeriodEpochs,
 	}
@@ -3824,6 +3832,9 @@ func (gp *GlobalParamsEntry) RawEncodeWithoutMetadata(blockHeight uint64, skipMe
 		data = append(data, UintToBuf(gp.StakeLockupEpochDuration)...)
 		data = append(data, UintToBuf(gp.ValidatorJailEpochDuration)...)
 		data = append(data, UintToBuf(gp.LeaderScheduleMaxNumValidators)...)
+		data = append(data, UintToBuf(gp.ValidatorSetMaxNumValidators)...)
+		data = append(data, UintToBuf(gp.StakingRewardsMaxNumStakes)...)
+		data = append(data, UintToBuf(gp.StakingRewardsAPYBasisPoints)...)
 		data = append(data, UintToBuf(gp.EpochDurationNumBlocks)...)
 		data = append(data, UintToBuf(gp.JailInactiveValidatorGracePeriodEpochs)...)
 	}
@@ -3871,6 +3882,18 @@ func (gp *GlobalParamsEntry) RawDecodeWithoutMetadata(blockHeight uint64, rr *by
 		gp.LeaderScheduleMaxNumValidators, err = ReadUvarint(rr)
 		if err != nil {
 			return errors.Wrapf(err, "GlobalParamsEntry.Decode: Problem reading LeaderScheduleMaxNumValidators: ")
+		}
+		gp.ValidatorSetMaxNumValidators, err = ReadUvarint(rr)
+		if err != nil {
+			return errors.Wrapf(err, "GlobalParamsEntry.Decode: Problem reading ValidatorSetMaxNumValidators: ")
+		}
+		gp.StakingRewardsMaxNumStakes, err = ReadUvarint(rr)
+		if err != nil {
+			return errors.Wrapf(err, "GlobalParamsEntry.Decode: Problem reading StakingRewardsMaxNumStakes: ")
+		}
+		gp.StakingRewardsAPYBasisPoints, err = ReadUvarint(rr)
+		if err != nil {
+			return errors.Wrapf(err, "GlobalParamsEntry.Decode: Problem reading StakingRewardsAPYBasisPoints: ")
 		}
 		gp.EpochDurationNumBlocks, err = ReadUvarint(rr)
 		if err != nil {

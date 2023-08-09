@@ -1,9 +1,9 @@
 package lib
 
 import (
-	"github.com/stretchr/testify/require"
-	"math"
 	"testing"
+
+	"github.com/stretchr/testify/require"
 )
 
 func TestCurrentEpoch(t *testing.T) {
@@ -13,6 +13,7 @@ func TestCurrentEpoch(t *testing.T) {
 	// Initialize blockchain.
 	chain, params, db := NewLowDifficultyBlockchain(t)
 	blockHeight := uint64(chain.blockTip().Height) + 1
+	blockTimestampNanoSecs := uint64(chain.blockTip().Header.TstampSecs)*1e9 + 1e9
 	utxoView, err := NewUtxoView(db, params, chain.postgres, chain.snapshot)
 	require.NoError(t, err)
 
@@ -29,12 +30,13 @@ func TestCurrentEpoch(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, epochEntry)
 	require.Equal(t, epochEntry.EpochNumber, uint64(0))
-	require.Equal(t, epochEntry.FinalBlockHeight, uint64(math.MaxUint64))
+	require.Equal(t, epochEntry.FinalBlockHeight, uint64(utxoView.Params.ForkHeights.ProofOfStake1StateSetupBlockHeight))
 
 	// Set the CurrentEpoch.
 	epochEntry = &EpochEntry{
-		EpochNumber:      1,
-		FinalBlockHeight: blockHeight + 5,
+		EpochNumber:                     1,
+		FinalBlockHeight:                blockHeight + 5,
+		CreatedAtBlockTimestampNanoSecs: blockTimestampNanoSecs + 5*1e9,
 	}
 	utxoView._setCurrentEpochEntry(epochEntry)
 	require.NoError(t, utxoView.FlushToDb(blockHeight))
@@ -45,6 +47,7 @@ func TestCurrentEpoch(t *testing.T) {
 	require.NotNil(t, epochEntry)
 	require.Equal(t, epochEntry.EpochNumber, uint64(1))
 	require.Equal(t, epochEntry.FinalBlockHeight, blockHeight+5)
+	require.Equal(t, epochEntry.CreatedAtBlockTimestampNanoSecs, blockTimestampNanoSecs+5*1e9)
 
 	// Test that the CurrentEpoch is flushed from the UtxoView.
 	require.Nil(t, utxoView.CurrentEpochEntry)
@@ -55,12 +58,14 @@ func TestCurrentEpoch(t *testing.T) {
 	require.NotNil(t, epochEntry)
 	require.Equal(t, epochEntry.EpochNumber, uint64(1))
 	require.Equal(t, epochEntry.FinalBlockHeight, blockHeight+5)
+	require.Equal(t, epochEntry.CreatedAtBlockTimestampNanoSecs, blockTimestampNanoSecs+5*1e9)
 
 	// Test that the CurrentEpoch is set in the UtxoView.
 	epochEntry = utxoView.CurrentEpochEntry
 	require.NotNil(t, epochEntry)
 	require.Equal(t, epochEntry.EpochNumber, uint64(1))
 	require.Equal(t, epochEntry.FinalBlockHeight, blockHeight+5)
+	require.Equal(t, epochEntry.CreatedAtBlockTimestampNanoSecs, blockTimestampNanoSecs+5*1e9)
 
 	// Delete CurrentEpoch from the UtxoView.
 	utxoView.CurrentEpochEntry = nil

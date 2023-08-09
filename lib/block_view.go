@@ -118,9 +118,6 @@ type UtxoView struct {
 	// Validator mappings
 	ValidatorPKIDToValidatorEntry map[PKID]*ValidatorEntry
 
-	// The global active stake is the sum of all stake across validators who have Status = Active.
-	GlobalActiveStakeAmountNanos *uint256.Int
-
 	// Stake mappings
 	StakeMapKeyToStakeEntry map[StakeMapKey]*StakeEntry
 
@@ -137,18 +134,24 @@ type UtxoView struct {
 	// It contains the snapshot value of the GlobalParamsEntry at the given SnapshotAtEpochNumber.
 	SnapshotGlobalParamEntries map[uint64]*GlobalParamsEntry
 
-	// SnapshotValidatorEntries is a map of <SnapshotAtEpochNumber, ValidatorPKID> to a ValidatorEntry.
-	// It contains the snapshot value of a ValidatorEntry at the given SnapshotAtEpochNumber.
-	SnapshotValidatorEntries map[SnapshotValidatorMapKey]*ValidatorEntry
+	// SnapshotValidatorSet is a map of <SnapshotAtEpochNumber, ValidatorPKID> to a ValidatorEntry.
+	// It contains the snapshot value of every ValidatorEntry that makes up the validator set at
+	// the given SnapshotAtEpochNumber.
+	SnapshotValidatorSet map[SnapshotValidatorSetMapKey]*ValidatorEntry
 
-	// SnapshotGlobalActiveStakeAmountNanos is a map of SnapshotAtEpochNumber to a GlobalActiveStakeAmountNanos.
+	// SnapshotValidatorSetTotalStakeAmountNanos is a map of SnapshotAtEpochNumber to the sum TotalStakeAmountNanos
+	// for the validator set of for an epoch.
 	// It contains the snapshot value of the GlobalActiveStakeAmountNanos at the given SnapshotAtEpochNumber.
-	SnapshotGlobalActiveStakeAmountNanos map[uint64]*uint256.Int
+	SnapshotValidatorSetTotalStakeAmountNanos map[uint64]*uint256.Int
 
 	// SnapshotLeaderSchedule is a map of <SnapshotAtEpochNumber, LeaderIndex> to a ValidatorPKID.
 	// It contains the PKID of the validator at the given index in the leader schedule
 	// generated at the given SnapshotAtEpochNumber.
 	SnapshotLeaderSchedule map[SnapshotLeaderScheduleMapKey]*PKID
+
+	// SnapshotStakesToReward is a map of <SnapshotAtEpochNumber, ValidatorPKID, StakerPKID>
+	// to a snapshotted StakeEntry for the ValidatorPKID and StakerPKID pair at a given SnapshotAtEpochNumber.
+	SnapshotStakesToReward map[SnapshotStakeMapKey]*StakeEntry
 
 	// The hash of the tip the view is currently referencing. Mainly used
 	// for error-checking when doing a bulk operation on the view.
@@ -242,11 +245,6 @@ func (bav *UtxoView) _ResetViewMappingsAfterFlush() {
 	// ValidatorEntries
 	bav.ValidatorPKIDToValidatorEntry = make(map[PKID]*ValidatorEntry)
 
-	// Global active stake across validators. We deliberately want this to initialize to nil and not zero
-	// since a zero value will overwrite an existing GlobalActiveStakeAmountNanos value in the db, whereas
-	// a nil GlobalActiveStakeAmountNanos value signifies that this value was never set.
-	bav.GlobalActiveStakeAmountNanos = nil
-
 	// StakeEntries
 	bav.StakeMapKeyToStakeEntry = make(map[StakeMapKey]*StakeEntry)
 
@@ -259,14 +257,17 @@ func (bav *UtxoView) _ResetViewMappingsAfterFlush() {
 	// SnapshotGlobalParamEntries
 	bav.SnapshotGlobalParamEntries = make(map[uint64]*GlobalParamsEntry)
 
-	// SnapshotValidatorEntries
-	bav.SnapshotValidatorEntries = make(map[SnapshotValidatorMapKey]*ValidatorEntry)
+	// SnapshotValidatorSet
+	bav.SnapshotValidatorSet = make(map[SnapshotValidatorSetMapKey]*ValidatorEntry)
 
-	// SnapshotGlobalActiveStakeAmountNanos
-	bav.SnapshotGlobalActiveStakeAmountNanos = make(map[uint64]*uint256.Int)
+	// SnapshotValidatorSetTotalStakeAmountNanos
+	bav.SnapshotValidatorSetTotalStakeAmountNanos = make(map[uint64]*uint256.Int)
 
 	// SnapshotLeaderSchedule
 	bav.SnapshotLeaderSchedule = make(map[SnapshotLeaderScheduleMapKey]*PKID)
+
+	// SnapshotStakesToReward
+	bav.SnapshotStakesToReward = make(map[SnapshotStakeMapKey]*StakeEntry)
 }
 
 func (bav *UtxoView) CopyUtxoView() (*UtxoView, error) {
@@ -525,11 +526,6 @@ func (bav *UtxoView) CopyUtxoView() (*UtxoView, error) {
 		newView.ValidatorPKIDToValidatorEntry[entryKey] = entry.Copy()
 	}
 
-	// Copy the GlobalActiveStakeAmountNanos.
-	if bav.GlobalActiveStakeAmountNanos != nil {
-		newView.GlobalActiveStakeAmountNanos = bav.GlobalActiveStakeAmountNanos.Clone()
-	}
-
 	// Copy the StakeEntries
 	newView.StakeMapKeyToStakeEntry = make(map[StakeMapKey]*StakeEntry, len(bav.StakeMapKeyToStakeEntry))
 	for entryKey, entry := range bav.StakeMapKeyToStakeEntry {
@@ -559,19 +555,24 @@ func (bav *UtxoView) CopyUtxoView() (*UtxoView, error) {
 		newView.SnapshotGlobalParamEntries[epochNumber] = globalParamsEntry.Copy()
 	}
 
-	// Copy the SnapshotValidatorEntries
-	for mapKey, validatorEntry := range bav.SnapshotValidatorEntries {
-		newView.SnapshotValidatorEntries[mapKey] = validatorEntry.Copy()
+	// Copy the SnapshotValidatorSet
+	for mapKey, validatorEntry := range bav.SnapshotValidatorSet {
+		newView.SnapshotValidatorSet[mapKey] = validatorEntry.Copy()
 	}
 
-	// Copy the SnapshotGlobalActiveStakeAmountNanos
-	for epochNumber, globalActiveStakeAmountNanos := range bav.SnapshotGlobalActiveStakeAmountNanos {
-		newView.SnapshotGlobalActiveStakeAmountNanos[epochNumber] = globalActiveStakeAmountNanos.Clone()
+	// Copy the SnapshotValidatorSetTotalStakeAmountNanos
+	for epochNumber, totalStakeAmountNanos := range bav.SnapshotValidatorSetTotalStakeAmountNanos {
+		newView.SnapshotValidatorSetTotalStakeAmountNanos[epochNumber] = totalStakeAmountNanos.Clone()
 	}
 
 	// Copy the SnapshotLeaderSchedule
 	for mapKey, validatorPKID := range bav.SnapshotLeaderSchedule {
 		newView.SnapshotLeaderSchedule[mapKey] = validatorPKID.NewPKID()
+	}
+
+	// Copy the SnapshotStakesToReward
+	for mapKey, snapshotStakeToReward := range bav.SnapshotStakesToReward {
+		newView.SnapshotStakesToReward[mapKey] = snapshotStakeToReward.Copy()
 	}
 
 	return newView, nil
@@ -3033,6 +3034,31 @@ func (bav *UtxoView) _connectUpdateGlobalParams(
 			newGlobalParamsEntry.LeaderScheduleMaxNumValidators, bytesRead = Uvarint(extraData[LeaderScheduleMaxNumValidatorsKey])
 			if bytesRead <= 0 {
 				return 0, 0, nil, fmt.Errorf("_connectUpdateGlobalParams: unable to decode LeaderScheduleMaxNumValidators as uint64")
+			}
+		}
+		if len(extraData[ValidatorSetMaxNumValidatorsKey]) > 0 {
+			newGlobalParamsEntry.ValidatorSetMaxNumValidators, bytesRead = Uvarint(extraData[ValidatorSetMaxNumValidatorsKey])
+			if bytesRead <= 0 {
+				return 0, 0, nil, fmt.Errorf("_connectUpdateGlobalParams: unable to decode ValidatorSetMaxNumValidators as uint64")
+			}
+		}
+
+		// Cross-validate the new LeaderScheduleMaxNumValidators and ValidatorSetMaxNumValidators values. The size of the
+		// leader schedule must be less than or equal to the size of the validator set.
+		if newGlobalParamsEntry.ValidatorSetMaxNumValidators < newGlobalParamsEntry.LeaderScheduleMaxNumValidators {
+			return 0, 0, nil, RuleErrorLeaderScheduleExceedsValidatorSetMaxNumValidators
+		}
+
+		if len(extraData[StakingRewardsMaxNumStakesKey]) > 0 {
+			newGlobalParamsEntry.StakingRewardsMaxNumStakes, bytesRead = Uvarint(extraData[StakingRewardsMaxNumStakesKey])
+			if bytesRead <= 0 {
+				return 0, 0, nil, fmt.Errorf("_connectUpdateGlobalParams: unable to decode StakingRewardsMaxNumStakes as uint64")
+			}
+		}
+		if len(extraData[StakingRewardsAPYBasisPointsKey]) > 0 {
+			newGlobalParamsEntry.StakingRewardsAPYBasisPoints, bytesRead = Uvarint(extraData[StakingRewardsAPYBasisPointsKey])
+			if bytesRead <= 0 {
+				return 0, 0, nil, fmt.Errorf("_connectUpdateGlobalParams: unable to decode StakingRewardsAPYBasisPoints as uint64")
 			}
 		}
 		if len(extraData[EpochDurationNumBlocksKey]) > 0 {

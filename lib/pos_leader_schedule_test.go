@@ -182,8 +182,8 @@ func TestGenerateLeaderSchedule(t *testing.T) {
 		registerValidator(m6Pub, m6Priv, 700)
 	}
 	{
-		// Verify GetTopActiveValidatorsByStake.
-		validatorEntries, err := newUtxoView().GetTopActiveValidatorsByStake(10)
+		// Verify GetTopActiveValidatorsByStakeAmount.
+		validatorEntries, err := newUtxoView().GetTopActiveValidatorsByStakeAmount(10)
 		require.NoError(t, err)
 		require.Len(t, validatorEntries, 7)
 		require.True(t, validatorEntries[0].ValidatorPKID.Eq(m6PKID))
