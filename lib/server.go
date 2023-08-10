@@ -60,6 +60,12 @@ type Server struct {
 	eventManager  *EventManager
 	TxIndex       *TXIndex
 
+	blockProposer *BlockProposer
+	validator     *Validator
+	paceMaker     *PaceMaker
+
+	// posMempool *PosMemPool TODO: Add the mempool later
+
 	// All messages received from peers get sent from the ConnectionManager to the
 	// Server through this channel.
 	//
@@ -1717,6 +1723,21 @@ func (srv *Server) _handleBlockAccepted(event *BlockEvent) {
 		return
 	}
 
+	// Notify the block proposer that a block was accepted.
+	if srv.blockProposer != nil {
+		srv.blockProposer.BlockAccepted(blk.Header)
+	}
+
+	// Notify the pacemaker that a block was accepted.
+	if srv.paceMaker != nil {
+		srv.paceMaker.BlockAccepted(blk.Header)
+	}
+
+	// Construct and broadcast a vote message if possible.
+	if srv.validator != nil {
+		srv._voteOnBlock(*event.Block)
+	}
+
 	// Construct an inventory vector to relay to peers.
 	blockHash, _ := blk.Header.Hash()
 	invVect := &InvVect{
@@ -2116,6 +2137,42 @@ func (srv *Server) _handleGetAddrMessage(pp *Peer, msg *MsgDeSoGetAddr) {
 	pp.AddDeSoMessage(res, false)
 }
 
+// _handleBlockProposalSignal is called when the block proposer is ready to propose a
+// block at a block height. This function should performs the following steps:
+// 1. Check that it is still possible to construct a block at this height
+// 2. Check that the current node is the leader for the current view
+// 3. Construct the block by calling the block proposer
+// 4. Process the block locally
+// 5. Broadcast the block to peers
+func (srv *Server) _handleBlockProposalSignal(blockHeight uint64) {
+	// TODO: implement this.
+}
+
+// _voteOnBlock is called when we have connected a block to the blockchain. This function
+// should perform the following steps:
+// 1. Check that the block is not stale
+// 2. Check that we haven't voted or timed out on this view already
+// 3. Check that we haven't voted at this block height already
+// 4. Check that the current node is in the validator set
+// 5. Construct a vote message
+// 6. Process the vote message locally
+// 7. Broadcast the vote message to peers
+func (srv *Server) _voteOnBlock(block MsgDeSoBlock) {
+	// TODO: implement this.
+}
+
+// _handleTimeoutSignal is called when the pacemaker has timed out a view. This function
+// should perform the following steps:
+// 1. Check that the timed out view isn't stale
+// 2. Check that we haven't voted or timed out on this view already
+// 3. Check that the current node is in the validator set
+// 4. Construct a timeout message
+// 5. Process the timeout message locally
+// 6. Broadcast the timeout message to peers
+func (srv *Server) _handleTimeoutSignal(timedOutView uint64) {
+	// TODO: implement this.
+}
+
 func (srv *Server) _handleControlMessages(serverMessage *ServerMessage) (_shouldQuit bool) {
 	switch serverMessage.Msg.(type) {
 	// Control messages used internally to signal to the server.
@@ -2159,41 +2216,81 @@ func (srv *Server) _handlePeerMessages(serverMessage *ServerMessage) {
 	}
 }
 
-// Note that messageHandler is single-threaded and so all of the handle* functions
-// it calls can assume they can access the Server's variables without concurrency
-// issues.
-func (srv *Server) messageHandler() {
+// _startConsensusEventLoop contains the top-level event loop to run both the PoW and PoS consensus. It is
+// single-threaded to ensure that concurrent event do not conflict with each other. It's role is to guarantee
+// single threaded processing and act as an entry point for consensus events. It does minimal validation on its
+// own.
+//
+// For the PoW consensus:
+// - It solely handles peer messages and control messages
+//
+// For the PoS consensus:
+// - It listens to all peer messages from the network and handles them as they come in. For simplicity, this includes
+// control messages from peer, proposed blocks from peers, votes/timeouts, block requests, mempool requests from
+// syncing peers
+// - It listens to the block proposal signal from the block proposer, and kicks off block construction and
+// broadcasting
+// - It listens to consensus timeouts from the Pacemaker module, and kicks off the consensus timeout logic
+func (srv *Server) _startConsensusEventLoop() {
 	for {
 		// This is used instead of the shouldQuit control message exist mechanism below. shouldQuit will be true only
 		// when all incoming messages have been processed, on the other hand this shutdown will quit immediately.
 		if atomic.LoadInt32(&srv.shutdown) >= 1 {
 			break
 		}
-		serverMessage := <-srv.incomingMessages
-		glog.V(2).Infof("Server.messageHandler: Handling message of type %v from Peer %v",
-			serverMessage.Msg.GetMsgType(), serverMessage.Peer)
 
-		// If the message is an addr message we handle it independent of whether or
-		// not the BitcoinManager is synced.
-		if serverMessage.Msg.GetMsgType() == MsgTypeAddr {
-			srv._handleAddrMessage(serverMessage.Peer, serverMessage.Msg.(*MsgDeSoAddr))
-			continue
-		}
-		// If the message is a GetAddr message we handle it independent of whether or
-		// not the BitcoinManager is synced.
-		if serverMessage.Msg.GetMsgType() == MsgTypeGetAddr {
-			srv._handleGetAddrMessage(serverMessage.Peer, serverMessage.Msg.(*MsgDeSoGetAddr))
-			continue
-		}
+		select {
+		case readyBlockHeight := <-srv.blockProposer.ReadyBlockHeights:
+			{
+				// TODO: The block proposer has signaled that it has a block ready to be proposed.
+				glog.Infof("Server._startConsensusEventLoop: Received block proposal signal for block height: %v", readyBlockHeight.BlockHeight)
+				srv._handleBlockProposalSignal(readyBlockHeight.BlockHeight)
+			}
 
-		srv._handlePeerMessages(serverMessage)
+		case timeoutSignal := <-srv.paceMaker.TimedOutViews:
+			{
+				// TODO: The current consensus view tracked by the pacemaker has timed out.
+				glog.Infof("Server._startConsensusEventLoop: Received timeout signal for view number: %v", timeoutSignal.TimedOutView)
+				srv._handleTimeoutSignal(timeoutSignal.TimedOutView)
+			}
 
-		// Always check for and handle control messages regardless of whether the
-		// BitcoinManager is synced. Note that we filter control messages out in a
-		// Peer's inHandler so any control message we get at this point should be bona fide.
-		shouldQuit := srv._handleControlMessages(serverMessage)
-		if shouldQuit {
-			break
+		case serverMessage := <-srv.incomingMessages:
+			{
+				// There is an incoming network message from a peer.
+
+				glog.V(2).Infof("Server._startConsensusEventLoop: Handling message of type %v from Peer %v",
+					serverMessage.Msg.GetMsgType(), serverMessage.Peer)
+
+				// If the message is an addr message we handle it independent of whether or
+				// not the BitcoinManager is synced.
+				//
+				// TODO: Do we still need this special case?
+				if serverMessage.Msg.GetMsgType() == MsgTypeAddr {
+					srv._handleAddrMessage(serverMessage.Peer, serverMessage.Msg.(*MsgDeSoAddr))
+					continue
+				}
+				// If the message is a GetAddr message we handle it independent of whether or
+				// not the BitcoinManager is synced.
+				//
+				// TODO: Do we still need this special case?
+				if serverMessage.Msg.GetMsgType() == MsgTypeGetAddr {
+					srv._handleGetAddrMessage(serverMessage.Peer, serverMessage.Msg.(*MsgDeSoGetAddr))
+					continue
+				}
+
+				srv._handlePeerMessages(serverMessage)
+
+				// Always check for and handle control messages regardless of whether the
+				// BitcoinManager is synced. Note that we filter control messages out in a
+				// Peer's inHandler so any control message we get at this point should be bona fide.
+				//
+				// TODO: do we still want this control message handler here?
+				shouldQuit := srv._handleControlMessages(serverMessage)
+				if shouldQuit {
+					break
+				}
+			}
+
 		}
 	}
 
@@ -2322,6 +2419,20 @@ func (srv *Server) Stop() {
 		glog.Infof(CLog(Yellow, "Server.Stop: Closed the Miner"))
 	}
 
+	// Stop the PoS block proposer if we have one running.
+	if srv.blockProposer != nil {
+		srv.blockProposer.Stop()
+		glog.Infof(CLog(Yellow, "Server.Stop: Closed the BlockProposer"))
+	}
+
+	// Stop the Pos pacemaker if we have one running.
+	if srv.paceMaker != nil {
+		srv.paceMaker.Stop()
+		glog.Infof(CLog(Yellow, "Server.Stop: Closed the PosPacemaker"))
+	}
+
+	// TODO: Stop the PoS mempool if we have one running.
+
 	if srv.mempool != nil {
 		// Before the node shuts down, write all the mempool txns to disk
 		// if the flag is set.
@@ -2374,7 +2485,7 @@ func (srv *Server) Start() {
 	// finds some Peers.
 	glog.Info("Server.Start: Starting Server")
 	srv.waitGroup.Add(1)
-	go srv.messageHandler()
+	go srv._startConsensusEventLoop()
 
 	go srv._startAddressRelayer()
 
@@ -2389,6 +2500,10 @@ func (srv *Server) Start() {
 	if srv.miner != nil && len(srv.miner.PublicKeys) > 0 {
 		go srv.miner.Start()
 	}
+
+	// TODO: Gate these behind a PoS validator flag.
+	go srv.blockProposer.Start()
+	go srv.paceMaker.Start()
 }
 
 // SyncPrefixProgress keeps track of sync progress on an individual prefix. It is used in
