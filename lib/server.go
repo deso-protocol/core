@@ -1429,7 +1429,6 @@ func (srv *Server) updateDbOpts(opts badger.Options) {
 		// If we can't open the DB with the new options, we need to exit the process.
 		glog.Fatalf("Server._handleSnapshot: Problem switching badger db to performance opts, error: (%v)", err)
 	}
-	// TODO: Am I missing any db instances to replace here?
 	srv.blockchain.db = db
 	srv.snapshot.mainDb = srv.blockchain.db
 	srv.mempool.bc.db = srv.blockchain.db
