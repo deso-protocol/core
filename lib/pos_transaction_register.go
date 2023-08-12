@@ -252,16 +252,12 @@ func (tr *TransactionRegister) GetFeeTimeTransactions() []*MempoolTx {
 
 // GetTransaction returns the transaction with the given hash if it exists in the register, or nil otherwise.
 func (tr *TransactionRegister) GetTransaction(hash *BlockHash) *MempoolTx {
-	tr.RLock()
-	defer tr.RUnlock()
-
-	return tr.getTransactionNoLock(hash)
-}
-
-func (tr *TransactionRegister) getTransactionNoLock(hash *BlockHash) *MempoolTx {
 	if hash == nil {
 		return nil
 	}
+
+	tr.RLock()
+	defer tr.RUnlock()
 
 	return tr.txnMembership[*hash]
 }

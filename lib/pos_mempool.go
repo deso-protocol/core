@@ -257,7 +257,7 @@ func (dmp *PosMempool) RemoveTransaction(txnHash *BlockHash) error {
 	defer dmp.Unlock()
 
 	// Get the transaction from the register.
-	txn := dmp.txnRegister.getTransactionNoLock(txnHash)
+	txn := dmp.txnRegister.GetTransaction(txnHash)
 	if txn == nil {
 		return nil
 	}
