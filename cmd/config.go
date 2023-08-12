@@ -41,6 +41,9 @@ type Config struct {
 	SnapshotBlockHeightPeriod uint64
 	DisableEncoderMigrations  bool
 
+	// Mempool
+	BatchPersistFrequencyMilliseconds uint64
+
 	// Mining
 	MinerPublicKeys  []string
 	NumMiningThreads uint64
@@ -101,6 +104,9 @@ func LoadConfig() *Config {
 	config.MaxSyncBlockHeight = viper.GetUint32("max-sync-block-height")
 	config.SnapshotBlockHeightPeriod = viper.GetUint64("snapshot-block-height-period")
 	config.DisableEncoderMigrations = viper.GetBool("disable-encoder-migrations")
+
+	// Mempool
+	config.BatchPersistFrequencyMilliseconds = viper.GetUint64("batch-persist-frequency-milliseconds")
 
 	// Peers
 	config.ConnectIPs = viper.GetStringSlice("connect-ips")

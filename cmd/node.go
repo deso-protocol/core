@@ -85,6 +85,9 @@ func (node *Node) Start(exitChannels ...*chan struct{}) {
 		node.Params.EnableRegtest()
 	}
 
+	// Set the mempool's batch persist frequency.
+	node.Params.BatchPersistFrequencyMilliseconds = node.Config.BatchPersistFrequencyMilliseconds
+
 	// Validate params
 	validateParams(node.Params)
 	// This is a bit of a hack, and we should deprecate this. We rely on GlobalDeSoParams static variable in only one

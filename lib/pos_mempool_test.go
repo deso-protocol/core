@@ -20,7 +20,7 @@ func TestPosMempoolStart(t *testing.T) {
 	t.Logf("BadgerDB directory: %s\nIt should be automatically removed at the end of the test", dir)
 	defer os.RemoveAll(dir)
 
-	mempool := NewPosMempool(&params, globalParams, nil, nil, dir)
+	mempool := NewPosMempool(&params, globalParams, nil, 0, dir)
 	require.NoError(mempool.Start())
 	require.Equal(PosMempoolStatusRunning, mempool.status)
 	mempool.Stop()
@@ -35,33 +35,32 @@ func TestPosMempoolRestartWithTransactions(t *testing.T) {
 	feeMin := globalParams.MinimumNetworkFeeNanosPerKB
 	feeMax := uint64(10000)
 
-	chain, params, db := _blockchainSetup(t)
+	params, db := _blockchainSetup(t)
 	m0PubBytes, _, _ := Base58CheckDecode(m0Pub)
 	m1PubBytes, _, _ := Base58CheckDecode(m1Pub)
 
 	latestBlockView, err := NewUtxoView(db, params, nil, nil)
 	require.NoError(err)
-	latestBlockNode := chain.blockTip()
 
 	dir, err := os.MkdirTemp("", "badgerdb-mempool")
 	require.NoError(err)
 	t.Logf("BadgerDB directory: %s\nIt should be automatically removed at the end of the test", dir)
 	defer os.RemoveAll(dir)
 
-	mempool := NewPosMempool(params, globalParams, latestBlockView, latestBlockNode, dir)
+	mempool := NewPosMempool(params, globalParams, latestBlockView, 2, dir)
 	require.NoError(mempool.Start())
 	require.Equal(PosMempoolStatusRunning, mempool.status)
 
 	txn1 := _generateTestTxn(t, rand, feeMin, feeMax, m0PubBytes, m0Priv, 100, 0)
 	txn2 := _generateTestTxn(t, rand, feeMin, feeMax, m1PubBytes, m1Priv, 100, 0)
-	require.NoError(mempool.ProcessMsgDeSoTxn(txn1))
-	require.NoError(mempool.ProcessMsgDeSoTxn(txn2))
+	require.NoError(mempool.AddTransaction(txn1))
+	require.NoError(mempool.AddTransaction(txn2))
 
 	poolTxns := mempool.GetTransactions()
 	require.Equal(2, len(poolTxns))
 	mempool.Stop()
 
-	newPool := NewPosMempool(params, globalParams, latestBlockView, latestBlockNode, dir)
+	newPool := NewPosMempool(params, globalParams, latestBlockView, 2, dir)
 	require.NoError(newPool.Start())
 	require.Equal(PosMempoolStatusRunning, newPool.status)
 	newPoolTxns := newPool.GetTransactions()
@@ -78,13 +77,12 @@ func TestPosMempoolPrune(t *testing.T) {
 	feeMin := globalParams.MinimumNetworkFeeNanosPerKB
 	feeMax := uint64(2000)
 
-	chain, params, db := _blockchainSetup(t)
+	params, db := _blockchainSetup(t)
 	m0PubBytes, _, _ := Base58CheckDecode(m0Pub)
 	m1PubBytes, _, _ := Base58CheckDecode(m1Pub)
 
 	latestBlockView, err := NewUtxoView(db, params, nil, nil)
 	require.NoError(err)
-	latestBlockNode := chain.blockTip()
 
 	dir, err := os.MkdirTemp("", "badgerdb-mempool")
 	require.NoError(err)
@@ -92,7 +90,7 @@ func TestPosMempoolPrune(t *testing.T) {
 	defer os.RemoveAll(dir)
 
 	params.MaxMempoolPosSizeBytes = 500
-	mempool := NewPosMempool(params, globalParams, latestBlockView, latestBlockNode, dir)
+	mempool := NewPosMempool(params, globalParams, latestBlockView, 2, dir)
 	require.NoError(mempool.Start())
 	require.Equal(PosMempoolStatusRunning, mempool.status)
 
@@ -106,37 +104,37 @@ func TestPosMempoolPrune(t *testing.T) {
 		}
 		txn := _generateTestTxn(t, rand, feeMin, feeMax, pk, priv, 100, 25)
 		txns = append(txns, txn)
-		require.NoError(mempool.ProcessMsgDeSoTxn(txn))
+		require.NoError(mempool.AddTransaction(txn))
 	}
 
 	fetchedTxns := mempool.GetTransactions()
 	require.Equal(3, len(fetchedTxns))
-	require.Equal(uint64(1974), fetchedTxns[0].Tx.TxnFeeNanos)
-	require.Equal(uint64(1931), fetchedTxns[1].Tx.TxnFeeNanos)
-	require.Equal(uint64(1776), fetchedTxns[2].Tx.TxnFeeNanos)
-	require.Equal(uint64(1974), mempool.GetTransaction(fetchedTxns[0].Tx.Hash()).Tx.TxnFeeNanos)
-	require.Equal(uint64(1931), mempool.GetTransaction(fetchedTxns[1].Tx.Hash()).Tx.TxnFeeNanos)
-	require.Equal(uint64(1776), mempool.GetTransaction(fetchedTxns[2].Tx.Hash()).Tx.TxnFeeNanos)
+	require.Equal(uint64(1974), fetchedTxns[0].TxnFeeNanos)
+	require.Equal(uint64(1931), fetchedTxns[1].TxnFeeNanos)
+	require.Equal(uint64(1776), fetchedTxns[2].TxnFeeNanos)
+	require.Equal(uint64(1974), mempool.GetTransaction(fetchedTxns[0].Hash()).TxnFeeNanos)
+	require.Equal(uint64(1931), mempool.GetTransaction(fetchedTxns[1].Hash()).TxnFeeNanos)
+	require.Equal(uint64(1776), mempool.GetTransaction(fetchedTxns[2].Hash()).TxnFeeNanos)
 
 	// Remove one transaction.
-	require.NoError(mempool.RemoveTransaction(fetchedTxns[0]))
+	require.NoError(mempool.RemoveTransaction(fetchedTxns[0].Hash()))
 	mempool.Stop()
 
-	newPool := NewPosMempool(params, globalParams, latestBlockView, latestBlockNode, dir)
+	newPool := NewPosMempool(params, globalParams, latestBlockView, 2, dir)
 	require.NoError(newPool.Start())
 	require.Equal(PosMempoolStatusRunning, newPool.status)
 	require.Equal(2, len(newPool.GetTransactions()))
 
 	// Remove the other transactions.
-	require.NoError(newPool.RemoveTransaction(fetchedTxns[1]))
-	require.NoError(newPool.RemoveTransaction(fetchedTxns[2]))
+	require.NoError(newPool.RemoveTransaction(fetchedTxns[1].Hash()))
+	require.NoError(newPool.RemoveTransaction(fetchedTxns[2].Hash()))
 	// Remove the same transaction twice
-	require.NoError(newPool.RemoveTransaction(fetchedTxns[1]))
+	require.NoError(newPool.RemoveTransaction(fetchedTxns[1].Hash()))
 	require.Equal(0, len(newPool.GetTransactions()))
 
 	// Add the transactions back.
 	for _, txn := range fetchedTxns {
-		require.NoError(newPool.ProcessMsgDeSoTxn(txn.Tx))
+		require.NoError(newPool.AddTransaction(txn))
 	}
 	require.Equal(3, len(newPool.GetTransactions()))
 
@@ -146,7 +144,7 @@ func TestPosMempoolPrune(t *testing.T) {
 	for it.Next() {
 		tx, ok := it.Value()
 		require.True(ok)
-		require.True(bytes.Equal(tx.Tx.Hash().ToBytes(), fetchedTxns[index].Tx.Hash().ToBytes()))
+		require.True(bytes.Equal(tx.Hash().ToBytes(), fetchedTxns[index].Hash().ToBytes()))
 		index++
 	}
 	newPool.Stop()
@@ -161,20 +159,19 @@ func TestPosMempoolUpdateGlobalParams(t *testing.T) {
 	feeMin := globalParams.MinimumNetworkFeeNanosPerKB
 	feeMax := uint64(2000)
 
-	chain, params, db := _blockchainSetup(t)
+	params, db := _blockchainSetup(t)
 	m0PubBytes, _, _ := Base58CheckDecode(m0Pub)
 	m1PubBytes, _, _ := Base58CheckDecode(m1Pub)
 
 	latestBlockView, err := NewUtxoView(db, params, nil, nil)
 	require.NoError(err)
-	latestBlockNode := chain.blockTip()
 
 	dir, err := os.MkdirTemp("", "badgerdb-mempool")
 	require.NoError(err)
 	t.Logf("BadgerDB directory: %s\nIt should be automatically removed at the end of the test", dir)
 	defer os.RemoveAll(dir)
 
-	mempool := NewPosMempool(params, globalParams, latestBlockView, latestBlockNode, dir)
+	mempool := NewPosMempool(params, globalParams, latestBlockView, 2, dir)
 	require.NoError(mempool.Start())
 	require.Equal(PosMempoolStatusRunning, mempool.status)
 
@@ -188,7 +185,7 @@ func TestPosMempoolUpdateGlobalParams(t *testing.T) {
 		}
 		txn := _generateTestTxn(t, rand, feeMin, feeMax, pk, priv, 100, 25)
 		txns = append(txns, txn)
-		require.NoError(mempool.ProcessMsgDeSoTxn(txn))
+		require.NoError(mempool.AddTransaction(txn))
 	}
 
 	require.Equal(100, len(mempool.GetTransactions()))
@@ -198,7 +195,7 @@ func TestPosMempoolUpdateGlobalParams(t *testing.T) {
 	require.Equal(0, len(mempool.GetTransactions()))
 	mempool.Stop()
 
-	newPool := NewPosMempool(params, newGlobalParams, latestBlockView, latestBlockNode, dir)
+	newPool := NewPosMempool(params, newGlobalParams, latestBlockView, 2, dir)
 	require.NoError(newPool.Start())
 	require.Equal(PosMempoolStatusRunning, newPool.status)
 	newPoolTxns := newPool.GetTransactions()
@@ -206,7 +203,7 @@ func TestPosMempoolUpdateGlobalParams(t *testing.T) {
 	newPool.Stop()
 }
 
-func _blockchainSetup(t *testing.T) (_chain *Blockchain, _params *DeSoParams, _db *badger.DB) {
+func _blockchainSetup(t *testing.T) (_params *DeSoParams, _db *badger.DB) {
 	require := require.New(t)
 
 	chain, params, db := NewLowDifficultyBlockchain(t)
@@ -229,7 +226,7 @@ func _blockchainSetup(t *testing.T) (_chain *Blockchain, _params *DeSoParams, _d
 		t, chain, db, params, senderPkString, m1PublicKeyBase58Check,
 		senderPrivString, 200000, 11)
 
-	return chain, params, db
+	return params, db
 }
 
 func _generateTestTxn(t *testing.T, rand *rand.Rand, feeMin uint64, feeMax uint64, pk []byte, priv string, expirationHeight uint64,

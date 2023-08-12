@@ -255,6 +255,10 @@ func (tr *TransactionRegister) GetTransaction(hash *BlockHash) *MempoolTx {
 	tr.RLock()
 	defer tr.RUnlock()
 
+	return tr.getTransactionNoLock(hash)
+}
+
+func (tr *TransactionRegister) getTransactionNoLock(hash *BlockHash) *MempoolTx {
 	if hash == nil {
 		return nil
 	}
