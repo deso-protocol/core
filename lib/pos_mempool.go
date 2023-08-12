@@ -25,7 +25,7 @@ type Mempool interface {
 	GetTransaction(txnHash *BlockHash) *MsgDeSoTxn
 	GetTransactions() []*MsgDeSoTxn
 	GetIterator() MempoolIterator
-	UpdateLatestBlock(blockView *UtxoView, blockNode *BlockNode)
+	UpdateLatestBlock(blockView *UtxoView, blockHeight uint64)
 	UpdateGlobalParams(globalParams *GlobalParamsEntry)
 }
 
