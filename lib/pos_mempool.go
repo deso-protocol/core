@@ -383,7 +383,7 @@ func (dmp *PosMempool) UpdateGlobalParams(globalParams *GlobalParamsEntry) {
 	}
 
 	if len(removedTxnHashes) > 0 {
-		glog.Errorf("PosMempool.UpdateGlobalParams: Transactions with the following hashes were removed: %v",
+		glog.Infof("PosMempool.UpdateGlobalParams: Transactions with the following hashes were removed: %v",
 			strings.Join(removedTxnHashes, ","))
 	}
 	dmp.txnRegister.Reset()
