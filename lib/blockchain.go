@@ -2598,6 +2598,11 @@ func (bc *Blockchain) processBlockPoS(desoBlock *MsgDeSoBlock, verifySignatures 
 	return false, false, fmt.Errorf("ProcessBlockPoS: Not implemented yet")
 }
 
+func (bc *Blockchain) GetUncommittedTipView() (*UtxoView, error) {
+	// Connect the uncommitted blocks to the tip so that we can validate subsequent blocks
+	panic("GetUncommittedTipView: Not implemented yet")
+}
+
 // DisconnectBlocksToHeight will rollback blocks from the db and blockchain structs until block tip reaches the provided
 // blockHeight parameter.
 func (bc *Blockchain) DisconnectBlocksToHeight(blockHeight uint64, snap *Snapshot) error {
