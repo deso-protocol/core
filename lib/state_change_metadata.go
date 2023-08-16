@@ -61,19 +61,21 @@ func GetStateChangeMetadataFromOpType(opType OperationType) DeSoEncoder {
 }
 
 type CreatorCoinStateChangeMetadata struct {
-	ProfileEntry *ProfileEntry
+	ProfileDeSoLockedNanos uint64
 }
 
 func (creatorCoinSCM *CreatorCoinStateChangeMetadata) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte {
 	var data []byte
-	data = append(data, EncodeToBytes(blockHeight, creatorCoinSCM.ProfileEntry, skipMetadata...)...)
+	data = append(data, UintToBuf(creatorCoinSCM.ProfileDeSoLockedNanos)...)
 	return data
 }
 
 func (creatorCoinSCM *CreatorCoinStateChangeMetadata) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.Reader) error {
 	var err error
-	if creatorCoinSCM.ProfileEntry, err = DecodeDeSoEncoder(&ProfileEntry{}, rr); err != nil {
-		return errors.Wrapf(err, "CreatorCoinStateChangeMetadata.Decode: Problem reading ProfileEntry")
+
+	creatorCoinSCM.ProfileDeSoLockedNanos, err = ReadUvarint(rr)
+	if err != nil {
+		return errors.Wrapf(err, "CreatorCoinStateChangeMetadata.Decode: Problem reading ProfileDeSoLockedNanos")
 	}
 
 	return nil

@@ -1037,7 +1037,7 @@ func (bav *UtxoView) HelpConnectCreatorCoinBuy(
 
 	// Add a CreatorCoinStateChangeMetadata to the UtxoOperation to track the state change.
 	stateChangeMetadata := &CreatorCoinStateChangeMetadata{
-		ProfileEntry: existingProfileEntry,
+		ProfileDeSoLockedNanos: existingProfileEntry.CreatorCoinEntry.DeSoLockedNanos,
 	}
 
 	// Add an operation to the list at the end indicating we've executed a
@@ -1346,7 +1346,7 @@ func (bav *UtxoView) HelpConnectCreatorCoinSell(
 
 	// Add a CreatorCoinStateChangeMetadata to the UtxoOperation to track the state change.
 	stateChangeMetadata := &CreatorCoinStateChangeMetadata{
-		ProfileEntry: existingProfileEntry,
+		ProfileDeSoLockedNanos: existingProfileEntry.CreatorCoinEntry.DeSoLockedNanos,
 	}
 
 	// Add an operation to the list at the end indicating we've executed a
