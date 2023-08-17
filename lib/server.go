@@ -1723,7 +1723,7 @@ func (srv *Server) _handleBlockAccepted(event *BlockEvent) {
 
 	// Notify the consensus that a block was accepted.
 	if srv.fastHotStuffConsensus != nil {
-		srv.fastHotStuffConsensus.HandleAcceptedBlock()
+		srv.fastHotStuffConsensus.UpdateChainTip( /*...*/ )
 	}
 
 	// Construct an inventory vector to relay to peers.

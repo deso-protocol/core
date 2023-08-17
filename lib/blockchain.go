@@ -2589,19 +2589,19 @@ func (bc *Blockchain) processBlockPoW(desoBlock *MsgDeSoBlock, verifySignatures 
 }
 
 // processBlockPoS runs the Fast-Hotstuff block connect and commit rule as follows:
-// 1. Validate on an incoming block and its header
+// 1. Validate on an incoming block and its header. This includes all view, block height, and QC validations.
 // 2. Store the block in the db
 // 3. Resolves forks within the last two blocks
 // 4. Connect the block to the blockchain's tip
 // 5. If applicable, flush the incoming block's grandparent to the DB
-// 6. Notify the block proposer, pacemaker, and voting logic that the incoming block has been accepted
+// 6. Notify the consensus that the new block has been accepted and conntected to the blockchain's tip.
 func (bc *Blockchain) processBlockPoS(desoBlock *MsgDeSoBlock, verifySignatures bool) (_isMainChain bool, _isOrphan bool, err error) {
 	// TODO: Implement me
 	return false, false, fmt.Errorf("ProcessBlockPoS: Not implemented yet")
 }
 
-func (bc *Blockchain) GetUncommittedTipView() (*UtxoView, error) {
-	// Connect the uncommitted blocks to the tip so that we can validate subsequent blocks
+func (bc *Blockchain) GetUncommittedBlockView() (*UtxoView, error) {
+	// Create a UtxoView that reflects the state of the blockchain at the tip.
 	panic("GetUncommittedTipView: Not implemented yet")
 }
 
