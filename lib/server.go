@@ -1723,7 +1723,7 @@ func (srv *Server) _handleBlockAccepted(event *BlockEvent) {
 
 	// Notify the consensus that a block was accepted.
 	if srv.fastHotStuffConsensus != nil {
-		srv.fastHotStuffConsensus.HandleAcceptedBlock()
+		srv.fastHotStuffConsensus.UpdateChainTip()
 	}
 
 	// Construct an inventory vector to relay to peers.
@@ -2477,9 +2477,6 @@ func (srv *Server) Start() {
 	if srv.miner != nil && len(srv.miner.PublicKeys) > 0 {
 		go srv.miner.Start()
 	}
-
-	// TODO: Gate these behind a PoS consensus flag.
-	go srv.fastHotStuffConsensus.Start()
 }
 
 // SyncPrefixProgress keeps track of sync progress on an individual prefix. It is used in
