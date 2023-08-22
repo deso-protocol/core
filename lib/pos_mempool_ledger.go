@@ -21,62 +21,45 @@ func NewBalanceLedger() *BalanceLedger {
 	}
 }
 
-// CanIncreaseBalance checks if the user's balance can be increased by the given amount. If the user's balance + amount
-// is less or equal than the provided maxBalance, the increase is allowed. Otherwise, an error is returned.
-func (bl *BalanceLedger) CanIncreaseBalance(publicKey PublicKey, amount uint64, maxBalance uint64) error {
+// CanIncreaseEntryWithLimit checks if the user's ledger entry can be increased by delta. If the user's
+// balance + delta is less or equal than the balanceLimit, the increase is allowed. Otherwise, an error is returned.
+func (bl *BalanceLedger) CanIncreaseEntryWithLimit(publicKey PublicKey, delta uint64, balanceLimit uint64) error {
 	bl.RLock()
 	defer bl.RUnlock()
 
 	balance, exists := bl.balances[publicKey]
 
 	// Check for balance overflow.
-	if exists && amount > math.MaxUint64-balance {
-		return errors.Errorf("CanIncreaseBalance: balance overflow")
+	if exists && delta > math.MaxUint64-balance {
+		return errors.Errorf("CanIncreaseEntryWithLimit: balance overflow")
 	}
 
-	newBalance := balance + amount
-	if newBalance > maxBalance {
-		return errors.Errorf("CanIncreaseBalance: Not enough balance to cover txn fees "+
-			"(newBalance: %d, maxBalance: %d)", newBalance, maxBalance)
-	}
-	return nil
-}
-
-// CanDecreaseBalance checks if the user's balance can be decreased by the given amount. If the user's balance is
-// greater or equal to the amount, the decrease is allowed. Otherwise, an error is returned.
-func (bl *BalanceLedger) CanDecreaseBalance(publicKey PublicKey, amountNanos uint64) error {
-	bl.RLock()
-	defer bl.RUnlock()
-
-	balance, exists := bl.balances[publicKey]
-	if !exists {
-		return errors.Errorf("CanDecreaseBalance: No balance for public key")
-	}
-	if amountNanos > balance {
-		return errors.Errorf("CanDecreaseBalance: Amount exceeds current balance")
+	newBalance := balance + delta
+	if newBalance > balanceLimit {
+		return errors.Errorf("CanIncreaseEntryWithLimit: Balance + delta exceeds balance limit "+
+			"(balance: %d, delta %v, balanceLimit: %d)", balance, delta, balanceLimit)
 	}
 	return nil
 }
 
-// IncreaseBalance increases the user's balance by the given amount. CanIncreaseBalance should be called before
+// IncreaseEntry increases the user's ledger entry by delta. CanIncreaseEntryWithLimit should be called before
 // calling this function to ensure the increase is allowed.
-func (bl *BalanceLedger) IncreaseBalance(publicKey PublicKey, amount uint64) {
+func (bl *BalanceLedger) IncreaseEntry(publicKey PublicKey, delta uint64) {
 	bl.Lock()
 	defer bl.Unlock()
 
 	balance, _ := bl.balances[publicKey]
 	// Check for balance overflow.
-	if amount > math.MaxUint64-balance {
+	if delta > math.MaxUint64-balance {
 		bl.balances[publicKey] = math.MaxUint64
 		return
 	}
 
-	bl.balances[publicKey] = balance + amount
+	bl.balances[publicKey] = balance + delta
 }
 
-// DecreaseBalance decreases the user's balance by the given amount. CanDecreaseBalance should be called before
-// calling this function to ensure the decrease is allowed.
-func (bl *BalanceLedger) DecreaseBalance(publicKey PublicKey, amount uint64) {
+// DecreaseEntry decreases the user's ledger entry by delta.
+func (bl *BalanceLedger) DecreaseEntry(publicKey PublicKey, delta uint64) {
 	bl.Lock()
 	defer bl.Unlock()
 
@@ -85,16 +68,16 @@ func (bl *BalanceLedger) DecreaseBalance(publicKey PublicKey, amount uint64) {
 		return
 	}
 	// Check for balance underflow.
-	if amount > balance {
+	if delta > balance {
 		delete(bl.balances, publicKey)
 		return
 	}
 
-	bl.balances[publicKey] = balance - amount
+	bl.balances[publicKey] = balance - delta
 }
 
-// GetBalance returns the user's balance.
-func (bl *BalanceLedger) GetBalance(publicKey PublicKey) uint64 {
+// GetEntry returns the user's ledger entry.
+func (bl *BalanceLedger) GetEntry(publicKey PublicKey) uint64 {
 	bl.RLock()
 	defer bl.RUnlock()
 

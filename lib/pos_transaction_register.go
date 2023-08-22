@@ -28,7 +28,7 @@ type TransactionRegister struct {
 	// a FeeTimeBucket given its min fee.
 	feeTimeBucketsByMinFeeMap map[uint64]*FeeTimeBucket
 	// txnMembership is a set of transaction hashes. It is used to determine existence of a transaction in the register.
-	txnMembership *Set[BlockHash]
+	txnMembership map[BlockHash]*MempoolTx
 	// totalTxnsSizeBytes is the total size of all transactions in the register.
 	totalTxnsSizeBytes uint64
 	// minimumNetworkFeeNanosPerKB is the base fee rate for the lowest fee FeeTimeBucket. This value corresponds to
@@ -45,7 +45,7 @@ func NewTransactionRegister(globalParams *GlobalParamsEntry) *TransactionRegiste
 	return &TransactionRegister{
 		feeTimeBucketSet:                   feeTimeBucketSet,
 		feeTimeBucketsByMinFeeMap:          make(map[uint64]*FeeTimeBucket),
-		txnMembership:                      NewSet([]BlockHash{}),
+		txnMembership:                      make(map[BlockHash]*MempoolTx),
 		totalTxnsSizeBytes:                 0,
 		minimumNetworkFeeNanosPerKB:        minNetworkFee,
 		feeBucketRateMultiplierBasisPoints: bucketMultiplier,
@@ -87,7 +87,7 @@ func (tr *TransactionRegister) addTransactionNoLock(txn *MempoolTx) error {
 		return fmt.Errorf("TransactionRegister.AddTransaction: Transaction or transaction hash is nil")
 	}
 
-	if tr.txnMembership.Includes(*txn.Hash) {
+	if _, ok := tr.txnMembership[*txn.Hash]; ok {
 		return nil
 	}
 
@@ -118,7 +118,7 @@ func (tr *TransactionRegister) addTransactionNoLock(txn *MempoolTx) error {
 	}
 
 	tr.totalTxnsSizeBytes += txn.TxSizeBytes
-	tr.txnMembership.Add(*txn.Hash)
+	tr.txnMembership[*txn.Hash] = txn
 	return nil
 }
 
@@ -137,7 +137,7 @@ func (tr *TransactionRegister) removeTransactionNoLock(txn *MempoolTx) error {
 		return fmt.Errorf("TransactionRegister.RemoveTransaction: Transaction or transaction hash is nil")
 	}
 
-	if !tr.txnMembership.Includes(*txn.Hash) {
+	if _, ok := tr.txnMembership[*txn.Hash]; !ok {
 		return nil
 	}
 
@@ -163,7 +163,7 @@ func (tr *TransactionRegister) removeTransactionNoLock(txn *MempoolTx) error {
 		}
 	}
 
-	tr.txnMembership.Remove(*txn.Hash)
+	delete(tr.txnMembership, *txn.Hash)
 	tr.totalTxnsSizeBytes -= txn.TxSizeBytes
 	return nil
 }
@@ -209,7 +209,8 @@ func (tr *TransactionRegister) Includes(txn *MempoolTx) bool {
 		return false
 	}
 
-	return tr.txnMembership.Includes(*txn.Hash)
+	_, ok := tr.txnMembership[*txn.Hash]
+	return ok
 }
 
 func (tr *TransactionRegister) Reset() {
@@ -218,7 +219,7 @@ func (tr *TransactionRegister) Reset() {
 
 	tr.feeTimeBucketSet.Clear()
 	tr.feeTimeBucketsByMinFeeMap = make(map[uint64]*FeeTimeBucket)
-	tr.txnMembership = NewSet([]BlockHash{})
+	tr.txnMembership = make(map[BlockHash]*MempoolTx)
 	tr.totalTxnsSizeBytes = 0
 }
 
@@ -247,6 +248,18 @@ func (tr *TransactionRegister) GetFeeTimeTransactions() []*MempoolTx {
 		}
 	}
 	return txns
+}
+
+// GetTransaction returns the transaction with the given hash if it exists in the register, or nil otherwise.
+func (tr *TransactionRegister) GetTransaction(hash *BlockHash) *MempoolTx {
+	if hash == nil {
+		return nil
+	}
+
+	tr.RLock()
+	defer tr.RUnlock()
+
+	return tr.txnMembership[*hash]
 }
 
 // PruneToSize removes transactions from the end of the register until the size of the register shrinks to the desired

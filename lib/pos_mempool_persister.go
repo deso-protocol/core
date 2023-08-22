@@ -49,22 +49,22 @@ type MempoolPersister struct {
 	stopGroup  sync.WaitGroup
 	startGroup sync.WaitGroup
 
-	// batchPersistFrequencyMilliseconds is the time frequency at which the persister will flush the transaction queue to the database.
-	batchPersistFrequencyMilliseconds int
+	// mempoolBackupTimeMilliseconds is the time frequency at which the persister will flush the transaction queue to the database.
+	mempoolBackupTimeMilliseconds int
 	// eventQueue is used to queue up transactions to be persisted. The queue receives events from the EnqueueEvent,
 	// which is called whenever a transaction is added or removed from the mempool.
 	eventQueue chan *MempoolEvent
 	// updateBatch is used to cache transactions that need to be persisted to the database. The batch is flushed to the
-	// database periodically based on the batchPersistFrequencyMilliseconds.
+	// database periodically based on the mempoolBackupTimeMilliseconds.
 	updateBatch []*MempoolEvent
 }
 
-func NewMempoolPersister(db *badger.DB, batchPersistFrequencyMilliseconds int) *MempoolPersister {
+func NewMempoolPersister(db *badger.DB, mempoolBackupTimeMilliseconds int) *MempoolPersister {
 	return &MempoolPersister{
-		batchPersistFrequencyMilliseconds: batchPersistFrequencyMilliseconds,
-		status:                            MempoolPersisterStatusNotRunning,
-		db:                                db,
-		eventQueue:                        make(chan *MempoolEvent, eventQueueSize),
+		mempoolBackupTimeMilliseconds: mempoolBackupTimeMilliseconds,
+		status:                        MempoolPersisterStatusNotRunning,
+		db:                            db,
+		eventQueue:                    make(chan *MempoolEvent, eventQueueSize),
 	}
 }
 
@@ -109,7 +109,7 @@ func (mp *MempoolPersister) run() {
 			}
 			continue
 
-		case <-time.After(time.Duration(mp.batchPersistFrequencyMilliseconds) * time.Millisecond):
+		case <-time.After(time.Duration(mp.mempoolBackupTimeMilliseconds) * time.Millisecond):
 			if err := mp.persistBatch(); err != nil {
 				glog.Errorf("MempoolPersister: Error persisting batch: %v", err)
 			}
