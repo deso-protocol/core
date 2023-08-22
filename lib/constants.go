@@ -707,8 +707,8 @@ type DeSoParams struct {
 	// The maximum aggregate number of bytes of transactions included in the PoS mempool.
 	MaxMempoolPosSizeBytes uint64
 
-	// BatchPersistFrequencyMilliseconds is the frequency with which pos mempool persists transactions to disk.
-	BatchPersistFrequencyMilliseconds uint64
+	// MempoolBackupTimeMilliseconds is the frequency with which pos mempool persists transactions to storage.
+	MempoolBackupTimeMilliseconds uint64
 }
 
 var RegtestForkHeights = ForkHeights{
@@ -1113,8 +1113,8 @@ var DeSoMainnetParams = DeSoParams{
 	EncoderMigrationHeights:     GetEncoderMigrationHeights(&MainnetForkHeights),
 	EncoderMigrationHeightsList: GetEncoderMigrationHeightsList(&MainnetForkHeights),
 
-	MaxMempoolPosSizeBytes:            3 << 30, // 3Gb
-	BatchPersistFrequencyMilliseconds: 30000,
+	MaxMempoolPosSizeBytes:        3 << 30, // 3Gb
+	MempoolBackupTimeMilliseconds: 30000,
 }
 
 func mustDecodeHexBlockHashBitcoin(ss string) *BlockHash {
@@ -1374,8 +1374,8 @@ var DeSoTestnetParams = DeSoParams{
 	EncoderMigrationHeights:     GetEncoderMigrationHeights(&TestnetForkHeights),
 	EncoderMigrationHeightsList: GetEncoderMigrationHeightsList(&TestnetForkHeights),
 
-	MaxMempoolPosSizeBytes:            3 << 30, // 3Gb
-	BatchPersistFrequencyMilliseconds: 30000,
+	MaxMempoolPosSizeBytes:        3 << 30, // 3Gb
+	MempoolBackupTimeMilliseconds: 30000,
 }
 
 // GetDataDir gets the user data directory where we store files

@@ -85,8 +85,8 @@ func (node *Node) Start(exitChannels ...*chan struct{}) {
 		node.Params.EnableRegtest()
 	}
 
-	// Set the mempool's batch persist frequency.
-	node.Params.BatchPersistFrequencyMilliseconds = node.Config.BatchPersistFrequencyMilliseconds
+	// Set the frequency of mempool's database backup.
+	node.Params.MempoolBackupTimeMilliseconds = node.Config.MempoolBackupTimeMilliseconds
 
 	// Validate params
 	validateParams(node.Params)

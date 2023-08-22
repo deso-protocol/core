@@ -42,7 +42,7 @@ type Config struct {
 	DisableEncoderMigrations  bool
 
 	// Mempool
-	BatchPersistFrequencyMilliseconds uint64
+	MempoolBackupTimeMilliseconds uint64
 
 	// Mining
 	MinerPublicKeys  []string
@@ -106,7 +106,7 @@ func LoadConfig() *Config {
 	config.DisableEncoderMigrations = viper.GetBool("disable-encoder-migrations")
 
 	// Mempool
-	config.BatchPersistFrequencyMilliseconds = viper.GetUint64("batch-persist-frequency-milliseconds")
+	config.MempoolBackupTimeMilliseconds = viper.GetUint64("mempool-backup-time-milliseconds")
 
 	// Peers
 	config.ConnectIPs = viper.GetStringSlice("connect-ips")

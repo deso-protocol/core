@@ -14,11 +14,7 @@ func TestPosMempoolStart(t *testing.T) {
 
 	params := DeSoTestnetParams
 	globalParams := _testGetDefaultGlobalParams()
-
-	dir, err := os.MkdirTemp("", "badgerdb-mempool")
-	require.NoError(err)
-	t.Logf("BadgerDB directory: %s\nIt should be automatically removed at the end of the test", dir)
-	defer os.RemoveAll(dir)
+	dir := _dbDirSetup(t)
 
 	mempool := NewPosMempool(&params, globalParams, nil, 0, dir)
 	require.NoError(mempool.Start())
@@ -41,11 +37,7 @@ func TestPosMempoolRestartWithTransactions(t *testing.T) {
 
 	latestBlockView, err := NewUtxoView(db, params, nil, nil)
 	require.NoError(err)
-
-	dir, err := os.MkdirTemp("", "badgerdb-mempool")
-	require.NoError(err)
-	t.Logf("BadgerDB directory: %s\nIt should be automatically removed at the end of the test", dir)
-	defer os.RemoveAll(dir)
+	dir := _dbDirSetup(t)
 
 	mempool := NewPosMempool(params, globalParams, latestBlockView, 2, dir)
 	require.NoError(mempool.Start())
@@ -83,11 +75,7 @@ func TestPosMempoolPrune(t *testing.T) {
 
 	latestBlockView, err := NewUtxoView(db, params, nil, nil)
 	require.NoError(err)
-
-	dir, err := os.MkdirTemp("", "badgerdb-mempool")
-	require.NoError(err)
-	t.Logf("BadgerDB directory: %s\nIt should be automatically removed at the end of the test", dir)
-	defer os.RemoveAll(dir)
+	dir := _dbDirSetup(t)
 
 	params.MaxMempoolPosSizeBytes = 500
 	mempool := NewPosMempool(params, globalParams, latestBlockView, 2, dir)
@@ -165,11 +153,7 @@ func TestPosMempoolUpdateGlobalParams(t *testing.T) {
 
 	latestBlockView, err := NewUtxoView(db, params, nil, nil)
 	require.NoError(err)
-
-	dir, err := os.MkdirTemp("", "badgerdb-mempool")
-	require.NoError(err)
-	t.Logf("BadgerDB directory: %s\nIt should be automatically removed at the end of the test", dir)
-	defer os.RemoveAll(dir)
+	dir := _dbDirSetup(t)
 
 	mempool := NewPosMempool(params, globalParams, latestBlockView, 2, dir)
 	require.NoError(mempool.Start())
@@ -227,6 +211,18 @@ func _blockchainSetup(t *testing.T) (_params *DeSoParams, _db *badger.DB) {
 		senderPrivString, 200000, 11)
 
 	return params, db
+}
+
+func _dbDirSetup(t *testing.T) (_dir string) {
+	require := require.New(t)
+
+	dir, err := os.MkdirTemp("", "badgerdb-mempool")
+	require.NoError(err)
+	t.Logf("BadgerDB directory: %s\nIt should be automatically removed at the end of the test", dir)
+	t.Cleanup(func() {
+		os.RemoveAll(dir)
+	})
+	return dir
 }
 
 func _generateTestTxn(t *testing.T, rand *rand.Rand, feeMin uint64, feeMax uint64, pk []byte, priv string, expirationHeight uint64,

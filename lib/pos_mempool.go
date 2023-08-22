@@ -128,7 +128,7 @@ func (dmp *PosMempool) Start() error {
 	dmp.ledger = NewBalanceLedger()
 
 	// Create the persister
-	dmp.persister = NewMempoolPersister(dmp.db, int(dmp.params.BatchPersistFrequencyMilliseconds))
+	dmp.persister = NewMempoolPersister(dmp.db, int(dmp.params.MempoolBackupTimeMilliseconds))
 
 	// Start the persister and retrieve transactions from the database.
 	dmp.persister.Start()
@@ -221,7 +221,7 @@ func (dmp *PosMempool) addTransactionNoLock(txn *MempoolTx, persistToDb bool) er
 	if err != nil {
 		return errors.Wrapf(err, "PosMempool.addTransactionNoLock: Problem getting spendable balance")
 	}
-	if err := dmp.ledger.CanIncreaseBalance(*userPk, txnFee, spendableBalanceNanos); err != nil {
+	if err := dmp.ledger.CanIncreaseEntryWithLimit(*userPk, txnFee, spendableBalanceNanos); err != nil {
 		return errors.Wrapf(err, "PosMempool.addTransactionNoLock: Problem checking balance increase for transaction with"+
 			"hash %v, fee %v", txn.Tx.Hash(), txnFee)
 	}
@@ -233,7 +233,7 @@ func (dmp *PosMempool) addTransactionNoLock(txn *MempoolTx, persistToDb bool) er
 	}
 
 	// We update the reserved balance to include the newly added transaction's fee.
-	dmp.ledger.IncreaseBalance(*userPk, txnFee)
+	dmp.ledger.IncreaseEntry(*userPk, txnFee)
 
 	// Emit an event for the newly added transaction.
 	if persistToDb {
@@ -274,7 +274,7 @@ func (dmp *PosMempool) removeTransactionNoLock(txn *MempoolTx, persistToDb bool)
 		return errors.Wrapf(err, "PosMempool.removeTransactionNoLock: Problem removing txn from register")
 	}
 	// Decrease the appropriate ledger's balance by the transaction fee.
-	dmp.ledger.DecreaseBalance(*userPk, txn.Fee)
+	dmp.ledger.DecreaseEntry(*userPk, txn.Fee)
 
 	// Emit an event for the removed transaction.
 	if persistToDb {
@@ -360,6 +360,7 @@ func (dmp *PosMempool) pruneNoLock() error {
 	}
 	for _, prunedTxn := range prunedTxns {
 		if err := dmp.removeTransactionNoLock(prunedTxn, true); err != nil {
+			// We should never get to here since the transaction was already pruned from the TransactionRegister.
 			glog.Errorf("PosMempool.pruneNoLock: Problem removing transaction from mempool: %v", err)
 		}
 	}
