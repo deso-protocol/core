@@ -16,6 +16,7 @@ RUN go mod download
 COPY bls         bls
 COPY cmd         cmd
 COPY collections collections
+COPY consensus   consensus
 COPY desohash    desohash
 COPY lib         lib
 COPY migrate     migrate
