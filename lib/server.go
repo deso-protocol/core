@@ -1723,7 +1723,7 @@ func (srv *Server) _handleBlockAccepted(event *BlockEvent) {
 
 	// Notify the consensus that a block was accepted.
 	if srv.fastHotStuffConsensus != nil {
-		srv.fastHotStuffConsensus.HandleAcceptedBlock()
+		srv.fastHotStuffConsensus.UpdateChainTip()
 	}
 
 	// Construct an inventory vector to relay to peers.
@@ -2182,6 +2182,17 @@ func (srv *Server) _handleFastHostStuffBlockProposal(event *consensus.ConsensusE
 	// 7. Broadcast the block to the network
 }
 
+func (srv *Server) _handleFastHostStuffEmptyTimeoutBlockProposal(event *consensus.ConsensusEvent) {
+	// The consensus module has signaled that we have a timeout QC and can propose one at a certain
+	// block height. We construct an empty block with a timeout QC and broadcast it here:
+	// 1. Verify that the block height and view we want to propose at is valid
+	// 2. Get a timeout QC from the consensus module
+	// 3. Construct a block with the timeout QC
+	// 4. Sign the block
+	// 5. Process the block locally
+	// 6. Broadcast the block to the network
+}
+
 func (srv *Server) _handleFastHostStuffVote(event *consensus.ConsensusEvent) {
 	// The consensus module has signaled that we can vote on a block. We construct and
 	// broadcast the vote here:
@@ -2202,12 +2213,14 @@ func (srv *Server) _handleFastHostStuffTimeout(event *consensus.ConsensusEvent) 
 
 func (srv *Server) _handleFastHostStuffConsensusEvent(event *consensus.ConsensusEvent) {
 	switch event.EventType {
-	case consensus.ConsensusEventTypeBlockProposal:
-		srv._handleFastHostStuffBlockProposal(event)
 	case consensus.ConsensusEventTypeVote:
 		srv._handleFastHostStuffVote(event)
 	case consensus.ConsensusEventTypeTimeout:
 		srv._handleFastHostStuffTimeout(event)
+	case consensus.ConsensusEventTypeConstructVoteQC:
+		srv._handleFastHostStuffBlockProposal(event)
+	case consensus.ConsensusEventTypeConstructTimeoutQC:
+		srv._handleFastHostStuffEmptyTimeoutBlockProposal(event)
 	}
 }
 
@@ -2226,7 +2239,7 @@ func (srv *Server) _handleFastHostStuffConsensusEvent(event *consensus.Consensus
 // control messages from peer, proposed blocks from peers, votes/timeouts, block requests, mempool
 // requests from syncing peers
 // - It listens to consensus events from the Fast HostStuff consensus engine. The consensus signals when
-// it's ready to vote, timeout, or propose a block.
+// it's ready to vote, timeout, propose a block, or propose an empty block with a timeout QC.
 func (srv *Server) _startConsensus() {
 	for {
 		// This is used instead of the shouldQuit control message exist mechanism below. shouldQuit will be true only
@@ -2477,9 +2490,6 @@ func (srv *Server) Start() {
 	if srv.miner != nil && len(srv.miner.PublicKeys) > 0 {
 		go srv.miner.Start()
 	}
-
-	// TODO: Gate these behind a PoS consensus flag.
-	go srv.fastHotStuffConsensus.Start()
 }
 
 // SyncPrefixProgress keeps track of sync progress on an individual prefix. It is used in
