@@ -255,8 +255,12 @@ const (
 	TxnTypeUnstake                      TxnType = 37
 	TxnTypeUnlockStake                  TxnType = 38
 	TxnTypeUnjailValidator              TxnType = 39
+	TxnTypeDAOCoinLockup                TxnType = 40
+	TxnTypeUpdateDAOCoinLockupParams    TxnType = 41
+	TxnTypeDAOCoinLockupTransfer        TxnType = 42
+	TxnTypeDAOCoinUnlock                TxnType = 43
 
-	// NEXT_ID = 40
+	// NEXT_ID = 44
 )
 
 type TxnString string
@@ -302,6 +306,10 @@ const (
 	TxnStringUnstake                      TxnString = "UNSTAKE"
 	TxnStringUnlockStake                  TxnString = "UNLOCK_STAKE"
 	TxnStringUnjailValidator              TxnString = "UNJAIL_VALIDATOR"
+	TxnStringDAOCoinLockup                TxnString = "DAO_COIN_LOCKUP"
+	TxnStringUpdateDAOCoinLockupParams    TxnString = "UPDATE_DAO_COIN_LOCKUP_PARAMS"
+	TxnStringDAOCoinLockupTransfer        TxnString = "DAO_COIN_LOCKUP_TRANSFER"
+	TxnStringDAOCoinUnlock                TxnString = "DAO_COIN_UNLOCK"
 )
 
 var (
@@ -315,6 +323,7 @@ var (
 		TxnTypeDeleteUserAssociation, TxnTypeCreatePostAssociation, TxnTypeDeletePostAssociation,
 		TxnTypeAccessGroup, TxnTypeAccessGroupMembers, TxnTypeNewMessage, TxnTypeRegisterAsValidator,
 		TxnTypeUnregisterAsValidator, TxnTypeStake, TxnTypeUnstake, TxnTypeUnlockStake, TxnTypeUnjailValidator,
+		TxnTypeDAOCoinLockup, TxnTypeUpdateDAOCoinLockupParams, TxnTypeDAOCoinLockupTransfer, TxnTypeDAOCoinUnlock,
 	}
 	AllTxnString = []TxnString{
 		TxnStringUnset, TxnStringBlockReward, TxnStringBasicTransfer, TxnStringBitcoinExchange, TxnStringPrivateMessage,
@@ -326,6 +335,7 @@ var (
 		TxnStringDeleteUserAssociation, TxnStringCreatePostAssociation, TxnStringDeletePostAssociation,
 		TxnStringAccessGroup, TxnStringAccessGroupMembers, TxnStringNewMessage, TxnStringRegisterAsValidator,
 		TxnStringUnregisterAsValidator, TxnStringStake, TxnStringUnstake, TxnStringUnlockStake, TxnStringUnjailValidator,
+		TxnStringDAOCoinLockup, TxnStringUpdateDAOCoinLockupParams, TxnStringDAOCoinLockupTransfer, TxnStringDAOCoinUnlock,
 	}
 )
 
@@ -417,6 +427,14 @@ func (txnType TxnType) GetTxnString() TxnString {
 		return TxnStringUnlockStake
 	case TxnTypeUnjailValidator:
 		return TxnStringUnjailValidator
+	case TxnTypeDAOCoinLockup:
+		return TxnStringDAOCoinLockup
+	case TxnTypeUpdateDAOCoinLockupParams:
+		return TxnStringUpdateDAOCoinLockupParams
+	case TxnTypeDAOCoinLockupTransfer:
+		return TxnStringDAOCoinLockupTransfer
+	case TxnTypeDAOCoinUnlock:
+		return TxnStringDAOCoinUnlock
 	default:
 		return TxnStringUndefined
 	}
@@ -502,6 +520,14 @@ func GetTxnTypeFromString(txnString TxnString) TxnType {
 		return TxnTypeUnlockStake
 	case TxnStringUnjailValidator:
 		return TxnTypeUnjailValidator
+	case TxnStringDAOCoinLockup:
+		return TxnTypeDAOCoinLockup
+	case TxnStringUpdateDAOCoinLockupParams:
+		return TxnTypeUpdateDAOCoinLockupParams
+	case TxnStringDAOCoinLockupTransfer:
+		return TxnTypeDAOCoinLockupTransfer
+	case TxnStringDAOCoinUnlock:
+		return TxnTypeDAOCoinUnlock
 	default:
 		// TxnTypeUnset means we couldn't find a matching txn type
 		return TxnTypeUnset
@@ -595,6 +621,14 @@ func NewTxnMetadata(txType TxnType) (DeSoTxnMetadata, error) {
 		return (&UnlockStakeMetadata{}).New(), nil
 	case TxnTypeUnjailValidator:
 		return (&UnjailValidatorMetadata{}).New(), nil
+	case TxnTypeDAOCoinLockup:
+		return (&DAOCoinLockupMetadata{}).New(), nil
+	case TxnTypeUpdateDAOCoinLockupParams:
+		return (&UpdateDAOCoinLockupParamsMetadata{}).New(), nil
+	case TxnTypeDAOCoinLockupTransfer:
+		return (&DAOCoinLockupTransferMetadata{}).New(), nil
+	case TxnTypeDAOCoinUnlock:
+		return (&DAOCoinUnlockMetadata{}).New(), nil
 	default:
 		return nil, fmt.Errorf("NewTxnMetadata: Unrecognized TxnType: %v; make sure you add the new type of transaction to NewTxnMetadata", txType)
 	}
