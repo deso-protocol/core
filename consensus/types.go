@@ -132,13 +132,15 @@ type FastHotStuffConsensus struct {
 	// next block height.
 	validators []Validator
 
-	// votesSeen is an in-memory map of all the votes we've seen so far, organized by the public key
-	// of the sender and the block hash of the block that was voted on.
-	votesSeen map[votesSeenMapKey]VoteMessage
+	// votesSeen is an in-memory map of all the votes we've seen so far, organized by the block hash
+	// that was voted on and the public key of the sender. We use a nested map because we want to be
+	// able to fetch all votes by block hash.
+	votesSeen map[BlockHash]map[bls.PublicKey]VoteMessage
 
 	// timeoutsSeen is an in-memory map of all the timeout messages we've seen so far, organized by
-	// the public key of the sender and the view that was timed out.
-	timeoutsSeen map[timeoutsSeenMapKey]TimeoutMessage
+	// the timed out view and the public key of the sender. We use a nested map because we want to
+	// be able to fetch all timeout messages by view.
+	timeoutsSeen map[uint64]map[bls.PublicKey]TimeoutMessage
 
 	// Externally accessible channel for signals sent to the Server.
 	ConsensusEvents chan *ConsensusEvent
@@ -156,13 +158,3 @@ const (
 	consensusStatusNotRunning consensusStatus = iota
 	consensusStatusRunning
 )
-
-type votesSeenMapKey struct {
-	blockHash BlockHash
-	publicKey bls.PublicKey
-}
-
-type timeoutsSeenMapKey struct {
-	view      uint64
-	publicKey bls.PublicKey
-}
