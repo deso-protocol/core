@@ -21,10 +21,10 @@ import (
 type ConsensusEventType byte
 
 const (
-	ConsensusEventTypeVote ConsensusEventType = iota
-	ConsensusEventTypeTimeout
-	ConsensusEventTypeConstructVoteQC
-	ConsensusEventTypeConstructTimeoutQC
+	ConsensusEventTypeVote               ConsensusEventType = 0
+	ConsensusEventTypeTimeout            ConsensusEventType = 1
+	ConsensusEventTypeConstructVoteQC    ConsensusEventType = 2
+	ConsensusEventTypeConstructTimeoutQC ConsensusEventType = 3
 )
 
 type ConsensusEvent struct {
@@ -106,10 +106,10 @@ type QuorumCertificate interface {
 //
 // This module is very simply and only houses the logic that decide what action to perform next given the
 // current chain tip. The module does not track the history of blocks, and instead needs its caller to
-// provide update the block at the current chain tip. It expects its caller to maintain the block chain,
+// update the block at the current chain tip. It expects its caller to maintain the block chain,
 // the index of all past blocks, to perform QC validations for incoming blocks, to handle the commit rule,
-// and only then and to pass the validated chain tip. Note: this module takes the provided chain tip as a
-// trusted input and does NOT validate any incoming blocks. This also mean the module expect its caller to
+// and only then to pass the validated chain tip. Note: this module takes the provided chain tip as a
+// trusted input and does NOT validate any incoming blocks. This also mean the module expects its caller to
 // track historical vote and timeout messages it has sent so as to not vote more than once at a given view
 // or block height.
 type FastHotStuffConsensus struct {
@@ -121,7 +121,7 @@ type FastHotStuffConsensus struct {
 	nextBlockConstructionTime time.Time
 	nextTimeoutTime           time.Time
 
-	// The latest block accepted by the caller. We only keep track of and build on top of the the chain
+	// The latest block accepted by the caller. We only keep track of and build on top of the chain
 	// tip here. In the event of a fork, we expect the new tip to be resolved and provided by the caller
 	chainTip Block
 	// The current view at which we expect to see or propose the next block. In the event of a timeout,
@@ -134,11 +134,11 @@ type FastHotStuffConsensus struct {
 
 	// votesSeen is an in-memory map of all the votes we've seen so far, organized by the public key
 	// of the sender and the block hash of the block that was voted on.
-	votesSeen map[BlockHash]map[bls.PublicKey]VoteMessage
+	votesSeen map[votesSeenMapKey]VoteMessage
 
 	// timeoutsSeen is an in-memory map of all the timeout messages we've seen so far, organized by
 	// the public key of the sender and the view that was timed out.
-	timeoutsSeen map[uint64]map[bls.PublicKey]TimeoutMessage
+	timeoutsSeen map[timeoutsSeenMapKey]TimeoutMessage
 
 	// Externally accessible channel for signals sent to the Server.
 	ConsensusEvents chan *ConsensusEvent
@@ -156,3 +156,13 @@ const (
 	consensusStatusNotRunning consensusStatus = iota
 	consensusStatusRunning
 )
+
+type votesSeenMapKey struct {
+	blockHash BlockHash
+	publicKey bls.PublicKey
+}
+
+type timeoutsSeenMapKey struct {
+	view      uint64
+	publicKey bls.PublicKey
+}

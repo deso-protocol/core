@@ -3,8 +3,6 @@ package consensus
 import (
 	"errors"
 	"time"
-
-	"github.com/deso-protocol/core/bls"
 )
 
 func NewFastHotStuffConsensus() *FastHotStuffConsensus {
@@ -37,7 +35,7 @@ func (fc *FastHotStuffConsensus) Init(
 	defer fc.lock.Unlock()
 
 	// Ensure the consensus instance is not already running
-	if fc.status != consensusStatusRunning {
+	if fc.status == consensusStatusRunning {
 		return errors.New("Consensus instance is already running")
 	}
 
@@ -55,8 +53,8 @@ func (fc *FastHotStuffConsensus) Init(
 	fc.validators = validators
 
 	// Reset all internal data structures for votes and timeouts
-	fc.votesSeen = make(map[BlockHash]map[bls.PublicKey]VoteMessage)
-	fc.timeoutsSeen = make(map[uint64]map[bls.PublicKey]TimeoutMessage)
+	fc.votesSeen = make(map[votesSeenMapKey]VoteMessage)
+	fc.timeoutsSeen = make(map[timeoutsSeenMapKey]TimeoutMessage)
 
 	// Reset all internal and external channels used for signaling
 	fc.internalTimersUpdatedSignal = make(chan interface{})
