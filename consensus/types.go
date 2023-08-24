@@ -104,7 +104,7 @@ type QuorumCertificate interface {
 // When a new block is connected to the chain, the caller is expected to update the chain tip. The module
 // resets all internal data structures and timers to handle all of the above based on the new chain tip.
 //
-// This module is very simply and only houses the logic that decide what action to perform next given the
+// This module is very simple and only houses the logic that decides what action to perform next given the
 // current chain tip. The module does not track the history of blocks, and instead needs its caller to
 // update the block at the current chain tip. It expects its caller to maintain the block chain,
 // the index of all past blocks, to perform QC validations for incoming blocks, to handle the commit rule,
@@ -118,8 +118,8 @@ type FastHotStuffConsensus struct {
 	blockConstructionCadence time.Duration
 	timeoutBaseDuration      time.Duration
 
-	nextBlockConstructionTime time.Time
-	nextTimeoutTime           time.Time
+	nextBlockConstructionTimeStamp time.Time
+	nextTimeoutTimeStamp           time.Time
 
 	// The latest block accepted by the caller. We only keep track of and build on top of the chain
 	// tip here. In the event of a fork, we expect the new tip to be resolved and provided by the caller

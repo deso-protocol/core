@@ -14,7 +14,8 @@ func NewFastHotStuffConsensus() *FastHotStuffConsensus {
 }
 
 // Initializes the consensus instance with the latest known valid block in the blockchain, and
-// the validator set. The functions expects the following for the input params:
+// the validator set for the next block height. The functions expects the following for the input
+// params:
 //   - Block construction duration must be > 0
 //   - Timeout base duration must be > 0
 //   - The input block must have a valid block hash, block height, view, and QC
@@ -22,10 +23,8 @@ func NewFastHotStuffConsensus() *FastHotStuffConsensus {
 //     consistent tie breaking scheme. The validator set is expected to be valid for
 //     validating votes and timeouts for the next block height.
 //
-// Given the above, This function does two things:
-//   - Initializes all internal data structures so used to track incoming votes and timeout messages
-//   - Starts the internal timers that regulate consensus timeouts and the block proposal
-//     crank timer.
+// Given the above, This function updates the chain tip internally, and initializes all internal
+// data structures that are used to track incoming votes and timeout messages.
 func (fc *FastHotStuffConsensus) Init(
 	blockConstructionCadence time.Duration,
 	timeoutBaseDuration time.Duration,
@@ -90,6 +89,8 @@ func (fc *FastHotStuffConsensus) ConstructTimeoutQC( /* TODO */ ) {
 	// TODO
 }
 
+// Sets the initial times for the the block construction and timeout timers and starts
+// the event loop building off of the current chain tip.
 func (fc *FastHotStuffConsensus) Start() {
 	fc.lock.Lock()
 	if fc.status == consensusStatusRunning {
@@ -100,20 +101,23 @@ func (fc *FastHotStuffConsensus) Start() {
 
 	// Update the consensus status to mark it as running.
 	fc.status = consensusStatusRunning
-	fc.lock.Unlock()
 
 	// Set the initial times for the the block construction and timeout timers
-	fc.nextBlockConstructionTime = time.Now().Add(fc.blockConstructionCadence)
-	fc.nextTimeoutTime = time.Now().Add(fc.timeoutBaseDuration)
+	fc.nextBlockConstructionTimeStamp = time.Now().Add(fc.blockConstructionCadence)
+	fc.nextTimeoutTimeStamp = time.Now().Add(fc.timeoutBaseDuration)
+
+	// We can release the lock now that all state changes has been set up to start
+	// the event loop.
+	fc.lock.Unlock()
 
 	// Start the event loop
 	for {
 		select {
-		case <-time.After(time.Until(fc.nextBlockConstructionTime)):
+		case <-time.After(time.Until(fc.nextBlockConstructionTimeStamp)):
 			{
 				// TODO
 			}
-		case <-time.After(time.Until(fc.nextTimeoutTime)):
+		case <-time.After(time.Until(fc.nextTimeoutTimeStamp)):
 			{
 				// TODO
 			}
