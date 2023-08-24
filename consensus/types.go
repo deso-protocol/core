@@ -144,8 +144,8 @@ type FastHotStuffConsensus struct {
 	ConsensusEvents chan *ConsensusEvent
 
 	// Internal channels used by this module to coordinate the event loop
-	internalTimersUpdated chan interface{}
-	stop                  chan interface{}
+	internalTimersUpdatedSignal chan interface{}
+	stopSignal                  chan interface{}
 
 	status consensusStatus
 }

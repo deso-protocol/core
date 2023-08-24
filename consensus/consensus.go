@@ -32,7 +32,7 @@ func (fc *FastHotStuffConsensus) Init(
 	chainTip Block,
 	validators []Validator,
 ) error {
-	// Grab the instance's lock
+	// Grab the consensus instance's lock
 	fc.lock.Lock()
 	defer fc.lock.Unlock()
 
@@ -59,36 +59,15 @@ func (fc *FastHotStuffConsensus) Init(
 	fc.timeoutsSeen = make(map[uint64]map[bls.PublicKey]TimeoutMessage)
 
 	// Reset all internal and external channels used for signaling
-	fc.internalTimersUpdated = make(chan interface{})
-	fc.stop = make(chan interface{})
+	fc.internalTimersUpdatedSignal = make(chan interface{})
+	fc.stopSignal = make(chan interface{})
 	fc.ConsensusEvents = make(chan *ConsensusEvent)
 
 	// Set the block construction and timeout base durations
 	fc.blockConstructionCadence = blockConstructionCadence
 	fc.timeoutBaseDuration = timeoutBaseDuration
 
-	// Start the crank and timeout timers
-	fc.nextBlockConstructionTime = time.Now().Add(blockConstructionCadence)
-	fc.nextTimeoutTime = time.Now().Add(timeoutBaseDuration)
-
-	// Update the consensus status
-	fc.status = consensusStatusRunning
-
-	// Start the consensus internal event loop
-	go fc.runEventLoop()
-
 	return nil
-}
-
-func (fc *FastHotStuffConsensus) IsRunning() bool {
-	fc.lock.RLock()
-	defer fc.lock.RUnlock()
-
-	return fc.status == consensusStatusRunning
-}
-
-func (fc *FastHotStuffConsensus) Stop() {
-	fc.stop <- struct{}{}
 }
 
 func (fc *FastHotStuffConsensus) UpdateChainTip( /* TODO */ ) {
@@ -111,19 +90,23 @@ func (fc *FastHotStuffConsensus) ConstructTimeoutQC( /* TODO */ ) {
 	// TODO
 }
 
-func (fc *FastHotStuffConsensus) onStopInternalSignal() {
+func (fc *FastHotStuffConsensus) Start() {
 	fc.lock.Lock()
-	defer fc.lock.Unlock()
+	if fc.status == consensusStatusRunning {
+		// Nothing to do here. The consensus instance is already running.
+		fc.lock.Unlock()
+		return
+	}
 
-	// Reset all internal and external channels used for signaling
-	fc.internalTimersUpdated = make(chan interface{})
-	fc.stop = make(chan interface{})
+	// Update the consensus status to mark it as running.
+	fc.status = consensusStatusRunning
+	fc.lock.Unlock()
 
-	// Update the consensus status
-	fc.status = consensusStatusNotRunning
-}
+	// Set the initial times for the the block construction and timeout timers
+	fc.nextBlockConstructionTime = time.Now().Add(fc.blockConstructionCadence)
+	fc.nextTimeoutTime = time.Now().Add(fc.timeoutBaseDuration)
 
-func (fc *FastHotStuffConsensus) runEventLoop() {
+	// Start the event loop
 	for {
 		select {
 		case <-time.After(time.Until(fc.nextBlockConstructionTime)):
@@ -134,15 +117,46 @@ func (fc *FastHotStuffConsensus) runEventLoop() {
 			{
 				// TODO
 			}
-		case <-fc.internalTimersUpdated:
+		case <-fc.internalTimersUpdatedSignal:
 			{
 				// TODO
 			}
-		case <-fc.stop:
+		case <-fc.stopSignal:
 			{
-				fc.onStopInternalSignal()
+				fc.onStopSignal()
 				return
 			}
 		}
 	}
+}
+
+func (fc *FastHotStuffConsensus) IsRunning() bool {
+	fc.lock.RLock()
+	defer fc.lock.RUnlock()
+
+	return fc.status == consensusStatusRunning
+}
+
+func (fc *FastHotStuffConsensus) Stop() {
+	fc.lock.Lock()
+	defer fc.lock.Unlock()
+
+	// Grabbing the lock first and checking the status ensures that we can never push a stop
+	// signal once the channel has been closed. It's OK if we push multiple stop signals while
+	// the channel is still open.
+	if fc.status == consensusStatusRunning {
+		fc.stopSignal <- struct{}{}
+	}
+}
+
+func (fc *FastHotStuffConsensus) onStopSignal() {
+	fc.lock.Lock()
+	defer fc.lock.Unlock()
+
+	// Close all internal and external channels used for signaling
+	close(fc.internalTimersUpdatedSignal)
+	close(fc.stopSignal)
+
+	// Update the consensus status
+	fc.status = consensusStatusNotRunning
 }
