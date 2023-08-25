@@ -73,11 +73,15 @@ func (fc *FastHotStuffConsensus) UpdateChainTip( /* TODO */ ) {
 	// TODO
 }
 
-func (fc *FastHotStuffConsensus) ProcessVoteMessage( /* TODO */ ) {
+func (fc *FastHotStuffConsensus) UpdateView( /* TODO */ ) {
 	// TODO
 }
 
-func (pc *FastHotStuffConsensus) ProcessTimeoutMessage( /* TODO */ ) {
+func (fc *FastHotStuffConsensus) ProcessVote( /* TODO */ ) {
+	// TODO
+}
+
+func (pc *FastHotStuffConsensus) ProcessTimeout( /* TODO */ ) {
 	// TODO
 }
 
