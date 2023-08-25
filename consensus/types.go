@@ -44,24 +44,31 @@ type BlockHash interface {
 }
 
 type Validator interface {
-	GetPublicKey() bls.PublicKey
+	GetPublicKey() *bls.PublicKey
 	GetStakeAmount() *uint256.Int
+}
+
+type QuorumCertificate interface {
+	GetBlockHash() BlockHash
+	GetView() uint64
+	GetSignersList() *bitset.Bitset
+	GetAggregatedSignature() *bls.Signature
 }
 
 type VoteMessage interface {
 	GetView()
 	GetBlockHash() BlockHash
 
-	GetPublicKey() bls.PublicKey
-	GetSignature() bls.Signature
+	GetPublicKey() *bls.PublicKey
+	GetSignature() *bls.Signature
 }
 
 type TimeoutMessage interface {
 	GetView() uint64
 	GetHighQC() QuorumCertificate
 
-	GetPublicKey() bls.PublicKey
-	GetSignature() bls.Signature
+	GetPublicKey() *bls.PublicKey
+	GetSignature() *bls.Signature
 }
 
 type Block interface {
@@ -76,13 +83,6 @@ type Block interface {
 	// a timeout QC for the next block in the event of a timeout. So, this QC will always be the latest QC
 	// at the current chain's tip that subsequent blocks will build on top of.
 	GetQC() QuorumCertificate
-}
-
-type QuorumCertificate interface {
-	GetBlockHash() BlockHash
-	GetView() uint64
-	GetSignersList() *bitset.Bitset
-	GetAggregatedSignature() *bls.Signature
 }
 
 // An instance of FastHotStuffConsensus is a self-contained module that represents a single node running the
