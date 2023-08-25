@@ -1,6 +1,10 @@
 package consensus
 
-import "github.com/deso-protocol/core/collections"
+import (
+	"reflect"
+
+	"github.com/deso-protocol/core/collections"
+)
 
 func isValidBlock(block Block) bool {
 	// The block must be non-nil
@@ -14,7 +18,7 @@ func isValidBlock(block Block) bool {
 	}
 
 	// The block hash and QC must be non-nil
-	if block.GetBlockHash() == nil || block.GetQC() == nil {
+	if isInterfaceNil(block.GetBlockHash()) || isInterfaceNil(block.GetQC()) {
 		return false
 	}
 
@@ -36,6 +40,18 @@ func isValidValidatorSet(validators []Validator) bool {
 
 	// If any validator in the slice has an invalid property, then something is wrong.
 	return !collections.Any(validators, func(v Validator) bool {
-		return v == nil || v.GetPublicKey() == nil || v.GetStakeAmount() == nil || v.GetStakeAmount().IsZero()
+		return isInterfaceNil(v) || v.GetPublicKey() == nil || v.GetStakeAmount() == nil || v.GetStakeAmount().IsZero()
 	})
+}
+
+// golang interface types are stored as a tuple of (type, value). A single i==nil check is not enough to
+// determine if a pointer that implements an interface is nil. This function checks if the interface is nil
+// by checking if the pointer itself is nil.
+func isInterfaceNil(i interface{}) bool {
+	if i == nil {
+		return true
+	}
+
+	value := reflect.ValueOf(i)
+	return value.Kind() == reflect.Ptr && value.IsNil()
 }

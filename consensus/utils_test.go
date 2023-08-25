@@ -11,10 +11,42 @@ import (
 )
 
 func TestIsValidBlock(t *testing.T) {
+	// Test nil block
+	{
+		require.False(t, isValidBlock(nil))
+	}
+
+	// Test zero height
+	{
+		block := block{height: 0, view: 1, blockHash: createDummyBlockHash(), qc: createDummyQC()}
+		require.False(t, isValidBlock(&block))
+	}
+
+	// Test zero view
+	{
+		block := block{height: 1, view: 0, blockHash: createDummyBlockHash(), qc: createDummyQC()}
+		require.False(t, isValidBlock(&block))
+	}
+
+	// Test nil block hash
+	{
+		block := block{height: 1, view: 1, blockHash: nil, qc: createDummyQC()}
+		require.False(t, isValidBlock(&block))
+	}
+
+	// Test nil QC
+	{
+		block := block{height: 1, view: 1, blockHash: createDummyBlockHash(), qc: nil}
+		require.False(t, isValidBlock(&block))
+	}
+
+	// Test valid block
+	{
+		require.True(t, isValidBlock(createDummyBlock()))
+	}
 }
 
 func TestIsValidValidatorSet(t *testing.T) {
-
 	// Test empty slice
 	{
 		require.False(t, isValidValidatorSet([]Validator{}))
@@ -27,8 +59,26 @@ func TestIsValidValidatorSet(t *testing.T) {
 
 	// Test nil public key
 	{
-		// validator :=
-		// 	require.False(t, isValidValidatorSet([]Validator{createDummyValidator(nil, uint256.NewInt().SetUint64(1))}))
+		validator := validator{publicKey: nil, stakeAmount: uint256.NewInt().SetUint64(1)}
+		require.False(t, isValidValidatorSet([]Validator{&validator}))
+	}
+
+	// Test nil stake amount
+	{
+		validator := validator{publicKey: createDummyBLSPublicKey(), stakeAmount: nil}
+		require.False(t, isValidValidatorSet([]Validator{&validator}))
+	}
+
+	// Test zero stake amount
+	{
+		validator := validator{publicKey: createDummyBLSPublicKey(), stakeAmount: uint256.NewInt()}
+		require.False(t, isValidValidatorSet([]Validator{&validator}))
+	}
+
+	// Test valid validator
+	{
+		validator := validator{publicKey: createDummyBLSPublicKey(), stakeAmount: uint256.NewInt().SetUint64(1)}
+		require.True(t, isValidValidatorSet([]Validator{&validator}))
 	}
 }
 
@@ -52,8 +102,8 @@ func createDummyValidatorSet() []Validator {
 func createDummyBlock() *block {
 	return &block{
 		blockHash: createDummyBlockHash(),
-		view:      0,
-		height:    0,
+		view:      1,
+		height:    1,
 		qc:        createDummyQC(),
 	}
 }
@@ -61,7 +111,7 @@ func createDummyBlock() *block {
 func createDummyQC() *quorumCertificate {
 	return &quorumCertificate{
 		blockHash:           createDummyBlockHash(),
-		view:                0,
+		view:                1,
 		signersList:         bitset.NewBitset().FromBytes([]byte{0x3}),
 		aggregatedSignature: createDummyBLSSignature(),
 	}
