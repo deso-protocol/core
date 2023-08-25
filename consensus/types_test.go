@@ -23,11 +23,11 @@ func (bh *blockHash) GetValue() [32]byte {
 //////////////////////////////////////////////////////////
 
 type validator struct {
-	publicKey   bls.PublicKey
+	publicKey   *bls.PublicKey
 	stakeAmount *uint256.Int
 }
 
-func (v *validator) GetPublicKey() bls.PublicKey {
+func (v *validator) GetPublicKey() *bls.PublicKey {
 	return v.publicKey
 }
 
@@ -40,14 +40,14 @@ func (v *validator) GetStakeAmount() *uint256.Int {
 //////////////////////////////////////////////////////////
 
 type quorumCertificate struct {
-	blockHash           blockHash
+	blockHash           *blockHash
 	view                uint64
 	signersList         *bitset.Bitset
 	aggregatedSignature *bls.Signature
 }
 
 func (qc *quorumCertificate) GetBlockHash() BlockHash {
-	return &qc.blockHash
+	return qc.blockHash
 }
 
 func (qc *quorumCertificate) GetView() uint64 {
@@ -67,14 +67,14 @@ func (qc *quorumCertificate) GetAggregatedSignature() *bls.Signature {
 //////////////////////////////////////////////////////////
 
 type block struct {
-	blockHash blockHash
+	blockHash *blockHash
 	height    uint64
 	view      uint64
-	qc        quorumCertificate
+	qc        *quorumCertificate
 }
 
 func (b *block) GetBlockHash() BlockHash {
-	return &b.blockHash
+	return b.blockHash
 }
 
 func (b *block) GetHeight() uint64 {
@@ -86,5 +86,5 @@ func (b *block) GetView() uint64 {
 }
 
 func (b *block) GetQC() QuorumCertificate {
-	return &b.qc
+	return b.qc
 }
