@@ -4422,33 +4422,21 @@ type CoinEntry struct {
 	TransferRestrictionStatus TransferRestrictionStatus
 
 	// ===== ENCODER MIGRATION ProofOfStake1StateSetupMigration =====
-	// DAOCoinLockupYieldAPYBasisPoints specifies an optional APY yield
-	// holders of a DAO coin can earn for locking up their coins.
-	DAOCoinLockupYieldAPYBasisPoints uint64
-
-	// ===== ENCODER MIGRATION ProofOfStake1StateSetupMigration =====
 	// LockupTransferRestrictionStatus specifies transfer restrictions
 	// for only those DAO coins actively locked up.
 	LockupTransferRestrictionStatus TransferRestrictionStatus
-
-	// ===== ENCODER MIGRATION ProofOfStake1StateSetupMigration =====
-	// The minimum amount of time a DAO coin holder must lockup
-	// their tokens to earn yield.
-	MinimumLockupDurationNanoseconds int64
 }
 
 func (ce *CoinEntry) Copy() *CoinEntry {
 	return &CoinEntry{
-		CreatorBasisPoints:               ce.CreatorBasisPoints,
-		DeSoLockedNanos:                  ce.DeSoLockedNanos,
-		NumberOfHolders:                  ce.NumberOfHolders,
-		CoinsInCirculationNanos:          *uint256.NewInt().Set(&ce.CoinsInCirculationNanos),
-		CoinWatermarkNanos:               ce.CoinWatermarkNanos,
-		MintingDisabled:                  ce.MintingDisabled,
-		TransferRestrictionStatus:        ce.TransferRestrictionStatus,
-		DAOCoinLockupYieldAPYBasisPoints: ce.DAOCoinLockupYieldAPYBasisPoints,
-		LockupTransferRestrictionStatus:  ce.LockupTransferRestrictionStatus,
-		MinimumLockupDurationNanoseconds: ce.MinimumLockupDurationNanoseconds,
+		CreatorBasisPoints:              ce.CreatorBasisPoints,
+		DeSoLockedNanos:                 ce.DeSoLockedNanos,
+		NumberOfHolders:                 ce.NumberOfHolders,
+		CoinsInCirculationNanos:         *uint256.NewInt().Set(&ce.CoinsInCirculationNanos),
+		CoinWatermarkNanos:              ce.CoinWatermarkNanos,
+		MintingDisabled:                 ce.MintingDisabled,
+		TransferRestrictionStatus:       ce.TransferRestrictionStatus,
+		LockupTransferRestrictionStatus: ce.LockupTransferRestrictionStatus,
 	}
 }
 
@@ -4465,9 +4453,7 @@ func (ce *CoinEntry) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata .
 	data = append(data, byte(ce.TransferRestrictionStatus))
 
 	if MigrationTriggered(blockHeight, ProofOfStake1StateSetupMigration) {
-		data = append(data, UintToBuf(ce.DAOCoinLockupYieldAPYBasisPoints)...)
 		data = append(data, byte(ce.LockupTransferRestrictionStatus))
-		data = append(data, UintToBuf(uint64(ce.MinimumLockupDurationNanoseconds))...)
 	}
 
 	return data
@@ -4512,22 +4498,11 @@ func (ce *CoinEntry) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.Read
 	ce.TransferRestrictionStatus = TransferRestrictionStatus(statusByte)
 
 	if MigrationTriggered(blockHeight, ProofOfStake1StateSetupMigration) {
-		ce.DAOCoinLockupYieldAPYBasisPoints, err = ReadUvarint(rr)
-		if err != nil {
-			return errors.Wrapf(err, "CoinEntry.Decode: Problem reading DAOCoinLockupYieldAPYBasisPoints")
-		}
-
 		lockedStatusByte, err := rr.ReadByte()
 		if err != nil {
 			return errors.Wrapf(err, "CoinEntry.Decode: Problem reading LockupTransferRestrictionStatus")
 		}
 		ce.LockupTransferRestrictionStatus = TransferRestrictionStatus(lockedStatusByte)
-
-		uint64MinimumLockupDurationNanoseconds, err := ReadUvarint(rr)
-		if err != nil {
-			return errors.Wrapf(err, "CoinEntry.Decode: Problem reading MinimumLockupDurationNanoseconds")
-		}
-		ce.MinimumLockupDurationNanoseconds = int64(uint64MinimumLockupDurationNanoseconds)
 	}
 
 	return nil
