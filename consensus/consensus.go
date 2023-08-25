@@ -9,7 +9,7 @@ import (
 
 func NewFastHotStuffConsensus() *FastHotStuffConsensus {
 	return &FastHotStuffConsensus{
-		status: consensusStatusNotRunning,
+		status: consensusStatusUninitialized,
 	}
 }
 
@@ -73,11 +73,11 @@ func (fc *FastHotStuffConsensus) UpdateChainTip( /* TODO */ ) {
 	// TODO
 }
 
-func (fc *FastHotStuffConsensus) HandleVoteMessage( /* TODO */ ) {
+func (fc *FastHotStuffConsensus) ProcessVoteMessage( /* TODO */ ) {
 	// TODO
 }
 
-func (pc *FastHotStuffConsensus) HandleTimeoutMessage( /* TODO */ ) {
+func (pc *FastHotStuffConsensus) ProcessTimeoutMessage( /* TODO */ ) {
 	// TODO
 }
 
@@ -93,8 +93,8 @@ func (fc *FastHotStuffConsensus) ConstructTimeoutQC( /* TODO */ ) {
 // the event loop building off of the current chain tip.
 func (fc *FastHotStuffConsensus) Start() {
 	fc.lock.Lock()
-	if fc.status == consensusStatusRunning {
-		// Nothing to do here. The consensus instance is already running.
+	if fc.status != consensusStatusNotRunning {
+		// Nothing to do here. The consensus instance is either already running or uninitialized.
 		fc.lock.Unlock()
 		return
 	}
@@ -132,6 +132,13 @@ func (fc *FastHotStuffConsensus) Start() {
 			}
 		}
 	}
+}
+
+func (fc *FastHotStuffConsensus) IsInitialized() bool {
+	fc.lock.RLock()
+	defer fc.lock.RUnlock()
+
+	return fc.status != consensusStatusUninitialized
 }
 
 func (fc *FastHotStuffConsensus) IsRunning() bool {
