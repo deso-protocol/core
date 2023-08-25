@@ -40,15 +40,25 @@ func (fc *FastHotStuffConsensus) Init(
 
 	// Ensure the consensus instance is not already running
 	if fc.status == consensusStatusRunning {
-		return errors.New("Consensus instance is already running")
+		return errors.New("FastHotStuffConsensus.Init: Consensus instance is already running")
 	}
 
-	// Validate the inputs
+	// Validate the timer durations
 	if blockConstructionCadence <= 0 {
-		return errors.New("Block construction duration must be > 0")
+		return errors.New("FastHotStuffConsensus.Init: Block construction duration must be > 0")
 	}
 	if timeoutBaseDuration <= 0 {
-		return errors.New("Timeout base duration must be > 0")
+		return errors.New("FastHotStuffConsensus.Init: Timeout base duration must be > 0")
+	}
+
+	// Validate the integrity of the block
+	if !isValidBlock(chainTip) {
+		return errors.New("FastHotStuffConsensus.Init: Invalid block")
+	}
+
+	// Validate the integrity of the validator set
+	if !isValidValidatorSet(validators) {
+		return errors.New("FastHotStuffConsensus.Init: Invalid validator set")
 	}
 
 	// Update the chain tip and validator set

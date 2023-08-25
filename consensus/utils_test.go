@@ -1,11 +1,36 @@
 package consensus
 
 import (
+	"testing"
+
 	"github.com/deso-protocol/core/bls"
 	"github.com/deso-protocol/core/collections"
 	"github.com/deso-protocol/core/collections/bitset"
 	"github.com/holiman/uint256"
+	"github.com/stretchr/testify/require"
 )
+
+func TestIsValidBlock(t *testing.T) {
+}
+
+func TestIsValidValidatorSet(t *testing.T) {
+
+	// Test empty slice
+	{
+		require.False(t, isValidValidatorSet([]Validator{}))
+	}
+
+	// Test nil validator
+	{
+		require.False(t, isValidValidatorSet([]Validator{nil}))
+	}
+
+	// Test nil public key
+	{
+		// validator :=
+		// 	require.False(t, isValidValidatorSet([]Validator{createDummyValidator(nil, uint256.NewInt().SetUint64(1))}))
+	}
+}
 
 func createDummyValidatorSet() []Validator {
 	validators := []*validator{
@@ -19,7 +44,7 @@ func createDummyValidatorSet() []Validator {
 		},
 	}
 	// Cast the slice of concrete structs []*validators to a slice of interfaces []Validator
-	return collections.TransformSlice(validators, func(v *validator) Validator {
+	return collections.Transform(validators, func(v *validator) Validator {
 		return v
 	})
 }
