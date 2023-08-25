@@ -77,11 +77,11 @@ func (fc *FastHotStuffConsensus) UpdateView( /* TODO */ ) {
 	// TODO
 }
 
-func (fc *FastHotStuffConsensus) ProcessVote( /* TODO */ ) {
+func (fc *FastHotStuffConsensus) ProcessVoteMsg( /* TODO */ ) {
 	// TODO
 }
 
-func (pc *FastHotStuffConsensus) ProcessTimeout( /* TODO */ ) {
+func (pc *FastHotStuffConsensus) ProcessTimeoutMsg( /* TODO */ ) {
 	// TODO
 }
 
