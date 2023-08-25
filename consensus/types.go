@@ -56,7 +56,7 @@ type QuorumCertificate interface {
 }
 
 type VoteMessage interface {
-	GetView()
+	GetView() uint64
 	GetBlockHash() BlockHash
 
 	GetPublicKey() *bls.PublicKey
@@ -84,6 +84,13 @@ type Block interface {
 	// at the current chain's tip that subsequent blocks will build on top of.
 	GetQC() QuorumCertificate
 }
+
+// We want a large buffer for the signal channels to ensure threads don't block when trying to push new
+// signals.
+//
+// TODO: is a size of 100 enough? If we want to bullet-proof this, we could back it by a slice as a
+// secondary buffer.
+const signalChannelBufferSize = 100
 
 // An instance of FastHotStuffEventLoop is a self-contained module that represents a single node running
 // the event loop for the Fast HotStuff consensus protocol. The module is initialized at the current chain's
@@ -121,8 +128,8 @@ type FastHotStuffEventLoop struct {
 	nextBlockConstructionTimeStamp time.Time
 	nextTimeoutTimeStamp           time.Time
 
-	// The latest block accepted by the caller. We only keep track of and build on top of the chain
-	// tip here. In the event of a fork, we expect the new tip to be resolved and provided by the caller
+	// The latest block accepted by the caller. We only keep track of the latest safe block here because
+	// it's the block we vote on, and construct a vote QC for.
 	chainTip Block
 	// The current view at which we expect to see or propose the next block. In the event of a timeout,
 	// the timeout signal will be triggered for this view.
@@ -130,24 +137,24 @@ type FastHotStuffEventLoop struct {
 	// The validator set sorted in decreasing order of stake amount, with a consistent tie-breaking
 	// scheme. This validator set is expected to be valid for validating votes and timeouts for the
 	// next block height.
-	validators []Validator
+	validatorsAtChainTip []Validator
 
 	// votesSeen is an in-memory map of all the votes we've seen so far, organized by the block hash
-	// that was voted on and the public key of the sender. We use a nested map because we want to be
-	// able to fetch all votes by block hash.
-	votesSeen map[BlockHash]map[bls.PublicKey]VoteMessage
+	// that was voted on and the BLS public key string of the sender. We use a nested map because we
+	// want to be able to fetch all votes by block hash.
+	votesSeen map[[32]byte]map[string]VoteMessage
 
 	// timeoutsSeen is an in-memory map of all the timeout messages we've seen so far, organized by
-	// the timed out view and the public key of the sender. We use a nested map because we want to
-	// be able to fetch all timeout messages by view.
-	timeoutsSeen map[uint64]map[bls.PublicKey]TimeoutMessage
+	// the timed out view and the BLS public key string of the sender. We use a nested map because
+	// we want to be able to fetch all timeout messages by view.
+	timeoutsSeen map[uint64]map[string]TimeoutMessage
 
 	// Externally accessible channel for signals sent to the Server.
 	ConsensusEvents chan *ConsensusEvent
 
 	// Internal channels used by this module to coordinate the event loop
-	internalTimersUpdatedSignal chan interface{}
-	stopSignal                  chan interface{}
+	resetEventLoopSignal chan interface{}
+	stopSignal           chan interface{}
 
 	// Internal statuses and wait groups used to coordinate the start and stop operations for
 	// the event loop.

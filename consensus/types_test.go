@@ -88,3 +88,57 @@ func (b *block) GetView() uint64 {
 func (b *block) GetQC() QuorumCertificate {
 	return b.qc
 }
+
+//////////////////////////////////////////////////////////
+// VoteMessage interface implementation for testing
+//////////////////////////////////////////////////////////
+
+type voteMessage struct {
+	view      uint64
+	blockHash *blockHash
+	publicKey *bls.PublicKey
+	signature *bls.Signature
+}
+
+func (vm *voteMessage) GetView() uint64 {
+	return vm.view
+}
+
+func (vm *voteMessage) GetBlockHash() BlockHash {
+	return vm.blockHash
+}
+
+func (vm *voteMessage) GetPublicKey() *bls.PublicKey {
+	return vm.publicKey
+}
+
+func (vm *voteMessage) GetSignature() *bls.Signature {
+	return vm.signature
+}
+
+//////////////////////////////////////////////////////////
+// TimeoutMessage interface implementation for testing
+//////////////////////////////////////////////////////////
+
+type timeoutMessage struct {
+	view      uint64
+	highQC    *quorumCertificate
+	publicKey *bls.PublicKey
+	signature *bls.Signature
+}
+
+func (tm *timeoutMessage) GetView() uint64 {
+	return tm.view
+}
+
+func (tm *timeoutMessage) GetHighQC() QuorumCertificate {
+	return tm.highQC
+}
+
+func (tm *timeoutMessage) GetPublicKey() *bls.PublicKey {
+	return tm.publicKey
+}
+
+func (tm *timeoutMessage) GetSignature() *bls.Signature {
+	return tm.signature
+}
