@@ -155,7 +155,7 @@ type FastHotStuffConsensus struct {
 type consensusStatus byte
 
 const (
-	consensusStatusUninitialized consensusStatus = 0 // Not initialized and the event loop is not running
-	consensusStatusNotRunning    consensusStatus = 1 // Initialized but the event loop is not running
-	consensusStatusRunning       consensusStatus = 2 // Initialized and the event loop is running
+	consensusStatusNotInitialized consensusStatus = 0 // Not initialized and the event loop is not running
+	consensusStatusInitialized    consensusStatus = 1 // Initialized but the event loop is not running
+	consensusStatusRunning        consensusStatus = 2 // Initialized and the event loop is running
 )

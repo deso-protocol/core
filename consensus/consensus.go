@@ -9,7 +9,7 @@ import (
 
 func NewFastHotStuffConsensus() *FastHotStuffConsensus {
 	return &FastHotStuffConsensus{
-		status: consensusStatusUninitialized,
+		status: consensusStatusNotInitialized,
 	}
 }
 
@@ -66,6 +66,9 @@ func (fc *FastHotStuffConsensus) Init(
 	fc.blockConstructionCadence = blockConstructionCadence
 	fc.timeoutBaseDuration = timeoutBaseDuration
 
+	// Update the consensus status
+	fc.status = consensusStatusInitialized
+
 	return nil
 }
 
@@ -97,7 +100,7 @@ func (fc *FastHotStuffConsensus) ConstructTimeoutQC( /* TODO */ ) {
 // the event loop building off of the current chain tip.
 func (fc *FastHotStuffConsensus) Start() {
 	fc.lock.Lock()
-	if fc.status != consensusStatusNotRunning {
+	if fc.status != consensusStatusInitialized {
 		// Nothing to do here. The consensus instance is either already running or uninitialized.
 		fc.lock.Unlock()
 		return
@@ -142,7 +145,7 @@ func (fc *FastHotStuffConsensus) IsInitialized() bool {
 	fc.lock.RLock()
 	defer fc.lock.RUnlock()
 
-	return fc.status != consensusStatusUninitialized
+	return fc.status != consensusStatusNotInitialized
 }
 
 func (fc *FastHotStuffConsensus) IsRunning() bool {
@@ -173,5 +176,5 @@ func (fc *FastHotStuffConsensus) onStopSignal() {
 	close(fc.stopSignal)
 
 	// Update the consensus status
-	fc.status = consensusStatusNotRunning
+	fc.status = consensusStatusInitialized
 }
