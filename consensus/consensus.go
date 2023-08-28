@@ -116,6 +116,7 @@ func (fc *FastHotStuffConsensus) Start() {
 	fc.nextTimeoutTimeStamp = time.Now().Add(fc.timeoutBaseDuration)
 
 	// Kick off the event loop in a separate goroutine
+	fc.startGroup.Add(1)
 	go fc.runEventLoop()
 
 	// Wait for the event loop to start
@@ -136,6 +137,7 @@ func (fc *FastHotStuffConsensus) Stop() {
 	}
 
 	// Signal the event loop to stop
+	fc.stopGroup.Add(1)
 	fc.stopSignal <- struct{}{}
 
 	// Wait for the event loop to stop
