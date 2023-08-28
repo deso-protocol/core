@@ -83,6 +83,32 @@ func (fc *FastHotStuffEventLoop) Init(
 	return nil
 }
 
+// AdvanceView is called when the chain tip has not changed but the consensus instance has signaled a
+// timeout, and can advance to the next view. This function resets the timeout timer and crank timer
+// for the next view.
+func (fc *FastHotStuffEventLoop) AdvanceView() (uint64, error) {
+	// Grab the consensus instance's lock
+	fc.lock.Lock()
+	defer fc.lock.Unlock()
+
+	// Ensure the consensus instance is running. This guarantees that the chain tip and validator set
+	// have already been set.
+	if fc.status != consensusStatusRunning {
+		return 0, errors.New("FastHotStuffConsensus.AdvanceView: Consensus instance is not running")
+	}
+
+	// Advance the view
+	fc.currentView++
+
+	// Evict all stale votes and timeouts
+	fc.evictStaleVotesAndTimeouts()
+
+	// Signal the event loop to reset the internal timers
+	fc.resetEventLoopSignal <- struct{}{}
+
+	return fc.currentView, nil
+}
+
 // ProcessSafeBlock must only be called when the caller has accepted a new block, connected it
 // to the tip of the blockchain, and determined that the block is safe to vote on. Given such a
 // block, this function resets the internal timers and state of the Fast HotStuff consensus that
@@ -135,10 +161,6 @@ func (fc *FastHotStuffEventLoop) ProcessSafeBlock(block Block, validators []Vali
 	fc.resetEventLoopSignal <- struct{}{}
 
 	return nil
-}
-
-func (fc *FastHotStuffEventLoop) UpdateView( /* TODO */ ) {
-	// TODO
 }
 
 func (fc *FastHotStuffEventLoop) ProcessVoteMsg( /* TODO */ ) {
