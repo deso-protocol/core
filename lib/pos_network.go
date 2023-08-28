@@ -38,7 +38,7 @@ type MsgDeSoValidatorVote struct {
 	// The block hash corresponding to the block that this vote is for.
 	BlockHash *BlockHash
 
-	// The view number when the the block was proposed.
+	// The view number when the block was proposed.
 	ProposedInView uint64
 
 	// The validator's partial BLS signature of the (ProposedInView, BlockHash) pair
@@ -280,7 +280,7 @@ type QuorumCertificate struct {
 	// The block hash corresponding to the block that this QC authorizes.
 	BlockHash *BlockHash
 
-	// The view number when the the block was proposed.
+	// The view number when the block was proposed.
 	ProposedInView uint64
 
 	// This BLS signature is aggregated from all of the partial BLS signatures for

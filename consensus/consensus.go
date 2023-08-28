@@ -111,7 +111,7 @@ func (fc *FastHotStuffConsensus) Start() {
 		return
 	}
 
-	// Set the initial times for the the block construction and timeout timers
+	// Set the initial times for the block construction and timeout timers
 	fc.nextBlockConstructionTimeStamp = time.Now().Add(fc.blockConstructionCadence)
 	fc.nextTimeoutTimeStamp = time.Now().Add(fc.timeoutBaseDuration)
 
