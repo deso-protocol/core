@@ -149,6 +149,11 @@ func (fc *FastHotStuffConsensus) Stop() {
 	close(fc.stopSignal)
 }
 
+// Runs the internal event loop that waits for all internal or external signals. If the
+// event loop is running, the consensus instance status must be set to consensusStatusRunning.
+// Note, this function does not directly update the consensus status. To simplify the inner
+// implementation of the loop, the caller who starts and stops should always be responsible
+// for updating the status as it starts and stop the loop.
 func (fc *FastHotStuffConsensus) runEventLoop() {
 	// Signal that the event loop has started
 	fc.startGroup.Done()
