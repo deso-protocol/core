@@ -45,6 +45,7 @@ func TestFastHotStuffInitialization(t *testing.T) {
 		require.Equal(t, fc.IsRunning(), false)
 
 		require.NotPanics(t, fc.Stop) // Calling Stop() on an initialized instance should be a no-op
+		require.Equal(t, fc.status, consensusStatusInitialized)
 
 		require.Equal(t, fc.chainTip.GetBlockHash().GetValue(), createDummyBlockHash().GetValue())
 		require.Equal(t, fc.chainTip.GetView(), uint64(0))
@@ -66,12 +67,8 @@ func TestFastHotStuffEventLoopStartStop(t *testing.T) {
 	err := fc.Init(oneHourInNanoSecs, 2*oneHourInNanoSecs, createDummyBlock(), createDummyValidatorSet())
 	require.NoError(t, err)
 
-	go fc.Start()
-
-	// Busy wait until the event loop has started
-	for !fc.IsRunning() {
-		continue
-	}
+	// Start the event loop
+	fc.Start()
 
 	// Confirm the consensus instance status has changed to running
 	require.Equal(t, consensusStatusRunning, fc.status)
@@ -86,11 +83,6 @@ func TestFastHotStuffEventLoopStartStop(t *testing.T) {
 
 	// Stop the event loop
 	fc.Stop()
-
-	// Busy wait until the event loop has stopped
-	for fc.IsRunning() {
-		continue
-	}
 
 	// Confirm the consensus instance status has reverted to initialized
 	require.Equal(t, consensusStatusInitialized, fc.status)
