@@ -11,12 +11,12 @@ import (
 
 // ConsensusEvent is a way for FastHotStuffConsensus to send messages back to the Server.
 // There are four types of events that can be sent:
-//   - Vote: The consensus is ready to vote on a block at a given block height and view
-//   - Timeout: The consensus has timed out on a view
-//   - ConstructVoteQC: The consensus has a QC for a block and is ready to construct the
+//   - ConsensusEventTypeVote: The consensus is ready to vote on a block at a given block height and view
+//   - ConsensusEventTypeTimeout: The consensus has timed out on a view
+//   - ConsensusEventTypeConstructVoteQC: The consensus has a QC for a block and is ready to construct the
 //     next block at the next block height and the current view
-//   - ConstructTimeoutQC: The consensus has a timeout QC for a view and is ready to construct
-//     an empty block with the timeout QC at the next block height and the current view
+//   - ConsensusEventTypeConstructTimeoutQC: The consensus has a timeout QC for a view and is ready to
+//     construct an empty block with the timeout QC at the next block height and the current view
 
 type ConsensusEventType byte
 
@@ -76,8 +76,8 @@ type Block interface {
 	GetHeight() uint64
 	GetView() uint64
 	// This is a hybrid function that returns the QC from the block.
-	// - If the block is a normal block, this returns the validators' votes for the previous block
-	// - If the block contains a timeout QC, this returns the validators' high QC aggregated from
+	// - If the block is a normal block, this returns the QC from validators' votes for the previous block
+	// - If the block contains a timeout QC, this returns the validator high QC aggregated from
 	//   validators' timeout messages
 	// We are able to simplify the GetQC() to this behavior because this QC is only needed to construct
 	// a timeout QC for the next block in the event of a timeout. So, this QC will always be the latest QC
@@ -149,7 +149,11 @@ type FastHotStuffConsensus struct {
 	internalTimersUpdatedSignal chan interface{}
 	stopSignal                  chan interface{}
 
-	status consensusStatus
+	// Internal statuses and wait groups used to coordinate the start and stop operations for
+	// the event loop.
+	status     consensusStatus
+	startGroup sync.WaitGroup
+	stopGroup  sync.WaitGroup
 }
 
 type consensusStatus byte
