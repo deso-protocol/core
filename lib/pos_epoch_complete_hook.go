@@ -204,7 +204,7 @@ func (bav *UtxoView) generateAndSnapshotLeaderSchedule(epochNumber uint64) error
 
 func (bav *UtxoView) generateAndSnapshotStakesToReward(epochNumber uint64, validatorSet []*ValidatorEntry) error {
 	// Fetch the validator set's PKIDs so we can filter the top stakes by the current validator set.
-	validatorSetPKIDs := collections.TransformSlice(validatorSet, func(validatorEntry *ValidatorEntry) *PKID {
+	validatorSetPKIDs := collections.Transform(validatorSet, func(validatorEntry *ValidatorEntry) *PKID {
 		return validatorEntry.ValidatorPKID
 	})
 

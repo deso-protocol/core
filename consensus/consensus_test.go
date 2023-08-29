@@ -34,6 +34,20 @@ func TestFastHotStuffInitialization(t *testing.T) {
 		require.Error(t, err)
 	}
 
+	// Test Init() function with malformed block
+	{
+		fc := NewFastHotStuffConsensus()
+		err := fc.Init(1, 1, nil, createDummyValidatorSet())
+		require.Error(t, err)
+	}
+
+	// Test Init() function with malformed validator set
+	{
+		fc := NewFastHotStuffConsensus()
+		err := fc.Init(1, 1, createDummyBlock(), nil)
+		require.Error(t, err)
+	}
+
 	// Test Init() function with valid parameters
 	{
 		fc := NewFastHotStuffConsensus()
@@ -48,13 +62,13 @@ func TestFastHotStuffInitialization(t *testing.T) {
 		require.Equal(t, fc.status, consensusStatusInitialized)
 
 		require.Equal(t, fc.chainTip.GetBlockHash().GetValue(), createDummyBlockHash().GetValue())
-		require.Equal(t, fc.chainTip.GetView(), uint64(0))
-		require.Equal(t, fc.chainTip.GetHeight(), uint64(0))
+		require.Equal(t, fc.chainTip.GetView(), uint64(1))
+		require.Equal(t, fc.chainTip.GetHeight(), uint64(1))
 
 		require.Equal(t, fc.blockConstructionCadence, time.Duration(100))
 		require.Equal(t, fc.timeoutBaseDuration, time.Duration(101))
 
-		require.Equal(t, fc.currentView, uint64(1))
+		require.Equal(t, fc.currentView, uint64(2))
 		require.Equal(t, len(fc.validators), len(createDummyValidatorSet()))
 	}
 }
