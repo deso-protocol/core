@@ -1949,7 +1949,7 @@ type MsgDeSoHeader struct {
 	//
 	// In the event of a timeout, this field will contain the aggregate QC constructed from
 	// timeout messages from 2/3 of validators weighted by stake, and proves that they have
-	// timed out. This value is set to null in normal cases where a regular block vote has
+	// timed out. This value is set to nil in normal cases where a regular block vote has
 	// taken place.
 	ValidatorsTimeoutAggregateQC *TimeoutAggregateQuorumCertificate
 
