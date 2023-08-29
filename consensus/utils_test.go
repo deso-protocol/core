@@ -12,39 +12,39 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestIsValidBlock(t *testing.T) {
+func TestIsProperlyFormedBlock(t *testing.T) {
 	// Test nil block
 	{
-		require.False(t, isValidBlock(nil))
+		require.False(t, isProperlyFormedBlock(nil))
 	}
 
 	// Test zero height
 	{
 		block := block{height: 0, view: 1, blockHash: createDummyBlockHash(), qc: createDummyQC()}
-		require.False(t, isValidBlock(&block))
+		require.False(t, isProperlyFormedBlock(&block))
 	}
 
 	// Test zero view
 	{
 		block := block{height: 1, view: 0, blockHash: createDummyBlockHash(), qc: createDummyQC()}
-		require.False(t, isValidBlock(&block))
+		require.False(t, isProperlyFormedBlock(&block))
 	}
 
 	// Test nil block hash
 	{
 		block := block{height: 1, view: 1, blockHash: nil, qc: createDummyQC()}
-		require.False(t, isValidBlock(&block))
+		require.False(t, isProperlyFormedBlock(&block))
 	}
 
 	// Test nil QC
 	{
 		block := block{height: 1, view: 1, blockHash: createDummyBlockHash(), qc: nil}
-		require.False(t, isValidBlock(&block))
+		require.False(t, isProperlyFormedBlock(&block))
 	}
 
 	// Test valid block
 	{
-		require.True(t, isValidBlock(createDummyBlock()))
+		require.True(t, isProperlyFormedBlock(createDummyBlock()))
 	}
 }
 

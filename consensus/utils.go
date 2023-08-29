@@ -6,7 +6,10 @@ import (
 	"github.com/deso-protocol/core/collections"
 )
 
-func isValidBlock(block Block) bool {
+// This function checks if the block is properly formed. These are all surface level checks that
+// ensure that critical fields in the block are not nil so that the code in this package does not
+// panic.
+func isProperlyFormedBlock(block Block) bool {
 	// The block must be non-nil
 	if block == nil {
 		return false
@@ -25,7 +28,10 @@ func isValidBlock(block Block) bool {
 	qc := block.GetQC()
 
 	// The QC fields must be non-nil and the view non-zero
-	if qc.GetAggregatedSignature() == nil || qc.GetBlockHash() == nil || qc.GetSignersList() == nil || qc.GetView() == 0 {
+	if isInterfaceNil(qc.GetAggregatedSignature()) ||
+		isInterfaceNil(qc.GetBlockHash()) ||
+		qc.GetSignersList() == nil ||
+		qc.GetView() == 0 {
 		return false
 	}
 

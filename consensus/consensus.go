@@ -52,7 +52,7 @@ func (fc *FastHotStuffConsensus) Init(
 	}
 
 	// Validate the integrity of the block
-	if !isValidBlock(chainTip) {
+	if !isProperlyFormedBlock(chainTip) {
 		return errors.New("FastHotStuffConsensus.Init: Invalid block")
 	}
 
