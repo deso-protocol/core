@@ -48,39 +48,39 @@ func TestIsProperlyFormedBlock(t *testing.T) {
 	}
 }
 
-func TestIsValidValidatorSet(t *testing.T) {
+func TestIsProperlyFormedValidatorSet(t *testing.T) {
 	// Test empty slice
 	{
-		require.False(t, isValidValidatorSet([]Validator{}))
+		require.False(t, isProperlyFormedValidatorSet([]Validator{}))
 	}
 
 	// Test nil validator
 	{
-		require.False(t, isValidValidatorSet([]Validator{nil}))
+		require.False(t, isProperlyFormedValidatorSet([]Validator{nil}))
 	}
 
 	// Test nil public key
 	{
 		validator := validator{publicKey: nil, stakeAmount: uint256.NewInt().SetUint64(1)}
-		require.False(t, isValidValidatorSet([]Validator{&validator}))
+		require.False(t, isProperlyFormedValidatorSet([]Validator{&validator}))
 	}
 
 	// Test nil stake amount
 	{
 		validator := validator{publicKey: createDummyBLSPublicKey(), stakeAmount: nil}
-		require.False(t, isValidValidatorSet([]Validator{&validator}))
+		require.False(t, isProperlyFormedValidatorSet([]Validator{&validator}))
 	}
 
 	// Test zero stake amount
 	{
 		validator := validator{publicKey: createDummyBLSPublicKey(), stakeAmount: uint256.NewInt()}
-		require.False(t, isValidValidatorSet([]Validator{&validator}))
+		require.False(t, isProperlyFormedValidatorSet([]Validator{&validator}))
 	}
 
 	// Test valid validator
 	{
 		validator := validator{publicKey: createDummyBLSPublicKey(), stakeAmount: uint256.NewInt().SetUint64(1)}
-		require.True(t, isValidValidatorSet([]Validator{&validator}))
+		require.True(t, isProperlyFormedValidatorSet([]Validator{&validator}))
 	}
 }
 

@@ -38,7 +38,7 @@ func isProperlyFormedBlock(block Block) bool {
 	return true
 }
 
-func isValidValidatorSet(validators []Validator) bool {
+func isProperlyFormedValidatorSet(validators []Validator) bool {
 	// The validator set must be non-empty
 	if len(validators) == 0 {
 		return false

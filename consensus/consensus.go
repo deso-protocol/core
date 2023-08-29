@@ -57,7 +57,7 @@ func (fc *FastHotStuffConsensus) Init(
 	}
 
 	// Validate the integrity of the validator set
-	if !isValidValidatorSet(validators) {
+	if !isProperlyFormedValidatorSet(validators) {
 		return errors.New("FastHotStuffConsensus.Init: Invalid validator set")
 	}
 
