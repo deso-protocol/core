@@ -7,13 +7,12 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 )
 
-type PosMempoolStatus int
-
 const (
-	PosMempoolStatusRunning PosMempoolStatus = iota
-	PosMempoolStatusNotRunning
+	PosMempoolStatusNotRunning = iota
+	PosMempoolStatusRunning
 )
 
 type Mempool interface {
@@ -40,7 +39,7 @@ type MempoolIterator interface {
 // by Fee-Time algorithm. More on the Fee-Time algorithm can be found in the documentation of TransactionRegister.
 type PosMempool struct {
 	sync.RWMutex
-	status PosMempoolStatus
+	status *atomic.Int32
 	// params of the blockchain
 	params *DeSoParams
 	// globalParams are used to track the latest GlobalParamsEntry. In case the GlobalParamsEntry changes, the PosMempool
@@ -99,8 +98,11 @@ func NewPosMempoolIterator(it *FeeTimeIterator) *PosMempoolIterator {
 
 func NewPosMempool(params *DeSoParams, globalParams *GlobalParamsEntry, latestBlockView *UtxoView,
 	latestBlockHeight uint64, dir string) *PosMempool {
+
+	var status atomic.Int32
+	status.Store(PosMempoolStatusNotRunning)
 	return &PosMempool{
-		status:            PosMempoolStatusNotRunning,
+		status:            &status,
 		params:            params,
 		globalParams:      globalParams,
 		dir:               dir,
@@ -110,6 +112,9 @@ func NewPosMempool(params *DeSoParams, globalParams *GlobalParamsEntry, latestBl
 }
 
 func (dmp *PosMempool) Start() error {
+	dmp.Lock()
+	defer dmp.Unlock()
+
 	if dmp.IsRunning() {
 		return nil
 	}
@@ -132,23 +137,19 @@ func (dmp *PosMempool) Start() error {
 
 	// Start the persister and retrieve transactions from the database.
 	dmp.persister.Start()
-	txns, err := dmp.persister.GetPersistedTransactions()
+	err = dmp.loadPersistedTransactions()
 	if err != nil {
-		return errors.Wrapf(err, "PosMempool.Start: Problem retrieving transactions from persister")
+		return errors.Wrapf(err, "PosMempool.Start: Problem loading persisted transactions")
 	}
-	// We set the persistToDb flag to false so that persister doesn't try to save the transactions.
-	for _, txn := range txns {
-		if err := dmp.addTransactionNoLock(txn, false); err != nil {
-			glog.Errorf("PosMempool.Start: Problem adding transaction with hash (%v) from persister: %v",
-				txn.Hash, err)
-		}
-	}
-	dmp.status = PosMempoolStatusRunning
 
+	dmp.status.Store(PosMempoolStatusRunning)
 	return nil
 }
 
 func (dmp *PosMempool) Stop() {
+	dmp.Lock()
+	defer dmp.Unlock()
+
 	if !dmp.IsRunning() {
 		return
 	}
@@ -164,20 +165,16 @@ func (dmp *PosMempool) Stop() {
 	dmp.txnRegister.Reset()
 	dmp.ledger.Reset()
 
-	dmp.status = PosMempoolStatusNotRunning
+	dmp.status.Store(PosMempoolStatusNotRunning)
 }
 
 func (dmp *PosMempool) IsRunning() bool {
-	return dmp.status == PosMempoolStatusRunning
+	return dmp.status.Load() == PosMempoolStatusRunning
 }
 
 // AddTransaction validates a MsgDeSoTxn transaction and adds it to the mempool if it is valid.
 // If the mempool overflows as a result of adding the transaction, the mempool is pruned.
 func (dmp *PosMempool) AddTransaction(txn *MsgDeSoTxn) error {
-	if !dmp.IsRunning() {
-		return errors.Wrapf(MempoolErrorNotRunning, "PosMempool.AddTransaction: ")
-	}
-
 	// First, validate that the transaction is properly formatted according to BalanceModel.
 	if err := ValidateDeSoTxnSanityBalanceModel(txn, dmp.latestBlockHeight, dmp.params, dmp.globalParams); err != nil {
 		return errors.Wrapf(err, "PosMempool.AddTransaction: Problem validating transaction sanity")
@@ -198,6 +195,10 @@ func (dmp *PosMempool) AddTransaction(txn *MsgDeSoTxn) error {
 	// We lock the mempool to ensure that no other thread is modifying it while we add the transaction.
 	dmp.Lock()
 	defer dmp.Unlock()
+
+	if !dmp.IsRunning() {
+		return errors.Wrapf(MempoolErrorNotRunning, "PosMempool.AddTransaction: ")
+	}
 
 	// Add the transaction to the mempool and then prune if needed.
 	if err := dmp.addTransactionNoLock(mempoolTx, true); err != nil {
@@ -247,14 +248,31 @@ func (dmp *PosMempool) addTransactionNoLock(txn *MempoolTx, persistToDb bool) er
 	return nil
 }
 
+// loadPersistedTransactions fetches transactions from the persister's storage and adds the transactions to the mempool.
+// No lock is held and (persistToDb = false) flag is used when adding transactions internally.
+func (dmp *PosMempool) loadPersistedTransactions() error {
+	txns, err := dmp.persister.GetPersistedTransactions()
+	if err != nil {
+		return errors.Wrapf(err, "PosMempool.Start: Problem retrieving transactions from persister")
+	}
+	// We set the persistToDb flag to false so that persister doesn't try to save the transactions.
+	for _, txn := range txns {
+		if err := dmp.addTransactionNoLock(txn, false); err != nil {
+			glog.Errorf("PosMempool.Start: Problem adding transaction with hash (%v) from persister: %v",
+				txn.Hash, err)
+		}
+	}
+	return nil
+}
+
 // RemoveTransaction is the main function for removing a transaction from the mempool.
 func (dmp *PosMempool) RemoveTransaction(txnHash *BlockHash) error {
+	dmp.Lock()
+	defer dmp.Unlock()
+
 	if !dmp.IsRunning() {
 		return errors.Wrapf(MempoolErrorNotRunning, "PosMempool.RemoveTransaction: ")
 	}
-
-	dmp.Lock()
-	defer dmp.Unlock()
 
 	// Get the transaction from the register.
 	txn := dmp.txnRegister.GetTransaction(txnHash)
@@ -290,12 +308,12 @@ func (dmp *PosMempool) removeTransactionNoLock(txn *MempoolTx, persistToDb bool)
 
 // GetTransaction returns the transaction with the given hash if it exists in the mempool. This function is thread-safe.
 func (dmp *PosMempool) GetTransaction(txnHash *BlockHash) *MsgDeSoTxn {
+	dmp.RLock()
+	defer dmp.RUnlock()
+
 	if !dmp.IsRunning() {
 		return nil
 	}
-
-	dmp.RLock()
-	defer dmp.RUnlock()
 
 	txn := dmp.txnRegister.GetTransaction(txnHash)
 	if txn == nil || txn.Tx == nil {
@@ -307,12 +325,12 @@ func (dmp *PosMempool) GetTransaction(txnHash *BlockHash) *MsgDeSoTxn {
 
 // GetTransactions returns all transactions in the mempool ordered by the Fee-Time algorithm. This function is thread-safe.
 func (dmp *PosMempool) GetTransactions() []*MsgDeSoTxn {
+	dmp.RLock()
+	defer dmp.RUnlock()
+
 	if !dmp.IsRunning() {
 		return nil
 	}
-
-	dmp.RLock()
-	defer dmp.RUnlock()
 
 	var desoTxns []*MsgDeSoTxn
 	poolTxns := dmp.txnRegister.GetFeeTimeTransactions()
@@ -336,12 +354,12 @@ func (dmp *PosMempool) GetTransactions() []*MsgDeSoTxn {
 //
 // Note that the iteration pattern is not thread-safe. Another lock should be used to ensure thread-safety.
 func (dmp *PosMempool) GetIterator() MempoolIterator {
+	dmp.RLock()
+	defer dmp.RUnlock()
+
 	if !dmp.IsRunning() {
 		return nil
 	}
-
-	dmp.RLock()
-	defer dmp.RUnlock()
 
 	return NewPosMempoolIterator(dmp.txnRegister.GetFeeTimeIterator())
 }
@@ -369,12 +387,12 @@ func (dmp *PosMempool) pruneNoLock() error {
 
 // UpdateLatestBlock updates the latest block view and latest block node in the mempool.
 func (dmp *PosMempool) UpdateLatestBlock(blockView *UtxoView, blockHeight uint64) {
+	dmp.Lock()
+	defer dmp.Unlock()
+
 	if !dmp.IsRunning() {
 		return
 	}
-
-	dmp.Lock()
-	defer dmp.Unlock()
 
 	dmp.latestBlockView = blockView
 	dmp.latestBlockHeight = blockHeight
@@ -385,12 +403,12 @@ func (dmp *PosMempool) UpdateLatestBlock(blockView *UtxoView, blockHeight uint64
 // new minimum will be removed from the mempool. To safely handle this, this method re-creates the TransactionRegister
 // with the new global params and re-adds all transactions in the mempool to the new register.
 func (dmp *PosMempool) UpdateGlobalParams(globalParams *GlobalParamsEntry) {
+	dmp.Lock()
+	defer dmp.Unlock()
+
 	if !dmp.IsRunning() {
 		return
 	}
-
-	dmp.Lock()
-	defer dmp.Unlock()
 
 	dmp.globalParams = globalParams
 	mempoolTxns := dmp.txnRegister.GetFeeTimeTransactions()
