@@ -38,8 +38,7 @@ func TestMempoolPersister(t *testing.T) {
 
 	// Start the mempool persister.
 	mempoolPersister.Start()
-
-	defer mempoolPersister.Stop()
+	require.True(mempoolPersister.IsRunning())
 
 	// Add all the transactions to the mempool.
 	for _, txn := range txnPool {
@@ -102,6 +101,9 @@ func TestMempoolPersister(t *testing.T) {
 	retrievedTxns, err = mempoolPersister.GetPersistedTransactions()
 	require.NoError(err)
 	require.Equal(len(txnPool)-addRemoveCases, len(retrievedTxns))
+
+	require.NoError(mempoolPersister.Stop())
+	require.False(mempoolPersister.IsRunning())
 }
 
 func TestMempoolPersisterRestart(t *testing.T) {
@@ -130,6 +132,7 @@ func TestMempoolPersisterRestart(t *testing.T) {
 
 	// Start the mempool persister.
 	mempoolPersister.Start()
+	require.True(mempoolPersister.IsRunning())
 
 	// Add all the transactions to the mempool.
 	for _, txn := range txnPool {
@@ -147,6 +150,7 @@ func TestMempoolPersisterRestart(t *testing.T) {
 
 	// Stop the mempool persister.
 	require.NoError(mempoolPersister.Stop())
+	require.False(mempoolPersister.IsRunning())
 
 	// Make sure we get an error retrieving transactions on stopped persister.
 	_, err = mempoolPersister.GetPersistedTransactions()
@@ -160,11 +164,16 @@ func TestMempoolPersisterRestart(t *testing.T) {
 
 	// Restart the mempool persister.
 	mempoolPersister.Start()
+	require.True(mempoolPersister.IsRunning())
 
 	// Make sure we can retrieve the transactions again.
 	retrievedTxns, err = mempoolPersister.GetPersistedTransactions()
 	require.NoError(err)
 	require.Equal(len(txnPool), len(retrievedTxns))
+
+	// Stop the mempool persister.
+	require.NoError(mempoolPersister.Stop())
+	require.False(mempoolPersister.IsRunning())
 
 	require.NoError(db.Close())
 	require.NoError(os.RemoveAll(dir))
