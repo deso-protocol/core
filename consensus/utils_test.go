@@ -84,6 +84,46 @@ func TestIsProperlyFormedValidatorSet(t *testing.T) {
 	}
 }
 
+func TestIsProperlyFormedVote(t *testing.T) {
+	// Test nil value
+	{
+		require.False(t, isProperlyFormedVote(nil))
+	}
+
+	// Test zero-value view
+	{
+		vote := createDummyVoteMessage(0)
+		require.False(t, isProperlyFormedVote(vote))
+	}
+
+	// Test nil block hash
+	{
+		vote := createDummyVoteMessage(1)
+		vote.blockHash = nil
+		require.False(t, isProperlyFormedVote(vote))
+	}
+
+	// Test nil public key
+	{
+		vote := createDummyVoteMessage(1)
+		vote.publicKey = nil
+		require.False(t, isProperlyFormedVote(vote))
+	}
+
+	// Test nil signature
+	{
+		vote := createDummyVoteMessage(1)
+		vote.signature = nil
+		require.False(t, isProperlyFormedVote(vote))
+	}
+
+	// Test happy path
+	{
+		vote := createDummyVoteMessage(1)
+		require.True(t, isProperlyFormedVote(vote))
+	}
+}
+
 func createDummyValidatorSet() []Validator {
 	validators := []*validator{
 		{
@@ -111,11 +151,17 @@ func createDummyBlock() *block {
 }
 
 func createDummyVoteMessage(view uint64) *voteMessage {
+	blockHash := createDummyBlockHash()
+	signaturePayload := GetVoteSignaturePayload(view, blockHash)
+
+	blsPrivateKey, _ := bls.NewPrivateKey()
+	blsSignature, _ := blsPrivateKey.Sign(signaturePayload[:])
+
 	return &voteMessage{
-		blockHash: createDummyBlockHash(),
+		blockHash: blockHash,
 		view:      view,
-		publicKey: createDummyBLSPublicKey(),
-		signature: createDummyBLSSignature(),
+		publicKey: blsPrivateKey.PublicKey(),
+		signature: blsSignature,
 	}
 }
 
