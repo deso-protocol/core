@@ -337,6 +337,87 @@ func TestProcessValidatorVote(t *testing.T) {
 	fc.Stop()
 }
 
+func TestProcessValidatorTimeout(t *testing.T) {
+	oneHourInNanoSecs := time.Duration(3600000000000)
+
+	fc := NewFastHotStuffEventLoop()
+
+	// BlockHeight = 1, Current View = 2
+	err := fc.Init(oneHourInNanoSecs, oneHourInNanoSecs, createDummyBlock(), createDummyValidatorSet())
+	require.NoError(t, err)
+
+	// Start the event loop
+	fc.Start()
+
+	// Current View = 3
+	{
+		currentView, err := fc.AdvanceView()
+		require.NoError(t, err)
+		require.Equal(t, uint64(3), currentView)
+	}
+
+	// Test with malformed timeout
+	{
+		err := fc.ProcessValidatorTimeout(nil)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "Malformed timeout message")
+	}
+
+	// Test invalid signature
+	{
+		timeout := createDummyTimeoutMessage(3)
+		timeout.signature = createDummyBLSSignature()
+		err := fc.ProcessValidatorTimeout(timeout)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "Invalid signature")
+	}
+
+	// Test with stale view
+	{
+		timeout := createDummyTimeoutMessage(1)
+		err := fc.ProcessValidatorTimeout(timeout)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "Timeout has a stale view")
+	}
+
+	// Test when we've already seen a vote from the validator for the same view
+	{
+		timeout := createDummyTimeoutMessage(3)
+		vote := createDummyVoteMessage(3)
+
+		fc.votesSeen[GetVoteSignaturePayload(vote.GetView(), vote.GetBlockHash())] = map[string]VoteMessage{
+			timeout.publicKey.ToString(): vote,
+		}
+
+		err = fc.ProcessValidatorTimeout(timeout)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "has already voted for view")
+	}
+
+	// Test when we've already seen a timeout from the validator for the same view
+	{
+		timeout := createDummyTimeoutMessage(3)
+
+		fc.timeoutsSeen[timeout.view] = map[string]TimeoutMessage{
+			timeout.publicKey.ToString(): timeout,
+		}
+
+		err = fc.ProcessValidatorTimeout(timeout)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "has already timed out for view")
+	}
+
+	// Test happy path
+	{
+		timeout := createDummyTimeoutMessage(3)
+		err := fc.ProcessValidatorTimeout(timeout)
+		require.NoError(t, err)
+	}
+
+	// Stop the event loop
+	fc.Stop()
+}
+
 func TestFastHotStuffEventLoopStartStop(t *testing.T) {
 	oneHourInNanoSecs := time.Duration(3600000000000)
 	tenSecondsInNanoSecs := time.Duration(10000000000)

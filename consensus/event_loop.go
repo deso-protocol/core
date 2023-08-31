@@ -194,7 +194,7 @@ func (fc *FastHotStuffEventLoop) ProcessValidatorVote(vote VoteMessage) error {
 	}
 
 	// Check if the vote is stale
-	if isStaleVote(fc.currentView, vote) {
+	if isStaleView(fc.currentView, vote.GetView()) {
 		return errors.Errorf("FastHotStuffEventLoop.ProcessValidatorVote: Vote has a stale view %d", vote.GetView())
 	}
 
@@ -237,8 +237,72 @@ func (fc *FastHotStuffEventLoop) ProcessValidatorVote(vote VoteMessage) error {
 	return nil
 }
 
-func (pc *FastHotStuffEventLoop) ProcessTimeoutMsg( /* TODO */ ) {
-	// TODO
+// ProcessValidatorTimeout captures an incoming timeout message from a validator. This module has no knowledge
+// of who the leader is for a given view, so it is up to the caller to decide whether to process the timeout
+// message or not. If a timeout message is passed here, then the consensus instance will store it until
+// it can construct a QC with it or until the timeout's view has gone stale.
+//
+// This function does not directly check if the timeout results in a stake weighted super majority to build
+// a timeout QC. Instead, it stores the timeout locally and waits for the crank timer to determine
+// when to run the super majority timeout check, and to signal the caller that we can construct a timeout QC.
+//
+// Reference implementation:
+// https://github.com/deso-protocol/hotstuff_pseudocode/blob/6409b51c3a9a953b383e90619076887e9cebf38d/fast_hotstuff_bls.go#L958
+func (fc *FastHotStuffEventLoop) ProcessValidatorTimeout(timeout TimeoutMessage) error {
+	// Grab the consensus instance's lock
+	fc.lock.Lock()
+	defer fc.lock.Unlock()
+
+	// Ensure the consensus instance is running. This guarantees that the chain tip and validator set
+	// have already been set.
+	if fc.status != consensusStatusRunning {
+		return errors.New("FastHotStuffEventLoop.ProcessValidatorTimeout: Consensus instance is not running")
+	}
+
+	// Do a basic integrity check on the timeout message
+	if !isProperlyFormedTimeout(timeout) {
+		return errors.New("FastHotStuffEventLoop.ProcessValidatorTimeout: Malformed timeout message")
+	}
+
+	// Compute the value sha256(timeout.View, timeout.HighQC.View)
+	timeoutSignaturePayload := GetTimeoutSignaturePayload(timeout.GetView(), timeout.GetHighQC().GetView())
+
+	// Verify the vote signature
+	if !isValidSignature(timeout.GetPublicKey(), timeout.GetSignature(), timeoutSignaturePayload[:]) {
+		return errors.New("FastHotStuffEventLoop.ProcessValidatorTimeout: Invalid signature")
+	}
+
+	// Check if the timeout is stale
+	if isStaleView(fc.currentView, timeout.GetView()) {
+		return errors.Errorf("FastHotStuffEventLoop.ProcessValidatorTimeout: Timeout has a stale view %d", timeout.GetView())
+	}
+
+	// Check if the public key has already voted for this view. The protocol does not allow
+	// a validator to time out for a view it has already voted on.
+	if fc.hasVotedForView(timeout.GetPublicKey(), timeout.GetView()) {
+		return errors.Errorf(
+			"FastHotStuffEventLoop.ProcessValidatorTimeout: validator %s has already voted for view %d",
+			timeout.GetPublicKey().ToString(),
+			timeout.GetView(),
+		)
+	}
+
+	// Check if the public key has already timed out for this view. The protocol does not allow
+	// for a validator to time out more than once for the same view.
+	if fc.hasTimedOutForView(timeout.GetPublicKey(), timeout.GetView()) {
+		return errors.Errorf(
+			"FastHotStuffEventLoop.ProcessValidatorTimeout: validator %s has already timed out for view %d",
+			timeout.GetPublicKey().ToString(),
+			timeout.GetView(),
+		)
+	}
+
+	// Note: we do not check if the timeout is for the current view. Nodes in the network are expected to have
+	// slightly different timings and may be at different views. To make this code resilient to timing
+	// differences between nodes, we simply store the timeout as long as it's properly formed and not stale.
+	// Stored timeouts will be evicted once we advance beyond them.
+
+	return nil
 }
 
 func (fc *FastHotStuffEventLoop) ConstructVoteQC( /* TODO */ ) {
@@ -371,7 +435,7 @@ func (fc *FastHotStuffEventLoop) evictStaleVotesAndTimeouts() {
 	// Evict stale vote messages
 	for blockHash, voters := range fc.votesSeen {
 		for _, vote := range voters {
-			if isStaleVote(fc.currentView, vote) {
+			if isStaleView(fc.currentView, vote.GetView()) {
 				// Each block is proposed at a known view, and has an immutable block hash. Votes are signed on the
 				// tuple (blockhash, view). So, if any vote message for the blockhash has a view that satisfies this
 				// condition, then it's guaranteed that all votes for the same block hash have satisfy this condition.
@@ -434,6 +498,6 @@ func (fc *FastHotStuffEventLoop) hasTimedOutForView(publicKey *bls.PublicKey, vi
 	return ok
 }
 
-func isStaleVote(currentView uint64, vote VoteMessage) bool {
-	return currentView > vote.GetView()+1
+func isStaleView(currentView uint64, testView uint64) bool {
+	return currentView > testView+1
 }

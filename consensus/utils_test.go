@@ -124,6 +124,46 @@ func TestIsProperlyFormedVote(t *testing.T) {
 	}
 }
 
+func TestIsProperlyFormedTimeout(t *testing.T) {
+	// Test nil value
+	{
+		require.False(t, isProperlyFormedTimeout(nil))
+	}
+
+	// Test zero-value view
+	{
+		timeout := createDummyTimeoutMessage(0)
+		require.False(t, isProperlyFormedTimeout(timeout))
+	}
+
+	// Test nil high QC
+	{
+		timeout := createDummyTimeoutMessage(1)
+		timeout.highQC = nil
+		require.False(t, isProperlyFormedTimeout(timeout))
+	}
+
+	// Test nil public key
+	{
+		timeout := createDummyTimeoutMessage(1)
+		timeout.publicKey = nil
+		require.False(t, isProperlyFormedTimeout(timeout))
+	}
+
+	// Test nil signature
+	{
+		timeout := createDummyTimeoutMessage(1)
+		timeout.signature = nil
+		require.False(t, isProperlyFormedTimeout(timeout))
+	}
+
+	// Test happy path
+	{
+		timeout := createDummyTimeoutMessage(1)
+		require.True(t, isProperlyFormedTimeout(timeout))
+	}
+}
+
 func createDummyValidatorSet() []Validator {
 	validators := []*validator{
 		{
@@ -166,11 +206,18 @@ func createDummyVoteMessage(view uint64) *voteMessage {
 }
 
 func createDummyTimeoutMessage(view uint64) *timeoutMessage {
+	highQC := createDummyQC()
+
+	signaturePayload := GetTimeoutSignaturePayload(view, highQC.view)
+
+	blsPrivateKey, _ := bls.NewPrivateKey()
+	blsSignature, _ := blsPrivateKey.Sign(signaturePayload[:])
+
 	return &timeoutMessage{
-		highQC:    createDummyQC(),
+		highQC:    highQC,
 		view:      view,
-		publicKey: createDummyBLSPublicKey(),
-		signature: createDummyBLSSignature(),
+		publicKey: blsPrivateKey.PublicKey(),
+		signature: blsSignature,
 	}
 }
 
