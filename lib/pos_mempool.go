@@ -175,7 +175,11 @@ func (dmp *PosMempool) IsRunning() bool {
 // AddTransaction validates a MsgDeSoTxn transaction and adds it to the mempool if it is valid.
 // If the mempool overflows as a result of adding the transaction, the mempool is pruned.
 func (dmp *PosMempool) AddTransaction(txn *MsgDeSoTxn) error {
-	// First, validate that the transaction is properly formatted according to BalanceModel.
+	// First, validate that the transaction is properly formatted according to BalanceModel. We acquire a read lock on
+	// the mempool. This allows multiple goroutines to safely perform transaction validation concurrently. In particular,
+	// transaction signature verification can be parallelized.
+	dmp.RLock()
+
 	if err := ValidateDeSoTxnSanityBalanceModel(txn, dmp.latestBlockHeight, dmp.params, dmp.globalParams); err != nil {
 		return errors.Wrapf(err, "PosMempool.AddTransaction: Problem validating transaction sanity")
 	}
@@ -190,6 +194,7 @@ func (dmp *PosMempool) AddTransaction(txn *MsgDeSoTxn) error {
 	if _, err := dmp.latestBlockView.VerifySignature(txn, uint32(dmp.latestBlockHeight)); err != nil {
 		return errors.Wrapf(err, "PosMempool.AddTransaction: Signature validation failed")
 	}
+	dmp.RUnlock()
 
 	// If we get this far, it means that the transaction is valid. We can now add it to the mempool.
 	// We lock the mempool to ensure that no other thread is modifying it while we add the transaction.
