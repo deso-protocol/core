@@ -505,6 +505,9 @@ const (
 	TxErrorNonceExpired                             RuleError = "TxErrorNonceExpired"
 	TxErrorNonceExpirationBlockHeightOffsetExceeded RuleError = "TxErrorNonceExpirationBlockHeightOffsetExceeded"
 	TxErrorNoNonceAfterBalanceModelBlockHeight      RuleError = "TxErrorNoNonceAfterBalanceModelBlockHeight"
+
+	// Mempool
+	MempoolErrorNotRunning RuleError = "MempoolErrorNotRunning"
 )
 
 func (e RuleError) Error() string {
