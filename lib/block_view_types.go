@@ -3751,9 +3751,7 @@ type GlobalParamsEntry struct {
 	// The maximum number of NFT copies that are allowed to be minted.
 	MaxCopiesPerNFT uint64
 
-	// MinimumNetworkFeeNanosPerKB is the minimal fee rate in DeSo nanos per KB a transaction can have.
-	// If a transaction has a lower fee than MinimumNetworkFeeNanosPerKB, it will be
-	// rejected by the node's mempool.
+	// The new minimum fee the network will accept
 	MinimumNetworkFeeNanosPerKB uint64
 
 	// MaxNonceExpirationBlockHeightOffset is maximum value nodes will
@@ -3798,13 +3796,6 @@ type GlobalParamsEntry struct {
 	// allow a validator to be inactive for (neither voting nor proposing
 	// blocks) before they are jailed.
 	JailInactiveValidatorGracePeriodEpochs uint64
-
-	// FeeBucketRateMultiplierBasisPoints is the rate of growth of the fee bucket ranges. This is part of the new
-	// PoS Mempool. The multiplier is given as basis points. For example a value of 1000 means that the fee bucket
-	// ranges will grow by 10% each time. If, let's say, we start with MinimumNetworkFeeNanosPerKB of 1000 nanos,
-	// then the first bucket will be [1000, 1099], the second bucket will be [1100, 1209], the third bucket will
-	// be [1210, 1330], etc.
-	FeeBucketRateMultiplierBasisPoints uint64
 }
 
 func (gp *GlobalParamsEntry) Copy() *GlobalParamsEntry {
@@ -3823,7 +3814,6 @@ func (gp *GlobalParamsEntry) Copy() *GlobalParamsEntry {
 		StakingRewardsAPYBasisPoints:           gp.StakingRewardsAPYBasisPoints,
 		EpochDurationNumBlocks:                 gp.EpochDurationNumBlocks,
 		JailInactiveValidatorGracePeriodEpochs: gp.JailInactiveValidatorGracePeriodEpochs,
-		FeeBucketRateMultiplierBasisPoints:     gp.FeeBucketRateMultiplierBasisPoints,
 	}
 }
 
@@ -3847,7 +3837,6 @@ func (gp *GlobalParamsEntry) RawEncodeWithoutMetadata(blockHeight uint64, skipMe
 		data = append(data, UintToBuf(gp.StakingRewardsAPYBasisPoints)...)
 		data = append(data, UintToBuf(gp.EpochDurationNumBlocks)...)
 		data = append(data, UintToBuf(gp.JailInactiveValidatorGracePeriodEpochs)...)
-		data = append(data, UintToBuf(gp.FeeBucketRateMultiplierBasisPoints)...)
 	}
 	return data
 }
@@ -3914,10 +3903,6 @@ func (gp *GlobalParamsEntry) RawDecodeWithoutMetadata(blockHeight uint64, rr *by
 		if err != nil {
 			return errors.Wrapf(err, "GlobalParamsEntry.Decode: Problem reading JailInactiveValidatorGracePeriodEpochs: ")
 		}
-		gp.FeeBucketRateMultiplierBasisPoints, err = ReadUvarint(rr)
-		if err != nil {
-			return errors.Wrapf(err, "GlobalParamsEntry.Decode: Problem reading FeeBucketRateMultiplierBasisPoints")
-		}
 	}
 	return nil
 }
@@ -3928,17 +3913,6 @@ func (gp *GlobalParamsEntry) GetVersionByte(blockHeight uint64) byte {
 
 func (gp *GlobalParamsEntry) GetEncoderType() EncoderType {
 	return EncoderTypeGlobalParamsEntry
-}
-
-// ComputeFeeTimeBucketMinimumFeeAndMultiplier takes the MinimumNetworkFeeNanosPerKB and FeeBucketRateMultiplierBasisPoints for
-// the GlobalParamsEntry, and returns them as big.Floats.
-func (gp *GlobalParamsEntry) ComputeFeeTimeBucketMinimumFeeAndMultiplier() (
-	_minimumRate *big.Float, _bucketMultiplier *big.Float) {
-
-	minimumNetworkFeeNanosPerKB := NewFloat().SetUint64(gp.MinimumNetworkFeeNanosPerKB)
-	feeBucketMultiplier := NewFloat().SetUint64(10000 + gp.FeeBucketRateMultiplierBasisPoints)
-	feeBucketMultiplier.Quo(feeBucketMultiplier, NewFloat().SetUint64(10000))
-	return minimumNetworkFeeNanosPerKB, feeBucketMultiplier
 }
 
 // This struct holds info on a readers interactions (e.g. likes) with a post.

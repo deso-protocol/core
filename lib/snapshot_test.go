@@ -276,6 +276,7 @@ func TestFasterHashToCurve(t *testing.T) {
 	if err := sem.Acquire(ctx, int64(maxWorkers)); err != nil {
 		fmt.Println("FAILED")
 	}
+	fmt.Println("YEAAAH")
 }
 
 func TestStateChecksumBirthdayParadox(t *testing.T) {

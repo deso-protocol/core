@@ -74,7 +74,6 @@ func setBalanceModelBlockHeights(t *testing.T) {
 	DeSoTestnetParams.ForkHeights.ExtraDataOnEntriesBlockHeight = 0
 	DeSoTestnetParams.ForkHeights.AssociationsAndAccessGroupsBlockHeight = 0
 	DeSoTestnetParams.ForkHeights.BalanceModelBlockHeight = 1
-	DeSoTestnetParams.ForkHeights.ProofOfStake1StateSetupBlockHeight = 1
 	DeSoTestnetParams.EncoderMigrationHeights = GetEncoderMigrationHeights(&DeSoTestnetParams.ForkHeights)
 	DeSoTestnetParams.EncoderMigrationHeightsList = GetEncoderMigrationHeightsList(&DeSoTestnetParams.ForkHeights)
 	GlobalDeSoParams = DeSoTestnetParams
@@ -90,7 +89,6 @@ func resetBalanceModelBlockHeights() {
 	DeSoTestnetParams.ForkHeights.ExtraDataOnEntriesBlockHeight = 1000000
 	DeSoTestnetParams.ForkHeights.AssociationsAndAccessGroupsBlockHeight = 1000000
 	DeSoTestnetParams.ForkHeights.BalanceModelBlockHeight = 1000000
-	DeSoTestnetParams.ForkHeights.ProofOfStake1StateSetupBlockHeight = 1000000
 	DeSoTestnetParams.EncoderMigrationHeights = GetEncoderMigrationHeights(&DeSoTestnetParams.ForkHeights)
 	DeSoTestnetParams.EncoderMigrationHeightsList = GetEncoderMigrationHeightsList(&DeSoTestnetParams.ForkHeights)
 	GlobalDeSoParams = DeSoTestnetParams
