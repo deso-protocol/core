@@ -138,12 +138,13 @@ func createTestBlockHeaderVersion2(t *testing.T) *MsgDeSoHeader {
 		TstampNanoSecs:        SecondsToNanoSeconds(1678943210),
 		Height:                uint64(1321012345),
 		// Nonce and ExtraNonce are unused and set to 0 starting in version 2.
-		Nonce:                   uint64(0),
-		ExtraNonce:              uint64(0),
-		ProposerPublicKey:       NewPublicKey(pkForTesting1),
-		ProposerVotingPublicKey: testBLSPublicKey,
-		ProposerRandomSeedHash:  &testRandomSeedHash,
-		ProposedInView:          uint64(1432101234),
+		Nonce:                     uint64(0),
+		ExtraNonce:                uint64(0),
+		TransactionsConnectStatus: testBitset,
+		ProposerPublicKey:         NewPublicKey(pkForTesting1),
+		ProposerVotingPublicKey:   testBLSPublicKey,
+		ProposerRandomSeedHash:    &testRandomSeedHash,
+		ProposedInView:            uint64(1432101234),
 		// Use real signatures and public keys for the PoS fields
 		ValidatorsVoteQC: &QuorumCertificate{
 			BlockHash:      &testBlockHash,
@@ -189,38 +190,38 @@ func TestHeaderConversionAndReadWriteMessage(t *testing.T) {
 	// versions we want to test.
 	for _, expectedBlockHeader := range expectedBlockHeadersToTest {
 		data, err := expectedBlockHeader.ToBytes(false)
-		assert.NoError(err)
+		require.NoError(err)
 
 		testHdr := NewMessage(MsgTypeHeader)
 		err = testHdr.FromBytes(data)
-		assert.NoError(err)
+		require.NoError(err)
 
-		assert.Equal(expectedBlockHeader, testHdr)
+		require.True(assert.Equal(expectedBlockHeader, testHdr))
 
 		// Test read write.
 		var buf bytes.Buffer
 		payload, err := WriteMessage(&buf, expectedBlockHeader, networkType)
-		assert.NoError(err)
+		require.NoError(err)
 		// Form the header from the payload and make sure it matches.
 		hdrFromPayload := NewMessage(MsgTypeHeader).(*MsgDeSoHeader)
-		assert.NotNil(hdrFromPayload, "NewMessage(MsgTypeHeader) should not return nil.")
-		assert.Equal(uint64(0), hdrFromPayload.Nonce, "NewMessage(MsgTypeHeader) should initialize Nonce to empty byte slice.")
+		require.NotNil(hdrFromPayload, "NewMessage(MsgTypeHeader) should not return nil.")
+		require.True(assert.Equal(uint64(0), hdrFromPayload.Nonce, "NewMessage(MsgTypeHeader) should initialize Nonce to empty byte slice."))
 		err = hdrFromPayload.FromBytes(payload)
-		assert.NoError(err)
-		assert.Equal(expectedBlockHeader, hdrFromPayload)
+		require.NoError(err)
+		require.True(assert.Equal(expectedBlockHeader, hdrFromPayload))
 
 		hdrBytes := buf.Bytes()
 		testMsg, data, err := ReadMessage(bytes.NewReader(hdrBytes),
 			networkType)
-		assert.NoError(err)
-		assert.Equal(expectedBlockHeader, testMsg)
+		require.NoError(err)
+		require.True(assert.Equal(expectedBlockHeader, testMsg))
 
 		// Compute the header payload bytes so we can compare them.
 		hdrPayload, err := expectedBlockHeader.ToBytes(false)
-		assert.NoError(err)
-		assert.Equal(hdrPayload, data)
+		require.NoError(err)
+		require.True(assert.Equal(hdrPayload, data))
 
-		assert.Equalf(14, reflect.TypeOf(expectedBlockHeader).Elem().NumField(),
+		require.Equalf(15, reflect.TypeOf(expectedBlockHeader).Elem().NumField(),
 			"Number of fields in HEADER message is different from expected. "+
 				"Did you add a new field? If so, make sure the serialization code "+
 				"works, add the new field to the test case, and fix this error.")
