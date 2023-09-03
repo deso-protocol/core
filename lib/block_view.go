@@ -3603,6 +3603,13 @@ func (bav *UtxoView) _connectTransaction(txn *MsgDeSoTxn, txHash *BlockHash,
 	return utxoOpsForTxn, totalInput, totalOutput, fees, nil
 }
 
+func (bav *UtxoView) _connectFailingTransaction(txn *MsgDeSoTxn, txHash *BlockHash,
+	txnSizeBytes int64, blockHeight uint32, verifySignatures bool, ignoreUtxos bool) (
+	_utxoOps []*UtxoOperation, _totalInput uint64, _totalOutput uint64,
+	_fees uint64, _err error) {
+
+}
+
 func (bav *UtxoView) _compareBalancesToSnapshot(balanceSnapshot map[PublicKey]uint64) (
 	*big.Int, map[PublicKey]*big.Int, error) {
 	runningTotal := big.NewInt(0)
