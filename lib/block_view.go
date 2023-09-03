@@ -1608,6 +1608,10 @@ func _isEntryImmatureBlockReward(utxoEntry *UtxoEntry, blockHeight uint32, param
 	return false
 }
 
+func (bav *UtxoView) VerifySignature(txn *MsgDeSoTxn, blockHeight uint32) (_derivedPkBytes []byte, _err error) {
+	return bav._verifySignature(txn, blockHeight)
+}
+
 func (bav *UtxoView) _verifySignature(txn *MsgDeSoTxn, blockHeight uint32) (_derivedPkBytes []byte, _err error) {
 	if txn.Signature.Sign == nil {
 		return nil, fmt.Errorf("_verifySignature: Transaction signature is empty")

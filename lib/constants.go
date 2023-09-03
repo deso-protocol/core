@@ -707,6 +707,12 @@ type DeSoParams struct {
 
 	EncoderMigrationHeights     *EncoderMigrationHeights
 	EncoderMigrationHeightsList []*MigrationHeight
+
+	// The maximum aggregate number of bytes of transactions included in the PoS mempool.
+	MaxMempoolPosSizeBytes uint64
+
+	// MempoolBackupTimeMilliseconds is the frequency with which pos mempool persists transactions to storage.
+	MempoolBackupTimeMilliseconds uint64
 }
 
 var RegtestForkHeights = ForkHeights{
@@ -1113,6 +1119,9 @@ var DeSoMainnetParams = DeSoParams{
 	ForkHeights:                 MainnetForkHeights,
 	EncoderMigrationHeights:     GetEncoderMigrationHeights(&MainnetForkHeights),
 	EncoderMigrationHeightsList: GetEncoderMigrationHeightsList(&MainnetForkHeights),
+
+	MaxMempoolPosSizeBytes:        3 << 30, // 3Gb
+	MempoolBackupTimeMilliseconds: 30000,
 }
 
 func mustDecodeHexBlockHashBitcoin(ss string) *BlockHash {
@@ -1374,6 +1383,9 @@ var DeSoTestnetParams = DeSoParams{
 	ForkHeights:                 TestnetForkHeights,
 	EncoderMigrationHeights:     GetEncoderMigrationHeights(&TestnetForkHeights),
 	EncoderMigrationHeightsList: GetEncoderMigrationHeightsList(&TestnetForkHeights),
+
+	MaxMempoolPosSizeBytes:        3 << 30, // 3Gb
+	MempoolBackupTimeMilliseconds: 30000,
 }
 
 // GetDataDir gets the user data directory where we store files
@@ -1497,6 +1509,8 @@ var (
 		// We initialize the CreateNFTFeeNanos to 0 so we do not assess a fee to create an NFT until specified by ParamUpdater.
 		CreateNFTFeeNanos: 0,
 		MaxCopiesPerNFT:   0,
+		// We initialize the FeeBucketRateMultiplierBasisPoints to 1000, or equivalently, a multiplier of 1.1x.
+		FeeBucketRateMultiplierBasisPoints: 1000,
 	}
 )
 
