@@ -8,7 +8,6 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"github.com/deso-protocol/core/collections/bitset"
 	"io"
 	"math"
 	"math/big"
@@ -1915,15 +1914,6 @@ type MsgDeSoHeader struct {
 	// event that ASICs become powerful enough to have birthday problems in the future.
 	ExtraNonce uint64
 
-	// TransactionsConnectStatus is only used for Proof of Stake blocks, starting with
-	// MsgDeSoHeader version 2. For all earlier versions, this field will default to nil.
-	//
-	// This bitset field stores information whether each transaction in the block passes
-	// or fails to connect. The bit at i-th position is set to 1 if the i-th transaction
-	// in the block passes connect, and 0 otherwise. The length of the bitset must match
-	// the number of transactions in the block.
-	TransactionsConnectStatus *bitset.Bitset
-
 	// ProposerPublicKey is only used for Proof of Stake blocks, starting with MsgDeSoHeader
 	// version 2. For all earlier versions, this field will default to nil.
 	//
@@ -2142,12 +2132,6 @@ func (msg *MsgDeSoHeader) EncodeHeaderVersion2(preSignature bool) ([]byte, error
 	// The Nonce and ExtraNonce fields are unused in version 2. We skip them
 	// during both encoding and decoding.
 
-	// TransactionsConnectStatus
-	if msg.TransactionsConnectStatus == nil {
-		return nil, fmt.Errorf("EncodeHeaderVersion2: TransactionsConnectStatus must be non-nil")
-	}
-	retBytes = append(retBytes, EncodeBitset(msg.TransactionsConnectStatus)...)
-
 	// ProposerPublicKey
 	if msg.ProposerPublicKey == nil {
 		return nil, fmt.Errorf("EncodeHeaderVersion2: ProposerPublicKey must be non-nil")
@@ -2361,13 +2345,6 @@ func DecodeHeaderVersion2(rr io.Reader) (*MsgDeSoHeader, error) {
 	// during both encoding and decoding.
 	retHeader.Nonce = 0
 	retHeader.ExtraNonce = 0
-
-	// TransactionsConnectStatus
-	tcs, err := DecodeBitset(rr)
-	if err != nil {
-		return nil, errors.Wrapf(err, "MsgDeSoHeader.FromBytes: Problem decoding TransactionsConnectStatus")
-	}
-	retHeader.TransactionsConnectStatus = tcs
 
 	// ProposerPublicKey
 	retHeader.ProposerPublicKey, err = ReadPublicKey(rr)
