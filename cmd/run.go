@@ -82,11 +82,6 @@ func SetupRunFlags(cmd *cobra.Command) {
 		- hypersync: Will sync by downloading historical state, and will NOT
 		  download historical blocks. Can only be set if HyperSync is true.`)
 
-	// Mempool
-	cmd.PersistentFlags().Uint64("batch-persist-frequency-milliseconds", 30000,
-		"The frequency in milliseconds with which the mempool will persist its state to disk. "+
-			"The default value is 30 seconds, or 30,000 milliseconds.")
-
 	// Peers
 	cmd.PersistentFlags().StringSlice("connect-ips", []string{},
 		"A comma-separated list of ip:port addresses that we should connect to on startup. "+
