@@ -149,6 +149,10 @@ func (node *Node) Start(exitChannels ...*chan struct{}) {
 	// Blocksync requires performance options because certain indexes tracked by blocksync have extremely large
 	// records (e.g. PrefixBlockHashToUtxoOperations). These large records will overflow the default badger mem table
 	// size.
+	//
+	// FIXME: We should rewrite the code so that PrefixBlockHashToUtxoOperations is either removed or written
+	// to badger in such a way as to not require the use of PerformanceBadgerOptions. Seet he comment on
+	// dirtyHackUpdateDbOpts.
 	if node.Config.HyperSync {
 		opts = lib.DefaultBadgerOptions(dbDir)
 	} else {
