@@ -3608,6 +3608,19 @@ func (bav *UtxoView) _connectFailingTransaction(txn *MsgDeSoTxn, txHash *BlockHa
 	_utxoOps []*UtxoOperation, _totalInput uint64, _totalOutput uint64,
 	_fees uint64, _err error) {
 
+	// Sanity check the transaction to make sure it is properly formatted.
+	if err := CheckTransactionSanity(txn, blockHeight, bav.Params); err != nil {
+		return nil, 0, 0, 0, errors.Wrapf(err, "ConnectTransaction: "+
+			"Problem checking txn sanity")
+	}
+
+	if err := ValidateDeSoTxnSanityBalanceModel(txn, uint64(blockHeight), bav.Params, bav.GlobalParamsEntry); err != nil {
+		return nil, 0, 0, 0, errors.Wrapf(err, "ConnectTransaction: "+
+			"Problem checking txn sanity under balance model")
+	}
+
+	// Find the amount of DeSo that should be burned for this transaction.
+	// Figure out how to burn stuff and have a utxoop.
 }
 
 func (bav *UtxoView) _compareBalancesToSnapshot(balanceSnapshot map[PublicKey]uint64) (
