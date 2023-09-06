@@ -19,6 +19,7 @@ import (
 	chainlib "github.com/btcsuite/btcd/blockchain"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/davecgh/go-spew/spew"
+	"github.com/deso-protocol/core/consensus"
 	"github.com/deso-protocol/go-deadlock"
 	"github.com/dgraph-io/badger/v3"
 	"github.com/golang/glog"
@@ -59,6 +60,9 @@ type Server struct {
 	blockProducer *DeSoBlockProducer
 	eventManager  *EventManager
 	TxIndex       *TXIndex
+
+	fastHotStuffConsensus *consensus.FastHotStuffConsensus
+	// posMempool *PosMemPool TODO: Add the mempool later
 
 	// All messages received from peers get sent from the ConnectionManager to the
 	// Server through this channel.
@@ -1717,6 +1721,11 @@ func (srv *Server) _handleBlockAccepted(event *BlockEvent) {
 		return
 	}
 
+	// Notify the consensus that a block was accepted.
+	if srv.fastHotStuffConsensus != nil {
+		srv.fastHotStuffConsensus.HandleAcceptedBlock()
+	}
+
 	// Construct an inventory vector to relay to peers.
 	blockHash, _ := blk.Header.Hash()
 	invVect := &InvVect{
@@ -2159,41 +2168,111 @@ func (srv *Server) _handlePeerMessages(serverMessage *ServerMessage) {
 	}
 }
 
-// Note that messageHandler is single-threaded and so all of the handle* functions
-// it calls can assume they can access the Server's variables without concurrency
-// issues.
-func (srv *Server) messageHandler() {
+func (srv *Server) _handleFastHostStuffBlockProposal(event *consensus.ConsensusEvent) {
+	// The consensus module has signaled that we can propose a block at a certain block
+	// height. We construct the block and broadcast it here:
+	// 1. Verify that the block height we want to propose at is valid
+	// 2. Get a QC from the consensus module
+	// 3. Iterate over the top n transactions from the mempool
+	// 4. Construct a block with the QC and the top n transactions from the mempool
+	// 5. Sign the block
+	// 6. Process the block locally
+	//   - This will connect the block to the blockchain, remove the transactions from the
+	//   - mempool, and process the vote in the consensus module
+	// 7. Broadcast the block to the network
+}
+
+func (srv *Server) _handleFastHostStuffVote(event *consensus.ConsensusEvent) {
+	// The consensus module has signaled that we can vote on a block. We construct and
+	// broadcast the vote here:
+	// 1. Verify that the block height we want to vote on is valid
+	// 2. Construct the vote message
+	// 3. Process the vote in the consensus module
+	// 4. Broadcast the timeout msg to the network
+}
+
+func (srv *Server) _handleFastHostStuffTimeout(event *consensus.ConsensusEvent) {
+	// The consensus module has signaled that we have timed out for a view. We construct and
+	// broadcast the timeout here:
+	// 1. Verify the block height and view we want to timeout on are valid
+	// 2. Construct the timeout message
+	// 3. Process the timeout in the consensus module
+	// 4. Broadcast the timeout msg to the network
+}
+
+func (srv *Server) _handleFastHostStuffConsensusEvent(event *consensus.ConsensusEvent) {
+	switch event.EventType {
+	case consensus.ConsensusEventTypeBlockProposal:
+		srv._handleFastHostStuffBlockProposal(event)
+	case consensus.ConsensusEventTypeVote:
+		srv._handleFastHostStuffVote(event)
+	case consensus.ConsensusEventTypeTimeout:
+		srv._handleFastHostStuffTimeout(event)
+	}
+}
+
+// _startConsensusEventLoop contains the top-level event loop to run both the PoW and PoS consensus. It is
+// single-threaded to ensure that concurrent event do not conflict with each other. It's role is to guarantee
+// single threaded processing and act as an entry point for consensus events. It does minimal validation on its
+// own.
+//
+// For the PoW consensus:
+// - It listens to all peer messages from the network and handles them as they come in. This includes
+// control messages from peer, proposed blocks from peers, votes/timeouts, block requests, mempool
+// requests from syncing peers
+//
+// For the PoS consensus:
+// - It listens to all peer messages from the network and handles them as they come in. This includes
+// control messages from peer, proposed blocks from peers, votes/timeouts, block requests, mempool
+// requests from syncing peers
+// - It listens to consensus events from the Fast HostStuff consensus engine. The consensus signals when
+// it's ready to vote, timeout, or propose a block.
+func (srv *Server) _startConsensus() {
 	for {
 		// This is used instead of the shouldQuit control message exist mechanism below. shouldQuit will be true only
 		// when all incoming messages have been processed, on the other hand this shutdown will quit immediately.
 		if atomic.LoadInt32(&srv.shutdown) >= 1 {
 			break
 		}
-		serverMessage := <-srv.incomingMessages
-		glog.V(2).Infof("Server.messageHandler: Handling message of type %v from Peer %v",
-			serverMessage.Msg.GetMsgType(), serverMessage.Peer)
 
-		// If the message is an addr message we handle it independent of whether or
-		// not the BitcoinManager is synced.
-		if serverMessage.Msg.GetMsgType() == MsgTypeAddr {
-			srv._handleAddrMessage(serverMessage.Peer, serverMessage.Msg.(*MsgDeSoAddr))
-			continue
-		}
-		// If the message is a GetAddr message we handle it independent of whether or
-		// not the BitcoinManager is synced.
-		if serverMessage.Msg.GetMsgType() == MsgTypeGetAddr {
-			srv._handleGetAddrMessage(serverMessage.Peer, serverMessage.Msg.(*MsgDeSoGetAddr))
-			continue
-		}
+		select {
+		case consensusEvent := <-srv.fastHotStuffConsensus.ConsensusEvents:
+			{
+				glog.Infof("Server._startConsensus: Received consensus event for block height: %v", consensusEvent.BlockHeight)
+				srv._handleFastHostStuffConsensusEvent(consensusEvent)
+			}
 
-		srv._handlePeerMessages(serverMessage)
+		case serverMessage := <-srv.incomingMessages:
+			{
+				// There is an incoming network message from a peer.
 
-		// Always check for and handle control messages regardless of whether the
-		// BitcoinManager is synced. Note that we filter control messages out in a
-		// Peer's inHandler so any control message we get at this point should be bona fide.
-		shouldQuit := srv._handleControlMessages(serverMessage)
-		if shouldQuit {
-			break
+				glog.V(2).Infof("Server._startConsensus: Handling message of type %v from Peer %v",
+					serverMessage.Msg.GetMsgType(), serverMessage.Peer)
+
+				// If the message is an addr message we handle it independent of whether or
+				// not the BitcoinManager is synced.
+				if serverMessage.Msg.GetMsgType() == MsgTypeAddr {
+					srv._handleAddrMessage(serverMessage.Peer, serverMessage.Msg.(*MsgDeSoAddr))
+					continue
+				}
+				// If the message is a GetAddr message we handle it independent of whether or
+				// not the BitcoinManager is synced.
+				if serverMessage.Msg.GetMsgType() == MsgTypeGetAddr {
+					srv._handleGetAddrMessage(serverMessage.Peer, serverMessage.Msg.(*MsgDeSoGetAddr))
+					continue
+				}
+
+				srv._handlePeerMessages(serverMessage)
+
+				// Always check for and handle control messages regardless of whether the
+				// BitcoinManager is synced. Note that we filter control messages out in a
+				// Peer's inHandler so any control message we get at this point should be bona fide.
+				shouldQuit := srv._handleControlMessages(serverMessage)
+				if shouldQuit {
+					break
+				}
+			}
+
 		}
 	}
 
@@ -2322,6 +2401,14 @@ func (srv *Server) Stop() {
 		glog.Infof(CLog(Yellow, "Server.Stop: Closed the Miner"))
 	}
 
+	// Stop the PoS block proposer if we have one running.
+	if srv.fastHotStuffConsensus != nil {
+		srv.fastHotStuffConsensus.Stop()
+		glog.Infof(CLog(Yellow, "Server.Stop: Closed the FastHotStuffConsensus"))
+	}
+
+	// TODO: Stop the PoS mempool if we have one running.
+
 	if srv.mempool != nil {
 		// Before the node shuts down, write all the mempool txns to disk
 		// if the flag is set.
@@ -2374,7 +2461,8 @@ func (srv *Server) Start() {
 	// finds some Peers.
 	glog.Info("Server.Start: Starting Server")
 	srv.waitGroup.Add(1)
-	go srv.messageHandler()
+
+	go srv._startConsensus()
 
 	go srv._startAddressRelayer()
 
@@ -2389,6 +2477,9 @@ func (srv *Server) Start() {
 	if srv.miner != nil && len(srv.miner.PublicKeys) > 0 {
 		go srv.miner.Start()
 	}
+
+	// TODO: Gate these behind a PoS consensus flag.
+	go srv.fastHotStuffConsensus.Start()
 }
 
 // SyncPrefixProgress keeps track of sync progress on an individual prefix. It is used in

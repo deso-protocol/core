@@ -3805,6 +3805,11 @@ type GlobalParamsEntry struct {
 	// then the first bucket will be [1000, 1099], the second bucket will be [1100, 1209], the third bucket will
 	// be [1210, 1330], etc.
 	FeeBucketRateMultiplierBasisPoints uint64
+
+	// FailingTransactionBMFRateBasisPoints is the factor of the transaction fee that is used for the computation
+	// BMF. The value is expressed in basis points. For example a value of 5000 means that 50% of the fee will be
+	// failing transaction fee will be used in the BMF algorithm.
+	FailingTransactionBMFRateBasisPoints uint64
 }
 
 func (gp *GlobalParamsEntry) Copy() *GlobalParamsEntry {
@@ -3824,6 +3829,7 @@ func (gp *GlobalParamsEntry) Copy() *GlobalParamsEntry {
 		EpochDurationNumBlocks:                 gp.EpochDurationNumBlocks,
 		JailInactiveValidatorGracePeriodEpochs: gp.JailInactiveValidatorGracePeriodEpochs,
 		FeeBucketRateMultiplierBasisPoints:     gp.FeeBucketRateMultiplierBasisPoints,
+		FailingTransactionBMFRateBasisPoints:   gp.FailingTransactionBMFRateBasisPoints,
 	}
 }
 
@@ -3848,6 +3854,7 @@ func (gp *GlobalParamsEntry) RawEncodeWithoutMetadata(blockHeight uint64, skipMe
 		data = append(data, UintToBuf(gp.EpochDurationNumBlocks)...)
 		data = append(data, UintToBuf(gp.JailInactiveValidatorGracePeriodEpochs)...)
 		data = append(data, UintToBuf(gp.FeeBucketRateMultiplierBasisPoints)...)
+		data = append(data, UintToBuf(gp.FailingTransactionBMFRateBasisPoints)...)
 	}
 	return data
 }
@@ -3917,6 +3924,10 @@ func (gp *GlobalParamsEntry) RawDecodeWithoutMetadata(blockHeight uint64, rr *by
 		gp.FeeBucketRateMultiplierBasisPoints, err = ReadUvarint(rr)
 		if err != nil {
 			return errors.Wrapf(err, "GlobalParamsEntry.Decode: Problem reading FeeBucketRateMultiplierBasisPoints")
+		}
+		gp.FailingTransactionBMFRateBasisPoints, err = ReadUvarint(rr)
+		if err != nil {
+			return errors.Wrapf(err, "GlobalParamsEntry.Decode: Problem reading FailingTransactionBMFRateBasisPoints")
 		}
 	}
 	return nil
