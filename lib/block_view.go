@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"math"
 	"math/big"
+	"math/bits"
 	"reflect"
 	"strings"
 	"time"
@@ -2077,31 +2078,8 @@ func (bav *UtxoView) _connectBasicTransferWithExtraSpend(
 
 	// If signature verification is requested then do that as well.
 	if verifySignatures {
-		// When we looped through the inputs we verified that all of them belong
-		// to the public key specified in the transaction. So, as long as the transaction
-		// public key has signed the transaction as a whole, we can assume that
-		// all of the inputs are authorized to be spent. One signature to rule them
-		// all.
-		//
-		// UPDATE: Transaction can be signed by a different key, called a derived key.
-		// The derived key must be authorized through an AuthorizeDerivedKey transaction,
-		// and then passed along in ExtraData for evey transaction signed with it.
-		//
-		// We treat block rewards as a special case in that we actually require that they
-		// not have a transaction-level public key and that they not be signed. Doing this
-		// simplifies things operationally for miners because it means they can run their
-		// mining operation without having any private key material on any of the mining
-		// nodes. Block rewards are the only transactions that get a pass on this. They are
-		// also not allowed to have any inputs because they by construction cannot authorize
-		// the spending of any inputs.
-		if txn.TxnMeta.GetTxnType() == TxnTypeBlockReward {
-			if len(txn.PublicKey) != 0 || txn.Signature.Sign != nil {
-				return 0, 0, nil, RuleErrorBlockRewardTxnNotAllowedToHaveSignature
-			}
-		} else {
-			if _, err := bav._verifySignature(txn, blockHeight); err != nil {
-				return 0, 0, nil, errors.Wrapf(err, "_connectBasicTransferWithExtraSpend Problem verifying txn signature: ")
-			}
+		if err := bav._helpVerifySignature(txn, blockHeight); err != nil {
+			return 0, 0, nil, errors.Wrapf(err, "_connectBasicTransferWithExtraSpend ")
 		}
 	}
 
@@ -2126,6 +2104,36 @@ func (bav *UtxoView) _connectBasicTransferWithExtraSpend(
 	// Now that we've processed the transaction, return all of the computed
 	// data.
 	return totalInput, totalOutput, utxoOpsForTxn, nil
+}
+
+func (bav *UtxoView) _helpVerifySignature(txn *MsgDeSoTxn, blockHeight uint32) error {
+	// When we looped through the inputs we verified that all of them belong
+	// to the public key specified in the transaction. So, as long as the transaction
+	// public key has signed the transaction as a whole, we can assume that
+	// all of the inputs are authorized to be spent. One signature to rule them
+	// all.
+	//
+	// UPDATE: Transaction can be signed by a different key, called a derived key.
+	// The derived key must be authorized through an AuthorizeDerivedKey transaction,
+	// and then passed along in ExtraData for evey transaction signed with it.
+	//
+	// We treat block rewards as a special case in that we actually require that they
+	// not have a transaction-level public key and that they not be signed. Doing this
+	// simplifies things operationally for miners because it means they can run their
+	// mining operation without having any private key material on any of the mining
+	// nodes. Block rewards are the only transactions that get a pass on this. They are
+	// also not allowed to have any inputs because they by construction cannot authorize
+	// the spending of any inputs.
+	if txn.TxnMeta.GetTxnType() == TxnTypeBlockReward {
+		if len(txn.PublicKey) != 0 || txn.Signature.Sign != nil {
+			return RuleErrorBlockRewardTxnNotAllowedToHaveSignature
+		}
+	} else {
+		if _, err := bav._verifySignature(txn, blockHeight); err != nil {
+			return errors.Wrapf(err, "_connectBasicTransferWithExtraSpend Problem verifying txn signature: ")
+		}
+	}
+	return nil
 }
 
 func (bav *UtxoView) _checkAndUpdateDerivedKeySpendingLimit(
@@ -3093,6 +3101,30 @@ func (bav *UtxoView) _connectUpdateGlobalParams(
 		}
 	}
 
+	if blockHeight >= bav.Params.ForkHeights.ProofOfStake2ConsensusCutoverBlockHeight {
+		var bytesRead int
+		if len(extraData[FeeBucketRateMultiplierBasisPointsKey]) > 0 {
+			newGlobalParamsEntry.FeeBucketRateMultiplierBasisPoints, bytesRead = Uvarint(
+				extraData[FeeBucketRateMultiplierBasisPointsKey],
+			)
+			if bytesRead <= 0 {
+				return 0, 0, nil, fmt.Errorf(
+					"_connectUpdateGlobalParams: unable to decode FeeBucketRateMultiplierBasisPoints as uint64",
+				)
+			}
+		}
+		if len(extraData[FailingTransactionBMFRateBasisPointsKey]) > 0 {
+			newGlobalParamsEntry.FailingTransactionBMFRateBasisPoints, bytesRead = Uvarint(
+				extraData[FailingTransactionBMFRateBasisPointsKey],
+			)
+			if bytesRead <= 0 {
+				return 0, 0, nil, fmt.Errorf(
+					"_connectUpdateGlobalParams: unable to decode FailingTransactionBMFRateBasisPoints as uint64",
+				)
+			}
+		}
+	}
+
 	var newForbiddenPubKeyEntry *ForbiddenPubKeyEntry
 	var prevForbiddenPubKeyEntry *ForbiddenPubKeyEntry
 	var forbiddenPubKey []byte
@@ -3603,24 +3635,95 @@ func (bav *UtxoView) _connectTransaction(txn *MsgDeSoTxn, txHash *BlockHash,
 	return utxoOpsForTxn, totalInput, totalOutput, fees, nil
 }
 
-func (bav *UtxoView) _connectFailingTransaction(txn *MsgDeSoTxn, txHash *BlockHash,
-	txnSizeBytes int64, blockHeight uint32, verifySignatures bool, ignoreUtxos bool) (
-	_utxoOps []*UtxoOperation, _totalInput uint64, _totalOutput uint64,
-	_fees uint64, _err error) {
+// _connectFailingTransaction is used to process the fee and burn associated with the user submitting a failing transaction.
+// A failing transaction passes formatting validation, yet fails connecting to the UtxoView. This can happen for a number
+// of reasons, such as insufficient DESO balance, wrong public key, etc. With Revolution's Fee-Time block ordering, these
+// failing transactions are included in the blocks and their fees are burned. Initially blocks will include full transactions,
+// and in the future iterations blocks will only include the failing transaction hashes. This is done to prevent spamming
+// attacks on the network with seemingly valid transactions that never commit and just end up occupying the mempool space.
+// In addition, a major part of the effective fees of this transaction is burned with BMF. This makes spam attacks economically
+// disadvantageous. Attacker's funds are burned, to the benefit of everyone else on the network. BMF algorithm also computes
+// a utility fee, which is distributed to the block producer.
+func (bav *UtxoView) _connectFailingTransaction(txn *MsgDeSoTxn, blockHeight uint32, verifySignatures bool) (
+	_utxoOps []*UtxoOperation, _burnFee uint64, _utilityFee uint64, _err error) {
+
+	// Failing transactions are only allowed after ProofOfStake2ConsensusCutoverBlockHeight.
+	if blockHeight <= bav.Params.ForkHeights.ProofOfStake2ConsensusCutoverBlockHeight {
+		return nil, 0, 0, fmt.Errorf("_connectFailingTransaction: Failing transactions " +
+			"not allowed before ProofOfStake2ConsensusCutoverBlockHeight")
+	}
 
 	// Sanity check the transaction to make sure it is properly formatted.
 	if err := CheckTransactionSanity(txn, blockHeight, bav.Params); err != nil {
-		return nil, 0, 0, 0, errors.Wrapf(err, "ConnectTransaction: "+
+		return nil, 0, 0, errors.Wrapf(err, "_connectFailingTransaction: "+
 			"Problem checking txn sanity")
 	}
 
 	if err := ValidateDeSoTxnSanityBalanceModel(txn, uint64(blockHeight), bav.Params, bav.GlobalParamsEntry); err != nil {
-		return nil, 0, 0, 0, errors.Wrapf(err, "ConnectTransaction: "+
+		return nil, 0, 0, errors.Wrapf(err, "_connectFailingTransaction: "+
 			"Problem checking txn sanity under balance model")
 	}
 
-	// Find the amount of DeSo that should be burned for this transaction.
-	// Figure out how to burn stuff and have a utxoop.
+	// Get the FailingTransactionBMFRateBasisPoints from the global params entry. We then compute the effective fee
+	// as: effectiveFee = txn.TxnFeeNanos * FailingTransactionBMFRateBasisPoints / 10000
+	gp := bav.GetCurrentGlobalParamsEntry()
+	failingTransactionRate := NewFloat().SetUint64(gp.FailingTransactionBMFRateBasisPoints)
+	failingTransactionRate.Quo(failingTransactionRate, NewFloat().SetUint64(10000))
+	effectiveFee, _ := NewFloat().Mul(failingTransactionRate, NewFloat().SetUint64(txn.TxnFeeNanos)).Uint64()
+	burnFee, utilityFee := computeBMF(effectiveFee)
+
+	var utxoOps []*UtxoOperation
+	// When spending balances, we need to check for immature block rewards. Since we don't have
+	// the block rewards yet for the current block, we subtract one from the current block height
+	// when spending balances.
+	burnUtxoOp, err := bav._spendBalance(burnFee, txn.PublicKey, blockHeight-1)
+	if err != nil {
+		return nil, 0, 0, errors.Wrapf(err, "_connectFailingTransaction: Problem "+
+			"spending balance")
+	}
+	utxoOps = append(utxoOps, burnUtxoOp)
+
+	// When spending balances, we need to check for immature block rewards. Since we don't have
+	// the block rewards yet for the current block, we subtract one from the current block height
+	// when spending balances.
+	feeUtxoOp, err := bav._spendBalance(utilityFee, txn.PublicKey, blockHeight-1)
+	if err != nil {
+		return nil, 0, 0, errors.Wrapf(err, "_connectFailingTransaction: Problem "+
+			"spending balance")
+	}
+	utxoOps = append(utxoOps, feeUtxoOp)
+
+	// If verifySignatures is passed, we check transaction signature.
+	if verifySignatures {
+		if err := bav._helpVerifySignature(txn, blockHeight); err != nil {
+			return nil, 0, 0, errors.Wrapf(err, "_connectFailingTransaction: Problem "+
+				"verifying signature")
+		}
+	}
+
+	return utxoOps, burnFee, utilityFee, nil
+}
+
+// computeBMF computes the burn fee and the utility fee for a given fee. The acronym stands for Burn Maximizing Fee, which
+// entails that the burn function is designed to maximize the amount of DESO burned, while providing the minimal viable
+// utility fee to the block producer. This is so that block producers have no advantage over other network participants
+// in accruing DESO. The utility fee that block producers get from transaction fees is just enough so that it's economically
+// advantageous to include as many transactions as possible in blocks. Reliably doing so for an extended period of time
+// could accumulate to some DESO from transaction fees.
+// The utility fee is computed by taking a binary logarithm of the fee, and the remainder is burned. BMF(fee) computes:
+//
+//	burnFee := fee - log_2(fee), utilityFee := log_2(fee).
+func computeBMF(fee uint64) (_burnFee uint64, _utilityFee uint64) {
+	// Compute the utility fee as log_2(fee). We can find it by taking the bit length of fee.
+	utilityFee := uint64(bits.Len64(fee))
+
+	// This should never happen but just in case make sure utilityFee is not greater than fee.
+	if utilityFee > fee {
+		utilityFee = fee
+	}
+	// Compute the burn as fee - log_2(fee).
+	burnFee := fee - utilityFee
+	return burnFee, utilityFee
 }
 
 func (bav *UtxoView) _compareBalancesToSnapshot(balanceSnapshot map[PublicKey]uint64) (
