@@ -198,6 +198,7 @@ func _blockchainSetup(t *testing.T) (_params *DeSoParams, _db *badger.DB) {
 	require := require.New(t)
 
 	chain, params, db := NewLowDifficultyBlockchain(t)
+	params.ForkHeights.BalanceModelBlockHeight = 1
 	oldPool, miner := NewTestMiner(t, chain, params, true)
 	// Mine a few blocks to give the senderPkString some money.
 	_, err := miner.MineAndProcessSingleBlock(0 /*threadIndex*/, oldPool)
