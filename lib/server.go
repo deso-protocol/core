@@ -61,7 +61,7 @@ type Server struct {
 	eventManager  *EventManager
 	TxIndex       *TXIndex
 
-	fastHotStuffConsensus *consensus.FastHotStuffConsensus
+	fastHotStuffEventLoop *consensus.FastHotStuffEventLoop
 	// posMempool *PosMemPool TODO: Add the mempool later
 
 	// All messages received from peers get sent from the ConnectionManager to the
@@ -1722,8 +1722,8 @@ func (srv *Server) _handleBlockAccepted(event *BlockEvent) {
 	}
 
 	// Notify the consensus that a block was accepted.
-	if srv.fastHotStuffConsensus != nil {
-		srv.fastHotStuffConsensus.UpdateChainTip()
+	if srv.fastHotStuffEventLoop != nil {
+		srv.fastHotStuffEventLoop.UpdateChainTip()
 	}
 
 	// Construct an inventory vector to relay to peers.
@@ -2249,7 +2249,7 @@ func (srv *Server) _startConsensus() {
 		}
 
 		select {
-		case consensusEvent := <-srv.fastHotStuffConsensus.ConsensusEvents:
+		case consensusEvent := <-srv.fastHotStuffEventLoop.ConsensusEvents:
 			{
 				glog.Infof("Server._startConsensus: Received consensus event for block height: %v", consensusEvent.BlockHeight)
 				srv._handleFastHostStuffConsensusEvent(consensusEvent)
@@ -2415,9 +2415,9 @@ func (srv *Server) Stop() {
 	}
 
 	// Stop the PoS block proposer if we have one running.
-	if srv.fastHotStuffConsensus != nil {
-		srv.fastHotStuffConsensus.Stop()
-		glog.Infof(CLog(Yellow, "Server.Stop: Closed the FastHotStuffConsensus"))
+	if srv.fastHotStuffEventLoop != nil {
+		srv.fastHotStuffEventLoop.Stop()
+		glog.Infof(CLog(Yellow, "Server.Stop: Closed the fastHotStuffEventLoop"))
 	}
 
 	// TODO: Stop the PoS mempool if we have one running.

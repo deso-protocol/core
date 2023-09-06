@@ -13,7 +13,7 @@ func TestFastHotStuffInitialization(t *testing.T) {
 
 	// Test initial status for newly constructed instance
 	{
-		fc := NewFastHotStuffConsensus()
+		fc := NewFastHotStuffEventLoop()
 		require.Equal(t, consensusStatusNotInitialized, fc.status)
 		require.Equal(t, fc.IsInitialized(), false)
 		require.Equal(t, fc.IsRunning(), false)
@@ -22,35 +22,35 @@ func TestFastHotStuffInitialization(t *testing.T) {
 
 	// Test Init() function with invalid block construction cadence
 	{
-		fc := NewFastHotStuffConsensus()
+		fc := NewFastHotStuffEventLoop()
 		err := fc.Init(0, 1, createDummyBlock(), createDummyValidatorSet())
 		require.Error(t, err)
 	}
 
 	// Test Init() function with invalid timeout duration
 	{
-		fc := NewFastHotStuffConsensus()
+		fc := NewFastHotStuffEventLoop()
 		err := fc.Init(1, 0, createDummyBlock(), createDummyValidatorSet())
 		require.Error(t, err)
 	}
 
 	// Test Init() function with malformed block
 	{
-		fc := NewFastHotStuffConsensus()
+		fc := NewFastHotStuffEventLoop()
 		err := fc.Init(1, 1, nil, createDummyValidatorSet())
 		require.Error(t, err)
 	}
 
 	// Test Init() function with malformed validator set
 	{
-		fc := NewFastHotStuffConsensus()
+		fc := NewFastHotStuffEventLoop()
 		err := fc.Init(1, 1, createDummyBlock(), nil)
 		require.Error(t, err)
 	}
 
 	// Test Init() function with valid parameters
 	{
-		fc := NewFastHotStuffConsensus()
+		fc := NewFastHotStuffEventLoop()
 		err := fc.Init(100, 101, createDummyBlock(), createDummyValidatorSet())
 		require.NoError(t, err)
 
@@ -77,7 +77,7 @@ func TestFastHotStuffEventLoopStartStop(t *testing.T) {
 	oneHourInNanoSecs := time.Duration(3600000000000)
 	tenSecondsInNanoSecs := time.Duration(10000000000)
 
-	fc := NewFastHotStuffConsensus()
+	fc := NewFastHotStuffEventLoop()
 	err := fc.Init(oneHourInNanoSecs, 2*oneHourInNanoSecs, createDummyBlock(), createDummyValidatorSet())
 	require.NoError(t, err)
 

@@ -8,8 +8,8 @@ import (
 	"github.com/deso-protocol/core/bls"
 )
 
-func NewFastHotStuffConsensus() *FastHotStuffConsensus {
-	return &FastHotStuffConsensus{
+func NewFastHotStuffEventLoop() *FastHotStuffEventLoop {
+	return &FastHotStuffEventLoop{
 		status:     consensusStatusNotInitialized,
 		startGroup: sync.WaitGroup{},
 		stopGroup:  sync.WaitGroup{},
@@ -28,7 +28,7 @@ func NewFastHotStuffConsensus() *FastHotStuffConsensus {
 //
 // Given the above, This function updates the chain tip internally, and re-initializes all internal
 // data structures that are used to track incoming votes and timeout messages for QC construction.
-func (fc *FastHotStuffConsensus) Init(
+func (fc *FastHotStuffEventLoop) Init(
 	blockConstructionCadence time.Duration,
 	timeoutBaseDuration time.Duration,
 	chainTip Block,
@@ -40,25 +40,25 @@ func (fc *FastHotStuffConsensus) Init(
 
 	// Ensure the consensus instance is not already running
 	if fc.status == consensusStatusRunning {
-		return errors.New("FastHotStuffConsensus.Init: Consensus instance is already running")
+		return errors.New("FastHotStuffEventLoop.Init: Consensus instance is already running")
 	}
 
 	// Validate the timer durations
 	if blockConstructionCadence <= 0 {
-		return errors.New("FastHotStuffConsensus.Init: Block construction duration must be > 0")
+		return errors.New("FastHotStuffEventLoop.Init: Block construction duration must be > 0")
 	}
 	if timeoutBaseDuration <= 0 {
-		return errors.New("FastHotStuffConsensus.Init: Timeout base duration must be > 0")
+		return errors.New("FastHotStuffEventLoop.Init: Timeout base duration must be > 0")
 	}
 
 	// Validate the integrity of the block
 	if !isProperlyFormedBlock(chainTip) {
-		return errors.New("FastHotStuffConsensus.Init: Invalid block")
+		return errors.New("FastHotStuffEventLoop.Init: Invalid block")
 	}
 
 	// Validate the integrity of the validator set
 	if !isProperlyFormedValidatorSet(validators) {
-		return errors.New("FastHotStuffConsensus.Init: Invalid validator set")
+		return errors.New("FastHotStuffEventLoop.Init: Invalid validator set")
 	}
 
 	// Update the chain tip and validator set
@@ -85,33 +85,33 @@ func (fc *FastHotStuffConsensus) Init(
 	return nil
 }
 
-func (fc *FastHotStuffConsensus) UpdateChainTip( /* TODO */ ) {
+func (fc *FastHotStuffEventLoop) UpdateChainTip( /* TODO */ ) {
 	// TODO
 }
 
-func (fc *FastHotStuffConsensus) UpdateView( /* TODO */ ) {
+func (fc *FastHotStuffEventLoop) UpdateView( /* TODO */ ) {
 	// TODO
 }
 
-func (fc *FastHotStuffConsensus) ProcessVoteMsg( /* TODO */ ) {
+func (fc *FastHotStuffEventLoop) ProcessVoteMsg( /* TODO */ ) {
 	// TODO
 }
 
-func (pc *FastHotStuffConsensus) ProcessTimeoutMsg( /* TODO */ ) {
+func (pc *FastHotStuffEventLoop) ProcessTimeoutMsg( /* TODO */ ) {
 	// TODO
 }
 
-func (fc *FastHotStuffConsensus) ConstructVoteQC( /* TODO */ ) {
+func (fc *FastHotStuffEventLoop) ConstructVoteQC( /* TODO */ ) {
 	// TODO
 }
 
-func (fc *FastHotStuffConsensus) ConstructTimeoutQC( /* TODO */ ) {
+func (fc *FastHotStuffEventLoop) ConstructTimeoutQC( /* TODO */ ) {
 	// TODO
 }
 
 // Sets the initial times for the block construction and timeout timers and starts
 // the event loop building off of the current chain tip.
-func (fc *FastHotStuffConsensus) Start() {
+func (fc *FastHotStuffEventLoop) Start() {
 	fc.lock.Lock()
 	defer fc.lock.Unlock()
 
@@ -136,7 +136,7 @@ func (fc *FastHotStuffConsensus) Start() {
 	fc.status = consensusStatusRunning
 }
 
-func (fc *FastHotStuffConsensus) Stop() {
+func (fc *FastHotStuffEventLoop) Stop() {
 	fc.lock.Lock()
 	defer fc.lock.Unlock()
 
@@ -166,7 +166,7 @@ func (fc *FastHotStuffConsensus) Stop() {
 // Note, this function does not directly update the consensus status. To simplify the inner
 // implementation of the loop, the caller who starts and stops should always be responsible
 // for updating the status as it starts and stop the loop.
-func (fc *FastHotStuffConsensus) runEventLoop() {
+func (fc *FastHotStuffEventLoop) runEventLoop() {
 	// Signal that the event loop has started
 	fc.startGroup.Done()
 
@@ -195,14 +195,14 @@ func (fc *FastHotStuffConsensus) runEventLoop() {
 	}
 }
 
-func (fc *FastHotStuffConsensus) IsInitialized() bool {
+func (fc *FastHotStuffEventLoop) IsInitialized() bool {
 	fc.lock.RLock()
 	defer fc.lock.RUnlock()
 
 	return fc.status != consensusStatusNotInitialized
 }
 
-func (fc *FastHotStuffConsensus) IsRunning() bool {
+func (fc *FastHotStuffEventLoop) IsRunning() bool {
 	fc.lock.RLock()
 	defer fc.lock.RUnlock()
 

@@ -9,7 +9,7 @@ import (
 	"github.com/holiman/uint256"
 )
 
-// ConsensusEvent is a way for FastHotStuffConsensus to send messages back to the Server.
+// ConsensusEvent is a way for FastHotStuffEventLoop to send messages back to the Server.
 // There are four types of events that can be sent:
 //   - ConsensusEventTypeVote: The consensus is ready to vote on a block at a given block height and view
 //   - ConsensusEventTypeTimeout: The consensus has timed out on a view
@@ -85,10 +85,10 @@ type Block interface {
 	GetQC() QuorumCertificate
 }
 
-// An instance of FastHotStuffConsensus is a self-contained module that represents a single node running the
-// Fast HotStuff consensus protocol. The module is initialized at the current chain's tip, with a given
-// block hash, block height, view number, and validator set. The module is simplified and does not know
-// whether its role is that of a block proposer or a validator.
+// An instance of FastHotStuffEventLoop is a self-contained module that represents a single node running
+// the event loop for the Fast HotStuff consensus protocol. The module is initialized at the current chain's
+// tip, with a given block hash, block height, view number, and validator set. The module is simplified and
+// does not know whether its role is that of a block proposer or a validator.
 //
 // Given a block that's at the tip of the current chain, this module maintains its own internal data structures
 // and runs internal timers that handles all of the following:
@@ -112,7 +112,7 @@ type Block interface {
 // trusted input and does NOT validate any incoming blocks. This also mean the module expects its caller to
 // track historical vote and timeout messages it has sent so as to not vote more than once at a given view
 // or block height.
-type FastHotStuffConsensus struct {
+type FastHotStuffEventLoop struct {
 	lock sync.RWMutex
 
 	blockConstructionCadence time.Duration
