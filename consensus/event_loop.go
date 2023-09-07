@@ -96,17 +96,17 @@ func (fc *FastHotStuffEventLoop) ProcessSafeBlock(block Block, validators []Vali
 
 	// Ensure the consensus instance is running
 	if fc.status != consensusStatusRunning {
-		return errors.New("FastHotStuffConsensus.ProcessSafeBlock: Consensus instance is not running")
+		return errors.New("FastHotStuffEventLoop.ProcessSafeBlock: Consensus instance is not running")
 	}
 
 	// Do a basic integrity check on the block
 	if !isProperlyFormedBlock(block) {
-		return errors.New("FastHotStuffConsensus.ProcessSafeBlock: Invalid block")
+		return errors.New("FastHotStuffEventLoop.ProcessSafeBlock: Invalid block")
 	}
 
 	// Do a basic integrity check on the validator set
 	if !isProperlyFormedValidatorSet(validators) {
-		return errors.New("FastHotStuffConsensus.ProcessSafeBlock: Invalid validator set")
+		return errors.New("FastHotStuffEventLoop.ProcessSafeBlock: Invalid validator set")
 	}
 
 	// Update the chain tip and validator set
