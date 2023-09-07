@@ -124,6 +124,12 @@ type UtxoView struct {
 	// Locked stake mappings
 	LockedStakeMapKeyToLockedStakeEntry map[LockedStakeMapKey]*LockedStakeEntry
 
+	// Locked DAO coin balance entry mapping.
+	LockedBalanceEntryMapKeyToLockedBalanceEntry map[LockedBalanceEntryMapKey]*LockedBalanceEntry
+
+	// Lockup yield curve points.
+	PKIDToLockupYieldCurvePoints map[PKID][]*LockupYieldCurvePoint
+
 	// Current EpochEntry
 	CurrentEpochEntry *EpochEntry
 
@@ -3451,6 +3457,9 @@ func (bav *UtxoView) _connectTransaction(txn *MsgDeSoTxn, txHash *BlockHash,
 
 	case TxnTypeUnjailValidator:
 		totalInput, totalOutput, utxoOpsForTxn, err = bav._connectUnjailValidator(txn, txHash, blockHeight, verifySignatures)
+
+	case TxnTypeDAOCoinLockup:
+		totalInput, totalOutput, utxoOpsForTxn, err = bav._connectDAOCoinLockup(txn, txHash, blockHeight, verifySignatures)
 
 	default:
 		err = fmt.Errorf("ConnectTransaction: Unimplemented txn type %v", txn.TxnMeta.GetTxnType().String())

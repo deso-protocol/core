@@ -486,6 +486,19 @@ const (
 	// EpochCompleteHook
 	RuleErrorBlockTimestampBeforeEpochStartTimestamp RuleError = "RuleErrorBlockTimestampBeforeEpochStartTimestamp"
 
+	// Lockups
+	RuleErrorInvalidLockupDuration                 RuleError = "RuleErrorInvalidLockupDuration"
+	RuleErrorDAOCoinLockupBalanceEntryDoesNotExist RuleError = "RuleErrorDAOCoinLockupBalanceEntryDoesNotExist"
+	RuleErrorDAOCoinLockupInsufficientCoins        RuleError = "RuleErrorDAOCoinLockupInsufficientCoins"
+	RuleErrorDAOCoinLockupInsufficientDeSo         RuleError = "RuleErrorDAOCoinLockupInsufficientDeSo"
+	RuleErrorDAOCoinLockupOnNonExistentProfile     RuleError = "RuleErrorDAOCoinLockupOnNonExistentProfile"
+	RuleErrorDAOCoinLockupOfAmountZero             RuleError = "RuleErrorDAOCoinLockupOfAmountZero"
+	RuleErrorDAOCoinLockupExcessiveDeSoLockup      RuleError = "RuleErrorDAOCoinLockupExcessiveDeSoLockup"
+	RuleErrorDAOCoinLockupNonExistentProfile       RuleError = "RuleErrorDAOCoinLockupNonExistentProfile"
+	RuleErrorDAOCoinLockupCoinYieldOverflow        RuleError = "RuleErrorDAOCoinLockupCoinYieldOverflow"
+	RuleErrorDAOCoinLockupYieldCausesOverflow      RuleError = "RuleErrorDAOCoinLockupYieldCausesOverflow"
+	RuleErrorDAOCoinLockupUnlockTimestampOverflow  RuleError = "RuleErrorDAOCoinLockupUnlockTimestampOverflow"
+
 	HeaderErrorDuplicateHeader                                                   RuleError = "HeaderErrorDuplicateHeader"
 	HeaderErrorNilPrevHash                                                       RuleError = "HeaderErrorNilPrevHash"
 	HeaderErrorInvalidParent                                                     RuleError = "HeaderErrorInvalidParent"

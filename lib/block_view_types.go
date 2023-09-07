@@ -632,8 +632,9 @@ const (
 	OperationTypeUnstake                      OperationType = 42
 	OperationTypeUnlockStake                  OperationType = 43
 	OperationTypeUnjailValidator              OperationType = 44
+	OperationTypeDAOCoinLockup                OperationType = 45
 
-	// NEXT_TAG = 45
+	// NEXT_TAG = 46
 )
 
 func (op OperationType) String() string {
@@ -726,6 +727,8 @@ func (op OperationType) String() string {
 		return "OperationTypeUnlockStake"
 	case OperationTypeUnjailValidator:
 		return "OperationTypeUnjailValidator"
+	case OperationTypeDAOCoinLockup:
+		return "OperationTypeDAOCoinLockup"
 	}
 	return "OperationTypeUNKNOWN"
 }
@@ -922,6 +925,10 @@ type UtxoOperation struct {
 	// PrevLockedStakeEntries is a slice of LockedStakeEntries
 	// prior to a unstake or unlock stake txn.
 	PrevLockedStakeEntries []*LockedStakeEntry
+
+	// PrevLockedBalanceEntry is the previous LockedBalanceEntry prior
+	// to a DAO coin lockup or DAO coin unlock.
+	PrevLockedBalanceEntry *LockedBalanceEntry
 }
 
 func (op *UtxoOperation) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte {
@@ -1248,6 +1255,9 @@ func (op *UtxoOperation) RawEncodeWithoutMetadata(blockHeight uint64, skipMetada
 
 		// PrevLockedStakeEntries
 		data = append(data, EncodeDeSoEncoderSlice(op.PrevLockedStakeEntries, blockHeight, skipMetadata...)...)
+
+		// PrevLockedBalanceEntry
+		data = append(data, EncodeToBytes(blockHeight, op.PrevLockedBalanceEntry, skipMetadata...)...)
 	}
 
 	return data
@@ -1879,6 +1889,11 @@ func (op *UtxoOperation) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.
 		// PrevLockedStakeEntries
 		if op.PrevLockedStakeEntries, err = DecodeDeSoEncoderSlice[*LockedStakeEntry](rr); err != nil {
 			return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading PrevLockedStakeEntries: ")
+		}
+
+		// PrevLockedBalanceEntry
+		if op.PrevLockedBalanceEntry, err = DecodeDeSoEncoder(&LockedBalanceEntry{}, rr); err != nil {
+			return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading PrevLockedBalanceEntry")
 		}
 	}
 
