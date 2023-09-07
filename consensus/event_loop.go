@@ -94,7 +94,7 @@ func (fc *FastHotStuffEventLoop) AdvanceView() (uint64, error) {
 	// Ensure the consensus instance is running. This guarantees that the chain tip and validator set
 	// have already been set.
 	if fc.status != consensusStatusRunning {
-		return 0, errors.New("FastHotStuffConsensus.AdvanceView: Consensus instance is not running")
+		return 0, errors.New("FastHotStuffEventLoop.AdvanceView: Consensus instance is not running")
 	}
 
 	// Advance the view
