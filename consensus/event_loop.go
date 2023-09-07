@@ -106,8 +106,8 @@ func (fc *FastHotStuffEventLoop) AdvanceView() (uint64, error) {
 	// Evict all stale votes and timeouts
 	fc.evictStaleVotesAndTimeouts()
 
-	// Signal the event loop to reset the internal timers
-	fc.resetEventLoopSignal <- struct{}{}
+	// Recompute the event loop's next ETAs
+	fc.resetEventLoopTimers()
 
 	return fc.currentView, nil
 }
@@ -160,8 +160,8 @@ func (fc *FastHotStuffEventLoop) ProcessSafeBlock(block Block, validators []Vali
 		View:        fc.chainTip.GetView(),
 	}
 
-	// Signal the event loop to reset the internal timers
-	fc.resetEventLoopSignal <- struct{}{}
+	// Recompute the event loop's next ETAs
+	fc.resetEventLoopTimers()
 
 	return nil
 }
@@ -389,7 +389,8 @@ func (fc *FastHotStuffEventLoop) runEventLoop() {
 			}
 		case <-fc.resetEventLoopSignal:
 			{
-				// TODO
+				// Do nothing. We use this signal purely to refresh the timers above
+				// and rerun another iteration of the event loop.
 			}
 		case <-fc.stopSignal:
 			{
@@ -413,6 +414,38 @@ func (fc *FastHotStuffEventLoop) IsRunning() bool {
 	defer fc.lock.RUnlock()
 
 	return fc.status == consensusStatusRunning
+}
+
+// resetEventLoopTimers recomputes the nextBlockConstructionTimeStamp and nextTimeoutTimeStamp
+// values and signals the event loop to rerun.
+func (fc *FastHotStuffEventLoop) resetEventLoopTimers() {
+	// Compute the next block construction ETA
+	fc.nextBlockConstructionTimeStamp = time.Now().Add(fc.blockConstructionCadence)
+
+	// Compute the next timeout ETA. We use exponential back-off for timeouts when there are
+	// multiple consecutive timeouts. We use the difference between the current view and the
+	// chain tip's view to determine this. The current view can only drift from the chain tip's
+	// view as a result of timeouts. This guarantees that the number of consecutive timeouts is
+	// always: max(currentView - chainTip.GetView() - 1, 0).
+
+	timeoutDuration := fc.timeoutBaseDuration
+
+	// Check if we have timed out at all for the last n view. If so, we apply exponential
+	// back-off to the timeout base duration.
+	if fc.chainTip.GetView() < fc.currentView-1 {
+		// Note, there is no risk of underflow here because the following is guaranteed:
+		// currentView > chainTip.GetView() + 1.
+		numTimeouts := fc.currentView - fc.chainTip.GetView() - 1
+
+		// Compute the exponential back-off: nextTimeoutDuration * 2^numTimeouts
+		timeoutDuration = fc.timeoutBaseDuration << numTimeouts
+	}
+
+	// Compute the next timeout ETA
+	fc.nextTimeoutTimeStamp = time.Now().Add(timeoutDuration)
+
+	// Signal the event loop to rerun
+	fc.resetEventLoopSignal <- struct{}{}
 }
 
 // Evict all locally stored votes and timeout messages with stale views. We can safely use the current

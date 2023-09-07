@@ -418,6 +418,77 @@ func TestProcessValidatorTimeout(t *testing.T) {
 	fc.Stop()
 }
 
+func TestResetEventLoopSignal(t *testing.T) {
+	oneHourInNanoSecs := time.Duration(3600000000000)
+	tenSecondsInNanoSecs := time.Duration(10000000000)
+
+	fc := NewFastHotStuffEventLoop()
+	err := fc.Init(oneHourInNanoSecs, 2*oneHourInNanoSecs, createDummyBlock(), createDummyValidatorSet())
+	require.NoError(t, err)
+
+	// Start the event loop
+	fc.Start()
+
+	// Confirm the ETAs for the block construction and timeout timers
+	require.Greater(t, fc.nextBlockConstructionTimeStamp, time.Now().Add(
+		oneHourInNanoSecs-tenSecondsInNanoSecs, // 1 hour away
+	))
+	require.Greater(t, fc.nextTimeoutTimeStamp, time.Now().Add(
+		2*oneHourInNanoSecs-tenSecondsInNanoSecs, // 2 hours = 4 hours away
+	))
+	require.Less(t, fc.nextTimeoutTimeStamp, time.Now().Add(
+		2*oneHourInNanoSecs+tenSecondsInNanoSecs, // 2 hours = 4 hours away
+	))
+
+	// Advance the view to simulate a timeout
+	_, err = fc.AdvanceView()
+	require.NoError(t, err)
+
+	// Confirm the ETAs for the block construction and timeout timers
+	require.Greater(t, fc.nextBlockConstructionTimeStamp, time.Now().Add(
+		oneHourInNanoSecs-tenSecondsInNanoSecs, // 1 hour away
+	))
+	require.Greater(t, fc.nextTimeoutTimeStamp, time.Now().Add(
+		4*oneHourInNanoSecs-tenSecondsInNanoSecs, // 2 hours * 2 = 4 hours away
+	))
+	require.Less(t, fc.nextTimeoutTimeStamp, time.Now().Add(
+		4*oneHourInNanoSecs+tenSecondsInNanoSecs, // 2 hours * 2 = 4 hours away
+	))
+
+	// Advance the view to simulate a 2nd timeout
+	_, err = fc.AdvanceView()
+	require.NoError(t, err)
+
+	// Confirm the ETAs for the block construction and timeout timers
+	require.Greater(t, fc.nextBlockConstructionTimeStamp, time.Now().Add(
+		oneHourInNanoSecs-tenSecondsInNanoSecs, // 1 hour away
+	))
+	require.Greater(t, fc.nextTimeoutTimeStamp, time.Now().Add(
+		8*oneHourInNanoSecs-tenSecondsInNanoSecs, // 2 hours * 2^2 = 8 hours away
+	))
+	require.Less(t, fc.nextTimeoutTimeStamp, time.Now().Add(
+		8*oneHourInNanoSecs+tenSecondsInNanoSecs, // 2 hours * 2 = 8 hours away
+	))
+
+	// Advance the view to simulate a 3nd timeout
+	_, err = fc.AdvanceView()
+	require.NoError(t, err)
+
+	// Confirm the ETAs for the block construction and timeout timers
+	require.Greater(t, fc.nextBlockConstructionTimeStamp, time.Now().Add(
+		oneHourInNanoSecs-tenSecondsInNanoSecs, // 1 hour away
+	))
+	require.Greater(t, fc.nextTimeoutTimeStamp, time.Now().Add(
+		16*oneHourInNanoSecs-tenSecondsInNanoSecs, // 2 hours * 2^3 = 16 hours away
+	))
+	require.Less(t, fc.nextTimeoutTimeStamp, time.Now().Add(
+		16*oneHourInNanoSecs+tenSecondsInNanoSecs, // 2 hours * 2^3 = 16 hours away
+	))
+
+	// Stop the event loop
+	fc.Stop()
+}
+
 func TestFastHotStuffEventLoopStartStop(t *testing.T) {
 	oneHourInNanoSecs := time.Duration(3600000000000)
 	tenSecondsInNanoSecs := time.Duration(10000000000)
