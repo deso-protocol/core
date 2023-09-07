@@ -185,12 +185,12 @@ func (fc *FastHotStuffEventLoop) ProcessValidatorVote(vote VoteMessage) error {
 	// Ensure the consensus instance is running. This guarantees that the chain tip and validator set
 	// have already been set.
 	if fc.status != consensusStatusRunning {
-		return errors.New("FastHotStuffConsensus.ProcessValidatorVote: Consensus instance is not running")
+		return errors.New("FastHotStuffEventLoop.ProcessValidatorVote: Consensus instance is not running")
 	}
 
 	// Do a basic integrity check on the vote message
 	if !isProperlyFormedVote(vote) {
-		return errors.New("FastHotStuffConsensus.ProcessValidatorVote: Malformed vote message")
+		return errors.New("FastHotStuffEventLoop.ProcessValidatorVote: Malformed vote message")
 	}
 
 	// Compute the value sha256(vote.View, vote.BlockHash)
@@ -198,19 +198,19 @@ func (fc *FastHotStuffEventLoop) ProcessValidatorVote(vote VoteMessage) error {
 
 	// Verify the vote signature
 	if !isValidSignature(vote.GetPublicKey(), vote.GetSignature(), voteSignaturePayload[:]) {
-		return errors.New("FastHotStuffConsensus.ProcessValidatorVote: Invalid signature")
+		return errors.New("FastHotStuffEventLoop.ProcessValidatorVote: Invalid signature")
 	}
 
 	// Check if the vote is stale
 	if isStaleVote(fc.currentView, vote) {
-		return errors.Errorf("FastHotStuffConsensus.ProcessValidatorVote: Vote has a stale view %d", vote.GetView())
+		return errors.Errorf("FastHotStuffEventLoop.ProcessValidatorVote: Vote has a stale view %d", vote.GetView())
 	}
 
 	// Check if the public key has already voted for this view. The protocol does not allow
 	// a validator to vote for more than one block in a given view.
 	if fc.hasVotedForView(vote.GetPublicKey(), vote.GetView()) {
 		return errors.Errorf(
-			"FastHotStuffConsensus.ProcessValidatorVote: validator %s has already voted for view %d",
+			"FastHotStuffEventLoop.ProcessValidatorVote: validator %s has already voted for view %d",
 			vote.GetPublicKey().ToString(),
 			vote.GetView(),
 		)
@@ -220,7 +220,7 @@ func (fc *FastHotStuffEventLoop) ProcessValidatorVote(vote VoteMessage) error {
 	// for a validator to vote for a block in a view that it has already timed out for.
 	if fc.hasTimedOutForView(vote.GetPublicKey(), vote.GetView()) {
 		return errors.Errorf(
-			"FastHotStuffConsensus.ProcessValidatorVote: validator %s has already timed out for view %d",
+			"FastHotStuffEventLoop.ProcessValidatorVote: validator %s has already timed out for view %d",
 			vote.GetPublicKey().ToString(),
 			vote.GetView(),
 		)
