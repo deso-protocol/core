@@ -256,10 +256,10 @@ func TestAdvanceView(t *testing.T) {
 	fc.Stop()
 }
 
-func TestCaptureValidatorVote(t *testing.T) {
+func TestProcessValidatorVote(t *testing.T) {
 	oneHourInNanoSecs := time.Duration(3600000000000)
 
-	fc := NewFastHotStuffConsensus()
+	fc := NewFastHotStuffEventLoop()
 
 	// BlockHeight = 1, Current View = 2
 	err := fc.Init(oneHourInNanoSecs, oneHourInNanoSecs, createDummyBlock(), createDummyValidatorSet())
@@ -277,7 +277,7 @@ func TestCaptureValidatorVote(t *testing.T) {
 
 	// Test with malformed vote
 	{
-		err := fc.CaptureValidatorVote(nil)
+		err := fc.ProcessValidatorVote(nil)
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "Malformed vote message")
 	}
@@ -286,7 +286,7 @@ func TestCaptureValidatorVote(t *testing.T) {
 	{
 		vote := createDummyVoteMessage(3)
 		vote.signature = createDummyBLSSignature()
-		err := fc.CaptureValidatorVote(vote)
+		err := fc.ProcessValidatorVote(vote)
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "Invalid signature")
 	}
@@ -294,7 +294,7 @@ func TestCaptureValidatorVote(t *testing.T) {
 	// Test with stale view
 	{
 		vote := createDummyVoteMessage(1)
-		err := fc.CaptureValidatorVote(vote)
+		err := fc.ProcessValidatorVote(vote)
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "Vote has a stale view")
 	}
@@ -306,7 +306,7 @@ func TestCaptureValidatorVote(t *testing.T) {
 			vote.publicKey.ToString(): vote,
 		}
 
-		err := fc.CaptureValidatorVote(vote)
+		err := fc.ProcessValidatorVote(vote)
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "has already voted for view")
 	}
@@ -321,7 +321,7 @@ func TestCaptureValidatorVote(t *testing.T) {
 			timeout.publicKey.ToString(): timeout,
 		}
 
-		err := fc.CaptureValidatorVote(vote)
+		err := fc.ProcessValidatorVote(vote)
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "has already timed out for view")
 	}
@@ -329,7 +329,7 @@ func TestCaptureValidatorVote(t *testing.T) {
 	// Test happy path
 	{
 		vote := createDummyVoteMessage(3)
-		err := fc.CaptureValidatorVote(vote)
+		err := fc.ProcessValidatorVote(vote)
 		require.NoError(t, err)
 	}
 

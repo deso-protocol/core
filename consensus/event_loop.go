@@ -166,7 +166,7 @@ func (fc *FastHotStuffEventLoop) ProcessSafeBlock(block Block, validators []Vali
 	return nil
 }
 
-// CaptureValidatorVote captures an incoming vote message from a validator. This module has no knowledge
+// ProcessValidatorVote captures an incoming vote message from a validator. This module has no knowledge
 // of who the leader is for a given view, so it is up to the caller to decide whether to process the vote
 // message or not. If a vote message is passed here, then the consensus instance will store it until
 // it can construct a QC with it or until the vote's view has gone stale.
@@ -177,7 +177,7 @@ func (fc *FastHotStuffEventLoop) ProcessSafeBlock(block Block, validators []Vali
 //
 // Reference implementation:
 // https://github.com/deso-protocol/hotstuff_pseudocode/blob/6409b51c3a9a953b383e90619076887e9cebf38d/fast_hotstuff_bls.go#L756
-func (fc *FastHotStuffConsensus) CaptureValidatorVote(vote VoteMessage) error {
+func (fc *FastHotStuffEventLoop) ProcessValidatorVote(vote VoteMessage) error {
 	// Grab the consensus instance's lock
 	fc.lock.Lock()
 	defer fc.lock.Unlock()
@@ -185,12 +185,12 @@ func (fc *FastHotStuffConsensus) CaptureValidatorVote(vote VoteMessage) error {
 	// Ensure the consensus instance is running. This guarantees that the chain tip and validator set
 	// have already been set.
 	if fc.status != consensusStatusRunning {
-		return errors.New("FastHotStuffConsensus.CaptureValidatorVote: Consensus instance is not running")
+		return errors.New("FastHotStuffConsensus.ProcessValidatorVote: Consensus instance is not running")
 	}
 
 	// Do a basic integrity check on the vote message
 	if !isProperlyFormedVote(vote) {
-		return errors.New("FastHotStuffConsensus.CaptureValidatorVote: Malformed vote message")
+		return errors.New("FastHotStuffConsensus.ProcessValidatorVote: Malformed vote message")
 	}
 
 	// Compute the value sha256(vote.View, vote.BlockHash)
@@ -198,19 +198,19 @@ func (fc *FastHotStuffConsensus) CaptureValidatorVote(vote VoteMessage) error {
 
 	// Verify the vote signature
 	if !isValidSignature(vote.GetPublicKey(), vote.GetSignature(), voteSignaturePayload[:]) {
-		return errors.New("FastHotStuffConsensus.CaptureValidatorVote: Invalid signature")
+		return errors.New("FastHotStuffConsensus.ProcessValidatorVote: Invalid signature")
 	}
 
 	// Check if the vote is stale
 	if isStaleVote(fc.currentView, vote) {
-		return errors.Errorf("FastHotStuffConsensus.CaptureValidatorVote: Vote has a stale view %d", vote.GetView())
+		return errors.Errorf("FastHotStuffConsensus.ProcessValidatorVote: Vote has a stale view %d", vote.GetView())
 	}
 
 	// Check if the public key has already voted for this view. The protocol does not allow
 	// a validator to vote for more than one block in a given view.
 	if fc.hasVotedForView(vote.GetPublicKey(), vote.GetView()) {
 		return errors.Errorf(
-			"FastHotStuffConsensus.CaptureValidatorVote: validator %s has already voted for view %d",
+			"FastHotStuffConsensus.ProcessValidatorVote: validator %s has already voted for view %d",
 			vote.GetPublicKey().ToString(),
 			vote.GetView(),
 		)
@@ -220,7 +220,7 @@ func (fc *FastHotStuffConsensus) CaptureValidatorVote(vote VoteMessage) error {
 	// for a validator to vote for a block in a view that it has already timed out for.
 	if fc.hasTimedOutForView(vote.GetPublicKey(), vote.GetView()) {
 		return errors.Errorf(
-			"FastHotStuffConsensus.CaptureValidatorVote: validator %s has already timed out for view %d",
+			"FastHotStuffConsensus.ProcessValidatorVote: validator %s has already timed out for view %d",
 			vote.GetPublicKey().ToString(),
 			vote.GetView(),
 		)
@@ -235,7 +235,6 @@ func (fc *FastHotStuffConsensus) CaptureValidatorVote(vote VoteMessage) error {
 	fc.storeVote(voteSignaturePayload, vote)
 
 	return nil
->>>>>>> 6b09355 (Fast HotStuff Vote Msg Storage)
 }
 
 func (pc *FastHotStuffEventLoop) ProcessTimeoutMsg( /* TODO */ ) {
@@ -391,7 +390,7 @@ func (fc *FastHotStuffEventLoop) evictStaleVotesAndTimeouts() {
 	}
 }
 
-func (fc *FastHotStuffConsensus) storeVote(signaturePayload [32]byte, vote VoteMessage) {
+func (fc *FastHotStuffEventLoop) storeVote(signaturePayload [32]byte, vote VoteMessage) {
 	votesForBlockHash, ok := fc.votesSeen[signaturePayload]
 	if !ok {
 		votesForBlockHash = make(map[string]VoteMessage)
@@ -401,7 +400,7 @@ func (fc *FastHotStuffConsensus) storeVote(signaturePayload [32]byte, vote VoteM
 	votesForBlockHash[vote.GetPublicKey().ToString()] = vote
 }
 
-func (fc *FastHotStuffConsensus) hasVotedForView(publicKey *bls.PublicKey, view uint64) bool {
+func (fc *FastHotStuffEventLoop) hasVotedForView(publicKey *bls.PublicKey, view uint64) bool {
 	// This is an O(n) operation that scales with the number of block hashes that we have stored
 	// votes for. In practice, n will be very small because we evict stale votes, and server.go
 	// will be smart about not processing votes for views we won't be the block proposer for.
@@ -423,7 +422,7 @@ func (fc *FastHotStuffConsensus) hasVotedForView(publicKey *bls.PublicKey, view 
 	return false
 }
 
-func (fc *FastHotStuffConsensus) hasTimedOutForView(publicKey *bls.PublicKey, view uint64) bool {
+func (fc *FastHotStuffEventLoop) hasTimedOutForView(publicKey *bls.PublicKey, view uint64) bool {
 	timeoutsForView, ok := fc.timeoutsSeen[view]
 	if !ok {
 		return false
