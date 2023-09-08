@@ -169,6 +169,93 @@ func TestFastHotStuffProcessSafeBlock(t *testing.T) {
 	fc.Stop()
 }
 
+func TestAdvanceView(t *testing.T) {
+	oneHourInNanoSecs := time.Duration(3600000000000)
+
+	fc := NewFastHotStuffEventLoop()
+
+	// BlockHeight = 1, Current View = 2
+	err := fc.Init(oneHourInNanoSecs, oneHourInNanoSecs, createDummyBlock(), createDummyValidatorSet())
+	require.NoError(t, err)
+
+	// Running AdvanceView() should fail because the consensus event loop is not running
+	{
+		_, err := fc.AdvanceView()
+		require.Error(t, err)
+	}
+
+	// Start the consensus event loop
+	fc.Start()
+
+	// Populate the votesSeen and timeoutsSeen maps with dummy data
+	{
+		fc.votesSeen = map[[32]byte]map[string]VoteMessage{
+			{0}: { // blockHash = 0
+				"pubKeyA": createDummyVoteMessage(0),
+			},
+			{1}: { // blockHash = 1
+				"pubKeyB": createDummyVoteMessage(1),
+			},
+			{2}: { // blockHash = 2
+				"pubKeyC": createDummyVoteMessage(2),
+			},
+			{3}: { // blockHash = 3
+				"pubKeyD": createDummyVoteMessage(3),
+			},
+			{4}: { // blockHash = 4
+				"pubKeyE": createDummyVoteMessage(4),
+			},
+		}
+
+		fc.timeoutsSeen = map[uint64]map[string]TimeoutMessage{
+			0: { // view = 0
+				"pubKeyA": createDummyTimeoutMessage(0),
+			},
+			1: { // view = 1
+				"pubKeyB": createDummyTimeoutMessage(1),
+			},
+			2: { // view = 2
+				"pubKeyC": createDummyTimeoutMessage(2),
+			},
+			3: { // view = 3
+				"pubKeyD": createDummyTimeoutMessage(3),
+			},
+			4: { // view = 4
+				"pubKeyE": createDummyTimeoutMessage(4),
+			},
+		}
+	}
+
+	// Run AdvanceView() to view 3
+	{
+		newView, err := fc.AdvanceView()
+		require.NoError(t, err)
+		require.Equal(t, uint64(3), newView)
+	}
+
+	// Verify that vote and timeout messages haven't changed
+	{
+		require.Equal(t, len(fc.votesSeen), 3)
+		require.Equal(t, len(fc.timeoutsSeen), 3)
+	}
+
+	// Run AdvanceView() to view 4
+	{
+		newView, err := fc.AdvanceView()
+		require.NoError(t, err)
+		require.Equal(t, uint64(4), newView)
+	}
+
+	// Verify that stale votes and timeouts have been evicted
+	{
+		require.Equal(t, len(fc.votesSeen), 2)
+		require.Equal(t, len(fc.timeoutsSeen), 2)
+	}
+
+	// Stop the event loop
+	fc.Stop()
+}
+
 func TestFastHotStuffEventLoopStartStop(t *testing.T) {
 	oneHourInNanoSecs := time.Duration(3600000000000)
 	tenSecondsInNanoSecs := time.Duration(10000000000)
