@@ -660,7 +660,10 @@ func (stateChangeSyncer *StateChangeSyncer) SyncMempoolToStateSyncer(server *Ser
 	}
 
 	// Loop through all the transactions in the mempool and connect them and their utxo ops to the mempool view.
+	server.mempool.mtx.RLock()
 	mempoolTxns, _, err := server.mempool._getTransactionsOrderedByTimeAdded()
+	server.mempool.mtx.RUnlock()
+
 	if err != nil {
 		mempoolUtxoView.EventManager.stateSyncerFlushed(&StateSyncerFlushedEvent{
 			FlushId:        uuid.Nil,
