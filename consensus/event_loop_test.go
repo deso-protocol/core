@@ -15,8 +15,6 @@ func TestFastHotStuffInitialization(t *testing.T) {
 	{
 		fc := NewFastHotStuffEventLoop()
 		require.Equal(t, consensusStatusNotInitialized, fc.status)
-		require.Equal(t, fc.IsInitialized(), false)
-		require.Equal(t, fc.IsRunning(), false)
 		require.NotPanics(t, fc.Stop) // Calling Stop() on an uninitialized instance should be a no-op
 	}
 
@@ -55,8 +53,6 @@ func TestFastHotStuffInitialization(t *testing.T) {
 		require.NoError(t, err)
 
 		require.Equal(t, consensusStatusInitialized, fc.status)
-		require.Equal(t, fc.IsInitialized(), true)
-		require.Equal(t, fc.IsRunning(), false)
 
 		require.NotPanics(t, fc.Stop) // Calling Stop() on an initialized instance should be a no-op
 		require.Equal(t, fc.status, consensusStatusInitialized)
@@ -69,8 +65,108 @@ func TestFastHotStuffInitialization(t *testing.T) {
 		require.Equal(t, fc.timeoutBaseDuration, time.Duration(101))
 
 		require.Equal(t, fc.currentView, uint64(2))
-		require.Equal(t, len(fc.validators), len(createDummyValidatorSet()))
+		require.Equal(t, len(fc.validatorsAtChainTip), 2)
 	}
+}
+
+func TestFastHotStuffProcessSafeBlock(t *testing.T) {
+	oneHourInNanoSecs := time.Duration(3600000000000)
+
+	fc := NewFastHotStuffEventLoop()
+	err := fc.Init(oneHourInNanoSecs, oneHourInNanoSecs, createDummyBlock(), createDummyValidatorSet())
+	require.NoError(t, err)
+
+	// Test ProcessSafeBlock() function when consensus event loop is not running
+	{
+		err := fc.ProcessSafeBlock(createDummyBlock(), createDummyValidatorSet())
+		require.Error(t, err)
+	}
+
+	// Start the consensus event loop
+	fc.Start()
+
+	// Test ProcessSafeBlock() function with malformed block
+	{
+		err := fc.ProcessSafeBlock(nil, createDummyValidatorSet())
+		require.Error(t, err)
+	}
+
+	// Test ProcessSafeBlock() function with malformed validator set
+	{
+		err := fc.ProcessSafeBlock(createDummyBlock(), nil)
+		require.Error(t, err)
+	}
+
+	// Populate the votesSeen and timeoutsSeen maps with dummy data
+	{
+		fc.votesSeen = map[[32]byte]map[string]VoteMessage{
+			{0}: { // blockHash = 0
+				"pubKeyA": createDummyVoteMessage(0),
+			},
+			{1}: { // blockHash = 1
+				"pubKeyB": createDummyVoteMessage(1),
+			},
+			{2}: { // blockHash = 2
+				"pubKeyC": createDummyVoteMessage(2),
+			},
+			{3}: { // blockHash = 3
+				"pubKeyD": createDummyVoteMessage(3),
+			},
+			{4}: { // blockHash = 4
+				"pubKeyE": createDummyVoteMessage(4),
+			},
+		}
+
+		fc.timeoutsSeen = map[uint64]map[string]TimeoutMessage{
+			0: { // view = 0
+				"pubKeyA": createDummyTimeoutMessage(0),
+			},
+			1: { // view = 1
+				"pubKeyB": createDummyTimeoutMessage(1),
+			},
+			2: { // view = 2
+				"pubKeyC": createDummyTimeoutMessage(2),
+			},
+			3: { // view = 3
+				"pubKeyD": createDummyTimeoutMessage(3),
+			},
+			4: { // view = 4
+				"pubKeyE": createDummyTimeoutMessage(4),
+			},
+		}
+	}
+
+	// Verify the sizes of the votesSeen and timeoutsSeen maps
+	{
+		require.Equal(t, len(fc.votesSeen), 5)
+		require.Equal(t, len(fc.timeoutsSeen), 5)
+	}
+
+	// Test ProcessSafeBlock() function with valid parameters
+	{
+		nextBlock := createDummyBlock()
+		nextBlock.height = 2
+		nextBlock.view = 3
+
+		err := fc.ProcessSafeBlock(nextBlock, createDummyValidatorSet())
+		require.NoError(t, err)
+
+		require.Equal(t, createDummyBlockHash().GetValue(), fc.chainTip.GetBlockHash().GetValue())
+		require.Equal(t, uint64(3), fc.chainTip.GetView())
+		require.Equal(t, uint64(2), fc.chainTip.GetHeight())
+
+		require.Equal(t, uint64(4), fc.currentView)
+		require.Equal(t, 2, len(fc.validatorsAtChainTip))
+	}
+
+	// Verify that stale votes and timeouts have been evicted
+	{
+		require.Equal(t, 2, len(fc.votesSeen))
+		require.Equal(t, 2, len(fc.timeoutsSeen))
+	}
+
+	// Stop the event loop
+	fc.Stop()
 }
 
 func TestFastHotStuffEventLoopStartStop(t *testing.T) {

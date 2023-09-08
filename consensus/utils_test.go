@@ -110,6 +110,24 @@ func createDummyBlock() *block {
 	}
 }
 
+func createDummyVoteMessage(view uint64) *voteMessage {
+	return &voteMessage{
+		blockHash: createDummyBlockHash(),
+		view:      view,
+		publicKey: createDummyBLSPublicKey(),
+		signature: createDummyBLSSignature(),
+	}
+}
+
+func createDummyTimeoutMessage(view uint64) *timeoutMessage {
+	return &timeoutMessage{
+		highQC:    createDummyQC(),
+		view:      view,
+		publicKey: createDummyBLSPublicKey(),
+		signature: createDummyBLSSignature(),
+	}
+}
+
 func createDummyQC() *quorumCertificate {
 	return &quorumCertificate{
 		blockHash:           createDummyBlockHash(),
