@@ -12,19 +12,20 @@ import (
 //
 // If a task is already scheduled, the previous task is cancelled and the new task is scheduled.
 type ScheduledTask[TaskParam any] struct {
-	lock  sync.Mutex
-	timer *time.Timer
+	lock     sync.RWMutex
+	timer    *time.Timer
+	duration time.Duration
 }
 
 func NewScheduledTask[TaskParam any]() *ScheduledTask[TaskParam] {
 	return &ScheduledTask[TaskParam]{
-		lock:  sync.Mutex{},
+		lock:  sync.RWMutex{},
 		timer: nil,
 	}
 }
 
-// Cancel the currently scheduled task, if any, and schedule a new task to be executed after the countdown.
-func (t *ScheduledTask[TaskParam]) Schedule(countdown time.Duration, param TaskParam, task func(TaskParam)) {
+// Cancel the currently scheduled task, if any, and schedule a new task to be executed after the countdown duration.
+func (t *ScheduledTask[TaskParam]) Schedule(duration time.Duration, param TaskParam, task func(TaskParam)) {
 	t.lock.Lock()
 	defer t.lock.Unlock()
 
@@ -32,8 +33,12 @@ func (t *ScheduledTask[TaskParam]) Schedule(countdown time.Duration, param TaskP
 		t.timer.Stop()
 	}
 
+	// Update the duration struct field so it's available to external callers. This struct
+	// field has no other purpose.
+	t.duration = duration
+
 	// Replacing the timer results in it being garbage collected, so this is entirely safe.
-	t.timer = time.AfterFunc(countdown, func() {
+	t.timer = time.AfterFunc(duration, func() {
 		task(param)
 	})
 }
@@ -45,4 +50,11 @@ func (t *ScheduledTask[TaskParam]) Cancel() {
 	if t.timer != nil {
 		t.timer.Stop()
 	}
+}
+
+func (t *ScheduledTask[TaskParam]) GetDuration() time.Duration {
+	t.lock.RLock()
+	defer t.lock.RUnlock()
+
+	return t.duration
 }

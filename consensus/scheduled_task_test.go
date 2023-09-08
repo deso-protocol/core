@@ -21,6 +21,9 @@ func TestScheduledTask(t *testing.T) {
 
 		// The task should not have executed so this value will now be 100.
 		require.Equal(t, uint64(100), executedTaskParam)
+
+		// Confirm the last duration of the task was 1 microsecond.
+		require.Equal(t, time.Microsecond, task.GetDuration())
 	}
 
 	// Test long scheduled task that's not expected to execute
@@ -35,5 +38,11 @@ func TestScheduledTask(t *testing.T) {
 
 		// The task should not have executed so this value will remain 0.
 		require.Equal(t, uint64(0), executedTaskParam)
+
+		// Confirm the last duration of the task was 1 hour.
+		require.Equal(t, time.Hour, task.GetDuration())
+
+		// Cancel the task.
+		task.Cancel()
 	}
 }
