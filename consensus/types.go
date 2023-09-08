@@ -103,7 +103,7 @@ const signalChannelBufferSize = 100
 // does not know whether its role is that of a block proposer or a replica validator.
 //
 // Given a block that's at the tip of the current chain, this module maintains its own internal data structures
-// and runs internal timers that handles all of the following:
+// and runs an internal event loop that handles all of the following:
 //   - Tracking of the current view, incrementing the view during timeouts, and computing exponential
 //     back-off durations during consecutive timeouts
 //   - Aggregation of votes and QC construction for the current block
@@ -114,7 +114,7 @@ const signalChannelBufferSize = 100
 //   - Signaling its caller when it has a timeout QC for the current view
 //
 // When a new block is connected to the chain, the caller is expected to update the chain tip. The module
-// resets all internal data structures and timers to handle all of the above based on the new chain tip.
+// resets all internal data structures and scheduled tasks to handle all of the above based on the new chain tip.
 //
 // This module is very simple and only houses the logic that decides what action to perform next given the
 // current chain tip. The module does not track the history of blocks, and instead needs its caller to
@@ -130,8 +130,8 @@ type FastHotStuffEventLoop struct {
 	blockConstructionCadence time.Duration
 	timeoutBaseDuration      time.Duration
 
-	nextBlockConstructionTimeStamp time.Time
-	nextTimeoutTimeStamp           time.Time
+	nextBlockConstructionTask *ScheduledTask[uint64]
+	nextTimeoutTask           *ScheduledTask[uint64]
 
 	// The latest block accepted by the caller. We only keep track of the latest safe block here because
 	// it's the block we vote on, and construct a vote QC for.
@@ -160,15 +160,9 @@ type FastHotStuffEventLoop struct {
 	// Externally accessible channel for signals sent to the Server.
 	ConsensusEvents chan *ConsensusEvent
 
-	// Internal channels used by this module to coordinate the event loop
-	resetEventLoopSignal chan interface{}
-	stopSignal           chan interface{}
-
 	// Internal statuses and wait groups used to coordinate the start and stop operations for
 	// the event loop.
-	status     consensusStatus
-	startGroup sync.WaitGroup
-	stopGroup  sync.WaitGroup
+	status consensusStatus
 }
 
 type consensusStatus byte
