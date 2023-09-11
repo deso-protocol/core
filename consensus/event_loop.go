@@ -70,7 +70,7 @@ func (fc *FastHotStuffEventLoop) Init(
 	fc.votesSeen = make(map[[32]byte]map[string]VoteMessage)
 	fc.timeoutsSeen = make(map[uint64]map[string]TimeoutMessage)
 
-	// Reset the external used for signaling
+	// Reset the external channel used for signaling
 	fc.ConsensusEvents = make(chan *ConsensusEvent, signalChannelBufferSize)
 
 	// Set the block construction and timeout base durations
