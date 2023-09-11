@@ -38,7 +38,7 @@ type MempoolEvent struct {
 // will then add the event to a queue. Periodically, the transaction queue is flushed to the database and all the cached
 // transactions are persisted. To achieve this, the persister runs its own goroutine.
 type MempoolPersister struct {
-	sync.RWMutex
+	sync.Mutex
 	status MempoolPersisterStatus
 
 	// db is the database that the persister will write transactions to.
@@ -216,7 +216,7 @@ func (mp *MempoolPersister) GetPersistedTransactions() ([]*MempoolTx, error) {
 	defer mp.Unlock()
 
 	if !mp.IsRunning() {
-		return nil, errors.Wrapf(MempoolErrorNotRunning, "MempoolPersister: Cannot retrieve transactions while running")
+		return nil, errors.Wrapf(MempoolErrorNotRunning, "MempoolPersister: Cannot retrieve transactions while not running")
 	}
 
 	var mempoolTxns []*MempoolTx
