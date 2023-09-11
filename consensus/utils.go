@@ -24,6 +24,19 @@ func GetVoteSignaturePayload(view uint64, blockHash BlockHash) [32]byte {
 	return sha3.Sum256(append(viewBytes, blockHashBytes[:]...))
 }
 
+// When timing out for a view, validators sign the payload sha3-256(View, HighQCView) with their BLS
+// private key. This hash guarantees that the view and high QC view fields in a TimeoutMessage
+// have not been tampered with.
+func GetTimeoutSignaturePayload(view uint64, highQCView uint64) [32]byte {
+	viewBytes := make([]byte, 8)
+	binary.BigEndian.PutUint64(viewBytes, view)
+
+	highQCViewBytes := make([]byte, 8)
+	binary.BigEndian.PutUint64(highQCViewBytes, highQCView)
+
+	return sha3.Sum256(append(viewBytes, highQCViewBytes...))
+}
+
 // This function checks if the block is properly formed. These are all surface level checks that
 // ensure that critical fields in the block are not nil so that the code in this package does not
 // panic.
@@ -39,17 +52,7 @@ func isProperlyFormedBlock(block Block) bool {
 	}
 
 	// The block hash and QC must be non-nil
-	if isInterfaceNil(block.GetBlockHash()) || isInterfaceNil(block.GetQC()) {
-		return false
-	}
-
-	qc := block.GetQC()
-
-	// The QC fields must be non-nil and the view non-zero
-	if isInterfaceNil(qc.GetAggregatedSignature()) ||
-		isInterfaceNil(qc.GetBlockHash()) ||
-		qc.GetSignersList() == nil ||
-		qc.GetView() == 0 {
+	if isInterfaceNil(block.GetBlockHash()) || !isProperlyFormedQC(block.GetQC()) {
 		return false
 	}
 
@@ -81,6 +84,44 @@ func isProperlyFormedVote(vote VoteMessage) bool {
 
 	// The signature and public key must be non-nil
 	if vote.GetSignature() == nil || vote.GetPublicKey() == nil {
+		return false
+	}
+
+	return true
+}
+
+func isProperlyFormedTimeout(timeout TimeoutMessage) bool {
+	// The timeout must be non-nil
+	if isInterfaceNil(timeout) {
+		return false
+	}
+
+	// The view must be non-zero and the high QC non-nil
+	if timeout.GetView() == 0 || isInterfaceNil(timeout.GetHighQC()) {
+		return false
+	}
+
+	// The signature and public key must be non-nil
+	if timeout.GetSignature() == nil || timeout.GetPublicKey() == nil {
+		return false
+	}
+
+	return true
+}
+
+func isProperlyFormedQC(qc QuorumCertificate) bool {
+	// The QC must be non-nil
+	if isInterfaceNil(qc) {
+		return false
+	}
+
+	// The view must be non-zero and the aggregated signature non-nil
+	if qc.GetView() == 0 || isInterfaceNil(qc.GetAggregatedSignature()) {
+		return false
+	}
+
+	// The signers list must be non-nil
+	if qc.GetSignersList() == nil {
 		return false
 	}
 

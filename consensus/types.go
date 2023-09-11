@@ -71,6 +71,7 @@ type TimeoutMessage interface {
 	GetHighQC() QuorumCertificate
 
 	GetPublicKey() *bls.PublicKey
+	// The validator's BLS signature of the (View, HighQC.View) pair.
 	GetSignature() *bls.Signature
 }
 
