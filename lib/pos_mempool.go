@@ -176,23 +176,9 @@ func (dmp *PosMempool) AddTransaction(txn *MsgDeSoTxn) error {
 	// First, validate that the transaction is properly formatted according to BalanceModel. We acquire a read lock on
 	// the mempool. This allows multiple goroutines to safely perform transaction validation concurrently. In particular,
 	// transaction signature verification can be parallelized.
-	dmp.RLock()
-
-	if err := ValidateDeSoTxnSanityBalanceModel(txn, dmp.latestBlockHeight, dmp.params, dmp.globalParams); err != nil {
-		return errors.Wrapf(err, "PosMempool.AddTransaction: Problem validating transaction sanity")
+	if err := dmp.verifyTransaction(txn); err != nil {
+		return errors.Wrapf(err, "PosMempool.AddTransaction: Problem verifying transaction")
 	}
-
-	// Construct the MempoolTx from the MsgDeSoTxn.
-	mempoolTx, err := NewMempoolTx(txn, dmp.latestBlockHeight)
-	if err != nil {
-		return errors.Wrapf(err, "PosMempool.AddTransaction: Problem constructing MempoolTx")
-	}
-
-	// Check transaction signature
-	if _, err := dmp.latestBlockView.VerifySignature(txn, uint32(dmp.latestBlockHeight)); err != nil {
-		return errors.Wrapf(err, "PosMempool.AddTransaction: Signature validation failed")
-	}
-	dmp.RUnlock()
 
 	// If we get this far, it means that the transaction is valid. We can now add it to the mempool.
 	// We lock the mempool to ensure that no other thread is modifying it while we add the transaction.
@@ -203,6 +189,12 @@ func (dmp *PosMempool) AddTransaction(txn *MsgDeSoTxn) error {
 		return errors.Wrapf(MempoolErrorNotRunning, "PosMempool.AddTransaction: ")
 	}
 
+	// Construct the MempoolTx from the MsgDeSoTxn.
+	mempoolTx, err := NewMempoolTx(txn, dmp.latestBlockHeight)
+	if err != nil {
+		return errors.Wrapf(err, "PosMempool.AddTransaction: Problem constructing MempoolTx")
+	}
+
 	// Add the transaction to the mempool and then prune if needed.
 	if err := dmp.addTransactionNoLock(mempoolTx, true); err != nil {
 		return errors.Wrapf(err, "PosMempool.AddTransaction: Problem adding transaction to mempool")
@@ -210,6 +202,22 @@ func (dmp *PosMempool) AddTransaction(txn *MsgDeSoTxn) error {
 
 	if err := dmp.pruneNoLock(); err != nil {
 		glog.Errorf("PosMempool.AddTransaction: Problem pruning mempool: %v", err)
+	}
+
+	return nil
+}
+
+func (dmp *PosMempool) verifyTransaction(txn *MsgDeSoTxn) error {
+	dmp.RLock()
+	defer dmp.RUnlock()
+
+	if err := ValidateDeSoTxnSanityBalanceModel(txn, dmp.latestBlockHeight, dmp.params, dmp.globalParams); err != nil {
+		return errors.Wrapf(err, "PosMempool.AddTransaction: Problem validating transaction sanity")
+	}
+
+	// Check transaction signature
+	if _, err := dmp.latestBlockView.VerifySignature(txn, uint32(dmp.latestBlockHeight)); err != nil {
+		return errors.Wrapf(err, "PosMempool.AddTransaction: Signature validation failed")
 	}
 
 	return nil
