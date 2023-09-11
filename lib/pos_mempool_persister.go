@@ -6,7 +6,6 @@ import (
 	"github.com/golang/glog"
 	"github.com/pkg/errors"
 	"sync"
-	"sync/atomic"
 	"time"
 )
 
@@ -22,9 +21,11 @@ const (
 	MempoolEventExit
 )
 
+type MempoolPersisterStatus int
+
 const (
-	MempoolPersisterStatusNotRunning = iota
-	MempoolPersisterStatusRunning
+	MempoolPersisterStatusRunning MempoolPersisterStatus = iota
+	MempoolPersisterStatusNotRunning
 )
 
 type MempoolEvent struct {
@@ -37,10 +38,8 @@ type MempoolEvent struct {
 // will then add the event to a queue. Periodically, the transaction queue is flushed to the database and all the cached
 // transactions are persisted. To achieve this, the persister runs its own goroutine.
 type MempoolPersister struct {
-	sync.Mutex
-	stopLock sync.Mutex
-
-	status *atomic.Int32
+	sync.RWMutex
+	status MempoolPersisterStatus
 
 	// db is the database that the persister will write transactions to.
 	db *badger.DB
@@ -60,12 +59,9 @@ type MempoolPersister struct {
 }
 
 func NewMempoolPersister(db *badger.DB, mempoolBackupTimeMilliseconds int) *MempoolPersister {
-	var status atomic.Int32
-	status.Store(MempoolPersisterStatusNotRunning)
-
 	return &MempoolPersister{
 		mempoolBackupTimeMilliseconds: mempoolBackupTimeMilliseconds,
-		status:                        &status,
+		status:                        MempoolPersisterStatusNotRunning,
 		db:                            db,
 		eventQueue:                    make(chan *MempoolEvent, eventQueueSize),
 	}
@@ -91,7 +87,7 @@ func (mp *MempoolPersister) Start() {
 	go mp.run()
 	// Wait for the persister goroutine to start.
 	mp.startGroup.Wait()
-	mp.status.Store(MempoolPersisterStatusRunning)
+	mp.status = MempoolPersisterStatusRunning
 }
 
 // run is the main even loop for the MempoolPersister thread.
@@ -125,23 +121,18 @@ func (mp *MempoolPersister) run() {
 }
 
 // Stop is used to stop the persister thread and reset the persister state. It will wait for the persister thread to
-// flush the outstanding updateBatch to the database before returning.
+// flush the outstanding updateBatch to the database before returning. Stop should not be called in concurrent threads.
 func (mp *MempoolPersister) Stop() error {
-	// stopLock ensures that only a single MempolEventExit is enqueued in case someone called Stop concurrently.
-	mp.stopLock.Lock()
-	defer mp.stopLock.Unlock()
-
+	mp.Lock()
 	if !mp.IsRunning() {
 		return nil
 	}
+	mp.Unlock()
 
 	// Enqueue the exit event and wait for the persister thread to stop.
-	mp.EnqueueEvent(&MempoolEvent{Type: MempoolEventExit})
+	event := &MempoolEvent{Type: MempoolEventExit}
+	mp.EnqueueEvent(event)
 	mp.stopGroup.Wait()
-
-	// Lock is held only now that we've processed all events and the persister thread has stopped.
-	mp.Lock()
-	defer mp.Unlock()
 
 	// Persist any outstanding transactions.
 	if err := mp.persistBatchNoLock(); err != nil {
@@ -149,12 +140,12 @@ func (mp *MempoolPersister) Stop() error {
 	}
 	// Reset the persister state.
 	mp.reset()
-	mp.status.Store(MempoolPersisterStatusNotRunning)
+	mp.status = MempoolPersisterStatusNotRunning
 	return nil
 }
 
 func (mp *MempoolPersister) IsRunning() bool {
-	return mp.status.Load() == MempoolPersisterStatusRunning
+	return mp.status == MempoolPersisterStatusRunning
 }
 
 // persistBatch is used to flush the updateBatch to the database. It will iterate through the updateBatch and add or remove

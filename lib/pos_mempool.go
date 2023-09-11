@@ -7,12 +7,13 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
-	"sync/atomic"
 )
 
+type PosMempoolStatus int
+
 const (
-	PosMempoolStatusNotRunning = iota
-	PosMempoolStatusRunning
+	PosMempoolStatusRunning PosMempoolStatus = iota
+	PosMempoolStatusNotRunning
 )
 
 type Mempool interface {
@@ -39,7 +40,7 @@ type MempoolIterator interface {
 // by Fee-Time algorithm. More on the Fee-Time algorithm can be found in the documentation of TransactionRegister.
 type PosMempool struct {
 	sync.RWMutex
-	status *atomic.Int32
+	status PosMempoolStatus
 	// params of the blockchain
 	params *DeSoParams
 	// globalParams are used to track the latest GlobalParamsEntry. In case the GlobalParamsEntry changes, the PosMempool
@@ -98,11 +99,8 @@ func NewPosMempoolIterator(it *FeeTimeIterator) *PosMempoolIterator {
 
 func NewPosMempool(params *DeSoParams, globalParams *GlobalParamsEntry, latestBlockView *UtxoView,
 	latestBlockHeight uint64, dir string) *PosMempool {
-
-	var status atomic.Int32
-	status.Store(PosMempoolStatusNotRunning)
 	return &PosMempool{
-		status:            &status,
+		status:            PosMempoolStatusNotRunning,
 		params:            params,
 		globalParams:      globalParams,
 		dir:               dir,
@@ -142,7 +140,7 @@ func (dmp *PosMempool) Start() error {
 		return errors.Wrapf(err, "PosMempool.Start: Problem loading persisted transactions")
 	}
 
-	dmp.status.Store(PosMempoolStatusRunning)
+	dmp.status = PosMempoolStatusRunning
 	return nil
 }
 
@@ -165,11 +163,11 @@ func (dmp *PosMempool) Stop() {
 	dmp.txnRegister.Reset()
 	dmp.ledger.Reset()
 
-	dmp.status.Store(PosMempoolStatusNotRunning)
+	dmp.status = PosMempoolStatusNotRunning
 }
 
 func (dmp *PosMempool) IsRunning() bool {
-	return dmp.status.Load() == PosMempoolStatusRunning
+	return dmp.status == PosMempoolStatusRunning
 }
 
 // AddTransaction validates a MsgDeSoTxn transaction and adds it to the mempool if it is valid.
