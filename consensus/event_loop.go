@@ -193,14 +193,6 @@ func (fc *FastHotStuffEventLoop) ProcessValidatorVote(vote VoteMessage) error {
 		return errors.New("FastHotStuffEventLoop.ProcessValidatorVote: Malformed vote message")
 	}
 
-	// Compute the value sha256(vote.View, vote.BlockHash)
-	voteSignaturePayload := GetVoteSignaturePayload(vote.GetView(), vote.GetBlockHash())
-
-	// Verify the vote signature
-	if !isValidSignature(vote.GetPublicKey(), vote.GetSignature(), voteSignaturePayload[:]) {
-		return errors.New("FastHotStuffEventLoop.ProcessValidatorVote: Invalid signature")
-	}
-
 	// Check if the vote is stale
 	if isStaleVote(fc.currentView, vote) {
 		return errors.Errorf("FastHotStuffEventLoop.ProcessValidatorVote: Vote has a stale view %d", vote.GetView())
@@ -224,6 +216,14 @@ func (fc *FastHotStuffEventLoop) ProcessValidatorVote(vote VoteMessage) error {
 			vote.GetPublicKey().ToString(),
 			vote.GetView(),
 		)
+	}
+
+	// Compute the value sha3-256(vote.View, vote.BlockHash)
+	voteSignaturePayload := GetVoteSignaturePayload(vote.GetView(), vote.GetBlockHash())
+
+	// Verify the vote signature
+	if !isValidSignature(vote.GetPublicKey(), vote.GetSignature(), voteSignaturePayload[:]) {
+		return errors.New("FastHotStuffEventLoop.ProcessValidatorVote: Invalid signature")
 	}
 
 	// Note: we do not check if the vote is for the current chain tip's blockhash. During leader changes

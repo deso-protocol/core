@@ -1,15 +1,15 @@
 package consensus
 
 import (
-	"crypto/sha256"
-	"fmt"
+	"encoding/binary"
 	"reflect"
 
 	"github.com/deso-protocol/core/bls"
 	"github.com/deso-protocol/core/collections"
+	"golang.org/x/crypto/sha3"
 )
 
-// When voting on a block, validators sign the payload sha256(View, BlockHash) with their BLS
+// When voting on a block, validators sign the payload sha3-256(View, BlockHash) with their BLS
 // private key. This hash guarantees that the view and block hash fields in a VoteMessage
 // have not been tampered with, while maintaining all existing guarantees that the validator
 // has voted for a given block.
@@ -17,10 +17,11 @@ import (
 // Reference Implementation:
 // https://github.com/deso-protocol/hotstuff_pseudocode/blob/6409b51c3a9a953b383e90619076887e9cebf38d/fast_hotstuff_bls.go#L294
 func GetVoteSignaturePayload(view uint64, blockHash BlockHash) [32]byte {
-	viewBytes := []byte(fmt.Sprintf("%d", view))
+	viewBytes := make([]byte, 8)
+	binary.BigEndian.PutUint64(viewBytes, view)
 	blockHashBytes := blockHash.GetValue()
 
-	return sha256.Sum256(append(viewBytes, blockHashBytes[:]...))
+	return sha3.Sum256(append(viewBytes, blockHashBytes[:]...))
 }
 
 // This function checks if the block is properly formed. These are all surface level checks that
