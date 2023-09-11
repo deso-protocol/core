@@ -633,6 +633,7 @@ const (
 	OperationTypeUnlockStake                  OperationType = 43
 	OperationTypeUnjailValidator              OperationType = 44
 	OperationTypeCoinLockup                   OperationType = 45
+	OperationTypeCoinLockupTransfer           OperationType = 46
 
 	// NEXT_TAG = 46
 )
@@ -729,6 +730,8 @@ func (op OperationType) String() string {
 		return "OperationTypeUnjailValidator"
 	case OperationTypeCoinLockup:
 		return "OperationTypeCoinLockup"
+	case OperationTypeCoinLockupTransfer:
+		return "OperationTypeCoinLockupTransfer"
 	}
 	return "OperationTypeUNKNOWN"
 }
@@ -926,9 +929,22 @@ type UtxoOperation struct {
 	// prior to a unstake or unlock stake txn.
 	PrevLockedStakeEntries []*LockedStakeEntry
 
+	//
+	// Coin Lockup fields
+	//
+
 	// PrevLockedBalanceEntry is the previous LockedBalanceEntry prior
 	// to a DAO coin lockup or DAO coin unlock.
 	PrevLockedBalanceEntry *LockedBalanceEntry
+
+	// PrevLockedBalanceEntryOther, PrevLockedBalanceEntryHODLer, PrevLockedBalanceEntryCreator,
+	// PrevRecipientLockedBalanceEntryOther, PrevRecipientLockedBalanceEntryCreator are
+	// the previous LockedBalanceEntry for both the sender and receiver in the coin lockup transfer operation.
+	PrevLockedBalanceEntryOther            *LockedBalanceEntry
+	PrevLockedBalanceEntryHODLer           *LockedBalanceEntry
+	PrevLockedBalanceEntryCreator          *LockedBalanceEntry
+	PrevRecipientLockedBalanceEntryOther   *LockedBalanceEntry
+	PrevRecipientLockedBalanceEntryCreator *LockedBalanceEntry
 }
 
 func (op *UtxoOperation) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte {
@@ -1256,8 +1272,18 @@ func (op *UtxoOperation) RawEncodeWithoutMetadata(blockHeight uint64, skipMetada
 		// PrevLockedStakeEntries
 		data = append(data, EncodeDeSoEncoderSlice(op.PrevLockedStakeEntries, blockHeight, skipMetadata...)...)
 
+		// Lockup Fields
+
 		// PrevLockedBalanceEntry
 		data = append(data, EncodeToBytes(blockHeight, op.PrevLockedBalanceEntry, skipMetadata...)...)
+
+		// PrevLockedBalanceEntryOther, PrevLockedBalanceEntryHODLer, PrevLockedBalanceEntryCreator
+		// PrevRecipientLockedBalanceEntryOther, PrevRecipientLockedBalanceEntryCreator
+		data = append(data, EncodeToBytes(blockHeight, op.PrevLockedBalanceEntryOther, skipMetadata...)...)
+		data = append(data, EncodeToBytes(blockHeight, op.PrevLockedBalanceEntryHODLer, skipMetadata...)...)
+		data = append(data, EncodeToBytes(blockHeight, op.PrevLockedBalanceEntryCreator, skipMetadata...)...)
+		data = append(data, EncodeToBytes(blockHeight, op.PrevRecipientLockedBalanceEntryOther, skipMetadata...)...)
+		data = append(data, EncodeToBytes(blockHeight, op.PrevRecipientLockedBalanceEntryCreator, skipMetadata...)...)
 	}
 
 	return data
@@ -1891,9 +1917,29 @@ func (op *UtxoOperation) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.
 			return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading PrevLockedStakeEntries: ")
 		}
 
+		// Lockup Fields
+
 		// PrevLockedBalanceEntry
 		if op.PrevLockedBalanceEntry, err = DecodeDeSoEncoder(&LockedBalanceEntry{}, rr); err != nil {
 			return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading PrevLockedBalanceEntry")
+		}
+
+		// PrevLockedBalanceEntryOther, PrevLockedBalanceEntryHODLer, PrevLockedBalanceEntryCreator
+		// PrevRecipientLockedBalanceEntryOther, PrevRecipientLockedBalanceEntryCreator
+		if op.PrevLockedBalanceEntryOther, err = DecodeDeSoEncoder(&LockedBalanceEntry{}, rr); err != nil {
+			return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading PrevLockedBalanceEntryOther")
+		}
+		if op.PrevLockedBalanceEntryHODLer, err = DecodeDeSoEncoder(&LockedBalanceEntry{}, rr); err != nil {
+			return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading PrevLockedBalanceEntryHODLer")
+		}
+		if op.PrevLockedBalanceEntryCreator, err = DecodeDeSoEncoder(&LockedBalanceEntry{}, rr); err != nil {
+			return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading PrevLockedBalanceEntryCreator")
+		}
+		if op.PrevRecipientLockedBalanceEntryOther, err = DecodeDeSoEncoder(&LockedBalanceEntry{}, rr); err != nil {
+			return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading PrevRecipientLockedBalanceEntryOther")
+		}
+		if op.PrevRecipientLockedBalanceEntryCreator, err = DecodeDeSoEncoder(&LockedBalanceEntry{}, rr); err != nil {
+			return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading PrevRecipientLockedBalanceEntryCreator")
 		}
 	}
 

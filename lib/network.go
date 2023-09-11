@@ -257,7 +257,7 @@ const (
 	TxnTypeUnjailValidator              TxnType = 39
 	TxnTypeCoinLockup                   TxnType = 40
 	TxnTypeUpdateDAOCoinLockupParams    TxnType = 41
-	TxnTypeDAOCoinLockupTransfer        TxnType = 42
+	TxnTypeCoinLockupTransfer           TxnType = 42
 	TxnTypeDAOCoinUnlock                TxnType = 43
 
 	// NEXT_ID = 44

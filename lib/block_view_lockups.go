@@ -375,27 +375,27 @@ func (txnData *UpdateDAOCoinLockupParamsMetadata) New() DeSoTxnMetadata {
 // TYPES: DAOCoinLockupTransferMetadata
 //
 
-type DAOCoinLockupTransferMetadata struct {
-	RecipientPublicKey               *PublicKey
-	ProfilePublicKey                 *PublicKey
-	ExpirationTimestampUnixNanoSecs  int64
-	LockedDAOCoinToTransferBaseUnits *uint256.Int
+type CoinLockupTransferMetadata struct {
+	RecipientPublicKey              *PublicKey
+	ProfilePublicKey                *PublicKey
+	ExpirationTimestampUnixNanoSecs int64
+	LockedCoinsToTransferBaseUnits  *uint256.Int
 }
 
-func (txnData *DAOCoinLockupTransferMetadata) GetTxnType() TxnType {
-	return TxnTypeDAOCoinLockupTransfer
+func (txnData *CoinLockupTransferMetadata) GetTxnType() TxnType {
+	return TxnTypeCoinLockupTransfer
 }
 
-func (txnData *DAOCoinLockupTransferMetadata) ToBytes(preSignature bool) ([]byte, error) {
+func (txnData *CoinLockupTransferMetadata) ToBytes(preSignature bool) ([]byte, error) {
 	var data []byte
 	data = append(data, EncodeByteArray(txnData.RecipientPublicKey.ToBytes())...)
 	data = append(data, EncodeByteArray(txnData.ProfilePublicKey.ToBytes())...)
 	data = append(data, UintToBuf(uint64(txnData.ExpirationTimestampUnixNanoSecs))...)
-	data = append(data, VariableEncodeUint256(txnData.LockedDAOCoinToTransferBaseUnits)...)
+	data = append(data, VariableEncodeUint256(txnData.LockedCoinsToTransferBaseUnits)...)
 	return data, nil
 }
 
-func (txnData *DAOCoinLockupTransferMetadata) FromBytes(data []byte) error {
+func (txnData *CoinLockupTransferMetadata) FromBytes(data []byte) error {
 	rr := bytes.NewReader(data)
 
 	// RecipientPublicKey
@@ -420,7 +420,7 @@ func (txnData *DAOCoinLockupTransferMetadata) FromBytes(data []byte) error {
 	txnData.ExpirationTimestampUnixNanoSecs = int64(uint64ExpirationTimestampUnixNanoSecs)
 
 	// LockedDAOCoinToTransferBaseUnits
-	txnData.LockedDAOCoinToTransferBaseUnits, err = VariableDecodeUint256(rr)
+	txnData.LockedCoinsToTransferBaseUnits, err = VariableDecodeUint256(rr)
 	if err != nil {
 		return errors.Wrapf(err, "DAOCoinLockupTransferMetadata.FromBytes: Problem reading LockedDAOCoinToTransferBaseUnits")
 	}
@@ -428,8 +428,8 @@ func (txnData *DAOCoinLockupTransferMetadata) FromBytes(data []byte) error {
 	return nil
 }
 
-func (txnData *DAOCoinLockupTransferMetadata) New() DeSoTxnMetadata {
-	return &DAOCoinLockupTransferMetadata{}
+func (txnData *CoinLockupTransferMetadata) New() DeSoTxnMetadata {
+	return &CoinLockupTransferMetadata{}
 }
 
 //
@@ -1013,7 +1013,7 @@ func (bav *UtxoView) _disconnectUpdateDAOCoinLockupParams(
 	return nil
 }
 
-func (bav *UtxoView) _connectDAOCoinLockupTransfer(
+func (bav *UtxoView) _connectCoinLockupTransfer(
 	txn *MsgDeSoTxn,
 	txHash *BlockHash,
 	blockHeight uint32,
@@ -1022,15 +1022,303 @@ func (bav *UtxoView) _connectDAOCoinLockupTransfer(
 	_totalOutput uint64,
 	_utxoOps []*UtxoOperation,
 	_err error) {
-	return 0, 0, nil, nil
+	var utxoOpsForTxn []*UtxoOperation
+
+	// Validate the starting block height.
+	if blockHeight < bav.Params.ForkHeights.ProofOfStake1StateSetupBlockHeight ||
+		blockHeight < bav.Params.ForkHeights.BalanceModelBlockHeight {
+		return 0, 0, nil, errors.Wrapf(RuleErrorProofofStakeTxnBeforeBlockHeight, "_connectCoinLockupTransfer")
+	}
+
+	// Validate the txn TxnType.
+	if txn.TxnMeta.GetTxnType() != TxnTypeCoinLockupTransfer {
+		return 0, 0, nil, fmt.Errorf(
+			"_connectCoinLockupTransfer: called with bad TxnType: %s", txn.TxnMeta.GetTxnType().String())
+	}
+
+	// Try connecting the basic transfer without considering transaction metadata.
+	_, _, utxoOpsForBasicTransfer, err := bav._connectBasicTransfer(txn, txHash, blockHeight, verifySignatures)
+	if err != nil {
+		return 0, 0, nil, errors.Wrap(err, "_connectCoinLockupTransfer")
+	}
+	utxoOpsForTxn = append(utxoOpsForTxn, utxoOpsForBasicTransfer...)
+
+	// Grab the txn metadata.
+	txMeta := txn.TxnMeta.(*CoinLockupTransferMetadata)
+
+	// Validate the transfer amount as non-zero.
+	if txMeta.LockedCoinsToTransferBaseUnits.IsZero() {
+		return 0, 0, nil, errors.Wrap(RuleErrorCoinLockupTransferOfAmountZero,
+			"_connectCoinLockupTransfer")
+	}
+
+	// If this is a DeSo lockup, ensure the amount is less than 2**64.
+	if txMeta.ProfilePublicKey.IsZeroPublicKey() {
+		maxUint64, _ := uint256.FromBig(big.NewInt(0).SetUint64(math.MaxUint64))
+		if txMeta.LockedCoinsToTransferBaseUnits.Gt(maxUint64) {
+			return 0, 0, nil, errors.Wrap(RuleErrorCoinLockupTransferOfDeSoCausesOverflow,
+				"_connectCoinLockupTransfer")
+		}
+	}
+
+	// Fetch PKIDs for the recipient and sender.
+	senderPKIDEntry := bav.GetPKIDForPublicKey(txn.PublicKey)
+	senderPKID := senderPKIDEntry.PKID
+	receiverPKIDEntry := bav.GetPKIDForPublicKey(txMeta.RecipientPublicKey.ToBytes())
+	receieverPKID := receiverPKIDEntry.PKID
+	profilePKIDEntry := bav.GetPKIDForPublicKey(txMeta.ProfilePublicKey.ToBytes())
+	profilePKID := profilePKIDEntry.PKID
+
+	// Ensure the sender and receiver are different.
+	if senderPKID.Eq(receieverPKID) {
+		return 0, 0, nil, errors.Wrapf(RuleErrorCoinLockupTransferSenderEqualsReceiver,
+			"_connectCoinLockupTransfer")
+	}
+
+	// Verify the transfer restrictions attached to the transfer.
+	profileEntry := bav.GetProfileEntryForPKID(profilePKID)
+	if profileEntry.DAOCoinEntry.LockupTransferRestrictionStatus == TransferRestrictionStatusProfileOwnerOnly &&
+		!profilePKID.Eq(senderPKID) {
+		return 0, 0, nil, errors.Wrapf(RuleErrorCoinLockupTransferRestrictedToProfileOwner,
+			"_connectCoinLockupTransfer")
+	}
+
+	// Fetch the sender's balance entries.
+	//
+	// Note that the sender can have three possible entries each expiring on the same time:
+	//           LockedByType: {LockedByCreator, LockedByHODLer, LockedByOther}
+	//
+	// When transferring a lockup balance we can either specify the type in the transaction
+	// OR we can take a preference in consensus of which balance to credit first. The second
+	// option is a bit better from a UX perspective, so we use it here. We credit
+	// balances in the following order: LockedByOther -> LockedByHODLer -> LockedByCreator
+	// This preference is arbitrary but based on the idea that LockedByOther has the least
+	// intrinsic value while LockedByCreator has the most intrinsic value as the creator
+	// was responsible for the lockup.
+	//
+	// We go ahead and save a previous copy of the balance entries in the event the
+	// transaction must be reversed.
+	lockedBalanceEntryOther := bav.GetLockedBalanceEntryForHODLerPKIDCreatorPKIDTimestampLockedByType(
+		senderPKID, profilePKID, txMeta.ExpirationTimestampUnixNanoSecs, LockedByOther)
+	prevLockedBalanceEntryOther := lockedBalanceEntryOther.Copy()
+	lockedBalanceEntryHODLer := bav.GetLockedBalanceEntryForHODLerPKIDCreatorPKIDTimestampLockedByType(
+		senderPKID, profilePKID, txMeta.ExpirationTimestampUnixNanoSecs, LockedByHODLer)
+	prevLockedBalanceEntryHODLer := lockedBalanceEntryHODLer.Copy()
+	lockedBalanceEntryCreator := bav.GetLockedBalanceEntryForHODLerPKIDCreatorPKIDTimestampLockedByType(
+		senderPKID, profilePKID, txMeta.ExpirationTimestampUnixNanoSecs, LockedByCreator)
+	prevLockedBalaneEntryCreator := lockedBalanceEntryCreator.Copy()
+
+	// Credit the balance entries using the protocol aforementioned.
+	remainingTransferAmount := txMeta.LockedCoinsToTransferBaseUnits.Clone()
+	amountSentFromOther := uint256.NewInt()
+	amountSentFromCreator := uint256.NewInt()
+	if !lockedBalanceEntryOther.AmountBaseUnits.IsZero() && !remainingTransferAmount.IsZero() {
+		// If the other balance entry has more or equal coins than the transfer amount
+		// Else the transfer amount is larger than the BalanceEntry
+		if lockedBalanceEntryOther.AmountBaseUnits.Gt(remainingTransferAmount) ||
+			lockedBalanceEntryOther.AmountBaseUnits.Eq(remainingTransferAmount) {
+			lockedBalanceEntryOther.AmountBaseUnits = *uint256.NewInt().Sub(&lockedBalanceEntryOther.AmountBaseUnits,
+				remainingTransferAmount)
+			remainingTransferAmount = uint256.NewInt().Sub(remainingTransferAmount, remainingTransferAmount)
+			amountSentFromOther = uint256.NewInt().Add(amountSentFromOther, remainingTransferAmount)
+		} else {
+			lockedBalanceEntryOther.AmountBaseUnits = *uint256.NewInt().Sub(&lockedBalanceEntryOther.AmountBaseUnits,
+				&lockedBalanceEntryOther.AmountBaseUnits)
+			remainingTransferAmount = uint256.NewInt().Sub(remainingTransferAmount,
+				&lockedBalanceEntryOther.AmountBaseUnits)
+			amountSentFromOther = uint256.NewInt().Add(amountSentFromOther, &lockedBalanceEntryOther.AmountBaseUnits)
+		}
+	}
+	if !lockedBalanceEntryHODLer.AmountBaseUnits.IsZero() && !remainingTransferAmount.IsZero() {
+		// If the other balance entry has more or equal coins than the transfer amount
+		// Else the transfer amount is larger than the BalanceEntry
+		if lockedBalanceEntryHODLer.AmountBaseUnits.Gt(remainingTransferAmount) ||
+			lockedBalanceEntryHODLer.AmountBaseUnits.Eq(remainingTransferAmount) {
+			lockedBalanceEntryHODLer.AmountBaseUnits = *uint256.NewInt().Sub(&lockedBalanceEntryHODLer.AmountBaseUnits,
+				remainingTransferAmount)
+			remainingTransferAmount = uint256.NewInt().Sub(remainingTransferAmount, remainingTransferAmount)
+			amountSentFromOther = uint256.NewInt().Add(amountSentFromOther, remainingTransferAmount)
+		} else {
+			lockedBalanceEntryHODLer.AmountBaseUnits = *uint256.NewInt().Sub(&lockedBalanceEntryHODLer.AmountBaseUnits,
+				&lockedBalanceEntryHODLer.AmountBaseUnits)
+			remainingTransferAmount = uint256.NewInt().Sub(remainingTransferAmount,
+				&lockedBalanceEntryHODLer.AmountBaseUnits)
+			amountSentFromOther = uint256.NewInt().Add(amountSentFromOther, &lockedBalanceEntryHODLer.AmountBaseUnits)
+		}
+	}
+	if !lockedBalanceEntryCreator.AmountBaseUnits.IsZero() && !remainingTransferAmount.IsZero() {
+		// If the other balance entry has more or equal coins than the transfer amount
+		// Else the transfer amount is larger than the BalanceEntry
+		if lockedBalanceEntryCreator.AmountBaseUnits.Gt(remainingTransferAmount) ||
+			lockedBalanceEntryCreator.AmountBaseUnits.Eq(remainingTransferAmount) {
+			lockedBalanceEntryCreator.AmountBaseUnits = *uint256.NewInt().Sub(&lockedBalanceEntryCreator.AmountBaseUnits,
+				remainingTransferAmount)
+			remainingTransferAmount = uint256.NewInt().Sub(remainingTransferAmount, remainingTransferAmount)
+			amountSentFromCreator = uint256.NewInt().Add(amountSentFromOther, remainingTransferAmount)
+		} else {
+			lockedBalanceEntryCreator.AmountBaseUnits = *uint256.NewInt().Sub(&lockedBalanceEntryCreator.AmountBaseUnits,
+				&lockedBalanceEntryCreator.AmountBaseUnits)
+			remainingTransferAmount = uint256.NewInt().Sub(remainingTransferAmount,
+				&lockedBalanceEntryCreator.AmountBaseUnits)
+			amountSentFromCreator = uint256.NewInt().Add(amountSentFromOther, &lockedBalanceEntryCreator.AmountBaseUnits)
+		}
+	}
+	if !remainingTransferAmount.IsZero() {
+		return 0, 0, nil, errors.Wrapf(RuleErrorCoinLockupTransferInsufficientBalance,
+			"_connectCoinLockupTransfer")
+	}
+
+	// Fetch the recipient's balance entry.
+	recipientLockedBalanceEntryOther := bav.GetLockedBalanceEntryForHODLerPKIDCreatorPKIDTimestampLockedByType(
+		receieverPKID, profilePKID, txMeta.ExpirationTimestampUnixNanoSecs, LockedByOther)
+	recipientLockedBalanceEntryCreator := bav.GetLockedBalanceEntryForHODLerPKIDCreatorPKIDTimestampLockedByType(
+		receieverPKID, profilePKID, txMeta.ExpirationTimestampUnixNanoSecs, LockedByCreator)
+	prevRecipientLockedBalanceEntryOther := recipientLockedBalanceEntryOther
+	prevRecipientLockedBalanceEntryCreator := recipientLockedBalanceEntryCreator
+
+	// Add to the recipient's balance entry, checking for overflow.
+	newRecipientBalanceOther, err := SafeUint256().Add(&recipientLockedBalanceEntryOther.AmountBaseUnits,
+		amountSentFromOther)
+	if err != nil {
+		return 0, 0, nil, errors.Wrapf(RuleErrorCoinLockupTransferBalanceOverflowAtReceiver,
+			"_connectCoinLockupTransfer")
+	}
+	recipientLockedBalanceEntryOther.AmountBaseUnits = *newRecipientBalanceOther
+
+	newRecipientBalanceCreator, err := SafeUint256().Add(&recipientLockedBalanceEntryCreator.AmountBaseUnits,
+		amountSentFromCreator)
+	if err != nil {
+		return 0, 0, nil, errors.Wrapf(RuleErrorCoinLockupTransferBalanceOverflowAtReceiver,
+			"_connectCoinLockupTransfer")
+	}
+	recipientLockedBalanceEntryCreator.AmountBaseUnits = *newRecipientBalanceCreator
+
+	// Create a UtxoOperation for easily disconnecting the transaction.
+	utxoOpsForTxn = append(utxoOpsForTxn, &UtxoOperation{
+		Type:                                   OperationTypeCoinLockupTransfer,
+		PrevLockedBalanceEntryOther:            prevLockedBalanceEntryOther,
+		PrevLockedBalanceEntryHODLer:           prevLockedBalanceEntryHODLer,
+		PrevLockedBalanceEntryCreator:          prevLockedBalaneEntryCreator,
+		PrevRecipientLockedBalanceEntryOther:   prevRecipientLockedBalanceEntryOther,
+		PrevRecipientLockedBalanceEntryCreator: prevRecipientLockedBalanceEntryCreator,
+	})
+
+	return 0, 0, utxoOpsForTxn, nil
 }
 
-func (bav *UtxoView) _disconnectDAOCoinLockupTransfer(
+func (bav *UtxoView) _disconnectCoinLockupTransfer(
 	operationType OperationType,
 	currentTxn *MsgDeSoTxn,
-	txHash *BlockHash,
+	txnHash *BlockHash,
 	utxoOpsForTxn []*UtxoOperation,
 	blockHeight uint32) error {
+	if len(utxoOpsForTxn) == 0 {
+		return fmt.Errorf("_disconnectCoinLockupTransfer: utxoOperations are missing")
+	}
+	operationIndex := len(utxoOpsForTxn) - 1
+
+	// Verify the last operation as being a CoinLockupTransfer operation.
+	if utxoOpsForTxn[operationIndex].Type != OperationTypeCoinLockupTransfer {
+		return fmt.Errorf("_disconnectDAOCoinLockup: Trying to revert "+
+			"OperationTypeCoinLockupTransfer but found type %v", utxoOpsForTxn[operationIndex].Type)
+	}
+
+	// Sanity check the OperationTypeCoinLockupTransfer exists.
+	operationData := utxoOpsForTxn[operationIndex]
+	operationIndex--
+	if operationIndex < 0 {
+		return fmt.Errorf("_disconnectCoinLockupTransfer: Trying to revert OperationTypeCoinLockupTransfer " +
+			"but malformed utxoOpsForTxn")
+	}
+	if operationData.PrevLockedBalanceEntryOther == nil || operationData.PrevLockedBalanceEntryOther.isDeleted {
+		return fmt.Errorf("_disconnectCoinLockupTransfer: Trying to revert OperationTypeCoinLockupTransfer " +
+			"but found nil or deleted PrevLockedBalanceEntryOther")
+	}
+	if operationData.PrevLockedBalanceEntryHODLer == nil || operationData.PrevLockedBalanceEntryHODLer.isDeleted {
+		return fmt.Errorf("_disconnectCoinLockupTransfer: Trying to revert OperationTypeCoinLockupTransfer " +
+			"but found nil or deleted PrevLockedBalanceEntryHODLer")
+	}
+	if operationData.PrevLockedBalanceEntryCreator == nil || operationData.PrevLockedBalanceEntryCreator.isDeleted {
+		return fmt.Errorf("_disconnectCoinLockupTransfer: Trying to revert OperationTypeCoinLockupTransfer " +
+			"but found nil or deleted PrevLockedBalanceEntryCreator")
+	}
+	if operationData.PrevRecipientLockedBalanceEntryOther == nil ||
+		operationData.PrevRecipientLockedBalanceEntryOther.isDeleted {
+		return fmt.Errorf("_disconnectCoinLockupTransfer: Trying to revert OperationTypeCoinLockupTransfer " +
+			"but found nil or deleted PrevRecipientLockedBalanceEntryOther")
+	}
+	if operationData.PrevRecipientLockedBalanceEntryCreator == nil ||
+		operationData.PrevRecipientLockedBalanceEntryCreator.isDeleted {
+		return fmt.Errorf("_disconnectCoinLockupTransfer: Trying to revert OperationTypeCoinLockupTransfer " +
+			"but found nil or deleted PrevRecipientLockedBalanceEntryCreator")
+	}
+
+	// Fetch the LockedBalanceEntries in the view.
+	lockedBalanceEntryOther := bav.GetLockedBalanceEntryForHODLerPKIDCreatorPKIDTimestampLockedByType(
+		operationData.PrevLockedBalanceEntryOther.HODLerPKID,
+		operationData.PrevLockedBalanceEntryOther.CreatorPKID,
+		operationData.PrevLockedBalanceEntryOther.ExpirationTimestampUnixNanoSecs,
+		operationData.PrevLockedBalanceEntryOther.LockedBy)
+	lockedBalanceEntryHODLer := bav.GetLockedBalanceEntryForHODLerPKIDCreatorPKIDTimestampLockedByType(
+		operationData.PrevLockedBalanceEntryHODLer.HODLerPKID,
+		operationData.PrevLockedBalanceEntryHODLer.CreatorPKID,
+		operationData.PrevLockedBalanceEntryHODLer.ExpirationTimestampUnixNanoSecs,
+		operationData.PrevLockedBalanceEntryHODLer.LockedBy)
+	lockedBalanceEntryCreator := bav.GetLockedBalanceEntryForHODLerPKIDCreatorPKIDTimestampLockedByType(
+		operationData.PrevLockedBalanceEntryCreator.HODLerPKID,
+		operationData.PrevLockedBalanceEntryCreator.CreatorPKID,
+		operationData.PrevLockedBalanceEntryCreator.ExpirationTimestampUnixNanoSecs,
+		operationData.PrevLockedBalanceEntryCreator.LockedBy)
+	recipientLockedBalanceEntryOther := bav.GetLockedBalanceEntryForHODLerPKIDCreatorPKIDTimestampLockedByType(
+		operationData.PrevRecipientLockedBalanceEntryOther.HODLerPKID,
+		operationData.PrevRecipientLockedBalanceEntryOther.CreatorPKID,
+		operationData.PrevRecipientLockedBalanceEntryOther.ExpirationTimestampUnixNanoSecs,
+		operationData.PrevRecipientLockedBalanceEntryOther.LockedBy)
+	recipientLockedBalanceEntryCreator := bav.GetLockedBalanceEntryForHODLerPKIDCreatorPKIDTimestampLockedByType(
+		operationData.PrevRecipientLockedBalanceEntryCreator.HODLerPKID,
+		operationData.PrevRecipientLockedBalanceEntryCreator.CreatorPKID,
+		operationData.PrevRecipientLockedBalanceEntryCreator.ExpirationTimestampUnixNanoSecs,
+		operationData.PrevRecipientLockedBalanceEntryCreator.LockedBy)
+
+	// Ensure reverting the transaction won't cause the recipients balances to increase
+	// or cause the senders balances to decrease.
+	if operationData.PrevLockedBalanceEntryOther.AmountBaseUnits.Lt(&lockedBalanceEntryOther.AmountBaseUnits) {
+		return fmt.Errorf("_disconnectCoinLockupTransfer: Reversion of coin lockup transfer would " +
+			"result in less coins for sender")
+	}
+	if operationData.PrevLockedBalanceEntryHODLer.AmountBaseUnits.Lt(&lockedBalanceEntryHODLer.AmountBaseUnits) {
+		return fmt.Errorf("_disconnectCoinLockupTransfer: Reversion of coin lockup transfer would " +
+			"result in less coins for sender")
+	}
+	if operationData.PrevLockedBalanceEntryCreator.AmountBaseUnits.Lt(&lockedBalanceEntryCreator.AmountBaseUnits) {
+		return fmt.Errorf("_disconnectCoinLockupTransfer: Reversion of coin lockup transfer would " +
+			"result in less coins for sender")
+	}
+	if operationData.PrevRecipientLockedBalanceEntryOther.AmountBaseUnits.Gt(
+		&recipientLockedBalanceEntryOther.AmountBaseUnits) {
+		return fmt.Errorf("_disconnectCoinLockupTransfer: Reversion of coin lockup transfer would " +
+			"result in more coins for receipient")
+	}
+	if operationData.PrevRecipientLockedBalanceEntryCreator.AmountBaseUnits.Gt(
+		&recipientLockedBalanceEntryCreator.AmountBaseUnits) {
+		return fmt.Errorf("_disconnectCoinLockupTransfer: Reversion of coin lockup transfer would " +
+			"result in more coins for receipient")
+	}
+
+	// Set the balance entry mappings.
+	bav._setLockedBalanceEntry(operationData.PrevLockedBalanceEntryOther)
+	bav._setLockedBalanceEntry(operationData.PrevLockedBalanceEntryHODLer)
+	bav._setLockedBalanceEntry(operationData.PrevLockedBalanceEntryCreator)
+	bav._setLockedBalanceEntry(operationData.PrevRecipientLockedBalanceEntryOther)
+	bav._setLockedBalanceEntry(operationData.PrevRecipientLockedBalanceEntryCreator)
+
+	// By here we only need to disconnect the basic transfer associated with the transaction.
+	basicTransferOps := utxoOpsForTxn[:operationIndex]
+	err := bav._disconnectBasicTransfer(currentTxn, txnHash, basicTransferOps, blockHeight)
+	if err != nil {
+		return errors.Wrapf(err, "_disconnectCoinLockupTransfer")
+	}
+
 	return nil
 }
 
@@ -1066,7 +1354,3 @@ func (bav *UtxoView) _flushLockedBalanceEntriesToDbWithTxn(txn *badger.Txn, bloc
 func (bav *UtxoView) _flushYieldCurveEntriesToDbWithTxn(txn *badger.Txn, blockHeight uint64) error {
 	return nil
 }
-
-//
-// Mempool Operations (TBD)
-//
