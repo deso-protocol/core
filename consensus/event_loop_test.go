@@ -434,10 +434,10 @@ func TestResetEventLoopSignal(t *testing.T) {
 		oneHourInNanoSecs-tenSecondsInNanoSecs, // 1 hour away
 	))
 	require.Greater(t, fc.nextTimeoutTimeStamp, time.Now().Add(
-		2*oneHourInNanoSecs-tenSecondsInNanoSecs, // 2 hours = 4 hours away
+		2*oneHourInNanoSecs-tenSecondsInNanoSecs, // 2 hours away
 	))
 	require.Less(t, fc.nextTimeoutTimeStamp, time.Now().Add(
-		2*oneHourInNanoSecs+tenSecondsInNanoSecs, // 2 hours = 4 hours away
+		2*oneHourInNanoSecs+tenSecondsInNanoSecs, // 2 hours away
 	))
 
 	// Advance the view to simulate a timeout
