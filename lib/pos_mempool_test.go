@@ -18,8 +18,9 @@ func TestPosMempoolStart(t *testing.T) {
 
 	mempool := NewPosMempool(&params, globalParams, nil, 0, dir)
 	require.NoError(mempool.Start())
-	require.Equal(PosMempoolStatusRunning, mempool.status)
+	require.True(mempool.IsRunning())
 	mempool.Stop()
+	require.False(mempool.IsRunning())
 }
 
 func TestPosMempoolRestartWithTransactions(t *testing.T) {
@@ -41,7 +42,7 @@ func TestPosMempoolRestartWithTransactions(t *testing.T) {
 
 	mempool := NewPosMempool(params, globalParams, latestBlockView, 2, dir)
 	require.NoError(mempool.Start())
-	require.Equal(PosMempoolStatusRunning, mempool.status)
+	require.True(mempool.IsRunning())
 
 	txn1 := _generateTestTxn(t, rand, feeMin, feeMax, m0PubBytes, m0Priv, 100, 0)
 	txn2 := _generateTestTxn(t, rand, feeMin, feeMax, m1PubBytes, m1Priv, 100, 0)
@@ -51,13 +52,15 @@ func TestPosMempoolRestartWithTransactions(t *testing.T) {
 	poolTxns := mempool.GetTransactions()
 	require.Equal(2, len(poolTxns))
 	mempool.Stop()
+	require.False(mempool.IsRunning())
 
 	newPool := NewPosMempool(params, globalParams, latestBlockView, 2, dir)
 	require.NoError(newPool.Start())
-	require.Equal(PosMempoolStatusRunning, newPool.status)
+	require.True(newPool.IsRunning())
 	newPoolTxns := newPool.GetTransactions()
 	require.Equal(2, len(newPoolTxns))
 	newPool.Stop()
+	require.False(newPool.IsRunning())
 }
 
 func TestPosMempoolPrune(t *testing.T) {
@@ -80,7 +83,7 @@ func TestPosMempoolPrune(t *testing.T) {
 	params.MaxMempoolPosSizeBytes = 500
 	mempool := NewPosMempool(params, globalParams, latestBlockView, 2, dir)
 	require.NoError(mempool.Start())
-	require.Equal(PosMempoolStatusRunning, mempool.status)
+	require.True(mempool.IsRunning())
 
 	var txns []*MsgDeSoTxn
 	for ii := 0; ii < 10; ii++ {
@@ -107,10 +110,11 @@ func TestPosMempoolPrune(t *testing.T) {
 	// Remove one transaction.
 	require.NoError(mempool.RemoveTransaction(fetchedTxns[0].Hash()))
 	mempool.Stop()
+	require.False(mempool.IsRunning())
 
 	newPool := NewPosMempool(params, globalParams, latestBlockView, 2, dir)
 	require.NoError(newPool.Start())
-	require.Equal(PosMempoolStatusRunning, newPool.status)
+	require.True(newPool.IsRunning())
 	require.Equal(2, len(newPool.GetTransactions()))
 
 	// Remove the other transactions.
@@ -136,6 +140,7 @@ func TestPosMempoolPrune(t *testing.T) {
 		index++
 	}
 	newPool.Stop()
+	require.False(newPool.IsRunning())
 }
 
 func TestPosMempoolUpdateGlobalParams(t *testing.T) {
@@ -157,7 +162,7 @@ func TestPosMempoolUpdateGlobalParams(t *testing.T) {
 
 	mempool := NewPosMempool(params, globalParams, latestBlockView, 2, dir)
 	require.NoError(mempool.Start())
-	require.Equal(PosMempoolStatusRunning, mempool.status)
+	require.True(mempool.IsRunning())
 
 	var txns []*MsgDeSoTxn
 	for ii := 0; ii < 100; ii++ {
@@ -178,13 +183,15 @@ func TestPosMempoolUpdateGlobalParams(t *testing.T) {
 	mempool.UpdateGlobalParams(newGlobalParams)
 	require.Equal(0, len(mempool.GetTransactions()))
 	mempool.Stop()
+	require.False(mempool.IsRunning())
 
 	newPool := NewPosMempool(params, newGlobalParams, latestBlockView, 2, dir)
 	require.NoError(newPool.Start())
-	require.Equal(PosMempoolStatusRunning, newPool.status)
+	require.True(newPool.IsRunning())
 	newPoolTxns := newPool.GetTransactions()
 	require.Equal(0, len(newPoolTxns))
 	newPool.Stop()
+	require.False(newPool.IsRunning())
 }
 
 func _blockchainSetup(t *testing.T) (_params *DeSoParams, _db *badger.DB) {

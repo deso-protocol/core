@@ -10,8 +10,7 @@ import (
 )
 
 const (
-	DbMempoolContextId = "transactions"
-	eventQueueSize     = 10000
+	eventQueueSize = 10000
 )
 
 type MempoolEventType int
@@ -70,7 +69,10 @@ func NewMempoolPersister(db *badger.DB, mempoolBackupTimeMilliseconds int) *Memp
 
 // Start is the entry point for the MempoolPersister. It starts the run loop and begins persisting transactions to the database.
 func (mp *MempoolPersister) Start() {
-	if mp.status == MempoolPersisterStatusRunning {
+	mp.Lock()
+	defer mp.Unlock()
+
+	if mp.IsRunning() {
 		return
 	}
 
@@ -119,16 +121,21 @@ func (mp *MempoolPersister) run() {
 }
 
 // Stop is used to stop the persister thread and reset the persister state. It will wait for the persister thread to
-// flush the outstanding updateBatch to the database before returning.
+// flush the outstanding updateBatch to the database before returning. Stop should not be called in concurrent threads.
 func (mp *MempoolPersister) Stop() error {
-	if mp.status == MempoolPersisterStatusNotRunning {
+	mp.Lock()
+	if !mp.IsRunning() {
 		return nil
 	}
+	mp.Unlock()
+
 	// Enqueue the exit event and wait for the persister thread to stop.
-	mp.eventQueue <- &MempoolEvent{Type: MempoolEventExit}
+	event := &MempoolEvent{Type: MempoolEventExit}
+	mp.EnqueueEvent(event)
 	mp.stopGroup.Wait()
+
 	// Persist any outstanding transactions.
-	if err := mp.persistBatch(); err != nil {
+	if err := mp.persistBatchNoLock(); err != nil {
 		return errors.Wrapf(err, "MempoolPersister: Error persisting batch")
 	}
 	// Reset the persister state.
@@ -137,16 +144,28 @@ func (mp *MempoolPersister) Stop() error {
 	return nil
 }
 
+func (mp *MempoolPersister) IsRunning() bool {
+	return mp.status == MempoolPersisterStatusRunning
+}
+
 // persistBatch is used to flush the updateBatch to the database. It will iterate through the updateBatch and add or remove
 // transactions from the database based on the event type. Error is returned if the persister is not running or if there
 // is an error persisting the batch.
 func (mp *MempoolPersister) persistBatch() error {
-	if mp.status == MempoolPersisterStatusNotRunning {
+	mp.Lock()
+	defer mp.Unlock()
+
+	if !mp.IsRunning() {
 		return nil
 	}
 
-	mp.Lock()
-	defer mp.Unlock()
+	return mp.persistBatchNoLock()
+}
+
+func (mp *MempoolPersister) persistBatchNoLock() error {
+	if !mp.IsRunning() {
+		return nil
+	}
 
 	// If there are no transactions to persist, return.
 	if len(mp.updateBatch) == 0 {
@@ -193,12 +212,12 @@ func (mp *MempoolPersister) persistBatch() error {
 // GetPersistedTransactions is used to retrieve all transactions from the database. It will return an error if the persister
 // is not currently running or if there was an issue retrieving the transactions.
 func (mp *MempoolPersister) GetPersistedTransactions() ([]*MempoolTx, error) {
-	if mp.status == MempoolPersisterStatusNotRunning {
-		return nil, errors.Wrapf(MempoolErrorNotRunning, "MempoolPersister: Cannot retrieve transactions while running")
-	}
-
 	mp.Lock()
 	defer mp.Unlock()
+
+	if !mp.IsRunning() {
+		return nil, errors.Wrapf(MempoolErrorNotRunning, "MempoolPersister: Cannot retrieve transactions while not running")
+	}
 
 	var mempoolTxns []*MempoolTx
 	err := mp.db.View(func(txn *badger.Txn) error {
@@ -237,9 +256,6 @@ func (mp *MempoolPersister) EnqueueEvent(event *MempoolEvent) {
 
 // reset is used to clear the persister state.
 func (mp *MempoolPersister) reset() {
-	mp.Lock()
-	defer mp.Unlock()
-
 	mp.updateBatch = nil
 	mp.eventQueue = make(chan *MempoolEvent, eventQueueSize)
 }
