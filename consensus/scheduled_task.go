@@ -5,12 +5,13 @@ import (
 	"time"
 )
 
-// ScheduledTask is a wrapper around time.Timer that allows for scheduling tasks to be executed
-// at a later time, with params specified at the time the task is scheduled. This pattern is useful
-// for scheduling tasks and capturing all of the params and context needed for them to execute them
-// all in one place.
+// ScheduledTask is a thread-safe wrapper around time.Timer that allows for creating tasks that
+// can be scheduled to execute at a later time with pre-specified params. Both the params the
+// task are fully defined at the time of scheduling. Once a task has been scheduled, it cannot
+// be modified. However, tasks can be cancelled and rescheduled.
 //
-// If a task is already scheduled, the previous task is cancelled and the new task is scheduled.
+// This pattern is useful for spawning off tasks that we want to run after some specified amount
+// of time, but still want to have the ability to cancel.
 type ScheduledTask[TaskParam any] struct {
 	lock     sync.RWMutex
 	timer    *time.Timer
