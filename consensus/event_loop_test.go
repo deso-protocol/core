@@ -418,6 +418,48 @@ func TestProcessValidatorTimeout(t *testing.T) {
 	fc.Stop()
 }
 
+func TestTimeoutScheduledTaskExecuted(t *testing.T) {
+	oneHourInNanoSecs := time.Duration(3600000000000)
+	oneMilliSecondInNanoSeconds := time.Duration(1000000)
+
+	dummyBlock := createDummyBlock()
+
+	fc := NewFastHotStuffEventLoop()
+	err := fc.Init(oneHourInNanoSecs, oneMilliSecondInNanoSeconds, dummyBlock, createDummyValidatorSet())
+	require.NoError(t, err)
+
+	// Start the event loop
+	fc.Start()
+
+	// Wait for the timeout signal to be sent
+	timeoutSignal := <-fc.ConsensusEvents
+
+	// Confirm that the timeout signal is for the the expected view
+	require.Equal(t, timeoutSignal.EventType, ConsensusEventTypeTimeout)
+	require.Equal(t, timeoutSignal.View, dummyBlock.GetView()+1)
+	require.Equal(t, timeoutSignal.BlockHash.GetValue(), dummyBlock.GetBlockHash().GetValue())
+
+	// Confirm that the timeout is no longer running
+	require.False(t, fc.nextTimeoutTask.IsScheduled())
+
+	// Advance the view, which should reset the timeout scheduled task
+	fc.AdvanceView()
+
+	// Wait for the timeout signal to be sent
+	timeoutSignal = <-fc.ConsensusEvents
+
+	// Confirm that the timeout signal is for the the expected view
+	require.Equal(t, timeoutSignal.EventType, ConsensusEventTypeTimeout)
+	require.Equal(t, timeoutSignal.View, dummyBlock.GetView()+2)
+	require.Equal(t, timeoutSignal.BlockHash.GetValue(), dummyBlock.GetBlockHash().GetValue())
+
+	// Confirm that the timeout is no longer running
+	require.False(t, fc.nextTimeoutTask.IsScheduled())
+
+	// Stop the event loop
+	fc.Stop()
+}
+
 func TestResetEventLoopSignal(t *testing.T) {
 	oneHourInNanoSecs := time.Duration(3600000000000)
 
