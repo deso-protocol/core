@@ -176,7 +176,7 @@ func (dmp *PosMempool) AddTransaction(txn *MsgDeSoTxn) error {
 	// First, validate that the transaction is properly formatted according to BalanceModel. We acquire a read lock on
 	// the mempool. This allows multiple goroutines to safely perform transaction validation concurrently. In particular,
 	// transaction signature verification can be parallelized.
-	if err := dmp.verifyTransaction(txn); err != nil {
+	if err := dmp.validateTransaction(txn); err != nil {
 		return errors.Wrapf(err, "PosMempool.AddTransaction: Problem verifying transaction")
 	}
 
@@ -207,7 +207,7 @@ func (dmp *PosMempool) AddTransaction(txn *MsgDeSoTxn) error {
 	return nil
 }
 
-func (dmp *PosMempool) verifyTransaction(txn *MsgDeSoTxn) error {
+func (dmp *PosMempool) validateTransaction(txn *MsgDeSoTxn) error {
 	dmp.RLock()
 	defer dmp.RUnlock()
 
