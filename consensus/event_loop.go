@@ -264,14 +264,6 @@ func (fc *FastHotStuffEventLoop) ProcessValidatorTimeout(timeout TimeoutMessage)
 		return errors.New("FastHotStuffEventLoop.ProcessValidatorTimeout: Malformed timeout message")
 	}
 
-	// Compute the value sha256(timeout.View, timeout.HighQC.View)
-	timeoutSignaturePayload := GetTimeoutSignaturePayload(timeout.GetView(), timeout.GetHighQC().GetView())
-
-	// Verify the vote signature
-	if !isValidSignature(timeout.GetPublicKey(), timeout.GetSignature(), timeoutSignaturePayload[:]) {
-		return errors.New("FastHotStuffEventLoop.ProcessValidatorTimeout: Invalid signature")
-	}
-
 	// Check if the timeout is stale
 	if isStaleView(fc.currentView, timeout.GetView()) {
 		return errors.Errorf("FastHotStuffEventLoop.ProcessValidatorTimeout: Timeout has a stale view %d", timeout.GetView())
@@ -295,6 +287,14 @@ func (fc *FastHotStuffEventLoop) ProcessValidatorTimeout(timeout TimeoutMessage)
 			timeout.GetPublicKey().ToString(),
 			timeout.GetView(),
 		)
+	}
+
+	// Compute the value sha3-256(timeout.View, timeout.HighQC.View)
+	timeoutSignaturePayload := GetTimeoutSignaturePayload(timeout.GetView(), timeout.GetHighQC().GetView())
+
+	// Verify the vote signature
+	if !isValidSignature(timeout.GetPublicKey(), timeout.GetSignature(), timeoutSignaturePayload[:]) {
+		return errors.New("FastHotStuffEventLoop.ProcessValidatorTimeout: Invalid signature")
 	}
 
 	// Note: we do not check if the timeout is for the current view. Nodes in the network are expected to have

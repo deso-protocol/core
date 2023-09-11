@@ -1,6 +1,7 @@
 package consensus
 
 import (
+	"crypto/sha256"
 	"encoding/binary"
 	"reflect"
 
@@ -24,14 +25,17 @@ func GetVoteSignaturePayload(view uint64, blockHash BlockHash) [32]byte {
 	return sha3.Sum256(append(viewBytes, blockHashBytes[:]...))
 }
 
-// When timing out for a view, validators sign the payload sha256(View, HighQCView) with their BLS
+// When timing out for a view, validators sign the payload sha3-256(View, HighQCView) with their BLS
 // private key. This hash guarantees that the view and high QC view fields in a TimeoutMessage
 // have not been tampered with.
 func GetTimeoutSignaturePayload(view uint64, highQCView uint64) [32]byte {
-	viewBytes := []byte(fmt.Sprintf("%d", view))
-	highQCViewBytes := []byte(fmt.Sprintf("%d", highQCView))
+	viewBytes := make([]byte, 8)
+	binary.BigEndian.PutUint64(viewBytes, view)
 
-	return sha256.Sum256(append(viewBytes, highQCViewBytes[:]...))
+	highQCViewBytes := make([]byte, 8)
+	binary.BigEndian.PutUint64(highQCViewBytes, highQCView)
+
+	return sha256.Sum256(append(viewBytes, highQCViewBytes...))
 }
 
 // This function checks if the block is properly formed. These are all surface level checks that
