@@ -60,6 +60,9 @@ type VoteMessage interface {
 	GetBlockHash() BlockHash
 
 	GetPublicKey() *bls.PublicKey
+
+	// The validator's BLS signature of the (View, BlockHash) pair. This represents the validator's
+	// vote for this block. The block height is implicitly captured in the block hash.
 	GetSignature() *bls.Signature
 }
 
@@ -89,13 +92,14 @@ type Block interface {
 // signals.
 //
 // TODO: is a size of 100 enough? If we want to bullet-proof this, we could back it by a slice as a
-// secondary buffer.
+// secondary buffer. That seems unnecessary since every channel will only have signals pushed by a single
+// producer thread.
 const signalChannelBufferSize = 100
 
 // An instance of FastHotStuffEventLoop is a self-contained module that represents a single node running
 // the event loop for the Fast HotStuff consensus protocol. The module is initialized at the current chain's
 // tip, with a given block hash, block height, view number, and validator set. The module is simplified and
-// does not know whether its role is that of a block proposer or a validator.
+// does not know whether its role is that of a block proposer or a replica validator.
 //
 // Given a block that's at the tip of the current chain, this module maintains its own internal data structures
 // and runs internal timers that handles all of the following:
@@ -139,9 +143,12 @@ type FastHotStuffEventLoop struct {
 	// next block height.
 	validatorsAtChainTip []Validator
 
-	// votesSeen is an in-memory map of all the votes we've seen so far, organized by the block hash
-	// that was voted on and the BLS public key string of the sender. We use a nested map because we
-	// want to be able to fetch all votes by block hash.
+	// votesSeen is an in-memory map of all the votes we've seen so far. It's a nested map with the
+	// following nested key structure:
+	//
+	//   sha256(vote.View, vote.BlockHash) - > string(vote.PublicKey) -> VoteMessage
+	//
+	// We use a nested map as above because we want to be able to efficiently fetch all votes by block hash.
 	votesSeen map[[32]byte]map[string]VoteMessage
 
 	// timeoutsSeen is an in-memory map of all the timeout messages we've seen so far, organized by
