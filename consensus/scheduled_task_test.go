@@ -17,9 +17,9 @@ func TestScheduledTask(t *testing.T) {
 		task.Schedule(time.Microsecond, 100, func(param uint64) {
 			executedTaskParam = param
 		})
-		time.Sleep(time.Second)
+		time.Sleep(time.Second / 2)
 
-		// The task should not have executed so this value will now be 100.
+		// The task should have executed so this value will now be 100.
 		require.Equal(t, uint64(100), executedTaskParam)
 
 		// Confirm the last duration of the task was 1 microsecond.
@@ -34,7 +34,6 @@ func TestScheduledTask(t *testing.T) {
 		task.Schedule(time.Hour, 100, func(param uint64) {
 			executedTaskParam = param
 		})
-		time.Sleep(time.Second)
 
 		// The task should not have executed so this value will remain 0.
 		require.Equal(t, uint64(0), executedTaskParam)

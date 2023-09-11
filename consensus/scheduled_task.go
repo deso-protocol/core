@@ -6,7 +6,7 @@ import (
 )
 
 // ScheduledTask is a thread-safe wrapper around time.Timer that allows for creating tasks that
-// can be scheduled to execute at a later time with pre-specified params. Both the params the
+// can be scheduled to execute at a later time with pre-specified params. Both the params and the
 // task are fully defined at the time of scheduling. Once a task has been scheduled, it cannot
 // be modified. However, tasks can be cancelled and rescheduled.
 //
@@ -25,7 +25,8 @@ func NewScheduledTask[TaskParam any]() *ScheduledTask[TaskParam] {
 	}
 }
 
-// Cancel the currently scheduled task, if any, and schedule a new task to be executed after the countdown duration.
+// Schedule a new task to be executed after the countdown duration. If there is an existing scheduled
+// task, it will be cancelled and replaced with the new task.
 func (t *ScheduledTask[TaskParam]) Schedule(duration time.Duration, param TaskParam, task func(TaskParam)) {
 	t.lock.Lock()
 	defer t.lock.Unlock()
