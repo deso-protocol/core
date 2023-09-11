@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
-)a
+)
 
 type PosMempoolStatus int
 
