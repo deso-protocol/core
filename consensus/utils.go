@@ -1,7 +1,6 @@
 package consensus
 
 import (
-	"crypto/sha256"
 	"encoding/binary"
 	"reflect"
 
@@ -35,7 +34,7 @@ func GetTimeoutSignaturePayload(view uint64, highQCView uint64) [32]byte {
 	highQCViewBytes := make([]byte, 8)
 	binary.BigEndian.PutUint64(highQCViewBytes, highQCView)
 
-	return sha256.Sum256(append(viewBytes, highQCViewBytes...))
+	return sha3.Sum256(append(viewBytes, highQCViewBytes...))
 }
 
 // This function checks if the block is properly formed. These are all surface level checks that

@@ -302,6 +302,8 @@ func (fc *FastHotStuffEventLoop) ProcessValidatorTimeout(timeout TimeoutMessage)
 	// differences between nodes, we simply store the timeout as long as it's properly formed and not stale.
 	// Stored timeouts will be evicted once we advance beyond them.
 
+	fc.storeTimeout(timeout)
+
 	return nil
 }
 
@@ -448,7 +450,7 @@ func (fc *FastHotStuffEventLoop) evictStaleVotesAndTimeouts() {
 
 	// Evict stale timeout messages
 	for view := range fc.timeoutsSeen {
-		if fc.currentView > view+1 {
+		if isStaleView(fc.currentView, view) {
 			delete(fc.timeoutsSeen, view)
 		}
 	}
@@ -484,6 +486,16 @@ func (fc *FastHotStuffEventLoop) hasVotedForView(publicKey *bls.PublicKey, view 
 	}
 
 	return false
+}
+
+func (fc *FastHotStuffEventLoop) storeTimeout(timeout TimeoutMessage) {
+	timeoutsForView, ok := fc.timeoutsSeen[timeout.GetView()]
+	if !ok {
+		timeoutsForView = make(map[string]TimeoutMessage)
+		fc.timeoutsSeen[timeout.GetView()] = timeoutsForView
+	}
+
+	timeoutsForView[timeout.GetPublicKey().ToString()] = timeout
 }
 
 func (fc *FastHotStuffEventLoop) hasTimedOutForView(publicKey *bls.PublicKey, view uint64) bool {
