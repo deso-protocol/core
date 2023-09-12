@@ -12,7 +12,8 @@ const taskListCapacity = 10
 // task are fully defined at the time of scheduling. Once a task has been scheduled, it cannot
 // be modified. However, tasks can be cancelled and rescheduled. If a task is scheduled while
 // an existing task is mid-flight, the new task is ensured to execute after the existing task
-// has finished.
+// has finished. Tasks that are not canceled are guaranteed to execute in the order they were
+// scheduled.
 //
 // This pattern is useful for spawning off tasks that we want to run after some specified amount
 // of time, but still want to have the ability to cancel.
