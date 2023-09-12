@@ -1,7 +1,6 @@
 package consensus
 
 import (
-	"sync"
 	"time"
 
 	"github.com/pkg/errors"
@@ -11,9 +10,9 @@ import (
 
 func NewFastHotStuffEventLoop() *FastHotStuffEventLoop {
 	return &FastHotStuffEventLoop{
-		status:     consensusStatusNotInitialized,
-		startGroup: sync.WaitGroup{},
-		stopGroup:  sync.WaitGroup{},
+		status:                    consensusStatusNotInitialized,
+		nextBlockConstructionTask: NewScheduledTask[uint64](),
+		nextTimeoutTask:           NewScheduledTask[uint64](),
 	}
 }
 
@@ -44,7 +43,7 @@ func (fc *FastHotStuffEventLoop) Init(
 		return errors.New("FastHotStuffEventLoop.Init: Consensus instance is already running")
 	}
 
-	// Validate the timer durations
+	// Validate the scheduled task durations
 	if blockConstructionCadence <= 0 {
 		return errors.New("FastHotStuffEventLoop.Init: Block construction duration must be > 0")
 	}
@@ -71,9 +70,7 @@ func (fc *FastHotStuffEventLoop) Init(
 	fc.votesSeen = make(map[[32]byte]map[string]VoteMessage)
 	fc.timeoutsSeen = make(map[uint64]map[string]TimeoutMessage)
 
-	// Reset all internal and external channels used for signaling
-	fc.resetEventLoopSignal = make(chan interface{}, signalChannelBufferSize)
-	fc.stopSignal = make(chan interface{}, signalChannelBufferSize)
+	// Reset the external channel used for signaling
 	fc.ConsensusEvents = make(chan *ConsensusEvent, signalChannelBufferSize)
 
 	// Set the block construction and timeout base durations
@@ -87,8 +84,8 @@ func (fc *FastHotStuffEventLoop) Init(
 }
 
 // AdvanceView is called when the chain tip has not changed but the consensus instance has signaled a
-// timeout, and can advance to the next view. This function resets the timeout timer and crank timer
-// for the next view.
+// timeout, and can advance to the next view. This function resets the timeout scheduled task and block
+// production scheduled task for the next view.
 func (fc *FastHotStuffEventLoop) AdvanceView() (uint64, error) {
 	// Grab the consensus instance's lock
 	fc.lock.Lock()
@@ -106,15 +103,15 @@ func (fc *FastHotStuffEventLoop) AdvanceView() (uint64, error) {
 	// Evict all stale votes and timeouts
 	fc.evictStaleVotesAndTimeouts()
 
-	// Recompute the event loop's next ETAs
-	fc.resetEventLoopTimers()
+	// Schedule the next block construction and timeout scheduled tasks
+	fc.resetScheduledTasks()
 
 	return fc.currentView, nil
 }
 
 // ProcessSafeBlock must only be called when the caller has accepted a new block, connected it
 // to the tip of the blockchain, and determined that the block is safe to vote on. Given such a
-// block, this function resets the internal timers and state of the Fast HotStuff consensus that
+// block, this function resets internal state and schedules the next block construction and timeout
 // determine the next action. The functions expects the following for the input params:
 //   - block: the input block that was safely added to the blockchain and is safe to vote on
 //   - validators: the validator set for the next block height
@@ -141,7 +138,7 @@ func (fc *FastHotStuffEventLoop) ProcessSafeBlock(block Block, validators []Vali
 	// Update the chain tip and validator set
 	fc.chainTip = block
 
-	// We track the current view here so we know which view to start the timeout timer for.
+	// We track the current view here so we know which view to time out on later on.
 	fc.currentView = block.GetView() + 1
 
 	// Update the validator set so we know when we have a QC from votes at the next block height
@@ -160,8 +157,8 @@ func (fc *FastHotStuffEventLoop) ProcessSafeBlock(block Block, validators []Vali
 		View:        fc.chainTip.GetView(),
 	}
 
-	// Recompute the event loop's next ETAs
-	fc.resetEventLoopTimers()
+	// Schedule the next block construction and timeout scheduled tasks
+	fc.resetScheduledTasks()
 
 	return nil
 }
@@ -243,7 +240,7 @@ func (fc *FastHotStuffEventLoop) ProcessValidatorVote(vote VoteMessage) error {
 // it can construct a QC with it or until the timeout's view has gone stale.
 //
 // This function does not directly check if the timeout results in a stake weighted super majority to build
-// a timeout QC. Instead, it stores the timeout locally and waits for the crank timer to determine
+// a timeout QC. Instead, it stores the timeout locally and waits for the block production scheduled task to determine
 // when to run the super majority timeout check, and to signal the caller that we can construct a timeout QC.
 //
 // Reference implementation:
@@ -315,8 +312,7 @@ func (fc *FastHotStuffEventLoop) ConstructTimeoutQC( /* TODO */ ) {
 	// TODO
 }
 
-// Sets the initial times for the block construction and timeout timers and starts
-// the event loop building off of the current chain tip.
+// Sets the initial times for the block construction and timeouts and starts scheduled tasks.
 func (fc *FastHotStuffEventLoop) Start() {
 	fc.lock.Lock()
 	defer fc.lock.Unlock()
@@ -327,19 +323,11 @@ func (fc *FastHotStuffEventLoop) Start() {
 		return
 	}
 
-	// Set the initial times for the block construction and timeout timers
-	fc.nextBlockConstructionTimeStamp = time.Now().Add(fc.blockConstructionCadence)
-	fc.nextTimeoutTimeStamp = time.Now().Add(fc.timeoutBaseDuration)
-
-	// Kick off the event loop in a separate goroutine
-	fc.startGroup.Add(1)
-	go fc.runEventLoop()
-
-	// Wait for the event loop to start
-	fc.startGroup.Wait()
-
 	// Update the consensus status to mark it as running.
 	fc.status = consensusStatusRunning
+
+	// Set the initial block construction and timeout scheduled tasks
+	fc.resetScheduledTasks()
 }
 
 func (fc *FastHotStuffEventLoop) Stop() {
@@ -352,54 +340,12 @@ func (fc *FastHotStuffEventLoop) Stop() {
 		return
 	}
 
-	// Signal the event loop to stop
-	fc.stopGroup.Add(1)
-	fc.stopSignal <- struct{}{}
+	// Cancel the next block construction and timeout scheduled tasks, if any.
+	fc.nextBlockConstructionTask.Cancel()
+	fc.nextTimeoutTask.Cancel()
 
-	// Wait for the event loop to stop
-	fc.stopGroup.Wait()
-
-	// Update the consensus status
+	// Update the consensus status so it is no longer marked as running.
 	fc.status = consensusStatusInitialized
-
-	// Close all internal channels used for signaling
-	close(fc.resetEventLoopSignal)
-	close(fc.stopSignal)
-}
-
-// Runs the internal event loop that waits for all internal or external signals. If the
-// event loop is running, the consensus instance status must be set to consensusStatusRunning.
-// Note, this function does not directly update the consensus status. To simplify the inner
-// implementation of the loop, the caller who starts and stops should always be responsible
-// for updating the status as it starts and stop the loop.
-func (fc *FastHotStuffEventLoop) runEventLoop() {
-	// Signal that the event loop has started
-	fc.startGroup.Done()
-
-	// Start the event loop
-	for {
-		select {
-		case <-time.After(time.Until(fc.nextBlockConstructionTimeStamp)):
-			{
-				// TODO
-			}
-		case <-time.After(time.Until(fc.nextTimeoutTimeStamp)):
-			{
-				// TODO
-			}
-		case <-fc.resetEventLoopSignal:
-			{
-				// Do nothing. We use this signal purely to refresh the timers above
-				// and rerun another iteration of the event loop.
-			}
-		case <-fc.stopSignal:
-			{
-				// Signal that the event loop has stopped
-				fc.stopGroup.Done()
-				return
-			}
-		}
-	}
 }
 
 func (fc *FastHotStuffEventLoop) IsInitialized() bool {
@@ -416,12 +362,9 @@ func (fc *FastHotStuffEventLoop) IsRunning() bool {
 	return fc.status == consensusStatusRunning
 }
 
-// resetEventLoopTimers recomputes the nextBlockConstructionTimeStamp and nextTimeoutTimeStamp
-// values and signals the event loop to rerun.
-func (fc *FastHotStuffEventLoop) resetEventLoopTimers() {
-	// Compute the next block construction ETA
-	fc.nextBlockConstructionTimeStamp = time.Now().Add(fc.blockConstructionCadence)
-
+// resetScheduledTasks recomputes the nextBlockConstructionTimeStamp and nextTimeoutTimeStamp
+// values, and reschedules the next block construction and timeout tasks.
+func (fc *FastHotStuffEventLoop) resetScheduledTasks() {
 	// Compute the next timeout ETA. We use exponential back-off for timeouts when there are
 	// multiple consecutive timeouts. We use the difference between the current view and the
 	// chain tip's view to determine this. The current view can only drift from the chain tip's
@@ -441,11 +384,19 @@ func (fc *FastHotStuffEventLoop) resetEventLoopTimers() {
 		timeoutDuration = fc.timeoutBaseDuration << numTimeouts
 	}
 
-	// Compute the next timeout ETA
-	fc.nextTimeoutTimeStamp = time.Now().Add(timeoutDuration)
+	// Schedule the next block construction task. This will run with currentView param.
+	fc.nextBlockConstructionTask.Schedule(fc.blockConstructionCadence, fc.currentView, fc.onBlockConstructionScheduledTask)
 
-	// Signal the event loop to rerun
-	fc.resetEventLoopSignal <- struct{}{}
+	// Schedule the next timeout task. This will run with currentView param.
+	fc.nextTimeoutTask.Schedule(timeoutDuration, fc.currentView, fc.onTimeoutScheduledTask)
+}
+
+func (fc *FastHotStuffEventLoop) onBlockConstructionScheduledTask(blockConstructionView uint64) {
+	// TODO
+}
+
+func (fc *FastHotStuffEventLoop) onTimeoutScheduledTask(timedOutView uint64) {
+	// TODO
 }
 
 // Evict all locally stored votes and timeout messages with stale views. We can safely use the current
