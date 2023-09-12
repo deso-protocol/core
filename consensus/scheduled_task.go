@@ -6,6 +6,7 @@ import (
 	"time"
 )
 
+// scheduledTaskStatus represents the status of the task that is scheduled.
 type scheduledTaskStatus int
 
 const (
@@ -46,9 +47,13 @@ func (t *ScheduledTask[TaskParam]) Schedule(duration time.Duration, param TaskPa
 	t.lock.Lock()
 	defer t.lock.Unlock()
 
+	// If the task has already started, we can't schedule a new one. Instead, we will let the caller know to wait
+	// for the task to finish.
 	if t.status == scheduledTaskStatusStarted {
 		return errors.New(errorScheduledTaskNotFinished)
 	}
+	// We can now safely assume that the task has not started. We reset the status and increment the sequence number.
+	// The sequence number is ensures that stale tasks are terminated.
 	t.status = scheduledTaskStatusNotStarted
 	t.seq++
 
@@ -60,18 +65,22 @@ func (t *ScheduledTask[TaskParam]) Schedule(duration time.Duration, param TaskPa
 	// field has no other purpose.
 	t.duration = duration
 
-	// Replacing the timer results in it being garbage collected, so this is entirely safe.
-	taskFunc := func(seq uint64) {
+	// taskInit checks that the task isn't stale and updates the status to started.
+	taskInit := func(seq uint64) bool {
 		t.lock.Lock()
 		defer t.lock.Unlock()
 
 		if t.seq != seq {
-			return
+			return false
 		}
 		t.status = scheduledTaskStatusStarted
+		return true
 	}
+	// Replacing the timer results in it being garbage collected, so this is entirely safe.
 	t.timer = time.AfterFunc(duration, func() {
-		taskFunc(t.seq)
+		if !taskInit(t.seq) {
+			return
+		}
 		task(param)
 
 		t.lock.Lock()

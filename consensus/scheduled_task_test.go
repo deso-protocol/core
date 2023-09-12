@@ -63,16 +63,16 @@ func TestConcurrentScheduledTask(t *testing.T) {
 		questionableField: 0,
 	}
 	task := NewScheduledTask[int]()
-	err := task.Schedule(100*time.Millisecond, 5, func(param int) {
+	err := task.Schedule(time.Millisecond, 5, func(param int) {
 		fmt.Println("Task with sleep: Started")
-		time.Sleep(250 * time.Millisecond)
+		time.Sleep(15 * time.Millisecond)
 		fmt.Println("Task with sleep: After sleep")
 		qvar.questionableField = param
 		fmt.Println("Task with sleep: Finished")
 	})
 	require.NoError(t, err)
 
-	time.Sleep(150 * time.Millisecond)
+	time.Sleep(10 * time.Millisecond)
 	_taskWithoutSleep := func() {
 		err = task.Schedule(time.Millisecond, 10, func(param int) {
 			fmt.Println("Task without sleep: Started")
@@ -84,12 +84,12 @@ func TestConcurrentScheduledTask(t *testing.T) {
 	if err != nil {
 		fmt.Println("Task without sleep: Cant start, error:", err)
 	}
-	time.Sleep(400 * time.Millisecond)
+	time.Sleep(10 * time.Millisecond)
 	fmt.Println("Task without sleep: Waited, retrying")
 	_taskWithoutSleep()
 	require.NoError(t, err)
 
-	time.Sleep(50 * time.Millisecond)
+	time.Sleep(10 * time.Millisecond)
 	// The value will be 10 because the second task will not execute until the first task has finished or never started.
 	fmt.Println(qvar.ToString())
 }
