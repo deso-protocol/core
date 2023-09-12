@@ -1,6 +1,7 @@
 package consensus
 
 import (
+	"fmt"
 	"testing"
 	"time"
 
@@ -44,4 +45,38 @@ func TestScheduledTask(t *testing.T) {
 		// Cancel the task.
 		task.Cancel()
 	}
+}
+
+type QuestionableStruct struct {
+	questionableField int
+}
+
+func (q *QuestionableStruct) ToString() string {
+	return fmt.Sprintf("Value: %d", q.questionableField)
+}
+
+func TestConcurrentScheduledTask(t *testing.T) {
+
+	qvar := &QuestionableStruct{
+		questionableField: 0,
+	}
+	task := NewScheduledTask[int]()
+	task.Schedule(100*time.Millisecond, 5, func(param int) {
+		fmt.Println("Task with sleep: Started")
+		time.Sleep(250 * time.Millisecond)
+		fmt.Println("Task with sleep: After sleep")
+		qvar.questionableField = param
+		fmt.Println("Task with sleep: Finished")
+	})
+
+	time.Sleep(150 * time.Millisecond)
+	task.Schedule(time.Millisecond, 10, func(param int) {
+		fmt.Println("Task without sleep: Started")
+		qvar.questionableField = param
+		fmt.Println("Task without sleep: Finished")
+	})
+
+	time.Sleep(500 * time.Millisecond)
+	// Notice that the value will be 5, even though 10 was scheduled after 5.
+	fmt.Println(qvar.ToString())
 }
