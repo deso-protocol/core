@@ -1,6 +1,7 @@
 package consensus
 
 import (
+	"fmt"
 	"testing"
 	"time"
 
@@ -14,9 +15,10 @@ func TestScheduledTask(t *testing.T) {
 		task := NewScheduledTask[uint64]()
 
 		executedTaskParam := uint64(0)
-		task.Schedule(time.Microsecond, 100, func(param uint64) {
+		err := task.Schedule(time.Microsecond, 100, func(param uint64) {
 			executedTaskParam = param
 		})
+		require.NoError(t, err)
 		time.Sleep(time.Second / 2)
 
 		// The task should have executed so this value will now be 100.
@@ -31,9 +33,10 @@ func TestScheduledTask(t *testing.T) {
 		task := NewScheduledTask[uint64]()
 
 		executedTaskParam := uint64(0)
-		task.Schedule(time.Hour, 100, func(param uint64) {
+		err := task.Schedule(time.Hour, 100, func(param uint64) {
 			executedTaskParam = param
 		})
+		require.NoError(t, err)
 
 		// The task should not have executed so this value will remain 0.
 		require.Equal(t, uint64(0), executedTaskParam)
@@ -44,4 +47,49 @@ func TestScheduledTask(t *testing.T) {
 		// Cancel the task.
 		task.Cancel()
 	}
+}
+
+type QuestionableStruct struct {
+	questionableField int
+}
+
+func (q *QuestionableStruct) ToString() string {
+	return fmt.Sprintf("Value: %d", q.questionableField)
+}
+
+func TestConcurrentScheduledTask(t *testing.T) {
+
+	qvar := &QuestionableStruct{
+		questionableField: 0,
+	}
+	task := NewScheduledTask[int]()
+	err := task.Schedule(100*time.Millisecond, 5, func(param int) {
+		fmt.Println("Task with sleep: Started")
+		time.Sleep(250 * time.Millisecond)
+		fmt.Println("Task with sleep: After sleep")
+		qvar.questionableField = param
+		fmt.Println("Task with sleep: Finished")
+	})
+	require.NoError(t, err)
+
+	time.Sleep(150 * time.Millisecond)
+	_taskWithoutSleep := func() {
+		err = task.Schedule(time.Millisecond, 10, func(param int) {
+			fmt.Println("Task without sleep: Started")
+			qvar.questionableField = param
+			fmt.Println("Task without sleep: Finished")
+		})
+	}
+	_taskWithoutSleep()
+	if err != nil {
+		fmt.Println("Task without sleep: Cant start, error:", err)
+	}
+	time.Sleep(400 * time.Millisecond)
+	fmt.Println("Task without sleep: Waited, retrying")
+	_taskWithoutSleep()
+	require.NoError(t, err)
+
+	time.Sleep(50 * time.Millisecond)
+	// The value will be 10 because the second task will not execute until the first task has finished or never started.
+	fmt.Println(qvar.ToString())
 }

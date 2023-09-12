@@ -89,6 +89,8 @@ func (t *ScheduledTask[TaskParam]) Cancel() {
 	if t.status == scheduledTaskStatusStarted {
 		return
 	}
+	t.status = scheduledTaskStatusNotStarted
+	t.seq++
 
 	if t.timer != nil {
 		t.timer.Stop()
