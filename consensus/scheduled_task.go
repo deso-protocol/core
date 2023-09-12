@@ -24,9 +24,6 @@ type ScheduledTask[TaskParam any] struct {
 
 func NewScheduledTask[TaskParam any]() *ScheduledTask[TaskParam] {
 	return &ScheduledTask[TaskParam]{
-		seq:      0,
-		lock:     sync.RWMutex{},
-		timer:    nil,
 		taskList: make(chan wrappedTask[TaskParam], taskListCapacity),
 	}
 }
