@@ -6,8 +6,50 @@ import (
 
 	"github.com/deso-protocol/core/bls"
 	"github.com/deso-protocol/core/collections"
+	"github.com/holiman/uint256"
 	"golang.org/x/crypto/sha3"
 )
+
+// Given a QC and a sorted validator set, this function returns true if the QC contains a valid
+// super-majority of signatures from the validator set for the QC's (View, BlockHash) pair.
+func IsValidSuperMajorityQuorumCertificate(qc QuorumCertificate, validators []Validator) bool {
+	if !isProperlyFormedQC(qc) || !isProperlyFormedValidatorSet(validators) {
+		return false
+	}
+
+	// Compute the signature that validators in the QC would have signed
+	signaturePayload := GetVoteSignaturePayload(qc.GetView(), qc.GetBlockHash())
+
+	// Compute the total stake in the QC and the total stake in the network
+	stakeInQC := uint256.NewInt()
+	totalStake := uint256.NewInt()
+
+	// Fetch the validators in the QC
+	validatorPublicKeysInQC := []*bls.PublicKey{}
+
+	// Fetch the validators in the QC, and compute the sum of stake in the QC and in the network
+	for ii := range validators {
+		if qc.GetSignersList().Get(ii) {
+			stakeInQC.Add(stakeInQC, validators[ii].GetStakeAmount())
+			validatorPublicKeysInQC = append(validatorPublicKeysInQC, validators[ii].GetPublicKey())
+		}
+		totalStake.Add(totalStake, validators[ii].GetStakeAmount())
+	}
+
+	// Check if the QC contains a super-majority of stake
+	if !isSuperMajorityStake(stakeInQC, totalStake) {
+		return false
+	}
+
+	// Finally, validate the signature
+	isValidSignature, err := bls.VerifyAggregateSignatureSinglePayload(
+		validatorPublicKeysInQC,
+		qc.GetAggregatedSignature(),
+		signaturePayload[:],
+	)
+
+	return err == nil && isValidSignature
+}
 
 // When voting on a block, validators sign the payload sha3-256(View, BlockHash) with their BLS
 // private key. This hash guarantees that the view and block hash fields in a VoteMessage
@@ -125,6 +167,11 @@ func isProperlyFormedQC(qc QuorumCertificate) bool {
 		return false
 	}
 
+	// The block hash must be non-nil
+	if isInterfaceNil(qc.GetBlockHash()) {
+		return false
+	}
+
 	// The view must be non-zero and the aggregated signature non-nil
 	if qc.GetView() == 0 || isInterfaceNil(qc.GetAggregatedSignature()) {
 		return false
@@ -153,4 +200,39 @@ func isInterfaceNil(i interface{}) bool {
 func isValidSignature(publicKey *bls.PublicKey, signature *bls.Signature, payload []byte) bool {
 	isValid, err := bls.VerifyAggregateSignatureSinglePayload([]*bls.PublicKey{publicKey}, signature, payload)
 	return err == nil && isValid
+}
+
+// This function uses integer math to verify if the provided stake amount represents a
+// super-majority 2f+1 Byzantine Quorum. First we need the following context:
+// - Assume N = total stake in the network
+// - Assume f = safe faulty stake in the network
+// - Assume C = honest stake in the network
+//
+// - We define N = C + f, and N = 3f + 1
+// - We know that f = (N - 1) / 3
+// - We want to determine if we have a BQ where C >= 2f + 1
+//
+// Given the above, we can use derive the following condition as the super-majority QC check:
+// - N - C <= floor[(N - 1) / 3]
+// - If the condition passes, then it guarantees that that C >= 2f + 1
+func isSuperMajorityStake(stake *uint256.Int, totalStake *uint256.Int) bool {
+	// Both values must be > 0
+	if stake == nil || totalStake == nil || stake.IsZero() || totalStake.IsZero() {
+		return false
+	}
+
+	// The stake must be less than or equal to the total stake
+	if stake.Cmp(totalStake) > 0 {
+		return false
+	}
+
+	// Compute f = floor[(N - 1) / 3]
+	safeFaultyStake := uint256.NewInt().Sub(totalStake, uint256.NewInt().SetOne())
+	safeFaultyStake = safeFaultyStake.Div(safeFaultyStake, uint256.NewInt().SetUint64(3))
+
+	// Compute N - C
+	totalVsHonestStakeDifference := uint256.NewInt().Sub(totalStake, stake)
+
+	// Check if (N - C) <= floor[(N - 1) / 3]
+	return totalVsHonestStakeDifference.Cmp(safeFaultyStake) <= 0
 }
