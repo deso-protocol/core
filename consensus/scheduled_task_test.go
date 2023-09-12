@@ -49,17 +49,17 @@ func TestScheduledTask(t *testing.T) {
 	}
 }
 
-type QuestionableStruct struct {
+type questionableStruct struct {
 	questionableField int
 }
 
-func (q *QuestionableStruct) ToString() string {
+func (q *questionableStruct) ToString() string {
 	return fmt.Sprintf("Value: %d", q.questionableField)
 }
 
 func TestConcurrentScheduledTask(t *testing.T) {
 
-	qvar := &QuestionableStruct{
+	qvar := &questionableStruct{
 		questionableField: 0,
 	}
 	task := NewScheduledTask[int]()
