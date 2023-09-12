@@ -9839,12 +9839,12 @@ func StartDBSummarySnapshots(db *badger.DB) {
 }
 
 const (
-	// PerformanceMemTableSize is 3072 MB. Increases the maximum
+	// PerformanceMemTableSize is 1024 MB. Increases the maximum
 	// amount of data we can commit in a single transaction.
-	PerformanceMemTableSize = 3072 << 20
+	PerformanceMemTableSize = 1024 << 20
 
-	// PerformanceLogValueSize is 256 MB.
-	PerformanceLogValueSize = 256 << 20
+	// PerformanceLogValueSize is 128 MB.
+	PerformanceLogValueSize = 128 << 20
 )
 
 // PerformanceBadgerOptions are performance geared
