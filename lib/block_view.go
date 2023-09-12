@@ -3089,10 +3089,6 @@ func (bav *UtxoView) _connectUpdateGlobalParams(
 				)
 			}
 		}
-	}
-
-	if blockHeight >= bav.Params.ForkHeights.ProofOfStake2ConsensusCutoverBlockHeight {
-		var bytesRead int
 		if len(extraData[FeeBucketRateMultiplierBasisPointsKey]) > 0 {
 			newGlobalParamsEntry.FeeBucketRateMultiplierBasisPoints, bytesRead = Uvarint(
 				extraData[FeeBucketRateMultiplierBasisPointsKey],
