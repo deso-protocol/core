@@ -10,6 +10,7 @@ import (
 	"github.com/pkg/errors"
 	"math"
 	"math/big"
+	"sort"
 )
 
 // block_view_lockups.go introduces 4 new transaction types:
@@ -433,46 +434,46 @@ func (txnData *CoinLockupTransferMetadata) New() DeSoTxnMetadata {
 }
 
 //
-// TYPES: DAOCoinUnlockMetadata
+// TYPES: CoinUnlockMetadata
 //
 
-type DAOCoinUnlockMetadata struct {
-	ProfilePublicKey         *PublicKey
-	DAOCoinToUnlockBaseUnits *uint256.Int
+type CoinUnlockMetadata struct {
+	ProfilePublicKey       *PublicKey
+	CoinsToUnlockBaseUnits *uint256.Int
 }
 
-func (txnData *DAOCoinUnlockMetadata) GetTxnType() TxnType {
-	return TxnTypeDAOCoinUnlock
+func (txnData *CoinUnlockMetadata) GetTxnType() TxnType {
+	return TxnTypeCoinUnlock
 }
 
-func (txnData *DAOCoinUnlockMetadata) ToBytes(preSignature bool) ([]byte, error) {
+func (txnData *CoinUnlockMetadata) ToBytes(preSignature bool) ([]byte, error) {
 	var data []byte
 	data = append(data, EncodeByteArray(txnData.ProfilePublicKey.ToBytes())...)
-	data = append(data, VariableEncodeUint256(txnData.DAOCoinToUnlockBaseUnits)...)
+	data = append(data, VariableEncodeUint256(txnData.CoinsToUnlockBaseUnits)...)
 	return data, nil
 }
 
-func (txnData *DAOCoinUnlockMetadata) FromBytes(data []byte) error {
+func (txnData *CoinUnlockMetadata) FromBytes(data []byte) error {
 	rr := bytes.NewReader(data)
 
 	// ProfilePublicKey
 	profilePublicKeyBytes, err := DecodeByteArray(rr)
 	if err != nil {
-		return errors.Wrapf(err, "DAOCoinUnlockMetadata.FromBytes: Problem reading ProfilePublicKey")
+		return errors.Wrapf(err, "CoinUnlockMetadata.FromBytes: Problem reading ProfilePublicKey")
 	}
 	txnData.ProfilePublicKey = NewPublicKey(profilePublicKeyBytes)
 
-	// LockedDAOCoinToTransferBaseUnits
-	txnData.DAOCoinToUnlockBaseUnits, err = VariableDecodeUint256(rr)
+	// CoinToUnlockBaseUnits
+	txnData.CoinsToUnlockBaseUnits, err = VariableDecodeUint256(rr)
 	if err != nil {
-		return errors.Wrapf(err, "DAOCoinUnlockMetadata.FromBytes: Problem reading DAOCoinToUnlockBaseUnits")
+		return errors.Wrapf(err, "CoinUnlockMetadata.FromBytes: Problem reading DAOCoinToUnlockBaseUnits")
 	}
 
 	return nil
 }
 
-func (txnData *DAOCoinUnlockMetadata) New() DeSoTxnMetadata {
-	return &DAOCoinUnlockMetadata{}
+func (txnData *CoinUnlockMetadata) New() DeSoTxnMetadata {
+	return &CoinUnlockMetadata{}
 }
 
 //
@@ -1098,13 +1099,13 @@ func (bav *UtxoView) _connectCoinLockupTransfer(
 	//
 	// We go ahead and save a previous copy of the balance entries in the event the
 	// transaction must be reversed.
-	lockedBalanceEntryOther := bav.GetLockedBalanceEntryForHODLerPKIDCreatorPKIDTimestampLockedByType(
+	lockedBalanceEntryOther := bav.GetLockedBalanceEntryForHODLerPKIDProfilePKIDTimestampLockedByType(
 		senderPKID, profilePKID, txMeta.ExpirationTimestampUnixNanoSecs, LockedByOther)
 	prevLockedBalanceEntryOther := lockedBalanceEntryOther.Copy()
-	lockedBalanceEntryHODLer := bav.GetLockedBalanceEntryForHODLerPKIDCreatorPKIDTimestampLockedByType(
+	lockedBalanceEntryHODLer := bav.GetLockedBalanceEntryForHODLerPKIDProfilePKIDTimestampLockedByType(
 		senderPKID, profilePKID, txMeta.ExpirationTimestampUnixNanoSecs, LockedByHODLer)
 	prevLockedBalanceEntryHODLer := lockedBalanceEntryHODLer.Copy()
-	lockedBalanceEntryCreator := bav.GetLockedBalanceEntryForHODLerPKIDCreatorPKIDTimestampLockedByType(
+	lockedBalanceEntryCreator := bav.GetLockedBalanceEntryForHODLerPKIDProfilePKIDTimestampLockedByType(
 		senderPKID, profilePKID, txMeta.ExpirationTimestampUnixNanoSecs, LockedByCreator)
 	prevLockedBalaneEntryCreator := lockedBalanceEntryCreator.Copy()
 
@@ -1169,9 +1170,9 @@ func (bav *UtxoView) _connectCoinLockupTransfer(
 	}
 
 	// Fetch the recipient's balance entry.
-	recipientLockedBalanceEntryOther := bav.GetLockedBalanceEntryForHODLerPKIDCreatorPKIDTimestampLockedByType(
+	recipientLockedBalanceEntryOther := bav.GetLockedBalanceEntryForHODLerPKIDProfilePKIDTimestampLockedByType(
 		receieverPKID, profilePKID, txMeta.ExpirationTimestampUnixNanoSecs, LockedByOther)
-	recipientLockedBalanceEntryCreator := bav.GetLockedBalanceEntryForHODLerPKIDCreatorPKIDTimestampLockedByType(
+	recipientLockedBalanceEntryCreator := bav.GetLockedBalanceEntryForHODLerPKIDProfilePKIDTimestampLockedByType(
 		receieverPKID, profilePKID, txMeta.ExpirationTimestampUnixNanoSecs, LockedByCreator)
 	prevRecipientLockedBalanceEntryOther := recipientLockedBalanceEntryOther
 	prevRecipientLockedBalanceEntryCreator := recipientLockedBalanceEntryCreator
@@ -1254,29 +1255,29 @@ func (bav *UtxoView) _disconnectCoinLockupTransfer(
 	}
 
 	// Fetch the LockedBalanceEntries in the view.
-	lockedBalanceEntryOther := bav.GetLockedBalanceEntryForHODLerPKIDCreatorPKIDTimestampLockedByType(
+	lockedBalanceEntryOther := bav.GetLockedBalanceEntryForHODLerPKIDProfilePKIDTimestampLockedByType(
 		operationData.PrevLockedBalanceEntryOther.HODLerPKID,
-		operationData.PrevLockedBalanceEntryOther.CreatorPKID,
+		operationData.PrevLockedBalanceEntryOther.ProfilePKID,
 		operationData.PrevLockedBalanceEntryOther.ExpirationTimestampUnixNanoSecs,
 		operationData.PrevLockedBalanceEntryOther.LockedBy)
-	lockedBalanceEntryHODLer := bav.GetLockedBalanceEntryForHODLerPKIDCreatorPKIDTimestampLockedByType(
+	lockedBalanceEntryHODLer := bav.GetLockedBalanceEntryForHODLerPKIDProfilePKIDTimestampLockedByType(
 		operationData.PrevLockedBalanceEntryHODLer.HODLerPKID,
-		operationData.PrevLockedBalanceEntryHODLer.CreatorPKID,
+		operationData.PrevLockedBalanceEntryHODLer.ProfilePKID,
 		operationData.PrevLockedBalanceEntryHODLer.ExpirationTimestampUnixNanoSecs,
 		operationData.PrevLockedBalanceEntryHODLer.LockedBy)
-	lockedBalanceEntryCreator := bav.GetLockedBalanceEntryForHODLerPKIDCreatorPKIDTimestampLockedByType(
+	lockedBalanceEntryCreator := bav.GetLockedBalanceEntryForHODLerPKIDProfilePKIDTimestampLockedByType(
 		operationData.PrevLockedBalanceEntryCreator.HODLerPKID,
-		operationData.PrevLockedBalanceEntryCreator.CreatorPKID,
+		operationData.PrevLockedBalanceEntryCreator.ProfilePKID,
 		operationData.PrevLockedBalanceEntryCreator.ExpirationTimestampUnixNanoSecs,
 		operationData.PrevLockedBalanceEntryCreator.LockedBy)
-	recipientLockedBalanceEntryOther := bav.GetLockedBalanceEntryForHODLerPKIDCreatorPKIDTimestampLockedByType(
+	recipientLockedBalanceEntryOther := bav.GetLockedBalanceEntryForHODLerPKIDProfilePKIDTimestampLockedByType(
 		operationData.PrevRecipientLockedBalanceEntryOther.HODLerPKID,
-		operationData.PrevRecipientLockedBalanceEntryOther.CreatorPKID,
+		operationData.PrevRecipientLockedBalanceEntryOther.ProfilePKID,
 		operationData.PrevRecipientLockedBalanceEntryOther.ExpirationTimestampUnixNanoSecs,
 		operationData.PrevRecipientLockedBalanceEntryOther.LockedBy)
-	recipientLockedBalanceEntryCreator := bav.GetLockedBalanceEntryForHODLerPKIDCreatorPKIDTimestampLockedByType(
+	recipientLockedBalanceEntryCreator := bav.GetLockedBalanceEntryForHODLerPKIDProfilePKIDTimestampLockedByType(
 		operationData.PrevRecipientLockedBalanceEntryCreator.HODLerPKID,
-		operationData.PrevRecipientLockedBalanceEntryCreator.CreatorPKID,
+		operationData.PrevRecipientLockedBalanceEntryCreator.ProfilePKID,
 		operationData.PrevRecipientLockedBalanceEntryCreator.ExpirationTimestampUnixNanoSecs,
 		operationData.PrevRecipientLockedBalanceEntryCreator.LockedBy)
 
@@ -1322,7 +1323,7 @@ func (bav *UtxoView) _disconnectCoinLockupTransfer(
 	return nil
 }
 
-func (bav *UtxoView) _connectDAOCoinUnlock(
+func (bav *UtxoView) _connectCoinUnlock(
 	txn *MsgDeSoTxn,
 	txHash *BlockHash,
 	blockHeight uint32,
@@ -1331,15 +1332,307 @@ func (bav *UtxoView) _connectDAOCoinUnlock(
 	_totalOutput uint64,
 	_utxoOps []*UtxoOperation,
 	_err error) {
-	return 0, 0, nil, nil
+	var utxoOpsForTxn []*UtxoOperation
+
+	if blockHeight < bav.Params.ForkHeights.ProofOfStake1StateSetupBlockHeight ||
+		blockHeight < bav.Params.ForkHeights.BalanceModelBlockHeight {
+		return 0, 0, nil, errors.Wrapf(RuleErrorProofofStakeTxnBeforeBlockHeight, "_connectCoinLockup")
+	}
+
+	// Validate the txn TxnType.
+	if txn.TxnMeta.GetTxnType() != TxnTypeCoinUnlock {
+		return 0, 0, nil, fmt.Errorf(
+			"_connectCoinUnlock: called with bad TxnType %s", txn.TxnMeta.GetTxnType().String(),
+		)
+	}
+
+	// Try connecting the basic transfer without considering transaction metadata.
+	_, _, utxoOpsForBasicTransfer, err := bav._connectBasicTransfer(txn, txHash, blockHeight, verifySignatures)
+	if err != nil {
+		return 0, 0, nil, errors.Wrapf(err, "_connectCoinUnlock")
+	}
+	utxoOpsForTxn = append(utxoOpsForTxn, utxoOpsForBasicTransfer...)
+
+	// Grab the txn metadata.
+	txMeta := txn.TxnMeta.(*CoinUnlockMetadata)
+
+	// Check for a valid public key.
+	if len(txMeta.ProfilePublicKey) != btcec.PubKeyBytesLenCompressed {
+		return 0, 0, nil, errors.Wrap(RuleErrorDAOCoinInvalidPubKey,
+			"_connectCoinUnlock")
+	}
+	if !txMeta.ProfilePublicKey.IsZeroPublicKey() {
+		creatorProfileEntry := bav.GetProfileEntryForPublicKey(txMeta.ProfilePublicKey.ToBytes())
+		if creatorProfileEntry == nil || creatorProfileEntry.isDeleted {
+			return 0, 0, nil, errors.Wrap(RuleErrorCoinUnlockOnNonExistentProfile,
+				"_connectCoinUnlock")
+		}
+	}
+
+	// Validate the unlock amount as non-zero. This is meant to prevent wasteful "no-op" transactions.
+	if txMeta.CoinsToUnlockBaseUnits.IsZero() {
+		return 0, 0, nil, errors.Wrap(RuleErrorCoinUnlockOfAmountZero,
+			"_connectCoinUnlock")
+	}
+
+	// Ensure the DeSo unlock amount is less than 2**64 (maximum DeSo balance).
+	if txMeta.ProfilePublicKey.IsZeroPublicKey() {
+		maxUint64, _ := uint256.FromBig(big.NewInt(0).SetUint64(math.MaxUint64))
+		if txMeta.CoinsToUnlockBaseUnits.Gt(maxUint64) {
+			return 0, 0, nil, errors.Wrap(RuleErrorCoinUnlockOfAmountZero,
+				"_connectCoinUnlock")
+		}
+	}
+
+	// Convert the TransactorPublicKey to HODLerPKID
+	transactorPKIDEntry := bav.GetPKIDForPublicKey(txn.PublicKey)
+	if transactorPKIDEntry == nil || transactorPKIDEntry.isDeleted {
+		return 0, 0, nil, errors.Wrapf(RuleErrorCoinUnlockInvalidHODLerPKID,
+			"_connectCoinUnlock")
+	}
+	hodlerPKID := transactorPKIDEntry.PKID
+
+	// Convert the ProfilePublicKey to ProfilePKID.
+	var profilePKID *PKID
+	if txMeta.ProfilePublicKey.IsZeroPublicKey() {
+		profilePKID = ZeroPKID.NewPKID()
+	} else {
+		profilePKIDEntry := bav.GetPKIDForPublicKey(txMeta.ProfilePublicKey.ToBytes())
+		if profilePKIDEntry == nil || profilePKIDEntry.isDeleted {
+			return 0, 0, nil, errors.Wrapf(RuleErrorCoinUnlockInvalidProfilePKID,
+				"_connectCoinUnlock")
+		}
+		profilePKID = profilePKIDEntry.PKID
+	}
+
+	// TODO: Fetch the timestamp of the current block
+	currentTimestamp := int64(0)
+
+	// Retrieve PrevLockedBalanceEntries. These will be restored if we disconnect this txn.
+	prevLockedBalanceEntries, err := bav.GetUnlockableLockedBalanceEntries(
+		hodlerPKID, profilePKID, currentTimestamp)
+	if err != nil {
+		return 0, 0, nil, errors.Wrapf(err, "_connectCoinUnlock")
+	}
+	if len(prevLockedBalanceEntries) == 0 {
+		return 0, 0, nil, errors.Wrapf(RuleErrorCoinUnlockNoUnlockableCoinsFound,
+			"_connectCoinUnlock")
+	}
+
+	// Unlock coins until the amount specified by the transaction is deducted.
+	var newLockedBalanceEntries []*LockedBalanceEntry
+	remainingUnlockBalance := txMeta.CoinsToUnlockBaseUnits.Clone()
+	for _, prevLockedBalanceEntry := range prevLockedBalanceEntries {
+		newLockedBalanceEntry := prevLockedBalanceEntry.Copy()
+		if newLockedBalanceEntry.AmountBaseUnits.Gt(remainingUnlockBalance) ||
+			newLockedBalanceEntry.AmountBaseUnits.Eq(remainingUnlockBalance) {
+			remainingUnlockBalance = uint256.NewInt()
+			newLockedBalanceEntry.AmountBaseUnits =
+				*uint256.NewInt().Sub(&newLockedBalanceEntry.AmountBaseUnits, remainingUnlockBalance)
+		} else {
+			remainingUnlockBalance =
+				uint256.NewInt().Sub(remainingUnlockBalance, &newLockedBalanceEntry.AmountBaseUnits)
+			newLockedBalanceEntry.AmountBaseUnits = *uint256.NewInt()
+		}
+
+		// Append the new LockedBalanceEntry.
+		newLockedBalanceEntries = append(newLockedBalanceEntries, newLockedBalanceEntry)
+
+		// Break if we've satisfied the unlock amount.
+		if remainingUnlockBalance.IsZero() {
+			break
+		}
+	}
+	if remainingUnlockBalance.IsZero() {
+		return 0, 0, nil, errors.Wrapf(RuleErrorCoinUnlockInsufficientUnlockableCoins,
+			"_connectCoinUnlock")
+	}
+
+	// Update the LockedBalanceEntries.
+	for _, lockedBalanceEntry := range newLockedBalanceEntries {
+		bav._setLockedBalanceEntry(lockedBalanceEntry)
+	}
+
+	// Credit the transactor with either DAO coins or DeSo for this unlock.
+	var prevTransactorBalanceEntry *BalanceEntry
+	if profilePKID.IsZeroPKID() {
+		utxoOp, err := bav._addBalance(txMeta.CoinsToUnlockBaseUnits.Uint64(), txn.PublicKey)
+		if err != nil {
+			return 0, 0, nil, errors.Wrapf(err, "_connectCoinUnlock: error"+
+				"adding CoinToUnlockBaseUnits to the transactor balance: ")
+		}
+		utxoOpsForTxn = append(utxoOpsForTxn, utxoOp)
+	} else {
+		prevTransactorBalanceEntry = bav.GetBalanceEntry(hodlerPKID, profilePKID, true)
+
+		// Credit the transactor with the unlock amount.
+		transactorBalanceEntry := prevTransactorBalanceEntry.Copy()
+		newTransactorBalanceNanos, err := SafeUint256().Add(&transactorBalanceEntry.BalanceNanos, txMeta.CoinsToUnlockBaseUnits)
+		if err != nil {
+
+		}
+		transactorBalanceEntry.BalanceNanos = *newTransactorBalanceNanos
+		bav._setBalanceEntryMappings(transactorBalanceEntry, true)
+	}
+
+	// Create a UtxoOp for the operation.
+	utxoOpsForTxn = append(utxoOpsForTxn, &UtxoOperation{
+		Type:                       OperationTypeCoinUnlock,
+		PrevTransactorBalanceEntry: prevTransactorBalanceEntry,
+		PrevLockedBalanceEntries:   prevLockedBalanceEntries,
+	})
+
+	return 0, 0, utxoOpsForTxn, nil
 }
 
-func (bav *UtxoView) _disconnectDAOCoinUnlock(
+func (bav *UtxoView) GetUnlockableLockedBalanceEntries(
+	hodlerPKID *PKID,
+	profilePKID *PKID,
+	currentTimestampUnixNanoSecs int64,
+) ([]*LockedBalanceEntry, error) {
+	// Validate inputs.
+	if hodlerPKID == nil {
+		return nil, errors.New("UtxoView.GetUnlockableLockedBalanceEntries: nil hodlerPKID provided as input")
+	}
+	if profilePKID == nil {
+		return nil, errors.New("UtxoView.GetUnlockableLockedBalanceEntries: nil profilePKID provided as input")
+	}
+	if currentTimestampUnixNanoSecs < 0 {
+		return nil, errors.New("UtxoView.GetUnlockableLockedBalanceEntries: negative timestamp provided as input")
+	}
+
+	// First, pull unlockable LockedBalanceEntries from the db and cache them in the UtxoView.
+	dbUnlockableLockedBalanceEntries, err := DBGetUnlockableLockedBalanceEntries(
+		bav.Handle, bav.Snapshot, hodlerPKID, profilePKID, currentTimestampUnixNanoSecs)
+	if err != nil {
+		return nil, errors.Wrapf(err, "UtxoView.GetUnlockableLockedBalanceEntries")
+	}
+	for _, lockedBalanceEntry := range dbUnlockableLockedBalanceEntries {
+		// Cache results in the UtxoView.
+		if _, exists := bav.LockedBalanceEntryMapKeyToLockedBalanceEntry[lockedBalanceEntry.ToMapKey()]; !exists {
+			bav._setLockedBalanceEntry(lockedBalanceEntry)
+		}
+	}
+
+	// Then, pull unlockable LockedBalanceEntries from the UtxoView.
+	var unlockableLockedBalanceEntries []*LockedBalanceEntry
+	for _, lockedBalanceEntry := range bav.LockedBalanceEntryMapKeyToLockedBalanceEntry {
+		// Filter to matching LockedBalanceEntries.
+		if !lockedBalanceEntry.HODLerPKID.Eq(hodlerPKID) ||
+			!lockedBalanceEntry.ProfilePKID.Eq(profilePKID) ||
+			lockedBalanceEntry.ExpirationTimestampUnixNanoSecs > currentTimestampUnixNanoSecs ||
+			lockedBalanceEntry.AmountBaseUnits.IsZero() ||
+			lockedBalanceEntry.isDeleted {
+			continue
+		}
+		unlockableLockedBalanceEntries = append(unlockableLockedBalanceEntries, lockedBalanceEntry)
+	}
+
+	// Sort UnlockableLockedBalanceEntries by timestamp ASC.
+	sort.Slice(unlockableLockedBalanceEntries, func(ii, jj int) bool {
+		return unlockableLockedBalanceEntries[ii].ExpirationTimestampUnixNanoSecs <
+			unlockableLockedBalanceEntries[jj].ExpirationTimestampUnixNanoSecs
+	})
+	return unlockableLockedBalanceEntries, nil
+}
+
+func (bav *UtxoView) _disconnectCoinUnlock(
 	operationType OperationType,
 	currentTxn *MsgDeSoTxn,
-	txHash *BlockHash,
+	txnHash *BlockHash,
 	utxoOpsForTxn []*UtxoOperation,
 	blockHeight uint32) error {
+
+	if len(utxoOpsForTxn) == 0 {
+		return fmt.Errorf("_disconnectCoinUnlock: utxoOperations are missing")
+	}
+	operationIndex := len(utxoOpsForTxn) - 1
+
+	// Verify the last operation as being a CoinUnlock operation.
+	if utxoOpsForTxn[operationIndex].Type != OperationTypeCoinUnlock {
+		return fmt.Errorf("_disconnectCoinUnlock: Trying to revert "+
+			"OperationTypeCoinUnlock but found type %v", utxoOpsForTxn[operationIndex].Type)
+	}
+
+	// Sanity check the CoinUnlock operation exists.
+	operationData := utxoOpsForTxn[operationIndex]
+	if operationData.PrevLockedBalanceEntries == nil || len(operationData.PrevLockedBalanceEntries) == 0 {
+		return fmt.Errorf("_disconnectCoinUnlock: Trying to revert OperationTypeCoinUnlock " +
+			"but found nil or empty previous locked balance entries slice")
+	}
+	for _, prevLockedBalanceEntry := range operationData.PrevLockedBalanceEntries {
+		if prevLockedBalanceEntry == nil || prevLockedBalanceEntry.isDeleted {
+			return fmt.Errorf("_disconnectCoinUnlock: Trying to revert OperationTypeCoinUnlock " +
+				"but found nil or deleted previous locked balance entry")
+		}
+	}
+	operationIndex--
+	if operationIndex < 0 {
+		return fmt.Errorf("_disconnectCoinUnlock: Trying to revert OperationTypeCoinUnlock " +
+			"but found malformed utxoOpsForTxn")
+	}
+
+	// Sanity check the data within the CoinUnlock.
+	// Reverting an unlock of LockedBalanceEntry should not result in less coins.
+	for _, prevLockedBalanceEntry := range operationData.PrevLockedBalanceEntries {
+		lockedBalanceEntry := bav.GetLockedBalanceEntryForHODLerPKIDProfilePKIDTimestampLockedByType(
+			prevLockedBalanceEntry.HODLerPKID,
+			prevLockedBalanceEntry.ProfilePKID,
+			prevLockedBalanceEntry.ExpirationTimestampUnixNanoSecs,
+			prevLockedBalanceEntry.LockedBy)
+		if prevLockedBalanceEntry.AmountBaseUnits.Lt(&lockedBalanceEntry.AmountBaseUnits) {
+			return fmt.Errorf("_disconnectCoinUnlock: Trying to revert OperationTypeCoinUnlock " +
+				"would cause locked balance entry balance to decrease")
+		}
+		bav._setLockedBalanceEntry(prevLockedBalanceEntry)
+	}
+
+	// Reverting the BalanceEntry (if applicable) should not result in more coins.
+	profilePKID := operationData.PrevLockedBalanceEntries[0].ProfilePKID
+	hodlerPKID := operationData.PrevLockedBalanceEntries[0].HODLerPKID
+	if !profilePKID.IsZeroPKID() {
+		balanceEntry := bav.GetBalanceEntry(hodlerPKID, profilePKID, true)
+		if operationData.PrevTransactorBalanceEntry == nil || operationData.PrevTransactorBalanceEntry.isDeleted {
+			return fmt.Errorf("_disconnectCoinUnlock: Trying to revert OperationTypeCoinUnlock " +
+				"but found nil or deleted previous balance entry")
+		}
+		if operationData.PrevTransactorBalanceEntry.BalanceNanos.Gt(&balanceEntry.BalanceNanos) {
+			return fmt.Errorf("_disconnectCoinUnlock: Trying to revert OperationTypeCoinUnlock " +
+				"would cause balance entry balance to increase")
+		}
+		bav._setBalanceEntryMappings(operationData.PrevTransactorBalanceEntry, true)
+	}
+
+	// Reverting the DeSo addition should not result in more coins.
+	if profilePKID.IsZeroPKID() {
+		// Revert the DeSo add.
+		operationData = utxoOpsForTxn[operationIndex]
+		if operationData.Type != OperationTypeAddBalance {
+			return fmt.Errorf("_disconnectCoinLockup: Trying to revert OperationTypeAddBalance "+
+				"but found type %v", operationData.Type)
+		}
+		if !bytes.Equal(operationData.BalancePublicKey, currentTxn.PublicKey) {
+			return fmt.Errorf("_disconnectCoinLockup: Trying to revert OperationTypeAddBalance " +
+				"but found mismatched public keys")
+		}
+		err := bav._unAddBalance(operationData.BalanceAmountNanos, operationData.BalancePublicKey)
+		if err != nil {
+			return errors.Wrapf(err, "_disconnectCoinLockup: Problem unAdding balance of %v for the "+
+				"transactor", operationData.BalanceAmountNanos)
+		}
+		operationIndex--
+		if operationIndex < 0 {
+			return fmt.Errorf("_disconnectCoinLockup: Trying to revert OperationTypeCoinUnlock " +
+				"but malformed utxoOpsForTxn")
+		}
+	}
+
+	// By here we only need to disconnect the basic transfer associated with the transaction.
+	basicTransferOps := utxoOpsForTxn[:operationIndex]
+	err := bav._disconnectBasicTransfer(currentTxn, txnHash, basicTransferOps, blockHeight)
+	if err != nil {
+		return errors.Wrapf(err, "_disconnectCoinLockup")
+	}
 	return nil
 }
 

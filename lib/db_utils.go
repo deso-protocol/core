@@ -10687,13 +10687,111 @@ func DBDeletePostAssociationWithTxn(txn *badger.Txn, snap *Snapshot, association
 
 // LockedBalanceEntry DB Operations
 
+func DBGetUnlockableLockedBalanceEntries(
+	handle *badger.DB,
+	snap *Snapshot,
+	hodlerPKID *PKID,
+	profilePKID *PKID,
+	currentTimestampUnixNanoSecs int64,
+) ([]*LockedBalanceEntry, error) {
+	var ret []*LockedBalanceEntry
+	var err error
+	handle.View(func(txn *badger.Txn) error {
+		ret, err = DBGetUnlockableLockedBalanceEntriesWithTxn(
+			txn, snap, hodlerPKID, profilePKID, currentTimestampUnixNanoSecs)
+		return nil
+	})
+	return ret, err
+}
+
+func DBGetUnlockableLockedBalanceEntriesWithTxn(
+	txn *badger.Txn,
+	snap *Snapshot,
+	hodlerPKID *PKID,
+	profilePKID *PKID,
+	currentTimestampUnixNanoSecs int64,
+) ([]*LockedBalanceEntry, error) {
+	// Retrieve all LockedBalanceEntries from db matching hodlerPKID, profilePKID, and
+	// ExpirationTimestampUnixNanoSecs <= currentTimestampUnixNanoSecs.
+	// NOTE: While ideally we would start with <prefix, HODLerPKID, ProfilePKID> and
+	//       seek till <prefix, HODLerPKID, ProfilePKID, currentTimestampUnixNanoSecs>,
+	//       Badger does not support this functionality as the ValidForPrefix() function
+	//       stops when a mismatched prefix occurs, not a "lexicographically less than" prefix.
+	//       For this reason, we start with <prefix, HODLerPKID, ProfilePKID, currentTimestampUnixNanoSecs + 1>
+	//       and iterate backwards while we're valid for the prefix <prefix, HODLerPKID, ProfilePKID>.
+
+	if currentTimestampUnixNanoSecs < 0 || currentTimestampUnixNanoSecs == math.MaxInt64-1 {
+		return nil, fmt.Errorf("DBGetUnlockableLockedBalanceEntriesWithTxn: invalid " +
+			"block timestamp; this shouldn't be possible")
+	}
+
+	// Valid until <prefix, HODLerPKID, ProfilePKID, CurrentTimestampNanoSecs>
+	startKey := DBKeyForLockedBalanceEntryByHODLerPKIDandProfilePKIDandLockedAt(&LockedBalanceEntry{
+		HODLerPKID:                      hodlerPKID,
+		ProfilePKID:                     profilePKID,
+		ExpirationTimestampUnixNanoSecs: currentTimestampUnixNanoSecs + 1,
+	})
+
+	// Start at <prefix, HODLerPKID, ProfilePKID>
+	prefixKey := DBPrefixKeyForLockedBalanceEntryByHODLerPKIDandProfilePKID(&LockedBalanceEntry{
+		HODLerPKID:  hodlerPKID,
+		ProfilePKID: profilePKID,
+	})
+
+	// Create an iterator. We set the iterator to reverse in o
+	opts := badger.DefaultIteratorOptions
+	opts.Reverse = true
+	iterator := txn.NewIterator(opts)
+	defer iterator.Close()
+
+	// Store matching LockedBalanceEntries to return
+	var lockedBalanceEntries []*LockedBalanceEntry
+
+	// Loop.
+	for iterator.Seek(startKey); iterator.ValidForPrefix(prefixKey); iterator.Next() {
+		// Retrieve the LockedBalanceEntryBytes.
+		lockedBalanceEntryBytes, err := iterator.Item().ValueCopy(nil)
+		if err != nil {
+			return nil, errors.Wrapf(err, "DBGetUnlockableLockedBalanceEntriesWithTxn: "+
+				"error retrieveing LockedBalanceEntry: ")
+		}
+
+		// Convert LockedBalanceEntryBytes to LockedBalanceEntry.
+		rr := bytes.NewReader(lockedBalanceEntryBytes)
+		lockedBalanceEntry, err := DecodeDeSoEncoder(&LockedBalanceEntry{}, rr)
+		if err != nil {
+			return nil, errors.Wrapf(err, "DBGetUnlockableLockedBalanceEntriesWithTxn: "+
+				"error decoding LockedBalanceEntry: ")
+		}
+
+		if lockedBalanceEntry.ExpirationTimestampUnixNanoSecs < currentTimestampUnixNanoSecs {
+			lockedBalanceEntries = append(lockedBalanceEntries)
+		}
+	}
+
+	return lockedBalanceEntries, nil
+}
+
+func DBKeyForLockedBalanceEntryByHODLerPKIDandProfilePKIDandLockedAt(lockedBalanceEntry *LockedBalanceEntry) []byte {
+	data := DBPrefixKeyForLockedBalanceEntryByHODLerPKIDandProfilePKID(lockedBalanceEntry)
+	data = append(data, EncodeUint64(uint64(lockedBalanceEntry.ExpirationTimestampUnixNanoSecs))...)
+	return data
+}
+
+func DBPrefixKeyForLockedBalanceEntryByHODLerPKIDandProfilePKID(lockedBalanceEntry *LockedBalanceEntry) []byte {
+	data := append([]byte{}, Prefixes.PrefixLockedBalanceEntryByHODLerPKIDProfilePKIDUnlockTimestampType...)
+	data = append(data, lockedBalanceEntry.HODLerPKID.ToBytes()...)
+	data = append(data, lockedBalanceEntry.ProfilePKID.ToBytes()...)
+	return data
+}
+
 func DBGetLockedBalanceEntryForHODLerPKIDProfilePKIDTimestampType(handle *badger.DB, snap *Snapshot,
-	hodlerPKID *PKID, creatorPKID *PKID, expirationTimestamp int64, lockedByType LockedByType) *LockedBalanceEntry {
+	hodlerPKID *PKID, profilePKID *PKID, expirationTimestamp int64, lockedByType LockedByType) *LockedBalanceEntry {
 
 	var ret *LockedBalanceEntry
 	handle.View(func(txn *badger.Txn) error {
 		ret = DBGetLockedBalanceEntryForHODLerPKIDProfilePKIDTimestampTypeWithTxn(
-			txn, snap, hodlerPKID, creatorPKID, expirationTimestamp, lockedByType)
+			txn, snap, hodlerPKID, profilePKID, expirationTimestamp, lockedByType)
 		return nil
 	})
 	return ret

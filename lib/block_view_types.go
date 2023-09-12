@@ -634,6 +634,7 @@ const (
 	OperationTypeUnjailValidator              OperationType = 44
 	OperationTypeCoinLockup                   OperationType = 45
 	OperationTypeCoinLockupTransfer           OperationType = 46
+	OperationTypeCoinUnlock                   OperationType = 47
 
 	// NEXT_TAG = 46
 )
@@ -934,7 +935,7 @@ type UtxoOperation struct {
 	//
 
 	// PrevLockedBalanceEntry is the previous LockedBalanceEntry prior
-	// to a DAO coin lockup or DAO coin unlock.
+	// to a DAO coin lockup.
 	PrevLockedBalanceEntry *LockedBalanceEntry
 
 	// PrevLockedBalanceEntryOther, PrevLockedBalanceEntryHODLer, PrevLockedBalanceEntryCreator,
@@ -945,6 +946,9 @@ type UtxoOperation struct {
 	PrevLockedBalanceEntryCreator          *LockedBalanceEntry
 	PrevRecipientLockedBalanceEntryOther   *LockedBalanceEntry
 	PrevRecipientLockedBalanceEntryCreator *LockedBalanceEntry
+
+	// PrevLockedBalanceEntries is a slice of LockedBalanceEntry prior to a coin unlock.
+	PrevLockedBalanceEntries []*LockedBalanceEntry
 }
 
 func (op *UtxoOperation) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte {

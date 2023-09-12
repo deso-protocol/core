@@ -258,7 +258,7 @@ const (
 	TxnTypeCoinLockup                   TxnType = 40
 	TxnTypeUpdateDAOCoinLockupParams    TxnType = 41
 	TxnTypeCoinLockupTransfer           TxnType = 42
-	TxnTypeDAOCoinUnlock                TxnType = 43
+	TxnTypeCoinUnlock                   TxnType = 43
 
 	// NEXT_ID = 44
 )
@@ -625,10 +625,10 @@ func NewTxnMetadata(txType TxnType) (DeSoTxnMetadata, error) {
 		return (&CoinLockupMetadata{}).New(), nil
 	case TxnTypeUpdateDAOCoinLockupParams:
 		return (&UpdateDAOCoinLockupParamsMetadata{}).New(), nil
-	case TxnTypeDAOCoinLockupTransfer:
-		return (&DAOCoinLockupTransferMetadata{}).New(), nil
-	case TxnTypeDAOCoinUnlock:
-		return (&DAOCoinUnlockMetadata{}).New(), nil
+	case TxnTypeCoinLockupTransfer:
+		return (&CoinLockupTransferMetadata{}).New(), nil
+	case TxnTypeCoinUnlock:
+		return (&CoinUnlockMetadata{}).New(), nil
 	default:
 		return nil, fmt.Errorf("NewTxnMetadata: Unrecognized TxnType: %v; make sure you add the new type of transaction to NewTxnMetadata", txType)
 	}
