@@ -10,15 +10,18 @@ const taskListCapacity = 10
 // ScheduledTask is a thread-safe wrapper around time.Timer that allows for creating tasks that
 // can be scheduled to execute at a later time with pre-specified params. Both the params and the
 // task are fully defined at the time of scheduling. Once a task has been scheduled, it cannot
-// be modified. However, tasks can be cancelled and rescheduled.
+// be modified. However, tasks can be cancelled and rescheduled. If a task is scheduled while
+// an existing task is mid-flight, the new task is ensured to execute after the existing task
+// has finished.
 //
 // This pattern is useful for spawning off tasks that we want to run after some specified amount
 // of time, but still want to have the ability to cancel.
 type ScheduledTask[TaskParam any] struct {
-	seq      uint64
 	lock     sync.RWMutex
+	taskLock sync.Mutex
 	timer    *time.Timer
 	duration time.Duration
+	seq      uint64
 	taskList chan wrappedTask[TaskParam]
 }
 
@@ -61,6 +64,8 @@ func (t *ScheduledTask[TaskParam]) Schedule(duration time.Duration, param TaskPa
 		if !taskInit(t.seq) {
 			return
 		}
+		t.taskLock.Lock()
+		defer t.taskLock.Unlock()
 		taskItem := <-t.taskList
 		taskItem.task(taskItem.param)
 	})
