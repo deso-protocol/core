@@ -66,9 +66,6 @@ func (t *ScheduledTask[TaskParam]) Schedule(duration time.Duration, param TaskPa
 		}
 		taskItem := <-t.taskList
 		taskItem.task(taskItem.param)
-
-		t.lock.Lock()
-		defer t.lock.Unlock()
 	})
 }
 
