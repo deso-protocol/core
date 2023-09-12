@@ -1,21 +1,11 @@
 package consensus
 
 import (
-	"github.com/pkg/errors"
 	"sync"
 	"time"
 )
 
-// scheduledTaskStatus represents the status of the task that is scheduled.
-type scheduledTaskStatus int
-
-const (
-	scheduledTaskStatusNotStarted scheduledTaskStatus = iota
-	scheduledTaskStatusStarted
-	scheduledTaskStatusFinished
-)
-
-const errorScheduledTaskNotFinished = "ScheduledTask has started and must finish before a new task can be scheduled."
+const taskListCapacity = 10
 
 // ScheduledTask is a thread-safe wrapper around time.Timer that allows for creating tasks that
 // can be scheduled to execute at a later time with pre-specified params. Both the params and the
@@ -25,36 +15,28 @@ const errorScheduledTaskNotFinished = "ScheduledTask has started and must finish
 // This pattern is useful for spawning off tasks that we want to run after some specified amount
 // of time, but still want to have the ability to cancel.
 type ScheduledTask[TaskParam any] struct {
-	status   scheduledTaskStatus
 	seq      uint64
 	lock     sync.RWMutex
 	timer    *time.Timer
 	duration time.Duration
+	taskList chan wrappedTask[TaskParam]
 }
 
 func NewScheduledTask[TaskParam any]() *ScheduledTask[TaskParam] {
 	return &ScheduledTask[TaskParam]{
-		status: scheduledTaskStatusNotStarted,
-		seq:    0,
-		lock:   sync.RWMutex{},
-		timer:  nil,
+		seq:      0,
+		lock:     sync.RWMutex{},
+		timer:    nil,
+		taskList: make(chan wrappedTask[TaskParam], taskListCapacity),
 	}
 }
 
 // Schedule a new task to be executed after the countdown duration. If there is an existing scheduled
 // task, it will be cancelled and replaced with the new task.
-func (t *ScheduledTask[TaskParam]) Schedule(duration time.Duration, param TaskParam, task func(TaskParam)) error {
+func (t *ScheduledTask[TaskParam]) Schedule(duration time.Duration, param TaskParam, task func(TaskParam)) {
 	t.lock.Lock()
 	defer t.lock.Unlock()
-
-	// If the task has already started, we can't schedule a new one. Instead, we will let the caller know to wait
-	// for the task to finish.
-	if t.status == scheduledTaskStatusStarted {
-		return errors.New(errorScheduledTaskNotFinished)
-	}
-	// We can now safely assume that the task has not started. We reset the status and increment the sequence number.
-	// The sequence number is ensures that stale tasks are terminated.
-	t.status = scheduledTaskStatusNotStarted
+	// The sequence number ensures that stale tasks are terminated.
 	t.seq++
 
 	if t.timer != nil {
@@ -65,7 +47,7 @@ func (t *ScheduledTask[TaskParam]) Schedule(duration time.Duration, param TaskPa
 	// field has no other purpose.
 	t.duration = duration
 
-	// taskInit checks that the task isn't stale and updates the status to started.
+	// taskInit checks that the task isn't stale.
 	taskInit := func(seq uint64) bool {
 		t.lock.Lock()
 		defer t.lock.Unlock()
@@ -73,7 +55,8 @@ func (t *ScheduledTask[TaskParam]) Schedule(duration time.Duration, param TaskPa
 		if t.seq != seq {
 			return false
 		}
-		t.status = scheduledTaskStatusStarted
+		// task isn't stale so we schedule it for execution.
+		t.taskList <- wrappedTask[TaskParam]{task, param}
 		return true
 	}
 	// Replacing the timer results in it being garbage collected, so this is entirely safe.
@@ -81,24 +64,17 @@ func (t *ScheduledTask[TaskParam]) Schedule(duration time.Duration, param TaskPa
 		if !taskInit(t.seq) {
 			return
 		}
-		task(param)
+		taskItem := <-t.taskList
+		taskItem.task(taskItem.param)
 
 		t.lock.Lock()
 		defer t.lock.Unlock()
-		t.status = scheduledTaskStatusFinished
 	})
-
-	return nil
 }
 
 func (t *ScheduledTask[TaskParam]) Cancel() {
 	t.lock.Lock()
 	defer t.lock.Unlock()
-
-	if t.status == scheduledTaskStatusStarted {
-		return
-	}
-	t.status = scheduledTaskStatusNotStarted
 	t.seq++
 
 	if t.timer != nil {
@@ -111,4 +87,9 @@ func (t *ScheduledTask[TaskParam]) GetDuration() time.Duration {
 	defer t.lock.RUnlock()
 
 	return t.duration
+}
+
+type wrappedTask[TaskParam any] struct {
+	task  func(TaskParam)
+	param TaskParam
 }
