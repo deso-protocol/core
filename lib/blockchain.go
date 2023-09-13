@@ -1605,10 +1605,10 @@ func updateBestChainInMemory(mainChainList []*BlockNode, mainChainMap map[BlockH
 }
 
 // Caller must acquire the ChainLock for writing prior to calling this.
-func (bc *Blockchain) processHeader(blockHeader *MsgDeSoHeader, headerHash *BlockHash) (_isMainChain bool, _isOrphan bool, _err error) {
+func (bc *Blockchain) processHeaderPoW(blockHeader *MsgDeSoHeader, headerHash *BlockHash) (_isMainChain bool, _isOrphan bool, _err error) {
 	// Start by checking if the header already exists in our node
 	// index. If it does, then return an error. We should generally
-	// expect that processHeader will only be called on headers we
+	// expect that processHeaderPoW will only be called on headers we
 	// haven't seen before.
 	_, nodeExists := bc.blockIndex[*headerHash]
 	if nodeExists {
@@ -1657,7 +1657,7 @@ func (bc *Blockchain) processHeader(blockHeader *MsgDeSoHeader, headerHash *Bloc
 	// Verify that the height is one greater than the parent.
 	prevHeight := parentHeader.Height
 	if blockHeader.Height != prevHeight+1 {
-		glog.Errorf("processHeader: Height of block (=%d) is not equal to one greater "+
+		glog.Errorf("processHeaderPoW: Height of block (=%d) is not equal to one greater "+
 			"than the parent height (=%d)", blockHeader.Height, prevHeight)
 		return false, false, HeaderErrorHeightInvalid
 	}
@@ -1686,7 +1686,7 @@ func (bc *Blockchain) processHeader(blockHeader *MsgDeSoHeader, headerHash *Bloc
 	// This commentary is useful to consider with regard to that:
 	//   https://github.com/zawy12/difficulty-algorithms/issues/45
 	if blockHeader.GetTstampSecs() <= parentHeader.GetTstampSecs() {
-		glog.Warningf("processHeader: Rejecting header because timestamp %v is "+
+		glog.Warningf("processHeaderPoW: Rejecting header because timestamp %v is "+
 			"before timestamp of previous block %v",
 			time.Unix(int64(blockHeader.GetTstampSecs()), 0),
 			time.Unix(int64(parentHeader.GetTstampSecs()), 0))
@@ -1776,26 +1776,60 @@ func (bc *Blockchain) processHeader(blockHeader *MsgDeSoHeader, headerHash *Bloc
 	return isMainChain, false, nil
 }
 
-// ProcessHeader is a wrapper around processHeader, which does the leg-work, that
-// acquires the ChainLock first.
+// processHeaderPoS is validates and stores an incoming block header as follows:
+// 1. Validating the block header's structure and timestamp
+// 2. Connect the block header to the header chain's tip
+// 3. Store the block header in the db and the in-memory block index
+func (bc *Blockchain) processHeaderPoS(blockHeader *MsgDeSoHeader, headerHash *BlockHash) (_isMainChain bool, _isOrphan bool, _err error) {
+	// TODO
+	return false, false, fmt.Errorf("processHeaderPoS: Not implemented")
+}
+
+// ProcessHeader is a wrapper around processHeaderPoW and processHeaderPoS, which do the leg-work.
 func (bc *Blockchain) ProcessHeader(blockHeader *MsgDeSoHeader, headerHash *BlockHash) (_isMainChain bool, _isOrphan bool, _err error) {
 	bc.ChainLock.Lock()
 	defer bc.ChainLock.Unlock()
 
-	return bc.processHeader(blockHeader, headerHash)
+	if blockHeader == nil {
+		// If the header is nil then we return an error. Nothing we can do here.
+		return false, false, fmt.Errorf("ProcessHeader: Header is nil")
+	}
+
+	// If the header's height is after the PoS cut-over fork height, then we use the PoS header processing logic. Otherwise, fall back
+	// to the PoW logic.
+	if blockHeader.Height >= uint64(bc.params.ForkHeights.ProofOfStake2ConsensusCutoverBlockHeight) {
+		// TODO: call bc.processHeaderPoS(blockHeader, headerHash) instead
+		return bc.processHeaderPoW(blockHeader, headerHash)
+	}
+
+	return bc.processHeaderPoW(blockHeader, headerHash)
 }
 
 func (bc *Blockchain) ProcessBlock(desoBlock *MsgDeSoBlock, verifySignatures bool) (_isMainChain bool, _isOrphan bool, _err error) {
-	// TODO: Move this to be more isolated.
 	bc.ChainLock.Lock()
 	defer bc.ChainLock.Unlock()
+
+	if desoBlock == nil {
+		// If the block is nil then we return an error. Nothing we can do here.
+		return false, false, fmt.Errorf("ProcessBlock: Block is nil")
+	}
+
+	// If the block's height is after the PoS cut-over fork height, then we use the PoS block processing logic. Otherwise, fall back
+	// to the PoW logic.
+	if desoBlock.Header.Height >= uint64(bc.params.ForkHeights.ProofOfStake2ConsensusCutoverBlockHeight) {
+		// TODO: call bc.processBlockPoS(desoBlock, verifySignatures) instead
+		return bc.processBlockPoW(desoBlock, verifySignatures)
+	}
+
+	return bc.processBlockPoW(desoBlock, verifySignatures)
+}
+
+func (bc *Blockchain) processBlockPoW(desoBlock *MsgDeSoBlock, verifySignatures bool) (_isMainChain bool, _isOrphan bool, err error) {
+	// TODO: Move this to be more isolated.
 
 	blockHeight := uint64(bc.BlockTip().Height + 1)
 
 	bc.timer.Start("Blockchain.ProcessBlock: Initial")
-	if desoBlock == nil {
-		return false, false, fmt.Errorf("ProcessBlock: Block is nil")
-	}
 
 	// Start by getting and validating the block's header.
 	blockHeader := desoBlock.Header
@@ -1875,7 +1909,7 @@ func (bc *Blockchain) ProcessBlock(desoBlock *MsgDeSoBlock, verifySignatures boo
 	// first before we do anything. This should create a node and set
 	// the header validation status for it.
 	if !nodeExists {
-		_, isOrphan, err := bc.processHeader(blockHeader, blockHash)
+		_, isOrphan, err := bc.processHeaderPoW(blockHeader, blockHash)
 		if err != nil {
 			// If an error occurred processing the header, then the header
 			// should be marked as invalid, which should be sufficient.
@@ -2552,6 +2586,23 @@ func (bc *Blockchain) ProcessBlock(desoBlock *MsgDeSoBlock, verifySignatures boo
 	// to our data structures and any unconnectedTxns that are no longer unconnectedTxns should have
 	// also been processed.
 	return isMainChain, false, nil
+}
+
+// processBlockPoS runs the Fast-Hotstuff block connect and commit rule as follows:
+// 1. Validate on an incoming block and its header
+// 2. Store the block in the db
+// 3. Resolves forks within the last two blocks
+// 4. Connect the block to the blockchain's tip
+// 5. If applicable, flush the incoming block's grandparent to the DB
+// 6. Notify the block proposer, pacemaker, and voting logic that the incoming block has been accepted
+func (bc *Blockchain) processBlockPoS(desoBlock *MsgDeSoBlock, verifySignatures bool) (_isMainChain bool, _isOrphan bool, err error) {
+	// TODO: Implement me
+	return false, false, fmt.Errorf("ProcessBlockPoS: Not implemented yet")
+}
+
+func (bc *Blockchain) GetUncommittedTipView() (*UtxoView, error) {
+	// Connect the uncommitted blocks to the tip so that we can validate subsequent blocks
+	panic("GetUncommittedTipView: Not implemented yet")
 }
 
 // DisconnectBlocksToHeight will rollback blocks from the db and blockchain structs until block tip reaches the provided

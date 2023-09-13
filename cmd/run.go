@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"github.com/deso-protocol/core/lib"
 	"github.com/golang/glog"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
@@ -69,6 +70,8 @@ func SetupRunFlags(cmd *cobra.Command) {
 	cmd.PersistentFlags().Bool("archival-mode", true, "Download all historical blocks after finishing hypersync.")
 	// Disable encoder migrations
 	cmd.PersistentFlags().Bool("disable-encoder-migrations", false, "Disable badgerDB encoder migrations")
+	// Semephore cap that limits the number of snapshot chunks stored in the OperationChannel during hypersync.
+	cmd.PersistentFlags().Uint32("hypersync-max-queue-size", lib.HypersyncDefaultMaxQueueSize, "Limit number of snapshot chunks stored in the OperationChannel during hypersync.")
 	// Disable slow sync
 	cmd.PersistentFlags().String("sync-type", "any", `We have the following options for SyncType:
 		- any: Will sync with a node no matter what kind of syncing it supports.

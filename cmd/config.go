@@ -40,6 +40,7 @@ type Config struct {
 	MaxSyncBlockHeight        uint32
 	SnapshotBlockHeightPeriod uint64
 	DisableEncoderMigrations  bool
+	HypersyncMaxQueueSize     uint32
 
 	// Mempool
 	MempoolBackupTimeMilliseconds uint64
@@ -104,6 +105,7 @@ func LoadConfig() *Config {
 	config.MaxSyncBlockHeight = viper.GetUint32("max-sync-block-height")
 	config.SnapshotBlockHeightPeriod = viper.GetUint64("snapshot-block-height-period")
 	config.DisableEncoderMigrations = viper.GetBool("disable-encoder-migrations")
+	config.HypersyncMaxQueueSize = viper.GetUint32("hypersync-max-queue-size")
 
 	// Mempool
 	config.MempoolBackupTimeMilliseconds = viper.GetUint64("mempool-backup-time-milliseconds")
