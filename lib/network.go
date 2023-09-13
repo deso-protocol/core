@@ -256,7 +256,7 @@ const (
 	TxnTypeUnlockStake                  TxnType = 38
 	TxnTypeUnjailValidator              TxnType = 39
 	TxnTypeCoinLockup                   TxnType = 40
-	TxnTypeUpdateDAOCoinLockupParams    TxnType = 41
+	TxnTypeUpdateCoinLockupParams       TxnType = 41
 	TxnTypeCoinLockupTransfer           TxnType = 42
 	TxnTypeCoinUnlock                   TxnType = 43
 
@@ -429,11 +429,11 @@ func (txnType TxnType) GetTxnString() TxnString {
 		return TxnStringUnjailValidator
 	case TxnTypeCoinLockup:
 		return TxnStringDAOCoinLockup
-	case TxnTypeUpdateDAOCoinLockupParams:
+	case TxnTypeUpdateCoinLockupParams:
 		return TxnStringUpdateDAOCoinLockupParams
-	case TxnTypeDAOCoinLockupTransfer:
+	case TxnTypeCoinLockupTransfer:
 		return TxnStringDAOCoinLockupTransfer
-	case TxnTypeDAOCoinUnlock:
+	case TxnTypeCoinUnlock:
 		return TxnStringDAOCoinUnlock
 	default:
 		return TxnStringUndefined

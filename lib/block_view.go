@@ -128,7 +128,7 @@ type UtxoView struct {
 	LockedBalanceEntryMapKeyToLockedBalanceEntry map[LockedBalanceEntryMapKey]*LockedBalanceEntry
 
 	// Lockup yield curve points.
-	PKIDToLockupYieldCurvePoints map[PKID][]*LockupYieldCurvePoint
+	PKIDToLockupYieldCurvePointMapKeyToLockupYieldCurvePoints map[PKID]map[LockupYieldCurvePointMapKey]*LockupYieldCurvePoint
 
 	// Current EpochEntry
 	CurrentEpochEntry *EpochEntry
@@ -3469,6 +3469,8 @@ func (bav *UtxoView) _connectTransaction(txn *MsgDeSoTxn, txHash *BlockHash,
 
 	case TxnTypeCoinLockup:
 		totalInput, totalOutput, utxoOpsForTxn, err = bav._connectCoinLockup(txn, txHash, blockHeight, verifySignatures)
+	case TxnTypeUpdateCoinLockupParams:
+		totalInput, totalOutput, utxoOpsForTxn, err = bav._connectUpdateCoinLockupParams(txn, txHash, blockHeight, verifySignatures)
 	case TxnTypeCoinLockupTransfer:
 		totalInput, totalOutput, utxoOpsForTxn, err = bav._connectCoinLockupTransfer(txn, txHash, blockHeight, verifySignatures)
 	case TxnTypeCoinUnlock:

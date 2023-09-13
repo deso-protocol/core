@@ -10798,15 +10798,15 @@ func DBGetLockedBalanceEntryForHODLerPKIDProfilePKIDTimestampType(handle *badger
 }
 
 func DBGetLockedBalanceEntryForHODLerPKIDProfilePKIDTimestampTypeWithTxn(txn *badger.Txn, snap *Snapshot,
-	hodlerPKID *PKID, creatorPKID *PKID, expirationTimestamp int64, lockedByType LockedByType) *LockedBalanceEntry {
+	hodlerPKID *PKID, profilePKID *PKID, expirationTimestamp int64, lockedByType LockedByType) *LockedBalanceEntry {
 
 	key := _dbKeyForHODLerPKIDProfilePKIDTimestampTypeToLockedBalanceEntry(hodlerPKID,
-		creatorPKID, expirationTimestamp, lockedByType)
+		profilePKID, expirationTimestamp, lockedByType)
 	lockedBalanceEntryBytes, err := DBGetWithTxn(txn, snap, key)
 	if err != nil {
 		return &LockedBalanceEntry{
 			HODLerPKID:                      hodlerPKID.NewPKID(),
-			ProfilePKID:                     creatorPKID.NewPKID(),
+			ProfilePKID:                     profilePKID.NewPKID(),
 			ExpirationTimestampUnixNanoSecs: expirationTimestamp,
 			AmountBaseUnits:                 *uint256.NewInt(),
 			LockedBy:                        lockedByType,

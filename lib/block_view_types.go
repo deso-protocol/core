@@ -635,6 +635,7 @@ const (
 	OperationTypeCoinLockup                   OperationType = 45
 	OperationTypeCoinLockupTransfer           OperationType = 46
 	OperationTypeCoinUnlock                   OperationType = 47
+	OperationTypeUpdateCoinLockupParams       OperationType = 48
 
 	// NEXT_TAG = 46
 )
@@ -731,8 +732,12 @@ func (op OperationType) String() string {
 		return "OperationTypeUnjailValidator"
 	case OperationTypeCoinLockup:
 		return "OperationTypeCoinLockup"
+	case OperationTypeUpdateCoinLockupParams:
+		return "OperationTypeUpdateCoinLockupParams"
 	case OperationTypeCoinLockupTransfer:
 		return "OperationTypeCoinLockupTransfer"
+	case OperationTypeCoinUnlock:
+		return "OperationTypeCoinUnlock"
 	}
 	return "OperationTypeUNKNOWN"
 }
@@ -949,6 +954,12 @@ type UtxoOperation struct {
 
 	// PrevLockedBalanceEntries is a slice of LockedBalanceEntry prior to a coin unlock.
 	PrevLockedBalanceEntries []*LockedBalanceEntry
+
+	// PrevLockupYieldCurvePoint and PrevLockupTransferRestriction are
+	// the previous yield curve and transfer restrictions associated
+	// with an UpdateCoinLockupParams transaction.
+	PrevLockupYieldCurvePoint     *LockupYieldCurvePoint
+	PrevLockupTransferRestriction TransferRestrictionStatus
 }
 
 func (op *UtxoOperation) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte {

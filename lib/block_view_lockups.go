@@ -19,7 +19,7 @@ import (
 //                      Can be used for creating tokens on a vested schedule or, with the addition of an optional
 //                      lockup yield, for earning a reward in return for locking up DeSo / DAO coins.
 //  (2) DAOCoinUnlock - Once the locked tokens have matured, they can be unlocked via the DAOCoinUnlock transaction.
-//  (3) DAOCoinLockupTransfer - Depending on how the creator has configured their DAO, locked tokens can be transferred
+//  (3) DAOCoinLockupTransfer - Depending on how the profile has configured their DAO, locked tokens can be transferred
 //                              between users via the DAOCoinLockupTransfer operation.
 //  (4) UpdateDAOCoinLockupParams - Used for configuring the lockup / yield curve of the underlying DAO coin as well
 //                                  as transfer restrictions. We make this a separate transaction to prevent
@@ -208,6 +208,7 @@ type LockupYieldCurvePoint struct {
 	ProfilePKID               *PKID
 	LockupDurationNanoSecs    int64
 	LockupYieldAPYBasisPoints uint64
+	isDeleted                 bool
 }
 
 type LockupYieldCurvePointMapKey struct {
@@ -232,6 +233,209 @@ func (lockupYieldCurvePoint *LockupYieldCurvePoint) ToMapKey() LockupYieldCurveP
 		ProfilePKID:            lockupYieldCurvePoint.ProfilePKID,
 		LockupDurationNanoSecs: lockupYieldCurvePoint.LockupDurationNanoSecs,
 	}
+}
+
+func (bav *UtxoView) _setLockupYieldCurvePoint(point *LockupYieldCurvePoint) {
+	// This function shouldn't be called with nil.
+	if point == nil {
+		glog.Errorf("_setLockupYieldCurvePoint: Called with nil LockupYieldCurvePoint; " +
+			"this should never happen.")
+		return
+	}
+
+	// Check if the PKID needs a map added to the view.
+	if _, mapExists := bav.PKIDToLockupYieldCurvePointMapKeyToLockupYieldCurvePoints[*point.ProfilePKID]; !mapExists {
+		bav.PKIDToLockupYieldCurvePointMapKeyToLockupYieldCurvePoints[*point.ProfilePKID] =
+			make(map[LockupYieldCurvePointMapKey]*LockupYieldCurvePoint)
+	}
+
+	// Set the LockupYieldCurvePoint in the view.
+	bav.PKIDToLockupYieldCurvePointMapKeyToLockupYieldCurvePoints[*point.ProfilePKID][point.ToMapKey()] = point
+}
+
+func (bav *UtxoView) _deleteLockupYieldCurvePoint(point *LockupYieldCurvePoint) {
+	// Create a tombstone entry.
+	tombstoneLockupYieldCurvePoint := *point
+	tombstoneLockupYieldCurvePoint.isDeleted = true
+
+	// Check if the PKID needs a map added to the view.
+	if _, mapExists := bav.PKIDToLockupYieldCurvePointMapKeyToLockupYieldCurvePoints[*point.ProfilePKID]; !mapExists {
+		bav.PKIDToLockupYieldCurvePointMapKeyToLockupYieldCurvePoints[*point.ProfilePKID] =
+			make(map[LockupYieldCurvePointMapKey]*LockupYieldCurvePoint)
+	}
+
+	// Set the LockupYieldCurvePoint as deleted in the view.
+	bav.PKIDToLockupYieldCurvePointMapKeyToLockupYieldCurvePoints[*point.ProfilePKID][point.ToMapKey()] = point
+}
+
+func (bav *UtxoView) GetLocalYieldCurvePoints(profilePKID *PKID, lockupDuration int64) (
+	leftLockupPoint *LockupYieldCurvePoint, rightLockupPoint *LockupYieldCurvePoint, err error) {
+	// Setup "default" local points.
+	leftLockupPoint = &LockupYieldCurvePoint{
+		ProfilePKID:               profilePKID,
+		LockupDurationNanoSecs:    0,
+		LockupYieldAPYBasisPoints: 0,
+	}
+	rightLockupPoint = &LockupYieldCurvePoint{
+		ProfilePKID:               profilePKID,
+		LockupDurationNanoSecs:    int64(math.MaxInt64),
+		LockupYieldAPYBasisPoints: 0,
+	}
+
+	// Check the UtxoView for local points tied to the profilePKID.
+	//
+	// NOTE: While we could use a binary search here, it's unlikely for there to be a large number
+	//       of yield curve points held in the UtxoView.
+	// NOTE: We take special care to "Copy()" the yield curve points in the view to prevent
+	//       accidental modifications of the points before writing to the db.
+	for _, lockupYieldCurvePoint := range bav.PKIDToLockupYieldCurvePointMapKeyToLockupYieldCurvePoints[*profilePKID] {
+		// Check if the point is "more left" than the current left point.
+		if lockupYieldCurvePoint.LockupDurationNanoSecs < lockupDuration &&
+			lockupYieldCurvePoint.LockupDurationNanoSecs > leftLockupPoint.LockupDurationNanoSecs {
+			leftLockupPoint = lockupYieldCurvePoint.Copy()
+		}
+
+		// Check if the point is "more right" than the current right point.
+		if lockupYieldCurvePoint.LockupDurationNanoSecs >= lockupDuration &&
+			lockupYieldCurvePoint.LockupDurationNanoSecs < leftLockupPoint.LockupDurationNanoSecs {
+			rightLockupPoint = lockupYieldCurvePoint.Copy()
+		}
+	}
+
+	// Now we fetch local curve points from the DB using careful seek operations.
+	key := _dbKeyForLockupYieldCurvePoint(LockupYieldCurvePoint{
+		ProfilePKID:               profilePKID,
+		LockupDurationNanoSecs:    lockupDuration,
+		LockupYieldAPYBasisPoints: 0,
+	})
+
+	// Seek badgerDB for the closest left point in the DB.
+	err = bav.GetDbAdapter().badgerDb.View(func(txn *badger.Txn) error {
+		iterLeftOpts := badger.DefaultIteratorOptions
+		iterLeftOpts.Reverse = true
+		iterLeft := txn.NewIterator(iterLeftOpts)
+		iterLeft.Seek(key)
+		iterLeftKey := iterLeft.Item().Key()
+
+		// There's a chance our seek yield a key in a different prefix (i.e. not a yield curve point).
+		// In this case, we know _dbKeyToLockupYieldCurvePoint will fail in parsing the key.
+		// We can return early in this case as there's no relevant yield points in the DB.
+		if len(iterLeftKey) < len(Prefixes.PrefixLockedCoinYieldByProfilePKIDAndDuration) {
+			return nil
+		}
+		if !bytes.Equal(iterLeftKey[:len(Prefixes.PrefixLockedCoinYieldByProfilePKIDAndDuration)],
+			Prefixes.PrefixLockedCoinYieldByProfilePKIDAndDuration) {
+			return nil
+		}
+
+		// Parse the db key returned by seek.
+		leftDbLockupPoint, err := _dbKeyToLockupYieldCurvePoint(iterLeftKey)
+		if err != nil {
+			return err
+		}
+
+		// Check for an updated left point.
+		if leftDbLockupPoint.ProfilePKID.Eq(profilePKID) {
+			if leftDbLockupPoint.LockupDurationNanoSecs < lockupDuration &&
+				leftDbLockupPoint.LockupDurationNanoSecs > leftLockupPoint.LockupDurationNanoSecs {
+				leftLockupPoint = leftDbLockupPoint
+			}
+		}
+
+		return nil
+	})
+	if err != nil {
+		return nil, nil, errors.Wrap(err, "GetLocalYieldCurvePoints")
+	}
+
+	// Seek badgerDB for the closest right point in the DB.
+	err = bav.GetDbAdapter().badgerDb.View(func(txn *badger.Txn) error {
+		iterRightOpts := badger.DefaultIteratorOptions
+		iterRight := txn.NewIterator(iterRightOpts)
+		iterRight.Seek(key)
+		iterRightKey := iterRight.Item().Key()
+
+		// There's a chance our seek yield a key in a different prefix (i.e. not a yield curve point).
+		// In this case, we know _dbKeyToLockupYieldCurvePoint will fail in parsing the key.
+		// We can return early in this case as there's no relevant yield points in the DB.
+		if len(iterRightKey) < len(Prefixes.PrefixLockedCoinYieldByProfilePKIDAndDuration) {
+			return nil
+		}
+		if !bytes.Equal(iterRightKey[:len(Prefixes.PrefixLockedCoinYieldByProfilePKIDAndDuration)],
+			Prefixes.PrefixLockedCoinYieldByProfilePKIDAndDuration) {
+			return nil
+		}
+
+		// Parse the db key returned by seek.
+		rightDbLockupPoint, err := _dbKeyToLockupYieldCurvePoint(iterRightKey)
+		if err != nil {
+			return err
+		}
+
+		// Check for an updated right point.
+		if rightDbLockupPoint.ProfilePKID.Eq(profilePKID) {
+			if rightDbLockupPoint.LockupDurationNanoSecs >= lockupDuration &&
+				rightDbLockupPoint.LockupDurationNanoSecs < rightLockupPoint.LockupDurationNanoSecs {
+				rightLockupPoint = rightDbLockupPoint
+			}
+		}
+
+		return nil
+	})
+	if err != nil {
+		return nil, nil, errors.Wrap(err, "_getLocalYieldCurvePoints")
+	}
+
+	return leftLockupPoint, rightLockupPoint, nil
+}
+
+func (bav *UtxoView) GetYieldCurvePointByProfilePKIDAndDuration(profilePKID *PKID, lockupDurationNanoSecs int64) (
+	_point *LockupYieldCurvePoint, _err error) {
+	var point *LockupYieldCurvePoint
+	var err error
+
+	// Construct the necessary key.
+	key := _dbKeyForLockupYieldCurvePoint(LockupYieldCurvePoint{
+		ProfilePKID:               profilePKID,
+		LockupDurationNanoSecs:    lockupDurationNanoSecs,
+		LockupYieldAPYBasisPoints: 0,
+	})
+
+	// Seek badgerDB for the closest right point in the DB.
+	err = bav.GetDbAdapter().badgerDb.View(func(txn *badger.Txn) error {
+		iterOpts := badger.DefaultIteratorOptions
+		iter := txn.NewIterator(iterOpts)
+		iter.Seek(key)
+		iterKey := iter.Item().Key()
+
+		// There's a chance our seek yield a key in a different prefix (i.e. not a yield curve point).
+		// In this case, we know _dbKeyToLockupYieldCurvePoint will fail in parsing the key.
+		// We can return early in this case as there's no relevant yield points in the DB.
+		if len(iterKey) < len(Prefixes.PrefixLockedCoinYieldByProfilePKIDAndDuration) {
+			return nil
+		}
+		if !bytes.Equal(iterKey[:len(Prefixes.PrefixLockedCoinYieldByProfilePKIDAndDuration)],
+			Prefixes.PrefixLockedCoinYieldByProfilePKIDAndDuration) {
+			return nil
+		}
+
+		// Parse the db key returned by seek.
+		point, err = _dbKeyToLockupYieldCurvePoint(iterKey)
+		if err != nil {
+			return err
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, errors.Wrap(err, "GetYieldCurvePointByProfilePKIDAndDuration")
+	}
+
+	// In the event no point exists following the seek or the point is invalid, we return nil.
+	if point == nil || !(point.ProfilePKID.Eq(profilePKID) && point.LockupDurationNanoSecs == lockupDurationNanoSecs) {
+		point = nil
+	}
+
+	return point, nil
 }
 
 //
@@ -290,7 +494,7 @@ func (txnData *CoinLockupMetadata) New() DeSoTxnMetadata {
 // TYPES: UpdateDAOCoinLockupParamsMetadata
 //
 
-type UpdateDAOCoinLockupParamsMetadata struct {
+type UpdateCoinLockupParamsMetadata struct {
 	// LockupYieldDurationNanoSecs and LockupYieldAPYBasisPoints describe a coordinate pair
 	// of (duration, APY yield) on a yield curve.
 	//
@@ -302,6 +506,7 @@ type UpdateDAOCoinLockupParamsMetadata struct {
 	//    The point (LockupYieldDurationNanoSecs, LockupYieldAPYBasisPoints)
 	//    is added to the profile's yield curve. If a point with the same duration already exists
 	//    on the profile's yield curve, it will be updated with the new yield.
+	//    Note if LockupYieldDurationNanoSecs=0, nothing is modified or added at t=0.
 	// Assuming RemoveYieldCurvePoint is true:
 	//    The point (LockupYieldDurationNanoSecs, XXX) is removed from the profile's yield curve.
 	//    Note that LockupYieldAPYBasisPoints is ignored in this transaction.
@@ -321,11 +526,11 @@ type UpdateDAOCoinLockupParamsMetadata struct {
 	LockupTransferRestrictionStatus TransferRestrictionStatus
 }
 
-func (txnData *UpdateDAOCoinLockupParamsMetadata) GetTxnType() TxnType {
-	return TxnTypeUpdateDAOCoinLockupParams
+func (txnData *UpdateCoinLockupParamsMetadata) GetTxnType() TxnType {
+	return TxnTypeUpdateCoinLockupParams
 }
 
-func (txnData *UpdateDAOCoinLockupParamsMetadata) ToBytes(preSignature bool) ([]byte, error) {
+func (txnData *UpdateCoinLockupParamsMetadata) ToBytes(preSignature bool) ([]byte, error) {
 	var data []byte
 	data = append(data, UintToBuf(uint64(txnData.LockupYieldDurationNanoSecs))...)
 	data = append(data, UintToBuf(txnData.LockupYieldAPYBasisPoints)...)
@@ -335,7 +540,7 @@ func (txnData *UpdateDAOCoinLockupParamsMetadata) ToBytes(preSignature bool) ([]
 	return data, nil
 }
 
-func (txnData *UpdateDAOCoinLockupParamsMetadata) FromBytes(data []byte) error {
+func (txnData *UpdateCoinLockupParamsMetadata) FromBytes(data []byte) error {
 	rr := bytes.NewReader(data)
 
 	lockupYieldDurationNanoSecs, err := ReadUvarint(rr)
@@ -368,8 +573,8 @@ func (txnData *UpdateDAOCoinLockupParamsMetadata) FromBytes(data []byte) error {
 	return nil
 }
 
-func (txnData *UpdateDAOCoinLockupParamsMetadata) New() DeSoTxnMetadata {
-	return &UpdateDAOCoinLockupParamsMetadata{}
+func (txnData *UpdateCoinLockupParamsMetadata) New() DeSoTxnMetadata {
+	return &UpdateCoinLockupParamsMetadata{}
 }
 
 //
@@ -630,7 +835,7 @@ func (bav *UtxoView) _connectCoinLockup(
 
 	// By now we know the transaction to be valid. We now source yield information from either
 	// the profile's yield curve or the DeSo yield curve. Because there's some choice in how
-	// to determine the yield when the lockup duration falls between two creator specified yield curve
+	// to determine the yield when the lockup duration falls between two profile specified yield curve
 	// points, we return here the two local points and choose/interpolate between them below.
 	leftYieldCurvePoint, rightYieldCurvePoint, err :=
 		bav.GetLocalYieldCurvePoints(profilePKID, txMeta.LockupDurationNanoSecs)
@@ -793,127 +998,6 @@ func CalculateLockupYield(
 	return yield, nil
 }
 
-func (bav *UtxoView) GetLocalYieldCurvePoints(profilePKID *PKID, lockupDuration int64) (
-	leftLockupPoint *LockupYieldCurvePoint, rightLockupPoint *LockupYieldCurvePoint, err error) {
-	// Setup "default" local points.
-	leftLockupPoint = &LockupYieldCurvePoint{
-		ProfilePKID:               profilePKID,
-		LockupDurationNanoSecs:    0,
-		LockupYieldAPYBasisPoints: 0,
-	}
-	rightLockupPoint = &LockupYieldCurvePoint{
-		ProfilePKID:               profilePKID,
-		LockupDurationNanoSecs:    int64(math.MaxInt64),
-		LockupYieldAPYBasisPoints: 0,
-	}
-
-	// Check the UtxoView for local points tied to the profilePKID.
-	//
-	// NOTE: While we could use a binary search here, it's unlikely for there to be a large number
-	//       of yield curve points held in the UtxoView.
-	// NOTE: We take special care to "Copy()" the yield curve points in the view to prevent
-	//       accidental modifications of the points before writing to the db.
-	for _, lockupYieldCurvePoint := range bav.PKIDToLockupYieldCurvePoints[*profilePKID] {
-		// Check if the point is "more left" than the current left point.
-		if lockupYieldCurvePoint.LockupDurationNanoSecs < lockupDuration &&
-			lockupYieldCurvePoint.LockupDurationNanoSecs > leftLockupPoint.LockupDurationNanoSecs {
-			leftLockupPoint = lockupYieldCurvePoint.Copy()
-		}
-
-		// Check if the point is "more right" than the current right point.
-		if lockupYieldCurvePoint.LockupDurationNanoSecs >= lockupDuration &&
-			lockupYieldCurvePoint.LockupDurationNanoSecs < leftLockupPoint.LockupDurationNanoSecs {
-			rightLockupPoint = lockupYieldCurvePoint.Copy()
-		}
-	}
-
-	// Now we fetch local curve points from the DB using careful seek operations.
-	key := _dbKeyForLockupYieldCurvePoint(LockupYieldCurvePoint{
-		ProfilePKID:               profilePKID,
-		LockupDurationNanoSecs:    lockupDuration,
-		LockupYieldAPYBasisPoints: 0,
-	})
-
-	// Seek badgerDB for the closest left point in the DB.
-	err = bav.GetDbAdapter().badgerDb.View(func(txn *badger.Txn) error {
-		iterLeftOpts := badger.DefaultIteratorOptions
-		iterLeftOpts.Reverse = true
-		iterLeft := txn.NewIterator(iterLeftOpts)
-		iterLeft.Seek(key)
-		iterLeftKey := iterLeft.Item().Key()
-
-		// There's a chance our seek yield a key in a different prefix (i.e. not a yield curve point).
-		// In this case, we know _dbKeyToLockupYieldCurvePoint will fail in parsing the key.
-		// We can return early in this case as there's no relevant yield points in the DB.
-		if len(iterLeftKey) < len(Prefixes.PrefixLockedCoinYieldByProfilePKIDAndDuration) {
-			return nil
-		}
-		if !bytes.Equal(iterLeftKey[:len(Prefixes.PrefixLockedCoinYieldByProfilePKIDAndDuration)],
-			Prefixes.PrefixLockedCoinYieldByProfilePKIDAndDuration) {
-			return nil
-		}
-
-		// Parse the db key returned by seek.
-		leftDbLockupPoint, err := _dbKeyToLockupYieldCurvePoint(iterLeftKey)
-		if err != nil {
-			return err
-		}
-
-		// Check for an updated left point.
-		if leftDbLockupPoint.ProfilePKID.Eq(profilePKID) {
-			if leftDbLockupPoint.LockupDurationNanoSecs < lockupDuration &&
-				leftDbLockupPoint.LockupDurationNanoSecs > leftLockupPoint.LockupDurationNanoSecs {
-				leftLockupPoint = leftDbLockupPoint
-			}
-		}
-
-		return nil
-	})
-	if err != nil {
-		return nil, nil, errors.Wrap(err, "_getLocalYieldCurvePoints")
-	}
-
-	// Seek badgerDB for the closest right point in the DB.
-	err = bav.GetDbAdapter().badgerDb.View(func(txn *badger.Txn) error {
-		iterRightOpts := badger.DefaultIteratorOptions
-		iterRight := txn.NewIterator(iterRightOpts)
-		iterRight.Seek(key)
-		iterRightKey := iterRight.Item().Key()
-
-		// There's a chance our seek yield a key in a different prefix (i.e. not a yield curve point).
-		// In this case, we know _dbKeyToLockupYieldCurvePoint will fail in parsing the key.
-		// We can return early in this case as there's no relevant yield points in the DB.
-		if len(iterRightKey) < len(Prefixes.PrefixLockedCoinYieldByProfilePKIDAndDuration) {
-			return nil
-		}
-		if !bytes.Equal(iterRightKey[:len(Prefixes.PrefixLockedCoinYieldByProfilePKIDAndDuration)],
-			Prefixes.PrefixLockedCoinYieldByProfilePKIDAndDuration) {
-			return nil
-		}
-
-		// Parse the db key returned by seek.
-		rightDbLockupPoint, err := _dbKeyToLockupYieldCurvePoint(iterRightKey)
-		if err != nil {
-			return err
-		}
-
-		// Check for an updated right point.
-		if rightDbLockupPoint.ProfilePKID.Eq(profilePKID) {
-			if rightDbLockupPoint.LockupDurationNanoSecs >= lockupDuration &&
-				rightDbLockupPoint.LockupDurationNanoSecs < rightLockupPoint.LockupDurationNanoSecs {
-				rightLockupPoint = rightDbLockupPoint
-			}
-		}
-
-		return nil
-	})
-	if err != nil {
-		return nil, nil, errors.Wrap(err, "_getLocalYieldCurvePoints")
-	}
-
-	return leftLockupPoint, rightLockupPoint, nil
-}
-
 func (bav *UtxoView) _disconnectCoinLockup(
 	operationType OperationType,
 	currentTxn *MsgDeSoTxn,
@@ -993,7 +1077,7 @@ func (bav *UtxoView) _disconnectCoinLockup(
 	return nil
 }
 
-func (bav *UtxoView) _connectUpdateDAOCoinLockupParams(
+func (bav *UtxoView) _connectUpdateCoinLockupParams(
 	txn *MsgDeSoTxn,
 	txHash *BlockHash,
 	blockHeight uint32,
@@ -1002,15 +1086,212 @@ func (bav *UtxoView) _connectUpdateDAOCoinLockupParams(
 	_totalOutput uint64,
 	_utxoOps []*UtxoOperation,
 	_err error) {
-	return 0, 0, nil, nil
+	var utxoOpsForTxn []*UtxoOperation
+
+	// Validate the starting block height.
+	if blockHeight < bav.Params.ForkHeights.ProofOfStake1StateSetupBlockHeight ||
+		blockHeight < bav.Params.ForkHeights.BalanceModelBlockHeight {
+		return 0, 0, nil, errors.Wrapf(RuleErrorProofofStakeTxnBeforeBlockHeight, "_connectDAOCoinLockup")
+	}
+
+	// Validate the txn TxnType.
+	if txn.TxnMeta.GetTxnType() != TxnTypeUpdateCoinLockupParams {
+		return 0, 0, nil, fmt.Errorf("_connectUpdateCoinLockupParams: "+
+			"called with bad TxnType %s", txn.TxnMeta.GetTxnType().String())
+	}
+
+	// Try connecting the basic transfer without considering transaction metadata.
+	_, _, utxoOpsForBasicTransfer, err := bav._connectBasicTransfer(txn, txHash, blockHeight, verifySignatures)
+	if err != nil {
+		return 0, 0, nil, errors.Wrapf(err, "_connectUpdateCoinLockupParams")
+	}
+	utxoOpsForTxn = append(utxoOpsForTxn, utxoOpsForBasicTransfer...)
+
+	// Grab the txn metadata.
+	txMeta := txn.TxnMeta.(*UpdateCoinLockupParamsMetadata)
+
+	// Get the profilePKID from the transactor public key.
+	var profilePKID *PKID
+	_, updaterIsParamUpdater := GetParamUpdaterPublicKeys(blockHeight, bav.Params)[MakePkMapKey(txn.PublicKey)]
+	if updaterIsParamUpdater {
+		profilePKID = ZeroPKID.NewPKID()
+	} else {
+		profilePKIDEntry := bav.GetPKIDForPublicKey(txn.PublicKey)
+		if profilePKIDEntry == nil || profilePKIDEntry.isDeleted {
+			return 0, 0, nil, errors.Wrap(RuleErrorUpdateCoinLockupParamsOnInvalidPKID,
+				"_connectUpdateCoinLockupParams")
+		}
+		profilePKID = profilePKIDEntry.PKID
+	}
+
+	// Sanity check the lockup duration as valid.
+	if txMeta.LockupYieldDurationNanoSecs < 0 {
+		return 0, 0, nil, errors.Wrapf(RuleErrorUpdateCoinLockupParamsNegativeDuration,
+			"_connectUpdateCoinLockupParams")
+	}
+
+	// Fetch the previous yield curve point associated with this <profilePKID, lockupDurationNanoSecs> pair.
+	prevLockupYieldCurvePoint, err :=
+		bav.GetYieldCurvePointByProfilePKIDAndDuration(profilePKID, txMeta.LockupYieldDurationNanoSecs)
+	if err != nil {
+		return 0, 0, nil, errors.Wrap(err, "_connectUpdateCoinLockupParams")
+	}
+
+	// Check if a yield curve point is being added.
+	if !txMeta.RemoveYieldCurvePoint && txMeta.LockupYieldDurationNanoSecs > 0 {
+		// NOTE: During the view flush, any comparable LockupYieldCurvePoint with the unique
+		//       <ProfilePKID, LockupDurationNanoSecs> pair will be deleted prior to this new
+		//       point being added. Above we saved the previous LockupYieldCurvePoint
+		//       in the even this is reverted.
+		bav._setLockupYieldCurvePoint(&LockupYieldCurvePoint{
+			ProfilePKID:               profilePKID,
+			LockupDurationNanoSecs:    txMeta.LockupYieldDurationNanoSecs,
+			LockupYieldAPYBasisPoints: txMeta.LockupYieldAPYBasisPoints,
+		})
+	}
+
+	// Check if a yield curve point is being removed.
+	if txMeta.RemoveYieldCurvePoint && txMeta.LockupYieldDurationNanoSecs > 0 {
+		// Check that we're not deleting a point which doesn't exist. This ensures that disconnects function properly,
+		// as well ensures there's no wasteful "no-ops" executed.
+		if prevLockupYieldCurvePoint == nil {
+			return 0, 0, nil,
+				errors.Wrapf(RuleErrorUpdateCoinLockupParamsDeletingNonExistentPoint, "_connectUpdateCoinLockupParams")
+		}
+
+		// NOTE: The "LockupYieldAPYBasisPoints" field is effectively irrelevant here.
+		//       The DB operations will seek to the unique <ProfilePKID, LockupDurationNanoSecs>
+		//       pair and delete it during the view flush. The "isDeleted" field ensures
+		//       nothing else is put in its place.
+		bav._deleteLockupYieldCurvePoint(&LockupYieldCurvePoint{
+			ProfilePKID:            profilePKID,
+			LockupDurationNanoSecs: txMeta.LockupYieldDurationNanoSecs,
+		})
+	}
+
+	// Check if we're updating transfer restriction.
+	var prevLockupTransferRestriction TransferRestrictionStatus
+	if txMeta.NewLockupTransferRestrictions {
+		// Fetch the profile entry and LockupTransferRestriction status.
+		profileEntry := bav.GetProfileEntryForPKID(profilePKID)
+
+		// Store a copy of the previous LockupTransferRestrictionStatus for easy transaction disconnect.
+		prevLockupTransferRestriction = profileEntry.DAOCoinEntry.LockupTransferRestrictionStatus
+
+		// Check that the new transfer restrictions are valid.
+		if !(txMeta.LockupTransferRestrictionStatus == TransferRestrictionStatusUnrestricted ||
+			txMeta.LockupTransferRestrictionStatus == TransferRestrictionStatusProfileOwnerOnly) {
+			return 0, 0, nil,
+				errors.Wrapf(RuleErrorUpdateCoinLockupParamsInvalidRestrictions, "_connectUpdateCoinLockupParams")
+		}
+
+		// Update the transfer restrictions.
+		profileEntry.DAOCoinEntry.LockupTransferRestrictionStatus = txMeta.LockupTransferRestrictionStatus
+		bav._setProfileEntryMappings(profileEntry)
+	}
+
+	// Add a UtxoOperation for easy reversion during disconnect.
+	utxoOpsForTxn = append(utxoOpsForTxn, &UtxoOperation{
+		Type:                          OperationTypeUpdateCoinLockupParams,
+		PrevLockupYieldCurvePoint:     prevLockupYieldCurvePoint,
+		PrevLockupTransferRestriction: prevLockupTransferRestriction,
+	})
+
+	return 0, 0, utxoOpsForTxn, nil
 }
 
-func (bav *UtxoView) _disconnectUpdateDAOCoinLockupParams(
+func (bav *UtxoView) _disconnectUpdateCoinLockupParams(
 	operationType OperationType,
 	currentTxn *MsgDeSoTxn,
-	txHash *BlockHash,
+	txnHash *BlockHash,
 	utxoOpsForTxn []*UtxoOperation,
 	blockHeight uint32) error {
+
+	if len(utxoOpsForTxn) == 0 {
+		return fmt.Errorf("_disconnectUpdateCoinLockupParams: utxoOperations are missing")
+	}
+	operationIndex := len(utxoOpsForTxn) - 1
+
+	// Verify the last operation as being a UpdateCoinLockupParams operation.
+	if utxoOpsForTxn[operationIndex].Type != OperationTypeUpdateCoinLockupParams {
+		return fmt.Errorf("_disconnectUpdateCoinLockupParams: Trying to revert "+
+			"OperationTypeUpdateCoinLockupParams but found type %v", utxoOpsForTxn[operationIndex].Type)
+	}
+
+	// Fetch the UpdateCoinLockupParams operation.
+	operationData := utxoOpsForTxn[operationIndex]
+
+	// Grab the txn metadata.
+	txMeta := currentTxn.TxnMeta.(*UpdateCoinLockupParamsMetadata)
+
+	// Fetch the profilePKID for the transactor.
+	var profilePKID *PKID
+	_, updaterIsParamUpdater := GetParamUpdaterPublicKeys(blockHeight, bav.Params)[MakePkMapKey(currentTxn.PublicKey)]
+	if updaterIsParamUpdater {
+		profilePKID = ZeroPKID.NewPKID()
+	} else {
+		profilePKIDEntry := bav.GetPKIDForPublicKey(currentTxn.PublicKey)
+		if profilePKIDEntry == nil || profilePKIDEntry.isDeleted {
+			return errors.Wrap(RuleErrorUpdateCoinLockupParamsOnInvalidPKID,
+				"_connectUpdateCoinLockupParams")
+		}
+		profilePKID = profilePKIDEntry.PKID
+	}
+
+	// Check if the transaction added a yield curve point. If it did, we restore the previous point.
+	// If the previous point is nil meaning this point didn't have a previous, then we simply delete the current point.
+	if !txMeta.RemoveYieldCurvePoint && txMeta.LockupYieldDurationNanoSecs > 0 {
+		if operationData.PrevLockupYieldCurvePoint == nil {
+			bav._deleteLockupYieldCurvePoint(&LockupYieldCurvePoint{
+				ProfilePKID:            profilePKID,
+				LockupDurationNanoSecs: txMeta.LockupYieldDurationNanoSecs,
+			})
+		} else {
+			bav._setLockupYieldCurvePoint(&LockupYieldCurvePoint{
+				ProfilePKID:               profilePKID,
+				LockupDurationNanoSecs:    operationData.PrevLockupYieldCurvePoint.LockupDurationNanoSecs,
+				LockupYieldAPYBasisPoints: operationData.PrevLockupYieldCurvePoint.LockupYieldAPYBasisPoints,
+			})
+		}
+	}
+
+	// Check if the transaction deleted a yield curve point. If it did, we add back the previous point.
+	// If the previous point is nil, we throw an error. This shouldn't be possible.
+	if txMeta.RemoveYieldCurvePoint && txMeta.LockupYieldDurationNanoSecs > 0 {
+		if operationData.PrevLockupYieldCurvePoint == nil {
+			return fmt.Errorf("_connectUpdateCoinLockupParams: trying to revert point deletion " +
+				"but found nil previous yield curve point; this shouldn't be possible")
+		}
+		bav._setLockupYieldCurvePoint(&LockupYieldCurvePoint{
+			ProfilePKID:               profilePKID,
+			LockupDurationNanoSecs:    operationData.PrevLockupYieldCurvePoint.LockupDurationNanoSecs,
+			LockupYieldAPYBasisPoints: operationData.PrevLockupYieldCurvePoint.LockupYieldAPYBasisPoints,
+		})
+	}
+
+	// Check if the transaction updated transfer restrictions. If it did, we reset the previous transfer restrictions.
+	if txMeta.NewLockupTransferRestrictions {
+		// Fetch the profile entry and LockupTransferRestriction status.
+		profileEntry := bav.GetProfileEntryForPKID(profilePKID)
+
+		// Update the transfer restrictions.
+		profileEntry.DAOCoinEntry.LockupTransferRestrictionStatus = operationData.PrevLockupTransferRestriction
+		bav._setProfileEntryMappings(profileEntry)
+	}
+
+	// Decrement the operationIndex. We expect to find the basic transfer UtxoOps next.
+	operationIndex--
+	if operationIndex < 0 {
+		return fmt.Errorf("_disconnectUpdateCoinLockupParams: Trying to revert OperationTypeUpdateCoinLockupParams " +
+			"but found malformed utxoOpsForTxn")
+	}
+
+	// By here we only need to disconnect the basic transfer associated with the transaction.
+	basicTransferOps := utxoOpsForTxn[:operationIndex]
+	err := bav._disconnectBasicTransfer(currentTxn, txnHash, basicTransferOps, blockHeight)
+	if err != nil {
+		return errors.Wrapf(err, "_disconnectUpdateCoinLockupParams")
+	}
 	return nil
 }
 
@@ -1094,7 +1375,7 @@ func (bav *UtxoView) _connectCoinLockupTransfer(
 	// option is a bit better from a UX perspective, so we use it here. We credit
 	// balances in the following order: LockedByOther -> LockedByHODLer -> LockedByCreator
 	// This preference is arbitrary but based on the idea that LockedByOther has the least
-	// intrinsic value while LockedByCreator has the most intrinsic value as the creator
+	// intrinsic value while LockedByCreator has the most intrinsic value as the profile
 	// was responsible for the lockup.
 	//
 	// We go ahead and save a previous copy of the balance entries in the event the
@@ -1362,8 +1643,8 @@ func (bav *UtxoView) _connectCoinUnlock(
 			"_connectCoinUnlock")
 	}
 	if !txMeta.ProfilePublicKey.IsZeroPublicKey() {
-		creatorProfileEntry := bav.GetProfileEntryForPublicKey(txMeta.ProfilePublicKey.ToBytes())
-		if creatorProfileEntry == nil || creatorProfileEntry.isDeleted {
+		profileEntry := bav.GetProfileEntryForPublicKey(txMeta.ProfilePublicKey.ToBytes())
+		if profileEntry == nil || profileEntry.isDeleted {
 			return 0, 0, nil, errors.Wrap(RuleErrorCoinUnlockOnNonExistentProfile,
 				"_connectCoinUnlock")
 		}
