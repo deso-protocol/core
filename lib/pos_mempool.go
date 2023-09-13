@@ -215,7 +215,7 @@ func (dmp *PosMempool) validateTransaction(txn *MsgDeSoTxn) error {
 		return errors.Wrapf(err, "PosMempool.AddTransaction: Problem validating transaction sanity")
 	}
 
-	// Check transaction signature
+	// Check transaction signature.
 	if _, err := dmp.latestBlockView.VerifySignature(txn, uint32(dmp.latestBlockHeight)); err != nil {
 		return errors.Wrapf(err, "PosMempool.AddTransaction: Signature validation failed")
 	}
