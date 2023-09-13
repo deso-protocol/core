@@ -52,6 +52,8 @@ func (t *ScheduledTask[TaskParam]) Cancel() {
 	if t.timer != nil {
 		t.timer.Stop()
 	}
+
+	t.timer = nil
 }
 
 func (t *ScheduledTask[TaskParam]) GetDuration() time.Duration {
@@ -59,4 +61,11 @@ func (t *ScheduledTask[TaskParam]) GetDuration() time.Duration {
 	defer t.lock.RUnlock()
 
 	return t.duration
+}
+
+func (t *ScheduledTask[TaskParam]) IsScheduled() bool {
+	t.lock.RLock()
+	defer t.lock.RUnlock()
+
+	return t.timer != nil
 }

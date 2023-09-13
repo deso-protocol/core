@@ -388,15 +388,42 @@ func (fc *FastHotStuffEventLoop) resetScheduledTasks() {
 	fc.nextBlockConstructionTask.Schedule(fc.blockConstructionCadence, fc.currentView, fc.onBlockConstructionScheduledTask)
 
 	// Schedule the next timeout task. This will run with currentView param.
-	fc.nextTimeoutTask.Schedule(timeoutDuration, fc.currentView, fc.onTimeoutScheduledTask)
+	fc.nextTimeoutTask.Schedule(timeoutDuration, fc.currentView, fc.onTimeoutScheduledTaskExecuted)
 }
 
 func (fc *FastHotStuffEventLoop) onBlockConstructionScheduledTask(blockConstructionView uint64) {
 	// TODO
 }
 
-func (fc *FastHotStuffEventLoop) onTimeoutScheduledTask(timedOutView uint64) {
-	// TODO
+// When this function is triggered, it means that we have reached out the timeout ETA for the
+// timedOutView. In the event of a timeout, we signal the server that we are ready to time out
+// and cancel the timeout task.
+func (fc *FastHotStuffEventLoop) onTimeoutScheduledTaskExecuted(timedOutView uint64) {
+	fc.lock.Lock()
+	defer fc.lock.Unlock()
+
+	// Check if the consensus instance is running. If it's not running, then there's nothing
+	// to do here.
+	if fc.status != consensusStatusRunning {
+		return
+	}
+
+	// Check if the timed out view is stale. If it's stale, then there's nothing to do here.
+	// The view may be stale in the race condition where the view advanced at the exact moment
+	// this task began to execute and wait for the event loop's lock at the top of this function.
+	if fc.currentView != timedOutView {
+		return
+	}
+
+	// Signal the server that we are ready to time out
+	fc.ConsensusEvents <- &ConsensusEvent{
+		EventType: ConsensusEventTypeTimeout,  // The timeout event type
+		View:      timedOutView,               // The view we timed out
+		BlockHash: fc.chainTip.GetBlockHash(), // The last block we saw
+	}
+
+	// Cancel the timeout task. The server will reschedule it when it advances the view.
+	fc.nextTimeoutTask.Cancel()
 }
 
 // Evict all locally stored votes and timeout messages with stale views. We can safely use the current
