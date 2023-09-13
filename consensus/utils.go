@@ -56,6 +56,11 @@ func isProperlyFormedBlock(block Block) bool {
 		return false
 	}
 
+	// The QC's view must be less than the block's view
+	if block.GetQC().GetView() >= block.GetView() {
+		return false
+	}
+
 	return true
 }
 
@@ -103,6 +108,11 @@ func isProperlyFormedTimeout(timeout TimeoutMessage) bool {
 
 	// The signature and public key must be non-nil
 	if timeout.GetSignature() == nil || timeout.GetPublicKey() == nil {
+		return false
+	}
+
+	// The QC's view must be less than the timed out view
+	if timeout.GetHighQC().GetView() >= timeout.GetView() {
 		return false
 	}
 

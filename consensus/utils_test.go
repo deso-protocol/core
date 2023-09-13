@@ -20,19 +20,19 @@ func TestIsProperlyFormedBlock(t *testing.T) {
 
 	// Test zero height
 	{
-		block := block{height: 0, view: 1, blockHash: createDummyBlockHash(), qc: createDummyQC()}
+		block := block{height: 0, view: 2, blockHash: createDummyBlockHash(), qc: createDummyQC(1)}
 		require.False(t, isProperlyFormedBlock(&block))
 	}
 
 	// Test zero view
 	{
-		block := block{height: 1, view: 0, blockHash: createDummyBlockHash(), qc: createDummyQC()}
+		block := block{height: 1, view: 0, blockHash: createDummyBlockHash(), qc: createDummyQC(0)}
 		require.False(t, isProperlyFormedBlock(&block))
 	}
 
 	// Test nil block hash
 	{
-		block := block{height: 1, view: 1, blockHash: nil, qc: createDummyQC()}
+		block := block{height: 1, view: 1, blockHash: nil, qc: createDummyQC(0)}
 		require.False(t, isProperlyFormedBlock(&block))
 	}
 
@@ -44,7 +44,7 @@ func TestIsProperlyFormedBlock(t *testing.T) {
 
 	// Test valid block
 	{
-		require.True(t, isProperlyFormedBlock(createDummyBlock()))
+		require.True(t, isProperlyFormedBlock(createDummyBlock(2)))
 	}
 }
 
@@ -181,12 +181,12 @@ func createDummyValidatorSet() []Validator {
 	})
 }
 
-func createDummyBlock() *block {
+func createDummyBlock(view uint64) *block {
 	return &block{
 		blockHash: createDummyBlockHash(),
-		view:      1,
+		view:      view,
 		height:    1,
-		qc:        createDummyQC(),
+		qc:        createDummyQC(view - 1),
 	}
 }
 
@@ -206,7 +206,7 @@ func createDummyVoteMessage(view uint64) *voteMessage {
 }
 
 func createDummyTimeoutMessage(view uint64) *timeoutMessage {
-	highQC := createDummyQC()
+	highQC := createDummyQC(view - 1)
 
 	signaturePayload := GetTimeoutSignaturePayload(view, highQC.view)
 
@@ -221,10 +221,10 @@ func createDummyTimeoutMessage(view uint64) *timeoutMessage {
 	}
 }
 
-func createDummyQC() *quorumCertificate {
+func createDummyQC(view uint64) *quorumCertificate {
 	return &quorumCertificate{
 		blockHash:           createDummyBlockHash(),
-		view:                1,
+		view:                view,
 		signersList:         bitset.NewBitset().FromBytes([]byte{0x3}),
 		aggregatedSignature: createDummyBLSSignature(),
 	}

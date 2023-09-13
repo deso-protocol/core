@@ -21,14 +21,14 @@ func TestFastHotStuffInitialization(t *testing.T) {
 	// Test Init() function with invalid block construction cadence
 	{
 		fc := NewFastHotStuffEventLoop()
-		err := fc.Init(0, 1, createDummyBlock(), createDummyValidatorSet())
+		err := fc.Init(0, 1, createDummyBlock(2), createDummyValidatorSet())
 		require.Error(t, err)
 	}
 
 	// Test Init() function with invalid timeout duration
 	{
 		fc := NewFastHotStuffEventLoop()
-		err := fc.Init(1, 0, createDummyBlock(), createDummyValidatorSet())
+		err := fc.Init(1, 0, createDummyBlock(2), createDummyValidatorSet())
 		require.Error(t, err)
 	}
 
@@ -42,14 +42,14 @@ func TestFastHotStuffInitialization(t *testing.T) {
 	// Test Init() function with malformed validator set
 	{
 		fc := NewFastHotStuffEventLoop()
-		err := fc.Init(1, 1, createDummyBlock(), nil)
+		err := fc.Init(1, 1, createDummyBlock(2), nil)
 		require.Error(t, err)
 	}
 
 	// Test Init() function with valid parameters
 	{
 		fc := NewFastHotStuffEventLoop()
-		err := fc.Init(100, 101, createDummyBlock(), createDummyValidatorSet())
+		err := fc.Init(100, 101, createDummyBlock(2), createDummyValidatorSet())
 		require.NoError(t, err)
 
 		require.Equal(t, consensusStatusInitialized, fc.status)
@@ -58,13 +58,13 @@ func TestFastHotStuffInitialization(t *testing.T) {
 		require.Equal(t, fc.status, consensusStatusInitialized)
 
 		require.Equal(t, fc.chainTip.GetBlockHash().GetValue(), createDummyBlockHash().GetValue())
-		require.Equal(t, fc.chainTip.GetView(), uint64(1))
+		require.Equal(t, fc.chainTip.GetView(), uint64(2))
 		require.Equal(t, fc.chainTip.GetHeight(), uint64(1))
 
 		require.Equal(t, fc.blockConstructionCadence, time.Duration(100))
 		require.Equal(t, fc.timeoutBaseDuration, time.Duration(101))
 
-		require.Equal(t, fc.currentView, uint64(2))
+		require.Equal(t, fc.currentView, uint64(3))
 		require.Equal(t, len(fc.validatorsAtChainTip), 2)
 	}
 }
@@ -73,12 +73,12 @@ func TestFastHotStuffProcessSafeBlock(t *testing.T) {
 	oneHourInNanoSecs := time.Duration(3600000000000)
 
 	fc := NewFastHotStuffEventLoop()
-	err := fc.Init(oneHourInNanoSecs, oneHourInNanoSecs, createDummyBlock(), createDummyValidatorSet())
+	err := fc.Init(oneHourInNanoSecs, oneHourInNanoSecs, createDummyBlock(2), createDummyValidatorSet())
 	require.NoError(t, err)
 
 	// Test ProcessSafeBlock() function when consensus event loop is not running
 	{
-		err := fc.ProcessSafeBlock(createDummyBlock(), createDummyValidatorSet())
+		err := fc.ProcessSafeBlock(createDummyBlock(2), createDummyValidatorSet())
 		require.Error(t, err)
 	}
 
@@ -93,7 +93,7 @@ func TestFastHotStuffProcessSafeBlock(t *testing.T) {
 
 	// Test ProcessSafeBlock() function with malformed validator set
 	{
-		err := fc.ProcessSafeBlock(createDummyBlock(), nil)
+		err := fc.ProcessSafeBlock(createDummyBlock(2), nil)
 		require.Error(t, err)
 	}
 
@@ -144,7 +144,7 @@ func TestFastHotStuffProcessSafeBlock(t *testing.T) {
 
 	// Test ProcessSafeBlock() function with valid parameters
 	{
-		nextBlock := createDummyBlock()
+		nextBlock := createDummyBlock(2)
 		nextBlock.height = 2
 		nextBlock.view = 3
 
@@ -174,8 +174,8 @@ func TestAdvanceView(t *testing.T) {
 
 	fc := NewFastHotStuffEventLoop()
 
-	// BlockHeight = 1, Current View = 2
-	err := fc.Init(oneHourInNanoSecs, oneHourInNanoSecs, createDummyBlock(), createDummyValidatorSet())
+	// BlockHeight = 1, Current View = 3
+	err := fc.Init(oneHourInNanoSecs, oneHourInNanoSecs, createDummyBlock(2), createDummyValidatorSet())
 	require.NoError(t, err)
 
 	// Running AdvanceView() should fail because the consensus event loop is not running
@@ -190,47 +190,47 @@ func TestAdvanceView(t *testing.T) {
 	// Populate the votesSeen and timeoutsSeen maps with dummy data
 	{
 		fc.votesSeen = map[[32]byte]map[string]VoteMessage{
-			{0}: { // blockHash = 0
-				"pubKeyA": createDummyVoteMessage(0),
-			},
 			{1}: { // blockHash = 1
-				"pubKeyB": createDummyVoteMessage(1),
+				"pubKeyA": createDummyVoteMessage(1),
 			},
 			{2}: { // blockHash = 2
-				"pubKeyC": createDummyVoteMessage(2),
+				"pubKeyB": createDummyVoteMessage(2),
 			},
 			{3}: { // blockHash = 3
-				"pubKeyD": createDummyVoteMessage(3),
+				"pubKeyC": createDummyVoteMessage(3),
 			},
 			{4}: { // blockHash = 4
-				"pubKeyE": createDummyVoteMessage(4),
+				"pubKeyD": createDummyVoteMessage(4),
+			},
+			{5}: { // blockHash = 5
+				"pubKeyE": createDummyVoteMessage(5),
 			},
 		}
 
 		fc.timeoutsSeen = map[uint64]map[string]TimeoutMessage{
-			0: { // view = 0
-				"pubKeyA": createDummyTimeoutMessage(0),
-			},
 			1: { // view = 1
-				"pubKeyB": createDummyTimeoutMessage(1),
+				"pubKeyA": createDummyTimeoutMessage(1),
 			},
 			2: { // view = 2
-				"pubKeyC": createDummyTimeoutMessage(2),
+				"pubKeyB": createDummyTimeoutMessage(2),
 			},
 			3: { // view = 3
-				"pubKeyD": createDummyTimeoutMessage(3),
+				"pubKeyC": createDummyTimeoutMessage(3),
 			},
 			4: { // view = 4
-				"pubKeyE": createDummyTimeoutMessage(4),
+				"pubKeyD": createDummyTimeoutMessage(4),
+			},
+			5: { // view = 5
+				"pubKeyE": createDummyTimeoutMessage(5),
 			},
 		}
 	}
 
-	// Run AdvanceView() to view 3
+	// Run AdvanceView() to view 4
 	{
 		newView, err := fc.AdvanceView()
 		require.NoError(t, err)
-		require.Equal(t, uint64(3), newView)
+		require.Equal(t, uint64(4), newView)
 	}
 
 	// Verify that vote and timeout messages haven't changed
@@ -239,11 +239,11 @@ func TestAdvanceView(t *testing.T) {
 		require.Equal(t, len(fc.timeoutsSeen), 3)
 	}
 
-	// Run AdvanceView() to view 4
+	// Run AdvanceView() to view 5
 	{
 		newView, err := fc.AdvanceView()
 		require.NoError(t, err)
-		require.Equal(t, uint64(4), newView)
+		require.Equal(t, uint64(5), newView)
 	}
 
 	// Verify that stale votes and timeouts have been evicted
@@ -261,18 +261,18 @@ func TestProcessValidatorVote(t *testing.T) {
 
 	fc := NewFastHotStuffEventLoop()
 
-	// BlockHeight = 1, Current View = 2
-	err := fc.Init(oneHourInNanoSecs, oneHourInNanoSecs, createDummyBlock(), createDummyValidatorSet())
+	// BlockHeight = 1, Current View = 3
+	err := fc.Init(oneHourInNanoSecs, oneHourInNanoSecs, createDummyBlock(2), createDummyValidatorSet())
 	require.NoError(t, err)
 
 	// Start the event loop
 	fc.Start()
 
-	// Current View = 3
+	// Current View = 4
 	{
 		currentView, err := fc.AdvanceView()
 		require.NoError(t, err)
-		require.Equal(t, uint64(3), currentView)
+		require.Equal(t, uint64(4), currentView)
 	}
 
 	// Test with malformed vote
@@ -284,7 +284,7 @@ func TestProcessValidatorVote(t *testing.T) {
 
 	// Test invalid signature
 	{
-		vote := createDummyVoteMessage(3)
+		vote := createDummyVoteMessage(4)
 		vote.signature = createDummyBLSSignature()
 		err := fc.ProcessValidatorVote(vote)
 		require.Error(t, err)
@@ -301,7 +301,7 @@ func TestProcessValidatorVote(t *testing.T) {
 
 	// Test when we've already seen a vote from the validator for the same view
 	{
-		vote := createDummyVoteMessage(3)
+		vote := createDummyVoteMessage(4)
 		fc.votesSeen[GetVoteSignaturePayload(vote.GetView(), vote.GetBlockHash())] = map[string]VoteMessage{
 			vote.publicKey.ToString(): vote,
 		}
@@ -313,8 +313,8 @@ func TestProcessValidatorVote(t *testing.T) {
 
 	// Test when we've already seen a timeout from the validator for the same view
 	{
-		vote := createDummyVoteMessage(4)
-		timeout := createDummyTimeoutMessage(4)
+		vote := createDummyVoteMessage(5)
+		timeout := createDummyTimeoutMessage(5)
 		timeout.publicKey = vote.publicKey
 
 		fc.timeoutsSeen[timeout.GetView()] = map[string]TimeoutMessage{
@@ -328,7 +328,7 @@ func TestProcessValidatorVote(t *testing.T) {
 
 	// Test happy path
 	{
-		vote := createDummyVoteMessage(3)
+		vote := createDummyVoteMessage(4)
 		err := fc.ProcessValidatorVote(vote)
 		require.NoError(t, err)
 	}
@@ -342,18 +342,18 @@ func TestProcessValidatorTimeout(t *testing.T) {
 
 	fc := NewFastHotStuffEventLoop()
 
-	// BlockHeight = 1, Current View = 2
-	err := fc.Init(oneHourInNanoSecs, oneHourInNanoSecs, createDummyBlock(), createDummyValidatorSet())
+	// BlockHeight = 1, Current View = 3
+	err := fc.Init(oneHourInNanoSecs, oneHourInNanoSecs, createDummyBlock(2), createDummyValidatorSet())
 	require.NoError(t, err)
 
 	// Start the event loop
 	fc.Start()
 
-	// Current View = 3
+	// Current View = 4
 	{
 		currentView, err := fc.AdvanceView()
 		require.NoError(t, err)
-		require.Equal(t, uint64(3), currentView)
+		require.Equal(t, uint64(4), currentView)
 	}
 
 	// Test with malformed timeout
@@ -365,7 +365,7 @@ func TestProcessValidatorTimeout(t *testing.T) {
 
 	// Test invalid signature
 	{
-		timeout := createDummyTimeoutMessage(3)
+		timeout := createDummyTimeoutMessage(4)
 		timeout.signature = createDummyBLSSignature()
 		err := fc.ProcessValidatorTimeout(timeout)
 		require.Error(t, err)
@@ -382,8 +382,8 @@ func TestProcessValidatorTimeout(t *testing.T) {
 
 	// Test when we've already seen a vote from the validator for the same view
 	{
-		timeout := createDummyTimeoutMessage(3)
-		vote := createDummyVoteMessage(3)
+		timeout := createDummyTimeoutMessage(4)
+		vote := createDummyVoteMessage(4)
 
 		fc.votesSeen[GetVoteSignaturePayload(vote.GetView(), vote.GetBlockHash())] = map[string]VoteMessage{
 			timeout.publicKey.ToString(): vote,
@@ -396,7 +396,7 @@ func TestProcessValidatorTimeout(t *testing.T) {
 
 	// Test when we've already seen a timeout from the validator for the same view
 	{
-		timeout := createDummyTimeoutMessage(3)
+		timeout := createDummyTimeoutMessage(4)
 
 		fc.timeoutsSeen[timeout.view] = map[string]TimeoutMessage{
 			timeout.publicKey.ToString(): timeout,
@@ -409,7 +409,7 @@ func TestProcessValidatorTimeout(t *testing.T) {
 
 	// Test happy path
 	{
-		timeout := createDummyTimeoutMessage(3)
+		timeout := createDummyTimeoutMessage(4)
 		err := fc.ProcessValidatorTimeout(timeout)
 		require.NoError(t, err)
 	}
@@ -422,7 +422,7 @@ func TestTimeoutScheduledTaskExecuted(t *testing.T) {
 	oneHourInNanoSecs := time.Duration(3600000000000)
 	oneMilliSecondInNanoSeconds := time.Duration(1000000)
 
-	dummyBlock := createDummyBlock()
+	dummyBlock := createDummyBlock(2)
 
 	fc := NewFastHotStuffEventLoop()
 	err := fc.Init(oneHourInNanoSecs, oneMilliSecondInNanoSeconds, dummyBlock, createDummyValidatorSet())
@@ -464,7 +464,7 @@ func TestResetEventLoopSignal(t *testing.T) {
 	oneHourInNanoSecs := time.Duration(3600000000000)
 
 	fc := NewFastHotStuffEventLoop()
-	err := fc.Init(oneHourInNanoSecs, 2*oneHourInNanoSecs, createDummyBlock(), createDummyValidatorSet())
+	err := fc.Init(oneHourInNanoSecs, 2*oneHourInNanoSecs, createDummyBlock(2), createDummyValidatorSet())
 	require.NoError(t, err)
 
 	// Start the event loop
@@ -506,7 +506,7 @@ func TestFastHotStuffEventLoopStartStop(t *testing.T) {
 	oneHourInNanoSecs := time.Duration(3600000000000)
 
 	fc := NewFastHotStuffEventLoop()
-	err := fc.Init(oneHourInNanoSecs, 2*oneHourInNanoSecs, createDummyBlock(), createDummyValidatorSet())
+	err := fc.Init(oneHourInNanoSecs, 2*oneHourInNanoSecs, createDummyBlock(2), createDummyValidatorSet())
 	require.NoError(t, err)
 
 	// Start the event loop
