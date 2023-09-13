@@ -131,6 +131,10 @@ func _mergeGlobalParamEntryDefaults(bav *UtxoView, globalParamsEntry *GlobalPara
 	if globalParamsEntryCopy.FeeBucketRateMultiplierBasisPoints == 0 {
 		globalParamsEntryCopy.FeeBucketRateMultiplierBasisPoints = bav.Params.DefaultFeeBucketRateMultiplierBasisPoints
 	}
+	// We don't allow the FailingTransactionBMFRateBasisPoints to be set below the default value.
+	if globalParamsEntryCopy.FailingTransactionBMFRateBasisPoints < bav.Params.DefaultFailingTransactionBMFRateBasisPoints {
+		globalParamsEntryCopy.FailingTransactionBMFRateBasisPoints = bav.Params.DefaultFailingTransactionBMFRateBasisPoints
+	}
 
 	// Return the merged result.
 	return globalParamsEntryCopy

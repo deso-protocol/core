@@ -3099,6 +3099,16 @@ func (bav *UtxoView) _connectUpdateGlobalParams(
 				)
 			}
 		}
+		if len(extraData[FailingTransactionBMFRateBasisPointsKey]) > 0 {
+			newGlobalParamsEntry.FailingTransactionBMFRateBasisPoints, bytesRead = Uvarint(
+				extraData[FailingTransactionBMFRateBasisPointsKey],
+			)
+			if bytesRead <= 0 {
+				return 0, 0, nil, fmt.Errorf(
+					"_connectUpdateGlobalParams: unable to decode FailingTransactionBMFRateBasisPoints as uint64",
+				)
+			}
+		}
 	}
 
 	if blockHeight >= bav.Params.ForkHeights.ProofOfStake2ConsensusCutoverBlockHeight {

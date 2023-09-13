@@ -703,6 +703,11 @@ type DeSoParams struct {
 	// as basis points. For example a value of 1000 means that the fee bucket ranges will grow by 10% each time.
 	DefaultFeeBucketRateMultiplierBasisPoints uint64
 
+	// DefaultFailingTransactionBMFRateBasisPoints is the default rate of the failing transaction fee, in basis points,
+	// that is used to in BMF calculations. E.g. a value of 5000 means that 50% of the failing transaction's fee is used
+	// in BMF calculations.
+	DefaultFailingTransactionBMFRateBasisPoints uint64
+
 	ForkHeights ForkHeights
 
 	EncoderMigrationHeights     *EncoderMigrationHeights
@@ -1116,6 +1121,9 @@ var DeSoMainnetParams = DeSoParams{
 	// The rate of growth of the fee bucket ranges.
 	DefaultFeeBucketRateMultiplierBasisPoints: uint64(1000),
 
+	// The rate of the failing transaction's fee used in BMF calculations.
+	DefaultFailingTransactionBMFRateBasisPoints: uint64(5000),
+
 	ForkHeights:                 MainnetForkHeights,
 	EncoderMigrationHeights:     GetEncoderMigrationHeights(&MainnetForkHeights),
 	EncoderMigrationHeightsList: GetEncoderMigrationHeightsList(&MainnetForkHeights),
@@ -1380,6 +1388,9 @@ var DeSoTestnetParams = DeSoParams{
 	// The rate of growth of the fee bucket ranges.
 	DefaultFeeBucketRateMultiplierBasisPoints: uint64(1000),
 
+	// The rate of the failing transaction's fee used in BMF calculations.
+	DefaultFailingTransactionBMFRateBasisPoints: uint64(5000),
+
 	ForkHeights:                 TestnetForkHeights,
 	EncoderMigrationHeights:     GetEncoderMigrationHeights(&TestnetForkHeights),
 	EncoderMigrationHeightsList: GetEncoderMigrationHeightsList(&TestnetForkHeights),
@@ -1436,6 +1447,7 @@ const (
 	EpochDurationNumBlocksKey                 = "EpochDurationNumBlocks"
 	JailInactiveValidatorGracePeriodEpochsKey = "JailInactiveValidatorGracePeriodEpochs"
 	FeeBucketRateMultiplierBasisPointsKey     = "FeeBucketRateMultiplierBasisPointsKey"
+	FailingTransactionBMFRateBasisPointsKey   = "FailingTransactionBMFRateBasisPoints"
 
 	DiamondLevelKey    = "DiamondLevel"
 	DiamondPostHashKey = "DiamondPostHash"
