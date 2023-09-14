@@ -1954,6 +1954,18 @@ func ComputeTransactionMetadata(txn *MsgDeSoTxn, utxoView *UtxoView, blockHash *
 			Metadata:             "NewMessageRecipientAccessGroupOwnerPublicKe",
 		})
 	}
+	// Check if the transactor is an affected public key. If not, add them.
+	if txnMeta.TransactorPublicKeyBase58Check != "" {
+		for _, affectedPublicKey := range txnMeta.AffectedPublicKeys {
+			if affectedPublicKey.PublicKeyBase58Check == txnMeta.TransactorPublicKeyBase58Check {
+				return txnMeta
+			}
+		}
+		txnMeta.AffectedPublicKeys = append(txnMeta.AffectedPublicKeys, &AffectedPublicKey{
+			PublicKeyBase58Check: txnMeta.TransactorPublicKeyBase58Check,
+			Metadata:             "TransactorPublicKeyBase58Check",
+		})
+	}
 	return txnMeta
 }
 
