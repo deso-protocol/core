@@ -498,7 +498,8 @@ func (bav *UtxoView) _connectCoinLockup(
 	// We require the BalanceModelBlockHeight fork to ensure consensus is utilizing balance model.
 	if blockHeight < bav.Params.ForkHeights.ProofOfStake1StateSetupBlockHeight ||
 		blockHeight < bav.Params.ForkHeights.BalanceModelBlockHeight {
-		return 0, 0, nil, errors.Wrapf(RuleErrorProofofStakeTxnBeforeBlockHeight, "_connectCoinLockup")
+		return 0, 0, nil,
+			errors.Wrapf(RuleErrorProofofStakeTxnBeforeBlockHeight, "_connectCoinLockup")
 	}
 
 	// Validate the txn TxnType.
@@ -608,7 +609,8 @@ func (bav *UtxoView) _connectCoinLockup(
 		prevTransactorBalanceEntry = transactorBalanceEntry
 
 		// Spend the transactor's DAO coin balance.
-		transactorBalanceEntry.BalanceNanos = *uint256.NewInt().Sub(&transactorBalanceEntry.BalanceNanos, txMeta.LockupAmountBaseUnits)
+		transactorBalanceEntry.BalanceNanos =
+			*uint256.NewInt().Sub(&transactorBalanceEntry.BalanceNanos, txMeta.LockupAmountBaseUnits)
 		bav._setDAOCoinBalanceEntryMappings(transactorBalanceEntry)
 	}
 
@@ -629,7 +631,8 @@ func (bav *UtxoView) _connectCoinLockup(
 	// the profile's yield curve or the DeSo yield curve. Because there's some choice in how
 	// to determine the yield when the lockup duration falls between two creator specified yield curve
 	// points, we return here the two local points and choose/interpolate between them below.
-	leftYieldCurvePoint, rightYieldCurvePoint, err := bav.GetLocalYieldCurvePoints(creatorPKID, txMeta.LockupDurationNanoSecs)
+	leftYieldCurvePoint, rightYieldCurvePoint, err :=
+		bav.GetLocalYieldCurvePoints(creatorPKID, txMeta.LockupDurationNanoSecs)
 	if err != nil {
 		return 0, 0, nil, errors.Wrap(err, "_connectCoinLockup")
 	}
@@ -914,7 +917,7 @@ func (bav *UtxoView) GetLocalYieldCurvePoints(creatorPKID *PKID, lockupDuration 
 	return leftLockupPoint, rightLockupPoint, nil
 }
 
-func (bav *UtxoView) _disconnectDAOCoinLockup(
+func (bav *UtxoView) _disconnectCoinLockup(
 	operationType OperationType,
 	currentTxn *MsgDeSoTxn,
 	txnHash *BlockHash,
@@ -922,34 +925,34 @@ func (bav *UtxoView) _disconnectDAOCoinLockup(
 	blockHeight uint32) error {
 
 	if len(utxoOpsForTxn) == 0 {
-		return fmt.Errorf("_disconnectDAOCoinLockup: utxoOperations are missing")
+		return fmt.Errorf("_disconnectCoinLockup: utxoOperations are missing")
 	}
 	operationIndex := len(utxoOpsForTxn) - 1
 
-	// Verify the last operation as being a DAOCoinLockup operation.
+	// Verify the last operation as being a CoinLockup operation.
 	if utxoOpsForTxn[operationIndex].Type != OperationTypeCoinLockup {
-		return fmt.Errorf("_disconnectDAOCoinLockup: Trying to revert "+
-			"OperationTypeDAOCoinLockup but found type %v", utxoOpsForTxn[operationIndex].Type)
+		return fmt.Errorf("_disconnectCoinLockup: Trying to revert "+
+			"OperationTypeCoinLockup but found type %v", utxoOpsForTxn[operationIndex].Type)
 	}
 
-	// Sanity check the DAOCoinLockup operation exists.
+	// Sanity check the CoinLockup operation exists.
 	operationData := utxoOpsForTxn[operationIndex]
 	if operationData.PrevLockedBalanceEntry == nil || operationData.PrevLockedBalanceEntry.isDeleted {
-		return fmt.Errorf("_disconnectDAOCoinLockup: Trying to revert OperationTypeDAOCoinLockup " +
+		return fmt.Errorf("_disconnectCoinLockup: Trying to revert OperationTypeCoinLockup " +
 			"but found nil or deleted previous locked balance entry")
 	}
 	operationIndex--
 	if operationIndex < 0 {
-		return fmt.Errorf("_disconnectDAOCoinLockup: Trying to revert OperationTypeDAOCoinLockup " +
+		return fmt.Errorf("_disconnectCoinLockup: Trying to revert OperationTypeCoinLockup " +
 			"but malformed utxoOpsForTxn")
 	}
 
-	// Sanity check the data within the DAOCoinLockup. Reverting a lockup should not result in more coins.
+	// Sanity check the data within the CoinLockup. Reverting a lockup should not result in more coins.
 	lockedBalanceEntry := bav.GetLockedBalanceEntryForHODLerPKIDCreatorPKIDTimestampLockedByType(
 		operationData.PrevLockedBalanceEntry.HODLerPKID, operationData.PrevLockedBalanceEntry.CreatorPKID,
 		operationData.PrevLockedBalanceEntry.ExpirationTimestampUnixNanoSecs, operationData.PrevLockedBalanceEntry.LockedBy)
 	if lockedBalanceEntry.AmountBaseUnits.Lt(&operationData.PrevLockedBalanceEntry.AmountBaseUnits) {
-		return fmt.Errorf("_disconnectDAOCoinLockup: Reversion of coin lockup would result in " +
+		return fmt.Errorf("_disconnectCoinLockup: Reversion of coin lockup would result in " +
 			"more coins in the lockup")
 	}
 
@@ -962,20 +965,21 @@ func (bav *UtxoView) _disconnectDAOCoinLockup(
 		// Revert the spent DeSo.
 		operationData = utxoOpsForTxn[operationIndex]
 		if operationData.Type != OperationTypeSpendBalance {
-			return fmt.Errorf("_disconnectDAOCoinLockup: Trying to revert OperationTypeSpendBalance "+
+			return fmt.Errorf("_disconnectCoinLockup: Trying to revert OperationTypeSpendBalance "+
 				"but found type %v", operationData.Type)
 		}
 		if !bytes.Equal(operationData.BalancePublicKey, currentTxn.PublicKey) {
-			return fmt.Errorf("_disconnectDAOCoinLockup: Trying to revert OperationTypeSpendBalance but found " +
+			return fmt.Errorf("_disconnectCoinLockup: Trying to revert OperationTypeSpendBalance but found " +
 				"mismatched public keys")
 		}
 		err := bav._unSpendBalance(operationData.BalanceAmountNanos, currentTxn.PublicKey)
 		if err != nil {
-			return errors.Wrapf(err, "_disconnectDAOCoinLockup: Problem unSpending balance of %v for the transactor", operationData.BalanceAmountNanos)
+			return errors.Wrapf(err, "_disconnectCoinLockup: Problem unSpending balance of %v "+
+				"for the transactor", operationData.BalanceAmountNanos)
 		}
 		operationIndex--
 		if operationIndex < 0 {
-			return fmt.Errorf("_disconnectDAOCoinLockup: Trying to revert OperationTypeDAOCoinLockup " +
+			return fmt.Errorf("_disconnectCoinLockup: Trying to revert OperationTypeDAOCoinLockup " +
 				"but malformed utxoOpsForTxn")
 		}
 	} else {
@@ -987,7 +991,7 @@ func (bav *UtxoView) _disconnectDAOCoinLockup(
 	basicTransferOps := utxoOpsForTxn[:operationIndex]
 	err := bav._disconnectBasicTransfer(currentTxn, txnHash, basicTransferOps, blockHeight)
 	if err != nil {
-		return errors.Wrapf(err, "_disconnectDAOCoinLockup")
+		return errors.Wrapf(err, "_disconnectCoinLockup")
 	}
 	return nil
 }

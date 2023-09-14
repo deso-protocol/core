@@ -1451,6 +1451,9 @@ func (bav *UtxoView) DisconnectTransaction(currentTxn *MsgDeSoTxn, txnHash *Bloc
 	case TxnTypeUnjailValidator:
 		return bav._disconnectUnjailValidator(
 			OperationTypeUnjailValidator, currentTxn, txnHash, utxoOpsForTxn, blockHeight)
+
+	case TxnTypeCoinLockup:
+		return bav._disconnectCoinLockup(OperationTypeCoinLockup, currentTxn, txnHash, utxoOpsForTxn, blockHeight)
 	}
 
 	return fmt.Errorf("DisconnectBlock: Unimplemented txn type %v", currentTxn.TxnMeta.GetTxnType().String())
