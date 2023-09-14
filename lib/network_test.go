@@ -121,6 +121,12 @@ func createTestBlockHeaderVersion2(t *testing.T) *MsgDeSoHeader {
 		0x54, 0x55, 0x56, 0x57, 0x58, 0x59, 0x60, 0x61, 0x62, 0x63,
 		0x64, 0x65,
 	}
+	testTxnStateConnectedIndexHash := BlockHash{
+		0x00, 0x03, 0x04, 0x21, 0x06, 0x07, 0x08, 0x09, 0x10, 0x19,
+		0x12, 0x13, 0x14, 0x15, 0x44, 0x17, 0x18, 0x19, 0x20, 0x21,
+		0x02, 0x23, 0x24, 0x25, 0x26, 0x27, 0x33, 0x29, 0x30, 0x31,
+		0x32, 0x33,
+	}
 	testRandomSeedHash := RandomSeedHash{
 		0x00, 0x36, 0x36, 0x37, 0x38, 0x39, 0x40, 0x41, 0x42, 0x43,
 		0x44, 0x45, 0x46, 0x47, 0x48, 0x49, 0x50, 0x51, 0x52, 0x53,
@@ -138,13 +144,13 @@ func createTestBlockHeaderVersion2(t *testing.T) *MsgDeSoHeader {
 		TstampNanoSecs:        SecondsToNanoSeconds(1678943210),
 		Height:                uint64(1321012345),
 		// Nonce and ExtraNonce are unused and set to 0 starting in version 2.
-		Nonce:                     uint64(0),
-		ExtraNonce:                uint64(0),
-		TransactionsConnectStatus: testBitset,
-		ProposerPublicKey:         NewPublicKey(pkForTesting1),
-		ProposerVotingPublicKey:   testBLSPublicKey,
-		ProposerRandomSeedHash:    &testRandomSeedHash,
-		ProposedInView:            uint64(1432101234),
+		Nonce:                      uint64(0),
+		ExtraNonce:                 uint64(0),
+		TxnStateConnectedIndexHash: &testTxnStateConnectedIndexHash,
+		ProposerPublicKey:          NewPublicKey(pkForTesting1),
+		ProposerVotingPublicKey:    testBLSPublicKey,
+		ProposerRandomSeedHash:     &testRandomSeedHash,
+		ProposedInView:             uint64(1432101234),
 		// Use real signatures and public keys for the PoS fields
 		ValidatorsVoteQC: &QuorumCertificate{
 			BlockHash:      &testBlockHash,
@@ -403,6 +409,33 @@ var expectedBlock = &MsgDeSoBlock{
 	},
 }
 
+func createTestBlockVersion1(t *testing.T) *MsgDeSoBlock {
+	require := require.New(t)
+
+	newBlockV1 := expectedBlock
+
+	// Add a signature to the block V1
+	priv, err := btcec.NewPrivateKey(btcec.S256())
+	require.NoError(err)
+	newBlockV1.BlockProducerInfo.Signature, err = priv.Sign([]byte{0x01, 0x02, 0x03})
+	require.NoError(err)
+	return newBlockV1
+}
+
+func createTestBlockVersion2(t *testing.T) *MsgDeSoBlock {
+	block := *expectedBlock
+	block.BlockProducerInfo = nil
+
+	// Set V2 header.
+	block.Header = createTestBlockHeaderVersion2(t)
+
+	// Set the block's TxnStateConnectedIndex and update its hash in the header.
+	block.TxnStateConnectedIndex = bitset.NewBitset().Set(0, true).Set(3, true)
+	block.Header.TxnStateConnectedIndexHash = HashBitset(block.TxnStateConnectedIndex)
+
+	return &block
+}
+
 func expectedTransactions(includeV1Fields bool) []*MsgDeSoTxn {
 	txns := []*MsgDeSoTxn{
 		{
@@ -557,20 +590,22 @@ func TestBlockSerialize(t *testing.T) {
 	_ = assert
 	_ = require
 
-	// Add a signature to the block
-	priv, err := btcec.NewPrivateKey(btcec.S256())
-	require.NoError(err)
-	expectedBlock.BlockProducerInfo.Signature, err = priv.Sign([]byte{0x01, 0x02, 0x03})
-	require.NoError(err)
+	expectedBlocksToTest := []*MsgDeSoBlock{
+		createTestBlockVersion1(t),
+		createTestBlockVersion2(t),
+	}
 
-	data, err := expectedBlock.ToBytes(false)
-	require.NoError(err)
+	for _, block := range expectedBlocksToTest {
+		data, err := block.ToBytes(false)
+		require.NoError(err)
 
-	testBlock := NewMessage(MsgTypeBlock).(*MsgDeSoBlock)
-	err = testBlock.FromBytes(data)
-	require.NoError(err)
+		testBlock := NewMessage(MsgTypeBlock).(*MsgDeSoBlock)
+		err = testBlock.FromBytes(data)
+		require.NoError(err)
 
-	assert.Equal(*expectedBlock, *testBlock)
+		require.True(assert.Equal(*block, *testBlock))
+	}
+
 }
 
 func TestBlockSerializeNoBlockProducerInfo(t *testing.T) {
@@ -579,18 +614,22 @@ func TestBlockSerializeNoBlockProducerInfo(t *testing.T) {
 	_ = assert
 	_ = require
 
-	// Add a signature to the block
-	blockWithoutProducerInfo := *expectedBlock
-	blockWithoutProducerInfo.BlockProducerInfo = nil
+	expectedBlocksToTest := []*MsgDeSoBlock{
+		createTestBlockVersion1(t),
+		createTestBlockVersion2(t),
+	}
+	expectedBlocksToTest[0].BlockProducerInfo = nil
+	expectedBlocksToTest[1].BlockProducerInfo = nil
 
-	data, err := blockWithoutProducerInfo.ToBytes(false)
-	require.NoError(err)
+	for _, block := range expectedBlocksToTest {
+		data, err := block.ToBytes(false)
+		require.NoError(err)
 
-	testBlock := NewMessage(MsgTypeBlock).(*MsgDeSoBlock)
-	err = testBlock.FromBytes(data)
-	require.NoError(err)
-
-	assert.Equal(blockWithoutProducerInfo, *testBlock)
+		testBlock := NewMessage(MsgTypeBlock).(*MsgDeSoBlock)
+		err = testBlock.FromBytes(data)
+		require.NoError(err)
+		require.True(assert.Equal(*block, *testBlock))
+	}
 }
 
 func TestBlockRewardTransactionSerialize(t *testing.T) {
@@ -599,19 +638,20 @@ func TestBlockRewardTransactionSerialize(t *testing.T) {
 	_ = assert
 	_ = require
 
-	// Add a signature to the block
-	priv, err := btcec.NewPrivateKey(btcec.S256())
-	require.NoError(err)
-	expectedBlock.BlockProducerInfo.Signature, err = priv.Sign([]byte{0x01, 0x02, 0x03})
-	require.NoError(err)
+	expectedBlocksToTest := []*MsgDeSoBlock{
+		createTestBlockVersion1(t),
+		createTestBlockVersion2(t),
+	}
 
-	data, err := expectedBlock.Txns[0].ToBytes(false)
-	require.NoError(err)
+	for _, block := range expectedBlocksToTest {
+		data, err := block.Txns[0].ToBytes(false)
+		require.NoError(err)
 
-	testTxn := NewMessage(MsgTypeTxn).(*MsgDeSoTxn)
-	err = testTxn.FromBytes(data)
-	require.NoError(err)
-	require.Equal(expectedBlock.Txns[0], testTxn)
+		testTxn := NewMessage(MsgTypeTxn).(*MsgDeSoTxn)
+		err = testTxn.FromBytes(data)
+		require.NoError(err)
+		require.True(assert.Equal(block.Txns[0], testTxn))
+	}
 }
 
 func TestSerializeInv(t *testing.T) {
