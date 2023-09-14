@@ -234,20 +234,20 @@ func (lockupYieldCurvePoint *LockupYieldCurvePoint) ToMapKey() LockupYieldCurveP
 }
 
 //
-// TYPES: DAOCoinLockupMetadata
+// TYPES: CoinLockupMetadata
 //
 
-type DAOCoinLockupMetadata struct {
+type CoinLockupMetadata struct {
 	ProfilePublicKey       *PublicKey
 	LockupDurationNanoSecs int64
 	LockupAmountBaseUnits  *uint256.Int
 }
 
-func (txnData *DAOCoinLockupMetadata) GetTxnType() TxnType {
-	return TxnTypeDAOCoinLockup
+func (txnData *CoinLockupMetadata) GetTxnType() TxnType {
+	return TxnTypeCoinLockup
 }
 
-func (txnData *DAOCoinLockupMetadata) ToBytes(preSignature bool) ([]byte, error) {
+func (txnData *CoinLockupMetadata) ToBytes(preSignature bool) ([]byte, error) {
 	var data []byte
 	data = append(data, EncodeByteArray(txnData.ProfilePublicKey.ToBytes())...)
 	data = append(data, UintToBuf(uint64(txnData.LockupDurationNanoSecs))...)
@@ -255,34 +255,34 @@ func (txnData *DAOCoinLockupMetadata) ToBytes(preSignature bool) ([]byte, error)
 	return data, nil
 }
 
-func (txnData *DAOCoinLockupMetadata) FromBytes(data []byte) error {
+func (txnData *CoinLockupMetadata) FromBytes(data []byte) error {
 	rr := bytes.NewReader(data)
 
 	// ProfilePublicKey
 	profilePublicKeyBytes, err := DecodeByteArray(rr)
 	if err != nil {
-		return errors.Wrapf(err, "DAOCoinLockupMetadata.FromBytes: Problem reading ProfilePublicKey")
+		return errors.Wrapf(err, "CoinLockupMetadata.FromBytes: Problem reading ProfilePublicKey")
 	}
 	txnData.ProfilePublicKey = NewPublicKey(profilePublicKeyBytes)
 
 	// ExpirationTimestampUnixNanoSecs
 	uint64LockupDurationNanoSecs, err := ReadUvarint(rr)
 	if err != nil {
-		return errors.Wrapf(err, "DAOCoinLockupMetadata.FromBytes: Problem reading LockupDurationNanoSecs")
+		return errors.Wrapf(err, "CoinLockupMetadata.FromBytes: Problem reading LockupDurationNanoSecs")
 	}
 	txnData.LockupDurationNanoSecs = int64(uint64LockupDurationNanoSecs)
 
 	// LockupAmountBaseUnits
 	txnData.LockupAmountBaseUnits, err = VariableDecodeUint256(rr)
 	if err != nil {
-		return errors.Wrapf(err, "DAOCoinLockupMetadata.FromBytes: Problem reading LockupAmountBaseUnits")
+		return errors.Wrapf(err, "CoinLockupMetadata.FromBytes: Problem reading LockupAmountBaseUnits")
 	}
 
 	return nil
 }
 
-func (txnData *DAOCoinLockupMetadata) New() DeSoTxnMetadata {
-	return &DAOCoinLockupMetadata{}
+func (txnData *CoinLockupMetadata) New() DeSoTxnMetadata {
+	return &CoinLockupMetadata{}
 }
 
 //
@@ -476,10 +476,10 @@ func (txnData *DAOCoinUnlockMetadata) New() DeSoTxnMetadata {
 }
 
 //
-// DAOCoinLockup Transaction Logic
+// CoinLockup Transaction Logic
 //
 
-func (bav *UtxoView) _connectDAOCoinLockup(
+func (bav *UtxoView) _connectCoinLockup(
 	txn *MsgDeSoTxn,
 	txHash *BlockHash,
 	blockHeight uint32,
@@ -498,11 +498,11 @@ func (bav *UtxoView) _connectDAOCoinLockup(
 	// We require the BalanceModelBlockHeight fork to ensure consensus is utilizing balance model.
 	if blockHeight < bav.Params.ForkHeights.ProofOfStake1StateSetupBlockHeight ||
 		blockHeight < bav.Params.ForkHeights.BalanceModelBlockHeight {
-		return 0, 0, nil, errors.Wrapf(RuleErrorProofofStakeTxnBeforeBlockHeight, "_connectDAOCoinLockup")
+		return 0, 0, nil, errors.Wrapf(RuleErrorProofofStakeTxnBeforeBlockHeight, "_connectCoinLockup")
 	}
 
 	// Validate the txn TxnType.
-	if txn.TxnMeta.GetTxnType() != TxnTypeDAOCoinLockup {
+	if txn.TxnMeta.GetTxnType() != TxnTypeCoinLockup {
 		return 0, 0, nil, fmt.Errorf(
 			"_connectDAOCoinLockup: called with bad TxnType %s", txn.TxnMeta.GetTxnType().String(),
 		)
@@ -515,7 +515,7 @@ func (bav *UtxoView) _connectDAOCoinLockup(
 	// the transactor has sufficient DeSo remaining for the lockup.
 	_, _, utxoOpsForBasicTransfer, err := bav._connectBasicTransfer(txn, txHash, blockHeight, verifySignatures)
 	if err != nil {
-		return 0, 0, nil, errors.Wrapf(err, "_connectDAOCoinLockup")
+		return 0, 0, nil, errors.Wrapf(err, "_connectCoinLockup")
 	}
 	utxoOpsForTxn = append(utxoOpsForTxn, utxoOpsForBasicTransfer...)
 
@@ -523,38 +523,43 @@ func (bav *UtxoView) _connectDAOCoinLockup(
 	// In this transaction, we're requiring balance model to be present where the txn nonce prevents replay.
 
 	// Grab the txn metadata.
-	txMeta := txn.TxnMeta.(*DAOCoinLockupMetadata)
+	txMeta := txn.TxnMeta.(*CoinLockupMetadata)
 
 	// Check that the target profile public key is valid and that a profile corresponding to that public key exists.
 	//
 	// NOTE: Here we make an exception to this rule is made for the zero public key.
 	//       The zero public key symbolically represents raw DeSo for lockup.
 	if len(txMeta.ProfilePublicKey) != btcec.PubKeyBytesLenCompressed {
-		return 0, 0, nil, errors.Wrap(RuleErrorDAOCoinInvalidPubKey, "_connectDAOCoinLockup")
+		return 0, 0, nil,
+			errors.Wrap(RuleErrorCoinLockupInvalidProfilePubKey, "_connectCoinLockup")
 	}
 	if !txMeta.ProfilePublicKey.IsZeroPublicKey() {
 		creatorProfileEntry := bav.GetProfileEntryForPublicKey(txMeta.ProfilePublicKey.ToBytes())
 		if creatorProfileEntry == nil || creatorProfileEntry.isDeleted {
-			return 0, 0, nil, errors.Wrap(RuleErrorDAOCoinLockupOnNonExistentProfile, "_connectDAOCoinLockup")
+			return 0, 0, nil,
+				errors.Wrap(RuleErrorCoinLockupOnNonExistentProfile, "_connectCoinLockup")
 		}
 	}
 
 	// Validate the lockup amount as non-zero. This is meant to prevent wasteful "no-op" transactions.
 	if txMeta.LockupAmountBaseUnits.IsZero() {
-		return 0, 0, nil, errors.Wrap(RuleErrorDAOCoinLockupOfAmountZero, "_connectDAOCoinLockup")
+		return 0, 0, nil,
+			errors.Wrap(RuleErrorCoinLockupOfAmountZero, "_connectCoinLockup")
 	}
 
 	// If this is a DeSo lockup, ensure the amount is less than 2**64 (maximum DeSo balance).
 	if txMeta.ProfilePublicKey.IsZeroPublicKey() {
 		maxUint64, _ := uint256.FromBig(big.NewInt(0).SetUint64(math.MaxUint64))
 		if txMeta.LockupAmountBaseUnits.Gt(maxUint64) {
-			return 0, 0, nil, errors.Wrap(RuleErrorDAOCoinLockupExcessiveDeSoLockup, "_connectDAOCoinLockup")
+			return 0, 0, nil,
+				errors.Wrap(RuleErrorCoinLockupExcessiveDeSoLockup, "_connectCoinLockup")
 		}
 	}
 
 	// Validate the lockup duration as non-negative and non-zero. This ensures the lockup will expire in the future.
 	if txMeta.LockupDurationNanoSecs <= 0 {
-		return 0, 0, nil, errors.Wrap(RuleErrorInvalidLockupDuration, "_connectDAOCoinLockup")
+		return 0, 0, nil,
+			errors.Wrap(RuleErrorCoinLockupInvalidLockupDuration, "_connectCoinLockup")
 	}
 
 	// Validate the transactor as having sufficient DAO Coin or DESO balance for the transaction.
@@ -564,20 +569,21 @@ func (bav *UtxoView) _connectDAOCoinLockup(
 		// Check the DeSo balance of the user.
 		transactorBalanceNanos, err := bav.GetDeSoBalanceNanosForPublicKey(txn.PublicKey)
 		if err != nil {
-			return 0, 0, nil, errors.Wrap(err, "_connectDAOCoin")
+			return 0, 0, nil, errors.Wrap(err, "_connectCoinLockup")
 		}
 
 		// Validate the DeSo balance as having sufficient funds.
 		transactorBalanceNanos256, _ = uint256.FromBig(big.NewInt(0).SetUint64(transactorBalanceNanos))
 		if txMeta.LockupAmountBaseUnits.Gt(transactorBalanceNanos256) {
-			return 0, 0, nil, errors.Wrap(RuleErrorDAOCoinLockupInsufficientDeSo, "_connectDAOCoinLockup")
+			return 0, 0, nil,
+				errors.Wrap(RuleErrorCoinLockupInsufficientDeSo, "_connectCoinLockup")
 		}
 
 		// Spend the transactor's DeSo balance.
 		lockupAmount64 := txMeta.LockupAmountBaseUnits.Uint64()
 		newUtxoOp, err := bav._spendBalance(lockupAmount64, txn.PublicKey, blockHeight)
 		if err != nil {
-			return 0, 0, nil, errors.Wrapf(err, "_connectDAOCoinLockup")
+			return 0, 0, nil, errors.Wrapf(err, "_connectCoinLockup")
 		}
 		utxoOpsForTxn = append(utxoOpsForTxn, newUtxoOp)
 	} else {
@@ -587,13 +593,15 @@ func (bav *UtxoView) _connectDAOCoinLockup(
 			txMeta.ProfilePublicKey.ToBytes(),
 			true)
 		if transactorBalanceEntry == nil || transactorBalanceEntry.isDeleted {
-			return 0, 0, nil, errors.Wrapf(RuleErrorDAOCoinLockupBalanceEntryDoesNotExist, "_connectDAOCoinLockup")
+			return 0, 0, nil,
+				errors.Wrapf(RuleErrorCoinLockupBalanceEntryDoesNotExist, "_connectCoinLockup")
 		}
 
 		// Validate the balance entry as having sufficient funds.
 		transactorBalanceNanos256 = transactorBalanceEntry.BalanceNanos.Clone()
 		if txMeta.LockupAmountBaseUnits.Gt(transactorBalanceNanos256) {
-			return 0, 0, nil, errors.Wrap(RuleErrorDAOCoinLockupInsufficientCoins, "_connectDAOCoinLockup")
+			return 0, 0, nil,
+				errors.Wrap(RuleErrorCoinLockupInsufficientCoins, "_connectCoinLockup")
 		}
 
 		// We store the previous transactor balance entry in the event we need to revert the transaction.
@@ -611,7 +619,8 @@ func (bav *UtxoView) _connectDAOCoinLockup(
 	} else {
 		creatorPKIDEntry := bav.GetPKIDForPublicKey(txMeta.ProfilePublicKey.ToBytes())
 		if creatorPKIDEntry == nil || creatorPKIDEntry.isDeleted {
-			return 0, 0, nil, errors.Wrap(RuleErrorDAOCoinLockupNonExistentProfile, "_connectDAOCoinLockup")
+			return 0, 0, nil,
+				errors.Wrap(RuleErrorCoinLockupNonExistentProfile, "_connectCoinLockup")
 		}
 		creatorPKID = creatorPKIDEntry.PKID.NewPKID()
 	}
@@ -622,7 +631,7 @@ func (bav *UtxoView) _connectDAOCoinLockup(
 	// points, we return here the two local points and choose/interpolate between them below.
 	leftYieldCurvePoint, rightYieldCurvePoint, err := bav.GetLocalYieldCurvePoints(creatorPKID, txMeta.LockupDurationNanoSecs)
 	if err != nil {
-		return 0, 0, nil, errors.Wrap(err, "_connectDAOCoinLockup")
+		return 0, 0, nil, errors.Wrap(err, "_connectCoinLockup")
 	}
 
 	// Here we interpolate/choose between the two local yield curve points.
@@ -646,20 +655,23 @@ func (bav *UtxoView) _connectDAOCoinLockup(
 	txnYieldEarningDurationNanoSecs256 := uint256.NewInt().SetUint64(uint64(txnYieldEarningDurationNanoSecs))
 
 	// Compute the yield associated with this operation, checking to ensure there's no overflow.
-	yieldFromTxn, err := CalculateLockupYield(txMeta.LockupAmountBaseUnits, txnYieldBasisPoints256, txnYieldEarningDurationNanoSecs256)
+	yieldFromTxn, err :=
+		CalculateLockupYield(txMeta.LockupAmountBaseUnits, txnYieldBasisPoints256, txnYieldEarningDurationNanoSecs256)
 	if err != nil {
-		return 0, 0, nil, errors.Wrap(err, "_connectDAOCoinLockup")
+		return 0, 0, nil, errors.Wrap(err, "_connectCoinLockup")
 	}
 
 	// We check that the minted yield does not cause an overflow in the transactor's balance.
 	// In the case of DeSo being locked up, we must check that the resulting amount is less than 2**64.
 	if uint256.NewInt().Sub(MaxUint256, yieldFromTxn).Lt(transactorBalanceNanos256) {
-		return 0, 0, nil, errors.Wrap(RuleErrorDAOCoinLockupYieldCausesOverflow, "_connectDAOCoinLockup")
+		return 0, 0, nil,
+			errors.Wrap(RuleErrorCoinLockupYieldCausesOverflow, "_connectCoinLockup")
 	}
 	if creatorPKID.IsZeroPKID() {
 		// Check if DeSo minted would overflow 2**64 in the transactor balance.
 		if uint256.NewInt().Sub(uint256.NewInt().SetUint64(math.MaxUint64), yieldFromTxn).Lt(transactorBalanceNanos256) {
-			return 0, 0, nil, errors.Wrap(RuleErrorDAOCoinLockupYieldCausesOverflow, "_connectDAOCoinLockup")
+			return 0, 0, nil,
+				errors.Wrap(RuleErrorCoinLockupYieldCausesOverflow, "_connectCoinLockup")
 		}
 	}
 
@@ -687,7 +699,8 @@ func (bav *UtxoView) _connectDAOCoinLockup(
 	//       all uses of _connectTransaction in tests.
 	blockTimestampNanoSecs := int64(0)
 	if int64(math.MaxInt64)-blockTimestampNanoSecs < txMeta.LockupDurationNanoSecs {
-		return 0, 0, nil, errors.Wrap(RuleErrorDAOCoinLockupUnlockTimestampOverflow, "_connectDAOCoinLockup")
+		return 0, 0, nil,
+			errors.Wrap(RuleErrorCoinLockupUnlockTimestampOverflow, "_connectCoinLockup")
 	}
 	unlockTimestamp := blockTimestampNanoSecs + txMeta.LockupDurationNanoSecs
 
@@ -707,12 +720,14 @@ func (bav *UtxoView) _connectDAOCoinLockup(
 
 	// Check for overflow within the locked balance entry itself.
 	if uint256.NewInt().Sub(MaxUint256, yieldFromTxn).Lt(transactorBalanceNanos256) {
-		return 0, 0, nil, errors.Wrap(RuleErrorDAOCoinLockupYieldCausesOverflow, "_connectDAOCoinLockup")
+		return 0, 0, nil,
+			errors.Wrap(RuleErrorCoinLockupYieldCausesOverflow, "_connectCoinLockup")
 	}
 	if creatorPKID.IsZeroPKID() {
 		// Check if DeSo minted would overflow 2**64 in the transactor balance.
 		if uint256.NewInt().Sub(uint256.NewInt().SetUint64(math.MaxUint64), yieldFromTxn).Lt(transactorBalanceNanos256) {
-			return 0, 0, nil, errors.Wrap(RuleErrorDAOCoinLockupYieldCausesOverflow, "_connectDAOCoinLockup")
+			return 0, 0, nil,
+				errors.Wrap(RuleErrorCoinLockupYieldCausesOverflow, "_connectCoinLockup")
 		}
 	}
 
@@ -722,7 +737,7 @@ func (bav *UtxoView) _connectDAOCoinLockup(
 
 	// Add a UtxoOperation for easy reversion during disconnect.
 	utxoOpsForTxn = append(utxoOpsForTxn, &UtxoOperation{
-		Type:                       OperationTypeDAOCoinLockup,
+		Type:                       OperationTypeCoinLockup,
 		PrevTransactorBalanceEntry: prevTransactorBalanceEntry,
 		PrevLockedBalanceEntry:     &previousLockedBalanceEntry,
 	})
@@ -731,7 +746,11 @@ func (bav *UtxoView) _connectDAOCoinLockup(
 	return 0, 0, utxoOpsForTxn, nil
 }
 
-func CalculateLockupYield(principal *uint256.Int, apyYieldBasisPoints *uint256.Int, durationNanoSecs *uint256.Int) (*uint256.Int, error) {
+func CalculateLockupYield(
+	principal *uint256.Int,
+	apyYieldBasisPoints *uint256.Int,
+	durationNanoSecs *uint256.Int,
+) (*uint256.Int, error) {
 	// Note: We could compute either simple of compounding interest. While compounding interest is ideal from an
 	//       application perspective, it becomes incredibly difficult to implement from a numerical perspective.
 	//       This is because compound interest requires fractional exponents rather for computing the yield.
@@ -744,25 +763,31 @@ func CalculateLockupYield(principal *uint256.Int, apyYieldBasisPoints *uint256.I
 	// Notice this formula makes detecting computational overflow trivial by utilizing the DeSo SafeUint256 library.
 
 	// Compute the denominators from the nanosecond to year conversion and the basis point computation.
-	denominators, err := SafeUint256().Mul(uint256.NewInt().SetUint64(_nanoSecsPerYear), uint256.NewInt().SetUint64(10000))
+	denominators, err := SafeUint256().Mul(
+		uint256.NewInt().SetUint64(_nanoSecsPerYear),
+		uint256.NewInt().SetUint64(10000))
 	if err != nil {
-		return nil, errors.Wrap(RuleErrorDAOCoinLockupCoinYieldOverflow, "CalculateLockupYield (nanoSecsPerYear * 10000)")
+		return nil,
+			errors.Wrap(RuleErrorCoinLockupCoinYieldOverflow, "CalculateLockupYield (nanoSecsPerYear * 10000)")
 	}
 
 	// Compute the numerators from the principal, apy yield, and time in nanoseconds.
 	numerators, err := SafeUint256().Mul(principal, apyYieldBasisPoints)
 	if err != nil {
-		return nil, errors.Wrap(RuleErrorDAOCoinLockupCoinYieldOverflow, "CalculateLockupYield (principal * yield)")
+		return nil,
+			errors.Wrap(RuleErrorCoinLockupCoinYieldOverflow, "CalculateLockupYield (principal * yield)")
 	}
 	numerators, err = SafeUint256().Mul(numerators, durationNanoSecs)
 	if err != nil {
-		return nil, errors.Wrap(RuleErrorDAOCoinLockupCoinYieldOverflow, "CalculateLockupYield ((principal * yield) * duration)")
+		return nil,
+			errors.Wrap(RuleErrorCoinLockupCoinYieldOverflow, "CalculateLockupYield ((principal * yield) * duration)")
 	}
 
 	// Compute the yield for the transaction.
 	yield, err := SafeUint256().Div(numerators, denominators)
 	if err != nil {
-		return nil, errors.Wrap(err, "CalculateLockupYield (numerator / denominator)")
+		return nil,
+			errors.Wrap(err, "CalculateLockupYield (numerator / denominator)")
 	}
 
 	return yield, nil
@@ -902,7 +927,7 @@ func (bav *UtxoView) _disconnectDAOCoinLockup(
 	operationIndex := len(utxoOpsForTxn) - 1
 
 	// Verify the last operation as being a DAOCoinLockup operation.
-	if utxoOpsForTxn[operationIndex].Type != OperationTypeDAOCoinLockup {
+	if utxoOpsForTxn[operationIndex].Type != OperationTypeCoinLockup {
 		return fmt.Errorf("_disconnectDAOCoinLockup: Trying to revert "+
 			"OperationTypeDAOCoinLockup but found type %v", utxoOpsForTxn[operationIndex].Type)
 	}

@@ -255,7 +255,7 @@ const (
 	TxnTypeUnstake                      TxnType = 37
 	TxnTypeUnlockStake                  TxnType = 38
 	TxnTypeUnjailValidator              TxnType = 39
-	TxnTypeDAOCoinLockup                TxnType = 40
+	TxnTypeCoinLockup                   TxnType = 40
 	TxnTypeUpdateDAOCoinLockupParams    TxnType = 41
 	TxnTypeDAOCoinLockupTransfer        TxnType = 42
 	TxnTypeDAOCoinUnlock                TxnType = 43
@@ -323,7 +323,7 @@ var (
 		TxnTypeDeleteUserAssociation, TxnTypeCreatePostAssociation, TxnTypeDeletePostAssociation,
 		TxnTypeAccessGroup, TxnTypeAccessGroupMembers, TxnTypeNewMessage, TxnTypeRegisterAsValidator,
 		TxnTypeUnregisterAsValidator, TxnTypeStake, TxnTypeUnstake, TxnTypeUnlockStake, TxnTypeUnjailValidator,
-		TxnTypeDAOCoinLockup, TxnTypeUpdateDAOCoinLockupParams, TxnTypeDAOCoinLockupTransfer, TxnTypeDAOCoinUnlock,
+		TxnTypeCoinLockup, TxnTypeUpdateDAOCoinLockupParams, TxnTypeDAOCoinLockupTransfer, TxnTypeDAOCoinUnlock,
 	}
 	AllTxnString = []TxnString{
 		TxnStringUnset, TxnStringBlockReward, TxnStringBasicTransfer, TxnStringBitcoinExchange, TxnStringPrivateMessage,
@@ -427,7 +427,7 @@ func (txnType TxnType) GetTxnString() TxnString {
 		return TxnStringUnlockStake
 	case TxnTypeUnjailValidator:
 		return TxnStringUnjailValidator
-	case TxnTypeDAOCoinLockup:
+	case TxnTypeCoinLockup:
 		return TxnStringDAOCoinLockup
 	case TxnTypeUpdateDAOCoinLockupParams:
 		return TxnStringUpdateDAOCoinLockupParams
@@ -521,7 +521,7 @@ func GetTxnTypeFromString(txnString TxnString) TxnType {
 	case TxnStringUnjailValidator:
 		return TxnTypeUnjailValidator
 	case TxnStringDAOCoinLockup:
-		return TxnTypeDAOCoinLockup
+		return TxnTypeCoinLockup
 	case TxnStringUpdateDAOCoinLockupParams:
 		return TxnTypeUpdateDAOCoinLockupParams
 	case TxnStringDAOCoinLockupTransfer:
@@ -621,8 +621,8 @@ func NewTxnMetadata(txType TxnType) (DeSoTxnMetadata, error) {
 		return (&UnlockStakeMetadata{}).New(), nil
 	case TxnTypeUnjailValidator:
 		return (&UnjailValidatorMetadata{}).New(), nil
-	case TxnTypeDAOCoinLockup:
-		return (&DAOCoinLockupMetadata{}).New(), nil
+	case TxnTypeCoinLockup:
+		return (&CoinLockupMetadata{}).New(), nil
 	case TxnTypeUpdateDAOCoinLockupParams:
 		return (&UpdateDAOCoinLockupParamsMetadata{}).New(), nil
 	case TxnTypeDAOCoinLockupTransfer:

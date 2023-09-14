@@ -632,7 +632,7 @@ const (
 	OperationTypeUnstake                      OperationType = 42
 	OperationTypeUnlockStake                  OperationType = 43
 	OperationTypeUnjailValidator              OperationType = 44
-	OperationTypeDAOCoinLockup                OperationType = 45
+	OperationTypeCoinLockup                   OperationType = 45
 
 	// NEXT_TAG = 46
 )
@@ -727,8 +727,8 @@ func (op OperationType) String() string {
 		return "OperationTypeUnlockStake"
 	case OperationTypeUnjailValidator:
 		return "OperationTypeUnjailValidator"
-	case OperationTypeDAOCoinLockup:
-		return "OperationTypeDAOCoinLockup"
+	case OperationTypeCoinLockup:
+		return "OperationTypeCoinLockup"
 	}
 	return "OperationTypeUNKNOWN"
 }
