@@ -63,10 +63,10 @@ type LockedBalanceEntryMapKey struct {
 }
 
 func MakeLockedBalanceEntryMapKey(
-	hodlerPKID *PKID, creatorPKID *PKID, timestamp int64, lockedByType LockedByType) LockedBalanceEntryMapKey {
+	hodlerPKID *PKID, profilePKID *PKID, timestamp int64, lockedByType LockedByType) LockedBalanceEntryMapKey {
 	return LockedBalanceEntryMapKey{
 		HODLerPKID:                      *hodlerPKID,
-		CreatorPKID:                     *creatorPKID,
+		ProfilePKID:                     *profilePKID,
 		ExpirationTimestampUnixNanoSecs: timestamp,
 		LockedBy:                        lockedByType,
 	}
@@ -154,31 +154,31 @@ func (lockedBalanceEntry *LockedBalanceEntry) GetEncoderType() EncoderType {
 	return EncoderTypeLockedBalanceEntry
 }
 
-func (bav *UtxoView) GetLockedBalanceEntryForHODLerPKIDCreatorPKIDTimestampLockedByType(
-	hodlerPKID *PKID, creatorPKID *PKID, expirationTimestamp int64,
+func (bav *UtxoView) GetLockedBalanceEntryForHODLerPKIDProfilePKIDTimestampLockedByType(
+	hodlerPKID *PKID, profilePKID *PKID, expirationTimestamp int64,
 	lockedByType LockedByType) (_lockedBalanceEntry *LockedBalanceEntry) {
 	// Check if we have the LockedBalanceEntry in the view.
-	lockedBalanceEntryMapKey := MakeLockedBalanceEntryMapKey(hodlerPKID, creatorPKID, expirationTimestamp, lockedByType)
+	lockedBalanceEntryMapKey := MakeLockedBalanceEntryMapKey(hodlerPKID, profilePKID, expirationTimestamp, lockedByType)
 	if viewEntry, viewEntryExists := bav.LockedBalanceEntryMapKeyToLockedBalanceEntry[lockedBalanceEntryMapKey]; viewEntryExists {
 		return viewEntry
 	}
 
 	// No mapping exists in the view, check for an entry in the DB.
 	// NOTE: Postgres support is deprecated by the time we support Lockups (i.e. 1st PoS fork).
-	lockedBalanceEntry := DBGetLockedBalanceEntryForHODLerPKIDCreatorPKIDTimestampType(
-		bav.Handle, bav.Snapshot, hodlerPKID, creatorPKID, expirationTimestamp, lockedByType)
+	lockedBalanceEntry := DBGetLockedBalanceEntryForHODLerPKIDProfilePKIDTimestampType(
+		bav.Handle, bav.Snapshot, hodlerPKID, profilePKID, expirationTimestamp, lockedByType)
 
 	// Cache the DB entry in the in-memory map.
 	if lockedBalanceEntry != nil {
 		bav._setLockedBalanceEntryMappingsWithPKIDsTimestampType(lockedBalanceEntry,
-			hodlerPKID, creatorPKID, expirationTimestamp, lockedByType)
+			hodlerPKID, profilePKID, expirationTimestamp, lockedByType)
 	}
 	return lockedBalanceEntry
 }
 
 // block_view_locked_balance_entry.go
 func (bav *UtxoView) _setLockedBalanceEntryMappingsWithPKIDsTimestampType(
-	lockedBalanceEntry *LockedBalanceEntry, hodlerPKID *PKID, creatorPKID *PKID,
+	lockedBalanceEntry *LockedBalanceEntry, hodlerPKID *PKID, profilePKID *PKID,
 	expirationTimestamp int64, lockedByType LockedByType) {
 
 	// This function shouldn't be called with nil.
@@ -189,13 +189,13 @@ func (bav *UtxoView) _setLockedBalanceEntryMappingsWithPKIDsTimestampType(
 	}
 
 	// Add a mapping for the LockedBalanceEntry
-	lockedBalanceEntryMapKey := MakeLockedBalanceEntryMapKey(hodlerPKID, creatorPKID, expirationTimestamp, lockedByType)
+	lockedBalanceEntryMapKey := MakeLockedBalanceEntryMapKey(hodlerPKID, profilePKID, expirationTimestamp, lockedByType)
 	bav.LockedBalanceEntryMapKeyToLockedBalanceEntry[lockedBalanceEntryMapKey] = lockedBalanceEntry
 }
 
 func (bav *UtxoView) _setLockedBalanceEntry(lockedBalanceEntry *LockedBalanceEntry) {
 	bav._setLockedBalanceEntryMappingsWithPKIDsTimestampType(lockedBalanceEntry,
-		lockedBalanceEntry.HODLerPKID, lockedBalanceEntry.CreatorPKID,
+		lockedBalanceEntry.HODLerPKID, lockedBalanceEntry.ProfilePKID,
 		lockedBalanceEntry.ExpirationTimestampUnixNanoSecs, lockedBalanceEntry.LockedBy)
 }
 
@@ -204,19 +204,19 @@ func (bav *UtxoView) _setLockedBalanceEntry(lockedBalanceEntry *LockedBalanceEnt
 //
 
 type LockupYieldCurvePoint struct {
-	CreatorPKID               *PKID
+	ProfilePKID               *PKID
 	LockupDurationNanoSecs    int64
 	LockupYieldAPYBasisPoints uint64
 }
 
 type LockupYieldCurvePointMapKey struct {
-	CreatorPKID            *PKID
+	ProfilePKID            *PKID
 	LockupDurationNanoSecs int64
 }
 
 func (lockupYieldCurvePoint *LockupYieldCurvePoint) Copy() *LockupYieldCurvePoint {
 	return &LockupYieldCurvePoint{
-		CreatorPKID:               lockupYieldCurvePoint.CreatorPKID.NewPKID(),
+		ProfilePKID:               lockupYieldCurvePoint.ProfilePKID.NewPKID(),
 		LockupDurationNanoSecs:    lockupYieldCurvePoint.LockupDurationNanoSecs,
 		LockupYieldAPYBasisPoints: lockupYieldCurvePoint.LockupYieldAPYBasisPoints,
 	}
@@ -228,7 +228,7 @@ func (lockupYieldCurvePoint *LockupYieldCurvePoint) Eq(other *LockupYieldCurvePo
 
 func (lockupYieldCurvePoint *LockupYieldCurvePoint) ToMapKey() LockupYieldCurvePointMapKey {
 	return LockupYieldCurvePointMapKey{
-		CreatorPKID:            lockupYieldCurvePoint.CreatorPKID,
+		ProfilePKID:            lockupYieldCurvePoint.ProfilePKID,
 		LockupDurationNanoSecs: lockupYieldCurvePoint.LockupDurationNanoSecs,
 	}
 }
@@ -535,8 +535,8 @@ func (bav *UtxoView) _connectCoinLockup(
 			errors.Wrap(RuleErrorCoinLockupInvalidProfilePubKey, "_connectCoinLockup")
 	}
 	if !txMeta.ProfilePublicKey.IsZeroPublicKey() {
-		creatorProfileEntry := bav.GetProfileEntryForPublicKey(txMeta.ProfilePublicKey.ToBytes())
-		if creatorProfileEntry == nil || creatorProfileEntry.isDeleted {
+		profileEntry := bav.GetProfileEntryForPublicKey(txMeta.ProfilePublicKey.ToBytes())
+		if profileEntry == nil || profileEntry.isDeleted {
 			return 0, 0, nil,
 				errors.Wrap(RuleErrorCoinLockupOnNonExistentProfile, "_connectCoinLockup")
 		}
@@ -615,16 +615,16 @@ func (bav *UtxoView) _connectCoinLockup(
 	}
 
 	// Determine which PKID to use.
-	var creatorPKID *PKID
+	var profilePKID *PKID
 	if txMeta.ProfilePublicKey.IsZeroPublicKey() {
-		creatorPKID = ZeroPKID.NewPKID()
+		profilePKID = ZeroPKID.NewPKID()
 	} else {
-		creatorPKIDEntry := bav.GetPKIDForPublicKey(txMeta.ProfilePublicKey.ToBytes())
-		if creatorPKIDEntry == nil || creatorPKIDEntry.isDeleted {
+		profilePKIDEntry := bav.GetPKIDForPublicKey(txMeta.ProfilePublicKey.ToBytes())
+		if profilePKIDEntry == nil || profilePKIDEntry.isDeleted {
 			return 0, 0, nil,
 				errors.Wrap(RuleErrorCoinLockupNonExistentProfile, "_connectCoinLockup")
 		}
-		creatorPKID = creatorPKIDEntry.PKID.NewPKID()
+		profilePKID = profilePKIDEntry.PKID.NewPKID()
 	}
 
 	// By now we know the transaction to be valid. We now source yield information from either
@@ -632,7 +632,7 @@ func (bav *UtxoView) _connectCoinLockup(
 	// to determine the yield when the lockup duration falls between two creator specified yield curve
 	// points, we return here the two local points and choose/interpolate between them below.
 	leftYieldCurvePoint, rightYieldCurvePoint, err :=
-		bav.GetLocalYieldCurvePoints(creatorPKID, txMeta.LockupDurationNanoSecs)
+		bav.GetLocalYieldCurvePoints(profilePKID, txMeta.LockupDurationNanoSecs)
 	if err != nil {
 		return 0, 0, nil, errors.Wrap(err, "_connectCoinLockup")
 	}
@@ -670,7 +670,7 @@ func (bav *UtxoView) _connectCoinLockup(
 		return 0, 0, nil,
 			errors.Wrap(RuleErrorCoinLockupYieldCausesOverflow, "_connectCoinLockup")
 	}
-	if creatorPKID.IsZeroPKID() {
+	if profilePKID.IsZeroPKID() {
 		// Check if DeSo minted would overflow 2**64 in the transactor balance.
 		if uint256.NewInt().Sub(uint256.NewInt().SetUint64(math.MaxUint64), yieldFromTxn).Lt(transactorBalanceNanos256) {
 			return 0, 0, nil,
@@ -690,7 +690,7 @@ func (bav *UtxoView) _connectCoinLockup(
 	transactorPKIDEntry := bav.GetPKIDForPublicKey(txn.PublicKey)
 	transactorPKID := transactorPKIDEntry.PKID
 	var lockedByType LockedByType
-	if transactorPKID.Eq(creatorPKID) {
+	if transactorPKID.Eq(profilePKID) {
 		lockedByType = LockedByCreator
 	} else {
 		lockedByType = LockedByHODLer
@@ -708,12 +708,12 @@ func (bav *UtxoView) _connectCoinLockup(
 	unlockTimestamp := blockTimestampNanoSecs + txMeta.LockupDurationNanoSecs
 
 	// For consolidation, we fetch equivalent LockedBalanceEntries.
-	lockedBalanceEntry := bav.GetLockedBalanceEntryForHODLerPKIDCreatorPKIDTimestampLockedByType(
-		transactorPKID, creatorPKID, unlockTimestamp, lockedByType)
+	lockedBalanceEntry := bav.GetLockedBalanceEntryForHODLerPKIDProfilePKIDTimestampLockedByType(
+		transactorPKID, profilePKID, unlockTimestamp, lockedByType)
 	if lockedBalanceEntry == nil || lockedBalanceEntry.isDeleted {
 		lockedBalanceEntry = &LockedBalanceEntry{
 			HODLerPKID:                      transactorPKID,
-			CreatorPKID:                     creatorPKID,
+			ProfilePKID:                     profilePKID,
 			ExpirationTimestampUnixNanoSecs: unlockTimestamp,
 			AmountBaseUnits:                 *uint256.NewInt(),
 			LockedBy:                        lockedByType,
@@ -726,7 +726,7 @@ func (bav *UtxoView) _connectCoinLockup(
 		return 0, 0, nil,
 			errors.Wrap(RuleErrorCoinLockupYieldCausesOverflow, "_connectCoinLockup")
 	}
-	if creatorPKID.IsZeroPKID() {
+	if profilePKID.IsZeroPKID() {
 		// Check if DeSo minted would overflow 2**64 in the transactor balance.
 		if uint256.NewInt().Sub(uint256.NewInt().SetUint64(math.MaxUint64), yieldFromTxn).Lt(transactorBalanceNanos256) {
 			return 0, 0, nil,
@@ -796,27 +796,27 @@ func CalculateLockupYield(
 	return yield, nil
 }
 
-func (bav *UtxoView) GetLocalYieldCurvePoints(creatorPKID *PKID, lockupDuration int64) (
+func (bav *UtxoView) GetLocalYieldCurvePoints(profilePKID *PKID, lockupDuration int64) (
 	leftLockupPoint *LockupYieldCurvePoint, rightLockupPoint *LockupYieldCurvePoint, err error) {
 	// Setup "default" local points.
 	leftLockupPoint = &LockupYieldCurvePoint{
-		CreatorPKID:               creatorPKID,
+		ProfilePKID:               profilePKID,
 		LockupDurationNanoSecs:    0,
 		LockupYieldAPYBasisPoints: 0,
 	}
 	rightLockupPoint = &LockupYieldCurvePoint{
-		CreatorPKID:               creatorPKID,
+		ProfilePKID:               profilePKID,
 		LockupDurationNanoSecs:    int64(math.MaxInt64),
 		LockupYieldAPYBasisPoints: 0,
 	}
 
-	// Check the UtxoView for local points tied to the creatorPKID.
+	// Check the UtxoView for local points tied to the profilePKID.
 	//
 	// NOTE: While we could use a binary search here, it's unlikely for there to be a large number
 	//       of yield curve points held in the UtxoView.
 	// NOTE: We take special care to "Copy()" the yield curve points in the view to prevent
 	//       accidental modifications of the points before writing to the db.
-	for _, lockupYieldCurvePoint := range bav.PKIDToLockupYieldCurvePoints[*creatorPKID] {
+	for _, lockupYieldCurvePoint := range bav.PKIDToLockupYieldCurvePoints[*profilePKID] {
 		// Check if the point is "more left" than the current left point.
 		if lockupYieldCurvePoint.LockupDurationNanoSecs < lockupDuration &&
 			lockupYieldCurvePoint.LockupDurationNanoSecs > leftLockupPoint.LockupDurationNanoSecs {
@@ -832,7 +832,7 @@ func (bav *UtxoView) GetLocalYieldCurvePoints(creatorPKID *PKID, lockupDuration 
 
 	// Now we fetch local curve points from the DB using careful seek operations.
 	key := _dbKeyForLockupYieldCurvePoint(LockupYieldCurvePoint{
-		CreatorPKID:               creatorPKID,
+		ProfilePKID:               profilePKID,
 		LockupDurationNanoSecs:    lockupDuration,
 		LockupYieldAPYBasisPoints: 0,
 	})
@@ -848,11 +848,11 @@ func (bav *UtxoView) GetLocalYieldCurvePoints(creatorPKID *PKID, lockupDuration 
 		// There's a chance our seek yield a key in a different prefix (i.e. not a yield curve point).
 		// In this case, we know _dbKeyToLockupYieldCurvePoint will fail in parsing the key.
 		// We can return early in this case as there's no relevant yield points in the DB.
-		if len(iterLeftKey) < len(Prefixes.PrefixLockedDAOCoinYieldByCreatorAndDuration) {
+		if len(iterLeftKey) < len(Prefixes.PrefixLockedCoinYieldByProfilePKIDAndDuration) {
 			return nil
 		}
-		if !bytes.Equal(iterLeftKey[:len(Prefixes.PrefixLockedDAOCoinYieldByCreatorAndDuration)],
-			Prefixes.PrefixLockedDAOCoinYieldByCreatorAndDuration) {
+		if !bytes.Equal(iterLeftKey[:len(Prefixes.PrefixLockedCoinYieldByProfilePKIDAndDuration)],
+			Prefixes.PrefixLockedCoinYieldByProfilePKIDAndDuration) {
 			return nil
 		}
 
@@ -863,7 +863,7 @@ func (bav *UtxoView) GetLocalYieldCurvePoints(creatorPKID *PKID, lockupDuration 
 		}
 
 		// Check for an updated left point.
-		if leftDbLockupPoint.CreatorPKID.Eq(creatorPKID) {
+		if leftDbLockupPoint.ProfilePKID.Eq(profilePKID) {
 			if leftDbLockupPoint.LockupDurationNanoSecs < lockupDuration &&
 				leftDbLockupPoint.LockupDurationNanoSecs > leftLockupPoint.LockupDurationNanoSecs {
 				leftLockupPoint = leftDbLockupPoint
@@ -886,11 +886,11 @@ func (bav *UtxoView) GetLocalYieldCurvePoints(creatorPKID *PKID, lockupDuration 
 		// There's a chance our seek yield a key in a different prefix (i.e. not a yield curve point).
 		// In this case, we know _dbKeyToLockupYieldCurvePoint will fail in parsing the key.
 		// We can return early in this case as there's no relevant yield points in the DB.
-		if len(iterRightKey) < len(Prefixes.PrefixLockedDAOCoinYieldByCreatorAndDuration) {
+		if len(iterRightKey) < len(Prefixes.PrefixLockedCoinYieldByProfilePKIDAndDuration) {
 			return nil
 		}
-		if !bytes.Equal(iterRightKey[:len(Prefixes.PrefixLockedDAOCoinYieldByCreatorAndDuration)],
-			Prefixes.PrefixLockedDAOCoinYieldByCreatorAndDuration) {
+		if !bytes.Equal(iterRightKey[:len(Prefixes.PrefixLockedCoinYieldByProfilePKIDAndDuration)],
+			Prefixes.PrefixLockedCoinYieldByProfilePKIDAndDuration) {
 			return nil
 		}
 
@@ -901,7 +901,7 @@ func (bav *UtxoView) GetLocalYieldCurvePoints(creatorPKID *PKID, lockupDuration 
 		}
 
 		// Check for an updated right point.
-		if rightDbLockupPoint.CreatorPKID.Eq(creatorPKID) {
+		if rightDbLockupPoint.ProfilePKID.Eq(profilePKID) {
 			if rightDbLockupPoint.LockupDurationNanoSecs >= lockupDuration &&
 				rightDbLockupPoint.LockupDurationNanoSecs < rightLockupPoint.LockupDurationNanoSecs {
 				rightLockupPoint = rightDbLockupPoint
@@ -948,8 +948,8 @@ func (bav *UtxoView) _disconnectCoinLockup(
 	}
 
 	// Sanity check the data within the CoinLockup. Reverting a lockup should not result in more coins.
-	lockedBalanceEntry := bav.GetLockedBalanceEntryForHODLerPKIDCreatorPKIDTimestampLockedByType(
-		operationData.PrevLockedBalanceEntry.HODLerPKID, operationData.PrevLockedBalanceEntry.CreatorPKID,
+	lockedBalanceEntry := bav.GetLockedBalanceEntryForHODLerPKIDProfilePKIDTimestampLockedByType(
+		operationData.PrevLockedBalanceEntry.HODLerPKID, operationData.PrevLockedBalanceEntry.ProfilePKID,
 		operationData.PrevLockedBalanceEntry.ExpirationTimestampUnixNanoSecs, operationData.PrevLockedBalanceEntry.LockedBy)
 	if lockedBalanceEntry.AmountBaseUnits.Lt(&operationData.PrevLockedBalanceEntry.AmountBaseUnits) {
 		return fmt.Errorf("_disconnectCoinLockup: Reversion of coin lockup would result in " +
@@ -960,7 +960,7 @@ func (bav *UtxoView) _disconnectCoinLockup(
 	bav._setLockedBalanceEntry(operationData.PrevLockedBalanceEntry)
 
 	// Depending on whether the lockup dealt with DeSo, we should have either a UtxoOp or a PrevTransactorBalanceEntry.
-	isDeSoLockup := operationData.PrevLockedBalanceEntry.CreatorPKID.IsZeroPKID()
+	isDeSoLockup := operationData.PrevLockedBalanceEntry.ProfilePKID.IsZeroPKID()
 	if isDeSoLockup {
 		// Revert the spent DeSo.
 		operationData = utxoOpsForTxn[operationIndex]

@@ -559,18 +559,19 @@ type DBPrefixes struct {
 	// Note, we parse the ValidatorPKID and StakerPKID from the key.
 	PrefixSnapshotStakeToRewardByValidatorAndStaker []byte `prefix_id:"[90]" is_state:"true"`
 
-	// PrefixLockedDAOCoinBalanceEntryByHODLerAndCreator: Retrieves LockedBalanceEntries that may or may not
-	// be claimable for unlock. LockedBalanceEntries can be retrieved by HodlerPKID and CreatorPKID are have their
+	// PrefixLockedBalanceEntryByHODLerPKIDProfilePKIDUnlockTimestampType:
+	// Retrieves LockedBalanceEntries that may or may not be claimable for unlock.
+	// LockedBalanceEntries can be retrieved by HodlerPKID and CreatorPKID are have their
 	// corresponding unlock timestamp appended to sort by timestamp.
-	// Prefix, <HodlerPKID [33]byte>, <CreatorPKID [33]byte>, <UnlockTimestampUnixNanoSecs int64>,
+	// Prefix, <HodlerPKID [33]byte>, <ProfilePKID [33]byte>, <UnlockTimestampUnixNanoSecs int64>,
 	//         <LockedByType uint8> -> <LockedBalanceEntry>
-	PrefixLockedDAOCoinBalanceEntryByHODLerCreatorUnlockTimestampType []byte `prefix_id:"[91]" is_state:"true"`
+	PrefixLockedBalanceEntryByHODLerPKIDProfilePKIDUnlockTimestampType []byte `prefix_id:"[91]" is_state:"true"`
 
-	// PrefixLockedDAOCoinYieldByCreatorAndDuration: Retrieves an empty byte slice. The key itself embeds
-	// the yield curve point for a given CreatorPKID and lockup duration. By encoding the yield in the key, retrieving
+	// PrefixLockedCoinYieldByCreatorAndDuration: Retrieves an empty byte slice. The key itself embeds
+	// the yield curve point for a given ProfilePKID and lockup duration. By encoding the yield in the key, retrieving
 	// and seeking values along the yield curve can be extremely fast as no value lookups are required.
-	// Prefix, <CreatorPKID [33]byte>, <LockupDurationNanoSecs int64>, <LockupYieldAPYBasisPoints uint64> -> []byte{}
-	PrefixLockedDAOCoinYieldByCreatorAndDuration []byte `prefix_id:"[92]" is_state:"true"`
+	// Prefix, <ProfilePKID [33]byte>, <LockupDurationNanoSecs int64>, <LockupYieldAPYBasisPoints uint64> -> []byte{}
+	PrefixLockedCoinYieldByProfilePKIDAndDuration []byte `prefix_id:"[92]" is_state:"true"`
 
 	// NEXT_TAG: 93
 }
@@ -813,10 +814,10 @@ func StatePrefixToDeSoEncoder(prefix []byte) (_isEncoder bool, _encoder DeSoEnco
 	} else if bytes.Equal(prefix, Prefixes.PrefixSnapshotStakeToRewardByValidatorAndStaker) {
 		// prefix_id:"[90]"
 		return true, &StakeEntry{}
-	} else if bytes.Equal(prefix, Prefixes.PrefixLockedDAOCoinBalanceEntryByCreatorAndHodler) {
+	} else if bytes.Equal(prefix, Prefixes.PrefixLockedBalanceEntryByHODLerPKIDProfilePKIDUnlockTimestampType) {
 		// prefix_id:"[91]"
 		return true, &LockedBalanceEntry{}
-	} else if bytes.Equal(prefix, Prefixes.PrefixLockedDAOCoinYieldByCreatorAndDuration) {
+	} else if bytes.Equal(prefix, Prefixes.PrefixLockedCoinYieldByProfilePKIDAndDuration) {
 		// prefix_id:"[92]"
 		return false, nil
 	}
@@ -10686,28 +10687,28 @@ func DBDeletePostAssociationWithTxn(txn *badger.Txn, snap *Snapshot, association
 
 // LockedBalanceEntry DB Operations
 
-func DBGetLockedBalanceEntryForHODLerPKIDCreatorPKIDTimestampType(handle *badger.DB, snap *Snapshot,
+func DBGetLockedBalanceEntryForHODLerPKIDProfilePKIDTimestampType(handle *badger.DB, snap *Snapshot,
 	hodlerPKID *PKID, creatorPKID *PKID, expirationTimestamp int64, lockedByType LockedByType) *LockedBalanceEntry {
 
 	var ret *LockedBalanceEntry
 	handle.View(func(txn *badger.Txn) error {
-		ret = DBGetLockedBalanceEntryForHODLerPKIDCreatorPKIDTimestampTypeWithTxn(
+		ret = DBGetLockedBalanceEntryForHODLerPKIDProfilePKIDTimestampTypeWithTxn(
 			txn, snap, hodlerPKID, creatorPKID, expirationTimestamp, lockedByType)
 		return nil
 	})
 	return ret
 }
 
-func DBGetLockedBalanceEntryForHODLerPKIDCreatorPKIDTimestampTypeWithTxn(txn *badger.Txn, snap *Snapshot,
+func DBGetLockedBalanceEntryForHODLerPKIDProfilePKIDTimestampTypeWithTxn(txn *badger.Txn, snap *Snapshot,
 	hodlerPKID *PKID, creatorPKID *PKID, expirationTimestamp int64, lockedByType LockedByType) *LockedBalanceEntry {
 
-	key := _dbKeyForHODLerPKIDCreatorPKIDTimestampTypeToLockedBalanceEntry(hodlerPKID,
+	key := _dbKeyForHODLerPKIDProfilePKIDTimestampTypeToLockedBalanceEntry(hodlerPKID,
 		creatorPKID, expirationTimestamp, lockedByType)
 	lockedBalanceEntryBytes, err := DBGetWithTxn(txn, snap, key)
 	if err != nil {
 		return &LockedBalanceEntry{
 			HODLerPKID:                      hodlerPKID.NewPKID(),
-			CreatorPKID:                     creatorPKID.NewPKID(),
+			ProfilePKID:                     creatorPKID.NewPKID(),
 			ExpirationTimestampUnixNanoSecs: expirationTimestamp,
 			AmountBaseUnits:                 *uint256.NewInt(),
 			LockedBy:                        lockedByType,
@@ -10719,11 +10720,11 @@ func DBGetLockedBalanceEntryForHODLerPKIDCreatorPKIDTimestampTypeWithTxn(txn *ba
 	return lockedBalanceEntryObj
 }
 
-func _dbKeyForHODLerPKIDCreatorPKIDTimestampTypeToLockedBalanceEntry(hodlerPKID *PKID, creatorPKID *PKID,
+func _dbKeyForHODLerPKIDProfilePKIDTimestampTypeToLockedBalanceEntry(hodlerPKID *PKID, profilePKID *PKID,
 	expirationTimestamp int64, lockedByType LockedByType) []byte {
-	key := append([]byte{}, Prefixes.PrefixLockedDAOCoinBalanceEntryByHODLerCreatorUnlockTimestampType...)
+	key := append([]byte{}, Prefixes.PrefixLockedBalanceEntryByHODLerPKIDProfilePKIDUnlockTimestampType...)
 	key = append(key, hodlerPKID[:]...)
-	key = append(key, creatorPKID[:]...)
+	key = append(key, profilePKID[:]...)
 	key = append(key, EncodeUint64(uint64(expirationTimestamp))...)
 	return append(key, byte(lockedByType))
 }
@@ -10732,8 +10733,8 @@ func _dbKeyForHODLerPKIDCreatorPKIDTimestampTypeToLockedBalanceEntry(hodlerPKID 
 
 func _dbKeyForLockupYieldCurvePoint(lockupYieldCurvePoint LockupYieldCurvePoint) []byte {
 	// Make a copy to avoid multiple calls to this function re-using the same slice.
-	prefixCopy := append([]byte{}, Prefixes.PrefixLockedDAOCoinYieldByCreatorAndDuration...)
-	key := append(prefixCopy, lockupYieldCurvePoint.CreatorPKID[:]...)
+	prefixCopy := append([]byte{}, Prefixes.PrefixLockedCoinYieldByProfilePKIDAndDuration...)
+	key := append(prefixCopy, lockupYieldCurvePoint.ProfilePKID[:]...)
 
 	// Note that while we typically use UintToBuf to encode int64 and uint64 data,
 	// we cannot use that here. The variable length encoding of the int64 LockupDuration
@@ -10761,22 +10762,22 @@ func _dbKeyForLockupYieldCurvePoint(lockupYieldCurvePoint LockupYieldCurvePoint)
 func _dbKeyToLockupYieldCurvePoint(key []byte) (*LockupYieldCurvePoint, error) {
 	// Ensure that the key is of proper length.
 	// The key should contain a prefix, PKID, an 8-byte int64, and an 8-byte uint64.
-	if len(key) != len(Prefixes.PrefixLockedDAOCoinYieldByCreatorAndDuration)+PublicKeyLenCompressed+16 {
+	if len(key) != len(Prefixes.PrefixLockedCoinYieldByProfilePKIDAndDuration)+PublicKeyLenCompressed+16 {
 		return nil, errors.New("_dbKeyToLockupYieldCurvePoint: Invalid key length")
 	}
 
 	// Parse the bytes in the key.
 	// See the comment in _dbKeyForLockupYieldCurvePoint for why we use abnormal encoding.
-	creatorPKID := NewPKID(
-		key[len(Prefixes.PrefixLockedDAOCoinYieldByCreatorAndDuration) : len(Prefixes.PrefixLockedDAOCoinBalanceEntryByHODLerCreatorUnlockTimestampType)+PublicKeyLenCompressed])
+	profilePKID := NewPKID(
+		key[len(Prefixes.PrefixLockedCoinYieldByProfilePKIDAndDuration) : len(Prefixes.PrefixLockedBalanceEntryByHODLerPKIDProfilePKIDUnlockTimestampType)+PublicKeyLenCompressed])
 	lockupDurationNanoSecs := int64(binary.BigEndian.Uint64(
-		key[len(Prefixes.PrefixLockedDAOCoinYieldByCreatorAndDuration)+PublicKeyLenCompressed : len(Prefixes.PrefixLockedDAOCoinBalanceEntryByHODLerCreatorUnlockTimestampType)+PublicKeyLenCompressed+8]))
+		key[len(Prefixes.PrefixLockedCoinYieldByProfilePKIDAndDuration)+PublicKeyLenCompressed : len(Prefixes.PrefixLockedBalanceEntryByHODLerPKIDProfilePKIDUnlockTimestampType)+PublicKeyLenCompressed+8]))
 	lockupYieldAPYBasisPoints := binary.BigEndian.Uint64(
-		key[len(Prefixes.PrefixLockedDAOCoinYieldByCreatorAndDuration)+PublicKeyLenCompressed+8 : len(Prefixes.PrefixLockedDAOCoinBalanceEntryByHODLerCreatorUnlockTimestampType)+PublicKeyLenCompressed+16])
+		key[len(Prefixes.PrefixLockedCoinYieldByProfilePKIDAndDuration)+PublicKeyLenCompressed+8 : len(Prefixes.PrefixLockedBalanceEntryByHODLerPKIDProfilePKIDUnlockTimestampType)+PublicKeyLenCompressed+16])
 
 	// Format into a LockupYieldCurvePoint.
 	lockupYieldCurvePoint := &LockupYieldCurvePoint{
-		CreatorPKID:               creatorPKID,
+		ProfilePKID:               profilePKID,
 		LockupDurationNanoSecs:    lockupDurationNanoSecs,
 		LockupYieldAPYBasisPoints: lockupYieldAPYBasisPoints,
 	}
