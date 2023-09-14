@@ -23,7 +23,7 @@ const (
 
 type LockedBalanceEntry struct {
 	HODLerPKID                      *PKID
-	CreatorPKID                     *PKID
+	ProfilePKID                     *PKID
 	ExpirationTimestampUnixNanoSecs int64
 	AmountBaseUnits                 *uint256.Int
 	LockedBy                        LockedByType
@@ -32,7 +32,7 @@ type LockedBalanceEntry struct {
 
 type LockedBalanceEntryMapKey struct {
 	HODLerPKID                      PKID
-	CreatorPKID                     PKID
+	ProfilePKID                     PKID
 	ExpirationTimestampUnixNanoSecs int64
 
 	// Including LockedBy in the LockedBalanceEntryMapKey is a design choice
@@ -48,7 +48,7 @@ type LockedBalanceEntryMapKey struct {
 func (lockedBalanceEntry *LockedBalanceEntry) Copy() *LockedBalanceEntry {
 	return &LockedBalanceEntry{
 		HODLerPKID:                      lockedBalanceEntry.HODLerPKID.NewPKID(),
-		CreatorPKID:                     lockedBalanceEntry.CreatorPKID.NewPKID(),
+		ProfilePKID:                     lockedBalanceEntry.ProfilePKID.NewPKID(),
 		ExpirationTimestampUnixNanoSecs: lockedBalanceEntry.ExpirationTimestampUnixNanoSecs,
 		AmountBaseUnits:                 lockedBalanceEntry.AmountBaseUnits.Clone(),
 		LockedBy:                        lockedBalanceEntry.LockedBy,
@@ -63,7 +63,7 @@ func (lockedBalanceEntry *LockedBalanceEntry) Eq(other *LockedBalanceEntry) bool
 func (lockedBalanceEntry *LockedBalanceEntry) ToMapKey() LockedBalanceEntryMapKey {
 	return LockedBalanceEntryMapKey{
 		HODLerPKID:                      *lockedBalanceEntry.HODLerPKID,
-		CreatorPKID:                     *lockedBalanceEntry.CreatorPKID,
+		ProfilePKID:                     *lockedBalanceEntry.ProfilePKID,
 		ExpirationTimestampUnixNanoSecs: lockedBalanceEntry.ExpirationTimestampUnixNanoSecs,
 		LockedBy:                        lockedBalanceEntry.LockedBy,
 	}
@@ -76,7 +76,7 @@ func (lockedBalanceEntry *LockedBalanceEntry) ToMapKey() LockedBalanceEntryMapKe
 func (lockedBalanceEntry *LockedBalanceEntry) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte {
 	var data []byte
 	data = append(data, EncodeToBytes(blockHeight, lockedBalanceEntry.HODLerPKID, skipMetadata...)...)
-	data = append(data, EncodeToBytes(blockHeight, lockedBalanceEntry.CreatorPKID, skipMetadata...)...)
+	data = append(data, EncodeToBytes(blockHeight, lockedBalanceEntry.ProfilePKID, skipMetadata...)...)
 	data = append(data, UintToBuf(uint64(lockedBalanceEntry.ExpirationTimestampUnixNanoSecs))...)
 	data = append(data, VariableEncodeUint256(lockedBalanceEntry.AmountBaseUnits)...)
 	data = append(data, lockedBalanceEntry.LockedBy)
@@ -92,10 +92,10 @@ func (lockedBalanceEntry *LockedBalanceEntry) RawDecodeWithoutMetadata(blockHeig
 		return errors.Wrapf(err, "LockedBalanceEntry.Decode: Problem reading HODLerPKID")
 	}
 
-	// CreatorPKID
-	lockedBalanceEntry.CreatorPKID, err = DecodeDeSoEncoder(&PKID{}, rr)
+	// ProfilePKID
+	lockedBalanceEntry.ProfilePKID, err = DecodeDeSoEncoder(&PKID{}, rr)
 	if err != nil {
-		return errors.Wrapf(err, "LockedBalanceEntry.Decode: Problem reading CreatorPKID")
+		return errors.Wrapf(err, "LockedBalanceEntry.Decode: Problem reading ProfilePKID")
 	}
 
 	// ExpirationTimestampUnixNanoSecs
