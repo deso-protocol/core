@@ -3227,8 +3227,6 @@ func (bav *UtxoView) _connectTransaction(txn *MsgDeSoTxn, txHash *BlockHash, txn
 		// cannot be assumed to be equal to total input - total output.
 		if blockHeight >= bav.Params.ForkHeights.BalanceModelBlockHeight {
 			fees = txn.TxnFeeNanos
-		} else {
-			txn.TxnFeeNanos = fees
 		}
 	}
 	// Validate that totalInput - totalOutput is equal to the fee specified in the transaction metadata.
