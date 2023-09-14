@@ -27,6 +27,14 @@ func NewScheduledTask[TaskParam any]() *ScheduledTask[TaskParam] {
 
 // Schedule a new task to be executed after the countdown duration. If there is an existing scheduled
 // task, it will be cancelled and replaced with the new task.
+//
+// Note: There is a race condition in which a scheduled task is rescheduled at the same moment the
+// previously scheduled task begins to execute. This gives the appearance from the caller's POV that
+// the previous task executed, despite being replaced. There is no simple internal-only solution to
+// prevent, in a way that guarantees no risk of deadlock with outside code's mutexes. If such race
+// conditions are a concern, the caller must internally validate the provided param to ensure its
+// attached task is no longer stale. See FastHotStuffEventLoop.onTimeoutScheduledTaskExecuted(view uint64)
+// for a simple example that exits task execution early when the view param is stale.
 func (t *ScheduledTask[TaskParam]) Schedule(duration time.Duration, param TaskParam, task func(TaskParam)) {
 	t.lock.Lock()
 	defer t.lock.Unlock()
@@ -45,6 +53,9 @@ func (t *ScheduledTask[TaskParam]) Schedule(duration time.Duration, param TaskPa
 	})
 }
 
+// Note: The same race condition as above exists, in which a scheduled task is cancelled at the same moment
+// it is begins to execute. If such race conditions are a concern, the caller must internally validate the
+// provided param to ensure its attached task is no longer stale, similar to the above.
 func (t *ScheduledTask[TaskParam]) Cancel() {
 	t.lock.Lock()
 	defer t.lock.Unlock()
