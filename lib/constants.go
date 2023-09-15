@@ -1523,6 +1523,8 @@ var (
 		MaxCopiesPerNFT:   0,
 		// We initialize the FeeBucketRateMultiplierBasisPoints to 1000, or equivalently, a multiplier of 1.1x.
 		FeeBucketRateMultiplierBasisPoints: 1000,
+		// We initialize the FailingTransactionBMFRateBasisPoints to 5000, or equivalently, a rate of 0.5.
+		FailingTransactionBMFRateBasisPoints: 5000,
 	}
 )
 
