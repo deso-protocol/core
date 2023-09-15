@@ -1122,7 +1122,7 @@ var DeSoMainnetParams = DeSoParams{
 	DefaultFeeBucketRateMultiplierBasisPoints: uint64(1000),
 
 	// The rate of the failing transaction's fee used in BMF calculations.
-	DefaultFailingTransactionBMFRateBasisPoints: uint64(5000),
+	DefaultFailingTransactionBMFRateBasisPoints: uint64(2500),
 
 	ForkHeights:                 MainnetForkHeights,
 	EncoderMigrationHeights:     GetEncoderMigrationHeights(&MainnetForkHeights),
@@ -1389,7 +1389,7 @@ var DeSoTestnetParams = DeSoParams{
 	DefaultFeeBucketRateMultiplierBasisPoints: uint64(1000),
 
 	// The rate of the failing transaction's fee used in BMF calculations.
-	DefaultFailingTransactionBMFRateBasisPoints: uint64(5000),
+	DefaultFailingTransactionBMFRateBasisPoints: uint64(2500),
 
 	ForkHeights:                 TestnetForkHeights,
 	EncoderMigrationHeights:     GetEncoderMigrationHeights(&TestnetForkHeights),
@@ -1524,7 +1524,7 @@ var (
 		// We initialize the FeeBucketRateMultiplierBasisPoints to 1000, or equivalently, a multiplier of 1.1x.
 		FeeBucketRateMultiplierBasisPoints: 1000,
 		// We initialize the FailingTransactionBMFRateBasisPoints to 5000, or equivalently, a rate of 0.5.
-		FailingTransactionBMFRateBasisPoints: 5000,
+		FailingTransactionBMFRateBasisPoints: 2500,
 	}
 )
 

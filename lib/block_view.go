@@ -2078,7 +2078,7 @@ func (bav *UtxoView) _connectBasicTransferWithExtraSpend(
 
 	// If signature verification is requested then do that as well.
 	if verifySignatures {
-		if err := bav._helpVerifySignature(txn, blockHeight); err != nil {
+		if err := bav._verifyTxnSignature(txn, blockHeight); err != nil {
 			return 0, 0, nil, errors.Wrapf(err, "_connectBasicTransferWithExtraSpend ")
 		}
 	}
@@ -2106,7 +2106,7 @@ func (bav *UtxoView) _connectBasicTransferWithExtraSpend(
 	return totalInput, totalOutput, utxoOpsForTxn, nil
 }
 
-func (bav *UtxoView) _helpVerifySignature(txn *MsgDeSoTxn, blockHeight uint32) error {
+func (bav *UtxoView) _verifyTxnSignature(txn *MsgDeSoTxn, blockHeight uint32) error {
 	// When we looped through the inputs we verified that all of them belong
 	// to the public key specified in the transaction. So, as long as the transaction
 	// public key has signed the transaction as a whole, we can assume that
@@ -3650,7 +3650,7 @@ func (bav *UtxoView) _connectTransaction(txn *MsgDeSoTxn, txHash *BlockHash,
 // of reasons, such as insufficient DESO balance, wrong public key, etc. With Revolution's Fee-Time block ordering, these
 // failing transactions are included in the blocks and their fees are burned. Initially blocks will include full transactions,
 // and in the future iterations blocks will only include the failing transaction hashes. This is done to prevent spamming
-// attacks on the network with seemingly valid transactions that never commit and just end up occupying the mempool space.
+// attacks on the network with seemingly valid transactions that never commit and just end up occupying the block space.
 // In addition, a major part of the effective fees of this transaction is burned with BMF. This makes spam attacks economically
 // disadvantageous. Attacker's funds are burned, to the benefit of everyone else on the network. BMF algorithm also computes
 // a utility fee, which is distributed to the block producer.
@@ -3705,7 +3705,7 @@ func (bav *UtxoView) _connectFailingTransaction(txn *MsgDeSoTxn, blockHeight uin
 
 	// If verifySignatures is passed, we check transaction signature.
 	if verifySignatures {
-		if err := bav._helpVerifySignature(txn, blockHeight); err != nil {
+		if err := bav._verifyTxnSignature(txn, blockHeight); err != nil {
 			return nil, 0, 0, errors.Wrapf(err, "_connectFailingTransaction: Problem "+
 				"verifying signature")
 		}

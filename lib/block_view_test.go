@@ -2211,11 +2211,16 @@ func TestConnectFailingTransaction(t *testing.T) {
 	chain, params, db := NewLowDifficultyBlockchain(t)
 	params.ForkHeights.BalanceModelBlockHeight = 1
 	params.ForkHeights.ProofOfStake2ConsensusCutoverBlockHeight = 1
-	oldPool, miner := NewTestMiner(t, chain, params, true)
+	params.ForkHeights.ProofOfStake1StateSetupBlockHeight = 1
+	params.EncoderMigrationHeights.ProofOfStake1StateSetupMigration.Height = 1
+	params.EncoderMigrationHeightsList = GetEncoderMigrationHeightsList(&params.ForkHeights)
+	oldParams := GlobalDeSoParams
+	GlobalDeSoParams = *params
+	mempool, miner := NewTestMiner(t, chain, params, true)
 	// Mine a few blocks to give the senderPkString some money.
-	_, err := miner.MineAndProcessSingleBlock(0 /*threadIndex*/, oldPool)
+	_, err := miner.MineAndProcessSingleBlock(0 /*threadIndex*/, mempool)
 	require.NoError(err)
-	_, err = miner.MineAndProcessSingleBlock(0 /*threadIndex*/, oldPool)
+	_, err = miner.MineAndProcessSingleBlock(0 /*threadIndex*/, mempool)
 	require.NoError(err)
 
 	m0PubBytes, _, _ := Base58CheckDecode(m0Pub)
@@ -2237,7 +2242,58 @@ func TestConnectFailingTransaction(t *testing.T) {
 	require.Equal(expectedUtilityFee, utilityFee)
 
 	err = blockView.FlushToDb(uint64(blockHeight))
+
+	// Also test updating the global params for FailingTransactionBMFRateBasisPoints and FeeBucketRateMultiplierBasisPoints.
+	testMeta := &TestMeta{
+		t:                 t,
+		chain:             chain,
+		params:            params,
+		db:                db,
+		mempool:           mempool,
+		miner:             miner,
+		savedHeight:       blockHeight,
+		feeRateNanosPerKb: uint64(201),
+	}
+	// Allow m0 to update global params.
+	params.ExtraRegtestParamUpdaterKeys[MakePkMapKey(m0PubBytes)] = true
+	{
+		// Set FailingTransactionBMFRateBasisPoints=7000 or 70%.
+		_updateGlobalParamsEntryWithExtraData(
+			testMeta,
+			testMeta.feeRateNanosPerKb,
+			m0Pub,
+			m0Priv,
+			map[string][]byte{FailingTransactionBMFRateBasisPointsKey: UintToBuf(7000)},
+		)
+	}
+	{
+		// Set FeeBucketRateMultiplierBasisPoints=7000 or 70%.
+		_updateGlobalParamsEntryWithExtraData(
+			testMeta,
+			testMeta.feeRateNanosPerKb,
+			m0Pub,
+			m0Priv,
+			map[string][]byte{FeeBucketRateMultiplierBasisPointsKey: UintToBuf(7000)},
+		)
+	}
+	blockView, err = NewUtxoView(db, params, nil, nil)
 	require.NoError(err)
+	newParams := blockView.GetCurrentGlobalParamsEntry()
+	require.Equal(uint64(7000), newParams.FailingTransactionBMFRateBasisPoints)
+	require.Equal(uint64(7000), newParams.FeeBucketRateMultiplierBasisPoints)
+
+	// Try connecting another failing transaction, and make sure the burn and utility fees are computed accurately.
+	txn2 := _generateTestTxn(t, rand, feeMin, feeMax, m0PubBytes, m0Priv, 100, 0)
+	utxoOps, burnFee, utilityFee, err = blockView._connectFailingTransaction(txn2, blockHeight, true)
+	require.NoError(err)
+	require.Equal(2, len(utxoOps))
+	expectedBurnFee, expectedUtilityFee = _getBMFForTxn(txn2, newParams)
+	require.Equal(expectedBurnFee, burnFee)
+	require.Equal(expectedUtilityFee, utilityFee)
+
+	err = blockView.FlushToDb(uint64(blockHeight))
+
+	GlobalDeSoParams = oldParams
 }
 
 func _getBMFForTxn(txn *MsgDeSoTxn, gp *GlobalParamsEntry) (_burnFee uint64, _utilityFee uint64) {
