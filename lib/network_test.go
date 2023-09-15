@@ -121,7 +121,7 @@ func createTestBlockHeaderVersion2(t *testing.T) *MsgDeSoHeader {
 		0x54, 0x55, 0x56, 0x57, 0x58, 0x59, 0x60, 0x61, 0x62, 0x63,
 		0x64, 0x65,
 	}
-	testTxnStateConnectedIndexHash := BlockHash{
+	testTxnConnectStatusByIndex := BlockHash{
 		0x00, 0x03, 0x04, 0x21, 0x06, 0x07, 0x08, 0x09, 0x10, 0x19,
 		0x12, 0x13, 0x14, 0x15, 0x44, 0x17, 0x18, 0x19, 0x20, 0x21,
 		0x02, 0x23, 0x24, 0x25, 0x26, 0x27, 0x33, 0x29, 0x30, 0x31,
@@ -144,13 +144,13 @@ func createTestBlockHeaderVersion2(t *testing.T) *MsgDeSoHeader {
 		TstampNanoSecs:        SecondsToNanoSeconds(1678943210),
 		Height:                uint64(1321012345),
 		// Nonce and ExtraNonce are unused and set to 0 starting in version 2.
-		Nonce:                      uint64(0),
-		ExtraNonce:                 uint64(0),
-		TxnStateConnectedIndexHash: &testTxnStateConnectedIndexHash,
-		ProposerPublicKey:          NewPublicKey(pkForTesting1),
-		ProposerVotingPublicKey:    testBLSPublicKey,
-		ProposerRandomSeedHash:     &testRandomSeedHash,
-		ProposedInView:             uint64(1432101234),
+		Nonce:                       uint64(0),
+		ExtraNonce:                  uint64(0),
+		TxnConnectStatusByIndexHash: &testTxnConnectStatusByIndex,
+		ProposerPublicKey:           NewPublicKey(pkForTesting1),
+		ProposerVotingPublicKey:     testBLSPublicKey,
+		ProposerRandomSeedHash:      &testRandomSeedHash,
+		ProposedInView:              uint64(1432101234),
 		// Use real signatures and public keys for the PoS fields
 		ValidatorsVoteQC: &QuorumCertificate{
 			BlockHash:      &testBlockHash,
@@ -429,9 +429,9 @@ func createTestBlockVersion2(t *testing.T) *MsgDeSoBlock {
 	// Set V2 header.
 	block.Header = createTestBlockHeaderVersion2(t)
 
-	// Set the block's TxnStateConnectedIndex and update its hash in the header.
-	block.TxnStateConnectedIndex = bitset.NewBitset().Set(0, true).Set(3, true)
-	block.Header.TxnStateConnectedIndexHash = HashBitset(block.TxnStateConnectedIndex)
+	// Set the block's TxnConnectStatusByIndex and update its hash in the header.
+	block.TxnConnectStatusByIndex = bitset.NewBitset().Set(0, true).Set(3, true)
+	block.Header.TxnConnectStatusByIndexHash = HashBitset(block.TxnConnectStatusByIndex)
 
 	return &block
 }

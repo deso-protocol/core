@@ -1918,10 +1918,10 @@ type MsgDeSoHeader struct {
 	// TransactionsConnectStatus is only used for Proof of Stake blocks, starting with
 	// MsgDeSoHeader version 2. For all earlier versions, this field will default to nil.
 	//
-	// The hash of the TxnStateConnectedIndex field in MsgDeSoBlock. It is stored to ensure
-	// that the TxnStateConnectedIndex is part of the header hash, which is signed by the
+	// The hash of the TxnConnectStatusByIndex field in MsgDeSoBlock. It is stored to ensure
+	// that the TxnConnectStatusByIndex is part of the header hash, which is signed by the
 	// proposer. The full index is stored in the block to offload space complexity.
-	TxnStateConnectedIndexHash *BlockHash
+	TxnConnectStatusByIndexHash *BlockHash
 
 	// ProposerPublicKey is only used for Proof of Stake blocks, starting with MsgDeSoHeader
 	// version 2. For all earlier versions, this field will default to nil.
@@ -2141,11 +2141,11 @@ func (msg *MsgDeSoHeader) EncodeHeaderVersion2(preSignature bool) ([]byte, error
 	// The Nonce and ExtraNonce fields are unused in version 2. We skip them
 	// during both encoding and decoding.
 
-	// TxnStateConnectedIndexHash
-	if msg.TxnStateConnectedIndexHash == nil {
-		return nil, fmt.Errorf("EncodeHeaderVersion2: TxnStateConnectedIndexHash must be non-nil")
+	// TxnConnectStatusByIndexHash
+	if msg.TxnConnectStatusByIndexHash == nil {
+		return nil, fmt.Errorf("EncodeHeaderVersion2: TxnConnectStatusByIndexHash must be non-nil")
 	}
-	retBytes = append(retBytes, msg.TxnStateConnectedIndexHash[:]...)
+	retBytes = append(retBytes, msg.TxnConnectStatusByIndexHash[:]...)
 
 	// ProposerPublicKey
 	if msg.ProposerPublicKey == nil {
@@ -2361,11 +2361,11 @@ func DecodeHeaderVersion2(rr io.Reader) (*MsgDeSoHeader, error) {
 	retHeader.Nonce = 0
 	retHeader.ExtraNonce = 0
 
-	// TxnStateConnectedIndexHash
-	retHeader.TxnStateConnectedIndexHash = &BlockHash{}
-	_, err = io.ReadFull(rr, retHeader.TxnStateConnectedIndexHash[:])
+	// TxnConnectStatusByIndexHash
+	retHeader.TxnConnectStatusByIndexHash = &BlockHash{}
+	_, err = io.ReadFull(rr, retHeader.TxnConnectStatusByIndexHash[:])
 	if err != nil {
-		return nil, errors.Wrapf(err, "MsgDeSoHeader.FromBytes: Problem decoding TxnStateConnectedIndexHash")
+		return nil, errors.Wrapf(err, "MsgDeSoHeader.FromBytes: Problem decoding TxnConnectStatusByIndexHash")
 	}
 
 	// ProposerPublicKey
@@ -2592,7 +2592,7 @@ type MsgDeSoBlock struct {
 	// or fails to connect. The bit at i-th position is set to 1 if the i-th transaction
 	// in the block passes connect, and 0 otherwise. The length of the bitset must match
 	// the number of transactions in the block.
-	TxnStateConnectedIndex *bitset.Bitset
+	TxnConnectStatusByIndex *bitset.Bitset
 }
 
 func (msg *MsgDeSoBlock) EncodeBlockCommmon(preSignature bool) ([]byte, error) {
@@ -2651,11 +2651,11 @@ func (msg *MsgDeSoBlock) EncodeBlockVersion2(preSignature bool) ([]byte, error) 
 		return nil, err
 	}
 
-	// TxnStateConnectedIndex
-	if msg.TxnStateConnectedIndex == nil {
-		return nil, fmt.Errorf("MsgDeSoBlock.EncodeBlockVersion2: TxnStateConnectedIndex should not be nil")
+	// TxnConnectStatusByIndex
+	if msg.TxnConnectStatusByIndex == nil {
+		return nil, fmt.Errorf("MsgDeSoBlock.EncodeBlockVersion2: TxnConnectStatusByIndex should not be nil")
 	}
-	data = append(data, EncodeBitset(msg.TxnStateConnectedIndex)...)
+	data = append(data, EncodeBitset(msg.TxnConnectStatusByIndex)...)
 
 	return data, nil
 }
@@ -2762,9 +2762,9 @@ func (msg *MsgDeSoBlock) FromBytes(data []byte) error {
 
 	// Version 2 blocks have a TxnStatusConnectedIndex attached to them.
 	if ret.Header.Version == HeaderVersion2 {
-		ret.TxnStateConnectedIndex, err = DecodeBitset(rr)
+		ret.TxnConnectStatusByIndex, err = DecodeBitset(rr)
 		if err != nil {
-			return errors.Wrapf(err, "MsgDeSoBlock.FromBytes: Error decoding TxnStateConnectedIndex")
+			return errors.Wrapf(err, "MsgDeSoBlock.FromBytes: Error decoding TxnConnectStatusByIndex")
 		}
 	}
 
