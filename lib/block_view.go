@@ -157,6 +157,12 @@ type UtxoView struct {
 	// for error-checking when doing a bulk operation on the view.
 	TipHash *BlockHash
 
+	// The timestamp of the block being actively connected/disconnected.
+	// Used within any time-dependent operations like lockups. This should not be used
+	// outside of functions called exclusively by ConnectBlock and DisconnectBlock while
+	// the blockchain chain lock is acquired.
+	ConnectingBlockTimestampNanoSecs int64
+
 	Handle   *badger.DB
 	Postgres *Postgres
 	Params   *DeSoParams
@@ -1567,6 +1573,9 @@ func (bav *UtxoView) DisconnectBlock(
 			bav.SetTransactorNonceEntry(nonceEntry)
 		}
 	}
+
+	// Set the block timestamp in the view for use in time-dependent transactions.
+	bav.ConnectingBlockTimestampNanoSecs = int64(desoBlock.Header.TstampNanoSecs)
 
 	// Loop through the txns backwards to process them.
 	// Track the operation we're performing as we go.
@@ -3649,6 +3658,9 @@ func (bav *UtxoView) ConnectBlock(
 			return nil, fmt.Errorf("ConnectBlock: Problem parsing block reward public key: %v", err)
 		}
 	}
+
+	// Set the block timestamp in the view for use in time-dependent transactions.
+	bav.ConnectingBlockTimestampNanoSecs = int64(desoBlock.Header.TstampNanoSecs)
 
 	// Loop through all the transactions and validate them using the view. Also
 	// keep track of the total fees throughout.
