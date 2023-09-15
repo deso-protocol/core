@@ -696,16 +696,12 @@ func (bav *UtxoView) _connectCoinLockup(
 		lockedByType = LockedByHODLer
 	}
 
-	// Check that the unlock time won't overflow UNIX nanosecond timestamps.
-	// TODO: Discuss this because getting the block timestamp is a bit wonk.
-	//       Feeding it in from ConnectBlock through _connectTransaction would require modifying
-	//       all uses of _connectTransaction in tests.
-	blockTimestampNanoSecs := int64(0)
-	if int64(math.MaxInt64)-blockTimestampNanoSecs < txMeta.LockupDurationNanoSecs {
+	// Compute the unlock time based on the block timestamp.
+	if int64(math.MaxInt64)-bav.ConnectingBlockTimestampNanoSecs < txMeta.LockupDurationNanoSecs {
 		return 0, 0, nil,
 			errors.Wrap(RuleErrorCoinLockupUnlockTimestampOverflow, "_connectCoinLockup")
 	}
-	unlockTimestamp := blockTimestampNanoSecs + txMeta.LockupDurationNanoSecs
+	unlockTimestamp := bav.ConnectingBlockTimestampNanoSecs + txMeta.LockupDurationNanoSecs
 
 	// For consolidation, we fetch equivalent LockedBalanceEntries.
 	lockedBalanceEntry := bav.GetLockedBalanceEntryForHODLerPKIDProfilePKIDTimestampLockedByType(
