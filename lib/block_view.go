@@ -1454,6 +1454,9 @@ func (bav *UtxoView) DisconnectTransaction(currentTxn *MsgDeSoTxn, txnHash *Bloc
 
 	case TxnTypeCoinLockup:
 		return bav._disconnectCoinLockup(OperationTypeCoinLockup, currentTxn, txnHash, utxoOpsForTxn, blockHeight)
+	case TxnTypeUpdateCoinLockupParams:
+		return bav._disconnectUpdateCoinLockupParams(
+			OperationTypeUpdateCoinLockupParams, currentTxn, txnHash, utxoOpsForTxn, blockHeight)
 	case TxnTypeCoinLockupTransfer:
 		return bav._disconnectCoinLockupTransfer(
 			OperationTypeCoinLockupTransfer, currentTxn, txnHash, utxoOpsForTxn, blockHeight)
