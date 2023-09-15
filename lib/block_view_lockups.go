@@ -1405,12 +1405,9 @@ func (bav *UtxoView) _connectCoinUnlock(
 		profilePKID = profilePKIDEntry.PKID
 	}
 
-	// TODO: Fetch the timestamp of the current block
-	currentTimestamp := int64(0)
-
 	// Retrieve PrevLockedBalanceEntries. These will be restored if we disconnect this txn.
 	prevLockedBalanceEntries, err := bav.GetUnlockableLockedBalanceEntries(
-		hodlerPKID, profilePKID, currentTimestamp)
+		hodlerPKID, profilePKID, bav.ConnectingBlockTimestampNanoSecs)
 	if err != nil {
 		return 0, 0, nil, errors.Wrapf(err, "_connectCoinUnlock")
 	}
