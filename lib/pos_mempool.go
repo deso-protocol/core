@@ -62,6 +62,10 @@ type PosMempool struct {
 	// The persister runs on its dedicated thread and events are used to notify the persister thread whenever
 	// transactions are added/removed from the mempool. The persister thread then updates the database accordingly.
 	persister *MempoolPersister
+	// nonceTracker is responsible for keeping track of a (public key, nonce) -> Txn index. The index is useful in
+	// facilitating a "replace by higher fee" feature. This feature gives users the ability to replace their existing
+	// mempool transaction with a new transaction having the same nonce but higher fee.
+	nonceTracker *PosMempoolNonceTracker
 
 	// latestBlockView is used to check if a transaction is valid before being added to the mempool. The latestBlockView
 	// checks if the transaction has a valid signature and if the transaction's sender has enough funds to cover the fee.
@@ -126,9 +130,10 @@ func (dmp *PosMempool) Start() error {
 	}
 	dmp.db = db
 
-	// Create the transaction register and ledger
+	// Create the transaction register, the ledger, and the nonce tracker,
 	dmp.txnRegister = NewTransactionRegister(dmp.globalParams)
 	dmp.ledger = NewBalanceLedger()
+	dmp.nonceTracker = NewPosMempoolNonceTracker()
 
 	// Create the persister
 	dmp.persister = NewMempoolPersister(dmp.db, int(dmp.params.MempoolBackupTimeMilliseconds))
@@ -159,9 +164,10 @@ func (dmp *PosMempool) Stop() {
 	if err := dmp.db.Close(); err != nil {
 		glog.Errorf("PosMempool.Stop: Problem closing database: %v", err)
 	}
-	// Reset the transaction register and the ledger.
+	// Reset the transaction register, the ledger, and the nonce tracker.
 	dmp.txnRegister.Reset()
 	dmp.ledger.Reset()
+	dmp.nonceTracker.Reset()
 
 	dmp.status = PosMempoolStatusNotRunning
 }
@@ -195,10 +201,26 @@ func (dmp *PosMempool) AddTransaction(txn *MsgDeSoTxn) error {
 		return errors.Wrapf(err, "PosMempool.AddTransaction: Problem constructing MempoolTx")
 	}
 
+	// Check the nonceTracker to see if this transaction is meant to replace an existing one.
+	pk := NewPublicKey(txn.PublicKey)
+	if existingTxn := dmp.nonceTracker.GetTxnByPublicKeyNonce(*pk, txn.TxnNonce.PartialID); existingTxn != nil {
+		if existingTxn.FeePerKB > mempoolTx.FeePerKB {
+			return errors.Wrapf(MempoolFailedReplaceByHigherFee, "PosMempool.AddTransaction: Problem replacing transaction "+
+				"by higher fee failed. New transaction has lower fee.")
+		}
+		if err := dmp.removeTransactionNoLock(existingTxn, true); err != nil {
+			return errors.Wrapf(err, "PosMempool.AddTransaction: Problem removing old transaction from mempool during "+
+				"replacement with higher fee.")
+		}
+	}
+
 	// Add the transaction to the mempool and then prune if needed.
 	if err := dmp.addTransactionNoLock(mempoolTx, true); err != nil {
 		return errors.Wrapf(err, "PosMempool.AddTransaction: Problem adding transaction to mempool")
 	}
+
+	// Add the transaction to the nonce tracker.
+	dmp.nonceTracker.AddTxnByPublicKeyNonce(*pk, txn.TxnNonce.PartialID, mempoolTx)
 
 	if err := dmp.pruneNoLock(); err != nil {
 		glog.Errorf("PosMempool.AddTransaction: Problem pruning mempool: %v", err)
@@ -279,7 +301,11 @@ func (dmp *PosMempool) loadPersistedTransactions() error {
 		if err := dmp.addTransactionNoLock(txn, false); err != nil {
 			glog.Errorf("PosMempool.Start: Problem adding transaction with hash (%v) from persister: %v",
 				txn.Hash, err)
+			continue
 		}
+		// If the transaction was successfully added, also include it in the nonce tracker.
+		pk := NewPublicKey(txn.Tx.PublicKey)
+		dmp.nonceTracker.AddTxnByPublicKeyNonce(*pk, txn.Tx.TxnNonce.PartialID, txn)
 	}
 	return nil
 }
@@ -298,8 +324,14 @@ func (dmp *PosMempool) RemoveTransaction(txnHash *BlockHash) error {
 	if txn == nil {
 		return nil
 	}
+	pk := NewPublicKey(txn.Tx.PublicKey)
 
-	return dmp.removeTransactionNoLock(txn, true)
+	if err := dmp.removeTransactionNoLock(txn, true); err != nil {
+		return errors.Wrapf(err, "PosMempool.RemoveTransaction: Problem removing transaction from mempool")
+	}
+	// Remove the txn from the nonce tracker.
+	dmp.nonceTracker.RemoveTxnByPublicKeyNonce(*pk, txn.FeePerKB)
+	return nil
 }
 
 func (dmp *PosMempool) removeTransactionNoLock(txn *MempoolTx, persistToDb bool) error {

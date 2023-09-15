@@ -59,6 +59,7 @@ func TestPosMempoolRestartWithTransactions(t *testing.T) {
 	require.True(newPool.IsRunning())
 	newPoolTxns := newPool.GetTransactions()
 	require.Equal(2, len(newPoolTxns))
+	require.Equal(len(newPool.GetTransactions()), len(newPool.nonceTracker.nonceMap))
 	newPool.Stop()
 	require.False(newPool.IsRunning())
 }
@@ -139,6 +140,7 @@ func TestPosMempoolPrune(t *testing.T) {
 		require.True(bytes.Equal(tx.Hash().ToBytes(), fetchedTxns[index].Hash().ToBytes()))
 		index++
 	}
+	require.Equal(len(mempool.GetTransactions()), len(mempool.nonceTracker.nonceMap))
 	newPool.Stop()
 	require.False(newPool.IsRunning())
 }
@@ -190,8 +192,64 @@ func TestPosMempoolUpdateGlobalParams(t *testing.T) {
 	require.True(newPool.IsRunning())
 	newPoolTxns := newPool.GetTransactions()
 	require.Equal(0, len(newPoolTxns))
+	require.Equal(len(mempool.GetTransactions()), len(mempool.nonceTracker.nonceMap))
 	newPool.Stop()
 	require.False(newPool.IsRunning())
+}
+
+func TestPosMempoolReplaceWithHigherFee(t *testing.T) {
+	require := require.New(t)
+	seed := int64(1077)
+	rand := rand.New(rand.NewSource(seed))
+
+	globalParams := _testGetDefaultGlobalParams()
+	feeMin := globalParams.MinimumNetworkFeeNanosPerKB
+	feeMax := uint64(2000)
+
+	params, db := _blockchainSetup(t)
+	m0PubBytes, _, _ := Base58CheckDecode(m0Pub)
+	m1PubBytes, _, _ := Base58CheckDecode(m1Pub)
+
+	latestBlockView, err := NewUtxoView(db, params, nil, nil)
+	require.NoError(err)
+	dir := _dbDirSetup(t)
+
+	mempool := NewPosMempool(params, globalParams, latestBlockView, 2, dir)
+	require.NoError(mempool.Start())
+	require.True(mempool.IsRunning())
+
+	txn1 := _generateTestTxn(t, rand, feeMin, feeMax, m0PubBytes, m0Priv, 100, 25)
+	require.NoError(mempool.AddTransaction(txn1))
+	require.Equal(1, len(mempool.GetTransactions()))
+
+	txns := mempool.GetTransactions()
+	require.Equal(1, len(txns))
+	txn1New := _generateTestTxn(t, rand, feeMin, feeMax, m0PubBytes, m0Priv, 100, 25)
+	txn1New.TxnFeeNanos = txn1.TxnFeeNanos + 1000
+	txn1New.TxnNonce.PartialID = txn1.TxnNonce.PartialID
+	_signTxn(t, txn1New, m0Priv)
+	require.NoError(mempool.AddTransaction(txn1New))
+	require.Equal(1, len(mempool.GetTransactions()))
+	require.Equal(txn1New.TxnNonce, mempool.GetTransactions()[0].TxnNonce)
+
+	txn2 := _generateTestTxn(t, rand, feeMin, feeMax, m1PubBytes, m1Priv, 100, 25)
+	require.NoError(mempool.AddTransaction(txn2))
+	require.Equal(2, len(mempool.GetTransactions()))
+
+	txns = mempool.GetTransactions()
+	require.Equal(2, len(txns))
+	txn2New := _generateTestTxn(t, rand, feeMin, feeMax, m1PubBytes, m1Priv, 100, 25)
+	txn2New.TxnFeeNanos = txn2.TxnFeeNanos + 1000
+	txn2New.TxnNonce.PartialID = txn2.TxnNonce.PartialID
+	_signTxn(t, txn2New, m1Priv)
+	require.NoError(mempool.AddTransaction(txn2New))
+	require.Equal(2, len(mempool.GetTransactions()))
+	require.Equal(txn2New.TxnNonce, mempool.GetTransactions()[0].TxnNonce)
+	require.Equal(txn1New.TxnNonce, mempool.GetTransactions()[1].TxnNonce)
+
+	require.Equal(len(mempool.GetTransactions()), len(mempool.nonceTracker.nonceMap))
+	mempool.Stop()
+	require.False(mempool.IsRunning())
 }
 
 func _blockchainSetup(t *testing.T) (_params *DeSoParams, _db *badger.DB) {
@@ -245,6 +303,7 @@ func _generateTestTxn(t *testing.T, rand *rand.Rand, feeMin uint64, feeMax uint6
 		TxnFeeNanos: rand.Uint64()%(feeMax-feeMin) + feeMin,
 		TxnNonce: &DeSoNonce{
 			ExpirationBlockHeight: expirationHeight,
+			PartialID:             rand.Uint64() % 10000,
 		},
 		ExtraData: extraData,
 	}
