@@ -634,7 +634,7 @@ func (srv *Server) GetSnapshot(pp *Peer) {
 	// If peer isn't assigned to any prefix, we will assign him now.
 	if !syncingPrefix {
 		// We will assign the peer to a non-existent prefix.
-		for _, prefix = range StatePrefixes.StatePrefixesList {
+		for _, prefix = range PrefixesMetadata.StatePrefixesList {
 			exists := false
 			for _, prefixProgress := range srv.HyperSyncProgress.PrefixProgress {
 				if reflect.DeepEqual(prefix, prefixProgress.Prefix) {
@@ -1268,7 +1268,7 @@ func (srv *Server) _handleSnapshot(pp *Peer, msg *MsgDeSoSnapshotData) {
 	// and see what's left to do.
 
 	var completedPrefixes [][]byte
-	for _, prefix := range StatePrefixes.StatePrefixesList {
+	for _, prefix := range PrefixesMetadata.StatePrefixesList {
 		completed := false
 		// Check if the prefix has been completed.
 		for _, prefixProgress := range srv.HyperSyncProgress.PrefixProgress {
@@ -2490,7 +2490,7 @@ func (progress *SyncProgress) PrintLoop() {
 			var incompletePrefixes [][]byte
 			var currentPrefix []byte
 
-			for _, prefix := range StatePrefixes.StatePrefixesList {
+			for _, prefix := range PrefixesMetadata.StatePrefixesList {
 				// Check if the prefix has been completed.
 				foundPrefix := false
 				for _, prefixProgress := range progress.PrefixProgress {

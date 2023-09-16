@@ -165,8 +165,8 @@ func TestSimpleHyperSyncRestart(t *testing.T) {
 	bridge := NewConnectionBridge(node1, node2)
 	require.NoError(bridge.Start())
 
-	syncIndex := randomUint32Between(t, 0, uint32(len(lib.StatePrefixes.StatePrefixesList)))
-	syncPrefix := lib.StatePrefixes.StatePrefixesList[syncIndex]
+	syncIndex := randomUint32Between(t, 0, uint32(len(lib.PrefixesMetadata.StatePrefixesList)))
+	syncPrefix := lib.PrefixesMetadata.StatePrefixesList[syncIndex]
 	fmt.Println("Random sync prefix for a restart (re-use if test failed):", syncPrefix)
 	// Reboot node2 at a specific sync prefix and reconnect it with node1
 	node2, bridge = restartAtSyncPrefixAndReconnectNode(t, node2, node1, bridge, syncPrefix)
@@ -230,8 +230,8 @@ func TestSimpleHyperSyncDisconnectWithSwitchingToNewPeer(t *testing.T) {
 	bridge12 := NewConnectionBridge(node1, node2)
 	require.NoError(bridge12.Start())
 
-	syncIndex := randomUint32Between(t, 0, uint32(len(lib.StatePrefixes.StatePrefixesList)))
-	syncPrefix := lib.StatePrefixes.StatePrefixesList[syncIndex]
+	syncIndex := randomUint32Between(t, 0, uint32(len(lib.PrefixesMetadata.StatePrefixesList)))
+	syncPrefix := lib.PrefixesMetadata.StatePrefixesList[syncIndex]
 	fmt.Println("Random prefix for a restart (re-use if test failed):", syncPrefix)
 	disconnectAtSyncPrefix(t, node2, bridge12, syncPrefix)
 
@@ -290,8 +290,8 @@ func TestSimpleHyperSyncDisconnectWithSwitchingToNewPeer(t *testing.T) {
 //	bridge := NewConnectionBridge(node1, node2)
 //	require.NoError(bridge.Start())
 //
-//	syncIndex := randomUint32Between(t, 0, uint32(len(lib.StatePrefixes.StatePrefixesList)))
-//	lastPrefix := lib.StatePrefixes.StatePrefixesList[syncIndex]
+//	syncIndex := randomUint32Between(t, 0, uint32(len(lib.PrefixesMetadata.StatePrefixesList)))
+//	lastPrefix := lib.PrefixesMetadata.StatePrefixesList[syncIndex]
 //	listener := make(chan bool)
 //	listenForSyncPrefix(t, node2, lastPrefix, listener)
 //	<-listener

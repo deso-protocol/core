@@ -15,10 +15,10 @@ import (
 
 // Check that all state db prefixes have been correctly mapped to DeSoEncoder types via StatePrefixToDeSoEncoder
 func TestStatePrefixToDeSoEncoder(t *testing.T) {
-	for prefixByte, isState := range StatePrefixes.StatePrefixesMap {
+	for prefixByte, prefixType := range PrefixesMetadata.PrefixToTypeMap {
 		prefix := []byte{prefixByte}
 		isEncoder, encoder := StatePrefixToDeSoEncoder(prefix)
-		if isState {
+		if prefixType.IsType(DBPrefixTypeState) {
 			if isEncoder && encoder == nil {
 				t.Fatalf("State prefix (%v) mapped to an incorrect encoder, isEncoder is true and encoder is nil", prefix)
 			} else if !isEncoder && encoder != nil {

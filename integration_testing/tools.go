@@ -150,14 +150,14 @@ func compareNodesByChecksum(t *testing.T, nodeA *cmd.Node, nodeB *cmd.Node) {
 // compareNodesByState will look through all state records in nodeA and nodeB databases and will compare them.
 // The nodes pass this comparison iff they have identical states.
 func compareNodesByState(t *testing.T, nodeA *cmd.Node, nodeB *cmd.Node, verbose int) {
-	compareNodesByStateWithPrefixList(t, nodeA.ChainDB, nodeB.ChainDB, lib.StatePrefixes.StatePrefixesList, verbose)
+	compareNodesByStateWithPrefixList(t, nodeA.ChainDB, nodeB.ChainDB, lib.PrefixesMetadata.StatePrefixesList, verbose)
 }
 
 // compareNodesByDB will look through all records in nodeA and nodeB databases and will compare them.
 // The nodes pass this comparison iff they have identical states.
 func compareNodesByDB(t *testing.T, nodeA *cmd.Node, nodeB *cmd.Node, verbose int) {
 	var prefixList [][]byte
-	for prefix := range lib.StatePrefixes.StatePrefixesMap {
+	for prefix := range lib.PrefixesMetadata.PrefixToTypeMap {
 		// We skip utxooperations because we actually can't sync them in hypersync.
 		if reflect.DeepEqual([]byte{prefix}, lib.Prefixes.PrefixBlockHashToUtxoOperations) {
 			continue
@@ -171,7 +171,7 @@ func compareNodesByDB(t *testing.T, nodeA *cmd.Node, nodeB *cmd.Node, verbose in
 // The nodes pass this comparison iff they have identical states.
 func compareNodesByTxIndex(t *testing.T, nodeA *cmd.Node, nodeB *cmd.Node, verbose int) {
 	var prefixList [][]byte
-	for prefix := range lib.StatePrefixes.StatePrefixesMap {
+	for prefix := range lib.PrefixesMetadata.PrefixToTypeMap {
 		// We skip utxooperations because we actually can't sync them in hypersync.
 		if reflect.DeepEqual([]byte{prefix}, lib.Prefixes.PrefixBlockHashToUtxoOperations) {
 			continue
@@ -312,8 +312,8 @@ func computeNodeStateChecksum(t *testing.T, node *cmd.Node, blockHeight uint64) 
 
 	// Get all state prefixes and sort them.
 	var prefixes [][]byte
-	for prefix, isState := range lib.StatePrefixes.StatePrefixesMap {
-		if !isState {
+	for prefix, prefixType := range lib.PrefixesMetadata.PrefixToTypeMap {
+		if !prefixType.IsType(lib.DBPrefixTypeChecksum) {
 			continue
 		}
 		prefixes = append(prefixes, []byte{prefix})
@@ -333,8 +333,10 @@ func computeNodeStateChecksum(t *testing.T, node *cmd.Node, blockHeight uint64) 
 				item := it.Item()
 				key := item.Key()
 				err := item.Value(func(value []byte) error {
-					return carrierChecksum.AddOrRemoveBytesWithMigrations(key, value, blockHeight,
-						nil, true)
+					var err error
+					carrierChecksum, err = lib.AddOrRemoveBytesWithMigrations(carrierChecksum, key, value, blockHeight,
+						&lib.DeSoTestnetParams, nil, true)
+					return err
 				})
 				if err != nil {
 					return err
