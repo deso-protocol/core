@@ -1271,6 +1271,9 @@ func DBGetPublicKeyForPKIDWithTxn(txn *badger.Txn, snap *Snapshot, pkidd *PKID) 
 }
 
 func DBGetPublicKeyForPKID(db *badger.DB, snap *Snapshot, pkidd *PKID) []byte {
+	if db == nil {
+		return nil
+	}
 	var publicKey []byte
 	db.View(func(txn *badger.Txn) error {
 		publicKey = DBGetPublicKeyForPKIDWithTxn(txn, snap, pkidd)
