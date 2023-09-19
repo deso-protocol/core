@@ -42,13 +42,7 @@ func IsValidSuperMajorityQuorumCertificate(qc QuorumCertificate, validators []Va
 	}
 
 	// Finally, validate the signature
-	isValidSignature, err := bls.VerifyAggregateSignatureSinglePayload(
-		validatorPublicKeysInQC,
-		qc.GetAggregatedSignature(),
-		signaturePayload[:],
-	)
-
-	return err == nil && isValidSignature
+	return isValidSignatureManyPublicKeys(validatorPublicKeysInQC, qc.GetAggregatedSignature(), signaturePayload[:])
 }
 
 // When voting on a block, validators sign the payload sha3-256(View, BlockHash) with their BLS
@@ -197,24 +191,31 @@ func isInterfaceNil(i interface{}) bool {
 	return value.Kind() == reflect.Ptr && value.IsNil()
 }
 
-func isValidSignature(publicKey *bls.PublicKey, signature *bls.Signature, payload []byte) bool {
+func isValidSignatureSinglePublicKey(publicKey *bls.PublicKey, signature *bls.Signature, payload []byte) bool {
 	isValid, err := bls.VerifyAggregateSignatureSinglePayload([]*bls.PublicKey{publicKey}, signature, payload)
+	return err == nil && isValid
+}
+
+func isValidSignatureManyPublicKeys(publicKeys []*bls.PublicKey, signature *bls.Signature, payload []byte) bool {
+	isValid, err := bls.VerifyAggregateSignatureSinglePayload(publicKeys, signature, payload)
 	return err == nil && isValid
 }
 
 // This function uses integer math to verify if the provided stake amount represents a
 // super-majority 2f+1 Byzantine Quorum. First we need the following context:
 // - Assume N = total stake in the network
-// - Assume f = safe faulty stake in the network
+// - Assume f = faulty stake in the network
 // - Assume C = honest stake in the network
 //
-// - We define N = C + f, and N = 3f + 1
-// - We know that f = (N - 1) / 3
+// - We define N = C + f, N = 3f + 1
 // - We want to determine if we have a BQ where C >= 2f + 1
 //
-// Given the above, we can use derive the following condition as the super-majority QC check:
-// - N - C <= floor[(N - 1) / 3]
-// - If the condition passes, then it guarantees that that C >= 2f + 1
+// Given the above, we can derive the following to derive the super-majority check:
+// - C >= 2f + 1
+// - 3C >= 6f + 3
+// - 3C >= 2(3f + 1) + 1
+// - 3C >= 2N + 1
+// - Finally, this gives us the condition: 3C - 2N - 1 >= 0
 func isSuperMajorityStake(stake *uint256.Int, totalStake *uint256.Int) bool {
 	// Both values must be > 0
 	if stake == nil || totalStake == nil || stake.IsZero() || totalStake.IsZero() {
@@ -226,13 +227,18 @@ func isSuperMajorityStake(stake *uint256.Int, totalStake *uint256.Int) bool {
 		return false
 	}
 
-	// Compute f = floor[(N - 1) / 3]
-	safeFaultyStake := uint256.NewInt().Sub(totalStake, uint256.NewInt().SetOne())
-	safeFaultyStake = safeFaultyStake.Div(safeFaultyStake, uint256.NewInt().SetUint64(3))
+	// Compute 3C
+	honestStakeComponent := uint256.NewInt().Mul(stake, uint256.NewInt().SetUint64(3))
 
-	// Compute N - C
-	totalVsHonestStakeDifference := uint256.NewInt().Sub(totalStake, stake)
+	// Compute 2N
+	totalStakeComponent := uint256.NewInt().Mul(totalStake, uint256.NewInt().SetUint64(2))
 
-	// Check if (N - C) <= floor[(N - 1) / 3]
-	return totalVsHonestStakeDifference.Cmp(safeFaultyStake) <= 0
+	// Compute 3C - 2N - 1
+	superMajorityConditionSum := uint256.NewInt().Sub(
+		uint256.NewInt().Sub(honestStakeComponent, totalStakeComponent),
+		uint256.NewInt().SetOne(),
+	)
+
+	// Check if 3C - 2N - 1 >= 0
+	return superMajorityConditionSum.Sign() >= 0
 }
