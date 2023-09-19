@@ -3686,17 +3686,7 @@ func (bav *UtxoView) _connectFailingTransaction(txn *MsgDeSoTxn, blockHeight uin
 	// When spending balances, we need to check for immature block rewards. Since we don't have
 	// the block rewards yet for the current block, we subtract one from the current block height
 	// when spending balances.
-	burnUtxoOp, err := bav._spendBalance(burnFee, txn.PublicKey, blockHeight-1)
-	if err != nil {
-		return nil, 0, 0, errors.Wrapf(err, "_connectFailingTransaction: Problem "+
-			"spending balance")
-	}
-	utxoOps = append(utxoOps, burnUtxoOp)
-
-	// When spending balances, we need to check for immature block rewards. Since we don't have
-	// the block rewards yet for the current block, we subtract one from the current block height
-	// when spending balances.
-	feeUtxoOp, err := bav._spendBalance(utilityFee, txn.PublicKey, blockHeight-1)
+	feeUtxoOp, err := bav._spendBalance(effectiveFee, txn.PublicKey, blockHeight-1)
 	if err != nil {
 		return nil, 0, 0, errors.Wrapf(err, "_connectFailingTransaction: Problem "+
 			"spending balance")

@@ -3807,7 +3807,7 @@ type GlobalParamsEntry struct {
 	FeeBucketRateMultiplierBasisPoints uint64
 
 	// FailingTransactionBMFRateBasisPoints is the factor of the transaction fee that is used for the computation
-	// BMF. The value is expressed in basis points. For example a value of 5000 means that 50% of the fee will be
+	// BMF. The value is expressed in basis points. For example a value of 2500 means that 25% of the fee will be
 	// failing transaction fee will be used in the BMF algorithm.
 	FailingTransactionBMFRateBasisPoints uint64
 }

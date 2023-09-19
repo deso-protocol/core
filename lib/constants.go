@@ -704,7 +704,7 @@ type DeSoParams struct {
 	DefaultFeeBucketRateMultiplierBasisPoints uint64
 
 	// DefaultFailingTransactionBMFRateBasisPoints is the default rate of the failing transaction fee, in basis points,
-	// that is used to in BMF calculations. E.g. a value of 5000 means that 50% of the failing transaction's fee is used
+	// that is used to in BMF calculations. E.g. a value of 2500 means that 25% of the failing transaction's fee is used
 	// in BMF calculations.
 	DefaultFailingTransactionBMFRateBasisPoints uint64
 
@@ -1523,7 +1523,7 @@ var (
 		MaxCopiesPerNFT:   0,
 		// We initialize the FeeBucketRateMultiplierBasisPoints to 1000, or equivalently, a multiplier of 1.1x.
 		FeeBucketRateMultiplierBasisPoints: 1000,
-		// We initialize the FailingTransactionBMFRateBasisPoints to 5000, or equivalently, a rate of 0.5.
+		// We initialize the FailingTransactionBMFRateBasisPoints to 2500, or equivalently, a rate of 0.25.
 		FailingTransactionBMFRateBasisPoints: 2500,
 	}
 )
