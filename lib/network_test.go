@@ -181,10 +181,7 @@ func createTestBlockHeaderVersion2(t *testing.T) *MsgDeSoHeader {
 }
 
 func TestHeaderConversionAndReadWriteMessage(t *testing.T) {
-	assert := assert.New(t)
 	require := require.New(t)
-	_ = assert
-	_ = require
 	networkType := NetworkType_MAINNET
 
 	expectedBlockHeadersToTest := []*MsgDeSoHeader{
@@ -202,7 +199,7 @@ func TestHeaderConversionAndReadWriteMessage(t *testing.T) {
 		err = testHdr.FromBytes(data)
 		require.NoError(err)
 
-		require.True(assert.Equal(expectedBlockHeader, testHdr))
+		require.Equal(expectedBlockHeader, testHdr)
 
 		// Test read write.
 		var buf bytes.Buffer
@@ -211,21 +208,21 @@ func TestHeaderConversionAndReadWriteMessage(t *testing.T) {
 		// Form the header from the payload and make sure it matches.
 		hdrFromPayload := NewMessage(MsgTypeHeader).(*MsgDeSoHeader)
 		require.NotNil(hdrFromPayload, "NewMessage(MsgTypeHeader) should not return nil.")
-		require.True(assert.Equal(uint64(0), hdrFromPayload.Nonce, "NewMessage(MsgTypeHeader) should initialize Nonce to empty byte slice."))
+		require.Equal(uint64(0), hdrFromPayload.Nonce, "NewMessage(MsgTypeHeader) should initialize Nonce to empty byte slice.")
 		err = hdrFromPayload.FromBytes(payload)
 		require.NoError(err)
-		require.True(assert.Equal(expectedBlockHeader, hdrFromPayload))
+		require.Equal(expectedBlockHeader, hdrFromPayload)
 
 		hdrBytes := buf.Bytes()
 		testMsg, data, err := ReadMessage(bytes.NewReader(hdrBytes),
 			networkType)
 		require.NoError(err)
-		require.True(assert.Equal(expectedBlockHeader, testMsg))
+		require.Equal(expectedBlockHeader, testMsg)
 
 		// Compute the header payload bytes so we can compare them.
 		hdrPayload, err := expectedBlockHeader.ToBytes(false)
 		require.NoError(err)
-		require.True(assert.Equal(hdrPayload, data))
+		require.Equal(hdrPayload, data)
 
 		require.Equalf(15, reflect.TypeOf(expectedBlockHeader).Elem().NumField(),
 			"Number of fields in HEADER message is different from expected. "+
@@ -412,14 +409,14 @@ var expectedBlock = &MsgDeSoBlock{
 func createTestBlockVersion1(t *testing.T) *MsgDeSoBlock {
 	require := require.New(t)
 
-	newBlockV1 := expectedBlock
+	newBlockV1 := *expectedBlock
 
 	// Add a signature to the block V1
 	priv, err := btcec.NewPrivateKey(btcec.S256())
 	require.NoError(err)
 	newBlockV1.BlockProducerInfo.Signature, err = priv.Sign([]byte{0x01, 0x02, 0x03})
 	require.NoError(err)
-	return newBlockV1
+	return &newBlockV1
 }
 
 func createTestBlockVersion2(t *testing.T) *MsgDeSoBlock {
@@ -585,10 +582,7 @@ var expectedV0Header = &MsgDeSoHeader{
 }
 
 func TestBlockSerialize(t *testing.T) {
-	assert := assert.New(t)
 	require := require.New(t)
-	_ = assert
-	_ = require
 
 	expectedBlocksToTest := []*MsgDeSoBlock{
 		createTestBlockVersion1(t),
@@ -603,16 +597,13 @@ func TestBlockSerialize(t *testing.T) {
 		err = testBlock.FromBytes(data)
 		require.NoError(err)
 
-		require.True(assert.Equal(*block, *testBlock))
+		require.Equal(*block, *testBlock)
 	}
 
 }
 
 func TestBlockSerializeNoBlockProducerInfo(t *testing.T) {
-	assert := assert.New(t)
 	require := require.New(t)
-	_ = assert
-	_ = require
 
 	expectedBlocksToTest := []*MsgDeSoBlock{
 		createTestBlockVersion1(t),
@@ -628,15 +619,12 @@ func TestBlockSerializeNoBlockProducerInfo(t *testing.T) {
 		testBlock := NewMessage(MsgTypeBlock).(*MsgDeSoBlock)
 		err = testBlock.FromBytes(data)
 		require.NoError(err)
-		require.True(assert.Equal(*block, *testBlock))
+		require.Equal(*block, *testBlock)
 	}
 }
 
 func TestBlockRewardTransactionSerialize(t *testing.T) {
-	assert := assert.New(t)
 	require := require.New(t)
-	_ = assert
-	_ = require
 
 	expectedBlocksToTest := []*MsgDeSoBlock{
 		createTestBlockVersion1(t),
@@ -650,7 +638,7 @@ func TestBlockRewardTransactionSerialize(t *testing.T) {
 		testTxn := NewMessage(MsgTypeTxn).(*MsgDeSoTxn)
 		err = testTxn.FromBytes(data)
 		require.NoError(err)
-		require.True(assert.Equal(block.Txns[0], testTxn))
+		require.Equal(block.Txns[0], testTxn)
 	}
 }
 
