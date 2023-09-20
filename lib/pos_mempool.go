@@ -65,11 +65,13 @@ type PosMempool struct {
 	// nonceTracker is responsible for keeping track of a (public key, nonce) -> Txn index. The index is useful in
 	// facilitating a "replace by higher fee" feature. This feature gives users the ability to replace their existing
 	// mempool transaction with a new transaction having the same nonce but higher fee.
-	nonceTracker *PosMempoolNonceTracker
+	nonceTracker *NonceTracker
 
 	// latestBlockView is used to check if a transaction is valid before being added to the mempool. The latestBlockView
 	// checks if the transaction has a valid signature and if the transaction's sender has enough funds to cover the fee.
 	// The latestBlockView should be updated whenever a new block is added to the blockchain via UpdateLatestBlock.
+	// PosMempool only needs read-access to the block view. It isn't necessary to copy the block view before passing it
+	// to the mempool.
 	latestBlockView *UtxoView
 	// latestBlockNode is used to infer the latest block height. The latestBlockNode should be updated whenever a new
 	// block is added to the blockchain via UpdateLatestBlock.
@@ -133,7 +135,7 @@ func (dmp *PosMempool) Start() error {
 	// Create the transaction register, the ledger, and the nonce tracker,
 	dmp.txnRegister = NewTransactionRegister(dmp.globalParams)
 	dmp.ledger = NewBalanceLedger()
-	dmp.nonceTracker = NewPosMempoolNonceTracker()
+	dmp.nonceTracker = NewNonceTracker(dmp.latestBlockView)
 
 	// Create the persister
 	dmp.persister = NewMempoolPersister(dmp.db, int(dmp.params.MempoolBackupTimeMilliseconds))
@@ -203,7 +205,7 @@ func (dmp *PosMempool) AddTransaction(txn *MsgDeSoTxn) error {
 
 	// Check the nonceTracker to see if this transaction is meant to replace an existing one.
 	pk := NewPublicKey(txn.PublicKey)
-	if existingTxn := dmp.nonceTracker.GetTxnByPublicKeyNonce(*pk, txn.TxnNonce.PartialID); existingTxn != nil {
+	if existingTxn := dmp.nonceTracker.GetTxnByPublicKeyNonce(*pk, *txn.TxnNonce); existingTxn != nil {
 		if existingTxn.FeePerKB > mempoolTx.FeePerKB {
 			return errors.Wrapf(MempoolFailedReplaceByHigherFee, "PosMempool.AddTransaction: Problem replacing transaction "+
 				"by higher fee failed. New transaction has lower fee.")
@@ -220,7 +222,7 @@ func (dmp *PosMempool) AddTransaction(txn *MsgDeSoTxn) error {
 	}
 
 	// Add the transaction to the nonce tracker.
-	dmp.nonceTracker.AddTxnByPublicKeyNonce(*pk, txn.TxnNonce.PartialID, mempoolTx)
+	dmp.nonceTracker.AddTxnByPublicKeyNonce(*pk, *txn.TxnNonce, mempoolTx)
 
 	if err := dmp.pruneNoLock(); err != nil {
 		glog.Errorf("PosMempool.AddTransaction: Problem pruning mempool: %v", err)
@@ -305,7 +307,7 @@ func (dmp *PosMempool) loadPersistedTransactions() error {
 		}
 		// If the transaction was successfully added, also include it in the nonce tracker.
 		pk := NewPublicKey(txn.Tx.PublicKey)
-		dmp.nonceTracker.AddTxnByPublicKeyNonce(*pk, txn.Tx.TxnNonce.PartialID, txn)
+		dmp.nonceTracker.AddTxnByPublicKeyNonce(*pk, *txn.Tx.TxnNonce, txn)
 	}
 	return nil
 }
@@ -330,7 +332,7 @@ func (dmp *PosMempool) RemoveTransaction(txnHash *BlockHash) error {
 		return errors.Wrapf(err, "PosMempool.RemoveTransaction: Problem removing transaction from mempool")
 	}
 	// Remove the txn from the nonce tracker.
-	dmp.nonceTracker.RemoveTxnByPublicKeyNonce(*pk, txn.FeePerKB)
+	dmp.nonceTracker.RemoveTxnByPublicKeyNonce(*pk, *txn.Tx.TxnNonce)
 	return nil
 }
 
@@ -447,6 +449,7 @@ func (dmp *PosMempool) UpdateLatestBlock(blockView *UtxoView, blockHeight uint64
 
 	dmp.latestBlockView = blockView
 	dmp.latestBlockHeight = blockHeight
+	dmp.nonceTracker.UpdateLatestBlock(blockView)
 }
 
 // UpdateGlobalParams updates the global params in the mempool. Changing GlobalParamsEntry can impact the validity of

@@ -1,52 +1,90 @@
 package lib
 
-// PosMempoolNonceTracker is a helper struct that is used to track (public key, nonce) pairs in pos mempool.
+import (
+	"sync"
+)
+
+// NonceTracker is a helper struct that is used to track (public key, nonce) pairs in pos mempool.
 // It is used to facilitate the "replace by higher fee" feature, which allows users to resubmit transactions.
 // If a user submits a transaction with an existing DeSoNonce.PartialID (among this user's transactions in the mempool),
 // then the new transaction will replace the old one if the new transaction has a higher fee.
-type PosMempoolNonceTracker struct {
-	// nonceMap indexes mempool transactions by (public key, nonce) pairs.
-	nonceMap map[PublicKey]map[uint64]*MempoolTx
+type NonceTracker struct {
+	sync.RWMutex
+
+	// nonceMap indexes mempool transactions by (PKID, nonce) pairs.
+	nonceMap map[TransactorNonceMapKey]*MempoolTx
+	// latestBlockView is used to get the PKID for a given public key. NonceTracker only needs read-access to the
+	// block view, so it isn't necessary to copy the block view before passing it to this struct.
+	latestBlockView *UtxoView
 }
 
-func NewPosMempoolNonceTracker() *PosMempoolNonceTracker {
-	return &PosMempoolNonceTracker{
-		nonceMap: make(map[PublicKey]map[uint64]*MempoolTx),
+func NewNonceTracker(latestBlockView *UtxoView) *NonceTracker {
+	return &NonceTracker{
+		nonceMap:        make(map[TransactorNonceMapKey]*MempoolTx),
+		latestBlockView: latestBlockView,
 	}
 }
 
 // GetTxnByPublicKeyNonce returns the transaction with the given public key and nonce pair.
-func (pmnt *PosMempoolNonceTracker) GetTxnByPublicKeyNonce(pk PublicKey, nonce uint64) *MempoolTx {
-	innerMap, ok := pmnt.nonceMap[pk]
+func (pmnt *NonceTracker) GetTxnByPublicKeyNonce(pk PublicKey, nonce DeSoNonce) *MempoolTx {
+	pmnt.RLock()
+	defer pmnt.RUnlock()
+
+	nonceKey, ok := pmnt._getNonceKey(pk, nonce)
 	if !ok {
 		return nil
 	}
-	txn, ok := innerMap[nonce]
-	if !ok {
-		return nil
-	}
+	txn, _ := pmnt.nonceMap[nonceKey]
 	return txn
 }
 
 // RemoveTxnByPublicKeyNonce removes a (pk, nonce) pair from the nonce tracker.
-func (pmnt *PosMempoolNonceTracker) RemoveTxnByPublicKeyNonce(pk PublicKey, nonce uint64) {
-	innerMap, ok := pmnt.nonceMap[pk]
+func (pmnt *NonceTracker) RemoveTxnByPublicKeyNonce(pk PublicKey, nonce DeSoNonce) {
+	pmnt.Lock()
+	defer pmnt.Unlock()
+
+	nonceKey, ok := pmnt._getNonceKey(pk, nonce)
 	if !ok {
 		return
 	}
-	delete(innerMap, nonce)
+
+	delete(pmnt.nonceMap, nonceKey)
 }
 
 // AddTxnByPublicKeyNonce adds a new (pk, nonce) -> txn mapping to the nonce tracker.
-func (pmnt *PosMempoolNonceTracker) AddTxnByPublicKeyNonce(pk PublicKey, nonce uint64, txn *MempoolTx) {
-	innerMap, ok := pmnt.nonceMap[pk]
+func (pmnt *NonceTracker) AddTxnByPublicKeyNonce(pk PublicKey, nonce DeSoNonce, txn *MempoolTx) {
+	pmnt.Lock()
+	defer pmnt.Unlock()
+
+	nonceKey, ok := pmnt._getNonceKey(pk, nonce)
 	if !ok {
-		innerMap = make(map[uint64]*MempoolTx)
-		pmnt.nonceMap[pk] = innerMap
+		return
 	}
-	innerMap[nonce] = txn
+
+	pmnt.nonceMap[nonceKey] = txn
 }
 
-func (pmnt *PosMempoolNonceTracker) Reset() {
-	pmnt.nonceMap = make(map[PublicKey]map[uint64]*MempoolTx)
+// UpdateLatestBlock updates the latest block view used by the nonce tracker.
+func (pmnt *NonceTracker) UpdateLatestBlock(latestBlockView *UtxoView) {
+	pmnt.Lock()
+	defer pmnt.Unlock()
+
+	pmnt.latestBlockView = latestBlockView
+}
+
+func (pmnt *NonceTracker) Reset() {
+	pmnt.Lock()
+	defer pmnt.Unlock()
+
+	pmnt.nonceMap = make(map[TransactorNonceMapKey]*MempoolTx)
+}
+
+// _getNonceKey returns the nonce map key for a given public key and nonce. The function retrieves the PKID for the public key.
+func (pmnt *NonceTracker) _getNonceKey(pk PublicKey, nonce DeSoNonce) (TransactorNonceMapKey, bool) {
+	pkidEntry := pmnt.latestBlockView.GetPKIDForPublicKey(pk.ToBytes())
+	if pkidEntry == nil || pkidEntry.isDeleted || pkidEntry.PKID == nil {
+		return TransactorNonceMapKey{}, false
+	}
+
+	return NewTransactorNonceMapKey(nonce, *pkidEntry.PKID), true
 }
