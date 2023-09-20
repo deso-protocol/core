@@ -3090,9 +3090,16 @@ func (bav *UtxoView) _connectUpdateGlobalParams(
 			}
 		}
 		if len(extraData[FeeBucketRateMultiplierBasisPointsKey]) > 0 {
-			newGlobalParamsEntry.FeeBucketRateMultiplierBasisPoints, bytesRead = Uvarint(
+			val, bytesRead := Uvarint(
 				extraData[FeeBucketRateMultiplierBasisPointsKey],
 			)
+			if val > _basisPoints {
+				return 0, 0, nil, fmt.Errorf(
+					"_connectUpdateGlobalParams: FeeBucketRateMultiplierBasisPoints must be <= %d",
+					_basisPoints,
+				)
+			}
+			newGlobalParamsEntry.FeeBucketRateMultiplierBasisPoints = val
 			if bytesRead <= 0 {
 				return 0, 0, nil, fmt.Errorf(
 					"_connectUpdateGlobalParams: unable to decode FeeBucketRateMultiplierBasisPoints as uint64",
@@ -3100,9 +3107,17 @@ func (bav *UtxoView) _connectUpdateGlobalParams(
 			}
 		}
 		if len(extraData[FailingTransactionBMFRateBasisPointsKey]) > 0 {
-			newGlobalParamsEntry.FailingTransactionBMFRateBasisPoints, bytesRead = Uvarint(
+			val, bytesRead := Uvarint(
 				extraData[FailingTransactionBMFRateBasisPointsKey],
 			)
+			if val > _basisPoints {
+				return 0, 0, nil, fmt.Errorf(
+					"_connectUpdateGlobalParams: FailingTransactionBMFRateBasisPoints must be <= %d",
+					_basisPoints,
+				)
+			}
+			newGlobalParamsEntry.FailingTransactionBMFRateBasisPoints = val
+
 			if bytesRead <= 0 {
 				return 0, 0, nil, fmt.Errorf(
 					"_connectUpdateGlobalParams: unable to decode FailingTransactionBMFRateBasisPoints as uint64",
@@ -3613,29 +3628,17 @@ func (bav *UtxoView) _connectTransaction(txn *MsgDeSoTxn, txHash *BlockHash,
 	if blockHeight >= bav.Params.ForkHeights.BalanceModelBlockHeight &&
 		txn.TxnMeta.GetTxnType() != TxnTypeBlockReward {
 
-		if uint64(blockHeight) > txn.TxnNonce.ExpirationBlockHeight {
-			return nil, 0, 0, 0, errors.Wrapf(RuleErrorNonceExpired,
-				"ConnectTransaction: Nonce %s has expired for public key %v",
-				txn.TxnNonce.String(), PkToStringBoth(txn.PublicKey))
+		if err := bav.ValidateTransactionNonce(txn, uint64(blockHeight)); err != nil {
+			return nil, 0, 0, 0, errors.Wrapf(err,
+				"ConnectTransaction: error validating transaction nonce")
 		}
 		pkidEntry := bav.GetPKIDForPublicKey(txn.PublicKey)
 		if pkidEntry == nil || pkidEntry.isDeleted {
 			return nil, 0, 0, 0, fmt.Errorf(
-				"DisconnectTransaction: PKID for public key %s does not exist",
+				"ConnectTransaction: PKID for public key %s does not exist",
 				PkToString(txn.PublicKey, bav.Params))
 		}
 
-		nonce, err := bav.GetTransactorNonceEntry(txn.TxnNonce, pkidEntry.PKID)
-		if err != nil {
-			return nil, 0, 0, 0, errors.Wrapf(err,
-				"ConnectTransaction: Problem getting transaction nonce entry for nonce %s and PKID %v",
-				txn.TxnNonce.String(), pkidEntry.PKID)
-		}
-		if nonce != nil && !nonce.isDeleted {
-			return nil, 0, 0, 0, errors.Wrapf(RuleErrorReusedNonce,
-				"ConnectTransaction: Nonce %s has already been used for PKID %v",
-				txn.TxnNonce.String(), pkidEntry.PKID)
-		}
 		bav.SetTransactorNonceEntry(&TransactorNonceEntry{
 			Nonce:          txn.TxnNonce,
 			TransactorPKID: pkidEntry.PKID,
@@ -3643,6 +3646,33 @@ func (bav *UtxoView) _connectTransaction(txn *MsgDeSoTxn, txHash *BlockHash,
 	}
 
 	return utxoOpsForTxn, totalInput, totalOutput, fees, nil
+}
+
+func (bav *UtxoView) ValidateTransactionNonce(txn *MsgDeSoTxn, blockHeight uint64) error {
+	if blockHeight > txn.TxnNonce.ExpirationBlockHeight {
+		return errors.Wrapf(RuleErrorNonceExpired,
+			"ValidateTransactionNonce: Nonce %s has expired for public key %v",
+			txn.TxnNonce.String(), PkToStringBoth(txn.PublicKey))
+	}
+	pkidEntry := bav.GetPKIDForPublicKey(txn.PublicKey)
+	if pkidEntry == nil || pkidEntry.isDeleted {
+		return fmt.Errorf(
+			"ValidateTransactionNonce: PKID for public key %s does not exist",
+			PkToString(txn.PublicKey, bav.Params))
+	}
+
+	nonce, err := bav.GetTransactorNonceEntry(txn.TxnNonce, pkidEntry.PKID)
+	if err != nil {
+		return errors.Wrapf(err,
+			"ValidateTransactionNonce: Problem getting transaction nonce entry for nonce %s and PKID %v",
+			txn.TxnNonce.String(), pkidEntry.PKID)
+	}
+	if nonce != nil && !nonce.isDeleted {
+		return errors.Wrapf(RuleErrorReusedNonce,
+			"ValidateTransactionNonce: Nonce %s has already been used for PKID %v",
+			txn.TxnNonce.String(), pkidEntry.PKID)
+	}
+	return nil
 }
 
 // _connectFailingTransaction is used to process the fee and burn associated with the user submitting a failing transaction.
@@ -3674,12 +3704,33 @@ func (bav *UtxoView) _connectFailingTransaction(txn *MsgDeSoTxn, blockHeight uin
 			"Problem checking txn sanity under balance model")
 	}
 
+	if err := bav.ValidateTransactionNonce(txn, uint64(blockHeight)); err != nil {
+		return nil, 0, 0, errors.Wrapf(err, "_connectFailingTransaction: "+
+			"Problem validating transaction nonce")
+	}
+
 	// Get the FailingTransactionBMFRateBasisPoints from the global params entry. We then compute the effective fee
 	// as: effectiveFee = txn.TxnFeeNanos * FailingTransactionBMFRateBasisPoints / 10000
 	gp := bav.GetCurrentGlobalParamsEntry()
-	failingTransactionRate := NewFloat().SetUint64(gp.FailingTransactionBMFRateBasisPoints)
-	failingTransactionRate.Quo(failingTransactionRate, NewFloat().SetUint64(10000))
-	effectiveFee, _ := NewFloat().Mul(failingTransactionRate, NewFloat().SetUint64(txn.TxnFeeNanos)).Uint64()
+
+	failingTransactionRate := uint256.NewInt().SetUint64(gp.FailingTransactionBMFRateBasisPoints)
+	failingTransactionFee := uint256.NewInt().SetUint64(txn.TxnFeeNanos)
+	basisPointsAsUint256 := uint256.NewInt().SetUint64(10000)
+
+	effectiveFeeU256 := failingTransactionRate.Mul(failingTransactionRate, failingTransactionFee)
+	effectiveFeeU256.Div(effectiveFeeU256, basisPointsAsUint256)
+	// We should never overflow on the effective fee, since FailingTransactionBMFRateBasisPoints is <= 10000.
+	// But if for some magical reason we do, we set the effective fee to the max uint64. We don't error, and
+	// instead let _spendBalance handle the overflow.
+	maxUint64 := uint256.NewInt().SetUint64(math.MaxUint64)
+	if effectiveFeeU256.Cmp(maxUint64) > 0 {
+		effectiveFeeU256.SetUint64(math.MaxUint64)
+	}
+	effectiveFee := effectiveFeeU256.Uint64()
+	// If the effective fee is less than the minimum network fee, we set it to the minimum network fee.
+	if effectiveFee < gp.MinimumNetworkFeeNanosPerKB {
+		effectiveFee = gp.MinimumNetworkFeeNanosPerKB
+	}
 	burnFee, utilityFee := computeBMF(effectiveFee)
 
 	var utxoOps []*UtxoOperation
