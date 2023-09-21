@@ -1012,6 +1012,241 @@ func (bav *UtxoView) _disconnectCoinLockup(
 }
 
 //
+// UpdateCoinLockupParams Transaction Logic
+//
+
+func (bav *UtxoView) _connectUpdateCoinLockupParams(
+	txn *MsgDeSoTxn,
+	txHash *BlockHash,
+	blockHeight uint32,
+	verifySignatures bool,
+) (_totalInput uint64,
+	_totalOutput uint64,
+	_utxoOps []*UtxoOperation,
+	_err error) {
+	var utxoOpsForTxn []*UtxoOperation
+
+	// Validate the starting block height.
+	if blockHeight < bav.Params.ForkHeights.ProofOfStake1StateSetupBlockHeight ||
+		blockHeight < bav.Params.ForkHeights.BalanceModelBlockHeight {
+		return 0, 0, nil, errors.Wrapf(RuleErrorProofofStakeTxnBeforeBlockHeight, "_connectDAOCoinLockup")
+	}
+
+	// Validate the txn TxnType.
+	if txn.TxnMeta.GetTxnType() != TxnTypeUpdateCoinLockupParams {
+		return 0, 0, nil, fmt.Errorf("_connectUpdateCoinLockupParams: "+
+			"called with bad TxnType %s", txn.TxnMeta.GetTxnType().String())
+	}
+
+	// Try connecting the basic transfer without considering transaction metadata.
+	_, _, utxoOpsForBasicTransfer, err := bav._connectBasicTransfer(txn, txHash, blockHeight, verifySignatures)
+	if err != nil {
+		return 0, 0, nil, errors.Wrapf(err, "_connectUpdateCoinLockupParams")
+	}
+	utxoOpsForTxn = append(utxoOpsForTxn, utxoOpsForBasicTransfer...)
+
+	// Grab the txn metadata.
+	txMeta := txn.TxnMeta.(*UpdateCoinLockupParamsMetadata)
+
+	// Get the profilePKID from the transactor public key.
+	var profilePKID *PKID
+	_, updaterIsParamUpdater := GetParamUpdaterPublicKeys(blockHeight, bav.Params)[MakePkMapKey(txn.PublicKey)]
+	if updaterIsParamUpdater {
+		profilePKID = ZeroPKID.NewPKID()
+	} else {
+		profilePKIDEntry := bav.GetPKIDForPublicKey(txn.PublicKey)
+		if profilePKIDEntry == nil || profilePKIDEntry.isDeleted {
+			return 0, 0, nil, errors.Wrap(RuleErrorUpdateCoinLockupParamsOnInvalidPKID,
+				"_connectUpdateCoinLockupParams")
+		}
+		profilePKID = profilePKIDEntry.PKID
+	}
+
+	// Sanity check the lockup duration as valid.
+	if txMeta.LockupYieldDurationNanoSecs < 0 {
+		return 0, 0, nil, errors.Wrapf(RuleErrorUpdateCoinLockupParamsNegativeDuration,
+			"_connectUpdateCoinLockupParams")
+	}
+
+	// Fetch the previous yield curve point associated with this <profilePKID, lockupDurationNanoSecs> pair.
+	prevLockupYieldCurvePoint :=
+		bav.GetYieldCurvePointByProfilePKIDAndDurationNanoSecs(profilePKID, txMeta.LockupYieldDurationNanoSecs)
+
+	// Check if a yield curve point is being added.
+	if !txMeta.RemoveYieldCurvePoint && txMeta.LockupYieldDurationNanoSecs > 0 {
+		// NOTE: During the view flush, any comparable LockupYieldCurvePoint with the unique
+		//       <ProfilePKID, LockupDurationNanoSecs> pair will be deleted prior to this new
+		//       point being added. Above we saved the previous LockupYieldCurvePoint
+		//       in the even this is reverted.
+		bav._setLockupYieldCurvePoint(&LockupYieldCurvePoint{
+			ProfilePKID:               profilePKID,
+			LockupDurationNanoSecs:    txMeta.LockupYieldDurationNanoSecs,
+			LockupYieldAPYBasisPoints: txMeta.LockupYieldAPYBasisPoints,
+		})
+	}
+
+	// Check if a yield curve point is being removed.
+	if txMeta.RemoveYieldCurvePoint && txMeta.LockupYieldDurationNanoSecs > 0 {
+		// Check that we're not deleting a point which doesn't exist. This ensures that disconnects function properly,
+		// as well ensures there's no wasteful "no-ops" executed.
+		if prevLockupYieldCurvePoint == nil {
+			return 0, 0, nil,
+				errors.Wrapf(RuleErrorUpdateCoinLockupParamsDeletingNonExistentPoint, "_connectUpdateCoinLockupParams")
+		}
+
+		// NOTE: The "LockupYieldAPYBasisPoints" field is effectively irrelevant here.
+		//       The DB operations will seek to the unique <ProfilePKID, LockupDurationNanoSecs>
+		//       pair and delete it during the view flush. The "isDeleted" field ensures
+		//       nothing else is put in its place.
+		bav._deleteLockupYieldCurvePoint(&LockupYieldCurvePoint{
+			ProfilePKID:            profilePKID,
+			LockupDurationNanoSecs: txMeta.LockupYieldDurationNanoSecs,
+		})
+	}
+
+	// Check if we're updating transfer restriction.
+	var prevLockupTransferRestriction TransferRestrictionStatus
+	if txMeta.NewLockupTransferRestrictions {
+		// Fetch the profile entry and LockupTransferRestriction status.
+		profileEntry := bav.GetProfileEntryForPKID(profilePKID)
+		if profileEntry == nil || profileEntry.isDeleted {
+			return 0, 0, nil,
+				errors.Wrapf(RuleErrorUpdateCoinLockupParamsUpdatingNonExistentProfile, "_connectUpdateCoinLockupParams")
+		}
+
+		// Store a copy of the previous LockupTransferRestrictionStatus for easy transaction disconnect.
+		prevLockupTransferRestriction = profileEntry.DAOCoinEntry.LockupTransferRestrictionStatus
+
+		// Ensure we're not updating a permanent transfer restriction.
+		if prevLockupTransferRestriction == TransferRestrictionStatusPermanentlyUnrestricted {
+			return 0, 0, nil, errors.Wrapf(
+				RuleErrorUpdateCoinLockupParamsUpdatingPermanentTransferRestriction, "_connectUpdateCoinLockupParams")
+		}
+
+		// Check that the new transfer restrictions are valid.
+		if !(txMeta.LockupTransferRestrictionStatus == TransferRestrictionStatusUnrestricted) &&
+			!(txMeta.LockupTransferRestrictionStatus == TransferRestrictionStatusProfileOwnerOnly) &&
+			!(txMeta.LockupTransferRestrictionStatus == TransferRestrictionStatusDAOMembersOnly) &&
+			!(txMeta.LockupTransferRestrictionStatus == TransferRestrictionStatusPermanentlyUnrestricted) {
+			return 0, 0, nil,
+				errors.Wrapf(RuleErrorUpdateCoinLockupParamsInvalidRestrictions, "_connectUpdateCoinLockupParams")
+		}
+
+		// Update the transfer restrictions.
+		profileEntry.DAOCoinEntry.LockupTransferRestrictionStatus = txMeta.LockupTransferRestrictionStatus
+		bav._setProfileEntryMappings(profileEntry)
+	}
+
+	// Add a UtxoOperation for easy reversion during disconnect.
+	utxoOpsForTxn = append(utxoOpsForTxn, &UtxoOperation{
+		Type:                          OperationTypeUpdateCoinLockupParams,
+		PrevLockupYieldCurvePoint:     prevLockupYieldCurvePoint,
+		PrevLockupTransferRestriction: prevLockupTransferRestriction,
+	})
+
+	return 0, 0, utxoOpsForTxn, nil
+}
+
+func (bav *UtxoView) _disconnectUpdateCoinLockupParams(
+	operationType OperationType,
+	currentTxn *MsgDeSoTxn,
+	txnHash *BlockHash,
+	utxoOpsForTxn []*UtxoOperation,
+	blockHeight uint32) error {
+
+	if len(utxoOpsForTxn) == 0 {
+		return fmt.Errorf("_disconnectUpdateCoinLockupParams: utxoOperations are missing")
+	}
+	operationIndex := len(utxoOpsForTxn) - 1
+
+	// Verify the last operation as being a UpdateCoinLockupParams operation.
+	if utxoOpsForTxn[operationIndex].Type != OperationTypeUpdateCoinLockupParams {
+		return fmt.Errorf("_disconnectUpdateCoinLockupParams: Trying to revert "+
+			"OperationTypeUpdateCoinLockupParams but found type %v", utxoOpsForTxn[operationIndex].Type)
+	}
+
+	// Fetch the UpdateCoinLockupParams operation.
+	operationData := utxoOpsForTxn[operationIndex]
+
+	// Grab the txn metadata.
+	txMeta := currentTxn.TxnMeta.(*UpdateCoinLockupParamsMetadata)
+
+	// Fetch the profilePKID for the transactor.
+	var profilePKID *PKID
+	_, updaterIsParamUpdater := GetParamUpdaterPublicKeys(blockHeight, bav.Params)[MakePkMapKey(currentTxn.PublicKey)]
+	if updaterIsParamUpdater {
+		profilePKID = ZeroPKID.NewPKID()
+	} else {
+		profilePKIDEntry := bav.GetPKIDForPublicKey(currentTxn.PublicKey)
+		if profilePKIDEntry == nil || profilePKIDEntry.isDeleted {
+			return errors.Wrap(RuleErrorUpdateCoinLockupParamsOnInvalidPKID,
+				"_connectUpdateCoinLockupParams")
+		}
+		profilePKID = profilePKIDEntry.PKID
+	}
+
+	// Check if the transaction added a yield curve point. If it did, we restore the previous point.
+	// If the previous point is nil meaning this point didn't have a previous, then we simply delete the current point.
+	if !txMeta.RemoveYieldCurvePoint && txMeta.LockupYieldDurationNanoSecs > 0 {
+		if operationData.PrevLockupYieldCurvePoint == nil {
+			bav._deleteLockupYieldCurvePoint(&LockupYieldCurvePoint{
+				ProfilePKID:            profilePKID,
+				LockupDurationNanoSecs: txMeta.LockupYieldDurationNanoSecs,
+			})
+		} else {
+			bav._setLockupYieldCurvePoint(&LockupYieldCurvePoint{
+				ProfilePKID:               profilePKID,
+				LockupDurationNanoSecs:    operationData.PrevLockupYieldCurvePoint.LockupDurationNanoSecs,
+				LockupYieldAPYBasisPoints: operationData.PrevLockupYieldCurvePoint.LockupYieldAPYBasisPoints,
+			})
+		}
+	}
+
+	// Check if the transaction deleted a yield curve point. If it did, we add back the previous point.
+	// If the previous point is nil, we throw an error. This shouldn't be possible.
+	if txMeta.RemoveYieldCurvePoint && txMeta.LockupYieldDurationNanoSecs > 0 {
+		if operationData.PrevLockupYieldCurvePoint == nil {
+			return fmt.Errorf("_connectUpdateCoinLockupParams: trying to revert point deletion " +
+				"but found nil previous yield curve point; this shouldn't be possible")
+		}
+		bav._setLockupYieldCurvePoint(&LockupYieldCurvePoint{
+			ProfilePKID:               profilePKID,
+			LockupDurationNanoSecs:    operationData.PrevLockupYieldCurvePoint.LockupDurationNanoSecs,
+			LockupYieldAPYBasisPoints: operationData.PrevLockupYieldCurvePoint.LockupYieldAPYBasisPoints,
+		})
+	}
+
+	// Check if the transaction updated transfer restrictions. If it did, we reset the previous transfer restrictions.
+	if txMeta.NewLockupTransferRestrictions {
+		// Fetch the profile entry and LockupTransferRestriction status.
+		profileEntry := bav.GetProfileEntryForPKID(profilePKID)
+		if profileEntry == nil || profileEntry.isDeleted {
+			return fmt.Errorf("_connectUpdateCoinLockupParams: Trying to revert lockup transfer restriction " +
+				"update but found nil profile entry; this shouldn't be possible")
+		}
+
+		// Update the transfer restrictions.
+		profileEntry.DAOCoinEntry.LockupTransferRestrictionStatus = operationData.PrevLockupTransferRestriction
+		bav._setProfileEntryMappings(profileEntry)
+	}
+
+	// Decrement the operationIndex. We expect to find the basic transfer UtxoOps next.
+	operationIndex--
+	if operationIndex < 0 {
+		return fmt.Errorf("_disconnectUpdateCoinLockupParams: Trying to revert OperationTypeUpdateCoinLockupParams " +
+			"but found malformed utxoOpsForTxn")
+	}
+
+	// By here we only need to disconnect the basic transfer associated with the transaction.
+	basicTransferOps := utxoOpsForTxn[:operationIndex]
+	err := bav._disconnectBasicTransfer(currentTxn, txnHash, basicTransferOps, blockHeight)
+	if err != nil {
+		return errors.Wrapf(err, "_disconnectUpdateCoinLockupParams")
+	}
+	return nil
+}
+
+//
 // DB FLUSHES
 //
 
