@@ -1247,6 +1247,201 @@ func (bav *UtxoView) _disconnectUpdateCoinLockupParams(
 }
 
 //
+// CoinLockupTransfer Transaction Logic
+//
+
+func (bav *UtxoView) _connectCoinLockupTransfer(
+	txn *MsgDeSoTxn,
+	txHash *BlockHash,
+	blockHeight uint32,
+	verifySignatures bool,
+) (_totalInput uint64,
+	_totalOutput uint64,
+	_utxoOps []*UtxoOperation,
+	_err error) {
+	var utxoOpsForTxn []*UtxoOperation
+
+	// Validate the starting block height.
+	if blockHeight < bav.Params.ForkHeights.ProofOfStake1StateSetupBlockHeight ||
+		blockHeight < bav.Params.ForkHeights.BalanceModelBlockHeight {
+		return 0, 0, nil, errors.Wrapf(RuleErrorProofofStakeTxnBeforeBlockHeight, "_connectCoinLockupTransfer")
+	}
+
+	// Validate the txn TxnType.
+	if txn.TxnMeta.GetTxnType() != TxnTypeCoinLockupTransfer {
+		return 0, 0, nil, fmt.Errorf(
+			"_connectCoinLockupTransfer: called with bad TxnType: %s", txn.TxnMeta.GetTxnType().String())
+	}
+
+	// Try connecting the basic transfer without considering transaction metadata.
+	_, _, utxoOpsForBasicTransfer, err := bav._connectBasicTransfer(txn, txHash, blockHeight, verifySignatures)
+	if err != nil {
+		return 0, 0, nil, errors.Wrap(err, "_connectCoinLockupTransfer")
+	}
+	utxoOpsForTxn = append(utxoOpsForTxn, utxoOpsForBasicTransfer...)
+
+	// Grab the txn metadata.
+	txMeta := txn.TxnMeta.(*CoinLockupTransferMetadata)
+
+	// Validate the transfer amount as non-zero.
+	if txMeta.LockedCoinsToTransferBaseUnits.IsZero() {
+		return 0, 0, nil, errors.Wrap(RuleErrorCoinLockupTransferOfAmountZero,
+			"_connectCoinLockupTransfer")
+	}
+
+	// If this is a DeSo lockup, ensure the amount is less than 2**64.
+	if txMeta.ProfilePublicKey.IsZeroPublicKey() {
+		maxUint64, _ := uint256.FromBig(big.NewInt(0).SetUint64(math.MaxUint64))
+		if txMeta.LockedCoinsToTransferBaseUnits.Gt(maxUint64) {
+			return 0, 0, nil, errors.Wrap(RuleErrorCoinLockupTransferOfDeSoCausesOverflow,
+				"_connectCoinLockupTransfer")
+		}
+	}
+
+	// Fetch PKIDs for the recipient and sender.
+	senderPKIDEntry := bav.GetPKIDForPublicKey(txn.PublicKey)
+	senderPKID := senderPKIDEntry.PKID
+	receiverPKIDEntry := bav.GetPKIDForPublicKey(txMeta.RecipientPublicKey.ToBytes())
+	receiverPKID := receiverPKIDEntry.PKID
+	profilePKIDEntry := bav.GetPKIDForPublicKey(txMeta.ProfilePublicKey.ToBytes())
+	profilePKID := profilePKIDEntry.PKID
+
+	// Ensure the sender and receiver are different.
+	if senderPKID.Eq(receiverPKID) {
+		return 0, 0, nil, errors.Wrapf(RuleErrorCoinLockupTransferSenderEqualsReceiver,
+			"_connectCoinLockupTransfer")
+	}
+
+	// Verify the transfer restrictions attached to the transfer.
+	profileEntry := bav.GetProfileEntryForPKID(profilePKID)
+	if profileEntry.DAOCoinEntry.LockupTransferRestrictionStatus == TransferRestrictionStatusProfileOwnerOnly &&
+		!profilePKID.Eq(senderPKID) {
+		return 0, 0, nil, errors.Wrapf(RuleErrorCoinLockupTransferRestrictedToProfileOwner,
+			"_connectCoinLockupTransfer")
+	}
+	if profileEntry.DAOCoinEntry.LockupTransferRestrictionStatus == TransferRestrictionStatusDAOMembersOnly {
+		// TODO: Determine if this is desired behavior. We assume the sender must be part of the DAO to have
+		//       transferable coins. It seems weird to tie locked DAO coin transfers to unlocked DAO coin balances.
+		//       An alternative approach is not allow the "TransferRestrictionStatusDAOMembersOnly" restriction.
+		receiverBalanceEntry := bav.GetBalanceEntry(receiverPKID, profilePKID, true)
+		if receiverBalanceEntry.BalanceNanos.IsZero() {
+			return 0, 0, nil,
+				errors.Wrapf(RuleErrorCoinLockupTransferRestrictedToDAOMembers, "_connectCoinLockupTransfer")
+		}
+	}
+
+	// Fetch the sender's balance entries.
+	senderLockedBalanceEntry := bav.GetLockedBalanceEntryForHODLerPKIDProfilePKIDExpirationTimestampNanoSecs(
+		senderPKID, profilePKID, txMeta.ExpirationTimestampUnixNanoSecs)
+	prevSenderLockedBalanceEntry := senderLockedBalanceEntry.Copy()
+
+	// Check that the sender's balance entry has sufficient balance.
+	if txMeta.LockedCoinsToTransferBaseUnits.Gt(&senderLockedBalanceEntry.BalanceBaseUnits) {
+		return 0, 0, nil, errors.Wrapf(RuleErrorCoinLockupTransferInsufficientBalance,
+			"_connectCoinLockupTransfer")
+	}
+
+	// Credit the sender's balance entry.
+	senderLockedBalanceEntry.BalanceBaseUnits = *uint256.NewInt().Sub(
+		&senderLockedBalanceEntry.BalanceBaseUnits, txMeta.LockedCoinsToTransferBaseUnits)
+
+	// Fetch the recipient's balance entry.
+	receiverLockedBalanceEntry := bav.GetLockedBalanceEntryForHODLerPKIDProfilePKIDExpirationTimestampNanoSecs(
+		receiverPKID, profilePKID, txMeta.ExpirationTimestampUnixNanoSecs)
+	prevReceiverLockedBalanceEntry := receiverLockedBalanceEntry
+
+	// Add to the recipient's balance entry, checking for overflow.
+	newRecipientBalanceBaseUnits, err := SafeUint256().Add(&receiverLockedBalanceEntry.BalanceBaseUnits,
+		txMeta.LockedCoinsToTransferBaseUnits)
+	if err != nil {
+		return 0, 0, nil, errors.Wrapf(RuleErrorCoinLockupTransferBalanceOverflowAtReceiver,
+			"_connectCoinLockupTransfer")
+	}
+	receiverLockedBalanceEntry.BalanceBaseUnits = *newRecipientBalanceBaseUnits
+
+	// Update the balances in the view.
+	bav._setLockedBalanceEntry(senderLockedBalanceEntry)
+	bav._setLockedBalanceEntry(receiverLockedBalanceEntry)
+
+	// Create a UtxoOperation for easily disconnecting the transaction.
+	utxoOpsForTxn = append(utxoOpsForTxn, &UtxoOperation{
+		Type:                           OperationTypeCoinLockupTransfer,
+		PrevSenderLockedBalanceEntry:   prevSenderLockedBalanceEntry,
+		PrevReceiverLockedBalanceEntry: prevReceiverLockedBalanceEntry,
+	})
+
+	return 0, 0, utxoOpsForTxn, nil
+}
+
+func (bav *UtxoView) _disconnectCoinLockupTransfer(
+	operationType OperationType,
+	currentTxn *MsgDeSoTxn,
+	txnHash *BlockHash,
+	utxoOpsForTxn []*UtxoOperation,
+	blockHeight uint32) error {
+	if len(utxoOpsForTxn) == 0 {
+		return fmt.Errorf("_disconnectCoinLockupTransfer: utxoOperations are missing")
+	}
+	operationIndex := len(utxoOpsForTxn) - 1
+
+	// Verify the last operation as being a CoinLockupTransfer operation.
+	if utxoOpsForTxn[operationIndex].Type != OperationTypeCoinLockupTransfer {
+		return fmt.Errorf("_disconnectDAOCoinLockup: Trying to revert "+
+			"OperationTypeCoinLockupTransfer but found type %v", utxoOpsForTxn[operationIndex].Type)
+	}
+
+	// Sanity check the OperationTypeCoinLockupTransfer exists.
+	operationData := utxoOpsForTxn[operationIndex]
+	operationIndex--
+	if operationIndex < 0 {
+		return fmt.Errorf("_disconnectCoinLockupTransfer: Trying to revert OperationTypeCoinLockupTransfer " +
+			"but malformed utxoOpsForTxn")
+	}
+	if operationData.PrevSenderLockedBalanceEntry == nil || operationData.PrevSenderLockedBalanceEntry.isDeleted {
+		return fmt.Errorf("_disconnectCoinLockupTransfer: Trying to revert OperationTypeCoinLockupTransfer " +
+			"but found nil or deleted PrevSenderLockedBalanceEntry")
+	}
+	if operationData.PrevReceiverLockedBalanceEntry == nil || operationData.PrevReceiverLockedBalanceEntry.isDeleted {
+		return fmt.Errorf("_disconnectCoinLockupTransfer: Trying to revert OperationTypeCoinLockupTransfer " +
+			"but found nil or deleted PrevReceiverLockedBalanceEntry")
+	}
+
+	// Fetch the LockedBalanceEntries in the view.
+	senderLockedBalanceEntry := bav.GetLockedBalanceEntryForHODLerPKIDProfilePKIDExpirationTimestampNanoSecs(
+		operationData.PrevSenderLockedBalanceEntry.HODLerPKID,
+		operationData.PrevSenderLockedBalanceEntry.ProfilePKID,
+		operationData.PrevSenderLockedBalanceEntry.ExpirationTimestampNanoSecs)
+	receiverLockedBalanceEntry := bav.GetLockedBalanceEntryForHODLerPKIDProfilePKIDExpirationTimestampNanoSecs(
+		operationData.PrevReceiverLockedBalanceEntry.HODLerPKID,
+		operationData.PrevReceiverLockedBalanceEntry.ProfilePKID,
+		operationData.PrevReceiverLockedBalanceEntry.ExpirationTimestampNanoSecs)
+
+	// Ensure reverting the transaction won't cause the recipients balances to increase
+	// or cause the senders balances to decrease.
+	if operationData.PrevSenderLockedBalanceEntry.BalanceBaseUnits.Lt(&senderLockedBalanceEntry.BalanceBaseUnits) {
+		return fmt.Errorf("_disconnectCoinLockupTransfer: Reversion of coin lockup transfer would " +
+			"result in less coins for sender")
+	}
+	if operationData.PrevReceiverLockedBalanceEntry.BalanceBaseUnits.Gt(&receiverLockedBalanceEntry.BalanceBaseUnits) {
+		return fmt.Errorf("_disconnectCoinLockupTransfer: Reversion of coin lockup transfer would " +
+			"result in more coins for receiver")
+	}
+
+	// Set the balance entry mappings.
+	bav._setLockedBalanceEntry(operationData.PrevSenderLockedBalanceEntry)
+	bav._setLockedBalanceEntry(operationData.PrevReceiverLockedBalanceEntry)
+
+	// By here we only need to disconnect the basic transfer associated with the transaction.
+	basicTransferOps := utxoOpsForTxn[:operationIndex]
+	err := bav._disconnectBasicTransfer(currentTxn, txnHash, basicTransferOps, blockHeight)
+	if err != nil {
+		return errors.Wrapf(err, "_disconnectCoinLockupTransfer")
+	}
+
+	return nil
+}
+
+//
 // DB FLUSHES
 //
 
