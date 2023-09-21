@@ -1859,7 +1859,9 @@ func (bc *Blockchain) ProcessBlock(desoBlock *MsgDeSoBlock, verifySignatures boo
 	// If the block's height is after the PoS cut-over fork height, then we use the PoS block processing logic. Otherwise, fall back
 	// to the PoW logic.
 	if desoBlock.Header.Height >= uint64(bc.params.ForkHeights.ProofOfStake2ConsensusCutoverBlockHeight) {
-		return bc.processBlockPoS(desoBlock, verifySignatures)
+		// TODO: call bc.processBlockPoS(desoBlock, verifySignatures) instead
+		isMainChain, isOrphan, err := bc.processBlockPoW(desoBlock, verifySignatures)
+		return isMainChain, isOrphan, nil, err
 	}
 
 	isMainChain, isOrphan, err := bc.processBlockPoW(desoBlock, verifySignatures)
