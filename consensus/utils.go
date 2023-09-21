@@ -206,16 +206,24 @@ func isValidSignatureManyPublicKeys(publicKeys []*bls.PublicKey, signature *bls.
 // - Assume N = total stake in the network
 // - Assume f = faulty stake in the network
 // - Assume C = honest stake in the network
+// - We have N = C + f.
 //
-// - We define N = C + f, N = 3f + 1
-// - We want to determine if we have a BQ where C >= 2f + 1
+// As our security assumptions, we need C >= 2f+1. If we consider worst-case scenario (C=2f+1), we have N = 3f + 1.
+// - We want to determine if we have a super-majority Quorum containing the majority of C
+// - The minimal size of such Quorum is f + [floor(C/2) + 1]
+//   - For a fixed N, this function grows larger as C gets smaller relative to f.
+//   - We would need the largest Quorum for C = 2f+1, and it's size would also be 2f+1 = f + floor((2f+1)/2) + 1.
 //
-// Given the above, we can derive the following to derive the super-majority check:
-// - C >= 2f + 1
-// - 3C >= 6f + 3
-// - 3C >= 2(3f + 1) + 1
-// - 3C >= 2N + 1
-// - Finally, this gives us the condition: 3C - 2N - 1 >= 0
+// So, for a given N, we check for a super-majority Quorum, containing at least 2f+1 votes, where f is defined
+// in worst-case scenario of N = 3f+1.
+//
+// Given the above, let's say Cq := stake that is provided to this function. We can derive the following
+// super-majority check:
+// - Cq >= 2f + 1
+// - 3Cq >= 6f + 3
+// - 3Cq >= 2(3f + 1) + 1
+// - 3Cq >= 2N + 1
+// - Finally, this gives us the condition: 3Cq - 2N - 1 >= 0. Which is what we will verify in this function.
 func isSuperMajorityStake(stake *uint256.Int, totalStake *uint256.Int) bool {
 	// Both values must be > 0
 	if stake == nil || totalStake == nil || stake.IsZero() || totalStake.IsZero() {
@@ -227,18 +235,18 @@ func isSuperMajorityStake(stake *uint256.Int, totalStake *uint256.Int) bool {
 		return false
 	}
 
-	// Compute 3C
+	// Compute 3Cq
 	honestStakeComponent := uint256.NewInt().Mul(stake, uint256.NewInt().SetUint64(3))
 
 	// Compute 2N
 	totalStakeComponent := uint256.NewInt().Mul(totalStake, uint256.NewInt().SetUint64(2))
 
-	// Compute 3C - 2N - 1
+	// Compute 3Cq - 2N - 1
 	superMajorityConditionSum := uint256.NewInt().Sub(
 		uint256.NewInt().Sub(honestStakeComponent, totalStakeComponent),
 		uint256.NewInt().SetOne(),
 	)
 
-	// Check if 3C - 2N - 1 >= 0
+	// Check if 3Cq - 2N - 1 >= 0
 	return superMajorityConditionSum.Sign() >= 0
 }
