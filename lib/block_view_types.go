@@ -114,9 +114,11 @@ const (
 	EncoderTypeStakeEntry                        EncoderType = 41
 	EncoderTypeLockedStakeEntry                  EncoderType = 42
 	EncoderTypeEpochEntry                        EncoderType = 43
+	EncoderTypeLockedBalanceEntry                EncoderType = 44
+	EncoderTypeLockupYieldCurvePoint             EncoderType = 45
 
 	// EncoderTypeEndBlockView encoder type should be at the end and is used for automated tests.
-	EncoderTypeEndBlockView EncoderType = 44
+	EncoderTypeEndBlockView EncoderType = 46
 )
 
 // Txindex encoder types.
@@ -254,6 +256,10 @@ func (encoderType EncoderType) New() DeSoEncoder {
 		return &LockedStakeEntry{}
 	case EncoderTypeEpochEntry:
 		return &EpochEntry{}
+	case EncoderTypeLockedBalanceEntry:
+		return &LockedBalanceEntry{}
+	case EncoderTypeLockupYieldCurvePoint:
+		return &LockupYieldCurvePoint{}
 	}
 
 	// Txindex encoder types
@@ -629,8 +635,12 @@ const (
 	OperationTypeUnstake                      OperationType = 42
 	OperationTypeUnlockStake                  OperationType = 43
 	OperationTypeUnjailValidator              OperationType = 44
+	OperationTypeCoinLockup                   OperationType = 45
+	OperationTypeCoinLockupTransfer           OperationType = 46
+	OperationTypeCoinUnlock                   OperationType = 47
+	OperationTypeUpdateCoinLockupParams       OperationType = 48
 
-	// NEXT_TAG = 45
+	// NEXT_TAG = 49
 )
 
 func (op OperationType) String() string {
@@ -723,6 +733,14 @@ func (op OperationType) String() string {
 		return "OperationTypeUnlockStake"
 	case OperationTypeUnjailValidator:
 		return "OperationTypeUnjailValidator"
+	case OperationTypeCoinLockup:
+		return "OperationTypeCoinLockup"
+	case OperationTypeUpdateCoinLockupParams:
+		return "OperationTypeUpdateCoinLockupParams"
+	case OperationTypeCoinLockupTransfer:
+		return "OperationTypeCoinLockupTransfer"
+	case OperationTypeCoinUnlock:
+		return "OperationTypeCoinUnlock"
 	}
 	return "OperationTypeUNKNOWN"
 }
@@ -4417,17 +4435,23 @@ type CoinEntry struct {
 	MintingDisabled bool
 
 	TransferRestrictionStatus TransferRestrictionStatus
+
+	// ===== ENCODER MIGRATION ProofOfStake1StateSetupMigration =====
+	// LockupTransferRestrictionStatus specifies transfer restrictions
+	// for only those DAO coins actively locked up.
+	LockupTransferRestrictionStatus TransferRestrictionStatus
 }
 
 func (ce *CoinEntry) Copy() *CoinEntry {
 	return &CoinEntry{
-		CreatorBasisPoints:        ce.CreatorBasisPoints,
-		DeSoLockedNanos:           ce.DeSoLockedNanos,
-		NumberOfHolders:           ce.NumberOfHolders,
-		CoinsInCirculationNanos:   *uint256.NewInt().Set(&ce.CoinsInCirculationNanos),
-		CoinWatermarkNanos:        ce.CoinWatermarkNanos,
-		MintingDisabled:           ce.MintingDisabled,
-		TransferRestrictionStatus: ce.TransferRestrictionStatus,
+		CreatorBasisPoints:              ce.CreatorBasisPoints,
+		DeSoLockedNanos:                 ce.DeSoLockedNanos,
+		NumberOfHolders:                 ce.NumberOfHolders,
+		CoinsInCirculationNanos:         *uint256.NewInt().Set(&ce.CoinsInCirculationNanos),
+		CoinWatermarkNanos:              ce.CoinWatermarkNanos,
+		MintingDisabled:                 ce.MintingDisabled,
+		TransferRestrictionStatus:       ce.TransferRestrictionStatus,
+		LockupTransferRestrictionStatus: ce.LockupTransferRestrictionStatus,
 	}
 }
 
@@ -4442,6 +4466,10 @@ func (ce *CoinEntry) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata .
 	data = append(data, UintToBuf(ce.CoinWatermarkNanos)...)
 	data = append(data, BoolToByte(ce.MintingDisabled))
 	data = append(data, byte(ce.TransferRestrictionStatus))
+
+	if MigrationTriggered(blockHeight, ProofOfStake1StateSetupMigration) {
+		data = append(data, byte(ce.LockupTransferRestrictionStatus))
+	}
 
 	return data
 }
@@ -4484,11 +4512,22 @@ func (ce *CoinEntry) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.Read
 	}
 	ce.TransferRestrictionStatus = TransferRestrictionStatus(statusByte)
 
+	if MigrationTriggered(blockHeight, ProofOfStake1StateSetupMigration) {
+		lockedStatusByte, err := rr.ReadByte()
+		if err != nil {
+			return errors.Wrapf(err, "CoinEntry.Decode: Problem reading LockupTransferRestrictionStatus")
+		}
+		ce.LockupTransferRestrictionStatus = TransferRestrictionStatus(lockedStatusByte)
+	}
+
 	return nil
 }
 
 func (ce *CoinEntry) GetVersionByte(blockHeight uint64) byte {
-	return 0
+	return GetMigrationVersion(
+		blockHeight,
+		ProofOfStake1StateSetupMigration,
+	)
 }
 
 func (ce *CoinEntry) GetEncoderType() EncoderType {
