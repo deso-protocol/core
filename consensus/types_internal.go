@@ -181,3 +181,13 @@ func (tm *timeoutMessage) GetPublicKey() *bls.PublicKey {
 func (tm *timeoutMessage) GetSignature() *bls.Signature {
 	return tm.signature
 }
+
+//////////////////////////////////////////////////////////
+// Internal blockWithValidatorLookup type
+//////////////////////////////////////////////////////////
+
+type blockWithValidatorLookup struct {
+	block           Block
+	validatorSet    []Validator          // Ordered slice of validators
+	validatorLookup map[string]Validator // Lookup of validators by validator public key string
+}

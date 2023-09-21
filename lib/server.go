@@ -1774,11 +1774,6 @@ func (srv *Server) _handleBlockAccepted(event *BlockEvent) {
 		return
 	}
 
-	// Notify the consensus event loop that a block was accepted.
-	if srv.fastHotStuffEventLoop != nil {
-		srv.fastHotStuffEventLoop.ProcessSafeBlock(nil, nil) // TODO: fill these out
-	}
-
 	// Construct an inventory vector to relay to peers.
 	blockHash, _ := blk.Header.Hash()
 	invVect := &InvVect{

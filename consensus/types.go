@@ -100,6 +100,14 @@ type Block interface {
 	GetQC() QuorumCertificate
 }
 
+type BlockWithValidators struct {
+	Block Block
+	// The validator set for the next block height after the block. This validator set can be used to validate
+	// votes and timeouts used to build a QC that extends from the block. The validator set must be sorted
+	// in descending order of stake amount with a consistent tie breaking scheme.
+	Validators []Validator
+}
+
 // We want a large buffer for the signal channels to ensure threads don't block when trying to push new
 // signals.
 //
@@ -144,16 +152,17 @@ type FastHotStuffEventLoop struct {
 	nextBlockConstructionTask *ScheduledTask[uint64]
 	nextTimeoutTask           *ScheduledTask[uint64]
 
-	// The latest block accepted by the caller. We only keep track of the latest safe block here because
-	// it's the block we vote on, and construct a vote QC for.
-	chainTip Block
+	// Stores all safe blocks that we can
 	// The current view at which we expect to see or propose the next block. In the event of a timeout,
 	// the timeout signal will be triggered for this view.
 	currentView uint64
-	// The validator set sorted in decreasing order of stake amount, with a consistent tie-breaking
-	// scheme. This validator set is expected to be valid for validating votes and timeouts for the
-	// next block height.
-	validatorsAtChainTip []Validator
+
+	// Block hash of the current tip of the block-chain.
+	tip blockWithValidatorLookup
+
+	// All blocks that are safe to extend from. This will include the committed tip and all uncommitted
+	// descendants that are safe to extend from. This slice also includes the tip block itself.
+	safeBlocks []blockWithValidatorLookup
 
 	// votesSeen is an in-memory map of all the votes we've seen so far. It's a nested map with the
 	// following nested key structure:

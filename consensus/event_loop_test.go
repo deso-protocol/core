@@ -9,7 +9,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestFastHotStuffInitialization(t *testing.T) {
+func TestInit(t *testing.T) {
 
 	// Test initial status for newly constructed instance
 	{
@@ -18,31 +18,63 @@ func TestFastHotStuffInitialization(t *testing.T) {
 		require.NotPanics(t, fc.Stop) // Calling Stop() on an uninitialized instance should be a no-op
 	}
 
-	// Test Init() function with invalid block construction cadence
+	// Test Init() function with invalid block construction interval
 	{
 		fc := NewFastHotStuffEventLoop()
-		err := fc.Init(0, 1, createDummyBlock(2), createDummyValidatorSet())
+		err := fc.Init(0, 1,
+			BlockWithValidators{createDummyBlock(2), createDummyValidatorSet()},     // tip
+			[]BlockWithValidators{{createDummyBlock(2), createDummyValidatorSet()}}, // safeBlocks
+		)
 		require.Error(t, err)
 	}
 
 	// Test Init() function with invalid timeout duration
 	{
 		fc := NewFastHotStuffEventLoop()
-		err := fc.Init(1, 0, createDummyBlock(2), createDummyValidatorSet())
+		err := fc.Init(1, 0,
+			BlockWithValidators{createDummyBlock(2), createDummyValidatorSet()},     // tip
+			[]BlockWithValidators{{createDummyBlock(2), createDummyValidatorSet()}}, // safeBlocks
+		)
 		require.Error(t, err)
 	}
 
-	// Test Init() function with malformed block
+	// Test Init() function with malformed tip block
 	{
 		fc := NewFastHotStuffEventLoop()
-		err := fc.Init(1, 1, nil, createDummyValidatorSet())
+		err := fc.Init(1, 1,
+			BlockWithValidators{nil, createDummyValidatorSet()},                     // tip
+			[]BlockWithValidators{{createDummyBlock(2), createDummyValidatorSet()}}, // safeBlocks
+		)
 		require.Error(t, err)
 	}
 
-	// Test Init() function with malformed validator set
+	// Test Init() function with malformed validator set for tip block
 	{
 		fc := NewFastHotStuffEventLoop()
-		err := fc.Init(1, 1, createDummyBlock(2), nil)
+		err := fc.Init(1, 1,
+			BlockWithValidators{createDummyBlock(2), nil},                           // tip
+			[]BlockWithValidators{{createDummyBlock(2), createDummyValidatorSet()}}, // safeBlocks
+		)
+		require.Error(t, err)
+	}
+
+	// Test Init() function with malformed safe block
+	{
+		fc := NewFastHotStuffEventLoop()
+		err := fc.Init(1, 1,
+			BlockWithValidators{createDummyBlock(2), createDummyValidatorSet()}, // tip
+			[]BlockWithValidators{{nil, createDummyValidatorSet()}},             // safeBlocks
+		)
+		require.Error(t, err)
+	}
+
+	// Test Init() function with malformed validator set for safe block
+	{
+		fc := NewFastHotStuffEventLoop()
+		err := fc.Init(1, 1,
+			BlockWithValidators{createDummyBlock(2), createDummyValidatorSet()}, // tip
+			[]BlockWithValidators{{createDummyBlock(2), nil}},                   // safeBlocks
+		)
 		require.Error(t, err)
 	}
 
@@ -51,7 +83,10 @@ func TestFastHotStuffInitialization(t *testing.T) {
 		block := createDummyBlock(2)
 
 		fc := NewFastHotStuffEventLoop()
-		err := fc.Init(100, 101, block, createDummyValidatorSet())
+		err := fc.Init(100, 101,
+			BlockWithValidators{block, createDummyValidatorSet()},     // tip
+			[]BlockWithValidators{{block, createDummyValidatorSet()}}, // safeBlocks
+		)
 		require.NoError(t, err)
 
 		require.Equal(t, consensusStatusInitialized, fc.status)
@@ -59,43 +94,81 @@ func TestFastHotStuffInitialization(t *testing.T) {
 		require.NotPanics(t, fc.Stop) // Calling Stop() on an initialized instance should be a no-op
 		require.Equal(t, fc.status, consensusStatusInitialized)
 
-		require.Equal(t, fc.chainTip.GetBlockHash().GetValue(), block.GetBlockHash().GetValue())
-		require.Equal(t, fc.chainTip.GetView(), uint64(2))
-		require.Equal(t, fc.chainTip.GetHeight(), uint64(1))
+		require.Equal(t, fc.tip.block.GetBlockHash().GetValue(), block.GetBlockHash().GetValue())
+		require.Equal(t, fc.tip.block.GetView(), uint64(2))
+		require.Equal(t, fc.tip.block.GetHeight(), uint64(1))
 
 		require.Equal(t, fc.blockConstructionInterval, time.Duration(100))
 		require.Equal(t, fc.timeoutBaseDuration, time.Duration(101))
 
 		require.Equal(t, fc.currentView, uint64(3))
-		require.Equal(t, len(fc.validatorsAtChainTip), 2)
+		require.Equal(t, len(fc.tip.validatorSet), 2)
+		require.Equal(t, len(fc.tip.validatorLookup), 2)
+
+		require.Equal(t, len(fc.safeBlocks), 1)
+		require.Equal(t, fc.safeBlocks[0].block.GetBlockHash().GetValue(), block.GetBlockHash().GetValue())
+		require.Equal(t, fc.safeBlocks[0].block.GetView(), uint64(2))
+		require.Equal(t, fc.safeBlocks[0].block.GetHeight(), uint64(1))
+		require.Equal(t, len(fc.safeBlocks[0].validatorSet), 2)
+		require.Equal(t, len(fc.safeBlocks[0].validatorLookup), 2)
 	}
 }
 
-func TestFastHotStuffProcessSafeBlock(t *testing.T) {
+func TestProcessTipBlock(t *testing.T) {
 	oneHourInNanoSecs := time.Duration(3600000000000)
 
 	fc := NewFastHotStuffEventLoop()
-	err := fc.Init(oneHourInNanoSecs, oneHourInNanoSecs, createDummyBlock(2), createDummyValidatorSet())
+	err := fc.Init(oneHourInNanoSecs, oneHourInNanoSecs,
+		BlockWithValidators{createDummyBlock(2), createDummyValidatorSet()},     // tip
+		[]BlockWithValidators{{createDummyBlock(2), createDummyValidatorSet()}}, // safeBlocks
+	)
 	require.NoError(t, err)
 
-	// Test ProcessSafeBlock() function when consensus event loop is not running
+	// Test ProcessTipBlock() function when consensus event loop is not running
 	{
-		err := fc.ProcessSafeBlock(createDummyBlock(2), createDummyValidatorSet())
+		err := fc.ProcessTipBlock(
+			BlockWithValidators{createDummyBlock(2), createDummyValidatorSet()},     // tip
+			[]BlockWithValidators{{createDummyBlock(2), createDummyValidatorSet()}}, // safeBlocks
+		)
 		require.Error(t, err)
 	}
 
 	// Start the consensus event loop
 	fc.Start()
 
-	// Test ProcessSafeBlock() function with malformed block
+	// Test ProcessTipBlock() function with malformed tip block
 	{
-		err := fc.ProcessSafeBlock(nil, createDummyValidatorSet())
+		err := fc.ProcessTipBlock(
+			BlockWithValidators{nil, createDummyValidatorSet()},                     // tip
+			[]BlockWithValidators{{createDummyBlock(2), createDummyValidatorSet()}}, // safeBlocks
+		)
 		require.Error(t, err)
 	}
 
-	// Test ProcessSafeBlock() function with malformed validator set
+	// Test ProcessTipBlock() function with malformed tip validator set
 	{
-		err := fc.ProcessSafeBlock(createDummyBlock(2), nil)
+		err := fc.ProcessTipBlock(
+			BlockWithValidators{createDummyBlock(2), nil},                           // tip
+			[]BlockWithValidators{{createDummyBlock(2), createDummyValidatorSet()}}, // safeBlocks
+		)
+		require.Error(t, err)
+	}
+
+	// Test ProcessTipBlock() function with malformed safe block
+	{
+		err := fc.ProcessTipBlock(
+			BlockWithValidators{createDummyBlock(2), createDummyValidatorSet()}, // tip
+			[]BlockWithValidators{{nil, createDummyValidatorSet()}},             // safeBlocks
+		)
+		require.Error(t, err)
+	}
+
+	// Test ProcessTipBlock() function with malformed safe block's validator set
+	{
+		err := fc.ProcessTipBlock(
+			BlockWithValidators{createDummyBlock(2), createDummyValidatorSet()}, // tip
+			[]BlockWithValidators{{createDummyBlock(2), nil}},                   // safeBlocks
+		)
 		require.Error(t, err)
 	}
 
@@ -144,21 +217,24 @@ func TestFastHotStuffProcessSafeBlock(t *testing.T) {
 		require.Equal(t, len(fc.timeoutsSeen), 5)
 	}
 
-	// Test ProcessSafeBlock() function with valid parameters
+	// Test ProcessTipBlock() function with valid parameters
 	{
 		nextBlock := createDummyBlock(2)
 		nextBlock.height = 2
 		nextBlock.view = 3
 
-		err := fc.ProcessSafeBlock(nextBlock, createDummyValidatorSet())
+		err := fc.ProcessTipBlock(
+			BlockWithValidators{nextBlock, createDummyValidatorSet()},     // tip
+			[]BlockWithValidators{{nextBlock, createDummyValidatorSet()}}, // safeBlocks
+		)
 		require.NoError(t, err)
 
-		require.Equal(t, nextBlock.GetBlockHash().GetValue(), fc.chainTip.GetBlockHash().GetValue())
-		require.Equal(t, uint64(3), fc.chainTip.GetView())
-		require.Equal(t, uint64(2), fc.chainTip.GetHeight())
+		require.Equal(t, nextBlock.GetBlockHash().GetValue(), fc.tip.block.GetBlockHash().GetValue())
+		require.Equal(t, uint64(3), fc.tip.block.GetView())
+		require.Equal(t, uint64(2), fc.tip.block.GetHeight())
 
 		require.Equal(t, uint64(4), fc.currentView)
-		require.Equal(t, 2, len(fc.validatorsAtChainTip))
+		require.Equal(t, 2, len(fc.tip.validatorSet))
 	}
 
 	// Verify that stale votes and timeouts have been evicted
@@ -177,7 +253,10 @@ func TestAdvanceView(t *testing.T) {
 	fc := NewFastHotStuffEventLoop()
 
 	// BlockHeight = 1, Current View = 3
-	err := fc.Init(oneHourInNanoSecs, oneHourInNanoSecs, createDummyBlock(2), createDummyValidatorSet())
+	err := fc.Init(oneHourInNanoSecs, oneHourInNanoSecs,
+		BlockWithValidators{createDummyBlock(2), createDummyValidatorSet()},     // tip
+		[]BlockWithValidators{{createDummyBlock(2), createDummyValidatorSet()}}, // safeBlocks
+	)
 	require.NoError(t, err)
 
 	// Running AdvanceView() should fail because the consensus event loop is not running
@@ -264,7 +343,10 @@ func TestProcessValidatorVote(t *testing.T) {
 	fc := NewFastHotStuffEventLoop()
 
 	// BlockHeight = 1, Current View = 3
-	err := fc.Init(oneHourInNanoSecs, oneHourInNanoSecs, createDummyBlock(2), createDummyValidatorSet())
+	err := fc.Init(oneHourInNanoSecs, oneHourInNanoSecs,
+		BlockWithValidators{createDummyBlock(2), createDummyValidatorSet()},     // tip
+		[]BlockWithValidators{{createDummyBlock(2), createDummyValidatorSet()}}, // safeBlocks
+	)
 	require.NoError(t, err)
 
 	// Start the event loop
@@ -345,7 +427,10 @@ func TestProcessValidatorTimeout(t *testing.T) {
 	fc := NewFastHotStuffEventLoop()
 
 	// BlockHeight = 1, Current View = 3
-	err := fc.Init(oneHourInNanoSecs, oneHourInNanoSecs, createDummyBlock(2), createDummyValidatorSet())
+	err := fc.Init(oneHourInNanoSecs, oneHourInNanoSecs,
+		BlockWithValidators{createDummyBlock(2), createDummyValidatorSet()},     // tip
+		[]BlockWithValidators{{createDummyBlock(2), createDummyValidatorSet()}}, // safeBlocks
+	)
 	require.NoError(t, err)
 
 	// Start the event loop
@@ -427,7 +512,10 @@ func TestTimeoutScheduledTaskExecuted(t *testing.T) {
 	dummyBlock := createDummyBlock(2)
 
 	fc := NewFastHotStuffEventLoop()
-	err := fc.Init(oneHourInNanoSecs, oneMilliSecondInNanoSeconds, dummyBlock, createDummyValidatorSet())
+	err := fc.Init(oneHourInNanoSecs, oneMilliSecondInNanoSeconds,
+		BlockWithValidators{dummyBlock, createDummyValidatorSet()},     // tip
+		[]BlockWithValidators{{dummyBlock, createDummyValidatorSet()}}, // safeBlocks
+	)
 	require.NoError(t, err)
 
 	// Start the event loop
@@ -466,7 +554,10 @@ func TestResetEventLoopSignal(t *testing.T) {
 	oneHourInNanoSecs := time.Duration(3600000000000)
 
 	fc := NewFastHotStuffEventLoop()
-	err := fc.Init(oneHourInNanoSecs, 2*oneHourInNanoSecs, createDummyBlock(2), createDummyValidatorSet())
+	err := fc.Init(oneHourInNanoSecs, 2*oneHourInNanoSecs,
+		BlockWithValidators{createDummyBlock(2), createDummyValidatorSet()},     // tip
+		[]BlockWithValidators{{createDummyBlock(2), createDummyValidatorSet()}}, // safeBlocks
+	)
 	require.NoError(t, err)
 
 	// Start the event loop
@@ -508,7 +599,10 @@ func TestFastHotStuffEventLoopStartStop(t *testing.T) {
 	oneHourInNanoSecs := time.Duration(3600000000000)
 
 	fc := NewFastHotStuffEventLoop()
-	err := fc.Init(oneHourInNanoSecs, 2*oneHourInNanoSecs, createDummyBlock(2), createDummyValidatorSet())
+	err := fc.Init(oneHourInNanoSecs, 2*oneHourInNanoSecs,
+		BlockWithValidators{createDummyBlock(2), createDummyValidatorSet()},     // tip
+		[]BlockWithValidators{{createDummyBlock(2), createDummyValidatorSet()}}, // safeBlocks
+	)
 	require.NoError(t, err)
 
 	// Start the event loop
