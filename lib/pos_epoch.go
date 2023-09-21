@@ -14,7 +14,10 @@ import (
 
 type EpochEntry struct {
 	EpochNumber      uint64
-	FinalBlockHeight uint64
+	StartBlockHeight uint64
+	StartViewNumber  uint64
+	FinalBlockHeight uint64 // TODO: I'm leaving this here currently because it makes our lives easier
+	// and doesn't add too much overhead.
 
 	// This captures the on-chain timestamp when this epoch entry was created. This does not
 	// represent the timestamp for first block of the epoch, but rather when this epoch entry
@@ -25,6 +28,8 @@ type EpochEntry struct {
 func (epochEntry *EpochEntry) Copy() *EpochEntry {
 	return &EpochEntry{
 		EpochNumber:                     epochEntry.EpochNumber,
+		StartBlockHeight:                epochEntry.StartBlockHeight,
+		StartViewNumber:                 epochEntry.StartViewNumber,
 		FinalBlockHeight:                epochEntry.FinalBlockHeight,
 		CreatedAtBlockTimestampNanoSecs: epochEntry.CreatedAtBlockTimestampNanoSecs,
 	}
@@ -33,6 +38,8 @@ func (epochEntry *EpochEntry) Copy() *EpochEntry {
 func (epochEntry *EpochEntry) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte {
 	var data []byte
 	data = append(data, UintToBuf(epochEntry.EpochNumber)...)
+	data = append(data, UintToBuf(epochEntry.StartBlockHeight)...)
+	data = append(data, UintToBuf(epochEntry.StartViewNumber)...)
 	data = append(data, UintToBuf(epochEntry.FinalBlockHeight)...)
 	data = append(data, UintToBuf(epochEntry.CreatedAtBlockTimestampNanoSecs)...)
 	return data
@@ -45,6 +52,18 @@ func (epochEntry *EpochEntry) RawDecodeWithoutMetadata(blockHeight uint64, rr *b
 	epochEntry.EpochNumber, err = ReadUvarint(rr)
 	if err != nil {
 		return errors.Wrapf(err, "EpochEntry.Decode: Problem reading EpochNumber: ")
+	}
+
+	// StartBlockHeight
+	epochEntry.StartBlockHeight, err = ReadUvarint(rr)
+	if err != nil {
+		return errors.Wrapf(err, "EpochEntry.Decode: Problem reading StartBlockHeight: ")
+	}
+
+	// StartViewNumber
+	epochEntry.StartViewNumber, err = ReadUvarint(rr)
+	if err != nil {
+		return errors.Wrapf(err, "EpochEntry.Decode: Problem reading StartViewNumber: ")
 	}
 
 	// FinalBlockHeight
@@ -99,6 +118,8 @@ func (bav *UtxoView) GetCurrentEpochEntry() (*EpochEntry, error) {
 	// case prior to the first execution of the OnEpochCompleteHook.
 	genesisEpochEntry := &EpochEntry{
 		EpochNumber:                     0,
+		StartBlockHeight:                0, // TODO: What is the appropriate value for this?
+		StartViewNumber:                 0, // TODO: What is the appropriate value for this? I think 0 is correct or do we want our view number to roughly line up w/ our start block height?
 		FinalBlockHeight:                uint64(bav.Params.ForkHeights.ProofOfStake1StateSetupBlockHeight),
 		CreatedAtBlockTimestampNanoSecs: 0,
 	}

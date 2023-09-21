@@ -35,6 +35,8 @@ func TestCurrentEpoch(t *testing.T) {
 	// Set the CurrentEpoch.
 	epochEntry = &EpochEntry{
 		EpochNumber:                     1,
+		StartBlockHeight:                blockHeight + 1,
+		StartViewNumber:                 1,
 		FinalBlockHeight:                blockHeight + 5,
 		CreatedAtBlockTimestampNanoSecs: blockTimestampNanoSecs + 5*1e9,
 	}
@@ -46,6 +48,8 @@ func TestCurrentEpoch(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, epochEntry)
 	require.Equal(t, epochEntry.EpochNumber, uint64(1))
+	require.Equal(t, epochEntry.StartBlockHeight, blockHeight+1)
+	require.Equal(t, epochEntry.StartViewNumber, uint64(1))
 	require.Equal(t, epochEntry.FinalBlockHeight, blockHeight+5)
 	require.Equal(t, epochEntry.CreatedAtBlockTimestampNanoSecs, blockTimestampNanoSecs+5*1e9)
 
@@ -57,6 +61,8 @@ func TestCurrentEpoch(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, epochEntry)
 	require.Equal(t, epochEntry.EpochNumber, uint64(1))
+	require.Equal(t, epochEntry.StartBlockHeight, blockHeight+1)
+	require.Equal(t, epochEntry.StartViewNumber, uint64(1))
 	require.Equal(t, epochEntry.FinalBlockHeight, blockHeight+5)
 	require.Equal(t, epochEntry.CreatedAtBlockTimestampNanoSecs, blockTimestampNanoSecs+5*1e9)
 
@@ -64,6 +70,8 @@ func TestCurrentEpoch(t *testing.T) {
 	epochEntry = utxoView.CurrentEpochEntry
 	require.NotNil(t, epochEntry)
 	require.Equal(t, epochEntry.EpochNumber, uint64(1))
+	require.Equal(t, epochEntry.StartBlockHeight, blockHeight+1)
+	require.Equal(t, epochEntry.StartViewNumber, uint64(1))
 	require.Equal(t, epochEntry.FinalBlockHeight, blockHeight+5)
 	require.Equal(t, epochEntry.CreatedAtBlockTimestampNanoSecs, blockTimestampNanoSecs+5*1e9)
 

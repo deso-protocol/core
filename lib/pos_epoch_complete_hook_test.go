@@ -151,6 +151,12 @@ func TestRunEpochCompleteHook(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, currentEpochNumber, uint64(1))
 
+		// Test CurrentEpochEntry
+		currentEpoch, err := _newUtxoView(testMeta).GetCurrentEpochEntry()
+		require.NoError(t, err)
+		require.NotNil(t, currentEpoch)
+		require.Equal(t, currentEpoch.StartBlockHeight, uint64(1))
+
 		// Test SnapshotGlobalParamsEntry is nil.
 		snapshotGlobalParamsEntry, err := _newUtxoView(testMeta).GetSnapshotGlobalParamsEntry()
 		require.NoError(t, err)
