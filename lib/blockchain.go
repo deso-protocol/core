@@ -2639,9 +2639,170 @@ func (bc *Blockchain) processBlockPoW(desoBlock *MsgDeSoBlock, verifySignatures 
 // 4. Connect the block to the blockchain's tip
 // 5. If applicable, flush the incoming block's grandparent to the DB
 // 6. Notify the block proposer, pacemaker, and voting logic that the incoming block has been accepted
-func (bc *Blockchain) processBlockPoS(desoBlock *MsgDeSoBlock, verifySignatures bool) (_isMainChain bool, _isOrphan bool, err error) {
+func (bc *Blockchain) processBlockPoS(desoBlock *MsgDeSoBlock, verifySignatures bool) (_success bool, _isOrphan bool, _blockHashToRequest *BlockHash, _err error) {
 	// TODO: Implement me
-	return false, false, fmt.Errorf("ProcessBlockPoS: Not implemented yet")
+	// 1. Surface Level validation fo the block
+	if err := bc.validateBlockGeneral(desoBlock); err != nil {
+		return false, false, nil, err
+	}
+	// 2. Validate Block Height
+	if err := bc.validateBlockHeight(desoBlock); err != nil {
+		return false, false, nil, err
+	}
+	// 3. Validate View
+	if err := bc.validateBlockView(desoBlock); err != nil {
+		// Check if err is for view > latest committed block view and <= latest uncommitted block.
+		// If so, we need to perform the rest of the validations and then add to our block index.
+		// TODO: implement check on error described above.
+		return false, false, nil, err
+	}
+	// 4. Validate Leader
+	if err := bc.validateBlockLeader(desoBlock); err != nil {
+		return false, false, nil, err
+	}
+	// TODO: Get validator set for current block height. Alternatively, we could do this in
+	// validateQC, but we may need the validator set elsewhere in this function anyway.
+	var validatorSet []*ValidatorEntry
+	// 5. Validate QC
+	if err := bc.validateQC(desoBlock, validatorSet); err != nil {
+		return false, false, nil, err
+	}
+	// TODO: Determine if we have a timeout QC
+	timeoutQC := false
+	// 6. If timeout QC, validate that block hash isn't too far back from the latest.
+	if timeoutQC {
+		if err := bc.validateTimeoutQC(desoBlock); err != nil {
+			return false, false, nil, err
+		}
+	}
+	// 7. Determine if we're missing a parent block of this block and any of its parents from the block index.
+	// If so, add block to block index and return the hash of the missing block.
+	missingBlockHash, err := bc.validateAncestorsExist(desoBlock)
+	if err != nil {
+		return false, false, nil, err
+	}
+	if missingBlockHash != nil {
+		return false, true, missingBlockHash, nil
+	}
+
+	// 8. Happy path
+	// - Add block to best chain and block index
+	// - Update in-memory struct holding uncommitted blocks.
+	// - Commit grandparent if possible
+	// - Update current view to block's view + 1
+	if err = bc.addBlockToBestChain(desoBlock); err != nil {
+		return false, false, nil, err
+	}
+
+	if err = bc.updateUncommittedBlocks(desoBlock); err != nil {
+		return false, false, nil, err
+	}
+
+	if err = bc.commitGrandparents(desoBlock); err != nil {
+		return false, false, nil, err
+	}
+
+	if err = bc.updateCurrentView(desoBlock); err != nil {
+		return false, false, nil, err
+	}
+
+	return true, false, nil, nil
+}
+
+// validateBlockGeneral validates the block at a surface level. It checks
+// that the timestamp is valid, that the version of the header is valid,
+// and other general integrity checks (such as not malformed).
+func (bc *Blockchain) validateBlockGeneral(desoBlock *MsgDeSoBlock) error {
+	// TODO: Implement me
+	return errors.New("IMPLEMENT ME")
+}
+
+// validateBlockHeight validates the block height for a given block. It checks
+// that this block height is exactly one greater than the current block height.
+// TODO: Are we sure that's the correct validation here?
+func (bc *Blockchain) validateBlockHeight(desoBlock *MsgDeSoBlock) error {
+	// TODO: Implement me
+	return errors.New("IMPLEMENT ME")
+}
+
+// validateBlockView validates the view for a given block. First, it checks that
+// the view is greater than the latest committed block view. If not,
+// we return an error indicating that we'll never accept this block. Next,
+// it checks that the view is less than or equal to the latest uncommitted block.
+// If not, we return an error indicating that we'll want to add this block as an
+// orphan. Then it will check if that the view is exactly one greater than the
+// latest uncommitted block if we have an regular vote QC. If this block has a
+// timeout QC, it will check that the view is at least greater than the latest
+// uncommitted block's view + 1.
+func (bc *Blockchain) validateBlockView(desoBlock *MsgDeSoBlock) error {
+	// TODO: Implement me
+	return errors.New("IMPLEMENT ME")
+}
+
+// validateBlockLeader validates that the proposer is the expected proposer for the
+// block height + view number pair.
+func (bc *Blockchain) validateBlockLeader(desoBlock *MsgDeSoBlock) error {
+	// TODO: Implement me
+	return errors.New("IMPLEMENT ME")
+}
+
+// validateQC validates that the QC of this block is valid, meaning a super majority
+// of the validator set has voted (or timed out). Assumes ValidatorEntry list is sorted.
+func (bc *Blockchain) validateQC(desoBlock *MsgDeSoBlock, validatorSet []*ValidatorEntry) error {
+	// TODO: Implement me
+	return errors.New("IMPLEMENT ME")
+}
+
+// validateTimeoutQC validates that the parent block hash is not too far back from the latest.
+// Specifically, it checks that the parent block hash is at least the latest committed block.
+func (bc *Blockchain) validateTimeoutQC(desoBlock *MsgDeSoBlock) error {
+	// TODO: Implement me
+	return errors.New("IMPLEMENT ME")
+}
+
+// validateAncestorsExist checks that all ancestors of this block exist in the block index.
+// If an ancestor is not found, we'll return the block hash of the missing ancestor so the
+// caller can request this block.
+func (bc *Blockchain) validateAncestorsExist(desoBlock *MsgDeSoBlock) (_missingBlockHash *BlockHash, _err error) {
+	// Notes: starting from the block passed in, we'll look for the parent in the block index.
+	// 1. If the parent does not appear in the block index, we'll return the parent's hash.
+	// 2. If the parent exists in the block index AND is in the best chain, we can safely assume
+	//    that all ancestors exist in the block index.
+	// 3. If the parent exists in the block index but is not in the best chain, we repeat from
+	//    step 1 with the parent as the block passed in.
+	// TODO: Implement me
+	return nil, errors.New("IMPLEMENT ME")
+}
+
+func (bc *Blockchain) addBlockToBlockIndex(desoBlock *MsgDeSoBlock) error {
+	// TODO: Implement me.
+	return errors.New("IMPLEMENT ME")
+}
+
+// addBlockToBestChain adds the block to the best chain and block index.
+func (bc *Blockchain) addBlockToBestChain(desoBlock *MsgDeSoBlock) error {
+	// TODO: Implement me.
+	return errors.New("IMPLEMENT ME")
+}
+
+// updateUncommittedBlocks updates the in-memory struct holding uncommitted blocks.
+func (bc *Blockchain) updateUncommittedBlocks(desoBlock *MsgDeSoBlock) error {
+	// TODO: Implement me.
+	return errors.New("IMPLEMENT ME")
+}
+
+// commitGrandparents commits the grandparent of the block if possible.
+// Specifically, this updates the CommittedBlockStatus of its grandparent
+// and flushes the view after connecting the grandparent block to the DB.
+func (bc *Blockchain) commitGrandparents(desoBlock *MsgDeSoBlock) error {
+	// TODO: Implement me.
+	return errors.New("IMPLEMENT ME")
+}
+
+// updateCurrentView updates the current view to the block's view + 1.
+func (bc *Blockchain) updateCurrentView(desoBlock *MsgDeSoBlock) error {
+	// TODO: Implement me.
+	return errors.New("IMPLEMENT ME")
 }
 
 func (bc *Blockchain) GetUncommittedTipView() (*UtxoView, error) {
