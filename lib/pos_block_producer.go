@@ -22,14 +22,14 @@ func NewPosBlockProducer(mm *MempoolManager, params *DeSoParams) *PosBlockProduc
 
 // CreateBlockTemplate constructs a block with Fee-Time ordered transactions.
 // TODO: how do we set the following Header fields?
-//	 - ProposerPublicKey
-//	 - ProposerVotingPublicKey
+//   - ProposerPublicKey
+//   - ProposerVotingPublicKey
 //   - ProposerRandomSeedHash
 //   - ProposedInView
 //   - ValidatorsVoteQC
 //   - ValidatorsTimeoutAggregateQC
 //   - ProposerVotePartialSignature
-//  Perhaps the caller of CreateBlockTemplate (server/consensus) will fill these out. The block is also unsigned.
+//     Perhaps the caller of CreateBlockTemplate (server/consensus) will fill these out. The block is also unsigned.
 func (pbp *PosBlockProducer) CreateBlockTemplate(chainTip *BlockNode, latestBlockView *UtxoView) (*MsgDeSoBlock, error) {
 	// Fill out some initial header info
 	block := NewMessage(MsgTypeBlock).(*MsgDeSoBlock)
