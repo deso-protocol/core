@@ -2,24 +2,20 @@ package lib
 
 import (
 	"github.com/deso-protocol/core/collections/bitset"
-	"github.com/dgraph-io/badger/v3"
 	"github.com/pkg/errors"
 	"math"
 )
 
 type PosBlockProducer struct {
-	mm *MempoolManager
+	mm       *MempoolManager
+	utxoView *UtxoView
 
-	db     *badger.DB
-	pg     *Postgres
 	params *DeSoParams
 }
 
-func NewPosBlockProducer(mm *MempoolManager, db *badger.DB, pg *Postgres, params *DeSoParams) *PosBlockProducer {
+func NewPosBlockProducer(mm *MempoolManager, params *DeSoParams) *PosBlockProducer {
 	return &PosBlockProducer{
 		mm:     mm,
-		db:     db,
-		pg:     pg,
 		params: params,
 	}
 }
@@ -34,7 +30,7 @@ func NewPosBlockProducer(mm *MempoolManager, db *badger.DB, pg *Postgres, params
 //   - ValidatorsTimeoutAggregateQC
 //   - ProposerVotePartialSignature
 //  Perhaps the caller of CreateBlockTemplate (server/consensus) will fill these out. The block is also unsigned.
-func (pbp *PosBlockProducer) CreateBlockTemplate(chainTip *BlockNode) (*MsgDeSoBlock, error) {
+func (pbp *PosBlockProducer) CreateBlockTemplate(chainTip *BlockNode, latestBlockView *UtxoView) (*MsgDeSoBlock, error) {
 	// Fill out some initial header info
 	block := NewMessage(MsgTypeBlock).(*MsgDeSoBlock)
 	block.Header.Version = HeaderVersion2
@@ -63,7 +59,7 @@ func (pbp *PosBlockProducer) CreateBlockTemplate(chainTip *BlockNode) (*MsgDeSoB
 
 	// 2. Get Fee-Time ordered transactions from the mempool and determine the pass/fail flags for each txn.
 	// TODO: We should also include per-transaction timestamps from the proposer.
-	feeTimeTxns, txnConnectStatusByIndex, maxUtilityFee, err := pbp.getBlockTransactions(chainTip,
+	feeTimeTxns, txnConnectStatusByIndex, maxUtilityFee, err := pbp.getBlockTransactions(chainTip, latestBlockView,
 		maxBlockContentsSizeBytes-uint64(len(blockRewardTxnSizeBytes)))
 	if err != nil {
 		return nil, errors.Wrapf(err, "Error getting block transactions: ")
@@ -88,17 +84,12 @@ func (pbp *PosBlockProducer) CreateBlockTemplate(chainTip *BlockNode) (*MsgDeSoB
 	return block, nil
 }
 
-func (pbp *PosBlockProducer) getBlockTransactions(chainTip *BlockNode, maxBlockSizeBytes uint64) (_txns []*MsgDeSoTxn,
-	_txnConnectStatusByIndex *bitset.Bitset, _maxUtilityFee uint64, _err error) {
+func (pbp *PosBlockProducer) getBlockTransactions(chainTip *BlockNode, latestBlockView *UtxoView, maxBlockSizeBytes uint64) (
+	_txns []*MsgDeSoTxn, _txnConnectStatusByIndex *bitset.Bitset, _maxUtilityFee uint64, _err error) {
 	// Get Fee-Time ordered transactions from the mempool
 	feeTimeTxns := pbp.mm.Mempool().GetTransactions()
 
-	// Create a blank UtxoView, and try to connect transactions one by one.
-	utxoView, err := NewUtxoView(pbp.db, pbp.params, pbp.pg, nil)
-	if err != nil {
-		return nil, nil, 0, err
-	}
-
+	// Try to connect transactions one by one.
 	blocksTxns := []*MsgDeSoTxn{}
 	txnConnectStatusByIndex := bitset.NewBitset()
 	maxUtilityFee := uint64(0)
@@ -113,7 +104,7 @@ func (pbp *PosBlockProducer) getBlockTransactions(chainTip *BlockNode, maxBlockS
 			continue
 		}
 
-		utxoViewCopy, err := utxoView.CopyUtxoView()
+		utxoViewCopy, err := latestBlockView.CopyUtxoView()
 		if err != nil {
 			return nil, nil, 0, errors.Wrapf(err, "Error copying UtxoView: ")
 		}
@@ -131,7 +122,7 @@ func (pbp *PosBlockProducer) getBlockTransactions(chainTip *BlockNode, maxBlockS
 			continue
 		}
 		// If the transaction didn't connect, we will try to add it as a failing transaction.
-		utxoViewCopy, err = utxoView.CopyUtxoView()
+		utxoViewCopy, err = latestBlockView.CopyUtxoView()
 		if err != nil {
 			return nil, nil, 0, errors.Wrapf(err, "Error copying UtxoView: ")
 		}
