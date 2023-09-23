@@ -8,6 +8,7 @@ import (
 	"reflect"
 	"sort"
 	"testing"
+	"time"
 
 	"github.com/btcsuite/btcd/btcec"
 	"github.com/decred/dcrd/lru"
@@ -80,6 +81,8 @@ func setBalanceModelBlockHeights(t *testing.T) {
 	DeSoTestnetParams.EncoderMigrationHeightsList = GetEncoderMigrationHeightsList(&DeSoTestnetParams.ForkHeights)
 	GlobalDeSoParams = DeSoTestnetParams
 
+	time.Sleep(10 * time.Millisecond)
+
 	t.Cleanup(resetBalanceModelBlockHeights)
 	glog.Info("setBalanceModelBlockHeights: Successfully set balance model block heights to 0")
 }
@@ -96,6 +99,9 @@ func resetBalanceModelBlockHeights() {
 	DeSoTestnetParams.EncoderMigrationHeights = GetEncoderMigrationHeights(&DeSoTestnetParams.ForkHeights)
 	DeSoTestnetParams.EncoderMigrationHeightsList = GetEncoderMigrationHeightsList(&DeSoTestnetParams.ForkHeights)
 	GlobalDeSoParams = DeSoTestnetParams
+
+	time.Sleep(10 * time.Millisecond)
+
 	glog.Info("resetBalanceModelBlockHeights: Successfully reset balance model block heights")
 }
 
