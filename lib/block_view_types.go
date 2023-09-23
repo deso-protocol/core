@@ -114,9 +114,11 @@ const (
 	EncoderTypeStakeEntry                        EncoderType = 41
 	EncoderTypeLockedStakeEntry                  EncoderType = 42
 	EncoderTypeEpochEntry                        EncoderType = 43
+	EncoderTypeLockedBalanceEntry                EncoderType = 44
+	EncoderTypeLockupYieldCurvePoint             EncoderType = 45
 
 	// EncoderTypeEndBlockView encoder type should be at the end and is used for automated tests.
-	EncoderTypeEndBlockView EncoderType = 44
+	EncoderTypeEndBlockView EncoderType = 46
 )
 
 // Txindex encoder types.
@@ -254,6 +256,10 @@ func (encoderType EncoderType) New() DeSoEncoder {
 		return &LockedStakeEntry{}
 	case EncoderTypeEpochEntry:
 		return &EpochEntry{}
+	case EncoderTypeLockedBalanceEntry:
+		return &LockedBalanceEntry{}
+	case EncoderTypeLockupYieldCurvePoint:
+		return &LockupYieldCurvePoint{}
 	}
 
 	// Txindex encoder types
@@ -629,8 +635,12 @@ const (
 	OperationTypeUnstake                      OperationType = 42
 	OperationTypeUnlockStake                  OperationType = 43
 	OperationTypeUnjailValidator              OperationType = 44
+	OperationTypeCoinLockup                   OperationType = 45
+	OperationTypeCoinLockupTransfer           OperationType = 46
+	OperationTypeCoinUnlock                   OperationType = 47
+	OperationTypeUpdateCoinLockupParams       OperationType = 48
 
-	// NEXT_TAG = 45
+	// NEXT_TAG = 49
 )
 
 func (op OperationType) String() string {
@@ -723,6 +733,14 @@ func (op OperationType) String() string {
 		return "OperationTypeUnlockStake"
 	case OperationTypeUnjailValidator:
 		return "OperationTypeUnjailValidator"
+	case OperationTypeCoinLockup:
+		return "OperationTypeCoinLockup"
+	case OperationTypeUpdateCoinLockupParams:
+		return "OperationTypeUpdateCoinLockupParams"
+	case OperationTypeCoinLockupTransfer:
+		return "OperationTypeCoinLockupTransfer"
+	case OperationTypeCoinUnlock:
+		return "OperationTypeCoinUnlock"
 	}
 	return "OperationTypeUNKNOWN"
 }
@@ -919,6 +937,28 @@ type UtxoOperation struct {
 	// PrevLockedStakeEntries is a slice of LockedStakeEntries
 	// prior to a unstake or unlock stake txn.
 	PrevLockedStakeEntries []*LockedStakeEntry
+
+	//
+	// Coin Lockup fields
+	//
+
+	// PrevLockedBalanceEntry is the previous LockedBalanceEntry prior
+	// to a DAO coin lockup.
+	PrevLockedBalanceEntry *LockedBalanceEntry
+
+	// PrevSenderLockedBalanceEntry and PrevReceiverLockedBalanceEntry are the previous LockedBalanceEntry
+	// for both the sender and receiver in the coin lockup transfer operation.
+	PrevSenderLockedBalanceEntry   *LockedBalanceEntry
+	PrevReceiverLockedBalanceEntry *LockedBalanceEntry
+
+	// PrevLockedBalanceEntries is a slice of LockedBalanceEntry prior to a coin unlock.
+	PrevLockedBalanceEntries []*LockedBalanceEntry
+
+	// PrevLockupYieldCurvePoint and PrevLockupTransferRestriction are
+	// the previous yield curve and transfer restrictions associated
+	// with an UpdateCoinLockupParams transaction.
+	PrevLockupYieldCurvePoint     *LockupYieldCurvePoint
+	PrevLockupTransferRestriction TransferRestrictionStatus
 }
 
 func (op *UtxoOperation) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte {
@@ -1245,6 +1285,26 @@ func (op *UtxoOperation) RawEncodeWithoutMetadata(blockHeight uint64, skipMetada
 
 		// PrevLockedStakeEntries
 		data = append(data, EncodeDeSoEncoderSlice(op.PrevLockedStakeEntries, blockHeight, skipMetadata...)...)
+
+		// Lockup Fields
+
+		// PrevLockedBalanceEntry
+		data = append(data, EncodeToBytes(blockHeight, op.PrevLockedBalanceEntry, skipMetadata...)...)
+
+		// PrevLockupYieldCurvePoint, PrevLockupTransferRestrictions
+		data = append(data, EncodeToBytes(blockHeight, op.PrevLockupYieldCurvePoint, skipMetadata...)...)
+		data = append(data, byte(op.PrevLockupTransferRestriction))
+
+		// PrevSenderLockedBalanceEntry, PrevReceiverLockedBalanceEntry
+		data = append(data, EncodeToBytes(blockHeight, op.PrevSenderLockedBalanceEntry, skipMetadata...)...)
+		data = append(data, EncodeToBytes(blockHeight, op.PrevReceiverLockedBalanceEntry, skipMetadata...)...)
+
+		// PrevTransactorBalanceEntry, PrevLockedBalanceEntries
+		data = append(data, EncodeToBytes(blockHeight, op.PrevTransactorBalanceEntry, skipMetadata...)...)
+		data = append(data, UintToBuf(uint64(len(op.PrevLockedBalanceEntries)))...)
+		for _, entry := range op.PrevLockedBalanceEntries {
+			data = append(data, EncodeToBytes(blockHeight, entry, skipMetadata...)...)
+		}
 	}
 
 	return data
@@ -1876,6 +1936,48 @@ func (op *UtxoOperation) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.
 		// PrevLockedStakeEntries
 		if op.PrevLockedStakeEntries, err = DecodeDeSoEncoderSlice[*LockedStakeEntry](rr); err != nil {
 			return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading PrevLockedStakeEntries: ")
+		}
+
+		// Lockup Fields
+
+		// PrevLockedBalanceEntry
+		if op.PrevLockedBalanceEntry, err = DecodeDeSoEncoder(&LockedBalanceEntry{}, rr); err != nil {
+			return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading PrevLockedBalanceEntry")
+		}
+
+		// PrevLockupYieldCurvePoint, PrevLockupTransferRestriction
+		if op.PrevLockupYieldCurvePoint, err = DecodeDeSoEncoder(&LockupYieldCurvePoint{}, rr); err != nil {
+			return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading PrevLockupYieldCurvePoint")
+		}
+		lockupTransferRestriction, err := rr.ReadByte()
+		if err != nil {
+			return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading PrevLockupTransferRestriction")
+		}
+		op.PrevLockupTransferRestriction = TransferRestrictionStatus(lockupTransferRestriction)
+
+		// PrevSenderLockedBalanceEntry, PrevReceiverLockedBalanceEntry
+		if op.PrevSenderLockedBalanceEntry, err = DecodeDeSoEncoder(&LockedBalanceEntry{}, rr); err != nil {
+			return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading PrevSenderLockedBalanceEntry")
+		}
+		if op.PrevReceiverLockedBalanceEntry, err = DecodeDeSoEncoder(&LockedBalanceEntry{}, rr); err != nil {
+			return errors.Wrapf(err, "UtxoOperation.Decode: Problem Reading PrevReceiverLockedBalanceEntry")
+		}
+
+		// PrevTransactorBalanceEntry, PrevLockedBalanceEntries
+		if op.PrevTransactorBalanceEntry, err = DecodeDeSoEncoder(&BalanceEntry{}, rr); err != nil {
+			return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading PrevTransactorBalanceEntry")
+		}
+		var numPrevLockedBalanceEntries uint64
+		numPrevLockedBalanceEntries, err = ReadUvarint(rr)
+		if err != nil {
+			return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading numPrevLockedBalanceEntries")
+		}
+		for ; numPrevLockedBalanceEntries > 0; numPrevLockedBalanceEntries-- {
+			prevLockedBalanceEntry := &LockedBalanceEntry{}
+			if _, err = DecodeFromBytes(prevLockedBalanceEntry, rr); err != nil {
+				return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading prevLockedBalanceEntry")
+			}
+			op.PrevLockedBalanceEntries = append(op.PrevLockedBalanceEntries, prevLockedBalanceEntry)
 		}
 	}
 
@@ -4417,17 +4519,23 @@ type CoinEntry struct {
 	MintingDisabled bool
 
 	TransferRestrictionStatus TransferRestrictionStatus
+
+	// ===== ENCODER MIGRATION ProofOfStake1StateSetupMigration =====
+	// LockupTransferRestrictionStatus specifies transfer restrictions
+	// for only those DAO coins actively locked up.
+	LockupTransferRestrictionStatus TransferRestrictionStatus
 }
 
 func (ce *CoinEntry) Copy() *CoinEntry {
 	return &CoinEntry{
-		CreatorBasisPoints:        ce.CreatorBasisPoints,
-		DeSoLockedNanos:           ce.DeSoLockedNanos,
-		NumberOfHolders:           ce.NumberOfHolders,
-		CoinsInCirculationNanos:   *uint256.NewInt().Set(&ce.CoinsInCirculationNanos),
-		CoinWatermarkNanos:        ce.CoinWatermarkNanos,
-		MintingDisabled:           ce.MintingDisabled,
-		TransferRestrictionStatus: ce.TransferRestrictionStatus,
+		CreatorBasisPoints:              ce.CreatorBasisPoints,
+		DeSoLockedNanos:                 ce.DeSoLockedNanos,
+		NumberOfHolders:                 ce.NumberOfHolders,
+		CoinsInCirculationNanos:         *uint256.NewInt().Set(&ce.CoinsInCirculationNanos),
+		CoinWatermarkNanos:              ce.CoinWatermarkNanos,
+		MintingDisabled:                 ce.MintingDisabled,
+		TransferRestrictionStatus:       ce.TransferRestrictionStatus,
+		LockupTransferRestrictionStatus: ce.LockupTransferRestrictionStatus,
 	}
 }
 
@@ -4442,6 +4550,10 @@ func (ce *CoinEntry) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata .
 	data = append(data, UintToBuf(ce.CoinWatermarkNanos)...)
 	data = append(data, BoolToByte(ce.MintingDisabled))
 	data = append(data, byte(ce.TransferRestrictionStatus))
+
+	if MigrationTriggered(blockHeight, ProofOfStake1StateSetupMigration) {
+		data = append(data, byte(ce.LockupTransferRestrictionStatus))
+	}
 
 	return data
 }
@@ -4484,11 +4596,22 @@ func (ce *CoinEntry) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.Read
 	}
 	ce.TransferRestrictionStatus = TransferRestrictionStatus(statusByte)
 
+	if MigrationTriggered(blockHeight, ProofOfStake1StateSetupMigration) {
+		lockedStatusByte, err := rr.ReadByte()
+		if err != nil {
+			return errors.Wrapf(err, "CoinEntry.Decode: Problem reading LockupTransferRestrictionStatus")
+		}
+		ce.LockupTransferRestrictionStatus = TransferRestrictionStatus(lockedStatusByte)
+	}
+
 	return nil
 }
 
 func (ce *CoinEntry) GetVersionByte(blockHeight uint64) byte {
-	return 0
+	return GetMigrationVersion(
+		blockHeight,
+		ProofOfStake1StateSetupMigration,
+	)
 }
 
 func (ce *CoinEntry) GetEncoderType() EncoderType {

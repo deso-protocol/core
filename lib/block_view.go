@@ -124,6 +124,12 @@ type UtxoView struct {
 	// Locked stake mappings
 	LockedStakeMapKeyToLockedStakeEntry map[LockedStakeMapKey]*LockedStakeEntry
 
+	// Locked DAO coin balance entry mapping.
+	LockedBalanceEntryKeyToLockedBalanceEntry map[LockedBalanceEntryKey]*LockedBalanceEntry
+
+	// Lockup yield curve points.
+	PKIDToLockupYieldCurvePointKeyToLockupYieldCurvePoints map[PKID]map[LockupYieldCurvePointKey]*LockupYieldCurvePoint
+
 	// Current EpochEntry
 	CurrentEpochEntry *EpochEntry
 
@@ -241,6 +247,12 @@ func (bav *UtxoView) _ResetViewMappingsAfterFlush() {
 
 	// Transaction nonce map
 	bav.TransactorNonceMapKeyToTransactorNonceEntry = make(map[TransactorNonceMapKey]*TransactorNonceEntry)
+
+	// Locked Balance Entries Map
+	bav.LockedBalanceEntryKeyToLockedBalanceEntry = make(map[LockedBalanceEntryKey]*LockedBalanceEntry)
+
+	// Lockup Yield Curve Points Map
+	bav.PKIDToLockupYieldCurvePointKeyToLockupYieldCurvePoints = make(map[PKID]map[LockupYieldCurvePointKey]*LockupYieldCurvePoint)
 
 	// ValidatorEntries
 	bav.ValidatorPKIDToValidatorEntry = make(map[PKID]*ValidatorEntry)
@@ -518,6 +530,29 @@ func (bav *UtxoView) CopyUtxoView() (*UtxoView, error) {
 	for entryKey, entry := range bav.TransactorNonceMapKeyToTransactorNonceEntry {
 		newEntry := *entry
 		newView.TransactorNonceMapKeyToTransactorNonceEntry[entryKey] = &newEntry
+	}
+
+	// Copy the LockedBalanceEntries
+	newView.LockedBalanceEntryKeyToLockedBalanceEntry = make(map[LockedBalanceEntryKey]*LockedBalanceEntry,
+		len(bav.LockedBalanceEntryKeyToLockedBalanceEntry))
+	for entryKey, entry := range bav.LockedBalanceEntryKeyToLockedBalanceEntry {
+		newEntry := *entry
+		newView.LockedBalanceEntryKeyToLockedBalanceEntry[entryKey] = &newEntry
+	}
+
+	// Copy the LockupYieldCurvePoints
+	newView.PKIDToLockupYieldCurvePointKeyToLockupYieldCurvePoints =
+		make(map[PKID]map[LockupYieldCurvePointKey]*LockupYieldCurvePoint, len(bav.PKIDToLockupYieldCurvePointKeyToLockupYieldCurvePoints))
+	for pkid, lockupYieldCurvePointMap := range bav.PKIDToLockupYieldCurvePointKeyToLockupYieldCurvePoints {
+		// Copy the map for the given PKID
+		newView.PKIDToLockupYieldCurvePointKeyToLockupYieldCurvePoints[pkid] =
+			make(map[LockupYieldCurvePointKey]*LockupYieldCurvePoint, len(lockupYieldCurvePointMap))
+
+		// Go through all LockupYieldCurvePoints in the LockupYieldCurvePoint map.
+		for entryKey, entry := range lockupYieldCurvePointMap {
+			newLockupYieldCurvePoint := *entry
+			newView.PKIDToLockupYieldCurvePointKeyToLockupYieldCurvePoints[pkid][entryKey] = &newLockupYieldCurvePoint
+		}
 	}
 
 	// Copy the ValidatorEntries
@@ -1439,6 +1474,18 @@ func (bav *UtxoView) DisconnectTransaction(currentTxn *MsgDeSoTxn, txnHash *Bloc
 	case TxnTypeUnjailValidator:
 		return bav._disconnectUnjailValidator(
 			OperationTypeUnjailValidator, currentTxn, txnHash, utxoOpsForTxn, blockHeight)
+
+	case TxnTypeCoinLockup:
+		return bav._disconnectCoinLockup(OperationTypeCoinLockup, currentTxn, txnHash, utxoOpsForTxn, blockHeight)
+	case TxnTypeUpdateCoinLockupParams:
+		return bav._disconnectUpdateCoinLockupParams(
+			OperationTypeUpdateCoinLockupParams, currentTxn, txnHash, utxoOpsForTxn, blockHeight)
+	case TxnTypeCoinLockupTransfer:
+		return bav._disconnectCoinLockupTransfer(
+			OperationTypeCoinLockupTransfer, currentTxn, txnHash, utxoOpsForTxn, blockHeight)
+	case TxnTypeCoinUnlock:
+		return bav._disconnectCoinUnlock(OperationTypeCoinUnlock, currentTxn, txnHash, utxoOpsForTxn, blockHeight)
+
 	}
 
 	return fmt.Errorf("DisconnectBlock: Unimplemented txn type %v", currentTxn.TxnMeta.GetTxnType().String())
@@ -3442,6 +3489,17 @@ func (bav *UtxoView) _connectTransaction(txn *MsgDeSoTxn, txHash *BlockHash,
 
 	case TxnTypeUnjailValidator:
 		totalInput, totalOutput, utxoOpsForTxn, err = bav._connectUnjailValidator(txn, txHash, blockHeight, verifySignatures)
+
+	case TxnTypeCoinLockup:
+		// TODO: Once merged, update blockTimestamp parameter
+		totalInput, totalOutput, utxoOpsForTxn, err = bav._connectCoinLockup(txn, txHash, blockHeight, 0, verifySignatures)
+	case TxnTypeUpdateCoinLockupParams:
+		totalInput, totalOutput, utxoOpsForTxn, err = bav._connectUpdateCoinLockupParams(txn, txHash, blockHeight, verifySignatures)
+	case TxnTypeCoinLockupTransfer:
+		totalInput, totalOutput, utxoOpsForTxn, err = bav._connectCoinLockupTransfer(txn, txHash, blockHeight, verifySignatures)
+	case TxnTypeCoinUnlock:
+		// TODO: Once merged, update blockTimestamp parameter
+		totalInput, totalOutput, utxoOpsForTxn, err = bav._connectCoinUnlock(txn, txHash, blockHeight, 0, verifySignatures)
 
 	default:
 		err = fmt.Errorf("ConnectTransaction: Unimplemented txn type %v", txn.TxnMeta.GetTxnType().String())
