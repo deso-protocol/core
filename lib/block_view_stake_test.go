@@ -14,6 +14,9 @@ import (
 )
 
 func TestStaking(t *testing.T) {
+	// Initialize balance model fork heights.
+	setBalanceModelBlockHeights(t)
+
 	_testStaking(t, false)
 	_testStaking(t, true)
 }
@@ -21,9 +24,6 @@ func TestStaking(t *testing.T) {
 func _testStaking(t *testing.T, flushToDB bool) {
 	// Local variables
 	var err error
-
-	// Initialize balance model fork heights.
-	setBalanceModelBlockHeights(t)
 
 	// Initialize test chain and miner.
 	chain, params, db := NewLowDifficultyBlockchain(t)
@@ -1670,14 +1670,14 @@ func TestStakingWithDerivedKey(t *testing.T) {
 }
 
 func TestGetTopStakesByStakeAmount(t *testing.T) {
+	// Initialize balance model fork heights.
+	setBalanceModelBlockHeights(t)
+
 	_testGetTopStakesByStakeAmount(t, false)
 	_testGetTopStakesByStakeAmount(t, true)
 }
 
 func _testGetTopStakesByStakeAmount(t *testing.T, flushToDB bool) {
-	// Initialize balance model fork heights.
-	setBalanceModelBlockHeights(t)
-
 	// Initialize test chain and miner.
 	chain, params, db := NewLowDifficultyBlockchain(t)
 	mempool, miner := NewTestMiner(t, chain, params, true)
@@ -2107,15 +2107,15 @@ func TestStakeLockupEpochDuration(t *testing.T) {
 }
 
 func TestStakingToJailedValidator(t *testing.T) {
+	// Initialize balance model fork heights.
+	setBalanceModelBlockHeights(t)
+
 	testStakingToJailedValidator(t, false)
 	testStakingToJailedValidator(t, true)
 }
 
 func testStakingToJailedValidator(t *testing.T, flushToDB bool) {
 	var err error
-
-	// Initialize balance model fork heights.
-	setBalanceModelBlockHeights(t)
 
 	// Initialize test chain and miner.
 	chain, params, db := NewLowDifficultyBlockchain(t)

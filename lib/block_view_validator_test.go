@@ -15,6 +15,9 @@ import (
 )
 
 func TestValidatorRegistration(t *testing.T) {
+	// Initialize balance model fork heights.
+	setBalanceModelBlockHeights(t)
+
 	_testValidatorRegistration(t, false)
 	_testValidatorRegistration(t, true)
 }
@@ -25,9 +28,6 @@ func _testValidatorRegistration(t *testing.T, flushToDB bool) {
 	var validatorEntry *ValidatorEntry
 	var validatorEntries []*ValidatorEntry
 	var err error
-
-	// Initialize balance model fork heights.
-	setBalanceModelBlockHeights(t)
 
 	// Initialize test chain and miner.
 	chain, params, db := NewLowDifficultyBlockchain(t)
@@ -676,6 +676,9 @@ func TestValidatorRegistrationWithDerivedKey(t *testing.T) {
 }
 
 func TestGetTopActiveValidatorsByStakeAmount(t *testing.T) {
+	// Initialize balance model fork heights.
+	setBalanceModelBlockHeights(t)
+
 	_testGetTopActiveValidatorsByStakeAmount(t, false)
 	_testGetTopActiveValidatorsByStakeAmount(t, true)
 }
@@ -683,9 +686,6 @@ func TestGetTopActiveValidatorsByStakeAmount(t *testing.T) {
 func _testGetTopActiveValidatorsByStakeAmount(t *testing.T, flushToDB bool) {
 	var validatorEntries []*ValidatorEntry
 	var err error
-
-	// Initialize balance model fork heights.
-	setBalanceModelBlockHeights(t)
 
 	// Initialize test chain and miner.
 	chain, params, db := NewLowDifficultyBlockchain(t)
@@ -1107,6 +1107,9 @@ func TestGetTopActiveValidatorsByStakeMergingDbAndUtxoView(t *testing.T) {
 }
 
 func TestUpdatingValidatorDisableDelegatedStake(t *testing.T) {
+	// Initialize balance model fork heights.
+	setBalanceModelBlockHeights(t)
+
 	_testUpdatingValidatorDisableDelegatedStake(t, false)
 	_testUpdatingValidatorDisableDelegatedStake(t, true)
 }
@@ -1115,9 +1118,6 @@ func _testUpdatingValidatorDisableDelegatedStake(t *testing.T, flushToDB bool) {
 	var validatorEntry *ValidatorEntry
 	var stakeEntries []*StakeEntry
 	var err error
-
-	// Initialize balance model fork heights.
-	setBalanceModelBlockHeights(t)
 
 	// Initialize test chain and miner.
 	chain, params, db := NewLowDifficultyBlockchain(t)
@@ -1288,6 +1288,9 @@ func _testUpdatingValidatorDisableDelegatedStake(t *testing.T, flushToDB bool) {
 }
 
 func TestUnregisterAsValidator(t *testing.T) {
+	// Initialize balance model fork heights.
+	setBalanceModelBlockHeights(t)
+
 	_testUnregisterAsValidator(t, false)
 	_testUnregisterAsValidator(t, true)
 }
@@ -1298,9 +1301,6 @@ func _testUnregisterAsValidator(t *testing.T, flushToDB bool) {
 	var lockedStakeEntry *LockedStakeEntry
 	_ = lockedStakeEntry
 	var err error
-
-	// Initialize balance model fork heights.
-	setBalanceModelBlockHeights(t)
 
 	// Initialize test chain and miner.
 	chain, params, db := NewLowDifficultyBlockchain(t)
@@ -1465,6 +1465,9 @@ func _testUnregisterAsValidator(t *testing.T, flushToDB bool) {
 }
 
 func TestUnjailValidator(t *testing.T) {
+	// Initialize balance model fork heights.
+	setBalanceModelBlockHeights(t)
+
 	_testUnjailValidator(t, false)
 	_testUnjailValidator(t, true)
 }
@@ -1472,9 +1475,6 @@ func TestUnjailValidator(t *testing.T) {
 func _testUnjailValidator(t *testing.T, flushToDB bool) {
 	var validatorEntry *ValidatorEntry
 	var err error
-
-	// Initialize balance model fork heights.
-	setBalanceModelBlockHeights(t)
 
 	// Initialize test chain and miner.
 	chain, params, db := NewLowDifficultyBlockchain(t)

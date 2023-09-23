@@ -4,6 +4,11 @@ import (
 	"bytes"
 	"encoding/hex"
 	"fmt"
+	_ "net/http/pprof"
+	"reflect"
+	"sort"
+	"testing"
+
 	"github.com/btcsuite/btcd/btcec"
 	"github.com/decred/dcrd/lru"
 	"github.com/dgraph-io/badger/v3"
@@ -11,10 +16,6 @@ import (
 	"github.com/golang/glog"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	_ "net/http/pprof"
-	"reflect"
-	"sort"
-	"testing"
 )
 
 func _strToPk(t *testing.T, pkStr string) []byte {
@@ -82,13 +83,13 @@ func setBalanceModelBlockHeights(t *testing.T) {
 }
 
 func resetBalanceModelBlockHeights() {
-	DeSoTestnetParams.ForkHeights.NFTTransferOrBurnAndDerivedKeysBlockHeight = 1000000
-	DeSoTestnetParams.ForkHeights.DerivedKeySetSpendingLimitsBlockHeight = 1000000
-	DeSoTestnetParams.ForkHeights.DerivedKeyTrackSpendingLimitsBlockHeight = 1000000
-	DeSoTestnetParams.ForkHeights.DerivedKeyEthSignatureCompatibilityBlockHeight = 1000000
-	DeSoTestnetParams.ForkHeights.ExtraDataOnEntriesBlockHeight = 1000000
-	DeSoTestnetParams.ForkHeights.AssociationsAndAccessGroupsBlockHeight = 1000000
-	DeSoTestnetParams.ForkHeights.BalanceModelBlockHeight = 1000000
+	DeSoTestnetParams.ForkHeights.NFTTransferOrBurnAndDerivedKeysBlockHeight = uint32(60743)
+	DeSoTestnetParams.ForkHeights.DerivedKeySetSpendingLimitsBlockHeight = uint32(304087)
+	DeSoTestnetParams.ForkHeights.DerivedKeyTrackSpendingLimitsBlockHeight = uint32(304087 + 18*60)
+	DeSoTestnetParams.ForkHeights.DerivedKeyEthSignatureCompatibilityBlockHeight = uint32(360584)
+	DeSoTestnetParams.ForkHeights.ExtraDataOnEntriesBlockHeight = uint32(304087)
+	DeSoTestnetParams.ForkHeights.AssociationsAndAccessGroupsBlockHeight = uint32(596555)
+	DeSoTestnetParams.ForkHeights.BalanceModelBlockHeight = uint32(683058)
 	DeSoTestnetParams.EncoderMigrationHeights = GetEncoderMigrationHeights(&DeSoTestnetParams.ForkHeights)
 	DeSoTestnetParams.EncoderMigrationHeightsList = GetEncoderMigrationHeightsList(&DeSoTestnetParams.ForkHeights)
 	GlobalDeSoParams = DeSoTestnetParams
@@ -303,16 +304,16 @@ func (tes *transactionTestSuite) Run() {
 	}
 }
 
-const TestDeSoEncoderRetries = 3
+const testDeSoEncoderRetries = 3
 
-func TestDeSoEncoderSetup(t *testing.T) {
+func setupTestDeSoEncoder(t *testing.T) {
 	EncodeToBytesImpl = func(blockHeight uint64, encoder DeSoEncoder, skipMetadata ...bool) []byte {
 		versionByte := encoder.GetVersionByte(blockHeight)
 		encodingBytes := encodeToBytes(blockHeight, encoder, skipMetadata...)
 		// Check for deterministic encoding, try re-encoding the same encoder a couple of times and compare it with
 		// the original bytes.
 		{
-			for ii := 0; ii < TestDeSoEncoderRetries; ii++ {
+			for ii := 0; ii < testDeSoEncoderRetries; ii++ {
 				newVersionByte := encoder.GetVersionByte(blockHeight)
 				reEncodingBytes := encodeToBytes(blockHeight, encoder, skipMetadata...)
 				if !bytes.Equal(encodingBytes, reEncodingBytes) {
@@ -329,7 +330,7 @@ func TestDeSoEncoderSetup(t *testing.T) {
 	}
 }
 
-func TestDeSoEncoderShutdown(t *testing.T) {
+func resetTestDeSoEncoder(t *testing.T) {
 	EncodeToBytesImpl = encodeToBytes
 }
 
