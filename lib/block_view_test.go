@@ -68,6 +68,7 @@ var (
 )
 
 func setBalanceModelBlockHeights(t *testing.T) {
+	glog.Info("setBalanceModelBlockHeights: Setting balance model block heights to 0")
 	DeSoTestnetParams.ForkHeights.NFTTransferOrBurnAndDerivedKeysBlockHeight = 0
 	DeSoTestnetParams.ForkHeights.DerivedKeySetSpendingLimitsBlockHeight = 0
 	DeSoTestnetParams.ForkHeights.DerivedKeyTrackSpendingLimitsBlockHeight = 0
@@ -80,9 +81,11 @@ func setBalanceModelBlockHeights(t *testing.T) {
 	GlobalDeSoParams = DeSoTestnetParams
 
 	t.Cleanup(resetBalanceModelBlockHeights)
+	glog.Info("setBalanceModelBlockHeights: Successfully set balance model block heights to 0")
 }
 
 func resetBalanceModelBlockHeights() {
+	glog.Info("resetBalanceModelBlockHeights: Resetting balance model block heights")
 	DeSoTestnetParams.ForkHeights.NFTTransferOrBurnAndDerivedKeysBlockHeight = uint32(60743)
 	DeSoTestnetParams.ForkHeights.DerivedKeySetSpendingLimitsBlockHeight = uint32(304087)
 	DeSoTestnetParams.ForkHeights.DerivedKeyTrackSpendingLimitsBlockHeight = uint32(304087 + 18*60)
@@ -93,6 +96,7 @@ func resetBalanceModelBlockHeights() {
 	DeSoTestnetParams.EncoderMigrationHeights = GetEncoderMigrationHeights(&DeSoTestnetParams.ForkHeights)
 	DeSoTestnetParams.EncoderMigrationHeightsList = GetEncoderMigrationHeightsList(&DeSoTestnetParams.ForkHeights)
 	GlobalDeSoParams = DeSoTestnetParams
+	glog.Info("resetBalanceModelBlockHeights: Successfully reset balance model block heights")
 }
 
 func GetConditionalBalanceFunc(chain *Blockchain, params *DeSoParams) func(uint64, uint64) uint64 {
