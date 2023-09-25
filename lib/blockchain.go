@@ -75,6 +75,13 @@ const (
 	StatusBitcoinHeaderValidateFailed // Deprecated
 )
 
+type CommittedBlockStatus uint8
+
+const (
+	COMMITTED   CommittedBlockStatus = 0
+	UNCOMMITTED CommittedBlockStatus = 1
+)
+
 // IsFullyProcessed determines if the BlockStatus corresponds to a fully processed and stored block.
 func (blockStatus BlockStatus) IsFullyProcessed() bool {
 	return blockStatus&StatusHeaderValidated != 0 &&
@@ -149,6 +156,16 @@ type BlockNode struct {
 	// Status holds the validation state for the block and whether or not
 	// it's stored in the database.
 	Status BlockStatus
+
+	// CommittedStatus is either COMMITTED or UNCOMMITTED. If it's UNCOMMITTED, then
+	// the block is not yet committed to the blockchain. If it's COMMITTED, then the
+	// block is committed to the blockchain.
+	// In PoW consensus, all blocks will have CommittedStatus = COMMITTED.
+	// In PoS consensus, the chain tip and its parent will have CommittedStatus = UNCOMMITTED and
+	// all other blocks will have CommittedStatus = COMMITTED. When a new block is added to the tip,
+	// its CommittedStatus will be set to UNCOMMITTED and its grandparent's CommittedStatus will be
+	// updated to COMMITTED.
+	CommittedStatus CommittedBlockStatus
 }
 
 func _difficultyBitsToHash(diffBits uint32) (_diffHash *BlockHash) {
@@ -281,12 +298,15 @@ func (nn *BlockNode) String() string {
 	if nn.Header != nil {
 		tstamp = uint32(nn.Header.GetTstampSecs())
 	}
-	return fmt.Sprintf("< TstampSecs: %d, Height: %d, Hash: %s, ParentHash %s, Status: %s, CumWork: %v>",
-		tstamp, nn.Header.Height, nn.Hash, parentHash, nn.Status, nn.CumWork)
+	return fmt.Sprintf("< TstampSecs: %d, Height: %d, Hash: %s, ParentHash %s, Status: %s, CumWork: %v, CommittedStatus: %v>",
+		tstamp, nn.Header.Height, nn.Hash, parentHash, nn.Status, nn.CumWork, nn.CommittedStatus)
 }
 
+// NewPoWBlockNode is a helper function to create a BlockNode
+// when running PoW consensus. All blocks in the PoW consensus
+// have a committed status of COMMITTED.
 // TODO: Height not needed in this since it's in the header.
-func NewBlockNode(
+func NewPoWBlockNode(
 	parent *BlockNode,
 	hash *BlockHash,
 	height uint32,
@@ -303,6 +323,28 @@ func NewBlockNode(
 		CumWork:          cumWork,
 		Header:           header,
 		Status:           status,
+		// All blocks have a committed status in PoW.
+		CommittedStatus: COMMITTED,
+	}
+}
+
+// NewPoSBlockNode is a new helper function to create a block node
+// as we need to control the value of the CommittedStatus field.
+func NewPoSBlockNode(
+	parent *BlockNode,
+	hash *BlockHash,
+	height uint32,
+	header *MsgDeSoHeader,
+	status BlockStatus,
+	committedStatus CommittedBlockStatus) *BlockNode {
+
+	return &BlockNode{
+		Parent:          parent,
+		Hash:            hash,
+		Height:          height,
+		Header:          header,
+		Status:          status,
+		CommittedStatus: committedStatus,
 	}
 }
 
@@ -1724,7 +1766,7 @@ func (bc *Blockchain) processHeaderPoW(blockHeader *MsgDeSoHeader, headerHash *B
 	// and try to mine on top of it before revealing it to everyone.
 	newWork := BytesToBigint(ExpectedWorkForBlockHash(diffTarget)[:])
 	cumWork := newWork.Add(newWork, parentNode.CumWork)
-	newNode := NewBlockNode(
+	newNode := NewPoWBlockNode(
 		parentNode,
 		headerHash,
 		uint32(blockHeader.Height),
