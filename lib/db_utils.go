@@ -4670,7 +4670,7 @@ func DeleteUtxoOperationsForBlockWithTxn(txn *badger.Txn, snap *Snapshot, blockH
 	return DBDeleteWithTxn(txn, snap, _DbKeyForUtxoOps(blockHash))
 }
 
-func blockNodeProofOfStakeMigrationTriggered(height uint32) bool {
+func blockNodeProofOfStakeCutoverMigrationTriggered(height uint32) bool {
 	return height >= GlobalDeSoParams.ForkHeights.ProofOfStake2ConsensusCutoverBlockHeight
 }
 
@@ -4682,7 +4682,7 @@ func SerializeBlockNode(blockNode *BlockNode) ([]byte, error) {
 	}
 	data = append(data, blockNode.Hash[:]...)
 	data = append(data, UintToBuf(uint64(blockNode.Height))...)
-	if !blockNodeProofOfStakeMigrationTriggered(blockNode.Height) {
+	if !blockNodeProofOfStakeCutoverMigrationTriggered(blockNode.Height) {
 		// DifficultyTarget
 		if blockNode.DifficultyTarget == nil {
 			return nil, fmt.Errorf("SerializeBlockNode: DifficultyTarget cannot be nil")
@@ -4700,7 +4700,7 @@ func SerializeBlockNode(blockNode *BlockNode) ([]byte, error) {
 	data = append(data, serializedHeader...)
 
 	data = append(data, UintToBuf(uint64(blockNode.Status))...)
-	if blockNodeProofOfStakeMigrationTriggered(blockNode.Height) {
+	if blockNodeProofOfStakeCutoverMigrationTriggered(blockNode.Height) {
 		data = append(data, UintToBuf(uint64(blockNode.CommittedStatus))...)
 	}
 	return data, nil
@@ -4732,7 +4732,7 @@ func DeserializeBlockNode(data []byte) (*BlockNode, error) {
 	}
 	blockNode.Height = uint32(height)
 
-	if !blockNodeProofOfStakeMigrationTriggered(blockNode.Height) {
+	if !blockNodeProofOfStakeCutoverMigrationTriggered(blockNode.Height) {
 		// DifficultyTarget
 		_, err = io.ReadFull(rr, blockNode.DifficultyTarget[:])
 		if err != nil {
@@ -4775,7 +4775,7 @@ func DeserializeBlockNode(data []byte) (*BlockNode, error) {
 	blockNode.Status = BlockStatus(uint32(status))
 
 	// CommittedStatus
-	if blockNodeProofOfStakeMigrationTriggered(blockNode.Height) {
+	if blockNodeProofOfStakeCutoverMigrationTriggered(blockNode.Height) {
 		committedStatus, err := ReadUvarint(rr)
 		if err != nil {
 			return nil, errors.Wrapf(err, "DeserializeBlockNode: Problem decoding CommittedStatus")
