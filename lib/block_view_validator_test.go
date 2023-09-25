@@ -15,8 +15,15 @@ import (
 )
 
 func TestValidatorRegistration(t *testing.T) {
-	_testValidatorRegistration(t, false)
-	_testValidatorRegistration(t, true)
+	// Initialize balance model fork heights.
+	setBalanceModelBlockHeights(t)
+
+	t.Run("flushToDB=false", func(t *testing.T) {
+		_testValidatorRegistration(t, false)
+	})
+	t.Run("flushToDB=true", func(t *testing.T) {
+		_testValidatorRegistration(t, true)
+	})
 }
 
 func _testValidatorRegistration(t *testing.T, flushToDB bool) {
@@ -25,9 +32,6 @@ func _testValidatorRegistration(t *testing.T, flushToDB bool) {
 	var validatorEntry *ValidatorEntry
 	var validatorEntries []*ValidatorEntry
 	var err error
-
-	// Initialize balance model fork heights.
-	setBalanceModelBlockHeights(t)
 
 	// Initialize test chain and miner.
 	chain, params, db := NewLowDifficultyBlockchain(t)
@@ -676,16 +680,20 @@ func TestValidatorRegistrationWithDerivedKey(t *testing.T) {
 }
 
 func TestGetTopActiveValidatorsByStakeAmount(t *testing.T) {
-	_testGetTopActiveValidatorsByStakeAmount(t, false)
-	_testGetTopActiveValidatorsByStakeAmount(t, true)
+	// Initialize balance model fork heights.
+	setBalanceModelBlockHeights(t)
+
+	t.Run("flushToDB=false", func(t *testing.T) {
+		_testGetTopActiveValidatorsByStakeAmount(t, false)
+	})
+	t.Run("flushToDB=true", func(t *testing.T) {
+		_testGetTopActiveValidatorsByStakeAmount(t, true)
+	})
 }
 
 func _testGetTopActiveValidatorsByStakeAmount(t *testing.T, flushToDB bool) {
 	var validatorEntries []*ValidatorEntry
 	var err error
-
-	// Initialize balance model fork heights.
-	setBalanceModelBlockHeights(t)
 
 	// Initialize test chain and miner.
 	chain, params, db := NewLowDifficultyBlockchain(t)
@@ -1107,17 +1115,21 @@ func TestGetTopActiveValidatorsByStakeMergingDbAndUtxoView(t *testing.T) {
 }
 
 func TestUpdatingValidatorDisableDelegatedStake(t *testing.T) {
-	_testUpdatingValidatorDisableDelegatedStake(t, false)
-	_testUpdatingValidatorDisableDelegatedStake(t, true)
+	// Initialize balance model fork heights.
+	setBalanceModelBlockHeights(t)
+
+	t.Run("flushToDB=false", func(t *testing.T) {
+		_testUpdatingValidatorDisableDelegatedStake(t, false)
+	})
+	t.Run("flushToDB=true", func(t *testing.T) {
+		_testUpdatingValidatorDisableDelegatedStake(t, true)
+	})
 }
 
 func _testUpdatingValidatorDisableDelegatedStake(t *testing.T, flushToDB bool) {
 	var validatorEntry *ValidatorEntry
 	var stakeEntries []*StakeEntry
 	var err error
-
-	// Initialize balance model fork heights.
-	setBalanceModelBlockHeights(t)
 
 	// Initialize test chain and miner.
 	chain, params, db := NewLowDifficultyBlockchain(t)
@@ -1288,8 +1300,15 @@ func _testUpdatingValidatorDisableDelegatedStake(t *testing.T, flushToDB bool) {
 }
 
 func TestUnregisterAsValidator(t *testing.T) {
-	_testUnregisterAsValidator(t, false)
-	_testUnregisterAsValidator(t, true)
+	// Initialize balance model fork heights.
+	setBalanceModelBlockHeights(t)
+
+	t.Run("flushToDB=false", func(t *testing.T) {
+		_testUnregisterAsValidator(t, false)
+	})
+	t.Run("flushToDB=true", func(t *testing.T) {
+		_testUnregisterAsValidator(t, true)
+	})
 }
 
 func _testUnregisterAsValidator(t *testing.T, flushToDB bool) {
@@ -1298,9 +1317,6 @@ func _testUnregisterAsValidator(t *testing.T, flushToDB bool) {
 	var lockedStakeEntry *LockedStakeEntry
 	_ = lockedStakeEntry
 	var err error
-
-	// Initialize balance model fork heights.
-	setBalanceModelBlockHeights(t)
 
 	// Initialize test chain and miner.
 	chain, params, db := NewLowDifficultyBlockchain(t)
@@ -1465,16 +1481,20 @@ func _testUnregisterAsValidator(t *testing.T, flushToDB bool) {
 }
 
 func TestUnjailValidator(t *testing.T) {
-	_testUnjailValidator(t, false)
-	_testUnjailValidator(t, true)
+	// Initialize balance model fork heights.
+	setBalanceModelBlockHeights(t)
+
+	t.Run("flushToDB=false", func(t *testing.T) {
+		_testUnjailValidator(t, false)
+	})
+	t.Run("flushToDB=true", func(t *testing.T) {
+		_testUnjailValidator(t, true)
+	})
 }
 
 func _testUnjailValidator(t *testing.T, flushToDB bool) {
 	var validatorEntry *ValidatorEntry
 	var err error
-
-	// Initialize balance model fork heights.
-	setBalanceModelBlockHeights(t)
 
 	// Initialize test chain and miner.
 	chain, params, db := NewLowDifficultyBlockchain(t)
