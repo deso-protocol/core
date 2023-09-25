@@ -1747,20 +1747,23 @@ func TestBasicTransferSignatures(t *testing.T) {
 	require := require.New(t)
 	_ = require
 
-	chain, params, db := NewLowDifficultyBlockchain(t)
-	postgres := chain.postgres
-	params.ForkHeights.NFTTransferOrBurnAndDerivedKeysBlockHeight = uint32(0)
-	params.ForkHeights.DerivedKeySetSpendingLimitsBlockHeight = uint32(0)
-	params.ForkHeights.DerivedKeyTrackSpendingLimitsBlockHeight = uint32(0)
-	// Make sure encoder migrations are not triggered yet.
-	GlobalDeSoParams = *params
-	GlobalDeSoParams.ForkHeights.DeSoUnlimitedDerivedKeysBlockHeight = uint32(100)
-	for ii := range GlobalDeSoParams.EncoderMigrationHeightsList {
-		if GlobalDeSoParams.EncoderMigrationHeightsList[ii].Version == 0 {
+	// Set up block heights
+	DeSoTestnetParams.ForkHeights.NFTTransferOrBurnAndDerivedKeysBlockHeight = uint32(0)
+	DeSoTestnetParams.ForkHeights.DerivedKeySetSpendingLimitsBlockHeight = uint32(0)
+	DeSoTestnetParams.ForkHeights.DerivedKeyTrackSpendingLimitsBlockHeight = uint32(0)
+	DeSoTestnetParams.ForkHeights.DeSoUnlimitedDerivedKeysBlockHeight = uint32(100)
+	for ii := range DeSoTestnetParams.EncoderMigrationHeightsList {
+		if DeSoTestnetParams.EncoderMigrationHeightsList[ii].Version == 0 {
 			continue
 		}
-		GlobalDeSoParams.EncoderMigrationHeightsList[ii].Height = 100
+		DeSoTestnetParams.EncoderMigrationHeightsList[ii].Height = 100
 	}
+
+	// Make sure encoder migrations are not triggered yet.
+	GlobalDeSoParams = DeSoTestnetParams
+
+	chain, params, db := NewLowDifficultyBlockchain(t)
+	postgres := chain.postgres
 
 	_ = db
 	mempool, miner := NewTestMiner(t, chain, params, true /*isSender*/)

@@ -2106,6 +2106,12 @@ func TestDeSoDiamondErrorCases(t *testing.T) {
 }
 
 func TestFreezingPosts(t *testing.T) {
+	// Set up block heights
+	DeSoTestnetParams.ForkHeights.AssociationsAndAccessGroupsBlockHeight = 1
+	DeSoTestnetParams.EncoderMigrationHeights = GetEncoderMigrationHeights(&DeSoTestnetParams.ForkHeights)
+	DeSoTestnetParams.EncoderMigrationHeightsList = GetEncoderMigrationHeightsList(&DeSoTestnetParams.ForkHeights)
+	GlobalDeSoParams = DeSoTestnetParams
+
 	// Initialize blockchain.
 	chain, params, db := NewLowDifficultyBlockchain(t)
 	defer func() {
@@ -2113,10 +2119,7 @@ func TestFreezingPosts(t *testing.T) {
 			require.NoError(t, ResetPostgres(chain.postgres))
 		}
 	}()
-	params.ForkHeights.AssociationsAndAccessGroupsBlockHeight = 1
-	params.EncoderMigrationHeights = GetEncoderMigrationHeights(&params.ForkHeights)
-	params.EncoderMigrationHeightsList = GetEncoderMigrationHeightsList(&params.ForkHeights)
-	GlobalDeSoParams = *params
+
 	mempool, miner := NewTestMiner(t, chain, params, true)
 
 	// Mine a few blocks to give the senderPkString some money.
