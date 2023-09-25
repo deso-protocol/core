@@ -4701,7 +4701,7 @@ func (blockNode *BlockNode) serializeBlockNode(blockHeight uint64) ([]byte, erro
 	if !MigrationTriggered(blockHeight, ProofOfStake2ConsensusCutoverMigration) {
 		// DifficultyTarget
 		if blockNode.DifficultyTarget == nil {
-			return nil, fmt.Errorf("serializeBlockNode: DifficultyTarget cannot be nil"))
+			return nil, fmt.Errorf("serializeBlockNode: DifficultyTarget cannot be nil")
 		}
 		data = append(data, blockNode.DifficultyTarget[:]...)
 
@@ -4787,6 +4787,7 @@ func (blockNode *BlockNode) deserializeBlockNode(blockHeight uint64, rr *bytes.R
 		}
 		blockNode.CommittedStatus = CommittedBlockStatus(committedStatus)
 	}
+	return nil
 }
 
 func SerializeBlockNode(blockNode *BlockNode) ([]byte, error) {
@@ -4808,7 +4809,7 @@ func DeserializeBlockNode(data []byte) (*BlockNode, error) {
 
 	rr := bytes.NewReader(data)
 	// We use block height 0 to indicate that we should use the old serialization format.
-	err := blockNode.deserializeBlockNode( 0, rr)
+	err := blockNode.deserializeBlockNode(0, rr)
 	if err != nil {
 		return nil, err
 	}
