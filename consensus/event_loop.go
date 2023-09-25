@@ -19,7 +19,7 @@ func NewFastHotStuffEventLoop() *FastHotStuffEventLoop {
 // Initializes the consensus instance with the latest known valid block in the blockchain, and
 // the validator set for the next block height. The functions expects the following for the input
 // params:
-//   - blockConstructionCadence: block construction duration must be > 0
+//   - blockConstructionInterval: block construction duration must be > 0
 //   - timeoutBaseDuration: timeout base duration must be > 0
 //   - chainTip: the input block must have a valid block hash, block height, view, and QC
 //   - validators: the validators must be sorted in decreasing order of stake, with a
@@ -29,7 +29,7 @@ func NewFastHotStuffEventLoop() *FastHotStuffEventLoop {
 // Given the above, This function updates the chain tip internally, and re-initializes all internal
 // data structures that are used to track incoming votes and timeout messages for QC construction.
 func (fc *FastHotStuffEventLoop) Init(
-	blockConstructionCadence time.Duration,
+	blockConstructionInterval time.Duration,
 	timeoutBaseDuration time.Duration,
 	chainTip Block,
 	validators []Validator,
@@ -44,7 +44,7 @@ func (fc *FastHotStuffEventLoop) Init(
 	}
 
 	// Validate the scheduled task durations
-	if blockConstructionCadence <= 0 {
+	if blockConstructionInterval <= 0 {
 		return errors.New("FastHotStuffEventLoop.Init: Block construction duration must be > 0")
 	}
 	if timeoutBaseDuration <= 0 {
@@ -74,7 +74,7 @@ func (fc *FastHotStuffEventLoop) Init(
 	fc.ConsensusEvents = make(chan *ConsensusEvent, signalChannelBufferSize)
 
 	// Set the block construction and timeout base durations
-	fc.blockConstructionCadence = blockConstructionCadence
+	fc.blockConstructionInterval = blockConstructionInterval
 	fc.timeoutBaseDuration = timeoutBaseDuration
 
 	// Update the consensus status
@@ -385,7 +385,7 @@ func (fc *FastHotStuffEventLoop) resetScheduledTasks() {
 	}
 
 	// Schedule the next block construction task. This will run with currentView param.
-	fc.nextBlockConstructionTask.Schedule(fc.blockConstructionCadence, fc.currentView, fc.onBlockConstructionScheduledTask)
+	fc.nextBlockConstructionTask.Schedule(fc.blockConstructionInterval, fc.currentView, fc.onBlockConstructionScheduledTask)
 
 	// Schedule the next timeout task. This will run with currentView param.
 	fc.nextTimeoutTask.Schedule(timeoutDuration, fc.currentView, fc.onTimeoutScheduledTaskExecuted)

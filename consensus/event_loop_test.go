@@ -61,7 +61,7 @@ func TestFastHotStuffInitialization(t *testing.T) {
 		require.Equal(t, fc.chainTip.GetView(), uint64(2))
 		require.Equal(t, fc.chainTip.GetHeight(), uint64(1))
 
-		require.Equal(t, fc.blockConstructionCadence, time.Duration(100))
+		require.Equal(t, fc.blockConstructionInterval, time.Duration(100))
 		require.Equal(t, fc.timeoutBaseDuration, time.Duration(101))
 
 		require.Equal(t, fc.currentView, uint64(3))
