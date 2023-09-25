@@ -4670,7 +4670,11 @@ func DeleteUtxoOperationsForBlockWithTxn(txn *badger.Txn, snap *Snapshot, blockH
 	return DBDeleteWithTxn(txn, snap, _DbKeyForUtxoOps(blockHash))
 }
 
-func (blockNode *BlockNode) serializeBlockNode(blockHeight uint64) ([]byte, error) {
+func blockNodeProofOfStakeMigrationTriggered(height uint32) bool {
+	return height >= GlobalDeSoParams.ForkHeights.ProofOfStake2ConsensusCutoverBlockHeight
+}
+
+func SerializeBlockNode(blockNode *BlockNode) ([]byte, error) {
 	data := []byte{}
 
 	if blockNode.Hash == nil {
@@ -4678,7 +4682,7 @@ func (blockNode *BlockNode) serializeBlockNode(blockHeight uint64) ([]byte, erro
 	}
 	data = append(data, blockNode.Hash[:]...)
 	data = append(data, UintToBuf(uint64(blockNode.Height))...)
-	if !MigrationTriggered(blockHeight, ProofOfStake2ConsensusCutoverMigration) {
+	if !blockNodeProofOfStakeMigrationTriggered(blockNode.Height) {
 		// DifficultyTarget
 		if blockNode.DifficultyTarget == nil {
 			return nil, fmt.Errorf("serializeBlockNode: DifficultyTarget cannot be nil")
@@ -4696,83 +4700,10 @@ func (blockNode *BlockNode) serializeBlockNode(blockHeight uint64) ([]byte, erro
 	data = append(data, serializedHeader...)
 
 	data = append(data, UintToBuf(uint64(blockNode.Status))...)
-	if MigrationTriggered(blockHeight, ProofOfStake2ConsensusCutoverMigration) {
+	if blockNodeProofOfStakeMigrationTriggered(blockNode.Height) {
 		data = append(data, UintToBuf(uint64(blockNode.CommittedStatus))...)
 	}
 	return data, nil
-}
-
-func (blockNode *BlockNode) deserializeBlockNode(blockHeight uint64, rr *bytes.Reader) error {
-
-	// Hash
-	_, err := io.ReadFull(rr, blockNode.Hash[:])
-	if err != nil {
-		return errors.Wrapf(err, "DeserializeBlockNode: Problem decoding Hash")
-	}
-
-	// Height
-	height, err := ReadUvarint(rr)
-	if err != nil {
-		return errors.Wrapf(err, "DeserializeBlockNode: Problem decoding Height")
-	}
-	blockNode.Height = uint32(height)
-
-	if !MigrationTriggered(blockHeight, ProofOfStake2ConsensusCutoverMigration) {
-		// DifficultyTarget
-		_, err = io.ReadFull(rr, blockNode.DifficultyTarget[:])
-		if err != nil {
-			return errors.Wrapf(err, "DeserializeBlockNode: Problem decoding DifficultyTarget")
-		}
-
-		// CumWork
-		tmp := BlockHash{}
-		_, err = io.ReadFull(rr, tmp[:])
-		if err != nil {
-			return errors.Wrapf(err, "DeserializeBlockNode: Problem decoding CumWork")
-		}
-		blockNode.CumWork = HashToBigint(&tmp)
-	}
-
-	// Header
-	payloadLen, err := ReadVarint(rr)
-	if err != nil {
-		return errors.Wrapf(err, "DeserializeBlockNode: Problem decoding Header length")
-	}
-	headerBytes, err := SafeMakeSliceWithLength[byte](uint64(payloadLen))
-	if err != nil {
-		return errors.Wrapf(err, "DeserializeBlockNode: Problem cretaing byte slice for header bytes")
-	}
-	_, err = io.ReadFull(rr, headerBytes[:])
-	if err != nil {
-		return errors.Wrapf(err, "DeserializeBlockNode: Problem reading Header bytes")
-	}
-	blockNode.Header = NewMessage(MsgTypeHeader).(*MsgDeSoHeader)
-	err = blockNode.Header.FromBytes(headerBytes)
-	if err != nil {
-		return errors.Wrapf(err, "DeserializeBlockNode: Problem parsing Header bytes")
-	}
-
-	// Status
-	status, err := ReadUvarint(rr)
-	if err != nil {
-		return errors.Wrapf(err, "DeserializeBlockNode: Problem decoding Status")
-	}
-	blockNode.Status = BlockStatus(uint32(status))
-
-	// CommittedStatus
-	if MigrationTriggered(blockHeight, ProofOfStake2ConsensusCutoverMigration) {
-		committedStatus, err := ReadUvarint(rr)
-		if err != nil {
-			return errors.Wrapf(err, "DeserializeBlockNode: Problem decoding CommittedStatus")
-		}
-		blockNode.CommittedStatus = CommittedBlockStatus(committedStatus)
-	}
-	return nil
-}
-
-func SerializeBlockNode(blockNode *BlockNode) ([]byte, error) {
-	// We use block height 0 to indicate that we should use the old serialization format.
-	return blockNode.serializeBlockNode(0)
 }
 
 func DeserializeBlockNode(data []byte) (*BlockNode, error) {
@@ -4788,10 +4719,68 @@ func DeserializeBlockNode(data []byte) (*BlockNode, error) {
 	)
 
 	rr := bytes.NewReader(data)
-	// We use block height 0 to indicate that we should use the old serialization format.
-	err := blockNode.deserializeBlockNode(0, rr)
+	// Hash
+	_, err := io.ReadFull(rr, blockNode.Hash[:])
 	if err != nil {
-		return nil, err
+		return nil, errors.Wrapf(err, "DeserializeBlockNode: Problem decoding Hash")
+	}
+
+	// Height
+	height, err := ReadUvarint(rr)
+	if err != nil {
+		return nil, errors.Wrapf(err, "DeserializeBlockNode: Problem decoding Height")
+	}
+	blockNode.Height = uint32(height)
+
+	if !blockNodeProofOfStakeMigrationTriggered(blockNode.Height) {
+		// DifficultyTarget
+		_, err = io.ReadFull(rr, blockNode.DifficultyTarget[:])
+		if err != nil {
+			return nil, errors.Wrapf(err, "DeserializeBlockNode: Problem decoding DifficultyTarget")
+		}
+
+		// CumWork
+		tmp := BlockHash{}
+		_, err = io.ReadFull(rr, tmp[:])
+		if err != nil {
+			return nil, errors.Wrapf(err, "DeserializeBlockNode: Problem decoding CumWork")
+		}
+		blockNode.CumWork = HashToBigint(&tmp)
+	}
+
+	// Header
+	payloadLen, err := ReadVarint(rr)
+	if err != nil {
+		return nil, errors.Wrapf(err, "DeserializeBlockNode: Problem decoding Header length")
+	}
+	headerBytes, err := SafeMakeSliceWithLength[byte](uint64(payloadLen))
+	if err != nil {
+		return nil, errors.Wrapf(err, "DeserializeBlockNode: Problem cretaing byte slice for header bytes")
+	}
+	_, err = io.ReadFull(rr, headerBytes[:])
+	if err != nil {
+		return nil, errors.Wrapf(err, "DeserializeBlockNode: Problem reading Header bytes")
+	}
+	blockNode.Header = NewMessage(MsgTypeHeader).(*MsgDeSoHeader)
+	err = blockNode.Header.FromBytes(headerBytes)
+	if err != nil {
+		return nil, errors.Wrapf(err, "DeserializeBlockNode: Problem parsing Header bytes")
+	}
+
+	// Status
+	status, err := ReadUvarint(rr)
+	if err != nil {
+		return nil, errors.Wrapf(err, "DeserializeBlockNode: Problem decoding Status")
+	}
+	blockNode.Status = BlockStatus(uint32(status))
+
+	// CommittedStatus
+	if blockNodeProofOfStakeMigrationTriggered(blockNode.Height) {
+		committedStatus, err := ReadUvarint(rr)
+		if err != nil {
+			return nil, errors.Wrapf(err, "DeserializeBlockNode: Problem decoding CommittedStatus")
+		}
+		blockNode.CommittedStatus = CommittedBlockStatus(committedStatus)
 	}
 	return blockNode, nil
 }
@@ -5054,18 +5043,9 @@ func GetHeightHashToNodeInfoWithTxn(txn *badger.Txn, snap *Snapshot,
 		return nil
 	}
 
-	var blockNode *BlockNode
-	if !bitcoinNodes && MigrationTriggered(uint64(height), ProofOfStake2ConsensusCutoverMigration) {
-		blockNode = &BlockNode{}
-		err = blockNode.deserializeBlockNode(uint64(height), bytes.NewReader(nodeBytes))
-		if err != nil {
-			return nil
-		}
-	} else {
-		blockNode, err = DeserializeBlockNode(nodeBytes)
-		if err != nil {
-			return nil
-		}
+	blockNode, err := DeserializeBlockNode(nodeBytes)
+	if err != nil {
+		return nil
 	}
 	return blockNode
 }
@@ -5085,18 +5065,9 @@ func PutHeightHashToNodeInfoWithTxn(txn *badger.Txn, snap *Snapshot,
 	node *BlockNode, bitcoinNodes bool) error {
 
 	key := _heightHashToNodeIndexKey(node.Height, node.Hash, bitcoinNodes)
-	var serializedNode []byte
-	var err error
-	if !bitcoinNodes && MigrationTriggered(uint64(node.Height), ProofOfStake2ConsensusCutoverMigration) {
-		serializedNode, err = node.serializeBlockNode(uint64(node.Height))
-		if err != nil {
-			return errors.Wrapf(err, "PutHeightHashToNodeInfoWithTxn: Problem serializing node")
-		}
-	} else {
-		serializedNode, err = SerializeBlockNode(node)
-		if err != nil {
-			return errors.Wrapf(err, "PutHeightHashToNodeInfoWithTxn: Problem serializing node")
-		}
+	serializedNode, err := SerializeBlockNode(node)
+	if err != nil {
+		return errors.Wrapf(err, "PutHeightHashToNodeInfoWithTxn: Problem serializing node")
 	}
 
 	if err := DBSetWithTxn(txn, snap, key, serializedNode); err != nil {

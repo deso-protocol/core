@@ -425,9 +425,6 @@ type EncoderMigrationHeights struct {
 
 	// This coincides with the ProofOfStake1StateSetupBlockHeight
 	ProofOfStake1StateSetupMigration MigrationHeight
-
-	// This coincides with the ProofOfStake2ConsensusCutoverBlockHeight
-	ProofOfStake2ConsensusCutoverMigration MigrationHeight
 }
 
 func GetEncoderMigrationHeights(forkHeights *ForkHeights) *EncoderMigrationHeights {
@@ -456,11 +453,6 @@ func GetEncoderMigrationHeights(forkHeights *ForkHeights) *EncoderMigrationHeigh
 			Version: 4,
 			Height:  uint64(forkHeights.ProofOfStake1StateSetupBlockHeight),
 			Name:    ProofOfStake1StateSetupMigration,
-		},
-		ProofOfStake2ConsensusCutoverMigration: MigrationHeight{
-			Version: 5,
-			Height:  uint64(forkHeights.ProofOfStake2ConsensusCutoverBlockHeight),
-			Name:    ProofOfStake2ConsensusCutoverMigration,
 		},
 	}
 }
