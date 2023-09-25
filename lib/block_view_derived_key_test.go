@@ -5,14 +5,15 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"math/rand"
+	"testing"
+	"time"
+
 	"github.com/btcsuite/btcd/btcec"
 	"github.com/dgraph-io/badger/v3"
 	"github.com/holiman/uint256"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"math/rand"
-	"testing"
-	"time"
 )
 
 const (
@@ -871,13 +872,15 @@ func _doAuthorizeTxnWithExtraDataAndSpendingLimits(testMeta *TestMeta, utxoView 
 func TestBalanceModelAuthorizeDerivedKey(t *testing.T) {
 	setBalanceModelBlockHeights(t)
 
-	TestAuthorizeDerivedKeyBasic(t)
-	TestAuthorizeDerivedKeyBasicWithTransactionLimits(t)
-	TestAuthorizedDerivedKeyWithTransactionLimitsHardcore(t)
-	// We need to set the block height here to 7 so that encoder migrations have the proper version and heights.
-	// Otherwise, the access groups and associations migrations do not run when encoding Utxo Operations.
-	DeSoTestnetParams.ForkHeights.BalanceModelBlockHeight = 7
-	TestAuthorizeDerivedKeyWithTransactionSpendingLimitsAccessGroups(t)
+	t.Run("TestAuthorizeDerivedKeyBasic", TestAuthorizeDerivedKeyBasic)
+	t.Run("TestAuthorizeDerivedKeyBasicWithTransactionLimits", TestAuthorizeDerivedKeyBasicWithTransactionLimits)
+	t.Run("TestAuthorizedDerivedKeyWithTransactionLimitsHardcore", TestAuthorizedDerivedKeyWithTransactionLimitsHardcore)
+	t.Run("TestAuthorizeDerivedKeyWithTransactionSpendingLimitsAccessGroups", func(t *testing.T) {
+		// We need to set the block height here to 7 so that encoder migrations have the proper version and heights.
+		// Otherwise, the access groups and associations migrations do not run when encoding Utxo Operations.
+		DeSoTestnetParams.ForkHeights.BalanceModelBlockHeight = 7
+		TestAuthorizeDerivedKeyWithTransactionSpendingLimitsAccessGroups(t)
+	})
 }
 
 func TestAuthorizeDerivedKeyBasic(t *testing.T) {

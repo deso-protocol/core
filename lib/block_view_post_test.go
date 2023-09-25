@@ -4,14 +4,15 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"github.com/dgraph-io/badger/v3"
-	"github.com/pkg/errors"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 	"reflect"
 	"sort"
 	"testing"
 	"time"
+
+	"github.com/dgraph-io/badger/v3"
+	"github.com/pkg/errors"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func _submitPost(t *testing.T, chain *Blockchain, db *badger.DB,
@@ -294,10 +295,10 @@ func _doSubmitPostTxn(t *testing.T, chain *Blockchain, db *badger.DB,
 func TestBalanceModelSubmitPost(t *testing.T) {
 	setBalanceModelBlockHeights(t)
 
-	TestSubmitPost(t)
-	TestDeSoDiamonds(t)
-	TestDeSoDiamondErrorCases(t)
-	TestFreezingPosts(t)
+	t.Run("TestSubmitPost", TestSubmitPost)
+	t.Run("TestDeSoDiamonds", TestDeSoDiamonds)
+	t.Run("TestDeSoDiamondErrorCases", TestDeSoDiamondErrorCases)
+	t.Run("TestFreezingPosts", TestFreezingPosts)
 }
 
 func TestSubmitPost(t *testing.T) {

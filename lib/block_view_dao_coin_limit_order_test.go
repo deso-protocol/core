@@ -3,21 +3,22 @@ package lib
 import (
 	"bytes"
 	"fmt"
-	"github.com/dgraph-io/badger/v3"
-	"github.com/holiman/uint256"
-	"github.com/stretchr/testify/require"
 	"math"
 	"math/big"
 	"testing"
 	"time"
+
+	"github.com/dgraph-io/badger/v3"
+	"github.com/holiman/uint256"
+	"github.com/stretchr/testify/require"
 )
 
 func TestBalanceModelDAOCoinLimitOrders(t *testing.T) {
 	setBalanceModelBlockHeights(t)
 
-	TestZeroCostOrderEdgeCaseDAOCoinLimitOrder(t)
-	TestDAOCoinLimitOrder(t)
-	TestFlushingDAOCoinLimitOrders(t)
+	t.Run("TestZeroCostOrderEdgeCaseDAOCoinLimitOrder", TestZeroCostOrderEdgeCaseDAOCoinLimitOrder)
+	t.Run("TestDAOCoinLimitOrder", TestDAOCoinLimitOrder)
+	t.Run("TestFlushingDAOCoinLimitOrders", TestFlushingDAOCoinLimitOrders)
 }
 func TestZeroCostOrderEdgeCaseDAOCoinLimitOrder(t *testing.T) {
 	// -----------------------
