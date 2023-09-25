@@ -4670,26 +4670,6 @@ func DeleteUtxoOperationsForBlockWithTxn(txn *badger.Txn, snap *Snapshot, blockH
 	return DBDeleteWithTxn(txn, snap, _DbKeyForUtxoOps(blockHash))
 }
 
-func (blockNode *BlockNode) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte {
-	serializedBytes, err := blockNode.serializeBlockNode(blockHeight)
-	if err != nil {
-		panic(fmt.Sprintf("Error serializing block node: %v", err))
-	}
-	return serializedBytes
-}
-
-func (blockNode *BlockNode) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.Reader) error {
-	return blockNode.deserializeBlockNode(blockHeight, rr)
-}
-
-func (blockNode *BlockNode) GetVersionByte(blockHeight uint64) byte {
-	return GetMigrationVersion(blockHeight, ProofOfStake2ConsensusCutoverMigration)
-}
-
-func (blockNode *BlockNode) GetEncoderType() EncoderType {
-	return EncoderTypeBlockNode
-}
-
 func (blockNode *BlockNode) serializeBlockNode(blockHeight uint64) ([]byte, error) {
 	data := []byte{}
 
@@ -5077,9 +5057,8 @@ func GetHeightHashToNodeInfoWithTxn(txn *badger.Txn, snap *Snapshot,
 	var blockNode *BlockNode
 	if !bitcoinNodes && MigrationTriggered(uint64(height), ProofOfStake2ConsensusCutoverMigration) {
 		blockNode = &BlockNode{}
-		var exists bool
-		exists, err = DecodeFromBytes(blockNode, bytes.NewReader(nodeBytes))
-		if err != nil || !exists {
+		err = blockNode.deserializeBlockNode(uint64(height), bytes.NewReader(nodeBytes))
+		if err != nil {
 			return nil
 		}
 	} else {
@@ -5107,10 +5086,13 @@ func PutHeightHashToNodeInfoWithTxn(txn *badger.Txn, snap *Snapshot,
 
 	key := _heightHashToNodeIndexKey(node.Height, node.Hash, bitcoinNodes)
 	var serializedNode []byte
+	var err error
 	if !bitcoinNodes && MigrationTriggered(uint64(node.Height), ProofOfStake2ConsensusCutoverMigration) {
-		serializedNode = node.RawEncodeWithoutMetadata(uint64(node.Height))
+		serializedNode, err = node.serializeBlockNode(uint64(node.Height))
+		if err != nil {
+			return errors.Wrapf(err, "PutHeightHashToNodeInfoWithTxn: Problem serializing node")
+		}
 	} else {
-		var err error
 		serializedNode, err = SerializeBlockNode(node)
 		if err != nil {
 			return errors.Wrapf(err, "PutHeightHashToNodeInfoWithTxn: Problem serializing node")

@@ -114,10 +114,9 @@ const (
 	EncoderTypeStakeEntry                        EncoderType = 41
 	EncoderTypeLockedStakeEntry                  EncoderType = 42
 	EncoderTypeEpochEntry                        EncoderType = 43
-	EncoderTypeBlockNode                         EncoderType = 44
 
 	// EncoderTypeEndBlockView encoder type should be at the end and is used for automated tests.
-	EncoderTypeEndBlockView EncoderType = 45
+	EncoderTypeEndBlockView EncoderType = 44
 )
 
 // Txindex encoder types.
