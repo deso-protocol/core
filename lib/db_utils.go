@@ -4678,14 +4678,14 @@ func SerializeBlockNode(blockNode *BlockNode) ([]byte, error) {
 	data := []byte{}
 
 	if blockNode.Hash == nil {
-		return nil, fmt.Errorf("serializeBlockNode: Hash cannot be nil")
+		return nil, fmt.Errorf("SerializeBlockNode: Hash cannot be nil")
 	}
 	data = append(data, blockNode.Hash[:]...)
 	data = append(data, UintToBuf(uint64(blockNode.Height))...)
 	if !blockNodeProofOfStakeMigrationTriggered(blockNode.Height) {
 		// DifficultyTarget
 		if blockNode.DifficultyTarget == nil {
-			return nil, fmt.Errorf("serializeBlockNode: DifficultyTarget cannot be nil")
+			return nil, fmt.Errorf("SerializeBlockNode: DifficultyTarget cannot be nil")
 		}
 		data = append(data, blockNode.DifficultyTarget[:]...)
 

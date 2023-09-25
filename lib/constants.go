@@ -403,12 +403,11 @@ type MigrationHeight struct {
 }
 
 const (
-	DefaultMigration                       MigrationName = "DefaultMigration"
-	UnlimitedDerivedKeysMigration          MigrationName = "UnlimitedDerivedKeysMigration"
-	AssociationsAndAccessGroupsMigration   MigrationName = "AssociationsAndAccessGroupsMigration"
-	BalanceModelMigration                  MigrationName = "BalanceModelMigration"
-	ProofOfStake1StateSetupMigration       MigrationName = "ProofOfStake1StateSetupMigration"
-	ProofOfStake2ConsensusCutoverMigration MigrationName = "ProofOfStake2ConsensusCutoverMigration"
+	DefaultMigration                     MigrationName = "DefaultMigration"
+	UnlimitedDerivedKeysMigration        MigrationName = "UnlimitedDerivedKeysMigration"
+	AssociationsAndAccessGroupsMigration MigrationName = "AssociationsAndAccessGroupsMigration"
+	BalanceModelMigration                MigrationName = "BalanceModelMigration"
+	ProofOfStake1StateSetupMigration     MigrationName = "ProofOfStake1StateSetupMigration"
 )
 
 type EncoderMigrationHeights struct {
