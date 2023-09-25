@@ -403,11 +403,12 @@ type MigrationHeight struct {
 }
 
 const (
-	DefaultMigration                     MigrationName = "DefaultMigration"
-	UnlimitedDerivedKeysMigration        MigrationName = "UnlimitedDerivedKeysMigration"
-	AssociationsAndAccessGroupsMigration MigrationName = "AssociationsAndAccessGroupsMigration"
-	BalanceModelMigration                MigrationName = "BalanceModelMigration"
-	ProofOfStake1StateSetupMigration     MigrationName = "ProofOfStake1StateSetupMigration"
+	DefaultMigration                       MigrationName = "DefaultMigration"
+	UnlimitedDerivedKeysMigration          MigrationName = "UnlimitedDerivedKeysMigration"
+	AssociationsAndAccessGroupsMigration   MigrationName = "AssociationsAndAccessGroupsMigration"
+	BalanceModelMigration                  MigrationName = "BalanceModelMigration"
+	ProofOfStake1StateSetupMigration       MigrationName = "ProofOfStake1StateSetupMigration"
+	ProofOfStake2ConsensusCutoverMigration MigrationName = "ProofOfStake2ConsensusCutoverMigration"
 )
 
 type EncoderMigrationHeights struct {
@@ -424,6 +425,9 @@ type EncoderMigrationHeights struct {
 
 	// This coincides with the ProofOfStake1StateSetupBlockHeight
 	ProofOfStake1StateSetupMigration MigrationHeight
+
+	// This coincides with the ProofOfStake2ConsensusCutoverBlockHeight
+	ProofOfStake2ConsensusCutoverMigration MigrationHeight
 }
 
 func GetEncoderMigrationHeights(forkHeights *ForkHeights) *EncoderMigrationHeights {
@@ -452,6 +456,11 @@ func GetEncoderMigrationHeights(forkHeights *ForkHeights) *EncoderMigrationHeigh
 			Version: 4,
 			Height:  uint64(forkHeights.ProofOfStake1StateSetupBlockHeight),
 			Name:    ProofOfStake1StateSetupMigration,
+		},
+		ProofOfStake2ConsensusCutoverMigration: MigrationHeight{
+			Version: 5,
+			Height:  uint64(forkHeights.ProofOfStake2ConsensusCutoverBlockHeight),
+			Name:    ProofOfStake2ConsensusCutoverMigration,
 		},
 	}
 }

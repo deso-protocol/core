@@ -298,8 +298,8 @@ func (nn *BlockNode) String() string {
 	if nn.Header != nil {
 		tstamp = uint32(nn.Header.GetTstampSecs())
 	}
-	return fmt.Sprintf("< TstampSecs: %d, Height: %d, Hash: %s, ParentHash %s, Status: %s, CumWork: %v>",
-		tstamp, nn.Header.Height, nn.Hash, parentHash, nn.Status, nn.CumWork)
+	return fmt.Sprintf("< TstampSecs: %d, Height: %d, Hash: %s, ParentHash %s, Status: %s, CumWork: %v, CommittedStatus: %v>",
+		tstamp, nn.Header.Height, nn.Hash, parentHash, nn.Status, nn.CumWork, nn.CommittedStatus)
 }
 
 // NewPoWBlockNode is a helper function to create a BlockNode
@@ -334,21 +334,17 @@ func NewPoSBlockNode(
 	parent *BlockNode,
 	hash *BlockHash,
 	height uint32,
-	difficultyTarget *BlockHash,
-	cumWork *big.Int,
 	header *MsgDeSoHeader,
 	status BlockStatus,
 	committedStatus CommittedBlockStatus) *BlockNode {
 
 	return &BlockNode{
-		Parent:           parent,
-		Hash:             hash,
-		Height:           height,
-		DifficultyTarget: difficultyTarget,
-		CumWork:          cumWork,
-		Header:           header,
-		Status:           status,
-		CommittedStatus:  committedStatus,
+		Parent:          parent,
+		Hash:            hash,
+		Height:          height,
+		Header:          header,
+		Status:          status,
+		CommittedStatus: committedStatus,
 	}
 }
 
