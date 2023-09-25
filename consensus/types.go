@@ -127,8 +127,8 @@ const signalChannelBufferSize = 100
 type FastHotStuffEventLoop struct {
 	lock sync.RWMutex
 
-	blockConstructionCadence time.Duration
-	timeoutBaseDuration      time.Duration
+	blockConstructionInterval time.Duration
+	timeoutBaseDuration       time.Duration
 
 	nextBlockConstructionTask *ScheduledTask[uint64]
 	nextTimeoutTask           *ScheduledTask[uint64]
