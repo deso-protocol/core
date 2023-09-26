@@ -1847,7 +1847,7 @@ func (bc *Blockchain) ProcessHeader(blockHeader *MsgDeSoHeader, headerHash *Bloc
 	return bc.processHeaderPoW(blockHeader, headerHash)
 }
 
-func (bc *Blockchain) ProcessBlock(desoBlock *MsgDeSoBlock, verifySignatures bool) (_isMainChain bool, _isOrphan bool, _missingBlockHash *BlockHash, _err error) {
+func (bc *Blockchain) ProcessBlock(desoBlock *MsgDeSoBlock, verifySignatures bool) (_isMainChain bool, _isOrphan bool, _missingBlockHashes []*BlockHash, _err error) {
 	bc.ChainLock.Lock()
 	defer bc.ChainLock.Unlock()
 
