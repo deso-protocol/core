@@ -13,8 +13,10 @@ import (
 //
 
 type EpochEntry struct {
-	EpochNumber      uint64
-	FinalBlockHeight uint64
+	EpochNumber        uint64
+	InitialBlockHeight uint64
+	InitialView        uint64
+	FinalBlockHeight   uint64
 
 	// This captures the on-chain timestamp when this epoch entry was created. This does not
 	// represent the timestamp for first block of the epoch, but rather when this epoch entry
@@ -25,6 +27,8 @@ type EpochEntry struct {
 func (epochEntry *EpochEntry) Copy() *EpochEntry {
 	return &EpochEntry{
 		EpochNumber:                     epochEntry.EpochNumber,
+		InitialBlockHeight:              epochEntry.InitialBlockHeight,
+		InitialView:                     epochEntry.InitialView,
 		FinalBlockHeight:                epochEntry.FinalBlockHeight,
 		CreatedAtBlockTimestampNanoSecs: epochEntry.CreatedAtBlockTimestampNanoSecs,
 	}
@@ -33,6 +37,8 @@ func (epochEntry *EpochEntry) Copy() *EpochEntry {
 func (epochEntry *EpochEntry) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte {
 	var data []byte
 	data = append(data, UintToBuf(epochEntry.EpochNumber)...)
+	data = append(data, UintToBuf(epochEntry.InitialBlockHeight)...)
+	data = append(data, UintToBuf(epochEntry.InitialView)...)
 	data = append(data, UintToBuf(epochEntry.FinalBlockHeight)...)
 	data = append(data, UintToBuf(epochEntry.CreatedAtBlockTimestampNanoSecs)...)
 	return data
@@ -45,6 +51,18 @@ func (epochEntry *EpochEntry) RawDecodeWithoutMetadata(blockHeight uint64, rr *b
 	epochEntry.EpochNumber, err = ReadUvarint(rr)
 	if err != nil {
 		return errors.Wrapf(err, "EpochEntry.Decode: Problem reading EpochNumber: ")
+	}
+
+	// InitialBlockHeight
+	epochEntry.InitialBlockHeight, err = ReadUvarint(rr)
+	if err != nil {
+		return errors.Wrapf(err, "EpochEntry.Decode: Problem reading InitialBlockHeight: ")
+	}
+
+	// InitialView
+	epochEntry.InitialView, err = ReadUvarint(rr)
+	if err != nil {
+		return errors.Wrapf(err, "EpochEntry.Decode: Problem reading InitialView: ")
 	}
 
 	// FinalBlockHeight
@@ -99,6 +117,8 @@ func (bav *UtxoView) GetCurrentEpochEntry() (*EpochEntry, error) {
 	// case prior to the first execution of the OnEpochCompleteHook.
 	genesisEpochEntry := &EpochEntry{
 		EpochNumber:                     0,
+		InitialBlockHeight:              0,
+		InitialView:                     0,
 		FinalBlockHeight:                uint64(bav.Params.ForkHeights.ProofOfStake1StateSetupBlockHeight),
 		CreatedAtBlockTimestampNanoSecs: 0,
 	}
