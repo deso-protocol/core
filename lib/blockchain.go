@@ -1847,23 +1847,25 @@ func (bc *Blockchain) ProcessHeader(blockHeader *MsgDeSoHeader, headerHash *Bloc
 	return bc.processHeaderPoW(blockHeader, headerHash)
 }
 
-func (bc *Blockchain) ProcessBlock(desoBlock *MsgDeSoBlock, verifySignatures bool) (_isMainChain bool, _isOrphan bool, _err error) {
+func (bc *Blockchain) ProcessBlock(desoBlock *MsgDeSoBlock, verifySignatures bool) (_isMainChain bool, _isOrphan bool, _missingBlockHashes []*BlockHash, _err error) {
 	bc.ChainLock.Lock()
 	defer bc.ChainLock.Unlock()
 
 	if desoBlock == nil {
 		// If the block is nil then we return an error. Nothing we can do here.
-		return false, false, fmt.Errorf("ProcessBlock: Block is nil")
+		return false, false, nil, fmt.Errorf("ProcessBlock: Block is nil")
 	}
 
 	// If the block's height is after the PoS cut-over fork height, then we use the PoS block processing logic. Otherwise, fall back
 	// to the PoW logic.
 	if desoBlock.Header.Height >= uint64(bc.params.ForkHeights.ProofOfStake2ConsensusCutoverBlockHeight) {
 		// TODO: call bc.processBlockPoS(desoBlock, verifySignatures) instead
-		return bc.processBlockPoW(desoBlock, verifySignatures)
+		isMainChain, isOrphan, err := bc.processBlockPoW(desoBlock, verifySignatures)
+		return isMainChain, isOrphan, nil, err
 	}
 
-	return bc.processBlockPoW(desoBlock, verifySignatures)
+	isMainChain, isOrphan, err := bc.processBlockPoW(desoBlock, verifySignatures)
+	return isMainChain, isOrphan, nil, err
 }
 
 func (bc *Blockchain) processBlockPoW(desoBlock *MsgDeSoBlock, verifySignatures bool) (_isMainChain bool, _isOrphan bool, err error) {
