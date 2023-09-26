@@ -160,8 +160,8 @@ func TestRunEpochCompleteHook(t *testing.T) {
 		currentEpoch, err := _newUtxoView(testMeta).GetCurrentEpochEntry()
 		require.NoError(t, err)
 		require.NotNil(t, currentEpoch)
-		require.Equal(t, currentEpoch.StartBlockHeight, uint64(13))
-		require.Equal(t, currentEpoch.StartViewNumber, uint64(2))
+		require.Equal(t, currentEpoch.InitialBlockHeight, uint64(13))
+		require.Equal(t, currentEpoch.InitialView, uint64(2))
 
 		// Test SnapshotGlobalParamsEntry is nil.
 		snapshotGlobalParamsEntry, err := _newUtxoView(testMeta).GetSnapshotGlobalParamsEntry()
@@ -206,8 +206,8 @@ func TestRunEpochCompleteHook(t *testing.T) {
 		currentEpoch, err := _newUtxoView(testMeta).GetCurrentEpochEntry()
 		require.NoError(t, err)
 		require.NotNil(t, currentEpoch)
-		require.Equal(t, currentEpoch.StartBlockHeight, uint64(14))
-		require.Equal(t, currentEpoch.StartViewNumber, uint64(3))
+		require.Equal(t, currentEpoch.InitialBlockHeight, uint64(14))
+		require.Equal(t, currentEpoch.InitialView, uint64(3))
 
 		// Test SnapshotGlobalParamsEntry is populated.
 		snapshotGlobalParamsEntry, err := _newUtxoView(testMeta).GetSnapshotGlobalParamsEntry()
@@ -234,8 +234,8 @@ func TestRunEpochCompleteHook(t *testing.T) {
 		currentEpoch, err := _newUtxoView(testMeta).GetCurrentEpochEntry()
 		require.NoError(t, err)
 		require.NotNil(t, currentEpoch)
-		require.Equal(t, currentEpoch.StartBlockHeight, uint64(15))
-		require.Equal(t, currentEpoch.StartViewNumber, uint64(4))
+		require.Equal(t, currentEpoch.InitialBlockHeight, uint64(15))
+		require.Equal(t, currentEpoch.InitialView, uint64(4))
 
 		// Test SnapshotGlobalParamsEntry is populated.
 		snapshotGlobalParamsEntry, err := _newUtxoView(testMeta).GetSnapshotGlobalParamsEntry()
