@@ -710,6 +710,163 @@ func TestVoteQCConstructionSignal(t *testing.T) {
 	}
 }
 
+func TestTimeoutQCConstructionSignal(t *testing.T) {
+	// Create a valid dummy block at view 2
+	block1 := createDummyBlock(2)
+
+	// Create a valid dummy block that extends from the above block at view 3
+	block2 := &block{
+		blockHash: createDummyBlockHash(),
+		view:      3,
+		height:    2,
+		qc:        createDummyQC(2, block1.GetBlockHash()),
+	}
+
+	// Create a valid validator set
+	validatorPrivateKey1, _ := bls.NewPrivateKey()
+	validatorPrivateKey2, _ := bls.NewPrivateKey()
+
+	validatorSet := []Validator{
+		&validator{
+			publicKey:   validatorPrivateKey1.PublicKey(),
+			stakeAmount: uint256.NewInt().SetUint64(70),
+		},
+		&validator{
+			publicKey:   validatorPrivateKey2.PublicKey(),
+			stakeAmount: uint256.NewInt().SetUint64(30),
+		},
+	}
+
+	// Both validators will timeout for view 4. Validator 1 will timeout with a highQC from view 2, and
+	// validator 2 will timeout with a highQC from view 3
+	timeoutSignaturePayload1 := GetTimeoutSignaturePayload(4, 1)
+	timeoutSignaturePayload2 := GetTimeoutSignaturePayload(4, 2)
+
+	validator1TimeoutSignature, _ := validatorPrivateKey1.Sign(timeoutSignaturePayload1[:])
+	validator2TimeoutSignature, _ := validatorPrivateKey2.Sign(timeoutSignaturePayload2[:])
+
+	// Sad path, not enough timeouts to construct a timeout QC
+	{
+		fc := NewFastHotStuffEventLoop()
+		err := fc.Init(time.Microsecond, time.Hour,
+			BlockWithValidators{block2, validatorSet}, // tip
+			[]BlockWithValidators{ // safeBlocks
+				{block1, validatorSet},
+				{block2, validatorSet},
+			},
+		)
+		require.NoError(t, err)
+
+		// Manually set the view to view 5 to simulate a timeout at view 4
+		fc.currentView = 5
+
+		// Create a timeout message from validator 2
+		timeout := timeoutMessage{
+			view:      4,                                // The view which the validator is timing out for
+			highQC:    block2.GetQC(),                   // The highest QC the validator has seen
+			publicKey: validatorPrivateKey2.PublicKey(), // Validator 2 with 30/100 stake
+			signature: validator2TimeoutSignature,       // Validator 2's timeout signature on payload (view 4, highQCview 2)
+		}
+
+		// Store the timeout in the event loop's timeoutsSeen map
+		fc.timeoutsSeen[4] = map[string]TimeoutMessage{
+			timeout.publicKey.ToString(): &timeout,
+		}
+
+		// Start the event loop
+		fc.Start()
+
+		// Wait up to 100 milliseconds for a block construction signal to be sent
+		select {
+		case <-fc.ConsensusEvents:
+			require.Fail(t, "Received a block construction signal when there were not enough timeouts to construct a timeout QC")
+		case <-time.After(100 * time.Millisecond):
+			// Do nothing
+		}
+
+		// Stop the event loop
+		fc.Stop()
+	}
+
+	// Happy path, there are enough timeouts with a super-majority of stake to construct a timeout QC
+	{
+		fc := NewFastHotStuffEventLoop()
+		err := fc.Init(time.Microsecond, time.Hour,
+			BlockWithValidators{block2, validatorSet}, // tip
+			[]BlockWithValidators{ // safeBlocks
+				{block1, validatorSet},
+				{block2, validatorSet},
+			},
+		)
+		require.NoError(t, err)
+
+		// Manually set the currentView to 5 to simulate a timeout on view 4
+		fc.currentView = 5
+
+		// Create a timeout message from validator 1 with highQC from block 1
+		timeout1 := timeoutMessage{
+			view:      4,                                // The view which the validator is timing out for
+			highQC:    block1.GetQC(),                   // The highest QC this validator has seen
+			publicKey: validatorPrivateKey1.PublicKey(), // Validator 1 with 70/100 stake
+			signature: validator1TimeoutSignature,       // Validator 1's timeout signature on payload (view 4, highQCview 1)
+		}
+
+		// Create a timeout message from validator 2 with highQC from block 2
+		timeout2 := timeoutMessage{
+			view:      4,                                // The view which the validator is timing out for
+			highQC:    block2.GetQC(),                   // The highest QC the validator has seen
+			publicKey: validatorPrivateKey2.PublicKey(), // Validator 2 with 30/100 stake
+			signature: validator2TimeoutSignature,       // Validator 2's timeout signature on payload (view 4, highQCview 2)
+		}
+
+		// Store the timeout in the event loop's timeoutsSeen map
+		fc.timeoutsSeen[4] = map[string]TimeoutMessage{
+			timeout1.publicKey.ToString(): &timeout1,
+			timeout2.publicKey.ToString(): &timeout2,
+		}
+
+		// Start the event loop
+		fc.Start()
+
+		var signal *ConsensusEvent
+
+		// Wait up to 100 milliseconds for a block construction signal to be sent
+		select {
+		case signal = <-fc.ConsensusEvents:
+			// Do nothing
+		case <-time.After(100 * time.Second):
+			require.Fail(t, "Did not receive a block construction signal when there were enough timeouts to construct a timeout QC")
+		}
+
+		// Stop the event loop
+		fc.Stop()
+
+		// Confirm that the block construction signal has the expected parameters
+		require.Equal(t, signal.EventType, ConsensusEventTypeConstructTimeoutQC)
+		require.Equal(t, signal.View, uint64(5))                                        // The timeout QC will be proposed in view 5
+		require.Equal(t, signal.BlockHash.GetValue(), block1.GetBlockHash().GetValue()) // The timeout QC will be proposed in a block that extends from block 1
+		require.Equal(t, signal.BlockHeight, block2.GetHeight())                        // The timeout QC will be proposed at the block height 2, replacing block 2
+		require.Equal(t, signal.AggregateQC.GetView(), uint64(4))                       // The timed out view is 4
+		require.Equal(t, signal.AggregateQC.GetHighQCViews(), []uint64{1, 2})           // The high QC view is 1 for validator 1 and 2 for validator 2
+		require.Equal(t,
+			signal.AggregateQC.GetAggregatedSignature().GetSignersList().ToBytes(),
+			bitset.NewBitset().Set(0, true).Set(1, true).ToBytes(), // Both validators have timed out, so both validators are in the timeout QC
+		)
+
+		// Verify that the high QC is the QC from block 2. It should be unchanged.
+		require.Equal(t, signal.AggregateQC.GetHighQC().GetBlockHash(), block2.GetQC().GetBlockHash())
+		require.Equal(t, signal.AggregateQC.GetHighQC().GetView(), block2.GetQC().GetView())
+		require.Equal(t,
+			signal.AggregateQC.GetHighQC().GetAggregatedSignature().GetSignersList().ToBytes(),
+			block2.GetQC().GetAggregatedSignature().GetSignersList().ToBytes(),
+		)
+		require.Equal(t,
+			signal.AggregateQC.GetHighQC().GetAggregatedSignature().GetSignature().ToBytes(),
+			block2.GetQC().GetAggregatedSignature().GetSignature().ToBytes(),
+		)
+	}
+}
+
 func TestFastHotStuffEventLoopStartStop(t *testing.T) {
 	oneHourInNanoSecs := time.Duration(3600000000000)
 
