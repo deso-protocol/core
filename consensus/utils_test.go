@@ -12,6 +12,83 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestIsValidSuperMajorityQuorumCertificate(t *testing.T) {
+	// Test malformed QC
+	{
+		require.False(t, IsValidSuperMajorityQuorumCertificate(nil, createDummyValidatorSet()))
+	}
+
+	// Test malformed validator set
+	{
+		require.False(t, IsValidSuperMajorityQuorumCertificate(createDummyQC(1), nil))
+	}
+
+	// Set up test validator data
+	validatorPrivateKey1 := createDummyBLSPrivateKey()
+	validatorPrivateKey2 := createDummyBLSPrivateKey()
+	validatorPrivateKey3 := createDummyBLSPrivateKey()
+
+	validator1 := validator{
+		publicKey:   validatorPrivateKey1.PublicKey(),
+		stakeAmount: uint256.NewInt().SetUint64(3),
+	}
+
+	validator2 := validator{
+		publicKey:   validatorPrivateKey2.PublicKey(),
+		stakeAmount: uint256.NewInt().SetUint64(2),
+	}
+
+	validator3 := validator{
+		publicKey:   validatorPrivateKey3.PublicKey(),
+		stakeAmount: uint256.NewInt().SetUint64(1),
+	}
+
+	validators := []Validator{&validator1, &validator2, &validator3}
+
+	// Set up the block hash and view
+	blockHash := createDummyBlockHash()
+	view := uint64(10)
+
+	// Compute the signature payload
+	signaturePayload := GetVoteSignaturePayload(view, blockHash)
+
+	// Test with no super-majority stake
+	{
+		validator1Signature, err := validatorPrivateKey1.Sign(signaturePayload[:])
+		require.NoError(t, err)
+
+		qc := quorumCertificate{
+			blockHash:           blockHash,
+			view:                view,
+			signersList:         bitset.NewBitset().FromBytes([]byte{0x1}), // 0b0001, which represents validator 1
+			aggregatedSignature: validator1Signature,
+		}
+
+		require.False(t, IsValidSuperMajorityQuorumCertificate(&qc, validators))
+	}
+
+	// Test with 5/6 super-majority stake
+	{
+		validator1Signature, err := validatorPrivateKey1.Sign(signaturePayload[:])
+		require.NoError(t, err)
+
+		validator2Signature, err := validatorPrivateKey2.Sign(signaturePayload[:])
+		require.NoError(t, err)
+
+		aggregatedSignature, err := bls.AggregateSignatures([]*bls.Signature{validator1Signature, validator2Signature})
+		require.NoError(t, err)
+
+		qc := quorumCertificate{
+			blockHash:           blockHash,
+			view:                view,
+			signersList:         bitset.NewBitset().FromBytes([]byte{0x3}), // 0b0011, which represents validators 1 and 2
+			aggregatedSignature: aggregatedSignature,
+		}
+
+		require.True(t, IsValidSuperMajorityQuorumCertificate(&qc, validators))
+	}
+}
+
 func TestIsProperlyFormedBlock(t *testing.T) {
 	// Test nil block
 	{
@@ -164,6 +241,64 @@ func TestIsProperlyFormedTimeout(t *testing.T) {
 	}
 }
 
+func TestIsSuperMajorityStake(t *testing.T) {
+	// Test nil values
+	{
+		require.False(t, isSuperMajorityStake(nil, nil))
+	}
+
+	// Test zero values
+	{
+		require.False(t, isSuperMajorityStake(uint256.NewInt(), uint256.NewInt()))
+	}
+
+	// Test stake amount greater than total stake
+	{
+		require.False(t, isSuperMajorityStake(uint256.NewInt().SetUint64(2), uint256.NewInt().SetUint64(1)))
+	}
+
+	// Test stake amount much less than super majority
+	{
+		stake := uint256.NewInt().SetUint64(1)
+		totalStake := uint256.NewInt().SetUint64(1000)
+		require.False(t, isSuperMajorityStake(stake, totalStake))
+	}
+
+	// Test stake amount less than super majority
+	{
+		stake := uint256.NewInt().SetUint64(666)
+		totalStake := uint256.NewInt().SetUint64(1000)
+		require.False(t, isSuperMajorityStake(stake, totalStake))
+	}
+
+	// Test stake amount equal to super majority
+	{
+		stake := uint256.NewInt().SetUint64(667)
+		totalStake := uint256.NewInt().SetUint64(1000)
+		require.True(t, isSuperMajorityStake(stake, totalStake))
+	}
+
+	// Test stake amount greater than super majority
+	{
+		stake := uint256.NewInt().SetUint64(668)
+		totalStake := uint256.NewInt().SetUint64(1000)
+		require.True(t, isSuperMajorityStake(stake, totalStake))
+	}
+
+	// Test stake amount much greater than super majority
+	{
+		stake := uint256.NewInt().SetUint64(999)
+		totalStake := uint256.NewInt().SetUint64(1000)
+		require.True(t, isSuperMajorityStake(stake, totalStake))
+	}
+
+	// Test stake amount equal to total stake
+	{
+		totalStake := uint256.NewInt().SetUint64(1000)
+		require.True(t, isSuperMajorityStake(totalStake, totalStake))
+	}
+}
+
 func createDummyValidatorSet() []Validator {
 	validators := []*validator{
 		{
@@ -240,6 +375,11 @@ func createDummyBLSSignature() *bls.Signature {
 func createDummyBLSPublicKey() *bls.PublicKey {
 	blsPrivateKey, _ := bls.NewPrivateKey()
 	return blsPrivateKey.PublicKey()
+}
+
+func createDummyBLSPrivateKey() *bls.PrivateKey {
+	blsPrivateKey, _ := bls.NewPrivateKey()
+	return blsPrivateKey
 }
 
 func createDummyBlockHash() *blockHash {

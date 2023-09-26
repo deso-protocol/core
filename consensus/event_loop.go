@@ -219,7 +219,7 @@ func (fc *FastHotStuffEventLoop) ProcessValidatorVote(vote VoteMessage) error {
 	voteSignaturePayload := GetVoteSignaturePayload(vote.GetView(), vote.GetBlockHash())
 
 	// Verify the vote signature
-	if !isValidSignature(vote.GetPublicKey(), vote.GetSignature(), voteSignaturePayload[:]) {
+	if !isValidSignatureSinglePublicKey(vote.GetPublicKey(), vote.GetSignature(), voteSignaturePayload[:]) {
 		return errors.New("FastHotStuffEventLoop.ProcessValidatorVote: Invalid signature")
 	}
 
@@ -290,7 +290,7 @@ func (fc *FastHotStuffEventLoop) ProcessValidatorTimeout(timeout TimeoutMessage)
 	timeoutSignaturePayload := GetTimeoutSignaturePayload(timeout.GetView(), timeout.GetHighQC().GetView())
 
 	// Verify the vote signature
-	if !isValidSignature(timeout.GetPublicKey(), timeout.GetSignature(), timeoutSignaturePayload[:]) {
+	if !isValidSignatureSinglePublicKey(timeout.GetPublicKey(), timeout.GetSignature(), timeoutSignaturePayload[:]) {
 		return errors.New("FastHotStuffEventLoop.ProcessValidatorTimeout: Invalid signature")
 	}
 
