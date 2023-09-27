@@ -35,6 +35,33 @@ func (v *validator) GetStakeAmount() *uint256.Int {
 	return v.stakeAmount
 }
 
+////////////////////////////////////////////////////////////////////////
+// AggregatedQuorumCertificate interface implementation for internal use
+////////////////////////////////////////////////////////////////////////
+
+type aggregatedQuorumCertificate struct {
+	view                uint64
+	highQC              QuorumCertificate
+	highQCViews         []uint64
+	aggregatedSignature AggregatedSignature
+}
+
+func (qc *aggregatedQuorumCertificate) GetView() uint64 {
+	return qc.view
+}
+
+func (qc *aggregatedQuorumCertificate) GetHighQC() QuorumCertificate {
+	return qc.highQC
+}
+
+func (qc *aggregatedQuorumCertificate) GetHighQCViews() []uint64 {
+	return qc.highQCViews
+}
+
+func (qc *aggregatedQuorumCertificate) GetAggregatedSignature() AggregatedSignature {
+	return qc.aggregatedSignature
+}
+
 //////////////////////////////////////////////////////////
 // QuorumCertificate interface implementation for testing
 //////////////////////////////////////////////////////////
@@ -42,8 +69,7 @@ func (v *validator) GetStakeAmount() *uint256.Int {
 type quorumCertificate struct {
 	blockHash           *blockHash
 	view                uint64
-	signersList         *bitset.Bitset
-	aggregatedSignature *bls.Signature
+	aggregatedSignature AggregatedSignature
 }
 
 func (qc *quorumCertificate) GetBlockHash() BlockHash {
@@ -54,12 +80,25 @@ func (qc *quorumCertificate) GetView() uint64 {
 	return qc.view
 }
 
-func (qc *quorumCertificate) GetSignersList() *bitset.Bitset {
-	return qc.signersList
+func (qc *quorumCertificate) GetAggregatedSignature() AggregatedSignature {
+	return qc.aggregatedSignature
 }
 
-func (qc *quorumCertificate) GetAggregatedSignature() *bls.Signature {
-	return qc.aggregatedSignature
+//////////////////////////////////////////////////////////
+// AggregatedSignature interface implementation for testing
+//////////////////////////////////////////////////////////
+
+type aggregatedSignature struct {
+	signersList *bitset.Bitset
+	signature   *bls.Signature
+}
+
+func (as *aggregatedSignature) GetSignersList() *bitset.Bitset {
+	return as.signersList
+}
+
+func (as *aggregatedSignature) GetSignature() *bls.Signature {
+	return as.signature
 }
 
 //////////////////////////////////////////////////////////

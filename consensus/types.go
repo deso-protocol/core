@@ -48,11 +48,22 @@ type Validator interface {
 	GetStakeAmount() *uint256.Int
 }
 
+type AggregateQuorumCertificate interface {
+	GetView() uint64
+	GetHighQC() QuorumCertificate
+	GetHighQCViews() []uint64
+	GetAggregatedSignature() AggregatedSignature
+}
+
 type QuorumCertificate interface {
 	GetBlockHash() BlockHash
 	GetView() uint64
+	GetAggregatedSignature() AggregatedSignature
+}
+
+type AggregatedSignature interface {
 	GetSignersList() *bitset.Bitset
-	GetAggregatedSignature() *bls.Signature
+	GetSignature() *bls.Signature
 }
 
 type VoteMessage interface {
