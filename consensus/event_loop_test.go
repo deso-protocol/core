@@ -48,8 +48,10 @@ func TestFastHotStuffInitialization(t *testing.T) {
 
 	// Test Init() function with valid parameters
 	{
+		block := createDummyBlock(2)
+
 		fc := NewFastHotStuffEventLoop()
-		err := fc.Init(100, 101, createDummyBlock(2), createDummyValidatorSet())
+		err := fc.Init(100, 101, block, createDummyValidatorSet())
 		require.NoError(t, err)
 
 		require.Equal(t, consensusStatusInitialized, fc.status)
@@ -57,7 +59,7 @@ func TestFastHotStuffInitialization(t *testing.T) {
 		require.NotPanics(t, fc.Stop) // Calling Stop() on an initialized instance should be a no-op
 		require.Equal(t, fc.status, consensusStatusInitialized)
 
-		require.Equal(t, fc.chainTip.GetBlockHash().GetValue(), createDummyBlockHash().GetValue())
+		require.Equal(t, fc.chainTip.GetBlockHash().GetValue(), block.GetBlockHash().GetValue())
 		require.Equal(t, fc.chainTip.GetView(), uint64(2))
 		require.Equal(t, fc.chainTip.GetHeight(), uint64(1))
 
@@ -151,7 +153,7 @@ func TestFastHotStuffProcessSafeBlock(t *testing.T) {
 		err := fc.ProcessSafeBlock(nextBlock, createDummyValidatorSet())
 		require.NoError(t, err)
 
-		require.Equal(t, createDummyBlockHash().GetValue(), fc.chainTip.GetBlockHash().GetValue())
+		require.Equal(t, nextBlock.GetBlockHash().GetValue(), fc.chainTip.GetBlockHash().GetValue())
 		require.Equal(t, uint64(3), fc.chainTip.GetView())
 		require.Equal(t, uint64(2), fc.chainTip.GetHeight())
 
