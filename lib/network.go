@@ -2590,8 +2590,7 @@ type MsgDeSoBlock struct {
 
 	// This bitset field stores information whether each transaction in the block passes
 	// or fails to connect. The bit at i-th position is set to 1 if the i-th transaction
-	// in the block passes connect, and 0 otherwise. The length of the bitset must match
-	// the number of transactions in the block.
+	// in the block passes connect, and 0 otherwise.
 	TxnConnectStatusByIndex *bitset.Bitset
 }
 
