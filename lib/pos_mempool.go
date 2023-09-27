@@ -211,8 +211,16 @@ func (dmp *PosMempool) validateTransaction(txn *MsgDeSoTxn) error {
 	dmp.RLock()
 	defer dmp.RUnlock()
 
+	if err := CheckTransactionSanity(txn, uint32(dmp.latestBlockHeight), dmp.params); err != nil {
+		return errors.Wrapf(err, "PosMempool.AddTransaction: Problem validating transaction sanity")
+	}
+
 	if err := ValidateDeSoTxnSanityBalanceModel(txn, dmp.latestBlockHeight, dmp.params, dmp.globalParams); err != nil {
 		return errors.Wrapf(err, "PosMempool.AddTransaction: Problem validating transaction sanity")
+	}
+
+	if err := dmp.latestBlockView.ValidateTransactionNonce(txn, dmp.latestBlockHeight); err != nil {
+		return errors.Wrapf(err, "PosMempool.AddTransaction: Problem validating transaction nonce")
 	}
 
 	// Check transaction signature.
