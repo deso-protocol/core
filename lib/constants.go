@@ -699,6 +699,10 @@ type DeSoParams struct {
 	// before they are jailed.
 	DefaultJailInactiveValidatorGracePeriodEpochs uint64
 
+	// DefaultFeeBucketRateMultiplierBasisPoints is the rate of growth of the fee bucket ranges. The multiplier is given
+	// as basis points. For example a value of 1000 means that the fee bucket ranges will grow by 10% each time.
+	DefaultFeeBucketRateMultiplierBasisPoints uint64
+
 	ForkHeights ForkHeights
 
 	EncoderMigrationHeights     *EncoderMigrationHeights
@@ -1109,6 +1113,9 @@ var DeSoMainnetParams = DeSoParams{
 	// The number of epochs before an inactive validator is jailed
 	DefaultJailInactiveValidatorGracePeriodEpochs: uint64(48),
 
+	// The rate of growth of the fee bucket ranges.
+	DefaultFeeBucketRateMultiplierBasisPoints: uint64(1000),
+
 	ForkHeights:                 MainnetForkHeights,
 	EncoderMigrationHeights:     GetEncoderMigrationHeights(&MainnetForkHeights),
 	EncoderMigrationHeightsList: GetEncoderMigrationHeightsList(&MainnetForkHeights),
@@ -1370,6 +1377,9 @@ var DeSoTestnetParams = DeSoParams{
 	// The number of epochs before an inactive validator is jailed
 	DefaultJailInactiveValidatorGracePeriodEpochs: uint64(48),
 
+	// The rate of growth of the fee bucket ranges.
+	DefaultFeeBucketRateMultiplierBasisPoints: uint64(1000),
+
 	ForkHeights:                 TestnetForkHeights,
 	EncoderMigrationHeights:     GetEncoderMigrationHeights(&TestnetForkHeights),
 	EncoderMigrationHeightsList: GetEncoderMigrationHeightsList(&TestnetForkHeights),
@@ -1425,6 +1435,7 @@ const (
 	StakingRewardsAPYBasisPointsKey           = "StakingRewardsAPYBasisPoints"
 	EpochDurationNumBlocksKey                 = "EpochDurationNumBlocks"
 	JailInactiveValidatorGracePeriodEpochsKey = "JailInactiveValidatorGracePeriodEpochs"
+	FeeBucketRateMultiplierBasisPointsKey     = "FeeBucketRateMultiplierBasisPointsKey"
 
 	DiamondLevelKey    = "DiamondLevel"
 	DiamondPostHashKey = "DiamondPostHash"

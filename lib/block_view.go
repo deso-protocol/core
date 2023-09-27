@@ -3081,6 +3081,16 @@ func (bav *UtxoView) _connectUpdateGlobalParams(
 				)
 			}
 		}
+		if len(extraData[FeeBucketRateMultiplierBasisPointsKey]) > 0 {
+			newGlobalParamsEntry.FeeBucketRateMultiplierBasisPoints, bytesRead = Uvarint(
+				extraData[FeeBucketRateMultiplierBasisPointsKey],
+			)
+			if bytesRead <= 0 {
+				return 0, 0, nil, fmt.Errorf(
+					"_connectUpdateGlobalParams: unable to decode FeeBucketRateMultiplierBasisPoints as uint64",
+				)
+			}
+		}
 	}
 
 	var newForbiddenPubKeyEntry *ForbiddenPubKeyEntry

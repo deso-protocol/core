@@ -128,6 +128,9 @@ func _mergeGlobalParamEntryDefaults(bav *UtxoView, globalParamsEntry *GlobalPara
 	if globalParamsEntryCopy.JailInactiveValidatorGracePeriodEpochs == 0 {
 		globalParamsEntryCopy.JailInactiveValidatorGracePeriodEpochs = bav.Params.DefaultJailInactiveValidatorGracePeriodEpochs
 	}
+	if globalParamsEntryCopy.FeeBucketRateMultiplierBasisPoints == 0 {
+		globalParamsEntryCopy.FeeBucketRateMultiplierBasisPoints = bav.Params.DefaultFeeBucketRateMultiplierBasisPoints
+	}
 
 	// Return the merged result.
 	return globalParamsEntryCopy
