@@ -3093,10 +3093,10 @@ func (bav *UtxoView) _connectUpdateGlobalParams(
 			val, bytesRead := Uvarint(
 				extraData[FeeBucketRateMultiplierBasisPointsKey],
 			)
-			if val > _basisPoints {
+			if val > _maxBasisPoints {
 				return 0, 0, nil, fmt.Errorf(
 					"_connectUpdateGlobalParams: FeeBucketRateMultiplierBasisPoints must be <= %d",
-					_basisPoints,
+					_maxBasisPoints,
 				)
 			}
 			newGlobalParamsEntry.FeeBucketRateMultiplierBasisPoints = val
@@ -3110,10 +3110,10 @@ func (bav *UtxoView) _connectUpdateGlobalParams(
 			val, bytesRead := Uvarint(
 				extraData[FailingTransactionBMFRateBasisPointsKey],
 			)
-			if val > _basisPoints {
+			if val > _maxBasisPoints {
 				return 0, 0, nil, fmt.Errorf(
 					"_connectUpdateGlobalParams: FailingTransactionBMFRateBasisPoints must be <= %d",
-					_basisPoints,
+					_maxBasisPoints,
 				)
 			}
 			newGlobalParamsEntry.FailingTransactionBMFRateBasisPoints = val
@@ -3722,8 +3722,7 @@ func (bav *UtxoView) _connectFailingTransaction(txn *MsgDeSoTxn, blockHeight uin
 	// We should never overflow on the effective fee, since FailingTransactionBMFRateBasisPoints is <= 10000.
 	// But if for some magical reason we do, we set the effective fee to the max uint64. We don't error, and
 	// instead let _spendBalance handle the overflow.
-	maxUint64 := uint256.NewInt().SetUint64(math.MaxUint64)
-	if effectiveFeeU256.Cmp(maxUint64) > 0 {
+	if !effectiveFeeU256.IsUint64() {
 		effectiveFeeU256.SetUint64(math.MaxUint64)
 	}
 	effectiveFee := effectiveFeeU256.Uint64()
