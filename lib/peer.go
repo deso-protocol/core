@@ -50,6 +50,7 @@ type Peer struct {
 	TimeConnected  time.Time
 	startingHeight uint32
 	ID             uint64
+	attemptId      uint64
 	// Ping-related fields.
 	LastPingNonce  uint64
 	LastPingTime   time.Time
@@ -63,9 +64,6 @@ type Peer struct {
 	stallTimeoutSeconds uint64
 	Params              *DeSoParams
 	MessageChan         chan *ServerMessage
-	// A hack to make it so that we can allow an API endpoint to manually
-	// delete a peer.
-	PeerManuallyRemovedFromConnectionManager bool
 
 	// In order to complete a version negotiation successfully, the peer must
 	// reply to the initial version message we send them with a verack message
@@ -142,6 +140,10 @@ type Peer struct {
 	// SyncType indicates whether blocksync should not be requested for this peer. If set to true
 	// then we'll only hypersync from this peer.
 	syncType NodeSyncType
+}
+
+func (pp *Peer) AttemptId() uint64 {
+	return pp.attemptId
 }
 
 func (pp *Peer) AddDeSoMessage(desoMessage DeSoMessage, inbound bool) {
@@ -611,15 +613,19 @@ func (pp *Peer) StartDeSoMessageProcessor() {
 }
 
 // NewPeer creates a new Peer object.
-func NewPeer(_conn net.Conn, _isOutbound bool, _netAddr *wire.NetAddress,
+func NewPeer(_id uint64, _attemptId uint64, _conn net.Conn, _isOutbound bool, _netAddr *wire.NetAddress,
 	_isPersistent bool, _stallTimeoutSeconds uint64,
 	_minFeeRateNanosPerKB uint64,
 	params *DeSoParams,
 	messageChan chan *ServerMessage,
 	_cmgr *ConnectionManager, _srv *Server,
-	_syncType NodeSyncType) *Peer {
+	_syncType NodeSyncType,
+	newPeerChan chan *Peer,
+	donePeerChan chan *Peer) *Peer {
 
 	pp := Peer{
+		ID:                     _id,
+		attemptId:              _attemptId,
 		cmgr:                   _cmgr,
 		srv:                    _srv,
 		Conn:                   _conn,
@@ -638,9 +644,6 @@ func NewPeer(_conn net.Conn, _isOutbound bool, _netAddr *wire.NetAddress,
 		MessageChan:            messageChan,
 		requestedBlocks:        make(map[BlockHash]bool),
 		syncType:               _syncType,
-	}
-	if _cmgr != nil {
-		pp.ID = atomic.AddUint64(&_cmgr.peerIndex, 1)
 	}
 
 	// TODO: Before, we would give each Peer its own Logger object. Now we
@@ -784,6 +787,10 @@ func (pp *Peer) Address() string {
 	return pp.addrStr
 }
 
+func (pp *Peer) NetAddress() *wire.NetAddress {
+	return pp.netAddr
+}
+
 func (pp *Peer) IP() string {
 	return pp.netAddr.IP.String()
 }
@@ -794,6 +801,10 @@ func (pp *Peer) Port() uint16 {
 
 func (pp *Peer) IsOutbound() bool {
 	return pp.isOutbound
+}
+
+func (pp *Peer) IsPersistend() bool {
+	return pp.isPersistent
 }
 
 func (pp *Peer) QueueMessage(desoMessage DeSoMessage) {
@@ -1495,10 +1506,11 @@ func (pp *Peer) NegotiateVersion(versionNegotiationTimeout time.Duration) error 
 func (pp *Peer) Disconnect() {
 	// Only run the logic the first time Disconnect is called.
 	glog.V(1).Infof(CLog(Yellow, "Peer.Disconnect: Starting"))
-	if atomic.AddInt32(&pp.disconnected, 1) != 1 {
+	if atomic.LoadInt32(&pp.disconnected) != 0 {
 		glog.V(1).Infof("Peer.Disconnect: Disconnect call ignored since it was already called before for Peer %v", pp)
 		return
 	}
+	atomic.AddInt32(&pp.disconnected, 1)
 
 	glog.V(1).Infof("Peer.Disconnect: Running Disconnect for the first time for Peer %v", pp)
 

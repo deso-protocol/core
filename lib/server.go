@@ -690,14 +690,20 @@ func (srv *Server) GetSnapshot(pp *Peer) {
 	}
 	// If operationQueueSemaphore is full, we are already storing too many chunks in memory. Block the thread while
 	// we wait for the queue to clear up.
-	srv.snapshot.operationQueueSemaphore <- struct{}{}
-	// Now send a message to the peer to fetch the snapshot chunk.
-	pp.AddDeSoMessage(&MsgDeSoGetSnapshot{
-		SnapshotStartKey: lastReceivedKey,
-	}, false)
+	go func() {
+		srv.snapshot.operationQueueSemaphore <- struct{}{}
+		// Now send a message to the peer to fetch the snapshot chunk.
+		pp.AddDeSoMessage(&MsgDeSoGetSnapshot{
+			SnapshotStartKey: lastReceivedKey,
+		}, false)
+	}()
 
 	glog.V(2).Infof("Server.GetSnapshot: Sending a GetSnapshot message to peer (%v) "+
 		"with Prefix (%v) and SnapshotStartEntry (%v)", pp, prefix, lastReceivedKey)
+}
+
+func (srv *Server) SendMessage(msg DeSoMessage, peerId uint64) error {
+	return srv.cmgr.SendMessage(msg, peerId)
 }
 
 // GetBlocksToStore is part of the archival mode, which makes the node download all historical blocks after completing
@@ -1131,6 +1137,8 @@ func (srv *Server) _handleSnapshot(pp *Peer, msg *MsgDeSoSnapshotData) {
 		"<%v>, Last entry: <%v>), (number of entries: %v), metadata (%v), and isEmpty (%v), from Peer %v",
 		msg.SnapshotChunk[0].Key, msg.SnapshotChunk[len(msg.SnapshotChunk)-1].Key, len(msg.SnapshotChunk),
 		msg.SnapshotMetadata, msg.SnapshotChunk[0].IsEmpty(), pp)))
+	// Free up a slot in the operationQueueSemaphore, now that a chunk has been processed.
+	srv.snapshot.FreeOperationQueueSemaphore()
 
 	// There is a possibility that during hypersync the network entered a new snapshot epoch. We handle this case by
 	// restarting the node and starting hypersync from scratch.
@@ -2289,7 +2297,7 @@ func (srv *Server) _startConsensus() {
 		}
 
 		select {
-		case consensusEvent := <-srv.consensusController.fastHotStuffEventLoop.GetEvents():
+		case consensusEvent := <-srv.consensusController.fastHotStuffEventLoop.Events:
 			{
 				glog.Infof("Server._startConsensus: Received consensus event for block height: %v", consensusEvent.TipBlockHeight)
 				srv._handleFastHostStuffConsensusEvent(consensusEvent)
@@ -2437,6 +2445,25 @@ func (srv *Server) _startTransactionRelayer() {
 	}
 }
 
+func (srv *Server) AddTimeSample(addrStr string, timeSample time.Time) {
+	srv.cmgr.AddTimeSample(addrStr, timeSample)
+}
+
+func (srv *Server) CreateOutboundConnection(ipAddr string) (_attemptId uint64) {
+	glog.V(2).Infof("Server.ConnectOutboundConnection: Connecting to peer %v", ipAddr)
+	return srv.cmgr.CreateOutboundConnection(ipAddr)
+}
+
+func (srv *Server) CloseConnection(peerId uint64) {
+	glog.V(2).Infof("Server.CloseConnection: Closing connection to peer (id= %v)", peerId)
+	srv.cmgr.DisconnectPeer(peerId)
+}
+
+func (srv *Server) CloseAttemptedConnection(attemptId uint64) {
+	glog.V(2).Infof("Server.CloseAttemptedConnection: Closing connection to peer (attemptId= %v)", attemptId)
+	srv.cmgr.CloseAttemptedConnection(attemptId)
+}
+
 func (srv *Server) Stop() {
 	glog.Info("Server.Stop: Gracefully shutting down Server")
 
@@ -2452,12 +2479,6 @@ func (srv *Server) Stop() {
 	if srv.miner != nil {
 		srv.miner.Stop()
 		glog.Infof(CLog(Yellow, "Server.Stop: Closed the Miner"))
-	}
-
-	// Stop the PoS block proposer if we have one running.
-	if srv.consensusController != nil {
-		srv.consensusController.fastHotStuffEventLoop.Stop()
-		glog.Infof(CLog(Yellow, "Server.Stop: Closed the fastHotStuffEventLoop"))
 	}
 
 	// TODO: Stop the PoS mempool if we have one running.

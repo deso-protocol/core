@@ -69,7 +69,7 @@ func generateConfig(t *testing.T, port uint32, dataDir string, maxPeers uint32) 
 	config.MaxSyncBlockHeight = 0
 	config.ConnectIPs = []string{}
 	config.PrivateMode = true
-	config.GlogV = 0
+	config.GlogV = 2
 	config.GlogVmodule = "*bitcoin_manager*=0,*balance*=0,*view*=0,*frontend*=0,*peer*=0,*addr*=0,*network*=0,*utils*=0,*connection*=0,*main*=0,*server*=0,*mempool*=0,*miner*=0,*blockchain*=0"
 	config.MaxInboundPeers = maxPeers
 	config.TargetOutboundPeers = maxPeers
@@ -150,7 +150,8 @@ func compareNodesByChecksum(t *testing.T, nodeA *cmd.Node, nodeB *cmd.Node) {
 // compareNodesByState will look through all state records in nodeA and nodeB databases and will compare them.
 // The nodes pass this comparison iff they have identical states.
 func compareNodesByState(t *testing.T, nodeA *cmd.Node, nodeB *cmd.Node, verbose int) {
-	compareNodesByStateWithPrefixList(t, nodeA.ChainDB, nodeB.ChainDB, lib.StatePrefixes.StatePrefixesList, verbose)
+	compareNodesByStateWithPrefixList(t, nodeA.Server.GetBlockchain().DB(), nodeB.Server.GetBlockchain().DB(),
+		lib.StatePrefixes.StatePrefixesList, verbose)
 }
 
 // compareNodesByDB will look through all records in nodeA and nodeB databases and will compare them.
@@ -164,7 +165,8 @@ func compareNodesByDB(t *testing.T, nodeA *cmd.Node, nodeB *cmd.Node, verbose in
 		}
 		prefixList = append(prefixList, []byte{prefix})
 	}
-	compareNodesByStateWithPrefixList(t, nodeA.ChainDB, nodeB.ChainDB, prefixList, verbose)
+	compareNodesByStateWithPrefixList(t, nodeA.Server.GetBlockchain().DB(), nodeB.Server.GetBlockchain().DB(),
+		prefixList, verbose)
 }
 
 // compareNodesByDB will look through all records in nodeA and nodeB txindex databases and will compare them.
@@ -386,25 +388,25 @@ func restartNode(t *testing.T, node *cmd.Node) *cmd.Node {
 }
 
 // listenForBlockHeight busy-waits until the node's block tip reaches provided height.
-func listenForBlockHeight(t *testing.T, node *cmd.Node, height uint32, signal chan<- bool) {
+func listenForBlockHeight(node *cmd.Node, height uint32) (_listener chan bool) {
+	listener := make(chan bool)
 	ticker := time.NewTicker(1 * time.Millisecond)
 	go func() {
 		for {
 			<-ticker.C
 			if node.Server.GetBlockchain().BlockTip().Height >= height {
-				signal <- true
+				listener <- true
 				break
 			}
 		}
 	}()
+	return listener
 }
 
 // disconnectAtBlockHeight busy-waits until the node's block tip reaches provided height, and then disconnects
 // from the provided bridge.
-func disconnectAtBlockHeight(t *testing.T, syncingNode *cmd.Node, bridge *ConnectionBridge, height uint32) {
-	listener := make(chan bool)
-	listenForBlockHeight(t, syncingNode, height, listener)
-	<-listener
+func disconnectAtBlockHeight(syncingNode *cmd.Node, bridge *ConnectionBridge, height uint32) {
+	<-listenForBlockHeight(syncingNode, height)
 	bridge.Disconnect()
 }
 
@@ -414,7 +416,7 @@ func restartAtHeightAndReconnectNode(t *testing.T, node *cmd.Node, source *cmd.N
 	height uint32) (_node *cmd.Node, _bridge *ConnectionBridge) {
 
 	require := require.New(t)
-	disconnectAtBlockHeight(t, node, currentBridge, height)
+	disconnectAtBlockHeight(node, currentBridge, height)
 	newNode := restartNode(t, node)
 	// Wait after the restart.
 	time.Sleep(1 * time.Second)

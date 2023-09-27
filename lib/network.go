@@ -24,6 +24,8 @@ import (
 
 	"github.com/deso-protocol/core/consensus"
 
+	"github.com/deso-protocol/core/collections/bitset"
+
 	"github.com/btcsuite/btcd/btcec"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/davecgh/go-spew/spew"

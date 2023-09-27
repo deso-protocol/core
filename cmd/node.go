@@ -27,12 +27,13 @@ import (
 )
 
 type Node struct {
-	Server   *lib.Server
-	ChainDB  *badger.DB
-	TXIndex  *lib.TXIndex
-	Params   *lib.DeSoParams
-	Config   *Config
-	Postgres *lib.Postgres
+	Server    *lib.Server
+	ChainDB   *badger.DB
+	TXIndex   *lib.TXIndex
+	Params    *lib.DeSoParams
+	Config    *Config
+	Postgres  *lib.Postgres
+	Listeners []net.Listener
 
 	// IsRunning is false when a NewNode is created, set to true on Start(), set to false
 	// after Stop() is called. Mainly used in testing.

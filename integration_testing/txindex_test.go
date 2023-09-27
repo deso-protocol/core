@@ -57,6 +57,7 @@ func TestSimpleTxIndex(t *testing.T) {
 	compareNodesByDB(t, node1, node2, 0)
 	compareNodesByTxIndex(t, node1, node2, 0)
 	fmt.Println("Databases match!")
+	bridge.Disconnect()
 	node1.Stop()
 	node2.Stop()
 }
