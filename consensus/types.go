@@ -9,26 +9,26 @@ import (
 	"github.com/holiman/uint256"
 )
 
-// ConsensusEvent is a way for FastHotStuffEventLoop to send messages back to the Server.
+// FastHotStuffEventType is a way for FastHotStuffEventLoop to send messages back to the Server.
 // There are four types of events that can be sent:
-//   - ConsensusEventTypeVote: The consensus is ready to vote on a block at a given block height and view
-//   - ConsensusEventTypeTimeout: The consensus has timed out on a view
-//   - ConsensusEventTypeConstructVoteQC: The consensus has a QC for a block and is ready to construct the
+//   - FastHotStuffEventTypeVote: The event loop is ready to vote on a block at a given block height and view
+//   - FastHotStuffEventTypeTimeout: The event loop has timed out on a view
+//   - FastHotStuffEventTypeConstructVoteQC: The event loop has a QC for a block and is ready to construct the
 //     next block at the next block height and the current view
-//   - ConsensusEventTypeConstructTimeoutQC: The consensus has a timeout QC for a view and is ready to
+//   - FastHotStuffEventTypeConstructTimeoutQC: The event loop has a timeout QC for a view and is ready to
 //     construct an empty block with the timeout QC at the next block height and the current view
 
-type ConsensusEventType byte
+type FastHotStuffEventType byte
 
 const (
-	ConsensusEventTypeVote               ConsensusEventType = 0
-	ConsensusEventTypeTimeout            ConsensusEventType = 1
-	ConsensusEventTypeConstructVoteQC    ConsensusEventType = 2
-	ConsensusEventTypeConstructTimeoutQC ConsensusEventType = 3
+	FastHotStuffEventTypeVote               FastHotStuffEventType = 0
+	FastHotStuffEventTypeTimeout            FastHotStuffEventType = 1
+	FastHotStuffEventTypeConstructVoteQC    FastHotStuffEventType = 2
+	FastHotStuffEventTypeConstructTimeoutQC FastHotStuffEventType = 3
 )
 
-type ConsensusEvent struct {
-	EventType      ConsensusEventType
+type FastHotStuffEvent struct {
+	EventType      FastHotStuffEventType
 	TipBlockHash   BlockHash
 	TipBlockHeight uint64
 	View           uint64
@@ -119,32 +119,29 @@ type BlockWithValidators struct {
 const signalChannelBufferSize = 100
 
 // An instance of FastHotStuffEventLoop is a self-contained module that represents a single node running
-// the event loop for the Fast HotStuff consensus protocol. The module is initialized at the current chain's
-// tip, with a given block hash, block height, view number, and validator set. The module is simplified and
+// the event loop for the Fast HotStuff consensus protocol. The event loop is initialized at the current chain's
+// tip, with a given block hash, block height, view number, and validator set. The event loop is simplified and
 // does not know whether its role is that of a block proposer or a replica validator.
 //
-// Given a block that's at the tip of the current chain, this module maintains its own internal data structures
+// Given a block that's at the tip of the current chain, the event loop maintains its own internal data structures
 // and runs an internal event loop that handles all of the following:
 //   - Tracking of the current view, incrementing the view during timeouts, and computing exponential
 //     back-off durations during consecutive timeouts
 //   - Aggregation of votes and QC construction for the current block
 //   - Aggregation of timeout messages for the current view
-//   - Signaling its caller when it can vote on the current chain tip
-//   - Signaling its caller when it has timed out the current view
-//   - Signaling its caller when it has a QC for the current block
-//   - Signaling its caller when it has a timeout QC for the current view
+//   - Signaling the server when it can vote on the current tip block
+//   - Signaling the server when it has timed out the current view
+//   - Signaling the server when it has a QC for the current tip block
+//   - Signaling the server when it has a timeout QC for the current view
 //
-// When a new block is connected to the chain, the caller is expected to update the chain tip. The module
-// resets all internal data structures and scheduled tasks to handle all of the above based on the new chain tip.
+// When a new block is connected to the chain, the server is expected to update the tip block. The event loop
+// resets all internal data structures and scheduled tasks to handle all of the above based on the new tip.
 //
-// This module is very simple and only houses the logic that decides what action to perform next given the
-// current chain tip. The module does not track the history of blocks, and instead needs its caller to
-// update the block at the current chain tip. It expects its caller to maintain the block chain,
-// the index of all past blocks, to perform QC validations for incoming blocks, to handle the commit rule,
-// and only then to pass the validated chain tip. Note: this module takes the provided chain tip as a
-// trusted input and does NOT validate any incoming blocks. This also mean the module expects its caller to
-// track historical vote and timeout messages it has sent so as to not vote more than once at a given view
-// or block height.
+// This event loop is simple and only houses the logic that decides what action to perform next given the
+// current tip block. The event loop does not track the full history of blocks, and instead needs the server
+// to pass in the tip block and safe extendable blocks. It expects the server to maintain the block chain,
+// the index of all past blocks, to perform QC validations for incoming blocks, to handle the commit rule, to
+// handle reorgs, and to only then to pass the the new validated tip.
 type FastHotStuffEventLoop struct {
 	lock sync.RWMutex
 
@@ -179,17 +176,17 @@ type FastHotStuffEventLoop struct {
 	timeoutsSeen map[uint64]map[string]TimeoutMessage
 
 	// Externally accessible channel for signals sent to the Server.
-	ConsensusEvents chan *ConsensusEvent
+	Events chan *FastHotStuffEvent
 
 	// Internal statuses and wait groups used to coordinate the start and stop operations for
 	// the event loop.
-	status consensusStatus
+	status eventLoopStatus
 }
 
-type consensusStatus byte
+type eventLoopStatus byte
 
 const (
-	consensusStatusNotInitialized consensusStatus = 0 // Not initialized and the event loop is not running
-	consensusStatusInitialized    consensusStatus = 1 // Initialized but the event loop is not running
-	consensusStatusRunning        consensusStatus = 2 // Initialized and the event loop is running
+	eventLoopStatusNotInitialized eventLoopStatus = 0 // Not initialized and the event loop is not running
+	eventLoopStatusInitialized    eventLoopStatus = 1 // Initialized but the event loop is not running
+	eventLoopStatusRunning        eventLoopStatus = 2 // Initialized and the event loop is running
 )

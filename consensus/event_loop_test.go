@@ -17,7 +17,7 @@ func TestInit(t *testing.T) {
 	// Test initial status for newly constructed instance
 	{
 		fc := NewFastHotStuffEventLoop()
-		require.Equal(t, consensusStatusNotInitialized, fc.status)
+		require.Equal(t, eventLoopStatusNotInitialized, fc.status)
 		require.NotPanics(t, fc.Stop) // Calling Stop() on an uninitialized instance should be a no-op
 	}
 
@@ -92,10 +92,10 @@ func TestInit(t *testing.T) {
 		)
 		require.NoError(t, err)
 
-		require.Equal(t, consensusStatusInitialized, fc.status)
+		require.Equal(t, eventLoopStatusInitialized, fc.status)
 
 		require.NotPanics(t, fc.Stop) // Calling Stop() on an initialized instance should be a no-op
-		require.Equal(t, fc.status, consensusStatusInitialized)
+		require.Equal(t, fc.status, eventLoopStatusInitialized)
 
 		require.Equal(t, fc.tip.block.GetBlockHash().GetValue(), block.GetBlockHash().GetValue())
 		require.Equal(t, fc.tip.block.GetView(), uint64(2))
@@ -127,7 +127,7 @@ func TestProcessTipBlock(t *testing.T) {
 	)
 	require.NoError(t, err)
 
-	// Test ProcessTipBlock() function when consensus event loop is not running
+	// Test ProcessTipBlock() function when event loop is not running
 	{
 		err := fc.ProcessTipBlock(
 			BlockWithValidators{createDummyBlock(2), createDummyValidatorSet()},     // tip
@@ -136,7 +136,7 @@ func TestProcessTipBlock(t *testing.T) {
 		require.Error(t, err)
 	}
 
-	// Start the consensus event loop
+	// Start the event loop
 	fc.Start()
 
 	// Test ProcessTipBlock() function with malformed tip block
@@ -262,13 +262,13 @@ func TestAdvanceView(t *testing.T) {
 	)
 	require.NoError(t, err)
 
-	// Running AdvanceView() should fail because the consensus event loop is not running
+	// Running AdvanceView() should fail because the event loop is not running
 	{
 		_, err := fc.AdvanceView()
 		require.Error(t, err)
 	}
 
-	// Start the consensus event loop
+	// Start the event loop
 	fc.Start()
 
 	// Populate the votesSeen and timeoutsSeen maps with dummy data
@@ -525,10 +525,10 @@ func TestTimeoutScheduledTaskExecuted(t *testing.T) {
 	fc.Start()
 
 	// Wait for the timeout signal to be sent
-	timeoutSignal := <-fc.ConsensusEvents
+	timeoutSignal := <-fc.Events
 
 	// Confirm that the timeout signal is for the the expected view
-	require.Equal(t, timeoutSignal.EventType, ConsensusEventTypeTimeout)
+	require.Equal(t, timeoutSignal.EventType, FastHotStuffEventTypeTimeout)
 	require.Equal(t, timeoutSignal.View, dummyBlock.GetView()+1)
 	require.Equal(t, timeoutSignal.TipBlockHash.GetValue(), dummyBlock.GetBlockHash().GetValue())
 
@@ -539,10 +539,10 @@ func TestTimeoutScheduledTaskExecuted(t *testing.T) {
 	fc.AdvanceView()
 
 	// Wait for the timeout signal to be sent
-	timeoutSignal = <-fc.ConsensusEvents
+	timeoutSignal = <-fc.Events
 
 	// Confirm that the timeout signal is for the the expected view
-	require.Equal(t, timeoutSignal.EventType, ConsensusEventTypeTimeout)
+	require.Equal(t, timeoutSignal.EventType, FastHotStuffEventTypeTimeout)
 	require.Equal(t, timeoutSignal.View, dummyBlock.GetView()+2)
 	require.Equal(t, timeoutSignal.TipBlockHash.GetValue(), dummyBlock.GetBlockHash().GetValue())
 
@@ -650,7 +650,7 @@ func TestVoteQCConstructionSignal(t *testing.T) {
 
 		// Wait up to 100 milliseconds for a block construction signal to be sent
 		select {
-		case <-fc.ConsensusEvents:
+		case <-fc.Events:
 			require.Fail(t, "Received a block construction signal when there were not enough votes to construct a QC")
 		case <-time.After(100 * time.Millisecond):
 			// Do nothing
@@ -685,11 +685,11 @@ func TestVoteQCConstructionSignal(t *testing.T) {
 		// Start the event loop
 		fc.Start()
 
-		var blockConstructionSignal *ConsensusEvent
+		var blockConstructionSignal *FastHotStuffEvent
 
 		// Wait up to 100 milliseconds for a block construction signal to be sent
 		select {
-		case blockConstructionSignal = <-fc.ConsensusEvents:
+		case blockConstructionSignal = <-fc.Events:
 			// Do nothing
 		case <-time.After(100 * time.Millisecond):
 			require.Fail(t, "Did not receive a block construction signal when there were enough votes to construct a QC")
@@ -699,7 +699,7 @@ func TestVoteQCConstructionSignal(t *testing.T) {
 		fc.Stop()
 
 		// Confirm that the block construction signal has the expected parameters
-		require.Equal(t, blockConstructionSignal.EventType, ConsensusEventTypeConstructVoteQC)
+		require.Equal(t, blockConstructionSignal.EventType, FastHotStuffEventTypeConstructVoteQC)
 		require.Equal(t, blockConstructionSignal.View, block.GetView()+1)
 		require.Equal(t, blockConstructionSignal.TipBlockHash.GetValue(), block.GetBlockHash().GetValue())
 		require.Equal(t, blockConstructionSignal.TipBlockHeight, block.GetHeight())
@@ -778,7 +778,7 @@ func TestTimeoutQCConstructionSignal(t *testing.T) {
 
 		// Wait up to 100 milliseconds for a block construction signal to be sent
 		select {
-		case <-fc.ConsensusEvents:
+		case <-fc.Events:
 			require.Fail(t, "Received a block construction signal when there were not enough timeouts to construct a timeout QC")
 		case <-time.After(100 * time.Millisecond):
 			// Do nothing
@@ -828,11 +828,11 @@ func TestTimeoutQCConstructionSignal(t *testing.T) {
 		// Start the event loop
 		fc.Start()
 
-		var signal *ConsensusEvent
+		var signal *FastHotStuffEvent
 
 		// Wait up to 100 milliseconds for a block construction signal to be sent
 		select {
-		case signal = <-fc.ConsensusEvents:
+		case signal = <-fc.Events:
 			// Do nothing
 		case <-time.After(100 * time.Second):
 			require.Fail(t, "Did not receive a block construction signal when there were enough timeouts to construct a timeout QC")
@@ -842,7 +842,7 @@ func TestTimeoutQCConstructionSignal(t *testing.T) {
 		fc.Stop()
 
 		// Confirm that the block construction signal has the expected parameters
-		require.Equal(t, signal.EventType, ConsensusEventTypeConstructTimeoutQC)
+		require.Equal(t, signal.EventType, FastHotStuffEventTypeConstructTimeoutQC)
 		require.Equal(t, signal.View, uint64(5))                                           // The timeout QC will be proposed in view 5
 		require.Equal(t, signal.TipBlockHash.GetValue(), block1.GetBlockHash().GetValue()) // The timeout QC will be proposed in a block that extends from block 1
 		require.Equal(t, signal.TipBlockHeight, block1.GetHeight())                        // The timeout QC will be proposed at the block height after block 1
@@ -880,8 +880,8 @@ func TestFastHotStuffEventLoopStartStop(t *testing.T) {
 	// Start the event loop
 	fc.Start()
 
-	// Confirm the consensus instance status has changed to running
-	require.Equal(t, consensusStatusRunning, fc.status)
+	// Confirm the event loop status has changed to running
+	require.Equal(t, eventLoopStatusRunning, fc.status)
 
 	// Confirm that the ETAs for the block construction and timeout timers have been set
 	require.Equal(t, fc.nextBlockConstructionTask.GetDuration(), oneHourInNanoSecs)
@@ -890,8 +890,8 @@ func TestFastHotStuffEventLoopStartStop(t *testing.T) {
 	// Stop the event loop
 	fc.Stop()
 
-	// Confirm the consensus instance status has reverted to initialized
-	require.Equal(t, consensusStatusInitialized, fc.status)
+	// Confirm the event loop status has reverted to initialized
+	require.Equal(t, eventLoopStatusInitialized, fc.status)
 
 	// Confirm that calling fc.Stop() again doesn't panic
 	require.NotPanics(t, fc.Stop)
