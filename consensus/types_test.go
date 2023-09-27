@@ -36,29 +36,29 @@ func (v *validator) GetStakeAmount() *uint256.Int {
 }
 
 ////////////////////////////////////////////////////////////////////////
-// AggregatedQuorumCertificate interface implementation for internal use
+// AggregateQuorumCertificate interface implementation for internal use
 ////////////////////////////////////////////////////////////////////////
 
-type aggregatedQuorumCertificate struct {
+type aggregateQuorumCertificate struct {
 	view                uint64
 	highQC              QuorumCertificate
 	highQCViews         []uint64
 	aggregatedSignature AggregatedSignature
 }
 
-func (qc *aggregatedQuorumCertificate) GetView() uint64 {
+func (qc *aggregateQuorumCertificate) GetView() uint64 {
 	return qc.view
 }
 
-func (qc *aggregatedQuorumCertificate) GetHighQC() QuorumCertificate {
+func (qc *aggregateQuorumCertificate) GetHighQC() QuorumCertificate {
 	return qc.highQC
 }
 
-func (qc *aggregatedQuorumCertificate) GetHighQCViews() []uint64 {
+func (qc *aggregateQuorumCertificate) GetHighQCViews() []uint64 {
 	return qc.highQCViews
 }
 
-func (qc *aggregatedQuorumCertificate) GetAggregatedSignature() AggregatedSignature {
+func (qc *aggregateQuorumCertificate) GetAggregatedSignature() AggregatedSignature {
 	return qc.aggregatedSignature
 }
 
