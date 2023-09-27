@@ -58,10 +58,12 @@ func TestIsValidSuperMajorityQuorumCertificate(t *testing.T) {
 		require.NoError(t, err)
 
 		qc := quorumCertificate{
-			blockHash:           blockHash,
-			view:                view,
-			signersList:         bitset.NewBitset().FromBytes([]byte{0x1}), // 0b0001, which represents validator 1
-			aggregatedSignature: validator1Signature,
+			blockHash: blockHash,
+			view:      view,
+			aggregatedSignature: &aggregatedSignature{
+				signersList: bitset.NewBitset().FromBytes([]byte{0x1}), // 0b0001, which represents validator 1
+				signature:   validator1Signature,
+			},
 		}
 
 		require.False(t, IsValidSuperMajorityQuorumCertificate(&qc, validators))
@@ -75,14 +77,17 @@ func TestIsValidSuperMajorityQuorumCertificate(t *testing.T) {
 		validator2Signature, err := validatorPrivateKey2.Sign(signaturePayload[:])
 		require.NoError(t, err)
 
-		aggregatedSignature, err := bls.AggregateSignatures([]*bls.Signature{validator1Signature, validator2Signature})
+		// Aggregate the two validators' signatures
+		signature, err := bls.AggregateSignatures([]*bls.Signature{validator1Signature, validator2Signature})
 		require.NoError(t, err)
 
 		qc := quorumCertificate{
-			blockHash:           blockHash,
-			view:                view,
-			signersList:         bitset.NewBitset().FromBytes([]byte{0x3}), // 0b0011, which represents validators 1 and 2
-			aggregatedSignature: aggregatedSignature,
+			blockHash: blockHash,
+			view:      view,
+			aggregatedSignature: &aggregatedSignature{
+				signersList: bitset.NewBitset().FromBytes([]byte{0x3}), // 0b0011, which represents validators 1 and 2
+				signature:   signature,
+			},
 		}
 
 		require.True(t, IsValidSuperMajorityQuorumCertificate(&qc, validators))
@@ -358,10 +363,12 @@ func createDummyTimeoutMessage(view uint64) *timeoutMessage {
 
 func createDummyQC(view uint64) *quorumCertificate {
 	return &quorumCertificate{
-		blockHash:           createDummyBlockHash(),
-		view:                view,
-		signersList:         bitset.NewBitset().FromBytes([]byte{0x3}),
-		aggregatedSignature: createDummyBLSSignature(),
+		blockHash: createDummyBlockHash(),
+		view:      view,
+		aggregatedSignature: &aggregatedSignature{
+			signersList: bitset.NewBitset().FromBytes([]byte{0x3}),
+			signature:   createDummyBLSSignature(),
+		},
 	}
 }
 

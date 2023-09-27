@@ -27,9 +27,12 @@ func IsValidSuperMajorityQuorumCertificate(qc QuorumCertificate, validators []Va
 	// Fetch the validators in the QC
 	validatorPublicKeysInQC := []*bls.PublicKey{}
 
+	// Fetch the aggregated signature in the QC
+	aggregatedSignature := qc.GetAggregatedSignature()
+
 	// Fetch the validators in the QC, and compute the sum of stake in the QC and in the network
 	for ii := range validators {
-		if qc.GetSignersList().Get(ii) {
+		if aggregatedSignature.GetSignersList().Get(ii) {
 			stakeInQC.Add(stakeInQC, validators[ii].GetStakeAmount())
 			validatorPublicKeysInQC = append(validatorPublicKeysInQC, validators[ii].GetPublicKey())
 		}
@@ -42,7 +45,7 @@ func IsValidSuperMajorityQuorumCertificate(qc QuorumCertificate, validators []Va
 	}
 
 	// Finally, validate the signature
-	return isValidSignatureManyPublicKeys(validatorPublicKeysInQC, qc.GetAggregatedSignature(), signaturePayload[:])
+	return isValidSignatureManyPublicKeys(validatorPublicKeysInQC, aggregatedSignature.GetSignature(), signaturePayload[:])
 }
 
 // When voting on a block, validators sign the payload sha3-256(View, BlockHash) with their BLS
@@ -161,22 +164,21 @@ func isProperlyFormedQC(qc QuorumCertificate) bool {
 		return false
 	}
 
-	// The block hash must be non-nil
-	if isInterfaceNil(qc.GetBlockHash()) {
+	// The view must be non-zero and the block hash must be non-nil
+	if qc.GetView() == 0 || isInterfaceNil(qc.GetBlockHash()) {
 		return false
 	}
 
-	// The view must be non-zero and the aggregated signature non-nil
-	if qc.GetView() == 0 || isInterfaceNil(qc.GetAggregatedSignature()) {
+	return isProperlyFormedAggregateSignature(qc.GetAggregatedSignature())
+}
+
+func isProperlyFormedAggregateSignature(agg AggregatedSignature) bool {
+	// The signature must be non-nil
+	if isInterfaceNil(agg) {
 		return false
 	}
 
-	// The signers list must be non-nil
-	if qc.GetSignersList() == nil {
-		return false
-	}
-
-	return true
+	return agg.GetSignersList() != nil && agg.GetSignature() != nil
 }
 
 // golang interface types are stored as a tuple of (type, value). A single i==nil check is not enough to
