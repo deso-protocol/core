@@ -81,10 +81,10 @@ func (fc *FastHotStuffEventLoop) Init(
 	return nil
 }
 
-// AdvanceView is called when the tip has not changed but the event loop has timed out. This
+// AdvanceViewOnTimeout is called when the tip has not changed but the event loop has timed out. This
 // function advances the view and resets the timeout scheduled task and block production scheduled
 // tasks.
-func (fc *FastHotStuffEventLoop) AdvanceView() (uint64, error) {
+func (fc *FastHotStuffEventLoop) AdvanceViewOnTimeout() (uint64, error) {
 	// Grab the event loop's lock
 	fc.lock.Lock()
 	defer fc.lock.Unlock()
@@ -92,7 +92,7 @@ func (fc *FastHotStuffEventLoop) AdvanceView() (uint64, error) {
 	// Ensure the event loop is running. This guarantees that the chain tip and validator set
 	// have already been set.
 	if fc.status != eventLoopStatusRunning {
-		return 0, errors.New("FastHotStuffEventLoop.AdvanceView: Event loop is not running")
+		return 0, errors.New("FastHotStuffEventLoop.AdvanceViewOnTimeout: Event loop is not running")
 	}
 
 	// Advance the view

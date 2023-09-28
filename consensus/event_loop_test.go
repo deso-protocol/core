@@ -250,7 +250,7 @@ func TestProcessTipBlock(t *testing.T) {
 	fc.Stop()
 }
 
-func TestAdvanceView(t *testing.T) {
+func TestAdvanceViewOnTimeout(t *testing.T) {
 	oneHourInNanoSecs := time.Duration(3600000000000)
 
 	fc := NewFastHotStuffEventLoop()
@@ -262,9 +262,9 @@ func TestAdvanceView(t *testing.T) {
 	)
 	require.NoError(t, err)
 
-	// Running AdvanceView() should fail because the event loop is not running
+	// Running AdvanceViewOnTimeout() should fail because the event loop is not running
 	{
-		_, err := fc.AdvanceView()
+		_, err := fc.AdvanceViewOnTimeout()
 		require.Error(t, err)
 	}
 
@@ -310,9 +310,9 @@ func TestAdvanceView(t *testing.T) {
 		}
 	}
 
-	// Run AdvanceView() to view 4
+	// Run AdvanceViewOnTimeout() to view 4
 	{
-		newView, err := fc.AdvanceView()
+		newView, err := fc.AdvanceViewOnTimeout()
 		require.NoError(t, err)
 		require.Equal(t, uint64(4), newView)
 	}
@@ -323,9 +323,9 @@ func TestAdvanceView(t *testing.T) {
 		require.Equal(t, len(fc.timeoutsSeen), 3)
 	}
 
-	// Run AdvanceView() to view 5
+	// Run AdvanceViewOnTimeout() to view 5
 	{
-		newView, err := fc.AdvanceView()
+		newView, err := fc.AdvanceViewOnTimeout()
 		require.NoError(t, err)
 		require.Equal(t, uint64(5), newView)
 	}
@@ -357,7 +357,7 @@ func TestProcessValidatorVote(t *testing.T) {
 
 	// Current View = 4
 	{
-		currentView, err := fc.AdvanceView()
+		currentView, err := fc.AdvanceViewOnTimeout()
 		require.NoError(t, err)
 		require.Equal(t, uint64(4), currentView)
 	}
@@ -441,7 +441,7 @@ func TestProcessValidatorTimeout(t *testing.T) {
 
 	// Current View = 4
 	{
-		currentView, err := fc.AdvanceView()
+		currentView, err := fc.AdvanceViewOnTimeout()
 		require.NoError(t, err)
 		require.Equal(t, uint64(4), currentView)
 	}
@@ -536,7 +536,7 @@ func TestTimeoutScheduledTaskExecuted(t *testing.T) {
 	require.False(t, fc.nextTimeoutTask.IsScheduled())
 
 	// Advance the view, which should reset the timeout scheduled task
-	fc.AdvanceView()
+	fc.AdvanceViewOnTimeout()
 
 	// Wait for the timeout signal to be sent
 	timeoutSignal = <-fc.Events
@@ -571,7 +571,7 @@ func TestResetEventLoopSignal(t *testing.T) {
 	require.Equal(t, fc.nextTimeoutTask.GetDuration(), 2*oneHourInNanoSecs)         // 2 hours away
 
 	// Advance the view to simulate a timeout
-	_, err = fc.AdvanceView()
+	_, err = fc.AdvanceViewOnTimeout()
 	require.NoError(t, err)
 
 	// Confirm the ETAs for the block construction and timeout timers
@@ -579,7 +579,7 @@ func TestResetEventLoopSignal(t *testing.T) {
 	require.Equal(t, fc.nextTimeoutTask.GetDuration(), 4*oneHourInNanoSecs)         // 2 hours * 2 = 4 hours away
 
 	// Advance the view to simulate a 2nd timeout
-	_, err = fc.AdvanceView()
+	_, err = fc.AdvanceViewOnTimeout()
 	require.NoError(t, err)
 
 	// Confirm the ETAs for the block construction and timeout timers
@@ -587,7 +587,7 @@ func TestResetEventLoopSignal(t *testing.T) {
 	require.Equal(t, fc.nextTimeoutTask.GetDuration(), 8*oneHourInNanoSecs)         // 2 hours * 2^2 = 8 hours away
 
 	// Advance the view to simulate a 3nd timeout
-	_, err = fc.AdvanceView()
+	_, err = fc.AdvanceViewOnTimeout()
 	require.NoError(t, err)
 
 	// Confirm the ETAs for the block construction and timeout timers
