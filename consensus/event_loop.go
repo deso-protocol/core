@@ -60,7 +60,7 @@ func (fc *FastHotStuffEventLoop) Init(
 	}
 
 	// We track the current view here so we know which view to time out on later on.
-	fc.currentView = safeBlocks[len(safeBlocks)-1].Block.GetView() + 1
+	fc.currentView = tip.Block.GetView() + 1
 
 	// Reset all internal data structures for votes and timeouts
 	fc.votesSeen = make(map[[32]byte]map[string]VoteMessage)

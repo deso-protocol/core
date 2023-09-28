@@ -18,10 +18,6 @@ func (bh *blockHash) GetValue() [32]byte {
 	return bh.value
 }
 
-func (bh *blockHash) Eq(other BlockHash) bool {
-	return bh.value == other.GetValue()
-}
-
 //////////////////////////////////////////////////////////
 // Validator interface implementation for testing
 //////////////////////////////////////////////////////////
