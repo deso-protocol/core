@@ -28,11 +28,11 @@ const (
 )
 
 type ConsensusEvent struct {
-	EventType   ConsensusEventType
-	BlockHash   BlockHash
-	BlockHeight uint64
-	View        uint64
-	QC          QuorumCertificate
+	EventType      ConsensusEventType
+	TipBlockHash   BlockHash
+	TipBlockHeight uint64
+	View           uint64
+	QC             QuorumCertificate
 }
 
 // BlockHash is a 32-byte hash of a block used to uniquely identify a block. It's re-defined here

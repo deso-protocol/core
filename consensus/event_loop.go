@@ -142,10 +142,10 @@ func (fc *FastHotStuffEventLoop) ProcessTipBlock(tip BlockWithValidators, safeBl
 	// Signal the caller that we can vote for the block. The caller will decide whether to construct and
 	// broadcast the vote.
 	fc.ConsensusEvents <- &ConsensusEvent{
-		EventType:   ConsensusEventTypeVote,
-		BlockHash:   fc.tip.block.GetBlockHash(),
-		BlockHeight: fc.tip.block.GetHeight(),
-		View:        fc.tip.block.GetView(),
+		EventType:      ConsensusEventTypeVote,
+		TipBlockHash:   fc.tip.block.GetBlockHash(),
+		TipBlockHeight: fc.tip.block.GetHeight(),
+		View:           fc.tip.block.GetView(),
 	}
 
 	// Schedule the next block construction and timeout scheduled tasks
@@ -448,10 +448,10 @@ func (fc *FastHotStuffEventLoop) onBlockConstructionScheduledTaskExecuted(blockC
 	if canConstructQC, signersList, signature := fc.tryConstructVoteQCInCurrentView(); canConstructQC {
 		// Signal the server that we can construct a QC for the chain tip
 		fc.ConsensusEvents <- &ConsensusEvent{
-			EventType:   ConsensusEventTypeConstructVoteQC, // The event type
-			View:        fc.currentView,                    // The current view in which we can construct a block
-			BlockHash:   fc.tip.block.GetBlockHash(),       // Block hash for the tip, which we are extending from
-			BlockHeight: fc.tip.block.GetHeight() + 1,      // The next block height
+			EventType:      ConsensusEventTypeConstructVoteQC, // The event type
+			View:           fc.currentView,                    // The current view in which we can construct a block
+			TipBlockHash:   fc.tip.block.GetBlockHash(),       // Block hash for the tip, which we are extending from
+			TipBlockHeight: fc.tip.block.GetHeight(),          // Block height for the tip, which we are extending from
 			QC: &quorumCertificate{
 				blockHash: fc.tip.block.GetBlockHash(), // Block hash for the tip, which we are extending from
 				view:      fc.tip.block.GetView(),      // The view from the tip block. This is always fc.currentView - 1
@@ -461,10 +461,6 @@ func (fc *FastHotStuffEventLoop) onBlockConstructionScheduledTaskExecuted(blockC
 				},
 			},
 		}
-
-		// Cancel the block construction task since we know we can construct a QC in the current view.
-		// It will be rescheduled when we advance view.
-		fc.nextBlockConstructionTask.Cancel()
 
 		return
 	}
@@ -570,9 +566,10 @@ func (fc *FastHotStuffEventLoop) onTimeoutScheduledTaskExecuted(timedOutView uin
 
 	// Signal the server that we are ready to time out
 	fc.ConsensusEvents <- &ConsensusEvent{
-		EventType: ConsensusEventTypeTimeout,   // The timeout event type
-		View:      timedOutView,                // The view we timed out
-		BlockHash: fc.tip.block.GetBlockHash(), // The last block we saw
+		EventType:      ConsensusEventTypeTimeout,   // The timeout event type
+		View:           timedOutView,                // The view we timed out
+		TipBlockHash:   fc.tip.block.GetBlockHash(), // The last block we saw
+		TipBlockHeight: fc.tip.block.GetHeight(),    // The last block we saw
 	}
 
 	// Cancel the timeout task. The server will reschedule it when it advances the view.

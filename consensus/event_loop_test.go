@@ -530,7 +530,7 @@ func TestTimeoutScheduledTaskExecuted(t *testing.T) {
 	// Confirm that the timeout signal is for the the expected view
 	require.Equal(t, timeoutSignal.EventType, ConsensusEventTypeTimeout)
 	require.Equal(t, timeoutSignal.View, dummyBlock.GetView()+1)
-	require.Equal(t, timeoutSignal.BlockHash.GetValue(), dummyBlock.GetBlockHash().GetValue())
+	require.Equal(t, timeoutSignal.TipBlockHash.GetValue(), dummyBlock.GetBlockHash().GetValue())
 
 	// Confirm that the timeout is no longer running
 	require.False(t, fc.nextTimeoutTask.IsScheduled())
@@ -544,7 +544,7 @@ func TestTimeoutScheduledTaskExecuted(t *testing.T) {
 	// Confirm that the timeout signal is for the the expected view
 	require.Equal(t, timeoutSignal.EventType, ConsensusEventTypeTimeout)
 	require.Equal(t, timeoutSignal.View, dummyBlock.GetView()+2)
-	require.Equal(t, timeoutSignal.BlockHash.GetValue(), dummyBlock.GetBlockHash().GetValue())
+	require.Equal(t, timeoutSignal.TipBlockHash.GetValue(), dummyBlock.GetBlockHash().GetValue())
 
 	// Confirm that the timeout is no longer running
 	require.False(t, fc.nextTimeoutTask.IsScheduled())
@@ -701,8 +701,8 @@ func TestVoteQCConstructionSignal(t *testing.T) {
 		// Confirm that the block construction signal has the expected parameters
 		require.Equal(t, blockConstructionSignal.EventType, ConsensusEventTypeConstructVoteQC)
 		require.Equal(t, blockConstructionSignal.View, block.GetView()+1)
-		require.Equal(t, blockConstructionSignal.BlockHash.GetValue(), block.GetBlockHash().GetValue())
-		require.Equal(t, blockConstructionSignal.BlockHeight, block.GetHeight()+1)
+		require.Equal(t, blockConstructionSignal.TipBlockHash.GetValue(), block.GetBlockHash().GetValue())
+		require.Equal(t, blockConstructionSignal.TipBlockHeight, block.GetHeight()+1)
 		require.Equal(t, blockConstructionSignal.QC.GetView(), block.GetView())
 		require.Equal(t, blockConstructionSignal.QC.GetBlockHash().GetValue(), block.GetBlockHash().GetValue())
 		require.Equal(t, blockConstructionSignal.QC.GetAggregatedSignature().GetSignersList().ToBytes(), bitset.NewBitset().Set(0, true).ToBytes())
