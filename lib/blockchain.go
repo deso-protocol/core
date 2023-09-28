@@ -2639,7 +2639,7 @@ func (bc *Blockchain) processBlockPoW(desoBlock *MsgDeSoBlock, verifySignatures 
 // 4. Connect the block to the blockchain's tip
 // 5. If applicable, flush the incoming block's grandparent to the DB
 // 6. Notify the block proposer, pacemaker, and voting logic that the incoming block has been accepted
-func (bc *Blockchain) processBlockPoS(desoBlock *MsgDeSoBlock, verifySignatures bool) (_success bool, _isOrphan bool, _blockHashToRequest *BlockHash, _err error) {
+func (bc *Blockchain) processBlockPoS(desoBlock *MsgDeSoBlock, verifySignatures bool) (_success bool, _isOrphan bool, _missingBlockHashes []*BlockHash, _err error) {
 	// TODO: Implement me
 	// 1. Surface Level validation fo the block
 	if err := bc.validateBlockGeneral(desoBlock); err != nil {
@@ -2682,7 +2682,7 @@ func (bc *Blockchain) processBlockPoS(desoBlock *MsgDeSoBlock, verifySignatures 
 		return false, false, nil, err
 	}
 	if missingBlockHash != nil {
-		return false, true, missingBlockHash, nil
+		return false, true, []*BlockHash{missingBlockHash}, nil
 	}
 
 	// 8. Happy path
