@@ -152,7 +152,6 @@ type FastHotStuffEventLoop struct {
 	nextBlockConstructionTask *ScheduledTask[uint64]
 	nextTimeoutTask           *ScheduledTask[uint64]
 
-	// Stores all safe blocks that we can
 	// The current view at which we expect to see or propose the next block. In the event of a timeout,
 	// the timeout signal will be triggered for this view.
 	currentView uint64

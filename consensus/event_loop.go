@@ -22,7 +22,8 @@ func NewFastHotStuffEventLoop() *FastHotStuffEventLoop {
 // params:
 //   - blockConstructionInterval: block construction duration must be > 0
 //   - timeoutBaseDuration: timeout base duration must be > 0
-//   - tip: the current tip of the blockchain, with the validator set at that block height
+//   - tip: the current tip of the blockchain, with the validator set at that block height. This may
+//     be a committed or uncommitted block.
 //   - safeBlocks: an unordered slice of blocks including the committed tip, the uncommitted tip,
 //     all ancestors of the uncommitted tip that are safe to extend from, and all blocks from forks
 //     that are safe to extend from. This function does not validate the collection of blocks. It
@@ -110,7 +111,7 @@ func (fc *FastHotStuffEventLoop) AdvanceView() (uint64, error) {
 // timers.
 //
 // Expected params:
-//   - tip: the current tip of the blockchain, with the validator set at that block height
+//   - tip: the current uncommitted tip of the blockchain, with the validator set at that block height
 //   - safeBlocks: an unordered slice of blocks including the committed tip, the uncommitted tip,
 //     all ancestors of the uncommitted tip that are safe to extend from, and all blocks from forks
 //     that are safe to extend from. This function does not validate the collection of blocks. It
