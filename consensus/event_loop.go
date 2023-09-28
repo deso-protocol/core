@@ -454,7 +454,7 @@ func (fc *FastHotStuffEventLoop) onBlockConstructionScheduledTaskExecuted(blockC
 			BlockHeight: fc.tip.block.GetHeight() + 1,      // The next block height
 			QC: &quorumCertificate{
 				blockHash: fc.tip.block.GetBlockHash(), // Block hash for the tip, which we are extending from
-				view:      fc.tip.block.GetView(),      // The view from the tip block. This is always currentView - 1
+				view:      fc.tip.block.GetView(),      // The view from the tip block. This is always fc.currentView - 1
 				aggregatedSignature: &aggregatedSignature{
 					signersList: signersList, // The signers list who voted on the tip block
 					signature:   signature,   // Aggregated signature from votes on the tip block
@@ -476,11 +476,11 @@ func (fc *FastHotStuffEventLoop) onBlockConstructionScheduledTaskExecuted(blockC
 }
 
 // tryConstructVoteQCInCurrentView is a helper function that attempts to construct a QC for the tip block
-// so that can be proposed in a block in the current view. The function internally performs all view and vote
+// so that it can be proposed in a block in the current view. The function internally performs all view and vote
 // validations to ensure that the resulting QC is valid. If a QC can be constructed, the function returns
 // the signers list and aggregate signature that can be used to construct the QC.
 //
-// This function must be called while holding the consensus instance's lock held.
+// This function must be called while holding the consensus instance's lock.
 func (fc *FastHotStuffEventLoop) tryConstructVoteQCInCurrentView() (
 	_success bool, // true if and only if we are able to construct a vote QC for the tip block in the current view
 	_signersList *bitset.Bitset, // bitset of signers for the aggregated signature for the tip block
@@ -526,7 +526,7 @@ func (fc *FastHotStuffEventLoop) tryConstructVoteQCInCurrentView() (
 			continue
 		}
 
-		// Track the votes signature, stake, and place in the validator set
+		// Track the vote's signature, stake, and place in the validator set
 		totalVotingStake = uint256.NewInt().Add(totalVotingStake, validator.GetStakeAmount())
 		signersList.Set(ii, true)
 		signatures = append(signatures, vote.GetSignature())

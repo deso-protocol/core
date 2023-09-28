@@ -669,7 +669,7 @@ func TestVoteQCConstructionSignal(t *testing.T) {
 		)
 		require.NoError(t, err)
 
-		// Create a vote from validator 2
+		// Create a vote from validator 1
 		vote := voteMessage{
 			view:      2,                                // The view the block was proposed in
 			blockHash: block.GetBlockHash(),             // Block hash is the same as the block hash of the dummy block
