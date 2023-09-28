@@ -16,3 +16,11 @@ func Transform[TInput any, TOutput any](slice []TInput, transformFn func(TInput)
 	}
 	return result
 }
+
+func ToMap[TKey comparable, TValue any](slice []TValue, keyFn func(TValue) TKey) map[TKey]TValue {
+	result := make(map[TKey]TValue)
+	for _, val := range slice {
+		result[keyFn(val)] = val
+	}
+	return result
+}
