@@ -52,7 +52,7 @@ func (pmnt *NonceTracker) RemoveTxnByPublicKeyNonce(pk PublicKey, nonce DeSoNonc
 }
 
 // AddTxnByPublicKeyNonce adds a new (pk, nonce) -> txn mapping to the nonce tracker.
-func (pmnt *NonceTracker) AddTxnByPublicKeyNonce(pk PublicKey, nonce DeSoNonce, txn *MempoolTx) {
+func (pmnt *NonceTracker) AddTxnByPublicKeyNonce(txn *MempoolTx, pk PublicKey, nonce DeSoNonce) {
 	pmnt.Lock()
 	defer pmnt.Unlock()
 

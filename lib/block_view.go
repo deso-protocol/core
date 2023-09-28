@@ -3649,6 +3649,11 @@ func (bav *UtxoView) _connectTransaction(txn *MsgDeSoTxn, txHash *BlockHash,
 }
 
 func (bav *UtxoView) ValidateTransactionNonce(txn *MsgDeSoTxn, blockHeight uint64) error {
+	if txn == nil || txn.TxnNonce == nil {
+		return fmt.Errorf("ValidateTransactionNonce: Nonce or txn is nil for public key %v",
+			PkToStringBoth(txn.PublicKey))
+	}
+
 	if blockHeight > txn.TxnNonce.ExpirationBlockHeight {
 		return errors.Wrapf(RuleErrorNonceExpired,
 			"ValidateTransactionNonce: Nonce %s has expired for public key %v",
