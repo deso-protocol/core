@@ -574,9 +574,17 @@ func (fc *FastHotStuffEventLoop) tryConstructVoteQCInCurrentView() (
 	return true, signersList, aggregateSignature
 }
 
+// tryConstructTimeoutQCInCurrentView is a helper function that attempts to construct a timeout QC for the
+// previous view, so that it can be proposed in an empty block in the current view. The function internally performs
+// all view and timeout message validations to ensure that the resulting timeout QC is valid and extends from a
+// known safe block. If a timeout QC can be constructed, the function returns the safe block that it extends
+// from, the highQC, highQC views from validator timeout messages, signers list, and aggregate signature needed
+// to construct the timeout QC.
+//
+// This function must be called while holding the consensus instance's lock.
 func (fc *FastHotStuffEventLoop) tryConstructTimeoutQCInCurrentView() (
 	_success bool, // true if and only if we are able to construct a timeout QC in the current view
-	_previousBlock Block, // the safe block that the high QC is for; the timeout QC will be proposed extending from block
+	_previousBlock Block, // the safe block that the high QC is from; the timeout QC proposed will extend from this block
 	_highQC QuorumCertificate, // high QC aggregated from validators who timed out
 	_highQCViews []uint64, // high QC views for each validator who timed out
 	_signersList *bitset.Bitset, // bitset of signers for the aggregated signature from the timeout messages
@@ -595,7 +603,7 @@ func (fc *FastHotStuffEventLoop) tryConstructTimeoutQCInCurrentView() (
 	for _, timeout := range timeoutsByValidator {
 		// Check if the high QC from the timeout messages is for a block in our safeBlocks slice. If not,
 		// then we have no knowledge of the block, or the block is not safe to extend from. This should never
-		// happen, but may be possible in the event we receive a timeout message at the same time the block is
+		// happen, but may be possible in the event we receive a timeout message at the same time the block
 		// becomes unsafe to extend from (ex: it's part of an stale reorg). We check for the edge case here to
 		// be 100% safe.
 		isSafeBlock, _, _, validatorSetAtBlock := fc.getBlockAndValidatorSetByHash(timeout.GetHighQC().GetBlockHash())
