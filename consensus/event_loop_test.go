@@ -843,11 +843,11 @@ func TestTimeoutQCConstructionSignal(t *testing.T) {
 
 		// Confirm that the block construction signal has the expected parameters
 		require.Equal(t, signal.EventType, ConsensusEventTypeConstructTimeoutQC)
-		require.Equal(t, signal.View, uint64(5))                                        // The timeout QC will be proposed in view 5
-		require.Equal(t, signal.BlockHash.GetValue(), block1.GetBlockHash().GetValue()) // The timeout QC will be proposed in a block that extends from block 1
-		require.Equal(t, signal.BlockHeight, block2.GetHeight())                        // The timeout QC will be proposed at the block height 2, replacing block 2
-		require.Equal(t, signal.AggregateQC.GetView(), uint64(4))                       // The timed out view is 4
-		require.Equal(t, signal.AggregateQC.GetHighQCViews(), []uint64{1, 2})           // The high QC view is 1 for validator 1 and 2 for validator 2
+		require.Equal(t, signal.View, uint64(5))                                           // The timeout QC will be proposed in view 5
+		require.Equal(t, signal.TipBlockHash.GetValue(), block1.GetBlockHash().GetValue()) // The timeout QC will be proposed in a block that extends from block 1
+		require.Equal(t, signal.TipBlockHeight, block2.GetHeight())                        // The timeout QC will be proposed at the block height 2, replacing block 2
+		require.Equal(t, signal.AggregateQC.GetView(), uint64(4))                          // The timed out view is 4
+		require.Equal(t, signal.AggregateQC.GetHighQCViews(), []uint64{1, 2})              // The high QC view is 1 for validator 1 and 2 for validator 2
 		require.Equal(t,
 			signal.AggregateQC.GetAggregatedSignature().GetSignersList().ToBytes(),
 			bitset.NewBitset().Set(0, true).Set(1, true).ToBytes(), // Both validators have timed out, so both validators are in the timeout QC

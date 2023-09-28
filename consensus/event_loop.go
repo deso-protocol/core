@@ -470,10 +470,10 @@ func (fc *FastHotStuffEventLoop) onBlockConstructionScheduledTaskExecuted(blockC
 	if success, previousBlock, highQC, highQCViews, signersList, signature := fc.tryConstructTimeoutQCInCurrentView(); success {
 		// Signal the server that we can construct a timeout QC for the current view
 		fc.ConsensusEvents <- &ConsensusEvent{
-			EventType:   ConsensusEventTypeConstructTimeoutQC, // The event type
-			View:        fc.currentView,                       // The view that we have a timeout QC for
-			BlockHash:   highQC.GetBlockHash(),                // The block hash we can build the aggregate QC from
-			BlockHeight: previousBlock.GetHeight() + 1,        // The block height we can propose a block with this timeout aggregate QC
+			EventType:      ConsensusEventTypeConstructTimeoutQC, // The event type
+			View:           fc.currentView,                       // The view that we have a timeout QC for
+			TipBlockHash:   highQC.GetBlockHash(),                // The block hash that we extend from
+			TipBlockHeight: previousBlock.GetHeight(),            // The block height that we extend from
 			AggregateQC: &aggregateQuorumCertificate{
 				view:        fc.currentView - 1, // The timed out view is always the previous view
 				highQC:      highQC,             // The high QC aggregated from the timeout messages
