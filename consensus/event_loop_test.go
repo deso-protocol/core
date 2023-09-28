@@ -702,7 +702,7 @@ func TestVoteQCConstructionSignal(t *testing.T) {
 		require.Equal(t, blockConstructionSignal.EventType, ConsensusEventTypeConstructVoteQC)
 		require.Equal(t, blockConstructionSignal.View, block.GetView()+1)
 		require.Equal(t, blockConstructionSignal.TipBlockHash.GetValue(), block.GetBlockHash().GetValue())
-		require.Equal(t, blockConstructionSignal.TipBlockHeight, block.GetHeight()+1)
+		require.Equal(t, blockConstructionSignal.TipBlockHeight, block.GetHeight())
 		require.Equal(t, blockConstructionSignal.QC.GetView(), block.GetView())
 		require.Equal(t, blockConstructionSignal.QC.GetBlockHash().GetValue(), block.GetBlockHash().GetValue())
 		require.Equal(t, blockConstructionSignal.QC.GetAggregatedSignature().GetSignersList().ToBytes(), bitset.NewBitset().Set(0, true).ToBytes())
