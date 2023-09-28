@@ -482,6 +482,13 @@ type Blockchain struct {
 	bestHeaderChain    []*BlockNode
 	bestHeaderChainMap map[BlockHash]*BlockNode
 
+	// Track the highest QC we've seen.
+	highestQC *QuorumCertificate
+
+	// Tracks all uncommitted blocks in memory
+	uncommittedBlocks    []*MsgDeSoBlock
+	uncommittedBlocksMap map[BlockHash]*MsgDeSoBlock
+
 	// We keep track of orphan blocks with the following data structures. Orphans
 	// are not written to disk and are only cached in memory. Moreover we only keep
 	// up to MaxOrphansInMemory of them in order to prevent memory exhaustion.
@@ -2633,49 +2640,83 @@ func (bc *Blockchain) processBlockPoW(desoBlock *MsgDeSoBlock, verifySignatures 
 }
 
 // processBlockPoS runs the Fast-Hotstuff block connect and commit rule as follows:
-// 1. Validate on an incoming block and its header
-// 2. Store the block in the db
-// 3. Resolves forks within the last two blocks
-// 4. Connect the block to the blockchain's tip
-// 5. If applicable, flush the incoming block's grandparent to the DB
-// 6. Notify the block proposer, pacemaker, and voting logic that the incoming block has been accepted
+//  1. Validate on an incoming block, its header, its block height, the leader, and its QCs (vote or timeout)
+//  2. Store the block in the block index
+//  3. Determine if we're missing a parent block of this block and any of its parents from the block index.
+//     If so, return the hash of the missing block.
+//  4. Resolves forks within the last two blocks
+//  5. Connect the block to the blockchain's tip
+//  6. Update in-memory struct holding uncommitted block. @sofonias - should this happen AFTER we run the commit rule?
+//  7. Run the commit rule - If applicable, flushes the incoming block's grandparent to the DB
+//  8. Update the currentView to this new block's view + 1
+//  9. Notify the block proposer, pacemaker, and voting logic that the incoming block has been accepted by returning success.
 func (bc *Blockchain) processBlockPoS(desoBlock *MsgDeSoBlock, verifySignatures bool) (_success bool, _isOrphan bool, _missingBlockHashes []*BlockHash, _err error) {
 	// TODO: Implement me
-	// 1. Surface Level validation fo the block
+	// 1. Start with all sanity checks of the block.
+	// 1a. Surface Level validation fo the block
 	if err := bc.validateBlockGeneral(desoBlock); err != nil {
 		return false, false, nil, err
 	}
-	// 2. Validate Block Height
+	// 1b. Validate Block Height
 	if err := bc.validateBlockHeight(desoBlock); err != nil {
 		return false, false, nil, err
 	}
-	// 3. Validate View
+	// 1c. Validate View
 	if err := bc.validateBlockView(desoBlock); err != nil {
 		// Check if err is for view > latest committed block view and <= latest uncommitted block.
 		// If so, we need to perform the rest of the validations and then add to our block index.
 		// TODO: implement check on error described above.
 		return false, false, nil, err
 	}
-	// 4. Validate Leader
+	// 1d. Validate Leader
 	if err := bc.validateBlockLeader(desoBlock); err != nil {
 		return false, false, nil, err
 	}
 	// TODO: Get validator set for current block height. Alternatively, we could do this in
 	// validateQC, but we may need the validator set elsewhere in this function anyway.
 	var validatorSet []*ValidatorEntry
-	// 5. Validate QC
+	// 1e. Validate QC
 	if err := bc.validateQC(desoBlock, validatorSet); err != nil {
 		return false, false, nil, err
 	}
-	// TODO: Determine if we have a timeout QC
-	timeoutQC := false
-	// 6. If timeout QC, validate that block hash isn't too far back from the latest.
-	if timeoutQC {
-		if err := bc.validateTimeoutQC(desoBlock); err != nil {
+
+	// If the block doesn’t contain a ValidatorsTimeoutAggregateQC, then that indicates that we
+	// did NOT timeout in the previous view, which means we should just check that
+	// the QC corresponds to the previous view.
+	if desoBlock.Header.ValidatorsTimeoutAggregateQC.isEmpty() {
+		// The block is safe to vote on if it is a direct child of the previous
+		// block. This means that the parent and child blocks have consecutive
+		// views. We use the current block’s QC to find the view of the parent.
+		// TODO: Any processing related to the block's vote QC.
+	} else {
+		// If we have a ValidatorsTimeoutAggregateQC set on the block, it means the nodes decided
+		// to skip a view by sending TimeoutMessages to the leader, so we process
+		// the block accordingly.
+		// 1f. If timeout QC, validate that block hash isn't too far back from the latest.
+		if err := bc.validateTimeoutQC(desoBlock, validatorSet); err != nil {
 			return false, false, nil, err
 		}
+		// TODO: Get highest timeout QC from the block.
+		// We find the QC with the highest view among the QCs contained in the
+		// AggregateQC.
+		var highestTimeoutQC *QuorumCertificate
+		// TODO: Check if our local highestQC has a smaller view than the highestTimeoutQC.
+		// If our local highestQC has a smaller view than the highestTimeoutQC,
+		// we update our local highestQC.
+		if highestTimeoutQC.ProposedInView > bc.highestQC.ProposedInView {
+			// Update our high QC.
+			// TODO: Should probably COPY this.
+			bc.highestQC = highestTimeoutQC
+		}
 	}
-	// 7. Determine if we're missing a parent block of this block and any of its parents from the block index.
+
+	// 2. We can now add this block to the block index since we have performed
+	// all basic validations
+	if err := bc.addBlockToBlockIndex(desoBlock); err != nil {
+		return false, false, nil, err
+	}
+
+	// 3. Determine if we're missing a parent block of this block and any of its parents from the block index.
 	// If so, add block to block index and return the hash of the missing block.
 	missingBlockHash, err := bc.validateAncestorsExist(desoBlock)
 	if err != nil {
@@ -2685,27 +2726,35 @@ func (bc *Blockchain) processBlockPoS(desoBlock *MsgDeSoBlock, verifySignatures 
 		return false, true, []*BlockHash{missingBlockHash}, nil
 	}
 
-	// 8. Happy path
-	// - Add block to best chain and block index
-	// - Update in-memory struct holding uncommitted blocks.
-	// - Commit grandparent if possible
-	// - Update current view to block's view + 1
+	// 4. Handle reorgs if necessary
+	if bc.shouldReorg(desoBlock) {
+		if err = bc.handleReorg(desoBlock); err != nil {
+			return false, false, nil, err
+		}
+	}
+
+	// Happy path
+	// 5. Add block to best chain.
 	if err = bc.addBlockToBestChain(desoBlock); err != nil {
 		return false, false, nil, err
 	}
 
+	// 6. Update in-memory struct holding uncommitted blocks.
 	if err = bc.updateUncommittedBlocks(desoBlock); err != nil {
 		return false, false, nil, err
 	}
 
+	// 7. Commit grandparent if possible.
 	if err = bc.commitGrandparents(desoBlock); err != nil {
 		return false, false, nil, err
 	}
 
+	// 8. Update current view to block's view + 1
 	if err = bc.updateCurrentView(desoBlock); err != nil {
 		return false, false, nil, err
 	}
 
+	// 9. Return success
 	return true, false, nil, nil
 }
 
@@ -2755,7 +2804,7 @@ func (bc *Blockchain) validateQC(desoBlock *MsgDeSoBlock, validatorSet []*Valida
 
 // validateTimeoutQC validates that the parent block hash is not too far back from the latest.
 // Specifically, it checks that the parent block hash is at least the latest committed block.
-func (bc *Blockchain) validateTimeoutQC(desoBlock *MsgDeSoBlock) error {
+func (bc *Blockchain) validateTimeoutQC(desoBlock *MsgDeSoBlock, validatorSet []*ValidatorEntry) error {
 	// TODO: Implement me
 	return errors.New("IMPLEMENT ME")
 }
@@ -2774,12 +2823,30 @@ func (bc *Blockchain) validateAncestorsExist(desoBlock *MsgDeSoBlock) (_missingB
 	return nil, errors.New("IMPLEMENT ME")
 }
 
+// addBlockToBlockIndex adds the block to the block index.
 func (bc *Blockchain) addBlockToBlockIndex(desoBlock *MsgDeSoBlock) error {
 	// TODO: Implement me.
 	return errors.New("IMPLEMENT ME")
 }
 
-// addBlockToBestChain adds the block to the best chain and block index.
+// shouldReorg determines if we should reorg to the block provided. We should reorg if
+// this block has a higher QC than our current tip and extends from either the committed
+// tip OR any uncommitted safe block in our block index.
+func (bc *Blockchain) shouldReorg(desoBlock *MsgDeSoBlock) bool {
+	return false
+}
+
+// handleReorg handles a reorg to the block provided. It does not check whether or not we should
+// perform a reorg, so this should be called after shouldReorg. It will do the following:
+// 1. Update the bestChain and bestChainMap by removing blocks that are not uncommitted ancestor of this block.
+// 2. Update the bestChain and bestChainMap by adding blocks that are uncommitted ancestors of this block.
+// Note: addBlockToBestChain will be called after this to handle adding THIS block to the best chain.
+func (bc *Blockchain) handleReorg(desoBlock *MsgDeSoBlock) error {
+	// TODO: Implement me.
+	return errors.New("IMPLEMENT ME")
+}
+
+// addBlockToBestChain adds the block to the best chain.
 func (bc *Blockchain) addBlockToBestChain(desoBlock *MsgDeSoBlock) error {
 	// TODO: Implement me.
 	return errors.New("IMPLEMENT ME")

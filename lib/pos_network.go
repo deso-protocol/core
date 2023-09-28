@@ -548,6 +548,16 @@ func (aggQC *TimeoutAggregateQuorumCertificate) FromBytes(rr io.Reader) error {
 	return nil
 }
 
+// isEmpty returns true if the TimeoutAggregateQuorumCertificate is nil or if it
+// contains no data.
+// Reference implementation: https://github.com/deso-protocol/hotstuff_pseudocode/blob/6409b51c3a9a953b383e90619076887e9cebf38d/fast_hotstuff_bls.go#L119
+func (aggQC *TimeoutAggregateQuorumCertificate) isEmpty() bool {
+	return aggQC == nil ||
+		aggQC.TimedOutView == 0 ||
+		aggQC.ValidatorsTimeoutAggregatedSignature == nil ||
+		aggQC.ValidatorsTimeoutAggregatedSignature.Signature == nil
+}
+
 // ==================================================================
 // Bitset Utils
 // ==================================================================
