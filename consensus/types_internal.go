@@ -67,7 +67,7 @@ func (qc *aggregateQuorumCertificate) GetAggregatedSignature() AggregatedSignatu
 //////////////////////////////////////////////////////////
 
 type quorumCertificate struct {
-	blockHash           *blockHash
+	blockHash           BlockHash
 	view                uint64
 	aggregatedSignature AggregatedSignature
 }
@@ -106,10 +106,10 @@ func (as *aggregatedSignature) GetSignature() *bls.Signature {
 //////////////////////////////////////////////////////////
 
 type block struct {
-	blockHash *blockHash
+	blockHash BlockHash
 	height    uint64
 	view      uint64
-	qc        *quorumCertificate
+	qc        QuorumCertificate
 }
 
 func (b *block) GetBlockHash() BlockHash {
@@ -134,7 +134,7 @@ func (b *block) GetQC() QuorumCertificate {
 
 type voteMessage struct {
 	view      uint64
-	blockHash *blockHash
+	blockHash BlockHash
 	publicKey *bls.PublicKey
 	signature *bls.Signature
 }
@@ -161,7 +161,7 @@ func (vm *voteMessage) GetSignature() *bls.Signature {
 
 type timeoutMessage struct {
 	view      uint64
-	highQC    *quorumCertificate
+	highQC    QuorumCertificate
 	publicKey *bls.PublicKey
 	signature *bls.Signature
 }

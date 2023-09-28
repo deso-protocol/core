@@ -28,17 +28,18 @@ const (
 )
 
 type ConsensusEvent struct {
-	EventType   ConsensusEventType
-	BlockHash   BlockHash
-	BlockHeight uint64
-	View        uint64
+	EventType      ConsensusEventType
+	TipBlockHash   BlockHash
+	TipBlockHeight uint64
+	View           uint64
+	QC             QuorumCertificate
 }
 
 // BlockHash is a 32-byte hash of a block used to uniquely identify a block. It's re-defined here
 // as an interface that matches the exact structure of the BlockHash type in core, so that the two
-// packages are decoupled and the Fast HotStuff consensus can be tested end-to-end independently.
-// When using the Fast HotStuff, the lib package can convert its own BlockHash type to and from this
-// type trivially.
+// packages are decoupled and the Fast HotStuff event loop can be tested end-to-end independently.
+// When using the Fast HotStuff event loop, the lib package can convert its own BlockHash type to
+// and from this type trivially.
 type BlockHash interface {
 	GetValue() [32]byte
 }
@@ -166,7 +167,7 @@ type FastHotStuffEventLoop struct {
 	// votesSeen is an in-memory map of all the votes we've seen so far. It's a nested map with the
 	// following nested key structure:
 	//
-	//   sha256(vote.View, vote.BlockHash) - > string(vote.PublicKey) -> VoteMessage
+	//   sha3-256(vote.View, vote.BlockHash) - > string(vote.PublicKey) -> VoteMessage
 	//
 	// We use a nested map as above because we want to be able to efficiently fetch all votes by block hash.
 	votesSeen map[[32]byte]map[string]VoteMessage

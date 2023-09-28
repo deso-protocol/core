@@ -6,6 +6,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/deso-protocol/core/bls"
+	"github.com/deso-protocol/core/collections/bitset"
+	"github.com/holiman/uint256"
 	"github.com/stretchr/testify/require"
 )
 
@@ -527,7 +530,7 @@ func TestTimeoutScheduledTaskExecuted(t *testing.T) {
 	// Confirm that the timeout signal is for the the expected view
 	require.Equal(t, timeoutSignal.EventType, ConsensusEventTypeTimeout)
 	require.Equal(t, timeoutSignal.View, dummyBlock.GetView()+1)
-	require.Equal(t, timeoutSignal.BlockHash.GetValue(), dummyBlock.GetBlockHash().GetValue())
+	require.Equal(t, timeoutSignal.TipBlockHash.GetValue(), dummyBlock.GetBlockHash().GetValue())
 
 	// Confirm that the timeout is no longer running
 	require.False(t, fc.nextTimeoutTask.IsScheduled())
@@ -541,7 +544,7 @@ func TestTimeoutScheduledTaskExecuted(t *testing.T) {
 	// Confirm that the timeout signal is for the the expected view
 	require.Equal(t, timeoutSignal.EventType, ConsensusEventTypeTimeout)
 	require.Equal(t, timeoutSignal.View, dummyBlock.GetView()+2)
-	require.Equal(t, timeoutSignal.BlockHash.GetValue(), dummyBlock.GetBlockHash().GetValue())
+	require.Equal(t, timeoutSignal.TipBlockHash.GetValue(), dummyBlock.GetBlockHash().GetValue())
 
 	// Confirm that the timeout is no longer running
 	require.False(t, fc.nextTimeoutTask.IsScheduled())
@@ -593,6 +596,118 @@ func TestResetEventLoopSignal(t *testing.T) {
 
 	// Stop the event loop
 	fc.Stop()
+}
+
+func TestVoteQCConstructionSignal(t *testing.T) {
+
+	// Create a valid dummy block at view 2
+	block := createDummyBlock(2)
+
+	// Create a valid validator set
+	validatorPrivateKey1, _ := bls.NewPrivateKey()
+	validatorPrivateKey2, _ := bls.NewPrivateKey()
+
+	validatorSet := []Validator{
+		&validator{
+			publicKey:   validatorPrivateKey1.PublicKey(),
+			stakeAmount: uint256.NewInt().SetUint64(70),
+		},
+		&validator{
+			publicKey:   validatorPrivateKey2.PublicKey(),
+			stakeAmount: uint256.NewInt().SetUint64(30),
+		},
+	}
+
+	voteSignaturePayload := GetVoteSignaturePayload(2, block.GetBlockHash())
+
+	validator1Vote, _ := validatorPrivateKey1.Sign(voteSignaturePayload[:])
+	validator2Vote, _ := validatorPrivateKey2.Sign(voteSignaturePayload[:])
+
+	// Sad path, not enough votes to construct a QC
+	{
+		fc := NewFastHotStuffEventLoop()
+		err := fc.Init(time.Microsecond, time.Hour,
+			BlockWithValidators{block, validatorSet},     // tip
+			[]BlockWithValidators{{block, validatorSet}}, // safeBlocks
+		)
+		require.NoError(t, err)
+
+		// Create a vote from validator 2
+		vote := voteMessage{
+			view:      2,                                // The view the block was proposed in
+			blockHash: block.GetBlockHash(),             // Block hash is the same as the block hash of the dummy block
+			publicKey: validatorPrivateKey2.PublicKey(), // Validator 2 with 30/100 stake votes
+			signature: validator2Vote,                   // Validator 2's vote
+		}
+
+		// Store the vote in the event loop's votesSeen map
+		fc.votesSeen[voteSignaturePayload] = map[string]VoteMessage{
+			vote.publicKey.ToString(): &vote,
+		}
+
+		// Start the event loop
+		fc.Start()
+
+		// Wait up to 100 milliseconds for a block construction signal to be sent
+		select {
+		case <-fc.ConsensusEvents:
+			require.Fail(t, "Received a block construction signal when there were not enough votes to construct a QC")
+		case <-time.After(100 * time.Millisecond):
+			// Do nothing
+		}
+
+		// Stop the event loop
+		fc.Stop()
+	}
+
+	// Happy path, there are votes with a super-majority of stake to construct a QC
+	{
+		fc := NewFastHotStuffEventLoop()
+		err := fc.Init(time.Microsecond, time.Hour,
+			BlockWithValidators{block, validatorSet},     // tip
+			[]BlockWithValidators{{block, validatorSet}}, // safeBlocks
+		)
+		require.NoError(t, err)
+
+		// Create a vote from validator 1
+		vote := voteMessage{
+			view:      2,                                // The view the block was proposed in
+			blockHash: block.GetBlockHash(),             // Block hash is the same as the block hash of the dummy block
+			publicKey: validatorPrivateKey1.PublicKey(), // Validator 1 with 70/100 stake votes
+			signature: validator1Vote,                   // Validator 1's vote
+		}
+
+		// Store the vote in the event loop's votesSeen map
+		fc.votesSeen[voteSignaturePayload] = map[string]VoteMessage{
+			vote.publicKey.ToString(): &vote,
+		}
+
+		// Start the event loop
+		fc.Start()
+
+		var blockConstructionSignal *ConsensusEvent
+
+		// Wait up to 100 milliseconds for a block construction signal to be sent
+		select {
+		case blockConstructionSignal = <-fc.ConsensusEvents:
+			// Do nothing
+		case <-time.After(100 * time.Millisecond):
+			require.Fail(t, "Did not receive a block construction signal when there were enough votes to construct a QC")
+		}
+
+		// Stop the event loop
+		fc.Stop()
+
+		// Confirm that the block construction signal has the expected parameters
+		require.Equal(t, blockConstructionSignal.EventType, ConsensusEventTypeConstructVoteQC)
+		require.Equal(t, blockConstructionSignal.View, block.GetView()+1)
+		require.Equal(t, blockConstructionSignal.TipBlockHash.GetValue(), block.GetBlockHash().GetValue())
+		require.Equal(t, blockConstructionSignal.TipBlockHeight, block.GetHeight())
+		require.Equal(t, blockConstructionSignal.QC.GetView(), block.GetView())
+		require.Equal(t, blockConstructionSignal.QC.GetBlockHash().GetValue(), block.GetBlockHash().GetValue())
+		require.Equal(t, blockConstructionSignal.QC.GetAggregatedSignature().GetSignersList().ToBytes(), bitset.NewBitset().Set(0, true).ToBytes())
+		require.Equal(t, blockConstructionSignal.QC.GetAggregatedSignature().GetSignature().ToBytes(), validator1Vote.ToBytes())
+	}
 }
 
 func TestFastHotStuffEventLoopStartStop(t *testing.T) {

@@ -3,10 +3,12 @@ package consensus
 import (
 	"time"
 
+	"github.com/holiman/uint256"
 	"github.com/pkg/errors"
 
 	"github.com/deso-protocol/core/bls"
 	"github.com/deso-protocol/core/collections"
+	"github.com/deso-protocol/core/collections/bitset"
 )
 
 func NewFastHotStuffEventLoop() *FastHotStuffEventLoop {
@@ -140,10 +142,10 @@ func (fc *FastHotStuffEventLoop) ProcessTipBlock(tip BlockWithValidators, safeBl
 	// Signal the caller that we can vote for the block. The caller will decide whether to construct and
 	// broadcast the vote.
 	fc.ConsensusEvents <- &ConsensusEvent{
-		EventType:   ConsensusEventTypeVote,
-		BlockHash:   fc.tip.block.GetBlockHash(),
-		BlockHeight: fc.tip.block.GetHeight(),
-		View:        fc.tip.block.GetView(),
+		EventType:      ConsensusEventTypeVote,
+		TipBlockHash:   fc.tip.block.GetBlockHash(),
+		TipBlockHeight: fc.tip.block.GetHeight(),
+		View:           fc.tip.block.GetView(),
 	}
 
 	// Schedule the next block construction and timeout scheduled tasks
@@ -415,14 +417,131 @@ func (fc *FastHotStuffEventLoop) resetScheduledTasks() {
 	}
 
 	// Schedule the next block construction task. This will run with currentView param.
-	fc.nextBlockConstructionTask.Schedule(fc.blockConstructionInterval, fc.currentView, fc.onBlockConstructionScheduledTask)
+	fc.nextBlockConstructionTask.Schedule(fc.blockConstructionInterval, fc.currentView, fc.onBlockConstructionScheduledTaskExecuted)
 
 	// Schedule the next timeout task. This will run with currentView param.
 	fc.nextTimeoutTask.Schedule(timeoutDuration, fc.currentView, fc.onTimeoutScheduledTaskExecuted)
 }
 
-func (fc *FastHotStuffEventLoop) onBlockConstructionScheduledTask(blockConstructionView uint64) {
-	// TODO
+// When this function is triggered, it means that we have reached the block construction
+// time ETA for blockConstructionView. If we have a QC or timeout QC for the view, then we
+// signal the server.
+func (fc *FastHotStuffEventLoop) onBlockConstructionScheduledTaskExecuted(blockConstructionView uint64) {
+	fc.lock.Lock()
+	defer fc.lock.Unlock()
+
+	// Check if the consensus instance is running. If it's not running, then there's nothing
+	// to do here.
+	if fc.status != consensusStatusRunning {
+		return
+	}
+
+	// Check for race conditions where the view advanced at the exact moment this task began
+	// or we have already signaled for this view. If so, then there's nothing to do here.
+	if fc.currentView != blockConstructionView {
+		return
+	}
+
+	// Check if the conditions are met to construct a QC from votes for the chain tip. If so,
+	// we send a signal to the server and cancel the block construction task. The server will
+	// reschedule the task when it advances the view.
+	if canConstructQC, signersList, signature := fc.tryConstructVoteQCInCurrentView(); canConstructQC {
+		// Signal the server that we can construct a QC for the chain tip
+		fc.ConsensusEvents <- &ConsensusEvent{
+			EventType:      ConsensusEventTypeConstructVoteQC, // The event type
+			View:           fc.currentView,                    // The current view in which we can construct a block
+			TipBlockHash:   fc.tip.block.GetBlockHash(),       // Block hash for the tip, which we are extending from
+			TipBlockHeight: fc.tip.block.GetHeight(),          // Block height for the tip, which we are extending from
+			QC: &quorumCertificate{
+				blockHash: fc.tip.block.GetBlockHash(), // Block hash for the tip, which we are extending from
+				view:      fc.tip.block.GetView(),      // The view from the tip block. This is always fc.currentView - 1
+				aggregatedSignature: &aggregatedSignature{
+					signersList: signersList, // The signers list who voted on the tip block
+					signature:   signature,   // Aggregated signature from votes on the tip block
+				},
+			},
+		}
+
+		return
+	}
+
+	// TODO: Check if we can construct a timeout QC for the current view, and send the signal to the
+	// server
+
+	return
+}
+
+// tryConstructVoteQCInCurrentView is a helper function that attempts to construct a QC for the tip block
+// so that it can be proposed in a block in the current view. The function internally performs all view and vote
+// validations to ensure that the resulting QC is valid. If a QC can be constructed, the function returns
+// the signers list and aggregate signature that can be used to construct the QC.
+//
+// This function must be called while holding the consensus instance's lock.
+func (fc *FastHotStuffEventLoop) tryConstructVoteQCInCurrentView() (
+	_success bool, // true if and only if we are able to construct a vote QC for the tip block in the current view
+	_signersList *bitset.Bitset, // bitset of signers for the aggregated signature for the tip block
+	_aggregateSignature *bls.Signature, // aggregated signature for the tip block
+) {
+	// If currentView != tipBlock.View + 1, then we have timed out at some point, and can no longer
+	// construct a block with a QC of votes for the tip block.
+	tipBlock := fc.tip.block
+	if fc.currentView != tipBlock.GetView()+1 {
+		return false, nil, nil
+	}
+
+	// Fetch the validator set at the tip.
+	validatorSet := fc.tip.validatorSet
+
+	// Compute the chain tip's signature payload.
+	voteSignaturePayload := GetVoteSignaturePayload(tipBlock.GetView(), tipBlock.GetBlockHash())
+
+	// Fetch the validator votes for the tip block.
+	votesByValidator := fc.votesSeen[voteSignaturePayload]
+
+	// Compute the total stake and total stake with votes
+	totalStake := uint256.NewInt()
+	totalVotingStake := uint256.NewInt()
+
+	// Track the signatures and signers list for the chain tip
+	signersList := bitset.NewBitset()
+	signatures := []*bls.Signature{}
+
+	// Iterate through the entire validator set and check if each one has voted for the tip block. Track
+	// all voters and their stakes.
+	for ii, validator := range validatorSet {
+		totalStake = uint256.NewInt().Add(totalStake, validator.GetStakeAmount())
+
+		// Skip the validator if it hasn't voted for the the block
+		vote, hasVoted := votesByValidator[validator.GetPublicKey().ToString()]
+		if !hasVoted {
+			continue
+		}
+
+		// Verify the vote signature
+		if !isValidSignatureSinglePublicKey(vote.GetPublicKey(), vote.GetSignature(), voteSignaturePayload[:]) {
+			continue
+		}
+
+		// Track the vote's signature, stake, and place in the validator set
+		totalVotingStake = uint256.NewInt().Add(totalVotingStake, validator.GetStakeAmount())
+		signersList.Set(ii, true)
+		signatures = append(signatures, vote.GetSignature())
+	}
+
+	// If we don't have a super-majority vote for the chain tip, then we can't build a QC.
+	if !isSuperMajorityStake(totalVotingStake, totalStake) {
+		return false, nil, nil
+	}
+
+	// If we reach this point, then we have enough signatures to build a QC for the tip block. Try to
+	// aggregate the signatures. This should never fail.
+	aggregateSignature, err := bls.AggregateSignatures(signatures)
+	if err != nil {
+		return false, nil, nil
+	}
+
+	// Happy path
+	return true, signersList, aggregateSignature
 }
 
 // When this function is triggered, it means that we have reached out the timeout ETA for the
@@ -447,9 +566,10 @@ func (fc *FastHotStuffEventLoop) onTimeoutScheduledTaskExecuted(timedOutView uin
 
 	// Signal the server that we are ready to time out
 	fc.ConsensusEvents <- &ConsensusEvent{
-		EventType: ConsensusEventTypeTimeout,   // The timeout event type
-		View:      timedOutView,                // The view we timed out
-		BlockHash: fc.tip.block.GetBlockHash(), // The last block we saw
+		EventType:      ConsensusEventTypeTimeout,   // The timeout event type
+		View:           timedOutView,                // The view we timed out
+		TipBlockHash:   fc.tip.block.GetBlockHash(), // The last block we saw
+		TipBlockHeight: fc.tip.block.GetHeight(),    // The last block we saw
 	}
 
 	// Cancel the timeout task. The server will reschedule it when it advances the view.

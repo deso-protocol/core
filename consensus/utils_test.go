@@ -363,12 +363,25 @@ func createDummyTimeoutMessage(view uint64) *timeoutMessage {
 }
 
 func createDummyQC(view uint64) *quorumCertificate {
+	blockHash := createDummyBlockHash()
+
+	signaturePayload := GetVoteSignaturePayload(view, blockHash)
+
+	blsPrivateKey1, _ := bls.NewPrivateKey()
+	blsSignature1, _ := blsPrivateKey1.Sign(signaturePayload[:])
+
+	blsPrivateKey2, _ := bls.NewPrivateKey()
+	blsSignature2, _ := blsPrivateKey2.Sign(signaturePayload[:])
+
+	signersList := bitset.NewBitset().Set(0, true).Set(1, true)
+	aggregateSignature, _ := bls.AggregateSignatures([]*bls.Signature{blsSignature1, blsSignature2})
+
 	return &quorumCertificate{
-		blockHash: createDummyBlockHash(),
+		blockHash: blockHash,
 		view:      view,
 		aggregatedSignature: &aggregatedSignature{
-			signersList: bitset.NewBitset().FromBytes([]byte{0x3}),
-			signature:   createDummyBLSSignature(),
+			signersList: signersList,
+			signature:   aggregateSignature,
 		},
 	}
 }
