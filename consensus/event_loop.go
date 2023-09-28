@@ -467,13 +467,13 @@ func (fc *FastHotStuffEventLoop) onBlockConstructionScheduledTaskExecuted(blockC
 
 	// Check if we have enough timeouts to build an aggregate QC for the previous view. If so,
 	// we send a signal to the server and cancel all scheduled tasks.
-	if success, previousBlock, highQC, highQCViews, signersList, signature := fc.tryConstructTimeoutQCInCurrentView(); success {
+	if success, safeBlock, highQC, highQCViews, signersList, signature := fc.tryConstructTimeoutQCInCurrentView(); success {
 		// Signal the server that we can construct a timeout QC for the current view
 		fc.ConsensusEvents <- &ConsensusEvent{
 			EventType:      ConsensusEventTypeConstructTimeoutQC, // The event type
 			View:           fc.currentView,                       // The view that we have a timeout QC for
 			TipBlockHash:   highQC.GetBlockHash(),                // The block hash that we extend from
-			TipBlockHeight: previousBlock.GetHeight(),            // The block height that we extend from
+			TipBlockHeight: safeBlock.GetHeight(),                // The block height that we extend from
 			AggregateQC: &aggregateQuorumCertificate{
 				view:        fc.currentView - 1, // The timed out view is always the previous view
 				highQC:      highQC,             // The high QC aggregated from the timeout messages
@@ -584,7 +584,7 @@ func (fc *FastHotStuffEventLoop) tryConstructVoteQCInCurrentView() (
 // This function must be called while holding the consensus instance's lock.
 func (fc *FastHotStuffEventLoop) tryConstructTimeoutQCInCurrentView() (
 	_success bool, // true if and only if we are able to construct a timeout QC in the current view
-	_previousBlock Block, // the safe block that the high QC is from; the timeout QC proposed will extend from this block
+	_safeBlock Block, // the safe block that the high QC is from; the timeout QC proposed will extend from this block
 	_highQC QuorumCertificate, // high QC aggregated from validators who timed out
 	_highQCViews []uint64, // high QC views for each validator who timed out
 	_signersList *bitset.Bitset, // bitset of signers for the aggregated signature from the timeout messages
@@ -606,13 +606,13 @@ func (fc *FastHotStuffEventLoop) tryConstructTimeoutQCInCurrentView() (
 		// happen, but may be possible in the event we receive a timeout message at the same time the block
 		// becomes unsafe to extend from (ex: it's part of an stale reorg). We check for the edge case here to
 		// be 100% safe.
-		isSafeBlock, _, _, validatorSetAtBlock := fc.getBlockAndValidatorSetByHash(timeout.GetHighQC().GetBlockHash())
+		isSafeBlock, _, _, validatorLookup := fc.fetchSafeBlockInfo(timeout.GetHighQC().GetBlockHash())
 		if !isSafeBlock {
 			continue
 		}
 
 		// Make sure the timeout message was sent by a validator registered at the block height of the extracted QC.
-		if _, ok := validatorSetAtBlock[timeout.GetPublicKey().ToString()]; !ok {
+		if _, ok := validatorLookup[timeout.GetPublicKey().ToString()]; !ok {
 			continue
 		}
 
@@ -629,7 +629,7 @@ func (fc *FastHotStuffEventLoop) tryConstructTimeoutQCInCurrentView() (
 
 	// Fetch the validator set for the block height of the high QC. This lookup is guaranteed to succeed
 	// because it succeeded above.
-	ok, previousBlock, validatorSet, _ := fc.getBlockAndValidatorSetByHash(validatorsHighQC.GetBlockHash())
+	ok, safeBlock, validatorSet, _ := fc.fetchSafeBlockInfo(validatorsHighQC.GetBlockHash())
 	if !ok {
 		return false, nil, nil, nil, nil, nil
 	}
@@ -686,7 +686,7 @@ func (fc *FastHotStuffEventLoop) tryConstructTimeoutQCInCurrentView() (
 	}
 
 	// Happy path
-	return true, previousBlock, validatorsHighQC, highQCViews, signersList, aggregateSignature
+	return true, safeBlock, validatorsHighQC, highQCViews, signersList, aggregateSignature
 }
 
 // When this function is triggered, it means that we have reached out the timeout ETA for the
@@ -816,8 +816,11 @@ func (fc *FastHotStuffEventLoop) hasTimedOutForView(publicKey *bls.PublicKey, vi
 	return ok
 }
 
-func (fc *FastHotStuffEventLoop) getBlockAndValidatorSetByHash(blockHash BlockHash) (
-	bool, Block, []Validator, map[string]Validator,
+func (fc *FastHotStuffEventLoop) fetchSafeBlockInfo(blockHash BlockHash) (
+	_isSafeBlock bool,
+	_safeBlock Block,
+	_validatorSet []Validator,
+	_validatorLookup map[string]Validator,
 ) {
 	// A linear search here is fine. The safeBlocks slice is expected to be extremely small as it represents the
 	// number of uncommitted blocks in the blockchain. During steady stake, it will have a size of 3 blocks
