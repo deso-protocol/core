@@ -588,38 +588,34 @@ func (fc *FastHotStuffEventLoop) tryConstructTimeoutQCInCurrentView() (
 	// to aggregate timeouts from the previous one.
 	timeoutsByValidator := fc.timeoutsSeen[fc.currentView-1]
 
-	// Track the highQC and valid timeout messages from validators as we go along.
+	// Tracks the highQC from validators as we go along.
 	var validatorsHighQC QuorumCertificate
-	validatorsTimeoutMessages := map[string]TimeoutMessage{}
 
-	// Iterate through all timeouts for the previous view to find the highQC and all valid timeout messages
-	for validatorPublicKey, timeout := range timeoutsByValidator {
+	// Iterate through all timeouts for the previous view to find the highQC
+	for _, timeout := range timeoutsByValidator {
 		// Check if the high QC from the timeout messages is for a block in our safeBlocks slice. If not,
 		// then we have no knowledge of the block, or the block is not safe to extend from. This should never
-		// happen, but may be possible in the event we receive a timeout message but the block is no longer safe
-		// to extend from, and thus is no longer in the safe blocks slice. We check for the edge case here to
+		// happen, but may be possible in the event we receive a timeout message at the same time the block is
+		// becomes unsafe to extend from (ex: it's part of an stale reorg). We check for the edge case here to
 		// be 100% safe.
 		isSafeBlock, _, _, validatorSetAtBlock := fc.getBlockAndValidatorSetByHash(timeout.GetHighQC().GetBlockHash())
 		if !isSafeBlock {
 			continue
 		}
 
-		// Make sure the timeout message was sent by a validator registered at the block height of the high QC.
+		// Make sure the timeout message was sent by a validator registered at the block height of the extracted QC.
 		if _, ok := validatorSetAtBlock[timeout.GetPublicKey().ToString()]; !ok {
 			continue
 		}
 
-		// Store the timeout message, since it has a valid highQC
-		validatorsTimeoutMessages[validatorPublicKey] = timeout
-
-		// Update the best high QC if the timeout message has a higher QC view than the current highQC's view
+		// Update the highQC if the timeout message has a higher QC view than the current highQC's view
 		if isInterfaceNil(validatorsHighQC) || timeout.GetHighQC().GetView() > validatorsHighQC.GetView() {
 			validatorsHighQC = timeout.GetHighQC()
 		}
 	}
 
 	// If we didn't find a high QC or didn't find any valid timeout messages, then we can't build a timeout QC.
-	if isInterfaceNil(validatorsHighQC) || len(validatorsTimeoutMessages) == 0 {
+	if isInterfaceNil(validatorsHighQC) {
 		return false, nil, nil, nil, nil, nil
 	}
 
@@ -642,7 +638,10 @@ func (fc *FastHotStuffEventLoop) tryConstructTimeoutQCInCurrentView() (
 	signatures := []*bls.Signature{}
 
 	// Iterate through the entire validator set and check if each one has timed out for the previous
-	// view. Track all validators who timed out and their stakes.
+	// view. Track all validators who timed out and their stakes. We iterate through the validator set
+	// here rather than the timeoutsByValidator map because we want to preserve the order of the validator
+	// for the signersList bitset. In practice, the validator set is expected to be <= 1000 in size, so
+	// this loop will be fast.
 	for ii, validator := range validatorSet {
 		totalStake = uint256.NewInt().Add(totalStake, validator.GetStakeAmount())
 
@@ -667,9 +666,8 @@ func (fc *FastHotStuffEventLoop) tryConstructTimeoutQCInCurrentView() (
 		highQCViews[ii] = timeout.GetHighQC().GetView()
 	}
 
-	// Check if we have a super majority of timeouts and that we've successfully extracted a high QC from the
-	// validator timeout messages.
-	if !isSuperMajorityStake(totalTimedOutStake, totalStake) || isInterfaceNil(validatorsHighQC) {
+	// Check if we have a super majority of stake that has timed out
+	if !isSuperMajorityStake(totalTimedOutStake, totalStake) {
 		return false, nil, nil, nil, nil, nil
 	}
 
