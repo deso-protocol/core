@@ -613,8 +613,7 @@ func (txnData *CoinLockupTransferMetadata) New() DeSoTxnMetadata {
 //
 
 type CoinUnlockMetadata struct {
-	ProfilePublicKey       *PublicKey
-	CoinsToUnlockBaseUnits *uint256.Int
+	ProfilePublicKey *PublicKey
 }
 
 func (txnData *CoinUnlockMetadata) GetTxnType() TxnType {
@@ -624,7 +623,6 @@ func (txnData *CoinUnlockMetadata) GetTxnType() TxnType {
 func (txnData *CoinUnlockMetadata) ToBytes(preSignature bool) ([]byte, error) {
 	var data []byte
 	data = append(data, EncodeByteArray(txnData.ProfilePublicKey.ToBytes())...)
-	data = append(data, VariableEncodeUint256(txnData.CoinsToUnlockBaseUnits)...)
 	return data, nil
 }
 
@@ -637,12 +635,6 @@ func (txnData *CoinUnlockMetadata) FromBytes(data []byte) error {
 		return errors.Wrapf(err, "CoinUnlockMetadata.FromBytes: Problem reading ProfilePublicKey")
 	}
 	txnData.ProfilePublicKey = NewPublicKey(profilePublicKeyBytes)
-
-	// CoinToUnlockBaseUnits
-	txnData.CoinsToUnlockBaseUnits, err = VariableDecodeUint256(rr)
-	if err != nil {
-		return errors.Wrapf(err, "CoinUnlockMetadata.FromBytes: Problem reading DAOCoinToUnlockBaseUnits")
-	}
 
 	return nil
 }
@@ -1492,18 +1484,6 @@ func (bav *UtxoView) _connectCoinUnlock(
 		}
 	}
 
-	// Validate the unlock amount as non-zero. This is meant to prevent wasteful "no-op" transactions.
-	if txMeta.CoinsToUnlockBaseUnits.IsZero() {
-		return 0, 0, nil, errors.Wrap(RuleErrorCoinUnlockOfAmountZero,
-			"_connectCoinUnlock")
-	}
-
-	// Ensure the DeSo unlock amount is less than 2**64 (maximum DeSo balance).
-	if txMeta.ProfilePublicKey.IsZeroPublicKey() && !txMeta.CoinsToUnlockBaseUnits.IsUint64() {
-		return 0, 0, nil, errors.Wrap(RuleErrorCoinUnlockOfAmountZero,
-			"_connectCoinUnlock")
-	}
-
 	// Convert the TransactorPublicKey to HODLerPKID
 	transactorPKIDEntry := bav.GetPKIDForPublicKey(txn.PublicKey)
 	if transactorPKIDEntry == nil || transactorPKIDEntry.isDeleted {
@@ -1537,45 +1517,36 @@ func (bav *UtxoView) _connectCoinUnlock(
 	}
 
 	// Unlock coins until the amount specified by the transaction is deducted.
-	var newLockedBalanceEntries []*LockedBalanceEntry
 	var prevLockedBalanceEntries []*LockedBalanceEntry
-	remainingUnlockBalance := txMeta.CoinsToUnlockBaseUnits.Clone()
+	var unlockedBalance *uint256.Int
 	for _, unlockableLockedBalanceEntry := range unlockableLockedBalanceEntries {
-		newLockedBalanceEntry := unlockableLockedBalanceEntry.Copy()
-		if newLockedBalanceEntry.BalanceBaseUnits.Gt(remainingUnlockBalance) ||
-			newLockedBalanceEntry.BalanceBaseUnits.Eq(remainingUnlockBalance) {
-			remainingUnlockBalance = uint256.NewInt()
-			newLockedBalanceEntry.BalanceBaseUnits =
-				*uint256.NewInt().Sub(&newLockedBalanceEntry.BalanceBaseUnits, remainingUnlockBalance)
-		} else {
-			remainingUnlockBalance =
-				uint256.NewInt().Sub(remainingUnlockBalance, &newLockedBalanceEntry.BalanceBaseUnits)
-			newLockedBalanceEntry.BalanceBaseUnits = *uint256.NewInt()
+		unlockedBalance, err =
+			SafeUint256().Add(unlockedBalance, &unlockableLockedBalanceEntry.BalanceBaseUnits)
+		if err != nil {
+			return 0, 0, nil,
+				errors.Wrapf(RuleErrorCoinUnlockUnlockableCoinsOverflow, "_connectCoinUnlock")
 		}
 
-		// Append the new LockedBalanceEntry and prev in the event we rollback the transaction.
-		newLockedBalanceEntries = append(newLockedBalanceEntries, newLockedBalanceEntry)
+		// Append the LockedBalanceEntry in the event we rollback the transaction.
 		prevLockedBalanceEntries = append(prevLockedBalanceEntries, unlockableLockedBalanceEntry)
 
-		// Break if we've satisfied the unlock amount.
-		if remainingUnlockBalance.IsZero() {
-			break
-		}
-	}
-	if !remainingUnlockBalance.IsZero() {
-		return 0, 0, nil, errors.Wrapf(RuleErrorCoinUnlockInsufficientUnlockableCoins,
-			"_connectCoinUnlock")
-	}
-
-	// Update the LockedBalanceEntries.
-	for _, lockedBalanceEntry := range newLockedBalanceEntries {
-		bav._setLockedBalanceEntry(lockedBalanceEntry)
+		// Update the LockedBalanceEntry and delete the record.
+		unlockableLockedBalanceEntry.BalanceBaseUnits = *uint256.NewInt()
+		bav._deleteLockedBalanceEntry(unlockableLockedBalanceEntry)
 	}
 
 	// Credit the transactor with either DAO coins or DeSo for this unlock.
 	var prevTransactorBalanceEntry *BalanceEntry
 	if profilePKID.IsZeroPKID() {
-		utxoOp, err := bav._addBalance(txMeta.CoinsToUnlockBaseUnits.Uint64(), txn.PublicKey)
+		// Ensure the uint256 can be properly represented as a uint64.
+		if !unlockedBalance.IsUint64() {
+			return 0, 0, nil,
+				errors.Wrapf(RuleErrorCoinUnlockUnlockableDeSoOverflow, "_connectCoinUnlock")
+		}
+
+		// Add the unlockedBalance to the transactors DeSo balance.
+		// NOTE: _addBalance checks for balance overflow.
+		utxoOp, err := bav._addBalance(unlockedBalance.Uint64(), txn.PublicKey)
 		if err != nil {
 			return 0, 0, nil, errors.Wrapf(err, "_connectCoinUnlock: error"+
 				"adding CoinToUnlockBaseUnits to the transactor balance: ")
@@ -1586,7 +1557,7 @@ func (bav *UtxoView) _connectCoinUnlock(
 
 		// Credit the transactor with the unlock amount.
 		newTransactorBalanceEntry := prevTransactorBalanceEntry.Copy()
-		newTransactorBalanceNanos, err := SafeUint256().Add(&newTransactorBalanceEntry.BalanceNanos, txMeta.CoinsToUnlockBaseUnits)
+		newTransactorBalanceNanos, err := SafeUint256().Add(&newTransactorBalanceEntry.BalanceNanos, unlockedBalance)
 		if err != nil {
 			return 0, 0, nil, errors.Wrapf(RuleErrorCoinUnlockCausesBalanceOverflow,
 				"_connectCoinUnlock")
