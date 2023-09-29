@@ -10691,7 +10691,7 @@ func _dbKeyForLockedBalanceEntry(lockedBalanceEntry LockedBalanceEntry) []byte {
 	key := append([]byte{}, Prefixes.PrefixLockedBalanceEntryByHODLerPKIDProfilePKIDExpirationTimestampNanoSecs...)
 	key = append(key, lockedBalanceEntry.HODLerPKID[:]...)
 	key = append(key, lockedBalanceEntry.ProfilePKID[:]...)
-	return append(key, EncodeUint64(uint64(lockedBalanceEntry.ExpirationTimestampNanoSecs))...)
+	return append(key, EncodeUint64(uint64(lockedBalanceEntry.UnlockTimestampNanoSecs))...)
 }
 
 func DBPrefixKeyForLockedBalanceEntryByHODLerPKIDandProfilePKID(lockedBalanceEntry *LockedBalanceEntry) []byte {
@@ -10735,7 +10735,7 @@ func DbDeleteLockedBalanceEntryWithTxn(txn *badger.Txn, snap *Snapshot, lockedBa
 		return errors.Wrapf(err, "DbDeleteRepostMappingsWithTxn: Deleting "+
 			"locked balance entry for HODLer PKID %s, Profile PKID %s, expiration timestamp %d",
 			lockedBalanceEntry.HODLerPKID.ToString(), lockedBalanceEntry.ProfilePKID.ToString(),
-			lockedBalanceEntry.ExpirationTimestampNanoSecs)
+			lockedBalanceEntry.UnlockTimestampNanoSecs)
 	}
 	return nil
 }
@@ -10758,17 +10758,17 @@ func DBGetLockedBalanceEntryForHODLerPKIDProfilePKIDExpirationTimestampNanoSecsW
 	hodlerPKID *PKID, profilePKID *PKID, expirationTimestamp int64) *LockedBalanceEntry {
 
 	key := _dbKeyForLockedBalanceEntry(LockedBalanceEntry{
-		HODLerPKID:                  hodlerPKID,
-		ProfilePKID:                 profilePKID,
-		ExpirationTimestampNanoSecs: expirationTimestamp,
+		HODLerPKID:              hodlerPKID,
+		ProfilePKID:             profilePKID,
+		UnlockTimestampNanoSecs: expirationTimestamp,
 	})
 	lockedBalanceEntryBytes, err := DBGetWithTxn(txn, snap, key)
 	if err != nil {
 		return &LockedBalanceEntry{
-			HODLerPKID:                  hodlerPKID.NewPKID(),
-			ProfilePKID:                 profilePKID.NewPKID(),
-			ExpirationTimestampNanoSecs: expirationTimestamp,
-			BalanceBaseUnits:            *uint256.NewInt(),
+			HODLerPKID:              hodlerPKID.NewPKID(),
+			ProfilePKID:             profilePKID.NewPKID(),
+			UnlockTimestampNanoSecs: expirationTimestamp,
+			BalanceBaseUnits:        *uint256.NewInt(),
 		}
 	}
 	lockedBalanceEntryObj := &LockedBalanceEntry{}
@@ -10802,7 +10802,7 @@ func DBGetUnlockableLockedBalanceEntriesWithTxn(
 	currentTimestampUnixNanoSecs int64,
 ) ([]*LockedBalanceEntry, error) {
 	// Retrieve all LockedBalanceEntries from db matching hodlerPKID, profilePKID, and
-	// ExpirationTimestampNanoSecs <= currentTimestampUnixNanoSecs.
+	// UnlockTimestampNanoSecs <= currentTimestampUnixNanoSecs.
 	// NOTE: While ideally we would start with <prefix, HODLerPKID, ProfilePKID> and
 	//       seek till <prefix, HODLerPKID, ProfilePKID, currentTimestampUnixNanoSecs>,
 	//       Badger does not support this functionality as the ValidForPrefix() function
@@ -10817,9 +10817,9 @@ func DBGetUnlockableLockedBalanceEntriesWithTxn(
 
 	// Start at <prefix, HODLerPKID, ProfilePKID, CurrentTimestampNanoSecs>
 	startKey := _dbKeyForLockedBalanceEntry(LockedBalanceEntry{
-		HODLerPKID:                  hodlerPKID,
-		ProfilePKID:                 profilePKID,
-		ExpirationTimestampNanoSecs: currentTimestampUnixNanoSecs,
+		HODLerPKID:              hodlerPKID,
+		ProfilePKID:             profilePKID,
+		UnlockTimestampNanoSecs: currentTimestampUnixNanoSecs,
 	})
 
 	// Valid for prefix <prefix, HODLerPKID, ProfilePKID>
@@ -10854,7 +10854,7 @@ func DBGetUnlockableLockedBalanceEntriesWithTxn(
 				"error decoding LockedBalanceEntry: ")
 		}
 
-		if lockedBalanceEntry.ExpirationTimestampNanoSecs < currentTimestampUnixNanoSecs {
+		if lockedBalanceEntry.UnlockTimestampNanoSecs < currentTimestampUnixNanoSecs {
 			lockedBalanceEntries = append(lockedBalanceEntries)
 		}
 	}

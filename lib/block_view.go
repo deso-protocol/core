@@ -3491,14 +3491,14 @@ func (bav *UtxoView) _connectTransaction(txn *MsgDeSoTxn, txHash *BlockHash,
 		totalInput, totalOutput, utxoOpsForTxn, err = bav._connectUnjailValidator(txn, txHash, blockHeight, verifySignatures)
 
 	case TxnTypeCoinLockup:
-		// TODO: Once merged, update blockTimestamp parameter
+		// FIXME: Once merged, update blockTimestamp parameter
 		totalInput, totalOutput, utxoOpsForTxn, err = bav._connectCoinLockup(txn, txHash, blockHeight, 0, verifySignatures)
 	case TxnTypeUpdateCoinLockupParams:
 		totalInput, totalOutput, utxoOpsForTxn, err = bav._connectUpdateCoinLockupParams(txn, txHash, blockHeight, verifySignatures)
 	case TxnTypeCoinLockupTransfer:
 		totalInput, totalOutput, utxoOpsForTxn, err = bav._connectCoinLockupTransfer(txn, txHash, blockHeight, verifySignatures)
 	case TxnTypeCoinUnlock:
-		// TODO: Once merged, update blockTimestamp parameter
+		// FIXME: Once merged, update blockTimestamp parameter
 		totalInput, totalOutput, utxoOpsForTxn, err = bav._connectCoinUnlock(txn, txHash, blockHeight, 0, verifySignatures)
 
 	default:
