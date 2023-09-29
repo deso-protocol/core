@@ -80,11 +80,11 @@ func (lockedBalanceEntry *LockedBalanceEntry) RawDecodeWithoutMetadata(blockHeig
 	}
 
 	// UnlockTimestampNanoSecs
-	uint64ExpirationTimestampUnixNanoSecs, err := ReadUvarint(rr)
+	uint64UnlockTimestampUnixNanoSecs, err := ReadUvarint(rr)
 	if err != nil {
 		return errors.Wrapf(err, "LockedBalanceEntry.Decode: Problem reading UnlockTimestampNanoSecs")
 	}
-	lockedBalanceEntry.UnlockTimestampNanoSecs = int64(uint64ExpirationTimestampUnixNanoSecs)
+	lockedBalanceEntry.UnlockTimestampNanoSecs = int64(uint64UnlockTimestampUnixNanoSecs)
 
 	// BalanceBaseUnits
 	balanceBaseUnits, err := VariableDecodeUint256(rr)
@@ -120,22 +120,22 @@ func (bav *UtxoView) _setLockedBalanceEntry(lockedBalanceEntry *LockedBalanceEnt
 
 func (bav *UtxoView) _deleteLockedBalanceEntry(lockedBalanceEntry *LockedBalanceEntry) {
 	// Create a tombstone entry.
-	tombstoneLockedBalanceEntry := *lockedBalanceEntry
+	tombstoneLockedBalanceEntry := lockedBalanceEntry.Copy()
 	tombstoneLockedBalanceEntry.isDeleted = true
 
 	// Set the LockupYieldCurvePoint as deleted in the view.
-	bav._setLockedBalanceEntry(&tombstoneLockedBalanceEntry)
+	bav._setLockedBalanceEntry(tombstoneLockedBalanceEntry)
 }
 
 // Get Helper Functions for LockedBalanceEntry
 
-func (bav *UtxoView) GetLockedBalanceEntryForHODLerPKIDProfilePKIDExpirationTimestampNanoSecs(
-	hodlerPKID *PKID, profilePKID *PKID, expirationTimestampNanoSecs int64) (_lockedBalanceEntry *LockedBalanceEntry) {
+func (bav *UtxoView) GetLockedBalanceEntryForHODLerPKIDProfilePKIDUnlockTimestampNanoSecs(
+	hodlerPKID *PKID, profilePKID *PKID, unlockTimestampNanoSecs int64) (_lockedBalanceEntry *LockedBalanceEntry) {
 	// Create a key associated with the LockedBalanceEntry.
 	lockedBalanceEntryKey := (&LockedBalanceEntry{
 		HODLerPKID:              hodlerPKID,
 		ProfilePKID:             profilePKID,
-		UnlockTimestampNanoSecs: expirationTimestampNanoSecs,
+		UnlockTimestampNanoSecs: unlockTimestampNanoSecs,
 	}).ToMapKey()
 
 	// Check if the key exists in the view.
@@ -145,8 +145,8 @@ func (bav *UtxoView) GetLockedBalanceEntryForHODLerPKIDProfilePKIDExpirationTime
 	}
 
 	// No mapping exists in the view, check for an entry in the DB.
-	lockedBalanceEntry := DBGetLockedBalanceEntryForHODLerPKIDProfilePKIDExpirationTimestampNanoSecs(
-		bav.Handle, bav.Snapshot, hodlerPKID, profilePKID, expirationTimestampNanoSecs)
+	lockedBalanceEntry := DBGetLockedBalanceEntryForHODLerPKIDProfilePKIDUnlockTimestampNanoSecs(
+		bav.Handle, bav.Snapshot, hodlerPKID, profilePKID, unlockTimestampNanoSecs)
 
 	// Cache the DB entry in the in-memory map.
 	if lockedBalanceEntry != nil {
@@ -305,11 +305,11 @@ func (bav *UtxoView) _setLockupYieldCurvePoint(point *LockupYieldCurvePoint) {
 
 func (bav *UtxoView) _deleteLockupYieldCurvePoint(point *LockupYieldCurvePoint) {
 	// Create a tombstone entry.
-	tombstoneLockupYieldCurvePoint := *point
+	tombstoneLockupYieldCurvePoint := point.Copy()
 	tombstoneLockupYieldCurvePoint.isDeleted = true
 
 	// Set the LockupYieldCurvePoint as deleted in the view.
-	bav._setLockupYieldCurvePoint(&tombstoneLockupYieldCurvePoint)
+	bav._setLockupYieldCurvePoint(tombstoneLockupYieldCurvePoint)
 }
 
 // Get Helper Functions for LockupYieldCurvePoint
@@ -350,6 +350,11 @@ func (bav *UtxoView) GetLocalYieldCurvePoints(profilePKID *PKID, lockupDuration 
 	// Check the view for yield curve points.
 	if _, pointsInView := bav.PKIDToLockupYieldCurvePointKeyToLockupYieldCurvePoints[*profilePKID]; pointsInView {
 		for _, lockupYieldCurvePoint := range bav.PKIDToLockupYieldCurvePointKeyToLockupYieldCurvePoints[*profilePKID] {
+			// Ensure the point is not deleted.
+			if lockupYieldCurvePoint.isDeleted {
+				continue
+			}
+
 			// Check for nil pointer cases.
 			if lockupYieldCurvePoint.LockupDurationNanoSecs < lockupDuration && leftLockupPoint == nil {
 				leftLockupPoint = lockupYieldCurvePoint
@@ -366,7 +371,7 @@ func (bav *UtxoView) GetLocalYieldCurvePoints(profilePKID *PKID, lockupDuration 
 
 			// Check if the point is "more right" than the current right point.
 			if lockupYieldCurvePoint.LockupDurationNanoSecs >= lockupDuration &&
-				lockupYieldCurvePoint.LockupDurationNanoSecs < leftLockupPoint.LockupDurationNanoSecs {
+				lockupYieldCurvePoint.LockupDurationNanoSecs < rightLockupPoint.LockupDurationNanoSecs {
 				rightLockupPoint = lockupYieldCurvePoint.Copy()
 			}
 		}
@@ -547,10 +552,10 @@ func (txnData *UpdateCoinLockupParamsMetadata) New() DeSoTxnMetadata {
 //
 
 type CoinLockupTransferMetadata struct {
-	RecipientPublicKey              *PublicKey
-	ProfilePublicKey                *PublicKey
-	ExpirationTimestampUnixNanoSecs int64
-	LockedCoinsToTransferBaseUnits  *uint256.Int
+	RecipientPublicKey             *PublicKey
+	ProfilePublicKey               *PublicKey
+	UnlockTimestampUnixNanoSecs    int64
+	LockedCoinsToTransferBaseUnits *uint256.Int
 }
 
 func (txnData *CoinLockupTransferMetadata) GetTxnType() TxnType {
@@ -561,7 +566,7 @@ func (txnData *CoinLockupTransferMetadata) ToBytes(preSignature bool) ([]byte, e
 	var data []byte
 	data = append(data, EncodeByteArray(txnData.RecipientPublicKey.ToBytes())...)
 	data = append(data, EncodeByteArray(txnData.ProfilePublicKey.ToBytes())...)
-	data = append(data, UintToBuf(uint64(txnData.ExpirationTimestampUnixNanoSecs))...)
+	data = append(data, UintToBuf(uint64(txnData.UnlockTimestampUnixNanoSecs))...)
 	data = append(data, VariableEncodeUint256(txnData.LockedCoinsToTransferBaseUnits)...)
 	return data, nil
 }
@@ -584,11 +589,11 @@ func (txnData *CoinLockupTransferMetadata) FromBytes(data []byte) error {
 	txnData.ProfilePublicKey = NewPublicKey(profilePublicKeyBytes)
 
 	// UnlockTimestampNanoSecs
-	uint64ExpirationTimestampUnixNanoSecs, err := ReadUvarint(rr)
+	uint64UnlockTimestampUnixNanoSecs, err := ReadUvarint(rr)
 	if err != nil {
 		return errors.Wrapf(err, "DAOCoinLockupTransferMetadata.FromBytes: Problem reading UnlockTimestampNanoSecs")
 	}
-	txnData.ExpirationTimestampUnixNanoSecs = int64(uint64ExpirationTimestampUnixNanoSecs)
+	txnData.UnlockTimestampUnixNanoSecs = int64(uint64UnlockTimestampUnixNanoSecs)
 
 	// LockedDAOCoinToTransferBaseUnits
 	txnData.LockedCoinsToTransferBaseUnits, err = VariableDecodeUint256(rr)
@@ -845,7 +850,7 @@ func (bav *UtxoView) _connectCoinLockup(
 	//       with the sole intent of saturating the CoinsInCirculationNanos field preventing others from locking up.
 
 	// For consolidation, we fetch equivalent LockedBalanceEntries.
-	lockedBalanceEntry := bav.GetLockedBalanceEntryForHODLerPKIDProfilePKIDExpirationTimestampNanoSecs(
+	lockedBalanceEntry := bav.GetLockedBalanceEntryForHODLerPKIDProfilePKIDUnlockTimestampNanoSecs(
 		hodlerPKID, profilePKID, txMeta.UnlockTimestampNanoSecs)
 	if lockedBalanceEntry == nil || lockedBalanceEntry.isDeleted {
 		lockedBalanceEntry = &LockedBalanceEntry{
@@ -890,7 +895,7 @@ func CalculateLockupYield(
 	apyYieldBasisPoints *uint256.Int,
 	durationNanoSecs *uint256.Int,
 ) (*uint256.Int, error) {
-	// Note: We could compute either simple of compounding interest. While compounding interest is ideal from an
+	// Note: We could compute either simple or compounding interest. While compounding interest is ideal from an
 	//       application perspective, it becomes incredibly difficult to implement from a numerical perspective.
 	//       This is because compound interest requires fractional exponents rather for computing the yield.
 	//       Determining overflow and preventing excessive money-printers becomes tricky in the compound interest case.
@@ -963,7 +968,7 @@ func (bav *UtxoView) _disconnectCoinLockup(
 	}
 
 	// Sanity check the data within the CoinLockup. Reverting a lockup should not result in more coins.
-	lockedBalanceEntry := bav.GetLockedBalanceEntryForHODLerPKIDProfilePKIDExpirationTimestampNanoSecs(
+	lockedBalanceEntry := bav.GetLockedBalanceEntryForHODLerPKIDProfilePKIDUnlockTimestampNanoSecs(
 		operationData.PrevLockedBalanceEntry.HODLerPKID, operationData.PrevLockedBalanceEntry.ProfilePKID,
 		operationData.PrevLockedBalanceEntry.UnlockTimestampNanoSecs)
 	if lockedBalanceEntry.BalanceBaseUnits.Lt(&operationData.PrevLockedBalanceEntry.BalanceBaseUnits) {
@@ -1331,8 +1336,8 @@ func (bav *UtxoView) _connectCoinLockupTransfer(
 	}
 
 	// Fetch the sender's balance entries.
-	senderLockedBalanceEntry := bav.GetLockedBalanceEntryForHODLerPKIDProfilePKIDExpirationTimestampNanoSecs(
-		senderPKID, profilePKID, txMeta.ExpirationTimestampUnixNanoSecs)
+	senderLockedBalanceEntry := bav.GetLockedBalanceEntryForHODLerPKIDProfilePKIDUnlockTimestampNanoSecs(
+		senderPKID, profilePKID, txMeta.UnlockTimestampUnixNanoSecs)
 	prevSenderLockedBalanceEntry := senderLockedBalanceEntry.Copy()
 
 	// Check that the sender's balance entry has sufficient balance.
@@ -1346,8 +1351,8 @@ func (bav *UtxoView) _connectCoinLockupTransfer(
 		&senderLockedBalanceEntry.BalanceBaseUnits, txMeta.LockedCoinsToTransferBaseUnits)
 
 	// Fetch the recipient's balance entry.
-	receiverLockedBalanceEntry := bav.GetLockedBalanceEntryForHODLerPKIDProfilePKIDExpirationTimestampNanoSecs(
-		receiverPKID, profilePKID, txMeta.ExpirationTimestampUnixNanoSecs)
+	receiverLockedBalanceEntry := bav.GetLockedBalanceEntryForHODLerPKIDProfilePKIDUnlockTimestampNanoSecs(
+		receiverPKID, profilePKID, txMeta.UnlockTimestampUnixNanoSecs)
 	prevReceiverLockedBalanceEntry := receiverLockedBalanceEntry
 
 	// Add to the recipient's balance entry, checking for overflow.
@@ -1407,11 +1412,11 @@ func (bav *UtxoView) _disconnectCoinLockupTransfer(
 	}
 
 	// Fetch the LockedBalanceEntries in the view.
-	senderLockedBalanceEntry := bav.GetLockedBalanceEntryForHODLerPKIDProfilePKIDExpirationTimestampNanoSecs(
+	senderLockedBalanceEntry := bav.GetLockedBalanceEntryForHODLerPKIDProfilePKIDUnlockTimestampNanoSecs(
 		operationData.PrevSenderLockedBalanceEntry.HODLerPKID,
 		operationData.PrevSenderLockedBalanceEntry.ProfilePKID,
 		operationData.PrevSenderLockedBalanceEntry.UnlockTimestampNanoSecs)
-	receiverLockedBalanceEntry := bav.GetLockedBalanceEntryForHODLerPKIDProfilePKIDExpirationTimestampNanoSecs(
+	receiverLockedBalanceEntry := bav.GetLockedBalanceEntryForHODLerPKIDProfilePKIDUnlockTimestampNanoSecs(
 		operationData.PrevReceiverLockedBalanceEntry.HODLerPKID,
 		operationData.PrevReceiverLockedBalanceEntry.ProfilePKID,
 		operationData.PrevReceiverLockedBalanceEntry.UnlockTimestampNanoSecs)
@@ -1639,7 +1644,7 @@ func (bav *UtxoView) _disconnectCoinUnlock(
 	// Sanity check the data within the CoinUnlock.
 	// Reverting an unlock of LockedBalanceEntry should not result in less coins.
 	for _, prevLockedBalanceEntry := range operationData.PrevLockedBalanceEntries {
-		lockedBalanceEntry := bav.GetLockedBalanceEntryForHODLerPKIDProfilePKIDExpirationTimestampNanoSecs(
+		lockedBalanceEntry := bav.GetLockedBalanceEntryForHODLerPKIDProfilePKIDUnlockTimestampNanoSecs(
 			prevLockedBalanceEntry.HODLerPKID,
 			prevLockedBalanceEntry.ProfilePKID,
 			prevLockedBalanceEntry.UnlockTimestampNanoSecs)

@@ -559,12 +559,12 @@ type DBPrefixes struct {
 	// Note, we parse the ValidatorPKID and StakerPKID from the key.
 	PrefixSnapshotStakeToRewardByValidatorAndStaker []byte `prefix_id:"[90]" is_state:"true"`
 
-	// PrefixLockedBalanceEntryByHODLerPKIDProfilePKIDExpirationTimestampNanoSecs:
+	// PrefixLockedBalanceEntryByHODLerPKIDProfilePKIDUnlockTimestampNanoSecs:
 	// Retrieves LockedBalanceEntries that may or may not be claimable for unlock.
 	// LockedBalanceEntries can be retrieved by HodlerPKID and CreatorPKID are have their
 	// corresponding unlock timestamp appended to sort by timestamp.
 	// Prefix, <HodlerPKID [33]byte>, <ProfilePKID [33]byte>, <UnlockTimestampUnixNanoSecs int64> -> <LockedBalanceEntry>
-	PrefixLockedBalanceEntryByHODLerPKIDProfilePKIDExpirationTimestampNanoSecs []byte `prefix_id:"[91]" is_state:"true"`
+	PrefixLockedBalanceEntryByHODLerPKIDProfilePKIDUnlockTimestampNanoSecs []byte `prefix_id:"[91]" is_state:"true"`
 
 	// PrefixLockupYieldCurvePointByProfilePKIDAndDurationNanoSecs:
 	// Retrieves a LockupYieldCurvePoint.
@@ -814,7 +814,7 @@ func StatePrefixToDeSoEncoder(prefix []byte) (_isEncoder bool, _encoder DeSoEnco
 	} else if bytes.Equal(prefix, Prefixes.PrefixSnapshotStakeToRewardByValidatorAndStaker) {
 		// prefix_id:"[90]"
 		return true, &StakeEntry{}
-	} else if bytes.Equal(prefix, Prefixes.PrefixLockedBalanceEntryByHODLerPKIDProfilePKIDExpirationTimestampNanoSecs) {
+	} else if bytes.Equal(prefix, Prefixes.PrefixLockedBalanceEntryByHODLerPKIDProfilePKIDUnlockTimestampNanoSecs) {
 		// prefix_id:"[91]"
 		return true, &LockedBalanceEntry{}
 	} else if bytes.Equal(prefix, Prefixes.PrefixLockupYieldCurvePointByProfilePKIDAndDurationNanoSecs) {
@@ -10688,14 +10688,14 @@ func DBDeletePostAssociationWithTxn(txn *badger.Txn, snap *Snapshot, association
 // LockedBalanceEntry DB Key Operations
 
 func _dbKeyForLockedBalanceEntry(lockedBalanceEntry LockedBalanceEntry) []byte {
-	key := append([]byte{}, Prefixes.PrefixLockedBalanceEntryByHODLerPKIDProfilePKIDExpirationTimestampNanoSecs...)
+	key := append([]byte{}, Prefixes.PrefixLockedBalanceEntryByHODLerPKIDProfilePKIDUnlockTimestampNanoSecs...)
 	key = append(key, lockedBalanceEntry.HODLerPKID[:]...)
 	key = append(key, lockedBalanceEntry.ProfilePKID[:]...)
 	return append(key, EncodeUint64(uint64(lockedBalanceEntry.UnlockTimestampNanoSecs))...)
 }
 
 func DBPrefixKeyForLockedBalanceEntryByHODLerPKIDandProfilePKID(lockedBalanceEntry *LockedBalanceEntry) []byte {
-	data := append([]byte{}, Prefixes.PrefixLockedBalanceEntryByHODLerPKIDProfilePKIDExpirationTimestampNanoSecs...)
+	data := append([]byte{}, Prefixes.PrefixLockedBalanceEntryByHODLerPKIDProfilePKIDUnlockTimestampNanoSecs...)
 	data = append(data, lockedBalanceEntry.HODLerPKID.ToBytes()...)
 	data = append(data, lockedBalanceEntry.ProfilePKID.ToBytes()...)
 	return data
@@ -10742,32 +10742,32 @@ func DbDeleteLockedBalanceEntryWithTxn(txn *badger.Txn, snap *Snapshot, lockedBa
 
 // LockedBalanceEntry Get Operations (Badger Reads)
 
-func DBGetLockedBalanceEntryForHODLerPKIDProfilePKIDExpirationTimestampNanoSecs(handle *badger.DB, snap *Snapshot,
-	hodlerPKID *PKID, profilePKID *PKID, expirationTimestamp int64) *LockedBalanceEntry {
+func DBGetLockedBalanceEntryForHODLerPKIDProfilePKIDUnlockTimestampNanoSecs(
+	handle *badger.DB, snap *Snapshot, hodlerPKID *PKID, profilePKID *PKID, unlockTimestamp int64) *LockedBalanceEntry {
 
 	var ret *LockedBalanceEntry
 	handle.View(func(txn *badger.Txn) error {
-		ret = DBGetLockedBalanceEntryForHODLerPKIDProfilePKIDExpirationTimestampNanoSecsWithTxn(
-			txn, snap, hodlerPKID, profilePKID, expirationTimestamp)
+		ret = DBGetLockedBalanceEntryForHODLerPKIDProfilePKIDUnlockTimestampNanoSecsWithTxn(
+			txn, snap, hodlerPKID, profilePKID, unlockTimestamp)
 		return nil
 	})
 	return ret
 }
 
-func DBGetLockedBalanceEntryForHODLerPKIDProfilePKIDExpirationTimestampNanoSecsWithTxn(txn *badger.Txn, snap *Snapshot,
-	hodlerPKID *PKID, profilePKID *PKID, expirationTimestamp int64) *LockedBalanceEntry {
+func DBGetLockedBalanceEntryForHODLerPKIDProfilePKIDUnlockTimestampNanoSecsWithTxn(
+	txn *badger.Txn, snap *Snapshot, hodlerPKID *PKID, profilePKID *PKID, unlockTimestamp int64) *LockedBalanceEntry {
 
 	key := _dbKeyForLockedBalanceEntry(LockedBalanceEntry{
 		HODLerPKID:              hodlerPKID,
 		ProfilePKID:             profilePKID,
-		UnlockTimestampNanoSecs: expirationTimestamp,
+		UnlockTimestampNanoSecs: unlockTimestamp,
 	})
 	lockedBalanceEntryBytes, err := DBGetWithTxn(txn, snap, key)
 	if err != nil {
 		return &LockedBalanceEntry{
 			HODLerPKID:              hodlerPKID.NewPKID(),
 			ProfilePKID:             profilePKID.NewPKID(),
-			UnlockTimestampNanoSecs: expirationTimestamp,
+			UnlockTimestampNanoSecs: unlockTimestamp,
 			BalanceBaseUnits:        *uint256.NewInt(),
 		}
 	}
