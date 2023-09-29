@@ -3,6 +3,7 @@ package lib
 import (
 	"github.com/golang/glog"
 	"github.com/pkg/errors"
+	"time"
 )
 
 // processBlockPoS runs the Fast-Hotstuff block connect and commit rule as follows:
@@ -135,7 +136,34 @@ func (bc *Blockchain) validateDeSoBlockPoS(desoBlock *MsgDeSoBlock) error {
 // and other general integrity checks (such as not malformed).
 func (bc *Blockchain) validateBlockGeneral(desoBlock *MsgDeSoBlock) error {
 	// TODO: Implement me
-	return errors.New("IMPLEMENT ME")
+
+	// First make sure we have a non-nil header
+	if desoBlock.Header == nil {
+		return RuleErrorNilBlockHeader
+	}
+
+	// Timestamp validation
+	// What's the criteria? Is it just that it's not in the future?
+	// And that it's not too far in the past? Too far being older than the current best chain tip?
+	if desoBlock.Header.TstampNanoSecs < bc.GetBestChainTip().Header.TstampNanoSecs {
+		return RuleErrorPoSBlockTstampNanoSecsTooOld
+	}
+	if desoBlock.Header.TstampNanoSecs > uint64(time.Now().UnixNano()) {
+		return RuleErrorPoSBlockTstampNanoSecsInFuture
+	}
+
+	// Header validation
+
+	if desoBlock.Header.Version != HeaderVersion2 {
+		return RuleErrorInvalidPoSBlockHeaderVersion
+	}
+
+	// Malformed block checks
+	// Require header to have either vote or timeout QC
+	if desoBlock.Header.ValidatorsTimeoutAggregateQC.isEmpty() && desoBlock.Header.ValidatorsVoteQC.isEmpty() {
+		return RuleErrorNoTimeoutOrVoteQC
+	}
+	return nil
 }
 
 // validateBlockHeight validates the block height for a given block. It checks
@@ -247,4 +275,8 @@ func (bc *Blockchain) updateCurrentView(desoBlock *MsgDeSoBlock) {
 func (bc *Blockchain) GetUncommittedTipView() (*UtxoView, error) {
 	// Connect the uncommitted blocks to the tip so that we can validate subsequent blocks
 	panic("GetUncommittedTipView: Not implemented yet")
+}
+
+func (bc *Blockchain) GetBestChainTip() *BlockNode {
+	return bc.bestChain[len(bc.bestChain)-1]
 }

@@ -328,6 +328,14 @@ func (qc *QuorumCertificate) Eq(other *QuorumCertificate) bool {
 	return bytes.Equal(qcEncodedBytes, otherEncodedBytes)
 }
 
+func (qc *QuorumCertificate) isEmpty() bool {
+	return qc == nil ||
+		qc.BlockHash == nil ||
+		qc.ProposedInView == 0 ||
+		qc.ValidatorsVoteAggregatedSignature == nil ||
+		qc.ValidatorsVoteAggregatedSignature.Signature == nil
+}
+
 func (qc *QuorumCertificate) ToBytes() ([]byte, error) {
 	retBytes := []byte{}
 
@@ -620,6 +628,8 @@ func (aggQC *TimeoutAggregateQuorumCertificate) FromBytes(rr io.Reader) error {
 func (aggQC *TimeoutAggregateQuorumCertificate) isEmpty() bool {
 	return aggQC == nil ||
 		aggQC.TimedOutView == 0 ||
+		aggQC.ValidatorsHighQC.isEmpty() ||
+		len(aggQC.ValidatorsTimeoutHighQCViews) == 0 ||
 		aggQC.ValidatorsTimeoutAggregatedSignature == nil ||
 		aggQC.ValidatorsTimeoutAggregatedSignature.Signature == nil
 }
