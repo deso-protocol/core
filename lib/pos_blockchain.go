@@ -21,7 +21,7 @@ func (bc *Blockchain) processBlockPoS(desoBlock *MsgDeSoBlock, currentView uint6
 	// TODO: Implement me
 	// 1. Determine if we're missing a parent block of this block and any of its parents from the block index.
 	// If so, process the orphan, but don't add to the block index or uncommitted block map.
-	missingBlockHash, err := bc.validateAncestorsExist(desoBlock)
+	missingBlockHash, err := bc.validateAncestorsExist(*desoBlock.Header.PrevBlockHash)
 	if err != nil {
 		return false, false, nil, err
 	}
@@ -337,15 +337,29 @@ func (bc *Blockchain) validateTimeoutQC(desoBlock *MsgDeSoBlock, validatorSet []
 // validateAncestorsExist checks that all ancestors of this block exist in the block index.
 // If an ancestor is not found, we'll return the block hash of the missing ancestor so the
 // caller can request this block.
-func (bc *Blockchain) validateAncestorsExist(desoBlock *MsgDeSoBlock) (_missingBlockHash *BlockHash, _err error) {
+func (bc *Blockchain) validateAncestorsExist(parentHash BlockHash) (_missingBlockHash *BlockHash, _err error) {
 	// Notes: starting from the block passed in, we'll look for the parent in the block index.
 	// 1. If the parent does not appear in the block index, we'll return the parent's hash.
 	// 2. If the parent exists in the block index AND is in the best chain, we can safely assume
 	//    that all ancestors exist in the block index.
 	// 3. If the parent exists in the block index but is not in the best chain, we repeat from
 	//    step 1 with the parent as the block passed in.
-	// TODO: Implement me
-	return nil, errors.New("IMPLEMENT ME")
+
+	// check for parent in block index
+	// if parent does not exist in block index, return parent's hash
+	parentBlockNode, exists := bc.blockIndex[parentHash]
+	if !exists {
+		// TODO: should this return an error?
+		return &parentHash, nil
+	}
+
+	// if parent exists in block index AND is in best chain, return nil. We can
+	// safely assume that all ancestor exist then.
+	_, bestChainExists := bc.bestChainMap[parentHash]
+	if bestChainExists {
+		return nil, nil
+	}
+	return bc.validateAncestorsExist(*parentBlockNode.Header.PrevBlockHash)
 }
 
 // addBlockToBlockIndex adds the block to the block index and uncommitted blocks map.
