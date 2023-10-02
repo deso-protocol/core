@@ -25,7 +25,7 @@ type Mempool interface {
 	GetTransaction(txnHash *BlockHash) *MsgDeSoTxn
 	GetTransactions() []*MsgDeSoTxn
 	GetIterator() MempoolIterator
-	Refresh()
+	Refresh() error
 	UpdateLatestBlock(blockView *UtxoView, blockHeight uint64)
 	UpdateGlobalParams(globalParams *GlobalParamsEntry)
 }
