@@ -234,10 +234,14 @@ func (bc *Blockchain) validateBlockIntegrity(desoBlock *MsgDeSoBlock) error {
 
 // validateBlockHeight validates the block height for a given block. It checks
 // that this block height is exactly one greater than the current block height.
-// TODO: Are we sure that's the correct validation here?
 func (bc *Blockchain) validateBlockHeight(desoBlock *MsgDeSoBlock) error {
-	// TODO: Implement me
-	return errors.New("IMPLEMENT ME")
+	if desoBlock.Header.Height != bc.GetBestChainTip().Header.Height+1 {
+		return RuleErrorInvalidPoSBlockHeight
+	}
+	// TODO: What if this is a fork? Should this check be more lenient and only check
+	// that the block height is greater than the current block height?
+	// We can probably fold this into the bc.validateBlockGeneral function.
+	return nil
 }
 
 // validateBlockView validates the view for a given block. First, it checks that
@@ -363,4 +367,6 @@ const (
 	RuleErrorInvalidProposerVotingPublicKey RuleError = "RuleErrorInvalidProposerVotingPublicKey"
 	RuleErrorInvalidProposerPublicKey       RuleError = "RuleErrorInvalidProposerPublicKey"
 	RuleErrorInvalidRandomSeedHash          RuleError = "RuleErrorInvalidRandomSeedHash"
+
+	RuleErrorInvalidPoSBlockHeight RuleError = "RuleErrorInvalidPoSBlockHeight"
 )
