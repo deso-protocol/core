@@ -1425,7 +1425,7 @@ func (bav *UtxoView) _connectCoinLockupTransfer(
 	// Check if the transfers are limited to DAO members only.
 	// Here, a "DAO member" is anyone who holds either unlocked or locked DAO coins associated with the profile.
 	if transferRestrictionStatus == TransferRestrictionStatusDAOMembersOnly {
-		receiverBalanceEntry := bav.GetBalanceEntry(receiverPKID, profilePKID, true)
+		receiverBalanceEntry := bav._getBalanceEntryForHODLerPKIDAndCreatorPKID(receiverPKID, profilePKID, true)
 		if receiverBalanceEntry.BalanceNanos.IsZero() && receiverLockedBalanceEntry.BalanceBaseUnits.IsZero() {
 			return 0, 0, nil,
 				errors.Wrapf(RuleErrorCoinLockupTransferRestrictedToDAOMembers, "_connectCoinLockupTransfer")
@@ -1660,7 +1660,7 @@ func (bav *UtxoView) _connectCoinUnlock(
 		}
 		utxoOpsForTxn = append(utxoOpsForTxn, utxoOp)
 	} else {
-		prevTransactorBalanceEntry = bav.GetBalanceEntry(hodlerPKID, profilePKID, true)
+		prevTransactorBalanceEntry = bav._getBalanceEntryForHODLerPKIDAndCreatorPKID(hodlerPKID, profilePKID, true)
 
 		// Credit the transactor with the unlock amount.
 		newTransactorBalanceEntry := prevTransactorBalanceEntry.Copy()
@@ -1748,7 +1748,7 @@ func (bav *UtxoView) _disconnectCoinUnlock(
 	profilePKID := operationData.PrevLockedBalanceEntries[0].ProfilePKID
 	hodlerPKID := operationData.PrevLockedBalanceEntries[0].HODLerPKID
 	if !profilePKID.IsZeroPKID() {
-		balanceEntry := bav.GetBalanceEntry(hodlerPKID, profilePKID, true)
+		balanceEntry := bav._getBalanceEntryForHODLerPKIDAndCreatorPKID(hodlerPKID, profilePKID, true)
 		if operationData.PrevTransactorBalanceEntry == nil || operationData.PrevTransactorBalanceEntry.isDeleted {
 			return fmt.Errorf("_disconnectCoinUnlock: Trying to revert OperationTypeCoinUnlock " +
 				"but found nil or deleted previous balance entry")
