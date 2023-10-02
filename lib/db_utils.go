@@ -11077,6 +11077,10 @@ func DBGetLeftLockupYieldCurvePointWithTxn(txn *badger.Txn, snap *Snapshot, prof
 	leftLockupYieldCurvePointObj := &LockupYieldCurvePoint{}
 	rr := bytes.NewReader(leftLockupYieldCurvePointBytes)
 	DecodeFromBytes(leftLockupYieldCurvePointObj, rr)
+	if !leftLockupYieldCurvePointObj.ProfilePKID.Eq(profilePKID) {
+		return nil
+	}
+
 	return leftLockupYieldCurvePointObj
 }
 
@@ -11114,6 +11118,10 @@ func DBGetRightLockupYieldCurvePointWithTxn(txn *badger.Txn, snap *Snapshot, pro
 	rightLockupYieldCurvePointObj := &LockupYieldCurvePoint{}
 	rr := bytes.NewReader(rightLockupYieldCurvePointBytes)
 	DecodeFromBytes(rightLockupYieldCurvePointObj, rr)
+	if !rightLockupYieldCurvePointObj.ProfilePKID.Eq(profilePKID) {
+		return nil
+	}
+
 	return rightLockupYieldCurvePointObj
 }
 
