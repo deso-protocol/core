@@ -68,8 +68,8 @@ func (pbp *PosBlockProducer) CreateBlockTemplate(chainTip *BlockNode, latestBloc
 	block.Txns = append(block.Txns, feeTimeTxns...)
 	// Set the txnConnectStatusByIndex in the block and header.
 	// TODO: Add fixed-length bitset encoding.
-	block.TxnConnectStatusByIndex = txnConnectStatusByIndex
-	block.Header.TxnConnectStatusByIndexHash = HashBitset(txnConnectStatusByIndex)
+	block.RevolutionMetadata = NewRevolutionMetadata(txnConnectStatusByIndex, nil)
+	block.Header.RevolutionMetadataHash = block.RevolutionMetadata.Hash()
 
 	// Update the block reward transaction with the correct amount.
 	blockRewardOutput.AmountNanos = maxUtilityFee
@@ -87,7 +87,7 @@ func (pbp *PosBlockProducer) CreateBlockTemplate(chainTip *BlockNode, latestBloc
 func (pbp *PosBlockProducer) getBlockTransactions(chainTip *BlockNode, latestBlockView *UtxoView, maxBlockSizeBytes uint64) (
 	_txns []*MsgDeSoTxn, _txnConnectStatusByIndex *bitset.Bitset, _maxUtilityFee uint64, _err error) {
 	// Get Fee-Time ordered transactions from the mempool
-	feeTimeTxns := pbp.mm.Mempool().GetTransactions()
+	feeTimeTxns := pbp.mp.GetTransactions()
 
 	// Try to connect transactions one by one.
 	blocksTxns := []*MsgDeSoTxn{}
@@ -109,12 +109,12 @@ func (pbp *PosBlockProducer) getBlockTransactions(chainTip *BlockNode, latestBlo
 			return nil, nil, 0, errors.Wrapf(err, "Error copying UtxoView: ")
 		}
 		_, _, _, fees, err := utxoViewCopy._connectTransaction(
-			txn, txn.Hash(), int64(len(txnBytes)), chainTip.Height+1, true, false)
+			txn.GetTxn(), txn.Hash(), int64(len(txnBytes)), chainTip.Height+1, true, false)
 
 		// Check if the transaction connected.
 		if err == nil {
 			txnConnectStatusByIndex.Set(len(blocksTxns), true)
-			blocksTxns = append(blocksTxns, txn)
+			blocksTxns = append(blocksTxns, txn.GetTxn())
 			currentBlockSize += uint64(len(txnBytes))
 			// Compute BMF for the transaction.
 			_, utilityFee := computeBMF(fees)
@@ -126,7 +126,7 @@ func (pbp *PosBlockProducer) getBlockTransactions(chainTip *BlockNode, latestBlo
 		if err != nil {
 			return nil, nil, 0, errors.Wrapf(err, "Error copying UtxoView: ")
 		}
-		_, _, utilityFee, err := utxoViewCopy._connectFailingTransaction(txn, chainTip.Height+1, true)
+		_, _, utilityFee, err := utxoViewCopy._connectFailingTransaction(txn.GetTxn(), chainTip.Height+1, true)
 		if err != nil {
 			// If the transaction still doesn't connect, this means we encountered an invalid transaction. We will skip
 			// it and let some other process figure out what to do with it. Removing invalid transactions is a fast
@@ -136,7 +136,7 @@ func (pbp *PosBlockProducer) getBlockTransactions(chainTip *BlockNode, latestBlo
 		// If we get to this point, it means the transaction didn't connect but it was a valid transaction. We will
 		// add it to the block as a failing transaction.
 		txnConnectStatusByIndex.Set(len(blocksTxns), false)
-		blocksTxns = append(blocksTxns, txn)
+		blocksTxns = append(blocksTxns, txn.GetTxn())
 		currentBlockSize += uint64(len(txnBytes))
 		maxUtilityFee += utilityFee
 	}

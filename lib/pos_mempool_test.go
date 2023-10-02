@@ -8,6 +8,7 @@ import (
 	"math/rand"
 	"os"
 	"testing"
+	"time"
 )
 
 func TestPosMempoolStart(t *testing.T) {
@@ -136,7 +137,7 @@ func TestPosMempoolPrune(t *testing.T) {
 
 	// Add the transactions back.
 	for _, txn := range fetchedTxns {
-		_wrappedPosMempoolAddTransaction(t, newPool, txn)
+		_wrappedPosMempoolAddTransaction(t, newPool, txn.GetTxn())
 	}
 	require.Equal(3, len(newPool.GetTransactions()))
 
@@ -151,9 +152,9 @@ func TestPosMempoolPrune(t *testing.T) {
 	}
 	require.Equal(len(newPool.GetTransactions()), len(newPool.nonceTracker.nonceMap))
 	require.NoError(newPool.Refresh())
-	txns = newPool.GetTransactions()
-	require.Equal(3, len(txns))
-	for _, txn := range txns {
+	newTxns := newPool.GetTransactions()
+	require.Equal(3, len(newTxns))
+	for _, txn := range newTxns {
 		_wrappedPosMempoolRemoveTransaction(t, newPool, txn.Hash())
 	}
 	newPool.Stop()
@@ -345,7 +346,9 @@ func _generateTestTxn(t *testing.T, rand *rand.Rand, feeMin uint64, feeMax uint6
 }
 
 func _wrappedPosMempoolAddTransaction(t *testing.T, mp *PosMempool, txn *MsgDeSoTxn) {
-	require.NoError(t, mp.AddTransaction(txn, true))
+	added := uint64(time.Now().UnixMicro())
+	mtxn := NewMempoolTransaction(txn, added)
+	require.NoError(t, mp.AddTransaction(mtxn, true))
 	require.Equal(t, true, _checkPosMempoolIntegrity(t, mp))
 }
 
@@ -365,13 +368,14 @@ func _checkPosMempoolIntegrity(t *testing.T, mp *PosMempool) bool {
 	}
 
 	balances := make(map[PublicKey]uint64)
-	for _, txn := range mp.GetTransactions() {
+	txns := mp.GetTransactions()
+	for _, txn := range txns {
 		if txn.TxnNonce == nil {
 			t.Errorf("PosMempool transaction has nil nonce")
 			return false
 		}
 		pk := NewPublicKey(txn.PublicKey)
-		if txnNt := mp.nonceTracker.GetTxnByPublicKeyNonce(*pk, *txn.TxnNonce); !assert.Equal(t, txn, txnNt.Tx) {
+		if txnNt := mp.nonceTracker.GetTxnByPublicKeyNonce(*pk, *txn.TxnNonce); !assert.Equal(t, txn.GetTxn(), txnNt.Tx) {
 			t.Errorf("PosMempool nonceTracker and transactions are out of sync")
 			return false
 		}

@@ -39,7 +39,7 @@ type MempoolTx struct {
 	index int
 }
 
-func NewMempoolTx(txn *MsgDeSoTxn, blockHeight uint64) (*MempoolTx, error) {
+func NewMempoolTx(txn *MsgDeSoTxn, addedUnixMicro uint64, blockHeight uint64) (*MempoolTx, error) {
 	txnBytes, err := txn.ToBytes(false)
 	if err != nil {
 		return nil, errors.Wrapf(err, "PosMempool.GetMempoolTx: Problem serializing txn")
@@ -54,12 +54,13 @@ func NewMempoolTx(txn *MsgDeSoTxn, blockHeight uint64) (*MempoolTx, error) {
 	if err != nil {
 		return nil, errors.Wrapf(err, "PosMempool.GetMempoolTx: Problem computing fee per KB")
 	}
+	added := time.UnixMicro(int64(addedUnixMicro))
 
 	return &MempoolTx{
 		Tx:          txn,
 		Hash:        txnHash,
 		TxSizeBytes: serializedLen,
-		Added:       time.Now(),
+		Added:       added,
 		Height:      uint32(blockHeight),
 		Fee:         txn.TxnFeeNanos,
 		FeePerKB:    feePerKb,
@@ -109,16 +110,14 @@ func (mempoolTx *MempoolTx) FromBytes(rr *bytes.Reader) error {
 		return errors.Wrapf(err, "MempoolTx.Decode: Problem reading height")
 	}
 
-	// Create a new MempoolTx
-	newTxn, err := NewMempoolTx(txn, height)
-	*mempoolTx = *newTxn
-
 	// Decode the timestamp
-	timestamp, err := ReadUvarint(rr)
+	timestampUnixMicro, err := ReadUvarint(rr)
 	if err != nil {
 		return errors.Wrapf(err, "MempoolTx.Decode: Problem reading timestamp")
 	}
-	mempoolTx.Added = time.UnixMicro(int64(timestamp))
 
+	// Create a new MempoolTx
+	newTxn, err := NewMempoolTx(txn, timestampUnixMicro, height)
+	*mempoolTx = *newTxn
 	return nil
 }
