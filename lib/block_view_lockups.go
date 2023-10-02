@@ -80,11 +80,11 @@ func (lockedBalanceEntry *LockedBalanceEntry) RawDecodeWithoutMetadata(blockHeig
 	}
 
 	// UnlockTimestampNanoSecs
-	uint64UnlockTimestampUnixNanoSecs, err := ReadUvarint(rr)
+	uint64UnlockTimestampNanoSecs, err := ReadUvarint(rr)
 	if err != nil {
 		return errors.Wrapf(err, "LockedBalanceEntry.Decode: Problem reading UnlockTimestampNanoSecs")
 	}
-	lockedBalanceEntry.UnlockTimestampNanoSecs = int64(uint64UnlockTimestampUnixNanoSecs)
+	lockedBalanceEntry.UnlockTimestampNanoSecs = int64(uint64UnlockTimestampNanoSecs)
 
 	// BalanceBaseUnits
 	balanceBaseUnits, err := VariableDecodeUint256(rr)
@@ -555,7 +555,7 @@ func (txnData *UpdateCoinLockupParamsMetadata) New() DeSoTxnMetadata {
 type CoinLockupTransferMetadata struct {
 	RecipientPublicKey             *PublicKey
 	ProfilePublicKey               *PublicKey
-	UnlockTimestampUnixNanoSecs    int64
+	UnlockTimestampNanoSecs        int64
 	LockedCoinsToTransferBaseUnits *uint256.Int
 }
 
@@ -567,7 +567,7 @@ func (txnData *CoinLockupTransferMetadata) ToBytes(preSignature bool) ([]byte, e
 	var data []byte
 	data = append(data, EncodeByteArray(txnData.RecipientPublicKey.ToBytes())...)
 	data = append(data, EncodeByteArray(txnData.ProfilePublicKey.ToBytes())...)
-	data = append(data, UintToBuf(uint64(txnData.UnlockTimestampUnixNanoSecs))...)
+	data = append(data, UintToBuf(uint64(txnData.UnlockTimestampNanoSecs))...)
 	data = append(data, VariableEncodeUint256(txnData.LockedCoinsToTransferBaseUnits)...)
 	return data, nil
 }
@@ -590,11 +590,11 @@ func (txnData *CoinLockupTransferMetadata) FromBytes(data []byte) error {
 	txnData.ProfilePublicKey = NewPublicKey(profilePublicKeyBytes)
 
 	// UnlockTimestampNanoSecs
-	uint64UnlockTimestampUnixNanoSecs, err := ReadUvarint(rr)
+	uint64UnlockTimestampNanoSecs, err := ReadUvarint(rr)
 	if err != nil {
 		return errors.Wrapf(err, "DAOCoinLockupTransferMetadata.FromBytes: Problem reading UnlockTimestampNanoSecs")
 	}
-	txnData.UnlockTimestampUnixNanoSecs = int64(uint64UnlockTimestampUnixNanoSecs)
+	txnData.UnlockTimestampNanoSecs = int64(uint64UnlockTimestampNanoSecs)
 
 	// LockedDAOCoinToTransferBaseUnits
 	txnData.LockedCoinsToTransferBaseUnits, err = VariableDecodeUint256(rr)
@@ -1349,7 +1349,7 @@ func (bav *UtxoView) _connectCoinLockupTransfer(
 
 	// Fetch the sender's balance entries.
 	senderLockedBalanceEntry, err := bav.GetLockedBalanceEntryForHODLerPKIDProfilePKIDUnlockTimestampNanoSecs(
-		senderPKID, profilePKID, txMeta.UnlockTimestampUnixNanoSecs)
+		senderPKID, profilePKID, txMeta.UnlockTimestampNanoSecs)
 	if err != nil {
 		return 0, 0, nil,
 			errors.Wrap(err, "connectCoinLockupTransfer failed to fetch senderLockedBalanceEntry:w")
@@ -1358,7 +1358,7 @@ func (bav *UtxoView) _connectCoinLockupTransfer(
 		senderLockedBalanceEntry = &LockedBalanceEntry{
 			HODLerPKID:              senderPKID,
 			ProfilePKID:             profilePKID,
-			UnlockTimestampNanoSecs: txMeta.UnlockTimestampUnixNanoSecs,
+			UnlockTimestampNanoSecs: txMeta.UnlockTimestampNanoSecs,
 			BalanceBaseUnits:        *uint256.NewInt(),
 		}
 	}
@@ -1376,7 +1376,7 @@ func (bav *UtxoView) _connectCoinLockupTransfer(
 
 	// Fetch the recipient's balance entry.
 	receiverLockedBalanceEntry, err := bav.GetLockedBalanceEntryForHODLerPKIDProfilePKIDUnlockTimestampNanoSecs(
-		receiverPKID, profilePKID, txMeta.UnlockTimestampUnixNanoSecs)
+		receiverPKID, profilePKID, txMeta.UnlockTimestampNanoSecs)
 	if err != nil {
 		return 0, 0, nil,
 			errors.Wrap(err, "connectCoinLockupTransfer failed to fetch receiverLockedBalanceEntry")
@@ -1385,7 +1385,7 @@ func (bav *UtxoView) _connectCoinLockupTransfer(
 		receiverLockedBalanceEntry = &LockedBalanceEntry{
 			HODLerPKID:              receiverPKID,
 			ProfilePKID:             profilePKID,
-			UnlockTimestampNanoSecs: txMeta.UnlockTimestampUnixNanoSecs,
+			UnlockTimestampNanoSecs: txMeta.UnlockTimestampNanoSecs,
 			BalanceBaseUnits:        *uint256.NewInt(),
 		}
 	}

@@ -563,7 +563,7 @@ type DBPrefixes struct {
 	// Retrieves LockedBalanceEntries that may or may not be claimable for unlock.
 	// LockedBalanceEntries can be retrieved by HodlerPKID and CreatorPKID are have their
 	// corresponding unlock timestamp appended to sort by timestamp.
-	// Prefix, <HodlerPKID [33]byte>, <ProfilePKID [33]byte>, <UnlockTimestampUnixNanoSecs int64> -> <LockedBalanceEntry>
+	// Prefix, <HodlerPKID [33]byte>, <ProfilePKID [33]byte>, <UnlockTimestampNanoSecs int64> -> <LockedBalanceEntry>
 	PrefixLockedBalanceEntryByHODLerPKIDProfilePKIDUnlockTimestampNanoSecs []byte `prefix_id:"[91]" is_state:"true"`
 
 	// PrefixLockupYieldCurvePointByProfilePKIDAndDurationNanoSecs:
