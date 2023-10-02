@@ -8,6 +8,8 @@ import (
 	"time"
 )
 
+type BlockTemplate *MsgDeSoBlock
+
 type PosBlockProducer struct {
 	mp     Mempool
 	params *DeSoParams
@@ -35,11 +37,16 @@ func NewPosBlockProposerMetadata(
 	}
 }
 
-func (pbp *PosBlockProducer) CreateUnsignedBlock(latestBlockView *UtxoView, blockHeight uint64, view uint64,
-	proposerMetadata *PosBlockProposerMetadata, validatorsVoteQC *QuorumCertificate) (*MsgDeSoBlock, error) {
+func (pbp *PosBlockProducer) SignBlock(blockTemplate BlockTemplate, signerPrivateKey *bls.PrivateKey) (*MsgDeSoBlock, error) {
+	// TODO
+	return nil, nil
+}
+
+func (pbp *PosBlockProducer) CreateUnsignedBlock(latestBlockView *UtxoView, newBlockHeight uint64, view uint64,
+	proposerMetadata *PosBlockProposerMetadata, validatorsVoteQC *QuorumCertificate) (BlockTemplate, error) {
 
 	// Create the block template.
-	block, err := pbp.createBlockTemplate(latestBlockView, blockHeight, view, proposerMetadata)
+	block, err := pbp.createBlockTemplate(latestBlockView, newBlockHeight, view, proposerMetadata)
 	if err != nil {
 		return nil, errors.Wrapf(err, "PosBlockProducer.CreateUnsignedTimeoutBlock: Problem creating block template")
 	}
@@ -49,11 +56,11 @@ func (pbp *PosBlockProducer) CreateUnsignedBlock(latestBlockView *UtxoView, bloc
 	return block, nil
 }
 
-func (pbp *PosBlockProducer) CreateUnsignedTimeoutBlock(latestBlockView *UtxoView, blockHeight uint64, view uint64,
-	proposerMetadata *PosBlockProposerMetadata, validatorsTimeoutAggregateQC *TimeoutAggregateQuorumCertificate) (*MsgDeSoBlock, error) {
+func (pbp *PosBlockProducer) CreateUnsignedTimeoutBlock(latestBlockView *UtxoView, newBlockHeight uint64, view uint64,
+	proposerMetadata *PosBlockProposerMetadata, validatorsTimeoutAggregateQC *TimeoutAggregateQuorumCertificate) (BlockTemplate, error) {
 
 	// Create the block template.
-	block, err := pbp.createBlockTemplate(latestBlockView, blockHeight, view, proposerMetadata)
+	block, err := pbp.createBlockTemplate(latestBlockView, newBlockHeight, view, proposerMetadata)
 	if err != nil {
 		return nil, errors.Wrapf(err, "PosBlockProducer.CreateUnsignedTimeoutBlock: Problem creating block template")
 	}
@@ -64,10 +71,10 @@ func (pbp *PosBlockProducer) CreateUnsignedTimeoutBlock(latestBlockView *UtxoVie
 }
 
 // CreateBlockTemplate constructs a block with Fee-Time ordered transactions.
-func (pbp *PosBlockProducer) createBlockTemplate(latestBlockView *UtxoView, blockHeight uint64, view uint64,
-	proposerMetadata *PosBlockProposerMetadata) (*MsgDeSoBlock, error) {
+func (pbp *PosBlockProducer) createBlockTemplate(latestBlockView *UtxoView, newBlockHeight uint64, view uint64,
+	proposerMetadata *PosBlockProposerMetadata) (BlockTemplate, error) {
 	// First get the block without the header.
-	block, err := pbp.createBlockWithoutHeader(latestBlockView, blockHeight)
+	block, err := pbp.createBlockWithoutHeader(latestBlockView, newBlockHeight)
 	if err != nil {
 		return nil, errors.Wrapf(err, "PosBlockProducer.CreateBlockTemplate: Problem creating block without header")
 	}
@@ -84,7 +91,7 @@ func (pbp *PosBlockProducer) createBlockTemplate(latestBlockView *UtxoView, bloc
 	block.Header.TransactionMerkleRoot = merkleRoot
 	// FIXME: Anything special that we should do with the timestamp?
 	block.Header.TstampNanoSecs = uint64(time.Now().UnixNano())
-	block.Header.Height = blockHeight + 1
+	block.Header.Height = newBlockHeight
 	block.Header.ProposedInView = view
 
 	// Set the proposer information.
@@ -94,7 +101,7 @@ func (pbp *PosBlockProducer) createBlockTemplate(latestBlockView *UtxoView, bloc
 	return block, nil
 }
 
-func (pbp *PosBlockProducer) createBlockWithoutHeader(latestBlockView *UtxoView, blockHeight uint64) (*MsgDeSoBlock, error) {
+func (pbp *PosBlockProducer) createBlockWithoutHeader(latestBlockView *UtxoView, newBlockHeight uint64) (BlockTemplate, error) {
 	block := NewMessage(MsgTypeBlock).(*MsgDeSoBlock)
 
 	// Create the block reward transaction.
@@ -110,7 +117,7 @@ func (pbp *PosBlockProducer) createBlockWithoutHeader(latestBlockView *UtxoView,
 
 	// Get block transactions from the mempool.
 	feeTimeTxns, txnConnectStatusByIndex, txnTimestampsUnixMicro, maxUtilityFee, err := pbp.getBlockTransactions(
-		latestBlockView, blockHeight, pbp.params.MinerMaxBlockSizeBytes-uint64(len(blockRewardTxnSizeBytes)))
+		latestBlockView, newBlockHeight, pbp.params.MinerMaxBlockSizeBytes-uint64(len(blockRewardTxnSizeBytes)))
 	if err != nil {
 		return nil, errors.Wrapf(err, "PosBlockProducer.createBlockWithoutHeader: Problem retrieving block transactions: ")
 	}
@@ -124,7 +131,7 @@ func (pbp *PosBlockProducer) createBlockWithoutHeader(latestBlockView *UtxoView,
 	return block, nil
 }
 
-func (pbp *PosBlockProducer) getBlockTransactions(latestBlockView *UtxoView, blockHeight uint64, maxBlockSizeBytes uint64) (
+func (pbp *PosBlockProducer) getBlockTransactions(latestBlockView *UtxoView, newBlockHeight uint64, maxBlockSizeBytes uint64) (
 	_txns []*MsgDeSoTxn, _txnConnectStatusByIndex *bitset.Bitset, _txnTimestampsUnixMicro []uint64, _maxUtilityFee uint64, _err error) {
 	// Get Fee-Time ordered transactions from the mempool
 	feeTimeTxns := pbp.mp.GetTransactions()
@@ -135,6 +142,10 @@ func (pbp *PosBlockProducer) getBlockTransactions(latestBlockView *UtxoView, blo
 	txnTimestampsUnixMicro := []uint64{}
 	maxUtilityFee := uint64(0)
 	currentBlockSize := uint64(0)
+	blockUtxoView, err := latestBlockView.CopyUtxoView()
+	if err != nil {
+		return nil, nil, nil, 0, errors.Wrapf(err, "Error copying UtxoView: ")
+	}
 	for _, txn := range feeTimeTxns {
 		txnBytes, err := txn.ToBytes(false)
 		if err != nil {
@@ -145,15 +156,16 @@ func (pbp *PosBlockProducer) getBlockTransactions(latestBlockView *UtxoView, blo
 			continue
 		}
 
-		utxoViewCopy, err := latestBlockView.CopyUtxoView()
+		blockUtxoViewCopy, err := blockUtxoView.CopyUtxoView()
 		if err != nil {
 			return nil, nil, nil, 0, errors.Wrapf(err, "Error copying UtxoView: ")
 		}
-		_, _, _, fees, err := utxoViewCopy._connectTransaction(
-			txn.GetTxn(), txn.Hash(), int64(len(txnBytes)), uint32(blockHeight+1), true, false)
+		_, _, _, fees, err := blockUtxoViewCopy._connectTransaction(
+			txn.GetTxn(), txn.Hash(), int64(len(txnBytes)), uint32(newBlockHeight), true, false)
 
 		// Check if the transaction connected.
 		if err == nil {
+			blockUtxoView = blockUtxoViewCopy
 			txnConnectStatusByIndex.Set(len(blocksTxns), true)
 			txnTimestampsUnixMicro = append(txnTimestampsUnixMicro, txn.GetTimestampUnixMicro())
 			blocksTxns = append(blocksTxns, txn.GetTxn())
@@ -164,11 +176,11 @@ func (pbp *PosBlockProducer) getBlockTransactions(latestBlockView *UtxoView, blo
 			continue
 		}
 		// If the transaction didn't connect, we will try to add it as a failing transaction.
-		utxoViewCopy, err = latestBlockView.CopyUtxoView()
+		blockUtxoViewCopy, err = blockUtxoView.CopyUtxoView()
 		if err != nil {
 			return nil, nil, nil, 0, errors.Wrapf(err, "Error copying UtxoView: ")
 		}
-		_, _, utilityFee, err := utxoViewCopy._connectFailingTransaction(txn.GetTxn(), uint32(blockHeight+1), true)
+		_, _, utilityFee, err := blockUtxoViewCopy._connectFailingTransaction(txn.GetTxn(), uint32(newBlockHeight), true)
 		if err != nil {
 			// If the transaction still doesn't connect, this means we encountered an invalid transaction. We will skip
 			// it and let some other process figure out what to do with it. Removing invalid transactions is a fast
@@ -177,6 +189,7 @@ func (pbp *PosBlockProducer) getBlockTransactions(latestBlockView *UtxoView, blo
 		}
 		// If we get to this point, it means the transaction didn't connect but it was a valid transaction. We will
 		// add it to the block as a failing transaction.
+		blockUtxoView = blockUtxoViewCopy
 		txnConnectStatusByIndex.Set(len(blocksTxns), false)
 		txnTimestampsUnixMicro = append(txnTimestampsUnixMicro, txn.GetTimestampUnixMicro())
 		blocksTxns = append(blocksTxns, txn.GetTxn())

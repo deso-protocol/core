@@ -35,7 +35,7 @@ func TestPosMempoolRestartWithTransactions(t *testing.T) {
 	feeMin := globalParams.MinimumNetworkFeeNanosPerKB
 	feeMax := uint64(10000)
 
-	params, db := _blockchainSetup(t)
+	params, db := _posTestBlockchainSetup(t)
 	m0PubBytes, _, _ := Base58CheckDecode(m0Pub)
 	m1PubBytes, _, _ := Base58CheckDecode(m1Pub)
 	latestBlockView, err := NewUtxoView(db, params, nil, nil)
@@ -81,7 +81,7 @@ func TestPosMempoolPrune(t *testing.T) {
 	feeMin := globalParams.MinimumNetworkFeeNanosPerKB
 	feeMax := uint64(2000)
 
-	params, db := _blockchainSetup(t)
+	params, db := _posTestBlockchainSetup(t)
 	m0PubBytes, _, _ := Base58CheckDecode(m0Pub)
 	m1PubBytes, _, _ := Base58CheckDecode(m1Pub)
 
@@ -170,7 +170,7 @@ func TestPosMempoolUpdateGlobalParams(t *testing.T) {
 	feeMin := globalParams.MinimumNetworkFeeNanosPerKB
 	feeMax := uint64(2000)
 
-	params, db := _blockchainSetup(t)
+	params, db := _posTestBlockchainSetup(t)
 	m0PubBytes, _, _ := Base58CheckDecode(m0Pub)
 	m1PubBytes, _, _ := Base58CheckDecode(m1Pub)
 
@@ -222,7 +222,7 @@ func TestPosMempoolReplaceWithHigherFee(t *testing.T) {
 	feeMin := globalParams.MinimumNetworkFeeNanosPerKB
 	feeMax := uint64(2000)
 
-	params, db := _blockchainSetup(t)
+	params, db := _posTestBlockchainSetup(t)
 	m0PubBytes, _, _ := Base58CheckDecode(m0Pub)
 	m1PubBytes, _, _ := Base58CheckDecode(m1Pub)
 
@@ -288,7 +288,7 @@ func TestPosMempoolReplaceWithHigherFee(t *testing.T) {
 	require.False(mempool.IsRunning())
 }
 
-func _blockchainSetup(t *testing.T) (_params *DeSoParams, _db *badger.DB) {
+func _posTestBlockchainSetup(t *testing.T) (_params *DeSoParams, _db *badger.DB) {
 	require := require.New(t)
 
 	chain, params, db := NewLowDifficultyBlockchain(t)
