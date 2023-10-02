@@ -167,6 +167,14 @@ func (bc *Blockchain) validateBlockGeneral(desoBlock *MsgDeSoBlock) error {
 		return RuleErrorBothTimeoutAndVoteQC
 	}
 
+	if !isVoteQCEmpty && len(desoBlock.Txns) == 0 {
+		return RuleErrorVoteQCWithoutTransactions
+	}
+
+	if !isTimeoutQCEmpty && len(desoBlock.Txns) != 0 {
+		return RuleErrorTimeoutQCWithTransactions
+	}
+
 	// TODO: What other checks do we need to do here?
 	return nil
 }
@@ -293,4 +301,6 @@ const (
 	RuleErrorInvalidPoSBlockHeaderVersion   RuleError = "RuleErrorInvalidPoSBlockHeaderVersion"
 	RuleErrorNoTimeoutOrVoteQC              RuleError = "RuleErrorNoTimeoutOrVoteQC"
 	RuleErrorBothTimeoutAndVoteQC           RuleError = "RuleErrorBothTimeoutAndVoteQC"
+	RuleErrorVoteQCWithoutTransactions      RuleError = "RuleErrorVoteQCWithoutTransactions"
+	RuleErrorTimeoutQCWithTransactions      RuleError = "RuleErrorTimeoutQCWithTransactions"
 )

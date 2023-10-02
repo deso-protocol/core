@@ -60,6 +60,16 @@ func TestValidateBlockGeneral(t *testing.T) {
 	// There should be no error.
 	require.Nil(t, err)
 
+	// Timeout QC shouldn't have any transactions
+	block.Txns = []*MsgDeSoTxn{
+		{ // The validation just checks the length of transactions.
+			// Connecting the block elsewhere will ensure that the transactions themselves are valid.
+			TxInputs: nil,
+		},
+	}
+	err = bc.validateBlockGeneral(block)
+	require.Equal(t, err, RuleErrorTimeoutQCWithTransactions)
+
 	// Make sure block can't have both timeout and vote QC.
 	block.Header.ValidatorsVoteQC = &QuorumCertificate{
 		BlockHash:      bc.GetBestChainTip().Hash,
@@ -72,8 +82,14 @@ func TestValidateBlockGeneral(t *testing.T) {
 	err = bc.validateBlockGeneral(block)
 	require.Equal(t, err, RuleErrorBothTimeoutAndVoteQC)
 
-	// Validate the block with a valid vote QC and header.
+	// Validate the block with a valid vote QC and header. Vote QCs must have at least 1 transaction.
 	block.Header.ValidatorsTimeoutAggregateQC = nil
+	block.Txns = []*MsgDeSoTxn{
+		{ // The validation just checks the length of transactions.
+			// Connecting the block elsewhere will ensure that the transactions themselves are valid.
+			TxInputs: nil,
+		},
+	}
 	// There should be no error.
 	err = bc.validateBlockGeneral(block)
 	require.Nil(t, err)
