@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/deso-protocol/core/collections/bitset"
+	"golang.org/x/crypto/sha3"
 	"io"
 	"math"
 	"math/big"
@@ -1915,13 +1916,13 @@ type MsgDeSoHeader struct {
 	// event that ASICs become powerful enough to have birthday problems in the future.
 	ExtraNonce uint64
 
-	// TransactionsConnectStatus is only used for Proof of Stake blocks, starting with
+	// RevolutionMetadataHash is only used for Proof of Stake blocks, starting with
 	// MsgDeSoHeader version 2. For all earlier versions, this field will default to nil.
 	//
-	// The hash of the TxnConnectStatusByIndex field in MsgDeSoBlock. It is stored to ensure
-	// that the TxnConnectStatusByIndex is part of the header hash, which is signed by the
-	// proposer. The full index is stored in the block to offload space complexity.
-	TxnConnectStatusByIndexHash *BlockHash
+	// The hash of the RevolutionMetadata field in MsgDeSoBlock. It is stored to ensure
+	// that the RevolutionMetadata is part of the header hash, which is signed by the
+	// proposer. The full thing is stored in the block to offload space complexity.
+	RevolutionMetadataHash *BlockHash
 
 	// ProposerPublicKey is only used for Proof of Stake blocks, starting with MsgDeSoHeader
 	// version 2. For all earlier versions, this field will default to nil.
@@ -2141,11 +2142,11 @@ func (msg *MsgDeSoHeader) EncodeHeaderVersion2(preSignature bool) ([]byte, error
 	// The Nonce and ExtraNonce fields are unused in version 2. We skip them
 	// during both encoding and decoding.
 
-	// TxnConnectStatusByIndexHash
-	if msg.TxnConnectStatusByIndexHash == nil {
-		return nil, fmt.Errorf("EncodeHeaderVersion2: TxnConnectStatusByIndexHash must be non-nil")
+	// RevolutionMetadataHash
+	if msg.RevolutionMetadataHash == nil {
+		return nil, fmt.Errorf("EncodeHeaderVersion2: RevolutionMetadataHash must be non-nil")
 	}
-	retBytes = append(retBytes, msg.TxnConnectStatusByIndexHash[:]...)
+	retBytes = append(retBytes, msg.RevolutionMetadataHash[:]...)
 
 	// ProposerPublicKey
 	if msg.ProposerPublicKey == nil {
@@ -2361,11 +2362,11 @@ func DecodeHeaderVersion2(rr io.Reader) (*MsgDeSoHeader, error) {
 	retHeader.Nonce = 0
 	retHeader.ExtraNonce = 0
 
-	// TxnConnectStatusByIndexHash
-	retHeader.TxnConnectStatusByIndexHash = &BlockHash{}
-	_, err = io.ReadFull(rr, retHeader.TxnConnectStatusByIndexHash[:])
+	// RevolutionMetadataHash
+	retHeader.RevolutionMetadataHash = &BlockHash{}
+	_, err = io.ReadFull(rr, retHeader.RevolutionMetadataHash[:])
 	if err != nil {
-		return nil, errors.Wrapf(err, "MsgDeSoHeader.FromBytes: Problem decoding TxnConnectStatusByIndexHash")
+		return nil, errors.Wrapf(err, "MsgDeSoHeader.FromBytes: Problem decoding RevolutionMetadataHash")
 	}
 
 	// ProposerPublicKey
@@ -2588,10 +2589,11 @@ type MsgDeSoBlock struct {
 	// from.
 	BlockProducerInfo *BlockProducerInfo
 
-	// This bitset field stores information whether each transaction in the block passes
-	// or fails to connect. The bit at i-th position is set to 1 if the i-th transaction
-	// in the block passes connect, and 0 otherwise.
-	TxnConnectStatusByIndex *bitset.Bitset
+	// This RevolutionMetadata is a new field introduced in PoS. It stores some useful
+	// information related to Revolution. Such as information about the pass/fail connect
+	// status for each transaction, and timestamps for when each transaction entered
+	// the producer's mempool.
+	RevolutionMetadata *BlockRevolutionMetadata
 }
 
 func (msg *MsgDeSoBlock) EncodeBlockCommmon(preSignature bool) ([]byte, error) {
@@ -2650,11 +2652,11 @@ func (msg *MsgDeSoBlock) EncodeBlockVersion2(preSignature bool) ([]byte, error) 
 		return nil, err
 	}
 
-	// TxnConnectStatusByIndex
-	if msg.TxnConnectStatusByIndex == nil {
-		return nil, fmt.Errorf("MsgDeSoBlock.EncodeBlockVersion2: TxnConnectStatusByIndex should not be nil")
+	// RevolutionMetadata
+	if msg.RevolutionMetadata == nil {
+		return nil, fmt.Errorf("MsgDeSoBlock.EncodeBlockVersion2: RevolutionMetadata should not be nil")
 	}
-	data = append(data, EncodeBitset(msg.TxnConnectStatusByIndex)...)
+	data = append(data, msg.RevolutionMetadata.ToBytes()...)
 
 	return data, nil
 }
@@ -2761,9 +2763,9 @@ func (msg *MsgDeSoBlock) FromBytes(data []byte) error {
 
 	// Version 2 blocks have a TxnStatusConnectedIndex attached to them.
 	if ret.Header.Version == HeaderVersion2 {
-		ret.TxnConnectStatusByIndex, err = DecodeBitset(rr)
-		if err != nil {
-			return errors.Wrapf(err, "MsgDeSoBlock.FromBytes: Error decoding TxnConnectStatusByIndex")
+		ret.RevolutionMetadata = NewRevolutionMetadata(nil, nil)
+		if err = ret.RevolutionMetadata.FromBytes(rr); err != nil {
+			return errors.Wrapf(err, "MsgDeSoBlock.FromBytes: Error decoding RevolutionMetadata")
 		}
 	}
 
@@ -2787,6 +2789,55 @@ func (msg *MsgDeSoBlock) String() string {
 		return "<nil block or header>"
 	}
 	return fmt.Sprintf("<Header: %v, %v>", msg.Header.String(), msg.BlockProducerInfo)
+}
+
+// BlockRevolutionMetadata is a wrapper around the new metadata in MsgDeSoBlock introduced in PoS.
+type BlockRevolutionMetadata struct {
+	// TxnConnectStatusByIndex stores information whether each transaction in the block passes or fails to connect.
+	// The bit at i-th position is set to 1 if the i-th transaction in the block passes connect, and 0 otherwise.
+	TxnConnectStatusByIndex *bitset.Bitset
+	// TxnTimestampsUnixMicro is a list of unix timestamps in microseconds of when the block producer first added each
+	// transaction to their mempool. The timestamp at i-th position in the list corresponds to the i-th transaction
+	// in the block.
+	//
+	// Of course the block producer can show defiance and spoof the timestamps. That's fine, though. Producer can't censor
+	// transactions or else a revolt would commence. A transaction with a spoofed timestamp also doesn't result
+	// in any meaningful gain in the block space priority. Such transaction remains in the same Fee-Time bucket.
+	TxnTimestampsUnixMicro []uint64
+}
+
+func NewRevolutionMetadata(txnConnectStatusByIndex *bitset.Bitset, txnTimestampsUnixMicro []uint64) *BlockRevolutionMetadata {
+	return &BlockRevolutionMetadata{
+		TxnConnectStatusByIndex: txnConnectStatusByIndex,
+		TxnTimestampsUnixMicro:  txnTimestampsUnixMicro,
+	}
+}
+
+func (brm *BlockRevolutionMetadata) ToBytes() []byte {
+	data := []byte{}
+	data = append(data, EncodeBitset(brm.TxnConnectStatusByIndex)...)
+	data = append(data, EncodeUint64Array(brm.TxnTimestampsUnixMicro)...)
+	return data
+}
+
+func (brm *BlockRevolutionMetadata) FromBytes(rr io.Reader) error {
+	txnConnectStatusByIndex, err := DecodeBitset(rr)
+	if err != nil {
+		return errors.Wrapf(err, "BlockRevolutionMetadata.FromBytes: Error decoding txnConnectStatusByIndex")
+	}
+	txnTimestampsUnixMicro, err := DecodeUint64Array(rr)
+	if err != nil {
+		return errors.Wrapf(err, "BlockRevolutionMetadata.FromBytes: Error decoding txnTimestampsUnixMicro")
+	}
+	brm.TxnConnectStatusByIndex = txnConnectStatusByIndex
+	brm.TxnTimestampsUnixMicro = txnTimestampsUnixMicro
+	return nil
+}
+
+func (brm *BlockRevolutionMetadata) Hash() *BlockHash {
+	data := brm.ToBytes()
+	hash := sha3.Sum256(data)
+	return NewBlockHash(hash[:])
 }
 
 // ==================================================================
