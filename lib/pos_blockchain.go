@@ -1,6 +1,7 @@
 package lib
 
 import (
+	"github.com/deso-protocol/core/collections"
 	"github.com/golang/glog"
 	"github.com/pkg/errors"
 	"time"
@@ -302,10 +303,19 @@ func (bc *Blockchain) validateAncestorsExist(desoBlock *MsgDeSoBlock) (_missingB
 	return nil, errors.New("IMPLEMENT ME")
 }
 
-// addBlockToBlockIndex adds the block to the block index.
+// addBlockToBlockIndex adds the block to the block index and uncommitted blocks map.
 func (bc *Blockchain) addBlockToBlockIndex(desoBlock *MsgDeSoBlock) error {
-	// TODO: Implement me.
-	return errors.New("IMPLEMENT ME")
+	hash, err := desoBlock.Hash()
+	if err != nil {
+		return errors.Wrapf(err, "addBlockToBlockIndex: Problem hashing block %v", desoBlock)
+	}
+	// Need to get parent block node from block index
+	prevBlock := bc.blockIndex[*desoBlock.Header.PrevBlockHash]
+	// What should the block status be here? Validated?
+	bc.blockIndex[*hash] = NewPoSBlockNode(prevBlock, hash, uint32(desoBlock.Header.Height), desoBlock.Header, StatusBlockValidated, UNCOMMITTED)
+
+	bc.uncommittedBlocksMap[*hash] = desoBlock
+	return nil
 }
 
 // shouldReorg determines if we should reorg to the block provided. We should reorg if
@@ -353,11 +363,48 @@ func (bc *Blockchain) updateCurrentView(desoBlock *MsgDeSoBlock) {
 
 func (bc *Blockchain) GetUncommittedTipView() (*UtxoView, error) {
 	// Connect the uncommitted blocks to the tip so that we can validate subsequent blocks
-	panic("GetUncommittedTipView: Not implemented yet")
+	highestCommittedBlock, committedBlockIndex := bc.getHighestCommittedBlock()
+	if highestCommittedBlock == nil {
+		// TODO: do we just want to connect all the blocks in best chain then?
+		// This is an edge case we'll never hit in practice since all the PoW blocks
+		// are committed.
+		return nil, errors.New("GetUncommittedTipView: No committed blocks found")
+	}
+	utxoView, err := NewUtxoView(bc.db, bc.params, bc.postgres, bc.snapshot)
+	if err != nil {
+		return nil, errors.Wrapf(err, "GetUncommittedTipView: Problem initializing UtxoView")
+	}
+	if committedBlockIndex == len(bc.bestChain)-1 {
+		return utxoView, nil
+	}
+	for ii := committedBlockIndex + 1; ii < len(bc.bestChain); ii++ {
+		// We need to get these blocks from the uncommitted blocks map
+		fullBlock, exists := bc.uncommittedBlocksMap[*bc.bestChain[ii].Hash]
+		if !exists {
+			return nil, errors.Errorf("GetUncommittedTipView: Block %v not found in block index", bc.bestChain[ii].Hash)
+		}
+		// TODO: Do we want/need to attach the event manager here? Do we need the utxo ops for anything?
+		_, err = utxoView.ConnectBlock(fullBlock, collections.Transform(fullBlock.Txns, func(txn *MsgDeSoTxn) *BlockHash {
+			return txn.Hash()
+		}), false, bc.eventManager, fullBlock.Header.Height)
+		if err != nil {
+			return nil, errors.Wrapf(err, "GetUncommittedTipView: Problem connecting block %v", fullBlock.Hash)
+		}
+	}
+	return utxoView, nil
 }
 
 func (bc *Blockchain) GetBestChainTip() *BlockNode {
 	return bc.bestChain[len(bc.bestChain)-1]
+}
+
+func (bc *Blockchain) getHighestCommittedBlock() (*BlockNode, int) {
+	for ii := len(bc.bestChain) - 1; ii >= 0; ii-- {
+		if bc.bestChain[ii].CommittedStatus == COMMITTED {
+			return bc.bestChain[ii], ii
+		}
+	}
+	return nil, 0
 }
 
 const (
