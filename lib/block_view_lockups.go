@@ -1281,7 +1281,8 @@ func (bav *UtxoView) _connectCoinLockupTransfer(
 	// Validate the starting block height.
 	if blockHeight < bav.Params.ForkHeights.ProofOfStake1StateSetupBlockHeight ||
 		blockHeight < bav.Params.ForkHeights.BalanceModelBlockHeight {
-		return 0, 0, nil, errors.Wrapf(RuleErrorProofofStakeTxnBeforeBlockHeight, "_connectCoinLockupTransfer")
+		return 0, 0, nil,
+			errors.Wrapf(RuleErrorProofofStakeTxnBeforeBlockHeight, "_connectCoinLockupTransfer")
 	}
 
 	// Validate the txn TxnType.
@@ -1307,17 +1308,38 @@ func (bav *UtxoView) _connectCoinLockupTransfer(
 	}
 
 	// If this is a DeSo lockup, ensure the amount is less than 2**64.
-	if txMeta.ProfilePublicKey.IsZeroPublicKey() {
-		maxUint64, _ := uint256.FromBig(big.NewInt(0).SetUint64(math.MaxUint64))
-		if txMeta.LockedCoinsToTransferBaseUnits.Gt(maxUint64) {
-			return 0, 0, nil, errors.Wrap(RuleErrorCoinLockupTransferOfDeSoCausesOverflow,
-				"_connectCoinLockupTransfer")
+	if txMeta.ProfilePublicKey.IsZeroPublicKey() && !txMeta.LockedCoinsToTransferBaseUnits.IsUint64() {
+		return 0, 0, nil, errors.Wrap(RuleErrorCoinLockupTransferOfDeSoCausesOverflow,
+			"_connectCoinLockupTransfer")
+	}
+
+	// Validate recipient and profile public keys as valid.
+	var profileEntry *ProfileEntry
+	if len(txMeta.RecipientPublicKey) != btcec.PubKeyBytesLenCompressed {
+		return 0, 0, nil,
+			errors.Wrap(RuleErrorCoinLockupTransferInvalidRecipientPubKey, "_connectCoinLockupTransfer")
+	}
+	if len(txMeta.ProfilePublicKey) != btcec.PubKeyBytesLenCompressed {
+		return 0, 0, nil,
+			errors.Wrap(RuleErrorCoinLockupTransferInvalidProfilePubKey, "_connectCoinLockupTransfer")
+	}
+	if !txMeta.ProfilePublicKey.IsZeroPublicKey() {
+		profileEntry = bav.GetProfileEntryForPublicKey(txMeta.ProfilePublicKey.ToBytes())
+		if profileEntry == nil || profileEntry.isDeleted {
+			return 0, 0, nil,
+				errors.Wrap(RuleErrorCoinLockupOnNonExistentProfile, "_connectCoinLockupTransfer")
 		}
 	}
 
-	// Fetch PKIDs for the recipient and sender.
-	senderPKIDEntry := bav.GetPKIDForPublicKey(txn.PublicKey)
-	senderPKID := senderPKIDEntry.PKID
+	// Fetch PKIDs for the recipient, sender, and profile.
+	var senderPKID *PKID
+	if _, updaterIsParamUpdater :=
+		GetParamUpdaterPublicKeys(blockHeight, bav.Params)[MakePkMapKey(txn.PublicKey)]; !updaterIsParamUpdater {
+		senderPKID = ZeroPKID.NewPKID()
+	} else {
+		senderPKIDEntry := bav.GetPKIDForPublicKey(txn.PublicKey)
+		senderPKID = senderPKIDEntry.PKID
+	}
 	receiverPKIDEntry := bav.GetPKIDForPublicKey(txMeta.RecipientPublicKey.ToBytes())
 	receiverPKID := receiverPKIDEntry.PKID
 	profilePKIDEntry := bav.GetPKIDForPublicKey(txMeta.ProfilePublicKey.ToBytes())
@@ -1327,24 +1349,6 @@ func (bav *UtxoView) _connectCoinLockupTransfer(
 	if senderPKID.Eq(receiverPKID) {
 		return 0, 0, nil, errors.Wrapf(RuleErrorCoinLockupTransferSenderEqualsReceiver,
 			"_connectCoinLockupTransfer")
-	}
-
-	// Verify the transfer restrictions attached to the transfer.
-	profileEntry := bav.GetProfileEntryForPKID(profilePKID)
-	if profileEntry.DAOCoinEntry.LockupTransferRestrictionStatus == TransferRestrictionStatusProfileOwnerOnly &&
-		!profilePKID.Eq(senderPKID) {
-		return 0, 0, nil, errors.Wrapf(RuleErrorCoinLockupTransferRestrictedToProfileOwner,
-			"_connectCoinLockupTransfer")
-	}
-	if profileEntry.DAOCoinEntry.LockupTransferRestrictionStatus == TransferRestrictionStatusDAOMembersOnly {
-		// TODO: Determine if this is desired behavior. We assume the sender must be part of the DAO to have
-		//       transferable coins. It seems weird to tie locked DAO coin transfers to unlocked DAO coin balances.
-		//       An alternative approach is not allow the "TransferRestrictionStatusDAOMembersOnly" restriction.
-		receiverBalanceEntry := bav.GetBalanceEntry(receiverPKID, profilePKID, true)
-		if receiverBalanceEntry.BalanceNanos.IsZero() {
-			return 0, 0, nil,
-				errors.Wrapf(RuleErrorCoinLockupTransferRestrictedToDAOMembers, "_connectCoinLockupTransfer")
-		}
 	}
 
 	// Fetch the sender's balance entries.
@@ -1390,6 +1394,30 @@ func (bav *UtxoView) _connectCoinLockupTransfer(
 		}
 	}
 	prevReceiverLockedBalanceEntry := receiverLockedBalanceEntry.Copy()
+
+	// Fetch the transfer restrictions attached to the transfer.
+	var transferRestrictionStatus TransferRestrictionStatus
+	if profilePKID.IsZeroPKID() {
+		transferRestrictionStatus = bav.GlobalParamsEntry.LockedDESOTransferRestrictions
+	} else {
+		transferRestrictionStatus = profileEntry.DAOCoinEntry.TransferRestrictionStatus
+	}
+
+	// Check if transfers are limited to profile owner only.
+	if transferRestrictionStatus == TransferRestrictionStatusProfileOwnerOnly && !profilePKID.Eq(senderPKID) {
+		return 0, 0, nil,
+			errors.Wrapf(RuleErrorCoinLockupTransferRestrictedToProfileOwner, "_connectCoinLockupTransfer")
+	}
+
+	// Check if the transfers are limited to DAO members only.
+	// Here, a "DAO member" is anyone who holds either unlocked or locked DAO coins associated with the profile.
+	if transferRestrictionStatus == TransferRestrictionStatusDAOMembersOnly {
+		receiverBalanceEntry := bav.GetBalanceEntry(receiverPKID, profilePKID, true)
+		if receiverBalanceEntry.BalanceNanos.IsZero() && receiverLockedBalanceEntry.BalanceBaseUnits.IsZero() {
+			return 0, 0, nil,
+				errors.Wrapf(RuleErrorCoinLockupTransferRestrictedToDAOMembers, "_connectCoinLockupTransfer")
+		}
+	}
 
 	// Add to the recipient's balance entry, checking for overflow.
 	newRecipientBalanceBaseUnits, err := SafeUint256().Add(&receiverLockedBalanceEntry.BalanceBaseUnits,
