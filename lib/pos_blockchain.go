@@ -135,8 +135,6 @@ func (bc *Blockchain) validateDeSoBlockPoS(desoBlock *MsgDeSoBlock) error {
 // that the timestamp is valid, that the version of the header is valid,
 // and other general integrity checks (such as not malformed).
 func (bc *Blockchain) validateBlockGeneral(desoBlock *MsgDeSoBlock) error {
-	// TODO: Implement me
-
 	// First make sure we have a non-nil header
 	if desoBlock.Header == nil {
 		return RuleErrorNilBlockHeader
@@ -153,16 +151,23 @@ func (bc *Blockchain) validateBlockGeneral(desoBlock *MsgDeSoBlock) error {
 	}
 
 	// Header validation
-
 	if desoBlock.Header.Version != HeaderVersion2 {
 		return RuleErrorInvalidPoSBlockHeaderVersion
 	}
 
 	// Malformed block checks
 	// Require header to have either vote or timeout QC
-	if desoBlock.Header.ValidatorsTimeoutAggregateQC.isEmpty() && desoBlock.Header.ValidatorsVoteQC.isEmpty() {
+	isTimeoutQCEmpty := desoBlock.Header.ValidatorsTimeoutAggregateQC.isEmpty()
+	isVoteQCEmpty := desoBlock.Header.ValidatorsVoteQC.isEmpty()
+	if isTimeoutQCEmpty && isVoteQCEmpty {
 		return RuleErrorNoTimeoutOrVoteQC
 	}
+
+	if !isTimeoutQCEmpty && !isVoteQCEmpty {
+		return RuleErrorBothTimeoutAndVoteQC
+	}
+
+	// TODO: What other checks do we need to do here?
 	return nil
 }
 
@@ -280,3 +285,12 @@ func (bc *Blockchain) GetUncommittedTipView() (*UtxoView, error) {
 func (bc *Blockchain) GetBestChainTip() *BlockNode {
 	return bc.bestChain[len(bc.bestChain)-1]
 }
+
+const (
+	RuleErrorNilBlockHeader                 RuleError = "RuleErrorNilBlockHeader"
+	RuleErrorPoSBlockTstampNanoSecsTooOld   RuleError = "RuleErrorPoSBlockTstampNanoSecsTooOld"
+	RuleErrorPoSBlockTstampNanoSecsInFuture RuleError = "RuleErrorPoSBlockTstampNanoSecsInFuture"
+	RuleErrorInvalidPoSBlockHeaderVersion   RuleError = "RuleErrorInvalidPoSBlockHeaderVersion"
+	RuleErrorNoTimeoutOrVoteQC              RuleError = "RuleErrorNoTimeoutOrVoteQC"
+	RuleErrorBothTimeoutAndVoteQC           RuleError = "RuleErrorBothTimeoutAndVoteQC"
+)
