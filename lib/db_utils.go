@@ -10828,7 +10828,7 @@ func DBGetUnlockableLockedBalanceEntriesWithTxn(
 		ProfilePKID: profilePKID,
 	})
 
-	// Create an iterator. We set the iterator to reverse in o
+	// Create an iterator. We set the iterator to reverse as per the comment at the top of this function.
 	opts := badger.DefaultIteratorOptions
 	opts.Reverse = true
 	iterator := txn.NewIterator(opts)
@@ -10854,6 +10854,7 @@ func DBGetUnlockableLockedBalanceEntriesWithTxn(
 				"error decoding LockedBalanceEntry: ")
 		}
 
+		// This check is redundant. It's included to be extra safe only unlockable locked balance entries are included.
 		if lockedBalanceEntry.UnlockTimestampNanoSecs < currentTimestampUnixNanoSecs {
 			lockedBalanceEntries = append(lockedBalanceEntries)
 		}
@@ -10886,6 +10887,13 @@ func _dbKeyForLockupYieldCurvePoint(lockupYieldCurvePoint LockupYieldCurvePoint)
 	binary.BigEndian.PutUint64(lockupDurationBytes, uint64(lockupYieldCurvePoint.LockupDurationNanoSecs))
 	key = append(key, lockupDurationBytes...)
 
+	return key
+}
+
+func DBPrefixKeyForLockupYieldCurvePointsByProfilePKID(profilePKID *PKID) []byte {
+	// Make a copy to avoid multiple calls to this function re-using the same slice.
+	prefixCopy := append([]byte{}, Prefixes.PrefixLockupYieldCurvePointByProfilePKIDAndDurationNanoSecs...)
+	key := append(prefixCopy, profilePKID[:]...)
 	return key
 }
 
@@ -10930,6 +10938,55 @@ func DbDeleteLockupYieldCurvePointWithTxn(txn *badger.Txn, snap *Snapshot,
 }
 
 // LockupYieldCurvePoint Get Operations (Badger Reads)
+
+func DBGetAllYieldCurvePointsByProfilePKID(handle *badger.DB, snap *Snapshot,
+	profilePKID *PKID) (_lockupYieldCurvePoints []*LockupYieldCurvePoint, _err error) {
+	var lockupYieldCurvePoints []*LockupYieldCurvePoint
+	err := handle.View(func(txn *badger.Txn) error {
+		var err error
+		lockupYieldCurvePoints, err = DBGetAllYieldCurvePointsByProfilePKIDWithTxn(
+			txn, snap, profilePKID)
+		return err
+	})
+	return lockupYieldCurvePoints, err
+}
+
+func DBGetAllYieldCurvePointsByProfilePKIDWithTxn(txn *badger.Txn, snap *Snapshot,
+	profilePKID *PKID) (_lockupYieldCurvePoints []*LockupYieldCurvePoint, _err error) {
+	// Construct the key prefix.
+	startKey := DBPrefixKeyForLockupYieldCurvePointsByProfilePKID(profilePKID)
+
+	// Create an iterator.
+	opts := badger.DefaultIteratorOptions
+	iterator := txn.NewIterator(opts)
+	defer iterator.Close()
+
+	// Store matching LockupYieldCurvePoints to return.
+	var lockupYieldCurvePoints []*LockupYieldCurvePoint
+
+	// Loop.
+	for iterator.Seek(startKey); iterator.ValidForPrefix(startKey); iterator.Next() {
+		// Retrieve the LockupYieldCurvePointBytes.
+		lockupYieldCurvePointBytes, err := iterator.Item().ValueCopy(nil)
+		if err != nil {
+			return nil, errors.Wrapf(err, "DBGetAllYieldCurvePointsByProfilePKIDWithTxn: "+
+				"error retrieveing LockupYieldCurvePoint: ")
+		}
+
+		// Convert LockedBalanceEntryBytes to LockedBalanceEntry.
+		rr := bytes.NewReader(lockupYieldCurvePointBytes)
+		lockupYieldCurvePoint, err := DecodeDeSoEncoder(&LockupYieldCurvePoint{}, rr)
+		if err != nil {
+			return nil, errors.Wrapf(err, "DBGetAllYieldCurvePointsByProfilePKIDWithTxn: "+
+				"error decoding LockupYieldCurvePoint: ")
+		}
+
+		// Append to the array to return.
+		lockupYieldCurvePoints = append(lockupYieldCurvePoints, lockupYieldCurvePoint)
+	}
+
+	return lockupYieldCurvePoints, nil
+}
 
 func DBGetYieldCurvePointsByProfilePKIDAndDurationNanoSecs(handle *badger.DB, snap *Snapshot, profilePKID *PKID,
 	lockupDurationNanoSecs int64) (_lockupYieldCurvePoint *LockupYieldCurvePoint) {

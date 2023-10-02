@@ -343,9 +343,34 @@ func (bav *UtxoView) GetYieldCurvePointByProfilePKIDAndDurationNanoSecs(profileP
 }
 
 func (bav *UtxoView) GetLocalYieldCurvePoints(profilePKID *PKID, lockupDuration int64) (
-	_leftLockupPoint *LockupYieldCurvePoint, _rightLockupPoint *LockupYieldCurvePoint) {
+	_leftLockupPoint *LockupYieldCurvePoint, _rightLockupPoint *LockupYieldCurvePoint, _err error) {
 	var leftLockupPoint *LockupYieldCurvePoint
 	var rightLockupPoint *LockupYieldCurvePoint
+
+	// Fetch all yield curve points in the db.
+	dbYieldCurvePoints, err := DBGetAllYieldCurvePointsByProfilePKID(
+		bav.GetDbAdapter().badgerDb, bav.Snapshot, profilePKID)
+	if err != nil {
+		return nil, nil, errors.Wrap(err, "GetLocalYieldCurvePoints")
+	}
+
+	// Cache the db points in the view.
+	// While there's more efficient ways to do this with specialized badger seek operations, this is sufficient for now.
+	if len(dbYieldCurvePoints) > 0 {
+		// Check if there's a yield curve in the view for the associated profile.
+		if _, mapInView := bav.PKIDToLockupYieldCurvePointKeyToLockupYieldCurvePoints[*profilePKID]; !mapInView {
+			bav.PKIDToLockupYieldCurvePointKeyToLockupYieldCurvePoints[*profilePKID] =
+				make(map[LockupYieldCurvePointKey]*LockupYieldCurvePoint)
+		}
+
+		// Check if any of the points needs to be cached in the view.
+		for _, yieldCurvePoint := range dbYieldCurvePoints {
+			if _, pointInView :=
+				bav.PKIDToLockupYieldCurvePointKeyToLockupYieldCurvePoints[*profilePKID][yieldCurvePoint.ToMapKey()]; !pointInView {
+				bav._setLockupYieldCurvePoint(yieldCurvePoint)
+			}
+		}
+	}
 
 	// Check the view for yield curve points.
 	if _, pointsInView := bav.PKIDToLockupYieldCurvePointKeyToLockupYieldCurvePoints[*profilePKID]; pointsInView {
@@ -377,35 +402,7 @@ func (bav *UtxoView) GetLocalYieldCurvePoints(profilePKID *PKID, lockupDuration 
 		}
 	}
 
-	// Now we quickly fetch left and right local yield curve points from the DB using careful seek operations.
-	leftDBLockupPoint, rightDBLockupPoint := DBGetLocalYieldCurvePoints(
-		bav.GetDbAdapter().badgerDb, bav.Snapshot, profilePKID, lockupDuration)
-
-	// Check for nil pointer cases.
-	if leftDBLockupPoint != nil &&
-		leftDBLockupPoint.LockupDurationNanoSecs < lockupDuration {
-		leftLockupPoint = leftDBLockupPoint
-	}
-	if rightDBLockupPoint != nil &&
-		rightDBLockupPoint.LockupDurationNanoSecs >= lockupDuration {
-		rightLockupPoint = rightDBLockupPoint
-	}
-
-	// Check for an updated left and right yield curve point from the DB.
-	if leftDBLockupPoint != nil &&
-		leftDBLockupPoint.ProfilePKID.Eq(profilePKID) &&
-		leftDBLockupPoint.LockupDurationNanoSecs < lockupDuration &&
-		leftDBLockupPoint.LockupDurationNanoSecs > leftLockupPoint.LockupDurationNanoSecs {
-		leftLockupPoint = leftDBLockupPoint
-	}
-	if rightDBLockupPoint != nil &&
-		rightDBLockupPoint.ProfilePKID.Eq(profilePKID) &&
-		rightDBLockupPoint.LockupDurationNanoSecs >= lockupDuration &&
-		rightDBLockupPoint.LockupDurationNanoSecs < rightLockupPoint.LockupDurationNanoSecs {
-		rightLockupPoint = rightDBLockupPoint
-	}
-
-	return leftLockupPoint, rightLockupPoint
+	return leftLockupPoint, rightLockupPoint, nil
 }
 
 //
@@ -789,7 +786,11 @@ func (bav *UtxoView) _connectCoinLockup(
 	// the profile's yield curve or the raw DeSo yield curve. Because there's some choice in how
 	// to determine the yield when the lockup duration falls between two profile specified yield curve
 	// points, we return here the two local points and choose/interpolate between them below.
-	leftYieldCurvePoint, rightYieldCurvePoint := bav.GetLocalYieldCurvePoints(profilePKID, lockupDurationNanoSeconds)
+	leftYieldCurvePoint, rightYieldCurvePoint, err := bav.GetLocalYieldCurvePoints(profilePKID, lockupDurationNanoSeconds)
+	if err != nil {
+		return 0, 0, nil,
+			errors.Wrap(err, "_connectCoinLockup failed to fetch yield curve points")
+	}
 
 	// Here we interpolate (choose) the yield between the two returned local yield curve points.
 	//
