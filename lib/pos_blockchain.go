@@ -388,7 +388,8 @@ func (bc *Blockchain) GetUncommittedTipView() (*UtxoView, error) {
 			return txn.Hash()
 		}), false, bc.eventManager, fullBlock.Header.Height)
 		if err != nil {
-			return nil, errors.Wrapf(err, "GetUncommittedTipView: Problem connecting block %v", fullBlock.Hash)
+			hash, _ := fullBlock.Hash()
+			return nil, errors.Wrapf(err, "GetUncommittedTipView: Problem connecting block hash %v", hash.String())
 		}
 	}
 	return utxoView, nil
