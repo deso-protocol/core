@@ -1123,7 +1123,7 @@ func (bav *UtxoView) _connectUpdateCoinLockupParams(
 
 	// Check if we're updating transfer restriction.
 	var prevLockupTransferRestriction TransferRestrictionStatus
-	if txMeta.NewLockupTransferRestrictions {
+	if txMeta.NewLockupTransferRestrictions && !profilePKID.IsZeroPKID() {
 		// Fetch the profile entry and LockupTransferRestriction status.
 		profileEntry := bav.GetProfileEntryForPKID(profilePKID)
 		if profileEntry == nil || profileEntry.isDeleted {
@@ -1134,6 +1134,20 @@ func (bav *UtxoView) _connectUpdateCoinLockupParams(
 		// Store a copy of the previous LockupTransferRestrictionStatus for easy transaction disconnect.
 		prevLockupTransferRestriction = profileEntry.DAOCoinEntry.LockupTransferRestrictionStatus
 
+		// Update the transfer restrictions.
+		profileEntry.DAOCoinEntry.LockupTransferRestrictionStatus = txMeta.LockupTransferRestrictionStatus
+		bav._setProfileEntryMappings(profileEntry)
+	}
+	if txMeta.NewLockupTransferRestrictions && profilePKID.IsZeroPKID() {
+		// Store a copy of the previous TransferRestrictionStatus.
+		prevLockupTransferRestriction = bav.GlobalParamsEntry.LockedDESOTransferRestrictions
+
+		// Update the transfer restrictions in global params.
+		bav.GlobalParamsEntry.LockedDESOTransferRestrictions = txMeta.LockupTransferRestrictionStatus
+	}
+
+	// Check that the new transfer restriction is valid.
+	if txMeta.NewLockupTransferRestrictions {
 		// Ensure we're not updating a permanent transfer restriction.
 		if prevLockupTransferRestriction == TransferRestrictionStatusPermanentlyUnrestricted {
 			return 0, 0, nil, errors.Wrapf(
@@ -1148,10 +1162,6 @@ func (bav *UtxoView) _connectUpdateCoinLockupParams(
 			return 0, 0, nil,
 				errors.Wrapf(RuleErrorUpdateCoinLockupParamsInvalidRestrictions, "_connectUpdateCoinLockupParams")
 		}
-
-		// Update the transfer restrictions.
-		profileEntry.DAOCoinEntry.LockupTransferRestrictionStatus = txMeta.LockupTransferRestrictionStatus
-		bav._setProfileEntryMappings(profileEntry)
 	}
 
 	// Add a UtxoOperation for easy reversion during disconnect.
@@ -1234,7 +1244,7 @@ func (bav *UtxoView) _disconnectUpdateCoinLockupParams(
 	}
 
 	// Check if the transaction updated transfer restrictions. If it did, we reset the previous transfer restrictions.
-	if txMeta.NewLockupTransferRestrictions {
+	if txMeta.NewLockupTransferRestrictions && !profilePKID.IsZeroPKID() {
 		// Fetch the profile entry and LockupTransferRestriction status.
 		profileEntry := bav.GetProfileEntryForPKID(profilePKID)
 		if profileEntry == nil || profileEntry.isDeleted {
@@ -1245,6 +1255,9 @@ func (bav *UtxoView) _disconnectUpdateCoinLockupParams(
 		// Update the transfer restrictions.
 		profileEntry.DAOCoinEntry.LockupTransferRestrictionStatus = operationData.PrevLockupTransferRestriction
 		bav._setProfileEntryMappings(profileEntry)
+	}
+	if txMeta.NewLockupTransferRestrictions && profilePKID.IsZeroPKID() {
+		bav.GlobalParamsEntry.LockedDESOTransferRestrictions = operationData.PrevLockupTransferRestriction
 	}
 
 	// Decrement the operationIndex. We expect to find the basic transfer UtxoOps next.
