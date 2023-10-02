@@ -10743,38 +10743,43 @@ func DbDeleteLockedBalanceEntryWithTxn(txn *badger.Txn, snap *Snapshot, lockedBa
 // LockedBalanceEntry Get Operations (Badger Reads)
 
 func DBGetLockedBalanceEntryForHODLerPKIDProfilePKIDUnlockTimestampNanoSecs(
-	handle *badger.DB, snap *Snapshot, hodlerPKID *PKID, profilePKID *PKID, unlockTimestamp int64) *LockedBalanceEntry {
+	handle *badger.DB, snap *Snapshot, hodlerPKID *PKID, profilePKID *PKID,
+	unlockTimestamp int64) (_lockedBalanceEntry *LockedBalanceEntry, _err error) {
 
 	var ret *LockedBalanceEntry
-	handle.View(func(txn *badger.Txn) error {
-		ret = DBGetLockedBalanceEntryForHODLerPKIDProfilePKIDUnlockTimestampNanoSecsWithTxn(
+	err := handle.View(func(txn *badger.Txn) error {
+		var err error
+		ret, err = DBGetLockedBalanceEntryForHODLerPKIDProfilePKIDUnlockTimestampNanoSecsWithTxn(
 			txn, snap, hodlerPKID, profilePKID, unlockTimestamp)
-		return nil
+		return err
 	})
-	return ret
+	return ret, err
 }
 
 func DBGetLockedBalanceEntryForHODLerPKIDProfilePKIDUnlockTimestampNanoSecsWithTxn(
-	txn *badger.Txn, snap *Snapshot, hodlerPKID *PKID, profilePKID *PKID, unlockTimestamp int64) *LockedBalanceEntry {
+	txn *badger.Txn, snap *Snapshot, hodlerPKID *PKID, profilePKID *PKID,
+	unlockTimestamp int64) (_lockedBalanceEntry *LockedBalanceEntry, _err error) {
 
 	key := _dbKeyForLockedBalanceEntry(LockedBalanceEntry{
 		HODLerPKID:              hodlerPKID,
 		ProfilePKID:             profilePKID,
 		UnlockTimestampNanoSecs: unlockTimestamp,
 	})
+
+	// Get the key from the db.
 	lockedBalanceEntryBytes, err := DBGetWithTxn(txn, snap, key)
-	if err != nil {
-		return &LockedBalanceEntry{
-			HODLerPKID:              hodlerPKID.NewPKID(),
-			ProfilePKID:             profilePKID.NewPKID(),
-			UnlockTimestampNanoSecs: unlockTimestamp,
-			BalanceBaseUnits:        *uint256.NewInt(),
-		}
+	if err == badger.ErrKeyNotFound {
+		return nil, nil
 	}
+	if err != nil {
+		return nil,
+			errors.Wrap(err, "DBGetLockedBalanceEntryForHODLerPKIDProfilePKIDUnlockTimestampNanoSecsWithTxn")
+	}
+
 	lockedBalanceEntryObj := &LockedBalanceEntry{}
 	rr := bytes.NewReader(lockedBalanceEntryBytes)
 	DecodeFromBytes(lockedBalanceEntryObj, rr)
-	return lockedBalanceEntryObj
+	return lockedBalanceEntryObj, nil
 }
 
 func DBGetUnlockableLockedBalanceEntries(
