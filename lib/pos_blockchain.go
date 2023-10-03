@@ -97,10 +97,13 @@ func (bc *Blockchain) processBlockPoS(desoBlock *MsgDeSoBlock, currentView uint6
 	}
 
 	// Happy path
-	// 5. Add block to best chain.
-	if err = bc.addBlockToBestChain(desoBlock); err != nil {
+	// Make a block node struct for this block.
+	newBlockNode, err := bc.msgDeSoBlockToNewBlockNode(desoBlock)
+	if err != nil {
 		return false, false, nil, err
 	}
+	// 5. Add block to best chain.
+	bc.addBlockToBestChain(newBlockNode)
 
 	// 6. Commit grandparent if possible.
 	if err = bc.commitGrandparents(desoBlock); err != nil {
@@ -354,10 +357,23 @@ func (bc *Blockchain) handleReorg(desoBlock *MsgDeSoBlock) error {
 	return errors.New("IMPLEMENT ME")
 }
 
+func (bc *Blockchain) msgDeSoBlockToNewBlockNode(desoBlock *MsgDeSoBlock) (*BlockNode, error) {
+	parent, exists := bc.blockIndex[*desoBlock.Header.PrevBlockHash]
+	if !exists {
+		return nil, errors.Errorf("msgDeSoBlockToNewBlockNode: Parent block %v not found in block index", desoBlock.Header.PrevBlockHash)
+	}
+	hash, err := desoBlock.Hash()
+	if err != nil {
+		return nil, errors.Wrapf(err, "msgDeSoBlockToNewBlockNode: Problem hashing block %v", desoBlock)
+	}
+	// TODO: What's the proper status?
+	return NewPoSBlockNode(parent, hash, uint32(desoBlock.Header.Height), desoBlock.Header, StatusBlockValidated, UNCOMMITTED), nil
+}
+
 // addBlockToBestChain adds the block to the best chain.
-func (bc *Blockchain) addBlockToBestChain(desoBlock *MsgDeSoBlock) error {
-	// TODO: Implement me.
-	return errors.New("IMPLEMENT ME")
+func (bc *Blockchain) addBlockToBestChain(desoBlockNode *BlockNode) {
+	bc.bestChain = append(bc.bestChain, desoBlockNode)
+	bc.bestChainMap[*desoBlockNode.Hash] = desoBlockNode
 }
 
 // pruneUncommittedBlocks prunes the in-memory struct holding uncommitted blocks.
