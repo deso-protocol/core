@@ -147,7 +147,7 @@ func (stateChangeEntry *StateChangeEntry) RawDecodeWithoutMetadata(blockHeight u
 	stateChangeEntry.EncoderBytes = EncodeToBytes(blockHeight, encoder)
 
 	// Decode the ancestral record bytes.
-	ancestralRecord := stateChangeEntry.EncoderType.New()
+	ancestralRecord := stateChangeEntry.AncestralRecord.GetEncoderType().New()
 	if exist, err := DecodeFromBytes(ancestralRecord, rr); exist && err == nil {
 		stateChangeEntry.AncestralRecord = ancestralRecord
 	} else if err != nil {
@@ -737,7 +737,11 @@ func (stateChangeSyncer *StateChangeSyncer) StartMempoolSyncRoutine(server *Serv
 			time.Sleep(15000 * time.Millisecond)
 		}
 		if !stateChangeSyncer.BlocksyncCompleteEntriesFlushed && stateChangeSyncer.SyncType == NodeSyncTypeBlockSync {
-			stateChangeSyncer.FlushAllEntriesToFile(server)
+			fmt.Printf("Flushing to file")
+			err := stateChangeSyncer.FlushAllEntriesToFile(server)
+			if err != nil {
+				fmt.Printf("StateChangeSyncer.StartMempoolSyncRoutine: Error flushing all entries to file: %v", err)
+			}
 		}
 		mempoolClosed := server.mempool.stopped
 		for !mempoolClosed {
@@ -754,6 +758,15 @@ func (stateChangeSyncer *StateChangeSyncer) StartMempoolSyncRoutine(server *Serv
 }
 
 func (stateChangeSyncer *StateChangeSyncer) FlushAllEntriesToFile(server *Server) error {
+	// Check if the state change file already exists and is not empty. If so, return.
+	stateChangeFileInfo, err := stateChangeSyncer.StateChangeFile.Stat()
+	if err == nil {
+		// If the file is non-empty, no need to flush entries to file.
+		if stateChangeFileInfo.Size() > 0 {
+			return nil
+		}
+	}
+
 	// Disable deadlock detection, as the process of flushing entries to file can take a long time and
 	// if it takes longer than the deadlock detection timeout interval, it will cause an error to be thrown.
 	deadlock.Opts.Disable = true
@@ -783,21 +796,52 @@ func (stateChangeSyncer *StateChangeSyncer) FlushAllEntriesToFile(server *Server
 			dbFlushId := uuid.New()
 			// Fetch the batch from main DB records with a batch size of about snap.BatchSize.
 			dbBatchEntries, chunkFull, err = DBIteratePrefixKeys(server.blockchain.db, prefix, lastReceivedKey, SnapshotBatchSize/10)
+			fmt.Printf("Got %d entries for prefix: %+v\n", len(dbBatchEntries), prefix)
 			if err != nil {
 				return errors.Wrapf(err, "StateChangeSyncer.FlushAllEntriesToFile: ")
 			}
 			if len(dbBatchEntries) != 0 {
 				lastReceivedKey = dbBatchEntries[len(dbBatchEntries)-1].Key
 			}
-			for _, dbEntry := range dbBatchEntries {
+			for ii, dbEntry := range dbBatchEntries {
+				stateChangeEntry := &StateChangeEntry{
+					OperationType: DbOperationTypeInsert,
+					KeyBytes:      dbEntry.Key,
+					EncoderBytes:  dbEntry.Value,
+				}
+
+				fmt.Printf("Flushing entry %d to file\n", ii)
+
+				fmt.Printf("Prefix: %+v\n", prefix)
+				fmt.Printf("Target Prefix: %+v\n", Prefixes.PrefixBlockHashToUtxoOperations)
+				fmt.Printf("Bytes equal: %+v\n", bytes.Equal(prefix, Prefixes.PrefixBlockHashToUtxoOperations))
+
+				// If this prefix is the prefix for UTXO Ops, fetch the transaction for each UTXO Op and attach it to the UTXO Op.
+				if bytes.Equal(prefix, Prefixes.PrefixBlockHashToUtxoOperations) {
+					fmt.Printf("Prefix equal\n")
+					// Get block hash from the key.
+					blockHashBytes := dbEntry.Key[1:]
+					// Decode block hash from bytes.
+					fmt.Printf("Block hash bytes: %+v\n", blockHashBytes)
+					blockHash := NewBlockHash(blockHashBytes)
+					fmt.Printf("After decode\n")
+					fmt.Printf("Block hash bytes: %+v\n", blockHashBytes)
+					fmt.Printf("Block hash: %+v\n", blockHash)
+					fmt.Printf("Block hash string: %s\n", blockHash.String())
+
+					block, err := GetBlock(blockHash, server.blockchain.db, server.blockchain.snapshot)
+					if err != nil {
+						return errors.Wrapf(err, "StateChangeSyncer.FlushAllEntriesToFile: Error fetching block: ")
+					}
+					// Attach the block to the UTXO Op via the ancestral record.
+					stateChangeEntry.AncestralRecord = block
+				}
+				fmt.Printf("After bytes equal\n")
+
 				server.eventManager.stateSyncerOperation(&StateSyncerOperationEvent{
-					StateChangeEntry: &StateChangeEntry{
-						OperationType: DbOperationTypeInsert,
-						KeyBytes:      dbEntry.Key,
-						EncoderBytes:  dbEntry.Value,
-					},
-					FlushId:      dbFlushId,
-					IsMempoolTxn: false,
+					StateChangeEntry: stateChangeEntry,
+					FlushId:          dbFlushId,
+					IsMempoolTxn:     false,
 				})
 			}
 			server.eventManager.stateSyncerFlushed(&StateSyncerFlushedEvent{
