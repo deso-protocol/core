@@ -13,9 +13,10 @@ import (
 
 func NewFastHotStuffEventLoop() *FastHotStuffEventLoop {
 	return &FastHotStuffEventLoop{
-		status:          eventLoopStatusNotInitialized,
-		crankTimerTask:  NewScheduledTask[uint64](),
-		nextTimeoutTask: NewScheduledTask[uint64](),
+		status:               eventLoopStatusNotInitialized,
+		hasCrankTimerElapsed: false,
+		crankTimerTask:       NewScheduledTask[uint64](),
+		nextTimeoutTask:      NewScheduledTask[uint64](),
 	}
 }
 
@@ -254,13 +255,20 @@ func (fc *FastHotStuffEventLoop) ProcessValidatorVote(vote VoteMessage) error {
 		return errors.New("FastHotStuffEventLoop.ProcessValidatorVote: Invalid signature")
 	}
 
-	// Note: we do not check if the vote is for the current chain tip's blockhash. During leader changes
-	// where we will be the next block proposer, it is possible for us to receive a vote for a block that
-	// we haven't seen yet, but we will need to construct the QC for the block as we are the next leader.
-	// To make this code resilient to these race conditions during leader changes, we simply store the vote
-	// as long as it's properly formed and not stale.
-
+	// Cache the vote in case we need it for later
 	fc.storeVote(voteSignaturePayload, vote)
+
+	// Check if the crank timer has elapsed. If it has elapsed and if the vote is for the current chain tip,
+	// then we need to check if the vote results in a super-majority vote for the chain tip.
+	if !fc.hasCrankTimerElapsed || vote.GetBlockHash() != fc.tip.block.GetBlockHash() {
+		return nil
+	}
+
+	// Check if we have a super-majority vote for the chain tip. If so, we signal the server that we can
+	// construct a QC for the chain tip.
+	if voteQCEvent := fc.tryConstructVoteQCInCurrentView(); voteQCEvent != nil {
+		fc.Events <- voteQCEvent
+	}
 
 	return nil
 }
@@ -325,12 +333,20 @@ func (fc *FastHotStuffEventLoop) ProcessValidatorTimeout(timeout TimeoutMessage)
 		return errors.New("FastHotStuffEventLoop.ProcessValidatorTimeout: Invalid signature")
 	}
 
-	// Note: we do not check if the timeout is for the current view. Nodes in the network are expected to have
-	// slightly different timings and may be at different views. To make this code resilient to timing
-	// differences between nodes, we simply store the timeout as long as it's properly formed and not stale.
-	// Stored timeouts will be evicted once we advance beyond them.
-
+	// Cache the timeout message in case we need it for later
 	fc.storeTimeout(timeout)
+
+	// Check if the crank timer has elapsed. If it has elapsed and if the vote is for the current chain tip,
+	// then we need to check if the vote results in a super-majority vote for the chain tip.
+	if !fc.hasCrankTimerElapsed || timeout.GetView() != fc.currentView-1 {
+		return nil
+	}
+
+	// Check if we have a super-majority of stake has timed out of the previous view. If so, we signal the
+	// server that we can construct a timeoutQC in the current view.
+	if timeoutQCEvent := fc.tryConstructTimeoutQCInCurrentView(); timeoutQCEvent != nil {
+		fc.Events <- timeoutQCEvent
+	}
 
 	return nil
 }
@@ -407,6 +423,9 @@ func (fc *FastHotStuffEventLoop) resetScheduledTasks() {
 		timeoutDuration = fc.timeoutBaseDuration << numTimeouts
 	}
 
+	// Reset the elapsed state of the crank timer.
+	fc.hasCrankTimerElapsed = false
+
 	// Schedule the next crank timer task. This will run with currentView param.
 	fc.crankTimerTask.Schedule(fc.crankTimerInterval, fc.currentView, fc.onCrankTimerTaskExecuted)
 
@@ -433,6 +452,9 @@ func (fc *FastHotStuffEventLoop) onCrankTimerTaskExecuted(blockConstructionView 
 		return
 	}
 
+	// Mark that the crank timer has elapsed.
+	fc.hasCrankTimerElapsed = true
+
 	// Check if the conditions are met to construct a QC from votes for the chain tip. If so,
 	// we send a signal to the server and cancel the crank timer task. The server will
 	// reschedule the task when it advances the view.
@@ -449,9 +471,6 @@ func (fc *FastHotStuffEventLoop) onCrankTimerTaskExecuted(blockConstructionView 
 		fc.Events <- timeoutQCEvent
 		return
 	}
-
-	// We have not found a super majority of votes or timeouts. We can schedule the task to check again later.
-	fc.crankTimerTask.Schedule(fc.crankTimerInterval, fc.currentView, fc.onCrankTimerTaskExecuted)
 
 	return
 }
