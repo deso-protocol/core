@@ -148,6 +148,8 @@ type FastHotStuffEventLoop struct {
 	crankTimerInterval  time.Duration
 	timeoutBaseDuration time.Duration
 
+	hasCrankTimerElapsed bool
+
 	crankTimerTask  *ScheduledTask[uint64]
 	nextTimeoutTask *ScheduledTask[uint64]
 
