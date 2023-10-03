@@ -437,49 +437,17 @@ func (fc *FastHotStuffEventLoop) onBlockConstructionScheduledTaskExecuted(blockC
 	// Check if the conditions are met to construct a QC from votes for the chain tip. If so,
 	// we send a signal to the server and cancel the block construction task. The server will
 	// reschedule the task when it advances the view.
-	if success, signersList, signature := fc.tryConstructVoteQCInCurrentView(); success {
+	if voteQCEvent := fc.tryConstructVoteQCInCurrentView(); voteQCEvent != nil {
 		// Signal the server that we can construct a QC for the chain tip
-		fc.Events <- &FastHotStuffEvent{
-			EventType:      FastHotStuffEventTypeConstructVoteQC, // The event type
-			View:           fc.currentView,                       // The current view in which we can construct a block
-			TipBlockHash:   fc.tip.block.GetBlockHash(),          // Block hash for the tip, which we are extending from
-			TipBlockHeight: fc.tip.block.GetHeight(),             // Block height for the tip, which we are extending from
-			QC: &quorumCertificate{
-				blockHash: fc.tip.block.GetBlockHash(), // Block hash for the tip, which we are extending from
-				view:      fc.tip.block.GetView(),      // The view from the tip block. This is always fc.currentView - 1
-				aggregatedSignature: &aggregatedSignature{
-					signersList: signersList, // The signers list who voted on the tip block
-					signature:   signature,   // Aggregated signature from votes on the tip block
-				},
-			},
-		}
-
+		fc.Events <- voteQCEvent
 		return
 	}
 
 	// Check if we have enough timeouts to build an aggregate QC for the previous view. If so,
 	// we send a signal to the server and cancel all scheduled tasks.
-	if success, safeBlock, highQC, highQCViews, signersList, signature := fc.tryConstructTimeoutQCInCurrentView(); success {
+	if timeoutQCEvent := fc.tryConstructTimeoutQCInCurrentView(); timeoutQCEvent != nil {
 		// Signal the server that we can construct a timeout QC for the current view
-		fc.Events <- &FastHotStuffEvent{
-			EventType:      FastHotStuffEventTypeConstructTimeoutQC, // The event type
-			View:           fc.currentView,                          // The view that we have a timeout QC for
-			TipBlockHash:   highQC.GetBlockHash(),                   // The block hash that we extend from
-			TipBlockHeight: safeBlock.GetHeight(),                   // The block height that we extend from
-			AggregateQC: &aggregateQuorumCertificate{
-				view:        fc.currentView - 1, // The timed out view is always the previous view
-				highQC:      highQC,             // The high QC aggregated from the timeout messages
-				highQCViews: highQCViews,        // The high view for each validator who timed out
-				aggregatedSignature: &aggregatedSignature{
-					signersList: signersList, // The signers list of validators who timed out
-					signature:   signature,   // The aggregated signature from validators who timed out
-				},
-			},
-		}
-
-		// Cancel the block construction task since we know we can construct a timeout QC in the current view.
-		// It will be rescheduled when we advance view.
-		fc.nextBlockConstructionTask.Cancel()
+		fc.Events <- timeoutQCEvent
 		return
 	}
 
@@ -499,16 +467,12 @@ func (fc *FastHotStuffEventLoop) onBlockConstructionScheduledTaskExecuted(blockC
 // the signers list and aggregate signature that can be used to construct the QC.
 //
 // This function must be called while holding the event loop's lock.
-func (fc *FastHotStuffEventLoop) tryConstructVoteQCInCurrentView() (
-	_success bool, // true if and only if we are able to construct a vote QC for the tip block in the current view
-	_signersList *bitset.Bitset, // bitset of signers for the aggregated signature for the tip block
-	_aggregateSignature *bls.Signature, // aggregated signature for the tip block
-) {
+func (fc *FastHotStuffEventLoop) tryConstructVoteQCInCurrentView() *FastHotStuffEvent {
 	// If currentView != tipBlock.View + 1, then we have timed out at some point, and can no longer
 	// construct a block with a QC of votes for the tip block.
 	tipBlock := fc.tip.block
 	if fc.currentView != tipBlock.GetView()+1 {
-		return false, nil, nil
+		return nil
 	}
 
 	// Fetch the validator set at the tip.
@@ -552,18 +516,31 @@ func (fc *FastHotStuffEventLoop) tryConstructVoteQCInCurrentView() (
 
 	// If we don't have a super-majority vote for the chain tip, then we can't build a QC.
 	if !isSuperMajorityStake(totalVotingStake, totalStake) {
-		return false, nil, nil
+		return nil
 	}
 
 	// If we reach this point, then we have enough signatures to build a QC for the tip block. Try to
 	// aggregate the signatures. This should never fail.
 	aggregateSignature, err := bls.AggregateSignatures(signatures)
 	if err != nil {
-		return false, nil, nil
+		return nil
 	}
 
-	// Happy path
-	return true, signersList, aggregateSignature
+	// Happy path. Construct the QC and return as an event to signal to the server.
+	return &FastHotStuffEvent{
+		EventType:      FastHotStuffEventTypeConstructVoteQC, // The event type
+		View:           fc.currentView,                       // The current view in which we can construct a block
+		TipBlockHash:   fc.tip.block.GetBlockHash(),          // Block hash for the tip, which we are extending from
+		TipBlockHeight: fc.tip.block.GetHeight(),             // Block height for the tip, which we are extending from
+		QC: &quorumCertificate{
+			blockHash: fc.tip.block.GetBlockHash(), // Block hash for the tip, which we are extending from
+			view:      fc.tip.block.GetView(),      // The view from the tip block. This is always fc.currentView - 1
+			aggregatedSignature: &aggregatedSignature{
+				signersList: signersList,        // The signers list who voted on the tip block
+				signature:   aggregateSignature, // Aggregated signature from votes on the tip block
+			},
+		},
+	}
 }
 
 // tryConstructTimeoutQCInCurrentView is a helper function that attempts to construct a timeout QC for the
@@ -574,14 +551,7 @@ func (fc *FastHotStuffEventLoop) tryConstructVoteQCInCurrentView() (
 // to construct the timeout QC.
 //
 // This function must be called while holding the consensus instance's lock.
-func (fc *FastHotStuffEventLoop) tryConstructTimeoutQCInCurrentView() (
-	_success bool, // true if and only if we are able to construct a timeout QC in the current view
-	_safeBlock Block, // the safe block that the high QC is from; the timeout QC proposed will extend from this block
-	_highQC QuorumCertificate, // high QC aggregated from validators who timed out
-	_highQCViews []uint64, // high QC views for each validator who timed out
-	_signersList *bitset.Bitset, // bitset of signers for the aggregated signature from the timeout messages
-	_aggregatedSignature *bls.Signature, // aggregated signature from the validators' timeout messages
-) {
+func (fc *FastHotStuffEventLoop) tryConstructTimeoutQCInCurrentView() *FastHotStuffEvent {
 
 	// Fetch all timeouts for the previous view. All timeout messages for a view are aggregated and
 	// proposed in the next view. So if we want to propose a timeout QC in the current view, we need
@@ -616,14 +586,14 @@ func (fc *FastHotStuffEventLoop) tryConstructTimeoutQCInCurrentView() (
 
 	// If we didn't find a high QC or didn't find any valid timeout messages, then we can't build a timeout QC.
 	if isInterfaceNil(validatorsHighQC) {
-		return false, nil, nil, nil, nil, nil
+		return nil
 	}
 
 	// Fetch the validator set for the block height of the high QC. This lookup is guaranteed to succeed
 	// because it succeeded above.
 	ok, safeBlock, validatorSet, _ := fc.fetchSafeBlockInfo(validatorsHighQC.GetBlockHash())
 	if !ok {
-		return false, nil, nil, nil, nil, nil
+		return nil
 	}
 
 	// Compute the total stake and total stake with timeouts
@@ -668,17 +638,31 @@ func (fc *FastHotStuffEventLoop) tryConstructTimeoutQCInCurrentView() (
 
 	// Check if we have a super majority of stake that has timed out
 	if !isSuperMajorityStake(totalTimedOutStake, totalStake) {
-		return false, nil, nil, nil, nil, nil
+		return nil
 	}
 
 	// Finally aggregate the signatures from the timeouts
 	aggregateSignature, err := bls.AggregateSignatures(signatures)
 	if err != nil {
-		return false, nil, nil, nil, nil, nil
+		return nil
 	}
 
 	// Happy path
-	return true, safeBlock, validatorsHighQC, highQCViews, signersList, aggregateSignature
+	return &FastHotStuffEvent{
+		EventType:      FastHotStuffEventTypeConstructTimeoutQC, // The event type
+		View:           fc.currentView,                          // The view that we have a timeout QC for
+		TipBlockHash:   validatorsHighQC.GetBlockHash(),         // The block hash that we extend from
+		TipBlockHeight: safeBlock.GetHeight(),                   // The block height that we extend from
+		AggregateQC: &aggregateQuorumCertificate{
+			view:        fc.currentView - 1, // The timed out view is always the previous view
+			highQC:      validatorsHighQC,   // The high QC aggregated from the timeout messages
+			highQCViews: highQCViews,        // The high view for each validator who timed out
+			aggregatedSignature: &aggregatedSignature{
+				signersList: signersList,        // The signers list of validators who timed out
+				signature:   aggregateSignature, // The aggregated signature from validators who timed out
+			},
+		},
+	}
 }
 
 // When this function is triggered, it means that we have reached out the timeout ETA for the
