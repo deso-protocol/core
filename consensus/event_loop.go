@@ -408,7 +408,7 @@ func (fc *FastHotStuffEventLoop) resetScheduledTasks() {
 	}
 
 	// Schedule the next crank timer task. This will run with currentView param.
-	fc.crankTimerTask.Schedule(fc.crankTimerInterval, fc.currentView, fc.onBlockConstructionScheduledTaskExecuted)
+	fc.crankTimerTask.Schedule(fc.crankTimerInterval, fc.currentView, fc.onCrankTimerTaskExecuted)
 
 	// Schedule the next timeout task. This will run with currentView param.
 	fc.nextTimeoutTask.Schedule(timeoutDuration, fc.currentView, fc.onTimeoutScheduledTaskExecuted)
@@ -417,7 +417,7 @@ func (fc *FastHotStuffEventLoop) resetScheduledTasks() {
 // When this function is triggered, it means that we have reached the crank timer
 // time ETA for blockConstructionView. If we have a QC or timeout QC for the view, then we
 // signal the server.
-func (fc *FastHotStuffEventLoop) onBlockConstructionScheduledTaskExecuted(blockConstructionView uint64) {
+func (fc *FastHotStuffEventLoop) onCrankTimerTaskExecuted(blockConstructionView uint64) {
 	fc.lock.Lock()
 	defer fc.lock.Unlock()
 
@@ -451,11 +451,7 @@ func (fc *FastHotStuffEventLoop) onBlockConstructionScheduledTaskExecuted(blockC
 	}
 
 	// We have not found a super majority of votes or timeouts. We can schedule the task to check again later.
-	fc.crankTimerTask.Schedule(
-		fc.crankTimerInterval,
-		fc.currentView,
-		fc.onBlockConstructionScheduledTaskExecuted,
-	)
+	fc.crankTimerTask.Schedule(fc.crankTimerInterval, fc.currentView, fc.onCrankTimerTaskExecuted)
 
 	return
 }
