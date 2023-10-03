@@ -147,7 +147,13 @@ func (stateChangeEntry *StateChangeEntry) RawDecodeWithoutMetadata(blockHeight u
 	stateChangeEntry.EncoderBytes = EncodeToBytes(blockHeight, encoder)
 
 	// Decode the ancestral record bytes.
-	ancestralRecord := stateChangeEntry.AncestralRecord.GetEncoderType().New()
+	var ancestralRecord DeSoEncoder
+	if stateChangeEntry.AncestralRecord != nil {
+		ancestralRecord = stateChangeEntry.AncestralRecord.GetEncoderType().New()
+	} else {
+		ancestralRecord = stateChangeEntry.EncoderType.New()
+	}
+	
 	if exist, err := DecodeFromBytes(ancestralRecord, rr); exist && err == nil {
 		stateChangeEntry.AncestralRecord = ancestralRecord
 	} else if err != nil {
