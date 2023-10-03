@@ -82,8 +82,7 @@ func (fc *FastHotStuffEventLoop) Init(
 }
 
 // AdvanceViewOnTimeout is called when the tip has not changed but the event loop has timed out. This
-// function advances the view and resets the timeout scheduled task and block production scheduled
-// tasks.
+// function advances the view and resets the crank timer and timeout scheduled tasks.
 func (fc *FastHotStuffEventLoop) AdvanceViewOnTimeout() (uint64, error) {
 	// Grab the event loop's lock
 	fc.lock.Lock()
