@@ -145,11 +145,11 @@ const signalChannelBufferSize = 100
 type FastHotStuffEventLoop struct {
 	lock sync.RWMutex
 
-	blockConstructionInterval time.Duration
-	timeoutBaseDuration       time.Duration
+	crankTimerInterval  time.Duration
+	timeoutBaseDuration time.Duration
 
-	nextBlockConstructionTask *ScheduledTask[uint64]
-	nextTimeoutTask           *ScheduledTask[uint64]
+	crankTimerTask  *ScheduledTask[uint64]
+	nextTimeoutTask *ScheduledTask[uint64]
 
 	// The current view at which we expect to see or propose the next block. In the event of a timeout,
 	// the timeout signal will be triggered for this view.

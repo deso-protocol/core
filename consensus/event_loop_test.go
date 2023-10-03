@@ -101,7 +101,7 @@ func TestInit(t *testing.T) {
 		require.Equal(t, fc.tip.block.GetView(), uint64(2))
 		require.Equal(t, fc.tip.block.GetHeight(), uint64(1))
 
-		require.Equal(t, fc.blockConstructionInterval, time.Duration(100))
+		require.Equal(t, fc.crankTimerInterval, time.Duration(100))
 		require.Equal(t, fc.timeoutBaseDuration, time.Duration(101))
 
 		require.Equal(t, fc.currentView, uint64(3))
@@ -566,33 +566,33 @@ func TestResetEventLoopSignal(t *testing.T) {
 	// Start the event loop
 	fc.Start()
 
-	// Confirm the ETAs for the block construction and timeout timers
-	require.Equal(t, fc.nextBlockConstructionTask.GetDuration(), oneHourInNanoSecs) // 1 hour away
-	require.Equal(t, fc.nextTimeoutTask.GetDuration(), 2*oneHourInNanoSecs)         // 2 hours away
+	// Confirm the ETAs for the crank timer and timeout timer
+	require.Equal(t, fc.crankTimerTask.GetDuration(), oneHourInNanoSecs)    // 1 hour away
+	require.Equal(t, fc.nextTimeoutTask.GetDuration(), 2*oneHourInNanoSecs) // 2 hours away
 
 	// Advance the view to simulate a timeout
 	_, err = fc.AdvanceViewOnTimeout()
 	require.NoError(t, err)
 
-	// Confirm the ETAs for the block construction and timeout timers
-	require.Equal(t, fc.nextBlockConstructionTask.GetDuration(), oneHourInNanoSecs) // 1 hour away
-	require.Equal(t, fc.nextTimeoutTask.GetDuration(), 4*oneHourInNanoSecs)         // 2 hours * 2 = 4 hours away
+	// Confirm the ETAs for the crank timer and timeout timer
+	require.Equal(t, fc.crankTimerTask.GetDuration(), oneHourInNanoSecs)    // 1 hour away
+	require.Equal(t, fc.nextTimeoutTask.GetDuration(), 4*oneHourInNanoSecs) // 2 hours * 2 = 4 hours away
 
 	// Advance the view to simulate a 2nd timeout
 	_, err = fc.AdvanceViewOnTimeout()
 	require.NoError(t, err)
 
-	// Confirm the ETAs for the block construction and timeout timers
-	require.Equal(t, fc.nextBlockConstructionTask.GetDuration(), oneHourInNanoSecs) // 1 hour away
-	require.Equal(t, fc.nextTimeoutTask.GetDuration(), 8*oneHourInNanoSecs)         // 2 hours * 2^2 = 8 hours away
+	// Confirm the ETAs for the crank timer and timeout timer
+	require.Equal(t, fc.crankTimerTask.GetDuration(), oneHourInNanoSecs)    // 1 hour away
+	require.Equal(t, fc.nextTimeoutTask.GetDuration(), 8*oneHourInNanoSecs) // 2 hours * 2^2 = 8 hours away
 
 	// Advance the view to simulate a 3nd timeout
 	_, err = fc.AdvanceViewOnTimeout()
 	require.NoError(t, err)
 
-	// Confirm the ETAs for the block construction and timeout timers
-	require.Equal(t, fc.nextBlockConstructionTask.GetDuration(), oneHourInNanoSecs) // 1 hour away
-	require.Equal(t, fc.nextTimeoutTask.GetDuration(), 16*oneHourInNanoSecs)        // 2 hours * 2^3 = 16 hours away
+	// Confirm the ETAs for the crank timer and timeout timer
+	require.Equal(t, fc.crankTimerTask.GetDuration(), oneHourInNanoSecs)     // 1 hour away
+	require.Equal(t, fc.nextTimeoutTask.GetDuration(), 16*oneHourInNanoSecs) // 2 hours * 2^3 = 16 hours away
 
 	// Stop the event loop
 	fc.Stop()
@@ -884,7 +884,7 @@ func TestFastHotStuffEventLoopStartStop(t *testing.T) {
 	require.Equal(t, eventLoopStatusRunning, fc.status)
 
 	// Confirm that the ETAs for the block construction and timeout timers have been set
-	require.Equal(t, fc.nextBlockConstructionTask.GetDuration(), oneHourInNanoSecs)
+	require.Equal(t, fc.crankTimerTask.GetDuration(), oneHourInNanoSecs)
 	require.Equal(t, fc.nextTimeoutTask.GetDuration(), 2*oneHourInNanoSecs)
 
 	// Stop the event loop
