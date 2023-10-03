@@ -2216,7 +2216,7 @@ func (srv *Server) _handlePeerMessages(serverMessage *ServerMessage) {
 	}
 }
 
-func (srv *Server) _handleFastHostStuffBlockProposal(event *consensus.ConsensusEvent) {
+func (srv *Server) _handleFastHostStuffBlockProposal(event *consensus.FastHotStuffEvent) {
 	// The consensus module has signaled that we can propose a block at a certain block
 	// height. We construct the block and broadcast it here:
 	// 1. Verify that the block height we want to propose at is valid
@@ -2230,7 +2230,7 @@ func (srv *Server) _handleFastHostStuffBlockProposal(event *consensus.ConsensusE
 	// 7. Broadcast the block to the network
 }
 
-func (srv *Server) _handleFastHostStuffEmptyTimeoutBlockProposal(event *consensus.ConsensusEvent) {
+func (srv *Server) _handleFastHostStuffEmptyTimeoutBlockProposal(event *consensus.FastHotStuffEvent) {
 	// The consensus module has signaled that we have a timeout QC and can propose one at a certain
 	// block height. We construct an empty block with a timeout QC and broadcast it here:
 	// 1. Verify that the block height and view we want to propose at is valid
@@ -2241,7 +2241,7 @@ func (srv *Server) _handleFastHostStuffEmptyTimeoutBlockProposal(event *consensu
 	// 6. Broadcast the block to the network
 }
 
-func (srv *Server) _handleFastHostStuffVote(event *consensus.ConsensusEvent) {
+func (srv *Server) _handleFastHostStuffVote(event *consensus.FastHotStuffEvent) {
 	// The consensus module has signaled that we can vote on a block. We construct and
 	// broadcast the vote here:
 	// 1. Verify that the block height we want to vote on is valid
@@ -2250,7 +2250,7 @@ func (srv *Server) _handleFastHostStuffVote(event *consensus.ConsensusEvent) {
 	// 4. Broadcast the timeout msg to the network
 }
 
-func (srv *Server) _handleFastHostStuffTimeout(event *consensus.ConsensusEvent) {
+func (srv *Server) _handleFastHostStuffTimeout(event *consensus.FastHotStuffEvent) {
 	// The consensus module has signaled that we have timed out for a view. We construct and
 	// broadcast the timeout here:
 	// 1. Verify the block height and view we want to timeout on are valid
@@ -2259,15 +2259,15 @@ func (srv *Server) _handleFastHostStuffTimeout(event *consensus.ConsensusEvent) 
 	// 4. Broadcast the timeout msg to the network
 }
 
-func (srv *Server) _handleFastHostStuffConsensusEvent(event *consensus.ConsensusEvent) {
+func (srv *Server) _handleFastHostStuffConsensusEvent(event *consensus.FastHotStuffEvent) {
 	switch event.EventType {
-	case consensus.ConsensusEventTypeVote:
+	case consensus.FastHotStuffEventTypeVote:
 		srv._handleFastHostStuffVote(event)
-	case consensus.ConsensusEventTypeTimeout:
+	case consensus.FastHotStuffEventTypeTimeout:
 		srv._handleFastHostStuffTimeout(event)
-	case consensus.ConsensusEventTypeConstructVoteQC:
+	case consensus.FastHotStuffEventTypeConstructVoteQC:
 		srv._handleFastHostStuffBlockProposal(event)
-	case consensus.ConsensusEventTypeConstructTimeoutQC:
+	case consensus.FastHotStuffEventTypeConstructTimeoutQC:
 		srv._handleFastHostStuffEmptyTimeoutBlockProposal(event)
 	}
 }
@@ -2297,7 +2297,7 @@ func (srv *Server) _startConsensus() {
 		}
 
 		select {
-		case consensusEvent := <-srv.fastHotStuffEventLoop.ConsensusEvents:
+		case consensusEvent := <-srv.fastHotStuffEventLoop.Events:
 			{
 				glog.Infof("Server._startConsensus: Received consensus event for block height: %v", consensusEvent.TipBlockHeight)
 				srv._handleFastHostStuffConsensusEvent(consensusEvent)

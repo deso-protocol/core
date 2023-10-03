@@ -13,13 +13,13 @@ import (
 
 func NewFastHotStuffEventLoop() *FastHotStuffEventLoop {
 	return &FastHotStuffEventLoop{
-		status:                    consensusStatusNotInitialized,
+		status:                    eventLoopStatusNotInitialized,
 		nextBlockConstructionTask: NewScheduledTask[uint64](),
 		nextTimeoutTask:           NewScheduledTask[uint64](),
 	}
 }
 
-// Initializes the consensus instance with the latest known valid block in the blockchain, and
+// Initializes the consensus event loop with the latest known valid block in the blockchain, and
 // the validator set for the next block height. The functions expects the following for the input
 // params:
 //   - blockConstructionInterval: block construction duration must be > 0
@@ -29,7 +29,7 @@ func NewFastHotStuffEventLoop() *FastHotStuffEventLoop {
 //   - safeBlocks: an unordered slice of blocks including the committed tip, the uncommitted tip,
 //     all ancestors of the uncommitted tip that are safe to extend from, and all blocks from forks
 //     that are safe to extend from. This function does not validate the collection of blocks. It
-//     expects caller to know and decide what blocks are safe to extend from.
+//     expects the server to know and decide what blocks are safe to extend from.
 //
 // Given the above, This function updates the tip internally, stores the safe blocks, and re-initializes
 // all internal data structures that are used to track incoming votes and timeout messages for QC construction.
@@ -39,13 +39,13 @@ func (fc *FastHotStuffEventLoop) Init(
 	tip BlockWithValidators,
 	safeBlocks []BlockWithValidators,
 ) error {
-	// Grab the consensus instance's lock
+	// Grab the event loop's lock
 	fc.lock.Lock()
 	defer fc.lock.Unlock()
 
-	// Ensure the consensus instance is not already running
-	if fc.status == consensusStatusRunning {
-		return errors.New("FastHotStuffEventLoop.Init: Consensus instance is already running")
+	// Ensure the event loop is not already running
+	if fc.status == eventLoopStatusRunning {
+		return errors.New("FastHotStuffEventLoop.Init: event loop is already running")
 	}
 
 	// Validate the scheduled task durations
@@ -69,30 +69,30 @@ func (fc *FastHotStuffEventLoop) Init(
 	fc.timeoutsSeen = make(map[uint64]map[string]TimeoutMessage)
 
 	// Reset the external channel used for signaling
-	fc.ConsensusEvents = make(chan *ConsensusEvent, signalChannelBufferSize)
+	fc.Events = make(chan *FastHotStuffEvent, signalChannelBufferSize)
 
 	// Set the block construction and timeout base durations
 	fc.blockConstructionInterval = blockConstructionInterval
 	fc.timeoutBaseDuration = timeoutBaseDuration
 
-	// Update the consensus status
-	fc.status = consensusStatusInitialized
+	// Update the event loop's status
+	fc.status = eventLoopStatusInitialized
 
 	return nil
 }
 
-// AdvanceView is called when the tip has not changed but the consensus instance has timed out. This
+// AdvanceViewOnTimeout is called when the tip has not changed but the event loop has timed out. This
 // function advances the view and resets the timeout scheduled task and block production scheduled
 // tasks.
-func (fc *FastHotStuffEventLoop) AdvanceView() (uint64, error) {
-	// Grab the consensus instance's lock
+func (fc *FastHotStuffEventLoop) AdvanceViewOnTimeout() (uint64, error) {
+	// Grab the event loop's lock
 	fc.lock.Lock()
 	defer fc.lock.Unlock()
 
-	// Ensure the consensus instance is running. This guarantees that the chain tip and validator set
+	// Ensure the event loop is running. This guarantees that the chain tip and validator set
 	// have already been set.
-	if fc.status != consensusStatusRunning {
-		return 0, errors.New("FastHotStuffEventLoop.AdvanceView: Consensus instance is not running")
+	if fc.status != eventLoopStatusRunning {
+		return 0, errors.New("FastHotStuffEventLoop.AdvanceViewOnTimeout: Event loop is not running")
 	}
 
 	// Advance the view
@@ -107,7 +107,7 @@ func (fc *FastHotStuffEventLoop) AdvanceView() (uint64, error) {
 	return fc.currentView, nil
 }
 
-// ProcessTipBlock must only be called when the caller has accepted a new block, connected it
+// ProcessTipBlock must only be called when the server has accepted a new block, connected it
 // to the tip of the blockchain, and determined that the block is safe to vote on. Given such a
 // block, this function resets internal state and schedules the next block construction and timeout
 // timers.
@@ -117,15 +117,15 @@ func (fc *FastHotStuffEventLoop) AdvanceView() (uint64, error) {
 //   - safeBlocks: an unordered slice of blocks including the committed tip, the uncommitted tip,
 //     all ancestors of the uncommitted tip that are safe to extend from, and all blocks from forks
 //     that are safe to extend from. This function does not validate the collection of blocks. It
-//     expects the caller to know and decide what blocks are safe to extend from.
+//     expects the server to know and decide what blocks are safe to extend from.
 func (fc *FastHotStuffEventLoop) ProcessTipBlock(tip BlockWithValidators, safeBlocks []BlockWithValidators) error {
-	// Grab the consensus instance's lock
+	// Grab the event loop's lock
 	fc.lock.Lock()
 	defer fc.lock.Unlock()
 
-	// Ensure the consensus instance is running
-	if fc.status != consensusStatusRunning {
-		return errors.New("FastHotStuffEventLoop.ProcessTipBlock: Consensus instance is not running")
+	// Ensure the event loop is running
+	if fc.status != eventLoopStatusRunning {
+		return errors.New("FastHotStuffEventLoop.ProcessTipBlock: Event loop is not running")
 	}
 
 	// Validate the safe blocks and validator sets, and store them
@@ -139,10 +139,10 @@ func (fc *FastHotStuffEventLoop) ProcessTipBlock(tip BlockWithValidators, safeBl
 	// Evict all stale votes and timeouts
 	fc.evictStaleVotesAndTimeouts()
 
-	// Signal the caller that we can vote for the block. The caller will decide whether to construct and
+	// Signal the server that we can vote for the block. The server will decide whether to construct and
 	// broadcast the vote.
-	fc.ConsensusEvents <- &ConsensusEvent{
-		EventType:      ConsensusEventTypeVote,
+	fc.Events <- &FastHotStuffEvent{
+		EventType:      FastHotStuffEventTypeVote,
 		TipBlockHash:   fc.tip.block.GetBlockHash(),
 		TipBlockHeight: fc.tip.block.GetHeight(),
 		View:           fc.tip.block.GetView(),
@@ -155,7 +155,7 @@ func (fc *FastHotStuffEventLoop) ProcessTipBlock(tip BlockWithValidators, safeBl
 }
 
 // setSafeBlocks is a helper function that validates the provided blocks, validator sets, and stores them.
-// It must be called while holding the consensus instance's lock.
+// It must be called while holding the event loop's lock.
 func (fc *FastHotStuffEventLoop) storeBlocks(tip BlockWithValidators, safeBlocks []BlockWithValidators) error {
 	// Do a basic integrity check on the tip block and validator set
 	if !isProperlyFormedBlock(tip.Block) || !isProperlyFormedValidatorSet(tip.Validators) {
@@ -196,25 +196,25 @@ func (fc *FastHotStuffEventLoop) storeBlocks(tip BlockWithValidators, safeBlocks
 }
 
 // ProcessValidatorVote captures an incoming vote message from a validator. This module has no knowledge
-// of who the leader is for a given view, so it is up to the caller to decide whether to process the vote
-// message or not. If a vote message is passed here, then the consensus instance will store it until
+// of who the leader is for a given view, so it is up to the server to decide whether to process the vote
+// message or not. If a vote message is passed here, then the event loop will store it until
 // it can construct a QC with it or until the vote's view has gone stale.
 //
 // This function does not directly check if the vote results in a stake weighted super majority vote
 // for the target block. Instead, it stores the vote locally and waits for the crank timer to determine
-// when to run the super majority vote check, and to signal the caller that we can construct a QC.
+// when to run the super majority vote check, and to signal the server that we can construct a QC.
 //
 // Reference implementation:
 // https://github.com/deso-protocol/hotstuff_pseudocode/blob/6409b51c3a9a953b383e90619076887e9cebf38d/fast_hotstuff_bls.go#L756
 func (fc *FastHotStuffEventLoop) ProcessValidatorVote(vote VoteMessage) error {
-	// Grab the consensus instance's lock
+	// Grab the event loop's lock
 	fc.lock.Lock()
 	defer fc.lock.Unlock()
 
-	// Ensure the consensus instance is running. This guarantees that the chain tip and validator set
+	// Ensure the event loop is running. This guarantees that the chain tip and validator set
 	// have already been set.
-	if fc.status != consensusStatusRunning {
-		return errors.New("FastHotStuffEventLoop.ProcessValidatorVote: Consensus instance is not running")
+	if fc.status != eventLoopStatusRunning {
+		return errors.New("FastHotStuffEventLoop.ProcessValidatorVote: Event loop is not running")
 	}
 
 	// Do a basic integrity check on the vote message
@@ -267,25 +267,25 @@ func (fc *FastHotStuffEventLoop) ProcessValidatorVote(vote VoteMessage) error {
 }
 
 // ProcessValidatorTimeout captures an incoming timeout message from a validator. This module has no knowledge
-// of who the leader is for a given view, so it is up to the caller to decide whether to process the timeout
-// message or not. If a timeout message is passed here, then the consensus instance will store it until
+// of who the leader is for a given view, so it is up to the server to decide whether to process the timeout
+// message or not. If a timeout message is passed here, then the event loop will store it until
 // it can construct a QC with it or until the timeout's view has gone stale.
 //
 // This function does not directly check if the timeout results in a stake weighted super majority to build
 // a timeout QC. Instead, it stores the timeout locally and waits for the block production scheduled task to determine
-// when to run the super majority timeout check, and to signal the caller that we can construct a timeout QC.
+// when to run the super majority timeout check, and to signal the server that we can construct a timeout QC.
 //
 // Reference implementation:
 // https://github.com/deso-protocol/hotstuff_pseudocode/blob/6409b51c3a9a953b383e90619076887e9cebf38d/fast_hotstuff_bls.go#L958
 func (fc *FastHotStuffEventLoop) ProcessValidatorTimeout(timeout TimeoutMessage) error {
-	// Grab the consensus instance's lock
+	// Grab the event loop's lock
 	fc.lock.Lock()
 	defer fc.lock.Unlock()
 
-	// Ensure the consensus instance is running. This guarantees that the chain tip and validator set
+	// Ensure the event loop is running. This guarantees that the chain tip and validator set
 	// have already been set.
-	if fc.status != consensusStatusRunning {
-		return errors.New("FastHotStuffEventLoop.ProcessValidatorTimeout: Consensus instance is not running")
+	if fc.status != eventLoopStatusRunning {
+		return errors.New("FastHotStuffEventLoop.ProcessValidatorTimeout: Event loop is not running")
 	}
 
 	// Do a basic integrity check on the timeout message
@@ -336,27 +336,19 @@ func (fc *FastHotStuffEventLoop) ProcessValidatorTimeout(timeout TimeoutMessage)
 	return nil
 }
 
-func (fc *FastHotStuffEventLoop) ConstructVoteQC( /* TODO */ ) {
-	// TODO
-}
-
-func (fc *FastHotStuffEventLoop) ConstructTimeoutQC( /* TODO */ ) {
-	// TODO
-}
-
 // Sets the initial times for the block construction and timeouts and starts scheduled tasks.
 func (fc *FastHotStuffEventLoop) Start() {
 	fc.lock.Lock()
 	defer fc.lock.Unlock()
 
-	// Check if the consensus instance is either running or uninitialized.
+	// Check if the event loop is either running or uninitialized.
 	// If it's running or uninitialized, then there's nothing to do here.
-	if fc.status != consensusStatusInitialized {
+	if fc.status != eventLoopStatusInitialized {
 		return
 	}
 
-	// Update the consensus status to mark it as running.
-	fc.status = consensusStatusRunning
+	// Update the event loop's status to mark it as running.
+	fc.status = eventLoopStatusRunning
 
 	// Set the initial block construction and timeout scheduled tasks
 	fc.resetScheduledTasks()
@@ -366,9 +358,9 @@ func (fc *FastHotStuffEventLoop) Stop() {
 	fc.lock.Lock()
 	defer fc.lock.Unlock()
 
-	// Check if the consensus instance is no longer running. If it's not running
+	// Check if the event loop is no longer running. If it's not running
 	// we can simply return here.
-	if fc.status != consensusStatusRunning {
+	if fc.status != eventLoopStatusRunning {
 		return
 	}
 
@@ -376,22 +368,22 @@ func (fc *FastHotStuffEventLoop) Stop() {
 	fc.nextBlockConstructionTask.Cancel()
 	fc.nextTimeoutTask.Cancel()
 
-	// Update the consensus status so it is no longer marked as running.
-	fc.status = consensusStatusInitialized
+	// Update the event loop's status so it is no longer marked as running.
+	fc.status = eventLoopStatusInitialized
 }
 
 func (fc *FastHotStuffEventLoop) IsInitialized() bool {
 	fc.lock.RLock()
 	defer fc.lock.RUnlock()
 
-	return fc.status != consensusStatusNotInitialized
+	return fc.status != eventLoopStatusNotInitialized
 }
 
 func (fc *FastHotStuffEventLoop) IsRunning() bool {
 	fc.lock.RLock()
 	defer fc.lock.RUnlock()
 
-	return fc.status == consensusStatusRunning
+	return fc.status == eventLoopStatusRunning
 }
 
 // resetScheduledTasks recomputes the nextBlockConstructionTimeStamp and nextTimeoutTimeStamp
@@ -430,9 +422,9 @@ func (fc *FastHotStuffEventLoop) onBlockConstructionScheduledTaskExecuted(blockC
 	fc.lock.Lock()
 	defer fc.lock.Unlock()
 
-	// Check if the consensus instance is running. If it's not running, then there's nothing
+	// Check if the event loop is running. If it's not running, then there's nothing
 	// to do here.
-	if fc.status != consensusStatusRunning {
+	if fc.status != eventLoopStatusRunning {
 		return
 	}
 
@@ -447,11 +439,11 @@ func (fc *FastHotStuffEventLoop) onBlockConstructionScheduledTaskExecuted(blockC
 	// reschedule the task when it advances the view.
 	if success, signersList, signature := fc.tryConstructVoteQCInCurrentView(); success {
 		// Signal the server that we can construct a QC for the chain tip
-		fc.ConsensusEvents <- &ConsensusEvent{
-			EventType:      ConsensusEventTypeConstructVoteQC, // The event type
-			View:           fc.currentView,                    // The current view in which we can construct a block
-			TipBlockHash:   fc.tip.block.GetBlockHash(),       // Block hash for the tip, which we are extending from
-			TipBlockHeight: fc.tip.block.GetHeight(),          // Block height for the tip, which we are extending from
+		fc.Events <- &FastHotStuffEvent{
+			EventType:      FastHotStuffEventTypeConstructVoteQC, // The event type
+			View:           fc.currentView,                       // The current view in which we can construct a block
+			TipBlockHash:   fc.tip.block.GetBlockHash(),          // Block hash for the tip, which we are extending from
+			TipBlockHeight: fc.tip.block.GetHeight(),             // Block height for the tip, which we are extending from
 			QC: &quorumCertificate{
 				blockHash: fc.tip.block.GetBlockHash(), // Block hash for the tip, which we are extending from
 				view:      fc.tip.block.GetView(),      // The view from the tip block. This is always fc.currentView - 1
@@ -469,11 +461,11 @@ func (fc *FastHotStuffEventLoop) onBlockConstructionScheduledTaskExecuted(blockC
 	// we send a signal to the server and cancel all scheduled tasks.
 	if success, safeBlock, highQC, highQCViews, signersList, signature := fc.tryConstructTimeoutQCInCurrentView(); success {
 		// Signal the server that we can construct a timeout QC for the current view
-		fc.ConsensusEvents <- &ConsensusEvent{
-			EventType:      ConsensusEventTypeConstructTimeoutQC, // The event type
-			View:           fc.currentView,                       // The view that we have a timeout QC for
-			TipBlockHash:   highQC.GetBlockHash(),                // The block hash that we extend from
-			TipBlockHeight: safeBlock.GetHeight(),                // The block height that we extend from
+		fc.Events <- &FastHotStuffEvent{
+			EventType:      FastHotStuffEventTypeConstructTimeoutQC, // The event type
+			View:           fc.currentView,                          // The view that we have a timeout QC for
+			TipBlockHash:   highQC.GetBlockHash(),                   // The block hash that we extend from
+			TipBlockHeight: safeBlock.GetHeight(),                   // The block height that we extend from
 			AggregateQC: &aggregateQuorumCertificate{
 				view:        fc.currentView - 1, // The timed out view is always the previous view
 				highQC:      highQC,             // The high QC aggregated from the timeout messages
@@ -506,7 +498,7 @@ func (fc *FastHotStuffEventLoop) onBlockConstructionScheduledTaskExecuted(blockC
 // validations to ensure that the resulting QC is valid. If a QC can be constructed, the function returns
 // the signers list and aggregate signature that can be used to construct the QC.
 //
-// This function must be called while holding the consensus instance's lock.
+// This function must be called while holding the event loop's lock.
 func (fc *FastHotStuffEventLoop) tryConstructVoteQCInCurrentView() (
 	_success bool, // true if and only if we are able to construct a vote QC for the tip block in the current view
 	_signersList *bitset.Bitset, // bitset of signers for the aggregated signature for the tip block
@@ -696,9 +688,9 @@ func (fc *FastHotStuffEventLoop) onTimeoutScheduledTaskExecuted(timedOutView uin
 	fc.lock.Lock()
 	defer fc.lock.Unlock()
 
-	// Check if the consensus instance is running. If it's not running, then there's nothing
+	// Check if the event loop is running. If it's not running, then there's nothing
 	// to do here.
-	if fc.status != consensusStatusRunning {
+	if fc.status != eventLoopStatusRunning {
 		return
 	}
 
@@ -710,11 +702,11 @@ func (fc *FastHotStuffEventLoop) onTimeoutScheduledTaskExecuted(timedOutView uin
 	}
 
 	// Signal the server that we are ready to time out
-	fc.ConsensusEvents <- &ConsensusEvent{
-		EventType:      ConsensusEventTypeTimeout,   // The timeout event type
-		View:           timedOutView,                // The view we timed out
-		TipBlockHash:   fc.tip.block.GetBlockHash(), // The last block we saw
-		TipBlockHeight: fc.tip.block.GetHeight(),    // The last block we saw
+	fc.Events <- &FastHotStuffEvent{
+		EventType:      FastHotStuffEventTypeTimeout, // The timeout event type
+		View:           timedOutView,                 // The view we timed out
+		TipBlockHash:   fc.tip.block.GetBlockHash(),  // The last block we saw
+		TipBlockHeight: fc.tip.block.GetHeight(),     // The last block we saw
 	}
 
 	// Cancel the timeout task. The server will reschedule it when it advances the view.
