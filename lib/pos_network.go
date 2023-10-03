@@ -295,7 +295,7 @@ type QuorumCertificate struct {
 	ValidatorsVoteAggregatedSignature *AggregatedBLSSignature
 }
 
-func (qc *QuorumCertificate) GetBlockHash() *BlockHash {
+func (qc *QuorumCertificate) GetBlockHash() consensus.BlockHash {
 	return qc.BlockHash
 }
 
