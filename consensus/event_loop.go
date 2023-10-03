@@ -258,8 +258,8 @@ func (fc *FastHotStuffEventLoop) ProcessValidatorVote(vote VoteMessage) error {
 	// Cache the vote in case we need it for later
 	fc.storeVote(voteSignaturePayload, vote)
 
-	// Check if the crank timer has elapsed. If it has elapsed and if the vote is for the current chain tip,
-	// then we need to check if the vote results in a super-majority vote for the chain tip.
+	// Check if the crank timer has elapsed. If it has not elapsed or if the vote is not for
+	// the current chain tip, then there's nothing more to do.
 	if !fc.hasCrankTimerElapsed || vote.GetBlockHash() != fc.tip.block.GetBlockHash() {
 		return nil
 	}
@@ -336,14 +336,14 @@ func (fc *FastHotStuffEventLoop) ProcessValidatorTimeout(timeout TimeoutMessage)
 	// Cache the timeout message in case we need it for later
 	fc.storeTimeout(timeout)
 
-	// Check if the crank timer has elapsed. If it has elapsed and if the vote is for the current chain tip,
-	// then we need to check if the vote results in a super-majority vote for the chain tip.
+	// Check if the crank timer has elapsed. If it has not elapsed or if the timeout is not for
+	// the previous view, then there's nothing more to do.
 	if !fc.hasCrankTimerElapsed || timeout.GetView() != fc.currentView-1 {
 		return nil
 	}
 
-	// Check if we have a super-majority of stake has timed out of the previous view. If so, we signal the
-	// server that we can construct a timeoutQC in the current view.
+	// Check if we have a super-majority of stake has timed out of the previous view. If so, we signal
+	// the server that we can construct a timeoutQC in the current view.
 	if timeoutQCEvent := fc.tryConstructTimeoutQCInCurrentView(); timeoutQCEvent != nil {
 		fc.Events <- timeoutQCEvent
 	}
