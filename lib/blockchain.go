@@ -482,6 +482,10 @@ type Blockchain struct {
 	bestHeaderChain    []*BlockNode
 	bestHeaderChainMap map[BlockHash]*BlockNode
 
+	// Tracks all uncommitted blocks in memory. This includes blocks that are not part
+	// of the best chain.
+	uncommittedBlocksMap map[BlockHash]*MsgDeSoBlock
+
 	// We keep track of orphan blocks with the following data structures. Orphans
 	// are not written to disk and are only cached in memory. Moreover we only keep
 	// up to MaxOrphansInMemory of them in order to prevent memory exhaustion.
@@ -2630,23 +2634,6 @@ func (bc *Blockchain) processBlockPoW(desoBlock *MsgDeSoBlock, verifySignatures 
 	// to our data structures and any unconnectedTxns that are no longer unconnectedTxns should have
 	// also been processed.
 	return isMainChain, false, nil
-}
-
-// processBlockPoS runs the Fast-Hotstuff block connect and commit rule as follows:
-// 1. Validate on an incoming block and its header
-// 2. Store the block in the db
-// 3. Resolves forks within the last two blocks
-// 4. Connect the block to the blockchain's tip
-// 5. If applicable, flush the incoming block's grandparent to the DB
-// 6. Notify the block proposer, pacemaker, and voting logic that the incoming block has been accepted
-func (bc *Blockchain) processBlockPoS(desoBlock *MsgDeSoBlock, verifySignatures bool) (_isMainChain bool, _isOrphan bool, err error) {
-	// TODO: Implement me
-	return false, false, fmt.Errorf("ProcessBlockPoS: Not implemented yet")
-}
-
-func (bc *Blockchain) GetUncommittedTipView() (*UtxoView, error) {
-	// Connect the uncommitted blocks to the tip so that we can validate subsequent blocks
-	panic("GetUncommittedTipView: Not implemented yet")
 }
 
 // DisconnectBlocksToHeight will rollback blocks from the db and blockchain structs until block tip reaches the provided
