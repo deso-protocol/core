@@ -21,7 +21,7 @@ func TestIsValidSuperMajorityQuorumCertificate(t *testing.T) {
 
 	// Test malformed validator set
 	{
-		require.False(t, IsValidSuperMajorityQuorumCertificate(createDummyQC(1), nil))
+		require.False(t, IsValidSuperMajorityQuorumCertificate(createDummyQC(1, createDummyBlockHash()), nil))
 	}
 
 	// Set up test validator data
@@ -103,19 +103,19 @@ func TestIsProperlyFormedBlock(t *testing.T) {
 
 	// Test zero height
 	{
-		block := block{height: 0, view: 2, blockHash: createDummyBlockHash(), qc: createDummyQC(1)}
+		block := block{height: 0, view: 2, blockHash: createDummyBlockHash(), qc: createDummyQC(1, createDummyBlockHash())}
 		require.False(t, isProperlyFormedBlock(&block))
 	}
 
 	// Test zero view
 	{
-		block := block{height: 1, view: 0, blockHash: createDummyBlockHash(), qc: createDummyQC(0)}
+		block := block{height: 1, view: 0, blockHash: createDummyBlockHash(), qc: createDummyQC(0, createDummyBlockHash())}
 		require.False(t, isProperlyFormedBlock(&block))
 	}
 
 	// Test nil block hash
 	{
-		block := block{height: 1, view: 1, blockHash: nil, qc: createDummyQC(0)}
+		block := block{height: 1, view: 1, blockHash: nil, qc: createDummyQC(0, createDummyBlockHash())}
 		require.False(t, isProperlyFormedBlock(&block))
 	}
 
@@ -327,7 +327,7 @@ func createDummyBlock(view uint64) *block {
 		blockHash: createDummyBlockHash(),
 		view:      view,
 		height:    1,
-		qc:        createDummyQC(view - 1),
+		qc:        createDummyQC(view-1, createDummyBlockHash()),
 	}
 }
 
@@ -347,7 +347,7 @@ func createDummyVoteMessage(view uint64) *voteMessage {
 }
 
 func createDummyTimeoutMessage(view uint64) *timeoutMessage {
-	highQC := createDummyQC(view - 1)
+	highQC := createDummyQC(view-1, createDummyBlockHash())
 
 	signaturePayload := GetTimeoutSignaturePayload(view, highQC.view)
 
@@ -362,9 +362,7 @@ func createDummyTimeoutMessage(view uint64) *timeoutMessage {
 	}
 }
 
-func createDummyQC(view uint64) *quorumCertificate {
-	blockHash := createDummyBlockHash()
-
+func createDummyQC(view uint64, blockHash BlockHash) *quorumCertificate {
 	signaturePayload := GetVoteSignaturePayload(view, blockHash)
 
 	blsPrivateKey1, _ := bls.NewPrivateKey()

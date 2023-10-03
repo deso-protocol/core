@@ -445,7 +445,7 @@ func (fc *FastHotStuffEventLoop) onBlockConstructionScheduledTaskExecuted(blockC
 	// Check if the conditions are met to construct a QC from votes for the chain tip. If so,
 	// we send a signal to the server and cancel the block construction task. The server will
 	// reschedule the task when it advances the view.
-	if canConstructQC, signersList, signature := fc.tryConstructVoteQCInCurrentView(); canConstructQC {
+	if success, signersList, signature := fc.tryConstructVoteQCInCurrentView(); success {
 		// Signal the server that we can construct a QC for the chain tip
 		fc.ConsensusEvents <- &ConsensusEvent{
 			EventType:      ConsensusEventTypeConstructVoteQC, // The event type
@@ -465,8 +465,38 @@ func (fc *FastHotStuffEventLoop) onBlockConstructionScheduledTaskExecuted(blockC
 		return
 	}
 
-	// TODO: Check if we can construct a timeout QC for the current view, and send the signal to the
-	// server
+	// Check if we have enough timeouts to build an aggregate QC for the previous view. If so,
+	// we send a signal to the server and cancel all scheduled tasks.
+	if success, safeBlock, highQC, highQCViews, signersList, signature := fc.tryConstructTimeoutQCInCurrentView(); success {
+		// Signal the server that we can construct a timeout QC for the current view
+		fc.ConsensusEvents <- &ConsensusEvent{
+			EventType:      ConsensusEventTypeConstructTimeoutQC, // The event type
+			View:           fc.currentView,                       // The view that we have a timeout QC for
+			TipBlockHash:   highQC.GetBlockHash(),                // The block hash that we extend from
+			TipBlockHeight: safeBlock.GetHeight(),                // The block height that we extend from
+			AggregateQC: &aggregateQuorumCertificate{
+				view:        fc.currentView - 1, // The timed out view is always the previous view
+				highQC:      highQC,             // The high QC aggregated from the timeout messages
+				highQCViews: highQCViews,        // The high view for each validator who timed out
+				aggregatedSignature: &aggregatedSignature{
+					signersList: signersList, // The signers list of validators who timed out
+					signature:   signature,   // The aggregated signature from validators who timed out
+				},
+			},
+		}
+
+		// Cancel the block construction task since we know we can construct a timeout QC in the current view.
+		// It will be rescheduled when we advance view.
+		fc.nextBlockConstructionTask.Cancel()
+		return
+	}
+
+	// We have not found a super majority of votes or timeouts. We can schedule the task to check again later.
+	fc.nextBlockConstructionTask.Schedule(
+		fc.blockConstructionInterval,
+		fc.currentView,
+		fc.onBlockConstructionScheduledTaskExecuted,
+	)
 
 	return
 }
@@ -542,6 +572,121 @@ func (fc *FastHotStuffEventLoop) tryConstructVoteQCInCurrentView() (
 
 	// Happy path
 	return true, signersList, aggregateSignature
+}
+
+// tryConstructTimeoutQCInCurrentView is a helper function that attempts to construct a timeout QC for the
+// previous view, so that it can be proposed in an empty block in the current view. The function internally performs
+// all view and timeout message validations to ensure that the resulting timeout QC is valid and extends from a
+// known safe block. If a timeout QC can be constructed, the function returns the safe block that it extends
+// from, the highQC, highQC views from validator timeout messages, signers list, and aggregate signature needed
+// to construct the timeout QC.
+//
+// This function must be called while holding the consensus instance's lock.
+func (fc *FastHotStuffEventLoop) tryConstructTimeoutQCInCurrentView() (
+	_success bool, // true if and only if we are able to construct a timeout QC in the current view
+	_safeBlock Block, // the safe block that the high QC is from; the timeout QC proposed will extend from this block
+	_highQC QuorumCertificate, // high QC aggregated from validators who timed out
+	_highQCViews []uint64, // high QC views for each validator who timed out
+	_signersList *bitset.Bitset, // bitset of signers for the aggregated signature from the timeout messages
+	_aggregatedSignature *bls.Signature, // aggregated signature from the validators' timeout messages
+) {
+
+	// Fetch all timeouts for the previous view. All timeout messages for a view are aggregated and
+	// proposed in the next view. So if we want to propose a timeout QC in the current view, we need
+	// to aggregate timeouts from the previous one.
+	timeoutsByValidator := fc.timeoutsSeen[fc.currentView-1]
+
+	// Tracks the highQC from validators as we go along.
+	var validatorsHighQC QuorumCertificate
+
+	// Iterate through all timeouts for the previous view to find the highQC
+	for _, timeout := range timeoutsByValidator {
+		// Check if the high QC from the timeout messages is for a block in our safeBlocks slice. If not,
+		// then we have no knowledge of the block, or the block is not safe to extend from. This should never
+		// happen, but may be possible in the event we receive a timeout message at the same time the block
+		// becomes unsafe to extend from (ex: it's part of an stale reorg). We check for the edge case here to
+		// be 100% safe.
+		isSafeBlock, _, _, validatorLookup := fc.fetchSafeBlockInfo(timeout.GetHighQC().GetBlockHash())
+		if !isSafeBlock {
+			continue
+		}
+
+		// Make sure the timeout message was sent by a validator registered at the block height of the extracted QC.
+		if _, ok := validatorLookup[timeout.GetPublicKey().ToString()]; !ok {
+			continue
+		}
+
+		// Update the highQC if the timeout message has a higher QC view than the current highQC's view
+		if isInterfaceNil(validatorsHighQC) || timeout.GetHighQC().GetView() > validatorsHighQC.GetView() {
+			validatorsHighQC = timeout.GetHighQC()
+		}
+	}
+
+	// If we didn't find a high QC or didn't find any valid timeout messages, then we can't build a timeout QC.
+	if isInterfaceNil(validatorsHighQC) {
+		return false, nil, nil, nil, nil, nil
+	}
+
+	// Fetch the validator set for the block height of the high QC. This lookup is guaranteed to succeed
+	// because it succeeded above.
+	ok, safeBlock, validatorSet, _ := fc.fetchSafeBlockInfo(validatorsHighQC.GetBlockHash())
+	if !ok {
+		return false, nil, nil, nil, nil, nil
+	}
+
+	// Compute the total stake and total stake with timeouts
+	totalStake := uint256.NewInt()
+	totalTimedOutStake := uint256.NewInt()
+
+	// Track the high QC view for each validator
+	highQCViews := make([]uint64, len(validatorSet))
+
+	// Track the signatures and signers list for validators who timed out
+	signersList := bitset.NewBitset()
+	signatures := []*bls.Signature{}
+
+	// Iterate through the entire validator set and check if each one has timed out for the previous
+	// view. Track all validators who timed out and their stakes. We iterate through the validator set
+	// here rather than the timeoutsByValidator map because we want to preserve the order of the validator
+	// for the signersList bitset. In practice, the validator set is expected to be <= 1000 in size, so
+	// this loop will be fast.
+	for ii, validator := range validatorSet {
+		totalStake = uint256.NewInt().Add(totalStake, validator.GetStakeAmount())
+
+		// Skip the validator if it hasn't timed out for the previous view
+		timeout, hasTimedOut := timeoutsByValidator[validator.GetPublicKey().ToString()]
+		if !hasTimedOut {
+			continue
+		}
+
+		// Compute the signature payload that the validator should have signed
+		signaturePayload := GetTimeoutSignaturePayload(timeout.GetView(), timeout.GetHighQC().GetView())
+
+		// Verify the timeout signature
+		if !isValidSignatureSinglePublicKey(timeout.GetPublicKey(), timeout.GetSignature(), signaturePayload[:]) {
+			continue
+		}
+
+		// Track the signatures, timed out stake, and high QC views for the validator
+		totalTimedOutStake = uint256.NewInt().Add(totalTimedOutStake, validator.GetStakeAmount())
+		signersList.Set(ii, true)
+		signatures = append(signatures, timeout.GetSignature())
+		highQCViews[ii] = timeout.GetHighQC().GetView()
+	}
+
+	// Check if we have a super majority of stake that has timed out
+	if !isSuperMajorityStake(totalTimedOutStake, totalStake) {
+		return false, nil, nil, nil, nil, nil
+	}
+
+	// Finally aggregate the signatures from the timeouts
+	aggregateSignature, err := bls.AggregateSignatures(signatures)
+	if err != nil {
+		return false, nil, nil, nil, nil, nil
+	}
+
+	// Happy path
+	return true, safeBlock, validatorsHighQC, highQCViews, signersList, aggregateSignature
 }
 
 // When this function is triggered, it means that we have reached out the timeout ETA for the
@@ -671,8 +816,11 @@ func (fc *FastHotStuffEventLoop) hasTimedOutForView(publicKey *bls.PublicKey, vi
 	return ok
 }
 
-func (fc *FastHotStuffEventLoop) getBlockAndValidatorSetByHash(blockHash BlockHash) (
-	bool, Block, []Validator, map[string]Validator,
+func (fc *FastHotStuffEventLoop) fetchSafeBlockInfo(blockHash BlockHash) (
+	_isSafeBlock bool,
+	_safeBlock Block,
+	_validatorSet []Validator,
+	_validatorLookup map[string]Validator,
 ) {
 	// A linear search here is fine. The safeBlocks slice is expected to be extremely small as it represents the
 	// number of uncommitted blocks in the blockchain. During steady stake, it will have a size of 3 blocks

@@ -33,6 +33,7 @@ type ConsensusEvent struct {
 	TipBlockHeight uint64
 	View           uint64
 	QC             QuorumCertificate
+	AggregateQC    AggregateQuorumCertificate
 }
 
 // BlockHash is a 32-byte hash of a block used to uniquely identify a block. It's re-defined here
