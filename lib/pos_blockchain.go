@@ -264,8 +264,33 @@ func (bc *Blockchain) validateBlockHeight(desoBlock *MsgDeSoBlock) error {
 // timeout QC, it will check that the view is at least greater than the latest
 // uncommitted block's view + 1.
 func (bc *Blockchain) validateBlockView(desoBlock *MsgDeSoBlock) error {
-	// TODO: Implement me
-	return errors.New("IMPLEMENT ME")
+	committedBlock, _ := bc.getHighestCommittedBlock()
+	if committedBlock == nil {
+		// This is an edge case we'll never hit in practice since all the PoW blocks
+		// are committed.
+		return errors.New("validateBlockView: No committed blocks found")
+	}
+	// Validate that the view is greater than the latest committed block view.
+	if desoBlock.Header.ProposedInView <= committedBlock.Header.ProposedInView {
+		return RuleErrorPoSBlockViewEarlierThanCommittedBlock
+	}
+	// Validate that the view is greater than the latest uncommitted block.
+	chainTip := bc.GetBestChainTip()
+	// If the chain tip is committed, we can just check that the view is greater than the
+	// committed block's view, but this is already kinda done above. Basically we should never
+	// hit this logic.
+	if chainTip.CommittedStatus == COMMITTED {
+		if desoBlock.Header.ProposedInView <= chainTip.Header.ProposedInView {
+			return RuleErrorPoSBlockViewEarlierThanCommittedBlock
+		}
+		return nil
+	}
+	// If the chain tip is uncommitted, we need to check that the view is greater than the
+	// uncommitted block's view.
+	if desoBlock.Header.ProposedInView <= chainTip.Header.ProposedInView {
+		return RuleErrorPoSBlockViewEarlierThanUncommittedBlock
+	}
+	return nil
 }
 
 // validateBlockLeader validates that the proposer is the expected proposer for the
@@ -426,4 +451,7 @@ const (
 
 	RuleErrorInvalidPoSBlockHeight       RuleError = "RuleErrorInvalidPoSBlockHeight"
 	RuleErrorPoSBlockBeforeCutoverHeight RuleError = "RuleErrorPoSBlockBeforeCutoverHeight"
+
+	RuleErrorPoSBlockViewEarlierThanCommittedBlock   RuleError = "RuleErrorPoSBlockViewEarlierThanCommittedBlock"
+	RuleErrorPoSBlockViewEarlierThanUncommittedBlock RuleError = "RuleErrorPoSBlockViewEarlierThanUncommittedBlock"
 )
