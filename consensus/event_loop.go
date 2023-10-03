@@ -13,16 +13,16 @@ import (
 
 func NewFastHotStuffEventLoop() *FastHotStuffEventLoop {
 	return &FastHotStuffEventLoop{
-		status:                    eventLoopStatusNotInitialized,
-		nextBlockConstructionTask: NewScheduledTask[uint64](),
-		nextTimeoutTask:           NewScheduledTask[uint64](),
+		status:          eventLoopStatusNotInitialized,
+		crankTimerTask:  NewScheduledTask[uint64](),
+		nextTimeoutTask: NewScheduledTask[uint64](),
 	}
 }
 
 // Initializes the consensus event loop with the latest known valid block in the blockchain, and
 // the validator set for the next block height. The functions expects the following for the input
 // params:
-//   - blockConstructionInterval: block construction duration must be > 0
+//   - crankTimerInterval: crank timer interval duration must be > 0
 //   - timeoutBaseDuration: timeout base duration must be > 0
 //   - tip: the current tip of the blockchain, with the validator set at that block height. This may
 //     be a committed or uncommitted block.
@@ -34,7 +34,7 @@ func NewFastHotStuffEventLoop() *FastHotStuffEventLoop {
 // Given the above, This function updates the tip internally, stores the safe blocks, and re-initializes
 // all internal data structures that are used to track incoming votes and timeout messages for QC construction.
 func (fc *FastHotStuffEventLoop) Init(
-	blockConstructionInterval time.Duration,
+	crankTimerInterval time.Duration,
 	timeoutBaseDuration time.Duration,
 	tip BlockWithValidators,
 	safeBlocks []BlockWithValidators,
@@ -49,8 +49,8 @@ func (fc *FastHotStuffEventLoop) Init(
 	}
 
 	// Validate the scheduled task durations
-	if blockConstructionInterval <= 0 {
-		return errors.New("FastHotStuffEventLoop.Init: Block construction duration must be > 0")
+	if crankTimerInterval <= 0 {
+		return errors.New("FastHotStuffEventLoop.Init: Crank timer interval must be > 0")
 	}
 	if timeoutBaseDuration <= 0 {
 		return errors.New("FastHotStuffEventLoop.Init: Timeout base duration must be > 0")
@@ -71,8 +71,8 @@ func (fc *FastHotStuffEventLoop) Init(
 	// Reset the external channel used for signaling
 	fc.Events = make(chan *FastHotStuffEvent, signalChannelBufferSize)
 
-	// Set the block construction and timeout base durations
-	fc.blockConstructionInterval = blockConstructionInterval
+	// Set the crank timer interval and timeout base duration
+	fc.crankTimerInterval = crankTimerInterval
 	fc.timeoutBaseDuration = timeoutBaseDuration
 
 	// Update the event loop's status
@@ -82,8 +82,7 @@ func (fc *FastHotStuffEventLoop) Init(
 }
 
 // AdvanceViewOnTimeout is called when the tip has not changed but the event loop has timed out. This
-// function advances the view and resets the timeout scheduled task and block production scheduled
-// tasks.
+// function advances the view and resets the crank timer and timeout scheduled tasks.
 func (fc *FastHotStuffEventLoop) AdvanceViewOnTimeout() (uint64, error) {
 	// Grab the event loop's lock
 	fc.lock.Lock()
@@ -101,7 +100,7 @@ func (fc *FastHotStuffEventLoop) AdvanceViewOnTimeout() (uint64, error) {
 	// Evict all stale votes and timeouts
 	fc.evictStaleVotesAndTimeouts()
 
-	// Schedule the next block construction and timeout scheduled tasks
+	// Schedule the next crank timer and timeout scheduled tasks
 	fc.resetScheduledTasks()
 
 	return fc.currentView, nil
@@ -109,8 +108,8 @@ func (fc *FastHotStuffEventLoop) AdvanceViewOnTimeout() (uint64, error) {
 
 // ProcessTipBlock must only be called when the server has accepted a new block, connected it
 // to the tip of the blockchain, and determined that the block is safe to vote on. Given such a
-// block, this function resets internal state and schedules the next block construction and timeout
-// timers.
+// block, this function resets internal state and schedules the next crank timer and timeout
+// timer.
 //
 // Expected params:
 //   - tip: the current uncommitted tip of the blockchain, with the validator set at that block height
@@ -148,7 +147,7 @@ func (fc *FastHotStuffEventLoop) ProcessTipBlock(tip BlockWithValidators, safeBl
 		View:           fc.tip.block.GetView(),
 	}
 
-	// Schedule the next block construction and timeout scheduled tasks
+	// Schedule the next crank timer and timeout scheduled tasks
 	fc.resetScheduledTasks()
 
 	return nil
@@ -336,7 +335,7 @@ func (fc *FastHotStuffEventLoop) ProcessValidatorTimeout(timeout TimeoutMessage)
 	return nil
 }
 
-// Sets the initial times for the block construction and timeouts and starts scheduled tasks.
+// Sets the initial times for the crank timer and timeouts and starts scheduled tasks.
 func (fc *FastHotStuffEventLoop) Start() {
 	fc.lock.Lock()
 	defer fc.lock.Unlock()
@@ -350,7 +349,7 @@ func (fc *FastHotStuffEventLoop) Start() {
 	// Update the event loop's status to mark it as running.
 	fc.status = eventLoopStatusRunning
 
-	// Set the initial block construction and timeout scheduled tasks
+	// Set the initial crank timer and timeout scheduled tasks
 	fc.resetScheduledTasks()
 }
 
@@ -364,8 +363,8 @@ func (fc *FastHotStuffEventLoop) Stop() {
 		return
 	}
 
-	// Cancel the next block construction and timeout scheduled tasks, if any.
-	fc.nextBlockConstructionTask.Cancel()
+	// Cancel the crank timer and timeout scheduled tasks, if any.
+	fc.crankTimerTask.Cancel()
 	fc.nextTimeoutTask.Cancel()
 
 	// Update the event loop's status so it is no longer marked as running.
@@ -387,7 +386,7 @@ func (fc *FastHotStuffEventLoop) IsRunning() bool {
 }
 
 // resetScheduledTasks recomputes the nextBlockConstructionTimeStamp and nextTimeoutTimeStamp
-// values, and reschedules the next block construction and timeout tasks.
+// values, and reschedules the crank timer and timeout tasks.
 func (fc *FastHotStuffEventLoop) resetScheduledTasks() {
 	// Compute the next timeout ETA. We use exponential back-off for timeouts when there are
 	// multiple consecutive timeouts. We use the difference between the current view and the
@@ -408,14 +407,14 @@ func (fc *FastHotStuffEventLoop) resetScheduledTasks() {
 		timeoutDuration = fc.timeoutBaseDuration << numTimeouts
 	}
 
-	// Schedule the next block construction task. This will run with currentView param.
-	fc.nextBlockConstructionTask.Schedule(fc.blockConstructionInterval, fc.currentView, fc.onBlockConstructionScheduledTaskExecuted)
+	// Schedule the next crank timer task. This will run with currentView param.
+	fc.crankTimerTask.Schedule(fc.crankTimerInterval, fc.currentView, fc.onBlockConstructionScheduledTaskExecuted)
 
 	// Schedule the next timeout task. This will run with currentView param.
 	fc.nextTimeoutTask.Schedule(timeoutDuration, fc.currentView, fc.onTimeoutScheduledTaskExecuted)
 }
 
-// When this function is triggered, it means that we have reached the block construction
+// When this function is triggered, it means that we have reached the crank timer
 // time ETA for blockConstructionView. If we have a QC or timeout QC for the view, then we
 // signal the server.
 func (fc *FastHotStuffEventLoop) onBlockConstructionScheduledTaskExecuted(blockConstructionView uint64) {
@@ -435,7 +434,7 @@ func (fc *FastHotStuffEventLoop) onBlockConstructionScheduledTaskExecuted(blockC
 	}
 
 	// Check if the conditions are met to construct a QC from votes for the chain tip. If so,
-	// we send a signal to the server and cancel the block construction task. The server will
+	// we send a signal to the server and cancel the crank timer task. The server will
 	// reschedule the task when it advances the view.
 	if voteQCEvent := fc.tryConstructVoteQCInCurrentView(); voteQCEvent != nil {
 		// Signal the server that we can construct a QC for the chain tip
@@ -452,8 +451,8 @@ func (fc *FastHotStuffEventLoop) onBlockConstructionScheduledTaskExecuted(blockC
 	}
 
 	// We have not found a super majority of votes or timeouts. We can schedule the task to check again later.
-	fc.nextBlockConstructionTask.Schedule(
-		fc.blockConstructionInterval,
+	fc.crankTimerTask.Schedule(
+		fc.crankTimerInterval,
 		fc.currentView,
 		fc.onBlockConstructionScheduledTaskExecuted,
 	)
