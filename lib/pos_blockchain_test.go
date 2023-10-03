@@ -349,6 +349,49 @@ func TestAddBlockToBlockIndex(t *testing.T) {
 	require.True(t, bytes.Equal(uncommittedBytes, origBlockBytes))
 }
 
+func TestValidateBlockView(t *testing.T) {
+	bc, _, _ := NewTestBlockchain(t)
+	hash1 := NewBlockHash(RandomBytes(32))
+	hash2 := NewBlockHash(RandomBytes(32))
+	genesisNode := NewPoSBlockNode(nil, hash1, 1, &MsgDeSoHeader{
+		Version:        2,
+		Height:         1,
+		ProposedInView: 1,
+	}, StatusBlockValidated, COMMITTED)
+	bc.bestChain = []*BlockNode{
+		genesisNode,
+		NewPoSBlockNode(genesisNode, hash2, 2, &MsgDeSoHeader{
+			Version:                      2,
+			Height:                       2,
+			ProposedInView:               2,
+			ValidatorsVoteQC:             nil,
+			ValidatorsTimeoutAggregateQC: nil,
+		}, StatusBlockValidated, UNCOMMITTED),
+	}
+
+	block := &MsgDeSoBlock{
+		Header: &MsgDeSoHeader{
+			Version:        2,
+			TstampNanoSecs: uint64(time.Now().UnixNano()) - 10,
+			Height:         2,
+			ProposedInView: 1,
+		},
+		Txns: nil,
+	}
+
+	err := bc.validateBlockView(block)
+	require.Equal(t, err, RuleErrorPoSBlockViewEarlierThanCommittedBlock)
+
+	block.Header.ProposedInView = 2
+
+	err = bc.validateBlockView(block)
+	require.Equal(t, err, RuleErrorPoSBlockViewEarlierThanUncommittedBlock)
+
+	block.Header.ProposedInView = 3
+	err = bc.validateBlockView(block)
+	require.Nil(t, err)
+}
+
 func _generateRandomBLSPrivateKey(t *testing.T) *bls.PrivateKey {
 	privateKey, err := bls.NewPrivateKey()
 	require.NoError(t, err)
