@@ -57,6 +57,8 @@ type StateChangeEntry struct {
 	FlushId uuid.UUID
 	// The height of the block this entry belongs to.
 	BlockHeight uint64
+	// The block associated with this state change event. Only applicable to utxo operations.
+	Block *MsgDeSoBlock
 }
 
 // RawEncodeWithoutMetadata constructs the bytes to represent a StateChangeEntry.
@@ -112,6 +114,9 @@ func (stateChangeEntry *StateChangeEntry) RawEncodeWithoutMetadata(blockHeight u
 	// Encode the block height.
 	data = append(data, UintToBuf(blockHeight)...)
 
+	// Encode the transaction.
+	data = append(data, EncodeToBytes(blockHeight, stateChangeEntry.Block)...)
+
 	return data
 }
 
@@ -147,13 +152,7 @@ func (stateChangeEntry *StateChangeEntry) RawDecodeWithoutMetadata(blockHeight u
 	stateChangeEntry.EncoderBytes = EncodeToBytes(blockHeight, encoder)
 
 	// Decode the ancestral record bytes.
-	var ancestralRecord DeSoEncoder
-	if stateChangeEntry.AncestralRecord != nil {
-		ancestralRecord = stateChangeEntry.AncestralRecord.GetEncoderType().New()
-	} else {
-		ancestralRecord = stateChangeEntry.EncoderType.New()
-	}
-	
+	ancestralRecord := stateChangeEntry.EncoderType.New()
 	if exist, err := DecodeFromBytes(ancestralRecord, rr); exist && err == nil {
 		stateChangeEntry.AncestralRecord = ancestralRecord
 	} else if err != nil {
@@ -174,6 +173,13 @@ func (stateChangeEntry *StateChangeEntry) RawDecodeWithoutMetadata(blockHeight u
 		return errors.Wrapf(err, "StateChangeEntry.RawDecodeWithoutMetadata: error decoding block height")
 	}
 	stateChangeEntry.BlockHeight = entryBlockHeight
+
+	block := &MsgDeSoBlock{}
+	if exist, err := DecodeFromBytes(block, rr); exist && err == nil {
+		stateChangeEntry.Block = block
+	} else if err != nil {
+		return errors.Wrapf(err, "StateChangeEntry.RawDecodeWithoutMetadata: error decoding block")
+	}
 
 	return nil
 }
@@ -840,7 +846,7 @@ func (stateChangeSyncer *StateChangeSyncer) FlushAllEntriesToFile(server *Server
 						return errors.Wrapf(err, "StateChangeSyncer.FlushAllEntriesToFile: Error fetching block: ")
 					}
 					// Attach the block to the UTXO Op via the ancestral record.
-					stateChangeEntry.AncestralRecord = block
+					stateChangeEntry.Block = block
 				}
 				fmt.Printf("After bytes equal\n")
 
