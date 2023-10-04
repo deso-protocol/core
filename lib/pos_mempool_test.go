@@ -289,6 +289,10 @@ func TestPosMempoolReplaceWithHigherFee(t *testing.T) {
 }
 
 func _posTestBlockchainSetup(t *testing.T) (_params *DeSoParams, _db *badger.DB) {
+	return _posTestBlockchainSetupWithBalances(t, 200000, 200000)
+}
+
+func _posTestBlockchainSetupWithBalances(t *testing.T, m0Balance uint64, m1Balance uint64) (_params *DeSoParams, _db *badger.DB) {
 	require := require.New(t)
 
 	chain, params, db := NewLowDifficultyBlockchain(t)
@@ -307,10 +311,10 @@ func _posTestBlockchainSetup(t *testing.T) (_params *DeSoParams, _db *badger.DB)
 
 	_, _, _ = _doBasicTransferWithViewFlush(
 		t, chain, db, params, senderPkString, m0PublicKeyBase58Check,
-		senderPrivString, 200000, 11)
+		senderPrivString, m0Balance, 11)
 	_, _, _ = _doBasicTransferWithViewFlush(
 		t, chain, db, params, senderPkString, m1PublicKeyBase58Check,
-		senderPrivString, 200000, 11)
+		senderPrivString, m1Balance, 11)
 
 	return params, db
 }

@@ -1,10 +1,120 @@
 package lib
 
 import (
+	"github.com/deso-protocol/core/bls"
+	"github.com/deso-protocol/core/collections/bitset"
 	"github.com/stretchr/testify/require"
+	"math"
 	"math/rand"
 	"testing"
+	"time"
 )
+
+func TestCreateBlockTemplate(t *testing.T) {
+	require := require.New(t)
+	seed := int64(887)
+	rand := rand.New(rand.NewSource(seed))
+	globalParams := _testGetDefaultGlobalParams()
+	feeMin := globalParams.MinimumNetworkFeeNanosPerKB
+	feeMax := uint64(2000)
+	passingTransactions := 50
+	m0PubBytes, _, _ := Base58CheckDecode(m0Pub)
+
+	params, db := _posTestBlockchainSetupWithBalances(t, 200000, 200000)
+	params.ForkHeights.ProofOfStake2ConsensusCutoverBlockHeight = 1
+	latestBlockView, err := NewUtxoView(db, params, nil, nil)
+	require.NoError(err)
+	dir := _dbDirSetup(t)
+
+	mempool := NewPosMempool(params, globalParams, latestBlockView, 2, dir, false)
+	require.NoError(mempool.Start())
+	defer mempool.Stop()
+	require.True(mempool.IsRunning())
+
+	// Add a bunch of passing transactions to the mempool that we'll use to produce a block.
+	passingTxns := []*MsgDeSoTxn{}
+	totalUtilityFee := uint64(0)
+	for ii := 0; ii < passingTransactions; ii++ {
+		txn := _generateTestTxn(t, rand, feeMin, feeMax, m0PubBytes, m0Priv, 100, 20)
+		passingTxns = append(passingTxns, txn)
+		_, utilityFee := computeBMF(txn.TxnFeeNanos)
+		totalUtilityFee += utilityFee
+		_wrappedPosMempoolAddTransaction(t, mempool, txn)
+	}
+
+	pbp := NewPosBlockProducer(mempool, params)
+	priv, err := bls.NewPrivateKey()
+	require.NoError(err)
+	pub := priv.PublicKey()
+	seedHash := &RandomSeedHash{}
+	_, err = seedHash.FromBytes(Sha256DoubleHash([]byte("seed")).ToBytes())
+	require.NoError(err)
+	m0Pk := NewPublicKey(m0PubBytes)
+
+	propserMetadata := NewPosBlockProposerMetadata(m0Pk, pub, seedHash)
+	blockTemplate, err := pbp.createBlockTemplate(latestBlockView, 3, 10, propserMetadata)
+	require.NoError(err)
+	require.NotNil(blockTemplate)
+	require.NotNil(blockTemplate.Header)
+	require.Equal(blockTemplate.Header.Version, HeaderVersion2)
+	require.Equal(blockTemplate.Header.PrevBlockHash, latestBlockView.TipHash)
+	root, _, err := ComputeMerkleRoot(blockTemplate.Txns)
+	require.NoError(err)
+	require.Equal(blockTemplate.Header.TransactionMerkleRoot, root)
+	require.Equal(true, blockTemplate.Header.TstampNanoSecs < uint64(time.Now().UnixNano()))
+	require.Equal(blockTemplate.Header.Height, uint64(3))
+	require.Equal(blockTemplate.Header.ProposedInView, uint64(10))
+	require.Equal(blockTemplate.Header.ProposerPublicKey, propserMetadata.ProposerPublicKey)
+	require.Equal(blockTemplate.Header.ProposerVotingPublicKey, propserMetadata.ProposerVotingPublicKey)
+	require.Equal(blockTemplate.Header.ProposerRandomSeedHash, propserMetadata.ProposerRandomSeedHash)
+}
+
+func TestCreateBlockWithoutHeader(t *testing.T) {
+	require := require.New(t)
+	seed := int64(881)
+	rand := rand.New(rand.NewSource(seed))
+	globalParams := _testGetDefaultGlobalParams()
+	feeMin := globalParams.MinimumNetworkFeeNanosPerKB
+	feeMax := uint64(2000)
+	passingTransactions := 50
+	m0PubBytes, _, _ := Base58CheckDecode(m0Pub)
+	params, db := _posTestBlockchainSetupWithBalances(t, 200000, 200000)
+	params.ForkHeights.ProofOfStake2ConsensusCutoverBlockHeight = 1
+
+	latestBlockView, err := NewUtxoView(db, params, nil, nil)
+	require.NoError(err)
+	dir := _dbDirSetup(t)
+
+	mempool := NewPosMempool(params, globalParams, latestBlockView, 2, dir, false)
+	require.NoError(mempool.Start())
+	defer mempool.Stop()
+	require.True(mempool.IsRunning())
+
+	// Add a bunch of passing transactions to the mempool that we'll use to produce a block.
+	passingTxns := []*MsgDeSoTxn{}
+	totalUtilityFee := uint64(0)
+	for ii := 0; ii < passingTransactions; ii++ {
+		txn := _generateTestTxn(t, rand, feeMin, feeMax, m0PubBytes, m0Priv, 100, 20)
+		passingTxns = append(passingTxns, txn)
+		_, utilityFee := computeBMF(txn.TxnFeeNanos)
+		totalUtilityFee += utilityFee
+		_wrappedPosMempoolAddTransaction(t, mempool, txn)
+	}
+
+	pbp := NewPosBlockProducer(mempool, params)
+	txns, txnConnectStatus, txnTimestamps, maxUtilityFee, err := pbp.getBlockTransactions(
+		latestBlockView, 3, 50000)
+	require.NoError(err)
+
+	blockTemplate, err := pbp.createBlockWithoutHeader(latestBlockView, 3)
+	require.NoError(err)
+	require.Equal(txns, blockTemplate.Txns[1:])
+	require.Equal(txnConnectStatus, blockTemplate.RevolutionMetadata.TxnConnectStatusByIndex)
+	require.Equal(txnTimestamps, blockTemplate.RevolutionMetadata.TxnTimestampsUnixMicro)
+	require.Equal(maxUtilityFee, blockTemplate.Txns[0].TxOutputs[0].AmountNanos)
+	require.Equal(NewMessage(MsgTypeHeader).(*MsgDeSoHeader), blockTemplate.Header)
+	require.Nil(blockTemplate.BlockProducerInfo)
+}
 
 func TestGetBlockTransactions(t *testing.T) {
 	require := require.New(t)
@@ -19,27 +129,10 @@ func TestGetBlockTransactions(t *testing.T) {
 	feeMin := globalParams.MinimumNetworkFeeNanosPerKB
 	feeMax := uint64(2000)
 
-	chain, params, db := NewLowDifficultyBlockchain(t)
-	params.ForkHeights.BalanceModelBlockHeight = 1
+	params, db := _posTestBlockchainSetupWithBalances(t, 200000, m1InitialBalance)
 	params.ForkHeights.ProofOfStake2ConsensusCutoverBlockHeight = 1
-	oldPool, miner := NewTestMiner(t, chain, params, true)
-	// Mine a few blocks to give the senderPkString some money.
-	_, err := miner.MineAndProcessSingleBlock(0 /*threadIndex*/, oldPool)
-	require.NoError(err)
-	_, err = miner.MineAndProcessSingleBlock(0 /*threadIndex*/, oldPool)
-	require.NoError(err)
-
 	m0PubBytes, _, _ := Base58CheckDecode(m0Pub)
-	m0PublicKeyBase58Check := Base58CheckEncode(m0PubBytes, false, params)
 	m1PubBytes, _, _ := Base58CheckDecode(m1Pub)
-	m1PublicKeyBase58Check := Base58CheckEncode(m1PubBytes, false, params)
-
-	_, _, _ = _doBasicTransferWithViewFlush(
-		t, chain, db, params, senderPkString, m0PublicKeyBase58Check,
-		senderPrivString, 200000, 11)
-	_, _, _ = _doBasicTransferWithViewFlush(
-		t, chain, db, params, senderPkString, m1PublicKeyBase58Check,
-		senderPrivString, m1InitialBalance, 11)
 
 	latestBlockView, err := NewUtxoView(db, params, nil, nil)
 	require.NoError(err)
@@ -62,18 +155,8 @@ func TestGetBlockTransactions(t *testing.T) {
 	}
 
 	pbp := NewPosBlockProducer(mempool, params)
-	latestBlockViewCopy, err := latestBlockView.CopyUtxoView()
-	require.NoError(err)
-	txns, txnConnectStatus, txnTimestamps, maxUtilityFee, err := pbp.getBlockTransactions(latestBlockView, 3, 10000)
-	require.NoError(err)
-	require.Equal(latestBlockViewCopy, latestBlockView)
-	require.Equal(len(passingTxns), len(txns))
-	require.Equal(len(passingTxns), txnConnectStatus.Size())
-	require.Equal(len(passingTxns), len(txnTimestamps))
-	require.Equal(maxUtilityFee, totalUtilityFee)
-	for ii := range txns {
-		require.True(txnConnectStatus.Get(ii))
-	}
+	_testProduceBlockNoSizeLimit(t, mempool, pbp, latestBlockView, 3,
+		len(passingTxns), 0, 0)
 
 	// Now test the case where we have a bunch of transactions that don't pass.
 	// A failing transaction will try to send an excessive balance in a basic transfer.
@@ -91,24 +174,8 @@ func TestGetBlockTransactions(t *testing.T) {
 		failingTxns = append(failingTxns, failingTxn)
 		_wrappedPosMempoolAddTransaction(t, mempool, failingTxn)
 	}
-
-	latestBlockViewCopy, err = latestBlockView.CopyUtxoView()
-	require.NoError(err)
-	txns, txnConnectStatus, txnTimestamps, maxUtilityFee, err = pbp.getBlockTransactions(latestBlockView, 3, 50000)
-	require.NoError(err)
-	require.Equal(latestBlockViewCopy, latestBlockView)
-	require.Equal(len(passingTxns)+len(failingTxns), len(txns))
-	require.Equal(len(passingTxns)+len(failingTxns), len(txnTimestamps))
-	require.Equal(maxUtilityFee, totalUtilityFee)
-	totalConnected := 0
-	for ii := range txns {
-		if txnConnectStatus.Get(ii) {
-			totalConnected++
-		} else {
-			require.Equal(1, len(txns[ii].TxOutputs))
-		}
-	}
-	require.Equal(len(passingTxns), totalConnected)
+	_testProduceBlockNoSizeLimit(t, mempool, pbp, latestBlockView, 3,
+		len(passingTxns), len(failingTxns), 0)
 
 	// We will now test some invalid transactions, which make it in the mempool, yet will not connect to utxo view,
 	// nor as failing transactions. To do this, we will create a couple transactions with high spends compared to their
@@ -128,21 +195,61 @@ func TestGetBlockTransactions(t *testing.T) {
 		invalidTxns = append(invalidTxns, invalidTxn)
 		_wrappedPosMempoolAddTransaction(t, mempool, invalidTxn)
 	}
-	latestBlockViewCopy, err = latestBlockView.CopyUtxoView()
+
+	_testProduceBlockNoSizeLimit(t, mempool, pbp, latestBlockView, 3,
+		len(passingTxns)+1, len(failingTxns), len(invalidTxns)-1)
+	// Now test the case where we have too many transactions in the mempool compared to the max block size.
+	// In this case, some transactions should not make it into the block, despite being valid. The transactions
+	// that are rejected should have the lowest Fee-Time priority.
+
+	latestBlockViewCopy, err := latestBlockView.CopyUtxoView()
 	require.NoError(err)
-	txns, txnConnectStatus, txnTimestamps, maxUtilityFee, err = pbp.getBlockTransactions(latestBlockView, 3, 50000)
-	// Only a single of the invalid transactions made by m1 should have been added.
+	txns, txnConnectStatus, txnTimestamps, maxUtilityFee, err := pbp.getBlockTransactions(latestBlockView, 3, 1000)
 	require.NoError(err)
 	require.Equal(latestBlockViewCopy, latestBlockView)
-	require.Equal(len(passingTxns)+len(failingTxns)+1, len(txns))
-	require.Equal(len(passingTxns)+len(failingTxns)+1, len(txnTimestamps))
-	totalConnected = 0
+	require.Equal(true, len(passingTxns) > len(txns))
+	require.Equal(true, len(passingTxns) > txnConnectStatus.Size())
+	require.Equal(true, len(passingTxns) > len(txnTimestamps))
+	totalUtilityFee = 0
+	for _, txn := range txns {
+		_, utilityFee := computeBMF(txn.TxnFeeNanos)
+		totalUtilityFee += utilityFee
+	}
+	require.Equal(totalUtilityFee, maxUtilityFee)
+	for ii := 0; ii < len(txns)-1; ii++ {
+		txns1Timestamp := txnTimestamps[ii]
+		txns1FeeRate, err := txns[ii].ComputeFeeRatePerKBNanos()
+		require.NoError(err)
+		txns2Timestamp := txnTimestamps[ii+1]
+		txns2FeeRate, err := txns[ii+1].ComputeFeeRatePerKBNanos()
+		require.NoError(err)
+		require.Equal(true, txns1FeeRate >= txns2FeeRate || txns1Timestamp <= txns2Timestamp)
+	}
+}
+
+func _testProduceBlockNoSizeLimit(t *testing.T, mp *PosMempool, pbp *PosBlockProducer, latestBlockView *UtxoView, blockHeight uint64,
+	numPassing int, numFailing int, numInvalid int) (_txns []*MsgDeSoTxn, _txnConnectStatusByIndex *bitset.Bitset,
+	_txnTimestampsUnixMicro []uint64, _maxUtilityFee uint64) {
+	require := require.New(t)
+
+	totalAcceptedTxns := numPassing + numFailing
+	totalTxns := numPassing + numFailing + numInvalid
+	require.Equal(totalTxns, len(mp.GetTransactions()))
+
+	latestBlockViewCopy, err := latestBlockView.CopyUtxoView()
+	require.NoError(err)
+	txns, txnConnectStatus, txnTimestamps, maxUtilityFee, err := pbp.getBlockTransactions(latestBlockView, blockHeight, math.MaxUint64)
+	require.NoError(err)
+	require.Equal(latestBlockViewCopy, latestBlockView)
+	require.Equal(totalAcceptedTxns, len(txns))
+	require.Equal(true, totalAcceptedTxns >= txnConnectStatus.Size())
+	require.Equal(totalAcceptedTxns, len(txnTimestamps))
+	numConnected := 0
 	for ii := range txns {
 		if txnConnectStatus.Get(ii) {
-			totalConnected++
-		} else {
-			require.Equal(1, len(txns[ii].TxOutputs))
+			numConnected++
 		}
 	}
-	require.Equal(len(passingTxns)+1, totalConnected)
+	require.Equal(numPassing, numConnected)
+	return txns, txnConnectStatus, txnTimestamps, maxUtilityFee
 }
