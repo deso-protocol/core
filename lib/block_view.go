@@ -2433,6 +2433,40 @@ func (bav *UtxoView) _checkAndUpdateDerivedKeySpendingLimit(
 			derivedKeyEntry, txnMeta); err != nil {
 			return utxoOpsForTxn, err
 		}
+	case TxnTypeCoinLockup:
+		txnMeta := txn.TxnMeta.(*CoinLockupMetadata)
+		if derivedKeyEntry, err = bav._checkLockupTxnSpendingLimitAndUpdateDerivedKey(
+			derivedKeyEntry, txnMeta.ProfilePublicKey, CoinLockupOperation); err != nil {
+			return utxoOpsForTxn, err
+		}
+	case TxnTypeUpdateCoinLockupParams:
+		txnMeta := txn.TxnMeta.(*UpdateCoinLockupParamsMetadata)
+		// Check if we're updating the transactor's yield curve.
+		if txnMeta.LockupYieldDurationNanoSecs > 0 {
+			if derivedKeyEntry, err = bav._checkLockupTxnSpendingLimitAndUpdateDerivedKey(
+				derivedKeyEntry, NewPublicKey(txn.PublicKey), UpdateCoinLockupYieldCurveOperation); err != nil {
+				return utxoOpsForTxn, err
+			}
+		}
+		// Check if we're updating the transactor's transfer restrictions.
+		if txnMeta.NewLockupTransferRestrictions {
+			if derivedKeyEntry, err = bav._checkLockupTxnSpendingLimitAndUpdateDerivedKey(
+				derivedKeyEntry, NewPublicKey(txn.PublicKey), UpdateCoinLockupTransferRestrictionsOperation); err != nil {
+				return utxoOpsForTxn, err
+			}
+		}
+	case TxnTypeCoinLockupTransfer:
+		txnMeta := txn.TxnMeta.(*CoinLockupTransferMetadata)
+		if derivedKeyEntry, err = bav._checkLockupTxnSpendingLimitAndUpdateDerivedKey(
+			derivedKeyEntry, txnMeta.ProfilePublicKey, CoinLockupTransferOperation); err != nil {
+			return utxoOpsForTxn, err
+		}
+	case TxnTypeCoinUnlock:
+		txnMeta := txn.TxnMeta.(*CoinUnlockMetadata)
+		if derivedKeyEntry, err = bav._checkLockupTxnSpendingLimitAndUpdateDerivedKey(
+			derivedKeyEntry, txnMeta.ProfilePublicKey, CoinLockupUnlockOperation); err != nil {
+			return utxoOpsForTxn, err
+		}
 	case TxnTypeStake:
 		txnMeta := txn.TxnMeta.(*StakeMetadata)
 		if derivedKeyEntry, err = bav._checkStakeTxnSpendingLimitAndUpdateDerivedKey(

@@ -549,7 +549,7 @@ func (txnData *UpdateCoinLockupParamsMetadata) New() DeSoTxnMetadata {
 }
 
 //
-// TYPES: DAOCoinLockupTransferMetadata
+// TYPES: CoinLockupTransferMetadata
 //
 
 type CoinLockupTransferMetadata struct {
@@ -1875,4 +1875,233 @@ func (bav *UtxoView) _flushLockupYieldCurvePointEntriesToDbWithTxn(txn *badger.T
 
 	// By here the LockupYieldCurvePoint mappings in the db should be up-to-date.
 	return nil
+}
+
+//
+// Derived Key Transactional Limits
+//
+
+type LockupLimitKey struct {
+	ProfilePKID PKID
+	ScopeType   LockupLimitScopeType
+	Operation   LockupLimitOperation
+}
+
+func MakeLockupLimitKey(profilePKID *PKID, scopeType LockupLimitScopeType, operation LockupLimitOperation) LockupLimitKey {
+	return LockupLimitKey{
+		ProfilePKID: *profilePKID,
+		ScopeType:   scopeType,
+		Operation:   operation,
+	}
+}
+
+func (lockupLimitKey *LockupLimitKey) Encode() []byte {
+	var data []byte
+	data = append(data, lockupLimitKey.ProfilePKID.ToBytes()...)
+	data = append(data, byte(lockupLimitKey.ScopeType))
+	data = append(data, byte(lockupLimitKey.Operation))
+	return data
+}
+
+func (lockupLimitKey *LockupLimitKey) Decode(rr *bytes.Reader) error {
+	var err error
+
+	// ProfilePKID
+	profilePKID := &PKID{}
+	if err = profilePKID.FromBytes(rr); err != nil {
+		return errors.Wrap(err, "LockupLimitKey.Decode: Problem reading ProfilePKID: ")
+	}
+	lockupLimitKey.ProfilePKID = *profilePKID
+
+	// ScopeType
+	var scopeTypeByte byte
+	if scopeTypeByte, err = rr.ReadByte(); err != nil {
+		return errors.Wrap(err, "LockupLimitKey.Decode: Problem reading ScopeType: ")
+	}
+	lockupLimitKey.ScopeType = LockupLimitScopeType(scopeTypeByte)
+
+	// Operation
+	var operationByte byte
+	if operationByte, err = rr.ReadByte(); err != nil {
+		return errors.Wrap(err, "LockupLimitKey.Decode: Problem reading Operation: ")
+	}
+	lockupLimitKey.Operation = LockupLimitOperation(operationByte)
+
+	return nil
+}
+
+type LockupLimitOperation uint8
+type LockupLimitOperationString string
+
+const (
+	AnyLockupOperation                            LockupLimitOperation = 0
+	CoinLockupOperation                           LockupLimitOperation = 1
+	UpdateCoinLockupYieldCurveOperation           LockupLimitOperation = 2
+	UpdateCoinLockupTransferRestrictionsOperation LockupLimitOperation = 3
+	CoinLockupTransferOperation                   LockupLimitOperation = 4
+	CoinLockupUnlockOperation                     LockupLimitOperation = 5
+	UndefinedCoinLockupOperation                  LockupLimitOperation = 6
+)
+
+const (
+	AnyLockupOperationString                            LockupLimitOperationString = "Any"
+	CoinLockupOperationString                           LockupLimitOperationString = "CoinLockup"
+	UpdateCoinLockupYieldCurveOperationString           LockupLimitOperationString = "UpdateCoinLockupYieldCurve"
+	UpdateCoinLockupTransferRestrictionsOperationString LockupLimitOperationString = "UpdateCoinLockupTransferRestrictions"
+	CoinLockupTransferOperationString                   LockupLimitOperationString = "CoinLockupTransferOperationString"
+	CoinLockupUnlockOperationString                     LockupLimitOperationString = "CoinLockupUnlock"
+	UndefinedCoinLockupOperationString                  LockupLimitOperationString = "Undefined"
+)
+
+func (lockupLimitOperation LockupLimitOperation) ToString() string {
+	return string(lockupLimitOperation.ToOperationString())
+}
+
+func (lockupLimitOperation LockupLimitOperation) ToOperationString() LockupLimitOperationString {
+	switch lockupLimitOperation {
+	case AnyLockupOperation:
+		return AnyLockupOperationString
+	case CoinLockupOperation:
+		return CoinLockupOperationString
+	case UpdateCoinLockupYieldCurveOperation:
+		return UpdateCoinLockupYieldCurveOperationString
+	case UpdateCoinLockupTransferRestrictionsOperation:
+		return UpdateCoinLockupTransferRestrictionsOperationString
+	case CoinLockupTransferOperation:
+		return CoinLockupTransferOperationString
+	case CoinLockupUnlockOperation:
+		return CoinLockupUnlockOperationString
+	default:
+		return UndefinedCoinLockupOperationString
+	}
+}
+
+func (lockupLimitOperationString LockupLimitOperationString) ToOperationType() LockupLimitOperation {
+	switch lockupLimitOperationString {
+	case AnyLockupOperationString:
+		return AnyLockupOperation
+	case CoinLockupOperationString:
+		return CoinLockupOperation
+	case UpdateCoinLockupYieldCurveOperationString:
+		return UpdateCoinLockupYieldCurveOperation
+	case UpdateCoinLockupTransferRestrictionsOperationString:
+		return UpdateCoinLockupTransferRestrictionsOperation
+	case CoinLockupTransferOperationString:
+		return CoinLockupTransferOperation
+	case CoinLockupUnlockOperationString:
+		return CoinLockupUnlockOperation
+	default:
+		return UndefinedCoinLockupOperation
+	}
+}
+
+type LockupLimitScopeType uint8
+type LockupLimitScopeTypeString string
+
+const (
+	LockupLimitScopeTypeUndefined   LockupLimitScopeType = 0
+	LockupLimitScopeTypeAnyCoins    LockupLimitScopeType = 1
+	LockupLimitScopeTypeScopedCoins LockupLimitScopeType = 2
+)
+
+const (
+	LockupLimitScopeTypeUndefinedString   LockupLimitScopeTypeString = "Undefined"
+	LockupLimitScopeTypeAnyCoinsString    LockupLimitScopeTypeString = "AnyCoins"
+	LockupLimitScopeTypeScopedCoinsString LockupLimitScopeTypeString = "ScopedCoins"
+)
+
+func (lockupLimitScopeType LockupLimitScopeType) ToString() string {
+	return string(lockupLimitScopeType.ToScopeString())
+}
+
+func (lockupLimitScopeType LockupLimitScopeType) ToScopeString() LockupLimitScopeTypeString {
+	switch lockupLimitScopeType {
+	case LockupLimitScopeTypeAnyCoins:
+		return LockupLimitScopeTypeAnyCoinsString
+	case LockupLimitScopeTypeScopedCoins:
+		return LockupLimitScopeTypeScopedCoinsString
+	default:
+		return LockupLimitScopeTypeUndefinedString
+	}
+}
+
+func (lockupLimitScopeType LockupLimitScopeTypeString) ToScopeType() LockupLimitScopeType {
+	switch lockupLimitScopeType {
+	case LockupLimitScopeTypeAnyCoinsString:
+		return LockupLimitScopeTypeAnyCoins
+	case LockupLimitScopeTypeScopedCoinsString:
+		return LockupLimitScopeTypeScopedCoins
+	default:
+		return LockupLimitScopeTypeUndefined
+	}
+}
+
+func (bav *UtxoView) _checkLockupTxnSpendingLimitAndUpdateDerivedKey(
+	derivedKeyEntry DerivedKeyEntry,
+	profilePublicKey *PublicKey,
+	lockupOperation LockupLimitOperation,
+) (DerivedKeyEntry, error) {
+	// Convert profile public key to PKID.
+	var profilePKID *PKID
+	if profilePublicKey.IsZeroPublicKey() {
+		profilePKID = ZeroPKID.NewPKID()
+	} else {
+		profilePKIDEntry := bav.GetPKIDForPublicKey(profilePublicKey.ToBytes())
+		if profilePKIDEntry == nil || profilePKIDEntry.isDeleted {
+			return derivedKeyEntry,
+				errors.Wrap(RuleErrorDerivedKeyCoinLockupOperationInvalidProfilePKID,
+					"_checkCoinLockupTxnSpendingLimitAndUpdateDerivedKey")
+		}
+		profilePKID = profilePKIDEntry.PKID.NewPKID()
+	}
+
+	// Start by checking (specific profile PKID || specific operation) key
+	profilePKIDOperationKey := MakeLockupLimitKey(profilePKID, LockupLimitScopeTypeScopedCoins, lockupOperation)
+	if _checkLimitKeyAndUpdateDerivedKeyEntry(profilePKIDOperationKey, derivedKeyEntry) {
+		return derivedKeyEntry, nil
+	}
+
+	// Next check (specific profile PKID || any operation) key
+	profilePKIDAnyOperationKey := MakeLockupLimitKey(profilePKID, LockupLimitScopeTypeScopedCoins, AnyLockupOperation)
+	if _checkLimitKeyAndUpdateDerivedKeyEntry(profilePKIDAnyOperationKey, derivedKeyEntry) {
+		return derivedKeyEntry, nil
+	}
+
+	// Next check (any creator PKID || specific operation) key
+	anyProfilePKIDOperationKey := MakeLockupLimitKey(profilePKID, LockupLimitScopeTypeAnyCoins, lockupOperation)
+	if _checkLimitKeyAndUpdateDerivedKeyEntry(anyProfilePKIDOperationKey, derivedKeyEntry) {
+		return derivedKeyEntry, nil
+	}
+
+	// Next check (any creator PKID || any operation) key
+	anyProfilePKIDAnyOperationKey := MakeLockupLimitKey(profilePKID, LockupLimitScopeTypeAnyCoins, AnyLockupOperation)
+	if _checkLimitKeyAndUpdateDerivedKeyEntry(anyProfilePKIDAnyOperationKey, derivedKeyEntry) {
+		return derivedKeyEntry, nil
+	}
+
+	return derivedKeyEntry, errors.Wrapf(RuleErrorDerivedKeyCoinLockupOperationNotAuthorized, ""+
+		"_checkCoinLockupTxnSpendingLimitAndUpdateDerivedKey: coin lockup operation (type %s) not authorized: ",
+		lockupOperation.ToString())
+}
+
+func _checkLimitKeyAndUpdateDerivedKeyEntry(key LockupLimitKey, derivedKeyEntry DerivedKeyEntry) bool {
+	if derivedKeyEntry.TransactionSpendingLimitTracker == nil ||
+		derivedKeyEntry.TransactionSpendingLimitTracker.LockupLimitMap == nil {
+		return false
+	}
+	// If the key is present in the LockupLimitMap...
+	lockupOperationLimit, lockupOperationLimitExists :=
+		derivedKeyEntry.TransactionSpendingLimitTracker.LockupLimitMap[key]
+	if !lockupOperationLimitExists || lockupOperationLimit <= 0 {
+		return false
+	}
+	// If this is the last operation allowed for this key, we delete the key from the map.
+	if lockupOperationLimit == 1 {
+		delete(derivedKeyEntry.TransactionSpendingLimitTracker.LockupLimitMap, key)
+	} else {
+		// Otherwise we decrement the number of operations remaining for this key
+		derivedKeyEntry.TransactionSpendingLimitTracker.LockupLimitMap[key]--
+	}
+	// Return true because we found the key and decremented the remaining operations
+	return true
 }

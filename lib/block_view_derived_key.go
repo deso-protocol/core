@@ -189,6 +189,7 @@ func (bav *UtxoView) _connectAuthorizeDerivedKey(
 			AssociationLimitMap:          make(map[AssociationLimitKey]uint64),
 			AccessGroupMap:               make(map[AccessGroupLimitKey]uint64),
 			AccessGroupMemberMap:         make(map[AccessGroupMemberLimitKey]uint64),
+			LockupLimitMap:               make(map[LockupLimitKey]uint64),
 			StakeLimitMap:                make(map[StakeLimitKey]*uint256.Int),
 			UnstakeLimitMap:              make(map[StakeLimitKey]*uint256.Int),
 			UnlockStakeLimitMap:          make(map[StakeLimitKey]uint64),
@@ -312,6 +313,21 @@ func (bav *UtxoView) _connectAuthorizeDerivedKey(
 
 					// ====== Proof of Stake State Setup Fork ======
 					if blockHeight >= bav.Params.ForkHeights.ProofOfStake1StateSetupBlockHeight {
+						// LockupLimitMap
+						for lockupLimitKey, lockupLimit := range transactionSpendingLimit.LockupLimitMap {
+							// Check for key validity
+							if lockupLimitKey.ScopeType == LockupLimitScopeTypeAnyCoins &&
+								!lockupLimitKey.ProfilePKID.IsZeroPKID() {
+								return 0, 0, nil,
+									errors.New("error creating Lockups spending limit: cannot " +
+										"specify a lockup profile PKID if ScopeType is Any")
+							}
+							if lockupLimit == 0 {
+								delete(transactionSpendingLimit.LockupLimitMap, lockupLimitKey)
+							} else {
+								transactionSpendingLimit.LockupLimitMap[lockupLimitKey] = lockupLimit
+							}
+						}
 						// StakeLimitMap
 						for stakeLimitKey, stakingLimit := range transactionSpendingLimit.StakeLimitMap {
 							if err = bav.IsValidStakeLimitKey(txn.PublicKey, stakeLimitKey); err != nil {

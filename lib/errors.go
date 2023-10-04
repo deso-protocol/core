@@ -452,15 +452,17 @@ const (
 	RuleErrorOldToPublicKeyHasDeletedPKID   RuleError = "RuleErrorOldToPublicKeyHasDeletedPKID"
 
 	// Derived Key Transaction Spending Limits
-	RuleErrorDerivedKeyTxnTypeNotAuthorized              RuleError = "RuleErrorDerivedKeyTxnTypeNotAuthorized"
-	RuleErrorDerivedKeyTxnSpendsMoreThanGlobalDESOLimit  RuleError = "RuleErrorDerivedKeyTxnSpendsMoreThanGlobalDESOLimit"
-	RuleErrorDerivedKeyInvalidCreatorCoinLimitOperation  RuleError = "RuleErrorInvalidCreatorCoinLimitOperation"
-	RuleErrorDerivedKeyInvalidDAOCoinLimitOperation      RuleError = "RuleErrorInvalidDAOCoinLimitOperation"
-	RuleErrorDerivedKeyNFTOperationNotAuthorized         RuleError = "RuleErrorDerivedKeyNFTOperationNotAuthorized"
-	RuleErrorDerivedKeyCreatorCoinOperationNotAuthorized RuleError = "RuleErrorDerivedKeyCreatorCoinOperationNotAuthorized"
-	RuleErrorDerivedKeyDAOCoinOperationNotAuthorized     RuleError = "RuleErrorDerivedKeyDAOCoinOperationNotAuthorized"
-	RuleErrorDerivedKeyInvalidDAOCoinLimitOrderOrderID   RuleError = "RuleErrorDerivedKeyInvalidDAOCoinLimitOrderOrderID"
-	RuleErrorDerivedKeyDAOCoinLimitOrderNotAuthorized    RuleError = "RuleErrorDerivedKeyDAOCoinLimitOrderNotAuthorized"
+	RuleErrorDerivedKeyTxnTypeNotAuthorized                  RuleError = "RuleErrorDerivedKeyTxnTypeNotAuthorized"
+	RuleErrorDerivedKeyTxnSpendsMoreThanGlobalDESOLimit      RuleError = "RuleErrorDerivedKeyTxnSpendsMoreThanGlobalDESOLimit"
+	RuleErrorDerivedKeyInvalidCreatorCoinLimitOperation      RuleError = "RuleErrorInvalidCreatorCoinLimitOperation"
+	RuleErrorDerivedKeyInvalidDAOCoinLimitOperation          RuleError = "RuleErrorInvalidDAOCoinLimitOperation"
+	RuleErrorDerivedKeyNFTOperationNotAuthorized             RuleError = "RuleErrorDerivedKeyNFTOperationNotAuthorized"
+	RuleErrorDerivedKeyCreatorCoinOperationNotAuthorized     RuleError = "RuleErrorDerivedKeyCreatorCoinOperationNotAuthorized"
+	RuleErrorDerivedKeyDAOCoinOperationNotAuthorized         RuleError = "RuleErrorDerivedKeyDAOCoinOperationNotAuthorized"
+	RuleErrorDerivedKeyInvalidDAOCoinLimitOrderOrderID       RuleError = "RuleErrorDerivedKeyInvalidDAOCoinLimitOrderOrderID"
+	RuleErrorDerivedKeyDAOCoinLimitOrderNotAuthorized        RuleError = "RuleErrorDerivedKeyDAOCoinLimitOrderNotAuthorized"
+	RuleErrorDerivedKeyCoinLockupOperationNotAuthorized      RuleError = "RuleErrorDerivedKeyCoinLockupOperationNotAuthorized"
+	RuleErrorDerivedKeyCoinLockupOperationInvalidProfilePKID RuleError = "RuleErrorDerivedKeyCoinLockupOperationInvalidProfilePKID"
 
 	// Association Errors
 	RuleErrorAssociationBeforeBlockHeight     RuleError = "RuleErrorAssociationBeforeBlockHeight"
