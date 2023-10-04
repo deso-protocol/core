@@ -3,6 +3,7 @@
 package lib
 
 import (
+	"bytes"
 	"github.com/deso-protocol/core/bls"
 	"github.com/deso-protocol/core/collections/bitset"
 	"github.com/stretchr/testify/require"
@@ -279,6 +280,81 @@ func TestValidateBlockHeight(t *testing.T) {
 	bc.blockIndex = map[BlockHash]*BlockNode{}
 	err = bc.validateBlockHeight(block)
 	require.Equal(t, err, RuleErrorMissingParentBlock)
+}
+
+func TestAddBlockToBlockIndex(t *testing.T) {
+	bc, _, _ := NewTestBlockchain(t)
+	hash := NewBlockHash(RandomBytes(32))
+	genesisBlockNode := NewPoSBlockNode(nil, hash, 1, &MsgDeSoHeader{
+		Version:                      2,
+		Height:                       1,
+		ProposedInView:               1,
+		ValidatorsVoteQC:             nil,
+		ValidatorsTimeoutAggregateQC: nil,
+	}, StatusBlockValidated, COMMITTED)
+	_ = genesisBlockNode
+	derefedHash := *hash
+	bc.blockIndex = map[BlockHash]*BlockNode{
+		derefedHash: genesisBlockNode,
+	}
+	proposerVotingPublicKey := _generateRandomBLSPrivateKey(t)
+	dummySig, err := proposerVotingPublicKey.Sign(RandomBytes(32))
+	require.NoError(t, err)
+	block := &MsgDeSoBlock{
+		Header: &MsgDeSoHeader{
+			Version:                 2,
+			PrevBlockHash:           hash,
+			TstampNanoSecs:          uint64(time.Now().UnixNano()),
+			Height:                  2,
+			ProposerPublicKey:       NewPublicKey(RandomBytes(33)),
+			ProposerVotingPublicKey: proposerVotingPublicKey.PublicKey(),
+			ProposerRandomSeedHash:  &RandomSeedHash{},
+			ProposedInView:          1,
+			ValidatorsVoteQC: &QuorumCertificate{
+				BlockHash:      NewBlockHash(RandomBytes(32)),
+				ProposedInView: 1,
+				ValidatorsVoteAggregatedSignature: &AggregatedBLSSignature{
+					SignersList: bitset.NewBitset(),
+					Signature:   dummySig,
+				},
+			},
+			ValidatorsTimeoutAggregateQC: &TimeoutAggregateQuorumCertificate{
+				TimedOutView: 2,
+				ValidatorsHighQC: &QuorumCertificate{
+					BlockHash:      NewBlockHash(RandomBytes(32)),
+					ProposedInView: 1,
+					ValidatorsVoteAggregatedSignature: &AggregatedBLSSignature{
+						SignersList: bitset.NewBitset(),
+						Signature:   dummySig,
+					},
+				},
+				ValidatorsTimeoutHighQCViews: []uint64{28934},
+				ValidatorsTimeoutAggregatedSignature: &AggregatedBLSSignature{
+					SignersList: bitset.NewBitset(),
+					Signature:   dummySig,
+				},
+			},
+			ProposerVotePartialSignature: dummySig,
+		},
+		Txns: nil,
+	}
+	err = bc.addBlockToBlockIndex(block)
+	require.Nil(t, err)
+	newHash, err := block.Hash()
+	require.NoError(t, err)
+	// Check the block index
+	blockNode, exists := bc.blockIndex[*newHash]
+	require.True(t, exists)
+	require.True(t, bytes.Equal(blockNode.Hash[:], newHash[:]))
+
+	// Check the uncommitted blocks map
+	uncommittedBlock, uncommittedExists := bc.uncommittedBlocksMap[*newHash]
+	require.True(t, uncommittedExists)
+	uncommittedBytes, err := uncommittedBlock.ToBytes(false)
+	require.NoError(t, err)
+	origBlockBytes, err := block.ToBytes(false)
+	require.NoError(t, err)
+	require.True(t, bytes.Equal(uncommittedBytes, origBlockBytes))
 }
 
 func _generateRandomBLSPrivateKey(t *testing.T) *bls.PrivateKey {

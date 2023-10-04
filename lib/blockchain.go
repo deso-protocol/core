@@ -696,8 +696,9 @@ func NewBlockchain(
 		eventManager:                    eventManager,
 		archivalMode:                    archivalMode,
 
-		blockIndex:   make(map[BlockHash]*BlockNode),
-		bestChainMap: make(map[BlockHash]*BlockNode),
+		blockIndex:           make(map[BlockHash]*BlockNode),
+		uncommittedBlocksMap: make(map[BlockHash]*MsgDeSoBlock),
+		bestChainMap:         make(map[BlockHash]*BlockNode),
 
 		bestHeaderChainMap: make(map[BlockHash]*BlockNode),
 
