@@ -106,10 +106,11 @@ func (as *aggregatedSignature) GetSignature() *bls.Signature {
 //////////////////////////////////////////////////////////
 
 type block struct {
-	blockHash BlockHash
-	height    uint64
-	view      uint64
-	qc        QuorumCertificate
+	blockHash   BlockHash
+	height      uint64
+	view        uint64
+	qc          QuorumCertificate
+	aggregateQC AggregateQuorumCertificate
 }
 
 func (b *block) GetBlockHash() BlockHash {
@@ -125,6 +126,9 @@ func (b *block) GetView() uint64 {
 }
 
 func (b *block) GetQC() QuorumCertificate {
+	if isInterfaceNil(b.qc) {
+		return b.aggregateQC.GetHighQC()
+	}
 	return b.qc
 }
 
