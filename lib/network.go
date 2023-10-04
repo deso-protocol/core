@@ -255,8 +255,12 @@ const (
 	TxnTypeUnstake                      TxnType = 37
 	TxnTypeUnlockStake                  TxnType = 38
 	TxnTypeUnjailValidator              TxnType = 39
+	TxnTypeCoinLockup                   TxnType = 40
+	TxnTypeUpdateCoinLockupParams       TxnType = 41
+	TxnTypeCoinLockupTransfer           TxnType = 42
+	TxnTypeCoinUnlock                   TxnType = 43
 
-	// NEXT_ID = 40
+	// NEXT_ID = 44
 )
 
 type TxnString string
@@ -302,6 +306,10 @@ const (
 	TxnStringUnstake                      TxnString = "UNSTAKE"
 	TxnStringUnlockStake                  TxnString = "UNLOCK_STAKE"
 	TxnStringUnjailValidator              TxnString = "UNJAIL_VALIDATOR"
+	TxnStringCoinLockup                   TxnString = "COIN_LOCKUP"
+	TxnStringUpdateCoinLockupParams       TxnString = "UPDATE_COIN_LOCKUP_PARAMS"
+	TxnStringCoinLockupTransfer           TxnString = "COIN_LOCKUP_TRANSFER"
+	TxnStringCoinUnlock                   TxnString = "COIN_UNLOCK"
 )
 
 var (
@@ -315,6 +323,7 @@ var (
 		TxnTypeDeleteUserAssociation, TxnTypeCreatePostAssociation, TxnTypeDeletePostAssociation,
 		TxnTypeAccessGroup, TxnTypeAccessGroupMembers, TxnTypeNewMessage, TxnTypeRegisterAsValidator,
 		TxnTypeUnregisterAsValidator, TxnTypeStake, TxnTypeUnstake, TxnTypeUnlockStake, TxnTypeUnjailValidator,
+		TxnTypeCoinLockup, TxnTypeUpdateCoinLockupParams, TxnTypeCoinLockupTransfer, TxnTypeCoinUnlock,
 	}
 	AllTxnString = []TxnString{
 		TxnStringUnset, TxnStringBlockReward, TxnStringBasicTransfer, TxnStringBitcoinExchange, TxnStringPrivateMessage,
@@ -326,6 +335,7 @@ var (
 		TxnStringDeleteUserAssociation, TxnStringCreatePostAssociation, TxnStringDeletePostAssociation,
 		TxnStringAccessGroup, TxnStringAccessGroupMembers, TxnStringNewMessage, TxnStringRegisterAsValidator,
 		TxnStringUnregisterAsValidator, TxnStringStake, TxnStringUnstake, TxnStringUnlockStake, TxnStringUnjailValidator,
+		TxnStringCoinLockup, TxnStringUpdateCoinLockupParams, TxnStringCoinLockupTransfer, TxnStringCoinUnlock,
 	}
 )
 
@@ -417,6 +427,14 @@ func (txnType TxnType) GetTxnString() TxnString {
 		return TxnStringUnlockStake
 	case TxnTypeUnjailValidator:
 		return TxnStringUnjailValidator
+	case TxnTypeCoinLockup:
+		return TxnStringCoinLockup
+	case TxnTypeUpdateCoinLockupParams:
+		return TxnStringUpdateCoinLockupParams
+	case TxnTypeCoinLockupTransfer:
+		return TxnStringCoinLockupTransfer
+	case TxnTypeCoinUnlock:
+		return TxnStringCoinUnlock
 	default:
 		return TxnStringUndefined
 	}
@@ -502,6 +520,14 @@ func GetTxnTypeFromString(txnString TxnString) TxnType {
 		return TxnTypeUnlockStake
 	case TxnStringUnjailValidator:
 		return TxnTypeUnjailValidator
+	case TxnStringCoinLockup:
+		return TxnTypeCoinLockup
+	case TxnStringUpdateCoinLockupParams:
+		return TxnTypeUpdateCoinLockupParams
+	case TxnStringCoinLockupTransfer:
+		return TxnTypeCoinLockupTransfer
+	case TxnStringCoinUnlock:
+		return TxnTypeCoinUnlock
 	default:
 		// TxnTypeUnset means we couldn't find a matching txn type
 		return TxnTypeUnset
@@ -595,6 +621,14 @@ func NewTxnMetadata(txType TxnType) (DeSoTxnMetadata, error) {
 		return (&UnlockStakeMetadata{}).New(), nil
 	case TxnTypeUnjailValidator:
 		return (&UnjailValidatorMetadata{}).New(), nil
+	case TxnTypeCoinLockup:
+		return (&CoinLockupMetadata{}).New(), nil
+	case TxnTypeUpdateCoinLockupParams:
+		return (&UpdateCoinLockupParamsMetadata{}).New(), nil
+	case TxnTypeCoinLockupTransfer:
+		return (&CoinLockupTransferMetadata{}).New(), nil
+	case TxnTypeCoinUnlock:
+		return (&CoinUnlockMetadata{}).New(), nil
 	default:
 		return nil, fmt.Errorf("NewTxnMetadata: Unrecognized TxnType: %v; make sure you add the new type of transaction to NewTxnMetadata", txType)
 	}

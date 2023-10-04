@@ -559,7 +559,21 @@ type DBPrefixes struct {
 	// Note, we parse the ValidatorPKID and StakerPKID from the key.
 	PrefixSnapshotStakeToRewardByValidatorAndStaker []byte `prefix_id:"[90]" is_state:"true"`
 
-	// NEXT_TAG: 91
+	// PrefixLockedBalanceEntryByHODLerPKIDProfilePKIDExpirationTimestampNanoSecs:
+	// Retrieves LockedBalanceEntries that may or may not be claimable for unlock.
+	// LockedBalanceEntries can be retrieved by HodlerPKID and CreatorPKID are have their
+	// corresponding unlock timestamp appended to sort by timestamp.
+	// Prefix, <HodlerPKID [33]byte>, <ProfilePKID [33]byte>, <UnlockTimestampUnixNanoSecs int64> -> <LockedBalanceEntry>
+	PrefixLockedBalanceEntryByHODLerPKIDProfilePKIDExpirationTimestampNanoSecs []byte `prefix_id:"[91]" is_state:"true"`
+
+	// PrefixLockupYieldCurvePointByProfilePKIDAndDurationNanoSecs:
+	// Retrieves a LockupYieldCurvePoint.
+	// The structure of the key enables quick lookups for a (ProfilePKID, Duration) pair as well
+	// as quick construction of yield curve plots over time.
+	// Prefix, <ProfilePKID [33]byte>, <LockupDurationNanoSecs int64> -> <LockupYieldCurvePoint>
+	PrefixLockupYieldCurvePointByProfilePKIDAndDurationNanoSecs []byte `prefix_id:"[92]" is_state:"true"`
+
+	// NEXT_TAG: 93
 }
 
 // StatePrefixToDeSoEncoder maps each state prefix to a DeSoEncoder type that is stored under that prefix.
@@ -800,6 +814,12 @@ func StatePrefixToDeSoEncoder(prefix []byte) (_isEncoder bool, _encoder DeSoEnco
 	} else if bytes.Equal(prefix, Prefixes.PrefixSnapshotStakeToRewardByValidatorAndStaker) {
 		// prefix_id:"[90]"
 		return true, &StakeEntry{}
+	} else if bytes.Equal(prefix, Prefixes.PrefixLockedBalanceEntryByHODLerPKIDProfilePKIDExpirationTimestampNanoSecs) {
+		// prefix_id:"[91]"
+		return true, &LockedBalanceEntry{}
+	} else if bytes.Equal(prefix, Prefixes.PrefixLockupYieldCurvePointByProfilePKIDAndDurationNanoSecs) {
+		// prefix_id:"[92]"
+		return true, &LockupYieldCurvePoint{}
 	}
 
 	return true, nil
