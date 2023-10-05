@@ -3898,6 +3898,10 @@ type GlobalParamsEntry struct {
 	// allow a validator to be inactive for (neither voting nor proposing
 	// blocks) before they are jailed.
 	JailInactiveValidatorGracePeriodEpochs uint64
+
+	// LockedDESOTransferRestrictions is the transfer restrictions on Locked raw DESO.
+	// We place it here to prevent the creation of a ZeroPKID profile entry.
+	LockedDESOTransferRestrictions TransferRestrictionStatus
 }
 
 func (gp *GlobalParamsEntry) Copy() *GlobalParamsEntry {

@@ -559,12 +559,12 @@ type DBPrefixes struct {
 	// Note, we parse the ValidatorPKID and StakerPKID from the key.
 	PrefixSnapshotStakeToRewardByValidatorAndStaker []byte `prefix_id:"[90]" is_state:"true"`
 
-	// PrefixLockedBalanceEntryByHODLerPKIDProfilePKIDExpirationTimestampNanoSecs:
+	// PrefixLockedBalanceEntryByHODLerPKIDProfilePKIDUnlockTimestampNanoSecs:
 	// Retrieves LockedBalanceEntries that may or may not be claimable for unlock.
 	// LockedBalanceEntries can be retrieved by HodlerPKID and CreatorPKID are have their
 	// corresponding unlock timestamp appended to sort by timestamp.
-	// Prefix, <HodlerPKID [33]byte>, <ProfilePKID [33]byte>, <UnlockTimestampUnixNanoSecs int64> -> <LockedBalanceEntry>
-	PrefixLockedBalanceEntryByHODLerPKIDProfilePKIDExpirationTimestampNanoSecs []byte `prefix_id:"[91]" is_state:"true"`
+	// Prefix, <HodlerPKID [33]byte>, <ProfilePKID [33]byte>, <UnlockTimestampNanoSecs int64> -> <LockedBalanceEntry>
+	PrefixLockedBalanceEntryByHODLerPKIDProfilePKIDUnlockTimestampNanoSecs []byte `prefix_id:"[91]" is_state:"true"`
 
 	// PrefixLockupYieldCurvePointByProfilePKIDAndDurationNanoSecs:
 	// Retrieves a LockupYieldCurvePoint.
@@ -814,7 +814,7 @@ func StatePrefixToDeSoEncoder(prefix []byte) (_isEncoder bool, _encoder DeSoEnco
 	} else if bytes.Equal(prefix, Prefixes.PrefixSnapshotStakeToRewardByValidatorAndStaker) {
 		// prefix_id:"[90]"
 		return true, &StakeEntry{}
-	} else if bytes.Equal(prefix, Prefixes.PrefixLockedBalanceEntryByHODLerPKIDProfilePKIDExpirationTimestampNanoSecs) {
+	} else if bytes.Equal(prefix, Prefixes.PrefixLockedBalanceEntryByHODLerPKIDProfilePKIDUnlockTimestampNanoSecs) {
 		// prefix_id:"[91]"
 		return true, &LockedBalanceEntry{}
 	} else if bytes.Equal(prefix, Prefixes.PrefixLockupYieldCurvePointByProfilePKIDAndDurationNanoSecs) {
@@ -10688,14 +10688,14 @@ func DBDeletePostAssociationWithTxn(txn *badger.Txn, snap *Snapshot, association
 // LockedBalanceEntry DB Key Operations
 
 func _dbKeyForLockedBalanceEntry(lockedBalanceEntry LockedBalanceEntry) []byte {
-	key := append([]byte{}, Prefixes.PrefixLockedBalanceEntryByHODLerPKIDProfilePKIDExpirationTimestampNanoSecs...)
+	key := append([]byte{}, Prefixes.PrefixLockedBalanceEntryByHODLerPKIDProfilePKIDUnlockTimestampNanoSecs...)
 	key = append(key, lockedBalanceEntry.HODLerPKID[:]...)
 	key = append(key, lockedBalanceEntry.ProfilePKID[:]...)
-	return append(key, EncodeUint64(uint64(lockedBalanceEntry.ExpirationTimestampNanoSecs))...)
+	return append(key, EncodeUint64(uint64(lockedBalanceEntry.UnlockTimestampNanoSecs))...)
 }
 
 func DBPrefixKeyForLockedBalanceEntryByHODLerPKIDandProfilePKID(lockedBalanceEntry *LockedBalanceEntry) []byte {
-	data := append([]byte{}, Prefixes.PrefixLockedBalanceEntryByHODLerPKIDProfilePKIDExpirationTimestampNanoSecs...)
+	data := append([]byte{}, Prefixes.PrefixLockedBalanceEntryByHODLerPKIDProfilePKIDUnlockTimestampNanoSecs...)
 	data = append(data, lockedBalanceEntry.HODLerPKID.ToBytes()...)
 	data = append(data, lockedBalanceEntry.ProfilePKID.ToBytes()...)
 	return data
@@ -10735,46 +10735,51 @@ func DbDeleteLockedBalanceEntryWithTxn(txn *badger.Txn, snap *Snapshot, lockedBa
 		return errors.Wrapf(err, "DbDeleteRepostMappingsWithTxn: Deleting "+
 			"locked balance entry for HODLer PKID %s, Profile PKID %s, expiration timestamp %d",
 			lockedBalanceEntry.HODLerPKID.ToString(), lockedBalanceEntry.ProfilePKID.ToString(),
-			lockedBalanceEntry.ExpirationTimestampNanoSecs)
+			lockedBalanceEntry.UnlockTimestampNanoSecs)
 	}
 	return nil
 }
 
 // LockedBalanceEntry Get Operations (Badger Reads)
 
-func DBGetLockedBalanceEntryForHODLerPKIDProfilePKIDExpirationTimestampNanoSecs(handle *badger.DB, snap *Snapshot,
-	hodlerPKID *PKID, profilePKID *PKID, expirationTimestamp int64) *LockedBalanceEntry {
+func DBGetLockedBalanceEntryForHODLerPKIDProfilePKIDUnlockTimestampNanoSecs(
+	handle *badger.DB, snap *Snapshot, hodlerPKID *PKID, profilePKID *PKID,
+	unlockTimestamp int64) (_lockedBalanceEntry *LockedBalanceEntry, _err error) {
 
 	var ret *LockedBalanceEntry
-	handle.View(func(txn *badger.Txn) error {
-		ret = DBGetLockedBalanceEntryForHODLerPKIDProfilePKIDExpirationTimestampNanoSecsWithTxn(
-			txn, snap, hodlerPKID, profilePKID, expirationTimestamp)
-		return nil
+	err := handle.View(func(txn *badger.Txn) error {
+		var err error
+		ret, err = DBGetLockedBalanceEntryForHODLerPKIDProfilePKIDUnlockTimestampNanoSecsWithTxn(
+			txn, snap, hodlerPKID, profilePKID, unlockTimestamp)
+		return err
 	})
-	return ret
+	return ret, err
 }
 
-func DBGetLockedBalanceEntryForHODLerPKIDProfilePKIDExpirationTimestampNanoSecsWithTxn(txn *badger.Txn, snap *Snapshot,
-	hodlerPKID *PKID, profilePKID *PKID, expirationTimestamp int64) *LockedBalanceEntry {
+func DBGetLockedBalanceEntryForHODLerPKIDProfilePKIDUnlockTimestampNanoSecsWithTxn(
+	txn *badger.Txn, snap *Snapshot, hodlerPKID *PKID, profilePKID *PKID,
+	unlockTimestamp int64) (_lockedBalanceEntry *LockedBalanceEntry, _err error) {
 
 	key := _dbKeyForLockedBalanceEntry(LockedBalanceEntry{
-		HODLerPKID:                  hodlerPKID,
-		ProfilePKID:                 profilePKID,
-		ExpirationTimestampNanoSecs: expirationTimestamp,
+		HODLerPKID:              hodlerPKID,
+		ProfilePKID:             profilePKID,
+		UnlockTimestampNanoSecs: unlockTimestamp,
 	})
+
+	// Get the key from the db.
 	lockedBalanceEntryBytes, err := DBGetWithTxn(txn, snap, key)
-	if err != nil {
-		return &LockedBalanceEntry{
-			HODLerPKID:                  hodlerPKID.NewPKID(),
-			ProfilePKID:                 profilePKID.NewPKID(),
-			ExpirationTimestampNanoSecs: expirationTimestamp,
-			BalanceBaseUnits:            *uint256.NewInt(),
-		}
+	if err == badger.ErrKeyNotFound {
+		return nil, nil
 	}
+	if err != nil {
+		return nil,
+			errors.Wrap(err, "DBGetLockedBalanceEntryForHODLerPKIDProfilePKIDUnlockTimestampNanoSecsWithTxn")
+	}
+
 	lockedBalanceEntryObj := &LockedBalanceEntry{}
 	rr := bytes.NewReader(lockedBalanceEntryBytes)
 	DecodeFromBytes(lockedBalanceEntryObj, rr)
-	return lockedBalanceEntryObj
+	return lockedBalanceEntryObj, nil
 }
 
 func DBGetUnlockableLockedBalanceEntries(
@@ -10802,7 +10807,7 @@ func DBGetUnlockableLockedBalanceEntriesWithTxn(
 	currentTimestampUnixNanoSecs int64,
 ) ([]*LockedBalanceEntry, error) {
 	// Retrieve all LockedBalanceEntries from db matching hodlerPKID, profilePKID, and
-	// ExpirationTimestampNanoSecs <= currentTimestampUnixNanoSecs.
+	// UnlockTimestampNanoSecs <= currentTimestampUnixNanoSecs.
 	// NOTE: While ideally we would start with <prefix, HODLerPKID, ProfilePKID> and
 	//       seek till <prefix, HODLerPKID, ProfilePKID, currentTimestampUnixNanoSecs>,
 	//       Badger does not support this functionality as the ValidForPrefix() function
@@ -10817,9 +10822,9 @@ func DBGetUnlockableLockedBalanceEntriesWithTxn(
 
 	// Start at <prefix, HODLerPKID, ProfilePKID, CurrentTimestampNanoSecs>
 	startKey := _dbKeyForLockedBalanceEntry(LockedBalanceEntry{
-		HODLerPKID:                  hodlerPKID,
-		ProfilePKID:                 profilePKID,
-		ExpirationTimestampNanoSecs: currentTimestampUnixNanoSecs,
+		HODLerPKID:              hodlerPKID,
+		ProfilePKID:             profilePKID,
+		UnlockTimestampNanoSecs: currentTimestampUnixNanoSecs,
 	})
 
 	// Valid for prefix <prefix, HODLerPKID, ProfilePKID>
@@ -10828,7 +10833,7 @@ func DBGetUnlockableLockedBalanceEntriesWithTxn(
 		ProfilePKID: profilePKID,
 	})
 
-	// Create an iterator. We set the iterator to reverse in o
+	// Create an iterator. We set the iterator to reverse as per the comment at the top of this function.
 	opts := badger.DefaultIteratorOptions
 	opts.Reverse = true
 	iterator := txn.NewIterator(opts)
@@ -10854,7 +10859,8 @@ func DBGetUnlockableLockedBalanceEntriesWithTxn(
 				"error decoding LockedBalanceEntry: ")
 		}
 
-		if lockedBalanceEntry.ExpirationTimestampNanoSecs < currentTimestampUnixNanoSecs {
+		// This check is redundant. It's included to be extra safe only unlockable locked balance entries are included.
+		if lockedBalanceEntry.UnlockTimestampNanoSecs < currentTimestampUnixNanoSecs {
 			lockedBalanceEntries = append(lockedBalanceEntries)
 		}
 	}
@@ -10886,6 +10892,13 @@ func _dbKeyForLockupYieldCurvePoint(lockupYieldCurvePoint LockupYieldCurvePoint)
 	binary.BigEndian.PutUint64(lockupDurationBytes, uint64(lockupYieldCurvePoint.LockupDurationNanoSecs))
 	key = append(key, lockupDurationBytes...)
 
+	return key
+}
+
+func DBPrefixKeyForLockupYieldCurvePointsByProfilePKID(profilePKID *PKID) []byte {
+	// Make a copy to avoid multiple calls to this function re-using the same slice.
+	prefixCopy := append([]byte{}, Prefixes.PrefixLockupYieldCurvePointByProfilePKIDAndDurationNanoSecs...)
+	key := append(prefixCopy, profilePKID[:]...)
 	return key
 }
 
@@ -10930,6 +10943,55 @@ func DbDeleteLockupYieldCurvePointWithTxn(txn *badger.Txn, snap *Snapshot,
 }
 
 // LockupYieldCurvePoint Get Operations (Badger Reads)
+
+func DBGetAllYieldCurvePointsByProfilePKID(handle *badger.DB, snap *Snapshot,
+	profilePKID *PKID) (_lockupYieldCurvePoints []*LockupYieldCurvePoint, _err error) {
+	var lockupYieldCurvePoints []*LockupYieldCurvePoint
+	err := handle.View(func(txn *badger.Txn) error {
+		var err error
+		lockupYieldCurvePoints, err = DBGetAllYieldCurvePointsByProfilePKIDWithTxn(
+			txn, snap, profilePKID)
+		return err
+	})
+	return lockupYieldCurvePoints, err
+}
+
+func DBGetAllYieldCurvePointsByProfilePKIDWithTxn(txn *badger.Txn, snap *Snapshot,
+	profilePKID *PKID) (_lockupYieldCurvePoints []*LockupYieldCurvePoint, _err error) {
+	// Construct the key prefix.
+	startKey := DBPrefixKeyForLockupYieldCurvePointsByProfilePKID(profilePKID)
+
+	// Create an iterator.
+	opts := badger.DefaultIteratorOptions
+	iterator := txn.NewIterator(opts)
+	defer iterator.Close()
+
+	// Store matching LockupYieldCurvePoints to return.
+	var lockupYieldCurvePoints []*LockupYieldCurvePoint
+
+	// Loop.
+	for iterator.Seek(startKey); iterator.ValidForPrefix(startKey); iterator.Next() {
+		// Retrieve the LockupYieldCurvePointBytes.
+		lockupYieldCurvePointBytes, err := iterator.Item().ValueCopy(nil)
+		if err != nil {
+			return nil, errors.Wrapf(err, "DBGetAllYieldCurvePointsByProfilePKIDWithTxn: "+
+				"error retrieveing LockupYieldCurvePoint: ")
+		}
+
+		// Convert LockedBalanceEntryBytes to LockedBalanceEntry.
+		rr := bytes.NewReader(lockupYieldCurvePointBytes)
+		lockupYieldCurvePoint, err := DecodeDeSoEncoder(&LockupYieldCurvePoint{}, rr)
+		if err != nil {
+			return nil, errors.Wrapf(err, "DBGetAllYieldCurvePointsByProfilePKIDWithTxn: "+
+				"error decoding LockupYieldCurvePoint: ")
+		}
+
+		// Append to the array to return.
+		lockupYieldCurvePoints = append(lockupYieldCurvePoints, lockupYieldCurvePoint)
+	}
+
+	return lockupYieldCurvePoints, nil
+}
 
 func DBGetYieldCurvePointsByProfilePKIDAndDurationNanoSecs(handle *badger.DB, snap *Snapshot, profilePKID *PKID,
 	lockupDurationNanoSecs int64) (_lockupYieldCurvePoint *LockupYieldCurvePoint) {
@@ -11015,6 +11077,10 @@ func DBGetLeftLockupYieldCurvePointWithTxn(txn *badger.Txn, snap *Snapshot, prof
 	leftLockupYieldCurvePointObj := &LockupYieldCurvePoint{}
 	rr := bytes.NewReader(leftLockupYieldCurvePointBytes)
 	DecodeFromBytes(leftLockupYieldCurvePointObj, rr)
+	if !leftLockupYieldCurvePointObj.ProfilePKID.Eq(profilePKID) {
+		return nil
+	}
+
 	return leftLockupYieldCurvePointObj
 }
 
@@ -11052,6 +11118,10 @@ func DBGetRightLockupYieldCurvePointWithTxn(txn *badger.Txn, snap *Snapshot, pro
 	rightLockupYieldCurvePointObj := &LockupYieldCurvePoint{}
 	rr := bytes.NewReader(rightLockupYieldCurvePointBytes)
 	DecodeFromBytes(rightLockupYieldCurvePointObj, rr)
+	if !rightLockupYieldCurvePointObj.ProfilePKID.Eq(profilePKID) {
+		return nil
+	}
+
 	return rightLockupYieldCurvePointObj
 }
 
