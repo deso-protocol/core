@@ -2,9 +2,12 @@ package lib
 
 import (
 	"bytes"
+	"fmt"
+	"github.com/dgraph-io/badger/v3"
 	"github.com/golang/glog"
 	"github.com/holiman/uint256"
 	"github.com/pkg/errors"
+	"sort"
 )
 
 //
@@ -121,7 +124,82 @@ func (bav *UtxoView) _deleteLockedBalanceEntry(lockedBalanceEntry *LockedBalance
 	bav._setLockedBalanceEntry(&tombstoneLockedBalanceEntry)
 }
 
-// TODO: Get Helper Functions for LockedBalanceEntry
+// Get Helper Functions for LockedBalanceEntry
+
+func (bav *UtxoView) GetLockedBalanceEntryForHODLerPKIDProfilePKIDExpirationTimestampNanoSecs(
+	hodlerPKID *PKID, profilePKID *PKID, expirationTimestampNanoSecs int64) (_lockedBalanceEntry *LockedBalanceEntry) {
+	// Create a key associated with the LockedBalanceEntry.
+	lockedBalanceEntryKey := (&LockedBalanceEntry{
+		HODLerPKID:                  hodlerPKID,
+		ProfilePKID:                 profilePKID,
+		ExpirationTimestampNanoSecs: expirationTimestampNanoSecs,
+	}).ToMapKey()
+
+	// Check if the key exists in the view.
+	if viewEntry, viewEntryExists :=
+		bav.LockedBalanceEntryKeyToLockedBalanceEntry[lockedBalanceEntryKey]; viewEntryExists {
+		return viewEntry
+	}
+
+	// No mapping exists in the view, check for an entry in the DB.
+	lockedBalanceEntry := DBGetLockedBalanceEntryForHODLerPKIDProfilePKIDExpirationTimestampNanoSecs(
+		bav.Handle, bav.Snapshot, hodlerPKID, profilePKID, expirationTimestampNanoSecs)
+
+	// Cache the DB entry in the in-memory map.
+	if lockedBalanceEntry != nil {
+		bav._setLockedBalanceEntry(lockedBalanceEntry)
+	}
+
+	return lockedBalanceEntry
+}
+
+func (bav *UtxoView) GetUnlockableLockedBalanceEntries(
+	hodlerPKID *PKID,
+	profilePKID *PKID,
+	currentTimestampNanoSecs int64,
+) ([]*LockedBalanceEntry, error) {
+	// Validate inputs.
+	if hodlerPKID == nil {
+		return nil, errors.New("UtxoView.GetUnlockableLockedBalanceEntries: nil hodlerPKID provided as input")
+	}
+	if profilePKID == nil {
+		return nil, errors.New("UtxoView.GetUnlockableLockedBalanceEntries: nil profilePKID provided as input")
+	}
+
+	// First, pull unlockable LockedBalanceEntries from the db and cache them in the UtxoView.
+	dbUnlockableLockedBalanceEntries, err := DBGetUnlockableLockedBalanceEntries(
+		bav.Handle, bav.Snapshot, hodlerPKID, profilePKID, currentTimestampNanoSecs)
+	if err != nil {
+		return nil, errors.Wrapf(err, "UtxoView.GetUnlockableLockedBalanceEntries")
+	}
+	for _, lockedBalanceEntry := range dbUnlockableLockedBalanceEntries {
+		// Cache results in the UtxoView.
+		if _, exists := bav.LockedBalanceEntryKeyToLockedBalanceEntry[lockedBalanceEntry.ToMapKey()]; !exists {
+			bav._setLockedBalanceEntry(lockedBalanceEntry)
+		}
+	}
+
+	// Then, pull unlockable LockedBalanceEntries from the UtxoView.
+	var unlockableLockedBalanceEntries []*LockedBalanceEntry
+	for _, lockedBalanceEntry := range bav.LockedBalanceEntryKeyToLockedBalanceEntry {
+		// Filter to matching LockedBalanceEntries.
+		if !lockedBalanceEntry.HODLerPKID.Eq(hodlerPKID) ||
+			!lockedBalanceEntry.ProfilePKID.Eq(profilePKID) ||
+			lockedBalanceEntry.ExpirationTimestampNanoSecs > currentTimestampNanoSecs ||
+			lockedBalanceEntry.BalanceBaseUnits.IsZero() ||
+			lockedBalanceEntry.isDeleted {
+			continue
+		}
+		unlockableLockedBalanceEntries = append(unlockableLockedBalanceEntries, lockedBalanceEntry)
+	}
+
+	// Sort UnlockableLockedBalanceEntries by timestamp ASC.
+	sort.Slice(unlockableLockedBalanceEntries, func(ii, jj int) bool {
+		return unlockableLockedBalanceEntries[ii].ExpirationTimestampNanoSecs <
+			unlockableLockedBalanceEntries[jj].ExpirationTimestampNanoSecs
+	})
+	return unlockableLockedBalanceEntries, nil
+}
 
 //
 // TYPES: LockupYieldCurvePoint
@@ -231,7 +309,96 @@ func (bav *UtxoView) _deleteLockupYieldCurvePoint(point *LockupYieldCurvePoint) 
 	bav._setLockupYieldCurvePoint(&tombstoneLockupYieldCurvePoint)
 }
 
-// TODO: Get Helper Functions for LockupYieldCurvePoint
+// Get Helper Functions for LockupYieldCurvePoint
+
+func (bav *UtxoView) GetYieldCurvePointByProfilePKIDAndDurationNanoSecs(profilePKID *PKID,
+	lockupDurationNanoSecs int64) (_lockupYieldCurvePoint *LockupYieldCurvePoint) {
+	var lockupYieldCurvePoint *LockupYieldCurvePoint
+
+	// Check the view for a yield curve point.
+	if _, pointsInView := bav.PKIDToLockupYieldCurvePointKeyToLockupYieldCurvePoints[*profilePKID]; pointsInView {
+		lockupYieldCurvePointKey := (&LockupYieldCurvePoint{
+			ProfilePKID:            profilePKID,
+			LockupDurationNanoSecs: lockupDurationNanoSecs,
+		}).ToMapKey()
+		if inMemoryYieldCurvePoint, pointExists :=
+			bav.PKIDToLockupYieldCurvePointKeyToLockupYieldCurvePoints[*profilePKID][lockupYieldCurvePointKey]; pointExists {
+			return inMemoryYieldCurvePoint
+		}
+	}
+
+	// No mapping exists in the view, check for an entry in the DB.
+	lockupYieldCurvePoint = DBGetYieldCurvePointsByProfilePKIDAndDurationNanoSecs(bav.GetDbAdapter().badgerDb,
+		bav.Snapshot, profilePKID, lockupDurationNanoSecs)
+
+	// Cache the DB entry in the in-memory map.
+	if lockupYieldCurvePoint != nil {
+		bav._setLockupYieldCurvePoint(lockupYieldCurvePoint)
+	}
+
+	return lockupYieldCurvePoint
+}
+
+func (bav *UtxoView) GetLocalYieldCurvePoints(profilePKID *PKID, lockupDuration int64) (
+	_leftLockupPoint *LockupYieldCurvePoint, _rightLockupPoint *LockupYieldCurvePoint) {
+	var leftLockupPoint *LockupYieldCurvePoint
+	var rightLockupPoint *LockupYieldCurvePoint
+
+	// Check the view for yield curve points.
+	if _, pointsInView := bav.PKIDToLockupYieldCurvePointKeyToLockupYieldCurvePoints[*profilePKID]; pointsInView {
+		for _, lockupYieldCurvePoint := range bav.PKIDToLockupYieldCurvePointKeyToLockupYieldCurvePoints[*profilePKID] {
+			// Check for nil pointer cases.
+			if lockupYieldCurvePoint.LockupDurationNanoSecs < lockupDuration && leftLockupPoint == nil {
+				leftLockupPoint = lockupYieldCurvePoint
+			}
+			if lockupYieldCurvePoint.LockupDurationNanoSecs >= lockupDuration && rightLockupPoint == nil {
+				rightLockupPoint = lockupYieldCurvePoint
+			}
+
+			// Check if the point is "more left" than the current left point.
+			if lockupYieldCurvePoint.LockupDurationNanoSecs < lockupDuration &&
+				lockupYieldCurvePoint.LockupDurationNanoSecs > leftLockupPoint.LockupDurationNanoSecs {
+				leftLockupPoint = lockupYieldCurvePoint.Copy()
+			}
+
+			// Check if the point is "more right" than the current right point.
+			if lockupYieldCurvePoint.LockupDurationNanoSecs >= lockupDuration &&
+				lockupYieldCurvePoint.LockupDurationNanoSecs < leftLockupPoint.LockupDurationNanoSecs {
+				rightLockupPoint = lockupYieldCurvePoint.Copy()
+			}
+		}
+	}
+
+	// Now we quickly fetch left and right local yield curve points from the DB using careful seek operations.
+	leftDBLockupPoint, rightDBLockupPoint := DBGetLocalYieldCurvePoints(
+		bav.GetDbAdapter().badgerDb, bav.Snapshot, profilePKID, lockupDuration)
+
+	// Check for nil pointer cases.
+	if leftDBLockupPoint != nil &&
+		leftDBLockupPoint.LockupDurationNanoSecs < lockupDuration {
+		leftLockupPoint = leftDBLockupPoint
+	}
+	if rightDBLockupPoint != nil &&
+		rightDBLockupPoint.LockupDurationNanoSecs >= lockupDuration {
+		rightLockupPoint = rightDBLockupPoint
+	}
+
+	// Check for an updated left and right yield curve point from the DB.
+	if leftDBLockupPoint != nil &&
+		leftDBLockupPoint.ProfilePKID.Eq(profilePKID) &&
+		leftDBLockupPoint.LockupDurationNanoSecs < lockupDuration &&
+		leftDBLockupPoint.LockupDurationNanoSecs > leftLockupPoint.LockupDurationNanoSecs {
+		leftLockupPoint = leftDBLockupPoint
+	}
+	if rightDBLockupPoint != nil &&
+		rightDBLockupPoint.ProfilePKID.Eq(profilePKID) &&
+		rightDBLockupPoint.LockupDurationNanoSecs >= lockupDuration &&
+		rightDBLockupPoint.LockupDurationNanoSecs < rightLockupPoint.LockupDurationNanoSecs {
+		rightLockupPoint = rightDBLockupPoint
+	}
+
+	return leftLockupPoint, rightLockupPoint
+}
 
 //
 // TYPES: CoinLockupMetadata
@@ -474,4 +641,88 @@ func (txnData *CoinUnlockMetadata) FromBytes(data []byte) error {
 
 func (txnData *CoinUnlockMetadata) New() DeSoTxnMetadata {
 	return &CoinUnlockMetadata{}
+}
+
+//
+// DB FLUSHES
+//
+
+func (bav *UtxoView) _flushLockedBalanceEntriesToDbWithTxn(txn *badger.Txn, blockHeight uint64) error {
+	// Go through all entries in the LockedBalanceEntryMapKeyToLockedBalanceEntry map.
+	for lockedBalanceEntryMapKeyIter, lockedBalanceEntry := range bav.LockedBalanceEntryKeyToLockedBalanceEntry {
+		lockedBalanceEntryKey := lockedBalanceEntryMapKeyIter
+
+		// Sanity check the key computed from the lockedBalanceEntry is equal
+		// to the lockedBalanceEntryKey that maps to that entry.
+		lockedBalanceEntryKeyInEntry := lockedBalanceEntry.ToMapKey()
+		if lockedBalanceEntryKeyInEntry != lockedBalanceEntryKey {
+			return fmt.Errorf("_flushLockedBalanceEntriesToDbWithTxn: LockedBalanceEntry has "+
+				"LockedBalanceEntryKey: %v, which doesn't match the LockedBalanceEntryMapKeyToLockedBalanceEntry map key %v",
+				&lockedBalanceEntryKeyInEntry, &lockedBalanceEntry)
+		}
+
+		// Delete the existing mappings in the db for this LockedBalanceEntry.
+		// They will be re-added if the corresponding entry in memory has isDeleted=false.
+		if err := DbDeleteLockedBalanceEntryWithTxn(txn, bav.Snapshot, *lockedBalanceEntry); err != nil {
+			return errors.Wrapf(
+				err, "_flushLockedBalanceEntriesToDbWithTxn: Problem deleting mappings "+
+					"for LockedBalanceEntry: %v", &lockedBalanceEntryKey)
+		}
+	}
+	for _, lockedBalanceEntry := range bav.LockedBalanceEntryKeyToLockedBalanceEntry {
+		if lockedBalanceEntry.isDeleted || lockedBalanceEntry.BalanceBaseUnits.IsZero() {
+			// We do nothing as we've already deleted the entry above or the balance is zero.
+		} else {
+			if err := DbPutLockedBalanceEntryMappingsWithTxn(txn, bav.Snapshot, blockHeight,
+				*lockedBalanceEntry); err != nil {
+				return errors.Wrapf(err, "_flushLockedBalanceEntriesToDbWithTxn")
+			}
+		}
+	}
+
+	// By here the LockedBalanceEntry mappings in the db should be up-to-date.
+	return nil
+}
+
+func (bav *UtxoView) _flushLockupYieldCurvePointEntriesToDbWithTxn(txn *badger.Txn, blockHeight uint64) error {
+	// Go through all PKIDs with changes to their yield curves.
+	for _, LockupYieldCurvePointMap := range bav.PKIDToLockupYieldCurvePointKeyToLockupYieldCurvePoints {
+		// Go through all LockupYieldCurvePoints in the LockupYieldCurvePoint map.
+		for lockupYieldCurvePointKey, lockupYieldCurvePoint := range LockupYieldCurvePointMap {
+
+			// Sanity check the key computed from the lockupYieldCurvePoint is equal
+			// to the lockupYieldCurvePointKey that maps to that entry.
+			lockupYieldCurvePointKeyInEntry := lockupYieldCurvePoint.ToMapKey()
+			if lockupYieldCurvePointKeyInEntry != lockupYieldCurvePointKey {
+				return fmt.Errorf("_flushYieldCurveEntriesToDbWithTxn: LockupYieldCurvePoint has "+
+					"LockupYieldCurvePoint: %v, which doesn't match the LockupYieldCurvePoint map key %v",
+					&lockupYieldCurvePointKeyInEntry, &lockupYieldCurvePointKey)
+			}
+
+			// Delete the existing mappings in the db for this LockupYieldCurvePoint.
+			// They will be re-added if the corresponding entry in memory has isDeleted=false.
+			if err := DbDeleteLockupYieldCurvePointWithTxn(txn, bav.Snapshot, *lockupYieldCurvePoint); err != nil {
+				return errors.Wrapf(
+					err, "_flushYieldCurveEntriesToDbWithTxn: Problem deleting mappings "+
+						"for LockupYieldCurvePoint: %v", &lockupYieldCurvePoint)
+			}
+		}
+	}
+	// Go through all PKIDs with changes to their yield curves.
+	for _, LockupYieldCurvePointMap := range bav.PKIDToLockupYieldCurvePointKeyToLockupYieldCurvePoints {
+		// Go through all LockupYieldCurvePoints in the LockupYieldCurvePoint map.
+		for _, lockupYieldCurvePoint := range LockupYieldCurvePointMap {
+			if lockupYieldCurvePoint.isDeleted {
+				// We do nothing as we've already deleted the entry above.
+			} else {
+				if err := DbPutLockupYieldCurvePointMappingsWithTxn(txn, bav.Snapshot, blockHeight,
+					*lockupYieldCurvePoint); err != nil {
+					return errors.Wrapf(err, "_flushYieldCurveEntriesToDbWithTxn")
+				}
+			}
+		}
+	}
+
+	// By here the LockupYieldCurvePoint mappings in the db should be up-to-date.
+	return nil
 }
