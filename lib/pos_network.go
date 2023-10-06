@@ -256,8 +256,8 @@ func (msg *MsgDeSoValidatorTimeout) FromBytes(data []byte) error {
 	}
 
 	// HighQC
-	msg.HighQC, err = DecodeQuorumCertificate(rr)
-	if err != nil {
+	msg.HighQC = &QuorumCertificate{}
+	if msg.HighQC.FromBytes(rr); err != nil {
 		return errors.Wrapf(err, "MsgDeSoValidatorTimeout.FromBytes: Error decoding HighQC")
 	}
 
@@ -340,26 +340,56 @@ func (qc *QuorumCertificate) ToBytes() ([]byte, error) {
 	return retBytes, nil
 }
 
-func DecodeQuorumCertificate(rr io.Reader) (*QuorumCertificate, error) {
-	var qc QuorumCertificate
+func (qc *QuorumCertificate) FromBytes(rr io.Reader) error {
 	var err error
 
 	qc.BlockHash, err = ReadBlockHash(rr)
 	if err != nil {
-		return nil, errors.Wrapf(err, "DecodeQuorumCertificate: Error decoding BlockHash")
+		return errors.Wrapf(err, "QuorumCertificate.FromBytes: Error decoding BlockHash")
 	}
 
 	qc.ProposedInView, err = ReadUvarint(rr)
 	if err != nil {
-		return nil, errors.Wrapf(err, "DecodeQuorumCertificate: Error decoding ProposedInView")
+		return errors.Wrapf(err, "QuorumCertificate.FromBytes: Error decoding ProposedInView")
 	}
 
 	qc.ValidatorsVoteAggregatedSignature = &AggregatedBLSSignature{}
 	if err = qc.ValidatorsVoteAggregatedSignature.FromBytes(rr); err != nil {
-		return nil, errors.Wrapf(err, "DecodeQuorumCertificate: Error decoding ValidatorsVoteAggregatedSignature")
+		return errors.Wrapf(err, "QuorumCertificate.FromBytes: Error decoding ValidatorsVoteAggregatedSignature")
 	}
 
-	return &qc, nil
+	return nil
+}
+
+func EncodeQuorumCertificate(qc *QuorumCertificate) ([]byte, error) {
+	if qc == nil {
+		return EncodeByteArray(nil), nil
+	}
+
+	encodedBytes, err := qc.ToBytes()
+	if err != nil {
+		return nil, errors.Wrapf(err, "EncodeQuorumCertificate: Error encoding qc")
+	}
+
+	return EncodeByteArray(encodedBytes), nil
+}
+
+func DecodeQuorumCertificate(rr io.Reader) (*QuorumCertificate, error) {
+	encodedBytes, err := DecodeByteArray(rr)
+	if err != nil {
+		return nil, errors.Wrapf(err, "DecodeQuorumCertificate: Error decoding encodedBytes")
+	}
+
+	if len(encodedBytes) == 0 {
+		return nil, nil
+	}
+
+	qc := &QuorumCertificate{}
+	if err := qc.FromBytes(bytes.NewReader(encodedBytes)); err != nil {
+		return nil, errors.Wrapf(err, "DecodeQuorumCertificate: Error decoding qc")
+	}
+
+	return qc, nil
 }
 
 // This is an aggregated BLS signature from a set of validators. Each validator's
@@ -530,8 +560,8 @@ func (aggQC *TimeoutAggregateQuorumCertificate) FromBytes(rr io.Reader) error {
 		return errors.Wrapf(err, "TimeoutAggregateQuorumCertificate.FromBytes: Error decoding TimedOutView")
 	}
 
-	aggQC.ValidatorsHighQC, err = DecodeQuorumCertificate(rr)
-	if err != nil {
+	aggQC.ValidatorsHighQC = &QuorumCertificate{}
+	if aggQC.ValidatorsHighQC.FromBytes(rr); err != nil {
 		return errors.Wrapf(err, "TimeoutAggregateQuorumCertificate.FromBytes: Error decoding ValidatorsHighQC")
 	}
 
@@ -548,14 +578,44 @@ func (aggQC *TimeoutAggregateQuorumCertificate) FromBytes(rr io.Reader) error {
 	return nil
 }
 
-// isEmpty returns true if the TimeoutAggregateQuorumCertificate is nil or if it
-// contains no data.
+// isEmpty returns true if the TimeoutAggregateQuorumCertificate is nil or if it contains no data.
 // Reference implementation: https://github.com/deso-protocol/hotstuff_pseudocode/blob/6409b51c3a9a953b383e90619076887e9cebf38d/fast_hotstuff_bls.go#L119
 func (aggQC *TimeoutAggregateQuorumCertificate) isEmpty() bool {
 	return aggQC == nil ||
 		aggQC.TimedOutView == 0 ||
 		aggQC.ValidatorsTimeoutAggregatedSignature == nil ||
 		aggQC.ValidatorsTimeoutAggregatedSignature.Signature == nil
+}
+
+func EncodeTimeoutAggregateQuorumCertificate(aggQC *TimeoutAggregateQuorumCertificate) ([]byte, error) {
+	if aggQC == nil {
+		return EncodeByteArray(nil), nil
+	}
+
+	encodedBytes, err := aggQC.ToBytes()
+	if err != nil {
+		return nil, errors.Wrapf(err, "EncodeTimeoutAggregateQuorumCertificate: Error encoding aggQC")
+	}
+
+	return EncodeByteArray(encodedBytes), nil
+}
+
+func DecodeTimeoutAggregateQuorumCertificate(rr io.Reader) (*TimeoutAggregateQuorumCertificate, error) {
+	encodedBytes, err := DecodeByteArray(rr)
+	if err != nil {
+		return nil, errors.Wrapf(err, "DecodeTimeoutAggregateQuorumCertificate: Error decoding encodedBytes")
+	}
+
+	if len(encodedBytes) == 0 {
+		return nil, nil
+	}
+
+	aggQC := &TimeoutAggregateQuorumCertificate{}
+	if err := aggQC.FromBytes(bytes.NewReader(encodedBytes)); err != nil {
+		return nil, errors.Wrapf(err, "DecodeTimeoutAggregateQuorumCertificate: Error decoding aggQC")
+	}
+
+	return aggQC, nil
 }
 
 // ==================================================================
