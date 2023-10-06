@@ -108,7 +108,7 @@ var expectedBlockHeaderVersion1 = &MsgDeSoHeader{
 
 // Creates fully formatted a PoS block header with random signatures
 // and block hashes
-func createTestBlockHeaderVersion2(t *testing.T) *MsgDeSoHeader {
+func createTestBlockHeaderVersion2(t *testing.T, includeTimeoutQC bool) *MsgDeSoHeader {
 	testBlockHash := BlockHash{
 		0x00, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x10, 0x11,
 		0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18, 0x19, 0x20, 0x21,
@@ -131,7 +131,33 @@ func createTestBlockHeaderVersion2(t *testing.T) *MsgDeSoHeader {
 	testBitset := bitset.NewBitset().Set(0, true).Set(3, true)
 	testBLSPublicKey, testBLSSignature := _generateValidatorVotingPublicKeyAndSignature(t)
 
-	return &MsgDeSoHeader{
+	validatorsVoteQC := &QuorumCertificate{
+		BlockHash:      &testBlockHash,
+		ProposedInView: uint64(123456789123),
+		ValidatorsVoteAggregatedSignature: &AggregatedBLSSignature{
+			SignersList: testBitset,
+			Signature:   testBLSSignature,
+		},
+	}
+
+	validatorsTimeoutAggregateQC := &TimeoutAggregateQuorumCertificate{
+		TimedOutView: uint64(234567891234),
+		ValidatorsHighQC: &QuorumCertificate{
+			BlockHash:      &testBlockHash,
+			ProposedInView: uint64(345678912345),
+			ValidatorsVoteAggregatedSignature: &AggregatedBLSSignature{
+				SignersList: testBitset,
+				Signature:   testBLSSignature,
+			},
+		},
+		ValidatorsTimeoutHighQCViews: []uint64{456789123456},
+		ValidatorsTimeoutAggregatedSignature: &AggregatedBLSSignature{
+			SignersList: testBitset,
+			Signature:   testBLSSignature,
+		},
+	}
+
+	header := &MsgDeSoHeader{
 		Version:               2,
 		PrevBlockHash:         &testBlockHash,
 		TransactionMerkleRoot: &testMerkleRoot,
@@ -145,32 +171,17 @@ func createTestBlockHeaderVersion2(t *testing.T) *MsgDeSoHeader {
 		ProposerRandomSeedHash:  &testRandomSeedHash,
 		ProposedInView:          uint64(1432101234),
 		// Use real signatures and public keys for the PoS fields
-		ValidatorsVoteQC: &QuorumCertificate{
-			BlockHash:      &testBlockHash,
-			ProposedInView: uint64(123456789123),
-			ValidatorsVoteAggregatedSignature: &AggregatedBLSSignature{
-				SignersList: testBitset,
-				Signature:   testBLSSignature,
-			},
-		},
-		ValidatorsTimeoutAggregateQC: &TimeoutAggregateQuorumCertificate{
-			TimedOutView: uint64(234567891234),
-			ValidatorsHighQC: &QuorumCertificate{
-				BlockHash:      &testBlockHash,
-				ProposedInView: uint64(345678912345),
-				ValidatorsVoteAggregatedSignature: &AggregatedBLSSignature{
-					SignersList: testBitset,
-					Signature:   testBLSSignature,
-				},
-			},
-			ValidatorsTimeoutHighQCViews: []uint64{456789123456},
-			ValidatorsTimeoutAggregatedSignature: &AggregatedBLSSignature{
-				SignersList: testBitset,
-				Signature:   testBLSSignature,
-			},
-		},
 		ProposerVotePartialSignature: testBLSSignature,
 	}
+
+	// Only set one of the two fields.
+	if includeTimeoutQC {
+		header.ValidatorsTimeoutAggregateQC = validatorsTimeoutAggregateQC
+	} else {
+		header.ValidatorsVoteQC = validatorsVoteQC
+	}
+
+	return header
 }
 
 func TestHeaderConversionAndReadWriteMessage(t *testing.T) {
@@ -182,7 +193,8 @@ func TestHeaderConversionAndReadWriteMessage(t *testing.T) {
 
 	expectedBlockHeadersToTest := []*MsgDeSoHeader{
 		expectedBlockHeaderVersion1,
-		createTestBlockHeaderVersion2(t),
+		createTestBlockHeaderVersion2(t, true),
+		createTestBlockHeaderVersion2(t, false),
 	}
 
 	// Performs a full E2E byte encode and decode of all the block header
@@ -233,7 +245,7 @@ func TestHeaderVersion2SignatureByteEncoding(t *testing.T) {
 	_ = assert
 	_ = require
 
-	expectedBlockHeader := createTestBlockHeaderVersion2(t)
+	expectedBlockHeader := createTestBlockHeaderVersion2(t, true)
 
 	preSignatureBytes, err := expectedBlockHeader.ToBytes(true)
 	require.NoError(err)
@@ -264,7 +276,7 @@ func TestHeaderVersion2Hash(t *testing.T) {
 	_ = assert
 	_ = require
 
-	expectedBlockHeader := createTestBlockHeaderVersion2(t)
+	expectedBlockHeader := createTestBlockHeaderVersion2(t, true)
 
 	headerHash, err := expectedBlockHeader.Hash()
 	require.NoError(err)
@@ -313,7 +325,8 @@ func TestHeaderBundleSerialization(t *testing.T) {
 	headerBundle := &MsgDeSoHeaderBundle{
 		Headers: []*MsgDeSoHeader{
 			expectedBlockHeaderVersion1,
-			createTestBlockHeaderVersion2(t),
+			createTestBlockHeaderVersion2(t, true),
+			createTestBlockHeaderVersion2(t, false),
 		},
 		TipHash:   hash1,
 		TipHeight: 12345,
