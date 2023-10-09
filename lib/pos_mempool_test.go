@@ -260,7 +260,9 @@ func TestPosMempoolReplaceWithHigherFee(t *testing.T) {
 	txn2Low.TxnFeeNanos = txn2.TxnFeeNanos - 1000
 	*txn2Low.TxnNonce = *txn2.TxnNonce
 	_signTxn(t, txn2Low, m1Priv)
-	err = mempool.AddTransaction(txn2Low, true)
+	added2Low := uint64(time.Now().UnixMicro())
+	mtxn2Low := NewMempoolTransaction(txn2Low, added2Low)
+	err = mempool.AddTransaction(mtxn2Low, true)
 	require.Contains(err.Error(), MempoolFailedReplaceByHigherFee)
 
 	// Now generate a proper new transaction for m1, with same nonce, and higher fee.
@@ -273,11 +275,11 @@ func TestPosMempoolReplaceWithHigherFee(t *testing.T) {
 
 	// Verify that only the correct transactions are present in the mempool. Notice that on this seed, txn2 is positioned
 	// as first in the mempool's GetTransactions.
-	require.NotEqual(txn2, mempool.GetTransactions()[0])
-	require.NotEqual(txn2Low, mempool.GetTransactions()[0])
-	require.Equal(txn2New, mempool.GetTransactions()[0])
-	require.NotEqual(txn1, mempool.GetTransactions()[1])
-	require.Equal(txn1New, mempool.GetTransactions()[1])
+	require.NotEqual(txn2, mempool.GetTransactions()[0].MsgDeSoTxn)
+	require.NotEqual(txn2Low, mempool.GetTransactions()[0].MsgDeSoTxn)
+	require.Equal(txn2New, mempool.GetTransactions()[0].MsgDeSoTxn)
+	require.NotEqual(txn1, mempool.GetTransactions()[1].MsgDeSoTxn)
+	require.Equal(txn1New, mempool.GetTransactions()[1].MsgDeSoTxn)
 
 	require.Equal(len(mempool.GetTransactions()), len(mempool.nonceTracker.nonceMap))
 	require.NoError(mempool.Refresh())
