@@ -259,7 +259,7 @@ func TestPosMempoolReplaceWithHigherFee(t *testing.T) {
 	txn2Low.TxnFeeNanos = txn2.TxnFeeNanos - 1000
 	*txn2Low.TxnNonce = *txn2.TxnNonce
 	_signTxn(t, txn2Low, m1Priv)
-	err = mempool.AddTransaction(txn2Low)
+	err = mempool.AddTransaction(txn2Low, true)
 	require.Contains(err.Error(), MempoolFailedReplaceByHigherFee)
 
 	// Now generate a proper new transaction for m1, with same nonce, and higher fee.
