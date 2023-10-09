@@ -42,7 +42,6 @@ func TestCreateBlockTemplate(t *testing.T) {
 		_wrappedPosMempoolAddTransaction(t, mempool, txn)
 	}
 
-	pbp := NewPosBlockProducer(mempool, params)
 	priv, err := bls.NewPrivateKey()
 	require.NoError(err)
 	pub := priv.PublicKey()
@@ -50,9 +49,9 @@ func TestCreateBlockTemplate(t *testing.T) {
 	_, err = seedHash.FromBytes(Sha256DoubleHash([]byte("seed")).ToBytes())
 	require.NoError(err)
 	m0Pk := NewPublicKey(m0PubBytes)
+	pbp := NewPosBlockProducer(mempool, params, m0Pk, pub, seedHash)
 
-	propserMetadata := NewPosBlockProposerMetadata(m0Pk, pub, seedHash)
-	blockTemplate, err := pbp.createBlockTemplate(latestBlockView, 3, 10, propserMetadata)
+	blockTemplate, err := pbp.createBlockTemplate(latestBlockView, 3, 10)
 	require.NoError(err)
 	require.NotNil(blockTemplate)
 	require.NotNil(blockTemplate.Header)
@@ -64,9 +63,9 @@ func TestCreateBlockTemplate(t *testing.T) {
 	require.Equal(true, blockTemplate.Header.TstampNanoSecs < uint64(time.Now().UnixNano()))
 	require.Equal(blockTemplate.Header.Height, uint64(3))
 	require.Equal(blockTemplate.Header.ProposedInView, uint64(10))
-	require.Equal(blockTemplate.Header.ProposerPublicKey, propserMetadata.ProposerPublicKey)
-	require.Equal(blockTemplate.Header.ProposerVotingPublicKey, propserMetadata.ProposerVotingPublicKey)
-	require.Equal(blockTemplate.Header.ProposerRandomSeedHash, propserMetadata.ProposerRandomSeedHash)
+	require.Equal(blockTemplate.Header.ProposerPublicKey, m0Pk)
+	require.Equal(blockTemplate.Header.ProposerVotingPublicKey, pub)
+	require.Equal(blockTemplate.Header.ProposerRandomSeedHash, seedHash)
 }
 
 func TestCreateBlockWithoutHeader(t *testing.T) {
@@ -101,7 +100,7 @@ func TestCreateBlockWithoutHeader(t *testing.T) {
 		_wrappedPosMempoolAddTransaction(t, mempool, txn)
 	}
 
-	pbp := NewPosBlockProducer(mempool, params)
+	pbp := NewPosBlockProducer(mempool, params, nil, nil, nil)
 	txns, txnConnectStatus, txnTimestamps, maxUtilityFee, err := pbp.getBlockTransactions(
 		latestBlockView, 3, 50000)
 	require.NoError(err)
@@ -154,7 +153,7 @@ func TestGetBlockTransactions(t *testing.T) {
 		_wrappedPosMempoolAddTransaction(t, mempool, txn)
 	}
 
-	pbp := NewPosBlockProducer(mempool, params)
+	pbp := NewPosBlockProducer(mempool, params, nil, nil, nil)
 	_testProduceBlockNoSizeLimit(t, mempool, pbp, latestBlockView, 3,
 		len(passingTxns), 0, 0)
 

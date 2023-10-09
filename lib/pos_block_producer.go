@@ -8,32 +8,32 @@ import (
 	"time"
 )
 
+// BlockTemplate is a dummy type that is used to label incomplete blocks. The only purpose of this type is to make it
+// clear that the produced block is not yet ready to be processed, or sent to other nodes. Usually a BlockTemplate means
+// that the block is missing the producer's signature.
 type BlockTemplate *MsgDeSoBlock
 
+// PosBlockProducer is the new struct responsible for producing blocks in PoS. The PosBlockProducer struct is lightweight
+// and does not maintain any new internal state. Instead, most of the information needed to produce a block is passed in
+// as arguments. Both while instantiating the producer, or while creating a block to the CreateUnsignedBlock or
+// CreateUnsignedTimeoutBlock methods. As such, PosBlockProducer exists primarily for the purpose of cleaner separation of
+// concerns. Instantiating the PosBlockProducer can also be optional for nodes who do not wish to produce blocks.
 type PosBlockProducer struct {
-	mp     Mempool
-	params *DeSoParams
+	mp                      Mempool
+	params                  *DeSoParams
+	proposerPublicKey       *PublicKey
+	proposerVotingPublicKey *bls.PublicKey
+	proposerRandomSeedHash  *RandomSeedHash
 }
 
-func NewPosBlockProducer(mp Mempool, params *DeSoParams) *PosBlockProducer {
+func NewPosBlockProducer(mp Mempool, params *DeSoParams, proposerPublicKey *PublicKey, proposerVotingPublicKey *bls.PublicKey,
+	proposerRandomSeedHash *RandomSeedHash) *PosBlockProducer {
 	return &PosBlockProducer{
-		mp:     mp,
-		params: params,
-	}
-}
-
-type PosBlockProposerMetadata struct {
-	ProposerPublicKey       *PublicKey
-	ProposerVotingPublicKey *bls.PublicKey
-	ProposerRandomSeedHash  *RandomSeedHash
-}
-
-func NewPosBlockProposerMetadata(
-	ProposerPublicKey *PublicKey, ProposerVotingPublicKey *bls.PublicKey, ProposerRandomSeedHash *RandomSeedHash) *PosBlockProposerMetadata {
-	return &PosBlockProposerMetadata{
-		ProposerPublicKey:       ProposerPublicKey,
-		ProposerVotingPublicKey: ProposerVotingPublicKey,
-		ProposerRandomSeedHash:  ProposerRandomSeedHash,
+		mp:                      mp,
+		params:                  params,
+		proposerPublicKey:       proposerPublicKey,
+		proposerVotingPublicKey: proposerVotingPublicKey,
+		proposerRandomSeedHash:  proposerRandomSeedHash,
 	}
 }
 
@@ -42,11 +42,14 @@ func (pbp *PosBlockProducer) SignBlock(blockTemplate BlockTemplate, signerPrivat
 	return nil, nil
 }
 
+// CreateUnsignedBlock constructs an unsigned, PoS block with Fee-Time ordered transactions. This function should be used
+// during happy path in consensus when a vote QC has been assembled. The block is unsigned, so to indicate its incompleteness,
+// the block is returned as a BlockTemplate.
 func (pbp *PosBlockProducer) CreateUnsignedBlock(latestBlockView *UtxoView, newBlockHeight uint64, view uint64,
-	proposerMetadata *PosBlockProposerMetadata, validatorsVoteQC *QuorumCertificate) (BlockTemplate, error) {
+	validatorsVoteQC *QuorumCertificate) (BlockTemplate, error) {
 
 	// Create the block template.
-	block, err := pbp.createBlockTemplate(latestBlockView, newBlockHeight, view, proposerMetadata)
+	block, err := pbp.createBlockTemplate(latestBlockView, newBlockHeight, view)
 	if err != nil {
 		return nil, errors.Wrapf(err, "PosBlockProducer.CreateUnsignedTimeoutBlock: Problem creating block template")
 	}
@@ -56,11 +59,14 @@ func (pbp *PosBlockProducer) CreateUnsignedBlock(latestBlockView *UtxoView, newB
 	return block, nil
 }
 
+// CreateUnsignedTimeoutBlock constructs an unsigned, PoS block with Fee-Time ordered transactions. This function should be used
+// during a timeout in consensus when a validators timeout aggregate QC has been assembled. The block is unsigned,
+// and so is returned as a BlockTemplate.
 func (pbp *PosBlockProducer) CreateUnsignedTimeoutBlock(latestBlockView *UtxoView, newBlockHeight uint64, view uint64,
-	proposerMetadata *PosBlockProposerMetadata, validatorsTimeoutAggregateQC *TimeoutAggregateQuorumCertificate) (BlockTemplate, error) {
+	validatorsTimeoutAggregateQC *TimeoutAggregateQuorumCertificate) (BlockTemplate, error) {
 
 	// Create the block template.
-	block, err := pbp.createBlockTemplate(latestBlockView, newBlockHeight, view, proposerMetadata)
+	block, err := pbp.createBlockTemplate(latestBlockView, newBlockHeight, view)
 	if err != nil {
 		return nil, errors.Wrapf(err, "PosBlockProducer.CreateUnsignedTimeoutBlock: Problem creating block template")
 	}
@@ -70,9 +76,11 @@ func (pbp *PosBlockProducer) CreateUnsignedTimeoutBlock(latestBlockView *UtxoVie
 	return block, nil
 }
 
-// CreateBlockTemplate constructs a block with Fee-Time ordered transactions.
-func (pbp *PosBlockProducer) createBlockTemplate(latestBlockView *UtxoView, newBlockHeight uint64, view uint64,
-	proposerMetadata *PosBlockProposerMetadata) (BlockTemplate, error) {
+// createBlockTemplate is a helper function used by CreateUnsignedBlock and CreateUnsignedTimeoutBlock. It constructs
+// a partially filled out block with Fee-Time ordered transactions. The returned block is complete except for
+// the qc / aggregateQc fields, and the signature.
+func (pbp *PosBlockProducer) createBlockTemplate(latestBlockView *UtxoView, newBlockHeight uint64, view uint64) (
+	BlockTemplate, error) {
 	// First get the block without the header.
 	block, err := pbp.createBlockWithoutHeader(latestBlockView, newBlockHeight)
 	if err != nil {
@@ -95,12 +103,14 @@ func (pbp *PosBlockProducer) createBlockTemplate(latestBlockView *UtxoView, newB
 	block.Header.ProposedInView = view
 
 	// Set the proposer information.
-	block.Header.ProposerPublicKey = proposerMetadata.ProposerPublicKey
-	block.Header.ProposerVotingPublicKey = proposerMetadata.ProposerVotingPublicKey
-	block.Header.ProposerRandomSeedHash = proposerMetadata.ProposerRandomSeedHash
+	block.Header.ProposerPublicKey = pbp.proposerPublicKey
+	block.Header.ProposerVotingPublicKey = pbp.proposerVotingPublicKey
+	block.Header.ProposerRandomSeedHash = pbp.proposerRandomSeedHash
 	return block, nil
 }
 
+// createBlockWithoutHeader is a helper function used by createBlockTemplate. It constructs a partially filled out
+// block with Fee-Time ordered transactions. The returned block all its contents filled, except for the header.
 func (pbp *PosBlockProducer) createBlockWithoutHeader(latestBlockView *UtxoView, newBlockHeight uint64) (BlockTemplate, error) {
 	block := NewMessage(MsgTypeBlock).(*MsgDeSoBlock)
 
@@ -131,6 +141,7 @@ func (pbp *PosBlockProducer) createBlockWithoutHeader(latestBlockView *UtxoView,
 	return block, nil
 }
 
+// getBlockTransactions is used to retrieve fee-time ordered transactions from the mempool.
 func (pbp *PosBlockProducer) getBlockTransactions(latestBlockView *UtxoView, newBlockHeight uint64, maxBlockSizeBytes uint64) (
 	_txns []*MsgDeSoTxn, _txnConnectStatusByIndex *bitset.Bitset, _txnTimestampsUnixMicro []uint64, _maxUtilityFee uint64, _err error) {
 	// Get Fee-Time ordered transactions from the mempool
