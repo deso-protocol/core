@@ -135,7 +135,7 @@ func (dmp *PosMempool) Start() error {
 	// Create the transaction register, the ledger, and the nonce tracker,
 	dmp.txnRegister = NewTransactionRegister(dmp.globalParams)
 	dmp.ledger = NewBalanceLedger()
-	dmp.nonceTracker = NewNonceTracker(dmp.latestBlockView)
+	dmp.nonceTracker = NewNonceTracker()
 
 	// Create the persister
 	dmp.persister = NewMempoolPersister(dmp.db, int(dmp.params.MempoolBackupTimeMilliseconds))
@@ -443,7 +443,6 @@ func (dmp *PosMempool) UpdateLatestBlock(blockView *UtxoView, blockHeight uint64
 
 	dmp.latestBlockView = blockView
 	dmp.latestBlockHeight = blockHeight
-	dmp.nonceTracker.UpdateLatestBlock(blockView)
 }
 
 // UpdateGlobalParams updates the global params in the mempool. Changing GlobalParamsEntry can impact the validity of

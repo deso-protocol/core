@@ -6415,10 +6415,3 @@ type TransactorNonceMapKey struct {
 	Nonce          DeSoNonce
 	TransactorPKID PKID
 }
-
-func NewTransactorNonceMapKey(nonce DeSoNonce, pkid PKID) TransactorNonceMapKey {
-	return TransactorNonceMapKey{
-		Nonce:          nonce,
-		TransactorPKID: pkid,
-	}
-}
