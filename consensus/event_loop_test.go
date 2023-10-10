@@ -691,7 +691,7 @@ func TestVoteQCConstructionSignal(t *testing.T) {
 		select {
 		case blockConstructionSignal = <-fc.Events:
 			// Do nothing
-		case <-time.After(10 * time.Millisecond):
+		case <-time.After(100 * time.Millisecond):
 			require.Fail(t, "Did not receive a block construction signal when there were enough votes to construct a QC")
 		}
 
@@ -834,7 +834,7 @@ func TestTimeoutQCConstructionSignal(t *testing.T) {
 		select {
 		case signal = <-fc.Events:
 			// Do nothing
-		case <-time.After(10 * time.Second):
+		case <-time.After(100 * time.Millisecond):
 			require.Fail(t, "Did not receive a block construction signal when there were enough timeouts to construct a timeout QC")
 		}
 
