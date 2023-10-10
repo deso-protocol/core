@@ -310,14 +310,6 @@ func TestAddBlockToBlockIndex(t *testing.T) {
 			ProposerVotingPublicKey: proposerVotingPublicKey.PublicKey(),
 			ProposerRandomSeedHash:  &RandomSeedHash{},
 			ProposedInView:          1,
-			ValidatorsVoteQC: &QuorumCertificate{
-				BlockHash:      NewBlockHash(RandomBytes(32)),
-				ProposedInView: 1,
-				ValidatorsVoteAggregatedSignature: &AggregatedBLSSignature{
-					SignersList: bitset.NewBitset(),
-					Signature:   dummySig,
-				},
-			},
 			ValidatorsTimeoutAggregateQC: &TimeoutAggregateQuorumCertificate{
 				TimedOutView: 2,
 				ValidatorsHighQC: &QuorumCertificate{
