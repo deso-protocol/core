@@ -293,8 +293,31 @@ func (bc *Blockchain) validateBlockView(desoBlock *MsgDeSoBlock) error {
 // validateBlockLeader validates that the proposer is the expected proposer for the
 // block height + view number pair.
 func (bc *Blockchain) validateBlockLeader(desoBlock *MsgDeSoBlock) error {
-	// TODO: Implement me
-	return errors.New("IMPLEMENT ME")
+	utxoView, err := NewUtxoView(bc.db, bc.params, bc.postgres, bc.snapshot)
+	if err != nil {
+		return errors.Wrapf(err, "validateBlockLeader: Problem initializing UtxoView")
+	}
+	currentEpochEntry, err := utxoView.GetCurrentEpochEntry()
+	if err != nil {
+		return errors.Wrapf(err, "validateBlockLeader: Problem getting current epoch entry")
+	}
+	leaders, err := utxoView.GetSnapshotLeaderSchedule()
+	if err != nil {
+		return errors.Wrapf(err, "validateBlockLeader: Problem getting leader schedule")
+	}
+	// TODO: Do I need to validate the views + heights before doing the subtraction.
+	// Current leader Index = [(current view - epoch's start view) - (block height - epoch's start block height)] % len(leader schedule)]
+	leaderIdx := uint16(int((desoBlock.Header.ProposedInView-currentEpochEntry.InitialView)-(desoBlock.Header.Height-currentEpochEntry.InitialBlockHeight)) % len(leaders))
+	leaderEntry, err := utxoView.GetSnapshotLeaderScheduleValidator(leaderIdx)
+	if err != nil {
+		return errors.Wrapf(err, "validateBlockLeader: Problem getting leader schedule validator")
+	}
+	leaderPKIDFromBlock := utxoView.GetPKIDForPublicKey(desoBlock.Header.ProposerPublicKey[:])
+	if !leaderEntry.VotingPublicKey.Eq(desoBlock.Header.ProposerVotingPublicKey) ||
+		!leaderEntry.ValidatorPKID.Eq(leaderPKIDFromBlock.PKID) {
+		return RuleErrorLeaderForBlockDoesNotMatchSchedule
+	}
+	return nil
 }
 
 // validateQC validates that the QC of this block is valid, meaning a super majority
@@ -464,4 +487,6 @@ const (
 
 	RuleErrorPoSVoteBlockViewNotOneGreaterThanParent RuleError = "RuleErrorPoSVoteBlockViewNotOneGreaterThanParent"
 	RuleErrorPoSTimeoutBlockViewNotGreaterThanParent RuleError = "RuleErrorPoSTimeoutBlockViewNotGreaterThanParent"
+
+	RuleErrorLeaderForBlockDoesNotMatchSchedule RuleError = "RuleErrorLeaderForBlockDoesNotMatchSchedule"
 )

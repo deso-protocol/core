@@ -434,6 +434,10 @@ func TestValidateBlockView(t *testing.T) {
 	require.Nil(t, err)
 }
 
+func TestValidateBlockLeader(t *testing.T) {
+	t.Skipf("TODO: Implement")
+}
+
 func _generateRandomBLSPrivateKey(t *testing.T) *bls.PrivateKey {
 	privateKey, err := bls.NewPrivateKey()
 	require.NoError(t, err)
