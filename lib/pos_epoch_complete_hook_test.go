@@ -54,6 +54,9 @@ func TestIsLastBlockInCurrentEpoch(t *testing.T) {
 }
 
 func TestRunEpochCompleteHook(t *testing.T) {
+	// Initialize balance model fork heights.
+	setBalanceModelBlockHeights(t)
+
 	// Initialize test chain, miner, and testMeta
 	testMeta := _setUpMinerAndTestMetaForEpochCompleteTest(t)
 
@@ -476,6 +479,9 @@ func TestRunEpochCompleteHook(t *testing.T) {
 }
 
 func TestStakingRewardDistribution(t *testing.T) {
+	// Initialize balance model fork heights.
+	setBalanceModelBlockHeights(t)
+
 	// Initialize test chain, miner, and testMeta
 	testMeta := _setUpMinerAndTestMetaForEpochCompleteTest(t)
 
@@ -741,9 +747,6 @@ func TestStakingRewardDistribution(t *testing.T) {
 }
 
 func _setUpMinerAndTestMetaForEpochCompleteTest(t *testing.T) *TestMeta {
-	// Initialize balance model fork heights.
-	setBalanceModelBlockHeights(t)
-
 	// Initialize test chain and miner.
 	chain, params, db := NewLowDifficultyBlockchain(t)
 	mempool, miner := NewTestMiner(t, chain, params, true)

@@ -2168,21 +2168,22 @@ func (msg *MsgDeSoHeader) EncodeHeaderVersion2(preSignature bool) ([]byte, error
 	// ProposedInView
 	retBytes = append(retBytes, UintToBuf(msg.ProposedInView)...)
 
-	// ValidatorsVoteQC
-	if msg.ValidatorsVoteQC == nil {
-		return nil, fmt.Errorf("EncodeHeaderVersion2: ValidatorsVoteQC must be non-nil")
+	// Only one of ValidatorsVoteQC or ValidatorsTimeoutAggregateQC must be defined.
+	if (msg.ValidatorsVoteQC == nil) == (msg.ValidatorsTimeoutAggregateQC == nil) {
+		return nil, fmt.Errorf(
+			"EncodeHeaderVersion2: Exactly one of ValidatorsVoteQC or ValidatorsTimeoutAggregateQC must be non-nil",
+		)
 	}
-	encodedValidatorsVoteQC, err := msg.ValidatorsVoteQC.ToBytes()
+
+	// ValidatorsVoteQC
+	encodedValidatorsVoteQC, err := EncodeQuorumCertificate(msg.ValidatorsVoteQC)
 	if err != nil {
 		return nil, errors.Wrapf(err, "EncodeHeaderVersion2: error encoding ValidatorsVoteQC")
 	}
 	retBytes = append(retBytes, encodedValidatorsVoteQC...)
 
 	// ValidatorsTimeoutAggregateQC
-	if msg.ValidatorsTimeoutAggregateQC == nil {
-		return nil, fmt.Errorf("EncodeHeaderVersion2: ValidatorsTimeoutAggregateQC must be non-nil")
-	}
-	encodedValidatorsTimeoutAggregateQC, err := msg.ValidatorsTimeoutAggregateQC.ToBytes()
+	encodedValidatorsTimeoutAggregateQC, err := EncodeTimeoutAggregateQuorumCertificate(msg.ValidatorsTimeoutAggregateQC)
 	if err != nil {
 		return nil, errors.Wrapf(err, "EncodeHeaderVersion2: error encoding ValidatorsTimeoutAggregateQC")
 	}
@@ -2399,8 +2400,8 @@ func DecodeHeaderVersion2(rr io.Reader) (*MsgDeSoHeader, error) {
 	}
 
 	// ValidatorsTimeoutAggregateQC
-	retHeader.ValidatorsTimeoutAggregateQC = &TimeoutAggregateQuorumCertificate{}
-	if err = retHeader.ValidatorsTimeoutAggregateQC.FromBytes(rr); err != nil {
+	retHeader.ValidatorsTimeoutAggregateQC, err = DecodeTimeoutAggregateQuorumCertificate(rr)
+	if err != nil {
 		return nil, errors.Wrapf(err, "MsgDeSoHeader.FromBytes: Problem decoding ValidatorsTimeoutAggregateQC")
 	}
 

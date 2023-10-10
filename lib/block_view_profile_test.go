@@ -220,19 +220,19 @@ const (
 func TestBalanceModelUpdateProfile(t *testing.T) {
 	setBalanceModelBlockHeights(t)
 
-	TestUpdateProfile(t)
-	TestSpamUpdateProfile(t)
-	TestUpdateProfileChangeBack(t)
+	t.Run("TestUpdateProfile", TestUpdateProfile)
+	t.Run("TestSpamUpdateProfile", TestSpamUpdateProfile)
+	t.Run("TestUpdateProfileChangeBack", TestUpdateProfileChangeBack)
 }
 
 func TestBalanceModelSwapIdentity(t *testing.T) {
 	setBalanceModelBlockHeights(t)
 
-	TestSwapIdentityNOOPCreatorCoinBuySimple(t)
-	TestSwapIdentityCreatorCoinBuySimple(t)
-	TestSwapIdentityFailureCases(t)
-	TestSwapIdentityMain(t)
-	TestSwapIdentityWithFollows(t)
+	t.Run("TestSwapIdentityNOOPCreatorCoinBuySimple", TestSwapIdentityNOOPCreatorCoinBuySimple)
+	t.Run("TestSwapIdentityCreatorCoinBuySimple", TestSwapIdentityCreatorCoinBuySimple)
+	t.Run("TestSwapIdentityFailureCases", TestSwapIdentityFailureCases)
+	t.Run("TestSwapIdentityMain", TestSwapIdentityMain)
+	t.Run("TestSwapIdentityWithFollows", TestSwapIdentityWithFollows)
 }
 
 func TestUpdateProfile(t *testing.T) {
