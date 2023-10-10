@@ -54,18 +54,24 @@ type PosMempool struct {
 	// txnRegister is the in-memory data structure keeping track of the transactions in the mempool. The TransactionRegister
 	// is responsible for ordering transactions by the Fee-Time algorithm.
 	txnRegister *TransactionRegister
-	// ledger is a simple in-memory data structure that keeps track of cumulative transaction fees in the mempool.
-	// The ledger keeps track of how much each user would have spent in fees across all their transactions in the mempool.
-	ledger *BalanceLedger
 	// persister is responsible for interfacing with the database. The persister backs up mempool transactions so not to
 	// lose them when node reboots. The persister also retrieves transactions from the database when the node starts up.
 	// The persister runs on its dedicated thread and events are used to notify the persister thread whenever
 	// transactions are added/removed from the mempool. The persister thread then updates the database accordingly.
 	persister *MempoolPersister
+	// ledger is a simple data structure that keeps track of cumulative transaction fees in the mempool.
+	// The ledger keeps track of how much each user would have spent in fees across all their transactions in the mempool.
+	ledger *BalanceLedger
+	// nonceTracker is responsible for keeping track of a (public key, nonce) -> Txn index. The index is useful in
+	// facilitating a "replace by higher fee" feature. This feature gives users the ability to replace their existing
+	// mempool transaction with a new transaction having the same nonce but higher fee.
+	nonceTracker *NonceTracker
 
 	// latestBlockView is used to check if a transaction is valid before being added to the mempool. The latestBlockView
 	// checks if the transaction has a valid signature and if the transaction's sender has enough funds to cover the fee.
 	// The latestBlockView should be updated whenever a new block is added to the blockchain via UpdateLatestBlock.
+	// PosMempool only needs read-access to the block view. It isn't necessary to copy the block view before passing it
+	// to the mempool.
 	latestBlockView *UtxoView
 	// latestBlockNode is used to infer the latest block height. The latestBlockNode should be updated whenever a new
 	// block is added to the blockchain via UpdateLatestBlock.
@@ -126,9 +132,10 @@ func (dmp *PosMempool) Start() error {
 	}
 	dmp.db = db
 
-	// Create the transaction register and ledger
+	// Create the transaction register, the ledger, and the nonce tracker,
 	dmp.txnRegister = NewTransactionRegister(dmp.globalParams)
 	dmp.ledger = NewBalanceLedger()
+	dmp.nonceTracker = NewNonceTracker()
 
 	// Create the persister
 	dmp.persister = NewMempoolPersister(dmp.db, int(dmp.params.MempoolBackupTimeMilliseconds))
@@ -159,9 +166,10 @@ func (dmp *PosMempool) Stop() {
 	if err := dmp.db.Close(); err != nil {
 		glog.Errorf("PosMempool.Stop: Problem closing database: %v", err)
 	}
-	// Reset the transaction register and the ledger.
+	// Reset the transaction register, the ledger, and the nonce tracker.
 	dmp.txnRegister.Reset()
 	dmp.ledger.Reset()
+	dmp.nonceTracker.Reset()
 
 	dmp.status = PosMempoolStatusNotRunning
 }
@@ -246,14 +254,32 @@ func (dmp *PosMempool) addTransactionNoLock(txn *MempoolTx, persistToDb bool) er
 			"hash %v, fee %v", txn.Tx.Hash(), txnFee)
 	}
 
-	// If we get here, it means that the transaction's sender has enough balance to cover transaction fees. We can now
-	// add the transaction to mempool.
+	// Check the nonceTracker to see if this transaction is meant to replace an existing one.
+	existingTxn := dmp.nonceTracker.GetTxnByPublicKeyNonce(*userPk, *txn.Tx.TxnNonce)
+	if existingTxn != nil && existingTxn.FeePerKB > txn.FeePerKB {
+		return errors.Wrapf(MempoolFailedReplaceByHigherFee, "PosMempool.AddTransaction: Problem replacing transaction "+
+			"by higher fee failed. New transaction has lower fee.")
+	}
+
+	// If we get here, it means that the transaction's sender has enough balance to cover transaction fees. Moreover, if
+	// this transaction is meant to replace an existing one, at this point we know the new txn has a sufficient fee to
+	// do so. We can now add the transaction to mempool.
 	if err := dmp.txnRegister.AddTransaction(txn); err != nil {
 		return errors.Wrapf(err, "PosMempool.addTransactionNoLock: Problem adding txn to register")
 	}
 
-	// We update the reserved balance to include the newly added transaction's fee.
+	// If we've determined that this transaction is meant to replace an existing one, we remove the existing transaction now.
+	if existingTxn != nil {
+		if err := dmp.removeTransactionNoLock(existingTxn, true); err != nil {
+			recoveryErr := dmp.txnRegister.RemoveTransaction(txn)
+			return errors.Wrapf(err, "PosMempool.AddTransaction: Problem removing old transaction from mempool during "+
+				"replacement with higher fee. Recovery error: %v", recoveryErr)
+		}
+	}
+
+	// At this point the transaction is in the mempool. We can now update the ledger and nonce tracker.
 	dmp.ledger.IncreaseEntry(*userPk, txnFee)
+	dmp.nonceTracker.AddTxnByPublicKeyNonce(txn, *userPk, *txn.Tx.TxnNonce)
 
 	// Emit an event for the newly added transaction.
 	if persistToDb {
@@ -310,8 +336,10 @@ func (dmp *PosMempool) removeTransactionNoLock(txn *MempoolTx, persistToDb bool)
 	if err := dmp.txnRegister.RemoveTransaction(txn); err != nil {
 		return errors.Wrapf(err, "PosMempool.removeTransactionNoLock: Problem removing txn from register")
 	}
-	// Decrease the appropriate ledger's balance by the transaction fee.
+
+	// Remove the txn from the balance ledger and the nonce tracker.
 	dmp.ledger.DecreaseEntry(*userPk, txn.Fee)
+	dmp.nonceTracker.RemoveTxnByPublicKeyNonce(*userPk, *txn.Tx.TxnNonce)
 
 	// Emit an event for the removed transaction.
 	if persistToDb {

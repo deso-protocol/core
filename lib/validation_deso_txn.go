@@ -12,6 +12,10 @@ import (
 func ValidateDeSoTxnSanityBalanceModel(txn *MsgDeSoTxn, blockHeight uint64,
 	params *DeSoParams, globalParams *GlobalParamsEntry) error {
 
+	if txn == nil || params == nil || globalParams == nil {
+		return fmt.Errorf("ValidateDeSoTxnSanityBalanceModel: Transaction, params, and globalParams cannot be nil")
+	}
+
 	// Validate encoding
 	if err := ValidateDeSoTxnEncoding(txn, params); err != nil {
 		return errors.Wrapf(err, "ValidateDeSoTxnSanityBalanceModel: ")
@@ -41,6 +45,10 @@ func ValidateDeSoTxnSanityBalanceModel(txn *MsgDeSoTxn, blockHeight uint64,
 
 // ValidateDeSoTxnEncoding validates that the transaction encoding works as expected.
 func ValidateDeSoTxnEncoding(txn *MsgDeSoTxn, params *DeSoParams) error {
+	if txn == nil || params == nil {
+		return fmt.Errorf("ValidateDeSoTxnEncoding: Transaction and params cannot be nil")
+	}
+
 	// Validate transaction to/from bytes encoding
 	txnBytes, err := txn.ToBytes(false)
 	if err != nil {
@@ -70,9 +78,8 @@ func ValidateDeSoTxnEncoding(txn *MsgDeSoTxn, params *DeSoParams) error {
 
 // ValidateDeSoTxnMetadata validates that the transaction metadata is correctly formatted.
 func ValidateDeSoTxnMetadata(txn *MsgDeSoTxn) error {
-	// Validate that the transaction has correct metadata
-	if txn.TxnMeta == nil {
-		return fmt.Errorf("ValidateDeSoTxnMetadata: Transaction is missing TxnMeta")
+	if txn == nil || txn.TxnMeta == nil {
+		return fmt.Errorf("ValidateDeSoTxnMetadata: Transaction is nil or is missing TxnMeta")
 	}
 	if _, err := NewTxnMetadata(txn.TxnMeta.GetTxnType()); err != nil {
 		return errors.Wrapf(err, "ValidateDeSoTxnMetadata: Problem parsing TxnType")
@@ -82,6 +89,10 @@ func ValidateDeSoTxnMetadata(txn *MsgDeSoTxn) error {
 
 // ValidateDeSoTxnHash validates that the transaction hash is correctly computed.
 func ValidateDeSoTxnHash(txn *MsgDeSoTxn) error {
+	if txn == nil {
+		return fmt.Errorf("ValidateDeSoTxnHash: Transaction cannot be nil")
+	}
+
 	// Validate transaction hash
 	if txn.Hash() == nil {
 		return fmt.Errorf("ValidateDeSoTxnHash: Problem computing tx hash")
@@ -91,6 +102,10 @@ func ValidateDeSoTxnHash(txn *MsgDeSoTxn) error {
 
 // ValidateDeSoTxnPublicKey validates that the transaction public key is correctly formatted.
 func ValidateDeSoTxnPublicKey(txn *MsgDeSoTxn) error {
+	if txn == nil {
+		return fmt.Errorf("ValidateDeSoTxnPublicKey: Transaction cannot be nil")
+	}
+
 	// Validate public key
 	if err := IsByteArrayValidPublicKey(txn.PublicKey); err != nil {
 		return errors.Wrapf(err, "ValidateDeSoTxnPublicKey: Problem with public key")
@@ -101,6 +116,10 @@ func ValidateDeSoTxnPublicKey(txn *MsgDeSoTxn) error {
 // ValidateDeSoTxnFormatBalanceModel validates that the transaction is correctly formatted according to the balance model.
 func ValidateDeSoTxnFormatBalanceModel(txn *MsgDeSoTxn, blockHeight uint64, globalParams *GlobalParamsEntry) error {
 	var err error
+
+	if txn == nil || globalParams == nil || txn.TxnNonce == nil {
+		return fmt.Errorf("ValidateDeSoTxnFormatBalanceModel: Transaction, globalParams, and nonce cannot be nil")
+	}
 
 	// Validate transaction version
 	if txn.TxnVersion == DeSoTxnVersion0 {
@@ -153,6 +172,10 @@ func ValidateDeSoTxnFormatBalanceModel(txn *MsgDeSoTxn, blockHeight uint64, glob
 
 // ValidateDeSoTxnMinimalNetworkFee validates that the transaction is above the network's minimal fee.
 func ValidateDeSoTxnMinimalNetworkFee(txn *MsgDeSoTxn, globalParams *GlobalParamsEntry) error {
+	if txn == nil || globalParams == nil {
+		return fmt.Errorf("ValidateDeSoTxnMinimalNetworkFee: Transaction and globalParams cannot be nil")
+	}
+
 	// Verify the transaction fee
 	feeNanosPerKb, err := txn.ComputeFeeRatePerKBNanos()
 	if err != nil {

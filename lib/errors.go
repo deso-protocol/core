@@ -507,7 +507,8 @@ const (
 	TxErrorNoNonceAfterBalanceModelBlockHeight      RuleError = "TxErrorNoNonceAfterBalanceModelBlockHeight"
 
 	// Mempool
-	MempoolErrorNotRunning RuleError = "MempoolErrorNotRunning"
+	MempoolErrorNotRunning          RuleError = "MempoolErrorNotRunning"
+	MempoolFailedReplaceByHigherFee RuleError = "MempoolFailedReplaceByHigherFee"
 )
 
 func (e RuleError) Error() string {
