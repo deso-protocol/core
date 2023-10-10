@@ -218,16 +218,16 @@ func TestValidateBlockHeight(t *testing.T) {
 	bc, _, _ := NewTestBlockchain(t)
 	hash := NewBlockHash(RandomBytes(32))
 	nowTimestamp := uint64(time.Now().UnixNano())
-	bc.bestChain = []*BlockNode{
-		NewPoSBlockNode(nil, hash, 1, &MsgDeSoHeader{
-			Version:                      2,
-			TstampNanoSecs:               nowTimestamp - uint64(time.Minute.Nanoseconds()),
-			Height:                       1,
-			ProposedInView:               1,
-			ValidatorsVoteQC:             nil,
-			ValidatorsTimeoutAggregateQC: nil,
-		}, StatusBlockValidated, UNCOMMITTED),
-	}
+	genesisBlock := NewPoSBlockNode(nil, hash, 1, &MsgDeSoHeader{
+		Version:                      2,
+		TstampNanoSecs:               nowTimestamp - uint64(time.Minute.Nanoseconds()),
+		Height:                       1,
+		ProposedInView:               1,
+		ValidatorsVoteQC:             nil,
+		ValidatorsTimeoutAggregateQC: nil,
+	}, StatusBlockValidated, UNCOMMITTED)
+	bc.bestChain = []*BlockNode{genesisBlock}
+	bc.blockIndex[*genesisBlock.Hash] = genesisBlock
 	// Create a block with a valid header.
 	randomPayload := RandomBytes(256)
 	randomBLSPrivateKey := _generateRandomBLSPrivateKey(t)
@@ -235,6 +235,7 @@ func TestValidateBlockHeight(t *testing.T) {
 	require.NoError(t, err)
 	block := &MsgDeSoBlock{
 		Header: &MsgDeSoHeader{
+			PrevBlockHash:  genesisBlock.Hash,
 			Version:        2,
 			TstampNanoSecs: uint64(time.Now().UnixNano()) - 10,
 			Height:         2,
@@ -259,12 +260,25 @@ func TestValidateBlockHeight(t *testing.T) {
 		Txns: nil,
 	}
 
+	// validate that we've cutover to PoS
+	bc.params.ForkHeights.ProofOfStake2ConsensusCutoverBlockHeight = 3
+	err = bc.validateBlockHeight(block)
+	require.Equal(t, err, RuleErrorPoSBlockBeforeCutoverHeight)
+
+	// Update the fork height
+	bc.params.ForkHeights.ProofOfStake2ConsensusCutoverBlockHeight = 0
+
 	err = bc.validateBlockHeight(block)
 	require.Nil(t, err)
 
 	block.Header.Height = 1
 	err = bc.validateBlockHeight(block)
 	require.Equal(t, err, RuleErrorInvalidPoSBlockHeight)
+
+	block.Header.Height = 2
+	bc.blockIndex = map[BlockHash]*BlockNode{}
+	err = bc.validateBlockHeight(block)
+	require.Equal(t, err, RuleErrorMissingParentBlock)
 }
 
 func _generateRandomBLSPrivateKey(t *testing.T) *bls.PrivateKey {
