@@ -358,35 +358,81 @@ func TestValidateBlockView(t *testing.T) {
 		Height:         1,
 		ProposedInView: 1,
 	}, StatusBlockValidated, COMMITTED)
+	block2 := NewPoSBlockNode(genesisNode, hash2, 2, &MsgDeSoHeader{
+		Version:                      2,
+		Height:                       2,
+		ProposedInView:               2,
+		ValidatorsVoteQC:             nil,
+		ValidatorsTimeoutAggregateQC: nil,
+	}, StatusBlockValidated, UNCOMMITTED)
 	bc.bestChain = []*BlockNode{
 		genesisNode,
-		NewPoSBlockNode(genesisNode, hash2, 2, &MsgDeSoHeader{
-			Version:                      2,
-			Height:                       2,
-			ProposedInView:               2,
-			ValidatorsVoteQC:             nil,
-			ValidatorsTimeoutAggregateQC: nil,
-		}, StatusBlockValidated, UNCOMMITTED),
+		block2,
 	}
-
+	bc.blockIndex = map[BlockHash]*BlockNode{
+		*hash1: genesisNode,
+		*hash2: block2,
+	}
+	randomPayload := RandomBytes(256)
+	randomBLSPrivateKey := _generateRandomBLSPrivateKey(t)
+	signature, err := randomBLSPrivateKey.Sign(randomPayload)
+	voteQC := &QuorumCertificate{
+		BlockHash:      bc.GetBestChainTip().Hash,
+		ProposedInView: 1,
+		ValidatorsVoteAggregatedSignature: &AggregatedBLSSignature{
+			Signature:   signature,
+			SignersList: bitset.NewBitset(),
+		},
+	}
+	require.NoError(t, err)
 	block := &MsgDeSoBlock{
 		Header: &MsgDeSoHeader{
+			PrevBlockHash:  hash2,
 			Version:        2,
 			TstampNanoSecs: uint64(time.Now().UnixNano()) - 10,
 			Height:         2,
 			ProposedInView: 1,
+			ValidatorsTimeoutAggregateQC: &TimeoutAggregateQuorumCertificate{
+				TimedOutView:                 2,
+				ValidatorsHighQC:             voteQC,
+				ValidatorsTimeoutHighQCViews: []uint64{28934},
+				ValidatorsTimeoutAggregatedSignature: &AggregatedBLSSignature{
+					Signature:   signature,
+					SignersList: bitset.NewBitset(),
+				},
+			},
 		},
 		Txns: nil,
 	}
 
-	err := bc.validateBlockView(block)
+	// Make sure our view is at least greater than the latest committed block.
+	err = bc.validateBlockView(block)
 	require.Equal(t, err, RuleErrorPoSBlockViewEarlierThanCommittedBlock)
 
 	block.Header.ProposedInView = 2
 
+	// Blocks with timeout QCs must have a view strictly greater than the parent.
 	err = bc.validateBlockView(block)
-	require.Equal(t, err, RuleErrorPoSBlockViewEarlierThanUncommittedBlock)
+	require.Equal(t, err, RuleErrorPoSTimeoutBlockViewNotGreaterThanParent)
 
+	// Any arbitrary number GREATER than the parent's view is valid.
+	block.Header.ProposedInView = 10
+	err = bc.validateBlockView(block)
+	require.Nil(t, err)
+
+	// Now we set the timeout QC to nil and provide a vote QC, with height = 2
+	block.Header.ValidatorsTimeoutAggregateQC = nil
+	block.Header.ValidatorsVoteQC = voteQC
+	block.Header.ProposedInView = 2
+	err = bc.validateBlockView(block)
+	require.Equal(t, err, RuleErrorPoSVoteBlockViewNotOneGreaterThanParent)
+
+	// An arbitrary number greater than its parents should fail.
+	block.Header.ProposedInView = 10
+	err = bc.validateBlockView(block)
+	require.Equal(t, err, RuleErrorPoSVoteBlockViewNotOneGreaterThanParent)
+
+	// Exactly one great w/ vote QC should pass.
 	block.Header.ProposedInView = 3
 	err = bc.validateBlockView(block)
 	require.Nil(t, err)

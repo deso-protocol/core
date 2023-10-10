@@ -257,7 +257,7 @@ func (bc *Blockchain) validateBlockHeight(desoBlock *MsgDeSoBlock) error {
 // validateBlockView validates the view for a given block. First, it checks that
 // the view is greater than the latest committed block view. If not,
 // we return an error indicating that we'll never accept this block. Next,
-// it checks that the view is less than or equal to the latest uncommitted block.
+// it checks that the view is less than or equal to its parent.
 // If not, we return an error indicating that we'll want to add this block as an
 // orphan. Then it will check if that the view is exactly one greater than the
 // latest uncommitted block if we have an regular vote QC. If this block has a
@@ -275,20 +275,24 @@ func (bc *Blockchain) validateBlockView(desoBlock *MsgDeSoBlock) error {
 		return RuleErrorPoSBlockViewEarlierThanCommittedBlock
 	}
 	// Validate that the view is greater than the latest uncommitted block.
-	chainTip := bc.GetBestChainTip()
-	// If the chain tip is committed, we can just check that the view is greater than the
-	// committed block's view, but this is already kinda done above. Basically we should never
-	// hit this logic.
-	if chainTip.CommittedStatus == COMMITTED {
-		if desoBlock.Header.ProposedInView <= chainTip.Header.ProposedInView {
-			return RuleErrorPoSBlockViewEarlierThanCommittedBlock
-		}
-		return nil
+	parentBlock, exists := bc.blockIndex[*desoBlock.Header.PrevBlockHash]
+	if !exists {
+		// Note: this should never happen as we only call this function after
+		// we've validated that all ancestors exist in the block index.
+		return RuleErrorMissingParentBlock
 	}
-	// If the chain tip is uncommitted, we need to check that the view is greater than the
-	// uncommitted block's view.
-	if desoBlock.Header.ProposedInView <= chainTip.Header.ProposedInView {
-		return RuleErrorPoSBlockViewEarlierThanUncommittedBlock
+	// If our current block has a vote QC, then we need to validate that the
+	// view is exactly one greater than the latest uncommitted block.
+	if desoBlock.Header.ValidatorsTimeoutAggregateQC.isEmpty() {
+		if desoBlock.Header.ProposedInView != parentBlock.Header.ProposedInView+1 {
+			return RuleErrorPoSVoteBlockViewNotOneGreaterThanParent
+		}
+	} else {
+		// If our current block has a timeout QC, then we need to validate that the
+		// view is strictly greater than the latest uncommitted block's view.
+		if desoBlock.Header.ProposedInView <= parentBlock.Header.ProposedInView {
+			return RuleErrorPoSTimeoutBlockViewNotGreaterThanParent
+		}
 	}
 	return nil
 }
@@ -453,5 +457,6 @@ const (
 	RuleErrorPoSBlockBeforeCutoverHeight RuleError = "RuleErrorPoSBlockBeforeCutoverHeight"
 
 	RuleErrorPoSBlockViewEarlierThanCommittedBlock   RuleError = "RuleErrorPoSBlockViewEarlierThanCommittedBlock"
-	RuleErrorPoSBlockViewEarlierThanUncommittedBlock RuleError = "RuleErrorPoSBlockViewEarlierThanUncommittedBlock"
+	RuleErrorPoSVoteBlockViewNotOneGreaterThanParent RuleError = "RuleErrorPoSVoteBlockViewNotOneGreaterThanParent"
+	RuleErrorPoSTimeoutBlockViewNotGreaterThanParent RuleError = "RuleErrorPoSTimeoutBlockViewNotGreaterThanParent"
 )
