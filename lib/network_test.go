@@ -432,12 +432,12 @@ func createTestBlockVersion1(t *testing.T) *MsgDeSoBlock {
 	return &newBlockV1
 }
 
-func createTestBlockVersion2(t *testing.T) *MsgDeSoBlock {
+func createTestBlockVersion2(t *testing.T, includeTimeoutQC bool) *MsgDeSoBlock {
 	block := *expectedBlock
 	block.BlockProducerInfo = nil
 
 	// Set V2 header.
-	block.Header = createTestBlockHeaderVersion2(t)
+	block.Header = createTestBlockHeaderVersion2(t, includeTimeoutQC)
 
 	// Set the block's TxnConnectStatusByIndex and update its hash in the header.
 	block.TxnConnectStatusByIndex = bitset.NewBitset().Set(0, true).Set(3, true)
@@ -599,7 +599,8 @@ func TestBlockSerialize(t *testing.T) {
 
 	expectedBlocksToTest := []*MsgDeSoBlock{
 		createTestBlockVersion1(t),
-		createTestBlockVersion2(t),
+		createTestBlockVersion2(t, false),
+		createTestBlockVersion2(t, true),
 	}
 
 	for _, block := range expectedBlocksToTest {
@@ -620,7 +621,8 @@ func TestBlockSerializeNoBlockProducerInfo(t *testing.T) {
 
 	expectedBlocksToTest := []*MsgDeSoBlock{
 		createTestBlockVersion1(t),
-		createTestBlockVersion2(t),
+		createTestBlockVersion2(t, false),
+		createTestBlockVersion2(t, true),
 	}
 	expectedBlocksToTest[0].BlockProducerInfo = nil
 	expectedBlocksToTest[1].BlockProducerInfo = nil
@@ -641,7 +643,8 @@ func TestBlockRewardTransactionSerialize(t *testing.T) {
 
 	expectedBlocksToTest := []*MsgDeSoBlock{
 		createTestBlockVersion1(t),
-		createTestBlockVersion2(t),
+		createTestBlockVersion2(t, false),
+		createTestBlockVersion2(t, true),
 	}
 
 	for _, block := range expectedBlocksToTest {

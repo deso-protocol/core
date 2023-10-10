@@ -18,10 +18,6 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"math/rand"
-	_ "net/http/pprof"
-	"reflect"
-	"sort"
-	"testing"
 )
 
 func _strToPk(t *testing.T, pkStr string) []byte {
