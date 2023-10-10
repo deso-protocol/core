@@ -1,11 +1,8 @@
 package consensus
 
 import (
-<<<<<<< HEAD
 	"bytes"
-=======
 	"crypto/rand"
->>>>>>> aca224e (Shuffle Consensus Event Loop Utils for Integraiton Testing)
 	"encoding/binary"
 	"reflect"
 

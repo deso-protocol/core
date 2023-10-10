@@ -126,7 +126,7 @@ func (b *block) GetView() uint64 {
 }
 
 func (b *block) GetQC() QuorumCertificate {
-	if isInterfaceNil(b.qc) {
+	if !isInterfaceNil(b.aggregateQC) {
 		return b.aggregateQC.GetHighQC()
 	}
 	return b.qc
