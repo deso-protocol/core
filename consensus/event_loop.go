@@ -64,6 +64,9 @@ func (fc *FastHotStuffEventLoop) Init(
 	// We track the current view here so we know which view to time out on later on.
 	fc.currentView = tip.Block.GetView() + 1
 
+	// Reset QC construction status for the current view
+	fc.hasConstructedQCInCurrentView = false
+
 	// Reset all internal data structures for votes and timeouts
 	fc.votesSeen = make(map[[32]byte]map[string]VoteMessage)
 	fc.timeoutsSeen = make(map[uint64]map[string]TimeoutMessage)
@@ -96,6 +99,9 @@ func (fc *FastHotStuffEventLoop) AdvanceViewOnTimeout() (uint64, error) {
 
 	// Advance the view
 	fc.currentView++
+
+	// Reset QC construction status for the current view
+	fc.hasConstructedQCInCurrentView = false
 
 	// Evict all stale votes and timeouts
 	fc.evictStaleVotesAndTimeouts()
@@ -134,6 +140,9 @@ func (fc *FastHotStuffEventLoop) ProcessTipBlock(tip BlockWithValidators, safeBl
 
 	// We track the current view here so we know which view to time out on later on.
 	fc.currentView = fc.tip.block.GetView() + 1
+
+	// Reset QC construction status for the current view
+	fc.hasConstructedQCInCurrentView = false
 
 	// Evict all stale votes and timeouts
 	fc.evictStaleVotesAndTimeouts()
@@ -257,15 +266,22 @@ func (fc *FastHotStuffEventLoop) ProcessValidatorVote(vote VoteMessage) error {
 	// Cache the vote in case we need it for later
 	fc.storeVote(voteSignaturePayload, vote)
 
-	// Check if the crank timer has elapsed. If it has not elapsed or if the vote is not for
-	// the current chain tip, then there's nothing more to do.
-	if fc.crankTimerTask.IsScheduled() || vote.GetBlockHash() != fc.tip.block.GetBlockHash() {
+	// Check if the crank timer has elapsed or the event loop has constructed a QC in the current view.
+	// If so, then there's nothing more to do.
+	if fc.crankTimerTask.IsScheduled() || fc.hasConstructedQCInCurrentView {
 		return nil
 	}
 
-	// Check if we have a super-majority vote for the chain tip. If so, we signal the server that we can
-	// construct a QC for the chain tip.
+	// Check if the vote is for the chain tip. If not, then there's nothing more to do.
+	if vote.GetBlockHash() != fc.tip.block.GetBlockHash() {
+		return nil
+	}
+
+	// Check if we have a super-majority vote for the chain tip.
 	if voteQCEvent := fc.tryConstructVoteQCInCurrentView(); voteQCEvent != nil {
+		// Signal the server that we can construct a QC for the chain tip, and mark that we have
+		// constructed a QC for the current view.
+		fc.hasConstructedQCInCurrentView = true
 		fc.Events <- voteQCEvent
 	}
 
@@ -335,15 +351,23 @@ func (fc *FastHotStuffEventLoop) ProcessValidatorTimeout(timeout TimeoutMessage)
 	// Cache the timeout message in case we need it for later
 	fc.storeTimeout(timeout)
 
-	// Check if the crank timer has elapsed. If it has not elapsed or if the timeout is not for
-	// the previous view, then there's nothing more to do.
-	if fc.crankTimerTask.IsScheduled() || timeout.GetView() != fc.currentView-1 {
+	// Check if the crank timer has elapsed or the event loop has constructed a QC in the current view.
+	// If so, then there's nothing more to do.
+	if fc.crankTimerTask.IsScheduled() || fc.hasConstructedQCInCurrentView {
+		return nil
+	}
+
+	// Check if the timeout is not for the previous view. If not, then there's nothing more to do.
+	if timeout.GetView() != fc.currentView-1 {
 		return nil
 	}
 
 	// Check if we have a super-majority of stake has timed out of the previous view. If so, we signal
 	// the server that we can construct a timeoutQC in the current view.
 	if timeoutQCEvent := fc.tryConstructTimeoutQCInCurrentView(); timeoutQCEvent != nil {
+		// Signal the server that we can construct a timeout QC for the current view, and mark
+		// that we have constructed a QC for the current view.
+		fc.hasConstructedQCInCurrentView = true
 		fc.Events <- timeoutQCEvent
 	}
 
@@ -457,6 +481,7 @@ func (fc *FastHotStuffEventLoop) onCrankTimerTaskExecuted(blockConstructionView 
 	// reschedule the task when it advances the view.
 	if voteQCEvent := fc.tryConstructVoteQCInCurrentView(); voteQCEvent != nil {
 		// Signal the server that we can construct a QC for the chain tip
+		fc.hasConstructedQCInCurrentView = true
 		fc.Events <- voteQCEvent
 		return
 	}
@@ -465,6 +490,7 @@ func (fc *FastHotStuffEventLoop) onCrankTimerTaskExecuted(blockConstructionView 
 	// we send a signal to the server and cancel all scheduled tasks.
 	if timeoutQCEvent := fc.tryConstructTimeoutQCInCurrentView(); timeoutQCEvent != nil {
 		// Signal the server that we can construct a timeout QC for the current view
+		fc.hasConstructedQCInCurrentView = true
 		fc.Events <- timeoutQCEvent
 		return
 	}
