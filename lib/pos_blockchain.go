@@ -7,10 +7,10 @@ import (
 )
 
 // processBlockPoS runs the Fast-Hotstuff block connect and commit rule as follows:
-//  1. Validate on an incoming block, its header, its block height, the leader, and its QCs (vote or timeout)
-//  2. Store the block in the block index and uncommitted blocks map.
-//  3. Determine if we're missing a parent block of this block and any of its parents from the block index.
-//     If so, return the hash of the missing block.
+//  1. Determine if we're missing a parent block of this block and any of its parents from the block index.
+//     If so, return the hash of the missing block and add this block to the orphans list.
+//  2. Validate on an incoming block, its header, its block height, the leader, and its QCs (vote or timeout)
+//  3. Store the block in the block index and uncommitted blocks map.
 //  4. Resolves forks within the last two blocks
 //  5. Connect the block to the blockchain's tip
 //  6. Run the commit rule - If applicable, flushes the incoming block's grandparent to the DB
@@ -18,17 +18,40 @@ import (
 //  8. Update the currentView to this new block's view + 1
 func (bc *Blockchain) processBlockPoS(desoBlock *MsgDeSoBlock, verifySignatures bool) (_success bool, _isOrphan bool, _missingBlockHashes []*BlockHash, _err error) {
 	// TODO: Implement me
-	// 1. Start with all sanity checks of the block.
+	// 1. Determine if we're missing a parent block of this block and any of its parents from the block index.
+	// If so, process the orphan, but don't add to the block index or uncommitted block map.
+	missingBlockHash, err := bc.validateAncestorsExist(desoBlock)
+	if err != nil {
+		return false, false, nil, err
+	}
+	if missingBlockHash != nil {
+		missingBlockHashes := []*BlockHash{missingBlockHash}
+		var blockHash *BlockHash
+		blockHash, err = desoBlock.Header.Hash()
+		// If we fail to get the block hash, this block isn't valid at all, so we
+		// don't need to worry about adding it to the orphan list or block index.
+		if err != nil {
+			return false, true, missingBlockHashes, err
+		}
+		// ProcessOrphanBlock validates the block and adds it to the orphan list.
+		// TODO: update _validateOrphanBlock to perform additional validation required.
+		if err = bc.ProcessOrphanBlock(desoBlock, blockHash); err != nil {
+			return false, true, missingBlockHashes, err
+		}
+		return false, true, missingBlockHashes, nil
+	}
+
+	// 2. Start with all sanity checks of the block.
 	// TODO: Check if err is for view > latest committed block view and <= latest uncommitted block.
 	// If so, we need to perform the rest of the validations and then add to our block index.
-	if err := bc.validateDeSoBlockPoS(desoBlock); err != nil {
+	if err = bc.validateDeSoBlockPoS(desoBlock); err != nil {
 
 	}
 	// TODO: Get validator set for current block height. Alternatively, we could do this in
 	// validateQC, but we may need the validator set elsewhere in this function anyway.
 	var validatorSet []*ValidatorEntry
 	// 1e. Validate QC
-	if err := bc.validateQC(desoBlock, validatorSet); err != nil {
+	if err = bc.validateQC(desoBlock, validatorSet); err != nil {
 		return false, false, nil, err
 	}
 
@@ -63,16 +86,6 @@ func (bc *Blockchain) processBlockPoS(desoBlock *MsgDeSoBlock, verifySignatures 
 	// all basic validations. We can also add it to the uncommittedBlocksMap
 	if err := bc.addBlockToBlockIndex(desoBlock); err != nil {
 		return false, false, nil, err
-	}
-
-	// 3. Determine if we're missing a parent block of this block and any of its parents from the block index.
-	// If so, add block to block index and return the hash of the missing block.
-	missingBlockHash, err := bc.validateAncestorsExist(desoBlock)
-	if err != nil {
-		return false, false, nil, err
-	}
-	if missingBlockHash != nil {
-		return false, true, []*BlockHash{missingBlockHash}, nil
 	}
 
 	// 4. Handle reorgs if necessary
@@ -110,7 +123,7 @@ func (bc *Blockchain) processBlockPoS(desoBlock *MsgDeSoBlock, verifySignatures 
 // the Blockchain struct.
 func (bc *Blockchain) validateDeSoBlockPoS(desoBlock *MsgDeSoBlock) error {
 	// Surface Level validation of the block
-	if err := bc.validateBlockGeneral(desoBlock); err != nil {
+	if err := bc.validateBlockIntegrity(desoBlock); err != nil {
 		return err
 	}
 	// Validate Block Height
@@ -131,22 +144,34 @@ func (bc *Blockchain) validateDeSoBlockPoS(desoBlock *MsgDeSoBlock) error {
 	return nil
 }
 
-// validateBlockGeneral validates the block at a surface level. It checks
+// validateBlockIntegrity validates the block at a surface level. It checks
 // that the timestamp is valid, that the version of the header is valid,
 // and other general integrity checks (such as not malformed).
-func (bc *Blockchain) validateBlockGeneral(desoBlock *MsgDeSoBlock) error {
+func (bc *Blockchain) validateBlockIntegrity(desoBlock *MsgDeSoBlock) error {
 	// First make sure we have a non-nil header
 	if desoBlock.Header == nil {
 		return RuleErrorNilBlockHeader
 	}
 
+	// Make sure we have a prevBlockHash
+	if desoBlock.Header.PrevBlockHash == nil {
+		return RuleErrorNilPrevBlockHash
+	}
+
 	// Timestamp validation
-	// What's the criteria? Is it just that it's not in the future?
-	// And that it's not too far in the past? Too far being older than the current best chain tip?
-	if desoBlock.Header.TstampNanoSecs < bc.GetBestChainTip().Header.TstampNanoSecs {
+
+	// Validate that the timestamp is not less than its parent.
+	parentBlock, exists := bc.blockIndex[*desoBlock.Header.PrevBlockHash]
+	if !exists {
+		// Note: this should never happen as we only call this function after
+		// we've validated that all ancestors exist in the block index.
+		return RuleErrorMissingParentBlock
+	}
+	if desoBlock.Header.TstampNanoSecs < parentBlock.Header.TstampNanoSecs {
 		return RuleErrorPoSBlockTstampNanoSecsTooOld
 	}
-	if desoBlock.Header.TstampNanoSecs > uint64(time.Now().UnixNano()) {
+	// TODO: Add support for putting the drift into global params.
+	if desoBlock.Header.TstampNanoSecs > uint64(time.Now().UnixNano())+bc.params.DefaultBlockTimestampDriftNanoSecs {
 		return RuleErrorPoSBlockTstampNanoSecsInFuture
 	}
 
@@ -173,6 +198,39 @@ func (bc *Blockchain) validateBlockGeneral(desoBlock *MsgDeSoBlock) error {
 
 	if !isTimeoutQCEmpty && len(desoBlock.Txns) != 0 {
 		return RuleErrorTimeoutQCWithTransactions
+	}
+
+	if desoBlock.Header.ProposerVotingPublicKey.IsEmpty() {
+		return RuleErrorInvalidProposerVotingPublicKey
+	}
+
+	if desoBlock.Header.ProposerPublicKey == nil || desoBlock.Header.ProposerPublicKey.IsZeroPublicKey() {
+		return RuleErrorInvalidProposerPublicKey
+	}
+
+	if desoBlock.Header.ProposerRandomSeedHash.isEmpty() {
+		return RuleErrorInvalidRandomSeedHash
+	}
+
+	merkleRoot := desoBlock.Header.TransactionMerkleRoot
+
+	// We only want to check the merkle root if we have more than 0 transactions.
+	if isTimeoutQCEmpty {
+		if merkleRoot == nil {
+			return RuleErrorNilMerkleRoot
+		}
+		computedMerkleRoot, _, err := ComputeMerkleRoot(desoBlock.Txns)
+		if err != nil {
+			return errors.Wrapf(err, "validateBlockIntegrity: Problem computing merkle root")
+		}
+		if !merkleRoot.IsEqual(computedMerkleRoot) {
+			return RuleErrorInvalidMerkleRoot
+		}
+	} else {
+		// TODO: do we want to ensure a nil merkle root if we have a timeout QC?
+		if merkleRoot != nil {
+			return RuleErrorTimeoutQCWithMerkleRoot
+		}
 	}
 
 	// TODO: What other checks do we need to do here?
@@ -296,6 +354,7 @@ func (bc *Blockchain) GetBestChainTip() *BlockNode {
 
 const (
 	RuleErrorNilBlockHeader                 RuleError = "RuleErrorNilBlockHeader"
+	RuleErrorNilPrevBlockHash               RuleError = "RuleErrorNilPrevBlockHash"
 	RuleErrorPoSBlockTstampNanoSecsTooOld   RuleError = "RuleErrorPoSBlockTstampNanoSecsTooOld"
 	RuleErrorPoSBlockTstampNanoSecsInFuture RuleError = "RuleErrorPoSBlockTstampNanoSecsInFuture"
 	RuleErrorInvalidPoSBlockHeaderVersion   RuleError = "RuleErrorInvalidPoSBlockHeaderVersion"
@@ -303,4 +362,11 @@ const (
 	RuleErrorBothTimeoutAndVoteQC           RuleError = "RuleErrorBothTimeoutAndVoteQC"
 	RuleErrorVoteQCWithoutTransactions      RuleError = "RuleErrorVoteQCWithoutTransactions"
 	RuleErrorTimeoutQCWithTransactions      RuleError = "RuleErrorTimeoutQCWithTransactions"
+	RuleErrorMissingParentBlock             RuleError = "RuleErrorMissingParentBlock"
+	RuleErrorNilMerkleRoot                  RuleError = "RuleErrorNilMerkleRoot"
+	RuleErrorInvalidMerkleRoot              RuleError = "RuleErrorInvalidMerkleRoot"
+	RuleErrorTimeoutQCWithMerkleRoot        RuleError = "RuleErrorTimeoutQCWithMerkleRoot"
+	RuleErrorInvalidProposerVotingPublicKey RuleError = "RuleErrorInvalidProposerVotingPublicKey"
+	RuleErrorInvalidProposerPublicKey       RuleError = "RuleErrorInvalidProposerPublicKey"
+	RuleErrorInvalidRandomSeedHash          RuleError = "RuleErrorInvalidRandomSeedHash"
 )

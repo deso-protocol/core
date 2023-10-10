@@ -3796,6 +3796,9 @@ type GlobalParamsEntry struct {
 	// allow a validator to be inactive for (neither voting nor proposing
 	// blocks) before they are jailed.
 	JailInactiveValidatorGracePeriodEpochs uint64
+
+	//
+
 }
 
 func (gp *GlobalParamsEntry) Copy() *GlobalParamsEntry {

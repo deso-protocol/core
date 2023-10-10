@@ -699,6 +699,11 @@ type DeSoParams struct {
 	// before they are jailed.
 	DefaultJailInactiveValidatorGracePeriodEpochs uint64
 
+	// TODO: add support for putting the drift in global params.
+	// DefaultBlockTimestampDriftNanoSecs is the default number of nanoseconds
+	// from the current timestamp that we will allow a PoS block to be submitted.
+	DefaultBlockTimestampDriftNanoSecs uint64
+
 	ForkHeights ForkHeights
 
 	EncoderMigrationHeights     *EncoderMigrationHeights
@@ -1103,6 +1108,9 @@ var DeSoMainnetParams = DeSoParams{
 	// The number of epochs before an inactive validator is jailed
 	DefaultJailInactiveValidatorGracePeriodEpochs: uint64(48),
 
+	// The number of nanoseconds from the current timestamp that we will allow a PoS block to be submitted.
+	DefaultBlockTimestampDriftNanoSecs: uint64((time.Minute * 10).Nanoseconds()),
+
 	ForkHeights:                 MainnetForkHeights,
 	EncoderMigrationHeights:     GetEncoderMigrationHeights(&MainnetForkHeights),
 	EncoderMigrationHeightsList: GetEncoderMigrationHeightsList(&MainnetForkHeights),
@@ -1360,6 +1368,9 @@ var DeSoTestnetParams = DeSoParams{
 
 	// The number of epochs before an inactive validator is jailed
 	DefaultJailInactiveValidatorGracePeriodEpochs: uint64(48),
+
+	// The number of nanoseconds from the current timestamp that we will allow a PoS block to be submitted.
+	DefaultBlockTimestampDriftNanoSecs: uint64((time.Minute * 10).Nanoseconds()),
 
 	ForkHeights:                 TestnetForkHeights,
 	EncoderMigrationHeights:     GetEncoderMigrationHeights(&TestnetForkHeights),

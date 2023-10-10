@@ -1345,6 +1345,7 @@ func (bc *Blockchain) SetBestChainMap(bestChain []*BlockNode, bestChainMap map[B
 	bc.blockIndex = blockIndex
 }
 
+// TODO: update to support validating orphan PoS Blocks
 func (bc *Blockchain) _validateOrphanBlock(desoBlock *MsgDeSoBlock) error {
 	// Error if the block is missing a parent hash or header.
 	if desoBlock.Header == nil {

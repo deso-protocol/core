@@ -96,6 +96,10 @@ func (publicKey *PublicKey) Copy() *PublicKey {
 	panic(BLSNoRelicError)
 }
 
+func (publicKey *PublicKey) IsEmpty() bool {
+	panic(BLSNoRelicError)
+}
+
 //
 // TYPES: Signature
 //
