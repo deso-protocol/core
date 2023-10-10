@@ -519,6 +519,10 @@ func TestAddBlockToBlockIndexAndUncommittedBlocks(t *testing.T) {
 	require.Error(t, err)
 }
 
+func TestValidateBlockLeader(t *testing.T) {
+	t.Skipf("TODO: Implement")
+}
+
 func _generateRandomBLSPrivateKey(t *testing.T) *bls.PrivateKey {
 	privateKey, err := bls.NewPrivateKey()
 	require.NoError(t, err)
