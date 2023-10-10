@@ -966,6 +966,37 @@ func (bav *UtxoView) GetSnapshotLeaderScheduleValidator(leaderIndex uint16) (*Va
 	return validatorEntry, nil
 }
 
+func (bav *UtxoView) GetSnapshotLeaderSchedule() ([]*PKID, error) {
+	snapshotAtEpochNumber, err := bav.GetSnapshotEpochNumber()
+	if err != nil {
+		return nil, errors.Wrapf(err, "GetSnapshotLeaderSchedule: problem calculating SnapshotEpochNumber: ")
+	}
+	// Seek over DB prefix and merge into view.
+	leaderIdxToValidatorPKIDMap, err := DBSeekSnapshotLeaderSchedule(bav.Handle, snapshotAtEpochNumber)
+	if err != nil {
+		return nil, errors.Wrapf(err, "GetSnapshotLeaderSchedule: error retrieving ValidatorPKIDs: ")
+	}
+	// Merge the DB entries into the UtxoView.
+	for leaderIdx, validatorPKID := range leaderIdxToValidatorPKIDMap {
+		snapshotLeaderScheduleMapKey := SnapshotLeaderScheduleMapKey{
+			SnapshotAtEpochNumber: snapshotAtEpochNumber,
+			LeaderIndex:           leaderIdx,
+		}
+		if _, exists := bav.SnapshotLeaderSchedule[snapshotLeaderScheduleMapKey]; !exists {
+			bav._setSnapshotLeaderScheduleValidator(validatorPKID, leaderIdx, snapshotAtEpochNumber)
+		}
+	}
+
+	// First, check the UtxoView.
+	var leaderPKIDs []*PKID
+	for mapKey, validatorPKID := range bav.SnapshotLeaderSchedule {
+		if mapKey.SnapshotAtEpochNumber == snapshotAtEpochNumber {
+			leaderPKIDs = append(leaderPKIDs, validatorPKID)
+		}
+	}
+	return leaderPKIDs, nil
+}
+
 func (bav *UtxoView) _setSnapshotLeaderScheduleValidator(validatorPKID *PKID, index uint16, snapshotAtEpochNumber uint64) {
 	if validatorPKID == nil {
 		glog.Errorf("_setSnapshotLeaderScheduleValidator: called with nil ValidatorPKID, this should never happen")
@@ -1000,6 +1031,12 @@ func DBKeyForSnapshotLeaderScheduleValidator(leaderIndex uint16, snapshotAtEpoch
 	data := append([]byte{}, Prefixes.PrefixSnapshotLeaderSchedule...)
 	data = append(data, EncodeUint64(snapshotAtEpochNumber)...)
 	data = append(data, EncodeUint16(leaderIndex)...)
+	return data
+}
+
+func DBSSeekKeyForSnapshotLeaderSchedule(snapshotAtEpochNumber uint64) []byte {
+	data := append([]byte{}, Prefixes.PrefixSnapshotLeaderSchedule...)
+	data = append(data, EncodeUint64(snapshotAtEpochNumber)...)
 	return data
 }
 
@@ -1044,6 +1081,27 @@ func DBGetSnapshotLeaderScheduleValidatorWithTxn(
 
 	// Retrieve ValidatorEntry by PKID from db.
 	return DBGetSnapshotValidatorSetEntryByPKIDWithTxn(txn, snap, validatorPKID, snapshotAtEpochNumber)
+}
+
+func DBSeekSnapshotLeaderSchedule(
+	handle *badger.DB,
+	snapshotAtEpochNumber uint64,
+) (map[uint16]*PKID, error) {
+	seekKey := DBSSeekKeyForSnapshotLeaderSchedule(snapshotAtEpochNumber)
+	keysFound, valsFound := EnumerateKeysForPrefix(handle, seekKey)
+	leaderIdxToPKID := make(map[uint16]*PKID)
+	for idx, keyFound := range keysFound {
+		// TODO: Make sure this decode is correct
+		leaderIndex := DecodeUint16(keyFound[len(seekKey):])
+		// Decode ValidatorPKID from bytes.
+		validatorPKID := &PKID{}
+		rr := bytes.NewReader(valsFound[idx])
+		if exist, err := DecodeFromBytes(validatorPKID, rr); !exist || err != nil {
+			return nil, errors.Wrapf(err, "DBSeekSnapshotLeaderSchedule: problem decoding ValidatorPKID")
+		}
+		leaderIdxToPKID[leaderIndex] = validatorPKID
+	}
+	return leaderIdxToPKID, nil
 }
 
 func DBPutSnapshotLeaderScheduleValidatorWithTxn(
