@@ -311,8 +311,8 @@ func (bc *Blockchain) addBlockToBlockIndex(desoBlock *MsgDeSoBlock) error {
 	}
 	// Need to get parent block node from block index
 	prevBlock := bc.blockIndex[*desoBlock.Header.PrevBlockHash]
-	// What should the block status be here? Validated?
-	bc.blockIndex[*hash] = NewPoSBlockNode(prevBlock, hash, uint32(desoBlock.Header.Height), desoBlock.Header, StatusBlockValidated, UNCOMMITTED)
+	// TODO: What should the block status be here? Validated? What combo is correct? Need to check in with Diamondhands.
+	bc.blockIndex[*hash] = NewPoSBlockNode(prevBlock, hash, uint32(desoBlock.Header.Height), desoBlock.Header, StatusHeaderValidated|StatusBlockValidated, UNCOMMITTED)
 
 	bc.uncommittedBlocksMap[*hash] = desoBlock
 	return nil
@@ -365,7 +365,6 @@ func (bc *Blockchain) GetUncommittedTipView() (*UtxoView, error) {
 	// Connect the uncommitted blocks to the tip so that we can validate subsequent blocks
 	highestCommittedBlock, committedBlockIndex := bc.getHighestCommittedBlock()
 	if highestCommittedBlock == nil {
-		// TODO: do we just want to connect all the blocks in best chain then?
 		// This is an edge case we'll never hit in practice since all the PoW blocks
 		// are committed.
 		return nil, errors.New("GetUncommittedTipView: No committed blocks found")
@@ -383,10 +382,9 @@ func (bc *Blockchain) GetUncommittedTipView() (*UtxoView, error) {
 		if !exists {
 			return nil, errors.Errorf("GetUncommittedTipView: Block %v not found in block index", bc.bestChain[ii].Hash)
 		}
-		// TODO: Do we want/need to attach the event manager here? Do we need the utxo ops for anything?
 		_, err = utxoView.ConnectBlock(fullBlock, collections.Transform(fullBlock.Txns, func(txn *MsgDeSoTxn) *BlockHash {
 			return txn.Hash()
-		}), false, bc.eventManager, fullBlock.Header.Height)
+		}), false, nil, fullBlock.Header.Height)
 		if err != nil {
 			hash, _ := fullBlock.Hash()
 			return nil, errors.Wrapf(err, "GetUncommittedTipView: Problem connecting block hash %v", hash.String())
