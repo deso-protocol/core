@@ -687,7 +687,7 @@ func (fc *FastHotStuffEventLoop) tryConstructTimeoutQCInCurrentView() *FastHotSt
 	// Happy path
 	return &FastHotStuffEvent{
 		EventType:      FastHotStuffEventTypeConstructTimeoutQC, // The event type
-		View:           fc.currentView,                          // The view that we have a timeout QC for
+		View:           fc.currentView,                          // The view that the timeout QC is proposed in
 		TipBlockHash:   validatorsHighQC.GetBlockHash(),         // The block hash that we extend from
 		TipBlockHeight: safeBlock.GetHeight(),                   // The block height that we extend from
 		AggregateQC: &aggregateQuorumCertificate{
