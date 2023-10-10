@@ -17,9 +17,10 @@ func TestPosMempoolStart(t *testing.T) {
 	globalParams := _testGetDefaultGlobalParams()
 	dir := _dbDirSetup(t)
 
-	mempool := NewPosMempool(&params, globalParams, nil, 0, dir)
+	mempool := NewPosMempool(&params, globalParams, nil, 0, dir, false)
 	require.NoError(mempool.Start())
 	require.True(mempool.IsRunning())
+	require.NoError(mempool.Refresh())
 	mempool.Stop()
 	require.False(mempool.IsRunning())
 }
@@ -36,12 +37,11 @@ func TestPosMempoolRestartWithTransactions(t *testing.T) {
 	params, db := _blockchainSetup(t)
 	m0PubBytes, _, _ := Base58CheckDecode(m0Pub)
 	m1PubBytes, _, _ := Base58CheckDecode(m1Pub)
-
 	latestBlockView, err := NewUtxoView(db, params, nil, nil)
 	require.NoError(err)
 	dir := _dbDirSetup(t)
 
-	mempool := NewPosMempool(params, globalParams, latestBlockView, 2, dir)
+	mempool := NewPosMempool(params, globalParams, latestBlockView, 2, dir, false)
 	require.NoError(mempool.Start())
 	require.True(mempool.IsRunning())
 
@@ -52,15 +52,21 @@ func TestPosMempoolRestartWithTransactions(t *testing.T) {
 
 	poolTxns := mempool.GetTransactions()
 	require.Equal(2, len(poolTxns))
+	require.NoError(mempool.Refresh())
+	require.Equal(2, len(mempool.GetTransactions()))
 	mempool.Stop()
 	require.False(mempool.IsRunning())
 
-	newPool := NewPosMempool(params, globalParams, latestBlockView, 2, dir)
+	newPool := NewPosMempool(params, globalParams, latestBlockView, 2, dir, false)
 	require.NoError(newPool.Start())
 	require.True(newPool.IsRunning())
 	newPoolTxns := newPool.GetTransactions()
 	require.Equal(2, len(newPoolTxns))
 	require.Equal(len(newPool.GetTransactions()), len(newPool.nonceTracker.nonceMap))
+	require.NoError(newPool.Refresh())
+	require.Equal(2, len(newPool.GetTransactions()))
+	_wrappedPosMempoolRemoveTransaction(t, newPool, txn1.Hash())
+	_wrappedPosMempoolRemoveTransaction(t, newPool, txn2.Hash())
 	newPool.Stop()
 	require.False(newPool.IsRunning())
 }
@@ -83,7 +89,7 @@ func TestPosMempoolPrune(t *testing.T) {
 	dir := _dbDirSetup(t)
 
 	params.MaxMempoolPosSizeBytes = 500
-	mempool := NewPosMempool(params, globalParams, latestBlockView, 2, dir)
+	mempool := NewPosMempool(params, globalParams, latestBlockView, 2, dir, false)
 	require.NoError(mempool.Start())
 	require.True(mempool.IsRunning())
 
@@ -110,20 +116,22 @@ func TestPosMempoolPrune(t *testing.T) {
 	require.Equal(uint64(1776), mempool.GetTransaction(fetchedTxns[2].Hash()).TxnFeeNanos)
 
 	// Remove one transaction.
-	require.NoError(mempool.RemoveTransaction(fetchedTxns[0].Hash()))
+	_wrappedPosMempoolRemoveTransaction(t, mempool, fetchedTxns[0].Hash())
+	require.NoError(mempool.Refresh())
+	require.Equal(2, len(mempool.GetTransactions()))
 	mempool.Stop()
 	require.False(mempool.IsRunning())
 
-	newPool := NewPosMempool(params, globalParams, latestBlockView, 2, dir)
+	newPool := NewPosMempool(params, globalParams, latestBlockView, 2, dir, false)
 	require.NoError(newPool.Start())
 	require.True(newPool.IsRunning())
 	require.Equal(2, len(newPool.GetTransactions()))
 
 	// Remove the other transactions.
-	require.NoError(newPool.RemoveTransaction(fetchedTxns[1].Hash()))
-	require.NoError(newPool.RemoveTransaction(fetchedTxns[2].Hash()))
+	_wrappedPosMempoolRemoveTransaction(t, newPool, fetchedTxns[1].Hash())
+	_wrappedPosMempoolRemoveTransaction(t, newPool, fetchedTxns[2].Hash())
 	// Remove the same transaction twice
-	require.NoError(newPool.RemoveTransaction(fetchedTxns[1].Hash()))
+	_wrappedPosMempoolRemoveTransaction(t, newPool, fetchedTxns[1].Hash())
 	require.Equal(0, len(newPool.GetTransactions()))
 
 	// Add the transactions back.
@@ -142,6 +150,12 @@ func TestPosMempoolPrune(t *testing.T) {
 		index++
 	}
 	require.Equal(len(newPool.GetTransactions()), len(newPool.nonceTracker.nonceMap))
+	require.NoError(newPool.Refresh())
+	txns = newPool.GetTransactions()
+	require.Equal(3, len(txns))
+	for _, txn := range txns {
+		_wrappedPosMempoolRemoveTransaction(t, newPool, txn.Hash())
+	}
 	newPool.Stop()
 	require.False(newPool.IsRunning())
 }
@@ -163,7 +177,7 @@ func TestPosMempoolUpdateGlobalParams(t *testing.T) {
 	require.NoError(err)
 	dir := _dbDirSetup(t)
 
-	mempool := NewPosMempool(params, globalParams, latestBlockView, 2, dir)
+	mempool := NewPosMempool(params, globalParams, latestBlockView, 2, dir, false)
 	require.NoError(mempool.Start())
 	require.True(mempool.IsRunning())
 
@@ -188,7 +202,7 @@ func TestPosMempoolUpdateGlobalParams(t *testing.T) {
 	mempool.Stop()
 	require.False(mempool.IsRunning())
 
-	newPool := NewPosMempool(params, newGlobalParams, latestBlockView, 2, dir)
+	newPool := NewPosMempool(params, newGlobalParams, latestBlockView, 2, dir, false)
 	require.NoError(newPool.Start())
 	require.True(newPool.IsRunning())
 	newPoolTxns := newPool.GetTransactions()
@@ -215,7 +229,7 @@ func TestPosMempoolReplaceWithHigherFee(t *testing.T) {
 	require.NoError(err)
 	dir := _dbDirSetup(t)
 
-	mempool := NewPosMempool(params, globalParams, latestBlockView, 2, dir)
+	mempool := NewPosMempool(params, globalParams, latestBlockView, 2, dir, false)
 	require.NoError(mempool.Start())
 	require.True(mempool.IsRunning())
 
@@ -245,7 +259,7 @@ func TestPosMempoolReplaceWithHigherFee(t *testing.T) {
 	txn2Low.TxnFeeNanos = txn2.TxnFeeNanos - 1000
 	*txn2Low.TxnNonce = *txn2.TxnNonce
 	_signTxn(t, txn2Low, m1Priv)
-	err = mempool.AddTransaction(txn2Low)
+	err = mempool.AddTransaction(txn2Low, true)
 	require.Contains(err.Error(), MempoolFailedReplaceByHigherFee)
 
 	// Now generate a proper new transaction for m1, with same nonce, and higher fee.
@@ -265,6 +279,8 @@ func TestPosMempoolReplaceWithHigherFee(t *testing.T) {
 	require.Equal(txn1New, mempool.GetTransactions()[1])
 
 	require.Equal(len(mempool.GetTransactions()), len(mempool.nonceTracker.nonceMap))
+	require.NoError(mempool.Refresh())
+	require.Equal(2, len(mempool.GetTransactions()))
 	mempool.Stop()
 	require.False(mempool.IsRunning())
 }
@@ -329,7 +345,7 @@ func _generateTestTxn(t *testing.T, rand *rand.Rand, feeMin uint64, feeMax uint6
 }
 
 func _wrappedPosMempoolAddTransaction(t *testing.T, mp *PosMempool, txn *MsgDeSoTxn) {
-	require.NoError(t, mp.AddTransaction(txn))
+	require.NoError(t, mp.AddTransaction(txn, true))
 	require.Equal(t, true, _checkPosMempoolIntegrity(t, mp))
 }
 
