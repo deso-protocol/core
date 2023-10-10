@@ -8,6 +8,7 @@ type DatabaseId byte
 
 const (
 	BADGERDB DatabaseId = 0
+	BOLTDB   DatabaseId = 1
 )
 
 // Database is a unified interface for Key-Value databases. Using an additional layer of abstraction atop a native database
