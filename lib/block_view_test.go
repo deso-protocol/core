@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/hex"
 	"fmt"
+	"math"
 	_ "net/http/pprof"
 	"reflect"
 	"sort"
@@ -16,10 +17,6 @@ import (
 	"github.com/golang/glog"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	_ "net/http/pprof"
-	"reflect"
-	"sort"
-	"testing"
 )
 
 func _strToPk(t *testing.T, pkStr string) []byte {
@@ -95,7 +92,7 @@ func resetBalanceModelBlockHeights() {
 	DeSoTestnetParams.ForkHeights.ExtraDataOnEntriesBlockHeight = uint32(304087)
 	DeSoTestnetParams.ForkHeights.AssociationsAndAccessGroupsBlockHeight = uint32(596555)
 	DeSoTestnetParams.ForkHeights.BalanceModelBlockHeight = uint32(683058)
-	DeSoTestnetParams.ForkHeights.ProofOfStake1StateSetupBlockHeight = 1000000
+	DeSoTestnetParams.ForkHeights.ProofOfStake1StateSetupBlockHeight = uint32(math.MaxUint32)
 	DeSoTestnetParams.EncoderMigrationHeights = GetEncoderMigrationHeights(&DeSoTestnetParams.ForkHeights)
 	DeSoTestnetParams.EncoderMigrationHeightsList = GetEncoderMigrationHeightsList(&DeSoTestnetParams.ForkHeights)
 	GlobalDeSoParams = DeSoTestnetParams
