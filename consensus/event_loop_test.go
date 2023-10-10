@@ -545,6 +545,7 @@ func TestTimeoutScheduledTaskExecuted(t *testing.T) {
 	require.Equal(t, timeoutSignal.EventType, FastHotStuffEventTypeTimeout)
 	require.Equal(t, timeoutSignal.View, dummyBlock.GetView()+2)
 	require.Equal(t, timeoutSignal.TipBlockHash.GetValue(), dummyBlock.GetBlockHash().GetValue())
+	require.Equal(t, timeoutSignal.QC.GetBlockHash().GetValue(), dummyBlock.qc.GetBlockHash().GetValue())
 
 	// Confirm that the timeout is no longer running
 	require.False(t, fc.nextTimeoutTask.IsScheduled())
