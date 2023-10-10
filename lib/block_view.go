@@ -2440,8 +2440,17 @@ func (bav *UtxoView) _checkAndUpdateDerivedKeySpendingLimit(
 			return utxoOpsForTxn, err
 		}
 	case TxnTypeUpdateCoinLockupParams:
+		// NOTE: While this breaks convention, we allow the UpdateCoinLockupParamsMetadata to decrement
+		//       two different derived key limits independently for added flexibility. We could
+		//       have a limit as to the number of UpdateCoinLockupParams transactions but given the
+		//       importance of security regarding the lockup yield curve it makes more sense to break
+		//       derived key limits for UpdateCoinLockupParams into multiple behavior specific limits.
 		txnMeta := txn.TxnMeta.(*UpdateCoinLockupParamsMetadata)
 		// Check if we're updating the transactor's yield curve.
+		// NOTE: It's described in a longer comment in UpdateCoinLockupParamsMetadata that if
+		//       LockupYieldDurationNanoSecs is zero, the other fields associated with updating
+		//       the yield curve are ignored. Hence, the check below checks that any update
+		//       to the yield curve exists in the given transaction.
 		if txnMeta.LockupYieldDurationNanoSecs > 0 {
 			if derivedKeyEntry, err = bav._checkLockupTxnSpendingLimitAndUpdateDerivedKey(
 				derivedKeyEntry, NewPublicKey(txn.PublicKey), UpdateCoinLockupYieldCurveOperation); err != nil {
