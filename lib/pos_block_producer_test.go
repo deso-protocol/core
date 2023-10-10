@@ -49,9 +49,9 @@ func TestCreateBlockTemplate(t *testing.T) {
 	_, err = seedHash.FromBytes(Sha256DoubleHash([]byte("seed")).ToBytes())
 	require.NoError(err)
 	m0Pk := NewPublicKey(m0PubBytes)
-	pbp := NewPosBlockProducer(mempool, params, m0Pk, pub, seedHash)
+	pbp := NewPosBlockProducer(mempool, params, m0Pk, pub)
 
-	blockTemplate, err := pbp.createBlockTemplate(latestBlockView, 3, 10)
+	blockTemplate, err := pbp.createBlockTemplate(latestBlockView, 3, 10, seedHash)
 	require.NoError(err)
 	require.NotNil(blockTemplate)
 	require.NotNil(blockTemplate.Header)
@@ -100,16 +100,15 @@ func TestCreateBlockWithoutHeader(t *testing.T) {
 		_wrappedPosMempoolAddTransaction(t, mempool, txn)
 	}
 
-	pbp := NewPosBlockProducer(mempool, params, nil, nil, nil)
-	txns, txnConnectStatus, txnTimestamps, maxUtilityFee, err := pbp.getBlockTransactions(
+	pbp := NewPosBlockProducer(mempool, params, nil, nil)
+	txns, txnConnectStatus, maxUtilityFee, err := pbp.getBlockTransactions(
 		latestBlockView, 3, 50000)
 	require.NoError(err)
 
 	blockTemplate, err := pbp.createBlockWithoutHeader(latestBlockView, 3)
 	require.NoError(err)
 	require.Equal(txns, blockTemplate.Txns[1:])
-	require.Equal(txnConnectStatus, blockTemplate.RevolutionMetadata.TxnConnectStatusByIndex)
-	require.Equal(txnTimestamps, blockTemplate.RevolutionMetadata.TxnTimestampsUnixMicro)
+	require.Equal(txnConnectStatus, blockTemplate.TxnConnectStatusByIndex)
 	require.Equal(maxUtilityFee, blockTemplate.Txns[0].TxOutputs[0].AmountNanos)
 	require.Equal(NewMessage(MsgTypeHeader).(*MsgDeSoHeader), blockTemplate.Header)
 	require.Nil(blockTemplate.BlockProducerInfo)
@@ -153,7 +152,7 @@ func TestGetBlockTransactions(t *testing.T) {
 		_wrappedPosMempoolAddTransaction(t, mempool, txn)
 	}
 
-	pbp := NewPosBlockProducer(mempool, params, nil, nil, nil)
+	pbp := NewPosBlockProducer(mempool, params, nil, nil)
 	_testProduceBlockNoSizeLimit(t, mempool, pbp, latestBlockView, 3,
 		len(passingTxns), 0, 0)
 
@@ -203,32 +202,39 @@ func TestGetBlockTransactions(t *testing.T) {
 
 	latestBlockViewCopy, err := latestBlockView.CopyUtxoView()
 	require.NoError(err)
-	txns, txnConnectStatus, txnTimestamps, maxUtilityFee, err := pbp.getBlockTransactions(latestBlockView, 3, 1000)
+	txns, txnConnectStatus, maxUtilityFee, err := pbp.getBlockTransactions(latestBlockView, 3, 1000)
 	require.NoError(err)
 	require.Equal(latestBlockViewCopy, latestBlockView)
 	require.Equal(true, len(passingTxns) > len(txns))
 	require.Equal(true, len(passingTxns) > txnConnectStatus.Size())
-	require.Equal(true, len(passingTxns) > len(txnTimestamps))
 	totalUtilityFee = 0
 	for _, txn := range txns {
 		_, utilityFee := computeBMF(txn.TxnFeeNanos)
 		totalUtilityFee += utilityFee
 	}
 	require.Equal(totalUtilityFee, maxUtilityFee)
-	for ii := 0; ii < len(txns)-1; ii++ {
-		txns1Timestamp := txnTimestamps[ii]
-		txns1FeeRate, err := txns[ii].ComputeFeeRatePerKBNanos()
-		require.NoError(err)
-		txns2Timestamp := txnTimestamps[ii+1]
-		txns2FeeRate, err := txns[ii+1].ComputeFeeRatePerKBNanos()
-		require.NoError(err)
-		require.Equal(true, txns1FeeRate >= txns2FeeRate || txns1Timestamp <= txns2Timestamp)
+
+	// Create an in-memory mempool instance and add the transactions to it. Each transaction will be added with a
+	// Simulated Transaction Timestamp and afterward, mempool will be queried for the transactions. The transactions should
+	// be returned in the same order as the transaction from getBlockTransactions.
+	testMempool := NewPosMempool(params, globalParams, latestBlockView, 2, "", true)
+	require.NoError(testMempool.Start())
+	defer testMempool.Stop()
+	currentTime := uint64(time.Now().UnixMicro())
+	for ii, txn := range txns {
+		// Use the Simulated Transaction Timestamp.
+		mtxn := NewMempoolTransaction(txn, currentTime+uint64(ii))
+		require.NoError(testMempool.AddTransaction(mtxn, false))
+	}
+	newTxns := testMempool.GetTransactions()
+	require.Equal(len(txns), len(newTxns))
+	for ii := 0; ii < len(txns); ii++ {
+		require.Equal(txns[ii], newTxns[ii].GetTxn())
 	}
 }
 
 func _testProduceBlockNoSizeLimit(t *testing.T, mp *PosMempool, pbp *PosBlockProducer, latestBlockView *UtxoView, blockHeight uint64,
-	numPassing int, numFailing int, numInvalid int) (_txns []*MsgDeSoTxn, _txnConnectStatusByIndex *bitset.Bitset,
-	_txnTimestampsUnixMicro []uint64, _maxUtilityFee uint64) {
+	numPassing int, numFailing int, numInvalid int) (_txns []*MsgDeSoTxn, _txnConnectStatusByIndex *bitset.Bitset, _maxUtilityFee uint64) {
 	require := require.New(t)
 
 	totalAcceptedTxns := numPassing + numFailing
@@ -237,12 +243,11 @@ func _testProduceBlockNoSizeLimit(t *testing.T, mp *PosMempool, pbp *PosBlockPro
 
 	latestBlockViewCopy, err := latestBlockView.CopyUtxoView()
 	require.NoError(err)
-	txns, txnConnectStatus, txnTimestamps, maxUtilityFee, err := pbp.getBlockTransactions(latestBlockView, blockHeight, math.MaxUint64)
+	txns, txnConnectStatus, maxUtilityFee, err := pbp.getBlockTransactions(latestBlockView, blockHeight, math.MaxUint64)
 	require.NoError(err)
 	require.Equal(latestBlockViewCopy, latestBlockView)
 	require.Equal(totalAcceptedTxns, len(txns))
 	require.Equal(true, totalAcceptedTxns >= txnConnectStatus.Size())
-	require.Equal(totalAcceptedTxns, len(txnTimestamps))
 	numConnected := 0
 	for ii := range txns {
 		if txnConnectStatus.Get(ii) {
@@ -250,5 +255,5 @@ func _testProduceBlockNoSizeLimit(t *testing.T, mp *PosMempool, pbp *PosBlockPro
 		}
 	}
 	require.Equal(numPassing, numConnected)
-	return txns, txnConnectStatus, txnTimestamps, maxUtilityFee
+	return txns, txnConnectStatus, maxUtilityFee
 }

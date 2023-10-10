@@ -23,17 +23,14 @@ type PosBlockProducer struct {
 	params                  *DeSoParams
 	proposerPublicKey       *PublicKey
 	proposerVotingPublicKey *bls.PublicKey
-	proposerRandomSeedHash  *RandomSeedHash
 }
 
-func NewPosBlockProducer(mp Mempool, params *DeSoParams, proposerPublicKey *PublicKey, proposerVotingPublicKey *bls.PublicKey,
-	proposerRandomSeedHash *RandomSeedHash) *PosBlockProducer {
+func NewPosBlockProducer(mp Mempool, params *DeSoParams, proposerPublicKey *PublicKey, proposerVotingPublicKey *bls.PublicKey) *PosBlockProducer {
 	return &PosBlockProducer{
 		mp:                      mp,
 		params:                  params,
 		proposerPublicKey:       proposerPublicKey,
 		proposerVotingPublicKey: proposerVotingPublicKey,
-		proposerRandomSeedHash:  proposerRandomSeedHash,
 	}
 }
 
@@ -46,10 +43,10 @@ func (pbp *PosBlockProducer) SignBlock(blockTemplate BlockTemplate, signerPrivat
 // during happy path in consensus when a vote QC has been assembled. The block is unsigned, so to indicate its incompleteness,
 // the block is returned as a BlockTemplate.
 func (pbp *PosBlockProducer) CreateUnsignedBlock(latestBlockView *UtxoView, newBlockHeight uint64, view uint64,
-	validatorsVoteQC *QuorumCertificate) (BlockTemplate, error) {
+	proposerRandomSeedHash *RandomSeedHash, validatorsVoteQC *QuorumCertificate) (BlockTemplate, error) {
 
 	// Create the block template.
-	block, err := pbp.createBlockTemplate(latestBlockView, newBlockHeight, view)
+	block, err := pbp.createBlockTemplate(latestBlockView, newBlockHeight, view, proposerRandomSeedHash)
 	if err != nil {
 		return nil, errors.Wrapf(err, "PosBlockProducer.CreateUnsignedTimeoutBlock: Problem creating block template")
 	}
@@ -63,10 +60,10 @@ func (pbp *PosBlockProducer) CreateUnsignedBlock(latestBlockView *UtxoView, newB
 // during a timeout in consensus when a validators timeout aggregate QC has been assembled. The block is unsigned,
 // and so is returned as a BlockTemplate.
 func (pbp *PosBlockProducer) CreateUnsignedTimeoutBlock(latestBlockView *UtxoView, newBlockHeight uint64, view uint64,
-	validatorsTimeoutAggregateQC *TimeoutAggregateQuorumCertificate) (BlockTemplate, error) {
+	proposerRandomSeedHash *RandomSeedHash, validatorsTimeoutAggregateQC *TimeoutAggregateQuorumCertificate) (BlockTemplate, error) {
 
 	// Create the block template.
-	block, err := pbp.createBlockTemplate(latestBlockView, newBlockHeight, view)
+	block, err := pbp.createBlockTemplate(latestBlockView, newBlockHeight, view, proposerRandomSeedHash)
 	if err != nil {
 		return nil, errors.Wrapf(err, "PosBlockProducer.CreateUnsignedTimeoutBlock: Problem creating block template")
 	}
@@ -79,8 +76,8 @@ func (pbp *PosBlockProducer) CreateUnsignedTimeoutBlock(latestBlockView *UtxoVie
 // createBlockTemplate is a helper function used by CreateUnsignedBlock and CreateUnsignedTimeoutBlock. It constructs
 // a partially filled out block with Fee-Time ordered transactions. The returned block is complete except for
 // the qc / aggregateQc fields, and the signature.
-func (pbp *PosBlockProducer) createBlockTemplate(latestBlockView *UtxoView, newBlockHeight uint64, view uint64) (
-	BlockTemplate, error) {
+func (pbp *PosBlockProducer) createBlockTemplate(latestBlockView *UtxoView, newBlockHeight uint64, view uint64,
+	proposerRandomSeedHash *RandomSeedHash) (BlockTemplate, error) {
 	// First get the block without the header.
 	block, err := pbp.createBlockWithoutHeader(latestBlockView, newBlockHeight)
 	if err != nil {
@@ -105,7 +102,7 @@ func (pbp *PosBlockProducer) createBlockTemplate(latestBlockView *UtxoView, newB
 	// Set the proposer information.
 	block.Header.ProposerPublicKey = pbp.proposerPublicKey
 	block.Header.ProposerVotingPublicKey = pbp.proposerVotingPublicKey
-	block.Header.ProposerRandomSeedHash = pbp.proposerRandomSeedHash
+	block.Header.ProposerRandomSeedHash = proposerRandomSeedHash
 	return block, nil
 }
 
@@ -126,7 +123,7 @@ func (pbp *PosBlockProducer) createBlockWithoutHeader(latestBlockView *UtxoView,
 	}
 
 	// Get block transactions from the mempool.
-	feeTimeTxns, txnConnectStatusByIndex, txnTimestampsUnixMicro, maxUtilityFee, err := pbp.getBlockTransactions(
+	feeTimeTxns, txnConnectStatusByIndex, maxUtilityFee, err := pbp.getBlockTransactions(
 		latestBlockView, newBlockHeight, pbp.params.MinerMaxBlockSizeBytes-uint64(len(blockRewardTxnSizeBytes)))
 	if err != nil {
 		return nil, errors.Wrapf(err, "PosBlockProducer.createBlockWithoutHeader: Problem retrieving block transactions: ")
@@ -137,30 +134,29 @@ func (pbp *PosBlockProducer) createBlockWithoutHeader(latestBlockView *UtxoView,
 	block.Txns = append([]*MsgDeSoTxn{blockRewardTxn}, feeTimeTxns...)
 
 	// Set the RevolutionMetadata
-	block.RevolutionMetadata = NewRevolutionMetadata(txnConnectStatusByIndex, txnTimestampsUnixMicro)
+	block.TxnConnectStatusByIndex = txnConnectStatusByIndex
 	return block, nil
 }
 
 // getBlockTransactions is used to retrieve fee-time ordered transactions from the mempool.
 func (pbp *PosBlockProducer) getBlockTransactions(latestBlockView *UtxoView, newBlockHeight uint64, maxBlockSizeBytes uint64) (
-	_txns []*MsgDeSoTxn, _txnConnectStatusByIndex *bitset.Bitset, _txnTimestampsUnixMicro []uint64, _maxUtilityFee uint64, _err error) {
+	_txns []*MsgDeSoTxn, _txnConnectStatusByIndex *bitset.Bitset, _maxUtilityFee uint64, _err error) {
 	// Get Fee-Time ordered transactions from the mempool
 	feeTimeTxns := pbp.mp.GetTransactions()
 
 	// Try to connect transactions one by one.
 	blocksTxns := []*MsgDeSoTxn{}
 	txnConnectStatusByIndex := bitset.NewBitset()
-	txnTimestampsUnixMicro := []uint64{}
 	maxUtilityFee := uint64(0)
 	currentBlockSize := uint64(0)
 	blockUtxoView, err := latestBlockView.CopyUtxoView()
 	if err != nil {
-		return nil, nil, nil, 0, errors.Wrapf(err, "Error copying UtxoView: ")
+		return nil, nil, 0, errors.Wrapf(err, "Error copying UtxoView: ")
 	}
 	for _, txn := range feeTimeTxns {
 		txnBytes, err := txn.ToBytes(false)
 		if err != nil {
-			return nil, nil, nil, 0, errors.Wrapf(err, "Error getting transaction size: ")
+			return nil, nil, 0, errors.Wrapf(err, "Error getting transaction size: ")
 		}
 		// Skip over transactions that are too big.
 		if currentBlockSize+uint64(len(txnBytes)) > maxBlockSizeBytes {
@@ -169,7 +165,7 @@ func (pbp *PosBlockProducer) getBlockTransactions(latestBlockView *UtxoView, new
 
 		blockUtxoViewCopy, err := blockUtxoView.CopyUtxoView()
 		if err != nil {
-			return nil, nil, nil, 0, errors.Wrapf(err, "Error copying UtxoView: ")
+			return nil, nil, 0, errors.Wrapf(err, "Error copying UtxoView: ")
 		}
 		_, _, _, fees, err := blockUtxoViewCopy._connectTransaction(
 			txn.GetTxn(), txn.Hash(), int64(len(txnBytes)), uint32(newBlockHeight), true, false)
@@ -178,7 +174,6 @@ func (pbp *PosBlockProducer) getBlockTransactions(latestBlockView *UtxoView, new
 		if err == nil {
 			blockUtxoView = blockUtxoViewCopy
 			txnConnectStatusByIndex.Set(len(blocksTxns), true)
-			txnTimestampsUnixMicro = append(txnTimestampsUnixMicro, txn.GetTimestampUnixMicro())
 			blocksTxns = append(blocksTxns, txn.GetTxn())
 			currentBlockSize += uint64(len(txnBytes))
 			// Compute BMF for the transaction.
@@ -189,7 +184,7 @@ func (pbp *PosBlockProducer) getBlockTransactions(latestBlockView *UtxoView, new
 		// If the transaction didn't connect, we will try to add it as a failing transaction.
 		blockUtxoViewCopy, err = blockUtxoView.CopyUtxoView()
 		if err != nil {
-			return nil, nil, nil, 0, errors.Wrapf(err, "Error copying UtxoView: ")
+			return nil, nil, 0, errors.Wrapf(err, "Error copying UtxoView: ")
 		}
 		_, _, utilityFee, err := blockUtxoViewCopy._connectFailingTransaction(txn.GetTxn(), uint32(newBlockHeight), true)
 		if err != nil {
@@ -202,11 +197,10 @@ func (pbp *PosBlockProducer) getBlockTransactions(latestBlockView *UtxoView, new
 		// add it to the block as a failing transaction.
 		blockUtxoView = blockUtxoViewCopy
 		txnConnectStatusByIndex.Set(len(blocksTxns), false)
-		txnTimestampsUnixMicro = append(txnTimestampsUnixMicro, txn.GetTimestampUnixMicro())
 		blocksTxns = append(blocksTxns, txn.GetTxn())
 		currentBlockSize += uint64(len(txnBytes))
 		maxUtilityFee += utilityFee
 	}
 
-	return blocksTxns, txnConnectStatusByIndex, txnTimestampsUnixMicro, maxUtilityFee, nil
+	return blocksTxns, txnConnectStatusByIndex, maxUtilityFee, nil
 }
