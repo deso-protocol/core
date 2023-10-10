@@ -3648,7 +3648,7 @@ func (bav *UtxoView) _connectTransaction(txn *MsgDeSoTxn, txHash *BlockHash,
 	return utxoOpsForTxn, totalInput, totalOutput, fees, nil
 }
 
-func (bav *UtxoView) ValidateTransactionNonce(txn *MsgDeSoTxn, blockHeight uint64) error {
+func (bav *UtxoView) ValidateTrangtsactionNonce(txn *MsgDeSoTxn, blockHeight uint64) error {
 	if txn == nil || txn.TxnNonce == nil {
 		return fmt.Errorf("ValidateTransactionNonce: Nonce or txn is nil for public key %v",
 			PkToStringBoth(txn.PublicKey))

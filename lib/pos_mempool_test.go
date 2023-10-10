@@ -275,11 +275,11 @@ func TestPosMempoolReplaceWithHigherFee(t *testing.T) {
 
 	// Verify that only the correct transactions are present in the mempool. Notice that on this seed, txn2 is positioned
 	// as first in the mempool's GetTransactions.
-	require.NotEqual(txn2, mempool.GetTransactions()[0].MsgDeSoTxn)
-	require.NotEqual(txn2Low, mempool.GetTransactions()[0].MsgDeSoTxn)
-	require.Equal(txn2New, mempool.GetTransactions()[0].MsgDeSoTxn)
-	require.NotEqual(txn1, mempool.GetTransactions()[1].MsgDeSoTxn)
-	require.Equal(txn1New, mempool.GetTransactions()[1].MsgDeSoTxn)
+	require.NotEqual(txn2, mempool.GetTransactions()[0].GetTxn())
+	require.NotEqual(txn2Low, mempool.GetTransactions()[0].GetTxn())
+	require.Equal(txn2New, mempool.GetTransactions()[0].GetTxn())
+	require.NotEqual(txn1, mempool.GetTransactions()[1].GetTxn())
+	require.Equal(txn1New, mempool.GetTransactions()[1].GetTxn())
 
 	require.Equal(len(mempool.GetTransactions()), len(mempool.nonceTracker.nonceMap))
 	require.NoError(mempool.Refresh())
