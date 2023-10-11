@@ -232,12 +232,25 @@ func (bc *Blockchain) validateBlockIntegrity(desoBlock *MsgDeSoBlock) error {
 	return nil
 }
 
-// validateBlockHeight validates the block height for a given block. It checks
-// that this block height is exactly one greater than the current block height.
-// TODO: Are we sure that's the correct validation here?
+// validateBlockHeight validates the block height for a given block. First,
+// it checks that we've passed the PoS cutover fork height. Then it checks
+// that this block height is exactly one greater than its parent's block height.
 func (bc *Blockchain) validateBlockHeight(desoBlock *MsgDeSoBlock) error {
-	// TODO: Implement me
-	return errors.New("IMPLEMENT ME")
+	blockHeight := desoBlock.Header.Height
+	if blockHeight < uint64(bc.params.ForkHeights.ProofOfStake2ConsensusCutoverBlockHeight) {
+		return RuleErrorPoSBlockBeforeCutoverHeight
+	}
+	// Validate that the block height is exactly one greater than its parent.
+	parentBlock, exists := bc.blockIndex[*desoBlock.Header.PrevBlockHash]
+	if !exists {
+		// Note: this should never happen as we only call this function after
+		// we've validated that all ancestors exist in the block index.
+		return RuleErrorMissingParentBlock
+	}
+	if desoBlock.Header.Height != parentBlock.Header.Height+1 {
+		return RuleErrorInvalidPoSBlockHeight
+	}
+	return nil
 }
 
 // validateBlockView validates the view for a given block. First, it checks that
@@ -363,4 +376,7 @@ const (
 	RuleErrorInvalidProposerVotingPublicKey RuleError = "RuleErrorInvalidProposerVotingPublicKey"
 	RuleErrorInvalidProposerPublicKey       RuleError = "RuleErrorInvalidProposerPublicKey"
 	RuleErrorInvalidRandomSeedHash          RuleError = "RuleErrorInvalidRandomSeedHash"
+
+	RuleErrorInvalidPoSBlockHeight       RuleError = "RuleErrorInvalidPoSBlockHeight"
+	RuleErrorPoSBlockBeforeCutoverHeight RuleError = "RuleErrorPoSBlockBeforeCutoverHeight"
 )
