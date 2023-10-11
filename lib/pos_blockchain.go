@@ -192,10 +192,6 @@ func (bc *Blockchain) validateBlockIntegrity(desoBlock *MsgDeSoBlock) error {
 		return RuleErrorBothTimeoutAndVoteQC
 	}
 
-	if !isVoteQCEmpty && len(desoBlock.Txns) == 0 {
-		return RuleErrorVoteQCWithoutTransactions
-	}
-
 	if !isTimeoutQCEmpty && len(desoBlock.Txns) != 0 {
 		return RuleErrorTimeoutQCWithTransactions
 	}
@@ -215,7 +211,7 @@ func (bc *Blockchain) validateBlockIntegrity(desoBlock *MsgDeSoBlock) error {
 	merkleRoot := desoBlock.Header.TransactionMerkleRoot
 
 	// We only want to check the merkle root if we have more than 0 transactions.
-	if isTimeoutQCEmpty {
+	if len(desoBlock.Txns) > 0 {
 		if merkleRoot == nil {
 			return RuleErrorNilMerkleRoot
 		}
@@ -227,9 +223,8 @@ func (bc *Blockchain) validateBlockIntegrity(desoBlock *MsgDeSoBlock) error {
 			return RuleErrorInvalidMerkleRoot
 		}
 	} else {
-		// TODO: do we want to ensure a nil merkle root if we have a timeout QC?
 		if merkleRoot != nil {
-			return RuleErrorTimeoutQCWithMerkleRoot
+			return RuleErrorNoTxnsWithMerkleRoot
 		}
 	}
 
@@ -360,12 +355,11 @@ const (
 	RuleErrorInvalidPoSBlockHeaderVersion   RuleError = "RuleErrorInvalidPoSBlockHeaderVersion"
 	RuleErrorNoTimeoutOrVoteQC              RuleError = "RuleErrorNoTimeoutOrVoteQC"
 	RuleErrorBothTimeoutAndVoteQC           RuleError = "RuleErrorBothTimeoutAndVoteQC"
-	RuleErrorVoteQCWithoutTransactions      RuleError = "RuleErrorVoteQCWithoutTransactions"
 	RuleErrorTimeoutQCWithTransactions      RuleError = "RuleErrorTimeoutQCWithTransactions"
 	RuleErrorMissingParentBlock             RuleError = "RuleErrorMissingParentBlock"
 	RuleErrorNilMerkleRoot                  RuleError = "RuleErrorNilMerkleRoot"
 	RuleErrorInvalidMerkleRoot              RuleError = "RuleErrorInvalidMerkleRoot"
-	RuleErrorTimeoutQCWithMerkleRoot        RuleError = "RuleErrorTimeoutQCWithMerkleRoot"
+	RuleErrorNoTxnsWithMerkleRoot           RuleError = "RuleErrorNoTxnsWithMerkleRoot"
 	RuleErrorInvalidProposerVotingPublicKey RuleError = "RuleErrorInvalidProposerVotingPublicKey"
 	RuleErrorInvalidProposerPublicKey       RuleError = "RuleErrorInvalidProposerPublicKey"
 	RuleErrorInvalidRandomSeedHash          RuleError = "RuleErrorInvalidRandomSeedHash"

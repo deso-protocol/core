@@ -79,7 +79,7 @@ func TestValidateBlockIntegrity(t *testing.T) {
 	block.Txns = nil
 	block.Header.TransactionMerkleRoot = &ZeroBlockHash
 	err = bc.validateBlockIntegrity(block)
-	require.Equal(t, err, RuleErrorTimeoutQCWithMerkleRoot)
+	require.Equal(t, err, RuleErrorNoTxnsWithMerkleRoot)
 
 	// Make sure block can't have both timeout and vote QC.
 	validatorVoteQC := &QuorumCertificate{
@@ -103,11 +103,6 @@ func TestValidateBlockIntegrity(t *testing.T) {
 	// Reset validator vote QC.
 	block.Header.ValidatorsVoteQC = validatorVoteQC
 
-	// Vote QC must have transactions
-	block.Txns = nil
-	err = bc.validateBlockIntegrity(block)
-	require.Equal(t, err, RuleErrorVoteQCWithoutTransactions)
-
 	// Validate the block with a valid vote QC and header. Vote QCs must have at least 1 transaction.
 	txn := _assembleBasicTransferTxnFullySigned(t, bc, 100, 1000,
 		senderPkString, recipientPkString, senderPrivString, nil)
@@ -123,7 +118,7 @@ func TestValidateBlockIntegrity(t *testing.T) {
 	err = bc.validateBlockIntegrity(block)
 	require.Nil(t, err)
 
-	// Block must have non-nil Merkle root
+	// Block must have non-nil Merkle root iff we have non-zero transactions
 	block.Header.TransactionMerkleRoot = nil
 	err = bc.validateBlockIntegrity(block)
 	require.Equal(t, err, RuleErrorNilMerkleRoot)
@@ -133,8 +128,19 @@ func TestValidateBlockIntegrity(t *testing.T) {
 	err = bc.validateBlockIntegrity(block)
 	require.Equal(t, err, RuleErrorInvalidMerkleRoot)
 
-	// Reset merkle root
+	// Vote QC with no transactions and no merkle root is valid
+	block.Header.TransactionMerkleRoot = nil
+	block.Txns = nil
+	err = bc.validateBlockIntegrity(block)
+	require.Nil(t, err)
+
+	// Vote QC with no transactions but includes a merkle is invalid
 	block.Header.TransactionMerkleRoot = merkleRoot
+	err = bc.validateBlockIntegrity(block)
+	require.Equal(t, err, RuleErrorNoTxnsWithMerkleRoot)
+
+	// Reset transactions
+	block.Txns = []*MsgDeSoTxn{txn}
 
 	// Block must have valid proposer voting public key
 	block.Header.ProposerVotingPublicKey = nil
