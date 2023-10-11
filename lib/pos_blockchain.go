@@ -264,16 +264,6 @@ func (bc *Blockchain) validateBlockHeight(desoBlock *MsgDeSoBlock) error {
 // timeout QC, it will check that the view is at least greater than the latest
 // uncommitted block's view + 1.
 func (bc *Blockchain) validateBlockView(desoBlock *MsgDeSoBlock) error {
-	committedBlock, _ := bc.getHighestCommittedBlock()
-	if committedBlock == nil {
-		// This is an edge case we'll never hit in practice since all the PoW blocks
-		// are committed.
-		return errors.New("validateBlockView: No committed blocks found")
-	}
-	// Validate that the view is greater than the latest committed block view.
-	if desoBlock.Header.ProposedInView <= committedBlock.Header.ProposedInView {
-		return RuleErrorPoSBlockViewEarlierThanCommittedBlock
-	}
 	// Validate that the view is greater than the latest uncommitted block.
 	parentBlock, exists := bc.blockIndex[*desoBlock.Header.PrevBlockHash]
 	if !exists {
@@ -456,7 +446,6 @@ const (
 	RuleErrorInvalidPoSBlockHeight       RuleError = "RuleErrorInvalidPoSBlockHeight"
 	RuleErrorPoSBlockBeforeCutoverHeight RuleError = "RuleErrorPoSBlockBeforeCutoverHeight"
 
-	RuleErrorPoSBlockViewEarlierThanCommittedBlock   RuleError = "RuleErrorPoSBlockViewEarlierThanCommittedBlock"
 	RuleErrorPoSVoteBlockViewNotOneGreaterThanParent RuleError = "RuleErrorPoSVoteBlockViewNotOneGreaterThanParent"
 	RuleErrorPoSTimeoutBlockViewNotGreaterThanParent RuleError = "RuleErrorPoSTimeoutBlockViewNotGreaterThanParent"
 )

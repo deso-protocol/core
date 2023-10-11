@@ -405,10 +405,6 @@ func TestValidateBlockView(t *testing.T) {
 		Txns: nil,
 	}
 
-	// Make sure our view is at least greater than the latest committed block.
-	err = bc.validateBlockView(block)
-	require.Equal(t, err, RuleErrorPoSBlockViewEarlierThanCommittedBlock)
-
 	block.Header.ProposedInView = 2
 
 	// Blocks with timeout QCs must have a view strictly greater than the parent.
