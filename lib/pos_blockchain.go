@@ -17,7 +17,7 @@ import (
 //  6. Run the commit rule - If applicable, flushes the incoming block's grandparent to the DB
 //  7. Prune in-memory struct holding uncommitted block.
 //  8. Update the currentView to this new block's view + 1
-func (bc *Blockchain) processBlockPoS(desoBlock *MsgDeSoBlock, verifySignatures bool) (_success bool, _isOrphan bool, _missingBlockHashes []*BlockHash, _err error) {
+func (bc *Blockchain) processBlockPoS(desoBlock *MsgDeSoBlock, currentView uint64, verifySignatures bool) (_success bool, _isOrphan bool, _missingBlockHashes []*BlockHash, _err error) {
 	// TODO: Implement me
 	// 1. Determine if we're missing a parent block of this block and any of its parents from the block index.
 	// If so, process the orphan, but don't add to the block index or uncommitted block map.
