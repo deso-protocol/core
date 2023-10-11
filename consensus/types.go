@@ -158,7 +158,8 @@ type FastHotStuffEventLoop struct {
 	// Signifies whether or not the event loop has constructed a QC or timeout QC for the current view.
 	// This is an optimization that is useful to prevent the event loop from signaling the server multiple
 	// times for the same view.
-	hasConstructedQCInCurrentView bool
+	hasCrankTimerRunForCurrentView bool
+	hasConstructedQCInCurrentView  bool
 
 	// Block hash of the current tip of the block-chain.
 	tip blockWithValidatorLookup
