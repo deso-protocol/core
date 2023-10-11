@@ -1887,9 +1887,9 @@ type LockupLimitKey struct {
 	Operation   LockupLimitOperation
 }
 
-func MakeLockupLimitKey(profilePKID *PKID, scopeType LockupLimitScopeType, operation LockupLimitOperation) LockupLimitKey {
+func MakeLockupLimitKey(profilePKID PKID, scopeType LockupLimitScopeType, operation LockupLimitOperation) LockupLimitKey {
 	return LockupLimitKey{
-		ProfilePKID: *profilePKID,
+		ProfilePKID: profilePKID,
 		ScopeType:   scopeType,
 		Operation:   operation,
 	}
@@ -2056,25 +2056,25 @@ func (bav *UtxoView) _checkLockupTxnSpendingLimitAndUpdateDerivedKey(
 	}
 
 	// Start by checking (specific profile PKID || specific operation) key
-	profilePKIDOperationKey := MakeLockupLimitKey(profilePKID, LockupLimitScopeTypeScopedCoins, lockupOperation)
+	profilePKIDOperationKey := MakeLockupLimitKey(*profilePKID, LockupLimitScopeTypeScopedCoins, lockupOperation)
 	if _checkLimitKeyAndUpdateDerivedKeyEntry(profilePKIDOperationKey, derivedKeyEntry) {
 		return derivedKeyEntry, nil
 	}
 
 	// Next check (specific profile PKID || any operation) key
-	profilePKIDAnyOperationKey := MakeLockupLimitKey(profilePKID, LockupLimitScopeTypeScopedCoins, AnyLockupOperation)
+	profilePKIDAnyOperationKey := MakeLockupLimitKey(*profilePKID, LockupLimitScopeTypeScopedCoins, AnyLockupOperation)
 	if _checkLimitKeyAndUpdateDerivedKeyEntry(profilePKIDAnyOperationKey, derivedKeyEntry) {
 		return derivedKeyEntry, nil
 	}
 
 	// Next check (any creator PKID || specific operation) key
-	anyProfilePKIDOperationKey := MakeLockupLimitKey(profilePKID, LockupLimitScopeTypeAnyCoins, lockupOperation)
+	anyProfilePKIDOperationKey := MakeLockupLimitKey(*profilePKID, LockupLimitScopeTypeAnyCoins, lockupOperation)
 	if _checkLimitKeyAndUpdateDerivedKeyEntry(anyProfilePKIDOperationKey, derivedKeyEntry) {
 		return derivedKeyEntry, nil
 	}
 
 	// Next check (any creator PKID || any operation) key
-	anyProfilePKIDAnyOperationKey := MakeLockupLimitKey(profilePKID, LockupLimitScopeTypeAnyCoins, AnyLockupOperation)
+	anyProfilePKIDAnyOperationKey := MakeLockupLimitKey(*profilePKID, LockupLimitScopeTypeAnyCoins, AnyLockupOperation)
 	if _checkLimitKeyAndUpdateDerivedKeyEntry(anyProfilePKIDAnyOperationKey, derivedKeyEntry) {
 		return derivedKeyEntry, nil
 	}
