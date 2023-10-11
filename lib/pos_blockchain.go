@@ -382,9 +382,10 @@ func (bc *Blockchain) GetUncommittedTipView() (*UtxoView, error) {
 		if !exists {
 			return nil, errors.Errorf("GetUncommittedTipView: Block %v not found in block index", bc.bestChain[ii].Hash)
 		}
-		_, err = utxoView.ConnectBlock(fullBlock, collections.Transform(fullBlock.Txns, func(txn *MsgDeSoTxn) *BlockHash {
+		txnHashes := collections.Transform(fullBlock.Txns, func(txn *MsgDeSoTxn) *BlockHash {
 			return txn.Hash()
-		}), false, nil, fullBlock.Header.Height)
+		})
+		_, err = utxoView.ConnectBlock(fullBlock, txnHashes, false, nil, fullBlock.Header.Height)
 		if err != nil {
 			hash, _ := fullBlock.Hash()
 			return nil, errors.Wrapf(err, "GetUncommittedTipView: Problem connecting block hash %v", hash.String())
