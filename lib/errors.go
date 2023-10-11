@@ -463,6 +463,7 @@ const (
 	RuleErrorDerivedKeyDAOCoinLimitOrderNotAuthorized        RuleError = "RuleErrorDerivedKeyDAOCoinLimitOrderNotAuthorized"
 	RuleErrorDerivedKeyCoinLockupOperationNotAuthorized      RuleError = "RuleErrorDerivedKeyCoinLockupOperationNotAuthorized"
 	RuleErrorDerivedKeyCoinLockupOperationInvalidProfilePKID RuleError = "RuleErrorDerivedKeyCoinLockupOperationInvalidProfilePKID"
+	RuleErrorDerivedKeyUpdateCoinLockupParamsIsNoOp          RuleError = "RuleErrorDerivedKeyUpdateCoinLockupParamsIsNoOp"
 
 	// Association Errors
 	RuleErrorAssociationBeforeBlockHeight     RuleError = "RuleErrorAssociationBeforeBlockHeight"
