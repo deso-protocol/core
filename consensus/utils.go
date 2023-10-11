@@ -1,6 +1,7 @@
 package consensus
 
 import (
+	"bytes"
 	"encoding/binary"
 	"reflect"
 
@@ -251,4 +252,11 @@ func isSuperMajorityStake(stake *uint256.Int, totalStake *uint256.Int) bool {
 
 	// Check if 3Cq - 2N - 1 >= 0
 	return superMajorityConditionSum.Sign() >= 0
+}
+
+func isEqualBlockHashes(hash1 BlockHash, hash2 BlockHash) bool {
+	hash1Value := hash1.GetValue()
+	hash2Value := hash2.GetValue()
+
+	return bytes.Equal(hash1Value[:], hash2Value[:])
 }
