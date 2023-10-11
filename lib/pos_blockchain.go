@@ -22,14 +22,10 @@ func (bc *Blockchain) processBlockPoS(desoBlock *MsgDeSoBlock, currentView uint6
 	// TODO: Implement me
 	// 1. Determine if we're missing a parent block of this block and any of its parents from the block index.
 	// If so, process the orphan, but don't add to the block index or uncommitted block map.
-	missingBlockHash, err := bc.validateAncestorsExist(*desoBlock.Header.PrevBlockHash)
-	if err != nil {
-		return false, false, nil, err
-	}
+	missingBlockHash := bc.validateAncestorsExist(*desoBlock.Header.PrevBlockHash)
 	if missingBlockHash != nil {
 		missingBlockHashes := []*BlockHash{missingBlockHash}
-		var blockHash *BlockHash
-		blockHash, err = desoBlock.Header.Hash()
+		blockHash, err := desoBlock.Header.Hash()
 		// If we fail to get the block hash, this block isn't valid at all, so we
 		// don't need to worry about adding it to the orphan list or block index.
 		if err != nil {
@@ -46,14 +42,14 @@ func (bc *Blockchain) processBlockPoS(desoBlock *MsgDeSoBlock, currentView uint6
 	// 2. Start with all sanity checks of the block.
 	// TODO: Check if err is for view > latest committed block view and <= latest uncommitted block.
 	// If so, we need to perform the rest of the validations and then add to our block index.
-	if err = bc.validateDeSoBlockPoS(desoBlock); err != nil {
+	if err := bc.validateDeSoBlockPoS(desoBlock); err != nil {
 
 	}
 	// TODO: Get validator set for current block height. Alternatively, we could do this in
 	// validateQC, but we may need the validator set elsewhere in this function anyway.
 	var validatorSet []*ValidatorEntry
 	// 1e. Validate QC
-	if err = bc.validateQC(desoBlock, validatorSet); err != nil {
+	if err := bc.validateQC(desoBlock, validatorSet); err != nil {
 		return false, false, nil, err
 	}
 
@@ -92,7 +88,7 @@ func (bc *Blockchain) processBlockPoS(desoBlock *MsgDeSoBlock, currentView uint6
 
 	// 4. Handle reorgs if necessary
 	if bc.shouldReorg(desoBlock) {
-		if err = bc.handleReorg(desoBlock); err != nil {
+		if err := bc.handleReorg(desoBlock); err != nil {
 			return false, false, nil, err
 		}
 	}
@@ -366,7 +362,7 @@ func (bc *Blockchain) validateTimeoutQC(desoBlock *MsgDeSoBlock, validatorSet []
 // validateAncestorsExist checks that all ancestors of this block exist in the block index.
 // If an ancestor is not found, we'll return the block hash of the missing ancestor so the
 // caller can request this block.
-func (bc *Blockchain) validateAncestorsExist(parentHash BlockHash) (_missingBlockHash *BlockHash, _err error) {
+func (bc *Blockchain) validateAncestorsExist(parentHash BlockHash) *BlockHash {
 	// Notes: starting from the block passed in, we'll look for the parent in the block index.
 	// 1. If the parent does not appear in the block index, we'll return the parent's hash.
 	// 2. If the parent exists in the block index AND is in the best chain, we can safely assume
@@ -379,14 +375,14 @@ func (bc *Blockchain) validateAncestorsExist(parentHash BlockHash) (_missingBloc
 	parentBlockNode, exists := bc.blockIndex[parentHash]
 	if !exists {
 		// TODO: should this return an error?
-		return &parentHash, nil
+		return &parentHash
 	}
 
 	// if parent exists in block index AND is in best chain, return nil. We can
 	// safely assume that all ancestor exist then.
 	_, bestChainExists := bc.bestChainMap[parentHash]
 	if bestChainExists {
-		return nil, nil
+		return nil
 	}
 	return bc.validateAncestorsExist(*parentBlockNode.Header.PrevBlockHash)
 }
