@@ -65,6 +65,7 @@ func (fc *FastHotStuffEventLoop) Init(
 	fc.currentView = tip.Block.GetView() + 1
 
 	// Reset QC construction status for the current view
+	fc.hasCrankTimerRunForCurrentView = false
 	fc.hasConstructedQCInCurrentView = false
 
 	// Reset all internal data structures for votes and timeouts
@@ -101,6 +102,7 @@ func (fc *FastHotStuffEventLoop) AdvanceViewOnTimeout() (uint64, error) {
 	fc.currentView++
 
 	// Reset QC construction status for the current view
+	fc.hasCrankTimerRunForCurrentView = false
 	fc.hasConstructedQCInCurrentView = false
 
 	// Evict all stale votes and timeouts
@@ -142,6 +144,7 @@ func (fc *FastHotStuffEventLoop) ProcessTipBlock(tip BlockWithValidators, safeBl
 	fc.currentView = fc.tip.block.GetView() + 1
 
 	// Reset QC construction status for the current view
+	fc.hasCrankTimerRunForCurrentView = false
 	fc.hasConstructedQCInCurrentView = false
 
 	// Evict all stale votes and timeouts
@@ -268,7 +271,7 @@ func (fc *FastHotStuffEventLoop) ProcessValidatorVote(vote VoteMessage) error {
 
 	// Check if the crank timer has elapsed or the event loop has constructed a QC in the current view.
 	// If so, then there's nothing more to do.
-	if fc.crankTimerTask.IsScheduled() || fc.hasConstructedQCInCurrentView {
+	if !fc.hasCrankTimerRunForCurrentView || fc.hasConstructedQCInCurrentView {
 		return nil
 	}
 
@@ -353,7 +356,7 @@ func (fc *FastHotStuffEventLoop) ProcessValidatorTimeout(timeout TimeoutMessage)
 
 	// Check if the crank timer has elapsed or the event loop has constructed a QC in the current view.
 	// If so, then there's nothing more to do.
-	if fc.crankTimerTask.IsScheduled() || fc.hasConstructedQCInCurrentView {
+	if !fc.hasCrankTimerRunForCurrentView || fc.hasConstructedQCInCurrentView {
 		return nil
 	}
 
@@ -472,9 +475,8 @@ func (fc *FastHotStuffEventLoop) onCrankTimerTaskExecuted(blockConstructionView 
 		return
 	}
 
-	// Mark the crank timer task as not scheduled, so we can verify from the rest of the
-	// event loop when the timer has elapsed.
-	defer fc.crankTimerTask.Cancel()
+	// Mark that the crank timer has elapsed
+	fc.hasCrankTimerRunForCurrentView = true
 
 	// Check if the conditions are met to construct a QC from votes for the chain tip. If so,
 	// we send a signal to the server and cancel the crank timer task. The server will
