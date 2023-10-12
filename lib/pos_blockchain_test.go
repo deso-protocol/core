@@ -1084,6 +1084,44 @@ func TestValidateQC(t *testing.T) {
 	}
 }
 
+func TestShouldReorg(t *testing.T) {
+	bc, _, _ := NewTestBlockchain(t)
+	hash1 := NewBlockHash(RandomBytes(32))
+	hash2 := NewBlockHash(RandomBytes(32))
+	hash3 := NewBlockHash(RandomBytes(32))
+	bc.bestChain = []*BlockNode{
+		&BlockNode{
+			Hash:            hash1,
+			CommittedStatus: COMMITTED,
+		},
+		&BlockNode{
+			Hash:            hash3,
+			CommittedStatus: UNCOMMITTED,
+		},
+	}
+
+	newBlock := &MsgDeSoBlock{
+		Header: &MsgDeSoHeader{
+			ProposedInView: 2,
+			PrevBlockHash:  bc.bestChain[1].Hash,
+		},
+	}
+
+	// Parent is chain tip. No reorg required.
+	require.False(t, bc.shouldReorg(newBlock, 2))
+
+	// Parent is not chain tip, but currentView is greater than
+	// the block's view.
+	newBlock.Header.PrevBlockHash = hash1
+	require.False(t, bc.shouldReorg(newBlock, 3))
+
+	// Parent is not chain tip. Reorg required.
+	// Other checks have already been completed to ensure
+	// that hash2 exists in the blockIndex
+	newBlock.Header.PrevBlockHash = hash2
+	require.True(t, bc.shouldReorg(newBlock, 2))
+}
+
 func _generateRandomBLSPrivateKey(t *testing.T) *bls.PrivateKey {
 	privateKey, err := bls.NewPrivateKey()
 	require.NoError(t, err)
