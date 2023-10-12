@@ -87,7 +87,7 @@ func (bc *Blockchain) processBlockPoS(desoBlock *MsgDeSoBlock, currentView uint6
 	}
 
 	// 4. Handle reorgs if necessary
-	if bc.shouldReorg(desoBlock) {
+	if bc.shouldReorg(desoBlock, currentView) {
 		if err = bc.handleReorg(desoBlock); err != nil {
 			return false, false, nil, errors.Wrap(err, "processBlockPoS: Problem handling reorg")
 		}
@@ -394,10 +394,17 @@ func (bc *Blockchain) addBlockToBlockIndex(desoBlock *MsgDeSoBlock) error {
 }
 
 // shouldReorg determines if we should reorg to the block provided. We should reorg if
-// this block has a higher QC than our current tip and extends from either the committed
-// tip OR any uncommitted safe block in our block index.
-func (bc *Blockchain) shouldReorg(desoBlock *MsgDeSoBlock) bool {
-	return false
+// this block is proposed in a view greater than or equal to the currentView. Other
+// functions have validated that this block is not extending from a committed block
+// that is not the latest committed block, so there is no need to validate that here.
+func (bc *Blockchain) shouldReorg(desoBlock *MsgDeSoBlock, currentView uint64) bool {
+	chainTip := bc.GetBestChainTip()
+	// If this block extends from the chain tip, there's no need to reorg.
+	if chainTip.Hash.IsEqual(desoBlock.Header.PrevBlockHash) {
+		return false
+	}
+	// If the block is proposed in a view less than the current view, there's no need to reorg.
+	return desoBlock.Header.ProposedInView >= currentView
 }
 
 // handleReorg handles a reorg to the block provided. It does not check whether or not we should
