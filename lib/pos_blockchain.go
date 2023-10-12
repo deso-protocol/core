@@ -560,6 +560,48 @@ func (bc *Blockchain) getUtxoViewAtBlockHash(blockHash BlockHash) (*UtxoView, er
 	return utxoView, nil
 }
 
+// BuildUtxoViewToBlockParent builds a UtxoView to the block provided. It does this by
+// identifying all uncommitted ancestors of this block and then connecting those blocks.
+func (bc *Blockchain) BuildUtxoViewToBlockParent(parentHash BlockHash) (*UtxoView, error) {
+	uncommittedAncestors := []*BlockNode{}
+	currentBlock := bc.blockIndex[parentHash]
+	if currentBlock == nil {
+		return nil, errors.Errorf("BuildUtxoViewToBlockParent: Block %v not found in block index", parentHash)
+	}
+	for currentBlock.CommittedStatus == UNCOMMITTED {
+		currentParentHash := currentBlock.Header.PrevBlockHash
+		if currentParentHash == nil {
+			return nil, errors.Errorf("BuildUtxoViewToBlockParent: Block %v has nil PrevBlockHash", currentBlock.Hash)
+		}
+		currentBlock = bc.blockIndex[*currentParentHash]
+		if currentBlock == nil {
+			return nil, errors.Errorf("BuildUtxoViewToBlockParent: Block %v not found in block index", parentHash)
+		}
+		uncommittedAncestors = append(uncommittedAncestors, currentBlock)
+	}
+	// Connect the uncommitted blocks to the tip so that we can validate subsequent blocks
+	utxoView, err := NewUtxoView(bc.db, bc.params, bc.postgres, bc.snapshot)
+	if err != nil {
+		return nil, errors.Wrapf(err, "BuildUtxoViewToBlockParent: Problem initializing UtxoView")
+	}
+	for ii := len(uncommittedAncestors) - 1; ii >= 0; ii-- {
+		// We need to get these blocks from the uncommitted blocks map
+		fullBlock, exists := bc.uncommittedBlocksMap[*uncommittedAncestors[ii].Hash]
+		if !exists {
+			return nil, errors.Errorf("GetUncommittedTipView: Block %v not found in block index", uncommittedAncestors[ii].Hash)
+		}
+		txnHashes := collections.Transform(fullBlock.Txns, func(txn *MsgDeSoTxn) *BlockHash {
+			return txn.Hash()
+		})
+		_, err = utxoView.ConnectBlock(fullBlock, txnHashes, false, nil, fullBlock.Header.Height)
+		if err != nil {
+			hash, _ := fullBlock.Hash()
+			return nil, errors.Wrapf(err, "GetUncommittedTipView: Problem connecting block hash %v", hash.String())
+		}
+	}
+	return utxoView, nil
+}
+
 func (bc *Blockchain) GetBestChainTip() *BlockNode {
 	return bc.bestChain[len(bc.bestChain)-1]
 }
