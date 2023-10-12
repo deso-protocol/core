@@ -1091,19 +1091,11 @@ func TestShouldReorg(t *testing.T) {
 	hash2 := NewBlockHash(RandomBytes(32))
 	hash3 := NewBlockHash(RandomBytes(32))
 	bc.bestChain = []*BlockNode{
-<<<<<<< HEAD
 		{
 			Hash:            hash1,
 			CommittedStatus: COMMITTED,
 		},
 		{
-=======
-		&BlockNode{
-			Hash:            hash1,
-			CommittedStatus: COMMITTED,
-		},
-		&BlockNode{
->>>>>>> 30ac032 (Implement should reorg)
 			Hash:            hash3,
 			CommittedStatus: UNCOMMITTED,
 		},
@@ -1131,7 +1123,6 @@ func TestShouldReorg(t *testing.T) {
 	require.True(t, bc.shouldReorg(newBlock, 2))
 }
 
-<<<<<<< HEAD
 func TestTryReorgToNewTip(t *testing.T) {
 	bc, _, _ := NewTestBlockchain(t)
 	hash1 := NewBlockHash(RandomBytes(32))
@@ -1565,8 +1556,6 @@ func TestValidateQC(t *testing.T) {
 	}
 }
 
-=======
->>>>>>> 30ac032 (Implement should reorg)
 func _generateRandomBLSPrivateKey(t *testing.T) *bls.PrivateKey {
 	privateKey, err := bls.NewPrivateKey()
 	require.NoError(t, err)
