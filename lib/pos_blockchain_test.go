@@ -717,31 +717,17 @@ func TestValidateBlockLeader(t *testing.T) {
 func TestValidateAncestorsExist(t *testing.T) {
 	bc, _, _ := NewTestBlockchain(t)
 	hash1 := NewBlockHash(RandomBytes(32))
-	hash2 := NewBlockHash(RandomBytes(32))
 	genesisNode := NewPoSBlockNode(nil, hash1, 1, &MsgDeSoHeader{
 		Version:        2,
 		Height:         1,
 		ProposedInView: 1,
 	}, StatusBlockValidated, COMMITTED)
-	block2 := NewPoSBlockNode(genesisNode, hash2, 2, &MsgDeSoHeader{
-		Version:                      2,
-		Height:                       2,
-		ProposedInView:               2,
-		ValidatorsVoteQC:             nil,
-		ValidatorsTimeoutAggregateQC: nil,
-	}, StatusBlockValidated, UNCOMMITTED)
 	bc.blockIndex = map[BlockHash]*BlockNode{
 		*hash1: genesisNode,
-		*hash2: block2,
 	}
-	bc.bestChainMap = map[BlockHash]*BlockNode{
-		*hash1: genesisNode,
-		*hash2: block2,
-	}
-
 	block := &MsgDeSoBlock{
 		Header: &MsgDeSoHeader{
-			PrevBlockHash: hash2,
+			PrevBlockHash: hash1,
 		},
 	}
 	// If block is in best chain, we should a nil value for missing block hash and no error
@@ -752,25 +738,6 @@ func TestValidateAncestorsExist(t *testing.T) {
 	block.Header.PrevBlockHash = NewBlockHash(RandomBytes(32))
 	missingBlockHash = bc.validateAncestorsExist(*block.Header.PrevBlockHash)
 	require.True(t, missingBlockHash.IsEqual(block.Header.PrevBlockHash))
-
-	// If parent block is in block index, but not in best chain, we check its grandparents.
-
-	// 1. Grandparent exists in best chain
-	hash3 := NewBlockHash(RandomBytes(32))
-	block3 := NewPoSBlockNode(nil, hash3, 3, &MsgDeSoHeader{
-		Version:       2,
-		PrevBlockHash: hash1,
-	}, StatusBlockValidated, UNCOMMITTED)
-	bc.blockIndex[*hash3] = block3
-	block.Header.PrevBlockHash = hash3
-	missingBlockHash = bc.validateAncestorsExist(*block.Header.PrevBlockHash)
-	require.Nil(t, missingBlockHash)
-
-	// 2. Grandparent doesn't exist in best chain.
-	block3.Header.PrevBlockHash = NewBlockHash(RandomBytes(32))
-	bc.blockIndex[*hash3] = block3
-	missingBlockHash = bc.validateAncestorsExist(*block.Header.PrevBlockHash)
-	require.True(t, missingBlockHash.IsEqual(block3.Header.PrevBlockHash))
 }
 
 func _generateRandomBLSPrivateKey(t *testing.T) *bls.PrivateKey {

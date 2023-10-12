@@ -9,7 +9,7 @@ import (
 )
 
 // processBlockPoS runs the Fast-Hotstuff block connect and commit rule as follows:
-//  1. Determine if we're missing a parent block of this block and any of its parents from the block index.
+//  1. Determine if we're missing the parent block of this block.
 //     If so, return the hash of the missing block and add this block to the orphans list.
 //  2. Validate on an incoming block, its header, its block height, the leader, and its QCs (vote or timeout)
 //  3. Store the block in the block index and uncommitted blocks map.
@@ -20,8 +20,9 @@ import (
 //  8. Update the currentView to this new block's view + 1
 func (bc *Blockchain) processBlockPoS(desoBlock *MsgDeSoBlock, currentView uint64, verifySignatures bool) (_success bool, _isOrphan bool, _missingBlockHashes []*BlockHash, _err error) {
 	// TODO: Implement me
-	// 1. Determine if we're missing a parent block of this block and any of its parents from the block index.
-	// If so, process the orphan, but don't add to the block index or uncommitted block map.
+	// 1. Determine if we're missing the parent block of this block. If it's parent exists in the blockIndex,
+	// it is safe to assume we have all ancestors of this block in the block index.
+	// If the parent block is missing, process the orphan, but don't add to the block index or uncommitted block map.
 	missingBlockHash := bc.validateAncestorsExist(*desoBlock.Header.PrevBlockHash)
 	if missingBlockHash != nil {
 		missingBlockHashes := []*BlockHash{missingBlockHash}
@@ -359,32 +360,15 @@ func (bc *Blockchain) validateTimeoutQC(desoBlock *MsgDeSoBlock, validatorSet []
 	return errors.New("IMPLEMENT ME")
 }
 
-// validateAncestorsExist checks that all ancestors of this block exist in the block index.
-// If an ancestor is not found, we'll return the block hash of the missing ancestor so the
-// caller can request this block.
+// validateAncestorsExist checks the parent exists in the block index. If it does not,
+// return the parent's hash. Else, return nil.
 func (bc *Blockchain) validateAncestorsExist(parentHash BlockHash) *BlockHash {
-	// Notes: starting from the block passed in, we'll look for the parent in the block index.
-	// 1. If the parent does not appear in the block index, we'll return the parent's hash.
-	// 2. If the parent exists in the block index AND is in the best chain, we can safely assume
-	//    that all ancestors exist in the block index.
-	// 3. If the parent exists in the block index but is not in the best chain, we repeat from
-	//    step 1 with the parent as the block passed in.
-
 	// check for parent in block index
 	// if parent does not exist in block index, return parent's hash
-	parentBlockNode, exists := bc.blockIndex[parentHash]
-	if !exists {
-		// TODO: should this return an error?
+	if _, exists := bc.blockIndex[parentHash]; !exists {
 		return &parentHash
 	}
-
-	// if parent exists in block index AND is in best chain, return nil. We can
-	// safely assume that all ancestor exist then.
-	_, bestChainExists := bc.bestChainMap[parentHash]
-	if bestChainExists {
-		return nil
-	}
-	return bc.validateAncestorsExist(*parentBlockNode.Header.PrevBlockHash)
+	return nil
 }
 
 // addBlockToBlockIndex adds the block to the block index and uncommitted blocks map.
