@@ -4,6 +4,7 @@ import (
 	"github.com/deso-protocol/core/collections"
 	"github.com/golang/glog"
 	"github.com/pkg/errors"
+	"math"
 	"time"
 )
 
@@ -305,9 +306,37 @@ func (bc *Blockchain) validateBlockLeader(desoBlock *MsgDeSoBlock) error {
 	if err != nil {
 		return errors.Wrapf(err, "validateBlockLeader: Problem getting leader schedule")
 	}
-	// TODO: Do I need to validate the views + heights before doing the subtraction.
-	// Current leader Index = [(current view - epoch's start view) - (block height - epoch's start block height)] % len(leader schedule)]
-	leaderIdx := uint16(int((desoBlock.Header.ProposedInView-currentEpochEntry.InitialView)-(desoBlock.Header.Height-currentEpochEntry.InitialBlockHeight)) % len(leaders))
+	if len(leaders) == 0 {
+		return errors.Wrapf(err, "validateBlockLeader: No leaders found in leader schedule")
+	}
+	if desoBlock.Header.Height < currentEpochEntry.InitialBlockHeight {
+		return RuleErrorBlockHeightLessThanInitialHeightForEpoch
+	}
+	if desoBlock.Header.ProposedInView < currentEpochEntry.InitialView {
+		return RuleErrorBlockViewLessThanInitialViewForEpoch
+	}
+	heightDiff := desoBlock.Header.Height - currentEpochEntry.InitialBlockHeight
+	viewDiff := desoBlock.Header.ProposedInView - currentEpochEntry.InitialView
+	if viewDiff < heightDiff {
+		return RuleErrorBlockDiffLessThanHeightDiff
+	}
+	// We compute the current index in the leader schedule as follows:
+	// [(block.View - currentEpoch.InitialView) - (block.Height - currentEpoch.InitialHeight)] % len(leaders)
+	// The number of views that have elapsed since the start of the epoch is block.View - currentEpoch.InitialView.
+	// The number of blocks that have been added to the chain since the start of the epoch is block.Height - currentEpoch.InitialHeight.
+	// The difference between these two numbers is the number of timeouts that have occurred in this epoch.
+	// For each timeout, we need to go to the next leader in the schedule.
+	// If we have more timeouts than leaders in the schedule, we start from the top of the schedule again,
+	// which is why we take the modulo of the length of the leader schedule.
+	// A quick example: If we have 3 leaders in the schedule and the epoch started at height 10 and view 11,
+	// and the current block is at height 15 and view 17, then the number of timeouts that have occurred is
+	// (17 - 11) - (15 - 10) = 1. This means this block should be proposed by the 2nd leader in the schedule,
+	// which is at index 1.
+	leaderIdxUint64 := (viewDiff - heightDiff) % uint64(len(leaders))
+	if leaderIdxUint64 > math.MaxUint16 {
+		return RuleErrorLeaderIdxExceedsMaxUint16
+	}
+	leaderIdx := uint16(leaderIdxUint64)
 	leaderEntry, err := utxoView.GetSnapshotLeaderScheduleValidator(leaderIdx)
 	if err != nil {
 		return errors.Wrapf(err, "validateBlockLeader: Problem getting leader schedule validator")
@@ -488,5 +517,9 @@ const (
 	RuleErrorPoSVoteBlockViewNotOneGreaterThanParent RuleError = "RuleErrorPoSVoteBlockViewNotOneGreaterThanParent"
 	RuleErrorPoSTimeoutBlockViewNotGreaterThanParent RuleError = "RuleErrorPoSTimeoutBlockViewNotGreaterThanParent"
 
-	RuleErrorLeaderForBlockDoesNotMatchSchedule RuleError = "RuleErrorLeaderForBlockDoesNotMatchSchedule"
+	RuleErrorLeaderForBlockDoesNotMatchSchedule       RuleError = "RuleErrorLeaderForBlockDoesNotMatchSchedule"
+	RuleErrorBlockHeightLessThanInitialHeightForEpoch RuleError = "RuleErrorBlockHeightLessThanInitialHeightForEpoch"
+	RuleErrorBlockViewLessThanInitialViewForEpoch     RuleError = "RuleErrorBlockViewLessThanInitialViewForEpoch"
+	RuleErrorBlockDiffLessThanHeightDiff              RuleError = "RuleErrorBlockDiffLessThanHeightDiff"
+	RuleErrorLeaderIdxExceedsMaxUint16                RuleError = "RuleErrorLeaderIdxExceedsMaxUint16"
 )

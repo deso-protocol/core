@@ -688,6 +688,28 @@ func TestValidateBlockLeader(t *testing.T) {
 		dummyBlock.Header.ProposerVotingPublicKey = leader0Entry.VotingPublicKey
 		err = testMeta.chain.validateBlockLeader(dummyBlock)
 		require.NoError(t, err)
+
+		// If the block view is less than the epoch's initial view, this is an error.
+		dummyBlock.Header.ProposedInView = viewNumber
+		err = testMeta.chain.validateBlockLeader(dummyBlock)
+		require.Error(t, err)
+		require.Equal(t, err, RuleErrorBlockViewLessThanInitialViewForEpoch)
+
+		// If the block height is less than epoch's initial block height, this is an error.
+		dummyBlock.Header.ProposedInView = viewNumber + 1
+		dummyBlock.Header.Height = blockHeight
+		err = testMeta.chain.validateBlockLeader(dummyBlock)
+		require.Error(t, err)
+		require.Equal(t, err, RuleErrorBlockHeightLessThanInitialHeightForEpoch)
+
+		// If the difference between the block's view and epoch's initial view is less than
+		// the difference between the block's height and the epoch's initial height, this is an error.
+		// This would imply that we've had more blocks than views, which is not possible.
+		dummyBlock.Header.ProposedInView = viewNumber + 1
+		dummyBlock.Header.Height = blockHeight + 2
+		err = testMeta.chain.validateBlockLeader(dummyBlock)
+		require.Error(t, err)
+		require.Equal(t, err, RuleErrorBlockDiffLessThanHeightDiff)
 	}
 
 }
