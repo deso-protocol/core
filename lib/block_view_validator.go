@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"crypto/sha256"
 	"fmt"
+	"github.com/deso-protocol/core/consensus"
 	"io"
 	"math"
 	"net/url"
@@ -105,6 +106,14 @@ func (validatorEntry *ValidatorEntry) Status() ValidatorStatus {
 		return ValidatorStatusJailed
 	}
 	return ValidatorStatusActive
+}
+
+func toConsensusValidators(validatorEntries []*ValidatorEntry) []consensus.Validator {
+	var consensusValidators []consensus.Validator
+	for _, validatorEntry := range validatorEntries {
+		consensusValidators = append(consensusValidators, validatorEntry)
+	}
+	return consensusValidators
 }
 
 type ValidatorStatus uint8
@@ -1872,6 +1881,7 @@ func (bav *UtxoView) JailAllInactiveSnapshotValidators(blockHeight uint64) error
 		return nil
 	}
 
+	// TODO: We can replace this with a call to GetFullSnapshotValidatorSetEntriesByStake
 	// Fetch the ValidatorSetMaxNumValidators from the snapshot global params. We use the snapshot global
 	// params here because the value used to snapshot the size of the validator set was snapshotted along
 	// with the validator set.

@@ -312,6 +312,14 @@ func (bav *UtxoView) GetSnapshotValidatorSetByStakeAmount(limit uint64) ([]*Vali
 	return validatorEntries[0:upperBound], nil
 }
 
+func (bav *UtxoView) GetFullSnapshotValidatorSetEntriesByStake() ([]*ValidatorEntry, error) {
+	snapshotGlobalParams, err := bav.GetSnapshotGlobalParamsEntry()
+	if err != nil {
+		return nil, errors.Wrapf(err, "GetFullSnapshotValidatorSetEntriesByStake: problem getting SnapshotGlobalParamsEntry: ")
+	}
+	return bav.GetSnapshotValidatorSetByStakeAmount(snapshotGlobalParams.ValidatorSetMaxNumValidators)
+}
+
 func (bav *UtxoView) _setSnapshotValidatorSetEntry(validatorEntry *ValidatorEntry, snapshotAtEpochNumber uint64) {
 	if validatorEntry == nil {
 		glog.Errorf("_setSnapshotValidatorSetEntry: called with nil entry, this should never happen")

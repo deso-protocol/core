@@ -20,6 +20,43 @@ func IsValidSuperMajorityQuorumCertificate(qc QuorumCertificate, validators []Va
 	// Compute the signature that validators in the QC would have signed
 	signaturePayload := GetVoteSignaturePayload(qc.GetView(), qc.GetBlockHash())
 
+	isValidSuperMajority, validatorPublicKeysInQC := checkSuperMajorityStakeForAggregatedSignature(qc.GetAggregatedSignature(), validators)
+	if !isValidSuperMajority {
+		return false
+	}
+
+	return isValidSignatureManyPublicKeys(validatorPublicKeysInQC, qc.GetAggregatedSignature().GetSignature(), signaturePayload[:])
+}
+
+func IsValidSuperMajorityAggregateQuorumCertificate(aggQC AggregateQuorumCertificate, validators []Validator) bool {
+	if !isProperlyFormedAggregateQC(aggQC) || !isProperlyFormedValidatorSet(validators) {
+		return false
+	}
+
+	isValidSuperMajority, signerPublicKeys := checkSuperMajorityStakeForAggregatedSignature(aggQC.GetAggregatedSignature(), validators)
+	if !isValidSuperMajority {
+		return false
+	}
+
+	signedPayloads := [][]byte{}
+	for _, highQCView := range aggQC.GetHighQCViews() {
+		payload := GetTimeoutSignaturePayload(aggQC.GetView(), highQCView)
+		signedPayloads = append(signedPayloads, payload[:])
+	}
+
+	// Validate the signers' aggregate signatures
+	isValidSignature, err := bls.VerifyAggregateSignatureMultiplePayloads(
+		signerPublicKeys,
+		aggQC.GetAggregatedSignature().GetSignature(),
+		signedPayloads,
+	)
+	if err != nil || !isValidSignature {
+		return false
+	}
+	return true
+}
+
+func checkSuperMajorityStakeForAggregatedSignature(aggSig AggregatedSignature, validators []Validator) (bool, []*bls.PublicKey) {
 	// Compute the total stake in the QC and the total stake in the network
 	stakeInQC := uint256.NewInt()
 	totalStake := uint256.NewInt()
@@ -27,12 +64,9 @@ func IsValidSuperMajorityQuorumCertificate(qc QuorumCertificate, validators []Va
 	// Fetch the validators in the QC
 	validatorPublicKeysInQC := []*bls.PublicKey{}
 
-	// Fetch the aggregated signature in the QC
-	aggregatedSignature := qc.GetAggregatedSignature()
-
 	// Fetch the validators in the QC, and compute the sum of stake in the QC and in the network
 	for ii := range validators {
-		if aggregatedSignature.GetSignersList().Get(ii) {
+		if aggSig.GetSignersList().Get(ii) {
 			stakeInQC.Add(stakeInQC, validators[ii].GetStakeAmount())
 			validatorPublicKeysInQC = append(validatorPublicKeysInQC, validators[ii].GetPublicKey())
 		}
@@ -41,11 +75,9 @@ func IsValidSuperMajorityQuorumCertificate(qc QuorumCertificate, validators []Va
 
 	// Check if the QC contains a super-majority of stake
 	if !isSuperMajorityStake(stakeInQC, totalStake) {
-		return false
+		return false, validatorPublicKeysInQC
 	}
-
-	// Finally, validate the signature
-	return isValidSignatureManyPublicKeys(validatorPublicKeysInQC, aggregatedSignature.GetSignature(), signaturePayload[:])
+	return true, validatorPublicKeysInQC
 }
 
 // When voting on a block, validators sign the payload sha3-256(View, BlockHash) with their BLS
@@ -170,6 +202,19 @@ func isProperlyFormedQC(qc QuorumCertificate) bool {
 	}
 
 	return isProperlyFormedAggregateSignature(qc.GetAggregatedSignature())
+}
+
+func isProperlyFormedAggregateQC(aggQC AggregateQuorumCertificate) bool {
+	// The QC must be non-nil
+	if isInterfaceNil(aggQC) {
+		return false
+	}
+	// The view must be non-zero and the high QC must be properly formed
+	// TODO: Do we need further validation on high qc views? such as non-zero?
+	if aggQC.GetView() == 0 || !isProperlyFormedQC(aggQC.GetHighQC()) || len(aggQC.GetHighQCViews()) == 0 {
+		return false
+	}
+	return isProperlyFormedAggregateSignature(aggQC.GetAggregatedSignature())
 }
 
 func isProperlyFormedAggregateSignature(agg AggregatedSignature) bool {

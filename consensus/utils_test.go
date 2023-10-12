@@ -95,6 +95,100 @@ func TestIsValidSuperMajorityQuorumCertificate(t *testing.T) {
 	}
 }
 
+func TestIsValidSuperMajorityAggregateQuorumCertificate(t *testing.T) {
+	// Test malformed QC
+	{
+		require.False(t, IsValidSuperMajorityAggregateQuorumCertificate(nil, createDummyValidatorSet()))
+	}
+
+	// Test malformed validator set
+	{
+		require.False(t, IsValidSuperMajorityAggregateQuorumCertificate(createDummyAggQc(2, 1), nil))
+	}
+
+	// Set up test validator data
+	validatorPrivateKey1 := createDummyBLSPrivateKey()
+	validatorPrivateKey2 := createDummyBLSPrivateKey()
+	validatorPrivateKey3 := createDummyBLSPrivateKey()
+
+	validator1 := validator{
+		publicKey:   validatorPrivateKey1.PublicKey(),
+		stakeAmount: uint256.NewInt().SetUint64(3),
+	}
+
+	validator2 := validator{
+		publicKey:   validatorPrivateKey2.PublicKey(),
+		stakeAmount: uint256.NewInt().SetUint64(2),
+	}
+
+	validator3 := validator{
+		publicKey:   validatorPrivateKey3.PublicKey(),
+		stakeAmount: uint256.NewInt().SetUint64(1),
+	}
+
+	validators := []Validator{&validator1, &validator2, &validator3}
+
+	// Set up the block hash and view
+	dummyBlockHash := createDummyBlockHash()
+	view := uint64(10)
+
+	// Compute the signature payload
+	signaturePayload := GetVoteSignaturePayload(view, dummyBlockHash)
+
+	// Compute the aggregate signature payload
+	timeoutPayload := GetTimeoutSignaturePayload(view+1, view)
+
+	validator1Signature, err := validatorPrivateKey1.Sign(signaturePayload[:])
+	require.NoError(t, err)
+	highQC := quorumCertificate{
+		blockHash: dummyBlockHash,
+		view:      view,
+		aggregatedSignature: &aggregatedSignature{
+			signersList: bitset.NewBitset().FromBytes([]byte{0x1}), // 0b0001, which represents validator 1
+			signature:   validator1Signature,
+		},
+	}
+
+	// Test with no super-majority stake
+	{
+		validator1TimeoutSignature, err := validatorPrivateKey1.Sign(timeoutPayload[:])
+		require.NoError(t, err)
+		qc := aggregateQuorumCertificate{
+			view:        view + 1,
+			highQC:      &highQC,
+			highQCViews: []uint64{view},
+			aggregatedSignature: &aggregatedSignature{
+				signersList: bitset.NewBitset().FromBytes([]byte{0x1}), // 0b0001, which represents validator 1
+				signature:   validator1TimeoutSignature,
+			},
+		}
+		require.False(t, IsValidSuperMajorityAggregateQuorumCertificate(&qc, validators))
+	}
+
+	// Test with 5/6 super-majority stake
+	{
+		validator1TimeoutSignature, err := validatorPrivateKey1.Sign(timeoutPayload[:])
+		require.NoError(t, err)
+		// For fun, let's have validator 2 sign a timeout payload where its high QC is further behind.
+		validator2TimeoutPayload := GetTimeoutSignaturePayload(view+1, view-1)
+		validator2TimeoutSignature, err := validatorPrivateKey2.Sign(validator2TimeoutPayload[:])
+		require.NoError(t, err)
+
+		aggSig, err := bls.AggregateSignatures([]*bls.Signature{validator1TimeoutSignature, validator2TimeoutSignature})
+		require.NoError(t, err)
+		qc := aggregateQuorumCertificate{
+			view:        view + 1,
+			highQC:      &highQC,
+			highQCViews: []uint64{view, view - 1},
+			aggregatedSignature: &aggregatedSignature{
+				signersList: bitset.NewBitset().FromBytes([]byte{0x3}), // 0b0011, which represents validators 1 and 2
+				signature:   aggSig,
+			},
+		}
+		require.True(t, IsValidSuperMajorityAggregateQuorumCertificate(&qc, validators))
+	}
+}
+
 func TestIsProperlyFormedBlock(t *testing.T) {
 	// Test nil block
 	{
@@ -377,6 +471,26 @@ func createDummyQC(view uint64, blockHash BlockHash) *quorumCertificate {
 	return &quorumCertificate{
 		blockHash: blockHash,
 		view:      view,
+		aggregatedSignature: &aggregatedSignature{
+			signersList: signersList,
+			signature:   aggregateSignature,
+		},
+	}
+}
+
+func createDummyAggQc(view uint64, highQCView uint64) *aggregateQuorumCertificate {
+	timeoutSignaturePayload := GetTimeoutSignaturePayload(view, highQCView)
+	dummyQC := createDummyQC(highQCView, createDummyBlockHash())
+	blsPrivateKey1, _ := bls.NewPrivateKey()
+	blsSignature1, _ := blsPrivateKey1.Sign(timeoutSignaturePayload[:])
+	blsPrivateKey2, _ := bls.NewPrivateKey()
+	blsSignature2, _ := blsPrivateKey2.Sign(timeoutSignaturePayload[:])
+	signersList := bitset.NewBitset().Set(0, true).Set(1, true)
+	aggregateSignature, _ := bls.AggregateSignatures([]*bls.Signature{blsSignature1, blsSignature2})
+	return &aggregateQuorumCertificate{
+		view:        view,
+		highQC:      dummyQC,
+		highQCViews: []uint64{highQCView, highQCView},
 		aggregatedSignature: &aggregatedSignature{
 			signersList: signersList,
 			signature:   aggregateSignature,
