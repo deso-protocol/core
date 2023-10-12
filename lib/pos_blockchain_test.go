@@ -434,6 +434,91 @@ func TestValidateBlockView(t *testing.T) {
 	require.Nil(t, err)
 }
 
+func TestAddBlockToBlockIndexAndUncommittedBlocks(t *testing.T) {
+	bc, _, _ := NewTestBlockchain(t)
+	hash1 := NewBlockHash(RandomBytes(32))
+	hash2 := NewBlockHash(RandomBytes(32))
+	genesisNode := NewPoSBlockNode(nil, hash1, 1, &MsgDeSoHeader{
+		Version:        2,
+		Height:         1,
+		ProposedInView: 1,
+	}, StatusBlockValidated, COMMITTED)
+	block2 := NewPoSBlockNode(genesisNode, hash2, 2, &MsgDeSoHeader{
+		Version:                      2,
+		Height:                       2,
+		ProposedInView:               2,
+		ValidatorsVoteQC:             nil,
+		ValidatorsTimeoutAggregateQC: nil,
+	}, StatusBlockValidated, UNCOMMITTED)
+	bc.blockIndex = map[BlockHash]*BlockNode{
+		*hash1: genesisNode,
+		*hash2: block2,
+	}
+	randomPayload := RandomBytes(256)
+	randomBLSPrivateKey := _generateRandomBLSPrivateKey(t)
+	signature, err := randomBLSPrivateKey.Sign(randomPayload)
+	voteQC := &QuorumCertificate{
+		BlockHash:      bc.GetBestChainTip().Hash,
+		ProposedInView: 1,
+		ValidatorsVoteAggregatedSignature: &AggregatedBLSSignature{
+			Signature:   signature,
+			SignersList: bitset.NewBitset(),
+		},
+	}
+	require.NoError(t, err)
+	randomSeedHash := &RandomSeedHash{}
+	_, err = randomSeedHash.FromBytes(RandomBytes(32))
+	require.NoError(t, err)
+	blsPrivKey := _generateRandomBLSPrivateKey(t)
+	block := &MsgDeSoBlock{
+		Header: &MsgDeSoHeader{
+			PrevBlockHash:                hash2,
+			Version:                      2,
+			TstampNanoSecs:               uint64(time.Now().UnixNano()) - 10,
+			Height:                       2,
+			ProposedInView:               1,
+			ProposerPublicKey:            NewPublicKey(RandomBytes(33)),
+			ProposerVotingPublicKey:      blsPrivKey.PublicKey(),
+			ProposerRandomSeedHash:       randomSeedHash,
+			ProposerVotePartialSignature: signature,
+			ValidatorsTimeoutAggregateQC: &TimeoutAggregateQuorumCertificate{
+				TimedOutView:                 2,
+				ValidatorsHighQC:             voteQC,
+				ValidatorsTimeoutHighQCViews: []uint64{28934},
+				ValidatorsTimeoutAggregatedSignature: &AggregatedBLSSignature{
+					Signature:   signature,
+					SignersList: bitset.NewBitset(),
+				},
+			},
+		},
+		Txns: nil,
+	}
+
+	err = bc.addBlockToBlockIndex(block)
+	require.NoError(t, err)
+	newHash, err := block.Hash()
+	require.NoError(t, err)
+	// Check the block index
+	blockNode, exists := bc.blockIndex[*newHash]
+	require.True(t, exists)
+	require.True(t, bytes.Equal(blockNode.Hash[:], newHash[:]))
+	require.Equal(t, blockNode.Height, uint32(2))
+	// Check the uncommitted blocks map
+	uncommittedBlock, uncommittedExists := bc.uncommittedBlocksMap[*newHash]
+	require.True(t, uncommittedExists)
+	uncommittedBytes, err := uncommittedBlock.ToBytes(false)
+	require.NoError(t, err)
+	origBlockBytes, err := block.ToBytes(false)
+	require.NoError(t, err)
+	require.True(t, bytes.Equal(uncommittedBytes, origBlockBytes))
+
+	// If we're missing a field in the header, we should get an error
+	// as we can't compute the hash.
+	block.Header.ProposerPublicKey = nil
+	err = bc.addBlockToBlockIndex(block)
+	require.Error(t, err)
+}
+
 func _generateRandomBLSPrivateKey(t *testing.T) *bls.PrivateKey {
 	privateKey, err := bls.NewPrivateKey()
 	require.NoError(t, err)
