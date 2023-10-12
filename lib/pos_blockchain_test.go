@@ -519,6 +519,201 @@ func TestAddBlockToBlockIndexAndUncommittedBlocks(t *testing.T) {
 	require.Error(t, err)
 }
 
+func TestValidateBlockLeader(t *testing.T) {
+	// Initialize balance model fork heights.
+	setBalanceModelBlockHeights(t)
+
+	// Initialize test chain, miner, and testMeta
+	testMeta := _setUpMinerAndTestMetaForEpochCompleteTest(t)
+
+	_registerOrTransferWithTestMeta(testMeta, "m0", senderPkString, m0Pub, senderPrivString, 1e3)
+	_registerOrTransferWithTestMeta(testMeta, "m1", senderPkString, m1Pub, senderPrivString, 1e3)
+	_registerOrTransferWithTestMeta(testMeta, "m2", senderPkString, m2Pub, senderPrivString, 1e3)
+	_registerOrTransferWithTestMeta(testMeta, "m3", senderPkString, m3Pub, senderPrivString, 1e3)
+	_registerOrTransferWithTestMeta(testMeta, "m4", senderPkString, m4Pub, senderPrivString, 1e3)
+	_registerOrTransferWithTestMeta(testMeta, "m5", senderPkString, m5Pub, senderPrivString, 1e3)
+	_registerOrTransferWithTestMeta(testMeta, "m6", senderPkString, m6Pub, senderPrivString, 1e3)
+	_registerOrTransferWithTestMeta(testMeta, "", senderPkString, paramUpdaterPub, senderPrivString, 1e3)
+
+	m0PKID := *DBGetPKIDEntryForPublicKey(testMeta.db, testMeta.chain.snapshot, m0PkBytes).PKID
+	m1PKID := *DBGetPKIDEntryForPublicKey(testMeta.db, testMeta.chain.snapshot, m1PkBytes).PKID
+	m2PKID := *DBGetPKIDEntryForPublicKey(testMeta.db, testMeta.chain.snapshot, m2PkBytes).PKID
+	m3PKID := *DBGetPKIDEntryForPublicKey(testMeta.db, testMeta.chain.snapshot, m3PkBytes).PKID
+	m4PKID := *DBGetPKIDEntryForPublicKey(testMeta.db, testMeta.chain.snapshot, m4PkBytes).PKID
+	m5PKID := *DBGetPKIDEntryForPublicKey(testMeta.db, testMeta.chain.snapshot, m5PkBytes).PKID
+	m6PKID := *DBGetPKIDEntryForPublicKey(testMeta.db, testMeta.chain.snapshot, m6PkBytes).PKID
+
+	validatorPKIDs := []PKID{m0PKID, m1PKID, m2PKID, m3PKID, m4PKID, m5PKID, m6PKID}
+	_ = validatorPKIDs
+	blockHeight := uint64(testMeta.chain.blockTip().Height) + 1
+	incrBlockHeight := func() uint64 {
+		blockHeight += 1
+		return blockHeight
+	}
+	viewNumber := uint64(0)
+	incrViewNumber := func() uint64 {
+		viewNumber += 1
+		return viewNumber
+	}
+
+	// Seed a CurrentEpochEntry.
+	tmpUtxoView := _newUtxoView(testMeta)
+	tmpUtxoView._setCurrentEpochEntry(&EpochEntry{EpochNumber: 0, FinalBlockHeight: blockHeight + 1})
+	require.NoError(t, tmpUtxoView.FlushToDb(blockHeight))
+
+	// For these tests, we set each epoch duration to only one block.
+	testMeta.params.DefaultEpochDurationNumBlocks = uint64(1)
+
+	{
+
+		// We need to reset the UniversalUtxoView since the RegisterAsValidator and Stake
+		// txn test helper utils use and flush the UniversalUtxoView. Otherwise, the
+		// updated GlobalParamsEntry will be overwritten by the default one cached in
+		// the UniversalUtxoView when it is flushed.
+		testMeta.mempool.universalUtxoView._ResetViewMappingsAfterFlush()
+	}
+
+	// All validators register + stake to themselves.
+	_registerValidatorAndStake(testMeta, m0Pub, m0Priv, 0, 100, false)
+	_registerValidatorAndStake(testMeta, m1Pub, m1Priv, 0, 200, false)
+	_registerValidatorAndStake(testMeta, m2Pub, m2Priv, 0, 300, false)
+	_registerValidatorAndStake(testMeta, m3Pub, m3Priv, 0, 400, false)
+	_registerValidatorAndStake(testMeta, m4Pub, m4Priv, 0, 500, false)
+	_registerValidatorAndStake(testMeta, m5Pub, m5Priv, 0, 600, false)
+	_registerValidatorAndStake(testMeta, m6Pub, m6Priv, 0, 700, false)
+
+	// Get current epoch number
+	utxoView := _newUtxoView(testMeta)
+	currentEpochNumber, err := utxoView.GetCurrentEpochNumber()
+	require.NoError(t, err)
+
+	// Run the epoch complete hook
+	_runOnEpochCompleteHook(testMeta, incrBlockHeight(), incrViewNumber())
+
+	// Get leader schedule from DB
+	leaderSchedule, err := DBSeekSnapshotLeaderSchedule(testMeta.db, currentEpochNumber)
+	require.NoError(t, err)
+	require.Equal(t, len(leaderSchedule), len(validatorPKIDs))
+	// Make sure all the validators are in the leader schedule.
+	for _, pkid := range leaderSchedule {
+		require.Contains(t, validatorPKIDs, *pkid)
+	}
+
+	utxoView = _newUtxoView(testMeta)
+	leaders, err := utxoView.GetSnapshotLeaderSchedule()
+	require.NoError(t, err)
+	require.Equal(t, len(leaders), len(validatorPKIDs))
+	// Make sure all the validators are in the leader schedule.
+	for _, pkid := range leaders {
+		require.Contains(t, validatorPKIDs, *pkid)
+	}
+
+	utxoView = _newUtxoView(testMeta)
+	// Get all the validator entries
+	m0ValidatorEntry, err := utxoView.GetValidatorByPKID(&m0PKID)
+	require.NoError(t, err)
+	m1ValidatorEntry, err := utxoView.GetValidatorByPKID(&m1PKID)
+	require.NoError(t, err)
+	m2ValidatorEntry, err := utxoView.GetValidatorByPKID(&m2PKID)
+	require.NoError(t, err)
+	m3ValidatorEntry, err := utxoView.GetValidatorByPKID(&m3PKID)
+	require.NoError(t, err)
+	m4ValidatorEntry, err := utxoView.GetValidatorByPKID(&m4PKID)
+	require.NoError(t, err)
+	m5ValidatorEntry, err := utxoView.GetValidatorByPKID(&m5PKID)
+	require.NoError(t, err)
+	m6ValidatorEntry, err := utxoView.GetValidatorByPKID(&m6PKID)
+	require.NoError(t, err)
+	validatorPKIDToValidatorEntryMap := map[PKID]*ValidatorEntry{
+		m0PKID: m0ValidatorEntry,
+		m1PKID: m1ValidatorEntry,
+		m2PKID: m2ValidatorEntry,
+		m3PKID: m3ValidatorEntry,
+		m4PKID: m4ValidatorEntry,
+		m5PKID: m5ValidatorEntry,
+		m6PKID: m6ValidatorEntry,
+	}
+	{
+		// First block, we should have the first leader.
+		leader0PKID := leaderSchedule[0]
+		leader0Entry := validatorPKIDToValidatorEntryMap[*leader0PKID]
+		leader0PublicKey := utxoView.GetPublicKeyForPKID(leader0PKID)
+		dummyBlock := &MsgDeSoBlock{
+			Header: &MsgDeSoHeader{
+				ProposedInView:          viewNumber + 1,
+				Height:                  blockHeight + 1,
+				ProposerPublicKey:       NewPublicKey(leader0PublicKey),
+				ProposerVotingPublicKey: leader0Entry.VotingPublicKey,
+			},
+		}
+		err = testMeta.chain.validateBlockLeader(dummyBlock)
+		require.NoError(t, err)
+
+		// If we have a different proposer public key, we will have an error
+		leader1PublicKey := utxoView.GetPublicKeyForPKID(leaderSchedule[1])
+		leader1Entry := validatorPKIDToValidatorEntryMap[*leaderSchedule[1]]
+		dummyBlock.Header.ProposerPublicKey = NewPublicKey(leader1PublicKey)
+		err = testMeta.chain.validateBlockLeader(dummyBlock)
+		require.Error(t, err)
+		require.Equal(t, err, RuleErrorLeaderForBlockDoesNotMatchSchedule)
+
+		// If we have a different proposer voting public key, we will have an error
+		dummyBlock.Header.ProposerPublicKey = NewPublicKey(leader0PublicKey)
+		dummyBlock.Header.ProposerVotingPublicKey = leader1Entry.VotingPublicKey
+		err = testMeta.chain.validateBlockLeader(dummyBlock)
+		require.Error(t, err)
+		require.Equal(t, err, RuleErrorLeaderForBlockDoesNotMatchSchedule)
+
+		// If we advance the view, we know that leader 0 timed out, so
+		// we move to leader 1.
+		dummyBlock.Header.ProposedInView = viewNumber + 2
+		dummyBlock.Header.ProposerPublicKey = NewPublicKey(leader1PublicKey)
+		dummyBlock.Header.ProposerVotingPublicKey = leader1Entry.VotingPublicKey
+		err = testMeta.chain.validateBlockLeader(dummyBlock)
+		require.NoError(t, err)
+
+		// If we have 4 timeouts, we know that leaders 0, 1, 2, and 3 timed out,
+		// so we move to leader 4.
+		dummyBlock.Header.ProposedInView = viewNumber + 5
+		leader4PublicKey := utxoView.GetPublicKeyForPKID(leaderSchedule[4])
+		leader4Entry := validatorPKIDToValidatorEntryMap[*leaderSchedule[4]]
+		dummyBlock.Header.ProposerPublicKey = NewPublicKey(leader4PublicKey)
+		dummyBlock.Header.ProposerVotingPublicKey = leader4Entry.VotingPublicKey
+		err = testMeta.chain.validateBlockLeader(dummyBlock)
+		require.NoError(t, err)
+
+		// If we have 7 timeouts, we know everybody timed out, so we go back to leader 0.
+		dummyBlock.Header.ProposedInView = viewNumber + 8
+		dummyBlock.Header.ProposerPublicKey = NewPublicKey(leader0PublicKey)
+		dummyBlock.Header.ProposerVotingPublicKey = leader0Entry.VotingPublicKey
+		err = testMeta.chain.validateBlockLeader(dummyBlock)
+		require.NoError(t, err)
+
+		// If the block view is less than the epoch's initial view, this is an error.
+		dummyBlock.Header.ProposedInView = viewNumber
+		err = testMeta.chain.validateBlockLeader(dummyBlock)
+		require.Error(t, err)
+		require.Equal(t, err, RuleErrorBlockViewLessThanInitialViewForEpoch)
+
+		// If the block height is less than epoch's initial block height, this is an error.
+		dummyBlock.Header.ProposedInView = viewNumber + 1
+		dummyBlock.Header.Height = blockHeight
+		err = testMeta.chain.validateBlockLeader(dummyBlock)
+		require.Error(t, err)
+		require.Equal(t, err, RuleErrorBlockHeightLessThanInitialHeightForEpoch)
+
+		// If the difference between the block's view and epoch's initial view is less than
+		// the difference between the block's height and the epoch's initial height, this is an error.
+		// This would imply that we've had more blocks than views, which is not possible.
+		dummyBlock.Header.ProposedInView = viewNumber + 1
+		dummyBlock.Header.Height = blockHeight + 2
+		err = testMeta.chain.validateBlockLeader(dummyBlock)
+		require.Error(t, err)
+		require.Equal(t, err, RuleErrorBlockDiffLessThanHeightDiff)
+	}
+
+}
+
 func _generateRandomBLSPrivateKey(t *testing.T) *bls.PrivateKey {
 	privateKey, err := bls.NewPrivateKey()
 	require.NoError(t, err)
