@@ -39,7 +39,7 @@ func (bc *Blockchain) processBlockPoS(desoBlock *MsgDeSoBlock, currentView uint6
 		// ProcessOrphanBlock validates the block and adds it to the orphan list.
 		// TODO: update _validateOrphanBlock to perform additional validation required.
 		if err = bc.ProcessOrphanBlock(desoBlock, blockHash); err != nil {
-			return false, true, missingBlockHashes, err
+			return false, true, missingBlockHashes, errors.Wrap(err, "processBlockPoS: Problem processing orphan block")
 		}
 		return false, true, missingBlockHashes, nil
 	}
@@ -48,20 +48,20 @@ func (bc *Blockchain) processBlockPoS(desoBlock *MsgDeSoBlock, currentView uint6
 	// TODO: Check if err is for view > latest committed block view and <= latest uncommitted block.
 	// If so, we need to perform the rest of the validations and then add to our block index.
 	if err = bc.validateDeSoBlockPoS(desoBlock); err != nil {
-		return false, false, nil, err
+		return false, false, nil, errors.Wrap(err, "processBlockPoS: block validation failed: ")
 	}
 
 	utxoView, err := bc.getUtxoViewAtBlockHash(*desoBlock.Header.PrevBlockHash)
 	if err != nil {
-		return false, false, nil, errors.Wrapf(err, "processBlockPoS: Problem initializing UtxoView")
+		return false, false, nil, errors.Wrap(err, "processBlockPoS: Problem initializing UtxoView")
 	}
 	validatorsByStake, err := utxoView.GetAllSnapshotValidatorSetEntriesByStake()
 	if err != nil {
-		return false, false, nil, errors.Wrapf(err, "processBlockPoS: Problem getting validator set")
+		return false, false, nil, errors.Wrap(err, "processBlockPoS: Problem getting validator set")
 	}
 	// 1e. Validate QC
 	if err = bc.validateQC(desoBlock, validatorsByStake); err != nil {
-		return false, false, nil, err
+		return false, false, nil, errors.Wrap(err, "processBlockPoS: QC validation failed: ")
 	}
 
 	// @sofonias @piotr - should we move this to
@@ -87,13 +87,13 @@ func (bc *Blockchain) processBlockPoS(desoBlock *MsgDeSoBlock, currentView uint6
 	// 2. We can now add this block to the block index since we have performed
 	// all basic validations. We can also add it to the uncommittedBlocksMap
 	if err = bc.addBlockToBlockIndex(desoBlock); err != nil {
-		return false, false, nil, err
+		return false, false, nil, errors.Wrap(err, "processBlockPoS: Problem adding block to block index")
 	}
 
 	// 4. Handle reorgs if necessary
 	if bc.shouldReorg(desoBlock) {
 		if err = bc.handleReorg(desoBlock); err != nil {
-			return false, false, nil, err
+			return false, false, nil, errors.Wrap(err, "processBlockPoS: Problem handling reorg")
 		}
 	}
 
@@ -101,14 +101,14 @@ func (bc *Blockchain) processBlockPoS(desoBlock *MsgDeSoBlock, currentView uint6
 	// Make a block node struct for this block.
 	newBlockNode, err := bc.msgDeSoBlockToNewBlockNode(desoBlock)
 	if err != nil {
-		return false, false, nil, err
+		return false, false, nil, errors.Wrap(err, "processBlockPoS: Problem creating new block node")
 	}
 	// 5. Add block to best chain.
 	bc.addBlockToBestChain(newBlockNode)
 
 	// 6. Commit grandparent if possible.
 	if err = bc.commitGrandparents(desoBlock); err != nil {
-		return false, false, nil, err
+		return false, false, nil, errors.Wrap(err, "processBlockPoS: error committing grandparents")
 	}
 
 	// 7. Update in-memory struct holding uncommitted blocks.
