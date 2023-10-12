@@ -19,13 +19,12 @@ import (
 //  7. Prune in-memory struct holding uncommitted block.
 //  8. Update the currentView to this new block's view + 1
 func (bc *Blockchain) processBlockPoS(desoBlock *MsgDeSoBlock, currentView uint64, verifySignatures bool) (_success bool, _isOrphan bool, _missingBlockHashes []*BlockHash, _err error) {
-	// TODO: Implement me
 	// 1. Determine if we're missing the parent block of this block. If it's parent exists in the blockIndex,
 	// it is safe to assume we have all ancestors of this block in the block index.
 	// If the parent block is missing, process the orphan, but don't add to the block index or uncommitted block map.
-	missingBlockHash := bc.validateAncestorsExist(*desoBlock.Header.PrevBlockHash)
-	if missingBlockHash != nil {
-		missingBlockHashes := []*BlockHash{missingBlockHash}
+	hasKnownAncestors := bc.hasKnownAncestors(*desoBlock.Header.PrevBlockHash)
+	if !hasKnownAncestors {
+		missingBlockHashes := []*BlockHash{desoBlock.Header.PrevBlockHash}
 		blockHash, err := desoBlock.Header.Hash()
 		// If we fail to get the block hash, this block isn't valid at all, so we
 		// don't need to worry about adding it to the orphan list or block index.
@@ -360,15 +359,13 @@ func (bc *Blockchain) validateTimeoutQC(desoBlock *MsgDeSoBlock, validatorSet []
 	return errors.New("IMPLEMENT ME")
 }
 
-// validateAncestorsExist checks the parent exists in the block index. If it does not,
-// return the parent's hash. Else, return nil.
-func (bc *Blockchain) validateAncestorsExist(parentHash BlockHash) *BlockHash {
-	// check for parent in block index
-	// if parent does not exist in block index, return parent's hash
-	if _, exists := bc.blockIndex[parentHash]; !exists {
-		return &parentHash
-	}
-	return nil
+// hasKnownAncestors checks that the parent block hash exists in the block index.
+// It returns true if the parent block hash exists in the block index, and otherwise false.
+// If the parent hash is in the block index, it is assumed that all ancestors of this block
+// also exist in the block index.
+func (bc *Blockchain) hasKnownAncestors(parentHash BlockHash) bool {
+	_, exists := bc.blockIndex[parentHash]
+	return exists
 }
 
 // addBlockToBlockIndex adds the block to the block index and uncommitted blocks map.
