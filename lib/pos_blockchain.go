@@ -70,13 +70,6 @@ func (bc *Blockchain) processBlockPoS(desoBlock *MsgDeSoBlock, currentView uint6
 		// views. We use the current block’s QC to find the view of the parent.
 		// TODO: Any processing related to the block's vote QC.
 	} else {
-		// If we have a ValidatorsTimeoutAggregateQC set on the block, it means the nodes decided
-		// to skip a view by sending TimeoutMessages to the leader, so we process
-		// the block accordingly.
-		// 1f. If timeout QC, validate that block hash isn't too far back from the latest.
-		if err = bc.validateTimeoutQC(desoBlock, validatorsByStake); err != nil {
-			return false, false, nil, err
-		}
 		// TODO: Get highest timeout QC from the block.
 		// We find the QC with the highest view among the QCs contained in the
 		// AggregateQC.
@@ -174,6 +167,14 @@ func (bc *Blockchain) validateBlockIntegrity(desoBlock *MsgDeSoBlock) error {
 		// Note: this should never happen as we only call this function after
 		// we've validated that all ancestors exist in the block index.
 		return RuleErrorMissingParentBlock
+	}
+	if parentBlock.CommittedStatus == COMMITTED {
+		// If the parent block is committed, then we need to check that it's the
+		// latest committed block. Otherwise, this is an error.
+		highestCommittedBlock, _ := bc.getHighestCommittedBlock()
+		if !parentBlock.Hash.IsEqual(highestCommittedBlock.Hash) {
+			return RuleErrorParentBlockCommittedAndNotCommittedTip
+		}
 	}
 	if desoBlock.Header.TstampNanoSecs < parentBlock.Header.TstampNanoSecs {
 		return RuleErrorPoSBlockTstampNanoSecsTooOld
@@ -368,13 +369,6 @@ func (bc *Blockchain) validateQC(desoBlock *MsgDeSoBlock, validatorSet []*Valida
 	return nil
 }
 
-// validateTimeoutQC validates that the parent block hash is not too far back from the latest.
-// Specifically, it checks that the parent block hash is at least the latest committed block.
-func (bc *Blockchain) validateTimeoutQC(desoBlock *MsgDeSoBlock, validatorSet []*ValidatorEntry) error {
-	// TODO: Implement me
-	return errors.New("IMPLEMENT ME")
-}
-
 // hasKnownAncestors checks that the parent block hash exists in the block index.
 // It returns true if the parent block hash exists in the block index, and otherwise false.
 // If the parent hash is in the block index, it is assumed that all ancestors of this block
@@ -544,21 +538,22 @@ func (bc *Blockchain) getHighestCommittedBlock() (*BlockNode, int) {
 }
 
 const (
-	RuleErrorNilBlockHeader                 RuleError = "RuleErrorNilBlockHeader"
-	RuleErrorNilPrevBlockHash               RuleError = "RuleErrorNilPrevBlockHash"
-	RuleErrorPoSBlockTstampNanoSecsTooOld   RuleError = "RuleErrorPoSBlockTstampNanoSecsTooOld"
-	RuleErrorPoSBlockTstampNanoSecsInFuture RuleError = "RuleErrorPoSBlockTstampNanoSecsInFuture"
-	RuleErrorInvalidPoSBlockHeaderVersion   RuleError = "RuleErrorInvalidPoSBlockHeaderVersion"
-	RuleErrorNoTimeoutOrVoteQC              RuleError = "RuleErrorNoTimeoutOrVoteQC"
-	RuleErrorBothTimeoutAndVoteQC           RuleError = "RuleErrorBothTimeoutAndVoteQC"
-	RuleErrorTimeoutQCWithTransactions      RuleError = "RuleErrorTimeoutQCWithTransactions"
-	RuleErrorMissingParentBlock             RuleError = "RuleErrorMissingParentBlock"
-	RuleErrorNilMerkleRoot                  RuleError = "RuleErrorNilMerkleRoot"
-	RuleErrorInvalidMerkleRoot              RuleError = "RuleErrorInvalidMerkleRoot"
-	RuleErrorNoTxnsWithMerkleRoot           RuleError = "RuleErrorNoTxnsWithMerkleRoot"
-	RuleErrorInvalidProposerVotingPublicKey RuleError = "RuleErrorInvalidProposerVotingPublicKey"
-	RuleErrorInvalidProposerPublicKey       RuleError = "RuleErrorInvalidProposerPublicKey"
-	RuleErrorInvalidRandomSeedHash          RuleError = "RuleErrorInvalidRandomSeedHash"
+	RuleErrorNilBlockHeader                         RuleError = "RuleErrorNilBlockHeader"
+	RuleErrorNilPrevBlockHash                       RuleError = "RuleErrorNilPrevBlockHash"
+	RuleErrorPoSBlockTstampNanoSecsTooOld           RuleError = "RuleErrorPoSBlockTstampNanoSecsTooOld"
+	RuleErrorPoSBlockTstampNanoSecsInFuture         RuleError = "RuleErrorPoSBlockTstampNanoSecsInFuture"
+	RuleErrorInvalidPoSBlockHeaderVersion           RuleError = "RuleErrorInvalidPoSBlockHeaderVersion"
+	RuleErrorNoTimeoutOrVoteQC                      RuleError = "RuleErrorNoTimeoutOrVoteQC"
+	RuleErrorBothTimeoutAndVoteQC                   RuleError = "RuleErrorBothTimeoutAndVoteQC"
+	RuleErrorTimeoutQCWithTransactions              RuleError = "RuleErrorTimeoutQCWithTransactions"
+	RuleErrorMissingParentBlock                     RuleError = "RuleErrorMissingParentBlock"
+	RuleErrorParentBlockCommittedAndNotCommittedTip RuleError = "RuleErrorParentBlockCommittedAndNotCommittedTip"
+	RuleErrorNilMerkleRoot                          RuleError = "RuleErrorNilMerkleRoot"
+	RuleErrorInvalidMerkleRoot                      RuleError = "RuleErrorInvalidMerkleRoot"
+	RuleErrorNoTxnsWithMerkleRoot                   RuleError = "RuleErrorNoTxnsWithMerkleRoot"
+	RuleErrorInvalidProposerVotingPublicKey         RuleError = "RuleErrorInvalidProposerVotingPublicKey"
+	RuleErrorInvalidProposerPublicKey               RuleError = "RuleErrorInvalidProposerPublicKey"
+	RuleErrorInvalidRandomSeedHash                  RuleError = "RuleErrorInvalidRandomSeedHash"
 
 	RuleErrorInvalidPoSBlockHeight       RuleError = "RuleErrorInvalidPoSBlockHeight"
 	RuleErrorPoSBlockBeforeCutoverHeight RuleError = "RuleErrorPoSBlockBeforeCutoverHeight"

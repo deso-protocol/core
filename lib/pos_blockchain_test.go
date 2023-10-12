@@ -211,6 +211,17 @@ func TestValidateBlockIntegrity(t *testing.T) {
 	err = bc.validateBlockIntegrity(block)
 	require.Equal(t, err, RuleErrorMissingParentBlock)
 
+	// Set the PrevBlockHash to a non-latest committed block.
+	latestCommittedNode, _ := bc.getHighestCommittedBlock()
+	block.Header.PrevBlockHash = latestCommittedNode.Parent.Hash
+	err = bc.validateBlockIntegrity(block)
+	require.Equal(t, err, RuleErrorParentBlockCommittedAndNotCommittedTip)
+
+	// If it's the latest committed block, that's OK!
+	block.Header.PrevBlockHash = latestCommittedNode.Hash
+	err = bc.validateBlockIntegrity(block)
+	require.Nil(t, err)
+
 	// Nil block header not allowed
 	block.Header = nil
 	err = bc.validateBlockIntegrity(block)
