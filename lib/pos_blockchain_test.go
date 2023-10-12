@@ -714,6 +714,32 @@ func TestValidateBlockLeader(t *testing.T) {
 
 }
 
+func TestValidateAncestorsExist(t *testing.T) {
+	bc, _, _ := NewTestBlockchain(t)
+	hash1 := NewBlockHash(RandomBytes(32))
+	genesisNode := NewPoSBlockNode(nil, hash1, 1, &MsgDeSoHeader{
+		Version:        2,
+		Height:         1,
+		ProposedInView: 1,
+	}, StatusBlockValidated, COMMITTED)
+	bc.blockIndex = map[BlockHash]*BlockNode{
+		*hash1: genesisNode,
+	}
+	block := &MsgDeSoBlock{
+		Header: &MsgDeSoHeader{
+			PrevBlockHash: hash1,
+		},
+	}
+	// If block is in best chain, we should get true
+	hasKnownAncestors := bc.hasKnownAncestors(*block.Header.PrevBlockHash)
+	require.True(t, hasKnownAncestors)
+
+	// If parent block is not in block index, we should get the parent block hash back
+	block.Header.PrevBlockHash = NewBlockHash(RandomBytes(32))
+	hasKnownAncestors = bc.hasKnownAncestors(*block.Header.PrevBlockHash)
+	require.False(t, hasKnownAncestors)
+}
+
 func _generateRandomBLSPrivateKey(t *testing.T) *bls.PrivateKey {
 	privateKey, err := bls.NewPrivateKey()
 	require.NoError(t, err)
