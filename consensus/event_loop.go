@@ -840,9 +840,8 @@ func (fc *FastHotStuffEventLoop) fetchSafeBlockInfo(blockHash BlockHash) (
 	// number of uncommitted blocks in the blockchain. During steady stake, it will have a size of 3 blocks
 	// (one committed, two uncommitted). In the worse case, where the network has an unlucky series of
 	// timeout -> block -> timeout -> block,... it can still be expected to have < 10 blocks.
-	blockHashValue := blockHash.GetValue()
 	for _, block := range fc.safeBlocks {
-		if block.block.GetBlockHash().GetValue() == blockHashValue {
+		if isEqualBlockHashes(block.block.GetBlockHash(), blockHash) {
 			return true, block.block, block.validatorSet, block.validatorLookup
 		}
 	}
