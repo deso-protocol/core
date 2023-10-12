@@ -1090,11 +1090,11 @@ func TestShouldReorg(t *testing.T) {
 	hash2 := NewBlockHash(RandomBytes(32))
 	hash3 := NewBlockHash(RandomBytes(32))
 	bc.bestChain = []*BlockNode{
-		&BlockNode{
+		{
 			Hash:            hash1,
 			CommittedStatus: COMMITTED,
 		},
-		&BlockNode{
+		{
 			Hash:            hash3,
 			CommittedStatus: UNCOMMITTED,
 		},
