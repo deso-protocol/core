@@ -616,7 +616,6 @@ func (aggQC *TimeoutAggregateQuorumCertificate) FromBytes(rr io.Reader) error {
 		return errors.Wrapf(err, "TimeoutAggregateQuorumCertificate.FromBytes: Error decoding ValidatorsTimeoutHighQCViews")
 	}
 
-	// TODO: Go through these functions and make sure we're looking for all these errors.
 	aggQC.ValidatorsTimeoutAggregatedSignature = &AggregatedBLSSignature{}
 	if err = aggQC.ValidatorsTimeoutAggregatedSignature.FromBytes(rr); err != nil {
 		return errors.Wrapf(err, "TimeoutAggregateQuorumCertificate.FromBytes: Error decoding ValidatorsTimeoutAggregatedSignature")
