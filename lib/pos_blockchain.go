@@ -424,12 +424,42 @@ func (bc *Blockchain) shouldReorg(desoBlock *MsgDeSoBlock, currentView uint64) b
 
 // handleReorg handles a reorg to the block provided. It does not check whether or not we should
 // perform a reorg, so this should be called after shouldReorg. It will do the following:
-// 1. Update the bestChain and bestChainMap by removing blocks that are not uncommitted ancestor of this block.
+// 1. Update the bestChain and bestChainMap by removing blocks that are uncommitted and are not ancestors of this block.
 // 2. Update the bestChain and bestChainMap by adding blocks that are uncommitted ancestors of this block.
 // Note: addBlockToBestChain will be called after this to handle adding THIS block to the best chain.
 func (bc *Blockchain) handleReorg(desoBlock *MsgDeSoBlock) error {
-	// TODO: Implement me.
-	return errors.New("IMPLEMENT ME")
+	// For simplicity, we remove all uncommitted blocks and then re-add them.
+	highestCommittedBlock, idx := bc.getHighestCommittedBlock()
+	if highestCommittedBlock == nil {
+		// This is an edge case we'll never hit in practice since all the PoW blocks
+		// are committed.
+		return errors.New("handleReorg: No committed blocks found")
+	}
+	// Remove all uncommitted blocks. These are all blocks that come after the highestCommittedBlock
+	// in the best chain.
+	// Delete all blocks from bc.bestChainMap that come after the highest committed block.
+	for ii := idx + 1; ii < len(bc.bestChain); ii++ {
+		delete(bc.bestChainMap, *bc.bestChain[ii].Hash)
+	}
+	// Shorten best chain back to committed tip.
+	bc.bestChain = bc.bestChain[:idx+1]
+
+	// Find the ordered list of block nodes that connects the incoming block to the committed tip.
+	ancestors := []*BlockNode{}
+	isCommittedTip := false
+	currentBlock := bc.blockIndex[*desoBlock.Header.PrevBlockHash]
+	for !isCommittedTip {
+		if currentBlock.Hash.IsEqual(highestCommittedBlock.Hash) {
+			isCommittedTip = true
+			break
+		}
+		ancestors = append(ancestors, currentBlock)
+		currentBlock = bc.blockIndex[*currentBlock.Header.PrevBlockHash]
+	}
+	for ii := len(ancestors) - 1; ii >= 0; ii-- {
+		bc.addBlockToBestChain(ancestors[ii])
+	}
+	return nil
 }
 
 func (bc *Blockchain) msgDeSoBlockToNewBlockNode(desoBlock *MsgDeSoBlock) (*BlockNode, error) {
