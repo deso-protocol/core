@@ -173,7 +173,7 @@ func (bc *Blockchain) validateBlockIntegrity(desoBlock *MsgDeSoBlock) error {
 	if parentBlock.CommittedStatus == COMMITTED {
 		// If the parent block is committed, then we need to check that it's the
 		// latest committed block. Otherwise, this is an error.
-		highestCommittedBlock := bc.getHighestCommittedBlock()
+		highestCommittedBlock, _ := bc.getHighestCommittedBlock()
 		if !parentBlock.Hash.IsEqual(highestCommittedBlock.Hash) {
 			return RuleErrorParentBlockCommittedAndNotCommittedTip
 		}
