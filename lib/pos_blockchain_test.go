@@ -1160,6 +1160,7 @@ func TestTryReorgToNewTip(t *testing.T) {
 			ProposedInView: 10,
 		},
 	}
+
 	ancestors, err := bc.getLineageFromCommittedTip(newBlock)
 	require.NoError(t, err)
 	hasReorged, err := bc.tryReorgToNewTip(newBlock, 9, ancestors)
