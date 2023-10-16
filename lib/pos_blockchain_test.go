@@ -1123,7 +1123,7 @@ func TestShouldReorg(t *testing.T) {
 	require.True(t, bc.shouldReorg(newBlock, 2))
 }
 
-func TestHandleReorg(t *testing.T) {
+func TestTryReorgToNewTip(t *testing.T) {
 	bc, _, _ := NewTestBlockchain(t)
 	hash1 := NewBlockHash(RandomBytes(32))
 	bn1 := &BlockNode{
@@ -1156,10 +1156,11 @@ func TestHandleReorg(t *testing.T) {
 	// Simple reorg. Just replacing the uncommitted tip.
 	newBlock := &MsgDeSoBlock{
 		Header: &MsgDeSoHeader{
-			PrevBlockHash: hash2,
+			PrevBlockHash:  hash2,
+			ProposedInView: 10,
 		},
 	}
-	err := bc.handleReorg(newBlock)
+	_, err := bc.tryReorgToNewTip(newBlock, 9)
 	require.NoError(t, err)
 	checkBestChainForHash := func(hash *BlockHash) bool {
 		return collections.Any(bc.bestChain, func(bn *BlockNode) bool {
@@ -1207,7 +1208,7 @@ func TestHandleReorg(t *testing.T) {
 
 	// Set new block's parent to hash5
 	newBlock.Header.PrevBlockHash = hash5
-	err = bc.handleReorg(newBlock)
+	_, err = bc.tryReorgToNewTip(newBlock, 0)
 	require.NoError(t, err)
 	// hash 3 should no longer be in the best chain or best chain map
 	_, hash3ExistsInBestChainMap = bc.bestChainMap[*hash3]
