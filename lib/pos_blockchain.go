@@ -458,7 +458,7 @@ func (bc *Blockchain) updateCurrentView(desoBlock *MsgDeSoBlock) {
 // GetUncommittedTipView builds a UtxoView to the uncommitted tip.
 func (bc *Blockchain) GetUncommittedTipView() (*UtxoView, error) {
 	// Connect the uncommitted blocks to the tip so that we can validate subsequent blocks
-	highestCommittedBlock := bc.getHighestCommittedBlock()
+	highestCommittedBlock, _ := bc.getHighestCommittedBlock()
 	if highestCommittedBlock == nil {
 		// This is an edge case we'll never hit in practice since all the PoW blocks
 		// are committed.
@@ -481,7 +481,7 @@ func (bc *Blockchain) getUtxoViewAtBlockHash(blockHash BlockHash) (*UtxoView, er
 	// If the provided block is committed, we need to make sure it's the committed tip.
 	// Otherwise, we return an error.
 	if currentBlock.CommittedStatus == COMMITTED {
-		highestCommittedBlock := bc.getHighestCommittedBlock()
+		highestCommittedBlock, _ := bc.getHighestCommittedBlock()
 		if highestCommittedBlock == nil {
 			return nil, errors.Errorf("getUtxoViewAtBlockHash: No committed blocks found")
 		}
@@ -527,13 +527,13 @@ func (bc *Blockchain) GetBestChainTip() *BlockNode {
 	return bc.bestChain[len(bc.bestChain)-1]
 }
 
-func (bc *Blockchain) getHighestCommittedBlock() *BlockNode {
+func (bc *Blockchain) getHighestCommittedBlock() (*BlockNode, int) {
 	for ii := len(bc.bestChain) - 1; ii >= 0; ii-- {
 		if bc.bestChain[ii].CommittedStatus == COMMITTED {
-			return bc.bestChain[ii]
+			return bc.bestChain[ii], ii
 		}
 	}
-	return nil
+	return nil, -1
 }
 
 const (
