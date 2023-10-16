@@ -3,6 +3,7 @@ package lib
 import (
 	"github.com/deso-protocol/core/collections"
 	"github.com/deso-protocol/core/consensus"
+	"github.com/dgraph-io/badger/v3"
 	"github.com/golang/glog"
 	"github.com/pkg/errors"
 	"math"
@@ -482,8 +483,144 @@ func (bc *Blockchain) pruneUncommittedBlocks(desoBlock *MsgDeSoBlock) error {
 // Specifically, this updates the CommittedBlockStatus of its grandparent
 // and flushes the view after connecting the grandparent block to the DB.
 func (bc *Blockchain) commitGrandparents(desoBlock *MsgDeSoBlock) error {
-	// TODO: Implement me.
-	return errors.New("IMPLEMENT ME")
+	currentBlock := bc.GetBestChainTip()
+	var canCommit bool
+	var blockToCommit *BlockHash
+	for !canCommit {
+		// If the grandparent block is committed, then we can commit it.
+		// Otherwise, we can't commit it.
+		var committedBlockSeen bool
+		blockToCommit, canCommit, committedBlockSeen = bc.canCommitGrandparent(currentBlock)
+		// If we've seen a committed block, then we can't commit anything new.
+		if committedBlockSeen {
+			return nil
+		}
+		if !canCommit {
+			var exists bool
+			currentBlock, exists = bc.bestChainMap[*currentBlock.Header.PrevBlockHash]
+			if !exists {
+				return errors.Errorf("commitGrandparents: Block %v not found in best chain map", currentBlock.Hash.String())
+			}
+		}
+	}
+	// Find all uncommitted ancestors of block to commit
+	_, idx := bc.getHighestCommittedBlock()
+	if idx == -1 {
+		// This is an edge case we'll never hit in practice since all the PoW blocks
+		// are committed.
+		return errors.New("commitGrandparents: No committed blocks found")
+	}
+	uncommittedAncestors := []*BlockNode{}
+	for ii := idx + 1; ii < len(bc.bestChain); ii++ {
+		uncommittedAncestors = append(uncommittedAncestors, bc.bestChain[ii])
+		if bc.bestChain[ii].Hash.IsEqual(blockToCommit) {
+			break
+		}
+	}
+	for ii := 0; ii < len(uncommittedAncestors); ii++ {
+		if err := bc.commitBlock(uncommittedAncestors[ii].Hash); err != nil {
+			return errors.Wrapf(err, "commitGrandparents: Problem committing block %v", uncommittedAncestors[ii].Hash.String())
+		}
+	}
+	return nil
+}
+
+func (bc *Blockchain) canCommitGrandparent(currentBlock *BlockNode) (_grandparentBlockHash *BlockHash, _canCommit bool, _committedBlockSeen bool) {
+	// we may need to iterate a bit...
+	parent := bc.bestChainMap[*currentBlock.Header.PrevBlockHash]
+	grandParent := bc.bestChainMap[*parent.Header.PrevBlockHash]
+	if grandParent.CommittedStatus == COMMITTED {
+		return nil, false, true
+	}
+	if grandParent.Header.ProposedInView == parent.Header.ProposedInView-1 {
+		// Then we can run the commit rule up to the grandparent!
+		return grandParent.Hash, true, false
+	}
+	return nil, false, false
+}
+
+func (bc *Blockchain) commitBlock(blockhash *BlockHash) error {
+	block, exists := bc.uncommittedBlocksMap[*blockhash]
+	if !exists {
+		return errors.Errorf("commitBlock: Block %v not found in uncommitted blocks map", blockhash.String())
+	}
+	// block must be in the best chain. we grab the block node from there.
+	blockNode, exists := bc.bestChainMap[*blockhash]
+	if !exists {
+		return errors.Errorf("commitBlock: Block %v not found in best chain map", blockhash.String())
+	}
+	// Connect a view up to the parent of the grandparent
+	utxoView, err := bc.getUtxoViewAtBlockHash(*block.Header.PrevBlockHash)
+	if err != nil {
+		return errors.Wrapf(err, "commitGrandparents: Problem initializing UtxoView: ")
+	}
+	// Get the full uncommitted block from the uncommitted blocks map
+	grandParentBlock, exists := bc.uncommittedBlocksMap[*blockhash]
+	if !exists {
+		return errors.Errorf("commitGrandparents: Block %v not found in uncommitted blocks map", blockhash.String())
+	}
+	txHashes := collections.Transform(grandParentBlock.Txns, func(txn *MsgDeSoTxn) *BlockHash {
+		return txn.Hash()
+	})
+	// Connect the block to the view!
+	utxoOpsForBlock, err := utxoView.ConnectBlock(grandParentBlock, txHashes, true /*verifySignatures*/, bc.eventManager, block.Header.Height)
+	if err != nil {
+		// TODO: rule error handling? mark blocks invalid?
+		return errors.Wrapf(err, "commitGrandparents: Problem connecting block to view: ")
+	}
+	// Put the block in the db
+	// Note: we're skipping postgres.
+	// TODO: this is copy pasta from ProcessBlockPoW. Refactor.
+	err = bc.db.Update(func(txn *badger.Txn) error {
+		if bc.snapshot != nil {
+			bc.snapshot.PrepareAncestralRecordsFlush()
+			defer bc.snapshot.StartAncestralRecordsFlush(true)
+			glog.V(2).Infof("ProcessBlock: Preparing snapshot flush")
+		}
+		// Store the new block in the db under the
+		//   <blockHash> -> <serialized block>
+		// index.
+		// TODO: In the archival mode, we'll be setting ancestral entries for the block reward. Note that it is
+		// 	set in PutBlockWithTxn. Block rewards are part of the state, and they should be identical to the ones
+		// 	we've fetched during Hypersync. Is there an edge-case where for some reason they're not identical? Or
+		// 	somehow ancestral records get corrupted?
+		if innerErr := PutBlockWithTxn(txn, bc.snapshot, block); innerErr != nil {
+			return errors.Wrapf(err, "ProcessBlock: Problem calling PutBlock")
+		}
+
+		// Store the new block's node in our node index in the db under the
+		//   <height uin32, blockhash BlockHash> -> <node info>
+		// index.
+		if innerErr := PutHeightHashToNodeInfoWithTxn(txn, bc.snapshot, blockNode, false /*bitcoinNodes*/); innerErr != nil {
+			return errors.Wrapf(err, "ProcessBlock: Problem calling PutHeightHashToNodeInfo before validation")
+		}
+
+		// Set the best node hash to this one. Note the header chain should already
+		// be fully aware of this block so we shouldn't update it here.
+		if innerErr := PutBestHashWithTxn(txn, bc.snapshot, blockNode.Hash, ChainTypeDeSoBlock); innerErr != nil {
+			return errors.Wrapf(innerErr, "ProcessBlock: Problem calling PutBestHash after validation")
+		}
+		// Write the utxo operations for this block to the db so we can have the
+		// ability to roll it back in the future.
+		if innerErr := PutUtxoOperationsForBlockWithTxn(txn, bc.snapshot, uint64(blockNode.Height), blockNode.Hash, utxoOpsForBlock); innerErr != nil {
+			return errors.Wrapf(innerErr, "ProcessBlock: Problem writing utxo operations to db on simple add to tip")
+		}
+		if innerErr := utxoView.FlushToDbWithTxn(txn, uint64(blockNode.Height)); innerErr != nil {
+			return errors.Wrapf(innerErr, "ProcessBlock: Problem flushing UtxoView to db")
+		}
+		return nil
+	})
+	if err != nil {
+		return errors.Wrapf(err, "commitGrandparents: Problem putting block in db: ")
+	}
+	if bc.eventManager != nil {
+		bc.eventManager.blockConnected(&BlockEvent{
+			Block:    block,
+			UtxoView: utxoView,
+			UtxoOps:  utxoOpsForBlock,
+		})
+	}
+	return nil
 }
 
 // updateCurrentView updates the current view to the block's view + 1.
