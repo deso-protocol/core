@@ -3286,23 +3286,21 @@ func (bav *UtxoView) ValidateDiamondsAndGetNumDeSoNanos(
 	return desoToTransferNanos, netNewDiamonds, nil
 }
 
-func (bav *UtxoView) ConnectTransaction(txn *MsgDeSoTxn, txHash *BlockHash,
-	txnSizeBytes int64,
-	blockHeight uint32, verifySignatures bool, ignoreUtxos bool) (
-	_utxoOps []*UtxoOperation, _totalInput uint64, _totalOutput uint64,
-	_fees uint64, _err error) {
+func (bav *UtxoView) ConnectTransaction(
+	txn *MsgDeSoTxn, txHash *BlockHash, txnSizeBytes int64,
+	blockHeight uint32, blockTimestamp int64, verifySignatures bool,
+	ignoreUtxos bool) (_utxoOps []*UtxoOperation, _totalInput uint64,
+	_totalOutput uint64, _fees uint64, _err error) {
 
-	return bav._connectTransaction(txn, txHash,
-		txnSizeBytes,
-		blockHeight, verifySignatures,
-		ignoreUtxos)
+	return bav._connectTransaction(txn, txHash, txnSizeBytes, blockHeight, 0, verifySignatures, ignoreUtxos)
 
 }
 
-func (bav *UtxoView) _connectTransaction(txn *MsgDeSoTxn, txHash *BlockHash,
-	txnSizeBytes int64, blockHeight uint32, verifySignatures bool, ignoreUtxos bool) (
-	_utxoOps []*UtxoOperation, _totalInput uint64, _totalOutput uint64,
-	_fees uint64, _err error) {
+func (bav *UtxoView) _connectTransaction(
+	txn *MsgDeSoTxn, txHash *BlockHash, txnSizeBytes int64,
+	blockHeight uint32, blockTimestamp int64, verifySignatures bool,
+	ignoreUtxos bool) (_utxoOps []*UtxoOperation, _totalInput uint64,
+	_totalOutput uint64, _fees uint64, _err error) {
 
 	// Do a quick sanity check before trying to connect.
 	if err := CheckTransactionSanity(txn, blockHeight, bav.Params); err != nil {
@@ -3543,15 +3541,13 @@ func (bav *UtxoView) _connectTransaction(txn *MsgDeSoTxn, txHash *BlockHash,
 		totalInput, totalOutput, utxoOpsForTxn, err = bav._connectUnjailValidator(txn, txHash, blockHeight, verifySignatures)
 
 	case TxnTypeCoinLockup:
-		// FIXME: Once merged, update blockTimestamp parameter
-		totalInput, totalOutput, utxoOpsForTxn, err = bav._connectCoinLockup(txn, txHash, blockHeight, 0, verifySignatures)
+		totalInput, totalOutput, utxoOpsForTxn, err = bav._connectCoinLockup(txn, txHash, blockHeight, blockTimestamp, verifySignatures)
 	case TxnTypeUpdateCoinLockupParams:
 		totalInput, totalOutput, utxoOpsForTxn, err = bav._connectUpdateCoinLockupParams(txn, txHash, blockHeight, verifySignatures)
 	case TxnTypeCoinLockupTransfer:
 		totalInput, totalOutput, utxoOpsForTxn, err = bav._connectCoinLockupTransfer(txn, txHash, blockHeight, verifySignatures)
 	case TxnTypeCoinUnlock:
-		// FIXME: Once merged, update blockTimestamp parameter
-		totalInput, totalOutput, utxoOpsForTxn, err = bav._connectCoinUnlock(txn, txHash, blockHeight, 0, verifySignatures)
+		totalInput, totalOutput, utxoOpsForTxn, err = bav._connectCoinUnlock(txn, txHash, blockHeight, blockTimestamp, verifySignatures)
 
 	default:
 		err = fmt.Errorf("ConnectTransaction: Unimplemented txn type %v", txn.TxnMeta.GetTxnType().String())
@@ -3775,8 +3771,7 @@ func (bav *UtxoView) ConnectBlock(
 		// would slow down block processing significantly. We should figure out a way to
 		// enforce this check in the future, but for now the only attack vector is one in
 		// which a miner is trying to spam the network, which should generally never happen.
-		utxoOpsForTxn, totalInput, totalOutput, currentFees, err := bav.ConnectTransaction(
-			txn, txHash, 0, uint32(blockHeader.Height), verifySignatures, false /*ignoreUtxos*/)
+		utxoOpsForTxn, totalInput, totalOutput, currentFees, err := bav.ConnectTransaction(txn, txHash, 0, uint32(blockHeader.Height), 0, verifySignatures, false)
 		_, _ = totalInput, totalOutput // A bit surprising we don't use these
 		if err != nil {
 			return nil, errors.Wrapf(err, "ConnectBlock: error connecting txn #%d", txIndex)

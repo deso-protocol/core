@@ -871,7 +871,7 @@ func _doBasicTransferWithViewFlush(t *testing.T, chain *Blockchain, db *badger.D
 	txHash := txn.Hash()
 	blockHeight := chain.blockTip().Height + 1
 	utxoOps, totalInput, totalOutput, fees, err :=
-		utxoView.ConnectTransaction(txn, txHash, getTxnSize(*txn), blockHeight, true /*verifySignature*/, false /*ignoreUtxos*/)
+		utxoView.ConnectTransaction(txn, txHash, getTxnSize(*txn), blockHeight, 0, true, false)
 	require.NoError(err)
 	require.GreaterOrEqual(totalOutput, amountNanos)
 	require.Equal(totalInput, totalOutput+fees)
@@ -980,7 +980,7 @@ func _updateGlobalParamsEntryWithMempool(t *testing.T, chain *Blockchain, db *ba
 	// get mined into the next block.
 	blockHeight := chain.blockTip().Height + 1
 	utxoOps, totalInput, totalOutput, fees, err :=
-		utxoView.ConnectTransaction(txn, txHash, getTxnSize(*txn), blockHeight, true /*verifySignature*/, false /*ignoreUtxos*/)
+		utxoView.ConnectTransaction(txn, txHash, getTxnSize(*txn), blockHeight, 0, true, false)
 	// ConnectTransaction should treat the amount locked as contributing to the
 	// output.
 	if err != nil {
@@ -1186,7 +1186,7 @@ func _applyTestMetaTxnsToViewAndFlush(testMeta *TestMeta) {
 		txHash := txn.Hash()
 		blockHeight := testMeta.chain.blockTip().Height + 1
 		_, _, _, _, err =
-			utxoView.ConnectTransaction(txn, txHash, getTxnSize(*txn), blockHeight, true /*verifySignature*/, false /*ignoreUtxos*/)
+			utxoView.ConnectTransaction(txn, txHash, getTxnSize(*txn), blockHeight, 0, true, false)
 		require.NoError(testMeta.t, err)
 	}
 	// Flush the utxoView after having added all the transactions.
@@ -1321,9 +1321,7 @@ func TestUpdateGlobalParams(t *testing.T) {
 		txnSize := getTxnSize(*updateGlobalParamsTxn)
 		blockHeight := chain.blockTip().Height + 1
 		utxoOps, totalInput, totalOutput, fees, err :=
-			utxoView.ConnectTransaction(updateGlobalParamsTxn,
-				updateGlobalParamsTxn.Hash(), txnSize, blockHeight, true, /*verifySignature*/
-				false /*ignoreUtxos*/)
+			utxoView.ConnectTransaction(updateGlobalParamsTxn, updateGlobalParamsTxn.Hash(), txnSize, blockHeight, 0, true, false)
 		require.NoError(err)
 		_, _, _, _ = utxoOps, totalInput, totalOutput, fees
 		require.NoError(utxoView.FlushToDb(0))
@@ -1521,8 +1519,7 @@ func TestBasicTransfer(t *testing.T) {
 		txHash := txn.Hash()
 		blockHeight := chain.blockTip().Height + 1
 		_, _, _, _, err =
-			utxoView.ConnectTransaction(txn, txHash, getTxnSize(*txn), blockHeight,
-				true /*verifySignatures*/, false /*ignoreUtxos*/)
+			utxoView.ConnectTransaction(txn, txHash, getTxnSize(*txn), blockHeight, 0, true, false)
 		require.Error(err)
 		if blockHeight < params.ForkHeights.BalanceModelBlockHeight {
 			require.Contains(err.Error(), RuleErrorInputWithPublicKeyDifferentFromTxnPublicKey)
@@ -1564,8 +1561,7 @@ func TestBasicTransfer(t *testing.T) {
 		_signTxn(t, txn, recipientPrivString)
 		txHash := txn.Hash()
 		_, _, _, _, err =
-			utxoView.ConnectTransaction(txn, txHash, getTxnSize(*txn), blockHeight,
-				true /*verifySignature*/, false /*ignoreUtxos*/)
+			utxoView.ConnectTransaction(txn, txHash, getTxnSize(*txn), blockHeight, 0, true, false)
 		require.Error(err)
 		require.Contains(err.Error(), RuleErrorInvalidTransactionSignature)
 	}
@@ -1591,8 +1587,7 @@ func TestBasicTransfer(t *testing.T) {
 		txHash := txn.Hash()
 		blockHeight := chain.blockTip().Height + 1
 		_, _, _, _, err =
-			utxoView.ConnectTransaction(txn, txHash, getTxnSize(*txn), blockHeight,
-				true /*verifySignature*/, false /*ignoreUtxos*/)
+			utxoView.ConnectTransaction(txn, txHash, getTxnSize(*txn), blockHeight, 0, true, false)
 		require.Error(err)
 		require.Contains(err.Error(), RuleErrorBlockRewardTxnNotAllowedToHaveSignature)
 	}
@@ -1626,8 +1621,7 @@ func TestBasicTransfer(t *testing.T) {
 		txHash := txn.Hash()
 		blockHeight := chain.blockTip().Height + 1
 		_, _, _, _, err =
-			utxoView.ConnectTransaction(txn, txHash, getTxnSize(*txn), blockHeight,
-				true /*verifySignature*/, false /*ignoreUtxos*/)
+			utxoView.ConnectTransaction(txn, txHash, getTxnSize(*txn), blockHeight, 0, true, false)
 		require.Error(err)
 		if blockHeight < params.ForkHeights.BalanceModelBlockHeight {
 			require.Contains(err.Error(), RuleErrorBlockRewardTxnNotAllowedToHaveInputs)
@@ -1716,8 +1710,7 @@ func TestBasicTransfer(t *testing.T) {
 		utxoView, _ := NewUtxoView(db, params, chain.postgres, chain.snapshot)
 		txHash := txn.Hash()
 		_, _, _, _, err =
-			utxoView.ConnectTransaction(txn, txHash, getTxnSize(*txn), blockHeight,
-				true /*verifySignature*/, false /*ignoreUtxos*/)
+			utxoView.ConnectTransaction(txn, txHash, getTxnSize(*txn), blockHeight, 0, true, false)
 		require.NoError(err)
 
 		senderBalance, _ := utxoView.GetDeSoBalanceNanosForPublicKey(senderPkBytes)
@@ -2169,7 +2162,7 @@ func TestBlockRewardPatch(t *testing.T) {
 		_signTxn(t, txn, senderPrivString)
 		utxoView, err := NewUtxoView(db, params, chain.postgres, chain.snapshot)
 		require.NoError(t, err)
-		_, _, _, fees, err := utxoView._connectTransaction(txn, txn.Hash(), getTxnSize(*txn), chain.blockTip().Height+1, true, false)
+		_, _, _, fees, err := utxoView._connectTransaction(txn, txn.Hash(), getTxnSize(*txn), chain.blockTip().Height+1, 0, true, false)
 		require.NoError(t, err)
 		blkToMine, _, _, err := miner._getBlockToMine(0)
 		require.NoError(t, err)

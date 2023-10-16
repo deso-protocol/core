@@ -8,7 +8,6 @@ import (
 	"github.com/golang/glog"
 	"github.com/holiman/uint256"
 	"github.com/pkg/errors"
-	"math"
 	"math/big"
 	"sort"
 )
@@ -670,7 +669,10 @@ func (bav *UtxoView) _connectCoinLockup(
 	}
 
 	// Try connecting the basic transfer without considering transaction metadata.
-	_, _, utxoOpsForBasicTransfer, err := bav._connectBasicTransfer(txn, txHash, blockHeight, verifySignatures)
+	// NOTE: Even in the balance model era, we require totalInput and totalOutput
+	//       to test that fees are being paid accurately.
+	totalInput, totalOutput, utxoOpsForBasicTransfer, err :=
+		bav._connectBasicTransfer(txn, txHash, blockHeight, verifySignatures)
 	if err != nil {
 		return 0, 0, nil, errors.Wrapf(err, "_connectCoinLockup")
 	}
@@ -778,7 +780,7 @@ func (bav *UtxoView) _connectCoinLockup(
 		}
 
 		// We store the previous transactor balance entry in the event we need to revert the transaction.
-		prevTransactorBalanceEntry = transactorBalanceEntry
+		prevTransactorBalanceEntry = transactorBalanceEntry.Copy()
 
 		// Spend the transactor's DAO coin balance.
 		transactorBalanceEntry.BalanceNanos =
@@ -803,11 +805,13 @@ func (bav *UtxoView) _connectCoinLockup(
 	// be unable to unlock the coins until the transaction specified lockup duration expires.
 	txnYieldBasisPoints := uint64(0)
 	txnYieldEarningDurationNanoSecs := int64(0)
-	if leftYieldCurvePoint.LockupDurationNanoSecs < lockupDurationNanoSeconds {
+	if leftYieldCurvePoint != nil &&
+		leftYieldCurvePoint.LockupDurationNanoSecs < lockupDurationNanoSeconds {
 		txnYieldBasisPoints = leftYieldCurvePoint.LockupYieldAPYBasisPoints
 		txnYieldEarningDurationNanoSecs = leftYieldCurvePoint.LockupDurationNanoSecs
 	}
-	if rightYieldCurvePoint.LockupDurationNanoSecs == lockupDurationNanoSeconds {
+	if rightYieldCurvePoint != nil &&
+		rightYieldCurvePoint.LockupDurationNanoSecs == lockupDurationNanoSeconds {
 		txnYieldBasisPoints = rightYieldCurvePoint.LockupYieldAPYBasisPoints
 		txnYieldEarningDurationNanoSecs = rightYieldCurvePoint.LockupDurationNanoSecs
 	}
@@ -823,30 +827,15 @@ func (bav *UtxoView) _connectCoinLockup(
 		return 0, 0, nil, errors.Wrap(err, "_connectCoinLockup")
 	}
 
-	// We check that the minted yield does not cause an overflow in the transactor's balance.
-	// In the case of DeSo being locked up, we must check that the resulting amount is less than 2**64.
-	if uint256.NewInt().Sub(MaxUint256, yieldFromTxn).Lt(transactorBalanceNanos256) {
+	// Compute the amount awarded to the HODLer on unlock.
+	lockupValue, err := SafeUint256().Add(txMeta.LockupAmountBaseUnits, yieldFromTxn)
+	if err != nil {
 		return 0, 0, nil,
-			errors.Wrap(RuleErrorCoinLockupYieldCausesOverflow, "_connectCoinLockup")
+			errors.Wrap(RuleErrorCoinLockupYieldCausesOverflow, "_connectCoinLockup: lockupValue")
 	}
-
-	// Compute the amount to be added to the locked balance entry.
-	lockupValue := *uint256.NewInt().Add(transactorBalanceNanos256, yieldFromTxn)
-
-	// In the case of DeSo being locked up, we ensure that the resulting amount is less than 2**64.
-	if profilePKID.IsZeroPKID() && !lockupValue.IsUint64() {
-		return 0, 0, nil,
-			errors.Wrap(RuleErrorCoinLockupYieldCausesOverflow, "_connectCoinLockup")
-	}
-
-	// NOTE: While we could check for "global" overflow here, we let this occur on the unlock transaction instead.
-	//       Global overflow is where the yield causes fields like CoinEntry.CoinsInCirculationNanos to overflow.
-	//       Performing the check here would be redundant and may lead to worse UX in the case of coins being
-	//       burned in the future making current lockups no longer an overflow. Checking here would also
-	//       create a DoS attack vector where a malicious entity takes out an extremely long-dated lockup
-	//       with the sole intent of saturating the CoinsInCirculationNanos field preventing others from locking up.
 
 	// For consolidation, we fetch equivalent LockedBalanceEntries.
+	// An equivalent LockedBalanceEntry has the same unlock timestamp and the same profile PKID.
 	lockedBalanceEntry, err := bav.GetLockedBalanceEntryForHODLerPKIDProfilePKIDUnlockTimestampNanoSecs(
 		hodlerPKID, profilePKID, txMeta.UnlockTimestampNanoSecs)
 	if err != nil {
@@ -863,21 +852,30 @@ func (bav *UtxoView) _connectCoinLockup(
 	}
 	previousLockedBalanceEntry := *lockedBalanceEntry
 
-	// Check for overflow within the locked balance entry itself.
-	if uint256.NewInt().Sub(MaxUint256, yieldFromTxn).Lt(transactorBalanceNanos256) {
+	// Attempt to add the value of this lockup transaction to the locked balance entry.
+	newLockedBalanceEntryBalance, err := SafeUint256().Add(&lockedBalanceEntry.BalanceBaseUnits, lockupValue)
+	if err != nil {
 		return 0, 0, nil,
-			errors.Wrap(RuleErrorCoinLockupYieldCausesOverflow, "_connectCoinLockup")
-	}
-	if profilePKID.IsZeroPKID() {
-		// Check if DeSo minted would overflow 2**64 in the transactor balance.
-		if uint256.NewInt().Sub(uint256.NewInt().SetUint64(math.MaxUint64), yieldFromTxn).Lt(transactorBalanceNanos256) {
-			return 0, 0, nil,
-				errors.Wrap(RuleErrorCoinLockupYieldCausesOverflow, "_connectCoinLockup")
-		}
+			errors.Wrap(RuleErrorCoinLockupYieldCausesOverflow,
+				"_connectCoinLockup: New Locked Balance Entry Balance")
 	}
 
-	// Increment the lockedBalanceEntry and update the view.
-	lockedBalanceEntry.BalanceBaseUnits = *uint256.NewInt().Add(&lockedBalanceEntry.BalanceBaseUnits, &lockupValue)
+	// Ensure in the case of DESO the resulting locked amount is less than 2**64.
+	if profilePKID.IsZeroPKID() && !newLockedBalanceEntryBalance.IsUint64() {
+		return 0, 0, nil,
+			errors.Wrap(RuleErrorCoinLockupYieldCausesOverflow, "_connectCoinLockup: "+
+				"New DESO Locked Balance Entry Balance")
+	}
+
+	// NOTE: While we could check for "global" overflow here, we let this occur on the unlock transaction instead.
+	//       Global overflow is where the yield causes fields like CoinEntry.CoinsInCirculationNanos to overflow.
+	//       Performing the check here would be redundant and may lead to worse UX in the case of coins being
+	//       burned in the future making current lockups no longer an overflow. Checking here would also
+	//       create a DoS attack vector where a malicious entity takes out an extremely long-dated lockup
+	//       with the sole intent of saturating the CoinsInCirculationNanos field preventing others from locking up.
+
+	// Update the lockedBalanceEntry and update the view.
+	lockedBalanceEntry.BalanceBaseUnits = *newLockedBalanceEntryBalance
 	bav._setLockedBalanceEntry(lockedBalanceEntry)
 
 	// Add a UtxoOperation for easy reversion during disconnect.
@@ -888,7 +886,7 @@ func (bav *UtxoView) _connectCoinLockup(
 	})
 
 	// Construct UtxoOps in the event this transaction is reverted.
-	return 0, 0, utxoOpsForTxn, nil
+	return totalInput, totalOutput, utxoOpsForTxn, nil
 }
 
 func CalculateLockupYield(
@@ -906,6 +904,12 @@ func CalculateLockupYield(
 	//       yield = principal * apy_yield * time_in_years
 	//
 	// Notice this formula makes detecting computational overflow trivial by utilizing the DeSo SafeUint256 library.
+
+	// The SafeUint256 Library uses division to ensure there's no overflow. This leads to possible
+	// unnecessary false overflows in the event the duration or the yield is 0. Hence, we do a separate check here.
+	if apyYieldBasisPoints.IsZero() || durationNanoSecs.IsZero() {
+		return uint256.NewInt(), nil
+	}
 
 	// Compute the denominators from the nanosecond to year conversion and the basis point computation.
 	denominators, err := SafeUint256().Mul(
@@ -1056,7 +1060,8 @@ func (bav *UtxoView) _connectUpdateCoinLockupParams(
 	}
 
 	// Try connecting the basic transfer without considering transaction metadata.
-	_, _, utxoOpsForBasicTransfer, err := bav._connectBasicTransfer(txn, txHash, blockHeight, verifySignatures)
+	totalInput, totalOutput, utxoOpsForBasicTransfer, err :=
+		bav._connectBasicTransfer(txn, txHash, blockHeight, verifySignatures)
 	if err != nil {
 		return 0, 0, nil, errors.Wrapf(err, "_connectUpdateCoinLockupParams")
 	}
@@ -1171,7 +1176,7 @@ func (bav *UtxoView) _connectUpdateCoinLockupParams(
 		PrevLockupTransferRestriction: prevLockupTransferRestriction,
 	})
 
-	return 0, 0, utxoOpsForTxn, nil
+	return totalInput, totalOutput, utxoOpsForTxn, nil
 }
 
 func (bav *UtxoView) _disconnectUpdateCoinLockupParams(
@@ -1305,7 +1310,8 @@ func (bav *UtxoView) _connectCoinLockupTransfer(
 	}
 
 	// Try connecting the basic transfer without considering transaction metadata.
-	_, _, utxoOpsForBasicTransfer, err := bav._connectBasicTransfer(txn, txHash, blockHeight, verifySignatures)
+	totalInput, totalOutput, utxoOpsForBasicTransfer, err :=
+		bav._connectBasicTransfer(txn, txHash, blockHeight, verifySignatures)
 	if err != nil {
 		return 0, 0, nil, errors.Wrap(err, "_connectCoinLockupTransfer")
 	}
@@ -1340,14 +1346,14 @@ func (bav *UtxoView) _connectCoinLockupTransfer(
 		profileEntry = bav.GetProfileEntryForPublicKey(txMeta.ProfilePublicKey.ToBytes())
 		if profileEntry == nil || profileEntry.isDeleted {
 			return 0, 0, nil,
-				errors.Wrap(RuleErrorCoinLockupOnNonExistentProfile, "_connectCoinLockupTransfer")
+				errors.Wrap(RuleErrorCoinLockupTransferOnNonExistentProfile, "_connectCoinLockupTransfer")
 		}
 	}
 
 	// Fetch PKIDs for the recipient, sender, and profile.
 	var senderPKID *PKID
 	if _, updaterIsParamUpdater :=
-		GetParamUpdaterPublicKeys(blockHeight, bav.Params)[MakePkMapKey(txn.PublicKey)]; !updaterIsParamUpdater {
+		GetParamUpdaterPublicKeys(blockHeight, bav.Params)[MakePkMapKey(txn.PublicKey)]; updaterIsParamUpdater {
 		senderPKID = ZeroPKID.NewPKID()
 	} else {
 		senderPKIDEntry := bav.GetPKIDForPublicKey(txn.PublicKey)
@@ -1413,7 +1419,7 @@ func (bav *UtxoView) _connectCoinLockupTransfer(
 	if profilePKID.IsZeroPKID() {
 		transferRestrictionStatus = bav.GlobalParamsEntry.LockedDESOTransferRestrictions
 	} else {
-		transferRestrictionStatus = profileEntry.DAOCoinEntry.TransferRestrictionStatus
+		transferRestrictionStatus = profileEntry.DAOCoinEntry.LockupTransferRestrictionStatus
 	}
 
 	// Check if transfers are limited to profile owner only.
@@ -1452,7 +1458,7 @@ func (bav *UtxoView) _connectCoinLockupTransfer(
 		PrevReceiverLockedBalanceEntry: prevReceiverLockedBalanceEntry,
 	})
 
-	return 0, 0, utxoOpsForTxn, nil
+	return totalInput, totalOutput, utxoOpsForTxn, nil
 }
 
 func (bav *UtxoView) _disconnectCoinLockupTransfer(
@@ -1569,7 +1575,7 @@ func (bav *UtxoView) _connectCoinUnlock(
 	}
 
 	// Try connecting the basic transfer without considering transaction metadata.
-	_, _, utxoOpsForBasicTransfer, err := bav._connectBasicTransfer(txn, txHash, blockHeight, verifySignatures)
+	totalInput, totalOutput, utxoOpsForBasicTransfer, err := bav._connectBasicTransfer(txn, txHash, blockHeight, verifySignatures)
 	if err != nil {
 		return 0, 0, nil, errors.Wrapf(err, "_connectCoinUnlock")
 	}
@@ -1680,7 +1686,7 @@ func (bav *UtxoView) _connectCoinUnlock(
 		PrevLockedBalanceEntries:   prevLockedBalanceEntries,
 	})
 
-	return 0, 0, utxoOpsForTxn, nil
+	return totalInput, totalOutput, utxoOpsForTxn, nil
 }
 
 func (bav *UtxoView) _disconnectCoinUnlock(
