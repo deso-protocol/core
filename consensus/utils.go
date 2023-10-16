@@ -2,6 +2,7 @@ package consensus
 
 import (
 	"encoding/binary"
+	"github.com/deso-protocol/core/collections/bitset"
 	"reflect"
 
 	"github.com/deso-protocol/core/bls"
@@ -20,8 +21,8 @@ func IsValidSuperMajorityQuorumCertificate(qc QuorumCertificate, validators []Va
 	// Compute the signature that validators in the QC would have signed
 	signaturePayload := GetVoteSignaturePayload(qc.GetView(), qc.GetBlockHash())
 
-	isValidSuperMajority, validatorPublicKeysInQC := checkSuperMajorityStakeForAggregatedSignature(qc.GetAggregatedSignature(), validators)
-	if !isValidSuperMajority {
+	hasSuperMajorityStake, validatorPublicKeysInQC := isSuperMajorityStakeSignersList(qc.GetAggregatedSignature().GetSignersList(), validators)
+	if !hasSuperMajorityStake {
 		return false
 	}
 
@@ -33,11 +34,16 @@ func IsValidSuperMajorityAggregateQuorumCertificate(aggQC AggregateQuorumCertifi
 		return false
 	}
 
-	isValidSuperMajority, signerPublicKeys := checkSuperMajorityStakeForAggregatedSignature(aggQC.GetAggregatedSignature(), validators)
-	if !isValidSuperMajority {
+	hasSuperMajorityStake, signerPublicKeys := isSuperMajorityStakeSignersList(aggQC.GetAggregatedSignature().GetSignersList(), validators)
+	if !hasSuperMajorityStake {
 		return false
 	}
 
+	// Compute the timeout payloads signed by each validator.
+	// Each validator should sign a payload with the pair (View, HighQCView).
+	// The ordering of the high QC views and validators in the aggregate signature
+	// will match the ordering of active validators in descending order of stake for
+	// the timed out view's epoch.
 	signedPayloads := [][]byte{}
 	for _, highQCView := range aggQC.GetHighQCViews() {
 		payload := GetTimeoutSignaturePayload(aggQC.GetView(), highQCView)
@@ -56,7 +62,7 @@ func IsValidSuperMajorityAggregateQuorumCertificate(aggQC AggregateQuorumCertifi
 	return true
 }
 
-func checkSuperMajorityStakeForAggregatedSignature(aggSig AggregatedSignature, validators []Validator) (bool, []*bls.PublicKey) {
+func isSuperMajorityStakeSignersList(signersList *bitset.Bitset, validators []Validator) (bool, []*bls.PublicKey) {
 	// Compute the total stake in the QC and the total stake in the network
 	stakeInQC := uint256.NewInt()
 	totalStake := uint256.NewInt()
@@ -66,7 +72,7 @@ func checkSuperMajorityStakeForAggregatedSignature(aggSig AggregatedSignature, v
 
 	// Fetch the validators in the QC, and compute the sum of stake in the QC and in the network
 	for ii := range validators {
-		if aggSig.GetSignersList().Get(ii) {
+		if signersList.Get(ii) {
 			stakeInQC.Add(stakeInQC, validators[ii].GetStakeAmount())
 			validatorPublicKeysInQC = append(validatorPublicKeysInQC, validators[ii].GetPublicKey())
 		}
