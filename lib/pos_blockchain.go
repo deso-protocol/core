@@ -2,6 +2,7 @@ package lib
 
 import (
 	"github.com/deso-protocol/core/collections"
+	"github.com/deso-protocol/core/consensus"
 	"github.com/golang/glog"
 	"github.com/pkg/errors"
 	"math"
@@ -45,11 +46,17 @@ func (bc *Blockchain) processBlockPoS(desoBlock *MsgDeSoBlock, currentView uint6
 	if err := bc.validateDeSoBlockPoS(desoBlock); err != nil {
 
 	}
-	// TODO: Get validator set for current block height. Alternatively, we could do this in
-	// validateQC, but we may need the validator set elsewhere in this function anyway.
-	var validatorSet []*ValidatorEntry
+
+	utxoView, err := bc.getUtxoViewAtBlockHash(*desoBlock.Header.PrevBlockHash)
+	if err != nil {
+		return false, false, nil, errors.Wrapf(err, "processBlockPoS: Problem initializing UtxoView")
+	}
+	validatorsByStake, err := utxoView.GetAllSnapshotValidatorSetEntriesByStake()
+	if err != nil {
+		return false, false, nil, errors.Wrapf(err, "processBlockPoS: Problem getting validator set")
+	}
 	// 1e. Validate QC
-	if err := bc.validateQC(desoBlock, validatorSet); err != nil {
+	if err = bc.validateQC(desoBlock, validatorsByStake); err != nil {
 		return false, false, nil, err
 	}
 
@@ -67,7 +74,7 @@ func (bc *Blockchain) processBlockPoS(desoBlock *MsgDeSoBlock, currentView uint6
 		// to skip a view by sending TimeoutMessages to the leader, so we process
 		// the block accordingly.
 		// 1f. If timeout QC, validate that block hash isn't too far back from the latest.
-		if err := bc.validateTimeoutQC(desoBlock, validatorSet); err != nil {
+		if err = bc.validateTimeoutQC(desoBlock, validatorsByStake); err != nil {
 			return false, false, nil, err
 		}
 		// TODO: Get highest timeout QC from the block.
@@ -82,13 +89,13 @@ func (bc *Blockchain) processBlockPoS(desoBlock *MsgDeSoBlock, currentView uint6
 
 	// 2. We can now add this block to the block index since we have performed
 	// all basic validations. We can also add it to the uncommittedBlocksMap
-	if err := bc.addBlockToBlockIndex(desoBlock); err != nil {
+	if err = bc.addBlockToBlockIndex(desoBlock); err != nil {
 		return false, false, nil, err
 	}
 
 	// 4. Handle reorgs if necessary
 	if bc.shouldReorg(desoBlock) {
-		if err := bc.handleReorg(desoBlock); err != nil {
+		if err = bc.handleReorg(desoBlock); err != nil {
 			return false, false, nil, err
 		}
 	}
@@ -348,8 +355,17 @@ func (bc *Blockchain) validateBlockLeader(desoBlock *MsgDeSoBlock) error {
 // validateQC validates that the QC of this block is valid, meaning a super majority
 // of the validator set has voted (or timed out). Assumes ValidatorEntry list is sorted.
 func (bc *Blockchain) validateQC(desoBlock *MsgDeSoBlock, validatorSet []*ValidatorEntry) error {
-	// TODO: Implement me
-	return errors.New("IMPLEMENT ME")
+	validators := toConsensusValidators(validatorSet)
+	if !desoBlock.Header.ValidatorsTimeoutAggregateQC.isEmpty() {
+		if !consensus.IsValidSuperMajorityAggregateQuorumCertificate(desoBlock.Header.ValidatorsTimeoutAggregateQC, validators) {
+			return RuleErrorInvalidTimeoutQC
+		}
+		return nil
+	}
+	if !consensus.IsValidSuperMajorityQuorumCertificate(desoBlock.Header.ValidatorsVoteQC, validators) {
+		return RuleErrorInvalidVoteQC
+	}
+	return nil
 }
 
 // validateTimeoutQC validates that the parent block hash is not too far back from the latest.
@@ -439,26 +455,61 @@ func (bc *Blockchain) updateCurrentView(desoBlock *MsgDeSoBlock) {
 	panic(errors.New("IMPLEMENT ME"))
 }
 
+// GetUncommittedTipView builds a UtxoView to the uncommitted tip.
 func (bc *Blockchain) GetUncommittedTipView() (*UtxoView, error) {
 	// Connect the uncommitted blocks to the tip so that we can validate subsequent blocks
-	highestCommittedBlock, committedBlockIndex := bc.getHighestCommittedBlock()
+	highestCommittedBlock, _ := bc.getHighestCommittedBlock()
 	if highestCommittedBlock == nil {
 		// This is an edge case we'll never hit in practice since all the PoW blocks
 		// are committed.
 		return nil, errors.New("GetUncommittedTipView: No committed blocks found")
 	}
+	if highestCommittedBlock.Hash == nil {
+		return nil, errors.New("GetUncommittedTipView: Committed block has nil hash")
+	}
+	return bc.getUtxoViewAtBlockHash(*highestCommittedBlock.Hash)
+}
+
+// getUtxoViewAtBlockHash builds a UtxoView to the block provided. It does this by
+// identifying all uncommitted ancestors of this block and then connecting those blocks.
+func (bc *Blockchain) getUtxoViewAtBlockHash(blockHash BlockHash) (*UtxoView, error) {
+	uncommittedAncestors := []*BlockNode{}
+	currentBlock := bc.blockIndex[blockHash]
+	if currentBlock == nil {
+		return nil, errors.Errorf("getUtxoViewAtBlockHash: Block %v not found in block index", blockHash)
+	}
+	// If the provided block is committed, we need to make sure it's the committed tip.
+	// Otherwise, we return an error.
+	if currentBlock.CommittedStatus == COMMITTED {
+		highestCommittedBlock, _ := bc.getHighestCommittedBlock()
+		if highestCommittedBlock == nil {
+			return nil, errors.Errorf("getUtxoViewAtBlockHash: No committed blocks found")
+		}
+		if !highestCommittedBlock.Hash.IsEqual(&blockHash) {
+			return nil, errors.Errorf("getUtxoViewAtBlockHash: Block %v is committed but not the committed tip", blockHash)
+		}
+	}
+	for currentBlock.CommittedStatus == UNCOMMITTED {
+		currentParentHash := currentBlock.Header.PrevBlockHash
+		if currentParentHash == nil {
+			return nil, errors.Errorf("getUtxoViewAtBlockHash: Block %v has nil PrevBlockHash", currentBlock.Hash)
+		}
+		currentBlock = bc.blockIndex[*currentParentHash]
+		if currentBlock == nil {
+			return nil, errors.Errorf("getUtxoViewAtBlockHash: Block %v not found in block index", blockHash)
+		}
+		uncommittedAncestors = append(uncommittedAncestors, currentBlock)
+	}
+	// Connect the uncommitted blocks to the tip so that we can validate subsequent blocks
 	utxoView, err := NewUtxoView(bc.db, bc.params, bc.postgres, bc.snapshot)
 	if err != nil {
-		return nil, errors.Wrapf(err, "GetUncommittedTipView: Problem initializing UtxoView")
+		return nil, errors.Wrapf(err, "getUtxoViewAtBlockHash: Problem initializing UtxoView")
 	}
-	if committedBlockIndex == len(bc.bestChain)-1 {
-		return utxoView, nil
-	}
-	for ii := committedBlockIndex + 1; ii < len(bc.bestChain); ii++ {
+	for ii := len(uncommittedAncestors) - 1; ii >= 0; ii-- {
 		// We need to get these blocks from the uncommitted blocks map
-		fullBlock, exists := bc.uncommittedBlocksMap[*bc.bestChain[ii].Hash]
+		fullBlock, exists := bc.uncommittedBlocksMap[*uncommittedAncestors[ii].Hash]
 		if !exists {
-			return nil, errors.Errorf("GetUncommittedTipView: Block %v not found in block index", bc.bestChain[ii].Hash)
+			return nil, errors.Errorf("GetUncommittedTipView: Block %v not found in block index", uncommittedAncestors[ii].Hash)
 		}
 		txnHashes := collections.Transform(fullBlock.Txns, func(txn *MsgDeSoTxn) *BlockHash {
 			return txn.Hash()
@@ -482,7 +533,7 @@ func (bc *Blockchain) getHighestCommittedBlock() (*BlockNode, int) {
 			return bc.bestChain[ii], ii
 		}
 	}
-	return nil, 0
+	return nil, -1
 }
 
 const (
@@ -513,4 +564,7 @@ const (
 	RuleErrorBlockViewLessThanInitialViewForEpoch     RuleError = "RuleErrorBlockViewLessThanInitialViewForEpoch"
 	RuleErrorBlockDiffLessThanHeightDiff              RuleError = "RuleErrorBlockDiffLessThanHeightDiff"
 	RuleErrorLeaderIdxExceedsMaxUint16                RuleError = "RuleErrorLeaderIdxExceedsMaxUint16"
+
+	RuleErrorInvalidVoteQC    RuleError = "RuleErrorInvalidVoteQC"
+	RuleErrorInvalidTimeoutQC RuleError = "RuleErrorInvalidTimeoutQC"
 )

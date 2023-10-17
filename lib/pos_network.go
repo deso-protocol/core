@@ -333,7 +333,8 @@ func (qc *QuorumCertificate) isEmpty() bool {
 		qc.BlockHash == nil ||
 		qc.ProposedInView == 0 ||
 		qc.ValidatorsVoteAggregatedSignature == nil ||
-		qc.ValidatorsVoteAggregatedSignature.Signature == nil
+		qc.ValidatorsVoteAggregatedSignature.Signature == nil ||
+		qc.ValidatorsVoteAggregatedSignature.SignersList == nil
 }
 
 func (qc *QuorumCertificate) ToBytes() ([]byte, error) {
@@ -530,7 +531,7 @@ func (aggQC *TimeoutAggregateQuorumCertificate) GetView() uint64 {
 	return aggQC.TimedOutView
 }
 
-func (aggQC *TimeoutAggregateQuorumCertificate) GetHighQC() *QuorumCertificate {
+func (aggQC *TimeoutAggregateQuorumCertificate) GetHighQC() consensus.QuorumCertificate {
 	return aggQC.ValidatorsHighQC
 }
 
@@ -615,6 +616,7 @@ func (aggQC *TimeoutAggregateQuorumCertificate) FromBytes(rr io.Reader) error {
 		return errors.Wrapf(err, "TimeoutAggregateQuorumCertificate.FromBytes: Error decoding ValidatorsTimeoutHighQCViews")
 	}
 
+	// TODO: Go through these functions and make sure we're looking for all these errors.
 	aggQC.ValidatorsTimeoutAggregatedSignature = &AggregatedBLSSignature{}
 	if aggQC.ValidatorsTimeoutAggregatedSignature.FromBytes(rr); err != nil {
 		return errors.Wrapf(err, "TimeoutAggregateQuorumCertificate.FromBytes: Error decoding ValidatorsTimeoutAggregatedSignature")
@@ -631,7 +633,8 @@ func (aggQC *TimeoutAggregateQuorumCertificate) isEmpty() bool {
 		aggQC.ValidatorsHighQC.isEmpty() ||
 		len(aggQC.ValidatorsTimeoutHighQCViews) == 0 ||
 		aggQC.ValidatorsTimeoutAggregatedSignature == nil ||
-		aggQC.ValidatorsTimeoutAggregatedSignature.Signature == nil
+		aggQC.ValidatorsTimeoutAggregatedSignature.Signature == nil ||
+		aggQC.ValidatorsTimeoutAggregatedSignature.SignersList == nil
 }
 
 func EncodeTimeoutAggregateQuorumCertificate(aggQC *TimeoutAggregateQuorumCertificate) ([]byte, error) {

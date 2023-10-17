@@ -312,6 +312,17 @@ func (bav *UtxoView) GetSnapshotValidatorSetByStakeAmount(limit uint64) ([]*Vali
 	return validatorEntries[0:upperBound], nil
 }
 
+// GetAllSnapshotValidatorSetEntriesByStake returns all validators in the snapshot
+// ordered by stake. This is useful when we need to know all the validators that
+// are in a leader schedule.
+func (bav *UtxoView) GetAllSnapshotValidatorSetEntriesByStake() ([]*ValidatorEntry, error) {
+	snapshotGlobalParams, err := bav.GetSnapshotGlobalParamsEntry()
+	if err != nil {
+		return nil, errors.Wrapf(err, "GetAllSnapshotValidatorSetEntriesByStake: problem getting SnapshotGlobalParamsEntry: ")
+	}
+	return bav.GetSnapshotValidatorSetByStakeAmount(snapshotGlobalParams.ValidatorSetMaxNumValidators)
+}
+
 func (bav *UtxoView) _setSnapshotValidatorSetEntry(validatorEntry *ValidatorEntry, snapshotAtEpochNumber uint64) {
 	if validatorEntry == nil {
 		glog.Errorf("_setSnapshotValidatorSetEntry: called with nil entry, this should never happen")
