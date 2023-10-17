@@ -742,7 +742,6 @@ func TestGetLineageFromCommittedTip(t *testing.T) {
 	// If parent block is not in block index, we should get an error
 	block.Header.PrevBlockHash = NewBlockHash(RandomBytes(32))
 	ancestors, err = bc.getLineageFromCommittedTip(block)
-
 	require.Error(t, err)
 	require.Equal(t, err, RuleErrorMissingAncestorBlock)
 	require.Nil(t, ancestors)
