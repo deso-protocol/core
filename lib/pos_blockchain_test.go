@@ -724,6 +724,7 @@ func TestValidateAncestorsExist(t *testing.T) {
 		Height:         1,
 		ProposedInView: 1,
 	}, StatusBlockValidated, COMMITTED)
+	bc.bestChain = []*BlockNode{genesisNode}
 	bc.blockIndex = map[BlockHash]*BlockNode{
 		*hash1: genesisNode,
 	}
@@ -732,14 +733,40 @@ func TestValidateAncestorsExist(t *testing.T) {
 			PrevBlockHash: hash1,
 		},
 	}
-	// If block is in best chain, we should get true
-	hasKnownAncestors := bc.hasKnownAncestors(*block.Header.PrevBlockHash)
-	require.True(t, hasKnownAncestors)
+	// If parent is committed tip, we'll have 0 ancestors.
+	ancestors, err := bc.getLineageFromCommittedTip(block)
+	require.NoError(t, err)
+	require.Len(t, ancestors, 0)
 
-	// If parent block is not in block index, we should get the parent block hash back
+	// If parent block is not in block index, we should get an error
 	block.Header.PrevBlockHash = NewBlockHash(RandomBytes(32))
-	hasKnownAncestors = bc.hasKnownAncestors(*block.Header.PrevBlockHash)
-	require.False(t, hasKnownAncestors)
+	ancestors, err = bc.getLineageFromCommittedTip(block)
+	require.Error(t, err)
+	require.Equal(t, err, RuleErrorMissingAncestorBlock)
+	require.Nil(t, ancestors)
+
+	// If this block extends from a committed block that is not the tip, we should get an error.
+	block.Header.PrevBlockHash = hash1
+	// add another block to the best chain.
+	hash2 := NewBlockHash(RandomBytes(32))
+	block2 := NewPoSBlockNode(genesisNode, hash2, 2, &MsgDeSoHeader{
+		Version:       2,
+		Height:        2,
+		PrevBlockHash: hash1,
+	}, StatusBlockValidated, COMMITTED)
+	bc.bestChain = append(bc.bestChain, block2)
+	bc.blockIndex[*hash2] = block2
+	ancestors, err = bc.getLineageFromCommittedTip(block)
+	require.Error(t, err)
+	require.Equal(t, err, RuleErrorDoesNotExtendCommittedTip)
+
+	// update block to be uncommitted
+	block2.CommittedStatus = UNCOMMITTED
+	// set new block's parent as block 2.
+	block.Header.PrevBlockHash = hash2
+	ancestors, err = bc.getLineageFromCommittedTip(block)
+	require.NoError(t, err)
+	require.Len(t, ancestors, 1)
 }
 
 func TestValidateQC(t *testing.T) {

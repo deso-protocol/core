@@ -23,8 +23,12 @@ func (bc *Blockchain) processBlockPoS(desoBlock *MsgDeSoBlock, currentView uint6
 	// 1. Determine if we're missing the parent block of this block. If it's parent exists in the blockIndex,
 	// it is safe to assume we have all ancestors of this block in the block index.
 	// If the parent block is missing, process the orphan, but don't add to the block index or uncommitted block map.
-	hasKnownAncestors := bc.hasKnownAncestors(*desoBlock.Header.PrevBlockHash)
-	if !hasKnownAncestors {
+	_, err := bc.getLineageFromCommittedTip(desoBlock)
+	if err != nil && err != RuleErrorMissingAncestorBlock {
+		return false, false, nil, err
+	}
+
+	if err == RuleErrorMissingAncestorBlock {
 		missingBlockHashes := []*BlockHash{desoBlock.Header.PrevBlockHash}
 		blockHash, err := desoBlock.Header.Hash()
 		// If we fail to get the block hash, this block isn't valid at all, so we
@@ -43,8 +47,8 @@ func (bc *Blockchain) processBlockPoS(desoBlock *MsgDeSoBlock, currentView uint6
 	// 2. Start with all sanity checks of the block.
 	// TODO: Check if err is for view > latest committed block view and <= latest uncommitted block.
 	// If so, we need to perform the rest of the validations and then add to our block index.
-	if err := bc.validateDeSoBlockPoS(desoBlock); err != nil {
-
+	if err = bc.validateDeSoBlockPoS(desoBlock); err != nil {
+		return false, false, nil, err
 	}
 
 	utxoView, err := bc.getUtxoViewAtBlockHash(*desoBlock.Header.PrevBlockHash)
@@ -70,13 +74,6 @@ func (bc *Blockchain) processBlockPoS(desoBlock *MsgDeSoBlock, currentView uint6
 		// views. We use the current block’s QC to find the view of the parent.
 		// TODO: Any processing related to the block's vote QC.
 	} else {
-		// If we have a ValidatorsTimeoutAggregateQC set on the block, it means the nodes decided
-		// to skip a view by sending TimeoutMessages to the leader, so we process
-		// the block accordingly.
-		// 1f. If timeout QC, validate that block hash isn't too far back from the latest.
-		if err = bc.validateTimeoutQC(desoBlock, validatorsByStake); err != nil {
-			return false, false, nil, err
-		}
 		// TODO: Get highest timeout QC from the block.
 		// We find the QC with the highest view among the QCs contained in the
 		// AggregateQC.
@@ -368,20 +365,32 @@ func (bc *Blockchain) validateQC(desoBlock *MsgDeSoBlock, validatorSet []*Valida
 	return nil
 }
 
-// validateTimeoutQC validates that the parent block hash is not too far back from the latest.
-// Specifically, it checks that the parent block hash is at least the latest committed block.
-func (bc *Blockchain) validateTimeoutQC(desoBlock *MsgDeSoBlock, validatorSet []*ValidatorEntry) error {
-	// TODO: Implement me
-	return errors.New("IMPLEMENT ME")
-}
-
-// hasKnownAncestors checks that the parent block hash exists in the block index.
-// It returns true if the parent block hash exists in the block index, and otherwise false.
-// If the parent hash is in the block index, it is assumed that all ancestors of this block
-// also exist in the block index.
-func (bc *Blockchain) hasKnownAncestors(parentHash BlockHash) bool {
-	_, exists := bc.blockIndex[parentHash]
-	return exists
+// getLineageFromCommittedTip returns the ancestors of the block provided up to, but not
+// including the committed tip. The first block in the returned slice is the first uncommitted
+// ancestor.
+func (bc *Blockchain) getLineageFromCommittedTip(desoBlock *MsgDeSoBlock) ([]*BlockNode, error) {
+	highestCommittedBlock, idx := bc.getHighestCommittedBlock()
+	if idx == -1 || highestCommittedBlock == nil {
+		return nil, errors.New("getLineageFromCommittedTip: No committed blocks found")
+	}
+	currentHash := desoBlock.Header.PrevBlockHash.NewBlockHash()
+	ancestors := []*BlockNode{}
+	for {
+		currentBlock, exists := bc.blockIndex[*currentHash]
+		if !exists {
+			return nil, RuleErrorMissingAncestorBlock
+		}
+		if currentBlock.Hash.IsEqual(highestCommittedBlock.Hash) {
+			break
+		}
+		if currentBlock.CommittedStatus == COMMITTED {
+			return nil, RuleErrorDoesNotExtendCommittedTip
+		}
+		ancestors = append(ancestors, currentBlock)
+		currentHash = currentBlock.Header.PrevBlockHash
+	}
+	collections.Reverse(ancestors)
+	return ancestors, nil
 }
 
 // addBlockToBlockIndex adds the block to the block index and uncommitted blocks map.
@@ -546,6 +555,8 @@ const (
 	RuleErrorBothTimeoutAndVoteQC           RuleError = "RuleErrorBothTimeoutAndVoteQC"
 	RuleErrorTimeoutQCWithTransactions      RuleError = "RuleErrorTimeoutQCWithTransactions"
 	RuleErrorMissingParentBlock             RuleError = "RuleErrorMissingParentBlock"
+	RuleErrorMissingAncestorBlock           RuleError = "RuleErrorMissingAncestorBlock"
+	RuleErrorDoesNotExtendCommittedTip      RuleError = "RuleErrorDoesNotExtendCommittedTip"
 	RuleErrorNilMerkleRoot                  RuleError = "RuleErrorNilMerkleRoot"
 	RuleErrorInvalidMerkleRoot              RuleError = "RuleErrorInvalidMerkleRoot"
 	RuleErrorNoTxnsWithMerkleRoot           RuleError = "RuleErrorNoTxnsWithMerkleRoot"
