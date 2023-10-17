@@ -5,6 +5,7 @@ package lib
 import (
 	"bytes"
 	"github.com/deso-protocol/core/bls"
+	"github.com/deso-protocol/core/collections"
 	"github.com/deso-protocol/core/collections/bitset"
 	"github.com/deso-protocol/core/consensus"
 	"github.com/holiman/uint256"
@@ -716,7 +717,7 @@ func TestValidateBlockLeader(t *testing.T) {
 
 }
 
-func TestValidateAncestorsExist(t *testing.T) {
+func TestGetLineageFromCommittedTip(t *testing.T) {
 	bc, _, _ := NewTestBlockchain(t)
 	hash1 := NewBlockHash(RandomBytes(32))
 	genesisNode := NewPoSBlockNode(nil, hash1, 1, &MsgDeSoHeader{
@@ -1082,6 +1083,162 @@ func TestValidateQC(t *testing.T) {
 		require.Error(t, err)
 		require.Equal(t, err, RuleErrorInvalidTimeoutQC)
 	}
+}
+
+func TestShouldReorg(t *testing.T) {
+	bc, _, _ := NewTestBlockchain(t)
+	hash1 := NewBlockHash(RandomBytes(32))
+	hash2 := NewBlockHash(RandomBytes(32))
+	hash3 := NewBlockHash(RandomBytes(32))
+	bc.bestChain = []*BlockNode{
+		{
+			Hash:            hash1,
+			CommittedStatus: COMMITTED,
+		},
+		{
+			Hash:            hash3,
+			CommittedStatus: UNCOMMITTED,
+		},
+	}
+
+	newBlock := &MsgDeSoBlock{
+		Header: &MsgDeSoHeader{
+			ProposedInView: 2,
+			PrevBlockHash:  bc.bestChain[1].Hash,
+		},
+	}
+
+	// Parent is chain tip. No reorg required.
+	require.False(t, bc.shouldReorg(newBlock, 2))
+
+	// Parent is not chain tip, but currentView is greater than
+	// the block's view.
+	newBlock.Header.PrevBlockHash = hash1
+	require.False(t, bc.shouldReorg(newBlock, 3))
+
+	// Parent is not chain tip. Reorg required.
+	// Other checks have already been completed to ensure
+	// that hash2 exists in the blockIndex
+	newBlock.Header.PrevBlockHash = hash2
+	require.True(t, bc.shouldReorg(newBlock, 2))
+}
+
+func TestTryReorgToNewTip(t *testing.T) {
+	bc, _, _ := NewTestBlockchain(t)
+	hash1 := NewBlockHash(RandomBytes(32))
+	bn1 := &BlockNode{
+		Hash:            hash1,
+		CommittedStatus: COMMITTED,
+	}
+	hash2 := NewBlockHash(RandomBytes(32))
+	bn2 := &BlockNode{
+		Hash:            hash2,
+		CommittedStatus: UNCOMMITTED,
+		Header: &MsgDeSoHeader{
+			PrevBlockHash: hash1,
+		},
+	}
+	hash3 := NewBlockHash(RandomBytes(32))
+	bn3 := &BlockNode{
+		Hash:            hash3,
+		CommittedStatus: UNCOMMITTED,
+		Header: &MsgDeSoHeader{
+			PrevBlockHash: hash2,
+		},
+	}
+	bc.addBlockToBestChain(bn1)
+	bc.addBlockToBestChain(bn2)
+	bc.addBlockToBestChain(bn3)
+	bc.blockIndex[*hash1] = bn1
+	bc.blockIndex[*hash2] = bn2
+	bc.blockIndex[*hash3] = bn3
+
+	// Simple reorg. Just replacing the uncommitted tip.
+	newBlock := &MsgDeSoBlock{
+		Header: &MsgDeSoHeader{
+			PrevBlockHash:  hash2,
+			ProposedInView: 10,
+		},
+	}
+	ancestors, err := bc.getLineageFromCommittedTip(newBlock)
+	require.NoError(t, err)
+	hasReorged, err := bc.tryReorgToNewTip(newBlock, 9, ancestors)
+	require.True(t, hasReorged)
+	require.NoError(t, err)
+	checkBestChainForHash := func(hash *BlockHash) bool {
+		return collections.Any(bc.bestChain, func(bn *BlockNode) bool {
+			return bn.Hash.IsEqual(hash)
+		})
+	}
+	// hash 3 should no longer be in the best chain or best chain map
+	_, hash3ExistsInBestChainMap := bc.bestChainMap[*hash3]
+	require.False(t, hash3ExistsInBestChainMap)
+	require.False(t, checkBestChainForHash(hash3))
+	// hash 2 should still be in the best chain and the best chain map
+	_, hash2ExistsInBestChainMap := bc.bestChainMap[*hash2]
+	require.True(t, hash2ExistsInBestChainMap)
+	require.True(t, checkBestChainForHash(hash2))
+	// Just to be safe, make sure hash1 is still in there!
+	_, hash1ExistsInBestChainMap := bc.bestChainMap[*hash1]
+	require.True(t, hash1ExistsInBestChainMap)
+	require.True(t, checkBestChainForHash(hash1))
+
+	// Add bn3 back to the best chain and block index
+	bc.addBlockToBestChain(bn3)
+	bc.blockIndex[*hash3] = bn3
+
+	// Add a series of blocks that are not part of the best chain
+	// to the block index and reorg to them
+	hash4 := NewBlockHash(RandomBytes(32))
+	bn4 := &BlockNode{
+		Hash:            hash4,
+		CommittedStatus: UNCOMMITTED,
+		Header: &MsgDeSoHeader{
+			PrevBlockHash: hash1,
+		},
+	}
+
+	hash5 := NewBlockHash(RandomBytes(32))
+	bn5 := &BlockNode{
+		Hash:            hash5,
+		CommittedStatus: UNCOMMITTED,
+		Header: &MsgDeSoHeader{
+			PrevBlockHash: hash4,
+		},
+	}
+	bc.blockIndex[*hash4] = bn4
+	bc.blockIndex[*hash5] = bn5
+
+	// Set new block's parent to hash5
+	newBlock.Header.PrevBlockHash = hash5
+	ancestors, err = bc.getLineageFromCommittedTip(newBlock)
+	require.NoError(t, err)
+	hasReorged, err = bc.tryReorgToNewTip(newBlock, 9, ancestors)
+	require.True(t, hasReorged)
+	require.NoError(t, err)
+	// hash 3 should no longer be in the best chain or best chain map
+	_, hash3ExistsInBestChainMap = bc.bestChainMap[*hash3]
+	require.False(t, hash3ExistsInBestChainMap)
+	require.False(t, checkBestChainForHash(hash3))
+	// hash 2 should no longer be in the best chain or best chain map
+	_, hash2ExistsInBestChainMap = bc.bestChainMap[*hash2]
+	require.False(t, hash2ExistsInBestChainMap)
+	require.False(t, checkBestChainForHash(hash2))
+	// hash 4 should be in the best chain and the best chain map
+	_, hash4ExistsInBestChainMap := bc.bestChainMap[*hash4]
+	require.True(t, hash4ExistsInBestChainMap)
+	require.True(t, checkBestChainForHash(hash4))
+	// hash 5 should be in the best chain and the best chain map
+	_, hash5ExistsInBestChainMap := bc.bestChainMap[*hash5]
+	require.True(t, hash5ExistsInBestChainMap)
+	require.True(t, checkBestChainForHash(hash5))
+
+	// No reorg tests
+	// currentView > newBlock.View
+	newBlock.Header.ProposedInView = 8
+	hasReorged, err = bc.tryReorgToNewTip(newBlock, 9, ancestors)
+	require.False(t, hasReorged)
+	require.NoError(t, err)
 }
 
 func _generateRandomBLSPrivateKey(t *testing.T) *bls.PrivateKey {
