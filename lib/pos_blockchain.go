@@ -170,14 +170,6 @@ func (bc *Blockchain) validateBlockIntegrity(desoBlock *MsgDeSoBlock) error {
 		// we've validated that all ancestors exist in the block index.
 		return RuleErrorMissingParentBlock
 	}
-	if parentBlock.CommittedStatus == COMMITTED {
-		// If the parent block is committed, then we need to check that it's the
-		// latest committed block. Otherwise, this is an error.
-		highestCommittedBlock, _ := bc.getHighestCommittedBlock()
-		if !parentBlock.Hash.IsEqual(highestCommittedBlock.Hash) {
-			return RuleErrorParentBlockCommittedAndNotCommittedTip
-		}
-	}
 	if desoBlock.Header.TstampNanoSecs < parentBlock.Header.TstampNanoSecs {
 		return RuleErrorPoSBlockTstampNanoSecsTooOld
 	}
