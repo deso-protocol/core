@@ -717,7 +717,7 @@ func TestValidateBlockLeader(t *testing.T) {
 
 }
 
-func TestValidateAncestorsExist(t *testing.T) {
+func TestGetLineageFromCommittedTip(t *testing.T) {
 	bc, _, _ := NewTestBlockchain(t)
 	hash1 := NewBlockHash(RandomBytes(32))
 	genesisNode := NewPoSBlockNode(nil, hash1, 1, &MsgDeSoHeader{
@@ -1160,7 +1160,7 @@ func TestTryReorgToNewTip(t *testing.T) {
 			ProposedInView: 10,
 		},
 	}
-	ancestors, err := bc.getAncestorsToCommittedTip(newBlock)
+	ancestors, err := bc.getLineageFromCommittedTip(newBlock)
 	require.NoError(t, err)
 	hasReorged, err := bc.tryReorgToNewTip(newBlock, 9, ancestors)
 	require.True(t, hasReorged)
@@ -1211,7 +1211,7 @@ func TestTryReorgToNewTip(t *testing.T) {
 
 	// Set new block's parent to hash5
 	newBlock.Header.PrevBlockHash = hash5
-	ancestors, err = bc.getAncestorsToCommittedTip(newBlock)
+	ancestors, err = bc.getLineageFromCommittedTip(newBlock)
 	require.NoError(t, err)
 	hasReorged, err = bc.tryReorgToNewTip(newBlock, 9, ancestors)
 	require.True(t, hasReorged)
