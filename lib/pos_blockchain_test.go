@@ -211,17 +211,6 @@ func TestValidateBlockIntegrity(t *testing.T) {
 	err = bc.validateBlockIntegrity(block)
 	require.Equal(t, err, RuleErrorMissingParentBlock)
 
-	// Set the PrevBlockHash to a non-latest committed block.
-	latestCommittedNode, _ := bc.getHighestCommittedBlock()
-	block.Header.PrevBlockHash = latestCommittedNode.Parent.Hash
-	err = bc.validateBlockIntegrity(block)
-	require.Equal(t, err, RuleErrorParentBlockCommittedAndNotCommittedTip)
-
-	// If it's the latest committed block, that's OK!
-	block.Header.PrevBlockHash = latestCommittedNode.Hash
-	err = bc.validateBlockIntegrity(block)
-	require.Nil(t, err)
-
 	// Nil block header not allowed
 	block.Header = nil
 	err = bc.validateBlockIntegrity(block)
@@ -735,6 +724,7 @@ func TestValidateAncestorsExist(t *testing.T) {
 		Height:         1,
 		ProposedInView: 1,
 	}, StatusBlockValidated, COMMITTED)
+	bc.bestChain = []*BlockNode{genesisNode}
 	bc.blockIndex = map[BlockHash]*BlockNode{
 		*hash1: genesisNode,
 	}
@@ -744,13 +734,31 @@ func TestValidateAncestorsExist(t *testing.T) {
 		},
 	}
 	// If block is in best chain, we should get true
-	hasKnownAncestors := bc.hasKnownAncestors(*block.Header.PrevBlockHash)
-	require.True(t, hasKnownAncestors)
+	ancestors, err := bc.getAncestorsToCommittedTip(block)
+	require.NoError(t, err)
+	require.Len(t, ancestors, 1)
 
-	// If parent block is not in block index, we should get the parent block hash back
+	// If parent block is not in block index, we should get an error
 	block.Header.PrevBlockHash = NewBlockHash(RandomBytes(32))
-	hasKnownAncestors = bc.hasKnownAncestors(*block.Header.PrevBlockHash)
-	require.False(t, hasKnownAncestors)
+	ancestors, err = bc.getAncestorsToCommittedTip(block)
+	require.Error(t, err)
+	require.Equal(t, err, RuleErrorMissingAncestorBlock)
+	require.Nil(t, ancestors)
+
+	// If this block extends from a committed block that is not the tip, we should get an error.
+	block.Header.PrevBlockHash = hash1
+	// add another block to the best chain.
+	hash2 := NewBlockHash(RandomBytes(32))
+	block2 := NewPoSBlockNode(genesisNode, hash2, 2, &MsgDeSoHeader{
+		Version:       2,
+		Height:        2,
+		PrevBlockHash: hash1,
+	}, StatusBlockValidated, COMMITTED)
+	bc.bestChain = append(bc.bestChain, block2)
+	bc.blockIndex[*hash2] = block2
+	ancestors, err = bc.getAncestorsToCommittedTip(block)
+	require.Error(t, err)
+	require.Equal(t, err, RuleErrorDoesNotExtendCommittedTip)
 }
 
 func TestValidateQC(t *testing.T) {

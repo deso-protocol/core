@@ -23,8 +23,13 @@ func (bc *Blockchain) processBlockPoS(desoBlock *MsgDeSoBlock, currentView uint6
 	// 1. Determine if we're missing the parent block of this block. If it's parent exists in the blockIndex,
 	// it is safe to assume we have all ancestors of this block in the block index.
 	// If the parent block is missing, process the orphan, but don't add to the block index or uncommitted block map.
-	hasKnownAncestors := bc.hasKnownAncestors(*desoBlock.Header.PrevBlockHash)
-	if !hasKnownAncestors {
+	lineageToCommittedTip, err := bc.getAncestorsToCommittedTip(desoBlock)
+	if err != nil && err != RuleErrorMissingAncestorBlock {
+		return false, false, nil, err
+	}
+	_ = lineageToCommittedTip
+
+	if err == RuleErrorMissingAncestorBlock {
 		missingBlockHashes := []*BlockHash{desoBlock.Header.PrevBlockHash}
 		blockHash, err := desoBlock.Header.Hash()
 		// If we fail to get the block hash, this block isn't valid at all, so we
@@ -43,8 +48,8 @@ func (bc *Blockchain) processBlockPoS(desoBlock *MsgDeSoBlock, currentView uint6
 	// 2. Start with all sanity checks of the block.
 	// TODO: Check if err is for view > latest committed block view and <= latest uncommitted block.
 	// If so, we need to perform the rest of the validations and then add to our block index.
-	if err := bc.validateDeSoBlockPoS(desoBlock); err != nil {
-
+	if err = bc.validateDeSoBlockPoS(desoBlock); err != nil {
+		return false, false, nil, err
 	}
 
 	utxoView, err := bc.getUtxoViewAtBlockHash(*desoBlock.Header.PrevBlockHash)
@@ -167,14 +172,6 @@ func (bc *Blockchain) validateBlockIntegrity(desoBlock *MsgDeSoBlock) error {
 		// Note: this should never happen as we only call this function after
 		// we've validated that all ancestors exist in the block index.
 		return RuleErrorMissingParentBlock
-	}
-	if parentBlock.CommittedStatus == COMMITTED {
-		// If the parent block is committed, then we need to check that it's the
-		// latest committed block. Otherwise, this is an error.
-		highestCommittedBlock, _ := bc.getHighestCommittedBlock()
-		if !parentBlock.Hash.IsEqual(highestCommittedBlock.Hash) {
-			return RuleErrorParentBlockCommittedAndNotCommittedTip
-		}
 	}
 	if desoBlock.Header.TstampNanoSecs < parentBlock.Header.TstampNanoSecs {
 		return RuleErrorPoSBlockTstampNanoSecsTooOld
@@ -369,13 +366,30 @@ func (bc *Blockchain) validateQC(desoBlock *MsgDeSoBlock, validatorSet []*Valida
 	return nil
 }
 
-// hasKnownAncestors checks that the parent block hash exists in the block index.
-// It returns true if the parent block hash exists in the block index, and otherwise false.
-// If the parent hash is in the block index, it is assumed that all ancestors of this block
-// also exist in the block index.
-func (bc *Blockchain) hasKnownAncestors(parentHash BlockHash) bool {
-	_, exists := bc.blockIndex[parentHash]
-	return exists
+// getAncestorsToCommittedTip returns the ancestors of the block provided up to the
+// committed tip.
+func (bc *Blockchain) getAncestorsToCommittedTip(desoBlock *MsgDeSoBlock) ([]*BlockNode, error) {
+	highestCommittedBlock, idx := bc.getHighestCommittedBlock()
+	if idx == -1 || highestCommittedBlock == nil {
+		return nil, errors.New("getAncestorsToCommittedTip: No committed blocks found")
+	}
+	currentHash := desoBlock.Header.PrevBlockHash.NewBlockHash()
+	ancestors := []*BlockNode{}
+	for {
+		currentBlock, exists := bc.blockIndex[*currentHash]
+		if !exists {
+			return nil, RuleErrorMissingAncestorBlock
+		}
+		ancestors = append(ancestors, currentBlock)
+		if currentBlock.Hash.IsEqual(highestCommittedBlock.Hash) {
+			break
+		}
+		if currentBlock.CommittedStatus == COMMITTED {
+			return nil, RuleErrorDoesNotExtendCommittedTip
+		}
+		currentHash = currentBlock.Header.PrevBlockHash
+	}
+	return ancestors, nil
 }
 
 // addBlockToBlockIndex adds the block to the block index and uncommitted blocks map.
@@ -531,22 +545,23 @@ func (bc *Blockchain) getHighestCommittedBlock() (*BlockNode, int) {
 }
 
 const (
-	RuleErrorNilBlockHeader                         RuleError = "RuleErrorNilBlockHeader"
-	RuleErrorNilPrevBlockHash                       RuleError = "RuleErrorNilPrevBlockHash"
-	RuleErrorPoSBlockTstampNanoSecsTooOld           RuleError = "RuleErrorPoSBlockTstampNanoSecsTooOld"
-	RuleErrorPoSBlockTstampNanoSecsInFuture         RuleError = "RuleErrorPoSBlockTstampNanoSecsInFuture"
-	RuleErrorInvalidPoSBlockHeaderVersion           RuleError = "RuleErrorInvalidPoSBlockHeaderVersion"
-	RuleErrorNoTimeoutOrVoteQC                      RuleError = "RuleErrorNoTimeoutOrVoteQC"
-	RuleErrorBothTimeoutAndVoteQC                   RuleError = "RuleErrorBothTimeoutAndVoteQC"
-	RuleErrorTimeoutQCWithTransactions              RuleError = "RuleErrorTimeoutQCWithTransactions"
-	RuleErrorMissingParentBlock                     RuleError = "RuleErrorMissingParentBlock"
-	RuleErrorParentBlockCommittedAndNotCommittedTip RuleError = "RuleErrorParentBlockCommittedAndNotCommittedTip"
-	RuleErrorNilMerkleRoot                          RuleError = "RuleErrorNilMerkleRoot"
-	RuleErrorInvalidMerkleRoot                      RuleError = "RuleErrorInvalidMerkleRoot"
-	RuleErrorNoTxnsWithMerkleRoot                   RuleError = "RuleErrorNoTxnsWithMerkleRoot"
-	RuleErrorInvalidProposerVotingPublicKey         RuleError = "RuleErrorInvalidProposerVotingPublicKey"
-	RuleErrorInvalidProposerPublicKey               RuleError = "RuleErrorInvalidProposerPublicKey"
-	RuleErrorInvalidRandomSeedHash                  RuleError = "RuleErrorInvalidRandomSeedHash"
+	RuleErrorNilBlockHeader                 RuleError = "RuleErrorNilBlockHeader"
+	RuleErrorNilPrevBlockHash               RuleError = "RuleErrorNilPrevBlockHash"
+	RuleErrorPoSBlockTstampNanoSecsTooOld   RuleError = "RuleErrorPoSBlockTstampNanoSecsTooOld"
+	RuleErrorPoSBlockTstampNanoSecsInFuture RuleError = "RuleErrorPoSBlockTstampNanoSecsInFuture"
+	RuleErrorInvalidPoSBlockHeaderVersion   RuleError = "RuleErrorInvalidPoSBlockHeaderVersion"
+	RuleErrorNoTimeoutOrVoteQC              RuleError = "RuleErrorNoTimeoutOrVoteQC"
+	RuleErrorBothTimeoutAndVoteQC           RuleError = "RuleErrorBothTimeoutAndVoteQC"
+	RuleErrorTimeoutQCWithTransactions      RuleError = "RuleErrorTimeoutQCWithTransactions"
+	RuleErrorMissingParentBlock             RuleError = "RuleErrorMissingParentBlock"
+	RuleErrorMissingAncestorBlock           RuleError = "RuleErrorMissingAncestorBlock"
+	RuleErrorDoesNotExtendCommittedTip      RuleError = "RuleErrorDoesNotExtendCommittedTip"
+	RuleErrorNilMerkleRoot                  RuleError = "RuleErrorNilMerkleRoot"
+	RuleErrorInvalidMerkleRoot              RuleError = "RuleErrorInvalidMerkleRoot"
+	RuleErrorNoTxnsWithMerkleRoot           RuleError = "RuleErrorNoTxnsWithMerkleRoot"
+	RuleErrorInvalidProposerVotingPublicKey RuleError = "RuleErrorInvalidProposerVotingPublicKey"
+	RuleErrorInvalidProposerPublicKey       RuleError = "RuleErrorInvalidProposerPublicKey"
+	RuleErrorInvalidRandomSeedHash          RuleError = "RuleErrorInvalidRandomSeedHash"
 
 	RuleErrorInvalidPoSBlockHeight       RuleError = "RuleErrorInvalidPoSBlockHeight"
 	RuleErrorPoSBlockBeforeCutoverHeight RuleError = "RuleErrorPoSBlockBeforeCutoverHeight"
