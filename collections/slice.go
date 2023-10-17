@@ -24,3 +24,9 @@ func ToMap[TKey comparable, TValue any](slice []TValue, keyFn func(TValue) TKey)
 	}
 	return result
 }
+
+func Reverse[T any](input []T) {
+	for ii, jj := 0, len(input)-1; ii < jj; ii, jj = ii+1, jj-1 {
+		input[ii], input[jj] = input[jj], input[ii]
+	}
+}

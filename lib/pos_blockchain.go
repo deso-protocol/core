@@ -23,11 +23,10 @@ func (bc *Blockchain) processBlockPoS(desoBlock *MsgDeSoBlock, currentView uint6
 	// 1. Determine if we're missing the parent block of this block. If it's parent exists in the blockIndex,
 	// it is safe to assume we have all ancestors of this block in the block index.
 	// If the parent block is missing, process the orphan, but don't add to the block index or uncommitted block map.
-	lineageToCommittedTip, err := bc.getAncestorsToCommittedTip(desoBlock)
+	_, err := bc.getLineageFromCommittedTip(desoBlock)
 	if err != nil && err != RuleErrorMissingAncestorBlock {
 		return false, false, nil, err
 	}
-	_ = lineageToCommittedTip
 
 	if err == RuleErrorMissingAncestorBlock {
 		missingBlockHashes := []*BlockHash{desoBlock.Header.PrevBlockHash}
@@ -366,12 +365,13 @@ func (bc *Blockchain) validateQC(desoBlock *MsgDeSoBlock, validatorSet []*Valida
 	return nil
 }
 
-// getAncestorsToCommittedTip returns the ancestors of the block provided up to the
-// committed tip.
-func (bc *Blockchain) getAncestorsToCommittedTip(desoBlock *MsgDeSoBlock) ([]*BlockNode, error) {
+// getLineageFromCommittedTip returns the ancestors of the block provided up to, but not
+// including the committed tip. The first block in the returned slice is the first uncommitted
+// ancestor.
+func (bc *Blockchain) getLineageFromCommittedTip(desoBlock *MsgDeSoBlock) ([]*BlockNode, error) {
 	highestCommittedBlock, idx := bc.getHighestCommittedBlock()
 	if idx == -1 || highestCommittedBlock == nil {
-		return nil, errors.New("getAncestorsToCommittedTip: No committed blocks found")
+		return nil, errors.New("getLineageFromCommittedTip: No committed blocks found")
 	}
 	currentHash := desoBlock.Header.PrevBlockHash.NewBlockHash()
 	ancestors := []*BlockNode{}
@@ -380,15 +380,16 @@ func (bc *Blockchain) getAncestorsToCommittedTip(desoBlock *MsgDeSoBlock) ([]*Bl
 		if !exists {
 			return nil, RuleErrorMissingAncestorBlock
 		}
-		ancestors = append(ancestors, currentBlock)
 		if currentBlock.Hash.IsEqual(highestCommittedBlock.Hash) {
 			break
 		}
 		if currentBlock.CommittedStatus == COMMITTED {
 			return nil, RuleErrorDoesNotExtendCommittedTip
 		}
+		ancestors = append(ancestors, currentBlock)
 		currentHash = currentBlock.Header.PrevBlockHash
 	}
+	collections.Reverse(ancestors)
 	return ancestors, nil
 }
 

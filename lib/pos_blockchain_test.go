@@ -734,13 +734,13 @@ func TestValidateAncestorsExist(t *testing.T) {
 		},
 	}
 	// If block is in best chain, we should get true
-	ancestors, err := bc.getAncestorsToCommittedTip(block)
+	ancestors, err := bc.getLineageFromCommittedTip(block)
 	require.NoError(t, err)
 	require.Len(t, ancestors, 1)
 
 	// If parent block is not in block index, we should get an error
 	block.Header.PrevBlockHash = NewBlockHash(RandomBytes(32))
-	ancestors, err = bc.getAncestorsToCommittedTip(block)
+	ancestors, err = bc.getLineageFromCommittedTip(block)
 	require.Error(t, err)
 	require.Equal(t, err, RuleErrorMissingAncestorBlock)
 	require.Nil(t, ancestors)
@@ -756,7 +756,7 @@ func TestValidateAncestorsExist(t *testing.T) {
 	}, StatusBlockValidated, COMMITTED)
 	bc.bestChain = append(bc.bestChain, block2)
 	bc.blockIndex[*hash2] = block2
-	ancestors, err = bc.getAncestorsToCommittedTip(block)
+	ancestors, err = bc.getLineageFromCommittedTip(block)
 	require.Error(t, err)
 	require.Equal(t, err, RuleErrorDoesNotExtendCommittedTip)
 }
