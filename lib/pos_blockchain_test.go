@@ -1160,7 +1160,9 @@ func TestTryReorgToNewTip(t *testing.T) {
 			ProposedInView: 10,
 		},
 	}
-	hasReorged, err := bc.tryReorgToNewTip(newBlock, 9)
+	ancestors, err := bc.getAncestorsToCommittedTip(newBlock)
+	require.NoError(t, err)
+	hasReorged, err := bc.tryReorgToNewTip(newBlock, 9, ancestors)
 	require.True(t, hasReorged)
 	require.NoError(t, err)
 	checkBestChainForHash := func(hash *BlockHash) bool {
@@ -1209,7 +1211,9 @@ func TestTryReorgToNewTip(t *testing.T) {
 
 	// Set new block's parent to hash5
 	newBlock.Header.PrevBlockHash = hash5
-	hasReorged, err = bc.tryReorgToNewTip(newBlock, 9)
+	ancestors, err = bc.getAncestorsToCommittedTip(newBlock)
+	require.NoError(t, err)
+	hasReorged, err = bc.tryReorgToNewTip(newBlock, 9, ancestors)
 	require.True(t, hasReorged)
 	require.NoError(t, err)
 	// hash 3 should no longer be in the best chain or best chain map
@@ -1232,20 +1236,9 @@ func TestTryReorgToNewTip(t *testing.T) {
 	// No reorg tests
 	// currentView > newBlock.View
 	newBlock.Header.ProposedInView = 8
-	hasReorged, err = bc.tryReorgToNewTip(newBlock, 9)
+	hasReorged, err = bc.tryReorgToNewTip(newBlock, 9, ancestors)
 	require.False(t, hasReorged)
 	require.NoError(t, err)
-
-	// Can't reorg if not a descendent of committed tip.
-	newBlock.Header.ProposedInView = 10
-	// Set bn4 to be committed
-	bn4.CommittedStatus = COMMITTED
-	// set new blocks parent to be bn1
-	newBlock.Header.PrevBlockHash = hash1
-	hasReorged, err = bc.tryReorgToNewTip(newBlock, 9)
-	require.False(t, hasReorged)
-	require.Error(t, err)
-	require.Contains(t, err.Error(), "is committed but not the committed tip")
 }
 
 func _generateRandomBLSPrivateKey(t *testing.T) *bls.PrivateKey {

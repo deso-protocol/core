@@ -23,7 +23,7 @@ func (bc *Blockchain) processBlockPoS(desoBlock *MsgDeSoBlock, currentView uint6
 	// 1. Determine if we're missing the parent block of this block. If it's parent exists in the blockIndex,
 	// it is safe to assume we have all ancestors of this block in the block index.
 	// If the parent block is missing, process the orphan, but don't add to the block index or uncommitted block map.
-	_, err := bc.getLineageFromCommittedTip(desoBlock)
+	lineageToCommittedTip, err := bc.getLineageFromCommittedTip(desoBlock)
 	if err != nil && err != RuleErrorMissingAncestorBlock {
 		return false, false, nil, err
 	}
@@ -91,7 +91,7 @@ func (bc *Blockchain) processBlockPoS(desoBlock *MsgDeSoBlock, currentView uint6
 	}
 
 	// 4. Handle reorgs if necessary
-	if _, err = bc.tryReorgToNewTip(desoBlock, currentView); err != nil {
+	if _, err = bc.tryReorgToNewTip(desoBlock, currentView, lineageToCommittedTip); err != nil {
 		return false, false, nil, errors.Wrap(err, "processBlockPoS: Problem handling reorg: ")
 	}
 
@@ -425,7 +425,7 @@ func (bc *Blockchain) shouldReorg(desoBlock *MsgDeSoBlock, currentView uint64) b
 // 1. Update the bestChain and bestChainMap by removing blocks that are uncommitted and are not ancestors of this block.
 // 2. Update the bestChain and bestChainMap by adding blocks that are uncommitted ancestors of this block.
 // Note: addBlockToBestChain will be called after this to handle adding THIS block to the best chain.
-func (bc *Blockchain) tryReorgToNewTip(desoBlock *MsgDeSoBlock, currentView uint64) (_hasReorg bool, _err error) {
+func (bc *Blockchain) tryReorgToNewTip(desoBlock *MsgDeSoBlock, currentView uint64, ancestorsToCommittedTip []*BlockNode) (_hasReorg bool, _err error) {
 	// Check if we should perform a reorg here
 	if !bc.shouldReorg(desoBlock, currentView) {
 		return false, nil
@@ -438,30 +438,6 @@ func (bc *Blockchain) tryReorgToNewTip(desoBlock *MsgDeSoBlock, currentView uint
 		return false, errors.New("tryReorgToNewTip: No committed blocks found")
 	}
 
-	// Find the ordered list of block nodes that connects the incoming block to the committed tip.
-	ancestors := []*BlockNode{}
-	isCommittedTip := false
-	currentBlock := bc.blockIndex[*desoBlock.Header.PrevBlockHash]
-	for !isCommittedTip {
-		if currentBlock.Hash.IsEqual(highestCommittedBlock.Hash) {
-			isCommittedTip = true
-			break
-		}
-		if currentBlock.CommittedStatus == COMMITTED {
-			// This is bad! This means that we have a committed block that is not the committed tip.
-			// We cannot reorg to this block.
-			return false, errors.Errorf("tryReorgToNewTip: Block %v is committed but not the committed tip", currentBlock.Hash.String())
-		}
-		ancestors = append(ancestors, currentBlock)
-		// Make sure we have a prev block hash to check.
-		if currentBlock.Header.PrevBlockHash == nil {
-			return false, errors.Errorf("tryReorgToNewTip: Block %v has nil PrevBlockHash", currentBlock.Hash.String())
-		}
-		currentBlock = bc.blockIndex[*currentBlock.Header.PrevBlockHash]
-	}
-	// We have now verified that the incoming block is a descendant of the committed tip
-	// and can proceed to update the best chain.
-
 	// Remove all uncommitted blocks. These are all blocks that come after the highestCommittedBlock
 	// in the best chain.
 	// Delete all blocks from bc.bestChainMap that come after the highest committed block.
@@ -471,8 +447,8 @@ func (bc *Blockchain) tryReorgToNewTip(desoBlock *MsgDeSoBlock, currentView uint
 	// Shorten best chain back to committed tip.
 	bc.bestChain = bc.bestChain[:idx+1]
 
-	for ii := len(ancestors) - 1; ii >= 0; ii-- {
-		bc.addBlockToBestChain(ancestors[ii])
+	for ii := len(ancestorsToCommittedTip) - 1; ii >= 0; ii-- {
+		bc.addBlockToBestChain(ancestorsToCommittedTip[ii])
 	}
 	return true, nil
 }
