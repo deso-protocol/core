@@ -1160,12 +1160,8 @@ func TestTryReorgToNewTip(t *testing.T) {
 			ProposedInView: 10,
 		},
 	}
-<<<<<<< HEAD
 
 	ancestors, err := bc.getLineageFromCommittedTip(newBlock)
-=======
-	ancestors, err := bc.getAncestorsToCommittedTip(newBlock)
->>>>>>> 980682e (use ancestors from getAncestorsToCommittedTip func)
 	require.NoError(t, err)
 	hasReorged, err := bc.tryReorgToNewTip(newBlock, 9, ancestors)
 	require.True(t, hasReorged)
@@ -1216,11 +1212,7 @@ func TestTryReorgToNewTip(t *testing.T) {
 
 	// Set new block's parent to hash5
 	newBlock.Header.PrevBlockHash = hash5
-<<<<<<< HEAD
 	ancestors, err = bc.getLineageFromCommittedTip(newBlock)
-=======
-	ancestors, err = bc.getAncestorsToCommittedTip(newBlock)
->>>>>>> 980682e (use ancestors from getAncestorsToCommittedTip func)
 	require.NoError(t, err)
 	hasReorged, err = bc.tryReorgToNewTip(newBlock, 9, ancestors)
 	require.True(t, hasReorged)
@@ -1248,7 +1240,6 @@ func TestTryReorgToNewTip(t *testing.T) {
 	hasReorged, err = bc.tryReorgToNewTip(newBlock, 9, ancestors)
 	require.False(t, hasReorged)
 	require.NoError(t, err)
-<<<<<<< HEAD
 }
 
 func TestValidateQC(t *testing.T) {
@@ -1564,8 +1555,6 @@ func TestValidateQC(t *testing.T) {
 		require.Error(t, err)
 		require.Equal(t, err, RuleErrorInvalidTimeoutQC)
 	}
-=======
->>>>>>> 980682e (use ancestors from getAncestorsToCommittedTip func)
 }
 
 func _generateRandomBLSPrivateKey(t *testing.T) *bls.PrivateKey {
