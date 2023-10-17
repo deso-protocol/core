@@ -520,6 +520,7 @@ const (
 	RuleErrorCoinUnlockUnlockableCoinsOverflow                          RuleError = "RuleErrorCoinUnlockUnlockableCoinsOverflow"
 	RuleErrorCoinUnlockUnlockableDeSoOverflow                           RuleError = "RuleErrorCoinUnlockUnlockableCoinsOverflow"
 	RuleErrorCoinUnlockCausesBalanceOverflow                            RuleError = "RuleErrorCoinUnlockCausesBalanceOverflow"
+	RuleErrorCoinUnlockCausesCoinsInCirculationOverflow                 RuleError = "RuleErrorCoinUnlockCausesCoinsInCirculationOverflow"
 	RuleErrorUpdateCoinLockupParamsOnInvalidPKID                        RuleError = "RuleErrorUpdateCoinLockupParamsOnInvalidPKID"
 	RuleErrorUpdateCoinLockupParamsInvalidRestrictions                  RuleError = "RuleErrorUpdateCoinLockupParamsInvalidRestrictions"
 	RuleErrorUpdateCoinLockupParamsNegativeDuration                     RuleError = "RuleErrorUpdateCoinLockupParamsInvalidRestrictions"

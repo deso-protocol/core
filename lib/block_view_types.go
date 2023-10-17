@@ -943,7 +943,8 @@ type UtxoOperation struct {
 	//
 
 	// PrevLockedBalanceEntry is the previous LockedBalanceEntry prior
-	// to a DAO coin lockup.
+	// to a DAO coin lockup. PrevCoinEntry defined above stores the
+	// CoinsInCirculation and NumberOfHolders prior to a lockup transaction.
 	PrevLockedBalanceEntry *LockedBalanceEntry
 
 	// PrevSenderLockedBalanceEntry and PrevReceiverLockedBalanceEntry are the previous LockedBalanceEntry
