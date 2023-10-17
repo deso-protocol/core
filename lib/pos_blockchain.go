@@ -613,6 +613,10 @@ func (bc *Blockchain) commitBlock(blockhash *BlockHash) error {
 	if err != nil {
 		return errors.Wrapf(err, "commitGrandparents: Problem putting block in db: ")
 	}
+	// Update the block node's committed status
+	bc.bestChainMap[*blockNode.Hash].CommittedStatus = COMMITTED
+	bc.blockIndex[*blockNode.Hash].CommittedStatus = COMMITTED
+	// TODO: find the block in the bestChain slice
 	if bc.eventManager != nil {
 		bc.eventManager.blockConnected(&BlockEvent{
 			Block:    block,
