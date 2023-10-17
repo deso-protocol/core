@@ -733,10 +733,10 @@ func TestValidateAncestorsExist(t *testing.T) {
 			PrevBlockHash: hash1,
 		},
 	}
-	// If block is in best chain, we should get true
+	// If parent is committed tip, we'll have 0 ancestors.
 	ancestors, err := bc.getLineageFromCommittedTip(block)
 	require.NoError(t, err)
-	require.Len(t, ancestors, 1)
+	require.Len(t, ancestors, 0)
 
 	// If parent block is not in block index, we should get an error
 	block.Header.PrevBlockHash = NewBlockHash(RandomBytes(32))
@@ -759,6 +759,14 @@ func TestValidateAncestorsExist(t *testing.T) {
 	ancestors, err = bc.getLineageFromCommittedTip(block)
 	require.Error(t, err)
 	require.Equal(t, err, RuleErrorDoesNotExtendCommittedTip)
+
+	// update block to be uncommitted
+	block2.CommittedStatus = UNCOMMITTED
+	// set new block's parent as block 2.
+	block.Header.PrevBlockHash = hash2
+	ancestors, err = bc.getLineageFromCommittedTip(block)
+	require.NoError(t, err)
+	require.Len(t, ancestors, 1)
 }
 
 func TestValidateQC(t *testing.T) {
