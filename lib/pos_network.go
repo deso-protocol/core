@@ -258,7 +258,7 @@ func (msg *MsgDeSoValidatorTimeout) FromBytes(data []byte) error {
 
 	// HighQC
 	msg.HighQC = &QuorumCertificate{}
-	if msg.HighQC.FromBytes(rr); err != nil {
+	if err = msg.HighQC.FromBytes(rr); err != nil {
 		return errors.Wrapf(err, "MsgDeSoValidatorTimeout.FromBytes: Error decoding HighQC")
 	}
 
@@ -607,7 +607,7 @@ func (aggQC *TimeoutAggregateQuorumCertificate) FromBytes(rr io.Reader) error {
 	}
 
 	aggQC.ValidatorsHighQC = &QuorumCertificate{}
-	if aggQC.ValidatorsHighQC.FromBytes(rr); err != nil {
+	if err = aggQC.ValidatorsHighQC.FromBytes(rr); err != nil {
 		return errors.Wrapf(err, "TimeoutAggregateQuorumCertificate.FromBytes: Error decoding ValidatorsHighQC")
 	}
 
@@ -616,9 +616,8 @@ func (aggQC *TimeoutAggregateQuorumCertificate) FromBytes(rr io.Reader) error {
 		return errors.Wrapf(err, "TimeoutAggregateQuorumCertificate.FromBytes: Error decoding ValidatorsTimeoutHighQCViews")
 	}
 
-	// TODO: Go through these functions and make sure we're looking for all these errors.
 	aggQC.ValidatorsTimeoutAggregatedSignature = &AggregatedBLSSignature{}
-	if aggQC.ValidatorsTimeoutAggregatedSignature.FromBytes(rr); err != nil {
+	if err = aggQC.ValidatorsTimeoutAggregatedSignature.FromBytes(rr); err != nil {
 		return errors.Wrapf(err, "TimeoutAggregateQuorumCertificate.FromBytes: Error decoding ValidatorsTimeoutAggregatedSignature")
 	}
 
