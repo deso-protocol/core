@@ -106,7 +106,7 @@ func (bc *Blockchain) processBlockPoS(desoBlock *MsgDeSoBlock, currentView uint6
 	bc.addBlockToBestChain(newBlockNode)
 
 	// 6. Commit grandparent if possible.
-	if err = bc.commitGrandparents(); err != nil {
+	if err = bc.runCommitRuleOnBestChain(); err != nil {
 		return false, false, nil, errors.Wrap(err, "processBlockPoS: error committing grandparents: ")
 	}
 
@@ -479,36 +479,23 @@ func (bc *Blockchain) pruneUncommittedBlocks(desoBlock *MsgDeSoBlock) error {
 	return errors.New("IMPLEMENT ME")
 }
 
-// commitGrandparents commits the grandparent of the block if possible.
+// runCommitRuleOnBestChain commits the grandparent of the block if possible.
 // Specifically, this updates the CommittedBlockStatus of its grandparent
 // and flushes the view after connecting the grandparent block to the DB.
-func (bc *Blockchain) commitGrandparents() error {
+func (bc *Blockchain) runCommitRuleOnBestChain() error {
 	currentBlock := bc.GetBestChainTip()
-	var canCommit bool
-	var blockToCommit *BlockHash
-	for !canCommit {
-		// If the grandparent block is committed, then we can commit it.
-		// Otherwise, we can't commit it.
-		var committedBlockSeen bool
-		blockToCommit, canCommit, committedBlockSeen = bc.canCommitGrandparent(currentBlock)
-		// If we've seen a committed block, then we can't commit anything new.
-		if committedBlockSeen {
-			return nil
-		}
-		if !canCommit {
-			var exists bool
-			currentBlock, exists = bc.bestChainMap[*currentBlock.Header.PrevBlockHash]
-			if !exists {
-				return errors.Errorf("commitGrandparents: Block %v not found in best chain map", currentBlock.Hash.String())
-			}
-		}
+	// If we can commit the grandparent, commit it.
+	// Otherwise, we can't commit it and return nil.
+	blockToCommit, canCommit := bc.canCommitGrandparent(currentBlock)
+	if !canCommit {
+		return nil
 	}
 	// Find all uncommitted ancestors of block to commit
 	_, idx := bc.getHighestCommittedBlock()
 	if idx == -1 {
 		// This is an edge case we'll never hit in practice since all the PoW blocks
 		// are committed.
-		return errors.New("commitGrandparents: No committed blocks found")
+		return errors.New("runCommitRuleOnBestChain: No committed blocks found")
 	}
 	uncommittedAncestors := []*BlockNode{}
 	for ii := idx + 1; ii < len(bc.bestChain); ii++ {
@@ -519,7 +506,7 @@ func (bc *Blockchain) commitGrandparents() error {
 	}
 	for ii := 0; ii < len(uncommittedAncestors); ii++ {
 		if err := bc.commitBlock(uncommittedAncestors[ii].Hash); err != nil {
-			return errors.Wrapf(err, "commitGrandparents: Problem committing block %v", uncommittedAncestors[ii].Hash.String())
+			return errors.Wrapf(err, "runCommitRuleOnBestChain: Problem committing block %v", uncommittedAncestors[ii].Hash.String())
 		}
 	}
 	return nil
@@ -530,19 +517,19 @@ func (bc *Blockchain) commitGrandparents() error {
 // between the grandparent and parent of the new block, meaning the grandparent and parent
 // are proposed in consecutive views, and the "parent" is an ancestor of the incoming block (not necessarily consecutive views).
 // Additionally, the grandparent must not already be committed.
-func (bc *Blockchain) canCommitGrandparent(currentBlock *BlockNode) (_grandparentBlockHash *BlockHash, _canCommit bool, _committedBlockSeen bool) {
+func (bc *Blockchain) canCommitGrandparent(currentBlock *BlockNode) (_grandparentBlockHash *BlockHash, _canCommit bool) {
 	// TODO: Is it sufficient that the current block's header points to the parent
 	// or does it need to have something to do with the QC?
 	parent := bc.bestChainMap[*currentBlock.Header.PrevBlockHash]
 	grandParent := bc.bestChainMap[*parent.Header.PrevBlockHash]
 	if grandParent.CommittedStatus == COMMITTED {
-		return nil, false, true
+		return nil, false
 	}
 	if grandParent.Header.ProposedInView == parent.Header.ProposedInView-1 {
 		// Then we can run the commit rule up to the grandparent!
-		return grandParent.Hash, true, false
+		return grandParent.Hash, true
 	}
-	return nil, false, false
+	return nil, false
 }
 
 // commitBlock commits the block with the given hash. Specifically, this updates the
@@ -561,12 +548,12 @@ func (bc *Blockchain) commitBlock(blockHash *BlockHash) error {
 	// Connect a view up to the parent of the block we are committing.
 	utxoView, err := bc.getUtxoViewAtBlockHash(*block.Header.PrevBlockHash)
 	if err != nil {
-		return errors.Wrapf(err, "commitGrandparents: Problem initializing UtxoView: ")
+		return errors.Wrapf(err, "runCommitRuleOnBestChain: Problem initializing UtxoView: ")
 	}
 	// Get the full uncommitted block from the uncommitted blocks map
 	grandParentBlock, exists := bc.uncommittedBlocksMap[*blockHash]
 	if !exists {
-		return errors.Errorf("commitGrandparents: Block %v not found in uncommitted blocks map", blockHash.String())
+		return errors.Errorf("runCommitRuleOnBestChain: Block %v not found in uncommitted blocks map", blockHash.String())
 	}
 	txHashes := collections.Transform(grandParentBlock.Txns, func(txn *MsgDeSoTxn) *BlockHash {
 		return txn.Hash()
@@ -575,7 +562,7 @@ func (bc *Blockchain) commitBlock(blockHash *BlockHash) error {
 	utxoOpsForBlock, err := utxoView.ConnectBlock(grandParentBlock, txHashes, true /*verifySignatures*/, bc.eventManager, block.Header.Height)
 	if err != nil {
 		// TODO: rule error handling? mark blocks invalid?
-		return errors.Wrapf(err, "commitGrandparents: Problem connecting block to view: ")
+		return errors.Wrapf(err, "runCommitRuleOnBestChain: Problem connecting block to view: ")
 	}
 	// Put the block in the db
 	// Note: we're skipping postgres.
@@ -620,7 +607,7 @@ func (bc *Blockchain) commitBlock(blockHash *BlockHash) error {
 		return nil
 	})
 	if err != nil {
-		return errors.Wrapf(err, "commitGrandparents: Problem putting block in db: ")
+		return errors.Wrapf(err, "runCommitRuleOnBestChain: Problem putting block in db: ")
 	}
 	// Update the block node's committed status
 	bc.bestChainMap[*blockNode.Hash].CommittedStatus = COMMITTED

@@ -1279,34 +1279,31 @@ func TestCanCommitGrandparent(t *testing.T) {
 	// and bn2 and bn3 possess a direct parent-child relationship
 	// (meaning they are in consecutive views). So we should be able
 	// to commit bn1.
-	grandparentHash, canCommit, committedBlockSeen := bc.canCommitGrandparent(bn3)
+	grandparentHash, canCommit := bc.canCommitGrandparent(bn3)
 	require.True(t, hash1.IsEqual(grandparentHash))
 	require.True(t, canCommit)
-	require.False(t, committedBlockSeen)
 
 	// Update bn1 to be committed. We no longer can run the commit since bn1 is already
 	// committed. We expect committedBlockSeen to be true.
 	bn1.CommittedStatus = COMMITTED
-	grandparentHash, canCommit, committedBlockSeen = bc.canCommitGrandparent(bn3)
+	grandparentHash, canCommit = bc.canCommitGrandparent(bn3)
 	require.Nil(t, grandparentHash)
 	require.False(t, canCommit)
-	require.True(t, committedBlockSeen)
 
 	// revert bn1's committed status.
 	bn1.CommittedStatus = UNCOMMITTED
 	// Increase bn2's proposed in view, so that it is no longer a direct child of bn3.
 	// We should no longer be able to commit bn1.
 	bn2.Header.ProposedInView = 3
-	grandparentHash, canCommit, committedBlockSeen = bc.canCommitGrandparent(bn3)
+	grandparentHash, canCommit = bc.canCommitGrandparent(bn3)
 	require.Nil(t, grandparentHash)
 	require.False(t, canCommit)
-	require.False(t, committedBlockSeen)
 
 	// TODO: What other cases do we really need tested here?
 }
 
 func TestCommitGrandparent(t *testing.T) {
-	t.Skip("Skipping TestCommitGrandparent - NOT IMPLEMENTED")
+	t.Skip("Skipping TestCommitGrandparent")
 }
 
 func _generateRandomBLSPrivateKey(t *testing.T) *bls.PrivateKey {
