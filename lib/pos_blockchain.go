@@ -638,16 +638,7 @@ func (bc *Blockchain) updateCurrentView(desoBlock *MsgDeSoBlock) {
 // GetUncommittedTipView builds a UtxoView to the uncommitted tip.
 func (bc *Blockchain) GetUncommittedTipView() (*UtxoView, error) {
 	// Connect the uncommitted blocks to the tip so that we can validate subsequent blocks
-	highestCommittedBlock, _ := bc.getHighestCommittedBlock()
-	if highestCommittedBlock == nil {
-		// This is an edge case we'll never hit in practice since all the PoW blocks
-		// are committed.
-		return nil, errors.New("GetUncommittedTipView: No committed blocks found")
-	}
-	if highestCommittedBlock.Hash == nil {
-		return nil, errors.New("GetUncommittedTipView: Committed block has nil hash")
-	}
-	return bc.getUtxoViewAtBlockHash(*highestCommittedBlock.Hash)
+	return bc.getUtxoViewAtBlockHash(*bc.GetBestChainTip().Hash)
 }
 
 // getUtxoViewAtBlockHash builds a UtxoView to the block provided. It does this by
@@ -670,6 +661,7 @@ func (bc *Blockchain) getUtxoViewAtBlockHash(blockHash BlockHash) (*UtxoView, er
 		}
 	}
 	for currentBlock.CommittedStatus == UNCOMMITTED {
+		uncommittedAncestors = append(uncommittedAncestors, currentBlock)
 		currentParentHash := currentBlock.Header.PrevBlockHash
 		if currentParentHash == nil {
 			return nil, errors.Errorf("getUtxoViewAtBlockHash: Block %v has nil PrevBlockHash", currentBlock.Hash)
@@ -678,7 +670,6 @@ func (bc *Blockchain) getUtxoViewAtBlockHash(blockHash BlockHash) (*UtxoView, er
 		if currentBlock == nil {
 			return nil, errors.Errorf("getUtxoViewAtBlockHash: Block %v not found in block index", blockHash)
 		}
-		uncommittedAncestors = append(uncommittedAncestors, currentBlock)
 	}
 	// Connect the uncommitted blocks to the tip so that we can validate subsequent blocks
 	utxoView, err := NewUtxoView(bc.db, bc.params, bc.postgres, bc.snapshot)
@@ -700,6 +691,8 @@ func (bc *Blockchain) getUtxoViewAtBlockHash(blockHash BlockHash) (*UtxoView, er
 			return nil, errors.Wrapf(err, "GetUncommittedTipView: Problem connecting block hash %v", hash.String())
 		}
 	}
+	// Always update the tiphash of the utxo view to be the block hash provided.
+	utxoView.TipHash = &blockHash
 	return utxoView, nil
 }
 
