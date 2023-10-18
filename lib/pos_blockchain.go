@@ -106,7 +106,7 @@ func (bc *Blockchain) processBlockPoS(desoBlock *MsgDeSoBlock, currentView uint6
 	bc.addBlockToBestChain(newBlockNode)
 
 	// 6. Commit grandparent if possible.
-	if err = bc.commitGrandparents(desoBlock); err != nil {
+	if err = bc.commitGrandparents(); err != nil {
 		return false, false, nil, errors.Wrap(err, "processBlockPoS: error committing grandparents: ")
 	}
 
@@ -482,7 +482,7 @@ func (bc *Blockchain) pruneUncommittedBlocks(desoBlock *MsgDeSoBlock) error {
 // commitGrandparents commits the grandparent of the block if possible.
 // Specifically, this updates the CommittedBlockStatus of its grandparent
 // and flushes the view after connecting the grandparent block to the DB.
-func (bc *Blockchain) commitGrandparents(desoBlock *MsgDeSoBlock) error {
+func (bc *Blockchain) commitGrandparents() error {
 	currentBlock := bc.GetBestChainTip()
 	var canCommit bool
 	var blockToCommit *BlockHash
@@ -525,8 +525,14 @@ func (bc *Blockchain) commitGrandparents(desoBlock *MsgDeSoBlock) error {
 	return nil
 }
 
+// canCommitGrandparent determines if the grandparent of the current block can be committed.
+// The grandparent can be committed if there exists a direct parent-child relationship
+// between the grandparent and parent of the new block, meaning the grandparent and parent
+// are proposed in consecutive views, and the "parent" is an ancestor of the incoming block (not necessarily consecutive views).
+// Additionally, the grandparent must not already be committed.
 func (bc *Blockchain) canCommitGrandparent(currentBlock *BlockNode) (_grandparentBlockHash *BlockHash, _canCommit bool, _committedBlockSeen bool) {
-	// we may need to iterate a bit...
+	// TODO: Is it sufficient that the current block's header points to the parent
+	// or does it need to have something to do with the QC?
 	parent := bc.bestChainMap[*currentBlock.Header.PrevBlockHash]
 	grandParent := bc.bestChainMap[*parent.Header.PrevBlockHash]
 	if grandParent.CommittedStatus == COMMITTED {
@@ -539,25 +545,28 @@ func (bc *Blockchain) canCommitGrandparent(currentBlock *BlockNode) (_grandparen
 	return nil, false, false
 }
 
-func (bc *Blockchain) commitBlock(blockhash *BlockHash) error {
-	block, exists := bc.uncommittedBlocksMap[*blockhash]
+// commitBlock commits the block with the given hash. Specifically, this updates the
+// CommittedBlockStatus of the block and flushes the view after connecting the block
+// to the DB and updates relevant badger indexes with info about the block.
+func (bc *Blockchain) commitBlock(blockHash *BlockHash) error {
+	block, exists := bc.uncommittedBlocksMap[*blockHash]
 	if !exists {
-		return errors.Errorf("commitBlock: Block %v not found in uncommitted blocks map", blockhash.String())
+		return errors.Errorf("commitBlock: Block %v not found in uncommitted blocks map", blockHash.String())
 	}
 	// block must be in the best chain. we grab the block node from there.
-	blockNode, exists := bc.bestChainMap[*blockhash]
+	blockNode, exists := bc.bestChainMap[*blockHash]
 	if !exists {
-		return errors.Errorf("commitBlock: Block %v not found in best chain map", blockhash.String())
+		return errors.Errorf("commitBlock: Block %v not found in best chain map", blockHash.String())
 	}
-	// Connect a view up to the parent of the grandparent
+	// Connect a view up to the parent of the block we are committing.
 	utxoView, err := bc.getUtxoViewAtBlockHash(*block.Header.PrevBlockHash)
 	if err != nil {
 		return errors.Wrapf(err, "commitGrandparents: Problem initializing UtxoView: ")
 	}
 	// Get the full uncommitted block from the uncommitted blocks map
-	grandParentBlock, exists := bc.uncommittedBlocksMap[*blockhash]
+	grandParentBlock, exists := bc.uncommittedBlocksMap[*blockHash]
 	if !exists {
-		return errors.Errorf("commitGrandparents: Block %v not found in uncommitted blocks map", blockhash.String())
+		return errors.Errorf("commitGrandparents: Block %v not found in uncommitted blocks map", blockHash.String())
 	}
 	txHashes := collections.Transform(grandParentBlock.Txns, func(txn *MsgDeSoTxn) *BlockHash {
 		return txn.Hash()
@@ -589,7 +598,7 @@ func (bc *Blockchain) commitBlock(blockhash *BlockHash) error {
 		}
 
 		// Store the new block's node in our node index in the db under the
-		//   <height uin32, blockhash BlockHash> -> <node info>
+		//   <height uin32, blockHash BlockHash> -> <node info>
 		// index.
 		if innerErr := PutHeightHashToNodeInfoWithTxn(txn, bc.snapshot, blockNode, false /*bitcoinNodes*/); innerErr != nil {
 			return errors.Wrapf(err, "ProcessBlock: Problem calling PutHeightHashToNodeInfo before validation")
@@ -616,7 +625,12 @@ func (bc *Blockchain) commitBlock(blockhash *BlockHash) error {
 	// Update the block node's committed status
 	bc.bestChainMap[*blockNode.Hash].CommittedStatus = COMMITTED
 	bc.blockIndex[*blockNode.Hash].CommittedStatus = COMMITTED
-	// TODO: find the block in the bestChain slice
+	for _, node := range bc.bestChain {
+		if node.Hash.IsEqual(blockNode.Hash) {
+			node.CommittedStatus = COMMITTED
+			break
+		}
+	}
 	if bc.eventManager != nil {
 		bc.eventManager.blockConnected(&BlockEvent{
 			Block:    block,
@@ -624,6 +638,7 @@ func (bc *Blockchain) commitBlock(blockhash *BlockHash) error {
 			UtxoOps:  utxoOpsForBlock,
 		})
 	}
+	// TODO: What else do we need to do in here?
 	return nil
 }
 

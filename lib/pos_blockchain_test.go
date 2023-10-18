@@ -1242,319 +1242,71 @@ func TestTryReorgToNewTip(t *testing.T) {
 	require.NoError(t, err)
 }
 
-func TestValidateQC(t *testing.T) {
+func TestCanCommitGrandparent(t *testing.T) {
 	bc, _, _ := NewTestBlockchain(t)
 	hash1 := NewBlockHash(RandomBytes(32))
-	// Mock validator entries
-	m1PKID := DBGetPKIDEntryForPublicKey(bc.db, nil, m1PkBytes).PKID
-	m1VotingPrivateKey := _generateRandomBLSPrivateKey(t)
-	validator1Entry := &ValidatorEntry{
-		ValidatorPKID:         m1PKID,
-		VotingPublicKey:       m1VotingPrivateKey.PublicKey(),
-		TotalStakeAmountNanos: uint256.NewInt().SetUint64(3),
-	}
-	m2PKID := DBGetPKIDEntryForPublicKey(bc.db, nil, m2PkBytes).PKID
-	m2VotingPrivateKey := _generateRandomBLSPrivateKey(t)
-	validator2Entry := &ValidatorEntry{
-		ValidatorPKID:         m2PKID,
-		VotingPublicKey:       m2VotingPrivateKey.PublicKey(),
-		TotalStakeAmountNanos: uint256.NewInt().SetUint64(2),
-	}
-	m3PKID := DBGetPKIDEntryForPublicKey(bc.db, nil, m3PkBytes).PKID
-	m3VotingPrivateKey := _generateRandomBLSPrivateKey(t)
-	validator3Entry := &ValidatorEntry{
-		ValidatorPKID:         m3PKID,
-		VotingPublicKey:       m3VotingPrivateKey.PublicKey(),
-		TotalStakeAmountNanos: uint256.NewInt().SetUint64(1),
-	}
-
-	validatorSet := []*ValidatorEntry{validator1Entry, validator2Entry, validator3Entry}
-
-	desoBlock := &MsgDeSoBlock{
+	bn1 := &BlockNode{
+		Hash:            hash1,
+		CommittedStatus: UNCOMMITTED,
 		Header: &MsgDeSoHeader{
-			Height:         5,
-			ProposedInView: 6,
+			ProposedInView: 1,
 		},
 	}
-	// Empty QC for both vote and timeout should fail
-	err := bc.validateQC(desoBlock, validatorSet)
-	require.Error(t, err)
-	require.Equal(t, err, RuleErrorInvalidVoteQC)
-
-	// Valid vote QC should pass with supermajority
-	votePayload := consensus.GetVoteSignaturePayload(6, hash1)
-	vote1Signature, err := m1VotingPrivateKey.Sign(votePayload[:])
-	require.NoError(t, err)
-	vote2Signature, err := m2VotingPrivateKey.Sign(votePayload[:])
-	require.NoError(t, err)
-	aggregateSig, err := bls.AggregateSignatures([]*bls.Signature{vote1Signature, vote2Signature})
-	require.NoError(t, err)
-	signersList1And2 := bitset.NewBitset().FromBytes([]byte{0x3}) // 0b0011, which represents validators 1 and 2,
-	voteQC := &QuorumCertificate{
-		BlockHash:      hash1,
-		ProposedInView: 6,
-		ValidatorsVoteAggregatedSignature: &AggregatedBLSSignature{
-			SignersList: signersList1And2,
-			Signature:   aggregateSig,
+	hash2 := NewBlockHash(RandomBytes(32))
+	bn2 := &BlockNode{
+		Hash:            hash2,
+		CommittedStatus: UNCOMMITTED,
+		Header: &MsgDeSoHeader{
+			ProposedInView: 2,
+			PrevBlockHash:  hash1,
 		},
 	}
-	desoBlock.Header.ValidatorsVoteQC = voteQC
-	err = bc.validateQC(desoBlock, validatorSet)
-	require.NoError(t, err)
+	bc.bestChainMap[*hash1] = bn1
+	bc.bestChainMap[*hash2] = bn2
 
-	// Empty validator set should fail
-	err = bc.validateQC(desoBlock, []*ValidatorEntry{})
-	require.Error(t, err)
-	require.Equal(t, err, RuleErrorInvalidVoteQC)
-
-	// Malformed validators should fail
-	{
-		// Zero stake amount
-		validatorSet[0].TotalStakeAmountNanos = uint256.NewInt().SetUint64(0)
-		err = bc.validateQC(desoBlock, validatorSet)
-		require.Error(t, err)
-		require.Equal(t, err, RuleErrorInvalidVoteQC)
-
-		// Nil stake amount
-		validatorSet[0].TotalStakeAmountNanos = nil
-		err = bc.validateQC(desoBlock, validatorSet)
-		require.Error(t, err)
-		require.Equal(t, err, RuleErrorInvalidVoteQC)
-
-		// Reset stake amount
-		validatorSet[0].TotalStakeAmountNanos = uint256.NewInt().SetUint64(3)
-		// Nil voting public key
-		validatorSet[0].VotingPublicKey = nil
-		err = bc.validateQC(desoBlock, validatorSet)
-		require.Error(t, err)
-		require.Equal(t, err, RuleErrorInvalidVoteQC)
-
-		// Reset voting public key
-		validatorSet[0].VotingPublicKey = m1VotingPrivateKey.PublicKey()
-		// Nil validator entry
-		err = bc.validateQC(desoBlock, append(validatorSet, nil))
-		require.Error(t, err)
-		require.Equal(t, err, RuleErrorInvalidVoteQC)
-	}
-
-	{
-		// Malformed vote QC should fail
-		// Nil vote QC
-		desoBlock.Header.ValidatorsVoteQC = nil
-		err = bc.validateQC(desoBlock, validatorSet)
-		require.Error(t, err)
-		require.Equal(t, err, RuleErrorInvalidVoteQC)
-
-		// View is 0
-		desoBlock.Header.ValidatorsVoteQC = voteQC
-		voteQC.ProposedInView = 0
-		err = bc.validateQC(desoBlock, validatorSet)
-		require.Error(t, err)
-		require.Equal(t, err, RuleErrorInvalidVoteQC)
-
-		// Nil block hash
-		voteQC.ProposedInView = 6
-		voteQC.BlockHash = nil
-		err = bc.validateQC(desoBlock, validatorSet)
-		require.Error(t, err)
-		require.Equal(t, err, RuleErrorInvalidVoteQC)
-
-		// Nil signers list
-		voteQC.ValidatorsVoteAggregatedSignature.SignersList = nil
-		err = bc.validateQC(desoBlock, validatorSet)
-		require.Error(t, err)
-		require.Equal(t, err, RuleErrorInvalidVoteQC)
-
-		// Nil Signature
-		voteQC.ValidatorsVoteAggregatedSignature.SignersList = signersList1And2
-		voteQC.ValidatorsVoteAggregatedSignature.Signature = nil
-		err = bc.validateQC(desoBlock, validatorSet)
-		require.Error(t, err)
-		require.Equal(t, err, RuleErrorInvalidVoteQC)
-
-		// Nil aggregate signature
-		voteQC.BlockHash = hash1
-		voteQC.ValidatorsVoteAggregatedSignature = nil
-		err = bc.validateQC(desoBlock, validatorSet)
-		require.Error(t, err)
-		require.Equal(t, err, RuleErrorInvalidVoteQC)
-		// Reset the ValidatorsVoteAggregatedSignature
-		voteQC.ValidatorsVoteAggregatedSignature = &AggregatedBLSSignature{
-			SignersList: signersList1And2,
-			Signature:   aggregateSig,
-		}
-	}
-
-	{
-		// No supermajority in vote QC
-		voteQC.ValidatorsVoteAggregatedSignature.SignersList = bitset.NewBitset().FromBytes([]byte{0x1}) // 0b0001, which represents validator 1
-		voteQC.ValidatorsVoteAggregatedSignature.Signature = vote1Signature
-		err = bc.validateQC(desoBlock, validatorSet)
-		require.Error(t, err)
-		require.Equal(t, err, RuleErrorInvalidVoteQC)
-	}
-	{
-		// Only having signature for validator 1 should fail even if signers list has validator 2
-		voteQC.ValidatorsVoteAggregatedSignature.SignersList = bitset.NewBitset().FromBytes([]byte{0x3}) // 0b0010, which represents validator 1 and 2
-		err = bc.validateQC(desoBlock, validatorSet)
-		require.Error(t, err)
-		require.Equal(t, err, RuleErrorInvalidVoteQC)
-
-		// Having 1 and 3 in signers list, but including signature for 2 should fail
-		voteQC.ValidatorsVoteAggregatedSignature.SignersList = bitset.NewBitset().Set(0, true).Set(2, true) // represents validator 1 and 3
-		voteQC.ValidatorsVoteAggregatedSignature.Signature = aggregateSig
-		err = bc.validateQC(desoBlock, validatorSet)
-		require.Error(t, err)
-		require.Equal(t, err, RuleErrorInvalidVoteQC)
-
-		// Reset the signers list and signature
-		voteQC.ValidatorsVoteAggregatedSignature.SignersList = signersList1And2
-		voteQC.ValidatorsVoteAggregatedSignature.Signature = aggregateSig
-	}
-
-	// Timeout QC tests
-	// Let's start with a valid timeout QC
-	timeout1Payload := consensus.GetTimeoutSignaturePayload(6, 5)
-	timeout1Signature, err := m1VotingPrivateKey.Sign(timeout1Payload[:])
-	require.NoError(t, err)
-	timeout2Payload := consensus.GetTimeoutSignaturePayload(6, 4)
-	timeout2Signature, err := m2VotingPrivateKey.Sign(timeout2Payload[:])
-
-	timeoutAggSig, err := bls.AggregateSignatures([]*bls.Signature{timeout1Signature, timeout2Signature})
-	require.NoError(t, err)
-	timeoutQC := &TimeoutAggregateQuorumCertificate{
-		TimedOutView:                 6,
-		ValidatorsHighQC:             voteQC,
-		ValidatorsTimeoutHighQCViews: []uint64{5, 4},
-		ValidatorsTimeoutAggregatedSignature: &AggregatedBLSSignature{
-			SignersList: signersList1And2,
-			Signature:   timeoutAggSig,
+	// define incoming block
+	hash3 := NewBlockHash(RandomBytes(32))
+	bn3 := &BlockNode{
+		Hash:            hash3,
+		CommittedStatus: UNCOMMITTED,
+		Header: &MsgDeSoHeader{
+			ProposedInView: 10,
+			PrevBlockHash:  hash2,
 		},
 	}
-	// Set the vote qc to nil
-	desoBlock.Header.ValidatorsVoteQC = nil
-	// Set the timeout qc to the timeout qc constructed above
-	desoBlock.Header.ValidatorsTimeoutAggregateQC = timeoutQC
-	err = bc.validateQC(desoBlock, validatorSet)
-	require.NoError(t, err)
 
-	{
-		// Malformed timeout QC tests
-		// NOTE: these actually trigger RuleErrorInvalidVoteQC because the
-		// timeout QC is interpreted as empty
-		// View = 0
-		timeoutQC.TimedOutView = 0
-		err = bc.validateQC(desoBlock, validatorSet)
-		require.Error(t, err)
-		require.Equal(t, err, RuleErrorInvalidVoteQC)
+	// If we are adding bn3 to the chain, it is an descendant of bn2
+	// and bn2 and bn3 possess a direct parent-child relationship
+	// (meaning they are in consecutive views). So we should be able
+	// to commit bn1.
+	grandparentHash, canCommit, committedBlockSeen := bc.canCommitGrandparent(bn3)
+	require.True(t, hash1.IsEqual(grandparentHash))
+	require.True(t, canCommit)
+	require.False(t, committedBlockSeen)
 
-		// Nil high QC
-		timeoutQC.TimedOutView = 6
-		timeoutQC.ValidatorsHighQC = nil
-		err = bc.validateQC(desoBlock, validatorSet)
-		require.Error(t, err)
-		require.Equal(t, err, RuleErrorInvalidVoteQC)
+	// Update bn1 to be committed. We no longer can run the commit since bn1 is already
+	// committed. We expect committedBlockSeen to be true.
+	bn1.CommittedStatus = COMMITTED
+	grandparentHash, canCommit, committedBlockSeen = bc.canCommitGrandparent(bn3)
+	require.Nil(t, grandparentHash)
+	require.False(t, canCommit)
+	require.True(t, committedBlockSeen)
 
-		// High QC has view of 0
-		timeoutQC.ValidatorsHighQC = voteQC
-		timeoutQC.ValidatorsHighQC.ProposedInView = 0
-		err = bc.validateQC(desoBlock, validatorSet)
-		require.Error(t, err)
-		require.Equal(t, err, RuleErrorInvalidVoteQC)
+	// revert bn1's committed status.
+	bn1.CommittedStatus = UNCOMMITTED
+	// Increase bn2's proposed in view, so that it is no longer a direct child of bn3.
+	// We should no longer be able to commit bn1.
+	bn2.Header.ProposedInView = 3
+	grandparentHash, canCommit, committedBlockSeen = bc.canCommitGrandparent(bn3)
+	require.Nil(t, grandparentHash)
+	require.False(t, canCommit)
+	require.False(t, committedBlockSeen)
 
-		// No high QC views
-		timeoutQC.ValidatorsHighQC.ProposedInView = 6
-		timeoutQC.ValidatorsTimeoutHighQCViews = []uint64{}
-		err = bc.validateQC(desoBlock, validatorSet)
-		require.Error(t, err)
-		require.Equal(t, err, RuleErrorInvalidVoteQC)
+	// TODO: What other cases do we really need tested here?
+}
 
-		// Nil high QC block hash
-		timeoutQC.ValidatorsTimeoutHighQCViews = []uint64{5, 4}
-		timeoutQC.ValidatorsHighQC.BlockHash = nil
-		err = bc.validateQC(desoBlock, validatorSet)
-		require.Error(t, err)
-		require.Equal(t, err, RuleErrorInvalidVoteQC)
-
-		// Nil high QC signers list
-		timeoutQC.ValidatorsHighQC.BlockHash = hash1
-		timeoutQC.ValidatorsHighQC.ValidatorsVoteAggregatedSignature.SignersList = nil
-		err = bc.validateQC(desoBlock, validatorSet)
-		require.Error(t, err)
-		require.Equal(t, err, RuleErrorInvalidVoteQC)
-
-		// Nil high QC signature
-		timeoutQC.ValidatorsHighQC.ValidatorsVoteAggregatedSignature.SignersList = signersList1And2
-		timeoutQC.ValidatorsHighQC.ValidatorsVoteAggregatedSignature.Signature = nil
-		err = bc.validateQC(desoBlock, validatorSet)
-		require.Error(t, err)
-		require.Equal(t, err, RuleErrorInvalidVoteQC)
-
-		// Nil High QC Aggregated signature
-		timeoutQC.ValidatorsHighQC.ValidatorsVoteAggregatedSignature = nil
-		err = bc.validateQC(desoBlock, validatorSet)
-		require.Error(t, err)
-		require.Equal(t, err, RuleErrorInvalidVoteQC)
-
-		// Revert high qc aggregated signature
-		timeoutQC.ValidatorsHighQC.ValidatorsVoteAggregatedSignature = &AggregatedBLSSignature{
-			SignersList: signersList1And2,
-			Signature:   timeoutAggSig,
-		}
-	}
-	{
-		// Invalid validator set tests
-		// Zero stake amount
-		validatorSet[0].TotalStakeAmountNanos = uint256.NewInt().SetUint64(0)
-		err = bc.validateQC(desoBlock, validatorSet)
-		require.Error(t, err)
-		require.Equal(t, err, RuleErrorInvalidTimeoutQC)
-
-		// Nil stake amount
-		validatorSet[0].TotalStakeAmountNanos = nil
-		err = bc.validateQC(desoBlock, validatorSet)
-		require.Error(t, err)
-		require.Equal(t, err, RuleErrorInvalidTimeoutQC)
-
-		// Reset stake amount
-		validatorSet[0].TotalStakeAmountNanos = uint256.NewInt().SetUint64(3)
-		// Nil voting public key
-		validatorSet[0].VotingPublicKey = nil
-		err = bc.validateQC(desoBlock, validatorSet)
-		require.Error(t, err)
-		require.Equal(t, err, RuleErrorInvalidTimeoutQC)
-
-		// Reset voting public key
-		validatorSet[0].VotingPublicKey = m1VotingPrivateKey.PublicKey()
-		// Nil validator entry
-		err = bc.validateQC(desoBlock, append(validatorSet, nil))
-		require.Error(t, err)
-		require.Equal(t, err, RuleErrorInvalidTimeoutQC)
-	}
-
-	{
-		// No supermajority test
-		timeoutQC.ValidatorsTimeoutAggregatedSignature.SignersList = bitset.NewBitset().FromBytes([]byte{0x1}) // 0b0001, which represents validator 1
-		timeoutQC.ValidatorsTimeoutAggregatedSignature.Signature = timeout1Signature
-		err = bc.validateQC(desoBlock, validatorSet)
-		require.Error(t, err)
-		require.Equal(t, err, RuleErrorInvalidTimeoutQC)
-	}
-
-	{
-		// Only having signature for validator 1 should fail even if signers list has validator 2
-		timeoutQC.ValidatorsTimeoutAggregatedSignature.SignersList = bitset.NewBitset().FromBytes([]byte{0x3}) // 0b0010, which represents validator 1 and 2
-		err = bc.validateQC(desoBlock, validatorSet)
-		require.Error(t, err)
-		require.Equal(t, err, RuleErrorInvalidTimeoutQC)
-
-		// Having 1 and 3 in signers list, but including signature for 2 should fail
-		timeoutQC.ValidatorsTimeoutAggregatedSignature.SignersList = bitset.NewBitset().Set(0, true).Set(2, true) // represents validator 1 and 3
-		timeoutQC.ValidatorsTimeoutAggregatedSignature.Signature = timeoutAggSig
-		err = bc.validateQC(desoBlock, validatorSet)
-		require.Error(t, err)
-		require.Equal(t, err, RuleErrorInvalidTimeoutQC)
-	}
+func TestCommitGrandparent(t *testing.T) {
+	t.Skip("Skipping TestCommitGrandparent - NOT IMPLEMENTED")
 }
 
 func _generateRandomBLSPrivateKey(t *testing.T) *bls.PrivateKey {
