@@ -527,4 +527,3 @@ func generateRandomBytes(numBytes int) []byte {
 	rand.Read(randomBytes)
 	return randomBytes
 }
-
