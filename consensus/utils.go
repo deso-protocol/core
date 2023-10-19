@@ -392,6 +392,26 @@ func createDummyQC(view uint64, blockHash BlockHash) *quorumCertificate {
 	}
 }
 
+func createDummyAggQc(view uint64, highQCView uint64) *aggregateQuorumCertificate {
+	timeoutSignaturePayload := GetTimeoutSignaturePayload(view, highQCView)
+	dummyQC := createDummyQC(highQCView, createDummyBlockHash())
+	blsPrivateKey1, _ := bls.NewPrivateKey()
+	blsSignature1, _ := blsPrivateKey1.Sign(timeoutSignaturePayload[:])
+	blsPrivateKey2, _ := bls.NewPrivateKey()
+	blsSignature2, _ := blsPrivateKey2.Sign(timeoutSignaturePayload[:])
+	signersList := bitset.NewBitset().Set(0, true).Set(1, true)
+	aggregateSignature, _ := bls.AggregateSignatures([]*bls.Signature{blsSignature1, blsSignature2})
+	return &aggregateQuorumCertificate{
+		view:        view,
+		highQC:      dummyQC,
+		highQCViews: []uint64{highQCView, highQCView},
+		aggregatedSignature: &aggregatedSignature{
+			signersList: signersList,
+			signature:   aggregateSignature,
+		},
+	}
+}
+
 func createDummyBLSSignature() *bls.Signature {
 	blsPrivateKey, _ := bls.NewPrivateKey()
 	blockHashValue := createDummyBlockHash().GetValue()

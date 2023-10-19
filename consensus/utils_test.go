@@ -396,20 +396,3 @@ func TestIsSuperMajorityStake(t *testing.T) {
 		require.True(t, isSuperMajorityStake(totalStake, totalStake))
 	}
 }
-
-func createDummyValidatorSet() []Validator {
-	validators := []*validator{
-		{
-			publicKey:   createDummyBLSPublicKey(),
-			stakeAmount: uint256.NewInt().SetUint64(100),
-		},
-		{
-			publicKey:   createDummyBLSPublicKey(),
-			stakeAmount: uint256.NewInt().SetUint64(50),
-		},
-	}
-	// Cast the slice of concrete structs []*validators to a slice of interfaces []Validator
-	return collections.Transform(validators, func(v *validator) Validator {
-		return v
-	})
-}
