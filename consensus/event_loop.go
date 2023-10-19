@@ -65,6 +65,7 @@ func (fc *FastHotStuffEventLoop) Init(
 	fc.currentView = tip.Block.GetView() + 1
 
 	// Reset QC construction status for the current view
+	fc.hasCrankTimerRunForCurrentView = false
 	fc.hasConstructedQCInCurrentView = false
 
 	// Reset all internal data structures for votes and timeouts
@@ -101,6 +102,7 @@ func (fc *FastHotStuffEventLoop) AdvanceViewOnTimeout() (uint64, error) {
 	fc.currentView++
 
 	// Reset QC construction status for the current view
+	fc.hasCrankTimerRunForCurrentView = false
 	fc.hasConstructedQCInCurrentView = false
 
 	// Evict all stale votes and timeouts
@@ -142,6 +144,7 @@ func (fc *FastHotStuffEventLoop) ProcessTipBlock(tip BlockWithValidators, safeBl
 	fc.currentView = fc.tip.block.GetView() + 1
 
 	// Reset QC construction status for the current view
+	fc.hasCrankTimerRunForCurrentView = false
 	fc.hasConstructedQCInCurrentView = false
 
 	// Evict all stale votes and timeouts
@@ -268,7 +271,7 @@ func (fc *FastHotStuffEventLoop) ProcessValidatorVote(vote VoteMessage) error {
 
 	// Check if the crank timer has elapsed or the event loop has constructed a QC in the current view.
 	// If so, then there's nothing more to do.
-	if fc.crankTimerTask.IsScheduled() || fc.hasConstructedQCInCurrentView {
+	if !fc.hasCrankTimerRunForCurrentView || fc.hasConstructedQCInCurrentView {
 		return nil
 	}
 
@@ -353,7 +356,7 @@ func (fc *FastHotStuffEventLoop) ProcessValidatorTimeout(timeout TimeoutMessage)
 
 	// Check if the crank timer has elapsed or the event loop has constructed a QC in the current view.
 	// If so, then there's nothing more to do.
-	if fc.crankTimerTask.IsScheduled() || fc.hasConstructedQCInCurrentView {
+	if !fc.hasCrankTimerRunForCurrentView || fc.hasConstructedQCInCurrentView {
 		return nil
 	}
 
@@ -472,9 +475,8 @@ func (fc *FastHotStuffEventLoop) onCrankTimerTaskExecuted(blockConstructionView 
 		return
 	}
 
-	// Mark the crank timer task as not scheduled, so we can verify from the rest of the
-	// event loop when the timer has elapsed.
-	defer fc.crankTimerTask.Cancel()
+	// Mark that the crank timer has elapsed
+	fc.hasCrankTimerRunForCurrentView = true
 
 	// Check if the conditions are met to construct a QC from votes for the chain tip. If so,
 	// we send a signal to the server and cancel the crank timer task. The server will
@@ -685,7 +687,7 @@ func (fc *FastHotStuffEventLoop) tryConstructTimeoutQCInCurrentView() *FastHotSt
 	// Happy path
 	return &FastHotStuffEvent{
 		EventType:      FastHotStuffEventTypeConstructTimeoutQC, // The event type
-		View:           fc.currentView,                          // The view that we have a timeout QC for
+		View:           fc.currentView,                          // The view that the timeout QC is proposed in
 		TipBlockHash:   validatorsHighQC.GetBlockHash(),         // The block hash that we extend from
 		TipBlockHeight: safeBlock.GetHeight(),                   // The block height that we extend from
 		AggregateQC: &aggregateQuorumCertificate{
@@ -838,9 +840,8 @@ func (fc *FastHotStuffEventLoop) fetchSafeBlockInfo(blockHash BlockHash) (
 	// number of uncommitted blocks in the blockchain. During steady stake, it will have a size of 3 blocks
 	// (one committed, two uncommitted). In the worse case, where the network has an unlucky series of
 	// timeout -> block -> timeout -> block,... it can still be expected to have < 10 blocks.
-	blockHashValue := blockHash.GetValue()
 	for _, block := range fc.safeBlocks {
-		if block.block.GetBlockHash().GetValue() == blockHashValue {
+		if isEqualBlockHashes(block.block.GetBlockHash(), blockHash) {
 			return true, block.block, block.validatorSet, block.validatorLookup
 		}
 	}

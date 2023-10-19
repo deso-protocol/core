@@ -155,10 +155,11 @@ type FastHotStuffEventLoop struct {
 	// the timeout signal will be triggered for this view.
 	currentView uint64
 
-	// Signifies whether or not the event loop has constructed a QC or timeout QC for the current view.
-	// This is an optimization that is useful to prevent the event loop from signaling the server multiple
-	// times for the same view.
-	hasConstructedQCInCurrentView bool
+	// These track whether the event loop has already run the crank timer for the current view and
+	// constructed a QC for the current view. They ensure that we only attempt to construct a QC once
+	// the crank timer has elapsed, and only signal for QC construction once per view.
+	hasCrankTimerRunForCurrentView bool
+	hasConstructedQCInCurrentView  bool
 
 	// Block hash of the current tip of the block-chain.
 	tip blockWithValidatorLookup
