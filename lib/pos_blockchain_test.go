@@ -1160,6 +1160,7 @@ func TestTryReorgToNewTip(t *testing.T) {
 			ProposedInView: 10,
 		},
 	}
+
 	ancestors, err := bc.getLineageFromCommittedTip(newBlock)
 	require.NoError(t, err)
 	hasReorged, err := bc.tryReorgToNewTip(newBlock, 9, ancestors)
@@ -1239,6 +1240,70 @@ func TestTryReorgToNewTip(t *testing.T) {
 	hasReorged, err = bc.tryReorgToNewTip(newBlock, 9, ancestors)
 	require.False(t, hasReorged)
 	require.NoError(t, err)
+}
+
+func TestCanCommitGrandparent(t *testing.T) {
+	bc, _, _ := NewTestBlockchain(t)
+	hash1 := NewBlockHash(RandomBytes(32))
+	bn1 := &BlockNode{
+		Hash:            hash1,
+		CommittedStatus: UNCOMMITTED,
+		Header: &MsgDeSoHeader{
+			ProposedInView: 1,
+		},
+	}
+	hash2 := NewBlockHash(RandomBytes(32))
+	bn2 := &BlockNode{
+		Hash:            hash2,
+		CommittedStatus: UNCOMMITTED,
+		Header: &MsgDeSoHeader{
+			ProposedInView: 2,
+			PrevBlockHash:  hash1,
+		},
+	}
+	bc.bestChainMap[*hash1] = bn1
+	bc.bestChainMap[*hash2] = bn2
+
+	// define incoming block
+	hash3 := NewBlockHash(RandomBytes(32))
+	bn3 := &BlockNode{
+		Hash:            hash3,
+		CommittedStatus: UNCOMMITTED,
+		Header: &MsgDeSoHeader{
+			ProposedInView: 10,
+			PrevBlockHash:  hash2,
+		},
+	}
+
+	// If we are adding bn3 to the chain, it is an descendant of bn2
+	// and bn2 and bn3 possess a direct parent-child relationship
+	// (meaning they are in consecutive views). So we should be able
+	// to commit bn1.
+	grandparentHash, canCommit := bc.canCommitGrandparent(bn3)
+	require.True(t, hash1.IsEqual(grandparentHash))
+	require.True(t, canCommit)
+
+	// Update bn1 to be committed. We no longer can run the commit since bn1 is already
+	// committed. We expect committedBlockSeen to be true.
+	bn1.CommittedStatus = COMMITTED
+	grandparentHash, canCommit = bc.canCommitGrandparent(bn3)
+	require.Nil(t, grandparentHash)
+	require.False(t, canCommit)
+
+	// revert bn1's committed status.
+	bn1.CommittedStatus = UNCOMMITTED
+	// Increase bn2's proposed in view, so that it is no longer a direct child of bn3.
+	// We should no longer be able to commit bn1.
+	bn2.Header.ProposedInView = 3
+	grandparentHash, canCommit = bc.canCommitGrandparent(bn3)
+	require.Nil(t, grandparentHash)
+	require.False(t, canCommit)
+
+	// TODO: What other cases do we really need tested here?
+}
+
+func TestCommitGrandparent(t *testing.T) {
+	t.Skip("Skipping TestCommitGrandparent")
 }
 
 func _generateRandomBLSPrivateKey(t *testing.T) *bls.PrivateKey {

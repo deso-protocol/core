@@ -3,6 +3,7 @@ package lib
 import (
 	"github.com/deso-protocol/core/collections"
 	"github.com/deso-protocol/core/consensus"
+	"github.com/dgraph-io/badger/v3"
 	"github.com/golang/glog"
 	"github.com/pkg/errors"
 	"math"
@@ -105,7 +106,7 @@ func (bc *Blockchain) processBlockPoS(desoBlock *MsgDeSoBlock, currentView uint6
 	bc.addBlockToBestChain(newBlockNode)
 
 	// 6. Commit grandparent if possible.
-	if err = bc.commitGrandparents(desoBlock); err != nil {
+	if err = bc.runCommitRuleOnBestChain(); err != nil {
 		return false, false, nil, errors.Wrap(err, "processBlockPoS: error committing grandparents: ")
 	}
 
@@ -478,12 +479,154 @@ func (bc *Blockchain) pruneUncommittedBlocks(desoBlock *MsgDeSoBlock) error {
 	return errors.New("IMPLEMENT ME")
 }
 
-// commitGrandparents commits the grandparent of the block if possible.
+// runCommitRuleOnBestChain commits the grandparent of the block if possible.
 // Specifically, this updates the CommittedBlockStatus of its grandparent
 // and flushes the view after connecting the grandparent block to the DB.
-func (bc *Blockchain) commitGrandparents(desoBlock *MsgDeSoBlock) error {
-	// TODO: Implement me.
-	return errors.New("IMPLEMENT ME")
+func (bc *Blockchain) runCommitRuleOnBestChain() error {
+	currentBlock := bc.GetBestChainTip()
+	// If we can commit the grandparent, commit it.
+	// Otherwise, we can't commit it and return nil.
+	blockToCommit, canCommit := bc.canCommitGrandparent(currentBlock)
+	if !canCommit {
+		return nil
+	}
+	// Find all uncommitted ancestors of block to commit
+	_, idx := bc.getHighestCommittedBlock()
+	if idx == -1 {
+		// This is an edge case we'll never hit in practice since all the PoW blocks
+		// are committed.
+		return errors.New("runCommitRuleOnBestChain: No committed blocks found")
+	}
+	uncommittedAncestors := []*BlockNode{}
+	for ii := idx + 1; ii < len(bc.bestChain); ii++ {
+		uncommittedAncestors = append(uncommittedAncestors, bc.bestChain[ii])
+		if bc.bestChain[ii].Hash.IsEqual(blockToCommit) {
+			break
+		}
+	}
+	for ii := 0; ii < len(uncommittedAncestors); ii++ {
+		if err := bc.commitBlock(uncommittedAncestors[ii].Hash); err != nil {
+			return errors.Wrapf(err, "runCommitRuleOnBestChain: Problem committing block %v", uncommittedAncestors[ii].Hash.String())
+		}
+	}
+	return nil
+}
+
+// canCommitGrandparent determines if the grandparent of the current block can be committed.
+// The grandparent can be committed if there exists a direct parent-child relationship
+// between the grandparent and parent of the new block, meaning the grandparent and parent
+// are proposed in consecutive views, and the "parent" is an ancestor of the incoming block (not necessarily consecutive views).
+// Additionally, the grandparent must not already be committed.
+func (bc *Blockchain) canCommitGrandparent(currentBlock *BlockNode) (_grandparentBlockHash *BlockHash, _canCommit bool) {
+	// TODO: Is it sufficient that the current block's header points to the parent
+	// or does it need to have something to do with the QC?
+	parent := bc.bestChainMap[*currentBlock.Header.PrevBlockHash]
+	grandParent := bc.bestChainMap[*parent.Header.PrevBlockHash]
+	if grandParent.CommittedStatus == COMMITTED {
+		return nil, false
+	}
+	if grandParent.Header.ProposedInView == parent.Header.ProposedInView-1 {
+		// Then we can run the commit rule up to the grandparent!
+		return grandParent.Hash, true
+	}
+	return nil, false
+}
+
+// commitBlock commits the block with the given hash. Specifically, this updates the
+// CommittedBlockStatus of the block and flushes the view after connecting the block
+// to the DB and updates relevant badger indexes with info about the block.
+func (bc *Blockchain) commitBlock(blockHash *BlockHash) error {
+	block, exists := bc.uncommittedBlocksMap[*blockHash]
+	if !exists {
+		return errors.Errorf("commitBlock: Block %v not found in uncommitted blocks map", blockHash.String())
+	}
+	// block must be in the best chain. we grab the block node from there.
+	blockNode, exists := bc.bestChainMap[*blockHash]
+	if !exists {
+		return errors.Errorf("commitBlock: Block %v not found in best chain map", blockHash.String())
+	}
+	// Connect a view up to the parent of the block we are committing.
+	utxoView, err := bc.getUtxoViewAtBlockHash(*block.Header.PrevBlockHash)
+	if err != nil {
+		return errors.Wrapf(err, "runCommitRuleOnBestChain: Problem initializing UtxoView: ")
+	}
+	// Get the full uncommitted block from the uncommitted blocks map
+	grandParentBlock, exists := bc.uncommittedBlocksMap[*blockHash]
+	if !exists {
+		return errors.Errorf("runCommitRuleOnBestChain: Block %v not found in uncommitted blocks map", blockHash.String())
+	}
+	txHashes := collections.Transform(grandParentBlock.Txns, func(txn *MsgDeSoTxn) *BlockHash {
+		return txn.Hash()
+	})
+	// Connect the block to the view!
+	utxoOpsForBlock, err := utxoView.ConnectBlock(grandParentBlock, txHashes, true /*verifySignatures*/, bc.eventManager, block.Header.Height)
+	if err != nil {
+		// TODO: rule error handling? mark blocks invalid?
+		return errors.Wrapf(err, "runCommitRuleOnBestChain: Problem connecting block to view: ")
+	}
+	// Put the block in the db
+	// Note: we're skipping postgres.
+	// TODO: this is copy pasta from ProcessBlockPoW. Refactor.
+	err = bc.db.Update(func(txn *badger.Txn) error {
+		if bc.snapshot != nil {
+			bc.snapshot.PrepareAncestralRecordsFlush()
+			defer bc.snapshot.StartAncestralRecordsFlush(true)
+			glog.V(2).Infof("ProcessBlock: Preparing snapshot flush")
+		}
+		// Store the new block in the db under the
+		//   <blockHash> -> <serialized block>
+		// index.
+		// TODO: In the archival mode, we'll be setting ancestral entries for the block reward. Note that it is
+		// 	set in PutBlockWithTxn. Block rewards are part of the state, and they should be identical to the ones
+		// 	we've fetched during Hypersync. Is there an edge-case where for some reason they're not identical? Or
+		// 	somehow ancestral records get corrupted?
+		if innerErr := PutBlockWithTxn(txn, bc.snapshot, block); innerErr != nil {
+			return errors.Wrapf(err, "ProcessBlock: Problem calling PutBlock")
+		}
+
+		// Store the new block's node in our node index in the db under the
+		//   <height uin32, blockHash BlockHash> -> <node info>
+		// index.
+		if innerErr := PutHeightHashToNodeInfoWithTxn(txn, bc.snapshot, blockNode, false /*bitcoinNodes*/); innerErr != nil {
+			return errors.Wrapf(err, "ProcessBlock: Problem calling PutHeightHashToNodeInfo before validation")
+		}
+
+		// Set the best node hash to this one. Note the header chain should already
+		// be fully aware of this block so we shouldn't update it here.
+		if innerErr := PutBestHashWithTxn(txn, bc.snapshot, blockNode.Hash, ChainTypeDeSoBlock); innerErr != nil {
+			return errors.Wrapf(innerErr, "ProcessBlock: Problem calling PutBestHash after validation")
+		}
+		// Write the utxo operations for this block to the db so we can have the
+		// ability to roll it back in the future.
+		if innerErr := PutUtxoOperationsForBlockWithTxn(txn, bc.snapshot, uint64(blockNode.Height), blockNode.Hash, utxoOpsForBlock); innerErr != nil {
+			return errors.Wrapf(innerErr, "ProcessBlock: Problem writing utxo operations to db on simple add to tip")
+		}
+		if innerErr := utxoView.FlushToDbWithTxn(txn, uint64(blockNode.Height)); innerErr != nil {
+			return errors.Wrapf(innerErr, "ProcessBlock: Problem flushing UtxoView to db")
+		}
+		return nil
+	})
+	if err != nil {
+		return errors.Wrapf(err, "runCommitRuleOnBestChain: Problem putting block in db: ")
+	}
+	// Update the block node's committed status
+	bc.bestChainMap[*blockNode.Hash].CommittedStatus = COMMITTED
+	bc.blockIndex[*blockNode.Hash].CommittedStatus = COMMITTED
+	for _, node := range bc.bestChain {
+		if node.Hash.IsEqual(blockNode.Hash) {
+			node.CommittedStatus = COMMITTED
+			break
+		}
+	}
+	if bc.eventManager != nil {
+		bc.eventManager.blockConnected(&BlockEvent{
+			Block:    block,
+			UtxoView: utxoView,
+			UtxoOps:  utxoOpsForBlock,
+		})
+	}
+	// TODO: What else do we need to do in here?
+	return nil
 }
 
 // updateCurrentView updates the current view to the block's view + 1.
