@@ -3,11 +3,9 @@
 package consensus
 
 import (
-	"crypto/rand"
 	"testing"
 
 	"github.com/deso-protocol/core/bls"
-	"github.com/deso-protocol/core/collections"
 	"github.com/deso-protocol/core/collections/bitset"
 	"github.com/holiman/uint256"
 	"github.com/stretchr/testify/require"
@@ -529,3 +527,4 @@ func generateRandomBytes(numBytes int) []byte {
 	rand.Read(randomBytes)
 	return randomBytes
 }
+

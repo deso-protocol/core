@@ -1,12 +1,14 @@
 package consensus
 
 import (
+	"bytes"
+	"crypto/rand"
 	"encoding/binary"
-	"github.com/deso-protocol/core/collections/bitset"
 	"reflect"
 
 	"github.com/deso-protocol/core/bls"
 	"github.com/deso-protocol/core/collections"
+	"github.com/deso-protocol/core/collections/bitset"
 	"github.com/holiman/uint256"
 	"golang.org/x/crypto/sha3"
 )
@@ -302,4 +304,122 @@ func isSuperMajorityStake(stake *uint256.Int, totalStake *uint256.Int) bool {
 
 	// Check if 3Cq - 2N - 1 >= 0
 	return superMajorityConditionSum.Sign() >= 0
+}
+
+func isEqualBlockHashes(hash1 BlockHash, hash2 BlockHash) bool {
+	hash1Value := hash1.GetValue()
+	hash2Value := hash2.GetValue()
+
+	return bytes.Equal(hash1Value[:], hash2Value[:])
+}
+
+func createDummyValidatorSet() []Validator {
+	validators := []*validator{
+		{
+			publicKey:   createDummyBLSPublicKey(),
+			stakeAmount: uint256.NewInt().SetUint64(100),
+		},
+		{
+			publicKey:   createDummyBLSPublicKey(),
+			stakeAmount: uint256.NewInt().SetUint64(50),
+		},
+	}
+	// Cast the slice of concrete structs []*validators to a slice of interfaces []Validator
+	return collections.Transform(validators, func(v *validator) Validator {
+		return v
+	})
+}
+
+func createDummyBlock(view uint64) *block {
+	return &block{
+		blockHash: createDummyBlockHash(),
+		view:      view,
+		height:    1,
+		qc:        createDummyQC(view-1, createDummyBlockHash()),
+	}
+}
+
+func createDummyVoteMessage(view uint64) *voteMessage {
+	blockHash := createDummyBlockHash()
+	signaturePayload := GetVoteSignaturePayload(view, blockHash)
+
+	blsPrivateKey, _ := bls.NewPrivateKey()
+	blsSignature, _ := blsPrivateKey.Sign(signaturePayload[:])
+
+	return &voteMessage{
+		blockHash: blockHash,
+		view:      view,
+		publicKey: blsPrivateKey.PublicKey(),
+		signature: blsSignature,
+	}
+}
+
+func createDummyTimeoutMessage(view uint64) *timeoutMessage {
+	highQC := createDummyQC(view-1, createDummyBlockHash())
+
+	signaturePayload := GetTimeoutSignaturePayload(view, highQC.view)
+
+	blsPrivateKey, _ := bls.NewPrivateKey()
+	blsSignature, _ := blsPrivateKey.Sign(signaturePayload[:])
+
+	return &timeoutMessage{
+		highQC:    highQC,
+		view:      view,
+		publicKey: blsPrivateKey.PublicKey(),
+		signature: blsSignature,
+	}
+}
+
+func createDummyQC(view uint64, blockHash BlockHash) *quorumCertificate {
+	signaturePayload := GetVoteSignaturePayload(view, blockHash)
+
+	blsPrivateKey1, _ := bls.NewPrivateKey()
+	blsSignature1, _ := blsPrivateKey1.Sign(signaturePayload[:])
+
+	blsPrivateKey2, _ := bls.NewPrivateKey()
+	blsSignature2, _ := blsPrivateKey2.Sign(signaturePayload[:])
+
+	signersList := bitset.NewBitset().Set(0, true).Set(1, true)
+	aggregateSignature, _ := bls.AggregateSignatures([]*bls.Signature{blsSignature1, blsSignature2})
+
+	return &quorumCertificate{
+		blockHash: blockHash,
+		view:      view,
+		aggregatedSignature: &aggregatedSignature{
+			signersList: signersList,
+			signature:   aggregateSignature,
+		},
+	}
+}
+
+func createDummyBLSSignature() *bls.Signature {
+	blsPrivateKey, _ := bls.NewPrivateKey()
+	blockHashValue := createDummyBlockHash().GetValue()
+	blsSignature, _ := blsPrivateKey.Sign(blockHashValue[:])
+	return blsSignature
+}
+
+func createDummyBLSPublicKey() *bls.PublicKey {
+	blsPrivateKey, _ := bls.NewPrivateKey()
+	return blsPrivateKey.PublicKey()
+}
+
+func createDummyBLSPrivateKey() *bls.PrivateKey {
+	blsPrivateKey, _ := bls.NewPrivateKey()
+	return blsPrivateKey
+}
+
+func createDummyBlockHash() *blockHash {
+	byteArray := [32]byte{}
+	copy(byteArray[:], generateRandomBytes(32))
+
+	return &blockHash{
+		value: byteArray,
+	}
+}
+
+func generateRandomBytes(numBytes int) []byte {
+	randomBytes := make([]byte, numBytes)
+	rand.Read(randomBytes)
+	return randomBytes
 }
