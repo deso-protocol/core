@@ -503,6 +503,7 @@ const (
 	RuleErrorCoinLockupNonExistentProfile                               RuleError = "RuleErrorCoinLockupNonExistentProfile"
 	RuleErrorCoinLockupCoinYieldOverflow                                RuleError = "RuleErrorCoinLockupCoinYieldOverflow"
 	RuleErrorCoinLockupYieldCausesOverflow                              RuleError = "RuleErrorCoinLockupYieldCausesOverflow"
+	RuleErrorCoinLockupYieldCausesOverflowInLockedBalanceEntry          RuleError = "RuleErrorCoinLockupYieldCausesOverflowInLockedBalanceEntry"
 	RuleErrorCoinLockupTransferOfAmountZero                             RuleError = "RuleErrorCoinLockupTransferOfAmountZero"
 	RuleErrorCoinLockupTransferOfDeSoCausesOverflow                     RuleError = "RuleErrorCoinLockupTransferOfDeSoCausesOverflow"
 	RuleErrorCoinLockupTransferRestrictedToProfileOwner                 RuleError = "RuleErrorCoinLockupTransferRestrictedToCreator"

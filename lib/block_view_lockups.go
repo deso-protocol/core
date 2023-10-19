@@ -219,7 +219,7 @@ type LockupYieldCurvePoint struct {
 }
 
 type LockupYieldCurvePointKey struct {
-	ProfilePKID            *PKID
+	ProfilePKID            PKID
 	LockupDurationNanoSecs int64
 }
 
@@ -237,7 +237,7 @@ func (lockupYieldCurvePoint *LockupYieldCurvePoint) Eq(other *LockupYieldCurvePo
 
 func (lockupYieldCurvePoint *LockupYieldCurvePoint) ToMapKey() LockupYieldCurvePointKey {
 	return LockupYieldCurvePointKey{
-		ProfilePKID:            lockupYieldCurvePoint.ProfilePKID,
+		ProfilePKID:            *lockupYieldCurvePoint.ProfilePKID,
 		LockupDurationNanoSecs: lockupYieldCurvePoint.LockupDurationNanoSecs,
 	}
 }
@@ -742,8 +742,12 @@ func (bav *UtxoView) _connectCoinLockup(
 	var prevTransactorBalanceEntry *BalanceEntry
 	var prevCoinEntry *CoinEntry
 	if profilePKID.IsZeroPKID() {
+		// NOTE: When spending balances, we need to check for immature block rewards. Since we don't have
+		//       the block rewards yet for the current block, we subtract one from the current block height
+		//        when spending balances.
+
 		// Check the DeSo balance of the user.
-		transactorBalanceNanos, err := bav.GetDeSoBalanceNanosForPublicKey(txn.PublicKey)
+		transactorBalanceNanos, err := bav.GetSpendableDeSoBalanceNanosForPublicKey(txn.PublicKey, blockHeight-1)
 		if err != nil {
 			return 0, 0, nil, errors.Wrap(err, "_connectCoinLockup")
 		}
@@ -757,7 +761,7 @@ func (bav *UtxoView) _connectCoinLockup(
 
 		// Spend the transactor's DeSo balance.
 		lockupAmount64 := txMeta.LockupAmountBaseUnits.Uint64()
-		newUtxoOp, err := bav._spendBalance(lockupAmount64, txn.PublicKey, blockHeight)
+		newUtxoOp, err := bav._spendBalance(lockupAmount64, txn.PublicKey, blockHeight-1)
 		if err != nil {
 			return 0, 0, nil, errors.Wrapf(err, "_connectCoinLockup")
 		}
@@ -869,7 +873,7 @@ func (bav *UtxoView) _connectCoinLockup(
 	newLockedBalanceEntryBalance, err := SafeUint256().Add(&lockedBalanceEntry.BalanceBaseUnits, lockupValue)
 	if err != nil {
 		return 0, 0, nil,
-			errors.Wrap(RuleErrorCoinLockupYieldCausesOverflow,
+			errors.Wrap(RuleErrorCoinLockupYieldCausesOverflowInLockedBalanceEntry,
 				"_connectCoinLockup: New Locked Balance Entry Balance")
 	}
 
@@ -1663,7 +1667,7 @@ func (bav *UtxoView) _connectCoinUnlock(
 
 	// Unlock coins until the amount specified by the transaction is deducted.
 	var prevLockedBalanceEntries []*LockedBalanceEntry
-	var unlockedBalance *uint256.Int
+	unlockedBalance := uint256.NewInt()
 	for _, unlockableLockedBalanceEntry := range unlockableLockedBalanceEntries {
 		unlockedBalance, err =
 			SafeUint256().Add(unlockedBalance, &unlockableLockedBalanceEntry.BalanceBaseUnits)
@@ -1673,7 +1677,7 @@ func (bav *UtxoView) _connectCoinUnlock(
 		}
 
 		// Append the LockedBalanceEntry in the event we rollback the transaction.
-		prevLockedBalanceEntries = append(prevLockedBalanceEntries, unlockableLockedBalanceEntry)
+		prevLockedBalanceEntries = append(prevLockedBalanceEntries, unlockableLockedBalanceEntry.Copy())
 
 		// Update the LockedBalanceEntry and delete the record.
 		unlockableLockedBalanceEntry.BalanceBaseUnits = *uint256.NewInt()
@@ -1732,6 +1736,7 @@ func (bav *UtxoView) _connectCoinUnlock(
 		Type:                       OperationTypeCoinUnlock,
 		PrevTransactorBalanceEntry: prevTransactorBalanceEntry,
 		PrevLockedBalanceEntries:   prevLockedBalanceEntries,
+		PrevCoinEntry:              prevCoinEntry,
 	})
 
 	return totalInput, totalOutput, utxoOpsForTxn, nil
@@ -1812,6 +1817,21 @@ func (bav *UtxoView) _disconnectCoinUnlock(
 				"would cause balance entry balance to increase")
 		}
 		bav._setBalanceEntryMappings(operationData.PrevTransactorBalanceEntry, true)
+	}
+
+	// Reverting the CoinEntry (if applicable) should not result in more coins in circulation.
+	if !profilePKID.IsZeroPKID() {
+		profileEntry := bav.GetProfileEntryForPKID(profilePKID)
+		if profileEntry == nil || profileEntry.isDeleted {
+			return fmt.Errorf("_disconnectCoinUnlock: Trying to revert coin unlock " +
+				"but found nil profile entry; this shouldn't be possible")
+		}
+		if operationData.PrevCoinEntry.CoinsInCirculationNanos.Gt(&profileEntry.DAOCoinEntry.CoinsInCirculationNanos) {
+			return fmt.Errorf("_disconnectCoinUnlock: Trying to revert OperationTypeCoinUnlock " +
+				"would cause profile entry coin entry balance to increase")
+		}
+		profileEntry.DAOCoinEntry = *operationData.PrevCoinEntry
+		bav._setProfileEntryMappings(profileEntry)
 	}
 
 	// Reverting the DeSo addition should not result in more coins.

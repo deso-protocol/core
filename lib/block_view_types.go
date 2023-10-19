@@ -3921,6 +3921,7 @@ func (gp *GlobalParamsEntry) Copy() *GlobalParamsEntry {
 		StakingRewardsAPYBasisPoints:           gp.StakingRewardsAPYBasisPoints,
 		EpochDurationNumBlocks:                 gp.EpochDurationNumBlocks,
 		JailInactiveValidatorGracePeriodEpochs: gp.JailInactiveValidatorGracePeriodEpochs,
+		LockedDESOTransferRestrictions:         gp.LockedDESOTransferRestrictions,
 	}
 }
 
@@ -3944,6 +3945,7 @@ func (gp *GlobalParamsEntry) RawEncodeWithoutMetadata(blockHeight uint64, skipMe
 		data = append(data, UintToBuf(gp.StakingRewardsAPYBasisPoints)...)
 		data = append(data, UintToBuf(gp.EpochDurationNumBlocks)...)
 		data = append(data, UintToBuf(gp.JailInactiveValidatorGracePeriodEpochs)...)
+		data = append(data, byte(gp.LockedDESOTransferRestrictions))
 	}
 	return data
 }
@@ -4010,6 +4012,11 @@ func (gp *GlobalParamsEntry) RawDecodeWithoutMetadata(blockHeight uint64, rr *by
 		if err != nil {
 			return errors.Wrapf(err, "GlobalParamsEntry.Decode: Problem reading JailInactiveValidatorGracePeriodEpochs: ")
 		}
+		statusByte, err := rr.ReadByte()
+		if err != nil {
+			return errors.Wrapf(err, "GlobalParamsEntry.Decode: Problem reading LockedDESOTransferRestrictions")
+		}
+		gp.LockedDESOTransferRestrictions = TransferRestrictionStatus(statusByte)
 	}
 	return nil
 }

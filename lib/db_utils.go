@@ -10860,7 +10860,7 @@ func DBGetUnlockableLockedBalanceEntriesWithTxn(
 
 		// This check is redundant. It's included to be extra safe only unlockable locked balance entries are included.
 		if lockedBalanceEntry.UnlockTimestampNanoSecs < currentTimestampUnixNanoSecs {
-			lockedBalanceEntries = append(lockedBalanceEntries)
+			lockedBalanceEntries = append(lockedBalanceEntries, lockedBalanceEntry)
 		}
 	}
 
@@ -10958,7 +10958,11 @@ func DBGetAllYieldCurvePointsByProfilePKID(handle *badger.DB, snap *Snapshot,
 func DBGetAllYieldCurvePointsByProfilePKIDWithTxn(txn *badger.Txn, snap *Snapshot,
 	profilePKID *PKID) (_lockupYieldCurvePoints []*LockupYieldCurvePoint, _err error) {
 	// Construct the key prefix.
-	startKey := DBPrefixKeyForLockupYieldCurvePointsByProfilePKID(profilePKID)
+	startKey := _dbKeyForLockupYieldCurvePoint(LockupYieldCurvePoint{
+		ProfilePKID:            profilePKID,
+		LockupDurationNanoSecs: 0,
+	})
+	validKey := DBPrefixKeyForLockupYieldCurvePointsByProfilePKID(profilePKID)
 
 	// Create an iterator.
 	opts := badger.DefaultIteratorOptions
@@ -10969,7 +10973,7 @@ func DBGetAllYieldCurvePointsByProfilePKIDWithTxn(txn *badger.Txn, snap *Snapsho
 	var lockupYieldCurvePoints []*LockupYieldCurvePoint
 
 	// Loop.
-	for iterator.Seek(startKey); iterator.ValidForPrefix(startKey); iterator.Next() {
+	for iterator.Seek(startKey); iterator.ValidForPrefix(validKey); iterator.Next() {
 		// Retrieve the LockupYieldCurvePointBytes.
 		lockupYieldCurvePointBytes, err := iterator.Item().ValueCopy(nil)
 		if err != nil {

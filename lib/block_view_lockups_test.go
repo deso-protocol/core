@@ -8,6 +8,127 @@ import (
 	"testing"
 )
 
+func TestForkHeightAndInitialState(t *testing.T) {
+	// TODO: Create test for forks.
+
+	// TODO: Create test for initial creator state.
+
+	// TODO: Create test for initial deso state.
+}
+
+func TestCalculateLockupYield(t *testing.T) {
+	var yield *uint256.Int
+	var err error
+
+	// Ensure that a lockup with zero duration has zero yield.
+	yield, err = CalculateLockupYield(
+		MaxUint256,
+		uint256.NewInt(),
+		uint256.NewInt().SetUint64(1))
+	require.NoError(t, err)
+	require.Equal(t, *yield, *uint256.NewInt())
+
+	// Ensure that a lockup with zero apyYieldBasisPoints has zero yield.
+	yield, err = CalculateLockupYield(
+		MaxUint256,
+		uint256.NewInt().SetUint64(1),
+		uint256.NewInt())
+	require.NoError(t, err)
+	require.Equal(t, *yield, *uint256.NewInt())
+
+	// Ensure that when principal is MaxUint256 and the apy yield is 2bp,
+	// the operation fails due to lack of precision.
+	_, err = CalculateLockupYield(
+		MaxUint256,
+		uint256.NewInt().SetUint64(2),
+		uint256.NewInt().SetUint64(1))
+	require.Contains(t, err.Error(), RuleErrorCoinLockupCoinYieldOverflow)
+
+	// Ensure that when principal is MaxUint256 and the duration is 2ns,
+	// the operation fails due to lack of precision.
+	_, err = CalculateLockupYield(
+		MaxUint256,
+		uint256.NewInt().SetUint64(1),
+		uint256.NewInt().SetUint64(2))
+	require.Contains(t, err.Error(), RuleErrorCoinLockupCoinYieldOverflow)
+
+	// Ensure that the CalculateLockupYield operation acts as a floor of
+	// the true infinite precision CalculateLockupYield operation.
+	//
+	// To do this, we note that the operation is numerically as follows:
+	// (principal * yield_bp * duration_ns) / (365 * 24 * 60 * 60 * 1e9 * 10000)
+	//
+	// Numerically we start by computing the denominator and numerator separately.
+	// To test that division rounding is functioning correctly, we set the following values:
+	// principal = 365 * 24 * 10000
+	// yield_bp  = 60 * 60
+	// duration  = 1e9
+	//
+	// In theory, this should return a yield of 1 without any overflow in the operation.
+	// We test this below:
+	yield, err = CalculateLockupYield(
+		uint256.NewInt().SetUint64(365*24*10000),
+		uint256.NewInt().SetUint64(60*60),
+		uint256.NewInt().SetUint64(1e9))
+	require.NoError(t, err)
+	require.Equal(t, *yield, *uint256.NewInt().SetUint64(1))
+
+	// Knowing this, we can now check to ensure the edges of the CalculateLockupYield
+	// operation are behaving correctly and never minting more coins than expected.
+	// We start by reducing the numerator. Any decrease to the numerator should return a yield of zero.
+	// To test this, we set duration = 1e9 - 1.
+	// (This decreases only the largest factor, leading to the smallest decrease possible in the numerator)
+	yield, err = CalculateLockupYield(
+		uint256.NewInt().SetUint64(365*24*10000),
+		uint256.NewInt().SetUint64(60*60),
+		uint256.NewInt().SetUint64(1e9-1))
+	require.NoError(t, err)
+	require.Equal(t, *yield, *uint256.NewInt().SetUint64(0))
+
+	// If we only slightly increase the numerator, we should expect to see the yield remain the same.
+	// To test this, we set duration = 1e9 + 1
+	// (This increases only the largest factor, leading to the smallest increase possible in the numerator)
+	yield, err = CalculateLockupYield(
+		uint256.NewInt().SetUint64(365*24*10000),
+		uint256.NewInt().SetUint64(60*60),
+		uint256.NewInt().SetUint64(1e9+1))
+	require.NoError(t, err)
+	require.Equal(t, *yield, *uint256.NewInt().SetUint64(1))
+
+	// We should only see an increase to the output yield if the numerator is scaled by a constant.
+	// To do this, we can iterate through various constants and see if the output yield matches.
+	// These operations are quick and cheap, so we test all values between 0 and 100000.
+	// We also ensure that slight deviations do not alter the output.
+	for ii := uint64(0); ii < 100000; ii++ {
+		yield, err = CalculateLockupYield(
+			uint256.NewInt().SetUint64(ii*365*24*10000),
+			uint256.NewInt().SetUint64(60*60),
+			uint256.NewInt().SetUint64(1e9))
+		require.NoError(t, err)
+		require.Equal(t, *yield, *uint256.NewInt().SetUint64(ii))
+
+		// Slight increase to the numerator. Ensure we don't create more yield than expected.
+		yield, err = CalculateLockupYield(
+			uint256.NewInt().SetUint64(ii*365*24*10000),
+			uint256.NewInt().SetUint64(60*60),
+			uint256.NewInt().SetUint64(1e9+1))
+		require.NoError(t, err)
+		require.Equal(t, *yield, *uint256.NewInt().SetUint64(ii))
+
+		// Slight decrease to the numerator. Ensure we create strictly less yield.
+		expectedValue := ii - 1
+		if ii == 0 {
+			expectedValue = 0
+		}
+		yield, err = CalculateLockupYield(
+			uint256.NewInt().SetUint64(ii*365*24*10000),
+			uint256.NewInt().SetUint64(60*60),
+			uint256.NewInt().SetUint64(1e9-1))
+		require.NoError(t, err)
+		require.Equal(t, *yield, *uint256.NewInt().SetUint64(expectedValue))
+	}
+}
+
 func TestCoinLockupTxnRuleErrors(t *testing.T) {
 	// Initialize test chain, miner, and testMeta
 	testMeta := _setUpMinerAndTestMetaForTimestampBasedLockupTests(t)
@@ -47,6 +168,7 @@ func TestCoinLockupTxnRuleErrors(t *testing.T) {
 
 	// Attempt to perform an excessive DESO lockup (more than 2**64 DESO).
 	// (This should fail -- RuleErrorCoinLockupExcessiveDeSoLockup)
+	// NOTE: This also checks that DESO lockups do not require an associated profile.
 	{
 		_, _, _, err := _coinLockupWithConnectTimestamp(
 			t, testMeta.chain, testMeta.db, testMeta.params,
@@ -468,7 +590,804 @@ func TestCoinUnlockTxnRuleErrors(t *testing.T) {
 		require.Contains(t, err.Error(), RuleErrorCoinUnlockNoUnlockableCoinsFound)
 	}
 
-	// TODO: Cause unlockable balance overflow test. Tricky as it relies on yield.
+	// NOTE: We test overflow errors based on unlocks in tests below.
+	//       In general, they're tricky to trigger. Because of this we have special tests for overflows.
+}
+
+func TestLockupBasedOverflowsOnProfiles(t *testing.T) {
+	// Initialize test chain, miner, and testMeta
+	testMeta := _setUpMinerAndTestMetaForTimestampBasedLockupTests(t)
+
+	// Initialize m0, m1, m2, m3, m4, and paramUpdater
+	_setUpProfilesAndMintM0M1DAOCoins(testMeta)
+
+	// Create an on-chain profile for m2
+	{
+		_updateProfileWithTestMeta(
+			testMeta,
+			testMeta.feeRateNanosPerKb,
+			m2Pub,
+			m2Priv,
+			[]byte{},
+			"m2",
+			"i am the m2",
+			shortPic,
+			10*100,
+			1.25*100*100,
+			false,
+		)
+	}
+
+	// Create MaxUint256 m2 DAO coins held by m2
+	{
+		_daoCoinTxnWithTestMeta(
+			testMeta,
+			testMeta.feeRateNanosPerKb,
+			m2Pub,
+			m2Priv,
+			DAOCoinMetadata{
+				ProfilePublicKey:          m2PkBytes,
+				OperationType:             DAOCoinOperationTypeMint,
+				CoinsToMintNanos:          *MaxUint256,
+				CoinsToBurnNanos:          uint256.Int{},
+				TransferRestrictionStatus: 0,
+			})
+	}
+
+	// Try and lockup MaxUint256 m2 coins and ensure CoinsInCirculation and NumberOfHolders decreases
+	{
+		_coinLockupWithTestMetaAndConnectTimestamp(
+			testMeta,
+			testMeta.feeRateNanosPerKb,
+			m2Pub,
+			m2Priv,
+			m2Pub,
+			1000,
+			MaxUint256,
+			0)
+
+		// Ensure CoinsInCirculationNanos and NumberOfHolders are now zero
+		utxoView, err := NewUtxoView(testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot)
+		require.NoError(t, err)
+		profileEntry := utxoView.GetProfileEntryForPublicKey(m2PkBytes)
+		require.Equal(t, *uint256.NewInt(), profileEntry.DAOCoinEntry.CoinsInCirculationNanos)
+		require.Equal(t, uint64(0), profileEntry.DAOCoinEntry.NumberOfHolders)
+	}
+
+	// Create MaxUint256 m2 DAO coins held by m2. This should succeed as we locked all tokens previously.
+	{
+		_daoCoinTxnWithTestMeta(
+			testMeta,
+			testMeta.feeRateNanosPerKb,
+			m2Pub,
+			m2Priv,
+			DAOCoinMetadata{
+				ProfilePublicKey:          m2PkBytes,
+				OperationType:             DAOCoinOperationTypeMint,
+				CoinsToMintNanos:          *MaxUint256,
+				CoinsToBurnNanos:          uint256.Int{},
+				TransferRestrictionStatus: 0,
+			})
+	}
+
+	// Try and do a subsequent lockup of one base unit of m2 coin at the same timestamp as above.
+	// (This should fail -- RuleErrorCoinLockupYieldCausesOverflowInLockedBalanceEntry)
+	{
+		_, _, _, err := _coinLockupWithConnectTimestamp(
+			t, testMeta.chain, testMeta.db, testMeta.params,
+			testMeta.feeRateNanosPerKb,
+			m2Pub,
+			m2Priv,
+			m2Pub,
+			1000,
+			uint256.NewInt().SetUint64(1),
+			0)
+		require.Contains(t, err.Error(), RuleErrorCoinLockupYieldCausesOverflowInLockedBalanceEntry)
+	}
+
+	// Try and do a MaxUint256 lockup for one year at 1% yield.
+	// (This should fail in CalculateLockupYield -- RuleErrorCoinLockupCoinYieldOverflow)
+	{
+		_updateCoinLockupParamsWithTestMeta(
+			testMeta,
+			testMeta.feeRateNanosPerKb,
+			m2Pub,
+			m2Priv,
+			365*24*60*60*1e9,
+			100,
+			false,
+			false,
+			TransferRestrictionStatusUnrestricted,
+		)
+
+		_, _, _, err := _coinLockupWithConnectTimestamp(
+			t, testMeta.chain, testMeta.db, testMeta.params,
+			testMeta.feeRateNanosPerKb,
+			m2Pub,
+			m2Priv,
+			m2Pub,
+			365*24*60*60*1e9,
+			MaxUint256,
+			0)
+		require.Contains(t, err.Error(), RuleErrorCoinLockupCoinYieldOverflow)
+	}
+
+	// Try and do a MaxUint256 lockup with 1bp yield and 1ns duration.
+	// NOTE: This fails because principal + interest > MaxUint256, but the
+	//       CalculateLockupYield operation does not overflow (unlike the above check).
+	// (This should fail -- RuleErrorCoinLockupYieldCausesOverflow)
+	{
+		_updateCoinLockupParamsWithTestMeta(
+			testMeta,
+			testMeta.feeRateNanosPerKb,
+			m2Pub,
+			m2Priv,
+			1,
+			1,
+			false,
+			false,
+			TransferRestrictionStatusUnrestricted,
+		)
+
+		_, _, _, err := _coinLockupWithConnectTimestamp(
+			t, testMeta.chain, testMeta.db, testMeta.params,
+			testMeta.feeRateNanosPerKb,
+			m2Pub,
+			m2Priv,
+			m2Pub,
+			1,
+			MaxUint256,
+			0)
+		require.Contains(t, err.Error(), RuleErrorCoinLockupYieldCausesOverflow)
+
+		// Remove the yield curve point.
+		_updateCoinLockupParamsWithTestMeta(
+			testMeta,
+			testMeta.feeRateNanosPerKb,
+			m2Pub,
+			m2Priv,
+			1,
+			1,
+			true,
+			false,
+			TransferRestrictionStatusUnrestricted,
+		)
+	}
+
+	// Try and perform a lockup transfer to someone with an existing MaxUint256 balance.
+	// (This should fail -- RuleErrorCoinLockupTransferBalanceOverflowAtReceiver)
+	{
+		// Transfer MaxUint256 locked m2 tokens to m3. These were locked in an above test.
+		_coinLockupTransferWithTestMeta(
+			testMeta,
+			testMeta.feeRateNanosPerKb,
+			m2Pub,
+			m2Priv,
+			NewPublicKey(m3PkBytes),
+			NewPublicKey(m2PkBytes),
+			1000,
+			MaxUint256,
+		)
+
+		// Lockup MaxUint256 m2 tokens.
+		_coinLockupWithTestMetaAndConnectTimestamp(
+			testMeta,
+			testMeta.feeRateNanosPerKb,
+			m2Pub,
+			m2Priv,
+			m2Pub,
+			1000,
+			MaxUint256,
+			0,
+		)
+
+		// Try and perform another transfer. This should fail.
+		_, _, _, err := _coinLockupTransfer(
+			t, testMeta.chain, testMeta.db, testMeta.params,
+			testMeta.feeRateNanosPerKb,
+			m2Pub,
+			m2Priv,
+			NewPublicKey(m3PkBytes),
+			NewPublicKey(m2PkBytes),
+			1000,
+			MaxUint256,
+		)
+		require.Contains(t, err.Error(), RuleErrorCoinLockupTransferBalanceOverflowAtReceiver)
+	}
+
+	// Try and perform a lockup unlock on multiple locked balance entries such that the unlock balance overflows.
+	// (This should fail -- RuleErrorCoinUnlockUnlockableCoinsOverflow)
+	{
+		// Mint MaxUint256 m2 tokens.
+		_daoCoinTxnWithTestMeta(
+			testMeta,
+			testMeta.feeRateNanosPerKb,
+			m2Pub,
+			m2Priv,
+			DAOCoinMetadata{
+				ProfilePublicKey:          m2PkBytes,
+				OperationType:             DAOCoinOperationTypeMint,
+				CoinsToMintNanos:          *MaxUint256,
+				CoinsToBurnNanos:          uint256.Int{},
+				TransferRestrictionStatus: 0,
+			})
+
+		// Lockup MaxUint256 m2 tokens at a different timestamp.
+		_coinLockupWithTestMetaAndConnectTimestamp(
+			testMeta,
+			testMeta.feeRateNanosPerKb,
+			m2Pub,
+			m2Priv,
+			m2Pub,
+			1001,
+			MaxUint256,
+			0,
+		)
+
+		// Try and unlock all locked balance entries simultaneously.
+		// This should cause an overflow.
+		_, _, _, err := _coinUnlockWithConnectTimestamp(
+			t, testMeta.chain, testMeta.db, testMeta.params,
+			testMeta.feeRateNanosPerKb,
+			m2Pub,
+			m2Priv,
+			m2Pub,
+			1002)
+		require.Contains(t, err.Error(), RuleErrorCoinUnlockUnlockableCoinsOverflow)
+	}
+
+	// Try and perform a lockup unlock such that the transactor's balance entry overflows.
+	// (This should fail -- RuleErrorCoinUnlockCausesBalanceOverflow)
+	{
+		// Mint MaxUint256 m2 tokens.
+		_daoCoinTxnWithTestMeta(
+			testMeta,
+			testMeta.feeRateNanosPerKb,
+			m2Pub,
+			m2Priv,
+			DAOCoinMetadata{
+				ProfilePublicKey:          m2PkBytes,
+				OperationType:             DAOCoinOperationTypeMint,
+				CoinsToMintNanos:          *uint256.NewInt().SetUint64(1),
+				CoinsToBurnNanos:          uint256.Int{},
+				TransferRestrictionStatus: 0,
+			})
+
+		// Try and unlock one of the MaxUint256 locked balance entries.
+		// This should cause an overflow in the balance entry.
+		_, _, _, err := _coinUnlockWithConnectTimestamp(
+			t, testMeta.chain, testMeta.db, testMeta.params,
+			testMeta.feeRateNanosPerKb,
+			m2Pub,
+			m2Priv,
+			m2Pub,
+			1001)
+		require.Contains(t, err.Error(), RuleErrorCoinUnlockCausesBalanceOverflow)
+	}
+
+	// Try and perform a lockup unlock such that the CoinsInCirculation overflows.
+	// (This should fail -- RuleErrorCoinLockupCausesCoinsInCirculationOverflow)
+	{
+		_, _, _, err := _coinUnlockWithConnectTimestamp(
+			t, testMeta.chain, testMeta.db, testMeta.params,
+			testMeta.feeRateNanosPerKb,
+			m3Pub,
+			m3Priv,
+			m2Pub,
+			1001)
+		require.Contains(t, err.Error(), RuleErrorCoinUnlockCausesCoinsInCirculationOverflow)
+	}
+}
+
+func TestLockupStandardProfileFlows(t *testing.T) {
+	// Initialize test chain, miner, and testMeta
+	testMeta := _setUpMinerAndTestMetaForTimestampBasedLockupTests(t)
+
+	// Initialize m0, m1, m2, m3, m4, and paramUpdater
+	_setUpProfilesAndMintM0M1DAOCoins(testMeta)
+
+	// Have m1 create a yield curve which consists of:
+	// 1 year  @  5% yield
+	// 2 years @ 10% yield
+	// Remove the yield curve point.
+	{
+		_updateCoinLockupParamsWithTestMeta(
+			testMeta,
+			testMeta.feeRateNanosPerKb,
+			m1Pub,
+			m1Priv,
+			365*24*60*60*1e9,
+			500,
+			false,
+			false,
+			TransferRestrictionStatusUnrestricted,
+		)
+		_updateCoinLockupParamsWithTestMeta(
+			testMeta,
+			testMeta.feeRateNanosPerKb,
+			m1Pub,
+			m1Priv,
+			2*365*24*60*60*1e9,
+			1000,
+			false,
+			true,
+			TransferRestrictionStatusProfileOwnerOnly,
+		)
+	}
+
+	// Have m1 lockup 10000 m1 DAO tokens for half of a year.
+	// We set the connecting block timestamp to 1 year from UNIX start to give it a non-zero value.
+	// We expect this to create a locked balance entry with 10000 base units locked inside.
+	{
+		// Get the PKID associated with m1.
+		utxoView, err := NewUtxoView(testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot)
+		require.NoError(t, err)
+		m1PKIDEntry := utxoView.GetPKIDForPublicKey(m1PkBytes)
+		m1PKID := m1PKIDEntry.PKID
+
+		// Get the original BalanceEntry for the associated DAO coins.
+		originalBalanceEntry, _, _ := utxoView.GetBalanceEntryForHODLerPubKeyAndCreatorPubKey(
+			m1PkBytes, m1PkBytes, true)
+
+		_coinLockupWithTestMetaAndConnectTimestamp(
+			testMeta,
+			testMeta.feeRateNanosPerKb,
+			m1Pub,
+			m1Priv,
+			m1Pub,
+			365*24*60*60*1e9+365*12*60*60*1e9,
+			uint256.NewInt().SetUint64(10000),
+			365*24*60*60*1e9,
+		)
+
+		// Check to ensure the resulting locked balance entry has 10000 base units.
+		utxoView, err = NewUtxoView(testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot)
+		require.NoError(t, err)
+		lockedBalanceEntry, err := utxoView.GetLockedBalanceEntryForHODLerPKIDProfilePKIDUnlockTimestampNanoSecs(
+			m1PKID, m1PKID, 365*24*60*60*1e9+365*12*60*60*1e9)
+		require.NoError(t, err)
+		require.Equal(t, *uint256.NewInt().SetUint64(10000), lockedBalanceEntry.BalanceBaseUnits)
+
+		// Check to ensure that the BalanceEntry has decreased by exactly 10000.
+		newBalanceEntry, _, _ := utxoView.GetBalanceEntryForHODLerPubKeyAndCreatorPubKey(
+			m1PkBytes, m1PkBytes, true)
+		require.True(t, originalBalanceEntry.BalanceNanos.Gt(&newBalanceEntry.BalanceNanos))
+		require.Equal(t,
+			*uint256.NewInt().Sub(&originalBalanceEntry.BalanceNanos, &newBalanceEntry.BalanceNanos),
+			*uint256.NewInt().SetUint64(10000))
+	}
+
+	// Have m1 lockup 10000 m1 DAO tokens for one year.
+	// We set the connecting block timestamp to 1 year from UNIX start to give it a non-zero value.
+	// We expect this to create a locked balance entry with 10500 base units locked inside.
+	{
+		// Get the PKID associated with m1.
+		utxoView, err := NewUtxoView(testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot)
+		require.NoError(t, err)
+		m1PKIDEntry := utxoView.GetPKIDForPublicKey(m1PkBytes)
+		m1PKID := m1PKIDEntry.PKID
+
+		// Get the original BalanceEntry for the associated DAO coins.
+		originalBalanceEntry, _, _ := utxoView.GetBalanceEntryForHODLerPubKeyAndCreatorPubKey(
+			m1PkBytes, m1PkBytes, true)
+
+		_coinLockupWithTestMetaAndConnectTimestamp(
+			testMeta,
+			testMeta.feeRateNanosPerKb,
+			m1Pub,
+			m1Priv,
+			m1Pub,
+			2*365*24*60*60*1e9,
+			uint256.NewInt().SetUint64(10000),
+			365*24*60*60*1e9,
+		)
+
+		// Check to ensure the resulting locked balance entry has 10500 base units.
+		utxoView, err = NewUtxoView(testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot)
+		require.NoError(t, err)
+		lockedBalanceEntry, err := utxoView.GetLockedBalanceEntryForHODLerPKIDProfilePKIDUnlockTimestampNanoSecs(
+			m1PKID, m1PKID, 2*365*24*60*60*1e9)
+		require.NoError(t, err)
+		require.Equal(t, *uint256.NewInt().SetUint64(10500), lockedBalanceEntry.BalanceBaseUnits)
+
+		// Check to ensure that the BalanceEntry has decreased by exactly 10000.
+		newBalanceEntry, _, _ := utxoView.GetBalanceEntryForHODLerPubKeyAndCreatorPubKey(
+			m1PkBytes, m1PkBytes, true)
+		require.True(t, originalBalanceEntry.BalanceNanos.Gt(&newBalanceEntry.BalanceNanos))
+		require.Equal(t,
+			*uint256.NewInt().Sub(&originalBalanceEntry.BalanceNanos, &newBalanceEntry.BalanceNanos),
+			*uint256.NewInt().SetUint64(10000))
+	}
+
+	// Have m1 lockup 10000 m1 DAO tokens for one and a half year.
+	// We set the connecting block timestamp to 1 year from UNIX start to give it a non-zero value.
+	// We expect this to create a locked balance entry with 10500 base units locked inside.
+	// NOTE: This is testing the interpolation algorithm for lockups in the middle of two yield curve points.
+	{
+		_coinLockupWithTestMetaAndConnectTimestamp(
+			testMeta,
+			testMeta.feeRateNanosPerKb,
+			m1Pub,
+			m1Priv,
+			m1Pub,
+			2*365*24*60*60*1e9+365*12*60*60*1e9,
+			uint256.NewInt().SetUint64(10000),
+			365*24*60*60*1e9,
+		)
+
+		// Check to ensure the resulting locked balance entry has 10500 base units.
+		utxoView, err := NewUtxoView(testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot)
+		require.NoError(t, err)
+		m1PKIDEntry := utxoView.GetPKIDForPublicKey(m1PkBytes)
+		m1PKID := m1PKIDEntry.PKID
+		lockedBalanceEntry, err := utxoView.GetLockedBalanceEntryForHODLerPKIDProfilePKIDUnlockTimestampNanoSecs(
+			m1PKID, m1PKID, 2*365*24*60*60*1e9+365*12*60*60*1e9)
+		require.NoError(t, err)
+		require.Equal(t, *uint256.NewInt().SetUint64(10500), lockedBalanceEntry.BalanceBaseUnits)
+	}
+
+	// Have m1 lockup 10000 m1 DAO tokens for two years.
+	// We set the connecting block timestamp to 1 year from UNIX start to give it a non-zero value.
+	// We expect this to create a locked balance entry with 12000 base units locked inside.
+	{
+		_coinLockupWithTestMetaAndConnectTimestamp(
+			testMeta,
+			testMeta.feeRateNanosPerKb,
+			m1Pub,
+			m1Priv,
+			m1Pub,
+			3*365*24*60*60*1e9,
+			uint256.NewInt().SetUint64(10000),
+			365*24*60*60*1e9,
+		)
+
+		// Check to ensure the resulting locked balance entry has 12000 base units.
+		utxoView, err := NewUtxoView(testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot)
+		require.NoError(t, err)
+		m1PKIDEntry := utxoView.GetPKIDForPublicKey(m1PkBytes)
+		m1PKID := m1PKIDEntry.PKID
+		lockedBalanceEntry, err := utxoView.GetLockedBalanceEntryForHODLerPKIDProfilePKIDUnlockTimestampNanoSecs(
+			m1PKID, m1PKID, 3*365*24*60*60*1e9)
+		require.NoError(t, err)
+		require.Equal(t, *uint256.NewInt().SetUint64(12000), lockedBalanceEntry.BalanceBaseUnits)
+	}
+
+	// Have m1 distribute 1 year locked tokens.
+	{
+		_coinLockupTransferWithTestMeta(
+			testMeta,
+			testMeta.feeRateNanosPerKb,
+			m1Pub,
+			m1Priv,
+			NewPublicKey(m2PkBytes),
+			NewPublicKey(m1PkBytes),
+			2*365*24*60*60*1e9,
+			uint256.NewInt().SetUint64(500),
+		)
+		_coinLockupTransferWithTestMeta(
+			testMeta,
+			testMeta.feeRateNanosPerKb,
+			m1Pub,
+			m1Priv,
+			NewPublicKey(m3PkBytes),
+			NewPublicKey(m1PkBytes),
+			2*365*24*60*60*1e9,
+			uint256.NewInt().SetUint64(500),
+		)
+		_coinLockupTransferWithTestMeta(
+			testMeta,
+			testMeta.feeRateNanosPerKb,
+			m1Pub,
+			m1Priv,
+			NewPublicKey(m4PkBytes),
+			NewPublicKey(m1PkBytes),
+			2*365*24*60*60*1e9,
+			uint256.NewInt().SetUint64(500),
+		)
+
+		// Check to ensure the resulting locked balance entry for m1 has 9000 base units.
+		utxoView, err := NewUtxoView(testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot)
+		require.NoError(t, err)
+		m1PKIDEntry := utxoView.GetPKIDForPublicKey(m1PkBytes)
+		m1PKID := m1PKIDEntry.PKID
+		lockedBalanceEntry, err := utxoView.GetLockedBalanceEntryForHODLerPKIDProfilePKIDUnlockTimestampNanoSecs(
+			m1PKID, m1PKID, 2*365*24*60*60*1e9)
+		require.NoError(t, err)
+		require.Equal(t, *uint256.NewInt().SetUint64(9000), lockedBalanceEntry.BalanceBaseUnits)
+	}
+
+	// Check to make sure locked tokens are not liquid.
+	{
+		_, _, _, err := _coinLockupTransfer(
+			t, testMeta.chain, testMeta.db, testMeta.params, testMeta.feeRateNanosPerKb,
+			m2Pub,
+			m2Priv,
+			NewPublicKey(m3PkBytes),
+			NewPublicKey(m1PkBytes),
+			2*365*24*60*60*1e9,
+			uint256.NewInt().SetUint64(500),
+		)
+		require.Contains(t, err.Error(), RuleErrorCoinLockupTransferRestrictedToProfileOwner)
+	}
+
+	// Check to make sure tokens can be unlocked following a year.
+	// Ensure that the associated balance entry increases by 500 on unlock.
+	// 500 base units of m1 DAO coins was given by m2 during the distribution phase.
+	{
+		// Get the original BalanceEntry for the associated DAO coins.
+		utxoView, err := NewUtxoView(testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot)
+		require.NoError(t, err)
+		originalBalanceEntry, _, _ := utxoView.GetBalanceEntryForHODLerPubKeyAndCreatorPubKey(
+			m2PkBytes, m1PkBytes, true)
+
+		_, _, _, err = _coinUnlockWithConnectTimestamp(
+			t, testMeta.chain, testMeta.db, testMeta.params, testMeta.feeRateNanosPerKb,
+			m2Pub,
+			m2Priv,
+			m1Pub,
+			2*365*24*60*60*1e9+1,
+		)
+		require.NoError(t, err)
+
+		// Get the updated BalanceEntry for the associated DAO coins.
+		utxoView, err = NewUtxoView(testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot)
+		require.NoError(t, err)
+		newBalanceEntry, _, _ := utxoView.GetBalanceEntryForHODLerPubKeyAndCreatorPubKey(
+			m2PkBytes, m1PkBytes, true)
+		require.True(t, newBalanceEntry.BalanceNanos.Gt(&originalBalanceEntry.BalanceNanos))
+		require.Equal(t, *uint256.NewInt().SetUint64(500), *uint256.NewInt().Sub(
+			&newBalanceEntry.BalanceNanos, &originalBalanceEntry.BalanceNanos))
+	}
+}
+
+func TestLockupStandardDeSoFlows(t *testing.T) {
+	// Initialize test chain, miner, and testMeta
+	testMeta := _setUpMinerAndTestMetaForTimestampBasedLockupTests(t)
+
+	// Initialize m0, m1, m2, m3, m4, and paramUpdater
+	_setUpProfilesAndMintM0M1DAOCoins(testMeta)
+
+	// Ensure that paramUpdater is set in the testMeta
+	testMeta.params.ExtraRegtestParamUpdaterKeys[MakePkMapKey(paramUpdaterPkBytes)] = true
+
+	// Have paramUpdater create a yield curve which consists of:
+	// 1 year  @  5% yield
+	// 2 years @ 10% yield
+	// Remove the yield curve point.
+	{
+		_updateCoinLockupParamsWithTestMeta(
+			testMeta,
+			testMeta.feeRateNanosPerKb,
+			paramUpdaterPub,
+			paramUpdaterPriv,
+			365*24*60*60*1e9,
+			500,
+			false,
+			false,
+			TransferRestrictionStatusUnrestricted,
+		)
+		_updateCoinLockupParamsWithTestMeta(
+			testMeta,
+			testMeta.feeRateNanosPerKb,
+			paramUpdaterPub,
+			paramUpdaterPriv,
+			2*365*24*60*60*1e9,
+			1000,
+			false,
+			true,
+			TransferRestrictionStatusProfileOwnerOnly,
+		)
+	}
+
+	// Have m1 lockup 500 nDESO for half of a year.
+	// We set the connecting block timestamp to 1 year from UNIX start to give it a non-zero value.
+	// We expect this to create a locked balance entry with 500 base units locked inside.
+	{
+		// Get m1's DESO balance.
+		utxoView, err := NewUtxoView(testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot)
+		require.NoError(t, err)
+		m1OriginalBalance, err := utxoView.GetDeSoBalanceNanosForPublicKey(m1PkBytes)
+		require.NoError(t, err)
+
+		_coinLockupWithTestMetaAndConnectTimestamp(
+			testMeta,
+			testMeta.feeRateNanosPerKb,
+			m1Pub,
+			m1Priv,
+			Base58CheckEncode(ZeroPublicKey.ToBytes(), false, testMeta.params),
+			365*24*60*60*1e9+365*12*60*60*1e9,
+			uint256.NewInt().SetUint64(500),
+			365*24*60*60*1e9,
+		)
+
+		// Check to ensure the resulting locked balance entry has 525 base units.
+		utxoView, err = NewUtxoView(testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot)
+		require.NoError(t, err)
+		m1PKIDEntry := utxoView.GetPKIDForPublicKey(m1PkBytes)
+		m1PKID := m1PKIDEntry.PKID
+		lockedBalanceEntry, err := utxoView.GetLockedBalanceEntryForHODLerPKIDProfilePKIDUnlockTimestampNanoSecs(
+			m1PKID, ZeroPKID.NewPKID(), 365*24*60*60*1e9+365*12*60*60*1e9)
+		require.NoError(t, err)
+		require.Equal(t, *uint256.NewInt().SetUint64(500), lockedBalanceEntry.BalanceBaseUnits)
+
+		// Check that m1's DESO balance has decreased by more than 500 nDESO (some extra was spent on fees).
+		m1NewBalance, err := utxoView.GetDeSoBalanceNanosForPublicKey(m1PkBytes)
+		require.NoError(t, err)
+		require.Greater(t, m1OriginalBalance, m1NewBalance)
+		require.Greater(t, m1OriginalBalance-m1NewBalance, uint64(500))
+	}
+
+	// Have m1 lockup 500 nDESO for one year.
+	// We set the connecting block timestamp to 1 year from UNIX start to give it a non-zero value.
+	// We expect this to create a locked balance entry with 525 base units locked inside.
+	{
+		// Get m1's DESO balance.
+		utxoView, err := NewUtxoView(testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot)
+		require.NoError(t, err)
+		m1OriginalBalance, err := utxoView.GetDeSoBalanceNanosForPublicKey(m1PkBytes)
+		require.NoError(t, err)
+
+		_coinLockupWithTestMetaAndConnectTimestamp(
+			testMeta,
+			testMeta.feeRateNanosPerKb,
+			m1Pub,
+			m1Priv,
+			Base58CheckEncode(ZeroPublicKey.ToBytes(), false, testMeta.params),
+			2*365*24*60*60*1e9,
+			uint256.NewInt().SetUint64(500),
+			365*24*60*60*1e9,
+		)
+
+		// Check to ensure the resulting locked balance entry has 525 base units.
+		utxoView, err = NewUtxoView(testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot)
+		require.NoError(t, err)
+		m1PKIDEntry := utxoView.GetPKIDForPublicKey(m1PkBytes)
+		m1PKID := m1PKIDEntry.PKID
+		lockedBalanceEntry, err := utxoView.GetLockedBalanceEntryForHODLerPKIDProfilePKIDUnlockTimestampNanoSecs(
+			m1PKID, ZeroPKID.NewPKID(), 2*365*24*60*60*1e9)
+		require.NoError(t, err)
+		require.Equal(t, *uint256.NewInt().SetUint64(525), lockedBalanceEntry.BalanceBaseUnits)
+
+		// Check that m1's DESO balance has decreased by more than 500 nDESO (some extra was spent on fees).
+		m1NewBalance, err := utxoView.GetDeSoBalanceNanosForPublicKey(m1PkBytes)
+		require.NoError(t, err)
+		require.Greater(t, m1OriginalBalance, m1NewBalance)
+		require.Greater(t, m1OriginalBalance-m1NewBalance, uint64(500))
+	}
+
+	// Have m1 lockup 500 nDESO for one and a half years.
+	// We set the connecting block timestamp to 1 year from UNIX start to give it a non-zero value.
+	// We expect this to create a locked balance entry with 525 base units locked inside.
+	{
+		// Get m1's DESO balance.
+		utxoView, err := NewUtxoView(testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot)
+		require.NoError(t, err)
+		m1OriginalBalance, err := utxoView.GetDeSoBalanceNanosForPublicKey(m1PkBytes)
+		require.NoError(t, err)
+
+		_coinLockupWithTestMetaAndConnectTimestamp(
+			testMeta,
+			testMeta.feeRateNanosPerKb,
+			m1Pub,
+			m1Priv,
+			Base58CheckEncode(ZeroPublicKey.ToBytes(), false, testMeta.params),
+			2*365*24*60*60*1e9+365*12*60*60*1e9,
+			uint256.NewInt().SetUint64(500),
+			365*24*60*60*1e9,
+		)
+
+		// Check to ensure the resulting locked balance entry has 525 base units.
+		utxoView, err = NewUtxoView(testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot)
+		require.NoError(t, err)
+		m1PKIDEntry := utxoView.GetPKIDForPublicKey(m1PkBytes)
+		m1PKID := m1PKIDEntry.PKID
+		lockedBalanceEntry, err := utxoView.GetLockedBalanceEntryForHODLerPKIDProfilePKIDUnlockTimestampNanoSecs(
+			m1PKID, ZeroPKID.NewPKID(), 2*365*24*60*60*1e9+365*12*60*60*1e9)
+		require.NoError(t, err)
+		require.Equal(t, *uint256.NewInt().SetUint64(525), lockedBalanceEntry.BalanceBaseUnits)
+
+		// Check that m1's DESO balance has decreased by more than 500 nDESO (some extra was spent on fees).
+		m1NewBalance, err := utxoView.GetDeSoBalanceNanosForPublicKey(m1PkBytes)
+		require.NoError(t, err)
+		require.Greater(t, m1OriginalBalance, m1NewBalance)
+		require.Greater(t, m1OriginalBalance-m1NewBalance, uint64(500))
+	}
+
+	// Have m1 lockup 500 nDESO for two years.
+	// We set the connecting block timestamp to 1 year from UNIX start to give it a non-zero value.
+	// We expect this to create a locked balance entry with 600 base units locked inside.
+	{
+		// Get m1's DESO balance.
+		utxoView, err := NewUtxoView(testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot)
+		require.NoError(t, err)
+		m1OriginalBalance, err := utxoView.GetDeSoBalanceNanosForPublicKey(m1PkBytes)
+		require.NoError(t, err)
+
+		_coinLockupWithTestMetaAndConnectTimestamp(
+			testMeta,
+			testMeta.feeRateNanosPerKb,
+			m1Pub,
+			m1Priv,
+			Base58CheckEncode(ZeroPublicKey.ToBytes(), false, testMeta.params),
+			3*365*24*60*60*1e9,
+			uint256.NewInt().SetUint64(500),
+			365*24*60*60*1e9,
+		)
+
+		// Check to ensure the resulting locked balance entry has 525 base units.
+		utxoView, err = NewUtxoView(testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot)
+		require.NoError(t, err)
+		m1PKIDEntry := utxoView.GetPKIDForPublicKey(m1PkBytes)
+		m1PKID := m1PKIDEntry.PKID
+		lockedBalanceEntry, err := utxoView.GetLockedBalanceEntryForHODLerPKIDProfilePKIDUnlockTimestampNanoSecs(
+			m1PKID, ZeroPKID.NewPKID(), 3*365*24*60*60*1e9)
+		require.NoError(t, err)
+		require.Equal(t, *uint256.NewInt().SetUint64(600), lockedBalanceEntry.BalanceBaseUnits)
+
+		// Check that m1's DESO balance has decreased by more than 500 nDESO (some extra was spent on fees).
+		m1NewBalance, err := utxoView.GetDeSoBalanceNanosForPublicKey(m1PkBytes)
+		require.NoError(t, err)
+		require.Greater(t, m1OriginalBalance, m1NewBalance)
+		require.Greater(t, m1OriginalBalance-m1NewBalance, uint64(500))
+	}
+
+	// Check to make sure locked DESO is not liquid.
+	{
+		_, _, _, err := _coinLockupTransfer(
+			t, testMeta.chain, testMeta.db, testMeta.params, testMeta.feeRateNanosPerKb,
+			m1Pub,
+			m1Priv,
+			NewPublicKey(m3PkBytes),
+			&ZeroPublicKey,
+			2*365*24*60*60*1e9,
+			uint256.NewInt().SetUint64(100),
+		)
+		require.Contains(t, err.Error(), RuleErrorCoinLockupTransferRestrictedToProfileOwner)
+	}
+
+	// Check to make sure tokens can be unlocked following a year.
+	// Ensure that the associated balance entry increases by less than 1025 on unlock.
+	// One locked balance entry exists at half a year and has 500 nDESO, the other at one year
+	// and has 525 nDESO.
+	{
+		// Get m1's DESO balance.
+		utxoView, err := NewUtxoView(testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot)
+		require.NoError(t, err)
+		m1OriginalBalance, err := utxoView.GetDeSoBalanceNanosForPublicKey(m1PkBytes)
+		require.NoError(t, err)
+
+		_, _, _, err = _coinUnlockWithConnectTimestamp(
+			t, testMeta.chain, testMeta.db, testMeta.params, testMeta.feeRateNanosPerKb,
+			m1Pub,
+			m1Priv,
+			Base58CheckEncode(ZeroPublicKey.ToBytes(), false, testMeta.params),
+			2*365*24*60*60*1e9+1,
+		)
+		require.NoError(t, err)
+
+		// Check to ensure the resulting locked balance entry is deleted.
+		utxoView, err = NewUtxoView(testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot)
+		require.NoError(t, err)
+		m1PKIDEntry := utxoView.GetPKIDForPublicKey(m1PkBytes)
+		m1PKID := m1PKIDEntry.PKID
+		lockedBalanceEntry, err := utxoView.GetLockedBalanceEntryForHODLerPKIDProfilePKIDUnlockTimestampNanoSecs(
+			m1PKID, ZeroPKID.NewPKID(), 2*365*24*60*60*1e9)
+		require.True(t, lockedBalanceEntry == nil)
+
+		// Check that m1's DESO balance has increased by less than 1025 nDESO (some extra was spent on fees).
+		m1NewBalance, err := utxoView.GetDeSoBalanceNanosForPublicKey(m1PkBytes)
+		require.NoError(t, err)
+		require.Greater(t, m1NewBalance, m1OriginalBalance)
+		require.Less(t, m1NewBalance-m1OriginalBalance, uint64(1025))
+	}
+}
+
+func TestLockupDisconnects(t *testing.T) {
+	// Initialize test chain, miner, and testMeta
+	testMeta := _setUpMinerAndTestMetaForTimestampBasedLockupTests(t)
+
+	// Initialize m0, m1, m2, m3, m4, and paramUpdater
+	_setUpProfilesAndMintM0M1DAOCoins(testMeta)
 }
 
 //----------------------------------------------------------

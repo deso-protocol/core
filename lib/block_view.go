@@ -3292,7 +3292,7 @@ func (bav *UtxoView) ConnectTransaction(
 	ignoreUtxos bool) (_utxoOps []*UtxoOperation, _totalInput uint64,
 	_totalOutput uint64, _fees uint64, _err error) {
 
-	return bav._connectTransaction(txn, txHash, txnSizeBytes, blockHeight, 0, verifySignatures, ignoreUtxos)
+	return bav._connectTransaction(txn, txHash, txnSizeBytes, blockHeight, blockTimestamp, verifySignatures, ignoreUtxos)
 
 }
 
@@ -3653,6 +3653,38 @@ func (bav *UtxoView) _connectTransaction(
 				}
 			}
 			desoLockedDelta = big.NewInt(0).Neg(totalLockedAmountNanos.ToBig())
+		}
+		if txn.TxnMeta.GetTxnType() == TxnTypeCoinUnlock {
+			if len(utxoOpsForTxn) == 0 {
+				return nil, 0, 0, 0, errors.New(
+					"ConnectTransaction: TxnTypeCoinUnlock must return UtxoOpsForTxn",
+				)
+			}
+			coinUnlockMeta := txn.TxnMeta.(*CoinUnlockMetadata)
+
+			// We only count DESO added if coin unlock was a locked DESO unlock.
+			if coinUnlockMeta.ProfilePublicKey.IsZeroPublicKey() {
+				utxoOp := utxoOpsForTxn[len(utxoOpsForTxn)-1]
+				if utxoOp == nil || utxoOp.Type != OperationTypeCoinUnlock {
+					return nil, 0, 0, 0, errors.New(
+						"ConnectTransaction: TxnTypeCoinUnlock must correspond to OperationTypeCoinUnlock",
+					)
+				}
+				totalLockedDESOAmountNanos := uint256.NewInt()
+				for _, prevLockedBalanceEntry := range utxoOp.PrevLockedBalanceEntries {
+					totalLockedDESOAmountNanos, err = SafeUint256().Add(
+						totalLockedDESOAmountNanos, &prevLockedBalanceEntry.BalanceBaseUnits)
+					if err != nil {
+						return nil, 0, 0, 0,
+							errors.Wrapf(err, "ConnectTransaction: error computing TotalLockedCoinsAmountNanos: ")
+					}
+					if !totalLockedDESOAmountNanos.IsUint64() {
+						return nil, 0, 0, 0,
+							errors.Errorf("ConnectTransaction: totalLockedDESOAmountNanos overflows uint64")
+					}
+				}
+				desoLockedDelta = big.NewInt(0).Neg(totalLockedDESOAmountNanos.ToBig())
+			}
 		}
 		if big.NewInt(0).Add(balanceDelta, desoLockedDelta).Sign() > 0 {
 			return nil, 0, 0, 0, RuleErrorBalanceChangeGreaterThanZero
