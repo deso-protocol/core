@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"crypto/rand"
 	"encoding/binary"
-	"github.com/deso-protocol/core/collections/bitset"
 	"reflect"
 
 	"github.com/deso-protocol/core/bls"
