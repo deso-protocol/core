@@ -13,13 +13,11 @@ import (
 // processBlockPoS runs the Fast-Hotstuff block connect and commit rule as follows:
 //  1. Determine if we're missing the parent block of this block.
 //     If so, return the hash of the missing block and add this block to the orphans list.
-//  2. Validate on an incoming block, its header, its block height, the leader, and its QCs (vote or timeout)
+//  2. Validate the incoming block, its header, its block height, the leader, and its QCs (vote or timeout)
 //  3. Store the block in the block index and uncommitted blocks map.
-//  4. Resolves forks within the last two blocks
-//  5. Connect the block to the blockchain's tip
-//  6. Run the commit rule - If applicable, flushes the incoming block's grandparent to the DB
-//  7. Prune in-memory struct holding uncommitted block.
-//  8. Update the currentView to this new block's view + 1
+//  4. try to apply the incoming block as the tip (performing reorgs as necessary). If it can't be applied, we exit here.
+//  5. Run the commit rule - If applicable, flushes the incoming block's grandparent to the DB
+//  6. Prune in-memory struct holding uncommitted block.
 func (bc *Blockchain) processBlockPoS(desoBlock *MsgDeSoBlock, currentView uint64, verifySignatures bool) (_success bool, _isOrphan bool, _missingBlockHashes []*BlockHash, _err error) {
 	// 1. Determine if we're missing the parent block of this block. If it's parent exists in the blockIndex,
 	// it is safe to assume we have all ancestors of this block in the block index.
@@ -60,65 +58,42 @@ func (bc *Blockchain) processBlockPoS(desoBlock *MsgDeSoBlock, currentView uint6
 	if err != nil {
 		return false, false, nil, errors.Wrap(err, "processBlockPoS: Problem getting validator set: ")
 	}
-	// 1e. Validate QC
+	// 2. Validate QC
 	if err = bc.validateQC(desoBlock, validatorsByStake); err != nil {
 		return false, false, nil, errors.Wrap(err, "processBlockPoS: QC validation failed: ")
 	}
 
-	// @sofonias @piotr - should we move this to
-	// If the block doesn’t contain a ValidatorsTimeoutAggregateQC, then that indicates that we
-	// did NOT timeout in the previous view, which means we should just check that
-	// the QC corresponds to the previous view.
-	if desoBlock.Header.ValidatorsTimeoutAggregateQC.isEmpty() {
-		// The block is safe to vote on if it is a direct child of the previous
-		// block. This means that the parent and child blocks have consecutive
-		// views. We use the current block’s QC to find the view of the parent.
-		// TODO: Any processing related to the block's vote QC.
-	} else {
-		// TODO: Get highest timeout QC from the block.
-		// We find the QC with the highest view among the QCs contained in the
-		// AggregateQC.
-		var highestTimeoutQC *QuorumCertificate
-		// TODO: Check if our local highestQC has a smaller view than the highestTimeoutQC.
-		// If our local highestQC has a smaller view than the highestTimeoutQC,
-		// we update our local highestQC.
-		_ = highestTimeoutQC
-	}
-
-	// 2. We can now add this block to the block index since we have performed
+	// 3. We can now add this block to the block index since we have performed
 	// all basic validations. We can also add it to the uncommittedBlocksMap
 	if err = bc.addBlockToBlockIndex(desoBlock); err != nil {
 		return false, false, nil, errors.Wrap(err, "processBlockPoS: Problem adding block to block index: ")
 	}
 
-	// 4. Handle reorgs if necessary
-	if _, err = bc.tryReorgToNewTip(desoBlock, currentView, lineageFromCommittedTip); err != nil {
-		return false, false, nil, errors.Wrap(err, "processBlockPoS: Problem handling reorg: ")
-	}
-
-	// Happy path
-	// Make a block node struct for this block.
-	newBlockNode, err := bc.msgDeSoBlockToNewBlockNode(desoBlock)
+	// 4. Try to apply the incoming block as the new tip. This function will
+	// first perform any required reorgs and then determine if the incoming block
+	// extends the chain tip. If it does, it will apply the block to the best chain
+	// and appliedNewTip will be true and we can continue to running the commit rule.
+	appliedNewTip, err := bc.tryApplyNewTip(desoBlock, currentView, lineageFromCommittedTip)
 	if err != nil {
-		return false, false, nil, errors.Wrap(err, "processBlockPoS: Problem creating new block node: ")
+		return false, false, nil, errors.Wrap(err, "processBlockPoS: Problem applying new tip: ")
 	}
-	// 5. Add block to best chain.
-	bc.addBlockToBestChain(newBlockNode)
 
-	// 6. Commit grandparent if possible.
+	// If the incoming block is not applied as the new tip, we return early.
+	if !appliedNewTip {
+		return false, false, nil, nil
+	}
+
+	// 5. Commit grandparent if possible.
 	if err = bc.runCommitRuleOnBestChain(); err != nil {
 		return false, false, nil, errors.Wrap(err, "processBlockPoS: error committing grandparents: ")
 	}
 
-	// 7. Update in-memory struct holding uncommitted blocks.
+	// 6. Update in-memory struct holding uncommitted blocks.
 	if err = bc.pruneUncommittedBlocks(desoBlock); err != nil {
 		// We glog and continue here as failing to prune the uncommitted blocks map is not a
 		// critical error.
 		glog.Errorf("processBlockPoS: Error pruning uncommitted blocks: %v", err)
 	}
-
-	// 8. Update current view to block's view + 1
-	bc.updateCurrentView(desoBlock)
 
 	return true, false, nil, nil
 }
@@ -407,6 +382,29 @@ func (bc *Blockchain) addBlockToBlockIndex(desoBlock *MsgDeSoBlock) error {
 	return nil
 }
 
+// tryApplyNewTip attempts to apply the new tip to the best chain. It will do the following:
+// 1. Check if we should perform a reorg. If so, it will handle the reorg. If reorging causes an error, return false and error.
+// 2. Check if the incoming block extends the chain tip after reorg. If not, return false and nil
+// 3. If the incoming block extends the chain tip, we can apply it by calling addBlockToBestChain. Return true and nil.
+func (bc *Blockchain) tryApplyNewTip(desoBlock *MsgDeSoBlock, currentView uint64, lineageFromCommittedTip []*BlockNode) (_appliedNewTip bool, _err error) {
+	if _, err := bc.tryReorgToNewTip(desoBlock, currentView, lineageFromCommittedTip); err != nil {
+		return false, errors.Wrapf(err, "tryApplyNewTip: Problem handling reorg: ")
+	}
+
+	// Check if the incoming block extends the chain tip after reorg.
+	chainTip := bc.GetBestChainTip()
+	if !chainTip.Hash.IsEqual(desoBlock.Header.PrevBlockHash) {
+		return false, nil
+	}
+	// If the incoming block extends the chain tip, we can apply it by calling addBlockToBestChain.
+	newBlockNode, err := bc.msgDeSoBlockToNewBlockNode(desoBlock)
+	if err != nil {
+		return false, errors.Wrapf(err, "tryApplyNewTip: Problem creating new block node: ")
+	}
+	bc.addBlockToBestChain(newBlockNode)
+	return true, nil
+}
+
 // shouldReorg determines if we should reorg to the block provided. We should reorg if
 // this block is proposed in a view greater than or equal to the currentView. Other
 // functions have validated that this block is not extending from a committed block
@@ -629,25 +627,10 @@ func (bc *Blockchain) commitBlock(blockHash *BlockHash) error {
 	return nil
 }
 
-// updateCurrentView updates the current view to the block's view + 1.
-func (bc *Blockchain) updateCurrentView(desoBlock *MsgDeSoBlock) {
-	// TODO: Implement me.
-	panic(errors.New("IMPLEMENT ME"))
-}
-
 // GetUncommittedTipView builds a UtxoView to the uncommitted tip.
 func (bc *Blockchain) GetUncommittedTipView() (*UtxoView, error) {
 	// Connect the uncommitted blocks to the tip so that we can validate subsequent blocks
-	highestCommittedBlock, _ := bc.getHighestCommittedBlock()
-	if highestCommittedBlock == nil {
-		// This is an edge case we'll never hit in practice since all the PoW blocks
-		// are committed.
-		return nil, errors.New("GetUncommittedTipView: No committed blocks found")
-	}
-	if highestCommittedBlock.Hash == nil {
-		return nil, errors.New("GetUncommittedTipView: Committed block has nil hash")
-	}
-	return bc.getUtxoViewAtBlockHash(*highestCommittedBlock.Hash)
+	return bc.getUtxoViewAtBlockHash(*bc.GetBestChainTip().Hash)
 }
 
 // getUtxoViewAtBlockHash builds a UtxoView to the block provided. It does this by
@@ -670,6 +653,7 @@ func (bc *Blockchain) getUtxoViewAtBlockHash(blockHash BlockHash) (*UtxoView, er
 		}
 	}
 	for currentBlock.CommittedStatus == UNCOMMITTED {
+		uncommittedAncestors = append(uncommittedAncestors, currentBlock)
 		currentParentHash := currentBlock.Header.PrevBlockHash
 		if currentParentHash == nil {
 			return nil, errors.Errorf("getUtxoViewAtBlockHash: Block %v has nil PrevBlockHash", currentBlock.Hash)
@@ -678,7 +662,6 @@ func (bc *Blockchain) getUtxoViewAtBlockHash(blockHash BlockHash) (*UtxoView, er
 		if currentBlock == nil {
 			return nil, errors.Errorf("getUtxoViewAtBlockHash: Block %v not found in block index", blockHash)
 		}
-		uncommittedAncestors = append(uncommittedAncestors, currentBlock)
 	}
 	// Connect the uncommitted blocks to the tip so that we can validate subsequent blocks
 	utxoView, err := NewUtxoView(bc.db, bc.params, bc.postgres, bc.snapshot)
@@ -700,6 +683,8 @@ func (bc *Blockchain) getUtxoViewAtBlockHash(blockHash BlockHash) (*UtxoView, er
 			return nil, errors.Wrapf(err, "GetUncommittedTipView: Problem connecting block hash %v", hash.String())
 		}
 	}
+	// Update the TipHash saved on the UtxoView to the blockHash provided.
+	utxoView.TipHash = &blockHash
 	return utxoView, nil
 }
 
