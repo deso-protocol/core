@@ -331,8 +331,10 @@ func TestAddBlockToBlockIndex(t *testing.T) {
 				},
 			},
 			ProposerVotePartialSignature: dummySig,
+			TxnConnectStatusByIndexHash:  NewBlockHash(bitset.NewBitset().ToBytes()),
 		},
-		Txns: nil,
+		Txns:                    nil,
+		TxnConnectStatusByIndex: bitset.NewBitset(),
 	}
 	err = bc.addBlockToBlockIndex(block)
 	require.Nil(t, err)
@@ -494,8 +496,10 @@ func TestAddBlockToBlockIndexAndUncommittedBlocks(t *testing.T) {
 					SignersList: bitset.NewBitset(),
 				},
 			},
+			TxnConnectStatusByIndexHash: NewBlockHash(bitset.NewBitset().ToBytes()),
 		},
-		Txns: nil,
+		Txns:                    nil,
+		TxnConnectStatusByIndex: bitset.NewBitset(),
 	}
 
 	err = bc.addBlockToBlockIndex(block)
@@ -1124,7 +1128,7 @@ func TestShouldReorg(t *testing.T) {
 	require.True(t, bc.shouldReorg(newBlock, 2))
 }
 
-func TestTryReorgToNewTipAndTryApplyNewTip(t *testing.T) {
+func TestTryApplyNewTip(t *testing.T) {
 	bc, _, _ := NewTestBlockchain(t)
 	hash1 := NewBlockHash(RandomBytes(32))
 	bn1 := &BlockNode{
