@@ -1123,7 +1123,7 @@ func TestShouldReorg(t *testing.T) {
 	require.True(t, bc.shouldReorg(newBlock, 2))
 }
 
-func TestTryReorgToNewTip(t *testing.T) {
+func TestTryReorgToNewTipAndTryApplyNewTip(t *testing.T) {
 	bc, _, _ := NewTestBlockchain(t)
 	hash1 := NewBlockHash(RandomBytes(32))
 	bn1 := &BlockNode{
@@ -1160,6 +1160,8 @@ func TestTryReorgToNewTip(t *testing.T) {
 			ProposedInView: 10,
 		},
 	}
+	newBlockHash, err := newBlock.Hash()
+	require.NoError(t, err)
 
 	ancestors, err := bc.getLineageFromCommittedTip(newBlock)
 	require.NoError(t, err)
@@ -1184,9 +1186,38 @@ func TestTryReorgToNewTip(t *testing.T) {
 	require.True(t, hash1ExistsInBestChainMap)
 	require.True(t, checkBestChainForHash(hash1))
 
-	// Add bn3 back to the best chain and block index
+	// Add bn3 back to the best chain and block index to reset the state.
 	bc.addBlockToBestChain(bn3)
-	bc.blockIndex[*hash3] = bn3
+
+	// Try to apply newBlock as tip. This should succeed.
+	appliedNewTip, err := bc.tryApplyNewTip(newBlock, 9, ancestors)
+	require.NoError(t, err)
+	require.True(t, appliedNewTip)
+	// hash 3 should no longer be in the best chain or best chain map
+	_, hash3ExistsInBestChainMap = bc.bestChainMap[*hash3]
+	require.False(t, hash3ExistsInBestChainMap)
+	require.False(t, checkBestChainForHash(hash3))
+
+	// newBlock should be in the best chain and the best chain map and should be the tip.
+	_, newBlockExistsInBestChainMap := bc.bestChainMap[*newBlockHash]
+	require.True(t, newBlockExistsInBestChainMap)
+	require.True(t, checkBestChainForHash(newBlockHash))
+	require.True(t, bc.GetBestChainTip().Hash.IsEqual(newBlockHash))
+
+	// Make sure block 2 and block 1 are still in the best chain.
+	_, hash2ExistsInBestChainMap = bc.bestChainMap[*hash2]
+	require.True(t, hash2ExistsInBestChainMap)
+	require.True(t, checkBestChainForHash(hash2))
+
+	_, hash1ExistsInBestChainMap = bc.bestChainMap[*hash1]
+	require.True(t, hash1ExistsInBestChainMap)
+	require.True(t, checkBestChainForHash(hash1))
+
+	// Remove newBlock from the best chain and block index to reset the state.
+	bc.bestChain = bc.bestChain[:len(bc.bestChain)-1]
+	delete(bc.bestChainMap, *newBlockHash)
+	// Add block 3 back
+	bc.addBlockToBestChain(bn3)
 
 	// Add a series of blocks that are not part of the best chain
 	// to the block index and reorg to them
@@ -1212,6 +1243,8 @@ func TestTryReorgToNewTip(t *testing.T) {
 
 	// Set new block's parent to hash5
 	newBlock.Header.PrevBlockHash = hash5
+	newBlockHash, err = newBlock.Hash()
+	require.NoError(t, err)
 	ancestors, err = bc.getLineageFromCommittedTip(newBlock)
 	require.NoError(t, err)
 	hasReorged, err = bc.tryReorgToNewTip(newBlock, 9, ancestors)
@@ -1234,12 +1267,72 @@ func TestTryReorgToNewTip(t *testing.T) {
 	require.True(t, hash5ExistsInBestChainMap)
 	require.True(t, checkBestChainForHash(hash5))
 
+	// Reset the state and try to apply the newBlock as the tip.
+	delete(bc.bestChainMap, *hash4)
+	delete(bc.bestChainMap, *hash5)
+	bc.bestChain = bc.bestChain[:len(bc.bestChain)-2]
+
+	// Add block 2 and 3 back.
+	bc.addBlockToBestChain(bn2)
+	bc.addBlockToBestChain(bn3)
+
+	// Try to apply newBlock as tip.
+	appliedNewTip, err = bc.tryApplyNewTip(newBlock, 9, ancestors)
+	require.NoError(t, err)
+	require.True(t, appliedNewTip)
+	// newBlockHash should be tip.
+	require.True(t, bc.GetBestChainTip().Hash.IsEqual(newBlockHash))
+	// hash 3 should no longer be in the best chain or best chain map
+	_, hash3ExistsInBestChainMap = bc.bestChainMap[*hash3]
+	require.False(t, hash3ExistsInBestChainMap)
+	require.False(t, checkBestChainForHash(hash3))
+	// hash 2 should no longer be in the best chain or best chain map
+	_, hash2ExistsInBestChainMap = bc.bestChainMap[*hash2]
+	require.False(t, hash2ExistsInBestChainMap)
+	require.False(t, checkBestChainForHash(hash2))
+	// hash 4 should be in the best chain and the best chain map
+	_, hash4ExistsInBestChainMap = bc.bestChainMap[*hash4]
+	require.True(t, hash4ExistsInBestChainMap)
+	require.True(t, checkBestChainForHash(hash4))
+	// hash 5 should be in the best chain and the best chain map
+	_, hash5ExistsInBestChainMap = bc.bestChainMap[*hash5]
+	require.True(t, hash5ExistsInBestChainMap)
+	require.True(t, checkBestChainForHash(hash5))
+
+	// Reset the state of the best chain.
+	delete(bc.bestChainMap, *hash4)
+	delete(bc.bestChainMap, *hash5)
+	delete(bc.bestChainMap, *newBlockHash)
+	bc.bestChain = bc.bestChain[:len(bc.bestChain)-3]
+
+	// Add block 2 and 3 back.
+	bc.addBlockToBestChain(bn2)
+	bc.addBlockToBestChain(bn3)
+
 	// No reorg tests
 	// currentView > newBlock.View
 	newBlock.Header.ProposedInView = 8
 	hasReorged, err = bc.tryReorgToNewTip(newBlock, 9, ancestors)
 	require.False(t, hasReorged)
 	require.NoError(t, err)
+
+	// we should not apply the new tip if it doesn't extend the current tip.
+	appliedNewTip, err = bc.tryApplyNewTip(newBlock, 9, ancestors)
+	require.False(t, appliedNewTip)
+	require.NoError(t, err)
+
+	// Super Happy path: no reorg, just extending tip.
+	newBlock.Header.ProposedInView = 10
+	newBlock.Header.PrevBlockHash = hash3
+	newBlockHash, err = newBlock.Hash()
+	require.NoError(t, err)
+	ancestors, err = bc.getLineageFromCommittedTip(newBlock)
+	require.NoError(t, err)
+	appliedNewTip, err = bc.tryApplyNewTip(newBlock, 9, ancestors)
+	require.True(t, appliedNewTip)
+	require.NoError(t, err)
+	// newBlockHash should be tip.
+	require.True(t, bc.GetBestChainTip().Hash.IsEqual(newBlockHash))
 }
 
 func TestCanCommitGrandparent(t *testing.T) {
