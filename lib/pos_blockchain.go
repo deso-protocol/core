@@ -394,41 +394,47 @@ func (bc *Blockchain) addBlockToBlockIndex(desoBlock *MsgDeSoBlock) error {
 // 2. Check if the incoming block extends the chain tip after reorg. If not, return false and nil
 // 3. If the incoming block extends the chain tip, we can apply it by calling addBlockToBestChain. Return true and nil.
 func (bc *Blockchain) tryApplyNewTip(newTip *MsgDeSoBlock, currentView uint64, lineageFromCommittedTip []*BlockNode) (_appliedNewTip bool, _err error) {
-	// Check if we should perform a reorg here
-	if bc.shouldReorg(newTip, currentView) {
-		// For simplicity, we remove all uncommitted blocks and then re-add them.
-		highestCommittedBlock, idx := bc.getHighestCommittedBlock()
-		if highestCommittedBlock == nil || idx == -1 {
-			// This is an edge case we'll never hit in practice since all the PoW blocks
-			// are committed.
-			return false, errors.New("tryApplyNewTip: No committed blocks found")
-		}
-
-		// Remove all uncommitted blocks. These are all blocks that come after the highestCommittedBlock
-		// in the best chain.
-		// Delete all blocks from bc.bestChainMap that come after the highest committed block.
-		for ii := idx + 1; ii < len(bc.bestChain); ii++ {
-			delete(bc.bestChainMap, *bc.bestChain[ii].Hash)
-		}
-		// Shorten best chain back to committed tip.
-		bc.bestChain = bc.bestChain[:idx+1]
-
-		for _, ancestor := range lineageFromCommittedTip {
-			bc.addBlockToBestChain(ancestor)
-		}
-	}
-
-	// Check if the incoming block extends the chain tip after reorg.
-	chainTip := bc.GetBestChainTip()
-	if !chainTip.Hash.IsEqual(newTip.Header.PrevBlockHash) {
-		return false, nil
-	}
-	// If the incoming block extends the chain tip, we can apply it by calling addBlockToBestChain.
-	newBlockNode, err := bc.msgDeSoBlockToNewBlockNode(newTip)
+	// Create a new block node for the new tip
+	newTipBlockNode, err := bc.msgDeSoBlockToNewBlockNode(newTip)
 	if err != nil {
 		return false, errors.Wrapf(err, "tryApplyNewTip: Problem creating new block node: ")
 	}
-	bc.addBlockToBestChain(newBlockNode)
+
+	// Check if the incoming block extends the chain tip. If so, we don't need to reorg
+	// and can just add this block to the best chain.
+	chainTip := bc.GetBestChainTip()
+	if chainTip.Hash.IsEqual(newTip.Header.PrevBlockHash) {
+		bc.addBlockToBestChain(newTipBlockNode)
+		return true, nil
+	}
+	// Check if we should perform a reorg here.
+	// If we shouldn't reorg AND the incoming block doesn't extend the chain tip, we know that
+	// the incoming block will not get applied as the new tip.
+	if !bc.shouldReorg(newTip, currentView) {
+		return false, nil
+	}
+
+	// We need to perform a reorg here. For simplicity, we remove all uncommitted blocks and then re-add them.
+	committedTip, idx := bc.getHighestCommittedBlock()
+	if committedTip == nil || idx == -1 {
+		// This is an edge case we'll never hit in practice since all the PoW blocks
+		// are committed.
+		return false, errors.New("tryApplyNewTip: No committed blocks found")
+	}
+	// Remove all uncommitted blocks. These are all blocks that come after the committedTip
+	// in the best chain.
+	// Delete all blocks from bc.bestChainMap that come after the highest committed block.
+	for ii := idx + 1; ii < len(bc.bestChain); ii++ {
+		delete(bc.bestChainMap, *bc.bestChain[ii].Hash)
+	}
+	// Shorten best chain back to committed tip.
+	bc.bestChain = bc.bestChain[:idx+1]
+	// Add the ancestors of the new tip to the best chain.
+	for _, ancestor := range lineageFromCommittedTip {
+		bc.addBlockToBestChain(ancestor)
+	}
+	// Add the new tip to the best chain.
+	bc.addBlockToBestChain(newTipBlockNode)
 	return true, nil
 }
 
