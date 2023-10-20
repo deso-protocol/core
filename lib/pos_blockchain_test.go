@@ -1351,7 +1351,7 @@ func TestCanCommitGrandparent(t *testing.T) {
 	// TODO: What other cases do we really need tested here?
 }
 
-func TestRunCommitRuleonBestChain(t *testing.T) {
+func TestRunCommitRuleOnBestChain(t *testing.T) {
 	testMeta := NewTestPoSBlockchain(t)
 
 	// Create a single block and add it to the best chain.
@@ -1471,6 +1471,19 @@ func _verifyCommitRuleHelper(testMeta *TestMeta, committedBlocks []*BlockHash, u
 	}
 }
 
+func TestProcessBlockPoS(t *testing.T) {
+	testMeta := NewTestPoSBlockchain(t)
+
+	// All validators register + stake to themselves.
+	_registerValidatorAndStake(testMeta, m0Pub, m0Priv, 0, 100, false)
+	_registerValidatorAndStake(testMeta, m1Pub, m1Priv, 0, 200, false)
+	_registerValidatorAndStake(testMeta, m2Pub, m2Priv, 0, 300, false)
+	_registerValidatorAndStake(testMeta, m3Pub, m3Priv, 0, 400, false)
+	_registerValidatorAndStake(testMeta, m4Pub, m4Priv, 0, 500, false)
+	_registerValidatorAndStake(testMeta, m5Pub, m5Priv, 0, 600, false)
+	_registerValidatorAndStake(testMeta, m6Pub, m6Priv, 0, 700, false)
+}
+
 func _generateBlockAndAddToBestChain(testMeta *TestMeta, blockHeight uint64, view uint64, seed int64) *MsgDeSoBlock {
 	globalParams := _testGetDefaultGlobalParams()
 	randSource := rand.New(rand.NewSource(seed))
@@ -1543,8 +1556,8 @@ func _generateRandomBLSPrivateKey(t *testing.T) *bls.PrivateKey {
 }
 
 func NewTestPoSBlockchain(t *testing.T) *TestMeta {
+	setBalanceModelBlockHeights(t)
 	chain, params, db := NewLowDifficultyBlockchain(t)
-	params.ForkHeights.BalanceModelBlockHeight = 1
 	oldPool, miner := NewTestMiner(t, chain, params, true)
 	// Mine a few blocks to give the senderPkString some money.
 	for ii := 0; ii < 10; ii++ {
@@ -1553,16 +1566,12 @@ func NewTestPoSBlockchain(t *testing.T) *TestMeta {
 	}
 
 	m0PubBytes, _, _ := Base58CheckDecode(m0Pub)
-	m0PublicKeyBase58Check := Base58CheckEncode(m0PubBytes, false, params)
-	m1PubBytes, _, _ := Base58CheckDecode(m1Pub)
-	m1PublicKeyBase58Check := Base58CheckEncode(m1PubBytes, false, params)
-
-	_, _, _ = _doBasicTransferWithViewFlush(
-		t, chain, db, params, senderPkString, m0PublicKeyBase58Check,
-		senderPrivString, 1e9, 1000)
-	_, _, _ = _doBasicTransferWithViewFlush(
-		t, chain, db, params, senderPkString, m1PublicKeyBase58Check,
-		senderPrivString, 1e9, 1000)
+	publicKeys := []string{m0Pub, m1Pub, m2Pub, m3Pub, m4Pub, m5Pub, m6Pub}
+	for _, publicKey := range publicKeys {
+		_, _, _ = _doBasicTransferWithViewFlush(
+			t, chain, db, params, senderPkString, publicKey,
+			senderPrivString, 1e9, 1000)
+	}
 	oldPool.Stop()
 	miner.Stop()
 	latestBlockView, err := NewUtxoView(db, params, nil, nil)
@@ -1586,6 +1595,7 @@ func NewTestPoSBlockchain(t *testing.T) *TestMeta {
 		posBlockProducer: posBlockProducer,
 		// TODO: what else do we need here?
 		feeRateNanosPerKb: 1000,
+		savedHeight:       10,
 		//miner:                  nil,
 		//txnOps:                 nil,
 		//txns:                   nil,
