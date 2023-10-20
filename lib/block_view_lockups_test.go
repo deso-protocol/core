@@ -1388,6 +1388,518 @@ func TestLockupDisconnects(t *testing.T) {
 
 	// Initialize m0, m1, m2, m3, m4, and paramUpdater
 	_setUpProfilesAndMintM0M1DAOCoins(testMeta)
+
+	// Ensure that paramUpdater is set in the testMeta
+	testMeta.params.ExtraRegtestParamUpdaterKeys[MakePkMapKey(paramUpdaterPkBytes)] = true
+
+	//
+	// Test Coin Lockup for Profiles
+	//
+	utxoOps1, txn1, _, err := _coinLockupWithConnectTimestamp(
+		t, testMeta.chain, testMeta.db, testMeta.params,
+		testMeta.feeRateNanosPerKb,
+		m0Pub,
+		m0Priv,
+		m0Pub,
+		2*365*24*60*60*1e9,
+		uint256.NewInt().SetUint64(1000),
+		365*24*60*60*1e9)
+	require.NoError(t, err)
+	utxoOps2, txn2, _, err := _coinLockupWithConnectTimestamp(
+		t, testMeta.chain, testMeta.db, testMeta.params,
+		testMeta.feeRateNanosPerKb,
+		m0Pub,
+		m0Priv,
+		m0Pub,
+		2*365*24*60*60*1e9,
+		uint256.NewInt().SetUint64(1000),
+		365*24*60*60*1e9)
+	require.NoError(t, err)
+	txHash := txn2.Hash()
+	blockHeight := testMeta.chain.BlockTip().Height + 1
+	utxoView, err := NewUtxoView(testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot)
+	require.NoError(t, err)
+	err = utxoView.DisconnectTransaction(txn2, txHash, utxoOps2, blockHeight)
+	require.NoError(t, utxoView.FlushToDb(uint64(blockHeight)))
+	require.NoError(t, err)
+	utxoView, err = NewUtxoView(testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot)
+	require.NoError(t, err)
+	m0PKID := utxoView.GetPKIDForPublicKey(m0PkBytes).PKID
+	lockedBalanceEntry, err := utxoView.GetLockedBalanceEntryForHODLerPKIDProfilePKIDUnlockTimestampNanoSecs(
+		m0PKID, m0PKID, 2*365*24*60*60*1e9)
+	require.NoError(t, err)
+	require.Equal(t, *uint256.NewInt().SetUint64(1000), lockedBalanceEntry.BalanceBaseUnits)
+	balanceEntry, _, _ := utxoView.GetBalanceEntryForHODLerPubKeyAndCreatorPubKey(m0PkBytes, m0PkBytes, true)
+	require.Equal(t, *uint256.NewInt().SetUint64(999000), balanceEntry.BalanceNanos)
+	err = utxoView.DisconnectTransaction(txn1, txn1.Hash(), utxoOps1, blockHeight)
+	require.NoError(t, utxoView.FlushToDb(uint64(blockHeight)))
+	require.NoError(t, err)
+	utxoView, err = NewUtxoView(testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot)
+	require.NoError(t, err)
+	lockedBalanceEntry, err = utxoView.GetLockedBalanceEntryForHODLerPKIDProfilePKIDUnlockTimestampNanoSecs(
+		m0PKID, m0PKID, 2*365*24*60*60*1e9)
+	require.True(t, lockedBalanceEntry == nil)
+	balanceEntry, _, _ = utxoView.GetBalanceEntryForHODLerPubKeyAndCreatorPubKey(m0PkBytes, m0PkBytes, true)
+	require.Equal(t, *uint256.NewInt().SetUint64(1000000), balanceEntry.BalanceNanos)
+
+	//
+	// Test Coin Lockup for DESO
+	//
+
+	utxoView, err = NewUtxoView(testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot)
+	require.NoError(t, err)
+	originalBalance, err := utxoView.GetSpendableDeSoBalanceNanosForPublicKey(
+		m2PkBytes, testMeta.chain.BlockTip().Height)
+	require.NoError(t, err)
+	utxoOps1, txn1, _, err = _coinLockupWithConnectTimestamp(
+		t, testMeta.chain, testMeta.db, testMeta.params,
+		testMeta.feeRateNanosPerKb,
+		m2Pub,
+		m2Priv,
+		Base58CheckEncode(ZeroPublicKey.ToBytes(), false, testMeta.params),
+		2*365*24*60*60*1e9,
+		uint256.NewInt().SetUint64(500),
+		365*24*60*60*1e9)
+	require.NoError(t, err)
+	utxoView, err = NewUtxoView(testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot)
+	require.NoError(t, err)
+	intermediateBalance, err := utxoView.GetSpendableDeSoBalanceNanosForPublicKey(
+		m2PkBytes, testMeta.chain.BlockTip().Height)
+	require.NoError(t, err)
+	utxoOps2, txn2, _, err = _coinLockupWithConnectTimestamp(
+		t, testMeta.chain, testMeta.db, testMeta.params,
+		testMeta.feeRateNanosPerKb,
+		m2Pub,
+		m2Priv,
+		Base58CheckEncode(ZeroPublicKey.ToBytes(), false, testMeta.params),
+		2*365*24*60*60*1e9,
+		uint256.NewInt().SetUint64(500),
+		365*24*60*60*1e9)
+	require.NoError(t, err)
+	txHash = txn2.Hash()
+	blockHeight = testMeta.chain.BlockTip().Height + 1
+	utxoView, err = NewUtxoView(testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot)
+	require.NoError(t, err)
+	err = utxoView.DisconnectTransaction(txn2, txHash, utxoOps2, blockHeight)
+	require.NoError(t, utxoView.FlushToDb(uint64(blockHeight)))
+	require.NoError(t, err)
+	utxoView, err = NewUtxoView(testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot)
+	require.NoError(t, err)
+	m2PKID := utxoView.GetPKIDForPublicKey(m2PkBytes).PKID
+	lockedBalanceEntry, err = utxoView.GetLockedBalanceEntryForHODLerPKIDProfilePKIDUnlockTimestampNanoSecs(
+		m2PKID, &ZeroPKID, 2*365*24*60*60*1e9)
+	require.NoError(t, err)
+	require.Equal(t, *uint256.NewInt().SetUint64(500), lockedBalanceEntry.BalanceBaseUnits)
+	currentBalance, err := utxoView.GetSpendableDeSoBalanceNanosForPublicKey(
+		m2PkBytes, testMeta.chain.BlockTip().Height)
+	require.NoError(t, err)
+	require.Equal(t, currentBalance, intermediateBalance)
+	err = utxoView.DisconnectTransaction(txn1, txn1.Hash(), utxoOps1, blockHeight)
+	require.NoError(t, utxoView.FlushToDb(uint64(blockHeight)))
+	require.NoError(t, err)
+	utxoView, err = NewUtxoView(testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot)
+	require.NoError(t, err)
+	lockedBalanceEntry, err = utxoView.GetLockedBalanceEntryForHODLerPKIDProfilePKIDUnlockTimestampNanoSecs(
+		m2PKID, &ZeroPKID, 2*365*24*60*60*1e9)
+	require.True(t, lockedBalanceEntry == nil)
+	currentBalance, err = utxoView.GetSpendableDeSoBalanceNanosForPublicKey(
+		m2PkBytes, testMeta.chain.BlockTip().Height)
+	require.NoError(t, err)
+	require.Equal(t, currentBalance, originalBalance)
+
+	//
+	// Test Update Coin Lockup Params for Profiles
+	//
+
+	// Test adding a lockup curve point and modifying lockup transfer restrictions.
+	// Ensure upon disconnect the original point and restrictions remain.
+	_, _, _, err = _updateCoinLockupParams(
+		t, testMeta.chain, testMeta.db, testMeta.params,
+		testMeta.feeRateNanosPerKb,
+		m1Pub,
+		m1Priv,
+		365*24*60*60*1e9,
+		1000,
+		false,
+		true,
+		TransferRestrictionStatusProfileOwnerOnly,
+	)
+	require.NoError(t, err)
+	utxoView, err = NewUtxoView(testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot)
+	require.NoError(t, err)
+	utxoOps, txn, _, err := _updateCoinLockupParams(
+		t, testMeta.chain, testMeta.db, testMeta.params,
+		testMeta.feeRateNanosPerKb,
+		m1Pub,
+		m1Priv,
+		365*24*60*60*1e9,
+		2500,
+		false,
+		true,
+		TransferRestrictionStatusPermanentlyUnrestricted,
+	)
+	require.NoError(t, err)
+	txHash = txn.Hash()
+	blockHeight = testMeta.chain.BlockTip().Height + 1
+	err = utxoView.DisconnectTransaction(txn, txHash, utxoOps, blockHeight)
+	require.NoError(t, utxoView.FlushToDb(uint64(blockHeight)))
+	require.NoError(t, err)
+	utxoView, err = NewUtxoView(testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot)
+	require.NoError(t, err)
+	m1PKID := utxoView.GetPKIDForPublicKey(m1PkBytes).PKID
+	leftYieldCurvePoint, rightYieldCurvePoint, err :=
+		utxoView.GetLocalYieldCurvePoints(m1PKID, 365*24*60*60*1e9)
+	require.NoError(t, err)
+	require.True(t, leftYieldCurvePoint == nil)
+	require.Equal(t, rightYieldCurvePoint.LockupYieldAPYBasisPoints, uint64(1000))
+	require.Equal(t, rightYieldCurvePoint.LockupDurationNanoSecs, int64(365*24*60*60*1e9))
+	profileEntry := utxoView.GetProfileEntryForPKID(m1PKID)
+	require.Equal(t, profileEntry.DAOCoinEntry.LockupTransferRestrictionStatus, TransferRestrictionStatusProfileOwnerOnly)
+
+	// Test Deleting a Yield Curve Point and Reverting Said Transaction
+	utxoView, err = NewUtxoView(testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot)
+	require.NoError(t, err)
+	utxoOps, txn, _, err = _updateCoinLockupParams(
+		t, testMeta.chain, testMeta.db, testMeta.params,
+		testMeta.feeRateNanosPerKb,
+		m1Pub,
+		m1Priv,
+		365*24*60*60*1e9,
+		0,
+		true,
+		false,
+		TransferRestrictionStatusUnrestricted,
+	)
+	require.NoError(t, err)
+	leftYieldCurvePoint, rightYieldCurvePoint, err =
+		utxoView.GetLocalYieldCurvePoints(m1PKID, 365*24*60*60*1e9)
+	require.NoError(t, err)
+	require.True(t, leftYieldCurvePoint == nil)
+	require.True(t, rightYieldCurvePoint == nil)
+	txHash = txn.Hash()
+	blockHeight = testMeta.chain.BlockTip().Height + 1
+	err = utxoView.DisconnectTransaction(txn, txHash, utxoOps, blockHeight)
+	require.NoError(t, utxoView.FlushToDb(uint64(blockHeight)))
+	require.NoError(t, err)
+	utxoView, err = NewUtxoView(testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot)
+	require.NoError(t, err)
+	leftYieldCurvePoint, rightYieldCurvePoint, err =
+		utxoView.GetLocalYieldCurvePoints(m1PKID, 365*24*60*60*1e9)
+	require.NoError(t, err)
+	require.True(t, leftYieldCurvePoint == nil)
+	require.Equal(t, rightYieldCurvePoint.LockupYieldAPYBasisPoints, uint64(1000))
+	require.Equal(t, rightYieldCurvePoint.LockupDurationNanoSecs, int64(365*24*60*60*1e9))
+	profileEntry = utxoView.GetProfileEntryForPKID(m1PKID)
+	require.Equal(t, profileEntry.DAOCoinEntry.LockupTransferRestrictionStatus, TransferRestrictionStatusProfileOwnerOnly)
+
+	//
+	// Test Update Coin Lockup Params for DESO
+	//
+
+	// Test adding a lockup curve point and modifying lockup transfer restrictions.
+	// Ensure upon disconnect the original point and restrictions remain.
+	_, _, _, err = _updateCoinLockupParams(
+		t, testMeta.chain, testMeta.db, testMeta.params,
+		testMeta.feeRateNanosPerKb,
+		paramUpdaterPub,
+		paramUpdaterPriv,
+		365*24*60*60*1e9,
+		1000,
+		false,
+		true,
+		TransferRestrictionStatusProfileOwnerOnly,
+	)
+	require.NoError(t, err)
+	utxoView, err = NewUtxoView(testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot)
+	require.NoError(t, err)
+	utxoOps, txn, _, err = _updateCoinLockupParams(
+		t, testMeta.chain, testMeta.db, testMeta.params,
+		testMeta.feeRateNanosPerKb,
+		paramUpdaterPub,
+		paramUpdaterPriv,
+		365*24*60*60*1e9,
+		2500,
+		false,
+		true,
+		TransferRestrictionStatusPermanentlyUnrestricted,
+	)
+	require.NoError(t, err)
+	txHash = txn.Hash()
+	blockHeight = testMeta.chain.BlockTip().Height + 1
+	err = utxoView.DisconnectTransaction(txn, txHash, utxoOps, blockHeight)
+	require.NoError(t, utxoView.FlushToDb(uint64(blockHeight)))
+	require.NoError(t, err)
+	utxoView, err = NewUtxoView(testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot)
+	require.NoError(t, err)
+	leftYieldCurvePoint, rightYieldCurvePoint, err =
+		utxoView.GetLocalYieldCurvePoints(&ZeroPKID, 365*24*60*60*1e9)
+	require.NoError(t, err)
+	require.True(t, leftYieldCurvePoint == nil)
+	require.Equal(t, rightYieldCurvePoint.LockupYieldAPYBasisPoints, uint64(1000))
+	require.Equal(t, rightYieldCurvePoint.LockupDurationNanoSecs, int64(365*24*60*60*1e9))
+	require.Equal(t, utxoView.GlobalParamsEntry.LockedDESOTransferRestrictions, TransferRestrictionStatusProfileOwnerOnly)
+
+	// Test Deleting a Yield Curve Point and Reverting Said Transaction
+	utxoView, err = NewUtxoView(testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot)
+	require.NoError(t, err)
+	utxoOps, txn, _, err = _updateCoinLockupParams(
+		t, testMeta.chain, testMeta.db, testMeta.params,
+		testMeta.feeRateNanosPerKb,
+		paramUpdaterPub,
+		paramUpdaterPriv,
+		365*24*60*60*1e9,
+		0,
+		true,
+		false,
+		TransferRestrictionStatusUnrestricted,
+	)
+	require.NoError(t, err)
+	leftYieldCurvePoint, rightYieldCurvePoint, err =
+		utxoView.GetLocalYieldCurvePoints(&ZeroPKID, 365*24*60*60*1e9)
+	require.NoError(t, err)
+	require.True(t, leftYieldCurvePoint == nil)
+	require.True(t, rightYieldCurvePoint == nil)
+	txHash = txn.Hash()
+	blockHeight = testMeta.chain.BlockTip().Height + 1
+	err = utxoView.DisconnectTransaction(txn, txHash, utxoOps, blockHeight)
+	require.NoError(t, utxoView.FlushToDb(uint64(blockHeight)))
+	require.NoError(t, err)
+	utxoView, err = NewUtxoView(testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot)
+	require.NoError(t, err)
+	leftYieldCurvePoint, rightYieldCurvePoint, err =
+		utxoView.GetLocalYieldCurvePoints(&ZeroPKID, 365*24*60*60*1e9)
+	require.NoError(t, err)
+	require.True(t, leftYieldCurvePoint == nil)
+	require.Equal(t, rightYieldCurvePoint.LockupYieldAPYBasisPoints, uint64(1000))
+	require.Equal(t, rightYieldCurvePoint.LockupDurationNanoSecs, int64(365*24*60*60*1e9))
+	require.Equal(t, utxoView.GlobalParamsEntry.LockedDESOTransferRestrictions, TransferRestrictionStatusProfileOwnerOnly)
+
+	//
+	// Test Coin Lockup Transfers
+	//
+
+	// Create an on-chain profile for m3 with MaxUint256 Locked Tokens
+	utxoView, err = NewUtxoView(testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot)
+	require.NoError(t, err)
+	_updateProfileWithTestMeta(
+		testMeta,
+		testMeta.feeRateNanosPerKb,
+		m3Pub,
+		m3Priv,
+		[]byte{},
+		"m3",
+		"i am the m3",
+		shortPic,
+		10*100,
+		1.25*100*100,
+		false,
+	)
+	_daoCoinTxnWithTestMeta(
+		testMeta,
+		testMeta.feeRateNanosPerKb,
+		m3Pub,
+		m3Priv,
+		DAOCoinMetadata{
+			ProfilePublicKey:          m3PkBytes,
+			OperationType:             DAOCoinOperationTypeMint,
+			CoinsToMintNanos:          *MaxUint256,
+			CoinsToBurnNanos:          uint256.Int{},
+			TransferRestrictionStatus: 0,
+		})
+	_coinLockupWithTestMetaAndConnectTimestamp(
+		testMeta,
+		testMeta.feeRateNanosPerKb,
+		m3Pub,
+		m3Priv,
+		m3Pub,
+		1000,
+		MaxUint256,
+		0)
+	utxoOps, txn, _, err = _coinLockupTransfer(
+		t, testMeta.chain, testMeta.db, testMeta.params,
+		testMeta.feeRateNanosPerKb,
+		m3Pub,
+		m3Priv,
+		NewPublicKey(m4PkBytes),
+		NewPublicKey(m3PkBytes),
+		1000,
+		MaxUint256)
+	utxoView, err = NewUtxoView(testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot)
+	require.NoError(t, err)
+	m3PKID := utxoView.GetPKIDForPublicKey(m3PkBytes).PKID
+	m4PKID := utxoView.GetPKIDForPublicKey(m4PkBytes).PKID
+	m3BalanceEntry, err := utxoView.GetLockedBalanceEntryForHODLerPKIDProfilePKIDUnlockTimestampNanoSecs(m3PKID, m3PKID, 1000)
+	m4BalanceEntry, err := utxoView.GetLockedBalanceEntryForHODLerPKIDProfilePKIDUnlockTimestampNanoSecs(m4PKID, m3PKID, 1000)
+	require.True(t, nil == m3BalanceEntry)
+	require.Equal(t, *MaxUint256, m4BalanceEntry.BalanceBaseUnits)
+	txHash = txn.Hash()
+	blockHeight = testMeta.chain.BlockTip().Height + 1
+	err = utxoView.DisconnectTransaction(txn, txHash, utxoOps, blockHeight)
+	require.NoError(t, utxoView.FlushToDb(uint64(blockHeight)))
+	require.NoError(t, err)
+	utxoView, err = NewUtxoView(testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot)
+	require.NoError(t, err)
+	m3PKID = utxoView.GetPKIDForPublicKey(m3PkBytes).PKID
+	m4PKID = utxoView.GetPKIDForPublicKey(m4PkBytes).PKID
+	m3BalanceEntry, err = utxoView.GetLockedBalanceEntryForHODLerPKIDProfilePKIDUnlockTimestampNanoSecs(m3PKID, m3PKID, 1000)
+	m4BalanceEntry, err = utxoView.GetLockedBalanceEntryForHODLerPKIDProfilePKIDUnlockTimestampNanoSecs(m4PKID, m3PKID, 1000)
+	require.True(t, nil == m4BalanceEntry)
+	require.Equal(t, *MaxUint256, m3BalanceEntry.BalanceBaseUnits)
+
+	//
+	// Test Coin Unlocks for Profiles
+	//
+
+	// Create an on-chain profile for m4 with MaxUint256 Locked Tokens
+	utxoView, err = NewUtxoView(testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot)
+	require.NoError(t, err)
+	_updateProfileWithTestMeta(
+		testMeta,
+		testMeta.feeRateNanosPerKb,
+		m4Pub,
+		m4Priv,
+		[]byte{},
+		"m4",
+		"i am the m4",
+		shortPic,
+		10*100,
+		1.25*100*100,
+		false,
+	)
+	_daoCoinTxnWithTestMeta(
+		testMeta,
+		testMeta.feeRateNanosPerKb,
+		m4Pub,
+		m4Priv,
+		DAOCoinMetadata{
+			ProfilePublicKey:          m4PkBytes,
+			OperationType:             DAOCoinOperationTypeMint,
+			CoinsToMintNanos:          *MaxUint256,
+			CoinsToBurnNanos:          uint256.Int{},
+			TransferRestrictionStatus: 0,
+		})
+	_coinLockupWithTestMetaAndConnectTimestamp(
+		testMeta,
+		testMeta.feeRateNanosPerKb,
+		m4Pub,
+		m4Priv,
+		m4Pub,
+		1000,
+		MaxUint256,
+		0)
+
+	utxoView, err = NewUtxoView(testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot)
+	require.NoError(t, err)
+	m4LockedBalanceEntry, err := utxoView.GetLockedBalanceEntryForHODLerPKIDProfilePKIDUnlockTimestampNanoSecs(
+		m4PKID, m4PKID, 1000)
+	m4be, _, _ := utxoView.GetDAOCoinBalanceEntryForHODLerPubKeyAndCreatorPubKey(m4PkBytes, m4PkBytes)
+	require.NoError(t, err)
+	require.Equal(t, *MaxUint256, m4LockedBalanceEntry.BalanceBaseUnits)
+	require.Equal(t, *uint256.NewInt(), m4be.BalanceNanos)
+
+	utxoOps, txn, _, err = _coinUnlockWithConnectTimestamp(
+		t, testMeta.chain, testMeta.db, testMeta.params,
+		testMeta.feeRateNanosPerKb,
+		m4Pub,
+		m4Priv,
+		m4Pub,
+		1001)
+
+	// Ensure unlock functioned properly
+	utxoView, err = NewUtxoView(testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot)
+	require.NoError(t, err)
+	m4LockedBalanceEntry, err = utxoView.GetLockedBalanceEntryForHODLerPKIDProfilePKIDUnlockTimestampNanoSecs(
+		m4PKID, m4PKID, 1000)
+	require.NoError(t, err)
+	m4be, _, _ = utxoView.GetDAOCoinBalanceEntryForHODLerPubKeyAndCreatorPubKey(m4PkBytes, m4PkBytes)
+	require.True(t, nil == m4LockedBalanceEntry)
+	require.Equal(t, *MaxUint256, m4be.BalanceNanos)
+
+	// Execute the disconnect and ensure it functions correctly
+	utxoView, err = NewUtxoView(testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot)
+	require.NoError(t, err)
+	txHash = txn.Hash()
+	blockHeight = testMeta.chain.BlockTip().Height + 1
+	err = utxoView.DisconnectTransaction(txn, txHash, utxoOps, blockHeight)
+	require.NoError(t, utxoView.FlushToDb(uint64(blockHeight)))
+	require.NoError(t, err)
+	utxoView, err = NewUtxoView(testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot)
+	require.NoError(t, err)
+	m4LockedBalanceEntry, err = utxoView.GetLockedBalanceEntryForHODLerPKIDProfilePKIDUnlockTimestampNanoSecs(
+		m4PKID, m4PKID, 1000)
+	require.NoError(t, err)
+	m4be, _, _ = utxoView.GetDAOCoinBalanceEntryForHODLerPubKeyAndCreatorPubKey(m4PkBytes, m4PkBytes)
+	require.Equal(t, *uint256.NewInt(), m4be.BalanceNanos)
+	require.Equal(t, *MaxUint256, m4LockedBalanceEntry.BalanceBaseUnits)
+
+	//
+	// Test Coin Unlocks for DESO
+	//
+
+	// Lockup 500 nDESO with m4. Check to ensure balances are accurately updated.
+	utxoView, err = NewUtxoView(testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot)
+	require.NoError(t, err)
+	startingBalance, err := utxoView.GetSpendableDeSoBalanceNanosForPublicKey(
+		m4PkBytes, testMeta.chain.BlockTip().Height)
+	require.NoError(t, err)
+	_coinLockupWithTestMetaAndConnectTimestamp(
+		testMeta,
+		testMeta.feeRateNanosPerKb,
+		m4Pub,
+		m4Priv,
+		Base58CheckEncode(ZeroPublicKey.ToBytes(), false, testMeta.params),
+		1000,
+		uint256.NewInt().SetUint64(500),
+		0)
+
+	utxoView, err = NewUtxoView(testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot)
+	require.NoError(t, err)
+	m4LockedBalanceEntry, err = utxoView.GetLockedBalanceEntryForHODLerPKIDProfilePKIDUnlockTimestampNanoSecs(
+		m4PKID, &ZeroPKID, 1000)
+	preUnlockBalance, err := utxoView.GetSpendableDeSoBalanceNanosForPublicKey(
+		m4PkBytes, testMeta.chain.BlockTip().Height)
+	require.NoError(t, err)
+	require.Equal(t, *uint256.NewInt().SetUint64(500), m4LockedBalanceEntry.BalanceBaseUnits)
+	require.Greater(t, startingBalance, preUnlockBalance)
+	require.Greater(t, startingBalance-preUnlockBalance, uint64(500))
+
+	utxoOps, txn, _, err = _coinUnlockWithConnectTimestamp(
+		t, testMeta.chain, testMeta.db, testMeta.params,
+		testMeta.feeRateNanosPerKb,
+		m4Pub,
+		m4Priv,
+		Base58CheckEncode(ZeroPublicKey.ToBytes(), false, testMeta.params),
+		1001)
+
+	// Ensure unlock functioned properly
+	utxoView, err = NewUtxoView(testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot)
+	require.NoError(t, err)
+	m4LockedBalanceEntry, err = utxoView.GetLockedBalanceEntryForHODLerPKIDProfilePKIDUnlockTimestampNanoSecs(
+		m4PKID, &ZeroPKID, 1000)
+	currentBalance, err = utxoView.GetSpendableDeSoBalanceNanosForPublicKey(
+		m4PkBytes, testMeta.chain.BlockTip().Height)
+	require.NoError(t, err)
+	require.True(t, m4LockedBalanceEntry == nil)
+	require.Greater(t, startingBalance, currentBalance)
+	require.Less(t, startingBalance-currentBalance, uint64(500))
+
+	// Execute the disconnect and ensure it functions correctly
+	utxoView, err = NewUtxoView(testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot)
+	require.NoError(t, err)
+	txHash = txn.Hash()
+	blockHeight = testMeta.chain.BlockTip().Height + 1
+	err = utxoView.DisconnectTransaction(txn, txHash, utxoOps, blockHeight)
+	require.NoError(t, utxoView.FlushToDb(uint64(blockHeight)))
+	require.NoError(t, err)
+	utxoView, err = NewUtxoView(testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot)
+	require.NoError(t, err)
+	m4LockedBalanceEntry, err = utxoView.GetLockedBalanceEntryForHODLerPKIDProfilePKIDUnlockTimestampNanoSecs(
+		m4PKID, &ZeroPKID, 1000)
+	currentBalance, err = utxoView.GetSpendableDeSoBalanceNanosForPublicKey(
+		m4PkBytes, testMeta.chain.BlockTip().Height)
+	require.NoError(t, err)
+	require.Equal(t, *uint256.NewInt().SetUint64(500), m4LockedBalanceEntry.BalanceBaseUnits)
+	require.Equal(t, preUnlockBalance, currentBalance)
 }
 
 //----------------------------------------------------------

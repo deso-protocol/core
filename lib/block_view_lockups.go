@@ -1031,11 +1031,6 @@ func (bav *UtxoView) _disconnectCoinLockup(
 			return errors.Wrapf(err, "_disconnectCoinLockup: Problem unSpending balance of %v "+
 				"for the transactor", operationData.BalanceAmountNanos)
 		}
-		operationIndex--
-		if operationIndex < 0 {
-			return fmt.Errorf("_disconnectCoinLockup: Trying to revert OperationTypeDAOCoinLockup " +
-				"but malformed utxoOpsForTxn")
-		}
 	} else {
 		// Revert the transactor's DAO coin balance.
 		bav._setBalanceEntryMappings(operationData.PrevTransactorBalanceEntry, true)
@@ -1790,9 +1785,9 @@ func (bav *UtxoView) _disconnectCoinUnlock(
 		}
 		if lockedBalanceEntry == nil || lockedBalanceEntry.isDeleted {
 			lockedBalanceEntry = &LockedBalanceEntry{
-				HODLerPKID:              operationData.PrevLockedBalanceEntry.HODLerPKID,
-				ProfilePKID:             operationData.PrevLockedBalanceEntry.ProfilePKID,
-				UnlockTimestampNanoSecs: operationData.PrevLockedBalanceEntry.UnlockTimestampNanoSecs,
+				HODLerPKID:              prevLockedBalanceEntry.HODLerPKID,
+				ProfilePKID:             prevLockedBalanceEntry.ProfilePKID,
+				UnlockTimestampNanoSecs: prevLockedBalanceEntry.UnlockTimestampNanoSecs,
 				BalanceBaseUnits:        *uint256.NewInt(),
 			}
 		}
@@ -1850,11 +1845,6 @@ func (bav *UtxoView) _disconnectCoinUnlock(
 		if err != nil {
 			return errors.Wrapf(err, "_disconnectCoinLockup: Problem unAdding balance of %v for the "+
 				"transactor", operationData.BalanceAmountNanos)
-		}
-		operationIndex--
-		if operationIndex < 0 {
-			return fmt.Errorf("_disconnectCoinLockup: Trying to revert OperationTypeCoinUnlock " +
-				"but malformed utxoOpsForTxn")
 		}
 	}
 
