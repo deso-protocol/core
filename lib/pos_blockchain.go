@@ -504,6 +504,9 @@ func (bc *Blockchain) runCommitRuleOnBestChain() error {
 	}
 	for ii := 0; ii < len(uncommittedAncestors); ii++ {
 		if err := bc.commitBlock(uncommittedAncestors[ii].Hash); err != nil {
+			// If we hit an error when committing the block, make sure we revert the
+			// block to be uncommitted in the block index and bestChain
+			bc.setBlockCommittedStatus(uncommittedAncestors[ii], UNCOMMITTED)
 			return errors.Wrapf(err, "runCommitRuleOnBestChain: Problem committing block %v", uncommittedAncestors[ii].Hash.String())
 		}
 	}
@@ -528,6 +531,17 @@ func (bc *Blockchain) canCommitGrandparent(currentBlock *BlockNode) (_grandparen
 		return grandParent.Hash, true
 	}
 	return nil, false
+}
+
+func (bc *Blockchain) setBlockCommittedStatus(blockNode *BlockNode, status CommittedBlockStatus) {
+	bc.bestChainMap[*blockNode.Hash].CommittedStatus = status
+	bc.blockIndex[*blockNode.Hash].CommittedStatus = status
+	for _, node := range bc.bestChain {
+		if node.Hash.IsEqual(blockNode.Hash) {
+			node.CommittedStatus = status
+			break
+		}
+	}
 }
 
 // commitBlock commits the block with the given hash. Specifically, this updates the
@@ -562,9 +576,12 @@ func (bc *Blockchain) commitBlock(blockHash *BlockHash) error {
 		// TODO: rule error handling? mark blocks invalid?
 		return errors.Wrapf(err, "runCommitRuleOnBestChain: Problem connecting block to view: ")
 	}
-	// Put the block in the db
-	// Note: we're skipping postgres.
-	// TODO: this is copy pasta from ProcessBlockPoW. Refactor.
+
+	// Update the committed status before doing DB writes. If
+	// we hit errors when committing the block, the caller is responsible for
+	// reverting these statuses.
+	bc.setBlockCommittedStatus(blockNode, COMMITTED)
+
 	err = bc.db.Update(func(txn *badger.Txn) error {
 		if bc.snapshot != nil {
 			bc.snapshot.PrepareAncestralRecordsFlush()
@@ -579,16 +596,25 @@ func (bc *Blockchain) commitBlock(blockHash *BlockHash) error {
 		// 	we've fetched during Hypersync. Is there an edge-case where for some reason they're not identical? Or
 		// 	somehow ancestral records get corrupted?
 		if innerErr := PutBlockWithTxn(txn, bc.snapshot, block); innerErr != nil {
-			return errors.Wrapf(err, "ProcessBlock: Problem calling PutBlock")
+			return errors.Wrapf(innerErr, "ProcessBlock: Problem calling PutBlock")
 		}
 
 		// Store the new block's node in our node index in the db under the
 		//   <height uin32, blockHash BlockHash> -> <node info>
 		// index.
 		if innerErr := PutHeightHashToNodeInfoWithTxn(txn, bc.snapshot, blockNode, false /*bitcoinNodes*/); innerErr != nil {
-			return errors.Wrapf(err, "ProcessBlock: Problem calling PutHeightHashToNodeInfo before validation")
+			return errors.Wrapf(innerErr, "ProcessBlock: Problem calling PutHeightHashToNodeInfo before validation")
 		}
+		return nil
+	})
+	if err != nil {
+		return errors.Wrapf(err, "runCommitRuleOnBestChain: Problem putting block in db: ")
+	}
 
+	// Put the block in the db
+	// Note: we're skipping postgres.
+	// TODO: this is copy pasta from ProcessBlockPoW. Refactor.
+	err = bc.db.Update(func(txn *badger.Txn) error {
 		// Set the best node hash to this one. Note the header chain should already
 		// be fully aware of this block so we shouldn't update it here.
 		if innerErr := PutBestHashWithTxn(txn, bc.snapshot, blockNode.Hash, ChainTypeDeSoBlock); innerErr != nil {
@@ -607,15 +633,7 @@ func (bc *Blockchain) commitBlock(blockHash *BlockHash) error {
 	if err != nil {
 		return errors.Wrapf(err, "runCommitRuleOnBestChain: Problem putting block in db: ")
 	}
-	// Update the block node's committed status
-	bc.bestChainMap[*blockNode.Hash].CommittedStatus = COMMITTED
-	bc.blockIndex[*blockNode.Hash].CommittedStatus = COMMITTED
-	for _, node := range bc.bestChain {
-		if node.Hash.IsEqual(blockNode.Hash) {
-			node.CommittedStatus = COMMITTED
-			break
-		}
-	}
+
 	if bc.eventManager != nil {
 		bc.eventManager.blockConnected(&BlockEvent{
 			Block:    block,
