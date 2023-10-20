@@ -8,12 +8,101 @@ import (
 	"testing"
 )
 
-func TestForkHeightAndInitialState(t *testing.T) {
-	// TODO: Create test for forks.
+func TestForkHeight(t *testing.T) {
+	// Test and ensure lockup transactions cannot trigger without:
+	//    (a) ProofOfStake1StateSetupBlockHeight Fork
 
-	// TODO: Create test for initial creator state.
+	// Initialize balance model fork heights.
+	setBalanceModelBlockHeights(t)
 
-	// TODO: Create test for initial deso state.
+	// Initialize test chain and miner.
+	chain, params, db := NewLowDifficultyBlockchain(t)
+	mempool, miner := NewTestMiner(t, chain, params, true)
+
+	// Ensure DAO coins and balance models are enabled (a pre-requisite for lockups)
+	params.ForkHeights.DAOCoinBlockHeight = uint32(1)
+	params.ForkHeights.BalanceModelBlockHeight = uint32(1)
+
+	// Initialize PoS fork heights.
+	params.ForkHeights.ProofOfStake1StateSetupBlockHeight = uint32(25)
+	GlobalDeSoParams.EncoderMigrationHeights = GetEncoderMigrationHeights(&params.ForkHeights)
+	GlobalDeSoParams.EncoderMigrationHeightsList = GetEncoderMigrationHeightsList(&params.ForkHeights)
+
+	// Mine a few blocks to give the senderPkString some money.
+	for ii := 0; ii < 10; ii++ {
+		_, err := miner.MineAndProcessSingleBlock(0, mempool)
+		require.NoError(t, err)
+	}
+
+	// We build the testMeta obj after mining blocks so that we save the correct block height.
+	blockHeight := uint64(chain.blockTip().Height) + 1
+
+	// Initialize m0, m1, m2, m3, m4, and paramUpdater
+	feeRateNanosPerKb := uint64(101)
+	_setUpProfilesAndMintM0M1DAOCoins(&TestMeta{
+		t:                 t,
+		chain:             chain,
+		params:            params,
+		db:                db,
+		mempool:           mempool,
+		miner:             miner,
+		savedHeight:       uint32(blockHeight),
+		feeRateNanosPerKb: uint64(101),
+	})
+
+	// Simulate blocks being mined up and to the fork and ensure lockup transactions cannot be triggered early.
+	for ii := 0; ; ii++ {
+		_, err := miner.MineAndProcessSingleBlock(0, mempool)
+		require.NoError(t, err)
+		currentBlockHeight := uint64(chain.blockTip().Height) + 1
+		if currentBlockHeight == uint64(params.ForkHeights.ProofOfStake1StateSetupBlockHeight) {
+			break
+		}
+
+		_, _, _, err1 := _coinLockupWithConnectTimestamp(
+			t, chain, db, params,
+			feeRateNanosPerKb,
+			m0Pub,
+			m0Priv,
+			m0Pub,
+			1000,
+			uint256.NewInt().SetUint64(100),
+			0)
+		_, _, _, err2 := _updateCoinLockupParams(
+			t, chain, db, params,
+			feeRateNanosPerKb,
+			m1Pub,
+			m1Priv,
+			365*25*60*60*1e9,
+			500,
+			false,
+			true,
+			TransferRestrictionStatusProfileOwnerOnly,
+		)
+		_, _, _, err3 := _coinLockupTransfer(
+			t, chain, db, params,
+			feeRateNanosPerKb,
+			m0Pub,
+			m0Priv,
+			NewPublicKey(m3PkBytes),
+			NewPublicKey(m0PkBytes),
+			1000,
+			uint256.NewInt().SetUint64(1))
+		_, _, _, err4 := _coinUnlockWithConnectTimestamp(
+			t, chain, db, params,
+			feeRateNanosPerKb,
+			m0Pub,
+			m0Priv,
+			m0Pub,
+			0)
+
+		if currentBlockHeight < uint64(params.ForkHeights.ProofOfStake1StateSetupBlockHeight) {
+			require.Contains(t, err1.Error(), RuleErrorLockupTxnBeforeBlockHeight)
+			require.Contains(t, err2.Error(), RuleErrorLockupTxnBeforeBlockHeight)
+			require.Contains(t, err3.Error(), RuleErrorLockupTxnBeforeBlockHeight)
+			require.Contains(t, err4.Error(), RuleErrorLockupTxnBeforeBlockHeight)
+		}
+	}
 }
 
 func TestCalculateLockupYield(t *testing.T) {
@@ -1900,6 +1989,247 @@ func TestLockupDisconnects(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, *uint256.NewInt().SetUint64(500), m4LockedBalanceEntry.BalanceBaseUnits)
 	require.Equal(t, preUnlockBalance, currentBalance)
+}
+
+func TestLockupBlockConnectsAndDisconnects(t *testing.T) {
+	// Initialize test chain, miner, and testMeta
+	testMeta := _setUpMinerAndTestMetaForTimestampBasedLockupTests(t)
+
+	// Initialize m0, m1, m2, m3, m4, and paramUpdater
+	_setUpProfilesAndMintM0M1DAOCoins(testMeta)
+
+	// Get chain tip header timestamp
+	tipTimestamp := int64(testMeta.chain.blockTip().Header.TstampNanoSecs)
+
+	// Validate the starting state
+	utxoView, err := NewUtxoView(testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot)
+	require.NoError(t, err)
+	m0PKID := utxoView.GetPKIDForPublicKey(m0PkBytes).PKID
+	m3PKID := utxoView.GetPKIDForPublicKey(m3PkBytes).PKID
+	m0Profile := utxoView.GetProfileEntryForPKID(m0PKID)
+	require.Equal(t, TransferRestrictionStatusUnrestricted, m0Profile.DAOCoinEntry.LockupTransferRestrictionStatus)
+	m0LeftYieldCurvePoint, m0RightYieldCurvePoint, err := utxoView.GetLocalYieldCurvePoints(m0PKID, 365*24*60*60*1e9+1)
+	require.NoError(t, err)
+	require.True(t, m0RightYieldCurvePoint == nil)
+	require.True(t, m0LeftYieldCurvePoint == nil)
+	m0BalanceEntry, _, _ := utxoView.GetDAOCoinBalanceEntryForHODLerPubKeyAndCreatorPubKey(m0PkBytes, m0PkBytes)
+	m3BalanceEntry, _, _ := utxoView.GetDAOCoinBalanceEntryForHODLerPubKeyAndCreatorPubKey(m3PkBytes, m0PkBytes)
+	require.Equal(t, *uint256.NewInt().SetUint64(1000000), m0BalanceEntry.BalanceNanos)
+	require.Equal(t, *uint256.NewInt(), m3BalanceEntry.BalanceNanos)
+	m0LockedBalanceEntry, err := utxoView.GetLockedBalanceEntryForHODLerPKIDProfilePKIDUnlockTimestampNanoSecs(
+		m0PKID, m0PKID, tipTimestamp+2e9)
+	require.NoError(t, err)
+	require.True(t, m0LockedBalanceEntry == nil)
+	m3LockedBalanceEntry, err := utxoView.GetLockedBalanceEntryForHODLerPKIDProfilePKIDUnlockTimestampNanoSecs(
+		m3PKID, m0PKID, tipTimestamp+2e9)
+	require.NoError(t, err)
+	require.True(t, m3LockedBalanceEntry == nil)
+
+	//
+	// Construct a block and test connect with a yield curve update, lockup, and transfer.
+	//
+
+	// Construct transactions
+	updateTxn, _, _, _, err := testMeta.chain.CreateUpdateCoinLockupParamsTxn(
+		m0PkBytes, 365*24*60*60*1e9, 1000, false,
+		true, TransferRestrictionStatusProfileOwnerOnly,
+		testMeta.feeRateNanosPerKb, nil, []*DeSoOutput{})
+	require.NoError(t, err)
+	_signTxn(t, updateTxn, m0Priv)
+	lockupTxn, _, _, _, err := testMeta.chain.CreateCoinLockupTxn(
+		m0PkBytes, m0PkBytes, tipTimestamp+2e9, uint256.NewInt().SetUint64(1000),
+		testMeta.feeRateNanosPerKb, nil, []*DeSoOutput{})
+	require.NoError(t, err)
+	_signTxn(t, lockupTxn, m0Priv)
+	transferTxn, _, _, _, err := testMeta.chain.CreateCoinLockupTransferTxn(
+		m0PkBytes, m3PkBytes, m0PkBytes, tipTimestamp+2e9,
+		uint256.NewInt().SetUint64(1000), testMeta.feeRateNanosPerKb, nil, []*DeSoOutput{})
+	require.NoError(t, err)
+	_signTxn(t, transferTxn, m0Priv)
+
+	// Construct and attach the first block
+	senderPkBytes, _, _ := Base58CheckDecode(senderPkString)
+	blk1, _, _, err := testMeta.miner.BlockProducer._getBlockTemplate(senderPkBytes)
+	require.NoError(t, err)
+	blk1.Txns = append(blk1.Txns, updateTxn)
+	blk1.Txns = append(blk1.Txns, lockupTxn)
+	blk1.Txns = append(blk1.Txns, transferTxn)
+	blk1Root, _, err := ComputeMerkleRoot(blk1.Txns)
+	require.NoError(t, err)
+	blk1.Header.TransactionMerkleRoot = blk1Root
+	blk1.Header.TstampNanoSecs = uint64(tipTimestamp + 1e9)
+
+	// Mine the first block to ensure the difficulty is sufficient for ProcessBlock
+	// NOTE: 10000 iterations is presumed sufficient for testing as seen in TestBasicTransfer.
+	_, bestNonce, err := FindLowestHash(blk1.Header, 10000)
+	require.NoError(t, err)
+	blk1.Header.Nonce = bestNonce
+
+	// Process the first block
+	err = testMeta.miner.BlockProducer.SignBlock(blk1)
+	require.NoError(t, err)
+	_, _, err = testMeta.chain.ProcessBlock(blk1, false)
+	require.NoError(t, err)
+
+	// Validate state update
+	utxoView, err = NewUtxoView(testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot)
+	require.NoError(t, err)
+	m0PKID = utxoView.GetPKIDForPublicKey(m0PkBytes).PKID
+	m3PKID = utxoView.GetPKIDForPublicKey(m3PkBytes).PKID
+	m0Profile = utxoView.GetProfileEntryForPKID(m0PKID)
+	require.Equal(t, TransferRestrictionStatusProfileOwnerOnly, m0Profile.DAOCoinEntry.LockupTransferRestrictionStatus)
+	m0LeftYieldCurvePoint, m0RightYieldCurvePoint, err = utxoView.GetLocalYieldCurvePoints(m0PKID, 365*24*60*60*1e9+1)
+	require.NoError(t, err)
+	require.True(t, m0RightYieldCurvePoint == nil)
+	require.Equal(t, int64(365*24*60*60*1e9), m0LeftYieldCurvePoint.LockupDurationNanoSecs)
+	require.Equal(t, uint64(1000), m0LeftYieldCurvePoint.LockupYieldAPYBasisPoints)
+	m0BalanceEntry, _, _ = utxoView.GetDAOCoinBalanceEntryForHODLerPubKeyAndCreatorPubKey(m0PkBytes, m0PkBytes)
+	m3BalanceEntry, _, _ = utxoView.GetDAOCoinBalanceEntryForHODLerPubKeyAndCreatorPubKey(m3PkBytes, m0PkBytes)
+	require.Equal(t, *uint256.NewInt().SetUint64(999000), m0BalanceEntry.BalanceNanos)
+	require.Equal(t, *uint256.NewInt(), m3BalanceEntry.BalanceNanos)
+	m0LockedBalanceEntry, err = utxoView.GetLockedBalanceEntryForHODLerPKIDProfilePKIDUnlockTimestampNanoSecs(
+		m0PKID, m0PKID, tipTimestamp+2e9)
+	require.NoError(t, err)
+	require.True(t, m0LockedBalanceEntry == nil)
+	m3LockedBalanceEntry, err = utxoView.GetLockedBalanceEntryForHODLerPKIDProfilePKIDUnlockTimestampNanoSecs(
+		m3PKID, m0PKID, tipTimestamp+2e9)
+	require.NoError(t, err)
+	require.Equal(t, *uint256.NewInt().SetUint64(1000), m3LockedBalanceEntry.BalanceBaseUnits)
+
+	//
+	// Construct a subsequent second block and test unlock.
+	//
+
+	// Construct transactions
+	unlockTxn, _, _, _, err := testMeta.chain.CreateCoinUnlockTxn(
+		m3PkBytes, m0PkBytes, testMeta.feeRateNanosPerKb, nil, []*DeSoOutput{})
+	require.NoError(t, err)
+	_signTxn(t, unlockTxn, m3Priv)
+
+	// Construct the second block
+	blk2, _, _, err := testMeta.miner.BlockProducer._getBlockTemplate(senderPkBytes)
+	require.NoError(t, err)
+	blk2.Txns = append(blk2.Txns, unlockTxn)
+	blk2Root, _, err := ComputeMerkleRoot(blk2.Txns)
+	require.NoError(t, err)
+	blk2.Header.TransactionMerkleRoot = blk2Root
+	blk2.Header.TstampNanoSecs = uint64(tipTimestamp + 3e9)
+
+	// Mine the second block to ensure the difficulty is sufficient for ProcessBlock
+	// NOTE: 10000 iterations is presumed sufficient for testing as seen in TestBasicTransfer.
+	_, bestNonce, err = FindLowestHash(blk2.Header, 10000)
+	require.NoError(t, err)
+	blk2.Header.Nonce = bestNonce
+
+	// Process the second block
+	err = testMeta.miner.BlockProducer.SignBlock(blk2)
+	require.NoError(t, err)
+	_, _, err = testMeta.chain.ProcessBlock(blk2, false)
+	require.NoError(t, err)
+
+	// Validate state update
+	utxoView, err = NewUtxoView(testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot)
+	require.NoError(t, err)
+	m0BalanceEntry, _, _ = utxoView.GetDAOCoinBalanceEntryForHODLerPubKeyAndCreatorPubKey(m0PkBytes, m0PkBytes)
+	m3BalanceEntry, _, _ = utxoView.GetDAOCoinBalanceEntryForHODLerPubKeyAndCreatorPubKey(m3PkBytes, m0PkBytes)
+	require.Equal(t, *uint256.NewInt().SetUint64(999000), m0BalanceEntry.BalanceNanos)
+	require.Equal(t, *uint256.NewInt().SetUint64(1000), m3BalanceEntry.BalanceNanos)
+	m0LockedBalanceEntry, err = utxoView.GetLockedBalanceEntryForHODLerPKIDProfilePKIDUnlockTimestampNanoSecs(
+		m0PKID, m0PKID, tipTimestamp+2e9)
+	require.NoError(t, err)
+	require.True(t, m0LockedBalanceEntry == nil)
+	m3LockedBalanceEntry, err = utxoView.GetLockedBalanceEntryForHODLerPKIDProfilePKIDUnlockTimestampNanoSecs(
+		m3PKID, m0PKID, tipTimestamp+2e9)
+	require.NoError(t, err)
+	require.True(t, m3LockedBalanceEntry == nil)
+
+	//
+	// Disconnect the second block and ensure state is reverted.
+	//
+
+	// Disconnect the second block
+	utxoView, err = NewUtxoView(testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot)
+	require.NoError(t, err)
+	blk2Hash, err := blk2.Hash()
+	require.NoError(t, err)
+	utxoOps, err := GetUtxoOperationsForBlock(testMeta.db, nil, blk2Hash)
+	require.NoError(t, err)
+	txHashes, err := ComputeTransactionHashes(blk2.Txns)
+	require.NoError(t, err)
+	err = utxoView.DisconnectBlock(blk2, txHashes, utxoOps, blk2.Header.Height)
+	require.NoError(t, err)
+	require.NoError(t, utxoView.FlushToDb(blk2.Header.Height))
+
+	// Update the tip
+	testMeta.chain.bestChain = testMeta.chain.bestChain[:len(testMeta.chain.bestChain)-1]
+
+	// Validate the state update
+	utxoView, err = NewUtxoView(testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot)
+	require.NoError(t, err)
+	m0PKID = utxoView.GetPKIDForPublicKey(m0PkBytes).PKID
+	m3PKID = utxoView.GetPKIDForPublicKey(m3PkBytes).PKID
+	m0Profile = utxoView.GetProfileEntryForPKID(m0PKID)
+	require.Equal(t, TransferRestrictionStatusProfileOwnerOnly, m0Profile.DAOCoinEntry.LockupTransferRestrictionStatus)
+	m0LeftYieldCurvePoint, m0RightYieldCurvePoint, err = utxoView.GetLocalYieldCurvePoints(m0PKID, 365*24*60*60*1e9+1)
+	require.NoError(t, err)
+	require.True(t, m0RightYieldCurvePoint == nil)
+	require.Equal(t, int64(365*24*60*60*1e9), m0LeftYieldCurvePoint.LockupDurationNanoSecs)
+	require.Equal(t, uint64(1000), m0LeftYieldCurvePoint.LockupYieldAPYBasisPoints)
+	m0BalanceEntry, _, _ = utxoView.GetDAOCoinBalanceEntryForHODLerPubKeyAndCreatorPubKey(m0PkBytes, m0PkBytes)
+	m3BalanceEntry, _, _ = utxoView.GetDAOCoinBalanceEntryForHODLerPubKeyAndCreatorPubKey(m3PkBytes, m0PkBytes)
+	require.Equal(t, *uint256.NewInt().SetUint64(999000), m0BalanceEntry.BalanceNanos)
+	require.Equal(t, *uint256.NewInt(), m3BalanceEntry.BalanceNanos)
+	m0LockedBalanceEntry, err = utxoView.GetLockedBalanceEntryForHODLerPKIDProfilePKIDUnlockTimestampNanoSecs(
+		m0PKID, m0PKID, tipTimestamp+2e9)
+	require.NoError(t, err)
+	require.True(t, m0LockedBalanceEntry == nil)
+	m3LockedBalanceEntry, err = utxoView.GetLockedBalanceEntryForHODLerPKIDProfilePKIDUnlockTimestampNanoSecs(
+		m3PKID, m0PKID, tipTimestamp+2e9)
+	require.NoError(t, err)
+	require.Equal(t, *uint256.NewInt().SetUint64(1000), m3LockedBalanceEntry.BalanceBaseUnits)
+
+	//
+	// Disconnect the first block and ensure state is reverted.
+	//
+
+	// Disconnect the first block
+	utxoView, err = NewUtxoView(testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot)
+	blk1Hash, err := blk1.Hash()
+	require.NoError(t, err)
+	utxoView.TipHash = blk1Hash
+	require.NoError(t, err)
+	utxoOps, err = GetUtxoOperationsForBlock(testMeta.db, nil, blk1Hash)
+	require.NoError(t, err)
+	txHashes, err = ComputeTransactionHashes(blk1.Txns)
+	require.NoError(t, err)
+	err = utxoView.DisconnectBlock(blk1, txHashes, utxoOps, blk1.Header.Height)
+	require.NoError(t, err)
+	require.NoError(t, utxoView.FlushToDb(blk1.Header.Height))
+
+	// Update the tip
+	testMeta.chain.bestChain = testMeta.chain.bestChain[:len(testMeta.chain.bestChain)-1]
+
+	// Verify we return back to the initial state
+	utxoView, err = NewUtxoView(testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot)
+	require.NoError(t, err)
+	m0Profile = utxoView.GetProfileEntryForPKID(m0PKID)
+	require.Equal(t, TransferRestrictionStatusUnrestricted, m0Profile.DAOCoinEntry.LockupTransferRestrictionStatus)
+	m0LeftYieldCurvePoint, m0RightYieldCurvePoint, err = utxoView.GetLocalYieldCurvePoints(m0PKID, 365*24*60*60*1e9+1)
+	require.NoError(t, err)
+	require.True(t, m0RightYieldCurvePoint == nil)
+	require.True(t, m0LeftYieldCurvePoint == nil)
+	m0BalanceEntry, _, _ = utxoView.GetDAOCoinBalanceEntryForHODLerPubKeyAndCreatorPubKey(m0PkBytes, m0PkBytes)
+	m3BalanceEntry, _, _ = utxoView.GetDAOCoinBalanceEntryForHODLerPubKeyAndCreatorPubKey(m3PkBytes, m0PkBytes)
+	require.Equal(t, *uint256.NewInt().SetUint64(1000000), m0BalanceEntry.BalanceNanos)
+	require.Equal(t, *uint256.NewInt(), m3BalanceEntry.BalanceNanos)
+	m0LockedBalanceEntry, err = utxoView.GetLockedBalanceEntryForHODLerPKIDProfilePKIDUnlockTimestampNanoSecs(
+		m0PKID, m0PKID, tipTimestamp+2e9)
+	require.NoError(t, err)
+	require.True(t, m0LockedBalanceEntry == nil)
+	m3LockedBalanceEntry, err = utxoView.GetLockedBalanceEntryForHODLerPKIDProfilePKIDUnlockTimestampNanoSecs(
+		m3PKID, m0PKID, tipTimestamp+2e9)
+	require.NoError(t, err)
+	require.True(t, m3LockedBalanceEntry == nil)
 }
 
 //----------------------------------------------------------

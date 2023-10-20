@@ -5139,7 +5139,7 @@ func (bc *Blockchain) EstimateDefaultFeeRateNanosPerKB(
 			return minFeeRateNanosPerKB
 		}
 		numBytesInTxn := len(txnBytes)
-		_, _, _, fees, err := utxoView.ConnectTransaction(txn, txn.Hash(), int64(numBytesInTxn), tipNode.Height, 0, false, false)
+		_, _, _, fees, err := utxoView.ConnectTransaction(txn, txn.Hash(), int64(numBytesInTxn), tipNode.Height, int64(tipNode.Header.TstampNanoSecs), false, false)
 		if err != nil {
 			return minFeeRateNanosPerKB
 		}

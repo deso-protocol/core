@@ -1080,7 +1080,8 @@ func (bav *UtxoView) _connectUpdateCoinLockupParams(
 	// Validate the starting block height.
 	if blockHeight < bav.Params.ForkHeights.ProofOfStake1StateSetupBlockHeight ||
 		blockHeight < bav.Params.ForkHeights.BalanceModelBlockHeight {
-		return 0, 0, nil, errors.Wrapf(RuleErrorProofofStakeTxnBeforeBlockHeight, "_connectDAOCoinLockup")
+		return 0, 0, nil,
+			errors.Wrapf(RuleErrorLockupTxnBeforeBlockHeight, "_connectUpdateCoinLockupParams")
 	}
 
 	// Validate the txn TxnType.
@@ -1330,7 +1331,7 @@ func (bav *UtxoView) _connectCoinLockupTransfer(
 	if blockHeight < bav.Params.ForkHeights.ProofOfStake1StateSetupBlockHeight ||
 		blockHeight < bav.Params.ForkHeights.BalanceModelBlockHeight {
 		return 0, 0, nil,
-			errors.Wrapf(RuleErrorProofofStakeTxnBeforeBlockHeight, "_connectCoinLockupTransfer")
+			errors.Wrapf(RuleErrorLockupTxnBeforeBlockHeight, "_connectCoinLockupTransfer")
 	}
 
 	// Validate the txn TxnType.
@@ -1382,8 +1383,8 @@ func (bav *UtxoView) _connectCoinLockupTransfer(
 
 	// Fetch PKIDs for the recipient, sender, and profile.
 	var senderPKID *PKID
-	if _, updaterIsParamUpdater :=
-		GetParamUpdaterPublicKeys(blockHeight, bav.Params)[MakePkMapKey(txn.PublicKey)]; updaterIsParamUpdater {
+	if _, senderIsParamUpdater :=
+		GetParamUpdaterPublicKeys(blockHeight, bav.Params)[MakePkMapKey(txn.PublicKey)]; senderIsParamUpdater {
 		senderPKID = ZeroPKID.NewPKID()
 	} else {
 		senderPKIDEntry := bav.GetPKIDForPublicKey(txn.PublicKey)
@@ -1594,7 +1595,8 @@ func (bav *UtxoView) _connectCoinUnlock(
 	// Validate the starting block height.
 	if blockHeight < bav.Params.ForkHeights.ProofOfStake1StateSetupBlockHeight ||
 		blockHeight < bav.Params.ForkHeights.BalanceModelBlockHeight {
-		return 0, 0, nil, errors.Wrapf(RuleErrorProofofStakeTxnBeforeBlockHeight, "_connectCoinLockup")
+		return 0, 0, nil,
+			errors.Wrapf(RuleErrorLockupTxnBeforeBlockHeight, "_connectCoinUnlock")
 	}
 
 	// Validate the txn TxnType.
@@ -1811,7 +1813,12 @@ func (bav *UtxoView) _disconnectCoinUnlock(
 			return fmt.Errorf("_disconnectCoinUnlock: Trying to revert OperationTypeCoinUnlock " +
 				"would cause balance entry balance to increase")
 		}
-		bav._setBalanceEntryMappings(operationData.PrevTransactorBalanceEntry, true)
+		if operationData.PrevTransactorBalanceEntry.BalanceNanos.IsZero() {
+			bav._deleteBalanceEntryMappingsWithPKIDs(operationData.PrevTransactorBalanceEntry,
+				hodlerPKID, profilePKID, true)
+		} else {
+			bav._setBalanceEntryMappings(operationData.PrevTransactorBalanceEntry, true)
+		}
 	}
 
 	// Reverting the CoinEntry (if applicable) should not result in more coins in circulation.
