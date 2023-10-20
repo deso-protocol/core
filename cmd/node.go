@@ -4,9 +4,11 @@ import (
 	"encoding/hex"
 	"flag"
 	"fmt"
+	"github.com/pkg/errors"
 	"net"
 	"os"
 	"os/signal"
+	"runtime"
 	"sync"
 	"syscall"
 	"time"
@@ -205,6 +207,124 @@ func (node *Node) Start(exitChannels ...*chan struct{}) {
 	// Setup eventManager
 	eventManager := lib.NewEventManager()
 
+	// TODO: Move this into Node
+	// Setup snapshot
+	var _snapshot *Snapshot
+	shouldRestart := false
+	archivalMode := false
+	if _hyperSync {
+		_snapshot, err, shouldRestart = NewSnapshot(_db, _dataDir, _snapshotBlockHeightPeriod,
+			false, false, _params, _disableEncoderMigrations, _hypersyncMaxQueueSize)
+		if err != nil {
+			panic(err)
+		}
+	}
+
+	// We only set archival mode true if we're a hypersync node.
+	if IsNodeArchival(_syncType) {
+		archivalMode = true
+	}
+
+	// TODO: ################################
+	// 	Move this to Node
+	eventManager.OnBlockConnected(srv._handleBlockMainChainConnectedd)
+	eventManager.OnBlockAccepted(srv._handleBlockAccepted)
+	eventManager.OnBlockDisconnected(srv._handleBlockMainChainDisconnectedd)
+
+	_chain, err := NewBlockchain(
+		_trustedBlockProducerPublicKeys, _trustedBlockProducerStartHeight, _maxSyncBlockHeight,
+		_params, timesource, _db, postgres, eventManager, _snapshot, archivalMode)
+	if err != nil {
+		return nil, errors.Wrapf(err, "NewServer: Problem initializing blockchain"), true
+	}
+
+	glog.V(1).Infof("Initialized chain: Best Header Height: %d, Header Hash: %s, Header CumWork: %s, Best Block Height: %d, Block Hash: %s, Block CumWork: %s",
+		_chain.headerTip().Height,
+		hex.EncodeToString(_chain.headerTip().Hash[:]),
+		hex.EncodeToString(BigintToHash(_chain.headerTip().CumWork)[:]),
+		_chain.blockTip().Height,
+		hex.EncodeToString(_chain.blockTip().Hash[:]),
+		hex.EncodeToString(BigintToHash(_chain.blockTip().CumWork)[:]))
+
+	// Create a mempool to store transactions until they're ready to be mined into
+	// blocks.
+	_mempool := NewDeSoMempool(_chain, _rateLimitFeerateNanosPerKB,
+		_minFeeRateNanosPerKB, _blockCypherAPIKey, _runReadOnlyUtxoViewUpdater, _dataDir,
+		_mempoolDumpDir, false)
+
+	// Useful for debugging. Every second, it outputs the contents of the mempool
+	// and the contents of the addrmanager.
+	/*
+		go func() {
+			time.Sleep(3 * time.Second)
+			for {
+				glog.V(2).Infof("Current mempool txns: ")
+				counter := 0
+				for kk, mempoolTx := range _mempool.poolMap {
+					kkCopy := kk
+					glog.V(2).Infof("\t%d: < %v: %v >", counter, &kkCopy, mempoolTx)
+					counter++
+				}
+				glog.V(2).Infof("Current addrs: ")
+				for ii, na := range srv.cmgr.AddrMgr.GetAllAddrs() {
+					glog.V(2).Infof("Addr %d: <%s:%d>", ii, na.IP.String(), na.Port)
+				}
+				time.Sleep(1 * time.Second)
+			}
+		}()
+	*/
+
+	// Initialize the BlockProducer
+	// TODO(miner): Should figure out a way to get this into main.
+	var _blockProducer *DeSoBlockProducer
+	if _maxBlockTemplatesToCache > 0 {
+		_blockProducer, err = NewDeSoBlockProducer(
+			_minBlockUpdateIntervalSeconds, _maxBlockTemplatesToCache,
+			_blockProducerSeed,
+			_mempool, _chain,
+			_params, postgres)
+		if err != nil {
+			panic(err)
+		}
+		go func() {
+			_blockProducer.Start()
+		}()
+	}
+
+	// TODO(miner): Make the miner its own binary and pull it out of here.
+	// Don't start the miner unless miner public keys are set.
+	if _numMiningThreads <= 0 {
+		_numMiningThreads = uint64(runtime.NumCPU())
+	}
+	_miner, err := NewDeSoMiner(_minerPublicKeys, uint32(_numMiningThreads), _blockProducer, _params)
+	if err != nil {
+		return nil, errors.Wrapf(err, "NewServer: "), true
+	}
+	// If we only want to sync to a specific block height, we would disable the miner.
+	// _maxSyncBlockHeight is used for development.
+	if _maxSyncBlockHeight > 0 {
+		_miner = nil
+	}
+
+	// If shouldRestart is true, it means that the state checksum is likely corrupted, and we need to enter a recovery mode.
+	// This can happen if the node was terminated mid-operation last time it was running. The recovery process rolls back
+	// blocks to the beginning of the current snapshot epoch and resets to the state checksum to the epoch checksum.
+	if shouldRestart {
+		glog.Errorf(CLog(Red, "NewServer: Forcing a rollback to the last snapshot epoch because node was not closed "+
+			"properly last time"))
+		if err := _snapshot.ForceResetToLastSnapshot(_chain); err != nil {
+			return nil, errors.Wrapf(err, "NewServer: Problem in ForceResetToLastSnapshot"), true
+		}
+	}
+
+	go srv._startConsensus()
+
+	if srv.miner != nil && len(srv.miner.PublicKeys) > 0 {
+		go srv.miner.Start()
+	}
+
+	ValidateHyperSyncFlags(_hyperSync, _syncType)
+
 	// Setup the server. ShouldRestart is used whenever we detect an issue and should restart the node after a recovery
 	// process, just in case. These issues usually arise when the node was shutdown unexpectedly mid-operation. The node
 	// performs regular health checks to detect whenever this occurs.
@@ -258,6 +378,9 @@ func (node *Node) Start(exitChannels ...*chan struct{}) {
 		}
 		panic(err)
 	}
+
+	// TODO: Gate these behind a PoS consensus flag.
+	go srv.fastHotStuffConsensus.Start()
 
 	if !shouldRestart {
 		node.Server.Start()
@@ -317,6 +440,43 @@ func (node *Node) Stop() {
 	node.IsRunning = false
 	glog.Infof(lib.CLog(lib.Yellow, "Node is shutting down. This might take a minute. Please don't "+
 		"close the node now or else you might corrupt the state."))
+
+	// Stop the miner if we have one running.
+	if srv.miner != nil {
+		srv.miner.Stop()
+		glog.Infof(CLog(Yellow, "Server.Stop: Closed the Miner"))
+	}
+
+	// Stop the PoS block proposer if we have one running.
+	if srv.fastHotStuffConsensus != nil {
+		srv.fastHotStuffConsensus.Stop()
+		glog.Infof(CLog(Yellow, "Server.Stop: Closed the FastHotStuffConsensus"))
+	}
+
+	// TODO: Stop the PoS mempool if we have one running.
+
+	if srv.mempool != nil {
+		// Before the node shuts down, write all the mempool txns to disk
+		// if the flag is set.
+		if srv.mempool.mempoolDir != "" {
+			glog.Info("Doing final mempool dump...")
+			srv.mempool.DumpTxnsToDB()
+			glog.Info("Final mempool dump complete!")
+		}
+
+		if !srv.mempool.stopped {
+			srv.mempool.Stop()
+		}
+		glog.Infof(CLog(Yellow, "Server.Stop: Closed Mempool"))
+	}
+
+	// Stop the block producer
+	if srv.blockProducer != nil {
+		if srv.blockchain.MaxSyncBlockHeight == 0 {
+			srv.blockProducer.Stop()
+		}
+		glog.Infof(CLog(Yellow, "Server.Stop: Closed BlockProducer"))
+	}
 
 	// Server
 	glog.Infof(lib.CLog(lib.Yellow, "Node.Stop: Stopping server..."))
