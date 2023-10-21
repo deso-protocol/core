@@ -7,6 +7,7 @@ import (
 	"github.com/golang/glog"
 	"github.com/pkg/errors"
 	"sort"
+	"sync/atomic"
 	"time"
 )
 
@@ -24,6 +25,8 @@ type TransactionsManager struct {
 	// Whether the peer is ready to receive INV messages. For a peer that
 	// still needs a mempool download, this is false.
 	canReceiveInvMessagess bool
+
+	minTxFeeRateNanosPerKB    uint64
 }
 
 func NewTransactionsManager() (*TransactionsManager, error) {
@@ -46,7 +49,26 @@ func (srv *Server) ResetRequestQueues() {
 func NewTransactionsManager() (*TransactionsManager, error) {
 	// This will initialize the request queues.
 	srv.ResetRequestQueues()
+	go srv._startTransactionRelayer()
 }
+
+
+func (srv *Server) _startTransactionRelayer() {
+	// If we've set a maximum sync height, we will not relay transactions.
+	// TODO: LOOK INTO THIS MAXSYNCCCC
+	/*if srv.blockchain.MaxSyncBlockHeight > 0 {
+		return
+	}*/
+
+	for {
+		if atomic.LoadInt32(&srv.shutdown) > 0 {
+			break
+		}
+		// Just continuously relay transactions to peers that don't have them.
+		srv._relayTransactions()
+	}
+}
+
 
 
 func (stm *TransactionsManager) _handleOutExpectedResponse(msg DeSoMessage) {

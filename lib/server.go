@@ -31,7 +31,7 @@ type MessageHandlerResponseCode int
 const (
 	MessageHandlerResponseCodeOK MessageHandlerResponseCode = iota
 	MessageHandlerResponseCodeSkip
-	MessageHandlerResponseCodePeerNotAvailable
+	MessageHandlerResponseCodePeerUnavailable
 	MessageHandlerResponseCodePeerDisconnect
 )
 
@@ -244,10 +244,6 @@ func (srv *Server) Start() {
 	glog.Info("Server.Start: Starting Server")
 	srv.waitGroup.Add(1)
 
-	go srv._startAddressRelayer()
-
-	go srv._startTransactionRelayer()
-
 	// Once the ConnectionManager is started, peers will be found and connected to and
 	// messages will begin to flow in to be processed.
 	if srv.DisableNetworking {
@@ -256,13 +252,7 @@ func (srv *Server) Start() {
 
 	go srv.cmgr.Start()
 	go srv._startMessageProcessor()
-}
-
-func (srv *Server) AddMessageHandler(handler MessageHandler) {
-	if srv.status != ServerStatusNotStarted {
-		glog.Fatal("Server.AddMessageHandler: Cannot add message handler after server has started")
-	}
-	srv.incomingMessagesHandlers = append(srv.incomingMessagesHandlers, handler)
+	go srv._startAddressRelayer()
 }
 
 func (srv *Server) _startMessageProcessor() {
@@ -289,6 +279,61 @@ func (srv *Server) _startMessageProcessor() {
 	srv.waitGroup.Done()
 }
 
+// Must be run inside a goroutine. Relays addresses to peers at regular intervals
+// and relays our own address to peers once every 24 hours.
+func (srv *Server) _startAddressRelayer() {
+	for numMinutesPassed := 0; ; numMinutesPassed++ {
+		if atomic.LoadInt32(&srv.shutdown) > 0 {
+			break
+		}
+		// For the first ten minutes after the server starts, relay our address to all
+		// peers. After the first ten minutes, do it once every 24 hours.
+		// TODO: Make sure Connection_Manager fields are not accessed directly
+		glog.V(1).Infof("Server.Start._startAddressRelayer: Relaying our own addr to peers")
+		if numMinutesPassed < 10 || numMinutesPassed%(RebroadcastNodeAddrIntervalMinutes) == 0 {
+			for _, pp := range srv.cmgr.GetAllPeers() {
+				bestAddress := srv.cmgr.GetAddrManager().GetBestLocalAddress(pp.NetAddr())
+				if bestAddress != nil {
+					glog.V(2).Infof("Server.Start._startAddressRelayer: Relaying address %v to "+
+						"peer %v", bestAddress.IP.String(), pp)
+					// Send the message and do nothing if the peer is unavailable.
+					_ = srv.cmgr.SendMessage(&MsgDeSoAddr{
+						AddrList: []*SingleAddr{
+							{
+								Timestamp: time.Now(),
+								IP:        bestAddress.IP,
+								Port:      bestAddress.Port,
+								Services:  (ServiceFlag)(bestAddress.Services),
+							},
+						},
+					}, pp.ID, nil)
+				}
+			}
+		}
+
+		glog.V(2).Infof("Server.Start._startAddressRelayer: Seeing if there are addrs to relay...")
+		// Broadcast the addrs we have to all of our peers.
+		addrsToBroadcast := srv._getAddrsToBroadcast()
+		if len(addrsToBroadcast) == 0 {
+			glog.V(2).Infof("Server.Start._startAddressRelayer: No addrs to relay.")
+			time.Sleep(AddrRelayIntervalSeconds * time.Second)
+			continue
+		}
+
+		glog.V(2).Infof("Server.Start._startAddressRelayer: Found %d addrs to "+
+			"relay: %v", len(addrsToBroadcast), spew.Sdump(addrsToBroadcast))
+		// Iterate over all our peers and broadcast the addrs to all of them.
+		for _, pp := range srv.cmgr.GetAllPeers() {
+			// Send the message and do nothing if the peer is unavailable.
+			_ = srv.cmgr.SendMessage(&MsgDeSoAddr{
+				AddrList: addrsToBroadcast,
+			}, pp.ID, nil)
+		}
+		time.Sleep(AddrRelayIntervalSeconds * time.Second)
+		continue
+	}
+}
+
 func (srv *Server) Stop() {
 	glog.Info("Server.Stop: Gracefully shutting down Server")
 
@@ -312,34 +357,21 @@ func (srv *Server) Stop() {
 	}()
 
 	// Wait for the server to fully shut down.
-	// TODO: shouldn't we wait for all modules to shutdown?
 	srv.waitGroup.Wait()
 	glog.Info("Server.Stop: Successfully shut down Server")
 }
 
-/*
-	// TODO: ################################
-	// 	Maybe keep this
-	func (srv *Server) _logAndDisconnectPeer(pp *Peer, blockMsg *MsgDeSoBlock, suffix string) {
-		// Disconnect the Peer. Generally-speaking, disconnecting from the peer will cause its
-		// requested blocks and txns to be removed from the global maps and cause it to be
-		// replaced by another peer. Furthermore,
-		// if we're in the process of syncing our node, the startSync process will also
-		// be restarted as a resul. If we're not syncing our peer and have instead reached
-		// the steady-state, then the next interesting inv message should cause us to
-		// fetch headers, blocks, etc. So we'll be back.
-		glog.Errorf("Server._handleBlock: Encountered an error processing "+
-			"block %v. Disconnecting from peer %v: %s", blockMsg, pp, suffix)
-		pp.Disconnect()
+func (srv *Server) AddMessageHandler(handler MessageHandler) {
+	if srv.status != ServerStatusNotStarted {
+		glog.Fatal("Server.AddMessageHandler: Cannot add message handler after server has started")
 	}
-*/
+	srv.incomingMessagesHandlers = append(srv.incomingMessagesHandlers, handler)
+}
 
 func (srv *Server) SendMessage(msg DeSoMessage, peerId uint64, expectedResponse *ExpectedResponse) error {
 	return srv.cmgr.SendMessage(msg, peerId, expectedResponse)
 }
 
-// TODO: ################################
-// 	Make Handler
 func (srv *Server) _handleAddrMessage(desoMsg DeSoMessage, origin *Peer) MessageHandlerResponseCode {
 	var msg *MsgDeSoAddr
 	var ok bool
@@ -359,7 +391,6 @@ func (srv *Server) _handleAddrMessage(desoMsg DeSoMessage, origin *Peer) Message
 			"Peer %v for sending us an addr message with %d transactions, which exceeds "+
 			"the max allowed %d",
 			origin, len(msg.AddrList), MaxAddrsPerAddrMsg))
-		//origin.Disconnect()
 		return MessageHandlerResponseCodePeerDisconnect
 	}
 
@@ -375,7 +406,7 @@ func (srv *Server) _handleAddrMessage(desoMsg DeSoMessage, origin *Peer) Message
 		netAddrsReceived = append(
 			netAddrsReceived, addrAsNetAddr)
 	}
-	srv.cmgr.AddAddresses(netAddrsReceived, origin.netAddr)
+	srv.cmgr.AddAddresses(netAddrsReceived, origin.NetAddr())
 
 	// If the message had <= 10 addrs in it, then queue all the addresses for relaying
 	// on the next cycle.
@@ -384,8 +415,8 @@ func (srv *Server) _handleAddrMessage(desoMsg DeSoMessage, origin *Peer) Message
 			"peer %v", len(msg.AddrList), origin)
 		sourceAddr := &SingleAddr{
 			Timestamp: time.Now(),
-			IP:        origin.netAddr.IP,
-			Port:      origin.netAddr.Port,
+			IP:        origin.NetAddr().IP,
+			Port:      origin.Port(),
 			Services:  origin.serviceFlags,
 		}
 		listToAddTo, hasSeenSource := srv.addrsToBroadcastt[sourceAddr.StringWithPort(false /*includePort*/)]
@@ -404,8 +435,6 @@ func (srv *Server) _handleAddrMessage(desoMsg DeSoMessage, origin *Peer) Message
 	return MessageHandlerResponseCodeOK
 }
 
-// TODO: ################################
-// 	Make Handler
 func (srv *Server) _handleGetAddrMessage(desoMsg DeSoMessage, origin *Peer) MessageHandlerResponseCode {
 	if _, ok := desoMsg.(*MsgDeSoGetAddr); !ok {
 		return MessageHandlerResponseCodeSkip
@@ -433,7 +462,7 @@ func (srv *Server) _handleGetAddrMessage(desoMsg DeSoMessage, origin *Peer) Mess
 	if err := srv.SendMessage(res, origin.ID, nil); err != nil {
 		glog.Errorf("Server._handleGetAddrMessage: Problem sending "+
 			"addr message to peer %v: %v", origin, err)
-		return MessageHandlerResponseCodePeerNotAvailable
+		return MessageHandlerResponseCodePeerUnavailable
 	}
 
 	return MessageHandlerResponseCodeOK
@@ -477,77 +506,8 @@ func (srv *Server) _getAddrsToBroadcast() []*SingleAddr {
 	return addrsToBroadcast
 }
 
-func (srv *Server) _startTransactionRelayer() {
-	// If we've set a maximum sync height, we will not relay transactions.
-	// TODO: LOOK INTO THIS MAXSYNCCCC
-	/*if srv.blockchain.MaxSyncBlockHeight > 0 {
-		return
-	}*/
-
-	for {
-		if atomic.LoadInt32(&srv.shutdown) > 0 {
-			break
-		}
-		// Just continuously relay transactions to peers that don't have them.
-		srv._relayTransactions()
-	}
-}
-
 func (srv *Server) GetStatsdClient() *statsd.Client {
 	return srv.statsdClient
-}
-
-// Must be run inside a goroutine. Relays addresses to peers at regular intervals
-// and relays our own address to peers once every 24 hours.
-func (srv *Server) _startAddressRelayer() {
-	for numMinutesPassed := 0; ; numMinutesPassed++ {
-		if atomic.LoadInt32(&srv.shutdown) > 0 {
-			break
-		}
-		// For the first ten minutes after the server starts, relay our address to all
-		// peers. After the first ten minutes, do it once every 24 hours.
-		// TODO: Make sure Connection_Manager fields are not accessed directly
-		glog.V(1).Infof("Server.Start._startAddressRelayer: Relaying our own addr to peers")
-		if numMinutesPassed < 10 || numMinutesPassed%(RebroadcastNodeAddrIntervalMinutes) == 0 {
-			for _, pp := range srv.cmgr.GetAllPeers() {
-				bestAddress := srv.cmgr.AddrMgr.GetBestLocalAddress(pp.netAddr)
-				if bestAddress != nil {
-					glog.V(2).Infof("Server.Start._startAddressRelayer: Relaying address %v to "+
-						"peer %v", bestAddress.IP.String(), pp)
-					pp.AddDeSoMessage(&MsgDeSoAddr{
-						AddrList: []*SingleAddr{
-							{
-								Timestamp: time.Now(),
-								IP:        bestAddress.IP,
-								Port:      bestAddress.Port,
-								Services:  (ServiceFlag)(bestAddress.Services),
-							},
-						},
-					}, false)
-				}
-			}
-		}
-
-		glog.V(2).Infof("Server.Start._startAddressRelayer: Seeing if there are addrs to relay...")
-		// Broadcast the addrs we have to all of our peers.
-		addrsToBroadcast := srv._getAddrsToBroadcast()
-		if len(addrsToBroadcast) == 0 {
-			glog.V(2).Infof("Server.Start._startAddressRelayer: No addrs to relay.")
-			time.Sleep(AddrRelayIntervalSeconds * time.Second)
-			continue
-		}
-
-		glog.V(2).Infof("Server.Start._startAddressRelayer: Found %d addrs to "+
-			"relay: %v", len(addrsToBroadcast), spew.Sdump(addrsToBroadcast))
-		// Iterate over all our peers and broadcast the addrs to all of them.
-		for _, pp := range srv.cmgr.GetAllPeers() {
-			pp.AddDeSoMessage(&MsgDeSoAddr{
-				AddrList: addrsToBroadcast,
-			}, false)
-		}
-		time.Sleep(AddrRelayIntervalSeconds * time.Second)
-		continue
-	}
 }
 
 func (cmgr *ConnectionManager) AddAddresses(netAddrsReceived []*wire.NetAddress, netAddr *wire.NetAddress) {

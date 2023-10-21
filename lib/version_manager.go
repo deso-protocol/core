@@ -2,6 +2,7 @@ package lib
 
 import (
 	"fmt"
+	"github.com/golang/glog"
 	"github.com/pkg/errors"
 	"time"
 )
@@ -45,7 +46,32 @@ func (pp *Peer) NewVersionMessage(params *DeSoParams) *MsgDeSoVersion {
 	// Set the minimum fee rate the peer will accept.
 	ver.MinFeeRateNanosPerKB = pp.minTxFeeRateNanosPerKB
 
+	// TODO: Factor out of ConnectionManager to VersionManager
+	if err := peer.NegotiateVersion(cmgr.params.VersionNegotiationTimeout); err != nil {
+		/*
+		   TODO: Perhaps the caller will decide whether to disconnect or not.
+		   		// If we have an error in the version negotiation we disconnect
+		   		// from this peer.
+		   		peer.Conn.Close()
+		*/
+		return errors.Wrapf(err, "ConnectPeer: Problem negotiating version with peer with addr: (%s)", conn.RemoteAddr().String())
+	}
+	peer._logVersionSuccess()
+
 	return ver
+}
+
+func (pp *Peer) _logVersionSuccess() {
+	inboundStr := "INBOUND"
+	if pp.isOutbound {
+		inboundStr = "OUTBOUND"
+	}
+	persistentStr := "PERSISTENT"
+	if !pp.isPersistent {
+		persistentStr = "NON-PERSISTENT"
+	}
+	logStr := fmt.Sprintf("SUCCESS version negotiation for (%s) (%s) peer (%v).", inboundStr, persistentStr, pp)
+	glog.V(1).Info(logStr)
 }
 
 func (pp *Peer) sendVerack() error {
@@ -173,6 +199,7 @@ func (pp *Peer) ReadWithTimeout(readFunc func() error, readTimeout time.Duration
 			return fmt.Errorf("ReadWithTimeout: Timed out reading message from peer: (%v)", pp)
 		}
 	}
+
 }
 
 func (pp *Peer) NegotiateVersion(versionNegotiationTimeout time.Duration) error {

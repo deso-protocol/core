@@ -96,7 +96,6 @@ type Peer struct {
 	advertisedProtocolVersion uint64
 	negotiatedProtocolVersion uint64
 	VersionNegotiated         bool
-	minTxFeeRateNanosPerKB    uint64
 
 	// The addresses this peer is aware of.
 	knownAddressesMapLock deadlock.RWMutex
@@ -119,89 +118,23 @@ type Peer struct {
 	snapshotChunkRequestInFlight bool
 }
 
-func (pp *Peer) AddDeSoMessage2(desoMessage DeSoMessage, expectedResponse *ExpectedResponse) {
-	// Don't add any more messages if the peer is disconnected
-	/*
-		if pp.disconnected != 0 {
-			glog.Errorf("AddDeSoMessage: Not enqueueing message %v because peer is disconnecting", desoMessage.GetMsgType())
-			return
-		}
-
-		pp.mtxMessageQueue.Lock()
-		defer pp.mtxMessageQueue.Unlock()
-
-		pp.messageQueue = append(pp.messageQueue, desoMessage)
-	*/
-	// If the peer is disconnected, don't queue anything.
-	if !pp.Connected() {
-		return
-	}
-
-	pp.outgoingMessageChan <- &outgoingMessage{desoMessage, expectedResponse}
-}
-
-/*
-func (pp *Peer) maybeDequeueDeSoMessage() DeSoMessage {
-	pp.mtxMessageQueue.Lock()
-	defer pp.mtxMessageQueue.Unlock()
-
-	// If we don't have any requests to process just return
-	if len(pp.messageQueue) == 0 {
-		return nil
-	}
-	// If we get here then we know we have messages to process.
-
-	messageToReturn := pp.messageQueue[0]
-	pp.messageQueue = pp.messageQueue[1:]
-
-	return messageToReturn
-}
-*/
-
-/*
-func (pp *Peer) startDeSoMessageProcessor() {
-	glog.Infof("startDeSoMessageProcessor: Starting for peer %v", pp)
-	for {
-		if pp.disconnected != 0 {
-			pp.cleanupMessageProcessor()
-			glog.Infof("startDeSoMessageProcessor: Stopping because peer disconnected: %v", pp)
-			return
-		}
-		msgToProcess := pp.maybeDequeueDeSoMessage()
-		if msgToProcess == nil {
-			time.Sleep(50 * time.Millisecond)
-			continue
-		}
-		// If we get here we know we have a transaction to process.
-		// TODO: ========================
-		// 	Move this to the components
-		glog.V(1).Infof("startDeSoMessageProcessor: SENDING message of "+
-			"type %v to peer %v", msgToProcess.GetMsgType(), pp)
-		pp.QueueMessage(msgToProcess)
-		}
-	}
-}
-*/
 // NewPeer creates a new Peer object.
 func NewPeer(_id uint64, _conn net.Conn, _isOutbound bool, _netAddr *wire.NetAddress,
-	_isPersistent bool, _stallTimeoutSeconds uint64,
-	_minFeeRateNanosPerKB uint64,
-	params *DeSoParams) *Peer {
+	_isPersistent bool, _stallTimeoutSeconds uint64, params *DeSoParams) *Peer {
 
 	pp := Peer{
-		ID:                     _id,
-		Conn:                   _conn,
-		addrStr:                _conn.RemoteAddr().String(),
-		netAddr:                _netAddr,
-		isOutbound:             _isOutbound,
-		isPersistent:           _isPersistent,
-		outgoingMessageChan:    make(chan *outgoingMessage),
-		quit:                   make(chan interface{}),
-		stallTimeoutSeconds:    _stallTimeoutSeconds,
-		minTxFeeRateNanosPerKB: _minFeeRateNanosPerKB,
-		knownAddressesMap:      make(map[string]bool),
-		Params:                 params,
-		IncomingMessageChan:    make(chan DeSoMessage, 100),
+		ID:                  _id,
+		Conn:                _conn,
+		addrStr:             _conn.RemoteAddr().String(),
+		netAddr:             _netAddr,
+		isOutbound:          _isOutbound,
+		isPersistent:        _isPersistent,
+		outgoingMessageChan: make(chan *outgoingMessage),
+		quit:                make(chan interface{}),
+		stallTimeoutSeconds: _stallTimeoutSeconds,
+		knownAddressesMap:   make(map[string]bool),
+		Params:              params,
+		IncomingMessageChan: make(chan DeSoMessage, 100),
 	}
 
 	// TODO: Before, we would give each Peer its own Logger object. Now we
@@ -226,6 +159,15 @@ func NewPeer(_id uint64, _conn net.Conn, _isOutbound bool, _netAddr *wire.NetAdd
 	return &pp
 }
 
+func (pp *Peer) AddDeSoMessage(desoMessage DeSoMessage, expectedResponse *ExpectedResponse) {
+	// Don't add any more messages if the peer is disconnected
+	if !pp.Connected() {
+		return
+	}
+
+	pp.outgoingMessageChan <- &outgoingMessage{desoMessage, expectedResponse}
+}
+
 func (pp *Peer) GetIncomingMessageChan() chan DeSoMessage {
 	return pp.IncomingMessageChan
 }
@@ -245,7 +187,7 @@ func (pp *Peer) HandlePingMsg(msg *MsgDeSoPing) {
 	// Include nonce from ping so pong can be identified.
 	glog.V(2).Infof("Peer.HandlePingMsg: Received ping from peer %v: %v", pp, msg)
 	// Queue up a pong message.
-	pp.AddDeSoMessage2(&MsgDeSoPong{Nonce: msg.Nonce})
+	pp.AddDeSoMessage(&MsgDeSoPong{Nonce: msg.Nonce}, nil)
 }
 
 // HandlePongMsg is invoked when a peer receives a pong message.  It
@@ -295,7 +237,7 @@ out:
 			pp.LastPingTime = time.Now()
 			pp.StatsMtx.Unlock()
 			// Queue the ping message to be sent.
-			pp.AddDeSoMessage2(&MsgDeSoPing{Nonce: nonce})
+			pp.AddDeSoMessage(&MsgDeSoPing{Nonce: nonce}, nil)
 
 		case <-pp.quit:
 			break out
@@ -321,6 +263,10 @@ func (pp *Peer) Address() string {
 
 func (pp *Peer) IP() string {
 	return pp.netAddr.IP.String()
+}
+
+func (pp *Peer) NetAddr() *wire.NetAddress {
+	return pp.netAddr
 }
 
 func (pp *Peer) Port() uint16 {
@@ -429,8 +375,6 @@ func (pp *Peer) _removeEarliestExpectedResponse(msgType MsgType) {
 	}
 }
 
-// TODO: ============================
-//		Mutex?
 func (pp *Peer) _addExpectedResponse(item *ExpectedResponse) {
 	pp.msgMtx.Lock()
 	defer pp.msgMtx.Unlock()
@@ -596,19 +540,6 @@ func (pp *Peer) Disconnect() {
 	close(pp.quit)
 
 	pp.IncomingMessageChan <- &MsgDeSoDonePeer{}
-}
-
-func (pp *Peer) _logVersionSuccess() {
-	inboundStr := "INBOUND"
-	if pp.isOutbound {
-		inboundStr = "OUTBOUND"
-	}
-	persistentStr := "PERSISTENT"
-	if !pp.isPersistent {
-		persistentStr = "NON-PERSISTENT"
-	}
-	logStr := fmt.Sprintf("SUCCESS version negotiation for (%s) (%s) peer (%v).", inboundStr, persistentStr, pp)
-	glog.V(1).Info(logStr)
 }
 
 func (pp *Peer) _logAddPeer() {
