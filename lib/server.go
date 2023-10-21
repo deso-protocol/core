@@ -31,7 +31,8 @@ type MessageHandlerResponseCode int
 const (
 	MessageHandlerResponseCodeOK MessageHandlerResponseCode = iota
 	MessageHandlerResponseCodeSkip
-	MessageHandlerResponseCodeDisconnectPeer
+	MessageHandlerResponseCodePeerNotAvailable
+	MessageHandlerResponseCodePeerDisconnect
 )
 
 func NewMessageHandler(fun func(msg DeSoMessage, origin *Peer) MessageHandlerResponseCode) MessageHandler {
@@ -279,7 +280,7 @@ func (srv *Server) _startMessageProcessor() {
 		for _, handler := range srv.incomingMessagesHandlers {
 			code := handler(msg.GetMessage(), msg.GetPeer())
 			switch code {
-			case MessageHandlerResponseCodeDisconnectPeer:
+			case MessageHandlerResponseCodePeerDisconnect:
 				// TODO: Make a sub-view of Peer (Validator) that exposes ID.
 				srv.cmgr.DisconnectPeer(msg.GetPeer().ID)
 			}
@@ -333,8 +334,8 @@ func (srv *Server) Stop() {
 	}
 */
 
-func (srv *Server) SendMessage(msg DeSoMessage, peerId uint64) {
-
+func (srv *Server) SendMessage(msg DeSoMessage, peerId uint64, expectedResponse *ExpectedResponse) error {
+	return srv.cmgr.SendMessage(msg, peerId, expectedResponse)
 }
 
 // TODO: ################################
@@ -359,7 +360,7 @@ func (srv *Server) _handleAddrMessage(desoMsg DeSoMessage, origin *Peer) Message
 			"the max allowed %d",
 			origin, len(msg.AddrList), MaxAddrsPerAddrMsg))
 		//origin.Disconnect()
-		return MessageHandlerResponseCodeDisconnectPeer
+		return MessageHandlerResponseCodePeerDisconnect
 	}
 
 	// Add all the addresses we received to the addrmgr.
@@ -429,9 +430,11 @@ func (srv *Server) _handleGetAddrMessage(desoMsg DeSoMessage, origin *Peer) Mess
 		}
 		res.AddrList = append(res.AddrList, singleAddr)
 	}
-	// TODO: CHANGE THIS TO ENQUEUE A MESSAGE TO SERVER by MAYBE PEER ID
-	origin.AddDeSoMessage(res, false)
-	srv.SendMessage(res, origin.ID)
+	if err := srv.SendMessage(res, origin.ID, nil); err != nil {
+		glog.Errorf("Server._handleGetAddrMessage: Problem sending "+
+			"addr message to peer %v: %v", origin, err)
+		return MessageHandlerResponseCodePeerNotAvailable
+	}
 
 	return MessageHandlerResponseCodeOK
 }

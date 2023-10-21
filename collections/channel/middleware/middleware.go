@@ -1,18 +1,18 @@
 package middleware
 
 import (
-	"github.com/deso-protocol/core/collections/channel/message_origin"
+	mo "github.com/deso-protocol/core/collections/channel/message_origin"
 )
 
 type Middleware[Message any, Origin any] struct {
 	inputChan     chan Message
-	outputChan    chan *message_origin.MessageOrigin[Message, Origin]
+	outputChan    chan *mo.MessageOrigin[Message, Origin]
 	messageOrigin Origin
 
 	quitChan chan struct{}
 }
 
-func NewMiddleware[Message any, Origin any](inputChan chan Message, outputChan chan *message_origin.MessageOrigin[Message, Origin],
+func NewMiddleware[Message any, Origin any](inputChan chan Message, outputChan chan *mo.MessageOrigin[Message, Origin],
 	messageOrigin Origin) *Middleware[Message, Origin] {
 
 	cm := &Middleware[Message, Origin]{
@@ -32,7 +32,7 @@ func (cm *Middleware[Message, Origin]) Start() {
 				if !ok {
 					return
 				}
-				cm.outputChan <- message_origin.NewMessageOrigin[Message, Origin](msg, cm.messageOrigin)
+				cm.outputChan <- mo.NewMessageOrigin[Message, Origin](msg, cm.messageOrigin)
 			case <-cm.quitChan:
 				return
 			}

@@ -77,6 +77,7 @@ type ConnectionManager struct {
 	persistentPeers map[uint64]*Peer
 	outboundPeers   map[uint64]*Peer
 	inboundPeers    map[uint64]*Peer
+	connectedPeers  map[uint64]*Peer
 
 	runningConnectionAttempts []*collections.RepeatedTask
 
@@ -145,6 +146,7 @@ func NewConnectionManager(
 		persistentPeers:        make(map[uint64]*Peer),
 		outboundPeers:          make(map[uint64]*Peer),
 		inboundPeers:           make(map[uint64]*Peer),
+		connectedPeers:         make(map[uint64]*Peer),
 		connectedOutboundAddrs: make(map[string]bool),
 
 		// Initialize the channels.
@@ -423,6 +425,15 @@ func (cmgr *ConnectionManager) _createOutboundConnection(persistentAddr *wire.Ne
 	}
 }
 
+func (cmgr *ConnectionManager) SendMessage(msg DeSoMessage, peerId uint64, expectedResponse *ExpectedResponse) error {
+	if peer, ok := cmgr.connectedPeers[peerId]; ok {
+		peer.AddDeSoMessage2(msg, expectedResponse)
+	} else {
+		return fmt.Errorf("SendMessage: Peer with ID %d not found", peerId)
+	}
+	return nil
+}
+
 // ConnectPeer connects either an INBOUND or OUTBOUND peer. If Conn == nil,
 // then we will set up an OUTBOUND peer. Otherwise we will use the Conn to
 // create an INBOUND peer. If the connection is OUTBOUND and the persistentAddr
@@ -625,6 +636,12 @@ func (cmgr *ConnectionManager) GetAllPeers() []*Peer {
 		allPeers = append(allPeers, pp)
 	}
 
+	// FIXME: REMOVE
+	if len(allPeers) != len(cmgr.connectedPeers) {
+		panic(fmt.Sprintf("GetAllPeers: allPeers length (%d) != connectedPeers length (%d)",
+			len(allPeers), len(cmgr.connectedPeers)))
+	}
+
 	return allPeers
 }
 
@@ -694,6 +711,7 @@ func (cmgr *ConnectionManager) addPeer(pp *Peer) {
 
 	cmgr.peerMessageMultiplexer.AddChannel(pp.ID, pp.GetIncomingMessageChan(), pp)
 	peerList[pp.ID] = pp
+	cmgr.connectedPeers[pp.ID] = pp
 }
 
 // Update our data structures to remove this peer.
@@ -736,6 +754,7 @@ func (cmgr *ConnectionManager) RemovePeer(pp *Peer) {
 	// Remove the peer from our data structure.
 	cmgr.peerMessageMultiplexer.RemoveChannel(pp.ID)
 	delete(peerList, pp.ID)
+	delete(cmgr.connectedPeers, pp.ID)
 }
 
 func (cmgr *ConnectionManager) _maybeReplacePeer(pp *Peer) {
@@ -870,6 +889,13 @@ func (cmgr *ConnectionManager) Start() {
 
 				// Start the peer's message loop.
 				pp.Start()
+				// If the address manager needs more addresses, then send a GetAddr message
+				// to the peer. This is best-effort.
+				if cmgr.AddrMgr.NeedMoreAddresses() {
+					go func() {
+						pp.AddDeSoMessage2(&MsgDeSoGetAddr{}, nil)
+					}()
+				}
 
 				// Signal the server about the new Peer in case it wants to do something with it.
 				cmgr.serverMessageQueue <- &ServerMessage{
@@ -911,6 +937,12 @@ func (cmgr *ConnectionManager) Stop() {
 			"shutting down")
 		return
 	}
+	// FIXME: Remove
+	if len(cmgr.connectedPeers) != len(cmgr.inboundPeers)+len(cmgr.outboundPeers)+len(cmgr.persistentPeers) {
+		panic(fmt.Sprintf("ConnectionManager.Stop: connectedPeers (%v) != inboundPeers (%v) + outboundPeers (%v) + persistentPeers (%v)",
+			len(cmgr.connectedPeers), len(cmgr.inboundPeers), len(cmgr.outboundPeers), len(cmgr.persistentPeers)))
+	}
+
 	glog.Infof("ConnectionManager: Stopping, number of inbound peers (%v), number of outbound "+
 		"peers (%v), number of persistent peers (%v).", len(cmgr.inboundPeers), len(cmgr.outboundPeers),
 		len(cmgr.persistentPeers))
