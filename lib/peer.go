@@ -88,14 +88,10 @@ type Peer struct {
 	VersionNonceReceived uint64
 
 	// Basic state.
-	PeerInfoMtx               deadlock.Mutex
-	serviceFlags              ServiceFlag
-	addrStr                   string
-	netAddr                   *wire.NetAddress
-	userAgent                 string
-	advertisedProtocolVersion uint64
-	negotiatedProtocolVersion uint64
-	VersionNegotiated         bool
+	PeerInfoMtx  deadlock.Mutex
+	serviceFlags ServiceFlag
+	addrStr      string
+	netAddr      *wire.NetAddress
 
 	// The addresses this peer is aware of.
 	knownAddressesMapLock deadlock.RWMutex

@@ -2,15 +2,69 @@ package lib
 
 import (
 	"fmt"
+	"github.com/decred/dcrd/lru"
 	"github.com/golang/glog"
 	"github.com/pkg/errors"
+	"math"
 	"time"
 )
 
 type VersionManager struct {
+	bc *Blockchain
+	srv *Server
+
+	params *DeSoParams
+
+	minTxFeeRateNanosPerKB uint64
+
+	// When --hypersync is set to true we will attempt fast block synchronization
+	hyperSync    bool
+	archivalMode bool
+
+	userAgent                 string
+	advertisedProtocolVersion uint64
+	negotiatedProtocolVersion uint64
+	VersionNegotiated         bool
+
+	peerVersionNoncesSent     map[uint64]uint64
+	peerVersionNoncesReceived map[uint64]uint64
+	peerVersionNegotiated map[uint64]struct{}
+
+	usedNonces lru.Cache
 }
 
-func (pp *Peer) NewVersionMessage(params *DeSoParams) *MsgDeSoVersion {
+func (vm *VersionManager) _logVersionSuccess(peer *Peer) {
+	inboundStr := "INBOUND"
+	if peer.isOutbound {
+		inboundStr = "OUTBOUND"
+	}
+	persistentStr := "PERSISTENT"
+	if !peer.isPersistent {
+		persistentStr = "NON-PERSISTENT"
+	}
+	logStr := fmt.Sprintf("SUCCESS version negotiation for (%s) (%s) peer (%v).", inboundStr, persistentStr, peer)
+	glog.V(1).Info(logStr)
+}
+
+func (vm *VersionManager) sendVersion(peerId uint64) error {
+	// For an outbound peer, we send a version message and then wait to
+	// hear back for one.
+	verMsg := vm.newVersionMessage(vm.params)
+
+	// Record the nonce of this version message before we send it so we can
+	// detect self connections and so we can validate that the peer actually
+	// controls the IP she's supposedly communicating to us from.
+	vm.peerVersionNoncesSent[peerId] = verMsg.Nonce
+	vm.usedNonces.Add(verMsg.Nonce)
+
+	if err := vm.srv.SendMessage(verMsg, peerId, nil); err != nil {
+		return errors.Wrap(err, "sendVersion: ")
+	}
+
+	return nil
+}
+
+func (vm *VersionManager) newVersionMessage(params *DeSoParams) *MsgDeSoVersion {
 	ver := NewMessage(MsgTypeVersion).(*MsgDeSoVersion)
 
 	ver.Version = params.ProtocolVersion
@@ -23,10 +77,10 @@ func (pp *Peer) NewVersionMessage(params *DeSoParams) *MsgDeSoVersion {
 	// TODO: Right now all peers are full nodes. Later on we'll want to change this,
 	// at which point we'll need to do a little refactoring.
 	ver.Services = SFFullNodeDeprecated
-	if pp.cmgr != nil && pp.cmgr.HyperSync {
+	if vm.hyperSync {
 		ver.Services |= SFHyperSync
 	}
-	if pp.srv.blockchain.archivalMode {
+	if vm.archivalMode {
 		ver.Services |= SFArchivalNode
 	}
 
@@ -36,124 +90,39 @@ func (pp *Peer) NewVersionMessage(params *DeSoParams) *MsgDeSoVersion {
 	// for initial block download.
 	//
 	// TODO: This is ugly. It would be nice if the Peer required zero knowledge of the
-	// Server and the Blockchain.
-	if pp.srv != nil {
-		ver.StartBlockHeight = uint32(pp.srv.blockchain.blockTip().Header.Height)
-	} else {
-		ver.StartBlockHeight = uint32(0)
-	}
+	// Server and the Blockchain. Update (Piotr): Agreed!
+	ver.StartBlockHeight = uint32(vm.bc.BlockTip().Header.Height)
 
 	// Set the minimum fee rate the peer will accept.
-	ver.MinFeeRateNanosPerKB = pp.minTxFeeRateNanosPerKB
-
-	// TODO: Factor out of ConnectionManager to VersionManager
-	if err := peer.NegotiateVersion(cmgr.params.VersionNegotiationTimeout); err != nil {
-		/*
-		   TODO: Perhaps the caller will decide whether to disconnect or not.
-		   		// If we have an error in the version negotiation we disconnect
-		   		// from this peer.
-		   		peer.Conn.Close()
-		*/
-		return errors.Wrapf(err, "ConnectPeer: Problem negotiating version with peer with addr: (%s)", conn.RemoteAddr().String())
-	}
-	peer._logVersionSuccess()
+	ver.MinFeeRateNanosPerKB = vm.minTxFeeRateNanosPerKB
 
 	return ver
 }
 
-func (pp *Peer) _logVersionSuccess() {
-	inboundStr := "INBOUND"
-	if pp.isOutbound {
-		inboundStr = "OUTBOUND"
-	}
-	persistentStr := "PERSISTENT"
-	if !pp.isPersistent {
-		persistentStr = "NON-PERSISTENT"
-	}
-	logStr := fmt.Sprintf("SUCCESS version negotiation for (%s) (%s) peer (%v).", inboundStr, persistentStr, pp)
-	glog.V(1).Info(logStr)
-}
-
-func (pp *Peer) sendVerack() error {
-	verackMsg := NewMessage(MsgTypeVerack)
-	// Include the nonce we received in the peer's version message so
-	// we can validate that we actually control our IP address.
-	verackMsg.(*MsgDeSoVerack).Nonce = pp.VersionNonceReceived
-	if err := pp.WriteDeSoMessage(verackMsg); err != nil {
-		return errors.Wrap(err, "sendVerack: ")
+func (vm *VersionManager) _handleVersionMessage(desoMsg DeSoMessage, origin *Peer) MessageHandlerResponseCode {
+	var verMsg *MsgDeSoVersion
+	var ok bool
+	if verMsg, ok = desoMsg.(*MsgDeSoVersion); !ok {
+		return MessageHandlerResponseCodeSkip
 	}
 
-	return nil
-}
-
-func (pp *Peer) readVerack() error {
-	msg, err := pp.ReadDeSoMessage()
-	if err != nil {
-		return errors.Wrap(err, "readVerack: ")
-	}
-	if msg.GetMsgType() != MsgTypeVerack {
-		return fmt.Errorf(
-			"readVerack: Received message with type %s but expected type VERACK. ",
-			msg.GetMsgType().String())
-	}
-	verackMsg := msg.(*MsgDeSoVerack)
-	if verackMsg.Nonce != pp.VersionNonceSent {
-		return fmt.Errorf(
-			"readVerack: Received VERACK message with nonce %d but expected nonce %d",
-			verackMsg.Nonce, pp.VersionNonceSent)
-	}
-
-	return nil
-}
-
-func (pp *Peer) sendVersion() error {
-	// For an outbound peer, we send a version message and then wait to
-	// hear back for one.
-	verMsg := pp.NewVersionMessage(pp.Params)
-
-	// Record the nonce of this version message before we send it so we can
-	// detect self connections and so we can validate that the peer actually
-	// controls the IP she's supposedly communicating to us from.
-	pp.VersionNonceSent = verMsg.Nonce
-	if pp.cmgr != nil {
-		pp.cmgr.sentNonces.Add(pp.VersionNonceSent)
-	}
-
-	if err := pp.WriteDeSoMessage(verMsg); err != nil {
-		return errors.Wrap(err, "sendVersion: ")
-	}
-
-	return nil
-}
-
-func (pp *Peer) readVersion() error {
-	msg, err := pp.ReadDeSoMessage()
-	if err != nil {
-		return errors.Wrap(err, "readVersion: ")
-	}
-
-	verMsg, ok := msg.(*MsgDeSoVersion)
-	if !ok {
-		return fmt.Errorf(
-			"readVersion: Received message with type %s but expected type VERSION. "+
-				"The VERSION message must preceed all others", msg.GetMsgType().String())
-	}
-	if verMsg.Version < pp.Params.MinProtocolVersion {
-		return fmt.Errorf("readVersion: Peer's protocol version too low: %d (min: %v)",
-			verMsg.Version, pp.Params.MinProtocolVersion)
+	if verMsg.Version < vm.params.MinProtocolVersion {
+		glog.V(1).Infof("VersionManager._handleVersionMessage: Requesting PeerDisconnect for id: (%v) protocol version " +
+			"too low: %d (min: %v)", origin.ID, verMsg.Version, vm.params.MinProtocolVersion)
+		return MessageHandlerResponseCodePeerDisconnect
 	}
 
 	// If we've sent this nonce before then return an error since this is
 	// a connection from ourselves.
 	msgNonce := verMsg.Nonce
-	if pp.cmgr != nil {
-		if pp.cmgr.sentNonces.Contains(msgNonce) {
-			pp.cmgr.sentNonces.Delete(msgNonce)
-			return fmt.Errorf("readVersion: Rejecting connection to self")
-		}
+	if vm.usedNonces.Contains(msgNonce) {
+		vm.usedNonces.Delete(msgNonce)
+		glog.V(1).Infof("VersionManager._handleVersionMessage: Requesting PeerDisconnect for id: (%v) "+
+			"nonce collision", origin.ID)
+		return MessageHandlerResponseCodePeerDisconnect
 	}
 	// Save the version nonce so we can include it in our verack message.
-	pp.VersionNonceReceived = msgNonce
+	vm.peerVersionNoncesReceived[origin.ID] = msgNonce
 
 	// Set the peer info-related fields.
 	pp.PeerInfoMtx.Lock()
@@ -184,6 +153,42 @@ func (pp *Peer) readVersion() error {
 	return nil
 }
 
+func (vm *VersionManager) sendVerack(peerId uint64) error {
+	verackMsg := NewMessage(MsgTypeVerack).(*MsgDeSoVerack)
+	// Include the nonce we received in the peer's version message so
+	// we can validate that we actually control our IP address.
+	nonce, ok := vm.peerVersionNoncesReceived[peerId]
+	if !ok {
+		return fmt.Errorf("sendVerack: No nonce found for peer %d", peerId)
+	}
+	verackMsg.Nonce = nonce
+	if err := vm.srv.SendMessage(verackMsg, peerId, nil); err != nil {
+		return errors.Wrap(err, "sendVerack: ")
+	}
+
+	return nil
+}
+
+func (pp *Peer) readVerack() error {
+	msg, err := pp.ReadDeSoMessage()
+	if err != nil {
+		return errors.Wrap(err, "readVerack: ")
+	}
+	if msg.GetMsgType() != MsgTypeVerack {
+		return fmt.Errorf(
+			"readVerack: Received message with type %s but expected type VERACK. ",
+			msg.GetMsgType().String())
+	}
+	verackMsg := msg.(*MsgDeSoVerack)
+	if verackMsg.Nonce != pp.VersionNonceSent {
+		return fmt.Errorf(
+			"readVerack: Received VERACK message with nonce %d but expected nonce %d",
+			verackMsg.Nonce, pp.VersionNonceSent)
+	}
+
+	return nil
+}
+
 func (pp *Peer) ReadWithTimeout(readFunc func() error, readTimeout time.Duration) error {
 	errChan := make(chan error)
 	go func() {
@@ -201,6 +206,18 @@ func (pp *Peer) ReadWithTimeout(readFunc func() error, readTimeout time.Duration
 	}
 
 }
+
+// TODO: Factor out of ConnectionManager to VersionManager
+if err := peer.NegotiateVersion(cmgr.params.VersionNegotiationTimeout); err != nil {
+/*
+   TODO: Perhaps the caller will decide whether to disconnect or not.
+   		// If we have an error in the version negotiation we disconnect
+   		// from this peer.
+   		peer.Conn.Close()
+*/
+return errors.Wrapf(err, "ConnectPeer: Problem negotiating version with peer with addr: (%s)", conn.RemoteAddr().String())
+}
+peer._logVersionSuccess()
 
 func (pp *Peer) NegotiateVersion(versionNegotiationTimeout time.Duration) error {
 	if pp.isOutbound {
