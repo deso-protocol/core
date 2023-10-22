@@ -27,8 +27,8 @@ type ExpectedResponse struct {
 }
 
 type outgoingMessage struct {
-	message          DeSoMessage
-	expectedResponse *ExpectedResponse
+	message           DeSoMessage
+	expectedResponses []*ExpectedResponse
 }
 
 // Peer is an object that holds all of the state for a connection to another node.
@@ -54,11 +54,10 @@ type Peer struct {
 	LastPingMicros int64
 
 	// Connection info.
-	Conn                net.Conn
-	isOutbound          bool
-	isPersistent        bool
-	stallTimeoutSeconds uint64
-	Params              *DeSoParams
+	Conn         net.Conn
+	isOutbound   bool
+	isPersistent bool
+	Params       *DeSoParams
 
 	IncomingMessageChan chan DeSoMessage
 	// Output queue for messages that need to be sent to the peer.
@@ -106,17 +105,11 @@ type Peer struct {
 	// We process GetTransaction requests in a separate loop. This allows us
 	// to ensure that the responses are ordered.
 	mtxMessageQueue deadlock.RWMutex
-
-	requestedBlocks map[BlockHash]bool
-
-	// We will only allow peer fetch one snapshot chunk at a time so we will keep
-	// track whether this peer has a get snapshot request in flight.
-	snapshotChunkRequestInFlight bool
 }
 
 // NewPeer creates a new Peer object.
 func NewPeer(_id uint64, _conn net.Conn, _isOutbound bool, _netAddr *wire.NetAddress,
-	_isPersistent bool, _stallTimeoutSeconds uint64, params *DeSoParams) *Peer {
+	_isPersistent bool, params *DeSoParams) *Peer {
 
 	pp := Peer{
 		ID:                  _id,
@@ -127,7 +120,6 @@ func NewPeer(_id uint64, _conn net.Conn, _isOutbound bool, _netAddr *wire.NetAdd
 		isPersistent:        _isPersistent,
 		outgoingMessageChan: make(chan *outgoingMessage),
 		quit:                make(chan interface{}),
-		stallTimeoutSeconds: _stallTimeoutSeconds,
 		knownAddressesMap:   make(map[string]bool),
 		Params:              params,
 		IncomingMessageChan: make(chan DeSoMessage, 100),
@@ -155,7 +147,7 @@ func NewPeer(_id uint64, _conn net.Conn, _isOutbound bool, _netAddr *wire.NetAdd
 	return &pp
 }
 
-func (pp *Peer) AddDeSoMessage(desoMessage DeSoMessage, expectedResponse *ExpectedResponse) {
+func (pp *Peer) AddDeSoMessage(desoMessage DeSoMessage, expectedResponse []*ExpectedResponse) {
 	// Don't add any more messages if the peer is disconnected
 	if !pp.Connected() {
 		return
@@ -306,7 +298,7 @@ out:
 	for {
 		select {
 		case oMsg := <-pp.outgoingMessageChan:
-			pp._addExpectedResponse(oMsg.expectedResponse)
+			pp.addExpectedResponses(oMsg.expectedResponses)
 			// TODO: ============================
 			//		Move this to Server maybe?
 			// Before we send an addr message to the peer, filter out the addresses
@@ -368,6 +360,12 @@ func (pp *Peer) _removeEarliestExpectedResponse(msgType MsgType) {
 			pp.expectedResponses = append(left, pp.expectedResponses[ii+1:]...)
 			return
 		}
+	}
+}
+
+func (pp *Peer) addExpectedResponses(responses []*ExpectedResponse) {
+	for _, res := range responses {
+		pp._addExpectedResponse(res)
 	}
 }
 

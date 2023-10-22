@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"github.com/decred/dcrd/lru"
+	"github.com/deso-protocol/go-deadlock"
 	"github.com/dgraph-io/badger/v3"
 	"github.com/golang/glog"
 	"reflect"
@@ -12,6 +13,26 @@ import (
 
 type SnapshotManager struct {
 	Snapshot
+
+
+	// We will only allow peer fetch one snapshot chunk at a time so we will keep
+	// track whether this peer has a get snapshot request in flight.
+	snapshotChunkRequestInFlight bool
+
+
+	// If we're syncing state using hypersync, we'll keep track of the progress using HyperSyncProgress.
+	// It stores information about all the prefixes that we're fetching. The way that HyperSyncProgress
+	// is organized allows for multi-peer state synchronization. In such case, we would assign prefixes
+	// to different peers. Whenever we assign a prefix to a peer, we would append a SyncProgressPrefix
+	// struct to the HyperSyncProgress.PrefixProgress array.
+	HyperSyncProgress SyncProgress
+
+	// DbMutex protects the badger database from concurrent access when it's being closed & re-opened.
+	// This is necessary because the database is closed & re-opened when the node finishes hypersyncing in order
+	// to change the database options from Default options to Performance options.
+	DbMutex deadlock.Mutex
+
+	requestedTransactionsMap: make(map[BlockHash]*GetDataRequestInfo),
 }
 
 // GetSnapshot is used for sending MsgDeSoGetSnapshot messages to peers. We will
@@ -19,6 +40,15 @@ type SnapshotManager struct {
 // we will request a snapshot data chunk from them. Otherwise, we will assign a
 // new prefix to that peer.
 func (snm *SnapshotManager) GetSnapshot(pp *Peer) {
+	switch {
+	case MsgTypeGetSnapshot:
+		msg := msgToProcess.DeSoMessage.(*MsgDeSoGetSnapshot)
+		glog.V(1).Infof("startDeSoMessageProcessor: RECEIVED message of type %v with start key %v "+
+			"and prefix %v from peer %v", msgToProcess.DeSoMessage.GetMsgType(), msg.SnapshotStartKey, msg.GetPrefix(), pp)
+
+		pp.HandleGetSnapshot(msg)
+	}
+
 
 	// Start the timer to measure how much time passes from a GetSnapshot msg to
 	// a SnapshotData message.
@@ -557,5 +587,199 @@ func (sn *SnapshotManager) _handleOutExpectedResponse(msg DeSoMessage) {
 			TimeExpected: time.Now().Add(stallTimeout),
 			MessageType:  MsgTypeSnapshotData,
 		})
+	}
+}
+
+// FIXME: This was called when chainState is SyncStateSyncingSnapshot and we've received a HeaderBundle.
+func (sn *SnapshotManager) InitSnapshotSync() MessageHandlerResponseCode {
+	glog.V(1).Infof("SyncManager._handleHeaderBundleMessage: *Syncing* state starting at "+
+		"height %v from peer (id= %v)", sm.bc.headerTip().Header.Height, origin.ID)
+
+	// If node is a hyper sync node and we haven't finished syncing state yet, we will kick off state sync.
+	if sm.HyperSync {
+		bestHeaderHeight := uint64(sm.bc.headerTip().Height)
+		expectedSnapshotHeight := bestHeaderHeight - (bestHeaderHeight % srv.snapshot.SnapshotBlockHeightPeriod)
+		srv.blockchain.snapshot.Migrations.CleanupMigrations(expectedSnapshotHeight)
+
+		if len(srv.HyperSyncProgress.PrefixProgress) != 0 {
+			srv.GetSnapshot(pp)
+			return
+		}
+		glog.Infof(CLog(Magenta, fmt.Sprintf("Initiating HyperSync after finishing downloading headers. Node "+
+			"will quickly download a snapshot of the blockchain taken at height (%v). HyperSync will sync each "+
+			"prefix of the node's KV database. Connected peer (%v). Note: State sync is a new feature and hence "+
+			"might contain some unexpected behavior. If you see an issue, please report it in DeSo Github "+
+			"https://github.com/deso-protocol/core.", expectedSnapshotHeight, pp)))
+
+		// Clean all the state prefixes from the node db so that we can populate it with snapshot entries.
+		// When we start a node, it first loads a bunch of seed transactions in the genesis block. We want to
+		// remove these entries from the db because we will receive them during state sync.
+		glog.Infof(CLog(Magenta, "HyperSync: deleting all state records. This can take a while."))
+		shouldErase, err := DBDeleteAllStateRecords(srv.blockchain.db)
+		if err != nil {
+			glog.Errorf(CLog(Red, fmt.Sprintf("Server._handleHeaderBundle: problem while deleting state "+
+				"records, error: %v", err)))
+		}
+		if shouldErase {
+			if srv.nodeMessageChannel != nil {
+				srv.nodeMessageChannel <- NodeErase
+			}
+			glog.Errorf(CLog(Red, fmt.Sprintf("Server._handleHeaderBundle: Records were found in the node "+
+				"directory, while trying to resync. Now erasing the node directory and restarting the node. "+
+				"That's faster than manually expunging all records from the database.")))
+			return
+		}
+
+		// We set the expected height and hash of the snapshot from our header chain. The snapshots should be
+		// taken on a regular basis every SnapshotBlockHeightPeriod number of blocks. This means we can calculate the
+		// expected height at which the snapshot should be taking place. We do this to make sure that the
+		// snapshot we receive from the peer is up-to-date.
+		// TODO: error handle if the hash doesn't exist for some reason.
+		srv.HyperSyncProgress.SnapshotMetadata = &SnapshotEpochMetadata{
+			SnapshotBlockHeight:       expectedSnapshotHeight,
+			FirstSnapshotBlockHeight:  expectedSnapshotHeight,
+			CurrentEpochChecksumBytes: []byte{},
+			CurrentEpochBlockHash:     srv.blockchain.bestHeaderChain[expectedSnapshotHeight].Hash,
+		}
+		srv.HyperSyncProgress.PrefixProgress = []*SyncPrefixProgress{}
+		srv.HyperSyncProgress.Completed = false
+		go srv.HyperSyncProgress.PrintLoop()
+
+		// Initialize the snapshot checksum so that it's reset. It got modified during chain initialization
+		// when processing seed transaction from the genesis block. So we need to clear it.
+		srv.snapshot.Checksum.ResetChecksum()
+		if err := srv.snapshot.Checksum.SaveChecksum(); err != nil {
+			glog.Errorf("Server._handleHeaderBundle: Problem saving snapshot to database, error (%v)", err)
+		}
+		// Reset the migrations along with the main checksum.
+		srv.snapshot.Migrations.ResetChecksums()
+		if err := srv.snapshot.Migrations.SaveMigrations(); err != nil {
+			glog.Errorf("Server._handleHeaderBundle: Problem saving migration checksums to database, error (%v)", err)
+		}
+
+		// Start a timer for hyper sync. This keeps track of how long hyper sync takes in total.
+		srv.timer.Start("HyperSync")
+
+		// Now proceed to start fetching snapshot data from the peer.
+		srv.GetSnapshot(pp)
+		return
+	}
+}
+
+// TODO: Clean this up
+// dirtyHackUpdateDbOpts closes the current badger DB instance and re-opens it with the provided options.
+//
+// FIXME: This is a dirty hack that we did in order to decrease memory usage. The reason why we needed it is
+// as follows:
+//   - When we run a node with --hypersync or --hypersync-archival, using PerformanceOptions the whole way
+//     through causes it to use too much memory.
+//   - The problem is that if we use DefaultOptions, then the block sync after HyperSync is complete will fail
+//     because it writes really big entries in a single transaction to the PrefixBlockHashToUtxoOperations
+//     index.
+//   - So, in order to keep memory usage reasonable, we need to use DefaultOptions during the HyperSync portion
+//     and then *switch over* to PerformanceOptions once the HyperSync is complete. That is what this function
+//     is used for.
+//   - Running a node with --blocksync requires that we use PerformanceOptions the whole way through, but we
+//     are moving away from syncing nodes that way, so we don't need to worry too much about that case right now.
+//
+// The long-term solution is to break the writing of the PrefixBlockHashToUtxoOperations index into chunks,
+// or to remove it entirely. We don't want to do that work right now, but we want to reduce the memory usage
+// for the "common" case, which is why we're doing this dirty hack for now.
+func (sm *SyncManager) dirtyHackUpdateDbOpts(opts badger.Options) {
+	// Make sure that a mempool process doesn't try to access the DB while we're closing and re-opening it.
+	srv.mempool.mtx.Lock()
+	defer srv.mempool.mtx.Unlock()
+	// Make sure that a server process doesn't try to access the DB while we're closing and re-opening it.
+	srv.DbMutex.Lock()
+	defer srv.DbMutex.Unlock()
+	srv.blockchain.db.Close()
+	db, err := badger.Open(opts)
+	if err != nil {
+		// If we can't open the DB with the new options, we need to exit the process.
+		glog.Fatalf("Server._handleSnapshot: Problem switching badger db to performance opts, error: (%v)", err)
+	}
+	srv.blockchain.db = db
+	srv.snapshot.mainDb = srv.blockchain.db
+	srv.mempool.bc.db = srv.blockchain.db
+	srv.mempool.backupUniversalUtxoView.Handle = srv.blockchain.db
+	srv.mempool.universalUtxoView.Handle = srv.blockchain.db
+}
+
+
+// SyncPrefixProgress keeps track of sync progress on an individual prefix. It is used in
+// hyper sync to determine which peer to query about each prefix and also what was the last
+// db key that we've received from that peer. Peers will send us state by chunks. But first we
+// need to tell the peer the starting key for the chunk we want to retrieve.
+type SyncPrefixProgress struct {
+	// Peer assigned for retrieving this particular prefix.
+	PrefixSyncPeer *Peer
+	// DB prefix corresponding to this particular sync progress.
+	Prefix []byte
+	// LastReceivedKey is the last key that we've received from this peer.
+	LastReceivedKey []byte
+
+	// Completed indicates whether we've finished syncing this prefix.
+	Completed bool
+}
+
+// SyncProgress is used to keep track of hyper sync progress. It stores a list of SyncPrefixProgress
+// structs which are used to track progress on each individual prefix. It also has the snapshot block
+// height and block hash of the current snapshot epoch.
+type SyncProgress struct {
+	// PrefixProgress includes a list of SyncPrefixProgress objects, each of which represents a state prefix.
+	PrefixProgress []*SyncPrefixProgress
+
+	// SnapshotMetadata is the information about the snapshot we're downloading.
+	SnapshotMetadata *SnapshotEpochMetadata
+
+	// Completed indicates whether we've finished syncing state.
+	Completed bool
+
+	printChannel chan struct{}
+}
+
+func (progress *SyncProgress) PrintLoop() {
+	progress.printChannel = make(chan struct{})
+	ticker := time.NewTicker(60 * time.Second)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-progress.printChannel:
+			return
+		case <-ticker.C:
+			var completedPrefixes [][]byte
+			var incompletePrefixes [][]byte
+			var currentPrefix []byte
+
+			for _, prefix := range StatePrefixes.StatePrefixesList {
+				// Check if the prefix has been completed.
+				foundPrefix := false
+				for _, prefixProgress := range progress.PrefixProgress {
+					if reflect.DeepEqual(prefix, prefixProgress.Prefix) {
+						foundPrefix = true
+						if prefixProgress.Completed {
+							completedPrefixes = append(completedPrefixes, prefix)
+							break
+						} else {
+							currentPrefix = prefix
+						}
+						break
+					}
+				}
+				if !foundPrefix {
+					incompletePrefixes = append(incompletePrefixes, prefix)
+				}
+			}
+			if len(completedPrefixes) > 0 {
+				glog.Infof(CLog(Green, fmt.Sprintf("HyperSync: finished downloading prefixes (%v)", completedPrefixes)))
+			}
+			if len(currentPrefix) > 0 {
+				glog.Infof(CLog(Magenta, fmt.Sprintf("HyperSync: currently syncing prefix: (%v)", currentPrefix)))
+			}
+			if len(incompletePrefixes) > 0 {
+				glog.Infof("Remaining prefixes (%v)", incompletePrefixes)
+			}
+		}
 	}
 }

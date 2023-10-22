@@ -110,10 +110,6 @@ type ConnectionManager struct {
 	newPeerChan  chan *Peer
 	donePeerChan chan *Peer
 
-	// stallTimeoutSeconds is how long we wait to receive responses from Peers
-	// for certain types of messages.
-	stallTimeoutSeconds uint64
-
 	// More chans we might want.	modifyRebroadcastInv chan interface{}
 	shutdown int32
 }
@@ -123,7 +119,6 @@ func NewConnectionManager(
 	_connectIps []string, _timeSource chainlib.MedianTimeSource,
 	_targetOutboundPeers uint32, _maxInboundPeers uint32,
 	_limitOneInboundConnectionPerIP bool,
-	_stallTimeoutSeconds uint64,
 	_serverMessageQueue chan *ServerMessage,
 	_srv *Server) *ConnectionManager {
 
@@ -159,7 +154,6 @@ func NewConnectionManager(
 		serverMessageQueue:             _serverMessageQueue,
 		incomingMessageChan:            peerMessageChan,
 		incomingMessageMultiplexer:     multiplexer.NewMultiplexer[DeSoMessage, *Peer](peerMessageChan),
-		stallTimeoutSeconds:            _stallTimeoutSeconds,
 	}
 }
 
@@ -409,9 +403,9 @@ func (cmgr *ConnectionManager) _createOutboundConnection(persistentAddr *wire.Ne
 	}
 }
 
-func (cmgr *ConnectionManager) SendMessage(msg DeSoMessage, peerId uint64, expectedResponse *ExpectedResponse) error {
+func (cmgr *ConnectionManager) SendMessage(msg DeSoMessage, peerId uint64, expectedResponses []*ExpectedResponse) error {
 	if peer, ok := cmgr.connectedPeers[peerId]; ok {
-		peer.AddDeSoMessage(msg, expectedResponse)
+		peer.AddDeSoMessage(msg, expectedResponses)
 	} else {
 		return fmt.Errorf("SendMessage: Peer with ID %d not found", peerId)
 	}
@@ -433,7 +427,7 @@ func (cmgr *ConnectionManager) ConnectPeer(conn net.Conn, isOutbound bool, isPer
 	}
 
 	id := atomic.AddUint64(&cmgr.peerIndex, 1)
-	peer := NewPeer(id, conn, isOutbound, na, isPersistent, cmgr.stallTimeoutSeconds, cmgr.params)
+	peer := NewPeer(id, conn, isOutbound, na, isPersistent, cmgr.params)
 
 	// If the version negotiation worked and we have an outbound non-persistent
 	// connection, mark the address as good in the addrmgr.
@@ -772,7 +766,7 @@ func (cmgr *ConnectionManager) AddAddresses(netAddrsReceived []*wire.NetAddress,
 }
 
 func (cmgr *ConnectionManager) AddTimeSample(addrStr string, timeSample time.Time) {
-	cmgr.AddrMgr.AddTimeSample(addrStr, timeSample)
+	cmgr.timeSource.AddTimeSample(addrStr, timeSample)
 }
 
 func (cmgr *ConnectionManager) Start() {

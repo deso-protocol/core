@@ -170,7 +170,6 @@ func NewServer(
 	_targetOutboundPeers uint32,
 	_maxInboundPeers uint32,
 	_limitOneInboundConnectionPerIP bool,
-	_stallTimeoutSeconds uint64,
 	_disableNetworking bool,
 	_readOnlyMode bool,
 	statsd *statsd.Client,
@@ -200,7 +199,7 @@ func NewServer(
 	_cmgr := NewConnectionManager(
 		_params, _desoAddrMgr, _listeners, _connectIps, timesource,
 		_targetOutboundPeers, _maxInboundPeers, _limitOneInboundConnectionPerIP,
-		_stallTimeoutSeconds, _incomingMessages, srv)
+		_incomingMessages, srv)
 
 	// Set up the blockchain data structure. This is responsible for accepting new
 	// blocks, keeping track of the best chain, and keeping all of that state up
@@ -300,7 +299,7 @@ func (srv *Server) _startAddressRelayer() {
 					glog.V(2).Infof("Server.Start._startAddressRelayer: Relaying address %v to "+
 						"peer %v", bestAddress.IP.String(), pp)
 					// Send the message and do nothing if the peer is unavailable.
-					_ = srv.cmgr.SendMessage(&MsgDeSoAddr{
+					msg := &MsgDeSoAddr{
 						AddrList: []*SingleAddr{
 							{
 								Timestamp: time.Now(),
@@ -309,7 +308,8 @@ func (srv *Server) _startAddressRelayer() {
 								Services:  (ServiceFlag)(bestAddress.Services),
 							},
 						},
-					}, pp.ID, nil)
+					}
+					_ = srv.SendMessage(msg, pp.ID, nil)
 				}
 			}
 		}
@@ -328,9 +328,10 @@ func (srv *Server) _startAddressRelayer() {
 		// Iterate over all our peers and broadcast the addrs to all of them.
 		for _, pp := range srv.cmgr.GetAllPeers() {
 			// Send the message and do nothing if the peer is unavailable.
-			_ = srv.cmgr.SendMessage(&MsgDeSoAddr{
+			msg := &MsgDeSoAddr{
 				AddrList: addrsToBroadcast,
-			}, pp.ID, nil)
+			}
+			_ = srv.SendMessage(msg, pp.ID, nil)
 		}
 		time.Sleep(AddrRelayIntervalSeconds * time.Second)
 		continue
@@ -371,8 +372,8 @@ func (srv *Server) RegisterIncomingMessagesHandler(msgType MsgType, handler Mess
 	srv.incomingMessagesHandlers[msgType] = append(srv.incomingMessagesHandlers[msgType], handler)
 }
 
-func (srv *Server) SendMessage(msg DeSoMessage, peerId uint64, expectedResponse *ExpectedResponse) error {
-	return srv.cmgr.SendMessage(msg, peerId, expectedResponse)
+func (srv *Server) SendMessage(msg DeSoMessage, peerId uint64, expectedResponses []*ExpectedResponse) error {
+	return srv.cmgr.SendMessage(msg, peerId, expectedResponses)
 }
 
 func (srv *Server) DisconnectPeer(peerId uint64) {
@@ -531,4 +532,8 @@ func (srv *Server) AddTimeSample(addrStr string, timeSample time.Time) {
 
 func (srv *Server) SignalPeerReady(peerId uint64) {
 	// TODO: This is called when peer passes handshake.
+}
+
+func (srv *Server) GetAllPeers() []*Peer {
+	return srv.cmgr.GetAllPeers()
 }

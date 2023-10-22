@@ -27,6 +27,29 @@ type TransactionsManager struct {
 	canReceiveInvMessagess bool
 
 	minTxFeeRateNanosPerKB    uint64
+
+	// inventoryBeingProcessed keeps track of the inventory (hashes of blocks and
+	// transactions) that we've recently processed from peers. It is useful for
+	// avoiding situations in which we re-fetch the same data from many peers.
+	// For example, if we get the same Block inv message from multiple peers,
+	// adding it to this map and checking this map before replying will make it
+	// so that we only send a reply to the first peer that sent us the inv, which
+	// is more efficient.
+	inventoryBeingProcessed lru.Cache
+
+	// Make this hold a multiple of what we hold for individual peers.
+	//srv.inventoryBeingProcessed = lru.NewCache(maxKnownInventory)
+	//srv.requestTimeoutSeconds = 10
+
+	// requestedTransactions contains hashes of transactions for which we have
+	// requested data but have not yet received a response.
+	requestedTransactionsMap     map[BlockHash]*GetDataRequestInfo
+	IgnoreInboundPeerInvMessages bool
+
+	// Becomes true after the node has processed its first transaction bundle from
+	// any peer. This is useful in a deployment setting because it makes it so that
+	// a health check can wait until this value becomes true.
+	hasProcessedFirstTransactionBundle bool
 }
 
 func NewTransactionsManager() (*TransactionsManager, error) {
@@ -44,6 +67,10 @@ func (srv *Server) ResetRequestQueues() {
 	glog.V(2).Infof("Server.ResetRequestQueues: Resetting request queues")
 
 	srv.requestedTransactionsMap = make(map[BlockHash]*GetDataRequestInfo)
+}
+
+func (sm *SyncManager) HasProcessedFirstTransactionBundle() bool {
+	return srv.hasProcessedFirstTransactionBundle
 }
 
 func NewTransactionsManager() (*TransactionsManager, error) {
@@ -67,6 +94,147 @@ func (srv *Server) _startTransactionRelayer() {
 		// Just continuously relay transactions to peers that don't have them.
 		srv._relayTransactions()
 	}
+}
+
+
+func (pp *Peer) HelpHandleInv(msg *MsgDeSoInv) {
+	// Get the requestedTransactions lock and release it at the end of the function.
+	pp.srv.dataLock.Lock()
+	defer pp.srv.dataLock.Unlock()
+
+	// Iterate through the message. Gather the transactions and the
+	// blocks we don't already have into separate inventory lists.
+	glog.V(1).Infof("Server._handleInv: Processing INV message of size %v from peer %v", len(msg.InvList), pp)
+	txHashList := []*BlockHash{}
+	blockHashList := []*BlockHash{}
+
+	for _, invVect := range msg.InvList {
+		// No matter what, add the inv to the peer's known inventory.
+		pp.knownInventory.Add(*invVect)
+
+		// If this is a hash we are currently processing, no need to do anything.
+		// This check serves to fill the gap between the time when we've decided
+		// to ask for the data corresponding to an inv and when we actually receive
+		// that data. Without this check, the following would happen:
+		// - Receive inv from peer1
+		// - Get data for inv from peer1
+		// - Receive same inv from peer2
+		// - Get same data for same inv from peer2 before we've received
+		//   a response from peer1
+		// Instead, because of this check, the following happens instead:
+		// - Receive inv from peer1
+		// - Get data for inv from peer1 *and* add it to inventoryBeingProcessed.
+		// - Receive same inv from peer2
+		// - Notice second inv is already in inventoryBeingProcessed so don't
+		//   request data for it.
+		if pp.srv.inventoryBeingProcessed.Contains(*invVect) {
+			continue
+		}
+
+		// Extract a copy of the block hash to avoid the iterator changing the
+		// value underneath us.
+		currentHash := BlockHash{}
+		copy(currentHash[:], invVect.Hash[:])
+
+		if invVect.Type == InvTypeTx {
+			// For transactions, check that the transaction isn't in the
+			// mempool and that it isn't currently being requested.
+			_, requestIsInFlight := pp.srv.requestedTransactionsMap[currentHash]
+			if requestIsInFlight || pp.srv.mempool.IsTransactionInPool(&currentHash) {
+				continue
+			}
+
+			txHashList = append(txHashList, &currentHash)
+		} else if invVect.Type == InvTypeBlock {
+			// For blocks, we check that the hash isn't known to us either in our
+			// main header chain or in side chains.
+			if pp.srv.blockchain.HasHeader(&currentHash) {
+				continue
+			}
+
+			blockHashList = append(blockHashList, &currentHash)
+		}
+
+		// If we made it here, it means the inventory was added to one of the
+		// lists so mark it as processed on the Server.
+		pp.srv.inventoryBeingProcessed.Add(*invVect)
+	}
+
+	// If there were any transactions we don't yet have, request them using
+	// a GetTransactions message.
+	if len(txHashList) > 0 {
+		// Add all the transactions we think we need to the list of transactions
+		// requested (i.e. in-flight) since we're about to request them.
+		for _, txHash := range txHashList {
+			pp.srv.requestedTransactionsMap[*txHash] = &GetDataRequestInfo{
+				PeerWhoSentInv: pp,
+				TimeRequested:  time.Now(),
+			}
+		}
+
+		pp.AddDeSoMessage(&MsgDeSoGetTransactions{
+			HashList: txHashList,
+		}, false /*inbound*/)
+	} else {
+		glog.V(1).Infof("Server._handleInv: Not sending GET_TRANSACTIONS because no new hashes")
+	}
+
+	// If the peer has sent us any block hashes that are new to us then send
+	// a GetHeaders message to her to get back in sync with her. The flow
+	// for this is generally:
+	// - Receive an inv message from a peer for a block we don't have.
+	// - Send them a GetHeaders message with our most up-to-date block locator.
+	// - Receive back from them all the headers they're aware of that can be
+	//   accepted into our chain.
+	// - We will then request from them all of the block data for the new headers
+	//   we have if they affect our main chain.
+	// - When the blocks come in, we process them by adding them to the chain
+	//   one-by-one.
+	if len(blockHashList) > 0 {
+		locator := pp.srv.blockchain.LatestHeaderLocator()
+		pp.AddDeSoMessage(&MsgDeSoGetHeaders{
+			StopHash:     &BlockHash{},
+			BlockLocator: locator,
+		}, false /*inbound*/)
+	}
+}
+
+func (pp *Peer) HandleInv(msg *MsgDeSoInv) {
+	// Ignore invs while we're still syncing and before we've requested
+	// all mempool transactions from one of our peers to bootstrap.
+	if pp.srv.blockchain.isSyncing() {
+		glog.Infof("Server._handleInv: Ignoring INV while syncing from Peer %v", pp)
+		return
+	}
+
+	// Expire any transactions that we've been waiting too long on.
+	// Also remove them from inventoryProcessed in case another Peer wants to send
+	// them to us in the future.
+	pp.srv.ExpireRequests()
+
+	pp.HelpHandleInv(msg)
+}
+
+
+func (sm *SyncManager) _handleInv(peer *Peer, msg *MsgDeSoInv) {
+	if !peer.isOutbound && srv.IgnoreInboundPeerInvMessages {
+		glog.Infof("_handleInv: Ignoring inv message from inbound peer because "+
+			"ignore_outbound_peer_inv_messages=true: %v", peer)
+		return
+	}
+	// If we've set a maximum sync height and we've reached that height, then we will
+	// stop accepting inv messages.
+	if srv.blockchain.isTipMaxed(srv.blockchain.blockTip()) {
+		return
+	}
+	peer.AddDeSoMessage(msg, true /*inbound*/)
+}
+
+func (sm *SyncManager) _handleGetTransactions(pp *Peer, msg *MsgDeSoGetTransactions) {
+	glog.V(1).Infof("Server._handleGetTransactions: Received GetTransactions "+
+		"message %v from Peer %v", msg, pp)
+
+	pp.AddDeSoMessage(msg, true /*inbound*/)
 }
 
 
@@ -374,6 +542,7 @@ func (pp *Peer) _processTransactionsAndMaybeRemoveRequests(transactions []*MsgDe
 	pp.srv.dataLock.Unlock()
 }
 
+// Call this on MsgTypeDonePeer
 func (srv *Server) _cleanupDonePeerState(pp *Peer) {
 	// Grab the dataLock since we'll be modifying requestedBlocks
 	srv.dataLock.Lock()

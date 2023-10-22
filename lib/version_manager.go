@@ -8,12 +8,12 @@ import (
 	"time"
 )
 
-type peerVersionMetadata struct {
+type ValidatorVersionMetadata struct {
 	versionNoncesSent         uint64
 	versionNoncesReceived     uint64
 	userAgent                 string
 	versionNegotiated         struct{}
-	serviceFlag               ServiceFlag
+	ServiceFlag               ServiceFlag
 	advertisedProtocolVersion uint64
 	negotiatedProtocolVersion uint64
 	minTxFeeRateNanosPerKB    uint64
@@ -21,6 +21,7 @@ type peerVersionMetadata struct {
 	timeOffsetSecs            int64
 	versionTimeExpected       *time.Time
 	verackTimeExpected        *time.Time
+	StartingBlockHeight       uint32
 }
 
 type VersionManager struct {
@@ -33,8 +34,8 @@ type VersionManager struct {
 	archivalMode              bool
 	versionNegotiationTimeout time.Duration
 
-	peerVersionMetadataMap map[uint64]*peerVersionMetadata
-	usedNonces             lru.Cache
+	versionMetadataMap map[uint64]*ValidatorVersionMetadata
+	usedNonces         lru.Cache
 }
 
 func NewVersionManager(bc *Blockchain, srv *Server, params *DeSoParams, minTxFeeRateNanosPerKB uint64,
@@ -48,7 +49,7 @@ func NewVersionManager(bc *Blockchain, srv *Server, params *DeSoParams, minTxFee
 		hyperSync:                 hyperSync,
 		archivalMode:              archivalMode,
 		versionNegotiationTimeout: versionNegotiationTimeout,
-		peerVersionMetadataMap:    make(map[uint64]*peerVersionMetadata),
+		versionMetadataMap:        make(map[uint64]*ValidatorVersionMetadata),
 		usedNonces:                lru.NewCache(1000),
 	}
 
@@ -67,11 +68,15 @@ func (vm *VersionManager) Start() {
 func (vm *VersionManager) Stop() {
 }
 
-func (vm *VersionManager) getPeerMetadata(peerId uint64) *peerVersionMetadata {
-	if _, exists := vm.peerVersionMetadataMap[peerId]; !exists {
-		vm.peerVersionMetadataMap[peerId] = &peerVersionMetadata{}
+func (vm *VersionManager) GetValidatorVersionMetadata(peerId uint64) *ValidatorVersionMetadata {
+	return vm.getValidatorVersionMetadata(peerId)
+}
+
+func (vm *VersionManager) getValidatorVersionMetadata(peerId uint64) *ValidatorVersionMetadata {
+	if _, exists := vm.versionMetadataMap[peerId]; !exists {
+		vm.versionMetadataMap[peerId] = &ValidatorVersionMetadata{}
 	}
-	return vm.peerVersionMetadataMap[peerId]
+	return vm.versionMetadataMap[peerId]
 }
 
 func (vm *VersionManager) _handleNewPeerMessage(desoMsg DeSoMessage, origin *Peer) MessageHandlerResponseCode {
@@ -80,9 +85,9 @@ func (vm *VersionManager) _handleNewPeerMessage(desoMsg DeSoMessage, origin *Pee
 	}
 
 	if origin.IsOutbound() {
-		pm := vm.getPeerMetadata(origin.ID)
+		vMeta := vm.getValidatorVersionMetadata(origin.ID)
 		versionTimeExpected := time.Now().Add(vm.versionNegotiationTimeout)
-		pm.versionTimeExpected = &versionTimeExpected
+		vMeta.versionTimeExpected = &versionTimeExpected
 		return vm.sendVersion(origin.ID)
 	}
 	return MessageHandlerResponseCodeOK
@@ -96,8 +101,8 @@ func (vm *VersionManager) sendVersion(peerId uint64) MessageHandlerResponseCode 
 	// Record the nonce of this version message before we send it so we can
 	// detect self connections and so we can validate that the peer actually
 	// controls the IP she's supposedly communicating to us from.
-	pm := vm.getPeerMetadata(peerId)
-	pm.versionNoncesSent = verMsg.Nonce
+	vMeta := vm.getValidatorVersionMetadata(peerId)
+	vMeta.versionNoncesSent = verMsg.Nonce
 	vm.usedNonces.Add(verMsg.Nonce)
 
 	if err := vm.srv.SendMessage(verMsg, peerId, nil); err != nil {
@@ -156,10 +161,10 @@ func (vm *VersionManager) _handleVersionMessage(desoMsg DeSoMessage, origin *Pee
 		return MessageHandlerResponseCodePeerDisconnect
 	}
 
-	pm := vm.getPeerMetadata(origin.ID)
-	if pm.versionTimeExpected != nil && pm.versionTimeExpected.Before(time.Now()) {
+	vMeta := vm.getValidatorVersionMetadata(origin.ID)
+	if vMeta.versionTimeExpected != nil && vMeta.versionTimeExpected.Before(time.Now()) {
 		glog.V(1).Infof("VersionManager._handleVersionMessage: Requesting PeerDisconnect for id: (%v) "+
-			"version timeout. Time expected: %v, now: %v", origin.ID, pm.versionTimeExpected.UnixMicro(), time.Now().UnixMicro())
+			"version timeout. Time expected: %v, now: %v", origin.ID, vMeta.versionTimeExpected.UnixMicro(), time.Now().UnixMicro())
 		return MessageHandlerResponseCodePeerDisconnect
 	}
 
@@ -173,21 +178,22 @@ func (vm *VersionManager) _handleVersionMessage(desoMsg DeSoMessage, origin *Pee
 		return MessageHandlerResponseCodePeerDisconnect
 	}
 	// Save the version nonce so we can include it in our verack message.
-	pm.versionNoncesReceived = msgNonce
+	vMeta.versionNoncesReceived = msgNonce
 
 	// Set the peer info-related fields.
-	pm.userAgent = verMsg.UserAgent
-	pm.serviceFlag = verMsg.Services
-	pm.advertisedProtocolVersion = verMsg.Version
+	vMeta.userAgent = verMsg.UserAgent
+	vMeta.ServiceFlag = verMsg.Services
+	vMeta.advertisedProtocolVersion = verMsg.Version
 	negotiatedVersion := vm.params.ProtocolVersion
 	if verMsg.Version < vm.params.ProtocolVersion {
 		negotiatedVersion = verMsg.Version
 	}
-	pm.negotiatedProtocolVersion = negotiatedVersion
-	pm.minTxFeeRateNanosPerKB = verMsg.MinFeeRateNanosPerKB
+	vMeta.negotiatedProtocolVersion = negotiatedVersion
+	vMeta.minTxFeeRateNanosPerKB = verMsg.MinFeeRateNanosPerKB
 	timeConnected := time.Unix(verMsg.TstampSecs, 0)
-	pm.timeConnected = &timeConnected
-	pm.timeOffsetSecs = verMsg.TstampSecs - time.Now().Unix()
+	vMeta.timeConnected = &timeConnected
+	vMeta.timeOffsetSecs = verMsg.TstampSecs - time.Now().Unix()
+	vMeta.StartingBlockHeight = verMsg.StartBlockHeight
 
 	// Update the timeSource now that we've gotten a version message from the peer.
 	vm.srv.AddTimeSample(origin.Address(), timeConnected)
@@ -201,7 +207,7 @@ func (vm *VersionManager) _handleVersionMessage(desoMsg DeSoMessage, origin *Pee
 	// After sending and receiving a compatible version, complete the
 	// negotiation by sending and receiving a verack message.
 	verackTimeExpected := time.Now().Add(vm.versionNegotiationTimeout)
-	pm.verackTimeExpected = &verackTimeExpected
+	vMeta.verackTimeExpected = &verackTimeExpected
 	return vm.sendVerack(origin.ID, msgNonce)
 }
 
@@ -228,17 +234,17 @@ func (vm *VersionManager) _handleVerackMessage(desoMsg DeSoMessage, origin *Peer
 		return MessageHandlerResponseCodePeerDisconnect
 	}
 
-	pm := vm.getPeerMetadata(origin.ID)
-	nonceReceived := pm.versionNoncesReceived
-	nonceSent := pm.versionNoncesSent
+	vMeta := vm.getValidatorVersionMetadata(origin.ID)
+	nonceReceived := vMeta.versionNoncesReceived
+	nonceSent := vMeta.versionNoncesSent
 	if !ok {
 		glog.V(1).Infof("VersionManager._handleVerackMessage: Requesting PeerDisconnect for id: (%v) "+
 			"nonce not found for peer", origin.ID)
 		return MessageHandlerResponseCodePeerDisconnect
 	}
-	if pm.verackTimeExpected != nil && pm.verackTimeExpected.Before(time.Now()) {
+	if vMeta.verackTimeExpected != nil && vMeta.verackTimeExpected.Before(time.Now()) {
 		glog.V(1).Infof("VersionManager._handleVerackMessage: Requesting PeerDisconnect for id: (%v) "+
-			"verack timeout. Time expected: %v, now: %v", origin.ID, pm.verackTimeExpected.UnixMicro(), time.Now().UnixMicro())
+			"verack timeout. Time expected: %v, now: %v", origin.ID, vMeta.verackTimeExpected.UnixMicro(), time.Now().UnixMicro())
 		return MessageHandlerResponseCodePeerDisconnect
 	}
 	// If the verack message has a nonce unseen for us, then request peer disconnect.
@@ -249,7 +255,7 @@ func (vm *VersionManager) _handleVerackMessage(desoMsg DeSoMessage, origin *Peer
 	}
 
 	// If we get here then the peer has successfully completed the handshake.
-	pm.versionNegotiated = struct{}{}
+	vMeta.versionNegotiated = struct{}{}
 	vm.srv.SignalPeerReady(origin.ID)
 
 	vm._logVersionSuccess(origin)
