@@ -192,7 +192,7 @@ func (bridge *ConnectionBridge) startConnection(connection *lib.Peer, otherNode 
 	}
 
 	// Wait for a response to the version message.
-	if err := connection.ReadWithTimeout(
+	if err := ReadWithTimeout(
 		func() error {
 			msg, err := connection.ReadDeSoMessage()
 			if err != nil {
@@ -223,7 +223,7 @@ func (bridge *ConnectionBridge) startConnection(connection *lib.Peer, otherNode 
 	}
 
 	// And finally wait for connection's response to the verack message.
-	if err := connection.ReadWithTimeout(
+	if err := ReadWithTimeout(
 		func() error {
 			msg, err := connection.ReadDeSoMessage()
 			if err != nil {
@@ -246,6 +246,24 @@ func (bridge *ConnectionBridge) startConnection(connection *lib.Peer, otherNode 
 	connection.VersionNegotiated = true
 
 	return nil
+}
+
+func ReadWithTimeout(readFunc func() error, readTimeout time.Duration) error {
+	errChan := make(chan error)
+	go func() {
+		errChan <- readFunc()
+	}()
+	select {
+	case err := <-errChan:
+		{
+			return err
+		}
+	case <-time.After(readTimeout):
+		{
+			return fmt.Errorf("ReadWithTimeout: Timed out reading message")
+		}
+	}
+
 }
 
 // routeTraffic routes all messages sent to the source connection and redirects it to the destination connection.

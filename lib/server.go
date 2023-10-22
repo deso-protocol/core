@@ -90,7 +90,7 @@ type Server struct {
 	// the Server can take action appropriately.
 	incomingMessages chan *ServerMessage
 
-	incomingMessagesHandlers []MessageHandler
+	incomingMessagesHandlers map[MsgType][]MessageHandler
 
 	// hasRequestedSync indicates whether we've bootstrapped our mempool
 	// by requesting all mempool transactions from a
@@ -180,14 +180,15 @@ func NewServer(
 
 	// Create an empty Server object here so we can pass a reference to it to the ConnectionManager.
 	srv := &Server{
-		status:             ServerStatusNotStarted,
-		DisableNetworking:  _disableNetworking,
-		ReadOnlyMode:       _readOnlyMode,
-		nodeMessageChannel: _nodeMessageChan,
+		status:                   ServerStatusNotStarted,
+		DisableNetworking:        _disableNetworking,
+		ReadOnlyMode:             _readOnlyMode,
+		nodeMessageChannel:       _nodeMessageChan,
+		incomingMessagesHandlers: make(map[MsgType][]MessageHandler),
 	}
 
-	srv.AddMessageHandler(NewMessageHandler(srv._handleAddrMessage))
-	srv.AddMessageHandler(NewMessageHandler(srv._handleGetAddrMessage))
+	srv.RegisterIncomingMessagesHandler(MsgTypeAddr, NewMessageHandler(srv._handleAddrMessage))
+	srv.RegisterIncomingMessagesHandler(MsgTypeGetAddr, NewMessageHandler(srv._handleGetAddrMessage))
 
 	// The same timesource is used in the chain data structure and in the connection
 	// manager. It just takes and keeps track of the median time among our peers so
@@ -263,16 +264,19 @@ func (srv *Server) _startMessageProcessor() {
 			break
 		}
 
-		if _, quit := msg.GetMessage().(*MsgDeSoQuit); quit {
+		msgType := msg.GetMessage().GetMsgType()
+		// TODO: Maybe pass through to controllers?
+		if msgType == MsgTypeQuit {
 			break
 		}
+		handlers := srv.incomingMessagesHandlers[msgType]
 
-		for _, handler := range srv.incomingMessagesHandlers {
+		for _, handler := range handlers {
 			code := handler(msg.GetMessage(), msg.GetPeer())
 			switch code {
 			case MessageHandlerResponseCodePeerDisconnect:
 				// TODO: Make a sub-view of Peer (Validator) that exposes ID.
-				srv.cmgr.DisconnectPeer(msg.GetPeer().ID)
+				srv.DisconnectPeer(msg.GetPeer().ID)
 			}
 		}
 	}
@@ -288,7 +292,6 @@ func (srv *Server) _startAddressRelayer() {
 		}
 		// For the first ten minutes after the server starts, relay our address to all
 		// peers. After the first ten minutes, do it once every 24 hours.
-		// TODO: Make sure Connection_Manager fields are not accessed directly
 		glog.V(1).Infof("Server.Start._startAddressRelayer: Relaying our own addr to peers")
 		if numMinutesPassed < 10 || numMinutesPassed%(RebroadcastNodeAddrIntervalMinutes) == 0 {
 			for _, pp := range srv.cmgr.GetAllPeers() {
@@ -361,18 +364,26 @@ func (srv *Server) Stop() {
 	glog.Info("Server.Stop: Successfully shut down Server")
 }
 
-func (srv *Server) AddMessageHandler(handler MessageHandler) {
+func (srv *Server) RegisterIncomingMessagesHandler(msgType MsgType, handler MessageHandler) {
 	if srv.status != ServerStatusNotStarted {
-		glog.Fatal("Server.AddMessageHandler: Cannot add message handler after server has started")
+		glog.Fatal("Server.RegisterIncomingMessagesHandler: Cannot add message handler after server has started")
 	}
-	srv.incomingMessagesHandlers = append(srv.incomingMessagesHandlers, handler)
+	srv.incomingMessagesHandlers[msgType] = append(srv.incomingMessagesHandlers[msgType], handler)
 }
 
 func (srv *Server) SendMessage(msg DeSoMessage, peerId uint64, expectedResponse *ExpectedResponse) error {
 	return srv.cmgr.SendMessage(msg, peerId, expectedResponse)
 }
 
+func (srv *Server) DisconnectPeer(peerId uint64) {
+	srv.cmgr.DisconnectPeer(peerId)
+}
+
 func (srv *Server) _handleAddrMessage(desoMsg DeSoMessage, origin *Peer) MessageHandlerResponseCode {
+	if desoMsg.GetMsgType() != MsgTypeAddr {
+		return MessageHandlerResponseCodeSkip
+	}
+
 	var msg *MsgDeSoAddr
 	var ok bool
 	if msg, ok = desoMsg.(*MsgDeSoAddr); !ok {
@@ -436,6 +447,10 @@ func (srv *Server) _handleAddrMessage(desoMsg DeSoMessage, origin *Peer) Message
 }
 
 func (srv *Server) _handleGetAddrMessage(desoMsg DeSoMessage, origin *Peer) MessageHandlerResponseCode {
+	if desoMsg.GetMsgType() != MsgTypeGetAddr {
+		return MessageHandlerResponseCodeSkip
+	}
+
 	if _, ok := desoMsg.(*MsgDeSoGetAddr); !ok {
 		return MessageHandlerResponseCodeSkip
 	}
@@ -510,6 +525,10 @@ func (srv *Server) GetStatsdClient() *statsd.Client {
 	return srv.statsdClient
 }
 
-func (cmgr *ConnectionManager) AddAddresses(netAddrsReceived []*wire.NetAddress, netAddr *wire.NetAddress) {
-	cmgr.AddrMgr.AddAddresses(netAddrsReceived, netAddr)
+func (srv *Server) AddTimeSample(addrStr string, timeSample time.Time) {
+	srv.cmgr.AddTimeSample(addrStr, timeSample)
+}
+
+func (srv *Server) SignalPeerReady(peerId uint64) {
+	// TODO: This is called when peer passes handshake.
 }

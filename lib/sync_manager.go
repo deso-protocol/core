@@ -129,6 +129,10 @@ type SyncManager struct {
 	// being sent is limited to a multiple of the number of Peers we have.
 	blocksToSendMtx deadlock.Mutex
 	blocksToSend    map[BlockHash]bool
+
+	//FIXME: Do this as a handler on version message
+	// Move this to sync manager
+	pp.startingHeight = verMsg.StartBlockHeight
 }
 
 func NewSyncManager() *SyncManager {

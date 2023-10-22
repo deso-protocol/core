@@ -767,6 +767,14 @@ func (cmgr *ConnectionManager) _logOutboundPeerData() {
 	cmgr.mtxOutboundConnIPGroups.Unlock()
 }
 
+func (cmgr *ConnectionManager) AddAddresses(netAddrsReceived []*wire.NetAddress, netAddr *wire.NetAddress) {
+	cmgr.AddrMgr.AddAddresses(netAddrsReceived, netAddr)
+}
+
+func (cmgr *ConnectionManager) AddTimeSample(addrStr string, timeSample time.Time) {
+	cmgr.AddrMgr.AddTimeSample(addrStr, timeSample)
+}
+
 func (cmgr *ConnectionManager) Start() {
 	// Below is a basic description of the ConnectionManager's main loop:
 	//
