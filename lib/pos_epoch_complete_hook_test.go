@@ -7,6 +7,7 @@ import (
 	"sort"
 	"testing"
 
+	"github.com/deso-protocol/core/bls"
 	"github.com/holiman/uint256"
 	"github.com/stretchr/testify/require"
 )
@@ -822,7 +823,12 @@ func _registerValidatorAndStake(
 	require.NoError(testMeta.t, err)
 
 	// Validator registers.
-	votingPublicKey, votingAuthorization := _generateVotingPublicKeyAndAuthorization(testMeta.t, pkBytes)
+	votingPrivateKey, votingPublicKey, votingAuthorization := _generateVotingPrivateKeyPublicKeyAndAuthorization(testMeta.t, pkBytes)
+	if testMeta.pubKeyToBLSKeyMap == nil {
+		testMeta.pubKeyToBLSKeyMap = make(map[string]*bls.PrivateKey)
+	}
+	// Stash the voting private key in testmeta for convenience
+	testMeta.pubKeyToBLSKeyMap[publicKey] = votingPrivateKey
 	registerMetadata := &RegisterAsValidatorMetadata{
 		Domains:                             [][]byte{[]byte(fmt.Sprintf("https://%s.com", publicKey))},
 		VotingPublicKey:                     votingPublicKey,
