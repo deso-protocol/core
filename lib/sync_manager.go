@@ -51,13 +51,12 @@ func ValidateHyperSyncFlags(isHypersync bool, syncType NodeSyncType) {
 }
 
 type SyncManager struct {
+	vm *VersionManager
+
 	bc  *Blockchain
-	vm  *VersionManager
 	srv *Server
 	mp  *DeSoMempool
 	snm *SnapshotManager
-
-	forceChecksum bool
 
 	// During initial block download, we request headers and blocks from a single
 	// peer. Note: These fields should only be accessed from the messageHandler thread.
@@ -66,9 +65,6 @@ type SyncManager struct {
 	// rather than from a single peer but it won't be a problem until later, at which
 	// point we can make the optimization.
 	SyncPeer *Peer
-
-	// When --hypersync is set to true we will attempt fast block synchronization
-	HyperSync bool
 
 	// We have the following options for SyncType:
 	// - any: Will sync with a node no matter what kind of syncing it supports.
@@ -95,17 +91,14 @@ type SyncManager struct {
 	peerRequestedBlocks map[uint64]map[BlockHash]bool
 }
 
-func NewSyncManager(bc *Blockchain, vm *VersionManager, srv *Server, mp *DeSoMempool, snm *SnapshotManager, forceChecksum bool,
-	hyperSync bool, syncType NodeSyncType, minFeeRateNanosPerKB uint64, stallTimeoutSeconds uint64) *SyncManager {
+func NewSyncManager(bc *Blockchain, srv *Server, mp *DeSoMempool, snm *SnapshotManager,
+	syncType NodeSyncType, minFeeRateNanosPerKB uint64, stallTimeoutSeconds uint64) *SyncManager {
 
 	return &SyncManager{
 		bc:                   bc,
-		vm:                   vm,
 		srv:                  srv,
 		mp:                   mp,
 		snm:                  snm,
-		forceChecksum:        forceChecksum,
-		HyperSync:            hyperSync,
 		syncType:             syncType,
 		minFeeRateNanosPerKB: minFeeRateNanosPerKB,
 		stallTimeoutSeconds:  stallTimeoutSeconds,
@@ -114,7 +107,9 @@ func NewSyncManager(bc *Blockchain, vm *VersionManager, srv *Server, mp *DeSoMem
 	}
 }
 
-func (sm *SyncManager) Init() {
+func (sm *SyncManager) Init(vm *VersionManager) {
+	sm.vm = vm
+
 	// TODO: Change this from MsgTypeNewPeer to MsgTypeHandshakeComplete or something like that.
 	sm.srv.RegisterIncomingMessagesHandler(MsgTypeNewPeer, sm._handleNewPeerMessage)
 	sm.srv.RegisterIncomingMessagesHandler(MsgTypeDonePeer, sm._handleDonePeerMessage)
@@ -487,7 +482,8 @@ func (sm *SyncManager) _handleHeaderBundleMessage(desoMsg DeSoMessage, origin *P
 		}
 
 		if sm.bc.chainState() == SyncStateSyncingSnapshot {
-			return sm.snm.InitSnapshotSync()
+			// TODO: We use SnapshotManager here, which also has a reference to the SyncManager, can we avoid circular reference?
+			return sm.snm.InitSnapshotSync(origin)
 		}
 
 		// If we have finished syncing peer's headers, but previously we have bootstrapped the blockchain through
@@ -497,7 +493,9 @@ func (sm *SyncManager) _handleHeaderBundleMessage(desoMsg DeSoMessage, origin *P
 			glog.V(1).Infof("SyncManager._handleHeaderBundleMessage: Syncing historical blocks because node is in " +
 				"archival mode.")
 			sm.bc.downloadingHistoricalBlocks = true
-			sm.getBlocksToStore(origin)
+			if code := sm.SyncMissingBlocksArchivalMode(origin); code != MessageHandlerResponseCodeOK {
+				return code
+			}
 			if sm.bc.downloadingHistoricalBlocks {
 				return MessageHandlerResponseCodeSkip
 			}
@@ -515,7 +513,7 @@ func (sm *SyncManager) _handleHeaderBundleMessage(desoMsg DeSoMessage, origin *P
 				"height %d out of %d from peer (id= %v)",
 				blockTip.Header.Height+1, msg.TipHeight, origin.ID)
 			maxHeight := -1
-			return sm.getBlocks(origin, maxHeight)
+			return sm.SyncMissingBlocks(origin, maxHeight)
 		}
 
 		// If we have exhausted the peer's headers and our blocks are current but
@@ -543,7 +541,7 @@ func (sm *SyncManager) _handleHeaderBundleMessage(desoMsg DeSoMessage, origin *P
 			blockTip := sm.bc.blockTip()
 			glog.V(1).Infof("SyncManager._handleHeaderBundleMessage: *Downloading* blocks starting at "+
 				"block tip %v out of %d from peer (id= %v)", blockTip.Header, msg.TipHeight, origin.ID)
-			return sm.getBlocks(origin, int(msg.TipHeight))
+			return sm.SyncMissingBlocks(origin, int(msg.TipHeight))
 		}
 
 		// If we get here it means we have all the headers and blocks we need
@@ -587,11 +585,11 @@ func (sm *SyncManager) _handleHeaderBundleMessage(desoMsg DeSoMessage, origin *P
 
 func (sm *SyncManager) sendGetHeadersMessage(getHeaders *MsgDeSoGetHeaders, peerId uint64) MessageHandlerResponseCode {
 	stallTimeout := time.Duration(int64(sm.stallTimeoutSeconds) * int64(time.Second))
-	expectedResponse := []*ExpectedResponse{{
+	expectedResponses := []*ExpectedResponse{{
 		TimeExpected: time.Now().Add(stallTimeout),
 		MessageType:  MsgTypeHeaderBundle,
 	}}
-	if err := sm.srv.SendMessage(getHeaders, peerId, expectedResponse); err != nil {
+	if err := sm.srv.SendMessage(getHeaders, peerId, expectedResponses); err != nil {
 		return MessageHandlerResponseCodePeerUnavailable
 	}
 	return MessageHandlerResponseCodeOK
@@ -787,7 +785,7 @@ func (sm *SyncManager) _handleBlockMessage(desoMsg DeSoMessage, origin *Peer) Me
 	}
 
 	if sm.bc.chainState() == SyncStateSyncingHistoricalBlocks {
-		if code := sm.getBlocksToStore(origin); code != MessageHandlerResponseCodeOK {
+		if code := sm.SyncMissingBlocksArchivalMode(origin); code != MessageHandlerResponseCodeOK {
 			return code
 		}
 		if sm.bc.downloadingHistoricalBlocks {
@@ -795,7 +793,7 @@ func (sm *SyncManager) _handleBlockMessage(desoMsg DeSoMessage, origin *Peer) Me
 		}
 	}
 
-	// If we're syncing blocks, call getBlocks and try to get as many blocks
+	// If we're syncing blocks, call SyncMissingBlocks and try to get as many blocks
 	// from our peer as we can. This allows the initial block download to be
 	// more incremental since every time we're able to accept a block (or
 	// group of blocks) we indicate this to our peer so they can send us more.
@@ -804,7 +802,7 @@ func (sm *SyncManager) _handleBlockMessage(desoMsg DeSoMessage, origin *Peer) Me
 		// peer, which is OK because we can assume the peer has all of them when
 		// we're syncing.
 		maxHeight := -1
-		return sm.getBlocks(origin, maxHeight)
+		return sm.SyncMissingBlocks(origin, maxHeight)
 	}
 
 	if sm.bc.chainState() == SyncStateNeedBlocksss {
@@ -845,13 +843,51 @@ func (sm *SyncManager) _getBlocksToSend(peerId uint64) map[BlockHash]bool {
 	return sm.blocksToSend[peerId]
 }
 
-// GetBlocksToStore is part of the archival mode, which makes the node download all historical blocks after completing
+// SyncMissingBlocks computes what blocks we need to fetch and asks for them from the
+// corresponding peer. It is typically called after we have exited
+// SyncStateSyncingHeaders.
+func (sm *SyncManager) SyncMissingBlocks(peer *Peer, maxHeight int) MessageHandlerResponseCode {
+	// Fetch as many blocks as we can from this peer.
+	requestedBlocks := sm._getPeerRequestedBlocks(peer.ID)
+	numBlocksToFetch := MaxBlocksInFlight - len(requestedBlocks)
+	blockNodesToFetch := sm.bc.GetBlockNodesToFetch(
+		numBlocksToFetch, maxHeight, requestedBlocks)
+	if len(blockNodesToFetch) == 0 {
+		// This can happen if, for example, we're already requesting the maximum
+		// number of blocks we can. Just return in this case.
+		return MessageHandlerResponseCodeOK
+	}
+
+	// If we're here then we have some blocks to fetch so fetch them.
+	hashList := []*BlockHash{}
+	for _, node := range blockNodesToFetch {
+		hashList = append(hashList, node.Hash)
+
+		requestedBlocks[*node.Hash] = true
+	}
+
+	getBlocks := &MsgDeSoGetBlocks{
+		HashList: hashList,
+	}
+	if code := sm.sendGetBlocksMessage(getBlocks, peer.ID); code != MessageHandlerResponseCodeOK {
+		return code
+	}
+
+	glog.V(1).Infof("SyncMissingBlocks: Downloading %d blocks from header %v to header %v from peer (id= %v)",
+		len(blockNodesToFetch),
+		blockNodesToFetch[0].Header,
+		blockNodesToFetch[len(blockNodesToFetch)-1].Header,
+		peer.ID)
+	return MessageHandlerResponseCodeOK
+}
+
+// SyncMissingBlocksArchivalMode is part of the archival mode, which makes the node download all historical blocks after completing
 // hypersync. We will go through all blocks corresponding to the snapshot and download the blocks.
-func (sm *SyncManager) getBlocksToStore(peer *Peer) MessageHandlerResponseCode {
-	glog.V(2).Infof("SyncManager.getBlocksToStore: Calling for peer (id= %v)", peer.ID)
+func (sm *SyncManager) SyncMissingBlocksArchivalMode(peer *Peer) MessageHandlerResponseCode {
+	glog.V(2).Infof("SyncMissingBlocksArchivalMode: Calling for peer (id= %v)", peer.ID)
 
 	if sm.bc.ChainState() != SyncStateSyncingHistoricalBlocks {
-		glog.Errorf("GetBlocksToStore: Called even though all blocks have already been downloaded. This " +
+		glog.Errorf("SyncMissingBlocksArchivalMode: Called even though all blocks have already been downloaded. This " +
 			"shouldn't happen.")
 		return MessageHandlerResponseCodeSkip
 	}
@@ -903,7 +939,7 @@ func (sm *SyncManager) getBlocksToStore(peer *Peer) MessageHandlerResponseCode {
 				return code
 			}
 
-			glog.V(1).Infof("GetBlocksToStore: Downloading blocks to store for header %v from peer (id= %v)",
+			glog.V(1).Infof("SyncMissingBlocksArchivalMode: Downloading blocks to store for header %v from peer (id= %v)",
 				blockNode.Header, peer.ID)
 			return MessageHandlerResponseCodeOK
 		}
@@ -914,49 +950,11 @@ func (sm *SyncManager) getBlocksToStore(peer *Peer) MessageHandlerResponseCode {
 	return MessageHandlerResponseCodeOK
 }
 
-// getBlocks computes what blocks we need to fetch and asks for them from the
-// corresponding peer. It is typically called after we have exited
-// SyncStateSyncingHeaders.
-func (sm *SyncManager) getBlocks(peer *Peer, maxHeight int) MessageHandlerResponseCode {
-	// Fetch as many blocks as we can from this peer.
-	requestedBlocks := sm._getPeerRequestedBlocks(peer.ID)
-	numBlocksToFetch := MaxBlocksInFlight - len(requestedBlocks)
-	blockNodesToFetch := sm.bc.GetBlockNodesToFetch(
-		numBlocksToFetch, maxHeight, requestedBlocks)
-	if len(blockNodesToFetch) == 0 {
-		// This can happen if, for example, we're already requesting the maximum
-		// number of blocks we can. Just return in this case.
-		return MessageHandlerResponseCodeOK
-	}
-
-	// If we're here then we have some blocks to fetch so fetch them.
-	hashList := []*BlockHash{}
-	for _, node := range blockNodesToFetch {
-		hashList = append(hashList, node.Hash)
-
-		requestedBlocks[*node.Hash] = true
-	}
-
-	getBlocks := &MsgDeSoGetBlocks{
-		HashList: hashList,
-	}
-	if code := sm.sendGetBlocksMessage(getBlocks, peer.ID); code != MessageHandlerResponseCodeOK {
-		return code
-	}
-
-	glog.V(1).Infof("getBlocks: Downloading %d blocks from header %v to header %v from peer (id= %v)",
-		len(blockNodesToFetch),
-		blockNodesToFetch[0].Header,
-		blockNodesToFetch[len(blockNodesToFetch)-1].Header,
-		peer.ID)
-	return MessageHandlerResponseCodeOK
-}
-
 func (sm *SyncManager) sendGetBlocksMessage(getBlocks *MsgDeSoGetBlocks, peerId uint64) MessageHandlerResponseCode {
 	// If we're sending the peer a GetBlocks message, we expect to receive the
 	// blocks at minimum within a few seconds of each other.
+	var expectedResponses []*ExpectedResponse
 	stallTimeout := time.Duration(int64(sm.stallTimeoutSeconds) * int64(time.Second))
-	expectedResponses := []*ExpectedResponse{}
 	for ii := range getBlocks.HashList {
 		expectedResponses = append(expectedResponses, &ExpectedResponse{
 			TimeExpected: time.Now().Add(

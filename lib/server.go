@@ -270,13 +270,17 @@ func (srv *Server) _startMessageProcessor() {
 		}
 		handlers := srv.incomingMessagesHandlers[msgType]
 
+		shouldDisconnect := false
 		for _, handler := range handlers {
+			// TODO: Make a sub-view of Peer (Validator) that exposes ID.
 			code := handler(msg.GetMessage(), msg.GetPeer())
 			switch code {
 			case MessageHandlerResponseCodePeerDisconnect:
-				// TODO: Make a sub-view of Peer (Validator) that exposes ID.
-				srv.DisconnectPeer(msg.GetPeer().ID)
+				shouldDisconnect = true
 			}
+		}
+		if shouldDisconnect {
+			srv.DisconnectPeer(msg.GetPeer().ID)
 		}
 	}
 	srv.waitGroup.Done()

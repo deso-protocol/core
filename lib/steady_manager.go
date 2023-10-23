@@ -44,6 +44,7 @@ type TransactionsManager struct {
 	// requestedTransactions contains hashes of transactions for which we have
 	// requested data but have not yet received a response.
 	requestedTransactionsMap     map[BlockHash]*GetDataRequestInfo
+	//requestedTransactionsMap: make(map[BlockHash]*GetDataRequestInfo),
 	IgnoreInboundPeerInvMessages bool
 
 	// Becomes true after the node has processed its first transaction bundle from
