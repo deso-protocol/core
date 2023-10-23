@@ -11,6 +11,7 @@ import (
 	"github.com/holiman/uint256"
 	"github.com/stretchr/testify/require"
 	"math/rand"
+	"strconv"
 	"testing"
 	"time"
 )
@@ -1483,7 +1484,7 @@ func TestProcessBlockPoS(t *testing.T) {
 	require.Error(t, err)
 
 	var realBlock *MsgDeSoBlock
-	realBlock = _generateRealBlock(testMeta, 12, 12, 889)
+	realBlock = _generateRealBlock(testMeta, 12, 12, 889, testMeta.chain.GetBestChainTip().Hash)
 	success, isOrphan, missingBlockHashes, err = testMeta.chain.processBlockPoS(realBlock, 12, true)
 	require.True(t, success)
 	require.False(t, isOrphan)
@@ -1498,18 +1499,19 @@ func TestProcessBlockPoS(t *testing.T) {
 
 	// Now let's try adding two more blocks on top of this one to make sure commit rule works properly.
 	var realBlock2 *MsgDeSoBlock
-	realBlock2 = _generateRealBlock(testMeta, 13, 13, 950)
+	realBlock2 = _generateRealBlock(testMeta, 13, 13, 950, blockHash1)
 	success, isOrphan, missingBlockHashes, err = testMeta.chain.processBlockPoS(realBlock2, 13, true)
 	require.True(t, success)
+	blockHash2, err := realBlock2.Hash()
+	require.NoError(t, err)
 
 	var realBlock3 *MsgDeSoBlock
-	realBlock3 = _generateRealBlock(testMeta, 14, 14, 378)
+	realBlock3 = _generateRealBlock(testMeta, 14, 14, 378, blockHash2)
+
 	success, isOrphan, missingBlockHashes, err = testMeta.chain.processBlockPoS(realBlock3, 14, true)
 	require.True(t, success)
 
 	// Okay now we expect blockHash1 to be committed, but blockHash2 and 3 to not be committed.
-	blockHash2, err := realBlock2.Hash()
-	require.NoError(t, err)
 	blockHash3, err := realBlock3.Hash()
 	require.NoError(t, err)
 
@@ -1517,12 +1519,32 @@ func TestProcessBlockPoS(t *testing.T) {
 
 	// Okay let's timeout view 15
 	var timeoutBlock *MsgDeSoBlock
-	timeoutBlock = _generateRealTimeout(testMeta, 15, 15, 381)
+	timeoutBlock = _generateRealTimeout(testMeta, 15, 15, 381, blockHash3)
 	success, isOrphan, missingBlockHashes, err = testMeta.chain.processBlockPoS(timeoutBlock, 15, true)
 	require.True(t, success)
+	timeoutBlockHash, err := timeoutBlock.Hash()
+	require.NoError(t, err)
+
+	_verifyCommitRuleHelper(testMeta, []*BlockHash{blockHash1, blockHash2}, []*BlockHash{blockHash3, timeoutBlockHash}, blockHash2)
+
+	// Okay let's introduce a reorg. New block at view 15 with block 3 as its parent.
+	var reorgBlock *MsgDeSoBlock
+	reorgBlock = _generateRealBlock(testMeta, 15, 15, 373, blockHash3)
+	success, isOrphan, missingBlockHashes, err = testMeta.chain.processBlockPoS(reorgBlock, 15, true)
+	require.True(t, success)
+	reorgBlockHash, err := reorgBlock.Hash()
+	require.NoError(t, err)
+
+	// We expect blockHash1 and blockHash2 to be committed, but blockHash3 and reorgBlockHash to not be committed.
+	// Timeout block will no longer be in best chain, but will still be in uncommitted blocks map.
+	_verifyCommitRuleHelper(testMeta, []*BlockHash{blockHash1, blockHash2}, []*BlockHash{blockHash3, reorgBlockHash}, blockHash2)
+	_, exists := testMeta.chain.bestChainMap[*timeoutBlockHash]
+	require.False(t, exists)
+	_, exists = testMeta.chain.uncommittedBlocksMap[*timeoutBlockHash]
+	require.True(t, exists)
 }
 
-func _generateRealBlock(testMeta *TestMeta, blockHeight uint64, view uint64, seed int64) BlockTemplate {
+func _generateRealBlock(testMeta *TestMeta, blockHeight uint64, view uint64, seed int64, prevBlockHash *BlockHash) BlockTemplate {
 	globalParams := _testGetDefaultGlobalParams()
 	randSource := rand.New(rand.NewSource(seed))
 	passingTxns := []*MsgDeSoTxn{}
@@ -1540,21 +1562,22 @@ func _generateRealBlock(testMeta *TestMeta, blockHeight uint64, view uint64, see
 	}
 
 	seedHash := &RandomSeedHash{}
-	_, err := seedHash.FromBytes(Sha256DoubleHash([]byte("seed")).ToBytes())
+	_, err := seedHash.FromBytes(Sha256DoubleHash([]byte(strconv.FormatInt(seed, 10))).ToBytes())
 	require.NoError(testMeta.t, err)
 	// Always update the testMeta latestBlockView
-	latestBlockView, err := testMeta.chain.GetUncommittedTipView()
+	latestBlockView, err := testMeta.chain.getUtxoViewAtBlockHash(*prevBlockHash)
 	require.NoError(testMeta.t, err)
-	testMeta.posMempool.UpdateLatestBlock(latestBlockView, uint64(testMeta.chain.GetBestChainTip().Height))
+	latestBlockHeight := testMeta.chain.blockIndex[*prevBlockHash].Height
+	testMeta.posMempool.UpdateLatestBlock(latestBlockView, uint64(latestBlockHeight))
 	return _getFullRealBlockTemplate(testMeta, testMeta.posMempool.latestBlockView, blockHeight, view, seedHash, false)
 }
 
-func _generateRealTimeout(testMeta *TestMeta, blockHeight uint64, view uint64, seed int64) BlockTemplate {
+func _generateRealTimeout(testMeta *TestMeta, blockHeight uint64, view uint64, seed int64, prevBlockHash *BlockHash) BlockTemplate {
 	seedHash := &RandomSeedHash{}
-	_, err := seedHash.FromBytes(Sha256DoubleHash([]byte("seed")).ToBytes())
+	_, err := seedHash.FromBytes(Sha256DoubleHash([]byte(strconv.FormatInt(seed, 10))).ToBytes())
 	require.NoError(testMeta.t, err)
 	// Always update the testMeta latestBlockView
-	latestBlockView, err := testMeta.chain.GetUncommittedTipView()
+	latestBlockView, err := testMeta.chain.getUtxoViewAtBlockHash(*prevBlockHash)
 	require.NoError(testMeta.t, err)
 	testMeta.posMempool.UpdateLatestBlock(latestBlockView, uint64(testMeta.chain.GetBestChainTip().Height))
 	return _getFullRealBlockTemplate(testMeta, testMeta.posMempool.latestBlockView, blockHeight, view, seedHash, true)
@@ -1634,7 +1657,7 @@ func _getFullRealBlockTemplate(testMeta *TestMeta, latestBlockView *UtxoView, bl
 	// Get leader voting private key.
 	leaderVotingPrivateKey := testMeta.pubKeyToBLSKeyMap[leaderPublicKey]
 	// Get hash of last block
-	chainTip := testMeta.chain.GetBestChainTip()
+	chainTip := testMeta.chain.blockIndex[*blockTemplate.Header.PrevBlockHash]
 	chainTipHash := chainTip.Hash
 	// Get the vote signature payload
 	// Hack to get view numbers working properly w/ PoW blocks.

@@ -1,3 +1,5 @@
+//go:build relic
+
 package lib
 
 import (
@@ -102,6 +104,7 @@ var expectedBlockHeaderVersion1 = &MsgDeSoHeader{
 	// Use full uint64 values to make sure serialization and de-serialization work
 	TstampNanoSecs: SecondsToNanoSeconds(1678943210),
 	Height:         uint64(1321012345),
+	ProposedInView: uint64(1321012345),
 	Nonce:          uint64(12345678901234),
 	ExtraNonce:     uint64(101234123456789),
 }
