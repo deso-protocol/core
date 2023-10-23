@@ -100,12 +100,6 @@ type Server struct {
 	// The waitGroup is used to manage the cleanup of the Server.
 	waitGroup deadlock.WaitGroup
 
-	// How long we wait on a transaction we're fetching before giving
-	// up on it. Note this doesn't apply to blocks because they have their own
-	// process for retrying that differs from transactions, which are
-	// more best-effort than blocks.
-	requestTimeoutSeconds uint32
-
 	// addrsToBroadcast is a list of all the addresses we've received from valid addr
 	// messages that we intend to broadcast to our peers. It is organized as:
 	// <recipient address> -> <list of addresses we received from that recipient>.
@@ -117,12 +111,6 @@ type Server struct {
 
 	// When set to true, we disable the ConnectionManager
 	DisableNetworking bool
-
-	// When set to true, transactions created on this node will be ignored.
-	ReadOnlyMode bool
-
-	// dataLock protects requestedTxns and requestedBlocks
-	dataLock deadlock.Mutex
 
 	statsdClient *statsd.Client
 
@@ -171,7 +159,6 @@ func NewServer(
 	_maxInboundPeers uint32,
 	_limitOneInboundConnectionPerIP bool,
 	_disableNetworking bool,
-	_readOnlyMode bool,
 	statsd *statsd.Client,
 	eventManager *EventManager,
 	_nodeMessageChan chan NodeMessage) (
@@ -181,7 +168,6 @@ func NewServer(
 	srv := &Server{
 		status:                   ServerStatusNotStarted,
 		DisableNetworking:        _disableNetworking,
-		ReadOnlyMode:             _readOnlyMode,
 		nodeMessageChannel:       _nodeMessageChan,
 		incomingMessagesHandlers: make(map[MsgType][]MessageHandler),
 	}
@@ -540,4 +526,8 @@ func (srv *Server) SignalPeerReady(peerId uint64) {
 
 func (srv *Server) GetAllPeers() []*Peer {
 	return srv.cmgr.GetAllPeers()
+}
+
+func (srv *Server) GetRandomPeer() *Peer {
+	return srv.cmgr.RandomPeer()
 }

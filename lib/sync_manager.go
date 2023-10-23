@@ -277,7 +277,7 @@ func (sm *SyncManager) _startSync() {
 		StopHash:     &BlockHash{},
 		BlockLocator: locator,
 	}
-	if code := sm.sendGetHeadersMessage(getHeaders, bestValidator.ID); code != MessageHandlerResponseCodeOK {
+	if code := sm.SendGetHeadersMessage(getHeaders, bestValidator.ID); code != MessageHandlerResponseCodeOK {
 		glog.Errorf("SyncManager._startSync: Problem sending GetHeaders message to peer: (code= %v)", code)
 		return
 	}
@@ -574,7 +574,7 @@ func (sm *SyncManager) _handleHeaderBundleMessage(desoMsg DeSoMessage, origin *P
 		StopHash:     &BlockHash{},
 		BlockLocator: locator,
 	}
-	if code := sm.sendGetHeadersMessage(getHeaders, origin.ID); code != MessageHandlerResponseCodeOK {
+	if code := sm.SendGetHeadersMessage(getHeaders, origin.ID); code != MessageHandlerResponseCodeOK {
 		return code
 	}
 	headerTip := sm.bc.headerTip()
@@ -583,7 +583,7 @@ func (sm *SyncManager) _handleHeaderBundleMessage(desoMsg DeSoMessage, origin *P
 	return MessageHandlerResponseCodeOK
 }
 
-func (sm *SyncManager) sendGetHeadersMessage(getHeaders *MsgDeSoGetHeaders, peerId uint64) MessageHandlerResponseCode {
+func (sm *SyncManager) SendGetHeadersMessage(getHeaders *MsgDeSoGetHeaders, peerId uint64) MessageHandlerResponseCode {
 	stallTimeout := time.Duration(int64(sm.stallTimeoutSeconds) * int64(time.Second))
 	expectedResponses := []*ExpectedResponse{{
 		TimeExpected: time.Now().Add(stallTimeout),
@@ -644,6 +644,11 @@ func (sm *SyncManager) _handleGetBlocksMessage(desoMsg DeSoMessage, origin *Peer
 				"she asked for a block with hash %v that we don't have", origin.ID, getBlocksMsg.HashList[0])
 			return MessageHandlerResponseCodePeerDisconnect
 		}
+		sm.blocksToSendMtx.Lock()
+		hash, _ := desoMsg.(*MsgDeSoBlock).Hash()
+		delete(sm._getBlocksToSend(origin.ID), *hash)
+		sm.blocksToSendMtx.Unlock()
+
 		if err := sm.srv.SendMessage(blockToSend, origin.ID, nil); err != nil {
 			return MessageHandlerResponseCodePeerUnavailable
 		}
@@ -685,11 +690,6 @@ func (sm *SyncManager) _handleBlockMessage(desoMsg DeSoMessage, origin *Peer) Me
 	if blkMsg, ok = desoMsg.(*MsgDeSoBlock); !ok {
 		return MessageHandlerResponseCodePeerDisconnect
 	}
-
-	sm.blocksToSendMtx.Lock()
-	hash, _ := desoMsg.(*MsgDeSoBlock).Hash()
-	delete(sm._getBlocksToSend(origin.ID), *hash)
-	sm.blocksToSendMtx.Unlock()
 
 	glog.Infof(CLog(Cyan, fmt.Sprintf("SyncManager._handleBlockMessage: Received block ( %v / %v ) from Peer (id= %v)",
 		blkMsg.Header.Height, sm.bc.headerTip().Height, origin.ID)))
@@ -823,7 +823,7 @@ func (sm *SyncManager) _handleBlockMessage(desoMsg DeSoMessage, origin *Peer) Me
 			StopHash:     &BlockHash{},
 			BlockLocator: locator,
 		}
-		if code := sm.sendGetHeadersMessage(getHeaders, origin.ID); code != MessageHandlerResponseCodeOK {
+		if code := sm.SendGetHeadersMessage(getHeaders, origin.ID); code != MessageHandlerResponseCodeOK {
 			return code
 		}
 		return MessageHandlerResponseCodeSkip
