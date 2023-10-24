@@ -8,8 +8,6 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"github.com/deso-protocol/core/consensus"
-	"github.com/golang/glog"
 	"io"
 	"math"
 	"math/big"
@@ -26,8 +24,11 @@ import (
 	"github.com/davecgh/go-spew/spew"
 	decredEC "github.com/decred/dcrd/dcrec/secp256k1/v4/ecdsa"
 	"github.com/deso-protocol/core/bls"
+	"github.com/deso-protocol/core/collections/bitset"
+	"github.com/deso-protocol/core/consensus"
 	merkletree "github.com/deso-protocol/go-merkle-tree"
 	"github.com/ethereum/go-ethereum/crypto/ecies"
+	"github.com/golang/glog"
 	"github.com/holiman/uint256"
 	"github.com/pkg/errors"
 )
@@ -1916,6 +1917,14 @@ type MsgDeSoHeader struct {
 	// event that ASICs become powerful enough to have birthday problems in the future.
 	ExtraNonce uint64
 
+	// TransactionsConnectStatus is only used for Proof of Stake blocks, starting with
+	// MsgDeSoHeader version 2. For all earlier versions, this field will default to nil.
+	//
+	// The hash of the TxnConnectStatusByIndex field in MsgDeSoBlock. It is stored to ensure
+	// that the TxnConnectStatusByIndex is part of the header hash, which is signed by the
+	// proposer. The full index is stored in the block to offload space complexity.
+	TxnConnectStatusByIndexHash *BlockHash
+
 	// ProposerPublicKey is only used for Proof of Stake blocks, starting with MsgDeSoHeader
 	// version 2. For all earlier versions, this field will default to nil.
 	//
@@ -2159,6 +2168,12 @@ func (msg *MsgDeSoHeader) EncodeHeaderVersion2(preSignature bool) ([]byte, error
 	// The Nonce and ExtraNonce fields are unused in version 2. We skip them
 	// during both encoding and decoding.
 
+	// TxnConnectStatusByIndexHash
+	if msg.TxnConnectStatusByIndexHash == nil {
+		return nil, fmt.Errorf("EncodeHeaderVersion2: TxnConnectStatusByIndexHash must be non-nil")
+	}
+	retBytes = append(retBytes, msg.TxnConnectStatusByIndexHash[:]...)
+
 	// ProposerPublicKey
 	if msg.ProposerPublicKey == nil {
 		return nil, fmt.Errorf("EncodeHeaderVersion2: ProposerPublicKey must be non-nil")
@@ -2373,6 +2388,13 @@ func DecodeHeaderVersion2(rr io.Reader) (*MsgDeSoHeader, error) {
 	// during both encoding and decoding.
 	retHeader.Nonce = 0
 	retHeader.ExtraNonce = 0
+
+	// TxnConnectStatusByIndexHash
+	retHeader.TxnConnectStatusByIndexHash = &BlockHash{}
+	_, err = io.ReadFull(rr, retHeader.TxnConnectStatusByIndexHash[:])
+	if err != nil {
+		return nil, errors.Wrapf(err, "MsgDeSoHeader.FromBytes: Problem decoding TxnConnectStatusByIndexHash")
+	}
 
 	// ProposerPublicKey
 	retHeader.ProposerPublicKey, err = ReadPublicKey(rr)
@@ -2593,6 +2615,11 @@ type MsgDeSoBlock struct {
 	// entity, which can be useful for nodes that want to restrict who they accept blocks
 	// from.
 	BlockProducerInfo *BlockProducerInfo
+
+	// This bitset field stores information whether each transaction in the block passes
+	// or fails to connect. The bit at i-th position is set to 1 if the i-th transaction
+	// in the block passes connect, and 0 otherwise.
+	TxnConnectStatusByIndex *bitset.Bitset
 }
 
 func (msg *MsgDeSoBlock) EncodeBlockCommmon(preSignature bool) ([]byte, error) {
@@ -2646,7 +2673,18 @@ func (msg *MsgDeSoBlock) EncodeBlockVersion1(preSignature bool) ([]byte, error) 
 }
 
 func (msg *MsgDeSoBlock) EncodeBlockVersion2(preSignature bool) ([]byte, error) {
-	return msg.EncodeBlockCommmon(preSignature)
+	data, err := msg.EncodeBlockCommmon(preSignature)
+	if err != nil {
+		return nil, err
+	}
+
+	// TxnConnectStatusByIndex
+	if msg.TxnConnectStatusByIndex == nil {
+		return nil, fmt.Errorf("MsgDeSoBlock.EncodeBlockVersion2: TxnConnectStatusByIndex should not be nil")
+	}
+	data = append(data, EncodeBitset(msg.TxnConnectStatusByIndex)...)
+
+	return data, nil
 }
 
 func (msg *MsgDeSoBlock) ToBytes(preSignature bool) ([]byte, error) {
@@ -2746,6 +2784,14 @@ func (msg *MsgDeSoBlock) FromBytes(data []byte) error {
 				return errors.Wrapf(err, "MsgDeSoBlock.FromBytes: Error deserializing block producer info")
 			}
 			ret.BlockProducerInfo = blockProducerInfo
+		}
+	}
+
+	// Version 2 blocks have a TxnStatusConnectedIndex attached to them.
+	if ret.Header.Version == HeaderVersion2 {
+		ret.TxnConnectStatusByIndex, err = DecodeBitset(rr)
+		if err != nil {
+			return errors.Wrapf(err, "MsgDeSoBlock.FromBytes: Error decoding TxnConnectStatusByIndex")
 		}
 	}
 
@@ -3835,6 +3881,30 @@ func (msg *MsgDeSoTxn) UnmarshalJSON(data []byte) error {
 	msg.TxnTypeJSON = 0
 
 	return nil
+}
+
+// ComputeFeeRatePerKBNanos computes the fee rate per KB for a signed transaction. This function should not be used for
+// unsigned transactions because the fee rate will not be accurate.
+func (txn *MsgDeSoTxn) ComputeFeeRatePerKBNanos() (uint64, error) {
+	if txn.Signature.Sign == nil {
+		return 0, fmt.Errorf("ComputeFeeRatePerKBNanos: Cannot compute fee rate for unsigned txn")
+	}
+
+	txBytes, err := txn.ToBytes(false)
+	if err != nil {
+		return 0, errors.Wrapf(err, "ComputeFeeRatePerKBNanos: Problem converting txn to bytes")
+	}
+	serializedLen := uint64(len(txBytes))
+	if serializedLen == 0 {
+		return 0, fmt.Errorf("ComputeFeeRatePerKBNanos: Txn has zero length")
+	}
+
+	fees := txn.TxnFeeNanos
+	if fees != ((fees * 1000) / 1000) {
+		return 0, errors.Wrapf(RuleErrorOverflowDetectedInFeeRateCalculation, "ComputeFeeRatePerKBNanos: Overflow detected in fee rate calculation")
+	}
+
+	return (fees * 1000) / serializedLen, nil
 }
 
 // ==================================================================

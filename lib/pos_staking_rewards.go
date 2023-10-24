@@ -234,13 +234,13 @@ func (bav *UtxoView) distributeValidatorCommission(validatorPKID *PKID, commissi
 }
 
 const (
-	_basisPoints     = uint64(10000)                    // 1e4
+	_maxBasisPoints  = uint64(10000)                    // 1e4
 	_nanoSecsPerYear = uint64(365) * 24 * 60 * 60 * 1e9 // 365 days * 24 hours * 60 minutes * 60 seconds * 1e9 nanoseconds
 )
 
 var (
-	_basisPointsAsInt       = big.NewInt(int64(_basisPoints))
-	_basisPointsAsFloat     = NewFloat().SetUint64(_basisPoints)
+	_basisPointsAsInt       = big.NewInt(int64(_maxBasisPoints))
+	_basisPointsAsFloat     = NewFloat().SetUint64(_maxBasisPoints)
 	_nanoSecsPerYearAsFloat = NewFloat().SetUint64(_nanoSecsPerYear)
 )
 

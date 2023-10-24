@@ -3,11 +3,12 @@ package lib
 import (
 	"bytes"
 	"fmt"
-	"github.com/deso-protocol/core/consensus"
+	"golang.org/x/crypto/sha3"
 	"io"
 
 	"github.com/deso-protocol/core/bls"
 	"github.com/deso-protocol/core/collections/bitset"
+	"github.com/deso-protocol/core/consensus"
 	"github.com/pkg/errors"
 )
 
@@ -685,4 +686,10 @@ func DecodeBitset(rr io.Reader) (*bitset.Bitset, error) {
 		return nil, errors.Wrapf(err, "DecodeBitset: Error decoding bitset")
 	}
 	return (bitset.NewBitset()).FromBytes(encodedBytes), nil
+}
+
+func HashBitset(b *bitset.Bitset) *BlockHash {
+	encodedBytes := EncodeBitset(b)
+	hash := sha3.Sum256(encodedBytes)
+	return NewBlockHash(hash[:])
 }

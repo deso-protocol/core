@@ -704,10 +704,25 @@ type DeSoParams struct {
 	// from the current timestamp that we will allow a PoS block to be submitted.
 	DefaultBlockTimestampDriftNanoSecs uint64
 
+	// DefaultFeeBucketRateMultiplierBasisPoints is the rate of growth of the fee bucket ranges. The multiplier is given
+	// as basis points. For example a value of 1000 means that the fee bucket ranges will grow by 10% each time.
+	DefaultFeeBucketRateMultiplierBasisPoints uint64
+
+	// DefaultFailingTransactionBMFRateBasisPoints is the default rate of the failing transaction fee, in basis points,
+	// that is used to in BMF calculations. E.g. a value of 2500 means that 25% of the failing transaction's fee is used
+	// in BMF calculations.
+	DefaultFailingTransactionBMFRateBasisPoints uint64
+
 	ForkHeights ForkHeights
 
 	EncoderMigrationHeights     *EncoderMigrationHeights
 	EncoderMigrationHeightsList []*MigrationHeight
+
+	// The maximum aggregate number of bytes of transactions included in the PoS mempool.
+	MaxMempoolPosSizeBytes uint64
+
+	// MempoolBackupTimeMilliseconds is the frequency with which pos mempool persists transactions to storage.
+	MempoolBackupTimeMilliseconds uint64
 }
 
 var RegtestForkHeights = ForkHeights{
@@ -1111,9 +1126,18 @@ var DeSoMainnetParams = DeSoParams{
 	// The number of nanoseconds from the current timestamp that we will allow a PoS block to be submitted.
 	DefaultBlockTimestampDriftNanoSecs: uint64((time.Minute * 10).Nanoseconds()),
 
+	// The rate of growth of the fee bucket ranges.
+	DefaultFeeBucketRateMultiplierBasisPoints: uint64(1000),
+
+	// The rate of the failing transaction's fee used in BMF calculations.
+	DefaultFailingTransactionBMFRateBasisPoints: uint64(2500),
+
 	ForkHeights:                 MainnetForkHeights,
 	EncoderMigrationHeights:     GetEncoderMigrationHeights(&MainnetForkHeights),
 	EncoderMigrationHeightsList: GetEncoderMigrationHeightsList(&MainnetForkHeights),
+
+	MaxMempoolPosSizeBytes:        3 << 30, // 3Gb
+	MempoolBackupTimeMilliseconds: 30000,
 }
 
 func mustDecodeHexBlockHashBitcoin(ss string) *BlockHash {
@@ -1372,9 +1396,18 @@ var DeSoTestnetParams = DeSoParams{
 	// The number of nanoseconds from the current timestamp that we will allow a PoS block to be submitted.
 	DefaultBlockTimestampDriftNanoSecs: uint64((time.Minute * 10).Nanoseconds()),
 
+	// The rate of growth of the fee bucket ranges.
+	DefaultFeeBucketRateMultiplierBasisPoints: uint64(1000),
+
+	// The rate of the failing transaction's fee used in BMF calculations.
+	DefaultFailingTransactionBMFRateBasisPoints: uint64(2500),
+
 	ForkHeights:                 TestnetForkHeights,
 	EncoderMigrationHeights:     GetEncoderMigrationHeights(&TestnetForkHeights),
 	EncoderMigrationHeightsList: GetEncoderMigrationHeightsList(&TestnetForkHeights),
+
+	MaxMempoolPosSizeBytes:        3 << 30, // 3Gb
+	MempoolBackupTimeMilliseconds: 30000,
 }
 
 // GetDataDir gets the user data directory where we store files
@@ -1424,6 +1457,8 @@ const (
 	StakingRewardsAPYBasisPointsKey           = "StakingRewardsAPYBasisPoints"
 	EpochDurationNumBlocksKey                 = "EpochDurationNumBlocks"
 	JailInactiveValidatorGracePeriodEpochsKey = "JailInactiveValidatorGracePeriodEpochs"
+	FeeBucketRateMultiplierBasisPointsKey     = "FeeBucketRateMultiplierBasisPointsKey"
+	FailingTransactionBMFRateBasisPointsKey   = "FailingTransactionBMFRateBasisPoints"
 
 	DiamondLevelKey    = "DiamondLevel"
 	DiamondPostHashKey = "DiamondPostHash"
@@ -1497,6 +1532,10 @@ var (
 		// We initialize the CreateNFTFeeNanos to 0 so we do not assess a fee to create an NFT until specified by ParamUpdater.
 		CreateNFTFeeNanos: 0,
 		MaxCopiesPerNFT:   0,
+		// We initialize the FeeBucketRateMultiplierBasisPoints to 1000, or equivalently, a multiplier of 1.1x.
+		FeeBucketRateMultiplierBasisPoints: 1000,
+		// We initialize the FailingTransactionBMFRateBasisPoints to 2500, or equivalently, a rate of 0.25.
+		FailingTransactionBMFRateBasisPoints: 2500,
 	}
 )
 
