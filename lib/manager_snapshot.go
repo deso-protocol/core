@@ -46,7 +46,7 @@ type SnapshotManager struct {
 	// is organized allows for multi-peer state synchronization. In such case, we would assign prefixes
 	// to different peers. Whenever we assign a prefix to a peer, we would append a SyncProgressPrefix
 	// struct to the HyperSyncProgress.PrefixProgress array.
-	hyperSyncProgress SyncProgress
+	HyperSyncProgress SyncProgress
 }
 
 func NewSnapshotManager(bc *Blockchain, snap *Snapshot, srv *Server, mp *DeSoMempool, eventManager *EventManager,
@@ -209,7 +209,7 @@ func (snm *SnapshotManager) syncSnapshot(peer *Peer) MessageHandlerResponseCode 
 	// Iterate over all incomplete prefixes in the HyperSyncProgress and see if
 	// any of them has been assigned to the peer.
 	syncingPrefix := false
-	for _, prefixProgress := range snm.hyperSyncProgress.PrefixProgress {
+	for _, prefixProgress := range snm.HyperSyncProgress.PrefixProgress {
 		if prefixProgress.Completed {
 			continue
 		}
@@ -235,7 +235,7 @@ func (snm *SnapshotManager) syncSnapshot(peer *Peer) MessageHandlerResponseCode 
 		// We will assign the peer to a non-existent prefix.
 		for _, prefix = range StatePrefixes.StatePrefixesList {
 			exists := false
-			for _, prefixProgress := range snm.hyperSyncProgress.PrefixProgress {
+			for _, prefixProgress := range snm.HyperSyncProgress.PrefixProgress {
 				if reflect.DeepEqual(prefix, prefixProgress.Prefix) {
 					exists = true
 					break
@@ -244,7 +244,7 @@ func (snm *SnapshotManager) syncSnapshot(peer *Peer) MessageHandlerResponseCode 
 			// If prefix doesn't exist in our prefix progress struct, append new progress tracker
 			// and assign it to the current peer.
 			if !exists {
-				snm.hyperSyncProgress.PrefixProgress = append(snm.hyperSyncProgress.PrefixProgress, &SyncPrefixProgress{
+				snm.HyperSyncProgress.PrefixProgress = append(snm.HyperSyncProgress.PrefixProgress, &SyncPrefixProgress{
 					PrefixSyncPeer:  peer,
 					Prefix:          prefix,
 					LastReceivedKey: prefix,
@@ -335,7 +335,7 @@ func (snm *SnapshotManager) _handleSnapshotDataMessage(desoMsg DeSoMessage, orig
 
 	// There is a possibility that during hypersync the network entered a new snapshot epoch. We handle this case by
 	// restarting the node and starting hypersync from scratch.
-	if snapDataMsg.SnapshotMetadata.SnapshotBlockHeight > snm.hyperSyncProgress.SnapshotMetadata.SnapshotBlockHeight &&
+	if snapDataMsg.SnapshotMetadata.SnapshotBlockHeight > snm.HyperSyncProgress.SnapshotMetadata.SnapshotBlockHeight &&
 		uint64(snm.bc.HeaderTip().Height) >= snapDataMsg.SnapshotMetadata.SnapshotBlockHeight {
 
 		// TODO: Figure out how to handle header not reaching us, yet peer is telling us that the new epoch has started.
@@ -344,7 +344,7 @@ func (snm *SnapshotManager) _handleSnapshotDataMessage(desoMsg DeSoMessage, orig
 			glog.Infof(CLog(Yellow, fmt.Sprintf("SnapshotManager._handleSnapshotDataMessage: Received a snapshot metadata "+
 				"with height (%v) which is greater than the hypersync progress height (%v). This can happen when the network "+
 				"entered a new snapshot epoch while we were syncing. The node will be restarted to retry hypersync with new epoch.",
-				snapDataMsg.SnapshotMetadata.SnapshotBlockHeight, snm.hyperSyncProgress.SnapshotMetadata.SnapshotBlockHeight)))
+				snapDataMsg.SnapshotMetadata.SnapshotBlockHeight, snm.HyperSyncProgress.SnapshotMetadata.SnapshotBlockHeight)))
 			return MessageHandlerResponseCodeOK
 		} else {
 			// TODO: We previously didn't return here, seems like we should?
@@ -355,19 +355,19 @@ func (snm *SnapshotManager) _handleSnapshotDataMessage(desoMsg DeSoMessage, orig
 	}
 
 	// Make sure that the expected snapshot height and blockhash match the ones in received message.
-	if snapDataMsg.SnapshotMetadata.SnapshotBlockHeight != snm.hyperSyncProgress.SnapshotMetadata.SnapshotBlockHeight ||
-		!bytes.Equal(snapDataMsg.SnapshotMetadata.CurrentEpochBlockHash[:], snm.hyperSyncProgress.SnapshotMetadata.CurrentEpochBlockHash[:]) {
+	if snapDataMsg.SnapshotMetadata.SnapshotBlockHeight != snm.HyperSyncProgress.SnapshotMetadata.SnapshotBlockHeight ||
+		!bytes.Equal(snapDataMsg.SnapshotMetadata.CurrentEpochBlockHash[:], snm.HyperSyncProgress.SnapshotMetadata.CurrentEpochBlockHash[:]) {
 
 		glog.Errorf("SnapshotManager._handleSnapshotDataMessage: blockheight (%v) and blockhash (%v) in msg do "+
 			"not match the expected hyper sync height (%v) and hash (%v)",
 			snapDataMsg.SnapshotMetadata.SnapshotBlockHeight, snapDataMsg.SnapshotMetadata.CurrentEpochBlockHash,
-			snm.hyperSyncProgress.SnapshotMetadata.SnapshotBlockHeight, snm.hyperSyncProgress.SnapshotMetadata.CurrentEpochBlockHash)
+			snm.HyperSyncProgress.SnapshotMetadata.SnapshotBlockHeight, snm.HyperSyncProgress.SnapshotMetadata.CurrentEpochBlockHash)
 		return MessageHandlerResponseCodePeerDisconnect
 	}
 
 	// First find the hyper sync progress struct that matches the received message.
 	var syncPrefixProgress *SyncPrefixProgress
-	for _, syncProgress := range snm.hyperSyncProgress.PrefixProgress {
+	for _, syncProgress := range snm.HyperSyncProgress.PrefixProgress {
 		if bytes.Equal(snapDataMsg.Prefix, syncProgress.Prefix) {
 			syncPrefixProgress = syncProgress
 			break
@@ -383,11 +383,11 @@ func (snm *SnapshotManager) _handleSnapshotDataMessage(desoMsg DeSoMessage, orig
 
 	// If we haven't yet set the epoch checksum bytes in the hyper sync progress, we'll do it now.
 	// If we did set the checksum bytes, we will verify that they match the one that peer has sent us.
-	prevChecksumBytes := make([]byte, len(snm.hyperSyncProgress.SnapshotMetadata.CurrentEpochChecksumBytes))
-	copy(prevChecksumBytes, snm.hyperSyncProgress.SnapshotMetadata.CurrentEpochChecksumBytes[:])
-	if len(snm.hyperSyncProgress.SnapshotMetadata.CurrentEpochChecksumBytes) == 0 {
-		snm.hyperSyncProgress.SnapshotMetadata.CurrentEpochChecksumBytes = snapDataMsg.SnapshotMetadata.CurrentEpochChecksumBytes
-	} else if !reflect.DeepEqual(snm.hyperSyncProgress.SnapshotMetadata.CurrentEpochChecksumBytes, snapDataMsg.SnapshotMetadata.CurrentEpochChecksumBytes) {
+	prevChecksumBytes := make([]byte, len(snm.HyperSyncProgress.SnapshotMetadata.CurrentEpochChecksumBytes))
+	copy(prevChecksumBytes, snm.HyperSyncProgress.SnapshotMetadata.CurrentEpochChecksumBytes[:])
+	if len(snm.HyperSyncProgress.SnapshotMetadata.CurrentEpochChecksumBytes) == 0 {
+		snm.HyperSyncProgress.SnapshotMetadata.CurrentEpochChecksumBytes = snapDataMsg.SnapshotMetadata.CurrentEpochChecksumBytes
+	} else if !reflect.DeepEqual(snm.HyperSyncProgress.SnapshotMetadata.CurrentEpochChecksumBytes, snapDataMsg.SnapshotMetadata.CurrentEpochChecksumBytes) {
 		// We should disconnect the peer because he is misbehaving
 		glog.Errorf("SnapshotManager._handleSnapshotDataMessage: HyperSyncProgress epoch checksum bytes does not "+
 			"match that received from peer, disconnecting misbehaving peer (id= %v)", origin.ID)
@@ -412,7 +412,7 @@ func (snm *SnapshotManager) _handleSnapshotDataMessage(desoMsg DeSoMessage, orig
 			// We should disconnect the peer because he is misbehaving.
 			glog.Errorf("SnapshotManager._handleSnapshotDataMessage: Snapshot chunk DBEntry key has mismatched prefix "+
 				"disconnecting misbehaving peer (id= %v)", origin.ID)
-			snm.hyperSyncProgress.SnapshotMetadata.CurrentEpochChecksumBytes = prevChecksumBytes
+			snm.HyperSyncProgress.SnapshotMetadata.CurrentEpochChecksumBytes = prevChecksumBytes
 			return MessageHandlerResponseCodePeerDisconnect
 		}
 		dbChunk = append(dbChunk, snapDataMsg.SnapshotChunk[0])
@@ -423,7 +423,7 @@ func (snm *SnapshotManager) _handleSnapshotDataMessage(desoMsg DeSoMessage, orig
 		if !bytes.Equal(syncPrefixProgress.LastReceivedKey, snapDataMsg.SnapshotChunk[0].Key) {
 			glog.Errorf("SnapshotManager._handleSnapshotDataMessage: Received a snapshot chunk that's not in-line "+
 				"with the sync progress disconnecting misbehaving peer (id= %v)", origin.ID)
-			snm.hyperSyncProgress.SnapshotMetadata.CurrentEpochChecksumBytes = prevChecksumBytes
+			snm.HyperSyncProgress.SnapshotMetadata.CurrentEpochChecksumBytes = prevChecksumBytes
 			return MessageHandlerResponseCodePeerDisconnect
 		}
 	}
@@ -439,7 +439,7 @@ func (snm *SnapshotManager) _handleSnapshotDataMessage(desoMsg DeSoMessage, orig
 				// We should disconnect the peer because he is misbehaving
 				glog.Errorf("SnapshotManager._handleSnapshotDataMessage: DBEntry key has mismatched prefix "+
 					"disconnecting misbehaving peer (id= %v)", origin.ID)
-				snm.hyperSyncProgress.SnapshotMetadata.CurrentEpochChecksumBytes = prevChecksumBytes
+				snm.HyperSyncProgress.SnapshotMetadata.CurrentEpochChecksumBytes = prevChecksumBytes
 				return MessageHandlerResponseCodePeerDisconnect
 			}
 			// Make sure that the dbChunk is sorted increasingly.
@@ -448,23 +448,23 @@ func (snm *SnapshotManager) _handleSnapshotDataMessage(desoMsg DeSoMessage, orig
 				glog.Errorf("SnapshotManager._handleSnapshotDataMessage: dbChunk entries are not sorted: first entry "+
 					"at index (%v) with value (%v) and second entry with index (%v) and value (%v) disconnecting misbehaving "+
 					"peer (id= %v)", ii-1, dbChunk[ii-1].Key, ii, dbChunk[ii].Key, origin.ID)
-				snm.hyperSyncProgress.SnapshotMetadata.CurrentEpochChecksumBytes = prevChecksumBytes
+				snm.HyperSyncProgress.SnapshotMetadata.CurrentEpochChecksumBytes = prevChecksumBytes
 				return MessageHandlerResponseCodePeerDisconnect
 			}
 		}
 
 		// Process the DBEntries from the msg and add them to the db.
 		snm.snap.ProcessSnapshotChunk(snm.bc.db, &snm.bc.ChainLock, dbChunk,
-			snm.hyperSyncProgress.SnapshotMetadata.SnapshotBlockHeight)
+			snm.HyperSyncProgress.SnapshotMetadata.SnapshotBlockHeight)
 	}
 
 	// We will update the hyper sync progress tracker struct to reflect the newly added snapshot chunk.
 	// In particular, we want to update the last received key to the last key in the received chunk.
-	for ii := 0; ii < len(snm.hyperSyncProgress.PrefixProgress); ii++ {
-		if reflect.DeepEqual(snm.hyperSyncProgress.PrefixProgress[ii].Prefix, snapDataMsg.Prefix) {
+	for ii := 0; ii < len(snm.HyperSyncProgress.PrefixProgress); ii++ {
+		if reflect.DeepEqual(snm.HyperSyncProgress.PrefixProgress[ii].Prefix, snapDataMsg.Prefix) {
 			// We found the hyper sync progress corresponding to this snapshot chunk so update the key.
 			lastKey := snapDataMsg.SnapshotChunk[len(snapDataMsg.SnapshotChunk)-1].Key
-			snm.hyperSyncProgress.PrefixProgress[ii].LastReceivedKey = lastKey
+			snm.HyperSyncProgress.PrefixProgress[ii].LastReceivedKey = lastKey
 
 			// If the snapshot chunk is not full, it means that we've completed this prefix. In such case,
 			// there is a possibility we've finished hyper sync altogether. We will break out of the loop
@@ -472,7 +472,7 @@ func (snm *SnapshotManager) _handleSnapshotDataMessage(desoMsg DeSoMessage, orig
 			// TODO: verify that the prefix checksum matches the checksum provided by the peer / header checksum.
 			//		We'll do this when we want to implement multi-peer sync.
 			if !snapDataMsg.SnapshotChunkFull {
-				snm.hyperSyncProgress.PrefixProgress[ii].Completed = true
+				snm.HyperSyncProgress.PrefixProgress[ii].Completed = true
 				break
 			} else {
 				// If chunk is full it means there's more work to do, so we will resume snapshot sync.
@@ -488,7 +488,7 @@ func (snm *SnapshotManager) _handleSnapshotDataMessage(desoMsg DeSoMessage, orig
 	for _, prefix := range StatePrefixes.StatePrefixesList {
 		completed := false
 		// Check if the prefix has been completed.
-		for _, prefixProgress := range snm.hyperSyncProgress.PrefixProgress {
+		for _, prefixProgress := range snm.HyperSyncProgress.PrefixProgress {
 			if reflect.DeepEqual(prefix, prefixProgress.Prefix) {
 				completed = prefixProgress.Completed
 				break
@@ -500,7 +500,7 @@ func (snm *SnapshotManager) _handleSnapshotDataMessage(desoMsg DeSoMessage, orig
 		completedPrefixes = append(completedPrefixes, prefix)
 	}
 
-	snm.hyperSyncProgress.printChannel <- struct{}{}
+	snm.HyperSyncProgress.printChannel <- struct{}{}
 	// Wait for the snapshot thread to process all operations and print the checksum.
 	snm.snap.WaitForAllOperationsToFinish()
 
@@ -508,7 +508,7 @@ func (snm *SnapshotManager) _handleSnapshotDataMessage(desoMsg DeSoMessage, orig
 	// Do some logging.
 	snm.snap.PrintChecksum("Finished hyper sync. Checksum is:")
 	glog.Infof(CLog(Magenta, fmt.Sprintf("Metadata checksum: (%v)",
-		snm.hyperSyncProgress.SnapshotMetadata.CurrentEpochChecksumBytes)))
+		snm.HyperSyncProgress.SnapshotMetadata.CurrentEpochChecksumBytes)))
 
 	glog.Infof(CLog(Yellow, fmt.Sprintf("Best header chain %v best block chain %v",
 		snm.bc.bestHeaderChain[snapDataMsg.SnapshotMetadata.SnapshotBlockHeight], snm.bc.bestChain)))
@@ -519,7 +519,7 @@ func (snm *SnapshotManager) _handleSnapshotDataMessage(desoMsg DeSoMessage, orig
 	if err != nil {
 		glog.Errorf("SnapshotManager._handleSnapshotDataMessage: Problem getting checksum bytes, error (%v)", err)
 	}
-	if reflect.DeepEqual(checksumBytes, snm.hyperSyncProgress.SnapshotMetadata.CurrentEpochChecksumBytes) {
+	if reflect.DeepEqual(checksumBytes, snm.HyperSyncProgress.SnapshotMetadata.CurrentEpochChecksumBytes) {
 		glog.Infof(CLog(Green, fmt.Sprintf("Server._handleSnapshot: State checksum matched "+
 			"what was expected!")))
 	} else {
@@ -529,7 +529,7 @@ func (snm *SnapshotManager) _handleSnapshotDataMessage(desoMsg DeSoMessage, orig
 			"You should report this as an issue on DeSo github https://github.com/deso-protocol/core. It is also possible "+
 			"that the peer is misbehaving and sent invalid snapshot chunks. In either way, we'll restart the node and "+
 			"attempt to HyperSync from the beginning. Local db checksum %v; peer's snapshot checksum %v",
-			checksumBytes, snm.hyperSyncProgress.SnapshotMetadata.CurrentEpochChecksumBytes)))
+			checksumBytes, snm.HyperSyncProgress.SnapshotMetadata.CurrentEpochChecksumBytes)))
 		if snm.forceChecksum {
 			// If forceChecksum is true we signal an erasure of the state and return here,
 			// which will cut off the sync.
@@ -560,7 +560,7 @@ func (snm *SnapshotManager) _handleSnapshotDataMessage(desoMsg DeSoMessage, orig
 	// height, we will now mark all these blocks as processed. To do so, we will iterate through
 	// the blockNodes in the header chain and set them in the blockchain data structures.
 	err = snm.bc.db.Update(func(txn *badger.Txn) error {
-		for ii := uint64(1); ii <= snm.hyperSyncProgress.SnapshotMetadata.SnapshotBlockHeight; ii++ {
+		for ii := uint64(1); ii <= snm.HyperSyncProgress.SnapshotMetadata.SnapshotBlockHeight; ii++ {
 			curretNode := snm.bc.bestHeaderChain[ii]
 			// Do not set the StatusBlockStored flag, because we still need to download the past blocks.
 			curretNode.Status |= StatusBlockProcessed
@@ -586,7 +586,7 @@ func (snm *SnapshotManager) _handleSnapshotDataMessage(desoMsg DeSoMessage, orig
 
 	// If we got here then we finished the snapshot sync so set appropriate flags.
 	snm.bc.syncingState = false
-	snm.bc.snapshot.CurrentEpochSnapshotMetadata = snm.hyperSyncProgress.SnapshotMetadata
+	snm.bc.snapshot.CurrentEpochSnapshotMetadata = snm.HyperSyncProgress.SnapshotMetadata
 
 	// Update the snapshot epoch metadata in the snapshot DB.
 	for ii := 0; ii < MetadataRetryCount; ii++ {
@@ -640,7 +640,7 @@ func (snm *SnapshotManager) InitSnapshotSync(peer *Peer) MessageHandlerResponseC
 	expectedSnapshotHeight := bestHeaderHeight - (bestHeaderHeight % snm.snap.SnapshotBlockHeightPeriod)
 	snm.snap.Migrations.CleanupMigrations(expectedSnapshotHeight)
 
-	if len(snm.hyperSyncProgress.PrefixProgress) != 0 {
+	if len(snm.HyperSyncProgress.PrefixProgress) != 0 {
 		return snm.syncSnapshot(peer)
 	}
 	glog.Infof(CLog(Magenta, fmt.Sprintf("Initiating HyperSync after finishing downloading headers. Node "+
@@ -673,15 +673,15 @@ func (snm *SnapshotManager) InitSnapshotSync(peer *Peer) MessageHandlerResponseC
 	// expected height at which the snapshot should be taking place. We do this to make sure that the
 	// snapshot we receive from the peer is up-to-date.
 	// TODO: error handle if the hash doesn't exist for some reason.
-	snm.hyperSyncProgress.SnapshotMetadata = &SnapshotEpochMetadata{
+	snm.HyperSyncProgress.SnapshotMetadata = &SnapshotEpochMetadata{
 		SnapshotBlockHeight:       expectedSnapshotHeight,
 		FirstSnapshotBlockHeight:  expectedSnapshotHeight,
 		CurrentEpochChecksumBytes: []byte{},
 		CurrentEpochBlockHash:     snm.bc.bestHeaderChain[expectedSnapshotHeight].Hash,
 	}
-	snm.hyperSyncProgress.PrefixProgress = []*SyncPrefixProgress{}
-	snm.hyperSyncProgress.Completed = false
-	go snm.hyperSyncProgress.PrintLoop()
+	snm.HyperSyncProgress.PrefixProgress = []*SyncPrefixProgress{}
+	snm.HyperSyncProgress.Completed = false
+	go snm.HyperSyncProgress.PrintLoop()
 
 	// Initialize the snapshot checksum so that it's reset. It got modified during chain initialization
 	// when processing seed transaction from the genesis block. So we need to clear it.

@@ -44,15 +44,15 @@ func TestEncoderMigrations(t *testing.T) {
 
 	// wait for node2 to sync blocks.
 	waitForNodeToFullySync(node2)
-	fmt.Println("Chain state and operation channel", node2.Server.GetBlockchain().ChainState(),
-		len(node2.Server.GetBlockchain().Snapshot().OperationChannel.OperationChannel))
+	fmt.Println("Chain state and operation channel", node2.Blockchain.ChainState(),
+		len(node2.Snapshot.OperationChannel.OperationChannel))
 
 	compareNodesByState(t, node1, node2, 0)
 	fmt.Println("node1 checksum:", computeNodeStateChecksum(t, node1, 1500))
 	fmt.Println("node2 checksum:", computeNodeStateChecksum(t, node2, 1500))
-	checksum1, err := node1.Server.GetBlockchain().Snapshot().Checksum.ToBytes()
+	checksum1, err := node1.Snapshot.Checksum.ToBytes()
 	require.NoError(err)
-	checksum2, err := node2.Server.GetBlockchain().Snapshot().Checksum.ToBytes()
+	checksum2, err := node2.Snapshot.Checksum.ToBytes()
 	require.NoError(err)
 	fmt.Println("node1 server checksum:", checksum1)
 	fmt.Println("node2 server checksum:", checksum2)

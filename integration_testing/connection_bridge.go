@@ -110,13 +110,10 @@ func (bridge *ConnectionBridge) createInboundConnection(node *cmd.Node) *lib.Pee
 		panic(err)
 	}
 
-	// This channel is redundant in our setting.
-	messagesFromPeer := make(chan *lib.ServerMessage)
 	// Because it is an inbound Peer of the node, it is simultaneously a "fake" outbound Peer of the bridge.
 	// Hence, we will mark the _isOutbound parameter as "true" in NewPeer.
-	peer := lib.NewPeer(conn, true, netAddress, true,
-		10000, 0, &lib.DeSoMainnetParams,
-		messagesFromPeer, nil, nil, lib.NodeSyncTypeAny)
+	peer := lib.NewPeer(0, conn, true, netAddress, true,
+		&lib.DeSoMainnetParams)
 	peer.ID = uint64(lib.RandInt64(math.MaxInt64))
 	return peer
 }
@@ -141,10 +138,7 @@ func (bridge *ConnectionBridge) createOutboundConnection(node *cmd.Node, otherNo
 
 		na, err := lib.IPToNetAddr(conn.RemoteAddr().String(), otherNode.Server.GetConnectionManager().AddrMgr,
 			otherNode.Params)
-		messagesFromPeer := make(chan *lib.ServerMessage)
-		peer := lib.NewPeer(conn, false, na, false,
-			10000, 0, bridge.nodeB.Params,
-			messagesFromPeer, nil, nil, lib.NodeSyncTypeAny)
+		peer := lib.NewPeer(0, conn, false, na, false, bridge.nodeB.Params)
 		peer.ID = uint64(lib.RandInt64(math.MaxInt64))
 		bridge.newPeerChan <- peer
 		//}
@@ -153,7 +147,7 @@ func (bridge *ConnectionBridge) createOutboundConnection(node *cmd.Node, otherNo
 	// Make the provided node to make an outbound connection to our listener.
 	netAddress, _ := lib.IPToNetAddr(ll.Addr().String(), addrmgr.New("", net.LookupIP), &lib.DeSoMainnetParams)
 	fmt.Println("createOutboundConnection: IP:", netAddress.IP, "Port:", netAddress.Port)
-	go node.Server.GetConnectionManager().ConnectPeer(nil, netAddress)
+	go node.Server.ConnectPeer(netAddress)
 }
 
 // getVersionMessage simulates a version message that the provided node would have sent.
@@ -172,7 +166,7 @@ func (bridge *ConnectionBridge) getVersionMessage(node *cmd.Node) *lib.MsgDeSoVe
 	}
 
 	if node.Server != nil {
-		ver.StartBlockHeight = uint32(node.Server.GetBlockchain().BlockTip().Header.Height)
+		ver.StartBlockHeight = uint32(node.Blockchain.BlockTip().Header.Height)
 	}
 	ver.MinFeeRateNanosPerKB = node.Config.MinFeerate
 	return ver
@@ -243,7 +237,6 @@ func (bridge *ConnectionBridge) startConnection(connection *lib.Peer, otherNode 
 
 		return err
 	}
-	connection.VersionNegotiated = true
 
 	return nil
 }

@@ -363,6 +363,10 @@ func IPToNetAddr(ipStr string, addrMgr *addrmgr.AddrManager, params *DeSoParams)
 	return netAddr, nil
 }
 
+func (cmgr *ConnectionManager) CreateOutboundConnection(persistentAddr *wire.NetAddress) {
+	cmgr._createOutboundConnection(persistentAddr)
+}
+
 func (cmgr *ConnectionManager) _createOutboundConnection(persistentAddr *wire.NetAddress) {
 	isPersistent := (persistentAddr != nil)
 	retryCount := 0

@@ -520,6 +520,10 @@ func (srv *Server) AddTimeSample(addrStr string, timeSample time.Time) {
 	srv.cmgr.AddTimeSample(addrStr, timeSample)
 }
 
+func (srv *Server) GetConnectionManager() *ConnectionManager {
+	return srv.cmgr
+}
+
 func (srv *Server) SendHandshakePeerMessage(peer *Peer) {
 	srv.incomingMessages <- &ServerMessage{
 		Peer: peer,
@@ -533,4 +537,8 @@ func (srv *Server) GetAllPeers() []*Peer {
 
 func (srv *Server) GetRandomPeer() *Peer {
 	return srv.cmgr.RandomPeer()
+}
+
+func (srv *Server) ConnectPeer(netAddr *wire.NetAddress) {
+	srv.cmgr.CreateOutboundConnection(netAddr)
 }
