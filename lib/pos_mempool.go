@@ -169,7 +169,7 @@ func (mp *PosMempool) Start() error {
 
 	// Create the persister
 	if !mp.inMemoryOnly {
-		mp.persister = NewMempoolPersister(mp.db, int(mp.params.MempoolBackupTimeMilliseconds))
+		mp.persister = NewMempoolPersister(mp.db, int(mp.params.MempoolBackupIntervalMillis))
 
 		// Start the persister and retrieve transactions from the database.
 		mp.persister.Start()

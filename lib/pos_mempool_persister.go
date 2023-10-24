@@ -38,7 +38,7 @@ type MempoolEvent struct {
 // will then add the event to a queue. Periodically, the transaction queue is flushed to the database and all the cached
 // transactions are persisted. To achieve this, the persister runs its own goroutine.
 type MempoolPersister struct {
-	sync.Mutex
+	sync.RWMutex
 	status MempoolPersisterStatus
 
 	// db is the database that the persister will write transactions to.
@@ -48,22 +48,22 @@ type MempoolPersister struct {
 	stopGroup  sync.WaitGroup
 	startGroup sync.WaitGroup
 
-	// mempoolBackupTimeMilliseconds is the time frequency at which the persister will flush the transaction queue to the database.
-	mempoolBackupTimeMilliseconds int
+	// mempoolBackupIntervalMillis is the time frequency at which the persister will flush the transaction queue to the database.
+	mempoolBackupIntervalMillis int
 	// eventQueue is used to queue up transactions to be persisted. The queue receives events from the EnqueueEvent,
 	// which is called whenever a transaction is added or removed from the mempool.
 	eventQueue chan *MempoolEvent
 	// updateBatch is used to cache transactions that need to be persisted to the database. The batch is flushed to the
-	// database periodically based on the mempoolBackupTimeMilliseconds.
+	// database periodically based on the mempoolBackupIntervalMillis.
 	updateBatch []*MempoolEvent
 }
 
-func NewMempoolPersister(db *badger.DB, mempoolBackupTimeMilliseconds int) *MempoolPersister {
+func NewMempoolPersister(db *badger.DB, mempoolBackupIntervalMillis int) *MempoolPersister {
 	return &MempoolPersister{
-		mempoolBackupTimeMilliseconds: mempoolBackupTimeMilliseconds,
-		status:                        MempoolPersisterStatusNotRunning,
-		db:                            db,
-		eventQueue:                    make(chan *MempoolEvent, eventQueueSize),
+		mempoolBackupIntervalMillis: mempoolBackupIntervalMillis,
+		status:                      MempoolPersisterStatusNotRunning,
+		db:                          db,
+		eventQueue:                  make(chan *MempoolEvent, eventQueueSize),
 	}
 }
 
@@ -111,7 +111,7 @@ func (mp *MempoolPersister) run() {
 			}
 			continue
 
-		case <-time.After(time.Duration(mp.mempoolBackupTimeMilliseconds) * time.Millisecond):
+		case <-time.After(time.Duration(mp.mempoolBackupIntervalMillis) * time.Millisecond):
 			if err := mp.persistBatch(); err != nil {
 				glog.Errorf("MempoolPersister: Error persisting batch: %v", err)
 			}
@@ -212,8 +212,8 @@ func (mp *MempoolPersister) persistBatchNoLock() error {
 // GetPersistedTransactions is used to retrieve all transactions from the database. It will return an error if the persister
 // is not currently running or if there was an issue retrieving the transactions.
 func (mp *MempoolPersister) GetPersistedTransactions() ([]*MempoolTx, error) {
-	mp.Lock()
-	defer mp.Unlock()
+	mp.RLock()
+	defer mp.RUnlock()
 
 	if !mp.IsRunning() {
 		return nil, errors.Wrapf(MempoolErrorNotRunning, "MempoolPersister: Cannot retrieve transactions while not running")

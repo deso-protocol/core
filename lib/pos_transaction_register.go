@@ -141,6 +141,8 @@ func (tr *TransactionRegister) removeTransactionNoLock(txn *MempoolTx) error {
 		return nil
 	}
 
+	// Sanity-check that the size of the transaction doesn't exceed the current size of the TransactionRegister.
+	// This should never happen, unless somehow the underlying transaction was modified. Which won't happen.
 	if tr.totalTxnsSizeBytes < txn.TxSizeBytes {
 		return fmt.Errorf("TransactionRegister.RemoveTransaction: Transaction with transaction hash %v size %v "+
 			"exceeds total mempool size %v", txn.Hash.String(), txn.TxSizeBytes, tr.totalTxnsSizeBytes)
@@ -161,6 +163,9 @@ func (tr *TransactionRegister) removeTransactionNoLock(txn *MempoolTx) error {
 		if bucket.Empty() {
 			tr.removeBucketNoLock(bucket)
 		}
+	} else if !exists {
+		return fmt.Errorf("TransactionRegister.RemoveTransaction: Bucket with min fee %v does not exist",
+			bucketMinFeeNanosPerKb)
 	}
 
 	delete(tr.txnMembership, *txn.Hash)
@@ -305,6 +310,7 @@ func (tr *TransactionRegister) getTransactionsToPrune(minPrunedBytes uint64) (_p
 	prunedTxns := []*MempoolTx{}
 
 	// Find the FeeTime bucket at the end of the Set. It'll have the smallest fee among the buckets in the register.
+	// We iterate in reverse order, starting from the end, so that we drop transactions ordered by least-to-highest priority.
 	it := tr.feeTimeBucketSet.Iterator()
 	it.End()
 	// Iterate through the buckets in reverse order so that we drop transactions ordered by least-to-highest priority.
