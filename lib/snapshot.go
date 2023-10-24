@@ -420,7 +420,7 @@ func NewSnapshot(mainDb *badger.DB, mainDbDirectory string, snapshotBlockHeightP
 		AncestralFlushCounter:        uint64(0),
 		SnapshotBlockHeightPeriod:    snapshotBlockHeightPeriod,
 		OperationChannel:             operationChannel,
-		operationQueueSemaphore:      make(chan struct{}, hypersyncMaxQueueSize),
+		operationQueueSemaphore:      make(chan struct{}, 1000), // TODO: Fix this.
 		Checksum:                     checksum,
 		Migrations:                   migrations,
 		CurrentEpochSnapshotMetadata: metadata,

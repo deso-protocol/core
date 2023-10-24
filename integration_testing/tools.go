@@ -150,7 +150,7 @@ func compareNodesByChecksum(t *testing.T, nodeA *cmd.Node, nodeB *cmd.Node) {
 // compareNodesByState will look through all state records in nodeA and nodeB databases and will compare them.
 // The nodes pass this comparison iff they have identical states.
 func compareNodesByState(t *testing.T, nodeA *cmd.Node, nodeB *cmd.Node, verbose int) {
-	compareNodesByStateWithPrefixList(t, nodeA.ChainDB, nodeB.ChainDB, lib.StatePrefixes.StatePrefixesList, verbose)
+	compareNodesByStateWithPrefixList(t, nodeA.Blockchain.DB(), nodeB.Blockchain.DB(), lib.StatePrefixes.StatePrefixesList, verbose)
 }
 
 // compareNodesByDB will look through all records in nodeA and nodeB databases and will compare them.
@@ -164,7 +164,7 @@ func compareNodesByDB(t *testing.T, nodeA *cmd.Node, nodeB *cmd.Node, verbose in
 		}
 		prefixList = append(prefixList, []byte{prefix})
 	}
-	compareNodesByStateWithPrefixList(t, nodeA.ChainDB, nodeB.ChainDB, prefixList, verbose)
+	compareNodesByStateWithPrefixList(t, nodeA.Blockchain.DB(), nodeB.Blockchain.DB(), prefixList, verbose)
 }
 
 // compareNodesByDB will look through all records in nodeA and nodeB txindex databases and will compare them.
