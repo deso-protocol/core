@@ -1957,3 +1957,76 @@ func NewTestPoSBlockchain(t *testing.T) *TestMeta {
 	})
 	return testMeta
 }
+
+func TestPruneUncommittedBlocksMap(t *testing.T) {
+	testMeta := NewTestPoSBlockchainWithValidators(t)
+	block1 := _generateBlockAndAddToBestChain(testMeta, 12, 12, 887)
+	block1Hash, err := block1.Hash()
+	require.NoError(t, err)
+	block2 := _generateBlockAndAddToBestChain(testMeta, 13, 13, 889)
+	block2Hash, err := block2.Hash()
+	require.NoError(t, err)
+	block3 := _generateBlockAndAddToBestChain(testMeta, 14, 14, 378)
+	block3Hash, err := block3.Hash()
+	require.NoError(t, err)
+	block4 := _generateBlockAndAddToBestChain(testMeta, 15, 15, 728)
+	block4Hash, err := block4.Hash()
+	require.NoError(t, err)
+	// Run the commit rule.
+	err = testMeta.chain.runCommitRuleOnBestChain()
+	require.NoError(t, err)
+	// Make sure the chain is what we expect.
+	_verifyCommitRuleHelper(testMeta, []*BlockHash{block1Hash, block2Hash}, []*BlockHash{block3Hash, block4Hash}, block2Hash)
+
+	// Make some blocks that shouldn't get pruned.
+	var blockExtendingUncommittedTip *MsgDeSoBlock
+	blockExtendingUncommittedTip = _generateRealBlock(testMeta, 16, 16, 381, block4Hash)
+	blockExtendingUncommittedTipHash, err := blockExtendingUncommittedTip.Hash()
+	require.NoError(t, err)
+	err = testMeta.chain.addBlockToBlockIndex(blockExtendingUncommittedTip)
+	require.NoError(t, err)
+	var blockExtendingCommittedTip *MsgDeSoBlock
+	blockExtendingCommittedTip = _generateRealBlock(testMeta, 14, 14, 727, block2Hash)
+	blockExtendingCommittedTipHash, err := blockExtendingCommittedTip.Hash()
+	require.NoError(t, err)
+	err = testMeta.chain.addBlockToBlockIndex(blockExtendingCommittedTip)
+	require.NoError(t, err)
+	// Make some blocks that SHOULD get pruned.
+	var blockExtendingFromBlock1 *MsgDeSoBlock
+	blockExtendingFromBlock1 = _generateDummyBlock(testMeta, 13, 13, 172)
+	blockExtendingFromBlock1.Header.PrevBlockHash = block1Hash
+	blockExtendingFromBlock1Hash, err := blockExtendingFromBlock1.Hash()
+	require.NoError(t, err)
+	err = testMeta.chain.addBlockToBlockIndex(blockExtendingFromBlock1)
+	require.NoError(t, err)
+	var dummyBlockNotInBlockIndex *MsgDeSoBlock
+	dummyBlockNotInBlockIndex = _generateDummyBlock(testMeta, 17, 17, 1187)
+	dummyBlockHash, err := dummyBlockNotInBlockIndex.Hash()
+	require.NoError(t, err)
+	var blockExtendingFromDummy *MsgDeSoBlock
+	blockExtendingFromDummy = _generateDummyBlock(testMeta, 18, 18, 2781)
+	blockExtendingFromDummy.Header.PrevBlockHash = dummyBlockHash
+	blockExtendingFromDummyHash, err := blockExtendingFromDummy.Hash()
+	require.NoError(t, err)
+	err = testMeta.chain.addBlockToBlockIndex(blockExtendingFromDummy)
+	testMeta.chain.pruneUncommittedBlocks()
+
+	// Block 1 and 2 should NO LONGER be in the uncommitted blocks map. Block 3 and 4 should still be there.
+	// Blocks that should not be pruned will still be there. Blocks that should get pruned should be removed.
+	_, exists := testMeta.chain.uncommittedBlocksMap[*block1Hash]
+	require.False(t, exists)
+	_, exists = testMeta.chain.uncommittedBlocksMap[*block2Hash]
+	require.False(t, exists)
+	_, exists = testMeta.chain.uncommittedBlocksMap[*block3Hash]
+	require.True(t, exists)
+	_, exists = testMeta.chain.uncommittedBlocksMap[*block4Hash]
+	require.True(t, exists)
+	_, exists = testMeta.chain.uncommittedBlocksMap[*blockExtendingUncommittedTipHash]
+	require.True(t, exists)
+	_, exists = testMeta.chain.uncommittedBlocksMap[*blockExtendingCommittedTipHash]
+	require.True(t, exists)
+	_, exists = testMeta.chain.uncommittedBlocksMap[*blockExtendingFromBlock1Hash]
+	require.False(t, exists)
+	_, exists = testMeta.chain.uncommittedBlocksMap[*blockExtendingFromDummyHash]
+	require.False(t, exists)
+}
