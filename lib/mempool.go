@@ -185,7 +185,7 @@ type DeSoMempool struct {
 
 	// When set, transactions are initially read from this dir and dumped
 	// to this dir.
-	MempoolDir string
+	mempoolDir string
 
 	// Whether or not we should be computing readOnlyUtxoViews.
 	generateReadOnlyUtxoView bool
@@ -230,6 +230,10 @@ func (mp *DeSoMempool) getBadgerOptions(dir string) badger.Options {
 		return DefaultBadgerOptions(dir)
 	}
 	return PerformanceBadgerOptions(dir)
+}
+
+func (mp *DeSoMempool) GetMempoolDir() string {
+	return mp.mempoolDir
 }
 
 // See comment on RemoveUnconnectedTxn. The mempool lock must be called for writing
@@ -687,9 +691,9 @@ func (mp *DeSoMempool) DumpTxnsToDB() {
 	// Now we shuffle the directories we created. The temp that we just created will become
 	// the latest dump and the latest dump will become the previous dump.  By doing this
 	// shuffle, we ensure that we always have a complete view of the mempool to load from.
-	tempDir := filepath.Join(mp.MempoolDir, "temp_mempool_dump")
-	previousDir := filepath.Join(mp.MempoolDir, "previous_mempool_dump")
-	latestDir := filepath.Join(mp.MempoolDir, "latest_mempool_dump")
+	tempDir := filepath.Join(mp.mempoolDir, "temp_mempool_dump")
+	previousDir := filepath.Join(mp.mempoolDir, "previous_mempool_dump")
+	latestDir := filepath.Join(mp.mempoolDir, "latest_mempool_dump")
 
 	// If latestDir exists, move latestDir --> previousDir.
 	// Check that latestDir exists before trying to move it.
@@ -736,10 +740,10 @@ func (mp *DeSoMempool) OpenTempDBAndDumpTxns() error {
 	blockHeight := uint64(mp.bc.blockTip().Height + 1)
 	allTxns := mp.readOnlyUniversalTransactionList
 
-	tempMempoolDBDir := filepath.Join(mp.MempoolDir, "temp_mempool_dump")
+	tempMempoolDBDir := filepath.Join(mp.mempoolDir, "temp_mempool_dump")
 	glog.Infof("OpenTempDBAndDumpTxns: Opening new temp db %v", tempMempoolDBDir)
 	// Make the top-level folder if it doesn't exist.
-	err := MakeDirIfNonExistent(mp.MempoolDir)
+	err := MakeDirIfNonExistent(mp.mempoolDir)
 	if err != nil {
 		return fmt.Errorf("OpenTempDBAndDumpTxns: Error making top-level dir: %v", err)
 	}
@@ -2539,10 +2543,10 @@ func (mp *DeSoMempool) LoadTxnsFromDB() {
 	// to temp first, we ensure that we always have a full set of txns in latest and previous dir.
 	// Note that it is possible for previousDir to exist even if latestDir does not because
 	// the machine could crash after moving latest to previous. Thus, we check both.
-	savedTxnsDir := filepath.Join(mp.MempoolDir, "latest_mempool_dump")
+	savedTxnsDir := filepath.Join(mp.mempoolDir, "latest_mempool_dump")
 	_, err := os.Stat(savedTxnsDir)
 	if os.IsNotExist(err) {
-		savedTxnsDir = filepath.Join(mp.MempoolDir, "previous_mempool_dump")
+		savedTxnsDir = filepath.Join(mp.mempoolDir, "previous_mempool_dump")
 		_, err = os.Stat(savedTxnsDir)
 		if err != nil {
 			glog.Infof("LoadTxnsFromDB: os.Stat(previousDir) error: %v", err)
@@ -2614,7 +2618,7 @@ func NewDeSoMempool(_bc *Blockchain, _rateLimitFeerateNanosPerKB uint64,
 		blockCypherAPIKey:               _blockCypherAPIKey,
 		backupUniversalUtxoView:         backupUtxoView,
 		universalUtxoView:               utxoView,
-		MempoolDir:                      _mempoolDumpDir,
+		mempoolDir:                      _mempoolDumpDir,
 		generateReadOnlyUtxoView:        _runReadOnlyViewUpdater,
 		readOnlyUtxoView:                readOnlyUtxoView,
 		readOnlyUniversalTransactionMap: make(map[BlockHash]*MempoolTx),
@@ -2623,7 +2627,7 @@ func NewDeSoMempool(_bc *Blockchain, _rateLimitFeerateNanosPerKB uint64,
 		useDefaultBadgerOptions:         useDefaultBadgerOptions,
 	}
 
-	if newPool.MempoolDir != "" {
+	if newPool.mempoolDir != "" {
 		newPool.LoadTxnsFromDB()
 	}
 
@@ -2633,7 +2637,7 @@ func NewDeSoMempool(_bc *Blockchain, _rateLimitFeerateNanosPerKB uint64,
 		newPool.StartReadOnlyUtxoViewRegenerator()
 	}
 
-	if newPool.MempoolDir != "" {
+	if newPool.mempoolDir != "" {
 		newPool.StartMempoolDBDumper()
 	}
 

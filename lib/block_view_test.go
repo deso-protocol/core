@@ -192,7 +192,7 @@ func (tm *transactionTestMeta) Quit() {
 	}
 
 	if tm.mempool != nil {
-		if tm.mempool.MempoolDir != "" {
+		if tm.mempool.mempoolDir != "" {
 			tm.mempool.DumpTxnsToDB()
 		}
 		tm.mempool.Stop()

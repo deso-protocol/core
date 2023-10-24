@@ -274,7 +274,7 @@ func (node *Node) Stop() {
 	if node.Mempool != nil {
 		// Before the node shuts down, write all the mempool txns to disk
 		// if the flag is set.
-		if node.Mempool.MempoolDir != "" {
+		if node.Mempool.GetMempoolDir() != "" {
 			glog.Info("Doing final mempool dump...")
 			node.Mempool.DumpTxnsToDB()
 			glog.Info("Final mempool dump complete!")
