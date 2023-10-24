@@ -96,7 +96,7 @@ func (bc *Blockchain) processBlockPoS(desoBlock *MsgDeSoBlock, currentView uint6
 	}
 
 	// 6. Update in-memory struct holding uncommitted blocks.
-	if err = bc.pruneUncommittedBlocks(desoBlock); err != nil {
+	if err = bc.pruneUncommittedBlocks(); err != nil {
 		// We glog and continue here as failing to prune the uncommitted blocks map is not a
 		// critical error.
 		glog.Errorf("processBlockPoS: Error pruning uncommitted blocks: %v", err)
@@ -472,9 +472,20 @@ func (bc *Blockchain) addBlockToBestChain(desoBlockNode *BlockNode) {
 }
 
 // pruneUncommittedBlocks prunes the in-memory struct holding uncommitted blocks.
-func (bc *Blockchain) pruneUncommittedBlocks(desoBlock *MsgDeSoBlock) error {
-	// TODO: Implement me.
-	return errors.New("IMPLEMENT ME")
+func (bc *Blockchain) pruneUncommittedBlocks() error {
+	for blockHash := range bc.uncommittedBlocksMap {
+		// Check if the block is committed in the block index. If so, we can delete it from the uncommitted blocks map.
+		blockNode, exists := bc.blockIndex[blockHash]
+		if !exists || blockNode == nil {
+			// TODO: If it doesn't exist in the block index, can we remove it?
+			continue
+		}
+		if blockNode.CommittedStatus == COMMITTED {
+			delete(bc.uncommittedBlocksMap, blockHash)
+		}
+		// TODO: What other conditions do we have for pruning?
+	}
+	return nil
 }
 
 // runCommitRuleOnBestChain commits the grandparent of the block if possible.
