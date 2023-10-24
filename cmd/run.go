@@ -83,9 +83,11 @@ func SetupRunFlags(cmd *cobra.Command) {
 		  download historical blocks. Can only be set if HyperSync is true.`)
 
 	// Mempool
-	cmd.PersistentFlags().Uint64("batch-persist-frequency-milliseconds", 30000,
+	cmd.PersistentFlags().Uint64("mempool-backup-time-millis", 30000,
 		"The frequency in milliseconds with which the mempool will persist its state to disk. "+
 			"The default value is 30 seconds, or 30,000 milliseconds.")
+	cmd.PersistentFlags().Uint64("max-mempool-pos-size-bytes", 3<<30 /*3Gb*/,
+		"The maximum size of the PoS mempool in bytes. The default value is 3 << 30 bytes, or 3Gb.")
 
 	// Peers
 	cmd.PersistentFlags().StringSlice("connect-ips", []string{},

@@ -86,7 +86,8 @@ func (node *Node) Start(exitChannels ...*chan struct{}) {
 	}
 
 	// Set the frequency of mempool's database backup.
-	node.Params.MempoolBackupTimeMilliseconds = node.Config.MempoolBackupTimeMilliseconds
+	node.Params.MempoolBackupIntervalMillis = node.Config.MempoolBackupIntervalMillis
+	node.Params.MaxMempoolPosSizeBytes = node.Config.MaxMempoolPosSizeBytes
 
 	// Validate params
 	validateParams(node.Params)

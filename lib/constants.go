@@ -703,8 +703,8 @@ type DeSoParams struct {
 	// as basis points. For example a value of 1000 means that the fee bucket ranges will grow by 10% each time.
 	DefaultFeeBucketRateMultiplierBasisPoints uint64
 
-	// DefaultFailingTransactionBMFRateBasisPoints is the default rate of the failing transaction fee, in basis points,
-	// that is used to in BMF calculations. E.g. a value of 2500 means that 25% of the failing transaction's fee is used
+	// DefaultFailingTransactionBMFRateBasisPoints is the default rate for failing transaction fees, in basis points,
+	// used in BMF calculations. E.g. a value of 2500 means that 25% of the failing transaction's fee is used
 	// in BMF calculations.
 	DefaultFailingTransactionBMFRateBasisPoints uint64
 
@@ -716,8 +716,8 @@ type DeSoParams struct {
 	// The maximum aggregate number of bytes of transactions included in the PoS mempool.
 	MaxMempoolPosSizeBytes uint64
 
-	// MempoolBackupTimeMilliseconds is the frequency with which pos mempool persists transactions to storage.
-	MempoolBackupTimeMilliseconds uint64
+	// MempoolBackupIntervalMillis is the frequency with which pos mempool persists transactions to storage.
+	MempoolBackupIntervalMillis uint64
 }
 
 var RegtestForkHeights = ForkHeights{
@@ -1128,8 +1128,8 @@ var DeSoMainnetParams = DeSoParams{
 	EncoderMigrationHeights:     GetEncoderMigrationHeights(&MainnetForkHeights),
 	EncoderMigrationHeightsList: GetEncoderMigrationHeightsList(&MainnetForkHeights),
 
-	MaxMempoolPosSizeBytes:        3 << 30, // 3Gb
-	MempoolBackupTimeMilliseconds: 30000,
+	MaxMempoolPosSizeBytes:      3 << 30, // 3Gb
+	MempoolBackupIntervalMillis: 30000,
 }
 
 func mustDecodeHexBlockHashBitcoin(ss string) *BlockHash {
@@ -1395,8 +1395,8 @@ var DeSoTestnetParams = DeSoParams{
 	EncoderMigrationHeights:     GetEncoderMigrationHeights(&TestnetForkHeights),
 	EncoderMigrationHeightsList: GetEncoderMigrationHeightsList(&TestnetForkHeights),
 
-	MaxMempoolPosSizeBytes:        3 << 30, // 3Gb
-	MempoolBackupTimeMilliseconds: 30000,
+	MaxMempoolPosSizeBytes:      3 << 30, // 3Gb
+	MempoolBackupIntervalMillis: 30000,
 }
 
 // GetDataDir gets the user data directory where we store files
