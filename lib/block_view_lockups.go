@@ -2139,13 +2139,13 @@ func (bav *UtxoView) _checkLockupTxnSpendingLimitAndUpdateDerivedKey(
 	}
 
 	// Next check (any creator PKID || specific operation) key
-	anyProfilePKIDOperationKey := MakeLockupLimitKey(*profilePKID, LockupLimitScopeTypeAnyCoins, lockupOperation)
+	anyProfilePKIDOperationKey := MakeLockupLimitKey(ZeroPKID, LockupLimitScopeTypeAnyCoins, lockupOperation)
 	if _checkLimitKeyAndUpdateDerivedKeyEntry(anyProfilePKIDOperationKey, derivedKeyEntry) {
 		return derivedKeyEntry, nil
 	}
 
 	// Next check (any creator PKID || any operation) key
-	anyProfilePKIDAnyOperationKey := MakeLockupLimitKey(*profilePKID, LockupLimitScopeTypeAnyCoins, AnyLockupOperation)
+	anyProfilePKIDAnyOperationKey := MakeLockupLimitKey(ZeroPKID, LockupLimitScopeTypeAnyCoins, AnyLockupOperation)
 	if _checkLimitKeyAndUpdateDerivedKeyEntry(anyProfilePKIDAnyOperationKey, derivedKeyEntry) {
 		return derivedKeyEntry, nil
 	}

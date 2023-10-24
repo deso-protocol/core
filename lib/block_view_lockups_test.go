@@ -1,8 +1,10 @@
 package lib
 
 import (
+	"github.com/btcsuite/btcd/btcec"
 	"github.com/dgraph-io/badger/v3"
 	"github.com/holiman/uint256"
+	"github.com/pkg/errors"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"testing"
@@ -1468,6 +1470,637 @@ func TestLockupStandardDeSoFlows(t *testing.T) {
 		require.NoError(t, err)
 		require.Greater(t, m1NewBalance, m1OriginalBalance)
 		require.Less(t, m1NewBalance-m1OriginalBalance, uint64(1025))
+	}
+}
+
+func TestLockupWithDerivedKey(t *testing.T) {
+	var derivedKeyPriv string
+	var derivedKeyPub string
+
+	// Initialize test chain, miner, and testMeta
+	testMeta := _setUpMinerAndTestMetaForTimestampBasedLockupTests(t)
+	blockHeight := uint64(testMeta.chain.BlockTip().Height) + 1
+
+	// Initialize m0, m1, m2, m3, m4, and paramUpdater
+	_setUpProfilesAndMintM0M1DAOCoins(testMeta)
+
+	utxoView, err := NewUtxoView(testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot)
+	require.NoError(t, err)
+	m0PKID := utxoView.GetPKIDForPublicKey(m0PkBytes).PKID
+	m1PKID := utxoView.GetPKIDForPublicKey(m1PkBytes).PKID
+	//m2PKID := utxoView.GetPKIDForPublicKey(m2PkBytes).PKID
+
+	senderPrivBytes, _, err := Base58CheckDecode(m0Priv)
+	require.NoError(t, err)
+	m0PrivKey, _ := btcec.PrivKeyFromBytes(btcec.S256(), senderPrivBytes)
+
+	// Setup helper functions for creating m0 derived keys
+	newUtxoView := func() *UtxoView {
+		utxoView, err := NewUtxoView(testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot)
+		require.NoError(t, err)
+		return utxoView
+	}
+	_submitAuthorizeDerivedKeyTxn := func(txnSpendingLimit *TransactionSpendingLimit) (string, string, error) {
+		utxoView := newUtxoView()
+		derivedKeyMetadata, derivedKeyAuthPriv := _getAuthorizeDerivedKeyMetadataWithTransactionSpendingLimit(
+			t, m0PrivKey, blockHeight+5, txnSpendingLimit, false, blockHeight,
+		)
+		derivedKeyAuthPrivBase58Check := Base58CheckEncode(derivedKeyAuthPriv.Serialize(), true, testMeta.params)
+
+		prevBalance := _getBalance(testMeta.t, testMeta.chain, testMeta.mempool, m0Pub)
+
+		utxoOps, txn, _, err := _doAuthorizeTxnWithExtraDataAndSpendingLimits(
+			testMeta,
+			utxoView,
+			testMeta.feeRateNanosPerKb,
+			m0PkBytes,
+			derivedKeyMetadata.DerivedPublicKey,
+			derivedKeyAuthPrivBase58Check,
+			derivedKeyMetadata.ExpirationBlock,
+			derivedKeyMetadata.AccessSignature,
+			false,
+			nil,
+			nil,
+			txnSpendingLimit,
+		)
+		if err != nil {
+			return "", "", err
+		}
+		require.NoError(t, utxoView.FlushToDb(blockHeight))
+		testMeta.expectedSenderBalances = append(testMeta.expectedSenderBalances, prevBalance)
+		testMeta.txnOps = append(testMeta.txnOps, utxoOps)
+		testMeta.txns = append(testMeta.txns, txn)
+
+		err = utxoView.ValidateDerivedKey(
+			m0PkBytes, derivedKeyMetadata.DerivedPublicKey, blockHeight,
+		)
+		require.NoError(t, err)
+		return derivedKeyAuthPrivBase58Check,
+			Base58CheckEncode(derivedKeyMetadata.DerivedPublicKey, false, testMeta.params), nil
+	}
+	_submitLockupTxnWithDerivedKeyAndTimestamp := func(
+		transactorPkBytes []byte, derivedKeyPrivBase58Check string, inputTxn MsgDeSoTxn, blockTimestamp int64,
+	) (_fees uint64, _err error) {
+		utxoView := newUtxoView()
+		var txn *MsgDeSoTxn
+
+		switch inputTxn.TxnMeta.GetTxnType() {
+		// Construct txn.
+		case TxnTypeCoinLockup:
+			txMeta := inputTxn.TxnMeta.(*CoinLockupMetadata)
+			txn, _, _, _, err = testMeta.chain.CreateCoinLockupTxn(
+				transactorPkBytes,
+				txMeta.ProfilePublicKey.ToBytes(),
+				txMeta.UnlockTimestampNanoSecs,
+				txMeta.LockupAmountBaseUnits,
+				testMeta.feeRateNanosPerKb, nil, []*DeSoOutput{})
+			require.NoError(t, err)
+		case TxnTypeUpdateCoinLockupParams:
+			txMeta := inputTxn.TxnMeta.(*UpdateCoinLockupParamsMetadata)
+			txn, _, _, _, err = testMeta.chain.CreateUpdateCoinLockupParamsTxn(
+				transactorPkBytes,
+				txMeta.LockupYieldDurationNanoSecs,
+				txMeta.LockupYieldAPYBasisPoints,
+				txMeta.RemoveYieldCurvePoint,
+				txMeta.NewLockupTransferRestrictions,
+				txMeta.LockupTransferRestrictionStatus,
+				testMeta.feeRateNanosPerKb, nil, []*DeSoOutput{})
+			require.NoError(t, err)
+		case TxnTypeCoinLockupTransfer:
+			txMeta := inputTxn.TxnMeta.(*CoinLockupTransferMetadata)
+			txn, _, _, _, err = testMeta.chain.CreateCoinLockupTransferTxn(
+				transactorPkBytes,
+				txMeta.RecipientPublicKey.ToBytes(),
+				txMeta.ProfilePublicKey.ToBytes(),
+				txMeta.UnlockTimestampNanoSecs,
+				txMeta.LockedCoinsToTransferBaseUnits,
+				testMeta.feeRateNanosPerKb, nil, []*DeSoOutput{})
+			require.NoError(t, err)
+		case TxnTypeCoinUnlock:
+			txMeta := inputTxn.TxnMeta.(*CoinUnlockMetadata)
+			txn, _, _, _, err = testMeta.chain.CreateCoinUnlockTxn(
+				transactorPkBytes,
+				txMeta.ProfilePublicKey.ToBytes(),
+				testMeta.feeRateNanosPerKb, nil, []*DeSoOutput{})
+			require.NoError(t, err)
+		default:
+			return 0, errors.New("invalid txn type")
+		}
+		if err != nil {
+			return 0, err
+		}
+		// Sign txn.
+		_signTxnWithDerivedKeyAndType(t, txn, derivedKeyPrivBase58Check, 1)
+
+		// Store the original transactor balance.
+		transactorPublicKeyBase58Check := Base58CheckEncode(transactorPkBytes, false, testMeta.params)
+		prevBalance := _getBalance(testMeta.t, testMeta.chain, testMeta.mempool, transactorPublicKeyBase58Check)
+		// Connect txn.
+		utxoOps, _, _, fees, err := utxoView.ConnectTransaction(txn, txn.Hash(), getTxnSize(*txn),
+			testMeta.savedHeight, blockTimestamp, true, false)
+		if err != nil {
+			return 0, err
+		}
+		// Flush UTXO view to the db.
+		require.NoError(t, utxoView.FlushToDb(blockHeight))
+		// Track txn for rolling back.
+		testMeta.expectedSenderBalances = append(testMeta.expectedSenderBalances, prevBalance)
+		testMeta.txnOps = append(testMeta.txnOps, utxoOps)
+		testMeta.txns = append(testMeta.txns, txn)
+		return fees, nil
+	}
+
+	{
+		// Error creating spending limit: cannot specify a lockup profile PKID if scope type is Any
+		lockupLimitKey := MakeLockupLimitKey(*m0PKID, LockupLimitScopeTypeAnyCoins, AnyLockupOperation)
+		txnSpendingLimit := &TransactionSpendingLimit{
+			GlobalDESOLimit: NanosPerUnit, // 1 $DESO spending limit
+			TransactionCountLimitMap: map[TxnType]uint64{
+				// NOTE: We must include TxnTypeAuthorizeDerivedKey as the helper function
+				//       _doAuthorizeTxnWithExtraDataAndSpendingLimits signs with the derived key,
+				//       NOT the owner key. This transaction will decrement this one type AuthorizeDerivedKey limit.
+				TxnTypeAuthorizeDerivedKey: 1,
+			},
+			LockupLimitMap: map[LockupLimitKey]uint64{lockupLimitKey: uint64(1)},
+		}
+		derivedKeyPriv, derivedKeyPub, err = _submitAuthorizeDerivedKeyTxn(txnSpendingLimit)
+		require.Error(t, err)
+	}
+
+	{
+		// Try and create an UpdateCoinLockupParams transaction that does nothing.
+		// (This should fail -- RueErrorDerivedKeyUpdateCoinLockupParamsISNoOp)
+
+		// Create the derived key
+		lockupLimitKey := MakeLockupLimitKey(*m0PKID, LockupLimitScopeTypeScopedCoins, AnyLockupOperation)
+		txnSpendingLimit := &TransactionSpendingLimit{
+			GlobalDESOLimit: NanosPerUnit, // 1 $DESO spending limit
+			TransactionCountLimitMap: map[TxnType]uint64{
+				// NOTE: We must include TxnTypeAuthorizeDerivedKey as the helper function
+				//       _doAuthorizeTxnWithExtraDataAndSpendingLimits signs with the derived key,
+				//       NOT the owner key. This transaction will decrement this one type AuthorizeDerivedKey limit.
+				TxnTypeAuthorizeDerivedKey: 1,
+			},
+			LockupLimitMap: map[LockupLimitKey]uint64{lockupLimitKey: uint64(1)},
+		}
+		derivedKeyPriv, derivedKeyPub, err = _submitAuthorizeDerivedKeyTxn(txnSpendingLimit)
+		require.NoError(t, err)
+		utxoView, err := NewUtxoView(testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot)
+		require.NoError(t, err)
+		derivedPubKeyBytes, _, err := Base58CheckDecode(derivedKeyPub)
+		require.NoError(t, err)
+		derivedKeyEntry := utxoView.GetDerivedKeyMappingForOwner(m0PkBytes, derivedPubKeyBytes)
+		require.Equal(t, uint64(1), derivedKeyEntry.TransactionSpendingLimitTracker.LockupLimitMap[lockupLimitKey])
+
+		// Submit the no-op transaction
+		updateCoinLockupParamsMetadata := &UpdateCoinLockupParamsMetadata{
+			LockupYieldDurationNanoSecs:     0,
+			LockupYieldAPYBasisPoints:       0,
+			RemoveYieldCurvePoint:           false,
+			NewLockupTransferRestrictions:   false,
+			LockupTransferRestrictionStatus: TransferRestrictionStatusUnrestricted,
+		}
+		_, err = _submitLockupTxnWithDerivedKeyAndTimestamp(
+			m0PkBytes, derivedKeyPriv, MsgDeSoTxn{TxnMeta: updateCoinLockupParamsMetadata}, 0,
+		)
+		require.Contains(t, err.Error(), RuleErrorDerivedKeyUpdateCoinLockupParamsIsNoOp)
+	}
+
+	// Testing (specific profile PKID || specific operation) limits
+	{
+		// Try and lockup tokens out-of-scope with the transactor's PKID. This should fail.
+		// To do this, we will try and have m0's derived key lockup m0's DeSo tokens while
+		// only allowing the DeSo token to do lockups on m1's PKID.
+		// This tests incorrect profile scope combined with the correct operation.
+		//
+		// Then, we will try and have m0 perform an unlock on locked m1 tokens.
+		// This tests correct profile scope combined with incorrect operation.
+		//
+		// After this, we try and have m0 lockup m1 tokens.
+		// This should succeed as it's the correct profile scope and correct operation.
+
+		// Create the derived key
+		lockupLimitKey := MakeLockupLimitKey(*m1PKID, LockupLimitScopeTypeScopedCoins, CoinLockupOperation)
+		txnSpendingLimit := &TransactionSpendingLimit{
+			GlobalDESOLimit: NanosPerUnit, // 1 $DESO spending limit
+			TransactionCountLimitMap: map[TxnType]uint64{
+				// NOTE: We must include TxnTypeAuthorizeDerivedKey as the helper function
+				//       _doAuthorizeTxnWithExtraDataAndSpendingLimits signs with the derived key,
+				//       NOT the owner key. This transaction will decrement this one type AuthorizeDerivedKey limit.
+				TxnTypeAuthorizeDerivedKey: 1,
+			},
+			LockupLimitMap: map[LockupLimitKey]uint64{lockupLimitKey: uint64(1)},
+		}
+		derivedKeyPriv, derivedKeyPub, err = _submitAuthorizeDerivedKeyTxn(txnSpendingLimit)
+		require.NoError(t, err)
+
+		// Have m0 try and lockup m0 tokens. (Incorrect profile + correct operation)
+		coinLockupMetadata := &CoinLockupMetadata{
+			ProfilePublicKey:        NewPublicKey(m0PkBytes),
+			UnlockTimestampNanoSecs: 365 * 24 * 60 * 60 * 1e9,
+			LockupAmountBaseUnits:   uint256.NewInt().SetUint64(1000),
+		}
+		_, err = _submitLockupTxnWithDerivedKeyAndTimestamp(
+			m0PkBytes, derivedKeyPriv, MsgDeSoTxn{TxnMeta: coinLockupMetadata}, 0,
+		)
+		require.Contains(t, err.Error(), RuleErrorDerivedKeyCoinLockupOperationNotAuthorized)
+
+		// Have m1 transfer over 1,000 LOCKED m1 tokens for m0 to unlock. (Correct profile + incorrect operation)
+		_coinLockupWithTestMetaAndConnectTimestamp(
+			testMeta,
+			testMeta.feeRateNanosPerKb,
+			m1Pub,
+			m1Priv,
+			m1Pub,
+			365*24*60*60*1e9,
+			uint256.NewInt().SetUint64(1000),
+			0,
+		)
+		_coinLockupTransferWithTestMeta(
+			testMeta,
+			testMeta.feeRateNanosPerKb,
+			m1Pub,
+			m1Priv,
+			NewPublicKey(m0PkBytes),
+			NewPublicKey(m1PkBytes),
+			365*24*60*60*1e9,
+			uint256.NewInt().SetUint64(1000),
+		)
+		coinUnlockMetadata := &CoinUnlockMetadata{ProfilePublicKey: NewPublicKey(m1PkBytes)}
+		_, err = _submitLockupTxnWithDerivedKeyAndTimestamp(
+			m0PkBytes, derivedKeyPriv, MsgDeSoTxn{TxnMeta: coinUnlockMetadata}, 365*24*60*60*1e9+1,
+		)
+		require.Contains(t, err.Error(), RuleErrorDerivedKeyCoinLockupOperationNotAuthorized)
+
+		// Have m1 transfer over 1,000 unlocked m1 tokens to m0 and have m0 lock them up.
+		// (Correct profile + correct operation)
+		_daoCoinTransferTxnWithTestMeta(testMeta, testMeta.feeRateNanosPerKb, m1Pub, m1Priv, DAOCoinTransferMetadata{
+			ProfilePublicKey:       m1PkBytes,
+			DAOCoinToTransferNanos: *uint256.NewInt().SetUint64(1000),
+			ReceiverPublicKey:      m0PkBytes,
+		})
+		coinLockupMetadata = &CoinLockupMetadata{
+			ProfilePublicKey:        NewPublicKey(m1PkBytes),
+			UnlockTimestampNanoSecs: 365 * 24 * 60 * 60 * 1e9,
+			LockupAmountBaseUnits:   uint256.NewInt().SetUint64(1000),
+		}
+		_, err = _submitLockupTxnWithDerivedKeyAndTimestamp(
+			m0PkBytes, derivedKeyPriv, MsgDeSoTxn{TxnMeta: coinLockupMetadata}, 0,
+		)
+		require.NoError(t, err)
+
+		// Ensure the operation cannot be performed again as the transaction limit was set to 1.
+		_daoCoinTransferTxnWithTestMeta(testMeta, testMeta.feeRateNanosPerKb, m1Pub, m1Priv, DAOCoinTransferMetadata{
+			ProfilePublicKey:       m1PkBytes,
+			DAOCoinToTransferNanos: *uint256.NewInt().SetUint64(1000),
+			ReceiverPublicKey:      m0PkBytes,
+		})
+		coinLockupMetadata = &CoinLockupMetadata{
+			ProfilePublicKey:        NewPublicKey(m1PkBytes),
+			UnlockTimestampNanoSecs: 365 * 24 * 60 * 60 * 1e9,
+			LockupAmountBaseUnits:   uint256.NewInt().SetUint64(1000),
+		}
+		_, err = _submitLockupTxnWithDerivedKeyAndTimestamp(
+			m0PkBytes, derivedKeyPriv, MsgDeSoTxn{TxnMeta: coinLockupMetadata}, 0,
+		)
+		require.Contains(t, err.Error(), RuleErrorDerivedKeyCoinLockupOperationNotAuthorized)
+	}
+
+	// Test (specific profile PKID || any operation) limits
+	{
+		// Create the derived key
+		lockupLimitKey := MakeLockupLimitKey(*m0PKID, LockupLimitScopeTypeScopedCoins, AnyLockupOperation)
+		txnSpendingLimit := &TransactionSpendingLimit{
+			GlobalDESOLimit: NanosPerUnit, // 1 $DESO spending limit
+			TransactionCountLimitMap: map[TxnType]uint64{
+				// NOTE: We must include TxnTypeAuthorizeDerivedKey as the helper function
+				//       _doAuthorizeTxnWithExtraDataAndSpendingLimits signs with the derived key,
+				//       NOT the owner key. This transaction will decrement this one type AuthorizeDerivedKey limit.
+				TxnTypeAuthorizeDerivedKey: 1,
+			},
+			LockupLimitMap: map[LockupLimitKey]uint64{lockupLimitKey: uint64(2)},
+		}
+		derivedKeyPriv, derivedKeyPub, err = _submitAuthorizeDerivedKeyTxn(txnSpendingLimit)
+		require.NoError(t, err)
+
+		// Have m1 transfer 1000 unlocked m1 coins to m0
+		_daoCoinTransferTxnWithTestMeta(testMeta, testMeta.feeRateNanosPerKb, m1Pub, m1Priv, DAOCoinTransferMetadata{
+			ProfilePublicKey:       m1PkBytes,
+			DAOCoinToTransferNanos: *uint256.NewInt().SetUint64(1000),
+			ReceiverPublicKey:      m0PkBytes,
+		})
+
+		// Try to submit a transaction locking up 1000 m1 coins with m0's derived key.
+		// This should fail. (Incorrect Profile PKID + Correct Operation)
+		coinLockupMetadata := &CoinLockupMetadata{
+			ProfilePublicKey:        NewPublicKey(m1PkBytes),
+			UnlockTimestampNanoSecs: 365 * 24 * 60 * 60 * 1e9,
+			LockupAmountBaseUnits:   uint256.NewInt().SetUint64(1000),
+		}
+		_, err = _submitLockupTxnWithDerivedKeyAndTimestamp(
+			m0PkBytes, derivedKeyPriv, MsgDeSoTxn{TxnMeta: coinLockupMetadata}, 0,
+		)
+		require.Contains(t, err.Error(), RuleErrorDerivedKeyCoinLockupOperationNotAuthorized)
+
+		// Try to submit a transaction locking up 1000 m0 coins with m0's derived key.
+		// This should succeed. (Correct Profile PKID + Correct Operation)
+		coinLockupMetadata = &CoinLockupMetadata{
+			ProfilePublicKey:        NewPublicKey(m0PkBytes),
+			UnlockTimestampNanoSecs: 365 * 24 * 60 * 60 * 1e9,
+			LockupAmountBaseUnits:   uint256.NewInt().SetUint64(1000),
+		}
+		_, err = _submitLockupTxnWithDerivedKeyAndTimestamp(
+			m0PkBytes, derivedKeyPriv, MsgDeSoTxn{TxnMeta: coinLockupMetadata}, 0,
+		)
+		require.NoError(t, err)
+
+		// Try to submit a transaction unlocking 1000 m0 coins with m0's derived key.
+		// This should succeed. (Correct Profile PKID + Correct Operation)
+		// This tests that AnyLockupOperation is truly ANY lockup operation.
+		coinUnlockMetadata := &CoinUnlockMetadata{ProfilePublicKey: NewPublicKey(m0PkBytes)}
+		_, err = _submitLockupTxnWithDerivedKeyAndTimestamp(
+			m0PkBytes, derivedKeyPriv, MsgDeSoTxn{TxnMeta: coinUnlockMetadata}, 365*24*60*60*1e9+1,
+		)
+		require.NoError(t, err)
+
+		// Try to submit a subsequent lockup transaction. This should fail as we've exhausted the derived key.
+		coinLockupMetadata = &CoinLockupMetadata{
+			ProfilePublicKey:        NewPublicKey(m0PkBytes),
+			UnlockTimestampNanoSecs: 365 * 24 * 60 * 60 * 1e9,
+			LockupAmountBaseUnits:   uint256.NewInt().SetUint64(1000),
+		}
+		_, err = _submitLockupTxnWithDerivedKeyAndTimestamp(
+			m0PkBytes, derivedKeyPriv, MsgDeSoTxn{TxnMeta: coinLockupMetadata}, 365*24*60*60*1e9+1,
+		)
+		require.Contains(t, err.Error(), RuleErrorDerivedKeyCoinLockupOperationNotAuthorized)
+	}
+
+	// Test (any creator PKID || specific operation) limits
+	{
+		// To test this, we create a derived key that can unlock ANY locked coins ONCE.
+		// We have m1 send locked tokens to m0, and ensure m0's derived key can unlock them properly.
+
+		// Create the derived key
+		lockupLimitKey := MakeLockupLimitKey(ZeroPKID, LockupLimitScopeTypeAnyCoins, CoinLockupUnlockOperation)
+		txnSpendingLimit := &TransactionSpendingLimit{
+			GlobalDESOLimit: NanosPerUnit, // 1 $DESO spending limit
+			TransactionCountLimitMap: map[TxnType]uint64{
+				// NOTE: We must include TxnTypeAuthorizeDerivedKey as the helper function
+				//       _doAuthorizeTxnWithExtraDataAndSpendingLimits signs with the derived key,
+				//       NOT the owner key. This transaction will decrement this one type AuthorizeDerivedKey limit.
+				TxnTypeAuthorizeDerivedKey: 1,
+			},
+			LockupLimitMap: map[LockupLimitKey]uint64{lockupLimitKey: uint64(1)},
+		}
+		derivedKeyPriv, derivedKeyPub, err = _submitAuthorizeDerivedKeyTxn(txnSpendingLimit)
+		require.NoError(t, err)
+
+		// Have m0 lockup 1000 m0 tokens to be unlocked one year into the future.
+		// This should fail. (Correct PKID + Incorrect Operation Type)
+		coinLockupMetadata := &CoinLockupMetadata{
+			ProfilePublicKey:        NewPublicKey(m0PkBytes),
+			UnlockTimestampNanoSecs: 365 * 24 * 60 * 60 * 1e9,
+			LockupAmountBaseUnits:   uint256.NewInt().SetUint64(1000),
+		}
+		_, err = _submitLockupTxnWithDerivedKeyAndTimestamp(
+			m0PkBytes, derivedKeyPriv, MsgDeSoTxn{TxnMeta: coinLockupMetadata}, 0,
+		)
+		require.Contains(t, err.Error(), RuleErrorDerivedKeyCoinLockupOperationNotAuthorized)
+
+		// Have m1 transfer over 1,000 LOCKED m1 tokens for m0 to unlock.
+		_coinLockupWithTestMetaAndConnectTimestamp(
+			testMeta,
+			testMeta.feeRateNanosPerKb,
+			m1Pub,
+			m1Priv,
+			m1Pub,
+			365*24*60*60*1e9,
+			uint256.NewInt().SetUint64(1000),
+			0,
+		)
+		_coinLockupTransferWithTestMeta(
+			testMeta,
+			testMeta.feeRateNanosPerKb,
+			m1Pub,
+			m1Priv,
+			NewPublicKey(m0PkBytes),
+			NewPublicKey(m1PkBytes),
+			365*24*60*60*1e9,
+			uint256.NewInt().SetUint64(1000),
+		)
+
+		// Have m0 unlock the 1,000 locked m1 tokens.
+		// This should succeed. (Correct PKID + Correct Operation)
+		coinUnlockMetadata := &CoinUnlockMetadata{ProfilePublicKey: NewPublicKey(m1PkBytes)}
+		_, err = _submitLockupTxnWithDerivedKeyAndTimestamp(
+			m0PkBytes, derivedKeyPriv, MsgDeSoTxn{TxnMeta: coinUnlockMetadata}, 365*24*60*60*1e9+1,
+		)
+		require.NoError(t, err)
+
+		// Try to submit a subsequent lockup transaction. This should fail as we've exhausted the derived key.
+		coinLockupMetadata = &CoinLockupMetadata{
+			ProfilePublicKey:        NewPublicKey(m0PkBytes),
+			UnlockTimestampNanoSecs: 365 * 24 * 60 * 60 * 1e9,
+			LockupAmountBaseUnits:   uint256.NewInt().SetUint64(1000),
+		}
+		_, err = _submitLockupTxnWithDerivedKeyAndTimestamp(
+			m0PkBytes, derivedKeyPriv, MsgDeSoTxn{TxnMeta: coinLockupMetadata}, 365*24*60*60*1e9+1,
+		)
+		require.Contains(t, err.Error(), RuleErrorDerivedKeyCoinLockupOperationNotAuthorized)
+	}
+
+	// Test (any creator PKID || any operation) limits
+	{
+		// To test (any creator PKID || any operation) we attempt to do the following from a derived key:
+		//   - 2x Update the owner's yield curve
+		//   - 1x Update Lockup Transfer Restrictions
+		//   - 2x Lockup the owner's tokens
+		//   - 2x Transfer the owner's locked tokens
+		//   - 2x Unlock the transfers locked tokens
+
+		// Create the derived key
+		lockupLimitKey := MakeLockupLimitKey(ZeroPKID, LockupLimitScopeTypeAnyCoins, AnyLockupOperation)
+		txnSpendingLimit := &TransactionSpendingLimit{
+			GlobalDESOLimit: NanosPerUnit, // 1 $DESO spending limit
+			TransactionCountLimitMap: map[TxnType]uint64{
+				// NOTE: We must include TxnTypeAuthorizeDerivedKey as the helper function
+				//       _doAuthorizeTxnWithExtraDataAndSpendingLimits signs with the derived key,
+				//       NOT the owner key. This transaction will decrement this one type AuthorizeDerivedKey limit.
+				TxnTypeAuthorizeDerivedKey: 1,
+			},
+			LockupLimitMap: map[LockupLimitKey]uint64{lockupLimitKey: uint64(9)},
+		}
+		derivedKeyPriv, derivedKeyPub, err = _submitAuthorizeDerivedKeyTxn(txnSpendingLimit)
+		require.NoError(t, err)
+
+		// Perform the first update to the yield curve
+		// NOTE: This will count as two operations against the limit as it's both
+		//       updating the yield curve AND updating transfer restrictions.
+		updateCoinLockupParamsMetadata := &UpdateCoinLockupParamsMetadata{
+			LockupYieldDurationNanoSecs:     365 * 24 * 60 * 60 * 1e9,
+			LockupYieldAPYBasisPoints:       1000,
+			RemoveYieldCurvePoint:           false,
+			NewLockupTransferRestrictions:   true,
+			LockupTransferRestrictionStatus: TransferRestrictionStatusProfileOwnerOnly,
+		}
+		_, err = _submitLockupTxnWithDerivedKeyAndTimestamp(
+			m0PkBytes, derivedKeyPriv, MsgDeSoTxn{TxnMeta: updateCoinLockupParamsMetadata}, 0,
+		)
+		require.NoError(t, err)
+		utxoView, err := NewUtxoView(testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot)
+		require.NoError(t, err)
+		profileEntry := utxoView.GetProfileEntryForPKID(m0PKID)
+		require.Equal(t, TransferRestrictionStatusProfileOwnerOnly, profileEntry.DAOCoinEntry.LockupTransferRestrictionStatus)
+		leftYCP, rightYCP, err := utxoView.GetLocalYieldCurvePoints(m0PKID, 365*24*60*60*1e9)
+		require.NoError(t, err)
+		require.True(t, leftYCP == nil)
+		require.Equal(t, int64(365*24*60*60*1e9), rightYCP.LockupDurationNanoSecs)
+		require.Equal(t, uint64(1000), rightYCP.LockupYieldAPYBasisPoints)
+
+		// Perform the second update to the yield curve (a delete operation)
+		updateCoinLockupParamsMetadata = &UpdateCoinLockupParamsMetadata{
+			LockupYieldDurationNanoSecs:     365 * 24 * 60 * 60 * 1e9,
+			LockupYieldAPYBasisPoints:       1000,
+			RemoveYieldCurvePoint:           true,
+			NewLockupTransferRestrictions:   false,
+			LockupTransferRestrictionStatus: TransferRestrictionStatusDAOMembersOnly,
+		}
+		_, err = _submitLockupTxnWithDerivedKeyAndTimestamp(
+			m0PkBytes, derivedKeyPriv, MsgDeSoTxn{TxnMeta: updateCoinLockupParamsMetadata}, 0,
+		)
+		require.NoError(t, err)
+		utxoView, err = NewUtxoView(testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot)
+		require.NoError(t, err)
+		profileEntry = utxoView.GetProfileEntryForPKID(m0PKID)
+		require.Equal(t, TransferRestrictionStatusProfileOwnerOnly, profileEntry.DAOCoinEntry.LockupTransferRestrictionStatus)
+		leftYCP, rightYCP, err = utxoView.GetLocalYieldCurvePoints(m0PKID, 365*24*60*60*1e9)
+		require.NoError(t, err)
+		require.True(t, leftYCP == nil)
+		require.True(t, rightYCP == nil)
+
+		// Perform the first lockup operation of 1000 m0 coins at 1yr
+		coinLockupMetadata := &CoinLockupMetadata{
+			ProfilePublicKey:        NewPublicKey(m0PkBytes),
+			UnlockTimestampNanoSecs: 365 * 24 * 60 * 60 * 1e9,
+			LockupAmountBaseUnits:   uint256.NewInt().SetUint64(1000),
+		}
+		_, err = _submitLockupTxnWithDerivedKeyAndTimestamp(
+			m0PkBytes, derivedKeyPriv, MsgDeSoTxn{TxnMeta: coinLockupMetadata}, 0,
+		)
+		require.NoError(t, err)
+		utxoView, err = NewUtxoView(testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot)
+		require.NoError(t, err)
+		lockedBalanceEntry, err := utxoView.GetLockedBalanceEntryForHODLerPKIDProfilePKIDUnlockTimestampNanoSecs(
+			m0PKID, m0PKID, 365*24*60*60*1e9)
+		require.NoError(t, err)
+		require.Equal(t, *uint256.NewInt().SetUint64(1000), lockedBalanceEntry.BalanceBaseUnits)
+		require.Equal(t, int64(365*24*60*60*1e9), lockedBalanceEntry.UnlockTimestampNanoSecs)
+
+		// Perform the second lockup operation of 1000 m0 coins at 2yrs
+		coinLockupMetadata = &CoinLockupMetadata{
+			ProfilePublicKey:        NewPublicKey(m0PkBytes),
+			UnlockTimestampNanoSecs: 2 * 365 * 24 * 60 * 60 * 1e9,
+			LockupAmountBaseUnits:   uint256.NewInt().SetUint64(1000),
+		}
+		_, err = _submitLockupTxnWithDerivedKeyAndTimestamp(
+			m0PkBytes, derivedKeyPriv, MsgDeSoTxn{TxnMeta: coinLockupMetadata}, 0,
+		)
+		require.NoError(t, err)
+		utxoView, err = NewUtxoView(testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot)
+		require.NoError(t, err)
+		lockedBalanceEntry, err = utxoView.GetLockedBalanceEntryForHODLerPKIDProfilePKIDUnlockTimestampNanoSecs(
+			m0PKID, m0PKID, 2*365*24*60*60*1e9)
+		require.NoError(t, err)
+		require.Equal(t, *uint256.NewInt().SetUint64(1000), lockedBalanceEntry.BalanceBaseUnits)
+		require.Equal(t, int64(2*365*24*60*60*1e9), lockedBalanceEntry.UnlockTimestampNanoSecs)
+
+		// Perform the first transfer operation to m1 of 500 locked m0 coins @ 1yr
+		coinLockupTransferMetadata := &CoinLockupTransferMetadata{
+			RecipientPublicKey:             NewPublicKey(m1PkBytes),
+			ProfilePublicKey:               NewPublicKey(m0PkBytes),
+			UnlockTimestampNanoSecs:        365 * 24 * 60 * 60 * 1e9,
+			LockedCoinsToTransferBaseUnits: uint256.NewInt().SetUint64(500),
+		}
+		_, err = _submitLockupTxnWithDerivedKeyAndTimestamp(
+			m0PkBytes, derivedKeyPriv, MsgDeSoTxn{TxnMeta: coinLockupTransferMetadata}, 0,
+		)
+		require.NoError(t, err)
+		utxoView, err = NewUtxoView(testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot)
+		require.NoError(t, err)
+		lockedBalanceEntry, err = utxoView.GetLockedBalanceEntryForHODLerPKIDProfilePKIDUnlockTimestampNanoSecs(
+			m1PKID, m0PKID, 365*24*60*60*1e9)
+		require.NoError(t, err)
+		require.Equal(t, *uint256.NewInt().SetUint64(500), lockedBalanceEntry.BalanceBaseUnits)
+		require.Equal(t, int64(365*24*60*60*1e9), lockedBalanceEntry.UnlockTimestampNanoSecs)
+
+		// Perform the second transfer operation to m1 of 500 locked m0 coins @ 2yrs
+		coinLockupTransferMetadata = &CoinLockupTransferMetadata{
+			RecipientPublicKey:             NewPublicKey(m1PkBytes),
+			ProfilePublicKey:               NewPublicKey(m0PkBytes),
+			UnlockTimestampNanoSecs:        2 * 365 * 24 * 60 * 60 * 1e9,
+			LockedCoinsToTransferBaseUnits: uint256.NewInt().SetUint64(500),
+		}
+		_, err = _submitLockupTxnWithDerivedKeyAndTimestamp(
+			m0PkBytes, derivedKeyPriv, MsgDeSoTxn{TxnMeta: coinLockupTransferMetadata}, 0,
+		)
+		require.NoError(t, err)
+		utxoView, err = NewUtxoView(testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot)
+		require.NoError(t, err)
+		lockedBalanceEntry, err = utxoView.GetLockedBalanceEntryForHODLerPKIDProfilePKIDUnlockTimestampNanoSecs(
+			m1PKID, m0PKID, 2*365*24*60*60*1e9)
+		require.NoError(t, err)
+		require.Equal(t, *uint256.NewInt().SetUint64(500), lockedBalanceEntry.BalanceBaseUnits)
+		require.Equal(t, int64(2*365*24*60*60*1e9), lockedBalanceEntry.UnlockTimestampNanoSecs)
+
+		// Perform the first unlock operation of 500 m1 tokens @ 1yr
+		utxoView, err = NewUtxoView(testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot)
+		require.NoError(t, err)
+		balanceEntry, _, _ := utxoView.GetDAOCoinBalanceEntryForHODLerPubKeyAndCreatorPubKey(m0PkBytes, m0PkBytes)
+		startingBalance := balanceEntry.BalanceNanos
+		coinUnlockMetadata := &CoinUnlockMetadata{ProfilePublicKey: NewPublicKey(m0PkBytes)}
+		_, err = _submitLockupTxnWithDerivedKeyAndTimestamp(
+			m0PkBytes, derivedKeyPriv, MsgDeSoTxn{TxnMeta: coinUnlockMetadata}, 365*24*60*60*1e9+1,
+		)
+		require.NoError(t, err)
+		utxoView, err = NewUtxoView(testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot)
+		require.NoError(t, err)
+		balanceEntry, _, _ = utxoView.GetDAOCoinBalanceEntryForHODLerPubKeyAndCreatorPubKey(m0PkBytes, m0PkBytes)
+		require.True(t, balanceEntry.BalanceNanos.Gt(&startingBalance))
+		require.Equal(t, *uint256.NewInt().SetUint64(500),
+			*uint256.NewInt().Sub(&balanceEntry.BalanceNanos, &startingBalance))
+		lockedBalanceEntry, err = utxoView.GetLockedBalanceEntryForHODLerPKIDProfilePKIDUnlockTimestampNanoSecs(
+			m0PKID, m0PKID, 365*24*60*60*1e9)
+		require.NoError(t, err)
+		require.True(t, lockedBalanceEntry == nil)
+
+		// Perform the second unlock operation of 500 m1 tokens @ 2yrs
+		utxoView, err = NewUtxoView(testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot)
+		require.NoError(t, err)
+		_, err = _submitLockupTxnWithDerivedKeyAndTimestamp(
+			m0PkBytes, derivedKeyPriv, MsgDeSoTxn{TxnMeta: coinUnlockMetadata}, 2*365*24*60*60*1e9+1,
+		)
+		require.NoError(t, err)
+		utxoView, err = NewUtxoView(testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot)
+		require.NoError(t, err)
+		balanceEntry, _, _ = utxoView.GetDAOCoinBalanceEntryForHODLerPubKeyAndCreatorPubKey(m0PkBytes, m0PkBytes)
+		require.True(t, balanceEntry.BalanceNanos.Gt(&startingBalance))
+		require.Equal(t, *uint256.NewInt().SetUint64(1000),
+			*uint256.NewInt().Sub(&balanceEntry.BalanceNanos, &startingBalance))
+		lockedBalanceEntry, err = utxoView.GetLockedBalanceEntryForHODLerPKIDProfilePKIDUnlockTimestampNanoSecs(
+			m0PKID, m0PKID, 2*365*24*60*60*1e9)
+		require.NoError(t, err)
+		require.True(t, lockedBalanceEntry == nil)
+
+		// Now we try and perform another operation. This should fail as we've depleted our lockup operations limit.
+		coinLockupMetadata = &CoinLockupMetadata{
+			ProfilePublicKey:        NewPublicKey(m0PkBytes),
+			UnlockTimestampNanoSecs: 3 * 365 * 24 * 60 * 60 * 1e9,
+			LockupAmountBaseUnits:   uint256.NewInt().SetUint64(1000),
+		}
+		_, err = _submitLockupTxnWithDerivedKeyAndTimestamp(
+			m0PkBytes, derivedKeyPriv, MsgDeSoTxn{TxnMeta: coinLockupMetadata}, 2*365*24*60*60*1e9+2,
+		)
+		require.Contains(t, err.Error(), RuleErrorDerivedKeyCoinLockupOperationNotAuthorized)
 	}
 }
 

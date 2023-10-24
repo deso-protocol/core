@@ -323,9 +323,9 @@ func (bav *UtxoView) _connectAuthorizeDerivedKey(
 										"specify a lockup profile PKID if ScopeType is Any")
 							}
 							if lockupLimit == 0 {
-								delete(transactionSpendingLimit.LockupLimitMap, lockupLimitKey)
+								delete(newTransactionSpendingLimit.LockupLimitMap, lockupLimitKey)
 							} else {
-								transactionSpendingLimit.LockupLimitMap[lockupLimitKey] = lockupLimit
+								newTransactionSpendingLimit.LockupLimitMap[lockupLimitKey] = lockupLimit
 							}
 						}
 						// StakeLimitMap
