@@ -506,7 +506,7 @@ func (bc *Blockchain) runCommitRuleOnBestChain() error {
 		if err := bc.commitBlock(uncommittedAncestors[ii].Hash); err != nil {
 			// If we hit an error when committing the block, make sure we revert the
 			// block to be uncommitted in the block index and bestChain
-			bc.setBlockCommittedStatus(uncommittedAncestors[ii], UNCOMMITTED)
+			bc.setBlockCommittedStatus(uncommittedAncestors[ii].Hash, UNCOMMITTED)
 			return errors.Wrapf(err, "runCommitRuleOnBestChain: Problem committing block %v", uncommittedAncestors[ii].Hash.String())
 		}
 	}
@@ -533,15 +533,9 @@ func (bc *Blockchain) canCommitGrandparent(currentBlock *BlockNode) (_grandparen
 	return nil, false
 }
 
-func (bc *Blockchain) setBlockCommittedStatus(blockNode *BlockNode, status CommittedBlockStatus) {
-	bc.bestChainMap[*blockNode.Hash].CommittedStatus = status
-	bc.blockIndex[*blockNode.Hash].CommittedStatus = status
-	for _, node := range bc.bestChain {
-		if node.Hash.IsEqual(blockNode.Hash) {
-			node.CommittedStatus = status
-			break
-		}
-	}
+func (bc *Blockchain) setBlockCommittedStatus(blockHash *BlockHash, status CommittedBlockStatus) {
+	bc.bestChainMap[*blockHash].CommittedStatus = status
+	bc.blockIndex[*blockHash].CommittedStatus = status
 }
 
 // commitBlock commits the block with the given hash. Specifically, this updates the
@@ -583,7 +577,7 @@ func (bc *Blockchain) commitBlock(blockHash *BlockHash) error {
 	// Update the committed status before doing DB writes. If
 	// we hit errors when committing the block, the caller is responsible for
 	// reverting these statuses.
-	bc.setBlockCommittedStatus(blockNode, COMMITTED)
+	bc.setBlockCommittedStatus(blockNode.Hash, COMMITTED)
 
 	err = bc.db.Update(func(txn *badger.Txn) error {
 		if bc.snapshot != nil {
