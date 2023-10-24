@@ -53,6 +53,7 @@ func (cm *ConsensusManager) Start() {
 func (cm *ConsensusManager) Stop() {
 	close(cm.exitChan)
 	cm.waitGroup.Wait()
+	glog.V(2).Info("ConsensusManager._startConsensus: Server done")
 }
 
 func (cm *ConsensusManager) GetType() ManagerType {
@@ -129,13 +130,9 @@ func (cm *ConsensusManager) _startConsensus() {
 				consensusEvent.BlockHeight)
 			cm._handleFastHostStuffConsensusEvent(consensusEvent)
 		case <-cm.exitChan:
-			break
+			return
 		}
 	}
-
-	// If we broke out of the select statement then it's time to allow things to
-	// clean up.
-	glog.V(2).Info("ConsensusManager._startConsensus: Server done")
 }
 
 // It's assumed that the caller will hold the ChainLock for reading so

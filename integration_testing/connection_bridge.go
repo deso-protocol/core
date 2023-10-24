@@ -145,9 +145,8 @@ func (bridge *ConnectionBridge) createOutboundConnection(node *cmd.Node, otherNo
 	}(ll)
 
 	// Make the provided node to make an outbound connection to our listener.
-	netAddress, _ := lib.IPToNetAddr(ll.Addr().String(), addrmgr.New("", net.LookupIP), &lib.DeSoMainnetParams)
-	fmt.Println("createOutboundConnection: IP:", netAddress.IP, "Port:", netAddress.Port)
-	go node.Server.ConnectPeer(netAddress)
+	fmt.Println("createOutboundConnection: IP:", ll.Addr().String())
+	node.Server.ConnectPeer(ll.Addr().String())
 }
 
 // getVersionMessage simulates a version message that the provided node would have sent.

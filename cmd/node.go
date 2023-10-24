@@ -42,6 +42,7 @@ type Node struct {
 	TXIndex               *lib.TXIndex
 	Postgres              *lib.Postgres
 	EventManager          *lib.EventManager
+	Listeners             []net.Listener
 
 	// Server
 	Server *lib.Server
@@ -147,8 +148,7 @@ func (node *Node) Start(exitChannels ...*chan struct{}) {
 
 	// This just gets localhost listening addresses on the protocol port.
 	// Such as [{127.0.0.1 18000 } {::1 18000 }], and associated listener structs.
-	listeningAddrs, listeners := GetAddrsToListenOn(node.Config.ProtocolPort)
-	_ = listeningAddrs
+	_, node.Listeners = GetAddrsToListenOn(node.Config.ProtocolPort)
 
 	// If --connect-ips is not passed, we will connect the addresses from
 	// --add-ips, DNSSeeds, and DNSSeedGenerators.
@@ -192,7 +192,7 @@ func (node *Node) Start(exitChannels ...*chan struct{}) {
 		return
 	}
 
-	node.Server, err = lib.NewServer(node.Config.Params, listeners, desoAddrMgr, node.Config.ConnectIPs, node.Config.TargetOutboundPeers,
+	node.Server, err = lib.NewServer(node.Config.Params, node.Listeners, desoAddrMgr, node.Config.ConnectIPs, node.Config.TargetOutboundPeers,
 		node.Config.MaxInboundPeers, node.Config.OneInboundPerIp, node.Config.DisableNetworking, node.statsdClient,
 		node.EventManager, node.nodeMessageChan)
 	if err != nil {

@@ -654,7 +654,7 @@ func (sm *SyncManager) _handleGetBlocksMessage(desoMsg DeSoMessage, origin *Peer
 			return MessageHandlerResponseCodePeerDisconnect
 		}
 		sm.blocksToSendMtx.Lock()
-		hash, _ := desoMsg.(*MsgDeSoBlock).Hash()
+		hash, _ := blockToSend.Hash()
 		delete(sm._getBlocksToSend(origin.ID), *hash)
 		sm.blocksToSendMtx.Unlock()
 

@@ -172,6 +172,7 @@ func NewServer(
 		incomingMessagesHandlers: make(map[MsgType][]MessageHandler),
 	}
 
+	srv.RegisterIncomingMessagesHandler(MsgTypeHandshakePeer, NewMessageHandler(srv._handleHandshakePeerMessage))
 	srv.RegisterIncomingMessagesHandler(MsgTypeAddr, NewMessageHandler(srv._handleAddrMessage))
 	srv.RegisterIncomingMessagesHandler(MsgTypeGetAddr, NewMessageHandler(srv._handleGetAddrMessage))
 
@@ -245,17 +246,19 @@ func (srv *Server) _startMessageProcessor() {
 	for {
 		msg, open := <-srv.incomingMessages
 		if !open {
-			glog.Info("Server.Start: Incoming messages channel closed. Exiting.")
+			glog.Info("Server._startMessageProcessor: Incoming messages channel closed. Exiting.")
 			break
 		}
 
 		msgType := msg.GetMessage().GetMsgType()
-		// TODO: Maybe pass through to controllers?
 		if msgType == MsgTypeQuit {
+			glog.Info("Server._startMessageProcessor: Received quit message. Exiting.")
 			break
 		}
-		handlers := srv.incomingMessagesHandlers[msgType]
+		glog.V(1).Infof("Server._startMessageProcessor: Dequeued incoming message of type %v from "+
+			"origin (id= %v)", msg.GetMessage().GetMsgType().String(), msg.GetPeer().ID)
 
+		handlers := srv.incomingMessagesHandlers[msgType]
 		shouldDisconnect := false
 		for _, handler := range handlers {
 			// TODO: Make a sub-view of Peer (Validator) that exposes ID.
@@ -368,6 +371,21 @@ func (srv *Server) SendMessage(msg DeSoMessage, peerId uint64, expectedResponses
 
 func (srv *Server) DisconnectPeer(peerId uint64) {
 	srv.cmgr.DisconnectPeer(peerId)
+}
+
+func (srv *Server) _handleHandshakePeerMessage(desoMessage DeSoMessage, origin *Peer) MessageHandlerResponseCode {
+	if desoMessage.GetMsgType() != MsgTypeHandshakePeer {
+		return MessageHandlerResponseCodeSkip
+	}
+
+	// If the address manager needs more addresses, then send a GetAddr message
+	// to the peer. This is best-effort.
+	if srv.cmgr.AddrMgr.NeedMoreAddresses() {
+		go func() {
+			srv.SendMessage(&MsgDeSoGetAddr{}, origin.ID, nil)
+		}()
+	}
+	return MessageHandlerResponseCodeOK
 }
 
 func (srv *Server) _handleAddrMessage(desoMsg DeSoMessage, origin *Peer) MessageHandlerResponseCode {
@@ -539,6 +557,6 @@ func (srv *Server) GetRandomPeer() *Peer {
 	return srv.cmgr.RandomPeer()
 }
 
-func (srv *Server) ConnectPeer(netAddr *wire.NetAddress) {
-	srv.cmgr.CreateOutboundConnection(netAddr)
+func (srv *Server) ConnectPeer(ipStr string) {
+	go srv.cmgr.CreateOutboundConnection(ipStr)
 }
