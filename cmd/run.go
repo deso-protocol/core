@@ -86,7 +86,7 @@ func SetupRunFlags(cmd *cobra.Command) {
 	cmd.PersistentFlags().Uint64("mempool-backup-time-millis", 30000,
 		"The frequency in milliseconds with which the mempool will persist its state to disk. "+
 			"The default value is 30 seconds, or 30,000 milliseconds.")
-	cmd.PersistentFlags().Uint64("max-mempool-pos-size-bytes", 3<<30,
+	cmd.PersistentFlags().Uint64("max-mempool-pos-size-bytes", 3<<30 /*3Gb*/,
 		"The maximum size of the PoS mempool in bytes. The default value is 3 << 30 bytes, or 3Gb.")
 
 	// Peers
