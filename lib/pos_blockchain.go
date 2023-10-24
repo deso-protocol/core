@@ -96,11 +96,7 @@ func (bc *Blockchain) processBlockPoS(desoBlock *MsgDeSoBlock, currentView uint6
 	}
 
 	// 6. Update in-memory struct holding uncommitted blocks.
-	if err = bc.pruneUncommittedBlocks(); err != nil {
-		// We glog and continue here as failing to prune the uncommitted blocks map is not a
-		// critical error.
-		glog.Errorf("processBlockPoS: Error pruning uncommitted blocks: %v", err)
-	}
+	bc.pruneUncommittedBlocks()
 
 	return true, false, nil, nil
 }
@@ -472,20 +468,26 @@ func (bc *Blockchain) addBlockToBestChain(desoBlockNode *BlockNode) {
 }
 
 // pruneUncommittedBlocks prunes the in-memory struct holding uncommitted blocks.
-func (bc *Blockchain) pruneUncommittedBlocks() error {
-	for blockHash := range bc.uncommittedBlocksMap {
+func (bc *Blockchain) pruneUncommittedBlocks() {
+	// TODO: Do we only want to do this every n blocks or something?
+	for blockHash, fullBlock := range bc.uncommittedBlocksMap {
 		// Check if the block is committed in the block index. If so, we can delete it from the uncommitted blocks map.
 		blockNode, exists := bc.blockIndex[blockHash]
 		if !exists || blockNode == nil {
-			// TODO: If it doesn't exist in the block index, can we remove it?
+			delete(bc.uncommittedBlocksMap, blockHash)
 			continue
 		}
 		if blockNode.CommittedStatus == COMMITTED {
 			delete(bc.uncommittedBlocksMap, blockHash)
+			continue
+		}
+		// If the block does not extend from the committed tip, we can delete it from the uncommitted blocks map.
+		if _, err := bc.getLineageFromCommittedTip(fullBlock); err != nil {
+			delete(bc.uncommittedBlocksMap, blockHash)
+			continue
 		}
 		// TODO: What other conditions do we have for pruning?
 	}
-	return nil
 }
 
 // runCommitRuleOnBestChain commits the grandparent of the block if possible.
