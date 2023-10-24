@@ -1124,6 +1124,8 @@ type TestMeta struct {
 	expectedSenderBalances []uint64
 	savedHeight            uint32
 	feeRateNanosPerKb      uint64
+	posMempool             *PosMempool
+	posBlockProducer       *PosBlockProducer
 }
 
 func _executeAllTestRollbackAndFlush(testMeta *TestMeta) {
