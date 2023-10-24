@@ -1874,28 +1874,20 @@ func NewTestPoSBlockchainWithValidators(t *testing.T) *TestMeta {
 	posBlockProducer := NewPosBlockProducer(mempool, params, m0Pk, priv.PublicKey())
 	params.ForkHeights.ProofOfStake2ConsensusCutoverBlockHeight = 11
 	GlobalDeSoParams.ForkHeights.ProofOfStake2ConsensusCutoverBlockHeight = 11
+	resetGlobalDeSoParams := func() {
+		params.ForkHeights.ProofOfStake1StateSetupBlockHeight = TestnetForkHeights.ProofOfStake1StateSetupBlockHeight
+		params.ForkHeights.ProofOfStake2ConsensusCutoverBlockHeight = TestnetForkHeights.ProofOfStake2ConsensusCutoverBlockHeight
+		GlobalDeSoParams.ForkHeights.ProofOfStake1StateSetupBlockHeight = TestnetForkHeights.ProofOfStake1StateSetupBlockHeight
+		GlobalDeSoParams.ForkHeights.ProofOfStake2ConsensusCutoverBlockHeight = TestnetForkHeights.ProofOfStake2ConsensusCutoverBlockHeight
+		GlobalDeSoParams.EncoderMigrationHeights = GetEncoderMigrationHeights(&params.ForkHeights)
+		GlobalDeSoParams.EncoderMigrationHeightsList = GetEncoderMigrationHeightsList(&params.ForkHeights)
+	}
+	t.Cleanup(resetGlobalDeSoParams)
 	// TODO: do we need to update the encoder migration stuff for global params. Probably.
 	testMeta.mempool = nil
 	testMeta.posMempool = mempool
 	testMeta.posBlockProducer = posBlockProducer
 	testMeta.savedHeight = 12
-	//:= &TestMeta{
-	//	t:                t,
-	//	chain:            chain,
-	//	db:               db,
-	//	params:           params,
-	//	posMempool:       mempool,
-	//	posBlockProducer: posBlockProducer,
-	//	// TODO: what else do we need here?
-	//	feeRateNanosPerKb: 1000,
-	//	savedHeight:       10,
-	//	//miner:                  nil,
-	//	//txnOps:                 nil,
-	//	//txns:                   nil,
-	//	//expectedSenderBalances: nil,
-	//	//savedHeight:            0,
-	//	//feeRateNanosPerKb:      0,
-	//}
 	t.Cleanup(func() {
 		mempool.Stop()
 	})
@@ -1935,6 +1927,17 @@ func NewTestPoSBlockchain(t *testing.T) *TestMeta {
 	params.ForkHeights.ProofOfStake2ConsensusCutoverBlockHeight = 9
 	GlobalDeSoParams.ForkHeights.ProofOfStake1StateSetupBlockHeight = 9
 	GlobalDeSoParams.ForkHeights.ProofOfStake2ConsensusCutoverBlockHeight = 9
+	GlobalDeSoParams.EncoderMigrationHeights = GetEncoderMigrationHeights(&params.ForkHeights)
+	GlobalDeSoParams.EncoderMigrationHeightsList = GetEncoderMigrationHeightsList(&params.ForkHeights)
+	resetGlobalDeSoParams := func() {
+		params.ForkHeights.ProofOfStake1StateSetupBlockHeight = TestnetForkHeights.ProofOfStake1StateSetupBlockHeight
+		params.ForkHeights.ProofOfStake2ConsensusCutoverBlockHeight = TestnetForkHeights.ProofOfStake2ConsensusCutoverBlockHeight
+		GlobalDeSoParams.ForkHeights.ProofOfStake1StateSetupBlockHeight = TestnetForkHeights.ProofOfStake1StateSetupBlockHeight
+		GlobalDeSoParams.ForkHeights.ProofOfStake2ConsensusCutoverBlockHeight = TestnetForkHeights.ProofOfStake2ConsensusCutoverBlockHeight
+		GlobalDeSoParams.EncoderMigrationHeights = GetEncoderMigrationHeights(&params.ForkHeights)
+		GlobalDeSoParams.EncoderMigrationHeightsList = GetEncoderMigrationHeightsList(&params.ForkHeights)
+	}
+	t.Cleanup(resetGlobalDeSoParams)
 	testMeta := &TestMeta{
 		t:                t,
 		chain:            chain,
@@ -1945,12 +1948,6 @@ func NewTestPoSBlockchain(t *testing.T) *TestMeta {
 		// TODO: what else do we need here?
 		feeRateNanosPerKb: 1000,
 		savedHeight:       10,
-		//miner:                  nil,
-		//txnOps:                 nil,
-		//txns:                   nil,
-		//expectedSenderBalances: nil,
-		//savedHeight:            0,
-		//feeRateNanosPerKb:      0,
 	}
 	t.Cleanup(func() {
 		mempool.Stop()
