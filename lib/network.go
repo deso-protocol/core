@@ -112,6 +112,7 @@ const (
 	MsgTypeDonePeer             MsgType = ControlMessagesStart + 2
 	MsgTypeBlockAccepted        MsgType = ControlMessagesStart + 3
 	MsgTypeBitcoinManagerUpdate MsgType = ControlMessagesStart + 4 // Deprecated
+	MsgTypeHandshakePeer        MsgType = ControlMessagesStart + 5
 
 	// NEXT_TAG = 7
 )
@@ -177,6 +178,8 @@ func (msgType MsgType) String() string {
 		return "BLOCK_ACCEPTED"
 	case MsgTypeBitcoinManagerUpdate:
 		return "BITCOIN_MANAGER_UPDATE"
+	case MsgTypeHandshakePeer:
+		return "HANDSHAKE_PEER"
 	case MsgTypeGetSnapshot:
 		return "GET_SNAPSHOT"
 	case MsgTypeSnapshotData:
@@ -827,6 +830,21 @@ func (msg *MsgDeSoDonePeer) ToBytes(preSignature bool) ([]byte, error) {
 
 func (msg *MsgDeSoDonePeer) FromBytes(data []byte) error {
 	return fmt.Errorf("MsgDeSoDonePeer.FromBytes not implemented")
+}
+
+type MsgDeSoHandshakePeer struct {
+}
+
+func (msg *MsgDeSoHandshakePeer) GetMsgType() MsgType {
+	return MsgTypeHandshakePeer
+}
+
+func (msg *MsgDeSoHandshakePeer) ToBytes(preSignature bool) ([]byte, error) {
+	return nil, fmt.Errorf("MsgDeSoHandshakePeer.ToBytes: Not implemented")
+}
+
+func (msg *MsgDeSoHandshakePeer) FromBytes(data []byte) error {
+	return fmt.Errorf("MsgDeSoHandshakePeer.FromBytes not implemented")
 }
 
 // ==================================================================

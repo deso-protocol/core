@@ -51,12 +51,12 @@ func ValidateHyperSyncFlags(isHypersync bool, syncType NodeSyncType) {
 }
 
 type SyncManager struct {
-	vm *VersionManager
+	vm  *VersionManager
+	snm *SnapshotManager
 
 	bc  *Blockchain
 	srv *Server
 	mp  *DeSoMempool
-	snm *SnapshotManager
 
 	// During initial block download, we request headers and blocks from a single
 	// peer. Note: These fields should only be accessed from the messageHandler thread.
@@ -91,14 +91,13 @@ type SyncManager struct {
 	peerRequestedBlocks map[uint64]map[BlockHash]bool
 }
 
-func NewSyncManager(bc *Blockchain, srv *Server, mp *DeSoMempool, snm *SnapshotManager,
-	syncType NodeSyncType, minFeeRateNanosPerKB uint64, stallTimeoutSeconds uint64) *SyncManager {
+func NewSyncManager(bc *Blockchain, srv *Server, mp *DeSoMempool, syncType NodeSyncType,
+	minFeeRateNanosPerKB uint64, stallTimeoutSeconds uint64) *SyncManager {
 
 	return &SyncManager{
 		bc:                   bc,
 		srv:                  srv,
 		mp:                   mp,
-		snm:                  snm,
 		syncType:             syncType,
 		minFeeRateNanosPerKB: minFeeRateNanosPerKB,
 		stallTimeoutSeconds:  stallTimeoutSeconds,
@@ -107,11 +106,17 @@ func NewSyncManager(bc *Blockchain, srv *Server, mp *DeSoMempool, snm *SnapshotM
 	}
 }
 
-func (sm *SyncManager) Init(vm *VersionManager) {
-	sm.vm = vm
+func (sm *SyncManager) Init(managers []Manager) {
+	for _, manager := range managers {
+		switch manager.GetType() {
+		case ManagerTypeVersion:
+			sm.vm = manager.(*VersionManager)
+		case ManagerTypeSnapshot:
+			sm.snm = manager.(*SnapshotManager)
+		}
+	}
 
-	// TODO: Change this from MsgTypeNewPeer to MsgTypeHandshakeComplete or something like that.
-	sm.srv.RegisterIncomingMessagesHandler(MsgTypeNewPeer, sm._handleNewPeerMessage)
+	sm.srv.RegisterIncomingMessagesHandler(MsgTypeHandshakePeer, sm._handleHandshakePeerMessage)
 	sm.srv.RegisterIncomingMessagesHandler(MsgTypeDonePeer, sm._handleDonePeerMessage)
 	sm.srv.RegisterIncomingMessagesHandler(MsgTypeGetHeaders, sm._handleGetHeadersMessage)
 	sm.srv.RegisterIncomingMessagesHandler(MsgTypeHeaderBundle, sm._handleHeaderBundleMessage)
@@ -126,16 +131,20 @@ func (sm *SyncManager) Start() {
 func (sm *SyncManager) Stop() {
 }
 
+func (sm *SyncManager) GetType() ManagerType {
+	return ManagerTypeSync
+}
+
 // TODO: Replace this with some peer after-handshake message.
-func (sm *SyncManager) _handleNewPeerMessage(desoMsg DeSoMessage, origin *Peer) MessageHandlerResponseCode {
-	if desoMsg.GetMsgType() != MsgTypeNewPeer {
+func (sm *SyncManager) _handleHandshakePeerMessage(desoMsg DeSoMessage, origin *Peer) MessageHandlerResponseCode {
+	if desoMsg.GetMsgType() != MsgTypeHandshakePeer {
 		return MessageHandlerResponseCodeSkip
 	}
 
 	isSyncCandidate := sm.isSyncCandidate(origin)
 	isSyncing := sm.bc.isSyncing()
 	chainState := sm.bc.chainState()
-	glog.V(1).Infof("SyncManager._handleNewPeerMessage: Processing NewPeer: "+
+	glog.V(1).Infof("SyncManager._handleHandshakePeerMessage: Processing NewPeer: "+
 		"(id= %v); isSyncCandidate(%v), syncPeerIsNil=(%v), IsSyncing=(%v), ChainState=(%v)",
 		origin.ID, isSyncCandidate, (sm.SyncPeer == nil), isSyncing, chainState)
 
@@ -149,7 +158,7 @@ func (sm *SyncManager) _handleNewPeerMessage(desoMsg DeSoMessage, origin *Peer) 
 		sm._startSync()
 	}
 	if !isSyncCandidate {
-		glog.Infof("SyncManager. Peer._handleNewPeerMessage: is not sync candidate: "+
+		glog.Infof("SyncManager. Peer._handleHandshakePeerMessage: is not sync candidate: "+
 			"(id= %v) (isOutbound= %v)", origin.ID, origin.IsOutbound())
 	}
 	return MessageHandlerResponseCodeOK
@@ -168,7 +177,7 @@ func (sm *SyncManager) isSyncCandidate(peer *Peer) bool {
 			"isFullNode (%v), nodeSupportsHypersync (%v), --sync-type (%v), "+
 			"weRequireHypersync (%v), is outbound (%v), peerId (%v)",
 			isFullNode, nodeSupportsHypersync, sm.syncType,
-			weRequireHypersync, peer.IsOutbound())
+			weRequireHypersync, peer.IsOutbound(), peer.ID)
 		return false
 	}
 

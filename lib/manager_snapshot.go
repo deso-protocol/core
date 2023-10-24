@@ -50,34 +50,41 @@ type SnapshotManager struct {
 }
 
 func NewSnapshotManager(bc *Blockchain, snap *Snapshot, srv *Server, mp *DeSoMempool, eventManager *EventManager,
-	snapshotChunkRequestInFlight bool, hyperSync bool, forceChecksum bool, stallTimeoutSeconds uint64,
-	nodeMessageChannel chan NodeMessage) *SnapshotManager {
+	hyperSync bool, forceChecksum bool, stallTimeoutSeconds uint64, nodeMessageChannel chan NodeMessage) *SnapshotManager {
 
 	return &SnapshotManager{
-		bc:                           bc,
-		snap:                         snap,
-		srv:                          srv,
-		mp:                           mp,
-		eventManager:                 eventManager,
-		snapshotChunkRequestInFlight: snapshotChunkRequestInFlight,
-		HyperSync:                    hyperSync,
-		forceChecksum:                forceChecksum,
-		stallTimeoutSeconds:          stallTimeoutSeconds,
-		nodeMessageChannel:           nodeMessageChannel,
+		bc:                  bc,
+		snap:                snap,
+		srv:                 srv,
+		mp:                  mp,
+		eventManager:        eventManager,
+		HyperSync:           hyperSync,
+		forceChecksum:       forceChecksum,
+		stallTimeoutSeconds: stallTimeoutSeconds,
+		nodeMessageChannel:  nodeMessageChannel,
 	}
 }
 
-func (snm *SnapshotManager) Init(sm *SyncManager) {
-	snm.sm = sm
+func (snm *SnapshotManager) Init(managers []Manager) {
+	for _, manager := range managers {
+		if manager.GetType() != ManagerTypeSync {
+			continue
+		}
+		snm.sm = manager.(*SyncManager)
+	}
 
-	sm.srv.RegisterIncomingMessagesHandler(MsgTypeGetSnapshot, snm._handleGetSnapshotMessage)
-	sm.srv.RegisterIncomingMessagesHandler(MsgTypeSnapshotData, snm._handleSnapshotDataMessage)
+	snm.srv.RegisterIncomingMessagesHandler(MsgTypeGetSnapshot, snm._handleGetSnapshotMessage)
+	snm.srv.RegisterIncomingMessagesHandler(MsgTypeSnapshotData, snm._handleSnapshotDataMessage)
 }
 
 func (snm *SnapshotManager) Start() {
 }
 
 func (snm *SnapshotManager) Stop() {
+}
+
+func (snm *SnapshotManager) GetType() ManagerType {
+	return ManagerTypeSnapshot
 }
 
 // _handleGetSnapshotMessage gets called whenever we receive a GetSnapshot message from a peer. This means

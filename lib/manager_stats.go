@@ -14,7 +14,7 @@ type StatsManager struct {
 	exitChan chan struct{}
 }
 
-func (stam *StatsManager) NewMempoolManager(srv *Server, mp *DeSoMempool, bc *Blockchain,
+func NewStatsManager(srv *Server, mp *DeSoMempool, bc *Blockchain,
 	statsdClient *statsd.Client) *StatsManager {
 
 	return &StatsManager{
@@ -26,7 +26,7 @@ func (stam *StatsManager) NewMempoolManager(srv *Server, mp *DeSoMempool, bc *Bl
 	}
 }
 
-func (stam *StatsManager) Init() {
+func (stam *StatsManager) Init(managers []Manager) {
 }
 
 func (stam *StatsManager) Start() {
@@ -35,6 +35,10 @@ func (stam *StatsManager) Start() {
 
 func (stam *StatsManager) Stop() {
 	close(stam.exitChan)
+}
+
+func (stam *StatsManager) GetType() ManagerType {
+	return ManagerTypeStats
 }
 
 func (stam *StatsManager) GetStatsdClient() *statsd.Client {

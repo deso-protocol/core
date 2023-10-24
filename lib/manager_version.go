@@ -12,7 +12,7 @@ type ValidatorVersionMetadata struct {
 	versionNoncesSent         uint64
 	versionNoncesReceived     uint64
 	userAgent                 string
-	versionNegotiated         struct{}
+	versionNegotiated         bool
 	ServiceFlag               ServiceFlag
 	advertisedProtocolVersion uint64
 	negotiatedProtocolVersion uint64
@@ -28,35 +28,31 @@ type VersionManager struct {
 	bc  *Blockchain
 	srv *Server
 
-	params                    *DeSoParams
-	minTxFeeRateNanosPerKB    uint64
-	hyperSync                 bool
-	archivalMode              bool
-	versionNegotiationTimeout time.Duration
+	params                 *DeSoParams
+	minTxFeeRateNanosPerKB uint64
+	hyperSync              bool
 
 	versionMetadataMap map[uint64]*ValidatorVersionMetadata
 	usedNonces         lru.Cache
 }
 
 func NewVersionManager(bc *Blockchain, srv *Server, params *DeSoParams, minTxFeeRateNanosPerKB uint64,
-	hyperSync bool, archivalMode bool, versionNegotiationTimeout time.Duration) *VersionManager {
+	hyperSync bool) *VersionManager {
 
 	vm := &VersionManager{
-		bc:                        bc,
-		srv:                       srv,
-		params:                    params,
-		minTxFeeRateNanosPerKB:    minTxFeeRateNanosPerKB,
-		hyperSync:                 hyperSync,
-		archivalMode:              archivalMode,
-		versionNegotiationTimeout: versionNegotiationTimeout,
-		versionMetadataMap:        make(map[uint64]*ValidatorVersionMetadata),
-		usedNonces:                lru.NewCache(1000),
+		bc:                     bc,
+		srv:                    srv,
+		params:                 params,
+		minTxFeeRateNanosPerKB: minTxFeeRateNanosPerKB,
+		hyperSync:              hyperSync,
+		versionMetadataMap:     make(map[uint64]*ValidatorVersionMetadata),
+		usedNonces:             lru.NewCache(1000),
 	}
 
 	return vm
 }
 
-func (vm *VersionManager) Init() {
+func (vm *VersionManager) Init(managers []Manager) {
 	vm.srv.RegisterIncomingMessagesHandler(MsgTypeNewPeer, vm._handleNewPeerMessage)
 	vm.srv.RegisterIncomingMessagesHandler(MsgTypeVersion, vm._handleVersionMessage)
 	vm.srv.RegisterIncomingMessagesHandler(MsgTypeVerack, vm._handleVerackMessage)
@@ -66,6 +62,10 @@ func (vm *VersionManager) Start() {
 }
 
 func (vm *VersionManager) Stop() {
+}
+
+func (vm *VersionManager) GetType() ManagerType {
+	return ManagerTypeVersion
 }
 
 func (vm *VersionManager) GetValidatorVersionMetadata(peerId uint64) *ValidatorVersionMetadata {
@@ -86,7 +86,7 @@ func (vm *VersionManager) _handleNewPeerMessage(desoMsg DeSoMessage, origin *Pee
 
 	if origin.IsOutbound() {
 		vMeta := vm.getValidatorVersionMetadata(origin.ID)
-		versionTimeExpected := time.Now().Add(vm.versionNegotiationTimeout)
+		versionTimeExpected := time.Now().Add(vm.params.VersionNegotiationTimeout)
 		vMeta.versionTimeExpected = &versionTimeExpected
 		return vm.sendVersion(origin.ID)
 	}
@@ -128,7 +128,7 @@ func (vm *VersionManager) newVersionMessage(params *DeSoParams) *MsgDeSoVersion 
 	if vm.hyperSync {
 		ver.Services |= SFHyperSync
 	}
-	if vm.archivalMode {
+	if vm.bc.archivalMode {
 		ver.Services |= SFArchivalNode
 	}
 
@@ -206,7 +206,7 @@ func (vm *VersionManager) _handleVersionMessage(desoMsg DeSoMessage, origin *Pee
 	}
 	// After sending and receiving a compatible version, complete the
 	// negotiation by sending and receiving a verack message.
-	verackTimeExpected := time.Now().Add(vm.versionNegotiationTimeout)
+	verackTimeExpected := time.Now().Add(vm.params.VersionNegotiationTimeout)
 	vMeta.verackTimeExpected = &verackTimeExpected
 	return vm.sendVerack(origin.ID, msgNonce)
 }
@@ -255,8 +255,8 @@ func (vm *VersionManager) _handleVerackMessage(desoMsg DeSoMessage, origin *Peer
 	}
 
 	// If we get here then the peer has successfully completed the handshake.
-	vMeta.versionNegotiated = struct{}{}
-	vm.srv.SignalPeerReady(origin.ID)
+	vMeta.versionNegotiated = true
+	go vm.srv.SendHandshakePeerMessage(origin)
 
 	vm._logVersionSuccess(origin)
 	return MessageHandlerResponseCodeOK

@@ -14,6 +14,7 @@ type ConsensusManager struct {
 	bc                    *Blockchain
 	mp                    *DeSoMempool
 	srv                   *Server
+	eventManager          *EventManager
 
 	waitGroup sync.WaitGroup
 
@@ -21,18 +22,28 @@ type ConsensusManager struct {
 }
 
 func NewConsensusManager(fastHotStuffConsensus *consensus.FastHotStuffConsensus, bc *Blockchain,
-	mp *DeSoMempool, srv *Server) *ConsensusManager {
+	mp *DeSoMempool, srv *Server, eventManager *EventManager) *ConsensusManager {
 	return &ConsensusManager{
 		fastHotStuffConsensus: fastHotStuffConsensus,
 		bc:                    bc,
 		mp:                    mp,
 		srv:                   srv,
+		eventManager:          eventManager,
 		exitChan:              make(chan struct{}),
 	}
 }
 
-func (cm *ConsensusManager) Init(stm *SteadyManager) {
-	cm.stm = stm
+func (cm *ConsensusManager) Init(managers []Manager) {
+	for _, manager := range managers {
+		if manager.GetType() != ManagerTypeSteady {
+			continue
+		}
+		cm.stm = manager.(*SteadyManager)
+	}
+
+	cm.eventManager.OnBlockConnected(cm._handleBlockMainChainConnected)
+	cm.eventManager.OnBlockAccepted(cm._handleBlockAccepted)
+	cm.eventManager.OnBlockDisconnected(cm._handleBlockMainChainDisconnected)
 }
 
 func (cm *ConsensusManager) Start() {
@@ -42,6 +53,10 @@ func (cm *ConsensusManager) Start() {
 func (cm *ConsensusManager) Stop() {
 	close(cm.exitChan)
 	cm.waitGroup.Wait()
+}
+
+func (cm *ConsensusManager) GetType() ManagerType {
+	return ManagerTypeConsensus
 }
 
 func (cm *ConsensusManager) _handleFastHostStuffBlockProposal(event *consensus.ConsensusEvent) {
@@ -202,7 +217,7 @@ func (cm *ConsensusManager) _handleBlockAccepted(event *BlockEvent) {
 		}
 		if err := cm.stm.SendInvMessage(invMsg, peer.ID); err != nil {
 			glog.V(2).Infof("ConsensusManager._handleBlockAccepted: Problem sending inv message "+
-				"to peer (id= %v); err: ", peer.ID, err)
+				"to peer (id= %v); err: %v", peer.ID, err)
 		}
 	}
 }

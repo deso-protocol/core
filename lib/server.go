@@ -520,8 +520,11 @@ func (srv *Server) AddTimeSample(addrStr string, timeSample time.Time) {
 	srv.cmgr.AddTimeSample(addrStr, timeSample)
 }
 
-func (srv *Server) SignalPeerReady(peerId uint64) {
-	// TODO: This is called when peer passes handshake.
+func (srv *Server) SendHandshakePeerMessage(peer *Peer) {
+	srv.incomingMessages <- &ServerMessage{
+		Peer: peer,
+		Msg:  &MsgDeSoHandshakePeer{},
+	}
 }
 
 func (srv *Server) GetAllPeers() []*Peer {

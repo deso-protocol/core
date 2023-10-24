@@ -70,14 +70,14 @@ func GetTestParamsCopy(
 
 func _dumpAndLoadMempool(t *testing.T, mempool *DeSoMempool) {
 	mempoolDir := os.TempDir()
-	mempool.mempoolDir = mempoolDir
+	mempool.MempoolDir = mempoolDir
 	mempool.DumpTxnsToDB()
 	newMempool := NewDeSoMempool(
 		mempool.bc, 0, /* rateLimitFeeRateNanosPerKB */
 		0 /* minFeeRateNanosPerKB */, "", true,
 		mempool.dataDir, "", mempool.useDefaultBadgerOptions)
-	mempool.mempoolDir = ""
-	newMempool.mempoolDir = mempoolDir
+	mempool.MempoolDir = ""
+	newMempool.MempoolDir = mempoolDir
 	newMempool.LoadTxnsFromDB()
 	mempool.resetPool(newMempool)
 	t.Cleanup(func() {

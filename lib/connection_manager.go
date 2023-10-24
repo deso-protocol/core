@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"github.com/deso-protocol/core/collections/channel/message_origin"
 	"github.com/deso-protocol/core/collections/channel/multiplexer"
-	collections "github.com/deso-protocol/core/collections/repeated_task"
 	"math"
 	"net"
 	"strconv"
@@ -78,8 +77,6 @@ type ConnectionManager struct {
 	outboundPeers   map[uint64]*Peer
 	inboundPeers    map[uint64]*Peer
 	connectedPeers  map[uint64]*Peer
-
-	runningConnectionAttempts []*collections.RepeatedTask
 
 	// Track the number of outbound peers we have so that this value can
 	// be accessed concurrently when deciding whether or not to add more

@@ -92,8 +92,13 @@ func NewSteadyManager(srv *Server, bc *Blockchain, mp *DeSoMempool, params *DeSo
 	}
 }
 
-func (stm *SteadyManager) Init(sm *SyncManager) {
-	stm.sm = sm
+func (stm *SteadyManager) Init(managers []Manager) {
+	for _, manager := range managers {
+		if manager.GetType() != ManagerTypeSync {
+			continue
+		}
+		stm.sm = manager.(*SyncManager)
+	}
 
 	stm.srv.RegisterIncomingMessagesHandler(MsgTypeDonePeer, stm._handleDonePeerMessage)
 	stm.srv.RegisterIncomingMessagesHandler(MsgTypeInv, stm._handleInvMessage)
@@ -109,6 +114,10 @@ func (stm *SteadyManager) Start() {
 
 func (stm *SteadyManager) Stop() {
 	atomic.StoreInt32(&stm.shutdown, 1)
+}
+
+func (stm *SteadyManager) GetType() ManagerType {
+	return ManagerTypeSteady
 }
 
 // ResetRequestQueues resets all the request queues.
