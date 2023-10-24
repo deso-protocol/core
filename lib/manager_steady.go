@@ -97,6 +97,7 @@ func (stm *SteadyManager) Init(sm *SyncManager) {
 
 	stm.srv.RegisterIncomingMessagesHandler(MsgTypeDonePeer, stm._handleDonePeerMessage)
 	stm.srv.RegisterIncomingMessagesHandler(MsgTypeInv, stm._handleInvMessage)
+	stm.srv.RegisterIncomingMessagesHandler(MsgTypeMempool, stm._handleMempoolMessage)
 	stm.srv.RegisterIncomingMessagesHandler(MsgTypeGetTransactions, stm._handleGetTransactionsMessage)
 	stm.srv.RegisterIncomingMessagesHandler(MsgTypeTransactionBundle, stm._handleTransactionBundleMessage)
 	stm.srv.RegisterIncomingMessagesHandler(MsgTypeTransactionBundleV2, stm._handleTransactionBundleV2Message)
@@ -171,7 +172,7 @@ func (stm *SteadyManager) _relayTransactions() {
 			invMsg.InvList = append(invMsg.InvList, invVect)
 		}
 		if len(invMsg.InvList) > 0 {
-			if err := stm.sendInvMessage(invMsg, peer.ID); err != nil {
+			if err := stm.SendInvMessage(invMsg, peer.ID); err != nil {
 				glog.Errorf("SteadyManager._relayTransactions: Problem sending "+
 					"inv message to peer (id= %v): %v", peer.ID, err)
 			}
@@ -179,7 +180,7 @@ func (stm *SteadyManager) _relayTransactions() {
 	}
 }
 
-func (stm *SteadyManager) sendInvMessage(invMsg *MsgDeSoInv, peerId uint64) error {
+func (stm *SteadyManager) SendInvMessage(invMsg *MsgDeSoInv, peerId uint64) error {
 	if len(invMsg.InvList) == 0 {
 		// Don't send anything if the inv list is empty after filtering.
 		return nil
@@ -199,6 +200,15 @@ func (stm *SteadyManager) getKnownInventory(peerId uint64) *lru.Cache {
 		stm.knownInventoryMap[peerId] = &newCache
 	}
 	return stm.knownInventoryMap[peerId]
+}
+
+func (stm *SteadyManager) _handleMempoolMessage(desoMsg DeSoMessage, origin *Peer) MessageHandlerResponseCode {
+	if desoMsg.GetMsgType() != MsgTypeMempool {
+		return MessageHandlerResponseCodeSkip
+	}
+	glog.V(1).Infof("Server._handleMempool: Received Mempool message from Peer (id= %v)", origin.ID)
+	stm.canReceiveInvMessagesMap[origin.ID] = true
+	return MessageHandlerResponseCodeOK
 }
 
 func (stm *SteadyManager) _handleInvMessage(desoMsg DeSoMessage, origin *Peer) MessageHandlerResponseCode {
