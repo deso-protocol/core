@@ -16,23 +16,23 @@ func NewFastHotStuffConsensus() *FastHotStuffConsensus {
 	}
 }
 
-func (fc *FastHotStuffConsensus) Init( /*TODO */) {
+func (fc *FastHotStuffConsensus) Init( /*TODO */ ) {
 	// TODO
 }
 
-func (fc *FastHotStuffConsensus) HandleAcceptedBlock( /* TODO */) {
+func (fc *FastHotStuffConsensus) HandleAcceptedBlock( /* TODO */ ) {
 	// TODO
 }
 
-func (fc *FastHotStuffConsensus) HandleVoteMessage( /* TODO */) {
+func (fc *FastHotStuffConsensus) HandleVoteMessage( /* TODO */ ) {
 	// TODO
 }
 
-func (pc *FastHotStuffConsensus) HandleTimeoutMessage( /* TODO */) {
+func (pc *FastHotStuffConsensus) HandleTimeoutMessage( /* TODO */ ) {
 	// TODO
 }
 
-func (fc *FastHotStuffConsensus) HandleBlockProposal( /* TODO */) {
+func (fc *FastHotStuffConsensus) HandleBlockProposal( /* TODO */ ) {
 	// TODO
 }
 
