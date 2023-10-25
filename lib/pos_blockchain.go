@@ -157,6 +157,15 @@ func (bc *Blockchain) validateBlockIntegrity(desoBlock *MsgDeSoBlock) error {
 		return RuleErrorPoSBlockTstampNanoSecsInFuture
 	}
 
+	if err := bc.validateBlockHeaderAndMerkleRoot(desoBlock); err != nil {
+		return err
+	}
+
+	// TODO: What other checks do we need to do here?
+	return nil
+}
+
+func (bc *Blockchain) validateBlockHeaderAndMerkleRoot(desoBlock *MsgDeSoBlock) error {
 	// Header validation
 	if desoBlock.Header.Version != HeaderVersion2 {
 		return RuleErrorInvalidPoSBlockHeaderVersion
@@ -209,8 +218,6 @@ func (bc *Blockchain) validateBlockIntegrity(desoBlock *MsgDeSoBlock) error {
 			return RuleErrorNoTxnsWithMerkleRoot
 		}
 	}
-
-	// TODO: What other checks do we need to do here?
 	return nil
 }
 

@@ -1381,6 +1381,15 @@ func (bc *Blockchain) _validateOrphanBlock(desoBlock *MsgDeSoBlock) error {
 	// Moreover, while being attacked would be a minor inconvenience it doesn't
 	// stop the node from reaching consensus eventually. So we'll punt on defending
 	// against it unless/until it actually becomes a problem.
+	if desoBlock.Header.Height >= uint64(bc.params.ForkHeights.ProofOfStake2ConsensusCutoverBlockHeight) {
+		// TODO: basic validations that the block looks good.
+		if err = bc.validateBlockHeaderAndMerkleRoot(desoBlock); err != nil {
+			return err
+		}
+		if err = bc.validateBlockLeader(desoBlock); err != nil {
+			return err
+		}
+	}
 
 	return nil
 }
