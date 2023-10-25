@@ -523,7 +523,7 @@ func (bc *Blockchain) canCommitGrandparent(currentBlock *BlockNode) (_grandparen
 	if grandParent.CommittedStatus == COMMITTED {
 		return nil, false
 	}
-	if grandParent.Header.ProposedInView == parent.Header.ProposedInView-1 {
+	if grandParent.Header.ProposedInView+1 == parent.Header.ProposedInView {
 		// Then we can run the commit rule up to the grandparent!
 		return grandParent.Hash, true
 	}
