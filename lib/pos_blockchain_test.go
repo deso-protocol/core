@@ -1542,6 +1542,27 @@ func TestProcessBlockPoS(t *testing.T) {
 	require.False(t, exists)
 	_, exists = testMeta.chain.uncommittedBlocksMap[*timeoutBlockHash]
 	require.True(t, exists)
+
+	// Let's process an orphan block.
+	var dummyParentBlock *MsgDeSoBlock
+	dummyParentBlock = _generateRealBlock(testMeta, 16, 16, 272, reorgBlockHash)
+	dummyParentBlockHash, err := dummyParentBlock.Hash()
+	require.NoError(t, err)
+	var orphanBlock *MsgDeSoBlock
+	orphanBlock = _generateRealBlock(testMeta, 17, 17, 9273, reorgBlockHash)
+	// Set the prev block hash manually on orphan block
+	orphanBlock.Header.PrevBlockHash = dummyParentBlockHash
+	orphanBlockHash, err := orphanBlock.Hash()
+	require.NoError(t, err)
+	success, isOrphan, missingBlockHashes, err = testMeta.chain.processBlockPoS(orphanBlock, 17, true)
+	require.False(t, success)
+	require.True(t, isOrphan)
+	require.Len(t, missingBlockHashes, 1)
+	require.True(t, missingBlockHashes[0].IsEqual(dummyParentBlockHash))
+	require.NoError(t, err)
+	require.Equal(t, testMeta.chain.orphanList.Len(), 1)
+	require.True(t, testMeta.chain.orphanList.Front().Value.(*OrphanBlock).Hash.IsEqual(orphanBlockHash))
+
 }
 
 func _generateRealBlock(testMeta *TestMeta, blockHeight uint64, view uint64, seed int64, prevBlockHash *BlockHash) BlockTemplate {
