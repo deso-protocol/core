@@ -432,7 +432,7 @@ func listenForSyncPrefix(t *testing.T, node *cmd.Node, syncPrefix []byte, signal
 	go func() {
 		for {
 			<-ticker.C
-			for _, prefix := range node.SnapshotManager.HyperSyncProgress.PrefixProgress {
+			for _, prefix := range node.SnapshotController.HyperSyncProgress.PrefixProgress {
 				if reflect.DeepEqual(prefix.Prefix, syncPrefix) {
 					//if reflect.DeepEqual(prefix.LastReceivedKey, syncPrefix) {
 					//	break

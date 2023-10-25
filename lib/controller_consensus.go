@@ -7,8 +7,8 @@ import (
 	"sync"
 )
 
-type ConsensusManager struct {
-	stm *SteadyManager
+type ConsensusController struct {
+	stm *SteadyController
 
 	fastHotStuffConsensus *consensus.FastHotStuffConsensus
 	bc                    *Blockchain
@@ -21,9 +21,9 @@ type ConsensusManager struct {
 	exitChan chan struct{}
 }
 
-func NewConsensusManager(fastHotStuffConsensus *consensus.FastHotStuffConsensus, bc *Blockchain,
-	mp *DeSoMempool, srv *Server, eventManager *EventManager) *ConsensusManager {
-	return &ConsensusManager{
+func NewConsensusController(fastHotStuffConsensus *consensus.FastHotStuffConsensus, bc *Blockchain,
+	mp *DeSoMempool, srv *Server, eventManager *EventManager) *ConsensusController {
+	return &ConsensusController{
 		fastHotStuffConsensus: fastHotStuffConsensus,
 		bc:                    bc,
 		mp:                    mp,
@@ -33,12 +33,12 @@ func NewConsensusManager(fastHotStuffConsensus *consensus.FastHotStuffConsensus,
 	}
 }
 
-func (cm *ConsensusManager) Init(managers []Manager) {
-	for _, manager := range managers {
-		if manager.GetType() != ManagerTypeSteady {
+func (cm *ConsensusController) Init(controllers []Controller) {
+	for _, controller := range controllers {
+		if controller.GetType() != ControllerTypeSteady {
 			continue
 		}
-		cm.stm = manager.(*SteadyManager)
+		cm.stm = controller.(*SteadyController)
 	}
 
 	cm.eventManager.OnBlockConnected(cm._handleBlockMainChainConnected)
@@ -46,21 +46,21 @@ func (cm *ConsensusManager) Init(managers []Manager) {
 	cm.eventManager.OnBlockDisconnected(cm._handleBlockMainChainDisconnected)
 }
 
-func (cm *ConsensusManager) Start() {
+func (cm *ConsensusController) Start() {
 	go cm._startConsensus()
 }
 
-func (cm *ConsensusManager) Stop() {
+func (cm *ConsensusController) Stop() {
 	close(cm.exitChan)
 	cm.waitGroup.Wait()
-	glog.V(2).Info("ConsensusManager._startConsensus: Server done")
+	glog.V(2).Info("ConsensusController._startConsensus: Server done")
 }
 
-func (cm *ConsensusManager) GetType() ManagerType {
-	return ManagerTypeConsensus
+func (cm *ConsensusController) GetType() ControllerType {
+	return ControllerTypeConsensus
 }
 
-func (cm *ConsensusManager) _handleFastHostStuffBlockProposal(event *consensus.ConsensusEvent) {
+func (cm *ConsensusController) _handleFastHostStuffBlockProposal(event *consensus.ConsensusEvent) {
 	// The consensus module has signaled that we can propose a block at a certain block
 	// height. We construct the block and broadcast it here:
 	// 1. Verify that the block height we want to propose at is valid
@@ -74,7 +74,7 @@ func (cm *ConsensusManager) _handleFastHostStuffBlockProposal(event *consensus.C
 	// 7. Broadcast the block to the network
 }
 
-func (cm *ConsensusManager) _handleFastHostStuffVote(event *consensus.ConsensusEvent) {
+func (cm *ConsensusController) _handleFastHostStuffVote(event *consensus.ConsensusEvent) {
 	// The consensus module has signaled that we can vote on a block. We construct and
 	// broadcast the vote here:
 	// 1. Verify that the block height we want to vote on is valid
@@ -83,7 +83,7 @@ func (cm *ConsensusManager) _handleFastHostStuffVote(event *consensus.ConsensusE
 	// 4. Broadcast the timeout msg to the network
 }
 
-func (cm *ConsensusManager) _handleFastHostStuffTimeout(event *consensus.ConsensusEvent) {
+func (cm *ConsensusController) _handleFastHostStuffTimeout(event *consensus.ConsensusEvent) {
 	// The consensus module has signaled that we have timed out for a view. We construct and
 	// broadcast the timeout here:
 	// 1. Verify the block height and view we want to timeout on are valid
@@ -92,7 +92,7 @@ func (cm *ConsensusManager) _handleFastHostStuffTimeout(event *consensus.Consens
 	// 4. Broadcast the timeout msg to the network
 }
 
-func (cm *ConsensusManager) _handleFastHostStuffConsensusEvent(event *consensus.ConsensusEvent) {
+func (cm *ConsensusController) _handleFastHostStuffConsensusEvent(event *consensus.ConsensusEvent) {
 	switch event.EventType {
 	case consensus.ConsensusEventTypeBlockProposal:
 		cm._handleFastHostStuffBlockProposal(event)
@@ -119,14 +119,14 @@ func (cm *ConsensusManager) _handleFastHostStuffConsensusEvent(event *consensus.
 // requests from syncing peers
 // - It listens to consensus events from the Fast HostStuff consensus engine. The consensus signals when
 // it's ready to vote, timeout, or propose a block.
-func (cm *ConsensusManager) _startConsensus() {
+func (cm *ConsensusController) _startConsensus() {
 	cm.waitGroup.Add(1)
 	defer cm.waitGroup.Done()
 
 	for {
 		select {
 		case consensusEvent := <-cm.fastHotStuffConsensus.ConsensusEvents:
-			glog.Infof("ConsensusManager._startConsensus: Received consensus event for block height: %v",
+			glog.Infof("ConsensusController._startConsensus: Received consensus event for block height: %v",
 				consensusEvent.BlockHeight)
 			cm._handleFastHostStuffConsensusEvent(consensusEvent)
 		case <-cm.exitChan:
@@ -137,7 +137,7 @@ func (cm *ConsensusManager) _startConsensus() {
 
 // It's assumed that the caller will hold the ChainLock for reading so
 // that the mempool transactions don't shift under our feet.
-func (cm *ConsensusManager) _handleBlockMainChainConnected(event *BlockEvent) {
+func (cm *ConsensusController) _handleBlockMainChainConnected(event *BlockEvent) {
 	blk := event.Block
 
 	// Don't do anything mempool-related until our best block chain is done
@@ -158,13 +158,13 @@ func (cm *ConsensusManager) _handleBlockMainChainConnected(event *BlockEvent) {
 	cm.mp.UpdateAfterConnectBlock(blk)
 
 	blockHash, _ := blk.Header.Hash()
-	glog.V(1).Infof("ConsensusManager._handleBlockMainChainConnected: Block %s height %d connected to "+
+	glog.V(1).Infof("ConsensusController._handleBlockMainChainConnected: Block %s height %d connected to "+
 		"main chain and chain is current.", hex.EncodeToString(blockHash[:]), blk.Header.Height)
 }
 
 // It's assumed that the caller will hold the ChainLock for reading so
 // that the mempool transactions don't shift under our feet.
-func (cm *ConsensusManager) _handleBlockMainChainDisconnected(event *BlockEvent) {
+func (cm *ConsensusController) _handleBlockMainChainDisconnected(event *BlockEvent) {
 	blk := event.Block
 
 	// Don't do anything mempool-related until our best block chain is done
@@ -181,11 +181,11 @@ func (cm *ConsensusManager) _handleBlockMainChainDisconnected(event *BlockEvent)
 	cm.mp.UpdateAfterDisconnectBlock(blk)
 
 	blockHash, _ := blk.Header.Hash()
-	glog.V(1).Infof("ConsensusManager._handleBlockMainChainDisconnected: Block %s height %d disconnected from "+
+	glog.V(1).Infof("ConsensusController._handleBlockMainChainDisconnected: Block %s height %d disconnected from "+
 		"main chain and chain is current.", hex.EncodeToString(blockHash[:]), blk.Header.Height)
 }
 
-func (cm *ConsensusManager) _handleBlockAccepted(event *BlockEvent) {
+func (cm *ConsensusController) _handleBlockAccepted(event *BlockEvent) {
 	blk := event.Block
 
 	// Don't relay blocks until our best block chain is done syncing.
@@ -213,7 +213,7 @@ func (cm *ConsensusManager) _handleBlockAccepted(event *BlockEvent) {
 			InvList: []*InvVect{invVect},
 		}
 		if err := cm.stm.SendInvMessage(invMsg, peer.ID); err != nil {
-			glog.V(2).Infof("ConsensusManager._handleBlockAccepted: Problem sending inv message "+
+			glog.V(2).Infof("ConsensusController._handleBlockAccepted: Problem sending inv message "+
 				"to peer (id= %v); err: %v", peer.ID, err)
 		}
 	}

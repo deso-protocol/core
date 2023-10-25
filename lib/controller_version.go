@@ -24,7 +24,7 @@ type ValidatorVersionMetadata struct {
 	StartingBlockHeight       uint32
 }
 
-type VersionManager struct {
+type VersionController struct {
 	bc  *Blockchain
 	srv *Server
 
@@ -36,13 +36,13 @@ type VersionManager struct {
 	usedNonces         lru.Cache
 }
 
-func NewVersionManager(bc *Blockchain, srv *Server, params *DeSoParams, minTxFeeRateNanosPerKB uint64,
-	hyperSync bool) *VersionManager {
+func NewVersionController(bc *Blockchain, srv *Server, params *DeSoParams, minTxFeeRateNanosPerKB uint64,
+	hyperSync bool) *VersionController {
 
-	vm := &VersionManager{
+	vm := &VersionController{
 		bc:                     bc,
 		srv:                    srv,
-		params:                 params,
+		params:
 		minTxFeeRateNanosPerKB: minTxFeeRateNanosPerKB,
 		hyperSync:              hyperSync,
 		versionMetadataMap:     make(map[uint64]*ValidatorVersionMetadata),
@@ -52,34 +52,34 @@ func NewVersionManager(bc *Blockchain, srv *Server, params *DeSoParams, minTxFee
 	return vm
 }
 
-func (vm *VersionManager) Init(managers []Manager) {
+func (vm *VersionController) Init(controllers []Controller) {
 	vm.srv.RegisterIncomingMessagesHandler(MsgTypeNewPeer, vm._handleNewPeerMessage)
 	vm.srv.RegisterIncomingMessagesHandler(MsgTypeVersion, vm._handleVersionMessage)
 	vm.srv.RegisterIncomingMessagesHandler(MsgTypeVerack, vm._handleVerackMessage)
 }
 
-func (vm *VersionManager) Start() {
+func (vm *VersionController) Start() {
 }
 
-func (vm *VersionManager) Stop() {
+func (vm *VersionController) Stop() {
 }
 
-func (vm *VersionManager) GetType() ManagerType {
-	return ManagerTypeVersion
+func (vm *VersionController) GetType() ControllerType {
+	return ControllerTypeVersion
 }
 
-func (vm *VersionManager) GetValidatorVersionMetadata(peerId uint64) *ValidatorVersionMetadata {
+func (vm *VersionController) GetValidatorVersionMetadata(peerId uint64) *ValidatorVersionMetadata {
 	return vm.getValidatorVersionMetadata(peerId)
 }
 
-func (vm *VersionManager) getValidatorVersionMetadata(peerId uint64) *ValidatorVersionMetadata {
+func (vm *VersionController) getValidatorVersionMetadata(peerId uint64) *ValidatorVersionMetadata {
 	if _, exists := vm.versionMetadataMap[peerId]; !exists {
 		vm.versionMetadataMap[peerId] = &ValidatorVersionMetadata{}
 	}
 	return vm.versionMetadataMap[peerId]
 }
 
-func (vm *VersionManager) _handleNewPeerMessage(desoMsg DeSoMessage, origin *Peer) MessageHandlerResponseCode {
+func (vm *VersionController) _handleNewPeerMessage(desoMsg DeSoMessage, origin *Peer) MessageHandlerResponseCode {
 	if desoMsg.GetMsgType() != MsgTypeNewPeer {
 		return MessageHandlerResponseCodeSkip
 	}
@@ -93,7 +93,7 @@ func (vm *VersionManager) _handleNewPeerMessage(desoMsg DeSoMessage, origin *Pee
 	return MessageHandlerResponseCodeOK
 }
 
-func (vm *VersionManager) sendVersion(peerId uint64) MessageHandlerResponseCode {
+func (vm *VersionController) sendVersion(peerId uint64) MessageHandlerResponseCode {
 	// For an outbound peer, we send a version message and then wait to
 	// hear back for one.
 	verMsg := vm.newVersionMessage(vm.params)
@@ -112,7 +112,7 @@ func (vm *VersionManager) sendVersion(peerId uint64) MessageHandlerResponseCode 
 	return MessageHandlerResponseCodeOK
 }
 
-func (vm *VersionManager) newVersionMessage(params *DeSoParams) *MsgDeSoVersion {
+func (vm *VersionController) newVersionMessage(params *DeSoParams) *MsgDeSoVersion {
 	ver := NewMessage(MsgTypeVersion).(*MsgDeSoVersion)
 
 	ver.Version = params.ProtocolVersion
@@ -144,7 +144,7 @@ func (vm *VersionManager) newVersionMessage(params *DeSoParams) *MsgDeSoVersion 
 	return ver
 }
 
-func (vm *VersionManager) _handleVersionMessage(desoMsg DeSoMessage, origin *Peer) MessageHandlerResponseCode {
+func (vm *VersionController) _handleVersionMessage(desoMsg DeSoMessage, origin *Peer) MessageHandlerResponseCode {
 	if desoMsg.GetMsgType() != MsgTypeVersion {
 		return MessageHandlerResponseCodeSkip
 	}
@@ -156,14 +156,14 @@ func (vm *VersionManager) _handleVersionMessage(desoMsg DeSoMessage, origin *Pee
 	}
 
 	if verMsg.Version < vm.params.MinProtocolVersion {
-		glog.V(1).Infof("VersionManager._handleVersionMessage: Requesting PeerDisconnect for id: (%v) protocol version "+
+		glog.V(1).Infof("VersionController._handleVersionMessage: Requesting PeerDisconnect for id: (%v) protocol version "+
 			"too low: %d (min: %v)", origin.ID, verMsg.Version, vm.params.MinProtocolVersion)
 		return MessageHandlerResponseCodePeerDisconnect
 	}
 
 	vMeta := vm.getValidatorVersionMetadata(origin.ID)
 	if vMeta.versionTimeExpected != nil && vMeta.versionTimeExpected.Before(time.Now()) {
-		glog.V(1).Infof("VersionManager._handleVersionMessage: Requesting PeerDisconnect for id: (%v) "+
+		glog.V(1).Infof("VersionController._handleVersionMessage: Requesting PeerDisconnect for id: (%v) "+
 			"version timeout. Time expected: %v, now: %v", origin.ID, vMeta.versionTimeExpected.UnixMicro(), time.Now().UnixMicro())
 		return MessageHandlerResponseCodePeerDisconnect
 	}
@@ -173,7 +173,7 @@ func (vm *VersionManager) _handleVersionMessage(desoMsg DeSoMessage, origin *Pee
 	msgNonce := verMsg.Nonce
 	if vm.usedNonces.Contains(msgNonce) {
 		vm.usedNonces.Delete(msgNonce)
-		glog.V(1).Infof("VersionManager._handleVersionMessage: Requesting PeerDisconnect for id: (%v) "+
+		glog.V(1).Infof("VersionController._handleVersionMessage: Requesting PeerDisconnect for id: (%v) "+
 			"nonce collision", origin.ID)
 		return MessageHandlerResponseCodePeerDisconnect
 	}
@@ -211,7 +211,7 @@ func (vm *VersionManager) _handleVersionMessage(desoMsg DeSoMessage, origin *Pee
 	return vm.sendVerack(origin.ID, msgNonce)
 }
 
-func (vm *VersionManager) sendVerack(peerId uint64, nonce uint64) MessageHandlerResponseCode {
+func (vm *VersionController) sendVerack(peerId uint64, nonce uint64) MessageHandlerResponseCode {
 	verackMsg := NewMessage(MsgTypeVerack).(*MsgDeSoVerack)
 	// Include the nonce we received in the peer's version message so
 	// we can validate that we actually control our IP address.
@@ -223,7 +223,7 @@ func (vm *VersionManager) sendVerack(peerId uint64, nonce uint64) MessageHandler
 	return MessageHandlerResponseCodeOK
 }
 
-func (vm *VersionManager) _handleVerackMessage(desoMsg DeSoMessage, origin *Peer) MessageHandlerResponseCode {
+func (vm *VersionController) _handleVerackMessage(desoMsg DeSoMessage, origin *Peer) MessageHandlerResponseCode {
 	if desoMsg.GetMsgType() != MsgTypeVerack {
 		return MessageHandlerResponseCodeSkip
 	}
@@ -238,18 +238,18 @@ func (vm *VersionManager) _handleVerackMessage(desoMsg DeSoMessage, origin *Peer
 	nonceReceived := vMeta.versionNoncesReceived
 	nonceSent := vMeta.versionNoncesSent
 	if !ok {
-		glog.V(1).Infof("VersionManager._handleVerackMessage: Requesting PeerDisconnect for id: (%v) "+
+		glog.V(1).Infof("VersionController._handleVerackMessage: Requesting PeerDisconnect for id: (%v) "+
 			"nonce not found for peer", origin.ID)
 		return MessageHandlerResponseCodePeerDisconnect
 	}
 	if vMeta.verackTimeExpected != nil && vMeta.verackTimeExpected.Before(time.Now()) {
-		glog.V(1).Infof("VersionManager._handleVerackMessage: Requesting PeerDisconnect for id: (%v) "+
+		glog.V(1).Infof("VersionController._handleVerackMessage: Requesting PeerDisconnect for id: (%v) "+
 			"verack timeout. Time expected: %v, now: %v", origin.ID, vMeta.verackTimeExpected.UnixMicro(), time.Now().UnixMicro())
 		return MessageHandlerResponseCodePeerDisconnect
 	}
 	// If the verack message has a nonce unseen for us, then request peer disconnect.
 	if vrkMsg.Nonce != nonceSent && vrkMsg.Nonce != nonceReceived {
-		glog.V(1).Infof("VersionManager._handleVerackMessage: Requesting PeerDisconnect for id: (%v) "+
+		glog.V(1).Infof("VersionController._handleVerackMessage: Requesting PeerDisconnect for id: (%v) "+
 			"nonce mismatch; message: %v; nonceSent: %v; nonceReceived: %v", origin.ID, vrkMsg.Nonce, nonceSent, nonceReceived)
 		return MessageHandlerResponseCodePeerDisconnect
 	}
@@ -262,7 +262,7 @@ func (vm *VersionManager) _handleVerackMessage(desoMsg DeSoMessage, origin *Peer
 	return MessageHandlerResponseCodeOK
 }
 
-func (vm *VersionManager) _logVersionSuccess(peer *Peer) {
+func (vm *VersionController) _logVersionSuccess(peer *Peer) {
 	inboundStr := "INBOUND"
 	if peer.isOutbound {
 		inboundStr = "OUTBOUND"

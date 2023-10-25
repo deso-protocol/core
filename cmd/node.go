@@ -47,15 +47,15 @@ type Node struct {
 	// Server
 	Server *lib.Server
 
-	// Managers
-	ConsensusManager *lib.ConsensusManager
-	SteadyManager    *lib.SteadyManager
-	SnapshotManager  *lib.SnapshotManager
-	SyncManager      *lib.SyncManager
-	StatsManager     *lib.StatsManager
-	VersionManager   *lib.VersionManager
-	// TODO: In the future we could avoid storing all components/managers individually.
-	Managers []lib.Manager
+	// Controllers
+	ConsensusController *lib.ConsensusController
+	SteadyController    *lib.SteadyController
+	SnapshotController  *lib.SnapshotController
+	SyncController      *lib.SyncController
+	StatsController     *lib.StatsController
+	VersionController   *lib.VersionController
+	// TODO: In the future we could avoid storing all components/controllers individually.
+	Controllers []lib.Controller
 
 	Params       *lib.DeSoParams
 	Config       *Config
@@ -199,14 +199,14 @@ func (node *Node) Start(exitChannels ...*chan struct{}) {
 		panic(errors.Wrapf(err, "Node.Start: Problem initializing server"))
 	}
 
-	node.initializeManagers()
+	node.initializeControllers()
 
 	node.Server.Start()
 	if node.Miner != nil && len(node.Miner.PublicKeys) > 0 {
 		go node.Miner.Start()
 	}
 
-	node.startManagers()
+	node.startControllers()
 
 	// Setup TXIndex - not compatible with postgres
 	if node.Config.TXIndex && node.Postgres == nil {
@@ -261,7 +261,7 @@ func (node *Node) Stop() {
 		glog.Infof(lib.CLog(lib.Yellow, "Node.Stop: Closed the Miner"))
 	}
 
-	node.stopManagers()
+	node.stopControllers()
 
 	// Stop the PoS block proposer if we have one running.
 	if node.FastHotStuffConsensus != nil {
@@ -472,34 +472,34 @@ func (node *Node) initializeComponents() (_err error, _shouldRestart bool) {
 	return nil, shouldRestart
 }
 
-func (node *Node) initializeManagers() {
-	node.ConsensusManager = lib.NewConsensusManager(node.FastHotStuffConsensus, node.Blockchain, node.Mempool,
+func (node *Node) initializeControllers() {
+	node.ConsensusController = lib.NewConsensusController(node.FastHotStuffConsensus, node.Blockchain, node.Mempool,
 		node.Server, node.EventManager)
-	node.SteadyManager = lib.NewSteadyManager(node.Server, node.Blockchain, node.Mempool, node.Params, node.Config.MinFeerate,
+	node.SteadyController = lib.NewSteadyController(node.Server, node.Blockchain, node.Mempool, node.Params, node.Config.MinFeerate,
 		node.Config.StallTimeoutSeconds, node.Config.ReadOnlyMode, node.Config.IgnoreInboundInvs)
-	node.SnapshotManager = lib.NewSnapshotManager(node.Blockchain, node.Snapshot, node.Server, node.Mempool, node.EventManager,
+	node.SnapshotController = lib.NewSnapshotController(node.Blockchain, node.Snapshot, node.Server, node.Mempool, node.EventManager,
 		node.Config.HyperSync, node.Config.ForceChecksum, node.Config.StallTimeoutSeconds, node.nodeMessageChan)
-	node.SyncManager = lib.NewSyncManager(node.Blockchain, node.Server, node.Mempool, node.Config.SyncType,
+	node.SyncController = lib.NewSyncController(node.Blockchain, node.Server, node.Mempool, node.Config.SyncType,
 		node.Config.MinFeerate, node.Config.StallTimeoutSeconds)
-	node.StatsManager = lib.NewStatsManager(node.Server, node.Mempool, node.Blockchain, node.statsdClient)
-	node.VersionManager = lib.NewVersionManager(node.Blockchain, node.Server, node.Params, node.Config.MinFeerate,
+	node.StatsController = lib.NewStatsController(node.Server, node.Mempool, node.Blockchain, node.statsdClient)
+	node.VersionController = lib.NewVersionController(node.Blockchain, node.Server, node.Params, node.Config.MinFeerate,
 		node.Config.HyperSync)
 
-	node.Managers = []lib.Manager{node.ConsensusManager, node.SteadyManager, node.SnapshotManager, node.SyncManager, node.StatsManager, node.VersionManager}
-	for _, manager := range node.Managers {
-		manager.Init(node.Managers)
+	node.Controllers = []lib.Controller{node.ConsensusController, node.SteadyController, node.SnapshotController, node.SyncController, node.StatsController, node.VersionController}
+	for _, controller := range node.Controllers {
+		controller.Init(node.Controllers)
 	}
 }
 
-func (node *Node) startManagers() {
-	for _, manager := range node.Managers {
-		manager.Start()
+func (node *Node) startControllers() {
+	for _, controller := range node.Controllers {
+		controller.Start()
 	}
 }
 
-func (node *Node) stopManagers() {
-	for _, manager := range node.Managers {
-		manager.Stop()
+func (node *Node) stopControllers() {
+	for _, controller := range node.Controllers {
+		controller.Stop()
 	}
 }
 

@@ -50,9 +50,9 @@ func ValidateHyperSyncFlags(isHypersync bool, syncType NodeSyncType) {
 	}
 }
 
-type SyncManager struct {
-	vm  *VersionManager
-	snm *SnapshotManager
+type SyncController struct {
+	vm  *VersionController
+	snm *SnapshotController
 
 	bc  *Blockchain
 	srv *Server
@@ -91,10 +91,10 @@ type SyncManager struct {
 	peerRequestedBlocks map[uint64]map[BlockHash]bool
 }
 
-func NewSyncManager(bc *Blockchain, srv *Server, mp *DeSoMempool, syncType NodeSyncType,
-	minFeeRateNanosPerKB uint64, stallTimeoutSeconds uint64) *SyncManager {
+func NewSyncController(bc *Blockchain, srv *Server, mp *DeSoMempool, syncType NodeSyncType,
+	minFeeRateNanosPerKB uint64, stallTimeoutSeconds uint64) *SyncController {
 
-	return &SyncManager{
+	return &SyncController{
 		bc:                   bc,
 		srv:                  srv,
 		mp:                   mp,
@@ -106,13 +106,13 @@ func NewSyncManager(bc *Blockchain, srv *Server, mp *DeSoMempool, syncType NodeS
 	}
 }
 
-func (sm *SyncManager) Init(managers []Manager) {
-	for _, manager := range managers {
-		switch manager.GetType() {
-		case ManagerTypeVersion:
-			sm.vm = manager.(*VersionManager)
-		case ManagerTypeSnapshot:
-			sm.snm = manager.(*SnapshotManager)
+func (sm *SyncController) Init(controllers []Controller) {
+	for _, controller := range controllers {
+		switch controller.GetType() {
+		case ControllerTypeVersion:
+			sm.vm = controller.(*VersionController)
+		case ControllerTypeSnapshot:
+			sm.snm = controller.(*SnapshotController)
 		}
 	}
 
@@ -125,18 +125,18 @@ func (sm *SyncManager) Init(managers []Manager) {
 	sm.srv.RegisterIncomingMessagesHandler(MsgTypeQuit, sm._handleQuitMessage)
 }
 
-func (sm *SyncManager) Start() {
+func (sm *SyncController) Start() {
 }
 
-func (sm *SyncManager) Stop() {
+func (sm *SyncController) Stop() {
 }
 
-func (sm *SyncManager) GetType() ManagerType {
-	return ManagerTypeSync
+func (sm *SyncController) GetType() ControllerType {
+	return ControllerTypeSync
 }
 
 // TODO: Replace this with some peer after-handshake message.
-func (sm *SyncManager) _handleHandshakePeerMessage(desoMsg DeSoMessage, origin *Peer) MessageHandlerResponseCode {
+func (sm *SyncController) _handleHandshakePeerMessage(desoMsg DeSoMessage, origin *Peer) MessageHandlerResponseCode {
 	if desoMsg.GetMsgType() != MsgTypeHandshakePeer {
 		return MessageHandlerResponseCodeSkip
 	}
@@ -144,7 +144,7 @@ func (sm *SyncManager) _handleHandshakePeerMessage(desoMsg DeSoMessage, origin *
 	isSyncCandidate := sm.isSyncCandidate(origin)
 	isSyncing := sm.bc.isSyncing()
 	chainState := sm.bc.chainState()
-	glog.V(1).Infof("SyncManager._handleHandshakePeerMessage: Processing NewPeer: "+
+	glog.V(1).Infof("SyncController._handleHandshakePeerMessage: Processing NewPeer: "+
 		"(id= %v); isSyncCandidate(%v), syncPeerIsNil=(%v), IsSyncing=(%v), ChainState=(%v)",
 		origin.ID, isSyncCandidate, (sm.SyncPeer == nil), isSyncing, chainState)
 
@@ -158,13 +158,13 @@ func (sm *SyncManager) _handleHandshakePeerMessage(desoMsg DeSoMessage, origin *
 		sm._startSync()
 	}
 	if !isSyncCandidate {
-		glog.Infof("SyncManager. Peer._handleHandshakePeerMessage: is not sync candidate: "+
+		glog.Infof("SyncController. Peer._handleHandshakePeerMessage: is not sync candidate: "+
 			"(id= %v) (isOutbound= %v)", origin.ID, origin.IsOutbound())
 	}
 	return MessageHandlerResponseCodeOK
 }
 
-func (sm *SyncManager) isSyncCandidate(peer *Peer) bool {
+func (sm *SyncController) isSyncCandidate(peer *Peer) bool {
 	vMeta := sm.vm.GetValidatorVersionMetadata(peer.ID)
 	isFullNode := (vMeta.ServiceFlag & SFFullNodeDeprecated) != 0
 	// TODO: This is a bit of a messy way to determine whether the node was run with --hypersync
@@ -172,7 +172,7 @@ func (sm *SyncManager) isSyncCandidate(peer *Peer) bool {
 	weRequireHypersync := (sm.syncType == NodeSyncTypeHyperSync ||
 		sm.syncType == NodeSyncTypeHyperSyncArchival)
 	if weRequireHypersync && !nodeSupportsHypersync {
-		glog.Infof("SyncManager.isSyncCandidate: Rejecting node as sync candidate "+
+		glog.Infof("SyncController.isSyncCandidate: Rejecting node as sync candidate "+
 			"because weRequireHypersync=true but nodeSupportsHypersync=false "+
 			"isFullNode (%v), nodeSupportsHypersync (%v), --sync-type (%v), "+
 			"weRequireHypersync (%v), is outbound (%v), peerId (%v)",
@@ -184,7 +184,7 @@ func (sm *SyncManager) isSyncCandidate(peer *Peer) bool {
 	weRequireArchival := IsNodeArchival(sm.syncType)
 	nodeIsArchival := (vMeta.ServiceFlag & SFArchivalNode) != 0
 	if weRequireArchival && !nodeIsArchival {
-		glog.Infof("SyncManager.isSyncCandidate: Rejecting node as sync candidate "+
+		glog.Infof("SyncController.isSyncCandidate: Rejecting node as sync candidate "+
 			"because weRequireArchival=true but nodeIsArchival=false "+
 			"isFullNode (%v), nodeIsArchival (%v), --sync-type (%v), weRequireArchival (%v), "+
 			"is outbound (%v)",
@@ -196,48 +196,48 @@ func (sm *SyncManager) isSyncCandidate(peer *Peer) bool {
 	return isFullNode && peer.IsOutbound()
 }
 
-func (sm *SyncManager) _maybeRequestSync(peer *Peer) MessageHandlerResponseCode {
+func (sm *SyncController) _maybeRequestSync(peer *Peer) MessageHandlerResponseCode {
 	code := MessageHandlerResponseCodeOK
 
 	// Send the mempool message if DeSo and Bitcoin are fully current
 	if sm.bc.chainState() == SyncStateFullyCurrent {
 		// If peer is not nil and we haven't set a max sync blockheight, we will
 		if peer != nil && sm.bc.MaxSyncBlockHeight == 0 {
-			glog.V(1).Infof("SyncManager._maybeRequestSync: Sending mempool message to peer: (id= %v)", peer.ID)
+			glog.V(1).Infof("SyncController._maybeRequestSync: Sending mempool message to peer: (id= %v)", peer.ID)
 			if err := sm.srv.SendMessage(&MsgDeSoMempool{}, peer.ID, nil); err != nil {
-				glog.Errorf("SyncManager._maybeRequestSync: Problem sending mempool message to peer: %v", err)
+				glog.Errorf("SyncController._maybeRequestSync: Problem sending mempool message to peer: %v", err)
 				code = MessageHandlerResponseCodePeerUnavailable
 			}
 		} else {
-			glog.V(1).Infof("SyncManager._maybeRequestSync: NOT sending mempool message because peer is nil: %v", peer)
+			glog.V(1).Infof("SyncController._maybeRequestSync: NOT sending mempool message because peer is nil: %v", peer)
 		}
 	} else {
-		glog.V(1).Infof("SyncManager._maybeRequestSync: NOT sending mempool message because not current. "+
+		glog.V(1).Infof("SyncController._maybeRequestSync: NOT sending mempool message because not current. "+
 			"Chain state: %v, Peer: %v", sm.bc.chainState(), peer)
 	}
 	return code
 }
 
-func (sm *SyncManager) _startSync() {
+func (sm *SyncController) _startSync() {
 	// Return now if we're already syncing.
 	if sm.SyncPeer != nil {
-		glog.V(2).Infof("SyncManager._startSync: Not running because SyncPeer != nil")
+		glog.V(2).Infof("SyncController._startSync: Not running because SyncPeer != nil")
 		return
 	}
-	glog.V(1).Infof("SyncManager._startSync: Attempting to start sync")
+	glog.V(1).Infof("SyncController._startSync: Attempting to start sync")
 
 	// Set our tip to be the best header tip rather than the best block tip. Using
 	// the block tip instead might cause us to select a peer who is missing blocks
 	// for the headers we've downloaded.
 	bestHeight := sm.bc.headerTip().Height
 
-	// FIXME: This should be part of the SyncManager routine
+	// FIXME: This should be part of the SyncController routine
 	// Find a peer with StartingHeight bigger than our best header tip.
 	var bestValidator *Peer
 	var bestValidatorVersionMetadata *ValidatorVersionMetadata
 	for _, peer := range sm.srv.GetAllPeers() {
 		if !sm.isSyncCandidate(peer) {
-			glog.V(2).Infof("SyncManager._startSync: Peer is not sync candidate: %v (isOutbound: %v)", peer, peer.isOutbound)
+			glog.V(2).Infof("SyncController._startSync: Peer is not sync candidate: %v (isOutbound: %v)", peer, peer.isOutbound)
 			continue
 		}
 		vMeta := sm.vm.GetValidatorVersionMetadata(peer.ID)
@@ -259,7 +259,7 @@ func (sm *SyncManager) _startSync() {
 	}
 
 	if bestValidator == nil {
-		glog.V(1).Infof("SyncManager._startSync: No sync peer candidates available")
+		glog.V(1).Infof("SyncController._startSync: No sync peer candidates available")
 		return
 	}
 
@@ -275,7 +275,7 @@ func (sm *SyncManager) _startSync() {
 	// before we start requesting blocks. If we were to go directly to fetching
 	// blocks from our SyncPeer without doing this first, we wouldn't be 100%
 	// sure that she has them.
-	glog.V(1).Infof("SyncManager._startSync: Syncing headers to height %d from peer %v",
+	glog.V(1).Infof("SyncController._startSync: Syncing headers to height %d from peer %v",
 		bestValidatorVersionMetadata.StartingBlockHeight, bestValidator)
 
 	// Send a GetHeaders message to the Peer to start the headers sync.
@@ -287,7 +287,7 @@ func (sm *SyncManager) _startSync() {
 		BlockLocator: locator,
 	}
 	if code := sm.SendGetHeadersMessage(getHeaders, bestValidator.ID); code != MessageHandlerResponseCodeOK {
-		glog.Errorf("SyncManager._startSync: Problem sending GetHeaders message to peer: (code= %v)", code)
+		glog.Errorf("SyncController._startSync: Problem sending GetHeaders message to peer: (code= %v)", code)
 		return
 	}
 	glog.V(1).Infof("Server._startSync: Downloading headers for blocks starting at "+
@@ -296,12 +296,12 @@ func (sm *SyncManager) _startSync() {
 	sm.SyncPeer = bestValidator
 }
 
-func (sm *SyncManager) _handleDonePeerMessage(desoMsg DeSoMessage, origin *Peer) MessageHandlerResponseCode {
+func (sm *SyncController) _handleDonePeerMessage(desoMsg DeSoMessage, origin *Peer) MessageHandlerResponseCode {
 	if desoMsg.GetMsgType() != MsgTypeDonePeer {
 		return MessageHandlerResponseCodeSkip
 	}
 
-	glog.V(1).Infof("SyncManager._handleDonePeerMessage: Processing DonePeer: (id= %v)", origin.ID)
+	glog.V(1).Infof("SyncController._handleDonePeerMessage: Processing DonePeer: (id= %v)", origin.ID)
 
 	// Attempt to find a new peer to sync from if the quitting peer is the
 	// sync peer and if our blockchain isn't current.
@@ -313,14 +313,14 @@ func (sm *SyncManager) _handleDonePeerMessage(desoMsg DeSoMessage, origin *Peer)
 	return MessageHandlerResponseCodeOK
 }
 
-func (sm *SyncManager) _getPeerRequestedBlocks(peerId uint64) map[BlockHash]bool {
+func (sm *SyncController) _getPeerRequestedBlocks(peerId uint64) map[BlockHash]bool {
 	if _, exists := sm.peerRequestedBlocks[peerId]; !exists {
 		sm.peerRequestedBlocks[peerId] = make(map[BlockHash]bool)
 	}
 	return sm.peerRequestedBlocks[peerId]
 }
 
-func (sm *SyncManager) _handleGetHeadersMessage(desoMsg DeSoMessage, origin *Peer) MessageHandlerResponseCode {
+func (sm *SyncController) _handleGetHeadersMessage(desoMsg DeSoMessage, origin *Peer) MessageHandlerResponseCode {
 	if desoMsg.GetMsgType() != MsgTypeGetHeaders {
 		return MessageHandlerResponseCodeSkip
 	}
@@ -331,13 +331,13 @@ func (sm *SyncManager) _handleGetHeadersMessage(desoMsg DeSoMessage, origin *Pee
 		return MessageHandlerResponseCodePeerDisconnect
 	}
 
-	glog.V(1).Infof("SyncManager._handleGetHeadersMessage: called with locator: (%v), "+
+	glog.V(1).Infof("SyncController._handleGetHeadersMessage: called with locator: (%v), "+
 		"stopHash: (%v) from Peer (id= %v)", getHeadrsMsg.BlockLocator, getHeadrsMsg.StopHash, origin.ID)
 
 	// Ignore GetHeaders requests we're still syncing.
 	if sm.bc.isSyncing() {
 		chainState := sm.bc.chainState()
-		glog.V(1).Infof("SyncManager._handleGetHeadersMessage: Ignoring GetHeaders from Peer (id= %v)"+
+		glog.V(1).Infof("SyncController._handleGetHeadersMessage: Ignoring GetHeaders from Peer (id= %v)"+
 			"because node is syncing with ChainState (%v)", origin.ID, chainState)
 		return MessageHandlerResponseCodeSkip
 	}
@@ -366,13 +366,13 @@ func (sm *SyncManager) _handleGetHeadersMessage(desoMsg DeSoMessage, origin *Pee
 	if err := sm.srv.SendMessage(msg, origin.ID, nil); err != nil {
 		return MessageHandlerResponseCodePeerUnavailable
 	}
-	glog.V(2).Infof("SyncManager._handleGetHeadersMessage: Replied to GetHeaders request "+
+	glog.V(2).Infof("SyncController._handleGetHeadersMessage: Replied to GetHeaders request "+
 		"with response headers: (%v), tip hash (%v), tip height (%d) from Peer (id= %v)",
 		headers, blockTip.Hash, blockTip.Height, origin.ID)
 	return MessageHandlerResponseCodeOK
 }
 
-func (sm *SyncManager) _handleHeaderBundleMessage(desoMsg DeSoMessage, origin *Peer) MessageHandlerResponseCode {
+func (sm *SyncController) _handleHeaderBundleMessage(desoMsg DeSoMessage, origin *Peer) MessageHandlerResponseCode {
 	if desoMsg.GetMsgType() != MsgTypeHeaderBundle {
 		return MessageHandlerResponseCodeSkip
 	}
@@ -388,7 +388,7 @@ func (sm *SyncManager) _handleHeaderBundleMessage(desoMsg DeSoMessage, origin *P
 	if sm.bc.headerTip().Height > printHeight {
 		printHeight = sm.bc.headerTip().Height
 	}
-	glog.Infof(CLog(Yellow, fmt.Sprintf("SyncManager._handleHeaderBundleMessage: Received header bundle "+
+	glog.Infof(CLog(Yellow, fmt.Sprintf("SyncController._handleHeaderBundleMessage: Received header bundle "+
 		"with %v headers in state %s from peer (id= %v). Downloaded ( %v / %v ) total headers",
 		len(msg.Headers), sm.bc.chainState(), origin.ID, sm.bc.headerTip().Header.Height, printHeight)))
 
@@ -411,7 +411,7 @@ func (sm *SyncManager) _handleHeaderBundleMessage(desoMsg DeSoMessage, origin *P
 		if sm.bc.HasHeader(headerHash) {
 			if sm.bc.isSyncing() {
 
-				glog.Warningf("SyncManager._handleHeaderBundleMessage: Duplicate header %v received "+
+				glog.Warningf("SyncController._handleHeaderBundleMessage: Duplicate header %v received "+
 					"from peer (id= %v) in state %s. Local header tip height %d hash %s with duplicate %v",
 					headerHash, origin.ID, sm.bc.chainState(), sm.bc.headerTip().Height,
 					hex.EncodeToString(sm.bc.headerTip().Hash[:]), headerHash)
@@ -443,7 +443,7 @@ func (sm *SyncManager) _handleHeaderBundleMessage(desoMsg DeSoMessage, origin *P
 		// a GetHeaders request, the peer should know enough to never send us
 		// unconnectedTxns unless it's misbehaving.
 		if err != nil || isOrphan {
-			glog.Errorf("SyncManager._handleHeaderBundleMessage: Disconnecting from peer (id= %v) in state %s "+
+			glog.Errorf("SyncController._handleHeaderBundleMessage: Disconnecting from peer (id= %v) in state %s "+
 				"because error occurred processing header: %v, isOrphan: %v",
 				origin.ID, sm.bc.chainState(), err, isOrphan)
 
@@ -474,7 +474,7 @@ func (sm *SyncManager) _handleHeaderBundleMessage(desoMsg DeSoMessage, origin *P
 		// current it means the peer we chose isn't current either. So disconnect
 		// from her and try to sync with someone else.
 		if sm.bc.chainState() == SyncStateSyncingHeaders {
-			glog.V(1).Infof("SyncManager._handleHeaderBundleMessage: Disconnecting from peer (id= %v) because "+
+			glog.V(1).Infof("SyncController._handleHeaderBundleMessage: Disconnecting from peer (id= %v) because "+
 				"we have exhausted their headers but our tip is still only at time=%v height=%d",
 				origin.ID, time.Unix(int64(sm.bc.headerTip().Header.GetTstampSecs()), 0), sm.bc.headerTip().Header.Height)
 
@@ -491,7 +491,7 @@ func (sm *SyncManager) _handleHeaderBundleMessage(desoMsg DeSoMessage, origin *P
 		}
 
 		if sm.bc.chainState() == SyncStateSyncingSnapshot {
-			// TODO: We use SnapshotManager here, which also has a reference to the SyncManager, can we avoid circular reference?
+			// TODO: We use SnapshotController here, which also has a reference to the SyncController, can we avoid circular reference?
 			return sm.snm.InitSnapshotSync(origin)
 		}
 
@@ -499,7 +499,7 @@ func (sm *SyncManager) _handleHeaderBundleMessage(desoMsg DeSoMessage, origin *P
 		// hypersync and the node has the archival mode turned on, we might need to download historical blocks.
 		// We'll check if there are any outstanding historical blocks to download.
 		if sm.bc.checkArchivalMode() {
-			glog.V(1).Infof("SyncManager._handleHeaderBundleMessage: Syncing historical blocks because node is in " +
+			glog.V(1).Infof("SyncController._handleHeaderBundleMessage: Syncing historical blocks because node is in " +
 				"archival mode.")
 			sm.bc.downloadingHistoricalBlocks = true
 			if code := sm.SyncMissingBlocksArchivalMode(origin); code != MessageHandlerResponseCodeOK {
@@ -518,7 +518,7 @@ func (sm *SyncManager) _handleHeaderBundleMessage(desoMsg DeSoMessage, origin *P
 			// has. We can do that in this case since this usually happens during sync
 			// before we've made any GetBlocks requests to the peer.
 			blockTip := sm.bc.blockTip()
-			glog.V(1).Infof("SyncManager._handleHeaderBundleMessage: *Syncing* blocks starting at "+
+			glog.V(1).Infof("SyncController._handleHeaderBundleMessage: *Syncing* blocks starting at "+
 				"height %d out of %d from peer (id= %v)",
 				blockTip.Header.Height+1, msg.TipHeight, origin.ID)
 			maxHeight := -1
@@ -537,7 +537,7 @@ func (sm *SyncManager) _handleHeaderBundleMessage(desoMsg DeSoMessage, origin *P
 			// Doing things this way makes it so that when we request blocks we
 			// are 100% positive the peer has them.
 			if !sm.bc.HasHeader(msg.TipHash) {
-				glog.V(1).Infof("SyncManager._handleHeaderBundleMessage: Peer's tip is not in our blockchain so not "+
+				glog.V(1).Infof("SyncController._handleHeaderBundleMessage: Peer's tip is not in our blockchain so not "+
 					"requesting anything else from them. Our block tip %v, their tip %v:%d, peer: (id= %v)",
 					sm.bc.blockTip().Header, msg.TipHash, msg.TipHeight, origin.ID)
 				return MessageHandlerResponseCodeSkip
@@ -548,7 +548,7 @@ func (sm *SyncManager) _handleHeaderBundleMessage(desoMsg DeSoMessage, origin *P
 			// them should be available as long as they don't exceed the peer's
 			// tip height.
 			blockTip := sm.bc.blockTip()
-			glog.V(1).Infof("SyncManager._handleHeaderBundleMessage: *Downloading* blocks starting at "+
+			glog.V(1).Infof("SyncController._handleHeaderBundleMessage: *Downloading* blocks starting at "+
 				"block tip %v out of %d from peer (id= %v)", blockTip.Header, msg.TipHeight, origin.ID)
 			return sm.SyncMissingBlocks(origin, int(msg.TipHeight))
 		}
@@ -592,7 +592,7 @@ func (sm *SyncManager) _handleHeaderBundleMessage(desoMsg DeSoMessage, origin *P
 	return MessageHandlerResponseCodeOK
 }
 
-func (sm *SyncManager) SendGetHeadersMessage(getHeaders *MsgDeSoGetHeaders, peerId uint64) MessageHandlerResponseCode {
+func (sm *SyncController) SendGetHeadersMessage(getHeaders *MsgDeSoGetHeaders, peerId uint64) MessageHandlerResponseCode {
 	stallTimeout := time.Duration(int64(sm.stallTimeoutSeconds) * int64(time.Second))
 	expectedResponses := []*ExpectedResponse{{
 		TimeExpected: time.Now().Add(stallTimeout),
@@ -604,7 +604,7 @@ func (sm *SyncManager) SendGetHeadersMessage(getHeaders *MsgDeSoGetHeaders, peer
 	return MessageHandlerResponseCodeOK
 }
 
-func (sm *SyncManager) _handleGetBlocksMessage(desoMsg DeSoMessage, origin *Peer) MessageHandlerResponseCode {
+func (sm *SyncController) _handleGetBlocksMessage(desoMsg DeSoMessage, origin *Peer) MessageHandlerResponseCode {
 	if desoMsg.GetMsgType() != MsgTypeGetBlocks {
 		return MessageHandlerResponseCodeSkip
 	}
@@ -620,7 +620,7 @@ func (sm *SyncManager) _handleGetBlocksMessage(desoMsg DeSoMessage, origin *Peer
 		return code
 	}
 
-	glog.V(1).Infof("SyncManager._handleGetBlocksMessage: RECEIVED message of type %v with "+
+	glog.V(1).Infof("SyncController._handleGetBlocksMessage: RECEIVED message of type %v with "+
 		"num hashes %v from peer (id= %v)", desoMsg.GetMsgType(), len(getBlocksMsg.HashList), origin.ID)
 
 	glog.V(1).Infof("srv._handleGetBlocks: Called with message %v from Peer (id= %v)", getBlocksMsg, origin.ID)
@@ -665,7 +665,7 @@ func (sm *SyncManager) _handleGetBlocksMessage(desoMsg DeSoMessage, origin *Peer
 	return MessageHandlerResponseCodeOK
 }
 
-func (sm *SyncManager) _maybeAddBlocksToSend(getBlocksMsg *MsgDeSoGetBlocks, peer *Peer) MessageHandlerResponseCode {
+func (sm *SyncController) _maybeAddBlocksToSend(getBlocksMsg *MsgDeSoGetBlocks, peer *Peer) MessageHandlerResponseCode {
 	// At this point, we're sure this is a GetBlocks message. Acquire the
 	// blocksToSend mutex and cast the message.
 	sm.blocksToSendMtx.Lock()
@@ -689,7 +689,7 @@ func (sm *SyncManager) _maybeAddBlocksToSend(getBlocksMsg *MsgDeSoGetBlocks, pee
 	return MessageHandlerResponseCodeOK
 }
 
-func (sm *SyncManager) _handleBlockMessage(desoMsg DeSoMessage, origin *Peer) MessageHandlerResponseCode {
+func (sm *SyncController) _handleBlockMessage(desoMsg DeSoMessage, origin *Peer) MessageHandlerResponseCode {
 	if desoMsg.GetMsgType() != MsgTypeBlock {
 		return MessageHandlerResponseCodeSkip
 	}
@@ -700,7 +700,7 @@ func (sm *SyncManager) _handleBlockMessage(desoMsg DeSoMessage, origin *Peer) Me
 		return MessageHandlerResponseCodePeerDisconnect
 	}
 
-	glog.Infof(CLog(Cyan, fmt.Sprintf("SyncManager._handleBlockMessage: Received block ( %v / %v ) from Peer (id= %v)",
+	glog.Infof(CLog(Cyan, fmt.Sprintf("SyncController._handleBlockMessage: Received block ( %v / %v ) from Peer (id= %v)",
 		blkMsg.Header.Height, sm.bc.headerTip().Height, origin.ID)))
 
 	// Pull out the header for easy access.
@@ -715,7 +715,7 @@ func (sm *SyncManager) _handleBlockMessage(desoMsg DeSoMessage, origin *Peer) Me
 	if sm.bc.isTipMaxed(sm.bc.blockTip()) &&
 		blockHeader.Height > uint64(sm.bc.blockTip().Height) {
 
-		glog.Infof("SyncManager._handleBlockMessage: Exiting because block tip is maxed out")
+		glog.Infof("SyncController._handleBlockMessage: Exiting because block tip is maxed out")
 		return MessageHandlerResponseCodeSkip
 	}
 
@@ -729,7 +729,7 @@ func (sm *SyncManager) _handleBlockMessage(desoMsg DeSoMessage, origin *Peer) Me
 
 	requestedBlocks := sm._getPeerRequestedBlocks(origin.ID)
 	if _, exists := requestedBlocks[*blockHash]; !exists {
-		glog.Errorf("SyncManager._handleBlockMessage: Getting a block that we haven't requested before, "+
+		glog.Errorf("SyncController._handleBlockMessage: Getting a block that we haven't requested before, "+
 			"peer (id= %v), block hash (%v)", origin.ID, *blockHash)
 	}
 	delete(requestedBlocks, *blockHash)
@@ -752,7 +752,7 @@ func (sm *SyncManager) _handleBlockMessage(desoMsg DeSoMessage, origin *Peer) Me
 	// Only verify signatures for recent blocks.
 	var isOrphan bool
 	if sm.bc.isSyncing() {
-		glog.V(1).Infof(CLog(Cyan, fmt.Sprintf("SyncManager._handleBlockMessage: Processing block %v WITHOUT "+
+		glog.V(1).Infof(CLog(Cyan, fmt.Sprintf("SyncController._handleBlockMessage: Processing block %v WITHOUT "+
 			"signature checking because SyncState=%v for peer (id= %v)",
 			blkMsg.String(), sm.bc.chainState(), origin.ID)))
 		_, isOrphan, err = sm.bc.ProcessBlock(blkMsg, false)
@@ -761,7 +761,7 @@ func (sm *SyncManager) _handleBlockMessage(desoMsg DeSoMessage, origin *Peer) Me
 		// TODO: Signature checking slows things down because it acquires the ChainLock.
 		// The optimal solution is to check signatures in a way that doesn't acquire the
 		// ChainLock, which is what Bitcoin Core does.
-		glog.V(1).Infof(CLog(Cyan, fmt.Sprintf("SyncManager._handleBlockMessage: Processing block %v WITH "+
+		glog.V(1).Infof(CLog(Cyan, fmt.Sprintf("SyncController._handleBlockMessage: Processing block %v WITH "+
 			"signature checking because SyncState=%v for peer (id= %v)",
 			blkMsg.String(), sm.bc.chainState(), origin.ID)))
 		_, isOrphan, err = sm.bc.ProcessBlock(blkMsg, true)
@@ -845,7 +845,7 @@ func (sm *SyncManager) _handleBlockMessage(desoMsg DeSoMessage, origin *Peer) Me
 	return MessageHandlerResponseCodeOK
 }
 
-func (sm *SyncManager) _getBlocksToSend(peerId uint64) map[BlockHash]bool {
+func (sm *SyncController) _getBlocksToSend(peerId uint64) map[BlockHash]bool {
 	if _, exists := sm.blocksToSend[peerId]; !exists {
 		sm.blocksToSend[peerId] = make(map[BlockHash]bool)
 	}
@@ -855,7 +855,7 @@ func (sm *SyncManager) _getBlocksToSend(peerId uint64) map[BlockHash]bool {
 // SyncMissingBlocks computes what blocks we need to fetch and asks for them from the
 // corresponding peer. It is typically called after we have exited
 // SyncStateSyncingHeaders.
-func (sm *SyncManager) SyncMissingBlocks(peer *Peer, maxHeight int) MessageHandlerResponseCode {
+func (sm *SyncController) SyncMissingBlocks(peer *Peer, maxHeight int) MessageHandlerResponseCode {
 	// Fetch as many blocks as we can from this peer.
 	requestedBlocks := sm._getPeerRequestedBlocks(peer.ID)
 	numBlocksToFetch := MaxBlocksInFlight - len(requestedBlocks)
@@ -892,7 +892,7 @@ func (sm *SyncManager) SyncMissingBlocks(peer *Peer, maxHeight int) MessageHandl
 
 // SyncMissingBlocksArchivalMode is part of the archival mode, which makes the node download all historical blocks after completing
 // hypersync. We will go through all blocks corresponding to the snapshot and download the blocks.
-func (sm *SyncManager) SyncMissingBlocksArchivalMode(peer *Peer) MessageHandlerResponseCode {
+func (sm *SyncController) SyncMissingBlocksArchivalMode(peer *Peer) MessageHandlerResponseCode {
 	glog.V(2).Infof("SyncMissingBlocksArchivalMode: Calling for peer (id= %v)", peer.ID)
 
 	if sm.bc.ChainState() != SyncStateSyncingHistoricalBlocks {
@@ -959,7 +959,7 @@ func (sm *SyncManager) SyncMissingBlocksArchivalMode(peer *Peer) MessageHandlerR
 	return MessageHandlerResponseCodeOK
 }
 
-func (sm *SyncManager) sendGetBlocksMessage(getBlocks *MsgDeSoGetBlocks, peerId uint64) MessageHandlerResponseCode {
+func (sm *SyncController) sendGetBlocksMessage(getBlocks *MsgDeSoGetBlocks, peerId uint64) MessageHandlerResponseCode {
 	// If we're sending the peer a GetBlocks message, we expect to receive the
 	// blocks at minimum within a few seconds of each other.
 	var expectedResponses []*ExpectedResponse
@@ -978,11 +978,11 @@ func (sm *SyncManager) sendGetBlocksMessage(getBlocks *MsgDeSoGetBlocks, peerId 
 	return MessageHandlerResponseCodeOK
 }
 
-func (sm *SyncManager) _handleQuitMessage(desoMsg DeSoMessage, origin *Peer) MessageHandlerResponseCode {
+func (sm *SyncController) _handleQuitMessage(desoMsg DeSoMessage, origin *Peer) MessageHandlerResponseCode {
 	if desoMsg.GetMsgType() != MsgTypeQuit {
 		return MessageHandlerResponseCodeSkip
 	}
 
-	// TODO: Maybe close a routine once sync manager runs one
+	// TODO: Maybe close a routine once sync controller runs one
 	return MessageHandlerResponseCodeOK
 }

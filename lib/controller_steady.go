@@ -18,8 +18,8 @@ const (
 	maxKnownInventory = 1000000
 )
 
-type SteadyManager struct {
-	sm       *SyncManager
+type SteadyController struct {
+	sm       *SyncController
 	shutdown int32
 
 	srv *Server
@@ -72,9 +72,9 @@ type SteadyManager struct {
 	hasProcessedFirstTransactionBundle bool
 }
 
-func NewSteadyManager(srv *Server, bc *Blockchain, mp *DeSoMempool, params *DeSoParams, minTxFeeRateNanosPerKB uint64,
-	stallTimeoutSeconds uint64, readOnlyMode bool, ignoreInboundPeerInvMessages bool) *SteadyManager {
-	return &SteadyManager{
+func NewSteadyController(srv *Server, bc *Blockchain, mp *DeSoMempool, params *DeSoParams, minTxFeeRateNanosPerKB uint64,
+	stallTimeoutSeconds uint64, readOnlyMode bool, ignoreInboundPeerInvMessages bool) *SteadyController {
+	return &SteadyController{
 		srv:                                srv,
 		bc:                                 bc,
 		mp:                                 mp,
@@ -92,12 +92,12 @@ func NewSteadyManager(srv *Server, bc *Blockchain, mp *DeSoMempool, params *DeSo
 	}
 }
 
-func (stm *SteadyManager) Init(managers []Manager) {
-	for _, manager := range managers {
-		if manager.GetType() != ManagerTypeSync {
+func (stm *SteadyController) Init(controllers []Controller) {
+	for _, controller := range controllers {
+		if controller.GetType() != ControllerTypeSync {
 			continue
 		}
-		stm.sm = manager.(*SyncManager)
+		stm.sm = controller.(*SyncController)
 	}
 
 	stm.srv.RegisterIncomingMessagesHandler(MsgTypeDonePeer, stm._handleDonePeerMessage)
@@ -108,33 +108,33 @@ func (stm *SteadyManager) Init(managers []Manager) {
 	stm.srv.RegisterIncomingMessagesHandler(MsgTypeTransactionBundleV2, stm._handleTransactionBundleV2Message)
 }
 
-func (stm *SteadyManager) Start() {
+func (stm *SteadyController) Start() {
 	go stm._startTransactionRelayer()
 }
 
-func (stm *SteadyManager) Stop() {
+func (stm *SteadyController) Stop() {
 	atomic.StoreInt32(&stm.shutdown, 1)
 }
 
-func (stm *SteadyManager) GetType() ManagerType {
-	return ManagerTypeSteady
+func (stm *SteadyController) GetType() ControllerType {
+	return ControllerTypeSteady
 }
 
 // ResetRequestQueues resets all the request queues.
-func (stm *SteadyManager) ResetRequestQueues() {
+func (stm *SteadyController) ResetRequestQueues() {
 	stm.dataLock.Lock()
 	defer stm.dataLock.Unlock()
 
-	glog.V(2).Infof("SteadyManager.ResetRequestQueues: Resetting request queues")
+	glog.V(2).Infof("SteadyController.ResetRequestQueues: Resetting request queues")
 
 	stm.requestedTransactionsMap = make(map[BlockHash]*GetDataRequestInfo)
 }
 
-func (stm *SteadyManager) HasProcessedFirstTransactionBundle() bool {
+func (stm *SteadyController) HasProcessedFirstTransactionBundle() bool {
 	return stm.hasProcessedFirstTransactionBundle
 }
 
-func (stm *SteadyManager) _startTransactionRelayer() {
+func (stm *SteadyController) _startTransactionRelayer() {
 	// If we've set a maximum sync height, we will not relay transactions.
 	if stm.bc.MaxSyncBlockHeight > 0 {
 		return
@@ -149,10 +149,10 @@ func (stm *SteadyManager) _startTransactionRelayer() {
 	}
 }
 
-func (stm *SteadyManager) _relayTransactions() {
-	glog.V(1).Infof("SteadyManager._relayTransactions: Waiting for mempool readOnlyView to regenerate")
+func (stm *SteadyController) _relayTransactions() {
+	glog.V(1).Infof("SteadyController._relayTransactions: Waiting for mempool readOnlyView to regenerate")
 	stm.mp.BlockUntilReadOnlyViewRegenerated()
-	glog.V(1).Infof("SteadyManager._relayTransactions: Mempool view has regenerated")
+	glog.V(1).Infof("SteadyController._relayTransactions: Mempool view has regenerated")
 
 	// For each peer, compute the transactions they're missing from the mempool and
 	// send them an inv.
@@ -182,14 +182,14 @@ func (stm *SteadyManager) _relayTransactions() {
 		}
 		if len(invMsg.InvList) > 0 {
 			if err := stm.SendInvMessage(invMsg, peer.ID); err != nil {
-				glog.Errorf("SteadyManager._relayTransactions: Problem sending "+
+				glog.Errorf("SteadyController._relayTransactions: Problem sending "+
 					"inv message to peer (id= %v): %v", peer.ID, err)
 			}
 		}
 	}
 }
 
-func (stm *SteadyManager) SendInvMessage(invMsg *MsgDeSoInv, peerId uint64) error {
+func (stm *SteadyController) SendInvMessage(invMsg *MsgDeSoInv, peerId uint64) error {
 	if len(invMsg.InvList) == 0 {
 		// Don't send anything if the inv list is empty after filtering.
 		return nil
@@ -203,7 +203,7 @@ func (stm *SteadyManager) SendInvMessage(invMsg *MsgDeSoInv, peerId uint64) erro
 	return stm.srv.SendMessage(invMsg, peerId, nil)
 }
 
-func (stm *SteadyManager) getKnownInventory(peerId uint64) *lru.Cache {
+func (stm *SteadyController) getKnownInventory(peerId uint64) *lru.Cache {
 	if _, ok := stm.knownInventoryMap[peerId]; !ok {
 		newCache := lru.NewCache(maxKnownInventory)
 		stm.knownInventoryMap[peerId] = &newCache
@@ -211,7 +211,7 @@ func (stm *SteadyManager) getKnownInventory(peerId uint64) *lru.Cache {
 	return stm.knownInventoryMap[peerId]
 }
 
-func (stm *SteadyManager) _handleMempoolMessage(desoMsg DeSoMessage, origin *Peer) MessageHandlerResponseCode {
+func (stm *SteadyController) _handleMempoolMessage(desoMsg DeSoMessage, origin *Peer) MessageHandlerResponseCode {
 	if desoMsg.GetMsgType() != MsgTypeMempool {
 		return MessageHandlerResponseCodeSkip
 	}
@@ -220,7 +220,7 @@ func (stm *SteadyManager) _handleMempoolMessage(desoMsg DeSoMessage, origin *Pee
 	return MessageHandlerResponseCodeOK
 }
 
-func (stm *SteadyManager) _handleInvMessage(desoMsg DeSoMessage, origin *Peer) MessageHandlerResponseCode {
+func (stm *SteadyController) _handleInvMessage(desoMsg DeSoMessage, origin *Peer) MessageHandlerResponseCode {
 	if desoMsg.GetMsgType() != MsgTypeInv {
 		return MessageHandlerResponseCodeSkip
 	}
@@ -232,7 +232,7 @@ func (stm *SteadyManager) _handleInvMessage(desoMsg DeSoMessage, origin *Peer) M
 	}
 
 	if !origin.IsOutbound() && stm.ignoreInboundPeerInvMessages {
-		glog.Infof("SteadyManager._handleInvMessage: Ignoring inv message from inbound peer because "+
+		glog.Infof("SteadyController._handleInvMessage: Ignoring inv message from inbound peer because "+
 			"ignore_outbound_peer_inv_messages=true: (id= %v)", origin.ID)
 		return MessageHandlerResponseCodeSkip
 	}
@@ -245,7 +245,7 @@ func (stm *SteadyManager) _handleInvMessage(desoMsg DeSoMessage, origin *Peer) M
 	// Ignore invs while we're still syncing and before we've requested
 	// all mempool transactions from one of our peers to bootstrap.
 	if stm.bc.isSyncing() {
-		glog.Infof("SteadyManager._handleInvMessage: Ignoring INV while syncing from Peer (id= %v)", origin.ID)
+		glog.Infof("SteadyController._handleInvMessage: Ignoring INV while syncing from Peer (id= %v)", origin.ID)
 		return MessageHandlerResponseCodeSkip
 	}
 
@@ -260,7 +260,7 @@ func (stm *SteadyManager) _handleInvMessage(desoMsg DeSoMessage, origin *Peer) M
 
 	// Iterate through the message. Gather the transactions and the
 	// blocks we don't already have into separate inventory lists.
-	glog.V(1).Infof("SteadyManager._handleInvMessage: Processing INV message of size %v "+
+	glog.V(1).Infof("SteadyController._handleInvMessage: Processing INV message of size %v "+
 		"from peer (id= %v)", len(invMsg.InvList), origin.ID)
 	txHashList := []*BlockHash{}
 	blockHashList := []*BlockHash{}
@@ -333,11 +333,11 @@ func (stm *SteadyManager) _handleInvMessage(desoMsg DeSoMessage, origin *Peer) M
 			HashList: txHashList,
 		}
 		if code := stm.sendGetTransactionsMessage(getTxnsMsg, origin.ID); code != MessageHandlerResponseCodeOK {
-			glog.Errorf("SteadyManager._handleInvMessage: Problem sending GET_TRANSACTIONS "+
+			glog.Errorf("SteadyController._handleInvMessage: Problem sending GET_TRANSACTIONS "+
 				"message to peer (id= %v): code %v", origin.ID, code)
 		}
 	} else {
-		glog.V(1).Infof("SteadyManager._handleInvMessage: Not sending GET_TRANSACTIONS because no new hashes")
+		glog.V(1).Infof("SteadyController._handleInvMessage: Not sending GET_TRANSACTIONS because no new hashes")
 	}
 
 	// If the peer has sent us any block hashes that are new to us then send
@@ -359,7 +359,7 @@ func (stm *SteadyManager) _handleInvMessage(desoMsg DeSoMessage, origin *Peer) M
 		}
 		// TODO: Is this the best function to call? Seems hacky
 		if code := stm.sm.SendGetHeadersMessage(getHeaders, origin.ID); code != MessageHandlerResponseCodeOK {
-			glog.Errorf("SteadyManager._handleInvMessage: Problem sending GET_HEADERS "+
+			glog.Errorf("SteadyController._handleInvMessage: Problem sending GET_HEADERS "+
 				"message to peer (id= %v): code %v", origin.ID, code)
 		}
 	}
@@ -368,7 +368,7 @@ func (stm *SteadyManager) _handleInvMessage(desoMsg DeSoMessage, origin *Peer) M
 }
 
 // ExpireRequests checks to see if any requests have expired and removes them if so.
-func (stm *SteadyManager) expireRequestedTransactions() {
+func (stm *SteadyController) expireRequestedTransactions() {
 	stm.dataLock.Lock()
 	defer stm.dataLock.Unlock()
 
@@ -388,7 +388,7 @@ func (stm *SteadyManager) expireRequestedTransactions() {
 }
 
 // dataLock must be acquired for writing before calling this function.
-func (stm *SteadyManager) _removeRequestedTransaction(hash *BlockHash) {
+func (stm *SteadyController) _removeRequestedTransaction(hash *BlockHash) {
 	// Just be lazy and remove the hash from everything indiscriminately to
 	// make sure it's good and purged.
 	delete(stm.requestedTransactionsMap, *hash)
@@ -400,7 +400,7 @@ func (stm *SteadyManager) _removeRequestedTransaction(hash *BlockHash) {
 	stm.inventoryBeingProcessed.Delete(*invVect)
 }
 
-func (stm *SteadyManager) _handleGetTransactionsMessage(desoMsg DeSoMessage, origin *Peer) MessageHandlerResponseCode {
+func (stm *SteadyController) _handleGetTransactionsMessage(desoMsg DeSoMessage, origin *Peer) MessageHandlerResponseCode {
 	if desoMsg.GetMsgType() != MsgTypeGetTransactions {
 		return MessageHandlerResponseCodeSkip
 	}
@@ -411,7 +411,7 @@ func (stm *SteadyManager) _handleGetTransactionsMessage(desoMsg DeSoMessage, ori
 		return MessageHandlerResponseCodePeerDisconnect
 	}
 
-	glog.V(1).Infof("SteadyManager._handleGetTransactionsMessage: Received MsgDeSoGetTransactions "+
+	glog.V(1).Infof("SteadyController._handleGetTransactionsMessage: Received MsgDeSoGetTransactions "+
 		"message (%v) from Peer (id= %v)", getTxnMsg.String(), origin.ID)
 
 	mempoolTxs := []*MempoolTx{}
@@ -445,7 +445,7 @@ func (stm *SteadyManager) _handleGetTransactionsMessage(desoMsg DeSoMessage, ori
 	// we had available from the request. It should also be below the limit
 	// for number of transactions since the request itself was below the
 	// limit. So push the bundle to the Peer.
-	glog.V(2).Infof("SteadyManager._handleGetTransactionsMessage: Sending txn bundle with size %v to peer (id= %v)",
+	glog.V(2).Infof("SteadyController._handleGetTransactionsMessage: Sending txn bundle with size %v to peer (id= %v)",
 		len(txnList), origin.ID)
 
 	// Now we must enqueue the transactions in a transaction bundle. The type of transaction
@@ -469,7 +469,7 @@ func (stm *SteadyManager) _handleGetTransactionsMessage(desoMsg DeSoMessage, ori
 	return MessageHandlerResponseCodeOK
 }
 
-func (stm *SteadyManager) VerifyAndBroadcastTransaction(txn *MsgDeSoTxn) error {
+func (stm *SteadyController) VerifyAndBroadcastTransaction(txn *MsgDeSoTxn) error {
 	// Grab the block tip and use it as the height for validation.
 	blockHeight := stm.bc.BlockTip().Height
 	err := stm.bc.ValidateTransaction(
@@ -488,7 +488,7 @@ func (stm *SteadyManager) VerifyAndBroadcastTransaction(txn *MsgDeSoTxn) error {
 	// is no need to consider a rateLimit and also no need to verifySignatures
 	// because we generally will have done that already.
 	if stm.readOnlyMode {
-		err := fmt.Errorf("SteadyManager.VerifyAndBroadcastTransaction: Not processing txn because we are in "+
+		err := fmt.Errorf("SteadyController.VerifyAndBroadcastTransaction: Not processing txn because we are in "+
 			"read-only mode: %v", stm.readOnlyMode)
 		glog.V(1).Infof(err.Error())
 		return err
@@ -496,13 +496,13 @@ func (stm *SteadyManager) VerifyAndBroadcastTransaction(txn *MsgDeSoTxn) error {
 
 	if stm.bc.chainState() != SyncStateFullyCurrent {
 
-		err := fmt.Errorf("SteadyManager.VerifyAndBroadcastTransaction: Cannot process txn "+
+		err := fmt.Errorf("SteadyController.VerifyAndBroadcastTransaction: Cannot process txn "+
 			"while syncing: (chainState= %v, txn.Hash()= %v)", stm.bc.chainState(), txn.Hash())
 		glog.Error(err)
 		return err
 	}
 
-	glog.V(1).Infof("SteadyManager.VerifyAndBroadcastTransaction: txn (hash= %v)", txn.Hash().String())
+	glog.V(1).Infof("SteadyController.VerifyAndBroadcastTransaction: txn (hash= %v)", txn.Hash().String())
 
 	// FIXME: the peerID has always been 0 lol
 	// Try and add the transaction to the mempool.
@@ -512,10 +512,10 @@ func (stm *SteadyManager) VerifyAndBroadcastTransaction(txn *MsgDeSoTxn) error {
 		txn, true /*allowUnconnectedTxn*/, false, peerID, false)
 	stm.bc.ChainLock.RUnlock()
 	if err != nil {
-		return errors.Wrapf(err, "SteadyManager.VerifyAndBroadcastTransaction: Problem adding transaction to mempool: ")
+		return errors.Wrapf(err, "SteadyController.VerifyAndBroadcastTransaction: Problem adding transaction to mempool: ")
 	}
 
-	glog.V(1).Infof("SteadyManager.VerifyAndBroadcastTransaction: newlyAcceptedTxns: (len= %v)", len(newlyAcceptedTxns))
+	glog.V(1).Infof("SteadyController.VerifyAndBroadcastTransaction: newlyAcceptedTxns: (len= %v)", len(newlyAcceptedTxns))
 
 	// At this point, we know the transaction has been run through the mempool.
 	// Now wait for an update of the ReadOnlyUtxoView so we don't break anything.
@@ -523,7 +523,7 @@ func (stm *SteadyManager) VerifyAndBroadcastTransaction(txn *MsgDeSoTxn) error {
 	return nil
 }
 
-func (stm *SteadyManager) _handleTransactionBundleMessage(desoMsg DeSoMessage, origin *Peer) MessageHandlerResponseCode {
+func (stm *SteadyController) _handleTransactionBundleMessage(desoMsg DeSoMessage, origin *Peer) MessageHandlerResponseCode {
 	if desoMsg.GetMsgType() != MsgTypeTransactionBundle {
 		return MessageHandlerResponseCodeSkip
 	}
@@ -533,7 +533,7 @@ func (stm *SteadyManager) _handleTransactionBundleMessage(desoMsg DeSoMessage, o
 	if txnBundleMsg, ok = desoMsg.(*MsgDeSoTransactionBundle); !ok {
 		return MessageHandlerResponseCodePeerDisconnect
 	}
-	glog.V(1).Infof("SteadyManager._handleTransactionBundleMessage: Received TransactionBundle "+
+	glog.V(1).Infof("SteadyController._handleTransactionBundleMessage: Received TransactionBundle "+
 		"message of size %v from Peer %v", len(txnBundleMsg.Transactions), origin.ID)
 
 	// TODO (old): I think making it so that we can't process more than one TransactionBundle at
@@ -541,7 +541,7 @@ func (stm *SteadyManager) _handleTransactionBundleMessage(desoMsg DeSoMessage, o
 	// from multiple peers they'll be processed all at once, potentially interleaving with
 	// one another.
 
-	glog.V(1).Infof("SteadyManager._handleTransactionBundleMessage: Received TransactionBundle "+
+	glog.V(1).Infof("SteadyController._handleTransactionBundleMessage: Received TransactionBundle "+
 		"message of size %v from Peer (id= %v)", len(txnBundleMsg.Transactions), origin)
 
 	stm._processTransactionsAndMaybeRemoveRequests(txnBundleMsg.Transactions, origin)
@@ -550,7 +550,7 @@ func (stm *SteadyManager) _handleTransactionBundleMessage(desoMsg DeSoMessage, o
 	return MessageHandlerResponseCodeOK
 }
 
-func (stm *SteadyManager) _handleTransactionBundleV2Message(desoMsg DeSoMessage, origin *Peer) MessageHandlerResponseCode {
+func (stm *SteadyController) _handleTransactionBundleV2Message(desoMsg DeSoMessage, origin *Peer) MessageHandlerResponseCode {
 	if desoMsg.GetMsgType() != MsgTypeTransactionBundleV2 {
 		return MessageHandlerResponseCodeSkip
 	}
@@ -575,9 +575,9 @@ func (stm *SteadyManager) _handleTransactionBundleV2Message(desoMsg DeSoMessage,
 	return MessageHandlerResponseCodeOK
 }
 
-func (stm *SteadyManager) _processTransactionsAndMaybeRemoveRequests(transactions []*MsgDeSoTxn, peer *Peer) {
+func (stm *SteadyController) _processTransactionsAndMaybeRemoveRequests(transactions []*MsgDeSoTxn, peer *Peer) {
 	transactionsToRelay := stm._processTransactions(peer, transactions)
-	glog.V(2).Infof("SteadyManager._processTransactionsAndMaybeRemoveRequests: Accepted %v txns from Peer (id= %v)",
+	glog.V(2).Infof("SteadyController._processTransactionsAndMaybeRemoveRequests: Accepted %v txns from Peer (id= %v)",
 		len(transactionsToRelay), peer)
 
 	_ = transactionsToRelay
@@ -593,7 +593,7 @@ func (stm *SteadyManager) _processTransactionsAndMaybeRemoveRequests(transaction
 	stm.dataLock.Unlock()
 }
 
-func (stm *SteadyManager) _processTransactions(pp *Peer, transactions []*MsgDeSoTxn) []*MempoolTx {
+func (stm *SteadyController) _processTransactions(pp *Peer, transactions []*MsgDeSoTxn) []*MempoolTx {
 	// Try and add all the transactions to our mempool in the order we received
 	// them. If any fail to get added, just log an error.
 	//
@@ -602,7 +602,7 @@ func (stm *SteadyManager) _processTransactions(pp *Peer, transactions []*MsgDeSo
 	// a block. Doing something like this would make it so that if a transaction
 	// was initially rejected due to us not having its dependencies, then we
 	// will eventually add it as opposed to just forgetting about it.
-	glog.V(2).Infof("SteadyManager._processTransactions: Processing %d transactions from "+
+	glog.V(2).Infof("SteadyController._processTransactions: Processing %d transactions from "+
 		"peer %v", len(transactions), pp)
 	transactionsToRelay := []*MempoolTx{}
 	for _, txn := range transactions {
@@ -610,12 +610,12 @@ func (stm *SteadyManager) _processTransactions(pp *Peer, transactions []*MsgDeSo
 		// verifying signatures.
 		newlyAcceptedTxns, err := stm.processSingleTxnWithChainLock(pp, txn)
 		if err != nil {
-			glog.Errorf(fmt.Sprintf("SteadyManager._processTransactions: Rejected "+
+			glog.Errorf(fmt.Sprintf("SteadyController._processTransactions: Rejected "+
 				"transaction %v from peer %v from mempool: %v", txn, pp, err))
 			// A peer should know better than to send us a transaction that's below
 			// our min feerate, which they see when we send them a version message.
 			if err == TxErrorInsufficientFeeMinFee {
-				glog.Errorf(fmt.Sprintf("SteadyManager._processTransactions: Disconnecting "+
+				glog.Errorf(fmt.Sprintf("SteadyController._processTransactions: Disconnecting "+
 					"Peer %v for sending us a transaction %v with fee below the minimum fee %d",
 					pp, txn, stm.mp.minFeeRateNanosPerKB))
 				pp.Disconnect()
@@ -625,7 +625,7 @@ func (stm *SteadyManager) _processTransactions(pp *Peer, transactions []*MsgDeSo
 			continue
 		}
 		if len(newlyAcceptedTxns) == 0 {
-			glog.Infof(fmt.Sprintf("SteadyManager._processTransactions: "+
+			glog.Infof(fmt.Sprintf("SteadyController._processTransactions: "+
 				"Transaction %v from peer %v was added as an ORPHAN", spew.Sdump(txn), pp))
 		}
 
@@ -638,7 +638,7 @@ func (stm *SteadyManager) _processTransactions(pp *Peer, transactions []*MsgDeSo
 	return transactionsToRelay
 }
 
-func (stm *SteadyManager) processSingleTxnWithChainLock(peer *Peer, txn *MsgDeSoTxn) ([]*MempoolTx, error) {
+func (stm *SteadyController) processSingleTxnWithChainLock(peer *Peer, txn *MsgDeSoTxn) ([]*MempoolTx, error) {
 	// Lock the chain for reading so that transactions don't shift under our feet
 	// when processing this bundle. Not doing this could cause us to miss transactions
 	// erroneously.
@@ -656,7 +656,7 @@ func (stm *SteadyManager) processSingleTxnWithChainLock(peer *Peer, txn *MsgDeSo
 }
 
 // Call this on MsgTypeDonePeer
-func (stm *SteadyManager) _handleDonePeerMessage(desoMessage DeSoMessage, origin *Peer) MessageHandlerResponseCode {
+func (stm *SteadyController) _handleDonePeerMessage(desoMessage DeSoMessage, origin *Peer) MessageHandlerResponseCode {
 	if desoMessage.GetMsgType() != MsgTypeDonePeer {
 		return MessageHandlerResponseCodeSkip
 	}
@@ -725,7 +725,7 @@ func (stm *SteadyManager) _handleDonePeerMessage(desoMessage DeSoMessage, origin
 	return stm.sendGetTransactionsMessage(getTxnsMsg, origin.ID)
 }
 
-func (stm *SteadyManager) sendGetTransactionsMessage(getTxnsMsg *MsgDeSoGetTransactions, peerId uint64) MessageHandlerResponseCode {
+func (stm *SteadyController) sendGetTransactionsMessage(getTxnsMsg *MsgDeSoGetTransactions, peerId uint64) MessageHandlerResponseCode {
 	// If we're sending a GetTransactions message, the Peer should respond within
 	// a few seconds with a TransactionBundle. Every GetTransactions message should
 	// receive a TransactionBundle in response. The

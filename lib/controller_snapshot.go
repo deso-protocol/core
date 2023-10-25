@@ -12,9 +12,9 @@ import (
 	"time"
 )
 
-type SnapshotManager struct {
-	// TODO: Right now we're doing a circular reference *SyncManager <-> *SnapshotManager. Any better way?
-	sm *SyncManager
+type SnapshotController struct {
+	// TODO: Right now we're doing a circular reference *SyncController <-> *SnapshotController. Any better way?
+	sm *SyncController
 
 	bc   *Blockchain
 	snap *Snapshot
@@ -49,10 +49,10 @@ type SnapshotManager struct {
 	HyperSyncProgress SyncProgress
 }
 
-func NewSnapshotManager(bc *Blockchain, snap *Snapshot, srv *Server, mp *DeSoMempool, eventManager *EventManager,
-	hyperSync bool, forceChecksum bool, stallTimeoutSeconds uint64, nodeMessageChannel chan NodeMessage) *SnapshotManager {
+func NewSnapshotController(bc *Blockchain, snap *Snapshot, srv *Server, mp *DeSoMempool, eventManager *EventManager,
+	hyperSync bool, forceChecksum bool, stallTimeoutSeconds uint64, nodeMessageChannel chan NodeMessage) *SnapshotController {
 
-	return &SnapshotManager{
+	return &SnapshotController{
 		bc:                  bc,
 		snap:                snap,
 		srv:                 srv,
@@ -65,33 +65,33 @@ func NewSnapshotManager(bc *Blockchain, snap *Snapshot, srv *Server, mp *DeSoMem
 	}
 }
 
-func (snm *SnapshotManager) Init(managers []Manager) {
-	for _, manager := range managers {
-		if manager.GetType() != ManagerTypeSync {
+func (snm *SnapshotController) Init(controllers []Controller) {
+	for _, controller := range controllers {
+		if controller.GetType() != ControllerTypeSync {
 			continue
 		}
-		snm.sm = manager.(*SyncManager)
+		snm.sm = controller.(*SyncController)
 	}
 
 	snm.srv.RegisterIncomingMessagesHandler(MsgTypeGetSnapshot, snm._handleGetSnapshotMessage)
 	snm.srv.RegisterIncomingMessagesHandler(MsgTypeSnapshotData, snm._handleSnapshotDataMessage)
 }
 
-func (snm *SnapshotManager) Start() {
+func (snm *SnapshotController) Start() {
 }
 
-func (snm *SnapshotManager) Stop() {
+func (snm *SnapshotController) Stop() {
 }
 
-func (snm *SnapshotManager) GetType() ManagerType {
-	return ManagerTypeSnapshot
+func (snm *SnapshotController) GetType() ControllerType {
+	return ControllerTypeSnapshot
 }
 
 // _handleGetSnapshotMessage gets called whenever we receive a GetSnapshot message from a peer. This means
 // a peer is asking us to send him some data from our most recent snapshot. To respond to the peer we
 // will retrieve the chunk from our main and ancestral records db and attach it to the response message.
 // This function is handled within peer's inbound message loop because retrieving a chunk is costly.
-func (snm *SnapshotManager) _handleGetSnapshotMessage(desoMsg DeSoMessage, origin *Peer) MessageHandlerResponseCode {
+func (snm *SnapshotController) _handleGetSnapshotMessage(desoMsg DeSoMessage, origin *Peer) MessageHandlerResponseCode {
 	if desoMsg.GetMsgType() != MsgTypeGetSnapshot {
 		return MessageHandlerResponseCodeSkip
 	}
@@ -101,7 +101,7 @@ func (snm *SnapshotManager) _handleGetSnapshotMessage(desoMsg DeSoMessage, origi
 	if snapMsg, ok = desoMsg.(*MsgDeSoGetSnapshot); !ok {
 		return MessageHandlerResponseCodePeerDisconnect
 	}
-	glog.V(1).Infof("SnapshotManager._handleGetSnapshotMessage: Called with SnapshotStartKey= %v from Peer "+
+	glog.V(1).Infof("SnapshotController._handleGetSnapshotMessage: Called with SnapshotStartKey= %v from Peer "+
 		"(id= %v)", hex.EncodeToString(snapMsg.SnapshotStartKey), origin.ID)
 
 	// Make sure this peer can only request one snapshot chunk at a time.
@@ -111,7 +111,7 @@ func (snm *SnapshotManager) _handleGetSnapshotMessage(desoMsg DeSoMessage, origi
 		return MessageHandlerResponseCodePeerDisconnect
 	}
 	snm.snapshotChunkRequestInFlight = true
-	defer func(sm *SnapshotManager) { sm.snapshotChunkRequestInFlight = false }(snm)
+	defer func(sm *SnapshotController) { sm.snapshotChunkRequestInFlight = false }(snm)
 
 	// Ignore GetSnapshot requests and disconnect the peer if we're not a hypersync node.
 	if snm.snap == nil {
@@ -201,7 +201,7 @@ func (snm *SnapshotManager) _handleGetSnapshotMessage(desoMsg DeSoMessage, origi
 // check if the passed peer has been assigned to an in-progress prefix and if so,
 // we will request a snapshot data chunk from them. Otherwise, we will assign a
 // new prefix to that peer.
-func (snm *SnapshotManager) syncSnapshot(peer *Peer) MessageHandlerResponseCode {
+func (snm *SnapshotController) syncSnapshot(peer *Peer) MessageHandlerResponseCode {
 	var prefix []byte
 	var lastReceivedKey []byte
 
@@ -222,7 +222,7 @@ func (snm *SnapshotManager) syncSnapshot(peer *Peer) MessageHandlerResponseCode 
 			syncingPrefix = true
 			break
 		} else {
-			glog.V(1).Infof("SnapshotManager.syncSnapshot: switching peers on prefix (%v), previous "+
+			glog.V(1).Infof("SnapshotController.syncSnapshot: switching peers on prefix (%v), previous "+
 				"peer ID (id= %v) current peer ID (id= %v)", prefixProgress.Prefix, prefixProgress.PrefixSyncPeer.ID, peer.ID)
 			// TODO [OLD]: Should disable the previous sync peer here somehow
 
@@ -257,7 +257,7 @@ func (snm *SnapshotManager) syncSnapshot(peer *Peer) MessageHandlerResponseCode 
 		}
 		// If no prefix was found, we error and return because the state is already synced.
 		if !syncingPrefix {
-			glog.Errorf("SnapshotManager.syncSnapshot: Error selecting a prefix for peer (id= %v)"+
+			glog.Errorf("SnapshotController.syncSnapshot: Error selecting a prefix for peer (id= %v)"+
 				"all prefixes are synced", peer.ID)
 			return MessageHandlerResponseCodeSkip
 		}
@@ -266,7 +266,7 @@ func (snm *SnapshotManager) syncSnapshot(peer *Peer) MessageHandlerResponseCode 
 	// we wait for the queue to clear up.
 	snm.snap.operationQueueSemaphore <- struct{}{}
 	// Now send a message to the peer to fetch the snapshot chunk.
-	glog.V(2).Infof("SnapshotManager.syncSnapshot: Sending a syncSnapshot message to peer (id= %v) "+
+	glog.V(2).Infof("SnapshotController.syncSnapshot: Sending a syncSnapshot message to peer (id= %v) "+
 		"with Prefix (%v) and SnapshotStartEntry (%v)", peer.ID, prefix, lastReceivedKey)
 	getSnapshotMsg := &MsgDeSoGetSnapshot{
 		SnapshotStartKey: lastReceivedKey,
@@ -274,7 +274,7 @@ func (snm *SnapshotManager) syncSnapshot(peer *Peer) MessageHandlerResponseCode 
 	return snm.sendGetSnapshotMessage(getSnapshotMsg, peer.ID)
 }
 
-func (snm *SnapshotManager) sendGetSnapshotMessage(getSnapshotMsg *MsgDeSoGetSnapshot, peerId uint64) MessageHandlerResponseCode {
+func (snm *SnapshotController) sendGetSnapshotMessage(getSnapshotMsg *MsgDeSoGetSnapshot, peerId uint64) MessageHandlerResponseCode {
 	// If we're sending a GetSnapshot message, the peer should respond within a few seconds with a SnapshotData.
 	stallTimeout := time.Duration(int64(snm.stallTimeoutSeconds) * int64(time.Second))
 	expectedResponses := []*ExpectedResponse{{
@@ -291,7 +291,7 @@ func (snm *SnapshotManager) sendGetSnapshotMessage(getSnapshotMsg *MsgDeSoGetSna
 // _handleSnapshot gets called when we receive a SnapshotData message from a peer. The message contains
 // a snapshot chunk, which is a sorted list of <key, value> pairs representing a section of the database
 // at current snapshot epoch. We will set these entries in our node's database as well as update the checksum.
-func (snm *SnapshotManager) _handleSnapshotDataMessage(desoMsg DeSoMessage, origin *Peer) MessageHandlerResponseCode {
+func (snm *SnapshotController) _handleSnapshotDataMessage(desoMsg DeSoMessage, origin *Peer) MessageHandlerResponseCode {
 	if desoMsg.GetMsgType() != MsgTypeSnapshotData {
 		return MessageHandlerResponseCodeSkip
 	}
@@ -299,7 +299,7 @@ func (snm *SnapshotManager) _handleSnapshotDataMessage(desoMsg DeSoMessage, orig
 	var snapDataMsg *MsgDeSoSnapshotData
 	var ok bool
 	if snapDataMsg, ok = desoMsg.(*MsgDeSoSnapshotData); !ok {
-		glog.Errorf("SnapshotManager._handleSnapshotDataMessage: "+
+		glog.Errorf("SnapshotController._handleSnapshotDataMessage: "+
 			"Problem parsing MsgDeSoSnapshotData message from peer %v", origin)
 		return MessageHandlerResponseCodePeerDisconnect
 	}
@@ -307,14 +307,14 @@ func (snm *SnapshotManager) _handleSnapshotDataMessage(desoMsg DeSoMessage, orig
 	// If there are no db entries in the msg, we should also disconnect the peer. There should always be
 	// at least one entry sent, which is either the empty entry or the last key we've requested.
 	if snm.snap == nil {
-		glog.Errorf("SnapshotManager._handleSnapshotDataMessage: Received a snapshot message from a peer but " +
+		glog.Errorf("SnapshotController._handleSnapshotDataMessage: Received a snapshot message from a peer but " +
 			"snm.snap is nil. This peer shouldn't send us snapshot messages because we didn't pass the SFHyperSync flag.")
 		return MessageHandlerResponseCodePeerDisconnect
 	}
 
 	// If we're not syncing then we don't need the snapshot chunk so
 	if snm.bc.ChainState() != SyncStateSyncingSnapshot {
-		glog.Errorf("SnapshotManager._handleSnapshotDataMessage: Received a snapshot message from peer but chain is "+
+		glog.Errorf("SnapshotController._handleSnapshotDataMessage: Received a snapshot message from peer but chain is "+
 			"not currently syncing from snapshot. This means peer is most likely misbehaving so we'll disconnect them. "+
 			"Peer: (id= %v)", origin.ID)
 		return MessageHandlerResponseCodePeerDisconnect
@@ -322,12 +322,12 @@ func (snm *SnapshotManager) _handleSnapshotDataMessage(desoMsg DeSoMessage, orig
 
 	if len(snapDataMsg.SnapshotChunk) == 0 {
 		// We should disconnect the peer because he is misbehaving or doesn't have the snapshot.
-		glog.Errorf("SnapshotManager._handleSnapshotDataMessage: Received a snapshot messages with empty snapshot chunk "+
+		glog.Errorf("SnapshotController._handleSnapshotDataMessage: Received a snapshot messages with empty snapshot chunk "+
 			"disconnecting misbehaving peer (id= %v)", origin.ID)
 		return MessageHandlerResponseCodePeerDisconnect
 	}
 
-	glog.V(1).Infof(CLog(Yellow, fmt.Sprintf("SnapshotManager._handleSnapshotDataMessage: Received a "+
+	glog.V(1).Infof(CLog(Yellow, fmt.Sprintf("SnapshotController._handleSnapshotDataMessage: Received a "+
 		"snapshot message with entry keys (First entry: <%v>, Last entry: <%v>), (number of entries: %v), "+
 		"metadata (%v), and isEmpty (%v), from Peer (id= %v)",
 		snapDataMsg.SnapshotChunk[0].Key, snapDataMsg.SnapshotChunk[len(snapDataMsg.SnapshotChunk)-1].Key,
@@ -341,14 +341,14 @@ func (snm *SnapshotManager) _handleSnapshotDataMessage(desoMsg DeSoMessage, orig
 		// TODO: Figure out how to handle header not reaching us, yet peer is telling us that the new epoch has started.
 		if snm.nodeMessageChannel != nil {
 			snm.nodeMessageChannel <- NodeRestart
-			glog.Infof(CLog(Yellow, fmt.Sprintf("SnapshotManager._handleSnapshotDataMessage: Received a snapshot metadata "+
+			glog.Infof(CLog(Yellow, fmt.Sprintf("SnapshotController._handleSnapshotDataMessage: Received a snapshot metadata "+
 				"with height (%v) which is greater than the hypersync progress height (%v). This can happen when the network "+
 				"entered a new snapshot epoch while we were syncing. The node will be restarted to retry hypersync with new epoch.",
 				snapDataMsg.SnapshotMetadata.SnapshotBlockHeight, snm.HyperSyncProgress.SnapshotMetadata.SnapshotBlockHeight)))
 			return MessageHandlerResponseCodeOK
 		} else {
 			// TODO: We previously didn't return here, seems like we should?
-			glog.Errorf(CLog(Red, "SnapshotManager._handleSnapshotDataMessage: Trying to restart the node but "+
+			glog.Errorf(CLog(Red, "SnapshotController._handleSnapshotDataMessage: Trying to restart the node but "+
 				"nodeMessageChannel is empty, this should never happen."))
 			return MessageHandlerResponseCodeSkip
 		}
@@ -358,7 +358,7 @@ func (snm *SnapshotManager) _handleSnapshotDataMessage(desoMsg DeSoMessage, orig
 	if snapDataMsg.SnapshotMetadata.SnapshotBlockHeight != snm.HyperSyncProgress.SnapshotMetadata.SnapshotBlockHeight ||
 		!bytes.Equal(snapDataMsg.SnapshotMetadata.CurrentEpochBlockHash[:], snm.HyperSyncProgress.SnapshotMetadata.CurrentEpochBlockHash[:]) {
 
-		glog.Errorf("SnapshotManager._handleSnapshotDataMessage: blockheight (%v) and blockhash (%v) in msg do "+
+		glog.Errorf("SnapshotController._handleSnapshotDataMessage: blockheight (%v) and blockhash (%v) in msg do "+
 			"not match the expected hyper sync height (%v) and hash (%v)",
 			snapDataMsg.SnapshotMetadata.SnapshotBlockHeight, snapDataMsg.SnapshotMetadata.CurrentEpochBlockHash,
 			snm.HyperSyncProgress.SnapshotMetadata.SnapshotBlockHeight, snm.HyperSyncProgress.SnapshotMetadata.CurrentEpochBlockHash)
@@ -376,7 +376,7 @@ func (snm *SnapshotManager) _handleSnapshotDataMessage(desoMsg DeSoMessage, orig
 	// If peer sent a message with an incorrect prefix, we should disconnect them.
 	if syncPrefixProgress == nil {
 		// We should disconnect the peer because he is misbehaving
-		glog.Errorf("SnapshotManager._handleSnapshotDataMessage: Problem finding appropriate sync prefix progress "+
+		glog.Errorf("SnapshotController._handleSnapshotDataMessage: Problem finding appropriate sync prefix progress "+
 			"disconnecting misbehaving peer (id= %v)", origin.ID)
 		return MessageHandlerResponseCodePeerDisconnect
 	}
@@ -389,7 +389,7 @@ func (snm *SnapshotManager) _handleSnapshotDataMessage(desoMsg DeSoMessage, orig
 		snm.HyperSyncProgress.SnapshotMetadata.CurrentEpochChecksumBytes = snapDataMsg.SnapshotMetadata.CurrentEpochChecksumBytes
 	} else if !reflect.DeepEqual(snm.HyperSyncProgress.SnapshotMetadata.CurrentEpochChecksumBytes, snapDataMsg.SnapshotMetadata.CurrentEpochChecksumBytes) {
 		// We should disconnect the peer because he is misbehaving
-		glog.Errorf("SnapshotManager._handleSnapshotDataMessage: HyperSyncProgress epoch checksum bytes does not "+
+		glog.Errorf("SnapshotController._handleSnapshotDataMessage: HyperSyncProgress epoch checksum bytes does not "+
 			"match that received from peer, disconnecting misbehaving peer (id= %v)", origin.ID)
 		return MessageHandlerResponseCodePeerDisconnect
 	}
@@ -403,14 +403,14 @@ func (snm *SnapshotManager) _handleSnapshotDataMessage(desoMsg DeSoMessage, orig
 	if snapDataMsg.SnapshotChunk[0].IsEmpty() {
 		// We send the empty DB entry whenever we've exhausted the prefix. It can only be the first entry in the
 		// chunk. We set chunkEmpty to true.
-		glog.Infof("SnapshotManager._handleSnapshotDataMessage: First snapshot chunk is empty")
+		glog.Infof("SnapshotController._handleSnapshotDataMessage: First snapshot chunk is empty")
 		chunkEmpty = true
 	} else if bytes.Equal(syncPrefixProgress.LastReceivedKey, syncPrefixProgress.Prefix) {
 		// If this is the first message that we're receiving for this sync progress, the first entry in the chunk
 		// is going to be equal to the prefix.
 		if !bytes.HasPrefix(snapDataMsg.SnapshotChunk[0].Key, snapDataMsg.Prefix) {
 			// We should disconnect the peer because he is misbehaving.
-			glog.Errorf("SnapshotManager._handleSnapshotDataMessage: Snapshot chunk DBEntry key has mismatched prefix "+
+			glog.Errorf("SnapshotController._handleSnapshotDataMessage: Snapshot chunk DBEntry key has mismatched prefix "+
 				"disconnecting misbehaving peer (id= %v)", origin.ID)
 			snm.HyperSyncProgress.SnapshotMetadata.CurrentEpochChecksumBytes = prevChecksumBytes
 			return MessageHandlerResponseCodePeerDisconnect
@@ -421,7 +421,7 @@ func (snm *SnapshotManager) _handleSnapshotDataMessage(desoMsg DeSoMessage, orig
 		// should be identical to the first key in snapshot chunk. If it is not, then the peer either re-sent
 		// the same payload twice, a message was dropped by the network, or he is misbehaving.
 		if !bytes.Equal(syncPrefixProgress.LastReceivedKey, snapDataMsg.SnapshotChunk[0].Key) {
-			glog.Errorf("SnapshotManager._handleSnapshotDataMessage: Received a snapshot chunk that's not in-line "+
+			glog.Errorf("SnapshotController._handleSnapshotDataMessage: Received a snapshot chunk that's not in-line "+
 				"with the sync progress disconnecting misbehaving peer (id= %v)", origin.ID)
 			snm.HyperSyncProgress.SnapshotMetadata.CurrentEpochChecksumBytes = prevChecksumBytes
 			return MessageHandlerResponseCodePeerDisconnect
@@ -437,7 +437,7 @@ func (snm *SnapshotManager) _handleSnapshotDataMessage(desoMsg DeSoMessage, orig
 			// Make sure that all dbChunk entries have the same prefix as in the message.
 			if !bytes.HasPrefix(dbChunk[ii].Key, snapDataMsg.Prefix) {
 				// We should disconnect the peer because he is misbehaving
-				glog.Errorf("SnapshotManager._handleSnapshotDataMessage: DBEntry key has mismatched prefix "+
+				glog.Errorf("SnapshotController._handleSnapshotDataMessage: DBEntry key has mismatched prefix "+
 					"disconnecting misbehaving peer (id= %v)", origin.ID)
 				snm.HyperSyncProgress.SnapshotMetadata.CurrentEpochChecksumBytes = prevChecksumBytes
 				return MessageHandlerResponseCodePeerDisconnect
@@ -445,7 +445,7 @@ func (snm *SnapshotManager) _handleSnapshotDataMessage(desoMsg DeSoMessage, orig
 			// Make sure that the dbChunk is sorted increasingly.
 			if bytes.Compare(dbChunk[ii-1].Key, dbChunk[ii].Key) != -1 {
 				// We should disconnect the peer because he is misbehaving
-				glog.Errorf("SnapshotManager._handleSnapshotDataMessage: dbChunk entries are not sorted: first entry "+
+				glog.Errorf("SnapshotController._handleSnapshotDataMessage: dbChunk entries are not sorted: first entry "+
 					"at index (%v) with value (%v) and second entry with index (%v) and value (%v) disconnecting misbehaving "+
 					"peer (id= %v)", ii-1, dbChunk[ii-1].Key, ii, dbChunk[ii].Key, origin.ID)
 				snm.HyperSyncProgress.SnapshotMetadata.CurrentEpochChecksumBytes = prevChecksumBytes
@@ -517,14 +517,14 @@ func (snm *SnapshotManager) _handleSnapshotDataMessage(desoMsg DeSoMessage, orig
 	// If the checksums don't match, it means that we've been interacting with a peer that was misbehaving.
 	checksumBytes, err := snm.snap.Checksum.ToBytes()
 	if err != nil {
-		glog.Errorf("SnapshotManager._handleSnapshotDataMessage: Problem getting checksum bytes, error (%v)", err)
+		glog.Errorf("SnapshotController._handleSnapshotDataMessage: Problem getting checksum bytes, error (%v)", err)
 	}
 	if reflect.DeepEqual(checksumBytes, snm.HyperSyncProgress.SnapshotMetadata.CurrentEpochChecksumBytes) {
 		glog.Infof(CLog(Green, fmt.Sprintf("Server._handleSnapshot: State checksum matched "+
 			"what was expected!")))
 	} else {
 		// Checksums didn't match
-		glog.Errorf(CLog(Red, fmt.Sprintf("SnapshotManager._handleSnapshotDataMessage: The final db checksum doesn't "+
+		glog.Errorf(CLog(Red, fmt.Sprintf("SnapshotController._handleSnapshotDataMessage: The final db checksum doesn't "+
 			"match the checksum received from the peer. It is likely that HyperSync encountered some unexpected error earlier. "+
 			"You should report this as an issue on DeSo github https://github.com/deso-protocol/core. It is also possible "+
 			"that the peer is misbehaving and sent invalid snapshot chunks. In either way, we'll restart the node and "+
@@ -539,7 +539,7 @@ func (snm *SnapshotManager) _handleSnapshotDataMessage(desoMsg DeSoMessage, orig
 			return MessageHandlerResponseCodeOK
 		} else {
 			// Otherwise, if forceChecksum is false, we error but then keep going.
-			glog.Errorf(CLog(Yellow, fmt.Sprintf("SnapshotManager._handleSnapshotDataMessage: Ignoring checksum "+
+			glog.Errorf(CLog(Yellow, fmt.Sprintf("SnapshotController._handleSnapshotDataMessage: Ignoring checksum "+
 				"mismatch because --force-checksum is set to false.")))
 		}
 	}
@@ -578,7 +578,7 @@ func (snm *SnapshotManager) _handleSnapshotDataMessage(desoMsg DeSoMessage, orig
 		return err
 	})
 	if err != nil {
-		glog.Errorf("SnapshotManager._handleSnapshotDataMessage: Problem updating snapshot blocknodes, error: (%v)", err)
+		glog.Errorf("SnapshotController._handleSnapshotDataMessage: Problem updating snapshot blocknodes, error: (%v)", err)
 	}
 	// We also reset the in-memory snapshot cache, because it is populated with stale records after
 	// we've initialized the chain with seed transactions.
@@ -596,7 +596,7 @@ func (snm *SnapshotManager) _handleSnapshotDataMessage(desoMsg DeSoMessage, orig
 		})
 		snm.snap.SnapshotDbMutex.Unlock()
 		if err != nil {
-			glog.Errorf("SnapshotManager._handleSnapshotDataMessage: Problem setting snapshot epoch metadata "+
+			glog.Errorf("SnapshotController._handleSnapshotDataMessage: Problem setting snapshot epoch metadata "+
 				"in snapshot db, error (%v)", err)
 			time.Sleep(1 * time.Second)
 			continue
@@ -608,7 +608,7 @@ func (snm *SnapshotManager) _handleSnapshotDataMessage(desoMsg DeSoMessage, orig
 	snm.snap.Status.CurrentBlockHeight = snapDataMsg.SnapshotMetadata.SnapshotBlockHeight
 	snm.snap.Status.SaveStatus()
 
-	glog.Infof("SnapshotManager._handleSnapshotDataMessage: FINAL snapshot checksum is (%v) (%v)",
+	glog.Infof("SnapshotController._handleSnapshotDataMessage: FINAL snapshot checksum is (%v) (%v)",
 		snm.snap.CurrentEpochSnapshotMetadata.CurrentEpochChecksumBytes,
 		hex.EncodeToString(snm.snap.CurrentEpochSnapshotMetadata.CurrentEpochChecksumBytes))
 
@@ -618,7 +618,7 @@ func (snm *SnapshotManager) _handleSnapshotDataMessage(desoMsg DeSoMessage, orig
 	// Now sync the remaining blocks.
 	if snm.bc.archivalMode {
 		snm.bc.downloadingHistoricalBlocks = true
-		// TODO: Right now we're doing a circular reference *SyncManager <-> *SnapshotManager. Any better way?
+		// TODO: Right now we're doing a circular reference *SyncController <-> *SnapshotController. Any better way?
 		if code := snm.sm.SyncMissingBlocksArchivalMode(origin); code != MessageHandlerResponseCodeOK {
 			return code
 		}
@@ -626,11 +626,11 @@ func (snm *SnapshotManager) _handleSnapshotDataMessage(desoMsg DeSoMessage, orig
 	}
 
 	headerTip := snm.bc.headerTip()
-	// TODO: Right now we're doing a circular reference *SyncManager <-> *SnapshotManager. Any better way?
+	// TODO: Right now we're doing a circular reference *SyncController <-> *SnapshotController. Any better way?
 	return snm.sm.SyncMissingBlocks(origin, int(headerTip.Height))
 }
 
-func (snm *SnapshotManager) InitSnapshotSync(peer *Peer) MessageHandlerResponseCode {
+func (snm *SnapshotController) InitSnapshotSync(peer *Peer) MessageHandlerResponseCode {
 	// If node is a hyper sync node and we haven't finished syncing state yet, we will kick off state sync.
 	// TODO: Multi-peer sync.
 	if !snm.HyperSync {
@@ -652,17 +652,17 @@ func (snm *SnapshotManager) InitSnapshotSync(peer *Peer) MessageHandlerResponseC
 	// Clean all the state prefixes from the node db so that we can populate it with snapshot entries.
 	// When we start a node, it first loads a bunch of seed transactions in the genesis block. We want to
 	// remove these entries from the db because we will receive them during state sync.
-	glog.Infof(CLog(Magenta, "SnapshotManager.InitSnapshotSync: deleting all state records. This can take a while."))
+	glog.Infof(CLog(Magenta, "SnapshotController.InitSnapshotSync: deleting all state records. This can take a while."))
 	shouldErase, err := DBDeleteAllStateRecords(snm.bc.db)
 	if err != nil {
-		glog.Errorf(CLog(Red, fmt.Sprintf("SnapshotManager.InitSnapshotSync: problem while deleting state "+
+		glog.Errorf(CLog(Red, fmt.Sprintf("SnapshotController.InitSnapshotSync: problem while deleting state "+
 			"records, error: %v", err)))
 	}
 	if shouldErase {
 		if snm.nodeMessageChannel != nil {
 			snm.nodeMessageChannel <- NodeErase
 		}
-		glog.Errorf(CLog(Red, fmt.Sprintf("SnapshotManager.InitSnapshotSync: Records were found in the node "+
+		glog.Errorf(CLog(Red, fmt.Sprintf("SnapshotController.InitSnapshotSync: Records were found in the node "+
 			"directory, while trying to resync. Now erasing the node directory and restarting the node. "+
 			"That's faster than manually expunging all records from the database.")))
 		return MessageHandlerResponseCodeOK
@@ -687,12 +687,12 @@ func (snm *SnapshotManager) InitSnapshotSync(peer *Peer) MessageHandlerResponseC
 	// when processing seed transaction from the genesis block. So we need to clear it.
 	snm.snap.Checksum.ResetChecksum()
 	if err := snm.snap.Checksum.SaveChecksum(); err != nil {
-		glog.Errorf("SnapshotManager.InitSnapshotSync: Problem saving snapshot to database, error (%v)", err)
+		glog.Errorf("SnapshotController.InitSnapshotSync: Problem saving snapshot to database, error (%v)", err)
 	}
 	// Reset the migrations along with the main checksum.
 	snm.snap.Migrations.ResetChecksums()
 	if err := snm.snap.Migrations.SaveMigrations(); err != nil {
-		glog.Errorf("SnapshotManager.InitSnapshotSync: Problem saving migration checksums to database, error (%v)", err)
+		glog.Errorf("SnapshotController.InitSnapshotSync: Problem saving migration checksums to database, error (%v)", err)
 	}
 
 	// Now proceed to start fetching snapshot data from the peer.
@@ -718,7 +718,7 @@ func (snm *SnapshotManager) InitSnapshotSync(peer *Peer) MessageHandlerResponseC
 // The long-term solution is to break the writing of the PrefixBlockHashToUtxoOperations index into chunks,
 // or to remove it entirely. We don't want to do that work right now, but we want to reduce the memory usage
 // for the "common" case, which is why we're doing this dirty hack for now.
-func (snm *SnapshotManager) dirtyHackUpdateDbOpts(opts badger.Options) {
+func (snm *SnapshotController) dirtyHackUpdateDbOpts(opts badger.Options) {
 	// Make sure that a mempool process doesn't try to access the DB while we're closing and re-opening it.
 	snm.mp.mtx.Lock()
 	defer snm.mp.mtx.Unlock()

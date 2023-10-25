@@ -5,7 +5,7 @@ import (
 	"time"
 )
 
-type StatsManager struct {
+type StatsController struct {
 	srv          *Server
 	mp           *DeSoMempool
 	bc           *Blockchain
@@ -14,10 +14,10 @@ type StatsManager struct {
 	exitChan chan struct{}
 }
 
-func NewStatsManager(srv *Server, mp *DeSoMempool, bc *Blockchain,
-	statsdClient *statsd.Client) *StatsManager {
+func NewStatsController(srv *Server, mp *DeSoMempool, bc *Blockchain,
+	statsdClient *statsd.Client) *StatsController {
 
-	return &StatsManager{
+	return &StatsController{
 		srv:          srv,
 		mp:           mp,
 		bc:           bc,
@@ -26,26 +26,26 @@ func NewStatsManager(srv *Server, mp *DeSoMempool, bc *Blockchain,
 	}
 }
 
-func (stam *StatsManager) Init(managers []Manager) {
+func (stam *StatsController) Init(controllers []Controller) {
 }
 
-func (stam *StatsManager) Start() {
+func (stam *StatsController) Start() {
 	go stam.startStatsdReporter()
 }
 
-func (stam *StatsManager) Stop() {
+func (stam *StatsController) Stop() {
 	close(stam.exitChan)
 }
 
-func (stam *StatsManager) GetType() ManagerType {
-	return ManagerTypeStats
+func (stam *StatsController) GetType() ControllerType {
+	return ControllerTypeStats
 }
 
-func (stam *StatsManager) GetStatsdClient() *statsd.Client {
+func (stam *StatsController) GetStatsdClient() *statsd.Client {
 	return stam.statsdClient
 }
 
-func (stam *StatsManager) startStatsdReporter() {
+func (stam *StatsController) startStatsdReporter() {
 	if stam.statsdClient == nil {
 		return
 	}
