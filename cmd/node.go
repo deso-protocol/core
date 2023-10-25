@@ -4,9 +4,13 @@ import (
 	"encoding/hex"
 	"flag"
 	"fmt"
+	chainlib "github.com/btcsuite/btcd/blockchain"
+	"github.com/deso-protocol/core/consensus"
+	"github.com/pkg/errors"
 	"net"
 	"os"
 	"os/signal"
+	"runtime"
 	"sync"
 	"syscall"
 	"time"
@@ -27,13 +31,36 @@ import (
 )
 
 type Node struct {
-	Server   *lib.Server
-	ChainDB  *badger.DB
-	TXIndex  *lib.TXIndex
-	Params   *lib.DeSoParams
-	Config   *Config
-	Postgres *lib.Postgres
+	// Components
+	FastHotStuffConsensus *consensus.FastHotStuffConsensus
+	Blockchain            *lib.Blockchain
+	ChainDB               *badger.DB
+	Snapshot              *lib.Snapshot
+	Mempool               *lib.DeSoMempool
+	BlockProducer         *lib.DeSoBlockProducer
+	Miner                 *lib.DeSoMiner
+	TXIndex               *lib.TXIndex
+	Postgres              *lib.Postgres
+	EventManager          *lib.EventManager
+	Listeners             []net.Listener
 
+	// Server
+	Server *lib.Server
+
+	// Controllers
+	ConsensusController *lib.ConsensusController
+	SteadyController    *lib.SteadyController
+	SnapshotController  *lib.SnapshotController
+	SyncController      *lib.SyncController
+	StatsController     *lib.StatsController
+	VersionController   *lib.VersionController
+	// TODO: In the future we could avoid storing all components/controllers individually.
+	Controllers []lib.Controller
+
+	Params       *lib.DeSoParams
+	Config       *Config
+	timesource   chainlib.MedianTimeSource
+	statsdClient *statsd.Client
 	// IsRunning is false when a NewNode is created, set to true on Start(), set to false
 	// after Stop() is called. Mainly used in testing.
 	IsRunning bool
@@ -113,6 +140,7 @@ func (node *Node) Start(exitChannels ...*chan struct{}) {
 	if err != nil {
 		glog.Fatal(err)
 	}
+	node.statsdClient = statsdClient
 
 	// Setup listeners and peers
 	desoAddrMgr := addrmgr.New(node.Config.DataDirectory, net.LookupIP)
@@ -120,8 +148,7 @@ func (node *Node) Start(exitChannels ...*chan struct{}) {
 
 	// This just gets localhost listening addresses on the protocol port.
 	// Such as [{127.0.0.1 18000 } {::1 18000 }], and associated listener structs.
-	listeningAddrs, listeners := GetAddrsToListenOn(node.Config.ProtocolPort)
-	_ = listeningAddrs
+	_, node.Listeners = GetAddrsToListenOn(node.Config.ProtocolPort)
 
 	// If --connect-ips is not passed, we will connect the addresses from
 	// --add-ips, DNSSeeds, and DNSSeedGenerators.
@@ -142,145 +169,55 @@ func (node *Node) Start(exitChannels ...*chan struct{}) {
 		}
 	}
 
-	// Setup chain database
-	dbDir := lib.GetBadgerDbPath(node.Config.DataDirectory)
-	var opts badger.Options
-
-	// If we're in hypersync mode, we use the default badger options. Otherwise, we use performance options.
-	// This is because hypersync mode is very I/O intensive, so we want to use the default options to reduce
-	// the amount of memory consumed by the database.
-	// Blocksync requires performance options because certain indexes tracked by blocksync have extremely large
-	// records (e.g. PrefixBlockHashToUtxoOperations). These large records will overflow the default badger mem table
-	// size.
-	//
-	// FIXME: We should rewrite the code so that PrefixBlockHashToUtxoOperations is either removed or written
-	// to badger in such a way as to not require the use of PerformanceBadgerOptions. Seet he comment on
-	// dirtyHackUpdateDbOpts.
-	if node.Config.HyperSync {
-		opts = lib.DefaultBadgerOptions(dbDir)
-	} else {
-		opts = lib.PerformanceBadgerOptions(dbDir)
-	}
-	opts.ValueDir = dbDir
-	node.ChainDB, err = badger.Open(opts)
-	if err != nil {
-		panic(err)
-	}
-
-	// Setup snapshot logger
-	if node.Config.LogDBSummarySnapshots {
-		lib.StartDBSummarySnapshots(node.ChainDB)
-	}
-
-	// Validate that we weren't passed incompatible Hypersync flags
-	lib.ValidateHyperSyncFlags(node.Config.HyperSync, node.Config.SyncType)
-
-	// Setup postgres using a remote URI. Postgres is not currently supported when we're in hypersync mode.
-	if node.Config.HyperSync && node.Config.PostgresURI != "" {
-		glog.Fatal("--postgres-uri is not supported when --hypersync=true. We're " +
-			"working on Hypersync support for Postgres though!")
-	}
-	var db *pg.DB
-	if node.Config.PostgresURI != "" {
-		options, err := pg.ParseURL(node.Config.PostgresURI)
-		if err != nil {
+	err, shouldRestart := node.initializeComponents()
+	// If shouldRestart is true, it means that the state checksum is likely corrupted, and we need to enter a recovery mode.
+	// This can happen if the node was terminated mid-operation last time it was running. The recovery process rolls back
+	// blocks to the beginning of the current snapshot epoch and resets to the state checksum to the epoch checksum.
+	if shouldRestart {
+		glog.Errorf(lib.CLog(lib.Red, "Node.Start: Forcing a rollback to the last snapshot epoch because node was not closed "+
+			"properly last time"))
+		if err := node.Snapshot.ForceResetToLastSnapshot(node.Blockchain); err != nil {
+			// shouldRestart can be true if, on the previous run, we did not finish flushing all ancestral
+			// records to the DB. In this case, the snapshot is corrupted and needs to be recomputed entirely. See the
+			// comment at the top of snapshot.go for more information on how this works.
+			if shouldRestart {
+				glog.Infof(lib.CLog(lib.Red, fmt.Sprintf("Node.Start: Got en error while starting server and shouldRestart "+
+					"is true. Node will be erased and resynced. Error: (%v)", err)))
+				node.nodeMessageChan <- lib.NodeErase
+				return
+			}
 			panic(err)
 		}
-
-		db = pg.Connect(options)
-		node.Postgres = lib.NewPostgres(db)
-
-		// LoadMigrations registers all the migration files in the migrate package.
-		// See LoadMigrations for more info.
-		migrate.LoadMigrations()
-
-		// Migrate the database after loading all the migrations. This is equivalent
-		// to running "go run migrate.go migrate". See migrate.go for a migrations CLI tool
-		err = migrations.Run(db, "migrate", []string{"", "migrate"})
-		if err != nil {
-			panic(err)
-		}
+		node.nodeMessageChan <- lib.NodeRestart
+		return
 	}
 
-	// Setup eventManager
-	eventManager := lib.NewEventManager()
-
-	// Setup the server. ShouldRestart is used whenever we detect an issue and should restart the node after a recovery
-	// process, just in case. These issues usually arise when the node was shutdown unexpectedly mid-operation. The node
-	// performs regular health checks to detect whenever this occurs.
-	shouldRestart := false
-	node.Server, err, shouldRestart = lib.NewServer(
-		node.Params,
-		listeners,
-		desoAddrMgr,
-		node.Config.ConnectIPs,
-		node.ChainDB,
-		node.Postgres,
-		node.Config.TargetOutboundPeers,
-		node.Config.MaxInboundPeers,
-		node.Config.MinerPublicKeys,
-		node.Config.NumMiningThreads,
-		node.Config.OneInboundPerIp,
-		node.Config.HyperSync,
-		node.Config.SyncType,
-		node.Config.MaxSyncBlockHeight,
-		node.Config.DisableEncoderMigrations,
-		node.Config.RateLimitFeerate,
-		node.Config.MinFeerate,
-		node.Config.StallTimeoutSeconds,
-		node.Config.MaxBlockTemplatesCache,
-		node.Config.MinBlockUpdateInterval,
-		node.Config.BlockCypherAPIKey,
-		true,
-		node.Config.SnapshotBlockHeightPeriod,
-		node.Config.DataDirectory,
-		node.Config.MempoolDumpDirectory,
-		node.Config.DisableNetworking,
-		node.Config.ReadOnlyMode,
-		node.Config.IgnoreInboundInvs,
-		statsdClient,
-		node.Config.BlockProducerSeed,
-		node.Config.TrustedBlockProducerPublicKeys,
-		node.Config.TrustedBlockProducerStartHeight,
-		eventManager,
-		node.nodeMessageChan,
-		node.Config.ForceChecksum,
-		node.Config.HypersyncMaxQueueSize)
+	node.Server, err = lib.NewServer(node.Config.Params, node.Listeners, desoAddrMgr, node.Config.ConnectIPs, node.Config.TargetOutboundPeers,
+		node.Config.MaxInboundPeers, node.Config.OneInboundPerIp, node.Config.DisableNetworking, node.statsdClient,
+		node.EventManager, node.nodeMessageChan)
 	if err != nil {
-		// shouldRestart can be true if, on the previous run, we did not finish flushing all ancestral
-		// records to the DB. In this case, the snapshot is corrupted and needs to be computed. See the
-		// comment at the top of snapshot.go for more information on how this works.
-		if shouldRestart {
-			glog.Infof(lib.CLog(lib.Red, fmt.Sprintf("Start: Got en error while starting server and shouldRestart "+
-				"is true. Node will be erased and resynced. Error: (%v)", err)))
-			node.nodeMessageChan <- lib.NodeErase
-			return
-		}
-		panic(err)
+		panic(errors.Wrapf(err, "Node.Start: Problem initializing server"))
 	}
 
-	if !shouldRestart {
-		node.Server.Start()
+	node.initializeControllers()
 
-		// Setup TXIndex - not compatible with postgres
-		if node.Config.TXIndex && node.Postgres == nil {
-			node.TXIndex, err = lib.NewTXIndex(node.Server.GetBlockchain(), node.Params, node.Config.DataDirectory)
-			if err != nil {
-				glog.Fatal(err)
-			}
-			node.Server.TxIndex = node.TXIndex
-			if !shouldRestart {
-				node.TXIndex.Start()
-			}
+	node.Server.Start()
+	if node.Miner != nil && len(node.Miner.PublicKeys) > 0 {
+		go node.Miner.Start()
+	}
+
+	node.startControllers()
+
+	// Setup TXIndex - not compatible with postgres
+	if node.Config.TXIndex && node.Postgres == nil {
+		node.TXIndex, err = lib.NewTXIndex(node.Blockchain, node.Params, node.Config.DataDirectory)
+		if err != nil {
+			glog.Fatal(err)
 		}
+		node.TXIndex = node.TXIndex
+		node.TXIndex.Start()
 	}
 	node.IsRunning = true
-
-	if shouldRestart {
-		if node.nodeMessageChan != nil {
-			node.nodeMessageChan <- lib.NodeRestart
-		}
-	}
 
 	// Detect whenever an interrupt (Ctrl-c) or termination signals are sent.
 	syscallChannel := make(chan os.Signal)
@@ -318,17 +255,57 @@ func (node *Node) Stop() {
 	glog.Infof(lib.CLog(lib.Yellow, "Node is shutting down. This might take a minute. Please don't "+
 		"close the node now or else you might corrupt the state."))
 
+	// Stop the miner if we have one running.
+	if node.Miner != nil {
+		node.Miner.Stop()
+		glog.Infof(lib.CLog(lib.Yellow, "Node.Stop: Closed the Miner"))
+	}
+
+	node.stopControllers()
+
+	// Stop the PoS block proposer if we have one running.
+	if node.FastHotStuffConsensus != nil {
+		node.FastHotStuffConsensus.Stop()
+		glog.Infof(lib.CLog(lib.Yellow, "Node.Stop: Closed the FastHotStuffConsensus"))
+	}
+
+	// TODO: Stop the PoS mempool if we have one running.
+
+	if node.Mempool != nil {
+		// Before the node shuts down, write all the mempool txns to disk
+		// if the flag is set.
+		if node.Mempool.GetMempoolDir() != "" {
+			glog.Info("Doing final mempool dump...")
+			node.Mempool.DumpTxnsToDB()
+			glog.Info("Final mempool dump complete!")
+		}
+
+		if !node.Mempool.IsStopped() {
+			node.Mempool.Stop()
+		}
+		glog.Infof(lib.CLog(lib.Yellow, "Node.Stop: Closed Mempool"))
+	}
+
+	// Stop the block producer
+	if node.BlockProducer != nil {
+		if node.Blockchain.MaxSyncBlockHeight == 0 {
+			node.BlockProducer.Stop()
+		}
+		glog.Infof(lib.CLog(lib.Yellow, "Node.Stop: Closed BlockProducer"))
+	}
+
 	// Server
 	glog.Infof(lib.CLog(lib.Yellow, "Node.Stop: Stopping server..."))
-	node.Server.Stop()
+	if node.Server != nil {
+		node.Server.Stop()
+	}
 	glog.Infof(lib.CLog(lib.Yellow, "Node.Stop: Server successfully stopped."))
 
 	// Snapshot
-	snap := node.Server.GetBlockchain().Snapshot()
-	if snap != nil {
+	if node.Snapshot != nil {
 		glog.Infof(lib.CLog(lib.Yellow, "Node.Stop: Stopping snapshot..."))
-		snap.Stop()
-		node.closeDb(snap.SnapshotDb, "snapshot")
+		node.Snapshot.Stop()
+		node.closeDb(node.Snapshot.SnapshotDb, "snapshot")
 		glog.Infof(lib.CLog(lib.Yellow, "Node.Stop: Snapshot successfully stopped."))
 	}
 
@@ -349,6 +326,180 @@ func (node *Node) Stop() {
 	if node.internalExitChan != nil {
 		close(node.internalExitChan)
 		node.internalExitChan = nil
+	}
+}
+
+func (node *Node) initializeComponents() (_err error, _shouldRestart bool) {
+	var err error
+
+	// Setup chain database
+	dbDir := lib.GetBadgerDbPath(node.Config.DataDirectory)
+	var opts badger.Options
+
+	// If we're in hypersync mode, we use the default badger options. Otherwise, we use performance options.
+	// This is because hypersync mode is very I/O intensive, so we want to use the default options to reduce
+	// the amount of memory consumed by the database.
+	// Blocksync requires performance options because certain indexes tracked by blocksync have extremely large
+	// records (e.g. PrefixBlockHashToUtxoOperations). These large records will overflow the default badger mem table
+	// size.
+	//
+	// FIXME: We should rewrite the code so that PrefixBlockHashToUtxoOperations is either removed or written
+	// to badger in such a way as to not require the use of PerformanceBadgerOptions. Seet he comment on
+	// dirtyHackUpdateDbOpts.
+	if node.Config.HyperSync {
+		opts = lib.DefaultBadgerOptions(dbDir)
+	} else {
+		opts = lib.PerformanceBadgerOptions(dbDir)
+	}
+	opts.ValueDir = dbDir
+	node.ChainDB, err = badger.Open(opts)
+	if err != nil {
+		panic(err)
+	}
+
+	// Setup snapshot logger
+	if node.Config.LogDBSummarySnapshots {
+		lib.StartDBSummarySnapshots(node.ChainDB)
+	}
+
+	// Validate that we weren't passed incompatible Hypersync flags
+	lib.ValidateHyperSyncFlags(node.Config.HyperSync, node.Config.SyncType)
+
+	// Setup postgres using a remote URI. Postgres is not currently supported when we're in hypersync mode.
+	if node.Config.HyperSync && node.Config.PostgresURI != "" {
+		glog.Fatal("initializeComponents: --postgres-uri is not supported when --hypersync=true. We're " +
+			"working on Hypersync support for Postgres though!")
+	}
+	var db *pg.DB
+	if node.Config.PostgresURI != "" {
+		options, err := pg.ParseURL(node.Config.PostgresURI)
+		if err != nil {
+			panic(err)
+		}
+
+		db = pg.Connect(options)
+		node.Postgres = lib.NewPostgres(db)
+
+		// LoadMigrations registers all the migration files in the migrate package.
+		// See LoadMigrations for more info.
+		migrate.LoadMigrations()
+
+		// Migrate the database after loading all the migrations. This is equivalent
+		// to running "go run migrate.go migrate". See migrate.go for a migrations CLI tool
+		err = migrations.Run(db, "migrate", []string{"", "migrate"})
+		if err != nil {
+			panic(err)
+		}
+	}
+
+	// Setup eventManager
+	node.EventManager = lib.NewEventManager()
+
+	// Setup snapshot
+	shouldRestart := false
+	archivalMode := false
+	if node.Config.HyperSync {
+		node.Snapshot, err, shouldRestart = lib.NewSnapshot(node.ChainDB, node.Config.DataDirectory,
+			node.Config.SnapshotBlockHeightPeriod, false, false, node.Params,
+			node.Config.DisableEncoderMigrations, node.Config.HypersyncMaxQueueSize)
+		if err != nil {
+			panic(err)
+		}
+	}
+
+	// We only set archival mode true if we're a hypersync node.
+	if lib.IsNodeArchival(node.Config.SyncType) {
+		archivalMode = true
+	}
+	// The same timesource is used in the chain data structure and in the connection
+	// manager. It just takes and keeps track of the median time among our peers so
+	// we can keep a consistent clock.
+	node.timesource = chainlib.NewMedianTime()
+
+	node.Blockchain, err = lib.NewBlockchain(
+		node.Config.TrustedBlockProducerPublicKeys, node.Config.TrustedBlockProducerStartHeight, node.Config.MaxSyncBlockHeight,
+		node.Config.Params, node.timesource, node.ChainDB, node.Postgres, node.EventManager, node.Snapshot, archivalMode)
+	if err != nil {
+		return errors.Wrapf(err, "initializeComponents: Problem initializing blockchain"), true
+	}
+
+	glog.V(1).Infof("initializeComponents: Best Header Height: %d, Header Hash: %s, Header CumWork: %s, Best Block Height: %d, Block Hash: %s, Block CumWork: %s",
+		node.Blockchain.HeaderTip().Height,
+		hex.EncodeToString(node.Blockchain.HeaderTip().Hash[:]),
+		hex.EncodeToString(lib.BigintToHash(node.Blockchain.HeaderTip().CumWork)[:]),
+		node.Blockchain.BlockTip().Height,
+		hex.EncodeToString(node.Blockchain.BlockTip().Hash[:]),
+		hex.EncodeToString(lib.BigintToHash(node.Blockchain.BlockTip().CumWork)[:]))
+
+	// Create a mempool to store transactions until they're ready to be mined into
+	// blocks.
+	node.Mempool = lib.NewDeSoMempool(node.Blockchain, node.Config.RateLimitFeerate,
+		node.Config.MinFeerate, node.Config.BlockCypherAPIKey, true, node.Config.DataDirectory,
+		node.Config.MempoolDumpDirectory, false)
+
+	// Initialize the BlockProducer
+	// TODO-old(miner): Should figure out a way to get this into main.
+	if node.Config.MaxBlockTemplatesCache > 0 {
+		node.BlockProducer, err = lib.NewDeSoBlockProducer(
+			node.Config.MinBlockUpdateInterval, node.Config.MaxBlockTemplatesCache, node.Config.BlockProducerSeed,
+			node.Mempool, node.Blockchain, node.Config.Params, node.Postgres)
+		if err != nil {
+			panic(err)
+		}
+		// TODO: Copying it over, but we should start the producer next to everything else.
+		go node.BlockProducer.Start()
+	}
+
+	// TODO-old(miner): Make the miner its own binary and pull it out of here.
+	// Don't start the miner unless miner public keys are set.
+	numMiningThreads := node.Config.NumMiningThreads
+	if numMiningThreads <= 0 {
+		numMiningThreads = uint64(runtime.NumCPU())
+	}
+	node.Miner, err = lib.NewDeSoMiner(node.Config.MinerPublicKeys, uint32(node.Config.NumMiningThreads),
+		node.BlockProducer, node.Params)
+	if err != nil {
+		return errors.Wrapf(err, "initializeComponents: "), true
+	}
+	// If we only want to sync to a specific block height, we would disable the miner.
+	// _maxSyncBlockHeight is used for development.
+	if node.Config.MaxSyncBlockHeight > 0 {
+		node.Miner = nil
+	}
+
+	node.FastHotStuffConsensus = consensus.NewFastHotStuffConsensus()
+
+	return nil, shouldRestart
+}
+
+func (node *Node) initializeControllers() {
+	node.ConsensusController = lib.NewConsensusController(node.FastHotStuffConsensus, node.Blockchain, node.Mempool,
+		node.Server, node.EventManager)
+	node.SteadyController = lib.NewSteadyController(node.Server, node.Blockchain, node.Mempool, node.Params, node.Config.MinFeerate,
+		node.Config.StallTimeoutSeconds, node.Config.ReadOnlyMode, node.Config.IgnoreInboundInvs)
+	node.SnapshotController = lib.NewSnapshotController(node.Blockchain, node.Snapshot, node.Server, node.Mempool, node.EventManager,
+		node.Config.HyperSync, node.Config.ForceChecksum, node.Config.StallTimeoutSeconds, node.nodeMessageChan)
+	node.SyncController = lib.NewSyncController(node.Blockchain, node.Server, node.Mempool, node.Config.SyncType,
+		node.Config.MinFeerate, node.Config.StallTimeoutSeconds)
+	node.StatsController = lib.NewStatsController(node.Server, node.Mempool, node.Blockchain, node.statsdClient)
+	node.VersionController = lib.NewVersionController(node.Blockchain, node.Server, node.Params, node.Config.MinFeerate,
+		node.Config.HyperSync)
+
+	node.Controllers = []lib.Controller{node.ConsensusController, node.SteadyController, node.SnapshotController, node.SyncController, node.StatsController, node.VersionController}
+	for _, controller := range node.Controllers {
+		controller.Init(node.Controllers)
+	}
+}
+
+func (node *Node) startControllers() {
+	for _, controller := range node.Controllers {
+		controller.Start()
+	}
+}
+
+func (node *Node) stopControllers() {
+	for _, controller := range node.Controllers {
+		controller.Stop()
 	}
 }
 

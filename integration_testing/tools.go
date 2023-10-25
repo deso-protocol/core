@@ -69,7 +69,7 @@ func generateConfig(t *testing.T, port uint32, dataDir string, maxPeers uint32) 
 	config.MaxSyncBlockHeight = 0
 	config.ConnectIPs = []string{}
 	config.PrivateMode = true
-	config.GlogV = 0
+	config.GlogV = 2
 	config.GlogVmodule = "*bitcoin_manager*=0,*balance*=0,*view*=0,*frontend*=0,*peer*=0,*addr*=0,*network*=0,*utils*=0,*connection*=0,*main*=0,*server*=0,*mempool*=0,*miner*=0,*blockchain*=0"
 	config.MaxInboundPeers = maxPeers
 	config.TargetOutboundPeers = maxPeers
@@ -93,9 +93,9 @@ func waitForNodeToFullySync(node *cmd.Node) {
 	for {
 		<-ticker.C
 
-		if node.Server.GetBlockchain().ChainState() == lib.SyncStateFullyCurrent {
-			if node.Server.GetBlockchain().Snapshot() != nil {
-				node.Server.GetBlockchain().Snapshot().WaitForAllOperationsToFinish()
+		if node.Blockchain.ChainState() == lib.SyncStateFullyCurrent {
+			if node.Blockchain.Snapshot() != nil {
+				node.Snapshot.WaitForAllOperationsToFinish()
 			}
 			return
 		}
@@ -108,9 +108,9 @@ func waitForNodeToFullySyncAndStoreAllBlocks(node *cmd.Node) {
 	for {
 		<-ticker.C
 
-		if node.Server.GetBlockchain().IsFullyStored() {
-			if node.Server.GetBlockchain().Snapshot() != nil {
-				node.Server.GetBlockchain().Snapshot().WaitForAllOperationsToFinish()
+		if node.Blockchain.IsFullyStored() {
+			if node.Snapshot != nil {
+				node.Snapshot.WaitForAllOperationsToFinish()
 			}
 			return
 		}
@@ -123,9 +123,9 @@ func waitForNodeToFullySyncTxIndex(node *cmd.Node) {
 	for {
 		<-ticker.C
 
-		if node.TXIndex.FinishedSyncing() && node.Server.GetBlockchain().ChainState() == lib.SyncStateFullyCurrent {
-			if node.Server.GetBlockchain().Snapshot() != nil {
-				node.Server.GetBlockchain().Snapshot().WaitForAllOperationsToFinish()
+		if node.TXIndex.FinishedSyncing() && node.Blockchain.ChainState() == lib.SyncStateFullyCurrent {
+			if node.Snapshot != nil {
+				node.Snapshot.WaitForAllOperationsToFinish()
 			}
 			return
 		}
@@ -135,9 +135,9 @@ func waitForNodeToFullySyncTxIndex(node *cmd.Node) {
 // compareNodesByChecksum checks if the two provided nodes have identical checksums.
 func compareNodesByChecksum(t *testing.T, nodeA *cmd.Node, nodeB *cmd.Node) {
 	require := require.New(t)
-	checksumA, err := nodeA.Server.GetBlockchain().Snapshot().Checksum.ToBytes()
+	checksumA, err := nodeA.Snapshot.Checksum.ToBytes()
 	require.NoError(err)
-	checksumB, err := nodeB.Server.GetBlockchain().Snapshot().Checksum.ToBytes()
+	checksumB, err := nodeB.Snapshot.Checksum.ToBytes()
 	require.NoError(err)
 
 	if !reflect.DeepEqual(checksumA, checksumB) {
@@ -150,7 +150,7 @@ func compareNodesByChecksum(t *testing.T, nodeA *cmd.Node, nodeB *cmd.Node) {
 // compareNodesByState will look through all state records in nodeA and nodeB databases and will compare them.
 // The nodes pass this comparison iff they have identical states.
 func compareNodesByState(t *testing.T, nodeA *cmd.Node, nodeB *cmd.Node, verbose int) {
-	compareNodesByStateWithPrefixList(t, nodeA.ChainDB, nodeB.ChainDB, lib.StatePrefixes.StatePrefixesList, verbose)
+	compareNodesByStateWithPrefixList(t, nodeA.Blockchain.DB(), nodeB.Blockchain.DB(), lib.StatePrefixes.StatePrefixesList, verbose)
 }
 
 // compareNodesByDB will look through all records in nodeA and nodeB databases and will compare them.
@@ -164,7 +164,7 @@ func compareNodesByDB(t *testing.T, nodeA *cmd.Node, nodeB *cmd.Node, verbose in
 		}
 		prefixList = append(prefixList, []byte{prefix})
 	}
-	compareNodesByStateWithPrefixList(t, nodeA.ChainDB, nodeB.ChainDB, prefixList, verbose)
+	compareNodesByStateWithPrefixList(t, nodeA.Blockchain.DB(), nodeB.Blockchain.DB(), prefixList, verbose)
 }
 
 // compareNodesByDB will look through all records in nodeA and nodeB txindex databases and will compare them.
@@ -325,7 +325,7 @@ func computeNodeStateChecksum(t *testing.T, node *cmd.Node, blockHeight uint64) 
 	carrierChecksum := &lib.StateChecksum{}
 	carrierChecksum.Initialize(nil, nil)
 
-	err := node.Server.GetBlockchain().DB().View(func(txn *badger.Txn) error {
+	err := node.Blockchain.DB().View(func(txn *badger.Txn) error {
 		opts := badger.DefaultIteratorOptions
 		for _, prefix := range prefixes {
 			it := txn.NewIterator(opts)
@@ -391,7 +391,7 @@ func listenForBlockHeight(t *testing.T, node *cmd.Node, height uint32, signal ch
 	go func() {
 		for {
 			<-ticker.C
-			if node.Server.GetBlockchain().BlockTip().Height >= height {
+			if node.Blockchain.BlockTip().Height >= height {
 				signal <- true
 				break
 			}
@@ -432,7 +432,7 @@ func listenForSyncPrefix(t *testing.T, node *cmd.Node, syncPrefix []byte, signal
 	go func() {
 		for {
 			<-ticker.C
-			for _, prefix := range node.Server.HyperSyncProgress.PrefixProgress {
+			for _, prefix := range node.SnapshotController.HyperSyncProgress.PrefixProgress {
 				if reflect.DeepEqual(prefix.Prefix, syncPrefix) {
 					//if reflect.DeepEqual(prefix.LastReceivedKey, syncPrefix) {
 					//	break

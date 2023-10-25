@@ -12,26 +12,27 @@ func NewFastHotStuffConsensus() *FastHotStuffConsensus {
 		votesSeen:             make(map[BlockHash]map[bls.PublicKey]*bls.Signature),
 		timeoutsSeen:          make(map[BlockHash]map[bls.PublicKey]*bls.Signature),
 		ConsensusEvents:       make(chan *ConsensusEvent),
+		quit:                  make(chan interface{}, 1),
 	}
 }
 
-func (fc *FastHotStuffConsensus) Init( /*TODO */) {
+func (fc *FastHotStuffConsensus) Init( /*TODO */ ) {
 	// TODO
 }
 
-func (fc *FastHotStuffConsensus) HandleAcceptedBlock( /* TODO */) {
+func (fc *FastHotStuffConsensus) HandleAcceptedBlock( /* TODO */ ) {
 	// TODO
 }
 
-func (fc *FastHotStuffConsensus) HandleVoteMessage( /* TODO */) {
+func (fc *FastHotStuffConsensus) HandleVoteMessage( /* TODO */ ) {
 	// TODO
 }
 
-func (pc *FastHotStuffConsensus) HandleTimeoutMessage( /* TODO */) {
+func (pc *FastHotStuffConsensus) HandleTimeoutMessage( /* TODO */ ) {
 	// TODO
 }
 
-func (fc *FastHotStuffConsensus) HandleBlockProposal( /* TODO */) {
+func (fc *FastHotStuffConsensus) HandleBlockProposal( /* TODO */ ) {
 	// TODO
 }
 

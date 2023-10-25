@@ -49,6 +49,7 @@ func TestSimpleBlockSync(t *testing.T) {
 
 	compareNodesByDB(t, node1, node2, 0)
 	fmt.Println("Databases match!")
+	bridge.Disconnect()
 	node1.Stop()
 	node2.Stop()
 }
@@ -99,6 +100,7 @@ func TestSimpleSyncRestart(t *testing.T) {
 	compareNodesByDB(t, node1, node2, 0)
 	fmt.Println("Random restart successful! Random height was", randomHeight)
 	fmt.Println("Databases match!")
+	bridge.Disconnect()
 	node1.Stop()
 	node2.Stop()
 }
@@ -167,6 +169,8 @@ func TestSimpleSyncDisconnectWithSwitchingToNewPeer(t *testing.T) {
 	compareNodesByDB(t, node3, node2, 0)
 	fmt.Println("Random restart successful! Random height was", randomHeight)
 	fmt.Println("Databases match!")
+	bridge12.Disconnect()
+	bridge23.Disconnect()
 	node1.Stop()
 	node2.Stop()
 	node3.Stop()

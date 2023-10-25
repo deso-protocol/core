@@ -232,6 +232,10 @@ func (mp *DeSoMempool) getBadgerOptions(dir string) badger.Options {
 	return PerformanceBadgerOptions(dir)
 }
 
+func (mp *DeSoMempool) GetMempoolDir() string {
+	return mp.mempoolDir
+}
+
 // See comment on RemoveUnconnectedTxn. The mempool lock must be called for writing
 // when calling this function.
 func (mp *DeSoMempool) removeUnconnectedTxn(tx *MsgDeSoTxn, removeRedeemers bool) {
@@ -2589,6 +2593,10 @@ func (mp *DeSoMempool) Stop() {
 	mp.stopped = true
 }
 
+func (mp *DeSoMempool) IsStopped() bool {
+	return mp.stopped
+}
+
 // Create a new pool with no transactions in it.
 func NewDeSoMempool(_bc *Blockchain, _rateLimitFeerateNanosPerKB uint64,
 	_minFeerateNanosPerKB uint64, _blockCypherAPIKey string,
@@ -2632,6 +2640,28 @@ func NewDeSoMempool(_bc *Blockchain, _rateLimitFeerateNanosPerKB uint64,
 	if newPool.mempoolDir != "" {
 		newPool.StartMempoolDBDumper()
 	}
+
+	// Useful for debugging. Every second, it outputs the contents of the mempool
+	// and the contents of the addrmanager.
+	/*
+		go func() {
+			time.Sleep(3 * time.Second)
+			for {
+				glog.V(2).Infof("Current mempool txns: ")
+				counter := 0
+				for kk, mempoolTx := range _mempool.poolMap {
+					kkCopy := kk
+					glog.V(2).Infof("\t%d: < %v: %v >", counter, &kkCopy, mempoolTx)
+					counter++
+				}
+				glog.V(2).Infof("Current addrs: ")
+				for ii, na := range srv.cmgr.AddrMgr.GetAllAddrs() {
+					glog.V(2).Infof("Addr %d: <%s:%d>", ii, na.IP.String(), na.Port)
+				}
+				time.Sleep(1 * time.Second)
+			}
+		}()
+	*/
 
 	return newPool
 }
