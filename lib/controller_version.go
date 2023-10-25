@@ -42,7 +42,7 @@ func NewVersionController(bc *Blockchain, srv *Server, params *DeSoParams, minTx
 	vm := &VersionController{
 		bc:                     bc,
 		srv:                    srv,
-		params:
+		params:                 params,
 		minTxFeeRateNanosPerKB: minTxFeeRateNanosPerKB,
 		hyperSync:              hyperSync,
 		versionMetadataMap:     make(map[uint64]*ValidatorVersionMetadata),
