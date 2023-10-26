@@ -730,7 +730,7 @@ func TestGetLineageFromCommittedTip(t *testing.T) {
 		Version:        2,
 		Height:         1,
 		ProposedInView: 1,
-	}, StatusBlockStored|StatusBlockValidated)
+	}, StatusBlockStored|StatusBlockValidated|StatusBlockCommitted)
 	bc.bestChain = []*BlockNode{genesisNode}
 	bc.blockIndex = map[BlockHash]*BlockNode{
 		*hash1: genesisNode,
@@ -760,7 +760,7 @@ func TestGetLineageFromCommittedTip(t *testing.T) {
 		Version:       2,
 		Height:        2,
 		PrevBlockHash: hash1,
-	}, StatusBlockStored|StatusBlockValidated)
+	}, StatusBlockStored|StatusBlockValidated|StatusBlockCommitted)
 	bc.bestChain = append(bc.bestChain, block2)
 	bc.blockIndex[*hash2] = block2
 	ancestors, err = bc.getLineageFromCommittedTip(block)
