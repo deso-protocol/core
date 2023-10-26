@@ -93,15 +93,19 @@ type PosMempool struct {
 	// mempool transaction with a new transaction having the same nonce but higher fee.
 	nonceTracker *NonceTracker
 
-	// latestBlockView is used to check if a transaction is valid before being added to the mempool. The latestBlockView
+	// readOnlyLatestBlockView is used to check if a transaction is valid before being added to the mempool. The readOnlyLatestBlockView
 	// checks if the transaction has a valid signature and if the transaction's sender has enough funds to cover the fee.
-	// The latestBlockView should be updated whenever a new block is added to the blockchain via UpdateLatestBlock.
+	// The readOnlyLatestBlockView should be updated whenever a new block is added to the blockchain via UpdateLatestBlock.
 	// PosMempool only needs read-access to the block view. It isn't necessary to copy the block view before passing it
 	// to the mempool.
-	latestBlockView *UtxoView
+	readOnlyLatestBlockView *UtxoView
 	// latestBlockNode is used to infer the latest block height. The latestBlockNode should be updated whenever a new
 	// block is added to the blockchain via UpdateLatestBlock.
 	latestBlockHeight uint64
+	// maxMempoolPosSizeBytes is the maximum aggregate number of bytes of transactions included in the PoS mempool.
+	maxMempoolPosSizeBytes uint64
+	// mempoolBackupIntervalMillis is the frequency with which pos mempool persists transactions to storage.
+	mempoolBackupIntervalMillis uint64
 }
 
 // PosMempoolIterator is a wrapper around FeeTimeIterator, modified to return MsgDeSoTxn instead of MempoolTx.
@@ -130,16 +134,19 @@ func NewPosMempoolIterator(it *FeeTimeIterator) *PosMempoolIterator {
 	return &PosMempoolIterator{it: it}
 }
 
-func NewPosMempool(params *DeSoParams, globalParams *GlobalParamsEntry, latestBlockView *UtxoView,
-	latestBlockHeight uint64, dir string, inMemoryOnly bool) *PosMempool {
+func NewPosMempool(params *DeSoParams, globalParams *GlobalParamsEntry, readOnlyLatestBlockView *UtxoView,
+	latestBlockHeight uint64, dir string, inMemoryOnly bool, maxMempoolPosSizeBytes uint64,
+	mempoolBackupIntervalMillis uint64) *PosMempool {
 	return &PosMempool{
-		status:            PosMempoolStatusNotRunning,
-		params:            params,
-		globalParams:      globalParams,
-		inMemoryOnly:      inMemoryOnly,
-		dir:               dir,
-		latestBlockView:   latestBlockView,
-		latestBlockHeight: latestBlockHeight,
+		status:                      PosMempoolStatusNotRunning,
+		params:                      params,
+		globalParams:                globalParams,
+		inMemoryOnly:                inMemoryOnly,
+		dir:                         dir,
+		readOnlyLatestBlockView:     readOnlyLatestBlockView,
+		latestBlockHeight:           latestBlockHeight,
+		maxMempoolPosSizeBytes:      maxMempoolPosSizeBytes,
+		mempoolBackupIntervalMillis: mempoolBackupIntervalMillis,
 	}
 }
 
@@ -151,7 +158,12 @@ func (mp *PosMempool) Start() error {
 		return nil
 	}
 
-	// Setup the database.
+	// Create the transaction register, the ledger, and the nonce tracker,
+	mp.txnRegister = NewTransactionRegister(mp.globalParams)
+	mp.ledger = NewBalanceLedger()
+	mp.nonceTracker = NewNonceTracker()
+
+	// Setup the database and create the persister
 	if !mp.inMemoryOnly {
 		mempoolDirectory := filepath.Join(mp.dir, "mempool")
 		opts := DefaultBadgerOptions(mempoolDirectory)
@@ -160,20 +172,11 @@ func (mp *PosMempool) Start() error {
 			return errors.Wrapf(err, "PosMempool.Start: Problem setting up database")
 		}
 		mp.db = db
-	}
-
-	// Create the transaction register, the ledger, and the nonce tracker,
-	mp.txnRegister = NewTransactionRegister(mp.globalParams)
-	mp.ledger = NewBalanceLedger()
-	mp.nonceTracker = NewNonceTracker()
-
-	// Create the persister
-	if !mp.inMemoryOnly {
-		mp.persister = NewMempoolPersister(mp.db, int(mp.params.MempoolBackupIntervalMillis))
+		mp.persister = NewMempoolPersister(mp.db, int(mp.mempoolBackupIntervalMillis))
 
 		// Start the persister and retrieve transactions from the database.
 		mp.persister.Start()
-		err := mp.loadPersistedTransactions()
+		err = mp.loadPersistedTransactions()
 		if err != nil {
 			return errors.Wrapf(err, "PosMempool.Start: Problem loading persisted transactions")
 		}
@@ -267,7 +270,7 @@ func (mp *PosMempool) validateTransaction(txn *MsgDeSoTxn, verifySignature bool)
 		return errors.Wrapf(err, "PosMempool.AddTransaction: Problem validating transaction sanity")
 	}
 
-	if err := mp.latestBlockView.ValidateTransactionNonce(txn, mp.latestBlockHeight); err != nil {
+	if err := mp.readOnlyLatestBlockView.ValidateTransactionNonce(txn, mp.latestBlockHeight); err != nil {
 		return errors.Wrapf(err, "PosMempool.AddTransaction: Problem validating transaction nonce")
 	}
 
@@ -276,7 +279,7 @@ func (mp *PosMempool) validateTransaction(txn *MsgDeSoTxn, verifySignature bool)
 	}
 
 	// Check transaction signature.
-	if _, err := mp.latestBlockView.VerifySignature(txn, uint32(mp.latestBlockHeight)); err != nil {
+	if _, err := mp.readOnlyLatestBlockView.VerifySignature(txn, uint32(mp.latestBlockHeight)); err != nil {
 		return errors.Wrapf(err, "PosMempool.AddTransaction: Signature validation failed")
 	}
 
@@ -288,7 +291,7 @@ func (mp *PosMempool) addTransactionNoLock(txn *MempoolTx, persistToDb bool) err
 	txnFee := txn.Tx.TxnFeeNanos
 
 	// Validate that the user has enough balance to cover the transaction fees.
-	spendableBalanceNanos, err := mp.latestBlockView.GetSpendableDeSoBalanceNanosForPublicKey(userPk.ToBytes(),
+	spendableBalanceNanos, err := mp.readOnlyLatestBlockView.GetSpendableDeSoBalanceNanosForPublicKey(userPk.ToBytes(),
 		uint32(mp.latestBlockHeight))
 	if err != nil {
 		return errors.Wrapf(err, "PosMempool.addTransactionNoLock: Problem getting spendable balance")
@@ -467,7 +470,7 @@ func (mp *PosMempool) GetIterator() MempoolIterator {
 
 // Refresh can be used to evict stale transactions from the mempool. However, it is a bit expensive and should be used
 // sparingly. Upon being called, Refresh will create an in-memory temp PosMempool and populate it with transactions from
-// the main mempool. The temp mempool will have the most up-to-date latestBlockView, Height, and globalParams. Any
+// the main mempool. The temp mempool will have the most up-to-date readOnlyLatestBlockView, Height, and globalParams. Any
 // transaction that fails to add to the temp mempool will be removed from the main mempool.
 func (mp *PosMempool) Refresh() error {
 	mp.Lock()
@@ -484,8 +487,9 @@ func (mp *PosMempool) Refresh() error {
 }
 
 func (mp *PosMempool) refreshNoLock() error {
-	// Create the temporary in-memory mempool with the most up-to-date latestBlockView, Height, and globalParams.
-	tempPool := NewPosMempool(mp.params, mp.globalParams, mp.latestBlockView, mp.latestBlockHeight, "", true)
+	// Create the temporary in-memory mempool with the most up-to-date readOnlyLatestBlockView, Height, and globalParams.
+	tempPool := NewPosMempool(mp.params, mp.globalParams, mp.readOnlyLatestBlockView, mp.latestBlockHeight, "", true,
+		mp.maxMempoolPosSizeBytes, mp.mempoolBackupIntervalMillis)
 	if err := tempPool.Start(); err != nil {
 		return errors.Wrapf(err, "PosMempool.refreshNoLock: Problem starting temp pool")
 	}
@@ -528,11 +532,11 @@ func (mp *PosMempool) refreshNoLock() error {
 // are removed in lowest to highest Fee-Time priority, i.e. opposite way that transactions are ordered in
 // GetTransactions().
 func (mp *PosMempool) pruneNoLock() error {
-	if mp.txnRegister.Size() < mp.params.MaxMempoolPosSizeBytes {
+	if mp.txnRegister.Size() < mp.maxMempoolPosSizeBytes {
 		return nil
 	}
 
-	prunedTxns, err := mp.txnRegister.PruneToSize(mp.params.MaxMempoolPosSizeBytes)
+	prunedTxns, err := mp.txnRegister.PruneToSize(mp.maxMempoolPosSizeBytes)
 	if err != nil {
 		return errors.Wrapf(err, "PosMempool.pruneNoLock: Problem pruning mempool")
 	}
@@ -554,7 +558,7 @@ func (mp *PosMempool) UpdateLatestBlock(blockView *UtxoView, blockHeight uint64)
 		return
 	}
 
-	mp.latestBlockView = blockView
+	mp.readOnlyLatestBlockView = blockView
 	mp.latestBlockHeight = blockHeight
 }
 

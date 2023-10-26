@@ -34,21 +34,21 @@ type TransactionRegister struct {
 	// minimumNetworkFeeNanosPerKB is the base fee rate for the lowest fee FeeTimeBucket. This value corresponds to
 	// GlobalParamsEntry's MinimumNetworkFeeNanosPerKB.
 	minimumNetworkFeeNanosPerKB *big.Float
-	// feeBucketRateMultiplierBasisPoints is the fee rate multiplier for FeeTimeBucket objects. This value corresponds to
-	// GlobalParamsEntry's FeeBucketRateMultiplierBasisPoints.
-	feeBucketRateMultiplierBasisPoints *big.Float
+	// feeBucketGrowthRateBasisPoints is the fee rate multiplier for FeeTimeBucket objects. This value corresponds to
+	// GlobalParamsEntry's FeeBucketGrowthRateBasisPoints.
+	feeBucketGrowthRateBasisPoints *big.Float
 }
 
 func NewTransactionRegister(globalParams *GlobalParamsEntry) *TransactionRegister {
 	feeTimeBucketSet := treeset.NewWith(feeTimeBucketComparator)
 	minNetworkFee, bucketMultiplier := globalParams.ComputeFeeTimeBucketMinimumFeeAndMultiplier()
 	return &TransactionRegister{
-		feeTimeBucketSet:                   feeTimeBucketSet,
-		feeTimeBucketsByMinFeeMap:          make(map[uint64]*FeeTimeBucket),
-		txnMembership:                      make(map[BlockHash]*MempoolTx),
-		totalTxnsSizeBytes:                 0,
-		minimumNetworkFeeNanosPerKB:        minNetworkFee,
-		feeBucketRateMultiplierBasisPoints: bucketMultiplier,
+		feeTimeBucketSet:               feeTimeBucketSet,
+		feeTimeBucketsByMinFeeMap:      make(map[uint64]*FeeTimeBucket),
+		txnMembership:                  make(map[BlockHash]*MempoolTx),
+		totalTxnsSizeBytes:             0,
+		minimumNetworkFeeNanosPerKB:    minNetworkFee,
+		feeBucketGrowthRateBasisPoints: bucketMultiplier,
 	}
 }
 
@@ -99,7 +99,7 @@ func (tr *TransactionRegister) addTransactionNoLock(txn *MempoolTx) error {
 
 	// Determine the min fee of the bucket based on the transaction's fee rate.
 	bucketMinFeeNanosPerKb, bucketMaxFeeNanosPerKB := computeFeeTimeBucketRangeFromFeeNanosPerKB(txn.FeePerKB,
-		tr.minimumNetworkFeeNanosPerKB, tr.feeBucketRateMultiplierBasisPoints)
+		tr.minimumNetworkFeeNanosPerKB, tr.feeBucketGrowthRateBasisPoints)
 	// Lookup the bucket in the map.
 	bucket, bucketExists := tr.feeTimeBucketsByMinFeeMap[bucketMinFeeNanosPerKb]
 	if !bucketExists {
@@ -150,7 +150,7 @@ func (tr *TransactionRegister) removeTransactionNoLock(txn *MempoolTx) error {
 
 	// Determine the min fee of the bucket based on the transaction's fee rate.
 	bucketMinFeeNanosPerKb, _ := computeFeeTimeBucketRangeFromFeeNanosPerKB(txn.FeePerKB,
-		tr.minimumNetworkFeeNanosPerKB, tr.feeBucketRateMultiplierBasisPoints)
+		tr.minimumNetworkFeeNanosPerKB, tr.feeBucketGrowthRateBasisPoints)
 	// Remove the transaction from the bucket.
 	if bucket, exists := tr.feeTimeBucketsByMinFeeMap[bucketMinFeeNanosPerKb]; exists {
 		if bucket.minFeeNanosPerKB != bucketMinFeeNanosPerKb {

@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"math"
 	"math/big"
-	"math/bits"
 	"reflect"
 	"strings"
 	"time"
@@ -3089,38 +3088,38 @@ func (bav *UtxoView) _connectUpdateGlobalParams(
 				)
 			}
 		}
-		if len(extraData[FeeBucketRateMultiplierBasisPointsKey]) > 0 {
+		if len(extraData[FeeBucketGrowthRateBasisPointsKey]) > 0 {
 			val, bytesRead := Uvarint(
-				extraData[FeeBucketRateMultiplierBasisPointsKey],
+				extraData[FeeBucketGrowthRateBasisPointsKey],
 			)
 			if val > _maxBasisPoints {
 				return 0, 0, nil, fmt.Errorf(
-					"_connectUpdateGlobalParams: FeeBucketRateMultiplierBasisPoints must be <= %d",
+					"_connectUpdateGlobalParams: FeeBucketGrowthRateBasisPoints must be <= %d",
 					_maxBasisPoints,
 				)
 			}
-			newGlobalParamsEntry.FeeBucketRateMultiplierBasisPoints = val
+			newGlobalParamsEntry.FeeBucketGrowthRateBasisPoints = val
 			if bytesRead <= 0 {
 				return 0, 0, nil, fmt.Errorf(
-					"_connectUpdateGlobalParams: unable to decode FeeBucketRateMultiplierBasisPoints as uint64",
+					"_connectUpdateGlobalParams: unable to decode FeeBucketGrowthRateBasisPoints as uint64",
 				)
 			}
 		}
-		if len(extraData[FailingTransactionBMFRateBasisPointsKey]) > 0 {
+		if len(extraData[FailingTransactionBMFMultiplierBasisPointsKey]) > 0 {
 			val, bytesRead := Uvarint(
-				extraData[FailingTransactionBMFRateBasisPointsKey],
+				extraData[FailingTransactionBMFMultiplierBasisPointsKey],
 			)
 			if val > _maxBasisPoints {
 				return 0, 0, nil, fmt.Errorf(
-					"_connectUpdateGlobalParams: FailingTransactionBMFRateBasisPoints must be <= %d",
+					"_connectUpdateGlobalParams: FailingTransactionBMFMultiplierBasisPoints must be <= %d",
 					_maxBasisPoints,
 				)
 			}
-			newGlobalParamsEntry.FailingTransactionBMFRateBasisPoints = val
+			newGlobalParamsEntry.FailingTransactionBMFMultiplierBasisPoints = val
 
 			if bytesRead <= 0 {
 				return 0, 0, nil, fmt.Errorf(
-					"_connectUpdateGlobalParams: unable to decode FailingTransactionBMFRateBasisPoints as uint64",
+					"_connectUpdateGlobalParams: unable to decode FailingTransactionBMFMultiplierBasisPoints as uint64",
 				)
 			}
 		}
@@ -3128,23 +3127,23 @@ func (bav *UtxoView) _connectUpdateGlobalParams(
 
 	if blockHeight >= bav.Params.ForkHeights.ProofOfStake2ConsensusCutoverBlockHeight {
 		var bytesRead int
-		if len(extraData[FeeBucketRateMultiplierBasisPointsKey]) > 0 {
-			newGlobalParamsEntry.FeeBucketRateMultiplierBasisPoints, bytesRead = Uvarint(
-				extraData[FeeBucketRateMultiplierBasisPointsKey],
+		if len(extraData[FeeBucketGrowthRateBasisPointsKey]) > 0 {
+			newGlobalParamsEntry.FeeBucketGrowthRateBasisPoints, bytesRead = Uvarint(
+				extraData[FeeBucketGrowthRateBasisPointsKey],
 			)
 			if bytesRead <= 0 {
 				return 0, 0, nil, fmt.Errorf(
-					"_connectUpdateGlobalParams: unable to decode FeeBucketRateMultiplierBasisPoints as uint64",
+					"_connectUpdateGlobalParams: unable to decode FeeBucketGrowthRateBasisPoints as uint64",
 				)
 			}
 		}
-		if len(extraData[FailingTransactionBMFRateBasisPointsKey]) > 0 {
-			newGlobalParamsEntry.FailingTransactionBMFRateBasisPoints, bytesRead = Uvarint(
-				extraData[FailingTransactionBMFRateBasisPointsKey],
+		if len(extraData[FailingTransactionBMFMultiplierBasisPointsKey]) > 0 {
+			newGlobalParamsEntry.FailingTransactionBMFMultiplierBasisPoints, bytesRead = Uvarint(
+				extraData[FailingTransactionBMFMultiplierBasisPointsKey],
 			)
 			if bytesRead <= 0 {
 				return 0, 0, nil, fmt.Errorf(
-					"_connectUpdateGlobalParams: unable to decode FailingTransactionBMFRateBasisPoints as uint64",
+					"_connectUpdateGlobalParams: unable to decode FailingTransactionBMFMultiplierBasisPoints as uint64",
 				)
 			}
 		}
@@ -3681,14 +3680,12 @@ func (bav *UtxoView) ValidateTransactionNonce(txn *MsgDeSoTxn, blockHeight uint6
 }
 
 // _connectFailingTransaction is used to process the fee and burn associated with the user submitting a failing transaction.
-// A failing transaction passes formatting validation, yet fails connecting to the UtxoView. This can happen for a number
-// of reasons, such as insufficient DESO balance, wrong public key, etc. With Revolution's Fee-Time block ordering, these
-// failing transactions are included in the blocks and their fees are burned. Initially blocks will include full transactions,
-// and in the future iterations blocks will only include the failing transaction hashes. This is done to prevent spamming
-// attacks on the network with seemingly valid transactions that never commit and just end up occupying the block space.
-// In addition, a major part of the effective fees of this transaction is burned with BMF. This makes spam attacks economically
-// disadvantageous. Attacker's funds are burned, to the benefit of everyone else on the network. BMF algorithm also computes
-// a utility fee, which is distributed to the block producer.
+// A failing transaction is a txn that passes formatting validation, yet fails connecting to the UtxoView. This can happen for a
+// number of reasons, such as insufficient DESO balance, wrong public key, etc. With Revolution's Fee-Time block ordering, these
+// failing transactions are included in the blocks and their fees are burned. In addition, a major part of the effective
+// fees of this transaction is burned with BMF. This makes spam attacks economically disadvantageous. Attacker's funds
+// are burned, to the benefit of everyone else on the network. BMF algorithm also computes a utility fee, which is
+// distributed to the block producer.
 func (bav *UtxoView) _connectFailingTransaction(txn *MsgDeSoTxn, blockHeight uint32, verifySignatures bool) (
 	_utxoOps []*UtxoOperation, _burnFee uint64, _utilityFee uint64, _err error) {
 
@@ -3714,17 +3711,17 @@ func (bav *UtxoView) _connectFailingTransaction(txn *MsgDeSoTxn, blockHeight uin
 			"Problem validating transaction nonce")
 	}
 
-	// Get the FailingTransactionBMFRateBasisPoints from the global params entry. We then compute the effective fee
-	// as: effectiveFee = txn.TxnFeeNanos * FailingTransactionBMFRateBasisPoints / 10000
+	// Get the FailingTransactionBMFMultiplierBasisPoints from the global params entry. We then compute the effective fee
+	// as: effectiveFee = txn.TxnFeeNanos * FailingTransactionBMFMultiplierBasisPoints / 10000
 	gp := bav.GetCurrentGlobalParamsEntry()
 
-	failingTransactionRate := uint256.NewInt().SetUint64(gp.FailingTransactionBMFRateBasisPoints)
+	failingTransactionRate := uint256.NewInt().SetUint64(gp.FailingTransactionBMFMultiplierBasisPoints)
 	failingTransactionFee := uint256.NewInt().SetUint64(txn.TxnFeeNanos)
 	basisPointsAsUint256 := uint256.NewInt().SetUint64(10000)
 
 	effectiveFeeU256 := failingTransactionRate.Mul(failingTransactionRate, failingTransactionFee)
 	effectiveFeeU256.Div(effectiveFeeU256, basisPointsAsUint256)
-	// We should never overflow on the effective fee, since FailingTransactionBMFRateBasisPoints is <= 10000.
+	// We should never overflow on the effective fee, since FailingTransactionBMFMultiplierBasisPoints is <= 10000.
 	// But if for some magical reason we do, we set the effective fee to the max uint64. We don't error, and
 	// instead let _spendBalance handle the overflow.
 	if !effectiveFeeU256.IsUint64() {
@@ -3770,7 +3767,8 @@ func (bav *UtxoView) _connectFailingTransaction(txn *MsgDeSoTxn, blockHeight uin
 //	burnFee := fee - log_2(fee), utilityFee := log_2(fee).
 func computeBMF(fee uint64) (_burnFee uint64, _utilityFee uint64) {
 	// Compute the utility fee as log_2(fee). We can find it by taking the bit length of fee.
-	utilityFee := uint64(bits.Len64(fee))
+	// Alternatively: uint64(bits.Len64(fee))
+	utilityFee, _ := BigFloatLog2(NewFloat().SetUint64(fee)).Uint64()
 
 	// This should never happen but just in case make sure utilityFee is not greater than fee.
 	if utilityFee > fee {
