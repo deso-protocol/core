@@ -10,6 +10,7 @@ import (
 	"github.com/deso-protocol/core/consensus"
 	"github.com/holiman/uint256"
 	"github.com/stretchr/testify/require"
+	"math"
 	"testing"
 	"time"
 )
@@ -345,9 +346,9 @@ func TestAddBlockToBlockIndex(t *testing.T) {
 	require.True(t, bytes.Equal(blockNode.Hash[:], newHash[:]))
 	require.True(t, blockNode.IsStored())
 
-	// Check the uncommitted blocks map
-	uncommittedBlock, uncommittedExists := bc.uncommittedBlocksMap[*newHash]
-	require.True(t, uncommittedExists)
+	// Check the DB for the block.
+	uncommittedBlock, err := GetBlock(newHash, bc.db, bc.snapshot)
+	require.NoError(t, err)
 	uncommittedBytes, err := uncommittedBlock.ToBytes(false)
 	require.NoError(t, err)
 	origBlockBytes, err := block.ToBytes(false)
@@ -442,6 +443,11 @@ func TestValidateBlockView(t *testing.T) {
 
 func TestAddBlockToBlockIndexAndUncommittedBlocks(t *testing.T) {
 	bc, _, _ := NewTestBlockchain(t)
+	GlobalDeSoParams.ForkHeights.ProofOfStake2ConsensusCutoverBlockHeight = 0
+	resetGlobalDeSoParams := func() {
+		GlobalDeSoParams.ForkHeights.ProofOfStake2ConsensusCutoverBlockHeight = math.MaxUint32
+	}
+	t.Cleanup(resetGlobalDeSoParams)
 	hash1 := NewBlockHash(RandomBytes(32))
 	hash2 := NewBlockHash(RandomBytes(32))
 	genesisNode := NewBlockNode(nil, hash1, 1, nil, nil, &MsgDeSoHeader{
@@ -498,7 +504,11 @@ func TestAddBlockToBlockIndexAndUncommittedBlocks(t *testing.T) {
 			},
 			TxnConnectStatusByIndexHash: NewBlockHash(bitset.NewBitset().ToBytes()),
 		},
-		Txns:                    nil,
+		Txns: []*MsgDeSoTxn{
+			{
+				TxnMeta: &BlockRewardMetadataa{},
+			},
+		},
 		TxnConnectStatusByIndex: bitset.NewBitset(),
 	}
 
@@ -512,9 +522,9 @@ func TestAddBlockToBlockIndexAndUncommittedBlocks(t *testing.T) {
 	require.True(t, bytes.Equal(blockNode.Hash[:], newHash[:]))
 	require.Equal(t, blockNode.Height, uint32(2))
 	require.True(t, blockNode.IsStored())
-	// Check the uncommitted blocks map
-	uncommittedBlock, uncommittedExists := bc.uncommittedBlocksMap[*newHash]
-	require.True(t, uncommittedExists)
+	// Check the DB for the block
+	uncommittedBlock, err := GetBlock(newHash, bc.db, bc.snapshot)
+	require.NoError(t, err)
 	uncommittedBytes, err := uncommittedBlock.ToBytes(false)
 	require.NoError(t, err)
 	origBlockBytes, err := block.ToBytes(false)
