@@ -2,7 +2,6 @@ package lib
 
 import (
 	"bytes"
-	"container/list"
 	"encoding/hex"
 	"fmt"
 	"math"
@@ -63,24 +62,43 @@ const (
 	// don't store orphan headers and therefore any header that we do
 	// have in our node index will be known definitively to be valid or
 	// invalid one way or the other.
-	StatusHeaderValidated = 1 << iota
-	StatusHeaderValidateFailed
 
-	StatusBlockProcessed
-	StatusBlockStored
-	StatusBlockValidated
-	StatusBlockValidateFailed
+	// FIXME: Make sure we didn't break consensus by removing iota.
+	// Notice that adding StatusBlockCommitted in the middle would have broken
+	// consensus because of iota, because it would have caused the fields after
+	// it to get new values. Which is why we should never use that piece
+	// of crap.
+	StatusHeaderValidated      = 1 << 0
+	StatusHeaderValidateFailed = 1 << 1
 
-	StatusBitcoinHeaderValidated      // Deprecated
-	StatusBitcoinHeaderValidateFailed // Deprecated
+	StatusBlockProcessed      = 1 << 2
+	StatusBlockStored         = 1 << 3
+	StatusBlockValidated      = 1 << 4
+	StatusBlockValidateFailed = 1 << 5
+	StatusBlockCommitted      = 1 << 8
+
+	StatusBitcoinHeaderValidated      = 1 << 6 // Deprecated
+	StatusBitcoinHeaderValidateFailed = 1 << 7 // Deprecated
+
+	// NEXT_BIT = 9
 )
 
-type CommittedBlockStatus uint8
+// A block is stored if it has been added to the blockIndex and stored in the DB.
+func IsBlockStored(blockNode *BlockNode) bool {
+	return blockNode.Status&StatusBlockStored != 0
+}
 
-const (
-	COMMITTED   CommittedBlockStatus = 0
-	UNCOMMITTED CommittedBlockStatus = 1
-)
+// A block is validated if it has passed all validations. A block that is validated is
+// generally always stored first.
+func IsBlockValidated(blockNode *BlockNode) bool {
+	return blockNode.Status&StatusBlockValidated != 0
+}
+
+// A block is committed if it has passed all validations and it has been committed to
+// the blockchain according to the Fast HotStuff commit rule.
+func IsBlockCommitted(blockNode *BlockNode) bool {
+	return blockNode.Status&StatusBlockCommitted != 0
+}
 
 // IsFullyProcessed determines if the BlockStatus corresponds to a fully processed and stored block.
 func (blockStatus BlockStatus) IsFullyProcessed() bool {
@@ -156,16 +174,6 @@ type BlockNode struct {
 	// Status holds the validation state for the block and whether or not
 	// it's stored in the database.
 	Status BlockStatus
-
-	// CommittedStatus is either COMMITTED or UNCOMMITTED. If it's UNCOMMITTED, then
-	// the block is not yet committed to the blockchain. If it's COMMITTED, then the
-	// block is committed to the blockchain.
-	// In PoW consensus, all blocks will have CommittedStatus = COMMITTED.
-	// In PoS consensus, the chain tip and its parent will have CommittedStatus = UNCOMMITTED and
-	// all other blocks will have CommittedStatus = COMMITTED. When a new block is added to the tip,
-	// its CommittedStatus will be set to UNCOMMITTED and its grandparent's CommittedStatus will be
-	// updated to COMMITTED.
-	CommittedStatus CommittedBlockStatus
 }
 
 func _difficultyBitsToHash(diffBits uint32) (_diffHash *BlockHash) {
@@ -298,8 +306,8 @@ func (nn *BlockNode) String() string {
 	if nn.Header != nil {
 		tstamp = uint32(nn.Header.GetTstampSecs())
 	}
-	return fmt.Sprintf("< TstampSecs: %d, Height: %d, Hash: %s, ParentHash %s, Status: %s, CumWork: %v, CommittedStatus: %v>",
-		tstamp, nn.Header.Height, nn.Hash, parentHash, nn.Status, nn.CumWork, nn.CommittedStatus)
+	return fmt.Sprintf("< TstampSecs: %d, Height: %d, Hash: %s, ParentHash %s, Status: %s, CumWork: %v>",
+		tstamp, nn.Header.Height, nn.Hash, parentHash, nn.Status, nn.CumWork)
 }
 
 // NewPoWBlockNode is a helper function to create a BlockNode
@@ -323,8 +331,6 @@ func NewPoWBlockNode(
 		CumWork:          cumWork,
 		Header:           header,
 		Status:           status,
-		// All blocks have a committed status in PoW.
-		CommittedStatus: COMMITTED,
 	}
 }
 
@@ -335,16 +341,14 @@ func NewPoSBlockNode(
 	hash *BlockHash,
 	height uint32,
 	header *MsgDeSoHeader,
-	status BlockStatus,
-	committedStatus CommittedBlockStatus) *BlockNode {
+	status BlockStatus) *BlockNode {
 
 	return &BlockNode{
-		Parent:          parent,
-		Hash:            hash,
-		Height:          height,
-		Header:          header,
-		Status:          status,
-		CommittedStatus: committedStatus,
+		Parent: parent,
+		Hash:   hash,
+		Height: height,
+		Header: header,
+		Status: status,
 	}
 }
 
@@ -481,15 +485,6 @@ type Blockchain struct {
 
 	bestHeaderChain    []*BlockNode
 	bestHeaderChainMap map[BlockHash]*BlockNode
-
-	// Tracks all uncommitted blocks in memory. This includes blocks that are not part
-	// of the best chain.
-	uncommittedBlocksMap map[BlockHash]*MsgDeSoBlock
-
-	// We keep track of orphan blocks with the following data structures. Orphans
-	// are not written to disk and are only cached in memory. Moreover we only keep
-	// up to MaxOrphansInMemory of them in order to prevent memory exhaustion.
-	orphanList *list.List
 
 	// We connect many blocks in the same view and flush every X number of blocks
 	blockView *UtxoView
@@ -696,14 +691,12 @@ func NewBlockchain(
 		eventManager:                    eventManager,
 		archivalMode:                    archivalMode,
 
-		blockIndex:           make(map[BlockHash]*BlockNode),
-		uncommittedBlocksMap: make(map[BlockHash]*MsgDeSoBlock),
-		bestChainMap:         make(map[BlockHash]*BlockNode),
+		blockIndex:   make(map[BlockHash]*BlockNode),
+		bestChainMap: make(map[BlockHash]*BlockNode),
 
 		bestHeaderChainMap: make(map[BlockHash]*BlockNode),
 
-		orphanList: list.New(),
-		timer:      timer,
+		timer: timer,
 	}
 
 	// Hold the chain lock whenever we modify this object from now on.
@@ -1381,51 +1374,6 @@ func (bc *Blockchain) _validateOrphanBlock(desoBlock *MsgDeSoBlock) error {
 	// Moreover, while being attacked would be a minor inconvenience it doesn't
 	// stop the node from reaching consensus eventually. So we'll punt on defending
 	// against it unless/until it actually becomes a problem.
-
-	return nil
-}
-
-// ProcessOrphanBlock runs some very basic validation on the orphan block and adds
-// it to our orphan data structure if it passes. If there are too many orphan blocks
-// in our data structure, it also evicts the oldest block to make room for this one.
-//
-// TODO: Currently we only remove orphan blocks if we have too many. This means in
-// a steady state we are potentially keeping MaxOrphansInMemory at all times, which
-// is wasteful of resources. Better would be to clean up orphan blocks once they're
-// too old or something like that.
-func (bc *Blockchain) ProcessOrphanBlock(desoBlock *MsgDeSoBlock, blockHash *BlockHash) error {
-	err := bc._validateOrphanBlock(desoBlock)
-	if err != nil {
-		return errors.Wrapf(err, "ProcessOrphanBlock: Problem validating orphan block")
-	}
-
-	// If this block is already in the orphan list then don't add it.
-	//
-	// TODO: We do a basic linear search here because there are so few unconnectedTxns
-	// in our list. If we want to track more unconnectedTxns in the future we would probably
-	// want to manage this with a map.
-	for orphanElem := bc.orphanList.Front(); orphanElem != nil; orphanElem = orphanElem.Next() {
-		orphanBlock := orphanElem.Value.(*OrphanBlock)
-		if *orphanBlock.Hash == *blockHash {
-			return RuleErrorDuplicateOrphan
-		}
-	}
-
-	// At this point we know we are adding a new orphan to the list.
-
-	// If we are at capacity remove an orphan block by simply deleting the front
-	// element of the orphan list, which is also the oldest orphan.
-	if bc.orphanList.Len() >= MaxOrphansInMemory {
-		elemToRemove := bc.orphanList.Front()
-		bc.orphanList.Remove(elemToRemove)
-	}
-
-	// Add the orphan block to our data structure. We can also assume the orphan
-	// is not a duplicate and therefore simply add a new entry to the end of the list.
-	bc.orphanList.PushBack(&OrphanBlock{
-		Block: desoBlock,
-		Hash:  blockHash,
-	})
 
 	return nil
 }
