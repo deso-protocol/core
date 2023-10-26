@@ -85,10 +85,6 @@ func (node *Node) Start(exitChannels ...*chan struct{}) {
 		node.Params.EnableRegtest()
 	}
 
-	// Set the frequency of mempool's database backup.
-	node.Params.MempoolBackupIntervalMillis = node.Config.MempoolBackupIntervalMillis
-	node.Params.MaxMempoolPosSizeBytes = node.Config.MaxMempoolPosSizeBytes
-
 	// Validate params
 	validateParams(node.Params)
 	// This is a bit of a hack, and we should deprecate this. We rely on GlobalDeSoParams static variable in only one

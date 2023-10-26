@@ -2248,7 +2248,7 @@ func TestConnectFailingTransaction(t *testing.T) {
 
 	err = blockView.FlushToDb(uint64(blockHeight))
 
-	// Also test updating the global params for FailingTransactionBMFRateBasisPoints and FeeBucketRateMultiplierBasisPoints.
+	// Also test updating the global params for FailingTransactionBMFMultiplierBasisPoints and FeeBucketGrowthRateBasisPoints.
 	testMeta := &TestMeta{
 		t:                 t,
 		chain:             chain,
@@ -2262,30 +2262,30 @@ func TestConnectFailingTransaction(t *testing.T) {
 	// Allow m0 to update global params.
 	params.ExtraRegtestParamUpdaterKeys[MakePkMapKey(m0PubBytes)] = true
 	{
-		// Set FailingTransactionBMFRateBasisPoints=7000 or 70%.
+		// Set FailingTransactionBMFMultiplierBasisPoints=7000 or 70%.
 		_updateGlobalParamsEntryWithExtraData(
 			testMeta,
 			testMeta.feeRateNanosPerKb,
 			m0Pub,
 			m0Priv,
-			map[string][]byte{FailingTransactionBMFRateBasisPointsKey: UintToBuf(7000)},
+			map[string][]byte{FailingTransactionBMFMultiplierBasisPointsKey: UintToBuf(7000)},
 		)
 	}
 	{
-		// Set FeeBucketRateMultiplierBasisPoints=7000 or 70%.
+		// Set FeeBucketGrowthRateBasisPoints=7000 or 70%.
 		_updateGlobalParamsEntryWithExtraData(
 			testMeta,
 			testMeta.feeRateNanosPerKb,
 			m0Pub,
 			m0Priv,
-			map[string][]byte{FeeBucketRateMultiplierBasisPointsKey: UintToBuf(7000)},
+			map[string][]byte{FeeBucketGrowthRateBasisPointsKey: UintToBuf(7000)},
 		)
 	}
 	blockView, err = NewUtxoView(db, params, nil, nil)
 	require.NoError(err)
 	newParams := blockView.GetCurrentGlobalParamsEntry()
-	require.Equal(uint64(7000), newParams.FailingTransactionBMFRateBasisPoints)
-	require.Equal(uint64(7000), newParams.FeeBucketRateMultiplierBasisPoints)
+	require.Equal(uint64(7000), newParams.FailingTransactionBMFMultiplierBasisPoints)
+	require.Equal(uint64(7000), newParams.FeeBucketGrowthRateBasisPoints)
 
 	// Try connecting another failing transaction, and make sure the burn and utility fees are computed accurately.
 	txn2 := _generateTestTxn(t, rand, feeMin, feeMax, m0PubBytes, m0Priv, 100, 0)
@@ -2302,7 +2302,7 @@ func TestConnectFailingTransaction(t *testing.T) {
 }
 
 func _getBMFForTxn(txn *MsgDeSoTxn, gp *GlobalParamsEntry) (_burnFee uint64, _utilityFee uint64) {
-	failingTransactionRate := NewFloat().SetUint64(gp.FailingTransactionBMFRateBasisPoints)
+	failingTransactionRate := NewFloat().SetUint64(gp.FailingTransactionBMFMultiplierBasisPoints)
 	failingTransactionRate.Quo(failingTransactionRate, NewFloat().SetUint64(10000))
 	failingTransactionFee, _ := NewFloat().Mul(failingTransactionRate, NewFloat().SetUint64(txn.TxnFeeNanos)).Uint64()
 	return computeBMF(failingTransactionFee)
