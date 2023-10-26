@@ -43,7 +43,8 @@ type Config struct {
 	HypersyncMaxQueueSize     uint32
 
 	// Mempool
-	MempoolBackupTimeMilliseconds uint64
+	MempoolBackupIntervalMillis uint64
+	MaxMempoolPosSizeBytes      uint64
 
 	// Mining
 	MinerPublicKeys  []string
@@ -108,7 +109,8 @@ func LoadConfig() *Config {
 	config.HypersyncMaxQueueSize = viper.GetUint32("hypersync-max-queue-size")
 
 	// Mempool
-	config.MempoolBackupTimeMilliseconds = viper.GetUint64("mempool-backup-time-milliseconds")
+	config.MempoolBackupIntervalMillis = viper.GetUint64("mempool-backup-time-millis")
+	config.MaxMempoolPosSizeBytes = viper.GetUint64("max-mempool-pos-size-bytes")
 
 	// Peers
 	config.ConnectIPs = viper.GetStringSlice("connect-ips")

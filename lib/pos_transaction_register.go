@@ -34,21 +34,21 @@ type TransactionRegister struct {
 	// minimumNetworkFeeNanosPerKB is the base fee rate for the lowest fee FeeTimeBucket. This value corresponds to
 	// GlobalParamsEntry's MinimumNetworkFeeNanosPerKB.
 	minimumNetworkFeeNanosPerKB *big.Float
-	// feeBucketRateMultiplierBasisPoints is the fee rate multiplier for FeeTimeBucket objects. This value corresponds to
-	// GlobalParamsEntry's FeeBucketRateMultiplierBasisPoints.
-	feeBucketRateMultiplierBasisPoints *big.Float
+	// feeBucketGrowthRateBasisPoints is the fee rate multiplier for FeeTimeBucket objects. This value corresponds to
+	// GlobalParamsEntry's FeeBucketGrowthRateBasisPoints.
+	feeBucketGrowthRateBasisPoints *big.Float
 }
 
 func NewTransactionRegister(globalParams *GlobalParamsEntry) *TransactionRegister {
 	feeTimeBucketSet := treeset.NewWith(feeTimeBucketComparator)
 	minNetworkFee, bucketMultiplier := globalParams.ComputeFeeTimeBucketMinimumFeeAndMultiplier()
 	return &TransactionRegister{
-		feeTimeBucketSet:                   feeTimeBucketSet,
-		feeTimeBucketsByMinFeeMap:          make(map[uint64]*FeeTimeBucket),
-		txnMembership:                      make(map[BlockHash]*MempoolTx),
-		totalTxnsSizeBytes:                 0,
-		minimumNetworkFeeNanosPerKB:        minNetworkFee,
-		feeBucketRateMultiplierBasisPoints: bucketMultiplier,
+		feeTimeBucketSet:               feeTimeBucketSet,
+		feeTimeBucketsByMinFeeMap:      make(map[uint64]*FeeTimeBucket),
+		txnMembership:                  make(map[BlockHash]*MempoolTx),
+		totalTxnsSizeBytes:             0,
+		minimumNetworkFeeNanosPerKB:    minNetworkFee,
+		feeBucketGrowthRateBasisPoints: bucketMultiplier,
 	}
 }
 
@@ -99,7 +99,7 @@ func (tr *TransactionRegister) addTransactionNoLock(txn *MempoolTx) error {
 
 	// Determine the min fee of the bucket based on the transaction's fee rate.
 	bucketMinFeeNanosPerKb, bucketMaxFeeNanosPerKB := computeFeeTimeBucketRangeFromFeeNanosPerKB(txn.FeePerKB,
-		tr.minimumNetworkFeeNanosPerKB, tr.feeBucketRateMultiplierBasisPoints)
+		tr.minimumNetworkFeeNanosPerKB, tr.feeBucketGrowthRateBasisPoints)
 	// Lookup the bucket in the map.
 	bucket, bucketExists := tr.feeTimeBucketsByMinFeeMap[bucketMinFeeNanosPerKb]
 	if !bucketExists {
@@ -141,6 +141,8 @@ func (tr *TransactionRegister) removeTransactionNoLock(txn *MempoolTx) error {
 		return nil
 	}
 
+	// Sanity-check that the size of the transaction doesn't exceed the current size of the TransactionRegister.
+	// This should never happen, unless somehow the underlying transaction was modified. Which won't happen.
 	if tr.totalTxnsSizeBytes < txn.TxSizeBytes {
 		return fmt.Errorf("TransactionRegister.RemoveTransaction: Transaction with transaction hash %v size %v "+
 			"exceeds total mempool size %v", txn.Hash.String(), txn.TxSizeBytes, tr.totalTxnsSizeBytes)
@@ -148,7 +150,7 @@ func (tr *TransactionRegister) removeTransactionNoLock(txn *MempoolTx) error {
 
 	// Determine the min fee of the bucket based on the transaction's fee rate.
 	bucketMinFeeNanosPerKb, _ := computeFeeTimeBucketRangeFromFeeNanosPerKB(txn.FeePerKB,
-		tr.minimumNetworkFeeNanosPerKB, tr.feeBucketRateMultiplierBasisPoints)
+		tr.minimumNetworkFeeNanosPerKB, tr.feeBucketGrowthRateBasisPoints)
 	// Remove the transaction from the bucket.
 	if bucket, exists := tr.feeTimeBucketsByMinFeeMap[bucketMinFeeNanosPerKb]; exists {
 		if bucket.minFeeNanosPerKB != bucketMinFeeNanosPerKb {
@@ -161,6 +163,9 @@ func (tr *TransactionRegister) removeTransactionNoLock(txn *MempoolTx) error {
 		if bucket.Empty() {
 			tr.removeBucketNoLock(bucket)
 		}
+	} else if !exists {
+		return fmt.Errorf("TransactionRegister.RemoveTransaction: Bucket with min fee %v does not exist",
+			bucketMinFeeNanosPerKb)
 	}
 
 	delete(tr.txnMembership, *txn.Hash)
@@ -305,6 +310,7 @@ func (tr *TransactionRegister) getTransactionsToPrune(minPrunedBytes uint64) (_p
 	prunedTxns := []*MempoolTx{}
 
 	// Find the FeeTime bucket at the end of the Set. It'll have the smallest fee among the buckets in the register.
+	// We iterate in reverse order, starting from the end, so that we drop transactions ordered by least-to-highest priority.
 	it := tr.feeTimeBucketSet.Iterator()
 	it.End()
 	// Iterate through the buckets in reverse order so that we drop transactions ordered by least-to-highest priority.

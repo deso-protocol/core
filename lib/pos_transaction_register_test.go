@@ -362,7 +362,7 @@ func TestFeeTimeBucketBasic(t *testing.T) {
 func _testGetDefaultGlobalParams() *GlobalParamsEntry {
 	globalParams := InitialGlobalParamsEntry
 	globalParams.MinimumNetworkFeeNanosPerKB = 1000
-	globalParams.FeeBucketRateMultiplierBasisPoints = 1000
+	globalParams.FeeBucketGrowthRateBasisPoints = 1000
 
 	return &globalParams
 }
