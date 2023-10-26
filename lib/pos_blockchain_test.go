@@ -229,7 +229,7 @@ func TestValidateBlockHeight(t *testing.T) {
 		ProposedInView:               1,
 		ValidatorsVoteQC:             nil,
 		ValidatorsTimeoutAggregateQC: nil,
-	}, StatusBlockValidated, UNCOMMITTED)
+	}, StatusBlockStored|StatusBlockValidated)
 	bc.bestChain = []*BlockNode{genesisBlock}
 	bc.blockIndex[*genesisBlock.Hash] = genesisBlock
 	// Create a block with a valid header.
@@ -294,7 +294,7 @@ func TestAddBlockToBlockIndex(t *testing.T) {
 		ProposedInView:               1,
 		ValidatorsVoteQC:             nil,
 		ValidatorsTimeoutAggregateQC: nil,
-	}, StatusBlockValidated, COMMITTED)
+	}, StatusBlockStored|StatusBlockValidated)
 	_ = genesisBlockNode
 	derefedHash := *hash
 	bc.blockIndex = map[BlockHash]*BlockNode{
@@ -335,7 +335,7 @@ func TestAddBlockToBlockIndex(t *testing.T) {
 		Txns:                    nil,
 		TxnConnectStatusByIndex: bitset.NewBitset(),
 	}
-	err = bc.addBlockToBlockIndex(block)
+	err = bc.addBlockToBlockIndex(block, StatusBlockStored)
 	require.Nil(t, err)
 	newHash, err := block.Hash()
 	require.NoError(t, err)
@@ -343,6 +343,7 @@ func TestAddBlockToBlockIndex(t *testing.T) {
 	blockNode, exists := bc.blockIndex[*newHash]
 	require.True(t, exists)
 	require.True(t, bytes.Equal(blockNode.Hash[:], newHash[:]))
+	require.True(t, IsBlockStored(blockNode))
 
 	// Check the uncommitted blocks map
 	uncommittedBlock, uncommittedExists := bc.uncommittedBlocksMap[*newHash]
@@ -362,14 +363,14 @@ func TestValidateBlockView(t *testing.T) {
 		Version:        2,
 		Height:         1,
 		ProposedInView: 1,
-	}, StatusBlockValidated, COMMITTED)
+	}, StatusBlockStored|StatusBlockValidated)
 	block2 := NewPoSBlockNode(genesisNode, hash2, 2, &MsgDeSoHeader{
 		Version:                      2,
 		Height:                       2,
 		ProposedInView:               2,
 		ValidatorsVoteQC:             nil,
 		ValidatorsTimeoutAggregateQC: nil,
-	}, StatusBlockValidated, UNCOMMITTED)
+	}, StatusBlockStored|StatusBlockValidated)
 	bc.bestChain = []*BlockNode{
 		genesisNode,
 		block2,
@@ -447,14 +448,14 @@ func TestAddBlockToBlockIndexAndUncommittedBlocks(t *testing.T) {
 		Version:        2,
 		Height:         1,
 		ProposedInView: 1,
-	}, StatusBlockValidated, COMMITTED)
+	}, StatusBlockStored|StatusBlockValidated)
 	block2 := NewPoSBlockNode(genesisNode, hash2, 2, &MsgDeSoHeader{
 		Version:                      2,
 		Height:                       2,
 		ProposedInView:               2,
 		ValidatorsVoteQC:             nil,
 		ValidatorsTimeoutAggregateQC: nil,
-	}, StatusBlockValidated, UNCOMMITTED)
+	}, StatusBlockStored|StatusBlockValidated)
 	bc.blockIndex = map[BlockHash]*BlockNode{
 		*hash1: genesisNode,
 		*hash2: block2,
@@ -501,7 +502,7 @@ func TestAddBlockToBlockIndexAndUncommittedBlocks(t *testing.T) {
 		TxnConnectStatusByIndex: bitset.NewBitset(),
 	}
 
-	err = bc.addBlockToBlockIndex(block)
+	err = bc.addBlockToBlockIndex(block, StatusBlockStored)
 	require.NoError(t, err)
 	newHash, err := block.Hash()
 	require.NoError(t, err)
@@ -510,6 +511,7 @@ func TestAddBlockToBlockIndexAndUncommittedBlocks(t *testing.T) {
 	require.True(t, exists)
 	require.True(t, bytes.Equal(blockNode.Hash[:], newHash[:]))
 	require.Equal(t, blockNode.Height, uint32(2))
+	require.True(t, IsBlockStored(blockNode))
 	// Check the uncommitted blocks map
 	uncommittedBlock, uncommittedExists := bc.uncommittedBlocksMap[*newHash]
 	require.True(t, uncommittedExists)
@@ -522,7 +524,7 @@ func TestAddBlockToBlockIndexAndUncommittedBlocks(t *testing.T) {
 	// If we're missing a field in the header, we should get an error
 	// as we can't compute the hash.
 	block.Header.ProposerPublicKey = nil
-	err = bc.addBlockToBlockIndex(block)
+	err = bc.addBlockToBlockIndex(block, StatusBlockStored)
 	require.Error(t, err)
 }
 
@@ -728,7 +730,7 @@ func TestGetLineageFromCommittedTip(t *testing.T) {
 		Version:        2,
 		Height:         1,
 		ProposedInView: 1,
-	}, StatusBlockValidated, COMMITTED)
+	}, StatusBlockStored|StatusBlockValidated)
 	bc.bestChain = []*BlockNode{genesisNode}
 	bc.blockIndex = map[BlockHash]*BlockNode{
 		*hash1: genesisNode,
@@ -758,7 +760,7 @@ func TestGetLineageFromCommittedTip(t *testing.T) {
 		Version:       2,
 		Height:        2,
 		PrevBlockHash: hash1,
-	}, StatusBlockValidated, COMMITTED)
+	}, StatusBlockStored|StatusBlockValidated)
 	bc.bestChain = append(bc.bestChain, block2)
 	bc.blockIndex[*hash2] = block2
 	ancestors, err = bc.getLineageFromCommittedTip(block)
@@ -766,7 +768,7 @@ func TestGetLineageFromCommittedTip(t *testing.T) {
 	require.Equal(t, err, RuleErrorDoesNotExtendCommittedTip)
 
 	// update block to be uncommitted
-	block2.CommittedStatus = UNCOMMITTED
+	block2.Status = StatusBlockStored | StatusBlockValidated
 	// set new block's parent as block 2.
 	block.Header.PrevBlockHash = hash2
 	ancestors, err = bc.getLineageFromCommittedTip(block)
@@ -1096,12 +1098,12 @@ func TestShouldReorg(t *testing.T) {
 	hash3 := NewBlockHash(RandomBytes(32))
 	bc.bestChain = []*BlockNode{
 		{
-			Hash:            hash1,
-			CommittedStatus: COMMITTED,
+			Hash:   hash1,
+			Status: StatusBlockStored | StatusBlockValidated | StatusBlockCommitted,
 		},
 		{
-			Hash:            hash3,
-			CommittedStatus: UNCOMMITTED,
+			Hash:   hash3,
+			Status: StatusBlockStored | StatusBlockValidated,
 		},
 	}
 
@@ -1131,21 +1133,21 @@ func TestTryReorgToNewTipAndTryApplyNewTip(t *testing.T) {
 	bc, _, _ := NewTestBlockchain(t)
 	hash1 := NewBlockHash(RandomBytes(32))
 	bn1 := &BlockNode{
-		Hash:            hash1,
-		CommittedStatus: COMMITTED,
+		Hash:   hash1,
+		Status: StatusBlockStored | StatusBlockValidated | StatusBlockCommitted,
 	}
 	hash2 := NewBlockHash(RandomBytes(32))
 	bn2 := &BlockNode{
-		Hash:            hash2,
-		CommittedStatus: UNCOMMITTED,
+		Hash:   hash2,
+		Status: StatusBlockStored | StatusBlockValidated,
 		Header: &MsgDeSoHeader{
 			PrevBlockHash: hash1,
 		},
 	}
 	hash3 := NewBlockHash(RandomBytes(32))
 	bn3 := &BlockNode{
-		Hash:            hash3,
-		CommittedStatus: UNCOMMITTED,
+		Hash:   hash3,
+		Status: StatusBlockStored | StatusBlockValidated,
 		Header: &MsgDeSoHeader{
 			PrevBlockHash: hash2,
 		},
@@ -1209,8 +1211,8 @@ func TestTryReorgToNewTipAndTryApplyNewTip(t *testing.T) {
 	// to the block index and reorg to them
 	hash4 := NewBlockHash(RandomBytes(32))
 	bn4 := &BlockNode{
-		Hash:            hash4,
-		CommittedStatus: UNCOMMITTED,
+		Hash:   hash4,
+		Status: StatusBlockStored | StatusBlockValidated,
 		Header: &MsgDeSoHeader{
 			PrevBlockHash: hash1,
 		},
@@ -1218,8 +1220,8 @@ func TestTryReorgToNewTipAndTryApplyNewTip(t *testing.T) {
 
 	hash5 := NewBlockHash(RandomBytes(32))
 	bn5 := &BlockNode{
-		Hash:            hash5,
-		CommittedStatus: UNCOMMITTED,
+		Hash:   hash5,
+		Status: StatusBlockStored | StatusBlockValidated,
 		Header: &MsgDeSoHeader{
 			PrevBlockHash: hash4,
 		},
@@ -1294,16 +1296,16 @@ func TestCanCommitGrandparent(t *testing.T) {
 	bc, _, _ := NewTestBlockchain(t)
 	hash1 := NewBlockHash(RandomBytes(32))
 	bn1 := &BlockNode{
-		Hash:            hash1,
-		CommittedStatus: UNCOMMITTED,
+		Hash:   hash1,
+		Status: StatusBlockStored | StatusBlockValidated,
 		Header: &MsgDeSoHeader{
 			ProposedInView: 1,
 		},
 	}
 	hash2 := NewBlockHash(RandomBytes(32))
 	bn2 := &BlockNode{
-		Hash:            hash2,
-		CommittedStatus: UNCOMMITTED,
+		Hash:   hash2,
+		Status: StatusBlockStored | StatusBlockValidated,
 		Header: &MsgDeSoHeader{
 			ProposedInView: 2,
 			PrevBlockHash:  hash1,
@@ -1315,8 +1317,8 @@ func TestCanCommitGrandparent(t *testing.T) {
 	// define incoming block
 	hash3 := NewBlockHash(RandomBytes(32))
 	bn3 := &BlockNode{
-		Hash:            hash3,
-		CommittedStatus: UNCOMMITTED,
+		Hash:   hash3,
+		Status: StatusBlockStored | StatusBlockValidated,
 		Header: &MsgDeSoHeader{
 			ProposedInView: 10,
 			PrevBlockHash:  hash2,
@@ -1333,13 +1335,13 @@ func TestCanCommitGrandparent(t *testing.T) {
 
 	// Update bn1 to be committed. We no longer can run the commit since bn1 is already
 	// committed. We expect committedBlockSeen to be true.
-	bn1.CommittedStatus = COMMITTED
+	bn1.Status |= StatusBlockCommitted
 	grandparentHash, canCommit = bc.canCommitGrandparent(bn3)
 	require.Nil(t, grandparentHash)
 	require.False(t, canCommit)
 
 	// revert bn1's committed status.
-	bn1.CommittedStatus = UNCOMMITTED
+	bn1.Status = StatusBlockStored | StatusBlockValidated
 	// Increase bn2's proposed in view, so that it is no longer a direct child of bn3.
 	// We should no longer be able to commit bn1.
 	bn2.Header.ProposedInView = 3

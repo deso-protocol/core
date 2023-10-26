@@ -63,24 +63,35 @@ const (
 	// don't store orphan headers and therefore any header that we do
 	// have in our node index will be known definitively to be valid or
 	// invalid one way or the other.
-	StatusHeaderValidated = 1 << iota
-	StatusHeaderValidateFailed
+	StatusHeaderValidated      = 1 << 0
+	StatusHeaderValidateFailed = 1 << 1
 
-	StatusBlockProcessed
-	StatusBlockStored
-	StatusBlockValidated
-	StatusBlockValidateFailed
+	StatusBlockProcessed      = 1 << 2
+	StatusBlockStored         = 1 << 3
+	StatusBlockValidated      = 1 << 4
+	StatusBlockValidateFailed = 1 << 5
+	StatusBlockCommitted      = 1 << 8
 
-	StatusBitcoinHeaderValidated      // Deprecated
-	StatusBitcoinHeaderValidateFailed // Deprecated
+	StatusBitcoinHeaderValidated      = 1 << 6 // Deprecated
+	StatusBitcoinHeaderValidateFailed = 1 << 7 // Deprecated
 )
 
-type CommittedBlockStatus uint8
+// A block is stored if it has been added to the blockIndex and stored in the DB.
+func IsBlockStored(blockNode *BlockNode) bool {
+	return blockNode.Status&StatusBlockStored != 0
+}
 
-const (
-	COMMITTED   CommittedBlockStatus = 0
-	UNCOMMITTED CommittedBlockStatus = 1
-)
+// A block is validated if it has passed all validations. A block that is validated is
+// generally always stored first.
+func IsBlockValidated(blockNode *BlockNode) bool {
+	return blockNode.Status&StatusBlockValidated != 0
+}
+
+// A block is committed if it has passed all validations and it has been committed to
+// the blockchain according to the Fast HotStuff commit rule.
+func IsBlockCommitted(blockNode *BlockNode) bool {
+	return blockNode.Status&StatusBlockCommitted != 0
+}
 
 // IsFullyProcessed determines if the BlockStatus corresponds to a fully processed and stored block.
 func (blockStatus BlockStatus) IsFullyProcessed() bool {
@@ -156,16 +167,6 @@ type BlockNode struct {
 	// Status holds the validation state for the block and whether or not
 	// it's stored in the database.
 	Status BlockStatus
-
-	// CommittedStatus is either COMMITTED or UNCOMMITTED. If it's UNCOMMITTED, then
-	// the block is not yet committed to the blockchain. If it's COMMITTED, then the
-	// block is committed to the blockchain.
-	// In PoW consensus, all blocks will have CommittedStatus = COMMITTED.
-	// In PoS consensus, the chain tip and its parent will have CommittedStatus = UNCOMMITTED and
-	// all other blocks will have CommittedStatus = COMMITTED. When a new block is added to the tip,
-	// its CommittedStatus will be set to UNCOMMITTED and its grandparent's CommittedStatus will be
-	// updated to COMMITTED.
-	CommittedStatus CommittedBlockStatus
 }
 
 func _difficultyBitsToHash(diffBits uint32) (_diffHash *BlockHash) {
@@ -298,8 +299,8 @@ func (nn *BlockNode) String() string {
 	if nn.Header != nil {
 		tstamp = uint32(nn.Header.GetTstampSecs())
 	}
-	return fmt.Sprintf("< TstampSecs: %d, Height: %d, Hash: %s, ParentHash %s, Status: %s, CumWork: %v, CommittedStatus: %v>",
-		tstamp, nn.Header.Height, nn.Hash, parentHash, nn.Status, nn.CumWork, nn.CommittedStatus)
+	return fmt.Sprintf("< TstampSecs: %d, Height: %d, Hash: %s, ParentHash %s, Status: %s, CumWork: %v>",
+		tstamp, nn.Header.Height, nn.Hash, parentHash, nn.Status, nn.CumWork)
 }
 
 // NewPoWBlockNode is a helper function to create a BlockNode
@@ -323,28 +324,19 @@ func NewPoWBlockNode(
 		CumWork:          cumWork,
 		Header:           header,
 		Status:           status,
-		// All blocks have a committed status in PoW.
-		CommittedStatus: COMMITTED,
 	}
 }
 
 // NewPoSBlockNode is a new helper function to create a block node
 // as we need to control the value of the CommittedStatus field.
-func NewPoSBlockNode(
-	parent *BlockNode,
-	hash *BlockHash,
-	height uint32,
-	header *MsgDeSoHeader,
-	status BlockStatus,
-	committedStatus CommittedBlockStatus) *BlockNode {
+func NewPoSBlockNode(parent *BlockNode, hash *BlockHash, height uint32, header *MsgDeSoHeader, status BlockStatus) *BlockNode {
 
 	return &BlockNode{
-		Parent:          parent,
-		Hash:            hash,
-		Height:          height,
-		Header:          header,
-		Status:          status,
-		CommittedStatus: committedStatus,
+		Parent: parent,
+		Hash:   hash,
+		Height: height,
+		Header: header,
+		Status: status,
 	}
 }
 

@@ -4700,9 +4700,6 @@ func SerializeBlockNode(blockNode *BlockNode) ([]byte, error) {
 	data = append(data, serializedHeader...)
 
 	data = append(data, UintToBuf(uint64(blockNode.Status))...)
-	if blockNodeProofOfStakeCutoverMigrationTriggered(blockNode.Height) {
-		data = append(data, UintToBuf(uint64(blockNode.CommittedStatus))...)
-	}
 	return data, nil
 }
 
@@ -4773,15 +4770,6 @@ func DeserializeBlockNode(data []byte) (*BlockNode, error) {
 		return nil, errors.Wrapf(err, "DeserializeBlockNode: Problem decoding Status")
 	}
 	blockNode.Status = BlockStatus(uint32(status))
-
-	// CommittedStatus
-	if blockNodeProofOfStakeCutoverMigrationTriggered(blockNode.Height) {
-		committedStatus, err := ReadUvarint(rr)
-		if err != nil {
-			return nil, errors.Wrapf(err, "DeserializeBlockNode: Problem decoding CommittedStatus")
-		}
-		blockNode.CommittedStatus = CommittedBlockStatus(committedStatus)
-	}
 	return blockNode, nil
 }
 
