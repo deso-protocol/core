@@ -288,6 +288,11 @@ func TestValidateBlockHeight(t *testing.T) {
 
 func TestAddBlockToBlockIndex(t *testing.T) {
 	bc, _, _ := NewTestBlockchain(t)
+	GlobalDeSoParams.ForkHeights.ProofOfStake2ConsensusCutoverBlockHeight = 0
+	resetGlobalDeSoParams := func() {
+		GlobalDeSoParams.ForkHeights.ProofOfStake2ConsensusCutoverBlockHeight = math.MaxUint32
+	}
+	t.Cleanup(resetGlobalDeSoParams)
 	hash := NewBlockHash(RandomBytes(32))
 	genesisBlockNode := NewBlockNode(nil, hash, 1, nil, nil, &MsgDeSoHeader{
 		Version:                      2,
@@ -333,7 +338,11 @@ func TestAddBlockToBlockIndex(t *testing.T) {
 			ProposerVotePartialSignature: dummySig,
 			TxnConnectStatusByIndexHash:  NewBlockHash(bitset.NewBitset().ToBytes()),
 		},
-		Txns:                    nil,
+		Txns: []*MsgDeSoTxn{
+			{
+				TxnMeta: &BlockRewardMetadataa{},
+			},
+		},
 		TxnConnectStatusByIndex: bitset.NewBitset(),
 	}
 	err = bc.addBlockToBlockIndex(block, StatusBlockStored)
