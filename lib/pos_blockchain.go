@@ -17,11 +17,10 @@ import (
 //  3. Store the block in the block index and save to DB.
 //  4. try to apply the incoming block as the tip (performing reorgs as necessary). If it can't be applied, we exit here.
 //  5. Run the commit rule - If applicable, flushes the incoming block's grandparent to the DB
-//  6. Prune in-memory struct holding uncommitted block.
 func (bc *Blockchain) processBlockPoS(desoBlock *MsgDeSoBlock, currentView uint64, verifySignatures bool) (_success bool, _isOrphan bool, _missingBlockHashes []*BlockHash, _err error) {
 	// 1. Determine if we're missing the parent block of this block. If it's parent exists in the blockIndex,
 	// it is safe to assume we have all ancestors of this block in the block index.
-	// If the parent block is missing, process the orphan, but don't add to the block index or uncommitted block map.
+	// If the parent block is missing, process the orphan, but don't add to the block index.
 	lineageFromCommittedTip, err := bc.getLineageFromCommittedTip(desoBlock)
 	if err != nil && err != RuleErrorMissingAncestorBlock {
 		return false, false, nil, err
@@ -71,7 +70,7 @@ func (bc *Blockchain) processBlockPoS(desoBlock *MsgDeSoBlock, currentView uint6
 	}
 
 	// 3. We can now add this block to the block index since we have performed
-	// all basic validations. We can also add it to the uncommittedBlocksMap
+	// all basic validations.
 	if err = bc.addBlockToBlockIndex(desoBlock, StatusBlockStored|StatusBlockValidated); err != nil {
 		return false, false, nil, errors.Wrap(err, "processBlockPoS: Problem adding block to block index: ")
 	}
@@ -93,13 +92,6 @@ func (bc *Blockchain) processBlockPoS(desoBlock *MsgDeSoBlock, currentView uint6
 	// 5. Commit grandparent if possible.
 	if err = bc.runCommitRuleOnBestChain(); err != nil {
 		return false, false, nil, errors.Wrap(err, "processBlockPoS: error committing grandparents: ")
-	}
-
-	// 6. Update in-memory struct holding uncommitted blocks.
-	if err = bc.pruneUncommittedBlocks(desoBlock); err != nil {
-		// We glog and continue here as failing to prune the uncommitted blocks map is not a
-		// critical error.
-		glog.Errorf("processBlockPoS: Error pruning uncommitted blocks: %v", err)
 	}
 
 	return true, false, nil, nil
@@ -504,12 +496,6 @@ func (bc *Blockchain) addBlockToBestChain(desoBlockNode *BlockNode) {
 	bc.bestChainMap[*desoBlockNode.Hash] = desoBlockNode
 }
 
-// pruneUncommittedBlocks prunes the in-memory struct holding uncommitted blocks.
-func (bc *Blockchain) pruneUncommittedBlocks(desoBlock *MsgDeSoBlock) error {
-	// TODO: Implement me.
-	return errors.New("IMPLEMENT ME")
-}
-
 // runCommitRuleOnBestChain commits the grandparent of the block if possible.
 // Specifically, this updates the CommittedBlockStatus of its grandparent
 // and flushes the view after connecting the grandparent block to the DB.
@@ -694,7 +680,7 @@ func (bc *Blockchain) getUtxoViewAtBlockHash(blockHash BlockHash) (*UtxoView, er
 		return nil, errors.Wrapf(err, "getUtxoViewAtBlockHash: Problem initializing UtxoView")
 	}
 	for ii := len(uncommittedAncestors) - 1; ii >= 0; ii-- {
-		// We need to get these blocks from the uncommitted blocks map
+		// We need to get these blocks from badger
 		fullBlock, err := GetBlock(uncommittedAncestors[ii].Hash, bc.db, bc.snapshot)
 		if err != nil {
 			return nil, errors.Wrapf(err, "GetUncommittedTipView: Error fetching Block %v not found in block index", uncommittedAncestors[ii].Hash.String())
