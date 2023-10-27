@@ -267,7 +267,7 @@ func TestValidateBlockHeight(t *testing.T) {
 		ValidatorsTimeoutAggregateQC: nil,
 	}, StatusBlockStored|StatusBlockValidated)
 	bc.bestChain = []*BlockNode{genesisBlock}
-	bc.blockIndex[*genesisBlock.Hash] = genesisBlock
+	bc.blockIndexByHash[*genesisBlock.Hash] = genesisBlock
 	// Create a block with a valid header.
 	randomPayload := RandomBytes(256)
 	randomBLSPrivateKey := _generateRandomBLSPrivateKey(t)
@@ -316,7 +316,7 @@ func TestValidateBlockHeight(t *testing.T) {
 	require.Equal(t, err, RuleErrorInvalidPoSBlockHeight)
 
 	block.Header.Height = 2
-	bc.blockIndex = map[BlockHash]*BlockNode{}
+	bc.blockIndexByHash = map[BlockHash]*BlockNode{}
 	err = bc.validateBlockHeight(block)
 	require.Equal(t, err, RuleErrorMissingParentBlock)
 }
@@ -338,7 +338,7 @@ func TestUpsertBlockAndBlockNodeToDB(t *testing.T) {
 	}, StatusBlockStored|StatusBlockValidated)
 	_ = genesisBlockNode
 	derefedHash := *hash
-	bc.blockIndex = map[BlockHash]*BlockNode{
+	bc.blockIndexByHash = map[BlockHash]*BlockNode{
 		derefedHash: genesisBlockNode,
 	}
 	proposerVotingPublicKey := _generateRandomBLSPrivateKey(t)
@@ -385,7 +385,7 @@ func TestUpsertBlockAndBlockNodeToDB(t *testing.T) {
 	newHash, err := block.Hash()
 	require.NoError(t, err)
 	// Check the block index
-	blockNode, exists := bc.blockIndex[*newHash]
+	blockNode, exists := bc.blockIndexByHash[*newHash]
 	require.True(t, exists)
 	require.True(t, bytes.Equal(blockNode.Hash[:], newHash[:]))
 	require.True(t, blockNode.IsStored())
@@ -420,7 +420,7 @@ func TestValidateBlockView(t *testing.T) {
 		genesisNode,
 		block2,
 	}
-	bc.blockIndex = map[BlockHash]*BlockNode{
+	bc.blockIndexByHash = map[BlockHash]*BlockNode{
 		*hash1: genesisNode,
 		*hash2: block2,
 	}
@@ -506,7 +506,7 @@ func TestAddBlockToBlockIndexAndUncommittedBlocks(t *testing.T) {
 		ValidatorsVoteQC:             nil,
 		ValidatorsTimeoutAggregateQC: nil,
 	}, StatusBlockStored|StatusBlockValidated)
-	bc.blockIndex = map[BlockHash]*BlockNode{
+	bc.blockIndexByHash = map[BlockHash]*BlockNode{
 		*hash1: genesisNode,
 		*hash2: block2,
 	}
@@ -561,7 +561,7 @@ func TestAddBlockToBlockIndexAndUncommittedBlocks(t *testing.T) {
 	newHash, err := block.Hash()
 	require.NoError(t, err)
 	// Check the block index
-	blockNode, exists := bc.blockIndex[*newHash]
+	blockNode, exists := bc.blockIndexByHash[*newHash]
 	require.True(t, exists)
 	require.True(t, bytes.Equal(blockNode.Hash[:], newHash[:]))
 	require.Equal(t, blockNode.Height, uint32(2))
@@ -792,7 +792,7 @@ func TestGetLineageFromCommittedTip(t *testing.T) {
 		ProposedInView: 1,
 	}, StatusBlockStored|StatusBlockValidated|StatusBlockCommitted)
 	bc.bestChain = []*BlockNode{genesisNode}
-	bc.blockIndex = map[BlockHash]*BlockNode{
+	bc.blockIndexByHash = map[BlockHash]*BlockNode{
 		*hash1: genesisNode,
 	}
 	block := &MsgDeSoBlock{
@@ -822,7 +822,7 @@ func TestGetLineageFromCommittedTip(t *testing.T) {
 		PrevBlockHash: hash1,
 	}, StatusBlockStored|StatusBlockValidated|StatusBlockCommitted)
 	bc.bestChain = append(bc.bestChain, block2)
-	bc.blockIndex[*hash2] = block2
+	bc.blockIndexByHash[*hash2] = block2
 	ancestors, err = bc.getLineageFromCommittedTip(block)
 	require.Error(t, err)
 	require.Equal(t, err, RuleErrorDoesNotExtendCommittedTip)
@@ -1184,7 +1184,7 @@ func TestShouldReorg(t *testing.T) {
 
 	// Parent is not chain tip. Reorg required.
 	// Other checks have already been completed to ensure
-	// that hash2 exists in the blockIndex
+	// that hash2 exists in the blockIndexByHash
 	newBlock.Header.PrevBlockHash = hash2
 	require.True(t, bc.shouldReorg(newBlock, 2))
 }
@@ -1224,9 +1224,9 @@ func TestTryApplyNewTip(t *testing.T) {
 	bc.addBlockToBestChain(bn1)
 	bc.addBlockToBestChain(bn2)
 	bc.addBlockToBestChain(bn3)
-	bc.blockIndex[*hash1] = bn1
-	bc.blockIndex[*hash2] = bn2
-	bc.blockIndex[*hash3] = bn3
+	bc.blockIndexByHash[*hash1] = bn1
+	bc.blockIndexByHash[*hash2] = bn2
+	bc.blockIndexByHash[*hash3] = bn3
 
 	// Simple reorg. Just replacing the uncommitted tip.
 	newBlock := &MsgDeSoBlock{
@@ -1301,8 +1301,8 @@ func TestTryApplyNewTip(t *testing.T) {
 			PrevBlockHash: hash4,
 		},
 	}
-	bc.blockIndex[*hash4] = bn4
-	bc.blockIndex[*hash5] = bn5
+	bc.blockIndexByHash[*hash4] = bn4
+	bc.blockIndexByHash[*hash5] = bn5
 
 	// Set new block's parent to hash5
 	newBlockNode.Header.PrevBlockHash = hash5
@@ -1643,7 +1643,7 @@ func TestProcessBlockPoS(t *testing.T) {
 		_, exists := testMeta.chain.bestChainMap[*timeoutBlockHash]
 		require.False(t, exists)
 
-		timeoutBlockNode, exists := testMeta.chain.blockIndex[*timeoutBlockHash]
+		timeoutBlockNode, exists := testMeta.chain.blockIndexByHash[*timeoutBlockHash]
 		require.True(t, exists)
 		require.False(t, timeoutBlockNode.IsCommitted())
 
@@ -1694,7 +1694,7 @@ func _generateRealBlock(testMeta *TestMeta, blockHeight uint64, view uint64, see
 	// Always update the testMeta latestBlockView
 	latestBlockView, err := testMeta.chain.getUtxoViewAtBlockHash(*prevBlockHash)
 	require.NoError(testMeta.t, err)
-	latestBlockHeight := testMeta.chain.blockIndex[*prevBlockHash].Height
+	latestBlockHeight := testMeta.chain.blockIndexByHash[*prevBlockHash].Height
 	testMeta.posMempool.UpdateLatestBlock(latestBlockView, uint64(latestBlockHeight))
 	return _getFullRealBlockTemplate(testMeta, testMeta.posMempool.readOnlyLatestBlockView, blockHeight, view, seedHash, false)
 }
@@ -1746,7 +1746,7 @@ func _generateDummyBlock(testMeta *TestMeta, blockHeight uint64, view uint64, se
 	// Add block to block index and best chain
 	err = testMeta.chain.storeValidatedBlockInBlockIndex(msgDesoBlock)
 	require.NoError(testMeta.t, err)
-	_, exists := testMeta.chain.blockIndex[*newBlockHash]
+	_, exists := testMeta.chain.blockIndexByHash[*newBlockHash]
 	require.True(testMeta.t, exists)
 	return blockTemplate
 }
@@ -1757,7 +1757,7 @@ func _generateBlockAndAddToBestChain(testMeta *TestMeta, blockHeight uint64, vie
 	msgDesoBlock = blockTemplate
 	newBlockHash, err := msgDesoBlock.Hash()
 	require.NoError(testMeta.t, err)
-	newBlockNode, exists := testMeta.chain.blockIndex[*newBlockHash]
+	newBlockNode, exists := testMeta.chain.blockIndexByHash[*newBlockHash]
 	require.True(testMeta.t, exists)
 	testMeta.chain.addBlockToBestChain(newBlockNode)
 	// Update the latest block view
@@ -1792,7 +1792,7 @@ func _getFullRealBlockTemplate(testMeta *TestMeta, latestBlockView *UtxoView, bl
 	// Get leader voting private key.
 	leaderVotingPrivateKey := testMeta.pubKeyToBLSKeyMap[leaderPublicKey]
 	// Get hash of last block
-	chainTip := testMeta.chain.blockIndex[*blockTemplate.Header.PrevBlockHash]
+	chainTip := testMeta.chain.blockIndexByHash[*blockTemplate.Header.PrevBlockHash]
 	chainTipHash := chainTip.Hash
 	// Get the vote signature payload
 	// Hack to get view numbers working properly w/ PoW blocks.

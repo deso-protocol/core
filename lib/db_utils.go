@@ -4712,7 +4712,6 @@ func DeserializeBlockNode(data []byte) (*BlockNode, error) {
 		nil,          // CumWork
 		nil,          // Header
 		StatusNone,   // Status
-
 	)
 
 	rr := bytes.NewReader(data)
@@ -4769,6 +4768,7 @@ func DeserializeBlockNode(data []byte) (*BlockNode, error) {
 	if err != nil {
 		return nil, errors.Wrapf(err, "DeserializeBlockNode: Problem decoding Status")
 	}
+	// TODO: Should we just |StatusBlockValidated for PoW blocks here?
 	blockNode.Status = BlockStatus(uint32(status))
 	return blockNode, nil
 }
