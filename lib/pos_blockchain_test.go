@@ -330,8 +330,10 @@ func TestAddBlockToBlockIndex(t *testing.T) {
 				},
 			},
 			ProposerVotePartialSignature: dummySig,
+			TxnConnectStatusByIndexHash:  NewBlockHash(bitset.NewBitset().ToBytes()),
 		},
-		Txns: nil,
+		Txns:                    nil,
+		TxnConnectStatusByIndex: bitset.NewBitset(),
 	}
 	err = bc.addBlockToBlockIndex(block)
 	require.Nil(t, err)
@@ -493,8 +495,10 @@ func TestAddBlockToBlockIndexAndUncommittedBlocks(t *testing.T) {
 					SignersList: bitset.NewBitset(),
 				},
 			},
+			TxnConnectStatusByIndexHash: NewBlockHash(bitset.NewBitset().ToBytes()),
 		},
-		Txns: nil,
+		Txns:                    nil,
+		TxnConnectStatusByIndex: bitset.NewBitset(),
 	}
 
 	err = bc.addBlockToBlockIndex(block)
