@@ -748,6 +748,11 @@ func TestValidateBlockLeader(t *testing.T) {
 func TestGetLineageFromCommittedTip(t *testing.T) {
 	setBalanceModelBlockHeights(t)
 	bc, _, _ := NewTestBlockchain(t)
+	GlobalDeSoParams.ForkHeights.ProofOfStake2ConsensusCutoverBlockHeight = 0
+	resetGlobalDeSoParams := func() {
+		GlobalDeSoParams.ForkHeights.ProofOfStake2ConsensusCutoverBlockHeight = math.MaxUint32
+	}
+	t.Cleanup(resetGlobalDeSoParams)
 	hash1 := NewBlockHash(RandomBytes(32))
 	genesisNode := NewBlockNode(nil, hash1, 1, nil, nil, &MsgDeSoHeader{
 		Version:        2,
