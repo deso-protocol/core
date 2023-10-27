@@ -1127,7 +1127,7 @@ func TestShouldReorg(t *testing.T) {
 		},
 	}
 
-	newBlock := &MsgDeSoBlock{
+	newBlock := &BlockNode{
 		Header: &MsgDeSoHeader{
 			ProposedInView: 2,
 			PrevBlockHash:  bc.bestChain[1].Hash,
@@ -1203,7 +1203,11 @@ func TestTryReorgToNewTipAndTryApplyNewTip(t *testing.T) {
 	}
 
 	// Try to apply newBlock as tip. This should succeed.
-	appliedNewTip, err := bc.tryApplyNewTip(newBlock, 9, ancestors)
+	newBlockNode := &BlockNode{
+		Header: newBlock.Header,
+		Hash:   newBlockHash,
+	}
+	appliedNewTip, err := bc.tryApplyNewTip(newBlockNode, 9, ancestors)
 	require.NoError(t, err)
 	require.True(t, appliedNewTip)
 	// hash 3 should no longer be in the best chain or best chain map
@@ -1257,14 +1261,13 @@ func TestTryReorgToNewTipAndTryApplyNewTip(t *testing.T) {
 	bc.blockIndex[*hash5] = bn5
 
 	// Set new block's parent to hash5
-	newBlock.Header.PrevBlockHash = hash5
-	newBlockHash, err = newBlock.Hash()
+	newBlockNode.Header.PrevBlockHash = hash5
 	require.NoError(t, err)
 	ancestors, err = bc.getLineageFromCommittedTip(newBlock)
 	require.NoError(t, err)
 
 	// Try to apply newBlock as tip.
-	appliedNewTip, err = bc.tryApplyNewTip(newBlock, 9, ancestors)
+	appliedNewTip, err = bc.tryApplyNewTip(newBlockNode, 9, ancestors)
 	require.NoError(t, err)
 	require.True(t, appliedNewTip)
 	// newBlockHash should be tip.
@@ -1298,21 +1301,20 @@ func TestTryReorgToNewTipAndTryApplyNewTip(t *testing.T) {
 
 	// No reorg tests
 	// currentView > newBlock.View
-	newBlock.Header.ProposedInView = 8
+	newBlockNode.Header.ProposedInView = 8
 
 	// we should not apply the new tip if it doesn't extend the current tip.
-	appliedNewTip, err = bc.tryApplyNewTip(newBlock, 9, ancestors)
+	appliedNewTip, err = bc.tryApplyNewTip(newBlockNode, 9, ancestors)
 	require.False(t, appliedNewTip)
 	require.NoError(t, err)
 
 	// Super Happy path: no reorg, just extending tip.
-	newBlock.Header.ProposedInView = 10
-	newBlock.Header.PrevBlockHash = hash3
-	newBlockHash, err = newBlock.Hash()
+	newBlockNode.Header.ProposedInView = 10
+	newBlockNode.Header.PrevBlockHash = hash3
 	require.NoError(t, err)
 	ancestors, err = bc.getLineageFromCommittedTip(newBlock)
 	require.NoError(t, err)
-	appliedNewTip, err = bc.tryApplyNewTip(newBlock, 9, ancestors)
+	appliedNewTip, err = bc.tryApplyNewTip(newBlockNode, 9, ancestors)
 	require.True(t, appliedNewTip)
 	require.NoError(t, err)
 	// newBlockHash should be tip.

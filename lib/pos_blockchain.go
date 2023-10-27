@@ -18,45 +18,117 @@ import (
 //  4. try to apply the incoming block as the tip (performing reorgs as necessary). If it can't be applied, we exit here.
 //  5. Run the commit rule - If applicable, flushes the incoming block's grandparent to the DB
 func (bc *Blockchain) processBlockPoS(desoBlock *MsgDeSoBlock, currentView uint64, verifySignatures bool) (_success bool, _isOrphan bool, _missingBlockHashes []*BlockHash, _err error) {
-	// 1. Determine if we're missing the parent block of this block. If it's parent exists in the blockIndex,
-	// it is safe to assume we have all ancestors of this block in the block index.
-	// If the parent block is missing, process the orphan, but don't add to the block index.
+	// Start by pulling out the block hash.
+	blockHash, err := desoBlock.Header.Hash()
+	if err != nil {
+		return false, false, nil, errors.Wrap(err, "processBlockPoS: Problem hashing block: ")
+	}
+
+	// Get all the blocks between the current block and the committed tip. If the block
+	// is an orphan, then we store it without validating it. If the block connects to a
+	// committed block other than the committed tip, then we throw it away.
 	lineageFromCommittedTip, err := bc.getLineageFromCommittedTip(desoBlock)
-	if err != nil && err != RuleErrorMissingAncestorBlock {
+	if err == RuleErrorDoesNotExtendCommittedTip {
+		// In this case, the block extends a committed block that is NOT the tip
+		// block. There is no point in storing this block because we will never
+		// reorg to it.
 		return false, false, nil, err
-	}
 
+	}
 	if err == RuleErrorMissingAncestorBlock {
+		// In this case, the block is an orphan that does not connect to any blocks
+		// on our best chain. In this case we'll store it with the hope that we
+		// will eventually get a parent that connects to our best chain.
 		missingBlockHashes := []*BlockHash{desoBlock.Header.PrevBlockHash}
-		blockHash, err := desoBlock.Header.Hash()
-		// If we fail to get the block hash, this block isn't valid at all, so we
-		// don't need to worry about adding it to the orphan list or block index.
+		// FIXME: I sketeched some of these steps but not all...
+		// Step 0: I think we still need to do some basic validation on this block, like
+		// verifying that it's signed by the leader for example to prevent spamming.
+		// I didn't do that.
+		// Step 1: Create a new BlockNode for this block with status STORED. I did this below.
+		// Step 2: Add it to the blockIndex and store it in Badger. Did this below.
+		// Step 3: We may want to send a signal back to server.go to fetch the PrevBlockHash block
+		// so that we can consistently fix cases where we get hit with orphans. If we did this, then
+		// an unhappy path would look as follows:
+		// - We miss a block for some reason. Say it's block 100
+		// - We get block 101, which is an orphan. We store it and tell server.go to ask
+		//   someone for block 100
+		// - server.go does this, and this function is called with block 100, which connects (woohoo!)
+		// - Eventually we'll get block 102, which will connect 101 (see below for how we
+		//   connect ancestors)
+
+		// Add to blockIndex with status STORED only.
+		err = bc.storeBlockInBlockIndex(desoBlock)
 		if err != nil {
-			return false, true, missingBlockHashes, err
+			return false, false, missingBlockHashes, errors.Wrap(err, "processBlockPoS: Problem adding block to block index: ")
 		}
-		// ProcessOrphanBlock validates the block and adds it to the orphan list.
-		// TODO: update _validateOrphanBlock to perform additional validation required.
-		if err = bc.ProcessOrphanBlock(desoBlock, blockHash); err != nil {
-			return false, true, missingBlockHashes, errors.Wrap(err, "processBlockPoS: Problem processing orphan block: ")
-		}
-		return false, true, missingBlockHashes, nil
+
+		// In this case there is no error. We got a block that seemed ostensibly valid, it just
+		// didn't connect to anything.
+		return false, false, missingBlockHashes, nil
 	}
 
-	// 2. Start with all sanity checks of the block.
+	// Make sure its parent is validated. If not, we need to validate it first by calling processBlockPoS.
+	// Note that if any other ancestor is not validated, calling processBlockPoS on the parent will
+	// end up calling processBlockPoS on all of its ancestors that aren't validated yet.
+	parent, exists := bc.blockIndex[*desoBlock.Header.PrevBlockHash]
+	if !exists {
+		return false, false, nil, errors.New("processBlockPoS: Parent block not found in block index. This should never happen.")
+	}
+	if parent.IsValidateFailed() {
+		// We'll never add this to the best chain because its parent is invalid.
+		// If its parent is ValidateFailed, we can update the block index with the block status ValidateFailed
+		if addToBlockIndexErr := bc.storeValidateFailedBlockInBlockIndex(desoBlock); addToBlockIndexErr != nil {
+			return false, false, nil, errors.Wrapf(err, "processBlockPoS: Problem adding validate failed block to block index: %v", addToBlockIndexErr)
+		}
+		return false, false, nil, errors.Wrap(err, "processBlockPoS: block's parent failed validation: ")
+	}
+	if !parent.IsValidated() {
+		blk, err := GetBlock(parent.Hash, bc.db, bc.snapshot)
+		if err != nil {
+			return false, false, nil, errors.Wrapf(err, "processBlockPoS: Problem getting parent block %v", parent.Hash)
+		}
+		_, _, _, err = bc.processBlockPoS(blk, currentView, verifySignatures)
+		if err != nil {
+			return false, false, nil, errors.Wrapf(err, "processBlockPoS: Problem processing parent block %v", parent.Hash)
+		}
+	}
+
+	// At this point, we know that all the ancestors of this block have been successfully
+	// validated. That means we can now proceed with attempting to validate THIS block.
+
+	// Do all the sanity checks on the block.
 	// TODO: Check if err is for view > latest committed block view and <= latest uncommitted block.
 	// If so, we need to perform the rest of the validations and then add to our block index.
 	if err = bc.validateDeSoBlockPoS(desoBlock); err != nil {
+		// TODO: If validations fail, do we want to even bother storing the block? Are there any validations that
+		// wouldn't result in us wanting to mark the block as StatusBlockValidateFailed?
+		// If validations fail, we can update the block index with the block status ValidateFailed
+		if addToBlockIndexErr := bc.storeValidateFailedBlockInBlockIndex(desoBlock); addToBlockIndexErr != nil {
+			return false, false, nil, errors.Wrapf(err, "processBlockPoS: Problem adding validate failed block to block index: %v", addToBlockIndexErr)
+		}
 		return false, false, nil, errors.Wrap(err, "processBlockPoS: block validation failed: ")
 	}
 
+	// We know the utxoView will be valid because we check that all ancestor blocks have been validated.
 	utxoView, err := bc.getUtxoViewAtBlockHash(*desoBlock.Header.PrevBlockHash)
 	if err != nil {
 		return false, false, nil, errors.Wrap(err, "processBlockPoS: Problem initializing UtxoView: ")
 	}
+	// Connect this block to the UtxoView.
+	txHashes := collections.Transform(desoBlock.Txns, func(txn *MsgDeSoTxn) *BlockHash {
+		return txn.Hash()
+	})
+	_, err = utxoView.ConnectBlock(desoBlock, txHashes, true, bc.eventManager, desoBlock.Header.Height)
+	if err != nil {
+		// If it doesn't connect, do we want to mark it as ValidateFailed and store the block?
+		return false, false, nil, errors.Wrap(err, "processBlockPoS: Problem connecting block to UtxoView: ")
+	}
+
 	validatorsByStake, err := utxoView.GetAllSnapshotValidatorSetEntriesByStake()
 	if err != nil {
 		return false, false, nil, errors.Wrap(err, "processBlockPoS: Problem getting validator set: ")
 	}
+	// TODO(diamondhands): I don't think the TODO below makes sense given the changes but take a look.
 	// TODO: If block belongs in the next epoch or it's from an epoch far ahead in the future, we may not be able to validate its QC at all.
 	// the validator set for that epoch may be entirely different.
 	// A couple of options on how to handle:
@@ -66,6 +138,7 @@ func (bc *Blockchain) processBlockPoS(desoBlock *MsgDeSoBlock, currentView uint6
 	//     set for the block, we can at least store it locally.
 	// 2. Validate QC
 	if err = bc.validateQC(desoBlock, validatorsByStake); err != nil {
+		// TODO: If this fails, do we want to store the block as Stored & ValidateFailed?
 		return false, false, nil, errors.Wrap(err, "processBlockPoS: QC validation failed: ")
 	}
 
@@ -74,12 +147,17 @@ func (bc *Blockchain) processBlockPoS(desoBlock *MsgDeSoBlock, currentView uint6
 	if err = bc.storeValidatedBlockInBlockIndex(desoBlock); err != nil {
 		return false, false, nil, errors.Wrap(err, "processBlockPoS: Problem adding block to block index: ")
 	}
+	newBlockNode, exists := bc.blockIndex[*blockHash]
+	if !exists {
+		return false, false, nil, errors.New("processBlockPoS: Block not found in block index after adding it. " +
+			"This should never happen.")
+	}
 
 	// 4. Try to apply the incoming block as the new tip. This function will
 	// first perform any required reorgs and then determine if the incoming block
 	// extends the chain tip. If it does, it will apply the block to the best chain
 	// and appliedNewTip will be true and we can continue to running the commit rule.
-	appliedNewTip, err := bc.tryApplyNewTip(desoBlock, currentView, lineageFromCommittedTip)
+	appliedNewTip, err := bc.tryApplyNewTip(newBlockNode, currentView, lineageFromCommittedTip)
 	if err != nil {
 		return false, false, nil, errors.Wrap(err, "processBlockPoS: Problem applying new tip: ")
 	}
@@ -383,7 +461,7 @@ func (bc *Blockchain) getOrCreateBlockNodeFromBlockIndex(block *MsgDeSoBlock) (*
 	return newBlockNode, nil
 }
 
-// setBlockStoredInBlockIndex upserts the blocks into the in-memory block index and updates its status to
+// storeBlockInBlockIndex upserts the blocks into the in-memory block index and updates its status to
 // StatusBlockStored. It also writes the block to the block index in badger
 // by calling upsertBlockAndBlockNodeToDB.
 func (bc *Blockchain) storeBlockInBlockIndex(block *MsgDeSoBlock) error {
@@ -468,8 +546,10 @@ func (bc *Blockchain) storeCommittedBlockInBlockIndex(block *MsgDeSoBlock) error
 	return bc.upsertBlockAndBlockNodeToDB(block, blockNode)
 }
 
-// upsertBlockAndBlockNodeToDB adds the block to the block index with the given status. It also writes the block to the block
-// index in badger.
+// TODO: Do we want to allow ONLY writing to the HeightHashToNodeInfo prefix? This would allow us to skip
+// storing blocks that failed validation.
+// upsertBlockToDBBlockIndex writes the BlockNode to the blockIndex in badger and writes the full block
+// to the db under the <blockHash> -> <serialized block> index.
 func (bc *Blockchain) upsertBlockAndBlockNodeToDB(desoBlock *MsgDeSoBlock, newBlockNode *BlockNode) error {
 	// Store the block in badger
 	err := bc.db.Update(func(txn *badger.Txn) error {
@@ -507,28 +587,43 @@ func (bc *Blockchain) upsertBlockAndBlockNodeToDB(desoBlock *MsgDeSoBlock, newBl
 	return nil
 }
 
+func (bc *Blockchain) putBestHash(hash *BlockHash) error {
+	return bc.db.Update(func(txn *badger.Txn) error {
+		if bc.snapshot != nil {
+			bc.snapshot.PrepareAncestralRecordsFlush()
+			defer bc.snapshot.StartAncestralRecordsFlush(true)
+			glog.V(2).Infof("putBestHash: Preparing snapshot flush")
+		}
+		// Set the best node hash to this one. Notice that the "best hash" marks the tip of the best *uncommitted*
+		// chain. To get the best committed chain, you have to walk back from this hash to the first committed
+		// block when loading it up.
+		if innerErr := PutBestHashWithTxn(txn, bc.snapshot, hash, ChainTypeDeSoBlock); innerErr != nil {
+			return errors.Wrapf(innerErr, "putBestHash: Problem calling PutBestHash after validation")
+		}
+		return nil
+	})
+}
+
 // tryApplyNewTip attempts to apply the new tip to the best chain. It will do the following:
 // 1. Check if we should perform a reorg. If so, it will handle the reorg. If reorging causes an error, return false and error.
 // 2. Check if the incoming block extends the chain tip after reorg. If not, return false and nil
 // 3. If the incoming block extends the chain tip, we can apply it by calling addBlockToBestChain. Return true and nil.
-func (bc *Blockchain) tryApplyNewTip(newTip *MsgDeSoBlock, currentView uint64, lineageFromCommittedTip []*BlockNode) (_appliedNewTip bool, _err error) {
-	// Create a new block node for the new tip
-	newTipBlockNode, err := bc.msgDeSoBlockToNewBlockNode(newTip)
-	if err != nil {
-		return false, errors.Wrapf(err, "tryApplyNewTip: Problem creating new block node: ")
-	}
+func (bc *Blockchain) tryApplyNewTip(blockNode *BlockNode, currentView uint64, lineageFromCommittedTip []*BlockNode) (_appliedNewTip bool, _err error) {
 
 	// Check if the incoming block extends the chain tip. If so, we don't need to reorg
 	// and can just add this block to the best chain.
 	chainTip := bc.GetBestChainTip()
-	if chainTip.Hash.IsEqual(newTip.Header.PrevBlockHash) {
-		bc.addBlockToBestChain(newTipBlockNode)
+	if chainTip.Hash.IsEqual(blockNode.Header.PrevBlockHash) {
+		bc.addBlockToBestChain(blockNode)
+		if err := bc.putBestHash(blockNode.Hash); err != nil {
+			return false, errors.Wrapf(err, "tryApplyNewTip: Problem calling putBestHash: ")
+		}
 		return true, nil
 	}
 	// Check if we should perform a reorg here.
 	// If we shouldn't reorg AND the incoming block doesn't extend the chain tip, we know that
 	// the incoming block will not get applied as the new tip.
-	if !bc.shouldReorg(newTip, currentView) {
+	if !bc.shouldReorg(blockNode, currentView) {
 		return false, nil
 	}
 
@@ -552,7 +647,10 @@ func (bc *Blockchain) tryApplyNewTip(newTip *MsgDeSoBlock, currentView uint64, l
 		bc.addBlockToBestChain(ancestor)
 	}
 	// Add the new tip to the best chain.
-	bc.addBlockToBestChain(newTipBlockNode)
+	bc.addBlockToBestChain(blockNode)
+	if err := bc.putBestHash(blockNode.Hash); err != nil {
+		return false, errors.Wrapf(err, "tryApplyNewTip: Problem calling putBestHash: ")
+	}
 	return true, nil
 }
 
@@ -560,14 +658,14 @@ func (bc *Blockchain) tryApplyNewTip(newTip *MsgDeSoBlock, currentView uint64, l
 // this block is proposed in a view greater than or equal to the currentView. Other
 // functions have validated that this block is not extending from a committed block
 // that is not the latest committed block, so there is no need to validate that here.
-func (bc *Blockchain) shouldReorg(desoBlock *MsgDeSoBlock, currentView uint64) bool {
+func (bc *Blockchain) shouldReorg(blockNode *BlockNode, currentView uint64) bool {
 	chainTip := bc.GetBestChainTip()
 	// If this block extends from the chain tip, there's no need to reorg.
-	if chainTip.Hash.IsEqual(desoBlock.Header.PrevBlockHash) {
+	if chainTip.Hash.IsEqual(blockNode.Header.PrevBlockHash) {
 		return false
 	}
 	// If the block is proposed in a view less than the current view, there's no need to reorg.
-	return desoBlock.Header.ProposedInView >= currentView
+	return blockNode.Header.ProposedInView >= currentView
 }
 
 func (bc *Blockchain) msgDeSoBlockToNewBlockNode(desoBlock *MsgDeSoBlock) (*BlockNode, error) {
