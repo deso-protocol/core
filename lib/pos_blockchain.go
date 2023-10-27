@@ -240,8 +240,12 @@ func (bc *Blockchain) validateBlockIntegrity(desoBlock *MsgDeSoBlock) error {
 		return RuleErrorBothTimeoutAndVoteQC
 	}
 
-	if !isTimeoutQCEmpty && len(desoBlock.Txns) != 0 {
-		return RuleErrorTimeoutQCWithTransactions
+	if !isTimeoutQCEmpty && (len(desoBlock.Txns) != 1 || desoBlock.Txns[0].TxnMeta.GetTxnType() != TxnTypeBlockReward) {
+		return RuleErrorTimeoutQCWithInvalidTxns
+	}
+
+	if !isVoteQCEmpty && len(desoBlock.Txns) == 0 {
+		return RuleErrorVoteQCWithNoTxns
 	}
 
 	if desoBlock.Header.ProposerVotingPublicKey.IsEmpty() {
@@ -258,22 +262,16 @@ func (bc *Blockchain) validateBlockIntegrity(desoBlock *MsgDeSoBlock) error {
 
 	merkleRoot := desoBlock.Header.TransactionMerkleRoot
 
-	// We only want to check the merkle root if we have more than 0 transactions.
-	if len(desoBlock.Txns) > 0 {
-		if merkleRoot == nil {
-			return RuleErrorNilMerkleRoot
-		}
-		computedMerkleRoot, _, err := ComputeMerkleRoot(desoBlock.Txns)
-		if err != nil {
-			return errors.Wrapf(err, "validateBlockIntegrity: Problem computing merkle root")
-		}
-		if !merkleRoot.IsEqual(computedMerkleRoot) {
-			return RuleErrorInvalidMerkleRoot
-		}
-	} else {
-		if merkleRoot != nil {
-			return RuleErrorNoTxnsWithMerkleRoot
-		}
+	// We always need to check the merkle root.
+	if merkleRoot == nil {
+		return RuleErrorNilMerkleRoot
+	}
+	computedMerkleRoot, _, err := ComputeMerkleRoot(desoBlock.Txns)
+	if err != nil {
+		return errors.Wrapf(err, "validateBlockIntegrity: Problem computing merkle root")
+	}
+	if !merkleRoot.IsEqual(computedMerkleRoot) {
+		return RuleErrorInvalidMerkleRoot
 	}
 
 	// TODO: What other checks do we need to do here?
@@ -868,13 +866,13 @@ const (
 	RuleErrorInvalidPoSBlockHeaderVersion   RuleError = "RuleErrorInvalidPoSBlockHeaderVersion"
 	RuleErrorNoTimeoutOrVoteQC              RuleError = "RuleErrorNoTimeoutOrVoteQC"
 	RuleErrorBothTimeoutAndVoteQC           RuleError = "RuleErrorBothTimeoutAndVoteQC"
-	RuleErrorTimeoutQCWithTransactions      RuleError = "RuleErrorTimeoutQCWithTransactions"
+	RuleErrorTimeoutQCWithInvalidTxns       RuleError = "RuleErrorTimeoutQCWithInvalidTxns"
+	RuleErrorVoteQCWithNoTxns               RuleError = "RuleErrorVoteQCWithNoTxns"
 	RuleErrorMissingParentBlock             RuleError = "RuleErrorMissingParentBlock"
 	RuleErrorMissingAncestorBlock           RuleError = "RuleErrorMissingAncestorBlock"
 	RuleErrorDoesNotExtendCommittedTip      RuleError = "RuleErrorDoesNotExtendCommittedTip"
 	RuleErrorNilMerkleRoot                  RuleError = "RuleErrorNilMerkleRoot"
 	RuleErrorInvalidMerkleRoot              RuleError = "RuleErrorInvalidMerkleRoot"
-	RuleErrorNoTxnsWithMerkleRoot           RuleError = "RuleErrorNoTxnsWithMerkleRoot"
 	RuleErrorInvalidProposerVotingPublicKey RuleError = "RuleErrorInvalidProposerVotingPublicKey"
 	RuleErrorInvalidProposerPublicKey       RuleError = "RuleErrorInvalidProposerPublicKey"
 	RuleErrorInvalidRandomSeedHash          RuleError = "RuleErrorInvalidRandomSeedHash"
