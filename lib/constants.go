@@ -704,6 +704,15 @@ type DeSoParams struct {
 	// from the current timestamp that we will allow a PoS block to be submitted.
 	DefaultBlockTimestampDriftNanoSecs uint64
 
+	// DefaultFeeBucketGrowthRateBasisPoints is the rate of growth of the fee bucket ranges. The multiplier is given
+	// as basis points. For example a value of 1000 means that the fee bucket ranges will grow by 10% each time.
+	DefaultFeeBucketGrowthRateBasisPoints uint64
+
+	// DefaultFailingTransactionBMFMultiplierBasisPoints is the default rate for failing transaction fees, in basis points,
+	// used in BMF calculations. E.g. a value of 2500 means that 25% of the failing transaction's fee is used
+	// in BMF calculations.
+	DefaultFailingTransactionBMFMultiplierBasisPoints uint64
+
 	ForkHeights ForkHeights
 
 	EncoderMigrationHeights     *EncoderMigrationHeights
@@ -1111,6 +1120,12 @@ var DeSoMainnetParams = DeSoParams{
 	// The number of nanoseconds from the current timestamp that we will allow a PoS block to be submitted.
 	DefaultBlockTimestampDriftNanoSecs: uint64((time.Minute * 10).Nanoseconds()),
 
+	// The rate of growth of the fee bucket ranges.
+	DefaultFeeBucketGrowthRateBasisPoints: uint64(1000),
+
+	// The rate of the failing transaction's fee used in BMF calculations.
+	DefaultFailingTransactionBMFMultiplierBasisPoints: uint64(2500),
+
 	ForkHeights:                 MainnetForkHeights,
 	EncoderMigrationHeights:     GetEncoderMigrationHeights(&MainnetForkHeights),
 	EncoderMigrationHeightsList: GetEncoderMigrationHeightsList(&MainnetForkHeights),
@@ -1372,6 +1387,12 @@ var DeSoTestnetParams = DeSoParams{
 	// The number of nanoseconds from the current timestamp that we will allow a PoS block to be submitted.
 	DefaultBlockTimestampDriftNanoSecs: uint64((time.Minute * 10).Nanoseconds()),
 
+	// The rate of growth of the fee bucket ranges.
+	DefaultFeeBucketGrowthRateBasisPoints: uint64(1000),
+
+	// The rate of the failing transaction's fee used in BMF calculations.
+	DefaultFailingTransactionBMFMultiplierBasisPoints: uint64(2500),
+
 	ForkHeights:                 TestnetForkHeights,
 	EncoderMigrationHeights:     GetEncoderMigrationHeights(&TestnetForkHeights),
 	EncoderMigrationHeightsList: GetEncoderMigrationHeightsList(&TestnetForkHeights),
@@ -1409,21 +1430,23 @@ const (
 	IsFrozenKey = "IsFrozen"
 
 	// Keys for a GlobalParamUpdate transaction's extra data map.
-	USDCentsPerBitcoinKey                     = "USDCentsPerBitcoin"
-	MinNetworkFeeNanosPerKBKey                = "MinNetworkFeeNanosPerKB"
-	CreateProfileFeeNanosKey                  = "CreateProfileFeeNanos"
-	CreateNFTFeeNanosKey                      = "CreateNFTFeeNanos"
-	MaxCopiesPerNFTKey                        = "MaxCopiesPerNFT"
-	MaxNonceExpirationBlockHeightOffsetKey    = "MaxNonceExpirationBlockHeightOffset"
-	ForbiddenBlockSignaturePubKeyKey          = "ForbiddenBlockSignaturePubKey"
-	StakeLockupEpochDurationKey               = "StakeLockupEpochDuration"
-	ValidatorJailEpochDurationKey             = "ValidatorJailEpochDuration"
-	LeaderScheduleMaxNumValidatorsKey         = "LeaderScheduleMaxNumValidators"
-	ValidatorSetMaxNumValidatorsKey           = "ValidatorSetMaxNumValidators"
-	StakingRewardsMaxNumStakesKey             = "StakingRewardsMaxNumStakes"
-	StakingRewardsAPYBasisPointsKey           = "StakingRewardsAPYBasisPoints"
-	EpochDurationNumBlocksKey                 = "EpochDurationNumBlocks"
-	JailInactiveValidatorGracePeriodEpochsKey = "JailInactiveValidatorGracePeriodEpochs"
+	USDCentsPerBitcoinKey                         = "USDCentsPerBitcoin"
+	MinNetworkFeeNanosPerKBKey                    = "MinNetworkFeeNanosPerKB"
+	CreateProfileFeeNanosKey                      = "CreateProfileFeeNanos"
+	CreateNFTFeeNanosKey                          = "CreateNFTFeeNanos"
+	MaxCopiesPerNFTKey                            = "MaxCopiesPerNFT"
+	MaxNonceExpirationBlockHeightOffsetKey        = "MaxNonceExpirationBlockHeightOffset"
+	ForbiddenBlockSignaturePubKeyKey              = "ForbiddenBlockSignaturePubKey"
+	StakeLockupEpochDurationKey                   = "StakeLockupEpochDuration"
+	ValidatorJailEpochDurationKey                 = "ValidatorJailEpochDuration"
+	LeaderScheduleMaxNumValidatorsKey             = "LeaderScheduleMaxNumValidators"
+	ValidatorSetMaxNumValidatorsKey               = "ValidatorSetMaxNumValidators"
+	StakingRewardsMaxNumStakesKey                 = "StakingRewardsMaxNumStakes"
+	StakingRewardsAPYBasisPointsKey               = "StakingRewardsAPYBasisPoints"
+	EpochDurationNumBlocksKey                     = "EpochDurationNumBlocks"
+	JailInactiveValidatorGracePeriodEpochsKey     = "JailInactiveValidatorGracePeriodEpochs"
+	FeeBucketGrowthRateBasisPointsKey             = "FeeBucketGrowthRateBasisPointsKey"
+	FailingTransactionBMFMultiplierBasisPointsKey = "FailingTransactionBMFMultiplierBasisPoints"
 
 	DiamondLevelKey    = "DiamondLevel"
 	DiamondPostHashKey = "DiamondPostHash"
@@ -1497,6 +1520,10 @@ var (
 		// We initialize the CreateNFTFeeNanos to 0 so we do not assess a fee to create an NFT until specified by ParamUpdater.
 		CreateNFTFeeNanos: 0,
 		MaxCopiesPerNFT:   0,
+		// We initialize the FeeBucketGrowthRateBasisPoints to 1000, or equivalently, a multiplier of 1.1x.
+		FeeBucketGrowthRateBasisPoints: 1000,
+		// We initialize the FailingTransactionBMFMultiplierBasisPoints to 2500, or equivalently, a rate of 0.25.
+		FailingTransactionBMFMultiplierBasisPoints: 2500,
 	}
 )
 
