@@ -1492,7 +1492,7 @@ func _generateBlockAndAddToBestChain(testMeta *TestMeta, blockHeight uint64, vie
 	_, err := seedHash.FromBytes(Sha256DoubleHash([]byte("seed")).ToBytes())
 	require.NoError(testMeta.t, err)
 
-	blockTemplate := _getFullBlockTemplate(testMeta, testMeta.posMempool.latestBlockView, blockHeight, view, seedHash)
+	blockTemplate := _getFullBlockTemplate(testMeta, testMeta.posMempool.readOnlyLatestBlockView, blockHeight, view, seedHash)
 	require.NotNil(testMeta.t, blockTemplate)
 	// This is a hack to get the block to connect. We just give the block reward to m0.
 	blockTemplate.Txns[0].TxOutputs[0].PublicKey = m0PubBytes
@@ -1503,7 +1503,8 @@ func _generateBlockAndAddToBestChain(testMeta *TestMeta, blockHeight uint64, vie
 	require.NoError(testMeta.t, err)
 
 	// Add block to block index and best chain
-	testMeta.chain.addBlockToBlockIndex(blockTemplate)
+	err = testMeta.chain.addBlockToBlockIndex(blockTemplate)
+	require.NoError(testMeta.t, err)
 	newBlockNode, err := testMeta.chain.msgDeSoBlockToNewBlockNode(blockTemplate)
 	require.NoError(testMeta.t, err)
 	testMeta.chain.addBlockToBestChain(newBlockNode)
@@ -1567,7 +1568,9 @@ func NewTestPoSBlockchain(t *testing.T) *TestMeta {
 	miner.Stop()
 	latestBlockView, err := NewUtxoView(db, params, nil, nil)
 	require.NoError(t, err)
-	mempool := NewPosMempool(params, _testGetDefaultGlobalParams(), latestBlockView, 10, _dbDirSetup(t), false)
+	maxMempoolPosSizeBytes := uint64(500)
+	mempoolBackupIntervalMillis := uint64(30000)
+	mempool := NewPosMempool(params, _testGetDefaultGlobalParams(), latestBlockView, 10, _dbDirSetup(t), false, maxMempoolPosSizeBytes, mempoolBackupIntervalMillis)
 	require.NoError(t, mempool.Start())
 	require.True(t, mempool.IsRunning())
 	priv := _generateRandomBLSPrivateKey(t)
