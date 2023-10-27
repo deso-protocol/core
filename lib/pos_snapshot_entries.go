@@ -3,6 +3,7 @@ package lib
 import (
 	"bytes"
 	"fmt"
+	"github.com/deso-protocol/core/collections"
 	"math"
 	"sort"
 
@@ -983,6 +984,11 @@ func (bav *UtxoView) GetSnapshotLeaderScheduleValidator(leaderIndex uint16) (*Va
 	return validatorEntry, nil
 }
 
+type LeaderPKIDAndIndex struct {
+	leaderIdx  uint16
+	leaderPKID *PKID
+}
+
 func (bav *UtxoView) GetSnapshotLeaderSchedule() ([]*PKID, error) {
 	snapshotAtEpochNumber, err := bav.GetSnapshotEpochNumber()
 	if err != nil {
@@ -1005,12 +1011,21 @@ func (bav *UtxoView) GetSnapshotLeaderSchedule() ([]*PKID, error) {
 	}
 
 	// First, check the UtxoView.
-	var leaderPKIDs []*PKID
+	var leaderPKIDAndIndexSlice []LeaderPKIDAndIndex
 	for mapKey, validatorPKID := range bav.SnapshotLeaderSchedule {
 		if mapKey.SnapshotAtEpochNumber == snapshotAtEpochNumber {
-			leaderPKIDs = append(leaderPKIDs, validatorPKID)
+			leaderPKIDAndIndexSlice = append(leaderPKIDAndIndexSlice, LeaderPKIDAndIndex{
+				leaderIdx:  mapKey.LeaderIndex,
+				leaderPKID: validatorPKID,
+			})
 		}
 	}
+	sort.Slice(leaderPKIDAndIndexSlice, func(ii, jj int) bool {
+		return leaderPKIDAndIndexSlice[ii].leaderIdx < leaderPKIDAndIndexSlice[jj].leaderIdx
+	})
+	leaderPKIDs := collections.Transform(leaderPKIDAndIndexSlice, func(index LeaderPKIDAndIndex) *PKID {
+		return index.leaderPKID
+	})
 	return leaderPKIDs, nil
 }
 

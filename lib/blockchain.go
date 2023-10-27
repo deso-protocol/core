@@ -1691,6 +1691,9 @@ func (bc *Blockchain) processHeaderPoW(blockHeader *MsgDeSoHeader, headerHash *B
 		return false, false, HeaderErrorHeightInvalid
 	}
 
+	// Set ProposedInView to Height - this sets us up for PoS
+	blockHeader.ProposedInView = blockHeader.Height
+
 	// Make sure the block timestamp is greater than the previous block's timestamp.
 	// Note Bitcoin checks that the timestamp is greater than the median
 	// of the last 11 blocks. While this seems to work for Bitcoin for now it seems
