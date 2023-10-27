@@ -121,6 +121,12 @@ func createTestBlockHeaderVersion2(t *testing.T, includeTimeoutQC bool) *MsgDeSo
 		0x54, 0x55, 0x56, 0x57, 0x58, 0x59, 0x60, 0x61, 0x62, 0x63,
 		0x64, 0x65,
 	}
+	testTxnConnectStatusByIndex := BlockHash{
+		0x00, 0x03, 0x04, 0x21, 0x06, 0x07, 0x08, 0x09, 0x10, 0x19,
+		0x12, 0x13, 0x14, 0x15, 0x44, 0x17, 0x18, 0x19, 0x20, 0x21,
+		0x02, 0x23, 0x24, 0x25, 0x26, 0x27, 0x33, 0x29, 0x30, 0x31,
+		0x32, 0x33,
+	}
 	testRandomSeedHash := RandomSeedHash{
 		0x00, 0x36, 0x36, 0x37, 0x38, 0x39, 0x40, 0x41, 0x42, 0x43,
 		0x44, 0x45, 0x46, 0x47, 0x48, 0x49, 0x50, 0x51, 0x52, 0x53,
@@ -164,12 +170,13 @@ func createTestBlockHeaderVersion2(t *testing.T, includeTimeoutQC bool) *MsgDeSo
 		TstampNanoSecs:        SecondsToNanoSeconds(1678943210),
 		Height:                uint64(1321012345),
 		// Nonce and ExtraNonce are unused and set to 0 starting in version 2.
-		Nonce:                   uint64(0),
-		ExtraNonce:              uint64(0),
-		ProposerPublicKey:       NewPublicKey(pkForTesting1),
-		ProposerVotingPublicKey: testBLSPublicKey,
-		ProposerRandomSeedHash:  &testRandomSeedHash,
-		ProposedInView:          uint64(1432101234),
+		Nonce:                       uint64(0),
+		ExtraNonce:                  uint64(0),
+		TxnConnectStatusByIndexHash: &testTxnConnectStatusByIndex,
+		ProposerPublicKey:           NewPublicKey(pkForTesting1),
+		ProposerVotingPublicKey:     testBLSPublicKey,
+		ProposerRandomSeedHash:      &testRandomSeedHash,
+		ProposedInView:              uint64(1432101234),
 		// Use real signatures and public keys for the PoS fields
 		ProposerVotePartialSignature: testBLSSignature,
 	}
@@ -185,10 +192,7 @@ func createTestBlockHeaderVersion2(t *testing.T, includeTimeoutQC bool) *MsgDeSo
 }
 
 func TestHeaderConversionAndReadWriteMessage(t *testing.T) {
-	assert := assert.New(t)
 	require := require.New(t)
-	_ = assert
-	_ = require
 	networkType := NetworkType_MAINNET
 
 	expectedBlockHeadersToTest := []*MsgDeSoHeader{
@@ -201,38 +205,38 @@ func TestHeaderConversionAndReadWriteMessage(t *testing.T) {
 	// versions we want to test.
 	for _, expectedBlockHeader := range expectedBlockHeadersToTest {
 		data, err := expectedBlockHeader.ToBytes(false)
-		assert.NoError(err)
+		require.NoError(err)
 
 		testHdr := NewMessage(MsgTypeHeader)
 		err = testHdr.FromBytes(data)
-		assert.NoError(err)
+		require.NoError(err)
 
-		assert.Equal(expectedBlockHeader, testHdr)
+		require.Equal(expectedBlockHeader, testHdr)
 
 		// Test read write.
 		var buf bytes.Buffer
 		payload, err := WriteMessage(&buf, expectedBlockHeader, networkType)
-		assert.NoError(err)
+		require.NoError(err)
 		// Form the header from the payload and make sure it matches.
 		hdrFromPayload := NewMessage(MsgTypeHeader).(*MsgDeSoHeader)
-		assert.NotNil(hdrFromPayload, "NewMessage(MsgTypeHeader) should not return nil.")
-		assert.Equal(uint64(0), hdrFromPayload.Nonce, "NewMessage(MsgTypeHeader) should initialize Nonce to empty byte slice.")
+		require.NotNil(hdrFromPayload, "NewMessage(MsgTypeHeader) should not return nil.")
+		require.Equal(uint64(0), hdrFromPayload.Nonce, "NewMessage(MsgTypeHeader) should initialize Nonce to empty byte slice.")
 		err = hdrFromPayload.FromBytes(payload)
-		assert.NoError(err)
-		assert.Equal(expectedBlockHeader, hdrFromPayload)
+		require.NoError(err)
+		require.Equal(expectedBlockHeader, hdrFromPayload)
 
 		hdrBytes := buf.Bytes()
 		testMsg, data, err := ReadMessage(bytes.NewReader(hdrBytes),
 			networkType)
-		assert.NoError(err)
-		assert.Equal(expectedBlockHeader, testMsg)
+		require.NoError(err)
+		require.Equal(expectedBlockHeader, testMsg)
 
 		// Compute the header payload bytes so we can compare them.
 		hdrPayload, err := expectedBlockHeader.ToBytes(false)
-		assert.NoError(err)
-		assert.Equal(hdrPayload, data)
+		require.NoError(err)
+		require.Equal(hdrPayload, data)
 
-		assert.Equalf(14, reflect.TypeOf(expectedBlockHeader).Elem().NumField(),
+		require.Equalf(15, reflect.TypeOf(expectedBlockHeader).Elem().NumField(),
 			"Number of fields in HEADER message is different from expected. "+
 				"Did you add a new field? If so, make sure the serialization code "+
 				"works, add the new field to the test case, and fix this error.")
@@ -415,6 +419,33 @@ var expectedBlock = &MsgDeSoBlock{
 	},
 }
 
+func createTestBlockVersion1(t *testing.T) *MsgDeSoBlock {
+	require := require.New(t)
+
+	newBlockV1 := *expectedBlock
+
+	// Add a signature to the block V1
+	priv, err := btcec.NewPrivateKey(btcec.S256())
+	require.NoError(err)
+	newBlockV1.BlockProducerInfo.Signature, err = priv.Sign([]byte{0x01, 0x02, 0x03})
+	require.NoError(err)
+	return &newBlockV1
+}
+
+func createTestBlockVersion2(t *testing.T, includeTimeoutQC bool) *MsgDeSoBlock {
+	block := *expectedBlock
+	block.BlockProducerInfo = nil
+
+	// Set V2 header.
+	block.Header = createTestBlockHeaderVersion2(t, includeTimeoutQC)
+
+	// Set the block's TxnConnectStatusByIndex and update its hash in the header.
+	block.TxnConnectStatusByIndex = bitset.NewBitset().Set(0, true).Set(3, true)
+	block.Header.TxnConnectStatusByIndexHash = HashBitset(block.TxnConnectStatusByIndex)
+
+	return &block
+}
+
 func expectedTransactions(includeV1Fields bool) []*MsgDeSoTxn {
 	txns := []*MsgDeSoTxn{
 		{
@@ -564,66 +595,67 @@ var expectedV0Header = &MsgDeSoHeader{
 }
 
 func TestBlockSerialize(t *testing.T) {
-	assert := assert.New(t)
 	require := require.New(t)
-	_ = assert
-	_ = require
 
-	// Add a signature to the block
-	priv, err := btcec.NewPrivateKey(btcec.S256())
-	require.NoError(err)
-	expectedBlock.BlockProducerInfo.Signature, err = priv.Sign([]byte{0x01, 0x02, 0x03})
-	require.NoError(err)
+	expectedBlocksToTest := []*MsgDeSoBlock{
+		createTestBlockVersion1(t),
+		createTestBlockVersion2(t, false),
+		createTestBlockVersion2(t, true),
+	}
 
-	data, err := expectedBlock.ToBytes(false)
-	require.NoError(err)
+	for _, block := range expectedBlocksToTest {
+		data, err := block.ToBytes(false)
+		require.NoError(err)
 
-	testBlock := NewMessage(MsgTypeBlock).(*MsgDeSoBlock)
-	err = testBlock.FromBytes(data)
-	require.NoError(err)
+		testBlock := NewMessage(MsgTypeBlock).(*MsgDeSoBlock)
+		err = testBlock.FromBytes(data)
+		require.NoError(err)
 
-	assert.Equal(*expectedBlock, *testBlock)
+		require.Equal(*block, *testBlock)
+	}
+
 }
 
 func TestBlockSerializeNoBlockProducerInfo(t *testing.T) {
-	assert := assert.New(t)
 	require := require.New(t)
-	_ = assert
-	_ = require
 
-	// Add a signature to the block
-	blockWithoutProducerInfo := *expectedBlock
-	blockWithoutProducerInfo.BlockProducerInfo = nil
+	expectedBlocksToTest := []*MsgDeSoBlock{
+		createTestBlockVersion1(t),
+		createTestBlockVersion2(t, false),
+		createTestBlockVersion2(t, true),
+	}
+	expectedBlocksToTest[0].BlockProducerInfo = nil
+	expectedBlocksToTest[1].BlockProducerInfo = nil
 
-	data, err := blockWithoutProducerInfo.ToBytes(false)
-	require.NoError(err)
+	for _, block := range expectedBlocksToTest {
+		data, err := block.ToBytes(false)
+		require.NoError(err)
 
-	testBlock := NewMessage(MsgTypeBlock).(*MsgDeSoBlock)
-	err = testBlock.FromBytes(data)
-	require.NoError(err)
-
-	assert.Equal(blockWithoutProducerInfo, *testBlock)
+		testBlock := NewMessage(MsgTypeBlock).(*MsgDeSoBlock)
+		err = testBlock.FromBytes(data)
+		require.NoError(err)
+		require.Equal(*block, *testBlock)
+	}
 }
 
 func TestBlockRewardTransactionSerialize(t *testing.T) {
-	assert := assert.New(t)
 	require := require.New(t)
-	_ = assert
-	_ = require
 
-	// Add a signature to the block
-	priv, err := btcec.NewPrivateKey(btcec.S256())
-	require.NoError(err)
-	expectedBlock.BlockProducerInfo.Signature, err = priv.Sign([]byte{0x01, 0x02, 0x03})
-	require.NoError(err)
+	expectedBlocksToTest := []*MsgDeSoBlock{
+		createTestBlockVersion1(t),
+		createTestBlockVersion2(t, false),
+		createTestBlockVersion2(t, true),
+	}
 
-	data, err := expectedBlock.Txns[0].ToBytes(false)
-	require.NoError(err)
+	for _, block := range expectedBlocksToTest {
+		data, err := block.Txns[0].ToBytes(false)
+		require.NoError(err)
 
-	testTxn := NewMessage(MsgTypeTxn).(*MsgDeSoTxn)
-	err = testTxn.FromBytes(data)
-	require.NoError(err)
-	require.Equal(expectedBlock.Txns[0], testTxn)
+		testTxn := NewMessage(MsgTypeTxn).(*MsgDeSoTxn)
+		err = testTxn.FromBytes(data)
+		require.NoError(err)
+		require.Equal(block.Txns[0], testTxn)
+	}
 }
 
 func TestSerializeInv(t *testing.T) {

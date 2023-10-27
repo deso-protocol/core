@@ -3751,7 +3751,9 @@ type GlobalParamsEntry struct {
 	// The maximum number of NFT copies that are allowed to be minted.
 	MaxCopiesPerNFT uint64
 
-	// The new minimum fee the network will accept
+	// MinimumNetworkFeeNanosPerKB is the minimal fee rate in DeSo nanos per KB a transaction can have.
+	// If a transaction has a lower fee than MinimumNetworkFeeNanosPerKB, it will be
+	// rejected by the node's mempool.
 	MinimumNetworkFeeNanosPerKB uint64
 
 	// MaxNonceExpirationBlockHeightOffset is maximum value nodes will
@@ -3796,24 +3798,38 @@ type GlobalParamsEntry struct {
 	// allow a validator to be inactive for (neither voting nor proposing
 	// blocks) before they are jailed.
 	JailInactiveValidatorGracePeriodEpochs uint64
+
+	// FeeBucketGrowthRateBasisPoints is the rate of growth of the fee bucket ranges. This is part of the new
+	// PoS Mempool. The multiplier is given as basis points. For example a value of 1000 means that the fee bucket
+	// ranges will grow by 10% each time. If, let's say, we start with MinimumNetworkFeeNanosPerKB of 1000 nanos,
+	// then the first bucket will be [1000, 1099], the second bucket will be [1100, 1209], the third bucket will
+	// be [1210, 1330], etc.
+	FeeBucketGrowthRateBasisPoints uint64
+
+	// FailingTransactionBMFMultiplierBasisPoints is the factor of the transaction fee that is used for the computation
+	// BMF. The value is expressed in basis points. For example a value of 2500 means that 25% of the fee will be
+	// failing transaction fee will be used in the BMF algorithm.
+	FailingTransactionBMFMultiplierBasisPoints uint64
 }
 
 func (gp *GlobalParamsEntry) Copy() *GlobalParamsEntry {
 	return &GlobalParamsEntry{
-		USDCentsPerBitcoin:                     gp.USDCentsPerBitcoin,
-		CreateProfileFeeNanos:                  gp.CreateProfileFeeNanos,
-		CreateNFTFeeNanos:                      gp.CreateNFTFeeNanos,
-		MaxCopiesPerNFT:                        gp.MaxCopiesPerNFT,
-		MinimumNetworkFeeNanosPerKB:            gp.MinimumNetworkFeeNanosPerKB,
-		MaxNonceExpirationBlockHeightOffset:    gp.MaxNonceExpirationBlockHeightOffset,
-		StakeLockupEpochDuration:               gp.StakeLockupEpochDuration,
-		ValidatorJailEpochDuration:             gp.ValidatorJailEpochDuration,
-		LeaderScheduleMaxNumValidators:         gp.LeaderScheduleMaxNumValidators,
-		ValidatorSetMaxNumValidators:           gp.ValidatorSetMaxNumValidators,
-		StakingRewardsMaxNumStakes:             gp.StakingRewardsMaxNumStakes,
-		StakingRewardsAPYBasisPoints:           gp.StakingRewardsAPYBasisPoints,
-		EpochDurationNumBlocks:                 gp.EpochDurationNumBlocks,
-		JailInactiveValidatorGracePeriodEpochs: gp.JailInactiveValidatorGracePeriodEpochs,
+		USDCentsPerBitcoin:                         gp.USDCentsPerBitcoin,
+		CreateProfileFeeNanos:                      gp.CreateProfileFeeNanos,
+		CreateNFTFeeNanos:                          gp.CreateNFTFeeNanos,
+		MaxCopiesPerNFT:                            gp.MaxCopiesPerNFT,
+		MinimumNetworkFeeNanosPerKB:                gp.MinimumNetworkFeeNanosPerKB,
+		MaxNonceExpirationBlockHeightOffset:        gp.MaxNonceExpirationBlockHeightOffset,
+		StakeLockupEpochDuration:                   gp.StakeLockupEpochDuration,
+		ValidatorJailEpochDuration:                 gp.ValidatorJailEpochDuration,
+		LeaderScheduleMaxNumValidators:             gp.LeaderScheduleMaxNumValidators,
+		ValidatorSetMaxNumValidators:               gp.ValidatorSetMaxNumValidators,
+		StakingRewardsMaxNumStakes:                 gp.StakingRewardsMaxNumStakes,
+		StakingRewardsAPYBasisPoints:               gp.StakingRewardsAPYBasisPoints,
+		EpochDurationNumBlocks:                     gp.EpochDurationNumBlocks,
+		JailInactiveValidatorGracePeriodEpochs:     gp.JailInactiveValidatorGracePeriodEpochs,
+		FeeBucketGrowthRateBasisPoints:             gp.FeeBucketGrowthRateBasisPoints,
+		FailingTransactionBMFMultiplierBasisPoints: gp.FailingTransactionBMFMultiplierBasisPoints,
 	}
 }
 
@@ -3837,6 +3853,8 @@ func (gp *GlobalParamsEntry) RawEncodeWithoutMetadata(blockHeight uint64, skipMe
 		data = append(data, UintToBuf(gp.StakingRewardsAPYBasisPoints)...)
 		data = append(data, UintToBuf(gp.EpochDurationNumBlocks)...)
 		data = append(data, UintToBuf(gp.JailInactiveValidatorGracePeriodEpochs)...)
+		data = append(data, UintToBuf(gp.FeeBucketGrowthRateBasisPoints)...)
+		data = append(data, UintToBuf(gp.FailingTransactionBMFMultiplierBasisPoints)...)
 	}
 	return data
 }
@@ -3903,6 +3921,14 @@ func (gp *GlobalParamsEntry) RawDecodeWithoutMetadata(blockHeight uint64, rr *by
 		if err != nil {
 			return errors.Wrapf(err, "GlobalParamsEntry.Decode: Problem reading JailInactiveValidatorGracePeriodEpochs: ")
 		}
+		gp.FeeBucketGrowthRateBasisPoints, err = ReadUvarint(rr)
+		if err != nil {
+			return errors.Wrapf(err, "GlobalParamsEntry.Decode: Problem reading FeeBucketGrowthRateBasisPoints")
+		}
+		gp.FailingTransactionBMFMultiplierBasisPoints, err = ReadUvarint(rr)
+		if err != nil {
+			return errors.Wrapf(err, "GlobalParamsEntry.Decode: Problem reading FailingTransactionBMFMultiplierBasisPoints")
+		}
 	}
 	return nil
 }
@@ -3913,6 +3939,17 @@ func (gp *GlobalParamsEntry) GetVersionByte(blockHeight uint64) byte {
 
 func (gp *GlobalParamsEntry) GetEncoderType() EncoderType {
 	return EncoderTypeGlobalParamsEntry
+}
+
+// ComputeFeeTimeBucketMinimumFeeAndMultiplier takes the MinimumNetworkFeeNanosPerKB and FeeBucketGrowthRateBasisPoints for
+// the GlobalParamsEntry, and returns them as big.Floats.
+func (gp *GlobalParamsEntry) ComputeFeeTimeBucketMinimumFeeAndMultiplier() (
+	_minimumRate *big.Float, _bucketMultiplier *big.Float) {
+
+	minimumNetworkFeeNanosPerKB := NewFloat().SetUint64(gp.MinimumNetworkFeeNanosPerKB)
+	feeBucketMultiplier := NewFloat().SetUint64(10000 + gp.FeeBucketGrowthRateBasisPoints)
+	feeBucketMultiplier.Quo(feeBucketMultiplier, NewFloat().SetUint64(10000))
+	return minimumNetworkFeeNanosPerKB, feeBucketMultiplier
 }
 
 // This struct holds info on a readers interactions (e.g. likes) with a post.
