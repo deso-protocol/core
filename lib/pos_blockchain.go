@@ -638,19 +638,6 @@ func (bc *Blockchain) shouldReorg(blockNode *BlockNode, currentView uint64) bool
 	return blockNode.Header.ProposedInView >= currentView
 }
 
-func (bc *Blockchain) msgDeSoBlockToNewBlockNode(desoBlock *MsgDeSoBlock) (*BlockNode, error) {
-	parent, exists := bc.blockIndex[*desoBlock.Header.PrevBlockHash]
-	if !exists {
-		return nil, errors.Errorf("msgDeSoBlockToNewBlockNode: Parent block %v not found in block index", desoBlock.Header.PrevBlockHash)
-	}
-	hash, err := desoBlock.Hash()
-	if err != nil {
-		return nil, errors.Wrapf(err, "msgDeSoBlockToNewBlockNode: Problem hashing block %v", desoBlock)
-	}
-	// TODO: What's the proper status?
-	return NewBlockNode(parent, hash, uint32(desoBlock.Header.Height), nil, nil, desoBlock.Header, StatusBlockValidated), nil
-}
-
 // addBlockToBestChain adds the block to the best chain.
 func (bc *Blockchain) addBlockToBestChain(desoBlockNode *BlockNode) {
 	bc.bestChain = append(bc.bestChain, desoBlockNode)
@@ -731,7 +718,7 @@ func (bc *Blockchain) commitBlock(blockHash *BlockHash) error {
 	// Connect a view up to the parent of the block we are committing.
 	utxoView, err := bc.getUtxoViewAtBlockHash(*block.Header.PrevBlockHash)
 	if err != nil {
-		return errors.Wrapf(err, "runCommitRuleOnBestChain: Problem initializing UtxoView: ")
+		return errors.Wrapf(err, "commitBlock: Problem initializing UtxoView: ")
 	}
 	txHashes := collections.Transform(block.Txns, func(txn *MsgDeSoTxn) *BlockHash {
 		return txn.Hash()
@@ -740,7 +727,7 @@ func (bc *Blockchain) commitBlock(blockHash *BlockHash) error {
 	utxoOpsForBlock, err := utxoView.ConnectBlock(block, txHashes, true /*verifySignatures*/, bc.eventManager, block.Header.Height)
 	if err != nil {
 		// TODO: rule error handling? mark blocks invalid?
-		return errors.Wrapf(err, "runCommitRuleOnBestChain: Problem connecting block to view: ")
+		return errors.Wrapf(err, "commitBlock: Problem connecting block to view: ")
 	}
 	// Put the block in the db
 	// Note: we're skipping postgres.
@@ -750,7 +737,7 @@ func (bc *Blockchain) commitBlock(blockHash *BlockHash) error {
 		if bc.snapshot != nil {
 			bc.snapshot.PrepareAncestralRecordsFlush()
 			defer bc.snapshot.StartAncestralRecordsFlush(true)
-			glog.V(2).Infof("ProcessBlock: Preparing snapshot flush")
+			glog.V(2).Infof("commitBlock: Preparing snapshot flush")
 		}
 		// Store the new block in the db under the
 		//   <blockHash> -> <serialized block>
@@ -760,33 +747,34 @@ func (bc *Blockchain) commitBlock(blockHash *BlockHash) error {
 		// 	we've fetched during Hypersync. Is there an edge-case where for some reason they're not identical? Or
 		// 	somehow ancestral records get corrupted?
 		if innerErr := PutBlockWithTxn(txn, bc.snapshot, block); innerErr != nil {
-			return errors.Wrapf(innerErr, "ProcessBlock: Problem calling PutBlock")
+			return errors.Wrapf(innerErr, "commitBlock: Problem calling PutBlock")
 		}
 
 		// Store the new block's node in our node index in the db under the
 		//   <height uin32, blockHash BlockHash> -> <node info>
 		// index.
 		if innerErr := PutHeightHashToNodeInfoWithTxn(txn, bc.snapshot, blockNode, false /*bitcoinNodes*/); innerErr != nil {
-			return errors.Wrapf(innerErr, "ProcessBlock: Problem calling PutHeightHashToNodeInfo before validation")
+			return errors.Wrapf(innerErr, "commitBlock: Problem calling PutHeightHashToNodeInfo before validation")
 		}
 
 		// Set the best node hash to this one. Note the header chain should already
 		// be fully aware of this block so we shouldn't update it here.
 		if innerErr := PutBestHashWithTxn(txn, bc.snapshot, blockNode.Hash, ChainTypeDeSoBlock); innerErr != nil {
-			return errors.Wrapf(innerErr, "ProcessBlock: Problem calling PutBestHash after validation")
+			return errors.Wrapf(innerErr, "commitBlock: Problem calling PutBestHash after validation")
 		}
 		// Write the utxo operations for this block to the db so we can have the
 		// ability to roll it back in the future.
 		if innerErr := PutUtxoOperationsForBlockWithTxn(txn, bc.snapshot, uint64(blockNode.Height), blockNode.Hash, utxoOpsForBlock); innerErr != nil {
-			return errors.Wrapf(innerErr, "ProcessBlock: Problem writing utxo operations to db on simple add to tip")
+			return errors.Wrapf(innerErr, "commitBlock: Problem writing utxo operations to db on simple add to tip")
 		}
-		if innerErr := utxoView.FlushToDbWithTxn(txn, uint64(blockNode.Height)); innerErr != nil {
-			return errors.Wrapf(innerErr, "ProcessBlock: Problem flushing UtxoView to db")
-		}
+
 		return nil
 	})
 	if err != nil {
-		return errors.Wrapf(err, "runCommitRuleOnBestChain: Problem putting block in db: ")
+		return errors.Wrapf(err, "commitBlock: Problem putting block in db: ")
+	}
+	if err = utxoView.FlushToDb(uint64(blockNode.Height)); err != nil {
+		return errors.Wrapf(err, "commitBlock: Problem flushing UtxoView to db")
 	}
 	if bc.eventManager != nil {
 		bc.eventManager.blockConnected(&BlockEvent{
