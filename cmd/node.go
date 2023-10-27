@@ -27,12 +27,13 @@ import (
 )
 
 type Node struct {
-	Server   *lib.Server
-	ChainDB  *badger.DB
-	TXIndex  *lib.TXIndex
-	Params   *lib.DeSoParams
-	Config   *Config
-	Postgres *lib.Postgres
+	Server    *lib.Server
+	ChainDB   *badger.DB
+	TXIndex   *lib.TXIndex
+	Params    *lib.DeSoParams
+	Config    *Config
+	Postgres  *lib.Postgres
+	Listeners []net.Listener
 
 	// IsRunning is false when a NewNode is created, set to true on Start(), set to false
 	// after Stop() is called. Mainly used in testing.
@@ -120,8 +121,7 @@ func (node *Node) Start(exitChannels ...*chan struct{}) {
 
 	// This just gets localhost listening addresses on the protocol port.
 	// Such as [{127.0.0.1 18000 } {::1 18000 }], and associated listener structs.
-	listeningAddrs, listeners := GetAddrsToListenOn(node.Config.ProtocolPort)
-	_ = listeningAddrs
+	_, node.Listeners = GetAddrsToListenOn(node.Config.ProtocolPort)
 
 	// If --connect-ips is not passed, we will connect the addresses from
 	// --add-ips, DNSSeeds, and DNSSeedGenerators.
@@ -211,7 +211,7 @@ func (node *Node) Start(exitChannels ...*chan struct{}) {
 	shouldRestart := false
 	node.Server, err, shouldRestart = lib.NewServer(
 		node.Params,
-		listeners,
+		node.Listeners,
 		desoAddrMgr,
 		node.Config.ConnectIPs,
 		node.ChainDB,

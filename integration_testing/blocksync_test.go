@@ -40,9 +40,7 @@ func TestSimpleBlockSync(t *testing.T) {
 	// wait for node1 to sync blocks
 	waitForNodeToFullySync(node1)
 
-	// bridge the nodes together.
-	bridge := NewConnectionBridge(node1, node2)
-	require.NoError(bridge.Start())
+	node2.Server.CreateOutboundConnection(node1.Listeners[0].Addr().String())
 
 	// wait for node2 to sync blocks.
 	waitForNodeToFullySync(node2)
@@ -99,6 +97,7 @@ func TestSimpleSyncRestart(t *testing.T) {
 	compareNodesByDB(t, node1, node2, 0)
 	fmt.Println("Random restart successful! Random height was", randomHeight)
 	fmt.Println("Databases match!")
+	bridge.Disconnect()
 	node1.Stop()
 	node2.Stop()
 }
@@ -153,7 +152,7 @@ func TestSimpleSyncDisconnectWithSwitchingToNewPeer(t *testing.T) {
 
 	randomHeight := randomUint32Between(t, 10, config2.MaxSyncBlockHeight)
 	fmt.Println("Random height for a restart (re-use if test failed):", randomHeight)
-	disconnectAtBlockHeight(t, node2, bridge12, randomHeight)
+	disconnectAtBlockHeight(node2, bridge12, randomHeight)
 
 	// bridge the nodes together.
 	bridge23 := NewConnectionBridge(node2, node3)
@@ -167,6 +166,8 @@ func TestSimpleSyncDisconnectWithSwitchingToNewPeer(t *testing.T) {
 	compareNodesByDB(t, node3, node2, 0)
 	fmt.Println("Random restart successful! Random height was", randomHeight)
 	fmt.Println("Databases match!")
+	bridge12.Disconnect()
+	bridge23.Disconnect()
 	node1.Stop()
 	node2.Stop()
 	node3.Stop()

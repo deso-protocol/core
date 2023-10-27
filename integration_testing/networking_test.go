@@ -6,10 +6,10 @@ import (
 	"github.com/stretchr/testify/require"
 	"os"
 	"testing"
+	"time"
 )
 
-// TestSimpleBlockSync test if a node can mine blocks on regtest
-func TestRegtestMiner(t *testing.T) {
+func TestSimpleConnectDisconnect(t *testing.T) {
 	require := require.New(t)
 	_ = require
 
@@ -18,18 +18,16 @@ func TestRegtestMiner(t *testing.T) {
 
 	config1 := generateConfig(t, 18000, dbDir1, 10)
 	config1.SyncType = lib.NodeSyncTypeBlockSync
-	config1.Params = &lib.DeSoTestnetParams
-	config1.MaxSyncBlockHeight = 0
-	config1.MinerPublicKeys = []string{"tBCKVERmG9nZpHTk2AVPqknWc1Mw9HHAnqrTpW1RnXpXMQ4PsQgnmV"}
-
-	config1.Regtest = true
-
+	config1.MaxSyncBlockHeight = 100
 	node1 := cmd.NewNode(config1)
 	node1 = startNode(t, node1)
 
-	// wait for node1 to sync blocks
-	mineHeight := uint32(40)
-	<-listenForBlockHeight(node1, mineHeight)
+	// connect node1 to deso-seed-2.io
+	node1.Server.CreateOutboundConnection("deso-seed-2.io:17000")
+	node1.Server.GetConnectionManager().SetTargetOutboundPeers(0)
 
+	<-listenForBlockHeight(node1, 50)
+	node1.Server.CloseConnection("deso-seed-2.io:17000")
+	time.Sleep(15 * time.Second)
 	node1.Stop()
 }

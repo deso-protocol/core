@@ -406,6 +406,7 @@ func NewServer(
 		snapshot:                     _snapshot,
 		nodeMessageChannel:           _nodeMessageChan,
 		forceChecksum:                _forceChecksum,
+		fastHotStuffConsensus:        consensus.NewFastHotStuffConsensus(),
 	}
 
 	// The same timesource is used in the chain data structure and in the connection
@@ -669,11 +670,13 @@ func (srv *Server) GetSnapshot(pp *Peer) {
 	}
 	// If operationQueueSemaphore is full, we are already storing too many chunks in memory. Block the thread while
 	// we wait for the queue to clear up.
-	srv.snapshot.operationQueueSemaphore <- struct{}{}
-	// Now send a message to the peer to fetch the snapshot chunk.
-	pp.AddDeSoMessage(&MsgDeSoGetSnapshot{
-		SnapshotStartKey: lastReceivedKey,
-	}, false)
+	go func() {
+		srv.snapshot.operationQueueSemaphore <- struct{}{}
+		// Now send a message to the peer to fetch the snapshot chunk.
+		pp.AddDeSoMessage(&MsgDeSoGetSnapshot{
+			SnapshotStartKey: lastReceivedKey,
+		}, false)
+	}()
 
 	glog.V(2).Infof("Server.GetSnapshot: Sending a GetSnapshot message to peer (%v) "+
 		"with Prefix (%v) and SnapshotStartEntry (%v)", pp, prefix, lastReceivedKey)
@@ -1110,6 +1113,8 @@ func (srv *Server) _handleSnapshot(pp *Peer, msg *MsgDeSoSnapshotData) {
 		"<%v>, Last entry: <%v>), (number of entries: %v), metadata (%v), and isEmpty (%v), from Peer %v",
 		msg.SnapshotChunk[0].Key, msg.SnapshotChunk[len(msg.SnapshotChunk)-1].Key, len(msg.SnapshotChunk),
 		msg.SnapshotMetadata, msg.SnapshotChunk[0].IsEmpty(), pp)))
+	// Free up a slot in the operationQueueSemaphore, now that a chunk has been processed.
+	srv.snapshot.FreeOperationQueueSemaphore()
 
 	// There is a possibility that during hypersync the network entered a new snapshot epoch. We handle this case by
 	// restarting the node and starting hypersync from scratch.
@@ -2435,6 +2440,16 @@ func (srv *Server) _startTransactionRelayer() {
 		// Just continuously relay transactions to peers that don't have them.
 		srv._relayTransactions()
 	}
+}
+
+func (srv *Server) CreateOutboundConnection(ipAddr string) {
+	glog.V(2).Infof("Server.ConnectOutboundConnection: Connecting to peer %v", ipAddr)
+	srv.cmgr.CreateOutboundConnection(ipAddr)
+}
+
+func (srv *Server) CloseConnection(ipAddr string) {
+	glog.V(2).Infof("Server.CloseConnection: Closing connection to peer (ip= %s)", ipAddr)
+	srv.cmgr.DisconnectPeer(ipAddr)
 }
 
 func (srv *Server) Stop() {

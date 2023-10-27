@@ -11,7 +11,8 @@ func NewFastHotStuffConsensus() *FastHotStuffConsensus {
 		internalTimersUpdated: make(chan interface{}),
 		votesSeen:             make(map[BlockHash]map[bls.PublicKey]*bls.Signature),
 		timeoutsSeen:          make(map[BlockHash]map[bls.PublicKey]*bls.Signature),
-		ConsensusEvents:       make(chan *ConsensusEvent),
+		ConsensusEvents:       make(chan *ConsensusEvent, 100),
+		quit:                  make(chan interface{}, 1),
 	}
 }
 

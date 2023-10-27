@@ -80,6 +80,9 @@ type ConnectionManager struct {
 	// concurrently by many goroutines to figure out if outbound connections
 	// should be made to particular addresses.
 
+	connectionAttemptsByIP map[string]bool
+	disconnectedIPs        map[string]bool
+
 	mtxOutboundConnIPGroups deadlock.Mutex
 	outboundConnIPGroups    map[string]int
 	// The peer maps map peer ID to peers for various types of peer connections.
@@ -87,10 +90,12 @@ type ConnectionManager struct {
 	// A persistent peer is typically one we got through a commandline argument.
 	// The reason it's called persistent is because we maintain a connection to
 	// it, and retry the connection if it fails.
-	mtxPeerMaps     deadlock.RWMutex
-	persistentPeers map[uint64]*Peer
-	outboundPeers   map[uint64]*Peer
-	inboundPeers    map[uint64]*Peer
+	mtxPeerMaps        deadlock.RWMutex
+	persistentPeers    map[uint64]*Peer
+	outboundPeers      map[uint64]*Peer
+	inboundPeers       map[uint64]*Peer
+	connectedPeers     map[uint64]*Peer
+	connectedPeersByIp map[string]*Peer
 	// Track the number of outbound peers we have so that this value can
 	// be accessed concurrently when deciding whether or not to add more
 	// outbound peers.
@@ -153,6 +158,9 @@ func NewConnectionManager(
 		sentNonces: lru.NewCache(1000),
 		timeSource: _timeSource,
 
+		connectionAttemptsByIP: make(map[string]bool),
+		disconnectedIPs:        make(map[string]bool),
+
 		//newestBlock: _newestBlock,
 
 		// Initialize the peer data structures.
@@ -160,11 +168,13 @@ func NewConnectionManager(
 		persistentPeers:        make(map[uint64]*Peer),
 		outboundPeers:          make(map[uint64]*Peer),
 		inboundPeers:           make(map[uint64]*Peer),
+		connectedPeers:         make(map[uint64]*Peer),
 		connectedOutboundAddrs: make(map[string]bool),
+		connectedPeersByIp:     make(map[string]*Peer),
 
 		// Initialize the channels.
-		newPeerChan:  make(chan *Peer),
-		donePeerChan: make(chan *Peer),
+		newPeerChan:  make(chan *Peer, 100),
+		donePeerChan: make(chan *Peer, 100),
 
 		targetOutboundPeers:            _targetOutboundPeers,
 		maxInboundPeers:                _maxInboundPeers,
@@ -179,6 +189,10 @@ func NewConnectionManager(
 
 func (cmgr *ConnectionManager) GetAddrManager() *addrmgr.AddrManager {
 	return cmgr.AddrMgr
+}
+
+func (cmgr *ConnectionManager) SetTargetOutboundPeers(numPeers uint32) {
+	cmgr.targetOutboundPeers = numPeers
 }
 
 // Check if the address passed shares a group with any addresses already in our
@@ -220,18 +234,18 @@ func (cmgr *ConnectionManager) subFromGroupKey(na *wire.NetAddress) {
 
 func (cmgr *ConnectionManager) getRandomAddr() *wire.NetAddress {
 	for tries := 0; tries < 100; tries++ {
-		// Lock the address map since multiple threads will be trying to read
-		// and modify it at the same time.
-		cmgr.mtxConnectedOutboundAddrs.RLock()
 		addr := cmgr.AddrMgr.GetAddress()
-		cmgr.mtxConnectedOutboundAddrs.RUnlock()
-
 		if addr == nil {
 			glog.V(2).Infof("ConnectionManager.getRandomAddr: addr from GetAddressWithExclusions was nil")
 			break
 		}
 
-		if cmgr.connectedOutboundAddrs[addrmgr.NetAddressKey(addr.NetAddress())] {
+		// Lock the address map since multiple threads will be trying to read
+		// and modify it at the same time.
+		cmgr.mtxConnectedOutboundAddrs.RLock()
+		ok := cmgr.connectedOutboundAddrs[addrmgr.NetAddressKey(addr.NetAddress())]
+		cmgr.mtxConnectedOutboundAddrs.RUnlock()
+		if ok {
 			glog.V(2).Infof("ConnectionManager.getRandomAddr: Not choosing already connected address %v:%v", addr.NetAddress().IP, addr.NetAddress().Port)
 			continue
 		}
@@ -386,97 +400,109 @@ func IPToNetAddr(ipStr string, addrMgr *addrmgr.AddrManager, params *DeSoParams)
 	return netAddr, nil
 }
 
-// ConnectPeer connects either an INBOUND or OUTBOUND peer. If Conn == nil,
-// then we will set up an OUTBOUND peer. Otherwise we will use the Conn to
-// create an INBOUND peer. If the connection is OUTBOUND and the persistentAddr
-// is set, then we will connect only to that addr. Otherwise, we will use
-// the addrmgr to randomly select addrs and create OUTBOUND connections
-// with them until we find a worthy peer.
-func (cmgr *ConnectionManager) ConnectPeer(conn net.Conn, persistentAddr *wire.NetAddress) {
-	// If we don't have a connection object then we will try and make an
-	// outbound connection to a peer to get one.
-	isOutbound := false
-	if conn == nil {
-		isOutbound = true
+func (cmgr *ConnectionManager) CreateOutboundConnection(ipStr string) {
+	netAddr, err := IPToNetAddr(ipStr, cmgr.AddrMgr, cmgr.params)
+	if err != nil {
+		glog.Errorf("ConnectionManager.CreateOutboundConnection: Error parsing ip %s: %v", ipStr, err)
+		return
 	}
+	if cmgr.connectionAttemptsByIP[ipStr] {
+		glog.V(2).Infof("ConnectionManager.CreateOutboundConnection: Already tried to connect to %s. Ignoring.", ipStr)
+		return
+	}
+	cmgr.mtxPeerMaps.Lock()
+	delete(cmgr.disconnectedIPs, ipStr)
+	cmgr.mtxPeerMaps.Unlock()
+	go cmgr._createOutboundConnection(netAddr)
+}
+
+func (cmgr *ConnectionManager) _createOutboundConnection(persistentAddr *wire.NetAddress) {
 	isPersistent := (persistentAddr != nil)
+	if isPersistent && cmgr.connectionAttemptsByIP[persistentAddr.IP.String()] {
+		return
+	}
+	if isPersistent {
+		cmgr.mtxPeerMaps.Lock()
+		cmgr.connectionAttemptsByIP[persistentAddr.IP.String()] = true
+		cmgr.mtxPeerMaps.Unlock()
+	}
 	retryCount := 0
 	for {
 		// If the peer is persistent use exponential back off delay before retrying.
+		if isPersistent && cmgr.disconnectedIPs[persistentAddr.IP.String()] {
+			glog.V(2).Infof("ConnectionManager._createOutboundConnection: Peer %s is disconnected. "+
+				"Stopping.", persistentAddr.IP.String())
+			return
+		}
+
 		if isPersistent {
 			_delayRetry(retryCount, persistentAddr)
 		}
 		retryCount++
 
-		// If this is an outbound peer, create an outbound connection.
-		if isOutbound {
-			conn = cmgr._getOutboundConn(persistentAddr)
+		// If we are shutting down, exit.
+		if atomic.LoadInt32(&cmgr.shutdown) != 0 {
+			glog.Info("ConnectionManager._createOutboundConnection: Connection manager is shutting down. Exiting.")
+			return
 		}
 
+		conn := cmgr._getOutboundConn(persistentAddr)
 		if conn == nil {
 			// Conn should only be nil if this is a non-persistent outbound peer.
 			if isPersistent {
-				glog.Errorf("ConnectPeer: Got a nil connection for a persistent peer. This should never happen: (%s)", persistentAddr.IP.String())
+				glog.Errorf("ConnectionManager._createOutboundConnection: Got a nil connection for a persistent "+
+					"peer. This should never happen: (%s)", persistentAddr.IP.String())
 			}
 
 			// If we end up without a connection object, it implies we had enough
 			// outbound peers so just return.
 			return
 		}
-
-		// At this point Conn is set so create a peer object to do
-		// a version negotiation.
-		na, err := IPToNetAddr(conn.RemoteAddr().String(), cmgr.AddrMgr, cmgr.params)
-		if err != nil {
-			glog.Errorf("ConnectPeer: Problem calling ipToNetAddr for addr: (%s) err: (%v)", conn.RemoteAddr().String(), err)
-
-			// If we get an error in the conversion and this is an
-			// outbound connection, keep trying it. Otherwise, just return.
-			if isOutbound {
-				continue
-			}
-			return
-		}
-		peer := NewPeer(conn, isOutbound, na, isPersistent,
-			cmgr.stallTimeoutSeconds,
-			cmgr.minFeeRateNanosPerKB,
-			cmgr.params,
-			cmgr.srv.incomingMessages, cmgr, cmgr.srv, cmgr.SyncType)
-
-		if err := peer.NegotiateVersion(cmgr.params.VersionNegotiationTimeout); err != nil {
-			glog.Errorf("ConnectPeer: Problem negotiating version with peer with addr: (%s) err: (%v)", conn.RemoteAddr().String(), err)
-
-			// If we have an error in the version negotiation we disconnect
-			// from this peer.
-			peer.Conn.Close()
-
-			// If the connection is outbound, then
-			// we try a new connection until we get one that works. Otherwise
-			// we break.
-			if isOutbound {
-				continue
-			}
-			return
-		}
-		peer._logVersionSuccess()
-
-		// If the version negotiation worked and we have an outbound non-persistent
-		// connection, mark the address as good in the addrmgr.
-		if isOutbound && !isPersistent {
-			cmgr.AddrMgr.Good(na)
+		glog.V(2).Infof("ConnectionManager._createOutboundConnection: Running ConnectOutboundConnection for connection: "+
+			"(addr= %v)", conn.RemoteAddr())
+		if err := cmgr.ConnectPeer(conn, true, isPersistent); err != nil {
+			glog.Errorf("ConnectionManager._createOutboundConnection: Error running ConnectOutboundConnection: %v", err)
+			conn.Close()
+			continue
 		}
 
-		// We connected to the peer and it passed its version negotiation.
-		// Handle the next steps in the main loop.
-		cmgr.newPeerChan <- peer
-
-		// Once we've successfully connected to a valid peer we're done. The connection
-		// manager will handle starting the peer and, if this is an outbound peer and
-		// the peer later disconnects,
-		// it will potentially try and reconnect the peer or replace the peer with
-		// a new one so that we always maintain a fixed number of outbound peers.
 		return
 	}
+}
+
+// ConnectPeer connects either an INBOUND or OUTBOUND peer. If Conn == nil,
+// then we will set up an OUTBOUND peer. Otherwise we will use the Conn to
+// create an INBOUND peer. If the connection is OUTBOUND and the persistentAddr
+// is set, then we will connect only to that addr. Otherwise, we will use
+// the addrmgr to randomly select addrs and create OUTBOUND connections
+// with them until we find a worthy peer.
+func (cmgr *ConnectionManager) ConnectPeer(conn net.Conn, isOutbound bool, isPersistent bool) error {
+	// At this point Conn is set so create a peer object to do
+	// a version negotiation.
+	ipStr := conn.RemoteAddr().String()
+	cmgr.mtxPeerMaps.RLock()
+	if cmgr.disconnectedIPs[ipStr] {
+		glog.V(2).Infof("ConnectionManager.ConnectPeer: Peer %s is disconnected. "+
+			"Stopping.", ipStr)
+		return nil
+	}
+	cmgr.mtxPeerMaps.RUnlock()
+
+	na, err := IPToNetAddr(ipStr, cmgr.AddrMgr, cmgr.params)
+	if err != nil {
+		return errors.Wrapf(err, "ConnectOutboundConnection: Problem calling ipToNetAddr for addr: (%s)", conn.RemoteAddr().String())
+	}
+
+	id := atomic.AddUint64(&cmgr.peerIndex, 1)
+	peer := NewPeer(id, conn, isOutbound, na, isPersistent,
+		cmgr.stallTimeoutSeconds,
+		cmgr.minFeeRateNanosPerKB,
+		cmgr.params,
+		cmgr.srv.incomingMessages, cmgr, cmgr.srv, cmgr.SyncType,
+		cmgr.newPeerChan, cmgr.donePeerChan)
+
+	peer.NegotiateVersion(cmgr.params.VersionNegotiationTimeout)
+	return nil
 }
 
 func (cmgr *ConnectionManager) _initiateOutboundConnections() {
@@ -489,15 +515,7 @@ func (cmgr *ConnectionManager) _initiateOutboundConnections() {
 		// are persistent in the sense that if we disconnect from one, we will
 		// try to reconnect to the same one.
 		for _, connectIp := range cmgr.connectIps {
-			ipNetAddr, err := IPToNetAddr(connectIp, cmgr.AddrMgr, cmgr.params)
-			if err != nil {
-				glog.Error(errors.Errorf("Couldn't connect to IP %v: %v", connectIp, err))
-				continue
-			}
-
-			go func(na *wire.NetAddress) {
-				cmgr.ConnectPeer(nil, na)
-			}(ipNetAddr)
+			cmgr.CreateOutboundConnection(connectIp)
 		}
 		return
 	}
@@ -511,7 +529,7 @@ func (cmgr *ConnectionManager) _initiateOutboundConnections() {
 	// connections. I had this as the logic before but removed it because it caused
 	// contention of the AddrMgr's lock.
 	for ii := 0; ii < int(cmgr.targetOutboundPeers); ii++ {
-		go cmgr.ConnectPeer(nil, nil)
+		go cmgr._createOutboundConnection(nil)
 	}
 }
 
@@ -609,7 +627,12 @@ func (cmgr *ConnectionManager) _handleInboundConnections() {
 					continue
 				}
 
-				go cmgr.ConnectPeer(conn, nil)
+				if err := cmgr.ConnectPeer(conn, false, false); err != nil {
+					glog.Errorf("_handleInboundConnections: Problem connecting "+
+						"to peer %v: %v", conn.RemoteAddr().String(), err)
+					conn.Close()
+					continue
+				}
 			}
 		}(outerListener)
 	}
@@ -700,10 +723,26 @@ func (cmgr *ConnectionManager) addPeer(pp *Peer) {
 	}
 
 	peerList[pp.ID] = pp
+	cmgr.connectedPeers[pp.ID] = pp
+	cmgr.connectedPeersByIp[pp.IP()] = pp
+	cmgr.connectionAttemptsByIP[pp.IP()] = false
+	delete(cmgr.disconnectedIPs, pp.IP())
+}
+
+func (cmgr *ConnectionManager) DisconnectPeer(ipAddr string) {
+	cmgr.mtxPeerMaps.Lock()
+	peer, ok := cmgr.connectedPeersByIp[ipAddr]
+	if !ok {
+		cmgr.mtxPeerMaps.Unlock()
+		return
+	}
+	cmgr.disconnectedIPs[peer.IP()] = true
+	cmgr.mtxPeerMaps.Unlock()
+	peer.Disconnect()
 }
 
 // Update our data structures to remove this peer.
-func (cmgr *ConnectionManager) RemovePeer(pp *Peer) {
+func (cmgr *ConnectionManager) removePeer(pp *Peer) {
 	// Acquire the mtxPeerMaps lock for writing.
 	cmgr.mtxPeerMaps.Lock()
 	defer cmgr.mtxPeerMaps.Unlock()
@@ -741,6 +780,9 @@ func (cmgr *ConnectionManager) RemovePeer(pp *Peer) {
 
 	// Remove the peer from our data structure.
 	delete(peerList, pp.ID)
+	delete(cmgr.connectedPeers, pp.ID)
+	delete(cmgr.connectedPeersByIp, pp.IP())
+	delete(cmgr.connectionAttemptsByIP, pp.IP())
 }
 
 func (cmgr *ConnectionManager) _maybeReplacePeer(pp *Peer) {
@@ -754,7 +796,7 @@ func (cmgr *ConnectionManager) _maybeReplacePeer(pp *Peer) {
 		if !pp.isPersistent {
 			na = nil
 		}
-		go cmgr.ConnectPeer(nil, na)
+		go cmgr._createOutboundConnection(na)
 	}
 }
 
@@ -841,6 +883,17 @@ func (cmgr *ConnectionManager) Start() {
 			{
 				// We have successfully connected to a peer and it passed its version
 				// negotiation.
+				if cmgr.disconnectedIPs[pp.IP()] {
+					glog.V(1).Infof("ConnectionManager: Dropping peer (ip= %s) because it was "+
+						"previously disconnected.", pp.IP())
+					pp.Conn.Close()
+					continue
+				}
+
+				// Mmark the address as good in the addrmgr.
+				if pp.IsOutbound() && !pp.isPersistent {
+					cmgr.AddrMgr.Good(pp.NetAddress())
+				}
 
 				// if this is a non-persistent outbound peer and we already have enough
 				// outbound peers, then don't bother adding this one.
@@ -909,7 +962,7 @@ func (cmgr *ConnectionManager) Start() {
 
 				if !pp.PeerManuallyRemovedFromConnectionManager {
 					// Remove the peer from our data structures.
-					cmgr.RemovePeer(pp)
+					cmgr.removePeer(pp)
 
 					// Potentially replace the peer. For example, if the Peer was an outbound Peer
 					// then we want to find a new peer in order to maintain our TargetOutboundPeers.
