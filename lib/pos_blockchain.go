@@ -765,9 +765,8 @@ func (bc *Blockchain) commitBlock(blockHash *BlockHash) error {
 		// Write the utxo operations for this block to the db so we can have the
 		// ability to roll it back in the future.
 		if innerErr := PutUtxoOperationsForBlockWithTxn(txn, bc.snapshot, uint64(blockNode.Height), blockNode.Hash, utxoOpsForBlock); innerErr != nil {
-			return errors.Wrapf(innerErr, "commitBlock: Problem writing utxo operations to db on simple add to tip")
+			return errors.Wrapf(innerErr, "ProcessBlock: Problem writing utxo operations to db on simple add to tip")
 		}
-
 		return nil
 	})
 	if err != nil {
