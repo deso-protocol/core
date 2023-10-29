@@ -111,13 +111,14 @@ func (bridge *ConnectionBridge) createInboundConnection(node *cmd.Node) *lib.Pee
 	}
 
 	// This channel is redundant in our setting.
-	messagesFromPeer := make(chan *lib.ServerMessage)
+	messagesFromPeer := make(chan *lib.ServerMessage, 100)
+	newPeerChan := make(chan *lib.Peer, 100)
+	donePeerChan := make(chan *lib.Peer, 100)
 	// Because it is an inbound Peer of the node, it is simultaneously a "fake" outbound Peer of the bridge.
 	// Hence, we will mark the _isOutbound parameter as "true" in NewPeer.
-	peer := lib.NewPeer(conn, true, netAddress, true,
-		10000, 0, &lib.DeSoMainnetParams,
-		messagesFromPeer, nil, nil, lib.NodeSyncTypeAny)
-	peer.ID = uint64(lib.RandInt64(math.MaxInt64))
+	peer := lib.NewPeer(uint64(lib.RandInt64(math.MaxInt64)), conn, true, netAddress, true,
+		10000, 0, &lib.DeSoMainnetParams, messagesFromPeer, nil,
+		nil, lib.NodeSyncTypeAny, newPeerChan, donePeerChan)
 	return peer
 }
 
@@ -141,19 +142,21 @@ func (bridge *ConnectionBridge) createOutboundConnection(node *cmd.Node, otherNo
 
 		na, err := lib.IPToNetAddr(conn.RemoteAddr().String(), otherNode.Server.GetConnectionManager().AddrMgr,
 			otherNode.Params)
-		messagesFromPeer := make(chan *lib.ServerMessage)
-		peer := lib.NewPeer(conn, false, na, false,
+		messagesFromPeer := make(chan *lib.ServerMessage, 100)
+		newPeerChan := make(chan *lib.Peer, 100)
+		donePeerChan := make(chan *lib.Peer, 100)
+		peer := lib.NewPeer(uint64(lib.RandInt64(math.MaxInt64)), conn, false, na, false,
 			10000, 0, bridge.nodeB.Params,
-			messagesFromPeer, nil, nil, lib.NodeSyncTypeAny)
-		peer.ID = uint64(lib.RandInt64(math.MaxInt64))
+			messagesFromPeer, nil, nil, lib.NodeSyncTypeAny,
+			newPeerChan, donePeerChan)
 		bridge.newPeerChan <- peer
 		//}
 	}(ll)
 
 	// Make the provided node to make an outbound connection to our listener.
-	netAddress, _ := lib.IPToNetAddr(ll.Addr().String(), addrmgr.New("", net.LookupIP), &lib.DeSoMainnetParams)
-	fmt.Println("createOutboundConnection: IP:", netAddress.IP, "Port:", netAddress.Port)
-	go node.Server.GetConnectionManager().ConnectPeer(nil, netAddress)
+	//netAddress, _ := lib.IPToNetAddr(ll.Addr().String(), addrmgr.New("", net.LookupIP), &lib.DeSoMainnetParams)
+	//fmt.Println("createOutboundConnection: IP:", netAddress.IP, "Port:", netAddress.Port)
+	go node.Server.GetConnectionManager().CreateOutboundConnection(ll.Addr().String())
 }
 
 // getVersionMessage simulates a version message that the provided node would have sent.

@@ -29,9 +29,7 @@ func TestRegtestMiner(t *testing.T) {
 
 	// wait for node1 to sync blocks
 	mineHeight := uint32(40)
-	listener := make(chan bool)
-	listenForBlockHeight(t, node1, mineHeight, listener)
-	<-listener
+	<-listenForBlockHeight(node1, mineHeight)
 
 	node1.Stop()
 }
