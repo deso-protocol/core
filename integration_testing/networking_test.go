@@ -27,7 +27,13 @@ func TestSimpleConnectDisconnect(t *testing.T) {
 	node1.Server.GetConnectionManager().SetTargetOutboundPeers(0)
 
 	<-listenForBlockHeight(node1, 50)
-	node1.Server.CloseConnection("deso-seed-2.io:17000")
-	time.Sleep(15 * time.Second)
+	node1.Server.CloseConnection(1)
+	time.Sleep(3 * time.Second)
+	peers := node1.Server.GetConnectionManager().GetAllPeers()
+	for _, peer := range peers {
+		if peer.ID == 1 {
+			t.Fatalf("Should have disconnected from peer 1")
+		}
+	}
 	node1.Stop()
 }

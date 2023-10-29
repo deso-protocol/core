@@ -63,9 +63,6 @@ type Peer struct {
 	stallTimeoutSeconds uint64
 	Params              *DeSoParams
 	MessageChan         chan *ServerMessage
-	// A hack to make it so that we can allow an API endpoint to manually
-	// delete a peer.
-	PeerManuallyRemovedFromConnectionManager bool
 
 	// In order to complete a version negotiation successfully, the peer must
 	// reply to the initial version message we send them with a verack message

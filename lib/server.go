@@ -2447,9 +2447,9 @@ func (srv *Server) CreateOutboundConnection(ipAddr string) {
 	srv.cmgr.CreateOutboundConnection(ipAddr)
 }
 
-func (srv *Server) CloseConnection(ipAddr string) {
-	glog.V(2).Infof("Server.CloseConnection: Closing connection to peer (ip= %s)", ipAddr)
-	srv.cmgr.DisconnectPeer(ipAddr)
+func (srv *Server) CloseConnection(peerId uint64) {
+	glog.V(2).Infof("Server.CloseConnection: Closing connection to peer (id= %v)", peerId)
+	srv.cmgr.DisconnectPeer(peerId)
 }
 
 func (srv *Server) Stop() {
