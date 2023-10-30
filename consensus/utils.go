@@ -13,8 +13,8 @@ import (
 	"golang.org/x/crypto/sha3"
 )
 
-// Given a QC and a sorted validator set, this function returns true if the QC contains a valid
-// super-majority of signatures from the validator set for the QC's (View, BlockHash) pair.
+// Given a QC and a sorted validator list, this function returns true if the QC contains a valid
+// super-majority of signatures from the validator list for the QC's (View, BlockHash) pair.
 func IsValidSuperMajorityQuorumCertificate(qc QuorumCertificate, validators []Validator) bool {
 	if !isProperlyFormedQC(qc) || !isProperlyFormedValidatorSet(validators) {
 		return false
@@ -79,6 +79,10 @@ func GetTimeoutSignaturePayload(view uint64, highQCView uint64) [32]byte {
 	return sha3.Sum256(append(viewBytes, highQCViewBytes...))
 }
 
+func isProperlyFormedBlockWithValidatorList(block BlockWithValidatorList) bool {
+	return isProperlyFormedBlock(block.Block) && isProperlyFormedValidatorSet(block.ValidatorList)
+}
+
 // This function checks if the block is properly formed. These are all surface level checks that
 // ensure that critical fields in the block are not nil so that the code in this package does not
 // panic.
@@ -107,7 +111,7 @@ func isProperlyFormedBlock(block Block) bool {
 }
 
 func isProperlyFormedValidatorSet(validators []Validator) bool {
-	// The validator set must be non-empty
+	// The validator list must be non-empty
 	if len(validators) == 0 {
 		return false
 	}
@@ -263,7 +267,11 @@ func isEqualBlockHashes(hash1 BlockHash, hash2 BlockHash) bool {
 	return bytes.Equal(hash1Value[:], hash2Value[:])
 }
 
-func createDummyValidatorSet() []Validator {
+func validatorToPublicKeyString(validator Validator) string {
+	return validator.GetPublicKey().ToString()
+}
+
+func createDummyValidatorList() []Validator {
 	validators := []*validator{
 		{
 			publicKey:   createDummyBLSPublicKey(),

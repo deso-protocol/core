@@ -1,5 +1,9 @@
 package collections
 
+func All[T any](slice []T, predicate func(T) bool) bool {
+	return !Any(slice, predicate)
+}
+
 func Any[T any](slice []T, predicate func(T) bool) bool {
 	for _, val := range slice {
 		if predicate(val) {

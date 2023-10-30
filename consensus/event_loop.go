@@ -3,6 +3,7 @@ package consensus
 import (
 	"time"
 
+	"github.com/golang/glog"
 	"github.com/holiman/uint256"
 	"github.com/pkg/errors"
 
@@ -20,11 +21,11 @@ func NewFastHotStuffEventLoop() *FastHotStuffEventLoop {
 }
 
 // Initializes the consensus event loop with the latest known valid block in the blockchain, and
-// the validator set for the next block height. The functions expects the following for the input
+// the validator list for the next block height. The functions expects the following for the input
 // params:
 //   - crankTimerInterval: crank timer interval duration must be > 0
 //   - timeoutBaseDuration: timeout base duration must be > 0
-//   - tip: the current tip of the blockchain, with the validator set at that block height. This may
+//   - tip: the current tip of the blockchain, with the validator list at that block height. This may
 //     be a committed or uncommitted block.
 //   - safeBlocks: an unordered slice of blocks including the committed tip, the uncommitted tip,
 //     all ancestors of the uncommitted tip that are safe to extend from, and all blocks from forks
@@ -36,8 +37,8 @@ func NewFastHotStuffEventLoop() *FastHotStuffEventLoop {
 func (fc *FastHotStuffEventLoop) Init(
 	crankTimerInterval time.Duration,
 	timeoutBaseDuration time.Duration,
-	tip BlockWithValidators,
-	safeBlocks []BlockWithValidators,
+	tip BlockWithValidatorList,
+	safeBlocks []BlockWithValidatorList,
 ) error {
 	// Grab the event loop's lock
 	fc.lock.Lock()
@@ -56,7 +57,7 @@ func (fc *FastHotStuffEventLoop) Init(
 		return errors.New("FastHotStuffEventLoop.Init: Timeout base duration must be > 0")
 	}
 
-	// Validate the safe blocks and validator sets, and store them
+	// Validate the safe blocks and validator lists, and store them
 	if err := fc.storeBlocks(tip, safeBlocks); err != nil {
 		return errors.Wrap(err, "FastHotStuffEventLoop.Init: ")
 	}
@@ -69,8 +70,8 @@ func (fc *FastHotStuffEventLoop) Init(
 	fc.hasConstructedQCInCurrentView = false
 
 	// Reset all internal data structures for votes and timeouts
-	fc.votesSeen = make(map[[32]byte]map[string]VoteMessage)
-	fc.timeoutsSeen = make(map[uint64]map[string]TimeoutMessage)
+	fc.votesSeenByBlockHash = make(map[BlockHashValue]map[string]VoteMessage)
+	fc.timeoutsSeenByView = make(map[uint64]map[string]TimeoutMessage)
 
 	// Reset the external channel used for signaling
 	fc.Events = make(chan *FastHotStuffEvent, signalChannelBufferSize)
@@ -92,7 +93,7 @@ func (fc *FastHotStuffEventLoop) AdvanceViewOnTimeout() (uint64, error) {
 	fc.lock.Lock()
 	defer fc.lock.Unlock()
 
-	// Ensure the event loop is running. This guarantees that the chain tip and validator set
+	// Ensure the event loop is running. This guarantees that the chain tip and validator list
 	// have already been set.
 	if fc.status != eventLoopStatusRunning {
 		return 0, errors.New("FastHotStuffEventLoop.AdvanceViewOnTimeout: Event loop is not running")
@@ -120,12 +121,12 @@ func (fc *FastHotStuffEventLoop) AdvanceViewOnTimeout() (uint64, error) {
 // timer.
 //
 // Expected params:
-//   - tip: the current uncommitted tip of the blockchain, with the validator set at that block height
+//   - tip: the current uncommitted tip of the blockchain, with the validator list at that block height
 //   - safeBlocks: an unordered slice of blocks including the committed tip, the uncommitted tip,
 //     all ancestors of the uncommitted tip that are safe to extend from, and all blocks from forks
 //     that are safe to extend from. This function does not validate the collection of blocks. It
 //     expects the server to know and decide what blocks are safe to extend from.
-func (fc *FastHotStuffEventLoop) ProcessTipBlock(tip BlockWithValidators, safeBlocks []BlockWithValidators) error {
+func (fc *FastHotStuffEventLoop) ProcessTipBlock(tip BlockWithValidatorList, safeBlocks []BlockWithValidatorList) error {
 	// Grab the event loop's lock
 	fc.lock.Lock()
 	defer fc.lock.Unlock()
@@ -135,7 +136,7 @@ func (fc *FastHotStuffEventLoop) ProcessTipBlock(tip BlockWithValidators, safeBl
 		return errors.New("FastHotStuffEventLoop.ProcessTipBlock: Event loop is not running")
 	}
 
-	// Validate the safe blocks and validator sets, and store them
+	// Validate the safe blocks and validator lists, and store them
 	if err := fc.storeBlocks(tip, safeBlocks); err != nil {
 		return errors.Wrap(err, "FastHotStuffEventLoop.ProcessTipBlock: ")
 	}
@@ -165,41 +166,35 @@ func (fc *FastHotStuffEventLoop) ProcessTipBlock(tip BlockWithValidators, safeBl
 	return nil
 }
 
-// setSafeBlocks is a helper function that validates the provided blocks, validator sets, and stores them.
+// storeBlocks is a helper function that validates the provided blocks, validator lists, and stores them.
 // It must be called while holding the event loop's lock.
-func (fc *FastHotStuffEventLoop) storeBlocks(tip BlockWithValidators, safeBlocks []BlockWithValidators) error {
-	// Do a basic integrity check on the tip block and validator set
-	if !isProperlyFormedBlock(tip.Block) || !isProperlyFormedValidatorSet(tip.Validators) {
-		return errors.New("Invalid tip block or validator set")
+func (fc *FastHotStuffEventLoop) storeBlocks(tip BlockWithValidatorList, safeBlocks []BlockWithValidatorList) error {
+	// Do a basic integrity check on the tip block and validator list
+	if !isProperlyFormedBlockWithValidatorList(tip) {
+		return errors.New("Invalid tip block or validator list")
 	}
 
-	// Do a basic integrity check on the blocks and validator sets
-	hasMalformedInput := collections.Any(safeBlocks, func(block BlockWithValidators) bool {
-		return !isProperlyFormedBlock(block.Block) || !isProperlyFormedValidatorSet(block.Validators)
-	})
+	// Do a basic integrity check on the blocks and validator lists
+	hasMalformedInput := collections.All(safeBlocks, isProperlyFormedBlockWithValidatorList)
 
 	// There must be at least one block
 	if len(safeBlocks) == 0 || hasMalformedInput {
-		return errors.New("Invalid safe blocks or validator sets")
+		return errors.New("Invalid safe blocks or validator lists")
 	}
 
-	// Store the tip block and validator set
+	// Store the tip block and validator list
 	fc.tip = blockWithValidatorLookup{
-		block:        tip.Block,
-		validatorSet: tip.Validators,
-		validatorLookup: collections.ToMap(tip.Validators, func(validator Validator) string {
-			return validator.GetPublicKey().ToString()
-		}),
+		block:           tip.Block,
+		validatorList:   tip.ValidatorList,
+		validatorLookup: collections.ToMap(tip.ValidatorList, validatorToPublicKeyString),
 	}
 
-	// Store the blocks and validator sets
-	fc.safeBlocks = collections.Transform(safeBlocks, func(block BlockWithValidators) blockWithValidatorLookup {
+	// Store the blocks and validator lists
+	fc.safeBlocks = collections.Transform(safeBlocks, func(block BlockWithValidatorList) blockWithValidatorLookup {
 		return blockWithValidatorLookup{
-			block:        block.Block,
-			validatorSet: block.Validators,
-			validatorLookup: collections.ToMap(block.Validators, func(validator Validator) string {
-				return validator.GetPublicKey().ToString()
-			}),
+			block:           block.Block,
+			validatorList:   block.ValidatorList,
+			validatorLookup: collections.ToMap(block.ValidatorList, validatorToPublicKeyString),
 		}
 	})
 
@@ -222,7 +217,7 @@ func (fc *FastHotStuffEventLoop) ProcessValidatorVote(vote VoteMessage) error {
 	fc.lock.Lock()
 	defer fc.lock.Unlock()
 
-	// Ensure the event loop is running. This guarantees that the chain tip and validator set
+	// Ensure the event loop is running. This guarantees that the chain tip and validator list
 	// have already been set.
 	if fc.status != eventLoopStatusRunning {
 		return errors.New("FastHotStuffEventLoop.ProcessValidatorVote: Event loop is not running")
@@ -307,7 +302,7 @@ func (fc *FastHotStuffEventLoop) ProcessValidatorTimeout(timeout TimeoutMessage)
 	fc.lock.Lock()
 	defer fc.lock.Unlock()
 
-	// Ensure the event loop is running. This guarantees that the chain tip and validator set
+	// Ensure the event loop is running. This guarantees that the chain tip and validator list
 	// have already been set.
 	if fc.status != eventLoopStatusRunning {
 		return errors.New("FastHotStuffEventLoop.ProcessValidatorTimeout: Event loop is not running")
@@ -512,14 +507,14 @@ func (fc *FastHotStuffEventLoop) tryConstructVoteQCInCurrentView() *FastHotStuff
 		return nil
 	}
 
-	// Fetch the validator set at the tip.
-	validatorSet := fc.tip.validatorSet
+	// Fetch the validator list at the tip.
+	validatorList := fc.tip.validatorList
 
 	// Compute the chain tip's signature payload.
 	voteSignaturePayload := GetVoteSignaturePayload(tipBlock.GetView(), tipBlock.GetBlockHash())
 
 	// Fetch the validator votes for the tip block.
-	votesByValidator := fc.votesSeen[voteSignaturePayload]
+	votesByValidator := fc.votesSeenByBlockHash[voteSignaturePayload]
 
 	// Compute the total stake and total stake with votes
 	totalStake := uint256.NewInt()
@@ -529,9 +524,9 @@ func (fc *FastHotStuffEventLoop) tryConstructVoteQCInCurrentView() *FastHotStuff
 	signersList := bitset.NewBitset()
 	signatures := []*bls.Signature{}
 
-	// Iterate through the entire validator set and check if each one has voted for the tip block. Track
+	// Iterate through the entire validator list and check if each one has voted for the tip block. Track
 	// all voters and their stakes.
-	for ii, validator := range validatorSet {
+	for ii, validator := range validatorList {
 		totalStake = uint256.NewInt().Add(totalStake, validator.GetStakeAmount())
 
 		// Skip the validator if it hasn't voted for the the block
@@ -545,7 +540,7 @@ func (fc *FastHotStuffEventLoop) tryConstructVoteQCInCurrentView() *FastHotStuff
 			continue
 		}
 
-		// Track the vote's signature, stake, and place in the validator set
+		// Track the vote's signature, stake, and place in the validator list
 		totalVotingStake = uint256.NewInt().Add(totalVotingStake, validator.GetStakeAmount())
 		signersList.Set(ii, true)
 		signatures = append(signatures, vote.GetSignature())
@@ -560,6 +555,8 @@ func (fc *FastHotStuffEventLoop) tryConstructVoteQCInCurrentView() *FastHotStuff
 	// aggregate the signatures. This should never fail.
 	aggregateSignature, err := bls.AggregateSignatures(signatures)
 	if err != nil {
+		// This should never happen. If it does, then we log an error and return.
+		glog.Errorf("FastHotStuffEventLoop.tryConstructVoteQCInCurrentView: Failed to aggregate signatures: %v", err)
 		return nil
 	}
 
@@ -593,7 +590,7 @@ func (fc *FastHotStuffEventLoop) tryConstructTimeoutQCInCurrentView() *FastHotSt
 	// Fetch all timeouts for the previous view. All timeout messages for a view are aggregated and
 	// proposed in the next view. So if we want to propose a timeout QC in the current view, we need
 	// to aggregate timeouts from the previous one.
-	timeoutsByValidator := fc.timeoutsSeen[fc.currentView-1]
+	timeoutsByValidator := fc.timeoutsSeenByView[fc.currentView-1]
 
 	// Tracks the highQC from validators as we go along.
 	var validatorsHighQC QuorumCertificate
@@ -626,9 +623,9 @@ func (fc *FastHotStuffEventLoop) tryConstructTimeoutQCInCurrentView() *FastHotSt
 		return nil
 	}
 
-	// Fetch the validator set for the block height of the high QC. This lookup is guaranteed to succeed
+	// Fetch the validator list for the block height of the high QC. This lookup is guaranteed to succeed
 	// because it succeeded above.
-	ok, safeBlock, validatorSet, _ := fc.fetchSafeBlockInfo(validatorsHighQC.GetBlockHash())
+	ok, safeBlock, validatorList, _ := fc.fetchSafeBlockInfo(validatorsHighQC.GetBlockHash())
 	if !ok {
 		return nil
 	}
@@ -638,18 +635,18 @@ func (fc *FastHotStuffEventLoop) tryConstructTimeoutQCInCurrentView() *FastHotSt
 	totalTimedOutStake := uint256.NewInt()
 
 	// Track the high QC view for each validator
-	highQCViews := make([]uint64, len(validatorSet))
+	highQCViews := make([]uint64, len(validatorList))
 
 	// Track the signatures and signers list for validators who timed out
 	signersList := bitset.NewBitset()
 	signatures := []*bls.Signature{}
 
-	// Iterate through the entire validator set and check if each one has timed out for the previous
-	// view. Track all validators who timed out and their stakes. We iterate through the validator set
+	// Iterate through the entire validator list and check if each one has timed out for the previous
+	// view. Track all validators who timed out and their stakes. We iterate through the validator list
 	// here rather than the timeoutsByValidator map because we want to preserve the order of the validator
-	// for the signersList bitset. In practice, the validator set is expected to be <= 1000 in size, so
+	// for the signersList bitset. In practice, the validator list is expected to be <= 1000 in size, so
 	// this loop will be fast.
-	for ii, validator := range validatorSet {
+	for ii, validator := range validatorList {
 		totalStake = uint256.NewInt().Add(totalStake, validator.GetStakeAmount())
 
 		// Skip the validator if it hasn't timed out for the previous view
@@ -739,7 +736,7 @@ func (fc *FastHotStuffEventLoop) onTimeoutScheduledTaskExecuted(timedOutView uin
 // view to determine what is stale. The consensus mechanism will never construct a block with a view
 // that's lower than its current view. Consider the following:
 // - In the event the event update the chain tip, we will vote for that block and the view it was proposed in
-// - In the event we locally time out a view locally, we will send a timeout message for that view
+// - In the event we locally time out a view, we will send a timeout message for that view
 //
 // In both cases, we will never roll back the chain tip, or decrement the current view to construct a
 // conflicting block at that lower view that we have previously voted or timed out on. So we are safe to evict
@@ -755,32 +752,32 @@ func (fc *FastHotStuffEventLoop) onTimeoutScheduledTaskExecuted(timedOutView uin
 // currentView > timeout.GetView() + 1.
 func (fc *FastHotStuffEventLoop) evictStaleVotesAndTimeouts() {
 	// Evict stale vote messages
-	for blockHash, voters := range fc.votesSeen {
+	for blockHash, voters := range fc.votesSeenByBlockHash {
 		for _, vote := range voters {
 			if isStaleView(fc.currentView, vote.GetView()) {
 				// Each block is proposed at a known view, and has an immutable block hash. Votes are signed on the
 				// tuple (blockhash, view). So, if any vote message for the blockhash has a view that satisfies this
 				// condition, then it's guaranteed that all votes for the same block hash have satisfy this condition.
 				// We can safely evict all votes for this block hash.
-				delete(fc.votesSeen, blockHash)
+				delete(fc.votesSeenByBlockHash, blockHash)
 				break
 			}
 		}
 	}
 
 	// Evict stale timeout messages
-	for view := range fc.timeoutsSeen {
+	for view := range fc.timeoutsSeenByView {
 		if isStaleView(fc.currentView, view) {
-			delete(fc.timeoutsSeen, view)
+			delete(fc.timeoutsSeenByView, view)
 		}
 	}
 }
 
 func (fc *FastHotStuffEventLoop) storeVote(signaturePayload [32]byte, vote VoteMessage) {
-	votesForBlockHash, ok := fc.votesSeen[signaturePayload]
+	votesForBlockHash, ok := fc.votesSeenByBlockHash[signaturePayload]
 	if !ok {
 		votesForBlockHash = make(map[string]VoteMessage)
-		fc.votesSeen[signaturePayload] = votesForBlockHash
+		fc.votesSeenByBlockHash[signaturePayload] = votesForBlockHash
 	}
 
 	votesForBlockHash[vote.GetPublicKey().ToString()] = vote
@@ -798,7 +795,7 @@ func (fc *FastHotStuffEventLoop) hasVotedForView(publicKey *bls.PublicKey, view 
 	publicKeyString := publicKey.ToString()
 
 	// Search for the public key's votes across all existing block hashes
-	for _, votesForBlock := range fc.votesSeen {
+	for _, votesForBlock := range fc.votesSeenByBlockHash {
 		vote, ok := votesForBlock[publicKeyString]
 		if ok && vote.GetView() == view {
 			return true
@@ -809,17 +806,17 @@ func (fc *FastHotStuffEventLoop) hasVotedForView(publicKey *bls.PublicKey, view 
 }
 
 func (fc *FastHotStuffEventLoop) storeTimeout(timeout TimeoutMessage) {
-	timeoutsForView, ok := fc.timeoutsSeen[timeout.GetView()]
+	timeoutsForView, ok := fc.timeoutsSeenByView[timeout.GetView()]
 	if !ok {
 		timeoutsForView = make(map[string]TimeoutMessage)
-		fc.timeoutsSeen[timeout.GetView()] = timeoutsForView
+		fc.timeoutsSeenByView[timeout.GetView()] = timeoutsForView
 	}
 
 	timeoutsForView[timeout.GetPublicKey().ToString()] = timeout
 }
 
 func (fc *FastHotStuffEventLoop) hasTimedOutForView(publicKey *bls.PublicKey, view uint64) bool {
-	timeoutsForView, ok := fc.timeoutsSeen[view]
+	timeoutsForView, ok := fc.timeoutsSeenByView[view]
 	if !ok {
 		return false
 	}
@@ -833,7 +830,7 @@ func (fc *FastHotStuffEventLoop) hasTimedOutForView(publicKey *bls.PublicKey, vi
 func (fc *FastHotStuffEventLoop) fetchSafeBlockInfo(blockHash BlockHash) (
 	_isSafeBlock bool,
 	_safeBlock Block,
-	_validatorSet []Validator,
+	_validatorList []Validator,
 	_validatorLookup map[string]Validator,
 ) {
 	// A linear search here is fine. The safeBlocks slice is expected to be extremely small as it represents the
@@ -842,7 +839,7 @@ func (fc *FastHotStuffEventLoop) fetchSafeBlockInfo(blockHash BlockHash) (
 	// timeout -> block -> timeout -> block,... it can still be expected to have < 10 blocks.
 	for _, block := range fc.safeBlocks {
 		if isEqualBlockHashes(block.block.GetBlockHash(), blockHash) {
-			return true, block.block, block.validatorSet, block.validatorLookup
+			return true, block.block, block.validatorList, block.validatorLookup
 		}
 	}
 
