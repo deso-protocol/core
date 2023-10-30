@@ -190,7 +190,7 @@ func TestComputeMaxTPS(t *testing.T) {
 		_, _ = newParams, newDB
 		timeStart := time.Now()
 		for _, blockToConnect := range blocksMined {
-			_, _, _, err := newChain.ProcessBlock(blockToConnect, true /*verifySignatures*/)
+			_, _, err := newChain.ProcessBlock(blockToConnect, true /*verifySignatures*/)
 			require.NoError(err)
 		}
 		elapsedSecs := (time.Since(timeStart)).Seconds()
@@ -237,7 +237,7 @@ func TestConnectBlocksLoadTest(t *testing.T) {
 		pprof.StartCPUProfile(ff)
 		timeStart := time.Now()
 		for _, blockToConnect := range blocksMined {
-			_, _, _, err := newChain.ProcessBlock(blockToConnect, false /*verifySignatures*/)
+			_, _, err := newChain.ProcessBlock(blockToConnect, false /*verifySignatures*/)
 			require.NoError(err)
 		}
 		elapsedSecs := (time.Since(timeStart)).Seconds()

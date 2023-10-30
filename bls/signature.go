@@ -251,10 +251,6 @@ func (publicKey *PublicKey) Copy() *PublicKey {
 	}
 }
 
-func (publicKey *PublicKey) IsEmpty() bool {
-	return publicKey == nil || publicKey.flowPublicKey == nil
-}
-
 //
 // TYPES: Signature
 //

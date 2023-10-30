@@ -55,10 +55,6 @@ func DecodeRandomSeedHash(rr io.Reader) (*RandomSeedHash, error) {
 	return (&RandomSeedHash{}).FromBytes(randomSeedHashBytes)
 }
 
-func (randomSeedHash *RandomSeedHash) isEmpty() bool {
-	return randomSeedHash == nil || randomSeedHash.Eq(&RandomSeedHash{})
-}
-
 //
 // UTXO VIEW UTILS
 //
