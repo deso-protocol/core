@@ -321,85 +321,6 @@ func TestValidateBlockHeight(t *testing.T) {
 	require.Equal(t, err, RuleErrorMissingParentBlock)
 }
 
-func TestUpsertBlockAndBlockNodeToDB(t *testing.T) {
-	bc, _, _ := NewTestBlockchain(t)
-	GlobalDeSoParams.ForkHeights.ProofOfStake2ConsensusCutoverBlockHeight = 0
-	resetGlobalDeSoParams := func() {
-		GlobalDeSoParams.ForkHeights.ProofOfStake2ConsensusCutoverBlockHeight = math.MaxUint32
-	}
-	t.Cleanup(resetGlobalDeSoParams)
-	hash := NewBlockHash(RandomBytes(32))
-	genesisBlockNode := NewBlockNode(nil, hash, 1, nil, nil, &MsgDeSoHeader{
-		Version:                      2,
-		Height:                       1,
-		ProposedInView:               1,
-		ValidatorsVoteQC:             nil,
-		ValidatorsTimeoutAggregateQC: nil,
-	}, StatusBlockStored|StatusBlockValidated)
-	_ = genesisBlockNode
-	derefedHash := *hash
-	bc.blockIndexByHash = map[BlockHash]*BlockNode{
-		derefedHash: genesisBlockNode,
-	}
-	proposerVotingPublicKey := _generateRandomBLSPrivateKey(t)
-	dummySig, err := proposerVotingPublicKey.Sign(RandomBytes(32))
-	require.NoError(t, err)
-	block := &MsgDeSoBlock{
-		Header: &MsgDeSoHeader{
-			Version:                 2,
-			PrevBlockHash:           hash,
-			TstampNanoSecs:          uint64(time.Now().UnixNano()),
-			Height:                  2,
-			ProposerPublicKey:       NewPublicKey(RandomBytes(33)),
-			ProposerVotingPublicKey: proposerVotingPublicKey.PublicKey(),
-			ProposerRandomSeedHash:  &RandomSeedHash{},
-			ProposedInView:          1,
-			ValidatorsTimeoutAggregateQC: &TimeoutAggregateQuorumCertificate{
-				TimedOutView: 2,
-				ValidatorsHighQC: &QuorumCertificate{
-					BlockHash:      NewBlockHash(RandomBytes(32)),
-					ProposedInView: 1,
-					ValidatorsVoteAggregatedSignature: &AggregatedBLSSignature{
-						SignersList: bitset.NewBitset(),
-						Signature:   dummySig,
-					},
-				},
-				ValidatorsTimeoutHighQCViews: []uint64{28934},
-				ValidatorsTimeoutAggregatedSignature: &AggregatedBLSSignature{
-					SignersList: bitset.NewBitset(),
-					Signature:   dummySig,
-				},
-			},
-			ProposerVotePartialSignature: dummySig,
-			TxnConnectStatusByIndexHash:  NewBlockHash(bitset.NewBitset().ToBytes()),
-		},
-		Txns: []*MsgDeSoTxn{
-			{
-				TxnMeta: &BlockRewardMetadataa{},
-			},
-		},
-		TxnConnectStatusByIndex: bitset.NewBitset(),
-	}
-	err = bc.storeCommittedBlockInBlockIndex(block)
-	require.Nil(t, err)
-	newHash, err := block.Hash()
-	require.NoError(t, err)
-	// Check the block index
-	blockNode, exists := bc.blockIndexByHash[*newHash]
-	require.True(t, exists)
-	require.True(t, bytes.Equal(blockNode.Hash[:], newHash[:]))
-	require.True(t, blockNode.IsStored())
-
-	// Check the DB for the block.
-	uncommittedBlock, err := GetBlock(newHash, bc.db, bc.snapshot)
-	require.NoError(t, err)
-	uncommittedBytes, err := uncommittedBlock.ToBytes(false)
-	require.NoError(t, err)
-	origBlockBytes, err := block.ToBytes(false)
-	require.NoError(t, err)
-	require.True(t, bytes.Equal(uncommittedBytes, origBlockBytes))
-}
-
 func TestValidateBlockView(t *testing.T) {
 	bc, _, _ := NewTestBlockchain(t)
 	hash1 := NewBlockHash(RandomBytes(32))
@@ -485,7 +406,7 @@ func TestValidateBlockView(t *testing.T) {
 	require.Nil(t, err)
 }
 
-func TestAddBlockToBlockIndexAndUncommittedBlocks(t *testing.T) {
+func TestUpsertBlockAndBlockNodeToDB(t *testing.T) {
 	bc, _, _ := NewTestBlockchain(t)
 	GlobalDeSoParams.ForkHeights.ProofOfStake2ConsensusCutoverBlockHeight = 0
 	resetGlobalDeSoParams := func() {
@@ -560,12 +481,18 @@ func TestAddBlockToBlockIndexAndUncommittedBlocks(t *testing.T) {
 	require.NoError(t, err)
 	newHash, err := block.Hash()
 	require.NoError(t, err)
-	// Check the block index
+	// Check the block index by hash
 	blockNode, exists := bc.blockIndexByHash[*newHash]
 	require.True(t, exists)
-	require.True(t, bytes.Equal(blockNode.Hash[:], newHash[:]))
+	require.True(t, blockNode.Hash.IsEqual(newHash))
 	require.Equal(t, blockNode.Height, uint32(2))
 	require.True(t, blockNode.IsStored())
+	require.False(t, blockNode.IsValidated())
+	// Check the block index by height
+	byHeightBlockNodes, exists := bc.blockIndexByHeight[2]
+	require.True(t, exists)
+	require.Len(t, byHeightBlockNodes, 1)
+	require.True(t, byHeightBlockNodes[0].Hash.IsEqual(newHash))
 	// Check the DB for the block
 	uncommittedBlock, err := GetBlock(newHash, bc.db, bc.snapshot)
 	require.NoError(t, err)
@@ -574,6 +501,46 @@ func TestAddBlockToBlockIndexAndUncommittedBlocks(t *testing.T) {
 	origBlockBytes, err := block.ToBytes(false)
 	require.NoError(t, err)
 	require.True(t, bytes.Equal(uncommittedBytes, origBlockBytes))
+	// Okay now we update the status of the block to include validated.
+	err = bc.storeValidatedBlockInBlockIndex(block)
+	require.NoError(t, err)
+	blockNode, exists = bc.blockIndexByHash[*newHash]
+	require.True(t, exists)
+	require.True(t, blockNode.Hash.IsEqual(newHash))
+	require.Equal(t, blockNode.Height, uint32(2))
+	require.True(t, blockNode.IsStored())
+	require.True(t, blockNode.IsValidated())
+	// Check the block index by height.
+	byHeightBlockNodes, exists = bc.blockIndexByHeight[2]
+	require.True(t, exists)
+	require.Len(t, byHeightBlockNodes, 1)
+	require.True(t, byHeightBlockNodes[0].Hash.IsEqual(newHash))
+	require.True(t, byHeightBlockNodes[0].IsValidated())
+
+	// Okay now we'll put in another block at the same height.
+	// Update the random seed hash so we have a new hash for the block.
+	_, err = randomSeedHash.FromBytes(RandomBytes(32))
+	block.Header.ProposerRandomSeedHash = randomSeedHash
+	updatedBlockHash, err := block.Hash()
+	require.NoError(t, err)
+	require.False(t, updatedBlockHash.IsEqual(newHash))
+
+	// Okay now put this new block in there.
+	err = bc.storeBlockInBlockIndex(block)
+	require.NoError(t, err)
+	// Make sure the blockIndexByHash is correct.
+	updatedBlockNode, exists := bc.blockIndexByHash[*updatedBlockHash]
+	require.True(t, exists)
+	require.True(t, updatedBlockNode.Hash.IsEqual(updatedBlockHash))
+	require.Equal(t, updatedBlockNode.Height, uint32(2))
+	require.True(t, updatedBlockNode.IsStored())
+	require.False(t, updatedBlockNode.IsValidated())
+	// Make sure the blockIndexByHeight is correct
+	byHeightBlockNodes, exists = bc.blockIndexByHeight[2]
+	require.True(t, exists)
+	require.Len(t, byHeightBlockNodes, 2)
+	require.True(t, byHeightBlockNodes[0].Hash.IsEqual(newHash))
+	require.True(t, byHeightBlockNodes[1].Hash.IsEqual(updatedBlockHash))
 
 	// If we're missing a field in the header, we should get an error
 	// as we can't compute the hash.
@@ -1743,7 +1710,7 @@ func _generateDummyBlock(testMeta *TestMeta, blockHeight uint64, view uint64, se
 	newBlockHash, err := msgDesoBlock.Hash()
 	require.NoError(testMeta.t, err)
 
-	// Add block to block index and best chain
+	// Add block to block index.
 	err = testMeta.chain.storeValidatedBlockInBlockIndex(msgDesoBlock)
 	require.NoError(testMeta.t, err)
 	_, exists := testMeta.chain.blockIndexByHash[*newBlockHash]
