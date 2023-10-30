@@ -164,6 +164,7 @@ func (bc *Blockchain) processBlockPoS(block *MsgDeSoBlock, currentView uint64, v
 		return false, false, nil, errors.Wrap(err, "processBlockPoS: error committing grandparents: ")
 	}
 
+	// TODO: This should probably happen regardless of whether or not we apply a new tip.
 	// Now that we've processed this block, we check for any orphans that
 	// are children of this block and try to process them.
 	orphansAtNextHeight := bc.blockIndexByHeight[newBlockNode.Height+1]
