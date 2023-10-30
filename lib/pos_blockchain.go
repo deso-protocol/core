@@ -44,8 +44,8 @@ func (bc *Blockchain) processBlockPoS(desoBlock *MsgDeSoBlock, currentView uint6
 		// Step 0: I think we still need to do some basic validation on this block, like
 		// verifying that it's signed by the leader for example to prevent spamming.
 		// I didn't do that.
-		// Step 1: Create a new BlockNode for this block with status STORED. I did this below.
-		// Step 2: Add it to the blockIndex and store it in Badger. Did this below.
+		// Step 1: Create a new BlockNode for this block with status STORED.
+		// Step 2: Add it to the blockIndex and store it in Badger. This is handled by addBlockToBlockIndex
 		// Step 3: We may want to send a signal back to server.go to fetch the PrevBlockHash block
 		// so that we can consistently fix cases where we get hit with orphans. If we did this, then
 		// an unhappy path would look as follows:
@@ -57,8 +57,7 @@ func (bc *Blockchain) processBlockPoS(desoBlock *MsgDeSoBlock, currentView uint6
 		//   connect ancestors)
 
 		// Add to blockIndex with status STORED only.
-		err = bc.storeBlockInBlockIndex(desoBlock)
-		if err != nil {
+		if err = bc.storeBlockInBlockIndex(desoBlock); err != nil {
 			return false, false, missingBlockHashes, errors.Wrap(err, "processBlockPoS: Problem adding block to block index: ")
 		}
 
@@ -569,6 +568,7 @@ func (bc *Blockchain) upsertBlockAndBlockNodeToDB(desoBlock *MsgDeSoBlock, newBl
 		if innerErr := PutBlockWithTxn(txn, bc.snapshot, desoBlock); innerErr != nil {
 			return errors.Wrapf(innerErr, "upsertBlockAndBlockNodeToDB: Problem calling PutBlock")
 		}
+
 		// Store the new block's node in our node index in the db under the
 		//   <height uin32, blockHash BlockHash> -> <node info>
 		// index.
