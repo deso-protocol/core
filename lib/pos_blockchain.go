@@ -164,6 +164,24 @@ func (bc *Blockchain) processBlockPoS(block *MsgDeSoBlock, currentView uint64, v
 		return false, false, nil, errors.Wrap(err, "processBlockPoS: error committing grandparents: ")
 	}
 
+	// Now that we've processed this block, we check for any orphans that
+	// are children of this block and try to process them.
+	orphansAtNextHeight := bc.blockIndexByHeight[newBlockNode.Height+1]
+	for _, orphan := range orphansAtNextHeight {
+		if orphan.Header.PrevBlockHash.IsEqual(newBlockNode.Hash) && IsBlockStored(orphan) && !IsBlockValidated(orphan) {
+			// TODO: how do we want to handle failures when processing orphans.
+			orphanBlock, err := GetBlock(orphan.Hash, bc.db, bc.snapshot)
+			if err != nil {
+				glog.Errorf("processBlockPoS: Problem getting orphan block %v", orphan.Hash)
+				continue
+			}
+			if _, _, _, err = bc.processBlockPoS(orphanBlock, currentView, verifySignatures); err != nil {
+				glog.Errorf("processBlockPoS: Problem processing orphan block %v", orphan.Hash)
+				continue
+			}
+		}
+	}
+
 	return true, false, nil, nil
 }
 
