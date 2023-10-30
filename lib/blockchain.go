@@ -75,13 +75,6 @@ const (
 	StatusBitcoinHeaderValidateFailed // Deprecated
 )
 
-type CommittedBlockStatus uint8
-
-const (
-	COMMITTED   CommittedBlockStatus = 0
-	UNCOMMITTED CommittedBlockStatus = 1
-)
-
 // IsFullyProcessed determines if the BlockStatus corresponds to a fully processed and stored block.
 func (blockStatus BlockStatus) IsFullyProcessed() bool {
 	return blockStatus&StatusHeaderValidated != 0 &&
@@ -156,16 +149,6 @@ type BlockNode struct {
 	// Status holds the validation state for the block and whether or not
 	// it's stored in the database.
 	Status BlockStatus
-
-	// CommittedStatus is either COMMITTED or UNCOMMITTED. If it's UNCOMMITTED, then
-	// the block is not yet committed to the blockchain. If it's COMMITTED, then the
-	// block is committed to the blockchain.
-	// In PoW consensus, all blocks will have CommittedStatus = COMMITTED.
-	// In PoS consensus, the chain tip and its parent will have CommittedStatus = UNCOMMITTED and
-	// all other blocks will have CommittedStatus = COMMITTED. When a new block is added to the tip,
-	// its CommittedStatus will be set to UNCOMMITTED and its grandparent's CommittedStatus will be
-	// updated to COMMITTED.
-	CommittedStatus CommittedBlockStatus
 }
 
 func _difficultyBitsToHash(diffBits uint32) (_diffHash *BlockHash) {
@@ -298,15 +281,12 @@ func (nn *BlockNode) String() string {
 	if nn.Header != nil {
 		tstamp = uint32(nn.Header.GetTstampSecs())
 	}
-	return fmt.Sprintf("< TstampSecs: %d, Height: %d, Hash: %s, ParentHash %s, Status: %s, CumWork: %v, CommittedStatus: %v>",
-		tstamp, nn.Header.Height, nn.Hash, parentHash, nn.Status, nn.CumWork, nn.CommittedStatus)
+	return fmt.Sprintf("< TstampSecs: %d, Height: %d, Hash: %s, ParentHash %s, Status: %s, CumWork: %v>",
+		tstamp, nn.Header.Height, nn.Hash, parentHash, nn.Status, nn.CumWork)
 }
 
-// NewPoWBlockNode is a helper function to create a BlockNode
-// when running PoW consensus. All blocks in the PoW consensus
-// have a committed status of COMMITTED.
 // TODO: Height not needed in this since it's in the header.
-func NewPoWBlockNode(
+func NewBlockNode(
 	parent *BlockNode,
 	hash *BlockHash,
 	height uint32,
@@ -323,28 +303,6 @@ func NewPoWBlockNode(
 		CumWork:          cumWork,
 		Header:           header,
 		Status:           status,
-		// All blocks have a committed status in PoW.
-		CommittedStatus: COMMITTED,
-	}
-}
-
-// NewPoSBlockNode is a new helper function to create a block node
-// as we need to control the value of the CommittedStatus field.
-func NewPoSBlockNode(
-	parent *BlockNode,
-	hash *BlockHash,
-	height uint32,
-	header *MsgDeSoHeader,
-	status BlockStatus,
-	committedStatus CommittedBlockStatus) *BlockNode {
-
-	return &BlockNode{
-		Parent:          parent,
-		Hash:            hash,
-		Height:          height,
-		Header:          header,
-		Status:          status,
-		CommittedStatus: committedStatus,
 	}
 }
 
@@ -481,10 +439,6 @@ type Blockchain struct {
 
 	bestHeaderChain    []*BlockNode
 	bestHeaderChainMap map[BlockHash]*BlockNode
-
-	// Tracks all uncommitted blocks in memory. This includes blocks that are not part
-	// of the best chain.
-	uncommittedBlocksMap map[BlockHash]*MsgDeSoBlock
 
 	// We keep track of orphan blocks with the following data structures. Orphans
 	// are not written to disk and are only cached in memory. Moreover we only keep
@@ -696,9 +650,8 @@ func NewBlockchain(
 		eventManager:                    eventManager,
 		archivalMode:                    archivalMode,
 
-		blockIndex:           make(map[BlockHash]*BlockNode),
-		uncommittedBlocksMap: make(map[BlockHash]*MsgDeSoBlock),
-		bestChainMap:         make(map[BlockHash]*BlockNode),
+		blockIndex:   make(map[BlockHash]*BlockNode),
+		bestChainMap: make(map[BlockHash]*BlockNode),
 
 		bestHeaderChainMap: make(map[BlockHash]*BlockNode),
 
@@ -1346,7 +1299,6 @@ func (bc *Blockchain) SetBestChainMap(bestChain []*BlockNode, bestChainMap map[B
 	bc.blockIndex = blockIndex
 }
 
-// TODO: update to support validating orphan PoS Blocks
 func (bc *Blockchain) _validateOrphanBlock(desoBlock *MsgDeSoBlock) error {
 	// Error if the block is missing a parent hash or header.
 	if desoBlock.Header == nil {
@@ -1772,7 +1724,7 @@ func (bc *Blockchain) processHeaderPoW(blockHeader *MsgDeSoHeader, headerHash *B
 	// and try to mine on top of it before revealing it to everyone.
 	newWork := BytesToBigint(ExpectedWorkForBlockHash(diffTarget)[:])
 	cumWork := newWork.Add(newWork, parentNode.CumWork)
-	newNode := NewPoWBlockNode(
+	newNode := NewBlockNode(
 		parentNode,
 		headerHash,
 		uint32(blockHeader.Height),
@@ -1853,25 +1805,23 @@ func (bc *Blockchain) ProcessHeader(blockHeader *MsgDeSoHeader, headerHash *Bloc
 	return bc.processHeaderPoW(blockHeader, headerHash)
 }
 
-func (bc *Blockchain) ProcessBlock(desoBlock *MsgDeSoBlock, verifySignatures bool) (_isMainChain bool, _isOrphan bool, _missingBlockHashes []*BlockHash, _err error) {
+func (bc *Blockchain) ProcessBlock(desoBlock *MsgDeSoBlock, verifySignatures bool) (_isMainChain bool, _isOrphan bool, _err error) {
 	bc.ChainLock.Lock()
 	defer bc.ChainLock.Unlock()
 
 	if desoBlock == nil {
 		// If the block is nil then we return an error. Nothing we can do here.
-		return false, false, nil, fmt.Errorf("ProcessBlock: Block is nil")
+		return false, false, fmt.Errorf("ProcessBlock: Block is nil")
 	}
 
 	// If the block's height is after the PoS cut-over fork height, then we use the PoS block processing logic. Otherwise, fall back
 	// to the PoW logic.
 	if desoBlock.Header.Height >= uint64(bc.params.ForkHeights.ProofOfStake2ConsensusCutoverBlockHeight) {
 		// TODO: call bc.processBlockPoS(desoBlock, verifySignatures) instead
-		isMainChain, isOrphan, err := bc.processBlockPoW(desoBlock, verifySignatures)
-		return isMainChain, isOrphan, nil, err
+		return bc.processBlockPoW(desoBlock, verifySignatures)
 	}
 
-	isMainChain, isOrphan, err := bc.processBlockPoW(desoBlock, verifySignatures)
-	return isMainChain, isOrphan, nil, err
+	return bc.processBlockPoW(desoBlock, verifySignatures)
 }
 
 func (bc *Blockchain) processBlockPoW(desoBlock *MsgDeSoBlock, verifySignatures bool) (_isMainChain bool, _isOrphan bool, err error) {
@@ -2636,6 +2586,23 @@ func (bc *Blockchain) processBlockPoW(desoBlock *MsgDeSoBlock, verifySignatures 
 	// to our data structures and any unconnectedTxns that are no longer unconnectedTxns should have
 	// also been processed.
 	return isMainChain, false, nil
+}
+
+// processBlockPoS runs the Fast-Hotstuff block connect and commit rule as follows:
+// 1. Validate on an incoming block and its header
+// 2. Store the block in the db
+// 3. Resolves forks within the last two blocks
+// 4. Connect the block to the blockchain's tip
+// 5. If applicable, flush the incoming block's grandparent to the DB
+// 6. Notify the block proposer, pacemaker, and voting logic that the incoming block has been accepted
+func (bc *Blockchain) processBlockPoS(desoBlock *MsgDeSoBlock, verifySignatures bool) (_isMainChain bool, _isOrphan bool, err error) {
+	// TODO: Implement me
+	return false, false, fmt.Errorf("ProcessBlockPoS: Not implemented yet")
+}
+
+func (bc *Blockchain) GetUncommittedTipView() (*UtxoView, error) {
+	// Connect the uncommitted blocks to the tip so that we can validate subsequent blocks
+	panic("GetUncommittedTipView: Not implemented yet")
 }
 
 // DisconnectBlocksToHeight will rollback blocks from the db and blockchain structs until block tip reaches the provided

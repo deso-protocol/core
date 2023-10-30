@@ -1870,7 +1870,7 @@ func (srv *Server) _handleBlock(pp *Peer, blk *MsgDeSoBlock) {
 		glog.V(1).Infof(CLog(Cyan, fmt.Sprintf("Server._handleBlock: Processing block %v WITHOUT "+
 			"signature checking because SyncState=%v for peer %v",
 			blk, srv.blockchain.chainState(), pp)))
-		_, isOrphan, _, err = srv.blockchain.ProcessBlock(blk, false)
+		_, isOrphan, err = srv.blockchain.ProcessBlock(blk, false)
 
 	} else {
 		// TODO: Signature checking slows things down because it acquires the ChainLock.
@@ -1879,7 +1879,7 @@ func (srv *Server) _handleBlock(pp *Peer, blk *MsgDeSoBlock) {
 		glog.V(1).Infof(CLog(Cyan, fmt.Sprintf("Server._handleBlock: Processing block %v WITH "+
 			"signature checking because SyncState=%v for peer %v",
 			blk, srv.blockchain.chainState(), pp)))
-		_, isOrphan, _, err = srv.blockchain.ProcessBlock(blk, true)
+		_, isOrphan, err = srv.blockchain.ProcessBlock(blk, true)
 	}
 
 	// If we hit an error then abort mission entirely. We should generally never

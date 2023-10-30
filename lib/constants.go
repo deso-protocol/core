@@ -975,7 +975,7 @@ var DeSoMainnetParams = DeSoParams{
 	//   value should equal the amount of work it takes to get from whatever start node you
 	//   choose and the tip. This is done by running once, letting it fail, and then rerunning
 	//   with the value it outputs.
-	BitcoinStartBlockNode: NewPoWBlockNode(
+	BitcoinStartBlockNode: NewBlockNode(
 		nil,
 		mustDecodeHexBlockHashBitcoin("000000000000000000092d577cc673bede24b6d7199ee69c67eeb46c18fc978c"),
 		// Note the height is always one greater than the parent node.
@@ -1240,7 +1240,7 @@ var DeSoTestnetParams = DeSoParams{
 	DeSoNanosPurchasedAtGenesis:   uint64(6000000000000000),
 
 	// See comment in mainnet config.
-	BitcoinStartBlockNode: NewPoWBlockNode(
+	BitcoinStartBlockNode: NewBlockNode(
 		nil,
 		mustDecodeHexBlockHashBitcoin("000000000000003aae8fb976056413aa1d863eb5bee381ff16c9642283b1da1a"),
 		1897056,

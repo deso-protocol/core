@@ -4670,44 +4670,44 @@ func DeleteUtxoOperationsForBlockWithTxn(txn *badger.Txn, snap *Snapshot, blockH
 	return DBDeleteWithTxn(txn, snap, _DbKeyForUtxoOps(blockHash))
 }
 
-func blockNodeProofOfStakeCutoverMigrationTriggered(height uint32) bool {
-	return height >= GlobalDeSoParams.ForkHeights.ProofOfStake2ConsensusCutoverBlockHeight
-}
-
 func SerializeBlockNode(blockNode *BlockNode) ([]byte, error) {
 	data := []byte{}
 
+	// Hash
 	if blockNode.Hash == nil {
 		return nil, fmt.Errorf("SerializeBlockNode: Hash cannot be nil")
 	}
 	data = append(data, blockNode.Hash[:]...)
-	data = append(data, UintToBuf(uint64(blockNode.Height))...)
-	if !blockNodeProofOfStakeCutoverMigrationTriggered(blockNode.Height) {
-		// DifficultyTarget
-		if blockNode.DifficultyTarget == nil {
-			return nil, fmt.Errorf("SerializeBlockNode: DifficultyTarget cannot be nil")
-		}
-		data = append(data, blockNode.DifficultyTarget[:]...)
 
-		// CumWork
-		data = append(data, BigintToHash(blockNode.CumWork)[:]...)
+	// Height
+	data = append(data, UintToBuf(uint64(blockNode.Height))...)
+
+	// DifficultyTarget
+	if blockNode.DifficultyTarget == nil {
+		return nil, fmt.Errorf("SerializeBlockNode: DifficultyTarget cannot be nil")
 	}
+	data = append(data, blockNode.DifficultyTarget[:]...)
+
+	// CumWork
+	data = append(data, BigintToHash(blockNode.CumWork)[:]...)
+
+	// Header
 	serializedHeader, err := blockNode.Header.ToBytes(false)
 	if err != nil {
-		return nil, fmt.Errorf("serializePoSBlockNode: Problem serializing header: %v", err)
+		return nil, errors.Wrapf(err, "SerializeBlockNode: Problem serializing header")
 	}
 	data = append(data, IntToBuf(int64(len(serializedHeader)))...)
 	data = append(data, serializedHeader...)
 
+	// Status
+	// It's assumed this field is one byte long.
 	data = append(data, UintToBuf(uint64(blockNode.Status))...)
-	if blockNodeProofOfStakeCutoverMigrationTriggered(blockNode.Height) {
-		data = append(data, UintToBuf(uint64(blockNode.CommittedStatus))...)
-	}
+
 	return data, nil
 }
 
 func DeserializeBlockNode(data []byte) (*BlockNode, error) {
-	blockNode := NewPoWBlockNode(
+	blockNode := NewBlockNode(
 		nil,          // Parent
 		&BlockHash{}, // Hash
 		0,            // Height
@@ -4719,6 +4719,7 @@ func DeserializeBlockNode(data []byte) (*BlockNode, error) {
 	)
 
 	rr := bytes.NewReader(data)
+
 	// Hash
 	_, err := io.ReadFull(rr, blockNode.Hash[:])
 	if err != nil {
@@ -4732,21 +4733,19 @@ func DeserializeBlockNode(data []byte) (*BlockNode, error) {
 	}
 	blockNode.Height = uint32(height)
 
-	if !blockNodeProofOfStakeCutoverMigrationTriggered(blockNode.Height) {
-		// DifficultyTarget
-		_, err = io.ReadFull(rr, blockNode.DifficultyTarget[:])
-		if err != nil {
-			return nil, errors.Wrapf(err, "DeserializeBlockNode: Problem decoding DifficultyTarget")
-		}
-
-		// CumWork
-		tmp := BlockHash{}
-		_, err = io.ReadFull(rr, tmp[:])
-		if err != nil {
-			return nil, errors.Wrapf(err, "DeserializeBlockNode: Problem decoding CumWork")
-		}
-		blockNode.CumWork = HashToBigint(&tmp)
+	// DifficultyTarget
+	_, err = io.ReadFull(rr, blockNode.DifficultyTarget[:])
+	if err != nil {
+		return nil, errors.Wrapf(err, "DeserializeBlockNode: Problem decoding DifficultyTarget")
 	}
+
+	// CumWork
+	tmp := BlockHash{}
+	_, err = io.ReadFull(rr, tmp[:])
+	if err != nil {
+		return nil, errors.Wrapf(err, "DeserializeBlockNode: Problem decoding CumWork")
+	}
+	blockNode.CumWork = HashToBigint(&tmp)
 
 	// Header
 	payloadLen, err := ReadVarint(rr)
@@ -4774,14 +4773,6 @@ func DeserializeBlockNode(data []byte) (*BlockNode, error) {
 	}
 	blockNode.Status = BlockStatus(uint32(status))
 
-	// CommittedStatus
-	if blockNodeProofOfStakeCutoverMigrationTriggered(blockNode.Height) {
-		committedStatus, err := ReadUvarint(rr)
-		if err != nil {
-			return nil, errors.Wrapf(err, "DeserializeBlockNode: Problem decoding CommittedStatus")
-		}
-		blockNode.CommittedStatus = CommittedBlockStatus(committedStatus)
-	}
 	return blockNode, nil
 }
 
@@ -5043,7 +5034,8 @@ func GetHeightHashToNodeInfoWithTxn(txn *badger.Txn, snap *Snapshot,
 		return nil
 	}
 
-	blockNode, err := DeserializeBlockNode(nodeBytes)
+	var blockNode *BlockNode
+	blockNode, err = DeserializeBlockNode(nodeBytes)
 	if err != nil {
 		return nil
 	}
@@ -5124,7 +5116,7 @@ func InitDbWithDeSoGenesisBlock(params *DeSoParams, handle *badger.DB,
 	genesisBlock := params.GenesisBlock
 	diffTarget := MustDecodeHexBlockHash(params.MinDifficultyTargetHex)
 	blockHash := MustDecodeHexBlockHash(params.GenesisBlockHashHex)
-	genesisNode := NewPoWBlockNode(
+	genesisNode := NewBlockNode(
 		nil, // Parent
 		blockHash,
 		0, // Height
