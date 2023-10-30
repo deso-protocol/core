@@ -2335,6 +2335,8 @@ func DecodeHeaderVersion1(rr io.Reader) (*MsgDeSoHeader, error) {
 			return nil, errors.Wrapf(err, "MsgDeSoHeader.FromBytes: Problem decoding Height")
 		}
 		retHeader.Height = binary.BigEndian.Uint64(scratchBytes[:])
+		// TODO: Is this okay? Feels like it greatly simplifies things...
+		retHeader.ProposedInView = retHeader.Height
 	}
 
 	// Nonce
