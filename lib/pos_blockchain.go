@@ -316,12 +316,12 @@ func (bc *Blockchain) isProperlyFormedBlockPoS(block *MsgDeSoBlock) error {
 		return RuleErrorBothTimeoutAndVoteQC
 	}
 
-	if !isTimeoutQCEmpty && (len(block.Txns) != 1 || block.Txns[0].TxnMeta.GetTxnType() != TxnTypeBlockReward) {
-		return RuleErrorTimeoutQCWithInvalidTxns
+	if len(block.Txns) == 0 {
+		return RuleErrorBlockWithNoTxns
 	}
 
-	if !isVoteQCEmpty && len(block.Txns) == 0 {
-		return RuleErrorVoteQCWithNoTxns
+	if block.Txns[0].TxnMeta.GetTxnType() != TxnTypeBlockReward {
+		return RuleErrorBlockDoesNotStartWithRewardTxn
 	}
 
 	if block.Header.ProposerVotingPublicKey.IsEmpty() {
@@ -976,6 +976,8 @@ const (
 	RuleErrorInvalidPoSBlockHeaderVersion                       RuleError = "RuleErrorInvalidPoSBlockHeaderVersion"
 	RuleErrorNoTimeoutOrVoteQC                                  RuleError = "RuleErrorNoTimeoutOrVoteQC"
 	RuleErrorBothTimeoutAndVoteQC                               RuleError = "RuleErrorBothTimeoutAndVoteQC"
+	RuleErrorBlockWithNoTxns                                    RuleError = "RuleErrorBlockWithNoTxns"
+	RuleErrorBlockDoesNotStartWithRewardTxn                     RuleError = "RuleErrorBlockDoesNotStartWithRewardTxn"
 	RuleErrorMissingParentBlock                                 RuleError = "RuleErrorMissingParentBlock"
 	RuleErrorMissingAncestorBlock                               RuleError = "RuleErrorMissingAncestorBlock"
 	RuleErrorDoesNotExtendCommittedTip                          RuleError = "RuleErrorDoesNotExtendCommittedTip"
@@ -985,8 +987,6 @@ const (
 
 	RuleErrorNilMerkleRoot                  RuleError = "RuleErrorNilMerkleRoot"
 	RuleErrorInvalidMerkleRoot              RuleError = "RuleErrorInvalidMerkleRoot"
-	RuleErrorTimeoutQCWithInvalidTxns       RuleError = "RuleErrorTimeoutQCWithInvalidTxns"
-	RuleErrorVoteQCWithNoTxns               RuleError = "RuleErrorVoteQCWithNoTxns"
 	RuleErrorInvalidProposerVotingPublicKey RuleError = "RuleErrorInvalidProposerVotingPublicKey"
 	RuleErrorInvalidProposerPublicKey       RuleError = "RuleErrorInvalidProposerPublicKey"
 	RuleErrorInvalidRandomSeedHash          RuleError = "RuleErrorInvalidRandomSeedHash"

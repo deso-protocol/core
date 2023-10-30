@@ -83,7 +83,7 @@ func TestisProperlyFormedBlockPoS(t *testing.T) {
 	// Timeout QC should have exactly 1 transaction and that transaction is a block reward.
 	block.Txns = nil
 	err = bc.isProperlyFormedBlockPoS(block)
-	require.Equal(t, err, RuleErrorTimeoutQCWithInvalidTxns)
+	require.Equal(t, err, RuleErrorBlockWithNoTxns)
 
 	block.Txns = []*MsgDeSoTxn{
 		{
@@ -91,7 +91,7 @@ func TestisProperlyFormedBlockPoS(t *testing.T) {
 		},
 	}
 	err = bc.isProperlyFormedBlockPoS(block)
-	require.Equal(t, err, RuleErrorTimeoutQCWithInvalidTxns)
+	require.Equal(t, err, RuleErrorBlockDoesNotStartWithRewardTxn)
 	// Revert txns to be valid.
 	block.Txns = []*MsgDeSoTxn{
 		{
@@ -126,13 +126,14 @@ func TestisProperlyFormedBlockPoS(t *testing.T) {
 	// Reset validator vote QC.
 	block.Header.ValidatorsVoteQC = validatorVoteQC
 
-	// Validate the block with a valid vote QC and header. Vote QCs must have at least 1 transaction.
-	txn := _assembleBasicTransferTxnFullySigned(t, bc, 100, 1000,
-		senderPkString, recipientPkString, senderPrivString, nil)
+	// Validate the block with a valid vote QC and header. Vote QCs must have at least 1 transaction
+	// and first transaction must be a block reward.
 	block.Txns = []*MsgDeSoTxn{
 		// The validation just checks the length of transactions.
 		// Connecting the block elsewhere will ensure that the transactions themselves are valid.
-		txn,
+		{
+			TxnMeta: &BlockRewardMetadataa{},
+		},
 	}
 	merkleRoot, _, err = ComputeMerkleRoot(block.Txns)
 	require.NoError(t, err)
@@ -152,7 +153,11 @@ func TestisProperlyFormedBlockPoS(t *testing.T) {
 	require.Equal(t, err, RuleErrorInvalidMerkleRoot)
 
 	// Reset transactions
-	block.Txns = []*MsgDeSoTxn{txn}
+	block.Txns = []*MsgDeSoTxn{
+		{
+			TxnMeta: &BlockRewardMetadataa{},
+		},
+	}
 
 	// Block must have valid proposer voting public key
 	block.Header.ProposerVotingPublicKey = nil
