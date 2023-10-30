@@ -4083,7 +4083,7 @@ func (postgres *Postgres) InitGenesisBlock(params *DeSoParams, db *badger.DB) er
 	genesisBlock := params.GenesisBlock
 	diffTarget := MustDecodeHexBlockHash(params.MinDifficultyTargetHex)
 	blockHash := MustDecodeHexBlockHash(params.GenesisBlockHashHex)
-	genesisNode := NewPoWBlockNode(
+	genesisNode := NewBlockNode(
 		nil,
 		blockHash,
 		0,

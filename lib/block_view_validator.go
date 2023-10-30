@@ -84,14 +84,6 @@ type ValidatorEntry struct {
 	isDeleted bool
 }
 
-func (validatorEntry *ValidatorEntry) GetPublicKey() *bls.PublicKey {
-	return validatorEntry.VotingPublicKey
-}
-
-func (validatorEntry *ValidatorEntry) GetStakeAmount() *uint256.Int {
-	return validatorEntry.TotalStakeAmountNanos
-}
-
 func (validatorEntry *ValidatorEntry) Status() ValidatorStatus {
 	// ValidatorEntry.Status() is a virtual/derived field that is not stored in
 	// the database, but instead constructed from other ValidatorEntry fields.

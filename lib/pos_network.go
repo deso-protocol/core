@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/deso-protocol/core/consensus"
 	"golang.org/x/crypto/sha3"
 
 	"github.com/deso-protocol/core/bls"
@@ -297,18 +296,6 @@ type QuorumCertificate struct {
 	ValidatorsVoteAggregatedSignature *AggregatedBLSSignature
 }
 
-func (qc *QuorumCertificate) GetBlockHash() consensus.BlockHash {
-	return qc.BlockHash
-}
-
-func (qc *QuorumCertificate) GetView() uint64 {
-	return qc.ProposedInView
-}
-
-func (qc *QuorumCertificate) GetAggregatedSignature() consensus.AggregatedSignature {
-	return qc.ValidatorsVoteAggregatedSignature
-}
-
 // Performs a deep equality check between two QuorumCertificates, and returns true
 // if the two are fully initialized and have identical values. In all other cases,
 // it return false.
@@ -328,14 +315,6 @@ func (qc *QuorumCertificate) Eq(other *QuorumCertificate) bool {
 	}
 
 	return bytes.Equal(qcEncodedBytes, otherEncodedBytes)
-}
-
-func (qc *QuorumCertificate) isEmpty() bool {
-	return qc == nil ||
-		qc.BlockHash == nil ||
-		qc.ProposedInView == 0 ||
-		qc.ValidatorsVoteAggregatedSignature == nil ||
-		qc.ValidatorsVoteAggregatedSignature.Signature == nil
 }
 
 func (qc *QuorumCertificate) ToBytes() ([]byte, error) {
@@ -429,14 +408,6 @@ type AggregatedBLSSignature struct {
 	Signature   *bls.Signature
 }
 
-func (sig *AggregatedBLSSignature) GetSignersList() *bitset.Bitset {
-	return sig.SignersList
-}
-
-func (sig *AggregatedBLSSignature) GetSignature() *bls.Signature {
-	return sig.Signature
-}
-
 // Performs a deep equality check between two AggregatedBLSSignatures, and returns true
 // if the two are fully initialized and have identical values. In all other cases,
 // it return false.
@@ -528,22 +499,6 @@ type TimeoutAggregateQuorumCertificate struct {
 	ValidatorsTimeoutAggregatedSignature *AggregatedBLSSignature
 }
 
-func (aggQC *TimeoutAggregateQuorumCertificate) GetView() uint64 {
-	return aggQC.TimedOutView
-}
-
-func (aggQC *TimeoutAggregateQuorumCertificate) GetHighQC() *QuorumCertificate {
-	return aggQC.ValidatorsHighQC
-}
-
-func (aggQC *TimeoutAggregateQuorumCertificate) GetHighQCViews() []uint64 {
-	return aggQC.ValidatorsTimeoutHighQCViews
-}
-
-func (aggQC *TimeoutAggregateQuorumCertificate) GetAggregatedSignature() consensus.AggregatedSignature {
-	return aggQC.ValidatorsTimeoutAggregatedSignature
-}
-
 // Performs a deep equality check between two TimeoutAggregateQuorumCertificates, and
 // returns true if the two are fully initialized and have identical values. In all other
 // cases, it return false.
@@ -630,8 +585,6 @@ func (aggQC *TimeoutAggregateQuorumCertificate) FromBytes(rr io.Reader) error {
 func (aggQC *TimeoutAggregateQuorumCertificate) isEmpty() bool {
 	return aggQC == nil ||
 		aggQC.TimedOutView == 0 ||
-		aggQC.ValidatorsHighQC.isEmpty() ||
-		len(aggQC.ValidatorsTimeoutHighQCViews) == 0 ||
 		aggQC.ValidatorsTimeoutAggregatedSignature == nil ||
 		aggQC.ValidatorsTimeoutAggregatedSignature.Signature == nil
 }

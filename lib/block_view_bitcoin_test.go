@@ -49,7 +49,7 @@ func GetTestParamsCopy(
 	// Set the BitcoinExchange-related params to canned values.
 	paramsCopy := *paramss
 	headerHash := (BlockHash)(startHeader.BlockHash())
-	paramsCopy.BitcoinStartBlockNode = NewPoWBlockNode(
+	paramsCopy.BitcoinStartBlockNode = NewBlockNode(
 		nil,         /*ParentNode*/
 		&headerHash, /*Hash*/
 		startHeight,
