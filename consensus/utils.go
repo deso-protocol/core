@@ -381,3 +381,11 @@ func generateRandomBytes(numBytes int) []byte {
 	rand.Read(randomBytes)
 	return randomBytes
 }
+
+func powerOfTwo(n uint64) int64 {
+	result := int64(1)
+	for i := uint64(0); i < n; i++ {
+		result *= 2
+	}
+	return result
+}

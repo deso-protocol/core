@@ -441,7 +441,7 @@ func (fc *FastHotStuffEventLoop) resetScheduledTasks() {
 		numTimeouts := fc.currentView - fc.tip.block.GetView() - 1
 
 		// Compute the exponential back-off: nextTimeoutDuration * 2^numTimeouts
-		timeoutDuration = fc.timeoutBaseDuration << numTimeouts
+		timeoutDuration = fc.timeoutBaseDuration * time.Duration(powerOfTwo(numTimeouts))
 	}
 
 	// Schedule the next crank timer task. This will run with currentView param.
