@@ -572,6 +572,7 @@ var expectedV0Header = &MsgDeSoHeader{
 	},
 	TstampNanoSecs: SecondsToNanoSeconds(0x70717273),
 	Height:         uint64(99999),
+	ProposedInView: uint64(99999),
 	Nonce:          uint64(123456),
 }
 
