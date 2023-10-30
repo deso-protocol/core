@@ -84,6 +84,11 @@ func TestRunEpochCompleteHook(t *testing.T) {
 		blockHeight += 1
 		return blockHeight
 	}
+	viewNumber := uint64(0)
+	incrViewNumber := func() uint64 {
+		viewNumber += 1
+		return viewNumber
+	}
 
 	// Seed a CurrentEpochEntry.
 	tmpUtxoView := _newUtxoView(testMeta)
@@ -140,7 +145,7 @@ func TestRunEpochCompleteHook(t *testing.T) {
 	}
 	{
 		// Test RunOnEpochCompleteHook() with no validators or stakers.
-		_runOnEpochCompleteHook(testMeta, incrBlockHeight())
+		_runOnEpochCompleteHook(testMeta, incrBlockHeight(), incrViewNumber())
 	}
 	{
 		// Test the state of the snapshots after running our first OnEpochCompleteHook
@@ -150,6 +155,13 @@ func TestRunEpochCompleteHook(t *testing.T) {
 		currentEpochNumber, err := _newUtxoView(testMeta).GetCurrentEpochNumber()
 		require.NoError(t, err)
 		require.Equal(t, currentEpochNumber, uint64(1))
+
+		// Test CurrentEpochEntry
+		currentEpoch, err := _newUtxoView(testMeta).GetCurrentEpochEntry()
+		require.NoError(t, err)
+		require.NotNil(t, currentEpoch)
+		require.Equal(t, currentEpoch.InitialBlockHeight, uint64(13))
+		require.Equal(t, currentEpoch.InitialView, uint64(2))
 
 		// Test SnapshotGlobalParamsEntry is nil.
 		snapshotGlobalParamsEntry, err := _newUtxoView(testMeta).GetSnapshotGlobalParamsEntry()
@@ -182,13 +194,20 @@ func TestRunEpochCompleteHook(t *testing.T) {
 	}
 	{
 		// Test RunOnEpochCompleteHook().
-		_runOnEpochCompleteHook(testMeta, incrBlockHeight())
+		_runOnEpochCompleteHook(testMeta, incrBlockHeight(), incrViewNumber())
 	}
 	{
 		// Test CurrentEpochNumber.
 		currentEpochNumber, err := _newUtxoView(testMeta).GetCurrentEpochNumber()
 		require.NoError(t, err)
 		require.Equal(t, currentEpochNumber, uint64(2))
+
+		// Test CurrentEpochEntry
+		currentEpoch, err := _newUtxoView(testMeta).GetCurrentEpochEntry()
+		require.NoError(t, err)
+		require.NotNil(t, currentEpoch)
+		require.Equal(t, currentEpoch.InitialBlockHeight, uint64(14))
+		require.Equal(t, currentEpoch.InitialView, uint64(3))
 
 		// Test SnapshotGlobalParamsEntry is populated.
 		snapshotGlobalParamsEntry, err := _newUtxoView(testMeta).GetSnapshotGlobalParamsEntry()
@@ -203,13 +222,20 @@ func TestRunEpochCompleteHook(t *testing.T) {
 	}
 	{
 		// Test RunOnEpochCompleteHook().
-		_runOnEpochCompleteHook(testMeta, incrBlockHeight())
+		_runOnEpochCompleteHook(testMeta, incrBlockHeight(), incrViewNumber())
 	}
 	{
 		// Test CurrentEpochNumber.
 		currentEpochNumber, err := _newUtxoView(testMeta).GetCurrentEpochNumber()
 		require.NoError(t, err)
 		require.Equal(t, currentEpochNumber, uint64(3))
+
+		// Test CurrentEpochEntry
+		currentEpoch, err := _newUtxoView(testMeta).GetCurrentEpochEntry()
+		require.NoError(t, err)
+		require.NotNil(t, currentEpoch)
+		require.Equal(t, currentEpoch.InitialBlockHeight, uint64(15))
+		require.Equal(t, currentEpoch.InitialView, uint64(4))
 
 		// Test SnapshotGlobalParamsEntry is populated.
 		snapshotGlobalParamsEntry, err := _newUtxoView(testMeta).GetSnapshotGlobalParamsEntry()
@@ -275,7 +301,7 @@ func TestRunEpochCompleteHook(t *testing.T) {
 		require.Equal(t, validatorEntry.TotalStakeAmountNanos.Uint64(), uint64(800))
 
 		// Run OnEpochCompleteHook().
-		_runOnEpochCompleteHook(testMeta, incrBlockHeight())
+		_runOnEpochCompleteHook(testMeta, incrBlockHeight(), incrViewNumber())
 
 		// Snapshot m5 still has 600 staked.
 		validatorEntry, err = _newUtxoView(testMeta).GetSnapshotValidatorSetEntryByPKID(m5PKID)
@@ -291,7 +317,7 @@ func TestRunEpochCompleteHook(t *testing.T) {
 		require.Equal(t, stakeEntries[1].StakeAmountNanos, uint256.NewInt().SetUint64(600))
 
 		// Run OnEpochCompleteHook().
-		_runOnEpochCompleteHook(testMeta, incrBlockHeight())
+		_runOnEpochCompleteHook(testMeta, incrBlockHeight(), incrViewNumber())
 
 		// Snapshot m5 now has 800 staked.
 		validatorEntry, err = _newUtxoView(testMeta).GetSnapshotValidatorSetEntryByPKID(m5PKID)
@@ -325,7 +351,7 @@ func TestRunEpochCompleteHook(t *testing.T) {
 		require.Equal(t, _newUtxoView(testMeta).GlobalParamsEntry.StakeLockupEpochDuration, uint64(2))
 
 		// Run OnEpochCompleteHook().
-		_runOnEpochCompleteHook(testMeta, incrBlockHeight())
+		_runOnEpochCompleteHook(testMeta, incrBlockHeight(), incrViewNumber())
 
 		// Snapshot StakeLockupEpochDuration is still 3.
 		snapshotGlobalsParamsEntry, err = _newUtxoView(testMeta).GetSnapshotGlobalParamsEntry()
@@ -333,7 +359,7 @@ func TestRunEpochCompleteHook(t *testing.T) {
 		require.Equal(t, snapshotGlobalsParamsEntry.StakeLockupEpochDuration, uint64(3))
 
 		// Run OnEpochCompleteHook().
-		_runOnEpochCompleteHook(testMeta, incrBlockHeight())
+		_runOnEpochCompleteHook(testMeta, incrBlockHeight(), incrViewNumber())
 
 		// Snapshot StakeLockupEpochDuration is updated to 2.
 		snapshotGlobalsParamsEntry, err = _newUtxoView(testMeta).GetSnapshotGlobalParamsEntry()
@@ -352,7 +378,7 @@ func TestRunEpochCompleteHook(t *testing.T) {
 		require.NoError(t, err)
 
 		// Run OnEpochCompleteHook().
-		_runOnEpochCompleteHook(testMeta, incrBlockHeight())
+		_runOnEpochCompleteHook(testMeta, incrBlockHeight(), incrViewNumber())
 
 		// m0 is still in the snapshot validator set.
 		snapshotValidatorSet, err = _newUtxoView(testMeta).GetSnapshotValidatorSetByStakeAmount(10)
@@ -364,7 +390,7 @@ func TestRunEpochCompleteHook(t *testing.T) {
 		require.Len(t, snapshotStakeEntries, 7)
 
 		// Run OnEpochCompleteHook().
-		_runOnEpochCompleteHook(testMeta, incrBlockHeight())
+		_runOnEpochCompleteHook(testMeta, incrBlockHeight(), incrViewNumber())
 
 		// m0 is dropped from the snapshot validator set.
 		snapshotValidatorSet, err = _newUtxoView(testMeta).GetSnapshotValidatorSetByStakeAmount(10)
@@ -377,11 +403,11 @@ func TestRunEpochCompleteHook(t *testing.T) {
 	}
 	{
 		// Run OnEpochCompleteHook().
-		_runOnEpochCompleteHook(testMeta, incrBlockHeight())
+		_runOnEpochCompleteHook(testMeta, incrBlockHeight(), incrViewNumber())
 	}
 	{
 		// Run OnEpochCompleteHook()
-		_runOnEpochCompleteHook(testMeta, incrBlockHeight())
+		_runOnEpochCompleteHook(testMeta, incrBlockHeight(), incrViewNumber())
 	}
 	{
 		// Test jailing inactive validators.
@@ -440,7 +466,7 @@ func TestRunEpochCompleteHook(t *testing.T) {
 		require.Equal(t, getNumSnapshotStakes(), 6)
 
 		// Run OnEpochCompleteHook().
-		_runOnEpochCompleteHook(testMeta, incrBlockHeight())
+		_runOnEpochCompleteHook(testMeta, incrBlockHeight(), incrViewNumber())
 
 		// In epoch 12, all current registered validators have Status = Jailed.
 		// In snapshot 10, all snapshot validators have Status = Active.
@@ -454,7 +480,7 @@ func TestRunEpochCompleteHook(t *testing.T) {
 		require.Equal(t, getCurrentValidator(m6PKID).JailedAtEpochNumber, uint64(11))
 
 		// Run OnEpochCompleteHook().
-		_runOnEpochCompleteHook(testMeta, incrBlockHeight())
+		_runOnEpochCompleteHook(testMeta, incrBlockHeight(), incrViewNumber())
 
 		// In epoch 13, all current registered validators have Status = Jailed.
 		// In snapshot 11, the validator set is empty because all validators have Status = Jailed.
@@ -465,7 +491,7 @@ func TestRunEpochCompleteHook(t *testing.T) {
 		require.Empty(t, getNumSnapshotStakes())
 
 		// Run OnEpochCompleteHook().
-		_runOnEpochCompleteHook(testMeta, incrBlockHeight())
+		_runOnEpochCompleteHook(testMeta, incrBlockHeight(), incrViewNumber())
 
 		// In epoch 14, all current registered validators have Status = Jailed.
 		// In snapshot 12, the validator set is empty because all validators have Status = Jailed.
@@ -501,6 +527,11 @@ func TestStakingRewardDistribution(t *testing.T) {
 	incrBlockHeight := func() uint64 {
 		blockHeight += 1
 		return blockHeight
+	}
+	viewNumber := uint64(0)
+	incrViewNumber := func() uint64 {
+		viewNumber += 1
+		return viewNumber
 	}
 
 	// Seed a CurrentEpochEntry.
@@ -558,12 +589,12 @@ func TestStakingRewardDistribution(t *testing.T) {
 
 	{
 		// Run OnEpochCompleteHook().
-		_runOnEpochCompleteHook(testMeta, incrBlockHeight())
+		_runOnEpochCompleteHook(testMeta, incrBlockHeight(), incrViewNumber())
 	}
 
 	{
 		// Run OnEpochCompleteHook().
-		_runOnEpochCompleteHook(testMeta, incrBlockHeight())
+		_runOnEpochCompleteHook(testMeta, incrBlockHeight(), incrViewNumber())
 	}
 
 	{
@@ -611,7 +642,7 @@ func TestStakingRewardDistribution(t *testing.T) {
 
 	{
 		// Run OnEpochCompleteHook().
-		_runOnEpochCompleteHook(testMeta, incrBlockHeight())
+		_runOnEpochCompleteHook(testMeta, incrBlockHeight(), incrViewNumber())
 	}
 
 	{
@@ -723,7 +754,7 @@ func TestStakingRewardDistribution(t *testing.T) {
 
 	{
 		// Run OnEpochCompleteHook().
-		_runOnEpochCompleteHook(testMeta, incrBlockHeight())
+		_runOnEpochCompleteHook(testMeta, incrBlockHeight(), incrViewNumber())
 	}
 
 	{
@@ -836,12 +867,12 @@ func _newUtxoView(testMeta *TestMeta) *UtxoView {
 	return newUtxoView
 }
 
-func _runOnEpochCompleteHook(testMeta *TestMeta, blockHeight uint64) {
+func _runOnEpochCompleteHook(testMeta *TestMeta, blockHeight uint64, viewNumber uint64) {
 	tmpUtxoView := _newUtxoView(testMeta)
 	// Set blockTimestampNanoSecs to 1 year * block height. Every time the block height increments,
 	// the timestamp increases by 1 year
 	blockTimestampNanoSecs := blockHeight * 365 * 24 * 3600 * 1e9
-	require.NoError(testMeta.t, tmpUtxoView.RunEpochCompleteHook(blockHeight, blockTimestampNanoSecs))
+	require.NoError(testMeta.t, tmpUtxoView.RunEpochCompleteHook(blockHeight, viewNumber, blockTimestampNanoSecs))
 	require.NoError(testMeta.t, tmpUtxoView.FlushToDb(blockHeight))
 }
 
