@@ -240,12 +240,12 @@ func (bc *Blockchain) validateBlockIntegrity(desoBlock *MsgDeSoBlock) error {
 		return RuleErrorBothTimeoutAndVoteQC
 	}
 
-	if !isTimeoutQCEmpty && (len(desoBlock.Txns) != 1 || desoBlock.Txns[0].TxnMeta.GetTxnType() != TxnTypeBlockReward) {
-		return RuleErrorTimeoutQCWithInvalidTxns
+	if len(desoBlock.Txns) == 0 {
+		return RuleErrorBlockWithNoTxns
 	}
 
-	if !isVoteQCEmpty && len(desoBlock.Txns) == 0 {
-		return RuleErrorVoteQCWithNoTxns
+	if desoBlock.Txns[0].TxnMeta.GetTxnType() != TxnTypeBlockReward {
+		return RuleErrorBlockDoesNotStartWithRewardTxn
 	}
 
 	if desoBlock.Header.ProposerVotingPublicKey.IsEmpty() {
@@ -866,8 +866,8 @@ const (
 	RuleErrorInvalidPoSBlockHeaderVersion   RuleError = "RuleErrorInvalidPoSBlockHeaderVersion"
 	RuleErrorNoTimeoutOrVoteQC              RuleError = "RuleErrorNoTimeoutOrVoteQC"
 	RuleErrorBothTimeoutAndVoteQC           RuleError = "RuleErrorBothTimeoutAndVoteQC"
-	RuleErrorTimeoutQCWithInvalidTxns       RuleError = "RuleErrorTimeoutQCWithInvalidTxns"
-	RuleErrorVoteQCWithNoTxns               RuleError = "RuleErrorVoteQCWithNoTxns"
+	RuleErrorBlockWithNoTxns                RuleError = "RuleErrorBlockWithNoTxns"
+	RuleErrorBlockDoesNotStartWithRewardTxn RuleError = "RuleErrorBlockDoesNotStartWithRewardTxn"
 	RuleErrorMissingParentBlock             RuleError = "RuleErrorMissingParentBlock"
 	RuleErrorMissingAncestorBlock           RuleError = "RuleErrorMissingAncestorBlock"
 	RuleErrorDoesNotExtendCommittedTip      RuleError = "RuleErrorDoesNotExtendCommittedTip"
