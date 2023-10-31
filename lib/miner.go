@@ -240,7 +240,7 @@ func (desoMiner *DeSoMiner) MineAndProcessSingleBlock(threadIndex uint32, mempoo
 	verifySignatures := true
 	// TODO(miner): Replace with a call to SubmitBlock.
 	isMainChain, isOrphan, _, err := desoMiner.BlockProducer.chain.ProcessBlock(
-		blockToMine, verifySignatures)
+		blockToMine, 0, verifySignatures)
 	glog.V(2).Infof("Called ProcessBlock: isMainChain=(%v), isOrphan=(%v), err=(%v)",
 		isMainChain, isOrphan, err)
 	if err != nil {

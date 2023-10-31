@@ -18,6 +18,9 @@ import (
 //  4. try to apply the incoming block as the tip (performing reorgs as necessary). If it can't be applied, we exit here.
 //  5. Run the commit rule - If applicable, flushes the incoming block's grandparent to the DB
 func (bc *Blockchain) processBlockPoS(block *MsgDeSoBlock, currentView uint64, verifySignatures bool) (_success bool, _isOrphan bool, _missingBlockHashes []*BlockHash, _err error) {
+	if block.Header.Height < uint64(bc.params.ForkHeights.ProofOfStake2ConsensusCutoverBlockHeight) {
+		return false, false, nil, RuleErrorProcessBlockPoSBeforeCutOverHeight
+	}
 	// Start by pulling out the block hash.
 	blockHash, err := block.Header.Hash()
 	if err != nil {
@@ -967,4 +970,7 @@ const (
 
 	RuleErrorInvalidVoteQC    RuleError = "RuleErrorInvalidVoteQC"
 	RuleErrorInvalidTimeoutQC RuleError = "RuleErrorInvalidTimeoutQC"
+
+	RuleErrorProcessBlockPoWAfterPoSCutOver     RuleError = "RuleErrorProcessBlockPoWAfterPoSCutOver"
+	RuleErrorProcessBlockPoSBeforeCutOverHeight RuleError = "RuleErrorProcessBlockPoSBeforeCutOverHeight"
 )
