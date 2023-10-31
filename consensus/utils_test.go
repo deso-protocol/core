@@ -14,10 +14,10 @@ import (
 func TestIsValidSuperMajorityQuorumCertificate(t *testing.T) {
 	// Test malformed QC
 	{
-		require.False(t, IsValidSuperMajorityQuorumCertificate(nil, createDummyValidatorSet()))
+		require.False(t, IsValidSuperMajorityQuorumCertificate(nil, createDummyValidatorList()))
 	}
 
-	// Test malformed validator set
+	// Test malformed validator list
 	{
 		require.False(t, IsValidSuperMajorityQuorumCertificate(createDummyQC(1, createDummyBlockHash()), nil))
 	}
