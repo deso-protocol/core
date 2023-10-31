@@ -69,11 +69,11 @@ func (bc *Blockchain) processBlockPoS(desoBlock *MsgDeSoBlock, currentView uint6
 	// Make sure its parent is validated. If not, we need to validate it first by calling processBlockPoS.
 	// Note that if any other ancestor is not validated, calling processBlockPoS on the parent will
 	// end up calling processBlockPoS on all of its ancestors that aren't validated yet.
-	parent, exists := bc.blockIndex[*desoBlock.Header.PrevBlockHash]
+	parentBlockNode, exists := bc.blockIndex[*desoBlock.Header.PrevBlockHash]
 	if !exists {
 		return false, false, nil, errors.New("processBlockPoS: Parent block not found in block index. This should never happen.")
 	}
-	if parent.IsValidateFailed() {
+	if parentBlockNode.IsValidateFailed() {
 		// We'll never add this to the best chain because its parent is invalid.
 		// If its parent is ValidateFailed, we can update the block index with the block status ValidateFailed
 		if addToBlockIndexErr := bc.storeValidateFailedBlockInBlockIndex(desoBlock); addToBlockIndexErr != nil {
@@ -81,14 +81,14 @@ func (bc *Blockchain) processBlockPoS(desoBlock *MsgDeSoBlock, currentView uint6
 		}
 		return false, false, nil, errors.Wrap(err, "processBlockPoS: block's parent failed validation: ")
 	}
-	if !parent.IsValidated() {
-		blk, err := GetBlock(parent.Hash, bc.db, bc.snapshot)
+	if !parentBlockNode.IsValidated() {
+		blk, err := GetBlock(parentBlockNode.Hash, bc.db, bc.snapshot)
 		if err != nil {
-			return false, false, nil, errors.Wrapf(err, "processBlockPoS: Problem getting parent block %v", parent.Hash)
+			return false, false, nil, errors.Wrapf(err, "processBlockPoS: Problem getting parent block %v", parentBlockNode.Hash)
 		}
 		_, _, _, err = bc.processBlockPoS(blk, currentView, verifySignatures)
 		if err != nil {
-			return false, false, nil, errors.Wrapf(err, "processBlockPoS: Problem processing parent block %v", parent.Hash)
+			return false, false, nil, errors.Wrapf(err, "processBlockPoS: Problem processing parent block %v", parentBlockNode.Hash)
 		}
 	}
 
