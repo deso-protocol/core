@@ -2,10 +2,6 @@ package lib
 
 import "github.com/deso-protocol/core/consensus"
 
-func isSynced() bool {
-	return false
-}
-
 func (srv *Server) _handleFastHostStuffConsensusEvent(event *consensus.FastHotStuffEvent) {
 	switch event.EventType {
 	case consensus.FastHotStuffEventTypeVote:
