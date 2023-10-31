@@ -438,7 +438,7 @@ func (txi *TXIndex) Update() error {
 
 		// Now that we have added all the txns to our TxIndex db, attach the block
 		// to update our chain.
-		_, _, _, err = txi.TXIndexChain.ProcessBlockPoW(blockMsg, 0, false /*verifySignatures*/)
+		_, _, err = txi.TXIndexChain.ProcessBlockPoW(blockMsg, false /*verifySignatures*/)
 		if err != nil {
 			return fmt.Errorf("Update: Problem attaching block %v: %v",
 				blockToAttach, err)

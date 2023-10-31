@@ -239,8 +239,8 @@ func (desoMiner *DeSoMiner) MineAndProcessSingleBlock(threadIndex uint32, mempoo
 	// will be informed about it. This will cause it to be relayed appropriately.
 	verifySignatures := true
 	// TODO(miner): Replace with a call to SubmitBlock.
-	isMainChain, isOrphan, _, err := desoMiner.BlockProducer.chain.ProcessBlockPoW(
-		blockToMine, 0, verifySignatures)
+	isMainChain, isOrphan, err := desoMiner.BlockProducer.chain.ProcessBlockPoW(
+		blockToMine, verifySignatures)
 	glog.V(2).Infof("Called ProcessBlockPoW: isMainChain=(%v), isOrphan=(%v), err=(%v)",
 		isMainChain, isOrphan, err)
 	if err != nil {
