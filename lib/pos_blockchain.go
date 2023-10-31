@@ -892,7 +892,7 @@ func (bc *Blockchain) GetSafeBlocks() ([]*BlockNode, error) {
 		}
 		for _, blockNode := range blockNodes {
 			// TODO: Are there other conditions we should consider?
-			if IsBlockValidated(blockNode) {
+			if blockNode.IsValidated() {
 				safeBlocks = append(safeBlocks, blockNode)
 			}
 		}
