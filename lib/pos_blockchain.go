@@ -169,7 +169,7 @@ func (bc *Blockchain) processBlockPoS(block *MsgDeSoBlock, currentView uint64, v
 	// are children of this block and try to process them.
 	orphansAtNextHeight := bc.blockIndexByHeight[newBlockNode.Height+1]
 	for _, orphan := range orphansAtNextHeight {
-		if orphan.Header.PrevBlockHash.IsEqual(newBlockNode.Hash) && IsBlockStored(orphan) && !IsBlockValidated(orphan) {
+		if orphan.Header.PrevBlockHash.IsEqual(newBlockNode.Hash) && orphan.IsStored() && !orphan.IsValidated() {
 			// TODO: how do we want to handle failures when processing orphans.
 			orphanBlock, err := GetBlock(orphan.Hash, bc.db, bc.snapshot)
 			if err != nil {
