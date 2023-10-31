@@ -1638,6 +1638,10 @@ func TestProcessBlockPoS(t *testing.T) {
 	}
 }
 
+func TestProcessBlockTransitionFromPoWToPoS(t *testing.T) {
+
+}
+
 func TestGetSafeBlocks(t *testing.T) {
 	testMeta := NewTestPoSBlockchainWithValidators(t)
 	committedHash := testMeta.chain.GetBestChainTip().Hash

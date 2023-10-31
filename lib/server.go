@@ -1847,8 +1847,8 @@ func (srv *Server) _handleBlock(pp *Peer, blk *MsgDeSoBlock) {
 	}
 
 	// Check that the mempool has not received a transaction that would forbid this block's signature pubkey.
-	// This is a minimal check, a more thorough check is made in the ProcessBlock function. This check is
-	// necessary because the ProcessBlock function only has access to mined transactions. Therefore, if an
+	// This is a minimal check, a more thorough check is made in the ProcessBlockPoW function. This check is
+	// necessary because the ProcessBlockPoW function only has access to mined transactions. Therefore, if an
 	// attacker were to prevent a "forbid X pubkey" transaction from mining, they could force nodes to continue
 	// processing their blocks.
 	if len(srv.blockchain.trustedBlockProducerPublicKeys) > 0 && blockHeader.Height >= srv.blockchain.trustedBlockProducerStartHeight {
@@ -1870,7 +1870,7 @@ func (srv *Server) _handleBlock(pp *Peer, blk *MsgDeSoBlock) {
 		glog.V(1).Infof(CLog(Cyan, fmt.Sprintf("Server._handleBlock: Processing block %v WITHOUT "+
 			"signature checking because SyncState=%v for peer %v",
 			blk, srv.blockchain.chainState(), pp)))
-		_, isOrphan, _, err = srv.blockchain.ProcessBlock(blk, 0, false)
+		_, isOrphan, _, err = srv.blockchain.ProcessBlockPoW(blk, 0, false)
 
 	} else {
 		// TODO: Signature checking slows things down because it acquires the ChainLock.
@@ -1879,7 +1879,7 @@ func (srv *Server) _handleBlock(pp *Peer, blk *MsgDeSoBlock) {
 		glog.V(1).Infof(CLog(Cyan, fmt.Sprintf("Server._handleBlock: Processing block %v WITH "+
 			"signature checking because SyncState=%v for peer %v",
 			blk, srv.blockchain.chainState(), pp)))
-		_, isOrphan, _, err = srv.blockchain.ProcessBlock(blk, 0, true)
+		_, isOrphan, _, err = srv.blockchain.ProcessBlockPoW(blk, 0, true)
 	}
 
 	// If we hit an error then abort mission entirely. We should generally never

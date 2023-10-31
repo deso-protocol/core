@@ -239,21 +239,21 @@ func (desoMiner *DeSoMiner) MineAndProcessSingleBlock(threadIndex uint32, mempoo
 	// will be informed about it. This will cause it to be relayed appropriately.
 	verifySignatures := true
 	// TODO(miner): Replace with a call to SubmitBlock.
-	isMainChain, isOrphan, _, err := desoMiner.BlockProducer.chain.ProcessBlock(
+	isMainChain, isOrphan, _, err := desoMiner.BlockProducer.chain.ProcessBlockPoW(
 		blockToMine, 0, verifySignatures)
-	glog.V(2).Infof("Called ProcessBlock: isMainChain=(%v), isOrphan=(%v), err=(%v)",
+	glog.V(2).Infof("Called ProcessBlockPoW: isMainChain=(%v), isOrphan=(%v), err=(%v)",
 		isMainChain, isOrphan, err)
 	if err != nil {
-		glog.Errorf("ERROR calling ProcessBlock: isMainChain=(%v), isOrphan=(%v), err=(%v)",
+		glog.Errorf("ERROR calling ProcessBlockPoW: isMainChain=(%v), isOrphan=(%v), err=(%v)",
 			isMainChain, isOrphan, err)
 		// We return the block even when we have an error in case the caller wants to do
 		// something with it.
-		return blockToMine, fmt.Errorf("ERROR calling ProcessBlock: isMainChain=(%v), isOrphan=(%v), err=(%v)",
+		return blockToMine, fmt.Errorf("ERROR calling ProcessBlockPoW: isMainChain=(%v), isOrphan=(%v), err=(%v)",
 			isMainChain, isOrphan, err)
 	}
 
 	// If a mempool object is passed then update it. Normally this isn't necessary because
-	// ProcessBlock will trigger it because the backendServer will be set on the blockchain
+	// ProcessBlockPoW will trigger it because the backendServer will be set on the blockchain
 	// object. But it's useful for tests.
 	if mempoolToUpdate != nil {
 		mempoolToUpdate.UpdateAfterConnectBlock(blockToMine)
