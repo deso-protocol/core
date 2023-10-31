@@ -381,7 +381,7 @@ func (bc *Blockchain) addBlockToBlockIndex(desoBlock *MsgDeSoBlock, blockStatus 
 		if bc.snapshot != nil {
 			bc.snapshot.PrepareAncestralRecordsFlush()
 			defer bc.snapshot.StartAncestralRecordsFlush(true)
-			glog.V(2).Infof("ProcessBlock: Preparing snapshot flush")
+			glog.V(2).Infof("addBlockToBlockIndex: Preparing snapshot flush")
 		}
 		// TODO: Do we want to write the full block once.
 		// Store the new block in the db under the
@@ -407,7 +407,7 @@ func (bc *Blockchain) addBlockToBlockIndex(desoBlock *MsgDeSoBlock, blockStatus 
 		return nil
 	})
 	if err != nil {
-		return errors.Wrapf(err, "runCommitRuleOnBestChain: Problem putting block in db: ")
+		return errors.Wrapf(err, "addBlockToBlockIndex: Problem putting block in db: ")
 	}
 	// Need to get parent block node from block index
 	bc.blockIndex[*hash] = newBlockNode
