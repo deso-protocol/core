@@ -14,6 +14,14 @@ import (
 // - PoS Validator Timeout Messages
 // - PoS Block Proposals
 // - PoS Validator Connection Handshakes
+//
+// TODO: We will likely need to associate individual op-codes for each message type that can be signed,
+// so that there no risk of signature collisions between different message types. Ex: the payload
+// signed per message type must be made up of the following tuples:
+// - Validator Vote:          (0x01, view uint64, blockHash consensus.BlockHash)
+// - Validator Timeout:       (0x02, view uint64, highQCView uint64)
+// - PoS Block Proposal:      (0x03, view uint64, blockHash consensus.BlockHash)
+// - PoS Validator Handshake: (0x04, peer's random nonce, our node's random nonce)
 type BLSSigner struct {
 	privateKey *bls.PrivateKey
 }
