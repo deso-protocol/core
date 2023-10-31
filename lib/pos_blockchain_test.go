@@ -1626,7 +1626,7 @@ func TestProcessBlockPoS(t *testing.T) {
 
 		timeoutBlockNode, exists := testMeta.chain.blockIndex[*timeoutBlockHash]
 		require.True(t, exists)
-		require.False(t, IsBlockCommitted(timeoutBlockNode))
+		require.False(t, timeoutBlockNode.IsCommitted())
 
 		// Let's process an orphan block.
 		var dummyParentBlock *MsgDeSoBlock
