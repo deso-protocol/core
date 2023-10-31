@@ -1907,6 +1907,13 @@ func _generateRandomBLSPrivateKey(t *testing.T) *bls.PrivateKey {
 
 func NewTestPoSBlockchainWithValidators(t *testing.T) *TestMeta {
 	setBalanceModelBlockHeights(t)
+	// Set the PoS Setup Height to block 11.
+	DeSoTestnetParams.ForkHeights.ProofOfStake1StateSetupBlockHeight = 11
+	DeSoTestnetParams.ForkHeights.ProofOfStake2ConsensusCutoverBlockHeight = 12
+	DeSoTestnetParams.EncoderMigrationHeights = GetEncoderMigrationHeights(&DeSoTestnetParams.ForkHeights)
+	DeSoTestnetParams.EncoderMigrationHeightsList = GetEncoderMigrationHeightsList(&DeSoTestnetParams.ForkHeights)
+	GlobalDeSoParams = DeSoTestnetParams
+
 	chain, params, db := NewLowDifficultyBlockchain(t)
 	oldPool, miner := NewTestMiner(t, chain, params, true)
 	// Mine a few blocks to give the senderPkString some money.
@@ -1949,9 +1956,7 @@ func NewTestPoSBlockchainWithValidators(t *testing.T) *TestMeta {
 	miner.Stop()
 	latestBlockView, err := NewUtxoView(db, params, nil, nil)
 	require.NoError(t, err)
-	// Set the PoS Setup Height to block 11.
-	params.ForkHeights.ProofOfStake1StateSetupBlockHeight = 11
-	GlobalDeSoParams.ForkHeights.ProofOfStake1StateSetupBlockHeight = 11
+
 	// Run the on epoch complete hook to set the leader schedule.
 	err = latestBlockView.RunEpochCompleteHook(11, 11, uint64(time.Now().UnixNano()))
 	require.NoError(t, err)
@@ -1965,8 +1970,6 @@ func NewTestPoSBlockchainWithValidators(t *testing.T) *TestMeta {
 	priv := _generateRandomBLSPrivateKey(t)
 	m0Pk := NewPublicKey(m0PubBytes)
 	posBlockProducer := NewPosBlockProducer(mempool, params, m0Pk, priv.PublicKey())
-	params.ForkHeights.ProofOfStake2ConsensusCutoverBlockHeight = 12
-	GlobalDeSoParams.ForkHeights.ProofOfStake2ConsensusCutoverBlockHeight = 12
 	// TODO: do we need to update the encoder migration stuff for global params. Probably.
 	testMeta.mempool = nil
 	testMeta.posMempool = mempool
@@ -1991,14 +1994,17 @@ func NewTestPoSBlockchainWithValidators(t *testing.T) *TestMeta {
 	//}
 	t.Cleanup(func() {
 		mempool.Stop()
-		GlobalDeSoParams.ForkHeights.ProofOfStake1StateSetupBlockHeight = math.MaxUint32
-		GlobalDeSoParams.ForkHeights.ProofOfStake2ConsensusCutoverBlockHeight = math.MaxUint32
 	})
 	return testMeta
 }
 
 func NewTestPoSBlockchain(t *testing.T) *TestMeta {
 	setBalanceModelBlockHeights(t)
+	DeSoTestnetParams.ForkHeights.ProofOfStake1StateSetupBlockHeight = 9
+	DeSoTestnetParams.ForkHeights.ProofOfStake2ConsensusCutoverBlockHeight = 11
+	DeSoTestnetParams.EncoderMigrationHeights = GetEncoderMigrationHeights(&DeSoTestnetParams.ForkHeights)
+	DeSoTestnetParams.EncoderMigrationHeightsList = GetEncoderMigrationHeightsList(&DeSoTestnetParams.ForkHeights)
+	GlobalDeSoParams = DeSoTestnetParams
 	chain, params, db := NewLowDifficultyBlockchain(t)
 	params.ForkHeights.BalanceModelBlockHeight = 1
 	oldPool, miner := NewTestMiner(t, chain, params, true)
@@ -2027,10 +2033,6 @@ func NewTestPoSBlockchain(t *testing.T) *TestMeta {
 	priv := _generateRandomBLSPrivateKey(t)
 	m0Pk := NewPublicKey(m0PubBytes)
 	posBlockProducer := NewPosBlockProducer(mempool, params, m0Pk, priv.PublicKey())
-	params.ForkHeights.ProofOfStake1StateSetupBlockHeight = 9
-	params.ForkHeights.ProofOfStake2ConsensusCutoverBlockHeight = 11
-	GlobalDeSoParams.ForkHeights.ProofOfStake1StateSetupBlockHeight = 9
-	GlobalDeSoParams.ForkHeights.ProofOfStake2ConsensusCutoverBlockHeight = 11
 	testMeta := &TestMeta{
 		t:                t,
 		chain:            chain,
@@ -2050,8 +2052,6 @@ func NewTestPoSBlockchain(t *testing.T) *TestMeta {
 	}
 	t.Cleanup(func() {
 		mempool.Stop()
-		GlobalDeSoParams.ForkHeights.ProofOfStake1StateSetupBlockHeight = math.MaxUint32
-		GlobalDeSoParams.ForkHeights.ProofOfStake2ConsensusCutoverBlockHeight = math.MaxUint32
 	})
 	return testMeta
 }
