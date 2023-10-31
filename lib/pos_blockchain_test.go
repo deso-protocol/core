@@ -222,7 +222,7 @@ func TestValidateBlockHeight(t *testing.T) {
 	bc, _, _ := NewTestBlockchain(t)
 	hash := NewBlockHash(RandomBytes(32))
 	nowTimestamp := uint64(time.Now().UnixNano())
-	genesisBlock := NewPoSBlockNode(nil, hash, 1, &MsgDeSoHeader{
+	genesisBlock := NewBlockNode(nil, hash, 1, nil, nil, &MsgDeSoHeader{
 		Version:                      2,
 		TstampNanoSecs:               nowTimestamp - uint64(time.Minute.Nanoseconds()),
 		Height:                       1,
@@ -288,7 +288,7 @@ func TestValidateBlockHeight(t *testing.T) {
 func TestAddBlockToBlockIndex(t *testing.T) {
 	bc, _, _ := NewTestBlockchain(t)
 	hash := NewBlockHash(RandomBytes(32))
-	genesisBlockNode := NewPoSBlockNode(nil, hash, 1, &MsgDeSoHeader{
+	genesisBlockNode := NewBlockNode(nil, hash, 1, nil, nil, &MsgDeSoHeader{
 		Version:                      2,
 		Height:                       1,
 		ProposedInView:               1,
@@ -343,7 +343,7 @@ func TestAddBlockToBlockIndex(t *testing.T) {
 	blockNode, exists := bc.blockIndex[*newHash]
 	require.True(t, exists)
 	require.True(t, bytes.Equal(blockNode.Hash[:], newHash[:]))
-	require.True(t, IsBlockStored(blockNode))
+	require.True(t, blockNode.IsStored())
 
 	// Check the uncommitted blocks map
 	uncommittedBlock, uncommittedExists := bc.uncommittedBlocksMap[*newHash]
@@ -359,12 +359,12 @@ func TestValidateBlockView(t *testing.T) {
 	bc, _, _ := NewTestBlockchain(t)
 	hash1 := NewBlockHash(RandomBytes(32))
 	hash2 := NewBlockHash(RandomBytes(32))
-	genesisNode := NewPoSBlockNode(nil, hash1, 1, &MsgDeSoHeader{
+	genesisNode := NewBlockNode(nil, hash1, 1, nil, nil, &MsgDeSoHeader{
 		Version:        2,
 		Height:         1,
 		ProposedInView: 1,
 	}, StatusBlockStored|StatusBlockValidated)
-	block2 := NewPoSBlockNode(genesisNode, hash2, 2, &MsgDeSoHeader{
+	block2 := NewBlockNode(genesisNode, hash2, 2, nil, nil, &MsgDeSoHeader{
 		Version:                      2,
 		Height:                       2,
 		ProposedInView:               2,
@@ -444,12 +444,12 @@ func TestAddBlockToBlockIndexAndUncommittedBlocks(t *testing.T) {
 	bc, _, _ := NewTestBlockchain(t)
 	hash1 := NewBlockHash(RandomBytes(32))
 	hash2 := NewBlockHash(RandomBytes(32))
-	genesisNode := NewPoSBlockNode(nil, hash1, 1, &MsgDeSoHeader{
+	genesisNode := NewBlockNode(nil, hash1, 1, nil, nil, &MsgDeSoHeader{
 		Version:        2,
 		Height:         1,
 		ProposedInView: 1,
 	}, StatusBlockStored|StatusBlockValidated)
-	block2 := NewPoSBlockNode(genesisNode, hash2, 2, &MsgDeSoHeader{
+	block2 := NewBlockNode(genesisNode, hash2, 2, nil, nil, &MsgDeSoHeader{
 		Version:                      2,
 		Height:                       2,
 		ProposedInView:               2,
@@ -511,7 +511,7 @@ func TestAddBlockToBlockIndexAndUncommittedBlocks(t *testing.T) {
 	require.True(t, exists)
 	require.True(t, bytes.Equal(blockNode.Hash[:], newHash[:]))
 	require.Equal(t, blockNode.Height, uint32(2))
-	require.True(t, IsBlockStored(blockNode))
+	require.True(t, blockNode.IsStored())
 	// Check the uncommitted blocks map
 	uncommittedBlock, uncommittedExists := bc.uncommittedBlocksMap[*newHash]
 	require.True(t, uncommittedExists)
@@ -726,7 +726,7 @@ func TestValidateBlockLeader(t *testing.T) {
 func TestGetLineageFromCommittedTip(t *testing.T) {
 	bc, _, _ := NewTestBlockchain(t)
 	hash1 := NewBlockHash(RandomBytes(32))
-	genesisNode := NewPoSBlockNode(nil, hash1, 1, &MsgDeSoHeader{
+	genesisNode := NewBlockNode(nil, hash1, 1, nil, nil, &MsgDeSoHeader{
 		Version:        2,
 		Height:         1,
 		ProposedInView: 1,
@@ -756,7 +756,7 @@ func TestGetLineageFromCommittedTip(t *testing.T) {
 	block.Header.PrevBlockHash = hash1
 	// add another block to the best chain.
 	hash2 := NewBlockHash(RandomBytes(32))
-	block2 := NewPoSBlockNode(genesisNode, hash2, 2, &MsgDeSoHeader{
+	block2 := NewBlockNode(genesisNode, hash2, 2, nil, nil, &MsgDeSoHeader{
 		Version:       2,
 		Height:        2,
 		PrevBlockHash: hash1,

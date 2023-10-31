@@ -364,7 +364,7 @@ func (bc *Blockchain) getLineageFromCommittedTip(desoBlock *MsgDeSoBlock) ([]*Bl
 		if currentBlock.Hash.IsEqual(highestCommittedBlock.Hash) {
 			break
 		}
-		if IsBlockCommitted(currentBlock) {
+		if currentBlock.IsCommitted() {
 			return nil, RuleErrorDoesNotExtendCommittedTip
 		}
 		ancestors = append(ancestors, currentBlock)
@@ -382,7 +382,7 @@ func (bc *Blockchain) addBlockToBlockIndex(desoBlock *MsgDeSoBlock, blockStatus 
 	}
 	// Need to get parent block node from block index
 	prevBlock := bc.blockIndex[*desoBlock.Header.PrevBlockHash]
-	bc.blockIndex[*hash] = NewPoSBlockNode(prevBlock, hash, uint32(desoBlock.Header.Height), desoBlock.Header, blockStatus)
+	bc.blockIndex[*hash] = NewBlockNode(prevBlock, hash, uint32(desoBlock.Header.Height), nil, nil, desoBlock.Header, blockStatus)
 
 	bc.uncommittedBlocksMap[*hash] = desoBlock
 	return nil
@@ -461,7 +461,7 @@ func (bc *Blockchain) msgDeSoBlockToNewBlockNode(desoBlock *MsgDeSoBlock) (*Bloc
 		return nil, errors.Wrapf(err, "msgDeSoBlockToNewBlockNode: Problem hashing block %v", desoBlock)
 	}
 	// TODO: What's the proper status?
-	return NewPoSBlockNode(parent, hash, uint32(desoBlock.Header.Height), desoBlock.Header, StatusBlockValidated), nil
+	return NewBlockNode(parent, hash, uint32(desoBlock.Header.Height), nil, nil, desoBlock.Header, StatusBlockValidated), nil
 }
 
 // addBlockToBestChain adds the block to the best chain.
@@ -519,7 +519,7 @@ func (bc *Blockchain) canCommitGrandparent(currentBlock *BlockNode) (_grandparen
 	// or does it need to have something to do with the QC?
 	parent := bc.bestChainMap[*currentBlock.Header.PrevBlockHash]
 	grandParent := bc.bestChainMap[*parent.Header.PrevBlockHash]
-	if IsBlockCommitted(grandParent) {
+	if grandParent.IsCommitted() {
 		return nil, false
 	}
 	if grandParent.Header.ProposedInView+1 == parent.Header.ProposedInView {
@@ -642,7 +642,7 @@ func (bc *Blockchain) getUtxoViewAtBlockHash(blockHash BlockHash) (*UtxoView, er
 	}
 	// If the provided block is committed, we need to make sure it's the committed tip.
 	// Otherwise, we return an error.
-	if IsBlockCommitted(currentBlock) {
+	if currentBlock.IsCommitted() {
 		highestCommittedBlock, _ := bc.getHighestCommittedBlock()
 		if highestCommittedBlock == nil {
 			return nil, errors.Errorf("getUtxoViewAtBlockHash: No committed blocks found")
@@ -651,7 +651,7 @@ func (bc *Blockchain) getUtxoViewAtBlockHash(blockHash BlockHash) (*UtxoView, er
 			return nil, errors.Errorf("getUtxoViewAtBlockHash: Block %v is committed but not the committed tip", blockHash)
 		}
 	}
-	for !IsBlockCommitted(currentBlock) {
+	for !currentBlock.IsCommitted() {
 		uncommittedAncestors = append(uncommittedAncestors, currentBlock)
 		currentParentHash := currentBlock.Header.PrevBlockHash
 		if currentParentHash == nil {
@@ -693,7 +693,7 @@ func (bc *Blockchain) GetBestChainTip() *BlockNode {
 
 func (bc *Blockchain) getHighestCommittedBlock() (*BlockNode, int) {
 	for ii := len(bc.bestChain) - 1; ii >= 0; ii-- {
-		if IsBlockCommitted(bc.bestChain[ii]) {
+		if bc.bestChain[ii].IsCommitted() {
 			return bc.bestChain[ii], ii
 		}
 	}

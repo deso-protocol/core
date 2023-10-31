@@ -4704,7 +4704,7 @@ func SerializeBlockNode(blockNode *BlockNode) ([]byte, error) {
 }
 
 func DeserializeBlockNode(data []byte) (*BlockNode, error) {
-	blockNode := NewPoWBlockNode(
+	blockNode := NewBlockNode(
 		nil,          // Parent
 		&BlockHash{}, // Hash
 		0,            // Height
@@ -5112,7 +5112,7 @@ func InitDbWithDeSoGenesisBlock(params *DeSoParams, handle *badger.DB,
 	genesisBlock := params.GenesisBlock
 	diffTarget := MustDecodeHexBlockHash(params.MinDifficultyTargetHex)
 	blockHash := MustDecodeHexBlockHash(params.GenesisBlockHashHex)
-	genesisNode := NewPoWBlockNode(
+	genesisNode := NewBlockNode(
 		nil, // Parent
 		blockHash,
 		0, // Height
