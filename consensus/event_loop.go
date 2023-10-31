@@ -174,11 +174,11 @@ func (fc *FastHotStuffEventLoop) storeBlocks(tip BlockWithValidatorList, safeBlo
 		return errors.New("Invalid tip block or validator list")
 	}
 
-	// Do a basic integrity check on the blocks and validator lists
-	hasMalformedInput := collections.All(safeBlocks, isProperlyFormedBlockWithValidatorList)
+	// Do a basic integrity check on the safe blocks and validator lists
+	hasProperlyFormedSafeBlocksAndValidatorLists := collections.All(safeBlocks, isProperlyFormedBlockWithValidatorList)
 
 	// There must be at least one block
-	if len(safeBlocks) == 0 || hasMalformedInput {
+	if len(safeBlocks) == 0 || !hasProperlyFormedSafeBlocksAndValidatorLists {
 		return errors.New("Invalid safe blocks or validator lists")
 	}
 

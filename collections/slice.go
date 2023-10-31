@@ -1,7 +1,10 @@
 package collections
 
 func All[T any](slice []T, predicate func(T) bool) bool {
-	return !Any(slice, predicate)
+	negatedPredicate := func(val T) bool {
+		return !predicate(val)
+	}
+	return !Any(slice, negatedPredicate)
 }
 
 func Any[T any](slice []T, predicate func(T) bool) bool {
