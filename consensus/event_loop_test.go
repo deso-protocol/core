@@ -25,8 +25,8 @@ func TestInit(t *testing.T) {
 	{
 		fc := NewFastHotStuffEventLoop()
 		err := fc.Init(0, 1,
-			BlockWithValidators{createDummyBlock(2), createDummyValidatorSet()},     // tip
-			[]BlockWithValidators{{createDummyBlock(2), createDummyValidatorSet()}}, // safeBlocks
+			BlockWithValidatorList{createDummyBlock(2), createDummyValidatorList()},     // tip
+			[]BlockWithValidatorList{{createDummyBlock(2), createDummyValidatorList()}}, // safeBlocks
 		)
 		require.Error(t, err)
 	}
@@ -35,8 +35,8 @@ func TestInit(t *testing.T) {
 	{
 		fc := NewFastHotStuffEventLoop()
 		err := fc.Init(1, 0,
-			BlockWithValidators{createDummyBlock(2), createDummyValidatorSet()},     // tip
-			[]BlockWithValidators{{createDummyBlock(2), createDummyValidatorSet()}}, // safeBlocks
+			BlockWithValidatorList{createDummyBlock(2), createDummyValidatorList()},     // tip
+			[]BlockWithValidatorList{{createDummyBlock(2), createDummyValidatorList()}}, // safeBlocks
 		)
 		require.Error(t, err)
 	}
@@ -45,18 +45,18 @@ func TestInit(t *testing.T) {
 	{
 		fc := NewFastHotStuffEventLoop()
 		err := fc.Init(1, 1,
-			BlockWithValidators{nil, createDummyValidatorSet()},                     // tip
-			[]BlockWithValidators{{createDummyBlock(2), createDummyValidatorSet()}}, // safeBlocks
+			BlockWithValidatorList{nil, createDummyValidatorList()},                     // tip
+			[]BlockWithValidatorList{{createDummyBlock(2), createDummyValidatorList()}}, // safeBlocks
 		)
 		require.Error(t, err)
 	}
 
-	// Test Init() function with malformed validator set for tip block
+	// Test Init() function with malformed validator list for tip block
 	{
 		fc := NewFastHotStuffEventLoop()
 		err := fc.Init(1, 1,
-			BlockWithValidators{createDummyBlock(2), nil},                           // tip
-			[]BlockWithValidators{{createDummyBlock(2), createDummyValidatorSet()}}, // safeBlocks
+			BlockWithValidatorList{createDummyBlock(2), nil},                            // tip
+			[]BlockWithValidatorList{{createDummyBlock(2), createDummyValidatorList()}}, // safeBlocks
 		)
 		require.Error(t, err)
 	}
@@ -65,18 +65,18 @@ func TestInit(t *testing.T) {
 	{
 		fc := NewFastHotStuffEventLoop()
 		err := fc.Init(1, 1,
-			BlockWithValidators{createDummyBlock(2), createDummyValidatorSet()}, // tip
-			[]BlockWithValidators{{nil, createDummyValidatorSet()}},             // safeBlocks
+			BlockWithValidatorList{createDummyBlock(2), createDummyValidatorList()}, // tip
+			[]BlockWithValidatorList{{nil, createDummyValidatorList()}},             // safeBlocks
 		)
 		require.Error(t, err)
 	}
 
-	// Test Init() function with malformed validator set for safe block
+	// Test Init() function with malformed validator list for safe block
 	{
 		fc := NewFastHotStuffEventLoop()
 		err := fc.Init(1, 1,
-			BlockWithValidators{createDummyBlock(2), createDummyValidatorSet()}, // tip
-			[]BlockWithValidators{{createDummyBlock(2), nil}},                   // safeBlocks
+			BlockWithValidatorList{createDummyBlock(2), createDummyValidatorList()}, // tip
+			[]BlockWithValidatorList{{createDummyBlock(2), nil}},                    // safeBlocks
 		)
 		require.Error(t, err)
 	}
@@ -87,8 +87,8 @@ func TestInit(t *testing.T) {
 
 		fc := NewFastHotStuffEventLoop()
 		err := fc.Init(100, 101,
-			BlockWithValidators{block, createDummyValidatorSet()},     // tip
-			[]BlockWithValidators{{block, createDummyValidatorSet()}}, // safeBlocks
+			BlockWithValidatorList{block, createDummyValidatorList()},     // tip
+			[]BlockWithValidatorList{{block, createDummyValidatorList()}}, // safeBlocks
 		)
 		require.NoError(t, err)
 
@@ -105,14 +105,14 @@ func TestInit(t *testing.T) {
 		require.Equal(t, fc.timeoutBaseDuration, time.Duration(101))
 
 		require.Equal(t, fc.currentView, uint64(3))
-		require.Equal(t, len(fc.tip.validatorSet), 2)
+		require.Equal(t, len(fc.tip.validatorList), 2)
 		require.Equal(t, len(fc.tip.validatorLookup), 2)
 
 		require.Equal(t, len(fc.safeBlocks), 1)
 		require.Equal(t, fc.safeBlocks[0].block.GetBlockHash().GetValue(), block.GetBlockHash().GetValue())
 		require.Equal(t, fc.safeBlocks[0].block.GetView(), uint64(2))
 		require.Equal(t, fc.safeBlocks[0].block.GetHeight(), uint64(1))
-		require.Equal(t, len(fc.safeBlocks[0].validatorSet), 2)
+		require.Equal(t, len(fc.safeBlocks[0].validatorList), 2)
 		require.Equal(t, len(fc.safeBlocks[0].validatorLookup), 2)
 	}
 }
@@ -122,16 +122,16 @@ func TestProcessTipBlock(t *testing.T) {
 
 	fc := NewFastHotStuffEventLoop()
 	err := fc.Init(oneHourInNanoSecs, oneHourInNanoSecs,
-		BlockWithValidators{createDummyBlock(2), createDummyValidatorSet()},     // tip
-		[]BlockWithValidators{{createDummyBlock(2), createDummyValidatorSet()}}, // safeBlocks
+		BlockWithValidatorList{createDummyBlock(2), createDummyValidatorList()},     // tip
+		[]BlockWithValidatorList{{createDummyBlock(2), createDummyValidatorList()}}, // safeBlocks
 	)
 	require.NoError(t, err)
 
 	// Test ProcessTipBlock() function when event loop is not running
 	{
 		err := fc.ProcessTipBlock(
-			BlockWithValidators{createDummyBlock(2), createDummyValidatorSet()},     // tip
-			[]BlockWithValidators{{createDummyBlock(2), createDummyValidatorSet()}}, // safeBlocks
+			BlockWithValidatorList{createDummyBlock(2), createDummyValidatorList()},     // tip
+			[]BlockWithValidatorList{{createDummyBlock(2), createDummyValidatorList()}}, // safeBlocks
 		)
 		require.Error(t, err)
 	}
@@ -142,17 +142,17 @@ func TestProcessTipBlock(t *testing.T) {
 	// Test ProcessTipBlock() function with malformed tip block
 	{
 		err := fc.ProcessTipBlock(
-			BlockWithValidators{nil, createDummyValidatorSet()},                     // tip
-			[]BlockWithValidators{{createDummyBlock(2), createDummyValidatorSet()}}, // safeBlocks
+			BlockWithValidatorList{nil, createDummyValidatorList()},                     // tip
+			[]BlockWithValidatorList{{createDummyBlock(2), createDummyValidatorList()}}, // safeBlocks
 		)
 		require.Error(t, err)
 	}
 
-	// Test ProcessTipBlock() function with malformed tip validator set
+	// Test ProcessTipBlock() function with malformed tip validator list
 	{
 		err := fc.ProcessTipBlock(
-			BlockWithValidators{createDummyBlock(2), nil},                           // tip
-			[]BlockWithValidators{{createDummyBlock(2), createDummyValidatorSet()}}, // safeBlocks
+			BlockWithValidatorList{createDummyBlock(2), nil},                            // tip
+			[]BlockWithValidatorList{{createDummyBlock(2), createDummyValidatorList()}}, // safeBlocks
 		)
 		require.Error(t, err)
 	}
@@ -160,24 +160,24 @@ func TestProcessTipBlock(t *testing.T) {
 	// Test ProcessTipBlock() function with malformed safe block
 	{
 		err := fc.ProcessTipBlock(
-			BlockWithValidators{createDummyBlock(2), createDummyValidatorSet()}, // tip
-			[]BlockWithValidators{{nil, createDummyValidatorSet()}},             // safeBlocks
+			BlockWithValidatorList{createDummyBlock(2), createDummyValidatorList()}, // tip
+			[]BlockWithValidatorList{{nil, createDummyValidatorList()}},             // safeBlocks
 		)
 		require.Error(t, err)
 	}
 
-	// Test ProcessTipBlock() function with malformed safe block's validator set
+	// Test ProcessTipBlock() function with malformed safe block's validator list
 	{
 		err := fc.ProcessTipBlock(
-			BlockWithValidators{createDummyBlock(2), createDummyValidatorSet()}, // tip
-			[]BlockWithValidators{{createDummyBlock(2), nil}},                   // safeBlocks
+			BlockWithValidatorList{createDummyBlock(2), createDummyValidatorList()}, // tip
+			[]BlockWithValidatorList{{createDummyBlock(2), nil}},                    // safeBlocks
 		)
 		require.Error(t, err)
 	}
 
-	// Populate the votesSeen and timeoutsSeen maps with dummy data
+	// Populate the votesSeenByBlockHash and timeoutsSeenByView maps with dummy data
 	{
-		fc.votesSeen = map[[32]byte]map[string]VoteMessage{
+		fc.votesSeenByBlockHash = map[[32]byte]map[string]VoteMessage{
 			{0}: { // blockHash = 0
 				"pubKeyA": createDummyVoteMessage(0),
 			},
@@ -195,7 +195,7 @@ func TestProcessTipBlock(t *testing.T) {
 			},
 		}
 
-		fc.timeoutsSeen = map[uint64]map[string]TimeoutMessage{
+		fc.timeoutsSeenByView = map[uint64]map[string]TimeoutMessage{
 			0: { // view = 0
 				"pubKeyA": createDummyTimeoutMessage(0),
 			},
@@ -214,10 +214,10 @@ func TestProcessTipBlock(t *testing.T) {
 		}
 	}
 
-	// Verify the sizes of the votesSeen and timeoutsSeen maps
+	// Verify the sizes of the votesSeenByBlockHash and timeoutsSeenByView maps
 	{
-		require.Equal(t, len(fc.votesSeen), 5)
-		require.Equal(t, len(fc.timeoutsSeen), 5)
+		require.Equal(t, len(fc.votesSeenByBlockHash), 5)
+		require.Equal(t, len(fc.timeoutsSeenByView), 5)
 	}
 
 	// Test ProcessTipBlock() function with valid parameters
@@ -227,8 +227,8 @@ func TestProcessTipBlock(t *testing.T) {
 		nextBlock.view = 3
 
 		err := fc.ProcessTipBlock(
-			BlockWithValidators{nextBlock, createDummyValidatorSet()},     // tip
-			[]BlockWithValidators{{nextBlock, createDummyValidatorSet()}}, // safeBlocks
+			BlockWithValidatorList{nextBlock, createDummyValidatorList()},     // tip
+			[]BlockWithValidatorList{{nextBlock, createDummyValidatorList()}}, // safeBlocks
 		)
 		require.NoError(t, err)
 
@@ -237,13 +237,13 @@ func TestProcessTipBlock(t *testing.T) {
 		require.Equal(t, uint64(2), fc.tip.block.GetHeight())
 
 		require.Equal(t, uint64(4), fc.currentView)
-		require.Equal(t, 2, len(fc.tip.validatorSet))
+		require.Equal(t, 2, len(fc.tip.validatorList))
 	}
 
 	// Verify that stale votes and timeouts have been evicted
 	{
-		require.Equal(t, 2, len(fc.votesSeen))
-		require.Equal(t, 2, len(fc.timeoutsSeen))
+		require.Equal(t, 2, len(fc.votesSeenByBlockHash))
+		require.Equal(t, 2, len(fc.timeoutsSeenByView))
 	}
 
 	// Stop the event loop
@@ -257,8 +257,8 @@ func TestAdvanceViewOnTimeout(t *testing.T) {
 
 	// BlockHeight = 1, Current View = 3
 	err := fc.Init(oneHourInNanoSecs, oneHourInNanoSecs,
-		BlockWithValidators{createDummyBlock(2), createDummyValidatorSet()},     // tip
-		[]BlockWithValidators{{createDummyBlock(2), createDummyValidatorSet()}}, // safeBlocks
+		BlockWithValidatorList{createDummyBlock(2), createDummyValidatorList()},     // tip
+		[]BlockWithValidatorList{{createDummyBlock(2), createDummyValidatorList()}}, // safeBlocks
 	)
 	require.NoError(t, err)
 
@@ -271,9 +271,9 @@ func TestAdvanceViewOnTimeout(t *testing.T) {
 	// Start the event loop
 	fc.Start()
 
-	// Populate the votesSeen and timeoutsSeen maps with dummy data
+	// Populate the votesSeenByBlockHash and timeoutsSeenByView maps with dummy data
 	{
-		fc.votesSeen = map[[32]byte]map[string]VoteMessage{
+		fc.votesSeenByBlockHash = map[[32]byte]map[string]VoteMessage{
 			{1}: { // blockHash = 1
 				"pubKeyA": createDummyVoteMessage(1),
 			},
@@ -291,7 +291,7 @@ func TestAdvanceViewOnTimeout(t *testing.T) {
 			},
 		}
 
-		fc.timeoutsSeen = map[uint64]map[string]TimeoutMessage{
+		fc.timeoutsSeenByView = map[uint64]map[string]TimeoutMessage{
 			1: { // view = 1
 				"pubKeyA": createDummyTimeoutMessage(1),
 			},
@@ -319,8 +319,8 @@ func TestAdvanceViewOnTimeout(t *testing.T) {
 
 	// Verify that vote and timeout messages haven't changed
 	{
-		require.Equal(t, len(fc.votesSeen), 3)
-		require.Equal(t, len(fc.timeoutsSeen), 3)
+		require.Equal(t, len(fc.votesSeenByBlockHash), 3)
+		require.Equal(t, len(fc.timeoutsSeenByView), 3)
 	}
 
 	// Run AdvanceViewOnTimeout() to view 5
@@ -332,8 +332,8 @@ func TestAdvanceViewOnTimeout(t *testing.T) {
 
 	// Verify that stale votes and timeouts have been evicted
 	{
-		require.Equal(t, len(fc.votesSeen), 2)
-		require.Equal(t, len(fc.timeoutsSeen), 2)
+		require.Equal(t, len(fc.votesSeenByBlockHash), 2)
+		require.Equal(t, len(fc.timeoutsSeenByView), 2)
 	}
 
 	// Stop the event loop
@@ -347,8 +347,8 @@ func TestProcessValidatorVote(t *testing.T) {
 
 	// BlockHeight = 1, Current View = 3
 	err := fc.Init(oneHourInNanoSecs, oneHourInNanoSecs,
-		BlockWithValidators{createDummyBlock(2), createDummyValidatorSet()},     // tip
-		[]BlockWithValidators{{createDummyBlock(2), createDummyValidatorSet()}}, // safeBlocks
+		BlockWithValidatorList{createDummyBlock(2), createDummyValidatorList()},     // tip
+		[]BlockWithValidatorList{{createDummyBlock(2), createDummyValidatorList()}}, // safeBlocks
 	)
 	require.NoError(t, err)
 
@@ -389,7 +389,7 @@ func TestProcessValidatorVote(t *testing.T) {
 	// Test when we've already seen a vote from the validator for the same view
 	{
 		vote := createDummyVoteMessage(4)
-		fc.votesSeen[GetVoteSignaturePayload(vote.GetView(), vote.GetBlockHash())] = map[string]VoteMessage{
+		fc.votesSeenByBlockHash[GetVoteSignaturePayload(vote.GetView(), vote.GetBlockHash())] = map[string]VoteMessage{
 			vote.publicKey.ToString(): vote,
 		}
 
@@ -404,7 +404,7 @@ func TestProcessValidatorVote(t *testing.T) {
 		timeout := createDummyTimeoutMessage(5)
 		timeout.publicKey = vote.publicKey
 
-		fc.timeoutsSeen[timeout.GetView()] = map[string]TimeoutMessage{
+		fc.timeoutsSeenByView[timeout.GetView()] = map[string]TimeoutMessage{
 			timeout.publicKey.ToString(): timeout,
 		}
 
@@ -431,8 +431,8 @@ func TestProcessValidatorTimeout(t *testing.T) {
 
 	// BlockHeight = 1, Current View = 3
 	err := fc.Init(oneHourInNanoSecs, oneHourInNanoSecs,
-		BlockWithValidators{createDummyBlock(2), createDummyValidatorSet()},     // tip
-		[]BlockWithValidators{{createDummyBlock(2), createDummyValidatorSet()}}, // safeBlocks
+		BlockWithValidatorList{createDummyBlock(2), createDummyValidatorList()},     // tip
+		[]BlockWithValidatorList{{createDummyBlock(2), createDummyValidatorList()}}, // safeBlocks
 	)
 	require.NoError(t, err)
 
@@ -475,7 +475,7 @@ func TestProcessValidatorTimeout(t *testing.T) {
 		timeout := createDummyTimeoutMessage(4)
 		vote := createDummyVoteMessage(4)
 
-		fc.votesSeen[GetVoteSignaturePayload(vote.GetView(), vote.GetBlockHash())] = map[string]VoteMessage{
+		fc.votesSeenByBlockHash[GetVoteSignaturePayload(vote.GetView(), vote.GetBlockHash())] = map[string]VoteMessage{
 			timeout.publicKey.ToString(): vote,
 		}
 
@@ -488,7 +488,7 @@ func TestProcessValidatorTimeout(t *testing.T) {
 	{
 		timeout := createDummyTimeoutMessage(4)
 
-		fc.timeoutsSeen[timeout.view] = map[string]TimeoutMessage{
+		fc.timeoutsSeenByView[timeout.view] = map[string]TimeoutMessage{
 			timeout.publicKey.ToString(): timeout,
 		}
 
@@ -516,8 +516,8 @@ func TestTimeoutScheduledTaskExecuted(t *testing.T) {
 
 	fc := NewFastHotStuffEventLoop()
 	err := fc.Init(oneHourInNanoSecs, oneMilliSecondInNanoSeconds,
-		BlockWithValidators{dummyBlock, createDummyValidatorSet()},     // tip
-		[]BlockWithValidators{{dummyBlock, createDummyValidatorSet()}}, // safeBlocks
+		BlockWithValidatorList{dummyBlock, createDummyValidatorList()},     // tip
+		[]BlockWithValidatorList{{dummyBlock, createDummyValidatorList()}}, // safeBlocks
 	)
 	require.NoError(t, err)
 
@@ -559,8 +559,8 @@ func TestResetEventLoopSignal(t *testing.T) {
 
 	fc := NewFastHotStuffEventLoop()
 	err := fc.Init(oneHourInNanoSecs, 2*oneHourInNanoSecs,
-		BlockWithValidators{createDummyBlock(2), createDummyValidatorSet()},     // tip
-		[]BlockWithValidators{{createDummyBlock(2), createDummyValidatorSet()}}, // safeBlocks
+		BlockWithValidatorList{createDummyBlock(2), createDummyValidatorList()},     // tip
+		[]BlockWithValidatorList{{createDummyBlock(2), createDummyValidatorList()}}, // safeBlocks
 	)
 	require.NoError(t, err)
 
@@ -604,11 +604,11 @@ func TestVoteQCConstructionSignal(t *testing.T) {
 	// Create a valid dummy block at view 2
 	block := createDummyBlock(2)
 
-	// Create a valid validator set
+	// Create a valid validator list
 	validatorPrivateKey1, _ := bls.NewPrivateKey()
 	validatorPrivateKey2, _ := bls.NewPrivateKey()
 
-	validatorSet := []Validator{
+	validatorList := []Validator{
 		&validator{
 			publicKey:   validatorPrivateKey1.PublicKey(),
 			stakeAmount: uint256.NewInt().SetUint64(70),
@@ -628,8 +628,8 @@ func TestVoteQCConstructionSignal(t *testing.T) {
 	{
 		fc := NewFastHotStuffEventLoop()
 		err := fc.Init(time.Microsecond, time.Hour,
-			BlockWithValidators{block, validatorSet},     // tip
-			[]BlockWithValidators{{block, validatorSet}}, // safeBlocks
+			BlockWithValidatorList{block, validatorList},     // tip
+			[]BlockWithValidatorList{{block, validatorList}}, // safeBlocks
 		)
 		require.NoError(t, err)
 
@@ -641,8 +641,8 @@ func TestVoteQCConstructionSignal(t *testing.T) {
 			signature: validator2Vote,                   // Validator 2's vote
 		}
 
-		// Store the vote in the event loop's votesSeen map
-		fc.votesSeen[voteSignaturePayload] = map[string]VoteMessage{
+		// Store the vote in the event loop's votesSeenByBlockHash map
+		fc.votesSeenByBlockHash[voteSignaturePayload] = map[string]VoteMessage{
 			vote.publicKey.ToString(): &vote,
 		}
 
@@ -665,8 +665,8 @@ func TestVoteQCConstructionSignal(t *testing.T) {
 	{
 		fc := NewFastHotStuffEventLoop()
 		err := fc.Init(time.Microsecond, time.Hour,
-			BlockWithValidators{block, validatorSet},     // tip
-			[]BlockWithValidators{{block, validatorSet}}, // safeBlocks
+			BlockWithValidatorList{block, validatorList},     // tip
+			[]BlockWithValidatorList{{block, validatorList}}, // safeBlocks
 		)
 		require.NoError(t, err)
 
@@ -678,8 +678,8 @@ func TestVoteQCConstructionSignal(t *testing.T) {
 			signature: validator1Vote,                   // Validator 1's vote
 		}
 
-		// Store the vote in the event loop's votesSeen map
-		fc.votesSeen[voteSignaturePayload] = map[string]VoteMessage{
+		// Store the vote in the event loop's votesSeenByBlockHash map
+		fc.votesSeenByBlockHash[voteSignaturePayload] = map[string]VoteMessage{
 			vote.publicKey.ToString(): &vote,
 		}
 
@@ -723,11 +723,11 @@ func TestTimeoutQCConstructionSignal(t *testing.T) {
 		qc:        createDummyQC(2, block1.GetBlockHash()),
 	}
 
-	// Create a valid validator set
+	// Create a valid validator list
 	validatorPrivateKey1, _ := bls.NewPrivateKey()
 	validatorPrivateKey2, _ := bls.NewPrivateKey()
 
-	validatorSet := []Validator{
+	validatorList := []Validator{
 		&validator{
 			publicKey:   validatorPrivateKey1.PublicKey(),
 			stakeAmount: uint256.NewInt().SetUint64(70),
@@ -750,10 +750,10 @@ func TestTimeoutQCConstructionSignal(t *testing.T) {
 	{
 		fc := NewFastHotStuffEventLoop()
 		err := fc.Init(time.Microsecond, time.Hour,
-			BlockWithValidators{block2, validatorSet}, // tip
-			[]BlockWithValidators{ // safeBlocks
-				{block1, validatorSet},
-				{block2, validatorSet},
+			BlockWithValidatorList{block2, validatorList}, // tip
+			[]BlockWithValidatorList{ // safeBlocks
+				{block1, validatorList},
+				{block2, validatorList},
 			},
 		)
 		require.NoError(t, err)
@@ -769,8 +769,8 @@ func TestTimeoutQCConstructionSignal(t *testing.T) {
 			signature: validator2TimeoutSignature,       // Validator 2's timeout signature on payload (view 4, highQCview 2)
 		}
 
-		// Store the timeout in the event loop's timeoutsSeen map
-		fc.timeoutsSeen[4] = map[string]TimeoutMessage{
+		// Store the timeout in the event loop's timeoutsSeenByView map
+		fc.timeoutsSeenByView[4] = map[string]TimeoutMessage{
 			timeout.publicKey.ToString(): &timeout,
 		}
 
@@ -793,10 +793,10 @@ func TestTimeoutQCConstructionSignal(t *testing.T) {
 	{
 		fc := NewFastHotStuffEventLoop()
 		err := fc.Init(time.Microsecond, time.Hour,
-			BlockWithValidators{block2, validatorSet}, // tip
-			[]BlockWithValidators{ // safeBlocks
-				{block1, validatorSet},
-				{block2, validatorSet},
+			BlockWithValidatorList{block2, validatorList}, // tip
+			[]BlockWithValidatorList{ // safeBlocks
+				{block1, validatorList},
+				{block2, validatorList},
 			},
 		)
 		require.NoError(t, err)
@@ -820,8 +820,8 @@ func TestTimeoutQCConstructionSignal(t *testing.T) {
 			signature: validator2TimeoutSignature,       // Validator 2's timeout signature on payload (view 4, highQCview 2)
 		}
 
-		// Store the timeout in the event loop's timeoutsSeen map
-		fc.timeoutsSeen[4] = map[string]TimeoutMessage{
+		// Store the timeout in the event loop's timeoutsSeenByView map
+		fc.timeoutsSeenByView[4] = map[string]TimeoutMessage{
 			timeout1.publicKey.ToString(): &timeout1,
 			timeout2.publicKey.ToString(): &timeout2,
 		}
@@ -873,8 +873,8 @@ func TestFastHotStuffEventLoopStartStop(t *testing.T) {
 
 	fc := NewFastHotStuffEventLoop()
 	err := fc.Init(oneHourInNanoSecs, 2*oneHourInNanoSecs,
-		BlockWithValidators{createDummyBlock(2), createDummyValidatorSet()},     // tip
-		[]BlockWithValidators{{createDummyBlock(2), createDummyValidatorSet()}}, // safeBlocks
+		BlockWithValidatorList{createDummyBlock(2), createDummyValidatorList()},     // tip
+		[]BlockWithValidatorList{{createDummyBlock(2), createDummyValidatorList()}}, // safeBlocks
 	)
 	require.NoError(t, err)
 

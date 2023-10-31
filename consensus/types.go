@@ -36,6 +36,10 @@ type FastHotStuffEvent struct {
 	AggregateQC    AggregateQuorumCertificate
 }
 
+// Create an alias type of the 32 bit block hash so that the raw [32]byte type isn't
+// ambiguously repeated in the code base
+type BlockHashValue = [32]byte
+
 // BlockHash is a 32-byte hash of a block used to uniquely identify a block. It's re-defined here
 // as an interface that matches the exact structure of the BlockHash type in core, so that the two
 // packages are decoupled and the Fast HotStuff event loop can be tested end-to-end independently.
@@ -102,25 +106,25 @@ type Block interface {
 	GetQC() QuorumCertificate
 }
 
-type BlockWithValidators struct {
+type BlockWithValidatorList struct {
 	Block Block
-	// The validator set for the next block height after the block. This validator set can be used to validate
-	// votes and timeouts used to build a QC that extends from the block. The validator set must be sorted
-	// in descending order of stake amount with a consistent tie breaking scheme.
-	Validators []Validator
+	// The ordered validator list for the next block height after the block. This validator list can be used to
+	// validate votes and timeouts used to build a QC that extends from the block. The validator list must be
+	// sorted in descending order of stake amount with a consistent tie breaking scheme.
+	ValidatorList []Validator
 }
 
 // We want a large buffer for the signal channels to ensure threads don't block when trying to push new
 // signals.
 //
-// TODO: is a size of 100 enough? If we want to bullet-proof this, we could back it by a slice as a
+// TODO: is a size of 10000 enough? If we want to bullet-proof this, we could back it by a slice as a
 // secondary buffer. That seems unnecessary since every channel will only have signals pushed by a single
 // producer thread.
-const signalChannelBufferSize = 100
+const signalChannelBufferSize = 10000
 
 // An instance of FastHotStuffEventLoop is a self-contained module that represents a single node running
 // the event loop for the Fast HotStuff consensus protocol. The event loop is initialized at the current chain's
-// tip, with a given block hash, block height, view number, and validator set. The event loop is simplified and
+// tip, with a given block hash, block height, view number, and validator list. The event loop is simplified and
 // does not know whether its role is that of a block proposer or a replica validator.
 //
 // Given a block that's at the tip of the current chain, the event loop maintains its own internal data structures
@@ -168,18 +172,18 @@ type FastHotStuffEventLoop struct {
 	// descendants that are safe to extend from. This slice also includes the tip block itself.
 	safeBlocks []blockWithValidatorLookup
 
-	// votesSeen is an in-memory map of all the votes we've seen so far. It's a nested map with the
-	// following nested key structure:
+	// votesSeenByBlockHash is an in-memory map of all the votes we've seen so far. It's a nested map with
+	// the following nested key structure:
 	//
 	//   sha3-256(vote.View, vote.BlockHash) - > string(vote.PublicKey) -> VoteMessage
 	//
 	// We use a nested map as above because we want to be able to efficiently fetch all votes by block hash.
-	votesSeen map[[32]byte]map[string]VoteMessage
+	votesSeenByBlockHash map[BlockHashValue]map[string]VoteMessage
 
-	// timeoutsSeen is an in-memory map of all the timeout messages we've seen so far, organized by
+	// timeoutsSeenByView is an in-memory map of all the timeout messages we've seen so far, organized by
 	// the timed out view and the BLS public key string of the sender. We use a nested map because
 	// we want to be able to fetch all timeout messages by view.
-	timeoutsSeen map[uint64]map[string]TimeoutMessage
+	timeoutsSeenByView map[uint64]map[string]TimeoutMessage
 
 	// Externally accessible channel for signals sent to the Server.
 	Events chan *FastHotStuffEvent

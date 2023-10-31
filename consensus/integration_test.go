@@ -72,8 +72,8 @@ func TestNetworkWithOfflineValidators(t *testing.T) {
 	node3.Start()
 	node4.Stop()
 
-	// Let all nodes run for 0.5 seconds so that the network produces at least one block.
-	time.Sleep(time.Millisecond * 500)
+	// Let all nodes run for 2 seconds so that the network produces at least one block.
+	time.Sleep(time.Millisecond * 2000)
 
 	// Stop all remaining nodes
 	node1.Stop()

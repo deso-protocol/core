@@ -62,8 +62,8 @@ func (node *validatorNode) Init(
 	return node.eventLoop.Init(
 		crankTimerInterval,
 		timeoutBaseDuration,
-		BlockWithValidators{genesisBlock, node.getValidators()},
-		[]BlockWithValidators{
+		BlockWithValidatorList{genesisBlock, node.getValidators()},
+		[]BlockWithValidatorList{
 			{genesisBlock, node.getValidators()},
 		},
 	)
@@ -81,9 +81,9 @@ func (node *validatorNode) Resync(tipBlock *block, safeBlocks []*block) error {
 	return node.eventLoop.Init(
 		node.eventLoop.crankTimerInterval,
 		node.eventLoop.timeoutBaseDuration,
-		BlockWithValidators{tipBlock, node.getValidators()},
-		collections.Transform(safeBlocks, func(bb *block) BlockWithValidators {
-			return BlockWithValidators{bb, node.getValidators()}
+		BlockWithValidatorList{tipBlock, node.getValidators()},
+		collections.Transform(safeBlocks, func(bb *block) BlockWithValidatorList {
+			return BlockWithValidatorList{bb, node.getValidators()}
 		}),
 	)
 }
@@ -154,11 +154,11 @@ func (node *validatorNode) ProcessBlock(incomingBlock *block) {
 
 	// Update the event loop with the new block as the chain tip.
 	node.eventLoop.ProcessTipBlock(
-		BlockWithValidators{incomingBlock, node.getValidators()},
+		BlockWithValidatorList{incomingBlock, node.getValidators()},
 		collections.Transform(
 			collections.MapValues(node.safeBlocks),
-			func(bb *block) BlockWithValidators {
-				return BlockWithValidators{bb, node.getValidators()}
+			func(bb *block) BlockWithValidatorList {
+				return BlockWithValidatorList{bb, node.getValidators()}
 			},
 		),
 	)
