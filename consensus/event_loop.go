@@ -86,6 +86,13 @@ func (fc *FastHotStuffEventLoop) Init(
 	return nil
 }
 
+// GetCurrentView is a simple getter that returns the event loop's current view. It does not need
+// to be thread-safe. The caller is expected to use it in a thread-safe manner, at a time when
+// the view is guaranteed to not change.
+func (fc *FastHotStuffEventLoop) GetCurrentView() uint64 {
+	return fc.currentView
+}
+
 // AdvanceViewOnTimeout is called when the tip has not changed but the event loop has timed out. This
 // function advances the view and resets the crank timer and timeout scheduled tasks.
 func (fc *FastHotStuffEventLoop) AdvanceViewOnTimeout() (uint64, error) {
