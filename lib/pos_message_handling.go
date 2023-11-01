@@ -3,6 +3,18 @@ package lib
 import "github.com/deso-protocol/core/consensus"
 
 type ConsensusMessageHandler struct {
+	fastHotStuffEventLoop *consensus.FastHotStuffEventLoop
+	blockchain            *Blockchain
+}
+
+func NewConsensusMessageHandler(
+	fastHotStuffEventLoop *consensus.FastHotStuffEventLoop,
+	blockchain *Blockchain,
+) *ConsensusMessageHandler {
+	return &ConsensusMessageHandler{
+		fastHotStuffEventLoop: fastHotStuffEventLoop,
+		blockchain:            blockchain,
+	}
 }
 
 func (handler *ConsensusMessageHandler) HandleFastHostStuffBlockProposal(event *consensus.FastHotStuffEvent) {
