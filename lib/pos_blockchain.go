@@ -14,14 +14,13 @@ import (
 //  1. Determine if we're missing the parent block of this block.
 //     If so, return the hash of the missing block and add this block to the orphans list.
 //  2. Validate the incoming block, its header, its block height, the leader, and its QCs (vote or timeout)
-//  3. Store the block in the block index and uncommitted blocks map.
+//  3. Store the block in the block index and save to DB.
 //  4. try to apply the incoming block as the tip (performing reorgs as necessary). If it can't be applied, we exit here.
 //  5. Run the commit rule - If applicable, flushes the incoming block's grandparent to the DB
-//  6. Prune in-memory struct holding uncommitted block.
 func (bc *Blockchain) processBlockPoS(desoBlock *MsgDeSoBlock, currentView uint64, verifySignatures bool) (_success bool, _isOrphan bool, _missingBlockHashes []*BlockHash, _err error) {
 	// 1. Determine if we're missing the parent block of this block. If it's parent exists in the blockIndex,
 	// it is safe to assume we have all ancestors of this block in the block index.
-	// If the parent block is missing, process the orphan, but don't add to the block index or uncommitted block map.
+	// If the parent block is missing, process the orphan, but don't add to the block index.
 	lineageFromCommittedTip, err := bc.getLineageFromCommittedTip(desoBlock)
 	if err != nil && err != RuleErrorMissingAncestorBlock {
 		return false, false, nil, err
@@ -71,8 +70,8 @@ func (bc *Blockchain) processBlockPoS(desoBlock *MsgDeSoBlock, currentView uint6
 	}
 
 	// 3. We can now add this block to the block index since we have performed
-	// all basic validations. We can also add it to the uncommittedBlocksMap
-	if err = bc.addBlockToBlockIndex(desoBlock, StatusBlockStored|StatusBlockValidated); err != nil {
+	// all basic validations.
+	if err = bc.storeValidatedBlockInBlockIndex(desoBlock); err != nil {
 		return false, false, nil, errors.Wrap(err, "processBlockPoS: Problem adding block to block index: ")
 	}
 
@@ -93,13 +92,6 @@ func (bc *Blockchain) processBlockPoS(desoBlock *MsgDeSoBlock, currentView uint6
 	// 5. Commit grandparent if possible.
 	if err = bc.runCommitRuleOnBestChain(); err != nil {
 		return false, false, nil, errors.Wrap(err, "processBlockPoS: error committing grandparents: ")
-	}
-
-	// 6. Update in-memory struct holding uncommitted blocks.
-	if err = bc.pruneUncommittedBlocks(desoBlock); err != nil {
-		// We glog and continue here as failing to prune the uncommitted blocks map is not a
-		// critical error.
-		glog.Errorf("processBlockPoS: Error pruning uncommitted blocks: %v", err)
 	}
 
 	return true, false, nil, nil
@@ -374,17 +366,144 @@ func (bc *Blockchain) getLineageFromCommittedTip(desoBlock *MsgDeSoBlock) ([]*Bl
 	return ancestors, nil
 }
 
-// addBlockToBlockIndex adds the block to the block index and uncommitted blocks map.
-func (bc *Blockchain) addBlockToBlockIndex(desoBlock *MsgDeSoBlock, blockStatus BlockStatus) error {
-	hash, err := desoBlock.Hash()
+// getOrCreateBlockNodeFromBlockIndex returns the block node from the block index if it exists.
+// Otherwise, it creates a new block node and adds it to the block index.
+func (bc *Blockchain) getOrCreateBlockNodeFromBlockIndex(block *MsgDeSoBlock) (*BlockNode, error) {
+	hash, err := block.Header.Hash()
 	if err != nil {
-		return errors.Wrapf(err, "addBlockToBlockIndex: Problem hashing block %v", desoBlock)
+		return nil, errors.Wrapf(err, "getOrCreateBlockNodeFromBlockIndex: Problem hashing block %v", block)
 	}
-	// Need to get parent block node from block index
-	prevBlock := bc.blockIndex[*desoBlock.Header.PrevBlockHash]
-	bc.blockIndex[*hash] = NewBlockNode(prevBlock, hash, uint32(desoBlock.Header.Height), nil, nil, desoBlock.Header, blockStatus)
+	blockNode := bc.blockIndex[*hash]
+	if blockNode != nil {
+		return blockNode, nil
+	}
+	prevBlockNode := bc.blockIndex[*block.Header.PrevBlockHash]
+	newBlockNode := NewBlockNode(prevBlockNode, hash, uint32(block.Header.Height), nil, nil, block.Header, StatusNone)
+	bc.blockIndex[*hash] = newBlockNode
+	return newBlockNode, nil
+}
 
-	bc.uncommittedBlocksMap[*hash] = desoBlock
+// setBlockStoredInBlockIndex upserts the blocks into the in-memory block index and updates its status to
+// StatusBlockStored. It also writes the block to the block index in badger
+// by calling upsertBlockAndBlockNodeToDB.
+func (bc *Blockchain) storeBlockInBlockIndex(block *MsgDeSoBlock) error {
+	blockNode, err := bc.getOrCreateBlockNodeFromBlockIndex(block)
+	if err != nil {
+		return errors.Wrapf(err, "storeBlockInBlockIndex: Problem getting or creating block node")
+	}
+	// We should throw an error if the BlockNode is already Stored.
+	if blockNode.IsStored() {
+		return errors.New("storeBlockInBlockIndex: BlockNode is already stored")
+	}
+	blockNode.Status |= StatusBlockStored
+	return bc.upsertBlockAndBlockNodeToDB(block, blockNode)
+}
+
+// storeValidatedBlockInBlockIndex upserts the blocks into the in-memory block index and updates its status to
+// StatusBlockValidated. If it does not have the status StatusBlockStored already, we add that as we will
+// store the block in the DB after updating its status.  It also writes the block to the block index in badger
+// by calling upsertBlockAndBlockNodeToDB.
+func (bc *Blockchain) storeValidatedBlockInBlockIndex(block *MsgDeSoBlock) error {
+	blockNode, err := bc.getOrCreateBlockNodeFromBlockIndex(block)
+	if err != nil {
+		return errors.Wrapf(err, "storeValidatedBlockInBlockIndex: Problem getting or creating block node")
+	}
+	// We should throw an error if the BlockNode is already Validated.
+	if blockNode.IsValidated() {
+		return errors.New("storeValidatedBlockInBlockIndex: BlockNode is already validated")
+	}
+	blockNode.Status |= StatusBlockValidated
+	// If the BlockNode is not already stored, we should set its status to stored.
+	if !blockNode.IsStored() {
+		blockNode.Status |= StatusBlockStored
+	}
+	return bc.upsertBlockAndBlockNodeToDB(block, blockNode)
+}
+
+// storeValidateFailedBlockInBlockIndex upserts the blocks into the in-memory block index and updates its status to
+// StatusBlockValidateFailed. If it does not have the status StatusBlockStored already, we add that as we will
+// store the block in the DB after updating its status.  It also writes the block to the block index in badger
+// by calling upsertBlockAndBlockNodeToDB.
+func (bc *Blockchain) storeValidateFailedBlockInBlockIndex(block *MsgDeSoBlock) error {
+	blockNode, err := bc.getOrCreateBlockNodeFromBlockIndex(block)
+	if err != nil {
+		return errors.Wrapf(err, "storeValidateFailedBlockInBlockIndex: Problem getting or creating block node")
+	}
+	// We should throw an error if the BlockNode is already Validate Failed.
+	if blockNode.IsValidateFailed() {
+		return errors.New("storeValidateFailedBlockInBlockIndex: BlockNode is already validate failed")
+	}
+	// We should throw an error if the BlockNode is already Validated
+	if blockNode.IsValidated() {
+		return errors.New("storeValidateFailedBlockInBlockIndex: can't set BlockNode to validate failed after it's already validated")
+	}
+	blockNode.Status |= StatusBlockValidateFailed
+	// If the BlockNode is not already stored, we should set it to stored.
+	if !blockNode.IsStored() {
+		blockNode.Status |= StatusBlockStored
+	}
+	return bc.upsertBlockAndBlockNodeToDB(block, blockNode)
+}
+
+// storeCommittedBlockInBlockIndex upserts the blocks into the in-memory block index and updates its status to
+// StatusBlockCommitted. If the BlockNode does not have StatusBlockValidated and StatusBlockStored statuses,
+// we also add those. It also writes the block to the block index in badger by calling upsertBlockAndBlockNodeToDB.
+func (bc *Blockchain) storeCommittedBlockInBlockIndex(block *MsgDeSoBlock) error {
+	blockNode, err := bc.getOrCreateBlockNodeFromBlockIndex(block)
+	if err != nil {
+		return errors.Wrapf(err, "storeCommittedBlockInBlockIndex: Problem getting or creating block node")
+	}
+	// We should throw an error if the BlockNode is already Committed.
+	if blockNode.IsCommitted() {
+		return errors.New("storeCommittedBlockInBlockIndex: BlockNode is already committed")
+	}
+	blockNode.Status |= StatusBlockCommitted
+	if !blockNode.IsValidated() {
+		blockNode.Status |= StatusBlockValidated
+	}
+	if !blockNode.IsStored() {
+		blockNode.Status |= StatusBlockStored
+	}
+	// Do we want any side effects here or nah?
+	return bc.upsertBlockAndBlockNodeToDB(block, blockNode)
+}
+
+// upsertBlockAndBlockNodeToDB adds the block to the block index with the given status. It also writes the block to the block
+// index in badger.
+func (bc *Blockchain) upsertBlockAndBlockNodeToDB(desoBlock *MsgDeSoBlock, newBlockNode *BlockNode) error {
+	// Store the block in badger
+	err := bc.db.Update(func(txn *badger.Txn) error {
+		if bc.snapshot != nil {
+			bc.snapshot.PrepareAncestralRecordsFlush()
+			defer bc.snapshot.StartAncestralRecordsFlush(true)
+			glog.V(2).Infof("upsertBlockAndBlockNodeToDB: Preparing snapshot flush")
+		}
+		// TODO: Do we want to write the full block once.
+		// Store the new block in the db under the
+		//   <blockHash> -> <serialized block>
+		// index.
+		// TODO: In the archival mode, we'll be setting ancestral entries for the block reward. Note that it is
+		// 	set in PutBlockWithTxn. Block rewards are part of the state, and they should be identical to the ones
+		// 	we've fetched during Hypersync. Is there an edge-case where for some reason they're not identical? Or
+		// 	somehow ancestral records get corrupted?
+		if innerErr := PutBlockWithTxn(txn, bc.snapshot, desoBlock); innerErr != nil {
+			return errors.Wrapf(innerErr, "upsertBlockAndBlockNodeToDB: Problem calling PutBlock")
+		}
+		// Store the new block's node in our node index in the db under the
+		//   <height uin32, blockHash BlockHash> -> <node info>
+		// index.
+		if innerErr := PutHeightHashToNodeInfoWithTxn(txn, bc.snapshot, newBlockNode, false /*bitcoinNodes*/); innerErr != nil {
+			return errors.Wrapf(innerErr, "upsertBlockAndBlockNodeToDB: Problem calling PutHeightHashToNodeInfo before validation")
+		}
+
+		// Notice we don't call PutBestHash or PutUtxoOperationsForBlockWithTxn because we're not
+		// affecting those right now.
+
+		return nil
+	})
+	if err != nil {
+		return errors.Wrapf(err, "upsertBlockAndBlockNodeToDB: Problem putting block in db: ")
+	}
 	return nil
 }
 
@@ -470,12 +589,6 @@ func (bc *Blockchain) addBlockToBestChain(desoBlockNode *BlockNode) {
 	bc.bestChainMap[*desoBlockNode.Hash] = desoBlockNode
 }
 
-// pruneUncommittedBlocks prunes the in-memory struct holding uncommitted blocks.
-func (bc *Blockchain) pruneUncommittedBlocks(desoBlock *MsgDeSoBlock) error {
-	// TODO: Implement me.
-	return errors.New("IMPLEMENT ME")
-}
-
 // runCommitRuleOnBestChain commits the grandparent of the block if possible.
 // Specifically, this updates the CommittedBlockStatus of its grandparent
 // and flushes the view after connecting the grandparent block to the DB.
@@ -533,30 +646,30 @@ func (bc *Blockchain) canCommitGrandparent(currentBlock *BlockNode) (_grandparen
 // CommittedBlockStatus of the block and flushes the view after connecting the block
 // to the DB and updates relevant badger indexes with info about the block.
 func (bc *Blockchain) commitBlock(blockHash *BlockHash) error {
-	block, exists := bc.uncommittedBlocksMap[*blockHash]
-	if !exists {
-		return errors.Errorf("commitBlock: Block %v not found in uncommitted blocks map", blockHash.String())
-	}
 	// block must be in the best chain. we grab the block node from there.
 	blockNode, exists := bc.bestChainMap[*blockHash]
 	if !exists {
 		return errors.Errorf("commitBlock: Block %v not found in best chain map", blockHash.String())
+	}
+	// TODO: Do we want other validation in here?
+	if blockNode.IsCommitted() {
+		// Can't commit a block that's already committed.
+		return errors.Errorf("commitBlock: Block %v is already committed", blockHash.String())
+	}
+	block, err := GetBlock(blockHash, bc.db, bc.snapshot)
+	if err != nil {
+		return errors.Wrapf(err, "commitBlock: Problem getting block from db %v", blockHash.String())
 	}
 	// Connect a view up to the parent of the block we are committing.
 	utxoView, err := bc.getUtxoViewAtBlockHash(*block.Header.PrevBlockHash)
 	if err != nil {
 		return errors.Wrapf(err, "runCommitRuleOnBestChain: Problem initializing UtxoView: ")
 	}
-	// Get the full uncommitted block from the uncommitted blocks map
-	grandParentBlock, exists := bc.uncommittedBlocksMap[*blockHash]
-	if !exists {
-		return errors.Errorf("runCommitRuleOnBestChain: Block %v not found in uncommitted blocks map", blockHash.String())
-	}
-	txHashes := collections.Transform(grandParentBlock.Txns, func(txn *MsgDeSoTxn) *BlockHash {
+	txHashes := collections.Transform(block.Txns, func(txn *MsgDeSoTxn) *BlockHash {
 		return txn.Hash()
 	})
 	// Connect the block to the view!
-	utxoOpsForBlock, err := utxoView.ConnectBlock(grandParentBlock, txHashes, true /*verifySignatures*/, bc.eventManager, block.Header.Height)
+	utxoOpsForBlock, err := utxoView.ConnectBlock(block, txHashes, true /*verifySignatures*/, bc.eventManager, block.Header.Height)
 	if err != nil {
 		// TODO: rule error handling? mark blocks invalid?
 		return errors.Wrapf(err, "runCommitRuleOnBestChain: Problem connecting block to view: ")
@@ -564,6 +677,7 @@ func (bc *Blockchain) commitBlock(blockHash *BlockHash) error {
 	// Put the block in the db
 	// Note: we're skipping postgres.
 	// TODO: this is copy pasta from ProcessBlockPoW. Refactor.
+	blockNode.Status |= StatusBlockCommitted
 	err = bc.db.Update(func(txn *badger.Txn) error {
 		if bc.snapshot != nil {
 			bc.snapshot.PrepareAncestralRecordsFlush()
@@ -578,14 +692,14 @@ func (bc *Blockchain) commitBlock(blockHash *BlockHash) error {
 		// 	we've fetched during Hypersync. Is there an edge-case where for some reason they're not identical? Or
 		// 	somehow ancestral records get corrupted?
 		if innerErr := PutBlockWithTxn(txn, bc.snapshot, block); innerErr != nil {
-			return errors.Wrapf(err, "ProcessBlock: Problem calling PutBlock")
+			return errors.Wrapf(innerErr, "ProcessBlock: Problem calling PutBlock")
 		}
 
 		// Store the new block's node in our node index in the db under the
 		//   <height uin32, blockHash BlockHash> -> <node info>
 		// index.
 		if innerErr := PutHeightHashToNodeInfoWithTxn(txn, bc.snapshot, blockNode, false /*bitcoinNodes*/); innerErr != nil {
-			return errors.Wrapf(err, "ProcessBlock: Problem calling PutHeightHashToNodeInfo before validation")
+			return errors.Wrapf(innerErr, "ProcessBlock: Problem calling PutHeightHashToNodeInfo before validation")
 		}
 
 		// Set the best node hash to this one. Note the header chain should already
@@ -605,15 +719,6 @@ func (bc *Blockchain) commitBlock(blockHash *BlockHash) error {
 	})
 	if err != nil {
 		return errors.Wrapf(err, "runCommitRuleOnBestChain: Problem putting block in db: ")
-	}
-	// Update the block node's committed status
-	bc.bestChainMap[*blockNode.Hash].Status |= StatusBlockCommitted
-	bc.blockIndex[*blockNode.Hash].Status |= StatusBlockCommitted
-	for _, node := range bc.bestChain {
-		if node.Hash.IsEqual(blockNode.Hash) {
-			node.Status |= StatusBlockCommitted
-			break
-		}
 	}
 	if bc.eventManager != nil {
 		bc.eventManager.blockConnected(&BlockEvent{
@@ -668,10 +773,10 @@ func (bc *Blockchain) getUtxoViewAtBlockHash(blockHash BlockHash) (*UtxoView, er
 		return nil, errors.Wrapf(err, "getUtxoViewAtBlockHash: Problem initializing UtxoView")
 	}
 	for ii := len(uncommittedAncestors) - 1; ii >= 0; ii-- {
-		// We need to get these blocks from the uncommitted blocks map
-		fullBlock, exists := bc.uncommittedBlocksMap[*uncommittedAncestors[ii].Hash]
-		if !exists {
-			return nil, errors.Errorf("GetUncommittedTipView: Block %v not found in block index", uncommittedAncestors[ii].Hash)
+		// We need to get these blocks from badger
+		fullBlock, err := GetBlock(uncommittedAncestors[ii].Hash, bc.db, bc.snapshot)
+		if err != nil {
+			return nil, errors.Wrapf(err, "GetUncommittedTipView: Error fetching Block %v not found in block index", uncommittedAncestors[ii].Hash.String())
 		}
 		txnHashes := collections.Transform(fullBlock.Txns, func(txn *MsgDeSoTxn) *BlockHash {
 			return txn.Hash()

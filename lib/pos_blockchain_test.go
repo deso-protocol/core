@@ -10,6 +10,7 @@ import (
 	"github.com/deso-protocol/core/consensus"
 	"github.com/holiman/uint256"
 	"github.com/stretchr/testify/require"
+	"math"
 	"testing"
 	"time"
 )
@@ -285,8 +286,13 @@ func TestValidateBlockHeight(t *testing.T) {
 	require.Equal(t, err, RuleErrorMissingParentBlock)
 }
 
-func TestAddBlockToBlockIndex(t *testing.T) {
+func TestUpsertBlockAndBlockNodeToDB(t *testing.T) {
 	bc, _, _ := NewTestBlockchain(t)
+	GlobalDeSoParams.ForkHeights.ProofOfStake2ConsensusCutoverBlockHeight = 0
+	resetGlobalDeSoParams := func() {
+		GlobalDeSoParams.ForkHeights.ProofOfStake2ConsensusCutoverBlockHeight = math.MaxUint32
+	}
+	t.Cleanup(resetGlobalDeSoParams)
 	hash := NewBlockHash(RandomBytes(32))
 	genesisBlockNode := NewBlockNode(nil, hash, 1, nil, nil, &MsgDeSoHeader{
 		Version:                      2,
@@ -332,10 +338,14 @@ func TestAddBlockToBlockIndex(t *testing.T) {
 			ProposerVotePartialSignature: dummySig,
 			TxnConnectStatusByIndexHash:  NewBlockHash(bitset.NewBitset().ToBytes()),
 		},
-		Txns:                    nil,
+		Txns: []*MsgDeSoTxn{
+			{
+				TxnMeta: &BlockRewardMetadataa{},
+			},
+		},
 		TxnConnectStatusByIndex: bitset.NewBitset(),
 	}
-	err = bc.addBlockToBlockIndex(block, StatusBlockStored)
+	err = bc.storeCommittedBlockInBlockIndex(block)
 	require.Nil(t, err)
 	newHash, err := block.Hash()
 	require.NoError(t, err)
@@ -345,9 +355,9 @@ func TestAddBlockToBlockIndex(t *testing.T) {
 	require.True(t, bytes.Equal(blockNode.Hash[:], newHash[:]))
 	require.True(t, blockNode.IsStored())
 
-	// Check the uncommitted blocks map
-	uncommittedBlock, uncommittedExists := bc.uncommittedBlocksMap[*newHash]
-	require.True(t, uncommittedExists)
+	// Check the DB for the block.
+	uncommittedBlock, err := GetBlock(newHash, bc.db, bc.snapshot)
+	require.NoError(t, err)
 	uncommittedBytes, err := uncommittedBlock.ToBytes(false)
 	require.NoError(t, err)
 	origBlockBytes, err := block.ToBytes(false)
@@ -442,6 +452,11 @@ func TestValidateBlockView(t *testing.T) {
 
 func TestAddBlockToBlockIndexAndUncommittedBlocks(t *testing.T) {
 	bc, _, _ := NewTestBlockchain(t)
+	GlobalDeSoParams.ForkHeights.ProofOfStake2ConsensusCutoverBlockHeight = 0
+	resetGlobalDeSoParams := func() {
+		GlobalDeSoParams.ForkHeights.ProofOfStake2ConsensusCutoverBlockHeight = math.MaxUint32
+	}
+	t.Cleanup(resetGlobalDeSoParams)
 	hash1 := NewBlockHash(RandomBytes(32))
 	hash2 := NewBlockHash(RandomBytes(32))
 	genesisNode := NewBlockNode(nil, hash1, 1, nil, nil, &MsgDeSoHeader{
@@ -498,11 +513,15 @@ func TestAddBlockToBlockIndexAndUncommittedBlocks(t *testing.T) {
 			},
 			TxnConnectStatusByIndexHash: NewBlockHash(bitset.NewBitset().ToBytes()),
 		},
-		Txns:                    nil,
+		Txns: []*MsgDeSoTxn{
+			{
+				TxnMeta: &BlockRewardMetadataa{},
+			},
+		},
 		TxnConnectStatusByIndex: bitset.NewBitset(),
 	}
 
-	err = bc.addBlockToBlockIndex(block, StatusBlockStored)
+	err = bc.storeBlockInBlockIndex(block)
 	require.NoError(t, err)
 	newHash, err := block.Hash()
 	require.NoError(t, err)
@@ -512,9 +531,9 @@ func TestAddBlockToBlockIndexAndUncommittedBlocks(t *testing.T) {
 	require.True(t, bytes.Equal(blockNode.Hash[:], newHash[:]))
 	require.Equal(t, blockNode.Height, uint32(2))
 	require.True(t, blockNode.IsStored())
-	// Check the uncommitted blocks map
-	uncommittedBlock, uncommittedExists := bc.uncommittedBlocksMap[*newHash]
-	require.True(t, uncommittedExists)
+	// Check the DB for the block
+	uncommittedBlock, err := GetBlock(newHash, bc.db, bc.snapshot)
+	require.NoError(t, err)
 	uncommittedBytes, err := uncommittedBlock.ToBytes(false)
 	require.NoError(t, err)
 	origBlockBytes, err := block.ToBytes(false)
@@ -524,7 +543,7 @@ func TestAddBlockToBlockIndexAndUncommittedBlocks(t *testing.T) {
 	// If we're missing a field in the header, we should get an error
 	// as we can't compute the hash.
 	block.Header.ProposerPublicKey = nil
-	err = bc.addBlockToBlockIndex(block, StatusBlockStored)
+	err = bc.storeBlockInBlockIndex(block)
 	require.Error(t, err)
 }
 
@@ -724,6 +743,7 @@ func TestValidateBlockLeader(t *testing.T) {
 }
 
 func TestGetLineageFromCommittedTip(t *testing.T) {
+	setBalanceModelBlockHeights(t)
 	bc, _, _ := NewTestBlockchain(t)
 	hash1 := NewBlockHash(RandomBytes(32))
 	genesisNode := NewBlockNode(nil, hash1, 1, nil, nil, &MsgDeSoHeader{
@@ -1130,16 +1150,19 @@ func TestShouldReorg(t *testing.T) {
 }
 
 func TestTryReorgToNewTipAndTryApplyNewTip(t *testing.T) {
+	setBalanceModelBlockHeights(t)
 	bc, _, _ := NewTestBlockchain(t)
 	hash1 := NewBlockHash(RandomBytes(32))
 	bn1 := &BlockNode{
 		Hash:   hash1,
 		Status: StatusBlockStored | StatusBlockValidated | StatusBlockCommitted,
+		Height: 2,
 	}
 	hash2 := NewBlockHash(RandomBytes(32))
 	bn2 := &BlockNode{
 		Hash:   hash2,
 		Status: StatusBlockStored | StatusBlockValidated,
+		Height: 3,
 		Header: &MsgDeSoHeader{
 			PrevBlockHash: hash1,
 		},
@@ -1148,8 +1171,10 @@ func TestTryReorgToNewTipAndTryApplyNewTip(t *testing.T) {
 	bn3 := &BlockNode{
 		Hash:   hash3,
 		Status: StatusBlockStored | StatusBlockValidated,
+		Height: 4,
 		Header: &MsgDeSoHeader{
 			PrevBlockHash: hash2,
+			Height:        4,
 		},
 	}
 	bc.addBlockToBestChain(bn1)
@@ -1213,6 +1238,7 @@ func TestTryReorgToNewTipAndTryApplyNewTip(t *testing.T) {
 	bn4 := &BlockNode{
 		Hash:   hash4,
 		Status: StatusBlockStored | StatusBlockValidated,
+		Height: 5,
 		Header: &MsgDeSoHeader{
 			PrevBlockHash: hash1,
 		},
@@ -1222,6 +1248,7 @@ func TestTryReorgToNewTipAndTryApplyNewTip(t *testing.T) {
 	bn5 := &BlockNode{
 		Hash:   hash5,
 		Status: StatusBlockStored | StatusBlockValidated,
+		Height: 6,
 		Header: &MsgDeSoHeader{
 			PrevBlockHash: hash4,
 		},
@@ -1293,11 +1320,13 @@ func TestTryReorgToNewTipAndTryApplyNewTip(t *testing.T) {
 }
 
 func TestCanCommitGrandparent(t *testing.T) {
+	setBalanceModelBlockHeights(t)
 	bc, _, _ := NewTestBlockchain(t)
 	hash1 := NewBlockHash(RandomBytes(32))
 	bn1 := &BlockNode{
 		Hash:   hash1,
 		Status: StatusBlockStored | StatusBlockValidated,
+		Height: 2,
 		Header: &MsgDeSoHeader{
 			ProposedInView: 1,
 		},
@@ -1306,6 +1335,7 @@ func TestCanCommitGrandparent(t *testing.T) {
 	bn2 := &BlockNode{
 		Hash:   hash2,
 		Status: StatusBlockStored | StatusBlockValidated,
+		Height: 3,
 		Header: &MsgDeSoHeader{
 			ProposedInView: 2,
 			PrevBlockHash:  hash1,
@@ -1319,6 +1349,7 @@ func TestCanCommitGrandparent(t *testing.T) {
 	bn3 := &BlockNode{
 		Hash:   hash3,
 		Status: StatusBlockStored | StatusBlockValidated,
+		Height: 4,
 		Header: &MsgDeSoHeader{
 			ProposedInView: 10,
 			PrevBlockHash:  hash2,

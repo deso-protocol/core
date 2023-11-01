@@ -88,10 +88,16 @@ func (nn *BlockNode) IsValidated() bool {
 	return nn.Status&StatusBlockValidated != 0
 }
 
+// IsValidateFailed returns true if a BlockNode has failed validations. A BlockNode that is validate failed
+// will never be added to the best chain.
+func (nn *BlockNode) IsValidateFailed() bool {
+	return nn.Status&StatusBlockValidateFailed != 0
+}
+
 // IsCommitted returns true if a BlockNode has passed all validations, and it has been committed to
 // the Blockchain according to the Fast HotStuff commit rule.
 func (nn *BlockNode) IsCommitted() bool {
-	return nn.Status&StatusBlockCommitted != 0
+	return nn.Status&StatusBlockCommitted != 0 || !blockNodeProofOfStakeCutoverMigrationTriggered(nn.Height)
 }
 
 // IsFullyProcessed determines if the BlockStatus corresponds to a fully processed and stored block.
@@ -462,10 +468,6 @@ type Blockchain struct {
 	bestHeaderChain    []*BlockNode
 	bestHeaderChainMap map[BlockHash]*BlockNode
 
-	// Tracks all uncommitted blocks in memory. This includes blocks that are not part
-	// of the best chain.
-	uncommittedBlocksMap map[BlockHash]*MsgDeSoBlock
-
 	// We keep track of orphan blocks with the following data structures. Orphans
 	// are not written to disk and are only cached in memory. Moreover we only keep
 	// up to MaxOrphansInMemory of them in order to prevent memory exhaustion.
@@ -676,9 +678,8 @@ func NewBlockchain(
 		eventManager:                    eventManager,
 		archivalMode:                    archivalMode,
 
-		blockIndex:           make(map[BlockHash]*BlockNode),
-		uncommittedBlocksMap: make(map[BlockHash]*MsgDeSoBlock),
-		bestChainMap:         make(map[BlockHash]*BlockNode),
+		blockIndex:   make(map[BlockHash]*BlockNode),
+		bestChainMap: make(map[BlockHash]*BlockNode),
 
 		bestHeaderChainMap: make(map[BlockHash]*BlockNode),
 
