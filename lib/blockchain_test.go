@@ -1239,7 +1239,7 @@ func TestCalcNextDifficultyTargetHalvingDoublingHitLimit(t *testing.T) {
 		}
 		nextDiff, err := CalcNextDifficultyTarget(lastNode, HeaderVersion0, fakeParams)
 		require.NoErrorf(err, "Block index: %d", ii)
-		nodes = append(nodes, NewPoWBlockNode(
+		nodes = append(nodes, NewBlockNode(
 			lastNode,
 			nil,
 			uint32(ii),
@@ -1276,7 +1276,7 @@ func TestCalcNextDifficultyTargetHalvingDoublingHitLimit(t *testing.T) {
 		lastNode := nodes[ii-1]
 		nextDiff, err := CalcNextDifficultyTarget(lastNode, HeaderVersion0, fakeParams)
 		require.NoErrorf(err, "Block index: %d", ii)
-		nodes = append(nodes, NewPoWBlockNode(
+		nodes = append(nodes, NewBlockNode(
 			lastNode,
 			nil,
 			uint32(ii),
@@ -1335,7 +1335,7 @@ func TestCalcNextDifficultyTargetHittingLimitsSlow(t *testing.T) {
 		}
 		nextDiff, err := CalcNextDifficultyTarget(lastNode, HeaderVersion0, fakeParams)
 		require.NoErrorf(err, "Block index: %d", ii)
-		nodes = append(nodes, NewPoWBlockNode(
+		nodes = append(nodes, NewBlockNode(
 			lastNode,
 			nil,
 			uint32(ii),
@@ -1372,7 +1372,7 @@ func TestCalcNextDifficultyTargetHittingLimitsSlow(t *testing.T) {
 		lastNode := nodes[ii-1]
 		nextDiff, err := CalcNextDifficultyTarget(lastNode, HeaderVersion0, fakeParams)
 		require.NoErrorf(err, "Block index: %d", ii)
-		nodes = append(nodes, NewPoWBlockNode(
+		nodes = append(nodes, NewBlockNode(
 			lastNode,
 			nil,
 			uint32(ii),
@@ -1431,7 +1431,7 @@ func TestCalcNextDifficultyTargetHittingLimitsFast(t *testing.T) {
 		}
 		nextDiff, err := CalcNextDifficultyTarget(lastNode, HeaderVersion0, fakeParams)
 		require.NoErrorf(err, "Block index: %d", ii)
-		nodes = append(nodes, NewPoWBlockNode(
+		nodes = append(nodes, NewBlockNode(
 			lastNode,
 			nil,
 			uint32(ii),
@@ -1486,7 +1486,7 @@ func TestCalcNextDifficultyTargetJustRight(t *testing.T) {
 		}
 		nextDiff, err := CalcNextDifficultyTarget(lastNode, HeaderVersion0, fakeParams)
 		require.NoErrorf(err, "Block index: %d", ii)
-		nodes = append(nodes, NewPoWBlockNode(
+		nodes = append(nodes, NewBlockNode(
 			lastNode,
 			nil,
 			uint32(ii),
@@ -1541,7 +1541,7 @@ func TestCalcNextDifficultyTargetSlightlyOff(t *testing.T) {
 		}
 		nextDiff, err := CalcNextDifficultyTarget(lastNode, HeaderVersion0, fakeParams)
 		require.NoErrorf(err, "Block index: %d", ii)
-		nodes = append(nodes, NewPoWBlockNode(
+		nodes = append(nodes, NewBlockNode(
 			lastNode,
 			nil,
 			uint32(ii),
@@ -1578,7 +1578,7 @@ func TestCalcNextDifficultyTargetSlightlyOff(t *testing.T) {
 		lastNode := nodes[ii-1]
 		nextDiff, err := CalcNextDifficultyTarget(lastNode, HeaderVersion0, fakeParams)
 		require.NoErrorf(err, "Block index: %d", ii)
-		nodes = append(nodes, NewPoWBlockNode(
+		nodes = append(nodes, NewBlockNode(
 			lastNode,
 			nil,
 			uint32(ii),

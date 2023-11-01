@@ -63,24 +63,36 @@ const (
 	// don't store orphan headers and therefore any header that we do
 	// have in our node index will be known definitively to be valid or
 	// invalid one way or the other.
-	StatusHeaderValidated = 1 << iota
-	StatusHeaderValidateFailed
+	StatusHeaderValidated      = 1 << 0
+	StatusHeaderValidateFailed = 1 << 1
 
-	StatusBlockProcessed
-	StatusBlockStored
-	StatusBlockValidated
-	StatusBlockValidateFailed
+	StatusBlockProcessed      = 1 << 2 // Process means that the block is not an orphan and has been processed. This helps prevent us from reprocessing a block that we've already attempted to validate and add to the block index.
+	StatusBlockStored         = 1 << 3 // Stored means that the block has been added to the block index and stored in the DB.
+	StatusBlockValidated      = 1 << 4 // Validated means that the block has passed validations and is eligible to be part of the best chain.
+	StatusBlockValidateFailed = 1 << 5 // Validate Failed means that the block did not pass validations and will never be part of the best chain.
 
-	StatusBitcoinHeaderValidated      // Deprecated
-	StatusBitcoinHeaderValidateFailed // Deprecated
+	StatusBitcoinHeaderValidated      = 1 << 6 // Deprecated
+	StatusBitcoinHeaderValidateFailed = 1 << 7 // Deprecated
+
+	StatusBlockCommitted = 1 << 8 // Committed means that the block has been committed to the blockchain according to the Fast HotStuff commit rule. Only set on blocks after the cutover for PoS
 )
 
-type CommittedBlockStatus uint8
+// IsStored returns true if the BlockNode has been added to the blockIndex and stored in the DB.
+func (nn *BlockNode) IsStored() bool {
+	return nn.Status&StatusBlockStored != 0
+}
 
-const (
-	COMMITTED   CommittedBlockStatus = 0
-	UNCOMMITTED CommittedBlockStatus = 1
-)
+// IsValidated returns true if a BlockNode has passed all validations. A BlockNode that is validated is
+// generally always stored first.
+func (nn *BlockNode) IsValidated() bool {
+	return nn.Status&StatusBlockValidated != 0
+}
+
+// IsCommitted returns true if a BlockNode has passed all validations, and it has been committed to
+// the Blockchain according to the Fast HotStuff commit rule.
+func (nn *BlockNode) IsCommitted() bool {
+	return nn.Status&StatusBlockCommitted != 0
+}
 
 // IsFullyProcessed determines if the BlockStatus corresponds to a fully processed and stored block.
 func (blockStatus BlockStatus) IsFullyProcessed() bool {
@@ -156,16 +168,6 @@ type BlockNode struct {
 	// Status holds the validation state for the block and whether or not
 	// it's stored in the database.
 	Status BlockStatus
-
-	// CommittedStatus is either COMMITTED or UNCOMMITTED. If it's UNCOMMITTED, then
-	// the block is not yet committed to the blockchain. If it's COMMITTED, then the
-	// block is committed to the blockchain.
-	// In PoW consensus, all blocks will have CommittedStatus = COMMITTED.
-	// In PoS consensus, the chain tip and its parent will have CommittedStatus = UNCOMMITTED and
-	// all other blocks will have CommittedStatus = COMMITTED. When a new block is added to the tip,
-	// its CommittedStatus will be set to UNCOMMITTED and its grandparent's CommittedStatus will be
-	// updated to COMMITTED.
-	CommittedStatus CommittedBlockStatus
 }
 
 func _difficultyBitsToHash(diffBits uint32) (_diffHash *BlockHash) {
@@ -298,15 +300,15 @@ func (nn *BlockNode) String() string {
 	if nn.Header != nil {
 		tstamp = uint32(nn.Header.GetTstampSecs())
 	}
-	return fmt.Sprintf("< TstampSecs: %d, Height: %d, Hash: %s, ParentHash %s, Status: %s, CumWork: %v, CommittedStatus: %v>",
-		tstamp, nn.Header.Height, nn.Hash, parentHash, nn.Status, nn.CumWork, nn.CommittedStatus)
+	return fmt.Sprintf("< TstampSecs: %d, Height: %d, Hash: %s, ParentHash %s, Status: %s, CumWork: %v>",
+		tstamp, nn.Header.Height, nn.Hash, parentHash, nn.Status, nn.CumWork)
 }
 
-// NewPoWBlockNode is a helper function to create a BlockNode
+// NewBlockNode is a helper function to create a BlockNode
 // when running PoW consensus. All blocks in the PoW consensus
 // have a committed status of COMMITTED.
 // TODO: Height not needed in this since it's in the header.
-func NewPoWBlockNode(
+func NewBlockNode(
 	parent *BlockNode,
 	hash *BlockHash,
 	height uint32,
@@ -323,28 +325,6 @@ func NewPoWBlockNode(
 		CumWork:          cumWork,
 		Header:           header,
 		Status:           status,
-		// All blocks have a committed status in PoW.
-		CommittedStatus: COMMITTED,
-	}
-}
-
-// NewPoSBlockNode is a new helper function to create a block node
-// as we need to control the value of the CommittedStatus field.
-func NewPoSBlockNode(
-	parent *BlockNode,
-	hash *BlockHash,
-	height uint32,
-	header *MsgDeSoHeader,
-	status BlockStatus,
-	committedStatus CommittedBlockStatus) *BlockNode {
-
-	return &BlockNode{
-		Parent:          parent,
-		Hash:            hash,
-		Height:          height,
-		Header:          header,
-		Status:          status,
-		CommittedStatus: committedStatus,
 	}
 }
 
@@ -1772,7 +1752,7 @@ func (bc *Blockchain) processHeaderPoW(blockHeader *MsgDeSoHeader, headerHash *B
 	// and try to mine on top of it before revealing it to everyone.
 	newWork := BytesToBigint(ExpectedWorkForBlockHash(diffTarget)[:])
 	cumWork := newWork.Add(newWork, parentNode.CumWork)
-	newNode := NewPoWBlockNode(
+	newNode := NewBlockNode(
 		parentNode,
 		headerHash,
 		uint32(blockHeader.Height),
