@@ -71,7 +71,7 @@ func (bc *Blockchain) processBlockPoS(desoBlock *MsgDeSoBlock, currentView uint6
 
 	// 3. We can now add this block to the block index since we have performed
 	// all basic validations.
-	if err = bc.setBlockValidatedInBlockIndex(desoBlock); err != nil {
+	if err = bc.storeValidatedBlockInBlockIndex(desoBlock); err != nil {
 		return false, false, nil, errors.Wrap(err, "processBlockPoS: Problem adding block to block index: ")
 	}
 
@@ -366,6 +366,8 @@ func (bc *Blockchain) getLineageFromCommittedTip(desoBlock *MsgDeSoBlock) ([]*Bl
 	return ancestors, nil
 }
 
+// getOrCreateBlockNodeFromBlockIndex returns the block node from the block index if it exists.
+// Otherwise, it creates a new block node and adds it to the block index.
 func (bc *Blockchain) getOrCreateBlockNodeFromBlockIndex(desoBlock *MsgDeSoBlock) (*BlockNode, error) {
 	hash, err := desoBlock.Header.Hash()
 	if err != nil {
@@ -381,29 +383,61 @@ func (bc *Blockchain) getOrCreateBlockNodeFromBlockIndex(desoBlock *MsgDeSoBlock
 	return newBlockNode, nil
 }
 
-func (bc *Blockchain) setBlockStoredInBlockIndex(desoBlock *MsgDeSoBlock) error {
+// setBlockStoredInBlockIndex upserts the blocks into the in-memory block index and updates its status to
+// StatusBlockStored. It also writes the block to the block index in badger
+// by calling upsertBlockToDBBlockIndex.
+func (bc *Blockchain) storeBlockInBlockIndex(desoBlock *MsgDeSoBlock) error {
 	blockNode, err := bc.getOrCreateBlockNodeFromBlockIndex(desoBlock)
 	if err != nil {
-		return errors.Wrapf(err, "setBlockStoredInBlockIndex: Problem getting or creating block node")
+		return errors.Wrapf(err, "storeBlockInBlockIndex: Problem getting or creating block node")
 	}
 	// We should throw an error if the BlockNode is already Stored.
 	if blockNode.IsStored() {
-		return errors.New("setBlockStoredInBlockIndex: BlockNode is already stored")
+		return errors.New("storeBlockInBlockIndex: BlockNode is already stored")
 	}
 	blockNode.Status |= StatusBlockStored
 	return bc.upsertBlockToDBBlockIndex(desoBlock, blockNode)
 }
 
-func (bc *Blockchain) setBlockValidatedInBlockIndex(desoBlock *MsgDeSoBlock) error {
+// storeValidatedBlockInBlockIndex upserts the blocks into the in-memory block index and updates its status to
+// StatusBlockValidated. If it does not have the status StatusBlockStored already, we add that as we will
+// store the block in the DB after updating its status.  It also writes the block to the block index in badger
+// by calling upsertBlockToDBBlockIndex.
+func (bc *Blockchain) storeValidatedBlockInBlockIndex(desoBlock *MsgDeSoBlock) error {
 	blockNode, err := bc.getOrCreateBlockNodeFromBlockIndex(desoBlock)
 	if err != nil {
-		return errors.Wrapf(err, "setBlockValidatedInBlockIndex: Problem getting or creating block node")
+		return errors.Wrapf(err, "storeValidatedBlockInBlockIndex: Problem getting or creating block node")
 	}
 	// We should throw an error if the BlockNode is already Validated.
 	if blockNode.IsValidated() {
-		return errors.New("setBlockValidatedInBlockIndex: BlockNode is already validated")
+		return errors.New("storeValidatedBlockInBlockIndex: BlockNode is already validated")
 	}
 	blockNode.Status |= StatusBlockValidated
+	// If the BlockNode is not already stored, we should set its status to stored.
+	if !blockNode.IsStored() {
+		blockNode.Status |= StatusBlockStored
+	}
+	return bc.upsertBlockToDBBlockIndex(desoBlock, blockNode)
+}
+
+// storeValidateFailedBlockInBlockIndex upserts the blocks into the in-memory block index and updates its status to
+// StatusBlockValidateFailed. If it does not have the status StatusBlockStored already, we add that as we will
+// store the block in the DB after updating its status.  It also writes the block to the block index in badger
+// by calling upsertBlockToDBBlockIndex.
+func (bc *Blockchain) storeValidateFailedBlockInBlockIndex(desoBlock *MsgDeSoBlock) error {
+	blockNode, err := bc.getOrCreateBlockNodeFromBlockIndex(desoBlock)
+	if err != nil {
+		return errors.Wrapf(err, "storeValidateFailedBlockInBlockIndex: Problem getting or creating block node")
+	}
+	// We should throw an error if the BlockNode is already Validate Failed.
+	if blockNode.IsValidateFailed() {
+		return errors.New("storeValidateFailedBlockInBlockIndex: BlockNode is already validate failed")
+	}
+	// We should throw an error if the BlockNode is already Validated
+	if blockNode.IsValidated() {
+		return errors.New("storeValidateFailedBlockInBlockIndex: can't set BlockNode to validate failed after it's already validated")
+	}
+	blockNode.Status |= StatusBlockValidateFailed
 	// If the BlockNode is not already stored, we should set it to stored.
 	if !blockNode.IsStored() {
 		blockNode.Status |= StatusBlockStored
@@ -411,21 +445,30 @@ func (bc *Blockchain) setBlockValidatedInBlockIndex(desoBlock *MsgDeSoBlock) err
 	return bc.upsertBlockToDBBlockIndex(desoBlock, blockNode)
 }
 
-func (bc *Blockchain) setBlockCommittedInBlockIndex(desoBlock *MsgDeSoBlock) error {
+// storeCommittedBlockInBlockIndex upserts the blocks into the in-memory block index and updates its status to
+// StatusBlockCommitted. If the BlockNode does not have StatusBlockValidated and StatusBlockStored statuses,
+// we also add those. It also writes the block to the block index in badger by calling upsertBlockToDBBlockIndex.
+func (bc *Blockchain) storeCommittedBlockInBlockIndex(desoBlock *MsgDeSoBlock) error {
 	blockNode, err := bc.getOrCreateBlockNodeFromBlockIndex(desoBlock)
 	if err != nil {
-		return errors.Wrapf(err, "setBlockCommittedInBlockIndex: Problem getting or creating block node")
+		return errors.Wrapf(err, "storeCommittedBlockInBlockIndex: Problem getting or creating block node")
 	}
 	// We should throw an error if the BlockNode is already Committed.
 	if blockNode.IsCommitted() {
-		return errors.New("setBlockCommittedInBlockIndex: BlockNode is already committed")
+		return errors.New("storeCommittedBlockInBlockIndex: BlockNode is already committed")
 	}
 	blockNode.Status |= StatusBlockCommitted
+	if !blockNode.IsValidated() {
+		blockNode.Status |= StatusBlockValidated
+	}
+	if !blockNode.IsStored() {
+		blockNode.Status |= StatusBlockStored
+	}
 	// Do we want any side effects here or nah?
 	return bc.upsertBlockToDBBlockIndex(desoBlock, blockNode)
 }
 
-// addBlockToBlockIndex adds the block to the block index with the given status. It also writes the block to the block
+// upsertBlockToDBBlockIndex adds the block to the block index with the given status. It also writes the block to the block
 // index in badger.
 func (bc *Blockchain) upsertBlockToDBBlockIndex(desoBlock *MsgDeSoBlock, newBlockNode *BlockNode) error {
 	// Store the block in badger
@@ -433,7 +476,7 @@ func (bc *Blockchain) upsertBlockToDBBlockIndex(desoBlock *MsgDeSoBlock, newBloc
 		if bc.snapshot != nil {
 			bc.snapshot.PrepareAncestralRecordsFlush()
 			defer bc.snapshot.StartAncestralRecordsFlush(true)
-			glog.V(2).Infof("addBlockToBlockIndex: Preparing snapshot flush")
+			glog.V(2).Infof("upsertBlockToDBBlockIndex: Preparing snapshot flush")
 		}
 		// TODO: Do we want to write the full block once.
 		// Store the new block in the db under the
@@ -444,13 +487,13 @@ func (bc *Blockchain) upsertBlockToDBBlockIndex(desoBlock *MsgDeSoBlock, newBloc
 		// 	we've fetched during Hypersync. Is there an edge-case where for some reason they're not identical? Or
 		// 	somehow ancestral records get corrupted?
 		if innerErr := PutBlockWithTxn(txn, bc.snapshot, desoBlock); innerErr != nil {
-			return errors.Wrapf(innerErr, "addBlockToBlockIndex: Problem calling PutBlock")
+			return errors.Wrapf(innerErr, "upsertBlockToDBBlockIndex: Problem calling PutBlock")
 		}
 		// Store the new block's node in our node index in the db under the
 		//   <height uin32, blockHash BlockHash> -> <node info>
 		// index.
 		if innerErr := PutHeightHashToNodeInfoWithTxn(txn, bc.snapshot, newBlockNode, false /*bitcoinNodes*/); innerErr != nil {
-			return errors.Wrapf(innerErr, "addBlockToBlockIndex: Problem calling PutHeightHashToNodeInfo before validation")
+			return errors.Wrapf(innerErr, "upsertBlockToDBBlockIndex: Problem calling PutHeightHashToNodeInfo before validation")
 		}
 
 		// Notice we don't call PutBestHash or PutUtxoOperationsForBlockWithTxn because we're not
@@ -459,7 +502,7 @@ func (bc *Blockchain) upsertBlockToDBBlockIndex(desoBlock *MsgDeSoBlock, newBloc
 		return nil
 	})
 	if err != nil {
-		return errors.Wrapf(err, "addBlockToBlockIndex: Problem putting block in db: ")
+		return errors.Wrapf(err, "upsertBlockToDBBlockIndex: Problem putting block in db: ")
 	}
 	return nil
 }

@@ -345,7 +345,7 @@ func TestUpsertBlockToDBBlockIndex(t *testing.T) {
 		},
 		TxnConnectStatusByIndex: bitset.NewBitset(),
 	}
-	err = bc.setBlockStoredInBlockIndex(block)
+	err = bc.storeCommittedBlockInBlockIndex(block)
 	require.Nil(t, err)
 	newHash, err := block.Hash()
 	require.NoError(t, err)
@@ -521,7 +521,7 @@ func TestAddBlockToBlockIndexAndUncommittedBlocks(t *testing.T) {
 		TxnConnectStatusByIndex: bitset.NewBitset(),
 	}
 
-	err = bc.setBlockStoredInBlockIndex(block)
+	err = bc.storeBlockInBlockIndex(block)
 	require.NoError(t, err)
 	newHash, err := block.Hash()
 	require.NoError(t, err)
@@ -543,7 +543,7 @@ func TestAddBlockToBlockIndexAndUncommittedBlocks(t *testing.T) {
 	// If we're missing a field in the header, we should get an error
 	// as we can't compute the hash.
 	block.Header.ProposerPublicKey = nil
-	err = bc.setBlockStoredInBlockIndex(block)
+	err = bc.storeBlockInBlockIndex(block)
 	require.Error(t, err)
 }
 

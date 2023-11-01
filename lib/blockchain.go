@@ -88,10 +88,16 @@ func (nn *BlockNode) IsValidated() bool {
 	return nn.Status&StatusBlockValidated != 0
 }
 
+// IsValidateFailed returns true if a BlockNode has failed validations. A BlockNode that is validate failed
+// will never be added to the best chain.
+func (nn *BlockNode) IsValidateFailed() bool {
+	return nn.Status&StatusBlockValidateFailed != 0
+}
+
 // IsCommitted returns true if a BlockNode has passed all validations, and it has been committed to
 // the Blockchain according to the Fast HotStuff commit rule.
 func (nn *BlockNode) IsCommitted() bool {
-	return nn.Status&StatusBlockCommitted != 0
+	return nn.Status&StatusBlockCommitted != 0 || !blockNodeProofOfStakeCutoverMigrationTriggered(nn.Height)
 }
 
 // IsFullyProcessed determines if the BlockStatus corresponds to a fully processed and stored block.
