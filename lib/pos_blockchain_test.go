@@ -1150,16 +1150,19 @@ func TestShouldReorg(t *testing.T) {
 }
 
 func TestTryReorgToNewTipAndTryApplyNewTip(t *testing.T) {
+	setBalanceModelBlockHeights(t)
 	bc, _, _ := NewTestBlockchain(t)
 	hash1 := NewBlockHash(RandomBytes(32))
 	bn1 := &BlockNode{
 		Hash:   hash1,
 		Status: StatusBlockStored | StatusBlockValidated | StatusBlockCommitted,
+		Height: 2,
 	}
 	hash2 := NewBlockHash(RandomBytes(32))
 	bn2 := &BlockNode{
 		Hash:   hash2,
 		Status: StatusBlockStored | StatusBlockValidated,
+		Height: 3,
 		Header: &MsgDeSoHeader{
 			PrevBlockHash: hash1,
 		},
@@ -1168,8 +1171,10 @@ func TestTryReorgToNewTipAndTryApplyNewTip(t *testing.T) {
 	bn3 := &BlockNode{
 		Hash:   hash3,
 		Status: StatusBlockStored | StatusBlockValidated,
+		Height: 4,
 		Header: &MsgDeSoHeader{
 			PrevBlockHash: hash2,
+			Height:        4,
 		},
 	}
 	bc.addBlockToBestChain(bn1)
@@ -1233,6 +1238,7 @@ func TestTryReorgToNewTipAndTryApplyNewTip(t *testing.T) {
 	bn4 := &BlockNode{
 		Hash:   hash4,
 		Status: StatusBlockStored | StatusBlockValidated,
+		Height: 5,
 		Header: &MsgDeSoHeader{
 			PrevBlockHash: hash1,
 		},
@@ -1242,6 +1248,7 @@ func TestTryReorgToNewTipAndTryApplyNewTip(t *testing.T) {
 	bn5 := &BlockNode{
 		Hash:   hash5,
 		Status: StatusBlockStored | StatusBlockValidated,
+		Height: 6,
 		Header: &MsgDeSoHeader{
 			PrevBlockHash: hash4,
 		},
@@ -1313,11 +1320,13 @@ func TestTryReorgToNewTipAndTryApplyNewTip(t *testing.T) {
 }
 
 func TestCanCommitGrandparent(t *testing.T) {
+	setBalanceModelBlockHeights(t)
 	bc, _, _ := NewTestBlockchain(t)
 	hash1 := NewBlockHash(RandomBytes(32))
 	bn1 := &BlockNode{
 		Hash:   hash1,
 		Status: StatusBlockStored | StatusBlockValidated,
+		Height: 2,
 		Header: &MsgDeSoHeader{
 			ProposedInView: 1,
 		},
@@ -1326,6 +1335,7 @@ func TestCanCommitGrandparent(t *testing.T) {
 	bn2 := &BlockNode{
 		Hash:   hash2,
 		Status: StatusBlockStored | StatusBlockValidated,
+		Height: 3,
 		Header: &MsgDeSoHeader{
 			ProposedInView: 2,
 			PrevBlockHash:  hash1,
@@ -1339,6 +1349,7 @@ func TestCanCommitGrandparent(t *testing.T) {
 	bn3 := &BlockNode{
 		Hash:   hash3,
 		Status: StatusBlockStored | StatusBlockValidated,
+		Height: 4,
 		Header: &MsgDeSoHeader{
 			ProposedInView: 10,
 			PrevBlockHash:  hash2,
