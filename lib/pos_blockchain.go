@@ -234,8 +234,8 @@ func (bc *Blockchain) validateBlockIntegrity(desoBlock *MsgDeSoBlock) error {
 	if len(desoBlock.Txns) == 0 {
 		return RuleErrorBlockWithNoTxns
 	}
-	// Must have non-nil TxnConnectStatusByIndex of non-zero length.
-	if desoBlock.TxnConnectStatusByIndex == nil || desoBlock.TxnConnectStatusByIndex.Size() == 0 {
+	// Must have non-nil TxnConnectStatusByIndex
+	if desoBlock.TxnConnectStatusByIndex == nil {
 		return RuleErrorNilTxnConnectStatusByIndex
 	}
 

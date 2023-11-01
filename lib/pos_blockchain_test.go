@@ -170,10 +170,6 @@ func TestValidateBlockIntegrity(t *testing.T) {
 	block.TxnConnectStatusByIndex = nil
 	err = bc.validateBlockIntegrity(block)
 	require.Equal(t, err, RuleErrorNilTxnConnectStatusByIndex)
-	// TxnConnectStatusByIndex must have at least one item.
-	block.TxnConnectStatusByIndex = bitset.NewBitset()
-	err = bc.validateBlockIntegrity(block)
-	require.Equal(t, err, RuleErrorNilTxnConnectStatusByIndex)
 	// TxnConnectStatusByIndexHash must be non-nil
 	block.TxnConnectStatusByIndex = bitset.NewBitset().Set(0, true)
 	block.Header.TxnConnectStatusByIndexHash = nil
