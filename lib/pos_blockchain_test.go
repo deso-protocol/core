@@ -67,12 +67,14 @@ func TestValidateBlockIntegrity(t *testing.T) {
 					SignersList: bitset.NewBitset(),
 				},
 			},
-			ProposerRandomSeedHash:  randomSeedHash,
-			ProposerPublicKey:       NewPublicKey(RandomBytes(33)),
-			ProposerVotingPublicKey: randomBLSPrivateKey.PublicKey(),
-			TransactionMerkleRoot:   merkleRoot,
+			ProposerRandomSeedHash:      randomSeedHash,
+			ProposerPublicKey:           NewPublicKey(RandomBytes(33)),
+			ProposerVotingPublicKey:     randomBLSPrivateKey.PublicKey(),
+			TransactionMerkleRoot:       merkleRoot,
+			TxnConnectStatusByIndexHash: HashBitset(bitset.NewBitset().Set(0, true)),
 		},
-		Txns: txns,
+		Txns:                    txns,
+		TxnConnectStatusByIndex: bitset.NewBitset().Set(0, true),
 	}
 
 	// Validate the block with a valid timeout QC and header.
@@ -162,6 +164,27 @@ func TestValidateBlockIntegrity(t *testing.T) {
 			TxnMeta: &BlockRewardMetadataa{},
 		},
 	}
+
+	// TxnConnectStatusByIndex tests
+	// TxnConnectStatusByIndex must be non-nil
+	block.TxnConnectStatusByIndex = nil
+	err = bc.validateBlockIntegrity(block)
+	require.Equal(t, err, RuleErrorNilTxnConnectStatusByIndex)
+	// TxnConnectStatusByIndex must have at least one item.
+	block.TxnConnectStatusByIndex = bitset.NewBitset()
+	err = bc.validateBlockIntegrity(block)
+	require.Equal(t, err, RuleErrorNilTxnConnectStatusByIndex)
+	// TxnConnectStatusByIndexHash must be non-nil
+	block.TxnConnectStatusByIndex = bitset.NewBitset().Set(0, true)
+	block.Header.TxnConnectStatusByIndexHash = nil
+	err = bc.validateBlockIntegrity(block)
+	require.Equal(t, err, RuleErrorNilTxnConnectStatusByIndexHash)
+	// The hashed version of TxnConnectStatusByIndex must match the actual TxnConnectStatusByIndexHash
+	block.Header.TxnConnectStatusByIndexHash = HashBitset(bitset.NewBitset().Set(0, false))
+	err = bc.validateBlockIntegrity(block)
+	require.Equal(t, err, RuleErrorTxnConnectStatusByIndexHashMismatch)
+	// Reset TxnConnectStatusByIndexHash
+	block.Header.TxnConnectStatusByIndexHash = HashBitset(block.TxnConnectStatusByIndex)
 
 	// Block must have valid proposer voting public key
 	block.Header.ProposerVotingPublicKey = nil

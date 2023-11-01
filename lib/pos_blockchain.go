@@ -229,6 +229,26 @@ func (bc *Blockchain) validateBlockIntegrity(desoBlock *MsgDeSoBlock) error {
 	}
 
 	// Malformed block checks
+
+	// All blocks must have at least one txn
+	if len(desoBlock.Txns) == 0 {
+		return RuleErrorBlockWithNoTxns
+	}
+	// Must have non-nil TxnConnectStatusByIndex of non-zero length.
+	if desoBlock.TxnConnectStatusByIndex == nil || desoBlock.TxnConnectStatusByIndex.Size() == 0 {
+		return RuleErrorNilTxnConnectStatusByIndex
+	}
+
+	// Must have TxnConnectStatusByIndexHash
+	if desoBlock.Header.TxnConnectStatusByIndexHash == nil {
+		return RuleErrorNilTxnConnectStatusByIndexHash
+	}
+
+	// Make sure the TxnConnectStatusByIndex matches the TxnConnectStatusByIndexHash
+	if !(HashBitset(desoBlock.TxnConnectStatusByIndex).IsEqual(desoBlock.Header.TxnConnectStatusByIndexHash)) {
+		return RuleErrorTxnConnectStatusByIndexHashMismatch
+	}
+
 	// Require header to have either vote or timeout QC
 	isTimeoutQCEmpty := desoBlock.Header.ValidatorsTimeoutAggregateQC.isEmpty()
 	isVoteQCEmpty := desoBlock.Header.ValidatorsVoteQC.isEmpty()
@@ -238,10 +258,6 @@ func (bc *Blockchain) validateBlockIntegrity(desoBlock *MsgDeSoBlock) error {
 
 	if !isTimeoutQCEmpty && !isVoteQCEmpty {
 		return RuleErrorBothTimeoutAndVoteQC
-	}
-
-	if len(desoBlock.Txns) == 0 {
-		return RuleErrorBlockWithNoTxns
 	}
 
 	if desoBlock.Txns[0].TxnMeta.GetTxnType() != TxnTypeBlockReward {
@@ -859,23 +875,26 @@ func (bc *Blockchain) getHighestCommittedBlock() (*BlockNode, int) {
 }
 
 const (
-	RuleErrorNilBlockHeader                 RuleError = "RuleErrorNilBlockHeader"
-	RuleErrorNilPrevBlockHash               RuleError = "RuleErrorNilPrevBlockHash"
-	RuleErrorPoSBlockTstampNanoSecsTooOld   RuleError = "RuleErrorPoSBlockTstampNanoSecsTooOld"
-	RuleErrorPoSBlockTstampNanoSecsInFuture RuleError = "RuleErrorPoSBlockTstampNanoSecsInFuture"
-	RuleErrorInvalidPoSBlockHeaderVersion   RuleError = "RuleErrorInvalidPoSBlockHeaderVersion"
-	RuleErrorNoTimeoutOrVoteQC              RuleError = "RuleErrorNoTimeoutOrVoteQC"
-	RuleErrorBothTimeoutAndVoteQC           RuleError = "RuleErrorBothTimeoutAndVoteQC"
-	RuleErrorBlockWithNoTxns                RuleError = "RuleErrorBlockWithNoTxns"
-	RuleErrorBlockDoesNotStartWithRewardTxn RuleError = "RuleErrorBlockDoesNotStartWithRewardTxn"
-	RuleErrorMissingParentBlock             RuleError = "RuleErrorMissingParentBlock"
-	RuleErrorMissingAncestorBlock           RuleError = "RuleErrorMissingAncestorBlock"
-	RuleErrorDoesNotExtendCommittedTip      RuleError = "RuleErrorDoesNotExtendCommittedTip"
-	RuleErrorNilMerkleRoot                  RuleError = "RuleErrorNilMerkleRoot"
-	RuleErrorInvalidMerkleRoot              RuleError = "RuleErrorInvalidMerkleRoot"
-	RuleErrorInvalidProposerVotingPublicKey RuleError = "RuleErrorInvalidProposerVotingPublicKey"
-	RuleErrorInvalidProposerPublicKey       RuleError = "RuleErrorInvalidProposerPublicKey"
-	RuleErrorInvalidRandomSeedHash          RuleError = "RuleErrorInvalidRandomSeedHash"
+	RuleErrorNilBlockHeader                      RuleError = "RuleErrorNilBlockHeader"
+	RuleErrorNilPrevBlockHash                    RuleError = "RuleErrorNilPrevBlockHash"
+	RuleErrorPoSBlockTstampNanoSecsTooOld        RuleError = "RuleErrorPoSBlockTstampNanoSecsTooOld"
+	RuleErrorPoSBlockTstampNanoSecsInFuture      RuleError = "RuleErrorPoSBlockTstampNanoSecsInFuture"
+	RuleErrorInvalidPoSBlockHeaderVersion        RuleError = "RuleErrorInvalidPoSBlockHeaderVersion"
+	RuleErrorNilTxnConnectStatusByIndex          RuleError = "RuleErrorNilTxnConnectStatusByIndex"
+	RuleErrorNilTxnConnectStatusByIndexHash      RuleError = "RuleErrorNilTxnConnectStatusByIndexHash"
+	RuleErrorTxnConnectStatusByIndexHashMismatch RuleError = "RuleErrorTxnConnectStatusByIndexHashMismatch"
+	RuleErrorNoTimeoutOrVoteQC                   RuleError = "RuleErrorNoTimeoutOrVoteQC"
+	RuleErrorBothTimeoutAndVoteQC                RuleError = "RuleErrorBothTimeoutAndVoteQC"
+	RuleErrorBlockWithNoTxns                     RuleError = "RuleErrorBlockWithNoTxns"
+	RuleErrorBlockDoesNotStartWithRewardTxn      RuleError = "RuleErrorBlockDoesNotStartWithRewardTxn"
+	RuleErrorMissingParentBlock                  RuleError = "RuleErrorMissingParentBlock"
+	RuleErrorMissingAncestorBlock                RuleError = "RuleErrorMissingAncestorBlock"
+	RuleErrorDoesNotExtendCommittedTip           RuleError = "RuleErrorDoesNotExtendCommittedTip"
+	RuleErrorNilMerkleRoot                       RuleError = "RuleErrorNilMerkleRoot"
+	RuleErrorInvalidMerkleRoot                   RuleError = "RuleErrorInvalidMerkleRoot"
+	RuleErrorInvalidProposerVotingPublicKey      RuleError = "RuleErrorInvalidProposerVotingPublicKey"
+	RuleErrorInvalidProposerPublicKey            RuleError = "RuleErrorInvalidProposerPublicKey"
+	RuleErrorInvalidRandomSeedHash               RuleError = "RuleErrorInvalidRandomSeedHash"
 
 	RuleErrorInvalidPoSBlockHeight       RuleError = "RuleErrorInvalidPoSBlockHeight"
 	RuleErrorPoSBlockBeforeCutoverHeight RuleError = "RuleErrorPoSBlockBeforeCutoverHeight"
