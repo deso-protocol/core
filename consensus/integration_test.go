@@ -59,21 +59,29 @@ func TestNetworkWithOfflineValidators(t *testing.T) {
 	// Let all nodes run for 0.5 seconds so that the network produces at least one block.
 	time.Sleep(time.Millisecond * 500)
 
-	// Restart node 2 to simulate it going back online, and stop node 3 to simulate it
-	// going offline. The network has enough stake online to continue producing blocks.
+	// Restart node 2 to simulate it going back online
 	node2.Start()
+
+	// Let all nodes run for 0.5 seconds so that the network produces at least one block.
+	time.Sleep(time.Millisecond * 500)
+
+	// Stop node 3 to simulate it going offline. The network has enough stake online to continue producing blocks.
 	node3.Stop()
 
 	// Let all nodes run for 0.5 seconds so that the network produces at least one block.
 	time.Sleep(time.Millisecond * 500)
 
-	// Restart node 3 to simulate it going back online, and stop node 4 to simulate it
-	// going offline. The network has enough stake online to continue producing blocks.
+	// Restart node 3 to simulate it going back online
 	node3.Start()
+
+	// Let all nodes run for 0.5 seconds so that the network produces at least one block.
+	time.Sleep(time.Millisecond * 500)
+
+	// Stop node 4 to simulate it going offline. The network has enough stake online to continue producing blocks.
 	node4.Stop()
 
 	// Let all nodes run for 2 seconds so that the network produces at least one block.
-	time.Sleep(time.Millisecond * 2000)
+	time.Sleep(time.Millisecond * 500)
 
 	// Stop all remaining nodes
 	node1.Stop()
