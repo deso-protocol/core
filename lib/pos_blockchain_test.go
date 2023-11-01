@@ -286,7 +286,7 @@ func TestValidateBlockHeight(t *testing.T) {
 	require.Equal(t, err, RuleErrorMissingParentBlock)
 }
 
-func TestUpsertBlockToDBBlockIndex(t *testing.T) {
+func TestUpsertBlockAndBlockNodeToDB(t *testing.T) {
 	bc, _, _ := NewTestBlockchain(t)
 	GlobalDeSoParams.ForkHeights.ProofOfStake2ConsensusCutoverBlockHeight = 0
 	resetGlobalDeSoParams := func() {

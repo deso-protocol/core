@@ -368,26 +368,26 @@ func (bc *Blockchain) getLineageFromCommittedTip(desoBlock *MsgDeSoBlock) ([]*Bl
 
 // getOrCreateBlockNodeFromBlockIndex returns the block node from the block index if it exists.
 // Otherwise, it creates a new block node and adds it to the block index.
-func (bc *Blockchain) getOrCreateBlockNodeFromBlockIndex(desoBlock *MsgDeSoBlock) (*BlockNode, error) {
-	hash, err := desoBlock.Header.Hash()
+func (bc *Blockchain) getOrCreateBlockNodeFromBlockIndex(block *MsgDeSoBlock) (*BlockNode, error) {
+	hash, err := block.Header.Hash()
 	if err != nil {
-		return nil, errors.Wrapf(err, "setBlockStoredInBlockIndex: Problem hashing block %v", desoBlock)
+		return nil, errors.Wrapf(err, "getOrCreateBlockNodeFromBlockIndex: Problem hashing block %v", block)
 	}
 	blockNode := bc.blockIndex[*hash]
 	if blockNode != nil {
 		return blockNode, nil
 	}
-	prevBlockNode := bc.blockIndex[*desoBlock.Header.PrevBlockHash]
-	newBlockNode := NewBlockNode(prevBlockNode, hash, uint32(desoBlock.Header.Height), nil, nil, desoBlock.Header, StatusNone)
+	prevBlockNode := bc.blockIndex[*block.Header.PrevBlockHash]
+	newBlockNode := NewBlockNode(prevBlockNode, hash, uint32(block.Header.Height), nil, nil, block.Header, StatusNone)
 	bc.blockIndex[*hash] = newBlockNode
 	return newBlockNode, nil
 }
 
 // setBlockStoredInBlockIndex upserts the blocks into the in-memory block index and updates its status to
 // StatusBlockStored. It also writes the block to the block index in badger
-// by calling upsertBlockToDBBlockIndex.
-func (bc *Blockchain) storeBlockInBlockIndex(desoBlock *MsgDeSoBlock) error {
-	blockNode, err := bc.getOrCreateBlockNodeFromBlockIndex(desoBlock)
+// by calling upsertBlockAndBlockNodeToDB.
+func (bc *Blockchain) storeBlockInBlockIndex(block *MsgDeSoBlock) error {
+	blockNode, err := bc.getOrCreateBlockNodeFromBlockIndex(block)
 	if err != nil {
 		return errors.Wrapf(err, "storeBlockInBlockIndex: Problem getting or creating block node")
 	}
@@ -396,15 +396,15 @@ func (bc *Blockchain) storeBlockInBlockIndex(desoBlock *MsgDeSoBlock) error {
 		return errors.New("storeBlockInBlockIndex: BlockNode is already stored")
 	}
 	blockNode.Status |= StatusBlockStored
-	return bc.upsertBlockToDBBlockIndex(desoBlock, blockNode)
+	return bc.upsertBlockAndBlockNodeToDB(block, blockNode)
 }
 
 // storeValidatedBlockInBlockIndex upserts the blocks into the in-memory block index and updates its status to
 // StatusBlockValidated. If it does not have the status StatusBlockStored already, we add that as we will
 // store the block in the DB after updating its status.  It also writes the block to the block index in badger
-// by calling upsertBlockToDBBlockIndex.
-func (bc *Blockchain) storeValidatedBlockInBlockIndex(desoBlock *MsgDeSoBlock) error {
-	blockNode, err := bc.getOrCreateBlockNodeFromBlockIndex(desoBlock)
+// by calling upsertBlockAndBlockNodeToDB.
+func (bc *Blockchain) storeValidatedBlockInBlockIndex(block *MsgDeSoBlock) error {
+	blockNode, err := bc.getOrCreateBlockNodeFromBlockIndex(block)
 	if err != nil {
 		return errors.Wrapf(err, "storeValidatedBlockInBlockIndex: Problem getting or creating block node")
 	}
@@ -417,15 +417,15 @@ func (bc *Blockchain) storeValidatedBlockInBlockIndex(desoBlock *MsgDeSoBlock) e
 	if !blockNode.IsStored() {
 		blockNode.Status |= StatusBlockStored
 	}
-	return bc.upsertBlockToDBBlockIndex(desoBlock, blockNode)
+	return bc.upsertBlockAndBlockNodeToDB(block, blockNode)
 }
 
 // storeValidateFailedBlockInBlockIndex upserts the blocks into the in-memory block index and updates its status to
 // StatusBlockValidateFailed. If it does not have the status StatusBlockStored already, we add that as we will
 // store the block in the DB after updating its status.  It also writes the block to the block index in badger
-// by calling upsertBlockToDBBlockIndex.
-func (bc *Blockchain) storeValidateFailedBlockInBlockIndex(desoBlock *MsgDeSoBlock) error {
-	blockNode, err := bc.getOrCreateBlockNodeFromBlockIndex(desoBlock)
+// by calling upsertBlockAndBlockNodeToDB.
+func (bc *Blockchain) storeValidateFailedBlockInBlockIndex(block *MsgDeSoBlock) error {
+	blockNode, err := bc.getOrCreateBlockNodeFromBlockIndex(block)
 	if err != nil {
 		return errors.Wrapf(err, "storeValidateFailedBlockInBlockIndex: Problem getting or creating block node")
 	}
@@ -442,14 +442,14 @@ func (bc *Blockchain) storeValidateFailedBlockInBlockIndex(desoBlock *MsgDeSoBlo
 	if !blockNode.IsStored() {
 		blockNode.Status |= StatusBlockStored
 	}
-	return bc.upsertBlockToDBBlockIndex(desoBlock, blockNode)
+	return bc.upsertBlockAndBlockNodeToDB(block, blockNode)
 }
 
 // storeCommittedBlockInBlockIndex upserts the blocks into the in-memory block index and updates its status to
 // StatusBlockCommitted. If the BlockNode does not have StatusBlockValidated and StatusBlockStored statuses,
-// we also add those. It also writes the block to the block index in badger by calling upsertBlockToDBBlockIndex.
-func (bc *Blockchain) storeCommittedBlockInBlockIndex(desoBlock *MsgDeSoBlock) error {
-	blockNode, err := bc.getOrCreateBlockNodeFromBlockIndex(desoBlock)
+// we also add those. It also writes the block to the block index in badger by calling upsertBlockAndBlockNodeToDB.
+func (bc *Blockchain) storeCommittedBlockInBlockIndex(block *MsgDeSoBlock) error {
+	blockNode, err := bc.getOrCreateBlockNodeFromBlockIndex(block)
 	if err != nil {
 		return errors.Wrapf(err, "storeCommittedBlockInBlockIndex: Problem getting or creating block node")
 	}
@@ -465,18 +465,18 @@ func (bc *Blockchain) storeCommittedBlockInBlockIndex(desoBlock *MsgDeSoBlock) e
 		blockNode.Status |= StatusBlockStored
 	}
 	// Do we want any side effects here or nah?
-	return bc.upsertBlockToDBBlockIndex(desoBlock, blockNode)
+	return bc.upsertBlockAndBlockNodeToDB(block, blockNode)
 }
 
-// upsertBlockToDBBlockIndex adds the block to the block index with the given status. It also writes the block to the block
+// upsertBlockAndBlockNodeToDB adds the block to the block index with the given status. It also writes the block to the block
 // index in badger.
-func (bc *Blockchain) upsertBlockToDBBlockIndex(desoBlock *MsgDeSoBlock, newBlockNode *BlockNode) error {
+func (bc *Blockchain) upsertBlockAndBlockNodeToDB(desoBlock *MsgDeSoBlock, newBlockNode *BlockNode) error {
 	// Store the block in badger
 	err := bc.db.Update(func(txn *badger.Txn) error {
 		if bc.snapshot != nil {
 			bc.snapshot.PrepareAncestralRecordsFlush()
 			defer bc.snapshot.StartAncestralRecordsFlush(true)
-			glog.V(2).Infof("upsertBlockToDBBlockIndex: Preparing snapshot flush")
+			glog.V(2).Infof("upsertBlockAndBlockNodeToDB: Preparing snapshot flush")
 		}
 		// TODO: Do we want to write the full block once.
 		// Store the new block in the db under the
@@ -487,13 +487,13 @@ func (bc *Blockchain) upsertBlockToDBBlockIndex(desoBlock *MsgDeSoBlock, newBloc
 		// 	we've fetched during Hypersync. Is there an edge-case where for some reason they're not identical? Or
 		// 	somehow ancestral records get corrupted?
 		if innerErr := PutBlockWithTxn(txn, bc.snapshot, desoBlock); innerErr != nil {
-			return errors.Wrapf(innerErr, "upsertBlockToDBBlockIndex: Problem calling PutBlock")
+			return errors.Wrapf(innerErr, "upsertBlockAndBlockNodeToDB: Problem calling PutBlock")
 		}
 		// Store the new block's node in our node index in the db under the
 		//   <height uin32, blockHash BlockHash> -> <node info>
 		// index.
 		if innerErr := PutHeightHashToNodeInfoWithTxn(txn, bc.snapshot, newBlockNode, false /*bitcoinNodes*/); innerErr != nil {
-			return errors.Wrapf(innerErr, "upsertBlockToDBBlockIndex: Problem calling PutHeightHashToNodeInfo before validation")
+			return errors.Wrapf(innerErr, "upsertBlockAndBlockNodeToDB: Problem calling PutHeightHashToNodeInfo before validation")
 		}
 
 		// Notice we don't call PutBestHash or PutUtxoOperationsForBlockWithTxn because we're not
@@ -502,7 +502,7 @@ func (bc *Blockchain) upsertBlockToDBBlockIndex(desoBlock *MsgDeSoBlock, newBloc
 		return nil
 	})
 	if err != nil {
-		return errors.Wrapf(err, "upsertBlockToDBBlockIndex: Problem putting block in db: ")
+		return errors.Wrapf(err, "upsertBlockAndBlockNodeToDB: Problem putting block in db: ")
 	}
 	return nil
 }
