@@ -77,19 +77,19 @@ const (
 	StatusBlockCommitted = 1 << 8 // Committed means that the block has been committed to the blockchain according to the Fast HotStuff commit rule. Only set on blocks after the cutover for PoS
 )
 
-// A block is stored if it has been added to the blockIndex and stored in the DB.
+// IsStored returns true if the BlockNode has been added to the blockIndex and stored in the DB.
 func (nn *BlockNode) IsStored() bool {
 	return nn.Status&StatusBlockStored != 0
 }
 
-// A block is validated if it has passed all validations. A block that is validated is
+// IsValidated returns true if a BlockNode has passed all validations. A BlockNode that is validated is
 // generally always stored first.
 func (nn *BlockNode) IsValidated() bool {
 	return nn.Status&StatusBlockValidated != 0
 }
 
-// A block is committed if it has passed all validations and it has been committed to
-// the blockchain according to the Fast HotStuff commit rule.
+// IsCommitted returns true if a BlockNode has passed all validations, and it has been committed to
+// the Blockchain according to the Fast HotStuff commit rule.
 func (nn *BlockNode) IsCommitted() bool {
 	return nn.Status&StatusBlockCommitted != 0
 }
