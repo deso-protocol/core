@@ -71,7 +71,7 @@ func (bc *Blockchain) processBlockPoS(desoBlock *MsgDeSoBlock, currentView uint6
 
 	// 3. We can now add this block to the block index since we have performed
 	// all basic validations.
-	if err = bc.addBlockToBlockIndex(desoBlock, StatusBlockStored|StatusBlockValidated); err != nil {
+	if err = bc.setBlockValidatedInBlockIndex(desoBlock); err != nil {
 		return false, false, nil, errors.Wrap(err, "processBlockPoS: Problem adding block to block index: ")
 	}
 
@@ -366,18 +366,70 @@ func (bc *Blockchain) getLineageFromCommittedTip(desoBlock *MsgDeSoBlock) ([]*Bl
 	return ancestors, nil
 }
 
+func (bc *Blockchain) getOrCreateBlockNodeFromBlockIndex(desoBlock *MsgDeSoBlock) (*BlockNode, error) {
+	hash, err := desoBlock.Header.Hash()
+	if err != nil {
+		return nil, errors.Wrapf(err, "setBlockStoredInBlockIndex: Problem hashing block %v", desoBlock)
+	}
+	blockNode := bc.blockIndex[*hash]
+	if blockNode != nil {
+		return blockNode, nil
+	}
+	prevBlockNode := bc.blockIndex[*desoBlock.Header.PrevBlockHash]
+	newBlockNode := NewBlockNode(prevBlockNode, hash, uint32(desoBlock.Header.Height), nil, nil, desoBlock.Header, StatusNone)
+	bc.blockIndex[*hash] = newBlockNode
+	return newBlockNode, nil
+}
+
+func (bc *Blockchain) setBlockStoredInBlockIndex(desoBlock *MsgDeSoBlock) error {
+	blockNode, err := bc.getOrCreateBlockNodeFromBlockIndex(desoBlock)
+	if err != nil {
+		return errors.Wrapf(err, "setBlockStoredInBlockIndex: Problem getting or creating block node")
+	}
+	// We should throw an error if the BlockNode is already Stored.
+	if blockNode.IsStored() {
+		return errors.New("setBlockStoredInBlockIndex: BlockNode is already stored")
+	}
+	blockNode.Status |= StatusBlockStored
+	return bc.upsertBlockToDBBlockIndex(desoBlock, blockNode)
+}
+
+func (bc *Blockchain) setBlockValidatedInBlockIndex(desoBlock *MsgDeSoBlock) error {
+	blockNode, err := bc.getOrCreateBlockNodeFromBlockIndex(desoBlock)
+	if err != nil {
+		return errors.Wrapf(err, "setBlockValidatedInBlockIndex: Problem getting or creating block node")
+	}
+	// We should throw an error if the BlockNode is already Validated.
+	if blockNode.IsValidated() {
+		return errors.New("setBlockValidatedInBlockIndex: BlockNode is already validated")
+	}
+	blockNode.Status |= StatusBlockValidated
+	// If the BlockNode is not already stored, we should set it to stored.
+	if !blockNode.IsStored() {
+		blockNode.Status |= StatusBlockStored
+	}
+	return bc.upsertBlockToDBBlockIndex(desoBlock, blockNode)
+}
+
+func (bc *Blockchain) setBlockCommittedInBlockIndex(desoBlock *MsgDeSoBlock) error {
+	blockNode, err := bc.getOrCreateBlockNodeFromBlockIndex(desoBlock)
+	if err != nil {
+		return errors.Wrapf(err, "setBlockCommittedInBlockIndex: Problem getting or creating block node")
+	}
+	// We should throw an error if the BlockNode is already Committed.
+	if blockNode.IsCommitted() {
+		return errors.New("setBlockCommittedInBlockIndex: BlockNode is already committed")
+	}
+	blockNode.Status |= StatusBlockCommitted
+	// Do we want any side effects here or nah?
+	return bc.upsertBlockToDBBlockIndex(desoBlock, blockNode)
+}
+
 // addBlockToBlockIndex adds the block to the block index with the given status. It also writes the block to the block
 // index in badger.
-func (bc *Blockchain) addBlockToBlockIndex(desoBlock *MsgDeSoBlock, blockStatus BlockStatus) error {
-	hash, err := desoBlock.Hash()
-	if err != nil {
-		return errors.Wrapf(err, "addBlockToBlockIndex: Problem hashing block %v", desoBlock)
-	}
-	// Need to get parent block node from block index
-	prevBlock := bc.blockIndex[*desoBlock.Header.PrevBlockHash]
-	newBlockNode := NewBlockNode(prevBlock, hash, uint32(desoBlock.Header.Height), nil, nil, desoBlock.Header, blockStatus)
+func (bc *Blockchain) upsertBlockToDBBlockIndex(desoBlock *MsgDeSoBlock, newBlockNode *BlockNode) error {
 	// Store the block in badger
-	err = bc.db.Update(func(txn *badger.Txn) error {
+	err := bc.db.Update(func(txn *badger.Txn) error {
 		if bc.snapshot != nil {
 			bc.snapshot.PrepareAncestralRecordsFlush()
 			defer bc.snapshot.StartAncestralRecordsFlush(true)
@@ -409,8 +461,6 @@ func (bc *Blockchain) addBlockToBlockIndex(desoBlock *MsgDeSoBlock, blockStatus 
 	if err != nil {
 		return errors.Wrapf(err, "addBlockToBlockIndex: Problem putting block in db: ")
 	}
-	// Need to get parent block node from block index
-	bc.blockIndex[*hash] = newBlockNode
 	return nil
 }
 

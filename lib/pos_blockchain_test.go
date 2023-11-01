@@ -286,7 +286,7 @@ func TestValidateBlockHeight(t *testing.T) {
 	require.Equal(t, err, RuleErrorMissingParentBlock)
 }
 
-func TestAddBlockToBlockIndex(t *testing.T) {
+func TestUpsertBlockToDBBlockIndex(t *testing.T) {
 	bc, _, _ := NewTestBlockchain(t)
 	GlobalDeSoParams.ForkHeights.ProofOfStake2ConsensusCutoverBlockHeight = 0
 	resetGlobalDeSoParams := func() {
@@ -345,7 +345,7 @@ func TestAddBlockToBlockIndex(t *testing.T) {
 		},
 		TxnConnectStatusByIndex: bitset.NewBitset(),
 	}
-	err = bc.addBlockToBlockIndex(block, StatusBlockStored)
+	err = bc.setBlockStoredInBlockIndex(block)
 	require.Nil(t, err)
 	newHash, err := block.Hash()
 	require.NoError(t, err)
@@ -521,7 +521,7 @@ func TestAddBlockToBlockIndexAndUncommittedBlocks(t *testing.T) {
 		TxnConnectStatusByIndex: bitset.NewBitset(),
 	}
 
-	err = bc.addBlockToBlockIndex(block, StatusBlockStored)
+	err = bc.setBlockStoredInBlockIndex(block)
 	require.NoError(t, err)
 	newHash, err := block.Hash()
 	require.NoError(t, err)
@@ -543,7 +543,7 @@ func TestAddBlockToBlockIndexAndUncommittedBlocks(t *testing.T) {
 	// If we're missing a field in the header, we should get an error
 	// as we can't compute the hash.
 	block.Header.ProposerPublicKey = nil
-	err = bc.addBlockToBlockIndex(block, StatusBlockStored)
+	err = bc.setBlockStoredInBlockIndex(block)
 	require.Error(t, err)
 }
 
