@@ -2,22 +2,22 @@ package lib
 
 import "github.com/deso-protocol/core/consensus"
 
-type ConsensusMessageHandler struct {
+type ConsensusController struct {
 	fastHotStuffEventLoop *consensus.FastHotStuffEventLoop
 	blockchain            *Blockchain
 }
 
-func NewConsensusMessageHandler(
+func NewConsensusController(
 	fastHotStuffEventLoop *consensus.FastHotStuffEventLoop,
 	blockchain *Blockchain,
-) *ConsensusMessageHandler {
-	return &ConsensusMessageHandler{
+) *ConsensusController {
+	return &ConsensusController{
 		fastHotStuffEventLoop: fastHotStuffEventLoop,
 		blockchain:            blockchain,
 	}
 }
 
-func (handler *ConsensusMessageHandler) HandleFastHostStuffBlockProposal(event *consensus.FastHotStuffEvent) {
+func (cc *ConsensusController) HandleFastHostStuffBlockProposal(event *consensus.FastHotStuffEvent) {
 	// The consensus module has signaled that we can propose a block at a certain block
 	// height. We construct the block and broadcast it here:
 	// 1. Verify that the block height we want to propose at is valid
@@ -31,7 +31,7 @@ func (handler *ConsensusMessageHandler) HandleFastHostStuffBlockProposal(event *
 	// 7. Broadcast the block to the network
 }
 
-func (handler *ConsensusMessageHandler) HandleFastHostStuffEmptyTimeoutBlockProposal(event *consensus.FastHotStuffEvent) {
+func (cc *ConsensusController) HandleFastHostStuffEmptyTimeoutBlockProposal(event *consensus.FastHotStuffEvent) {
 	// The consensus module has signaled that we have a timeout QC and can propose one at a certain
 	// block height. We construct an empty block with a timeout QC and broadcast it here:
 	// 1. Verify that the block height and view we want to propose at is valid
@@ -42,7 +42,7 @@ func (handler *ConsensusMessageHandler) HandleFastHostStuffEmptyTimeoutBlockProp
 	// 6. Broadcast the block to the network
 }
 
-func (handler *ConsensusMessageHandler) HandleFastHostStuffVote(event *consensus.FastHotStuffEvent) {
+func (cc *ConsensusController) HandleFastHostStuffVote(event *consensus.FastHotStuffEvent) {
 	// The consensus module has signaled that we can vote on a block. We construct and
 	// broadcast the vote here:
 	// 1. Verify that the block height we want to vote on is valid
@@ -51,7 +51,7 @@ func (handler *ConsensusMessageHandler) HandleFastHostStuffVote(event *consensus
 	// 4. Broadcast the timeout msg to the network
 }
 
-func (handler *ConsensusMessageHandler) HandleFastHostStuffTimeout(event *consensus.FastHotStuffEvent) {
+func (handler *ConsensusController) HandleFastHostStuffTimeout(event *consensus.FastHotStuffEvent) {
 	// The consensus module has signaled that we have timed out for a view. We construct and
 	// broadcast the timeout here:
 	// 1. Verify the block height and view we want to timeout on are valid
@@ -60,18 +60,18 @@ func (handler *ConsensusMessageHandler) HandleFastHostStuffTimeout(event *consen
 	// 4. Broadcast the timeout msg to the network
 }
 
-func (handler *ConsensusMessageHandler) HandleHeaderBundle(pp *Peer, msg *MsgDeSoHeaderBundle) {
+func (cc *ConsensusController) HandleHeaderBundle(pp *Peer, msg *MsgDeSoHeaderBundle) {
 	// TODO
 }
 
-func (handler *ConsensusMessageHandler) HandleGetBlocks(pp *Peer, msg *MsgDeSoGetBlocks) {
+func (cc *ConsensusController) HandleGetBlocks(pp *Peer, msg *MsgDeSoGetBlocks) {
 	// TODO
 }
 
-func (handler *ConsensusMessageHandler) HandleHeader(pp *Peer, msg *MsgDeSoHeader) {
+func (cc *ConsensusController) HandleHeader(pp *Peer, msg *MsgDeSoHeader) {
 	// TODO
 }
 
-func (handler *ConsensusMessageHandler) HandleBlock(pp *Peer, msg *MsgDeSoBlock) {
+func (cc *ConsensusController) HandleBlock(pp *Peer, msg *MsgDeSoBlock) {
 	// TODO
 }

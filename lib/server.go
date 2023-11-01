@@ -61,8 +61,8 @@ type Server struct {
 	eventManager  *EventManager
 	TxIndex       *TXIndex
 
-	consensusMessageHandler *ConsensusMessageHandler
-	fastHotStuffEventLoop   *consensus.FastHotStuffEventLoop
+	consensusController   *ConsensusController
+	fastHotStuffEventLoop *consensus.FastHotStuffEventLoop
 	// posMempool *PosMemPool TODO: Add the mempool later
 
 	// All messages received from peers get sent from the ConnectionManager to the
@@ -2220,20 +2220,20 @@ func (srv *Server) _handlePeerMessages(serverMessage *ServerMessage) {
 func (srv *Server) _handleFastHostStuffConsensusEvent(event *consensus.FastHotStuffEvent) {
 	// This should never happen. If the consensus message handler isn't defined, then something went
 	// wrong during the node initialization. We log it and return early to avoid panicking.
-	if srv.consensusMessageHandler == nil {
+	if srv.consensusController == nil {
 		glog.Errorf("Server._handleFastHostStuffConsensusEvent: Consensus message handler is nil")
 		return
 	}
 
 	switch event.EventType {
 	case consensus.FastHotStuffEventTypeVote:
-		srv.consensusMessageHandler.HandleFastHostStuffVote(event)
+		srv.consensusController.HandleFastHostStuffVote(event)
 	case consensus.FastHotStuffEventTypeTimeout:
-		srv.consensusMessageHandler.HandleFastHostStuffTimeout(event)
+		srv.consensusController.HandleFastHostStuffTimeout(event)
 	case consensus.FastHotStuffEventTypeConstructVoteQC:
-		srv.consensusMessageHandler.HandleFastHostStuffBlockProposal(event)
+		srv.consensusController.HandleFastHostStuffBlockProposal(event)
 	case consensus.FastHotStuffEventTypeConstructTimeoutQC:
-		srv.consensusMessageHandler.HandleFastHostStuffEmptyTimeoutBlockProposal(event)
+		srv.consensusController.HandleFastHostStuffEmptyTimeoutBlockProposal(event)
 	}
 }
 
