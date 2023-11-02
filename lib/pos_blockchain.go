@@ -107,6 +107,11 @@ func (bc *Blockchain) validateBlockPoS(block *MsgDeSoBlock) error {
 	// end up calling processBlockPoS on all of its ancestors that aren't validated yet.
 	parentBlockNode, exists := bc.blockIndex[*block.Header.PrevBlockHash]
 	if !exists {
+		// TODO: We should never really hit this, but if we do, we should probably
+		// store the block w/ StatusBlockStored, but not StatusBlockValidateFailed.
+		if err := bc.storeBlockInBlockIndex(block); err != nil {
+			return errors.Wrap(err, "validateBlockPoS: Problem adding block to block index: ")
+		}
 		return errors.New("validateBlockPoS: Parent block not found in block index. This should never happen.")
 	}
 	if parentBlockNode.IsValidateFailed() {
@@ -120,17 +125,41 @@ func (bc *Blockchain) validateBlockPoS(block *MsgDeSoBlock) error {
 	if !parentBlockNode.IsValidated() {
 		blk, err := GetBlock(parentBlockNode.Hash, bc.db, bc.snapshot)
 		if err != nil {
+			// If we don't have the parent, we need to fetch it from the network.
+			// We won't handle that in here, so we should just store the block and return.
+			if storeInBlockIndexErr := bc.storeBlockInBlockIndex(block); storeInBlockIndexErr != nil {
+				return errors.Wrapf(err, "validateBlockPoS: Problem adding block to block index: %v", storeInBlockIndexErr)
+			}
 			return errors.Wrapf(err, "validateBlockPoS: Problem getting parent block %v", parentBlockNode.Hash)
 		}
+		// TODO: I hate how deeply nested this is right now, but we'll refactor to make it nicer.
 		if err = bc.validateBlockPoS(blk); err != nil {
+			// Okay here's where it gets a little tricky. We pull the parent BlockNode from the BlockIndex. If the
+			// parent has a status of ValidateFailed, then we know we store this block as ValidateFailed. If the parent
+			// is not ValidateFailed, we ONLY store the block and move on. We don't want to store it as ValidateFailed
+			// because we don't know if it's actually invalid. It could be that we hit some intermittent error when
+			// trying to validate its parent, such as an intermittent badger error.
+			parentBlockNode = bc.blockIndex[*block.Header.PrevBlockHash]
+			if parentBlockNode.IsValidateFailed() {
+				if storeInBlockIndexErr := bc.storeValidateFailedBlockInBlockIndex(block); storeInBlockIndexErr != nil {
+					return errors.Wrapf(err, "validateBlockPoS: Problem adding validate failed block to block index: %v", storeInBlockIndexErr)
+				}
+			} else {
+				if storeInBlockIndexErr := bc.storeBlockInBlockIndex(block); storeInBlockIndexErr != nil {
+					return errors.Wrapf(err, "validateBlockPoS: Problem adding block to block index: %v", storeInBlockIndexErr)
+				}
+			}
 			return errors.Wrapf(err, "validateBlockPoS: Problem processing parent block %v", parentBlockNode.Hash)
 		}
 	}
 
 	if err := bc.validateDeSoBlockPoS(block); err != nil {
-		// TODO: If validations fail, do we want to even bother storing the block? Are there any validations that
+		// TODO: If validations fail, do we want to even bother storing the full block? Are there any validations that
 		// wouldn't result in us wanting to mark the block as StatusBlockValidateFailed?
+		// Do we ONLY mark it as ValidateFailed if we hit a rule error? We can check this with IsRuleError(err)
 		// If validations fail, we can update the block index with the block status ValidateFailed
+		isRuleError := IsRuleError(err)
+		_ = isRuleError
 		if storeInBlockIndexErr := bc.storeValidateFailedBlockInBlockIndex(block); storeInBlockIndexErr != nil {
 			return errors.Wrapf(err, "validateBlockPoS: Problem adding validate failed block to block index: %v", storeInBlockIndexErr)
 		}
@@ -140,14 +169,18 @@ func (bc *Blockchain) validateBlockPoS(block *MsgDeSoBlock) error {
 	// We know the utxoView will be valid because we check that all ancestor blocks have been validated.
 	utxoView, err := bc.getUtxoViewAtBlockHash(*block.Header.PrevBlockHash)
 	if err != nil {
+		// Here we want to at least store this block since we don't know if it's invalid. Hitting
+		// an error here should really never happen.
+		if storeInBlockIndexErr := bc.storeBlockInBlockIndex(block); storeInBlockIndexErr != nil {
+			return errors.Wrapf(err, "validateBlockPoS: Problem adding block to block index: %v", storeInBlockIndexErr)
+		}
 		return errors.Wrap(err, "processBlockPoS: Problem initializing UtxoView: ")
 	}
 	// Connect this block to the UtxoView.
 	txHashes := collections.Transform(block.Txns, func(txn *MsgDeSoTxn) *BlockHash {
 		return txn.Hash()
 	})
-	_, err = utxoView.ConnectBlock(block, txHashes, true, nil, block.Header.Height)
-	if err != nil {
+	if _, err = utxoView.ConnectBlock(block, txHashes, true, nil, block.Header.Height); err != nil {
 		// If it doesn't connect, we want to mark it as ValidateFailed.
 		if storeInBlockIndexErr := bc.storeValidateFailedBlockInBlockIndex(block); storeInBlockIndexErr != nil {
 			return errors.Wrapf(err, "validateBlockPoS: Problem adding validate failed block to block index: %v", storeInBlockIndexErr)
@@ -157,6 +190,11 @@ func (bc *Blockchain) validateBlockPoS(block *MsgDeSoBlock) error {
 
 	validatorsByStake, err := utxoView.GetAllSnapshotValidatorSetEntriesByStake()
 	if err != nil {
+		// Here's another case where we want to store the block even if we hit an error.
+		// We're not SURE if it's invalid, so we should store it, but not mark is as ValidateFailed
+		if storeInBlockIndexErr := bc.storeBlockInBlockIndex(block); storeInBlockIndexErr != nil {
+			return errors.Wrapf(err, "validateBlockPoS: Problem adding block to block index: %v", storeInBlockIndexErr)
+		}
 		return errors.Wrap(err, "validateBlockPoS: Problem getting validator set: ")
 	}
 	// TODO(diamondhands): I don't think the TODO below makes sense given the changes but take a look.
