@@ -108,7 +108,7 @@ func (bc *Blockchain) processBlockPoS(block *MsgDeSoBlock, currentView uint64, v
 	txHashes := collections.Transform(block.Txns, func(txn *MsgDeSoTxn) *BlockHash {
 		return txn.Hash()
 	})
-	_, err = utxoView.ConnectBlock(block, txHashes, true, bc.eventManager, block.Header.Height)
+	_, err = utxoView.ConnectBlock(block, txHashes, true, nil, block.Header.Height)
 	if err != nil {
 		// If it doesn't connect, do we want to mark it as ValidateFailed and store the block?
 		return false, false, nil, errors.Wrap(err, "processBlockPoS: Problem connecting block to UtxoView: ")
