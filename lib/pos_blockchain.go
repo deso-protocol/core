@@ -49,12 +49,12 @@ func (bc *Blockchain) processBlockPoS(block *MsgDeSoBlock, currentView uint64, v
 
 		// Add to blockIndex with status STORED only.
 		if err = bc.storeBlockInBlockIndex(block); err != nil {
-			return false, false, missingBlockHashes, errors.Wrap(err, "processBlockPoS: Problem adding block to block index: ")
+			return false, true, missingBlockHashes, errors.Wrap(err, "processBlockPoS: Problem adding block to block index: ")
 		}
 
 		// In this case there is no error. We got a block that seemed ostensibly valid, it just
 		// didn't extend from a known block. We request the block's parent as missingBlockHashes.
-		return false, false, missingBlockHashes, nil
+		return false, true, missingBlockHashes, nil
 	}
 
 	// Make sure its parent is validated. If not, we need to validate it first by calling processBlockPoS.
@@ -641,9 +641,6 @@ func (bc *Blockchain) tryApplyNewTip(blockNode *BlockNode, currentView uint64, l
 	}
 	// Add the new tip to the best chain.
 	bc.addBlockToBestChain(blockNode)
-	if err := bc.storeTipHashInDB(blockNode.Hash); err != nil {
-		return false, errors.Wrapf(err, "tryApplyNewTip: Problem calling storeTipHashInDB: ")
-	}
 	return true, nil
 }
 
