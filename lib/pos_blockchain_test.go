@@ -1598,11 +1598,10 @@ func _generateBlockAndAddToBestChain(testMeta *TestMeta, blockHeight uint64, vie
 	require.NoError(testMeta.t, err)
 
 	// Add block to block index and best chain
-	blockNode, err := testMeta.chain.storeValidatedBlockInBlockIndex(msgDesoBlock)
+	newBlockNode, err := testMeta.chain.storeValidatedBlockInBlockIndex(msgDesoBlock)
 	require.NoError(testMeta.t, err)
-	require.True(testMeta.t, blockNode.IsValidated())
-	newBlockNode, exists := testMeta.chain.blockIndex[*newBlockHash]
-	require.True(testMeta.t, exists)
+	require.True(testMeta.t, newBlockNode.IsValidated())
+	require.True(testMeta.t, newBlockNode.Hash.IsEqual(newBlockHash))
 	testMeta.chain.addBlockToBestChain(newBlockNode)
 	// Update the latest block view
 	latestBlockView, err := testMeta.chain.GetUncommittedTipView()
