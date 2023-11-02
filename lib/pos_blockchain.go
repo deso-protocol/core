@@ -57,92 +57,23 @@ func (bc *Blockchain) processBlockPoS(block *MsgDeSoBlock, currentView uint64, v
 		return false, true, missingBlockHashes, nil
 	}
 
-	// Make sure its parent is validated. If not, we need to validate it first by calling processBlockPoS.
-	// Note that if any other ancestor is not validated, calling processBlockPoS on the parent will
-	// end up calling processBlockPoS on all of its ancestors that aren't validated yet.
-	parentBlockNode, exists := bc.blockIndex[*block.Header.PrevBlockHash]
-	if !exists {
-		return false, false, nil, errors.New("processBlockPoS: Parent block not found in block index. This should never happen.")
-	}
-	if parentBlockNode.IsValidateFailed() {
-		// We'll never add this to the best chain because its parent is invalid.
-		// If its parent is ValidateFailed, we can update the block index with the block status ValidateFailed
-		if err = bc.storeValidateFailedBlockInBlockIndex(block); err != nil {
-			return false, false, nil, errors.Wrap(err, "processBlockPoS: Problem adding validate failed block to block index")
-		}
-		return false, false, nil, errors.New("processBlockPoS: block's parent failed validation: ")
-	}
-	if !parentBlockNode.IsValidated() {
-		blk, err := GetBlock(parentBlockNode.Hash, bc.db, bc.snapshot)
-		if err != nil {
-			return false, false, nil, errors.Wrapf(err, "processBlockPoS: Problem getting parent block %v", parentBlockNode.Hash)
-		}
-		_, _, _, err = bc.processBlockPoS(blk, currentView, verifySignatures)
-		if err != nil {
-			return false, false, nil, errors.Wrapf(err, "processBlockPoS: Problem processing parent block %v", parentBlockNode.Hash)
-		}
-	}
-
-	// At this point, we know that all the ancestors of this block have been successfully
-	// validated. That means we can now proceed with attempting to validate THIS block.
-
-	// Do all the sanity checks on the block.
-	// TODO: Check if err is for view > latest committed block view and <= latest uncommitted block.
-	// If so, we need to perform the rest of the validations and then add to our block index.
-	if err = bc.validateDeSoBlockPoS(block); err != nil {
-		// TODO: If validations fail, do we want to even bother storing the block? Are there any validations that
-		// wouldn't result in us wanting to mark the block as StatusBlockValidateFailed?
-		// If validations fail, we can update the block index with the block status ValidateFailed
-		if storeInBlockIndexErr := bc.storeValidateFailedBlockInBlockIndex(block); storeInBlockIndexErr != nil {
-			return false, false, nil, errors.Wrapf(err, "processBlockPoS: Problem adding validate failed block to block index: %v", storeInBlockIndexErr)
-		}
-		return false, false, nil, errors.Wrap(err, "processBlockPoS: block validation failed: ")
-	}
-
-	// We know the utxoView will be valid because we check that all ancestor blocks have been validated.
-	utxoView, err := bc.getUtxoViewAtBlockHash(*block.Header.PrevBlockHash)
 	if err != nil {
-		return false, false, nil, errors.Wrap(err, "processBlockPoS: Problem initializing UtxoView: ")
-	}
-	// Connect this block to the UtxoView.
-	txHashes := collections.Transform(block.Txns, func(txn *MsgDeSoTxn) *BlockHash {
-		return txn.Hash()
-	})
-	_, err = utxoView.ConnectBlock(block, txHashes, true, nil, block.Header.Height)
-	if err != nil {
-		// If it doesn't connect, do we want to mark it as ValidateFailed and store the block?
-		return false, false, nil, errors.Wrap(err, "processBlockPoS: Problem connecting block to UtxoView: ")
+		return false, false, _missingBlockHashes, errors.Wrap(err, "processBlockPoS: Problem getting lineage from committed tip: UNEXPECTED ERROR!!!")
 	}
 
-	validatorsByStake, err := utxoView.GetAllSnapshotValidatorSetEntriesByStake()
-	if err != nil {
-		return false, false, nil, errors.Wrap(err, "processBlockPoS: Problem getting validator set: ")
-	}
-	// TODO(diamondhands): I don't think the TODO below makes sense given the changes but take a look.
-	// TODO: If block belongs in the next epoch or it's from an epoch far ahead in the future, we may not be able to validate its QC at all.
-	// the validator set for that epoch may be entirely different.
-	// A couple of options on how to handle:
-	//   - Add utility to UtxoView to fetch the validator set given an arbitrary block height. If we can't fetch the
-	//     validator set for the block, then we reject it (even if it later turns out to be a valid block)
-	//   - Add block to the block index before QC validation such that even if we aren't able to fetch the validator
-	//     set for the block, we can at least store it locally.
-	// 2. Validate QC
-	if err = bc.validateQC(block, validatorsByStake); err != nil {
-		if storeInBlockIndexErr := bc.storeValidateFailedBlockInBlockIndex(block); storeInBlockIndexErr != nil {
-			return false, false, nil, errors.Wrapf(err, "processBlockPoS: Problem adding validate failed block to block index: %v", storeInBlockIndexErr)
-		}
-		return false, false, nil, errors.Wrap(err, "processBlockPoS: QC validation failed: ")
+	// TODO: Is there any error that would require special handling? If that's the case, we should
+	// probably push that logic in validateBlockPoS anyway.
+	if err = bc.validateBlockPoS(block); err != nil {
+		return false, false, nil, errors.Wrap(err, "processBlockPoS: Problem validating block: ")
 	}
 
-	// 3. We can now add this block to the block index since we have performed
-	// all basic validations.
-	if err = bc.storeValidatedBlockInBlockIndex(block); err != nil {
-		return false, false, nil, errors.Wrap(err, "processBlockPoS: Problem adding block to block index: ")
-	}
 	newBlockNode, exists := bc.blockIndex[*blockHash]
 	if !exists {
 		return false, false, nil, errors.New("processBlockPoS: Block not found in block index after adding it. " +
 			"This should never happen.")
+	}
+	if !newBlockNode.IsValidated() {
+		return false, false, nil, errors.New("processBlockPoS: Block not validated after performing all validations. This should never happen")
 	}
 
 	// 4. Try to apply the incoming block as the new tip. This function will
@@ -165,6 +96,91 @@ func (bc *Blockchain) processBlockPoS(block *MsgDeSoBlock, currentView uint64, v
 	}
 
 	return true, false, nil, nil
+}
+
+func (bc *Blockchain) validateBlockPoS(block *MsgDeSoBlock) error {
+	// TODO: Should we call getLineageFromCommittedTip in here? Seems a little
+	// unnecessary since the caller should be responsible for it and we don't REALLY
+	// need to know that here.
+	// Make sure its parent is validated. If not, we need to validate it first by calling processBlockPoS.
+	// Note that if any other ancestor is not validated, calling processBlockPoS on the parent will
+	// end up calling processBlockPoS on all of its ancestors that aren't validated yet.
+	parentBlockNode, exists := bc.blockIndex[*block.Header.PrevBlockHash]
+	if !exists {
+		return errors.New("validateBlockPoS: Parent block not found in block index. This should never happen.")
+	}
+	if parentBlockNode.IsValidateFailed() {
+		// We'll never add this to the best chain because its parent is invalid.
+		// If its parent is ValidateFailed, we can update the block index with the block status ValidateFailed
+		if err := bc.storeValidateFailedBlockInBlockIndex(block); err != nil {
+			return errors.Wrap(err, "validateBlockPoS: Problem adding validate failed block to block index")
+		}
+		return errors.New("validateBlockPoS: block's parent failed validation: ")
+	}
+	if !parentBlockNode.IsValidated() {
+		blk, err := GetBlock(parentBlockNode.Hash, bc.db, bc.snapshot)
+		if err != nil {
+			return errors.Wrapf(err, "validateBlockPoS: Problem getting parent block %v", parentBlockNode.Hash)
+		}
+		if err = bc.validateBlockPoS(blk); err != nil {
+			return errors.Wrapf(err, "validateBlockPoS: Problem processing parent block %v", parentBlockNode.Hash)
+		}
+	}
+
+	if err := bc.validateDeSoBlockPoS(block); err != nil {
+		// TODO: If validations fail, do we want to even bother storing the block? Are there any validations that
+		// wouldn't result in us wanting to mark the block as StatusBlockValidateFailed?
+		// If validations fail, we can update the block index with the block status ValidateFailed
+		if storeInBlockIndexErr := bc.storeValidateFailedBlockInBlockIndex(block); storeInBlockIndexErr != nil {
+			return errors.Wrapf(err, "validateBlockPoS: Problem adding validate failed block to block index: %v", storeInBlockIndexErr)
+		}
+		return errors.Wrap(err, "validateBlockPoS: block validation failed: ")
+	}
+
+	// We know the utxoView will be valid because we check that all ancestor blocks have been validated.
+	utxoView, err := bc.getUtxoViewAtBlockHash(*block.Header.PrevBlockHash)
+	if err != nil {
+		return errors.Wrap(err, "processBlockPoS: Problem initializing UtxoView: ")
+	}
+	// Connect this block to the UtxoView.
+	txHashes := collections.Transform(block.Txns, func(txn *MsgDeSoTxn) *BlockHash {
+		return txn.Hash()
+	})
+	_, err = utxoView.ConnectBlock(block, txHashes, true, nil, block.Header.Height)
+	if err != nil {
+		// If it doesn't connect, we want to mark it as ValidateFailed.
+		if storeInBlockIndexErr := bc.storeValidateFailedBlockInBlockIndex(block); storeInBlockIndexErr != nil {
+			return errors.Wrapf(err, "validateBlockPoS: Problem adding validate failed block to block index: %v", storeInBlockIndexErr)
+		}
+		return errors.Wrap(err, "validateBlockPoS: Problem connecting block to UtxoView: ")
+	}
+
+	validatorsByStake, err := utxoView.GetAllSnapshotValidatorSetEntriesByStake()
+	if err != nil {
+		return errors.Wrap(err, "validateBlockPoS: Problem getting validator set: ")
+	}
+	// TODO(diamondhands): I don't think the TODO below makes sense given the changes but take a look.
+	// TODO: If block belongs in the next epoch or it's from an epoch far ahead in the future, we may not be able to validate its QC at all.
+	// the validator set for that epoch may be entirely different.
+	// A couple of options on how to handle:
+	//   - Add utility to UtxoView to fetch the validator set given an arbitrary block height. If we can't fetch the
+	//     validator set for the block, then we reject it (even if it later turns out to be a valid block)
+	//   - Add block to the block index before QC validation such that even if we aren't able to fetch the validator
+	//     set for the block, we can at least store it locally.
+	// 2. Validate QC
+	if err = bc.validateQC(block, validatorsByStake); err != nil {
+		if storeInBlockIndexErr := bc.storeValidateFailedBlockInBlockIndex(block); storeInBlockIndexErr != nil {
+			return errors.Wrapf(err, "validateBlockPoS: Problem adding validate failed block to block index: %v", storeInBlockIndexErr)
+		}
+		return errors.Wrap(err, "processBlockPoS: QC validation failed: ")
+	}
+
+	// 3. We can now add this block to the block index since we have performed
+	// all basic validations.
+	if err = bc.storeValidatedBlockInBlockIndex(block); err != nil {
+		return errors.Wrap(err, "validateBlockPoS: Problem adding block to block index: ")
+	}
+	return nil
 }
 
 // validateDeSoBlockPoS performs all basic validations on a block as it relates to
