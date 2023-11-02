@@ -1,8 +1,13 @@
 package lib
 
-import "github.com/deso-protocol/core/consensus"
+import (
+	"sync"
+
+	"github.com/deso-protocol/core/consensus"
+)
 
 type ConsensusController struct {
+	lock                  sync.RWMutex
 	fastHotStuffEventLoop *consensus.FastHotStuffEventLoop
 	blockchain            *Blockchain
 }
@@ -15,6 +20,15 @@ func NewConsensusController(
 		fastHotStuffEventLoop: fastHotStuffEventLoop,
 		blockchain:            blockchain,
 	}
+}
+
+func (cc *ConsensusController) Init() {
+	// This initializes the FastHotStuffEventLoop based on the blockchain state. This should
+	// only be called once the blockchain has synced, the node is ready to join the validator
+	// network, and the node is able validate blocks in the steady state.
+	//
+	// TODO: Implement this later once the Blockchain struct changes are merged. We need to be
+	// able to fetch the tip block and current persisted view from DB from the Blockchain struct.
 }
 
 func (cc *ConsensusController) HandleFastHostStuffBlockProposal(event *consensus.FastHotStuffEvent) {
@@ -51,7 +65,7 @@ func (cc *ConsensusController) HandleFastHostStuffVote(event *consensus.FastHotS
 	// 4. Broadcast the timeout msg to the network
 }
 
-func (handler *ConsensusController) HandleFastHostStuffTimeout(event *consensus.FastHotStuffEvent) {
+func (cc *ConsensusController) HandleFastHostStuffTimeout(event *consensus.FastHotStuffEvent) {
 	// The consensus module has signaled that we have timed out for a view. We construct and
 	// broadcast the timeout here:
 	// 1. Verify the block height and view we want to timeout on are valid
