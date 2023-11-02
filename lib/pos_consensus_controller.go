@@ -26,6 +26,9 @@ func (cc *ConsensusController) Init() {
 	// This initializes the FastHotStuffEventLoop based on the blockchain state. This should
 	// only be called once the blockchain has synced, the node is ready to join the validator
 	// network, and the node is able validate blocks in the steady state.
+	//
+	// TODO: Implement this later once the Blockchain struct changes are merged. We need to be
+	// able to fetch the tip block and current persisted view from DB from the Blockchain struct.
 }
 
 func (cc *ConsensusController) HandleFastHostStuffBlockProposal(event *consensus.FastHotStuffEvent) {
