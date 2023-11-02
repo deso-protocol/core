@@ -580,23 +580,6 @@ func (bc *Blockchain) upsertBlockAndBlockNodeToDB(block *MsgDeSoBlock, blockNode
 	return nil
 }
 
-func (bc *Blockchain) storeTipHashInDB(hash *BlockHash) error {
-	return bc.db.Update(func(txn *badger.Txn) error {
-		if bc.snapshot != nil {
-			bc.snapshot.PrepareAncestralRecordsFlush()
-			defer bc.snapshot.StartAncestralRecordsFlush(true)
-			glog.V(2).Infof("storeTipHashInDB: Preparing snapshot flush")
-		}
-		// Set the best node hash to this one. Notice that the "best hash" marks the tip of the best *uncommitted*
-		// chain. To get the best committed chain, you have to walk back from this hash to the first committed
-		// block when loading it up.
-		if innerErr := PutBestHashWithTxn(txn, bc.snapshot, hash, ChainTypeDeSoBlock); innerErr != nil {
-			return errors.Wrapf(innerErr, "storeTipHashInDB: Problem calling PutBestHash after validation")
-		}
-		return nil
-	})
-}
-
 // tryApplyNewTip attempts to apply the new tip to the best chain. It will do the following:
 // 1. Check if we should perform a reorg. If so, it will handle the reorg. If reorging causes an error, return false and error.
 // 2. Check if the incoming block extends the chain tip after reorg. If not, return false and nil
@@ -608,9 +591,6 @@ func (bc *Blockchain) tryApplyNewTip(blockNode *BlockNode, currentView uint64, l
 	chainTip := bc.GetBestChainTip()
 	if chainTip.Hash.IsEqual(blockNode.Header.PrevBlockHash) {
 		bc.addBlockToBestChain(blockNode)
-		if err := bc.storeTipHashInDB(blockNode.Hash); err != nil {
-			return false, errors.Wrapf(err, "tryApplyNewTip: Problem calling storeTipHashInDB: ")
-		}
 		return true, nil
 	}
 	// Check if we should perform a reorg here.
