@@ -1765,10 +1765,9 @@ func _generateDummyBlock(testMeta *TestMeta, blockHeight uint64, view uint64, se
 	require.NoError(testMeta.t, err)
 
 	// Add block to block index and best chain
-	newBlockNode, err := testMeta.chain.storeValidatedBlockInBlockIndex(msgDesoBlock)
+	blockNode, err := testMeta.chain.storeValidatedBlockInBlockIndex(msgDesoBlock)
 	require.NoError(testMeta.t, err)
-	require.True(testMeta.t, newBlockNode.IsValidated())
-	require.True(testMeta.t, newBlockNode.Hash.IsEqual(newBlockHash))
+	require.True(testMeta.t, blockNode.IsValidated())
 	_, exists := testMeta.chain.blockIndex[*newBlockHash]
 	require.True(testMeta.t, exists)
 	return blockTemplate
