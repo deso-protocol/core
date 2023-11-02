@@ -4,18 +4,21 @@ import (
 	"sync"
 
 	"github.com/deso-protocol/core/consensus"
+	"github.com/pkg/errors"
 )
 
 type ConsensusController struct {
 	lock                  sync.RWMutex
 	fastHotStuffEventLoop consensus.FastHotStuffEventLoop
 	blockchain            *Blockchain
+	signer                *BLSSigner
 }
 
-func NewConsensusController(blockchain *Blockchain) *ConsensusController {
+func NewConsensusController(blockchain *Blockchain, signer *BLSSigner) *ConsensusController {
 	return &ConsensusController{
-		fastHotStuffEventLoop: consensus.NewFastHotStuffEventLoop(),
 		blockchain:            blockchain,
+		fastHotStuffEventLoop: consensus.NewFastHotStuffEventLoop(),
+		signer:                signer,
 	}
 }
 
@@ -62,13 +65,84 @@ func (cc *ConsensusController) HandleFastHostStuffVote(event *consensus.FastHotS
 	// 4. Broadcast the timeout msg to the network
 }
 
-func (cc *ConsensusController) HandleFastHostStuffTimeout(event *consensus.FastHotStuffEvent) {
-	// The consensus module has signaled that we have timed out for a view. We construct and
-	// broadcast the timeout here:
-	// 1. Verify the block height and view we want to timeout on are valid
-	// 2. Construct the timeout message
-	// 3. Process the timeout in the consensus module
-	// 4. Broadcast the timeout msg to the network
+// HandleFastHostStuffTimeout is triggered when the FastHotStuffEventLoop has signaled that
+// it is ready to time out the current view. This function validates the timeout signal for
+// staleness. If the signal is valid, then it construct and broadcast the timeout msg here.
+//
+// Steps:
+// 1. Verify the timeout message's and the view we want to timeout on
+// 2. Construct the timeout message
+// 3. Process the timeout in the consensus module
+// 4. Broadcast the timeout msg to the network
+func (cc *ConsensusController) HandleFastHostStuffTimeout(event *consensus.FastHotStuffEvent) error {
+	// Hold a read lock on the consensus controller. This is because we need to check the
+	// current view and block height of the consensus module.
+	cc.lock.Lock()
+	defer cc.lock.Unlock()
+
+	var err error
+
+	if !consensus.IsProperlyFormedTimeoutEvent(event) {
+		// If the event is not properly formed, we ignore it and log it. This should never happen.
+		return errors.Errorf("HandleFastHostStuffTimeout: Received improperly formed timeout event: %v", event)
+	}
+
+	if event.View != cc.fastHotStuffEventLoop.GetCurrentView() {
+		// It's possible that the event loop signaled to timeout, but at the same time, we
+		// received a block proposal from the network and advanced the view. This is normal
+		// and an expected race condition in the steady-state.
+		//
+		// Nothing to do here.
+		return errors.Errorf("HandleFastHostStuffTimeout: Stale timeout event: %v", event)
+	}
+
+	// Locally advance the event loop's view so that the node is locally running the Fast-HotStuff
+	// protocol correctly. Any errors below related to broadcasting the timeout message should not
+	// affect the correctness of the protocol's local execution.
+	if _, err := cc.fastHotStuffEventLoop.AdvanceViewOnTimeout(); err != nil {
+		// This should never happen as long as the event loop is running. If it happens, we return
+		// the error and let the caller handle it.
+		return errors.Errorf("HandleFastHostStuffTimeout: Error advancing view on timeout: %v", err)
+	}
+
+	// Construct the timeout message
+	timeoutMsg := NewMessage(MsgTypeValidatorTimeout).(*MsgDeSoValidatorTimeout)
+	timeoutMsg.MsgVersion = MsgValidatorTimeoutVersion0
+	timeoutMsg.TimedOutView = event.View
+	// TODO: Somehow we need to know the validator's ECDSA public key. Fill this out once the
+	// mapping between BLS and ECDSA keys is implemented and available in the consensus module.
+	// timeoutMsg.PublicKey = <ECDSA public key here>
+	timeoutMsg.VotingPublicKey = cc.signer.GetPublicKey()
+	highQCBlockHash := event.QC.GetBlockHash().GetValue()
+	timeoutMsg.HighQC = &QuorumCertificate{
+		BlockHash:      NewBlockHash(highQCBlockHash[:]),
+		ProposedInView: event.QC.GetView(),
+		ValidatorsVoteAggregatedSignature: &AggregatedBLSSignature{
+			SignersList: event.QC.GetAggregatedSignature().GetSignersList(),
+			Signature:   event.QC.GetAggregatedSignature().GetSignature(),
+		},
+	}
+
+	timeoutMsg.TimeoutPartialSignature, err = cc.signer.SignValidatorTimeout(event.View, event.QC.GetView())
+	if err != nil {
+		// This should never happen as long as the BLS signer is initialized correctly.
+		return errors.Errorf("HandleFastHostStuffTimeout: Error signing validator timeout: %v", err)
+	}
+
+	// Process the timeout message locally in the FastHotStuffEventLoop
+	if err := cc.fastHotStuffEventLoop.ProcessValidatorTimeout(timeoutMsg); err != nil {
+		// This should never happen. If we error here, it means that the timeout message is stale
+		// beyond the committed tip, the timeout message is malformed, or the timeout message is
+		// is duplicated for the same view. In any case, something is very wrong. We should not
+		// broadcast this message to the network.
+		return errors.Errorf("HandleFastHostStuffTimeout: Error processing timeout locally: %v", err)
+
+	}
+
+	// Broadcast the timeout message to the network
+	// TODO: Broadcast the timeout message to the network or alternatively to just the block proposer
+
+	return nil
 }
 
 func (cc *ConsensusController) HandleHeaderBundle(pp *Peer, msg *MsgDeSoHeaderBundle) {

@@ -302,40 +302,40 @@ func TestIsProperlyFormedVote(t *testing.T) {
 func TestIsProperlyFormedTimeout(t *testing.T) {
 	// Test nil value
 	{
-		require.False(t, isProperlyFormedTimeout(nil))
+		require.False(t, IsProperlyFormedTimeout(nil))
 	}
 
 	// Test zero-value view
 	{
 		timeout := createDummyTimeoutMessage(0)
-		require.False(t, isProperlyFormedTimeout(timeout))
+		require.False(t, IsProperlyFormedTimeout(timeout))
 	}
 
 	// Test nil high QC
 	{
 		timeout := createDummyTimeoutMessage(1)
 		timeout.highQC = nil
-		require.False(t, isProperlyFormedTimeout(timeout))
+		require.False(t, IsProperlyFormedTimeout(timeout))
 	}
 
 	// Test nil public key
 	{
 		timeout := createDummyTimeoutMessage(1)
 		timeout.publicKey = nil
-		require.False(t, isProperlyFormedTimeout(timeout))
+		require.False(t, IsProperlyFormedTimeout(timeout))
 	}
 
 	// Test nil signature
 	{
 		timeout := createDummyTimeoutMessage(1)
 		timeout.signature = nil
-		require.False(t, isProperlyFormedTimeout(timeout))
+		require.False(t, IsProperlyFormedTimeout(timeout))
 	}
 
 	// Test happy path
 	{
 		timeout := createDummyTimeoutMessage(1)
-		require.True(t, isProperlyFormedTimeout(timeout))
+		require.True(t, IsProperlyFormedTimeout(timeout))
 	}
 }
 

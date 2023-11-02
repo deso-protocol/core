@@ -297,18 +297,6 @@ type QuorumCertificate struct {
 	ValidatorsVoteAggregatedSignature *AggregatedBLSSignature
 }
 
-func (qc *QuorumCertificate) GetBlockHash() consensus.BlockHash {
-	return qc.BlockHash
-}
-
-func (qc *QuorumCertificate) GetView() uint64 {
-	return qc.ProposedInView
-}
-
-func (qc *QuorumCertificate) GetAggregatedSignature() consensus.AggregatedSignature {
-	return qc.ValidatorsVoteAggregatedSignature
-}
-
 // Performs a deep equality check between two QuorumCertificates, and returns true
 // if the two are fully initialized and have identical values. In all other cases,
 // it return false.
@@ -428,14 +416,6 @@ func DecodeQuorumCertificate(rr io.Reader) (*QuorumCertificate, error) {
 type AggregatedBLSSignature struct {
 	SignersList *bitset.Bitset
 	Signature   *bls.Signature
-}
-
-func (sig *AggregatedBLSSignature) GetSignersList() *bitset.Bitset {
-	return sig.SignersList
-}
-
-func (sig *AggregatedBLSSignature) GetSignature() *bls.Signature {
-	return sig.Signature
 }
 
 // Performs a deep equality check between two AggregatedBLSSignatures, and returns true
