@@ -66,7 +66,7 @@ func TestValidateBlockIntegrity(t *testing.T) {
 	}
 
 	// Validate the block with a valid timeout QC and header.
-	err = bc.validateBlockIntegrity(block)
+	err = bc.isProperlyFormedBlockPoS(block)
 	// There should be no error.
 	require.Nil(t, err)
 
@@ -77,13 +77,13 @@ func TestValidateBlockIntegrity(t *testing.T) {
 			TxInputs: nil,
 		},
 	}
-	err = bc.validateBlockIntegrity(block)
+	err = bc.isProperlyFormedBlockPoS(block)
 	require.Equal(t, err, RuleErrorTimeoutQCWithTransactions)
 
 	// Timeout QC shouldn't have a merkle root
 	block.Txns = nil
 	block.Header.TransactionMerkleRoot = &ZeroBlockHash
-	err = bc.validateBlockIntegrity(block)
+	err = bc.isProperlyFormedBlockPoS(block)
 	require.Equal(t, err, RuleErrorNoTxnsWithMerkleRoot)
 
 	// Make sure block can't have both timeout and vote QC.
@@ -96,13 +96,13 @@ func TestValidateBlockIntegrity(t *testing.T) {
 		},
 	}
 	block.Header.ValidatorsVoteQC = validatorVoteQC
-	err = bc.validateBlockIntegrity(block)
+	err = bc.isProperlyFormedBlockPoS(block)
 	require.Equal(t, err, RuleErrorBothTimeoutAndVoteQC)
 
 	// Make sure block has either timeout or vote QC.
 	block.Header.ValidatorsTimeoutAggregateQC = nil
 	block.Header.ValidatorsVoteQC = nil
-	err = bc.validateBlockIntegrity(block)
+	err = bc.isProperlyFormedBlockPoS(block)
 	require.Equal(t, err, RuleErrorNoTimeoutOrVoteQC)
 
 	// Reset validator vote QC.
@@ -120,28 +120,28 @@ func TestValidateBlockIntegrity(t *testing.T) {
 	require.NoError(t, err)
 	block.Header.TransactionMerkleRoot = merkleRoot
 	// There should be no error.
-	err = bc.validateBlockIntegrity(block)
+	err = bc.isProperlyFormedBlockPoS(block)
 	require.Nil(t, err)
 
 	// Block must have non-nil Merkle root iff we have non-zero transactions
 	block.Header.TransactionMerkleRoot = nil
-	err = bc.validateBlockIntegrity(block)
+	err = bc.isProperlyFormedBlockPoS(block)
 	require.Equal(t, err, RuleErrorNilMerkleRoot)
 
 	// Block must have a matching merkle root
 	block.Header.TransactionMerkleRoot = &ZeroBlockHash
-	err = bc.validateBlockIntegrity(block)
+	err = bc.isProperlyFormedBlockPoS(block)
 	require.Equal(t, err, RuleErrorInvalidMerkleRoot)
 
 	// Vote QC with no transactions and no merkle root is valid
 	block.Header.TransactionMerkleRoot = nil
 	block.Txns = nil
-	err = bc.validateBlockIntegrity(block)
+	err = bc.isProperlyFormedBlockPoS(block)
 	require.Nil(t, err)
 
 	// Vote QC with no transactions but includes a merkle is invalid
 	block.Header.TransactionMerkleRoot = merkleRoot
-	err = bc.validateBlockIntegrity(block)
+	err = bc.isProperlyFormedBlockPoS(block)
 	require.Equal(t, err, RuleErrorNoTxnsWithMerkleRoot)
 
 	// Reset transactions
@@ -149,11 +149,11 @@ func TestValidateBlockIntegrity(t *testing.T) {
 
 	// Block must have valid proposer voting public key
 	block.Header.ProposerVotingPublicKey = nil
-	err = bc.validateBlockIntegrity(block)
+	err = bc.isProperlyFormedBlockPoS(block)
 	require.Equal(t, err, RuleErrorInvalidProposerVotingPublicKey)
 
 	block.Header.ProposerVotingPublicKey = &bls.PublicKey{}
-	err = bc.validateBlockIntegrity(block)
+	err = bc.isProperlyFormedBlockPoS(block)
 	require.Equal(t, err, RuleErrorInvalidProposerVotingPublicKey)
 
 	// Reset proposer voting public key
@@ -161,22 +161,22 @@ func TestValidateBlockIntegrity(t *testing.T) {
 
 	// Block must have valid proposer public key
 	block.Header.ProposerPublicKey = nil
-	err = bc.validateBlockIntegrity(block)
+	err = bc.isProperlyFormedBlockPoS(block)
 	require.Equal(t, err, RuleErrorInvalidProposerPublicKey)
 
 	block.Header.ProposerPublicKey = &ZeroPublicKey
-	err = bc.validateBlockIntegrity(block)
+	err = bc.isProperlyFormedBlockPoS(block)
 	require.Equal(t, err, RuleErrorInvalidProposerPublicKey)
 
 	block.Header.ProposerPublicKey = NewPublicKey(RandomBytes(33))
 
 	// Block must have valid proposer random seed hash
 	block.Header.ProposerRandomSeedHash = nil
-	err = bc.validateBlockIntegrity(block)
+	err = bc.isProperlyFormedBlockPoS(block)
 	require.Equal(t, err, RuleErrorInvalidRandomSeedHash)
 
 	block.Header.ProposerRandomSeedHash = &RandomSeedHash{}
-	err = bc.validateBlockIntegrity(block)
+	err = bc.isProperlyFormedBlockPoS(block)
 	require.Equal(t, err, RuleErrorInvalidRandomSeedHash)
 
 	block.Header.ProposerRandomSeedHash = randomSeedHash
@@ -184,12 +184,12 @@ func TestValidateBlockIntegrity(t *testing.T) {
 	// Timestamp validations
 	// Block timestamp must be greater than the previous block timestamp
 	block.Header.TstampNanoSecs = bc.GetBestChainTip().Header.GetTstampSecs() - 1
-	err = bc.validateBlockIntegrity(block)
+	err = bc.isProperlyFormedBlockPoS(block)
 	require.Equal(t, err, RuleErrorPoSBlockTstampNanoSecsTooOld)
 
 	// Block timestamps can't be in the future.
 	block.Header.TstampNanoSecs = uint64(time.Now().UnixNano() + (11 * time.Minute).Nanoseconds())
-	err = bc.validateBlockIntegrity(block)
+	err = bc.isProperlyFormedBlockPoS(block)
 	require.Equal(t, err, RuleErrorPoSBlockTstampNanoSecsInFuture)
 
 	// Revert the Header's timestamp
@@ -197,7 +197,7 @@ func TestValidateBlockIntegrity(t *testing.T) {
 
 	//  Block Header version must be 2
 	block.Header.Version = 1
-	err = bc.validateBlockIntegrity(block)
+	err = bc.isProperlyFormedBlockPoS(block)
 	require.Equal(t, err, RuleErrorInvalidPoSBlockHeaderVersion)
 
 	// Revert block header version
@@ -205,17 +205,17 @@ func TestValidateBlockIntegrity(t *testing.T) {
 
 	// Nil prev block hash not allowed
 	block.Header.PrevBlockHash = nil
-	err = bc.validateBlockIntegrity(block)
+	err = bc.isProperlyFormedBlockPoS(block)
 	require.Equal(t, err, RuleErrorNilPrevBlockHash)
 
 	// Parent must exist in the block index.
 	block.Header.PrevBlockHash = NewBlockHash(RandomBytes(32))
-	err = bc.validateBlockIntegrity(block)
+	err = bc.isProperlyFormedBlockPoS(block)
 	require.Equal(t, err, RuleErrorMissingParentBlock)
 
 	// Nil block header not allowed
 	block.Header = nil
-	err = bc.validateBlockIntegrity(block)
+	err = bc.isProperlyFormedBlockPoS(block)
 	require.Equal(t, err, RuleErrorNilBlockHeader)
 }
 
@@ -267,22 +267,22 @@ func TestValidateBlockHeight(t *testing.T) {
 
 	// validate that we've cutover to PoS
 	bc.params.ForkHeights.ProofOfStake2ConsensusCutoverBlockHeight = 3
-	err = bc.validateBlockHeight(block)
+	err = bc.hasValidBlockHeightPoS(block)
 	require.Equal(t, err, RuleErrorPoSBlockBeforeCutoverHeight)
 
 	// Update the fork height
 	bc.params.ForkHeights.ProofOfStake2ConsensusCutoverBlockHeight = 0
 
-	err = bc.validateBlockHeight(block)
+	err = bc.hasValidBlockHeightPoS(block)
 	require.Nil(t, err)
 
 	block.Header.Height = 1
-	err = bc.validateBlockHeight(block)
+	err = bc.hasValidBlockHeightPoS(block)
 	require.Equal(t, err, RuleErrorInvalidPoSBlockHeight)
 
 	block.Header.Height = 2
 	bc.blockIndex = map[BlockHash]*BlockNode{}
-	err = bc.validateBlockHeight(block)
+	err = bc.hasValidBlockHeightPoS(block)
 	require.Equal(t, err, RuleErrorMissingParentBlock)
 }
 
@@ -421,29 +421,29 @@ func TestValidateBlockView(t *testing.T) {
 	block.Header.ProposedInView = 2
 
 	// Blocks with timeout QCs must have a view strictly greater than the parent.
-	err = bc.validateBlockView(block)
+	err = bc.hasValidBlockViewPoS(block)
 	require.Equal(t, err, RuleErrorPoSTimeoutBlockViewNotGreaterThanParent)
 
 	// Any arbitrary number GREATER than the parent's view is valid.
 	block.Header.ProposedInView = 10
-	err = bc.validateBlockView(block)
+	err = bc.hasValidBlockViewPoS(block)
 	require.Nil(t, err)
 
 	// Now we set the timeout QC to nil and provide a vote QC, with height = 2
 	block.Header.ValidatorsTimeoutAggregateQC = nil
 	block.Header.ValidatorsVoteQC = voteQC
 	block.Header.ProposedInView = 2
-	err = bc.validateBlockView(block)
+	err = bc.hasValidBlockViewPoS(block)
 	require.Equal(t, err, RuleErrorPoSVoteBlockViewNotOneGreaterThanParent)
 
 	// An arbitrary number greater than its parents should fail.
 	block.Header.ProposedInView = 10
-	err = bc.validateBlockView(block)
+	err = bc.hasValidBlockViewPoS(block)
 	require.Equal(t, err, RuleErrorPoSVoteBlockViewNotOneGreaterThanParent)
 
 	// Exactly one great w/ vote QC should pass.
 	block.Header.ProposedInView = 3
-	err = bc.validateBlockView(block)
+	err = bc.hasValidBlockViewPoS(block)
 	require.Nil(t, err)
 }
 
@@ -657,7 +657,7 @@ func TestValidateBlockLeader(t *testing.T) {
 	}
 	// Mark chain tip as committed.
 	testMeta.chain.GetBestChainTip().Status |= StatusBlockCommitted
-	var isInvalidLeader bool
+	var isBlockProposerValid bool
 	{
 		// First block, we should have the first leader.
 		leader0PKID := leaderSchedule[0]
@@ -672,33 +672,33 @@ func TestValidateBlockLeader(t *testing.T) {
 				ProposerVotingPublicKey: leader0Entry.VotingPublicKey,
 			},
 		}
-		isInvalidLeader, err = testMeta.chain.validateBlockLeader(dummyBlock)
+		isBlockProposerValid, err = testMeta.chain.hasValidBlockProposerPoS(dummyBlock)
 		require.NoError(t, err)
-		require.False(t, isInvalidLeader)
+		require.True(t, isBlockProposerValid)
 
 		// If we have a different proposer public key, we will have an error
 		leader1PublicKey := utxoView.GetPublicKeyForPKID(leaderSchedule[1])
 		leader1Entry := validatorPKIDToValidatorEntryMap[*leaderSchedule[1]]
 		dummyBlock.Header.ProposerPublicKey = NewPublicKey(leader1PublicKey)
-		isInvalidLeader, err = testMeta.chain.validateBlockLeader(dummyBlock)
+		isBlockProposerValid, err = testMeta.chain.hasValidBlockProposerPoS(dummyBlock)
 		require.NoError(t, err)
-		require.True(t, isInvalidLeader)
+		require.False(t, isBlockProposerValid)
 
 		// If we have a different proposer voting public key, we will have an error
 		dummyBlock.Header.ProposerPublicKey = NewPublicKey(leader0PublicKey)
 		dummyBlock.Header.ProposerVotingPublicKey = leader1Entry.VotingPublicKey
-		isInvalidLeader, err = testMeta.chain.validateBlockLeader(dummyBlock)
+		isBlockProposerValid, err = testMeta.chain.hasValidBlockProposerPoS(dummyBlock)
 		require.NoError(t, err)
-		require.True(t, isInvalidLeader)
+		require.False(t, isBlockProposerValid)
 
 		// If we advance the view, we know that leader 0 timed out, so
 		// we move to leader 1.
 		dummyBlock.Header.ProposedInView = viewNumber + 2
 		dummyBlock.Header.ProposerPublicKey = NewPublicKey(leader1PublicKey)
 		dummyBlock.Header.ProposerVotingPublicKey = leader1Entry.VotingPublicKey
-		isInvalidLeader, err = testMeta.chain.validateBlockLeader(dummyBlock)
+		isBlockProposerValid, err = testMeta.chain.hasValidBlockProposerPoS(dummyBlock)
 		require.NoError(t, err)
-		require.False(t, isInvalidLeader)
+		require.True(t, isBlockProposerValid)
 
 		// If we have 4 timeouts, we know that leaders 0, 1, 2, and 3 timed out,
 		// so we move to leader 4.
@@ -707,39 +707,39 @@ func TestValidateBlockLeader(t *testing.T) {
 		leader4Entry := validatorPKIDToValidatorEntryMap[*leaderSchedule[4]]
 		dummyBlock.Header.ProposerPublicKey = NewPublicKey(leader4PublicKey)
 		dummyBlock.Header.ProposerVotingPublicKey = leader4Entry.VotingPublicKey
-		isInvalidLeader, err = testMeta.chain.validateBlockLeader(dummyBlock)
+		isBlockProposerValid, err = testMeta.chain.hasValidBlockProposerPoS(dummyBlock)
 		require.NoError(t, err)
-		require.False(t, isInvalidLeader)
+		require.True(t, isBlockProposerValid)
 
 		// If we have 7 timeouts, we know everybody timed out, so we go back to leader 0.
 		dummyBlock.Header.ProposedInView = viewNumber + 8
 		dummyBlock.Header.ProposerPublicKey = NewPublicKey(leader0PublicKey)
 		dummyBlock.Header.ProposerVotingPublicKey = leader0Entry.VotingPublicKey
-		isInvalidLeader, err = testMeta.chain.validateBlockLeader(dummyBlock)
+		isBlockProposerValid, err = testMeta.chain.hasValidBlockProposerPoS(dummyBlock)
 		require.NoError(t, err)
-		require.False(t, isInvalidLeader)
+		require.True(t, isBlockProposerValid)
 
 		// If the block view is less than the epoch's initial view, this is an error.
 		dummyBlock.Header.ProposedInView = viewNumber
-		isInvalidLeader, err = testMeta.chain.validateBlockLeader(dummyBlock)
+		isBlockProposerValid, err = testMeta.chain.hasValidBlockProposerPoS(dummyBlock)
 		require.NoError(t, err)
-		require.True(t, isInvalidLeader)
+		require.False(t, isBlockProposerValid)
 
 		// If the block height is less than epoch's initial block height, this is an error.
 		dummyBlock.Header.ProposedInView = viewNumber + 1
 		dummyBlock.Header.Height = blockHeight
-		isInvalidLeader, err = testMeta.chain.validateBlockLeader(dummyBlock)
+		isBlockProposerValid, err = testMeta.chain.hasValidBlockProposerPoS(dummyBlock)
 		require.NoError(t, err)
-		require.True(t, isInvalidLeader)
+		require.False(t, isBlockProposerValid)
 
 		// If the difference between the block's view and epoch's initial view is less than
 		// the difference between the block's height and the epoch's initial height, this is an error.
 		// This would imply that we've had more blocks than views, which is not possible.
 		dummyBlock.Header.ProposedInView = viewNumber + 1
 		dummyBlock.Header.Height = blockHeight + 2
-		isInvalidLeader, err = testMeta.chain.validateBlockLeader(dummyBlock)
+		isBlockProposerValid, err = testMeta.chain.hasValidBlockProposerPoS(dummyBlock)
 		require.NoError(t, err)
-		require.True(t, isInvalidLeader)
+		require.False(t, isBlockProposerValid)
 	}
 
 }

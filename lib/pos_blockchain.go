@@ -190,12 +190,12 @@ func (bc *Blockchain) validateAndIndexBlockPoS(block *MsgDeSoBlock) (*BlockNode,
 		return bc.storeValidateFailedBlockWithWrappedError(block, err)
 	}
 
-	isInvalidLeader, err := bc.validateBlockLeader(block)
+	isBlockProposerValid, err := bc.hasValidBlockProposerPoS(block)
 	if err != nil {
-		return nil, errors.Wrapf(err, "validateAndIndexBlockPoS: Problem validating block leader")
+		return nil, errors.Wrapf(err, "validateAndIndexBlockPoS: Problem validating block proposer")
 	}
-	if isInvalidLeader {
-		return bc.storeValidateFailedBlockWithWrappedError(block, errors.New("invalid block leader"))
+	if isBlockProposerValid {
+		return bc.storeValidateFailedBlockWithWrappedError(block, errors.New("invalid block proposer"))
 	}
 
 	// Connect this block to the parent block's UtxoView.
@@ -248,17 +248,17 @@ func (bc *Blockchain) validatePreviouslyIndexedBlockPoS(blockHash *BlockHash) (*
 
 // isValidBlockPoS performs all basic validations on a block as it relates to
 // the Blockchain struct.
-func (bc *Blockchain) isValidBlockPoS(desoBlock *MsgDeSoBlock) error {
+func (bc *Blockchain) isValidBlockPoS(block *MsgDeSoBlock) error {
 	// Surface Level validation of the block
-	if err := bc.validateBlockIntegrity(desoBlock); err != nil {
+	if err := bc.isProperlyFormedBlockPoS(block); err != nil {
 		return err
 	}
 	// Validate Block Height
-	if err := bc.validateBlockHeight(desoBlock); err != nil {
+	if err := bc.hasValidBlockHeightPoS(block); err != nil {
 		return err
 	}
 	// Validate View
-	if err := bc.validateBlockView(desoBlock); err != nil {
+	if err := bc.hasValidBlockViewPoS(block); err != nil {
 		// Check if err is for view > latest committed block view and <= latest uncommitted block.
 		// If so, we need to perform the rest of the validations and then add to our block index.
 		// TODO: implement check on error described above. Caller will handle this.
@@ -267,46 +267,46 @@ func (bc *Blockchain) isValidBlockPoS(desoBlock *MsgDeSoBlock) error {
 	return nil
 }
 
-// validateBlockIntegrity validates the block at a surface level. It checks
+// isProperlyFormedBlockPoS validates the block at a surface level. It checks
 // that the timestamp is valid, that the version of the header is valid,
 // and other general integrity checks (such as not malformed).
-func (bc *Blockchain) validateBlockIntegrity(desoBlock *MsgDeSoBlock) error {
+func (bc *Blockchain) isProperlyFormedBlockPoS(block *MsgDeSoBlock) error {
 	// First make sure we have a non-nil header
-	if desoBlock.Header == nil {
+	if block.Header == nil {
 		return RuleErrorNilBlockHeader
 	}
 
 	// Make sure we have a prevBlockHash
-	if desoBlock.Header.PrevBlockHash == nil {
+	if block.Header.PrevBlockHash == nil {
 		return RuleErrorNilPrevBlockHash
 	}
 
 	// Timestamp validation
 
 	// Validate that the timestamp is not less than its parent.
-	parentBlock, exists := bc.blockIndex[*desoBlock.Header.PrevBlockHash]
+	parentBlock, exists := bc.blockIndex[*block.Header.PrevBlockHash]
 	if !exists {
 		// Note: this should never happen as we only call this function after
 		// we've validated that all ancestors exist in the block index.
 		return RuleErrorMissingParentBlock
 	}
-	if desoBlock.Header.TstampNanoSecs < parentBlock.Header.TstampNanoSecs {
+	if block.Header.TstampNanoSecs < parentBlock.Header.TstampNanoSecs {
 		return RuleErrorPoSBlockTstampNanoSecsTooOld
 	}
 	// TODO: Add support for putting the drift into global params.
-	if desoBlock.Header.TstampNanoSecs > uint64(time.Now().UnixNano())+bc.params.DefaultBlockTimestampDriftNanoSecs {
+	if block.Header.TstampNanoSecs > uint64(time.Now().UnixNano())+bc.params.DefaultBlockTimestampDriftNanoSecs {
 		return RuleErrorPoSBlockTstampNanoSecsInFuture
 	}
 
 	// Header validation
-	if desoBlock.Header.Version != HeaderVersion2 {
+	if block.Header.Version != HeaderVersion2 {
 		return RuleErrorInvalidPoSBlockHeaderVersion
 	}
 
 	// Malformed block checks
 	// Require header to have either vote or timeout QC
-	isTimeoutQCEmpty := desoBlock.Header.ValidatorsTimeoutAggregateQC.isEmpty()
-	isVoteQCEmpty := desoBlock.Header.ValidatorsVoteQC.isEmpty()
+	isTimeoutQCEmpty := block.Header.ValidatorsTimeoutAggregateQC.isEmpty()
+	isVoteQCEmpty := block.Header.ValidatorsVoteQC.isEmpty()
 	if isTimeoutQCEmpty && isVoteQCEmpty {
 		return RuleErrorNoTimeoutOrVoteQC
 	}
@@ -315,32 +315,32 @@ func (bc *Blockchain) validateBlockIntegrity(desoBlock *MsgDeSoBlock) error {
 		return RuleErrorBothTimeoutAndVoteQC
 	}
 
-	if !isTimeoutQCEmpty && len(desoBlock.Txns) != 0 {
+	if !isTimeoutQCEmpty && len(block.Txns) != 0 {
 		return RuleErrorTimeoutQCWithTransactions
 	}
 
-	if desoBlock.Header.ProposerVotingPublicKey.IsEmpty() {
+	if block.Header.ProposerVotingPublicKey.IsEmpty() {
 		return RuleErrorInvalidProposerVotingPublicKey
 	}
 
-	if desoBlock.Header.ProposerPublicKey == nil || desoBlock.Header.ProposerPublicKey.IsZeroPublicKey() {
+	if block.Header.ProposerPublicKey == nil || block.Header.ProposerPublicKey.IsZeroPublicKey() {
 		return RuleErrorInvalidProposerPublicKey
 	}
 
-	if desoBlock.Header.ProposerRandomSeedHash.isEmpty() {
+	if block.Header.ProposerRandomSeedHash.isEmpty() {
 		return RuleErrorInvalidRandomSeedHash
 	}
 
-	merkleRoot := desoBlock.Header.TransactionMerkleRoot
+	merkleRoot := block.Header.TransactionMerkleRoot
 
 	// We only want to check the merkle root if we have more than 0 transactions.
-	if len(desoBlock.Txns) > 0 {
+	if len(block.Txns) > 0 {
 		if merkleRoot == nil {
 			return RuleErrorNilMerkleRoot
 		}
-		computedMerkleRoot, _, err := ComputeMerkleRoot(desoBlock.Txns)
+		computedMerkleRoot, _, err := ComputeMerkleRoot(block.Txns)
 		if err != nil {
-			return errors.Wrapf(err, "validateBlockIntegrity: Problem computing merkle root")
+			return errors.Wrapf(err, "isProperlyFormedBlockPoS: Problem computing merkle root")
 		}
 		if !merkleRoot.IsEqual(computedMerkleRoot) {
 			return RuleErrorInvalidMerkleRoot
@@ -355,28 +355,28 @@ func (bc *Blockchain) validateBlockIntegrity(desoBlock *MsgDeSoBlock) error {
 	return nil
 }
 
-// validateBlockHeight validates the block height for a given block. First,
+// hasValidBlockHeightPoS validates the block height for a given block. First,
 // it checks that we've passed the PoS cutover fork height. Then it checks
 // that this block height is exactly one greater than its parent's block height.
-func (bc *Blockchain) validateBlockHeight(desoBlock *MsgDeSoBlock) error {
-	blockHeight := desoBlock.Header.Height
+func (bc *Blockchain) hasValidBlockHeightPoS(block *MsgDeSoBlock) error {
+	blockHeight := block.Header.Height
 	if blockHeight < uint64(bc.params.ForkHeights.ProofOfStake2ConsensusCutoverBlockHeight) {
 		return RuleErrorPoSBlockBeforeCutoverHeight
 	}
 	// Validate that the block height is exactly one greater than its parent.
-	parentBlock, exists := bc.blockIndex[*desoBlock.Header.PrevBlockHash]
+	parentBlock, exists := bc.blockIndex[*block.Header.PrevBlockHash]
 	if !exists {
 		// Note: this should never happen as we only call this function after
 		// we've validated that all ancestors exist in the block index.
 		return RuleErrorMissingParentBlock
 	}
-	if desoBlock.Header.Height != parentBlock.Header.Height+1 {
+	if block.Header.Height != parentBlock.Header.Height+1 {
 		return RuleErrorInvalidPoSBlockHeight
 	}
 	return nil
 }
 
-// validateBlockView validates the view for a given block. First, it checks that
+// hasValidBlockViewPoS validates the view for a given block. First, it checks that
 // the view is greater than the latest committed block view. If not,
 // we return an error indicating that we'll never accept this block. Next,
 // it checks that the view is less than or equal to its parent.
@@ -385,9 +385,9 @@ func (bc *Blockchain) validateBlockHeight(desoBlock *MsgDeSoBlock) error {
 // latest uncommitted block if we have an regular vote QC. If this block has a
 // timeout QC, it will check that the view is at least greater than the latest
 // uncommitted block's view + 1.
-func (bc *Blockchain) validateBlockView(desoBlock *MsgDeSoBlock) error {
+func (bc *Blockchain) hasValidBlockViewPoS(block *MsgDeSoBlock) error {
 	// Validate that the view is greater than the latest uncommitted block.
-	parentBlock, exists := bc.blockIndex[*desoBlock.Header.PrevBlockHash]
+	parentBlock, exists := bc.blockIndex[*block.Header.PrevBlockHash]
 	if !exists {
 		// Note: this should never happen as we only call this function after
 		// we've validated that all ancestors exist in the block index.
@@ -395,50 +395,50 @@ func (bc *Blockchain) validateBlockView(desoBlock *MsgDeSoBlock) error {
 	}
 	// If our current block has a vote QC, then we need to validate that the
 	// view is exactly one greater than the latest uncommitted block.
-	if desoBlock.Header.ValidatorsTimeoutAggregateQC.isEmpty() {
-		if desoBlock.Header.ProposedInView != parentBlock.Header.ProposedInView+1 {
+	if block.Header.ValidatorsTimeoutAggregateQC.isEmpty() {
+		if block.Header.ProposedInView != parentBlock.Header.ProposedInView+1 {
 			return RuleErrorPoSVoteBlockViewNotOneGreaterThanParent
 		}
 	} else {
 		// If our current block has a timeout QC, then we need to validate that the
 		// view is strictly greater than the latest uncommitted block's view.
-		if desoBlock.Header.ProposedInView <= parentBlock.Header.ProposedInView {
+		if block.Header.ProposedInView <= parentBlock.Header.ProposedInView {
 			return RuleErrorPoSTimeoutBlockViewNotGreaterThanParent
 		}
 	}
 	return nil
 }
 
-// validateBlockLeader validates that the proposer is the expected proposer for the
-// block height + view number pair. It returns a bool indicating whether or not
-// we confirmed that the leader is invalid. If we receive an error, we are unsure
+// hasValidBlockProposerPoS validates that the proposer is the expected proposer for the
+// block height + view number pair. It returns a bool indicating whether
+// we confirmed that the leader is valid. If we receive an error, we are unsure
 // if the leader is invalid or not, so we return false.
-func (bc *Blockchain) validateBlockLeader(block *MsgDeSoBlock) (_isValidateFailed bool, _err error) {
+func (bc *Blockchain) hasValidBlockProposerPoS(block *MsgDeSoBlock) (_isValidBlockProposer bool, _err error) {
 	utxoView, err := bc.getUtxoViewAtBlockHash(*block.Header.PrevBlockHash)
 	if err != nil {
-		return false, errors.Wrapf(err, "validateBlockLeader: Problem initializing UtxoView")
+		return false, errors.Wrapf(err, "hasValidBlockProposerPoS: Problem initializing UtxoView")
 	}
 	currentEpochEntry, err := utxoView.GetCurrentEpochEntry()
 	if err != nil {
-		return false, errors.Wrapf(err, "validateBlockLeader: Problem getting current epoch entry")
+		return false, errors.Wrapf(err, "hasValidBlockProposerPoS: Problem getting current epoch entry")
 	}
 	leaders, err := utxoView.GetSnapshotLeaderSchedule()
 	if err != nil {
-		return false, errors.Wrapf(err, "validateBlockLeader: Problem getting leader schedule")
+		return false, errors.Wrapf(err, "hasValidBlockProposerPoS: Problem getting leader schedule")
 	}
 	if len(leaders) == 0 {
-		return false, errors.Wrapf(err, "validateBlockLeader: No leaders found in leader schedule")
+		return false, errors.Wrapf(err, "hasValidBlockProposerPoS: No leaders found in leader schedule")
 	}
 	if block.Header.Height < currentEpochEntry.InitialBlockHeight {
-		return true, nil
+		return false, nil
 	}
 	if block.Header.ProposedInView < currentEpochEntry.InitialView {
-		return true, nil
+		return false, nil
 	}
 	heightDiff := block.Header.Height - currentEpochEntry.InitialBlockHeight
 	viewDiff := block.Header.ProposedInView - currentEpochEntry.InitialView
 	if viewDiff < heightDiff {
-		return true, nil
+		return false, nil
 	}
 	// We compute the current index in the leader schedule as follows:
 	// [(block.View - currentEpoch.InitialView) - (block.Height - currentEpoch.InitialHeight)] % len(leaders)
@@ -454,19 +454,19 @@ func (bc *Blockchain) validateBlockLeader(block *MsgDeSoBlock) (_isValidateFaile
 	// which is at index 1.
 	leaderIdxUint64 := (viewDiff - heightDiff) % uint64(len(leaders))
 	if leaderIdxUint64 > math.MaxUint16 {
-		return true, nil
+		return false, nil
 	}
 	leaderIdx := uint16(leaderIdxUint64)
 	leaderEntry, err := utxoView.GetSnapshotLeaderScheduleValidator(leaderIdx)
 	if err != nil {
-		return true, errors.Wrapf(err, "validateBlockLeader: Problem getting leader schedule validator")
+		return false, errors.Wrapf(err, "hasValidBlockProposerPoS: Problem getting leader schedule validator")
 	}
 	leaderPKIDFromBlock := utxoView.GetPKIDForPublicKey(block.Header.ProposerPublicKey[:])
 	if !leaderEntry.VotingPublicKey.Eq(block.Header.ProposerVotingPublicKey) ||
 		!leaderEntry.ValidatorPKID.Eq(leaderPKIDFromBlock.PKID) {
-		return true, nil
+		return false, nil
 	}
-	return false, nil
+	return true, nil
 }
 
 // isValidPoSQuorumCertificate validates that the QC of this block is valid, meaning a super majority
