@@ -4712,7 +4712,6 @@ func DeserializeBlockNode(data []byte) (*BlockNode, error) {
 		nil,          // CumWork
 		nil,          // Header
 		StatusNone,   // Status
-
 	)
 
 	rr := bytes.NewReader(data)
