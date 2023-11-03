@@ -76,17 +76,33 @@ func (bc *Blockchain) processBlockPoS(block *MsgDeSoBlock, currentView uint64, v
 		return false, false, nil, errors.Wrap(err, "processBlockPoS: Problem applying new tip: ")
 	}
 
-	// If the incoming block is not applied as the new tip, we return early.
-	if !appliedNewTip {
-		return false, false, nil, nil
+	// 5. Commit grandparent if possible. Only need to do this if we applied a new tip.
+	if appliedNewTip {
+		if err = bc.runCommitRuleOnBestChain(); err != nil {
+			return false, false, nil, errors.Wrap(err, "processBlockPoS: error committing grandparents: ")
+		}
 	}
 
-	// 5. Commit grandparent if possible.
-	if err = bc.runCommitRuleOnBestChain(); err != nil {
-		return false, false, nil, errors.Wrap(err, "processBlockPoS: error committing grandparents: ")
+	// Now that we've processed this block, we check for any orphans that
+	// are children of this block and try to process them.
+	orphansAtNextHeight := bc.blockIndexByHeight[blockNode.Height+1]
+	for _, orphan := range orphansAtNextHeight {
+		if orphan.Header.PrevBlockHash.IsEqual(blockNode.Hash) && orphan.IsStored() && !orphan.IsValidated() {
+			// TODO: how do we want to handle failures when validating orphans.
+			var orphanBlock *MsgDeSoBlock
+			orphanBlock, err = GetBlock(orphan.Hash, bc.db, bc.snapshot)
+			if err != nil {
+				glog.Errorf("processBlockPoS: Problem getting orphan block %v", orphan.Hash)
+				continue
+			}
+			if _, err = bc.validateAndIndexBlockPoS(orphanBlock); err != nil {
+				glog.Errorf("processBlockPoS: Problem validating orphan block %v", orphan.Hash)
+				continue
+			}
+		}
 	}
-
-	return true, false, nil, nil
+	// Returns whether or not a new tip was applied, whether or not the block is an orphan, and any missing blocks, and an error.
+	return appliedNewTip, false, nil, nil
 }
 
 // storeValidateFailedBlockWithWrappedError is a helper function that takes in a block and an error and
