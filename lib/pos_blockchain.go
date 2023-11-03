@@ -173,8 +173,6 @@ func (bc *Blockchain) validateAndIndexBlockPoS(block *MsgDeSoBlock) (*BlockNode,
 		// We return the block node as-is as a best effort thing.
 		return blockNode, nil
 	}
-
-	// validate its QC at all. the validator set for that epoch may be entirely different.
 	// A couple of options on how to handle:
 	//   - Add utility to UtxoView to fetch the validator set given an arbitrary block height. If we can't fetch the
 	//     validator set for the block, then we reject it (even if it later turns out to be a valid block)
@@ -185,7 +183,7 @@ func (bc *Blockchain) validateAndIndexBlockPoS(block *MsgDeSoBlock) (*BlockNode,
 	if err != nil {
 		// This should never happen. If the parent is validated and extends from the tip, then we should
 		// be able to fetch the validator set at its block height for it. This failure can only happen due
-		// to transient or badger issues. We return the block node as-is as a best effort thing.
+		// to transient badger issues. We return the block node as-is as a best effort thing.
 		return blockNode, nil
 	}
 
