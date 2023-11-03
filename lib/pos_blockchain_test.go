@@ -1681,6 +1681,66 @@ func TestProcessBlockPoS(t *testing.T) {
 	}
 }
 
+func TestGetSafeBlocks(t *testing.T) {
+	testMeta := NewTestPoSBlockchainWithValidators(t)
+	committedHash := testMeta.chain.GetBestChainTip().Hash
+	var block1 *MsgDeSoBlock
+	block1 = _generateRealBlock(testMeta, uint64(testMeta.savedHeight), uint64(testMeta.savedHeight), 1723, committedHash)
+	block1Hash, err := block1.Hash()
+	require.NoError(t, err)
+	// Add block 1 w/ stored and validated
+	bn1, err := testMeta.chain.storeValidatedBlockInBlockIndex(block1)
+	require.NoError(t, err)
+	require.True(t, bn1.Hash.IsEqual(block1Hash))
+	// Create block 2 w/ block 1 as parent and add it to the block index w/ stored & validated
+	var block2 *MsgDeSoBlock
+	block2 = _generateRealBlock(testMeta, uint64(testMeta.savedHeight+1), uint64(testMeta.savedHeight+1), 1293, block1Hash)
+	block2Hash, err := block2.Hash()
+	require.NoError(t, err)
+	bn2, err := testMeta.chain.storeValidatedBlockInBlockIndex(block2)
+	require.NoError(t, err)
+	require.True(t, bn2.Hash.IsEqual(block2Hash))
+	// Add block 3 only as stored and validated
+	var block3 *MsgDeSoBlock
+	block3 = _generateRealBlock(testMeta, uint64(testMeta.savedHeight+2), uint64(testMeta.savedHeight+2), 1372, block2Hash)
+	bn3, err := testMeta.chain.storeValidatedBlockInBlockIndex(block3)
+	require.NoError(t, err)
+	block3Hash, err := block3.Hash()
+	require.NoError(t, err)
+	require.True(t, bn3.Hash.IsEqual(block3Hash))
+	// Add block 3' only as stored
+	var block3Prime *MsgDeSoBlock
+	block3Prime = _generateRealBlock(testMeta, uint64(testMeta.savedHeight+2), uint64(testMeta.savedHeight+2), 1237, block2Hash)
+	bn3Prime, err := testMeta.chain.storeBlockInBlockIndex(block3Prime)
+	require.NoError(t, err)
+	block3PrimeHash, err := block3Prime.Hash()
+	require.NoError(t, err)
+	require.True(t, bn3Prime.Hash.IsEqual(block3PrimeHash))
+	// Okay let's get the safe blocks.
+	safeBlocks, err := testMeta.chain.GetSafeBlocks()
+	require.NoError(t, err)
+	require.Len(t, safeBlocks, 4)
+	_checkSafeBlockForBlockHash := func(blockHash *BlockHash, safeBlockSlice []*BlockNode) bool {
+		return collections.Any(safeBlockSlice, func(blockNode *BlockNode) bool {
+			return blockNode.Hash.IsEqual(blockHash)
+		})
+	}
+	require.True(t, _checkSafeBlockForBlockHash(committedHash, safeBlocks))
+	require.True(t, _checkSafeBlockForBlockHash(block1Hash, safeBlocks))
+	require.True(t, _checkSafeBlockForBlockHash(block2Hash, safeBlocks))
+	require.True(t, _checkSafeBlockForBlockHash(block3Hash, safeBlocks))
+	require.False(t, _checkSafeBlockForBlockHash(block3PrimeHash, safeBlocks))
+
+	// Update block 3 prime to be validated and it should now be a safe block.
+	bn3Prime, err = testMeta.chain.storeValidatedBlockInBlockIndex(block3Prime)
+	require.NoError(t, err)
+	require.True(t, bn3Prime.IsValidated())
+	safeBlocks, err = testMeta.chain.GetSafeBlocks()
+	require.NoError(t, err)
+	require.Len(t, safeBlocks, 5)
+	require.True(t, _checkSafeBlockForBlockHash(block3PrimeHash, safeBlocks))
+}
+
 func _generateRealBlock(testMeta *TestMeta, blockHeight uint64, view uint64, seed int64, prevBlockHash *BlockHash) BlockTemplate {
 	globalParams := _testGetDefaultGlobalParams()
 	randSource := rand.New(rand.NewSource(seed))
