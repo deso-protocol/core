@@ -89,16 +89,19 @@ func (bc *Blockchain) processBlockPoS(block *MsgDeSoBlock, currentView uint64, v
 	blockNodesAtNextHeight := bc.blockIndexByHeight[uint64(blockNode.Height)+1]
 	for _, blockNodeAtNextHeight := range blockNodesAtNextHeight {
 		if blockNodeAtNextHeight.Header.PrevBlockHash.IsEqual(blockNode.Hash) && blockNodeAtNextHeight.IsStored() && !blockNodeAtNextHeight.IsValidated() {
-			// TODO: how do we want to handle failures when validating orphans.
 			var orphanBlock *MsgDeSoBlock
 			orphanBlock, err = GetBlock(blockNodeAtNextHeight.Hash, bc.db, bc.snapshot)
 			if err != nil {
 				glog.Errorf("processBlockPoS: Problem getting orphan block %v", blockNodeAtNextHeight.Hash)
 				continue
 			}
-			if _, err = bc.validateAndIndexBlockPoS(orphanBlock); err != nil {
+			var appliedNewTipOrphan bool
+			if appliedNewTipOrphan, _, _, err = bc.processBlockPoS(orphanBlock, currentView, verifySignatures); err != nil {
 				glog.Errorf("processBlockPoS: Problem validating orphan block %v", blockNodeAtNextHeight.Hash)
 				continue
+			}
+			if appliedNewTipOrphan {
+				appliedNewTip = true
 			}
 		}
 	}
