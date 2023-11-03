@@ -1681,6 +1681,13 @@ func TestProcessBlockPoS(t *testing.T) {
 	}
 }
 
+// TestGetSafeBlocks tests the GetSafeBlocks function to make sure it returns the correct blocks.
+// It adds three blocks as Validated and Stored to the block index, each referencing the previous
+// block as its parent and adds one block as Stored with the same height as the third block, but not validated.
+// Also, we add a block with a block height in the future to make sure it is not returned.
+// First, we expect that all three Validated & Stored blocks are returned as safe blocks and
+// the Stored block is not returned.
+// Next, we update the previously stored block to be validated and expect it to be returned.
 func TestGetSafeBlocks(t *testing.T) {
 	testMeta := NewTestPoSBlockchainWithValidators(t)
 	committedHash := testMeta.chain.GetBestChainTip().Hash
@@ -1716,6 +1723,14 @@ func TestGetSafeBlocks(t *testing.T) {
 	block3PrimeHash, err := block3Prime.Hash()
 	require.NoError(t, err)
 	require.True(t, bn3Prime.Hash.IsEqual(block3PrimeHash))
+	// Add block 5 as Stored & Validated (this could never really happen but it illustrates a point!)
+	var block5 *MsgDeSoBlock
+	block5 = _generateRealBlock(testMeta, uint64(testMeta.savedHeight+4), uint64(testMeta.savedHeight+4), 1237, block3Hash)
+	block5.Header.Height = uint64(testMeta.savedHeight + 5)
+	block5Hash, err := block5.Hash()
+	require.NoError(t, err)
+	_, err = testMeta.chain.storeValidatedBlockInBlockIndex(block5)
+	require.NoError(t, err)
 	// Okay let's get the safe blocks.
 	safeBlocks, err := testMeta.chain.GetSafeBlocks()
 	require.NoError(t, err)
@@ -1730,6 +1745,7 @@ func TestGetSafeBlocks(t *testing.T) {
 	require.True(t, _checkSafeBlockForBlockHash(block2Hash, safeBlocks))
 	require.True(t, _checkSafeBlockForBlockHash(block3Hash, safeBlocks))
 	require.False(t, _checkSafeBlockForBlockHash(block3PrimeHash, safeBlocks))
+	require.False(t, _checkSafeBlockForBlockHash(block5Hash, safeBlocks))
 
 	// Update block 3 prime to be validated and it should now be a safe block.
 	bn3Prime, err = testMeta.chain.storeValidatedBlockInBlockIndex(block3Prime)
