@@ -63,7 +63,7 @@ func (bc *Blockchain) processBlockPoS(block *MsgDeSoBlock, currentView uint64, v
 		return false, false, nil, errors.Wrap(err, "processBlockPoS: Problem validating block: ")
 	}
 	if !blockNode.IsValidated() {
-		return false, false, nil, errors.New("processBlockPoS: Block not validated after performing all validations. This should never happen")
+		return false, false, nil, errors.New("processBlockPoS: Block not validated after performing all validations.")
 	}
 
 	// 4. Try to apply the incoming block as the new tip. This function will
