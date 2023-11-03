@@ -159,14 +159,7 @@ func (bc *Blockchain) validateAndIndexBlockPoS(block *MsgDeSoBlock) (*BlockNode,
 
 	// Check if the block is properly formed and passes all basic validations.
 	if err = bc.isValidBlockPoS(block); err != nil {
-		// It's possible for isValidBlockPoS to return an error that is not a RuleError.
-		// If we have a RuleError, we KNOW that the block should be ValidateFailed.
-		if IsRuleError(err) {
-			return bc.storeValidateFailedBlockWithWrappedError(block, err)
-		}
-		// If we didn't hit a RuleError, then it's unclear whether or not the block should
-		// be ValidateFailed. We return the block node as-is.
-		return blockNode, nil
+		return bc.storeValidateFailedBlockWithWrappedError(block, err)
 	}
 
 	// We expect the utxoView for the parent block to be valid because we check that all ancestor blocks have
@@ -195,6 +188,14 @@ func (bc *Blockchain) validateAndIndexBlockPoS(block *MsgDeSoBlock) (*BlockNode,
 	// Validate the block's QC. If it's invalid, we store it as ValidateFailed.
 	if err = bc.isValidPoSQuorumCertificate(block, validatorsByStake); err != nil {
 		return bc.storeValidateFailedBlockWithWrappedError(block, err)
+	}
+
+	isInvalidLeader, err := bc.validateBlockLeader(block)
+	if err != nil {
+		return nil, errors.Wrapf(err, "validateAndIndexBlockPoS: Problem validating block leader")
+	}
+	if isInvalidLeader {
+		return bc.storeValidateFailedBlockWithWrappedError(block, errors.New("invalid block leader"))
 	}
 
 	// Connect this block to the parent block's UtxoView.
@@ -261,10 +262,6 @@ func (bc *Blockchain) isValidBlockPoS(desoBlock *MsgDeSoBlock) error {
 		// Check if err is for view > latest committed block view and <= latest uncommitted block.
 		// If so, we need to perform the rest of the validations and then add to our block index.
 		// TODO: implement check on error described above. Caller will handle this.
-		return err
-	}
-	// Validate Leader
-	if err := bc.validateBlockLeader(desoBlock); err != nil {
 		return err
 	}
 	return nil
@@ -413,33 +410,35 @@ func (bc *Blockchain) validateBlockView(desoBlock *MsgDeSoBlock) error {
 }
 
 // validateBlockLeader validates that the proposer is the expected proposer for the
-// block height + view number pair.
-func (bc *Blockchain) validateBlockLeader(desoBlock *MsgDeSoBlock) error {
-	utxoView, err := NewUtxoView(bc.db, bc.params, bc.postgres, bc.snapshot)
+// block height + view number pair. It returns a bool indicating whether or not
+// we confirmed that the leader is invalid. If we receive an error, we are unsure
+// if the leader is invalid or not, so we return false.
+func (bc *Blockchain) validateBlockLeader(block *MsgDeSoBlock) (_isValidateFailed bool, _err error) {
+	utxoView, err := bc.getUtxoViewAtBlockHash(*block.Header.PrevBlockHash)
 	if err != nil {
-		return errors.Wrapf(err, "validateBlockLeader: Problem initializing UtxoView")
+		return false, errors.Wrapf(err, "validateBlockLeader: Problem initializing UtxoView")
 	}
 	currentEpochEntry, err := utxoView.GetCurrentEpochEntry()
 	if err != nil {
-		return errors.Wrapf(err, "validateBlockLeader: Problem getting current epoch entry")
+		return false, errors.Wrapf(err, "validateBlockLeader: Problem getting current epoch entry")
 	}
 	leaders, err := utxoView.GetSnapshotLeaderSchedule()
 	if err != nil {
-		return errors.Wrapf(err, "validateBlockLeader: Problem getting leader schedule")
+		return false, errors.Wrapf(err, "validateBlockLeader: Problem getting leader schedule")
 	}
 	if len(leaders) == 0 {
-		return errors.Wrapf(err, "validateBlockLeader: No leaders found in leader schedule")
+		return false, errors.Wrapf(err, "validateBlockLeader: No leaders found in leader schedule")
 	}
-	if desoBlock.Header.Height < currentEpochEntry.InitialBlockHeight {
-		return RuleErrorBlockHeightLessThanInitialHeightForEpoch
+	if block.Header.Height < currentEpochEntry.InitialBlockHeight {
+		return true, nil
 	}
-	if desoBlock.Header.ProposedInView < currentEpochEntry.InitialView {
-		return RuleErrorBlockViewLessThanInitialViewForEpoch
+	if block.Header.ProposedInView < currentEpochEntry.InitialView {
+		return true, nil
 	}
-	heightDiff := desoBlock.Header.Height - currentEpochEntry.InitialBlockHeight
-	viewDiff := desoBlock.Header.ProposedInView - currentEpochEntry.InitialView
+	heightDiff := block.Header.Height - currentEpochEntry.InitialBlockHeight
+	viewDiff := block.Header.ProposedInView - currentEpochEntry.InitialView
 	if viewDiff < heightDiff {
-		return RuleErrorBlockDiffLessThanHeightDiff
+		return true, nil
 	}
 	// We compute the current index in the leader schedule as follows:
 	// [(block.View - currentEpoch.InitialView) - (block.Height - currentEpoch.InitialHeight)] % len(leaders)
@@ -455,19 +454,19 @@ func (bc *Blockchain) validateBlockLeader(desoBlock *MsgDeSoBlock) error {
 	// which is at index 1.
 	leaderIdxUint64 := (viewDiff - heightDiff) % uint64(len(leaders))
 	if leaderIdxUint64 > math.MaxUint16 {
-		return RuleErrorLeaderIdxExceedsMaxUint16
+		return true, nil
 	}
 	leaderIdx := uint16(leaderIdxUint64)
 	leaderEntry, err := utxoView.GetSnapshotLeaderScheduleValidator(leaderIdx)
 	if err != nil {
-		return errors.Wrapf(err, "validateBlockLeader: Problem getting leader schedule validator")
+		return true, errors.Wrapf(err, "validateBlockLeader: Problem getting leader schedule validator")
 	}
-	leaderPKIDFromBlock := utxoView.GetPKIDForPublicKey(desoBlock.Header.ProposerPublicKey[:])
-	if !leaderEntry.VotingPublicKey.Eq(desoBlock.Header.ProposerVotingPublicKey) ||
+	leaderPKIDFromBlock := utxoView.GetPKIDForPublicKey(block.Header.ProposerPublicKey[:])
+	if !leaderEntry.VotingPublicKey.Eq(block.Header.ProposerVotingPublicKey) ||
 		!leaderEntry.ValidatorPKID.Eq(leaderPKIDFromBlock.PKID) {
-		return RuleErrorLeaderForBlockDoesNotMatchSchedule
+		return true, nil
 	}
-	return nil
+	return false, nil
 }
 
 // isValidPoSQuorumCertificate validates that the QC of this block is valid, meaning a super majority
@@ -994,12 +993,6 @@ const (
 
 	RuleErrorPoSVoteBlockViewNotOneGreaterThanParent RuleError = "RuleErrorPoSVoteBlockViewNotOneGreaterThanParent"
 	RuleErrorPoSTimeoutBlockViewNotGreaterThanParent RuleError = "RuleErrorPoSTimeoutBlockViewNotGreaterThanParent"
-
-	RuleErrorLeaderForBlockDoesNotMatchSchedule       RuleError = "RuleErrorLeaderForBlockDoesNotMatchSchedule"
-	RuleErrorBlockHeightLessThanInitialHeightForEpoch RuleError = "RuleErrorBlockHeightLessThanInitialHeightForEpoch"
-	RuleErrorBlockViewLessThanInitialViewForEpoch     RuleError = "RuleErrorBlockViewLessThanInitialViewForEpoch"
-	RuleErrorBlockDiffLessThanHeightDiff              RuleError = "RuleErrorBlockDiffLessThanHeightDiff"
-	RuleErrorLeaderIdxExceedsMaxUint16                RuleError = "RuleErrorLeaderIdxExceedsMaxUint16"
 
 	RuleErrorInvalidVoteQC    RuleError = "RuleErrorInvalidVoteQC"
 	RuleErrorInvalidTimeoutQC RuleError = "RuleErrorInvalidTimeoutQC"

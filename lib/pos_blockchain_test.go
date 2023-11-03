@@ -655,6 +655,9 @@ func TestValidateBlockLeader(t *testing.T) {
 		m5PKID: m5ValidatorEntry,
 		m6PKID: m6ValidatorEntry,
 	}
+	// Mark chain tip as committed.
+	testMeta.chain.GetBestChainTip().Status |= StatusBlockCommitted
+	var isInvalidLeader bool
 	{
 		// First block, we should have the first leader.
 		leader0PKID := leaderSchedule[0]
@@ -662,37 +665,40 @@ func TestValidateBlockLeader(t *testing.T) {
 		leader0PublicKey := utxoView.GetPublicKeyForPKID(leader0PKID)
 		dummyBlock := &MsgDeSoBlock{
 			Header: &MsgDeSoHeader{
+				PrevBlockHash:           testMeta.chain.GetBestChainTip().Hash,
 				ProposedInView:          viewNumber + 1,
 				Height:                  blockHeight + 1,
 				ProposerPublicKey:       NewPublicKey(leader0PublicKey),
 				ProposerVotingPublicKey: leader0Entry.VotingPublicKey,
 			},
 		}
-		err = testMeta.chain.validateBlockLeader(dummyBlock)
+		isInvalidLeader, err = testMeta.chain.validateBlockLeader(dummyBlock)
 		require.NoError(t, err)
+		require.False(t, isInvalidLeader)
 
 		// If we have a different proposer public key, we will have an error
 		leader1PublicKey := utxoView.GetPublicKeyForPKID(leaderSchedule[1])
 		leader1Entry := validatorPKIDToValidatorEntryMap[*leaderSchedule[1]]
 		dummyBlock.Header.ProposerPublicKey = NewPublicKey(leader1PublicKey)
-		err = testMeta.chain.validateBlockLeader(dummyBlock)
-		require.Error(t, err)
-		require.Equal(t, err, RuleErrorLeaderForBlockDoesNotMatchSchedule)
+		isInvalidLeader, err = testMeta.chain.validateBlockLeader(dummyBlock)
+		require.NoError(t, err)
+		require.True(t, isInvalidLeader)
 
 		// If we have a different proposer voting public key, we will have an error
 		dummyBlock.Header.ProposerPublicKey = NewPublicKey(leader0PublicKey)
 		dummyBlock.Header.ProposerVotingPublicKey = leader1Entry.VotingPublicKey
-		err = testMeta.chain.validateBlockLeader(dummyBlock)
-		require.Error(t, err)
-		require.Equal(t, err, RuleErrorLeaderForBlockDoesNotMatchSchedule)
+		isInvalidLeader, err = testMeta.chain.validateBlockLeader(dummyBlock)
+		require.NoError(t, err)
+		require.True(t, isInvalidLeader)
 
 		// If we advance the view, we know that leader 0 timed out, so
 		// we move to leader 1.
 		dummyBlock.Header.ProposedInView = viewNumber + 2
 		dummyBlock.Header.ProposerPublicKey = NewPublicKey(leader1PublicKey)
 		dummyBlock.Header.ProposerVotingPublicKey = leader1Entry.VotingPublicKey
-		err = testMeta.chain.validateBlockLeader(dummyBlock)
+		isInvalidLeader, err = testMeta.chain.validateBlockLeader(dummyBlock)
 		require.NoError(t, err)
+		require.False(t, isInvalidLeader)
 
 		// If we have 4 timeouts, we know that leaders 0, 1, 2, and 3 timed out,
 		// so we move to leader 4.
@@ -701,37 +707,39 @@ func TestValidateBlockLeader(t *testing.T) {
 		leader4Entry := validatorPKIDToValidatorEntryMap[*leaderSchedule[4]]
 		dummyBlock.Header.ProposerPublicKey = NewPublicKey(leader4PublicKey)
 		dummyBlock.Header.ProposerVotingPublicKey = leader4Entry.VotingPublicKey
-		err = testMeta.chain.validateBlockLeader(dummyBlock)
+		isInvalidLeader, err = testMeta.chain.validateBlockLeader(dummyBlock)
 		require.NoError(t, err)
+		require.False(t, isInvalidLeader)
 
 		// If we have 7 timeouts, we know everybody timed out, so we go back to leader 0.
 		dummyBlock.Header.ProposedInView = viewNumber + 8
 		dummyBlock.Header.ProposerPublicKey = NewPublicKey(leader0PublicKey)
 		dummyBlock.Header.ProposerVotingPublicKey = leader0Entry.VotingPublicKey
-		err = testMeta.chain.validateBlockLeader(dummyBlock)
+		isInvalidLeader, err = testMeta.chain.validateBlockLeader(dummyBlock)
 		require.NoError(t, err)
+		require.False(t, isInvalidLeader)
 
 		// If the block view is less than the epoch's initial view, this is an error.
 		dummyBlock.Header.ProposedInView = viewNumber
-		err = testMeta.chain.validateBlockLeader(dummyBlock)
-		require.Error(t, err)
-		require.Equal(t, err, RuleErrorBlockViewLessThanInitialViewForEpoch)
+		isInvalidLeader, err = testMeta.chain.validateBlockLeader(dummyBlock)
+		require.NoError(t, err)
+		require.True(t, isInvalidLeader)
 
 		// If the block height is less than epoch's initial block height, this is an error.
 		dummyBlock.Header.ProposedInView = viewNumber + 1
 		dummyBlock.Header.Height = blockHeight
-		err = testMeta.chain.validateBlockLeader(dummyBlock)
-		require.Error(t, err)
-		require.Equal(t, err, RuleErrorBlockHeightLessThanInitialHeightForEpoch)
+		isInvalidLeader, err = testMeta.chain.validateBlockLeader(dummyBlock)
+		require.NoError(t, err)
+		require.True(t, isInvalidLeader)
 
 		// If the difference between the block's view and epoch's initial view is less than
 		// the difference between the block's height and the epoch's initial height, this is an error.
 		// This would imply that we've had more blocks than views, which is not possible.
 		dummyBlock.Header.ProposedInView = viewNumber + 1
 		dummyBlock.Header.Height = blockHeight + 2
-		err = testMeta.chain.validateBlockLeader(dummyBlock)
-		require.Error(t, err)
-		require.Equal(t, err, RuleErrorBlockDiffLessThanHeightDiff)
+		isInvalidLeader, err = testMeta.chain.validateBlockLeader(dummyBlock)
+		require.NoError(t, err)
+		require.True(t, isInvalidLeader)
 	}
 
 }
