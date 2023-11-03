@@ -2,11 +2,12 @@ package lib
 
 import (
 	"fmt"
+	"strconv"
+	"testing"
+
 	"github.com/dgraph-io/badger/v3"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"strconv"
-	"testing"
 )
 
 type _CreatorCoinTestData struct {
@@ -793,41 +794,41 @@ func _helpTestCreatorCoinBuySell(
 func TestBalanceModelCreatorCoins(t *testing.T) {
 	setBalanceModelBlockHeights(t)
 
-	TestCreatorCoinWithDiamonds(t)
-	TestCreatorCoinWithDiamondsFailureCases(t)
-	TestCreatorCoinDiamondAfterDeSoDiamondsBlockHeight(t)
-	TestCreatorCoinTransferSimple_CreatorCoinFounderReward(t)
-	TestCreatorCoinTransferSimple_DeSoFounderReward(t)
+	t.Run("TestCreatorCoinWithDiamonds", TestCreatorCoinWithDiamonds)
+	t.Run("TestCreatorCoinWithDiamondsFailureCases", TestCreatorCoinWithDiamondsFailureCases)
+	t.Run("TestCreatorCoinDiamondAfterDeSoDiamondsBlockHeight", TestCreatorCoinDiamondAfterDeSoDiamondsBlockHeight)
+	t.Run("TestCreatorCoinTransferSimple_CreatorCoinFounderReward", TestCreatorCoinTransferSimple_CreatorCoinFounderReward)
+	t.Run("TestCreatorCoinTransferSimple_DeSoFounderReward", TestCreatorCoinTransferSimple_DeSoFounderReward)
 }
 
 func TestBalanceModelCreatorCoins2(t *testing.T) {
 	setBalanceModelBlockHeights(t)
 
-	TestCreatorCoinTransferWithSwapIdentity(t)
-	TestCreatorCoinTransferWithSmallBalancesLeftOver(t)
-	TestCreatorCoinTransferWithMaxTransfers(t)
-	TestCreatorCoinTransferBelowMinThreshold(t)
-	TestCreatorCoinBuySellSimple_CreatorCoinFounderReward(t)
+	t.Run("TestCreatorCoinTransferWithSwapIdentity", TestCreatorCoinTransferWithSwapIdentity)
+	t.Run("TestCreatorCoinTransferWithSmallBalancesLeftOver", TestCreatorCoinTransferWithSmallBalancesLeftOver)
+	t.Run("TestCreatorCoinTransferWithMaxTransfers", TestCreatorCoinTransferWithMaxTransfers)
+	t.Run("TestCreatorCoinTransferBelowMinThreshold", TestCreatorCoinTransferBelowMinThreshold)
+	t.Run("TestCreatorCoinBuySellSimple_CreatorCoinFounderReward", TestCreatorCoinBuySellSimple_CreatorCoinFounderReward)
 }
 
 func TestBalanceModelCreatorCoins3(t *testing.T) {
 	setBalanceModelBlockHeights(t)
 
-	TestCreatorCoinBuySellSimple_DeSoFounderReward(t)
-	TestCreatorCoinSelfBuying_DeSoAndCreatorCoinFounderReward(t)
-	TestCreatorCoinTinyFounderRewardBuySellAmounts_CreatorCoinFounderReward(t)
-	TestCreatorCoinTinyFounderRewardBuySellAmounts_DeSoFounderReward(t)
-	TestCreatorCoinFullFounderRewardBuySellAmounts_CreatorCoinFounderReward(t)
+	t.Run("TestCreatorCoinBuySellSimple_DeSoFounderReward", TestCreatorCoinBuySellSimple_DeSoFounderReward)
+	t.Run("TestCreatorCoinSelfBuying_DeSoAndCreatorCoinFounderReward", TestCreatorCoinSelfBuying_DeSoAndCreatorCoinFounderReward)
+	t.Run("TestCreatorCoinTinyFounderRewardBuySellAmounts_CreatorCoinFounderReward", TestCreatorCoinTinyFounderRewardBuySellAmounts_CreatorCoinFounderReward)
+	t.Run("TestCreatorCoinTinyFounderRewardBuySellAmounts_DeSoFounderReward", TestCreatorCoinTinyFounderRewardBuySellAmounts_DeSoFounderReward)
+	t.Run("TestCreatorCoinFullFounderRewardBuySellAmounts_CreatorCoinFounderReward", TestCreatorCoinFullFounderRewardBuySellAmounts_CreatorCoinFounderReward)
 }
 
 func TestBalanceModelCreatorCoins4(t *testing.T) {
 	setBalanceModelBlockHeights(t)
 
-	TestCreatorCoinLargeFounderRewardBuySellAmounts(t)
-	TestCreatorCoinAroundThresholdBuySellAmounts(t)
-	TestSalomonSequence(t)
-	TestCreatorCoinBigBuyAfterSmallBuy(t)
-	TestCreatorCoinBigBigBuyBigSell(t)
+	t.Run("TestCreatorCoinLargeFounderRewardBuySellAmounts", TestCreatorCoinLargeFounderRewardBuySellAmounts)
+	t.Run("TestCreatorCoinAroundThresholdBuySellAmounts", TestCreatorCoinAroundThresholdBuySellAmounts)
+	t.Run("TestSalomonSequence", TestSalomonSequence)
+	t.Run("TestCreatorCoinBigBuyAfterSmallBuy", TestCreatorCoinBigBuyAfterSmallBuy)
+	t.Run("TestCreatorCoinBigBigBuyBigSell", TestCreatorCoinBigBigBuyBigSell)
 }
 
 func TestCreatorCoinWithDiamonds(t *testing.T) {

@@ -51,10 +51,10 @@ func (data *accessGroupMembersTestData) GetInputType() transactionTestInputType 
 func TestBalanceModelAccessGroupMembers(t *testing.T) {
 	setBalanceModelBlockHeights(t)
 
-	TestAccessGroupMembersAdd(t)
-	TestAccessGroupMembersUpdate(t)
-	TestAccessGroupMembersRemove(t)
-	TestAccessGroupMembersTxnWithDerivedKey(t)
+	t.Run("TestAccessGroupMembersAdd", TestAccessGroupMembersAdd)
+	t.Run("TestAccessGroupMembersUpdate", TestAccessGroupMembersUpdate)
+	t.Run("TestAccessGroupMembersRemove", TestAccessGroupMembersRemove)
+	t.Run("TestAccessGroupMembersTxnWithDerivedKey", TestAccessGroupMembersTxnWithDerivedKey)
 }
 
 func TestAccessGroupMembersAdd(t *testing.T) {

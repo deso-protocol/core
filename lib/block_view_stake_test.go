@@ -14,16 +14,20 @@ import (
 )
 
 func TestStaking(t *testing.T) {
-	_testStaking(t, false)
-	_testStaking(t, true)
+	// Initialize balance model fork heights.
+	setBalanceModelBlockHeights(t)
+
+	t.Run("flushToDB=false", func(t *testing.T) {
+		_testStaking(t, false)
+	})
+	t.Run("flushToDB=true", func(t *testing.T) {
+		_testStaking(t, true)
+	})
 }
 
 func _testStaking(t *testing.T, flushToDB bool) {
 	// Local variables
 	var err error
-
-	// Initialize balance model fork heights.
-	setBalanceModelBlockHeights(t)
 
 	// Initialize test chain and miner.
 	chain, params, db := NewLowDifficultyBlockchain(t)
@@ -1642,14 +1646,18 @@ func TestStakingWithDerivedKey(t *testing.T) {
 }
 
 func TestGetTopStakesByStakeAmount(t *testing.T) {
-	_testGetTopStakesByStakeAmount(t, false)
-	_testGetTopStakesByStakeAmount(t, true)
-}
-
-func _testGetTopStakesByStakeAmount(t *testing.T, flushToDB bool) {
 	// Initialize balance model fork heights.
 	setBalanceModelBlockHeights(t)
 
+	t.Run("flushToDB=false", func(t *testing.T) {
+		_testGetTopStakesByStakeAmount(t, false)
+	})
+	t.Run("flushToDB=true", func(t *testing.T) {
+		_testGetTopStakesByStakeAmount(t, true)
+	})
+}
+
+func _testGetTopStakesByStakeAmount(t *testing.T, flushToDB bool) {
 	// Initialize test chain and miner.
 	chain, params, db := NewLowDifficultyBlockchain(t)
 	mempool, miner := NewTestMiner(t, chain, params, true)
@@ -2079,15 +2087,19 @@ func TestStakeLockupEpochDuration(t *testing.T) {
 }
 
 func TestStakingToJailedValidator(t *testing.T) {
-	testStakingToJailedValidator(t, false)
-	testStakingToJailedValidator(t, true)
+	// Initialize balance model fork heights.
+	setBalanceModelBlockHeights(t)
+
+	t.Run("flushToDB=false", func(t *testing.T) {
+		testStakingToJailedValidator(t, false)
+	})
+	t.Run("flushToDB=true", func(t *testing.T) {
+		testStakingToJailedValidator(t, true)
+	})
 }
 
 func testStakingToJailedValidator(t *testing.T, flushToDB bool) {
 	var err error
-
-	// Initialize balance model fork heights.
-	setBalanceModelBlockHeights(t)
 
 	// Initialize test chain and miner.
 	chain, params, db := NewLowDifficultyBlockchain(t)

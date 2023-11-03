@@ -212,7 +212,7 @@ func NewLowDifficultyBlockchainWithParams(t *testing.T, params *DeSoParams) (
 
 func NewLowDifficultyBlockchainWithParamsAndDb(t *testing.T, params *DeSoParams, usePostgres bool, postgresPort uint32, useProvidedParams bool) (
 	*Blockchain, *DeSoParams, *embeddedpostgres.EmbeddedPostgres) {
-	TestDeSoEncoderSetup(t)
+	setupTestDeSoEncoder(t)
 	AppendToMemLog(t, "START")
 
 	// Set the number of txns per view regeneration to one while creating the txns
@@ -260,7 +260,7 @@ func NewLowDifficultyBlockchainWithParamsAndDb(t *testing.T, params *DeSoParams,
 
 	t.Cleanup(func() {
 		AppendToMemLog(t, "CLEANUP_START")
-		TestDeSoEncoderShutdown(t)
+		resetTestDeSoEncoder(t)
 		if snap != nil {
 			snap.Stop()
 			CleanUpBadger(snap.SnapshotDb)
@@ -358,6 +358,11 @@ func NewTestMiner(t *testing.T, chain *Blockchain, params *DeSoParams, isSender 
 		if !mempool.stopped {
 			mempool.Stop()
 		}
+		// The above Stop() calls are non-blocking so we need to wait a bit
+		// for them to finish. The alternative is to make them blocking but
+		// that would require a reasonable amount of refactoring that changes
+		// production behavior.
+		time.Sleep(100 * time.Millisecond)
 	})
 	return mempool, newMiner
 }
@@ -447,31 +452,32 @@ func _getBalanceWithView(t *testing.T, chain *Blockchain, utxoView *UtxoView, pk
 func TestBalanceModelBlockTests(t *testing.T) {
 	setBalanceModelBlockHeights(t)
 
-	TestBasicTransferReorg(t)
-	TestProcessBlockConnectBlocks(t)
-	TestProcessHeaderskReorgBlocks(t)
+	t.Run("TestBasicTransferReorg", TestBasicTransferReorg)
+	t.Run("TestProcessBlockConnectBlocks", TestProcessBlockConnectBlocks)
+	t.Run("TestProcessHeaderskReorgBlocks", TestProcessHeaderskReorgBlocks)
+	t.Run("TestValidateBasicTransfer", TestValidateBasicTransfer)
+
 	// The below two tests check utxos and need to be updated for balance model
 	//TestProcessBlockReorgBlocks(t)
 	//TestAddInputsAndChangeToTransaction(t)
-	TestValidateBasicTransfer(t)
 }
 
 func TestBalanceModelBlockTests2(t *testing.T) {
 	setBalanceModelBlockHeights(t)
 
-	TestCalcNextDifficultyTargetHalvingDoublingHitLimit(t)
-	TestCalcNextDifficultyTargetHittingLimitsSlow(t)
-	TestCalcNextDifficultyTargetHittingLimitsFast(t)
-	TestCalcNextDifficultyTargetJustRight(t)
+	t.Run("TestCalcNextDifficultyTargetHalvingDoublingHitLimit", TestCalcNextDifficultyTargetHalvingDoublingHitLimit)
+	t.Run("TestCalcNextDifficultyTargetHittingLimitsSlow", TestCalcNextDifficultyTargetHittingLimitsSlow)
+	t.Run("TestCalcNextDifficultyTargetHittingLimitsFast", TestCalcNextDifficultyTargetHittingLimitsFast)
+	t.Run("TestCalcNextDifficultyTargetJustRight", TestCalcNextDifficultyTargetJustRight)
 }
 
 func TestBalanceModelBlockTests3(t *testing.T) {
 	setBalanceModelBlockHeights(t)
 
-	TestCalcNextDifficultyTargetSlightlyOff(t)
-	TestBadMerkleRoot(t)
-	TestBadBlockSignature(t)
-	TestForbiddenBlockSignaturePubKey(t)
+	t.Run("TestCalcNextDifficultyTargetSlightlyOff", TestCalcNextDifficultyTargetSlightlyOff)
+	t.Run("TestBadMerkleRoot", TestBadMerkleRoot)
+	t.Run("TestBadBlockSignature", TestBadBlockSignature)
+	t.Run("TestForbiddenBlockSignaturePubKey", TestForbiddenBlockSignaturePubKey)
 }
 
 func TestBasicTransferReorg(t *testing.T) {

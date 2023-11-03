@@ -61,38 +61,6 @@ var (
 	LowFeeTxLimitBytesPerTenMinutes = 150000 // Allow 150KB per minute in low-fee txns.
 )
 
-// MempoolTx contains a transaction along with additional metadata like the
-// fee and time added.
-type MempoolTx struct {
-	Tx *MsgDeSoTxn
-
-	// TxMeta is the transaction metadata
-	TxMeta *TransactionMetadata
-
-	// Hash is a hash of the transaction so we don't have to recompute
-	// it all the time.
-	Hash *BlockHash
-
-	// TxSizeBytes is the cached size of the transaction.
-	TxSizeBytes uint64
-
-	// The time when the txn was added to the pool
-	Added time.Time
-
-	// The block height when the txn was added to the pool. It's generally set
-	// to tip+1.
-	Height uint32
-
-	// The total fee the txn pays. Cached for efficiency reasons.
-	Fee uint64
-
-	// The fee rate of the transaction in nanos per KB.
-	FeePerKB uint64
-
-	// index is used by the heap logic to allow for modification in-place.
-	index int
-}
-
 // Summary stats for a set of transactions of a specific type in the mempool.
 type SummaryStats struct {
 	// Number of transactions of this type in the mempool.
@@ -100,10 +68,6 @@ type SummaryStats struct {
 
 	// Number of bytes for transactions of this type in the mempool.
 	TotalBytes uint64
-}
-
-func (mempoolTx *MempoolTx) String() string {
-	return fmt.Sprintf("< Added: %v, index: %d, Fee: %d, Type: %v, Hash: %v", mempoolTx.Added, mempoolTx.index, mempoolTx.Fee, mempoolTx.Tx.TxnMeta.GetTxnType(), mempoolTx.Hash)
 }
 
 // MempoolTxFeeMinHeap is a priority queue based on transaction fee rate
@@ -1973,6 +1937,22 @@ func ComputeTransactionMetadata(txn *MsgDeSoTxn, utxoView *UtxoView, blockHash *
 		txindexMetadata, affectedPublicKeys := utxoView.CreateUnjailValidatorTxindexMetadata(utxoOps[len(utxoOps)-1], txn)
 		txnMeta.UnjailValidatorTxindexMetadata = txindexMetadata
 		txnMeta.AffectedPublicKeys = append(txnMeta.AffectedPublicKeys, affectedPublicKeys...)
+	}
+	// Check if the transactor is an affected public key. If not, add them.
+	if txnMeta.TransactorPublicKeyBase58Check != "" {
+		transactorPublicKeyFound := false
+		for _, affectedPublicKey := range txnMeta.AffectedPublicKeys {
+			if affectedPublicKey.PublicKeyBase58Check == txnMeta.TransactorPublicKeyBase58Check {
+				transactorPublicKeyFound = true
+				break
+			}
+		}
+		if !transactorPublicKeyFound {
+			txnMeta.AffectedPublicKeys = append(txnMeta.AffectedPublicKeys, &AffectedPublicKey{
+				PublicKeyBase58Check: txnMeta.TransactorPublicKeyBase58Check,
+				Metadata:             "TransactorPublicKeyBase58Check",
+			})
+		}
 	}
 	return txnMeta
 }

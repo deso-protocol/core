@@ -4,14 +4,15 @@ import (
 	"bytes"
 	"encoding/hex"
 	"fmt"
-	"github.com/btcsuite/btcd/btcec"
-	"github.com/dgraph-io/badger/v3"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 	"reflect"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/btcsuite/btcd/btcec"
+	"github.com/dgraph-io/badger/v3"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestBasePointSignature(t *testing.T) {
@@ -116,9 +117,9 @@ func _privateMessageWithExtraData(t *testing.T, chain *Blockchain, db *badger.DB
 func TestBalanceModelPrivateMessages(t *testing.T) {
 	setBalanceModelBlockHeights(t)
 
-	TestPrivateMessages(t)
-	TestMessagingKeys(t)
-	TestGroupMessages(t)
+	t.Run("TestPrivateMessages", TestPrivateMessages)
+	t.Run("TestMessagingKeys", TestMessagingKeys)
+	t.Run("TestGroupMessages", TestGroupMessages)
 }
 
 func TestPrivateMessage(t *testing.T) {

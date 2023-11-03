@@ -4,14 +4,15 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"github.com/dgraph-io/badger/v3"
-	"github.com/pkg/errors"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 	"reflect"
 	"sort"
 	"testing"
 	"time"
+
+	"github.com/dgraph-io/badger/v3"
+	"github.com/pkg/errors"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func _submitPost(t *testing.T, chain *Blockchain, db *badger.DB,
@@ -294,10 +295,10 @@ func _doSubmitPostTxn(t *testing.T, chain *Blockchain, db *badger.DB,
 func TestBalanceModelSubmitPost(t *testing.T) {
 	setBalanceModelBlockHeights(t)
 
-	TestSubmitPost(t)
-	TestDeSoDiamonds(t)
-	TestDeSoDiamondErrorCases(t)
-	TestFreezingPosts(t)
+	t.Run("TestSubmitPost", TestSubmitPost)
+	t.Run("TestDeSoDiamonds", TestDeSoDiamonds)
+	t.Run("TestDeSoDiamondErrorCases", TestDeSoDiamondErrorCases)
+	t.Run("TestFreezingPosts", TestFreezingPosts)
 }
 
 func TestSubmitPost(t *testing.T) {
@@ -2104,6 +2105,12 @@ func TestDeSoDiamondErrorCases(t *testing.T) {
 }
 
 func TestFreezingPosts(t *testing.T) {
+	// Set up block heights
+	DeSoTestnetParams.ForkHeights.AssociationsAndAccessGroupsBlockHeight = 1
+	DeSoTestnetParams.EncoderMigrationHeights = GetEncoderMigrationHeights(&DeSoTestnetParams.ForkHeights)
+	DeSoTestnetParams.EncoderMigrationHeightsList = GetEncoderMigrationHeightsList(&DeSoTestnetParams.ForkHeights)
+	GlobalDeSoParams = DeSoTestnetParams
+
 	// Initialize blockchain.
 	chain, params, db := NewLowDifficultyBlockchain(t)
 	defer func() {
@@ -2111,10 +2118,7 @@ func TestFreezingPosts(t *testing.T) {
 			require.NoError(t, ResetPostgres(chain.postgres))
 		}
 	}()
-	params.ForkHeights.AssociationsAndAccessGroupsBlockHeight = 1
-	params.EncoderMigrationHeights = GetEncoderMigrationHeights(&params.ForkHeights)
-	params.EncoderMigrationHeightsList = GetEncoderMigrationHeightsList(&params.ForkHeights)
-	GlobalDeSoParams = *params
+
 	mempool, miner := NewTestMiner(t, chain, params, true)
 
 	// Mine a few blocks to give the senderPkString some money.

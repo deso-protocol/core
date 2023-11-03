@@ -4,6 +4,12 @@ import (
 	"bytes"
 	"encoding/hex"
 	"fmt"
+	"math"
+	_ "net/http/pprof"
+	"reflect"
+	"sort"
+	"testing"
+
 	"github.com/btcsuite/btcd/btcec"
 	"github.com/decred/dcrd/lru"
 	"github.com/dgraph-io/badger/v3"
@@ -11,10 +17,7 @@ import (
 	"github.com/golang/glog"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	_ "net/http/pprof"
-	"reflect"
-	"sort"
-	"testing"
+	"math/rand"
 )
 
 func _strToPk(t *testing.T, pkStr string) []byte {
@@ -74,6 +77,7 @@ func setBalanceModelBlockHeights(t *testing.T) {
 	DeSoTestnetParams.ForkHeights.ExtraDataOnEntriesBlockHeight = 0
 	DeSoTestnetParams.ForkHeights.AssociationsAndAccessGroupsBlockHeight = 0
 	DeSoTestnetParams.ForkHeights.BalanceModelBlockHeight = 1
+	DeSoTestnetParams.ForkHeights.ProofOfStake1StateSetupBlockHeight = 1
 	DeSoTestnetParams.EncoderMigrationHeights = GetEncoderMigrationHeights(&DeSoTestnetParams.ForkHeights)
 	DeSoTestnetParams.EncoderMigrationHeightsList = GetEncoderMigrationHeightsList(&DeSoTestnetParams.ForkHeights)
 	GlobalDeSoParams = DeSoTestnetParams
@@ -82,13 +86,14 @@ func setBalanceModelBlockHeights(t *testing.T) {
 }
 
 func resetBalanceModelBlockHeights() {
-	DeSoTestnetParams.ForkHeights.NFTTransferOrBurnAndDerivedKeysBlockHeight = 1000000
-	DeSoTestnetParams.ForkHeights.DerivedKeySetSpendingLimitsBlockHeight = 1000000
-	DeSoTestnetParams.ForkHeights.DerivedKeyTrackSpendingLimitsBlockHeight = 1000000
-	DeSoTestnetParams.ForkHeights.DerivedKeyEthSignatureCompatibilityBlockHeight = 1000000
-	DeSoTestnetParams.ForkHeights.ExtraDataOnEntriesBlockHeight = 1000000
-	DeSoTestnetParams.ForkHeights.AssociationsAndAccessGroupsBlockHeight = 1000000
-	DeSoTestnetParams.ForkHeights.BalanceModelBlockHeight = 1000000
+	DeSoTestnetParams.ForkHeights.NFTTransferOrBurnAndDerivedKeysBlockHeight = uint32(60743)
+	DeSoTestnetParams.ForkHeights.DerivedKeySetSpendingLimitsBlockHeight = uint32(304087)
+	DeSoTestnetParams.ForkHeights.DerivedKeyTrackSpendingLimitsBlockHeight = uint32(304087 + 18*60)
+	DeSoTestnetParams.ForkHeights.DerivedKeyEthSignatureCompatibilityBlockHeight = uint32(360584)
+	DeSoTestnetParams.ForkHeights.ExtraDataOnEntriesBlockHeight = uint32(304087)
+	DeSoTestnetParams.ForkHeights.AssociationsAndAccessGroupsBlockHeight = uint32(596555)
+	DeSoTestnetParams.ForkHeights.BalanceModelBlockHeight = uint32(683058)
+	DeSoTestnetParams.ForkHeights.ProofOfStake1StateSetupBlockHeight = uint32(math.MaxUint32)
 	DeSoTestnetParams.EncoderMigrationHeights = GetEncoderMigrationHeights(&DeSoTestnetParams.ForkHeights)
 	DeSoTestnetParams.EncoderMigrationHeightsList = GetEncoderMigrationHeightsList(&DeSoTestnetParams.ForkHeights)
 	GlobalDeSoParams = DeSoTestnetParams
@@ -303,16 +308,16 @@ func (tes *transactionTestSuite) Run() {
 	}
 }
 
-const TestDeSoEncoderRetries = 3
+const testDeSoEncoderRetries = 3
 
-func TestDeSoEncoderSetup(t *testing.T) {
+func setupTestDeSoEncoder(t *testing.T) {
 	EncodeToBytesImpl = func(blockHeight uint64, encoder DeSoEncoder, skipMetadata ...bool) []byte {
 		versionByte := encoder.GetVersionByte(blockHeight)
 		encodingBytes := encodeToBytes(blockHeight, encoder, skipMetadata...)
 		// Check for deterministic encoding, try re-encoding the same encoder a couple of times and compare it with
 		// the original bytes.
 		{
-			for ii := 0; ii < TestDeSoEncoderRetries; ii++ {
+			for ii := 0; ii < testDeSoEncoderRetries; ii++ {
 				newVersionByte := encoder.GetVersionByte(blockHeight)
 				reEncodingBytes := encodeToBytes(blockHeight, encoder, skipMetadata...)
 				if !bytes.Equal(encodingBytes, reEncodingBytes) {
@@ -329,7 +334,7 @@ func TestDeSoEncoderSetup(t *testing.T) {
 	}
 }
 
-func TestDeSoEncoderShutdown(t *testing.T) {
+func resetTestDeSoEncoder(t *testing.T) {
 	EncodeToBytesImpl = encodeToBytes
 }
 
@@ -1462,9 +1467,9 @@ func TestUpdateGlobalParams(t *testing.T) {
 func TestBalanceModelBasicTransfers(t *testing.T) {
 	setBalanceModelBlockHeights(t)
 
-	TestBasicTransfer(t)
-	TestBasicTransferSignatures(t)
-	TestBlockRewardPatch(t)
+	t.Run("TestBasicTransfer", TestBasicTransfer)
+	t.Run("TestBasicTransferSignatures", TestBasicTransferSignatures)
+	t.Run("TestBlockRewardPatch", TestBlockRewardPatch)
 }
 
 func TestBasicTransfer(t *testing.T) {
@@ -1739,20 +1744,23 @@ func TestBasicTransferSignatures(t *testing.T) {
 	require := require.New(t)
 	_ = require
 
-	chain, params, db := NewLowDifficultyBlockchain(t)
-	postgres := chain.postgres
-	params.ForkHeights.NFTTransferOrBurnAndDerivedKeysBlockHeight = uint32(0)
-	params.ForkHeights.DerivedKeySetSpendingLimitsBlockHeight = uint32(0)
-	params.ForkHeights.DerivedKeyTrackSpendingLimitsBlockHeight = uint32(0)
-	// Make sure encoder migrations are not triggered yet.
-	GlobalDeSoParams = *params
-	GlobalDeSoParams.ForkHeights.DeSoUnlimitedDerivedKeysBlockHeight = uint32(100)
-	for ii := range GlobalDeSoParams.EncoderMigrationHeightsList {
-		if GlobalDeSoParams.EncoderMigrationHeightsList[ii].Version == 0 {
+	// Set up block heights
+	DeSoTestnetParams.ForkHeights.NFTTransferOrBurnAndDerivedKeysBlockHeight = uint32(0)
+	DeSoTestnetParams.ForkHeights.DerivedKeySetSpendingLimitsBlockHeight = uint32(0)
+	DeSoTestnetParams.ForkHeights.DerivedKeyTrackSpendingLimitsBlockHeight = uint32(0)
+	DeSoTestnetParams.ForkHeights.DeSoUnlimitedDerivedKeysBlockHeight = uint32(100)
+	for ii := range DeSoTestnetParams.EncoderMigrationHeightsList {
+		if DeSoTestnetParams.EncoderMigrationHeightsList[ii].Version == 0 {
 			continue
 		}
-		GlobalDeSoParams.EncoderMigrationHeightsList[ii].Height = 100
+		DeSoTestnetParams.EncoderMigrationHeightsList[ii].Height = 100
 	}
+
+	// Make sure encoder migrations are not triggered yet.
+	GlobalDeSoParams = DeSoTestnetParams
+
+	chain, params, db := NewLowDifficultyBlockchain(t)
+	postgres := chain.postgres
 
 	_ = db
 	mempool, miner := NewTestMiner(t, chain, params, true /*isSender*/)
@@ -2187,4 +2195,108 @@ func TestBlockRewardPatch(t *testing.T) {
 		_, err = utxoView.ConnectBlock(blkToMine, txHashes, true, nil, uint64(chain.blockTip().Height+1))
 		require.NoError(t, err)
 	}
+}
+
+func TestConnectFailingTransaction(t *testing.T) {
+	require := require.New(t)
+	seed := int64(1011)
+	rand := rand.New(rand.NewSource(seed))
+
+	globalParams := _testGetDefaultGlobalParams()
+	feeMin := globalParams.MinimumNetworkFeeNanosPerKB
+	feeMax := uint64(10000)
+
+	chain, params, db := NewLowDifficultyBlockchain(t)
+	params.ForkHeights.BalanceModelBlockHeight = 1
+	params.ForkHeights.ProofOfStake2ConsensusCutoverBlockHeight = 1
+	params.ForkHeights.ProofOfStake1StateSetupBlockHeight = 1
+	params.EncoderMigrationHeights.ProofOfStake1StateSetupMigration.Height = 1
+	params.EncoderMigrationHeightsList = GetEncoderMigrationHeightsList(&params.ForkHeights)
+	oldParams := GlobalDeSoParams
+	GlobalDeSoParams = *params
+	mempool, miner := NewTestMiner(t, chain, params, true)
+	// Mine a few blocks to give the senderPkString some money.
+	_, err := miner.MineAndProcessSingleBlock(0 /*threadIndex*/, mempool)
+	require.NoError(err)
+	_, err = miner.MineAndProcessSingleBlock(0 /*threadIndex*/, mempool)
+	require.NoError(err)
+
+	m0PubBytes, _, _ := Base58CheckDecode(m0Pub)
+	m0PublicKeyBase58Check := Base58CheckEncode(m0PubBytes, false, params)
+
+	_, _, _ = _doBasicTransferWithViewFlush(
+		t, chain, db, params, senderPkString, m0PublicKeyBase58Check,
+		senderPrivString, 200000, 11)
+
+	blockHeight := chain.BlockTip().Height + 1
+	blockView, err := NewUtxoView(db, params, nil, nil)
+	require.NoError(err)
+	txn1 := _generateTestTxn(t, rand, feeMin, feeMax, m0PubBytes, m0Priv, 100, 0)
+	utxoOps, burnFee, utilityFee, err := blockView._connectFailingTransaction(txn1, blockHeight, true)
+	require.NoError(err)
+	require.Equal(1, len(utxoOps))
+	expectedBurnFee, expectedUtilityFee := _getBMFForTxn(txn1, globalParams)
+	require.Equal(expectedBurnFee, burnFee)
+	require.Equal(expectedUtilityFee, utilityFee)
+
+	err = blockView.FlushToDb(uint64(blockHeight))
+
+	// Also test updating the global params for FailingTransactionBMFMultiplierBasisPoints and FeeBucketGrowthRateBasisPoints.
+	testMeta := &TestMeta{
+		t:                 t,
+		chain:             chain,
+		params:            params,
+		db:                db,
+		mempool:           mempool,
+		miner:             miner,
+		savedHeight:       blockHeight,
+		feeRateNanosPerKb: uint64(201),
+	}
+	// Allow m0 to update global params.
+	params.ExtraRegtestParamUpdaterKeys[MakePkMapKey(m0PubBytes)] = true
+	{
+		// Set FailingTransactionBMFMultiplierBasisPoints=7000 or 70%.
+		_updateGlobalParamsEntryWithExtraData(
+			testMeta,
+			testMeta.feeRateNanosPerKb,
+			m0Pub,
+			m0Priv,
+			map[string][]byte{FailingTransactionBMFMultiplierBasisPointsKey: UintToBuf(7000)},
+		)
+	}
+	{
+		// Set FeeBucketGrowthRateBasisPoints=7000 or 70%.
+		_updateGlobalParamsEntryWithExtraData(
+			testMeta,
+			testMeta.feeRateNanosPerKb,
+			m0Pub,
+			m0Priv,
+			map[string][]byte{FeeBucketGrowthRateBasisPointsKey: UintToBuf(7000)},
+		)
+	}
+	blockView, err = NewUtxoView(db, params, nil, nil)
+	require.NoError(err)
+	newParams := blockView.GetCurrentGlobalParamsEntry()
+	require.Equal(uint64(7000), newParams.FailingTransactionBMFMultiplierBasisPoints)
+	require.Equal(uint64(7000), newParams.FeeBucketGrowthRateBasisPoints)
+
+	// Try connecting another failing transaction, and make sure the burn and utility fees are computed accurately.
+	txn2 := _generateTestTxn(t, rand, feeMin, feeMax, m0PubBytes, m0Priv, 100, 0)
+	utxoOps, burnFee, utilityFee, err = blockView._connectFailingTransaction(txn2, blockHeight, true)
+	require.NoError(err)
+	require.Equal(1, len(utxoOps))
+	expectedBurnFee, expectedUtilityFee = _getBMFForTxn(txn2, newParams)
+	require.Equal(expectedBurnFee, burnFee)
+	require.Equal(expectedUtilityFee, utilityFee)
+
+	err = blockView.FlushToDb(uint64(blockHeight))
+
+	GlobalDeSoParams = oldParams
+}
+
+func _getBMFForTxn(txn *MsgDeSoTxn, gp *GlobalParamsEntry) (_burnFee uint64, _utilityFee uint64) {
+	failingTransactionRate := NewFloat().SetUint64(gp.FailingTransactionBMFMultiplierBasisPoints)
+	failingTransactionRate.Quo(failingTransactionRate, NewFloat().SetUint64(10000))
+	failingTransactionFee, _ := NewFloat().Mul(failingTransactionRate, NewFloat().SetUint64(txn.TxnFeeNanos)).Uint64()
+	return computeBMF(failingTransactionFee)
 }

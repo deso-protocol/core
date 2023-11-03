@@ -3,10 +3,11 @@ package lib
 import (
 	"bytes"
 	"fmt"
+	"testing"
+
 	"github.com/btcsuite/btcd/btcec"
 	"github.com/pkg/errors"
 	"github.com/stretchr/testify/require"
-	"testing"
 )
 
 type AccessGroupTestData struct {
@@ -35,7 +36,6 @@ func TestBalanceModelAccessGroups(t *testing.T) {
 	setBalanceModelBlockHeights(t)
 
 	TestAccessGroup(t)
-	TestAccessGroupTxnWithDerivedKey(t)
 }
 
 func TestAccessGroup(t *testing.T) {
