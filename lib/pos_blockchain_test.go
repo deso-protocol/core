@@ -813,13 +813,13 @@ func TestGetLineageFromCommittedTip(t *testing.T) {
 	block.Header.Height = 2
 	ancestors, err = bc.getLineageFromCommittedTip(block)
 	require.Error(t, err)
-	require.Equal(t, err, RuleErrorAncestorHeightNotEqualChildHeightMinusOne)
+	require.Equal(t, err, RuleErrorParentBlockHeightNotSequentialWithChildBlockHeight)
 	// Revert block 2's height and set block's view to be <= block2's view
 	block.Header.Height = 3
 	block.Header.ProposedInView = 2
 	ancestors, err = bc.getLineageFromCommittedTip(block)
 	require.Error(t, err)
-	require.Equal(t, err, RuleErrorAncestorHasGreaterOrEqualView)
+	require.Equal(t, err, RuleErrorParentBlockHasViewGreaterOrEqualToChildBlock)
 }
 
 func TestValidateQC(t *testing.T) {

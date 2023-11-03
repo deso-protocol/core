@@ -24,8 +24,8 @@ func (bc *Blockchain) processBlockPoS(block *MsgDeSoBlock, currentView uint64, v
 	// committed block other than the committed tip, then we throw it away.
 	lineageFromCommittedTip, err := bc.getLineageFromCommittedTip(block)
 	if err == RuleErrorDoesNotExtendCommittedTip ||
-		err == RuleErrorAncestorHasGreaterOrEqualView ||
-		err == RuleErrorAncestorHeightNotEqualChildHeightMinusOne ||
+		err == RuleErrorParentBlockHasViewGreaterOrEqualToChildBlock ||
+		err == RuleErrorParentBlockHeightNotSequentialWithChildBlockHeight ||
 		err == RuleErrorAncestorBlockValidationFailed {
 		// In this case, the block extends a committed block that is NOT the tip
 		// block. We will never accept this block, so mark it as ValidateFailed.
@@ -513,10 +513,10 @@ func (bc *Blockchain) getLineageFromCommittedTip(block *MsgDeSoBlock) ([]*BlockN
 			return nil, RuleErrorAncestorBlockValidationFailed
 		}
 		if currentBlock.Header.ProposedInView >= prevView {
-			return nil, RuleErrorAncestorHasGreaterOrEqualView
+			return nil, RuleErrorParentBlockHasViewGreaterOrEqualToChildBlock
 		}
 		if uint64(currentBlock.Header.Height)+1 != prevHeight {
-			return nil, RuleErrorAncestorHeightNotEqualChildHeightMinusOne
+			return nil, RuleErrorParentBlockHeightNotSequentialWithChildBlockHeight
 		}
 		ancestors = append(ancestors, currentBlock)
 		currentHash = currentBlock.Header.PrevBlockHash
@@ -984,26 +984,26 @@ func (bc *Blockchain) getHighestCommittedBlock() (*BlockNode, int) {
 }
 
 const (
-	RuleErrorNilBlockHeader                            RuleError = "RuleErrorNilBlockHeader"
-	RuleErrorNilPrevBlockHash                          RuleError = "RuleErrorNilPrevBlockHash"
-	RuleErrorPoSBlockTstampNanoSecsTooOld              RuleError = "RuleErrorPoSBlockTstampNanoSecsTooOld"
-	RuleErrorPoSBlockTstampNanoSecsInFuture            RuleError = "RuleErrorPoSBlockTstampNanoSecsInFuture"
-	RuleErrorInvalidPoSBlockHeaderVersion              RuleError = "RuleErrorInvalidPoSBlockHeaderVersion"
-	RuleErrorNoTimeoutOrVoteQC                         RuleError = "RuleErrorNoTimeoutOrVoteQC"
-	RuleErrorBothTimeoutAndVoteQC                      RuleError = "RuleErrorBothTimeoutAndVoteQC"
-	RuleErrorTimeoutQCWithTransactions                 RuleError = "RuleErrorTimeoutQCWithTransactions"
-	RuleErrorMissingParentBlock                        RuleError = "RuleErrorMissingParentBlock"
-	RuleErrorMissingAncestorBlock                      RuleError = "RuleErrorMissingAncestorBlock"
-	RuleErrorDoesNotExtendCommittedTip                 RuleError = "RuleErrorDoesNotExtendCommittedTip"
-	RuleErrorAncestorBlockValidationFailed             RuleError = "RuleErrorAncestorBlockValidationFailed"
-	RuleErrorAncestorHasGreaterOrEqualView             RuleError = "RuleErrorAncestorHasGreaterOrEqualView"
-	RuleErrorAncestorHeightNotEqualChildHeightMinusOne RuleError = "RuleErrorAncestorHeightNotEqualChildHeightMinusOne"
-	RuleErrorNilMerkleRoot                             RuleError = "RuleErrorNilMerkleRoot"
-	RuleErrorInvalidMerkleRoot                         RuleError = "RuleErrorInvalidMerkleRoot"
-	RuleErrorNoTxnsWithMerkleRoot                      RuleError = "RuleErrorNoTxnsWithMerkleRoot"
-	RuleErrorInvalidProposerVotingPublicKey            RuleError = "RuleErrorInvalidProposerVotingPublicKey"
-	RuleErrorInvalidProposerPublicKey                  RuleError = "RuleErrorInvalidProposerPublicKey"
-	RuleErrorInvalidRandomSeedHash                     RuleError = "RuleErrorInvalidRandomSeedHash"
+	RuleErrorNilBlockHeader                                     RuleError = "RuleErrorNilBlockHeader"
+	RuleErrorNilPrevBlockHash                                   RuleError = "RuleErrorNilPrevBlockHash"
+	RuleErrorPoSBlockTstampNanoSecsTooOld                       RuleError = "RuleErrorPoSBlockTstampNanoSecsTooOld"
+	RuleErrorPoSBlockTstampNanoSecsInFuture                     RuleError = "RuleErrorPoSBlockTstampNanoSecsInFuture"
+	RuleErrorInvalidPoSBlockHeaderVersion                       RuleError = "RuleErrorInvalidPoSBlockHeaderVersion"
+	RuleErrorNoTimeoutOrVoteQC                                  RuleError = "RuleErrorNoTimeoutOrVoteQC"
+	RuleErrorBothTimeoutAndVoteQC                               RuleError = "RuleErrorBothTimeoutAndVoteQC"
+	RuleErrorTimeoutQCWithTransactions                          RuleError = "RuleErrorTimeoutQCWithTransactions"
+	RuleErrorMissingParentBlock                                 RuleError = "RuleErrorMissingParentBlock"
+	RuleErrorMissingAncestorBlock                               RuleError = "RuleErrorMissingAncestorBlock"
+	RuleErrorDoesNotExtendCommittedTip                          RuleError = "RuleErrorDoesNotExtendCommittedTip"
+	RuleErrorAncestorBlockValidationFailed                      RuleError = "RuleErrorAncestorBlockValidationFailed"
+	RuleErrorParentBlockHasViewGreaterOrEqualToChildBlock       RuleError = "RuleErrorParentBlockHasViewGreaterOrEqualToChildBlock"
+	RuleErrorParentBlockHeightNotSequentialWithChildBlockHeight RuleError = "RuleErrorParentBlockHeightNotSequentialWithChildBlockHeight"
+	RuleErrorNilMerkleRoot                                      RuleError = "RuleErrorNilMerkleRoot"
+	RuleErrorInvalidMerkleRoot                                  RuleError = "RuleErrorInvalidMerkleRoot"
+	RuleErrorNoTxnsWithMerkleRoot                               RuleError = "RuleErrorNoTxnsWithMerkleRoot"
+	RuleErrorInvalidProposerVotingPublicKey                     RuleError = "RuleErrorInvalidProposerVotingPublicKey"
+	RuleErrorInvalidProposerPublicKey                           RuleError = "RuleErrorInvalidProposerPublicKey"
+	RuleErrorInvalidRandomSeedHash                              RuleError = "RuleErrorInvalidRandomSeedHash"
 
 	RuleErrorInvalidPoSBlockHeight       RuleError = "RuleErrorInvalidPoSBlockHeight"
 	RuleErrorPoSBlockBeforeCutoverHeight RuleError = "RuleErrorPoSBlockBeforeCutoverHeight"
