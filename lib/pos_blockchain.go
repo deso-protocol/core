@@ -25,7 +25,8 @@ func (bc *Blockchain) processBlockPoS(block *MsgDeSoBlock, currentView uint64, v
 	lineageFromCommittedTip, err := bc.getLineageFromCommittedTip(block)
 	if err == RuleErrorDoesNotExtendCommittedTip ||
 		err == RuleErrorAncestorHasGreaterOrEqualView ||
-		err == RuleErrorAncestorHeightNotEqualChildHeightMinusOne {
+		err == RuleErrorAncestorHeightNotEqualChildHeightMinusOne ||
+		err == RuleErrorAncestorBlockValidationFailed {
 		// In this case, the block extends a committed block that is NOT the tip
 		// block. We will never accept this block, so mark it as ValidateFailed.
 		return false, false, nil, err
