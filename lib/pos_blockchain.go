@@ -1,13 +1,14 @@
 package lib
 
 import (
+	"math"
+	"time"
+
 	"github.com/deso-protocol/core/collections"
 	"github.com/deso-protocol/core/consensus"
 	"github.com/dgraph-io/badger/v3"
 	"github.com/golang/glog"
 	"github.com/pkg/errors"
-	"math"
-	"time"
 )
 
 // processBlockPoS runs the Fast-Hotstuff block connect and commit rule as follows:
@@ -18,12 +19,6 @@ import (
 //  4. try to apply the incoming block as the tip (performing reorgs as necessary). If it can't be applied, we exit here.
 //  5. Run the commit rule - If applicable, flushes the incoming block's grandparent to the DB
 func (bc *Blockchain) processBlockPoS(block *MsgDeSoBlock, currentView uint64, verifySignatures bool) (_success bool, _isOrphan bool, _missingBlockHashes []*BlockHash, _err error) {
-	// Start by pulling out the block hash.
-	blockHash, err := block.Header.Hash()
-	if err != nil {
-		return false, false, nil, errors.Wrap(err, "processBlockPoS: Problem hashing block: ")
-	}
-
 	// Get all the blocks between the current block and the committed tip. If the block
 	// is an orphan, then we store it without validating it. If the block extends from any
 	// committed block other than the committed tip, then we throw it away.
@@ -48,7 +43,7 @@ func (bc *Blockchain) processBlockPoS(block *MsgDeSoBlock, currentView uint64, v
 		// Step 2: Add it to the blockIndex and store it in Badger. This is handled by addBlockToBlockIndex
 
 		// Add to blockIndex with status STORED only.
-		if err = bc.storeBlockInBlockIndex(block); err != nil {
+		if _, err = bc.storeBlockInBlockIndex(block); err != nil {
 			return false, true, missingBlockHashes, errors.Wrap(err, "processBlockPoS: Problem adding block to block index: ")
 		}
 
@@ -57,99 +52,25 @@ func (bc *Blockchain) processBlockPoS(block *MsgDeSoBlock, currentView uint64, v
 		return false, true, missingBlockHashes, nil
 	}
 
-	// Make sure its parent is validated. If not, we need to validate it first by calling processBlockPoS.
-	// Note that if any other ancestor is not validated, calling processBlockPoS on the parent will
-	// end up calling processBlockPoS on all of its ancestors that aren't validated yet.
-	parentBlockNode, exists := bc.blockIndex[*block.Header.PrevBlockHash]
-	if !exists {
-		return false, false, nil, errors.New("processBlockPoS: Parent block not found in block index. This should never happen.")
-	}
-	if parentBlockNode.IsValidateFailed() {
-		// We'll never add this to the best chain because its parent is invalid.
-		// If its parent is ValidateFailed, we can update the block index with the block status ValidateFailed
-		if err = bc.storeValidateFailedBlockInBlockIndex(block); err != nil {
-			return false, false, nil, errors.Wrap(err, "processBlockPoS: Problem adding validate failed block to block index")
-		}
-		return false, false, nil, errors.New("processBlockPoS: block's parent failed validation: ")
-	}
-	if !parentBlockNode.IsValidated() {
-		blk, err := GetBlock(parentBlockNode.Hash, bc.db, bc.snapshot)
-		if err != nil {
-			return false, false, nil, errors.Wrapf(err, "processBlockPoS: Problem getting parent block %v", parentBlockNode.Hash)
-		}
-		_, _, _, err = bc.processBlockPoS(blk, currentView, verifySignatures)
-		if err != nil {
-			return false, false, nil, errors.Wrapf(err, "processBlockPoS: Problem processing parent block %v", parentBlockNode.Hash)
-		}
-	}
-
-	// At this point, we know that all the ancestors of this block have been successfully
-	// validated. That means we can now proceed with attempting to validate THIS block.
-
-	// Do all the sanity checks on the block.
-	// TODO: Check if err is for view > latest committed block view and <= latest uncommitted block.
-	// If so, we need to perform the rest of the validations and then add to our block index.
-	if err = bc.validateDeSoBlockPoS(block); err != nil {
-		// TODO: If validations fail, do we want to even bother storing the block? Are there any validations that
-		// wouldn't result in us wanting to mark the block as StatusBlockValidateFailed?
-		// If validations fail, we can update the block index with the block status ValidateFailed
-		if storeInBlockIndexErr := bc.storeValidateFailedBlockInBlockIndex(block); storeInBlockIndexErr != nil {
-			return false, false, nil, errors.Wrapf(err, "processBlockPoS: Problem adding validate failed block to block index: %v", storeInBlockIndexErr)
-		}
-		return false, false, nil, errors.Wrap(err, "processBlockPoS: block validation failed: ")
-	}
-
-	// We know the utxoView will be valid because we check that all ancestor blocks have been validated.
-	utxoView, err := bc.getUtxoViewAtBlockHash(*block.Header.PrevBlockHash)
 	if err != nil {
-		return false, false, nil, errors.Wrap(err, "processBlockPoS: Problem initializing UtxoView: ")
-	}
-	// Connect this block to the UtxoView.
-	txHashes := collections.Transform(block.Txns, func(txn *MsgDeSoTxn) *BlockHash {
-		return txn.Hash()
-	})
-	_, err = utxoView.ConnectBlock(block, txHashes, true, nil, block.Header.Height)
-	if err != nil {
-		// If it doesn't connect, do we want to mark it as ValidateFailed and store the block?
-		return false, false, nil, errors.Wrap(err, "processBlockPoS: Problem connecting block to UtxoView: ")
+		return false, false, _missingBlockHashes, errors.Wrap(err, "processBlockPoS: Problem getting lineage from committed tip: UNEXPECTED ERROR!!!")
 	}
 
-	validatorsByStake, err := utxoView.GetAllSnapshotValidatorSetEntriesByStake()
+	// TODO: Is there any error that would require special handling? If that's the case, we should
+	// probably push that logic in validateAndIndexBlockPoS anyway.
+	blockNode, err := bc.validateAndIndexBlockPoS(block)
 	if err != nil {
-		return false, false, nil, errors.Wrap(err, "processBlockPoS: Problem getting validator set: ")
+		return false, false, nil, errors.Wrap(err, "processBlockPoS: Problem validating block: ")
 	}
-	// TODO(diamondhands): I don't think the TODO below makes sense given the changes but take a look.
-	// TODO: If block belongs in the next epoch or it's from an epoch far ahead in the future, we may not be able to validate its QC at all.
-	// the validator set for that epoch may be entirely different.
-	// A couple of options on how to handle:
-	//   - Add utility to UtxoView to fetch the validator set given an arbitrary block height. If we can't fetch the
-	//     validator set for the block, then we reject it (even if it later turns out to be a valid block)
-	//   - Add block to the block index before QC validation such that even if we aren't able to fetch the validator
-	//     set for the block, we can at least store it locally.
-	// 2. Validate QC
-	if err = bc.validateQC(block, validatorsByStake); err != nil {
-		if storeInBlockIndexErr := bc.storeValidateFailedBlockInBlockIndex(block); storeInBlockIndexErr != nil {
-			return false, false, nil, errors.Wrapf(err, "processBlockPoS: Problem adding validate failed block to block index: %v", storeInBlockIndexErr)
-		}
-		return false, false, nil, errors.Wrap(err, "processBlockPoS: QC validation failed: ")
-	}
-
-	// 3. We can now add this block to the block index since we have performed
-	// all basic validations.
-	if err = bc.storeValidatedBlockInBlockIndex(block); err != nil {
-		return false, false, nil, errors.Wrap(err, "processBlockPoS: Problem adding block to block index: ")
-	}
-	newBlockNode, exists := bc.blockIndex[*blockHash]
-	if !exists {
-		return false, false, nil, errors.New("processBlockPoS: Block not found in block index after adding it. " +
-			"This should never happen.")
+	if !blockNode.IsValidated() {
+		return false, false, nil, errors.New("processBlockPoS: Block not validated after performing all validations. This should never happen")
 	}
 
 	// 4. Try to apply the incoming block as the new tip. This function will
 	// first perform any required reorgs and then determine if the incoming block
 	// extends the chain tip. If it does, it will apply the block to the best chain
 	// and appliedNewTip will be true and we can continue to running the commit rule.
-	appliedNewTip, err := bc.tryApplyNewTip(newBlockNode, currentView, lineageFromCommittedTip)
+	appliedNewTip, err := bc.tryApplyNewTip(blockNode, currentView, lineageFromCommittedTip)
 	if err != nil {
 		return false, false, nil, errors.Wrap(err, "processBlockPoS: Problem applying new tip: ")
 	}
@@ -167,9 +88,169 @@ func (bc *Blockchain) processBlockPoS(block *MsgDeSoBlock, currentView uint64, v
 	return true, false, nil, nil
 }
 
-// validateDeSoBlockPoS performs all basic validations on a block as it relates to
+// validateAndIndexBlockPoS performs all validation checks for a given block and adds it to the block index with
+// the appropriate status.
+//  1. If the block is already VALIDATE_FAILED, we return the BlockNode as-is without perform further validations and
+//     throw an error.
+//  2. If the block is already VALIDATED, we return the BlockNode as-is without performing further validations and no error.
+//  3. We check if its parent is VALIDATE_FAILED, if so we add the block to the block index with status VALIDATE_FAILED
+//     and throw an error.
+//  4. If its parent is NOT VALIDATED and NOT VALIDATE_FAILED, we recursively call this function on its parent.
+//  5. If after calling this function on its parent, the parent is VALIDATE_FAILED, we add the block to the block index
+//     with status VALIDATE_FAILED and throw an error.
+//  6. If after calling this function on its parent, the parent is VALIDATED, we perform all other validations on the block.
+//
+// The recursive function's invariant is described as follows:
+//   - Base case: If block is VALIDATED or VALIDATE_FAILED, return the BlockNode as-is.
+//   - Recursive case: If the block is not VALIDATED or VALIDATE_FAILED in the blockIndex, we will perform all
+//     validations and add the block to the block index with the appropriate status (VALIDATED OR VALIDATE_FAILED) and
+//     return the new BlockNode.
+//   - Error case: Something goes wrong that doesn't result in the block being marked VALIDATE or VALIDATE_FAILED. In
+//     this case, we will add the block to the block index with status STORED and return the BlockNode.
+func (bc *Blockchain) validateAndIndexBlockPoS(block *MsgDeSoBlock) (*BlockNode, error) {
+	blockHash, err := block.Header.Hash()
+	if err != nil {
+		return nil, errors.Wrapf(err, "validateAndIndexBlockPoS: Problem hashing block %v", block)
+	}
+
+	// Base case - Check if the block is validated or validate failed. If so, we can return early.
+	blockNode, exists := bc.blockIndex[*blockHash]
+	if exists && (blockNode.IsValidateFailed() || blockNode.IsValidated()) {
+		return blockNode, nil
+	}
+
+	// Run the validation for the parent and update the block index with the parent's status. We first
+	// check if the parent has a cached status. If so, we use the cached status. Otherwise, we run
+	// the full validation algorithm on it, then index and an use the result.
+	parentBlockNode, err := bc.validatePreviouslyIndexedBlockPoS(block.Header.PrevBlockHash)
+	if err != nil {
+		return nil, err
+	}
+
+	// Here's where it gets a little tricky. If the parent has a status of ValidateFailed, then we know we store
+	// this block as ValidateFailed. If the parent is not ValidateFailed, we ONLY store the block and move on.
+	// We don't want to store it as ValidateFailed because we don't know if it's actually invalid.
+	if parentBlockNode.IsValidateFailed() {
+		blockNode, innerErr := bc.storeValidateFailedBlockInBlockIndex(block)
+		if innerErr != nil {
+			return nil, errors.Wrapf(err, "validateAndIndexBlockPoS: Problem adding validate failed block to block index: %v", innerErr)
+		}
+		return blockNode, nil
+	}
+
+	// If the parent block still has a Stored status, it means that we weren't able to validate it
+	// despite trying. The current block will also be stored as a Stored block.
+	if !parentBlockNode.IsValidated() {
+		blockNode, innerErr := bc.storeBlockInBlockIndex(block)
+		if innerErr != nil {
+			return nil, errors.Wrapf(err, "validateAndIndexBlockPoS: Problem adding block to block index: %v", innerErr)
+		}
+		return blockNode, nil
+	}
+
+	// At this point, we know the parent block is validated. We can now perform all other validations
+	// on the current block. First we store the block in the block index.
+	blockNode, err = bc.storeBlockInBlockIndex(block)
+	if err != nil {
+		return nil, errors.Wrapf(err, "validateAndIndexBlockPoS: Problem adding block to block index: %v", err)
+	}
+
+	// Check if the block is properly formed and passes all basic validations.
+	if err = bc.isValidBlockPoS(block); err != nil {
+		blockNode, innerErr := bc.storeValidateFailedBlockInBlockIndex(block)
+		if innerErr != nil {
+			return nil, errors.Wrapf(err, "validateAndIndexBlockPoS: Problem adding validate failed block to block index: %v", innerErr)
+		}
+		return blockNode, nil
+	}
+
+	// We expect the utxoView for the parent block to be valid because we check that all ancestor blocks have
+	// been validated.
+	utxoView, err := bc.getUtxoViewAtBlockHash(*block.Header.PrevBlockHash)
+	if err != nil {
+		// This should never happen. If the parent is validated and extends from the tip, then we should
+		// be able to build a UtxoView for it. This failure can only happen due to transient or badger issues.
+		// We return the block node as-is as a best effort thing.
+		return blockNode, nil
+	}
+	// A couple of options on how to handle:
+	//   - Add utility to UtxoView to fetch the validator set given an arbitrary block height. If we can't fetch the
+	//     validator set for the block, then we reject it (even if it later turns out to be a valid block)
+	//   - Add block to the block index before QC validation such that even if we aren't able to fetch the validator
+	//     set for the block, we can at least store it locally.
+	// 2. Validate QC
+	validatorsByStake, err := utxoView.GetAllSnapshotValidatorSetEntriesByStake()
+	if err != nil {
+		// This should never happen. If the parent is validated and extends from the tip, then we should
+		// be able to fetch the validator set at its block height for it. This failure can only happen due
+		// to transient badger issues. We return the block node as-is as a best effort thing.
+		return blockNode, nil
+	}
+
+	// Validate the block's QC. If it's invalid, we store it as ValidateFailed.
+	if err = bc.isValidPoSQuorumCertificate(block, validatorsByStake); err != nil {
+		blockNode, innerErr := bc.storeValidateFailedBlockInBlockIndex(block)
+		if innerErr != nil {
+			return nil, errors.Wrapf(err, "validateAndIndexBlockPoS: Problem adding validate failed block to block index: %v", innerErr)
+		}
+		return blockNode, nil
+	}
+
+	// Connect this block to the parent block's UtxoView.
+	txHashes := collections.Transform(block.Txns, func(txn *MsgDeSoTxn) *BlockHash {
+		return txn.Hash()
+	})
+
+	// If we fail to connect the block, then it means the block is invalid. We should store it as ValidateFailed.
+	if _, err = utxoView.ConnectBlock(block, txHashes, true, nil, block.Header.Height); err != nil {
+		// If it doesn't connect, we want to mark it as ValidateFailed.
+		blockNode, innerErr := bc.storeValidateFailedBlockInBlockIndex(block)
+		if innerErr != nil {
+			return nil, errors.Wrapf(err, "validateAndIndexBlockPoS: Problem adding validate failed block to block index: %v", innerErr)
+		}
+		return blockNode, nil
+	}
+
+	// We can now add this block to the block index since we have performed all basic validations.
+	blockNode, err = bc.storeValidatedBlockInBlockIndex(block)
+	if err != nil {
+		return nil, errors.Wrap(err, "validateAndIndexBlockPoS: Problem adding block to block index: ")
+	}
+	return blockNode, nil
+}
+
+// validatePreviouslyIndexedBlockPoS is a helper function that takes in a block hash for a previously
+// cached block, and runs the validateAndIndexBlockPoS algorithm on it. It returns the resulting BlockNode.
+func (bc *Blockchain) validatePreviouslyIndexedBlockPoS(blockHash *BlockHash) (*BlockNode, error) {
+	// Check if the block is already in the block index. If so, we check its current status first.
+	blockNode, exists := bc.blockIndex[*blockHash]
+	if !exists {
+		// We should never really hit this if the block has already been cached in the block index first.
+		// We check here anyway to be safe.
+		return nil, errors.New("validatePreviouslyIndexedBlockPoS: Block not found in block index. This should never happen.")
+	}
+
+	// If the block has already been validated or had validation failed, then we can return early.
+	if blockNode.IsValidateFailed() || blockNode.IsValidated() {
+		return blockNode, nil
+	}
+
+	// At this point we know that we have the block node in the index, but it hasn't gone through full
+	// validations yet. We fetch the block from the DB and run the full validation algorithm on it.
+	block, err := GetBlock(blockHash, bc.db, bc.snapshot)
+	if err != nil {
+		// If we can't fetch the block from the DB, we should return an error. This should never happen
+		// provided the block was cached in the block index and stored in the DB first.
+		return nil, errors.Wrapf(err, "validatePreviouslyIndexedBlockPoS: Problem fetching block from DB")
+	}
+
+	// We run the full validation algorithm on the block.
+	return bc.validateAndIndexBlockPoS(block)
+}
+
+// isValidBlockPoS performs all basic validations on a block as it relates to
 // the Blockchain struct.
-func (bc *Blockchain) validateDeSoBlockPoS(desoBlock *MsgDeSoBlock) error {
+func (bc *Blockchain) isValidBlockPoS(desoBlock *MsgDeSoBlock) error {
 	// Surface Level validation of the block
 	if err := bc.validateBlockIntegrity(desoBlock); err != nil {
 		return err
@@ -392,9 +473,9 @@ func (bc *Blockchain) validateBlockLeader(desoBlock *MsgDeSoBlock) error {
 	return nil
 }
 
-// validateQC validates that the QC of this block is valid, meaning a super majority
+// isValidPoSQuorumCertificate validates that the QC of this block is valid, meaning a super majority
 // of the validator set has voted (or timed out). Assumes ValidatorEntry list is sorted.
-func (bc *Blockchain) validateQC(desoBlock *MsgDeSoBlock, validatorSet []*ValidatorEntry) error {
+func (bc *Blockchain) isValidPoSQuorumCertificate(desoBlock *MsgDeSoBlock, validatorSet []*ValidatorEntry) error {
 	validators := toConsensusValidators(validatorSet)
 	if !desoBlock.Header.ValidatorsTimeoutAggregateQC.isEmpty() {
 		if !consensus.IsValidSuperMajorityAggregateQuorumCertificate(desoBlock.Header.ValidatorsTimeoutAggregateQC, validators) {
@@ -456,76 +537,88 @@ func (bc *Blockchain) getOrCreateBlockNodeFromBlockIndex(block *MsgDeSoBlock) (*
 // storeBlockInBlockIndex upserts the blocks into the in-memory block index and updates its status to
 // StatusBlockStored. It also writes the block to the block index in badger
 // by calling upsertBlockAndBlockNodeToDB.
-func (bc *Blockchain) storeBlockInBlockIndex(block *MsgDeSoBlock) error {
+func (bc *Blockchain) storeBlockInBlockIndex(block *MsgDeSoBlock) (*BlockNode, error) {
 	blockNode, err := bc.getOrCreateBlockNodeFromBlockIndex(block)
 	if err != nil {
-		return errors.Wrapf(err, "storeBlockInBlockIndex: Problem getting or creating block node")
+		return nil, errors.Wrapf(err, "storeBlockInBlockIndex: Problem getting or creating block node")
 	}
-	// We should throw an error if the BlockNode is already Stored.
+	// If the block is stored, then this is a no-op.
 	if blockNode.IsStored() {
-		return errors.New("storeBlockInBlockIndex: BlockNode is already stored")
+		return blockNode, nil
 	}
 	blockNode.Status |= StatusBlockStored
-	return bc.upsertBlockAndBlockNodeToDB(block, blockNode, true)
+	// If the DB update fails, then we should return an error.
+	if err = bc.upsertBlockAndBlockNodeToDB(block, blockNode, true); err != nil {
+		return nil, errors.Wrapf(err, "storeBlockInBlockIndex: Problem upserting block and block node to DB")
+	}
+	return blockNode, nil
 }
 
 // storeValidatedBlockInBlockIndex upserts the blocks into the in-memory block index and updates its status to
 // StatusBlockValidated. If it does not have the status StatusBlockStored already, we add that as we will
 // store the block in the DB after updating its status.  It also writes the block to the block index in badger
 // by calling upsertBlockAndBlockNodeToDB.
-func (bc *Blockchain) storeValidatedBlockInBlockIndex(block *MsgDeSoBlock) error {
+func (bc *Blockchain) storeValidatedBlockInBlockIndex(block *MsgDeSoBlock) (*BlockNode, error) {
 	blockNode, err := bc.getOrCreateBlockNodeFromBlockIndex(block)
 	if err != nil {
-		return errors.Wrapf(err, "storeValidatedBlockInBlockIndex: Problem getting or creating block node")
+		return nil, errors.Wrapf(err, "storeValidatedBlockInBlockIndex: Problem getting or creating block node")
 	}
-	// We should throw an error if the BlockNode is already Validated.
+	// If the block is validated, then this is a no-op.
 	if blockNode.IsValidated() {
-		return errors.New("storeValidatedBlockInBlockIndex: BlockNode is already validated")
+		return blockNode, nil
 	}
 	blockNode.Status |= StatusBlockValidated
 	// If the BlockNode is not already stored, we should set its status to stored.
 	if !blockNode.IsStored() {
 		blockNode.Status |= StatusBlockStored
 	}
-	return bc.upsertBlockAndBlockNodeToDB(block, blockNode, true)
+	// If the DB update fails, then we should return an error.
+	if err = bc.upsertBlockAndBlockNodeToDB(block, blockNode, true); err != nil {
+		return nil, errors.Wrapf(err, "storeValidatedBlockInBlockIndex: Problem upserting block and block node to DB")
+	}
+	return blockNode, nil
 }
 
 // storeValidateFailedBlockInBlockIndex upserts the blocks into the in-memory block index and updates its status to
 // StatusBlockValidateFailed. If it does not have the status StatusBlockStored already, we add that as we will
 // store the block in the DB after updating its status.  It also writes the block to the block index in badger
 // by calling upsertBlockAndBlockNodeToDB.
-func (bc *Blockchain) storeValidateFailedBlockInBlockIndex(block *MsgDeSoBlock) error {
+func (bc *Blockchain) storeValidateFailedBlockInBlockIndex(block *MsgDeSoBlock) (*BlockNode, error) {
 	blockNode, err := bc.getOrCreateBlockNodeFromBlockIndex(block)
 	if err != nil {
-		return errors.Wrapf(err, "storeValidateFailedBlockInBlockIndex: Problem getting or creating block node")
+		return nil, errors.Wrapf(err, "storeValidateFailedBlockInBlockIndex: Problem getting or creating block node")
 	}
-	// We should throw an error if the BlockNode is already Validate Failed.
+	// If the block has had validation failed, then this is a no-op.
 	if blockNode.IsValidateFailed() {
-		return errors.New("storeValidateFailedBlockInBlockIndex: BlockNode is already validate failed")
+		return blockNode, nil
 	}
 	// We should throw an error if the BlockNode is already Validated
 	if blockNode.IsValidated() {
-		return errors.New("storeValidateFailedBlockInBlockIndex: can't set BlockNode to validate failed after it's already validated")
+		return nil, errors.New("storeValidateFailedBlockInBlockIndex: can't set BlockNode to validate failed after it's already validated")
 	}
 	blockNode.Status |= StatusBlockValidateFailed
 	// If the BlockNode is not already stored, we should set it to stored.
 	if !blockNode.IsStored() {
 		blockNode.Status |= StatusBlockStored
 	}
-	return bc.upsertBlockAndBlockNodeToDB(block, blockNode, false)
+	// If the DB update fails, then we should return an error.
+	if err = bc.upsertBlockAndBlockNodeToDB(block, blockNode, false); err != nil {
+		return nil, errors.Wrapf(err, "storeValidateFailedBlockInBlockIndex: Problem upserting block and block node to DB")
+	}
+	return blockNode, nil
 }
 
 // storeCommittedBlockInBlockIndex upserts the blocks into the in-memory block index and updates its status to
 // StatusBlockCommitted. If the BlockNode does not have StatusBlockValidated and StatusBlockStored statuses,
 // we also add those. It also writes the block to the block index in badger by calling upsertBlockAndBlockNodeToDB.
-func (bc *Blockchain) storeCommittedBlockInBlockIndex(block *MsgDeSoBlock) error {
+func (bc *Blockchain) storeCommittedBlockInBlockIndex(block *MsgDeSoBlock) (*BlockNode, error) {
 	blockNode, err := bc.getOrCreateBlockNodeFromBlockIndex(block)
 	if err != nil {
-		return errors.Wrapf(err, "storeCommittedBlockInBlockIndex: Problem getting or creating block node")
+		return nil, errors.Wrapf(err, "storeCommittedBlockInBlockIndex: Problem getting or creating block node")
 	}
-	// We should throw an error if the BlockNode is already Committed.
+	// If the block is committed, then this is a no-op.
 	if blockNode.IsCommitted() {
-		return errors.New("storeCommittedBlockInBlockIndex: BlockNode is already committed")
+		return blockNode, nil
 	}
 	blockNode.Status |= StatusBlockCommitted
 	if !blockNode.IsValidated() {
@@ -534,8 +627,11 @@ func (bc *Blockchain) storeCommittedBlockInBlockIndex(block *MsgDeSoBlock) error
 	if !blockNode.IsStored() {
 		blockNode.Status |= StatusBlockStored
 	}
-	// Do we want any side effects here or nah?
-	return bc.upsertBlockAndBlockNodeToDB(block, blockNode, true)
+	// If the DB update fails, then we should return an error.
+	if err = bc.upsertBlockAndBlockNodeToDB(block, blockNode, true); err != nil {
+		return nil, errors.Wrapf(err, "storeCommittedBlockInBlockIndex: Problem upserting block and block node to DB")
+	}
+	return blockNode, nil
 }
 
 // upsertBlockAndBlockNodeToDB writes the BlockNode to the blockIndex in badger and writes the full block
@@ -561,6 +657,10 @@ func (bc *Blockchain) upsertBlockAndBlockNodeToDB(block *MsgDeSoBlock, blockNode
 				return errors.Wrapf(innerErr, "upsertBlockAndBlockNodeToDB: Problem calling PutBlock")
 			}
 		}
+
+		// TODO: if storeFullBlock = false, then we should probably remove the block from the DB? This can
+		// happen if we had a block stored in the DB but then determined that it would have failed validation.
+		// We would need to evict the block from the DB in that case.
 
 		// Store the new block's node in our node index in the db under the
 		//   <height uin32, blockHash BlockHash> -> <node info>

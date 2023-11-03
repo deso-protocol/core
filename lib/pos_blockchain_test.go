@@ -345,13 +345,10 @@ func TestUpsertBlockAndBlockNodeToDB(t *testing.T) {
 		},
 		TxnConnectStatusByIndex: bitset.NewBitset(),
 	}
-	err = bc.storeCommittedBlockInBlockIndex(block)
+	blockNode, err := bc.storeCommittedBlockInBlockIndex(block)
 	require.Nil(t, err)
 	newHash, err := block.Hash()
 	require.NoError(t, err)
-	// Check the block index
-	blockNode, exists := bc.blockIndex[*newHash]
-	require.True(t, exists)
 	require.True(t, bytes.Equal(blockNode.Hash[:], newHash[:]))
 	require.True(t, blockNode.IsStored())
 
@@ -521,13 +518,10 @@ func TestAddBlockToBlockIndexAndUncommittedBlocks(t *testing.T) {
 		TxnConnectStatusByIndex: bitset.NewBitset(),
 	}
 
-	err = bc.storeBlockInBlockIndex(block)
+	blockNode, err := bc.storeBlockInBlockIndex(block)
 	require.NoError(t, err)
 	newHash, err := block.Hash()
 	require.NoError(t, err)
-	// Check the block index
-	blockNode, exists := bc.blockIndex[*newHash]
-	require.True(t, exists)
 	require.True(t, bytes.Equal(blockNode.Hash[:], newHash[:]))
 	require.Equal(t, blockNode.Height, uint32(2))
 	require.True(t, blockNode.IsStored())
@@ -543,7 +537,7 @@ func TestAddBlockToBlockIndexAndUncommittedBlocks(t *testing.T) {
 	// If we're missing a field in the header, we should get an error
 	// as we can't compute the hash.
 	block.Header.ProposerPublicKey = nil
-	err = bc.storeBlockInBlockIndex(block)
+	_, err = bc.storeBlockInBlockIndex(block)
 	require.Error(t, err)
 }
 
@@ -831,7 +825,7 @@ func TestValidateQC(t *testing.T) {
 		},
 	}
 	// Empty QC for both vote and timeout should fail
-	err := bc.validateQC(desoBlock, validatorSet)
+	err := bc.isValidPoSQuorumCertificate(desoBlock, validatorSet)
 	require.Error(t, err)
 	require.Equal(t, err, RuleErrorInvalidVoteQC)
 
@@ -853,11 +847,11 @@ func TestValidateQC(t *testing.T) {
 		},
 	}
 	desoBlock.Header.ValidatorsVoteQC = voteQC
-	err = bc.validateQC(desoBlock, validatorSet)
+	err = bc.isValidPoSQuorumCertificate(desoBlock, validatorSet)
 	require.NoError(t, err)
 
 	// Empty validator set should fail
-	err = bc.validateQC(desoBlock, []*ValidatorEntry{})
+	err = bc.isValidPoSQuorumCertificate(desoBlock, []*ValidatorEntry{})
 	require.Error(t, err)
 	require.Equal(t, err, RuleErrorInvalidVoteQC)
 
@@ -865,13 +859,13 @@ func TestValidateQC(t *testing.T) {
 	{
 		// Zero stake amount
 		validatorSet[0].TotalStakeAmountNanos = uint256.NewInt().SetUint64(0)
-		err = bc.validateQC(desoBlock, validatorSet)
+		err = bc.isValidPoSQuorumCertificate(desoBlock, validatorSet)
 		require.Error(t, err)
 		require.Equal(t, err, RuleErrorInvalidVoteQC)
 
 		// Nil stake amount
 		validatorSet[0].TotalStakeAmountNanos = nil
-		err = bc.validateQC(desoBlock, validatorSet)
+		err = bc.isValidPoSQuorumCertificate(desoBlock, validatorSet)
 		require.Error(t, err)
 		require.Equal(t, err, RuleErrorInvalidVoteQC)
 
@@ -879,14 +873,14 @@ func TestValidateQC(t *testing.T) {
 		validatorSet[0].TotalStakeAmountNanos = uint256.NewInt().SetUint64(3)
 		// Nil voting public key
 		validatorSet[0].VotingPublicKey = nil
-		err = bc.validateQC(desoBlock, validatorSet)
+		err = bc.isValidPoSQuorumCertificate(desoBlock, validatorSet)
 		require.Error(t, err)
 		require.Equal(t, err, RuleErrorInvalidVoteQC)
 
 		// Reset voting public key
 		validatorSet[0].VotingPublicKey = m1VotingPrivateKey.PublicKey()
 		// Nil validator entry
-		err = bc.validateQC(desoBlock, append(validatorSet, nil))
+		err = bc.isValidPoSQuorumCertificate(desoBlock, append(validatorSet, nil))
 		require.Error(t, err)
 		require.Equal(t, err, RuleErrorInvalidVoteQC)
 	}
@@ -895,41 +889,41 @@ func TestValidateQC(t *testing.T) {
 		// Malformed vote QC should fail
 		// Nil vote QC
 		desoBlock.Header.ValidatorsVoteQC = nil
-		err = bc.validateQC(desoBlock, validatorSet)
+		err = bc.isValidPoSQuorumCertificate(desoBlock, validatorSet)
 		require.Error(t, err)
 		require.Equal(t, err, RuleErrorInvalidVoteQC)
 
 		// View is 0
 		desoBlock.Header.ValidatorsVoteQC = voteQC
 		voteQC.ProposedInView = 0
-		err = bc.validateQC(desoBlock, validatorSet)
+		err = bc.isValidPoSQuorumCertificate(desoBlock, validatorSet)
 		require.Error(t, err)
 		require.Equal(t, err, RuleErrorInvalidVoteQC)
 
 		// Nil block hash
 		voteQC.ProposedInView = 6
 		voteQC.BlockHash = nil
-		err = bc.validateQC(desoBlock, validatorSet)
+		err = bc.isValidPoSQuorumCertificate(desoBlock, validatorSet)
 		require.Error(t, err)
 		require.Equal(t, err, RuleErrorInvalidVoteQC)
 
 		// Nil signers list
 		voteQC.ValidatorsVoteAggregatedSignature.SignersList = nil
-		err = bc.validateQC(desoBlock, validatorSet)
+		err = bc.isValidPoSQuorumCertificate(desoBlock, validatorSet)
 		require.Error(t, err)
 		require.Equal(t, err, RuleErrorInvalidVoteQC)
 
 		// Nil Signature
 		voteQC.ValidatorsVoteAggregatedSignature.SignersList = signersList1And2
 		voteQC.ValidatorsVoteAggregatedSignature.Signature = nil
-		err = bc.validateQC(desoBlock, validatorSet)
+		err = bc.isValidPoSQuorumCertificate(desoBlock, validatorSet)
 		require.Error(t, err)
 		require.Equal(t, err, RuleErrorInvalidVoteQC)
 
 		// Nil aggregate signature
 		voteQC.BlockHash = hash1
 		voteQC.ValidatorsVoteAggregatedSignature = nil
-		err = bc.validateQC(desoBlock, validatorSet)
+		err = bc.isValidPoSQuorumCertificate(desoBlock, validatorSet)
 		require.Error(t, err)
 		require.Equal(t, err, RuleErrorInvalidVoteQC)
 		// Reset the ValidatorsVoteAggregatedSignature
@@ -943,21 +937,21 @@ func TestValidateQC(t *testing.T) {
 		// No supermajority in vote QC
 		voteQC.ValidatorsVoteAggregatedSignature.SignersList = bitset.NewBitset().FromBytes([]byte{0x1}) // 0b0001, which represents validator 1
 		voteQC.ValidatorsVoteAggregatedSignature.Signature = vote1Signature
-		err = bc.validateQC(desoBlock, validatorSet)
+		err = bc.isValidPoSQuorumCertificate(desoBlock, validatorSet)
 		require.Error(t, err)
 		require.Equal(t, err, RuleErrorInvalidVoteQC)
 	}
 	{
 		// Only having signature for validator 1 should fail even if signers list has validator 2
 		voteQC.ValidatorsVoteAggregatedSignature.SignersList = bitset.NewBitset().FromBytes([]byte{0x3}) // 0b0010, which represents validator 1 and 2
-		err = bc.validateQC(desoBlock, validatorSet)
+		err = bc.isValidPoSQuorumCertificate(desoBlock, validatorSet)
 		require.Error(t, err)
 		require.Equal(t, err, RuleErrorInvalidVoteQC)
 
 		// Having 1 and 3 in signers list, but including signature for 2 should fail
 		voteQC.ValidatorsVoteAggregatedSignature.SignersList = bitset.NewBitset().Set(0, true).Set(2, true) // represents validator 1 and 3
 		voteQC.ValidatorsVoteAggregatedSignature.Signature = aggregateSig
-		err = bc.validateQC(desoBlock, validatorSet)
+		err = bc.isValidPoSQuorumCertificate(desoBlock, validatorSet)
 		require.Error(t, err)
 		require.Equal(t, err, RuleErrorInvalidVoteQC)
 
@@ -989,7 +983,7 @@ func TestValidateQC(t *testing.T) {
 	desoBlock.Header.ValidatorsVoteQC = nil
 	// Set the timeout qc to the timeout qc constructed above
 	desoBlock.Header.ValidatorsTimeoutAggregateQC = timeoutQC
-	err = bc.validateQC(desoBlock, validatorSet)
+	err = bc.isValidPoSQuorumCertificate(desoBlock, validatorSet)
 	require.NoError(t, err)
 
 	{
@@ -998,55 +992,55 @@ func TestValidateQC(t *testing.T) {
 		// timeout QC is interpreted as empty
 		// View = 0
 		timeoutQC.TimedOutView = 0
-		err = bc.validateQC(desoBlock, validatorSet)
+		err = bc.isValidPoSQuorumCertificate(desoBlock, validatorSet)
 		require.Error(t, err)
 		require.Equal(t, err, RuleErrorInvalidVoteQC)
 
 		// Nil high QC
 		timeoutQC.TimedOutView = 6
 		timeoutQC.ValidatorsHighQC = nil
-		err = bc.validateQC(desoBlock, validatorSet)
+		err = bc.isValidPoSQuorumCertificate(desoBlock, validatorSet)
 		require.Error(t, err)
 		require.Equal(t, err, RuleErrorInvalidVoteQC)
 
 		// High QC has view of 0
 		timeoutQC.ValidatorsHighQC = voteQC
 		timeoutQC.ValidatorsHighQC.ProposedInView = 0
-		err = bc.validateQC(desoBlock, validatorSet)
+		err = bc.isValidPoSQuorumCertificate(desoBlock, validatorSet)
 		require.Error(t, err)
 		require.Equal(t, err, RuleErrorInvalidVoteQC)
 
 		// No high QC views
 		timeoutQC.ValidatorsHighQC.ProposedInView = 6
 		timeoutQC.ValidatorsTimeoutHighQCViews = []uint64{}
-		err = bc.validateQC(desoBlock, validatorSet)
+		err = bc.isValidPoSQuorumCertificate(desoBlock, validatorSet)
 		require.Error(t, err)
 		require.Equal(t, err, RuleErrorInvalidVoteQC)
 
 		// Nil high QC block hash
 		timeoutQC.ValidatorsTimeoutHighQCViews = []uint64{5, 4}
 		timeoutQC.ValidatorsHighQC.BlockHash = nil
-		err = bc.validateQC(desoBlock, validatorSet)
+		err = bc.isValidPoSQuorumCertificate(desoBlock, validatorSet)
 		require.Error(t, err)
 		require.Equal(t, err, RuleErrorInvalidVoteQC)
 
 		// Nil high QC signers list
 		timeoutQC.ValidatorsHighQC.BlockHash = hash1
 		timeoutQC.ValidatorsHighQC.ValidatorsVoteAggregatedSignature.SignersList = nil
-		err = bc.validateQC(desoBlock, validatorSet)
+		err = bc.isValidPoSQuorumCertificate(desoBlock, validatorSet)
 		require.Error(t, err)
 		require.Equal(t, err, RuleErrorInvalidVoteQC)
 
 		// Nil high QC signature
 		timeoutQC.ValidatorsHighQC.ValidatorsVoteAggregatedSignature.SignersList = signersList1And2
 		timeoutQC.ValidatorsHighQC.ValidatorsVoteAggregatedSignature.Signature = nil
-		err = bc.validateQC(desoBlock, validatorSet)
+		err = bc.isValidPoSQuorumCertificate(desoBlock, validatorSet)
 		require.Error(t, err)
 		require.Equal(t, err, RuleErrorInvalidVoteQC)
 
 		// Nil High QC Aggregated signature
 		timeoutQC.ValidatorsHighQC.ValidatorsVoteAggregatedSignature = nil
-		err = bc.validateQC(desoBlock, validatorSet)
+		err = bc.isValidPoSQuorumCertificate(desoBlock, validatorSet)
 		require.Error(t, err)
 		require.Equal(t, err, RuleErrorInvalidVoteQC)
 
@@ -1060,13 +1054,13 @@ func TestValidateQC(t *testing.T) {
 		// Invalid validator set tests
 		// Zero stake amount
 		validatorSet[0].TotalStakeAmountNanos = uint256.NewInt().SetUint64(0)
-		err = bc.validateQC(desoBlock, validatorSet)
+		err = bc.isValidPoSQuorumCertificate(desoBlock, validatorSet)
 		require.Error(t, err)
 		require.Equal(t, err, RuleErrorInvalidTimeoutQC)
 
 		// Nil stake amount
 		validatorSet[0].TotalStakeAmountNanos = nil
-		err = bc.validateQC(desoBlock, validatorSet)
+		err = bc.isValidPoSQuorumCertificate(desoBlock, validatorSet)
 		require.Error(t, err)
 		require.Equal(t, err, RuleErrorInvalidTimeoutQC)
 
@@ -1074,14 +1068,14 @@ func TestValidateQC(t *testing.T) {
 		validatorSet[0].TotalStakeAmountNanos = uint256.NewInt().SetUint64(3)
 		// Nil voting public key
 		validatorSet[0].VotingPublicKey = nil
-		err = bc.validateQC(desoBlock, validatorSet)
+		err = bc.isValidPoSQuorumCertificate(desoBlock, validatorSet)
 		require.Error(t, err)
 		require.Equal(t, err, RuleErrorInvalidTimeoutQC)
 
 		// Reset voting public key
 		validatorSet[0].VotingPublicKey = m1VotingPrivateKey.PublicKey()
 		// Nil validator entry
-		err = bc.validateQC(desoBlock, append(validatorSet, nil))
+		err = bc.isValidPoSQuorumCertificate(desoBlock, append(validatorSet, nil))
 		require.Error(t, err)
 		require.Equal(t, err, RuleErrorInvalidTimeoutQC)
 	}
@@ -1090,7 +1084,7 @@ func TestValidateQC(t *testing.T) {
 		// No supermajority test
 		timeoutQC.ValidatorsTimeoutAggregatedSignature.SignersList = bitset.NewBitset().FromBytes([]byte{0x1}) // 0b0001, which represents validator 1
 		timeoutQC.ValidatorsTimeoutAggregatedSignature.Signature = timeout1Signature
-		err = bc.validateQC(desoBlock, validatorSet)
+		err = bc.isValidPoSQuorumCertificate(desoBlock, validatorSet)
 		require.Error(t, err)
 		require.Equal(t, err, RuleErrorInvalidTimeoutQC)
 	}
@@ -1098,14 +1092,14 @@ func TestValidateQC(t *testing.T) {
 	{
 		// Only having signature for validator 1 should fail even if signers list has validator 2
 		timeoutQC.ValidatorsTimeoutAggregatedSignature.SignersList = bitset.NewBitset().FromBytes([]byte{0x3}) // 0b0010, which represents validator 1 and 2
-		err = bc.validateQC(desoBlock, validatorSet)
+		err = bc.isValidPoSQuorumCertificate(desoBlock, validatorSet)
 		require.Error(t, err)
 		require.Equal(t, err, RuleErrorInvalidTimeoutQC)
 
 		// Having 1 and 3 in signers list, but including signature for 2 should fail
 		timeoutQC.ValidatorsTimeoutAggregatedSignature.SignersList = bitset.NewBitset().Set(0, true).Set(2, true) // represents validator 1 and 3
 		timeoutQC.ValidatorsTimeoutAggregatedSignature.Signature = timeoutAggSig
-		err = bc.validateQC(desoBlock, validatorSet)
+		err = bc.isValidPoSQuorumCertificate(desoBlock, validatorSet)
 		require.Error(t, err)
 		require.Equal(t, err, RuleErrorInvalidTimeoutQC)
 	}
