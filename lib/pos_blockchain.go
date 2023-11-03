@@ -19,6 +19,10 @@ import (
 //  4. try to apply the incoming block as the tip (performing reorgs as necessary). If it can't be applied, we exit here.
 //  5. Run the commit rule - If applicable, flushes the incoming block's grandparent to the DB
 func (bc *Blockchain) processBlockPoS(block *MsgDeSoBlock, currentView uint64, verifySignatures bool) (_success bool, _isOrphan bool, _missingBlockHashes []*BlockHash, _err error) {
+	// If we can't hash the block, we can never store in the block index and we should throw it out immediately.
+	if _, err := block.Hash(); err != nil {
+		return false, false, nil, errors.New("processBlockPoS: Problem hashing block")
+	}
 	// Get all the blocks between the current block and the committed tip. If the block
 	// is an orphan, then we store it without validating it. If the block extends from any
 	// committed block other than the committed tip, then we throw it away.
@@ -43,9 +47,17 @@ func (bc *Blockchain) processBlockPoS(block *MsgDeSoBlock, currentView uint64, v
 		// Step 1: Create a new BlockNode for this block with status STORED.
 		// Step 2: Add it to the blockIndexByHash and store it in Badger. This is handled by addBlockToBlockIndex
 
-		// Add to blockIndexByHash with status STORED only.
-		if _, err = bc.storeBlockInBlockIndex(block); err != nil {
-			return false, true, missingBlockHashes, errors.Wrap(err, "processBlockPoS: Problem adding block to block index: ")
+		// All blocks should pass the basic integrity validations, which ensure the block
+		// is not malformed. If the block is malformed, we should store it as ValidateFailed.
+		if err = bc.isProperlyFormedBlockPoS(block); err != nil {
+			if _, innerErr := bc.storeValidateFailedBlockInBlockIndex(block); innerErr != nil {
+				return false, true, missingBlockHashes, errors.Wrapf(innerErr, "processBlockPoS: Problem adding validate failed block to block index: %v", err)
+			}
+		} else {
+			// Add to blockIndexByHash with status STORED only.
+			if _, err = bc.storeBlockInBlockIndex(block); err != nil {
+				return false, true, missingBlockHashes, errors.Wrap(err, "processBlockPoS: Problem adding block to block index: ")
+			}
 		}
 
 		// In this case there is no error. We got a block that seemed ostensibly valid, it just
@@ -270,6 +282,9 @@ func (bc *Blockchain) isValidBlockPoS(block *MsgDeSoBlock) error {
 	if err := bc.isProperlyFormedBlockPoS(block); err != nil {
 		return err
 	}
+	if err := bc.isBlockTimestampValidRelativeToParentPoS(block); err != nil {
+		return err
+	}
 	// Validate Block Height
 	if err := bc.hasValidBlockHeightPoS(block); err != nil {
 		return err
@@ -280,6 +295,22 @@ func (bc *Blockchain) isValidBlockPoS(block *MsgDeSoBlock) error {
 		// If so, we need to perform the rest of the validations and then add to our block index.
 		// TODO: implement check on error described above. Caller will handle this.
 		return err
+	}
+	return nil
+}
+
+// isBlockTimestampValidRelativeToParentPoS validates that the block's timestamp is
+// greater than its parent's timestamp.
+func (bc *Blockchain) isBlockTimestampValidRelativeToParentPoS(block *MsgDeSoBlock) error {
+	// Validate that the timestamp is not less than its parent.
+	parentBlock, exists := bc.blockIndexByHash[*block.Header.PrevBlockHash]
+	if !exists {
+		// Note: this should never happen as we only call this function after
+		// we've validated that all ancestors exist in the block index.
+		return RuleErrorMissingParentBlock
+	}
+	if block.Header.TstampNanoSecs < parentBlock.Header.TstampNanoSecs {
+		return RuleErrorPoSBlockTstampNanoSecsTooOld
 	}
 	return nil
 }
@@ -299,17 +330,17 @@ func (bc *Blockchain) isProperlyFormedBlockPoS(block *MsgDeSoBlock) error {
 	}
 
 	// Timestamp validation
+	// First make sure we have a non-nil header
+	if block.Header == nil {
+		return RuleErrorNilBlockHeader
+	}
 
-	// Validate that the timestamp is not less than its parent.
-	parentBlock, exists := bc.blockIndexByHash[*block.Header.PrevBlockHash]
-	if !exists {
-		// Note: this should never happen as we only call this function after
-		// we've validated that all ancestors exist in the block index.
-		return RuleErrorMissingParentBlock
+	// Make sure we have a prevBlockHash
+	if block.Header.PrevBlockHash == nil {
+		return RuleErrorNilPrevBlockHash
 	}
-	if block.Header.TstampNanoSecs < parentBlock.Header.TstampNanoSecs {
-		return RuleErrorPoSBlockTstampNanoSecsTooOld
-	}
+
+	// Timestamp validation
 	// TODO: Add support for putting the drift into global params.
 	if block.Header.TstampNanoSecs > uint64(time.Now().UnixNano())+bc.params.DefaultBlockTimestampDriftNanoSecs {
 		return RuleErrorPoSBlockTstampNanoSecsInFuture
