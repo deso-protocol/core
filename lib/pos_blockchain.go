@@ -543,8 +543,7 @@ func (bc *Blockchain) getOrCreateBlockNodeFromBlockIndex(block *MsgDeSoBlock) (*
 	}
 	prevBlockNode := bc.blockIndexByHash[*block.Header.PrevBlockHash]
 	newBlockNode := NewBlockNode(prevBlockNode, hash, uint32(block.Header.Height), nil, nil, block.Header, StatusNone)
-	bc.blockIndexByHash[*hash] = newBlockNode
-	bc.blockIndexByHeight[newBlockNode.Height] = append(bc.blockIndexByHeight[newBlockNode.Height], newBlockNode)
+	bc.addNewBlockNodeToBlockIndex(newBlockNode)
 	return newBlockNode, nil
 }
 

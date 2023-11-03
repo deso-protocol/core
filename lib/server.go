@@ -1355,20 +1355,20 @@ func (srv *Server) _handleSnapshot(pp *Peer, msg *MsgDeSoSnapshotData) {
 	// the blockNodes in the header chain and set them in the blockchain data structures.
 	err = srv.blockchain.db.Update(func(txn *badger.Txn) error {
 		for ii := uint64(1); ii <= srv.HyperSyncProgress.SnapshotMetadata.SnapshotBlockHeight; ii++ {
-			curretNode := srv.blockchain.bestHeaderChain[ii]
+			currentNode := srv.blockchain.bestHeaderChain[ii]
 			// Do not set the StatusBlockStored flag, because we still need to download the past blocks.
-			curretNode.Status |= StatusBlockProcessed
-			curretNode.Status |= StatusBlockValidated
-			srv.blockchain.blockIndexByHash[*curretNode.Hash] = curretNode
-			srv.blockchain.bestChainMap[*curretNode.Hash] = curretNode
-			srv.blockchain.bestChain = append(srv.blockchain.bestChain, curretNode)
-			err := PutHeightHashToNodeInfoWithTxn(txn, srv.snapshot, curretNode, false /*bitcoinNodes*/)
+			currentNode.Status |= StatusBlockProcessed
+			currentNode.Status |= StatusBlockValidated
+			srv.blockchain.addNewBlockNodeToBlockIndex(currentNode)
+			srv.blockchain.bestChainMap[*currentNode.Hash] = currentNode
+			srv.blockchain.bestChain = append(srv.blockchain.bestChain, currentNode)
+			err = PutHeightHashToNodeInfoWithTxn(txn, srv.snapshot, currentNode, false /*bitcoinNodes*/)
 			if err != nil {
 				return err
 			}
 		}
 		// We will also set the hash of the block at snapshot height as the best chain hash.
-		err := PutBestHashWithTxn(txn, srv.snapshot, msg.SnapshotMetadata.CurrentEpochBlockHash, ChainTypeDeSoBlock)
+		err = PutBestHashWithTxn(txn, srv.snapshot, msg.SnapshotMetadata.CurrentEpochBlockHash, ChainTypeDeSoBlock)
 		return err
 	})
 	if err != nil {

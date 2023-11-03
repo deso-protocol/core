@@ -383,7 +383,9 @@ func TestUpsertBlockAndBlockNodeToDB(t *testing.T) {
 	byHeightBlockNodes, exists := bc.blockIndexByHeight[2]
 	require.True(t, exists)
 	require.Len(t, byHeightBlockNodes, 1)
-	require.True(t, byHeightBlockNodes[0].Hash.IsEqual(newHash))
+	require.True(t, byHeightBlockNodes[*newHash].Hash.IsEqual(newHash))
+	require.True(t, bc.hasBlockNodesIndexedAtHeight(2))
+	require.Len(t, bc.getAllBlockNodesIndexedAtHeight(2), 1)
 	// Check the DB for the block
 	uncommittedBlock, err := GetBlock(newHash, bc.db, bc.snapshot)
 	require.NoError(t, err)
@@ -405,8 +407,10 @@ func TestUpsertBlockAndBlockNodeToDB(t *testing.T) {
 	byHeightBlockNodes, exists = bc.blockIndexByHeight[2]
 	require.True(t, exists)
 	require.Len(t, byHeightBlockNodes, 1)
-	require.True(t, byHeightBlockNodes[0].Hash.IsEqual(newHash))
-	require.True(t, byHeightBlockNodes[0].IsValidated())
+	require.True(t, byHeightBlockNodes[*newHash].Hash.IsEqual(newHash))
+	require.True(t, byHeightBlockNodes[*newHash].IsValidated())
+	require.True(t, bc.hasBlockNodesIndexedAtHeight(2))
+	require.Len(t, bc.getAllBlockNodesIndexedAtHeight(2), 1)
 
 	// Okay now we'll put in another block at the same height.
 	// Update the random seed hash so we have a new hash for the block.
@@ -430,8 +434,10 @@ func TestUpsertBlockAndBlockNodeToDB(t *testing.T) {
 	byHeightBlockNodes, exists = bc.blockIndexByHeight[2]
 	require.True(t, exists)
 	require.Len(t, byHeightBlockNodes, 2)
-	require.True(t, byHeightBlockNodes[0].Hash.IsEqual(newHash))
-	require.True(t, byHeightBlockNodes[1].Hash.IsEqual(updatedBlockHash))
+	require.True(t, byHeightBlockNodes[*newHash].Hash.IsEqual(newHash))
+	require.True(t, byHeightBlockNodes[*updatedBlockHash].Hash.IsEqual(updatedBlockHash))
+	require.True(t, bc.hasBlockNodesIndexedAtHeight(2))
+	require.Len(t, bc.getAllBlockNodesIndexedAtHeight(2), 2)
 
 	// If we're missing a field in the header, we should get an error
 	// as we can't compute the hash.

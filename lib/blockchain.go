@@ -5,6 +5,7 @@ import (
 	"container/list"
 	"encoding/hex"
 	"fmt"
+	"github.com/deso-protocol/core/collections"
 	"math"
 	"math/big"
 	"reflect"
@@ -462,7 +463,7 @@ type Blockchain struct {
 	blockIndexByHash map[BlockHash]*BlockNode
 	// blockIndexByHeight is an in-memory map of block height to block nodes. This is
 	// used to quickly find the safe blocks from which the chain can be extended for PoS
-	blockIndexByHeight map[uint32][]*BlockNode
+	blockIndexByHeight map[uint64]map[BlockHash]*BlockNode
 	// An in-memory slice of the blocks on the main chain only. The end of
 	// this slice is the best known tip that we have at any given time.
 	bestChain    []*BlockNode
@@ -490,20 +491,50 @@ type Blockchain struct {
 	timer *Timer
 }
 
-func (bc *Blockchain) CopyBlockIndex() map[BlockHash]*BlockNode {
-	newBlockIndex := make(map[BlockHash]*BlockNode)
+func (bc *Blockchain) addNewBlockNodeToBlockIndex(blockNode *BlockNode) {
+	bc.blockIndexByHash[*blockNode.Hash] = blockNode
+	if _, exists := bc.blockIndexByHeight[uint64(blockNode.Height)]; !exists {
+		bc.blockIndexByHeight[uint64(blockNode.Height)] = make(map[BlockHash]*BlockNode)
+	}
+	bc.blockIndexByHeight[uint64(blockNode.Height)][*blockNode.Hash] = blockNode
+}
+
+func (bc *Blockchain) CopyBlockIndexes() (_blockIndexByHash map[BlockHash]*BlockNode, _blockIndexByHeight map[uint64]map[BlockHash]*BlockNode) {
+	newBlockIndexByHash := make(map[BlockHash]*BlockNode)
+	newBlockIndexByHeight := make(map[uint64]map[BlockHash]*BlockNode)
 	for kk, vv := range bc.blockIndexByHash {
-		newBlockIndex[kk] = vv
+		newBlockIndexByHash[kk] = vv
+		blockHeight := uint64(vv.Height)
+		if _, exists := newBlockIndexByHeight[blockHeight]; !exists {
+			newBlockIndexByHeight[blockHeight] = make(map[BlockHash]*BlockNode)
+		}
+		newBlockIndexByHeight[blockHeight][kk] = vv
+	}
+	return newBlockIndexByHash, newBlockIndexByHeight
+}
+
+func (bc *Blockchain) ConstructBlockIndexByHeight() map[uint64]map[BlockHash]*BlockNode {
+	newBlockIndex := make(map[uint64]map[BlockHash]*BlockNode)
+	for _, blockNode := range bc.blockIndexByHash {
+		blockHeight := uint64(blockNode.Height)
+		if _, exists := newBlockIndex[blockHeight]; !exists {
+			newBlockIndex[blockHeight] = make(map[BlockHash]*BlockNode)
+		}
+		newBlockIndex[blockHeight][*blockNode.Hash] = blockNode
 	}
 	return newBlockIndex
 }
 
-func (bc *Blockchain) ConstructBlockIndexByHeight() map[uint32][]*BlockNode {
-	newBlockIndex := make(map[uint32][]*BlockNode)
-	for _, blockNode := range bc.blockIndexByHash {
-		newBlockIndex[blockNode.Height] = append(newBlockIndex[blockNode.Height], blockNode)
+func (bc *Blockchain) getAllBlockNodesIndexedAtHeight(blockHeight uint64) []*BlockNode {
+	return collections.MapValues(bc.blockIndexByHeight[blockHeight])
+}
+
+func (bc *Blockchain) hasBlockNodesIndexedAtHeight(blockHeight uint64) bool {
+	blocksAtHeight, hasNestedMapAtHeight := bc.blockIndexByHeight[blockHeight]
+	if !hasNestedMapAtHeight {
+		return false
 	}
-	return newBlockIndex
+	return len(blocksAtHeight) > 0
 }
 
 func (bc *Blockchain) CopyBestChain() ([]*BlockNode, map[BlockHash]*BlockNode) {
@@ -602,6 +633,7 @@ func (bc *Blockchain) _initChain() error {
 	if err != nil {
 		return errors.Wrapf(err, "_initChain: Problem reading block index from db")
 	}
+	bc.blockIndexByHeight = bc.ConstructBlockIndexByHeight()
 
 	// At this point the blockIndexByHash should contain a full node tree with all
 	// nodes pointing to valid parent nodes.
@@ -690,7 +722,7 @@ func NewBlockchain(
 		archivalMode:                    archivalMode,
 
 		blockIndexByHash:   make(map[BlockHash]*BlockNode),
-		blockIndexByHeight: make(map[uint32][]*BlockNode),
+		blockIndexByHeight: make(map[uint64]map[BlockHash]*BlockNode),
 		bestChainMap:       make(map[BlockHash]*BlockNode),
 
 		bestHeaderChainMap: make(map[BlockHash]*BlockNode),
@@ -1333,10 +1365,11 @@ func (bc *Blockchain) SetBestChain(bestChain []*BlockNode) {
 	bc.bestChain = bestChain
 }
 
-func (bc *Blockchain) SetBestChainMap(bestChain []*BlockNode, bestChainMap map[BlockHash]*BlockNode, blockIndex map[BlockHash]*BlockNode) {
+func (bc *Blockchain) SetBestChainMap(bestChain []*BlockNode, bestChainMap map[BlockHash]*BlockNode, blockIndexByHash map[BlockHash]*BlockNode, blockIndexByHeight map[uint64]map[BlockHash]*BlockNode) {
 	bc.bestChain = bestChain
 	bc.bestChainMap = bestChainMap
-	bc.blockIndexByHash = blockIndex
+	bc.blockIndexByHash = blockIndexByHash
+	bc.blockIndexByHeight = blockIndexByHeight
 }
 
 // TODO: update to support validating orphan PoS Blocks
@@ -1791,11 +1824,12 @@ func (bc *Blockchain) processHeaderPoW(blockHeader *MsgDeSoHeader, headerHash *B
 	// index. If we're still syncing then it's safe to just set it. Otherwise, we
 	// need to make a copy first since there could be some concurrency issues.
 	if bc.isSyncing() {
-		bc.blockIndexByHash[*newNode.Hash] = newNode
+		bc.addNewBlockNodeToBlockIndex(newNode)
 	} else {
-		newBlockIndex := bc.CopyBlockIndex()
-		newBlockIndex[*newNode.Hash] = newNode
-		bc.blockIndexByHash = newBlockIndex
+		newBlockIndexByHash, newBlockIndexByHeight := bc.CopyBlockIndexes()
+		bc.blockIndexByHash = newBlockIndexByHash
+		bc.blockIndexByHeight = newBlockIndexByHeight
+		bc.addNewBlockNodeToBlockIndex(newNode)
 	}
 
 	// Update the header chain if this header has more cumulative work than
