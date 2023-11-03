@@ -88,6 +88,16 @@ func (bc *Blockchain) processBlockPoS(block *MsgDeSoBlock, currentView uint64, v
 	return true, false, nil, nil
 }
 
+// storeValidateFailedBlockWithWrappedError is a helper function that takes in a block and an error and
+// stores the block in the block index with status VALIDATE_FAILED. It returns the resulting BlockNode.
+func (bc *Blockchain) storeValidateFailedBlockWithWrappedError(block *MsgDeSoBlock, outerErr error) (*BlockNode, error) {
+	blockNode, innerErr := bc.storeValidateFailedBlockInBlockIndex(block)
+	if innerErr != nil {
+		return nil, errors.Wrapf(innerErr, "storeValidateFailedBlockWithWrappedError: Problem adding validate failed block to block index: %v", outerErr)
+	}
+	return blockNode, nil
+}
+
 // validateAndIndexBlockPoS performs all validation checks for a given block and adds it to the block index with
 // the appropriate status.
 //  1. If the block is already VALIDATE_FAILED, we return the BlockNode as-is without perform further validations and
@@ -127,25 +137,17 @@ func (bc *Blockchain) validateAndIndexBlockPoS(block *MsgDeSoBlock) (*BlockNode,
 		return nil, errors.Wrapf(err, "validateAndIndexBlockPoS: Problem validating previously indexed block: ")
 	}
 
-	storeValidateFailedBlockInternal := func(outerErr error) (*BlockNode, error) {
-		bn, innerErr := bc.storeValidateFailedBlockInBlockIndex(block)
-		if innerErr != nil {
-			return nil, errors.Wrapf(innerErr, "validateAndIndexBlockPoS: Problem adding validate failed block to block index: %v", outerErr)
-		}
-		return bn, nil
-	}
-
 	// Here's where it gets a little tricky. If the parent has a status of ValidateFailed, then we know we store
 	// this block as ValidateFailed. If the parent is not ValidateFailed, we ONLY store the block and move on.
 	// We don't want to store it as ValidateFailed because we don't know if it's actually invalid.
 	if parentBlockNode.IsValidateFailed() {
-		return storeValidateFailedBlockInternal(errors.New("parent block is ValidateFailed"))
+		return bc.storeValidateFailedBlockWithWrappedError(block, errors.New("parent block is ValidateFailed"))
 	}
 
 	// If the parent block still has a Stored status, it means that we weren't able to validate it
 	// despite trying. The current block will also be stored as a Stored block.
 	if !parentBlockNode.IsValidated() {
-		return storeValidateFailedBlockInternal(errors.New("parent block is neither Validated nor ValidateFailed"))
+		return bc.storeValidateFailedBlockWithWrappedError(block, errors.New("parent block is neither Validated nor ValidateFailed"))
 	}
 
 	// At this point, we know the parent block is validated. We can now perform all other validations
@@ -160,7 +162,7 @@ func (bc *Blockchain) validateAndIndexBlockPoS(block *MsgDeSoBlock) (*BlockNode,
 		// It's possible for isValidBlockPoS to return an error that is not a RuleError.
 		// If we have a RuleError, we KNOW that the block should be ValidateFailed.
 		if IsRuleError(err) {
-			return storeValidateFailedBlockInternal(err)
+			return bc.storeValidateFailedBlockWithWrappedError(block, err)
 		}
 		// If we didn't hit a RuleError, then it's unclear whether or not the block should
 		// be ValidateFailed. We return the block node as-is.
@@ -192,7 +194,7 @@ func (bc *Blockchain) validateAndIndexBlockPoS(block *MsgDeSoBlock) (*BlockNode,
 
 	// Validate the block's QC. If it's invalid, we store it as ValidateFailed.
 	if err = bc.isValidPoSQuorumCertificate(block, validatorsByStake); err != nil {
-		return storeValidateFailedBlockInternal(err)
+		return bc.storeValidateFailedBlockWithWrappedError(block, err)
 	}
 
 	// Connect this block to the parent block's UtxoView.
@@ -203,7 +205,7 @@ func (bc *Blockchain) validateAndIndexBlockPoS(block *MsgDeSoBlock) (*BlockNode,
 	// If we fail to connect the block, then it means the block is invalid. We should store it as ValidateFailed.
 	if _, err = utxoView.ConnectBlock(block, txHashes, true, nil, block.Header.Height); err != nil {
 		// If it doesn't connect, we want to mark it as ValidateFailed.
-		return storeValidateFailedBlockInternal(err)
+		return bc.storeValidateFailedBlockWithWrappedError(block, err)
 	}
 
 	// We can now add this block to the block index since we have performed all basic validations.
