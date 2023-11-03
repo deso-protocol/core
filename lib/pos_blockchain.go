@@ -122,7 +122,7 @@ func (bc *Blockchain) validateAndIndexBlockPoS(block *MsgDeSoBlock) (*BlockNode,
 	// Run the validation for the parent and update the block index with the parent's status. We first
 	// check if the parent has a cached status. If so, we use the cached status. Otherwise, we run
 	// the full validation algorithm on it, then index and an use the result.
-	parentBlockNode, err := bc.validateCachedBlockPoS(block.Header.PrevBlockHash)
+	parentBlockNode, err := bc.validatePreviouslyIndexedBlockPoS(block.Header.PrevBlockHash)
 	if err != nil {
 		return nil, err
 	}
@@ -148,7 +148,7 @@ func (bc *Blockchain) validateAndIndexBlockPoS(block *MsgDeSoBlock) (*BlockNode,
 		return blockNode, nil
 	}
 
-	// At this point, we know the parent block is validation. We can now perform all other validations
+	// At this point, we know the parent block is validated. We can now perform all other validations
 	// on the current block. First we store the block in the block index.
 	blockNode, err = bc.storeBlockInBlockIndex(block)
 	if err != nil {
@@ -168,21 +168,12 @@ func (bc *Blockchain) validateAndIndexBlockPoS(block *MsgDeSoBlock) (*BlockNode,
 	// been validated.
 	utxoView, err := bc.getUtxoViewAtBlockHash(*block.Header.PrevBlockHash)
 	if err != nil {
-		// Here we want to at least store this block since we don't know if it's invalid.
-		// Hitting an error here should really never happen.
-		blockNode, innerErr := bc.storeBlockInBlockIndex(block)
-		if innerErr != nil {
-			return nil, errors.Wrapf(err, "validateAndIndexBlockPoS: Problem adding block to block index: %v", innerErr)
-		}
+		// This should never happen. If the parent is validated and extends from the tip, then we should
+		// be able to build a UtxoView for it. This failure can only happen due to transient or badger issues.
+		// We return the block node as-is as a best effort thing.
 		return blockNode, nil
 	}
 
-	// Connect this block to the parent block's UtxoView.
-	txHashes := collections.Transform(block.Txns, func(txn *MsgDeSoTxn) *BlockHash {
-		return txn.Hash()
-	})
-
-	// TODO: If block belongs in the next epoch or it's from an epoch far ahead in the future, we may not be able to
 	// validate its QC at all. the validator set for that epoch may be entirely different.
 	// A couple of options on how to handle:
 	//   - Add utility to UtxoView to fetch the validator set given an arbitrary block height. If we can't fetch the
@@ -192,12 +183,9 @@ func (bc *Blockchain) validateAndIndexBlockPoS(block *MsgDeSoBlock) (*BlockNode,
 	// 2. Validate QC
 	validatorsByStake, err := utxoView.GetAllSnapshotValidatorSetEntriesByStake()
 	if err != nil {
-		// Here we want to at least store this block since we don't know if it's invalid.
-		// Hitting an error here should really never happen.
-		blockNode, innerErr := bc.storeBlockInBlockIndex(block)
-		if innerErr != nil {
-			return nil, errors.Wrapf(err, "validateAndIndexBlockPoS: Problem adding block to block index: %v", innerErr)
-		}
+		// This should never happen. If the parent is validated and extends from the tip, then we should
+		// be able to fetch the validator set at its block height for it. This failure can only happen due
+		// to transient or badger issues. We return the block node as-is as a best effort thing.
 		return blockNode, nil
 	}
 
@@ -209,6 +197,11 @@ func (bc *Blockchain) validateAndIndexBlockPoS(block *MsgDeSoBlock) (*BlockNode,
 		}
 		return blockNode, nil
 	}
+
+	// Connect this block to the parent block's UtxoView.
+	txHashes := collections.Transform(block.Txns, func(txn *MsgDeSoTxn) *BlockHash {
+		return txn.Hash()
+	})
 
 	// If we fail to connect the block, then it means the block is invalid. We should store it as ValidateFailed.
 	if _, err = utxoView.ConnectBlock(block, txHashes, true, nil, block.Header.Height); err != nil {
@@ -228,15 +221,15 @@ func (bc *Blockchain) validateAndIndexBlockPoS(block *MsgDeSoBlock) (*BlockNode,
 	return blockNode, nil
 }
 
-// validateCachedBlockPoS is a helper function that takes in a block hash for a previously
+// validatePreviouslyIndexedBlockPoS is a helper function that takes in a block hash for a previously
 // cached block, and runs the validateAndIndexBlockPoS algorithm on it. It returns the resulting BlockNode.
-func (bc *Blockchain) validateCachedBlockPoS(blockHash *BlockHash) (*BlockNode, error) {
+func (bc *Blockchain) validatePreviouslyIndexedBlockPoS(blockHash *BlockHash) (*BlockNode, error) {
 	// Check if the block is already in the block index. If so, we check its current status first.
 	blockNode, exists := bc.blockIndex[*blockHash]
 	if !exists {
 		// We should never really hit this if the block has already been cached in the block index first.
 		// We check here anyway to be safe.
-		return nil, errors.New("validateCachedBlockPoS: Block not found in block index. This should never happen.")
+		return nil, errors.New("validatePreviouslyIndexedBlockPoS: Block not found in block index. This should never happen.")
 	}
 
 	// If the block has already been validated or had validation failed, then we can return early.
@@ -250,7 +243,7 @@ func (bc *Blockchain) validateCachedBlockPoS(blockHash *BlockHash) (*BlockNode, 
 	if err != nil {
 		// If we can't fetch the block from the DB, we should return an error. This should never happen
 		// provided the block was cached in the block index and stored in the DB first.
-		return nil, errors.Wrapf(err, "validateCachedBlockPoS: Problem fetching block from DB")
+		return nil, errors.Wrapf(err, "validatePreviouslyIndexedBlockPoS: Problem fetching block from DB")
 	}
 
 	// We run the full validation algorithm on the block.
