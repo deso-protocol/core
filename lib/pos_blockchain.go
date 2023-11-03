@@ -536,15 +536,15 @@ func (bc *Blockchain) hasValidBlockProposerPoS(block *MsgDeSoBlock) (_isValidBlo
 
 // isValidPoSQuorumCertificate validates that the QC of this block is valid, meaning a super majority
 // of the validator set has voted (or timed out). Assumes ValidatorEntry list is sorted.
-func (bc *Blockchain) isValidPoSQuorumCertificate(desoBlock *MsgDeSoBlock, validatorSet []*ValidatorEntry) error {
+func (bc *Blockchain) isValidPoSQuorumCertificate(block *MsgDeSoBlock, validatorSet []*ValidatorEntry) error {
 	validators := toConsensusValidators(validatorSet)
-	if !desoBlock.Header.ValidatorsTimeoutAggregateQC.isEmpty() {
-		if !consensus.IsValidSuperMajorityAggregateQuorumCertificate(desoBlock.Header.ValidatorsTimeoutAggregateQC, validators) {
+	if !block.Header.ValidatorsTimeoutAggregateQC.isEmpty() {
+		if !consensus.IsValidSuperMajorityAggregateQuorumCertificate(block.Header.ValidatorsTimeoutAggregateQC, validators) {
 			return RuleErrorInvalidTimeoutQC
 		}
 		return nil
 	}
-	if !consensus.IsValidSuperMajorityQuorumCertificate(desoBlock.Header.ValidatorsVoteQC, validators) {
+	if !consensus.IsValidSuperMajorityQuorumCertificate(block.Header.ValidatorsVoteQC, validators) {
 		return RuleErrorInvalidVoteQC
 	}
 	return nil
@@ -814,9 +814,9 @@ func (bc *Blockchain) shouldReorg(blockNode *BlockNode, currentView uint64) bool
 }
 
 // addBlockToBestChain adds the block to the best chain.
-func (bc *Blockchain) addBlockToBestChain(desoBlockNode *BlockNode) {
-	bc.bestChain = append(bc.bestChain, desoBlockNode)
-	bc.bestChainMap[*desoBlockNode.Hash] = desoBlockNode
+func (bc *Blockchain) addBlockToBestChain(blockNode *BlockNode) {
+	bc.bestChain = append(bc.bestChain, blockNode)
+	bc.bestChainMap[*blockNode.Hash] = blockNode
 }
 
 // runCommitRuleOnBestChain commits the grandparent of the block if possible.
