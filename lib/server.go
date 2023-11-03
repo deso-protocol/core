@@ -1359,7 +1359,7 @@ func (srv *Server) _handleSnapshot(pp *Peer, msg *MsgDeSoSnapshotData) {
 			// Do not set the StatusBlockStored flag, because we still need to download the past blocks.
 			curretNode.Status |= StatusBlockProcessed
 			curretNode.Status |= StatusBlockValidated
-			srv.blockchain.blockIndex[*curretNode.Hash] = curretNode
+			srv.blockchain.blockIndexByHash[*curretNode.Hash] = curretNode
 			srv.blockchain.bestChainMap[*curretNode.Hash] = curretNode
 			srv.blockchain.bestChain = append(srv.blockchain.bestChain, curretNode)
 			err := PutHeightHashToNodeInfoWithTxn(txn, srv.snapshot, curretNode, false /*bitcoinNodes*/)
