@@ -17,7 +17,7 @@ import (
 	"time"
 )
 
-func TestisProperlyFormedBlockPoS(t *testing.T) {
+func TestIsProperlyFormedBlockPoS(t *testing.T) {
 	bc, params, _ := NewTestBlockchain(t)
 	// TODO: update for PoS
 	mempool, miner := NewTestMiner(t, bc, params, true)
