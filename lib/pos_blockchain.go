@@ -306,21 +306,21 @@ func (bc *Blockchain) isProperlyFormedBlockPoS(block *MsgDeSoBlock) error {
 
 	// Malformed block checks
 	// All blocks must have at least one txn
-	if len(desoBlock.Txns) == 0 {
+	if len(block.Txns) == 0 {
 		return RuleErrorBlockWithNoTxns
 	}
 	// Must have non-nil TxnConnectStatusByIndex
-	if desoBlock.TxnConnectStatusByIndex == nil {
+	if block.TxnConnectStatusByIndex == nil {
 		return RuleErrorNilTxnConnectStatusByIndex
 	}
 
 	// Must have TxnConnectStatusByIndexHash
-	if desoBlock.Header.TxnConnectStatusByIndexHash == nil {
+	if block.Header.TxnConnectStatusByIndexHash == nil {
 		return RuleErrorNilTxnConnectStatusByIndexHash
 	}
 
 	// Make sure the TxnConnectStatusByIndex matches the TxnConnectStatusByIndexHash
-	if !(HashBitset(desoBlock.TxnConnectStatusByIndex).IsEqual(desoBlock.Header.TxnConnectStatusByIndexHash)) {
+	if !(HashBitset(block.TxnConnectStatusByIndex).IsEqual(block.Header.TxnConnectStatusByIndexHash)) {
 		return RuleErrorTxnConnectStatusByIndexHashMismatch
 	}
 
