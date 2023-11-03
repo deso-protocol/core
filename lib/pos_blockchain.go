@@ -194,7 +194,7 @@ func (bc *Blockchain) validateAndIndexBlockPoS(block *MsgDeSoBlock) (*BlockNode,
 	if err != nil {
 		return nil, errors.Wrapf(err, "validateAndIndexBlockPoS: Problem validating block proposer")
 	}
-	if isBlockProposerValid {
+	if !isBlockProposerValid {
 		return bc.storeValidateFailedBlockWithWrappedError(block, errors.New("invalid block proposer"))
 	}
 
