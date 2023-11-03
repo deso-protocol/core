@@ -63,7 +63,7 @@ func (bc *Blockchain) processBlockPoS(block *MsgDeSoBlock, currentView uint64, v
 		return false, false, nil, errors.Wrap(err, "processBlockPoS: Problem validating block: ")
 	}
 	if !blockNode.IsValidated() {
-		return false, false, nil, errors.New("processBlockPoS: Block not validated after performing all validations. This should never happen")
+		return false, false, nil, errors.New("processBlockPoS: Block not validated after performing all validations.")
 	}
 
 	// 4. Try to apply the incoming block as the new tip. This function will
@@ -86,6 +86,16 @@ func (bc *Blockchain) processBlockPoS(block *MsgDeSoBlock, currentView uint64, v
 	}
 
 	return true, false, nil, nil
+}
+
+// storeValidateFailedBlockWithWrappedError is a helper function that takes in a block and an error and
+// stores the block in the block index with status VALIDATE_FAILED. It returns the resulting BlockNode.
+func (bc *Blockchain) storeValidateFailedBlockWithWrappedError(block *MsgDeSoBlock, outerErr error) (*BlockNode, error) {
+	blockNode, innerErr := bc.storeValidateFailedBlockInBlockIndex(block)
+	if innerErr != nil {
+		return nil, errors.Wrapf(innerErr, "storeValidateFailedBlockWithWrappedError: Problem adding validate failed block to block index: %v", outerErr)
+	}
+	return blockNode, nil
 }
 
 // validateAndIndexBlockPoS performs all validation checks for a given block and adds it to the block index with
@@ -124,28 +134,20 @@ func (bc *Blockchain) validateAndIndexBlockPoS(block *MsgDeSoBlock) (*BlockNode,
 	// the full validation algorithm on it, then index and an use the result.
 	parentBlockNode, err := bc.validatePreviouslyIndexedBlockPoS(block.Header.PrevBlockHash)
 	if err != nil {
-		return nil, err
+		return nil, errors.Wrapf(err, "validateAndIndexBlockPoS: Problem validating previously indexed block: ")
 	}
 
 	// Here's where it gets a little tricky. If the parent has a status of ValidateFailed, then we know we store
 	// this block as ValidateFailed. If the parent is not ValidateFailed, we ONLY store the block and move on.
 	// We don't want to store it as ValidateFailed because we don't know if it's actually invalid.
 	if parentBlockNode.IsValidateFailed() {
-		blockNode, innerErr := bc.storeValidateFailedBlockInBlockIndex(block)
-		if innerErr != nil {
-			return nil, errors.Wrapf(err, "validateAndIndexBlockPoS: Problem adding validate failed block to block index: %v", innerErr)
-		}
-		return blockNode, nil
+		return bc.storeValidateFailedBlockWithWrappedError(block, errors.New("parent block is ValidateFailed"))
 	}
 
 	// If the parent block still has a Stored status, it means that we weren't able to validate it
 	// despite trying. The current block will also be stored as a Stored block.
 	if !parentBlockNode.IsValidated() {
-		blockNode, innerErr := bc.storeBlockInBlockIndex(block)
-		if innerErr != nil {
-			return nil, errors.Wrapf(err, "validateAndIndexBlockPoS: Problem adding block to block index: %v", innerErr)
-		}
-		return blockNode, nil
+		return bc.storeValidateFailedBlockWithWrappedError(block, errors.New("parent block is neither Validated nor ValidateFailed"))
 	}
 
 	// At this point, we know the parent block is validated. We can now perform all other validations
@@ -157,10 +159,13 @@ func (bc *Blockchain) validateAndIndexBlockPoS(block *MsgDeSoBlock) (*BlockNode,
 
 	// Check if the block is properly formed and passes all basic validations.
 	if err = bc.isValidBlockPoS(block); err != nil {
-		blockNode, innerErr := bc.storeValidateFailedBlockInBlockIndex(block)
-		if innerErr != nil {
-			return nil, errors.Wrapf(err, "validateAndIndexBlockPoS: Problem adding validate failed block to block index: %v", innerErr)
+		// It's possible for isValidBlockPoS to return an error that is not a RuleError.
+		// If we have a RuleError, we KNOW that the block should be ValidateFailed.
+		if IsRuleError(err) {
+			return bc.storeValidateFailedBlockWithWrappedError(block, err)
 		}
+		// If we didn't hit a RuleError, then it's unclear whether or not the block should
+		// be ValidateFailed. We return the block node as-is.
 		return blockNode, nil
 	}
 
@@ -189,11 +194,7 @@ func (bc *Blockchain) validateAndIndexBlockPoS(block *MsgDeSoBlock) (*BlockNode,
 
 	// Validate the block's QC. If it's invalid, we store it as ValidateFailed.
 	if err = bc.isValidPoSQuorumCertificate(block, validatorsByStake); err != nil {
-		blockNode, innerErr := bc.storeValidateFailedBlockInBlockIndex(block)
-		if innerErr != nil {
-			return nil, errors.Wrapf(err, "validateAndIndexBlockPoS: Problem adding validate failed block to block index: %v", innerErr)
-		}
-		return blockNode, nil
+		return bc.storeValidateFailedBlockWithWrappedError(block, err)
 	}
 
 	// Connect this block to the parent block's UtxoView.
@@ -204,11 +205,7 @@ func (bc *Blockchain) validateAndIndexBlockPoS(block *MsgDeSoBlock) (*BlockNode,
 	// If we fail to connect the block, then it means the block is invalid. We should store it as ValidateFailed.
 	if _, err = utxoView.ConnectBlock(block, txHashes, true, nil, block.Header.Height); err != nil {
 		// If it doesn't connect, we want to mark it as ValidateFailed.
-		blockNode, innerErr := bc.storeValidateFailedBlockInBlockIndex(block)
-		if innerErr != nil {
-			return nil, errors.Wrapf(err, "validateAndIndexBlockPoS: Problem adding validate failed block to block index: %v", innerErr)
-		}
-		return blockNode, nil
+		return bc.storeValidateFailedBlockWithWrappedError(block, err)
 	}
 
 	// We can now add this block to the block index since we have performed all basic validations.
