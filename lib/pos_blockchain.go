@@ -808,7 +808,7 @@ func (bc *Blockchain) canCommitGrandparent(currentBlock *BlockNode) (_grandparen
 }
 
 // commitBlock commits the block with the given hash. Specifically, this updates the
-// CommittedBlockStatus of the block and flushes the view after connecting the block
+// BlockStatus to include StatusBlockCommitted and flushes the view after connecting the block
 // to the DB and updates relevant badger indexes with info about the block.
 func (bc *Blockchain) commitBlock(blockHash *BlockHash) error {
 	// block must be in the best chain. we grab the block node from there.

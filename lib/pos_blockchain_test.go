@@ -1444,6 +1444,16 @@ func TestCanCommitGrandparent(t *testing.T) {
 	// TODO: What other cases do we really need tested here?
 }
 
+// TestRunCommitRuleOnBestChain tests the runCommitRuleOnBestChain function
+// to verify that it properly assesses the commit rule and that the commit logic
+// behaves as expected.
+// It tests the following cases:
+// 1. Adding a single block (block1) to the best chain does not result in any new blocks being committed.
+// 2. Adding a second block (block2) w/ parent (block1) to the best chain does not result in any new blocks being committed.
+// 3. Adding a third block (block3) w/ parent (block2) and block3's view = block2's view + 1 to the best chain results in block1 being committed.
+// 4. Adding a fourth block (block4) w/ parent (block3) and block4's view > block3's view + 1 to the best chain results in block2 being committed.
+// 5. Adding a fifth block (block5) w/ parent (block4) and block5's view = block4's view + 1 to the best chain does not result in block3 being committed.
+// 6. Adding a sixth block (block6) w/ parent (block5) and block6's view = block5's view + 1 to the best chain results in block3 and block4 being committed.
 func TestRunCommitRuleOnBestChain(t *testing.T) {
 	testMeta := NewTestPoSBlockchain(t)
 
@@ -1638,6 +1648,11 @@ func _generateRandomBLSPrivateKey(t *testing.T) *bls.PrivateKey {
 	return privateKey
 }
 
+// NewTestPoSBlockchain creates a new low-difficulty Blockchain for use in tests.
+// It first creates a new Blockchain, then mines 10 blocks to give the senderPkString
+// some DESO to send to m0 and m1. Then it stops the miner and PoW Mempool. Finally,
+// it creates a PoSMempool and PoSBlockProducer and sets the PoS fork heights. The setup
+// block height is set to 9 and the cutover is set to 11.
 func NewTestPoSBlockchain(t *testing.T) *TestMeta {
 	chain, params, db := NewLowDifficultyBlockchain(t)
 	params.ForkHeights.BalanceModelBlockHeight = 1
