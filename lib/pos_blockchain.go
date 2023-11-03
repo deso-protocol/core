@@ -37,7 +37,8 @@ func (bc *Blockchain) processBlockPoS(block *MsgDeSoBlock, currentView uint64, v
 	}
 	if err == RuleErrorMissingAncestorBlock {
 		// In this case, the block is an orphan that does not extend from any blocks
-		// on our best chain. In this case we'll store it with the hope that we
+		// on our best chain. Try to process the orphan by running basic validations.
+		// If it passes basic integrity checks, we'll store it with the hope that we
 		// will eventually get a parent that connects to our best chain.
 		missingBlockHashes := []*BlockHash{block.Header.PrevBlockHash}
 		// FIXME: I sketeched some of these steps but not all...
@@ -46,23 +47,7 @@ func (bc *Blockchain) processBlockPoS(block *MsgDeSoBlock, currentView uint64, v
 		// I didn't do that.
 		// Step 1: Create a new BlockNode for this block with status STORED.
 		// Step 2: Add it to the blockIndexByHash and store it in Badger. This is handled by addBlockToBlockIndex
-
-		// All blocks should pass the basic integrity validations, which ensure the block
-		// is not malformed. If the block is malformed, we should store it as ValidateFailed.
-		if err = bc.isProperlyFormedBlockPoS(block); err != nil {
-			if _, innerErr := bc.storeValidateFailedBlockInBlockIndex(block); innerErr != nil {
-				return false, true, missingBlockHashes, errors.Wrapf(innerErr, "processBlockPoS: Problem adding validate failed block to block index: %v", err)
-			}
-		} else {
-			// Add to blockIndexByHash with status STORED only.
-			if _, err = bc.storeBlockInBlockIndex(block); err != nil {
-				return false, true, missingBlockHashes, errors.Wrap(err, "processBlockPoS: Problem adding block to block index: ")
-			}
-		}
-
-		// In this case there is no error. We got a block that seemed ostensibly valid, it just
-		// didn't extend from a known block. We request the block's parent as missingBlockHashes.
-		return false, true, missingBlockHashes, nil
+		return false, true, missingBlockHashes, bc.processOrphanBlockPoS(block)
 	}
 
 	if err != nil {
@@ -113,8 +98,23 @@ func (bc *Blockchain) processBlockPoS(block *MsgDeSoBlock, currentView uint64, v
 			}
 		}
 	}
-	// Returns whether or not a new tip was applied, whether or not the block is an orphan, and any missing blocks, and an error.
+	// Returns whether a new tip was applied, whether the block is an orphan, and any missing blocks, and an error.
+
 	return appliedNewTip, false, nil, nil
+}
+
+func (bc *Blockchain) processOrphanBlockPoS(block *MsgDeSoBlock) error {
+	// All blocks should pass the basic integrity validations, which ensure the block
+	// is not malformed. If the block is malformed, we should store it as ValidateFailed.
+	if err := bc.isProperlyFormedBlockPoS(block); err != nil {
+		if _, innerErr := bc.storeValidateFailedBlockInBlockIndex(block); innerErr != nil {
+			return errors.Wrapf(innerErr, "processBlockPoS: Problem adding validate failed block to block index: %v", err)
+		}
+		return nil
+	}
+	// Add to blockIndexByHash with status STORED only as we are not sure if it's valid yet.
+	_, err := bc.storeBlockInBlockIndex(block)
+	return errors.Wrap(err, "processBlockPoS: Problem adding block to block index: ")
 }
 
 // storeValidateFailedBlockWithWrappedError is a helper function that takes in a block and an error and
