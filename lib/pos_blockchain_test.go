@@ -11,6 +11,7 @@ import (
 	"github.com/holiman/uint256"
 	"github.com/stretchr/testify/require"
 	"math"
+	"math/rand"
 	"testing"
 	"time"
 )
@@ -747,6 +748,11 @@ func TestValidateBlockLeader(t *testing.T) {
 func TestGetLineageFromCommittedTip(t *testing.T) {
 	setBalanceModelBlockHeights(t)
 	bc, _, _ := NewTestBlockchain(t)
+	GlobalDeSoParams.ForkHeights.ProofOfStake2ConsensusCutoverBlockHeight = 0
+	resetGlobalDeSoParams := func() {
+		GlobalDeSoParams.ForkHeights.ProofOfStake2ConsensusCutoverBlockHeight = math.MaxUint32
+	}
+	t.Cleanup(resetGlobalDeSoParams)
 	hash1 := NewBlockHash(RandomBytes(32))
 	genesisNode := NewBlockNode(nil, hash1, 1, nil, nil, &MsgDeSoHeader{
 		Version:        2,
@@ -1175,9 +1181,14 @@ func TestShouldReorg(t *testing.T) {
 	require.True(t, bc.shouldReorg(newBlock, 2))
 }
 
-func TestTryReorgToNewTipAndTryApplyNewTip(t *testing.T) {
+func TestTryApplyNewTip(t *testing.T) {
 	setBalanceModelBlockHeights(t)
 	bc, _, _ := NewTestBlockchain(t)
+	GlobalDeSoParams.ForkHeights.ProofOfStake2ConsensusCutoverBlockHeight = 0
+	resetGlobalDeSoParams := func() {
+		GlobalDeSoParams.ForkHeights.ProofOfStake2ConsensusCutoverBlockHeight = math.MaxUint32
+	}
+	t.Cleanup(resetGlobalDeSoParams)
 	hash1 := NewBlockHash(RandomBytes(32))
 	bn1 := &BlockNode{
 		Hash:   hash1,
@@ -1367,6 +1378,11 @@ func TestTryReorgToNewTipAndTryApplyNewTip(t *testing.T) {
 func TestCanCommitGrandparent(t *testing.T) {
 	setBalanceModelBlockHeights(t)
 	bc, _, _ := NewTestBlockchain(t)
+	GlobalDeSoParams.ForkHeights.ProofOfStake2ConsensusCutoverBlockHeight = 0
+	resetGlobalDeSoParams := func() {
+		GlobalDeSoParams.ForkHeights.ProofOfStake2ConsensusCutoverBlockHeight = math.MaxUint32
+	}
+	t.Cleanup(resetGlobalDeSoParams)
 	hash1 := NewBlockHash(RandomBytes(32))
 	bn1 := &BlockNode{
 		Hash:   hash1,
@@ -1428,12 +1444,272 @@ func TestCanCommitGrandparent(t *testing.T) {
 	// TODO: What other cases do we really need tested here?
 }
 
-func TestCommitGrandparent(t *testing.T) {
-	t.Skip("Skipping TestCommitGrandparent")
+// TestRunCommitRuleOnBestChain tests the runCommitRuleOnBestChain function
+// to verify that it properly assesses the commit rule and that the commit logic
+// behaves as expected.
+// It tests the following cases:
+// 1. Adding a single block (block1) to the best chain does not result in any new blocks being committed.
+// 2. Adding a second block (block2) w/ parent (block1) to the best chain does not result in any new blocks being committed.
+// 3. Adding a third block (block3) w/ parent (block2) and block3's view = block2's view + 1 to the best chain results in block1 being committed.
+// 4. Adding a fourth block (block4) w/ parent (block3) and block4's view > block3's view + 1 to the best chain results in block2 being committed.
+// 5. Adding a fifth block (block5) w/ parent (block4) and block5's view = block4's view + 1 to the best chain does not result in block3 being committed.
+// 6. Adding a sixth block (block6) w/ parent (block5) and block6's view = block5's view + 1 to the best chain results in block3 and block4 being committed.
+func TestRunCommitRuleOnBestChain(t *testing.T) {
+	testMeta := NewTestPoSBlockchain(t)
+
+	// Create a single block and add it to the best chain.
+	blockTemplate1 := _generateBlockAndAddToBestChain(testMeta, 11, 11, 887)
+	// Okay now try to run the commit rule. Nothing will happen.
+	// We expect the block to be uncommitted.
+	err := testMeta.chain.runCommitRuleOnBestChain()
+	require.NoError(t, err)
+
+	blockHash1, err := blockTemplate1.Hash()
+	require.NoError(t, err)
+	// Okay so let's make sure the block is uncommitted.
+	_verifyCommitRuleHelper(testMeta, []*BlockHash{}, []*BlockHash{blockHash1}, nil)
+
+	// Add one more block to best chain. Should still not trigger commit rule
+	blockTemplate2 := _generateBlockAndAddToBestChain(testMeta, 12, 12, 813)
+
+	// Run commit rule again. Nothing should happen.
+	// We expect both block 1 and block 2 to be uncommitted.
+	err = testMeta.chain.runCommitRuleOnBestChain()
+	require.NoError(t, err)
+
+	blockHash2, err := blockTemplate2.Hash()
+	require.NoError(t, err)
+	// Okay so let's make sure blocks 1 and 2 are uncommitted.
+	_verifyCommitRuleHelper(testMeta, []*BlockHash{}, []*BlockHash{blockHash1, blockHash2}, nil)
+
+	// Okay add one MORE block to the best chain. This should trigger the commit rule.
+	blockTemplate3 := _generateBlockAndAddToBestChain(testMeta, 13, 13, 513)
+
+	// Run the commit rule again. This time we expect block 1 to be committed.
+	err = testMeta.chain.runCommitRuleOnBestChain()
+	require.NoError(t, err)
+
+	blockHash3, err := blockTemplate3.Hash()
+	require.NoError(t, err)
+
+	// Okay so let's make sure that block 1 is committed and blocks 2 and 3 are not.
+	_verifyCommitRuleHelper(testMeta, []*BlockHash{blockHash1}, []*BlockHash{blockHash2, blockHash3}, blockHash1)
+
+	// Add one more block to the best chain, but have the view be further in the future.
+	// this should trigger a commit on block 2.
+	blockTemplate4 := _generateBlockAndAddToBestChain(testMeta, 14, 20, 429)
+	err = testMeta.chain.runCommitRuleOnBestChain()
+	require.NoError(t, err)
+
+	blockHash4, err := blockTemplate4.Hash()
+	require.NoError(t, err)
+
+	// Blocks 1 and 2 should be committed, blocks 3 and 4 are not.
+	_verifyCommitRuleHelper(testMeta, []*BlockHash{blockHash1, blockHash2}, []*BlockHash{blockHash3, blockHash4}, blockHash2)
+
+	// Okay so add block 5 to the best chain. This should NOT trigger a commit on block 3
+	// as block 4 is not a direct child of block 3 based on its view.
+	blockTemplate5 := _generateBlockAndAddToBestChain(testMeta, 15, 21, 654)
+	err = testMeta.chain.runCommitRuleOnBestChain()
+	require.NoError(t, err)
+
+	blockHash5, err := blockTemplate5.Hash()
+	require.NoError(t, err)
+
+	// Blocks 1 and 2 are committed, blocks 3, 4, and 5 are not.
+	_verifyCommitRuleHelper(testMeta, []*BlockHash{blockHash1, blockHash2}, []*BlockHash{blockHash3, blockHash4, blockHash5}, blockHash2)
+
+	// If we now add a block that is a descendent of block 5, we should be able to commit
+	// blocks 3 and 4 as block 4 and 5 possess a direct parent child relationship and
+	// we have a descendent of block 5.
+	blockTemplate6 := _generateBlockAndAddToBestChain(testMeta, 16, 22, 912)
+	require.NoError(t, err)
+	err = testMeta.chain.runCommitRuleOnBestChain()
+	require.NoError(t, err)
+
+	blockHash6, err := blockTemplate6.Hash()
+	require.NoError(t, err)
+
+	// Blocks 1, 2, 3, and 4 are committed, blocks 5 and 6 are not.
+	_verifyCommitRuleHelper(testMeta, []*BlockHash{blockHash1, blockHash2, blockHash3, blockHash4}, []*BlockHash{blockHash5, blockHash6}, blockHash4)
+}
+
+func _verifyCommitRuleHelper(testMeta *TestMeta, committedBlocks []*BlockHash, uncommittedBlocks []*BlockHash, bestHash *BlockHash) {
+	if bestHash != nil {
+		// Verify the best hash in the db.
+		dbBestHash := DbGetBestHash(testMeta.chain.db, testMeta.chain.snapshot, ChainTypeDeSoBlock)
+		require.True(testMeta.t, bestHash.IsEqual(dbBestHash))
+	}
+	for _, committedHash := range committedBlocks {
+		// Okay so let's make sure the block is committed.
+		blockNode, exists := testMeta.chain.bestChainMap[*committedHash]
+		require.True(testMeta.t, exists)
+		require.True(testMeta.t, blockNode.IsCommitted())
+
+		// Block should be in DB.
+		fullBlock, err := GetBlock(blockNode.Hash, testMeta.chain.db, testMeta.chain.snapshot)
+		require.NoError(testMeta.t, err)
+		require.NotNil(testMeta.t, fullBlock)
+		// Height Hash To Node Info should be in DB.
+		heightHashToNodeInfo := GetHeightHashToNodeInfo(testMeta.chain.db, testMeta.chain.snapshot, blockNode.Height, blockNode.Hash, false)
+		require.NoError(testMeta.t, err)
+		require.NotNil(testMeta.t, heightHashToNodeInfo)
+		// Make sure this info matches the block node.
+		serializedDBBlockNode, err := SerializeBlockNode(heightHashToNodeInfo)
+		require.NoError(testMeta.t, err)
+		serializedBlockNode, err := SerializeBlockNode(blockNode)
+		require.NoError(testMeta.t, err)
+		require.True(testMeta.t, bytes.Equal(serializedDBBlockNode, serializedBlockNode))
+		utxoOps, err := GetUtxoOperationsForBlock(testMeta.chain.db, testMeta.chain.snapshot, blockNode.Hash)
+		require.NoError(testMeta.t, err)
+		// We have 1 utxo op slice for each transaction PLUS 1 for expired nonces.
+		require.Len(testMeta.t, utxoOps, len(fullBlock.Txns)+1)
+	}
+	for _, uncommittedBlockHash := range uncommittedBlocks {
+		// Okay so let's make sure the block is uncommitted.
+		blockNode, exists := testMeta.chain.bestChainMap[*uncommittedBlockHash]
+		require.True(testMeta.t, exists)
+		require.False(testMeta.t, blockNode.IsCommitted())
+		// TODO: Verify DB results?? Kinda silly to make sure everything is missing.
+	}
+}
+
+func _generateBlockAndAddToBestChain(testMeta *TestMeta, blockHeight uint64, view uint64, seed int64) *MsgDeSoBlock {
+	globalParams := _testGetDefaultGlobalParams()
+	randSource := rand.New(rand.NewSource(seed))
+	passingTxns := []*MsgDeSoTxn{}
+	totalUtilityFee := uint64(0)
+	passingTransactions := 50
+	feeMin := globalParams.MinimumNetworkFeeNanosPerKB
+	feeMax := uint64(2000)
+	m0PubBytes, _, _ := Base58CheckDecode(m0Pub)
+	for ii := 0; ii < passingTransactions; ii++ {
+		txn := _generateTestTxn(testMeta.t, randSource, feeMin, feeMax, m0PubBytes, m0Priv, blockHeight+100, 20)
+		passingTxns = append(passingTxns, txn)
+		_, utilityFee := computeBMF(txn.TxnFeeNanos)
+		totalUtilityFee += utilityFee
+		_wrappedPosMempoolAddTransaction(testMeta.t, testMeta.posMempool, txn)
+	}
+
+	seedHash := &RandomSeedHash{}
+	_, err := seedHash.FromBytes(Sha256DoubleHash([]byte("seed")).ToBytes())
+	require.NoError(testMeta.t, err)
+
+	blockTemplate := _getFullBlockTemplate(testMeta, testMeta.posMempool.readOnlyLatestBlockView, blockHeight, view, seedHash)
+	require.NotNil(testMeta.t, blockTemplate)
+	// This is a hack to get the block to connect. We just give the block reward to m0.
+	blockTemplate.Txns[0].TxOutputs[0].PublicKey = m0PubBytes
+	// Make sure ToBytes works.
+	var msgDesoBlock *MsgDeSoBlock
+	msgDesoBlock = blockTemplate
+	_, err = msgDesoBlock.ToBytes(false)
+	require.NoError(testMeta.t, err)
+	newBlockHash, err := msgDesoBlock.Hash()
+	require.NoError(testMeta.t, err)
+
+	// Add block to block index and best chain
+	newBlockNode, err := testMeta.chain.storeValidatedBlockInBlockIndex(msgDesoBlock)
+	require.NoError(testMeta.t, err)
+	require.True(testMeta.t, newBlockNode.IsValidated())
+	require.True(testMeta.t, newBlockNode.Hash.IsEqual(newBlockHash))
+	testMeta.chain.addBlockToBestChain(newBlockNode)
+	// Update the latest block view
+	latestBlockView, err := testMeta.chain.GetUncommittedTipView()
+	require.NoError(testMeta.t, err)
+	testMeta.posMempool.UpdateLatestBlock(latestBlockView, blockTemplate.Header.Height)
+
+	return blockTemplate
+}
+
+func _getFullBlockTemplate(testMeta *TestMeta, latestBlockView *UtxoView, blockHeight uint64, view uint64, seedHash *RandomSeedHash) BlockTemplate {
+	blockTemplate, err := testMeta.posBlockProducer.createBlockTemplate(latestBlockView, blockHeight, view, seedHash)
+	require.NoError(testMeta.t, err)
+	require.NotNil(testMeta.t, blockTemplate)
+	blockTemplate.Header.TxnConnectStatusByIndexHash = HashBitset(blockTemplate.TxnConnectStatusByIndex)
+	// Add a dummy vote QC
+	proposerVotingPublicKey := _generateRandomBLSPrivateKey(testMeta.t)
+	dummySig, err := proposerVotingPublicKey.Sign(RandomBytes(32))
+	chainTip := testMeta.chain.GetBestChainTip()
+	blockTemplate.Header.ValidatorsVoteQC = &QuorumCertificate{
+		BlockHash:      chainTip.Hash,
+		ProposedInView: chainTip.Header.ProposedInView,
+		ValidatorsVoteAggregatedSignature: &AggregatedBLSSignature{
+			SignersList: bitset.NewBitset().Set(0, true),
+			Signature:   dummySig,
+		},
+	}
+	blockTemplate.Header.ProposerVotePartialSignature = dummySig
+	return blockTemplate
 }
 
 func _generateRandomBLSPrivateKey(t *testing.T) *bls.PrivateKey {
 	privateKey, err := bls.NewPrivateKey()
 	require.NoError(t, err)
 	return privateKey
+}
+
+// NewTestPoSBlockchain creates a new low-difficulty Blockchain for use in tests.
+// It first creates a new Blockchain, then mines 10 blocks to give the senderPkString
+// some DESO to send to m0 and m1. Then it stops the miner and PoW Mempool. Finally,
+// it creates a PoSMempool and PoSBlockProducer and sets the PoS fork heights. The setup
+// block height is set to 9 and the cutover is set to 11.
+func NewTestPoSBlockchain(t *testing.T) *TestMeta {
+	chain, params, db := NewLowDifficultyBlockchain(t)
+	params.ForkHeights.BalanceModelBlockHeight = 1
+	oldPool, miner := NewTestMiner(t, chain, params, true)
+	// Mine a few blocks to give the senderPkString some money.
+	for ii := 0; ii < 10; ii++ {
+		_, err := miner.MineAndProcessSingleBlock(0 /*threadIndex*/, oldPool)
+		require.NoError(t, err)
+	}
+
+	m0PubBytes, _, _ := Base58CheckDecode(m0Pub)
+	m0PublicKeyBase58Check := Base58CheckEncode(m0PubBytes, false, params)
+	m1PubBytes, _, _ := Base58CheckDecode(m1Pub)
+	m1PublicKeyBase58Check := Base58CheckEncode(m1PubBytes, false, params)
+
+	_, _, _ = _doBasicTransferWithViewFlush(
+		t, chain, db, params, senderPkString, m0PublicKeyBase58Check,
+		senderPrivString, 1e9, 1000)
+	_, _, _ = _doBasicTransferWithViewFlush(
+		t, chain, db, params, senderPkString, m1PublicKeyBase58Check,
+		senderPrivString, 1e9, 1000)
+	oldPool.Stop()
+	miner.Stop()
+	latestBlockView, err := NewUtxoView(db, params, nil, nil)
+	require.NoError(t, err)
+	maxMempoolPosSizeBytes := uint64(500)
+	mempoolBackupIntervalMillis := uint64(30000)
+	mempool := NewPosMempool(params, _testGetDefaultGlobalParams(), latestBlockView, 10, _dbDirSetup(t), false, maxMempoolPosSizeBytes, mempoolBackupIntervalMillis)
+	require.NoError(t, mempool.Start())
+	require.True(t, mempool.IsRunning())
+	priv := _generateRandomBLSPrivateKey(t)
+	m0Pk := NewPublicKey(m0PubBytes)
+	posBlockProducer := NewPosBlockProducer(mempool, params, m0Pk, priv.PublicKey())
+	params.ForkHeights.ProofOfStake1StateSetupBlockHeight = 9
+	params.ForkHeights.ProofOfStake2ConsensusCutoverBlockHeight = 11
+	GlobalDeSoParams.ForkHeights.ProofOfStake1StateSetupBlockHeight = 9
+	GlobalDeSoParams.ForkHeights.ProofOfStake2ConsensusCutoverBlockHeight = 11
+	testMeta := &TestMeta{
+		t:                t,
+		chain:            chain,
+		db:               db,
+		params:           params,
+		posMempool:       mempool,
+		posBlockProducer: posBlockProducer,
+		// TODO: what else do we need here?
+		feeRateNanosPerKb: 1000,
+		//miner:                  nil,
+		//txnOps:                 nil,
+		//txns:                   nil,
+		//expectedSenderBalances: nil,
+		//savedHeight:            0,
+		//feeRateNanosPerKb:      0,
+	}
+	t.Cleanup(func() {
+		mempool.Stop()
+		GlobalDeSoParams.ForkHeights.ProofOfStake1StateSetupBlockHeight = math.MaxUint32
+		GlobalDeSoParams.ForkHeights.ProofOfStake2ConsensusCutoverBlockHeight = math.MaxUint32
+	})
+	return testMeta
 }
