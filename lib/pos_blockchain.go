@@ -23,12 +23,13 @@ func (bc *Blockchain) processBlockPoS(block *MsgDeSoBlock, currentView uint64, v
 	// is an orphan, then we store it without validating it. If the block extends from any
 	// committed block other than the committed tip, then we throw it away.
 	lineageFromCommittedTip, err := bc.getLineageFromCommittedTip(block)
-	if err == RuleErrorDoesNotExtendCommittedTip {
+	if err == RuleErrorDoesNotExtendCommittedTip ||
+		err == RuleErrorParentBlockHasViewGreaterOrEqualToChildBlock ||
+		err == RuleErrorParentBlockHeightNotSequentialWithChildBlockHeight ||
+		err == RuleErrorAncestorBlockValidationFailed {
 		// In this case, the block extends a committed block that is NOT the tip
-		// block. There is no point in storing this block because we will never
-		// reorg to it.
+		// block. We will never accept this block, so mark it as ValidateFailed.
 		return false, false, nil, err
-
 	}
 	if err == RuleErrorMissingAncestorBlock {
 		// In this case, the block is an orphan that does not extend from any blocks
@@ -488,13 +489,15 @@ func (bc *Blockchain) isValidPoSQuorumCertificate(desoBlock *MsgDeSoBlock, valid
 // getLineageFromCommittedTip returns the ancestors of the block provided up to, but not
 // including the committed tip. The first block in the returned slice is the first uncommitted
 // ancestor.
-func (bc *Blockchain) getLineageFromCommittedTip(desoBlock *MsgDeSoBlock) ([]*BlockNode, error) {
+func (bc *Blockchain) getLineageFromCommittedTip(block *MsgDeSoBlock) ([]*BlockNode, error) {
 	highestCommittedBlock, idx := bc.getHighestCommittedBlock()
 	if idx == -1 || highestCommittedBlock == nil {
 		return nil, errors.New("getLineageFromCommittedTip: No committed blocks found")
 	}
-	currentHash := desoBlock.Header.PrevBlockHash.NewBlockHash()
+	currentHash := block.Header.PrevBlockHash.NewBlockHash()
 	ancestors := []*BlockNode{}
+	prevHeight := block.Header.Height
+	prevView := block.Header.ProposedInView
 	for {
 		currentBlock, exists := bc.blockIndex[*currentHash]
 		if !exists {
@@ -506,8 +509,19 @@ func (bc *Blockchain) getLineageFromCommittedTip(desoBlock *MsgDeSoBlock) ([]*Bl
 		if currentBlock.IsCommitted() {
 			return nil, RuleErrorDoesNotExtendCommittedTip
 		}
+		if currentBlock.IsValidateFailed() {
+			return nil, RuleErrorAncestorBlockValidationFailed
+		}
+		if currentBlock.Header.ProposedInView >= prevView {
+			return nil, RuleErrorParentBlockHasViewGreaterOrEqualToChildBlock
+		}
+		if uint64(currentBlock.Header.Height)+1 != prevHeight {
+			return nil, RuleErrorParentBlockHeightNotSequentialWithChildBlockHeight
+		}
 		ancestors = append(ancestors, currentBlock)
 		currentHash = currentBlock.Header.PrevBlockHash
+		prevHeight = currentBlock.Header.Height
+		prevView = currentBlock.Header.ProposedInView
 	}
 	collections.Reverse(ancestors)
 	return ancestors, nil
@@ -970,23 +984,26 @@ func (bc *Blockchain) getHighestCommittedBlock() (*BlockNode, int) {
 }
 
 const (
-	RuleErrorNilBlockHeader                 RuleError = "RuleErrorNilBlockHeader"
-	RuleErrorNilPrevBlockHash               RuleError = "RuleErrorNilPrevBlockHash"
-	RuleErrorPoSBlockTstampNanoSecsTooOld   RuleError = "RuleErrorPoSBlockTstampNanoSecsTooOld"
-	RuleErrorPoSBlockTstampNanoSecsInFuture RuleError = "RuleErrorPoSBlockTstampNanoSecsInFuture"
-	RuleErrorInvalidPoSBlockHeaderVersion   RuleError = "RuleErrorInvalidPoSBlockHeaderVersion"
-	RuleErrorNoTimeoutOrVoteQC              RuleError = "RuleErrorNoTimeoutOrVoteQC"
-	RuleErrorBothTimeoutAndVoteQC           RuleError = "RuleErrorBothTimeoutAndVoteQC"
-	RuleErrorTimeoutQCWithTransactions      RuleError = "RuleErrorTimeoutQCWithTransactions"
-	RuleErrorMissingParentBlock             RuleError = "RuleErrorMissingParentBlock"
-	RuleErrorMissingAncestorBlock           RuleError = "RuleErrorMissingAncestorBlock"
-	RuleErrorDoesNotExtendCommittedTip      RuleError = "RuleErrorDoesNotExtendCommittedTip"
-	RuleErrorNilMerkleRoot                  RuleError = "RuleErrorNilMerkleRoot"
-	RuleErrorInvalidMerkleRoot              RuleError = "RuleErrorInvalidMerkleRoot"
-	RuleErrorNoTxnsWithMerkleRoot           RuleError = "RuleErrorNoTxnsWithMerkleRoot"
-	RuleErrorInvalidProposerVotingPublicKey RuleError = "RuleErrorInvalidProposerVotingPublicKey"
-	RuleErrorInvalidProposerPublicKey       RuleError = "RuleErrorInvalidProposerPublicKey"
-	RuleErrorInvalidRandomSeedHash          RuleError = "RuleErrorInvalidRandomSeedHash"
+	RuleErrorNilBlockHeader                                     RuleError = "RuleErrorNilBlockHeader"
+	RuleErrorNilPrevBlockHash                                   RuleError = "RuleErrorNilPrevBlockHash"
+	RuleErrorPoSBlockTstampNanoSecsTooOld                       RuleError = "RuleErrorPoSBlockTstampNanoSecsTooOld"
+	RuleErrorPoSBlockTstampNanoSecsInFuture                     RuleError = "RuleErrorPoSBlockTstampNanoSecsInFuture"
+	RuleErrorInvalidPoSBlockHeaderVersion                       RuleError = "RuleErrorInvalidPoSBlockHeaderVersion"
+	RuleErrorNoTimeoutOrVoteQC                                  RuleError = "RuleErrorNoTimeoutOrVoteQC"
+	RuleErrorBothTimeoutAndVoteQC                               RuleError = "RuleErrorBothTimeoutAndVoteQC"
+	RuleErrorTimeoutQCWithTransactions                          RuleError = "RuleErrorTimeoutQCWithTransactions"
+	RuleErrorMissingParentBlock                                 RuleError = "RuleErrorMissingParentBlock"
+	RuleErrorMissingAncestorBlock                               RuleError = "RuleErrorMissingAncestorBlock"
+	RuleErrorDoesNotExtendCommittedTip                          RuleError = "RuleErrorDoesNotExtendCommittedTip"
+	RuleErrorAncestorBlockValidationFailed                      RuleError = "RuleErrorAncestorBlockValidationFailed"
+	RuleErrorParentBlockHasViewGreaterOrEqualToChildBlock       RuleError = "RuleErrorParentBlockHasViewGreaterOrEqualToChildBlock"
+	RuleErrorParentBlockHeightNotSequentialWithChildBlockHeight RuleError = "RuleErrorParentBlockHeightNotSequentialWithChildBlockHeight"
+	RuleErrorNilMerkleRoot                                      RuleError = "RuleErrorNilMerkleRoot"
+	RuleErrorInvalidMerkleRoot                                  RuleError = "RuleErrorInvalidMerkleRoot"
+	RuleErrorNoTxnsWithMerkleRoot                               RuleError = "RuleErrorNoTxnsWithMerkleRoot"
+	RuleErrorInvalidProposerVotingPublicKey                     RuleError = "RuleErrorInvalidProposerVotingPublicKey"
+	RuleErrorInvalidProposerPublicKey                           RuleError = "RuleErrorInvalidProposerPublicKey"
+	RuleErrorInvalidRandomSeedHash                              RuleError = "RuleErrorInvalidRandomSeedHash"
 
 	RuleErrorInvalidPoSBlockHeight       RuleError = "RuleErrorInvalidPoSBlockHeight"
 	RuleErrorPoSBlockBeforeCutoverHeight RuleError = "RuleErrorPoSBlockBeforeCutoverHeight"

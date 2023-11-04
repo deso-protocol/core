@@ -759,7 +759,9 @@ func TestGetLineageFromCommittedTip(t *testing.T) {
 	}
 	block := &MsgDeSoBlock{
 		Header: &MsgDeSoHeader{
-			PrevBlockHash: hash1,
+			PrevBlockHash:  hash1,
+			ProposedInView: 3,
+			Height:         3,
 		},
 	}
 	// If parent is committed tip, we'll have 0 ancestors.
@@ -779,9 +781,10 @@ func TestGetLineageFromCommittedTip(t *testing.T) {
 	// add another block to the best chain.
 	hash2 := NewBlockHash(RandomBytes(32))
 	block2 := NewBlockNode(genesisNode, hash2, 2, nil, nil, &MsgDeSoHeader{
-		Version:       2,
-		Height:        2,
-		PrevBlockHash: hash1,
+		Version:        2,
+		Height:         2,
+		ProposedInView: 2,
+		PrevBlockHash:  hash1,
 	}, StatusBlockStored|StatusBlockValidated|StatusBlockCommitted)
 	bc.bestChain = append(bc.bestChain, block2)
 	bc.blockIndex[*hash2] = block2
@@ -796,6 +799,27 @@ func TestGetLineageFromCommittedTip(t *testing.T) {
 	ancestors, err = bc.getLineageFromCommittedTip(block)
 	require.NoError(t, err)
 	require.Len(t, ancestors, 1)
+
+	// Testing error cases
+	// Set block 2 to be ValidateFailed
+	block2.Status = StatusBlockStored | StatusBlockValidateFailed
+	ancestors, err = bc.getLineageFromCommittedTip(block)
+	require.Error(t, err)
+	require.Equal(t, err, RuleErrorAncestorBlockValidationFailed)
+
+	// Revert block 2 status.
+	block2.Status = StatusBlockStored | StatusBlockValidated
+	// Set block's height to be <= block2's height
+	block.Header.Height = 2
+	ancestors, err = bc.getLineageFromCommittedTip(block)
+	require.Error(t, err)
+	require.Equal(t, err, RuleErrorParentBlockHeightNotSequentialWithChildBlockHeight)
+	// Revert block 2's height and set block's view to be <= block2's view
+	block.Header.Height = 3
+	block.Header.ProposedInView = 2
+	ancestors, err = bc.getLineageFromCommittedTip(block)
+	require.Error(t, err)
+	require.Equal(t, err, RuleErrorParentBlockHasViewGreaterOrEqualToChildBlock)
 }
 
 func TestValidateQC(t *testing.T) {
@@ -1159,6 +1183,10 @@ func TestTryReorgToNewTipAndTryApplyNewTip(t *testing.T) {
 		Hash:   hash1,
 		Status: StatusBlockStored | StatusBlockValidated | StatusBlockCommitted,
 		Height: 2,
+		Header: &MsgDeSoHeader{
+			Height:         2,
+			ProposedInView: 2,
+		},
 	}
 	hash2 := NewBlockHash(RandomBytes(32))
 	bn2 := &BlockNode{
@@ -1166,7 +1194,9 @@ func TestTryReorgToNewTipAndTryApplyNewTip(t *testing.T) {
 		Status: StatusBlockStored | StatusBlockValidated,
 		Height: 3,
 		Header: &MsgDeSoHeader{
-			PrevBlockHash: hash1,
+			PrevBlockHash:  hash1,
+			Height:         3,
+			ProposedInView: 3,
 		},
 	}
 	hash3 := NewBlockHash(RandomBytes(32))
@@ -1175,8 +1205,9 @@ func TestTryReorgToNewTipAndTryApplyNewTip(t *testing.T) {
 		Status: StatusBlockStored | StatusBlockValidated,
 		Height: 4,
 		Header: &MsgDeSoHeader{
-			PrevBlockHash: hash2,
-			Height:        4,
+			PrevBlockHash:  hash2,
+			Height:         4,
+			ProposedInView: 4,
 		},
 	}
 	bc.addBlockToBestChain(bn1)
@@ -1191,6 +1222,7 @@ func TestTryReorgToNewTipAndTryApplyNewTip(t *testing.T) {
 		Header: &MsgDeSoHeader{
 			PrevBlockHash:  hash2,
 			ProposedInView: 10,
+			Height:         4,
 		},
 	}
 	newBlockHash, err := newBlock.Hash()
@@ -1246,7 +1278,9 @@ func TestTryReorgToNewTipAndTryApplyNewTip(t *testing.T) {
 		Status: StatusBlockStored | StatusBlockValidated,
 		Height: 5,
 		Header: &MsgDeSoHeader{
-			PrevBlockHash: hash1,
+			PrevBlockHash:  hash1,
+			ProposedInView: 5,
+			Height:         5,
 		},
 	}
 
@@ -1256,7 +1290,9 @@ func TestTryReorgToNewTipAndTryApplyNewTip(t *testing.T) {
 		Status: StatusBlockStored | StatusBlockValidated,
 		Height: 6,
 		Header: &MsgDeSoHeader{
-			PrevBlockHash: hash4,
+			PrevBlockHash:  hash4,
+			ProposedInView: 6,
+			Height:         6,
 		},
 	}
 	bc.blockIndex[*hash4] = bn4
@@ -1264,12 +1300,15 @@ func TestTryReorgToNewTipAndTryApplyNewTip(t *testing.T) {
 
 	// Set new block's parent to hash5
 	newBlockNode.Header.PrevBlockHash = hash5
+	newBlockNode.Header.ProposedInView = 7
+	newBlockNode.Header.Height = 7
+	newBlockNode.Height = 7
 	require.NoError(t, err)
 	ancestors, err = bc.getLineageFromCommittedTip(newBlock)
 	require.NoError(t, err)
 
 	// Try to apply newBlock as tip.
-	appliedNewTip, err = bc.tryApplyNewTip(newBlockNode, 9, ancestors)
+	appliedNewTip, err = bc.tryApplyNewTip(newBlockNode, 6, ancestors)
 	require.NoError(t, err)
 	require.True(t, appliedNewTip)
 	// newBlockHash should be tip.
@@ -1313,10 +1352,12 @@ func TestTryReorgToNewTipAndTryApplyNewTip(t *testing.T) {
 	// Super Happy path: no reorg, just extending tip.
 	newBlockNode.Header.ProposedInView = 10
 	newBlockNode.Header.PrevBlockHash = hash3
+	newBlockNode.Header.Height = 5
+	newBlockNode.Height = 5
 	require.NoError(t, err)
 	ancestors, err = bc.getLineageFromCommittedTip(newBlock)
 	require.NoError(t, err)
-	appliedNewTip, err = bc.tryApplyNewTip(newBlockNode, 9, ancestors)
+	appliedNewTip, err = bc.tryApplyNewTip(newBlockNode, 6, ancestors)
 	require.True(t, appliedNewTip)
 	require.NoError(t, err)
 	// newBlockHash should be tip.
