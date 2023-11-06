@@ -973,6 +973,52 @@ func (bc *Blockchain) getHighestCommittedBlock() (*BlockNode, int) {
 	return nil, -1
 }
 
+func (bc *Blockchain) GetSafeBlocks() ([]*BlockNode, error) {
+	// First get committed tip.
+	committedTip, idx := bc.getHighestCommittedBlock()
+	if idx == -1 || committedTip == nil {
+		return nil, errors.New("GetSafeBlocks: No committed blocks found")
+	}
+	// Now get all blocks from the committed tip to the best chain tip.
+	safeBlocks := []*BlockNode{committedTip}
+	maxHeightWithSafeBlocks := bc.getMaxSequentialBlockHeightAfter(uint64(committedTip.Height))
+	for ii := uint64(committedTip.Height + 1); ii < maxHeightWithSafeBlocks+1; ii++ {
+		// If we don't have any blocks at this height, we know that any blocks at a later height are not safe blocks.
+		if !bc.hasBlockNodesIndexedAtHeight(ii) {
+			break
+		}
+		hasSeenValidatedBlockAtThisHeight := false
+		blockNodes := bc.getAllBlockNodesIndexedAtHeight(ii)
+		for _, blockNode := range blockNodes {
+			// TODO: Are there other conditions we should consider?
+			if blockNode.IsValidated() {
+				hasSeenValidatedBlockAtThisHeight = true
+				safeBlocks = append(safeBlocks, blockNode)
+			}
+		}
+		// If we didn't see any validated blocks at this height, we know
+		// that no blocks at a later height can be validated and thus
+		// cannot be safe blocks.
+		if !hasSeenValidatedBlockAtThisHeight {
+			break
+		}
+	}
+	return safeBlocks, nil
+}
+
+// getMaxSequentialBlockHeightAfter returns the max sequential block height after the starting height.
+// If the blockIndexByHeight does not have any blocks at a certain height, we know that any blocks
+// at a later height are not valid.
+func (bc *Blockchain) getMaxSequentialBlockHeightAfter(startingHeight uint64) uint64 {
+	hasBlocksAtCurrentHeight := true
+	maxSequentialHeightWithBlocks := startingHeight
+	for currentHeight := startingHeight; hasBlocksAtCurrentHeight; currentHeight++ {
+		maxSequentialHeightWithBlocks = currentHeight
+		hasBlocksAtCurrentHeight = bc.hasBlockNodesIndexedAtHeight(currentHeight)
+	}
+	return maxSequentialHeightWithBlocks
+}
+
 const (
 	RuleErrorNilBlockHeader                                     RuleError = "RuleErrorNilBlockHeader"
 	RuleErrorNilPrevBlockHash                                   RuleError = "RuleErrorNilPrevBlockHash"
