@@ -392,6 +392,11 @@ func (bc *Blockchain) hasValidBlockViewPoS(block *MsgDeSoBlock) error {
 		// we've validated that all ancestors exist in the block index.
 		return RuleErrorMissingParentBlock
 	}
+	// If the parent block was a PoW block, we can't validate this block's view
+	// in comparison.
+	if !blockNodeProofOfStakeCutoverMigrationTriggered(parentBlock.Height) {
+		return nil
+	}
 	// If our current block has a vote QC, then we need to validate that the
 	// view is exactly one greater than the latest uncommitted block.
 	if block.Header.ValidatorsTimeoutAggregateQC.isEmpty() {

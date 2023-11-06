@@ -375,6 +375,7 @@ func TestUpsertBlockAndBlockNodeToDB(t *testing.T) {
 }
 
 func TestValidateBlockView(t *testing.T) {
+	setBalanceModelBlockHeights(t)
 	bc, _, _ := NewTestBlockchain(t)
 	hash1 := NewBlockHash(RandomBytes(32))
 	hash2 := NewBlockHash(RandomBytes(32))
