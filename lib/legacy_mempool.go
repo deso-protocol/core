@@ -782,7 +782,7 @@ func (mp *DeSoMempool) OpenTempDBAndDumpTxns() error {
 // only be called when one is sure that a transaction is valid. Otherwise, it could
 // mess up the UtxoViews that we store internally.
 func (mp *DeSoMempool) addTransaction(
-	tx *MsgDeSoTxn, height uint32, fee uint64, updateBackupView bool) (*MempoolTx, error) {
+	tx *MsgDeSoTxn, height uint32, timestamp int64, fee uint64, updateBackupView bool) (*MempoolTx, error) {
 
 	// Add the transaction to the pool and mark the referenced outpoints
 	// as spent by the pool.
@@ -839,7 +839,9 @@ func (mp *DeSoMempool) addTransaction(
 
 	// Add it to the universal view. We assume the txn was already added to the
 	// backup view.
-	_, _, _, _, err = mp.universalUtxoView._connectTransaction(mempoolTx.Tx, mempoolTx.Hash, int64(mempoolTx.TxSizeBytes), height, 0, false, false)
+	_, _, _, _, err = mp.universalUtxoView._connectTransaction(
+		mempoolTx.Tx, mempoolTx.Hash, int64(mempoolTx.TxSizeBytes), height,
+		timestamp, false, false)
 	if err != nil {
 		return nil, errors.Wrap(err, "ERROR addTransaction: _connectTransaction "+
 			"failed on universalUtxoView; this is a HUGE problem and should never happen")
@@ -847,7 +849,8 @@ func (mp *DeSoMempool) addTransaction(
 	// Add it to the universalTransactionList if it made it through the view
 	mp.universalTransactionList = append(mp.universalTransactionList, mempoolTx)
 	if updateBackupView {
-		_, _, _, _, err = mp.backupUniversalUtxoView._connectTransaction(mempoolTx.Tx, mempoolTx.Hash, int64(mempoolTx.TxSizeBytes), height, 0, false, false)
+		_, _, _, _, err = mp.backupUniversalUtxoView._connectTransaction(mempoolTx.Tx, mempoolTx.Hash,
+			int64(mempoolTx.TxSizeBytes), height, timestamp, false, false)
 		if err != nil {
 			return nil, errors.Wrap(err, "ERROR addTransaction: _connectTransaction "+
 				"failed on backupUniversalUtxoView; this is a HUGE problem and should never happen")
@@ -1018,8 +1021,10 @@ func (mp *DeSoMempool) tryAcceptTransaction(
 	totalNanosPurchasedBefore := mp.backupUniversalUtxoView.NanosPurchased
 	usdCentsPerBitcoinBefore := mp.backupUniversalUtxoView.GetCurrentUSDCentsPerBitcoin()
 	bestHeight := uint32(mp.bc.blockTip().Height + 1)
+	bestTimestamp := time.Now().UnixNano()
 	// We can skip verifying the transaction size as related to the minimum fee here.
-	utxoOps, totalInput, totalOutput, txFee, err := mp.backupUniversalUtxoView._connectTransaction(tx, txHash, 0, bestHeight, 0, verifySignatures, false)
+	utxoOps, totalInput, totalOutput, txFee, err := mp.backupUniversalUtxoView._connectTransaction(
+		tx, txHash, 0, bestHeight, bestTimestamp, verifySignatures, false)
 	if err != nil {
 		mp.rebuildBackupView()
 		return nil, nil, errors.Wrapf(err, "tryAcceptTransaction: Problem "+
@@ -1086,7 +1091,7 @@ func (mp *DeSoMempool) tryAcceptTransaction(
 
 	// Add to transaction pool. Don't update the backup view since the call above
 	// will have already done this.
-	mempoolTx, err := mp.addTransaction(tx, bestHeight, txFee, false /*updateBackupUniversalView*/)
+	mempoolTx, err := mp.addTransaction(tx, bestHeight, bestTimestamp, txFee, false /*updateBackupUniversalView*/)
 	if err != nil {
 		mp.rebuildBackupView()
 		return nil, nil, errors.Wrapf(err, "tryAcceptTransaction: ")

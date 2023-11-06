@@ -368,8 +368,9 @@ func (bav *UtxoView) GetLocalYieldCurvePoints(profilePKID *PKID, lockupDuration 
 
 		// Check if any of the points needs to be cached in the view.
 		for _, yieldCurvePoint := range dbYieldCurvePoints {
-			if _, pointInView :=
-				bav.PKIDToLockupYieldCurvePointKeyToLockupYieldCurvePoints[*profilePKID][yieldCurvePoint.ToMapKey()]; !pointInView {
+			_, pointInView :=
+				bav.PKIDToLockupYieldCurvePointKeyToLockupYieldCurvePoints[*profilePKID][yieldCurvePoint.ToMapKey()]
+			if !pointInView {
 				bav._setLockupYieldCurvePoint(yieldCurvePoint)
 			}
 		}
@@ -385,10 +386,10 @@ func (bav *UtxoView) GetLocalYieldCurvePoints(profilePKID *PKID, lockupDuration 
 
 			// Check for nil pointer cases.
 			if lockupYieldCurvePoint.LockupDurationNanoSecs < lockupDuration && leftLockupPoint == nil {
-				leftLockupPoint = lockupYieldCurvePoint
+				leftLockupPoint = lockupYieldCurvePoint.Copy()
 			}
 			if lockupYieldCurvePoint.LockupDurationNanoSecs >= lockupDuration && rightLockupPoint == nil {
-				rightLockupPoint = lockupYieldCurvePoint
+				rightLockupPoint = lockupYieldCurvePoint.Copy()
 			}
 
 			// Check if the point is "more left" than the current left point.
@@ -482,7 +483,7 @@ type UpdateCoinLockupParamsMetadata struct {
 	//    Note that LockupYieldAPYBasisPoints is ignored in this transaction.
 	//
 	// By setting LockupYieldDurationNanoSecs to zero, the yield curve attached to the profile
-	// is left unmodified. In any UpdateDAOCoinLockupParams transaction looking to modify only
+	// is left unmodified. In any UpdateCoinLockupParams transaction looking to modify only
 	// LockupTransferRestrictions, LockupYieldDurationNanoSecs would be set to zero.
 	LockupYieldDurationNanoSecs int64
 	LockupYieldAPYBasisPoints   uint64
@@ -799,7 +800,7 @@ func (bav *UtxoView) _connectCoinLockup(
 		profileEntry.DAOCoinEntry.CoinsInCirculationNanos = *uint256.NewInt().Sub(
 			&profileEntry.DAOCoinEntry.CoinsInCirculationNanos,
 			txMeta.LockupAmountBaseUnits)
-		if transactorBalanceEntry.BalanceNanos.IsZero() {
+		if transactorBalanceEntry.BalanceNanos.IsZero() && !prevTransactorBalanceEntry.BalanceNanos.IsZero() {
 			profileEntry.DAOCoinEntry.NumberOfHolders--
 		}
 		bav._setProfileEntryMappings(profileEntry)
@@ -1424,7 +1425,7 @@ func (bav *UtxoView) _connectCoinLockupTransfer(
 			"_connectCoinLockupTransfer")
 	}
 
-	// Credit the sender's balance entry.
+	// Debit the sender's balance entry.
 	senderLockedBalanceEntry.BalanceBaseUnits = *uint256.NewInt().Sub(
 		&senderLockedBalanceEntry.BalanceBaseUnits, txMeta.LockedCoinsToTransferBaseUnits)
 
@@ -1662,7 +1663,7 @@ func (bav *UtxoView) _connectCoinUnlock(
 			"_connectCoinUnlock")
 	}
 
-	// Unlock coins until the amount specified by the transaction is deducted.
+	// Unlock all unlockable locked balance entries.
 	var prevLockedBalanceEntries []*LockedBalanceEntry
 	unlockedBalance := uint256.NewInt()
 	for _, unlockableLockedBalanceEntry := range unlockableLockedBalanceEntries {
@@ -1722,7 +1723,7 @@ func (bav *UtxoView) _connectCoinUnlock(
 				"_connectCoinUnlock")
 		}
 		profileEntry.DAOCoinEntry.CoinsInCirculationNanos = *newCoinsInCirculationNanos
-		if prevTransactorBalanceEntry.BalanceNanos.IsZero() {
+		if prevTransactorBalanceEntry.BalanceNanos.IsZero() && !newTransactorBalanceEntry.BalanceNanos.IsZero() {
 			profileEntry.DAOCoinEntry.NumberOfHolders++
 		}
 		bav._setProfileEntryMappings(profileEntry)

@@ -225,7 +225,8 @@ func (desoBlockProducer *DeSoBlockProducer) _getBlockTemplate(publicKey []byte) 
 			if err != nil {
 				return nil, nil, nil, errors.Wrapf(err, "Error copying UtxoView: ")
 			}
-			_, _, _, _, err = utxoViewCopy._connectTransaction(mempoolTx.Tx, mempoolTx.Hash, int64(mempoolTx.TxSizeBytes), uint32(blockRet.Header.Height), 0, true, false)
+			_, _, _, _, err = utxoViewCopy._connectTransaction(mempoolTx.Tx, mempoolTx.Hash, int64(mempoolTx.TxSizeBytes),
+				uint32(blockRet.Header.Height), int64(blockRet.Header.TstampNanoSecs), true, false)
 			if err != nil {
 				// Skip failing txns. This should happen super rarely.
 				txnErrorString := fmt.Sprintf(
@@ -235,7 +236,8 @@ func (desoBlockProducer *DeSoBlockProducer) _getBlockTemplate(publicKey []byte) 
 				continue
 			}
 			// At this point, we know the transaction isn't going to break our view so attach it.
-			_, _, _, _, err = utxoView._connectTransaction(mempoolTx.Tx, mempoolTx.Hash, int64(mempoolTx.TxSizeBytes), uint32(blockRet.Header.Height), 0, true, false)
+			_, _, _, _, err = utxoView._connectTransaction(mempoolTx.Tx, mempoolTx.Hash, int64(mempoolTx.TxSizeBytes),
+				uint32(blockRet.Header.Height), int64(blockRet.Header.TstampNanoSecs), true, false)
 			if err != nil {
 				// We should never get an error here since we just attached a txn to an indentical
 				// view.

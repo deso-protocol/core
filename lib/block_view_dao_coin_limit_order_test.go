@@ -4094,7 +4094,8 @@ func _connectDAOCoinLimitOrderTxn(
 	_signTxn(testMeta.t, txn, privateKey)
 	// Always use savedHeight (blockHeight+1) for validation since it's
 	// assumed the transaction will get mined into the next block.
-	utxoOps, totalInput, totalOutput, fees, err := currentUtxoView.ConnectTransaction(txn, txn.Hash(), getTxnSize(*txn), testMeta.savedHeight, 0, true, false)
+	utxoOps, totalInput, totalOutput, fees, err := currentUtxoView.ConnectTransaction(
+		txn, txn.Hash(), getTxnSize(*txn), testMeta.savedHeight, 0, true, false)
 	if err != nil {
 		// If error, remove most-recent expected sender balance added for this txn.
 		testMeta.expectedSenderBalances = testMeta.expectedSenderBalances[:len(testMeta.expectedSenderBalances)-1]

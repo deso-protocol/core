@@ -2172,7 +2172,8 @@ func _submitAssociationTxn(
 	_signTxn(testMeta.t, txn, TransactorPrivateKeyBase58Check)
 
 	// Connect the transaction.
-	utxoOps, totalInput, totalOutput, fees, err := testMeta.mempool.universalUtxoView.ConnectTransaction(txn, txn.Hash(), getTxnSize(*txn), testMeta.savedHeight, 0, true, false)
+	utxoOps, totalInput, totalOutput, fees, err := testMeta.mempool.universalUtxoView.ConnectTransaction(
+		txn, txn.Hash(), getTxnSize(*txn), testMeta.savedHeight, 0, true, false)
 	if err != nil {
 		return nil, nil, 0, err
 	}
@@ -2339,7 +2340,8 @@ func _testAssociationsWithDerivedKey(t *testing.T) {
 		// Sign txn.
 		_signTxnWithDerivedKey(t, txn, derivedKeyPrivBase58Check)
 		// Connect txn.
-		utxoOps, _, _, _, err := utxoView.ConnectTransaction(txn, txn.Hash(), getTxnSize(*txn), testMeta.savedHeight, 0, true, false)
+		utxoOps, _, _, _, err := utxoView.ConnectTransaction(
+			txn, txn.Hash(), getTxnSize(*txn), testMeta.savedHeight, 0, true, false)
 		if err != nil {
 			return err
 		}
