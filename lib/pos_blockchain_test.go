@@ -17,7 +17,7 @@ import (
 	"time"
 )
 
-func TestIsProperlyFormedBlockPoS(t *testing.T) {
+func TestIsProperlyFormedBlockAndIsBlockTimestampValidRelativeToParent(t *testing.T) {
 	bc, params, _ := NewTestBlockchain(t)
 	// TODO: update for PoS
 	mempool, miner := NewTestMiner(t, bc, params, true)
@@ -215,7 +215,7 @@ func TestIsProperlyFormedBlockPoS(t *testing.T) {
 	// Timestamp validations
 	// Block timestamp must be greater than the previous block timestamp
 	block.Header.TstampNanoSecs = bc.GetBestChainTip().Header.GetTstampSecs() - 1
-	err = bc.isProperlyFormedBlockPoS(block)
+	err = bc.isBlockTimestampValidRelativeToParentPoS(block)
 	require.Equal(t, err, RuleErrorPoSBlockTstampNanoSecsTooOld)
 
 	// Block timestamps can't be in the future.
@@ -241,7 +241,7 @@ func TestIsProperlyFormedBlockPoS(t *testing.T) {
 
 	// Parent must exist in the block index.
 	block.Header.PrevBlockHash = NewBlockHash(RandomBytes(32))
-	err = bc.isProperlyFormedBlockPoS(block)
+	err = bc.isBlockTimestampValidRelativeToParentPoS(block)
 	require.Equal(t, err, RuleErrorMissingParentBlock)
 
 	// Nil block header not allowed
@@ -1663,9 +1663,6 @@ func TestProcessBlockPoS(t *testing.T) {
 		require.True(t, success)
 		reorgBlockHash, err = reorgBlock.Hash()
 		require.NoError(t, err)
-	}
-
-	{
 		// We expect blockHash1 and blockHash2 to be committed, but blockHash3 and reorgBlockHash to not be committed.
 		// Timeout block will no longer be in best chain, and will still be in an uncommitted state in the block index
 		_verifyCommitRuleHelper(testMeta, []*BlockHash{blockHash1, blockHash2}, []*BlockHash{blockHash3, reorgBlockHash}, blockHash2)
@@ -1675,7 +1672,8 @@ func TestProcessBlockPoS(t *testing.T) {
 		timeoutBlockNode, exists := testMeta.chain.blockIndexByHash[*timeoutBlockHash]
 		require.True(t, exists)
 		require.False(t, timeoutBlockNode.IsCommitted())
-
+	}
+	{
 		// Let's process an orphan block.
 		var dummyParentBlock *MsgDeSoBlock
 		dummyParentBlock = _generateRealBlock(testMeta, 16, 16, 272, reorgBlockHash)
@@ -1694,9 +1692,51 @@ func TestProcessBlockPoS(t *testing.T) {
 		require.Len(t, missingBlockHashes, 1)
 		require.True(t, missingBlockHashes[0].IsEqual(dummyParentBlockHash))
 		require.NoError(t, err)
-		// TODO: decide what we're doing with orphans.
-		//require.Equal(t, testMeta.chain.orphanList.Len(), 1)
-		//require.True(t, testMeta.chain.orphanList.Front().Value.(*OrphanBlock).Hash.IsEqual(orphanBlockHash))
+		orphanBlockInIndex := testMeta.chain.blockIndexByHash[*orphanBlockHash]
+		require.NotNil(t, orphanBlockInIndex)
+		require.True(t, orphanBlockInIndex.IsStored())
+		require.False(t, orphanBlockInIndex.IsValidated())
+
+		// Okay now if we process the parent block, the orphan should get updated to be validated.
+		success, isOrphan, missingBlockHashes, err = testMeta.chain.processBlockPoS(dummyParentBlock, 16, true)
+		require.True(t, success)
+		require.False(t, isOrphan)
+		require.Len(t, missingBlockHashes, 0)
+		require.NoError(t, err)
+
+		orphanBlockInIndex = testMeta.chain.blockIndexByHash[*orphanBlockHash]
+		require.NotNil(t, orphanBlockInIndex)
+		require.True(t, orphanBlockInIndex.IsStored())
+		require.True(t, orphanBlockInIndex.IsValidated())
+	}
+	{
+		// Let's process a block that is an orphan, but is malformed.
+		randomHash := NewBlockHash(RandomBytes(32))
+		var malformedOrphanBlock *MsgDeSoBlock
+		malformedOrphanBlock = _generateRealBlock(testMeta, 18, 18, 9273, testMeta.chain.GetBestChainTip().Hash)
+		malformedOrphanBlock.Header.PrevBlockHash = randomHash
+		// Modify anything to make the block malformed, but make sure a hash can still be generated.
+		malformedOrphanBlock.Header.TxnConnectStatusByIndexHash = randomHash
+		malformedOrphanBlockHash, err := malformedOrphanBlock.Hash()
+		require.NoError(t, err)
+		success, isOrphan, missingBlockHashes, err := testMeta.chain.processBlockPoS(malformedOrphanBlock, 18, true)
+		require.False(t, success)
+		require.True(t, isOrphan)
+		require.Len(t, missingBlockHashes, 1)
+		require.True(t, missingBlockHashes[0].IsEqual(randomHash))
+		require.NoError(t, err)
+
+		malformedOrphanBlockInIndex := testMeta.chain.blockIndexByHash[*malformedOrphanBlockHash]
+		require.True(t, malformedOrphanBlockInIndex.IsValidateFailed())
+		require.True(t, malformedOrphanBlockInIndex.IsStored())
+
+		// If a block can't be hashed, we expect to get an error.
+		malformedOrphanBlock.Header.TxnConnectStatusByIndexHash = nil
+		success, isOrphan, missingBlockHashes, err = testMeta.chain.processBlockPoS(malformedOrphanBlock, 18, true)
+		require.False(t, success)
+		require.False(t, isOrphan)
+		require.Len(t, missingBlockHashes, 0)
+		require.Error(t, err)
 	}
 }
 
