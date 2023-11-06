@@ -20,8 +20,9 @@ import (
 //  5. Run the commit rule - If applicable, flushes the incoming block's grandparent to the DB
 func (bc *Blockchain) processBlockPoS(block *MsgDeSoBlock, currentView uint64, verifySignatures bool) (_success bool, _isOrphan bool, _missingBlockHashes []*BlockHash, _err error) {
 	// Get all the blocks between the current block and the committed tip. If the block
-	// is an orphan, then we store it without validating it. If the block extends from any
-	// committed block other than the committed tip, then we throw it away.
+	// is an orphan, then we store it after performing basic validations.
+	// If the block extends from any committed block other than the committed tip,
+	// then we throw it away.
 	lineageFromCommittedTip, err := bc.getLineageFromCommittedTip(block)
 	if err == RuleErrorDoesNotExtendCommittedTip ||
 		err == RuleErrorParentBlockHasViewGreaterOrEqualToChildBlock ||
@@ -76,17 +77,36 @@ func (bc *Blockchain) processBlockPoS(block *MsgDeSoBlock, currentView uint64, v
 		return false, false, nil, errors.Wrap(err, "processBlockPoS: Problem applying new tip: ")
 	}
 
-	// If the incoming block is not applied as the new tip, we return early.
-	if !appliedNewTip {
-		return false, false, nil, nil
+	// 5. Commit grandparent if possible. Only need to do this if we applied a new tip.
+	if appliedNewTip {
+		if err = bc.runCommitRuleOnBestChain(); err != nil {
+			return false, false, nil, errors.Wrap(err, "processBlockPoS: error running commit rule: ")
+		}
 	}
 
-	// 5. Commit grandparent if possible.
-	if err = bc.runCommitRuleOnBestChain(); err != nil {
-		return false, false, nil, errors.Wrap(err, "processBlockPoS: error committing grandparents: ")
+	// Now that we've processed this block, we check for any blocks that were previously
+	// stored as orphans, which are children of this block. We can  process them now.
+	blockNodesAtNextHeight := bc.blockIndexByHeight[uint64(blockNode.Height)+1]
+	for _, blockNodeAtNextHeight := range blockNodesAtNextHeight {
+		if blockNodeAtNextHeight.Header.PrevBlockHash.IsEqual(blockNode.Hash) && blockNodeAtNextHeight.IsStored() && !blockNodeAtNextHeight.IsValidated() {
+			var orphanBlock *MsgDeSoBlock
+			orphanBlock, err = GetBlock(blockNodeAtNextHeight.Hash, bc.db, bc.snapshot)
+			if err != nil {
+				glog.Errorf("processBlockPoS: Problem getting orphan block %v", blockNodeAtNextHeight.Hash)
+				continue
+			}
+			var appliedNewTipOrphan bool
+			if appliedNewTipOrphan, _, _, err = bc.processBlockPoS(orphanBlock, currentView, verifySignatures); err != nil {
+				glog.Errorf("processBlockPoS: Problem validating orphan block %v", blockNodeAtNextHeight.Hash)
+				continue
+			}
+			if appliedNewTipOrphan {
+				appliedNewTip = true
+			}
+		}
 	}
-
-	return true, false, nil, nil
+	// Returns whether a new tip was applied, whether the block is an orphan, and any missing blocks, and an error.
+	return appliedNewTip, false, nil, nil
 }
 
 // storeValidateFailedBlockWithWrappedError is a helper function that takes in a block and an error and
