@@ -61,6 +61,7 @@ type Server struct {
 	eventManager  *EventManager
 	TxIndex       *TXIndex
 
+	handshakeController *HandshakeController
 	consensusController *ConsensusController
 	// posMempool *PosMemPool TODO: Add the mempool later
 
@@ -405,7 +406,8 @@ func NewServer(
 	_nodeMessageChan chan NodeMessage,
 	_forceChecksum bool,
 	_stateChangeDir string,
-	_hypersyncMaxQueueSize uint32) (
+	_hypersyncMaxQueueSize uint32,
+	_blsKeystore *BLSKeystore) (
 	_srv *Server, _err error, _shouldRestart bool) {
 
 	var err error
@@ -495,6 +497,10 @@ func NewServer(
 		_chain.blockTip().Height,
 		hex.EncodeToString(_chain.blockTip().Hash[:]),
 		hex.EncodeToString(BigintToHash(_chain.blockTip().CumWork)[:]))
+
+	srv.consensusController = NewConsensusController(_chain, srv)
+	srv.handshakeController = NewHandshakeController(_chain, srv, _params, _minFeeRateNanosPerKB,
+		_hyperSync, _blsKeystore)
 
 	if srv.stateChangeSyncer != nil {
 		srv.stateChangeSyncer.BlockHeight = uint64(_chain.headerTip().Height)
@@ -732,6 +738,13 @@ func (srv *Server) GetSnapshot(pp *Peer) {
 
 func (srv *Server) SendMessage(msg DeSoMessage, peerId uint64) error {
 	return srv.cmgr.SendMessage(msg, peerId)
+}
+
+func (srv *Server) SendHandshakePeerMessage(peer *Peer) {
+	srv.incomingMessages <- &ServerMessage{
+		Peer: peer,
+		Msg:  &MsgDeSoHandshakePeer{},
+	}
 }
 
 // GetBlocksToStore is part of the archival mode, which makes the node download all historical blocks after completing
@@ -1588,11 +1601,11 @@ func (srv *Server) _startSync() {
 
 }
 
-func (srv *Server) _handleNewPeer(pp *Peer) {
+func (srv *Server) _handleHandshakePeer(pp *Peer) {
 	isSyncCandidate := pp.IsSyncCandidate()
 	isSyncing := srv.blockchain.isSyncing()
 	chainState := srv.blockchain.chainState()
-	glog.V(1).Infof("Server._handleNewPeer: Processing NewPeer: (%v); IsSyncCandidate(%v), syncPeerIsNil=(%v), IsSyncing=(%v), ChainState=(%v)",
+	glog.V(1).Infof("Server._handleHandshakePeer: Processing NewPeer: (%v); IsSyncCandidate(%v), syncPeerIsNil=(%v), IsSyncing=(%v), ChainState=(%v)",
 		pp, isSyncCandidate, (srv.SyncPeer == nil), isSyncing, chainState)
 
 	// Request a sync if we're ready
@@ -2241,7 +2254,9 @@ func (srv *Server) _handleControlMessages(serverMessage *ServerMessage) (_should
 	switch serverMessage.Msg.(type) {
 	// Control messages used internally to signal to the server.
 	case *MsgDeSoNewPeer:
-		srv._handleNewPeer(serverMessage.Peer)
+		srv.handshakeController._handleNewPeerMessage(serverMessage.Peer, serverMessage.Msg)
+	case *MsgDeSoHandshakePeer:
+		srv._handleHandshakePeer(serverMessage.Peer)
 	case *MsgDeSoDonePeer:
 		srv._handleDonePeer(serverMessage.Peer)
 	case *MsgDeSoQuit:
@@ -2277,6 +2292,10 @@ func (srv *Server) _handlePeerMessages(serverMessage *ServerMessage) {
 		srv._handleMempool(serverMessage.Peer, msg)
 	case *MsgDeSoInv:
 		srv._handleInv(serverMessage.Peer, msg)
+	case *MsgDeSoVersion:
+		srv.handshakeController._handleVersionMessage(serverMessage.Peer, serverMessage.Msg)
+	case *MsgDeSoVerack:
+		srv.handshakeController._handleVerackMessage(serverMessage.Peer, serverMessage.Msg)
 	}
 }
 

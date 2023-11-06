@@ -142,11 +142,13 @@ func (bridge *ConnectionBridge) createOutboundConnection(node *cmd.Node, otherNo
 
 		na, err := lib.IPToNetAddr(conn.RemoteAddr().String(), otherNode.Server.GetConnectionManager().AddrMgr,
 			otherNode.Params)
-		messagesFromPeer := make(chan *lib.ServerMessage)
-		peer := lib.NewPeer(conn, false, na, false,
-			10000, 0, bridge.nodeB.Params,
-			messagesFromPeer, nil, nil, lib.NodeSyncTypeAny)
-		peer.ID = uint64(lib.RandInt64(math.MaxInt64))
+		messagesFromPeer := make(chan *lib.ServerMessage, 100)
+		newPeerChan := make(chan *lib.Peer, 100)
+		donePeerChan := make(chan *lib.Peer, 100)
+		peer := lib.NewPeer(uint64(lib.RandInt64(math.MaxInt64)), uint64(lib.RandInt64(math.MaxInt64)),
+			conn, false, na, false, 10000, 0,
+			bridge.nodeB.Params, messagesFromPeer, nil, nil, lib.NodeSyncTypeAny,
+			newPeerChan, donePeerChan)
 		bridge.newPeerChan <- peer
 		//}
 	}(ll)
@@ -160,7 +162,7 @@ func (bridge *ConnectionBridge) createOutboundConnection(node *cmd.Node, otherNo
 // getVersionMessage simulates a version message that the provided node would have sent.
 func (bridge *ConnectionBridge) getVersionMessage(node *cmd.Node) *lib.MsgDeSoVersion {
 	ver := lib.NewMessage(lib.MsgTypeVersion).(*lib.MsgDeSoVersion)
-	ver.Version = node.Params.ProtocolVersion
+	ver.Version = node.Params.ProtocolVersion.ToUint64()
 	ver.TstampSecs = time.Now().Unix()
 	ver.Nonce = uint64(lib.RandInt64(math.MaxInt64))
 	ver.UserAgent = node.Params.UserAgent
@@ -179,6 +181,23 @@ func (bridge *ConnectionBridge) getVersionMessage(node *cmd.Node) *lib.MsgDeSoVe
 	return ver
 }
 
+func ReadWithTimeout(readFunc func() error, readTimeout time.Duration) error {
+	errChan := make(chan error)
+	go func() {
+		errChan <- readFunc()
+	}()
+	select {
+	case err := <-errChan:
+		{
+			return err
+		}
+	case <-time.After(readTimeout):
+		{
+			return fmt.Errorf("ReadWithTimeout: Timed out reading message")
+		}
+	}
+}
+
 // startConnection starts the connection by performing version and verack exchange with
 // the provided connection, pretending to be the otherNode.
 func (bridge *ConnectionBridge) startConnection(connection *lib.Peer, otherNode *cmd.Node) error {
@@ -193,7 +212,7 @@ func (bridge *ConnectionBridge) startConnection(connection *lib.Peer, otherNode 
 	}
 
 	// Wait for a response to the version message.
-	if err := connection.ReadWithTimeout(
+	if err := ReadWithTimeout(
 		func() error {
 			msg, err := connection.ReadDeSoMessage()
 			if err != nil {
@@ -216,7 +235,7 @@ func (bridge *ConnectionBridge) startConnection(connection *lib.Peer, otherNode 
 
 	// Now prepare the verack message.
 	verackMsg := lib.NewMessage(lib.MsgTypeVerack)
-	verackMsg.(*lib.MsgDeSoVerack).Nonce = connection.VersionNonceReceived
+	verackMsg.(*lib.MsgDeSoVerack).NonceReceived = connection.VersionNonceReceived
 
 	// And send it to the connection.
 	if err := connection.WriteDeSoMessage(verackMsg); err != nil {
@@ -224,7 +243,7 @@ func (bridge *ConnectionBridge) startConnection(connection *lib.Peer, otherNode 
 	}
 
 	// And finally wait for connection's response to the verack message.
-	if err := connection.ReadWithTimeout(
+	if err := ReadWithTimeout(
 		func() error {
 			msg, err := connection.ReadDeSoMessage()
 			if err != nil {
@@ -235,9 +254,9 @@ func (bridge *ConnectionBridge) startConnection(connection *lib.Peer, otherNode 
 				return fmt.Errorf("message is not verack! Type: %v", msg.GetMsgType())
 			}
 			verackMsg := msg.(*lib.MsgDeSoVerack)
-			if verackMsg.Nonce != connection.VersionNonceSent {
+			if verackMsg.NonceReceived != connection.VersionNonceSent {
 				return fmt.Errorf("verack message nonce doesn't match (received: %v, sent: %v)",
-					verackMsg.Nonce, connection.VersionNonceSent)
+					verackMsg.NonceReceived, connection.VersionNonceSent)
 			}
 			return nil
 		}, lib.DeSoMainnetParams.VersionNegotiationTimeout); err != nil {

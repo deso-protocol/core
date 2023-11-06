@@ -118,8 +118,7 @@ func (node *Node) Start(exitChannels ...*chan struct{}) {
 
 	// This just gets localhost listening addresses on the protocol port.
 	// Such as [{127.0.0.1 18000 } {::1 18000 }], and associated listener structs.
-	listeningAddrs, listeners := GetAddrsToListenOn(node.Config.ProtocolPort)
-	_ = listeningAddrs
+	_, node.Listeners = GetAddrsToListenOn(node.Config.ProtocolPort)
 
 	// If --connect-ips is not passed, we will connect the addresses from
 	// --add-ips, DNSSeeds, and DNSSeedGenerators.
@@ -203,13 +202,15 @@ func (node *Node) Start(exitChannels ...*chan struct{}) {
 	// Setup eventManager
 	eventManager := lib.NewEventManager()
 
+	blsKeystore, err := lib.NewBLSKeystore(node.Config.PosValidatorSeed)
+
 	// Setup the server. ShouldRestart is used whenever we detect an issue and should restart the node after a recovery
 	// process, just in case. These issues usually arise when the node was shutdown unexpectedly mid-operation. The node
 	// performs regular health checks to detect whenever this occurs.
 	shouldRestart := false
 	node.Server, err, shouldRestart = lib.NewServer(
 		node.Params,
-		listeners,
+		node.Listeners,
 		desoAddrMgr,
 		node.Config.ConnectIPs,
 		node.ChainDB,
@@ -244,7 +245,8 @@ func (node *Node) Start(exitChannels ...*chan struct{}) {
 		node.nodeMessageChan,
 		node.Config.ForceChecksum,
 		node.Config.StateChangeDir,
-		node.Config.HypersyncMaxQueueSize)
+		node.Config.HypersyncMaxQueueSize,
+		blsKeystore)
 	if err != nil {
 		// shouldRestart can be true if, on the previous run, we did not finish flushing all ancestral
 		// records to the DB. In this case, the snapshot is corrupted and needs to be computed. See the
