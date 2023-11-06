@@ -6,8 +6,6 @@ import (
 	"github.com/deso-protocol/core/collections"
 	"github.com/deso-protocol/core/consensus"
 	"github.com/pkg/errors"
-
-	"github.com/deso-protocol/core/consensus"
 )
 
 type ConsensusController struct {

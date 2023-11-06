@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"encoding/hex"
 	"fmt"
+	"github.com/btcsuite/btcd/wire"
+	"github.com/deso-protocol/core/consensus"
 	"net"
 	"reflect"
 	"runtime"
@@ -17,9 +19,7 @@ import (
 
 	"github.com/btcsuite/btcd/addrmgr"
 	chainlib "github.com/btcsuite/btcd/blockchain"
-	"github.com/btcsuite/btcd/wire"
 	"github.com/davecgh/go-spew/spew"
-	"github.com/deso-protocol/core/consensus"
 	"github.com/deso-protocol/go-deadlock"
 	"github.com/dgraph-io/badger/v3"
 	"github.com/golang/glog"
@@ -61,8 +61,9 @@ type Server struct {
 	eventManager  *EventManager
 	TxIndex       *TXIndex
 
-	handshakeController *HandshakeController
-	consensusController *ConsensusController
+	handshakeController  *HandshakeController
+	consensusController  *ConsensusController
+	connectionController *ConnectionController
 	// posMempool *PosMemPool TODO: Add the mempool later
 
 	// All messages received from peers get sent from the ConnectionManager to the
@@ -119,15 +120,6 @@ type Server struct {
 	// requestedTransactions contains hashes of transactions for which we have
 	// requested data but have not yet received a response.
 	requestedTransactionsMap map[BlockHash]*GetDataRequestInfo
-
-	// addrsToBroadcast is a list of all the addresses we've received from valid addr
-	// messages that we intend to broadcast to our peers. It is organized as:
-	// <recipient address> -> <list of addresses we received from that recipient>.
-	//
-	// It is organized in this way so that we can limit the number of addresses we
-	// are distributing for a single peer to avoid a DOS attack.
-	addrsToBroadcastLock deadlock.RWMutex
-	addrsToBroadcastt    map[string][]*SingleAddr
 
 	// When set to true, we disable the ConnectionManager
 	DisableNetworking bool
@@ -196,6 +188,10 @@ func (srv *Server) GetNumOutboundPeers() uint32 {
 	return srv.cmgr.GetNumOutboundPeers()
 }
 
+func (srv *Server) IsFromRedundantInboundIPAddress(netAddr *wire.NetAddress) bool {
+	return srv.cmgr._isFromRedundantInboundIPAddress(netAddr)
+}
+
 func (srv *Server) IsFromRedundantOutboundIPAddress(netAddr *wire.NetAddress) bool {
 	return srv.cmgr.isRedundantGroupKey(netAddr)
 }
@@ -210,6 +206,10 @@ func (srv *Server) IsAttemptedOutboundIpAddress(netAddr *wire.NetAddress) bool {
 
 func (srv *Server) RemoveAttemptedOutboundAddrs(netAddr *wire.NetAddress) {
 	srv.cmgr.RemoveAttemptedOutboundAddrs(netAddr)
+}
+
+func (srv *Server) ConnectPeer(conn net.Conn, na *wire.NetAddress, attemptId uint64, isOutbound bool, isPersistent bool) *Peer {
+	return srv.cmgr.ConnectPeer(conn, na, attemptId, isOutbound, isPersistent)
 }
 
 // dataLock must be acquired for writing before calling this function.
@@ -252,7 +252,6 @@ func (srv *Server) GetBlockProducer() *DeSoBlockProducer {
 	return srv.blockProducer
 }
 
-// TODO: The hallmark of a messy non-law-of-demeter-following interface...
 func (srv *Server) GetConnectionManager() *ConnectionManager {
 	return srv.cmgr
 }
@@ -462,8 +461,7 @@ func NewServer(
 	// Create a new connection manager but note that it won't be initialized until Start().
 	_incomingMessages := make(chan *ServerMessage, (_targetOutboundPeers+_maxInboundPeers)*3)
 	_cmgr := NewConnectionManager(
-		_params, _desoAddrMgr, _listeners, _connectIps, timesource,
-		_targetOutboundPeers, _maxInboundPeers, _limitOneInboundConnectionPerIP,
+		_params, _listeners, _connectIps, timesource,
 		_hyperSync, _syncType, _stallTimeoutSeconds, _minFeeRateNanosPerKB,
 		_incomingMessages, srv)
 
@@ -498,9 +496,12 @@ func NewServer(
 		hex.EncodeToString(_chain.blockTip().Hash[:]),
 		hex.EncodeToString(BigintToHash(_chain.blockTip().CumWork)[:]))
 
-	srv.consensusController = NewConsensusController(_chain, srv)
-	srv.handshakeController = NewHandshakeController(_chain, srv, _params, _minFeeRateNanosPerKB,
-		_hyperSync, _blsKeystore)
+	srv.consensusController = NewConsensusController(_params, _chain, nil, nil)
+	rniManager := NewRemoteNodeIndexerManager()
+
+	srv.connectionController = NewConnectionController(_params, srv, rniManager, _blsKeystore.GetSigner(), _desoAddrMgr,
+		_targetOutboundPeers, _maxInboundPeers, _limitOneInboundConnectionPerIP)
+	srv.handshakeController = NewHandshakeController(rniManager)
 
 	if srv.stateChangeSyncer != nil {
 		srv.stateChangeSyncer.BlockHeight = uint64(_chain.headerTip().Height)
@@ -587,9 +588,6 @@ func NewServer(
 	if srv.statsdClient != nil {
 		srv.StartStatsdReporter()
 	}
-
-	// Initialize the addrs to broadcast map.
-	srv.addrsToBroadcastt = make(map[string][]*SingleAddr)
 
 	// This will initialize the request queues.
 	srv.ResetRequestQueues()
@@ -2171,94 +2169,19 @@ func (srv *Server) StartStatsdReporter() {
 	}()
 }
 
-func (srv *Server) _handleAddrMessage(pp *Peer, msg *MsgDeSoAddr) {
-	srv.addrsToBroadcastLock.Lock()
-	defer srv.addrsToBroadcastLock.Unlock()
-
-	glog.V(1).Infof("Server._handleAddrMessage: Received Addr from peer %v with addrs %v", pp, spew.Sdump(msg.AddrList))
-
-	// If this addr message contains more than the maximum allowed number of addresses
-	// then disconnect this peer.
-	if len(msg.AddrList) > MaxAddrsPerAddrMsg {
-		glog.Errorf(fmt.Sprintf("Server._handleAddrMessage: Disconnecting "+
-			"Peer %v for sending us an addr message with %d transactions, which exceeds "+
-			"the max allowed %d",
-			pp, len(msg.AddrList), MaxAddrsPerAddrMsg))
-		pp.Disconnect()
-		return
-	}
-
-	// Add all the addresses we received to the addrmgr.
-	netAddrsReceived := []*wire.NetAddress{}
-	for _, addr := range msg.AddrList {
-		addrAsNetAddr := wire.NewNetAddressIPPort(addr.IP, addr.Port, (wire.ServiceFlag)(addr.Services))
-		if !addrmgr.IsRoutable(addrAsNetAddr) {
-			glog.V(1).Infof("Dropping address %v from peer %v because it is not routable", addr, pp)
-			continue
-		}
-
-		netAddrsReceived = append(
-			netAddrsReceived, addrAsNetAddr)
-	}
-	srv.cmgr.AddrMgr.AddAddresses(netAddrsReceived, pp.netAddr)
-
-	// If the message had <= 10 addrs in it, then queue all the addresses for relaying
-	// on the next cycle.
-	if len(msg.AddrList) <= 10 {
-		glog.V(1).Infof("Server._handleAddrMessage: Queueing %d addrs for forwarding from "+
-			"peer %v", len(msg.AddrList), pp)
-		sourceAddr := &SingleAddr{
-			Timestamp: time.Now(),
-			IP:        pp.netAddr.IP,
-			Port:      pp.netAddr.Port,
-			Services:  pp.serviceFlags,
-		}
-		listToAddTo, hasSeenSource := srv.addrsToBroadcastt[sourceAddr.StringWithPort(false /*includePort*/)]
-		if !hasSeenSource {
-			listToAddTo = []*SingleAddr{}
-		}
-		// If this peer has been sending us a lot of little crap, evict a lot of their
-		// stuff but don't disconnect.
-		if len(listToAddTo) > MaxAddrsPerAddrMsg {
-			listToAddTo = listToAddTo[:MaxAddrsPerAddrMsg/2]
-		}
-		listToAddTo = append(listToAddTo, msg.AddrList...)
-		srv.addrsToBroadcastt[sourceAddr.StringWithPort(false /*includePort*/)] = listToAddTo
-	}
-}
-
-func (srv *Server) _handleGetAddrMessage(pp *Peer, msg *MsgDeSoGetAddr) {
-	glog.V(1).Infof("Server._handleGetAddrMessage: Received GetAddr from peer %v", pp)
-	// When we get a GetAddr message, choose MaxAddrsPerMsg from the AddrMgr
-	// and send them back to the peer.
-	netAddrsFound := srv.cmgr.AddrMgr.AddressCache()
-	if len(netAddrsFound) > MaxAddrsPerAddrMsg {
-		netAddrsFound = netAddrsFound[:MaxAddrsPerAddrMsg]
-	}
-
-	// Convert the list to a SingleAddr list.
-	res := &MsgDeSoAddr{}
-	for _, netAddr := range netAddrsFound {
-		singleAddr := &SingleAddr{
-			Timestamp: time.Now(),
-			IP:        netAddr.IP,
-			Port:      netAddr.Port,
-			Services:  (ServiceFlag)(netAddr.Services),
-		}
-		res.AddrList = append(res.AddrList, singleAddr)
-	}
-	pp.AddDeSoMessage(res, false)
-}
-
 func (srv *Server) _handleControlMessages(serverMessage *ServerMessage) (_shouldQuit bool) {
 	switch serverMessage.Msg.(type) {
 	// Control messages used internally to signal to the server.
 	case *MsgDeSoNewPeer:
-		srv.handshakeController._handleNewPeerMessage(serverMessage.Peer, serverMessage.Msg)
+		break
 	case *MsgDeSoHandshakePeer:
 		srv._handleHandshakePeer(serverMessage.Peer)
+		srv.handshakeController._handleHandshakePeerMessage(serverMessage.Peer, serverMessage.Msg)
 	case *MsgDeSoDonePeer:
 		srv._handleDonePeer(serverMessage.Peer)
+		srv.connectionController._handleDonePeerMessage(serverMessage.Peer, serverMessage.Msg)
+	case *MsgDeSoNewConnection:
+		srv.connectionController._handleNewConnectionMessage(serverMessage.Peer, serverMessage.Msg)
 	case *MsgDeSoQuit:
 		return true
 	}
@@ -2270,6 +2193,10 @@ func (srv *Server) _handlePeerMessages(serverMessage *ServerMessage) {
 	// Handle all non-control message types from our Peers.
 	switch msg := serverMessage.Msg.(type) {
 	// Messages sent among peers.
+	case *MsgDeSoAddr:
+		srv.connectionController._handleAddrMessage(serverMessage.Peer, serverMessage.Msg)
+	case *MsgDeSoGetAddr:
+		srv.connectionController._handleGetAddrMessage(serverMessage.Peer, serverMessage.Msg)
 	case *MsgDeSoGetHeaders:
 		srv._handleGetHeaders(serverMessage.Peer, msg)
 	case *MsgDeSoHeaderBundle:
@@ -2356,20 +2283,6 @@ func (srv *Server) _startConsensus() {
 
 				glog.V(2).Infof("Server._startConsensus: Handling message of type %v from Peer %v",
 					serverMessage.Msg.GetMsgType(), serverMessage.Peer)
-
-				// If the message is an addr message we handle it independent of whether or
-				// not the BitcoinManager is synced.
-				if serverMessage.Msg.GetMsgType() == MsgTypeAddr {
-					srv._handleAddrMessage(serverMessage.Peer, serverMessage.Msg.(*MsgDeSoAddr))
-					continue
-				}
-				// If the message is a GetAddr message we handle it independent of whether or
-				// not the BitcoinManager is synced.
-				if serverMessage.Msg.GetMsgType() == MsgTypeGetAddr {
-					srv._handleGetAddrMessage(serverMessage.Peer, serverMessage.Msg.(*MsgDeSoGetAddr))
-					continue
-				}
-
 				srv._handlePeerMessages(serverMessage)
 
 				// Always check for and handle control messages regardless of whether the
@@ -2388,96 +2301,6 @@ func (srv *Server) _startConsensus() {
 	// clean up.
 	srv.waitGroup.Done()
 	glog.V(2).Info("Server.Start: Server done")
-}
-
-func (srv *Server) _getAddrsToBroadcast() []*SingleAddr {
-	srv.addrsToBroadcastLock.Lock()
-	defer srv.addrsToBroadcastLock.Unlock()
-
-	// If there's nothing in the map, return.
-	if len(srv.addrsToBroadcastt) == 0 {
-		return []*SingleAddr{}
-	}
-
-	// If we get here then we have some addresses to broadcast.
-	addrsToBroadcast := []*SingleAddr{}
-	for len(addrsToBroadcast) < 10 && len(srv.addrsToBroadcastt) > 0 {
-		// Choose a key at random. This works because map iteration is random in golang.
-		bucket := ""
-		for kk := range srv.addrsToBroadcastt {
-			bucket = kk
-			break
-		}
-
-		// Remove the last element from the slice for the given bucket.
-		currentAddrList := srv.addrsToBroadcastt[bucket]
-		if len(currentAddrList) > 0 {
-			lastIndex := len(currentAddrList) - 1
-			currentAddr := currentAddrList[lastIndex]
-			currentAddrList = currentAddrList[:lastIndex]
-			if len(currentAddrList) == 0 {
-				delete(srv.addrsToBroadcastt, bucket)
-			} else {
-				srv.addrsToBroadcastt[bucket] = currentAddrList
-			}
-
-			addrsToBroadcast = append(addrsToBroadcast, currentAddr)
-		}
-	}
-
-	return addrsToBroadcast
-}
-
-// Must be run inside a goroutine. Relays addresses to peers at regular intervals
-// and relays our own address to peers once every 24 hours.
-func (srv *Server) _startAddressRelayer() {
-	for numMinutesPassed := 0; ; numMinutesPassed++ {
-		if atomic.LoadInt32(&srv.shutdown) >= 1 {
-			break
-		}
-		// For the first ten minutes after the server starts, relay our address to all
-		// peers. After the first ten minutes, do it once every 24 hours.
-		glog.V(1).Infof("Server.Start._startAddressRelayer: Relaying our own addr to peers")
-		if numMinutesPassed < 10 || numMinutesPassed%(RebroadcastNodeAddrIntervalMinutes) == 0 {
-			for _, pp := range srv.cmgr.GetAllPeers() {
-				bestAddress := srv.cmgr.AddrMgr.GetBestLocalAddress(pp.netAddr)
-				if bestAddress != nil {
-					glog.V(2).Infof("Server.Start._startAddressRelayer: Relaying address %v to "+
-						"peer %v", bestAddress.IP.String(), pp)
-					pp.AddDeSoMessage(&MsgDeSoAddr{
-						AddrList: []*SingleAddr{
-							{
-								Timestamp: time.Now(),
-								IP:        bestAddress.IP,
-								Port:      bestAddress.Port,
-								Services:  (ServiceFlag)(bestAddress.Services),
-							},
-						},
-					}, false)
-				}
-			}
-		}
-
-		glog.V(2).Infof("Server.Start._startAddressRelayer: Seeing if there are addrs to relay...")
-		// Broadcast the addrs we have to all of our peers.
-		addrsToBroadcast := srv._getAddrsToBroadcast()
-		if len(addrsToBroadcast) == 0 {
-			glog.V(2).Infof("Server.Start._startAddressRelayer: No addrs to relay.")
-			time.Sleep(AddrRelayIntervalSeconds * time.Second)
-			continue
-		}
-
-		glog.V(2).Infof("Server.Start._startAddressRelayer: Found %d addrs to "+
-			"relay: %v", len(addrsToBroadcast), spew.Sdump(addrsToBroadcast))
-		// Iterate over all our peers and broadcast the addrs to all of them.
-		for _, pp := range srv.cmgr.GetAllPeers() {
-			pp.AddDeSoMessage(&MsgDeSoAddr{
-				AddrList: addrsToBroadcast,
-			}, false)
-		}
-		time.Sleep(AddrRelayIntervalSeconds * time.Second)
-		continue
-	}
 }
 
 func (srv *Server) _startTransactionRelayer() {
@@ -2589,8 +2412,6 @@ func (srv *Server) Start() {
 	srv.waitGroup.Add(1)
 
 	go srv._startConsensus()
-
-	go srv._startAddressRelayer()
 
 	go srv._startTransactionRelayer()
 

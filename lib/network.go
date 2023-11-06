@@ -17,11 +17,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/deso-protocol/core/collections/bitset"
+	"github.com/decred/dcrd/dcrec/secp256k1/v4"
 	"github.com/golang/glog"
 
-	"github.com/decred/dcrd/dcrec/secp256k1/v4"
-
+	"github.com/deso-protocol/core/collections/bitset"
 	"github.com/deso-protocol/core/consensus"
 
 	"github.com/btcsuite/btcd/btcec"

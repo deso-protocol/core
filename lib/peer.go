@@ -806,7 +806,7 @@ func (pp *Peer) IsOutbound() bool {
 	return pp.isOutbound
 }
 
-func (pp *Peer) IsPersistend() bool {
+func (pp *Peer) IsPersistent() bool {
 	return pp.isPersistent
 }
 
@@ -1208,11 +1208,12 @@ func (pp *Peer) Start() {
 	// If the address manager needs more addresses, then send a GetAddr message
 	// to the peer. This is best-effort.
 	if pp.cmgr != nil {
-		if pp.cmgr.AddrMgr.NeedMoreAddresses() {
+		// TODO: Move this to ConnectionController.
+		/*if pp.cmgr.AddrMgr.NeedMoreAddresses() {
 			go func() {
 				pp.QueueMessage(&MsgDeSoGetAddr{})
 			}()
-		}
+		}*/
 	}
 
 	// Send our verack message now that the IO processing machinery has started.

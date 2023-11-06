@@ -561,6 +561,9 @@ type DeSoParams struct {
 	// The amount of time we wait to receive a version message from a peer.
 	VersionNegotiationTimeout time.Duration
 
+	// The maximum number of addresses to broadcast to peers.
+	MaxAddressesToBroadcast uint32
+
 	// The genesis block to use as the base of our chain.
 	GenesisBlock *MsgDeSoBlock
 	// The expected hash of the genesis block. Should align with what one
@@ -1019,6 +1022,8 @@ var DeSoMainnetParams = DeSoParams{
 	DialTimeout:               30 * time.Second,
 	VersionNegotiationTimeout: 30 * time.Second,
 
+	MaxAddressesToBroadcast: 10,
+
 	BlockRewardMaturity: time.Hour * 3,
 
 	V1DifficultyAdjustmentFactor: 10,
@@ -1287,6 +1292,8 @@ var DeSoTestnetParams = DeSoParams{
 
 	DialTimeout:               30 * time.Second,
 	VersionNegotiationTimeout: 30 * time.Second,
+
+	MaxAddressesToBroadcast: 10,
 
 	GenesisBlock:        &GenesisBlock,
 	GenesisBlockHashHex: GenesisBlockHashHex,
