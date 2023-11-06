@@ -220,7 +220,8 @@ func (txi *TXIndex) GetTxindexUpdateBlockNodes() (
 	// The only thing we can really do in this case is rebuild the entire index
 	// from scratch. To do that, we return all the blocks in the index to detach
 	// and all the blocks in the real chain to attach.
-	txindexTipNode := txi.CoreChain.CopyBlockIndex()[*txindexTipHash.Hash]
+	blockIndexByHashCopy, _ := txi.TXIndexChain.CopyBlockIndexes()
+	txindexTipNode := blockIndexByHashCopy[*txindexTipHash.Hash]
 
 	if txindexTipNode == nil {
 		glog.Info("GetTxindexUpdateBlockNodes: Txindex tip was not found; building txindex starting at genesis block")
@@ -363,13 +364,13 @@ func (txi *TXIndex) Update() error {
 		// Delete this block from the chain db so we don't get duplicate block errors.
 
 		// Remove this block from our bestChain data structures.
-		newBlockIndex := txi.TXIndexChain.CopyBlockIndex()
+		newBlockIndexByHash, newBlockIndexByHeight := txi.TXIndexChain.CopyBlockIndexes()
 		newBestChain, newBestChainMap := txi.TXIndexChain.CopyBestChain()
 		newBestChain = newBestChain[:len(newBestChain)-1]
 		delete(newBestChainMap, *(blockToDetach.Hash))
-		delete(newBlockIndex, *(blockToDetach.Hash))
+		delete(newBlockIndexByHash, *(blockToDetach.Hash))
 
-		txi.TXIndexChain.SetBestChainMap(newBestChain, newBestChainMap, newBlockIndex)
+		txi.TXIndexChain.SetBestChainMap(newBestChain, newBestChainMap, newBlockIndexByHash, newBlockIndexByHeight)
 
 		// At this point the entries for the block should have been removed
 		// from both our Txindex chain and our transaction index mappings.
