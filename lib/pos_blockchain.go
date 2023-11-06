@@ -316,8 +316,12 @@ func (bc *Blockchain) isProperlyFormedBlockPoS(block *MsgDeSoBlock) error {
 		return RuleErrorBothTimeoutAndVoteQC
 	}
 
-	if !isTimeoutQCEmpty && len(block.Txns) != 0 {
-		return RuleErrorTimeoutQCWithTransactions
+	if len(block.Txns) == 0 {
+		return RuleErrorBlockWithNoTxns
+	}
+
+	if block.Txns[0].TxnMeta.GetTxnType() != TxnTypeBlockReward {
+		return RuleErrorBlockDoesNotStartWithRewardTxn
 	}
 
 	if block.Header.ProposerVotingPublicKey.IsEmpty() {
@@ -334,22 +338,16 @@ func (bc *Blockchain) isProperlyFormedBlockPoS(block *MsgDeSoBlock) error {
 
 	merkleRoot := block.Header.TransactionMerkleRoot
 
-	// We only want to check the merkle root if we have more than 0 transactions.
-	if len(block.Txns) > 0 {
-		if merkleRoot == nil {
-			return RuleErrorNilMerkleRoot
-		}
-		computedMerkleRoot, _, err := ComputeMerkleRoot(block.Txns)
-		if err != nil {
-			return errors.Wrapf(err, "isProperlyFormedBlockPoS: Problem computing merkle root")
-		}
-		if !merkleRoot.IsEqual(computedMerkleRoot) {
-			return RuleErrorInvalidMerkleRoot
-		}
-	} else {
-		if merkleRoot != nil {
-			return RuleErrorNoTxnsWithMerkleRoot
-		}
+	// We always need to check the merkle root.
+	if merkleRoot == nil {
+		return RuleErrorNilMerkleRoot
+	}
+	computedMerkleRoot, _, err := ComputeMerkleRoot(block.Txns)
+	if err != nil {
+		return errors.Wrapf(err, "isProperlyFormedBlockPoS: Problem computing merkle root")
+	}
+	if !merkleRoot.IsEqual(computedMerkleRoot) {
+		return RuleErrorInvalidMerkleRoot
 	}
 
 	// TODO: What other checks do we need to do here?
@@ -393,6 +391,11 @@ func (bc *Blockchain) hasValidBlockViewPoS(block *MsgDeSoBlock) error {
 		// Note: this should never happen as we only call this function after
 		// we've validated that all ancestors exist in the block index.
 		return RuleErrorMissingParentBlock
+	}
+	// If the parent block was a PoW block, we can't validate this block's view
+	// in comparison.
+	if !blockNodeProofOfStakeCutoverMigrationTriggered(parentBlock.Height) {
+		return nil
 	}
 	// If our current block has a vote QC, then we need to validate that the
 	// view is exactly one greater than the latest uncommitted block.
@@ -978,19 +981,20 @@ const (
 	RuleErrorInvalidPoSBlockHeaderVersion                       RuleError = "RuleErrorInvalidPoSBlockHeaderVersion"
 	RuleErrorNoTimeoutOrVoteQC                                  RuleError = "RuleErrorNoTimeoutOrVoteQC"
 	RuleErrorBothTimeoutAndVoteQC                               RuleError = "RuleErrorBothTimeoutAndVoteQC"
-	RuleErrorTimeoutQCWithTransactions                          RuleError = "RuleErrorTimeoutQCWithTransactions"
+	RuleErrorBlockWithNoTxns                                    RuleError = "RuleErrorBlockWithNoTxns"
+	RuleErrorBlockDoesNotStartWithRewardTxn                     RuleError = "RuleErrorBlockDoesNotStartWithRewardTxn"
 	RuleErrorMissingParentBlock                                 RuleError = "RuleErrorMissingParentBlock"
 	RuleErrorMissingAncestorBlock                               RuleError = "RuleErrorMissingAncestorBlock"
 	RuleErrorDoesNotExtendCommittedTip                          RuleError = "RuleErrorDoesNotExtendCommittedTip"
 	RuleErrorAncestorBlockValidationFailed                      RuleError = "RuleErrorAncestorBlockValidationFailed"
 	RuleErrorParentBlockHasViewGreaterOrEqualToChildBlock       RuleError = "RuleErrorParentBlockHasViewGreaterOrEqualToChildBlock"
 	RuleErrorParentBlockHeightNotSequentialWithChildBlockHeight RuleError = "RuleErrorParentBlockHeightNotSequentialWithChildBlockHeight"
-	RuleErrorNilMerkleRoot                                      RuleError = "RuleErrorNilMerkleRoot"
-	RuleErrorInvalidMerkleRoot                                  RuleError = "RuleErrorInvalidMerkleRoot"
-	RuleErrorNoTxnsWithMerkleRoot                               RuleError = "RuleErrorNoTxnsWithMerkleRoot"
-	RuleErrorInvalidProposerVotingPublicKey                     RuleError = "RuleErrorInvalidProposerVotingPublicKey"
-	RuleErrorInvalidProposerPublicKey                           RuleError = "RuleErrorInvalidProposerPublicKey"
-	RuleErrorInvalidRandomSeedHash                              RuleError = "RuleErrorInvalidRandomSeedHash"
+
+	RuleErrorNilMerkleRoot                  RuleError = "RuleErrorNilMerkleRoot"
+	RuleErrorInvalidMerkleRoot              RuleError = "RuleErrorInvalidMerkleRoot"
+	RuleErrorInvalidProposerVotingPublicKey RuleError = "RuleErrorInvalidProposerVotingPublicKey"
+	RuleErrorInvalidProposerPublicKey       RuleError = "RuleErrorInvalidProposerPublicKey"
+	RuleErrorInvalidRandomSeedHash          RuleError = "RuleErrorInvalidRandomSeedHash"
 
 	RuleErrorInvalidPoSBlockHeight       RuleError = "RuleErrorInvalidPoSBlockHeight"
 	RuleErrorPoSBlockBeforeCutoverHeight RuleError = "RuleErrorPoSBlockBeforeCutoverHeight"

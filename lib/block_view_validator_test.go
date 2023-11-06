@@ -2013,3 +2013,13 @@ func _generateVotingPublicKeyAndAuthorization(t *testing.T, transactorPkBytes []
 	require.NoError(t, err)
 	return votingPublicKey, votingAuthorization
 }
+
+func _generateVotingPrivateKeyPublicKeyAndAuthorization(t *testing.T, transactorPkBytes []byte) (*bls.PrivateKey, *bls.PublicKey, *bls.Signature) {
+	blsPrivateKey, err := bls.NewPrivateKey()
+	require.NoError(t, err)
+	votingPublicKey := blsPrivateKey.PublicKey()
+	votingAuthorizationPayload := CreateValidatorVotingAuthorizationPayload(transactorPkBytes)
+	votingAuthorization, err := blsPrivateKey.Sign(votingAuthorizationPayload)
+	require.NoError(t, err)
+	return blsPrivateKey, votingPublicKey, votingAuthorization
+}

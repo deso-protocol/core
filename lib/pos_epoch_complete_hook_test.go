@@ -4,6 +4,7 @@ package lib
 
 import (
 	"fmt"
+	"github.com/deso-protocol/core/bls"
 	"sort"
 	"testing"
 
@@ -822,7 +823,12 @@ func _registerValidatorAndStake(
 	require.NoError(testMeta.t, err)
 
 	// Validator registers.
-	votingPublicKey, votingAuthorization := _generateVotingPublicKeyAndAuthorization(testMeta.t, pkBytes)
+	votingPrivateKey, votingPublicKey, votingAuthorization := _generateVotingPrivateKeyPublicKeyAndAuthorization(testMeta.t, pkBytes)
+	if testMeta.pubKeyToBLSKeyMap == nil {
+		testMeta.pubKeyToBLSKeyMap = make(map[string]*bls.PrivateKey)
+	}
+	// Stash the voting private key in testmeta for convenience
+	testMeta.pubKeyToBLSKeyMap[publicKey] = votingPrivateKey
 	registerMetadata := &RegisterAsValidatorMetadata{
 		Domains:                             [][]byte{[]byte(fmt.Sprintf("https://%s.com", publicKey))},
 		VotingPublicKey:                     votingPublicKey,
