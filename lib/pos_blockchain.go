@@ -305,6 +305,25 @@ func (bc *Blockchain) isProperlyFormedBlockPoS(block *MsgDeSoBlock) error {
 	}
 
 	// Malformed block checks
+	// All blocks must have at least one txn
+	if len(block.Txns) == 0 {
+		return RuleErrorBlockWithNoTxns
+	}
+	// Must have non-nil TxnConnectStatusByIndex
+	if block.TxnConnectStatusByIndex == nil {
+		return RuleErrorNilTxnConnectStatusByIndex
+	}
+
+	// Must have TxnConnectStatusByIndexHash
+	if block.Header.TxnConnectStatusByIndexHash == nil {
+		return RuleErrorNilTxnConnectStatusByIndexHash
+	}
+
+	// Make sure the TxnConnectStatusByIndex matches the TxnConnectStatusByIndexHash
+	if !(HashBitset(block.TxnConnectStatusByIndex).IsEqual(block.Header.TxnConnectStatusByIndexHash)) {
+		return RuleErrorTxnConnectStatusByIndexHashMismatch
+	}
+
 	// Require header to have either vote or timeout QC
 	isTimeoutQCEmpty := block.Header.ValidatorsTimeoutAggregateQC.isEmpty()
 	isVoteQCEmpty := block.Header.ValidatorsVoteQC.isEmpty()
@@ -1025,6 +1044,9 @@ const (
 	RuleErrorPoSBlockTstampNanoSecsTooOld                       RuleError = "RuleErrorPoSBlockTstampNanoSecsTooOld"
 	RuleErrorPoSBlockTstampNanoSecsInFuture                     RuleError = "RuleErrorPoSBlockTstampNanoSecsInFuture"
 	RuleErrorInvalidPoSBlockHeaderVersion                       RuleError = "RuleErrorInvalidPoSBlockHeaderVersion"
+	RuleErrorNilTxnConnectStatusByIndex                         RuleError = "RuleErrorNilTxnConnectStatusByIndex"
+	RuleErrorNilTxnConnectStatusByIndexHash                     RuleError = "RuleErrorNilTxnConnectStatusByIndexHash"
+	RuleErrorTxnConnectStatusByIndexHashMismatch                RuleError = "RuleErrorTxnConnectStatusByIndexHashMismatch"
 	RuleErrorNoTimeoutOrVoteQC                                  RuleError = "RuleErrorNoTimeoutOrVoteQC"
 	RuleErrorBothTimeoutAndVoteQC                               RuleError = "RuleErrorBothTimeoutAndVoteQC"
 	RuleErrorBlockWithNoTxns                                    RuleError = "RuleErrorBlockWithNoTxns"
