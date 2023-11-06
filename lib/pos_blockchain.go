@@ -106,6 +106,9 @@ func (bc *Blockchain) processBlockPoS(block *MsgDeSoBlock, currentView uint64, v
 	return appliedNewTip, false, nil, nil
 }
 
+// processOrphanBlockPoS validates that an orphan block is properly formed. If
+// an orphan block is properly formed, we will save it as Stored in the block index.
+// If not, we mark it as ValidateFailed.
 func (bc *Blockchain) processOrphanBlockPoS(block *MsgDeSoBlock) error {
 	// All blocks should pass the basic integrity validations, which ensure the block
 	// is not malformed. If the block is malformed, we should store it as ValidateFailed.
@@ -544,15 +547,15 @@ func (bc *Blockchain) hasValidBlockProposerPoS(block *MsgDeSoBlock) (_isValidBlo
 
 // isValidPoSQuorumCertificate validates that the QC of this block is valid, meaning a super majority
 // of the validator set has voted (or timed out). Assumes ValidatorEntry list is sorted.
-func (bc *Blockchain) isValidPoSQuorumCertificate(desoBlock *MsgDeSoBlock, validatorSet []*ValidatorEntry) error {
+func (bc *Blockchain) isValidPoSQuorumCertificate(block *MsgDeSoBlock, validatorSet []*ValidatorEntry) error {
 	validators := toConsensusValidators(validatorSet)
-	if !desoBlock.Header.ValidatorsTimeoutAggregateQC.isEmpty() {
-		if !consensus.IsValidSuperMajorityAggregateQuorumCertificate(desoBlock.Header.ValidatorsTimeoutAggregateQC, validators) {
+	if !block.Header.ValidatorsTimeoutAggregateQC.isEmpty() {
+		if !consensus.IsValidSuperMajorityAggregateQuorumCertificate(block.Header.ValidatorsTimeoutAggregateQC, validators) {
 			return RuleErrorInvalidTimeoutQC
 		}
 		return nil
 	}
-	if !consensus.IsValidSuperMajorityQuorumCertificate(desoBlock.Header.ValidatorsVoteQC, validators) {
+	if !consensus.IsValidSuperMajorityQuorumCertificate(block.Header.ValidatorsVoteQC, validators) {
 		return RuleErrorInvalidVoteQC
 	}
 	return nil
@@ -562,7 +565,7 @@ func (bc *Blockchain) isValidPoSQuorumCertificate(desoBlock *MsgDeSoBlock, valid
 // including the committed tip. The first block in the returned slice is the first uncommitted
 // ancestor.
 func (bc *Blockchain) getLineageFromCommittedTip(block *MsgDeSoBlock) ([]*BlockNode, error) {
-	highestCommittedBlock, idx := bc.getHighestCommittedBlock()
+	highestCommittedBlock, idx := bc.getCommittedTip()
 	if idx == -1 || highestCommittedBlock == nil {
 		return nil, errors.New("getLineageFromCommittedTip: No committed blocks found")
 	}
@@ -783,7 +786,7 @@ func (bc *Blockchain) tryApplyNewTip(blockNode *BlockNode, currentView uint64, l
 	}
 
 	// We need to perform a reorg here. For simplicity, we remove all uncommitted blocks and then re-add them.
-	committedTip, idx := bc.getHighestCommittedBlock()
+	committedTip, idx := bc.getCommittedTip()
 	if committedTip == nil || idx == -1 {
 		// This is an edge case we'll never hit in practice since all the PoW blocks
 		// are committed.
@@ -821,9 +824,9 @@ func (bc *Blockchain) shouldReorg(blockNode *BlockNode, currentView uint64) bool
 }
 
 // addBlockToBestChain adds the block to the best chain.
-func (bc *Blockchain) addBlockToBestChain(desoBlockNode *BlockNode) {
-	bc.bestChain = append(bc.bestChain, desoBlockNode)
-	bc.bestChainMap[*desoBlockNode.Hash] = desoBlockNode
+func (bc *Blockchain) addBlockToBestChain(blockNode *BlockNode) {
+	bc.bestChain = append(bc.bestChain, blockNode)
+	bc.bestChainMap[*blockNode.Hash] = blockNode
 }
 
 // runCommitRuleOnBestChain commits the grandparent of the block if possible.
@@ -838,7 +841,7 @@ func (bc *Blockchain) runCommitRuleOnBestChain() error {
 		return nil
 	}
 	// Find all uncommitted ancestors of block to commit
-	_, idx := bc.getHighestCommittedBlock()
+	_, idx := bc.getCommittedTip()
 	if idx == -1 {
 		// This is an edge case we'll never hit in practice since all the PoW blocks
 		// are committed.
@@ -852,7 +855,7 @@ func (bc *Blockchain) runCommitRuleOnBestChain() error {
 		}
 	}
 	for ii := 0; ii < len(uncommittedAncestors); ii++ {
-		if err := bc.commitBlock(uncommittedAncestors[ii].Hash); err != nil {
+		if err := bc.commitBlockPoS(uncommittedAncestors[ii].Hash); err != nil {
 			return errors.Wrapf(err, "runCommitRuleOnBestChain: Problem committing block %v", uncommittedAncestors[ii].Hash.String())
 		}
 	}
@@ -879,28 +882,28 @@ func (bc *Blockchain) canCommitGrandparent(currentBlock *BlockNode) (_grandparen
 	return nil, false
 }
 
-// commitBlock commits the block with the given hash. Specifically, this updates the
+// commitBlockPoS commits the block with the given hash. Specifically, this updates the
 // BlockStatus to include StatusBlockCommitted and flushes the view after connecting the block
 // to the DB and updates relevant badger indexes with info about the block.
-func (bc *Blockchain) commitBlock(blockHash *BlockHash) error {
+func (bc *Blockchain) commitBlockPoS(blockHash *BlockHash) error {
 	// block must be in the best chain. we grab the block node from there.
 	blockNode, exists := bc.bestChainMap[*blockHash]
 	if !exists {
-		return errors.Errorf("commitBlock: Block %v not found in best chain map", blockHash.String())
+		return errors.Errorf("commitBlockPoS: Block %v not found in best chain map", blockHash.String())
 	}
 	// TODO: Do we want other validation in here?
 	if blockNode.IsCommitted() {
 		// Can't commit a block that's already committed.
-		return errors.Errorf("commitBlock: Block %v is already committed", blockHash.String())
+		return errors.Errorf("commitBlockPoS: Block %v is already committed", blockHash.String())
 	}
 	block, err := GetBlock(blockHash, bc.db, bc.snapshot)
 	if err != nil {
-		return errors.Wrapf(err, "commitBlock: Problem getting block from db %v", blockHash.String())
+		return errors.Wrapf(err, "commitBlockPoS: Problem getting block from db %v", blockHash.String())
 	}
 	// Connect a view up to the parent of the block we are committing.
 	utxoView, err := bc.getUtxoViewAtBlockHash(*block.Header.PrevBlockHash)
 	if err != nil {
-		return errors.Wrapf(err, "commitBlock: Problem initializing UtxoView: ")
+		return errors.Wrapf(err, "commitBlockPoS: Problem initializing UtxoView: ")
 	}
 	txHashes := collections.Transform(block.Txns, func(txn *MsgDeSoTxn) *BlockHash {
 		return txn.Hash()
@@ -909,7 +912,7 @@ func (bc *Blockchain) commitBlock(blockHash *BlockHash) error {
 	utxoOpsForBlock, err := utxoView.ConnectBlock(block, txHashes, true /*verifySignatures*/, bc.eventManager, block.Header.Height)
 	if err != nil {
 		// TODO: rule error handling? mark blocks invalid?
-		return errors.Wrapf(err, "commitBlock: Problem connecting block to view: ")
+		return errors.Wrapf(err, "commitBlockPoS: Problem connecting block to view: ")
 	}
 	// Put the block in the db
 	// Note: we're skipping postgres.
@@ -919,7 +922,7 @@ func (bc *Blockchain) commitBlock(blockHash *BlockHash) error {
 		if bc.snapshot != nil {
 			bc.snapshot.PrepareAncestralRecordsFlush()
 			defer bc.snapshot.StartAncestralRecordsFlush(true)
-			glog.V(2).Infof("commitBlock: Preparing snapshot flush")
+			glog.V(2).Infof("commitBlockPoS: Preparing snapshot flush")
 		}
 		// Store the new block in the db under the
 		//   <blockHash> -> <serialized block>
@@ -929,20 +932,20 @@ func (bc *Blockchain) commitBlock(blockHash *BlockHash) error {
 		// 	we've fetched during Hypersync. Is there an edge-case where for some reason they're not identical? Or
 		// 	somehow ancestral records get corrupted?
 		if innerErr := PutBlockWithTxn(txn, bc.snapshot, block); innerErr != nil {
-			return errors.Wrapf(innerErr, "commitBlock: Problem calling PutBlock")
+			return errors.Wrapf(innerErr, "commitBlockPoS: Problem calling PutBlock")
 		}
 
 		// Store the new block's node in our node index in the db under the
 		//   <height uin32, blockHash BlockHash> -> <node info>
 		// index.
 		if innerErr := PutHeightHashToNodeInfoWithTxn(txn, bc.snapshot, blockNode, false /*bitcoinNodes*/); innerErr != nil {
-			return errors.Wrapf(innerErr, "commitBlock: Problem calling PutHeightHashToNodeInfo before validation")
+			return errors.Wrapf(innerErr, "commitBlockPoS: Problem calling PutHeightHashToNodeInfo before validation")
 		}
 
 		// Set the best node hash to this one. Note the header chain should already
 		// be fully aware of this block so we shouldn't update it here.
 		if innerErr := PutBestHashWithTxn(txn, bc.snapshot, blockNode.Hash, ChainTypeDeSoBlock); innerErr != nil {
-			return errors.Wrapf(innerErr, "commitBlock: Problem calling PutBestHash after validation")
+			return errors.Wrapf(innerErr, "commitBlockPoS: Problem calling PutBestHash after validation")
 		}
 		// Write the utxo operations for this block to the db so we can have the
 		// ability to roll it back in the future.
@@ -952,10 +955,10 @@ func (bc *Blockchain) commitBlock(blockHash *BlockHash) error {
 		return nil
 	})
 	if err != nil {
-		return errors.Wrapf(err, "commitBlock: Problem putting block in db: ")
+		return errors.Wrapf(err, "commitBlockPoS: Problem putting block in db: ")
 	}
 	if err = utxoView.FlushToDb(uint64(blockNode.Height)); err != nil {
-		return errors.Wrapf(err, "commitBlock: Problem flushing UtxoView to db")
+		return errors.Wrapf(err, "commitBlockPoS: Problem flushing UtxoView to db")
 	}
 	if bc.eventManager != nil {
 		bc.eventManager.blockConnected(&BlockEvent{
@@ -985,7 +988,7 @@ func (bc *Blockchain) getUtxoViewAtBlockHash(blockHash BlockHash) (*UtxoView, er
 	// If the provided block is committed, we need to make sure it's the committed tip.
 	// Otherwise, we return an error.
 	if currentBlock.IsCommitted() {
-		highestCommittedBlock, _ := bc.getHighestCommittedBlock()
+		highestCommittedBlock, _ := bc.getCommittedTip()
 		if highestCommittedBlock == nil {
 			return nil, errors.Errorf("getUtxoViewAtBlockHash: No committed blocks found")
 		}
@@ -1029,11 +1032,13 @@ func (bc *Blockchain) getUtxoViewAtBlockHash(blockHash BlockHash) (*UtxoView, er
 	return utxoView, nil
 }
 
+// GetBestChainTip is a helper function that returns the tip of the best chain.
 func (bc *Blockchain) GetBestChainTip() *BlockNode {
 	return bc.bestChain[len(bc.bestChain)-1]
 }
 
-func (bc *Blockchain) getHighestCommittedBlock() (*BlockNode, int) {
+// getCommittedTip returns the highest committed block and its index in the best chain.
+func (bc *Blockchain) getCommittedTip() (*BlockNode, int) {
 	for ii := len(bc.bestChain) - 1; ii >= 0; ii-- {
 		if bc.bestChain[ii].IsCommitted() {
 			return bc.bestChain[ii], ii
@@ -1042,9 +1047,14 @@ func (bc *Blockchain) getHighestCommittedBlock() (*BlockNode, int) {
 	return nil, -1
 }
 
+// GetSafeBlocks returns all blocks from which the chain can safely extend. A
+// safe block is defined as a block that has been validated and all of its
+// ancestors have been validated and extending from this block would not
+// change any committed blocks. This means we return the committed tip and
+// all blocks from the committed tip that have been validated.
 func (bc *Blockchain) GetSafeBlocks() ([]*BlockNode, error) {
 	// First get committed tip.
-	committedTip, idx := bc.getHighestCommittedBlock()
+	committedTip, idx := bc.getCommittedTip()
 	if idx == -1 || committedTip == nil {
 		return nil, errors.New("GetSafeBlocks: No committed blocks found")
 	}
