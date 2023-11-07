@@ -18,10 +18,11 @@ import (
 //  3. Store the block in the block index and save to DB.
 //  4. try to apply the incoming block as the tip (performing reorgs as necessary). If it can't be applied, we exit here.
 //  5. Run the commit rule - If applicable, flushes the incoming block's grandparent to the DB
-func (bc *Blockchain) processBlockPoS(block *MsgDeSoBlock, currentView uint64, verifySignatures bool) (_success bool, _isOrphan bool, _missingBlockHashes []*BlockHash, _err error) {
+func (bc *Blockchain) processBlockPoS(block *MsgDeSoBlock, currentView uint64, verifySignatures bool) (
+	_success bool, _isOrphan bool, _missingBlockHashes []*BlockHash, _err error) {
 	// If we can't hash the block, we can never store in the block index and we should throw it out immediately.
 	if _, err := block.Hash(); err != nil {
-		return false, false, nil, errors.New("processBlockPoS: Problem hashing block")
+		return false, false, nil, errors.Wrapf(err, "processBlockPoS: Problem hashing block")
 	}
 	// Get all the blocks between the current block and the committed tip. If the block
 	// is an orphan, then we store it after performing basic validations.
@@ -34,6 +35,10 @@ func (bc *Blockchain) processBlockPoS(block *MsgDeSoBlock, currentView uint64, v
 		err == RuleErrorAncestorBlockValidationFailed {
 		// In this case, the block extends a committed block that is NOT the tip
 		// block. We will never accept this block, so mark it as ValidateFailed.
+		if _, innerErr := bc.storeValidateFailedBlockInBlockIndex(block); innerErr != nil {
+			return false, false, nil,
+				errors.Wrapf(innerErr, "processBlockPoS: Problem adding validate failed block to block index: %v", err)
+		}
 		return false, false, nil, err
 	}
 	if err == RuleErrorMissingAncestorBlock {
@@ -166,7 +171,7 @@ func (bc *Blockchain) validateAndIndexBlockPoS(block *MsgDeSoBlock) (*BlockNode,
 
 	// Run the validation for the parent and update the block index with the parent's status. We first
 	// check if the parent has a cached status. If so, we use the cached status. Otherwise, we run
-	// the full validation algorithm on it, then index and an use the result.
+	// the full validation algorithm on it, then index and use the result.
 	parentBlockNode, err := bc.validatePreviouslyIndexedBlockPoS(block.Header.PrevBlockHash)
 	if err != nil {
 		return nil, errors.Wrapf(err, "validateAndIndexBlockPoS: Problem validating previously indexed block: ")
@@ -182,7 +187,7 @@ func (bc *Blockchain) validateAndIndexBlockPoS(block *MsgDeSoBlock) (*BlockNode,
 	// If the parent block still has a Stored status, it means that we weren't able to validate it
 	// despite trying. The current block will also be stored as a Stored block.
 	if !parentBlockNode.IsValidated() {
-		return bc.storeValidateFailedBlockWithWrappedError(block, errors.New("parent block is neither Validated nor ValidateFailed"))
+		return bc.storeBlockInBlockIndex(block)
 	}
 
 	// At this point, we know the parent block is validated. We can now perform all other validations
@@ -386,10 +391,6 @@ func (bc *Blockchain) isProperlyFormedBlockPoS(block *MsgDeSoBlock) error {
 
 	if !isTimeoutQCEmpty && !isVoteQCEmpty {
 		return RuleErrorBothTimeoutAndVoteQC
-	}
-
-	if len(block.Txns) == 0 {
-		return RuleErrorBlockWithNoTxns
 	}
 
 	if block.Txns[0].TxnMeta.GetTxnType() != TxnTypeBlockReward {
@@ -949,16 +950,17 @@ func (bc *Blockchain) commitBlockPoS(blockHash *BlockHash) error {
 		// Write the utxo operations for this block to the db so we can have the
 		// ability to roll it back in the future.
 		if innerErr := PutUtxoOperationsForBlockWithTxn(txn, bc.snapshot, uint64(blockNode.Height), blockNode.Hash, utxoOpsForBlock, bc.eventManager); innerErr != nil {
-			return errors.Wrapf(innerErr, "ProcessBlock: Problem writing utxo operations to db on simple add to tip")
+			return errors.Wrapf(innerErr, "commitBlockPoS: Problem writing utxo operations to db on simple add to tip")
+		}
+		if innerErr := utxoView.FlushToDBWithoutAncestralRecordsFlushWithTxn(txn, uint64(blockNode.Height)); innerErr != nil {
+			return errors.Wrapf(innerErr, "commitBlockPoS: Problem flushing UtxoView to db")
 		}
 		return nil
 	})
 	if err != nil {
 		return errors.Wrapf(err, "commitBlockPoS: Problem putting block in db: ")
 	}
-	if err = utxoView.FlushToDb(uint64(blockNode.Height)); err != nil {
-		return errors.Wrapf(err, "commitBlockPoS: Problem flushing UtxoView to db")
-	}
+
 	if bc.eventManager != nil {
 		bc.eventManager.blockConnected(&BlockEvent{
 			Block:    block,
