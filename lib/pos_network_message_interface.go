@@ -13,6 +13,24 @@ import (
 // place all translations between types defined in lib and consensus packages.  //
 //////////////////////////////////////////////////////////////////////////////////
 
+// MsgDeSoValidatorVote struct <-> consensus.VoteMessage interface translation
+
+func (msg *MsgDeSoValidatorVote) GetPublicKey() *bls.PublicKey {
+	return msg.VotingPublicKey
+}
+
+func (msg *MsgDeSoValidatorVote) GetView() uint64 {
+	return msg.ProposedInView
+}
+
+func (msg *MsgDeSoValidatorVote) GetBlockHash() consensus.BlockHash {
+	return msg.BlockHash
+}
+
+func (msg *MsgDeSoValidatorVote) GetSignature() *bls.Signature {
+	return msg.VotePartialSignature
+}
+
 // MsgDeSoValidatorTimeout struct <-> consensus.TimeoutMessage interface translation
 
 func (msg *MsgDeSoValidatorTimeout) GetPublicKey() *bls.PublicKey {
