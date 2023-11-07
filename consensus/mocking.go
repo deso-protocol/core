@@ -3,58 +3,58 @@ package consensus
 import "time"
 
 type MockFastHotStuffEventLoop struct {
-	onGetEvents               func() chan *FastHotStuffEvent
-	onInit                    func(time.Duration, time.Duration, BlockWithValidatorList, []BlockWithValidatorList) error
-	onGetCurrentView          func() uint64
-	onAdvanceViewOnTimeout    func() (uint64, error)
-	onProcessTipBlock         func(BlockWithValidatorList, []BlockWithValidatorList) error
-	onProcessValidatorVote    func(VoteMessage) error
-	onProcessValidatorTimeout func(TimeoutMessage) error
-	onStart                   func()
-	onStop                    func()
-	onIsInitialized           func() bool
-	onIsRunning               func() bool
+	OnGetEvents               func() chan *FastHotStuffEvent
+	OnInit                    func(time.Duration, time.Duration, BlockWithValidatorList, []BlockWithValidatorList) error
+	OnGetCurrentView          func() uint64
+	OnAdvanceViewOnTimeout    func() (uint64, error)
+	OnProcessTipBlock         func(BlockWithValidatorList, []BlockWithValidatorList) error
+	OnProcessValidatorVote    func(VoteMessage) error
+	OnProcessValidatorTimeout func(TimeoutMessage) error
+	OnStart                   func()
+	OnStop                    func()
+	OnIsInitialized           func() bool
+	OnIsRunning               func() bool
 }
 
 func (fc *MockFastHotStuffEventLoop) GetEvents() chan *FastHotStuffEvent {
-	return fc.GetEvents()
+	return fc.OnGetEvents()
 }
 func (fc *MockFastHotStuffEventLoop) Init(crankTimerInterval time.Duration, timeoutBaseDuration time.Duration, tip BlockWithValidatorList, safeBlocks []BlockWithValidatorList) error {
-	return fc.onInit(crankTimerInterval, timeoutBaseDuration, tip, safeBlocks)
+	return fc.OnInit(crankTimerInterval, timeoutBaseDuration, tip, safeBlocks)
 }
 
 func (fc *MockFastHotStuffEventLoop) GetCurrentView() uint64 {
-	return fc.onGetCurrentView()
+	return fc.OnGetCurrentView()
 }
 
 func (fc *MockFastHotStuffEventLoop) AdvanceViewOnTimeout() (uint64, error) {
-	return fc.onAdvanceViewOnTimeout()
+	return fc.OnAdvanceViewOnTimeout()
 }
 
 func (fc *MockFastHotStuffEventLoop) ProcessTipBlock(tipBlock BlockWithValidatorList, safeBlocks []BlockWithValidatorList) error {
-	return fc.onProcessTipBlock(tipBlock, safeBlocks)
+	return fc.OnProcessTipBlock(tipBlock, safeBlocks)
 }
 
 func (fc *MockFastHotStuffEventLoop) ProcessValidatorVote(vote VoteMessage) error {
-	return fc.onProcessValidatorVote(vote)
+	return fc.OnProcessValidatorVote(vote)
 }
 
 func (fc *MockFastHotStuffEventLoop) ProcessValidatorTimeout(timeout TimeoutMessage) error {
-	return fc.onProcessValidatorTimeout(timeout)
+	return fc.OnProcessValidatorTimeout(timeout)
 }
 
 func (fc *MockFastHotStuffEventLoop) Start() {
-	fc.onStart()
+	fc.OnStart()
 }
 
 func (fc *MockFastHotStuffEventLoop) Stop() {
-	fc.onStop()
+	fc.OnStop()
 }
 
 func (fc *MockFastHotStuffEventLoop) IsInitialized() bool {
-	return fc.onIsInitialized()
+	return fc.OnIsInitialized()
 }
 
 func (fc *MockFastHotStuffEventLoop) IsRunning() bool {
-	return fc.onIsRunning()
+	return fc.OnIsRunning()
 }
