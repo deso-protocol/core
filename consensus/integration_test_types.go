@@ -22,7 +22,7 @@ type validatorNode struct {
 	privateKey *bls.PrivateKey
 	stake      *uint256.Int
 
-	eventLoop *FastHotStuffEventLoop
+	eventLoop *fastHotStuffEventLoop
 
 	isBlockProposer bool
 	validatorNodes  []*validatorNode

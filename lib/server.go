@@ -61,7 +61,7 @@ type Server struct {
 	eventManager  *EventManager
 	TxIndex       *TXIndex
 
-	fastHotStuffEventLoop *consensus.FastHotStuffEventLoop
+	fastHotStuffEventLoop consensus.FastHotStuffEventLoop
 	// posMempool *PosMemPool TODO: Add the mempool later
 
 	// All messages received from peers get sent from the ConnectionManager to the
@@ -2297,7 +2297,7 @@ func (srv *Server) _startConsensus() {
 		}
 
 		select {
-		case consensusEvent := <-srv.fastHotStuffEventLoop.Events:
+		case consensusEvent := <-srv.fastHotStuffEventLoop.GetEvents():
 			{
 				glog.Infof("Server._startConsensus: Received consensus event for block height: %v", consensusEvent.TipBlockHeight)
 				srv._handleFastHostStuffConsensusEvent(consensusEvent)
