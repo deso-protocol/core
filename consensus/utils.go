@@ -40,6 +40,48 @@ func IsValidSuperMajorityQuorumCertificate(qc QuorumCertificate, validators []Va
 	// Compute the signature that validators in the QC would have signed
 	signaturePayload := GetVoteSignaturePayload(qc.GetView(), qc.GetBlockHash())
 
+	hasSuperMajorityStake, validatorPublicKeysInQC := isSuperMajorityStakeSignersList(qc.GetAggregatedSignature().GetSignersList(), validators)
+	if !hasSuperMajorityStake {
+		return false
+	}
+
+	return isValidSignatureManyPublicKeys(validatorPublicKeysInQC, qc.GetAggregatedSignature().GetSignature(), signaturePayload[:])
+}
+
+func IsValidSuperMajorityAggregateQuorumCertificate(aggQC AggregateQuorumCertificate, validators []Validator) bool {
+	if !isProperlyFormedAggregateQC(aggQC) || !isProperlyFormedValidatorSet(validators) {
+		return false
+	}
+
+	hasSuperMajorityStake, signerPublicKeys := isSuperMajorityStakeSignersList(aggQC.GetAggregatedSignature().GetSignersList(), validators)
+	if !hasSuperMajorityStake {
+		return false
+	}
+
+	// Compute the timeout payloads signed by each validator.
+	// Each validator should sign a payload with the pair (View, HighQCView).
+	// The ordering of the high QC views and validators in the aggregate signature
+	// will match the ordering of active validators in descending order of stake for
+	// the timed out view's epoch.
+	signedPayloads := [][]byte{}
+	for _, highQCView := range aggQC.GetHighQCViews() {
+		payload := GetTimeoutSignaturePayload(aggQC.GetView(), highQCView)
+		signedPayloads = append(signedPayloads, payload[:])
+	}
+
+	// Validate the signers' aggregate signatures
+	isValidSignature, err := bls.VerifyAggregateSignatureMultiplePayloads(
+		signerPublicKeys,
+		aggQC.GetAggregatedSignature().GetSignature(),
+		signedPayloads,
+	)
+	if err != nil || !isValidSignature {
+		return false
+	}
+	return true
+}
+
+func isSuperMajorityStakeSignersList(signersList *bitset.Bitset, validators []Validator) (bool, []*bls.PublicKey) {
 	// Compute the total stake in the QC and the total stake in the network
 	stakeInQC := uint256.NewInt()
 	totalStake := uint256.NewInt()
@@ -47,12 +89,9 @@ func IsValidSuperMajorityQuorumCertificate(qc QuorumCertificate, validators []Va
 	// Fetch the validators in the QC
 	validatorPublicKeysInQC := []*bls.PublicKey{}
 
-	// Fetch the aggregated signature in the QC
-	aggregatedSignature := qc.GetAggregatedSignature()
-
 	// Fetch the validators in the QC, and compute the sum of stake in the QC and in the network
 	for ii := range validators {
-		if aggregatedSignature.GetSignersList().Get(ii) {
+		if signersList.Get(ii) {
 			stakeInQC.Add(stakeInQC, validators[ii].GetStakeAmount())
 			validatorPublicKeysInQC = append(validatorPublicKeysInQC, validators[ii].GetPublicKey())
 		}
@@ -61,11 +100,9 @@ func IsValidSuperMajorityQuorumCertificate(qc QuorumCertificate, validators []Va
 
 	// Check if the QC contains a super-majority of stake
 	if !isSuperMajorityStake(stakeInQC, totalStake) {
-		return false
+		return false, validatorPublicKeysInQC
 	}
-
-	// Finally, validate the signature
-	return isValidSignatureManyPublicKeys(validatorPublicKeysInQC, aggregatedSignature.GetSignature(), signaturePayload[:])
+	return true, validatorPublicKeysInQC
 }
 
 // When voting on a block, validators sign the payload sha3-256(View, BlockHash) with their BLS
@@ -194,6 +231,19 @@ func isProperlyFormedQC(qc QuorumCertificate) bool {
 	}
 
 	return isProperlyFormedAggregateSignature(qc.GetAggregatedSignature())
+}
+
+func isProperlyFormedAggregateQC(aggQC AggregateQuorumCertificate) bool {
+	// The QC must be non-nil
+	if isInterfaceNil(aggQC) {
+		return false
+	}
+	// The view must be non-zero and the high QC must be properly formed
+	// TODO: Do we need further validation on high qc views? such as non-zero?
+	if aggQC.GetView() == 0 || !isProperlyFormedQC(aggQC.GetHighQC()) || len(aggQC.GetHighQCViews()) == 0 {
+		return false
+	}
+	return isProperlyFormedAggregateSignature(aggQC.GetAggregatedSignature())
 }
 
 func isProperlyFormedAggregateSignature(agg AggregatedSignature) bool {
@@ -360,6 +410,26 @@ func createDummyQC(view uint64, blockHash BlockHash) *quorumCertificate {
 	return &quorumCertificate{
 		blockHash: blockHash,
 		view:      view,
+		aggregatedSignature: &aggregatedSignature{
+			signersList: signersList,
+			signature:   aggregateSignature,
+		},
+	}
+}
+
+func createDummyAggQc(view uint64, highQCView uint64) *aggregateQuorumCertificate {
+	timeoutSignaturePayload := GetTimeoutSignaturePayload(view, highQCView)
+	dummyQC := createDummyQC(highQCView, createDummyBlockHash())
+	blsPrivateKey1, _ := bls.NewPrivateKey()
+	blsSignature1, _ := blsPrivateKey1.Sign(timeoutSignaturePayload[:])
+	blsPrivateKey2, _ := bls.NewPrivateKey()
+	blsSignature2, _ := blsPrivateKey2.Sign(timeoutSignaturePayload[:])
+	signersList := bitset.NewBitset().Set(0, true).Set(1, true)
+	aggregateSignature, _ := bls.AggregateSignatures([]*bls.Signature{blsSignature1, blsSignature2})
+	return &aggregateQuorumCertificate{
+		view:        view,
+		highQC:      dummyQC,
+		highQCViews: []uint64{highQCView, highQCView},
 		aggregatedSignature: &aggregatedSignature{
 			signersList: signersList,
 			signature:   aggregateSignature,
