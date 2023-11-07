@@ -2261,7 +2261,7 @@ func (srv *Server) _startConsensus() {
 		}
 
 		select {
-		case consensusEvent := <-srv.consensusController.fastHotStuffEventLoop.Events:
+		case consensusEvent := <-srv.consensusController.fastHotStuffEventLoop.GetEvents():
 			{
 				glog.Infof("Server._startConsensus: Received consensus event for block height: %v", consensusEvent.TipBlockHeight)
 				srv._handleFastHostStuffConsensusEvent(consensusEvent)

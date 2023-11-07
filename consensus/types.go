@@ -40,6 +40,24 @@ type FastHotStuffEvent struct {
 // ambiguously repeated in the code base
 type BlockHashValue = [32]byte
 
+// FastHotStuffEventLoop is the public facing interface for the consensus event loop. We expose an
+// interface instead of the raw event loop struct to allow external callers to mock the event loop
+// for testing purposes.
+type FastHotStuffEventLoop interface {
+	GetEvents() chan *FastHotStuffEvent
+
+	Init(time.Duration, time.Duration, BlockWithValidatorList, []BlockWithValidatorList) error
+	GetCurrentView() uint64
+	AdvanceViewOnTimeout() (uint64, error)
+	ProcessTipBlock(BlockWithValidatorList, []BlockWithValidatorList) error
+	ProcessValidatorVote(VoteMessage) error
+	ProcessValidatorTimeout(TimeoutMessage) error
+	Start()
+	Stop()
+	IsInitialized() bool
+	IsRunning() bool
+}
+
 // BlockHash is a 32-byte hash of a block used to uniquely identify a block. It's re-defined here
 // as an interface that matches the exact structure of the BlockHash type in core, so that the two
 // packages are decoupled and the Fast HotStuff event loop can be tested end-to-end independently.
@@ -146,7 +164,7 @@ const signalChannelBufferSize = 10000
 // to pass in the tip block and safe extendable blocks. It expects the server to maintain the block chain,
 // the index of all past blocks, to perform QC validations for incoming blocks, to handle the commit rule, to
 // handle reorgs, and to only then to pass the the new validated tip.
-type FastHotStuffEventLoop struct {
+type fastHotStuffEventLoop struct {
 	lock sync.RWMutex
 
 	crankTimerInterval  time.Duration

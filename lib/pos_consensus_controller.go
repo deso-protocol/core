@@ -8,16 +8,13 @@ import (
 
 type ConsensusController struct {
 	lock                  sync.RWMutex
-	fastHotStuffEventLoop *consensus.FastHotStuffEventLoop
+	fastHotStuffEventLoop consensus.FastHotStuffEventLoop
 	blockchain            *Blockchain
 }
 
-func NewConsensusController(
-	fastHotStuffEventLoop *consensus.FastHotStuffEventLoop,
-	blockchain *Blockchain,
-) *ConsensusController {
+func NewConsensusController(blockchain *Blockchain) *ConsensusController {
 	return &ConsensusController{
-		fastHotStuffEventLoop: fastHotStuffEventLoop,
+		fastHotStuffEventLoop: consensus.NewFastHotStuffEventLoop(),
 		blockchain:            blockchain,
 	}
 }
