@@ -67,10 +67,10 @@ func (cc *ConsensusController) HandleFastHostStuffVote(event *consensus.FastHotS
 
 // HandleFastHostStuffTimeout is triggered when the FastHotStuffEventLoop has signaled that
 // it is ready to time out the current view. This function validates the timeout signal for
-// staleness. If the signal is valid, then it construct and broadcast the timeout msg here.
+// staleness. If the signal is valid, then it constructs and broadcasts the timeout msg here.
 //
 // Steps:
-// 1. Verify the timeout message's and the view we want to timeout on
+// 1. Verify the timeout message and the view we want to timeout on
 // 2. Construct the timeout message
 // 3. Process the timeout in the consensus module
 // 4. Broadcast the timeout msg to the network
