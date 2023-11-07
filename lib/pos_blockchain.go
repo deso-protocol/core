@@ -171,7 +171,7 @@ func (bc *Blockchain) validateAndIndexBlockPoS(block *MsgDeSoBlock) (*BlockNode,
 
 	// Run the validation for the parent and update the block index with the parent's status. We first
 	// check if the parent has a cached status. If so, we use the cached status. Otherwise, we run
-	// the full validation algorithm on it, then index and use the result.
+	// the full validation algorithm on it, then index it and use the result.
 	parentBlockNode, err := bc.validatePreviouslyIndexedBlockPoS(block.Header.PrevBlockHash)
 	if err != nil {
 		return nil, errors.Wrapf(err, "validateAndIndexBlockPoS: Problem validating previously indexed block: ")
