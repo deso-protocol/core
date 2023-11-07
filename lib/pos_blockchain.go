@@ -598,8 +598,7 @@ func (bc *Blockchain) getLineageFromCommittedTip(block *MsgDeSoBlock) ([]*BlockN
 		prevHeight = currentBlock.Header.Height
 		prevView = currentBlock.Header.ProposedInView
 	}
-	collections.Reverse(ancestors)
-	return ancestors, nil
+	return collections.Reverse(ancestors), nil
 }
 
 // getOrCreateBlockNodeFromBlockIndex returns the block node from the block index if it exists.
