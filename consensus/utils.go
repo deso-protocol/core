@@ -13,6 +13,23 @@ import (
 	"golang.org/x/crypto/sha3"
 )
 
+func IsProperlyFormedVoteEvent(event *FastHotStuffEvent) bool {
+	return event != nil && // Event non-nil
+		event.EventType == FastHotStuffEventTypeVote && // Event type is vote
+		event.View > 0 && // The view the tip block was proposed in is non-zero
+		event.TipBlockHeight > 0 && // Tip block height voted on is non-zero
+		!isInterfaceNil(event.TipBlockHash) // Tip block hash voted on is non-nil
+}
+
+func IsProperlyFormedTimeoutEvent(event *FastHotStuffEvent) bool {
+	return event != nil && // Event non-nil
+		event.EventType == FastHotStuffEventTypeTimeout && // Event type is timeout
+		event.View > 0 && // The view that was timed out is non-zero
+		event.TipBlockHeight > 0 && // Tip block height is non-zero
+		!isInterfaceNil(event.TipBlockHash) && // Tip block hash is non-nil
+		!isInterfaceNil(event.QC) // The high QC is non-nil
+}
+
 // Given a QC and a sorted validator list, this function returns true if the QC contains a valid
 // super-majority of signatures from the validator list for the QC's (View, BlockHash) pair.
 func IsValidSuperMajorityQuorumCertificate(qc QuorumCertificate, validators []Validator) bool {
