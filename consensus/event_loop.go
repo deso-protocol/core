@@ -86,6 +86,12 @@ func (fc *fastHotStuffEventLoop) Init(
 	return nil
 }
 
+// GetEvents returns the event loop's external channel for signaling. We need a getter function
+// to ensure that this struct implements the FastHotStuffEventLoop interface type.
+func (fc *fastHotStuffEventLoop) GetEvents() chan *FastHotStuffEvent {
+	return fc.Events
+}
+
 // GetCurrentView is a simple getter that returns the event loop's current view. It does not need
 // to be thread-safe. The caller is expected to use it in a thread-safe manner, at a time when
 // the view is guaranteed to not change.
