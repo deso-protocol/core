@@ -141,7 +141,23 @@ func (node *Node) Start(exitChannels ...*chan struct{}) {
 
 	// Setup chain database
 	dbDir := lib.GetBadgerDbPath(node.Config.DataDirectory)
-	opts := lib.PerformanceBadgerOptions(dbDir)
+	var opts badger.Options
+
+	// If we're in hypersync mode, we use the default badger options. Otherwise, we use performance options.
+	// This is because hypersync mode is very I/O intensive, so we want to use the default options to reduce
+	// the amount of memory consumed by the database.
+	// Blocksync requires performance options because certain indexes tracked by blocksync have extremely large
+	// records (e.g. PrefixBlockHashToUtxoOperations). These large records will overflow the default badger mem table
+	// size.
+	//
+	// FIXME: We should rewrite the code so that PrefixBlockHashToUtxoOperations is either removed or written
+	// to badger in such a way as to not require the use of PerformanceBadgerOptions. Seet he comment on
+	// dirtyHackUpdateDbOpts.
+	if node.Config.HyperSync {
+		opts = lib.DefaultBadgerOptions(dbDir)
+	} else {
+		opts = lib.PerformanceBadgerOptions(dbDir)
+	}
 	opts.ValueDir = dbDir
 	node.ChainDB, err = badger.Open(opts)
 	if err != nil {
@@ -226,7 +242,8 @@ func (node *Node) Start(exitChannels ...*chan struct{}) {
 		eventManager,
 		node.nodeMessageChan,
 		node.Config.ForceChecksum,
-		node.Config.StateChangeDir)
+		node.Config.StateChangeDir,
+		node.Config.HypersyncMaxQueueSize)
 	if err != nil {
 		// shouldRestart can be true if, on the previous run, we did not finish flushing all ancestral
 		// records to the DB. In this case, the snapshot is corrupted and needs to be computed. See the

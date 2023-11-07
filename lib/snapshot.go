@@ -54,6 +54,12 @@ var (
 	_prefixMigrationStatus = []byte{5}
 )
 
+const (
+	// Default value for limiting the number of items stored in the OperationChannel. Because the snapshot chunks are
+	// 100MB each, this limits the number of operations stored at one time to 2GB
+	HypersyncDefaultMaxQueueSize = 20
+)
+
 // -------------------------------------------------------------------------------------
 // Snapshot
 // -------------------------------------------------------------------------------------
@@ -296,8 +302,11 @@ type Snapshot struct {
 	// down incorrectly.
 	Status *SnapshotStatus
 
+	// mainDb is the main database that contains consensus state.
 	mainDb *badger.DB
-	params *DeSoParams
+	// mainDbDirectory is the directory where the main db is stored.
+	mainDbDirectory string
+	params          *DeSoParams
 
 	isTxIndex       bool
 	disableChecksum bool
@@ -315,14 +324,11 @@ type Snapshot struct {
 
 // NewSnapshot creates a new snapshot instance.
 func NewSnapshot(mainDb *badger.DB, mainDbDirectory string, snapshotBlockHeightPeriod uint64, isTxIndex bool,
-	disableChecksum bool, params *DeSoParams, disableMigrations bool, useDefaultBadgerOptions bool, eventManager *EventManager) (_snap *Snapshot, _err error, _shouldRestart bool) {
+	disableChecksum bool, params *DeSoParams, disableMigrations bool, hypersyncMaxQueueSize uint32, eventManager *EventManager) (_snap *Snapshot, _err error, _shouldRestart bool) {
 
 	// Initialize the ancestral records database
 	snapshotDirectory := filepath.Join(GetBadgerDbPath(mainDbDirectory), "snapshot")
-	snapshotOpts := PerformanceBadgerOptions(snapshotDirectory)
-	if useDefaultBadgerOptions {
-		snapshotOpts = DefaultBadgerOptions(snapshotDirectory)
-	}
+	snapshotOpts := DefaultBadgerOptions(snapshotDirectory)
 	snapshotOpts.ValueDir = GetBadgerDbPath(snapshotDirectory)
 	snapshotDb, err := badger.Open(snapshotOpts)
 	if err != nil {
@@ -334,6 +340,11 @@ func NewSnapshot(mainDb *badger.DB, mainDbDirectory string, snapshotBlockHeightP
 		snapshotBlockHeightPeriod = SnapshotBlockHeightPeriod
 	}
 	var snapshotDbMutex sync.Mutex
+
+	// If the max queue size is unset, use the default.
+	if hypersyncMaxQueueSize == 0 {
+		hypersyncMaxQueueSize = HypersyncDefaultMaxQueueSize
+	}
 
 	// Retrieve and initialize the checksum.
 	checksum := &StateChecksum{}
@@ -403,19 +414,16 @@ func NewSnapshot(mainDb *badger.DB, mainDbDirectory string, snapshotBlockHeightP
 	timer := &Timer{}
 	timer.Initialize()
 
-	// Limit the number of items stored in the OperationChannel. Because the snapshot chunks are 100MB each,
-	// this limits the number of operations stored at one time to 20GB.
-	const maxOperationQueueSize = 20
-
 	// Set the snapshot.
 	snap := &Snapshot{
+		mainDbDirectory:              mainDbDirectory,
 		SnapshotDb:                   snapshotDb,
 		SnapshotDbMutex:              &snapshotDbMutex,
 		DatabaseCache:                lru.NewKVCache(DatabaseCacheSize),
 		AncestralFlushCounter:        uint64(0),
 		SnapshotBlockHeightPeriod:    snapshotBlockHeightPeriod,
 		OperationChannel:             operationChannel,
-		operationQueueSemaphore:      make(chan struct{}, maxOperationQueueSize),
+		operationQueueSemaphore:      make(chan struct{}, hypersyncMaxQueueSize),
 		Checksum:                     checksum,
 		Migrations:                   migrations,
 		CurrentEpochSnapshotMetadata: metadata,
