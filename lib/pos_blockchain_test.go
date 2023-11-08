@@ -653,7 +653,7 @@ func TestHasValidBlockProposerPoS(t *testing.T) {
 	}
 
 	utxoView = _newUtxoView(testMeta)
-	leaders, err := utxoView.GetSnapshotLeaderSchedule()
+	leaders, err := utxoView.GetCurrentSnapshotLeaderSchedule()
 	require.NoError(t, err)
 	require.Equal(t, len(leaders), len(validatorPKIDs))
 	// Make sure all the validators are in the leader schedule.
@@ -703,7 +703,7 @@ func TestHasValidBlockProposerPoS(t *testing.T) {
 				ProposerVotingPublicKey: leader0Entry.VotingPublicKey,
 			},
 		}
-		isBlockProposerValid, err = testMeta.chain.hasValidBlockProposerPoS(dummyBlock)
+		isBlockProposerValid, err = utxoView.hasValidBlockProposerPoS(dummyBlock)
 		require.NoError(t, err)
 		require.True(t, isBlockProposerValid)
 
@@ -711,14 +711,14 @@ func TestHasValidBlockProposerPoS(t *testing.T) {
 		leader1PublicKey := utxoView.GetPublicKeyForPKID(leaderSchedule[1])
 		leader1Entry := validatorPKIDToValidatorEntryMap[*leaderSchedule[1]]
 		dummyBlock.Header.ProposerPublicKey = NewPublicKey(leader1PublicKey)
-		isBlockProposerValid, err = testMeta.chain.hasValidBlockProposerPoS(dummyBlock)
+		isBlockProposerValid, err = utxoView.hasValidBlockProposerPoS(dummyBlock)
 		require.NoError(t, err)
 		require.False(t, isBlockProposerValid)
 
 		// If we have a different proposer voting public key, we will have an error
 		dummyBlock.Header.ProposerPublicKey = NewPublicKey(leader0PublicKey)
 		dummyBlock.Header.ProposerVotingPublicKey = leader1Entry.VotingPublicKey
-		isBlockProposerValid, err = testMeta.chain.hasValidBlockProposerPoS(dummyBlock)
+		isBlockProposerValid, err = utxoView.hasValidBlockProposerPoS(dummyBlock)
 		require.NoError(t, err)
 		require.False(t, isBlockProposerValid)
 
@@ -727,7 +727,7 @@ func TestHasValidBlockProposerPoS(t *testing.T) {
 		dummyBlock.Header.ProposedInView = viewNumber + 2
 		dummyBlock.Header.ProposerPublicKey = NewPublicKey(leader1PublicKey)
 		dummyBlock.Header.ProposerVotingPublicKey = leader1Entry.VotingPublicKey
-		isBlockProposerValid, err = testMeta.chain.hasValidBlockProposerPoS(dummyBlock)
+		isBlockProposerValid, err = utxoView.hasValidBlockProposerPoS(dummyBlock)
 		require.NoError(t, err)
 		require.True(t, isBlockProposerValid)
 
@@ -738,7 +738,7 @@ func TestHasValidBlockProposerPoS(t *testing.T) {
 		leader4Entry := validatorPKIDToValidatorEntryMap[*leaderSchedule[4]]
 		dummyBlock.Header.ProposerPublicKey = NewPublicKey(leader4PublicKey)
 		dummyBlock.Header.ProposerVotingPublicKey = leader4Entry.VotingPublicKey
-		isBlockProposerValid, err = testMeta.chain.hasValidBlockProposerPoS(dummyBlock)
+		isBlockProposerValid, err = utxoView.hasValidBlockProposerPoS(dummyBlock)
 		require.NoError(t, err)
 		require.True(t, isBlockProposerValid)
 
@@ -746,20 +746,20 @@ func TestHasValidBlockProposerPoS(t *testing.T) {
 		dummyBlock.Header.ProposedInView = viewNumber + 8
 		dummyBlock.Header.ProposerPublicKey = NewPublicKey(leader0PublicKey)
 		dummyBlock.Header.ProposerVotingPublicKey = leader0Entry.VotingPublicKey
-		isBlockProposerValid, err = testMeta.chain.hasValidBlockProposerPoS(dummyBlock)
+		isBlockProposerValid, err = utxoView.hasValidBlockProposerPoS(dummyBlock)
 		require.NoError(t, err)
 		require.True(t, isBlockProposerValid)
 
 		// If the block view is less than the epoch's initial view, this is an error.
 		dummyBlock.Header.ProposedInView = viewNumber
-		isBlockProposerValid, err = testMeta.chain.hasValidBlockProposerPoS(dummyBlock)
+		isBlockProposerValid, err = utxoView.hasValidBlockProposerPoS(dummyBlock)
 		require.NoError(t, err)
 		require.False(t, isBlockProposerValid)
 
 		// If the block height is less than epoch's initial block height, this is an error.
 		dummyBlock.Header.ProposedInView = viewNumber + 1
 		dummyBlock.Header.Height = blockHeight
-		isBlockProposerValid, err = testMeta.chain.hasValidBlockProposerPoS(dummyBlock)
+		isBlockProposerValid, err = utxoView.hasValidBlockProposerPoS(dummyBlock)
 		require.NoError(t, err)
 		require.False(t, isBlockProposerValid)
 
@@ -768,7 +768,7 @@ func TestHasValidBlockProposerPoS(t *testing.T) {
 		// This would imply that we've had more blocks than views, which is not possible.
 		dummyBlock.Header.ProposedInView = viewNumber + 1
 		dummyBlock.Header.Height = blockHeight + 2
-		isBlockProposerValid, err = testMeta.chain.hasValidBlockProposerPoS(dummyBlock)
+		isBlockProposerValid, err = utxoView.hasValidBlockProposerPoS(dummyBlock)
 		require.NoError(t, err)
 		require.False(t, isBlockProposerValid)
 	}
@@ -1875,6 +1875,259 @@ func TestGetSafeBlocks(t *testing.T) {
 	require.True(t, _checkSafeBlockForBlockHash(block3PrimeHash, safeBlocks))
 }
 
+// TestProcessOrphanBlockPoS tests the ProcessOrphanBlockPoS function to make sure it properly handles
+// marking orphan blocks as Validate Failed if they are truly invalid. Note that orphan blocks will
+// never be marked Validated.
+func TestProcessOrphanBlockPoS(t *testing.T) {
+	testMeta := NewTestPoSBlockchainWithValidators(t)
+
+	// Generate a real block and make sure it doesn't hit any errors.
+	{
+		var realBlock *MsgDeSoBlock
+		realBlock = _generateRealBlock(testMeta, 12, 12, 889, testMeta.chain.GetBestChainTip().Hash, false)
+		// Give the block a random parent, so it is truly an orphan.
+		realBlock.Header.PrevBlockHash = NewBlockHash(RandomBytes(32))
+		err := testMeta.chain.processOrphanBlockPoS(realBlock)
+		require.NoError(t, err)
+		// Get the block node from the block index.
+		blockHash, err := realBlock.Hash()
+		require.NoError(t, err)
+		blockNode, exists := testMeta.chain.blockIndexByHash[*blockHash]
+		require.True(t, exists)
+		require.True(t, blockNode.IsStored())
+		require.False(t, blockNode.IsValidateFailed())
+		require.False(t, blockNode.IsValidated())
+	}
+	// Generate a real block and make some modification to the block to make it malformed.
+	{
+		var realBlock *MsgDeSoBlock
+		realBlock = _generateRealBlock(testMeta, 12, 12, 8172, testMeta.chain.GetBestChainTip().Hash, false)
+		// Give the block a random parent, so it is truly an orphan.
+		realBlock.Header.PrevBlockHash = NewBlockHash(RandomBytes(32))
+		// Set the header version to 1
+		realBlock.Header.Version = 1
+		// There should be no error, but the block should be marked as ValidateFailed.
+		err := testMeta.chain.processOrphanBlockPoS(realBlock)
+		require.NoError(t, err)
+		// Get the block node from the block index.
+		blockHash, err := realBlock.Hash()
+		require.NoError(t, err)
+		blockNode, exists := testMeta.chain.blockIndexByHash[*blockHash]
+		require.True(t, exists)
+		require.True(t, blockNode.IsStored())
+		require.True(t, blockNode.IsValidateFailed())
+		require.False(t, blockNode.IsValidated())
+	}
+	// Generate a real block in this epoch and change the block proposer. This should fail validation.
+	{
+		var realBlock *MsgDeSoBlock
+		realBlock = _generateRealBlock(testMeta, 12, 12, 1273, testMeta.chain.GetBestChainTip().Hash, false)
+		// Give the block a random parent, so it is truly an orphan.
+		realBlock.Header.PrevBlockHash = NewBlockHash(RandomBytes(32))
+		// Just make sure we're in the same epoch.
+		utxoView := _newUtxoView(testMeta)
+		currentEpochEntry, err := utxoView.GetCurrentEpochEntry()
+		require.NoError(t, err)
+		require.True(t, currentEpochEntry.ContainsBlockHeight(12))
+		// Change the block proposer to some any other validator's public key.
+		wrongBlockProposer := NewPublicKey(m0PkBytes)
+		if wrongBlockProposer.Equal(*realBlock.Header.ProposerPublicKey) {
+			wrongBlockProposer = NewPublicKey(m1PkBytes)
+		}
+		realBlock.Header.ProposerPublicKey = wrongBlockProposer
+		// There should be no error, but the block should be marked as ValidateFailed.
+		err = testMeta.chain.processOrphanBlockPoS(realBlock)
+		require.NoError(t, err)
+		// Get the block node from the block index.
+		blockHash, err := realBlock.Hash()
+		require.NoError(t, err)
+		blockNode, exists := testMeta.chain.blockIndexByHash[*blockHash]
+		require.True(t, exists)
+		require.True(t, blockNode.IsStored())
+		require.True(t, blockNode.IsValidateFailed())
+		require.False(t, blockNode.IsValidated())
+	}
+
+	// Generate a real block in this epoch and update the QC to not have a supermajority.
+	{
+		var realBlock *MsgDeSoBlock
+		realBlock = _generateRealBlock(testMeta, 12, 12, 543, testMeta.chain.GetBestChainTip().Hash, false)
+		// Give the block a random parent, so it is truly an orphan.
+		realBlock.Header.PrevBlockHash = NewBlockHash(RandomBytes(32))
+		// Just make sure we're in the same epoch.
+		utxoView := _newUtxoView(testMeta)
+		currentEpochEntry, err := utxoView.GetCurrentEpochEntry()
+		require.NoError(t, err)
+		require.True(t, currentEpochEntry.ContainsBlockHeight(12))
+		// Update the QC to not have a supermajority.
+		// Get all the bls keys for the validators that aren't the leader.
+		signersList := bitset.NewBitset()
+		var signatures []*bls.Signature
+		require.NoError(testMeta.t, err)
+		votePayload := consensus.GetVoteSignaturePayload(11, testMeta.chain.GetBestChainTip().Hash)
+		allSnapshotValidators, err := utxoView.GetAllSnapshotValidatorSetEntriesByStake()
+		require.NoError(t, err)
+		// Only have m0 sign it. m0 has significantly less than 2/3 of the stake.
+		m0PKID := utxoView.GetPKIDForPublicKey(m0PkBytes).PKID
+		for ii, validatorEntry := range allSnapshotValidators {
+			if !validatorEntry.ValidatorPKID.Eq(m0PKID) {
+				continue
+			}
+			validatorPublicKeyBytes := utxoView.GetPublicKeyForPKID(validatorEntry.ValidatorPKID)
+			validatorPublicKey := Base58CheckEncode(validatorPublicKeyBytes, false, testMeta.chain.params)
+			validatorBLSPrivateKey := testMeta.pubKeyToBLSKeyMap[validatorPublicKey]
+			sig, err := validatorBLSPrivateKey.Sign(votePayload[:])
+			require.NoError(testMeta.t, err)
+			signatures = append(signatures, sig)
+			signersList = signersList.Set(ii, true)
+		}
+		// Create the aggregated signature.
+		aggregatedSignature, err := bls.AggregateSignatures(signatures)
+		require.NoError(testMeta.t, err)
+		realBlock.Header.ValidatorsVoteQC.ValidatorsVoteAggregatedSignature = &AggregatedBLSSignature{
+			SignersList: signersList,
+			Signature:   aggregatedSignature,
+		}
+		// There should be no error, but the block should be marked as ValidateFailed.
+		err = testMeta.chain.processOrphanBlockPoS(realBlock)
+		require.NoError(t, err)
+		// Get the block node from the block index.
+		blockHash, err := realBlock.Hash()
+		require.NoError(t, err)
+		blockNode, exists := testMeta.chain.blockIndexByHash[*blockHash]
+		require.True(t, exists)
+		require.True(t, blockNode.IsStored())
+		require.True(t, blockNode.IsValidateFailed())
+		require.False(t, blockNode.IsValidated())
+	}
+	{
+		// Generate a real block in the next epoch and it should pass validation and be stored.
+		utxoView := _newUtxoView(testMeta)
+		currentEpochEntry, err := utxoView.GetCurrentEpochEntry()
+		require.NoError(t, err)
+		var nextEpochBlock *MsgDeSoBlock
+		nextEpochBlock = _generateRealBlock(testMeta, currentEpochEntry.FinalBlockHeight+1, currentEpochEntry.FinalBlockHeight+1, 23, testMeta.chain.GetBestChainTip().Hash, false)
+		// Give the block a random parent, so it is truly an orphan.
+		nextEpochBlock.Header.PrevBlockHash = NewBlockHash(RandomBytes(32))
+		err = testMeta.chain.processOrphanBlockPoS(nextEpochBlock)
+		require.NoError(t, err)
+		// Get the block node from the block index.
+		blockHash, err := nextEpochBlock.Hash()
+		require.NoError(t, err)
+		blockNode, exists := testMeta.chain.blockIndexByHash[*blockHash]
+		require.True(t, exists)
+		require.True(t, blockNode.IsStored())
+		require.False(t, blockNode.IsValidateFailed())
+		require.False(t, blockNode.IsValidated())
+	}
+	{
+		// Generate a real block in the next epoch and make the block proposer any public key not in
+		// the validator set. This should fail validation.
+		utxoView := _newUtxoView(testMeta)
+		currentEpochEntry, err := utxoView.GetCurrentEpochEntry()
+		require.NoError(t, err)
+		var nextEpochBlock *MsgDeSoBlock
+		nextEpochBlock = _generateRealBlock(testMeta, currentEpochEntry.FinalBlockHeight+1, currentEpochEntry.FinalBlockHeight+1, 17283, testMeta.chain.GetBestChainTip().Hash, false)
+		// Give the block a random parent, so it is truly an orphan.
+		nextEpochBlock.Header.PrevBlockHash = NewBlockHash(RandomBytes(32))
+		// Change the block proposer to the param updater's public key. The param updater is not in the validator set.
+		nextEpochBlock.Header.ProposerPublicKey = NewPublicKey(paramUpdaterPkBytes)
+		// There should be no error, but the block should be marked as ValidateFailed.
+		err = testMeta.chain.processOrphanBlockPoS(nextEpochBlock)
+		require.NoError(t, err)
+		// Get the block node from the block index.
+		blockHash, err := nextEpochBlock.Hash()
+		require.NoError(t, err)
+		blockNode, exists := testMeta.chain.blockIndexByHash[*blockHash]
+		require.True(t, exists)
+		require.True(t, blockNode.IsStored())
+		require.True(t, blockNode.IsValidateFailed())
+		require.False(t, blockNode.IsValidated())
+	}
+	{
+		// Generate a real block in the next epoch and update the QC to not have a supermajority.
+		utxoView := _newUtxoView(testMeta)
+		currentEpochEntry, err := utxoView.GetCurrentEpochEntry()
+		require.NoError(t, err)
+		var nextEpochBlock *MsgDeSoBlock
+		nextEpochBlock = _generateRealBlock(testMeta, currentEpochEntry.FinalBlockHeight+1, currentEpochEntry.FinalBlockHeight+1, 3178, testMeta.chain.GetBestChainTip().Hash, false)
+		// Give the block a random parent, so it is truly an orphan.
+		nextEpochBlock.Header.PrevBlockHash = NewBlockHash(RandomBytes(32))
+		// Update the QC to not have a supermajority.
+		err = testMeta.chain.processOrphanBlockPoS(nextEpochBlock)
+		require.NoError(t, err)
+		// Update the QC to not have a supermajority.
+		// Get all the bls keys for the validators that aren't the leader.
+		signersList := bitset.NewBitset()
+		var signatures []*bls.Signature
+		require.NoError(testMeta.t, err)
+		votePayload := consensus.GetVoteSignaturePayload(currentEpochEntry.FinalBlockHeight, testMeta.chain.GetBestChainTip().Hash)
+		allSnapshotValidators, err := utxoView.GetAllSnapshotValidatorSetEntriesByStake()
+		require.NoError(t, err)
+		// Only have m0 sign it. m0 has significantly less than 2/3 of the stake.
+		m0PKID := utxoView.GetPKIDForPublicKey(m0PkBytes).PKID
+		for ii, validatorEntry := range allSnapshotValidators {
+			if !validatorEntry.ValidatorPKID.Eq(m0PKID) {
+				continue
+			}
+			validatorPublicKeyBytes := utxoView.GetPublicKeyForPKID(validatorEntry.ValidatorPKID)
+			validatorPublicKey := Base58CheckEncode(validatorPublicKeyBytes, false, testMeta.chain.params)
+			validatorBLSPrivateKey := testMeta.pubKeyToBLSKeyMap[validatorPublicKey]
+			sig, err := validatorBLSPrivateKey.Sign(votePayload[:])
+			require.NoError(testMeta.t, err)
+			signatures = append(signatures, sig)
+			signersList = signersList.Set(ii, true)
+		}
+		// Create the aggregated signature.
+		aggregatedSignature, err := bls.AggregateSignatures(signatures)
+		require.NoError(testMeta.t, err)
+		nextEpochBlock.Header.ValidatorsVoteQC.ValidatorsVoteAggregatedSignature = &AggregatedBLSSignature{
+			SignersList: signersList,
+			Signature:   aggregatedSignature,
+		}
+	}
+	{
+		// Generate a block that is two epochs in the future. We won't even store this.
+		utxoView := _newUtxoView(testMeta)
+		currentEpochEntry, err := utxoView.GetCurrentEpochEntry()
+		require.NoError(t, err)
+		nextEpochEntry, err := utxoView.computeNextEpochEntry(currentEpochEntry.EpochNumber, currentEpochEntry.FinalBlockHeight, currentEpochEntry.FinalBlockHeight, 1)
+		require.NoError(t, err)
+		var twoEpochsInFutureBlock *MsgDeSoBlock
+		twoEpochsInFutureBlock = _generateRealBlock(testMeta, nextEpochEntry.FinalBlockHeight+1, nextEpochEntry.FinalBlockHeight+1, 17283, testMeta.chain.GetBestChainTip().Hash, false)
+		// Give the block a random parent, so it is truly an orphan.
+		twoEpochsInFutureBlock.Header.PrevBlockHash = NewBlockHash(RandomBytes(32))
+		// We should get an error that this block is too far in the future.
+		err = testMeta.chain.processOrphanBlockPoS(twoEpochsInFutureBlock)
+		require.Error(t, err)
+		// The block shouldn't be in the block index.
+		blockHash, err := twoEpochsInFutureBlock.Hash()
+		require.NoError(t, err)
+		_, exists := testMeta.chain.blockIndexByHash[*blockHash]
+		require.False(t, exists)
+	}
+	{
+		// Generate a block that is in the previous epoch. We should store this.
+		utxoView := _newUtxoView(testMeta)
+		currentEpochEntry, err := utxoView.GetCurrentEpochEntry()
+		require.NoError(t, err)
+		prevEpochEntry, err := utxoView.simulatePrevEpochEntry(currentEpochEntry.EpochNumber, currentEpochEntry.FinalBlockHeight)
+		require.NoError(t, err)
+		var prevEpochBlock *MsgDeSoBlock
+		prevEpochBlock = _generateRealBlock(testMeta, prevEpochEntry.FinalBlockHeight, prevEpochEntry.FinalBlockHeight, 17283, testMeta.chain.GetBestChainTip().Hash, false)
+		err = testMeta.chain.processOrphanBlockPoS(prevEpochBlock)
+		require.NoError(t, err)
+		// The block should be in the block index.
+		blockHash, err := prevEpochBlock.Hash()
+		require.NoError(t, err)
+		blockNode, exists := testMeta.chain.blockIndexByHash[*blockHash]
+		require.True(t, exists)
+		require.True(t, blockNode.IsStored())
+		require.False(t, blockNode.IsValidateFailed())
+		require.False(t, blockNode.IsValidated())
+	}
+}
+
 // _generateRealBlock generates a BlockTemplate with real data by adding 50 test transactions to the
 // PosMempool, generating a RandomSeedHash, updating the latestBlockView in the PosBlockProducer, and calling _getFullRealBlockTemplate.
 // It can be used to generate a block w/ either a vote or timeout QC.
@@ -1982,7 +2235,7 @@ func _getFullRealBlockTemplate(testMeta *TestMeta, latestBlockView *UtxoView, bl
 	// Figure out who the leader is supposed to be.
 	currentEpochEntry, err := latestBlockView.GetCurrentEpochEntry()
 	require.NoError(testMeta.t, err)
-	leaders, err := latestBlockView.GetSnapshotLeaderSchedule()
+	leaders, err := latestBlockView.GetCurrentSnapshotLeaderSchedule()
 	require.NoError(testMeta.t, err)
 	require.GreaterOrEqual(testMeta.t, view, currentEpochEntry.InitialView)
 	viewDiff := view - currentEpochEntry.InitialView

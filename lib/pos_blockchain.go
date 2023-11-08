@@ -1,6 +1,7 @@
 package lib
 
 import (
+	"fmt"
 	"math"
 	"time"
 
@@ -47,7 +48,7 @@ func (bc *Blockchain) processBlockPoS(block *MsgDeSoBlock, currentView uint64, v
 		// If it passes basic integrity checks, we'll store it with the hope that we
 		// will eventually get a parent that connects to our best chain.
 		missingBlockHashes := []*BlockHash{block.Header.PrevBlockHash}
-		// FIXME: I sketeched some of these steps but not all...
+		// FIXME: I sketched some of these steps but not all...
 		// Step 0: I think we still need to do some basic validation on this block, like
 		// verifying that it's signed by the leader for example to prevent spamming.
 		// I didn't do that.
@@ -119,12 +120,122 @@ func (bc *Blockchain) processOrphanBlockPoS(block *MsgDeSoBlock) error {
 	// is not malformed. If the block is malformed, we should store it as ValidateFailed.
 	if err := bc.isProperlyFormedBlockPoS(block); err != nil {
 		if _, innerErr := bc.storeValidateFailedBlockInBlockIndex(block); innerErr != nil {
-			return errors.Wrapf(innerErr, "processBlockPoS: Problem adding validate failed block to block index: %v", err)
+			return errors.Wrapf(innerErr, "processOrphanBlockPoS: Problem adding validate failed block to block index: %v", err)
+		}
+		return nil
+	}
+	// Validate QC has 2/3s supermajority.
+	utxoView, err := NewUtxoView(bc.db, bc.params, nil, bc.snapshot, nil)
+	if err != nil {
+		// What do we want to do here? We can't validate the QC without a UtxoView.
+		return errors.Wrap(err, "processOrphanBlockPoS: Problem initializing UtxoView")
+	}
+	currentEpochEntry, err := utxoView.GetCurrentEpochEntry()
+	if err != nil {
+		// What do we want to do here? We can't validate the QC without getting the current epoch entry.
+		return errors.Wrap(err, "processOrphanBlockPoS: Problem getting current epoch entry")
+	}
+	var validatorsByStake []*ValidatorEntry
+	if !currentEpochEntry.ContainsBlockHeight(block.Header.Height) {
+		// Get the epoch entry based on the block height. The logic is the same
+		// regardless of whether the block is in a previous or future epoch.
+		// Note that the InitialView cannot be properly computed.
+		var epochEntry *EpochEntry
+		usePrevEpoch := block.Header.Height < currentEpochEntry.InitialBlockHeight
+		// If it's in a previous epoch, we compute the prev epoch entry.
+		if usePrevEpoch {
+			epochEntry, err = utxoView.simulatePrevEpochEntry(currentEpochEntry.EpochNumber, currentEpochEntry.InitialBlockHeight)
+			if err != nil {
+				return errors.Wrap(err, "processOrphanBlockPoS: Problem computing prev epoch entry")
+			}
+		} else {
+			// Okay now we know that this block must be in a future epoch. We do our best to compute
+			// the next epoch entry and check if its in that epoch. If it's in a future epoch, we just throw it away.
+			// We supply 0 for the view and 0 for the block timestamp as we don't know what those values should be and
+			// we will ignore these values.
+			epochEntry, err = utxoView.computeNextEpochEntry(currentEpochEntry.EpochNumber, currentEpochEntry.FinalBlockHeight, 0, 0)
+			if err != nil {
+				return errors.Wrap(err, "processOrphanBlockPoS: Problem computing next epoch entry")
+			}
+		}
+		if !epochEntry.ContainsBlockHeight(block.Header.Height) {
+			// We will throw away this block as we know it's not in either
+			// the next or the previous epoch.
+			errSuffix := "future"
+			if usePrevEpoch {
+				errSuffix = "past"
+			}
+			return fmt.Errorf("processOrphanBlockPoS: Block height %d is too far in the %v", block.Header.Height, errSuffix)
+		}
+		var epochEntrySnapshotAtEpochNumber uint64
+		epochEntrySnapshotAtEpochNumber, err = utxoView.ComputeSnapshotEpochNumberForEpoch(epochEntry.EpochNumber)
+		if err != nil {
+			return errors.Wrapf(err, "processOrphanBlockPoS: Problem getting snapshot at epoch number for poch entry at epoch #%d", epochEntry.EpochNumber)
+		}
+		// Okay now that we've gotten the SnapshotAtEpochNumber for the next epoch, we can make sure that the proposer
+		// of the block is within the set of potential block proposers for the next epoch.
+		snapshotLeaderPKIDs, err := utxoView.GetSnapshotLeaderScheduleAtEpochNumber(epochEntrySnapshotAtEpochNumber)
+		if err != nil {
+			return errors.Wrapf(err, "processOrphanBlockPoS: Problem getting snapshot leader schedule at snapshot at epoch number %d", epochEntrySnapshotAtEpochNumber)
+		}
+		// Get the PKID for the block proposer.
+		blockProposerPKID := utxoView.GetPKIDForPublicKey(block.Header.ProposerPublicKey.ToBytes()).PKID
+		// TODO: Replace w/ collections.Any for simplicity. There is an issue with this version
+		// of Go's compiler that is preventing us from using collections.Any here.
+		// We can now check if the block proposer is in the set of snapshot leader PKIDs.
+		blockProposerSeen := false
+		for _, snapshotLeaderPKID := range snapshotLeaderPKIDs {
+			if snapshotLeaderPKID.Eq(blockProposerPKID) {
+				blockProposerSeen = true
+				break
+			}
+		}
+		if !blockProposerSeen {
+			// We can mark it as ValidateFailed. We'll never accept this block as
+			// its block proposer is not in the set of potential leaders.
+			if _, innerErr := bc.storeValidateFailedBlockInBlockIndex(block); innerErr != nil {
+				return errors.Wrap(innerErr, "processOrphanBlockPoS: Problem adding validate failed block to block index")
+			}
+			return nil
+		}
+		validatorsByStake, err = utxoView.GetAllSnapshotValidatorSetEntriesByStakeAtEpochNumber(epochEntrySnapshotAtEpochNumber)
+		if err != nil {
+			return errors.Wrapf(err, "processOrphanBlockPoS: Problem getting validator set at snapshot at epoch number %d", epochEntrySnapshotAtEpochNumber)
+		}
+	} else {
+		// This block is in the current epoch!
+		// First we validate that the leader is correct. We can only do this if the block
+		// is in the current epoch since we need the current epoch entry's initial view
+		// to compute the proper leader.
+		var isBlockProposerValid bool
+		isBlockProposerValid, err = utxoView.hasValidBlockProposerPoS(block)
+		if err != nil {
+			return errors.Wrapf(err, "processOrphanBlockPoS: Problem validating block proposer")
+		}
+		if !isBlockProposerValid {
+			if _, innerErr := bc.storeValidateFailedBlockInBlockIndex(block); innerErr != nil {
+				return errors.Wrapf(innerErr, "processOrphanBlockPoS: Problem adding validate failed block to block index: %v", err)
+			}
+			return nil
+		}
+		// If we get here, we know we have the correct block proposer. We now fetch the validators ordered by
+		// stake so we can validate the QC.
+		validatorsByStake, err = utxoView.GetAllSnapshotValidatorSetEntriesByStake()
+		if err != nil {
+			return errors.Wrap(err, "processOrphanBlockPoS: Problem getting validator set")
+		}
+	}
+	// Okay now we have the validator set ordered by stake, we can validate the QC.
+	if err = bc.isValidPoSQuorumCertificate(block, validatorsByStake); err != nil {
+		// If we hit an error, we know that the QC is invalid and we'll never accept this block,
+		// so we mark it as validate failed.
+		if _, innerErr := bc.storeValidateFailedBlockInBlockIndex(block); innerErr != nil {
+			return errors.Wrapf(innerErr, "processOrphanBlockPoS: Problem adding validate failed block to block index: %v", err)
 		}
 		return nil
 	}
 	// Add to blockIndexByHash with status STORED only as we are not sure if it's valid yet.
-	_, err := bc.storeBlockInBlockIndex(block)
+	_, err = bc.storeBlockInBlockIndex(block)
 	return errors.Wrap(err, "processBlockPoS: Problem adding block to block index: ")
 }
 
@@ -230,7 +341,7 @@ func (bc *Blockchain) validateAndIndexBlockPoS(block *MsgDeSoBlock) (*BlockNode,
 		return bc.storeValidateFailedBlockWithWrappedError(block, err)
 	}
 
-	isBlockProposerValid, err := bc.hasValidBlockProposerPoS(block)
+	isBlockProposerValid, err := utxoView.hasValidBlockProposerPoS(block)
 	if err != nil {
 		return nil, errors.Wrapf(err, "validateAndIndexBlockPoS: Problem validating block proposer")
 	}
@@ -490,16 +601,12 @@ func (bc *Blockchain) hasValidBlockViewPoS(block *MsgDeSoBlock) error {
 // block height + view number pair. It returns a bool indicating whether
 // we confirmed that the leader is valid. If we receive an error, we are unsure
 // if the leader is invalid or not, so we return false.
-func (bc *Blockchain) hasValidBlockProposerPoS(block *MsgDeSoBlock) (_isValidBlockProposer bool, _err error) {
-	utxoView, err := bc.getUtxoViewAtBlockHash(*block.Header.PrevBlockHash)
-	if err != nil {
-		return false, errors.Wrapf(err, "hasValidBlockProposerPoS: Problem initializing UtxoView")
-	}
-	currentEpochEntry, err := utxoView.GetCurrentEpochEntry()
+func (bav *UtxoView) hasValidBlockProposerPoS(block *MsgDeSoBlock) (_isValidBlockProposer bool, _err error) {
+	currentEpochEntry, err := bav.GetCurrentEpochEntry()
 	if err != nil {
 		return false, errors.Wrapf(err, "hasValidBlockProposerPoS: Problem getting current epoch entry")
 	}
-	leaders, err := utxoView.GetSnapshotLeaderSchedule()
+	leaders, err := bav.GetCurrentSnapshotLeaderSchedule()
 	if err != nil {
 		return false, errors.Wrapf(err, "hasValidBlockProposerPoS: Problem getting leader schedule")
 	}
@@ -534,11 +641,11 @@ func (bc *Blockchain) hasValidBlockProposerPoS(block *MsgDeSoBlock) (_isValidBlo
 		return false, nil
 	}
 	leaderIdx := uint16(leaderIdxUint64)
-	leaderEntry, err := utxoView.GetSnapshotLeaderScheduleValidator(leaderIdx)
+	leaderEntry, err := bav.GetSnapshotLeaderScheduleValidator(leaderIdx)
 	if err != nil {
 		return false, errors.Wrapf(err, "hasValidBlockProposerPoS: Problem getting leader schedule validator")
 	}
-	leaderPKIDFromBlock := utxoView.GetPKIDForPublicKey(block.Header.ProposerPublicKey[:])
+	leaderPKIDFromBlock := bav.GetPKIDForPublicKey(block.Header.ProposerPublicKey[:])
 	if !leaderEntry.VotingPublicKey.Eq(block.Header.ProposerVotingPublicKey) ||
 		!leaderEntry.ValidatorPKID.Eq(leaderPKIDFromBlock.PKID) {
 		return false, nil
