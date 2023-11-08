@@ -330,8 +330,9 @@ func (bav *UtxoView) _deleteLockupYieldCurvePoint(point *LockupYieldCurvePoint) 
 // Get Helper Functions for LockupYieldCurvePoint
 
 func (bav *UtxoView) GetYieldCurvePointByProfilePKIDAndDurationNanoSecs(profilePKID *PKID,
-	lockupDurationNanoSecs int64) (_lockupYieldCurvePoint *LockupYieldCurvePoint) {
+	lockupDurationNanoSecs int64) (_lockupYieldCurvePoint *LockupYieldCurvePoint, _err error) {
 	var lockupYieldCurvePoint *LockupYieldCurvePoint
+	var err error
 
 	// Check the view for a yield curve point.
 	if _, pointsInView := bav.PKIDToLockupYieldCurvePointKeyToLockupYieldCurvePoints[*profilePKID]; pointsInView {
@@ -341,20 +342,26 @@ func (bav *UtxoView) GetYieldCurvePointByProfilePKIDAndDurationNanoSecs(profileP
 		}).ToMapKey()
 		if inMemoryYieldCurvePoint, pointExists :=
 			bav.PKIDToLockupYieldCurvePointKeyToLockupYieldCurvePoints[*profilePKID][lockupYieldCurvePointKey]; pointExists {
-			return inMemoryYieldCurvePoint
+			if inMemoryYieldCurvePoint == nil || inMemoryYieldCurvePoint.isDeleted {
+				return nil, nil
+			}
+			return inMemoryYieldCurvePoint, nil
 		}
 	}
 
 	// No mapping exists in the view, check for an entry in the DB.
-	lockupYieldCurvePoint = DBGetYieldCurvePointsByProfilePKIDAndDurationNanoSecs(bav.GetDbAdapter().badgerDb,
+	lockupYieldCurvePoint, err = DBGetYieldCurvePointsByProfilePKIDAndDurationNanoSecs(bav.GetDbAdapter().badgerDb,
 		bav.Snapshot, profilePKID, lockupDurationNanoSecs)
+	if err != nil {
+		return nil, errors.Wrap(err, "GetYieldCurvePointByProfilePKIDAndDurationNanoSecs")
+	}
 
 	// Cache the DB entry in the in-memory map.
 	if lockupYieldCurvePoint != nil {
 		bav._setLockupYieldCurvePoint(lockupYieldCurvePoint)
 	}
 
-	return lockupYieldCurvePoint
+	return lockupYieldCurvePoint, nil
 }
 
 func (bav *UtxoView) GetLocalYieldCurvePoints(profilePKID *PKID, lockupDuration int64) (
@@ -1132,8 +1139,12 @@ func (bav *UtxoView) _connectUpdateCoinLockupParams(
 	}
 
 	// Fetch the previous yield curve point associated with this <profilePKID, lockupDurationNanoSecs> pair.
-	prevLockupYieldCurvePoint :=
+	prevLockupYieldCurvePoint, err :=
 		bav.GetYieldCurvePointByProfilePKIDAndDurationNanoSecs(profilePKID, txMeta.LockupYieldDurationNanoSecs)
+	if err != nil {
+		return 0, 0, nil, errors.Wrap(err, "_connectUpdateCoinLockupParams: "+
+			"failed a DB get operation on the previous yield curve point; this shouldn't happen")
+	}
 
 	// Check if a yield curve point is being added.
 	if !txMeta.RemoveYieldCurvePoint && txMeta.LockupYieldDurationNanoSecs > 0 {

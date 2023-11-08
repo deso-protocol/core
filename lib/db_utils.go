@@ -10725,13 +10725,19 @@ func DbPutLockedBalanceEntryMappingsWithTxn(txn *badger.Txn, snap *Snapshot, blo
 func DbDeleteLockedBalanceEntryWithTxn(txn *badger.Txn, snap *Snapshot, lockedBalanceEntry LockedBalanceEntry) error {
 	// First check that a mapping exists. If one doesn't then there's nothing to do.
 	_, err := DBGetWithTxn(txn, snap, _dbKeyForLockedBalanceEntry(lockedBalanceEntry))
-	if err != nil {
+	if errors.Is(err, badger.ErrKeyNotFound) {
 		return nil
+	}
+	if err != nil {
+		return errors.Wrapf(err, "DbDeleteLockedBalanceEntryWithTxn: Problem getting "+
+			"locked balance entry for HODLer PKID %s, Profile PKID %s, expiration timestamp %d",
+			lockedBalanceEntry.HODLerPKID.ToString(), lockedBalanceEntry.ProfilePKID.ToString(),
+			lockedBalanceEntry.UnlockTimestampNanoSecs)
 	}
 
 	// When a locked balance entry exists, delete the locked balance entry mapping.
 	if err := DBDeleteWithTxn(txn, snap, _dbKeyForLockedBalanceEntry(lockedBalanceEntry)); err != nil {
-		return errors.Wrapf(err, "DbDeleteRepostMappingsWithTxn: Deleting "+
+		return errors.Wrapf(err, "DbDeleteLockedBalanceEntryWithTxn: Deleting "+
 			"locked balance entry for HODLer PKID %s, Profile PKID %s, expiration timestamp %d",
 			lockedBalanceEntry.HODLerPKID.ToString(), lockedBalanceEntry.ProfilePKID.ToString(),
 			lockedBalanceEntry.UnlockTimestampNanoSecs)
@@ -10767,7 +10773,7 @@ func DBGetLockedBalanceEntryForHODLerPKIDProfilePKIDUnlockTimestampNanoSecsWithT
 
 	// Get the key from the db.
 	lockedBalanceEntryBytes, err := DBGetWithTxn(txn, snap, key)
-	if err == badger.ErrKeyNotFound {
+	if errors.Is(err, badger.ErrKeyNotFound) {
 		return nil, nil
 	}
 	if err != nil {
@@ -10775,10 +10781,7 @@ func DBGetLockedBalanceEntryForHODLerPKIDProfilePKIDUnlockTimestampNanoSecsWithT
 			errors.Wrap(err, "DBGetLockedBalanceEntryForHODLerPKIDProfilePKIDUnlockTimestampNanoSecsWithTxn")
 	}
 
-	lockedBalanceEntryObj := &LockedBalanceEntry{}
-	rr := bytes.NewReader(lockedBalanceEntryBytes)
-	DecodeFromBytes(lockedBalanceEntryObj, rr)
-	return lockedBalanceEntryObj, nil
+	return DecodeDeSoEncoder(&LockedBalanceEntry{}, bytes.NewReader(lockedBalanceEntryBytes))
 }
 
 func DBGetUnlockableLockedBalanceEntries(
@@ -10887,9 +10890,7 @@ func _dbKeyForLockupYieldCurvePoint(lockupYieldCurvePoint LockupYieldCurvePoint)
 	// This is crucial for badgerDB seeks as badger lexicographically seeks to nearest keys and
 	// BigEndian formatting ensures the lexicographic seeks function properly.
 
-	lockupDurationBytes := make([]byte, 8)
-	binary.BigEndian.PutUint64(lockupDurationBytes, uint64(lockupYieldCurvePoint.LockupDurationNanoSecs))
-	key = append(key, lockupDurationBytes...)
+	key = append(key, EncodeUint64(uint64(lockupYieldCurvePoint.LockupDurationNanoSecs))...)
 
 	return key
 }
@@ -10927,13 +10928,19 @@ func DbDeleteLockupYieldCurvePointWithTxn(txn *badger.Txn, snap *Snapshot,
 	lockupYieldCurvePoint LockupYieldCurvePoint) error {
 	// First check that a mapping exists. If one doesn't then there's nothing to do.
 	_, err := DBGetWithTxn(txn, snap, _dbKeyForLockupYieldCurvePoint(lockupYieldCurvePoint))
-	if err != nil {
+	if errors.Is(err, badger.ErrKeyNotFound) {
 		return nil
+	}
+	if err != nil {
+		return errors.Wrapf(err, "DbDeleteLockupYieldCurvePointWithTxn: Problem getting "+
+			"locked balance entry for Profile PKID %s, Duration %d, APY Yield Basis Points %d",
+			lockupYieldCurvePoint.ProfilePKID.ToString(), lockupYieldCurvePoint.LockupDurationNanoSecs,
+			lockupYieldCurvePoint.LockupYieldAPYBasisPoints)
 	}
 
 	// When a locked balance entry exists, delete the locked balance entry mapping.
 	if err := DBDeleteWithTxn(txn, snap, _dbKeyForLockupYieldCurvePoint(lockupYieldCurvePoint)); err != nil {
-		return errors.Wrapf(err, "DbDeleteRepostMappingsWithTxn: Deleting "+
+		return errors.Wrapf(err, "DbDeleteLockupYieldCurvePointWithTxn: Deleting "+
 			"locked balance entry for Profile PKID %s, Duration %d, APY Yield Basis Points %d",
 			lockupYieldCurvePoint.ProfilePKID.ToString(), lockupYieldCurvePoint.LockupDurationNanoSecs,
 			lockupYieldCurvePoint.LockupYieldAPYBasisPoints)
@@ -10997,18 +11004,23 @@ func DBGetAllYieldCurvePointsByProfilePKIDWithTxn(txn *badger.Txn, snap *Snapsho
 }
 
 func DBGetYieldCurvePointsByProfilePKIDAndDurationNanoSecs(handle *badger.DB, snap *Snapshot, profilePKID *PKID,
-	lockupDurationNanoSecs int64) (_lockupYieldCurvePoint *LockupYieldCurvePoint) {
+	lockupDurationNanoSecs int64) (_lockupYieldCurvePoint *LockupYieldCurvePoint, _err error) {
 	var lockupYieldCurvePoint *LockupYieldCurvePoint
-	handle.View(func(txn *badger.Txn) error {
-		lockupYieldCurvePoint = DBGetYieldCurvePointsByProfilePKIDAndDurationNanoSecsWithTxn(
+	err := handle.View(func(txn *badger.Txn) error {
+		var err error
+		lockupYieldCurvePoint, err = DBGetYieldCurvePointsByProfilePKIDAndDurationNanoSecsWithTxn(
 			txn, snap, profilePKID, lockupDurationNanoSecs)
-		return nil
+		return err
 	})
-	return lockupYieldCurvePoint
+	if err != nil {
+		return nil, errors.Wrap(err, "DBGetYieldCurvePointsByProfilePKIDAndDurationNanoSecs")
+
+	}
+	return lockupYieldCurvePoint, nil
 }
 
 func DBGetYieldCurvePointsByProfilePKIDAndDurationNanoSecsWithTxn(txn *badger.Txn, snap *Snapshot,
-	profilePKID *PKID, lockupDurationNanoSecs int64) (_lockupYieldCurvePoint *LockupYieldCurvePoint) {
+	profilePKID *PKID, lockupDurationNanoSecs int64) (_lockupYieldCurvePoint *LockupYieldCurvePoint, _err error) {
 	// Construct the key.
 	key := _dbKeyForLockupYieldCurvePoint(LockupYieldCurvePoint{
 		ProfilePKID:            profilePKID,
@@ -11017,151 +11029,18 @@ func DBGetYieldCurvePointsByProfilePKIDAndDurationNanoSecsWithTxn(txn *badger.Tx
 
 	// Fetch the point from the database.
 	lockupYieldCurvePointBytes, err := DBGetWithTxn(txn, snap, key)
+	if errors.Is(err, badger.ErrKeyNotFound) {
+		return nil, nil
+	}
 	if err != nil {
-		return nil
+		return nil, errors.Wrapf(err,
+			"DBGetYieldCurvePointsByProfilePKIDAndDurationNanoSecsWithTxn: failed getting "+
+				"lockup yield curve point with PKID %s and duration %d",
+			profilePKID.ToString(), lockupDurationNanoSecs)
 	}
 
 	// Parse the bytes beneath the key.
-	lockupYieldCurvePointObj := &LockupYieldCurvePoint{}
-	rr := bytes.NewReader(lockupYieldCurvePointBytes)
-	DecodeFromBytes(lockupYieldCurvePointObj, rr)
-	return lockupYieldCurvePointObj
-}
-
-// DBGetLocalYieldCurvePoints NOTE: This is a high performance implementation of
-// a yield curve seek operation. It's not currently used but can be used in core
-// if we opt to make coin lockup operations more performant. At a high level, it
-// reduces the number of badger reads in a coin lockup operation from O(n) to
-// O(1) where n is the number of yield curve points. If used, make sure to test
-// that the implementation is equivalent to the current process of fetching the
-// entire yield curve and processing it.
-func DBGetLocalYieldCurvePoints(handle *badger.DB, snap *Snapshot, profilePKID *PKID, lockupDurationNanoSecs int64) (
-	_leftLockupYieldCurvePoint *LockupYieldCurvePoint, _rightLockupYieldCurvePoint *LockupYieldCurvePoint) {
-	var leftLockupYieldCurvePoint *LockupYieldCurvePoint
-	handle.View(func(txn *badger.Txn) error {
-		leftLockupYieldCurvePoint = DBGetLeftLockupYieldCurvePointWithTxn(
-			txn, snap, profilePKID, lockupDurationNanoSecs)
-		return nil
-	})
-	var rightLockupYieldCurvePoint *LockupYieldCurvePoint
-	handle.View(func(txn *badger.Txn) error {
-		rightLockupYieldCurvePoint = DBGetRightLockupYieldCurvePointWithTxn(
-			txn, snap, profilePKID, lockupDurationNanoSecs)
-		return nil
-	})
-	return leftLockupYieldCurvePoint, rightLockupYieldCurvePoint
-}
-
-func DBGetLeftLockupYieldCurvePointWithTxn(txn *badger.Txn, snap *Snapshot, profilePKID *PKID,
-	lockupDurationNanoSecs int64) (_leftLockupYieldCurvePoint *LockupYieldCurvePoint) {
-	key := _dbKeyForLockupYieldCurvePoint(LockupYieldCurvePoint{
-		ProfilePKID:            profilePKID,
-		LockupDurationNanoSecs: lockupDurationNanoSecs,
-	})
-
-	// Seek left of the yield curve point.
-	iterLeftOpts := badger.DefaultIteratorOptions
-	iterLeftOpts.Reverse = true
-	iterLeft := txn.NewIterator(iterLeftOpts)
-	iterLeft.Seek(key)
-	iterLeftKey := iterLeft.Item().Key()
-
-	// There's a chance our seek yield a key in a different prefix (i.e. not a yield curve point).
-	// In this case, we know _dbKeyToLockupYieldCurvePoint will fail in parsing the key.
-	// We can return early in this case as there's no relevant yield points in the DB.
-	if len(iterLeftKey) < len(Prefixes.PrefixLockupYieldCurvePointByProfilePKIDAndDurationNanoSecs) {
-		return nil
-	}
-	if !bytes.Equal(iterLeftKey[:len(Prefixes.PrefixLockupYieldCurvePointByProfilePKIDAndDurationNanoSecs)],
-		Prefixes.PrefixLockupYieldCurvePointByProfilePKIDAndDurationNanoSecs) {
-		return nil
-	}
-
-	// Fetch the LockupYieldCurvePoint beneath the key.
-	leftLockupYieldCurvePointBytes, err := DBGetWithTxn(txn, snap, iterLeftKey)
-	if err != nil {
-		return nil
-	}
-
-	// Parse the bytes beneath the key.
-	leftLockupYieldCurvePointObj := &LockupYieldCurvePoint{}
-	rr := bytes.NewReader(leftLockupYieldCurvePointBytes)
-	DecodeFromBytes(leftLockupYieldCurvePointObj, rr)
-	if !leftLockupYieldCurvePointObj.ProfilePKID.Eq(profilePKID) {
-		return nil
-	}
-
-	return leftLockupYieldCurvePointObj
-}
-
-func DBGetRightLockupYieldCurvePointWithTxn(txn *badger.Txn, snap *Snapshot, profilePKID *PKID,
-	lockupDurationNanoSecs int64) (_rightLockupYieldCurvePoint *LockupYieldCurvePoint) {
-	key := _dbKeyForLockupYieldCurvePoint(LockupYieldCurvePoint{
-		ProfilePKID:            profilePKID,
-		LockupDurationNanoSecs: lockupDurationNanoSecs,
-	})
-
-	// Seek left of the yield curve point.
-	iterRightOpts := badger.DefaultIteratorOptions
-	iterRight := txn.NewIterator(iterRightOpts)
-	iterRight.Seek(key)
-	iterRightKey := iterRight.Item().Key()
-
-	// There's a chance our seek yield a key in a different prefix (i.e. not a yield curve point).
-	// In this case, we know _dbKeyToLockupYieldCurvePoint will fail in parsing the key.
-	// We can return early in this case as there's no relevant yield points in the DB.
-	if len(iterRightKey) < len(Prefixes.PrefixLockupYieldCurvePointByProfilePKIDAndDurationNanoSecs) {
-		return nil
-	}
-	if !bytes.Equal(iterRightKey[:len(Prefixes.PrefixLockupYieldCurvePointByProfilePKIDAndDurationNanoSecs)],
-		Prefixes.PrefixLockupYieldCurvePointByProfilePKIDAndDurationNanoSecs) {
-		return nil
-	}
-
-	// Fetch the LockupYieldCurvePoint beneath the key.
-	rightLockupYieldCurvePointBytes, err := DBGetWithTxn(txn, snap, iterRightKey)
-	if err != nil {
-		return nil
-	}
-
-	// Parse the bytes beneath the key.
-	rightLockupYieldCurvePointObj := &LockupYieldCurvePoint{}
-	rr := bytes.NewReader(rightLockupYieldCurvePointBytes)
-	DecodeFromBytes(rightLockupYieldCurvePointObj, rr)
-	if !rightLockupYieldCurvePointObj.ProfilePKID.Eq(profilePKID) {
-		return nil
-	}
-
-	return rightLockupYieldCurvePointObj
-}
-
-func DBGetLockupYieldCurvePointForProfilePKIDAndLockupDurationNanoSecs(handle *badger.DB, snap *Snapshot, profilePKID *PKID, lockupDurationNanoSecs int64) *LockupYieldCurvePoint {
-
-	var ret *LockupYieldCurvePoint
-	handle.View(func(txn *badger.Txn) error {
-		ret = DBGetLockupYieldCurvePointForProfilePKIDAndLockupDurationNanoSecsWithTxn(
-			txn, snap, profilePKID, lockupDurationNanoSecs)
-		return nil
-	})
-	return ret
-}
-
-func DBGetLockupYieldCurvePointForProfilePKIDAndLockupDurationNanoSecsWithTxn(txn *badger.Txn, snap *Snapshot,
-	profilePKID *PKID, lockupDurationNanoSecs int64) *LockupYieldCurvePoint {
-
-	key := _dbKeyForLockupYieldCurvePoint(LockupYieldCurvePoint{
-		ProfilePKID:            profilePKID,
-		LockupDurationNanoSecs: lockupDurationNanoSecs,
-	})
-	lockupYieldCurvePointBytes, err := DBGetWithTxn(txn, snap, key)
-	if err != nil {
-		return nil
-	}
-
-	lockupYieldCurvePointObj := &LockupYieldCurvePoint{}
-	rr := bytes.NewReader(lockupYieldCurvePointBytes)
-	DecodeFromBytes(lockupYieldCurvePointObj, rr)
-	return lockupYieldCurvePointObj
+	return DecodeDeSoEncoder(&LockupYieldCurvePoint{}, bytes.NewReader(lockupYieldCurvePointBytes))
 }
 
 // -------------------------------------------------------------------------------------
