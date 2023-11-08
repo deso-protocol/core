@@ -237,7 +237,7 @@ func (fc *fastHotStuffEventLoop) ProcessValidatorVote(vote VoteMessage) error {
 	}
 
 	// Do a basic integrity check on the vote message
-	if !isProperlyFormedVote(vote) {
+	if !IsProperlyFormedVote(vote) {
 		return errors.New("FastHotStuffEventLoop.ProcessValidatorVote: Malformed vote message")
 	}
 
@@ -851,7 +851,7 @@ func (fc *fastHotStuffEventLoop) fetchSafeBlockInfo(blockHash BlockHash) (
 	// (one committed, two uncommitted). In the worse case, where the network has an unlucky series of
 	// timeout -> block -> timeout -> block,... it can still be expected to have < 10 blocks.
 	for _, block := range fc.safeBlocks {
-		if isEqualBlockHashes(block.block.GetBlockHash(), blockHash) {
+		if IsEqualBlockHash(block.block.GetBlockHash(), blockHash) {
 			return true, block.block, block.validatorList, block.validatorLookup
 		}
 	}

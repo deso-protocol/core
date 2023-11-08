@@ -262,40 +262,40 @@ func TestIsProperlyFormedValidatorSet(t *testing.T) {
 func TestIsProperlyFormedVote(t *testing.T) {
 	// Test nil value
 	{
-		require.False(t, isProperlyFormedVote(nil))
+		require.False(t, IsProperlyFormedVote(nil))
 	}
 
 	// Test zero-value view
 	{
 		vote := createDummyVoteMessage(0)
-		require.False(t, isProperlyFormedVote(vote))
+		require.False(t, IsProperlyFormedVote(vote))
 	}
 
 	// Test nil block hash
 	{
 		vote := createDummyVoteMessage(1)
 		vote.blockHash = nil
-		require.False(t, isProperlyFormedVote(vote))
+		require.False(t, IsProperlyFormedVote(vote))
 	}
 
 	// Test nil public key
 	{
 		vote := createDummyVoteMessage(1)
 		vote.publicKey = nil
-		require.False(t, isProperlyFormedVote(vote))
+		require.False(t, IsProperlyFormedVote(vote))
 	}
 
 	// Test nil signature
 	{
 		vote := createDummyVoteMessage(1)
 		vote.signature = nil
-		require.False(t, isProperlyFormedVote(vote))
+		require.False(t, IsProperlyFormedVote(vote))
 	}
 
 	// Test happy path
 	{
 		vote := createDummyVoteMessage(1)
-		require.True(t, isProperlyFormedVote(vote))
+		require.True(t, IsProperlyFormedVote(vote))
 	}
 }
 

@@ -31,18 +31,26 @@ func (cc *ConsensusController) Init() {
 	// able to fetch the tip block and current persisted view from DB from the Blockchain struct.
 }
 
+// HandleFastHostStuffBlockProposal is called when FastHotStuffEventLoop has signaled that it can
+// construct a block at a certain block height. This function validates the block proposal signal,
+// then it constructs, processes locally, and then and broadcasts the block.
+//
+// Steps:
+// 1. Verify that the block height we want to propose at is valid
+// 2. Get a QC from the consensus module
+// 3. Iterate over the top n transactions from the mempool
+// 4. Construct a block with the QC and the top n transactions from the mempool
+// 5. Sign the block
+// 6. Process the block locally
+// - This will connect the block to the blockchain, remove the transactions from the
+// - mempool, and process the vote in the consensus module
+// 7. Broadcast the block to the network
 func (cc *ConsensusController) HandleFastHostStuffBlockProposal(event *consensus.FastHotStuffEvent) {
-	// The consensus module has signaled that we can propose a block at a certain block
-	// height. We construct the block and broadcast it here:
-	// 1. Verify that the block height we want to propose at is valid
-	// 2. Get a QC from the consensus module
-	// 3. Iterate over the top n transactions from the mempool
-	// 4. Construct a block with the QC and the top n transactions from the mempool
-	// 5. Sign the block
-	// 6. Process the block locally
-	//   - This will connect the block to the blockchain, remove the transactions from the
-	//   - mempool, and process the vote in the consensus module
-	// 7. Broadcast the block to the network
+	// Hold a read lock on the consensus controller. This is because we need to check the
+	// current view and block height of the consensus module.
+	cc.lock.Lock()
+	defer cc.lock.Unlock()
+
 }
 
 func (cc *ConsensusController) HandleFastHostStuffEmptyTimeoutBlockProposal(event *consensus.FastHotStuffEvent) {
@@ -56,13 +64,70 @@ func (cc *ConsensusController) HandleFastHostStuffEmptyTimeoutBlockProposal(even
 	// 6. Broadcast the block to the network
 }
 
-func (cc *ConsensusController) HandleFastHostStuffVote(event *consensus.FastHotStuffEvent) {
-	// The consensus module has signaled that we can vote on a block. We construct and
-	// broadcast the vote here:
-	// 1. Verify that the block height we want to vote on is valid
-	// 2. Construct the vote message
-	// 3. Process the vote in the consensus module
-	// 4. Broadcast the timeout msg to the network
+// HandleFastHostStuffVote is triggered when FastHotStuffEventLoop has signaled that it wants to
+// vote on the current tip. This functions validates the vote signal, then it constructs the
+// vote message here.
+//
+// Steps:
+// 1. Verify that the event is properly formed.
+// 2. Construct the vote message
+// 3. Process the vote in the consensus module
+// 4. Broadcast the vote msg to the network
+func (cc *ConsensusController) HandleFastHostStuffVote(event *consensus.FastHotStuffEvent) error {
+	// Hold a read lock on the consensus controller. This is because we need to check the
+	// current view and block height of the consensus module.
+	cc.lock.Lock()
+	defer cc.lock.Unlock()
+
+	var err error
+
+	if !consensus.IsProperlyFormedVoteEvent(event) {
+		// If the event is not properly formed, we ignore it and log it. This should never happen.
+		return errors.Errorf("HandleFastHostStuffVote: Received improperly formed vote event: %v", event)
+	}
+
+	// Provided the vote message is properly formed, we construct and broadcast it in a best effort
+	// manner. We do this even if the consensus event loop has advanced the view or block height. We
+	// maintain the invariant here that if consensus connected a new tip and wanted to vote on it, the
+	// vote should be broadcasted regardless of other concurrent events that may have happened.
+	//
+	// The block acceptance rules in Blockchain.ProcessBlockPoS guarantee that we cannot vote more
+	// than once per view, so this best effort approach is safe, and in-line with the Fast-HotStuff
+	// protocol.
+
+	// Construct the vote message
+	voteMsg := NewMessage(MsgTypeValidatorVote).(*MsgDeSoValidatorVote)
+	voteMsg.MsgVersion = MsgValidatorVoteVersion0
+	voteMsg.ProposedInView = event.View
+	// TODO: Somehow we need to know the validator's ECDSA public key. Fill this out once the
+	// mapping between BLS and ECDSA keys is implemented and available in the consensus module.
+	// voteMsg.PublicKey = <ECDSA public key here>
+	voteMsg.VotingPublicKey = cc.signer.GetPublicKey()
+
+	// Get the block hash
+	tipBlockHash := event.TipBlockHash.GetValue()
+	voteMsg.BlockHash = NewBlockHash(tipBlockHash[:])
+
+	// Compute and set the vote signature
+	voteMsg.VotePartialSignature, err = cc.signer.SignValidatorVote(event.View, event.TipBlockHash)
+	if err != nil {
+		// This should never happen as long as the BLS signer is initialized correctly.
+		return errors.Errorf("HandleFastHostStuffVote: Error signing validator vote: %v", err)
+	}
+
+	// Process the vote message locally in the FastHotStuffEventLoop
+	if err := cc.fastHotStuffEventLoop.ProcessValidatorVote(voteMsg); err != nil {
+		// If we can't process the vote locally, then it must somehow be malformed, stale,
+		// or a duplicate vote/timeout for the same view. Something is very wrong. We should not
+		// broadcast it to the network.
+		return errors.Errorf("HandleFastHostStuffVote: Error processing vote locally: %v", err)
+
+	}
+
+	// Broadcast the vote message to the network
+	// TODO: Broadcast the vote message to the network or alternatively to just the block proposer
+
+	return nil
 }
 
 // HandleFastHostStuffTimeout is triggered when the FastHotStuffEventLoop has signaled that

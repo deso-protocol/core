@@ -176,7 +176,7 @@ func isProperlyFormedValidatorSet(validators []Validator) bool {
 	})
 }
 
-func isProperlyFormedVote(vote VoteMessage) bool {
+func IsProperlyFormedVote(vote VoteMessage) bool {
 	// The vote must be non-nil
 	if vote == nil {
 		return false
@@ -327,7 +327,7 @@ func isSuperMajorityStake(stake *uint256.Int, totalStake *uint256.Int) bool {
 	return superMajorityConditionSum.Sign() >= 0
 }
 
-func isEqualBlockHashes(hash1 BlockHash, hash2 BlockHash) bool {
+func IsEqualBlockHash(hash1 BlockHash, hash2 BlockHash) bool {
 	hash1Value := hash1.GetValue()
 	hash2Value := hash2.GetValue()
 
