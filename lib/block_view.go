@@ -4399,6 +4399,15 @@ func (bav *UtxoView) GetUnspentUtxoEntrysForPublicKey(pkBytes []byte) ([]*UtxoEn
 // but should be fixed soon.
 func (bav *UtxoView) GetSpendableDeSoBalanceNanosForPublicKey(pkBytes []byte,
 	tipHeight uint32) (_spendableBalance uint64, _err error) {
+	// After the cut-over to Proof Of Stake, we no longer check for immature block rewards.
+	// All block rewards are immediately mature.
+	if tipHeight >= bav.Params.ForkHeights.ProofOfStake2ConsensusCutoverBlockHeight {
+		balanceNanos, err := bav.GetDeSoBalanceNanosForPublicKey(pkBytes)
+		if err != nil {
+			return 0, errors.Wrap(err, "GetSpendableDeSoBalanceNanosForPublicKey: ")
+		}
+		return balanceNanos, nil
+	}
 	// In order to get the spendable balance, we need to account for any immature block rewards.
 	// We get these by starting at the chain tip and iterating backwards until we have collected
 	// all the immature block rewards for this public key.

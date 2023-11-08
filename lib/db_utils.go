@@ -228,6 +228,8 @@ type DBPrefixes struct {
 	// <prefix_id, PublicKey [33]byte> -> uint64
 	PrefixPublicKeyToDeSoBalanceNanos []byte `prefix_id:"[52]" is_state:"true" core_state:"true"`
 
+	// DEPRECATED as of the PoS cut-over. Block rewards are no longer stored in the db as
+	// we consider all block rewards to be mature immediately.
 	// Block reward prefix:
 	//   - This index is needed because block rewards take N blocks to mature, which means we need
 	//     a way to deduct them from balance calculations until that point. Without this index, it
@@ -4985,33 +4987,39 @@ func GetBlock(blockHash *BlockHash, handle *badger.DB, snap *Snapshot) (*MsgDeSo
 	return blockRet, nil
 }
 
-func PutBlockWithTxn(txn *badger.Txn, snap *Snapshot, desoBlock *MsgDeSoBlock, eventManager *EventManager) error {
-	if desoBlock.Header == nil {
-		return fmt.Errorf("PutBlockWithTxn: Header was nil in block %v", desoBlock)
+func PutBlockHashToBlockWithTxn(txn *badger.Txn, snap *Snapshot, block *MsgDeSoBlock, eventManager *EventManager) error {
+	if block.Header == nil {
+		return fmt.Errorf("PutBlockHashToBlockWithTxn: Header was nil in block %v", block)
 	}
-	blockHash, err := desoBlock.Header.Hash()
+	blockHash, err := block.Header.Hash()
 	if err != nil {
-		return errors.Wrapf(err, "PutBlockWithTxn: Problem hashing header: ")
+		return errors.Wrap(err, "PutBlockHashToBlockWithTxn: Problem hashing header: ")
 	}
 	blockKey := BlockHashToBlockKey(blockHash)
-	data, err := desoBlock.ToBytes(false)
+	data, err := block.ToBytes(false)
 	if err != nil {
 		return err
 	}
 	// First check to see if the block is already in the db.
-	if _, err := DBGetWithTxn(txn, snap, blockKey); err == nil {
+	if _, err = DBGetWithTxn(txn, snap, blockKey); err == nil {
 		// err == nil means the block already exists in the db so
 		// no need to store it.
 		return nil
 	}
 	// If the block is not in the db then set it.
-	if err := DBSetWithTxn(txn, snap, blockKey, data, eventManager); err != nil {
+	if err = DBSetWithTxn(txn, snap, blockKey, data, eventManager); err != nil {
 		return err
 	}
+	return nil
+}
 
-	// Index the block reward. Used for deducting immature block rewards from user balances.
-	if len(desoBlock.Txns) == 0 {
-		return fmt.Errorf("PutBlockWithTxn: Got block without any txns %v", desoBlock)
+func PutBlockWithTxn(txn *badger.Txn, snap *Snapshot, desoBlock *MsgDeSoBlock, eventManager *EventManager) error {
+	blockHash, err := desoBlock.Header.Hash()
+	if err != nil {
+		return errors.Wrapf(err, "PutBlockWithTxn: Problem hashing header: ")
+	}
+	if err = PutBlockHashToBlockWithTxn(txn, snap, desoBlock, eventManager); err != nil {
+		return errors.Wrap(err, "PutBlockWithTxn: Problem putting block hash to block")
 	}
 	blockRewardTxn := desoBlock.Txns[0]
 	if blockRewardTxn.TxnMeta.GetTxnType() != TxnTypeBlockReward {
@@ -5031,7 +5039,7 @@ func PutBlockWithTxn(txn *badger.Txn, snap *Snapshot, desoBlock *MsgDeSoBlock, e
 		pkMapKey := pkMapKeyIter
 
 		blockRewardKey := PublicKeyBlockHashToBlockRewardKey(pkMapKey[:], blockHash)
-		if err := DBSetWithTxn(txn, snap, blockRewardKey, EncodeUint64(blockReward), eventManager); err != nil {
+		if err = DBSetWithTxn(txn, snap, blockRewardKey, EncodeUint64(blockReward), eventManager); err != nil {
 			return err
 		}
 	}
