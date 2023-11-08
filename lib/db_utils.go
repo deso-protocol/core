@@ -11028,6 +11028,13 @@ func DBGetYieldCurvePointsByProfilePKIDAndDurationNanoSecsWithTxn(txn *badger.Tx
 	return lockupYieldCurvePointObj
 }
 
+// DBGetLocalYieldCurvePoints NOTE: This is a high performance implementation of
+// a yield curve seek operation. It's not currently used but can be used in core
+// if we opt to make coin lockup operations more performant. At a high level, it
+// reduces the number of badger reads in a coin lockup operation from O(n) to
+// O(1) where n is the number of yield curve points. If used, make sure to test
+// that the implementation is equivalent to the current process of fetching the
+// entire yield curve and processing it.
 func DBGetLocalYieldCurvePoints(handle *badger.DB, snap *Snapshot, profilePKID *PKID, lockupDurationNanoSecs int64) (
 	_leftLockupYieldCurvePoint *LockupYieldCurvePoint, _rightLockupYieldCurvePoint *LockupYieldCurvePoint) {
 	var leftLockupYieldCurvePoint *LockupYieldCurvePoint
