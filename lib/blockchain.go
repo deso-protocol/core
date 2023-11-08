@@ -2187,6 +2187,9 @@ func (bc *Blockchain) ProcessBlock(desoBlock *MsgDeSoBlock, verifySignatures boo
 				if innerErr = bc.blockView.FlushToDbWithTxn(txn, blockHeight); innerErr != nil {
 					return errors.Wrapf(innerErr, "ProcessBlock: Problem writing utxo view to db on simple add to tip")
 				}
+				// Immediately after the utxo view is flushed to badger, emit a state syncer flushed event, so that
+				// state syncer maintains a consistent view of the blockchain.
+				// Note: We ignore the mempool manager here, as that process handles state syncer flush events itself.
 				if bc.eventManager != nil && !bc.eventManager.isMempoolManager {
 					bc.eventManager.stateSyncerFlushed(&StateSyncerFlushedEvent{
 						FlushId:   uuid.Nil,

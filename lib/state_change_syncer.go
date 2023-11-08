@@ -789,7 +789,6 @@ func (stateChangeSyncer *StateChangeSyncer) FlushAllEntriesToFile(server *Server
 	server.blockchain.ChainLock.Lock()
 	defer server.blockchain.ChainLock.Unlock()
 
-	fmt.Printf("Flushing all block-synced entries to state change file.\n")
 	// Allow the state change syncer to flush entries to file.
 	stateChangeSyncer.BlocksyncCompleteEntriesFlushed = true
 
@@ -808,38 +807,24 @@ func (stateChangeSyncer *StateChangeSyncer) FlushAllEntriesToFile(server *Server
 			dbFlushId := uuid.New()
 			// Fetch the batch from main DB records with a batch size of about snap.BatchSize.
 			dbBatchEntries, chunkFull, err = DBIteratePrefixKeys(server.blockchain.db, prefix, lastReceivedKey, SnapshotBatchSize/10)
-			fmt.Printf("Got %d entries for prefix: %+v\n", len(dbBatchEntries), prefix)
 			if err != nil {
 				return errors.Wrapf(err, "StateChangeSyncer.FlushAllEntriesToFile: ")
 			}
 			if len(dbBatchEntries) != 0 {
 				lastReceivedKey = dbBatchEntries[len(dbBatchEntries)-1].Key
 			}
-			for ii, dbEntry := range dbBatchEntries {
+			for _, dbEntry := range dbBatchEntries {
 				stateChangeEntry := &StateChangeEntry{
 					OperationType: DbOperationTypeInsert,
 					KeyBytes:      dbEntry.Key,
 					EncoderBytes:  dbEntry.Value,
 				}
 
-				fmt.Printf("Flushing entry %d to file\n", ii)
-
-				fmt.Printf("Prefix: %+v\n", prefix)
-				fmt.Printf("Target Prefix: %+v\n", Prefixes.PrefixBlockHashToUtxoOperations)
-				fmt.Printf("Bytes equal: %+v\n", bytes.Equal(prefix, Prefixes.PrefixBlockHashToUtxoOperations))
-
 				// If this prefix is the prefix for UTXO Ops, fetch the transaction for each UTXO Op and attach it to the UTXO Op.
 				if bytes.Equal(prefix, Prefixes.PrefixBlockHashToUtxoOperations) {
-					fmt.Printf("Prefix equal\n")
 					// Get block hash from the key.
 					blockHashBytes := dbEntry.Key[1:]
-					// Decode block hash from bytes.
-					fmt.Printf("Block hash bytes: %+v\n", blockHashBytes)
 					blockHash := NewBlockHash(blockHashBytes)
-					fmt.Printf("After decode\n")
-					fmt.Printf("Block hash bytes: %+v\n", blockHashBytes)
-					fmt.Printf("Block hash: %+v\n", blockHash)
-					fmt.Printf("Block hash string: %s\n", blockHash.String())
 
 					block, err := GetBlock(blockHash, server.blockchain.db, server.blockchain.snapshot)
 					if err != nil {
@@ -848,7 +833,6 @@ func (stateChangeSyncer *StateChangeSyncer) FlushAllEntriesToFile(server *Server
 					// Attach the block to the UTXO Op via the ancestral record.
 					stateChangeEntry.Block = block
 				}
-				fmt.Printf("After bytes equal\n")
 
 				server.eventManager.stateSyncerOperation(&StateSyncerOperationEvent{
 					StateChangeEntry: stateChangeEntry,
