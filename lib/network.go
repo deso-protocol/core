@@ -5774,6 +5774,8 @@ type TransactionSpendingLimit struct {
 	//  - ProfilePKID: A PKID to scope transactions by.
 	//                 If using the "Any" scope, then ProfilePKID has to be the ZeroPKID.
 	//  - LockupLimitOperationType: One of {Any, Scoped}
+	//                 If using the "Any" operation type, this limit applies to any possible DeSo token lockup.
+	//                 If using the "Scoped" operation type, this limit applies to the ProfilePKID specified.
 	LockupLimitMap map[LockupLimitKey]uint64
 	// ValidatorPKID || StakerPKID to amount of stake-able $DESO.
 	// Note that this is not a limit on the number of Stake txns that
@@ -6680,10 +6682,10 @@ func (tsl *TransactionSpendingLimit) FromBytes(blockHeight uint64, rr *bytes.Rea
 				var operationCount uint64
 				operationCount, err = ReadUvarint(rr)
 				if err != nil {
-					return errors.Wrap(err, "Error decoding LockupLimitKey: ")
+					return errors.Wrap(err, "Error decoding OperationCount for LockupLimitKey: ")
 				}
 				if _, keyExists := tsl.LockupLimitMap[*lockupLimitKey]; keyExists {
-					return fmt.Errorf("LockupLimitKey already exists")
+					return errors.New("LockupLimitKey already exists")
 				}
 				tsl.LockupLimitMap[*lockupLimitKey] = operationCount
 			}

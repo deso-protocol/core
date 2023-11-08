@@ -1302,10 +1302,7 @@ func (op *UtxoOperation) RawEncodeWithoutMetadata(blockHeight uint64, skipMetada
 
 		// PrevTransactorBalanceEntry, PrevLockedBalanceEntries
 		data = append(data, EncodeToBytes(blockHeight, op.PrevTransactorBalanceEntry, skipMetadata...)...)
-		data = append(data, UintToBuf(uint64(len(op.PrevLockedBalanceEntries)))...)
-		for _, entry := range op.PrevLockedBalanceEntries {
-			data = append(data, EncodeToBytes(blockHeight, entry, skipMetadata...)...)
-		}
+		data = append(data, EncodeDeSoEncoderSlice(op.PrevLockedBalanceEntries, blockHeight, skipMetadata...)...)
 	}
 
 	return data
@@ -1943,42 +1940,33 @@ func (op *UtxoOperation) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.
 
 		// PrevLockedBalanceEntry
 		if op.PrevLockedBalanceEntry, err = DecodeDeSoEncoder(&LockedBalanceEntry{}, rr); err != nil {
-			return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading PrevLockedBalanceEntry")
+			return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading PrevLockedBalanceEntry: ")
 		}
 
 		// PrevLockupYieldCurvePoint, PrevLockupTransferRestriction
 		if op.PrevLockupYieldCurvePoint, err = DecodeDeSoEncoder(&LockupYieldCurvePoint{}, rr); err != nil {
-			return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading PrevLockupYieldCurvePoint")
+			return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading PrevLockupYieldCurvePoint: ")
 		}
 		lockupTransferRestriction, err := rr.ReadByte()
 		if err != nil {
-			return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading PrevLockupTransferRestriction")
+			return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading PrevLockupTransferRestriction: ")
 		}
 		op.PrevLockupTransferRestriction = TransferRestrictionStatus(lockupTransferRestriction)
 
 		// PrevSenderLockedBalanceEntry, PrevReceiverLockedBalanceEntry
 		if op.PrevSenderLockedBalanceEntry, err = DecodeDeSoEncoder(&LockedBalanceEntry{}, rr); err != nil {
-			return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading PrevSenderLockedBalanceEntry")
+			return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading PrevSenderLockedBalanceEntry: ")
 		}
 		if op.PrevReceiverLockedBalanceEntry, err = DecodeDeSoEncoder(&LockedBalanceEntry{}, rr); err != nil {
-			return errors.Wrapf(err, "UtxoOperation.Decode: Problem Reading PrevReceiverLockedBalanceEntry")
+			return errors.Wrapf(err, "UtxoOperation.Decode: Problem Reading PrevReceiverLockedBalanceEntry: ")
 		}
 
 		// PrevTransactorBalanceEntry, PrevLockedBalanceEntries
 		if op.PrevTransactorBalanceEntry, err = DecodeDeSoEncoder(&BalanceEntry{}, rr); err != nil {
-			return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading PrevTransactorBalanceEntry")
+			return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading PrevTransactorBalanceEntry: ")
 		}
-		var numPrevLockedBalanceEntries uint64
-		numPrevLockedBalanceEntries, err = ReadUvarint(rr)
-		if err != nil {
-			return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading numPrevLockedBalanceEntries")
-		}
-		for ; numPrevLockedBalanceEntries > 0; numPrevLockedBalanceEntries-- {
-			prevLockedBalanceEntry := &LockedBalanceEntry{}
-			if _, err = DecodeFromBytes(prevLockedBalanceEntry, rr); err != nil {
-				return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading prevLockedBalanceEntry")
-			}
-			op.PrevLockedBalanceEntries = append(op.PrevLockedBalanceEntries, prevLockedBalanceEntry)
+		if op.PrevLockedBalanceEntries, err = DecodeDeSoEncoderSlice[*LockedBalanceEntry](rr); err != nil {
+			return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading PrevLockedBalanceEntry: ")
 		}
 	}
 
