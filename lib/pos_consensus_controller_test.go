@@ -59,14 +59,13 @@ func TestConsensusControllerHandleTimeoutSignal(t *testing.T) {
 					return errors.Errorf("Bad high QC in timeout message")
 				}
 
-				// Recompute the timeout's signature
-				timeoutPayload := consensus.GetTimeoutSignaturePayload(currentView, blockHeader.ValidatorsVoteQC.GetView())
-				timeoutSignature, err := blsPrivateKey.Sign(timeoutPayload[:])
+				// Verify the timeout's signature
+				isValidSignature, err := BLSVerifyValidatorTimeout(currentView, blockHeader.ValidatorsVoteQC.GetView(), timeout.GetSignature(), blsPublicKey)
 				if err != nil {
 					return err
 				}
 
-				if !timeout.GetSignature().Eq(timeoutSignature) {
+				if !isValidSignature {
 					return errors.Errorf("Bad signature in timeout message")
 				}
 
