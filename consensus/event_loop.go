@@ -322,7 +322,7 @@ func (fc *fastHotStuffEventLoop) ProcessValidatorTimeout(timeout TimeoutMessage)
 	}
 
 	// Do a basic integrity check on the timeout message
-	if !isProperlyFormedTimeout(timeout) {
+	if !IsProperlyFormedTimeout(timeout) {
 		return errors.New("FastHotStuffEventLoop.ProcessValidatorTimeout: Malformed timeout message")
 	}
 

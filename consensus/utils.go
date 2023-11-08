@@ -195,7 +195,7 @@ func isProperlyFormedVote(vote VoteMessage) bool {
 	return true
 }
 
-func isProperlyFormedTimeout(timeout TimeoutMessage) bool {
+func IsProperlyFormedTimeout(timeout TimeoutMessage) bool {
 	// The timeout must be non-nil
 	if isInterfaceNil(timeout) {
 		return false
