@@ -341,6 +341,10 @@ func (signature *Signature) Copy() *Signature {
 	}
 }
 
+func (signature *Signature) IsEmpty() bool {
+	return signature == nil || signature.flowSignature == nil
+}
+
 func extractFlowPublicKeys(publicKeys []*PublicKey) []flowCrypto.PublicKey {
 	flowPublicKeys := make([]flowCrypto.PublicKey, len(publicKeys))
 	for i, publicKey := range publicKeys {

@@ -1743,8 +1743,14 @@ func TestProcessBlockPoS(t *testing.T) {
 		// Set the prev block hash manually on orphan block
 		orphanBlock.Header.PrevBlockHash = dummyParentBlockHash
 		orphanBlockHash, err := orphanBlock.Hash()
-		_ = orphanBlockHash
 		require.NoError(t, err)
+		updateProposerVotePartialSignatureForBlock(testMeta, orphanBlock)
+		leaderPublicKey, _ := getLeaderForBlockHeightAndView(testMeta, testMeta.posMempool.readOnlyLatestBlockView, 17, 17)
+		leaderBlsPrivKey := testMeta.pubKeyToBLSKeyMap[leaderPublicKey]
+		partialSigPayload := consensus.GetVoteSignaturePayload(17, orphanBlockHash)
+		sig, err := leaderBlsPrivKey.Sign(partialSigPayload[:])
+		require.NoError(t, err)
+		orphanBlock.Header.ProposerVotePartialSignature = sig
 		success, isOrphan, missingBlockHashes, err := testMeta.chain.processBlockPoS(orphanBlock, 17, true)
 		require.False(t, success)
 		require.True(t, isOrphan)
@@ -1887,6 +1893,7 @@ func TestProcessOrphanBlockPoS(t *testing.T) {
 		realBlock = _generateRealBlock(testMeta, 12, 12, 889, testMeta.chain.GetBestChainTip().Hash, false)
 		// Give the block a random parent, so it is truly an orphan.
 		realBlock.Header.PrevBlockHash = NewBlockHash(RandomBytes(32))
+		updateProposerVotePartialSignatureForBlock(testMeta, realBlock)
 		err := testMeta.chain.processOrphanBlockPoS(realBlock)
 		require.NoError(t, err)
 		// Get the block node from the block index.
@@ -1906,6 +1913,7 @@ func TestProcessOrphanBlockPoS(t *testing.T) {
 		realBlock.Header.PrevBlockHash = NewBlockHash(RandomBytes(32))
 		// Set the header version to 1
 		realBlock.Header.Version = 1
+		updateProposerVotePartialSignatureForBlock(testMeta, realBlock)
 		// There should be no error, but the block should be marked as ValidateFailed.
 		err := testMeta.chain.processOrphanBlockPoS(realBlock)
 		require.NoError(t, err)
@@ -1935,6 +1943,7 @@ func TestProcessOrphanBlockPoS(t *testing.T) {
 			wrongBlockProposer = NewPublicKey(m1PkBytes)
 		}
 		realBlock.Header.ProposerPublicKey = wrongBlockProposer
+		updateProposerVotePartialSignatureForBlock(testMeta, realBlock)
 		// There should be no error, but the block should be marked as ValidateFailed.
 		err = testMeta.chain.processOrphanBlockPoS(realBlock)
 		require.NoError(t, err)
@@ -1988,6 +1997,7 @@ func TestProcessOrphanBlockPoS(t *testing.T) {
 			SignersList: signersList,
 			Signature:   aggregatedSignature,
 		}
+		updateProposerVotePartialSignatureForBlock(testMeta, realBlock)
 		// There should be no error, but the block should be marked as ValidateFailed.
 		err = testMeta.chain.processOrphanBlockPoS(realBlock)
 		require.NoError(t, err)
@@ -2009,6 +2019,7 @@ func TestProcessOrphanBlockPoS(t *testing.T) {
 		nextEpochBlock = _generateRealBlock(testMeta, currentEpochEntry.FinalBlockHeight+1, currentEpochEntry.FinalBlockHeight+1, 23, testMeta.chain.GetBestChainTip().Hash, false)
 		// Give the block a random parent, so it is truly an orphan.
 		nextEpochBlock.Header.PrevBlockHash = NewBlockHash(RandomBytes(32))
+		updateProposerVotePartialSignatureForBlock(testMeta, nextEpochBlock)
 		err = testMeta.chain.processOrphanBlockPoS(nextEpochBlock)
 		require.NoError(t, err)
 		// Get the block node from the block index.
@@ -2032,6 +2043,7 @@ func TestProcessOrphanBlockPoS(t *testing.T) {
 		nextEpochBlock.Header.PrevBlockHash = NewBlockHash(RandomBytes(32))
 		// Change the block proposer to the param updater's public key. The param updater is not in the validator set.
 		nextEpochBlock.Header.ProposerPublicKey = NewPublicKey(paramUpdaterPkBytes)
+		updateProposerVotePartialSignatureForBlock(testMeta, nextEpochBlock)
 		// There should be no error, but the block should be marked as ValidateFailed.
 		err = testMeta.chain.processOrphanBlockPoS(nextEpochBlock)
 		require.NoError(t, err)
@@ -2053,6 +2065,7 @@ func TestProcessOrphanBlockPoS(t *testing.T) {
 		nextEpochBlock = _generateRealBlock(testMeta, currentEpochEntry.FinalBlockHeight+1, currentEpochEntry.FinalBlockHeight+1, 3178, testMeta.chain.GetBestChainTip().Hash, false)
 		// Give the block a random parent, so it is truly an orphan.
 		nextEpochBlock.Header.PrevBlockHash = NewBlockHash(RandomBytes(32))
+		updateProposerVotePartialSignatureForBlock(testMeta, nextEpochBlock)
 		// Update the QC to not have a supermajority.
 		err = testMeta.chain.processOrphanBlockPoS(nextEpochBlock)
 		require.NoError(t, err)
@@ -2097,6 +2110,7 @@ func TestProcessOrphanBlockPoS(t *testing.T) {
 		twoEpochsInFutureBlock = _generateRealBlock(testMeta, nextEpochEntry.FinalBlockHeight+1, nextEpochEntry.FinalBlockHeight+1, 17283, testMeta.chain.GetBestChainTip().Hash, false)
 		// Give the block a random parent, so it is truly an orphan.
 		twoEpochsInFutureBlock.Header.PrevBlockHash = NewBlockHash(RandomBytes(32))
+		updateProposerVotePartialSignatureForBlock(testMeta, twoEpochsInFutureBlock)
 		// We should get an error that this block is too far in the future.
 		err = testMeta.chain.processOrphanBlockPoS(twoEpochsInFutureBlock)
 		require.Error(t, err)
@@ -2128,6 +2142,72 @@ func TestProcessOrphanBlockPoS(t *testing.T) {
 	}
 }
 
+func TestHasValidProposerPartialSignaturePoS(t *testing.T) {
+	testMeta := NewTestPoSBlockchainWithValidators(t)
+	// Generate a real block and make sure it doesn't hit any errors.
+	var realBlock *MsgDeSoBlock
+	realBlock = _generateRealBlock(testMeta, 12, 12, 889, testMeta.chain.GetBestChainTip().Hash, false)
+	utxoView := _newUtxoView(testMeta)
+	snapshotEpochNumber, err := utxoView.GetCurrentSnapshotEpochNumber()
+	require.NoError(t, err)
+	isValid, err := utxoView.hasValidProposerPartialSignaturePoS(realBlock, snapshotEpochNumber)
+	require.NoError(t, err)
+	require.True(t, isValid)
+
+	realProposerPublicKey := realBlock.Header.ProposerPublicKey
+	realProposerPublicKeyBase58Check := Base58CheckEncode(realProposerPublicKey.ToBytes(), false, testMeta.params)
+	wrongProposerPublicKey := NewPublicKey(m1PkBytes)
+	if wrongProposerPublicKey.Equal(*realProposerPublicKey) {
+		wrongProposerPublicKey = NewPublicKey(m2PkBytes)
+	}
+	wrongProposerPublicKeyBase58Check := Base58CheckEncode(wrongProposerPublicKey.ToBytes(), false, testMeta.params)
+	// Using a different validator's public key as ProposerPublicKey should fail
+	{
+		realBlock.Header.ProposerPublicKey = wrongProposerPublicKey
+		isValid, err = utxoView.hasValidProposerPartialSignaturePoS(realBlock, snapshotEpochNumber)
+		require.NoError(t, err)
+		require.False(t, isValid)
+	}
+	// Using a non-validator's public key as ProposerPublicKey should fail.
+	{
+		realBlock.Header.ProposerPublicKey = NewPublicKey(paramUpdaterPkBytes)
+		isValid, err = utxoView.hasValidProposerPartialSignaturePoS(realBlock, snapshotEpochNumber)
+		require.NoError(t, err)
+		require.False(t, isValid)
+		// Reset the proposer public key
+		realBlock.Header.ProposerPublicKey = realProposerPublicKey
+	}
+	// If the block proposer's voting public key doesn't match the snapshot, it should fail.
+	realVotingPublicKey := realBlock.Header.ProposerVotingPublicKey
+	{
+		realBlock.Header.ProposerVotingPublicKey = _generateRandomBLSPrivateKey(t).PublicKey()
+		isValid, err = utxoView.hasValidProposerPartialSignaturePoS(realBlock, snapshotEpochNumber)
+		require.NoError(t, err)
+		require.False(t, isValid)
+		// Reset the proposer voting public key
+		realBlock.Header.ProposerVotingPublicKey = realVotingPublicKey
+	}
+	// Signature on incorrect payload should fail.
+	{
+		incorrectPayload := consensus.GetVoteSignaturePayload(13, testMeta.chain.GetBestChainTip().Hash)
+		realBlock.Header.ProposerVotePartialSignature, err = testMeta.pubKeyToBLSKeyMap[realProposerPublicKeyBase58Check].Sign(incorrectPayload[:])
+		isValid, err = utxoView.hasValidProposerPartialSignaturePoS(realBlock, snapshotEpochNumber)
+		require.NoError(t, err)
+		require.False(t, isValid)
+	}
+	// Signature on correct payload from wrong public key should fail.
+	{
+		var realBlockHash *BlockHash
+		realBlockHash, err = realBlock.Hash()
+		require.NoError(t, err)
+		correctPayload := consensus.GetVoteSignaturePayload(12, realBlockHash)
+		realBlock.Header.ProposerVotePartialSignature, err = testMeta.pubKeyToBLSKeyMap[wrongProposerPublicKeyBase58Check].Sign(correctPayload[:])
+		isValid, err = utxoView.hasValidProposerPartialSignaturePoS(realBlock, snapshotEpochNumber)
+		require.NoError(t, err)
+		require.False(t, isValid)
+	}
+}
+
 // _generateRealBlock generates a BlockTemplate with real data by adding 50 test transactions to the
 // PosMempool, generating a RandomSeedHash, updating the latestBlockView in the PosBlockProducer, and calling _getFullRealBlockTemplate.
 // It can be used to generate a block w/ either a vote or timeout QC.
@@ -2153,6 +2233,9 @@ func _generateRealBlock(testMeta *TestMeta, blockHeight uint64, view uint64, see
 	require.NoError(testMeta.t, err)
 	// Always update the testMeta latestBlockView
 	latestBlockView, err := testMeta.chain.getUtxoViewAtBlockHash(*prevBlockHash)
+	if err != nil {
+		latestBlockView, err = testMeta.chain.getUtxoViewAtBlockHash(*testMeta.chain.GetBestChainTip().Hash)
+	}
 	require.NoError(testMeta.t, err)
 	latestBlockHeight := testMeta.chain.blockIndexByHash[*prevBlockHash].Height
 	testMeta.posMempool.UpdateLatestBlock(latestBlockView, uint64(latestBlockHeight))
@@ -2222,17 +2305,7 @@ func _generateBlockAndAddToBestChain(testMeta *TestMeta, blockHeight uint64, vie
 
 	return blockTemplate
 }
-
-// _getFullDummyBlockTemplate is a helper function that generates a block template with a valid TxnConnectStatusByIndexHash
-// and a valid TxnConnectStatusByIndex, a valid vote or timeout QC, does all the required signing by validators,
-// and generates the proper ProposerVotePartialSignature.
-func _getFullRealBlockTemplate(testMeta *TestMeta, latestBlockView *UtxoView, blockHeight uint64, view uint64, seedHash *RandomSeedHash, isTimeout bool) BlockTemplate {
-	blockTemplate, err := testMeta.posBlockProducer.createBlockTemplate(latestBlockView, blockHeight, view, seedHash)
-	require.NoError(testMeta.t, err)
-	require.NotNil(testMeta.t, blockTemplate)
-	blockTemplate.Header.TxnConnectStatusByIndexHash = HashBitset(blockTemplate.TxnConnectStatusByIndex)
-
-	// Figure out who the leader is supposed to be.
+func getLeaderForBlockHeightAndView(testMeta *TestMeta, latestBlockView *UtxoView, blockHeight uint64, view uint64) (string, []byte) {
 	currentEpochEntry, err := latestBlockView.GetCurrentEpochEntry()
 	require.NoError(testMeta.t, err)
 	leaders, err := latestBlockView.GetCurrentSnapshotLeaderSchedule()
@@ -2246,7 +2319,30 @@ func _getFullRealBlockTemplate(testMeta *TestMeta, latestBlockView *UtxoView, bl
 	require.Greater(testMeta.t, len(leaders), int(leaderIdx))
 	leader := leaders[leaderIdx]
 	leaderPublicKeyBytes := latestBlockView.GetPublicKeyForPKID(leader)
-	leaderPublicKey := Base58CheckEncode(leaderPublicKeyBytes, false, testMeta.chain.params)
+	return Base58CheckEncode(leaderPublicKeyBytes, false, testMeta.chain.params), leaderPublicKeyBytes
+}
+func updateProposerVotePartialSignatureForBlock(testMeta *TestMeta, block *MsgDeSoBlock) {
+	blockHash, err := block.Hash()
+	require.NoError(testMeta.t, err)
+	leaderPublicKey, _ := getLeaderForBlockHeightAndView(testMeta, testMeta.posMempool.readOnlyLatestBlockView, block.Header.Height, block.Header.ProposedInView)
+	leaderBlsPrivKey := testMeta.pubKeyToBLSKeyMap[leaderPublicKey]
+	partialSigPayload := consensus.GetVoteSignaturePayload(block.Header.ProposedInView, blockHash)
+	sig, err := leaderBlsPrivKey.Sign(partialSigPayload[:])
+	require.NoError(testMeta.t, err)
+	block.Header.ProposerVotePartialSignature = sig
+}
+
+// _getFullDummyBlockTemplate is a helper function that generates a block template with a valid TxnConnectStatusByIndexHash
+// and a valid TxnConnectStatusByIndex, a valid vote or timeout QC, does all the required signing by validators,
+// and generates the proper ProposerVotePartialSignature.
+func _getFullRealBlockTemplate(testMeta *TestMeta, latestBlockView *UtxoView, blockHeight uint64, view uint64, seedHash *RandomSeedHash, isTimeout bool) BlockTemplate {
+	blockTemplate, err := testMeta.posBlockProducer.createBlockTemplate(latestBlockView, blockHeight, view, seedHash)
+	require.NoError(testMeta.t, err)
+	require.NotNil(testMeta.t, blockTemplate)
+	blockTemplate.Header.TxnConnectStatusByIndexHash = HashBitset(blockTemplate.TxnConnectStatusByIndex)
+
+	// Figure out who the leader is supposed to be.
+	leaderPublicKey, leaderPublicKeyBytes := getLeaderForBlockHeightAndView(testMeta, latestBlockView, blockHeight, view)
 	// Get leader voting private key.
 	leaderVotingPrivateKey := testMeta.pubKeyToBLSKeyMap[leaderPublicKey]
 	// Get hash of last block
@@ -2341,15 +2437,9 @@ func _getFullRealBlockTemplate(testMeta *TestMeta, latestBlockView *UtxoView, bl
 	msgDesoBlock = blockTemplate
 	newBlockHash, err := msgDesoBlock.Hash()
 	require.NoError(testMeta.t, err)
-	if !isTimeout {
-		newBlockVotePayload := consensus.GetVoteSignaturePayload(view, newBlockHash)
-		proposerVotePartialSignature, err = leaderVotingPrivateKey.Sign(newBlockVotePayload[:])
-		require.NoError(testMeta.t, err)
-	} else {
-		newTimeoutPayload := consensus.GetTimeoutSignaturePayload(view, view+1)
-		proposerVotePartialSignature, err = leaderVotingPrivateKey.Sign(newTimeoutPayload[:])
-		require.NoError(testMeta.t, err)
-	}
+	newBlockVotePayload := consensus.GetVoteSignaturePayload(view, newBlockHash)
+	proposerVotePartialSignature, err = leaderVotingPrivateKey.Sign(newBlockVotePayload[:])
+	require.NoError(testMeta.t, err)
 
 	blockTemplate.Header.ProposerVotePartialSignature = proposerVotePartialSignature
 	return blockTemplate

@@ -247,7 +247,7 @@ func TestRunEpochCompleteHook(t *testing.T) {
 
 		// Test SnapshotValidatorByPKID is populated.
 		for _, pkid := range validatorPKIDs {
-			snapshotValidatorSetEntry, err := _newUtxoView(testMeta).GetSnapshotValidatorSetEntryByPKID(pkid)
+			snapshotValidatorSetEntry, err := _newUtxoView(testMeta).GetCurrentSnapshotValidatorSetEntryByPKID(pkid)
 			require.NoError(t, err)
 			require.NotNil(t, snapshotValidatorSetEntry)
 		}
@@ -305,7 +305,7 @@ func TestRunEpochCompleteHook(t *testing.T) {
 		_runOnEpochCompleteHook(testMeta, incrBlockHeight(), incrViewNumber())
 
 		// Snapshot m5 still has 600 staked.
-		validatorEntry, err = _newUtxoView(testMeta).GetSnapshotValidatorSetEntryByPKID(m5PKID)
+		validatorEntry, err = _newUtxoView(testMeta).GetCurrentSnapshotValidatorSetEntryByPKID(m5PKID)
 		require.NoError(t, err)
 		require.NotNil(t, validatorEntry)
 		require.Equal(t, validatorEntry.TotalStakeAmountNanos.Uint64(), uint64(600))
@@ -321,7 +321,7 @@ func TestRunEpochCompleteHook(t *testing.T) {
 		_runOnEpochCompleteHook(testMeta, incrBlockHeight(), incrViewNumber())
 
 		// Snapshot m5 now has 800 staked.
-		validatorEntry, err = _newUtxoView(testMeta).GetSnapshotValidatorSetEntryByPKID(m5PKID)
+		validatorEntry, err = _newUtxoView(testMeta).GetCurrentSnapshotValidatorSetEntryByPKID(m5PKID)
 		require.NoError(t, err)
 		require.NotNil(t, validatorEntry)
 		require.Equal(t, validatorEntry.TotalStakeAmountNanos.Uint64(), uint64(800))
