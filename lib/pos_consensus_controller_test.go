@@ -41,14 +41,13 @@ func TestConsensusControllerHandleVoteSignal(t *testing.T) {
 					return errors.Errorf("Bad tip block hash in vote message")
 				}
 
-				// Recompute the vote's signature
-				votePayload := consensus.GetVoteSignaturePayload(blockHeader.GetView(), blockHash)
-				voteSignature, err := blsPrivateKey.Sign(votePayload[:])
+				// Verify the vote's signature
+				isValidSignature, err := BLSVerifyValidatorVote(blockHeader.GetView(), blockHash, vote.GetSignature(), blsPublicKey)
 				if err != nil {
 					return err
 				}
 
-				if !vote.GetSignature().Eq(voteSignature) {
+				if !isValidSignature {
 					return errors.Errorf("Bad signature in vote message")
 				}
 
