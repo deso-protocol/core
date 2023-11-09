@@ -45,7 +45,7 @@ func _swapIdentity(t *testing.T, chain *Blockchain, db *badger.DB,
 	updaterPkBytes, _, err := Base58CheckDecode(updaterPkBase58Check)
 	require.NoError(err)
 
-	utxoView, err := NewUtxoView(db, params, chain.postgres, chain.snapshot)
+	utxoView, err := NewUtxoView(db, params, chain.postgres, chain.snapshot, chain.eventManager)
 	require.NoError(err)
 
 	txn, totalInputMake, changeAmountMake, feesMake, err := chain.CreateSwapIdentityTxn(
@@ -121,7 +121,7 @@ func _updateProfileWithExtraData(t *testing.T, chain *Blockchain, db *badger.DB,
 	updaterPkBytes, _, err := Base58CheckDecode(updaterPkBase58Check)
 	require.NoError(err)
 
-	utxoView, err := NewUtxoView(db, params, chain.postgres, chain.snapshot)
+	utxoView, err := NewUtxoView(db, params, chain.postgres, chain.snapshot, chain.eventManager)
 	require.NoError(err)
 
 	txn, totalInputMake, changeAmountMake, feesMake, err := chain.CreateUpdateProfileTxn(
@@ -941,7 +941,7 @@ func TestUpdateProfile(t *testing.T) {
 			require.NoError(err)
 			txns = append(txns, currentTxn)
 			txnOps = append(txnOps, currentOps)
-			utxoView, err := NewUtxoView(db, params, nil, chain.snapshot)
+			utxoView, err := NewUtxoView(db, params, nil, chain.snapshot, nil)
 			require.NoError(err)
 			m4ProfileEntry := utxoView.GetProfileEntryForPublicKey(m4PkBytes)
 			require.Equal(len(m4ProfileEntry.ExtraData), 2)
@@ -977,7 +977,7 @@ func TestUpdateProfile(t *testing.T) {
 			require.NoError(err)
 			txns = append(txns, currentTxn)
 			txnOps = append(txnOps, currentOps)
-			utxoView, err := NewUtxoView(db, params, nil, chain.snapshot)
+			utxoView, err := NewUtxoView(db, params, nil, chain.snapshot, nil)
 			require.NoError(err)
 			m4ProfileEntry := utxoView.GetProfileEntryForPublicKey(m4PkBytes)
 			require.Equal(len(m4ProfileEntry.ExtraData), 3)
@@ -1006,7 +1006,7 @@ func TestUpdateProfile(t *testing.T) {
 	// user5
 	// m5Pub, m5_paramUpdater, m5 created by paramUpdater, otherShortPic, 11*100, 1.5*100*100, false
 	checkProfilesExist := func() {
-		utxoView, err := NewUtxoView(db, params, nil, chain.snapshot)
+		utxoView, err := NewUtxoView(db, params, nil, chain.snapshot, nil)
 		require.NoError(err)
 		profileEntriesByPublicKey, _, _, _, err := utxoView.GetAllProfiles(nil)
 		require.NoError(err)
@@ -1061,7 +1061,7 @@ func TestUpdateProfile(t *testing.T) {
 	checkProfilesExist()
 
 	checkProfilesDeleted := func() {
-		utxoView, err := NewUtxoView(db, params, nil, chain.snapshot)
+		utxoView, err := NewUtxoView(db, params, nil, chain.snapshot, nil)
 		require.NoError(err)
 		profileEntriesByPublicKey, _, _, _, err := utxoView.GetAllProfiles(nil)
 		require.NoError(err)
@@ -1105,7 +1105,7 @@ func TestUpdateProfile(t *testing.T) {
 		currentTxn := txns[backwardIter]
 		fmt.Printf("Disconnecting transaction with type %v index %d (going backwards)\n", currentTxn.TxnMeta.GetTxnType(), backwardIter)
 
-		utxoView, err := NewUtxoView(db, params, nil, chain.snapshot)
+		utxoView, err := NewUtxoView(db, params, nil, chain.snapshot, nil)
 		require.NoError(err)
 
 		currentHash := currentTxn.Hash()
@@ -1136,7 +1136,7 @@ func TestUpdateProfile(t *testing.T) {
 	}
 
 	// Apply all the transactions to a view and flush the view to the db.
-	utxoView, err := NewUtxoView(db, params, nil, chain.snapshot)
+	utxoView, err := NewUtxoView(db, params, nil, chain.snapshot, nil)
 	require.NoError(err)
 	for ii, txn := range txns {
 		fmt.Printf("Adding txn %v of type %v to UtxoView\n", ii, txn.TxnMeta.GetTxnType())
@@ -1157,7 +1157,7 @@ func TestUpdateProfile(t *testing.T) {
 
 	// Disonnect the transactions from a single view in the same way as above
 	// i.e. without flushing each time.
-	utxoView2, err := NewUtxoView(db, params, nil, chain.snapshot)
+	utxoView2, err := NewUtxoView(db, params, nil, chain.snapshot, nil)
 	require.NoError(err)
 	for ii := 0; ii < len(txnOps); ii++ {
 		backwardIter := len(txnOps) - 1 - ii
@@ -1184,7 +1184,7 @@ func TestUpdateProfile(t *testing.T) {
 
 	// Roll back the block and make sure we don't hit any errors.
 	{
-		utxoView, err := NewUtxoView(db, params, nil, chain.snapshot)
+		utxoView, err := NewUtxoView(db, params, nil, chain.snapshot, nil)
 		require.NoError(err)
 
 		// Fetch the utxo operations for the block we're detaching. We need these

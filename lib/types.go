@@ -17,6 +17,7 @@ import (
 const PublicKeyLenCompressed int = 33
 
 type PKID [PublicKeyLenCompressed]byte
+
 type PublicKey [PublicKeyLenCompressed]byte
 
 func NewPKID(pkidBytes []byte) *PKID {

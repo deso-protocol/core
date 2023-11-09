@@ -11,6 +11,7 @@ import (
 	"github.com/dgraph-io/badger/v3"
 	"github.com/fatih/color"
 	"github.com/golang/glog"
+	"github.com/google/uuid"
 	"github.com/oleiade/lane"
 	"github.com/pkg/errors"
 	"golang.org/x/sync/semaphore"
@@ -317,11 +318,13 @@ type Snapshot struct {
 	stopped         bool
 
 	timer *Timer
+
+	eventManager *EventManager
 }
 
 // NewSnapshot creates a new snapshot instance.
 func NewSnapshot(mainDb *badger.DB, mainDbDirectory string, snapshotBlockHeightPeriod uint64, isTxIndex bool,
-	disableChecksum bool, params *DeSoParams, disableMigrations bool, hypersyncMaxQueueSize uint32) (_snap *Snapshot, _err error, _shouldRestart bool) {
+	disableChecksum bool, params *DeSoParams, disableMigrations bool, hypersyncMaxQueueSize uint32, eventManager *EventManager) (_snap *Snapshot, _err error, _shouldRestart bool) {
 
 	// Initialize the ancestral records database
 	snapshotDirectory := filepath.Join(GetBadgerDbPath(mainDbDirectory), "snapshot")
@@ -431,6 +434,7 @@ func NewSnapshot(mainDb *badger.DB, mainDbDirectory string, snapshotBlockHeightP
 		disableChecksum:              disableChecksum,
 		timer:                        timer,
 		ExitChannel:                  make(chan bool),
+		eventManager:                 eventManager,
 	}
 	// Now we will set the handler for finishing all operations in the operation channel.
 	snap.OperationChannel.SetFinishAllOperationsHandler(snap.PersistChecksumAndMigration)
@@ -458,6 +462,9 @@ func (snap *Snapshot) Run() {
 			snap.SnapshotProcessBlock(operation.blockNode)
 
 		case SnapshotOperationProcessChunk:
+			// If operationQueueSemaphore is full, we are already storing too many chunks in memory. Block the thread while
+			// we wait for the queue to clear up.
+			snap.operationQueueSemaphore <- struct{}{}
 			glog.V(1).Infof("Snapshot.Run: Number of operations in the operation channel (%v)",
 				snap.OperationChannel.GetStatus())
 			if err := snap.SetSnapshotChunk(operation.mainDb, operation.mainDbMutex, operation.snapshotChunk,
@@ -1231,6 +1238,7 @@ func (snap *Snapshot) SetSnapshotChunk(mainDb *badger.DB, mainDbMutex *deadlock.
 
 	var err error
 	var syncGroup sync.WaitGroup
+	dbFlushId := uuid.New()
 
 	snap.timer.Start("SetSnapshotChunk.Total")
 	// If there's a problem retrieving the snapshot checksum, we'll reschedule this snapshot chunk set.
@@ -1254,6 +1262,16 @@ func (snap *Snapshot) SetSnapshotChunk(mainDb *badger.DB, mainDbMutex *deadlock.
 		// TODO: Should we split the chunk into batches of 8MB so that we don't write too much data at once?
 		for _, dbEntry := range chunk {
 			localErr := wb.Set(dbEntry.Key, dbEntry.Value) // Will create txns as needed.
+			if snap.eventManager != nil {
+				snap.eventManager.stateSyncerOperation(&StateSyncerOperationEvent{
+					StateChangeEntry: &StateChangeEntry{
+						OperationType: DbOperationTypeInsert,
+						KeyBytes:      dbEntry.Key,
+						EncoderBytes:  dbEntry.Value,
+					},
+					FlushId: dbFlushId,
+				})
+			}
 			if localErr != nil {
 				glog.Errorf("Snapshot.SetSnapshotChunk: Problem setting db entry in write batch")
 				err = localErr
@@ -1261,6 +1279,12 @@ func (snap *Snapshot) SetSnapshotChunk(mainDb *badger.DB, mainDbMutex *deadlock.
 			}
 		}
 		if localErr := wb.Flush(); localErr != nil {
+			if snap.eventManager != nil {
+				snap.eventManager.stateSyncerFlushed(&StateSyncerFlushedEvent{
+					FlushId:   dbFlushId,
+					Succeeded: false,
+				})
+			}
 			glog.Errorf("Snapshot.SetSnapshotChunk: Problem flushing write batch to db")
 			err = localErr
 			return
@@ -1291,6 +1315,12 @@ func (snap *Snapshot) SetSnapshotChunk(mainDb *badger.DB, mainDbMutex *deadlock.
 
 	// If there's a problem setting the snapshot checksum, we'll reschedule this snapshot chunk set.
 	if err != nil {
+		if snap.eventManager != nil {
+			snap.eventManager.stateSyncerFlushed(&StateSyncerFlushedEvent{
+				FlushId:   dbFlushId,
+				Succeeded: false,
+			})
+		}
 		glog.Infof("Snapshot.SetSnapshotChunk: Problem setting the snapshot chunk, error (%v)", err)
 
 		// We reset the snapshot checksum so its initial value, so we won't overlap with processing the next snapshot chunk.
@@ -1301,6 +1331,13 @@ func (snap *Snapshot) SetSnapshotChunk(mainDb *badger.DB, mainDbMutex *deadlock.
 		}
 		snap.ProcessSnapshotChunk(mainDb, mainDbMutex, chunk, blockHeight)
 		return err
+	}
+
+	if snap.eventManager != nil {
+		snap.eventManager.stateSyncerFlushed(&StateSyncerFlushedEvent{
+			FlushId:   dbFlushId,
+			Succeeded: true,
+		})
 	}
 
 	snap.timer.End("SetSnapshotChunk.Total")
