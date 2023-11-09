@@ -242,6 +242,7 @@ func (node *Node) Start(exitChannels ...*chan struct{}) {
 		eventManager,
 		node.nodeMessageChan,
 		node.Config.ForceChecksum,
+		node.Config.StateChangeDir,
 		node.Config.HypersyncMaxQueueSize)
 	if err != nil {
 		// shouldRestart can be true if, on the previous run, we did not finish flushing all ancestral

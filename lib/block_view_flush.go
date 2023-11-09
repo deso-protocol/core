@@ -194,7 +194,7 @@ func (bav *UtxoView) _flushUtxosToDbWithTxn(txn *badger.Txn, blockHeight uint64)
 
 		// Start by deleting the pre-existing mappings in the db for this key if they
 		// have not yet been modified.
-		if err := DeleteUnmodifiedMappingsForUtxoWithTxn(txn, bav.Snapshot, &utxoKey); err != nil {
+		if err := DeleteUnmodifiedMappingsForUtxoWithTxn(txn, bav.Snapshot, &utxoKey, bav.EventManager, utxoEntry.isSpent); err != nil {
 			return err
 		}
 	}
@@ -212,7 +212,7 @@ func (bav *UtxoView) _flushUtxosToDbWithTxn(txn *badger.Txn, blockHeight uint64)
 			numPut++
 			// If the entry is unspent, then we need to re-set its mappings in the db
 			// appropriately.
-			if err := PutMappingsForUtxoWithTxn(txn, bav.Snapshot, blockHeight, &utxoKey, utxoEntry); err != nil {
+			if err := PutMappingsForUtxoWithTxn(txn, bav.Snapshot, blockHeight, &utxoKey, utxoEntry, bav.EventManager); err != nil {
 				return err
 			}
 		}
@@ -221,7 +221,7 @@ func (bav *UtxoView) _flushUtxosToDbWithTxn(txn *badger.Txn, blockHeight uint64)
 	glog.V(2).Infof("_flushUtxosToDbWithTxn: deleted %d mappings, put %d mappings", numDeleted, numPut)
 
 	// Now update the number of entries in the db with confidence.
-	if err := PutUtxoNumEntriesWithTxn(txn, bav.Snapshot, bav.NumUtxoEntries); err != nil {
+	if err := PutUtxoNumEntriesWithTxn(txn, bav.Snapshot, bav.NumUtxoEntries, bav.EventManager); err != nil {
 		return err
 	}
 
@@ -236,13 +236,13 @@ func (bav *UtxoView) _flushDeSoBalancesToDbWithTxn(txn *badger.Txn) error {
 	glog.V(2).Infof("_flushDeSoBalancesToDbWithTxn: flushing %d mappings",
 		len(bav.PublicKeyToDeSoBalanceNanos))
 
-	for pubKeyIter := range bav.PublicKeyToDeSoBalanceNanos {
+	for pubKeyIter, balanceNanos := range bav.PublicKeyToDeSoBalanceNanos {
 		// Make a copy of the iterator since it might change from under us.
 		pubKey := pubKeyIter[:]
 
 		// Start by deleting the pre-existing mappings in the db for this key if they
 		// have not yet been modified.
-		if err := DbDeletePublicKeyToDeSoBalanceWithTxn(txn, bav.Snapshot, pubKey); err != nil {
+		if err := DbDeletePublicKeyToDeSoBalanceWithTxn(txn, bav.Snapshot, pubKey, bav.EventManager, balanceNanos == 0); err != nil {
 			return err
 		}
 	}
@@ -251,7 +251,7 @@ func (bav *UtxoView) _flushDeSoBalancesToDbWithTxn(txn *badger.Txn) error {
 		pubKey := pubKeyIter[:]
 
 		if balanceNanos > 0 {
-			if err := DbPutDeSoBalanceForPublicKeyWithTxn(txn, bav.Snapshot, pubKey, balanceNanos); err != nil {
+			if err := DbPutDeSoBalanceForPublicKeyWithTxn(txn, bav.Snapshot, pubKey, balanceNanos, bav.EventManager); err != nil {
 				return err
 			}
 		}
@@ -262,7 +262,7 @@ func (bav *UtxoView) _flushDeSoBalancesToDbWithTxn(txn *badger.Txn) error {
 
 func (bav *UtxoView) _flushGlobalParamsEntryToDbWithTxn(txn *badger.Txn, blockHeight uint64) error {
 	globalParamsEntry := bav.GlobalParamsEntry
-	if err := DbPutGlobalParamsEntryWithTxn(txn, bav.Snapshot, blockHeight, *globalParamsEntry); err != nil {
+	if err := DbPutGlobalParamsEntryWithTxn(txn, bav.Snapshot, blockHeight, *globalParamsEntry, bav.EventManager); err != nil {
 		return errors.Wrapf(err, "_flushGlobalParamsEntryToDbWithTxn: Problem putting global params entry in DB")
 	}
 	return nil
@@ -274,8 +274,7 @@ func (bav *UtxoView) _flushForbiddenPubKeyEntriesToDbWithTxn(txn *badger.Txn) er
 	for _, forbiddenPubKeyEntry := range bav.ForbiddenPubKeyToForbiddenPubKeyEntry {
 		// Delete the existing mappings in the db for this ForbiddenPubKeyEntry. They will be re-added
 		// if the corresponding entry in memory has isDeleted=false.
-		if err := DbDeleteForbiddenBlockSignaturePubKeyWithTxn(txn,
-			bav.Snapshot, forbiddenPubKeyEntry.PubKey[:]); err != nil {
+		if err := DbDeleteForbiddenBlockSignaturePubKeyWithTxn(txn, bav.Snapshot, forbiddenPubKeyEntry.PubKey[:], bav.EventManager, forbiddenPubKeyEntry.isDeleted); err != nil {
 
 			return errors.Wrapf(
 				err, "_flushForbiddenPubKeyEntriesToDbWithTxn: Problem deleting "+
@@ -289,8 +288,7 @@ func (bav *UtxoView) _flushForbiddenPubKeyEntriesToDbWithTxn(txn *badger.Txn) er
 		} else {
 			// If the ForbiddenPubKeyEntry has (isDeleted = false) then we put the corresponding
 			// mappings for it into the db.
-			if err := DbPutForbiddenBlockSignaturePubKeyWithTxn(txn, bav.Snapshot,
-				forbiddenPubKeyEntry.PubKey); err != nil {
+			if err := DbPutForbiddenBlockSignaturePubKeyWithTxn(txn, bav.Snapshot, forbiddenPubKeyEntry.PubKey, bav.EventManager); err != nil {
 
 				return err
 			}
@@ -310,13 +308,13 @@ func (bav *UtxoView) _flushBitcoinExchangeDataWithTxn(txn *badger.Txn) error {
 
 		if mappingExists {
 			// In this case we should add the mapping to the db.
-			if err := DbPutBitcoinBurnTxIDWithTxn(txn, bav.Snapshot, &bitcoinBurnTxID); err != nil {
+			if err := DbPutBitcoinBurnTxIDWithTxn(txn, bav.Snapshot, &bitcoinBurnTxID, bav.EventManager); err != nil {
 				return errors.Wrapf(err, "UtxoView._flushBitcoinExchangeDataWithTxn: "+
 					"Problem putting BitcoinBurnTxID %v to db", &bitcoinBurnTxID)
 			}
 		} else {
 			// In this case we should delete the mapping from the db.
-			if err := DbDeleteBitcoinBurnTxIDWithTxn(txn, bav.Snapshot, &bitcoinBurnTxID); err != nil {
+			if err := DbDeleteBitcoinBurnTxIDWithTxn(txn, bav.Snapshot, &bitcoinBurnTxID, bav.EventManager, true); err != nil {
 				return errors.Wrapf(err, "UtxoView._flushBitcoinExchangeDataWithTxn: "+
 					"Problem deleting BitcoinBurnTxID %v to db", &bitcoinBurnTxID)
 			}
@@ -324,13 +322,13 @@ func (bav *UtxoView) _flushBitcoinExchangeDataWithTxn(txn *badger.Txn) error {
 	}
 
 	// Update NanosPurchased
-	if err := DbPutNanosPurchasedWithTxn(txn, bav.Snapshot, bav.NanosPurchased); err != nil {
+	if err := DbPutNanosPurchasedWithTxn(txn, bav.Snapshot, bav.NanosPurchased, bav.EventManager); err != nil {
 		errors.Wrapf(err, "UtxoView._flushBitcoinExchangeDataWithTxn: "+
 			"Problem putting NanosPurchased %d to db", bav.NanosPurchased)
 	}
 
 	// Update the BitcoinUSDExchangeRate in the db
-	if err := DbPutUSDCentsPerBitcoinExchangeRateWithTxn(txn, bav.Snapshot, bav.USDCentsPerBitcoin); err != nil {
+	if err := DbPutUSDCentsPerBitcoinExchangeRateWithTxn(txn, bav.Snapshot, bav.USDCentsPerBitcoin, bav.EventManager); err != nil {
 		errors.Wrapf(err, "UtxoView.FlushToDBWithTxn: "+
 			"Problem putting USDCentsPerBitcoin %d to db", bav.USDCentsPerBitcoin)
 	}
@@ -347,8 +345,7 @@ func (bav *UtxoView) _flushMessageEntriesToDbWithTxn(txn *badger.Txn, blockHeigh
 
 		// Delete the existing mappings in the db for this MessageKey. They will be re-added
 		// if the corresponding entry in memory has isDeleted=false.
-		if err := DBDeleteMessageEntryMappingsWithTxn(txn, bav.Snapshot,
-			messageKey.PublicKey[:], messageKey.TstampNanos); err != nil {
+		if err := DBDeleteMessageEntryMappingsWithTxn(txn, bav.Snapshot, messageKey.PublicKey[:], messageKey.TstampNanos, bav.EventManager, messageEntry.isDeleted); err != nil {
 
 			return errors.Wrapf(
 				err, "_flushMessageEntriesToDbWithTxn: Problem deleting mappings "+
@@ -361,7 +358,7 @@ func (bav *UtxoView) _flushMessageEntriesToDbWithTxn(txn *badger.Txn, blockHeigh
 		} else {
 			// If the MessageEntry has (isDeleted = false) then we put the corresponding
 			// mappings for it into the db.
-			if err := DBPutMessageEntryWithTxn(txn, bav.Snapshot, blockHeight, messageKey, messageEntry); err != nil {
+			if err := DBPutMessageEntryWithTxn(txn, bav.Snapshot, blockHeight, messageKey, messageEntry, bav.EventManager); err != nil {
 				return err
 			}
 		}
@@ -390,7 +387,7 @@ func (bav *UtxoView) _flushRepostEntriesToDbWithTxn(txn *badger.Txn, blockHeight
 
 		// Delete the existing mappings in the db for this RepostKey. They will be re-added
 		// if the corresponding entry in memory has isDeleted=false.
-		if err := DbDeleteRepostMappingsWithTxn(txn, bav.Snapshot, *repostEntry); err != nil {
+		if err := DbDeleteRepostMappingsWithTxn(txn, bav.Snapshot, *repostEntry, bav.EventManager, repostEntry.isDeleted); err != nil {
 
 			return errors.Wrapf(
 				err, "_flushRepostEntriesToDbWithTxn: Problem deleting mappings "+
@@ -404,7 +401,7 @@ func (bav *UtxoView) _flushRepostEntriesToDbWithTxn(txn *badger.Txn, blockHeight
 		} else {
 			// If the RepostEntry has (isDeleted = false) then we put the corresponding
 			// mappings for it into the db.
-			if err := DbPutRepostMappingsWithTxn(txn, bav.Snapshot, blockHeight, *repostEntry); err != nil {
+			if err := DbPutRepostMappingsWithTxn(txn, bav.Snapshot, blockHeight, *repostEntry, bav.EventManager); err != nil {
 
 				return err
 			}
@@ -434,8 +431,7 @@ func (bav *UtxoView) _flushLikeEntriesToDbWithTxn(txn *badger.Txn) error {
 
 		// Delete the existing mappings in the db for this LikeKey. They will be re-added
 		// if the corresponding entry in memory has isDeleted=false.
-		if err := DbDeleteLikeMappingsWithTxn(txn, bav.Snapshot,
-			likeKey.LikerPubKey[:], likeKey.LikedPostHash); err != nil {
+		if err := DbDeleteLikeMappingsWithTxn(txn, bav.Snapshot, likeKey.LikerPubKey[:], likeKey.LikedPostHash, bav.EventManager, likeEntry.isDeleted); err != nil {
 
 			return errors.Wrapf(
 				err, "_flushLikeEntriesToDbWithTxn: Problem deleting mappings "+
@@ -452,8 +448,7 @@ func (bav *UtxoView) _flushLikeEntriesToDbWithTxn(txn *badger.Txn) error {
 		} else {
 			// If the LikeEntry has (isDeleted = false) then we put the corresponding
 			// mappings for it into the db.
-			if err := DbPutLikeMappingsWithTxn(txn, bav.Snapshot,
-				likeEntry.LikerPubKey, *likeEntry.LikedPostHash); err != nil {
+			if err := DbPutLikeMappingsWithTxn(txn, bav.Snapshot, likeEntry.LikerPubKey, *likeEntry.LikedPostHash, bav.EventManager); err != nil {
 
 				return err
 			}
@@ -482,8 +477,7 @@ func (bav *UtxoView) _flushFollowEntriesToDbWithTxn(txn *badger.Txn) error {
 
 		// Delete the existing mappings in the db for this FollowKey. They will be re-added
 		// if the corresponding entry in memory has isDeleted=false.
-		if err := DbDeleteFollowMappingsWithTxn(txn, bav.Snapshot,
-			followEntry.FollowerPKID, followEntry.FollowedPKID); err != nil {
+		if err := DbDeleteFollowMappingsWithTxn(txn, bav.Snapshot, followEntry.FollowerPKID, followEntry.FollowedPKID, bav.EventManager, followEntry.isDeleted); err != nil {
 
 			return errors.Wrapf(
 				err, "_flushFollowEntriesToDbWithTxn: Problem deleting mappings "+
@@ -499,8 +493,7 @@ func (bav *UtxoView) _flushFollowEntriesToDbWithTxn(txn *badger.Txn) error {
 		} else {
 			// If the FollowEntry has (isDeleted = false) then we put the corresponding
 			// mappings for it into the db.
-			if err := DbPutFollowMappingsWithTxn(txn, bav.Snapshot,
-				followEntry.FollowerPKID, followEntry.FollowedPKID); err != nil {
+			if err := DbPutFollowMappingsWithTxn(txn, bav.Snapshot, followEntry.FollowerPKID, followEntry.FollowedPKID, bav.EventManager); err != nil {
 
 				return err
 			}
@@ -528,8 +521,7 @@ func (bav *UtxoView) _flushNFTEntriesToDbWithTxn(txn *badger.Txn, blockHeight ui
 
 		// Delete the existing mappings in the db for this NFTKey. They will be re-added
 		// if the corresponding entry in memory has isDeleted=false.
-		if err := DBDeleteNFTMappingsWithTxn(txn, bav.Snapshot,
-			nftEntry.NFTPostHash, nftEntry.SerialNumber); err != nil {
+		if err := DBDeleteNFTMappingsWithTxn(txn, bav.Snapshot, nftEntry.NFTPostHash, nftEntry.SerialNumber, bav.EventManager, nftEntry.isDeleted); err != nil {
 
 			return errors.Wrapf(
 				err, "_flushNFTEntriesToDbWithTxn: Problem deleting mappings "+
@@ -545,7 +537,7 @@ func (bav *UtxoView) _flushNFTEntriesToDbWithTxn(txn *badger.Txn, blockHeight ui
 		} else {
 			// If the NFTEntry has (isDeleted = false) then we put the corresponding
 			// mappings for it into the db.
-			if err := DBPutNFTEntryMappingsWithTxn(txn, bav.Snapshot, blockHeight, nftEntry); err != nil {
+			if err := DBPutNFTEntryMappingsWithTxn(txn, bav.Snapshot, blockHeight, nftEntry, bav.EventManager); err != nil {
 				return err
 			}
 		}
@@ -557,17 +549,20 @@ func (bav *UtxoView) _flushNFTEntriesToDbWithTxn(txn *badger.Txn, blockHeight ui
 func (bav *UtxoView) _flushAcceptedBidEntriesToDbWithTxn(txn *badger.Txn, blockHeight uint64) error {
 
 	// Go through and delete all the entries so they can be added back fresh.
-	for nftKeyIter := range bav.NFTKeyToAcceptedNFTBidHistory {
+	for nftKeyIter, acceptedNFTBidEntries := range bav.NFTKeyToAcceptedNFTBidHistory {
 		// Make a copy of the iterator since we make references to it below.
 		nftKey := nftKeyIter
+
+		// If the acceptedNFTBidEntries is nil or empty, then we set entryIsDeleted to true, so that the change is
+		// reflected by the state syncer.
+		entryIsDeleted := acceptedNFTBidEntries == nil || len(*acceptedNFTBidEntries) == 0
 
 		// We skip the standard sanity check.  Since it is possible to accept a bid on serial number 0, it is possible
 		// that none of the accepted bids have the same serial number as the key.
 
 		// Delete the existing mappings in the db for this NFTKey. They will be re-added
 		// if the corresponding entry in memory has isDeleted=false.
-		if err := DBDeleteAcceptedNFTBidEntriesMappingsWithTxn(txn, bav.Snapshot,
-			&nftKey.NFTPostHash, nftKey.SerialNumber); err != nil {
+		if err := DBDeleteAcceptedNFTBidEntriesMappingsWithTxn(txn, bav.Snapshot, &nftKey.NFTPostHash, nftKey.SerialNumber, bav.EventManager, entryIsDeleted); err != nil {
 
 			return errors.Wrapf(
 				err, "_flushAcceptedBidEntriesToDbWithTxn: Problem deleting mappings "+
@@ -584,8 +579,7 @@ func (bav *UtxoView) _flushAcceptedBidEntriesToDbWithTxn(txn *badger.Txn, blockH
 		} else {
 			// If the NFTEntry has (isDeleted = false) then we put the corresponding
 			// mappings for it into the db.
-			if err := DBPutAcceptedNFTBidEntriesMappingWithTxn(txn, bav.Snapshot, blockHeight,
-				nftKey, acceptedNFTBidEntries); err != nil {
+			if err := DBPutAcceptedNFTBidEntriesMappingWithTxn(txn, bav.Snapshot, blockHeight, nftKey, acceptedNFTBidEntries, bav.EventManager); err != nil {
 
 				return err
 			}
@@ -614,7 +608,7 @@ func (bav *UtxoView) _flushNFTBidEntriesToDbWithTxn(txn *badger.Txn) error {
 
 		// Delete the existing mappings in the db for this NFTBidKey. They will be re-added
 		// if the corresponding entry in memory has isDeleted=false.
-		if err := DBDeleteNFTBidMappingsWithTxn(txn, bav.Snapshot, &nftBidKey); err != nil {
+		if err := DBDeleteNFTBidMappingsWithTxn(txn, bav.Snapshot, &nftBidKey, bav.EventManager, nftBidEntry.isDeleted); err != nil {
 
 			return errors.Wrapf(
 				err, "_flushNFTBidEntriesToDbWithTxn: Problem deleting mappings "+
@@ -630,7 +624,7 @@ func (bav *UtxoView) _flushNFTBidEntriesToDbWithTxn(txn *badger.Txn) error {
 		} else {
 			// If the NFTEntry has (isDeleted = false) then we put the corresponding
 			// mappings for it into the db.
-			if err := DBPutNFTBidEntryMappingsWithTxn(txn, bav.Snapshot, nftBidEntry); err != nil {
+			if err := DBPutNFTBidEntryMappingsWithTxn(txn, bav.Snapshot, nftBidEntry, bav.EventManager); err != nil {
 				return err
 			}
 		}
@@ -658,7 +652,7 @@ func (bav *UtxoView) _flushDiamondEntriesToDbWithTxn(txn *badger.Txn, blockHeigh
 
 		// Delete the existing mappings in the db for this DiamondKey. They will be re-added
 		// if the corresponding entry in memory has isDeleted=false.
-		if err := DbDeleteDiamondMappingsWithTxn(txn, bav.Snapshot, diamondEntry); err != nil {
+		if err := DbDeleteDiamondMappingsWithTxn(txn, bav.Snapshot, diamondEntry, bav.EventManager, diamondEntry.isDeleted); err != nil {
 
 			return errors.Wrapf(
 				err, "_flushDiamondEntriesToDbWithTxn: Problem deleting mappings "+
@@ -674,8 +668,7 @@ func (bav *UtxoView) _flushDiamondEntriesToDbWithTxn(txn *badger.Txn, blockHeigh
 		} else {
 			// If the DiamondEntry has (isDeleted = false) then we put the corresponding
 			// mappings for it into the db.
-			if err := DbPutDiamondMappingsWithTxn(txn,
-				bav.Snapshot, blockHeight, diamondEntry); err != nil {
+			if err := DbPutDiamondMappingsWithTxn(txn, bav.Snapshot, blockHeight, diamondEntry, bav.EventManager); err != nil {
 
 				return err
 			}
@@ -707,8 +700,7 @@ func (bav *UtxoView) _flushPostEntriesToDbWithTxn(txn *badger.Txn, blockHeight u
 
 		// Delete the existing mappings in the db for this PostHash. They will be re-added
 		// if the corresponding entry in memory has isDeleted=false.
-		if err := DBDeletePostEntryMappingsWithTxn(txn,
-			bav.Snapshot, &postHash, bav.Params); err != nil {
+		if err := DBDeletePostEntryMappingsWithTxn(txn, bav.Snapshot, &postHash, bav.Params, bav.EventManager, postEntry.isDeleted); err != nil {
 
 			return errors.Wrapf(
 				err, "_flushPostEntriesToDbWithTxn: Problem deleting mappings "+
@@ -726,8 +718,7 @@ func (bav *UtxoView) _flushPostEntriesToDbWithTxn(txn *badger.Txn, blockHeight u
 			numPut++
 			// If the PostEntry has (isDeleted = false) then we put the corresponding
 			// mappings for it into the db.
-			if err := DBPutPostEntryMappingsWithTxn(txn, bav.Snapshot, blockHeight,
-				postEntry, bav.Params); err != nil {
+			if err := DBPutPostEntryMappingsWithTxn(txn, bav.Snapshot, blockHeight, postEntry, bav.Params, bav.EventManager); err != nil {
 
 				return err
 			}
@@ -748,8 +739,7 @@ func (bav *UtxoView) _flushPKIDEntriesToDbWithTxn(txn *badger.Txn, blockHeight u
 
 		// Delete the existing mappings in the db for this PKID. They will be re-added
 		// if the corresponding entry in memory has isDeleted=false.
-		if err := DBDeletePKIDMappingsWithTxn(txn, bav.Snapshot,
-			pubKeyCopy, bav.Params); err != nil {
+		if err := DBDeletePKIDMappingsWithTxn(txn, bav.Snapshot, pubKeyCopy, bav.Params, bav.EventManager, pkidEntry.isDeleted); err != nil {
 
 			return errors.Wrapf(
 				err, "_flushPKIDEntriesToDbWithTxn: Problem deleting mappings "+
@@ -786,8 +776,7 @@ func (bav *UtxoView) _flushPKIDEntriesToDbWithTxn(txn *badger.Txn, blockHeight u
 
 			// If the ProfileEntry has (isDeleted = false) then we put the corresponding
 			// mappings for it into the db.
-			if err := DBPutPKIDMappingsWithTxn(txn, bav.Snapshot, blockHeight,
-				pubKeyCopy, pkidEntry, bav.Params); err != nil {
+			if err := DBPutPKIDMappingsWithTxn(txn, bav.Snapshot, blockHeight, pubKeyCopy, pkidEntry, bav.Params, bav.EventManager); err != nil {
 
 				return err
 			}
@@ -808,8 +797,7 @@ func (bav *UtxoView) _flushProfileEntriesToDbWithTxn(txn *badger.Txn, blockHeigh
 
 		// Delete the existing mappings in the db for this PKID. They will be re-added
 		// if the corresponding entry in memory has isDeleted=false.
-		if err := DBDeleteProfileEntryMappingsWithTxn(txn, bav.Snapshot,
-			&profilePKID, bav.Params); err != nil {
+		if err := DBDeleteProfileEntryMappingsWithTxn(txn, bav.Snapshot, &profilePKID, bav.Params, bav.EventManager, profileEntry.isDeleted); err != nil {
 
 			return errors.Wrapf(
 				err, "_flushProfileEntriesToDbWithTxn: Problem deleting mappings "+
@@ -841,8 +829,7 @@ func (bav *UtxoView) _flushProfileEntriesToDbWithTxn(txn *badger.Txn, blockHeigh
 
 			// If the ProfileEntry has (isDeleted = false) then we put the corresponding
 			// mappings for it into the db.
-			if err := DBPutProfileEntryMappingsWithTxn(txn, bav.Snapshot, blockHeight,
-				profileEntry, &profilePKID, bav.Params); err != nil {
+			if err := DBPutProfileEntryMappingsWithTxn(txn, bav.Snapshot, blockHeight, profileEntry, &profilePKID, bav.Params, bav.EventManager); err != nil {
 
 				return err
 			}
@@ -880,8 +867,7 @@ func (bav *UtxoView) _flushBalanceEntriesToDbWithTxn(txn *badger.Txn, blockHeigh
 
 		// Delete the existing mappings in the db for this balance key. They will be re-added
 		// if the corresponding entry in memory has isDeleted=false.
-		if err := DBDeleteBalanceEntryMappingsWithTxn(txn, bav.Snapshot,
-			&(balanceKey.HODLerPKID), &(balanceKey.CreatorPKID), false); err != nil {
+		if err := DBDeleteBalanceEntryMappingsWithTxn(txn, bav.Snapshot, &(balanceKey.HODLerPKID), &(balanceKey.CreatorPKID), false, bav.EventManager, balanceEntry.isDeleted); err != nil {
 
 			return errors.Wrapf(
 				err, "_flushBalanceEntriesToDbWithTxn: Problem deleting mappings "+
@@ -901,8 +887,7 @@ func (bav *UtxoView) _flushBalanceEntriesToDbWithTxn(txn *badger.Txn, blockHeigh
 			numPut++
 			// If the ProfileEntry has (isDeleted = false) then we put the corresponding
 			// mappings for it into the db.
-			if err := DBPutBalanceEntryMappingsWithTxn(txn, bav.Snapshot, blockHeight,
-				balanceEntry, false); err != nil {
+			if err := DBPutBalanceEntryMappingsWithTxn(txn, bav.Snapshot, blockHeight, balanceEntry, false, bav.EventManager); err != nil {
 
 				return err
 			}
@@ -938,8 +923,7 @@ func (bav *UtxoView) _flushDAOCoinBalanceEntriesToDbWithTxn(txn *badger.Txn, blo
 
 		// Delete the existing mappings in the db for this balance key. They will be re-added
 		// if the corresponding entry in memory has isDeleted=false.
-		if err := DBDeleteBalanceEntryMappingsWithTxn(txn, bav.Snapshot,
-			&(balanceKey.HODLerPKID), &(balanceKey.CreatorPKID), true); err != nil {
+		if err := DBDeleteBalanceEntryMappingsWithTxn(txn, bav.Snapshot, &(balanceKey.HODLerPKID), &(balanceKey.CreatorPKID), true, bav.EventManager, balanceEntry.isDeleted); err != nil {
 
 			return errors.Wrapf(
 				err, "_flushDAOCoinBalanceEntriesToDbWithTxn: Problem deleting mappings "+
@@ -959,8 +943,7 @@ func (bav *UtxoView) _flushDAOCoinBalanceEntriesToDbWithTxn(txn *badger.Txn, blo
 			numPut++
 			// If the ProfileEntry has (isDeleted = false) then we put the corresponding
 			// mappings for it into the db.
-			if err := DBPutBalanceEntryMappingsWithTxn(txn, bav.Snapshot, blockHeight,
-				balanceEntry, true); err != nil {
+			if err := DBPutBalanceEntryMappingsWithTxn(txn, bav.Snapshot, blockHeight, balanceEntry, true, bav.EventManager); err != nil {
 
 				return err
 			}
@@ -983,8 +966,7 @@ func (bav *UtxoView) _flushDerivedKeyEntryToDbWithTxn(txn *badger.Txn, blockHeig
 	for derivedKeyMapKey, derivedKeyEntry := range bav.DerivedKeyToDerivedEntry {
 		// Delete the existing mapping in the DB for this map key, this will be re-added
 		// later if isDeleted=false.
-		if err := DBDeleteDerivedKeyMappingWithTxn(txn, bav.Snapshot,
-			derivedKeyMapKey.OwnerPublicKey, derivedKeyMapKey.DerivedPublicKey); err != nil {
+		if err := DBDeleteDerivedKeyMappingWithTxn(txn, bav.Snapshot, derivedKeyMapKey.OwnerPublicKey, derivedKeyMapKey.DerivedPublicKey, bav.EventManager, derivedKeyEntry.isDeleted); err != nil {
 
 			return errors.Wrapf(err, "UtxoView._flushDerivedKeyEntryToDbWithTxn: "+
 				"Problem deleting DerivedKeyEntry %v from db", *derivedKeyEntry)
@@ -995,8 +977,7 @@ func (bav *UtxoView) _flushDerivedKeyEntryToDbWithTxn(txn *badger.Txn, blockHeig
 			numDeleted++
 		} else {
 			// In this case we add the mapping to the DB.
-			if err := DBPutDerivedKeyMappingWithTxn(txn, bav.Snapshot, blockHeight,
-				derivedKeyMapKey.OwnerPublicKey, derivedKeyMapKey.DerivedPublicKey, derivedKeyEntry); err != nil {
+			if err := DBPutDerivedKeyMappingWithTxn(txn, bav.Snapshot, blockHeight, derivedKeyMapKey.OwnerPublicKey, derivedKeyMapKey.DerivedPublicKey, derivedKeyEntry, bav.EventManager); err != nil {
 
 				return errors.Wrapf(err, "UtxoView._flushDerivedKeyEntryToDbWithTxn: "+
 					"Problem putting DerivedKeyEntry %v to db", *derivedKeyEntry)
@@ -1026,13 +1007,12 @@ func (bav *UtxoView) _flushMessagingGroupEntriesToDbWithTxn(txn *badger.Txn, blo
 		// complexity into.
 		existingMessagingGroupEntry := DBGetMessagingGroupEntryWithTxn(txn, bav.Snapshot, &messagingGroupKey)
 		if existingMessagingGroupEntry != nil {
-			if err := DBDeleteMessagingGroupEntryWithTxn(txn, bav.Snapshot, &messagingGroupKey); err != nil {
+			if err := DBDeleteMessagingGroupEntryWithTxn(txn, bav.Snapshot, &messagingGroupKey, bav.EventManager, messagingGroupEntry.isDeleted); err != nil {
 				return errors.Wrapf(err, "UtxoView._flushMessagingGroupEntriesToDbWithTxn: "+
 					"Problem deleting MessagingGroupEntry %v from db", *messagingGroupEntry)
 			}
 			for _, member := range existingMessagingGroupEntry.MessagingGroupMembers {
-				if err := DBDeleteMessagingGroupMemberMappingWithTxn(txn, bav.Snapshot,
-					member, existingMessagingGroupEntry); err != nil {
+				if err := DBDeleteMessagingGroupMemberMappingWithTxn(txn, bav.Snapshot, member, existingMessagingGroupEntry, bav.EventManager, messagingGroupEntry.isDeleted); err != nil {
 
 					return errors.Wrapf(err, "UtxoView._flushMessagingGroupEntriesToDbWithTxn: "+
 						"Problem deleting MessagingGroupEntry recipients (%v) from db", member)
@@ -1050,8 +1030,7 @@ func (bav *UtxoView) _flushMessagingGroupEntriesToDbWithTxn(txn *badger.Txn, blo
 			// TODO: We should have a single PutMappings function in db_utils.go that we push this
 			// complexity into.
 			ownerPublicKey := messagingGroupKey.OwnerPublicKey
-			if err := DBPutMessagingGroupEntryWithTxn(txn, bav.Snapshot, blockHeight,
-				&ownerPublicKey, messagingGroupEntry); err != nil {
+			if err := DBPutMessagingGroupEntryWithTxn(txn, bav.Snapshot, blockHeight, &ownerPublicKey, messagingGroupEntry, bav.EventManager); err != nil {
 				return errors.Wrapf(err, "UtxoView._flushMessagingGroupEntriesToDbWithTxn: "+
 					"Problem putting MessagingGroupEntry %v to db", *messagingGroupEntry)
 			}
@@ -1062,8 +1041,7 @@ func (bav *UtxoView) _flushMessagingGroupEntriesToDbWithTxn(txn *badger.Txn, blo
 				if reflect.DeepEqual(recipient.GroupMemberPublicKey[:], ownerPublicKey[:]) {
 					continue
 				}
-				if err := DBPutMessagingGroupMemberWithTxn(txn, bav.Snapshot, blockHeight,
-					recipient, &ownerPublicKey, messagingGroupEntry); err != nil {
+				if err := DBPutMessagingGroupMemberWithTxn(txn, bav.Snapshot, blockHeight, recipient, &ownerPublicKey, messagingGroupEntry, bav.EventManager); err != nil {
 					return errors.Wrapf(err, "UtxoView._flushMessagingGroupEntriesToDbWithTxn: "+
 						"Problem putting MessagingGroupEntry recipient (%v) to db", recipient)
 				}
@@ -1093,8 +1071,7 @@ func (bav *UtxoView) _flushAccessGroupEntriesToDbWithTxn(txn *badger.Txn, blockH
 		}
 		accessGroupEntry := *accessGroupEntryIter
 
-		if err := DBDeleteAccessGroupEntryWithTxn(txn, bav.Snapshot,
-			accessGroupKey.AccessGroupOwnerPublicKey, accessGroupKey.AccessGroupKeyName); err != nil {
+		if err := DBDeleteAccessGroupEntryWithTxn(txn, bav.Snapshot, accessGroupKey.AccessGroupOwnerPublicKey, accessGroupKey.AccessGroupKeyName, bav.EventManager, accessGroupEntry.isDeleted); err != nil {
 
 			return errors.Wrapf(err, "UtxoView._flushAccessGroupEntriesToDbWithTxn: "+
 				"Problem deleting accessGroupKey %v and accessGroupEntry %v from db",
@@ -1104,7 +1081,7 @@ func (bav *UtxoView) _flushAccessGroupEntriesToDbWithTxn(txn *badger.Txn, blockH
 		if accessGroupEntry.isDeleted {
 			numDeleted++
 		} else {
-			if err := DBPutAccessGroupEntryWithTxn(txn, bav.Snapshot, blockHeight, &accessGroupEntry); err != nil {
+			if err := DBPutAccessGroupEntryWithTxn(txn, bav.Snapshot, blockHeight, &accessGroupEntry, bav.EventManager); err != nil {
 
 				return errors.Wrapf(err, "UtxoView._flushAccessGroupEntriesToDbWithTxn: "+
 					"Problem putting accessGroupKey %v and accessGroupEntry %v to db",
@@ -1145,15 +1122,13 @@ func (bav *UtxoView) _flushAccessGroupMembersToDbWithTxn(txn *badger.Txn, blockH
 		//
 		// TODO: Would probably be a bit cleaner to have one function that bundles these functions like
 		// we do for other parts of the code but OK for now.
-		if err := DBDeleteAccessGroupMemberEntryWithTxn(txn, bav.Snapshot,
-			groupMembershipKey.AccessGroupMemberPublicKey, groupMembershipKey.AccessGroupOwnerPublicKey, groupMembershipKey.AccessGroupKeyName); err != nil {
+		if err := DBDeleteAccessGroupMemberEntryWithTxn(txn, bav.Snapshot, groupMembershipKey.AccessGroupMemberPublicKey, groupMembershipKey.AccessGroupOwnerPublicKey, groupMembershipKey.AccessGroupKeyName, bav.EventManager, accessGroupMember.isDeleted); err != nil {
 			return errors.Wrapf(err, "UtxoView._flushAccessGroupMembersToDbWithTxn: "+
 				"Fail while putting new membership index. Problem putting access group member entry with "+
 				"AccessGroupMembershipKey %v and AccessGroupMemberEntry %v to db",
 				groupMembershipKey, accessGroupMember)
 		}
-		if err := DBDeleteAccessGroupMemberEnumerationIndexWithTxn(txn, bav.Snapshot,
-			groupMembershipKey.AccessGroupOwnerPublicKey, groupMembershipKey.AccessGroupKeyName, groupMembershipKey.AccessGroupMemberPublicKey); err != nil {
+		if err := DBDeleteAccessGroupMemberEnumerationIndexWithTxn(txn, bav.Snapshot, groupMembershipKey.AccessGroupOwnerPublicKey, groupMembershipKey.AccessGroupKeyName, groupMembershipKey.AccessGroupMemberPublicKey, bav.EventManager, accessGroupMember.isDeleted); err != nil {
 
 			return errors.Wrapf(err, "UtxoView._flushAccessGroupMembersToDbWithTxn: "+
 				"Fail while putting new membership index. Problem putting access group member entry with "+
@@ -1167,16 +1142,14 @@ func (bav *UtxoView) _flushAccessGroupMembersToDbWithTxn(txn *badger.Txn, blockH
 		} else {
 			// TODO: Would probably be a bit cleaner to have one function that bundles these functions like
 			// we do for other parts of the code but OK for now.
-			if err := DBPutAccessGroupMemberEntryWithTxn(txn, bav.Snapshot, blockHeight,
-				&accessGroupMember, groupMembershipKey.AccessGroupOwnerPublicKey, groupMembershipKey.AccessGroupKeyName); err != nil {
+			if err := DBPutAccessGroupMemberEntryWithTxn(txn, bav.Snapshot, blockHeight, &accessGroupMember, groupMembershipKey.AccessGroupOwnerPublicKey, groupMembershipKey.AccessGroupKeyName, bav.EventManager); err != nil {
 
 				return errors.Wrapf(err, "UtxoView._flushAccessGroupMembersToDbWithTxn: "+
 					"Fail while putting new membership index. Problem putting access group member entry with "+
 					"AccessGroupMembershipKey %v and AccessGroupMemberEntry %v to db",
 					groupMembershipKey, accessGroupMember)
 			}
-			if err := DBPutAccessGroupMemberEnumerationIndexWithTxn(txn, bav.Snapshot, blockHeight,
-				groupMembershipKey.AccessGroupOwnerPublicKey, groupMembershipKey.AccessGroupKeyName, groupMembershipKey.AccessGroupMemberPublicKey); err != nil {
+			if err := DBPutAccessGroupMemberEnumerationIndexWithTxn(txn, bav.Snapshot, blockHeight, groupMembershipKey.AccessGroupOwnerPublicKey, groupMembershipKey.AccessGroupKeyName, groupMembershipKey.AccessGroupMemberPublicKey, bav.EventManager); err != nil {
 				return errors.Wrapf(err, "UtxoView._flushAccessGroupMembersToDbWithTxn: "+
 					"Fail while putting new enumeration index. Problem putting access group member entry with "+
 					"AccessGroupMembershipKey %v and AccessGroupMemberEntry %v to db",
@@ -1209,7 +1182,7 @@ func (bav *UtxoView) _flushNewMessageEntriesToDbWithTxn(txn *badger.Txn, blockHe
 
 			// Delete the existing mapping in the DB for this map key, this will be re-added
 			// later if isDeleted=false.
-			if err := DBDeleteGroupChatMessageEntryWithTxn(txn, bav.Snapshot, groupChatMessageKey); err != nil {
+			if err := DBDeleteGroupChatMessageEntryWithTxn(txn, bav.Snapshot, groupChatMessageKey, bav.EventManager, messageEntry.isDeleted); err != nil {
 				return errors.Wrapf(
 					err, "_flushNewMessageEntriesToDbWithTxn: Problem deleting mappings "+
 						"for GroupChatMessageKey: %v: ", &groupChatMessageKey)
@@ -1218,8 +1191,7 @@ func (bav *UtxoView) _flushNewMessageEntriesToDbWithTxn(txn *badger.Txn, blockHe
 			if messageEntry.isDeleted {
 				numDeleted++
 			} else {
-				if err := DBPutGroupChatMessageEntryWithTxn(txn, bav.Snapshot, blockHeight,
-					groupChatMessageKey, &messageEntry); err != nil {
+				if err := DBPutGroupChatMessageEntryWithTxn(txn, bav.Snapshot, blockHeight, groupChatMessageKey, &messageEntry, bav.EventManager); err != nil {
 					return errors.Wrapf(
 						err, "_flushNewMessageEntriesToDbWithTxn: Problem setting message entry into "+
 							"group chat message index with key %v and value %v", groupChatMessageKey, messageEntry)
@@ -1245,7 +1217,7 @@ func (bav *UtxoView) _flushNewMessageEntriesToDbWithTxn(txn *badger.Txn, blockHe
 
 			// Delete the existing mapping in the DB for this map key, this will be re-added
 			// later if isDeleted=false.
-			if err := DBDeleteDmMessageEntryWithTxn(txn, bav.Snapshot, dmMessageKey); err != nil {
+			if err := DBDeleteDmMessageEntryWithTxn(txn, bav.Snapshot, dmMessageKey, bav.EventManager, messageEntry.isDeleted); err != nil {
 				return errors.Wrapf(
 					err, "_flushNewMessageEntriesToDbWithTxn: Problem deleting mappings "+
 						"for DmMessageKey: %v: ", &dmMessageKey)
@@ -1254,7 +1226,7 @@ func (bav *UtxoView) _flushNewMessageEntriesToDbWithTxn(txn *badger.Txn, blockHe
 			if messageEntry.isDeleted {
 				numDeleted++
 			} else {
-				if err := DBPutDmMessageEntryWithTxn(txn, bav.Snapshot, blockHeight, dmMessageKey, &messageEntry); err != nil {
+				if err := DBPutDmMessageEntryWithTxn(txn, bav.Snapshot, blockHeight, dmMessageKey, &messageEntry, bav.EventManager); err != nil {
 					return errors.Wrapf(
 						err, "_flushNewMessageEntriesToDbWithTxn: Problem setting message entry "+
 							"into dm message index with key %v and value %v", dmMessageKey, messageEntry)
@@ -1280,7 +1252,7 @@ func (bav *UtxoView) _flushNewMessageEntriesToDbWithTxn(txn *badger.Txn, blockHe
 
 			// Delete the existing mapping in the DB for this map key, this will be re-added
 			// later if isDeleted=false.
-			if err := DBDeleteDmThreadIndexWithTxn(txn, bav.Snapshot, dmThreadKey); err != nil {
+			if err := DBDeleteDmThreadIndexWithTxn(txn, bav.Snapshot, dmThreadKey, bav.EventManager, dmThreadEntry.isDeleted); err != nil {
 				return errors.Wrapf(
 					err, "_flushNewMessageEntriesToDbWithTxn: Problem deleting mappings for DmThreadKey: %v: ", &dmThreadKey)
 			}
@@ -1288,7 +1260,7 @@ func (bav *UtxoView) _flushNewMessageEntriesToDbWithTxn(txn *badger.Txn, blockHe
 			if dmThreadEntry.isDeleted {
 				numDeleted++
 			} else {
-				if err := DBPutDmThreadIndexWithTxn(txn, bav.Snapshot, blockHeight, dmThreadKey); err != nil {
+				if err := DBPutDmThreadIndexWithTxn(txn, bav.Snapshot, blockHeight, dmThreadKey, bav.EventManager); err != nil {
 					return errors.Wrapf(
 						err, "_flushNewMessageEntriesToDbWithTxn: Problem setting DmThreadKey: %v", dmThreadKey)
 				}
@@ -1321,7 +1293,7 @@ func (bav *UtxoView) _flushDAOCoinLimitOrderEntriesToDbWithTxn(txn *badger.Txn, 
 
 		// Delete the existing mappings in the db for this balance key. They will be re-added
 		// if the corresponding entry in memory has isDeleted=false.
-		if err := DBDeleteDAOCoinLimitOrderWithTxn(txn, bav.Snapshot, orderEntry); err != nil {
+		if err := DBDeleteDAOCoinLimitOrderWithTxn(txn, bav.Snapshot, orderEntry, bav.EventManager, orderEntry.isDeleted); err != nil {
 			return errors.Wrapf(
 				err, "_flushDAOCoinLimitOrderEntriesToDbWithTxn: problem deleting mappings")
 		}
@@ -1342,7 +1314,7 @@ func (bav *UtxoView) _flushDAOCoinLimitOrderEntriesToDbWithTxn(txn *badger.Txn, 
 			numPut++
 			// If the OrderEntry has (isDeleted = false) then we put the corresponding
 			// mappings for it into the db.
-			if err := DBPutDAOCoinLimitOrderWithTxn(txn, bav.Snapshot, orderEntry, blockHeight); err != nil {
+			if err := DBPutDAOCoinLimitOrderWithTxn(txn, bav.Snapshot, orderEntry, blockHeight, bav.EventManager); err != nil {
 				return err
 			}
 		}
@@ -1374,7 +1346,7 @@ func (bav *UtxoView) _flushUserAssociationEntriesToDbWithTxn(txn *badger.Txn, bl
 
 		// Delete the existing mappings in the db for this AssociationMapKey. They
 		// will be re-added if the corresponding entry in memory has isDeleted=false.
-		if err := DBDeleteUserAssociationWithTxn(txn, bav.Snapshot, &associationEntry); err != nil {
+		if err := DBDeleteUserAssociationWithTxn(txn, bav.Snapshot, &associationEntry, bav.EventManager, associationEntry.isDeleted); err != nil {
 			return fmt.Errorf(
 				"_flushUserAssociationEntriesToDbWithTxn: problem deleting association mappings for map key %v: %v",
 				&associationMapKey,
@@ -1392,7 +1364,7 @@ func (bav *UtxoView) _flushUserAssociationEntriesToDbWithTxn(txn *badger.Txn, bl
 		} else {
 			// If the AssociationEntry has isDeleted=false then we
 			// put the corresponding mappings for it into the db.
-			if err := DBPutUserAssociationWithTxn(txn, bav.Snapshot, &associationEntry, blockHeight); err != nil {
+			if err := DBPutUserAssociationWithTxn(txn, bav.Snapshot, &associationEntry, blockHeight, bav.EventManager); err != nil {
 				return fmt.Errorf("_flushUserAssociationEntriesToDbWithTxn: %v", err)
 			}
 		}
@@ -1420,7 +1392,7 @@ func (bav *UtxoView) _flushPostAssociationEntriesToDbWithTxn(txn *badger.Txn, bl
 
 		// Delete the existing mappings in the db for this AssociationMapKey. They
 		// will be re-added if the corresponding entry in memory has isDeleted=false.
-		if err := DBDeletePostAssociationWithTxn(txn, bav.Snapshot, &associationEntry); err != nil {
+		if err := DBDeletePostAssociationWithTxn(txn, bav.Snapshot, &associationEntry, bav.EventManager, associationEntry.isDeleted); err != nil {
 			return fmt.Errorf(
 				"_flushPostAssociationEntriesToDbWithTxn: problem deleting association mappings for map key %v: %v",
 				&associationMapKey,
@@ -1438,7 +1410,7 @@ func (bav *UtxoView) _flushPostAssociationEntriesToDbWithTxn(txn *badger.Txn, bl
 		} else {
 			// If the AssociationEntry has isDeleted=false then we
 			// put the corresponding mappings for it into the db.
-			if err := DBPutPostAssociationWithTxn(txn, bav.Snapshot, &associationEntry, blockHeight); err != nil {
+			if err := DBPutPostAssociationWithTxn(txn, bav.Snapshot, &associationEntry, blockHeight, bav.EventManager); err != nil {
 				return fmt.Errorf("_flushPostAssociationEntriesToDbWithTxn: %v", err)
 			}
 		}
@@ -1450,7 +1422,7 @@ func (bav *UtxoView) _flushNonceEntriesToDbWithTxn(txn *badger.Txn) error {
 	for _, nonceEntry := range bav.TransactorNonceMapKeyToTransactorNonceEntry {
 		// Delete the existing mappings in the db for this TransactorNonceEntry. They
 		// will be re-added if the corresponding entry in memory has isDeleted=false.
-		if err := DbDeleteTransactorNonceEntryWithTxn(txn, bav.Snapshot, nonceEntry.Nonce, nonceEntry.TransactorPKID); err != nil {
+		if err := DbDeleteTransactorNonceEntryWithTxn(txn, bav.Snapshot, nonceEntry.Nonce, nonceEntry.TransactorPKID, bav.EventManager, nonceEntry.isDeleted); err != nil {
 			return fmt.Errorf(
 				"_flushNonceEntriesToDbWithTxn: problem deleting account nonce mappings for account nonce %v: %v",
 				nonceEntry.Nonce.String(),
@@ -1466,7 +1438,7 @@ func (bav *UtxoView) _flushNonceEntriesToDbWithTxn(txn *badger.Txn) error {
 		} else {
 			// If the TransactorNonceEntry has isDeleted=false then we
 			// put the corresponding mappings for it into the db.
-			if err := DbPutTransactorNonceEntryWithTxn(txn, bav.Snapshot, nonceEntry.Nonce, nonceEntry.TransactorPKID); err != nil {
+			if err := DbPutTransactorNonceEntryWithTxn(txn, bav.Snapshot, nonceEntry.Nonce, nonceEntry.TransactorPKID, bav.EventManager); err != nil {
 				return fmt.Errorf("_flushNonceEntriesToDbWithTxn: %v", err)
 			}
 		}

@@ -247,7 +247,7 @@ func NewLowDifficultyBlockchainWithParamsAndDb(t *testing.T, params *DeSoParams,
 	// key have some DeSo
 	var snap *Snapshot
 	if !usePostgres {
-		snap, err, _ = NewSnapshot(db, dbDir, SnapshotBlockHeightPeriod, false, false, &testParams, false, HypersyncDefaultMaxQueueSize)
+		snap, err, _ = NewSnapshot(db, dbDir, SnapshotBlockHeightPeriod, false, false, &testParams, false, HypersyncDefaultMaxQueueSize, nil)
 		if err != nil {
 			log.Fatal(err)
 		}
@@ -376,7 +376,7 @@ func _getBalance(t *testing.T, chain *Blockchain, mempool *DeSoMempool, pkStr st
 		utxoView, err = mempool.GetAugmentedUniversalView()
 		require.NoError(t, err)
 	} else {
-		utxoView, err = NewUtxoView(chain.db, chain.params, chain.postgres, chain.snapshot)
+		utxoView, err = NewUtxoView(chain.db, chain.params, chain.postgres, chain.snapshot, nil)
 		require.NoError(t, err)
 	}
 
@@ -411,7 +411,7 @@ func _getCreatorCoinInfo(t *testing.T, chain *Blockchain, params *DeSoParams, pk
 	pkBytes, _, err := Base58CheckDecode(pkStr)
 	require.NoError(t, err)
 
-	utxoView, _ := NewUtxoView(chain.db, params, nil, chain.snapshot)
+	utxoView, _ := NewUtxoView(chain.db, params, nil, chain.snapshot, chain.eventManager)
 
 	// Profile fields
 	creatorProfile := utxoView.GetProfileEntryForPublicKey(pkBytes)

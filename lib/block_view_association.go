@@ -32,9 +32,7 @@ func (bav *UtxoView) _connectCreateUserAssociation(
 
 	// Connect a basic transfer to get the total input and the
 	// total output without considering the txn metadata.
-	totalInput, totalOutput, utxoOpsForTxn, err := bav._connectBasicTransfer(
-		txn, txHash, blockHeight, verifySignatures,
-	)
+	totalInput, totalOutput, utxoOpsForTxn, err := bav._connectBasicTransfer(txn, txHash, blockHeight, verifySignatures)
 	if err != nil {
 		return 0, 0, nil, errors.Wrapf(err, "_connectCreateUserAssociation: ")
 	}
@@ -96,6 +94,7 @@ func (bav *UtxoView) _connectCreateUserAssociation(
 		Type:                     OperationTypeCreateUserAssociation,
 		PrevUserAssociationEntry: prevAssociationEntry,
 	})
+
 	return totalInput, totalOutput, utxoOpsForTxn, nil
 }
 
@@ -124,9 +123,7 @@ func (bav *UtxoView) _connectDeleteUserAssociation(
 
 	// Connect a basic transfer to get the total input and the
 	// total output without considering the txn metadata.
-	totalInput, totalOutput, utxoOpsForTxn, err := bav._connectBasicTransfer(
-		txn, txHash, blockHeight, verifySignatures,
-	)
+	totalInput, totalOutput, utxoOpsForTxn, err := bav._connectBasicTransfer(txn, txHash, blockHeight, verifySignatures)
 	if err != nil {
 		return 0, 0, nil, errors.Wrapf(err, "_connectDeleteUserAssociation: ")
 	}
@@ -163,11 +160,23 @@ func (bav *UtxoView) _connectDeleteUserAssociation(
 	}
 	bav._deleteUserAssociationEntryMappings(prevAssociationEntry)
 
+	// Track state change metadata.
+	stateChangeMetadata := &DeleteUserAssociationStateChangeMetadata{
+		TargetUserPublicKeyBase58Check: PkToString(
+			bav.GetPublicKeyForPKID(prevAssociationEntry.TargetUserPKID), bav.Params,
+		),
+		AppPublicKeyBase58Check: PkToString(
+			bav.GetPublicKeyForPKID(prevAssociationEntry.AppPKID), bav.Params,
+		),
+	}
+
 	// Add a UTXO operation.
 	utxoOpsForTxn = append(utxoOpsForTxn, &UtxoOperation{
 		Type:                     OperationTypeDeleteUserAssociation,
 		PrevUserAssociationEntry: prevAssociationEntry,
+		StateChangeMetadata:      stateChangeMetadata,
 	})
+
 	return totalInput, totalOutput, utxoOpsForTxn, nil
 }
 
@@ -196,9 +205,7 @@ func (bav *UtxoView) _connectCreatePostAssociation(
 
 	// Connect a basic transfer to get the total input and the
 	// total output without considering the txn metadata.
-	totalInput, totalOutput, utxoOpsForTxn, err := bav._connectBasicTransfer(
-		txn, txHash, blockHeight, verifySignatures,
-	)
+	totalInput, totalOutput, utxoOpsForTxn, err := bav._connectBasicTransfer(txn, txHash, blockHeight, verifySignatures)
 	if err != nil {
 		return 0, 0, nil, errors.Wrapf(err, "_connectCreatePostAssociation: ")
 	}
@@ -255,11 +262,19 @@ func (bav *UtxoView) _connectCreatePostAssociation(
 	// Create the association.
 	bav._setPostAssociationEntryMappings(currentAssociationEntry)
 
+	// Track state changes.
+	postEntry := bav.GetPostEntryForPostHash(txMeta.PostHash)
+	stateChangeMetadata := &CreatePostAssociationStateChangeMetadata{
+		PostEntry: postEntry,
+	}
+
 	// Add a UTXO operation.
 	utxoOpsForTxn = append(utxoOpsForTxn, &UtxoOperation{
 		Type:                     OperationTypeCreatePostAssociation,
 		PrevPostAssociationEntry: prevAssociationEntry,
+		StateChangeMetadata:      stateChangeMetadata,
 	})
+
 	return totalInput, totalOutput, utxoOpsForTxn, nil
 }
 
@@ -288,9 +303,7 @@ func (bav *UtxoView) _connectDeletePostAssociation(
 
 	// Connect a basic transfer to get the total input and the
 	// total output without considering the txn metadata.
-	totalInput, totalOutput, utxoOpsForTxn, err := bav._connectBasicTransfer(
-		txn, txHash, blockHeight, verifySignatures,
-	)
+	totalInput, totalOutput, utxoOpsForTxn, err := bav._connectBasicTransfer(txn, txHash, blockHeight, verifySignatures)
 	if err != nil {
 		return 0, 0, nil, errors.Wrapf(err, "_connectDeleteUserAssociation: ")
 	}
@@ -326,11 +339,22 @@ func (bav *UtxoView) _connectDeletePostAssociation(
 	}
 	bav._deletePostAssociationEntryMappings(prevAssociationEntry)
 
+	// Track state changes.
+	postEntry := bav.GetPostEntryForPostHash(prevAssociationEntry.PostHash)
+	stateChangeMetadata := &DeletePostAssociationStateChangeMetadata{
+		AppPublicKeyBase58Check: PkToString(
+			bav.GetPublicKeyForPKID(prevAssociationEntry.AppPKID), bav.Params,
+		),
+		PostEntry: postEntry,
+	}
+
 	// Add a UTXO operation.
 	utxoOpsForTxn = append(utxoOpsForTxn, &UtxoOperation{
 		Type:                     OperationTypeDeletePostAssociation,
 		PrevPostAssociationEntry: prevAssociationEntry,
+		StateChangeMetadata:      stateChangeMetadata,
 	})
+
 	return totalInput, totalOutput, utxoOpsForTxn, nil
 }
 

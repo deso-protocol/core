@@ -8,7 +8,6 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"github.com/deso-protocol/core/collections/bitset"
 	"io"
 	"math"
 	"math/big"
@@ -17,6 +16,9 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/deso-protocol/core/collections/bitset"
+	"github.com/golang/glog"
 
 	"github.com/decred/dcrd/dcrec/secp256k1/v4"
 
@@ -2790,6 +2792,41 @@ func (msg *MsgDeSoBlock) String() string {
 	return fmt.Sprintf("<Header: %v, %v>", msg.Header.String(), msg.BlockProducerInfo)
 }
 
+func (msg *MsgDeSoBlock) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte {
+	blockBytes, err := msg.ToBytes(false /*preSignature*/)
+	if err != nil {
+		glog.Errorf("MsgDeSoBlock.RawEncodeWithoutMetadata: Problem encoding block: %v", err)
+	}
+	return EncodeByteArray(blockBytes)
+}
+
+func (msg *MsgDeSoBlock) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.Reader) error {
+	blockBytes, err := DecodeByteArray(rr)
+	if err != nil {
+		return errors.Wrapf(err, "MsgDeSoBlock.RawDecodeWithoutMetadata: Problem decoding block")
+	}
+	return msg.FromBytes(blockBytes)
+}
+
+func (msg *MsgDeSoBlock) GetVersionByte(blockHeight uint64) byte {
+	return 0
+}
+
+// GetEncoderType should return the EncoderType corresponding to the DeSoEncoder.
+func (msg *MsgDeSoBlock) GetEncoderType() EncoderType {
+	return EncoderTypeBlock
+}
+
+// Append DeSo Encoder Metadata bytes to MsgDeSoBlock bytes.
+func AddEncoderMetadataToMsgDeSoBlockBytes(blockBytes []byte, blockHeight uint64) []byte {
+	var blockData []byte
+	blockData = append(blockData, BoolToByte(true))
+	blockData = append(blockData, UintToBuf(uint64((&MsgDeSoBlock{}).GetEncoderType()))...)
+	blockData = append(blockData, UintToBuf(uint64((&MsgDeSoBlock{}).GetVersionByte(blockHeight)))...)
+	blockData = append(blockData, EncodeByteArray(blockBytes)...)
+	return blockData
+}
+
 // ==================================================================
 // SNAPSHOT Message
 // ==================================================================
@@ -3470,6 +3507,31 @@ func (msg *MsgDeSoTxn) ToBytes(preSignature bool) ([]byte, error) {
 		data = append(data, msg.TxnNonce.ToBytes()...)
 	}
 	return data, nil
+}
+
+func (msg *MsgDeSoTxn) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte {
+	txnBytes, err := msg.ToBytes(false /*preSignature*/)
+	if err != nil {
+		glog.Errorf("MsgDeSoTxn.RawEncodeWithoutMetadata: Problem encoding transaction: %v", err)
+	}
+	return EncodeByteArray(txnBytes)
+}
+
+func (msg *MsgDeSoTxn) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.Reader) error {
+	txnBytes, err := DecodeByteArray(rr)
+	if err != nil {
+		return errors.Wrapf(err, "MsgDeSoBlock.RawDecodeWithoutMetadata: Problem decoding block")
+	}
+	return msg.FromBytes(txnBytes)
+}
+
+func (msg *MsgDeSoTxn) GetVersionByte(blockHeight uint64) byte {
+	return 0
+}
+
+// GetEncoderType should return the EncoderType corresponding to the DeSoEncoder.
+func (msg *MsgDeSoTxn) GetEncoderType() EncoderType {
+	return EncoderTypeTxn
 }
 
 func ReadTransaction(rr io.Reader) (*MsgDeSoTxn, error) {

@@ -405,8 +405,7 @@ func (bav *UtxoView) _connectAuthorizeDerivedKey(
 	bav._setDerivedKeyMapping(&derivedKeyEntry)
 
 	// Call _connectBasicTransfer() to verify txn signature.
-	totalInput, totalOutput, utxoOpsForTxn, err := bav._connectBasicTransfer(
-		txn, txHash, blockHeight, verifySignatures)
+	totalInput, totalOutput, utxoOpsForTxn, err := bav._connectBasicTransfer(txn, txHash, blockHeight, verifySignatures)
 	if err != nil {
 		// Since we've failed, we revert the UtxoView mapping to what it was previously.
 		// We're doing this manually because we've set a temporary entry in UtxoView.
