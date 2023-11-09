@@ -553,8 +553,8 @@ func (bc *Blockchain) isProperlyFormedBlockPoS(block *MsgDeSoBlock) error {
 		return RuleErrorInvalidProposerPublicKey
 	}
 
-	if block.Header.ProposerRandomSeedHash.isEmpty() {
-		return RuleErrorInvalidRandomSeedHash
+	if block.Header.ProposerRandomSeedSignature.IsEmpty() {
+		return RuleErrorInvalidProposerRandomSeedSignature
 	}
 
 	merkleRoot := block.Header.TransactionMerkleRoot
@@ -1265,11 +1265,11 @@ const (
 	RuleErrorParentBlockHasViewGreaterOrEqualToChildBlock       RuleError = "RuleErrorParentBlockHasViewGreaterOrEqualToChildBlock"
 	RuleErrorParentBlockHeightNotSequentialWithChildBlockHeight RuleError = "RuleErrorParentBlockHeightNotSequentialWithChildBlockHeight"
 
-	RuleErrorNilMerkleRoot                  RuleError = "RuleErrorNilMerkleRoot"
-	RuleErrorInvalidMerkleRoot              RuleError = "RuleErrorInvalidMerkleRoot"
-	RuleErrorInvalidProposerVotingPublicKey RuleError = "RuleErrorInvalidProposerVotingPublicKey"
-	RuleErrorInvalidProposerPublicKey       RuleError = "RuleErrorInvalidProposerPublicKey"
-	RuleErrorInvalidRandomSeedHash          RuleError = "RuleErrorInvalidRandomSeedHash"
+	RuleErrorNilMerkleRoot                      RuleError = "RuleErrorNilMerkleRoot"
+	RuleErrorInvalidMerkleRoot                  RuleError = "RuleErrorInvalidMerkleRoot"
+	RuleErrorInvalidProposerVotingPublicKey     RuleError = "RuleErrorInvalidProposerVotingPublicKey"
+	RuleErrorInvalidProposerPublicKey           RuleError = "RuleErrorInvalidProposerPublicKey"
+	RuleErrorInvalidProposerRandomSeedSignature RuleError = "RuleErrorInvalidProposerRandomSeedSignature"
 
 	RuleErrorInvalidPoSBlockHeight       RuleError = "RuleErrorInvalidPoSBlockHeight"
 	RuleErrorPoSBlockBeforeCutoverHeight RuleError = "RuleErrorPoSBlockBeforeCutoverHeight"

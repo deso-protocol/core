@@ -108,12 +108,6 @@ func createTestBlockHeaderVersion2(t *testing.T, includeTimeoutQC bool) *MsgDeSo
 		0x02, 0x23, 0x24, 0x25, 0x26, 0x27, 0x33, 0x29, 0x30, 0x31,
 		0x32, 0x33,
 	}
-	testRandomSeedHash := RandomSeedHash{
-		0x00, 0x36, 0x36, 0x37, 0x38, 0x39, 0x40, 0x41, 0x42, 0x43,
-		0x44, 0x45, 0x46, 0x47, 0x48, 0x49, 0x50, 0x51, 0x52, 0x53,
-		0x54, 0x55, 0x56, 0x57, 0x58, 0x59, 0x60, 0x61, 0x62, 0x63,
-		0x64, 0x65,
-	}
 
 	testBitset := bitset.NewBitset().Set(0, true).Set(3, true)
 	testBLSPublicKey, testBLSSignature := _generateValidatorVotingPublicKeyAndSignature(t)
@@ -156,7 +150,7 @@ func createTestBlockHeaderVersion2(t *testing.T, includeTimeoutQC bool) *MsgDeSo
 		TxnConnectStatusByIndexHash: &testTxnConnectStatusByIndex,
 		ProposerPublicKey:           NewPublicKey(pkForTesting1),
 		ProposerVotingPublicKey:     testBLSPublicKey,
-		ProposerRandomSeedHash:      &testRandomSeedHash,
+		ProposerRandomSeedSignature: testBLSSignature,
 		ProposedInView:              uint64(1432101234),
 		// Use real signatures and public keys for the PoS fields
 		ProposerVotePartialSignature: testBLSSignature,

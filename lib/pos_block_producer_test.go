@@ -51,13 +51,13 @@ func TestCreateBlockTemplate(t *testing.T) {
 	priv, err := bls.NewPrivateKey()
 	require.NoError(err)
 	pub := priv.PublicKey()
-	seedHash := &RandomSeedHash{}
-	_, err = seedHash.FromBytes(Sha256DoubleHash([]byte("seed")).ToBytes())
+	seedSignature := &bls.Signature{}
+	_, err = seedSignature.FromBytes(Sha256DoubleHash([]byte("seed")).ToBytes())
 	require.NoError(err)
 	m0Pk := NewPublicKey(m0PubBytes)
 	pbp := NewPosBlockProducer(mempool, params, m0Pk, pub)
 
-	blockTemplate, err := pbp.createBlockTemplate(latestBlockView, 3, 10, seedHash)
+	blockTemplate, err := pbp.createBlockTemplate(latestBlockView, 3, 10, seedSignature)
 	require.NoError(err)
 	require.NotNil(blockTemplate)
 	require.NotNil(blockTemplate.Header)
@@ -71,7 +71,7 @@ func TestCreateBlockTemplate(t *testing.T) {
 	require.Equal(blockTemplate.Header.ProposedInView, uint64(10))
 	require.Equal(blockTemplate.Header.ProposerPublicKey, m0Pk)
 	require.Equal(blockTemplate.Header.ProposerVotingPublicKey, pub)
-	require.Equal(blockTemplate.Header.ProposerRandomSeedHash, seedHash)
+	require.True(blockTemplate.Header.ProposerRandomSeedSignature.Eq(seedSignature))
 }
 
 func TestCreateBlockWithoutHeader(t *testing.T) {
