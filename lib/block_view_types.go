@@ -120,13 +120,13 @@ const (
 	EncoderTypeBlock EncoderType = 43
 	// EncoderTypeTxn represents a transaction in the blockchain.
 	EncoderTypeTxn              EncoderType = 44
-	EncoderTypeValidatorEntry   EncoderType = 40
-	EncoderTypeStakeEntry       EncoderType = 41
-	EncoderTypeLockedStakeEntry EncoderType = 42
-	EncoderTypeEpochEntry       EncoderType = 43
+	EncoderTypeValidatorEntry   EncoderType = 45
+	EncoderTypeStakeEntry       EncoderType = 46
+	EncoderTypeLockedStakeEntry EncoderType = 47
+	EncoderTypeEpochEntry       EncoderType = 48
 
 	// EncoderTypeEndBlockView encoder type should be at the end and is used for automated tests.
-	EncoderTypeEndBlockView EncoderType = 45
+	EncoderTypeEndBlockView EncoderType = 49
 )
 
 // Txindex encoder types.

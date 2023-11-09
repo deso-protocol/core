@@ -78,7 +78,7 @@ func _testStaking(t *testing.T, flushToDB bool) {
 	}
 
 	// Seed a CurrentEpochEntry.
-	epochUtxoView, err := NewUtxoView(db, params, chain.postgres, chain.snapshot)
+	epochUtxoView, err := NewUtxoView(db, params, chain.postgres, chain.snapshot, chain.eventManager)
 	require.NoError(t, err)
 	epochUtxoView._setCurrentEpochEntry(&EpochEntry{EpochNumber: 1, FinalBlockHeight: blockHeight + 10})
 	require.NoError(t, epochUtxoView.FlushToDb(blockHeight))
@@ -843,7 +843,7 @@ func TestStakingWithDerivedKey(t *testing.T) {
 	senderPKID := DBGetPKIDEntryForPublicKey(db, chain.snapshot, senderPkBytes).PKID
 
 	newUtxoView := func() *UtxoView {
-		utxoView, err := NewUtxoView(db, params, chain.postgres, chain.snapshot)
+		utxoView, err := NewUtxoView(db, params, chain.postgres, chain.snapshot, chain.eventManager)
 		require.NoError(t, err)
 		return utxoView
 	}
@@ -1846,7 +1846,7 @@ func TestGetLockedStakeEntriesInRange(t *testing.T) {
 
 	// Initialize test chain and UtxoView.
 	chain, params, db := NewLowDifficultyBlockchain(t)
-	utxoView, err := NewUtxoView(db, params, chain.postgres, chain.snapshot)
+	utxoView, err := NewUtxoView(db, params, chain.postgres, chain.snapshot, chain.eventManager)
 	require.NoError(t, err)
 	blockHeight := uint64(chain.blockTip().Height + 1)
 
@@ -1996,7 +1996,7 @@ func TestStakeLockupEpochDuration(t *testing.T) {
 	m0PKID := DBGetPKIDEntryForPublicKey(db, chain.snapshot, m0PkBytes).PKID
 
 	newUtxoView := func() *UtxoView {
-		utxoView, err := NewUtxoView(db, params, chain.postgres, chain.snapshot)
+		utxoView, err := NewUtxoView(db, params, chain.postgres, chain.snapshot, chain.eventManager)
 		require.NoError(t, err)
 		return utxoView
 	}
@@ -2180,7 +2180,7 @@ func testStakingToJailedValidator(t *testing.T, flushToDB bool) {
 		require.NoError(t, err)
 
 		// Jail the validator.
-		tmpUtxoView, err := NewUtxoView(db, params, chain.postgres, chain.snapshot)
+		tmpUtxoView, err := NewUtxoView(db, params, chain.postgres, chain.snapshot, chain.eventManager)
 		require.NoError(t, err)
 		require.NoError(t, tmpUtxoView.JailValidator(validatorEntry))
 		require.NoError(t, tmpUtxoView.FlushToDb(blockHeight))

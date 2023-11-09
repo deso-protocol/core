@@ -3,15 +3,16 @@
 package lib
 
 import (
+	"testing"
+
 	"github.com/deso-protocol/core/bls"
 	"github.com/holiman/uint256"
 	"github.com/stretchr/testify/require"
-	"testing"
 )
 
 func TestCurrentRandomSeedHash(t *testing.T) {
 	chain, params, db := NewLowDifficultyBlockchain(t)
-	utxoView, err := NewUtxoView(db, params, chain.postgres, chain.snapshot)
+	utxoView, err := NewUtxoView(db, params, chain.postgres, chain.snapshot, chain.eventManager)
 	require.NoError(t, err)
 	blockHeight := uint64(0)
 

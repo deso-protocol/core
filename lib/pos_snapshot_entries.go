@@ -156,7 +156,7 @@ func (bav *UtxoView) _flushSnapshotGlobalParamsEntryToDbWithTxn(txn *badger.Txn,
 			)
 		}
 		if err := DBPutSnapshotGlobalParamsEntryWithTxn(
-			txn, bav.Snapshot, globalParamsEntry, snapshotAtEpochNumber, blockHeight,
+			txn, bav.Snapshot, globalParamsEntry, snapshotAtEpochNumber, blockHeight, bav.EventManager,
 		); err != nil {
 			return errors.Wrapf(
 				err,
@@ -211,6 +211,7 @@ func DBPutSnapshotGlobalParamsEntryWithTxn(
 	globalParamsEntry *GlobalParamsEntry,
 	snapshotAtEpochNumber uint64,
 	blockHeight uint64,
+	eventManager *EventManager,
 ) error {
 	if globalParamsEntry == nil {
 		// This should never happen but is a sanity check.
@@ -218,7 +219,7 @@ func DBPutSnapshotGlobalParamsEntryWithTxn(
 		return nil
 	}
 	key := DBKeyForSnapshotGlobalParamsEntry(snapshotAtEpochNumber)
-	return DBSetWithTxn(txn, snap, key, EncodeToBytes(blockHeight, globalParamsEntry))
+	return DBSetWithTxn(txn, snap, key, EncodeToBytes(blockHeight, globalParamsEntry), eventManager)
 }
 
 //
@@ -352,7 +353,7 @@ func (bav *UtxoView) _flushSnapshotValidatorSetToDbWithTxn(txn *badger.Txn, bloc
 			)
 		}
 		if err := DBDeleteSnapshotValidatorSetEntryWithTxn(
-			txn, bav.Snapshot, &mapKey.ValidatorPKID, mapKey.SnapshotAtEpochNumber,
+			txn, bav.Snapshot, &mapKey.ValidatorPKID, mapKey.SnapshotAtEpochNumber, bav.EventManager, validatorEntry.isDeleted,
 		); err != nil {
 			return errors.Wrapf(
 				err,
@@ -375,7 +376,7 @@ func (bav *UtxoView) _flushSnapshotValidatorSetToDbWithTxn(txn *badger.Txn, bloc
 			continue
 		}
 		if err := DBPutSnapshotValidatorSetEntryWithTxn(
-			txn, bav.Snapshot, validatorEntry, mapKey.SnapshotAtEpochNumber, blockHeight,
+			txn, bav.Snapshot, validatorEntry, mapKey.SnapshotAtEpochNumber, blockHeight, bav.EventManager,
 		); err != nil {
 			return errors.Wrapf(
 				err,
@@ -490,6 +491,7 @@ func DBPutSnapshotValidatorSetEntryWithTxn(
 	validatorEntry *ValidatorEntry,
 	snapshotAtEpochNumber uint64,
 	blockHeight uint64,
+	eventManager *EventManager,
 ) error {
 	if validatorEntry == nil {
 		// This should never happen but is a sanity check.
@@ -499,7 +501,7 @@ func DBPutSnapshotValidatorSetEntryWithTxn(
 
 	// Put the ValidatorEntry in the SnapshotSetByPKID index.
 	key := DBKeyForSnapshotValidatorSetByPKID(validatorEntry, snapshotAtEpochNumber)
-	if err := DBSetWithTxn(txn, snap, key, EncodeToBytes(blockHeight, validatorEntry)); err != nil {
+	if err := DBSetWithTxn(txn, snap, key, EncodeToBytes(blockHeight, validatorEntry), eventManager); err != nil {
 		return errors.Wrapf(
 			err,
 			"DBPutSnapshotValidatorSetEntryWithTxn: problem putting ValidatorEntry in the SnapshotValidatorByPKID index: ",
@@ -508,7 +510,7 @@ func DBPutSnapshotValidatorSetEntryWithTxn(
 
 	// Put the ValidatorPKID in the SnapshotValidatorByStatusAndStakeAmount index.
 	key = DBKeyForSnapshotValidatorSetByStakeAmount(validatorEntry, snapshotAtEpochNumber)
-	if err := DBSetWithTxn(txn, snap, key, EncodeToBytes(blockHeight, validatorEntry.ValidatorPKID)); err != nil {
+	if err := DBSetWithTxn(txn, snap, key, EncodeToBytes(blockHeight, validatorEntry.ValidatorPKID), eventManager); err != nil {
 		return errors.Wrapf(
 			err,
 			"DBPutSnapshotValidatorSetEntryWithTxn: problem putting ValidatorPKID in the SnapshotValidatorByStake index: ",
@@ -519,7 +521,7 @@ func DBPutSnapshotValidatorSetEntryWithTxn(
 }
 
 func DBDeleteSnapshotValidatorSetEntryWithTxn(
-	txn *badger.Txn, snap *Snapshot, validatorPKID *PKID, snapshotAtEpochNumber uint64,
+	txn *badger.Txn, snap *Snapshot, validatorPKID *PKID, snapshotAtEpochNumber uint64, eventManager *EventManager, entryIsDeleted bool,
 ) error {
 	if validatorPKID == nil {
 		// This should never happen but is a sanity check.
@@ -543,7 +545,7 @@ func DBDeleteSnapshotValidatorSetEntryWithTxn(
 
 	// Delete ValidatorEntry from PrefixSnapshotSetByPKID.
 	key := DBKeyForSnapshotValidatorSetByPKID(snapshotValidatorSetEntry, snapshotAtEpochNumber)
-	if err = DBDeleteWithTxn(txn, snap, key); err != nil {
+	if err = DBDeleteWithTxn(txn, snap, key, eventManager, entryIsDeleted); err != nil {
 		return errors.Wrapf(
 			err, "DBDeleteSnapshotValidatorSetEntryWithTxn: problem deleting ValidatorEntry from index PrefixSnapshotSetByPKID",
 		)
@@ -551,7 +553,7 @@ func DBDeleteSnapshotValidatorSetEntryWithTxn(
 
 	// Delete ValidatorEntry.PKID from PrefixSnapshotValidatorByStatusAndStakeAmount.
 	key = DBKeyForSnapshotValidatorSetByStakeAmount(snapshotValidatorSetEntry, snapshotAtEpochNumber)
-	if err = DBDeleteWithTxn(txn, snap, key); err != nil {
+	if err = DBDeleteWithTxn(txn, snap, key, eventManager, entryIsDeleted); err != nil {
 		return errors.Wrapf(
 			err, "DBDeleteSnapshotValidatorSetEntryWithTxn: problem deleting ValidatorEntry from index PrefixSnapshotValidatorByStatusAndStakeAmount",
 		)
@@ -633,7 +635,7 @@ func (bav *UtxoView) _flushSnapshotValidatorSetTotalStakeAmountNanosToDbWithTxn(
 			)
 		}
 		if err := DBPutSnapshotValidatorSetTotalStakeAmountNanosWithTxn(
-			txn, bav.Snapshot, globalActiveStakeAmountNanos, snapshotAtEpochNumber, blockHeight,
+			txn, bav.Snapshot, globalActiveStakeAmountNanos, snapshotAtEpochNumber, blockHeight, bav.EventManager,
 		); err != nil {
 			return errors.Wrapf(
 				err,
@@ -689,6 +691,7 @@ func DBPutSnapshotValidatorSetTotalStakeAmountNanosWithTxn(
 	globalActiveStakeAmountNanos *uint256.Int,
 	snapshotAtEpochNumber uint64,
 	blockHeight uint64,
+	eventManager *EventManager,
 ) error {
 	if globalActiveStakeAmountNanos == nil {
 		// This should never happen but is a sanity check.
@@ -696,7 +699,7 @@ func DBPutSnapshotValidatorSetTotalStakeAmountNanosWithTxn(
 		return nil
 	}
 	key := DBKeyForSnapshotValidatorSetTotalStakeAmountNanos(snapshotAtEpochNumber)
-	return DBSetWithTxn(txn, snap, key, VariableEncodeUint256(globalActiveStakeAmountNanos))
+	return DBSetWithTxn(txn, snap, key, VariableEncodeUint256(globalActiveStakeAmountNanos), eventManager)
 }
 
 //
@@ -855,7 +858,7 @@ func (bav *UtxoView) _flushSnapshotStakesToRewardToDbWithTxn(txn *badger.Txn, bl
 		// Delete the existing mappings in the db for this map key. They will be
 		// re-added if the corresponding entry in-memory has isDeleted=false.
 		if err := DBDeleteSnapshotStakeToRewardWithTxn(
-			txn, bav.Snapshot, stakeEntry.ValidatorPKID, stakeEntry.StakerPKID, mapKey.SnapshotAtEpochNumber, blockHeight,
+			txn, bav.Snapshot, stakeEntry.ValidatorPKID, stakeEntry.StakerPKID, mapKey.SnapshotAtEpochNumber, blockHeight, bav.EventManager, stakeEntry.isDeleted,
 		); err != nil {
 			return errors.Wrapf(err, "_flushSnapshotStakesToRewardToDbWithTxn: ")
 		}
@@ -868,7 +871,7 @@ func (bav *UtxoView) _flushSnapshotStakesToRewardToDbWithTxn(txn *badger.Txn, bl
 		}
 
 		if err := DBPutSnapshotStakeToRewardWithTxn(
-			txn, bav.Snapshot, stakeEntry, mapKey.SnapshotAtEpochNumber, blockHeight,
+			txn, bav.Snapshot, stakeEntry, mapKey.SnapshotAtEpochNumber, blockHeight, bav.EventManager,
 		); err != nil {
 			return errors.Wrapf(
 				err,
@@ -888,6 +891,8 @@ func DBDeleteSnapshotStakeToRewardWithTxn(
 	stakerPKID *PKID,
 	snapshotAtEpochNumber uint64,
 	blockHeight uint64,
+	eventManager *EventManager,
+	entryIsDeleted bool,
 ) error {
 	if validatorPKID == nil || stakerPKID == nil {
 		return nil
@@ -895,7 +900,7 @@ func DBDeleteSnapshotStakeToRewardWithTxn(
 
 	// Delete the snapshot StakeEntry from PrefixSnapshotStakeToRewardByValidatorByStaker.
 	stakeByValidatorAndStakerKey := DBKeyForSnapshotStakeToRewardByValidatorAndStaker(snapshotAtEpochNumber, validatorPKID, stakerPKID)
-	if err := DBDeleteWithTxn(txn, snap, stakeByValidatorAndStakerKey); err != nil {
+	if err := DBDeleteWithTxn(txn, snap, stakeByValidatorAndStakerKey, eventManager, entryIsDeleted); err != nil {
 		return errors.Wrapf(
 			err, "DBDeleteSnapshotStakeToRewardWithTxn: problem deleting snapshot StakeEntry from index PrefixSnapshotStakeToRewardByValidatorByStaker: ",
 		)
@@ -910,6 +915,7 @@ func DBPutSnapshotStakeToRewardWithTxn(
 	stakeEntry *StakeEntry,
 	snapshotAtEpochNumber uint64,
 	blockHeight uint64,
+	eventManager *EventManager,
 ) error {
 	if stakeEntry == nil {
 		// This should never happen but is a sanity check.
@@ -918,7 +924,7 @@ func DBPutSnapshotStakeToRewardWithTxn(
 	}
 
 	dbKey := DBKeyForSnapshotStakeToRewardByValidatorAndStaker(snapshotAtEpochNumber, stakeEntry.ValidatorPKID, stakeEntry.StakerPKID)
-	if err := DBSetWithTxn(txn, snap, dbKey, EncodeToBytes(blockHeight, stakeEntry)); err != nil {
+	if err := DBSetWithTxn(txn, snap, dbKey, EncodeToBytes(blockHeight, stakeEntry), eventManager); err != nil {
 		return errors.Wrapf(
 			err,
 			"DBPutSnapshotStakeToRewardWithTxn: problem putting snapshot stakeEntry in the SnapshotStakeToRewardByValidatorAndStaker index: ",
@@ -990,7 +996,7 @@ func (bav *UtxoView) _flushSnapshotLeaderScheduleToDbWithTxn(txn *badger.Txn, bl
 			)
 		}
 		if err := DBPutSnapshotLeaderScheduleValidatorWithTxn(
-			txn, bav.Snapshot, validatorPKID, mapKey.LeaderIndex, mapKey.SnapshotAtEpochNumber, blockHeight,
+			txn, bav.Snapshot, validatorPKID, mapKey.LeaderIndex, mapKey.SnapshotAtEpochNumber, blockHeight, bav.EventManager,
 		); err != nil {
 			return errors.Wrapf(
 				err,
@@ -1059,6 +1065,7 @@ func DBPutSnapshotLeaderScheduleValidatorWithTxn(
 	leaderIndex uint16,
 	snapshotAtEpochNumber uint64,
 	blockHeight uint64,
+	eventManager *EventManager,
 ) error {
 	if validatorPKID == nil {
 		// This should never happen but is a sanity check.
@@ -1066,7 +1073,7 @@ func DBPutSnapshotLeaderScheduleValidatorWithTxn(
 		return nil
 	}
 	key := DBKeyForSnapshotLeaderScheduleValidator(leaderIndex, snapshotAtEpochNumber)
-	if err := DBSetWithTxn(txn, snap, key, EncodeToBytes(blockHeight, validatorPKID)); err != nil {
+	if err := DBSetWithTxn(txn, snap, key, EncodeToBytes(blockHeight, validatorPKID), eventManager); err != nil {
 		return errors.Wrapf(
 			err,
 			"DBPutSnapshotLeaderScheduleValidatorWithTxn: problem putting ValidatorPKID in the SnapshotLeaderSchedule index: ",

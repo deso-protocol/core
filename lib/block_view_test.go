@@ -10,6 +10,8 @@ import (
 	"sort"
 	"testing"
 
+	"math/rand"
+
 	"github.com/btcsuite/btcd/btcec"
 	"github.com/decred/dcrd/lru"
 	"github.com/dgraph-io/badger/v3"
@@ -17,7 +19,6 @@ import (
 	"github.com/golang/glog"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"math/rand"
 )
 
 func _strToPk(t *testing.T, pkStr string) []byte {
@@ -2237,7 +2238,7 @@ func TestConnectFailingTransaction(t *testing.T) {
 		senderPrivString, 200000, 11)
 
 	blockHeight := chain.BlockTip().Height + 1
-	blockView, err := NewUtxoView(db, params, nil, nil)
+	blockView, err := NewUtxoView(db, params, nil, nil, chain.eventManager)
 	require.NoError(err)
 	txn1 := _generateTestTxn(t, rand, feeMin, feeMax, m0PubBytes, m0Priv, 100, 0)
 	utxoOps, burnFee, utilityFee, err := blockView._connectFailingTransaction(txn1, blockHeight, true)
@@ -2282,7 +2283,7 @@ func TestConnectFailingTransaction(t *testing.T) {
 			map[string][]byte{FeeBucketGrowthRateBasisPointsKey: UintToBuf(7000)},
 		)
 	}
-	blockView, err = NewUtxoView(db, params, nil, nil)
+	blockView, err = NewUtxoView(db, params, nil, nil, chain.eventManager)
 	require.NoError(err)
 	newParams := blockView.GetCurrentGlobalParamsEntry()
 	require.Equal(uint64(7000), newParams.FailingTransactionBMFMultiplierBasisPoints)

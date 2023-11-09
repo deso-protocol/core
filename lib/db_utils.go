@@ -491,20 +491,20 @@ type DBPrefixes struct {
 
 	// PrefixValidatorByPKID: Retrieve a validator by PKID.
 	// Prefix, <ValidatorPKID [33]byte> -> ValidatorEntry
-	PrefixValidatorByPKID []byte `prefix_id:"[78]" is_state:"true"`
+	PrefixValidatorByPKID []byte `prefix_id:"[80]" is_state:"true"`
 
 	// PrefixValidatorByStatusAndStakeAmount: Retrieve the top N active validators by stake.
 	// Prefix, <Status uint8>, <TotalStakeAmountNanos *uint256.Int>, <ValidatorPKID [33]byte> -> nil
 	// Note that we save space by storing a nil value and parsing the ValidatorPKID from the key.
-	PrefixValidatorByStatusAndStakeAmount []byte `prefix_id:"[79]" is_state:"true"`
+	PrefixValidatorByStatusAndStakeAmount []byte `prefix_id:"[81]" is_state:"true"`
 
 	// PrefixStakeByValidatorAndStaker: Retrieve a StakeEntry.
 	// Prefix, <ValidatorPKID [33]byte>, <StakerPKID [33]byte> -> StakeEntry
-	PrefixStakeByValidatorAndStaker []byte `prefix_id:"[80]" is_state:"true"`
+	PrefixStakeByValidatorAndStaker []byte `prefix_id:"[82]" is_state:"true"`
 
 	// PrefixStakeByStakeAmount: Retrieve the top N stake entries by stake amount.
 	// Prefix, <TotalStakeAmountNanos *uint256.Int>, <ValidatorPKID [33]byte>, <StakerPKID [33]byte> -> nil
-	PrefixStakeByStakeAmount []byte `prefix_id:"[81]" is_state:"true"`
+	PrefixStakeByStakeAmount []byte `prefix_id:"[83]" is_state:"true"`
 
 	// PrefixLockedStakeByValidatorAndStakerAndLockedAt: Retrieve a LockedStakeEntry.
 	// Prefix, <ValidatorPKID [33]byte>, <StakerPKID [33]byte>, <LockedAtEpochNumber uint64> -> LockedStakeEntry
@@ -531,47 +531,47 @@ type DBPrefixes struct {
 	//   (CurrentEpoch - LockedAtEpochNumber) = 133 - 123 = 10, which is greater than
 	//   cooldown=3. Thus the UnlockStake will succeed, which will result in the
 	//   LockedStakeEntry being deleted and 25 DESO being added to the user's balance.
-	PrefixLockedStakeByValidatorAndStakerAndLockedAt []byte `prefix_id:"[82]" is_state:"true"`
+	PrefixLockedStakeByValidatorAndStakerAndLockedAt []byte `prefix_id:"[84]" is_state:"true"`
 
 	// PrefixCurrentEpoch: Retrieve the current EpochEntry.
 	// Prefix -> EpochEntry
-	PrefixCurrentEpoch []byte `prefix_id:"[83]" is_state:"true"`
+	PrefixCurrentEpoch []byte `prefix_id:"[85]" is_state:"true"`
 
 	// PrefixCurrentRandomSeedHash: Retrieve the current RandomSeedHash.
 	// Prefix -> <RandomSeedHash [32]byte>.
-	PrefixCurrentRandomSeedHash []byte `prefix_id:"[84]" is_state:"true"`
+	PrefixCurrentRandomSeedHash []byte `prefix_id:"[86]" is_state:"true"`
 
 	// PrefixSnapshotGlobalParamsEntry: Retrieve a snapshot GlobalParamsEntry by SnapshotAtEpochNumber.
 	// Prefix, <SnapshotAtEpochNumber uint64> -> *GlobalParamsEntry
-	PrefixSnapshotGlobalParamsEntry []byte `prefix_id:"[85]" is_state:"true"`
+	PrefixSnapshotGlobalParamsEntry []byte `prefix_id:"[87]" is_state:"true"`
 
 	// PrefixSnapshotValidatorSetByPKID: Retrieve a ValidatorEntry from a snapshot validator set by
 	// <SnapshotAtEpochNumber, PKID>.
 	// Prefix, <SnapshotAtEpochNumber uint64>, <ValidatorPKID [33]byte> -> *ValidatorEntry
-	PrefixSnapshotValidatorSetByPKID []byte `prefix_id:"[86]" is_state:"true"`
+	PrefixSnapshotValidatorSetByPKID []byte `prefix_id:"[88]" is_state:"true"`
 
 	// PrefixSnapshotValidatorSetByStakeAmount: Retrieve stake-ordered ValidatorEntries from a snapshot validator set
 	// by SnapshotAtEpochNumber.
 	// Prefix, <SnapshotAtEpochNumber uint64>, <TotalStakeAmountNanos *uint256.Int>, <ValidatorPKID [33]byte> -> nil
 	// Note: we parse the ValidatorPKID from the key and the value is nil to save space.
-	PrefixSnapshotValidatorSetByStakeAmount []byte `prefix_id:"[87]" is_state:"true"`
+	PrefixSnapshotValidatorSetByStakeAmount []byte `prefix_id:"[89]" is_state:"true"`
 
 	// PrefixSnapshotValidatorSetTotalStakeAmountNanos: Retrieve a snapshot of the validator set's total amount of
 	// staked DESO by SnapshotAtEpochNumber.
 	// Prefix, <SnapshotAtEpochNumber uint64> -> *uint256.Int
-	PrefixSnapshotValidatorSetTotalStakeAmountNanos []byte `prefix_id:"[88]" is_state:"true"`
+	PrefixSnapshotValidatorSetTotalStakeAmountNanos []byte `prefix_id:"[90]" is_state:"true"`
 
 	// PrefixSnapshotLeaderSchedule: Retrieve a ValidatorPKID by <SnapshotAtEpochNumber, LeaderIndex>.
 	// Prefix, <SnapshotAtEpochNumber uint64>, <LeaderIndex uint16> -> ValidatorPKID
-	PrefixSnapshotLeaderSchedule []byte `prefix_id:"[89]" is_state:"true"`
+	PrefixSnapshotLeaderSchedule []byte `prefix_id:"[91]" is_state:"true"`
 
 	// PrefixSnapshotStakeToRewardByValidatorAndStaker: Retrieves snapshotted StakeEntries that are eligible to
 	// receive staking rewards for an epoch. StakeEntries can be retrieved by ValidatorPKID and StakerPKID.
 	// Prefix, <SnapshotAtEpochNumber>, <ValidatorPKID [33]byte>, <StakerPKID [33]byte> -> *StakeEntry
 	// Note, we parse the ValidatorPKID and StakerPKID from the key.
-	PrefixSnapshotStakeToRewardByValidatorAndStaker []byte `prefix_id:"[90]" is_state:"true"`
+	PrefixSnapshotStakeToRewardByValidatorAndStaker []byte `prefix_id:"[92]" is_state:"true"`
 
-	// NEXT_TAG: 91
+	// NEXT_TAG: 93
 }
 
 // DecodeStateKey decodes a state key into a DeSoEncoder type. This is useful for encoders which don't have a stored
@@ -818,43 +818,43 @@ func StatePrefixToDeSoEncoder(prefix []byte) (_isEncoder bool, _encoder DeSoEnco
 		// prefix_id:"[79]"
 		return true, &UtxoOperationBundle{}
 	} else if bytes.Equal(prefix, Prefixes.PrefixValidatorByPKID) {
-		// prefix_id:"[78]"
+		// prefix_id:"[80]"
 		return true, &ValidatorEntry{}
 	} else if bytes.Equal(prefix, Prefixes.PrefixValidatorByStatusAndStakeAmount) {
-		// prefix_id:"[79]"
-		return false, nil
-	} else if bytes.Equal(prefix, Prefixes.PrefixStakeByValidatorAndStaker) {
-		// prefix_id:"[80]"
-		return true, &StakeEntry{}
-	} else if bytes.Equal(prefix, Prefixes.PrefixStakeByStakeAmount) {
 		// prefix_id:"[81]"
 		return false, nil
-	} else if bytes.Equal(prefix, Prefixes.PrefixLockedStakeByValidatorAndStakerAndLockedAt) {
+	} else if bytes.Equal(prefix, Prefixes.PrefixStakeByValidatorAndStaker) {
 		// prefix_id:"[82]"
+		return true, &StakeEntry{}
+	} else if bytes.Equal(prefix, Prefixes.PrefixStakeByStakeAmount) {
+		// prefix_id:"[83]"
+		return false, nil
+	} else if bytes.Equal(prefix, Prefixes.PrefixLockedStakeByValidatorAndStakerAndLockedAt) {
+		// prefix_id:"[84]"
 		return true, &LockedStakeEntry{}
 	} else if bytes.Equal(prefix, Prefixes.PrefixCurrentEpoch) {
-		// prefix_id:"[83]"
+		// prefix_id:"[85]"
 		return true, &EpochEntry{}
 	} else if bytes.Equal(prefix, Prefixes.PrefixCurrentRandomSeedHash) {
-		// prefix_id:"[84]"
+		// prefix_id:"[86]"
 		return false, nil
 	} else if bytes.Equal(prefix, Prefixes.PrefixSnapshotGlobalParamsEntry) {
-		// prefix_id:"[85]"
+		// prefix_id:"[87]"
 		return true, &GlobalParamsEntry{}
 	} else if bytes.Equal(prefix, Prefixes.PrefixSnapshotValidatorSetByPKID) {
-		// prefix_id:"[86]"
+		// prefix_id:"[88]"
 		return true, &ValidatorEntry{}
 	} else if bytes.Equal(prefix, Prefixes.PrefixSnapshotValidatorSetByStakeAmount) {
-		// prefix_id:"[87]"
+		// prefix_id:"[89]"
 		return false, nil
 	} else if bytes.Equal(prefix, Prefixes.PrefixSnapshotValidatorSetTotalStakeAmountNanos) {
-		// prefix_id:"[88]"
+		// prefix_id:"[90]"
 		return false, nil
 	} else if bytes.Equal(prefix, Prefixes.PrefixSnapshotLeaderSchedule) {
-		// prefix_id:"[89]"
+		// prefix_id:"[91]"
 		return true, &PKID{}
 	} else if bytes.Equal(prefix, Prefixes.PrefixSnapshotStakeToRewardByValidatorAndStaker) {
-		// prefix_id:"[90]"
+		// prefix_id:"[92]"
 		return true, &StakeEntry{}
 	}
 
@@ -6996,67 +6996,6 @@ type TransactionMetadata struct {
 	UnstakeTxindexMetadata               *UnstakeTxindexMetadata               `json:",omitempty"`
 	UnlockStakeTxindexMetadata           *UnlockStakeTxindexMetadata           `json:",omitempty"`
 	UnjailValidatorTxindexMetadata       *UnjailValidatorTxindexMetadata       `json:",omitempty"`
-}
-
-func (txnMeta *TransactionMetadata) GetEncoderForTxType(txnType TxnType) DeSoEncoder {
-	switch txnType {
-	case TxnTypeBasicTransfer:
-		return txnMeta.BasicTransferTxindexMetadata
-	case TxnTypeBitcoinExchange:
-		return txnMeta.BitcoinExchangeTxindexMetadata
-	case TxnTypeCreatorCoin:
-		return txnMeta.CreatorCoinTxindexMetadata
-	case TxnTypeCreatorCoinTransfer:
-		return txnMeta.CreatorCoinTransferTxindexMetadata
-	case TxnTypeUpdateProfile:
-		return txnMeta.UpdateProfileTxindexMetadata
-	case TxnTypeSubmitPost:
-		return txnMeta.SubmitPostTxindexMetadata
-	case TxnTypeLike:
-		return txnMeta.LikeTxindexMetadata
-	case TxnTypeFollow:
-		return txnMeta.FollowTxindexMetadata
-	case TxnTypePrivateMessage:
-		return txnMeta.PrivateMessageTxindexMetadata
-	case TxnTypeSwapIdentity:
-		return txnMeta.SwapIdentityTxindexMetadata
-	case TxnTypeNFTBid:
-		return txnMeta.NFTBidTxindexMetadata
-	case TxnTypeAcceptNFTBid:
-		return txnMeta.AcceptNFTBidTxindexMetadata
-	case TxnTypeNFTTransfer:
-		return txnMeta.NFTTransferTxindexMetadata
-	case TxnTypeAcceptNFTTransfer:
-		return txnMeta.AcceptNFTTransferTxindexMetadata
-	case TxnTypeBurnNFT:
-		return txnMeta.BurnNFTTxindexMetadata
-	case TxnTypeDAOCoin:
-		return txnMeta.DAOCoinTxindexMetadata
-	case TxnTypeDAOCoinTransfer:
-		return txnMeta.DAOCoinTransferTxindexMetadata
-	case TxnTypeCreateNFT:
-		return txnMeta.CreateNFTTxindexMetadata
-	case TxnTypeUpdateNFT:
-		return txnMeta.UpdateNFTTxindexMetadata
-	case TxnTypeDAOCoinLimitOrder:
-		return txnMeta.DAOCoinLimitOrderTxindexMetadata
-	case TxnTypeCreateUserAssociation:
-		return txnMeta.CreateUserAssociationTxindexMetadata
-	case TxnTypeDeleteUserAssociation:
-		return txnMeta.DeleteUserAssociationTxindexMetadata
-	case TxnTypeCreatePostAssociation:
-		return txnMeta.CreatePostAssociationTxindexMetadata
-	case TxnTypeDeletePostAssociation:
-		return txnMeta.DeletePostAssociationTxindexMetadata
-	case TxnTypeAccessGroup:
-		return txnMeta.AccessGroupTxindexMetadata
-	case TxnTypeAccessGroupMembers:
-		return txnMeta.AccessGroupMembersTxindexMetadata
-	case TxnTypeNewMessage:
-		return txnMeta.NewMessageTxindexMetadata
-	default:
-		return nil
-	}
 }
 
 func (txnMeta *TransactionMetadata) GetEncoderForTxType(txnType TxnType) DeSoEncoder {
