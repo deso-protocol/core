@@ -50,6 +50,15 @@ func (bav *UtxoView) FlushToDbWithTxn(txn *badger.Txn, blockHeight uint64) error
 		defer bav.Snapshot.StartAncestralRecordsFlush(true)
 	}
 
+	return bav.FlushToDBWithoutAncestralRecordsFlushWithTxn(txn, blockHeight)
+}
+
+// FlushToDBWithoutAncestralRecordsFlushWithTxn flushes the UtxoView to the DB without
+// calling PrepareAncestralRecordsFlush. This SHOULD ONLY be used when flushing the
+// view within a badger transaction that itself calls PrepareAncestralRecordsFlush
+// and defer StartAncestralRecordsFlush.
+func (bav *UtxoView) FlushToDBWithoutAncestralRecordsFlushWithTxn(txn *badger.Txn, blockHeight uint64) error {
+
 	// Only flush to BadgerDB if Postgres is disabled
 	if bav.Postgres == nil {
 		if err := bav._flushUtxosToDbWithTxn(txn, blockHeight); err != nil {
