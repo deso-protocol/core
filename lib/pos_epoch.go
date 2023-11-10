@@ -151,7 +151,7 @@ func (bav *UtxoView) _flushCurrentEpochEntryToDbWithTxn(txn *badger.Txn, blockHe
 		// don't want to overwrite what is in the database. Just no-op.
 		return nil
 	}
-	if err := DBPutCurrentEpochEntryWithTxn(txn, bav.Snapshot, bav.CurrentEpochEntry, blockHeight); err != nil {
+	if err := DBPutCurrentEpochEntryWithTxn(txn, bav.Snapshot, bav.CurrentEpochEntry, blockHeight, bav.EventManager); err != nil {
 		return errors.Wrapf(err, "_flushCurrentEpochEntryToDbWithTxn: ")
 	}
 	return nil
@@ -196,7 +196,7 @@ func DBGetCurrentEpochEntryWithTxn(txn *badger.Txn, snap *Snapshot) (*EpochEntry
 	return epochEntry, nil
 }
 
-func DBPutCurrentEpochEntryWithTxn(txn *badger.Txn, snap *Snapshot, epochEntry *EpochEntry, blockHeight uint64) error {
+func DBPutCurrentEpochEntryWithTxn(txn *badger.Txn, snap *Snapshot, epochEntry *EpochEntry, blockHeight uint64, eventManager *EventManager) error {
 	// Set EpochEntry in PrefixCurrentEpoch.
 	if epochEntry == nil {
 		// This is just a safety check that we are not accidentally overwriting an
@@ -204,7 +204,7 @@ func DBPutCurrentEpochEntryWithTxn(txn *badger.Txn, snap *Snapshot, epochEntry *
 		return errors.New("DBPutCurrentEpochEntryWithTxn: called with nil EpochEntry")
 	}
 	key := DBKeyForCurrentEpoch()
-	if err := DBSetWithTxn(txn, snap, key, EncodeToBytes(blockHeight, epochEntry)); err != nil {
+	if err := DBSetWithTxn(txn, snap, key, EncodeToBytes(blockHeight, epochEntry), eventManager); err != nil {
 		return errors.Wrapf(
 			err, "DBPutCurrentEpochEntryWithTxn: problem storing EpochEntry in index PrefixCurrentEpoch: ",
 		)

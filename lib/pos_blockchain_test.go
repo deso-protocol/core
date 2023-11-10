@@ -4,17 +4,18 @@ package lib
 
 import (
 	"bytes"
+	"math"
+	"math/rand"
+	"strconv"
+	"testing"
+	"time"
+
 	"github.com/deso-protocol/core/bls"
 	"github.com/deso-protocol/core/collections"
 	"github.com/deso-protocol/core/collections/bitset"
 	"github.com/deso-protocol/core/consensus"
 	"github.com/holiman/uint256"
 	"github.com/stretchr/testify/require"
-	"math"
-	"math/rand"
-	"strconv"
-	"testing"
-	"time"
 )
 
 // TestIsProperlyFormedBlockPoSAndIsBlockTimestampValidRelativeToParentPoS tests that
@@ -2195,7 +2196,7 @@ func NewTestPoSBlockchainWithValidators(t *testing.T) *TestMeta {
 	require.NoError(t, err)
 	oldPool.Stop()
 	miner.Stop()
-	latestBlockView, err := NewUtxoView(db, params, nil, nil)
+	latestBlockView, err := NewUtxoView(db, params, nil, nil, nil)
 	require.NoError(t, err)
 
 	// Run the on epoch complete hook to set the leader schedule.
@@ -2269,7 +2270,7 @@ func NewTestPoSBlockchain(t *testing.T) *TestMeta {
 	}
 	oldPool.Stop()
 	miner.Stop()
-	latestBlockView, err := NewUtxoView(db, params, nil, nil)
+	latestBlockView, err := NewUtxoView(db, params, nil, nil, nil)
 	require.NoError(t, err)
 	maxMempoolPosSizeBytes := uint64(500)
 	mempoolBackupIntervalMillis := uint64(30000)

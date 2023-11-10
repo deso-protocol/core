@@ -737,7 +737,7 @@ func (bc *Blockchain) upsertBlockAndBlockNodeToDB(block *MsgDeSoBlock, blockNode
 		// 	we've fetched during Hypersync. Is there an edge-case where for some reason they're not identical? Or
 		// 	somehow ancestral records get corrupted?
 		if storeFullBlock {
-			if innerErr := PutBlockWithTxn(txn, bc.snapshot, block); innerErr != nil {
+			if innerErr := PutBlockWithTxn(txn, bc.snapshot, block, bc.eventManager); innerErr != nil {
 				return errors.Wrapf(innerErr, "upsertBlockAndBlockNodeToDB: Problem calling PutBlock")
 			}
 		}
@@ -749,7 +749,7 @@ func (bc *Blockchain) upsertBlockAndBlockNodeToDB(block *MsgDeSoBlock, blockNode
 		// Store the new block's node in our node index in the db under the
 		//   <height uin32, blockHash BlockHash> -> <node info>
 		// index.
-		if innerErr := PutHeightHashToNodeInfoWithTxn(txn, bc.snapshot, blockNode, false /*bitcoinNodes*/); innerErr != nil {
+		if innerErr := PutHeightHashToNodeInfoWithTxn(txn, bc.snapshot, blockNode, false /*bitcoinNodes*/, bc.eventManager); innerErr != nil {
 			return errors.Wrapf(innerErr, "upsertBlockAndBlockNodeToDB: Problem calling PutHeightHashToNodeInfo before validation")
 		}
 
@@ -930,25 +930,25 @@ func (bc *Blockchain) commitBlockPoS(blockHash *BlockHash) error {
 		// 	set in PutBlockWithTxn. Block rewards are part of the state, and they should be identical to the ones
 		// 	we've fetched during Hypersync. Is there an edge-case where for some reason they're not identical? Or
 		// 	somehow ancestral records get corrupted?
-		if innerErr := PutBlockWithTxn(txn, bc.snapshot, block); innerErr != nil {
+		if innerErr := PutBlockWithTxn(txn, bc.snapshot, block, bc.eventManager); innerErr != nil {
 			return errors.Wrapf(innerErr, "commitBlockPoS: Problem calling PutBlock")
 		}
 
 		// Store the new block's node in our node index in the db under the
 		//   <height uin32, blockHash BlockHash> -> <node info>
 		// index.
-		if innerErr := PutHeightHashToNodeInfoWithTxn(txn, bc.snapshot, blockNode, false /*bitcoinNodes*/); innerErr != nil {
+		if innerErr := PutHeightHashToNodeInfoWithTxn(txn, bc.snapshot, blockNode, false /*bitcoinNodes*/, bc.eventManager); innerErr != nil {
 			return errors.Wrapf(innerErr, "commitBlockPoS: Problem calling PutHeightHashToNodeInfo before validation")
 		}
 
 		// Set the best node hash to this one. Note the header chain should already
 		// be fully aware of this block so we shouldn't update it here.
-		if innerErr := PutBestHashWithTxn(txn, bc.snapshot, blockNode.Hash, ChainTypeDeSoBlock); innerErr != nil {
+		if innerErr := PutBestHashWithTxn(txn, bc.snapshot, blockNode.Hash, ChainTypeDeSoBlock, bc.eventManager); innerErr != nil {
 			return errors.Wrapf(innerErr, "commitBlockPoS: Problem calling PutBestHash after validation")
 		}
 		// Write the utxo operations for this block to the db so we can have the
 		// ability to roll it back in the future.
-		if innerErr := PutUtxoOperationsForBlockWithTxn(txn, bc.snapshot, uint64(blockNode.Height), blockNode.Hash, utxoOpsForBlock); innerErr != nil {
+		if innerErr := PutUtxoOperationsForBlockWithTxn(txn, bc.snapshot, uint64(blockNode.Height), blockNode.Hash, utxoOpsForBlock, bc.eventManager); innerErr != nil {
 			return errors.Wrapf(innerErr, "ProcessBlock: Problem writing utxo operations to db on simple add to tip")
 		}
 		return nil
@@ -1007,7 +1007,7 @@ func (bc *Blockchain) getUtxoViewAtBlockHash(blockHash BlockHash) (*UtxoView, er
 		}
 	}
 	// Connect the uncommitted blocks to the tip so that we can validate subsequent blocks
-	utxoView, err := NewUtxoView(bc.db, bc.params, bc.postgres, bc.snapshot)
+	utxoView, err := NewUtxoView(bc.db, bc.params, bc.postgres, bc.snapshot, bc.eventManager)
 	if err != nil {
 		return nil, errors.Wrapf(err, "getUtxoViewAtBlockHash: Problem initializing UtxoView")
 	}

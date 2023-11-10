@@ -3,12 +3,13 @@ package lib
 import (
 	"bytes"
 	"crypto/sha256"
+	"io"
+
 	"github.com/deso-protocol/core/bls"
 	"github.com/dgraph-io/badger/v3"
 	"github.com/golang/glog"
 	"github.com/holiman/uint256"
 	"github.com/pkg/errors"
-	"io"
 )
 
 //
@@ -142,7 +143,7 @@ func (bav *UtxoView) _flushCurrentRandomSeedHashToDbWithTxn(txn *badger.Txn, blo
 	if bav.CurrentRandomSeedHash == nil {
 		return nil
 	}
-	return DBPutCurrentRandomSeedHashWithTxn(txn, bav.Snapshot, bav.CurrentRandomSeedHash, blockHeight)
+	return DBPutCurrentRandomSeedHashWithTxn(txn, bav.Snapshot, bav.CurrentRandomSeedHash, blockHeight, bav.EventManager)
 }
 
 //
@@ -183,6 +184,7 @@ func DBPutCurrentRandomSeedHashWithTxn(
 	snap *Snapshot,
 	currentRandomSeedHash *RandomSeedHash,
 	blockHeight uint64,
+	eventManager *EventManager,
 ) error {
 	if currentRandomSeedHash == nil {
 		// This should never happen but is a sanity check.
@@ -190,5 +192,5 @@ func DBPutCurrentRandomSeedHashWithTxn(
 		return nil
 	}
 	key := DBKeyForCurrentRandomSeedHash()
-	return DBSetWithTxn(txn, snap, key, currentRandomSeedHash.ToBytes())
+	return DBSetWithTxn(txn, snap, key, currentRandomSeedHash.ToBytes(), eventManager)
 }

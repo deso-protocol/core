@@ -708,6 +708,7 @@ func DBPutValidatorWithTxn(
 	snap *Snapshot,
 	validatorEntry *ValidatorEntry,
 	blockHeight uint64,
+	eventManager *EventManager,
 ) error {
 	if validatorEntry == nil {
 		// This should never happen but is a sanity check.
@@ -717,7 +718,7 @@ func DBPutValidatorWithTxn(
 
 	// Set ValidatorEntry in PrefixValidatorByPKID.
 	key := DBKeyForValidatorByPKID(validatorEntry)
-	if err := DBSetWithTxn(txn, snap, key, EncodeToBytes(blockHeight, validatorEntry)); err != nil {
+	if err := DBSetWithTxn(txn, snap, key, EncodeToBytes(blockHeight, validatorEntry), eventManager); err != nil {
 		return errors.Wrapf(
 			err, "DBPutValidatorWithTxn: problem storing ValidatorEntry in index PrefixValidatorByPKID",
 		)
@@ -726,7 +727,7 @@ func DBPutValidatorWithTxn(
 	// Set ValidatorEntry key in PrefixValidatorByStatusAndStakeAmount. The value should be nil.
 	// We parse the ValidatorPKID from the key for this index.
 	key = DBKeyForValidatorByStatusAndStakeAmount(validatorEntry)
-	if err := DBSetWithTxn(txn, snap, key, nil); err != nil {
+	if err := DBSetWithTxn(txn, snap, key, nil, eventManager); err != nil {
 		return errors.Wrapf(
 			err, "DBPutValidatorWithTxn: problem storing ValidatorEntry in index PrefixValidatorByStatusAndStakeAmount",
 		)
@@ -735,7 +736,7 @@ func DBPutValidatorWithTxn(
 	return nil
 }
 
-func DBDeleteValidatorWithTxn(txn *badger.Txn, snap *Snapshot, validatorPKID *PKID) error {
+func DBDeleteValidatorWithTxn(txn *badger.Txn, snap *Snapshot, validatorPKID *PKID, eventManager *EventManager, entryIsDeleted bool) error {
 	if validatorPKID == nil {
 		// This should never happen but is a sanity check.
 		glog.Errorf("DBDeleteValidatorWithTxn: called with nil ValidatorPKID")
@@ -758,7 +759,7 @@ func DBDeleteValidatorWithTxn(txn *badger.Txn, snap *Snapshot, validatorPKID *PK
 
 	// Delete ValidatorEntry from PrefixValidatorByPKID.
 	key := DBKeyForValidatorByPKID(validatorEntry)
-	if err := DBDeleteWithTxn(txn, snap, key); err != nil {
+	if err := DBDeleteWithTxn(txn, snap, key, eventManager, entryIsDeleted); err != nil {
 		return errors.Wrapf(
 			err, "DBDeleteValidatorWithTxn: problem deleting ValidatorEntry from index PrefixValidatorByPKID",
 		)
@@ -766,7 +767,7 @@ func DBDeleteValidatorWithTxn(txn *badger.Txn, snap *Snapshot, validatorPKID *PK
 
 	// Delete ValidatorEntry.PKID from PrefixValidatorByStatusAndStakeAmount.
 	key = DBKeyForValidatorByStatusAndStakeAmount(validatorEntry)
-	if err := DBDeleteWithTxn(txn, snap, key); err != nil {
+	if err := DBDeleteWithTxn(txn, snap, key, eventManager, entryIsDeleted); err != nil {
 		return errors.Wrapf(
 			err, "DBDeleteValidatorWithTxn: problem deleting ValidatorEntry from index PrefixValidatorByStatusAndStakeAmount",
 		)
@@ -805,7 +806,7 @@ func (bc *Blockchain) CreateRegisterAsValidatorTxn(
 
 	// Create a new UtxoView. If we have access to a mempool object, use
 	// it to get an augmented view that factors in pending transactions.
-	utxoView, err := NewUtxoView(bc.db, bc.params, bc.postgres, bc.snapshot)
+	utxoView, err := NewUtxoView(bc.db, bc.params, bc.postgres, bc.snapshot, bc.eventManager)
 	if err != nil {
 		return nil, 0, 0, 0, errors.Wrap(
 			err, "Blockchain.CreateRegisterAsValidatorTxn: problem creating new utxo view: ",
@@ -882,7 +883,7 @@ func (bc *Blockchain) CreateUnregisterAsValidatorTxn(
 
 	// Create a new UtxoView. If we have access to a mempool object, use
 	// it to get an augmented view that factors in pending transactions.
-	utxoView, err := NewUtxoView(bc.db, bc.params, bc.postgres, bc.snapshot)
+	utxoView, err := NewUtxoView(bc.db, bc.params, bc.postgres, bc.snapshot, bc.eventManager)
 	if err != nil {
 		return nil, 0, 0, 0, errors.Wrap(
 			err, "Blockchain.CreateUnregisterAsValidatorTxn: problem creating new utxo view: ",
@@ -958,7 +959,7 @@ func (bc *Blockchain) CreateUnjailValidatorTxn(
 
 	// Create a new UtxoView. If we have access to a mempool object, use
 	// it to get an augmented view that factors in pending transactions.
-	utxoView, err := NewUtxoView(bc.db, bc.params, bc.postgres, bc.snapshot)
+	utxoView, err := NewUtxoView(bc.db, bc.params, bc.postgres, bc.snapshot, bc.eventManager)
 	if err != nil {
 		return nil, 0, 0, 0, errors.Wrap(
 			err, "Blockchain.CreateUnjailValidatorTxn: problem creating new utxo view: ",
@@ -2044,7 +2045,7 @@ func (bav *UtxoView) _flushValidatorEntriesToDbWithTxn(txn *badger.Txn, blockHei
 
 		// Delete the existing mappings in the db for this ValidatorMapKey. They
 		// will be re-added if the corresponding entry in memory has isDeleted=false.
-		if err := DBDeleteValidatorWithTxn(txn, bav.Snapshot, &validatorMapKey); err != nil {
+		if err := DBDeleteValidatorWithTxn(txn, bav.Snapshot, &validatorMapKey, bav.EventManager, validatorEntry.isDeleted); err != nil {
 			return errors.Wrapf(err, "_flushValidatorEntriesToDbWithTxn: ")
 		}
 	}
@@ -2058,7 +2059,7 @@ func (bav *UtxoView) _flushValidatorEntriesToDbWithTxn(txn *badger.Txn, blockHei
 		} else {
 			// If !ValidatorEntry.isDeleted then we put the
 			// corresponding mappings for it into the db.
-			if err := DBPutValidatorWithTxn(txn, bav.Snapshot, &validatorEntry, blockHeight); err != nil {
+			if err := DBPutValidatorWithTxn(txn, bav.Snapshot, &validatorEntry, blockHeight, bav.EventManager); err != nil {
 				return errors.Wrapf(err, "_flushValidatorEntriesToDbWithTxn: ")
 			}
 		}

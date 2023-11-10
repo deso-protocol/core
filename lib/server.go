@@ -153,6 +153,7 @@ type Server struct {
 	// It can be used to find computational bottlenecks.
 	timer *Timer
 
+	stateChangeSyncer *StateChangeSyncer
 	// DbMutex protects the badger database from concurrent access when it's being closed & re-opened.
 	// This is necessary because the database is closed & re-opened when the node finishes hypersyncing in order
 	// to change the database options from Default options to Performance options.
@@ -375,10 +376,21 @@ func NewServer(
 	eventManager *EventManager,
 	_nodeMessageChan chan NodeMessage,
 	_forceChecksum bool,
+	_stateChangeDir string,
 	_hypersyncMaxQueueSize uint32) (
 	_srv *Server, _err error, _shouldRestart bool) {
 
 	var err error
+
+	// Only initialize state change syncer if the directories are defined.
+	var stateChangeSyncer *StateChangeSyncer
+	if _stateChangeDir != "" {
+		// Create the state change syncer to handle syncing state changes to disk, and assign some of its methods
+		// to the event manager.
+		stateChangeSyncer = NewStateChangeSyncer(_stateChangeDir, _syncType)
+		eventManager.OnStateSyncerOperation(stateChangeSyncer._handleStateSyncerOperation)
+		eventManager.OnStateSyncerFlushed(stateChangeSyncer._handleStateSyncerFlush)
+	}
 
 	// Setup snapshot
 	var _snapshot *Snapshot
@@ -386,7 +398,7 @@ func NewServer(
 	archivalMode := false
 	if _hyperSync {
 		_snapshot, err, shouldRestart = NewSnapshot(_db, _dataDir, _snapshotBlockHeightPeriod,
-			false, false, _params, _disableEncoderMigrations, _hypersyncMaxQueueSize)
+			false, false, _params, _disableEncoderMigrations, _hypersyncMaxQueueSize, eventManager)
 		if err != nil {
 			panic(err)
 		}
@@ -406,6 +418,10 @@ func NewServer(
 		snapshot:                     _snapshot,
 		nodeMessageChannel:           _nodeMessageChan,
 		forceChecksum:                _forceChecksum,
+	}
+
+	if stateChangeSyncer != nil {
+		srv.stateChangeSyncer = stateChangeSyncer
 	}
 
 	// The same timesource is used in the chain data structure and in the connection
@@ -451,6 +467,10 @@ func NewServer(
 		_chain.blockTip().Height,
 		hex.EncodeToString(_chain.blockTip().Hash[:]),
 		hex.EncodeToString(BigintToHash(_chain.blockTip().CumWork)[:]))
+
+	if srv.stateChangeSyncer != nil {
+		srv.stateChangeSyncer.BlockHeight = uint64(_chain.headerTip().Height)
+	}
 
 	// Create a mempool to store transactions until they're ready to be mined into
 	// blocks.
@@ -549,6 +569,7 @@ func NewServer(
 	// This can happen if the node was terminated mid-operation last time it was running. The recovery process rolls back
 	// blocks to the beginning of the current snapshot epoch and resets to the state checksum to the epoch checksum.
 	if shouldRestart {
+		stateChangeSyncer.Reset()
 		glog.Errorf(CLog(Red, "NewServer: Forcing a rollback to the last snapshot epoch because node was not closed "+
 			"properly last time"))
 		if err := _snapshot.ForceResetToLastSnapshot(_chain); err != nil {
@@ -1362,15 +1383,16 @@ func (srv *Server) _handleSnapshot(pp *Peer, msg *MsgDeSoSnapshotData) {
 			srv.blockchain.addNewBlockNodeToBlockIndex(currentNode)
 			srv.blockchain.bestChainMap[*currentNode.Hash] = currentNode
 			srv.blockchain.bestChain = append(srv.blockchain.bestChain, currentNode)
-			err = PutHeightHashToNodeInfoWithTxn(txn, srv.snapshot, currentNode, false /*bitcoinNodes*/)
+			err = PutHeightHashToNodeInfoWithTxn(txn, srv.snapshot, currentNode, false /*bitcoinNodes*/, srv.eventManager)
 			if err != nil {
 				return err
 			}
 		}
 		// We will also set the hash of the block at snapshot height as the best chain hash.
-		err = PutBestHashWithTxn(txn, srv.snapshot, msg.SnapshotMetadata.CurrentEpochBlockHash, ChainTypeDeSoBlock)
+		err = PutBestHashWithTxn(txn, srv.snapshot, msg.SnapshotMetadata.CurrentEpochBlockHash, ChainTypeDeSoBlock, srv.eventManager)
 		return err
 	})
+
 	if err != nil {
 		glog.Errorf("Server._handleSnapshot: Problem updating snapshot blocknodes, error: (%v)", err)
 	}
@@ -1522,6 +1544,12 @@ func (srv *Server) _startSync() {
 		"header tip height %v from peer %v", bestHeight, bestPeer)
 
 	srv.SyncPeer = bestPeer
+
+	// Initialize state syncer mempool job, if needed.
+	if srv.stateChangeSyncer != nil {
+		srv.stateChangeSyncer.StartMempoolSyncRoutine(srv)
+	}
+
 }
 
 func (srv *Server) _handleNewPeer(pp *Peer) {

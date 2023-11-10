@@ -1,6 +1,8 @@
 package lib
 
 import (
+	"bytes"
+	"encoding/hex"
 	"fmt"
 	"github.com/btcsuite/btcd/btcec"
 	"github.com/btcsuite/btcd/chaincfg"
@@ -8,6 +10,8 @@ import (
 	"github.com/pkg/errors"
 	"github.com/unrolled/secure"
 	"math/big"
+	"reflect"
+	"sort"
 	"strings"
 )
 
@@ -203,6 +207,20 @@ func SafeMakeRecover(outputError *error) {
 	}
 }
 
+func EncodeBlockhashToHexString(blockHash *BlockHash) string {
+	if blockHash == nil {
+		return ""
+	}
+	return EncodeHexToStringIfNotNull(blockHash[:])
+}
+
+func EncodeHexToStringIfNotNull(hexBytes []byte) string {
+	if hexBytes == nil {
+		return ""
+	}
+	return hex.EncodeToString(hexBytes)
+}
+
 func MapKeysToNonDeterministicPointerSlice[K comparable, V any](inputMap map[K]V) []*K {
 	outputSlice := []*K{}
 	for k := range inputMap {
@@ -210,4 +228,57 @@ func MapKeysToNonDeterministicPointerSlice[K comparable, V any](inputMap map[K]V
 		outputSlice = append(outputSlice, &kCopy)
 	}
 	return outputSlice
+}
+
+// IsInterfaceValueNil returns true if the interface is nil or if the interface is a pointer and the pointer is nil.
+// This is useful for checking if an interface value's (e.g. DeSoEncoder) underlying struct is nil.
+func isInterfaceValueNil(i interface{}) bool {
+	if i == nil {
+		return true
+	}
+
+	value := reflect.ValueOf(i)
+	return value.Kind() == reflect.Ptr && value.IsNil()
+}
+
+// Encode a map[string]uint64 to bytes. The encoding is deterministic. This is useful for performing encodes for deso encoders.
+func EncodeStringUint64MapToBytes(mapToEncode map[string]uint64) []byte {
+	var data []byte
+
+	// Encode the number of keys in the map.
+	data = append(data, UintToBuf(uint64(len(mapToEncode)))...)
+	// Get sorted keys of map. We do this to ensure that the encoding is deterministic.
+	var sortedKeys []string
+	for key := range mapToEncode {
+		sortedKeys = append(sortedKeys, key)
+	}
+	sort.Strings(sortedKeys)
+	for _, key := range sortedKeys {
+		data = append(data, EncodeByteArray([]byte(key))...)
+		data = append(data, UintToBuf(mapToEncode[key])...)
+	}
+	return data
+}
+
+// Decode a map[string]uint64 from bytes. The decoding is deterministic. This is useful for performing decodes for deso decoders.
+func DecodeStringUint64MapFromBytes(rr *bytes.Reader) (map[string]uint64, error) {
+	// Decode the number of keys in the map.
+	numKeys, err := ReadUvarint(rr)
+	if err != nil {
+		return nil, errors.Wrapf(err, "DecodeStringUint64MapFromBytes: Problem reading numKeys")
+	}
+	// Decode the keys and values.
+	mapToReturn := make(map[string]uint64)
+	for ii := uint64(0); ii < numKeys; ii++ {
+		key, err := DecodeByteArray(rr)
+		if err != nil {
+			return nil, errors.Wrapf(err, "DecodeStringUint64MapFromBytes: Problem reading key")
+		}
+		value, err := ReadUvarint(rr)
+		if err != nil {
+			return nil, errors.Wrapf(err, "DecodeStringUint64MapFromBytes: Problem reading value")
+		}
+		mapToReturn[string(key)] = value
+	}
+	return mapToReturn, nil
 }

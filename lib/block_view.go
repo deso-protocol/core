@@ -157,10 +157,23 @@ type UtxoView struct {
 	// for error-checking when doing a bulk operation on the view.
 	TipHash *BlockHash
 
-	Handle   *badger.DB
+	// Handle is a pointer to the badger database. This is the primary data store
+	// for entries and messages on the DeSo blockchain.
+	Handle *badger.DB
+
+	// Postgres is a pointer to the Postgres database. This is an alternative data store
+	// to the badger database that has previously been used.
 	Postgres *Postgres
-	Params   *DeSoParams
+
+	// DeSoParams is a struct that contains all of the parameters that
+	// define how the DeSo blockchain operates. It is set once at startup
+	// and then never changed.
+	Params *DeSoParams
+
+	// Snapshot tracks the current state of the hypersyncing database.
 	Snapshot *Snapshot
+	// EventManager is used to emit callbacks when certain actions are triggered.
+	EventManager *EventManager
 }
 
 // Assumes the db Handle is already set on the view, but otherwise the
@@ -271,7 +284,7 @@ func (bav *UtxoView) _ResetViewMappingsAfterFlush() {
 }
 
 func (bav *UtxoView) CopyUtxoView() (*UtxoView, error) {
-	newView, err := NewUtxoView(bav.Handle, bav.Params, bav.Postgres, bav.Snapshot)
+	newView, err := NewUtxoView(bav.Handle, bav.Params, bav.Postgres, bav.Snapshot, bav.EventManager)
 	if err != nil {
 		return nil, err
 	}
@@ -583,6 +596,7 @@ func NewUtxoView(
 	_params *DeSoParams,
 	_postgres *Postgres,
 	_snapshot *Snapshot,
+	_eventManager *EventManager,
 ) (*UtxoView, error) {
 
 	view := UtxoView{
@@ -595,8 +609,9 @@ func NewUtxoView(
 		// itself with the header chain (see comment on GetBestHash for more info on that).
 		TipHash: DbGetBestHash(_handle, _snapshot, ChainTypeDeSoBlock /* don't get the header chain */),
 
-		Postgres: _postgres,
-		Snapshot: _snapshot,
+		Postgres:     _postgres,
+		Snapshot:     _snapshot,
+		EventManager: _eventManager,
 		// Set everything else in _ResetViewMappings()
 	}
 
@@ -2073,6 +2088,7 @@ func (bav *UtxoView) _connectBasicTransferWithExtraSpend(
 			PrevPostEntry:    previousDiamondPostEntry,
 			PrevDiamondEntry: previousDiamondEntry,
 		})
+
 	}
 
 	// If signature verification is requested then do that as well.
@@ -3171,8 +3187,7 @@ func (bav *UtxoView) _connectUpdateGlobalParams(
 
 	// Connect basic txn to get the total input and the total output without
 	// considering the transaction metadata.
-	totalInput, totalOutput, utxoOpsForTxn, err := bav._connectBasicTransfer(
-		txn, txHash, blockHeight, verifySignatures)
+	totalInput, totalOutput, utxoOpsForTxn, err := bav._connectBasicTransfer(txn, txHash, blockHeight, verifySignatures)
 	if err != nil {
 		return 0, 0, nil, errors.Wrapf(err, "_connectUpdateGlobalParams: ")
 	}
@@ -3263,17 +3278,11 @@ func (bav *UtxoView) ConnectTransaction(txn *MsgDeSoTxn, txHash *BlockHash,
 	_utxoOps []*UtxoOperation, _totalInput uint64, _totalOutput uint64,
 	_fees uint64, _err error) {
 
-	return bav._connectTransaction(txn, txHash,
-		txnSizeBytes,
-		blockHeight, verifySignatures,
-		ignoreUtxos)
+	return bav._connectTransaction(txn, txHash, txnSizeBytes, blockHeight, verifySignatures, ignoreUtxos)
 
 }
 
-func (bav *UtxoView) _connectTransaction(txn *MsgDeSoTxn, txHash *BlockHash,
-	txnSizeBytes int64, blockHeight uint32, verifySignatures bool, ignoreUtxos bool) (
-	_utxoOps []*UtxoOperation, _totalInput uint64, _totalOutput uint64,
-	_fees uint64, _err error) {
+func (bav *UtxoView) _connectTransaction(txn *MsgDeSoTxn, txHash *BlockHash, txnSizeBytes int64, blockHeight uint32, verifySignatures bool, ignoreUtxos bool) (_utxoOps []*UtxoOperation, _totalInput uint64, _totalOutput uint64, _fees uint64, _err error) {
 
 	// Do a quick sanity check before trying to connect.
 	if err := CheckTransactionSanity(txn, blockHeight, bav.Params); err != nil {
@@ -3352,8 +3361,7 @@ func (bav *UtxoView) _connectTransaction(txn *MsgDeSoTxn, txHash *BlockHash,
 	switch txn.TxnMeta.GetTxnType() {
 	case TxnTypeBlockReward, TxnTypeBasicTransfer:
 		totalInput, totalOutput, utxoOpsForTxn, err =
-			bav._connectBasicTransfer(
-				txn, txHash, blockHeight, verifySignatures)
+			bav._connectBasicTransfer(txn, txHash, blockHeight, verifySignatures)
 
 	case TxnTypeBitcoinExchange:
 		totalInput, totalOutput, utxoOpsForTxn, err =
