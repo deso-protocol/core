@@ -1,8 +1,37 @@
 package lib
 
+import "github.com/google/uuid"
+
 type TransactionEventFunc func(event *TransactionEvent)
+type StateSyncerOperationEventFunc func(event *StateSyncerOperationEvent)
+type StateSyncerFlushedEventFunc func(event *StateSyncerFlushedEvent)
 type BlockEventFunc func(event *BlockEvent)
 type SnapshotCompletedEventFunc func()
+
+// StateSyncerOperationEvent is an event that is fired when an entry is connected or disconnected from the badger db.
+type StateSyncerOperationEvent struct {
+	// The details needed to represent this state change to a data consumer.
+	StateChangeEntry *StateChangeEntry
+	// An ID to map the event to the db flush that it is included in.
+	FlushId uuid.UUID
+	// Whether the transaction is from the mempool or a confirmed transaction.
+	IsMempoolTxn bool
+}
+
+// StateSyncerFlushedEvent is an event that is fired when the badger db is flushed.
+type StateSyncerFlushedEvent struct {
+	// The id of the flush.
+	// Note that when blocksyncing, everything runs on a single thread, so the UUID.Nil value is used, since
+	// there is only ever one flush, so disambiguating them is unnecessary.
+	FlushId uuid.UUID
+	// Whether the flush succeeded or not.
+	Succeeded bool
+	// Whether the flush is from the mempool or a confirmed transaction.
+	IsMempoolFlush bool
+	// For mempool flushes, the flush id of the last confirmed flush when the mempool connect was initialized.
+	// If this has since changed, throw out the mempool flush.
+	BlockSyncFlushId uuid.UUID
+}
 
 type TransactionEvent struct {
 	Txn     *MsgDeSoTxn
@@ -23,14 +52,37 @@ type BlockEvent struct {
 
 type EventManager struct {
 	transactionConnectedHandlers []TransactionEventFunc
+	stateSyncerOperationHandlers []StateSyncerOperationEventFunc
+	stateSyncerFlushedHandlers   []StateSyncerFlushedEventFunc
 	blockConnectedHandlers       []BlockEventFunc
 	blockDisconnectedHandlers    []BlockEventFunc
 	blockAcceptedHandlers        []BlockEventFunc
 	snapshotCompletedHandlers    []SnapshotCompletedEventFunc
+	isMempoolManager             bool
 }
 
 func NewEventManager() *EventManager {
 	return &EventManager{}
+}
+
+func (em *EventManager) OnStateSyncerOperation(handler StateSyncerOperationEventFunc) {
+	em.stateSyncerOperationHandlers = append(em.stateSyncerOperationHandlers, handler)
+}
+
+func (em *EventManager) OnStateSyncerFlushed(handler StateSyncerFlushedEventFunc) {
+	em.stateSyncerFlushedHandlers = append(em.stateSyncerFlushedHandlers, handler)
+}
+
+func (em *EventManager) stateSyncerOperation(event *StateSyncerOperationEvent) {
+	for _, handler := range em.stateSyncerOperationHandlers {
+		handler(event)
+	}
+}
+
+func (em *EventManager) stateSyncerFlushed(event *StateSyncerFlushedEvent) {
+	for _, handler := range em.stateSyncerFlushedHandlers {
+		handler(event)
+	}
 }
 
 func (em *EventManager) OnTransactionConnected(handler TransactionEventFunc) {

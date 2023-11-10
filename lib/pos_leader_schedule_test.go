@@ -62,7 +62,7 @@ func TestGenerateLeaderSchedule(t *testing.T) {
 
 	// Helper utils
 	newUtxoView := func() *UtxoView {
-		utxoView, err := NewUtxoView(db, params, chain.postgres, chain.snapshot)
+		utxoView, err := NewUtxoView(db, params, chain.postgres, chain.snapshot, chain.eventManager)
 		require.NoError(t, err)
 		return utxoView
 	}

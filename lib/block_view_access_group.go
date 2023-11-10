@@ -420,8 +420,7 @@ func (bav *UtxoView) _connectAccessGroup(
 
 	// Connect basic txn to get the total input and the total output without
 	// considering the transaction metadata.
-	totalInput, totalOutput, utxoOpsForTxn, err := bav._connectBasicTransfer(
-		txn, txHash, blockHeight, verifySignatures)
+	totalInput, totalOutput, utxoOpsForTxn, err := bav._connectBasicTransfer(txn, txHash, blockHeight, verifySignatures)
 	if err != nil {
 		return 0, 0, nil, errors.Wrapf(err, "_connectAccessGroup: ")
 	}
@@ -444,6 +443,7 @@ func (bav *UtxoView) _connectAccessGroup(
 
 	// Construct UtxoOperation. Since we can only set/unset an access group with _connect/_disconnect, we don't need to
 	// store any information in the UtxoOperation. Transaction metadata is sufficient.
+
 	utxoOpsForTxn = append(utxoOpsForTxn, &UtxoOperation{
 		Type:                 OperationTypeAccessGroup,
 		PrevAccessGroupEntry: &prevAccessGroupEntry,
