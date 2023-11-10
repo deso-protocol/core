@@ -693,32 +693,6 @@ func (bc *Blockchain) storeValidateFailedBlockInBlockIndex(block *MsgDeSoBlock) 
 	return blockNode, nil
 }
 
-// storeCommittedBlockInBlockIndex upserts the blocks into the in-memory block index and updates its status to
-// StatusBlockCommitted. If the BlockNode does not have StatusBlockValidated and StatusBlockStored statuses,
-// we also add those. It also writes the block to the block index in badger by calling upsertBlockAndBlockNodeToDB.
-func (bc *Blockchain) storeCommittedBlockInBlockIndex(block *MsgDeSoBlock) (*BlockNode, error) {
-	blockNode, err := bc.getOrCreateBlockNodeFromBlockIndex(block)
-	if err != nil {
-		return nil, errors.Wrapf(err, "storeCommittedBlockInBlockIndex: Problem getting or creating block node")
-	}
-	// If the block is committed, then this is a no-op.
-	if blockNode.IsCommitted() {
-		return blockNode, nil
-	}
-	blockNode.Status |= StatusBlockCommitted
-	if !blockNode.IsValidated() {
-		blockNode.Status |= StatusBlockValidated
-	}
-	if !blockNode.IsStored() {
-		blockNode.Status |= StatusBlockStored
-	}
-	// If the DB update fails, then we should return an error.
-	if err = bc.upsertBlockAndBlockNodeToDB(block, blockNode, true); err != nil {
-		return nil, errors.Wrapf(err, "storeCommittedBlockInBlockIndex: Problem upserting block and block node to DB")
-	}
-	return blockNode, nil
-}
-
 // upsertBlockAndBlockNodeToDB writes the BlockNode to the blockIndexByHash in badger and writes the full block
 // to the db under the <blockHash> -> <serialized block> index.
 func (bc *Blockchain) upsertBlockAndBlockNodeToDB(block *MsgDeSoBlock, blockNode *BlockNode, storeFullBlock bool) error {
@@ -729,17 +703,9 @@ func (bc *Blockchain) upsertBlockAndBlockNodeToDB(block *MsgDeSoBlock, blockNode
 			defer bc.snapshot.StartAncestralRecordsFlush(true)
 			glog.V(2).Infof("upsertBlockAndBlockNodeToDB: Preparing snapshot flush")
 		}
-		// TODO: Do we want to write the full block once.
-		// Store the new block in the db under the
-		//   <blockHash> -> <serialized block>
-		// index.
-		// TODO: In the archival mode, we'll be setting ancestral entries for the block reward. Note that it is
-		// 	set in PutBlockWithTxn. Block rewards are part of the state, and they should be identical to the ones
-		// 	we've fetched during Hypersync. Is there an edge-case where for some reason they're not identical? Or
-		// 	somehow ancestral records get corrupted?
 		if storeFullBlock {
-			if innerErr := PutBlockWithTxn(txn, bc.snapshot, block, bc.eventManager); innerErr != nil {
-				return errors.Wrapf(innerErr, "upsertBlockAndBlockNodeToDB: Problem calling PutBlock")
+			if innerErr := PutBlockHashToBlockWithTxn(txn, bc.snapshot, block, bc.eventManager); innerErr != nil {
+				return errors.Wrapf(innerErr, "upsertBlockAndBlockNodeToDB: Problem calling PutBlockHashToBlockWithTxn")
 			}
 		}
 
@@ -916,7 +882,6 @@ func (bc *Blockchain) commitBlockPoS(blockHash *BlockHash) error {
 	}
 	// Put the block in the db
 	// Note: we're skipping postgres.
-	// TODO: this is copy pasta from ProcessBlockPoW. Refactor.
 	blockNode.Status |= StatusBlockCommitted
 	err = bc.db.Update(func(txn *badger.Txn) error {
 		if bc.snapshot != nil {
@@ -927,12 +892,8 @@ func (bc *Blockchain) commitBlockPoS(blockHash *BlockHash) error {
 		// Store the new block in the db under the
 		//   <blockHash> -> <serialized block>
 		// index.
-		// TODO: In the archival mode, we'll be setting ancestral entries for the block reward. Note that it is
-		// 	set in PutBlockWithTxn. Block rewards are part of the state, and they should be identical to the ones
-		// 	we've fetched during Hypersync. Is there an edge-case where for some reason they're not identical? Or
-		// 	somehow ancestral records get corrupted?
-		if innerErr := PutBlockWithTxn(txn, bc.snapshot, block, bc.eventManager); innerErr != nil {
-			return errors.Wrapf(innerErr, "commitBlockPoS: Problem calling PutBlock")
+		if innerErr := PutBlockHashToBlockWithTxn(txn, bc.snapshot, block, bc.eventManager); innerErr != nil {
+			return errors.Wrapf(innerErr, "commitBlockPoS: Problem calling PutBlockHashToBlockWithTxn")
 		}
 
 		// Store the new block's node in our node index in the db under the

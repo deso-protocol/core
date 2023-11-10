@@ -5,6 +5,7 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"math"
 	"math/big"
 	"math/rand"
 	"os"
@@ -451,7 +452,9 @@ func _getBalanceWithView(t *testing.T, chain *Blockchain, utxoView *UtxoView, pk
 
 func TestBalanceModelBlockTests(t *testing.T) {
 	setBalanceModelBlockHeights(t)
-
+	// This test assumes we're using PoW blocks, and thus we need to set the PoS cut-over
+	// fork height to some distant future height
+	DeSoTestnetParams.ForkHeights.ProofOfStake2ConsensusCutoverBlockHeight = math.MaxUint32
 	t.Run("TestBasicTransferReorg", TestBasicTransferReorg)
 	t.Run("TestProcessBlockConnectBlocks", TestProcessBlockConnectBlocks)
 	t.Run("TestProcessHeaderskReorgBlocks", TestProcessHeaderskReorgBlocks)
