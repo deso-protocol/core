@@ -912,6 +912,7 @@ func DBPutStakeEntryWithTxn(
 	snap *Snapshot,
 	stakeEntry *StakeEntry,
 	blockHeight uint64,
+	eventManager *EventManager,
 ) error {
 	if stakeEntry == nil {
 		return nil
@@ -919,7 +920,7 @@ func DBPutStakeEntryWithTxn(
 
 	// Set StakeEntry in PrefixStakeByValidatorByStaker.
 	stakeByValidatorAndStakerKey := DBKeyForStakeByValidatorAndStaker(stakeEntry.ValidatorPKID, stakeEntry.StakerPKID)
-	if err := DBSetWithTxn(txn, snap, stakeByValidatorAndStakerKey, EncodeToBytes(blockHeight, stakeEntry)); err != nil {
+	if err := DBSetWithTxn(txn, snap, stakeByValidatorAndStakerKey, EncodeToBytes(blockHeight, stakeEntry), eventManager); err != nil {
 		return errors.Wrapf(
 			err, "DBPutStakeEntryWithTxn: problem storing StakeEntry in index PrefixStakeByValidatorByStaker: ",
 		)
@@ -927,7 +928,7 @@ func DBPutStakeEntryWithTxn(
 
 	// Set StakeEntry in PrefixStakeByStakeAmount.
 	stakeByStakeAmountKey := DBKeyForStakeByStakeAmount(stakeEntry)
-	if err := DBSetWithTxn(txn, snap, stakeByStakeAmountKey, nil); err != nil {
+	if err := DBSetWithTxn(txn, snap, stakeByStakeAmountKey, nil, eventManager); err != nil {
 		return errors.Wrapf(
 			err, "DBPutStakeEntryWithTxn: problem storing StakeEntry in index PrefixStakeByStakeAmount: ",
 		)
@@ -941,6 +942,7 @@ func DBPutLockedStakeEntryWithTxn(
 	snap *Snapshot,
 	lockedStakeEntry *LockedStakeEntry,
 	blockHeight uint64,
+	eventManager *EventManager,
 ) error {
 	if lockedStakeEntry == nil {
 		return nil
@@ -948,7 +950,7 @@ func DBPutLockedStakeEntryWithTxn(
 
 	// Set LockedStakeEntry in PrefixLockedStakeByValidatorByStakerByLockedAt.
 	key := DBKeyForLockedStakeByValidatorAndStakerAndLockedAt(lockedStakeEntry)
-	if err := DBSetWithTxn(txn, snap, key, EncodeToBytes(blockHeight, lockedStakeEntry)); err != nil {
+	if err := DBSetWithTxn(txn, snap, key, EncodeToBytes(blockHeight, lockedStakeEntry), eventManager); err != nil {
 		return errors.Wrapf(
 			err, "DBPutLockedStakeEntryWithTxn: problem storing LockedStakeEntry in index PrefixLockedStakeByValidatorByStakerByLockedAt: ",
 		)
@@ -963,6 +965,8 @@ func DBDeleteStakeEntryWithTxn(
 	validatorPKID *PKID,
 	stakerPKID *PKID,
 	blockHeight uint64,
+	eventManager *EventManager,
+	isDeleted bool,
 ) error {
 	if validatorPKID == nil || stakerPKID == nil {
 		return nil
@@ -984,7 +988,7 @@ func DBDeleteStakeEntryWithTxn(
 
 	// Delete StakeEntry from PrefixStakeByValidatorByStaker.
 	stakeByValidatorAndStakerKey := DBKeyForStakeByValidatorAndStaker(validatorPKID, stakerPKID)
-	if err := DBDeleteWithTxn(txn, snap, stakeByValidatorAndStakerKey); err != nil {
+	if err := DBDeleteWithTxn(txn, snap, stakeByValidatorAndStakerKey, eventManager, isDeleted); err != nil {
 		return errors.Wrapf(
 			err, "DBDeleteStakeEntryWithTxn: problem deleting StakeEntry from index PrefixStakeByValidatorByStaker: ",
 		)
@@ -992,7 +996,7 @@ func DBDeleteStakeEntryWithTxn(
 
 	// Delete the StakeEntry from PrefixStakeByStakeAmount.
 	stakeByStakeAmountKey := DBKeyForStakeByStakeAmount(stakeEntry)
-	if err := DBDeleteWithTxn(txn, snap, stakeByStakeAmountKey); err != nil {
+	if err := DBDeleteWithTxn(txn, snap, stakeByStakeAmountKey, eventManager, isDeleted); err != nil {
 		return errors.Wrapf(
 			err, "DBDeleteStakeEntryWithTxn: problem deleting StakeEntry from index PrefixStakeByStakeAmount: ",
 		)
@@ -1006,6 +1010,8 @@ func DBDeleteLockedStakeEntryWithTxn(
 	snap *Snapshot,
 	lockedStakeEntry *LockedStakeEntry,
 	blockHeight uint64,
+	eventManager *EventManager,
+	isDeleted bool,
 ) error {
 	if lockedStakeEntry == nil {
 		return nil
@@ -1013,7 +1019,7 @@ func DBDeleteLockedStakeEntryWithTxn(
 
 	// Delete LockedStakeEntry from PrefixLockedStakeByValidatorByStakerByLockedAt.
 	key := DBKeyForLockedStakeByValidatorAndStakerAndLockedAt(lockedStakeEntry)
-	if err := DBDeleteWithTxn(txn, snap, key); err != nil {
+	if err := DBDeleteWithTxn(txn, snap, key, eventManager, isDeleted); err != nil {
 		return errors.Wrapf(
 			err, "DBDeleteLockedStakeEntryWithTxn: problem deleting StakeEntry from index PrefixLockedStakeByValidatorByStakerByLockedAt: ",
 		)
@@ -1052,7 +1058,7 @@ func (bc *Blockchain) CreateStakeTxn(
 
 	// Create a new UtxoView. If we have access to a mempool object, use
 	// it to get an augmented view that factors in pending transactions.
-	utxoView, err := NewUtxoView(bc.db, bc.params, bc.postgres, bc.snapshot)
+	utxoView, err := NewUtxoView(bc.db, bc.params, bc.postgres, bc.snapshot, bc.eventManager)
 	if err != nil {
 		return nil, 0, 0, 0, errors.Wrap(
 			err, "Blockchain.CreateStakeTxn: problem creating new utxo view: ",
@@ -1129,7 +1135,7 @@ func (bc *Blockchain) CreateUnstakeTxn(
 
 	// Create a new UtxoView. If we have access to a mempool object, use
 	// it to get an augmented view that factors in pending transactions.
-	utxoView, err := NewUtxoView(bc.db, bc.params, bc.postgres, bc.snapshot)
+	utxoView, err := NewUtxoView(bc.db, bc.params, bc.postgres, bc.snapshot, bc.eventManager)
 	if err != nil {
 		return nil, 0, 0, 0, errors.Wrap(
 			err, "Blockchain.CreateUnstakeTxn: problem creating new utxo view: ",
@@ -1205,7 +1211,7 @@ func (bc *Blockchain) CreateUnlockStakeTxn(
 
 	// Create a new UtxoView. If we have access to a mempool object, use
 	// it to get an augmented view that factors in pending transactions.
-	utxoView, err := NewUtxoView(bc.db, bc.params, bc.postgres, bc.snapshot)
+	utxoView, err := NewUtxoView(bc.db, bc.params, bc.postgres, bc.snapshot, bc.eventManager)
 	if err != nil {
 		return nil, 0, 0, 0, errors.Wrap(
 			err, "Blockchain.CreateUnlockStakeTxn: problem creating new utxo view: ",
@@ -2673,7 +2679,7 @@ func (bav *UtxoView) _flushStakeEntriesToDbWithTxn(txn *badger.Txn, blockHeight 
 
 		// Delete the existing mappings in the db for this MapKey. They will be
 		// re-added if the corresponding entry in-memory has isDeleted=false.
-		if err := DBDeleteStakeEntryWithTxn(txn, bav.Snapshot, entry.ValidatorPKID, entry.StakerPKID, blockHeight); err != nil {
+		if err := DBDeleteStakeEntryWithTxn(txn, bav.Snapshot, entry.ValidatorPKID, entry.StakerPKID, blockHeight, bav.EventManager, entry.isDeleted); err != nil {
 			return errors.Wrapf(err, "_flushStakeEntriesToDbWithTxn: ")
 		}
 	}
@@ -2687,7 +2693,7 @@ func (bav *UtxoView) _flushStakeEntriesToDbWithTxn(txn *badger.Txn, blockHeight 
 		} else {
 			// If !isDeleted then we put the corresponding
 			// mappings for it into the db.
-			if err := DBPutStakeEntryWithTxn(txn, bav.Snapshot, &entry, blockHeight); err != nil {
+			if err := DBPutStakeEntryWithTxn(txn, bav.Snapshot, &entry, blockHeight, bav.EventManager); err != nil {
 				return errors.Wrapf(err, "_flushStakeEntriesToDbWithTxn: ")
 			}
 		}
@@ -2715,7 +2721,7 @@ func (bav *UtxoView) _flushLockedStakeEntriesToDbWithTxn(txn *badger.Txn, blockH
 
 		// Delete the existing mappings in the db for this MapKey. They will be
 		// re-added if the corresponding entry in-memory has isDeleted=false.
-		if err := DBDeleteLockedStakeEntryWithTxn(txn, bav.Snapshot, &entry, blockHeight); err != nil {
+		if err := DBDeleteLockedStakeEntryWithTxn(txn, bav.Snapshot, &entry, blockHeight, bav.EventManager, entry.isDeleted); err != nil {
 			return errors.Wrapf(err, "_flushLockedStakeEntriesToDbWithTxn: ")
 		}
 	}
@@ -2729,7 +2735,7 @@ func (bav *UtxoView) _flushLockedStakeEntriesToDbWithTxn(txn *badger.Txn, blockH
 		} else {
 			// If !isDeleted then we put the corresponding
 			// mappings for it into the db.
-			if err := DBPutLockedStakeEntryWithTxn(txn, bav.Snapshot, &entry, blockHeight); err != nil {
+			if err := DBPutLockedStakeEntryWithTxn(txn, bav.Snapshot, &entry, blockHeight, bav.EventManager); err != nil {
 				return errors.Wrapf(err, "_flushLockedStakeEntriesToDbWithTxn: ")
 			}
 		}

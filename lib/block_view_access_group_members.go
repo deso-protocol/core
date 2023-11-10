@@ -428,8 +428,7 @@ func (bav *UtxoView) _connectAccessGroupMembers(
 	// Connect basic txn to get the total input and the total output without considering the transaction metadata.
 	// Note that it doesn't matter when we do this, because if the transaction fails later on, we will just revert the
 	// UtxoView to a previous stable state that isn't corrupted with partial block view entries.
-	totalInput, totalOutput, utxoOpsForTxn, err := bav._connectBasicTransfer(
-		txn, txHash, blockHeight, verifySignatures)
+	totalInput, totalOutput, utxoOpsForTxn, err := bav._connectBasicTransfer(txn, txHash, blockHeight, verifySignatures)
 	if err != nil {
 		return 0, 0, nil, errors.Wrapf(err, "_connectAccessGroupMembers: ")
 	}
@@ -690,6 +689,9 @@ func (bav *UtxoView) _setUtxoViewMappingsForAccessGroupMemberOperationAdd(txMeta
 			"Operation type %v not supported.", txMeta.AccessGroupMemberOperationType)
 	}
 
+	accessGroupOwnerPublicKey := NewPublicKey(txMeta.AccessGroupOwnerPublicKey)
+	accessGroupKeyName := NewGroupKeyName(txMeta.AccessGroupKeyName)
+
 	// AccessGroupMemberOperationTypeAdd indicates that we want to add members to the access group.
 	// Members are added to the access group by their own existing access groups, identified by the pair of:
 	// 	<AccessGroupMemberPublicKey, AccessGroupMemberKeyName>
@@ -732,7 +734,7 @@ func (bav *UtxoView) _setUtxoViewMappingsForAccessGroupMemberOperationAdd(txMeta
 		}
 
 		if err := bav._setAccessGroupMembershipKeyToAccessGroupMemberMapping(accessGroupMemberEntry,
-			NewPublicKey(txMeta.AccessGroupOwnerPublicKey), NewGroupKeyName(txMeta.AccessGroupKeyName)); err != nil {
+			accessGroupOwnerPublicKey, accessGroupKeyName); err != nil {
 			return errors.Wrapf(err, "_setUtxoViewMappingsForAccessGroupMemberOperationAdd: "+
 				"Problem setting access group member entry for (AccessGroupMemberPublicKey: %v, AccessGroupMemberKeyName: %v)",
 				accessMember.AccessGroupMemberPublicKey, accessMember.AccessGroupMemberKeyName)
@@ -751,6 +753,9 @@ func (bav *UtxoView) _setUtxoViewMappingsForAccessGroupMemberOperationRemove(txM
 				"OperationType should be AccessGroupMemberOperationTypeRemove, but received (OperationType=%v)",
 			txMeta.AccessGroupMemberOperationType)
 	}
+
+	accessGroupOwnerPublicKey := NewPublicKey(txMeta.AccessGroupOwnerPublicKey)
+	accessGroupKeyName := NewGroupKeyName(txMeta.AccessGroupKeyName)
 
 	// AccessGroupMemberOperationTypeRemove operation is used to remove members from an access group. The result of
 	// this operation is that all the members specified in the transaction's metadata will be purged from the DB as
@@ -783,7 +788,7 @@ func (bav *UtxoView) _setUtxoViewMappingsForAccessGroupMemberOperationRemove(txM
 
 		// Fetch the access group member entry for each member from the transaction metadata.
 		existingGroupMemberEntry, err := bav.GetAccessGroupMemberEntry(NewPublicKey(accessMember.AccessGroupMemberPublicKey),
-			NewPublicKey(txMeta.AccessGroupOwnerPublicKey), NewGroupKeyName(txMeta.AccessGroupKeyName))
+			accessGroupOwnerPublicKey, accessGroupKeyName)
 		if err != nil {
 			return nil, errors.Wrapf(err, "_setUtxoViewMappingsForAccessGroupMemberOperationRemove: "+
 				"Problem getting access group member entry for (AccessGroupMemberPublicKey: %v, AccessGroupMemberKeyName: %v)",
@@ -830,6 +835,9 @@ func (bav *UtxoView) _setUtxoViewMappingsForAccessGroupMemberOperationUpdate(txM
 			txMeta.AccessGroupMemberOperationType)
 	}
 
+	accessGroupOwnerPublicKey := NewPublicKey(txMeta.AccessGroupOwnerPublicKey)
+	accessGroupKeyName := NewGroupKeyName(txMeta.AccessGroupKeyName)
+
 	// AccessGroupMemberOperationTypeUpdate operation is used to update members in an access group.
 	// In this operation, all the members specified in the transaction's metadata will be updated to the values
 	// provided in the metadata.
@@ -869,7 +877,7 @@ func (bav *UtxoView) _setUtxoViewMappingsForAccessGroupMemberOperationUpdate(txM
 			ExtraData:                  accessMember.ExtraData,
 		}
 		if err := bav._setAccessGroupMembershipKeyToAccessGroupMemberMapping(accessGroupMemberEntry,
-			NewPublicKey(txMeta.AccessGroupOwnerPublicKey), NewGroupKeyName(txMeta.AccessGroupKeyName)); err != nil {
+			accessGroupOwnerPublicKey, accessGroupKeyName); err != nil {
 			return nil, errors.Wrapf(err, "_setUtxoViewMappingsForAccessGroupMemberOperationUpdate: "+
 				"Problem updating access group member entry for (AccessGroupMemberPublicKey: %v, AccessGroupMemberKeyName: %v)",
 				accessMember.AccessGroupMemberPublicKey, accessMember.AccessGroupMemberKeyName)
