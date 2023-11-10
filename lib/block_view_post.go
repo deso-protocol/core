@@ -3,15 +3,19 @@ package lib
 import (
 	"bytes"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"github.com/btcsuite/btcd/btcec"
 	"github.com/davecgh/go-spew/spew"
 	"github.com/dgraph-io/badger/v3"
+	"github.com/gernest/mention"
 	"github.com/golang/glog"
 	"github.com/pkg/errors"
 	"math"
 	"reflect"
+	"regexp"
 	"sort"
+	"strings"
 )
 
 func (bav *UtxoView) _getRepostEntryForRepostKey(repostKey *RepostKey) *RepostEntry {
@@ -547,6 +551,7 @@ func (bav *UtxoView) GetPostsPaginatedForPublicKeyOrderedByTimestamp(publicKey [
 			}
 			return nil
 		})
+
 		if err != nil {
 			return nil, err
 		}
@@ -699,10 +704,7 @@ func (bav *UtxoView) GetQuoteRepostsForPostHash(postHash *BlockHash,
 	return quoteReposterPubKeys, quoteReposterPubKeyToPosts, nil
 }
 
-func (bav *UtxoView) _connectSubmitPost(
-	txn *MsgDeSoTxn, txHash *BlockHash, blockHeight uint32,
-	verifySignatures bool, ignoreUtxos bool) (
-	_totalInput uint64, _totalOutput uint64, _utxoOps []*UtxoOperation, _err error) {
+func (bav *UtxoView) _connectSubmitPost(txn *MsgDeSoTxn, txHash *BlockHash, blockHeight uint32, verifySignatures bool, ignoreUtxos bool) (_totalInput uint64, _totalOutput uint64, _utxoOps []*UtxoOperation, _err error) {
 
 	// Check that the transaction has the right TxnType.
 	if txn.TxnMeta.GetTxnType() != TxnTypeSubmitPost {
@@ -722,8 +724,7 @@ func (bav *UtxoView) _connectSubmitPost(
 	var utxoOpsForTxn = []*UtxoOperation{}
 	var err error
 	if !ignoreUtxos {
-		totalInput, totalOutput, utxoOpsForTxn, err = bav._connectBasicTransfer(
-			txn, txHash, blockHeight, verifySignatures)
+		totalInput, totalOutput, utxoOpsForTxn, err = bav._connectBasicTransfer(txn, txHash, blockHeight, verifySignatures)
 		if err != nil {
 			return 0, 0, nil, errors.Wrapf(err, "_connectSubmitPost: ")
 		}
@@ -1094,6 +1095,38 @@ func (bav *UtxoView) _connectSubmitPost(
 		bav._setRepostEntryMappings(newRepostEntry)
 	}
 
+	bodyObj := &DeSoBodySchema{}
+	var profilesMentioned []*ProfileEntry
+	if err = json.Unmarshal(newPostEntry.Body, &bodyObj); err == nil {
+		terminators := []rune(" ,.\n&*()-+~'\"[]{}")
+		dollarTagsFound := mention.GetTagsAsUniqueStrings('$', bodyObj.Body, terminators...)
+		atTagsFound := mention.GetTagsAsUniqueStrings('@', bodyObj.Body, terminators...)
+		tagsFound := atTagsFound
+		// We check that cashtag usernames have at least 1 non-numeric character
+		dollarTagRegex := regexp.MustCompile("\\w*[a-zA-Z_]\\w*")
+		for _, dollarTagFound := range dollarTagsFound {
+			if dollarTagRegex.MatchString(dollarTagFound) {
+				tagsFound = append(tagsFound, dollarTagFound)
+			}
+		}
+		for _, tag := range tagsFound {
+			profileFound := bav.GetProfileEntryForUsername([]byte(strings.ToLower(tag)))
+			// Don't worry about tags that don't line up to a profile.
+			if profileFound == nil {
+				continue
+			}
+			profilesMentioned = append(profilesMentioned, profileFound)
+		}
+
+	}
+
+	// Create metadata object to store in the db alongside the transaction.
+	stateChangeMetadata := &SubmitPostStateChangeMetadata{
+		PostEntry:         newPostEntry,
+		ProfilesMentioned: profilesMentioned,
+		RepostPostEntry:   newRepostedPostEntry,
+	}
+
 	// Add an operation to the list at the end indicating we've added a post.
 	utxoOpsForTxn = append(utxoOpsForTxn, &UtxoOperation{
 		// PrevPostEntry should generally be nil when we created a new post from
@@ -1104,6 +1137,7 @@ func (bav *UtxoView) _connectSubmitPost(
 		PrevRepostedPostEntry:    prevRepostedPostEntry,
 		PrevRepostEntry:          prevRepostEntry,
 		Type:                     OperationTypeSubmitPost,
+		StateChangeMetadata:      stateChangeMetadata,
 	})
 
 	return totalInput, totalOutput, utxoOpsForTxn, nil

@@ -810,8 +810,7 @@ func (bav *UtxoView) _connectSwapIdentity(
 	}
 
 	// call _connectBasicTransfer to verify signatures
-	totalInput, totalOutput, utxoOpsForTxn, err := bav._connectBasicTransfer(
-		txn, txHash, blockHeight, verifySignatures)
+	totalInput, totalOutput, utxoOpsForTxn, err := bav._connectBasicTransfer(txn, txHash, blockHeight, verifySignatures)
 	if err != nil {
 		return 0, 0, nil, errors.Wrapf(err, "_connectSwapIdentity: ")
 	}
@@ -922,6 +921,12 @@ func (bav *UtxoView) _connectSwapIdentity(
 		toNanos = toProfileEntry.CreatorCoinEntry.DeSoLockedNanos
 	}
 
+	// Create the metadata for the state change.
+	stateChangeMetadata := &SwapIdentityStateChangeMetadata{
+		FromProfile: fromProfileEntry,
+		ToProfile:   toProfileEntry,
+	}
+
 	// Add an operation to the list at the end indicating we've swapped identities.
 	utxoOpsForTxn = append(utxoOpsForTxn, &UtxoOperation{
 		Type: OperationTypeSwapIdentity,
@@ -929,6 +934,7 @@ func (bav *UtxoView) _connectSwapIdentity(
 		SwapIdentityFromDESOLockedNanos: fromNanos,
 		SwapIdentityToDESOLockedNanos:   toNanos,
 
+		StateChangeMetadata: stateChangeMetadata,
 		// Note that we don't need any metadata on this operation, since the swap is reversible
 		// without it.
 	})

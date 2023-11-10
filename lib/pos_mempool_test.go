@@ -2,13 +2,14 @@ package lib
 
 import (
 	"bytes"
-	"github.com/dgraph-io/badger/v3"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 	"math/rand"
 	"os"
 	"testing"
 	"time"
+
+	"github.com/dgraph-io/badger/v3"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestPosMempoolStart(t *testing.T) {
@@ -43,7 +44,7 @@ func TestPosMempoolRestartWithTransactions(t *testing.T) {
 	params, db := _posTestBlockchainSetup(t)
 	m0PubBytes, _, _ := Base58CheckDecode(m0Pub)
 	m1PubBytes, _, _ := Base58CheckDecode(m1Pub)
-	latestBlockView, err := NewUtxoView(db, params, nil, nil)
+	latestBlockView, err := NewUtxoView(db, params, nil, nil, nil)
 	require.NoError(err)
 	dir := _dbDirSetup(t)
 
@@ -94,7 +95,7 @@ func TestPosMempoolPrune(t *testing.T) {
 	m0PubBytes, _, _ := Base58CheckDecode(m0Pub)
 	m1PubBytes, _, _ := Base58CheckDecode(m1Pub)
 
-	latestBlockView, err := NewUtxoView(db, params, nil, nil)
+	latestBlockView, err := NewUtxoView(db, params, nil, nil, nil)
 	require.NoError(err)
 	dir := _dbDirSetup(t)
 
@@ -186,7 +187,7 @@ func TestPosMempoolUpdateGlobalParams(t *testing.T) {
 	m0PubBytes, _, _ := Base58CheckDecode(m0Pub)
 	m1PubBytes, _, _ := Base58CheckDecode(m1Pub)
 
-	latestBlockView, err := NewUtxoView(db, params, nil, nil)
+	latestBlockView, err := NewUtxoView(db, params, nil, nil, nil)
 	require.NoError(err)
 	dir := _dbDirSetup(t)
 
@@ -242,7 +243,7 @@ func TestPosMempoolReplaceWithHigherFee(t *testing.T) {
 	m0PubBytes, _, _ := Base58CheckDecode(m0Pub)
 	m1PubBytes, _, _ := Base58CheckDecode(m1Pub)
 
-	latestBlockView, err := NewUtxoView(db, params, nil, nil)
+	latestBlockView, err := NewUtxoView(db, params, nil, nil, nil)
 	require.NoError(err)
 	dir := _dbDirSetup(t)
 
