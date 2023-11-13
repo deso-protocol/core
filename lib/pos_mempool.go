@@ -106,6 +106,9 @@ type PosMempool struct {
 	maxMempoolPosSizeBytes uint64
 	// mempoolBackupIntervalMillis is the frequency with which pos mempool persists transactions to storage.
 	mempoolBackupIntervalMillis uint64
+
+	// skipValidation - experimental, should only be used for past blocks estimator.
+	skipValidation bool
 }
 
 // PosMempoolIterator is a wrapper around FeeTimeIterator, modified to return MsgDeSoTxn instead of MempoolTx.
@@ -147,6 +150,23 @@ func NewPosMempool(params *DeSoParams, globalParams *GlobalParamsEntry, readOnly
 		latestBlockHeight:           latestBlockHeight,
 		maxMempoolPosSizeBytes:      maxMempoolPosSizeBytes,
 		mempoolBackupIntervalMillis: mempoolBackupIntervalMillis,
+	}
+}
+
+func NewPosMempoolNoValidation(params *DeSoParams, globalParams *GlobalParamsEntry, readOnlyLatestBlockView *UtxoView,
+	latestBlockHeight uint64, dir string, inMemoryOnly bool, maxMempoolPosSizeBytes uint64,
+	mempoolBackupIntervalMillis uint64) *PosMempool {
+	return &PosMempool{
+		status:                      PosMempoolStatusNotRunning,
+		params:                      params,
+		globalParams:                globalParams,
+		inMemoryOnly:                inMemoryOnly,
+		dir:                         dir,
+		readOnlyLatestBlockView:     readOnlyLatestBlockView,
+		latestBlockHeight:           latestBlockHeight,
+		maxMempoolPosSizeBytes:      maxMempoolPosSizeBytes,
+		mempoolBackupIntervalMillis: mempoolBackupIntervalMillis,
+		skipValidation:              true,
 	}
 }
 
@@ -261,7 +281,9 @@ func (mp *PosMempool) AddTransaction(mtxn *MempoolTransaction, verifySignature b
 func (mp *PosMempool) validateTransaction(txn *MsgDeSoTxn, verifySignature bool) error {
 	mp.RLock()
 	defer mp.RUnlock()
-
+	if mp.skipValidation {
+		return nil
+	}
 	if err := CheckTransactionSanity(txn, uint32(mp.latestBlockHeight), mp.params); err != nil {
 		return errors.Wrapf(err, "PosMempool.AddTransaction: Problem validating transaction sanity")
 	}
@@ -291,14 +313,16 @@ func (mp *PosMempool) addTransactionNoLock(txn *MempoolTx, persistToDb bool) err
 	txnFee := txn.Tx.TxnFeeNanos
 
 	// Validate that the user has enough balance to cover the transaction fees.
-	spendableBalanceNanos, err := mp.readOnlyLatestBlockView.GetSpendableDeSoBalanceNanosForPublicKey(userPk.ToBytes(),
-		uint32(mp.latestBlockHeight))
-	if err != nil {
-		return errors.Wrapf(err, "PosMempool.addTransactionNoLock: Problem getting spendable balance")
-	}
-	if err := mp.ledger.CanIncreaseEntryWithLimit(*userPk, txnFee, spendableBalanceNanos); err != nil {
-		return errors.Wrapf(err, "PosMempool.addTransactionNoLock: Problem checking balance increase for transaction with"+
-			"hash %v, fee %v", txn.Tx.Hash(), txnFee)
+	if !mp.skipValidation {
+		spendableBalanceNanos, err := mp.readOnlyLatestBlockView.GetSpendableDeSoBalanceNanosForPublicKey(userPk.ToBytes(),
+			uint32(mp.latestBlockHeight))
+		if err != nil {
+			return errors.Wrapf(err, "PosMempool.addTransactionNoLock: Problem getting spendable balance")
+		}
+		if err := mp.ledger.CanIncreaseEntryWithLimit(*userPk, txnFee, spendableBalanceNanos); err != nil {
+			return errors.Wrapf(err, "PosMempool.addTransactionNoLock: Problem checking balance increase for transaction with"+
+				"hash %v, fee %v", txn.Tx.Hash(), txnFee)
+		}
 	}
 
 	// Check the nonceTracker to see if this transaction is meant to replace an existing one.

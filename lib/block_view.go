@@ -4543,7 +4543,15 @@ func (bav *UtxoView) GetSpendableDeSoBalanceNanosForPublicKey(pkBytes []byte,
 	nextBlockHash := bav.TipHash
 	numImmatureBlocks := uint32(bav.Params.BlockRewardMaturity / bav.Params.TimeBetweenBlocks)
 	immatureBlockRewards := uint64(0)
-
+	// After the cut-over to Proof Of Stake, we no longer check for immature block rewards.
+	// All block rewards are immediately mature.
+	if tipHeight >= bav.Params.ForkHeights.ProofOfStake2ConsensusCutoverBlockHeight {
+		balanceNanos, err := bav.GetDeSoBalanceNanosForPublicKey(pkBytes)
+		if err != nil {
+			return 0, errors.Wrap(err, "GetSpendableDeSoBalanceNanosForPublicKey: ")
+		}
+		return balanceNanos, nil
+	}
 	if bav.Postgres != nil {
 		// Note: badger is only getting the block reward for the previous block, so we make postgres
 		// do the same thing. This is not ideal, but it is the simplest way to get the same behavior
