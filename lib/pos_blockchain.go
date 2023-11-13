@@ -204,7 +204,24 @@ func (bc *Blockchain) processOrphanBlockPoS(block *MsgDeSoBlock) error {
 		}
 	} else {
 		// This block is in the current epoch!
-		// First we validate that the leader is correct. We can only do this if the block
+		// First we validate the proposer vote partial signature
+		snapshotAtEpochNumber, err := utxoView.GetCurrentSnapshotEpochNumber()
+		if err != nil {
+			return errors.Wrap(err, "processOrphanBlockPoS: Problem getting current snapshot epoch number")
+		}
+		// Validate the proposer partial sig.
+		isValidPartialSig, err := utxoView.hasValidProposerPartialSignaturePoS(block, snapshotAtEpochNumber)
+		if err != nil {
+			return errors.Wrap(err, "processOrphanBlockPoS: Problem validating proposer partial sig")
+		}
+		if !isValidPartialSig {
+			// We can mark it as ValidateFailed. We'll never accept this block.
+			if _, innerErr := bc.storeValidateFailedBlockInBlockIndex(block); innerErr != nil {
+				return errors.Wrap(innerErr, "processOrphanBlockPoS: Problem adding validate failed block to block index")
+			}
+			return nil
+		}
+		// Next we validate that the leader is correct. We can only do this if the block
 		// is in the current epoch since we need the current epoch entry's initial view
 		// to compute the proper leader.
 		var isBlockProposerValid bool
@@ -321,6 +338,26 @@ func (bc *Blockchain) validateAndIndexBlockPoS(block *MsgDeSoBlock) (*BlockNode,
 		// be able to build a UtxoView for it. This failure can only happen due to transient or badger issues.
 		// We return the block node as-is as a best effort thing.
 		return blockNode, nil
+	}
+	currentEpochEntry, err := utxoView.GetCurrentEpochEntry()
+	if err != nil {
+		return nil, errors.Wrap(err, "validateAndIndexBlockPoS: Problem getting current epoch entry")
+	}
+	// If after constructing a UtxoView based on the parent block, we find that the current block's height
+	// isn't in the current epoch, then block's stated height is wrong. The block is guaranteed to be invalid.
+	if !currentEpochEntry.ContainsBlockHeight(block.Header.Height) {
+		return bc.storeValidateFailedBlockWithWrappedError(block, errors.New("block is not in current epoch"))
+	}
+	snapshotAtEpochNumber, err := utxoView.ComputeSnapshotEpochNumberForEpoch(currentEpochEntry.EpochNumber)
+	if err != nil {
+		return nil, errors.Wrapf(err, "validateAndIndexBlockPoS: Problem getting snapshot epoch number for epoch #%d", currentEpochEntry.EpochNumber)
+	}
+	isValidPartialSig, err := utxoView.hasValidProposerPartialSignaturePoS(block, snapshotAtEpochNumber)
+	if err != nil {
+		return nil, errors.Wrap(err, "validateAndIndexBlockPoS: Problem validating proposer partial sig")
+	}
+	if !isValidPartialSig {
+		return bc.storeValidateFailedBlockWithWrappedError(block, errors.New("invalid proposer partial sig"))
 	}
 	// A couple of options on how to handle:
 	//   - Add utility to UtxoView to fetch the validator set given an arbitrary block height. If we can't fetch the
@@ -595,6 +632,47 @@ func (bc *Blockchain) hasValidBlockViewPoS(block *MsgDeSoBlock) error {
 		}
 	}
 	return nil
+}
+
+func (bav *UtxoView) hasValidProposerPartialSignaturePoS(block *MsgDeSoBlock, snapshotAtEpochNumber uint64) (bool, error) {
+	votingPublicKey := block.Header.ProposerVotingPublicKey
+	proposerPublicKey := block.Header.ProposerPublicKey
+	proposerPartialSig := block.Header.ProposerVotePartialSignature
+	// If the proposer partial sig is nil, we can't validate it. That's an error.
+	if proposerPartialSig.IsEmpty() {
+		return false, nil
+	}
+	// Get the snapshot validator entry for the proposer.
+	proposerPKID := bav.GetPKIDForPublicKey(proposerPublicKey.ToBytes()).PKID
+	snapshotValidatorEntry, err := bav.GetSnapshotValidatorSetEntryByPKIDAtEpochNumber(proposerPKID, snapshotAtEpochNumber)
+	if err != nil {
+		return false, errors.Wrapf(err, "hasValidProposerPartialSignaturePoS: Problem getting snapshot validator entry")
+	}
+
+	// If the snapshot validator entry is nil or deleted, we didn't snapshot
+	// the validator at this epoch, so we will never accept this block.
+	if snapshotValidatorEntry == nil || snapshotValidatorEntry.isDeleted {
+		return false, nil
+	}
+	// If the voting public key from the block's header doesn't match the
+	// snapshotted voting public key, we will never accept this block.
+	if !snapshotValidatorEntry.VotingPublicKey.Eq(votingPublicKey) {
+		return false, nil
+	}
+	// Get the block's hash
+	blockHash, err := block.Header.Hash()
+	if err != nil {
+		return false, errors.Wrapf(err, "hasValidProposerPartialSignaturePoS: Problem hashing block")
+	}
+	// Now that we have the snapshot validator entry and validated that the
+	// voting public key from this block's header matches the snapshotted
+	// voting public key, we can validate the partial sig.
+	votePayload := consensus.GetVoteSignaturePayload(block.Header.ProposedInView, blockHash)
+	isVerified, err := votingPublicKey.Verify(proposerPartialSig, votePayload[:])
+	if err != nil {
+		return false, errors.Wrapf(err, "hasValidProposerPartialSignaturePoS: Problem verifying partial sig")
+	}
+	return isVerified, nil
 }
 
 // hasValidBlockProposerPoS validates that the proposer is the expected proposer for the

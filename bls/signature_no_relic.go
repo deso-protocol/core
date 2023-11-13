@@ -137,3 +137,7 @@ func (signature *Signature) Eq(other *Signature) bool {
 func (signature *Signature) Copy() *Signature {
 	panic(BLSNoRelicError)
 }
+
+func (signature *Signature) IsEmpty() bool {
+	panic(BLSNoRelicError)
+}

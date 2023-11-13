@@ -240,12 +240,15 @@ type SnapshotValidatorSetMapKey struct {
 	ValidatorPKID         PKID
 }
 
-func (bav *UtxoView) GetSnapshotValidatorSetEntryByPKID(pkid *PKID) (*ValidatorEntry, error) {
+func (bav *UtxoView) GetCurrentSnapshotValidatorSetEntryByPKID(pkid *PKID) (*ValidatorEntry, error) {
 	// Calculate the SnapshotEpochNumber.
 	snapshotAtEpochNumber, err := bav.GetCurrentSnapshotEpochNumber()
 	if err != nil {
-		return nil, errors.Wrapf(err, "GetSnapshotValidatorSetEntryByPKID: problem calculating SnapshotEpochNumber: ")
+		return nil, errors.Wrapf(err, "GetCurrentSnapshotValidatorSetEntryByPKID: problem calculating SnapshotEpochNumber: ")
 	}
+	return bav.GetSnapshotValidatorSetEntryByPKIDAtEpochNumber(pkid, snapshotAtEpochNumber)
+}
+func (bav *UtxoView) GetSnapshotValidatorSetEntryByPKIDAtEpochNumber(pkid *PKID, snapshotAtEpochNumber uint64) (*ValidatorEntry, error) {
 	// Check the UtxoView first.
 	mapKey := SnapshotValidatorSetMapKey{SnapshotAtEpochNumber: snapshotAtEpochNumber, ValidatorPKID: *pkid}
 	if validatorEntry, exists := bav.SnapshotValidatorSet[mapKey]; exists {
@@ -256,7 +259,7 @@ func (bav *UtxoView) GetSnapshotValidatorSetEntryByPKID(pkid *PKID) (*ValidatorE
 	if err != nil {
 		return nil, errors.Wrapf(
 			err,
-			"GetSnapshotValidatorSetEntryByPKID: problem retrieving ValidatorEntry from db: ",
+			"GetSnapshotValidatorSetEntryByPKIDAtEpochNumber: problem retrieving ValidatorEntry from db: ",
 		)
 	}
 	if validatorEntry != nil {
@@ -994,7 +997,7 @@ func (bav *UtxoView) GetSnapshotLeaderScheduleValidator(leaderIndex uint16) (*Va
 	// First, check the UtxoView.
 	mapKey := SnapshotLeaderScheduleMapKey{SnapshotAtEpochNumber: snapshotAtEpochNumber, LeaderIndex: leaderIndex}
 	if validatorPKID, exists := bav.SnapshotLeaderSchedule[mapKey]; exists {
-		return bav.GetSnapshotValidatorSetEntryByPKID(validatorPKID)
+		return bav.GetCurrentSnapshotValidatorSetEntryByPKID(validatorPKID)
 	}
 	// Next, check the db.
 	validatorEntry, err := DBGetSnapshotLeaderScheduleValidator(bav.Handle, bav.Snapshot, leaderIndex, snapshotAtEpochNumber)
