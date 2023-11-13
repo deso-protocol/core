@@ -1886,7 +1886,7 @@ func (bav *UtxoView) JailAllInactiveSnapshotValidators(blockHeight uint64) error
 	// Fetch the ValidatorSetMaxNumValidators from the snapshot global params. We use the snapshot global
 	// params here because the value used to snapshot the size of the validator set was snapshotted along
 	// with the validator set.
-	snapshotGlobalParams, err := bav.GetSnapshotGlobalParamsEntry()
+	snapshotGlobalParams, err := bav.GetCurrentSnapshotGlobalParamsEntry()
 	if err != nil {
 		return errors.Wrapf(err, "UtxoView.JailAllInactiveSnapshotValidators: error retrieving SnapshotGlobalParamsEntry: ")
 	}

@@ -15,13 +15,17 @@ import (
 
 const SnapshotLookbackNumEpochs uint64 = 2
 
-func (bav *UtxoView) GetSnapshotEpochNumber() (uint64, error) {
+func (bav *UtxoView) GetCurrentSnapshotEpochNumber() (uint64, error) {
 	// Retrieve the CurrentEpochNumber.
 	currentEpochNumber, err := bav.GetCurrentEpochNumber()
 	if err != nil {
-		return 0, errors.Wrapf(err, "GetSnapshotEpochNumber: problem retrieving CurrentEpochNumber: ")
+		return 0, errors.Wrapf(err, "GetCurrentSnapshotEpochNumber: problem retrieving CurrentEpochNumber: ")
 	}
-	if currentEpochNumber < SnapshotLookbackNumEpochs {
+	return bav.ComputeSnapshotEpochNumberForEpoch(currentEpochNumber)
+}
+
+func (bav *UtxoView) ComputeSnapshotEpochNumberForEpoch(epochNumber uint64) (uint64, error) {
+	if epochNumber < SnapshotLookbackNumEpochs {
 		// We want to return 0 in this case and not error. We start snapshotting with our StateSetup block height,
 		// so we should have the correct number of snapshots and not hit this case once we hit the ConsensusCutover
 		// block height. This case will only be hit immediately following the StateSetup block height. We run one
@@ -42,7 +46,7 @@ func (bav *UtxoView) GetSnapshotEpochNumber() (uint64, error) {
 		// then that value will take immediate effect in the first epoch with no lagged snapshot wait period.
 		return 0, nil
 	}
-	return SafeUint64().Sub(currentEpochNumber, SnapshotLookbackNumEpochs)
+	return SafeUint64().Sub(epochNumber, SnapshotLookbackNumEpochs)
 }
 
 //
@@ -53,7 +57,7 @@ func (bav *UtxoView) GetCurrentGlobalParamsEntry() *GlobalParamsEntry {
 	return _mergeGlobalParamEntryDefaults(bav, bav.GlobalParamsEntry)
 }
 
-// GetSnapshotGlobalParamsEntry retrieves a snapshot of the GlobalParamsEntry from n epochs ago. If a snapshot
+// GetCurrentSnapshotGlobalParamsEntry retrieves a snapshot of the GlobalParamsEntry from n epochs ago. If a snapshot
 // does not exist for that epoch, it will return the default values. We snapshot GlobalParams to make sure that
 // the validator set in the PoS consensus is in agreement ahead of time on the params used for an epoch long
 // before that epoch begins. Snapshot GlobalParams are only appropriate to use in two scenarios:
@@ -68,12 +72,16 @@ func (bav *UtxoView) GetCurrentGlobalParamsEntry() *GlobalParamsEntry {
 // snapshotted. This approach ensures that whenever we create a snapshot of the validator set, leader schedule,
 // and stakes to reward... the GlobalParams used to create the snapshots are snapshotted along with that data, and
 // live alongside them.
-func (bav *UtxoView) GetSnapshotGlobalParamsEntry() (*GlobalParamsEntry, error) {
+func (bav *UtxoView) GetCurrentSnapshotGlobalParamsEntry() (*GlobalParamsEntry, error) {
 	// Calculate the SnapshotEpochNumber.
-	snapshotAtEpochNumber, err := bav.GetSnapshotEpochNumber()
+	snapshotAtEpochNumber, err := bav.GetCurrentSnapshotEpochNumber()
 	if err != nil {
-		return nil, errors.Wrapf(err, "GetSnapshotGlobalParamsEntry: problem calculating SnapshotEpochNumber: ")
+		return nil, errors.Wrapf(err, "GetCurrentSnapshotGlobalParamsEntry: problem calculating SnapshotEpochNumber: ")
 	}
+	return bav.GetSnapshotGlobalParamsEntryByEpochNumber(snapshotAtEpochNumber)
+}
+
+func (bav *UtxoView) GetSnapshotGlobalParamsEntryByEpochNumber(snapshotAtEpochNumber uint64) (*GlobalParamsEntry, error) {
 	// Check the UtxoView first.
 	if globalParamsEntry, exists := bav.SnapshotGlobalParamEntries[snapshotAtEpochNumber]; exists {
 		return _mergeGlobalParamEntryDefaults(bav, globalParamsEntry), nil
@@ -83,7 +91,7 @@ func (bav *UtxoView) GetSnapshotGlobalParamsEntry() (*GlobalParamsEntry, error) 
 	if err != nil {
 		return nil, errors.Wrapf(
 			err,
-			"GetSnapshotGlobalParamsEntry: problem retrieving SnapshotGlobalParamsEntry from db: ",
+			"GetSnapshotGlobalParamsEntryByEpochNumber: problem retrieving SnapshotGlobalParamsEntry from db: ",
 		)
 	}
 	if globalParamsEntry != nil {
@@ -234,7 +242,7 @@ type SnapshotValidatorSetMapKey struct {
 
 func (bav *UtxoView) GetSnapshotValidatorSetEntryByPKID(pkid *PKID) (*ValidatorEntry, error) {
 	// Calculate the SnapshotEpochNumber.
-	snapshotAtEpochNumber, err := bav.GetSnapshotEpochNumber()
+	snapshotAtEpochNumber, err := bav.GetCurrentSnapshotEpochNumber()
 	if err != nil {
 		return nil, errors.Wrapf(err, "GetSnapshotValidatorSetEntryByPKID: problem calculating SnapshotEpochNumber: ")
 	}
@@ -260,11 +268,13 @@ func (bav *UtxoView) GetSnapshotValidatorSetEntryByPKID(pkid *PKID) (*ValidatorE
 
 func (bav *UtxoView) GetSnapshotValidatorSetByStakeAmount(limit uint64) ([]*ValidatorEntry, error) {
 	// Calculate the SnapshotEpochNumber.
-	snapshotAtEpochNumber, err := bav.GetSnapshotEpochNumber()
+	snapshotAtEpochNumber, err := bav.GetCurrentSnapshotEpochNumber()
 	if err != nil {
 		return nil, errors.Wrapf(err, "GetSnapshotValidatorSetEntriesByStake: problem calculating SnapshotEpochNumber: ")
 	}
-
+	return bav.GetSnapshotValidatorSetByStakeAmountAtEpochNumber(snapshotAtEpochNumber, limit)
+}
+func (bav *UtxoView) GetSnapshotValidatorSetByStakeAmountAtEpochNumber(snapshotAtEpochNumber uint64, limit uint64) ([]*ValidatorEntry, error) {
 	// Create a slice of all UtxoView ValidatorEntries to prevent pulling them from the db.
 	var utxoViewValidatorEntries []*ValidatorEntry
 	for mapKey, validatorEntry := range bav.SnapshotValidatorSet {
@@ -279,7 +289,7 @@ func (bav *UtxoView) GetSnapshotValidatorSetByStakeAmount(limit uint64) ([]*Vali
 		bav.Handle, bav.Snapshot, limit, snapshotAtEpochNumber, utxoViewValidatorEntries,
 	)
 	if err != nil {
-		return nil, errors.Wrapf(err, "GetSnapshotValidatorSetEntriesByStake: error retrieving entries from db: ")
+		return nil, errors.Wrapf(err, "GetSnapshotValidatorSetByStakeAmountAtEpochNumber: error retrieving entries from db: ")
 	}
 	// Cache top N active ValidatorEntries from the db in the UtxoView.
 	for _, validatorEntry := range dbValidatorEntries {
@@ -324,11 +334,19 @@ func (bav *UtxoView) GetSnapshotValidatorSetByStakeAmount(limit uint64) ([]*Vali
 // ordered by stake. This is useful when we need to know all the validators that
 // are in a leader schedule.
 func (bav *UtxoView) GetAllSnapshotValidatorSetEntriesByStake() ([]*ValidatorEntry, error) {
-	snapshotGlobalParams, err := bav.GetSnapshotGlobalParamsEntry()
+	snapshotGlobalParams, err := bav.GetCurrentSnapshotGlobalParamsEntry()
 	if err != nil {
 		return nil, errors.Wrapf(err, "GetAllSnapshotValidatorSetEntriesByStake: problem getting SnapshotGlobalParamsEntry: ")
 	}
 	return bav.GetSnapshotValidatorSetByStakeAmount(snapshotGlobalParams.ValidatorSetMaxNumValidators)
+}
+
+func (bav *UtxoView) GetAllSnapshotValidatorSetEntriesByStakeAtEpochNumber(snapshotAtEpochNumber uint64) ([]*ValidatorEntry, error) {
+	snapshotGlobalParams, err := bav.GetSnapshotGlobalParamsEntryByEpochNumber(snapshotAtEpochNumber)
+	if err != nil {
+		return nil, errors.Wrapf(err, "GetAllSnapshotValidatorSetEntriesByStakeAtEpochNumber: problem getting SnapshotGlobalParamsEntry: ")
+	}
+	return bav.GetSnapshotValidatorSetByStakeAmountAtEpochNumber(snapshotAtEpochNumber, snapshotGlobalParams.ValidatorSetMaxNumValidators)
 }
 
 func (bav *UtxoView) _setSnapshotValidatorSetEntry(validatorEntry *ValidatorEntry, snapshotAtEpochNumber uint64) {
@@ -606,7 +624,7 @@ func DBEnumerateAllCurrentValidators(handle *badger.DB, pkidsToSkip []*PKID) ([]
 
 func (bav *UtxoView) GetSnapshotValidatorSetTotalStakeAmountNanos() (*uint256.Int, error) {
 	// Calculate the SnapshotEpochNumber.
-	snapshotAtEpochNumber, err := bav.GetSnapshotEpochNumber()
+	snapshotAtEpochNumber, err := bav.GetCurrentSnapshotEpochNumber()
 	if err != nil {
 		return nil, errors.Wrapf(err, "GetSnapshotValidatorSetTotalStakeAmountNanos: problem calculating SnapshotEpochNumber: ")
 	}
@@ -743,7 +761,7 @@ func (bav *UtxoView) _setSnapshotStakeToReward(stakeEntry *StakeEntry, snapshotA
 // GetAllSnapshotStakesToReward returns all snapshotted StakeEntries that are eligible to receive staking
 // rewards for the current snapshot epoch. The order of the returned entries is arbitrary.
 func (bav *UtxoView) GetAllSnapshotStakesToReward() ([]*StakeEntry, error) {
-	snapshotGlobalParams, err := bav.GetSnapshotGlobalParamsEntry()
+	snapshotGlobalParams, err := bav.GetCurrentSnapshotGlobalParamsEntry()
 	if err != nil {
 		return nil, errors.Wrapf(err, "GetAllSnapshotStakesToReward: problem calculating SnapshotEpochNumber: ")
 	}
@@ -755,7 +773,7 @@ func (bav *UtxoView) GetAllSnapshotStakesToReward() ([]*StakeEntry, error) {
 	}
 
 	// Calculate the SnapshotEpochNumber.
-	snapshotAtEpochNumber, err := bav.GetSnapshotEpochNumber()
+	snapshotAtEpochNumber, err := bav.GetCurrentSnapshotEpochNumber()
 	if err != nil {
 		return nil, errors.Wrapf(err, "GetAllSnapshotStakesToReward: problem calculating SnapshotEpochNumber: ")
 	}
@@ -969,7 +987,7 @@ type SnapshotLeaderScheduleMapKey struct {
 
 func (bav *UtxoView) GetSnapshotLeaderScheduleValidator(leaderIndex uint16) (*ValidatorEntry, error) {
 	// Calculate the SnapshotEpochNumber.
-	snapshotAtEpochNumber, err := bav.GetSnapshotEpochNumber()
+	snapshotAtEpochNumber, err := bav.GetCurrentSnapshotEpochNumber()
 	if err != nil {
 		return nil, errors.Wrapf(err, " GetSnapshotLeaderScheduleValidator: problem calculating SnapshotEpochNumber: ")
 	}
@@ -995,15 +1013,18 @@ type LeaderPKIDAndIndex struct {
 	leaderPKID *PKID
 }
 
-func (bav *UtxoView) GetSnapshotLeaderSchedule() ([]*PKID, error) {
-	snapshotAtEpochNumber, err := bav.GetSnapshotEpochNumber()
+func (bav *UtxoView) GetCurrentSnapshotLeaderSchedule() ([]*PKID, error) {
+	snapshotAtEpochNumber, err := bav.GetCurrentSnapshotEpochNumber()
 	if err != nil {
-		return nil, errors.Wrapf(err, "GetSnapshotLeaderSchedule: problem calculating SnapshotEpochNumber: ")
+		return nil, errors.Wrapf(err, "GetCurrentSnapshotLeaderSchedule: problem calculating SnapshotEpochNumber: ")
 	}
+	return bav.GetSnapshotLeaderScheduleAtEpochNumber(snapshotAtEpochNumber)
+}
+func (bav *UtxoView) GetSnapshotLeaderScheduleAtEpochNumber(snapshotAtEpochNumber uint64) ([]*PKID, error) {
 	// Seek over DB prefix and merge into view.
 	leaderIdxToValidatorPKIDMap, err := DBSeekSnapshotLeaderSchedule(bav.Handle, snapshotAtEpochNumber)
 	if err != nil {
-		return nil, errors.Wrapf(err, "GetSnapshotLeaderSchedule: error retrieving ValidatorPKIDs: ")
+		return nil, errors.Wrapf(err, "GetSnapshotLeaderScheduleAtEpochNumber: error retrieving ValidatorPKIDs: ")
 	}
 	// Merge the DB entries into the UtxoView.
 	for leaderIdx, validatorPKID := range leaderIdxToValidatorPKIDMap {

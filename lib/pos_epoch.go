@@ -88,6 +88,10 @@ func (epochEntry *EpochEntry) GetEncoderType() EncoderType {
 	return EncoderTypeEpochEntry
 }
 
+func (epochEntry *EpochEntry) ContainsBlockHeight(blockHeight uint64) bool {
+	return blockHeight >= epochEntry.InitialBlockHeight && blockHeight <= epochEntry.FinalBlockHeight
+}
+
 //
 // UTXO VIEW UTILS
 //

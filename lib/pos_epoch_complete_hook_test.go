@@ -135,7 +135,7 @@ func TestRunEpochCompleteHook(t *testing.T) {
 		require.Equal(t, currentEpochNumber, uint64(0))
 
 		// Test SnapshotGlobalParamsEntry is non-nil and contains the default values.
-		snapshotGlobalParamsEntry, err := _newUtxoView(testMeta).GetSnapshotGlobalParamsEntry()
+		snapshotGlobalParamsEntry, err := _newUtxoView(testMeta).GetCurrentSnapshotGlobalParamsEntry()
 		require.NoError(t, err)
 		require.NotNil(t, snapshotGlobalParamsEntry)
 		require.Equal(t, snapshotGlobalParamsEntry.ValidatorJailEpochDuration, uint64(3))
@@ -165,7 +165,7 @@ func TestRunEpochCompleteHook(t *testing.T) {
 		require.Equal(t, currentEpoch.InitialView, uint64(2))
 
 		// Test SnapshotGlobalParamsEntry is nil.
-		snapshotGlobalParamsEntry, err := _newUtxoView(testMeta).GetSnapshotGlobalParamsEntry()
+		snapshotGlobalParamsEntry, err := _newUtxoView(testMeta).GetCurrentSnapshotGlobalParamsEntry()
 		require.NoError(t, err)
 		require.NotNil(t, snapshotGlobalParamsEntry)
 		require.Equal(t, _newUtxoView(testMeta).GlobalParamsEntry.MinimumNetworkFeeNanosPerKB, testMeta.feeRateNanosPerKb)
@@ -211,7 +211,7 @@ func TestRunEpochCompleteHook(t *testing.T) {
 		require.Equal(t, currentEpoch.InitialView, uint64(3))
 
 		// Test SnapshotGlobalParamsEntry is populated.
-		snapshotGlobalParamsEntry, err := _newUtxoView(testMeta).GetSnapshotGlobalParamsEntry()
+		snapshotGlobalParamsEntry, err := _newUtxoView(testMeta).GetCurrentSnapshotGlobalParamsEntry()
 		require.NoError(t, err)
 		require.NotNil(t, snapshotGlobalParamsEntry)
 		require.Equal(t, snapshotGlobalParamsEntry.MinimumNetworkFeeNanosPerKB, testMeta.feeRateNanosPerKb)
@@ -239,7 +239,7 @@ func TestRunEpochCompleteHook(t *testing.T) {
 		require.Equal(t, currentEpoch.InitialView, uint64(4))
 
 		// Test SnapshotGlobalParamsEntry is populated.
-		snapshotGlobalParamsEntry, err := _newUtxoView(testMeta).GetSnapshotGlobalParamsEntry()
+		snapshotGlobalParamsEntry, err := _newUtxoView(testMeta).GetCurrentSnapshotGlobalParamsEntry()
 		require.NoError(t, err)
 		require.NotNil(t, snapshotGlobalParamsEntry)
 		require.Equal(t, snapshotGlobalParamsEntry.MinimumNetworkFeeNanosPerKB, testMeta.feeRateNanosPerKb)
@@ -337,7 +337,7 @@ func TestRunEpochCompleteHook(t *testing.T) {
 		// Test snapshotting changing GlobalParams.
 
 		// Update StakeLockupEpochDuration from default of 3 to 2.
-		snapshotGlobalsParamsEntry, err := _newUtxoView(testMeta).GetSnapshotGlobalParamsEntry()
+		snapshotGlobalsParamsEntry, err := _newUtxoView(testMeta).GetCurrentSnapshotGlobalParamsEntry()
 		require.NoError(t, err)
 		require.Equal(t, snapshotGlobalsParamsEntry.StakeLockupEpochDuration, uint64(3))
 
@@ -355,7 +355,7 @@ func TestRunEpochCompleteHook(t *testing.T) {
 		_runOnEpochCompleteHook(testMeta, incrBlockHeight(), incrViewNumber())
 
 		// Snapshot StakeLockupEpochDuration is still 3.
-		snapshotGlobalsParamsEntry, err = _newUtxoView(testMeta).GetSnapshotGlobalParamsEntry()
+		snapshotGlobalsParamsEntry, err = _newUtxoView(testMeta).GetCurrentSnapshotGlobalParamsEntry()
 		require.NoError(t, err)
 		require.Equal(t, snapshotGlobalsParamsEntry.StakeLockupEpochDuration, uint64(3))
 
@@ -363,7 +363,7 @@ func TestRunEpochCompleteHook(t *testing.T) {
 		_runOnEpochCompleteHook(testMeta, incrBlockHeight(), incrViewNumber())
 
 		// Snapshot StakeLockupEpochDuration is updated to 2.
-		snapshotGlobalsParamsEntry, err = _newUtxoView(testMeta).GetSnapshotGlobalParamsEntry()
+		snapshotGlobalsParamsEntry, err = _newUtxoView(testMeta).GetCurrentSnapshotGlobalParamsEntry()
 		require.NoError(t, err)
 		require.Equal(t, snapshotGlobalsParamsEntry.StakeLockupEpochDuration, uint64(2))
 	}
