@@ -36,9 +36,6 @@ func TestIsProperlyFormedBlockPoSAndIsBlockTimestampValidRelativeToParentPoS(t *
 	}
 	// Create a block with a valid header.
 	randomPayload := RandomBytes(256)
-	randomSeedHashBytes := RandomBytes(32)
-	randomSeedHash := &RandomSeedHash{}
-	_, err = randomSeedHash.FromBytes(randomSeedHashBytes)
 	require.NoError(t, err)
 	randomBLSPrivateKey := _generateRandomBLSPrivateKey(t)
 	signature, err := randomBLSPrivateKey.Sign(randomPayload)
@@ -73,7 +70,7 @@ func TestIsProperlyFormedBlockPoSAndIsBlockTimestampValidRelativeToParentPoS(t *
 					SignersList: bitset.NewBitset(),
 				},
 			},
-			ProposerRandomSeedHash:      randomSeedHash,
+			ProposerRandomSeedSignature: signature,
 			ProposerPublicKey:           NewPublicKey(RandomBytes(33)),
 			ProposerVotingPublicKey:     randomBLSPrivateKey.PublicKey(),
 			TransactionMerkleRoot:       merkleRoot,
@@ -208,15 +205,15 @@ func TestIsProperlyFormedBlockPoSAndIsBlockTimestampValidRelativeToParentPoS(t *
 	block.Header.ProposerPublicKey = NewPublicKey(RandomBytes(33))
 
 	// Block must have valid proposer random seed hash
-	block.Header.ProposerRandomSeedHash = nil
+	block.Header.ProposerRandomSeedSignature = nil
 	err = bc.isProperlyFormedBlockPoS(block)
-	require.Equal(t, err, RuleErrorInvalidRandomSeedHash)
+	require.Equal(t, err, RuleErrorInvalidProposerRandomSeedSignature)
 
-	block.Header.ProposerRandomSeedHash = &RandomSeedHash{}
+	block.Header.ProposerRandomSeedSignature = &bls.Signature{}
 	err = bc.isProperlyFormedBlockPoS(block)
-	require.Equal(t, err, RuleErrorInvalidRandomSeedHash)
+	require.Equal(t, err, RuleErrorInvalidProposerRandomSeedSignature)
 
-	block.Header.ProposerRandomSeedHash = randomSeedHash
+	block.Header.ProposerRandomSeedSignature = signature
 
 	// Timestamp validations
 	// Block timestamp must be greater than the previous block timestamp
@@ -366,9 +363,6 @@ func TestUpsertBlockAndBlockNodeToDB(t *testing.T) {
 		},
 	}
 	require.NoError(t, err)
-	randomSeedHash := &RandomSeedHash{}
-	_, err = randomSeedHash.FromBytes(RandomBytes(32))
-	require.NoError(t, err)
 	blsPrivKey := _generateRandomBLSPrivateKey(t)
 	block := &MsgDeSoBlock{
 		Header: &MsgDeSoHeader{
@@ -379,7 +373,7 @@ func TestUpsertBlockAndBlockNodeToDB(t *testing.T) {
 			ProposedInView:               1,
 			ProposerPublicKey:            NewPublicKey(RandomBytes(33)),
 			ProposerVotingPublicKey:      blsPrivKey.PublicKey(),
-			ProposerRandomSeedHash:       randomSeedHash,
+			ProposerRandomSeedSignature:  signature,
 			ProposerVotePartialSignature: signature,
 			ValidatorsTimeoutAggregateQC: &TimeoutAggregateQuorumCertificate{
 				TimedOutView:                 2,
@@ -445,8 +439,8 @@ func TestUpsertBlockAndBlockNodeToDB(t *testing.T) {
 
 	// Okay now we'll put in another block at the same height.
 	// Update the random seed hash so we have a new hash for the block.
-	_, err = randomSeedHash.FromBytes(RandomBytes(32))
-	block.Header.ProposerRandomSeedHash = randomSeedHash
+	randomSig, err := (&bls.Signature{}).FromBytes(RandomBytes(32))
+	block.Header.ProposerRandomSeedSignature = randomSig
 	updatedBlockHash, err := block.Hash()
 	require.NoError(t, err)
 	require.False(t, updatedBlockHash.IsEqual(newHash))
@@ -2228,8 +2222,9 @@ func _generateRealBlock(testMeta *TestMeta, blockHeight uint64, view uint64, see
 		_wrappedPosMempoolAddTransaction(testMeta.t, testMeta.posMempool, txn)
 	}
 
-	seedHash := &RandomSeedHash{}
-	_, err := seedHash.FromBytes(Sha256DoubleHash([]byte(strconv.FormatInt(seed, 10))).ToBytes())
+	// TODO: Get real seed signature.
+	seedSignature := &bls.Signature{}
+	_, err := seedSignature.FromBytes(Sha256DoubleHash([]byte(strconv.FormatInt(seed, 10))).ToBytes())
 	require.NoError(testMeta.t, err)
 	// Always update the testMeta latestBlockView
 	latestBlockView, err := testMeta.chain.getUtxoViewAtBlockHash(*prevBlockHash)
@@ -2239,7 +2234,7 @@ func _generateRealBlock(testMeta *TestMeta, blockHeight uint64, view uint64, see
 	require.NoError(testMeta.t, err)
 	latestBlockHeight := testMeta.chain.blockIndexByHash[*prevBlockHash].Height
 	testMeta.posMempool.UpdateLatestBlock(latestBlockView, uint64(latestBlockHeight))
-	return _getFullRealBlockTemplate(testMeta, testMeta.posMempool.readOnlyLatestBlockView, blockHeight, view, seedHash, isTimeout)
+	return _getFullRealBlockTemplate(testMeta, testMeta.posMempool.readOnlyLatestBlockView, blockHeight, view, seedSignature, isTimeout)
 }
 
 // _generateDummyBlock generates a BlockTemplate with dummy data by adding 50 test transactions to the
@@ -2262,11 +2257,11 @@ func _generateDummyBlock(testMeta *TestMeta, blockHeight uint64, view uint64, se
 		_wrappedPosMempoolAddTransaction(testMeta.t, testMeta.posMempool, txn)
 	}
 
-	seedHash := &RandomSeedHash{}
-	_, err := seedHash.FromBytes(Sha256DoubleHash([]byte("seed")).ToBytes())
+	seedSignature := &bls.Signature{}
+	_, err := seedSignature.FromBytes(Sha256DoubleHash([]byte("seed")).ToBytes())
 	require.NoError(testMeta.t, err)
 
-	blockTemplate := _getFullDummyBlockTemplate(testMeta, testMeta.posMempool.readOnlyLatestBlockView, blockHeight, view, seedHash)
+	blockTemplate := _getFullDummyBlockTemplate(testMeta, testMeta.posMempool.readOnlyLatestBlockView, blockHeight, view, seedSignature)
 	require.NotNil(testMeta.t, blockTemplate)
 	// This is a hack to get the block to connect. We just give the block reward to m0.
 	blockTemplate.Txns[0].TxOutputs[0].PublicKey = m0PubBytes
@@ -2332,11 +2327,11 @@ func updateProposerVotePartialSignatureForBlock(testMeta *TestMeta, block *MsgDe
 	block.Header.ProposerVotePartialSignature = sig
 }
 
-// _getFullDummyBlockTemplate is a helper function that generates a block template with a valid TxnConnectStatusByIndexHash
+// _getFullRealBlockTemplate is a helper function that generates a block template with a valid TxnConnectStatusByIndexHash
 // and a valid TxnConnectStatusByIndex, a valid vote or timeout QC, does all the required signing by validators,
 // and generates the proper ProposerVotePartialSignature.
-func _getFullRealBlockTemplate(testMeta *TestMeta, latestBlockView *UtxoView, blockHeight uint64, view uint64, seedHash *RandomSeedHash, isTimeout bool) BlockTemplate {
-	blockTemplate, err := testMeta.posBlockProducer.createBlockTemplate(latestBlockView, blockHeight, view, seedHash)
+func _getFullRealBlockTemplate(testMeta *TestMeta, latestBlockView *UtxoView, blockHeight uint64, view uint64, seedSignature *bls.Signature, isTimeout bool) BlockTemplate {
+	blockTemplate, err := testMeta.posBlockProducer.createBlockTemplate(latestBlockView, blockHeight, view, seedSignature)
 	require.NoError(testMeta.t, err)
 	require.NotNil(testMeta.t, blockTemplate)
 	blockTemplate.Header.TxnConnectStatusByIndexHash = HashBitset(blockTemplate.TxnConnectStatusByIndex)
@@ -2447,8 +2442,8 @@ func _getFullRealBlockTemplate(testMeta *TestMeta, latestBlockView *UtxoView, bl
 
 // _getFullDummyBlockTemplate is a helper function that generates a block template with a dummy TxnConnectStatusByIndexHash
 // and a dummy ValidatorsVoteQC.
-func _getFullDummyBlockTemplate(testMeta *TestMeta, latestBlockView *UtxoView, blockHeight uint64, view uint64, seedHash *RandomSeedHash) BlockTemplate {
-	blockTemplate, err := testMeta.posBlockProducer.createBlockTemplate(latestBlockView, blockHeight, view, seedHash)
+func _getFullDummyBlockTemplate(testMeta *TestMeta, latestBlockView *UtxoView, blockHeight uint64, view uint64, seedSignature *bls.Signature) BlockTemplate {
+	blockTemplate, err := testMeta.posBlockProducer.createBlockTemplate(latestBlockView, blockHeight, view, seedSignature)
 	require.NoError(testMeta.t, err)
 	require.NotNil(testMeta.t, blockTemplate)
 	blockTemplate.Header.TxnConnectStatusByIndexHash = HashBitset(blockTemplate.TxnConnectStatusByIndex)
