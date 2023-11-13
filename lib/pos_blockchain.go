@@ -330,6 +330,15 @@ func (bc *Blockchain) validateAndIndexBlockPoS(block *MsgDeSoBlock) (*BlockNode,
 		return bc.storeValidateFailedBlockWithWrappedError(block, err)
 	}
 
+	// Validate the block's random seed signature
+	isValidRandomSeedSignature, err := bc.hasValidProposerRandomSeedSignaturePoS(block)
+	if err != nil {
+		return nil, errors.Wrap(err, "validateAndIndexBlockPoS: Problem validating random seed signature")
+	}
+	if !isValidRandomSeedSignature {
+		return bc.storeValidateFailedBlockWithWrappedError(block, errors.New("invalid random seed signature"))
+	}
+
 	// We expect the utxoView for the parent block to be valid because we check that all ancestor blocks have
 	// been validated.
 	utxoView, err := bc.getUtxoViewAtBlockHash(*block.Header.PrevBlockHash)
@@ -632,6 +641,26 @@ func (bc *Blockchain) hasValidBlockViewPoS(block *MsgDeSoBlock) error {
 		}
 	}
 	return nil
+}
+
+func (bc *Blockchain) hasValidProposerRandomSeedSignaturePoS(block *MsgDeSoBlock) (bool, error) {
+	// Validate that the leader proposed a valid random seed signature.
+	parentBlock, exists := bc.blockIndexByHash[*block.Header.PrevBlockHash]
+	if !exists {
+		// Note: this should never happen as we only call this function after
+		// we've validated that all ancestors exist in the block index.
+		return false, RuleErrorMissingParentBlock
+	}
+
+	prevRandomSeedHash, err := hashRandomSeedSignature(parentBlock.Header.ProposerRandomSeedSignature)
+	if err != nil {
+		return false, errors.Wrapf(err, "hasValidProposerRandomSeedSignaturePoS: Problem converting prev random seed hash to RandomSeedHash")
+	}
+	isVerified, err := verifySignatureOnRandomSeedHash(block.Header.ProposerVotingPublicKey, block.Header.ProposerRandomSeedSignature, prevRandomSeedHash)
+	if err != nil {
+		return false, errors.Wrapf(err, "hasValidProposerRandomSeedSignaturePoS: Problem verifying proposer random seed signature")
+	}
+	return isVerified, nil
 }
 
 func (bav *UtxoView) hasValidProposerPartialSignaturePoS(block *MsgDeSoBlock, snapshotAtEpochNumber uint64) (bool, error) {

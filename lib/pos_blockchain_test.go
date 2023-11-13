@@ -6,10 +6,10 @@ import (
 	"bytes"
 	"math"
 	"math/rand"
-	"strconv"
 	"testing"
 	"time"
 
+	"crypto/sha256"
 	"github.com/deso-protocol/core/bls"
 	"github.com/deso-protocol/core/collections"
 	"github.com/deso-protocol/core/collections/bitset"
@@ -1734,17 +1734,12 @@ func TestProcessBlockPoS(t *testing.T) {
 		require.NoError(t, err)
 		var orphanBlock *MsgDeSoBlock
 		orphanBlock = _generateRealBlock(testMeta, 17, 17, 9273, reorgBlockHash, false)
+		updateRandomSeedSignature(testMeta, orphanBlock, dummyParentBlock.Header.ProposerRandomSeedSignature)
 		// Set the prev block hash manually on orphan block
 		orphanBlock.Header.PrevBlockHash = dummyParentBlockHash
 		orphanBlockHash, err := orphanBlock.Hash()
 		require.NoError(t, err)
 		updateProposerVotePartialSignatureForBlock(testMeta, orphanBlock)
-		leaderPublicKey, _ := getLeaderForBlockHeightAndView(testMeta, testMeta.posMempool.readOnlyLatestBlockView, 17, 17)
-		leaderBlsPrivKey := testMeta.pubKeyToBLSKeyMap[leaderPublicKey]
-		partialSigPayload := consensus.GetVoteSignaturePayload(17, orphanBlockHash)
-		sig, err := leaderBlsPrivKey.Sign(partialSigPayload[:])
-		require.NoError(t, err)
-		orphanBlock.Header.ProposerVotePartialSignature = sig
 		success, isOrphan, missingBlockHashes, err := testMeta.chain.processBlockPoS(orphanBlock, 17, true)
 		require.False(t, success)
 		require.True(t, isOrphan)
@@ -1835,13 +1830,13 @@ func TestGetSafeBlocks(t *testing.T) {
 	require.True(t, bn3.Hash.IsEqual(block3Hash))
 	// Add block 3' only as stored
 	var block3Prime *MsgDeSoBlock
-	block3Prime = _generateRealBlock(testMeta, uint64(testMeta.savedHeight+2), uint64(testMeta.savedHeight+2), 1237, block2Hash, false)
+	block3Prime = _generateRealBlock(testMeta, uint64(testMeta.savedHeight+2), uint64(testMeta.savedHeight+3), 13717, block2Hash, false)
 	bn3Prime, err := testMeta.chain.storeBlockInBlockIndex(block3Prime)
 	require.NoError(t, err)
 	block3PrimeHash, err := block3Prime.Hash()
 	require.NoError(t, err)
 	require.True(t, bn3Prime.Hash.IsEqual(block3PrimeHash))
-	// Add block 5 as Stored & Validated (this could never really happen but it illustrates a point!)
+	// Add block 5 as Stored & Validated (this could never really happen, but it illustrates a point!)
 	var block5 *MsgDeSoBlock
 	block5 = _generateRealBlock(testMeta, uint64(testMeta.savedHeight+4), uint64(testMeta.savedHeight+4), 1237, block3Hash, false)
 	block5.Header.Height = uint64(testMeta.savedHeight + 5)
@@ -2202,6 +2197,56 @@ func TestHasValidProposerPartialSignaturePoS(t *testing.T) {
 	}
 }
 
+func TestHasValidProposerRandomSeedSignaturePoS(t *testing.T) {
+	testMeta := NewTestPoSBlockchainWithValidators(t)
+	// Generate a real block and process it so we have a PoS block on the best chain.
+	var realBlock *MsgDeSoBlock
+	realBlock = _generateRealBlock(testMeta, 12, 12, 889, testMeta.chain.GetBestChainTip().Hash, false)
+	// The first PoS block passes the validation.
+	isValid, err := testMeta.chain.hasValidProposerRandomSeedSignaturePoS(realBlock)
+	require.NoError(t, err)
+	require.True(t, isValid)
+	_, _, _, err = testMeta.chain.processBlockPoS(realBlock, 12, true)
+	require.NoError(t, err)
+	realBlockHash, err := realBlock.Hash()
+	require.NoError(t, err)
+	realBlockNode, exists := testMeta.chain.blockIndexByHash[*realBlockHash]
+	require.True(t, exists)
+	require.True(t, realBlockNode.IsStored())
+	require.False(t, realBlockNode.IsValidateFailed())
+	require.True(t, realBlockNode.IsValidated())
+	require.NotNil(t, realBlockNode.Header.ProposerRandomSeedSignature)
+
+	// A valid child block with a valid proposer random seed signature will pass validations.
+	var childBlock *MsgDeSoBlock
+	childBlock = _generateRealBlock(testMeta, 13, 13, 273, realBlockNode.Hash, false)
+	{
+		isValid, err = testMeta.chain.hasValidProposerRandomSeedSignaturePoS(childBlock)
+		require.NoError(t, err)
+		require.True(t, isValid)
+	}
+
+	// Modifying the random seed signature on the parent to make the child fail.
+	{
+		realBlockNode.Header.ProposerRandomSeedSignature, err = (&bls.Signature{}).FromBytes(RandomBytes(32))
+		require.NoError(t, err)
+		isValid, err = testMeta.chain.hasValidProposerRandomSeedSignaturePoS(childBlock)
+		require.NoError(t, err)
+		require.False(t, isValid)
+	}
+
+	// Signing the previous block's random seed signature with the wrong key should fail.
+	{
+		wrongProposerPrivateKey := _generateRandomBLSPrivateKey(t)
+		prevBlockRandomSeedHashBytes := sha256.Sum256(realBlockNode.Header.ProposerRandomSeedSignature.ToBytes())
+		childBlock.Header.ProposerRandomSeedSignature, err = wrongProposerPrivateKey.Sign(prevBlockRandomSeedHashBytes[:])
+		require.NoError(t, err)
+		isValid, err = testMeta.chain.hasValidProposerRandomSeedSignaturePoS(childBlock)
+		require.NoError(t, err)
+		require.False(t, isValid)
+	}
+}
+
 // _generateRealBlock generates a BlockTemplate with real data by adding 50 test transactions to the
 // PosMempool, generating a RandomSeedHash, updating the latestBlockView in the PosBlockProducer, and calling _getFullRealBlockTemplate.
 // It can be used to generate a block w/ either a vote or timeout QC.
@@ -2223,14 +2268,11 @@ func _generateRealBlock(testMeta *TestMeta, blockHeight uint64, view uint64, see
 	}
 
 	// TODO: Get real seed signature.
-	seedSignature := &bls.Signature{}
-	_, err := seedSignature.FromBytes(Sha256DoubleHash([]byte(strconv.FormatInt(seed, 10))).ToBytes())
-	require.NoError(testMeta.t, err)
+	prevBlock, exists := testMeta.chain.blockIndexByHash[*prevBlockHash]
+	require.True(testMeta.t, exists)
+	seedSignature := getRandomSeedSignature(testMeta, blockHeight, view, prevBlock.Header.ProposerRandomSeedSignature)
 	// Always update the testMeta latestBlockView
 	latestBlockView, err := testMeta.chain.getUtxoViewAtBlockHash(*prevBlockHash)
-	if err != nil {
-		latestBlockView, err = testMeta.chain.getUtxoViewAtBlockHash(*testMeta.chain.GetBestChainTip().Hash)
-	}
 	require.NoError(testMeta.t, err)
 	latestBlockHeight := testMeta.chain.blockIndexByHash[*prevBlockHash].Height
 	testMeta.posMempool.UpdateLatestBlock(latestBlockView, uint64(latestBlockHeight))
@@ -2300,6 +2342,7 @@ func _generateBlockAndAddToBestChain(testMeta *TestMeta, blockHeight uint64, vie
 
 	return blockTemplate
 }
+
 func getLeaderForBlockHeightAndView(testMeta *TestMeta, latestBlockView *UtxoView, blockHeight uint64, view uint64) (string, []byte) {
 	currentEpochEntry, err := latestBlockView.GetCurrentEpochEntry()
 	require.NoError(testMeta.t, err)
@@ -2316,6 +2359,20 @@ func getLeaderForBlockHeightAndView(testMeta *TestMeta, latestBlockView *UtxoVie
 	leaderPublicKeyBytes := latestBlockView.GetPublicKeyForPKID(leader)
 	return Base58CheckEncode(leaderPublicKeyBytes, false, testMeta.chain.params), leaderPublicKeyBytes
 }
+
+func getRandomSeedSignature(testMeta *TestMeta, height uint64, view uint64, prevRandomSeedSignature *bls.Signature) *bls.Signature {
+	leaderPublicKey, _ := getLeaderForBlockHeightAndView(testMeta, testMeta.posMempool.readOnlyLatestBlockView, height, view)
+	leaderBLSPrivKey := testMeta.pubKeyToBLSKeyMap[leaderPublicKey]
+	prevRandomSeedHashSHA256 := sha256.Sum256(prevRandomSeedSignature.ToBytes())
+	newRandomSeedSignature, err := leaderBLSPrivKey.Sign(prevRandomSeedHashSHA256[:])
+	require.NoError(testMeta.t, err)
+	return newRandomSeedSignature
+}
+
+func updateRandomSeedSignature(testMeta *TestMeta, block *MsgDeSoBlock, prevRandomSeedSignature *bls.Signature) {
+	block.Header.ProposerRandomSeedSignature = getRandomSeedSignature(testMeta, block.Header.Height, block.Header.ProposedInView, prevRandomSeedSignature)
+}
+
 func updateProposerVotePartialSignatureForBlock(testMeta *TestMeta, block *MsgDeSoBlock) {
 	blockHash, err := block.Hash()
 	require.NoError(testMeta.t, err)
@@ -2435,7 +2492,6 @@ func _getFullRealBlockTemplate(testMeta *TestMeta, latestBlockView *UtxoView, bl
 	newBlockVotePayload := consensus.GetVoteSignaturePayload(view, newBlockHash)
 	proposerVotePartialSignature, err = leaderVotingPrivateKey.Sign(newBlockVotePayload[:])
 	require.NoError(testMeta.t, err)
-
 	blockTemplate.Header.ProposerVotePartialSignature = proposerVotePartialSignature
 	return blockTemplate
 }
