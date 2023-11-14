@@ -5835,9 +5835,25 @@ type TransactionSpendingLimit struct {
 	// ProfilePKID || LockupLimitOperation || LockupLimitScopeType to number of transactions.
 	//  - ProfilePKID: A PKID to scope transactions by.
 	//                 If using the "Any" scope, then ProfilePKID has to be the ZeroPKID.
-	//  - LockupLimitOperationType: One of {Any, Scoped}
-	//                 If using the "Any" operation type, this limit applies to any possible DeSo token lockup.
-	//                 If using the "Scoped" operation type, this limit applies to the ProfilePKID specified.
+	//  - LockupLimitScopeType: One of {Any, Scoped}
+	//                 If using the "Any" scope type, this limit applies to any possible DeSo token lockup.
+	//                 If using the "Scoped" scope type, this limit applies to the ProfilePKID specified.
+	//  - LockupLimitOperation: One of {Any, Lockup, UpdateCoinLockupYieldCurve, UpdateCoinLockupTransferRestrictions,
+	//                                  CoinLockupTransfer, CoinLockupUnlock}
+	//                 If using the "Any" operation type the limit applies to any coin lockup transaction type.
+	//                 If using the "CoinLockup" operation type the limit applies strictly to coin lockups transactions.
+	//                 If using the "UpdateCoinLockupYield" operation type the limit applies to any
+	//                 UpdateCoinLockupParams transaction where the yield curve is updated.
+	//                 If using the "UpdateCoinLockupTransferRestrictions" operation the limit applies to any
+	//                 UpdateCoinLockupParams transaction where the lockup transfer restrictions are updated.
+	//                 If using the "CoinLockupTransfer" operation type the limit applies to any
+	//                 coin lockup transfer transactions.
+	//                 If using the "CoinLockupUnlock" operation type the limit applies to
+	//                 any locked coin unlock transactions.
+	//
+	// NOTE: Note that an UpdateCoinLockupParams transaction can decrement the transaction limits twice.
+	//       This is because we consider updating the yield curve and updating transfer restrictions as
+	//       separate for the purpose of derived key limits.
 	LockupLimitMap map[LockupLimitKey]uint64
 	// ValidatorPKID || StakerPKID to amount of stake-able $DESO.
 	// Note that this is not a limit on the number of Stake txns that

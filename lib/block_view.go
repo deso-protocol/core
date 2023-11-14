@@ -549,8 +549,7 @@ func (bav *UtxoView) CopyUtxoView() (*UtxoView, error) {
 	newView.LockedBalanceEntryKeyToLockedBalanceEntry = make(map[LockedBalanceEntryKey]*LockedBalanceEntry,
 		len(bav.LockedBalanceEntryKeyToLockedBalanceEntry))
 	for entryKey, entry := range bav.LockedBalanceEntryKeyToLockedBalanceEntry {
-		newEntry := *entry
-		newView.LockedBalanceEntryKeyToLockedBalanceEntry[entryKey] = newEntry.Copy()
+		newView.LockedBalanceEntryKeyToLockedBalanceEntry[entryKey] = entry.Copy()
 	}
 
 	// Copy the LockupYieldCurvePoints
@@ -563,8 +562,7 @@ func (bav *UtxoView) CopyUtxoView() (*UtxoView, error) {
 
 		// Go through all LockupYieldCurvePoints in the LockupYieldCurvePoint map.
 		for entryKey, entry := range lockupYieldCurvePointMap {
-			newLockupYieldCurvePoint := *entry
-			newView.PKIDToLockupYieldCurvePointKeyToLockupYieldCurvePoints[pkid][entryKey] = newLockupYieldCurvePoint.Copy()
+			newView.PKIDToLockupYieldCurvePointKeyToLockupYieldCurvePoints[pkid][entryKey] = entry.Copy()
 		}
 	}
 

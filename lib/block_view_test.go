@@ -79,6 +79,7 @@ func setBalanceModelBlockHeights(t *testing.T) {
 	DeSoTestnetParams.ForkHeights.AssociationsAndAccessGroupsBlockHeight = 0
 	DeSoTestnetParams.ForkHeights.BalanceModelBlockHeight = 1
 	DeSoTestnetParams.ForkHeights.ProofOfStake1StateSetupBlockHeight = 1
+	DeSoTestnetParams.ForkHeights.ProofOfStake2ConsensusCutoverBlockHeight = 1
 	DeSoTestnetParams.EncoderMigrationHeights = GetEncoderMigrationHeights(&DeSoTestnetParams.ForkHeights)
 	DeSoTestnetParams.EncoderMigrationHeightsList = GetEncoderMigrationHeightsList(&DeSoTestnetParams.ForkHeights)
 	GlobalDeSoParams = DeSoTestnetParams
@@ -95,6 +96,7 @@ func resetBalanceModelBlockHeights() {
 	DeSoTestnetParams.ForkHeights.AssociationsAndAccessGroupsBlockHeight = uint32(596555)
 	DeSoTestnetParams.ForkHeights.BalanceModelBlockHeight = uint32(683058)
 	DeSoTestnetParams.ForkHeights.ProofOfStake1StateSetupBlockHeight = uint32(math.MaxUint32)
+	DeSoTestnetParams.ForkHeights.ProofOfStake2ConsensusCutoverBlockHeight = uint32(math.MaxUint32)
 	DeSoTestnetParams.EncoderMigrationHeights = GetEncoderMigrationHeights(&DeSoTestnetParams.ForkHeights)
 	DeSoTestnetParams.EncoderMigrationHeightsList = GetEncoderMigrationHeightsList(&DeSoTestnetParams.ForkHeights)
 	GlobalDeSoParams = DeSoTestnetParams
@@ -2200,6 +2202,7 @@ func TestBlockRewardPatch(t *testing.T) {
 }
 
 func TestConnectFailingTransaction(t *testing.T) {
+	setBalanceModelBlockHeights(t)
 	require := require.New(t)
 	seed := int64(1011)
 	rand := rand.New(rand.NewSource(seed))
@@ -2209,13 +2212,6 @@ func TestConnectFailingTransaction(t *testing.T) {
 	feeMax := uint64(10000)
 
 	chain, params, db := NewLowDifficultyBlockchain(t)
-	params.ForkHeights.BalanceModelBlockHeight = 1
-	params.ForkHeights.ProofOfStake2ConsensusCutoverBlockHeight = 1
-	params.ForkHeights.ProofOfStake1StateSetupBlockHeight = 1
-	params.EncoderMigrationHeights.ProofOfStake1StateSetupMigration.Height = 1
-	params.EncoderMigrationHeightsList = GetEncoderMigrationHeightsList(&params.ForkHeights)
-	oldParams := GlobalDeSoParams
-	GlobalDeSoParams = *params
 	mempool, miner := NewTestMiner(t, chain, params, true)
 	// Mine a few blocks to give the senderPkString some money.
 	_, err := miner.MineAndProcessSingleBlock(0 /*threadIndex*/, mempool)
@@ -2292,8 +2288,6 @@ func TestConnectFailingTransaction(t *testing.T) {
 	require.Equal(expectedUtilityFee, utilityFee)
 
 	err = blockView.FlushToDb(uint64(blockHeight))
-
-	GlobalDeSoParams = oldParams
 }
 
 func _getBMFForTxn(txn *MsgDeSoTxn, gp *GlobalParamsEntry) (_burnFee uint64, _utilityFee uint64) {
