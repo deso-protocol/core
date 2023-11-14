@@ -99,16 +99,12 @@ func (cc *ConsensusController) HandleFastHostStuffVote(event *consensus.FastHotS
 	voteMsg := NewMessage(MsgTypeValidatorVote).(*MsgDeSoValidatorVote)
 	voteMsg.MsgVersion = MsgValidatorVoteVersion0
 	voteMsg.ProposedInView = event.View
-	// TODO: Somehow we need to know the validator's ECDSA public key. Fill this out once the
-	// mapping between BLS and ECDSA keys is implemented and available in the consensus module.
-	// voteMsg.PublicKey = <ECDSA public key here>
 	voteMsg.VotingPublicKey = cc.signer.GetPublicKey()
 
 	// Get the block hash
-	tipBlockHash := event.TipBlockHash.GetValue()
-	voteMsg.BlockHash = NewBlockHash(tipBlockHash[:])
+	voteMsg.BlockHash = BlockHashFromConsensusInterface(event.TipBlockHash)
 
-	// Compute and set the vote signature
+	// Sign the vote message
 	voteMsg.VotePartialSignature, err = cc.signer.SignValidatorVote(event.View, event.TipBlockHash)
 	if err != nil {
 		// This should never happen as long as the BLS signer is initialized correctly.
@@ -174,20 +170,10 @@ func (cc *ConsensusController) HandleFastHostStuffTimeout(event *consensus.FastH
 	timeoutMsg := NewMessage(MsgTypeValidatorTimeout).(*MsgDeSoValidatorTimeout)
 	timeoutMsg.MsgVersion = MsgValidatorTimeoutVersion0
 	timeoutMsg.TimedOutView = event.View
-	// TODO: Somehow we need to know the validator's ECDSA public key. Fill this out once the
-	// mapping between BLS and ECDSA keys is implemented and available in the consensus module.
-	// timeoutMsg.PublicKey = <ECDSA public key here>
 	timeoutMsg.VotingPublicKey = cc.signer.GetPublicKey()
-	highQCBlockHash := event.QC.GetBlockHash().GetValue()
-	timeoutMsg.HighQC = &QuorumCertificate{
-		BlockHash:      NewBlockHash(highQCBlockHash[:]),
-		ProposedInView: event.QC.GetView(),
-		ValidatorsVoteAggregatedSignature: &AggregatedBLSSignature{
-			SignersList: event.QC.GetAggregatedSignature().GetSignersList(),
-			Signature:   event.QC.GetAggregatedSignature().GetSignature(),
-		},
-	}
+	timeoutMsg.HighQC = QuorumCertificateFromConsensusInterface(event.QC)
 
+	// Sign the timeout message
 	timeoutMsg.TimeoutPartialSignature, err = cc.signer.SignValidatorTimeout(event.View, event.QC.GetView())
 	if err != nil {
 		// This should never happen as long as the BLS signer is initialized correctly.
