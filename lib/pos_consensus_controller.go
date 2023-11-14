@@ -9,16 +9,20 @@ import (
 
 type ConsensusController struct {
 	lock                  sync.RWMutex
-	fastHotStuffEventLoop consensus.FastHotStuffEventLoop
 	blockchain            *Blockchain
+	blockProducer         *PosBlockProducer
+	fastHotStuffEventLoop consensus.FastHotStuffEventLoop
+	mempool               Mempool
 	params                *DeSoParams
 	signer                *BLSSigner
 }
 
-func NewConsensusController(blockchain *Blockchain, signer *BLSSigner) *ConsensusController {
+func NewConsensusController(params *DeSoParams, blockchain *Blockchain, mempool Mempool, signer *BLSSigner) *ConsensusController {
 	return &ConsensusController{
 		blockchain:            blockchain,
+		blockProducer:         NewPosBlockProducer(mempool, params, nil, signer.GetPublicKey()),
 		fastHotStuffEventLoop: consensus.NewFastHotStuffEventLoop(),
+		mempool:               mempool,
 		signer:                signer,
 	}
 }
@@ -37,21 +41,109 @@ func (cc *ConsensusController) Init() {
 // then it constructs, processes locally, and then and broadcasts the block.
 //
 // Steps:
-// 1. Verify that the block height we want to propose at is valid
-// 2. Get a QC from the consensus module
-// 3. Iterate over the top n transactions from the mempool
-// 4. Construct a block with the QC and the top n transactions from the mempool
-// 5. Sign the block
-// 6. Process the block locally
-// - This will connect the block to the blockchain, remove the transactions from the
-// - mempool, and process the vote in the consensus module
-// 7. Broadcast the block to the network
-func (cc *ConsensusController) HandleFastHostStuffBlockProposal(event *consensus.FastHotStuffEvent) {
-	// Hold a read lock on the consensus controller. This is because we need to check the
-	// current view and block height of the consensus module.
+// 1. Validate that the block height and view we want to propose the block with are not stale
+// 2. Iterate over the top n transactions from the mempool
+// 3. Construct a block with the QC and the top n transactions from the mempool
+// 4. Sign the block
+// 5. Process the block locally
+//   - This will connect the block to the blockchain, remove the transactions from the
+//   - mempool, and process the vote in the consensus module
+//
+// 6. Broadcast the block to the network
+func (cc *ConsensusController) HandleFastHostStuffBlockProposal(event *consensus.FastHotStuffEvent) error {
+	// Hold a read and write lock on the consensus controller. This is because we need to check
+	// the current view of the consensus event loop, and to update the blockchain.
 	cc.lock.Lock()
 	defer cc.lock.Unlock()
 
+	if !consensus.IsProperlyFormedConstructVoteQCEvent(event) {
+		// If the event is not properly formed, we ignore it and log it. This should never happen.
+		return errors.Errorf("HandleFastHostStuffBlockProposal: Received improperly formed vote QC construction event: %v", event)
+	}
+
+	// If the block proposal is properly formed, we try to construct and broadcast the block here.
+
+	// Fetch the parent block
+	parentBlockHash := BlockHashFromConsensusInterface(event.QC.GetBlockHash())
+	parentBlock, parentBlockExists := cc.blockchain.blockIndex[*parentBlockHash]
+	if !parentBlockExists {
+		return errors.Errorf("HandleFastHostStuffBlockProposal: Error fetching parent block: %v", parentBlockHash)
+	}
+
+	// Perform simple block height and view sanity checks on the block construction signal.
+
+	// Cross-validate that the event's tip block height matches the parent's height. If the two don't match
+	// then something is very wrong.
+	if uint64(parentBlock.Height) != event.TipBlockHeight {
+		return errors.Errorf(
+			"HandleFastHostStuffBlockProposal: Error constructing block at height %d. Expected block height %d",
+			event.TipBlockHeight+1,
+			parentBlock.Height+1,
+		)
+	}
+
+	// Validate that the event's view is not stale. If the view is stale, then it means that the consensus
+	// has advanced to the next view after queuing this block proposal event. This is normal and an expected
+	// race condition in the steady-state.
+	currentView := cc.fastHotStuffEventLoop.GetCurrentView()
+	if currentView > event.View {
+		return errors.Errorf(
+			"HandleFastHostStuffBlockProposal: Error constructing block at height %d. Stale view %d",
+			event.TipBlockHeight+1,
+			event.View,
+		)
+	}
+
+	// Build a UtxoView at the parent block
+	utxoViewAtParent, err := cc.blockchain.getUtxoViewAtBlockHash(*parentBlock.Hash)
+	if err != nil {
+		// This should never happen as long as the parent block is a descendant of the committed tip.
+		return errors.Errorf("HandleFastHostStuffBlockProposal: Error fetching UtxoView for parent block: %v", parentBlockHash)
+	}
+
+	// TODO: Compute the random seed hash for the block proposer
+	var proposerRandomSeedHash *RandomSeedHash
+
+	// Construct an unsigned block
+	block, err := cc.blockProducer.CreateUnsignedBlock(
+		utxoViewAtParent,
+		event.TipBlockHeight+1,
+		event.View,
+		proposerRandomSeedHash,
+		QuorumCertificateFromConsensusInterface(event.QC),
+	)
+	if err != nil {
+		return errors.Errorf("HandleFastHostStuffBlockProposal: Error constructing unsigned block: %v", err)
+	}
+
+	// Sign the block
+	blockHash, err := block.Header.Hash()
+	if err != nil {
+		return errors.Errorf("HandleFastHostStuffBlockProposal: Error hashing block: %v", err)
+	}
+	block.Header.ProposerVotePartialSignature, err = cc.signer.SignBlockProposal(block.Header.ProposedInView, blockHash)
+	if err != nil {
+		return errors.Errorf("HandleFastHostStuffBlockProposal: Error signing block: %v", err)
+	}
+
+	// Process the block locally
+	missingBlockHashes, err := cc.tryProcessBlockAsNewTip(block)
+	if err != nil {
+		return errors.Errorf("HandleFastHostStuffBlockProposal: Error processing block locally: %v", err)
+	}
+
+	if len(missingBlockHashes) > 0 {
+		// This should not be possible. If we successfully constructed the block, then we should
+		// have its ancestors on-hand too. Something is very wrong. We should not broadcast this block.
+		return errors.Errorf(
+			"HandleFastHostStuffBlockProposal: Error processing block locally: missing block hashes: %v",
+			missingBlockHashes,
+		)
+	}
+
+	// TODO: Broadcast the block proposal to the network
+
+	return nil
 }
 
 func (cc *ConsensusController) HandleFastHostStuffEmptyTimeoutBlockProposal(event *consensus.FastHotStuffEvent) {
@@ -118,7 +210,6 @@ func (cc *ConsensusController) HandleFastHostStuffVote(event *consensus.FastHotS
 		// or a duplicate vote/timeout for the same view. Something is very wrong. We should not
 		// broadcast it to the network.
 		return errors.Errorf("HandleFastHostStuffVote: Error processing vote locally: %v", err)
-
 	}
 
 	// Broadcast the vote message to the network
@@ -434,4 +525,8 @@ func (epochEntry *EpochEntry) ContainsBlockHeight(blockHeight uint64) bool {
 
 func (bc *Blockchain) getSafeBlocks() ([]*MsgDeSoHeader, error) {
 	return nil, errors.New("getSafeBlocks: replace me with a real implementation later")
+}
+
+func (bav *UtxoView) getNextRandomSeedHash() (*RandomSeedHash, error) {
+	return nil, errors.New("getNextRandomSeedHash: replace me with a real implementation later")
 }

@@ -87,6 +87,12 @@ func (signer *BLSSigner) GetPublicKey() *bls.PublicKey {
 	return signer.privateKey.PublicKey()
 }
 
+func (signer *BLSSigner) SignBlockProposal(view uint64, blockHash consensus.BlockHash) (*bls.Signature, error) {
+	// A block proposer's signature on a block is just its partial vote signature. This allows us to aggregate
+	// signatures from the proposer and validators into a single aggregated signature to build a QC.
+	return signer.SignValidatorVote(view, blockHash)
+}
+
 func (signer *BLSSigner) SignValidatorVote(view uint64, blockHash consensus.BlockHash) (*bls.Signature, error) {
 	payload := consensus.GetVoteSignaturePayload(view, blockHash)
 	return signer.sign(BLSSignatureOpCodeValidatorVote, payload[:])
