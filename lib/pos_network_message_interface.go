@@ -63,6 +63,17 @@ func (qc *QuorumCertificate) GetAggregatedSignature() consensus.AggregatedSignat
 	return qc.ValidatorsVoteAggregatedSignature
 }
 
+func QuorumCertificateFromConsensusInterface(qc consensus.QuorumCertificate) *QuorumCertificate {
+	return &QuorumCertificate{
+		ProposedInView: qc.GetView(),
+		BlockHash:      BlockHashFromConsensusInterface(qc.GetBlockHash()),
+		ValidatorsVoteAggregatedSignature: &AggregatedBLSSignature{
+			Signature:   qc.GetAggregatedSignature().GetSignature(),
+			SignersList: qc.GetAggregatedSignature().GetSignersList(),
+		},
+	}
+}
+
 // AggregatedBLSSignature struct <-> consensus.AggregatedSignature interface translation
 
 func (aggSig *AggregatedBLSSignature) GetSignersList() *bitset.Bitset {
