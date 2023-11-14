@@ -117,8 +117,19 @@ const (
 	EncoderTypeLockedBalanceEntry                EncoderType = 44
 	EncoderTypeLockupYieldCurvePoint             EncoderType = 45
 
+	// EncoderTypeStateChangeEntry represents a state change to a DeSo encoder entry.
+	EncoderTypeStateChangeEntry EncoderType = 46
+	// EncoderTypeFollowEntry represents a follow relationship between two pkids.
+	EncoderTypeFollowEntry EncoderType = 47
+	// EncoderTypeDeSoBalanceEntry represents a balance of DeSo for a particular public key.
+	EncoderTypeDeSoBalanceEntry EncoderType = 48
+	// EncoderTypeBlock represents a block in the blockchain, including all transactions in said block.
+	EncoderTypeBlock EncoderType = 49
+	// EncoderTypeTxn represents a transaction in the blockchain.
+	EncoderTypeTxn EncoderType = 50
+
 	// EncoderTypeEndBlockView encoder type should be at the end and is used for automated tests.
-	EncoderTypeEndBlockView EncoderType = 46
+	EncoderTypeEndBlockView EncoderType = 51
 )
 
 // Txindex encoder types.
@@ -248,6 +259,16 @@ func (encoderType EncoderType) New() DeSoEncoder {
 		return &DeSoNonce{}
 	case EncoderTypeTransactorNonceEntry:
 		return &TransactorNonceEntry{}
+	case EncoderTypeFollowEntry:
+		return &FollowEntry{}
+	case EncoderTypeStateChangeEntry:
+		return &StateChangeEntry{}
+	case EncoderTypeDeSoBalanceEntry:
+		return &DeSoBalanceEntry{}
+	case EncoderTypeBlock:
+		return &MsgDeSoBlock{}
+	case EncoderTypeTxn:
+		return &MsgDeSoTxn{}
 	case EncoderTypeValidatorEntry:
 		return &ValidatorEntry{}
 	case EncoderTypeStakeEntry:
@@ -926,6 +947,9 @@ type UtxoOperation struct {
 	// When we connect a block, we delete expired nonce entries.
 	PrevNonceEntries []*TransactorNonceEntry
 
+	// Metadata related to the state change that this operation represents.
+	StateChangeMetadata DeSoEncoder
+
 	// PrevValidatorEntry is the previous ValidatorEntry prior to a
 	// register, unregister, stake, or unstake txn.
 	PrevValidatorEntry *ValidatorEntry
@@ -1303,6 +1327,11 @@ func (op *UtxoOperation) RawEncodeWithoutMetadata(blockHeight uint64, skipMetada
 		// PrevTransactorBalanceEntry, PrevLockedBalanceEntries
 		data = append(data, EncodeToBytes(blockHeight, op.PrevTransactorBalanceEntry, skipMetadata...)...)
 		data = append(data, EncodeDeSoEncoderSlice(op.PrevLockedBalanceEntries, blockHeight, skipMetadata...)...)
+	}
+
+	// StateChangeMetadata
+	if op.StateChangeMetadata != nil {
+		data = append(data, EncodeToBytes(blockHeight, op.StateChangeMetadata, skipMetadata...)...)
 	}
 
 	return data
@@ -1967,6 +1996,16 @@ func (op *UtxoOperation) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.
 		}
 		if op.PrevLockedBalanceEntries, err = DecodeDeSoEncoderSlice[*LockedBalanceEntry](rr); err != nil {
 			return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading PrevLockedBalanceEntry: ")
+		}
+	}
+
+	// DeSoEncoder
+	stateChangeMetadata := GetStateChangeMetadataFromOpType(op.Type)
+	if stateChangeMetadata != nil {
+		if exist, err := DecodeFromBytes(stateChangeMetadata, rr); exist && err == nil {
+			op.StateChangeMetadata = stateChangeMetadata
+		} else if err != nil {
+			return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading DeSoEncoder")
 		}
 	}
 
@@ -3213,6 +3252,16 @@ func (likeEntry *LikeEntry) RawDecodeWithoutMetadata(blockHeight uint64, rr *byt
 	return nil
 }
 
+func (likeEntry *LikeEntry) DecodeLikeEntryFromLikerPubKeyToLikedPostHashKey(key []byte) error {
+	if len(key) < HashSizeBytes+btcec.PubKeyBytesLenCompressed+1 {
+		return fmt.Errorf("LikeEntry.RawDecodeWithoutMetadataFromKey: key is too short: %v", len(key))
+	}
+	likeEntry.LikerPubKey = key[1 : btcec.PubKeyBytesLenCompressed+1]
+	likeEntry.LikedPostHash = &BlockHash{}
+	copy(likeEntry.LikedPostHash[:], key[btcec.PubKeyBytesLenCompressed+1:])
+	return nil
+}
+
 func (likeEntry *LikeEntry) GetVersionByte(blockHeight uint64) byte {
 	return 0
 }
@@ -3674,6 +3723,83 @@ type FollowEntry struct {
 
 func (fe *FollowEntry) IsDeleted() bool {
 	return fe.isDeleted
+}
+
+func (fe *FollowEntry) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte {
+	var data []byte
+	data = append(data, EncodeToBytes(blockHeight, fe.FollowerPKID, skipMetadata...)...)
+	data = append(data, EncodeToBytes(blockHeight, fe.FollowedPKID, skipMetadata...)...)
+	return data
+}
+
+func (fe *FollowEntry) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.Reader) error {
+	followerPKID := &PKID{}
+	if exist, err := DecodeFromBytes(followerPKID, rr); exist && err == nil {
+		fe.FollowerPKID = followerPKID
+	} else if err != nil {
+		return errors.Wrapf(err, "FollowEntry.Decode: Problem reading FollowerPKID")
+	}
+
+	// FollowedPKID
+	followedPKID := &PKID{}
+	if exist, err := DecodeFromBytes(followedPKID, rr); exist && err == nil {
+		fe.FollowedPKID = followedPKID
+	} else if err != nil {
+		return errors.Wrapf(err, "FollowEntry.Decode: Problem reading FollowedPKID")
+	}
+
+	return nil
+}
+
+func (fe *FollowEntry) GetVersionByte(blockHeight uint64) byte {
+	return 0
+}
+
+func (fe *FollowEntry) GetEncoderType() EncoderType {
+	return EncoderTypeFollowEntry
+}
+
+// DeSoBalanceEntry stores the user's pkid and their corresponding DeSo balance nanos.
+type DeSoBalanceEntry struct {
+	PublicKey    []byte
+	BalanceNanos uint64
+
+	// Whether or not this entry is deleted in the view.
+	isDeleted bool
+}
+
+func (desoBalanceEntry *DeSoBalanceEntry) IsDeleted() bool {
+	return desoBalanceEntry.isDeleted
+}
+
+func (desoBalanceEntry *DeSoBalanceEntry) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte {
+	var data []byte
+	data = append(data, EncodeByteArray(desoBalanceEntry.PublicKey)...)
+	data = append(data, UintToBuf(desoBalanceEntry.BalanceNanos)...)
+	return data
+}
+
+func (desoBalanceEntry *DeSoBalanceEntry) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.Reader) error {
+	var err error
+	desoBalanceEntry.PublicKey, err = DecodeByteArray(rr)
+	if err != nil {
+		return errors.Wrapf(err, "DesoBalanceEntry.Decode: Problem reading PublicKey")
+	}
+
+	balanceNanos, err := ReadUvarint(rr)
+	if err != nil {
+		return errors.Wrapf(err, "DesoBalanceEntry.Decode: Problem reading BalanceNanos")
+	}
+	desoBalanceEntry.BalanceNanos = balanceNanos
+	return nil
+}
+
+func (desoBalanceEntry *DeSoBalanceEntry) GetVersionByte(blockHeight uint64) byte {
+	return 0
+}
+
+func (desoBalanceEntry *DeSoBalanceEntry) GetEncoderType() EncoderType {
+	return EncoderTypeDeSoBalanceEntry
 }
 
 type DiamondKey struct {

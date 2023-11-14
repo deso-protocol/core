@@ -282,8 +282,7 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 	if txMeta.CancelOrderID != nil {
 		// Connect basic txn to get the total input and the total output without
 		// considering the transaction metadata.
-		totalInput, totalOutput, utxoOpsForTxn, err := bav._connectBasicTransfer(
-			txn, txHash, blockHeight, verifySignatures)
+		totalInput, totalOutput, utxoOpsForTxn, err := bav._connectBasicTransfer(txn, txHash, blockHeight, verifySignatures)
 		if err != nil {
 			return 0, 0, nil, errors.Wrapf(err, "_connectDAOCoinLimitOrder")
 		}
@@ -309,6 +308,7 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 		utxoOpsForTxn = append(utxoOpsForTxn, &UtxoOperation{
 			Type:                                 OperationTypeDAOCoinLimitOrder,
 			PrevTransactorDAOCoinLimitOrderEntry: prevTransactorOrder,
+			StateChangeMetadata:                  &DAOCoinLimitOrderStateChangeMetadata{},
 		})
 
 		return totalInput, totalOutput, utxoOpsForTxn, nil
@@ -943,6 +943,31 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 		return 0, 0, nil, err
 	}
 
+	//  TransactorPublicKeyBase58Check            string
+	//	BuyingDAOCoinCreatorPublicKeyBase58Check  string
+	//	SellingDAOCoinCreatorPublicKeyBase58Check string
+	//	UniqueFilledOrderPublicKeys               []string
+
+	fulfilledOrderMetadata := []*FilledDAOCoinLimitOrderMetadata{}
+	for _, filledOrder := range filledOrders {
+		fulfilledOrderMetadata = append(fulfilledOrderMetadata, &FilledDAOCoinLimitOrderMetadata{
+			TransactorPublicKeyBase58Check: PkToString(
+				bav.GetPublicKeyForPKID(filledOrder.TransactorPKID), bav.Params),
+			BuyingDAOCoinCreatorPublicKey: PkToString(
+				bav.GetPublicKeyForPKID(filledOrder.BuyingDAOCoinCreatorPKID), bav.Params),
+			SellingDAOCoinCreatorPublicKey: PkToString(
+				bav.GetPublicKeyForPKID(filledOrder.SellingDAOCoinCreatorPKID), bav.Params),
+			CoinQuantityInBaseUnitsBought: filledOrder.CoinQuantityInBaseUnitsBought,
+			CoinQuantityInBaseUnitsSold:   filledOrder.CoinQuantityInBaseUnitsSold,
+			IsFulfilled:                   filledOrder.IsFulfilled,
+		})
+	}
+
+	// Track state changes for the transaction.
+	stateChangeMetadata := &DAOCoinLimitOrderStateChangeMetadata{
+		FilledDAOCoinLimitOrdersMetadata: fulfilledOrderMetadata,
+	}
+
 	// We included the transactor in the slices of the prev balance entries
 	// and the prev DAO coin limit order entries. Usually we leave them in
 	// a separate place, but here it makes sense.
@@ -952,6 +977,7 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 		PrevBalanceEntries:                   prevBalances,
 		PrevMatchingOrders:                   prevMatchingOrders,
 		FilledDAOCoinLimitOrders:             filledOrders,
+		StateChangeMetadata:                  stateChangeMetadata,
 	})
 
 	outputAndSpendAmount, err := SafeUint64().Add(totalOutput, transactorDESOSpendAmount)

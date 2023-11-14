@@ -666,9 +666,8 @@ func (txnData *CoinUnlockMetadata) New() DeSoTxnMetadata {
 //
 
 func (bav *UtxoView) _connectCoinLockup(
-	txn *MsgDeSoTxn, txHash *BlockHash,
-	blockHeight uint32, blockTimestamp int64,
-	verifySignatures bool) (_totalInput uint64,
+	txn *MsgDeSoTxn, txHash *BlockHash, blockHeight uint32,
+	blockTimestampNanoSecs int64, verifySignatures bool) (_totalInput uint64,
 	_totalOutput uint64, _utxoOps []*UtxoOperation, _err error) {
 	var utxoOpsForTxn []*UtxoOperation
 
@@ -736,13 +735,13 @@ func (bav *UtxoView) _connectCoinLockup(
 	}
 
 	// Validate the lockup expires in the future.
-	if txMeta.UnlockTimestampNanoSecs <= blockTimestamp {
+	if txMeta.UnlockTimestampNanoSecs <= blockTimestampNanoSecs {
 		return 0, 0, nil,
 			errors.Wrap(RuleErrorCoinLockupInvalidLockupDuration, "_connectCoinLockup")
 	}
 
 	// Compute the lockup duration in nanoseconds.
-	lockupDurationNanoSeconds := txMeta.UnlockTimestampNanoSecs - blockTimestamp
+	lockupDurationNanoSeconds := txMeta.UnlockTimestampNanoSecs - blockTimestampNanoSecs
 
 	// Determine the hodler PKID to use.
 	transactorPKIDEntry := bav.GetPKIDForPublicKey(txn.PublicKey)
@@ -824,7 +823,8 @@ func (bav *UtxoView) _connectCoinLockup(
 	// the profile's yield curve or the raw DeSo yield curve. Because there's some choice in how
 	// to determine the yield when the lockup duration falls between two profile-specified yield curve
 	// points, we return here the two local points and choose/interpolate between them below.
-	leftYieldCurvePoint, rightYieldCurvePoint, err := bav.GetLocalYieldCurvePoints(profilePKID, lockupDurationNanoSeconds)
+	leftYieldCurvePoint, rightYieldCurvePoint, err :=
+		bav.GetLocalYieldCurvePoints(profilePKID, lockupDurationNanoSeconds)
 	if err != nil {
 		return 0, 0, nil,
 			errors.Wrap(err, "_connectCoinLockup failed to fetch yield curve points")
@@ -1602,8 +1602,7 @@ func (bav *UtxoView) _disconnectCoinLockupTransfer(
 //
 
 func (bav *UtxoView) _connectCoinUnlock(
-	txn *MsgDeSoTxn, txHash *BlockHash,
-	blockHeight uint32, blockTimestamp int64,
+	txn *MsgDeSoTxn, txHash *BlockHash, blockHeight uint32, blockTimestampNanoSecs int64,
 	verifySignatures bool) (_totalInput uint64, _totalOutput uint64, _utxoOps []*UtxoOperation, _err error) {
 	var utxoOpsForTxn []*UtxoOperation
 
@@ -1622,7 +1621,8 @@ func (bav *UtxoView) _connectCoinUnlock(
 	}
 
 	// Try connecting the basic transfer without considering transaction metadata.
-	totalInput, totalOutput, utxoOpsForBasicTransfer, err := bav._connectBasicTransfer(txn, txHash, blockHeight, verifySignatures)
+	totalInput, totalOutput, utxoOpsForBasicTransfer, err :=
+		bav._connectBasicTransfer(txn, txHash, blockHeight, verifySignatures)
 	if err != nil {
 		return 0, 0, nil, errors.Wrap(err, "_connectCoinUnlock")
 	}
@@ -1668,7 +1668,7 @@ func (bav *UtxoView) _connectCoinUnlock(
 
 	// Retrieve unlockable locked balance entries.
 	unlockableLockedBalanceEntries, err := bav.GetUnlockableLockedBalanceEntries(
-		hodlerPKID, profilePKID, blockTimestamp)
+		hodlerPKID, profilePKID, blockTimestampNanoSecs)
 	if err != nil {
 		return 0, 0, nil, errors.Wrap(err, "_connectCoinUnlock")
 	}
@@ -1715,7 +1715,8 @@ func (bav *UtxoView) _connectCoinUnlock(
 		}
 		utxoOpsForTxn = append(utxoOpsForTxn, utxoOp)
 	} else {
-		prevTransactorBalanceEntry = bav._getBalanceEntryForHODLerPKIDAndCreatorPKID(hodlerPKID, profilePKID, true)
+		prevTransactorBalanceEntry =
+			bav._getBalanceEntryForHODLerPKIDAndCreatorPKID(hodlerPKID, profilePKID, true)
 
 		// Credit the transactor with the unlock amount.
 		newTransactorBalanceEntry := prevTransactorBalanceEntry.Copy()
@@ -1733,8 +1734,8 @@ func (bav *UtxoView) _connectCoinUnlock(
 			&profileEntry.DAOCoinEntry.CoinsInCirculationNanos,
 			unlockedBalance)
 		if err != nil {
-			return 0, 0, nil, errors.Wrap(RuleErrorCoinUnlockCausesCoinsInCirculationOverflow,
-				"_connectCoinUnlock")
+			return 0, 0, nil,
+				errors.Wrap(RuleErrorCoinUnlockCausesCoinsInCirculationOverflow, "_connectCoinUnlock")
 		}
 		profileEntry.DAOCoinEntry.CoinsInCirculationNanos = *newCoinsInCirculationNanos
 		if prevTransactorBalanceEntry.BalanceNanos.IsZero() && !newTransactorBalanceEntry.BalanceNanos.IsZero() {
@@ -1899,7 +1900,8 @@ func (bav *UtxoView) _flushLockedBalanceEntriesToDbWithTxn(txn *badger.Txn, bloc
 
 		// Delete the existing mappings in the db for this LockedBalanceEntry.
 		// They will be re-added if the corresponding entry in memory has isDeleted=false.
-		if err := DbDeleteLockedBalanceEntryWithTxn(txn, bav.Snapshot, *lockedBalanceEntry); err != nil {
+		if err := DbDeleteLockedBalanceEntryWithTxn(txn, bav.Snapshot, *lockedBalanceEntry,
+			bav.EventManager, lockedBalanceEntry.isDeleted); err != nil {
 			return errors.Wrapf(
 				err, "_flushLockedBalanceEntriesToDbWithTxn: Problem deleting mappings "+
 					"for LockedBalanceEntry: %v", &lockedBalanceEntryKey)
@@ -1910,7 +1912,7 @@ func (bav *UtxoView) _flushLockedBalanceEntriesToDbWithTxn(txn *badger.Txn, bloc
 			// We do nothing as we've already deleted the entry above or the balance is zero.
 		} else {
 			if err := DbPutLockedBalanceEntryMappingsWithTxn(txn, bav.Snapshot, blockHeight,
-				*lockedBalanceEntry); err != nil {
+				*lockedBalanceEntry, bav.EventManager); err != nil {
 				return errors.Wrap(err, "_flushLockedBalanceEntriesToDbWithTxn")
 			}
 		}
@@ -1937,7 +1939,9 @@ func (bav *UtxoView) _flushLockupYieldCurvePointEntriesToDbWithTxn(txn *badger.T
 
 			// Delete the existing mappings in the db for this LockupYieldCurvePoint.
 			// They will be re-added if the corresponding entry in memory has isDeleted=false.
-			if err := DbDeleteLockupYieldCurvePointWithTxn(txn, bav.Snapshot, *lockupYieldCurvePoint); err != nil {
+			if err := DbDeleteLockupYieldCurvePointWithTxn(
+				txn, bav.Snapshot, *lockupYieldCurvePoint,
+				bav.EventManager, lockupYieldCurvePoint.isDeleted); err != nil {
 				return errors.Wrapf(
 					err, "_flushYieldCurveEntriesToDbWithTxn: Problem deleting mappings "+
 						"for LockupYieldCurvePoint: %v", &lockupYieldCurvePoint)
@@ -1952,7 +1956,7 @@ func (bav *UtxoView) _flushLockupYieldCurvePointEntriesToDbWithTxn(txn *badger.T
 				// We do nothing as we've already deleted the entry above.
 			} else {
 				if err := DbPutLockupYieldCurvePointMappingsWithTxn(txn, bav.Snapshot, blockHeight,
-					*lockupYieldCurvePoint); err != nil {
+					*lockupYieldCurvePoint, bav.EventManager); err != nil {
 					return errors.Wrap(err, "_flushYieldCurveEntriesToDbWithTxn")
 				}
 			}

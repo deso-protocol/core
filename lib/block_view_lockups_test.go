@@ -10,7 +10,7 @@ import (
 	"testing"
 )
 
-func TestForkHeight(t *testing.T) {
+func TestCoinLockupsForkHeight(t *testing.T) {
 	// Test and ensure lockup transactions cannot trigger without:
 	//    (a) ProofOfStake1StateSetupBlockHeight Fork
 
@@ -738,7 +738,7 @@ func TestLockupBasedOverflowsOnProfiles(t *testing.T) {
 			0)
 
 		// Ensure CoinsInCirculationNanos and NumberOfHolders are now zero
-		utxoView, err := NewUtxoView(testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot)
+		utxoView, err := NewUtxoView(testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot, nil)
 		require.NoError(t, err)
 		profileEntry := utxoView.GetProfileEntryForPublicKey(m2PkBytes)
 		require.Equal(t, *uint256.NewInt(), profileEntry.DAOCoinEntry.CoinsInCirculationNanos)
@@ -1011,7 +1011,8 @@ func TestLockupStandardProfileFlows(t *testing.T) {
 	// We expect this to create a locked balance entry with 10000 base units locked inside.
 	{
 		// Get the PKID associated with m1.
-		utxoView, err := NewUtxoView(testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot)
+		utxoView, err := NewUtxoView(
+			testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot, nil)
 		require.NoError(t, err)
 		m1PKIDEntry := utxoView.GetPKIDForPublicKey(m1PkBytes)
 		m1PKID := m1PKIDEntry.PKID
@@ -1032,7 +1033,8 @@ func TestLockupStandardProfileFlows(t *testing.T) {
 		)
 
 		// Check to ensure the resulting locked balance entry has 10000 base units.
-		utxoView, err = NewUtxoView(testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot)
+		utxoView, err = NewUtxoView(
+			testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot, nil)
 		require.NoError(t, err)
 		lockedBalanceEntry, err := utxoView.GetLockedBalanceEntryForHODLerPKIDProfilePKIDUnlockTimestampNanoSecs(
 			m1PKID, m1PKID, 365*24*60*60*1e9+365*12*60*60*1e9)
@@ -1053,7 +1055,8 @@ func TestLockupStandardProfileFlows(t *testing.T) {
 	// We expect this to create a locked balance entry with 10500 base units locked inside.
 	{
 		// Get the PKID associated with m1.
-		utxoView, err := NewUtxoView(testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot)
+		utxoView, err := NewUtxoView(
+			testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot, nil)
 		require.NoError(t, err)
 		m1PKIDEntry := utxoView.GetPKIDForPublicKey(m1PkBytes)
 		m1PKID := m1PKIDEntry.PKID
@@ -1074,7 +1077,8 @@ func TestLockupStandardProfileFlows(t *testing.T) {
 		)
 
 		// Check to ensure the resulting locked balance entry has 10500 base units.
-		utxoView, err = NewUtxoView(testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot)
+		utxoView, err = NewUtxoView(
+			testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot, nil)
 		require.NoError(t, err)
 		lockedBalanceEntry, err := utxoView.GetLockedBalanceEntryForHODLerPKIDProfilePKIDUnlockTimestampNanoSecs(
 			m1PKID, m1PKID, 2*365*24*60*60*1e9)
@@ -1107,7 +1111,8 @@ func TestLockupStandardProfileFlows(t *testing.T) {
 		)
 
 		// Check to ensure the resulting locked balance entry has 10500 base units.
-		utxoView, err := NewUtxoView(testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot)
+		utxoView, err := NewUtxoView(
+			testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot, nil)
 		require.NoError(t, err)
 		m1PKIDEntry := utxoView.GetPKIDForPublicKey(m1PkBytes)
 		m1PKID := m1PKIDEntry.PKID
@@ -1133,7 +1138,8 @@ func TestLockupStandardProfileFlows(t *testing.T) {
 		)
 
 		// Check to ensure the resulting locked balance entry has 12000 base units.
-		utxoView, err := NewUtxoView(testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot)
+		utxoView, err := NewUtxoView(
+			testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot, nil)
 		require.NoError(t, err)
 		m1PKIDEntry := utxoView.GetPKIDForPublicKey(m1PkBytes)
 		m1PKID := m1PKIDEntry.PKID
@@ -1177,7 +1183,8 @@ func TestLockupStandardProfileFlows(t *testing.T) {
 		)
 
 		// Check to ensure the resulting locked balance entry for m1 has 9000 base units.
-		utxoView, err := NewUtxoView(testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot)
+		utxoView, err := NewUtxoView(
+			testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot, nil)
 		require.NoError(t, err)
 		m1PKIDEntry := utxoView.GetPKIDForPublicKey(m1PkBytes)
 		m1PKID := m1PKIDEntry.PKID
@@ -1206,7 +1213,8 @@ func TestLockupStandardProfileFlows(t *testing.T) {
 	// 500 base units of m1 DAO coins was given by m2 during the distribution phase.
 	{
 		// Get the original BalanceEntry for the associated DAO coins.
-		utxoView, err := NewUtxoView(testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot)
+		utxoView, err := NewUtxoView(
+			testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot, nil)
 		require.NoError(t, err)
 		originalBalanceEntry, _, _ := utxoView.GetBalanceEntryForHODLerPubKeyAndCreatorPubKey(
 			m2PkBytes, m1PkBytes, true)
@@ -1221,7 +1229,8 @@ func TestLockupStandardProfileFlows(t *testing.T) {
 		require.NoError(t, err)
 
 		// Get the updated BalanceEntry for the associated DAO coins.
-		utxoView, err = NewUtxoView(testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot)
+		utxoView, err = NewUtxoView(
+			testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot, nil)
 		require.NoError(t, err)
 		newBalanceEntry, _, _ := utxoView.GetBalanceEntryForHODLerPubKeyAndCreatorPubKey(
 			m2PkBytes, m1PkBytes, true)
@@ -1275,7 +1284,8 @@ func TestLockupStandardDeSoFlows(t *testing.T) {
 	// We expect this to create a locked balance entry with 500 base units locked inside.
 	{
 		// Get m1's DESO balance.
-		utxoView, err := NewUtxoView(testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot)
+		utxoView, err := NewUtxoView(
+			testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot, nil)
 		require.NoError(t, err)
 		m1OriginalBalance, err := utxoView.GetDeSoBalanceNanosForPublicKey(m1PkBytes)
 		require.NoError(t, err)
@@ -1292,7 +1302,8 @@ func TestLockupStandardDeSoFlows(t *testing.T) {
 		)
 
 		// Check to ensure the resulting locked balance entry has 525 base units.
-		utxoView, err = NewUtxoView(testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot)
+		utxoView, err = NewUtxoView(
+			testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot, nil)
 		require.NoError(t, err)
 		m1PKIDEntry := utxoView.GetPKIDForPublicKey(m1PkBytes)
 		m1PKID := m1PKIDEntry.PKID
@@ -1313,7 +1324,8 @@ func TestLockupStandardDeSoFlows(t *testing.T) {
 	// We expect this to create a locked balance entry with 525 base units locked inside.
 	{
 		// Get m1's DESO balance.
-		utxoView, err := NewUtxoView(testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot)
+		utxoView, err := NewUtxoView(
+			testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot, nil)
 		require.NoError(t, err)
 		m1OriginalBalance, err := utxoView.GetDeSoBalanceNanosForPublicKey(m1PkBytes)
 		require.NoError(t, err)
@@ -1330,7 +1342,8 @@ func TestLockupStandardDeSoFlows(t *testing.T) {
 		)
 
 		// Check to ensure the resulting locked balance entry has 525 base units.
-		utxoView, err = NewUtxoView(testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot)
+		utxoView, err = NewUtxoView(
+			testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot, nil)
 		require.NoError(t, err)
 		m1PKIDEntry := utxoView.GetPKIDForPublicKey(m1PkBytes)
 		m1PKID := m1PKIDEntry.PKID
@@ -1351,7 +1364,8 @@ func TestLockupStandardDeSoFlows(t *testing.T) {
 	// We expect this to create a locked balance entry with 525 base units locked inside.
 	{
 		// Get m1's DESO balance.
-		utxoView, err := NewUtxoView(testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot)
+		utxoView, err := NewUtxoView(
+			testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot, nil)
 		require.NoError(t, err)
 		m1OriginalBalance, err := utxoView.GetDeSoBalanceNanosForPublicKey(m1PkBytes)
 		require.NoError(t, err)
@@ -1368,7 +1382,8 @@ func TestLockupStandardDeSoFlows(t *testing.T) {
 		)
 
 		// Check to ensure the resulting locked balance entry has 525 base units.
-		utxoView, err = NewUtxoView(testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot)
+		utxoView, err = NewUtxoView(
+			testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot, nil)
 		require.NoError(t, err)
 		m1PKIDEntry := utxoView.GetPKIDForPublicKey(m1PkBytes)
 		m1PKID := m1PKIDEntry.PKID
@@ -1389,7 +1404,8 @@ func TestLockupStandardDeSoFlows(t *testing.T) {
 	// We expect this to create a locked balance entry with 600 base units locked inside.
 	{
 		// Get m1's DESO balance.
-		utxoView, err := NewUtxoView(testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot)
+		utxoView, err := NewUtxoView(
+			testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot, nil)
 		require.NoError(t, err)
 		m1OriginalBalance, err := utxoView.GetDeSoBalanceNanosForPublicKey(m1PkBytes)
 		require.NoError(t, err)
@@ -1406,7 +1422,8 @@ func TestLockupStandardDeSoFlows(t *testing.T) {
 		)
 
 		// Check to ensure the resulting locked balance entry has 525 base units.
-		utxoView, err = NewUtxoView(testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot)
+		utxoView, err = NewUtxoView(
+			testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot, nil)
 		require.NoError(t, err)
 		m1PKIDEntry := utxoView.GetPKIDForPublicKey(m1PkBytes)
 		m1PKID := m1PKIDEntry.PKID
@@ -1442,7 +1459,8 @@ func TestLockupStandardDeSoFlows(t *testing.T) {
 	// and has 525 nDESO.
 	{
 		// Get m1's DESO balance.
-		utxoView, err := NewUtxoView(testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot)
+		utxoView, err := NewUtxoView(
+			testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot, nil)
 		require.NoError(t, err)
 		m1OriginalBalance, err := utxoView.GetDeSoBalanceNanosForPublicKey(m1PkBytes)
 		require.NoError(t, err)
@@ -1457,7 +1475,8 @@ func TestLockupStandardDeSoFlows(t *testing.T) {
 		require.NoError(t, err)
 
 		// Check to ensure the resulting locked balance entry is deleted.
-		utxoView, err = NewUtxoView(testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot)
+		utxoView, err = NewUtxoView(
+			testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot, nil)
 		require.NoError(t, err)
 		m1PKIDEntry := utxoView.GetPKIDForPublicKey(m1PkBytes)
 		m1PKID := m1PKIDEntry.PKID
@@ -1484,7 +1503,8 @@ func TestLockupWithDerivedKey(t *testing.T) {
 	// Initialize m0, m1, m2, m3, m4, and paramUpdater
 	_setUpProfilesAndMintM0M1DAOCoins(testMeta)
 
-	utxoView, err := NewUtxoView(testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot)
+	utxoView, err := NewUtxoView(
+		testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot, nil)
 	require.NoError(t, err)
 	m0PKID := utxoView.GetPKIDForPublicKey(m0PkBytes).PKID
 	m1PKID := utxoView.GetPKIDForPublicKey(m1PkBytes).PKID
@@ -1496,7 +1516,8 @@ func TestLockupWithDerivedKey(t *testing.T) {
 
 	// Setup helper functions for creating m0 derived keys
 	newUtxoView := func() *UtxoView {
-		utxoView, err := NewUtxoView(testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot)
+		utxoView, err := NewUtxoView(
+			testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot, nil)
 		require.NoError(t, err)
 		return utxoView
 	}
@@ -1645,7 +1666,8 @@ func TestLockupWithDerivedKey(t *testing.T) {
 		}
 		derivedKeyPriv, derivedKeyPub, err = _submitAuthorizeDerivedKeyTxn(txnSpendingLimit)
 		require.NoError(t, err)
-		utxoView, err := NewUtxoView(testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot)
+		utxoView, err := NewUtxoView(
+			testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot, nil)
 		require.NoError(t, err)
 		derivedPubKeyBytes, _, err := Base58CheckDecode(derivedKeyPub)
 		require.NoError(t, err)
@@ -1947,7 +1969,8 @@ func TestLockupWithDerivedKey(t *testing.T) {
 			m0PkBytes, derivedKeyPriv, MsgDeSoTxn{TxnMeta: updateCoinLockupParamsMetadata}, 0,
 		)
 		require.NoError(t, err)
-		utxoView, err := NewUtxoView(testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot)
+		utxoView, err := NewUtxoView(
+			testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot, nil)
 		require.NoError(t, err)
 		profileEntry := utxoView.GetProfileEntryForPKID(m0PKID)
 		require.Equal(t, TransferRestrictionStatusProfileOwnerOnly, profileEntry.DAOCoinEntry.LockupTransferRestrictionStatus)
@@ -1969,7 +1992,8 @@ func TestLockupWithDerivedKey(t *testing.T) {
 			m0PkBytes, derivedKeyPriv, MsgDeSoTxn{TxnMeta: updateCoinLockupParamsMetadata}, 0,
 		)
 		require.NoError(t, err)
-		utxoView, err = NewUtxoView(testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot)
+		utxoView, err = NewUtxoView(
+			testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot, nil)
 		require.NoError(t, err)
 		profileEntry = utxoView.GetProfileEntryForPKID(m0PKID)
 		require.Equal(t, TransferRestrictionStatusProfileOwnerOnly, profileEntry.DAOCoinEntry.LockupTransferRestrictionStatus)
@@ -1988,7 +2012,8 @@ func TestLockupWithDerivedKey(t *testing.T) {
 			m0PkBytes, derivedKeyPriv, MsgDeSoTxn{TxnMeta: coinLockupMetadata}, 0,
 		)
 		require.NoError(t, err)
-		utxoView, err = NewUtxoView(testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot)
+		utxoView, err = NewUtxoView(
+			testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot, nil)
 		require.NoError(t, err)
 		lockedBalanceEntry, err := utxoView.GetLockedBalanceEntryForHODLerPKIDProfilePKIDUnlockTimestampNanoSecs(
 			m0PKID, m0PKID, 365*24*60*60*1e9)
@@ -2006,7 +2031,8 @@ func TestLockupWithDerivedKey(t *testing.T) {
 			m0PkBytes, derivedKeyPriv, MsgDeSoTxn{TxnMeta: coinLockupMetadata}, 0,
 		)
 		require.NoError(t, err)
-		utxoView, err = NewUtxoView(testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot)
+		utxoView, err = NewUtxoView(
+			testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot, nil)
 		require.NoError(t, err)
 		lockedBalanceEntry, err = utxoView.GetLockedBalanceEntryForHODLerPKIDProfilePKIDUnlockTimestampNanoSecs(
 			m0PKID, m0PKID, 2*365*24*60*60*1e9)
@@ -2025,7 +2051,8 @@ func TestLockupWithDerivedKey(t *testing.T) {
 			m0PkBytes, derivedKeyPriv, MsgDeSoTxn{TxnMeta: coinLockupTransferMetadata}, 0,
 		)
 		require.NoError(t, err)
-		utxoView, err = NewUtxoView(testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot)
+		utxoView, err = NewUtxoView(
+			testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot, nil)
 		require.NoError(t, err)
 		lockedBalanceEntry, err = utxoView.GetLockedBalanceEntryForHODLerPKIDProfilePKIDUnlockTimestampNanoSecs(
 			m1PKID, m0PKID, 365*24*60*60*1e9)
@@ -2044,7 +2071,8 @@ func TestLockupWithDerivedKey(t *testing.T) {
 			m0PkBytes, derivedKeyPriv, MsgDeSoTxn{TxnMeta: coinLockupTransferMetadata}, 0,
 		)
 		require.NoError(t, err)
-		utxoView, err = NewUtxoView(testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot)
+		utxoView, err = NewUtxoView(
+			testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot, nil)
 		require.NoError(t, err)
 		lockedBalanceEntry, err = utxoView.GetLockedBalanceEntryForHODLerPKIDProfilePKIDUnlockTimestampNanoSecs(
 			m1PKID, m0PKID, 2*365*24*60*60*1e9)
@@ -2053,7 +2081,8 @@ func TestLockupWithDerivedKey(t *testing.T) {
 		require.Equal(t, int64(2*365*24*60*60*1e9), lockedBalanceEntry.UnlockTimestampNanoSecs)
 
 		// Perform the first unlock operation of 500 m1 tokens @ 1yr
-		utxoView, err = NewUtxoView(testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot)
+		utxoView, err = NewUtxoView(
+			testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot, nil)
 		require.NoError(t, err)
 		balanceEntry, _, _ := utxoView.GetDAOCoinBalanceEntryForHODLerPubKeyAndCreatorPubKey(m0PkBytes, m0PkBytes)
 		startingBalance := balanceEntry.BalanceNanos
@@ -2062,7 +2091,8 @@ func TestLockupWithDerivedKey(t *testing.T) {
 			m0PkBytes, derivedKeyPriv, MsgDeSoTxn{TxnMeta: coinUnlockMetadata}, 365*24*60*60*1e9+1,
 		)
 		require.NoError(t, err)
-		utxoView, err = NewUtxoView(testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot)
+		utxoView, err = NewUtxoView(
+			testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot, nil)
 		require.NoError(t, err)
 		balanceEntry, _, _ = utxoView.GetDAOCoinBalanceEntryForHODLerPubKeyAndCreatorPubKey(m0PkBytes, m0PkBytes)
 		require.True(t, balanceEntry.BalanceNanos.Gt(&startingBalance))
@@ -2074,13 +2104,15 @@ func TestLockupWithDerivedKey(t *testing.T) {
 		require.True(t, lockedBalanceEntry == nil)
 
 		// Perform the second unlock operation of 500 m1 tokens @ 2yrs
-		utxoView, err = NewUtxoView(testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot)
+		utxoView, err = NewUtxoView(
+			testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot, nil)
 		require.NoError(t, err)
 		_, err = _submitLockupTxnWithDerivedKeyAndTimestamp(
 			m0PkBytes, derivedKeyPriv, MsgDeSoTxn{TxnMeta: coinUnlockMetadata}, 2*365*24*60*60*1e9+1,
 		)
 		require.NoError(t, err)
-		utxoView, err = NewUtxoView(testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot)
+		utxoView, err = NewUtxoView(
+			testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot, nil)
 		require.NoError(t, err)
 		balanceEntry, _, _ = utxoView.GetDAOCoinBalanceEntryForHODLerPubKeyAndCreatorPubKey(m0PkBytes, m0PkBytes)
 		require.True(t, balanceEntry.BalanceNanos.Gt(&startingBalance))
@@ -2139,12 +2171,14 @@ func TestLockupDisconnects(t *testing.T) {
 	require.NoError(t, err)
 	txHash := txn2.Hash()
 	blockHeight := testMeta.chain.BlockTip().Height + 1
-	utxoView, err := NewUtxoView(testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot)
+	utxoView, err := NewUtxoView(
+		testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot, nil)
 	require.NoError(t, err)
 	err = utxoView.DisconnectTransaction(txn2, txHash, utxoOps2, blockHeight)
 	require.NoError(t, utxoView.FlushToDb(uint64(blockHeight)))
 	require.NoError(t, err)
-	utxoView, err = NewUtxoView(testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot)
+	utxoView, err = NewUtxoView(
+		testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot, nil)
 	require.NoError(t, err)
 	m0PKID := utxoView.GetPKIDForPublicKey(m0PkBytes).PKID
 	lockedBalanceEntry, err := utxoView.GetLockedBalanceEntryForHODLerPKIDProfilePKIDUnlockTimestampNanoSecs(
@@ -2156,7 +2190,8 @@ func TestLockupDisconnects(t *testing.T) {
 	err = utxoView.DisconnectTransaction(txn1, txn1.Hash(), utxoOps1, blockHeight)
 	require.NoError(t, utxoView.FlushToDb(uint64(blockHeight)))
 	require.NoError(t, err)
-	utxoView, err = NewUtxoView(testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot)
+	utxoView, err = NewUtxoView(
+		testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot, nil)
 	require.NoError(t, err)
 	lockedBalanceEntry, err = utxoView.GetLockedBalanceEntryForHODLerPKIDProfilePKIDUnlockTimestampNanoSecs(
 		m0PKID, m0PKID, 2*365*24*60*60*1e9)
@@ -2168,7 +2203,8 @@ func TestLockupDisconnects(t *testing.T) {
 	// Test Coin Lockup for DESO
 	//
 
-	utxoView, err = NewUtxoView(testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot)
+	utxoView, err = NewUtxoView(
+		testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot, nil)
 	require.NoError(t, err)
 	originalBalance, err := utxoView.GetSpendableDeSoBalanceNanosForPublicKey(
 		m2PkBytes, testMeta.chain.BlockTip().Height)
@@ -2183,7 +2219,8 @@ func TestLockupDisconnects(t *testing.T) {
 		uint256.NewInt().SetUint64(500),
 		365*24*60*60*1e9)
 	require.NoError(t, err)
-	utxoView, err = NewUtxoView(testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot)
+	utxoView, err = NewUtxoView(
+		testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot, nil)
 	require.NoError(t, err)
 	intermediateBalance, err := utxoView.GetSpendableDeSoBalanceNanosForPublicKey(
 		m2PkBytes, testMeta.chain.BlockTip().Height)
@@ -2200,12 +2237,14 @@ func TestLockupDisconnects(t *testing.T) {
 	require.NoError(t, err)
 	txHash = txn2.Hash()
 	blockHeight = testMeta.chain.BlockTip().Height + 1
-	utxoView, err = NewUtxoView(testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot)
+	utxoView, err = NewUtxoView(
+		testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot, nil)
 	require.NoError(t, err)
 	err = utxoView.DisconnectTransaction(txn2, txHash, utxoOps2, blockHeight)
 	require.NoError(t, utxoView.FlushToDb(uint64(blockHeight)))
 	require.NoError(t, err)
-	utxoView, err = NewUtxoView(testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot)
+	utxoView, err = NewUtxoView(
+		testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot, nil)
 	require.NoError(t, err)
 	m2PKID := utxoView.GetPKIDForPublicKey(m2PkBytes).PKID
 	lockedBalanceEntry, err = utxoView.GetLockedBalanceEntryForHODLerPKIDProfilePKIDUnlockTimestampNanoSecs(
@@ -2219,7 +2258,8 @@ func TestLockupDisconnects(t *testing.T) {
 	err = utxoView.DisconnectTransaction(txn1, txn1.Hash(), utxoOps1, blockHeight)
 	require.NoError(t, utxoView.FlushToDb(uint64(blockHeight)))
 	require.NoError(t, err)
-	utxoView, err = NewUtxoView(testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot)
+	utxoView, err = NewUtxoView(
+		testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot, nil)
 	require.NoError(t, err)
 	lockedBalanceEntry, err = utxoView.GetLockedBalanceEntryForHODLerPKIDProfilePKIDUnlockTimestampNanoSecs(
 		m2PKID, &ZeroPKID, 2*365*24*60*60*1e9)
@@ -2247,7 +2287,8 @@ func TestLockupDisconnects(t *testing.T) {
 		TransferRestrictionStatusProfileOwnerOnly,
 	)
 	require.NoError(t, err)
-	utxoView, err = NewUtxoView(testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot)
+	utxoView, err = NewUtxoView(
+		testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot, nil)
 	require.NoError(t, err)
 	utxoOps, txn, _, err := _updateCoinLockupParams(
 		t, testMeta.chain, testMeta.db, testMeta.params,
@@ -2266,7 +2307,8 @@ func TestLockupDisconnects(t *testing.T) {
 	err = utxoView.DisconnectTransaction(txn, txHash, utxoOps, blockHeight)
 	require.NoError(t, utxoView.FlushToDb(uint64(blockHeight)))
 	require.NoError(t, err)
-	utxoView, err = NewUtxoView(testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot)
+	utxoView, err = NewUtxoView(
+		testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot, nil)
 	require.NoError(t, err)
 	m1PKID := utxoView.GetPKIDForPublicKey(m1PkBytes).PKID
 	leftYieldCurvePoint, rightYieldCurvePoint, err :=
@@ -2279,7 +2321,8 @@ func TestLockupDisconnects(t *testing.T) {
 	require.Equal(t, profileEntry.DAOCoinEntry.LockupTransferRestrictionStatus, TransferRestrictionStatusProfileOwnerOnly)
 
 	// Test Deleting a Yield Curve Point and Reverting Said Transaction
-	utxoView, err = NewUtxoView(testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot)
+	utxoView, err = NewUtxoView(
+		testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot, nil)
 	require.NoError(t, err)
 	utxoOps, txn, _, err = _updateCoinLockupParams(
 		t, testMeta.chain, testMeta.db, testMeta.params,
@@ -2303,7 +2346,8 @@ func TestLockupDisconnects(t *testing.T) {
 	err = utxoView.DisconnectTransaction(txn, txHash, utxoOps, blockHeight)
 	require.NoError(t, utxoView.FlushToDb(uint64(blockHeight)))
 	require.NoError(t, err)
-	utxoView, err = NewUtxoView(testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot)
+	utxoView, err = NewUtxoView(
+		testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot, nil)
 	require.NoError(t, err)
 	leftYieldCurvePoint, rightYieldCurvePoint, err =
 		utxoView.GetLocalYieldCurvePoints(m1PKID, 365*24*60*60*1e9)
@@ -2332,7 +2376,8 @@ func TestLockupDisconnects(t *testing.T) {
 		TransferRestrictionStatusProfileOwnerOnly,
 	)
 	require.NoError(t, err)
-	utxoView, err = NewUtxoView(testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot)
+	utxoView, err = NewUtxoView(
+		testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot, nil)
 	require.NoError(t, err)
 	utxoOps, txn, _, err = _updateCoinLockupParams(
 		t, testMeta.chain, testMeta.db, testMeta.params,
@@ -2351,7 +2396,8 @@ func TestLockupDisconnects(t *testing.T) {
 	err = utxoView.DisconnectTransaction(txn, txHash, utxoOps, blockHeight)
 	require.NoError(t, utxoView.FlushToDb(uint64(blockHeight)))
 	require.NoError(t, err)
-	utxoView, err = NewUtxoView(testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot)
+	utxoView, err = NewUtxoView(
+		testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot, nil)
 	require.NoError(t, err)
 	leftYieldCurvePoint, rightYieldCurvePoint, err =
 		utxoView.GetLocalYieldCurvePoints(&ZeroPKID, 365*24*60*60*1e9)
@@ -2362,7 +2408,8 @@ func TestLockupDisconnects(t *testing.T) {
 	require.Equal(t, utxoView.GlobalParamsEntry.LockedDESOTransferRestrictions, TransferRestrictionStatusProfileOwnerOnly)
 
 	// Test Deleting a Yield Curve Point and Reverting Said Transaction
-	utxoView, err = NewUtxoView(testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot)
+	utxoView, err = NewUtxoView(
+		testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot, nil)
 	require.NoError(t, err)
 	utxoOps, txn, _, err = _updateCoinLockupParams(
 		t, testMeta.chain, testMeta.db, testMeta.params,
@@ -2386,7 +2433,8 @@ func TestLockupDisconnects(t *testing.T) {
 	err = utxoView.DisconnectTransaction(txn, txHash, utxoOps, blockHeight)
 	require.NoError(t, utxoView.FlushToDb(uint64(blockHeight)))
 	require.NoError(t, err)
-	utxoView, err = NewUtxoView(testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot)
+	utxoView, err = NewUtxoView(
+		testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot, nil)
 	require.NoError(t, err)
 	leftYieldCurvePoint, rightYieldCurvePoint, err =
 		utxoView.GetLocalYieldCurvePoints(&ZeroPKID, 365*24*60*60*1e9)
@@ -2401,7 +2449,8 @@ func TestLockupDisconnects(t *testing.T) {
 	//
 
 	// Create an on-chain profile for m3 with MaxUint256 Locked Tokens
-	utxoView, err = NewUtxoView(testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot)
+	utxoView, err = NewUtxoView(
+		testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot, nil)
 	require.NoError(t, err)
 	_updateProfileWithTestMeta(
 		testMeta,
@@ -2446,7 +2495,8 @@ func TestLockupDisconnects(t *testing.T) {
 		NewPublicKey(m3PkBytes),
 		1000,
 		MaxUint256)
-	utxoView, err = NewUtxoView(testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot)
+	utxoView, err = NewUtxoView(
+		testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot, nil)
 	require.NoError(t, err)
 	m3PKID := utxoView.GetPKIDForPublicKey(m3PkBytes).PKID
 	m4PKID := utxoView.GetPKIDForPublicKey(m4PkBytes).PKID
@@ -2459,7 +2509,8 @@ func TestLockupDisconnects(t *testing.T) {
 	err = utxoView.DisconnectTransaction(txn, txHash, utxoOps, blockHeight)
 	require.NoError(t, utxoView.FlushToDb(uint64(blockHeight)))
 	require.NoError(t, err)
-	utxoView, err = NewUtxoView(testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot)
+	utxoView, err = NewUtxoView(
+		testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot, nil)
 	require.NoError(t, err)
 	m3PKID = utxoView.GetPKIDForPublicKey(m3PkBytes).PKID
 	m4PKID = utxoView.GetPKIDForPublicKey(m4PkBytes).PKID
@@ -2473,7 +2524,8 @@ func TestLockupDisconnects(t *testing.T) {
 	//
 
 	// Create an on-chain profile for m4 with MaxUint256 Locked Tokens
-	utxoView, err = NewUtxoView(testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot)
+	utxoView, err = NewUtxoView(
+		testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot, nil)
 	require.NoError(t, err)
 	_updateProfileWithTestMeta(
 		testMeta,
@@ -2510,7 +2562,8 @@ func TestLockupDisconnects(t *testing.T) {
 		MaxUint256,
 		0)
 
-	utxoView, err = NewUtxoView(testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot)
+	utxoView, err = NewUtxoView(
+		testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot, nil)
 	require.NoError(t, err)
 	m4LockedBalanceEntry, err := utxoView.GetLockedBalanceEntryForHODLerPKIDProfilePKIDUnlockTimestampNanoSecs(
 		m4PKID, m4PKID, 1000)
@@ -2528,7 +2581,8 @@ func TestLockupDisconnects(t *testing.T) {
 		1001)
 
 	// Ensure unlock functioned properly
-	utxoView, err = NewUtxoView(testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot)
+	utxoView, err = NewUtxoView(
+		testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot, nil)
 	require.NoError(t, err)
 	m4LockedBalanceEntry, err = utxoView.GetLockedBalanceEntryForHODLerPKIDProfilePKIDUnlockTimestampNanoSecs(
 		m4PKID, m4PKID, 1000)
@@ -2538,14 +2592,16 @@ func TestLockupDisconnects(t *testing.T) {
 	require.Equal(t, *MaxUint256, m4be.BalanceNanos)
 
 	// Execute the disconnect and ensure it functions correctly
-	utxoView, err = NewUtxoView(testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot)
+	utxoView, err = NewUtxoView(
+		testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot, nil)
 	require.NoError(t, err)
 	txHash = txn.Hash()
 	blockHeight = testMeta.chain.BlockTip().Height + 1
 	err = utxoView.DisconnectTransaction(txn, txHash, utxoOps, blockHeight)
 	require.NoError(t, utxoView.FlushToDb(uint64(blockHeight)))
 	require.NoError(t, err)
-	utxoView, err = NewUtxoView(testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot)
+	utxoView, err = NewUtxoView(
+		testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot, nil)
 	require.NoError(t, err)
 	m4LockedBalanceEntry, err = utxoView.GetLockedBalanceEntryForHODLerPKIDProfilePKIDUnlockTimestampNanoSecs(
 		m4PKID, m4PKID, 1000)
@@ -2559,7 +2615,8 @@ func TestLockupDisconnects(t *testing.T) {
 	//
 
 	// Lockup 500 nDESO with m4. Check to ensure balances are accurately updated.
-	utxoView, err = NewUtxoView(testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot)
+	utxoView, err = NewUtxoView(
+		testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot, nil)
 	require.NoError(t, err)
 	startingBalance, err := utxoView.GetSpendableDeSoBalanceNanosForPublicKey(
 		m4PkBytes, testMeta.chain.BlockTip().Height)
@@ -2574,7 +2631,8 @@ func TestLockupDisconnects(t *testing.T) {
 		uint256.NewInt().SetUint64(500),
 		0)
 
-	utxoView, err = NewUtxoView(testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot)
+	utxoView, err = NewUtxoView(
+		testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot, nil)
 	require.NoError(t, err)
 	m4LockedBalanceEntry, err = utxoView.GetLockedBalanceEntryForHODLerPKIDProfilePKIDUnlockTimestampNanoSecs(
 		m4PKID, &ZeroPKID, 1000)
@@ -2594,7 +2652,8 @@ func TestLockupDisconnects(t *testing.T) {
 		1001)
 
 	// Ensure unlock functioned properly
-	utxoView, err = NewUtxoView(testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot)
+	utxoView, err = NewUtxoView(
+		testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot, nil)
 	require.NoError(t, err)
 	m4LockedBalanceEntry, err = utxoView.GetLockedBalanceEntryForHODLerPKIDProfilePKIDUnlockTimestampNanoSecs(
 		m4PKID, &ZeroPKID, 1000)
@@ -2606,14 +2665,16 @@ func TestLockupDisconnects(t *testing.T) {
 	require.Less(t, startingBalance-currentBalance, uint64(500))
 
 	// Execute the disconnect and ensure it functions correctly
-	utxoView, err = NewUtxoView(testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot)
+	utxoView, err = NewUtxoView(
+		testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot, nil)
 	require.NoError(t, err)
 	txHash = txn.Hash()
 	blockHeight = testMeta.chain.BlockTip().Height + 1
 	err = utxoView.DisconnectTransaction(txn, txHash, utxoOps, blockHeight)
 	require.NoError(t, utxoView.FlushToDb(uint64(blockHeight)))
 	require.NoError(t, err)
-	utxoView, err = NewUtxoView(testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot)
+	utxoView, err = NewUtxoView(
+		testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot, nil)
 	require.NoError(t, err)
 	m4LockedBalanceEntry, err = utxoView.GetLockedBalanceEntryForHODLerPKIDProfilePKIDUnlockTimestampNanoSecs(
 		m4PKID, &ZeroPKID, 1000)
@@ -2635,7 +2696,8 @@ func TestLockupBlockConnectsAndDisconnects(t *testing.T) {
 	tipTimestamp := int64(testMeta.chain.blockTip().Header.TstampNanoSecs)
 
 	// Validate the starting state
-	utxoView, err := NewUtxoView(testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot)
+	utxoView, err := NewUtxoView(
+		testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot, nil)
 	require.NoError(t, err)
 	m0PKID := utxoView.GetPKIDForPublicKey(m0PkBytes).PKID
 	m3PKID := utxoView.GetPKIDForPublicKey(m3PkBytes).PKID
@@ -2705,7 +2767,8 @@ func TestLockupBlockConnectsAndDisconnects(t *testing.T) {
 	require.NoError(t, err)
 
 	// Validate state update
-	utxoView, err = NewUtxoView(testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot)
+	utxoView, err = NewUtxoView(
+		testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot, nil)
 	require.NoError(t, err)
 	m0PKID = utxoView.GetPKIDForPublicKey(m0PkBytes).PKID
 	m3PKID = utxoView.GetPKIDForPublicKey(m3PkBytes).PKID
@@ -2761,7 +2824,8 @@ func TestLockupBlockConnectsAndDisconnects(t *testing.T) {
 	require.NoError(t, err)
 
 	// Validate state update
-	utxoView, err = NewUtxoView(testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot)
+	utxoView, err = NewUtxoView(
+		testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot, nil)
 	require.NoError(t, err)
 	m0BalanceEntry, _, _ = utxoView.GetDAOCoinBalanceEntryForHODLerPubKeyAndCreatorPubKey(m0PkBytes, m0PkBytes)
 	m3BalanceEntry, _, _ = utxoView.GetDAOCoinBalanceEntryForHODLerPubKeyAndCreatorPubKey(m3PkBytes, m0PkBytes)
@@ -2781,7 +2845,8 @@ func TestLockupBlockConnectsAndDisconnects(t *testing.T) {
 	//
 
 	// Disconnect the second block
-	utxoView, err = NewUtxoView(testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot)
+	utxoView, err = NewUtxoView(
+		testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot, nil)
 	require.NoError(t, err)
 	blk2Hash, err := blk2.Hash()
 	require.NoError(t, err)
@@ -2797,7 +2862,8 @@ func TestLockupBlockConnectsAndDisconnects(t *testing.T) {
 	testMeta.chain.bestChain = testMeta.chain.bestChain[:len(testMeta.chain.bestChain)-1]
 
 	// Validate the state update
-	utxoView, err = NewUtxoView(testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot)
+	utxoView, err = NewUtxoView(
+		testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot, nil)
 	require.NoError(t, err)
 	m0PKID = utxoView.GetPKIDForPublicKey(m0PkBytes).PKID
 	m3PKID = utxoView.GetPKIDForPublicKey(m3PkBytes).PKID
@@ -2826,7 +2892,8 @@ func TestLockupBlockConnectsAndDisconnects(t *testing.T) {
 	//
 
 	// Disconnect the first block
-	utxoView, err = NewUtxoView(testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot)
+	utxoView, err = NewUtxoView(
+		testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot, nil)
 	blk1Hash, err := blk1.Hash()
 	require.NoError(t, err)
 	utxoView.TipHash = blk1Hash
@@ -2843,7 +2910,8 @@ func TestLockupBlockConnectsAndDisconnects(t *testing.T) {
 	testMeta.chain.bestChain = testMeta.chain.bestChain[:len(testMeta.chain.bestChain)-1]
 
 	// Verify we return back to the initial state
-	utxoView, err = NewUtxoView(testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot)
+	utxoView, err = NewUtxoView(
+		testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot, nil)
 	require.NoError(t, err)
 	m0Profile = utxoView.GetProfileEntryForPKID(m0PKID)
 	require.Equal(t, TransferRestrictionStatusUnrestricted, m0Profile.DAOCoinEntry.LockupTransferRestrictionStatus)
@@ -3047,7 +3115,7 @@ func _coinLockupWithConnectTimestamp(t *testing.T, chain *Blockchain, db *badger
 	profilePkBytes, _, err := Base58CheckDecode(profilePublicKeyBase58Check)
 	require.NoError(err)
 
-	utxoView, err := NewUtxoView(db, params, chain.postgres, chain.snapshot)
+	utxoView, err := NewUtxoView(db, params, chain.postgres, chain.snapshot, nil)
 	require.NoError(err)
 
 	// Create the coin lockup transaction.
@@ -3134,7 +3202,7 @@ func _updateCoinLockupParams(t *testing.T, chain *Blockchain, db *badger.DB,
 	transactorPkBytes, _, err := Base58CheckDecode(transactorPublicKeyBase58Check)
 	require.NoError(err)
 
-	utxoView, err := NewUtxoView(db, params, chain.postgres, chain.snapshot)
+	utxoView, err := NewUtxoView(db, params, chain.postgres, chain.snapshot, nil)
 	require.NoError(err)
 
 	// Create the update coin lockup params transaction.
@@ -3213,7 +3281,7 @@ func _coinLockupTransfer(t *testing.T, chain *Blockchain, db *badger.DB,
 	transactorPkBytes, _, err := Base58CheckDecode(transactorPublicKeyBase58Check)
 	require.NoError(err)
 
-	utxoView, err := NewUtxoView(db, params, chain.postgres, chain.snapshot)
+	utxoView, err := NewUtxoView(db, params, chain.postgres, chain.snapshot, nil)
 	require.NoError(err)
 
 	// Create the update coin lockup params transaction.
@@ -3291,7 +3359,7 @@ func _coinUnlockWithConnectTimestamp(t *testing.T, chain *Blockchain, db *badger
 	profilePkBytes, _, err := Base58CheckDecode(profilePublicKeyBase58Check)
 	require.NoError(err)
 
-	utxoView, err := NewUtxoView(db, params, chain.postgres, chain.snapshot)
+	utxoView, err := NewUtxoView(db, params, chain.postgres, chain.snapshot, nil)
 	require.NoError(err)
 
 	// Create the coin unlock transaction.

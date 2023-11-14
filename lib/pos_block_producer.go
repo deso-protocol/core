@@ -108,8 +108,8 @@ func (pbp *PosBlockProducer) createBlockTemplate(latestBlockView *UtxoView, newB
 
 // createBlockWithoutHeader is a helper function used by createBlockTemplate. It constructs a partially filled out
 // block with Fee-Time ordered transactions. The returned block all its contents filled, except for the header.
-func (pbp *PosBlockProducer) createBlockWithoutHeader(latestBlockView *UtxoView,
-	newBlockHeight uint64, newBlockTimestamp uint64) (BlockTemplate, error) {
+func (pbp *PosBlockProducer) createBlockWithoutHeader(
+	latestBlockView *UtxoView, newBlockHeight uint64, newBlockTimestampNanoSecs uint64) (BlockTemplate, error) {
 	block := NewMessage(MsgTypeBlock).(*MsgDeSoBlock)
 
 	// Create the block reward transaction.
@@ -125,7 +125,7 @@ func (pbp *PosBlockProducer) createBlockWithoutHeader(latestBlockView *UtxoView,
 
 	// Get block transactions from the mempool.
 	feeTimeTxns, txnConnectStatusByIndex, maxUtilityFee, err := pbp.getBlockTransactions(
-		latestBlockView, newBlockHeight, newBlockTimestamp,
+		latestBlockView, newBlockHeight, newBlockTimestampNanoSecs,
 		pbp.params.MinerMaxBlockSizeBytes-uint64(len(blockRewardTxnSizeBytes)))
 	if err != nil {
 		return nil, errors.Wrapf(err, "PosBlockProducer.createBlockWithoutHeader: Problem retrieving block transactions: ")
@@ -141,9 +141,10 @@ func (pbp *PosBlockProducer) createBlockWithoutHeader(latestBlockView *UtxoView,
 }
 
 // getBlockTransactions is used to retrieve fee-time ordered transactions from the mempool.
-func (pbp *PosBlockProducer) getBlockTransactions(latestBlockView *UtxoView, newBlockHeight uint64,
-	newBlockTimestamp uint64, maxBlockSizeBytes uint64) (
-	_txns []*MsgDeSoTxn, _txnConnectStatusByIndex *bitset.Bitset, _maxUtilityFee uint64, _err error) {
+func (pbp *PosBlockProducer) getBlockTransactions(
+	latestBlockView *UtxoView, newBlockHeight uint64, newBlockTimestampNanoSecs uint64,
+	maxBlockSizeBytes uint64) (_txns []*MsgDeSoTxn, _txnConnectStatusByIndex *bitset.Bitset,
+	_maxUtilityFee uint64, _err error) {
 	// Get Fee-Time ordered transactions from the mempool
 	feeTimeTxns := pbp.mp.GetTransactions()
 
@@ -171,7 +172,7 @@ func (pbp *PosBlockProducer) getBlockTransactions(latestBlockView *UtxoView, new
 			return nil, nil, 0, errors.Wrapf(err, "Error copying UtxoView: ")
 		}
 		_, _, _, fees, err := blockUtxoViewCopy._connectTransaction(
-			txn.GetTxn(), txn.Hash(), int64(len(txnBytes)), uint32(newBlockHeight), int64(newBlockTimestamp),
+			txn.GetTxn(), txn.Hash(), int64(len(txnBytes)), uint32(newBlockHeight), int64(newBlockTimestampNanoSecs),
 			true, false)
 
 		// Check if the transaction connected.

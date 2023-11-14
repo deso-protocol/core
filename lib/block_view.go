@@ -163,10 +163,23 @@ type UtxoView struct {
 	// for error-checking when doing a bulk operation on the view.
 	TipHash *BlockHash
 
-	Handle   *badger.DB
+	// Handle is a pointer to the badger database. This is the primary data store
+	// for entries and messages on the DeSo blockchain.
+	Handle *badger.DB
+
+	// Postgres is a pointer to the Postgres database. This is an alternative data store
+	// to the badger database that has previously been used.
 	Postgres *Postgres
-	Params   *DeSoParams
+
+	// DeSoParams is a struct that contains all of the parameters that
+	// define how the DeSo blockchain operates. It is set once at startup
+	// and then never changed.
+	Params *DeSoParams
+
+	// Snapshot tracks the current state of the hypersyncing database.
 	Snapshot *Snapshot
+	// EventManager is used to emit callbacks when certain actions are triggered.
+	EventManager *EventManager
 }
 
 // Assumes the db Handle is already set on the view, but otherwise the
@@ -283,7 +296,7 @@ func (bav *UtxoView) _ResetViewMappingsAfterFlush() {
 }
 
 func (bav *UtxoView) CopyUtxoView() (*UtxoView, error) {
-	newView, err := NewUtxoView(bav.Handle, bav.Params, bav.Postgres, bav.Snapshot)
+	newView, err := NewUtxoView(bav.Handle, bav.Params, bav.Postgres, bav.Snapshot, bav.EventManager)
 	if err != nil {
 		return nil, err
 	}
@@ -529,7 +542,7 @@ func (bav *UtxoView) CopyUtxoView() (*UtxoView, error) {
 		len(bav.TransactorNonceMapKeyToTransactorNonceEntry))
 	for entryKey, entry := range bav.TransactorNonceMapKeyToTransactorNonceEntry {
 		newEntry := *entry
-		newView.TransactorNonceMapKeyToTransactorNonceEntry[entryKey] = &newEntry
+		newView.TransactorNonceMapKeyToTransactorNonceEntry[entryKey] = newEntry.Copy()
 	}
 
 	// Copy the LockedBalanceEntries
@@ -537,7 +550,7 @@ func (bav *UtxoView) CopyUtxoView() (*UtxoView, error) {
 		len(bav.LockedBalanceEntryKeyToLockedBalanceEntry))
 	for entryKey, entry := range bav.LockedBalanceEntryKeyToLockedBalanceEntry {
 		newEntry := *entry
-		newView.LockedBalanceEntryKeyToLockedBalanceEntry[entryKey] = &newEntry
+		newView.LockedBalanceEntryKeyToLockedBalanceEntry[entryKey] = newEntry.Copy()
 	}
 
 	// Copy the LockupYieldCurvePoints
@@ -618,6 +631,7 @@ func NewUtxoView(
 	_params *DeSoParams,
 	_postgres *Postgres,
 	_snapshot *Snapshot,
+	_eventManager *EventManager,
 ) (*UtxoView, error) {
 
 	view := UtxoView{
@@ -630,8 +644,9 @@ func NewUtxoView(
 		// itself with the header chain (see comment on GetBestHash for more info on that).
 		TipHash: DbGetBestHash(_handle, _snapshot, ChainTypeDeSoBlock /* don't get the header chain */),
 
-		Postgres: _postgres,
-		Snapshot: _snapshot,
+		Postgres:     _postgres,
+		Snapshot:     _snapshot,
+		EventManager: _eventManager,
 		// Set everything else in _ResetViewMappings()
 	}
 
@@ -2120,6 +2135,7 @@ func (bav *UtxoView) _connectBasicTransferWithExtraSpend(
 			PrevPostEntry:    previousDiamondPostEntry,
 			PrevDiamondEntry: previousDiamondEntry,
 		})
+
 	}
 
 	// If signature verification is requested then do that as well.
@@ -3270,8 +3286,7 @@ func (bav *UtxoView) _connectUpdateGlobalParams(
 
 	// Connect basic txn to get the total input and the total output without
 	// considering the transaction metadata.
-	totalInput, totalOutput, utxoOpsForTxn, err := bav._connectBasicTransfer(
-		txn, txHash, blockHeight, verifySignatures)
+	totalInput, totalOutput, utxoOpsForTxn, err := bav._connectBasicTransfer(txn, txHash, blockHeight, verifySignatures)
 	if err != nil {
 		return 0, 0, nil, errors.Wrapf(err, "_connectUpdateGlobalParams: ")
 	}
@@ -3358,20 +3373,17 @@ func (bav *UtxoView) ValidateDiamondsAndGetNumDeSoNanos(
 
 func (bav *UtxoView) ConnectTransaction(
 	txn *MsgDeSoTxn, txHash *BlockHash, txnSizeBytes int64,
-	blockHeight uint32, blockTimestamp int64, verifySignatures bool,
-	ignoreUtxos bool) (_utxoOps []*UtxoOperation, _totalInput uint64,
-	_totalOutput uint64, _fees uint64, _err error) {
-
-	return bav._connectTransaction(txn, txHash, txnSizeBytes, blockHeight, blockTimestamp, verifySignatures, ignoreUtxos)
+	blockHeight uint32, blockTimestampNanoSecs int64, verifySignatures bool,
+	ignoreUtxos bool) (_utxoOps []*UtxoOperation, _totalInput uint64, _totalOutput uint64, _fees uint64, _err error) {
+	return bav._connectTransaction(txn, txHash, txnSizeBytes,
+		blockHeight, blockTimestampNanoSecs, verifySignatures, ignoreUtxos)
 
 }
 
 func (bav *UtxoView) _connectTransaction(
-	txn *MsgDeSoTxn, txHash *BlockHash, txnSizeBytes int64,
-	blockHeight uint32, blockTimestamp int64, verifySignatures bool,
-	ignoreUtxos bool) (_utxoOps []*UtxoOperation, _totalInput uint64,
-	_totalOutput uint64, _fees uint64, _err error) {
-
+	txn *MsgDeSoTxn, txHash *BlockHash, txnSizeBytes int64, blockHeight uint32,
+	blockTimestampNanoSecs int64, verifySignatures bool,
+	ignoreUtxos bool) (_utxoOps []*UtxoOperation, _totalInput uint64, _totalOutput uint64, _fees uint64, _err error) {
 	// Do a quick sanity check before trying to connect.
 	if err := CheckTransactionSanity(txn, blockHeight, bav.Params); err != nil {
 		return nil, 0, 0, 0, errors.Wrapf(err, "_connectTransaction: ")
@@ -3449,8 +3461,7 @@ func (bav *UtxoView) _connectTransaction(
 	switch txn.TxnMeta.GetTxnType() {
 	case TxnTypeBlockReward, TxnTypeBasicTransfer:
 		totalInput, totalOutput, utxoOpsForTxn, err =
-			bav._connectBasicTransfer(
-				txn, txHash, blockHeight, verifySignatures)
+			bav._connectBasicTransfer(txn, txHash, blockHeight, verifySignatures)
 
 	case TxnTypeBitcoinExchange:
 		totalInput, totalOutput, utxoOpsForTxn, err =
@@ -3611,13 +3622,13 @@ func (bav *UtxoView) _connectTransaction(
 		totalInput, totalOutput, utxoOpsForTxn, err = bav._connectUnjailValidator(txn, txHash, blockHeight, verifySignatures)
 
 	case TxnTypeCoinLockup:
-		totalInput, totalOutput, utxoOpsForTxn, err = bav._connectCoinLockup(txn, txHash, blockHeight, blockTimestamp, verifySignatures)
+		totalInput, totalOutput, utxoOpsForTxn, err = bav._connectCoinLockup(txn, txHash, blockHeight, blockTimestampNanoSecs, verifySignatures)
 	case TxnTypeUpdateCoinLockupParams:
 		totalInput, totalOutput, utxoOpsForTxn, err = bav._connectUpdateCoinLockupParams(txn, txHash, blockHeight, verifySignatures)
 	case TxnTypeCoinLockupTransfer:
 		totalInput, totalOutput, utxoOpsForTxn, err = bav._connectCoinLockupTransfer(txn, txHash, blockHeight, verifySignatures)
 	case TxnTypeCoinUnlock:
-		totalInput, totalOutput, utxoOpsForTxn, err = bav._connectCoinUnlock(txn, txHash, blockHeight, blockTimestamp, verifySignatures)
+		totalInput, totalOutput, utxoOpsForTxn, err = bav._connectCoinUnlock(txn, txHash, blockHeight, blockTimestampNanoSecs, verifySignatures)
 
 	default:
 		err = fmt.Errorf("ConnectTransaction: Unimplemented txn type %v", txn.TxnMeta.GetTxnType().String())

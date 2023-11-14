@@ -764,7 +764,7 @@ func (mp *DeSoMempool) OpenTempDBAndDumpTxns() error {
 		if len(txnsToDump)%1000 == 0 || ii == len(allTxns)-1 {
 			glog.Infof("OpenTempDBAndDumpTxns: Dumping txns %v to %v", ii-len(txnsToDump)+1, ii)
 			err := tempMempoolDB.Update(func(txn *badger.Txn) error {
-				return FlushMempoolToDbWithTxn(txn, nil, blockHeight, txnsToDump)
+				return FlushMempoolToDbWithTxn(txn, nil, blockHeight, txnsToDump, mp.bc.eventManager)
 			})
 			if err != nil {
 				return fmt.Errorf("OpenTempDBAndDumpTxns: Error flushing mempool txns to DB: %v", err)
@@ -913,7 +913,7 @@ func (mp *DeSoMempool) _quickCheckBitcoinExchangeTxn(
 	// Note that it is safe to use this because we expect that the blockchain
 	// lock is held for the duration of this function call so there shouldn't
 	// be any shifting of the db happening beneath our fee.
-	utxoView, err := NewUtxoView(mp.bc.db, mp.bc.params, mp.bc.postgres, mp.bc.snapshot)
+	utxoView, err := NewUtxoView(mp.bc.db, mp.bc.params, mp.bc.postgres, mp.bc.snapshot, mp.bc.eventManager)
 	if err != nil {
 		return 0, errors.Wrapf(err,
 			"_helpConnectDepsAndFinalTxn: Problem initializing UtxoView")
@@ -930,7 +930,8 @@ func (mp *DeSoMempool) _quickCheckBitcoinExchangeTxn(
 	// transaction will only get this far once we are positive the BitcoinManager
 	// has the block corresponding to the transaction.
 	// We skip verifying txn size for bitcoin exchange transactions.
-	_, _, _, txFee, err := utxoView._connectTransaction(tx, txHash, 0, bestHeight, 0, false, false)
+	_, _, _, txFee, err := utxoView._connectTransaction(
+		tx, txHash, 0, bestHeight, 0, false, false)
 	if err != nil {
 		// Note this can happen in odd cases where a transaction's dependency was removed
 		// but the transaction depending on it was not. See the comment on
@@ -1475,9 +1476,9 @@ func ComputeTransactionMetadata(txn *MsgDeSoTxn, utxoView *UtxoView, blockHash *
 					CreatorCoinRoyaltyNanos:     utxoOp.NFTBidCreatorRoyaltyNanos,
 					CreatorRoyaltyNanos:         utxoOp.NFTBidCreatorDESORoyaltyNanos,
 					CreatorPublicKeyBase58Check: creatorPublicKeyBase58Check,
-					AdditionalCoinRoyaltiesMap: pubKeyRoyaltyPairToBase58CheckToRoyaltyNanosMap(
+					AdditionalCoinRoyaltiesMap: PubKeyRoyaltyPairToBase58CheckToRoyaltyNanosMap(
 						utxoOp.NFTBidAdditionalCoinRoyalties, utxoView.Params),
-					AdditionalDESORoyaltiesMap: pubKeyRoyaltyPairToBase58CheckToRoyaltyNanosMap(
+					AdditionalDESORoyaltiesMap: PubKeyRoyaltyPairToBase58CheckToRoyaltyNanosMap(
 						utxoOp.NFTBidAdditionalDESORoyalties, utxoView.Params),
 				}
 			}
@@ -1536,9 +1537,9 @@ func ComputeTransactionMetadata(txn *MsgDeSoTxn, utxoView *UtxoView, blockHash *
 				CreatorCoinRoyaltyNanos:     utxoOp.AcceptNFTBidCreatorRoyaltyNanos,
 				CreatorRoyaltyNanos:         utxoOp.AcceptNFTBidCreatorDESORoyaltyNanos,
 				CreatorPublicKeyBase58Check: creatorPublicKeyBase58Check,
-				AdditionalCoinRoyaltiesMap: pubKeyRoyaltyPairToBase58CheckToRoyaltyNanosMap(
+				AdditionalCoinRoyaltiesMap: PubKeyRoyaltyPairToBase58CheckToRoyaltyNanosMap(
 					utxoOp.AcceptNFTBidAdditionalCoinRoyalties, utxoView.Params),
-				AdditionalDESORoyaltiesMap: pubKeyRoyaltyPairToBase58CheckToRoyaltyNanosMap(
+				AdditionalDESORoyaltiesMap: PubKeyRoyaltyPairToBase58CheckToRoyaltyNanosMap(
 					utxoOp.AcceptNFTBidAdditionalDESORoyalties, utxoView.Params),
 			},
 		}
@@ -1581,9 +1582,9 @@ func ComputeTransactionMetadata(txn *MsgDeSoTxn, utxoView *UtxoView, blockHash *
 
 		postEntry := utxoView.GetPostEntryForPostHash(realTxMeta.NFTPostHash)
 
-		additionalDESORoyaltiesMap := pkidRoyaltyMapToBase58CheckToRoyaltyMap(
+		additionalDESORoyaltiesMap := PkidRoyaltyMapToBase58CheckToRoyaltyMap(
 			postEntry.AdditionalNFTRoyaltiesToCreatorsBasisPoints, utxoView)
-		additionalCoinRoyaltiesMap := pkidRoyaltyMapToBase58CheckToRoyaltyMap(
+		additionalCoinRoyaltiesMap := PkidRoyaltyMapToBase58CheckToRoyaltyMap(
 			postEntry.AdditionalNFTRoyaltiesToCoinsBasisPoints, utxoView)
 		txnMeta.CreateNFTTxindexMetadata = &CreateNFTTxindexMetadata{
 			NFTPostHashHex:             hex.EncodeToString(realTxMeta.NFTPostHash[:]),
@@ -1609,9 +1610,9 @@ func ComputeTransactionMetadata(txn *MsgDeSoTxn, utxoView *UtxoView, blockHash *
 
 		postEntry := utxoView.GetPostEntryForPostHash(realTxMeta.NFTPostHash)
 
-		additionalDESORoyaltiesMap := pkidRoyaltyMapToBase58CheckToRoyaltyMap(
+		additionalDESORoyaltiesMap := PkidRoyaltyMapToBase58CheckToRoyaltyMap(
 			postEntry.AdditionalNFTRoyaltiesToCreatorsBasisPoints, utxoView)
-		additionalCoinRoyaltiesMap := pkidRoyaltyMapToBase58CheckToRoyaltyMap(
+		additionalCoinRoyaltiesMap := PkidRoyaltyMapToBase58CheckToRoyaltyMap(
 			postEntry.AdditionalNFTRoyaltiesToCoinsBasisPoints, utxoView)
 		txnMeta.UpdateNFTTxindexMetadata = &UpdateNFTTxindexMetadata{
 			NFTPostHashHex: hex.EncodeToString(realTxMeta.NFTPostHash[:]),
@@ -1959,10 +1960,26 @@ func ComputeTransactionMetadata(txn *MsgDeSoTxn, utxoView *UtxoView, blockHash *
 			})
 		}
 	}
+	// Check if the transactor is an affected public key. If not, add them.
+	if txnMeta.TransactorPublicKeyBase58Check != "" {
+		transactorPublicKeyFound := false
+		for _, affectedPublicKey := range txnMeta.AffectedPublicKeys {
+			if affectedPublicKey.PublicKeyBase58Check == txnMeta.TransactorPublicKeyBase58Check {
+				transactorPublicKeyFound = true
+				break
+			}
+		}
+		if !transactorPublicKeyFound {
+			txnMeta.AffectedPublicKeys = append(txnMeta.AffectedPublicKeys, &AffectedPublicKey{
+				PublicKeyBase58Check: txnMeta.TransactorPublicKeyBase58Check,
+				Metadata:             "TransactorPublicKeyBase58Check",
+			})
+		}
+	}
 	return txnMeta
 }
 
-func pkidRoyaltyMapToBase58CheckToRoyaltyMap(royaltyMap map[PKID]uint64, utxoView *UtxoView) map[string]uint64 {
+func PkidRoyaltyMapToBase58CheckToRoyaltyMap(royaltyMap map[PKID]uint64, utxoView *UtxoView) map[string]uint64 {
 	if len(royaltyMap) == 0 {
 		return nil
 	}
@@ -1974,7 +1991,7 @@ func pkidRoyaltyMapToBase58CheckToRoyaltyMap(royaltyMap map[PKID]uint64, utxoVie
 	return pubKeyMap
 }
 
-func pubKeyRoyaltyPairToBase58CheckToRoyaltyNanosMap(
+func PubKeyRoyaltyPairToBase58CheckToRoyaltyNanosMap(
 	publicKeyRoyaltyPairs []*PublicKeyRoyaltyPair, params *DeSoParams) map[string]uint64 {
 	if len(publicKeyRoyaltyPairs) == 0 {
 		return nil
@@ -2054,7 +2071,8 @@ func ConnectTxnAndComputeTransactionMetadata(
 
 	totalNanosPurchasedBefore := utxoView.NanosPurchased
 	usdCentsPerBitcoinBefore := utxoView.GetCurrentUSDCentsPerBitcoin()
-	utxoOps, totalInput, totalOutput, fees, err := utxoView._connectTransaction(txn, txn.Hash(), 0, blockHeight, 0, false, false)
+	utxoOps, totalInput, totalOutput, fees, err := utxoView._connectTransaction(
+		txn, txn.Hash(), 0, blockHeight, 0, false, false)
 	if err != nil {
 		return nil, fmt.Errorf(
 			"UpdateTxindex: Error connecting txn to UtxoView: %v", err)
@@ -2594,9 +2612,9 @@ func NewDeSoMempool(_bc *Blockchain, _rateLimitFeerateNanosPerKB uint64,
 	_minFeerateNanosPerKB uint64, _blockCypherAPIKey string,
 	_runReadOnlyViewUpdater bool, _dataDir string, _mempoolDumpDir string, useDefaultBadgerOptions bool) *DeSoMempool {
 
-	utxoView, _ := NewUtxoView(_bc.db, _bc.params, _bc.postgres, _bc.snapshot)
-	backupUtxoView, _ := NewUtxoView(_bc.db, _bc.params, _bc.postgres, _bc.snapshot)
-	readOnlyUtxoView, _ := NewUtxoView(_bc.db, _bc.params, _bc.postgres, _bc.snapshot)
+	utxoView, _ := NewUtxoView(_bc.db, _bc.params, _bc.postgres, _bc.snapshot, _bc.eventManager)
+	backupUtxoView, _ := NewUtxoView(_bc.db, _bc.params, _bc.postgres, _bc.snapshot, _bc.eventManager)
+	readOnlyUtxoView, _ := NewUtxoView(_bc.db, _bc.params, _bc.postgres, _bc.snapshot, _bc.eventManager)
 	newPool := &DeSoMempool{
 		quit:                            make(chan struct{}),
 		bc:                              _bc,

@@ -311,8 +311,7 @@ func (bav *UtxoView) HelpConnectDAOCoinInitialization(txn *MsgDeSoTxn, txHash *B
 	}
 	// Connect basic txn to get the total input and the total output without
 	// considering the transaction metadata.
-	totalInput, totalOutput, utxoOpsForTxn, err := bav._connectBasicTransfer(
-		txn, txHash, blockHeight, verifySignatures)
+	totalInput, totalOutput, utxoOpsForTxn, err := bav._connectBasicTransfer(txn, txHash, blockHeight, verifySignatures)
 	if err != nil {
 		return 0, 0, nil, nil, errors.Wrapf(err, "_connectDAOCoin: ")
 	}
@@ -427,6 +426,11 @@ func (bav *UtxoView) HelpConnectDAOCoinMint(
 		bav._setProfileEntryMappings(creatorProfileEntry)
 	}
 
+	// Add state change metadata.
+	stateChangeMetadata := &DAOCoinStateChangeMetadata{
+		CreatorProfileEntry: creatorProfileEntry,
+	}
+
 	// Add an operation to the list at the end indicating we've executed a
 	// DAOCoin txn. Save the previous state of the CreatorCoinEntry for easy
 	// reversion during disconnect.
@@ -434,6 +438,7 @@ func (bav *UtxoView) HelpConnectDAOCoinMint(
 		Type:                    OperationTypeDAOCoin,
 		PrevCoinEntry:           &prevDAOCoinEntry,
 		PrevCreatorBalanceEntry: &prevProfileOwnerBalanceEntry,
+		StateChangeMetadata:     stateChangeMetadata,
 	})
 
 	return totalInput, totalOutput, utxoOpsForTxn, nil
@@ -517,10 +522,16 @@ func (bav *UtxoView) HelpConnectDAOCoinBurn(
 	}
 	bav._setProfileEntryMappings(creatorProfileEntry)
 
+	// Add state change metadata.
+	stateChangeMetadata := &DAOCoinStateChangeMetadata{
+		CreatorProfileEntry: creatorProfileEntry,
+	}
+
 	utxoOpsForTxn = append(utxoOpsForTxn, &UtxoOperation{
 		Type:                       OperationTypeDAOCoin,
 		PrevCoinEntry:              &prevCoinEntry,
 		PrevTransactorBalanceEntry: &prevTransactorBalanceEntry,
+		StateChangeMetadata:        stateChangeMetadata,
 	})
 
 	return totalInput, totalOutput, utxoOpsForTxn, nil
@@ -548,15 +559,21 @@ func (bav *UtxoView) HelpConnectDAOCoinDisableMinting(
 		return 0, 0, nil, RuleErrorDAOCoinCannotDisableMintingIfAlreadyDisabled
 	}
 
-	// Save the previous coin entry and then set minting disabled on the existing profile
+	// Save the previous coin entry and creatorProfileEntry and then set minting disabled on the existing profile
 	prevCoinEntry := creatorProfileEntry.DAOCoinEntry
 	creatorProfileEntry.DAOCoinEntry.MintingDisabled = true
 
 	bav._setProfileEntryMappings(creatorProfileEntry)
 
+	// Add state change metadata.
+	stateChangeMetadata := &DAOCoinStateChangeMetadata{
+		CreatorProfileEntry: creatorProfileEntry,
+	}
+
 	utxoOpsForTxn = append(utxoOpsForTxn, &UtxoOperation{
-		Type:          OperationTypeDAOCoin,
-		PrevCoinEntry: &prevCoinEntry,
+		Type:                OperationTypeDAOCoin,
+		PrevCoinEntry:       &prevCoinEntry,
+		StateChangeMetadata: stateChangeMetadata,
 	})
 
 	return totalInput, totalOutput, utxoOpsForTxn, nil
@@ -596,9 +613,15 @@ func (bav *UtxoView) HelpConnectUpdateTransferRestrictionStatus(
 
 	bav._setProfileEntryMappings(creatorProfileEntry)
 
+	// Add state change metadata.
+	stateChangeMetadata := &DAOCoinStateChangeMetadata{
+		CreatorProfileEntry: creatorProfileEntry,
+	}
+
 	utxoOpsForTxn = append(utxoOpsForTxn, &UtxoOperation{
-		Type:          OperationTypeDAOCoin,
-		PrevCoinEntry: &prevCoinEntry,
+		Type:                OperationTypeDAOCoin,
+		PrevCoinEntry:       &prevCoinEntry,
+		StateChangeMetadata: stateChangeMetadata,
 	})
 
 	return totalInput, totalOutput, utxoOpsForTxn, err

@@ -203,7 +203,7 @@ func (desoBlockProducer *DeSoBlockProducer) _getBlockTemplate(publicKey []byte) 
 
 		// Create a new view object.
 		utxoView, err := NewUtxoView(desoBlockProducer.chain.db, desoBlockProducer.params,
-			desoBlockProducer.postgres, desoBlockProducer.chain.snapshot)
+			desoBlockProducer.postgres, desoBlockProducer.chain.snapshot, nil)
 		if err != nil {
 			return nil, nil, nil, errors.Wrapf(err,
 				"DeSoBlockProducer._getBlockTemplate: Error generating checker UtxoView: ")
@@ -278,7 +278,7 @@ func (desoBlockProducer *DeSoBlockProducer) _getBlockTemplate(publicKey []byte) 
 	// Compute the total fee the BlockProducer should get.
 	totalFeeNanos := uint64(0)
 	feesUtxoView, err := NewUtxoView(desoBlockProducer.chain.db, desoBlockProducer.params,
-		desoBlockProducer.postgres, desoBlockProducer.chain.snapshot)
+		desoBlockProducer.postgres, desoBlockProducer.chain.snapshot, nil)
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf(
 			"DeSoBlockProducer._getBlockTemplate: Error generating UtxoView to compute txn fees: %v", err)
@@ -293,7 +293,9 @@ func (desoBlockProducer *DeSoBlockProducer) _getBlockTemplate(publicKey []byte) 
 	// Skip the block reward, which is the first txn in the block.
 	for _, txnInBlock := range blockRet.Txns[1:] {
 		var feeNanos uint64
-		_, _, _, feeNanos, err = feesUtxoView._connectTransaction(txnInBlock, txnInBlock.Hash(), 0, uint32(blockRet.Header.Height), 0, false, false)
+		_, _, _, feeNanos, err = feesUtxoView._connectTransaction(
+			txnInBlock, txnInBlock.Hash(), 0, uint32(blockRet.Header.Height),
+			0, false, false)
 		if err != nil {
 			return nil, nil, nil, fmt.Errorf(
 				"DeSoBlockProducer._getBlockTemplate: Error attaching txn to UtxoView for computed block: %v", err)

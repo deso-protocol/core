@@ -17,6 +17,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/google/uuid"
+
 	"github.com/holiman/uint256"
 
 	"github.com/btcsuite/btcd/btcec"
@@ -64,7 +66,7 @@ type DBPrefixes struct {
 	// The prefix for the block index:
 	// Key format: <prefix_id, hash BlockHash>
 	// Value format: serialized MsgDeSoBlock
-	PrefixBlockHashToBlock []byte `prefix_id:"[0]"`
+	PrefixBlockHashToBlock []byte `prefix_id:"[0]" core_state:"true"`
 
 	// The prefix for the node index that we use to reconstruct the block tree.
 	// Storing the height in big-endian byte order allows us to read in all the
@@ -95,8 +97,8 @@ type DBPrefixes struct {
 	// that were applied by this block. To roll back the block, one must loop through
 	// the UtxoOperations for a particular block backwards and invert them.
 	//
-	// <prefix_id, hash *BlockHash > -> < serialized []UtxoOperation using custom encoding >
-	PrefixBlockHashToUtxoOperations []byte `prefix_id:"[9]"`
+	// <prefix_id, hash *BlockHash > -> < serialized [][]UtxoOperation using custom encoding >
+	PrefixBlockHashToUtxoOperations []byte `prefix_id:"[9]" core_state:"true"`
 	// The below are mappings related to the validation of BitcoinExchange transactions.
 	//
 	// The number of nanos that has been purchased thus far.
@@ -116,7 +118,7 @@ type DBPrefixes struct {
 	// a message sends from pkFrom to pkTo then there will be two separate entries,
 	// one for pkFrom and one for pkTo. The exact format is as follows:
 	// <public key (33 bytes) || uint64 big-endian> -> <MessageEntry>
-	PrefixPublicKeyTimestampToPrivateMessage []byte `prefix_id:"[12]" is_state:"true"`
+	PrefixPublicKeyTimestampToPrivateMessage []byte `prefix_id:"[12]" is_state:"true" core_state:"true"`
 
 	// Tracks the tip of the transaction index. This is used to determine
 	// which blocks need to be processed in order to update the index.
@@ -130,7 +132,7 @@ type DBPrefixes struct {
 
 	// Main post index.
 	// <prefix_id, PostHash BlockHash> -> PostEntry
-	PrefixPostHashToPostEntry []byte `prefix_id:"[17]" is_state:"true"`
+	PrefixPostHashToPostEntry []byte `prefix_id:"[17]" is_state:"true" core_state:"true"`
 	// Post sorts
 	// <prefix_id, publicKey [33]byte, PostHash> -> <>
 	PrefixPosterPublicKeyPostHash []byte `prefix_id:"[18]" is_state:"true"`
@@ -149,7 +151,7 @@ type DBPrefixes struct {
 
 	// Main profile index
 	// <prefix_id, PKID [33]byte> -> ProfileEntry
-	PrefixPKIDToProfileEntry []byte `prefix_id:"[23]" is_state:"true"`
+	PrefixPKIDToProfileEntry []byte `prefix_id:"[23]" is_state:"true" core_state:"true"`
 	// Profile sorts
 	// For username, we set the PKID as a value since the username is not fixed width.
 	// We always lowercase usernames when using them as map keys in order to make
@@ -166,26 +168,26 @@ type DBPrefixes struct {
 	// Prefixes for follows:
 	// <prefix_id, follower PKID [33]byte, followed PKID [33]byte> -> <>
 	// <prefix_id, followed PKID [33]byte, follower PKID [33]byte> -> <>
-	PrefixFollowerPKIDToFollowedPKID []byte `prefix_id:"[28]" is_state:"true"`
+	PrefixFollowerPKIDToFollowedPKID []byte `prefix_id:"[28]" is_state:"true" core_state:"true"`
 	PrefixFollowedPKIDToFollowerPKID []byte `prefix_id:"[29]" is_state:"true"`
 
 	// Prefixes for likes:
 	// <prefix_id, user pub key [33]byte, liked post hash [32]byte> -> <>
 	// <prefix_id, post hash [32]byte, user pub key [33]byte> -> <>
-	PrefixLikerPubKeyToLikedPostHash []byte `prefix_id:"[30]" is_state:"true"`
+	PrefixLikerPubKeyToLikedPostHash []byte `prefix_id:"[30]" is_state:"true" core_state:"true"`
 	PrefixLikedPostHashToLikerPubKey []byte `prefix_id:"[31]" is_state:"true"`
 
 	// Prefixes for creator coin fields:
 	// <prefix_id, HODLer PKID [33]byte, creator PKID [33]byte> -> <BalanceEntry>
 	// <prefix_id, creator PKID [33]byte, HODLer PKID [33]byte> -> <BalanceEntry>
 	PrefixHODLerPKIDCreatorPKIDToBalanceEntry []byte `prefix_id:"[33]" is_state:"true"`
-	PrefixCreatorPKIDHODLerPKIDToBalanceEntry []byte `prefix_id:"[34]" is_state:"true"`
+	PrefixCreatorPKIDHODLerPKIDToBalanceEntry []byte `prefix_id:"[34]" is_state:"true" core_state:"true"`
 
 	PrefixPosterPublicKeyTimestampPostHash []byte `prefix_id:"[35]" is_state:"true"`
 	// If no mapping exists for a particular public key, then the PKID is simply
 	// the public key itself.
 	// <prefix_id, [33]byte> -> <PKID [33]byte>
-	PrefixPublicKeyToPKID []byte `prefix_id:"[36]" is_state:"true"`
+	PrefixPublicKeyToPKID []byte `prefix_id:"[36]" is_state:"true" core_state:"true"`
 	// <prefix_id, PKID [33]byte> -> <PublicKey [33]byte>
 	PrefixPKIDToPublicKey []byte `prefix_id:"[37]" is_state:"true"`
 	// Prefix for storing mempool transactions in badger. These stored transactions are
@@ -200,7 +202,7 @@ type DBPrefixes struct {
 	//  <prefix_id, DiamondReceiverPKID [33]byte, DiamondSenderPKID [33]byte, posthash> -> <DiamondEntry>
 	//  <prefix_id, DiamondSenderPKID [33]byte, DiamondReceiverPKID [33]byte, posthash> -> <DiamondEntry>
 	PrefixDiamondReceiverPKIDDiamondSenderPKIDPostHash []byte `prefix_id:"[41]" is_state:"true"`
-	PrefixDiamondSenderPKIDDiamondReceiverPKIDPostHash []byte `prefix_id:"[43]" is_state:"true"`
+	PrefixDiamondSenderPKIDDiamondReceiverPKIDPostHash []byte `prefix_id:"[43]" is_state:"true" core_state:"true"`
 	// Public keys that have been restricted from signing blocks.
 	// <prefix_id, ForbiddenPublicKey [33]byte> -> <>
 	PrefixForbiddenBlockSignaturePubKeys []byte `prefix_id:"[44]" is_state:"true"`
@@ -214,17 +216,17 @@ type DBPrefixes struct {
 	PrefixDiamondedPostHashDiamonderPKIDDiamondLevel   []byte `prefix_id:"[47]" is_state:"true"`
 	// Prefixes for NFT ownership:
 	// 	<prefix_id, NFTPostHash [32]byte, SerialNumber uint64> -> NFTEntry
-	PrefixPostHashSerialNumberToNFTEntry []byte `prefix_id:"[48]" is_state:"true"`
+	PrefixPostHashSerialNumberToNFTEntry []byte `prefix_id:"[48]" is_state:"true" core_state:"true"`
 	//  <prefix_id, PKID [33]byte, IsForSale bool, BidAmountNanos uint64, NFTPostHash[32]byte, SerialNumber uint64> -> NFTEntry
 	PrefixPKIDIsForSaleBidAmountNanosPostHashSerialNumberToNFTEntry []byte `prefix_id:"[49]" is_state:"true"`
 	// Prefixes for NFT bids:
 	//  <prefix_id, NFTPostHash [32]byte, SerialNumber uint64, BidNanos uint64, PKID [33]byte> -> <>
-	PrefixPostHashSerialNumberBidNanosBidderPKID []byte `prefix_id:"[50]" is_state:"true"`
+	PrefixPostHashSerialNumberBidNanosBidderPKID []byte `prefix_id:"[50]" is_state:"true" core_state:"true"`
 	//  <prefix_id, BidderPKID [33]byte, NFTPostHash [32]byte, SerialNumber uint64> -> <BidNanos uint64>
 	PrefixBidderPKIDPostHashSerialNumberToBidNanos []byte `prefix_id:"[51]" is_state:"true"`
 
 	// <prefix_id, PublicKey [33]byte> -> uint64
-	PrefixPublicKeyToDeSoBalanceNanos []byte `prefix_id:"[52]" is_state:"true"`
+	PrefixPublicKeyToDeSoBalanceNanos []byte `prefix_id:"[52]" is_state:"true" core_state:"true"`
 
 	// Block reward prefix:
 	//   - This index is needed because block rewards take N blocks to mature, which means we need
@@ -242,7 +244,7 @@ type DBPrefixes struct {
 	// Prefixes for DAO coin fields:
 	// <prefix, HODLer PKID [33]byte, creator PKID [33]byte> -> <BalanceEntry>
 	// <prefix, creator PKID [33]byte, HODLer PKID [33]byte> -> <BalanceEntry>
-	PrefixHODLerPKIDCreatorPKIDToDAOCoinBalanceEntry []byte `prefix_id:"[55]" is_state:"true"`
+	PrefixHODLerPKIDCreatorPKIDToDAOCoinBalanceEntry []byte `prefix_id:"[55]" is_state:"true" core_state:"true"`
 	PrefixCreatorPKIDHODLerPKIDToDAOCoinBalanceEntry []byte `prefix_id:"[56]" is_state:"true"`
 
 	// Prefix for MessagingGroupEntries indexed by OwnerPublicKey and GroupKeyName:
@@ -292,7 +294,7 @@ type DBPrefixes struct {
 
 	// Prefix for Authorize Derived Key transactions:
 	// 		<prefix_id, OwnerPublicKey [33]byte, DerivedPublicKey [33]byte> -> <DerivedKeyEntry>
-	PrefixAuthorizeDerivedKey []byte `prefix_id:"[59]" is_state:"true"`
+	PrefixAuthorizeDerivedKey []byte `prefix_id:"[59]" is_state:"true" core_state:"true"`
 
 	// Prefixes for DAO coin limit orders
 	// This index powers the order book.
@@ -320,7 +322,7 @@ type DBPrefixes struct {
 	//   _PrefixDAOCoinLimitOrderByOrderID
 	//   OrderID [32]byte
 	// > -> <DAOCoinLimitOrderEntry>
-	PrefixDAOCoinLimitOrder                 []byte `prefix_id:"[60]" is_state:"true"`
+	PrefixDAOCoinLimitOrder                 []byte `prefix_id:"[60]" is_state:"true" core_state:"true"`
 	PrefixDAOCoinLimitOrderByTransactorPKID []byte `prefix_id:"[61]" is_state:"true"`
 	PrefixDAOCoinLimitOrderByOrderID        []byte `prefix_id:"[62]" is_state:"true"`
 
@@ -330,7 +332,7 @@ type DBPrefixes struct {
 	//   PrefixUserAssociationByID
 	//   AssociationID [32]byte
 	//  > -> < UserAssociationEntry >
-	PrefixUserAssociationByID []byte `prefix_id:"[63]" is_state:"true"`
+	PrefixUserAssociationByID []byte `prefix_id:"[63]" is_state:"true" core_state:"true"`
 	// PrefixUserAssociationByTransactor:
 	//  <
 	//   PrefixUserAssociationByTransactor
@@ -368,7 +370,7 @@ type DBPrefixes struct {
 	//   PrefixPostAssociationByID
 	//   AssociationID [32]byte
 	//  > -> < PostAssociationEntry >
-	PrefixPostAssociationByID []byte `prefix_id:"[67]" is_state:"true"`
+	PrefixPostAssociationByID []byte `prefix_id:"[67]" is_state:"true" core_state:"true"`
 	// PrefixPostAssociationByTransactor
 	//  <
 	//   PrefixPostAssociationByTransactor
@@ -418,7 +420,7 @@ type DBPrefixes struct {
 	//   easy access to the owner key for decrypting messages.
 	//
 	// <prefix, AccessGroupOwnerPublicKey [33]byte, GroupKeyName [32]byte> -> <AccessGroupEntry>
-	PrefixAccessGroupEntriesByAccessGroupId []byte `prefix_id:"[71]" is_state:"true"`
+	PrefixAccessGroupEntriesByAccessGroupId []byte `prefix_id:"[71]" is_state:"true" core_state:"true"`
 
 	// This prefix is used to store all mappings for access group members. The group owner has a
 	// special-case mapping with <groupOwnerPk, groupOwnerPk, groupName> and then everybody else has
@@ -438,7 +440,7 @@ type DBPrefixes struct {
 	//
 	// New <GroupMembershipIndex> :
 	// <prefix, AccessGroupMemberPublicKey [33]byte, AccessGroupOwnerPublicKey [33]byte, GroupKeyName [32]byte> -> <AccessGroupMemberEntry>
-	PrefixAccessGroupMembershipIndex []byte `prefix_id:"[72]" is_state:"true"`
+	PrefixAccessGroupMembershipIndex []byte `prefix_id:"[72]" is_state:"true" core_state:"true"`
 
 	// Prefix for enumerating all the members of a group. Note that the previous index allows us to
 	// answer the question, "what groups is this person a member of?" while this index allows us to
@@ -450,7 +452,7 @@ type DBPrefixes struct {
 	// PrefixGroupChatMessagesIndex is modified by the NewMessage transaction and is used to store group chat
 	// NewMessageEntry objects for each message sent to a group chat. The index has the following structure:
 	// 	<prefix, AccessGroupOwnerPublicKey, AccessGroupKeyName, TimestampNanos> -> <NewMessageEntry>
-	PrefixGroupChatMessagesIndex []byte `prefix_id:"[74]" is_state:"true"`
+	PrefixGroupChatMessagesIndex []byte `prefix_id:"[74]" is_state:"true" core_state:"true"`
 
 	// PrefixDmMessagesIndex is modified by the NewMessage transaction and is used to store NewMessageEntry objects for
 	// each message sent to a Dm thread. It answers the question: "Give me all the messages between these two users."
@@ -477,22 +479,32 @@ type DBPrefixes struct {
 	// 	<prefix, expirationBlockHeight, PKID, partialID> -> <>
 	PrefixNoncePKIDIndex []byte `prefix_id:"[77]" is_state:"true"`
 
+	// PrefixTxnHashToTxn is used to store transactions that have been processed by the node. This isn't actually stored
+	// in badger, but is tracked by state syncer when processing mempool transactions.
+	// The index has the following structure:
+	// 	<prefix, txnHash> -> <Transaction>
+	PrefixTxnHashToTxn []byte `prefix_id:"[78]" core_state:"true"`
+
+	// PrefixTxnHashToUtxoOps is used to store UtxoOps for transactions that have been processed by the node.
+	// This isn't actually stored in badger, but is tracked by state syncer when processing mempool transactions.
+	PrefixTxnHashToUtxoOps []byte `prefix_id:"[79]" core_state:"true"`
+
 	// PrefixValidatorByPKID: Retrieve a validator by PKID.
 	// Prefix, <ValidatorPKID [33]byte> -> ValidatorEntry
-	PrefixValidatorByPKID []byte `prefix_id:"[78]" is_state:"true"`
+	PrefixValidatorByPKID []byte `prefix_id:"[80]" is_state:"true"`
 
 	// PrefixValidatorByStatusAndStakeAmount: Retrieve the top N active validators by stake.
 	// Prefix, <Status uint8>, <TotalStakeAmountNanos *uint256.Int>, <ValidatorPKID [33]byte> -> nil
 	// Note that we save space by storing a nil value and parsing the ValidatorPKID from the key.
-	PrefixValidatorByStatusAndStakeAmount []byte `prefix_id:"[79]" is_state:"true"`
+	PrefixValidatorByStatusAndStakeAmount []byte `prefix_id:"[81]" is_state:"true"`
 
 	// PrefixStakeByValidatorAndStaker: Retrieve a StakeEntry.
 	// Prefix, <ValidatorPKID [33]byte>, <StakerPKID [33]byte> -> StakeEntry
-	PrefixStakeByValidatorAndStaker []byte `prefix_id:"[80]" is_state:"true"`
+	PrefixStakeByValidatorAndStaker []byte `prefix_id:"[82]" is_state:"true"`
 
 	// PrefixStakeByStakeAmount: Retrieve the top N stake entries by stake amount.
 	// Prefix, <TotalStakeAmountNanos *uint256.Int>, <ValidatorPKID [33]byte>, <StakerPKID [33]byte> -> nil
-	PrefixStakeByStakeAmount []byte `prefix_id:"[81]" is_state:"true"`
+	PrefixStakeByStakeAmount []byte `prefix_id:"[83]" is_state:"true"`
 
 	// PrefixLockedStakeByValidatorAndStakerAndLockedAt: Retrieve a LockedStakeEntry.
 	// Prefix, <ValidatorPKID [33]byte>, <StakerPKID [33]byte>, <LockedAtEpochNumber uint64> -> LockedStakeEntry
@@ -519,61 +531,93 @@ type DBPrefixes struct {
 	//   (CurrentEpoch - LockedAtEpochNumber) = 133 - 123 = 10, which is greater than
 	//   cooldown=3. Thus the UnlockStake will succeed, which will result in the
 	//   LockedStakeEntry being deleted and 25 DESO being added to the user's balance.
-	PrefixLockedStakeByValidatorAndStakerAndLockedAt []byte `prefix_id:"[82]" is_state:"true"`
+	PrefixLockedStakeByValidatorAndStakerAndLockedAt []byte `prefix_id:"[84]" is_state:"true"`
 
 	// PrefixCurrentEpoch: Retrieve the current EpochEntry.
 	// Prefix -> EpochEntry
-	PrefixCurrentEpoch []byte `prefix_id:"[83]" is_state:"true"`
+	PrefixCurrentEpoch []byte `prefix_id:"[85]" is_state:"true"`
 
 	// PrefixCurrentRandomSeedHash: Retrieve the current RandomSeedHash.
 	// Prefix -> <RandomSeedHash [32]byte>.
-	PrefixCurrentRandomSeedHash []byte `prefix_id:"[84]" is_state:"true"`
+	PrefixCurrentRandomSeedHash []byte `prefix_id:"[86]" is_state:"true"`
 
 	// PrefixSnapshotGlobalParamsEntry: Retrieve a snapshot GlobalParamsEntry by SnapshotAtEpochNumber.
 	// Prefix, <SnapshotAtEpochNumber uint64> -> *GlobalParamsEntry
-	PrefixSnapshotGlobalParamsEntry []byte `prefix_id:"[85]" is_state:"true"`
+	PrefixSnapshotGlobalParamsEntry []byte `prefix_id:"[87]" is_state:"true"`
 
 	// PrefixSnapshotValidatorSetByPKID: Retrieve a ValidatorEntry from a snapshot validator set by
 	// <SnapshotAtEpochNumber, PKID>.
 	// Prefix, <SnapshotAtEpochNumber uint64>, <ValidatorPKID [33]byte> -> *ValidatorEntry
-	PrefixSnapshotValidatorSetByPKID []byte `prefix_id:"[86]" is_state:"true"`
+	PrefixSnapshotValidatorSetByPKID []byte `prefix_id:"[88]" is_state:"true"`
 
 	// PrefixSnapshotValidatorSetByStakeAmount: Retrieve stake-ordered ValidatorEntries from a snapshot validator set
 	// by SnapshotAtEpochNumber.
 	// Prefix, <SnapshotAtEpochNumber uint64>, <TotalStakeAmountNanos *uint256.Int>, <ValidatorPKID [33]byte> -> nil
 	// Note: we parse the ValidatorPKID from the key and the value is nil to save space.
-	PrefixSnapshotValidatorSetByStakeAmount []byte `prefix_id:"[87]" is_state:"true"`
+	PrefixSnapshotValidatorSetByStakeAmount []byte `prefix_id:"[89]" is_state:"true"`
 
 	// PrefixSnapshotValidatorSetTotalStakeAmountNanos: Retrieve a snapshot of the validator set's total amount of
 	// staked DESO by SnapshotAtEpochNumber.
 	// Prefix, <SnapshotAtEpochNumber uint64> -> *uint256.Int
-	PrefixSnapshotValidatorSetTotalStakeAmountNanos []byte `prefix_id:"[88]" is_state:"true"`
+	PrefixSnapshotValidatorSetTotalStakeAmountNanos []byte `prefix_id:"[90]" is_state:"true"`
 
 	// PrefixSnapshotLeaderSchedule: Retrieve a ValidatorPKID by <SnapshotAtEpochNumber, LeaderIndex>.
 	// Prefix, <SnapshotAtEpochNumber uint64>, <LeaderIndex uint16> -> ValidatorPKID
-	PrefixSnapshotLeaderSchedule []byte `prefix_id:"[89]" is_state:"true"`
+	PrefixSnapshotLeaderSchedule []byte `prefix_id:"[91]" is_state:"true"`
 
 	// PrefixSnapshotStakeToRewardByValidatorAndStaker: Retrieves snapshotted StakeEntries that are eligible to
 	// receive staking rewards for an epoch. StakeEntries can be retrieved by ValidatorPKID and StakerPKID.
 	// Prefix, <SnapshotAtEpochNumber>, <ValidatorPKID [33]byte>, <StakerPKID [33]byte> -> *StakeEntry
 	// Note, we parse the ValidatorPKID and StakerPKID from the key.
-	PrefixSnapshotStakeToRewardByValidatorAndStaker []byte `prefix_id:"[90]" is_state:"true"`
+	PrefixSnapshotStakeToRewardByValidatorAndStaker []byte `prefix_id:"[92]" is_state:"true"`
 
 	// PrefixLockedBalanceEntryByHODLerPKIDProfilePKIDUnlockTimestampNanoSecs:
 	// Retrieves LockedBalanceEntries that may or may not be claimable for unlock.
 	// LockedBalanceEntries can be retrieved by HodlerPKID and CreatorPKID are have their
 	// corresponding unlock timestamp appended to sort by timestamp.
 	// Prefix, <HodlerPKID [33]byte>, <ProfilePKID [33]byte>, <UnlockTimestampNanoSecs int64> -> <LockedBalanceEntry>
-	PrefixLockedBalanceEntryByHODLerPKIDProfilePKIDUnlockTimestampNanoSecs []byte `prefix_id:"[91]" is_state:"true"`
+	PrefixLockedBalanceEntryByHODLerPKIDProfilePKIDUnlockTimestampNanoSecs []byte `prefix_id:"[93]" is_state:"true"`
 
 	// PrefixLockupYieldCurvePointByProfilePKIDAndDurationNanoSecs:
 	// Retrieves a LockupYieldCurvePoint.
 	// The structure of the key enables quick lookups for a (ProfilePKID, Duration) pair as well
 	// as quick construction of yield curve plots over time.
 	// Prefix, <ProfilePKID [33]byte>, <LockupDurationNanoSecs int64> -> <LockupYieldCurvePoint>
-	PrefixLockupYieldCurvePointByProfilePKIDAndDurationNanoSecs []byte `prefix_id:"[92]" is_state:"true"`
+	PrefixLockupYieldCurvePointByProfilePKIDAndDurationNanoSecs []byte `prefix_id:"[94]" is_state:"true"`
 
-	// NEXT_TAG: 93
+	// NEXT_TAG: 95
+}
+
+// DecodeStateKey decodes a state key into a DeSoEncoder type. This is useful for encoders which don't have a stored
+// value in badger (meaning all info is stored via the key).
+func DecodeStateKey(key []byte, value []byte) (DeSoEncoder, error) {
+	prefix := key[:1]
+	if bytes.Equal(prefix, Prefixes.PrefixLikerPubKeyToLikedPostHash) {
+		if likeEntry, err := _decodeDbKeyForLikerPubKeyToLikedPostHashMapping(key); err != nil {
+			return nil, err
+		} else {
+			return likeEntry, nil
+		}
+	} else if bytes.Equal(prefix, Prefixes.PrefixFollowerPKIDToFollowedPKID) {
+		if followEntry, err := _decodeDbKeyForFollowerToFollowedMapping(key); err != nil {
+			return nil, err
+		} else {
+			return followEntry, nil
+		}
+	} else if bytes.Equal(prefix, Prefixes.PrefixPostHashSerialNumberBidNanosBidderPKID) {
+		if bidEntry, err := _decodeDbKeyForPostHashSerialNumberBidNanosBidderPKIDMapping(key); err != nil {
+			return nil, err
+		} else {
+			return bidEntry, nil
+		}
+	} else if bytes.Equal(prefix, Prefixes.PrefixPublicKeyToDeSoBalanceNanos) {
+		if balanceEntry, err := _decodeDbKeyForPublicKeyToDeSoBalanceNanosMapping(key, value); err != nil {
+			return nil, err
+		} else {
+			return balanceEntry, nil
+		}
+	}
+	return nil, fmt.Errorf("DecodeStateKey: No encoder found for prefix: %v", prefix)
 }
 
 // StatePrefixToDeSoEncoder maps each state prefix to a DeSoEncoder type that is stored under that prefix.
@@ -582,7 +626,10 @@ func StatePrefixToDeSoEncoder(prefix []byte) (_isEncoder bool, _encoder DeSoEnco
 	if len(prefix) > MaxPrefixLen {
 		panic(any(fmt.Sprintf("Called with prefix longer than MaxPrefixLen, prefix: (%v), MaxPrefixLen: (%v)", prefix, MaxPrefixLen)))
 	}
-	if bytes.Equal(prefix, Prefixes.PrefixUtxoKeyToUtxoEntry) {
+	if bytes.Equal(prefix, Prefixes.PrefixBlockHashToBlock) {
+		// prefix_id:"[0]"
+		return true, &MsgDeSoBlock{}
+	} else if bytes.Equal(prefix, Prefixes.PrefixUtxoKeyToUtxoEntry) {
 		// prefix_id:"[5]"
 		return true, &UtxoEntry{}
 	} else if bytes.Equal(prefix, Prefixes.PrefixPubKeyUtxoKey) {
@@ -591,6 +638,9 @@ func StatePrefixToDeSoEncoder(prefix []byte) (_isEncoder bool, _encoder DeSoEnco
 	} else if bytes.Equal(prefix, Prefixes.PrefixUtxoNumEntries) {
 		// prefix_id:"[8]"
 		return false, nil
+	} else if bytes.Equal(prefix, Prefixes.PrefixBlockHashToUtxoOperations) {
+		// prefix_id:"[9]"
+		return true, &UtxoOperationBundle{}
 	} else if bytes.Equal(prefix, Prefixes.PrefixNanosPurchased) {
 		// prefix_id:"[10]"
 		return false, nil
@@ -775,50 +825,56 @@ func StatePrefixToDeSoEncoder(prefix []byte) (_isEncoder bool, _encoder DeSoEnco
 	} else if bytes.Equal(prefix, Prefixes.PrefixNoncePKIDIndex) {
 		// prefix_id:"[77]"
 		return false, nil
-	} else if bytes.Equal(prefix, Prefixes.PrefixValidatorByPKID) {
+	} else if bytes.Equal(prefix, Prefixes.PrefixTxnHashToTxn) {
 		// prefix_id:"[78]"
+		return true, &MsgDeSoTxn{}
+	} else if bytes.Equal(prefix, Prefixes.PrefixTxnHashToUtxoOps) {
+		// prefix_id:"[79]"
+		return true, &UtxoOperationBundle{}
+	} else if bytes.Equal(prefix, Prefixes.PrefixValidatorByPKID) {
+		// prefix_id:"[80]"
 		return true, &ValidatorEntry{}
 	} else if bytes.Equal(prefix, Prefixes.PrefixValidatorByStatusAndStakeAmount) {
-		// prefix_id:"[79]"
-		return false, nil
-	} else if bytes.Equal(prefix, Prefixes.PrefixStakeByValidatorAndStaker) {
-		// prefix_id:"[80]"
-		return true, &StakeEntry{}
-	} else if bytes.Equal(prefix, Prefixes.PrefixStakeByStakeAmount) {
 		// prefix_id:"[81]"
 		return false, nil
-	} else if bytes.Equal(prefix, Prefixes.PrefixLockedStakeByValidatorAndStakerAndLockedAt) {
+	} else if bytes.Equal(prefix, Prefixes.PrefixStakeByValidatorAndStaker) {
 		// prefix_id:"[82]"
+		return true, &StakeEntry{}
+	} else if bytes.Equal(prefix, Prefixes.PrefixStakeByStakeAmount) {
+		// prefix_id:"[83]"
+		return false, nil
+	} else if bytes.Equal(prefix, Prefixes.PrefixLockedStakeByValidatorAndStakerAndLockedAt) {
+		// prefix_id:"[84]"
 		return true, &LockedStakeEntry{}
 	} else if bytes.Equal(prefix, Prefixes.PrefixCurrentEpoch) {
-		// prefix_id:"[83]"
+		// prefix_id:"[85]"
 		return true, &EpochEntry{}
 	} else if bytes.Equal(prefix, Prefixes.PrefixCurrentRandomSeedHash) {
-		// prefix_id:"[84]"
+		// prefix_id:"[86]"
 		return false, nil
 	} else if bytes.Equal(prefix, Prefixes.PrefixSnapshotGlobalParamsEntry) {
-		// prefix_id:"[85]"
+		// prefix_id:"[87]"
 		return true, &GlobalParamsEntry{}
 	} else if bytes.Equal(prefix, Prefixes.PrefixSnapshotValidatorSetByPKID) {
-		// prefix_id:"[86]"
+		// prefix_id:"[88]"
 		return true, &ValidatorEntry{}
 	} else if bytes.Equal(prefix, Prefixes.PrefixSnapshotValidatorSetByStakeAmount) {
-		// prefix_id:"[87]"
+		// prefix_id:"[89]"
 		return false, nil
 	} else if bytes.Equal(prefix, Prefixes.PrefixSnapshotValidatorSetTotalStakeAmountNanos) {
-		// prefix_id:"[88]"
+		// prefix_id:"[90]"
 		return false, nil
 	} else if bytes.Equal(prefix, Prefixes.PrefixSnapshotLeaderSchedule) {
-		// prefix_id:"[89]"
+		// prefix_id:"[91]"
 		return true, &PKID{}
 	} else if bytes.Equal(prefix, Prefixes.PrefixSnapshotStakeToRewardByValidatorAndStaker) {
-		// prefix_id:"[90]"
+		// prefix_id:"[92]"
 		return true, &StakeEntry{}
 	} else if bytes.Equal(prefix, Prefixes.PrefixLockedBalanceEntryByHODLerPKIDProfilePKIDUnlockTimestampNanoSecs) {
-		// prefix_id:"[91]"
+		// prefix_id:"[93]"
 		return true, &LockedBalanceEntry{}
 	} else if bytes.Equal(prefix, Prefixes.PrefixLockupYieldCurvePointByProfilePKIDAndDurationNanoSecs) {
-		// prefix_id:"[92]"
+		// prefix_id:"[94]"
 		return true, &LockupYieldCurvePoint{}
 	}
 
@@ -872,8 +928,14 @@ type DBStatePrefixes struct {
 	// StatePrefixesMap maps prefixes to whether they are state (true) or non-state (false) prefixes.
 	StatePrefixesMap map[byte]bool
 
+	// CoreStatePrefixesMap maps prefixes to whether they are core state (true) or non-state (false) prefixes.
+	CoreStatePrefixesMap map[byte]bool
+
 	// StatePrefixesList is a list of state prefixes.
 	StatePrefixesList [][]byte
+
+	// CoreStatePrefixesList is a list of core state prefixes for state syncer.
+	CoreStatePrefixesList [][]byte
 
 	// TxIndexPrefixes is a list of TxIndex prefixes
 	TxIndexPrefixes [][]byte
@@ -886,6 +948,7 @@ func GetStatePrefixes() *DBStatePrefixes {
 	statePrefixes := &DBStatePrefixes{}
 	statePrefixes.Prefixes = &DBPrefixes{}
 	statePrefixes.StatePrefixesMap = make(map[byte]bool)
+	statePrefixes.CoreStatePrefixesMap = make(map[byte]bool)
 
 	// Iterate over all the DBPrefixes fields and parse the prefix_id and is_state tags.
 	prefixElements := reflect.ValueOf(statePrefixes.Prefixes).Elem()
@@ -903,6 +966,12 @@ func GetStatePrefixes() *DBStatePrefixes {
 			panic(any(fmt.Errorf("prefix (%v) already exists in StatePrefixesMap. You created a "+
 				"prefix overlap, fix it", structFields.Field(i).Name)))
 		}
+
+		if structFields.Field(i).Tag.Get("core_state") == "true" {
+			statePrefixes.CoreStatePrefixesMap[prefix] = true
+			statePrefixes.CoreStatePrefixesList = append(statePrefixes.CoreStatePrefixesList, []byte{prefix})
+		}
+
 		if structFields.Field(i).Tag.Get("is_state") == "true" {
 			statePrefixes.StatePrefixesMap[prefix] = true
 			statePrefixes.StatePrefixesList = append(statePrefixes.StatePrefixesList, []byte{prefix})
@@ -935,6 +1004,19 @@ func isStateKey(key []byte) bool {
 	}
 	prefix := key[0]
 	isState, exists := StatePrefixes.StatePrefixesMap[prefix]
+	return exists && isState
+}
+
+// isCoreStateKey checks if a key prefix has a "core state" annotation.
+// The data stored in these keys represents all unique entries stored on the deso blockchain.
+// These entries are emitted by state syncer to a log file, which can be consumed to populate other data stores, power
+// explorers, etc.
+func isCoreStateKey(key []byte) bool {
+	if MaxPrefixLen > 1 {
+		panic(any(fmt.Errorf("this function only works if MaxPrefixLen is 1 but currently MaxPrefixLen=(%v)", MaxPrefixLen)))
+	}
+	prefix := key[0]
+	isState, exists := StatePrefixes.CoreStatePrefixesMap[prefix]
 	return exists && isState
 }
 
@@ -992,7 +1074,7 @@ func EncodeKeyAndValueForChecksum(key []byte, value []byte, blockHeight uint64) 
 // DBSetWithTxn is a wrapper around BadgerDB Set function which allows us to add computation
 // prior to DB writes. In particular, we use it to maintain a dynamic LRU cache, compute the
 // state checksum, and to build DB snapshots with ancestral records.
-func DBSetWithTxn(txn *badger.Txn, snap *Snapshot, key []byte, value []byte) error {
+func DBSetWithTxn(txn *badger.Txn, snap *Snapshot, key []byte, value []byte, eventManager *EventManager) error {
 	// We only cache / update ancestral records when we're dealing with state prefix.
 	isState := snap != nil && snap.isState(key)
 	var ancestralValue []byte
@@ -1040,6 +1122,20 @@ func DBSetWithTxn(txn *badger.Txn, snap *Snapshot, key []byte, value []byte) err
 			snap.AddChecksumBytes(key, value)
 		}
 	}
+
+	// If we have an event manager, we fire off the on db transaction event.
+	if eventManager != nil {
+		eventManager.stateSyncerOperation(&StateSyncerOperationEvent{
+			StateChangeEntry: &StateChangeEntry{
+				OperationType:        DbOperationTypeUpsert,
+				KeyBytes:             key,
+				EncoderBytes:         value,
+				AncestralRecordBytes: ancestralValue,
+			},
+			FlushId:      uuid.Nil,
+			IsMempoolTxn: eventManager.isMempoolManager,
+		})
+	}
 	return nil
 }
 
@@ -1083,7 +1179,7 @@ func DBGetWithTxn(txn *badger.Txn, snap *Snapshot, key []byte) ([]byte, error) {
 
 // DBDeleteWithTxn is a wrapper function around BadgerDB delete function.
 // It allows us to update the snapshot LRU cache, checksum, and ancestral records.
-func DBDeleteWithTxn(txn *badger.Txn, snap *Snapshot, key []byte) error {
+func DBDeleteWithTxn(txn *badger.Txn, snap *Snapshot, key []byte, eventManager *EventManager, entryIsDeleted bool) error {
 	var ancestralValue []byte
 	var getError error
 	isState := snap != nil && snap.isState(key)
@@ -1127,6 +1223,20 @@ func DBDeleteWithTxn(txn *badger.Txn, snap *Snapshot, key []byte) error {
 		if !snap.disableChecksum {
 			snap.RemoveChecksumBytes(key, ancestralValue)
 		}
+	}
+	// If we have an event manager, and the entry's isDeleted==true (i.e. it isn't going to be re-inserted later on in the
+	// same transaction), we fire off the on db transaction event.
+	if eventManager != nil && entryIsDeleted {
+		eventManager.stateSyncerOperation(&StateSyncerOperationEvent{
+			StateChangeEntry: &StateChangeEntry{
+				OperationType:        DbOperationTypeDelete,
+				KeyBytes:             key,
+				EncoderBytes:         nil,
+				AncestralRecordBytes: ancestralValue,
+			},
+			FlushId:      uuid.Nil,
+			IsMempoolTxn: eventManager.isMempoolManager,
+		})
 	}
 	return nil
 }
@@ -1303,6 +1413,9 @@ func DBGetPublicKeyForPKIDWithTxn(txn *badger.Txn, snap *Snapshot, pkidd *PKID) 
 }
 
 func DBGetPublicKeyForPKID(db *badger.DB, snap *Snapshot, pkidd *PKID) []byte {
+	if db == nil {
+		return nil
+	}
 	var publicKey []byte
 	db.View(func(txn *badger.Txn) error {
 		publicKey = DBGetPublicKeyForPKIDWithTxn(txn, snap, pkidd)
@@ -1311,8 +1424,7 @@ func DBGetPublicKeyForPKID(db *badger.DB, snap *Snapshot, pkidd *PKID) []byte {
 	return publicKey
 }
 
-func DBPutPKIDMappingsWithTxn(txn *badger.Txn, snap *Snapshot, blockHeight uint64,
-	publicKey []byte, pkidEntry *PKIDEntry, params *DeSoParams) error {
+func DBPutPKIDMappingsWithTxn(txn *badger.Txn, snap *Snapshot, blockHeight uint64, publicKey []byte, pkidEntry *PKIDEntry, params *DeSoParams, eventManager *EventManager) error {
 
 	// If the PKID entry is identical to the public key, there's no point in saving it in the DB.
 	// All functions fetching PKID will already return the public key if PKID was unset.
@@ -1324,7 +1436,7 @@ func DBPutPKIDMappingsWithTxn(txn *badger.Txn, snap *Snapshot, blockHeight uint6
 	{
 		prefix := append([]byte{}, Prefixes.PrefixPublicKeyToPKID...)
 		pubKeyToPkidKey := append(prefix, publicKey...)
-		if err := DBSetWithTxn(txn, snap, pubKeyToPkidKey, EncodeToBytes(blockHeight, pkidEntry)); err != nil {
+		if err := DBSetWithTxn(txn, snap, pubKeyToPkidKey, EncodeToBytes(blockHeight, pkidEntry), eventManager); err != nil {
 
 			return errors.Wrapf(err, "DBPutPKIDMappingsWithTxn: Problem "+
 				"adding mapping for pkid: %v public key: %v",
@@ -1336,7 +1448,7 @@ func DBPutPKIDMappingsWithTxn(txn *badger.Txn, snap *Snapshot, blockHeight uint6
 	{
 		prefix := append([]byte{}, Prefixes.PrefixPKIDToPublicKey...)
 		pkidToPubKey := append(prefix, pkidEntry.PKID[:]...)
-		if err := DBSetWithTxn(txn, snap, pkidToPubKey, publicKey); err != nil {
+		if err := DBSetWithTxn(txn, snap, pkidToPubKey, publicKey, eventManager); err != nil {
 
 			return errors.Wrapf(err, "DBPutPKIDMappingsWithTxn: Problem "+
 				"adding mapping for pkid: %v public key: %v",
@@ -1347,8 +1459,7 @@ func DBPutPKIDMappingsWithTxn(txn *badger.Txn, snap *Snapshot, blockHeight uint6
 	return nil
 }
 
-func DBDeletePKIDMappingsWithTxn(txn *badger.Txn, snap *Snapshot,
-	publicKey []byte, params *DeSoParams) error {
+func DBDeletePKIDMappingsWithTxn(txn *badger.Txn, snap *Snapshot, publicKey []byte, params *DeSoParams, eventManager *EventManager, entryIsDeleted bool) error {
 
 	// Look up the pkid for the public key.
 	pkidEntry := DBGetPKIDEntryForPublicKeyWithTxn(txn, snap, publicKey)
@@ -1356,7 +1467,7 @@ func DBDeletePKIDMappingsWithTxn(txn *badger.Txn, snap *Snapshot,
 	{
 		prefix := append([]byte{}, Prefixes.PrefixPublicKeyToPKID...)
 		pubKeyToPkidKey := append(prefix, publicKey...)
-		if err := DBDeleteWithTxn(txn, snap, pubKeyToPkidKey); err != nil {
+		if err := DBDeleteWithTxn(txn, snap, pubKeyToPkidKey, eventManager, entryIsDeleted); err != nil {
 
 			return errors.Wrapf(err, "DBDeletePKIDMappingsWithTxn: Problem "+
 				"deleting mapping for public key: %v",
@@ -1367,7 +1478,7 @@ func DBDeletePKIDMappingsWithTxn(txn *badger.Txn, snap *Snapshot,
 	{
 		prefix := append([]byte{}, Prefixes.PrefixPKIDToPublicKey...)
 		pubKeyToPkidKey := append(prefix, pkidEntry.PKID[:]...)
-		if err := DBDeleteWithTxn(txn, snap, pubKeyToPkidKey); err != nil {
+		if err := DBDeleteWithTxn(txn, snap, pubKeyToPkidKey, eventManager, entryIsDeleted); err != nil {
 
 			return errors.Wrapf(err, "DBDeletePKIDMappingsWithTxn: Problem "+
 				"deleting mapping for pkid: %v",
@@ -1530,6 +1641,24 @@ func _dbKeyForPublicKeyToDeSoBalanceNanos(publicKey []byte) []byte {
 	return key
 }
 
+func _decodeDbKeyForPublicKeyToDeSoBalanceNanosMapping(key []byte, value []byte) (*DeSoBalanceEntry, error) {
+	if len(key) != btcec.PubKeyBytesLenCompressed+1 {
+		return nil, fmt.Errorf("_decodeDbKeyForPublicKeyToDeSoBalanceNanosMapping: key is incorrect length: %v", len(key))
+	}
+	var balanceNanos uint64
+	if len(value) == 0 {
+		balanceNanos = 0
+	} else if len(value) != 8 {
+		return nil, fmt.Errorf("_decodeDbKeyForPublicKeyToDeSoBalanceNanosMapping: value is incorrect length: %v", len(value))
+	} else {
+		balanceNanos = DecodeUint64(value)
+	}
+	balanceEntry := &DeSoBalanceEntry{}
+	balanceEntry.PublicKey = key[1:]
+	balanceEntry.BalanceNanos = balanceNanos
+	return balanceEntry, nil
+}
+
 func DbGetPrefixForPublicKeyToDesoBalanceNanos() []byte {
 	return append([]byte{}, Prefixes.PrefixPublicKeyToDeSoBalanceNanos...)
 }
@@ -1572,8 +1701,7 @@ func DbGetDeSoBalanceNanosForPublicKey(db *badger.DB, snap *Snapshot, publicKey 
 	return ret, nil
 }
 
-func DbPutDeSoBalanceForPublicKeyWithTxn(txn *badger.Txn, snap *Snapshot,
-	publicKey []byte, balanceNanos uint64) error {
+func DbPutDeSoBalanceForPublicKeyWithTxn(txn *badger.Txn, snap *Snapshot, publicKey []byte, balanceNanos uint64, eventManager *EventManager) error {
 
 	if len(publicKey) != btcec.PubKeyBytesLenCompressed {
 		return fmt.Errorf("DbPutDeSoBalanceForPublicKeyWithTxn: Public key "+
@@ -1582,7 +1710,7 @@ func DbPutDeSoBalanceForPublicKeyWithTxn(txn *badger.Txn, snap *Snapshot,
 
 	balanceBytes := EncodeUint64(balanceNanos)
 
-	if err := DBSetWithTxn(txn, snap, _dbKeyForPublicKeyToDeSoBalanceNanos(publicKey), balanceBytes); err != nil {
+	if err := DBSetWithTxn(txn, snap, _dbKeyForPublicKeyToDeSoBalanceNanos(publicKey), balanceBytes, eventManager); err != nil {
 
 		return errors.Wrapf(
 			err, "DbPutDeSoBalanceForPublicKey: Problem adding balance mapping of %d for: %s ",
@@ -1592,17 +1720,16 @@ func DbPutDeSoBalanceForPublicKeyWithTxn(txn *badger.Txn, snap *Snapshot,
 	return nil
 }
 
-func DbPutDeSoBalanceForPublicKey(handle *badger.DB, snap *Snapshot,
-	publicKey []byte, balanceNanos uint64) error {
+func DbPutDeSoBalanceForPublicKey(handle *badger.DB, snap *Snapshot, publicKey []byte, balanceNanos uint64, eventManager *EventManager) error {
 
 	return handle.Update(func(txn *badger.Txn) error {
-		return DbPutDeSoBalanceForPublicKeyWithTxn(txn, snap, publicKey, balanceNanos)
+		return DbPutDeSoBalanceForPublicKeyWithTxn(txn, snap, publicKey, balanceNanos, eventManager)
 	})
 }
 
-func DbDeletePublicKeyToDeSoBalanceWithTxn(txn *badger.Txn, snap *Snapshot, publicKey []byte) error {
+func DbDeletePublicKeyToDeSoBalanceWithTxn(txn *badger.Txn, snap *Snapshot, publicKey []byte, eventManager *EventManager, entryIsDeleted bool) error {
 
-	if err := DBDeleteWithTxn(txn, snap, _dbKeyForPublicKeyToDeSoBalanceNanos(publicKey)); err != nil {
+	if err := DBDeleteWithTxn(txn, snap, _dbKeyForPublicKeyToDeSoBalanceNanos(publicKey), eventManager, entryIsDeleted); err != nil {
 		return errors.Wrapf(err, "DbDeletePublicKeyToDeSoBalanceWithTxn: Problem deleting "+
 			"balance for public key %s", PkToStringMainnet(publicKey))
 	}
@@ -1610,9 +1737,9 @@ func DbDeletePublicKeyToDeSoBalanceWithTxn(txn *badger.Txn, snap *Snapshot, publ
 	return nil
 }
 
-func DbDeletePublicKeyToDeSoBalance(handle *badger.DB, snap *Snapshot, publicKey []byte) error {
+func DbDeletePublicKeyToDeSoBalance(handle *badger.DB, snap *Snapshot, publicKey []byte, eventManager *EventManager, entryIsDeleted bool) error {
 	return handle.Update(func(txn *badger.Txn) error {
-		return DbDeletePublicKeyToDeSoBalanceWithTxn(txn, snap, publicKey)
+		return DbDeletePublicKeyToDeSoBalanceWithTxn(txn, snap, publicKey, eventManager, entryIsDeleted)
 	})
 }
 
@@ -1636,8 +1763,7 @@ func _dbSeekPrefixForMessagePublicKey(publicKey []byte) []byte {
 }
 
 // Note that this adds a mapping for the sender *and* the recipient.
-func DBPutMessageEntryWithTxn(txn *badger.Txn, snap *Snapshot, blockHeight uint64,
-	messageKey MessageKey, messageEntry *MessageEntry) error {
+func DBPutMessageEntryWithTxn(txn *badger.Txn, snap *Snapshot, blockHeight uint64, messageKey MessageKey, messageEntry *MessageEntry, eventManager *EventManager) error {
 
 	if err := IsByteArrayValidPublicKey(messageEntry.SenderPublicKey[:]); err != nil {
 		return errors.Wrapf(err, "DBPutMessageEntryWithTxn: Problem validating sender public key")
@@ -1653,7 +1779,7 @@ func DBPutMessageEntryWithTxn(txn *badger.Txn, snap *Snapshot, blockHeight uint6
 	}
 
 	if err := DBSetWithTxn(txn, snap, _dbKeyForMessageEntry(
-		messageKey.PublicKey[:], messageKey.TstampNanos), EncodeToBytes(blockHeight, messageEntry)); err != nil {
+		messageKey.PublicKey[:], messageKey.TstampNanos), EncodeToBytes(blockHeight, messageEntry), eventManager); err != nil {
 
 		return errors.Wrapf(err, "DBPutMessageEntryWithTxn: Problem setting the message (%v)", EncodeToBytes(blockHeight, messageEntry))
 	}
@@ -1661,11 +1787,10 @@ func DBPutMessageEntryWithTxn(txn *badger.Txn, snap *Snapshot, blockHeight uint6
 	return nil
 }
 
-func DBPutMessageEntry(handle *badger.DB, snap *Snapshot, blockHeight uint64,
-	messageKey MessageKey, messageEntry *MessageEntry) error {
+func DBPutMessageEntry(handle *badger.DB, snap *Snapshot, blockHeight uint64, messageKey MessageKey, messageEntry *MessageEntry, eventManager *EventManager) error {
 
 	return handle.Update(func(txn *badger.Txn) error {
-		return DBPutMessageEntryWithTxn(txn, snap, blockHeight, messageKey, messageEntry)
+		return DBPutMessageEntryWithTxn(txn, snap, blockHeight, messageKey, messageEntry, eventManager)
 	})
 }
 
@@ -1697,8 +1822,7 @@ func DBGetMessageEntry(db *badger.DB, snap *Snapshot,
 
 // Note this deletes the message for the sender *and* receiver since a mapping
 // should exist for each.
-func DBDeleteMessageEntryMappingsWithTxn(txn *badger.Txn, snap *Snapshot,
-	publicKey []byte, tstampNanos uint64) error {
+func DBDeleteMessageEntryMappingsWithTxn(txn *badger.Txn, snap *Snapshot, publicKey []byte, tstampNanos uint64, eventManager *EventManager, entryIsDeleted bool) error {
 
 	// First pull up the mapping that exists for the public key passed in.
 	// If one doesn't exist then there's nothing to do.
@@ -1708,7 +1832,7 @@ func DBDeleteMessageEntryMappingsWithTxn(txn *badger.Txn, snap *Snapshot,
 	}
 
 	// When a message exists, delete the mapping for the sender and receiver.
-	if err := DBDeleteWithTxn(txn, snap, _dbKeyForMessageEntry(publicKey, tstampNanos)); err != nil {
+	if err := DBDeleteWithTxn(txn, snap, _dbKeyForMessageEntry(publicKey, tstampNanos), eventManager, entryIsDeleted); err != nil {
 		return errors.Wrapf(err, "DBDeleteMessageEntryMappingsWithTxn: Deleting "+
 			"sender mapping for public key %s and tstamp %d failed",
 			PkToStringMainnet(publicKey), tstampNanos)
@@ -1717,11 +1841,10 @@ func DBDeleteMessageEntryMappingsWithTxn(txn *badger.Txn, snap *Snapshot,
 	return nil
 }
 
-func DBDeleteMessageEntryMappings(handle *badger.DB, snap *Snapshot,
-	publicKey []byte, tstampNanos uint64) error {
+func DBDeleteMessageEntryMappings(handle *badger.DB, snap *Snapshot, publicKey []byte, tstampNanos uint64, eventManager *EventManager, entryIsDeleted bool) error {
 
 	return handle.Update(func(txn *badger.Txn) error {
-		return DBDeleteMessageEntryMappingsWithTxn(txn, snap, publicKey, tstampNanos)
+		return DBDeleteMessageEntryMappingsWithTxn(txn, snap, publicKey, tstampNanos, eventManager, entryIsDeleted)
 	})
 }
 
@@ -1882,25 +2005,23 @@ func _dbSeekPrefixForMessagingGroupEntry(ownerPublicKey *PublicKey) []byte {
 	return append(prefixCopy, ownerPublicKey.ToBytes()...)
 }
 
-func DBPutMessagingGroupEntryWithTxn(txn *badger.Txn, snap *Snapshot, blockHeight uint64,
-	ownerPublicKey *PublicKey, messagingGroupEntry *MessagingGroupEntry) error {
+func DBPutMessagingGroupEntryWithTxn(txn *badger.Txn, snap *Snapshot, blockHeight uint64, ownerPublicKey *PublicKey, messagingGroupEntry *MessagingGroupEntry, eventManager *EventManager) error {
 
 	messagingKey := &MessagingGroupKey{
 		OwnerPublicKey: *ownerPublicKey,
 		GroupKeyName:   *messagingGroupEntry.MessagingGroupKeyName,
 	}
-	if err := DBSetWithTxn(txn, snap, _dbKeyForMessagingGroupEntry(messagingKey), EncodeToBytes(blockHeight, messagingGroupEntry)); err != nil {
+	if err := DBSetWithTxn(txn, snap, _dbKeyForMessagingGroupEntry(messagingKey), EncodeToBytes(blockHeight, messagingGroupEntry), eventManager); err != nil {
 		return errors.Wrapf(err, "DBPutMessagingGroupEntryWithTxn: Problem adding messaging key entry mapping: ")
 	}
 
 	return nil
 }
 
-func DBPutMessagingGroupEntry(handle *badger.DB, snap *Snapshot, blockHeight uint64,
-	ownerPublicKey *PublicKey, messagingGroupEntry *MessagingGroupEntry) error {
+func DBPutMessagingGroupEntry(handle *badger.DB, snap *Snapshot, blockHeight uint64, ownerPublicKey *PublicKey, messagingGroupEntry *MessagingGroupEntry, eventManager *EventManager) error {
 
 	return handle.Update(func(txn *badger.Txn) error {
-		return DBPutMessagingGroupEntryWithTxn(txn, snap, blockHeight, ownerPublicKey, messagingGroupEntry)
+		return DBPutMessagingGroupEntryWithTxn(txn, snap, blockHeight, ownerPublicKey, messagingGroupEntry, eventManager)
 	})
 }
 
@@ -1929,8 +2050,7 @@ func DBGetMessagingGroupEntry(db *badger.DB, snap *Snapshot,
 	return ret
 }
 
-func DBDeleteMessagingGroupEntryWithTxn(txn *badger.Txn, snap *Snapshot,
-	messagingGroupKey *MessagingGroupKey) error {
+func DBDeleteMessagingGroupEntryWithTxn(txn *badger.Txn, snap *Snapshot, messagingGroupKey *MessagingGroupKey, eventManager *EventManager, entryIsDeleted bool) error {
 
 	// First pull up the entry that exists for the messaging key.
 	// If one doesn't exist then there's nothing to do.
@@ -1939,7 +2059,7 @@ func DBDeleteMessagingGroupEntryWithTxn(txn *badger.Txn, snap *Snapshot,
 	}
 
 	// When a messaging key entry exists, delete it from the DB.
-	if err := DBDeleteWithTxn(txn, snap, _dbKeyForMessagingGroupEntry(messagingGroupKey)); err != nil {
+	if err := DBDeleteWithTxn(txn, snap, _dbKeyForMessagingGroupEntry(messagingGroupKey), eventManager, entryIsDeleted); err != nil {
 		return errors.Wrapf(err, "DBDeleteMessagingGroupEntryWithTxn: Deleting "+
 			"entry for MessagingGroupKey failed: %v", messagingGroupKey)
 	}
@@ -1947,10 +2067,9 @@ func DBDeleteMessagingGroupEntryWithTxn(txn *badger.Txn, snap *Snapshot,
 	return nil
 }
 
-func DBDeleteMessagingGroupEntry(handle *badger.DB, snap *Snapshot,
-	messagingGroupKey *MessagingGroupKey) error {
+func DBDeleteMessagingGroupEntry(handle *badger.DB, snap *Snapshot, messagingGroupKey *MessagingGroupKey, eventManager *EventManager, entryIsDeleted bool) error {
 	return handle.Update(func(txn *badger.Txn) error {
-		return DBDeleteMessagingGroupEntryWithTxn(txn, snap, messagingGroupKey)
+		return DBDeleteMessagingGroupEntryWithTxn(txn, snap, messagingGroupKey, eventManager, entryIsDeleted)
 	})
 }
 
@@ -2151,11 +2270,9 @@ func DBGetPaginatedGroupChatMessageEntryWithTxn(txn *badger.Txn, snap *Snapshot,
 	return messageEntries, nil
 }
 
-func DBPutGroupChatMessageEntryWithTxn(txn *badger.Txn, snap *Snapshot, blockHeight uint64,
-	key GroupChatMessageKey, messageEntry *NewMessageEntry) error {
+func DBPutGroupChatMessageEntryWithTxn(txn *badger.Txn, snap *Snapshot, blockHeight uint64, key GroupChatMessageKey, messageEntry *NewMessageEntry, eventManager *EventManager) error {
 
-	if err := DBSetWithTxn(txn, snap, _dbKeyForGroupChatMessagesIndex(key),
-		EncodeToBytes(blockHeight, messageEntry)); err != nil {
+	if err := DBSetWithTxn(txn, snap, _dbKeyForGroupChatMessagesIndex(key), EncodeToBytes(blockHeight, messageEntry), eventManager); err != nil {
 
 		return errors.Wrapf(err, "DBPutGroupChatMessageEntryWithTxn: Problem setting group chat messages index "+
 			"with key (%v) and entry (%v) in the db", _dbKeyForGroupChatMessagesIndex(key), messageEntry)
@@ -2164,7 +2281,7 @@ func DBPutGroupChatMessageEntryWithTxn(txn *badger.Txn, snap *Snapshot, blockHei
 	return nil
 }
 
-func DBDeleteGroupChatMessageEntryWithTxn(txn *badger.Txn, snap *Snapshot, key GroupChatMessageKey) error {
+func DBDeleteGroupChatMessageEntryWithTxn(txn *badger.Txn, snap *Snapshot, key GroupChatMessageKey, eventManager *EventManager, entryIsDeleted bool) error {
 	// First pull up the mapping that exists for the public key passed in.
 	// If one doesn't exist then there's nothing to do.
 	existingMessageEntry, err := DBGetGroupChatMessageEntryWithTxn(txn, snap, key)
@@ -2176,7 +2293,7 @@ func DBDeleteGroupChatMessageEntryWithTxn(txn *badger.Txn, snap *Snapshot, key G
 	}
 
 	// When a message exists, delete the mapping for the sender and receiver.
-	if err := DBDeleteWithTxn(txn, snap, _dbKeyForGroupChatMessagesIndex(key)); err != nil {
+	if err := DBDeleteWithTxn(txn, snap, _dbKeyForGroupChatMessagesIndex(key), eventManager, entryIsDeleted); err != nil {
 
 		return errors.Wrapf(err, "DBDeleteGroupChatMessageIndexWithTxn: Deleting mapping for group chat "+
 			"message key: %v", key)
@@ -2314,11 +2431,9 @@ func DBGetPaginatedDmMessageEntryWithTxn(txn *badger.Txn, snap *Snapshot,
 	return messageEntries, nil
 }
 
-func DBPutDmMessageEntryWithTxn(txn *badger.Txn, snap *Snapshot, blockHeight uint64,
-	key DmMessageKey, messageEntry *NewMessageEntry) error {
+func DBPutDmMessageEntryWithTxn(txn *badger.Txn, snap *Snapshot, blockHeight uint64, key DmMessageKey, messageEntry *NewMessageEntry, eventManager *EventManager) error {
 
-	if err := DBSetWithTxn(txn, snap, _dbKeyForPrefixDmMessageIndex(key),
-		EncodeToBytes(blockHeight, messageEntry)); err != nil {
+	if err := DBSetWithTxn(txn, snap, _dbKeyForPrefixDmMessageIndex(key), EncodeToBytes(blockHeight, messageEntry), eventManager); err != nil {
 
 		return errors.Wrapf(err, "DBPutDmMessageWithTxn: Problem setting dm message index "+
 			"with key (%v) and entry (%v) in the db", _dbKeyForPrefixDmMessageIndex(key), messageEntry)
@@ -2327,7 +2442,7 @@ func DBPutDmMessageEntryWithTxn(txn *badger.Txn, snap *Snapshot, blockHeight uin
 	return nil
 }
 
-func DBDeleteDmMessageEntryWithTxn(txn *badger.Txn, snap *Snapshot, key DmMessageKey) error {
+func DBDeleteDmMessageEntryWithTxn(txn *badger.Txn, snap *Snapshot, key DmMessageKey, eventManager *EventManager, entryIsDeleted bool) error {
 	existingMember, err := DBGetDmMessageEntryWithTxn(txn, snap, key)
 	if err != nil {
 		return errors.Wrapf(err, "DBDeleteDmMessageEntryWithTxn: Problem getting dm message entry")
@@ -2337,7 +2452,7 @@ func DBDeleteDmMessageEntryWithTxn(txn *badger.Txn, snap *Snapshot, key DmMessag
 	}
 
 	// When a message exists, delete the mapping.
-	if err := DBDeleteWithTxn(txn, snap, _dbKeyForPrefixDmMessageIndex(key)); err != nil {
+	if err := DBDeleteWithTxn(txn, snap, _dbKeyForPrefixDmMessageIndex(key), eventManager, entryIsDeleted); err != nil {
 
 		return errors.Wrapf(err, "DBDeleteDmMessageEntryWithTxn: Deleting mapping for dm message"+
 			"with message key: %v", key)
@@ -2518,9 +2633,9 @@ func DBGetAllUserDmThreadsWithTxn(txn *badger.Txn, snap *Snapshot,
 	return userDmThreads, nil
 }
 
-func DBPutDmThreadIndex(db *badger.DB, snap *Snapshot, blockHeight uint64, dmThreadKey DmThreadKey) error {
+func DBPutDmThreadIndex(db *badger.DB, snap *Snapshot, blockHeight uint64, dmThreadKey DmThreadKey, eventManager *EventManager) error {
 	err := db.Update(func(txn *badger.Txn) error {
-		return DBPutDmThreadIndexWithTxn(txn, snap, blockHeight, dmThreadKey)
+		return DBPutDmThreadIndexWithTxn(txn, snap, blockHeight, dmThreadKey, eventManager)
 	})
 	if err != nil {
 		return errors.Wrapf(err, "DBPutDmThreadIndex: Problem putting dm thread index with key: %v", dmThreadKey)
@@ -2528,20 +2643,20 @@ func DBPutDmThreadIndex(db *badger.DB, snap *Snapshot, blockHeight uint64, dmThr
 	return nil
 }
 
-func DBPutDmThreadIndexWithTxn(txn *badger.Txn, snap *Snapshot, blockHeight uint64, dmThreadKey DmThreadKey) error {
+func DBPutDmThreadIndexWithTxn(txn *badger.Txn, snap *Snapshot, blockHeight uint64, dmThreadKey DmThreadKey, eventManager *EventManager) error {
 	prefix := _dbKeyForPrefixDmThreadIndex(dmThreadKey)
 	// We don't store any data under this index for now. For forward-compatibility we store a dummy
 	// DeSoEncoder to allow for encoder migrations, should they ever be useful.
 	dmThreadExistence := MakeDmThreadEntry()
-	if err := DBSetWithTxn(txn, snap, prefix, EncodeToBytes(blockHeight, &dmThreadExistence)); err != nil {
+	if err := DBSetWithTxn(txn, snap, prefix, EncodeToBytes(blockHeight, &dmThreadExistence), eventManager); err != nil {
 		return errors.Wrapf(err, "DBPutDmThreadIndex: Problem putting dm thread index with key: %v", dmThreadKey)
 	}
 	return nil
 }
 
-func DBDeleteDmThreadIndex(db *badger.DB, snap *Snapshot, dmThreadKey DmThreadKey) error {
+func DBDeleteDmThreadIndex(db *badger.DB, snap *Snapshot, dmThreadKey DmThreadKey, eventManager *EventManager, entryIsDeleted bool) error {
 	err := db.Update(func(txn *badger.Txn) error {
-		return DBDeleteDmThreadIndexWithTxn(txn, snap, dmThreadKey)
+		return DBDeleteDmThreadIndexWithTxn(txn, snap, dmThreadKey, eventManager, entryIsDeleted)
 	})
 	if err != nil {
 		return errors.Wrapf(err, "DBDeleteDmThreadIndex: Problem deleting dm thread index with key: %v", dmThreadKey)
@@ -2549,9 +2664,9 @@ func DBDeleteDmThreadIndex(db *badger.DB, snap *Snapshot, dmThreadKey DmThreadKe
 	return nil
 }
 
-func DBDeleteDmThreadIndexWithTxn(txn *badger.Txn, snap *Snapshot, dmThreadKey DmThreadKey) error {
+func DBDeleteDmThreadIndexWithTxn(txn *badger.Txn, snap *Snapshot, dmThreadKey DmThreadKey, eventManager *EventManager, entryIsDeleted bool) error {
 	prefix := _dbKeyForPrefixDmThreadIndex(dmThreadKey)
-	if err := DBDeleteWithTxn(txn, snap, prefix); err != nil {
+	if err := DBDeleteWithTxn(txn, snap, prefix, eventManager, entryIsDeleted); err != nil {
 		return errors.Wrapf(err, "DBDeleteDmThreadIndex: Problem deleting dm thread index with key: %v", dmThreadKey)
 	}
 
@@ -2706,10 +2821,10 @@ func DBGetAccessGroupIdsForOwnerWithTxn(txn *badger.Txn, snap *Snapshot, accessG
 	return accessGroupIds, nil
 }
 
-func DBPutAccessGroupEntry(db *badger.DB, snap *Snapshot, blockHeight uint64, accessGroupEntry *AccessGroupEntry) error {
+func DBPutAccessGroupEntry(db *badger.DB, snap *Snapshot, blockHeight uint64, accessGroupEntry *AccessGroupEntry, eventManager *EventManager) error {
 	var err error
 	err = db.Update(func(txn *badger.Txn) error {
-		return DBPutAccessGroupEntryWithTxn(txn, snap, blockHeight, accessGroupEntry)
+		return DBPutAccessGroupEntryWithTxn(txn, snap, blockHeight, accessGroupEntry, eventManager)
 	})
 	if err != nil {
 		return errors.Wrapf(err, "DBPutAccessGroupEntry: Problem putting access group entry")
@@ -2717,20 +2832,19 @@ func DBPutAccessGroupEntry(db *badger.DB, snap *Snapshot, blockHeight uint64, ac
 	return nil
 }
 
-func DBPutAccessGroupEntryWithTxn(txn *badger.Txn, snap *Snapshot, blockHeight uint64, accessGroupEntry *AccessGroupEntry) error {
+func DBPutAccessGroupEntryWithTxn(txn *badger.Txn, snap *Snapshot, blockHeight uint64, accessGroupEntry *AccessGroupEntry, eventManager *EventManager) error {
 	prefix := _dbKeyForAccessGroupEntry(*accessGroupEntry.AccessGroupOwnerPublicKey, *accessGroupEntry.AccessGroupKeyName)
-	if err := DBSetWithTxn(txn, snap, prefix, EncodeToBytes(blockHeight, accessGroupEntry)); err != nil {
+	if err := DBSetWithTxn(txn, snap, prefix, EncodeToBytes(blockHeight, accessGroupEntry), eventManager); err != nil {
 		return errors.Wrapf(err, "DBPutAccessGroupEntryWithTxn: Problem putting access group entry")
 	}
 
 	return nil
 }
 
-func DBDeleteAccessGroupEntry(db *badger.DB, snap *Snapshot, accessGroupOwnerPublicKey PublicKey,
-	accessGroupKeyName GroupKeyName) error {
+func DBDeleteAccessGroupEntry(db *badger.DB, snap *Snapshot, accessGroupOwnerPublicKey PublicKey, accessGroupKeyName GroupKeyName, eventManager *EventManager, entryIsDeleted bool) error {
 	var err error
 	err = db.Update(func(txn *badger.Txn) error {
-		return DBDeleteAccessGroupEntryWithTxn(txn, snap, accessGroupOwnerPublicKey, accessGroupKeyName)
+		return DBDeleteAccessGroupEntryWithTxn(txn, snap, accessGroupOwnerPublicKey, accessGroupKeyName, eventManager, entryIsDeleted)
 	})
 	if err != nil {
 		return errors.Wrapf(err, "DBDeleteAccessGroupEntry: Problem deleting access group entry")
@@ -2738,12 +2852,11 @@ func DBDeleteAccessGroupEntry(db *badger.DB, snap *Snapshot, accessGroupOwnerPub
 	return nil
 }
 
-func DBDeleteAccessGroupEntryWithTxn(txn *badger.Txn, snap *Snapshot, accessGroupOwnerPublicKey PublicKey,
-	accessGroupKeyName GroupKeyName) error {
+func DBDeleteAccessGroupEntryWithTxn(txn *badger.Txn, snap *Snapshot, accessGroupOwnerPublicKey PublicKey, accessGroupKeyName GroupKeyName, eventManager *EventManager, entryIsDeleted bool) error {
 
 	prefix := _dbKeyForAccessGroupEntry(accessGroupOwnerPublicKey, accessGroupKeyName)
 
-	if err := DBDeleteWithTxn(txn, snap, prefix); err != nil {
+	if err := DBDeleteWithTxn(txn, snap, prefix, eventManager, entryIsDeleted); err != nil {
 		return errors.Wrapf(err, "DBDeleteAccessGroupEntryWithTxn: Problem deleting access group entry")
 	}
 
@@ -2870,12 +2983,10 @@ func DBGetAccessGroupIdsForMemberWithTxn(txn *badger.Txn, snap *Snapshot,
 	return accessGroupIds, nil
 }
 
-func DBPutAccessGroupMemberEntry(db *badger.DB, snap *Snapshot, blockHeight uint64,
-	accessGroupMemberEntry *AccessGroupMemberEntry, accessGroupOwnerPublicKey PublicKey, groupKeyName GroupKeyName) error {
+func DBPutAccessGroupMemberEntry(db *badger.DB, snap *Snapshot, blockHeight uint64, accessGroupMemberEntry *AccessGroupMemberEntry, accessGroupOwnerPublicKey PublicKey, groupKeyName GroupKeyName, eventManager *EventManager) error {
 	var err error
 	err = db.Update(func(txn *badger.Txn) error {
-		return DBPutAccessGroupMemberEntryWithTxn(txn, snap, blockHeight,
-			accessGroupMemberEntry, accessGroupOwnerPublicKey, groupKeyName)
+		return DBPutAccessGroupMemberEntryWithTxn(txn, snap, blockHeight, accessGroupMemberEntry, accessGroupOwnerPublicKey, groupKeyName, eventManager)
 	})
 	if err != nil {
 		return errors.Wrapf(err, "DBPutAccessGroupMemberEntry: Problem putting access group member entry")
@@ -2883,8 +2994,7 @@ func DBPutAccessGroupMemberEntry(db *badger.DB, snap *Snapshot, blockHeight uint
 	return nil
 }
 
-func DBPutAccessGroupMemberEntryWithTxn(txn *badger.Txn, snap *Snapshot, blockHeight uint64,
-	accessGroupMemberEntry *AccessGroupMemberEntry, accessGroupOwnerPublicKey PublicKey, groupKeyName GroupKeyName) error {
+func DBPutAccessGroupMemberEntryWithTxn(txn *badger.Txn, snap *Snapshot, blockHeight uint64, accessGroupMemberEntry *AccessGroupMemberEntry, accessGroupOwnerPublicKey PublicKey, groupKeyName GroupKeyName, eventManager *EventManager) error {
 
 	if accessGroupMemberEntry == nil || accessGroupMemberEntry.AccessGroupMemberPublicKey == nil {
 		return fmt.Errorf("DBPutAccessGroupMemberEntryWithTxn: accessGroupMemberEntry is nil or " +
@@ -2896,18 +3006,17 @@ func DBPutAccessGroupMemberEntryWithTxn(txn *badger.Txn, snap *Snapshot, blockHe
 
 	prefix := _dbKeyForAccessGroupMemberEntry(
 		*accessGroupMemberEntry.AccessGroupMemberPublicKey, accessGroupOwnerPublicKey, groupKeyName)
-	if err := DBSetWithTxn(txn, snap, prefix, EncodeToBytes(blockHeight, accessGroupMemberEntry)); err != nil {
+	if err := DBSetWithTxn(txn, snap, prefix, EncodeToBytes(blockHeight, accessGroupMemberEntry), eventManager); err != nil {
 		return errors.Wrapf(err, "DBPutAccessGroupMemberEntryWithTxn: Problem putting access group member entry")
 	}
 	return nil
 }
 
-func DBDeleteAccessGroupMemberEntry(db *badger.DB, snap *Snapshot,
-	accessGroupMemberPublicKey PublicKey, accessGroupOwnerPublicKey PublicKey, accessGroupKeyName GroupKeyName) error {
+func DBDeleteAccessGroupMemberEntry(db *badger.DB, snap *Snapshot, accessGroupMemberPublicKey PublicKey, accessGroupOwnerPublicKey PublicKey, accessGroupKeyName GroupKeyName, eventManager *EventManager, entryIsDeleted bool) error {
 
 	var err error
 	err = db.Update(func(txn *badger.Txn) error {
-		return DBDeleteAccessGroupMemberEntryWithTxn(txn, snap, accessGroupMemberPublicKey, accessGroupOwnerPublicKey, accessGroupKeyName)
+		return DBDeleteAccessGroupMemberEntryWithTxn(txn, snap, accessGroupMemberPublicKey, accessGroupOwnerPublicKey, accessGroupKeyName, eventManager, entryIsDeleted)
 	})
 	if err != nil {
 		return errors.Wrapf(err, "DBDeleteAccessGroupMemberEntry: Problem deleting access group member entry")
@@ -2915,11 +3024,10 @@ func DBDeleteAccessGroupMemberEntry(db *badger.DB, snap *Snapshot,
 	return nil
 }
 
-func DBDeleteAccessGroupMemberEntryWithTxn(txn *badger.Txn, snap *Snapshot,
-	accessGroupMemberPublicKey PublicKey, accessGroupOwnerPublicKey PublicKey, accessGroupKeyName GroupKeyName) error {
+func DBDeleteAccessGroupMemberEntryWithTxn(txn *badger.Txn, snap *Snapshot, accessGroupMemberPublicKey PublicKey, accessGroupOwnerPublicKey PublicKey, accessGroupKeyName GroupKeyName, eventManager *EventManager, entryIsDeleted bool) error {
 
 	prefix := _dbKeyForAccessGroupMemberEntry(accessGroupMemberPublicKey, accessGroupOwnerPublicKey, accessGroupKeyName)
-	if err := DBDeleteWithTxn(txn, snap, prefix); err != nil {
+	if err := DBDeleteWithTxn(txn, snap, prefix, eventManager, entryIsDeleted); err != nil {
 		return errors.Wrapf(err, "DBDeleteAccessGroupMemberEntryWithTxn: Problem deleting access group member entry")
 	}
 
@@ -3047,12 +3155,10 @@ func DBGetPaginatedAccessGroupMembersFromEnumerationIndexWithTxn(txn *badger.Txn
 	return accessGroupMembers, nil
 }
 
-func DBPutAccessGroupMemberEnumerationIndex(handle *badger.DB, snap *Snapshot, blockHeight uint64,
-	groupOwnerPublicKey PublicKey, groupKeyName GroupKeyName, accessGroupMemberPublicKey PublicKey) error {
+func DBPutAccessGroupMemberEnumerationIndex(handle *badger.DB, snap *Snapshot, blockHeight uint64, groupOwnerPublicKey PublicKey, groupKeyName GroupKeyName, accessGroupMemberPublicKey PublicKey, eventManager *EventManager) error {
 
 	err := handle.Update(func(txn *badger.Txn) error {
-		return DBPutAccessGroupMemberEnumerationIndexWithTxn(txn, snap, blockHeight,
-			groupOwnerPublicKey, groupKeyName, accessGroupMemberPublicKey)
+		return DBPutAccessGroupMemberEnumerationIndexWithTxn(txn, snap, blockHeight, groupOwnerPublicKey, groupKeyName, accessGroupMemberPublicKey, eventManager)
 	})
 	if err != nil {
 		return errors.Wrapf(err, "DBPutAccessGroupMemberEnumerationIndex: Problem putting access group member "+
@@ -3063,14 +3169,13 @@ func DBPutAccessGroupMemberEnumerationIndex(handle *badger.DB, snap *Snapshot, b
 }
 
 // DBPutAccessGroupMemberEnumerationIndexWithTxn puts a mapping from a group member to a group in the db.
-func DBPutAccessGroupMemberEnumerationIndexWithTxn(txn *badger.Txn, snap *Snapshot, blockHeight uint64,
-	groupOwnerPublicKey PublicKey, groupKeyName GroupKeyName, accessGroupMemberPublicKey PublicKey) error {
+func DBPutAccessGroupMemberEnumerationIndexWithTxn(txn *badger.Txn, snap *Snapshot, blockHeight uint64, groupOwnerPublicKey PublicKey, groupKeyName GroupKeyName, accessGroupMemberPublicKey PublicKey, eventManager *EventManager) error {
 
 	// We don't store any data under this index for now. For forward-compatibility we store a dummy
 	// DeSoEncoder to allow for encoder migrations, should they ever be useful.
 	accessGroupMemberEnumerationEntry := MakeAccessGroupMemberEnumerationEntry()
 	if err := DBSetWithTxn(txn, snap, _dbKeyForAccessGroupMemberEnumerationIndex(
-		groupOwnerPublicKey, groupKeyName, accessGroupMemberPublicKey), EncodeToBytes(blockHeight, &accessGroupMemberEnumerationEntry)); err != nil {
+		groupOwnerPublicKey, groupKeyName, accessGroupMemberPublicKey), EncodeToBytes(blockHeight, &accessGroupMemberEnumerationEntry), eventManager); err != nil {
 
 		return errors.Wrapf(err, "DBPutAccessGroupMemberInMembershipIndexWithTxn: Problem setting access "+
 			"recipient with groupOwnerPublicKey %v, groupKeyName %v, accessGroupMemberPublicKey %v",
@@ -3080,11 +3185,10 @@ func DBPutAccessGroupMemberEnumerationIndexWithTxn(txn *badger.Txn, snap *Snapsh
 	return nil
 }
 
-func DBDeleteAccessGroupMemberEnumerationIndex(handle *badger.DB, snap *Snapshot,
-	groupMemberPublicKey PublicKey, groupOwnerPublicKey PublicKey, groupKeyName GroupKeyName) error {
+func DBDeleteAccessGroupMemberEnumerationIndex(handle *badger.DB, snap *Snapshot, groupMemberPublicKey PublicKey, groupOwnerPublicKey PublicKey, groupKeyName GroupKeyName, eventManager *EventManager, entryIsDeleted bool) error {
 
 	err := handle.Update(func(txn *badger.Txn) error {
-		return DBDeleteAccessGroupMemberEnumerationIndexWithTxn(txn, snap, groupOwnerPublicKey, groupKeyName, groupMemberPublicKey)
+		return DBDeleteAccessGroupMemberEnumerationIndexWithTxn(txn, snap, groupOwnerPublicKey, groupKeyName, groupMemberPublicKey, eventManager, entryIsDeleted)
 	})
 	if err != nil {
 		return errors.Wrapf(err, "DBDeleteMemberFromEnumerationIndex: Problem deleting member from enumeration index "+
@@ -3094,11 +3198,10 @@ func DBDeleteAccessGroupMemberEnumerationIndex(handle *badger.DB, snap *Snapshot
 	return nil
 }
 
-func DBDeleteAccessGroupMemberEnumerationIndexWithTxn(txn *badger.Txn, snap *Snapshot,
-	groupOwnerPublicKey PublicKey, groupKeyName GroupKeyName, groupMemberPublicKey PublicKey) error {
+func DBDeleteAccessGroupMemberEnumerationIndexWithTxn(txn *badger.Txn, snap *Snapshot, groupOwnerPublicKey PublicKey, groupKeyName GroupKeyName, groupMemberPublicKey PublicKey, eventManager *EventManager, entryIsDeleted bool) error {
 
 	if err := DBDeleteWithTxn(txn, snap, _dbKeyForAccessGroupMemberEnumerationIndex(
-		groupOwnerPublicKey, groupKeyName, groupMemberPublicKey)); err != nil {
+		groupOwnerPublicKey, groupKeyName, groupMemberPublicKey), eventManager, entryIsDeleted); err != nil {
 
 		return errors.Wrapf(err, "DBDeleteMemberFromMembershipIndexWithTxn: Deleting mapping for public key %v, "+
 			"group owner public key %v and key name %v failed", groupOwnerPublicKey[:],
@@ -3125,9 +3228,7 @@ func _dbSeekPrefixForMessagingGroupMember(memberPublicKey *PublicKey) []byte {
 	return append(prefixCopy, memberPublicKey[:]...)
 }
 
-func DBPutMessagingGroupMemberWithTxn(txn *badger.Txn, snap *Snapshot, blockHeight uint64,
-	messagingGroupMember *MessagingGroupMember, groupOwnerPublicKey *PublicKey,
-	messagingGroupEntry *MessagingGroupEntry) error {
+func DBPutMessagingGroupMemberWithTxn(txn *badger.Txn, snap *Snapshot, blockHeight uint64, messagingGroupMember *MessagingGroupMember, groupOwnerPublicKey *PublicKey, messagingGroupEntry *MessagingGroupEntry, eventManager *EventManager) error {
 	// Sanity-check that public keys have the correct length.
 
 	if len(messagingGroupMember.EncryptedKey) < btcec.PrivKeyBytesLen {
@@ -3148,8 +3249,7 @@ func DBPutMessagingGroupMemberWithTxn(txn *badger.Txn, snap *Snapshot, blockHeig
 	}
 
 	if err := DBSetWithTxn(txn, snap, _dbKeyForMessagingGroupMember(
-		messagingGroupMember.GroupMemberPublicKey, messagingGroupEntry.MessagingPublicKey),
-		EncodeToBytes(blockHeight, memberGroupEntry)); err != nil {
+		messagingGroupMember.GroupMemberPublicKey, messagingGroupEntry.MessagingPublicKey), EncodeToBytes(blockHeight, memberGroupEntry), eventManager); err != nil {
 
 		return errors.Wrapf(err, "DBPutMessagingGroupMemberWithTxn: Problem setting messaging recipient with key (%v) "+
 			"and entry (%v) in the db", _dbKeyForMessagingGroupMember(
@@ -3160,11 +3260,10 @@ func DBPutMessagingGroupMemberWithTxn(txn *badger.Txn, snap *Snapshot, blockHeig
 	return nil
 }
 
-func DBPutMessagingGroupMember(handle *badger.DB, snap *Snapshot, blockHeight uint64,
-	messagingGroupMember *MessagingGroupMember, ownerPublicKey *PublicKey, messagingGroupEntry *MessagingGroupEntry) error {
+func DBPutMessagingGroupMember(handle *badger.DB, snap *Snapshot, blockHeight uint64, messagingGroupMember *MessagingGroupMember, ownerPublicKey *PublicKey, messagingGroupEntry *MessagingGroupEntry, eventManager *EventManager) error {
 
 	return handle.Update(func(txn *badger.Txn) error {
-		return DBPutMessagingGroupMemberWithTxn(txn, snap, blockHeight, messagingGroupMember, ownerPublicKey, messagingGroupEntry)
+		return DBPutMessagingGroupMemberWithTxn(txn, snap, blockHeight, messagingGroupMember, ownerPublicKey, messagingGroupEntry, eventManager)
 	})
 }
 
@@ -3225,8 +3324,7 @@ func DBGetAllMessagingGroupEntriesForMemberWithTxn(txn *badger.Txn, ownerPublicK
 
 // Note this deletes the message for the sender *and* receiver since a mapping
 // should exist for each.
-func DBDeleteMessagingGroupMemberMappingWithTxn(txn *badger.Txn, snap *Snapshot,
-	messagingGroupMember *MessagingGroupMember, messagingGroupEntry *MessagingGroupEntry) error {
+func DBDeleteMessagingGroupMemberMappingWithTxn(txn *badger.Txn, snap *Snapshot, messagingGroupMember *MessagingGroupMember, messagingGroupEntry *MessagingGroupEntry, eventManager *EventManager, entryIsDeleted bool) error {
 
 	// First pull up the mapping that exists for the public key passed in.
 	// If one doesn't exist then there's nothing to do.
@@ -3237,7 +3335,7 @@ func DBDeleteMessagingGroupMemberMappingWithTxn(txn *badger.Txn, snap *Snapshot,
 
 	// When a message exists, delete the mapping for the sender and receiver.
 	if err := DBDeleteWithTxn(txn, snap, _dbKeyForMessagingGroupMember(
-		messagingGroupMember.GroupMemberPublicKey, messagingGroupEntry.MessagingPublicKey)); err != nil {
+		messagingGroupMember.GroupMemberPublicKey, messagingGroupEntry.MessagingPublicKey), eventManager, entryIsDeleted); err != nil {
 
 		return errors.Wrapf(err, "DBDeleteMessagingGroupMemberMappingWithTxn: Deleting mapping for public key %v "+
 			"and messaging public key %v failed", messagingGroupMember.GroupMemberPublicKey[:],
@@ -3247,11 +3345,10 @@ func DBDeleteMessagingGroupMemberMappingWithTxn(txn *badger.Txn, snap *Snapshot,
 	return nil
 }
 
-func DBDeleteMessagingGroupMemberMappings(handle *badger.DB, snap *Snapshot,
-	messagingGroupMember *MessagingGroupMember, messagingGroupEntry *MessagingGroupEntry) error {
+func DBDeleteMessagingGroupMemberMappings(handle *badger.DB, snap *Snapshot, messagingGroupMember *MessagingGroupMember, messagingGroupEntry *MessagingGroupEntry, eventManager *EventManager, entryIsDeleted bool) error {
 
 	return handle.Update(func(txn *badger.Txn) error {
-		return DBDeleteMessagingGroupMemberMappingWithTxn(txn, snap, messagingGroupMember, messagingGroupEntry)
+		return DBDeleteMessagingGroupMemberMappingWithTxn(txn, snap, messagingGroupMember, messagingGroupEntry, eventManager, entryIsDeleted)
 	})
 }
 
@@ -3267,24 +3364,24 @@ func _dbKeyForForbiddenBlockSignaturePubKeys(publicKey []byte) []byte {
 	return key
 }
 
-func DbPutForbiddenBlockSignaturePubKeyWithTxn(txn *badger.Txn, snap *Snapshot, publicKey []byte) error {
+func DbPutForbiddenBlockSignaturePubKeyWithTxn(txn *badger.Txn, snap *Snapshot, publicKey []byte, eventManager *EventManager) error {
 
 	if len(publicKey) != btcec.PubKeyBytesLenCompressed {
 		return fmt.Errorf("DbPutForbiddenBlockSignaturePubKeyWithTxn: Forbidden public key "+
 			"length %d != %d", len(publicKey), btcec.PubKeyBytesLenCompressed)
 	}
 
-	if err := DBSetWithTxn(txn, snap, _dbKeyForForbiddenBlockSignaturePubKeys(publicKey), []byte{}); err != nil {
+	if err := DBSetWithTxn(txn, snap, _dbKeyForForbiddenBlockSignaturePubKeys(publicKey), []byte{}, eventManager); err != nil {
 		return errors.Wrapf(err, "DbPutForbiddenBlockSignaturePubKeyWithTxn: Problem adding mapping for sender: ")
 	}
 
 	return nil
 }
 
-func DbPutForbiddenBlockSignaturePubKey(handle *badger.DB, snap *Snapshot, publicKey []byte) error {
+func DbPutForbiddenBlockSignaturePubKey(handle *badger.DB, snap *Snapshot, publicKey []byte, eventManager *EventManager) error {
 
 	return handle.Update(func(txn *badger.Txn) error {
-		return DbPutForbiddenBlockSignaturePubKeyWithTxn(txn, snap, publicKey)
+		return DbPutForbiddenBlockSignaturePubKeyWithTxn(txn, snap, publicKey, eventManager)
 	})
 }
 
@@ -3310,15 +3407,14 @@ func DbGetForbiddenBlockSignaturePubKey(db *badger.DB, snap *Snapshot, publicKey
 	return ret
 }
 
-func DbDeleteForbiddenBlockSignaturePubKeyWithTxn(
-	txn *badger.Txn, snap *Snapshot, publicKey []byte) error {
+func DbDeleteForbiddenBlockSignaturePubKeyWithTxn(txn *badger.Txn, snap *Snapshot, publicKey []byte, eventManager *EventManager, entryIsDeleted bool) error {
 
 	existingEntry := DbGetForbiddenBlockSignaturePubKeyWithTxn(txn, snap, publicKey)
 	if existingEntry == nil {
 		return nil
 	}
 
-	if err := DBDeleteWithTxn(txn, snap, _dbKeyForForbiddenBlockSignaturePubKeys(publicKey)); err != nil {
+	if err := DBDeleteWithTxn(txn, snap, _dbKeyForForbiddenBlockSignaturePubKeys(publicKey), eventManager, entryIsDeleted); err != nil {
 		return errors.Wrapf(err, "DbDeleteForbiddenBlockSignaturePubKeyWithTxn: Deleting "+
 			"sender mapping for public key %s failed", PkToStringMainnet(publicKey))
 	}
@@ -3326,11 +3422,10 @@ func DbDeleteForbiddenBlockSignaturePubKeyWithTxn(
 	return nil
 }
 
-func DbDeleteForbiddenBlockSignaturePubKey(
-	handle *badger.DB, snap *Snapshot, publicKey []byte) error {
+func DbDeleteForbiddenBlockSignaturePubKey(handle *badger.DB, snap *Snapshot, publicKey []byte, eventManager *EventManager, entryIsDeleted bool) error {
 
 	return handle.Update(func(txn *badger.Txn) error {
-		return DbDeleteForbiddenBlockSignaturePubKeyWithTxn(txn, snap, publicKey)
+		return DbDeleteForbiddenBlockSignaturePubKeyWithTxn(txn, snap, publicKey, eventManager, entryIsDeleted)
 	})
 }
 
@@ -3347,6 +3442,17 @@ func _dbKeyForLikerPubKeyToLikedPostHashMapping(
 	key := append(prefixCopy, userPubKey...)
 	key = append(key, likedPostHash[:]...)
 	return key
+}
+
+func _decodeDbKeyForLikerPubKeyToLikedPostHashMapping(key []byte) (*LikeEntry, error) {
+	if len(key) != HashSizeBytes+btcec.PubKeyBytesLenCompressed+1 {
+		return nil, fmt.Errorf("DecodeDbKeyForLikerPubKeyToLikedPostHashMapping: key is incorrect length: %v", len(key))
+	}
+	likeEntry := &LikeEntry{}
+	likeEntry.LikerPubKey = key[1 : btcec.PubKeyBytesLenCompressed+1]
+	likeEntry.LikedPostHash = &BlockHash{}
+	copy(likeEntry.LikedPostHash[:], key[btcec.PubKeyBytesLenCompressed+1:])
+	return likeEntry, nil
 }
 
 func _dbKeyForLikedPostHashToLikerPubKeyMapping(
@@ -3371,8 +3477,7 @@ func _dbSeekPrefixForLikerPubKeysLikingAPostHash(likedPostHash BlockHash) []byte
 }
 
 // Note that this adds a mapping for the user *and* the liked post.
-func DbPutLikeMappingsWithTxn(txn *badger.Txn, snap *Snapshot,
-	userPubKey []byte, likedPostHash BlockHash) error {
+func DbPutLikeMappingsWithTxn(txn *badger.Txn, snap *Snapshot, userPubKey []byte, likedPostHash BlockHash, eventManager *EventManager) error {
 
 	if len(userPubKey) != btcec.PubKeyBytesLenCompressed {
 		return fmt.Errorf("DbPutLikeMappingsWithTxn: User public key "+
@@ -3380,13 +3485,13 @@ func DbPutLikeMappingsWithTxn(txn *badger.Txn, snap *Snapshot,
 	}
 
 	if err := DBSetWithTxn(txn, snap, _dbKeyForLikerPubKeyToLikedPostHashMapping(
-		userPubKey, likedPostHash), []byte{}); err != nil {
+		userPubKey, likedPostHash), []byte{}, eventManager); err != nil {
 
 		return errors.Wrapf(
 			err, "DbPutLikeMappingsWithTxn: Problem adding user to liked post mapping: ")
 	}
 	if err := DBSetWithTxn(txn, snap, _dbKeyForLikedPostHashToLikerPubKeyMapping(
-		likedPostHash, userPubKey), []byte{}); err != nil {
+		likedPostHash, userPubKey), []byte{}, eventManager); err != nil {
 
 		return errors.Wrapf(
 			err, "DbPutLikeMappingsWithTxn: Problem adding liked post to user mapping: ")
@@ -3395,11 +3500,10 @@ func DbPutLikeMappingsWithTxn(txn *badger.Txn, snap *Snapshot,
 	return nil
 }
 
-func DbPutLikeMappings(handle *badger.DB, snap *Snapshot,
-	userPubKey []byte, likedPostHash BlockHash) error {
+func DbPutLikeMappings(handle *badger.DB, snap *Snapshot, userPubKey []byte, likedPostHash BlockHash, eventManager *EventManager) error {
 
 	return handle.Update(func(txn *badger.Txn) error {
-		return DbPutLikeMappingsWithTxn(txn, snap, userPubKey, likedPostHash)
+		return DbPutLikeMappingsWithTxn(txn, snap, userPubKey, likedPostHash, eventManager)
 	})
 }
 
@@ -3429,8 +3533,7 @@ func DbGetLikerPubKeyToLikedPostHashMapping(
 
 // Note this deletes the like for the user *and* the liked post since a mapping
 // should exist for each.
-func DbDeleteLikeMappingsWithTxn(txn *badger.Txn, snap *Snapshot,
-	userPubKey []byte, likedPostHash BlockHash) error {
+func DbDeleteLikeMappingsWithTxn(txn *badger.Txn, snap *Snapshot, userPubKey []byte, likedPostHash BlockHash, eventManager *EventManager, entryIsDeleted bool) error {
 
 	// First check that a mapping exists. If one doesn't exist then there's nothing to do.
 	existingMapping := DbGetLikerPubKeyToLikedPostHashMappingWithTxn(
@@ -3440,14 +3543,12 @@ func DbDeleteLikeMappingsWithTxn(txn *badger.Txn, snap *Snapshot,
 	}
 
 	// When a message exists, delete the mapping for the sender and receiver.
-	if err := DBDeleteWithTxn(txn, snap,
-		_dbKeyForLikerPubKeyToLikedPostHashMapping(userPubKey, likedPostHash)); err != nil {
+	if err := DBDeleteWithTxn(txn, snap, _dbKeyForLikerPubKeyToLikedPostHashMapping(userPubKey, likedPostHash), eventManager, entryIsDeleted); err != nil {
 		return errors.Wrapf(err, "DbDeleteLikeMappingsWithTxn: Deleting "+
 			"userPubKey %s and likedPostHash %s failed",
 			PkToStringBoth(userPubKey), likedPostHash)
 	}
-	if err := DBDeleteWithTxn(txn, snap,
-		_dbKeyForLikedPostHashToLikerPubKeyMapping(likedPostHash, userPubKey)); err != nil {
+	if err := DBDeleteWithTxn(txn, snap, _dbKeyForLikedPostHashToLikerPubKeyMapping(likedPostHash, userPubKey), eventManager, entryIsDeleted); err != nil {
 		return errors.Wrapf(err, "DbDeleteLikeMappingsWithTxn: Deleting "+
 			"likedPostHash %s and userPubKey %s failed",
 			PkToStringBoth(likedPostHash[:]), PkToStringBoth(userPubKey))
@@ -3456,11 +3557,10 @@ func DbDeleteLikeMappingsWithTxn(txn *badger.Txn, snap *Snapshot,
 	return nil
 }
 
-func DbDeleteLikeMappings(handle *badger.DB, snap *Snapshot,
-	userPubKey []byte, likedPostHash BlockHash) error {
+func DbDeleteLikeMappings(handle *badger.DB, snap *Snapshot, userPubKey []byte, likedPostHash BlockHash, eventManager *EventManager, entryIsDeleted bool) error {
 
 	return handle.Update(func(txn *badger.Txn) error {
-		return DbDeleteLikeMappingsWithTxn(txn, snap, userPubKey, likedPostHash)
+		return DbDeleteLikeMappingsWithTxn(txn, snap, userPubKey, likedPostHash, eventManager, entryIsDeleted)
 	})
 }
 
@@ -3564,8 +3664,7 @@ func _dbKeyForRepostedPostHashReposterPubKeyRepostPostHash(
 }
 
 // Note that this adds a mapping for the user *and* the reposted post.
-func DbPutRepostMappingsWithTxn(txn *badger.Txn, snap *Snapshot, blockHeight uint64,
-	repostEntry RepostEntry) error {
+func DbPutRepostMappingsWithTxn(txn *badger.Txn, snap *Snapshot, blockHeight uint64, repostEntry RepostEntry, eventManager *EventManager) error {
 
 	if len(repostEntry.ReposterPubKey) != btcec.PubKeyBytesLenCompressed {
 		return fmt.Errorf("DbPutRepostMappingsWithTxn: User public key "+
@@ -3579,7 +3678,7 @@ func DbPutRepostMappingsWithTxn(txn *badger.Txn, snap *Snapshot, blockHeight uin
 	}
 
 	if err := DBSetWithTxn(txn, snap, _dbKeyForReposterPubKeyRepostedPostHashToRepostPostHash(
-		repostEntry.ReposterPubKey, *repostEntry.RepostedPostHash, *repostEntry.RepostPostHash), []byte{}); err != nil {
+		repostEntry.ReposterPubKey, *repostEntry.RepostedPostHash, *repostEntry.RepostPostHash), []byte{}, eventManager); err != nil {
 
 		return errors.Wrapf(
 			err, "DbPutRepostMappingsWithTxn: Problem adding user to reposted post mapping: ")
@@ -3588,11 +3687,10 @@ func DbPutRepostMappingsWithTxn(txn *badger.Txn, snap *Snapshot, blockHeight uin
 	return nil
 }
 
-func DbPutRepostMappings(handle *badger.DB, snap *Snapshot, blockHeight uint64,
-	userPubKey []byte, repostedPostHash BlockHash, repostEntry RepostEntry) error {
+func DbPutRepostMappings(handle *badger.DB, snap *Snapshot, blockHeight uint64, userPubKey []byte, repostedPostHash BlockHash, repostEntry RepostEntry, eventManager *EventManager) error {
 
 	return handle.Update(func(txn *badger.Txn) error {
-		return DbPutRepostMappingsWithTxn(txn, snap, blockHeight, repostEntry)
+		return DbPutRepostMappingsWithTxn(txn, snap, blockHeight, repostEntry, eventManager)
 	})
 }
 
@@ -3626,7 +3724,7 @@ func DbReposterPubKeyRepostedPostHashToRepostEntry(db *badger.DB,
 
 // Note this deletes the repost for the user *and* the reposted post since a mapping
 // should exist for each.
-func DbDeleteRepostMappingsWithTxn(txn *badger.Txn, snap *Snapshot, repostEntry RepostEntry) error {
+func DbDeleteRepostMappingsWithTxn(txn *badger.Txn, snap *Snapshot, repostEntry RepostEntry, eventManager *EventManager, entryIsDeleted bool) error {
 
 	// First check that a mapping exists. If one doesn't exist then there's nothing to do.
 	_, err := DBGetWithTxn(txn, snap, _dbKeyForReposterPubKeyRepostedPostHashToRepostPostHash(
@@ -3637,7 +3735,7 @@ func DbDeleteRepostMappingsWithTxn(txn *badger.Txn, snap *Snapshot, repostEntry 
 
 	// When a repost exists, delete the repost entry mapping.
 	if err := DBDeleteWithTxn(txn, snap, _dbKeyForReposterPubKeyRepostedPostHashToRepostPostHash(
-		repostEntry.ReposterPubKey, *repostEntry.RepostedPostHash, *repostEntry.RepostPostHash)); err != nil {
+		repostEntry.ReposterPubKey, *repostEntry.RepostedPostHash, *repostEntry.RepostPostHash), eventManager, entryIsDeleted); err != nil {
 		return errors.Wrapf(err, "DbDeleteRepostMappingsWithTxn: Deleting "+
 			"user public key %s and reposted post hash %v and repost post hash %v failed",
 			PkToStringMainnet(repostEntry.ReposterPubKey[:]), repostEntry.RepostedPostHash[:], repostEntry.RepostPostHash[:])
@@ -3645,7 +3743,7 @@ func DbDeleteRepostMappingsWithTxn(txn *badger.Txn, snap *Snapshot, repostEntry 
 	return nil
 }
 
-func DbDeleteAllRepostMappingsWithTxn(txn *badger.Txn, snap *Snapshot, userPubKey []byte, repostedPostHash BlockHash) error {
+func DbDeleteAllRepostMappingsWithTxn(txn *badger.Txn, snap *Snapshot, userPubKey []byte, repostedPostHash BlockHash, eventManager *EventManager, entryIsDeleted bool) error {
 
 	key := _dbSeekKeyForReposterPubKeyRepostedPostHashToRepostPostHash(userPubKey, repostedPostHash)
 	keysFound, _, err := _enumerateKeysForPrefixWithTxn(txn, key)
@@ -3653,7 +3751,7 @@ func DbDeleteAllRepostMappingsWithTxn(txn *badger.Txn, snap *Snapshot, userPubKe
 		return nil
 	}
 	for _, keyBytes := range keysFound {
-		if err := DBDeleteWithTxn(txn, snap, keyBytes); err != nil {
+		if err := DBDeleteWithTxn(txn, snap, keyBytes, eventManager, entryIsDeleted); err != nil {
 			return errors.Wrapf(err, "DbDeleteAllRepostMappingsWithTxn: Problem deleting a repost entry "+
 				"with key (%v)", key)
 		}
@@ -3693,6 +3791,22 @@ func _dbKeyForFollowerToFollowedMapping(
 	return key
 }
 
+func _decodeDbKeyForFollowerToFollowedMapping(key []byte) (*FollowEntry, error) {
+	if len(key) != (btcec.PubKeyBytesLenCompressed*2)+1 {
+		return nil, fmt.Errorf("_decodeDbKeyForFollowerToFollowedMapping: key is incorrect length: %v", len(key))
+	}
+	followEntry := &FollowEntry{}
+	followerPKIDBytes := key[1 : btcec.PubKeyBytesLenCompressed+1]
+	followerPKID := &PKID{}
+	copy(followerPKID[:], followerPKIDBytes)
+	followedPKIDBytes := key[btcec.PubKeyBytesLenCompressed+1:]
+	followedPKID := &PKID{}
+	copy(followedPKID[:], followedPKIDBytes)
+	followEntry.FollowerPKID = followerPKID
+	followEntry.FollowedPKID = followedPKID
+	return followEntry, nil
+}
+
 func _dbKeyForFollowedToFollowerMapping(
 	followedPKID *PKID, followerPKID *PKID) []byte {
 	// Make a copy to avoid multiple calls to this function re-using the same slice.
@@ -3715,8 +3829,7 @@ func _dbSeekPrefixForPKIDsFollowingYou(yourPKID *PKID) []byte {
 }
 
 // Note that this adds a mapping for the follower *and* the pub key being followed.
-func DbPutFollowMappingsWithTxn(txn *badger.Txn, snap *Snapshot,
-	followerPKID *PKID, followedPKID *PKID) error {
+func DbPutFollowMappingsWithTxn(txn *badger.Txn, snap *Snapshot, followerPKID *PKID, followedPKID *PKID, eventManager *EventManager) error {
 
 	if len(followerPKID) != btcec.PubKeyBytesLenCompressed {
 		return fmt.Errorf("DbPutFollowMappingsWithTxn: Follower PKID "+
@@ -3728,13 +3841,13 @@ func DbPutFollowMappingsWithTxn(txn *badger.Txn, snap *Snapshot,
 	}
 
 	if err := DBSetWithTxn(txn, snap, _dbKeyForFollowerToFollowedMapping(
-		followerPKID, followedPKID), []byte{}); err != nil {
+		followerPKID, followedPKID), []byte{}, eventManager); err != nil {
 
 		return errors.Wrapf(
 			err, "DbPutFollowMappingsWithTxn: Problem adding follower to followed mapping: ")
 	}
 	if err := DBSetWithTxn(txn, snap, _dbKeyForFollowedToFollowerMapping(
-		followedPKID, followerPKID), []byte{}); err != nil {
+		followedPKID, followerPKID), []byte{}, eventManager); err != nil {
 
 		return errors.Wrapf(
 			err, "DbPutFollowMappingsWithTxn: Problem adding followed to follower mapping: ")
@@ -3743,11 +3856,10 @@ func DbPutFollowMappingsWithTxn(txn *badger.Txn, snap *Snapshot,
 	return nil
 }
 
-func DbPutFollowMappings(handle *badger.DB, snap *Snapshot,
-	followerPKID *PKID, followedPKID *PKID) error {
+func DbPutFollowMappings(handle *badger.DB, snap *Snapshot, followerPKID *PKID, followedPKID *PKID, eventManager *EventManager) error {
 
 	return handle.Update(func(txn *badger.Txn) error {
-		return DbPutFollowMappingsWithTxn(txn, snap, followerPKID, followedPKID)
+		return DbPutFollowMappingsWithTxn(txn, snap, followerPKID, followedPKID, eventManager)
 	})
 }
 
@@ -3778,8 +3890,7 @@ func DbGetFollowerToFollowedMapping(db *badger.DB, snap *Snapshot,
 
 // Note this deletes the follow for the follower *and* followed since a mapping
 // should exist for each.
-func DbDeleteFollowMappingsWithTxn(txn *badger.Txn, snap *Snapshot,
-	followerPKID *PKID, followedPKID *PKID) error {
+func DbDeleteFollowMappingsWithTxn(txn *badger.Txn, snap *Snapshot, followerPKID *PKID, followedPKID *PKID, eventManager *EventManager, entryIsDeleted bool) error {
 
 	// First check that a mapping exists for the PKIDs passed in.
 	// If one doesn't exist then there's nothing to do.
@@ -3790,12 +3901,12 @@ func DbDeleteFollowMappingsWithTxn(txn *badger.Txn, snap *Snapshot,
 	}
 
 	// When a message exists, delete the mapping for the sender and receiver.
-	if err := DBDeleteWithTxn(txn, snap, _dbKeyForFollowerToFollowedMapping(followerPKID, followedPKID)); err != nil {
+	if err := DBDeleteWithTxn(txn, snap, _dbKeyForFollowerToFollowedMapping(followerPKID, followedPKID), eventManager, entryIsDeleted); err != nil {
 		return errors.Wrapf(err, "DbDeleteFollowMappingsWithTxn: Deleting "+
 			"followerPKID %s and followedPKID %s failed",
 			PkToStringMainnet(followerPKID[:]), PkToStringMainnet(followedPKID[:]))
 	}
-	if err := DBDeleteWithTxn(txn, snap, _dbKeyForFollowedToFollowerMapping(followedPKID, followerPKID)); err != nil {
+	if err := DBDeleteWithTxn(txn, snap, _dbKeyForFollowedToFollowerMapping(followedPKID, followerPKID), eventManager, entryIsDeleted); err != nil {
 		return errors.Wrapf(err, "DbDeleteFollowMappingsWithTxn: Deleting "+
 			"followedPKID %s and followerPKID %s failed",
 			PkToStringMainnet(followedPKID[:]), PkToStringMainnet(followerPKID[:]))
@@ -3804,11 +3915,10 @@ func DbDeleteFollowMappingsWithTxn(txn *badger.Txn, snap *Snapshot,
 	return nil
 }
 
-func DbDeleteFollowMappings(handle *badger.DB, snap *Snapshot,
-	followerPKID *PKID, followedPKID *PKID) error {
+func DbDeleteFollowMappings(handle *badger.DB, snap *Snapshot, followerPKID *PKID, followedPKID *PKID, eventManager *EventManager, entryIsDeleted bool) error {
 
 	return handle.Update(func(txn *badger.Txn) error {
-		return DbDeleteFollowMappingsWithTxn(txn, snap, followerPKID, followedPKID)
+		return DbDeleteFollowMappingsWithTxn(txn, snap, followerPKID, followedPKID, eventManager, entryIsDeleted)
 	})
 }
 
@@ -3962,8 +4072,7 @@ func _dbSeekPrefixForReceiverPKIDAndSenderPKID(receiverPKID *PKID, senderPKID *P
 	return append(key, senderPKID[:]...)
 }
 
-func DbPutDiamondMappingsWithTxn(txn *badger.Txn, snap *Snapshot, blockHeight uint64,
-	diamondEntry *DiamondEntry) error {
+func DbPutDiamondMappingsWithTxn(txn *badger.Txn, snap *Snapshot, blockHeight uint64, diamondEntry *DiamondEntry, eventManager *EventManager) error {
 
 	if len(diamondEntry.ReceiverPKID) != btcec.PubKeyBytesLenCompressed {
 		return fmt.Errorf("DbPutDiamondMappingsWithTxn: Receiver PKID "+
@@ -3975,17 +4084,16 @@ func DbPutDiamondMappingsWithTxn(txn *badger.Txn, snap *Snapshot, blockHeight ui
 	}
 
 	diamondEntryBytes := EncodeToBytes(blockHeight, diamondEntry)
-	if err := DBSetWithTxn(txn, snap, _dbKeyForDiamondReceiverToDiamondSenderMapping(diamondEntry), diamondEntryBytes); err != nil {
+	if err := DBSetWithTxn(txn, snap, _dbKeyForDiamondReceiverToDiamondSenderMapping(diamondEntry), diamondEntryBytes, eventManager); err != nil {
 		return errors.Wrapf(
 			err, "DbPutDiamondMappingsWithTxn: Problem adding receiver to giver mapping: ")
 	}
 
-	if err := DBSetWithTxn(txn, snap, _dbKeyForDiamondSenderToDiamondReceiverMapping(diamondEntry), diamondEntryBytes); err != nil {
+	if err := DBSetWithTxn(txn, snap, _dbKeyForDiamondSenderToDiamondReceiverMapping(diamondEntry), diamondEntryBytes, eventManager); err != nil {
 		return errors.Wrapf(err, "DbPutDiamondMappingsWithTxn: Problem adding sender to receiver mapping: ")
 	}
 
-	if err := DBSetWithTxn(txn, snap, _dbKeyForDiamondedPostHashDiamonderPKIDDiamondLevel(diamondEntry),
-		[]byte{}); err != nil {
+	if err := DBSetWithTxn(txn, snap, _dbKeyForDiamondedPostHashDiamonderPKIDDiamondLevel(diamondEntry), []byte{}, eventManager); err != nil {
 		return errors.Wrapf(
 			err, "DbPutDiamondMappingsWithTxn: Problem adding DiamondedPostHash Diamonder Diamond Level mapping: ")
 	}
@@ -3993,11 +4101,10 @@ func DbPutDiamondMappingsWithTxn(txn *badger.Txn, snap *Snapshot, blockHeight ui
 	return nil
 }
 
-func DbPutDiamondMappings(handle *badger.DB, snap *Snapshot, blockHeight uint64,
-	diamondEntry *DiamondEntry) error {
+func DbPutDiamondMappings(handle *badger.DB, snap *Snapshot, blockHeight uint64, diamondEntry *DiamondEntry, eventManager *EventManager) error {
 
 	return handle.Update(func(txn *badger.Txn) error {
-		return DbPutDiamondMappingsWithTxn(txn, snap, blockHeight, diamondEntry)
+		return DbPutDiamondMappingsWithTxn(txn, snap, blockHeight, diamondEntry, eventManager)
 	})
 }
 
@@ -4032,7 +4139,7 @@ func DbGetDiamondMappings(db *badger.DB, snap *Snapshot, diamondReceiverPKID *PK
 	return ret
 }
 
-func DbDeleteDiamondMappingsWithTxn(txn *badger.Txn, snap *Snapshot, diamondEntry *DiamondEntry) error {
+func DbDeleteDiamondMappingsWithTxn(txn *badger.Txn, snap *Snapshot, diamondEntry *DiamondEntry, eventManager *EventManager, entryIsDeleted bool) error {
 
 	// First check that a mapping exists for the PKIDs passed in.
 	// If one doesn't exist then there's nothing to do.
@@ -4043,7 +4150,7 @@ func DbDeleteDiamondMappingsWithTxn(txn *badger.Txn, snap *Snapshot, diamondEntr
 	}
 
 	// When a DiamondEntry exists, delete the diamond mappings.
-	if err := DBDeleteWithTxn(txn, snap, _dbKeyForDiamondReceiverToDiamondSenderMapping(diamondEntry)); err != nil {
+	if err := DBDeleteWithTxn(txn, snap, _dbKeyForDiamondReceiverToDiamondSenderMapping(diamondEntry), eventManager, entryIsDeleted); err != nil {
 		return errors.Wrapf(err, "DbDeleteDiamondMappingsWithTxn: Deleting "+
 			"diamondReceiverPKID %s and diamondSenderPKID %s and diamondPostHash %s failed",
 			PkToStringMainnet(diamondEntry.ReceiverPKID[:]),
@@ -4052,7 +4159,7 @@ func DbDeleteDiamondMappingsWithTxn(txn *badger.Txn, snap *Snapshot, diamondEntr
 		)
 	}
 	// When a DiamondEntry exists, delete the diamond mappings.
-	if err := DBDeleteWithTxn(txn, snap, _dbKeyForDiamondedPostHashDiamonderPKIDDiamondLevel(diamondEntry)); err != nil {
+	if err := DBDeleteWithTxn(txn, snap, _dbKeyForDiamondedPostHashDiamonderPKIDDiamondLevel(diamondEntry), eventManager, entryIsDeleted); err != nil {
 		return errors.Wrapf(err, "DbDeleteDiamondMappingsWithTxn: Deleting "+
 			"diamondedPostHash %s and diamonderPKID %s and diamondLevel %s failed",
 			diamondEntry.DiamondPostHash.String(),
@@ -4061,7 +4168,7 @@ func DbDeleteDiamondMappingsWithTxn(txn *badger.Txn, snap *Snapshot, diamondEntr
 		)
 	}
 
-	if err := DBDeleteWithTxn(txn, snap, _dbKeyForDiamondSenderToDiamondReceiverMapping(diamondEntry)); err != nil {
+	if err := DBDeleteWithTxn(txn, snap, _dbKeyForDiamondSenderToDiamondReceiverMapping(diamondEntry), eventManager, entryIsDeleted); err != nil {
 		return errors.Wrapf(err, "DbDeleteDiamondMappingsWithTxn: Deleting "+
 			"diamondSenderPKID %s and diamondReceiverPKID %s and diamondPostHash %s failed",
 			PkToStringMainnet(diamondEntry.SenderPKID[:]),
@@ -4073,9 +4180,9 @@ func DbDeleteDiamondMappingsWithTxn(txn *badger.Txn, snap *Snapshot, diamondEntr
 	return nil
 }
 
-func DbDeleteDiamondMappings(handle *badger.DB, snap *Snapshot, diamondEntry *DiamondEntry) error {
+func DbDeleteDiamondMappings(handle *badger.DB, snap *Snapshot, diamondEntry *DiamondEntry, eventManager *EventManager, entryIsDeleted bool) error {
 	return handle.Update(func(txn *badger.Txn) error {
-		return DbDeleteDiamondMappingsWithTxn(txn, snap, diamondEntry)
+		return DbDeleteDiamondMappingsWithTxn(txn, snap, diamondEntry, eventManager, entryIsDeleted)
 	})
 }
 
@@ -4234,8 +4341,8 @@ func _keyForBitcoinBurnTxID(bitcoinBurnTxID *BlockHash) []byte {
 	return append(prefixCopy, bitcoinBurnTxID[:]...)
 }
 
-func DbPutBitcoinBurnTxIDWithTxn(txn *badger.Txn, snap *Snapshot, bitcoinBurnTxID *BlockHash) error {
-	return DBSetWithTxn(txn, snap, _keyForBitcoinBurnTxID(bitcoinBurnTxID), []byte{})
+func DbPutBitcoinBurnTxIDWithTxn(txn *badger.Txn, snap *Snapshot, bitcoinBurnTxID *BlockHash, eventManager *EventManager) error {
+	return DBSetWithTxn(txn, snap, _keyForBitcoinBurnTxID(bitcoinBurnTxID), []byte{}, eventManager)
 }
 
 func DbExistsBitcoinBurnTxIDWithTxn(txn *badger.Txn, snap *Snapshot, bitcoinBurnTxID *BlockHash) bool {
@@ -4255,8 +4362,8 @@ func DbExistsBitcoinBurnTxID(db *badger.DB, snap *Snapshot, bitcoinBurnTxID *Blo
 	return exists
 }
 
-func DbDeleteBitcoinBurnTxIDWithTxn(txn *badger.Txn, snap *Snapshot, bitcoinBurnTxID *BlockHash) error {
-	return DBDeleteWithTxn(txn, snap, _keyForBitcoinBurnTxID(bitcoinBurnTxID))
+func DbDeleteBitcoinBurnTxIDWithTxn(txn *badger.Txn, snap *Snapshot, bitcoinBurnTxID *BlockHash, eventManager *EventManager, entryIsDeleted bool) error {
+	return DBDeleteWithTxn(txn, snap, _keyForBitcoinBurnTxID(bitcoinBurnTxID), eventManager, entryIsDeleted)
 }
 
 func DbGetAllBitcoinBurnTxIDs(handle *badger.DB) (_bitcoinBurnTxIDs []*BlockHash) {
@@ -4344,14 +4451,16 @@ func ReadUint8(rr *bytes.Reader) (uint8, error) {
 	return DecodeUint8(numBytes[:]), nil
 }
 
-func DbPutNanosPurchasedWithTxn(txn *badger.Txn, snap *Snapshot, nanosPurchased uint64) error {
-	return DBSetWithTxn(txn, snap, Prefixes.PrefixNanosPurchased, EncodeUint64(nanosPurchased))
+func DbPutNanosPurchasedWithTxn(txn *badger.Txn, snap *Snapshot, nanosPurchased uint64, eventManager *EventManager) error {
+	return DBSetWithTxn(txn, snap, Prefixes.PrefixNanosPurchased, EncodeUint64(nanosPurchased), eventManager)
 }
 
-func DbPutNanosPurchased(handle *badger.DB, snap *Snapshot, nanosPurchased uint64) error {
-	return handle.Update(func(txn *badger.Txn) error {
-		return DbPutNanosPurchasedWithTxn(txn, snap, nanosPurchased)
+func DbPutNanosPurchased(handle *badger.DB, snap *Snapshot, nanosPurchased uint64, eventManager *EventManager) error {
+	err := handle.Update(func(txn *badger.Txn) error {
+		return DbPutNanosPurchasedWithTxn(txn, snap, nanosPurchased, eventManager)
 	})
+
+	return err
 }
 
 func DbGetNanosPurchasedWithTxn(txn *badger.Txn, snap *Snapshot) uint64 {
@@ -4373,18 +4482,18 @@ func DbGetNanosPurchased(handle *badger.DB, snap *Snapshot) uint64 {
 	return nanosPurchased
 }
 
-func DbPutGlobalParamsEntry(handle *badger.DB, snap *Snapshot, blockHeight uint64,
-	globalParamsEntry GlobalParamsEntry) error {
+func DbPutGlobalParamsEntry(handle *badger.DB, snap *Snapshot, blockHeight uint64, globalParamsEntry GlobalParamsEntry, eventManager *EventManager) error {
 
-	return handle.Update(func(txn *badger.Txn) error {
-		return DbPutGlobalParamsEntryWithTxn(txn, snap, blockHeight, globalParamsEntry)
+	err := handle.Update(func(txn *badger.Txn) error {
+		return DbPutGlobalParamsEntryWithTxn(txn, snap, blockHeight, globalParamsEntry, eventManager)
 	})
+
+	return err
 }
 
-func DbPutGlobalParamsEntryWithTxn(txn *badger.Txn, snap *Snapshot, blockHeight uint64,
-	globalParamsEntry GlobalParamsEntry) error {
+func DbPutGlobalParamsEntryWithTxn(txn *badger.Txn, snap *Snapshot, blockHeight uint64, globalParamsEntry GlobalParamsEntry, eventManager *EventManager) error {
 
-	err := DBSetWithTxn(txn, snap, Prefixes.PrefixGlobalParams, EncodeToBytes(blockHeight, &globalParamsEntry))
+	err := DBSetWithTxn(txn, snap, Prefixes.PrefixGlobalParams, EncodeToBytes(blockHeight, &globalParamsEntry), eventManager)
 	if err != nil {
 		return errors.Wrapf(err, "DbPutGlobalParamsEntryWithTxn: Problem adding global params entry to db: ")
 	}
@@ -4412,11 +4521,9 @@ func DbGetGlobalParamsEntry(handle *badger.DB, snap *Snapshot) *GlobalParamsEntr
 	return globalParamsEntry
 }
 
-func DbPutUSDCentsPerBitcoinExchangeRateWithTxn(txn *badger.Txn, snap *Snapshot,
-	usdCentsPerBitcoinExchangeRate uint64) error {
+func DbPutUSDCentsPerBitcoinExchangeRateWithTxn(txn *badger.Txn, snap *Snapshot, usdCentsPerBitcoinExchangeRate uint64, eventManager *EventManager) error {
 
-	return DBSetWithTxn(txn, snap, Prefixes.PrefixUSDCentsPerBitcoinExchangeRate,
-		EncodeUint64(usdCentsPerBitcoinExchangeRate))
+	return DBSetWithTxn(txn, snap, Prefixes.PrefixUSDCentsPerBitcoinExchangeRate, EncodeUint64(usdCentsPerBitcoinExchangeRate), eventManager)
 }
 
 func DbGetUSDCentsPerBitcoinExchangeRateWithTxn(txn *badger.Txn, snap *Snapshot) uint64 {
@@ -4485,14 +4592,13 @@ func _UtxoKeyFromDbKey(utxoDbKey []byte) *UtxoKey {
 	}
 }
 
-func PutUtxoNumEntriesWithTxn(txn *badger.Txn, snap *Snapshot, newNumEntries uint64) error {
-	return DBSetWithTxn(txn, snap, Prefixes.PrefixUtxoNumEntries, EncodeUint64(newNumEntries))
+func PutUtxoNumEntriesWithTxn(txn *badger.Txn, snap *Snapshot, newNumEntries uint64, eventManager *EventManager) error {
+	return DBSetWithTxn(txn, snap, Prefixes.PrefixUtxoNumEntries, EncodeUint64(newNumEntries), eventManager)
 }
 
-func PutUtxoEntryForUtxoKeyWithTxn(txn *badger.Txn, snap *Snapshot, blockHeight uint64,
-	utxoKey *UtxoKey, utxoEntry *UtxoEntry) error {
+func PutUtxoEntryForUtxoKeyWithTxn(txn *badger.Txn, snap *Snapshot, blockHeight uint64, utxoKey *UtxoKey, utxoEntry *UtxoEntry, eventManager *EventManager) error {
 
-	return DBSetWithTxn(txn, snap, _DbKeyForUtxoKey(utxoKey), EncodeToBytes(blockHeight, utxoEntry))
+	return DBSetWithTxn(txn, snap, _DbKeyForUtxoKey(utxoKey), EncodeToBytes(blockHeight, utxoEntry), eventManager)
 }
 
 func DbGetUtxoEntryForUtxoKeyWithTxn(txn *badger.Txn, snap *Snapshot, utxoKey *UtxoKey) *UtxoEntry {
@@ -4518,12 +4624,11 @@ func DbGetUtxoEntryForUtxoKey(handle *badger.DB, snap *Snapshot, utxoKey *UtxoKe
 	return ret
 }
 
-func DeleteUtxoEntryForKeyWithTxn(txn *badger.Txn, snap *Snapshot, utxoKey *UtxoKey) error {
-	return DBDeleteWithTxn(txn, snap, _DbKeyForUtxoKey(utxoKey))
+func DeleteUtxoEntryForKeyWithTxn(txn *badger.Txn, snap *Snapshot, utxoKey *UtxoKey, eventManager *EventManager, entryIsDeleted bool) error {
+	return DBDeleteWithTxn(txn, snap, _DbKeyForUtxoKey(utxoKey), eventManager, entryIsDeleted)
 }
 
-func DeletePubKeyUtxoKeyMappingWithTxn(txn *badger.Txn, snap *Snapshot,
-	publicKey []byte, utxoKey *UtxoKey) error {
+func DeletePubKeyUtxoKeyMappingWithTxn(txn *badger.Txn, snap *Snapshot, publicKey []byte, utxoKey *UtxoKey, eventManager *EventManager, entryIsDeleted bool) error {
 	if len(publicKey) != btcec.PubKeyBytesLenCompressed {
 		return fmt.Errorf("DeletePubKeyUtxoKeyMappingWithTxn: Public key has improper length %d != %d", len(publicKey), btcec.PubKeyBytesLenCompressed)
 	}
@@ -4531,10 +4636,10 @@ func DeletePubKeyUtxoKeyMappingWithTxn(txn *badger.Txn, snap *Snapshot,
 	keyToDelete := append(append([]byte{}, Prefixes.PrefixPubKeyUtxoKey...), publicKey...)
 	keyToDelete = append(keyToDelete, _SerializeUtxoKey(utxoKey)...)
 
-	return DBDeleteWithTxn(txn, snap, keyToDelete)
+	return DBDeleteWithTxn(txn, snap, keyToDelete, eventManager, entryIsDeleted)
 }
 
-func PutPubKeyUtxoKeyWithTxn(txn *badger.Txn, snap *Snapshot, publicKey []byte, utxoKey *UtxoKey) error {
+func PutPubKeyUtxoKeyWithTxn(txn *badger.Txn, snap *Snapshot, publicKey []byte, utxoKey *UtxoKey, eventManager *EventManager) error {
 	if len(publicKey) != btcec.PubKeyBytesLenCompressed {
 		return fmt.Errorf("PutPubKeyUtxoKeyWithTxn: Public key has improper length %d != %d", len(publicKey), btcec.PubKeyBytesLenCompressed)
 	}
@@ -4542,7 +4647,7 @@ func PutPubKeyUtxoKeyWithTxn(txn *badger.Txn, snap *Snapshot, publicKey []byte, 
 	keyToAdd := append(append([]byte{}, Prefixes.PrefixPubKeyUtxoKey...), publicKey...)
 	keyToAdd = append(keyToAdd, _SerializeUtxoKey(utxoKey)...)
 
-	return DBSetWithTxn(txn, snap, keyToAdd, []byte{})
+	return DBSetWithTxn(txn, snap, keyToAdd, []byte{}, eventManager)
 }
 
 // DbGetUtxosForPubKey finds the UtxoEntry's corresponding to the public
@@ -4608,7 +4713,7 @@ func DbGetUtxosForPubKey(publicKey []byte, handle *badger.DB, snap *Snapshot) ([
 	return utxoEntriesFound, nil
 }
 
-func DeleteUnmodifiedMappingsForUtxoWithTxn(txn *badger.Txn, snap *Snapshot, utxoKey *UtxoKey) error {
+func DeleteUnmodifiedMappingsForUtxoWithTxn(txn *badger.Txn, snap *Snapshot, utxoKey *UtxoKey, eventManager *EventManager, entryIsDeleted bool) error {
 	// Get the entry for the utxoKey from the db.
 	utxoEntry := DbGetUtxoEntryForUtxoKeyWithTxn(txn, snap, utxoKey)
 	if utxoEntry == nil {
@@ -4620,27 +4725,26 @@ func DeleteUnmodifiedMappingsForUtxoWithTxn(txn *badger.Txn, snap *Snapshot, utx
 	// If the entry exists, delete the <UtxoKey -> UtxoEntry> mapping from the db.
 	// It is assumed that the entry corresponding to a key has not been modified
 	// and so is OK to delete
-	if err := DeleteUtxoEntryForKeyWithTxn(txn, snap, utxoKey); err != nil {
+	if err := DeleteUtxoEntryForKeyWithTxn(txn, snap, utxoKey, eventManager, entryIsDeleted); err != nil {
 		return err
 	}
 
 	// Delete the <pubkey, utxoKey> -> <> mapping.
-	if err := DeletePubKeyUtxoKeyMappingWithTxn(txn, snap, utxoEntry.PublicKey, utxoKey); err != nil {
+	if err := DeletePubKeyUtxoKeyMappingWithTxn(txn, snap, utxoEntry.PublicKey, utxoKey, eventManager, entryIsDeleted); err != nil {
 		return err
 	}
 
 	return nil
 }
 
-func PutMappingsForUtxoWithTxn(txn *badger.Txn, snap *Snapshot, blockHeight uint64,
-	utxoKey *UtxoKey, utxoEntry *UtxoEntry) error {
+func PutMappingsForUtxoWithTxn(txn *badger.Txn, snap *Snapshot, blockHeight uint64, utxoKey *UtxoKey, utxoEntry *UtxoEntry, eventManager *EventManager) error {
 	// Put the <utxoKey -> utxoEntry> mapping.
-	if err := PutUtxoEntryForUtxoKeyWithTxn(txn, snap, blockHeight, utxoKey, utxoEntry); err != nil {
+	if err := PutUtxoEntryForUtxoKeyWithTxn(txn, snap, blockHeight, utxoKey, utxoEntry, eventManager); err != nil {
 		return nil
 	}
 
 	// Put the <pubkey, utxoKey> -> <> mapping.
-	if err := PutPubKeyUtxoKeyWithTxn(txn, snap, utxoEntry.PublicKey, utxoKey); err != nil {
+	if err := PutPubKeyUtxoKeyWithTxn(txn, snap, utxoEntry.PublicKey, utxoKey, eventManager); err != nil {
 		return err
 	}
 
@@ -4649,6 +4753,10 @@ func PutMappingsForUtxoWithTxn(txn *badger.Txn, snap *Snapshot, blockHeight uint
 
 func _DbKeyForUtxoOps(blockHash *BlockHash) []byte {
 	return append(append([]byte{}, Prefixes.PrefixBlockHashToUtxoOperations...), blockHash[:]...)
+}
+
+func _DbKeyForTxnUtxoOps(txnHash *BlockHash) []byte {
+	return append(append([]byte{}, Prefixes.PrefixTxnHashToUtxoOps...), txnHash[:]...)
 }
 
 func GetUtxoOperationsForBlockWithTxn(txn *badger.Txn, snap *Snapshot, blockHash *BlockHash) ([][]*UtxoOperation, error) {
@@ -4678,16 +4786,16 @@ func GetUtxoOperationsForBlock(handle *badger.DB, snap *Snapshot, blockHash *Blo
 }
 
 func PutUtxoOperationsForBlockWithTxn(txn *badger.Txn, snap *Snapshot, blockHeight uint64,
-	blockHash *BlockHash, utxoOpsForBlock [][]*UtxoOperation) error {
+	blockHash *BlockHash, utxoOpsForBlock [][]*UtxoOperation, eventManager *EventManager) error {
 
 	opBundle := &UtxoOperationBundle{
 		UtxoOpBundle: utxoOpsForBlock,
 	}
-	return DBSetWithTxn(txn, snap, _DbKeyForUtxoOps(blockHash), EncodeToBytes(blockHeight, opBundle))
+	return DBSetWithTxn(txn, snap, _DbKeyForUtxoOps(blockHash), EncodeToBytes(blockHeight, opBundle), eventManager)
 }
 
-func DeleteUtxoOperationsForBlockWithTxn(txn *badger.Txn, snap *Snapshot, blockHash *BlockHash) error {
-	return DBDeleteWithTxn(txn, snap, _DbKeyForUtxoOps(blockHash))
+func DeleteUtxoOperationsForBlockWithTxn(txn *badger.Txn, snap *Snapshot, blockHash *BlockHash, eventManager *EventManager, entryIsDeleted bool) error {
+	return DBDeleteWithTxn(txn, snap, _DbKeyForUtxoOps(blockHash), eventManager, entryIsDeleted)
 }
 
 func SerializeBlockNode(blockNode *BlockNode) ([]byte, error) {
@@ -4828,24 +4936,30 @@ func DbGetBestHash(handle *badger.DB, snap *Snapshot, chainType ChainType) *Bloc
 }
 
 func PutBestHashWithTxn(txn *badger.Txn, snap *Snapshot,
-	bh *BlockHash, chainType ChainType) error {
+	bh *BlockHash, chainType ChainType, eventManager *EventManager) error {
 
 	prefix := _prefixForChainType(chainType)
 	if len(prefix) == 0 {
 		glog.Errorf("PutBestHashWithTxn: Problem getting prefix for ChainType: %d", chainType)
 		return nil
 	}
-	return DBSetWithTxn(txn, snap, prefix, bh[:])
+	return DBSetWithTxn(txn, snap, prefix, bh[:], eventManager)
 }
 
-func PutBestHash(handle *badger.DB, snap *Snapshot, bh *BlockHash, chainType ChainType) error {
-	return handle.Update(func(txn *badger.Txn) error {
-		return PutBestHashWithTxn(txn, snap, bh, chainType)
+func PutBestHash(handle *badger.DB, snap *Snapshot, bh *BlockHash, chainType ChainType, eventManager *EventManager) error {
+	err := handle.Update(func(txn *badger.Txn) error {
+		return PutBestHashWithTxn(txn, snap, bh, chainType, eventManager)
 	})
+
+	return err
 }
 
 func BlockHashToBlockKey(blockHash *BlockHash) []byte {
 	return append(append([]byte{}, Prefixes.PrefixBlockHashToBlock...), blockHash[:]...)
+}
+
+func TxnHashToTxnKey(txnHash *BlockHash) []byte {
+	return append(append([]byte{}, Prefixes.PrefixTxnHashToTxn...), txnHash[:]...)
 }
 
 func PublicKeyBlockHashToBlockRewardKey(publicKey []byte, blockHash *BlockHash) []byte {
@@ -4895,7 +5009,7 @@ func GetBlock(blockHash *BlockHash, handle *badger.DB, snap *Snapshot) (*MsgDeSo
 	return blockRet, nil
 }
 
-func PutBlockWithTxn(txn *badger.Txn, snap *Snapshot, desoBlock *MsgDeSoBlock) error {
+func PutBlockWithTxn(txn *badger.Txn, snap *Snapshot, desoBlock *MsgDeSoBlock, eventManager *EventManager) error {
 	if desoBlock.Header == nil {
 		return fmt.Errorf("PutBlockWithTxn: Header was nil in block %v", desoBlock)
 	}
@@ -4915,7 +5029,7 @@ func PutBlockWithTxn(txn *badger.Txn, snap *Snapshot, desoBlock *MsgDeSoBlock) e
 		return nil
 	}
 	// If the block is not in the db then set it.
-	if err := DBSetWithTxn(txn, snap, blockKey, data); err != nil {
+	if err := DBSetWithTxn(txn, snap, blockKey, data, eventManager); err != nil {
 		return err
 	}
 
@@ -4941,7 +5055,7 @@ func PutBlockWithTxn(txn *badger.Txn, snap *Snapshot, desoBlock *MsgDeSoBlock) e
 		pkMapKey := pkMapKeyIter
 
 		blockRewardKey := PublicKeyBlockHashToBlockRewardKey(pkMapKey[:], blockHash)
-		if err := DBSetWithTxn(txn, snap, blockRewardKey, EncodeUint64(blockReward)); err != nil {
+		if err := DBSetWithTxn(txn, snap, blockRewardKey, EncodeUint64(blockReward), eventManager); err != nil {
 			return err
 		}
 	}
@@ -4949,24 +5063,23 @@ func PutBlockWithTxn(txn *badger.Txn, snap *Snapshot, desoBlock *MsgDeSoBlock) e
 	return nil
 }
 
-func PutBlock(handle *badger.DB, snap *Snapshot, desoBlock *MsgDeSoBlock) error {
+func PutBlock(handle *badger.DB, snap *Snapshot, desoBlock *MsgDeSoBlock, eventManager *EventManager) error {
 	err := handle.Update(func(txn *badger.Txn) error {
-		return PutBlockWithTxn(txn, snap, desoBlock)
+		return PutBlockWithTxn(txn, snap, desoBlock, eventManager)
 	})
-	if err != nil {
-		return err
-	}
 
-	return nil
+	return err
 }
 
-func DeleteBlockReward(handle *badger.DB, snap *Snapshot, desoBlock *MsgDeSoBlock) error {
-	return handle.Update(func(txn *badger.Txn) error {
-		return DeleteBlockRewardWithTxn(txn, snap, desoBlock)
+func DeleteBlockReward(handle *badger.DB, snap *Snapshot, desoBlock *MsgDeSoBlock, eventManager *EventManager, entryIsDeleted bool) error {
+	err := handle.Update(func(txn *badger.Txn) error {
+		return DeleteBlockRewardWithTxn(txn, snap, desoBlock, eventManager, entryIsDeleted)
 	})
+
+	return err
 }
 
-func DeleteBlockRewardWithTxn(txn *badger.Txn, snap *Snapshot, desoBlock *MsgDeSoBlock) error {
+func DeleteBlockRewardWithTxn(txn *badger.Txn, snap *Snapshot, desoBlock *MsgDeSoBlock, eventManager *EventManager, entryIsDeleted bool) error {
 	blockHash, err := desoBlock.Header.Hash()
 	if err != nil {
 		return errors.Wrapf(err, "DeleteBlockRewardWithTxn: Problem hashing header: ")
@@ -4990,7 +5103,7 @@ func DeleteBlockRewardWithTxn(txn *badger.Txn, snap *Snapshot, desoBlock *MsgDeS
 		pkMapKey := pkMapKeyIter
 
 		blockRewardKey := PublicKeyBlockHashToBlockRewardKey(pkMapKey[:], blockHash)
-		if err := DBDeleteWithTxn(txn, snap, blockRewardKey); err != nil {
+		if err := DBDeleteWithTxn(txn, snap, blockRewardKey, eventManager, entryIsDeleted); err != nil {
 			return err
 		}
 	}
@@ -5074,7 +5187,7 @@ func GetHeightHashToNodeInfo(handle *badger.DB, snap *Snapshot,
 }
 
 func PutHeightHashToNodeInfoWithTxn(txn *badger.Txn, snap *Snapshot,
-	node *BlockNode, bitcoinNodes bool) error {
+	node *BlockNode, bitcoinNodes bool, eventManager *EventManager) error {
 
 	key := _heightHashToNodeIndexKey(node.Height, node.Hash, bitcoinNodes)
 	serializedNode, err := SerializeBlockNode(node)
@@ -5082,15 +5195,15 @@ func PutHeightHashToNodeInfoWithTxn(txn *badger.Txn, snap *Snapshot,
 		return errors.Wrapf(err, "PutHeightHashToNodeInfoWithTxn: Problem serializing node")
 	}
 
-	if err := DBSetWithTxn(txn, snap, key, serializedNode); err != nil {
+	if err := DBSetWithTxn(txn, snap, key, serializedNode, eventManager); err != nil {
 		return err
 	}
 	return nil
 }
 
-func PutHeightHashToNodeInfo(handle *badger.DB, snap *Snapshot, node *BlockNode, bitcoinNodes bool) error {
+func PutHeightHashToNodeInfo(handle *badger.DB, snap *Snapshot, node *BlockNode, bitcoinNodes bool, eventManager *EventManager) error {
 	err := handle.Update(func(txn *badger.Txn) error {
-		return PutHeightHashToNodeInfoWithTxn(txn, snap, node, bitcoinNodes)
+		return PutHeightHashToNodeInfoWithTxn(txn, snap, node, bitcoinNodes, eventManager)
 	})
 
 	if err != nil {
@@ -5100,18 +5213,16 @@ func PutHeightHashToNodeInfo(handle *badger.DB, snap *Snapshot, node *BlockNode,
 	return nil
 }
 
-func DbDeleteHeightHashToNodeInfoWithTxn(txn *badger.Txn, snap *Snapshot,
-	node *BlockNode, bitcoinNodes bool) error {
+func DbDeleteHeightHashToNodeInfoWithTxn(txn *badger.Txn, snap *Snapshot, node *BlockNode, bitcoinNodes bool, eventManager *EventManager, entryIsDeleted bool) error {
 
-	return DBDeleteWithTxn(txn, snap, _heightHashToNodeIndexKey(node.Height, node.Hash, bitcoinNodes))
+	return DBDeleteWithTxn(txn, snap, _heightHashToNodeIndexKey(node.Height, node.Hash, bitcoinNodes), eventManager, entryIsDeleted)
 }
 
-func DbBulkDeleteHeightHashToNodeInfo(handle *badger.DB, snap *Snapshot,
-	nodes []*BlockNode, bitcoinNodes bool) error {
+func DbBulkDeleteHeightHashToNodeInfo(handle *badger.DB, snap *Snapshot, nodes []*BlockNode, bitcoinNodes bool, eventManager *EventManager, entryIsDeleted bool) error {
 
 	err := handle.Update(func(txn *badger.Txn) error {
 		for _, nn := range nodes {
-			if err := DbDeleteHeightHashToNodeInfoWithTxn(txn, snap, nn, bitcoinNodes); err != nil {
+			if err := DbDeleteHeightHashToNodeInfoWithTxn(txn, snap, nn, bitcoinNodes, eventManager, entryIsDeleted); err != nil {
 				return err
 			}
 		}
@@ -5155,21 +5266,21 @@ func InitDbWithDeSoGenesisBlock(params *DeSoParams, handle *badger.DB,
 		snap.PrepareAncestralRecordsFlush()
 	}
 
-	if err := PutBestHash(handle, snap, blockHash, ChainTypeDeSoBlock); err != nil {
+	if err := PutBestHash(handle, snap, blockHash, ChainTypeDeSoBlock, eventManager); err != nil {
 		return errors.Wrapf(err, "InitDbWithGenesisBlock: Problem putting genesis block hash into db for block chain")
 	}
 	// Add the genesis block to the (hash -> block) index.
-	if err := PutBlock(handle, snap, genesisBlock); err != nil {
+	if err := PutBlock(handle, snap, genesisBlock, eventManager); err != nil {
 		return errors.Wrapf(err, "InitDbWithGenesisBlock: Problem putting genesis block into db")
 	}
 	// Add the genesis block to the (height, hash -> node info) index in the db.
-	if err := PutHeightHashToNodeInfo(handle, snap, genesisNode, false /*bitcoinNodes*/); err != nil {
+	if err := PutHeightHashToNodeInfo(handle, snap, genesisNode, false /*bitcoinNodes*/, eventManager); err != nil {
 		return errors.Wrapf(err, "InitDbWithGenesisBlock: Problem putting (height, hash -> node) in db")
 	}
-	if err := DbPutNanosPurchased(handle, snap, params.DeSoNanosPurchasedAtGenesis); err != nil {
+	if err := DbPutNanosPurchased(handle, snap, params.DeSoNanosPurchasedAtGenesis, eventManager); err != nil {
 		return errors.Wrapf(err, "InitDbWithGenesisBlock: Problem putting genesis block hash into db for block chain")
 	}
-	if err := DbPutGlobalParamsEntry(handle, snap, 0, InitialGlobalParamsEntry); err != nil {
+	if err := DbPutGlobalParamsEntry(handle, snap, 0, InitialGlobalParamsEntry, eventManager); err != nil {
 		return errors.Wrapf(err, "InitDbWithGenesisBlock: Problem putting GlobalParamsEntry into db for block chain")
 	}
 
@@ -5186,7 +5297,7 @@ func InitDbWithDeSoGenesisBlock(params *DeSoParams, handle *badger.DB,
 	// think things are initialized because we set the best block hash at the
 	// top. We should fix this at some point so that an error in this step
 	// wipes out the best hash.
-	utxoView, err := NewUtxoView(handle, params, postgres, snap)
+	utxoView, err := NewUtxoView(handle, params, postgres, snap, eventManager)
 	if err != nil {
 		return fmt.Errorf(
 			"InitDbWithDeSoGenesisBlock: Error initializing UtxoView")
@@ -5458,13 +5569,13 @@ func DbGetTxindexTip(handle *badger.DB, snap *Snapshot) *BlockHash {
 	return _getBlockHashForPrefix(handle, snap, Prefixes.PrefixTransactionIndexTip)
 }
 
-func DbPutTxindexTipWithTxn(txn *badger.Txn, snap *Snapshot, tipHash *BlockHash) error {
-	return DBSetWithTxn(txn, snap, Prefixes.PrefixTransactionIndexTip, tipHash[:])
+func DbPutTxindexTipWithTxn(txn *badger.Txn, snap *Snapshot, tipHash *BlockHash, eventManager *EventManager) error {
+	return DBSetWithTxn(txn, snap, Prefixes.PrefixTransactionIndexTip, tipHash[:], eventManager)
 }
 
-func DbPutTxindexTip(handle *badger.DB, snap *Snapshot, tipHash *BlockHash) error {
+func DbPutTxindexTip(handle *badger.DB, snap *Snapshot, tipHash *BlockHash, eventManager *EventManager) error {
 	return handle.Update(func(txn *badger.Txn) error {
-		return DbPutTxindexTipWithTxn(txn, snap, tipHash)
+		return DbPutTxindexTipWithTxn(txn, snap, tipHash, eventManager)
 	})
 }
 
@@ -5572,37 +5683,34 @@ func _DbGetTxindexNextIndexForPublicKeyWithTxn(txn *badger.Txn, snap *Snapshot, 
 
 }
 
-func DbPutTxindexNextIndexForPublicKeyWithTxn(txn *badger.Txn, snap *Snapshot,
-	publicKey []byte, nextIndex uint64) error {
+func DbPutTxindexNextIndexForPublicKeyWithTxn(txn *badger.Txn, snap *Snapshot, publicKey []byte, nextIndex uint64, eventManager *EventManager) error {
 
 	key := _DbTxindexPublicKeyNextIndexPrefix(publicKey)
 	valBuf := UintToBuf(nextIndex)
 
-	return DBSetWithTxn(txn, snap, key, valBuf)
+	return DBSetWithTxn(txn, snap, key, valBuf, eventManager)
 }
 
-func DbDeleteTxindexNextIndexForPublicKeyWithTxn(txn *badger.Txn, snap *Snapshot, publicKey []byte) error {
+func DbDeleteTxindexNextIndexForPublicKeyWithTxn(txn *badger.Txn, snap *Snapshot, publicKey []byte, eventManager *EventManager, entryIsDeleted bool) error {
 	key := _DbTxindexPublicKeyNextIndexPrefix(publicKey)
-	return DBDeleteWithTxn(txn, snap, key)
+	return DBDeleteWithTxn(txn, snap, key, eventManager, entryIsDeleted)
 }
 
-func DbPutTxindexPublicKeyToTxnMappingSingleWithTxn(txn *badger.Txn, snap *Snapshot,
-	publicKey []byte, txID *BlockHash) error {
+func DbPutTxindexPublicKeyToTxnMappingSingleWithTxn(txn *badger.Txn, snap *Snapshot, publicKey []byte, txID *BlockHash, eventManager *EventManager) error {
 
 	nextIndex := _DbGetTxindexNextIndexForPublicKeyWithTxn(txn, snap, publicKey)
 	if nextIndex == nil {
 		return fmt.Errorf("Error getting next index")
 	}
 	key := DbTxindexPublicKeyIndexToTxnKey(publicKey, uint32(*nextIndex))
-	err := DbPutTxindexNextIndexForPublicKeyWithTxn(txn, snap, publicKey, uint64(*nextIndex+1))
+	err := DbPutTxindexNextIndexForPublicKeyWithTxn(txn, snap, publicKey, uint64(*nextIndex+1), eventManager)
 	if err != nil {
 		return err
 	}
-	return DBSetWithTxn(txn, snap, key, txID[:])
+	return DBSetWithTxn(txn, snap, key, txID[:], eventManager)
 }
 
-func DbDeleteTxindexPublicKeyToTxnMappingSingleWithTxn(txn *badger.Txn,
-	snap *Snapshot, publicKey []byte, txID *BlockHash) error {
+func DbDeleteTxindexPublicKeyToTxnMappingSingleWithTxn(txn *badger.Txn, snap *Snapshot, publicKey []byte, txID *BlockHash, eventManager *EventManager, entryIsDeleted bool) error {
 
 	// Get all the mappings corresponding to the public key passed in.
 	// TODO: This is inefficient but reorgs are rare so whatever.
@@ -5625,20 +5733,20 @@ func DbDeleteTxindexPublicKeyToTxnMappingSingleWithTxn(txn *badger.Txn,
 	// Delete all the mappings from the db.
 	for pkIndex := 0; pkIndex < numMappingsInDB; pkIndex++ {
 		key := DbTxindexPublicKeyIndexToTxnKey(publicKey, uint32(pkIndex))
-		if err := DBDeleteWithTxn(txn, snap, key); err != nil {
+		if err := DBDeleteWithTxn(txn, snap, key, eventManager, entryIsDeleted); err != nil {
 			return err
 		}
 	}
 
 	// Delete the next index for this public key
-	err := DbDeleteTxindexNextIndexForPublicKeyWithTxn(txn, snap, publicKey)
+	err := DbDeleteTxindexNextIndexForPublicKeyWithTxn(txn, snap, publicKey, eventManager, entryIsDeleted)
 	if err != nil {
 		return err
 	}
 
 	// Re-add all the mappings to the db except the one we just deleted.
 	for _, singleTxID := range txIDsInDB {
-		if err := DbPutTxindexPublicKeyToTxnMappingSingleWithTxn(txn, snap, publicKey, singleTxID); err != nil {
+		if err := DbPutTxindexPublicKeyToTxnMappingSingleWithTxn(txn, snap, publicKey, singleTxID, eventManager); err != nil {
 			return err
 		}
 	}
@@ -6909,6 +7017,67 @@ type TransactionMetadata struct {
 	UnjailValidatorTxindexMetadata       *UnjailValidatorTxindexMetadata       `json:",omitempty"`
 }
 
+func (txnMeta *TransactionMetadata) GetEncoderForTxType(txnType TxnType) DeSoEncoder {
+	switch txnType {
+	case TxnTypeBasicTransfer:
+		return txnMeta.BasicTransferTxindexMetadata
+	case TxnTypeBitcoinExchange:
+		return txnMeta.BitcoinExchangeTxindexMetadata
+	case TxnTypeCreatorCoin:
+		return txnMeta.CreatorCoinTxindexMetadata
+	case TxnTypeCreatorCoinTransfer:
+		return txnMeta.CreatorCoinTransferTxindexMetadata
+	case TxnTypeUpdateProfile:
+		return txnMeta.UpdateProfileTxindexMetadata
+	case TxnTypeSubmitPost:
+		return txnMeta.SubmitPostTxindexMetadata
+	case TxnTypeLike:
+		return txnMeta.LikeTxindexMetadata
+	case TxnTypeFollow:
+		return txnMeta.FollowTxindexMetadata
+	case TxnTypePrivateMessage:
+		return txnMeta.PrivateMessageTxindexMetadata
+	case TxnTypeSwapIdentity:
+		return txnMeta.SwapIdentityTxindexMetadata
+	case TxnTypeNFTBid:
+		return txnMeta.NFTBidTxindexMetadata
+	case TxnTypeAcceptNFTBid:
+		return txnMeta.AcceptNFTBidTxindexMetadata
+	case TxnTypeNFTTransfer:
+		return txnMeta.NFTTransferTxindexMetadata
+	case TxnTypeAcceptNFTTransfer:
+		return txnMeta.AcceptNFTTransferTxindexMetadata
+	case TxnTypeBurnNFT:
+		return txnMeta.BurnNFTTxindexMetadata
+	case TxnTypeDAOCoin:
+		return txnMeta.DAOCoinTxindexMetadata
+	case TxnTypeDAOCoinTransfer:
+		return txnMeta.DAOCoinTransferTxindexMetadata
+	case TxnTypeCreateNFT:
+		return txnMeta.CreateNFTTxindexMetadata
+	case TxnTypeUpdateNFT:
+		return txnMeta.UpdateNFTTxindexMetadata
+	case TxnTypeDAOCoinLimitOrder:
+		return txnMeta.DAOCoinLimitOrderTxindexMetadata
+	case TxnTypeCreateUserAssociation:
+		return txnMeta.CreateUserAssociationTxindexMetadata
+	case TxnTypeDeleteUserAssociation:
+		return txnMeta.DeleteUserAssociationTxindexMetadata
+	case TxnTypeCreatePostAssociation:
+		return txnMeta.CreatePostAssociationTxindexMetadata
+	case TxnTypeDeletePostAssociation:
+		return txnMeta.DeletePostAssociationTxindexMetadata
+	case TxnTypeAccessGroup:
+		return txnMeta.AccessGroupTxindexMetadata
+	case TxnTypeAccessGroupMembers:
+		return txnMeta.AccessGroupMembersTxindexMetadata
+	case TxnTypeNewMessage:
+		return txnMeta.NewMessageTxindexMetadata
+	default:
+		return nil
+	}
+}
+
 func (txnMeta *TransactionMetadata) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte {
 	var data []byte
 
@@ -7331,18 +7500,16 @@ func DbGetTxindexTransactionRefByTxID(handle *badger.DB, snap *Snapshot, txID *B
 	})
 	return valObj
 }
-func DbPutTxindexTransactionWithTxn(txn *badger.Txn, snap *Snapshot, blockHeight uint64,
-	txID *BlockHash, txnMeta *TransactionMetadata) error {
+func DbPutTxindexTransactionWithTxn(txn *badger.Txn, snap *Snapshot, blockHeight uint64, txID *BlockHash, txnMeta *TransactionMetadata, eventManager *EventManager) error {
 
 	key := append(append([]byte{}, Prefixes.PrefixTransactionIDToMetadata...), txID[:]...)
-	return DBSetWithTxn(txn, snap, key, EncodeToBytes(blockHeight, txnMeta))
+	return DBSetWithTxn(txn, snap, key, EncodeToBytes(blockHeight, txnMeta), eventManager)
 }
 
-func DbPutTxindexTransaction(handle *badger.DB, snap *Snapshot, blockHeight uint64,
-	txID *BlockHash, txnMeta *TransactionMetadata) error {
+func DbPutTxindexTransaction(handle *badger.DB, snap *Snapshot, blockHeight uint64, txID *BlockHash, txnMeta *TransactionMetadata, eventManager *EventManager) error {
 
 	return handle.Update(func(txn *badger.Txn) error {
-		return DbPutTxindexTransactionWithTxn(txn, snap, blockHeight, txID, txnMeta)
+		return DbPutTxindexTransactionWithTxn(txn, snap, blockHeight, txID, txnMeta, eventManager)
 	})
 }
 
@@ -7387,11 +7554,11 @@ func _getPublicKeysForTxn(
 }
 
 func DbPutTxindexTransactionMappingsWithTxn(txn *badger.Txn, snap *Snapshot, blockHeight uint64,
-	desoTxn *MsgDeSoTxn, params *DeSoParams, txnMeta *TransactionMetadata) error {
+	desoTxn *MsgDeSoTxn, params *DeSoParams, txnMeta *TransactionMetadata, eventManager *EventManager) error {
 
 	txID := desoTxn.Hash()
 
-	if err := DbPutTxindexTransactionWithTxn(txn, snap, blockHeight, txID, txnMeta); err != nil {
+	if err := DbPutTxindexTransactionWithTxn(txn, snap, blockHeight, txID, txnMeta, eventManager); err != nil {
 		return fmt.Errorf("Problem adding txn to txindex transaction index: %v", err)
 	}
 
@@ -7403,7 +7570,7 @@ func DbPutTxindexTransactionMappingsWithTxn(txn *badger.Txn, snap *Snapshot, blo
 		pkFound := pkFoundIter
 
 		// Simply add a new entry for each of the public keys found.
-		if err := DbPutTxindexPublicKeyToTxnMappingSingleWithTxn(txn, snap, pkFound[:], txID); err != nil {
+		if err := DbPutTxindexPublicKeyToTxnMappingSingleWithTxn(txn, snap, pkFound[:], txID, eventManager); err != nil {
 			return err
 		}
 	}
@@ -7413,16 +7580,18 @@ func DbPutTxindexTransactionMappingsWithTxn(txn *badger.Txn, snap *Snapshot, blo
 }
 
 func DbPutTxindexTransactionMappings(handle *badger.DB, snap *Snapshot, blockHeight uint64,
-	desoTxn *MsgDeSoTxn, params *DeSoParams, txnMeta *TransactionMetadata) error {
+	desoTxn *MsgDeSoTxn, params *DeSoParams, txnMeta *TransactionMetadata, eventManager *EventManager) error {
 
-	return handle.Update(func(txn *badger.Txn) error {
+	err := handle.Update(func(txn *badger.Txn) error {
 		return DbPutTxindexTransactionMappingsWithTxn(
-			txn, snap, blockHeight, desoTxn, params, txnMeta)
+			txn, snap, blockHeight, desoTxn, params, txnMeta, eventManager)
 	})
+
+	return err
 }
 
 func DbDeleteTxindexTransactionMappingsWithTxn(txn *badger.Txn, snap *Snapshot, blockHeight uint64,
-	desoTxn *MsgDeSoTxn, params *DeSoParams) error {
+	desoTxn *MsgDeSoTxn, params *DeSoParams, eventManager *EventManager, entryIsDeleted bool) error {
 
 	txID := desoTxn.Hash()
 
@@ -7438,14 +7607,14 @@ func DbDeleteTxindexTransactionMappingsWithTxn(txn *badger.Txn, snap *Snapshot, 
 	// For each public key found, delete the txID mapping from the db.
 	for pkFoundIter := range publicKeys {
 		pkFound := pkFoundIter
-		if err := DbDeleteTxindexPublicKeyToTxnMappingSingleWithTxn(txn, snap, pkFound[:], txID); err != nil {
+		if err := DbDeleteTxindexPublicKeyToTxnMappingSingleWithTxn(txn, snap, pkFound[:], txID, eventManager, entryIsDeleted); err != nil {
 			return err
 		}
 	}
 
 	// Delete the metadata
 	transactionIndexKey := DbTxindexTxIDKey(txID)
-	if err := DBDeleteWithTxn(txn, snap, transactionIndexKey); err != nil {
+	if err := DBDeleteWithTxn(txn, snap, transactionIndexKey, eventManager, entryIsDeleted); err != nil {
 		return fmt.Errorf("Problem deleting transaction index key: %v", err)
 	}
 
@@ -7454,10 +7623,10 @@ func DbDeleteTxindexTransactionMappingsWithTxn(txn *badger.Txn, snap *Snapshot, 
 }
 
 func DbDeleteTxindexTransactionMappings(handle *badger.DB, snap *Snapshot, blockHeight uint64,
-	desoTxn *MsgDeSoTxn, params *DeSoParams) error {
+	desoTxn *MsgDeSoTxn, params *DeSoParams, eventManager *EventManager, entryIsDeleted bool) error {
 
 	return handle.Update(func(txn *badger.Txn) error {
-		return DbDeleteTxindexTransactionMappingsWithTxn(txn, snap, blockHeight, desoTxn, params)
+		return DbDeleteTxindexTransactionMappingsWithTxn(txn, snap, blockHeight, desoTxn, params, eventManager, entryIsDeleted)
 	})
 }
 
@@ -7574,8 +7743,7 @@ func DBGetPostEntryByPostHash(db *badger.DB, snap *Snapshot, postHash *BlockHash
 	return ret
 }
 
-func DBDeletePostEntryMappingsWithTxn(txn *badger.Txn, snap *Snapshot,
-	postHash *BlockHash, params *DeSoParams) error {
+func DBDeletePostEntryMappingsWithTxn(txn *badger.Txn, snap *Snapshot, postHash *BlockHash, params *DeSoParams, eventManager *EventManager, entryIsDeleted bool) error {
 
 	// First pull up the mapping that exists for the post hash passed in.
 	// If one doesn't exist then there's nothing to do.
@@ -7585,7 +7753,7 @@ func DBDeletePostEntryMappingsWithTxn(txn *badger.Txn, snap *Snapshot,
 	}
 
 	// When a post exists, delete the mapping for the post.
-	if err := DBDeleteWithTxn(txn, snap, _dbKeyForPostEntryHash(postHash)); err != nil {
+	if err := DBDeleteWithTxn(txn, snap, _dbKeyForPostEntryHash(postHash), eventManager, entryIsDeleted); err != nil {
 		return errors.Wrapf(err, "DbDeletePostEntryMappingsWithTxn: Deleting "+
 			"post mapping for post hash %v", postHash)
 	}
@@ -7603,32 +7771,32 @@ func DBDeletePostEntryMappingsWithTxn(txn *badger.Txn, snap *Snapshot,
 		extendedStakeID = append(extendedStakeID, 0x00)
 		parentStakeIDKey := _dbKeyForCommentParentStakeIDToPostHash(
 			extendedStakeID, postEntry.TimestampNanos, postEntry.PostHash)
-		if err := DBDeleteWithTxn(txn, snap, parentStakeIDKey); err != nil {
+		if err := DBDeleteWithTxn(txn, snap, parentStakeIDKey, eventManager, entryIsDeleted); err != nil {
 
 			return errors.Wrapf(err, "DbDeletePostEntryMappingsWithTxn: Problem "+
 				"deleting mapping for comment: %v: %v", postEntry, err)
 		}
 	} else {
 		if err := DBDeleteWithTxn(txn, snap, _dbKeyForPosterPublicKeyTimestampPostHash(
-			postEntry.PosterPublicKey, postEntry.TimestampNanos, postEntry.PostHash)); err != nil {
+			postEntry.PosterPublicKey, postEntry.TimestampNanos, postEntry.PostHash), eventManager, entryIsDeleted); err != nil {
 
 			return errors.Wrapf(err, "DbDeletePostEntryMappingsWithTxn: Deleting "+
 				"public key mapping for post hash %v: %v", postHash, err)
 		}
 		if err := DBDeleteWithTxn(txn, snap, _dbKeyForTstampPostHash(
-			postEntry.TimestampNanos, postEntry.PostHash)); err != nil {
+			postEntry.TimestampNanos, postEntry.PostHash), eventManager, entryIsDeleted); err != nil {
 
 			return errors.Wrapf(err, "DbDeletePostEntryMappingsWithTxn: Deleting "+
 				"tstamp mapping for post hash %v: %v", postHash, err)
 		}
 		if err := DBDeleteWithTxn(txn, snap, _dbKeyForCreatorBpsPostHash(
-			postEntry.CreatorBasisPoints, postEntry.PostHash)); err != nil {
+			postEntry.CreatorBasisPoints, postEntry.PostHash), eventManager, entryIsDeleted); err != nil {
 
 			return errors.Wrapf(err, "DbDeletePostEntryMappingsWithTxn: Deleting "+
 				"creatorBps mapping for post hash %v: %v", postHash, err)
 		}
 		if err := DBDeleteWithTxn(txn, snap, _dbKeyForStakeMultipleBpsPostHash(
-			postEntry.StakeMultipleBasisPoints, postEntry.PostHash)); err != nil {
+			postEntry.StakeMultipleBasisPoints, postEntry.PostHash), eventManager, entryIsDeleted); err != nil {
 
 			return errors.Wrapf(err, "DbDeletePostEntryMappingsWithTxn: Deleting "+
 				"stakeMultiple mapping for post hash %v: %v", postHash, err)
@@ -7637,20 +7805,17 @@ func DBDeletePostEntryMappingsWithTxn(txn *badger.Txn, snap *Snapshot,
 
 	// Delete the repost entries for the post.
 	if IsVanillaRepost(postEntry) {
-		if err := DBDeleteWithTxn(txn, snap,
-			_dbKeyForReposterPubKeyRepostedPostHashToRepostPostHash(postEntry.PosterPublicKey, *postEntry.RepostedPostHash, *postEntry.PostHash)); err != nil {
+		if err := DBDeleteWithTxn(txn, snap, _dbKeyForReposterPubKeyRepostedPostHashToRepostPostHash(postEntry.PosterPublicKey, *postEntry.RepostedPostHash, *postEntry.PostHash), eventManager, entryIsDeleted); err != nil {
 			return errors.Wrapf(err, "DbDeletePostEntryMappingsWithTxn: Error problem deleting mapping for repostPostHash to ReposterPubKey: %v", err)
 		}
-		if err := DBDeleteWithTxn(txn, snap,
-			_dbKeyForRepostedPostHashReposterPubKey(postEntry.RepostedPostHash, postEntry.PosterPublicKey)); err != nil {
+		if err := DBDeleteWithTxn(txn, snap, _dbKeyForRepostedPostHashReposterPubKey(postEntry.RepostedPostHash, postEntry.PosterPublicKey), eventManager, entryIsDeleted); err != nil {
 			return errors.Wrapf(err, "DbDeletePostEntryMappingsWithTxn: Error problem adding "+
 				"mapping for _dbKeyForRepostedPostHashReposterPubKey: %v", err)
 		}
 	} else if IsQuotedRepost(postEntry) {
 		// Put quoted repost stuff.
-		if err := DBDeleteWithTxn(txn, snap,
-			_dbKeyForRepostedPostHashReposterPubKeyRepostPostHash(
-				postEntry.RepostedPostHash, postEntry.PosterPublicKey, postEntry.PostHash)); err != nil {
+		if err := DBDeleteWithTxn(txn, snap, _dbKeyForRepostedPostHashReposterPubKeyRepostPostHash(
+			postEntry.RepostedPostHash, postEntry.PosterPublicKey, postEntry.PostHash), eventManager, entryIsDeleted); err != nil {
 			return errors.Wrapf(err, "DbDeletePostEntryMappingsWithTxn: Error problem adding "+
 				"mapping for _dbKeyForRepostedPostHashReposterPubKeyRepostPostHash: %v", err)
 
@@ -7660,19 +7825,17 @@ func DBDeletePostEntryMappingsWithTxn(txn *badger.Txn, snap *Snapshot,
 	return nil
 }
 
-func DBDeletePostEntryMappings(handle *badger.DB, snap *Snapshot,
-	postHash *BlockHash, params *DeSoParams) error {
+func DBDeletePostEntryMappings(handle *badger.DB, snap *Snapshot, postHash *BlockHash, params *DeSoParams, eventManager *EventManager, entryIsDeleted bool) error {
 
 	return handle.Update(func(txn *badger.Txn) error {
-		return DBDeletePostEntryMappingsWithTxn(txn, snap, postHash, params)
+		return DBDeletePostEntryMappingsWithTxn(txn, snap, postHash, params, eventManager, entryIsDeleted)
 	})
 }
 
-func DBPutPostEntryMappingsWithTxn(txn *badger.Txn, snap *Snapshot, blockHeight uint64,
-	postEntry *PostEntry, params *DeSoParams) error {
+func DBPutPostEntryMappingsWithTxn(txn *badger.Txn, snap *Snapshot, blockHeight uint64, postEntry *PostEntry, params *DeSoParams, eventManager *EventManager) error {
 
 	if err := DBSetWithTxn(txn, snap, _dbKeyForPostEntryHash(
-		postEntry.PostHash), EncodeToBytes(blockHeight, postEntry)); err != nil {
+		postEntry.PostHash), EncodeToBytes(blockHeight, postEntry), eventManager); err != nil {
 
 		return errors.Wrapf(err, "DbPutPostEntryMappingsWithTxn: Problem "+
 			"adding mapping for post: %v", postEntry.PostHash)
@@ -7698,7 +7861,7 @@ func DBPutPostEntryMappingsWithTxn(txn *badger.Txn, snap *Snapshot, blockHeight 
 		}
 		parentStakeIDKey := _dbKeyForCommentParentStakeIDToPostHash(
 			extendedStakeID, postEntry.TimestampNanos, postEntry.PostHash)
-		if err := DBSetWithTxn(txn, snap, parentStakeIDKey, []byte{}); err != nil {
+		if err := DBSetWithTxn(txn, snap, parentStakeIDKey, []byte{}, eventManager); err != nil {
 
 			return errors.Wrapf(err, "DbPutPostEntryMappingsWithTxn: Problem "+
 				"adding mapping for comment: %v: %v", postEntry, err)
@@ -7706,25 +7869,25 @@ func DBPutPostEntryMappingsWithTxn(txn *badger.Txn, snap *Snapshot, blockHeight 
 
 	} else {
 		if err := DBSetWithTxn(txn, snap, _dbKeyForPosterPublicKeyTimestampPostHash(
-			postEntry.PosterPublicKey, postEntry.TimestampNanos, postEntry.PostHash), []byte{}); err != nil {
+			postEntry.PosterPublicKey, postEntry.TimestampNanos, postEntry.PostHash), []byte{}, eventManager); err != nil {
 
 			return errors.Wrapf(err, "DbPutPostEntryMappingsWithTxn: Problem "+
 				"adding mapping for public key: %v: %v", postEntry, err)
 		}
 		if err := DBSetWithTxn(txn, snap, _dbKeyForTstampPostHash(
-			postEntry.TimestampNanos, postEntry.PostHash), []byte{}); err != nil {
+			postEntry.TimestampNanos, postEntry.PostHash), []byte{}, eventManager); err != nil {
 
 			return errors.Wrapf(err, "DbPutPostEntryMappingsWithTxn: Problem "+
 				"adding mapping for tstamp: %v", postEntry)
 		}
 		if err := DBSetWithTxn(txn, snap, _dbKeyForCreatorBpsPostHash(
-			postEntry.CreatorBasisPoints, postEntry.PostHash), []byte{}); err != nil {
+			postEntry.CreatorBasisPoints, postEntry.PostHash), []byte{}, eventManager); err != nil {
 
 			return errors.Wrapf(err, "DbPutPostEntryMappingsWithTxn: Problem "+
 				"adding mapping for creatorBps: %v", postEntry)
 		}
 		if err := DBSetWithTxn(txn, snap, _dbKeyForStakeMultipleBpsPostHash(
-			postEntry.StakeMultipleBasisPoints, postEntry.PostHash), []byte{}); err != nil {
+			postEntry.StakeMultipleBasisPoints, postEntry.PostHash), []byte{}, eventManager); err != nil {
 
 			return errors.Wrapf(err, "DbPutPostEntryMappingsWithTxn: Problem "+
 				"adding mapping for stakeMultipleBps: %v", postEntry)
@@ -7738,21 +7901,17 @@ func DBPutPostEntryMappingsWithTxn(txn *badger.Txn, snap *Snapshot, blockHeight 
 			RepostedPostHash: postEntry.RepostedPostHash,
 			ReposterPubKey:   postEntry.PosterPublicKey,
 		}
-		if err := DbPutRepostMappingsWithTxn(txn, snap, blockHeight, repostEntry); err != nil {
+		if err := DbPutRepostMappingsWithTxn(txn, snap, blockHeight, repostEntry, eventManager); err != nil {
 			return errors.Wrapf(err, "DbPutPostEntryMappingsWithTxn: Error problem adding mapping for repostPostHash to ReposterPubKey: %v", err)
 		}
-		if err := DBSetWithTxn(txn, snap,
-			_dbKeyForRepostedPostHashReposterPubKey(postEntry.RepostedPostHash, postEntry.PosterPublicKey),
-			[]byte{}); err != nil {
+		if err := DBSetWithTxn(txn, snap, _dbKeyForRepostedPostHashReposterPubKey(postEntry.RepostedPostHash, postEntry.PosterPublicKey), []byte{}, eventManager); err != nil {
 			return errors.Wrapf(err, "DbPutPostEntryMappingsWithTxn: Error problem adding "+
 				"mapping for _dbKeyForRepostedPostHashReposterPubKey: %v", err)
 		}
 	} else if IsQuotedRepost(postEntry) {
 		// Put quoted repost stuff.
-		if err := DBSetWithTxn(txn, snap,
-			_dbKeyForRepostedPostHashReposterPubKeyRepostPostHash(
-				postEntry.RepostedPostHash, postEntry.PosterPublicKey, postEntry.PostHash),
-			[]byte{}); err != nil {
+		if err := DBSetWithTxn(txn, snap, _dbKeyForRepostedPostHashReposterPubKeyRepostPostHash(
+			postEntry.RepostedPostHash, postEntry.PosterPublicKey, postEntry.PostHash), []byte{}, eventManager); err != nil {
 			return errors.Wrapf(err, "DbPutPostEntryMappingsWithTxn: Error problem adding "+
 				"mapping for _dbKeyForRepostedPostHashReposterPubKeyRepostPostHash: %v", err)
 		}
@@ -7760,11 +7919,10 @@ func DBPutPostEntryMappingsWithTxn(txn *badger.Txn, snap *Snapshot, blockHeight 
 	return nil
 }
 
-func DBPutPostEntryMappings(handle *badger.DB, snap *Snapshot, blockHeight uint64,
-	postEntry *PostEntry, params *DeSoParams) error {
+func DBPutPostEntryMappings(handle *badger.DB, snap *Snapshot, blockHeight uint64, postEntry *PostEntry, params *DeSoParams, eventManager *EventManager) error {
 
 	return handle.Update(func(txn *badger.Txn) error {
-		return DBPutPostEntryMappingsWithTxn(txn, snap, blockHeight, postEntry, params)
+		return DBPutPostEntryMappingsWithTxn(txn, snap, blockHeight, postEntry, params, eventManager)
 	})
 }
 
@@ -8040,8 +8198,7 @@ func DBGetNFTEntryByPostHashSerialNumber(db *badger.DB, snap *Snapshot,
 	return ret
 }
 
-func DBDeleteNFTMappingsWithTxn(txn *badger.Txn, snap *Snapshot,
-	nftPostHash *BlockHash, serialNumber uint64) error {
+func DBDeleteNFTMappingsWithTxn(txn *badger.Txn, snap *Snapshot, nftPostHash *BlockHash, serialNumber uint64, eventManager *EventManager, entryIsDeleted bool) error {
 
 	// First pull up the mapping that exists for the post / serial # passed in.
 	// If one doesn't exist then there's nothing to do.
@@ -8051,16 +8208,14 @@ func DBDeleteNFTMappingsWithTxn(txn *badger.Txn, snap *Snapshot,
 	}
 
 	// When an nftEntry exists, delete the mapping.
-	if err := DBDeleteWithTxn(txn, snap,
-		_dbKeyForPKIDIsForSaleBidAmountNanosNFTPostHashSerialNumber(
-			nftEntry.OwnerPKID, nftEntry.IsForSale, nftEntry.LastAcceptedBidAmountNanos, nftPostHash, serialNumber)); err != nil {
+	if err := DBDeleteWithTxn(txn, snap, _dbKeyForPKIDIsForSaleBidAmountNanosNFTPostHashSerialNumber(
+		nftEntry.OwnerPKID, nftEntry.IsForSale, nftEntry.LastAcceptedBidAmountNanos, nftPostHash, serialNumber), eventManager, entryIsDeleted); err != nil {
 		return errors.Wrapf(err, "DbDeleteNFTMappingsWithTxn: Deleting "+
 			"nft mapping for pkid %v post hash %v serial number %d", nftEntry.OwnerPKID, nftPostHash, serialNumber)
 	}
 
 	// When an nftEntry exists, delete the mapping.
-	if err := DBDeleteWithTxn(txn, snap,
-		_dbKeyForNFTPostHashSerialNumber(nftPostHash, serialNumber)); err != nil {
+	if err := DBDeleteWithTxn(txn, snap, _dbKeyForNFTPostHashSerialNumber(nftPostHash, serialNumber), eventManager, entryIsDeleted); err != nil {
 		return errors.Wrapf(err, "DbDeleteNFTMappingsWithTxn: Deleting "+
 			"nft mapping for post hash %v serial number %d", nftPostHash, serialNumber)
 	}
@@ -8068,26 +8223,25 @@ func DBDeleteNFTMappingsWithTxn(txn *badger.Txn, snap *Snapshot,
 	return nil
 }
 
-func DBDeleteNFTMappings(
-	handle *badger.DB, snap *Snapshot, postHash *BlockHash, serialNumber uint64) error {
+func DBDeleteNFTMappings(handle *badger.DB, snap *Snapshot, postHash *BlockHash, serialNumber uint64, eventManager *EventManager, entryIsDeleted bool) error {
 
 	return handle.Update(func(txn *badger.Txn) error {
-		return DBDeleteNFTMappingsWithTxn(txn, snap, postHash, serialNumber)
+		return DBDeleteNFTMappingsWithTxn(txn, snap, postHash, serialNumber, eventManager, entryIsDeleted)
 	})
 }
 
-func DBPutNFTEntryMappingsWithTxn(txn *badger.Txn, snap *Snapshot, blockHeight uint64, nftEntry *NFTEntry) error {
+func DBPutNFTEntryMappingsWithTxn(txn *badger.Txn, snap *Snapshot, blockHeight uint64, nftEntry *NFTEntry, eventManager *EventManager) error {
 	nftEntryBytes := EncodeToBytes(blockHeight, nftEntry)
 
 	if err := DBSetWithTxn(txn, snap, _dbKeyForNFTPostHashSerialNumber(
-		nftEntry.NFTPostHash, nftEntry.SerialNumber), nftEntryBytes); err != nil {
+		nftEntry.NFTPostHash, nftEntry.SerialNumber), nftEntryBytes, eventManager); err != nil {
 
 		return errors.Wrapf(err, "DbPutNFTEntryMappingsWithTxn: Problem "+
 			"adding mapping for post: %v, serial number: %d", nftEntry.NFTPostHash, nftEntry.SerialNumber)
 	}
 
 	if err := DBSetWithTxn(txn, snap, _dbKeyForPKIDIsForSaleBidAmountNanosNFTPostHashSerialNumber(
-		nftEntry.OwnerPKID, nftEntry.IsForSale, nftEntry.LastAcceptedBidAmountNanos, nftEntry.NFTPostHash, nftEntry.SerialNumber), nftEntryBytes); err != nil {
+		nftEntry.OwnerPKID, nftEntry.IsForSale, nftEntry.LastAcceptedBidAmountNanos, nftEntry.NFTPostHash, nftEntry.SerialNumber), nftEntryBytes, eventManager); err != nil {
 		return errors.Wrapf(err, "DbPutNFTEntryMappingsWithTxn: Problem "+
 			"adding mapping for pkid: %v, post: %v, serial number: %d", nftEntry.OwnerPKID, nftEntry.NFTPostHash, nftEntry.SerialNumber)
 	}
@@ -8095,10 +8249,10 @@ func DBPutNFTEntryMappingsWithTxn(txn *badger.Txn, snap *Snapshot, blockHeight u
 	return nil
 }
 
-func DBPutNFTEntryMappings(handle *badger.DB, snap *Snapshot, blockHeight uint64, nftEntry *NFTEntry) error {
+func DBPutNFTEntryMappings(handle *badger.DB, snap *Snapshot, blockHeight uint64, nftEntry *NFTEntry, eventManager *EventManager) error {
 
 	return handle.Update(func(txn *badger.Txn) error {
-		return DBPutNFTEntryMappingsWithTxn(txn, snap, blockHeight, nftEntry)
+		return DBPutNFTEntryMappingsWithTxn(txn, snap, blockHeight, nftEntry, eventManager)
 	})
 }
 
@@ -8177,14 +8331,13 @@ func _dbKeyForPostHashSerialNumberToAcceptedBidEntries(nftPostHash *BlockHash, s
 }
 
 // TODO: are we sure we want to pass a pointer to an array here?
-func DBPutAcceptedNFTBidEntriesMappingWithTxn(txn *badger.Txn, snap *Snapshot, blockHeight uint64,
-	nftKey NFTKey, nftBidEntries *[]*NFTBidEntry) error {
+func DBPutAcceptedNFTBidEntriesMappingWithTxn(txn *badger.Txn, snap *Snapshot, blockHeight uint64, nftKey NFTKey, nftBidEntries *[]*NFTBidEntry, eventManager *EventManager) error {
 
 	nftBidEntryBundle := &NFTBidEntryBundle{
 		nftBidEntryBundle: *nftBidEntries,
 	}
 	if err := DBSetWithTxn(txn, snap, _dbKeyForPostHashSerialNumberToAcceptedBidEntries(
-		&nftKey.NFTPostHash, nftKey.SerialNumber), EncodeToBytes(blockHeight, nftBidEntryBundle)); err != nil {
+		&nftKey.NFTPostHash, nftKey.SerialNumber), EncodeToBytes(blockHeight, nftBidEntryBundle), eventManager); err != nil {
 
 		return errors.Wrapf(err, "DBPutAcceptedNFTBidEntriesMappingWithTxn: Problem "+
 			"adding accepted bid mapping for post: %v, serial number: %d", nftKey.NFTPostHash, nftKey.SerialNumber)
@@ -8192,11 +8345,10 @@ func DBPutAcceptedNFTBidEntriesMappingWithTxn(txn *badger.Txn, snap *Snapshot, b
 	return nil
 }
 
-func DBPutAcceptedNFTBidEntriesMapping(handle *badger.DB, snap *Snapshot, blockHeight uint64,
-	nftKey NFTKey, nftBidEntries *[]*NFTBidEntry) error {
+func DBPutAcceptedNFTBidEntriesMapping(handle *badger.DB, snap *Snapshot, blockHeight uint64, nftKey NFTKey, nftBidEntries *[]*NFTBidEntry, eventManager *EventManager) error {
 
 	return handle.Update(func(txn *badger.Txn) error {
-		return DBPutAcceptedNFTBidEntriesMappingWithTxn(txn, snap, blockHeight, nftKey, nftBidEntries)
+		return DBPutAcceptedNFTBidEntriesMappingWithTxn(txn, snap, blockHeight, nftKey, nftBidEntries, eventManager)
 	})
 }
 
@@ -8229,8 +8381,7 @@ func DBGetAcceptedNFTBidEntriesByPostHashSerialNumber(db *badger.DB, snap *Snaps
 	return ret
 }
 
-func DBDeleteAcceptedNFTBidEntriesMappingsWithTxn(txn *badger.Txn, snap *Snapshot,
-	nftPostHash *BlockHash, serialNumber uint64) error {
+func DBDeleteAcceptedNFTBidEntriesMappingsWithTxn(txn *badger.Txn, snap *Snapshot, nftPostHash *BlockHash, serialNumber uint64, eventManager *EventManager, entryIsDeleted bool) error {
 
 	// First check to see if there is an existing mapping. If one doesn't exist, there's nothing to do.
 	nftBidEntries := DBGetAcceptedNFTBidEntriesByPostHashSerialNumberWithTxn(txn, snap, nftPostHash, serialNumber)
@@ -8239,8 +8390,7 @@ func DBDeleteAcceptedNFTBidEntriesMappingsWithTxn(txn *badger.Txn, snap *Snapsho
 	}
 
 	// When an nftEntry exists, delete both mapping.
-	if err := DBDeleteWithTxn(txn, snap,
-		_dbKeyForPostHashSerialNumberToAcceptedBidEntries(nftPostHash, serialNumber)); err != nil {
+	if err := DBDeleteWithTxn(txn, snap, _dbKeyForPostHashSerialNumberToAcceptedBidEntries(nftPostHash, serialNumber), eventManager, entryIsDeleted); err != nil {
 		return errors.Wrapf(err, "DBDeleteAcceptedNFTBidEntriesMappingsWithTxn: Deleting "+
 			"accepted nft bid mapping for post hash %v serial number %d", nftPostHash, serialNumber)
 	}
@@ -8248,11 +8398,10 @@ func DBDeleteAcceptedNFTBidEntriesMappingsWithTxn(txn *badger.Txn, snap *Snapsho
 	return nil
 }
 
-func DBDeleteAcceptedNFTBidMappings(handle *badger.DB, snap *Snapshot,
-	postHash *BlockHash, serialNumber uint64) error {
+func DBDeleteAcceptedNFTBidMappings(handle *badger.DB, snap *Snapshot, postHash *BlockHash, serialNumber uint64, eventManager *EventManager, entryIsDeleted bool) error {
 
 	return handle.Update(func(txn *badger.Txn) error {
-		return DBDeleteAcceptedNFTBidEntriesMappingsWithTxn(txn, snap, postHash, serialNumber)
+		return DBDeleteAcceptedNFTBidEntriesMappingsWithTxn(txn, snap, postHash, serialNumber, eventManager, entryIsDeleted)
 	})
 }
 
@@ -8268,6 +8417,20 @@ func _dbKeyForNFTPostHashSerialNumberBidNanosBidderPKID(bidEntry *NFTBidEntry) [
 	key = append(key, EncodeUint64(bidEntry.BidAmountNanos)...)
 	key = append(key, bidEntry.BidderPKID[:]...)
 	return key
+}
+
+func _decodeDbKeyForPostHashSerialNumberBidNanosBidderPKIDMapping(key []byte) (*NFTBidEntry, error) {
+	if len(key) != HashSizeBytes+8+8+btcec.PubKeyBytesLenCompressed+1 {
+		return nil, fmt.Errorf("DecodeDbKeyForPostHashSerialNumberBidNanosBidderPKIDMapping: key is incorrect length: %v", len(key))
+	}
+	bidEntry := &NFTBidEntry{}
+	bidEntry.NFTPostHash = &BlockHash{}
+	copy(bidEntry.NFTPostHash[:], key[1:HashSizeBytes+1])
+	bidEntry.SerialNumber = DecodeUint64(key[HashSizeBytes+1 : HashSizeBytes+1+8])
+	bidEntry.BidAmountNanos = DecodeUint64(key[HashSizeBytes+1+8 : HashSizeBytes+1+8+8])
+	bidEntry.BidderPKID = &PKID{}
+	copy(bidEntry.BidderPKID[:], key[HashSizeBytes+1+8+8:])
+	return bidEntry, nil
 }
 
 func _dbKeyForNFTBidderPKIDPostHashSerialNumber(
@@ -8321,7 +8484,7 @@ func DBGetNFTBidEntryForNFTBidKey(db *badger.DB, snap *Snapshot, nftBidKey *NFTB
 	return ret
 }
 
-func DBDeleteNFTBidMappingsWithTxn(txn *badger.Txn, snap *Snapshot, nftBidKey *NFTBidKey) error {
+func DBDeleteNFTBidMappingsWithTxn(txn *badger.Txn, snap *Snapshot, nftBidKey *NFTBidKey, eventManager *EventManager, entryIsDeleted bool) error {
 
 	// First check to see if there is an existing mapping. If one doesn't exist, there's nothing to do.
 	nftBidEntry := DBGetNFTBidEntryForNFTBidKeyWithTxn(txn, snap, nftBidKey)
@@ -8330,14 +8493,14 @@ func DBDeleteNFTBidMappingsWithTxn(txn *badger.Txn, snap *Snapshot, nftBidKey *N
 	}
 
 	// When an nftEntry exists, delete both mapping.
-	if err := DBDeleteWithTxn(txn, snap, _dbKeyForNFTPostHashSerialNumberBidNanosBidderPKID(nftBidEntry)); err != nil {
+	if err := DBDeleteWithTxn(txn, snap, _dbKeyForNFTPostHashSerialNumberBidNanosBidderPKID(nftBidEntry), eventManager, entryIsDeleted); err != nil {
 		return errors.Wrapf(err, "DbDeleteNFTBidMappingsWithTxn: Deleting "+
 			"nft bid mapping for nftBidKey %v", nftBidKey)
 	}
 
 	// When an nftEntry exists, delete both mapping.
 	if err := DBDeleteWithTxn(txn, snap, _dbKeyForNFTBidderPKIDPostHashSerialNumber(
-		nftBidEntry.BidderPKID, nftBidEntry.NFTPostHash, nftBidEntry.SerialNumber)); err != nil {
+		nftBidEntry.BidderPKID, nftBidEntry.NFTPostHash, nftBidEntry.SerialNumber), eventManager, entryIsDeleted); err != nil {
 		return errors.Wrapf(err, "DbDeleteNFTBidMappingsWithTxn: Deleting "+
 			"nft bid mapping for nftBidKey %v", nftBidKey)
 	}
@@ -8345,20 +8508,19 @@ func DBDeleteNFTBidMappingsWithTxn(txn *badger.Txn, snap *Snapshot, nftBidKey *N
 	return nil
 }
 
-func DBDeleteNFTBidMappings(handle *badger.DB, snap *Snapshot, nftBidKey *NFTBidKey) error {
+func DBDeleteNFTBidMappings(handle *badger.DB, snap *Snapshot, nftBidKey *NFTBidKey, eventManager *EventManager, entryIsDeleted bool) error {
 
 	return handle.Update(func(txn *badger.Txn) error {
-		return DBDeleteNFTBidMappingsWithTxn(txn, snap, nftBidKey)
+		return DBDeleteNFTBidMappingsWithTxn(txn, snap, nftBidKey, eventManager, entryIsDeleted)
 	})
 }
 
-func DBPutNFTBidEntryMappingsWithTxn(txn *badger.Txn, snap *Snapshot, nftBidEntry *NFTBidEntry) error {
+func DBPutNFTBidEntryMappingsWithTxn(txn *badger.Txn, snap *Snapshot, nftBidEntry *NFTBidEntry, eventManager *EventManager) error {
 	// We store two indexes for NFT bids. (1) sorted by bid amount nanos in the key and
 	// (2) sorted by the bidder PKID. Both come in handy.
 
 	// Put the first index --> []byte{} (no data needs to be stored since it all info is in the key)
-	if err := DBSetWithTxn(txn, snap,
-		_dbKeyForNFTPostHashSerialNumberBidNanosBidderPKID(nftBidEntry), []byte{}); err != nil {
+	if err := DBSetWithTxn(txn, snap, _dbKeyForNFTPostHashSerialNumberBidNanosBidderPKID(nftBidEntry), []byte{}, eventManager); err != nil {
 
 		return errors.Wrapf(err, "DbPutNFTBidEntryMappingsWithTxn: Problem "+
 			"adding mapping to BidderPKID for bid entry: %v", nftBidEntry)
@@ -8367,7 +8529,7 @@ func DBPutNFTBidEntryMappingsWithTxn(txn *badger.Txn, snap *Snapshot, nftBidEntr
 	// Put the second index --> BidAmountNanos
 	if err := DBSetWithTxn(txn, snap, _dbKeyForNFTBidderPKIDPostHashSerialNumber(
 		nftBidEntry.BidderPKID, nftBidEntry.NFTPostHash, nftBidEntry.SerialNumber,
-	), EncodeUint64(nftBidEntry.BidAmountNanos)); err != nil {
+	), EncodeUint64(nftBidEntry.BidAmountNanos), eventManager); err != nil {
 
 		return errors.Wrapf(err, "DbPutNFTBidEntryMappingsWithTxn: Problem "+
 			"adding mapping to BidAmountNanos for bid entry: %v", nftBidEntry)
@@ -8376,10 +8538,10 @@ func DBPutNFTBidEntryMappingsWithTxn(txn *badger.Txn, snap *Snapshot, nftBidEntr
 	return nil
 }
 
-func DBPutNFTBidEntryMappings(handle *badger.DB, snap *Snapshot, nftEntry *NFTBidEntry) error {
+func DBPutNFTBidEntryMappings(handle *badger.DB, snap *Snapshot, nftEntry *NFTBidEntry, eventManager *EventManager) error {
 
 	return handle.Update(func(txn *badger.Txn) error {
-		return DBPutNFTBidEntryMappingsWithTxn(txn, snap, nftEntry)
+		return DBPutNFTBidEntryMappingsWithTxn(txn, snap, nftEntry, eventManager)
 	})
 }
 
@@ -8531,19 +8693,17 @@ func _dbSeekPrefixForDerivedKeyMappings(
 	return key
 }
 
-func DBPutDerivedKeyMappingWithTxn(txn *badger.Txn, snap *Snapshot, blockHeight uint64,
-	ownerPublicKey PublicKey, derivedPublicKey PublicKey, derivedKeyEntry *DerivedKeyEntry) error {
+func DBPutDerivedKeyMappingWithTxn(txn *badger.Txn, snap *Snapshot, blockHeight uint64, ownerPublicKey PublicKey, derivedPublicKey PublicKey, derivedKeyEntry *DerivedKeyEntry, eventManager *EventManager) error {
 
 	key := _dbKeyForOwnerToDerivedKeyMapping(ownerPublicKey, derivedPublicKey)
 
-	return DBSetWithTxn(txn, snap, key, EncodeToBytes(blockHeight, derivedKeyEntry))
+	return DBSetWithTxn(txn, snap, key, EncodeToBytes(blockHeight, derivedKeyEntry), eventManager)
 }
 
-func DBPutDerivedKeyMapping(handle *badger.DB, snap *Snapshot, blockHeight uint64,
-	ownerPublicKey PublicKey, derivedPublicKey PublicKey, derivedKeyEntry *DerivedKeyEntry) error {
+func DBPutDerivedKeyMapping(handle *badger.DB, snap *Snapshot, blockHeight uint64, ownerPublicKey PublicKey, derivedPublicKey PublicKey, derivedKeyEntry *DerivedKeyEntry, eventManager *EventManager) error {
 
 	return handle.Update(func(txn *badger.Txn) error {
-		return DBPutDerivedKeyMappingWithTxn(txn, snap, blockHeight, ownerPublicKey, derivedPublicKey, derivedKeyEntry)
+		return DBPutDerivedKeyMappingWithTxn(txn, snap, blockHeight, ownerPublicKey, derivedPublicKey, derivedKeyEntry, eventManager)
 	})
 }
 
@@ -8573,11 +8733,10 @@ func DBGetOwnerToDerivedKeyMapping(db *badger.DB, snap *Snapshot,
 	return derivedKeyEntry
 }
 
-func DBDeleteDerivedKeyMappingWithTxn(txn *badger.Txn, snap *Snapshot,
-	ownerPublicKey PublicKey, derivedPublicKey PublicKey) error {
+func DBDeleteDerivedKeyMappingWithTxn(txn *badger.Txn, snap *Snapshot, ownerPublicKey PublicKey, derivedPublicKey PublicKey, eventManager *EventManager, entryIsDeleted bool) error {
 
 	// When a mapping exists, delete it.
-	if err := DBDeleteWithTxn(txn, snap, _dbKeyForOwnerToDerivedKeyMapping(ownerPublicKey, derivedPublicKey)); err != nil {
+	if err := DBDeleteWithTxn(txn, snap, _dbKeyForOwnerToDerivedKeyMapping(ownerPublicKey, derivedPublicKey), eventManager, entryIsDeleted); err != nil {
 		return errors.Wrapf(err, "DBDeleteDerivedKeyMappingWithTxn: Deleting "+
 			"ownerPublicKey %s and derivedPublicKey %s failed",
 			PkToStringMainnet(ownerPublicKey[:]), PkToStringMainnet(derivedPublicKey[:]))
@@ -8586,10 +8745,9 @@ func DBDeleteDerivedKeyMappingWithTxn(txn *badger.Txn, snap *Snapshot,
 	return nil
 }
 
-func DBDeleteDerivedKeyMapping(handle *badger.DB, snap *Snapshot,
-	ownerPublicKey PublicKey, derivedPublicKey PublicKey) error {
+func DBDeleteDerivedKeyMapping(handle *badger.DB, snap *Snapshot, ownerPublicKey PublicKey, derivedPublicKey PublicKey, eventManager *EventManager, entryIsDeleted bool) error {
 	return handle.Update(func(txn *badger.Txn) error {
-		return DBDeleteDerivedKeyMappingWithTxn(txn, snap, ownerPublicKey, derivedPublicKey)
+		return DBDeleteDerivedKeyMappingWithTxn(txn, snap, ownerPublicKey, derivedPublicKey, eventManager, entryIsDeleted)
 	})
 }
 
@@ -8705,8 +8863,7 @@ func DBGetProfileEntryForPKID(db *badger.DB, snap *Snapshot, pkid *PKID) *Profil
 	return ret
 }
 
-func DBDeleteProfileEntryMappingsWithTxn(txn *badger.Txn, snap *Snapshot,
-	pkid *PKID, params *DeSoParams) error {
+func DBDeleteProfileEntryMappingsWithTxn(txn *badger.Txn, snap *Snapshot, pkid *PKID, params *DeSoParams, eventManager *EventManager, entryIsDeleted bool) error {
 
 	// First pull up the mapping that exists for the profile pub key passed in.
 	// If one doesn't exist then there's nothing to do.
@@ -8716,23 +8873,21 @@ func DBDeleteProfileEntryMappingsWithTxn(txn *badger.Txn, snap *Snapshot,
 	}
 
 	// When a profile exists, delete the pkid mapping for the profile.
-	if err := DBDeleteWithTxn(txn, snap, _dbKeyForPKIDToProfileEntry(pkid)); err != nil {
+	if err := DBDeleteWithTxn(txn, snap, _dbKeyForPKIDToProfileEntry(pkid), eventManager, entryIsDeleted); err != nil {
 		return errors.Wrapf(err, "DbDeleteProfileEntryMappingsWithTxn: Deleting "+
 			"profile mapping for profile PKID: %v",
 			PkToString(pkid[:], params))
 	}
 
-	if err := DBDeleteWithTxn(txn, snap,
-		_dbKeyForProfileUsernameToPKID(profileEntry.Username)); err != nil {
+	if err := DBDeleteWithTxn(txn, snap, _dbKeyForProfileUsernameToPKID(profileEntry.Username), eventManager, entryIsDeleted); err != nil {
 
 		return errors.Wrapf(err, "DbDeleteProfileEntryMappingsWithTxn: Deleting "+
 			"username mapping for profile username %v", string(profileEntry.Username))
 	}
 
 	// The coin deso mapping
-	if err := DBDeleteWithTxn(txn, snap,
-		_dbKeyForCreatorDeSoLockedNanosCreatorPKID(
-			profileEntry.CreatorCoinEntry.DeSoLockedNanos, pkid)); err != nil {
+	if err := DBDeleteWithTxn(txn, snap, _dbKeyForCreatorDeSoLockedNanosCreatorPKID(
+		profileEntry.CreatorCoinEntry.DeSoLockedNanos, pkid), eventManager, entryIsDeleted); err != nil {
 
 		return errors.Wrapf(err, "DbDeleteProfileEntryMappingsWithTxn: Deleting "+
 			"coin mapping for profile username %v", string(profileEntry.Username))
@@ -8741,30 +8896,25 @@ func DBDeleteProfileEntryMappingsWithTxn(txn *badger.Txn, snap *Snapshot,
 	return nil
 }
 
-func DBPutProfileEntryMappingsWithTxn(txn *badger.Txn, snap *Snapshot, blockHeight uint64,
-	profileEntry *ProfileEntry, pkid *PKID, params *DeSoParams) error {
+func DBPutProfileEntryMappingsWithTxn(txn *badger.Txn, snap *Snapshot, blockHeight uint64, profileEntry *ProfileEntry, pkid *PKID, params *DeSoParams, eventManager *EventManager) error {
 
 	// Set the main PKID -> profile entry mapping.
-	if err := DBSetWithTxn(txn, snap, _dbKeyForPKIDToProfileEntry(pkid),
-		EncodeToBytes(blockHeight, profileEntry)); err != nil {
+	if err := DBSetWithTxn(txn, snap, _dbKeyForPKIDToProfileEntry(pkid), EncodeToBytes(blockHeight, profileEntry), eventManager); err != nil {
 
 		return errors.Wrapf(err, "DbPutProfileEntryMappingsWithTxn: Problem "+
 			"adding mapping for profile: %v", PkToString(pkid[:], params))
 	}
 
 	// Username
-	if err := DBSetWithTxn(txn, snap,
-		_dbKeyForProfileUsernameToPKID(profileEntry.Username),
-		pkid[:]); err != nil {
+	if err := DBSetWithTxn(txn, snap, _dbKeyForProfileUsernameToPKID(profileEntry.Username), pkid[:], eventManager); err != nil {
 
 		return errors.Wrapf(err, "DbPutProfileEntryMappingsWithTxn: Problem "+
 			"adding mapping for profile with username: %v", string(profileEntry.Username))
 	}
 
 	// The coin deso mapping
-	if err := DBSetWithTxn(txn, snap,
-		_dbKeyForCreatorDeSoLockedNanosCreatorPKID(
-			profileEntry.CreatorCoinEntry.DeSoLockedNanos, pkid), []byte{}); err != nil {
+	if err := DBSetWithTxn(txn, snap, _dbKeyForCreatorDeSoLockedNanosCreatorPKID(
+		profileEntry.CreatorCoinEntry.DeSoLockedNanos, pkid), []byte{}, eventManager); err != nil {
 
 		return errors.Wrapf(err, "DbPutProfileEntryMappingsWithTxn: Problem "+
 			"adding mapping for profile coin: ")
@@ -8773,11 +8923,10 @@ func DBPutProfileEntryMappingsWithTxn(txn *badger.Txn, snap *Snapshot, blockHeig
 	return nil
 }
 
-func DBPutProfileEntryMappings(handle *badger.DB, snap *Snapshot, blockHeight uint64,
-	profileEntry *ProfileEntry, pkid *PKID, params *DeSoParams) error {
+func DBPutProfileEntryMappings(handle *badger.DB, snap *Snapshot, blockHeight uint64, profileEntry *ProfileEntry, pkid *PKID, params *DeSoParams, eventManager *EventManager) error {
 
 	return handle.Update(func(txn *badger.Txn) error {
-		return DBPutProfileEntryMappingsWithTxn(txn, snap, blockHeight, profileEntry, pkid, params)
+		return DBPutProfileEntryMappingsWithTxn(txn, snap, blockHeight, profileEntry, pkid, params, eventManager)
 	})
 }
 
@@ -8935,8 +9084,7 @@ func DBGetBalanceEntryForCreatorPKIDAndHODLerPubKeyWithTxn(txn *badger.Txn, snap
 	return balanceEntryObj
 }
 
-func DBDeleteBalanceEntryMappingsWithTxn(txn *badger.Txn, snap *Snapshot,
-	hodlerPKID *PKID, creatorPKID *PKID, isDAOCoin bool) error {
+func DBDeleteBalanceEntryMappingsWithTxn(txn *badger.Txn, snap *Snapshot, hodlerPKID *PKID, creatorPKID *PKID, isDAOCoin bool, eventManager *EventManager, entryIsDeleted bool) error {
 
 	// First pull up the mappings that exists for the keys passed in.
 	// If one doesn't exist then there's nothing to do.
@@ -8947,12 +9095,12 @@ func DBDeleteBalanceEntryMappingsWithTxn(txn *badger.Txn, snap *Snapshot,
 	}
 
 	// When an entry exists, delete the mappings for it.
-	if err := DBDeleteWithTxn(txn, snap, _dbKeyForHODLerPKIDCreatorPKIDToBalanceEntry(hodlerPKID, creatorPKID, isDAOCoin)); err != nil {
+	if err := DBDeleteWithTxn(txn, snap, _dbKeyForHODLerPKIDCreatorPKIDToBalanceEntry(hodlerPKID, creatorPKID, isDAOCoin), eventManager, entryIsDeleted); err != nil {
 		return errors.Wrapf(err, "DBDeleteBalanceEntryMappingsWithTxn: Deleting "+
 			"mappings with keys: %v %v",
 			PkToStringBoth(hodlerPKID[:]), PkToStringBoth(creatorPKID[:]))
 	}
-	if err := DBDeleteWithTxn(txn, snap, _dbKeyForCreatorPKIDHODLerPKIDToBalanceEntry(creatorPKID, hodlerPKID, isDAOCoin)); err != nil {
+	if err := DBDeleteWithTxn(txn, snap, _dbKeyForCreatorPKIDHODLerPKIDToBalanceEntry(creatorPKID, hodlerPKID, isDAOCoin), eventManager, entryIsDeleted); err != nil {
 		return errors.Wrapf(err, "DBDeleteBalanceEntryMappingsWithTxn: Deleting "+
 			"mappings with keys: %v %v",
 			PkToStringBoth(hodlerPKID[:]), PkToStringBoth(creatorPKID[:]))
@@ -8965,17 +9113,14 @@ func DBDeleteBalanceEntryMappingsWithTxn(txn *badger.Txn, snap *Snapshot,
 	return nil
 }
 
-func DBDeleteBalanceEntryMappings(handle *badger.DB, snap *Snapshot,
-	hodlerPKID *PKID, creatorPKID *PKID, isDAOCoin bool) error {
+func DBDeleteBalanceEntryMappings(handle *badger.DB, snap *Snapshot, hodlerPKID *PKID, creatorPKID *PKID, isDAOCoin bool, eventManager *EventManager, entryIsDeleted bool) error {
 
 	return handle.Update(func(txn *badger.Txn) error {
-		return DBDeleteBalanceEntryMappingsWithTxn(
-			txn, snap, hodlerPKID, creatorPKID, isDAOCoin)
+		return DBDeleteBalanceEntryMappingsWithTxn(txn, snap, hodlerPKID, creatorPKID, isDAOCoin, eventManager, entryIsDeleted)
 	})
 }
 
-func DBPutBalanceEntryMappingsWithTxn(txn *badger.Txn, snap *Snapshot, blockHeight uint64,
-	balanceEntry *BalanceEntry, isDAOCoin bool) error {
+func DBPutBalanceEntryMappingsWithTxn(txn *badger.Txn, snap *Snapshot, blockHeight uint64, balanceEntry *BalanceEntry, isDAOCoin bool, eventManager *EventManager) error {
 
 	// If the balance is zero, then there is no point in storing this entry.
 	// We already placeholder a "zero" balance entry in connect logic.
@@ -8986,8 +9131,7 @@ func DBPutBalanceEntryMappingsWithTxn(txn *badger.Txn, snap *Snapshot, blockHeig
 	balanceEntryBytes := EncodeToBytes(blockHeight, balanceEntry)
 	// Set the forward direction for the HODLer
 	if err := DBSetWithTxn(txn, snap, _dbKeyForHODLerPKIDCreatorPKIDToBalanceEntry(
-		balanceEntry.HODLerPKID, balanceEntry.CreatorPKID, isDAOCoin),
-		balanceEntryBytes); err != nil {
+		balanceEntry.HODLerPKID, balanceEntry.CreatorPKID, isDAOCoin), balanceEntryBytes, eventManager); err != nil {
 
 		return errors.Wrapf(err, "DBPutBalanceEntryMappingsWithTxn: Problem "+
 			"adding forward mappings for pub keys: %v %v",
@@ -8997,8 +9141,7 @@ func DBPutBalanceEntryMappingsWithTxn(txn *badger.Txn, snap *Snapshot, blockHeig
 
 	// Set the reverse direction for the creator
 	if err := DBSetWithTxn(txn, snap, _dbKeyForCreatorPKIDHODLerPKIDToBalanceEntry(
-		balanceEntry.CreatorPKID, balanceEntry.HODLerPKID, isDAOCoin),
-		balanceEntryBytes); err != nil {
+		balanceEntry.CreatorPKID, balanceEntry.HODLerPKID, isDAOCoin), balanceEntryBytes, eventManager); err != nil {
 
 		return errors.Wrapf(err, "DBPutBalanceEntryMappingsWithTxn: Problem "+
 			"adding reverse mappings for pub keys: %v %v",
@@ -9009,12 +9152,10 @@ func DBPutBalanceEntryMappingsWithTxn(txn *badger.Txn, snap *Snapshot, blockHeig
 	return nil
 }
 
-func DBPutBalanceEntryMappings(handle *badger.DB, snap *Snapshot, blockHeight uint64,
-	balanceEntry *BalanceEntry, isDAOCoin bool) error {
+func DBPutBalanceEntryMappings(handle *badger.DB, snap *Snapshot, blockHeight uint64, balanceEntry *BalanceEntry, isDAOCoin bool, eventManager *EventManager) error {
 
 	return handle.Update(func(txn *badger.Txn) error {
-		return DBPutBalanceEntryMappingsWithTxn(
-			txn, snap, blockHeight, balanceEntry, isDAOCoin)
+		return DBPutBalanceEntryMappingsWithTxn(txn, snap, blockHeight, balanceEntry, isDAOCoin, eventManager)
 	})
 }
 
@@ -9622,7 +9763,7 @@ func _DBGetAllDAOCoinLimitOrdersByPrefix(handle *badger.DB, prefixKey []byte) ([
 	return orders, nil
 }
 
-func DBPutDAOCoinLimitOrderWithTxn(txn *badger.Txn, snap *Snapshot, order *DAOCoinLimitOrderEntry, blockHeight uint64) error {
+func DBPutDAOCoinLimitOrderWithTxn(txn *badger.Txn, snap *Snapshot, order *DAOCoinLimitOrderEntry, blockHeight uint64, eventManager *EventManager) error {
 	if order == nil {
 		return nil
 	}
@@ -9631,45 +9772,45 @@ func DBPutDAOCoinLimitOrderWithTxn(txn *badger.Txn, snap *Snapshot, order *DAOCo
 	// Store in index: PrefixDAOCoinLimitOrderByTransactorPKID
 	key := DBKeyForDAOCoinLimitOrder(order)
 
-	if err := DBSetWithTxn(txn, snap, key, orderBytes); err != nil {
+	if err := DBSetWithTxn(txn, snap, key, orderBytes, eventManager); err != nil {
 		return errors.Wrapf(err, "DBPutDAOCoinLimitOrderWithTxn: problem storing limit order")
 	}
 
 	// Store in index: PrefixDAOCoinLimitOrderByTransactorPKID
 	key = DBKeyForDAOCoinLimitOrderByTransactorPKID(order)
-	if err := DBSetWithTxn(txn, snap, key, orderBytes); err != nil {
+	if err := DBSetWithTxn(txn, snap, key, orderBytes, eventManager); err != nil {
 		return errors.Wrapf(err, "DBPutDAOCoinLimitOrderWithTxn: problem storing limit order")
 	}
 
 	// Store in index: PrefixDAOCoinLimitOrderByOrderID
 	key = DBKeyForDAOCoinLimitOrderByOrderID(order)
-	if err := DBSetWithTxn(txn, snap, key, orderBytes); err != nil {
+	if err := DBSetWithTxn(txn, snap, key, orderBytes, eventManager); err != nil {
 		return errors.Wrapf(err, "DBPutDAOCoinLimitOrderWithTxn: problem storing order in index PrefixDAOCoinLimitOrderByOrderID")
 	}
 
 	return nil
 }
 
-func DBDeleteDAOCoinLimitOrderWithTxn(txn *badger.Txn, snap *Snapshot, order *DAOCoinLimitOrderEntry) error {
+func DBDeleteDAOCoinLimitOrderWithTxn(txn *badger.Txn, snap *Snapshot, order *DAOCoinLimitOrderEntry, eventManager *EventManager, entryIsDeleted bool) error {
 	if order == nil {
 		return nil
 	}
 
 	// Delete from index: PrefixDAOCoinLimitOrder
 	key := DBKeyForDAOCoinLimitOrder(order)
-	if err := DBDeleteWithTxn(txn, snap, key); err != nil {
+	if err := DBDeleteWithTxn(txn, snap, key, eventManager, entryIsDeleted); err != nil {
 		return errors.Wrapf(err, "DBDeleteDAOCoinLimitOrderWithTxn: problem deleting limit order")
 	}
 
 	// Delete from index: PrefixDAOCoinLimitOrderByTransactorPKID
 	key = DBKeyForDAOCoinLimitOrderByTransactorPKID(order)
-	if err := DBDeleteWithTxn(txn, snap, key); err != nil {
+	if err := DBDeleteWithTxn(txn, snap, key, eventManager, entryIsDeleted); err != nil {
 		return errors.Wrapf(err, "DBDeleteDAOCoinLimitOrderWithTxn: problem deleting limit order")
 	}
 
 	// Delete from index: PrefixDAOCoinLimitOrderByOrderID
 	key = DBKeyForDAOCoinLimitOrderByOrderID(order)
-	if err := DBDeleteWithTxn(txn, snap, key); err != nil {
+	if err := DBDeleteWithTxn(txn, snap, key, eventManager, entryIsDeleted); err != nil {
 		return errors.Wrapf(err, "DBDeleteDAOCoinLimitOrderWithTxn: problem deleting order from index PrefixDAOCoinLimitOrderByOrderID")
 	}
 
@@ -9691,24 +9832,24 @@ func _dbKeyForMempoolTxn(mempoolTx *MempoolTx) []byte {
 	return key
 }
 
-func DbPutMempoolTxnWithTxn(txn *badger.Txn, snap *Snapshot, blockHeight uint64, mempoolTx *MempoolTx) error {
+func DbPutMempoolTxnWithTxn(txn *badger.Txn, snap *Snapshot, blockHeight uint64, mempoolTx *MempoolTx, eventManager *EventManager) error {
 
 	mempoolTxnBytes, err := mempoolTx.Tx.ToBytes(false /*preSignatureBool*/)
 	if err != nil {
 		return errors.Wrapf(err, "DbPutMempoolTxnWithTxn: Problem encoding mempoolTxn to bytes.")
 	}
 
-	if err := DBSetWithTxn(txn, snap, _dbKeyForMempoolTxn(mempoolTx), mempoolTxnBytes); err != nil {
+	if err := DBSetWithTxn(txn, snap, _dbKeyForMempoolTxn(mempoolTx), mempoolTxnBytes, eventManager); err != nil {
 		return errors.Wrapf(err, "DbPutMempoolTxnWithTxn: Problem putting mapping for txn hash: %s", mempoolTx.Hash.String())
 	}
 
 	return nil
 }
 
-func DbPutMempoolTxn(handle *badger.DB, snap *Snapshot, blockHeight uint64, mempoolTx *MempoolTx) error {
+func DbPutMempoolTxn(handle *badger.DB, snap *Snapshot, blockHeight uint64, mempoolTx *MempoolTx, eventManager *EventManager) error {
 
 	return handle.Update(func(txn *badger.Txn) error {
-		return DbPutMempoolTxnWithTxn(txn, snap, blockHeight, mempoolTx)
+		return DbPutMempoolTxnWithTxn(txn, snap, blockHeight, mempoolTx, eventManager)
 	})
 }
 
@@ -9755,14 +9896,14 @@ func DbGetAllMempoolTxnsSortedByTimeAdded(handle *badger.DB) (_mempoolTxns []*Ms
 	return mempoolTxns, nil
 }
 
-func DbDeleteAllMempoolTxnsWithTxn(txn *badger.Txn, snap *Snapshot) error {
+func DbDeleteAllMempoolTxnsWithTxn(txn *badger.Txn, snap *Snapshot, eventManager *EventManager, entryIsDeleted bool) error {
 	txnKeysFound, _, err := _enumerateKeysForPrefixWithTxn(txn, Prefixes.PrefixMempoolTxnHashToMsgDeSoTxn)
 	if err != nil {
 		return errors.Wrapf(err, "DbDeleteAllMempoolTxnsWithTxn: ")
 	}
 
 	for _, txnKey := range txnKeysFound {
-		err := DbDeleteMempoolTxnKeyWithTxn(txn, snap, txnKey)
+		err := DbDeleteMempoolTxnKeyWithTxn(txn, snap, txnKey, eventManager, entryIsDeleted)
 		if err != nil {
 			return errors.Wrapf(err, "DbDeleteAllMempoolTxMappings: Deleting mempool txnKey failed.")
 		}
@@ -9771,9 +9912,9 @@ func DbDeleteAllMempoolTxnsWithTxn(txn *badger.Txn, snap *Snapshot) error {
 	return nil
 }
 
-func FlushMempoolToDbWithTxn(txn *badger.Txn, snap *Snapshot, blockHeight uint64, allTxns []*MempoolTx) error {
+func FlushMempoolToDbWithTxn(txn *badger.Txn, snap *Snapshot, blockHeight uint64, allTxns []*MempoolTx, eventManager *EventManager) error {
 	for _, mempoolTx := range allTxns {
-		err := DbPutMempoolTxnWithTxn(txn, snap, blockHeight, mempoolTx)
+		err := DbPutMempoolTxnWithTxn(txn, snap, blockHeight, mempoolTx, eventManager)
 		if err != nil {
 			return errors.Wrapf(err, "FlushMempoolToDb: Putting "+
 				"mempool tx hash %s failed.", mempoolTx.Hash.String())
@@ -9783,9 +9924,9 @@ func FlushMempoolToDbWithTxn(txn *badger.Txn, snap *Snapshot, blockHeight uint64
 	return nil
 }
 
-func FlushMempoolToDb(handle *badger.DB, snap *Snapshot, blockHeight uint64, allTxns []*MempoolTx) error {
+func FlushMempoolToDb(handle *badger.DB, snap *Snapshot, blockHeight uint64, allTxns []*MempoolTx, eventManager *EventManager) error {
 	err := handle.Update(func(txn *badger.Txn) error {
-		return FlushMempoolToDbWithTxn(txn, snap, blockHeight, allTxns)
+		return FlushMempoolToDbWithTxn(txn, snap, blockHeight, allTxns, eventManager)
 	})
 	if err != nil {
 		return err
@@ -9794,18 +9935,18 @@ func FlushMempoolToDb(handle *badger.DB, snap *Snapshot, blockHeight uint64, all
 	return nil
 }
 
-func DbDeleteAllMempoolTxns(handle *badger.DB, snap *Snapshot) error {
+func DbDeleteAllMempoolTxns(handle *badger.DB, snap *Snapshot, eventManager *EventManager, entryIsDeleted bool) error {
 	handle.Update(func(txn *badger.Txn) error {
-		return DbDeleteAllMempoolTxnsWithTxn(txn, snap)
+		return DbDeleteAllMempoolTxnsWithTxn(txn, snap, eventManager, entryIsDeleted)
 	})
 
 	return nil
 }
 
-func DbDeleteMempoolTxnWithTxn(txn *badger.Txn, snap *Snapshot, mempoolTx *MempoolTx) error {
+func DbDeleteMempoolTxnWithTxn(txn *badger.Txn, snap *Snapshot, mempoolTx *MempoolTx, eventManager *EventManager, entryIsDeleted bool) error {
 
 	// When a mapping exists, delete it.
-	if err := DBDeleteWithTxn(txn, snap, _dbKeyForMempoolTxn(mempoolTx)); err != nil {
+	if err := DBDeleteWithTxn(txn, snap, _dbKeyForMempoolTxn(mempoolTx), eventManager, entryIsDeleted); err != nil {
 		return errors.Wrapf(err, "DbDeleteMempoolTxMappingWithTxn: Deleting "+
 			"mempool tx key failed.")
 	}
@@ -9813,22 +9954,22 @@ func DbDeleteMempoolTxnWithTxn(txn *badger.Txn, snap *Snapshot, mempoolTx *Mempo
 	return nil
 }
 
-func DbDeleteMempoolTxn(handle *badger.DB, snap *Snapshot, mempoolTx *MempoolTx) error {
+func DbDeleteMempoolTxn(handle *badger.DB, snap *Snapshot, mempoolTx *MempoolTx, eventManager *EventManager, entryIsDeleted bool) error {
 	return handle.Update(func(txn *badger.Txn) error {
-		return DbDeleteMempoolTxnWithTxn(txn, snap, mempoolTx)
+		return DbDeleteMempoolTxnWithTxn(txn, snap, mempoolTx, eventManager, entryIsDeleted)
 	})
 }
 
-func DbDeleteMempoolTxnKey(handle *badger.DB, snap *Snapshot, txnKey []byte) error {
+func DbDeleteMempoolTxnKey(handle *badger.DB, snap *Snapshot, txnKey []byte, eventManager *EventManager, entryIsDeleted bool) error {
 	return handle.Update(func(txn *badger.Txn) error {
-		return DbDeleteMempoolTxnKeyWithTxn(txn, snap, txnKey)
+		return DbDeleteMempoolTxnKeyWithTxn(txn, snap, txnKey, eventManager, entryIsDeleted)
 	})
 }
 
-func DbDeleteMempoolTxnKeyWithTxn(txn *badger.Txn, snap *Snapshot, txnKey []byte) error {
+func DbDeleteMempoolTxnKeyWithTxn(txn *badger.Txn, snap *Snapshot, txnKey []byte, eventManager *EventManager, entryIsDeleted bool) error {
 
 	// When a mapping exists, delete it.
-	if err := DBDeleteWithTxn(txn, snap, txnKey); err != nil {
+	if err := DBDeleteWithTxn(txn, snap, txnKey, eventManager, entryIsDeleted); err != nil {
 		return errors.Wrapf(err, "DbDeleteMempoolTxMappingWithTxn: Deleting "+
 			"mempool tx key failed.")
 	}
@@ -10511,12 +10652,7 @@ func _dbPostAssociationIdToKey(
 	return DBKeyForPostAssociationByPrefix(associationEntry, prefixType)
 }
 
-func DBPutUserAssociationWithTxn(
-	txn *badger.Txn,
-	snap *Snapshot,
-	associationEntry *UserAssociationEntry,
-	blockHeight uint64,
-) error {
+func DBPutUserAssociationWithTxn(txn *badger.Txn, snap *Snapshot, associationEntry *UserAssociationEntry, blockHeight uint64, eventManager *EventManager) error {
 	if associationEntry == nil {
 		return nil
 	}
@@ -10525,7 +10661,7 @@ func DBPutUserAssociationWithTxn(
 
 	// Store entry in index: PrefixUserAssociationByID.
 	key := DBKeyForUserAssociationByID(associationEntry)
-	if err := DBSetWithTxn(txn, snap, key, associationEntryBytes); err != nil {
+	if err := DBSetWithTxn(txn, snap, key, associationEntryBytes, eventManager); err != nil {
 		return errors.Wrapf(
 			err, "DBPutUserAssociationWithTxn: problem storing user association in index PrefixUserAssociationByID",
 		)
@@ -10533,7 +10669,7 @@ func DBPutUserAssociationWithTxn(
 
 	// Store ID in index: PrefixUserAssociationByTransactor.
 	key = DBKeyForUserAssociationByTransactor(associationEntry)
-	if err := DBSetWithTxn(txn, snap, key, associationIDBytes); err != nil {
+	if err := DBSetWithTxn(txn, snap, key, associationIDBytes, eventManager); err != nil {
 		return errors.Wrapf(
 			err, "DBPutUserAssociationWithTxn: problem storing user association in index PrefixUserAssociationByTransactor",
 		)
@@ -10541,7 +10677,7 @@ func DBPutUserAssociationWithTxn(
 
 	// Store ID in index: PrefixUserAssociationByTargetUser.
 	key = DBKeyForUserAssociationByTargetUser(associationEntry)
-	if err := DBSetWithTxn(txn, snap, key, associationIDBytes); err != nil {
+	if err := DBSetWithTxn(txn, snap, key, associationIDBytes, eventManager); err != nil {
 		return errors.Wrapf(
 			err, "DBPutUserAssociationWithTxn: problem storing user association in index PrefixUserAssociationByTargetUser",
 		)
@@ -10549,21 +10685,21 @@ func DBPutUserAssociationWithTxn(
 
 	// Store ID in index: PrefixUserAssociationByUsers.
 	key = DBKeyForUserAssociationByUsers(associationEntry)
-	if err := DBSetWithTxn(txn, snap, key, associationIDBytes); err != nil {
+	if err := DBSetWithTxn(txn, snap, key, associationIDBytes, eventManager); err != nil {
 		return errors.Wrapf(
 			err, "DBPutUserAssociationWithTxn: problem storing user association in index PrefixUserAssociationByUsers")
 	}
 	return nil
 }
 
-func DBDeleteUserAssociationWithTxn(txn *badger.Txn, snap *Snapshot, associationEntry *UserAssociationEntry) error {
+func DBDeleteUserAssociationWithTxn(txn *badger.Txn, snap *Snapshot, associationEntry *UserAssociationEntry, eventManager *EventManager, entryIsDeleted bool) error {
 	if associationEntry == nil {
 		return nil
 	}
 
 	// Delete from index: PrefixUserAssociationByID.
 	key := DBKeyForUserAssociationByID(associationEntry)
-	if err := DBDeleteWithTxn(txn, snap, key); err != nil {
+	if err := DBDeleteWithTxn(txn, snap, key, eventManager, entryIsDeleted); err != nil {
 		return errors.Wrapf(
 			err, "DBDeleteUserAssociationWithTxn: problem deleting user association from index PrefixUserAssociationByID",
 		)
@@ -10571,7 +10707,7 @@ func DBDeleteUserAssociationWithTxn(txn *badger.Txn, snap *Snapshot, association
 
 	// Delete from index: PrefixUserAssociationByTransactor.
 	key = DBKeyForUserAssociationByTransactor(associationEntry)
-	if err := DBDeleteWithTxn(txn, snap, key); err != nil {
+	if err := DBDeleteWithTxn(txn, snap, key, eventManager, entryIsDeleted); err != nil {
 		return errors.Wrapf(
 			err, "DBDeleteUserAssociationWithTxn: problem deleting user association from index PrefixUserAssociationByTransactor",
 		)
@@ -10579,7 +10715,7 @@ func DBDeleteUserAssociationWithTxn(txn *badger.Txn, snap *Snapshot, association
 
 	// Delete from index: PrefixUserAssociationByTargetUser.
 	key = DBKeyForUserAssociationByTargetUser(associationEntry)
-	if err := DBDeleteWithTxn(txn, snap, key); err != nil {
+	if err := DBDeleteWithTxn(txn, snap, key, eventManager, entryIsDeleted); err != nil {
 		return errors.Wrapf(
 			err, "DBDeleteUserAssociationWithTxn: problem deleting user association from index PrefixUserAssociationByTargetUser",
 		)
@@ -10587,7 +10723,7 @@ func DBDeleteUserAssociationWithTxn(txn *badger.Txn, snap *Snapshot, association
 
 	// Delete from index: PrefixUserAssociationByUsers.
 	key = DBKeyForUserAssociationByUsers(associationEntry)
-	if err := DBDeleteWithTxn(txn, snap, key); err != nil {
+	if err := DBDeleteWithTxn(txn, snap, key, eventManager, entryIsDeleted); err != nil {
 		return errors.Wrapf(
 			err, "DBDeleteUserAssociationWithTxn: problem deleting user association from index PrefixUserAssociationByUsers",
 		)
@@ -10595,12 +10731,7 @@ func DBDeleteUserAssociationWithTxn(txn *badger.Txn, snap *Snapshot, association
 	return nil
 }
 
-func DBPutPostAssociationWithTxn(
-	txn *badger.Txn,
-	snap *Snapshot,
-	associationEntry *PostAssociationEntry,
-	blockHeight uint64,
-) error {
+func DBPutPostAssociationWithTxn(txn *badger.Txn, snap *Snapshot, associationEntry *PostAssociationEntry, blockHeight uint64, eventManager *EventManager) error {
 	if associationEntry == nil {
 		return nil
 	}
@@ -10609,7 +10740,7 @@ func DBPutPostAssociationWithTxn(
 
 	// Store entry in index: PrefixPostAssociationByID.
 	key := DBKeyForPostAssociationByID(associationEntry)
-	if err := DBSetWithTxn(txn, snap, key, associationEntryBytes); err != nil {
+	if err := DBSetWithTxn(txn, snap, key, associationEntryBytes, eventManager); err != nil {
 		return errors.Wrapf(
 			err, "DBPutPostAssociationWithTxn: problem storing post association in index PrefixPostAssociationByID",
 		)
@@ -10617,7 +10748,7 @@ func DBPutPostAssociationWithTxn(
 
 	// Store ID in index: PrefixPostAssociationByTransactor.
 	key = DBKeyForPostAssociationByTransactor(associationEntry)
-	if err := DBSetWithTxn(txn, snap, key, associationIDBytes); err != nil {
+	if err := DBSetWithTxn(txn, snap, key, associationIDBytes, eventManager); err != nil {
 		return errors.Wrapf(
 			err, "DBPutPostAssociationWithTxn: problem storing post association in index PrefixPostAssociationByTransactor",
 		)
@@ -10625,7 +10756,7 @@ func DBPutPostAssociationWithTxn(
 
 	// Store ID in index: PrefixPostAssociationByPost.
 	key = DBKeyForPostAssociationByPost(associationEntry)
-	if err := DBSetWithTxn(txn, snap, key, associationIDBytes); err != nil {
+	if err := DBSetWithTxn(txn, snap, key, associationIDBytes, eventManager); err != nil {
 		return errors.Wrapf(
 			err, "DBPutPostAssociationWithTxn: problem storing post association in index PrefixPostAssociationByPost",
 		)
@@ -10633,7 +10764,7 @@ func DBPutPostAssociationWithTxn(
 
 	// Store ID in index: PrefixPostAssociationByType.
 	key = DBKeyForPostAssociationByType(associationEntry)
-	if err := DBSetWithTxn(txn, snap, key, associationIDBytes); err != nil {
+	if err := DBSetWithTxn(txn, snap, key, associationIDBytes, eventManager); err != nil {
 		return errors.Wrapf(
 			err, "DBPutPostAssociationWithTxn: problem storing post association in index PrefixPostAssociationByType",
 		)
@@ -10641,14 +10772,14 @@ func DBPutPostAssociationWithTxn(
 	return nil
 }
 
-func DBDeletePostAssociationWithTxn(txn *badger.Txn, snap *Snapshot, associationEntry *PostAssociationEntry) error {
+func DBDeletePostAssociationWithTxn(txn *badger.Txn, snap *Snapshot, associationEntry *PostAssociationEntry, eventManager *EventManager, entryIsDeleted bool) error {
 	if associationEntry == nil {
 		return nil
 	}
 
 	// Delete from index: PrefixPostAssociationByID.
 	key := DBKeyForPostAssociationByID(associationEntry)
-	if err := DBDeleteWithTxn(txn, snap, key); err != nil {
+	if err := DBDeleteWithTxn(txn, snap, key, eventManager, entryIsDeleted); err != nil {
 		return errors.Wrapf(
 			err, "DBDeletePostAssociationWithTxn: problem deleting post association from index PrefixPostAssociationByID",
 		)
@@ -10656,7 +10787,7 @@ func DBDeletePostAssociationWithTxn(txn *badger.Txn, snap *Snapshot, association
 
 	// Delete from index: PrefixPostAssociationByTransactor.
 	key = DBKeyForPostAssociationByTransactor(associationEntry)
-	if err := DBDeleteWithTxn(txn, snap, key); err != nil {
+	if err := DBDeleteWithTxn(txn, snap, key, eventManager, entryIsDeleted); err != nil {
 		return errors.Wrapf(
 			err, "DBDeletePostAssociationWithTxn: problem deleting post association from index PrefixPostAssociationByTransactor",
 		)
@@ -10664,7 +10795,7 @@ func DBDeletePostAssociationWithTxn(txn *badger.Txn, snap *Snapshot, association
 
 	// Delete from index: PrefixPostAssociationByPost.
 	key = DBKeyForPostAssociationByPost(associationEntry)
-	if err := DBDeleteWithTxn(txn, snap, key); err != nil {
+	if err := DBDeleteWithTxn(txn, snap, key, eventManager, entryIsDeleted); err != nil {
 		return errors.Wrapf(
 			err, "DBDeletePostAssociationWithTxn: problem deleting post association from index PrefixPostAssociationByPost",
 		)
@@ -10672,7 +10803,7 @@ func DBDeletePostAssociationWithTxn(txn *badger.Txn, snap *Snapshot, association
 
 	// Delete from index: PrefixPostAssociationByType.
 	key = DBKeyForPostAssociationByType(associationEntry)
-	if err := DBDeleteWithTxn(txn, snap, key); err != nil {
+	if err := DBDeleteWithTxn(txn, snap, key, eventManager, entryIsDeleted); err != nil {
 		return errors.Wrapf(
 			err, "DBDeletePostAssociationWithTxn: problem deleting post association from index PrefixPostAssociationByType",
 		)
@@ -10703,7 +10834,7 @@ func DBPrefixKeyForLockedBalanceEntryByHODLerPKIDandProfilePKID(lockedBalanceEnt
 // LockedBalanceEntry Put/Delete Operations (Badger Writes)
 
 func DbPutLockedBalanceEntryMappingsWithTxn(txn *badger.Txn, snap *Snapshot, blockHeight uint64,
-	lockedBalanceEntry LockedBalanceEntry) error {
+	lockedBalanceEntry LockedBalanceEntry, eventManager *EventManager) error {
 	// Sanity check the fields in the LockedBalanceEntry used in constructing the key.
 	if len(lockedBalanceEntry.HODLerPKID) != btcec.PubKeyBytesLenCompressed {
 		return fmt.Errorf("DbPutLockedBalanceEntryMappingsWithTxn: HODLer PKID "+
@@ -10715,14 +10846,15 @@ func DbPutLockedBalanceEntryMappingsWithTxn(txn *badger.Txn, snap *Snapshot, blo
 	}
 
 	if err := DBSetWithTxn(txn, snap, _dbKeyForLockedBalanceEntry(lockedBalanceEntry),
-		EncodeToBytes(blockHeight, &lockedBalanceEntry)); err != nil {
+		EncodeToBytes(blockHeight, &lockedBalanceEntry), eventManager); err != nil {
 		return errors.Wrapf(err, "DbPutLockedBalanceEntryMappingsWithTxn: "+
 			"Problem adding locked balance entry to db")
 	}
 	return nil
 }
 
-func DbDeleteLockedBalanceEntryWithTxn(txn *badger.Txn, snap *Snapshot, lockedBalanceEntry LockedBalanceEntry) error {
+func DbDeleteLockedBalanceEntryWithTxn(txn *badger.Txn, snap *Snapshot, lockedBalanceEntry LockedBalanceEntry,
+	eventManager *EventManager, entryIsDeleted bool) error {
 	// First check that a mapping exists. If one doesn't then there's nothing to do.
 	_, err := DBGetWithTxn(txn, snap, _dbKeyForLockedBalanceEntry(lockedBalanceEntry))
 	if errors.Is(err, badger.ErrKeyNotFound) {
@@ -10736,7 +10868,8 @@ func DbDeleteLockedBalanceEntryWithTxn(txn *badger.Txn, snap *Snapshot, lockedBa
 	}
 
 	// When a locked balance entry exists, delete the locked balance entry mapping.
-	if err := DBDeleteWithTxn(txn, snap, _dbKeyForLockedBalanceEntry(lockedBalanceEntry)); err != nil {
+	if err := DBDeleteWithTxn(txn, snap,
+		_dbKeyForLockedBalanceEntry(lockedBalanceEntry), eventManager, entryIsDeleted); err != nil {
 		return errors.Wrapf(err, "DbDeleteLockedBalanceEntryWithTxn: Deleting "+
 			"locked balance entry for HODLer PKID %s, Profile PKID %s, expiration timestamp %d",
 			lockedBalanceEntry.HODLerPKID.ToString(), lockedBalanceEntry.ProfilePKID.ToString(),
@@ -10905,7 +11038,7 @@ func DBPrefixKeyForLockupYieldCurvePointsByProfilePKID(profilePKID *PKID) []byte
 // LockupYieldCurvePoint Put/Delete Operations (Badger Writes)
 
 func DbPutLockupYieldCurvePointMappingsWithTxn(txn *badger.Txn, snap *Snapshot, blockHeight uint64,
-	lockupYieldCurvePoint LockupYieldCurvePoint) error {
+	lockupYieldCurvePoint LockupYieldCurvePoint, eventManager *EventManager) error {
 	// Sanity check the fields in the LockupYieldCurvePoint used in constructing the key.
 	if len(lockupYieldCurvePoint.ProfilePKID) != btcec.PubKeyBytesLenCompressed {
 		return fmt.Errorf("DbPutLockupYieldCurvePointMappingsWithTxn: Profile PKID "+
@@ -10917,7 +11050,7 @@ func DbPutLockupYieldCurvePointMappingsWithTxn(txn *badger.Txn, snap *Snapshot, 
 	}
 
 	if err := DBSetWithTxn(txn, snap, _dbKeyForLockupYieldCurvePoint(lockupYieldCurvePoint),
-		EncodeToBytes(blockHeight, &lockupYieldCurvePoint)); err != nil {
+		EncodeToBytes(blockHeight, &lockupYieldCurvePoint), eventManager); err != nil {
 		return errors.Wrapf(err, "DbPutLockupYieldCurvePointMappingsWithTxn: "+
 			"Problem adding locked balance entry to db")
 	}
@@ -10925,7 +11058,7 @@ func DbPutLockupYieldCurvePointMappingsWithTxn(txn *badger.Txn, snap *Snapshot, 
 }
 
 func DbDeleteLockupYieldCurvePointWithTxn(txn *badger.Txn, snap *Snapshot,
-	lockupYieldCurvePoint LockupYieldCurvePoint) error {
+	lockupYieldCurvePoint LockupYieldCurvePoint, eventManager *EventManager, entryIsDeleted bool) error {
 	// First check that a mapping exists. If one doesn't then there's nothing to do.
 	_, err := DBGetWithTxn(txn, snap, _dbKeyForLockupYieldCurvePoint(lockupYieldCurvePoint))
 	if errors.Is(err, badger.ErrKeyNotFound) {
@@ -10939,7 +11072,8 @@ func DbDeleteLockupYieldCurvePointWithTxn(txn *badger.Txn, snap *Snapshot,
 	}
 
 	// When a locked balance entry exists, delete the locked balance entry mapping.
-	if err := DBDeleteWithTxn(txn, snap, _dbKeyForLockupYieldCurvePoint(lockupYieldCurvePoint)); err != nil {
+	if err := DBDeleteWithTxn(txn, snap,
+		_dbKeyForLockupYieldCurvePoint(lockupYieldCurvePoint), eventManager, entryIsDeleted); err != nil {
 		return errors.Wrapf(err, "DbDeleteLockupYieldCurvePointWithTxn: Deleting "+
 			"locked balance entry for Profile PKID %s, Duration %d, APY Yield Basis Points %d",
 			lockupYieldCurvePoint.ProfilePKID.ToString(), lockupYieldCurvePoint.LockupDurationNanoSecs,
@@ -11089,20 +11223,20 @@ func DbGetTransactorNonceEntry(db *badger.DB, nonce *DeSoNonce, pkid *PKID) (*Tr
 	return ret, nil
 }
 
-func DbPutTransactorNonceEntryWithTxn(txn *badger.Txn, snap *Snapshot, nonce *DeSoNonce, pkid *PKID) error {
-	return errors.Wrap(DBSetWithTxn(txn, snap, _dbKeyForTransactorNonceEntry(nonce, pkid), []byte{}),
+func DbPutTransactorNonceEntryWithTxn(txn *badger.Txn, snap *Snapshot, nonce *DeSoNonce, pkid *PKID, eventManager *EventManager) error {
+	return errors.Wrap(DBSetWithTxn(txn, snap, _dbKeyForTransactorNonceEntry(nonce, pkid), []byte{}, eventManager),
 		"DbPutTransactorNonceEntryWithTxn: Problem setting nonce")
 }
 
-func DbPutTransactorNonceEntry(handle *badger.DB, snap *Snapshot, nonce *DeSoNonce, pkid *PKID) error {
+func DbPutTransactorNonceEntry(handle *badger.DB, snap *Snapshot, nonce *DeSoNonce, pkid *PKID, eventManager *EventManager) error {
 	return handle.Update(func(txn *badger.Txn) error {
-		return DbPutTransactorNonceEntryWithTxn(txn, snap, nonce, pkid)
+		return DbPutTransactorNonceEntryWithTxn(txn, snap, nonce, pkid, eventManager)
 	})
 }
 
-func DbDeleteTransactorNonceEntryWithTxn(txn *badger.Txn, snap *Snapshot, nonce *DeSoNonce, pkid *PKID) error {
+func DbDeleteTransactorNonceEntryWithTxn(txn *badger.Txn, snap *Snapshot, nonce *DeSoNonce, pkid *PKID, eventManager *EventManager, entryIsDeleted bool) error {
 	return errors.Wrap(
-		DBDeleteWithTxn(txn, snap, _dbKeyForTransactorNonceEntry(nonce, pkid)),
+		DBDeleteWithTxn(txn, snap, _dbKeyForTransactorNonceEntry(nonce, pkid), eventManager, entryIsDeleted),
 		"DbDeleteTransactorNonceEntryWithTxn: Problem deleting nonce")
 }
 
