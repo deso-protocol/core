@@ -633,6 +633,17 @@ type SnapshotValidatorBLSPublicKeyMapKey struct {
 	ValidatorBLSPublicKey bls.SerializedPublicKey
 }
 
+func (bav *UtxoView) GetSnapshotValidatorEntryByBLSPublicKey(blsPublicKey *bls.PublicKey, snapshotAtEpochNumber uint64) (*ValidatorEntry, error) {
+	blsPublicKeyPKIDPairEntry, err := bav.GetSnapshotValidatorBLSPublicKeyPKIDPairEntry(blsPublicKey, snapshotAtEpochNumber)
+	if err != nil {
+		return nil, errors.Wrapf(err, "GetSnapshotValidatorEntryByBLSPublicKey: problem getting BLSPublicKeyPKIDPairEntry: ")
+	}
+	if blsPublicKeyPKIDPairEntry == nil {
+		return nil, nil
+	}
+	return bav.GetSnapshotValidatorSetEntryByPKIDAtEpochNumber(blsPublicKeyPKIDPairEntry.PKID, snapshotAtEpochNumber)
+}
+
 func (bav *UtxoView) GetSnapshotValidatorBLSPublicKeyPKIDPairEntry(blsPublicKey *bls.PublicKey, snapshotAtEpochNumber uint64) (*BLSPublicKeyPKIDPairEntry, error) {
 	// Check the UtxoView first.
 	mapKey := SnapshotValidatorBLSPublicKeyMapKey{

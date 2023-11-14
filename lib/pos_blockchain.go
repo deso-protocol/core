@@ -172,25 +172,14 @@ func (bc *Blockchain) processOrphanBlockPoS(block *MsgDeSoBlock) error {
 		if err != nil {
 			return errors.Wrapf(err, "processOrphanBlockPoS: Problem getting snapshot at epoch number for poch entry at epoch #%d", epochEntry.EpochNumber)
 		}
-		// Okay now that we've gotten the SnapshotAtEpochNumber for the next epoch, we can make sure that the proposer
-		// of the block is within the set of potential block proposers for the next epoch.
-		snapshotLeaderPKIDs, err := utxoView.GetSnapshotLeaderScheduleAtEpochNumber(epochEntrySnapshotAtEpochNumber)
+		// Okay now that we've gotten the SnapshotAtEpochNumber for the prev/next epoch, we can make sure that the proposer
+		// of the block is within the set of potential block proposers for the prev/next epoch based on
+		// the VotingPublicKey
+		snapshotValidatorEntry, err := utxoView.GetSnapshotValidatorEntryByBLSPublicKey(block.Header.ProposerVotingPublicKey, epochEntrySnapshotAtEpochNumber)
 		if err != nil {
-			return errors.Wrapf(err, "processOrphanBlockPoS: Problem getting snapshot leader schedule at snapshot at epoch number %d", epochEntrySnapshotAtEpochNumber)
+			return errors.Wrapf(err, "processOrphanBlockPoS: Problem getting snapshot validator entry for block proposer %v", block.Header.ProposerVotingPublicKey)
 		}
-		// Get the PKID for the block proposer.
-		blockProposerPKID := utxoView.GetPKIDForPublicKey(block.Header.ProposerPublicKey.ToBytes()).PKID
-		// TODO: Replace w/ collections.Any for simplicity. There is an issue with this version
-		// of Go's compiler that is preventing us from using collections.Any here.
-		// We can now check if the block proposer is in the set of snapshot leader PKIDs.
-		blockProposerSeen := false
-		for _, snapshotLeaderPKID := range snapshotLeaderPKIDs {
-			if snapshotLeaderPKID.Eq(blockProposerPKID) {
-				blockProposerSeen = true
-				break
-			}
-		}
-		if !blockProposerSeen {
+		if snapshotValidatorEntry == nil {
 			// We can mark it as ValidateFailed. We'll never accept this block as
 			// its block proposer is not in the set of potential leaders.
 			if _, innerErr := bc.storeValidateFailedBlockInBlockIndex(block); innerErr != nil {
@@ -665,27 +654,25 @@ func (bc *Blockchain) hasValidProposerRandomSeedSignaturePoS(block *MsgDeSoBlock
 
 func (bav *UtxoView) hasValidProposerPartialSignaturePoS(block *MsgDeSoBlock, snapshotAtEpochNumber uint64) (bool, error) {
 	votingPublicKey := block.Header.ProposerVotingPublicKey
-	proposerPublicKey := block.Header.ProposerPublicKey
 	proposerPartialSig := block.Header.ProposerVotePartialSignature
 	// If the proposer partial sig is nil, we can't validate it. That's an error.
 	if proposerPartialSig.IsEmpty() {
 		return false, nil
 	}
 	// Get the snapshot validator entry for the proposer.
-	proposerPKID := bav.GetPKIDForPublicKey(proposerPublicKey.ToBytes()).PKID
-	snapshotValidatorEntry, err := bav.GetSnapshotValidatorSetEntryByPKIDAtEpochNumber(proposerPKID, snapshotAtEpochNumber)
+	snapshotBlockProposerValidatorEntry, err := bav.GetSnapshotValidatorEntryByBLSPublicKey(votingPublicKey, snapshotAtEpochNumber)
 	if err != nil {
 		return false, errors.Wrapf(err, "hasValidProposerPartialSignaturePoS: Problem getting snapshot validator entry")
 	}
 
 	// If the snapshot validator entry is nil or deleted, we didn't snapshot
 	// the validator at this epoch, so we will never accept this block.
-	if snapshotValidatorEntry == nil || snapshotValidatorEntry.isDeleted {
+	if snapshotBlockProposerValidatorEntry == nil || snapshotBlockProposerValidatorEntry.isDeleted {
 		return false, nil
 	}
 	// If the voting public key from the block's header doesn't match the
 	// snapshotted voting public key, we will never accept this block.
-	if !snapshotValidatorEntry.VotingPublicKey.Eq(votingPublicKey) {
+	if !snapshotBlockProposerValidatorEntry.VotingPublicKey.Eq(votingPublicKey) {
 		return false, nil
 	}
 	// Get the block's hash
@@ -752,9 +739,22 @@ func (bav *UtxoView) hasValidBlockProposerPoS(block *MsgDeSoBlock) (_isValidBloc
 	if err != nil {
 		return false, errors.Wrapf(err, "hasValidBlockProposerPoS: Problem getting leader schedule validator")
 	}
-	leaderPKIDFromBlock := bav.GetPKIDForPublicKey(block.Header.ProposerPublicKey[:])
+	snapshotAtEpochNumber, err := bav.ComputeSnapshotEpochNumberForEpoch(currentEpochEntry.EpochNumber)
+	if err != nil {
+		return false, errors.Wrapf(err, "hasValidBlockProposerPoS: Problem getting snapshot epoch number for epoch #%d", currentEpochEntry.EpochNumber)
+	}
+	leaderEntryFromVotingPublicKey, err := bav.GetSnapshotValidatorEntryByBLSPublicKey(
+		block.Header.ProposerVotingPublicKey,
+		snapshotAtEpochNumber)
+	if err != nil {
+		return false, errors.Wrapf(err, "hasValidBlockProposerPoS: Problem getting leader validator entry")
+	}
+	// If no leader is found from the voting public key, we'll never accept this block.
+	if leaderEntryFromVotingPublicKey == nil {
+		return false, nil
+	}
 	if !leaderEntry.VotingPublicKey.Eq(block.Header.ProposerVotingPublicKey) ||
-		!leaderEntry.ValidatorPKID.Eq(leaderPKIDFromBlock.PKID) {
+		!leaderEntry.ValidatorPKID.Eq(leaderEntryFromVotingPublicKey.ValidatorPKID) {
 		return false, nil
 	}
 	return true, nil
