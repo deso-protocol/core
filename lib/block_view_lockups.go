@@ -274,11 +274,10 @@ func (lockupYieldCurvePoint *LockupYieldCurvePoint) RawDecodeWithoutMetadata(blo
 	}
 
 	// LockupYieldAPYBasisPoints
-	lockupYieldAPYBasisPoints, err := ReadUvarint(rr)
+	lockupYieldCurvePoint.LockupYieldAPYBasisPoints, err = ReadUvarint(rr)
 	if err != nil {
 		return errors.Wrap(err, "LockupYieldCurvePoint.Decode: Problem reading LockupYieldAPYBasisPoints")
 	}
-	lockupYieldCurvePoint.LockupYieldAPYBasisPoints = lockupYieldAPYBasisPoints
 
 	return nil
 }

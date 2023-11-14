@@ -124,7 +124,7 @@ type UtxoView struct {
 	// Locked stake mappings
 	LockedStakeMapKeyToLockedStakeEntry map[LockedStakeMapKey]*LockedStakeEntry
 
-	// Locked DAO coin balance entry mapping.
+	// Locked DAO coin and locked DESO balance entry mapping.
 	LockedBalanceEntryKeyToLockedBalanceEntry map[LockedBalanceEntryKey]*LockedBalanceEntry
 
 	// Lockup yield curve points.
@@ -542,7 +542,7 @@ func (bav *UtxoView) CopyUtxoView() (*UtxoView, error) {
 		len(bav.TransactorNonceMapKeyToTransactorNonceEntry))
 	for entryKey, entry := range bav.TransactorNonceMapKeyToTransactorNonceEntry {
 		newEntry := *entry
-		newView.TransactorNonceMapKeyToTransactorNonceEntry[entryKey] = newEntry.Copy()
+		newView.TransactorNonceMapKeyToTransactorNonceEntry[entryKey] = &newEntry
 	}
 
 	// Copy the LockedBalanceEntries
@@ -564,7 +564,7 @@ func (bav *UtxoView) CopyUtxoView() (*UtxoView, error) {
 		// Go through all LockupYieldCurvePoints in the LockupYieldCurvePoint map.
 		for entryKey, entry := range lockupYieldCurvePointMap {
 			newLockupYieldCurvePoint := *entry
-			newView.PKIDToLockupYieldCurvePointKeyToLockupYieldCurvePoints[pkid][entryKey] = &newLockupYieldCurvePoint
+			newView.PKIDToLockupYieldCurvePointKeyToLockupYieldCurvePoints[pkid][entryKey] = newLockupYieldCurvePoint.Copy()
 		}
 	}
 
