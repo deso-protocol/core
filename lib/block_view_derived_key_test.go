@@ -91,8 +91,7 @@ func _derivedKeyBasicTransfer(t *testing.T, db *badger.DB, chain *Blockchain, pa
 	txHash := txn.Hash()
 	blockHeight := chain.blockTip().Height + 1
 	utxoOps, _, _, _, err :=
-		utxoView.ConnectTransaction(txn, txHash, getTxnSize(*txn), blockHeight,
-			true /*verifySignature*/, false /*ignoreUtxos*/)
+		utxoView.ConnectTransaction(txn, txHash, getTxnSize(*txn), blockHeight, 0, true, false)
 	return utxoOps, txn, err
 }
 
@@ -519,7 +518,7 @@ func _doTxnWithBlockHeight(
 	txHash := txn.Hash()
 	blockHeight := chain.blockTip().Height + 1
 	utxoOps, totalInput, totalOutput, fees, err :=
-		utxoView.ConnectTransaction(txn, txHash, getTxnSize(*txn), blockHeight, true /*verifySignature*/, false /*ignoreUtxos*/)
+		utxoView.ConnectTransaction(txn, txHash, getTxnSize(*txn), blockHeight, 0, true, false)
 	if err != nil {
 		return nil, nil, 0, err
 	}
@@ -837,7 +836,7 @@ func _doAuthorizeTxnWithExtraDataAndSpendingLimits(testMeta *TestMeta, utxoView 
 
 	txHash := txn.Hash()
 	utxoOps, totalInput, totalOutput, fees, err :=
-		utxoView.ConnectTransaction(txn, txHash, getTxnSize(*txn), blockHeight, true /*verifySignature*/, false /*ignoreUtxos*/)
+		utxoView.ConnectTransaction(txn, txHash, getTxnSize(*txn), blockHeight, 0, true, false)
 	// ConnectTransaction should treat the amount locked as contributing to the
 	// output.
 	if err != nil {
@@ -1150,8 +1149,7 @@ func TestAuthorizeDerivedKeyBasic(t *testing.T) {
 			blockHeight := chain.blockTip().Height + 1
 			txnSize := getTxnSize(*txn)
 			_, _, _, _, err :=
-				utxoView.ConnectTransaction(
-					txn, txn.Hash(), txnSize, blockHeight, true /*verifySignature*/, false /*ignoreUtxos*/)
+				utxoView.ConnectTransaction(txn, txn.Hash(), txnSize, blockHeight, 0, true, false)
 			require.NoError(err)
 		}
 
@@ -2004,8 +2002,7 @@ func TestAuthorizeDerivedKeyBasicWithTransactionLimits(t *testing.T) {
 			blockHeight := chain.blockTip().Height + 1
 			txnSize := getTxnSize(*txn)
 			_, _, _, _, err :=
-				utxoView.ConnectTransaction(
-					txn, txn.Hash(), txnSize, blockHeight, true /*verifySignature*/, false /*ignoreUtxos*/)
+				utxoView.ConnectTransaction(txn, txn.Hash(), txnSize, blockHeight, 0, true, false)
 			require.NoError(err)
 		}
 

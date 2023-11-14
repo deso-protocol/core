@@ -258,8 +258,12 @@ const (
 	TxnTypeUnstake                      TxnType = 37
 	TxnTypeUnlockStake                  TxnType = 38
 	TxnTypeUnjailValidator              TxnType = 39
+	TxnTypeCoinLockup                   TxnType = 40
+	TxnTypeUpdateCoinLockupParams       TxnType = 41
+	TxnTypeCoinLockupTransfer           TxnType = 42
+	TxnTypeCoinUnlock                   TxnType = 43
 
-	// NEXT_ID = 40
+	// NEXT_ID = 44
 )
 
 type TxnString string
@@ -305,6 +309,10 @@ const (
 	TxnStringUnstake                      TxnString = "UNSTAKE"
 	TxnStringUnlockStake                  TxnString = "UNLOCK_STAKE"
 	TxnStringUnjailValidator              TxnString = "UNJAIL_VALIDATOR"
+	TxnStringCoinLockup                   TxnString = "COIN_LOCKUP"
+	TxnStringUpdateCoinLockupParams       TxnString = "UPDATE_COIN_LOCKUP_PARAMS"
+	TxnStringCoinLockupTransfer           TxnString = "COIN_LOCKUP_TRANSFER"
+	TxnStringCoinUnlock                   TxnString = "COIN_UNLOCK"
 )
 
 var (
@@ -318,6 +326,7 @@ var (
 		TxnTypeDeleteUserAssociation, TxnTypeCreatePostAssociation, TxnTypeDeletePostAssociation,
 		TxnTypeAccessGroup, TxnTypeAccessGroupMembers, TxnTypeNewMessage, TxnTypeRegisterAsValidator,
 		TxnTypeUnregisterAsValidator, TxnTypeStake, TxnTypeUnstake, TxnTypeUnlockStake, TxnTypeUnjailValidator,
+		TxnTypeCoinLockup, TxnTypeUpdateCoinLockupParams, TxnTypeCoinLockupTransfer, TxnTypeCoinUnlock,
 	}
 	AllTxnString = []TxnString{
 		TxnStringUnset, TxnStringBlockReward, TxnStringBasicTransfer, TxnStringBitcoinExchange, TxnStringPrivateMessage,
@@ -329,6 +338,7 @@ var (
 		TxnStringDeleteUserAssociation, TxnStringCreatePostAssociation, TxnStringDeletePostAssociation,
 		TxnStringAccessGroup, TxnStringAccessGroupMembers, TxnStringNewMessage, TxnStringRegisterAsValidator,
 		TxnStringUnregisterAsValidator, TxnStringStake, TxnStringUnstake, TxnStringUnlockStake, TxnStringUnjailValidator,
+		TxnStringCoinLockup, TxnStringUpdateCoinLockupParams, TxnStringCoinLockupTransfer, TxnStringCoinUnlock,
 	}
 )
 
@@ -420,6 +430,14 @@ func (txnType TxnType) GetTxnString() TxnString {
 		return TxnStringUnlockStake
 	case TxnTypeUnjailValidator:
 		return TxnStringUnjailValidator
+	case TxnTypeCoinLockup:
+		return TxnStringCoinLockup
+	case TxnTypeUpdateCoinLockupParams:
+		return TxnStringUpdateCoinLockupParams
+	case TxnTypeCoinLockupTransfer:
+		return TxnStringCoinLockupTransfer
+	case TxnTypeCoinUnlock:
+		return TxnStringCoinUnlock
 	default:
 		return TxnStringUndefined
 	}
@@ -505,6 +523,14 @@ func GetTxnTypeFromString(txnString TxnString) TxnType {
 		return TxnTypeUnlockStake
 	case TxnStringUnjailValidator:
 		return TxnTypeUnjailValidator
+	case TxnStringCoinLockup:
+		return TxnTypeCoinLockup
+	case TxnStringUpdateCoinLockupParams:
+		return TxnTypeUpdateCoinLockupParams
+	case TxnStringCoinLockupTransfer:
+		return TxnTypeCoinLockupTransfer
+	case TxnStringCoinUnlock:
+		return TxnTypeCoinUnlock
 	default:
 		// TxnTypeUnset means we couldn't find a matching txn type
 		return TxnTypeUnset
@@ -598,6 +624,14 @@ func NewTxnMetadata(txType TxnType) (DeSoTxnMetadata, error) {
 		return (&UnlockStakeMetadata{}).New(), nil
 	case TxnTypeUnjailValidator:
 		return (&UnjailValidatorMetadata{}).New(), nil
+	case TxnTypeCoinLockup:
+		return (&CoinLockupMetadata{}).New(), nil
+	case TxnTypeUpdateCoinLockupParams:
+		return (&UpdateCoinLockupParamsMetadata{}).New(), nil
+	case TxnTypeCoinLockupTransfer:
+		return (&CoinLockupTransferMetadata{}).New(), nil
+	case TxnTypeCoinUnlock:
+		return (&CoinUnlockMetadata{}).New(), nil
 	default:
 		return nil, fmt.Errorf("NewTxnMetadata: Unrecognized TxnType: %v; make sure you add the new type of transaction to NewTxnMetadata", txType)
 	}
@@ -5798,6 +5832,29 @@ type TransactionSpendingLimit struct {
 	AssociationLimitMap map[AssociationLimitKey]uint64
 
 	// ===== ENCODER MIGRATION ProofOfStake1StateSetupMigration =====
+	// ProfilePKID || LockupLimitOperation || LockupLimitScopeType to number of transactions.
+	//  - ProfilePKID: A PKID to scope transactions by.
+	//                 If using the "Any" scope, then ProfilePKID has to be the ZeroPKID.
+	//  - LockupLimitScopeType: One of {Any, Scoped}
+	//                 If using the "Any" scope type, this limit applies to any possible DeSo token lockup.
+	//                 If using the "Scoped" scope type, this limit applies to the ProfilePKID specified.
+	//  - LockupLimitOperation: One of {Any, Lockup, UpdateCoinLockupYieldCurve, UpdateCoinLockupTransferRestrictions,
+	//                                  CoinLockupTransfer, CoinLockupUnlock}
+	//                 If using the "Any" operation type the limit applies to any coin lockup transaction type.
+	//                 If using the "CoinLockup" operation type the limit applies strictly to coin lockups transactions.
+	//                 If using the "UpdateCoinLockupYield" operation type the limit applies to any
+	//                 UpdateCoinLockupParams transaction where the yield curve is updated.
+	//                 If using the "UpdateCoinLockupTransferRestrictions" operation the limit applies to any
+	//                 UpdateCoinLockupParams transaction where the lockup transfer restrictions are updated.
+	//                 If using the "CoinLockupTransfer" operation type the limit applies to any
+	//                 coin lockup transfer transactions.
+	//                 If using the "CoinLockupUnlock" operation type the limit applies to
+	//                 any locked coin unlock transactions.
+	//
+	// NOTE: Note that an UpdateCoinLockupParams transaction can decrement the transaction limits twice.
+	//       This is because we consider updating the yield curve and updating transfer restrictions as
+	//       separate for the purpose of derived key limits.
+	LockupLimitMap map[LockupLimitKey]uint64
 	// ValidatorPKID || StakerPKID to amount of stake-able $DESO.
 	// Note that this is not a limit on the number of Stake txns that
 	// this derived key can perform but instead a limit on the amount
@@ -6051,6 +6108,33 @@ func (tsl *TransactionSpendingLimit) ToMetamaskString(params *DeSoParams) string
 		}
 		// Ensure deterministic ordering of the transaction count limit strings by doing a lexicographical sort.
 		sortStringsAndAddToLimitStr(accessGroupMemberStr)
+		indentationCounter--
+	}
+
+	// LockupLimitMap
+	if len(tsl.LockupLimitMap) > 0 {
+		var lockupLimitStr []string
+		str += _indt(indentationCounter) + "Lockup Restrictions:\n"
+		indentationCounter++
+		for limitKey, limit := range tsl.LockupLimitMap {
+			opString := _indt(indentationCounter) + "[\n"
+
+			indentationCounter++
+			opString += _indt(indentationCounter) + "Lockup Profile PKID: " +
+				Base58CheckEncode(limitKey.ProfilePKID.ToBytes(), false, params) + "\n"
+			opString += _indt(indentationCounter) + "Lockup Scope: " +
+				limitKey.ScopeType.ToString() + "\n"
+			opString += _indt(indentationCounter) + "Lockup Operation: " +
+				limitKey.Operation.ToString() + "\n"
+			opString += _indt(indentationCounter) + "Transaction Count: " +
+				strconv.FormatUint(limit, 10) + "\n"
+			indentationCounter--
+
+			opString += _indt(indentationCounter) + "]\n"
+			lockupLimitStr = append(lockupLimitStr, opString)
+		}
+		// Ensure deterministic ordering of the transaction count limit strings by doing a lexicographical sort.
+		sortStringsAndAddToLimitStr(lockupLimitStr)
 		indentationCounter--
 	}
 
@@ -6365,6 +6449,27 @@ func (tsl *TransactionSpendingLimit) ToBytes(blockHeight uint64) ([]byte, error)
 
 	// StakeLimitMap, UnstakeLimitMap, and UnlockStakeLimitMap, gated by the encoder migration.
 	if MigrationTriggered(blockHeight, ProofOfStake1StateSetupMigration) {
+		// LockupLimitMap
+		lockupLimitMapLength := uint64(len(tsl.LockupLimitMap))
+		data = append(data, UintToBuf(lockupLimitMapLength)...)
+		if lockupLimitMapLength > 0 {
+			keys, err := SafeMakeSliceWithLengthAndCapacity[LockupLimitKey](0, lockupLimitMapLength)
+			if err != nil {
+				return nil, err
+			}
+			for key := range tsl.LockupLimitMap {
+				keys = append(keys, key)
+			}
+			// Sort the keys to ensure deterministic ordering.
+			sort.Slice(keys, func(ii, jj int) bool {
+				return hex.EncodeToString(keys[ii].Encode()) < hex.EncodeToString(keys[jj].Encode())
+			})
+			for _, key := range keys {
+				data = append(data, key.Encode()...)
+				data = append(data, UintToBuf(tsl.LockupLimitMap[key])...)
+			}
+		}
+
 		// StakeLimitMap
 		stakeLimitMapLength := uint64(len(tsl.StakeLimitMap))
 		data = append(data, UintToBuf(stakeLimitMapLength)...)
@@ -6640,6 +6745,30 @@ func (tsl *TransactionSpendingLimit) FromBytes(blockHeight uint64, rr *bytes.Rea
 
 	// StakeLimitMap, UnstakeLimitMap, and UnlockStakeLimitMap, gated by the encoder migration.
 	if MigrationTriggered(blockHeight, ProofOfStake1StateSetupMigration) {
+		// LockupLimitMap
+		lockupLimitMapLen, err := ReadUvarint(rr)
+		if err != nil {
+			return err
+		}
+		tsl.LockupLimitMap = make(map[LockupLimitKey]uint64)
+		if lockupLimitMapLen > 0 {
+			for ii := uint64(0); ii < lockupLimitMapLen; ii++ {
+				lockupLimitKey := &LockupLimitKey{}
+				if err = lockupLimitKey.Decode(rr); err != nil {
+					return errors.Wrap(err, "Error decoding LockupLimitKey: ")
+				}
+				var operationCount uint64
+				operationCount, err = ReadUvarint(rr)
+				if err != nil {
+					return errors.Wrap(err, "Error decoding OperationCount for LockupLimitKey: ")
+				}
+				if _, keyExists := tsl.LockupLimitMap[*lockupLimitKey]; keyExists {
+					return errors.New("LockupLimitKey already exists")
+				}
+				tsl.LockupLimitMap[*lockupLimitKey] = operationCount
+			}
+		}
+
 		// StakeLimitMap
 		stakeLimitMapLen, err := ReadUvarint(rr)
 		if err != nil {
@@ -6769,6 +6898,7 @@ func (tsl *TransactionSpendingLimit) Copy() *TransactionSpendingLimit {
 		DAOCoinLimitOrderLimitMap:    make(map[DAOCoinLimitOrderLimitKey]uint64),
 		AccessGroupMap:               make(map[AccessGroupLimitKey]uint64),
 		AccessGroupMemberMap:         make(map[AccessGroupMemberLimitKey]uint64),
+		LockupLimitMap:               make(map[LockupLimitKey]uint64),
 		StakeLimitMap:                make(map[StakeLimitKey]*uint256.Int),
 		UnstakeLimitMap:              make(map[StakeLimitKey]*uint256.Int),
 		UnlockStakeLimitMap:          make(map[StakeLimitKey]uint64),
@@ -6812,6 +6942,10 @@ func (tsl *TransactionSpendingLimit) Copy() *TransactionSpendingLimit {
 		copyTSL.AccessGroupMemberMap[accessGroupMemberLimitKey] = accessGroupMemberCount
 	}
 
+	for lockupLimitKey, lockupLimit := range tsl.LockupLimitMap {
+		copyTSL.LockupLimitMap[lockupLimitKey] = lockupLimit
+	}
+
 	for stakeLimitKey, stakeLimitDESONanos := range tsl.StakeLimitMap {
 		copyTSL.StakeLimitMap[stakeLimitKey] = stakeLimitDESONanos.Clone()
 	}
@@ -6828,7 +6962,7 @@ func (tsl *TransactionSpendingLimit) Copy() *TransactionSpendingLimit {
 }
 
 func (bav *UtxoView) CheckIfValidUnlimitedSpendingLimit(tsl *TransactionSpendingLimit, blockHeight uint32) (_isUnlimited bool, _err error) {
-	AssertDependencyStructFieldNumbers(&TransactionSpendingLimit{}, 13)
+	AssertDependencyStructFieldNumbers(&TransactionSpendingLimit{}, 14)
 
 	if tsl.IsUnlimited && blockHeight < bav.Params.ForkHeights.DeSoUnlimitedDerivedKeysBlockHeight {
 		return false, RuleErrorUnlimitedDerivedKeyBeforeBlockHeight
@@ -6845,6 +6979,7 @@ func (bav *UtxoView) CheckIfValidUnlimitedSpendingLimit(tsl *TransactionSpending
 		len(tsl.AssociationLimitMap) > 0 ||
 		len(tsl.AccessGroupMap) > 0 ||
 		len(tsl.AccessGroupMemberMap) > 0 ||
+		len(tsl.LockupLimitMap) > 0 ||
 		len(tsl.StakeLimitMap) > 0 ||
 		len(tsl.UnstakeLimitMap) > 0 ||
 		len(tsl.UnlockStakeLimitMap) > 0) {

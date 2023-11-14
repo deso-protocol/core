@@ -2790,7 +2790,8 @@ func (bc *Blockchain) ValidateTransaction(
 	}
 	txnSize := int64(len(txnBytes))
 	// We don't care about the utxoOps or the fee it returns.
-	_, _, _, _, err = utxoView._connectTransaction(txnMsg, txHash, txnSize, blockHeight, verifySignatures, false)
+	_, _, _, _, err = utxoView._connectTransaction(
+		txnMsg, txHash, txnSize, blockHeight, 0, verifySignatures, false)
 	if err != nil {
 		return errors.Wrapf(err, "ValidateTransaction: Problem validating transaction: ")
 	}
@@ -5153,7 +5154,8 @@ func (bc *Blockchain) EstimateDefaultFeeRateNanosPerKB(
 		}
 		numBytesInTxn := len(txnBytes)
 		_, _, _, fees, err := utxoView.ConnectTransaction(
-			txn, txn.Hash(), int64(numBytesInTxn), tipNode.Height, false /*verifySignatures*/, false /*ignoreUtxos*/)
+			txn, txn.Hash(), int64(numBytesInTxn), tipNode.Height, int64(tipNode.Header.TstampNanoSecs),
+			false, false)
 		if err != nil {
 			return minFeeRateNanosPerKB
 		}
@@ -5371,4 +5373,200 @@ func (bc *Blockchain) _createAssociationTxn(
 		)
 	}
 	return txn, totalInput, changeAmount, fees, nil
+}
+
+// -------------------------------------------------
+// Lockup Transaction Creation Function
+// -------------------------------------------------
+
+func (bc *Blockchain) CreateCoinLockupTxn(
+	TransactorPublicKey []byte,
+	ProfilePublicKey []byte,
+	UnlockTimestampNanoSecs int64,
+	LockupAmountBaseUnits *uint256.Int,
+	// Standard transaction fields
+	minFeeRateNanosPerKB uint64, mempool *DeSoMempool, additionalOutputs []*DeSoOutput) (
+	_txn *MsgDeSoTxn, _totalInput uint64, _changeAmount uint64, _fees uint64, _err error) {
+
+	// NOTE: TxInputs is a remnant of the UTXO transaction model.
+	//       It's assumed that lockup transactions follow balance model.
+	//       For this reason, we ignore the TxInputs field in the MsgDeSoTxn struct.
+
+	// Create a transaction containing the coin lockup fields.
+	txn := &MsgDeSoTxn{
+		PublicKey: TransactorPublicKey,
+		TxnMeta: &CoinLockupMetadata{
+			ProfilePublicKey:        NewPublicKey(ProfilePublicKey),
+			UnlockTimestampNanoSecs: UnlockTimestampNanoSecs,
+			LockupAmountBaseUnits:   LockupAmountBaseUnits,
+		},
+		TxOutputs: additionalOutputs,
+		// The signature will be added once other transaction fields are finalized.
+	}
+
+	// NOTE: AddInputsAndChangeToTransaction returns four fields.
+	//       Some of these are no longer relevant following the move to balance model.
+	//       We list each of these fields and whether they're relevant below:
+	//       (Still relevant)      _totalInputAdded - Equals inputSubsidy + sum(txn.TxOutputs) + additionalFees + txn.TxnFees
+	//       (Still relevant)     _spendAmount      - Equals sum(txn.TxOutputs) + additionalFees
+	//       (No longer relevant) _totalChangeAdded - Always returns a zero in the balance model era.
+	//       (Still relevant)     _fee              - Returns the computed fees based on the size of the transaction.
+	//       (Still relevant)     _err              - Necessary for error checking. For obvious reasons.
+	totalInput, spendAmount, _, fees, err :=
+		bc.AddInputsAndChangeToTransaction(txn, minFeeRateNanosPerKB, mempool)
+	if err != nil {
+		return nil, 0, 0, 0,
+			errors.Wrapf(err, "CreateCoinLockupTxn: Problem adding inputs: ")
+	}
+	_ = spendAmount
+
+	// NOTE: Normally by convention here we check for the transaction to have at least one input in TxInputs.
+	//       This is assumed to be no longer necessary given the requirement of
+	//       lockup transactions to be after the transition to balance model.
+
+	return txn, totalInput, 0, fees, nil
+}
+
+func (bc *Blockchain) CreateCoinLockupTransferTxn(
+	TransactorPublicKey []byte,
+	RecipientPublicKey []byte,
+	ProfilePublicKey []byte,
+	UnlockTimestampNanoSecs int64,
+	LockedCoinsToTransferBaseUnits *uint256.Int,
+	// Standard transaction fields
+	minFeeRateNanosPerKB uint64, mempool *DeSoMempool, additionalOutputs []*DeSoOutput) (
+	_txn *MsgDeSoTxn, _totalInput uint64, _changeAmount uint64, _fees uint64, _err error) {
+
+	// NOTE: TxInputs is a remnant of the UTXO transaction model.
+	//       It's assumed that lockup transactions follow balance model.
+	//       For this reason, we ignore the TxInputs field in the MsgDeSoTxn struct.
+
+	// Create a transaction containing the coin lockup transfer fields.
+	txn := &MsgDeSoTxn{
+		PublicKey: TransactorPublicKey,
+		TxnMeta: &CoinLockupTransferMetadata{
+			RecipientPublicKey:             NewPublicKey(RecipientPublicKey),
+			ProfilePublicKey:               NewPublicKey(ProfilePublicKey),
+			UnlockTimestampNanoSecs:        UnlockTimestampNanoSecs,
+			LockedCoinsToTransferBaseUnits: LockedCoinsToTransferBaseUnits,
+		},
+		TxOutputs: additionalOutputs,
+		// The signature will be added once other transaction fields are finalized.
+	}
+
+	// NOTE: AddInputsAndChangeToTransaction returns four fields.
+	//       Some of these are no longer relevant following the move to balance model.
+	//       We list each of these fields and whether they're relevant below:
+	//       (Still relevant)      _totalInputAdded - Equals inputSubsidy + sum(txn.TxOutputs) + additionalFees + txn.TxnFees
+	//       (Still relevant)     _spendAmount      - Equals sum(txn.TxOutputs) + additionalFees
+	//       (No longer relevant) _totalChangeAdded - Always returns a zero in the balance model era.
+	//       (Still relevant)     _fee              - Returns the computed fees based on the size of the transaction.
+	//       (Still relevant)     _err              - Necessary for error checking. For obvious reasons.
+	totalInput, spendAmount, _, fees, err :=
+		bc.AddInputsAndChangeToTransaction(txn, minFeeRateNanosPerKB, mempool)
+	if err != nil {
+		return nil, 0, 0, 0,
+			errors.Wrapf(err, "CreateCoinLockupTransferTxn: Problem adding inputs: ")
+	}
+	_ = spendAmount
+
+	// NOTE: Normally by convention here we check for the transaction to have at least one input in TxInputs.
+	//       This is assumed to be no longer necessary given the requirement of
+	//       lockup transactions to be after the transition to balance model.
+
+	return txn, totalInput, 0, fees, nil
+}
+
+func (bc *Blockchain) CreateUpdateCoinLockupParamsTxn(
+	TransactorPublicKey []byte,
+	LockupYieldDurationNanoSecs int64,
+	LockupYieldAPYBasisPoints uint64,
+	RemoveYieldCurvePoint bool,
+	NewLockupTransferRestrictions bool,
+	LockupTransferRestrictionStatus TransferRestrictionStatus,
+	// Standard transaction fields
+	minFeeRateNanosPerKB uint64, mempool *DeSoMempool, additionalOutputs []*DeSoOutput) (
+	_txn *MsgDeSoTxn, _totalInput uint64, _changeAmount uint64, _fees uint64, _err error) {
+
+	// NOTE: TxInputs is a remnant of the UTXO transaction model.
+	//       It's assumed that lockup transactions follow balance model.
+	//       For this reason, we ignore the TxInputs field in the MsgDeSoTxn struct.
+
+	// Create a transaction containing the update coin lockup params fields.
+	txn := &MsgDeSoTxn{
+		PublicKey: TransactorPublicKey,
+		TxnMeta: &UpdateCoinLockupParamsMetadata{
+			LockupYieldDurationNanoSecs:     LockupYieldDurationNanoSecs,
+			LockupYieldAPYBasisPoints:       LockupYieldAPYBasisPoints,
+			RemoveYieldCurvePoint:           RemoveYieldCurvePoint,
+			NewLockupTransferRestrictions:   NewLockupTransferRestrictions,
+			LockupTransferRestrictionStatus: LockupTransferRestrictionStatus,
+		},
+		TxOutputs: additionalOutputs,
+		// The signature will be added once other transaction fields are finalized.
+	}
+
+	// NOTE: AddInputsAndChangeToTransaction returns four fields.
+	//       Some of these are no longer relevant following the move to balance model.
+	//       We list each of these fields and whether they're relevant below:
+	//       (Still relevant)      _totalInputAdded - Equals inputSubsidy + sum(txn.TxOutputs) + additionalFees + txn.TxnFees
+	//       (Still relevant)     _spendAmount      - Equals sum(txn.TxOutputs) + additionalFees
+	//       (No longer relevant) _totalChangeAdded - Always returns a zero in the balance model era.
+	//       (Still relevant)     _fee              - Returns the computed fees based on the size of the transaction.
+	//       (Still relevant)     _err              - Necessary for error checking. For obvious reasons.
+	totalInput, spendAmount, _, fees, err :=
+		bc.AddInputsAndChangeToTransaction(txn, minFeeRateNanosPerKB, mempool)
+	if err != nil {
+		return nil, 0, 0, 0,
+			errors.Wrapf(err, "CreateCoinLockupTransferTxn: Problem adding inputs: ")
+	}
+	_ = spendAmount
+
+	// NOTE: Normally by convention here we check for the transaction to have at least one input in TxInputs.
+	//       This is assumed to be no longer necessary given the requirement of
+	//       lockup transactions to be after the transition to balance model.
+
+	return txn, totalInput, 0, fees, nil
+}
+
+func (bc *Blockchain) CreateCoinUnlockTxn(
+	TransactorPublicKey []byte,
+	ProfilePublicKey []byte,
+	// Standard transaction fields
+	minFeeRateNanosPerKB uint64, mempool *DeSoMempool, additionalOutputs []*DeSoOutput) (
+	_txn *MsgDeSoTxn, _totalInput uint64, _chainAmount uint64, _fees uint64, _err error) {
+
+	// NOTE: TxInputs is a remnant of the UTXO transaction model.
+	//       It's assumed that lockup transactions follow balance model.
+	//       For this reason, we ignore the TxInputs field in the MsgDeSoTxn struct.
+
+	// Create a transaction containing the coin unlock fields.
+	txn := &MsgDeSoTxn{
+		PublicKey: TransactorPublicKey,
+		TxnMeta:   &CoinUnlockMetadata{ProfilePublicKey: NewPublicKey(ProfilePublicKey)},
+		TxOutputs: additionalOutputs,
+		// The signature will be added once other transaction fields are finalized.
+	}
+
+	// NOTE: AddInputsAndChangeToTransaction returns four fields.
+	//       Some of these are no longer relevant following the move to balance model.
+	//       We list each of these fields and whether they're relevant below:
+	//       (Still relevant)      _totalInputAdded - Equals inputSubsidy + sum(txn.TxOutputs) + additionalFees + txn.TxnFees
+	//       (Still relevant)     _spendAmount      - Equals sum(txn.TxOutputs) + additionalFees
+	//       (No longer relevant) _totalChangeAdded - Always returns a zero in the balance model era.
+	//       (Still relevant)     _fee              - Returns the computed fees based on the size of the transaction.
+	//       (Still relevant)     _err              - Necessary for error checking. For obvious reasons.
+	totalInput, spendAmount, _, fees, err :=
+		bc.AddInputsAndChangeToTransaction(txn, minFeeRateNanosPerKB, mempool)
+	if err != nil {
+		return nil, 0, 0, 0,
+			errors.Wrapf(err, "CreateCoinLockupTransferTxn: Problem adding inputs: ")
+	}
+	_ = spendAmount
+
+	// NOTE: Normally by convention here we check for the transaction to have at least one input in TxInputs.
+	//       This is assumed to be no longer necessary given the requirement of
+	//       lockup transactions to be after the transition to balance model.
+
+	return txn, totalInput, 0, fees, nil
 }
