@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/hex"
 	"fmt"
+	"github.com/deso-protocol/core/bls"
 	"math"
 	"math/big"
 	"reflect"
@@ -117,6 +118,9 @@ type UtxoView struct {
 
 	// Validator mappings
 	ValidatorPKIDToValidatorEntry map[PKID]*ValidatorEntry
+	// Mapping of BLS Public Key to BLSPublicKeyPKIDPairEntry. Used for enforcing uniqueness
+	// of BLS Public Keys in the validator set.
+	ValidatorBLSPublicKeyPKIDPairEntries map[bls.SerializedPublicKey]*BLSPublicKeyPKIDPairEntry
 
 	// Stake mappings
 	StakeMapKeyToStakeEntry map[StakeMapKey]*StakeEntry
@@ -269,6 +273,8 @@ func (bav *UtxoView) _ResetViewMappingsAfterFlush() {
 
 	// ValidatorEntries
 	bav.ValidatorPKIDToValidatorEntry = make(map[PKID]*ValidatorEntry)
+	// Validator BLS PublicKey to PKID
+	bav.ValidatorBLSPublicKeyPKIDPairEntries = make(map[bls.SerializedPublicKey]*BLSPublicKeyPKIDPairEntry)
 
 	// StakeEntries
 	bav.StakeMapKeyToStakeEntry = make(map[StakeMapKey]*StakeEntry)
@@ -570,6 +576,12 @@ func (bav *UtxoView) CopyUtxoView() (*UtxoView, error) {
 	newView.ValidatorPKIDToValidatorEntry = make(map[PKID]*ValidatorEntry, len(bav.ValidatorPKIDToValidatorEntry))
 	for entryKey, entry := range bav.ValidatorPKIDToValidatorEntry {
 		newView.ValidatorPKIDToValidatorEntry[entryKey] = entry.Copy()
+	}
+
+	// Copy the validator BLS PublicKey to PKID map
+	newView.ValidatorBLSPublicKeyPKIDPairEntries = make(map[bls.SerializedPublicKey]*BLSPublicKeyPKIDPairEntry, len(bav.ValidatorBLSPublicKeyPKIDPairEntries))
+	for entryKey, entry := range bav.ValidatorBLSPublicKeyPKIDPairEntries {
+		newView.ValidatorBLSPublicKeyPKIDPairEntries[entryKey] = entry.Copy()
 	}
 
 	// Copy the StakeEntries

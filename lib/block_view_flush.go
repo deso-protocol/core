@@ -159,6 +159,9 @@ func (bav *UtxoView) FlushToDBWithoutAncestralRecordsFlushWithTxn(txn *badger.Tx
 	if err := bav._flushValidatorEntriesToDbWithTxn(txn, blockHeight); err != nil {
 		return err
 	}
+	if err := bav._flushValidatorBLSPublicKeyPKIDPairEntryMappingsWithTxn(txn, blockHeight); err != nil {
+		return err
+	}
 	if err := bav._flushStakeEntriesToDbWithTxn(txn, blockHeight); err != nil {
 		return err
 	}
