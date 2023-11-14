@@ -290,6 +290,13 @@ func (blsPublicKeyPKIDPairEntry *BLSPublicKeyPKIDPairEntry) ToMapKey() bls.Seria
 	return blsPublicKeyPKIDPairEntry.BLSPublicKey.Serialize()
 }
 
+func (blsPublicKeyPKIDPairEntry *BLSPublicKeyPKIDPairEntry) ToSnapshotMapKey(snapshotAtEpoch uint64) SnapshotValidatorBLSPublicKeyMapKey {
+	return SnapshotValidatorBLSPublicKeyMapKey{
+		SnapshotAtEpochNumber: snapshotAtEpoch,
+		ValidatorBLSPublicKey: blsPublicKeyPKIDPairEntry.BLSPublicKey.Serialize(),
+	}
+}
+
 func (blsPublicKeyPKIDPairEntry *BLSPublicKeyPKIDPairEntry) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte {
 	var data []byte
 	data = append(data, EncodeBLSPublicKey(blsPublicKeyPKIDPairEntry.BLSPublicKey)...)
