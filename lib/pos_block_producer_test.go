@@ -111,10 +111,10 @@ func TestCreateBlockWithoutHeader(t *testing.T) {
 
 	pbp := NewPosBlockProducer(mempool, params, nil, nil)
 	txns, txnConnectStatus, maxUtilityFee, err := pbp.getBlockTransactions(
-		latestBlockView, 3, 50000)
+		latestBlockView, 3, 0, 50000)
 	require.NoError(err)
 
-	blockTemplate, err := pbp.createBlockWithoutHeader(latestBlockView, 3)
+	blockTemplate, err := pbp.createBlockWithoutHeader(latestBlockView, 3, 0)
 	require.NoError(err)
 	require.Equal(txns, blockTemplate.Txns[1:])
 	require.Equal(txnConnectStatus, blockTemplate.TxnConnectStatusByIndex)
@@ -214,7 +214,7 @@ func TestGetBlockTransactions(t *testing.T) {
 
 	latestBlockViewCopy, err := latestBlockView.CopyUtxoView()
 	require.NoError(err)
-	txns, txnConnectStatus, maxUtilityFee, err := pbp.getBlockTransactions(latestBlockView, 3, 1000)
+	txns, txnConnectStatus, maxUtilityFee, err := pbp.getBlockTransactions(latestBlockView, 3, 0, 1000)
 	require.NoError(err)
 	require.Equal(latestBlockViewCopy, latestBlockView)
 	require.Equal(true, len(passingTxns) > len(txns))
@@ -256,7 +256,7 @@ func _testProduceBlockNoSizeLimit(t *testing.T, mp *PosMempool, pbp *PosBlockPro
 
 	latestBlockViewCopy, err := latestBlockView.CopyUtxoView()
 	require.NoError(err)
-	txns, txnConnectStatus, maxUtilityFee, err := pbp.getBlockTransactions(latestBlockView, blockHeight, math.MaxUint64)
+	txns, txnConnectStatus, maxUtilityFee, err := pbp.getBlockTransactions(latestBlockView, blockHeight, 0, math.MaxUint64)
 	require.NoError(err)
 	require.Equal(latestBlockViewCopy, latestBlockView)
 	require.Equal(totalAcceptedTxns, len(txns))

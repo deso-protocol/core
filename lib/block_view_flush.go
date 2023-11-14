@@ -150,6 +150,12 @@ func (bav *UtxoView) FlushToDBWithoutAncestralRecordsFlushWithTxn(txn *badger.Tx
 	if err := bav._flushNonceEntriesToDbWithTxn(txn); err != nil {
 		return err
 	}
+	if err := bav._flushLockedBalanceEntriesToDbWithTxn(txn, blockHeight); err != nil {
+		return err
+	}
+	if err := bav._flushLockupYieldCurvePointEntriesToDbWithTxn(txn, blockHeight); err != nil {
+		return err
+	}
 	if err := bav._flushValidatorEntriesToDbWithTxn(txn, blockHeight); err != nil {
 		return err
 	}

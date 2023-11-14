@@ -124,6 +124,12 @@ type UtxoView struct {
 	// Locked stake mappings
 	LockedStakeMapKeyToLockedStakeEntry map[LockedStakeMapKey]*LockedStakeEntry
 
+	// Locked DAO coin and locked DESO balance entry mapping.
+	LockedBalanceEntryKeyToLockedBalanceEntry map[LockedBalanceEntryKey]*LockedBalanceEntry
+
+	// Lockup yield curve points.
+	PKIDToLockupYieldCurvePointKeyToLockupYieldCurvePoints map[PKID]map[LockupYieldCurvePointKey]*LockupYieldCurvePoint
+
 	// Current EpochEntry
 	CurrentEpochEntry *EpochEntry
 
@@ -254,6 +260,12 @@ func (bav *UtxoView) _ResetViewMappingsAfterFlush() {
 
 	// Transaction nonce map
 	bav.TransactorNonceMapKeyToTransactorNonceEntry = make(map[TransactorNonceMapKey]*TransactorNonceEntry)
+
+	// Locked Balance Entries Map
+	bav.LockedBalanceEntryKeyToLockedBalanceEntry = make(map[LockedBalanceEntryKey]*LockedBalanceEntry)
+
+	// Lockup Yield Curve Points Map
+	bav.PKIDToLockupYieldCurvePointKeyToLockupYieldCurvePoints = make(map[PKID]map[LockupYieldCurvePointKey]*LockupYieldCurvePoint)
 
 	// ValidatorEntries
 	bav.ValidatorPKIDToValidatorEntry = make(map[PKID]*ValidatorEntry)
@@ -531,6 +543,27 @@ func (bav *UtxoView) CopyUtxoView() (*UtxoView, error) {
 	for entryKey, entry := range bav.TransactorNonceMapKeyToTransactorNonceEntry {
 		newEntry := *entry
 		newView.TransactorNonceMapKeyToTransactorNonceEntry[entryKey] = &newEntry
+	}
+
+	// Copy the LockedBalanceEntries
+	newView.LockedBalanceEntryKeyToLockedBalanceEntry = make(map[LockedBalanceEntryKey]*LockedBalanceEntry,
+		len(bav.LockedBalanceEntryKeyToLockedBalanceEntry))
+	for entryKey, entry := range bav.LockedBalanceEntryKeyToLockedBalanceEntry {
+		newView.LockedBalanceEntryKeyToLockedBalanceEntry[entryKey] = entry.Copy()
+	}
+
+	// Copy the LockupYieldCurvePoints
+	newView.PKIDToLockupYieldCurvePointKeyToLockupYieldCurvePoints =
+		make(map[PKID]map[LockupYieldCurvePointKey]*LockupYieldCurvePoint, len(bav.PKIDToLockupYieldCurvePointKeyToLockupYieldCurvePoints))
+	for pkid, lockupYieldCurvePointMap := range bav.PKIDToLockupYieldCurvePointKeyToLockupYieldCurvePoints {
+		// Copy the map for the given PKID
+		newView.PKIDToLockupYieldCurvePointKeyToLockupYieldCurvePoints[pkid] =
+			make(map[LockupYieldCurvePointKey]*LockupYieldCurvePoint, len(lockupYieldCurvePointMap))
+
+		// Go through all LockupYieldCurvePoints in the LockupYieldCurvePoint map.
+		for entryKey, entry := range lockupYieldCurvePointMap {
+			newView.PKIDToLockupYieldCurvePointKeyToLockupYieldCurvePoints[pkid][entryKey] = entry.Copy()
+		}
 	}
 
 	// Copy the ValidatorEntries
@@ -1454,6 +1487,18 @@ func (bav *UtxoView) DisconnectTransaction(currentTxn *MsgDeSoTxn, txnHash *Bloc
 	case TxnTypeUnjailValidator:
 		return bav._disconnectUnjailValidator(
 			OperationTypeUnjailValidator, currentTxn, txnHash, utxoOpsForTxn, blockHeight)
+
+	case TxnTypeCoinLockup:
+		return bav._disconnectCoinLockup(OperationTypeCoinLockup, currentTxn, txnHash, utxoOpsForTxn, blockHeight)
+	case TxnTypeUpdateCoinLockupParams:
+		return bav._disconnectUpdateCoinLockupParams(
+			OperationTypeUpdateCoinLockupParams, currentTxn, txnHash, utxoOpsForTxn, blockHeight)
+	case TxnTypeCoinLockupTransfer:
+		return bav._disconnectCoinLockupTransfer(
+			OperationTypeCoinLockupTransfer, currentTxn, txnHash, utxoOpsForTxn, blockHeight)
+	case TxnTypeCoinUnlock:
+		return bav._disconnectCoinUnlock(OperationTypeCoinUnlock, currentTxn, txnHash, utxoOpsForTxn, blockHeight)
+
 	}
 
 	return fmt.Errorf("DisconnectBlock: Unimplemented txn type %v", currentTxn.TxnMeta.GetTxnType().String())
@@ -2413,6 +2458,58 @@ func (bav *UtxoView) _checkAndUpdateDerivedKeySpendingLimit(
 			derivedKeyEntry, txnMeta); err != nil {
 			return utxoOpsForTxn, err
 		}
+	case TxnTypeCoinLockup:
+		txnMeta := txn.TxnMeta.(*CoinLockupMetadata)
+		if derivedKeyEntry, err = bav._checkLockupTxnSpendingLimitAndUpdateDerivedKey(
+			derivedKeyEntry, txnMeta.ProfilePublicKey, CoinLockupOperation); err != nil {
+			return utxoOpsForTxn, err
+		}
+	case TxnTypeUpdateCoinLockupParams:
+		txnUpdatesYieldCurve := false
+		txnUpdatesTransferRestrictions := false
+		// NOTE: While this breaks convention, we allow the UpdateCoinLockupParamsMetadata to decrement
+		//       two different derived key limits independently for added flexibility. We could
+		//       have a limit as to the number of UpdateCoinLockupParams transactions but given the
+		//       importance of security regarding the lockup yield curve it makes more sense to break
+		//       derived key limits for UpdateCoinLockupParams into multiple behavior specific limits.
+		txnMeta := txn.TxnMeta.(*UpdateCoinLockupParamsMetadata)
+		// Check if we're updating the transactor's yield curve.
+		// NOTE: It's described in a longer comment in UpdateCoinLockupParamsMetadata that if
+		//       LockupYieldDurationNanoSecs is zero, the other fields associated with updating
+		//       the yield curve are ignored. Hence, the check below checks that any update
+		//       to the yield curve exists in the given transaction.
+		if txnMeta.LockupYieldDurationNanoSecs > 0 {
+			txnUpdatesYieldCurve = true
+			if derivedKeyEntry, err = bav._checkLockupTxnSpendingLimitAndUpdateDerivedKey(
+				derivedKeyEntry, NewPublicKey(txn.PublicKey), UpdateCoinLockupYieldCurveOperation); err != nil {
+				return utxoOpsForTxn, err
+			}
+		}
+		// Check if we're updating the transactor's transfer restrictions.
+		if txnMeta.NewLockupTransferRestrictions {
+			txnUpdatesTransferRestrictions = true
+			if derivedKeyEntry, err = bav._checkLockupTxnSpendingLimitAndUpdateDerivedKey(
+				derivedKeyEntry, NewPublicKey(txn.PublicKey), UpdateCoinLockupTransferRestrictionsOperation); err != nil {
+				return utxoOpsForTxn, err
+			}
+		}
+		// Throw an error if this transaction does nothing. A derived key transaction should decrement
+		// at least one limit as otherwise it's spending fees and accomplishing nothing.
+		if !txnUpdatesYieldCurve && !txnUpdatesTransferRestrictions {
+			return utxoOpsForTxn, RuleErrorDerivedKeyUpdateCoinLockupParamsIsNoOp
+		}
+	case TxnTypeCoinLockupTransfer:
+		txnMeta := txn.TxnMeta.(*CoinLockupTransferMetadata)
+		if derivedKeyEntry, err = bav._checkLockupTxnSpendingLimitAndUpdateDerivedKey(
+			derivedKeyEntry, txnMeta.ProfilePublicKey, CoinLockupTransferOperation); err != nil {
+			return utxoOpsForTxn, err
+		}
+	case TxnTypeCoinUnlock:
+		txnMeta := txn.TxnMeta.(*CoinUnlockMetadata)
+		if derivedKeyEntry, err = bav._checkLockupTxnSpendingLimitAndUpdateDerivedKey(
+			derivedKeyEntry, txnMeta.ProfilePublicKey, CoinLockupUnlockOperation); err != nil {
+			return utxoOpsForTxn, err
+		}
 	case TxnTypeStake:
 		txnMeta := txn.TxnMeta.(*StakeMetadata)
 		if derivedKeyEntry, err = bav._checkStakeTxnSpendingLimitAndUpdateDerivedKey(
@@ -3272,18 +3369,19 @@ func (bav *UtxoView) ValidateDiamondsAndGetNumDeSoNanos(
 	return desoToTransferNanos, netNewDiamonds, nil
 }
 
-func (bav *UtxoView) ConnectTransaction(txn *MsgDeSoTxn, txHash *BlockHash,
-	txnSizeBytes int64,
-	blockHeight uint32, verifySignatures bool, ignoreUtxos bool) (
-	_utxoOps []*UtxoOperation, _totalInput uint64, _totalOutput uint64,
-	_fees uint64, _err error) {
-
-	return bav._connectTransaction(txn, txHash, txnSizeBytes, blockHeight, verifySignatures, ignoreUtxos)
+func (bav *UtxoView) ConnectTransaction(
+	txn *MsgDeSoTxn, txHash *BlockHash, txnSizeBytes int64,
+	blockHeight uint32, blockTimestampNanoSecs int64, verifySignatures bool,
+	ignoreUtxos bool) (_utxoOps []*UtxoOperation, _totalInput uint64, _totalOutput uint64, _fees uint64, _err error) {
+	return bav._connectTransaction(txn, txHash, txnSizeBytes,
+		blockHeight, blockTimestampNanoSecs, verifySignatures, ignoreUtxos)
 
 }
 
-func (bav *UtxoView) _connectTransaction(txn *MsgDeSoTxn, txHash *BlockHash, txnSizeBytes int64, blockHeight uint32, verifySignatures bool, ignoreUtxos bool) (_utxoOps []*UtxoOperation, _totalInput uint64, _totalOutput uint64, _fees uint64, _err error) {
-
+func (bav *UtxoView) _connectTransaction(
+	txn *MsgDeSoTxn, txHash *BlockHash, txnSizeBytes int64, blockHeight uint32,
+	blockTimestampNanoSecs int64, verifySignatures bool,
+	ignoreUtxos bool) (_utxoOps []*UtxoOperation, _totalInput uint64, _totalOutput uint64, _fees uint64, _err error) {
 	// Do a quick sanity check before trying to connect.
 	if err := CheckTransactionSanity(txn, blockHeight, bav.Params); err != nil {
 		return nil, 0, 0, 0, errors.Wrapf(err, "_connectTransaction: ")
@@ -3521,6 +3619,15 @@ func (bav *UtxoView) _connectTransaction(txn *MsgDeSoTxn, txHash *BlockHash, txn
 	case TxnTypeUnjailValidator:
 		totalInput, totalOutput, utxoOpsForTxn, err = bav._connectUnjailValidator(txn, txHash, blockHeight, verifySignatures)
 
+	case TxnTypeCoinLockup:
+		totalInput, totalOutput, utxoOpsForTxn, err = bav._connectCoinLockup(txn, txHash, blockHeight, blockTimestampNanoSecs, verifySignatures)
+	case TxnTypeUpdateCoinLockupParams:
+		totalInput, totalOutput, utxoOpsForTxn, err = bav._connectUpdateCoinLockupParams(txn, txHash, blockHeight, verifySignatures)
+	case TxnTypeCoinLockupTransfer:
+		totalInput, totalOutput, utxoOpsForTxn, err = bav._connectCoinLockupTransfer(txn, txHash, blockHeight, verifySignatures)
+	case TxnTypeCoinUnlock:
+		totalInput, totalOutput, utxoOpsForTxn, err = bav._connectCoinUnlock(txn, txHash, blockHeight, blockTimestampNanoSecs, verifySignatures)
+
 	default:
 		err = fmt.Errorf("ConnectTransaction: Unimplemented txn type %v", txn.TxnMeta.GetTxnType().String())
 	}
@@ -3625,6 +3732,38 @@ func (bav *UtxoView) _connectTransaction(txn *MsgDeSoTxn, txHash *BlockHash, txn
 				}
 			}
 			desoLockedDelta = big.NewInt(0).Neg(totalLockedAmountNanos.ToBig())
+		}
+		if txn.TxnMeta.GetTxnType() == TxnTypeCoinUnlock {
+			if len(utxoOpsForTxn) == 0 {
+				return nil, 0, 0, 0, errors.New(
+					"ConnectTransaction: TxnTypeCoinUnlock must return UtxoOpsForTxn",
+				)
+			}
+			coinUnlockMeta := txn.TxnMeta.(*CoinUnlockMetadata)
+
+			// We only count DESO added if coin unlock was a locked DESO unlock.
+			if coinUnlockMeta.ProfilePublicKey.IsZeroPublicKey() {
+				utxoOp := utxoOpsForTxn[len(utxoOpsForTxn)-1]
+				if utxoOp == nil || utxoOp.Type != OperationTypeCoinUnlock {
+					return nil, 0, 0, 0, errors.New(
+						"ConnectTransaction: TxnTypeCoinUnlock must correspond to OperationTypeCoinUnlock",
+					)
+				}
+				totalLockedDESOAmountNanos := uint256.NewInt()
+				for _, prevLockedBalanceEntry := range utxoOp.PrevLockedBalanceEntries {
+					totalLockedDESOAmountNanos, err = SafeUint256().Add(
+						totalLockedDESOAmountNanos, &prevLockedBalanceEntry.BalanceBaseUnits)
+					if err != nil {
+						return nil, 0, 0, 0,
+							errors.Wrapf(err, "ConnectTransaction: error computing TotalLockedCoinsAmountNanos: ")
+					}
+					if !totalLockedDESOAmountNanos.IsUint64() {
+						return nil, 0, 0, 0,
+							errors.Errorf("ConnectTransaction: totalLockedDESOAmountNanos overflows uint64")
+					}
+				}
+				desoLockedDelta = big.NewInt(0).Neg(totalLockedDESOAmountNanos.ToBig())
+			}
 		}
 		if big.NewInt(0).Add(balanceDelta, desoLockedDelta).Sign() > 0 {
 			return nil, 0, 0, 0, RuleErrorBalanceChangeGreaterThanZero
@@ -3863,8 +4002,7 @@ func (bav *UtxoView) ConnectBlock(
 		// would slow down block processing significantly. We should figure out a way to
 		// enforce this check in the future, but for now the only attack vector is one in
 		// which a miner is trying to spam the network, which should generally never happen.
-		utxoOpsForTxn, totalInput, totalOutput, currentFees, err := bav.ConnectTransaction(
-			txn, txHash, 0, uint32(blockHeader.Height), verifySignatures, false /*ignoreUtxos*/)
+		utxoOpsForTxn, totalInput, totalOutput, currentFees, err := bav.ConnectTransaction(txn, txHash, 0, uint32(blockHeader.Height), int64(blockHeader.TstampNanoSecs), verifySignatures, false)
 		_, _ = totalInput, totalOutput // A bit surprising we don't use these
 		if err != nil {
 			return nil, errors.Wrapf(err, "ConnectBlock: error connecting txn #%d", txIndex)

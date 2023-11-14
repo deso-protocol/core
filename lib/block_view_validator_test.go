@@ -337,13 +337,7 @@ func _submitRegisterAsValidatorTxn(
 
 	// Connect the transaction.
 	utxoOps, totalInput, totalOutput, fees, err := testMeta.mempool.universalUtxoView.ConnectTransaction(
-		txn,
-		txn.Hash(),
-		getTxnSize(*txn),
-		testMeta.savedHeight,
-		true,
-		false,
-	)
+		txn, txn.Hash(), getTxnSize(*txn), testMeta.savedHeight, 0, true, false)
 	if err != nil {
 		return 0, err
 	}
@@ -394,13 +388,7 @@ func _submitUnregisterAsValidatorTxn(
 
 	// Connect the transaction.
 	utxoOps, totalInput, totalOutput, fees, err := testMeta.mempool.universalUtxoView.ConnectTransaction(
-		txn,
-		txn.Hash(),
-		getTxnSize(*txn),
-		testMeta.savedHeight,
-		true,
-		false,
-	)
+		txn, txn.Hash(), getTxnSize(*txn), testMeta.savedHeight, 0, true, false)
 	if err != nil {
 		return 0, err
 	}
@@ -554,13 +542,7 @@ func TestValidatorRegistrationWithDerivedKey(t *testing.T) {
 		prevBalance := _getBalance(testMeta.t, testMeta.chain, testMeta.mempool, transactorPublicKeyBase58Check)
 		// Connect txn.
 		utxoOps, _, _, _, err := utxoView.ConnectTransaction(
-			txn,
-			txn.Hash(),
-			getTxnSize(*txn),
-			testMeta.savedHeight,
-			true,
-			false,
-		)
+			txn, txn.Hash(), getTxnSize(*txn), testMeta.savedHeight, 0, true, false)
 		if err != nil {
 			return err
 		}
@@ -1820,13 +1802,7 @@ func TestUnjailValidatorWithDerivedKey(t *testing.T) {
 		prevBalance := _getBalance(testMeta.t, testMeta.chain, testMeta.mempool, transactorPublicKeyBase58Check)
 		// Connect txn.
 		utxoOps, _, _, _, err := utxoView.ConnectTransaction(
-			txn,
-			txn.Hash(),
-			getTxnSize(*txn),
-			testMeta.savedHeight,
-			true,
-			false,
-		)
+			txn, txn.Hash(), getTxnSize(*txn), testMeta.savedHeight, 0, true, false)
 		if err != nil {
 			return err
 		}
@@ -1979,13 +1955,7 @@ func _submitUnjailValidatorTxn(
 
 	// Connect the transaction.
 	utxoOps, totalInput, totalOutput, fees, err := testMeta.mempool.universalUtxoView.ConnectTransaction(
-		txn,
-		txn.Hash(),
-		getTxnSize(*txn),
-		testMeta.savedHeight,
-		true,
-		false,
-	)
+		txn, txn.Hash(), getTxnSize(*txn), testMeta.savedHeight, 0, true, false)
 	if err != nil {
 		return 0, err
 	}
