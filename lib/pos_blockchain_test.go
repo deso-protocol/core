@@ -702,16 +702,8 @@ func TestHasValidBlockProposerPoS(t *testing.T) {
 		require.True(t, isBlockProposerValid)
 
 		// If we have a different proposer public key, we will have an error
-		leader1PublicKey := utxoView.GetPublicKeyForPKID(leaderSchedule[1])
 		leader1Entry := validatorPKIDToValidatorEntryMap[*leaderSchedule[1]]
-		dummyBlock.Header.ProposerPublicKey = NewPublicKey(leader1PublicKey)
-		isBlockProposerValid, err = utxoView.hasValidBlockProposerPoS(dummyBlock)
-		require.NoError(t, err)
-		require.False(t, isBlockProposerValid)
-
-		// If we have a different proposer voting public key, we will have an error
-		dummyBlock.Header.ProposerPublicKey = NewPublicKey(leader0PublicKey)
-		dummyBlock.Header.ProposerVotingPublicKey = leader1Entry.VotingPublicKey
+		dummyBlock.Header.ProposerVotingPublicKey = leader1Entry.VotingPublicKey.Copy()
 		isBlockProposerValid, err = utxoView.hasValidBlockProposerPoS(dummyBlock)
 		require.NoError(t, err)
 		require.False(t, isBlockProposerValid)
@@ -719,7 +711,6 @@ func TestHasValidBlockProposerPoS(t *testing.T) {
 		// If we advance the view, we know that leader 0 timed out, so
 		// we move to leader 1.
 		dummyBlock.Header.ProposedInView = viewNumber + 2
-		dummyBlock.Header.ProposerPublicKey = NewPublicKey(leader1PublicKey)
 		dummyBlock.Header.ProposerVotingPublicKey = leader1Entry.VotingPublicKey
 		isBlockProposerValid, err = utxoView.hasValidBlockProposerPoS(dummyBlock)
 		require.NoError(t, err)
@@ -728,9 +719,7 @@ func TestHasValidBlockProposerPoS(t *testing.T) {
 		// If we have 4 timeouts, we know that leaders 0, 1, 2, and 3 timed out,
 		// so we move to leader 4.
 		dummyBlock.Header.ProposedInView = viewNumber + 5
-		leader4PublicKey := utxoView.GetPublicKeyForPKID(leaderSchedule[4])
 		leader4Entry := validatorPKIDToValidatorEntryMap[*leaderSchedule[4]]
-		dummyBlock.Header.ProposerPublicKey = NewPublicKey(leader4PublicKey)
 		dummyBlock.Header.ProposerVotingPublicKey = leader4Entry.VotingPublicKey
 		isBlockProposerValid, err = utxoView.hasValidBlockProposerPoS(dummyBlock)
 		require.NoError(t, err)
@@ -738,7 +727,6 @@ func TestHasValidBlockProposerPoS(t *testing.T) {
 
 		// If we have 7 timeouts, we know everybody timed out, so we go back to leader 0.
 		dummyBlock.Header.ProposedInView = viewNumber + 8
-		dummyBlock.Header.ProposerPublicKey = NewPublicKey(leader0PublicKey)
 		dummyBlock.Header.ProposerVotingPublicKey = leader0Entry.VotingPublicKey
 		isBlockProposerValid, err = utxoView.hasValidBlockProposerPoS(dummyBlock)
 		require.NoError(t, err)
@@ -1931,7 +1919,9 @@ func TestProcessOrphanBlockPoS(t *testing.T) {
 		if wrongBlockProposer.Equal(*realBlock.Header.ProposerPublicKey) {
 			wrongBlockProposer = NewPublicKey(m1PkBytes)
 		}
+		wrongBlockProposerVotingPublicKey := testMeta.pubKeyToBLSKeyMap[Base58CheckEncode(wrongBlockProposer.ToBytes(), false, testMeta.chain.params)].PublicKey()
 		realBlock.Header.ProposerPublicKey = wrongBlockProposer
+		realBlock.Header.ProposerVotingPublicKey = wrongBlockProposerVotingPublicKey
 		updateProposerVotePartialSignatureForBlock(testMeta, realBlock)
 		// There should be no error, but the block should be marked as ValidateFailed.
 		err = testMeta.chain.processOrphanBlockPoS(realBlock)
@@ -2030,8 +2020,8 @@ func TestProcessOrphanBlockPoS(t *testing.T) {
 		nextEpochBlock = _generateRealBlock(testMeta, currentEpochEntry.FinalBlockHeight+1, currentEpochEntry.FinalBlockHeight+1, 17283, testMeta.chain.GetBestChainTip().Hash, false)
 		// Give the block a random parent, so it is truly an orphan.
 		nextEpochBlock.Header.PrevBlockHash = NewBlockHash(RandomBytes(32))
-		// Change the block proposer to the param updater's public key. The param updater is not in the validator set.
-		nextEpochBlock.Header.ProposerPublicKey = NewPublicKey(paramUpdaterPkBytes)
+		// Change the block proposer to a random BLS public key.
+		nextEpochBlock.Header.ProposerVotingPublicKey = _generateRandomBLSPrivateKey(t).PublicKey()
 		updateProposerVotePartialSignatureForBlock(testMeta, nextEpochBlock)
 		// There should be no error, but the block should be marked as ValidateFailed.
 		err = testMeta.chain.processOrphanBlockPoS(nextEpochBlock)
