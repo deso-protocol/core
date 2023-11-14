@@ -50,14 +50,14 @@ func TestIsProperlyFormedBlockPoSAndIsBlockTimestampValidRelativeToParentPoS(t *
 	block := &MsgDeSoBlock{
 		Header: &MsgDeSoHeader{
 			Version:        2,
-			TstampNanoSecs: bc.GetBestChainTip().Header.TstampNanoSecs + 10,
+			TstampNanoSecs: bc.BlockTip().Header.TstampNanoSecs + 10,
 			Height:         2,
 			ProposedInView: 2,
-			PrevBlockHash:  bc.GetBestChainTip().Hash,
+			PrevBlockHash:  bc.BlockTip().Hash,
 			ValidatorsTimeoutAggregateQC: &TimeoutAggregateQuorumCertificate{
 				TimedOutView: 2,
 				ValidatorsHighQC: &QuorumCertificate{
-					BlockHash:      bc.GetBestChainTip().Hash,
+					BlockHash:      bc.BlockTip().Hash,
 					ProposedInView: 1,
 					ValidatorsVoteAggregatedSignature: &AggregatedBLSSignature{
 						Signature:   signature,
@@ -111,7 +111,7 @@ func TestIsProperlyFormedBlockPoSAndIsBlockTimestampValidRelativeToParentPoS(t *
 
 	// Make sure block can't have both timeout and vote QC.
 	validatorVoteQC := &QuorumCertificate{
-		BlockHash:      bc.GetBestChainTip().Hash,
+		BlockHash:      bc.BlockTip().Hash,
 		ProposedInView: 1,
 		ValidatorsVoteAggregatedSignature: &AggregatedBLSSignature{
 			Signature:   signature,
@@ -217,7 +217,7 @@ func TestIsProperlyFormedBlockPoSAndIsBlockTimestampValidRelativeToParentPoS(t *
 
 	// Timestamp validations
 	// Block timestamp must be greater than the previous block timestamp
-	block.Header.TstampNanoSecs = bc.GetBestChainTip().Header.GetTstampSecs() - 1
+	block.Header.TstampNanoSecs = bc.BlockTip().Header.GetTstampSecs() - 1
 	err = bc.isBlockTimestampValidRelativeToParentPoS(block)
 	require.Equal(t, err, RuleErrorPoSBlockTstampNanoSecsTooOld)
 
@@ -227,7 +227,7 @@ func TestIsProperlyFormedBlockPoSAndIsBlockTimestampValidRelativeToParentPoS(t *
 	require.Equal(t, err, RuleErrorPoSBlockTstampNanoSecsInFuture)
 
 	// Revert the Header's timestamp
-	block.Header.TstampNanoSecs = bc.GetBestChainTip().Header.TstampNanoSecs + 10
+	block.Header.TstampNanoSecs = bc.BlockTip().Header.TstampNanoSecs + 10
 
 	//  Block Header version must be 2
 	block.Header.Version = 1
@@ -286,8 +286,8 @@ func TestHasValidBlockHeight(t *testing.T) {
 			ValidatorsTimeoutAggregateQC: &TimeoutAggregateQuorumCertificate{
 				TimedOutView: 2,
 				ValidatorsHighQC: &QuorumCertificate{
-					BlockHash:      bc.GetBestChainTip().Hash,
-					ProposedInView: bc.GetBestChainTip().Header.ProposedInView,
+					BlockHash:      bc.BlockTip().Hash,
+					ProposedInView: bc.BlockTip().Header.ProposedInView,
 					ValidatorsVoteAggregatedSignature: &AggregatedBLSSignature{
 						Signature:   signature,
 						SignersList: bitset.NewBitset(),
@@ -355,7 +355,7 @@ func TestUpsertBlockAndBlockNodeToDB(t *testing.T) {
 	randomBLSPrivateKey := _generateRandomBLSPrivateKey(t)
 	signature, err := randomBLSPrivateKey.Sign(randomPayload)
 	voteQC := &QuorumCertificate{
-		BlockHash:      bc.GetBestChainTip().Hash,
+		BlockHash:      bc.BlockTip().Hash,
 		ProposedInView: 1,
 		ValidatorsVoteAggregatedSignature: &AggregatedBLSSignature{
 			Signature:   signature,
@@ -505,7 +505,7 @@ func TestHasValidBlockViewPoS(t *testing.T) {
 	randomBLSPrivateKey := _generateRandomBLSPrivateKey(t)
 	signature, err := randomBLSPrivateKey.Sign(randomPayload)
 	voteQC := &QuorumCertificate{
-		BlockHash:      bc.GetBestChainTip().Hash,
+		BlockHash:      bc.BlockTip().Hash,
 		ProposedInView: 1,
 		ValidatorsVoteAggregatedSignature: &AggregatedBLSSignature{
 			Signature:   signature,
@@ -681,7 +681,7 @@ func TestHasValidBlockProposerPoS(t *testing.T) {
 		m6PKID: m6ValidatorEntry,
 	}
 	// Mark chain tip as committed.
-	testMeta.chain.GetBestChainTip().Status |= StatusBlockCommitted
+	testMeta.chain.BlockTip().Status |= StatusBlockCommitted
 	var isBlockProposerValid bool
 	{
 		// First block, we should have the first leader.
@@ -690,7 +690,7 @@ func TestHasValidBlockProposerPoS(t *testing.T) {
 		leader0PublicKey := utxoView.GetPublicKeyForPKID(leader0PKID)
 		dummyBlock := &MsgDeSoBlock{
 			Header: &MsgDeSoHeader{
-				PrevBlockHash:           testMeta.chain.GetBestChainTip().Hash,
+				PrevBlockHash:           testMeta.chain.BlockTip().Hash,
 				ProposedInView:          viewNumber + 1,
 				Height:                  blockHeight + 1,
 				ProposerPublicKey:       NewPublicKey(leader0PublicKey),
@@ -1306,7 +1306,7 @@ func TestTryApplyNewTip(t *testing.T) {
 	_, newBlockExistsInBestChainMap := bc.bestChainMap[*newBlockHash]
 	require.True(t, newBlockExistsInBestChainMap)
 	require.True(t, checkBestChainForHash(newBlockHash))
-	require.True(t, bc.GetBestChainTip().Hash.IsEqual(newBlockHash))
+	require.True(t, bc.BlockTip().Hash.IsEqual(newBlockHash))
 
 	// Make sure block 2 and block 1 are still in the best chain.
 	_, hash2ExistsInBestChainMap := bc.bestChainMap[*hash2]
@@ -1365,7 +1365,7 @@ func TestTryApplyNewTip(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, appliedNewTip)
 	// newBlockHash should be tip.
-	require.True(t, bc.GetBestChainTip().Hash.IsEqual(newBlockHash))
+	require.True(t, bc.BlockTip().Hash.IsEqual(newBlockHash))
 	// hash 3 should no longer be in the best chain or best chain map
 	_, hash3ExistsInBestChainMap = bc.bestChainMap[*hash3]
 	require.False(t, hash3ExistsInBestChainMap)
@@ -1414,7 +1414,7 @@ func TestTryApplyNewTip(t *testing.T) {
 	require.True(t, appliedNewTip)
 	require.NoError(t, err)
 	// newBlockHash should be tip.
-	require.True(t, bc.GetBestChainTip().Hash.IsEqual(newBlockHash))
+	require.True(t, bc.BlockTip().Hash.IsEqual(newBlockHash))
 }
 
 // TestCanCommitGrandparent tests the canCommitGrandparent function
@@ -1646,7 +1646,7 @@ func TestProcessBlockPoS(t *testing.T) {
 	var blockHash1 *BlockHash
 	{
 		var realBlock *MsgDeSoBlock
-		realBlock = _generateRealBlock(testMeta, 12, 12, 889, testMeta.chain.GetBestChainTip().Hash, false)
+		realBlock = _generateRealBlock(testMeta, 12, 12, 889, testMeta.chain.BlockTip().Hash, false)
 		success, isOrphan, missingBlockHashes, err := testMeta.chain.processBlockPoS(realBlock, 12, true)
 		require.True(t, success)
 		require.False(t, isOrphan)
@@ -1755,7 +1755,7 @@ func TestProcessBlockPoS(t *testing.T) {
 		// Let's process a block that is an orphan, but is malformed.
 		randomHash := NewBlockHash(RandomBytes(32))
 		var malformedOrphanBlock *MsgDeSoBlock
-		malformedOrphanBlock = _generateRealBlock(testMeta, 18, 18, 9273, testMeta.chain.GetBestChainTip().Hash, false)
+		malformedOrphanBlock = _generateRealBlock(testMeta, 18, 18, 9273, testMeta.chain.BlockTip().Hash, false)
 		malformedOrphanBlock.Header.PrevBlockHash = randomHash
 		// Modify anything to make the block malformed, but make sure a hash can still be generated.
 		malformedOrphanBlock.Header.TxnConnectStatusByIndexHash = randomHash
@@ -1791,7 +1791,7 @@ func TestProcessBlockPoS(t *testing.T) {
 // Next, we update the previously stored block to be validated and expect it to be returned.
 func TestGetSafeBlocks(t *testing.T) {
 	testMeta := NewTestPoSBlockchainWithValidators(t)
-	committedHash := testMeta.chain.GetBestChainTip().Hash
+	committedHash := testMeta.chain.BlockTip().Hash
 	var block1 *MsgDeSoBlock
 	block1 = _generateRealBlock(testMeta, uint64(testMeta.savedHeight), uint64(testMeta.savedHeight), 1723, committedHash, false)
 	block1Hash, err := block1.Hash()
@@ -1867,7 +1867,7 @@ func TestProcessOrphanBlockPoS(t *testing.T) {
 	// Generate a real block and make sure it doesn't hit any errors.
 	{
 		var realBlock *MsgDeSoBlock
-		realBlock = _generateRealBlock(testMeta, 12, 12, 889, testMeta.chain.GetBestChainTip().Hash, false)
+		realBlock = _generateRealBlock(testMeta, 12, 12, 889, testMeta.chain.BlockTip().Hash, false)
 		// Give the block a random parent, so it is truly an orphan.
 		realBlock.Header.PrevBlockHash = NewBlockHash(RandomBytes(32))
 		updateProposerVotePartialSignatureForBlock(testMeta, realBlock)
@@ -1885,7 +1885,7 @@ func TestProcessOrphanBlockPoS(t *testing.T) {
 	// Generate a real block and make some modification to the block to make it malformed.
 	{
 		var realBlock *MsgDeSoBlock
-		realBlock = _generateRealBlock(testMeta, 12, 12, 8172, testMeta.chain.GetBestChainTip().Hash, false)
+		realBlock = _generateRealBlock(testMeta, 12, 12, 8172, testMeta.chain.BlockTip().Hash, false)
 		// Give the block a random parent, so it is truly an orphan.
 		realBlock.Header.PrevBlockHash = NewBlockHash(RandomBytes(32))
 		// Set the header version to 1
@@ -1906,7 +1906,7 @@ func TestProcessOrphanBlockPoS(t *testing.T) {
 	// Generate a real block in this epoch and change the block proposer. This should fail validation.
 	{
 		var realBlock *MsgDeSoBlock
-		realBlock = _generateRealBlock(testMeta, 12, 12, 1273, testMeta.chain.GetBestChainTip().Hash, false)
+		realBlock = _generateRealBlock(testMeta, 12, 12, 1273, testMeta.chain.BlockTip().Hash, false)
 		// Give the block a random parent, so it is truly an orphan.
 		realBlock.Header.PrevBlockHash = NewBlockHash(RandomBytes(32))
 		// Just make sure we're in the same epoch.
@@ -1939,7 +1939,7 @@ func TestProcessOrphanBlockPoS(t *testing.T) {
 	// Generate a real block in this epoch and update the QC to not have a supermajority.
 	{
 		var realBlock *MsgDeSoBlock
-		realBlock = _generateRealBlock(testMeta, 12, 12, 543, testMeta.chain.GetBestChainTip().Hash, false)
+		realBlock = _generateRealBlock(testMeta, 12, 12, 543, testMeta.chain.BlockTip().Hash, false)
 		// Give the block a random parent, so it is truly an orphan.
 		realBlock.Header.PrevBlockHash = NewBlockHash(RandomBytes(32))
 		// Just make sure we're in the same epoch.
@@ -1952,7 +1952,7 @@ func TestProcessOrphanBlockPoS(t *testing.T) {
 		signersList := bitset.NewBitset()
 		var signatures []*bls.Signature
 		require.NoError(testMeta.t, err)
-		votePayload := consensus.GetVoteSignaturePayload(11, testMeta.chain.GetBestChainTip().Hash)
+		votePayload := consensus.GetVoteSignaturePayload(11, testMeta.chain.BlockTip().Hash)
 		allSnapshotValidators, err := utxoView.GetAllSnapshotValidatorSetEntriesByStake()
 		require.NoError(t, err)
 		// Only have m0 sign it. m0 has significantly less than 2/3 of the stake.
@@ -1995,7 +1995,7 @@ func TestProcessOrphanBlockPoS(t *testing.T) {
 		currentEpochEntry, err := utxoView.GetCurrentEpochEntry()
 		require.NoError(t, err)
 		var nextEpochBlock *MsgDeSoBlock
-		nextEpochBlock = _generateRealBlock(testMeta, currentEpochEntry.FinalBlockHeight+1, currentEpochEntry.FinalBlockHeight+1, 23, testMeta.chain.GetBestChainTip().Hash, false)
+		nextEpochBlock = _generateRealBlock(testMeta, currentEpochEntry.FinalBlockHeight+1, currentEpochEntry.FinalBlockHeight+1, 23, testMeta.chain.BlockTip().Hash, false)
 		// Give the block a random parent, so it is truly an orphan.
 		nextEpochBlock.Header.PrevBlockHash = NewBlockHash(RandomBytes(32))
 		updateProposerVotePartialSignatureForBlock(testMeta, nextEpochBlock)
@@ -2017,7 +2017,7 @@ func TestProcessOrphanBlockPoS(t *testing.T) {
 		currentEpochEntry, err := utxoView.GetCurrentEpochEntry()
 		require.NoError(t, err)
 		var nextEpochBlock *MsgDeSoBlock
-		nextEpochBlock = _generateRealBlock(testMeta, currentEpochEntry.FinalBlockHeight+1, currentEpochEntry.FinalBlockHeight+1, 17283, testMeta.chain.GetBestChainTip().Hash, false)
+		nextEpochBlock = _generateRealBlock(testMeta, currentEpochEntry.FinalBlockHeight+1, currentEpochEntry.FinalBlockHeight+1, 17283, testMeta.chain.BlockTip().Hash, false)
 		// Give the block a random parent, so it is truly an orphan.
 		nextEpochBlock.Header.PrevBlockHash = NewBlockHash(RandomBytes(32))
 		// Change the block proposer to a random BLS public key.
@@ -2041,7 +2041,7 @@ func TestProcessOrphanBlockPoS(t *testing.T) {
 		currentEpochEntry, err := utxoView.GetCurrentEpochEntry()
 		require.NoError(t, err)
 		var nextEpochBlock *MsgDeSoBlock
-		nextEpochBlock = _generateRealBlock(testMeta, currentEpochEntry.FinalBlockHeight+1, currentEpochEntry.FinalBlockHeight+1, 3178, testMeta.chain.GetBestChainTip().Hash, false)
+		nextEpochBlock = _generateRealBlock(testMeta, currentEpochEntry.FinalBlockHeight+1, currentEpochEntry.FinalBlockHeight+1, 3178, testMeta.chain.BlockTip().Hash, false)
 		// Give the block a random parent, so it is truly an orphan.
 		nextEpochBlock.Header.PrevBlockHash = NewBlockHash(RandomBytes(32))
 		updateProposerVotePartialSignatureForBlock(testMeta, nextEpochBlock)
@@ -2053,7 +2053,7 @@ func TestProcessOrphanBlockPoS(t *testing.T) {
 		signersList := bitset.NewBitset()
 		var signatures []*bls.Signature
 		require.NoError(testMeta.t, err)
-		votePayload := consensus.GetVoteSignaturePayload(currentEpochEntry.FinalBlockHeight, testMeta.chain.GetBestChainTip().Hash)
+		votePayload := consensus.GetVoteSignaturePayload(currentEpochEntry.FinalBlockHeight, testMeta.chain.BlockTip().Hash)
 		allSnapshotValidators, err := utxoView.GetAllSnapshotValidatorSetEntriesByStake()
 		require.NoError(t, err)
 		// Only have m0 sign it. m0 has significantly less than 2/3 of the stake.
@@ -2086,7 +2086,7 @@ func TestProcessOrphanBlockPoS(t *testing.T) {
 		nextEpochEntry, err := utxoView.computeNextEpochEntry(currentEpochEntry.EpochNumber, currentEpochEntry.FinalBlockHeight, currentEpochEntry.FinalBlockHeight, 1)
 		require.NoError(t, err)
 		var twoEpochsInFutureBlock *MsgDeSoBlock
-		twoEpochsInFutureBlock = _generateRealBlock(testMeta, nextEpochEntry.FinalBlockHeight+1, nextEpochEntry.FinalBlockHeight+1, 17283, testMeta.chain.GetBestChainTip().Hash, false)
+		twoEpochsInFutureBlock = _generateRealBlock(testMeta, nextEpochEntry.FinalBlockHeight+1, nextEpochEntry.FinalBlockHeight+1, 17283, testMeta.chain.BlockTip().Hash, false)
 		// Give the block a random parent, so it is truly an orphan.
 		twoEpochsInFutureBlock.Header.PrevBlockHash = NewBlockHash(RandomBytes(32))
 		updateProposerVotePartialSignatureForBlock(testMeta, twoEpochsInFutureBlock)
@@ -2107,7 +2107,7 @@ func TestProcessOrphanBlockPoS(t *testing.T) {
 		prevEpochEntry, err := utxoView.simulatePrevEpochEntry(currentEpochEntry.EpochNumber, currentEpochEntry.FinalBlockHeight)
 		require.NoError(t, err)
 		var prevEpochBlock *MsgDeSoBlock
-		prevEpochBlock = _generateRealBlock(testMeta, prevEpochEntry.FinalBlockHeight, prevEpochEntry.FinalBlockHeight, 17283, testMeta.chain.GetBestChainTip().Hash, false)
+		prevEpochBlock = _generateRealBlock(testMeta, prevEpochEntry.FinalBlockHeight, prevEpochEntry.FinalBlockHeight, 17283, testMeta.chain.BlockTip().Hash, false)
 		err = testMeta.chain.processOrphanBlockPoS(prevEpochBlock)
 		require.NoError(t, err)
 		// The block should be in the block index.
@@ -2125,7 +2125,7 @@ func TestHasValidProposerPartialSignaturePoS(t *testing.T) {
 	testMeta := NewTestPoSBlockchainWithValidators(t)
 	// Generate a real block and make sure it doesn't hit any errors.
 	var realBlock *MsgDeSoBlock
-	realBlock = _generateRealBlock(testMeta, 12, 12, 889, testMeta.chain.GetBestChainTip().Hash, false)
+	realBlock = _generateRealBlock(testMeta, 12, 12, 889, testMeta.chain.BlockTip().Hash, false)
 	utxoView := _newUtxoView(testMeta)
 	snapshotEpochNumber, err := utxoView.GetCurrentSnapshotEpochNumber()
 	require.NoError(t, err)
@@ -2168,7 +2168,7 @@ func TestHasValidProposerPartialSignaturePoS(t *testing.T) {
 	}
 	// Signature on incorrect payload should fail.
 	{
-		incorrectPayload := consensus.GetVoteSignaturePayload(13, testMeta.chain.GetBestChainTip().Hash)
+		incorrectPayload := consensus.GetVoteSignaturePayload(13, testMeta.chain.BlockTip().Hash)
 		realBlock.Header.ProposerVotePartialSignature, err = testMeta.pubKeyToBLSKeyMap[realProposerPublicKeyBase58Check].Sign(incorrectPayload[:])
 		isValid, err = utxoView.hasValidProposerPartialSignaturePoS(realBlock, snapshotEpochNumber)
 		require.NoError(t, err)
@@ -2191,7 +2191,7 @@ func TestHasValidProposerRandomSeedSignaturePoS(t *testing.T) {
 	testMeta := NewTestPoSBlockchainWithValidators(t)
 	// Generate a real block and process it so we have a PoS block on the best chain.
 	var realBlock *MsgDeSoBlock
-	realBlock = _generateRealBlock(testMeta, 12, 12, 889, testMeta.chain.GetBestChainTip().Hash, false)
+	realBlock = _generateRealBlock(testMeta, 12, 12, 889, testMeta.chain.BlockTip().Hash, false)
 	// The first PoS block passes the validation.
 	isValid, err := testMeta.chain.hasValidProposerRandomSeedSignaturePoS(realBlock)
 	require.NoError(t, err)
@@ -2496,7 +2496,7 @@ func _getFullDummyBlockTemplate(testMeta *TestMeta, latestBlockView *UtxoView, b
 	// Add a dummy vote QC
 	proposerVotingPublicKey := _generateRandomBLSPrivateKey(testMeta.t)
 	dummySig, err := proposerVotingPublicKey.Sign(RandomBytes(32))
-	chainTip := testMeta.chain.GetBestChainTip()
+	chainTip := testMeta.chain.BlockTip()
 	blockTemplate.Header.ValidatorsVoteQC = &QuorumCertificate{
 		BlockHash:      chainTip.Hash,
 		ProposedInView: chainTip.Header.ProposedInView,
