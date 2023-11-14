@@ -118,8 +118,8 @@ type UtxoView struct {
 
 	// Validator mappings
 	ValidatorPKIDToValidatorEntry map[PKID]*ValidatorEntry
-	// Mapping of BLS Public Key to BLSPublicKeyPKIDPairEntry. Used for enforcing uniqueness
-	// of BLS Public Keys in the validator set.
+	// ValidatorBLSPublicKeyPKIDPairEntries is a mapping of BLS Public Key to BLSPublicKeyPKIDPairEntry.
+	// Used for enforcing uniqueness of BLS Public Keys in the validator set.
 	ValidatorBLSPublicKeyPKIDPairEntries map[bls.SerializedPublicKey]*BLSPublicKeyPKIDPairEntry
 
 	// Stake mappings
@@ -148,6 +148,11 @@ type UtxoView struct {
 	// It contains the snapshot value of every ValidatorEntry that makes up the validator set at
 	// the given SnapshotAtEpochNumber.
 	SnapshotValidatorSet map[SnapshotValidatorSetMapKey]*ValidatorEntry
+
+	// SnapshotValidatorBLSPublicKeyPKIDPairEntries is a map of <SnapshotAtEpochNumber, bls.SerializedPublicKey>
+	// to a BLSPublicKeyPKIDPairEntry. It contains the snapshot value of the BLSPublicKeyPKIDPairEntry
+	// of every validator that makes up the validator set at the given SnapshotAtEpochNumber.
+	SnapshotValidatorBLSPublicKeyPKIDPairEntries map[SnapshotValidatorBLSPublicKeyMapKey]*BLSPublicKeyPKIDPairEntry
 
 	// SnapshotValidatorSetTotalStakeAmountNanos is a map of SnapshotAtEpochNumber to the sum TotalStakeAmountNanos
 	// for the validator set of for an epoch.
@@ -290,6 +295,9 @@ func (bav *UtxoView) _ResetViewMappingsAfterFlush() {
 
 	// SnapshotValidatorSet
 	bav.SnapshotValidatorSet = make(map[SnapshotValidatorSetMapKey]*ValidatorEntry)
+
+	// SnapshotValidatorBLSPublicKeyPKIDPairEntries
+	bav.SnapshotValidatorBLSPublicKeyPKIDPairEntries = make(map[SnapshotValidatorBLSPublicKeyMapKey]*BLSPublicKeyPKIDPairEntry)
 
 	// SnapshotValidatorSetTotalStakeAmountNanos
 	bav.SnapshotValidatorSetTotalStakeAmountNanos = make(map[uint64]*uint256.Int)
@@ -616,6 +624,10 @@ func (bav *UtxoView) CopyUtxoView() (*UtxoView, error) {
 	// Copy the SnapshotValidatorSet
 	for mapKey, validatorEntry := range bav.SnapshotValidatorSet {
 		newView.SnapshotValidatorSet[mapKey] = validatorEntry.Copy()
+	}
+
+	for mapKey, blsPublicKeyPKIDPairEntry := range bav.SnapshotValidatorBLSPublicKeyPKIDPairEntries {
+		newView.SnapshotValidatorBLSPublicKeyPKIDPairEntries[mapKey] = blsPublicKeyPKIDPairEntry.Copy()
 	}
 
 	// Copy the SnapshotValidatorSetTotalStakeAmountNanos
