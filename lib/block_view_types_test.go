@@ -378,8 +378,7 @@ func TestUtxoEntryEncodeDecode(t *testing.T) {
 				burnTxnSize := getTxnSize(*burnTxn)
 				blockHeight := chain.blockTip().Height + 1
 				utxoOps, totalInput, totalOutput, fees, err :=
-					utxoView.ConnectTransaction(
-						burnTxn, burnTxn.Hash(), burnTxnSize, blockHeight, true /*verifySignature*/, false /*ignoreUtxos*/)
+					utxoView.ConnectTransaction(burnTxn, burnTxn.Hash(), burnTxnSize, blockHeight, 0, true, false)
 				_, _, _ = totalInput, totalOutput, fees
 				require.NoError(err)
 				utxoOpsList = append(utxoOpsList, utxoOps)
@@ -390,8 +389,7 @@ func TestUtxoEntryEncodeDecode(t *testing.T) {
 			burnTxnSize := getTxnSize(*burnTxn)
 			blockHeight := chain.blockTip().Height + 1
 			utxoOps, totalInput, totalOutput, fees, err :=
-				utxoView.ConnectTransaction(
-					burnTxn, burnTxn.Hash(), burnTxnSize, blockHeight, true /*verifySignature*/, false /*ignoreUtxos*/)
+				utxoView.ConnectTransaction(burnTxn, burnTxn.Hash(), burnTxnSize, blockHeight, 0, true, false)
 			require.NoError(err)
 
 			require.Equal(2, len(utxoOps))
