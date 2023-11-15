@@ -978,7 +978,7 @@ func (bc *Blockchain) tryApplyNewTip(blockNode *BlockNode, currentView uint64, l
 
 	// Check if the incoming block extends the chain tip. If so, we don't need to reorg
 	// and can just add this block to the best chain.
-	chainTip := bc.GetBestChainTip()
+	chainTip := bc.BlockTip()
 	if chainTip.Hash.IsEqual(blockNode.Header.PrevBlockHash) {
 		bc.addBlockToBestChain(blockNode)
 		return true, nil
@@ -1019,7 +1019,7 @@ func (bc *Blockchain) tryApplyNewTip(blockNode *BlockNode, currentView uint64, l
 // functions have validated that this block is not extending from a committed block
 // that is not the latest committed block, so there is no need to validate that here.
 func (bc *Blockchain) shouldReorg(blockNode *BlockNode, currentView uint64) bool {
-	chainTip := bc.GetBestChainTip()
+	chainTip := bc.BlockTip()
 	// If this block extends from the chain tip, there's no need to reorg.
 	if chainTip.Hash.IsEqual(blockNode.Header.PrevBlockHash) {
 		return false
@@ -1038,7 +1038,7 @@ func (bc *Blockchain) addBlockToBestChain(blockNode *BlockNode) {
 // Specifically, this updates the CommittedBlockStatus of its grandparent
 // and flushes the view after connecting the grandparent block to the DB.
 func (bc *Blockchain) runCommitRuleOnBestChain() error {
-	currentBlock := bc.GetBestChainTip()
+	currentBlock := bc.BlockTip()
 	// If we can commit the grandparent, commit it.
 	// Otherwise, we can't commit it and return nil.
 	blockToCommit, canCommit := bc.canCommitGrandparent(currentBlock)
@@ -1175,7 +1175,7 @@ func (bc *Blockchain) commitBlockPoS(blockHash *BlockHash) error {
 // GetUncommittedTipView builds a UtxoView to the uncommitted tip.
 func (bc *Blockchain) GetUncommittedTipView() (*UtxoView, error) {
 	// Connect the uncommitted blocks to the tip so that we can validate subsequent blocks
-	return bc.getUtxoViewAtBlockHash(*bc.GetBestChainTip().Hash)
+	return bc.getUtxoViewAtBlockHash(*bc.BlockTip().Hash)
 }
 
 // getUtxoViewAtBlockHash builds a UtxoView to the block provided. It does this by
@@ -1231,11 +1231,6 @@ func (bc *Blockchain) getUtxoViewAtBlockHash(blockHash BlockHash) (*UtxoView, er
 	// Update the TipHash saved on the UtxoView to the blockHash provided.
 	utxoView.TipHash = &blockHash
 	return utxoView, nil
-}
-
-// GetBestChainTip is a helper function that returns the tip of the best chain.
-func (bc *Blockchain) GetBestChainTip() *BlockNode {
-	return bc.bestChain[len(bc.bestChain)-1]
 }
 
 // getCommittedTip returns the highest committed block and its index in the best chain.
