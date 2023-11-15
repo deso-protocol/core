@@ -327,6 +327,16 @@ func isSuperMajorityStake(stake *uint256.Int, totalStake *uint256.Int) bool {
 	return superMajorityConditionSum.Sign() >= 0
 }
 
+func extractBlockHash(block BlockWithValidatorList) BlockHash {
+	return block.Block.GetBlockHash()
+}
+
+func containsBlockHash(blockHashes []BlockHash, blockHash BlockHash) bool {
+	return collections.Any(blockHashes, func(b BlockHash) bool {
+		return isEqualBlockHashes(b, blockHash)
+	})
+}
+
 func isEqualBlockHashes(hash1 BlockHash, hash2 BlockHash) bool {
 	hash1Value := hash1.GetValue()
 	hash2Value := hash2.GetValue()
