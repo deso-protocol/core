@@ -179,6 +179,41 @@ func (fc *fastHotStuffEventLoop) ProcessTipBlock(tip BlockWithValidatorList, saf
 	return nil
 }
 
+// UpdateSafeBlocks is used to update the safe blocks and their validator lists. This function
+// can be used instead of the above ProcessTipBlock when a new block has been added to a fork
+// in the blockchain, and the server has determined that the fork is safe to extend from. This
+// can happen even if the blockchain's current tip does not change.
+//
+// Expected param:
+//   - safeBlocks: an unordered slice of blocks including the committed tip, the uncommitted tip,
+//     all ancestors of the uncommitted tip that are safe to extend from, and all blocks from forks
+//     that are safe to extend from. This function does not validate the collection of blocks. It
+//     expects the server to know and decide what blocks are safe to extend from.
+func (fc *fastHotStuffEventLoop) UpdateSafeBlocks(safeBlocks []BlockWithValidatorList) error {
+	// Grab the event loop's lock
+	fc.lock.Lock()
+	defer fc.lock.Unlock()
+
+	// Ensure the event loop is running
+	if fc.status != eventLoopStatusRunning {
+		return errors.New("FastHotStuffEventLoop.UpdateSafeBlocks: Event loop is not running")
+	}
+
+	// Fetch the current tip block
+	tipBlock := BlockWithValidatorList{
+		Block:         fc.tip.block,
+		ValidatorList: fc.tip.validatorList,
+	}
+
+	// Validate the safe blocks and validator lists, and store them
+	if err := fc.storeBlocks(tipBlock, safeBlocks); err != nil {
+		return errors.Wrap(err, "FastHotStuffEventLoop.ProcessTipBlock: ")
+	}
+
+	// Happy path. There's no need to reschedule the crank timer or timeout scheduled tasks here.
+	return nil
+}
+
 // storeBlocks is a helper function that validates the provided blocks, validator lists, and stores them.
 // It must be called while holding the event loop's lock.
 func (fc *fastHotStuffEventLoop) storeBlocks(tip BlockWithValidatorList, safeBlocks []BlockWithValidatorList) error {
@@ -193,6 +228,15 @@ func (fc *fastHotStuffEventLoop) storeBlocks(tip BlockWithValidatorList, safeBlo
 	// There must be at least one block
 	if len(safeBlocks) == 0 || !hasProperlyFormedSafeBlocksAndValidatorLists {
 		return errors.New("Invalid safe blocks or validator lists")
+	}
+
+	// Extract the block hashes for the tip block and safe blocks
+	tipBlockHash := tip.Block.GetBlockHash()
+	safeBlockHashes := collections.Transform(safeBlocks, extractBlockHash)
+
+	// The safe blocks must contain the tip block. The tip block can always be extended from.
+	if !containsBlockHash(safeBlockHashes, tipBlockHash) {
+		return errors.New("Safe blocks do not contain the tip block")
 	}
 
 	// Store the tip block and validator list
