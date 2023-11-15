@@ -587,7 +587,11 @@ type DBPrefixes struct {
 	// Prefix, <ProfilePKID [33]byte>, <LockupDurationNanoSecs int64> -> <LockupYieldCurvePoint>
 	PrefixLockupYieldCurvePointByProfilePKIDAndDurationNanoSecs []byte `prefix_id:"[94]" is_state:"true"`
 
-	// NEXT_TAG: 95
+	// PrefixValidatorBLSPublicKeyPKIDPairEntry: Retrieve a BLSPublicKeyPKIDPairEntry by BLS public key.
+	// Prefix, <BLSPublicKey [33]byte> -> *BLSPublicKeyPKIDPairEntry
+	PrefixValidatorBLSPublicKeyPKIDPairEntry []byte `prefix_id:"[95]" is_state:"true"`
+
+	// NEXT_TAG: 96
 }
 
 // DecodeStateKey decodes a state key into a DeSoEncoder type. This is useful for encoders which don't have a stored
@@ -878,6 +882,9 @@ func StatePrefixToDeSoEncoder(prefix []byte) (_isEncoder bool, _encoder DeSoEnco
 	} else if bytes.Equal(prefix, Prefixes.PrefixLockupYieldCurvePointByProfilePKIDAndDurationNanoSecs) {
 		// prefix_id:"[94]"
 		return true, &LockupYieldCurvePoint{}
+	} else if bytes.Equal(prefix, Prefixes.PrefixValidatorBLSPublicKeyPKIDPairEntry) {
+		// prefix_id:"[95]"
+		return true, &BLSPublicKeyPKIDPairEntry{}
 	}
 
 	return true, nil
