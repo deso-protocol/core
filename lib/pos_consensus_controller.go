@@ -11,6 +11,7 @@ type ConsensusController struct {
 	lock                  sync.RWMutex
 	fastHotStuffEventLoop consensus.FastHotStuffEventLoop
 	blockchain            *Blockchain
+	params                *DeSoParams
 	signer                *BLSSigner
 }
 
@@ -210,4 +211,125 @@ func (cc *ConsensusController) HandleHeader(pp *Peer, msg *MsgDeSoHeader) {
 
 func (cc *ConsensusController) HandleBlock(pp *Peer, msg *MsgDeSoBlock) {
 	// TODO
+}
+
+// fetchValidatorListsForSafeBlocks takes in a set of safe blocks that can be extended from, this functions
+// fetches the validator set and returns them as type BlockWithValidatorList so they can be passed to the
+// FastHotStuffEventLoop. If the input blocks precede the committed tip or they do no exist within the current
+// or next epoch after the committed tip, then this function returns an error. In this case, the blocks cannot
+// possibly be safe blocks.
+func (cc *ConsensusController) fetchValidatorListsForSafeBlocks(blocks []*MsgDeSoHeader) (
+	[]consensus.BlockWithValidatorList,
+	error,
+) {
+	// If there are no blocks, then there's nothing to do.
+	if len(blocks) == 0 {
+		return nil, nil
+	}
+
+	// Create a map to cache the validator set entries by epoch number. Two blocks in the same epoch will have
+	// the same validator set, so we can use an in-memory cache to optimize the validator set lookup for them.
+	validatorSetEntriesBySnapshotEpochNumber := make(map[uint64][]*ValidatorEntry)
+
+	// Create a UtxoView for the committed tip block. We will use this to fetch the validator set for the
+	// all of the safe blocks.
+	utxoView, err := NewUtxoView(cc.blockchain.db, cc.params, nil, cc.blockchain.snapshot, nil)
+	if err != nil {
+		return nil, errors.Errorf("error creating UtxoView: %v", err)
+	}
+
+	// Fetch the current epoch entry for the committed tip
+	epochEntryAtCommittedTip, err := utxoView.GetCurrentEpochEntry()
+	if err != nil {
+		return nil, errors.Errorf("error fetching epoch entry for committed tip: %v", err)
+	}
+
+	// Fetch the next epoch entry after the committed tip
+	nextEpochEntryAfterCommittedTip, err := utxoView.SimulateNextEpochEntry(epochEntryAtCommittedTip)
+	if err != nil {
+		return nil, errors.Errorf("error fetching next epoch entry after committed tip: %v", err)
+	}
+
+	// The input blocks can only be part of the current or next epoch entries starting from the committed tip's height.
+	possibleEpochEntriesForBlocks := []*EpochEntry{epochEntryAtCommittedTip, nextEpochEntryAfterCommittedTip}
+
+	// Fetch the validator set at each block
+	blocksWithValidatorLists := make([]consensus.BlockWithValidatorList, len(blocks))
+	for ii, block := range blocks {
+		// Find the epoch entry for the block. It'll either be the current epoch entry or the next one.
+		epochEntryForBlock, err := getEpochEntryForBlock(block, possibleEpochEntriesForBlocks)
+		if err != nil {
+			return nil, errors.Errorf("error fetching epoch number for block: %v", err)
+		}
+
+		// Compute the snapshot epoch number for the block. This is the epoch number that the validator set
+		// for the block was snapshotted in.
+		snapshotEpochNumber, err := utxoView.ComputeSnapshotEpochNumberForEpoch(epochEntryForBlock.EpochNumber)
+		if err != nil {
+			return nil, errors.Errorf("error computing snapshot epoch number for epoch: %v", err)
+		}
+
+		var validatorSetAtBlock []*ValidatorEntry
+		var ok bool
+
+		// If the validator set for the block is already cached by the epoch number, then use it.
+		// Otherwise, fetch it from the UtxoView.
+		//
+		// We want to use the validator set after connecting the block and triggering an epoch transition
+		// (if there is one), because we want to fetch the validator set needed to validate the next block after
+		// the tip block.
+		if validatorSetAtBlock, ok = validatorSetEntriesBySnapshotEpochNumber[snapshotEpochNumber]; !ok {
+			// We don't have the validator set for the block cached. Fetch it from the UtxoView.
+			validatorSetAtBlock, err = utxoView.GetAllSnapshotValidatorSetEntriesByStakeAtEpochNumber(snapshotEpochNumber)
+			if err != nil {
+				return nil, errors.Errorf("error fetching validator set for block: %v", err)
+			}
+		}
+
+		blocksWithValidatorLists[ii] = consensus.BlockWithValidatorList{
+			Block:         block,
+			ValidatorList: ValidatorEntriesToConsensusInterface(validatorSetAtBlock),
+		}
+	}
+
+	// Happy path: we fetched the validator lists for all blocks successfully.
+	return blocksWithValidatorLists, nil
+}
+
+// Finds the epoch entry for the block and returns the epoch number.
+func getEpochEntryForBlock(block *MsgDeSoHeader, epochEntries []*EpochEntry) (*EpochEntry, error) {
+	for _, epochEntry := range epochEntries {
+		if epochEntry.ContainsBlockHeight(block.Height) {
+			return epochEntry, nil
+		}
+	}
+
+	return nil, errors.Errorf("error finding epoch number for block height: %v", block.Height)
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// TODO: delete all of the functions below. They are dummy stubbed out functions
+// needed by ConsensusController, but are implemented in other feature branches.
+// We stub them out here to unblock consensus work.
+////////////////////////////////////////////////////////////////////////////////
+
+func (bc *Blockchain) getUtxoViewAtBlockHash(blockHash BlockHash) (*UtxoView, error) {
+	return nil, errors.New("getUtxoViewAtBlockHash: replace me with a real implementation later")
+}
+
+func (bav *UtxoView) SimulateNextEpochEntry(epochEntry *EpochEntry) (*EpochEntry, error) {
+	return nil, errors.New("SimulateNextEpochEntry: replace me with a real implementation later")
+}
+
+func (bav *UtxoView) ComputeSnapshotEpochNumberForEpoch(epochNumber uint64) (uint64, error) {
+	return 0, errors.New("ComputeSnapshotEpochNumberForEpoch: replace me with a real implementation later")
+}
+
+func (bav *UtxoView) GetAllSnapshotValidatorSetEntriesByStakeAtEpochNumber(snapshotAtEpochNumber uint64) ([]*ValidatorEntry, error) {
+	return nil, errors.New("GetAllSnapshotValidatorSetEntriesByStakeAtEpochNumber: replace me with a real implementation later")
+}
+
+func (epochEntry *EpochEntry) ContainsBlockHeight(blockHeight uint64) bool {
+	// TODO: Implement this later
+	return false
 }

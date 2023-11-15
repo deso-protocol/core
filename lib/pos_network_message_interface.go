@@ -4,6 +4,7 @@ import (
 	"github.com/deso-protocol/core/bls"
 	"github.com/deso-protocol/core/collections/bitset"
 	"github.com/deso-protocol/core/consensus"
+	"github.com/holiman/uint256"
 )
 
 //////////////////////////////////////////////////////////////////////////////////
@@ -93,4 +94,22 @@ func (blockhash *BlockHash) GetValue() [HashSizeBytes]byte {
 func BlockHashFromConsensusInterface(blockHash consensus.BlockHash) *BlockHash {
 	blockHashValue := blockHash.GetValue()
 	return NewBlockHash(blockHashValue[:])
+}
+
+// ValidatorEntry struct <-> consensus.Validator interface translation
+
+func (validator *ValidatorEntry) GetPublicKey() *bls.PublicKey {
+	return validator.VotingPublicKey
+}
+
+func (validator *ValidatorEntry) GetStakeAmount() *uint256.Int {
+	return validator.TotalStakeAmountNanos
+}
+
+func ValidatorEntriesToConsensusInterface(validatorEntries []*ValidatorEntry) []consensus.Validator {
+	validatorInterfaces := make([]consensus.Validator, len(validatorEntries))
+	for idx, validatorEntry := range validatorEntries {
+		validatorInterfaces[idx] = validatorEntry
+	}
+	return validatorInterfaces
 }
