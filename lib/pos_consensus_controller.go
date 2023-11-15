@@ -209,8 +209,31 @@ func (cc *ConsensusController) HandleHeader(pp *Peer, msg *MsgDeSoHeader) {
 	// TODO
 }
 
-func (cc *ConsensusController) HandleBlock(pp *Peer, msg *MsgDeSoBlock) {
-	// TODO
+func (cc *ConsensusController) HandleBlock(pp *Peer, msg *MsgDeSoBlock) error {
+	// Hold a lock on the consensus controller, because we will need to mutate the Blockchain
+	// and the FastHotStuffEventLoop data structures.
+	cc.lock.Lock()
+	defer cc.lock.Unlock()
+
+	// Try to apply the block as the new tip of the blockchain. If the block is an orphan, then
+	// we will get back a list of missing ancestor block hashes. We can fetch the missing blocks
+	// from the network and retry.
+	missingBlockHashes, err := cc.tryProcessBlockAsNewTip(msg)
+	if err != nil {
+		// If we get an error here, it means something went wrong with the block processing algorithm.
+		// Nothing we can do to recover here.
+		return errors.Errorf("HandleBlock: Error processing block as new tip: %v", err)
+	}
+
+	// If there are missing block hashes, then we need to fetch the missing blocks from the network
+	// and retry processing the block as a new tip. We'll request the blocks from the same peer.
+	if len(missingBlockHashes) > 0 {
+		pp.QueueMessage(&MsgDeSoGetBlocks{
+			HashList: missingBlockHashes,
+		})
+	}
+
+	return nil
 }
 
 // tryProcessBlockAsNewTip tries to apply a new tip block to both the Blockchain and FastHotStuffEventLoop data
