@@ -213,6 +213,82 @@ func (cc *ConsensusController) HandleBlock(pp *Peer, msg *MsgDeSoBlock) {
 	// TODO
 }
 
+// tryProcessBlockAsNewTip tries to apply a new tip block to both the Blockchain and FastHotStuffEventLoop data
+// structures. It wraps the ProcessBlockPoS and ProcessTipBlock functions in the Blockchain and FastHotStuffEventLoop
+// data structures, which together implement the Fast-HotStuff block handling algorithm end-to-end.
+//
+// Reference Implementation:
+// https://github.com/deso-protocol/hotstuff_pseudocode/blob/6409b51c3a9a953b383e90619076887e9cebf38d/fast_hotstuff_bls.go#L573
+func (cc *ConsensusController) tryProcessBlockAsNewTip(block *MsgDeSoBlock) ([]*BlockHash, error) {
+	// Try to apply the block locally as the new tip of the blockchain
+	successfullyAppliedNewTip, _, missingBlockHashes, err := cc.blockchain.processBlockPoS(
+		block, // Pass in the block itself
+		cc.fastHotStuffEventLoop.GetCurrentView(), // Pass in the current view to ensure we don't process a stale block
+		true, // Make sure we verify signatures in the block
+	)
+	if err != nil {
+		return nil, errors.Errorf("HandleFastHostStuffBlockProposal: Error processing block locally: %v", err)
+	}
+
+	// If the incoming block is an orphan, then there's nothing we can do. We return the missing ancestor
+	// block hashes to the caller. The caller can then fetch the missing blocks from the network and retry
+	// if needed.
+	if len(missingBlockHashes) > 0 {
+		return missingBlockHashes, nil
+	}
+
+	// At this point we know that the blockchain was mutated. Either the incoming block resulted in a new
+	// tip for the blockchain, or the incoming block was part of a fork that resulted in a change in the
+	// safe blocks
+
+	// Fetch the safe blocks that are eligible to be extended from by the next incoming tip block
+	safeBlocks, err := cc.blockchain.getSafeBlocks()
+	if err != nil {
+		return nil, errors.Errorf("HandleFastHostStuffBlockProposal: Error fetching safe blocks: %v", err)
+	}
+
+	// Fetch the validator set at each safe block
+	safeBlocksWithValidators, err := cc.fetchValidatorListsForSafeBlocks(safeBlocks)
+	if err != nil {
+		return nil, errors.Errorf("HandleFastHostStuffBlockProposal: Error fetching validator lists for safe blocks: %v", err)
+	}
+
+	// If the block was processed successfully but was not applied as the new tip, we need up date the safe
+	// blocks in the FastHotStuffEventLoop. This is because the new block may be safe to extend even though
+	// it did not result in a new tip.
+	if !successfullyAppliedNewTip {
+		// Update the safe blocks to the FastHotStuffEventLoop
+		if err = cc.fastHotStuffEventLoop.UpdateSafeBlocks(safeBlocksWithValidators); err != nil {
+			return nil, errors.Errorf("HandleFastHostStuffBlockProposal: Error processing safe blocks locally: %v", err)
+		}
+
+		// Happy path. The safe blocks were successfully updated in the FastHotStuffEventLoop. Nothing left to do.
+		return nil, nil
+	}
+
+	// If the block was processed successfully and resulted in a change to the blockchain's tip, then
+	// we need to pass the new tip to the FastHotStuffEventLoop as well.
+
+	// Fetch the new tip from the blockchain. Note: the new tip may or may not be the input block itself.
+	// It's possible that there was a descendant of the tip block that was previously stored as an orphan
+	// in the Blockchain, and was applied as the new tip.
+	tipBlock := cc.blockchain.BlockTip().Header
+
+	// Fetch the validator set at the new tip block
+	tipBlockWithValidators, err := cc.fetchValidatorListsForSafeBlocks([]*MsgDeSoHeader{tipBlock})
+	if err != nil {
+		return nil, errors.Errorf("HandleFastHostStuffBlockProposal: Error fetching validator lists for tip block: %v", err)
+	}
+
+	// Pass the new tip and safe blocks to the FastHotStuffEventLoop
+	if err = cc.fastHotStuffEventLoop.ProcessTipBlock(tipBlockWithValidators[0], safeBlocksWithValidators); err != nil {
+		return nil, errors.Errorf("HandleFastHostStuffBlockProposal: Error processing tip block locally: %v", err)
+	}
+
+	// Happy path. The block was processed successfully and applied as the new tip. Nothing left to do.
+	return nil, nil
+}
+
 // fetchValidatorListsForSafeBlocks takes in a set of safe blocks that can be extended from, and fetches the
 // the validator set for each safe block. The result is returned as type BlockWithValidatorList so it can be
 // passed to the FastHotStuffEventLoop. If the input blocks precede the committed tip or they do no exist within
@@ -331,4 +407,8 @@ func (bav *UtxoView) GetAllSnapshotValidatorSetEntriesByStakeAtEpochNumber(snaps
 func (epochEntry *EpochEntry) ContainsBlockHeight(blockHeight uint64) bool {
 	// TODO: Implement this later
 	return false
+}
+
+func (bc *Blockchain) getSafeBlocks() ([]*MsgDeSoHeader, error) {
+	return nil, errors.New("getSafeBlocks: replace me with a real implementation later")
 }

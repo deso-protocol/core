@@ -2608,9 +2608,10 @@ func (bc *Blockchain) processBlockPoW(desoBlock *MsgDeSoBlock, verifySignatures 
 // 4. Connect the block to the blockchain's tip
 // 5. If applicable, flush the incoming block's grandparent to the DB
 // 6. Notify the block proposer, pacemaker, and voting logic that the incoming block has been accepted
-func (bc *Blockchain) processBlockPoS(desoBlock *MsgDeSoBlock, verifySignatures bool) (_isMainChain bool, _isOrphan bool, err error) {
+func (bc *Blockchain) processBlockPoS(block *MsgDeSoBlock, currentView uint64, verifySignatures bool) (
+	_success bool, _isOrphan bool, _missingBlockHashes []*BlockHash, _err error) {
 	// TODO: Implement me
-	return false, false, fmt.Errorf("ProcessBlockPoS: Not implemented yet")
+	return false, false, nil, fmt.Errorf("ProcessBlockPoS: Not implemented yet")
 }
 
 func (bc *Blockchain) GetUncommittedTipView() (*UtxoView, error) {
