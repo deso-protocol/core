@@ -121,18 +121,18 @@ func TestProcessTipBlock(t *testing.T) {
 	oneHourInNanoSecs := time.Duration(3600000000000)
 
 	fc := NewFastHotStuffEventLoop()
-	err := fc.Init(oneHourInNanoSecs, oneHourInNanoSecs,
-		BlockWithValidatorList{createDummyBlock(2), createDummyValidatorList()},     // tip
-		[]BlockWithValidatorList{{createDummyBlock(2), createDummyValidatorList()}}, // safeBlocks
-	)
-	require.NoError(t, err)
+
+	// Initialize the event loop
+	{
+		tipBlock := BlockWithValidatorList{createDummyBlock(2), createDummyValidatorList()}
+		err := fc.Init(oneHourInNanoSecs, oneHourInNanoSecs, tipBlock, []BlockWithValidatorList{tipBlock})
+		require.NoError(t, err)
+	}
 
 	// Test ProcessTipBlock() function when event loop is not running
 	{
-		err := fc.ProcessTipBlock(
-			BlockWithValidatorList{createDummyBlock(2), createDummyValidatorList()},     // tip
-			[]BlockWithValidatorList{{createDummyBlock(2), createDummyValidatorList()}}, // safeBlocks
-		)
+		tipBlock := BlockWithValidatorList{createDummyBlock(2), createDummyValidatorList()}
+		err := fc.ProcessTipBlock(tipBlock, []BlockWithValidatorList{tipBlock})
 		require.Error(t, err)
 	}
 
@@ -226,10 +226,9 @@ func TestProcessTipBlock(t *testing.T) {
 		nextBlock.height = 2
 		nextBlock.view = 3
 
-		err := fc.ProcessTipBlock(
-			BlockWithValidatorList{nextBlock, createDummyValidatorList()},     // tip
-			[]BlockWithValidatorList{{nextBlock, createDummyValidatorList()}}, // safeBlocks
-		)
+		tipBlock := BlockWithValidatorList{nextBlock, createDummyValidatorList()}
+
+		err := fc.ProcessTipBlock(tipBlock, []BlockWithValidatorList{tipBlock})
 		require.NoError(t, err)
 
 		require.Equal(t, nextBlock.GetBlockHash().GetValue(), fc.tip.block.GetBlockHash().GetValue())
@@ -255,12 +254,13 @@ func TestAdvanceViewOnTimeout(t *testing.T) {
 
 	fc := NewFastHotStuffEventLoop()
 
-	// BlockHeight = 1, Current View = 3
-	err := fc.Init(oneHourInNanoSecs, oneHourInNanoSecs,
-		BlockWithValidatorList{createDummyBlock(2), createDummyValidatorList()},     // tip
-		[]BlockWithValidatorList{{createDummyBlock(2), createDummyValidatorList()}}, // safeBlocks
-	)
-	require.NoError(t, err)
+	// Init the event loop
+	{
+		// BlockHeight = 1, Current View = 3
+		tipBlock := BlockWithValidatorList{createDummyBlock(2), createDummyValidatorList()}
+		err := fc.Init(oneHourInNanoSecs, oneHourInNanoSecs, tipBlock, []BlockWithValidatorList{tipBlock})
+		require.NoError(t, err)
+	}
 
 	// Running AdvanceViewOnTimeout() should fail because the event loop is not running
 	{
@@ -345,12 +345,13 @@ func TestProcessValidatorVote(t *testing.T) {
 
 	fc := NewFastHotStuffEventLoop()
 
-	// BlockHeight = 1, Current View = 3
-	err := fc.Init(oneHourInNanoSecs, oneHourInNanoSecs,
-		BlockWithValidatorList{createDummyBlock(2), createDummyValidatorList()},     // tip
-		[]BlockWithValidatorList{{createDummyBlock(2), createDummyValidatorList()}}, // safeBlocks
-	)
-	require.NoError(t, err)
+	// Init the event loop
+	{
+		// BlockHeight = 1, Current View = 3
+		tipBlock := BlockWithValidatorList{createDummyBlock(2), createDummyValidatorList()}
+		err := fc.Init(oneHourInNanoSecs, oneHourInNanoSecs, tipBlock, []BlockWithValidatorList{tipBlock})
+		require.NoError(t, err)
+	}
 
 	// Start the event loop
 	fc.Start()
@@ -429,12 +430,13 @@ func TestProcessValidatorTimeout(t *testing.T) {
 
 	fc := NewFastHotStuffEventLoop()
 
-	// BlockHeight = 1, Current View = 3
-	err := fc.Init(oneHourInNanoSecs, oneHourInNanoSecs,
-		BlockWithValidatorList{createDummyBlock(2), createDummyValidatorList()},     // tip
-		[]BlockWithValidatorList{{createDummyBlock(2), createDummyValidatorList()}}, // safeBlocks
-	)
-	require.NoError(t, err)
+	// Init the event loop
+	{
+		// BlockHeight = 1, Current View = 3
+		tipBlock := BlockWithValidatorList{createDummyBlock(2), createDummyValidatorList()}
+		err := fc.Init(oneHourInNanoSecs, oneHourInNanoSecs, tipBlock, []BlockWithValidatorList{tipBlock})
+		require.NoError(t, err)
+	}
 
 	// Start the event loop
 	fc.Start()
@@ -479,7 +481,7 @@ func TestProcessValidatorTimeout(t *testing.T) {
 			timeout.publicKey.ToString(): vote,
 		}
 
-		err = fc.ProcessValidatorTimeout(timeout)
+		err := fc.ProcessValidatorTimeout(timeout)
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "has already voted for view")
 	}
@@ -492,7 +494,7 @@ func TestProcessValidatorTimeout(t *testing.T) {
 			timeout.publicKey.ToString(): timeout,
 		}
 
-		err = fc.ProcessValidatorTimeout(timeout)
+		err := fc.ProcessValidatorTimeout(timeout)
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "has already timed out for view")
 	}
@@ -558,10 +560,10 @@ func TestResetEventLoopSignal(t *testing.T) {
 	oneHourInNanoSecs := time.Duration(3600000000000)
 
 	fc := NewFastHotStuffEventLoop()
-	err := fc.Init(oneHourInNanoSecs, 2*oneHourInNanoSecs,
-		BlockWithValidatorList{createDummyBlock(2), createDummyValidatorList()},     // tip
-		[]BlockWithValidatorList{{createDummyBlock(2), createDummyValidatorList()}}, // safeBlocks
-	)
+
+	// Init the event loop
+	tipBlock := BlockWithValidatorList{createDummyBlock(2), createDummyValidatorList()}
+	err := fc.Init(oneHourInNanoSecs, 2*oneHourInNanoSecs, tipBlock, []BlockWithValidatorList{tipBlock})
 	require.NoError(t, err)
 
 	// Start the event loop
@@ -872,10 +874,10 @@ func TestFastHotStuffEventLoopStartStop(t *testing.T) {
 	oneHourInNanoSecs := time.Duration(3600000000000)
 
 	fc := NewFastHotStuffEventLoop()
-	err := fc.Init(oneHourInNanoSecs, 2*oneHourInNanoSecs,
-		BlockWithValidatorList{createDummyBlock(2), createDummyValidatorList()},     // tip
-		[]BlockWithValidatorList{{createDummyBlock(2), createDummyValidatorList()}}, // safeBlocks
-	)
+
+	// Init the event loop
+	tipBlock := BlockWithValidatorList{createDummyBlock(2), createDummyValidatorList()}
+	err := fc.Init(oneHourInNanoSecs, 2*oneHourInNanoSecs, tipBlock, []BlockWithValidatorList{tipBlock})
 	require.NoError(t, err)
 
 	// Start the event loop
