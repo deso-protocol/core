@@ -1836,17 +1836,19 @@ func TestGetSafeBlocks(t *testing.T) {
 	safeBlocks, err := testMeta.chain.GetSafeBlocks()
 	require.NoError(t, err)
 	require.Len(t, safeBlocks, 4)
-	_checkSafeBlockForBlockHash := func(blockHash *BlockHash, safeBlockSlice []*BlockNode) bool {
-		return collections.Any(safeBlockSlice, func(blockNode *BlockNode) bool {
-			return blockNode.Hash.IsEqual(blockHash)
+	_checkSafeBlocksForBlockHash := func(blockHash *BlockHash, safeBlockSlice []*MsgDeSoHeader) bool {
+		return collections.Any(safeBlockSlice, func(header *MsgDeSoHeader) bool {
+			headerHash, err := header.Hash()
+			require.NoError(t, err)
+			return headerHash.IsEqual(blockHash)
 		})
 	}
-	require.True(t, _checkSafeBlockForBlockHash(committedHash, safeBlocks))
-	require.True(t, _checkSafeBlockForBlockHash(block1Hash, safeBlocks))
-	require.True(t, _checkSafeBlockForBlockHash(block2Hash, safeBlocks))
-	require.True(t, _checkSafeBlockForBlockHash(block3Hash, safeBlocks))
-	require.False(t, _checkSafeBlockForBlockHash(block3PrimeHash, safeBlocks))
-	require.False(t, _checkSafeBlockForBlockHash(block5Hash, safeBlocks))
+	require.True(t, _checkSafeBlocksForBlockHash(committedHash, safeBlocks))
+	require.True(t, _checkSafeBlocksForBlockHash(block1Hash, safeBlocks))
+	require.True(t, _checkSafeBlocksForBlockHash(block2Hash, safeBlocks))
+	require.True(t, _checkSafeBlocksForBlockHash(block3Hash, safeBlocks))
+	require.False(t, _checkSafeBlocksForBlockHash(block3PrimeHash, safeBlocks))
+	require.False(t, _checkSafeBlocksForBlockHash(block5Hash, safeBlocks))
 
 	// Update block 3 prime to be validated and it should now be a safe block.
 	bn3Prime, err = testMeta.chain.storeValidatedBlockInBlockIndex(block3Prime)
@@ -1855,7 +1857,7 @@ func TestGetSafeBlocks(t *testing.T) {
 	safeBlocks, err = testMeta.chain.GetSafeBlocks()
 	require.NoError(t, err)
 	require.Len(t, safeBlocks, 5)
-	require.True(t, _checkSafeBlockForBlockHash(block3PrimeHash, safeBlocks))
+	require.True(t, _checkSafeBlocksForBlockHash(block3PrimeHash, safeBlocks))
 }
 
 // TestProcessOrphanBlockPoS tests the ProcessOrphanBlockPoS function to make sure it properly handles
