@@ -290,6 +290,13 @@ func (blsPublicKeyPKIDPairEntry *BLSPublicKeyPKIDPairEntry) ToMapKey() bls.Seria
 	return blsPublicKeyPKIDPairEntry.BLSPublicKey.Serialize()
 }
 
+func (blsPublicKeyPKIDPairEntry *BLSPublicKeyPKIDPairEntry) ToSnapshotMapKey(snapshotAtEpoch uint64) SnapshotValidatorBLSPublicKeyMapKey {
+	return SnapshotValidatorBLSPublicKeyMapKey{
+		SnapshotAtEpochNumber: snapshotAtEpoch,
+		ValidatorBLSPublicKey: blsPublicKeyPKIDPairEntry.BLSPublicKey.Serialize(),
+	}
+}
+
 func (blsPublicKeyPKIDPairEntry *BLSPublicKeyPKIDPairEntry) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte {
 	var data []byte
 	data = append(data, EncodeBLSPublicKey(blsPublicKeyPKIDPairEntry.BLSPublicKey)...)
@@ -842,7 +849,7 @@ func DBDeleteValidatorWithTxn(txn *badger.Txn, snap *Snapshot, validatorPKID *PK
 // BLSPublicKeyPKIDPairEntry DB Utils
 //
 
-func DBKeyForValidatorBLSPublicKeyToPKID(blsPublicKey *bls.PublicKey) []byte {
+func DBKeyForValidatorBLSPublicKeyToPKIDPairEntry(blsPublicKey *bls.PublicKey) []byte {
 	key := append([]byte{}, Prefixes.PrefixValidatorBLSPublicKeyPKIDPairEntry...)
 	key = append(key, blsPublicKey.ToBytes()...)
 	return key
@@ -861,7 +868,7 @@ func DBPutValidatorBLSPublicKeyPKIDPairEntryWithTxn(
 		return nil
 	}
 
-	key := DBKeyForValidatorBLSPublicKeyToPKID(validatorBLSPublicKeyPKIDPairEntry.BLSPublicKey)
+	key := DBKeyForValidatorBLSPublicKeyToPKIDPairEntry(validatorBLSPublicKeyPKIDPairEntry.BLSPublicKey)
 	if err := DBSetWithTxn(txn, snap, key, EncodeToBytes(blockHeight, validatorBLSPublicKeyPKIDPairEntry), eventManager); err != nil {
 		return errors.Wrapf(
 			err, "DBPutValidatorBLSPublicKeyPKIDPairEntryWithTxn: problem storing BLSPublicKeyPKIDPairEntry in index PrefixValidatorBLSPublicKeyPKIDPairEntry",
@@ -878,7 +885,7 @@ func DBDeleteBLSPublicKeyPKIDPairEntryWithTxn(txn *badger.Txn, snap *Snapshot, b
 		return nil
 	}
 
-	key := DBKeyForValidatorBLSPublicKeyToPKID(blsPublicKey)
+	key := DBKeyForValidatorBLSPublicKeyToPKIDPairEntry(blsPublicKey)
 	if err := DBDeleteWithTxn(txn, snap, key, eventManager, entryIsDeleted); err != nil {
 		return errors.Wrapf(
 			err, "DBDeleteBLSPublicKeyPKIDPairEntryWithTxn: problem deleting BLSPublicKeyPKIDPairEntry from index PrefixValidatorBLSPublicKeyPKIDPairEntry",
@@ -899,7 +906,7 @@ func DBGetValidatorBLSPublicKeyPKIDPairEntry(handle *badger.DB, snap *Snapshot, 
 
 func DBGetValidatorBLSPublicKeyPKIDPairEntryWithTxn(txn *badger.Txn, snap *Snapshot, blsPublicKey *bls.PublicKey) (*BLSPublicKeyPKIDPairEntry, error) {
 	// Retrieve ValidatorEntry from db.
-	key := DBKeyForValidatorBLSPublicKeyToPKID(blsPublicKey)
+	key := DBKeyForValidatorBLSPublicKeyToPKIDPairEntry(blsPublicKey)
 	validatorBytes, err := DBGetWithTxn(txn, snap, key)
 	if err != nil {
 		// We don't want to error if the key isn't found. Instead, return nil.

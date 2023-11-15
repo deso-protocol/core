@@ -250,6 +250,11 @@ func TestRunEpochCompleteHook(t *testing.T) {
 			snapshotValidatorSetEntry, err := _newUtxoView(testMeta).GetCurrentSnapshotValidatorSetEntryByPKID(pkid)
 			require.NoError(t, err)
 			require.NotNil(t, snapshotValidatorSetEntry)
+			// Make sure BLS public key -> PKID mapping is populated.
+			blsPublicKeyPKIDEntry, err := _newUtxoView(testMeta).GetCurrentSnapshotValidatorBLSPublicKeyPKIDPairEntry(snapshotValidatorSetEntry.VotingPublicKey)
+			require.NoError(t, err)
+			require.NotNil(t, blsPublicKeyPKIDEntry)
+			require.True(t, blsPublicKeyPKIDEntry.PKID.Eq(pkid))
 		}
 
 		// Test GetSnapshotValidatorSetByStakeAmount is populated.
