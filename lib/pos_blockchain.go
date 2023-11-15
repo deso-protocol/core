@@ -1218,19 +1218,19 @@ func (bc *Blockchain) getCommittedTip() (*BlockNode, int) {
 	return nil, -1
 }
 
-// GetSafeBlocks returns all blocks from which the chain can safely extend. A
-// safe block is defined as a block that has been validated and all of its
+// GetSafeBlocks returns all headers of blocks from which the chain can safely extend.
+// A safe block is defined as a block that has been validated and all of its
 // ancestors have been validated and extending from this block would not
 // change any committed blocks. This means we return the committed tip and
 // all blocks from the committed tip that have been validated.
-func (bc *Blockchain) GetSafeBlocks() ([]*BlockNode, error) {
+func (bc *Blockchain) GetSafeBlocks() ([]*MsgDeSoHeader, error) {
 	// First get committed tip.
 	committedTip, idx := bc.getCommittedTip()
 	if idx == -1 || committedTip == nil {
 		return nil, errors.New("GetSafeBlocks: No committed blocks found")
 	}
 	// Now get all blocks from the committed tip to the best chain tip.
-	safeBlocks := []*BlockNode{committedTip}
+	safeBlocks := []*MsgDeSoHeader{committedTip.Header}
 	maxHeightWithSafeBlocks := bc.getMaxSequentialBlockHeightAfter(uint64(committedTip.Height))
 	for ii := uint64(committedTip.Height + 1); ii < maxHeightWithSafeBlocks+1; ii++ {
 		// If we don't have any blocks at this height, we know that any blocks at a later height are not safe blocks.
@@ -1243,7 +1243,7 @@ func (bc *Blockchain) GetSafeBlocks() ([]*BlockNode, error) {
 			// TODO: Are there other conditions we should consider?
 			if blockNode.IsValidated() {
 				hasSeenValidatedBlockAtThisHeight = true
-				safeBlocks = append(safeBlocks, blockNode)
+				safeBlocks = append(safeBlocks, blockNode.Header)
 			}
 		}
 		// If we didn't see any validated blocks at this height, we know
