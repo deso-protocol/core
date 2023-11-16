@@ -479,6 +479,13 @@ func TestRunEpochCompleteHook(t *testing.T) {
 }
 
 func TestStakingRewardDistribution(t *testing.T) {
+	DeSoTestnetParams.DefaultEpochDurationNumBlocks = uint64(1)
+	GlobalDeSoParams.DefaultEpochDurationNumBlocks = uint64(1)
+	resetDefaultEpochDurationNumBlocks := func() {
+		DeSoTestnetParams.DefaultEpochDurationNumBlocks = uint64(3600)
+		GlobalDeSoParams.DefaultEpochDurationNumBlocks = uint64(3600)
+	}
+	defer resetDefaultEpochDurationNumBlocks()
 	// Initialize balance model fork heights.
 	setBalanceModelBlockHeights(t)
 
