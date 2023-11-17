@@ -1,11 +1,12 @@
 package lib
 
 import (
+	"math"
+	"time"
+
 	"github.com/deso-protocol/core/bls"
 	"github.com/deso-protocol/core/collections/bitset"
 	"github.com/pkg/errors"
-	"math"
-	"time"
 )
 
 // BlockTemplate is a dummy type that is used to label incomplete blocks. The only purpose of this type is to make it
@@ -32,11 +33,6 @@ func NewPosBlockProducer(mp Mempool, params *DeSoParams, proposerPublicKey *Publ
 		proposerPublicKey:       proposerPublicKey,
 		proposerVotingPublicKey: proposerVotingPublicKey,
 	}
-}
-
-func (pbp *PosBlockProducer) SignBlock(blockTemplate BlockTemplate, signerPrivateKey *bls.PrivateKey) (*MsgDeSoBlock, error) {
-	// TODO
-	return nil, nil
 }
 
 // CreateUnsignedBlock constructs an unsigned, PoS block with Fee-Time ordered transactions. This function should be used
