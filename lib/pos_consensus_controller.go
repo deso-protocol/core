@@ -3,6 +3,7 @@ package lib
 import (
 	"sync"
 
+	"github.com/deso-protocol/core/collections"
 	"github.com/deso-protocol/core/consensus"
 	"github.com/pkg/errors"
 )
@@ -38,7 +39,7 @@ func (cc *ConsensusController) Init() {
 
 // HandleFastHostStuffBlockProposal is called when FastHotStuffEventLoop has signaled that it can
 // construct a block at a certain block height. This function validates the block proposal signal,
-// then it constructs, processes locally, and then and broadcasts the block.
+// constructs, processes locally, and then and broadcasts the block.
 //
 // Steps:
 //  1. Validate that the block height and view we want to propose the block with are not stale
@@ -55,9 +56,77 @@ func (cc *ConsensusController) HandleFastHostStuffBlockProposal(event *consensus
 	cc.lock.Lock()
 	defer cc.lock.Unlock()
 
-	if !consensus.IsProperlyFormedConstructVoteQCEvent(event) {
-		// If the event is not properly formed, we ignore it and log it. This should never happen.
-		return errors.Errorf("HandleFastHostStuffBlockProposal: Received improperly formed vote QC construction event: %v", event)
+	// Handle the event as a block proposal event for a regular block
+	err := cc.handleBlockProposerEvent(event, consensus.FastHotStuffEventTypeConstructVoteQC)
+	if err != nil {
+		return errors.Wrapf(err, "HandleFastHostStuffBlockProposal:")
+	}
+
+	// Happy path: nothing left to do
+	return nil
+}
+
+// HandleFastHostStuffBlockProposal is called when FastHotStuffEventLoop has signaled that it can
+// construct a block with a timeout QC at a certain block height. This function validates the block
+// proposal signal, constructs, processes locally, and then and broadcasts the block.
+//
+// Steps:
+//  1. Validate that the block height and view we want to propose the block with are not stale
+//  2. Iterate over the top n transactions from the mempool
+//  3. Construct a block with the aggregate QC and the top n transactions from the mempool
+//  4. Sign the block
+//  5. Process the block locally
+//     - This will connect the block to the blockchain, remove the transactions from the
+//     mempool, and process the vote in the FastHotStuffEventLoop
+//  6. Broadcast the block to the network
+func (cc *ConsensusController) HandleFastHostStuffEmptyTimeoutBlockProposal(event *consensus.FastHotStuffEvent) error {
+	// Hold a read and write lock on the consensus controller. This is because we need to check
+	// the current view of the consensus event loop, and to update the blockchain.
+	cc.lock.Lock()
+	defer cc.lock.Unlock()
+
+	// Handle the event as a block proposal event for a timeout block
+	err := cc.handleBlockProposerEvent(event, consensus.FastHotStuffEventTypeConstructTimeoutQC)
+	if err != nil {
+		return errors.Wrapf(err, "HandleFastHostStuffEmptyTimeoutBlockProposal:")
+	}
+
+	// Happy path: nothing left to do
+	return nil
+}
+
+// handleBlockProposerEvent is a helper function that can process a block proposal event for either
+// a regular block or a timeout block. It can be called with a expectedEventType param that toggles
+// whether the event should be validated and processed as normal block or timeout block proposal.
+func (cc *ConsensusController) handleBlockProposerEvent(
+	event *consensus.FastHotStuffEvent,
+	expectedEventType consensus.FastHotStuffEventType,
+) error {
+	// Validate that the expected event type is a block proposal event type
+	possibleExpectedEventTypes := []consensus.FastHotStuffEventType{
+		consensus.FastHotStuffEventTypeConstructVoteQC,
+		consensus.FastHotStuffEventTypeConstructTimeoutQC,
+	}
+	if !collections.Contains(possibleExpectedEventTypes, expectedEventType) {
+		return errors.Errorf("Invalid expected event type: %v", expectedEventType)
+	}
+
+	// The event's type should match the expected event type
+	if event.EventType != expectedEventType {
+		return errors.Errorf("Unexpected event type: %v", event.EventType)
+	}
+
+	// If the event is a regular block proposal event, then we validate and process it as a regular block
+	if expectedEventType == consensus.FastHotStuffEventTypeConstructVoteQC {
+		if !consensus.IsProperlyFormedConstructVoteQCEvent(event) {
+			// If the event is not properly formed, we ignore it and log it. This should never happen.
+			return errors.Errorf("Received improperly formed vote QC construction event: %v", event)
+		}
+	} else { // expectedEventType == consensus.FastHotStuffEventTypeConstructTimeoutQC
+		if !consensus.IsProperlyFormedConstructTimeoutQCEvent(event) {
+			// If the event is not properly formed, we ignore it and log it. This should never happen.
+			return errors.Errorf("Received improperly formed timeout QC construction event: %v", event)
+		}
 	}
 
 	// If the block proposal is properly formed, we try to construct and broadcast the block here.
@@ -66,13 +135,13 @@ func (cc *ConsensusController) HandleFastHostStuffBlockProposal(event *consensus
 	parentBlockHash := BlockHashFromConsensusInterface(event.QC.GetBlockHash())
 	parentBlock, parentBlockExists := cc.blockchain.blockIndex[*parentBlockHash]
 	if !parentBlockExists {
-		return errors.Errorf("HandleFastHostStuffBlockProposal: Error fetching parent block: %v", parentBlockHash)
+		return errors.Errorf("Error fetching parent block: %v", parentBlockHash)
 	}
 
 	// Make sure that the parent has a validated status. This should never fail. If it does, something is
 	// very wrong with the safeBlocks parameter in the FastHotStuffEventLoop.
 	if !parentBlock.IsValidated() {
-		return errors.Errorf("HandleFastHostStuffBlockProposal: parent block is not validated: %v", parentBlockHash)
+		return errors.Errorf("Parent block is not validated: %v", parentBlockHash)
 	}
 
 	// Perform simple block height and view sanity checks on the block construction signal.
@@ -81,7 +150,7 @@ func (cc *ConsensusController) HandleFastHostStuffBlockProposal(event *consensus
 	// then something is very wrong.
 	if uint64(parentBlock.Height) != event.TipBlockHeight {
 		return errors.Errorf(
-			"HandleFastHostStuffBlockProposal: Error constructing block at height %d. Expected block height %d",
+			"Error constructing block at height %d. Expected block height %d",
 			event.TipBlockHeight+1,
 			parentBlock.Height+1,
 		)
@@ -93,7 +162,7 @@ func (cc *ConsensusController) HandleFastHostStuffBlockProposal(event *consensus
 	currentView := cc.fastHotStuffEventLoop.GetCurrentView()
 	if currentView > event.View {
 		return errors.Errorf(
-			"HandleFastHostStuffBlockProposal: Error constructing block at height %d. Stale view %d",
+			"Error constructing block at height %d. Stale view %d",
 			event.TipBlockHeight+1,
 			event.View,
 		)
@@ -103,45 +172,61 @@ func (cc *ConsensusController) HandleFastHostStuffBlockProposal(event *consensus
 	utxoViewAtParent, err := cc.blockchain.getUtxoViewAtBlockHash(*parentBlock.Hash)
 	if err != nil {
 		// This should never happen as long as the parent block is a descendant of the committed tip.
-		return errors.Errorf("HandleFastHostStuffBlockProposal: Error fetching UtxoView for parent block: %v", parentBlockHash)
+		return errors.Errorf("Error fetching UtxoView for parent block: %v", parentBlockHash)
 	}
 
 	// TODO: Compute the random seed hash for the block proposer
 	var proposerRandomSeedHash *RandomSeedHash
 
-	// Construct an unsigned block
-	block, err := cc.blockProducer.CreateUnsignedBlock(
-		utxoViewAtParent,
-		event.TipBlockHeight+1,
-		event.View,
-		proposerRandomSeedHash,
-		QuorumCertificateFromConsensusInterface(event.QC),
-	)
-	if err != nil {
-		return errors.Errorf("HandleFastHostStuffBlockProposal: Error constructing unsigned block: %v", err)
+	var block *MsgDeSoBlock
+
+	if expectedEventType == consensus.FastHotStuffEventTypeConstructVoteQC {
+		// Construct an unsigned block
+		block, err = cc.blockProducer.CreateUnsignedBlock(
+			utxoViewAtParent,
+			event.TipBlockHeight+1,
+			event.View,
+			proposerRandomSeedHash,
+			QuorumCertificateFromConsensusInterface(event.QC),
+		)
+		if err != nil {
+			return errors.Errorf("Error constructing unsigned block: %v", err)
+		}
+	} else { // expectedEventType == consensus.FastHotStuffEventTypeConstructTimeoutQC
+		// Construct an unsigned timeout block
+		block, err = cc.blockProducer.CreateUnsignedTimeoutBlock(
+			utxoViewAtParent,
+			event.TipBlockHeight+1,
+			event.View,
+			proposerRandomSeedHash,
+			AggregateQuorumCertificateFromConsensusInterface(event.AggregateQC),
+		)
+		if err != nil {
+			return errors.Errorf("Error constructing unsigned timeout block: %v", err)
+		}
 	}
 
 	// Sign the block
 	blockHash, err := block.Header.Hash()
 	if err != nil {
-		return errors.Errorf("HandleFastHostStuffBlockProposal: Error hashing block: %v", err)
+		return errors.Errorf("Error hashing block: %v", err)
 	}
 	block.Header.ProposerVotePartialSignature, err = cc.signer.SignBlockProposal(block.Header.ProposedInView, blockHash)
 	if err != nil {
-		return errors.Errorf("HandleFastHostStuffBlockProposal: Error signing block: %v", err)
+		return errors.Errorf("Error signing block: %v", err)
 	}
 
 	// Process the block locally
 	missingBlockHashes, err := cc.tryProcessBlockAsNewTip(block)
 	if err != nil {
-		return errors.Errorf("HandleFastHostStuffBlockProposal: Error processing block locally: %v", err)
+		return errors.Errorf("Error processing block locally: %v", err)
 	}
 
 	if len(missingBlockHashes) > 0 {
 		// This should not be possible. If we successfully constructed the block, then we should
 		// have its ancestors on-hand too. Something is very wrong. We should not broadcast this block.
 		return errors.Errorf(
-			"HandleFastHostStuffBlockProposal: Error processing block locally: missing block hashes: %v",
+			"Error processing block locally: missing block hashes: %v",
 			missingBlockHashes,
 		)
 	}
@@ -149,17 +234,6 @@ func (cc *ConsensusController) HandleFastHostStuffBlockProposal(event *consensus
 	// TODO: Broadcast the block proposal to the network
 
 	return nil
-}
-
-func (cc *ConsensusController) HandleFastHostStuffEmptyTimeoutBlockProposal(event *consensus.FastHotStuffEvent) {
-	// The consensus module has signaled that we have a timeout QC and can propose one at a certain
-	// block height. We construct an empty block with a timeout QC and broadcast it here:
-	// 1. Verify that the block height and view we want to propose at is valid
-	// 2. Get a timeout QC from the consensus module
-	// 3. Construct a block with the timeout QC
-	// 4. Sign the block
-	// 5. Process the block locally
-	// 6. Broadcast the block to the network
 }
 
 // HandleFastHostStuffVote is triggered when FastHotStuffEventLoop has signaled that it wants to
