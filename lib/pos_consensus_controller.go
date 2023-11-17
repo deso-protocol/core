@@ -41,15 +41,14 @@ func (cc *ConsensusController) Init() {
 // then it constructs, processes locally, and then and broadcasts the block.
 //
 // Steps:
-// 1. Validate that the block height and view we want to propose the block with are not stale
-// 2. Iterate over the top n transactions from the mempool
-// 3. Construct a block with the QC and the top n transactions from the mempool
-// 4. Sign the block
-// 5. Process the block locally
-//   - This will connect the block to the blockchain, remove the transactions from the
-//   - mempool, and process the vote in the consensus module
-//
-// 6. Broadcast the block to the network
+//  1. Validate that the block height and view we want to propose the block with are not stale
+//  2. Iterate over the top n transactions from the mempool
+//  3. Construct a block with the QC and the top n transactions from the mempool
+//  4. Sign the block
+//  5. Process the block locally
+//     - This will connect the block to the blockchain, remove the transactions from the
+//     mempool, and process the vote in the FastHotStuffEventLoop
+//  6. Broadcast the block to the network
 func (cc *ConsensusController) HandleFastHostStuffBlockProposal(event *consensus.FastHotStuffEvent) error {
 	// Hold a read and write lock on the consensus controller. This is because we need to check
 	// the current view of the consensus event loop, and to update the blockchain.
@@ -68,6 +67,12 @@ func (cc *ConsensusController) HandleFastHostStuffBlockProposal(event *consensus
 	parentBlock, parentBlockExists := cc.blockchain.blockIndex[*parentBlockHash]
 	if !parentBlockExists {
 		return errors.Errorf("HandleFastHostStuffBlockProposal: Error fetching parent block: %v", parentBlockHash)
+	}
+
+	// Make sure that the parent has a validated status. This should never fail. If it does, something is
+	// very wrong with the safeBlocks parameter in the FastHotStuffEventLoop.
+	if !parentBlock.IsValidated() {
+		return errors.Errorf("HandleFastHostStuffBlockProposal: parent block is not validated: %v", parentBlockHash)
 	}
 
 	// Perform simple block height and view sanity checks on the block construction signal.
@@ -529,4 +534,8 @@ func (bc *Blockchain) getSafeBlocks() ([]*MsgDeSoHeader, error) {
 
 func (bav *UtxoView) getNextRandomSeedHash() (*RandomSeedHash, error) {
 	return nil, errors.New("getNextRandomSeedHash: replace me with a real implementation later")
+}
+
+func (b *BlockNode) IsValidated() bool {
+	return false
 }
