@@ -16,6 +16,12 @@ func Any[T any](slice []T, predicate func(T) bool) bool {
 	return false
 }
 
+func Contains[T comparable](slice []T, value T) bool {
+	return Any(slice, func(val T) bool {
+		return val == value
+	})
+}
+
 func Transform[TInput any, TOutput any](slice []TInput, transformFn func(TInput) TOutput) []TOutput {
 	var result []TOutput
 	for _, val := range slice {

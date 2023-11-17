@@ -75,6 +75,19 @@ func QuorumCertificateFromConsensusInterface(qc consensus.QuorumCertificate) *Qu
 	}
 }
 
+// AggregateQuorumCertificate struct <-> consensus.AggregateQuorumCertificate interface translation
+func AggregateQuorumCertificateFromConsensusInterface(aggQC consensus.AggregateQuorumCertificate) *TimeoutAggregateQuorumCertificate {
+	return &TimeoutAggregateQuorumCertificate{
+		TimedOutView:                 aggQC.GetView(),
+		ValidatorsHighQC:             QuorumCertificateFromConsensusInterface(aggQC.GetHighQC()),
+		ValidatorsTimeoutHighQCViews: aggQC.GetHighQCViews(),
+		ValidatorsTimeoutAggregatedSignature: &AggregatedBLSSignature{
+			Signature:   aggQC.GetAggregatedSignature().GetSignature(),
+			SignersList: aggQC.GetAggregatedSignature().GetSignersList(),
+		},
+	}
+}
+
 // AggregatedBLSSignature struct <-> consensus.AggregatedSignature interface translation
 
 func (aggSig *AggregatedBLSSignature) GetSignersList() *bitset.Bitset {
