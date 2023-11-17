@@ -39,17 +39,7 @@ func (cc *ConsensusController) Init() {
 
 // HandleFastHostStuffBlockProposal is called when FastHotStuffEventLoop has signaled that it can
 // construct a block at a certain block height. This function validates the block proposal signal,
-// constructs, processes locally, and then and broadcasts the block.
-//
-// Steps:
-//  1. Validate that the block height and view we want to propose the block with are not stale
-//  2. Iterate over the top n transactions from the mempool
-//  3. Construct a block with the QC and the top n transactions from the mempool
-//  4. Sign the block
-//  5. Process the block locally
-//     - This will connect the block to the blockchain, remove the transactions from the
-//     mempool, and process the vote in the FastHotStuffEventLoop
-//  6. Broadcast the block to the network
+// constructs, processes locally, and then broadcasts the block.
 func (cc *ConsensusController) HandleFastHostStuffBlockProposal(event *consensus.FastHotStuffEvent) error {
 	// Hold a read and write lock on the consensus controller. This is because we need to check
 	// the current view of the consensus event loop, and to update the blockchain.
@@ -57,8 +47,7 @@ func (cc *ConsensusController) HandleFastHostStuffBlockProposal(event *consensus
 	defer cc.lock.Unlock()
 
 	// Handle the event as a block proposal event for a regular block
-	err := cc.handleBlockProposerEvent(event, consensus.FastHotStuffEventTypeConstructVoteQC)
-	if err != nil {
+	if err := cc.handleBlockProposerEvent(event, consensus.FastHotStuffEventTypeConstructVoteQC); err != nil {
 		return errors.Wrapf(err, "HandleFastHostStuffBlockProposal:")
 	}
 
@@ -66,19 +55,9 @@ func (cc *ConsensusController) HandleFastHostStuffBlockProposal(event *consensus
 	return nil
 }
 
-// HandleFastHostStuffBlockProposal is called when FastHotStuffEventLoop has signaled that it can
-// construct a block with a timeout QC at a certain block height. This function validates the block
-// proposal signal, constructs, processes locally, and then and broadcasts the block.
-//
-// Steps:
-//  1. Validate that the block height and view we want to propose the block with are not stale
-//  2. Iterate over the top n transactions from the mempool
-//  3. Construct a block with the aggregate QC and the top n transactions from the mempool
-//  4. Sign the block
-//  5. Process the block locally
-//     - This will connect the block to the blockchain, remove the transactions from the
-//     mempool, and process the vote in the FastHotStuffEventLoop
-//  6. Broadcast the block to the network
+// HandleFastHostStuffEmptyTimeoutBlockProposal is called when FastHotStuffEventLoop has signaled that it can
+// construct a timeout block at a certain block height. This function validates the timeout block proposal
+// signal, constructs, processes locally, and then broadcasts the block.
 func (cc *ConsensusController) HandleFastHostStuffEmptyTimeoutBlockProposal(event *consensus.FastHotStuffEvent) error {
 	// Hold a read and write lock on the consensus controller. This is because we need to check
 	// the current view of the consensus event loop, and to update the blockchain.
@@ -86,8 +65,7 @@ func (cc *ConsensusController) HandleFastHostStuffEmptyTimeoutBlockProposal(even
 	defer cc.lock.Unlock()
 
 	// Handle the event as a block proposal event for a timeout block
-	err := cc.handleBlockProposerEvent(event, consensus.FastHotStuffEventTypeConstructTimeoutQC)
-	if err != nil {
+	if err := cc.handleBlockProposerEvent(event, consensus.FastHotStuffEventTypeConstructTimeoutQC); err != nil {
 		return errors.Wrapf(err, "HandleFastHostStuffEmptyTimeoutBlockProposal:")
 	}
 
@@ -98,6 +76,16 @@ func (cc *ConsensusController) HandleFastHostStuffEmptyTimeoutBlockProposal(even
 // handleBlockProposerEvent is a helper function that can process a block proposal event for either
 // a regular block or a timeout block. It can be called with a expectedEventType param that toggles
 // whether the event should be validated and processed as normal block or timeout block proposal.
+//
+// Steps:
+//  1. Validate that the block height and view we want to propose the block with are not stale
+//  2. Iterate over the top n transactions from the mempool
+//  3. Construct a block with the QC or aggregate QC and the top n transactions from the mempool
+//  4. Sign the block
+//  5. Process the block locally
+//     - This will connect the block to the blockchain, remove the transactions from the
+//     mempool, and process the vote in the FastHotStuffEventLoop
+//  6. Broadcast the block to the network
 func (cc *ConsensusController) handleBlockProposerEvent(
 	event *consensus.FastHotStuffEvent,
 	expectedEventType consensus.FastHotStuffEventType,
