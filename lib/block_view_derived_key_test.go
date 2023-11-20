@@ -10,6 +10,7 @@ import (
 	"github.com/holiman/uint256"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"math"
 	"math/rand"
 	"testing"
 	"time"
@@ -877,7 +878,7 @@ func TestBalanceModelAuthorizeDerivedKey(t *testing.T) {
 		// We need to set the block height here to 7 so that encoder migrations have the proper version and heights.
 		// Otherwise, the access groups and associations migrations do not run when encoding Utxo Operations.
 		DeSoTestnetParams.ForkHeights.BalanceModelBlockHeight = 7
-		DeSoTestnetParams.ForkHeights.ProofOfStake1StateSetupBlockHeight = 7
+		DeSoTestnetParams.ForkHeights.ProofOfStake1StateSetupBlockHeight = math.MaxUint32
 		TestAuthorizeDerivedKeyWithTransactionSpendingLimitsAccessGroups(t)
 	})
 }

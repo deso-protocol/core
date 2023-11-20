@@ -4092,6 +4092,19 @@ func (bav *UtxoView) ConnectBlock(
 		}
 	}
 
+	// If we're past the PoS Setup Fork Height, check if we should run the end of epoch hook.
+	if blockHeight >= uint64(bav.Params.ForkHeights.ProofOfStake1StateSetupBlockHeight) {
+		isLastBlockInEpoch, err := bav.IsLastBlockInCurrentEpoch(blockHeight)
+		if err != nil {
+			return nil, errors.Wrapf(err, "ConnectBlock: error checking if block is last in epoch")
+		}
+		if isLastBlockInEpoch {
+			if err = bav.RunEpochCompleteHook(blockHeight, blockHeader.TstampNanoSecs); err != nil {
+				return nil, errors.Wrapf(err, "ConnectBlock: error running epoch complete hook")
+			}
+		}
+	}
+
 	// If we made it to the end and this block is valid, advance the tip
 	// of the view to reflect that.
 	blockHash, err := desoBlock.Header.Hash()
