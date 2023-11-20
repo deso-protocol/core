@@ -904,5 +904,5 @@ func (fc *fastHotStuffEventLoop) fetchSafeBlockInfo(blockHash BlockHash) (
 }
 
 func isStaleView(currentView uint64, testView uint64) bool {
-	return currentView > testView+1
+	return testView < currentView-1
 }
