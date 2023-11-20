@@ -359,10 +359,6 @@ func (cc *ConsensusController) HandleHeaderBundle(pp *Peer, msg *MsgDeSoHeaderBu
 	// TODO
 }
 
-func (cc *ConsensusController) HandleGetBlocks(pp *Peer, msg *MsgDeSoGetBlocks) {
-	// TODO
-}
-
 func (cc *ConsensusController) HandleHeader(pp *Peer, msg *MsgDeSoHeader) {
 	// TODO
 }
@@ -566,7 +562,8 @@ func getEpochEntryForBlockHeight(blockHeight uint64, epochEntries []*EpochEntry)
 ////////////////////////////////////////////////////////////////////////////////
 // TODO: delete all of the functions below. They are dummy stubbed out functions
 // needed by ConsensusController, but are implemented in other feature branches.
-// We stub them out here to unblock consensus work.
+// We stub them out here to unblock consensus work, and can delete them once other
+// feature branches are merged.
 ////////////////////////////////////////////////////////////////////////////////
 
 func (bc *Blockchain) getUtxoViewAtBlockHash(blockHash BlockHash) (*UtxoView, error) {
