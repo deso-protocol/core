@@ -848,7 +848,8 @@ func _runOnEpochCompleteHook(testMeta *TestMeta, blockHeight uint64) {
 	// Set blockTimestampNanoSecs to 1 year * block height. Every time the block height increments,
 	// the timestamp increases by 1 year
 	blockTimestampNanoSecs := blockHeight * 365 * 24 * 3600 * 1e9
-	require.NoError(testMeta.t, tmpUtxoView.RunEpochCompleteHook(blockHeight, blockTimestampNanoSecs))
+	_, err := tmpUtxoView.RunEpochCompleteHook(blockHeight, blockTimestampNanoSecs)
+	require.NoError(testMeta.t, err)
 	require.NoError(testMeta.t, tmpUtxoView.FlushToDb(blockHeight))
 }
 

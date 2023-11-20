@@ -660,8 +660,8 @@ const (
 	OperationTypeCoinLockupTransfer           OperationType = 46
 	OperationTypeCoinUnlock                   OperationType = 47
 	OperationTypeUpdateCoinLockupParams       OperationType = 48
-
-	// NEXT_TAG = 49
+	OperationTypeStakeDistribution            OperationType = 49
+	// NEXT_TAG = 50
 )
 
 func (op OperationType) String() string {
@@ -762,6 +762,8 @@ func (op OperationType) String() string {
 		return "OperationTypeCoinLockupTransfer"
 	case OperationTypeCoinUnlock:
 		return "OperationTypeCoinUnlock"
+	case OperationTypeStakeDistribution:
+		return "OperationTypeStakeDistribution"
 	}
 	return "OperationTypeUNKNOWN"
 }
@@ -984,6 +986,11 @@ type UtxoOperation struct {
 	// with an UpdateCoinLockupParams transaction.
 	PrevLockupYieldCurvePoint     *LockupYieldCurvePoint
 	PrevLockupTransferRestriction TransferRestrictionStatus
+
+	// This value is used by Rosetta to return the amount of DESO that was added
+	// to a StakeEntry during the end-of-epoch hook. It's needed
+	// in order to avoid having to re-run the end of epoch hook.
+	StakeAmountNanosDiff uint64
 }
 
 func (op *UtxoOperation) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte {
