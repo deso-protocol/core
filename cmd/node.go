@@ -18,7 +18,7 @@ import (
 	"github.com/deso-protocol/core/lib"
 	"github.com/deso-protocol/core/migrate"
 	"github.com/deso-protocol/go-deadlock"
-	"github.com/dgraph-io/badger/v3"
+	"github.com/dgraph-io/badger/v4"
 	"github.com/go-pg/pg/v10"
 	"github.com/golang/glog"
 	migrations "github.com/robinjoseph08/go-pg-migrations/v3"

@@ -16,7 +16,7 @@ import (
 	"github.com/davecgh/go-spew/spew"
 
 	"github.com/btcsuite/btcd/btcec"
-	"github.com/dgraph-io/badger/v3"
+	"github.com/dgraph-io/badger/v4"
 	"github.com/golang/glog"
 	"github.com/pkg/errors"
 )
@@ -3743,7 +3743,7 @@ func (bav *UtxoView) _connectTransaction(
 					"ConnectTransaction: TxnTypeUnlockStake must correspond to OperationTypeUnlockStake",
 				)
 			}
-			totalLockedAmountNanos := uint256.NewInt()
+			totalLockedAmountNanos := uint256.NewInt(0)
 			for _, prevLockedStakeEntry := range utxoOp.PrevLockedStakeEntries {
 				totalLockedAmountNanos, err = SafeUint256().Add(
 					totalLockedAmountNanos, prevLockedStakeEntry.LockedAmountNanos,
@@ -3770,7 +3770,7 @@ func (bav *UtxoView) _connectTransaction(
 						"ConnectTransaction: TxnTypeCoinUnlock must correspond to OperationTypeCoinUnlock",
 					)
 				}
-				totalLockedDESOAmountNanos := uint256.NewInt()
+				totalLockedDESOAmountNanos := uint256.NewInt(0)
 				for _, prevLockedBalanceEntry := range utxoOp.PrevLockedBalanceEntries {
 					totalLockedDESOAmountNanos, err = SafeUint256().Add(
 						totalLockedDESOAmountNanos, &prevLockedBalanceEntry.BalanceBaseUnits)
@@ -3883,9 +3883,9 @@ func (bav *UtxoView) _connectFailingTransaction(txn *MsgDeSoTxn, blockHeight uin
 	// as: effectiveFee = txn.TxnFeeNanos * FailingTransactionBMFMultiplierBasisPoints / 10000
 	gp := bav.GetCurrentGlobalParamsEntry()
 
-	failingTransactionRate := uint256.NewInt().SetUint64(gp.FailingTransactionBMFMultiplierBasisPoints)
-	failingTransactionFee := uint256.NewInt().SetUint64(txn.TxnFeeNanos)
-	basisPointsAsUint256 := uint256.NewInt().SetUint64(10000)
+	failingTransactionRate := uint256.NewInt(gp.FailingTransactionBMFMultiplierBasisPoints)
+	failingTransactionFee := uint256.NewInt(txn.TxnFeeNanos)
+	basisPointsAsUint256 := uint256.NewInt(10000)
 
 	effectiveFeeU256 := failingTransactionRate.Mul(failingTransactionRate, failingTransactionFee)
 	effectiveFeeU256.Div(effectiveFeeU256, basisPointsAsUint256)

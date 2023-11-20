@@ -3,7 +3,7 @@ package lib
 import (
 	"encoding/hex"
 	"fmt"
-	"github.com/dgraph-io/badger/v3"
+	"github.com/dgraph-io/badger/v4"
 	"path/filepath"
 	"reflect"
 	"sync"

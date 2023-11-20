@@ -202,7 +202,7 @@ func (bav *UtxoView) distributeStakingReward(validatorPKID *PKID, stakerPKID *PK
 			PrevStakeEntries:     []*StakeEntry{stakeEntry.Copy()},
 			StakeAmountNanosDiff: rewardNanos,
 		}
-		stakeEntry.StakeAmountNanos = uint256.NewInt().Add(stakeEntry.StakeAmountNanos, uint256.NewInt().SetUint64(rewardNanos))
+		stakeEntry.StakeAmountNanos = uint256.NewInt(0).Add(stakeEntry.StakeAmountNanos, uint256.NewInt(rewardNanos))
 		bav._setStakeEntryMappings(stakeEntry)
 		return utxoOperation, nil
 	}
