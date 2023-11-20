@@ -2,7 +2,7 @@ package lib
 
 import (
 	"fmt"
-	"github.com/dgraph-io/badger/v3"
+	"github.com/dgraph-io/badger/v4"
 	"github.com/golang/glog"
 	"github.com/pkg/errors"
 	"path/filepath"

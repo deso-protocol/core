@@ -1298,7 +1298,7 @@ func TestDAOCoin(t *testing.T) {
 			0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09,
 			0x00, 0x01, 0x02}
 		txMeta.OperationType = DAOCoinOperationTypeMint
-		txMeta.CoinsToMintNanos = *uint256.NewInt().SetUint64(100)
+		txMeta.CoinsToMintNanos = *uint256.NewInt(100)
 
 		data, err := txMeta.ToBytes(false)
 		require.NoError(err)
@@ -1318,7 +1318,7 @@ func TestDAOCoin(t *testing.T) {
 			0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09,
 			0x00, 0x01, 0x02}
 		txMeta.OperationType = DAOCoinOperationTypeBurn
-		txMeta.CoinsToBurnNanos = *uint256.NewInt().SetUint64(100)
+		txMeta.CoinsToBurnNanos = *uint256.NewInt(100)
 
 		data, err := txMeta.ToBytes(false)
 		require.NoError(err)
@@ -1387,7 +1387,7 @@ func TestDAOCoinTransfer(t *testing.T) {
 		0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09,
 		0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09,
 		0x00, 0x01, 0x02}
-	txMeta.DAOCoinToTransferNanos = *uint256.NewInt().SetUint64(100)
+	txMeta.DAOCoinToTransferNanos = *uint256.NewInt(100)
 
 	data, err := txMeta.ToBytes(false)
 	require.NoError(err)

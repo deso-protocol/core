@@ -21,7 +21,7 @@ import (
 	"github.com/davecgh/go-spew/spew"
 	"github.com/deso-protocol/core/consensus"
 	"github.com/deso-protocol/go-deadlock"
-	"github.com/dgraph-io/badger/v3"
+	"github.com/dgraph-io/badger/v4"
 	"github.com/golang/glog"
 	"github.com/pkg/errors"
 )

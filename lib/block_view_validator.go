@@ -10,7 +10,7 @@ import (
 	"sort"
 
 	"github.com/deso-protocol/core/bls"
-	"github.com/dgraph-io/badger/v3"
+	"github.com/dgraph-io/badger/v4"
 	"github.com/golang/glog"
 	"github.com/holiman/uint256"
 	"github.com/pkg/errors"
@@ -1062,7 +1062,7 @@ func (bav *UtxoView) _connectRegisterAsValidator(
 	}
 
 	// Calculate TotalStakeAmountNanos.
-	totalStakeAmountNanos := uint256.NewInt()
+	totalStakeAmountNanos := uint256.NewInt(0)
 	if prevValidatorEntry != nil {
 		totalStakeAmountNanos = prevValidatorEntry.TotalStakeAmountNanos.Clone()
 	}
@@ -1243,7 +1243,7 @@ func (bav *UtxoView) _connectUnregisterAsValidator(
 
 	// Delete each StakeEntry and create or update the corresponding LockedStakeEntry.
 	// Track TotalUnstakedAmountNanos and PrevLockedStakeEntries.
-	totalUnstakedAmountNanos := uint256.NewInt()
+	totalUnstakedAmountNanos := uint256.NewInt(0)
 	var prevLockedStakeEntries []*LockedStakeEntry
 
 	for _, prevStakeEntry := range prevStakeEntries {
@@ -1742,7 +1742,7 @@ func (bav *UtxoView) SanityCheckUnregisterAsValidatorTxn(
 	}
 
 	// Sanity check the deleted StakeEntries.
-	totalUnstakedAmountNanos := uint256.NewInt()
+	totalUnstakedAmountNanos := uint256.NewInt(0)
 	for _, stakeEntry := range utxoOp.PrevStakeEntries {
 		totalUnstakedAmountNanos, err = SafeUint256().Add(totalUnstakedAmountNanos, stakeEntry.StakeAmountNanos)
 		if err != nil {
@@ -2160,7 +2160,7 @@ func (bav *UtxoView) CreateUnjailValidatorTxindexMetadata(
 }
 
 func SumValidatorEntriesTotalStakeAmountNanos(validatorEntries []*ValidatorEntry) *uint256.Int {
-	totalStakeAmountNanos := uint256.NewInt()
+	totalStakeAmountNanos := uint256.NewInt(0)
 	for _, validatorEntry := range validatorEntries {
 		totalStakeAmountNanos.Add(totalStakeAmountNanos, validatorEntry.TotalStakeAmountNanos)
 	}
