@@ -479,9 +479,13 @@ func generateRandomBytes(numBytes int) []byte {
 	return randomBytes
 }
 
-func powerOfTwo(n uint64) int64 {
+func powerOfTwo(exponent uint64, maxExponent uint64) int64 {
+	if exponent > maxExponent {
+		return powerOfTwo(maxExponent, maxExponent)
+	}
+
 	result := int64(1)
-	for i := uint64(0); i < n; i++ {
+	for i := uint64(0); i < exponent; i++ {
 		result *= 2
 	}
 	return result
