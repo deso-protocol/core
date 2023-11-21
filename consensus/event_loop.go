@@ -498,7 +498,7 @@ func (fc *fastHotStuffEventLoop) resetScheduledTasks() {
 		numTimeouts := fc.currentView - fc.tip.block.GetView() - 1
 
 		// Compute the exponential back-off: nextTimeoutDuration * 2^numTimeouts
-		timeoutDuration = fc.timeoutBaseDuration * time.Duration(powerOfTwo(numTimeouts))
+		timeoutDuration = fc.timeoutBaseDuration * time.Duration(powerOfTwo(numTimeouts, maxConsecutiveTimeouts))
 	}
 
 	// Schedule the next crank timer task. This will run with currentView param.
@@ -791,22 +791,15 @@ func (fc *fastHotStuffEventLoop) onTimeoutScheduledTaskExecuted(timedOutView uin
 
 // Evict all locally stored votes and timeout messages with stale views. We can safely use the current
 // view to determine what is stale. The consensus mechanism will never construct a block with a view
-// that's lower than its current view. Consider the following:
-// - In the event the event update the chain tip, we will vote for that block and the view it was proposed in
-// - In the event we locally time out a view, we will send a timeout message for that view
+// that's lower than its current view. We can use the following to determine which votes & timeouts are
+// stale:
+// - The currentView value is the view that the next block is going to be proposed on
+// - The next block must contain a QC of votes or aggregate QC of timeouts for the previous view
+//   - For votes, currentView = vote.GetView() + 1
+//   - For timeouts, currentView = timeout.GetView() + 1
 //
-// In both cases, we will never roll back the chain tip, or decrement the current view to construct a
-// conflicting block at that lower view that we have previously voted or timed out on. So we are safe to evict
-// locally stored votes and timeout messages with stale views because we expect to never use them for
-// block construction.
-//
-// The eviction works as follows:
-// - Votes: if the next block were to be a regular block with a QC aggregated from votes, then the it must
-// satisfy nextBlock.GetView() = tip.block.GetView() + 1, which means that currentView = tip.block.GetView() + 1.
-// We can safely evict all votes where vote.GetView() < currentView - 1.
-// - Timeouts: if the next block were be an empty block with a timeout QC aggregated from timeout messages,
-// then it must satisfy nextBlock.GetView() = timeout.GetView() + 1. We can safely evict all timeout messages with
-// currentView > timeout.GetView() + 1.
+// Any votes or timeouts with a view that's less than currentView - 1 are stale because they cannot
+// be used in the next block or any future blocks.
 func (fc *fastHotStuffEventLoop) evictStaleVotesAndTimeouts() {
 	// Evict stale vote messages
 	for blockHash, voters := range fc.votesSeenByBlockHash {
@@ -904,5 +897,5 @@ func (fc *fastHotStuffEventLoop) fetchSafeBlockInfo(blockHash BlockHash) (
 }
 
 func isStaleView(currentView uint64, testView uint64) bool {
-	return currentView > testView+1
+	return testView < currentView-1
 }

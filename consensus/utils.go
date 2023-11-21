@@ -298,8 +298,7 @@ func isValidSignatureManyPublicKeys(publicKeys []*bls.PublicKey, signature *bls.
 // - Cq >= 2f + 1
 // - 3Cq >= 6f + 3
 // - 3Cq >= 2(3f + 1) + 1
-// - 3Cq >= 2N + 1
-// - Finally, this gives us the condition: 3Cq - 2N - 1 >= 0. Which is what we will verify in this function.
+// - Finally, this gives us the condition: 3Cq >= 2N + 1. Which is what we will verify in this function.
 func isSuperMajorityStake(stake *uint256.Int, totalStake *uint256.Int) bool {
 	// Both values must be > 0
 	if stake == nil || totalStake == nil || stake.IsZero() || totalStake.IsZero() {
@@ -314,17 +313,12 @@ func isSuperMajorityStake(stake *uint256.Int, totalStake *uint256.Int) bool {
 	// Compute 3Cq
 	honestStakeComponent := uint256.NewInt().Mul(stake, uint256.NewInt().SetUint64(3))
 
-	// Compute 2N
+	// Compute 2N + 1
 	totalStakeComponent := uint256.NewInt().Mul(totalStake, uint256.NewInt().SetUint64(2))
+	totalStakeComponent = uint256.NewInt().Add(totalStakeComponent, uint256.NewInt().SetUint64(1))
 
-	// Compute 3Cq - 2N - 1
-	superMajorityConditionSum := uint256.NewInt().Sub(
-		uint256.NewInt().Sub(honestStakeComponent, totalStakeComponent),
-		uint256.NewInt().SetOne(),
-	)
-
-	// Check if 3Cq - 2N - 1 >= 0
-	return superMajorityConditionSum.Sign() >= 0
+	// Check if 3Cq >= 2N + 1
+	return honestStakeComponent.Cmp(totalStakeComponent) >= 0
 }
 
 func extractBlockHash(block BlockWithValidatorList) BlockHash {
@@ -479,9 +473,13 @@ func generateRandomBytes(numBytes int) []byte {
 	return randomBytes
 }
 
-func powerOfTwo(n uint64) int64 {
+func powerOfTwo(exponent uint64, maxExponent uint64) int64 {
+	if exponent > maxExponent {
+		return powerOfTwo(maxExponent, maxExponent)
+	}
+
 	result := int64(1)
-	for i := uint64(0); i < n; i++ {
+	for i := uint64(0); i < exponent; i++ {
 		result *= 2
 	}
 	return result

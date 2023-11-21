@@ -36,6 +36,11 @@ type FastHotStuffEvent struct {
 	AggregateQC    AggregateQuorumCertificate
 }
 
+// The maximum number of consecutive timeouts that can occur before the event loop stops
+// its exponential back-off. This is a safety valve that helps ensure that the event loop
+// doesn't get stuck in a near indefinite back-off state.
+const maxConsecutiveTimeouts = 16
+
 // Create an alias type of the 32 bit block hash so that the raw [32]byte type isn't
 // ambiguously repeated in the code base
 type BlockHashValue = [32]byte

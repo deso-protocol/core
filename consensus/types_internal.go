@@ -7,7 +7,7 @@ import (
 )
 
 //////////////////////////////////////////////////////////
-// BlockHash interface implementation for testing
+// BlockHash interface implementation for unit tests
 //////////////////////////////////////////////////////////
 
 type blockHash struct {
@@ -19,7 +19,7 @@ func (bh *blockHash) GetValue() [32]byte {
 }
 
 //////////////////////////////////////////////////////////
-// Validator interface implementation for testing
+// Validator interface implementation for unit tests
 //////////////////////////////////////////////////////////
 
 type validator struct {
@@ -36,7 +36,9 @@ func (v *validator) GetStakeAmount() *uint256.Int {
 }
 
 ////////////////////////////////////////////////////////////////////////
-// AggregateQuorumCertificate interface implementation for internal use
+// AggregateQuorumCertificate interface implementation for internal use.
+// We use this type for unit tests, and to construct timeout QCs for
+// external signaling.
 ////////////////////////////////////////////////////////////////////////
 
 type aggregateQuorumCertificate struct {
@@ -63,7 +65,7 @@ func (qc *aggregateQuorumCertificate) GetAggregatedSignature() AggregatedSignatu
 }
 
 //////////////////////////////////////////////////////////
-// QuorumCertificate interface implementation for testing
+// QuorumCertificate interface implementation for unit tests
 //////////////////////////////////////////////////////////
 
 type quorumCertificate struct {
@@ -102,7 +104,7 @@ func (as *aggregatedSignature) GetSignature() *bls.Signature {
 }
 
 //////////////////////////////////////////////////////////
-// Block interface implementation for testing
+// Block interface implementation for unit tests
 //////////////////////////////////////////////////////////
 
 type block struct {
@@ -133,7 +135,7 @@ func (b *block) GetQC() QuorumCertificate {
 }
 
 //////////////////////////////////////////////////////////
-// VoteMessage interface implementation for testing
+// VoteMessage interface implementation for unit tests
 //////////////////////////////////////////////////////////
 
 type voteMessage struct {
@@ -160,7 +162,7 @@ func (vm *voteMessage) GetSignature() *bls.Signature {
 }
 
 //////////////////////////////////////////////////////////
-// TimeoutMessage interface implementation for testing
+// TimeoutMessage interface implementation for unit tests
 //////////////////////////////////////////////////////////
 
 type timeoutMessage struct {
@@ -187,7 +189,9 @@ func (tm *timeoutMessage) GetSignature() *bls.Signature {
 }
 
 //////////////////////////////////////////////////////////
-// Internal blockWithValidatorLookup type
+// Internal blockWithValidatorLookup type. We use this type
+// to bundle a block with its validator list and a lookup
+// of validators by public key string.
 //////////////////////////////////////////////////////////
 
 type blockWithValidatorLookup struct {

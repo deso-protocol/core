@@ -65,6 +65,7 @@ func (t *ScheduledTask[TaskParam]) Cancel() {
 	}
 
 	t.timer = nil
+	t.duration = 0
 }
 
 func (t *ScheduledTask[TaskParam]) GetDuration() time.Duration {
