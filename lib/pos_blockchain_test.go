@@ -1759,6 +1759,8 @@ func TestProcessBlockPoS(t *testing.T) {
 		malformedOrphanBlock.Header.PrevBlockHash = randomHash
 		// Modify anything to make the block malformed, but make sure a hash can still be generated.
 		malformedOrphanBlock.Header.TxnConnectStatusByIndexHash = randomHash
+		// Resign the block.
+		updateProposerVotePartialSignatureForBlock(testMeta, malformedOrphanBlock)
 		malformedOrphanBlockHash, err := malformedOrphanBlock.Hash()
 		require.NoError(t, err)
 		success, isOrphan, missingBlockHashes, err := testMeta.chain.processBlockPoS(malformedOrphanBlock, 18, true)
@@ -1905,7 +1907,8 @@ func TestProcessOrphanBlockPoS(t *testing.T) {
 		require.True(t, blockNode.IsValidateFailed())
 		require.False(t, blockNode.IsValidated())
 	}
-	// Generate a real block in this epoch and change the block proposer. This should fail validation.
+	// Generate a real block in this epoch and change the block proposer. This should fail the spam prevention check
+	// and the block will not be in the block index.
 	{
 		var realBlock *MsgDeSoBlock
 		realBlock = _generateRealBlock(testMeta, 12, 12, 1273, testMeta.chain.BlockTip().Hash, false)
@@ -1931,14 +1934,12 @@ func TestProcessOrphanBlockPoS(t *testing.T) {
 		// Get the block node from the block index.
 		blockHash, err := realBlock.Hash()
 		require.NoError(t, err)
-		blockNode, exists := testMeta.chain.blockIndexByHash[*blockHash]
-		require.True(t, exists)
-		require.True(t, blockNode.IsStored())
-		require.True(t, blockNode.IsValidateFailed())
-		require.False(t, blockNode.IsValidated())
+		_, exists := testMeta.chain.blockIndexByHash[*blockHash]
+		require.False(t, exists)
 	}
 
 	// Generate a real block in this epoch and update the QC to not have a supermajority.
+	// This fails the spam prevention check and the block will not be in the block index.
 	{
 		var realBlock *MsgDeSoBlock
 		realBlock = _generateRealBlock(testMeta, 12, 12, 543, testMeta.chain.BlockTip().Hash, false)
@@ -1985,11 +1986,8 @@ func TestProcessOrphanBlockPoS(t *testing.T) {
 		// Get the block node from the block index.
 		blockHash, err := realBlock.Hash()
 		require.NoError(t, err)
-		blockNode, exists := testMeta.chain.blockIndexByHash[*blockHash]
-		require.True(t, exists)
-		require.True(t, blockNode.IsStored())
-		require.True(t, blockNode.IsValidateFailed())
-		require.False(t, blockNode.IsValidated())
+		_, exists := testMeta.chain.blockIndexByHash[*blockHash]
+		require.False(t, exists)
 	}
 	{
 		// Generate a real block in the next epoch and it should pass validation and be stored.
@@ -2014,7 +2012,7 @@ func TestProcessOrphanBlockPoS(t *testing.T) {
 	}
 	{
 		// Generate a real block in the next epoch and make the block proposer any public key not in
-		// the validator set. This should fail validation.
+		// the validator set. This should fail the spam prevention check and the block will not be in the block index.
 		utxoView := _newUtxoView(testMeta)
 		currentEpochEntry, err := utxoView.GetCurrentEpochEntry()
 		require.NoError(t, err)
@@ -2031,11 +2029,8 @@ func TestProcessOrphanBlockPoS(t *testing.T) {
 		// Get the block node from the block index.
 		blockHash, err := nextEpochBlock.Hash()
 		require.NoError(t, err)
-		blockNode, exists := testMeta.chain.blockIndexByHash[*blockHash]
-		require.True(t, exists)
-		require.True(t, blockNode.IsStored())
-		require.True(t, blockNode.IsValidateFailed())
-		require.False(t, blockNode.IsValidated())
+		_, exists := testMeta.chain.blockIndexByHash[*blockHash]
+		require.False(t, exists)
 	}
 	{
 		// Generate a real block in the next epoch and update the QC to not have a supermajority.
@@ -2079,6 +2074,14 @@ func TestProcessOrphanBlockPoS(t *testing.T) {
 			SignersList: signersList,
 			Signature:   aggregatedSignature,
 		}
+		updateProposerVotePartialSignatureForBlock(testMeta, nextEpochBlock)
+		err = testMeta.chain.processOrphanBlockPoS(nextEpochBlock)
+		require.NoError(t, err)
+		// Get the block node from the block index.
+		blockHash, err := nextEpochBlock.Hash()
+		require.NoError(t, err)
+		_, exists := testMeta.chain.blockIndexByHash[*blockHash]
+		require.False(t, exists)
 	}
 	{
 		// Generate a block that is two epochs in the future. We won't even store this.
