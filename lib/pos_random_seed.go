@@ -125,7 +125,7 @@ func hashRandomSeedSignature(randomSeedSignature *bls.Signature) (*RandomSeedHas
 	randomSeedSHA256 := sha256.Sum256(randomSeedSignature.ToBytes())
 	newRandomSeedHash, err := (&RandomSeedHash{}).FromBytes(randomSeedSHA256[:])
 	if err != nil {
-		return nil, errors.Wrapf(err, "UtxoView.hashRandomSeedSignature: problem hashing RandomSeedSignature: ")
+		return nil, errors.Wrapf(err, "hashRandomSeedSignature: problem hashing RandomSeedSignature: ")
 	}
 	return newRandomSeedHash, nil
 }
