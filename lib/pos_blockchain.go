@@ -405,7 +405,7 @@ func (bc *Blockchain) validateAndIndexBlockPoS(block *MsgDeSoBlock) (*BlockNode,
 	// the full validation algorithm on it, then index it and use the result.
 	parentBlockNode, err := bc.validatePreviouslyIndexedBlockPoS(block.Header.PrevBlockHash)
 	if err != nil {
-		return nil, errors.Wrapf(err, "validateAndIndexBlockPoS: Problem validating previously indexed block: ")
+		return blockNode, errors.Wrapf(err, "validateAndIndexBlockPoS: Problem validating previously indexed block: ")
 	}
 
 	// Here's where it gets a little tricky. If the parent has a status of ValidateFailed, then we know we store
@@ -421,13 +421,6 @@ func (bc *Blockchain) validateAndIndexBlockPoS(block *MsgDeSoBlock) (*BlockNode,
 		return bc.storeBlockInBlockIndex(block)
 	}
 
-	// At this point, we know the parent block is validated. We can now perform all other validations
-	// on the current block. First we store the block in the block index.
-	blockNode, err = bc.storeBlockInBlockIndex(block)
-	if err != nil {
-		return nil, errors.Wrapf(err, "validateAndIndexBlockPoS: Problem adding block to block index: %v", err)
-	}
-
 	// Check if the block is properly formed and passes all basic validations.
 	if err = bc.isValidBlockPoS(block); err != nil {
 		return bc.storeValidateFailedBlockWithWrappedError(block, err)
@@ -436,7 +429,12 @@ func (bc *Blockchain) validateAndIndexBlockPoS(block *MsgDeSoBlock) (*BlockNode,
 	// Validate the block's random seed signature
 	isValidRandomSeedSignature, err := bc.hasValidProposerRandomSeedSignaturePoS(block)
 	if err != nil {
-		return nil, errors.Wrap(err, "validateAndIndexBlockPoS: Problem validating random seed signature")
+		var innerErr error
+		blockNode, innerErr = bc.storeBlockInBlockIndex(block)
+		if innerErr != nil {
+			return nil, errors.Wrapf(innerErr, "validateAndIndexBlockPoS: Problem adding block to block index: %v", err)
+		}
+		return blockNode, errors.Wrap(err, "validateAndIndexBlockPoS: Problem validating random seed signature")
 	}
 	if !isValidRandomSeedSignature {
 		return bc.storeValidateFailedBlockWithWrappedError(block, errors.New("invalid random seed signature"))
@@ -448,8 +446,13 @@ func (bc *Blockchain) validateAndIndexBlockPoS(block *MsgDeSoBlock) (*BlockNode,
 	if err != nil {
 		// This should never happen. If the parent is validated and extends from the tip, then we should
 		// be able to build a UtxoView for it. This failure can only happen due to transient or badger issues.
-		// We return the block node as-is as a best effort thing.
-		return blockNode, nil
+		// We store the block and return an error.
+		var innerErr error
+		blockNode, innerErr = bc.storeBlockInBlockIndex(block)
+		if innerErr != nil {
+			return nil, errors.Wrapf(innerErr, "validateAndIndexBlockPoS: Problem adding block to block index: %v", err)
+		}
+		return blockNode, errors.Wrap(err, "validateAndIndexBlockPoS: Problem getting UtxoView")
 	}
 
 	// Connect this block to the parent block's UtxoView.
@@ -466,7 +469,7 @@ func (bc *Blockchain) validateAndIndexBlockPoS(block *MsgDeSoBlock) (*BlockNode,
 	// We can now add this block to the block index since we have performed all basic validations.
 	blockNode, err = bc.storeValidatedBlockInBlockIndex(block)
 	if err != nil {
-		return nil, errors.Wrap(err, "validateAndIndexBlockPoS: Problem adding block to block index: ")
+		return blockNode, errors.Wrap(err, "validateAndIndexBlockPoS: Problem adding block to block index: ")
 	}
 	return blockNode, nil
 }
@@ -520,7 +523,8 @@ func (bc *Blockchain) validatePreviouslyIndexedBlockPoS(blockHash *BlockHash) (*
 }
 
 // isValidBlockPoS performs all basic validations on a block as it relates to
-// the Blockchain struct.
+// the Blockchain struct. Any error resulting from this function implies that
+// the block is invalid.
 func (bc *Blockchain) isValidBlockPoS(block *MsgDeSoBlock) error {
 	// Surface Level validation of the block
 	if err := bc.isProperlyFormedBlockPoS(block); err != nil {
@@ -535,9 +539,6 @@ func (bc *Blockchain) isValidBlockPoS(block *MsgDeSoBlock) error {
 	}
 	// Validate View
 	if err := bc.hasValidBlockViewPoS(block); err != nil {
-		// Check if err is for view > latest committed block view and <= latest uncommitted block.
-		// If so, we need to perform the rest of the validations and then add to our block index.
-		// TODO: implement check on error described above. Caller will handle this.
 		return err
 	}
 	return nil
@@ -687,7 +688,7 @@ func (bc *Blockchain) hasValidBlockHeightPoS(block *MsgDeSoBlock) error {
 // it checks that the view is less than or equal to its parent.
 // If not, we return an error indicating that we'll want to add this block as an
 // orphan. Then it will check if that the view is exactly one greater than the
-// latest uncommitted block if we have an regular vote QC. If this block has a
+// latest uncommitted block if we have a regular vote QC. If this block has a
 // timeout QC, it will check that the view is at least greater than the latest
 // uncommitted block's view + 1.
 func (bc *Blockchain) hasValidBlockViewPoS(block *MsgDeSoBlock) error {
