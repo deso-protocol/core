@@ -896,10 +896,11 @@ func (fc *fastHotStuffEventLoop) fetchSafeBlockInfo(blockHash BlockHash) (
 	return false, nil, nil, nil
 }
 
-// Emits the event as a non-blocking operation. This ensures that even if the Events channel is full,
-// the emit operation completes without blocking. This guarantees that there will be no risk of deadlock
-// when a thread holding the event loop's lock is blocked from emitting an event because another thread that
-// needs to read an emitted event is blocked from doing so because it needs to first operate on the event loop.
+// emitEvent emits the event via a non-blocking operation. This ensures that even if the Events channel
+// is full, the emit operation completes without blocking. This guarantees that there will be no risk of
+// deadlock when a thread holding the event loop's lock is blocked from emitting an event because another
+// thread that needs to read an emitted event is blocked from doing so because it needs to first operate
+// on the event loop.
 func (fc *fastHotStuffEventLoop) emitEvent(event *FastHotStuffEvent) {
 	go func() { fc.Events <- event }()
 }
