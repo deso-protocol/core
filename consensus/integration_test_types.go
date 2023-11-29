@@ -335,6 +335,9 @@ func (node *validatorNode) runEventSignalLoop() {
 }
 
 func (node *validatorNode) handleVoteEvent(event *FastHotStuffEvent) {
+	node.lock.Lock()
+	defer node.lock.Unlock()
+
 	payload := GetVoteSignaturePayload(event.View, event.TipBlockHash)
 	signature, err := node.privateKey.Sign(payload[:])
 	if err != nil {
@@ -390,6 +393,9 @@ func (node *validatorNode) broadcastTimeout(event *FastHotStuffEvent) {
 }
 
 func (node *validatorNode) handleVoteQCConstructionEvent(event *FastHotStuffEvent) {
+	node.lock.Lock()
+	defer node.lock.Unlock()
+
 	if !node.isBlockProposer {
 		return
 	}
@@ -414,6 +420,9 @@ func (node *validatorNode) handleVoteQCConstructionEvent(event *FastHotStuffEven
 }
 
 func (node *validatorNode) handleTimeoutQCConstructionEvent(event *FastHotStuffEvent) {
+	node.lock.Lock()
+	defer node.lock.Unlock()
+
 	if !node.isBlockProposer {
 		return
 	}

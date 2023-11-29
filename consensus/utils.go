@@ -53,6 +53,10 @@ func IsValidSuperMajorityAggregateQuorumCertificate(aggQC AggregateQuorumCertifi
 		return false
 	}
 
+	if IsValidSuperMajorityQuorumCertificate(aggQC.GetHighQC(), validators) {
+		return false
+	}
+
 	hasSuperMajorityStake, signerPublicKeys := isSuperMajorityStakeSignersList(aggQC.GetAggregatedSignature().GetSignersList(), validators)
 	if !hasSuperMajorityStake {
 		return false
@@ -216,7 +220,8 @@ func isProperlyFormedTimeout(timeout TimeoutMessage) bool {
 		return false
 	}
 
-	return true
+	// The high QC must be properly formed on its own
+	return isProperlyFormedQC(timeout.GetHighQC())
 }
 
 func isProperlyFormedQC(qc QuorumCertificate) bool {
@@ -238,12 +243,36 @@ func isProperlyFormedAggregateQC(aggQC AggregateQuorumCertificate) bool {
 	if isInterfaceNil(aggQC) {
 		return false
 	}
-	// The view must be non-zero and the high QC must be properly formed
-	// TODO: Do we need further validation on high qc views? such as non-zero?
-	if aggQC.GetView() == 0 || !isProperlyFormedQC(aggQC.GetHighQC()) || len(aggQC.GetHighQCViews()) == 0 {
+	// The view must be non-zero and the high QC views must be non-empty
+	if aggQC.GetView() == 0 || len(aggQC.GetHighQCViews()) == 0 {
 		return false
 	}
-	return isProperlyFormedAggregateSignature(aggQC.GetAggregatedSignature())
+
+	// The high QC must be properly formed
+	if !isProperlyFormedQC(aggQC.GetHighQC()) {
+		return false
+	}
+
+	// If there was a timeout, it means that we've skipped at least one view. The
+	// timed out view and the high QC's view cannot be consecutive.
+	if aggQC.GetView() <= aggQC.GetHighQC().GetView()+1 {
+		return false
+	}
+
+	// The aggregate signature must be properly formed
+	if !isProperlyFormedAggregateSignature(aggQC.GetAggregatedSignature()) {
+		return false
+	}
+
+	// Validate that all of the high QC views are non-zero
+	for _, view := range aggQC.GetHighQCViews() {
+		if view == 0 {
+			return false
+		}
+	}
+
+	// Happy path
+	return true
 }
 
 func isProperlyFormedAggregateSignature(agg AggregatedSignature) bool {
@@ -298,8 +327,7 @@ func isValidSignatureManyPublicKeys(publicKeys []*bls.PublicKey, signature *bls.
 // - Cq >= 2f + 1
 // - 3Cq >= 6f + 3
 // - 3Cq >= 2(3f + 1) + 1
-// - 3Cq >= 2N + 1
-// - Finally, this gives us the condition: 3Cq - 2N - 1 >= 0. Which is what we will verify in this function.
+// - Finally, this gives us the condition: 3Cq >= 2N + 1. Which is what we will verify in this function.
 func isSuperMajorityStake(stake *uint256.Int, totalStake *uint256.Int) bool {
 	// Both values must be > 0
 	if stake == nil || totalStake == nil || stake.IsZero() || totalStake.IsZero() {
@@ -314,17 +342,12 @@ func isSuperMajorityStake(stake *uint256.Int, totalStake *uint256.Int) bool {
 	// Compute 3Cq
 	honestStakeComponent := uint256.NewInt().Mul(stake, uint256.NewInt().SetUint64(3))
 
-	// Compute 2N
+	// Compute 2N + 1
 	totalStakeComponent := uint256.NewInt().Mul(totalStake, uint256.NewInt().SetUint64(2))
+	totalStakeComponent = uint256.NewInt().Add(totalStakeComponent, uint256.NewInt().SetUint64(1))
 
-	// Compute 3Cq - 2N - 1
-	superMajorityConditionSum := uint256.NewInt().Sub(
-		uint256.NewInt().Sub(honestStakeComponent, totalStakeComponent),
-		uint256.NewInt().SetOne(),
-	)
-
-	// Check if 3Cq - 2N - 1 >= 0
-	return superMajorityConditionSum.Sign() >= 0
+	// Check if 3Cq >= 2N + 1
+	return honestStakeComponent.Cmp(totalStakeComponent) >= 0
 }
 
 func extractBlockHash(block BlockWithValidatorList) BlockHash {
@@ -349,13 +372,17 @@ func validatorToPublicKeyString(validator Validator) string {
 }
 
 func createDummyValidatorList() []Validator {
+	return createValidatorListForPrivateKeys(createDummyBLSPrivateKey(), createDummyBLSPrivateKey())
+}
+
+func createValidatorListForPrivateKeys(pk1 *bls.PrivateKey, pk2 *bls.PrivateKey) []Validator {
 	validators := []*validator{
 		{
-			publicKey:   createDummyBLSPublicKey(),
+			publicKey:   pk1.PublicKey(),
 			stakeAmount: uint256.NewInt().SetUint64(100),
 		},
 		{
-			publicKey:   createDummyBLSPublicKey(),
+			publicKey:   pk2.PublicKey(),
 			stakeAmount: uint256.NewInt().SetUint64(50),
 		},
 	}
@@ -369,8 +396,17 @@ func createDummyBlock(view uint64) *block {
 	return &block{
 		blockHash: createDummyBlockHash(),
 		view:      view,
-		height:    1,
+		height:    view,
 		qc:        createDummyQC(view-1, createDummyBlockHash()),
+	}
+}
+
+func createBlockWithParent(parentBlock Block) *block {
+	return &block{
+		blockHash: createDummyBlockHash(),
+		view:      parentBlock.GetView() + 1,
+		height:    parentBlock.GetView() + 1,
+		qc:        createDummyQC(parentBlock.GetView(), parentBlock.GetBlockHash()),
 	}
 }
 
@@ -390,17 +426,21 @@ func createDummyVoteMessage(view uint64) *voteMessage {
 }
 
 func createDummyTimeoutMessage(view uint64) *timeoutMessage {
-	highQC := createDummyQC(view-1, createDummyBlockHash())
+	return createTimeoutMessageWithPrivateKeyAndHighQC(
+		view,
+		createDummyBLSPrivateKey(),
+		createDummyQC(view-1, createDummyBlockHash()),
+	)
+}
 
-	signaturePayload := GetTimeoutSignaturePayload(view, highQC.view)
-
-	blsPrivateKey, _ := bls.NewPrivateKey()
-	blsSignature, _ := blsPrivateKey.Sign(signaturePayload[:])
+func createTimeoutMessageWithPrivateKeyAndHighQC(view uint64, pk *bls.PrivateKey, highQC QuorumCertificate) *timeoutMessage {
+	signaturePayload := GetTimeoutSignaturePayload(view, highQC.GetView())
+	blsSignature, _ := pk.Sign(signaturePayload[:])
 
 	return &timeoutMessage{
 		highQC:    highQC,
 		view:      view,
-		publicKey: blsPrivateKey.PublicKey(),
+		publicKey: pk.PublicKey(),
 		signature: blsSignature,
 	}
 }
@@ -479,9 +519,13 @@ func generateRandomBytes(numBytes int) []byte {
 	return randomBytes
 }
 
-func powerOfTwo(n uint64) int64 {
+func powerOfTwo(exponent uint64, maxExponent uint64) int64 {
+	if exponent > maxExponent {
+		return powerOfTwo(maxExponent, maxExponent)
+	}
+
 	result := int64(1)
-	for i := uint64(0); i < n; i++ {
+	for i := uint64(0); i < exponent; i++ {
 		result *= 2
 	}
 	return result

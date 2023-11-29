@@ -55,3 +55,57 @@ func TestSliceAny(t *testing.T) {
 		require.True(t, Any(slice, predicate))
 	}
 }
+
+func TestSliceToMap(t *testing.T) {
+	// Create a struct to test the slice -> map transformation
+	type keyValueType struct {
+		Key   string
+		Value string
+	}
+
+	// Test empty slice
+	{
+		// Create a custom function extract the key from the struct
+		keyFn := func(val keyValueType) string {
+			return val.Key
+		}
+
+		slice := []keyValueType{}
+		result := ToMap(slice, keyFn)
+		require.Equal(t, 0, len(result))
+	}
+
+	// Test slice with pointers
+	{
+		// Create a custom function extract the key from the struct
+		keyFn := func(val *keyValueType) string {
+			return val.Key
+		}
+
+		slice := []*keyValueType{
+			{Key: "a", Value: "1"},
+			{Key: "b", Value: "2"},
+		}
+		result := ToMap(slice, keyFn)
+		require.Equal(t, 2, len(result))
+		require.Equal(t, "1", result["a"].Value)
+		require.Equal(t, "2", result["b"].Value)
+	}
+
+	// Test slice with raw values
+	{
+		// Create a custom function extract the key from the struct
+		keyFn := func(val keyValueType) string {
+			return val.Key
+		}
+
+		slice := []keyValueType{
+			{Key: "a", Value: "1"},
+			{Key: "b", Value: "2"},
+		}
+		result := ToMap(slice, keyFn)
+		require.Equal(t, 2, len(result))
+		require.Equal(t, "1", result["a"].Value)
+		require.Equal(t, "2", result["b"].Value)
+	}
+}

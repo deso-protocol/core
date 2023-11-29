@@ -99,7 +99,7 @@ func TestInit(t *testing.T) {
 
 		require.Equal(t, fc.tip.block.GetBlockHash().GetValue(), block.GetBlockHash().GetValue())
 		require.Equal(t, fc.tip.block.GetView(), uint64(2))
-		require.Equal(t, fc.tip.block.GetHeight(), uint64(1))
+		require.Equal(t, fc.tip.block.GetHeight(), uint64(2))
 
 		require.Equal(t, fc.crankTimerInterval, time.Duration(100))
 		require.Equal(t, fc.timeoutBaseDuration, time.Duration(101))
@@ -111,7 +111,7 @@ func TestInit(t *testing.T) {
 		require.Equal(t, len(fc.safeBlocks), 1)
 		require.Equal(t, fc.safeBlocks[0].block.GetBlockHash().GetValue(), block.GetBlockHash().GetValue())
 		require.Equal(t, fc.safeBlocks[0].block.GetView(), uint64(2))
-		require.Equal(t, fc.safeBlocks[0].block.GetHeight(), uint64(1))
+		require.Equal(t, fc.safeBlocks[0].block.GetHeight(), uint64(2))
 		require.Equal(t, len(fc.safeBlocks[0].validatorList), 2)
 		require.Equal(t, len(fc.safeBlocks[0].validatorLookup), 2)
 	}
@@ -430,22 +430,28 @@ func TestProcessValidatorTimeout(t *testing.T) {
 
 	fc := NewFastHotStuffEventLoop()
 
+	validatorPrivateKey1 := createDummyBLSPrivateKey()
+	validatorPrivateKey2 := createDummyBLSPrivateKey()
+
+	validatorList := createValidatorListForPrivateKeys(validatorPrivateKey1, validatorPrivateKey2)
+
 	// Init the event loop
 	{
-		// BlockHeight = 1, Current View = 3
-		tipBlock := BlockWithValidatorList{createDummyBlock(2), createDummyValidatorList()}
-		err := fc.Init(oneHourInNanoSecs, oneHourInNanoSecs, tipBlock, []BlockWithValidatorList{tipBlock})
+		// BlockHeight = 3, Current View = 4
+		genesisBlock := BlockWithValidatorList{createDummyBlock(2), validatorList}
+		tipBlock := BlockWithValidatorList{createBlockWithParent(genesisBlock.Block), validatorList}
+		err := fc.Init(oneHourInNanoSecs, oneHourInNanoSecs, tipBlock, []BlockWithValidatorList{tipBlock, genesisBlock})
 		require.NoError(t, err)
 	}
 
 	// Start the event loop
 	fc.Start()
 
-	// Current View = 4
+	// Current View = 5
 	{
 		currentView, err := fc.AdvanceViewOnTimeout()
 		require.NoError(t, err)
-		require.Equal(t, uint64(4), currentView)
+		require.Equal(t, uint64(5), currentView)
 	}
 
 	// Test with malformed timeout
@@ -455,18 +461,9 @@ func TestProcessValidatorTimeout(t *testing.T) {
 		require.Contains(t, err.Error(), "Malformed timeout message")
 	}
 
-	// Test invalid signature
-	{
-		timeout := createDummyTimeoutMessage(4)
-		timeout.signature = createDummyBLSSignature()
-		err := fc.ProcessValidatorTimeout(timeout)
-		require.Error(t, err)
-		require.Contains(t, err.Error(), "Invalid signature")
-	}
-
 	// Test with stale view
 	{
-		timeout := createDummyTimeoutMessage(1)
+		timeout := createTimeoutMessageWithPrivateKeyAndHighQC(3, validatorPrivateKey1, fc.tip.block.GetQC())
 		err := fc.ProcessValidatorTimeout(timeout)
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "Timeout has a stale view")
@@ -499,9 +496,36 @@ func TestProcessValidatorTimeout(t *testing.T) {
 		require.Contains(t, err.Error(), "has already timed out for view")
 	}
 
+	// Test unknown high QC
+	{
+		timeout := createTimeoutMessageWithPrivateKeyAndHighQC(4, validatorPrivateKey1, fc.tip.block.GetQC())
+		timeout.highQC = createDummyQC(2, createDummyBlockHash())
+		err := fc.ProcessValidatorTimeout(timeout)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "has an unknown high QC")
+	}
+
+	// Test unknown public key in timeout message
+	{
+		timeout := createTimeoutMessageWithPrivateKeyAndHighQC(4, validatorPrivateKey1, fc.tip.block.GetQC())
+		timeout.publicKey = createDummyBLSPublicKey()
+		err := fc.ProcessValidatorTimeout(timeout)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "is not in the validator list")
+	}
+
+	// Test invalid signature
+	{
+		timeout := createTimeoutMessageWithPrivateKeyAndHighQC(4, validatorPrivateKey1, fc.tip.block.GetQC())
+		timeout.signature = createDummyBLSSignature()
+		err := fc.ProcessValidatorTimeout(timeout)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "Invalid signature")
+	}
+
 	// Test happy path
 	{
-		timeout := createDummyTimeoutMessage(4)
+		timeout := createTimeoutMessageWithPrivateKeyAndHighQC(4, validatorPrivateKey1, fc.tip.block.GetQC())
 		err := fc.ProcessValidatorTimeout(timeout)
 		require.NoError(t, err)
 	}
