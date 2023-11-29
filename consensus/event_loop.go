@@ -166,12 +166,12 @@ func (fc *fastHotStuffEventLoop) ProcessTipBlock(tip BlockWithValidatorList, saf
 
 	// Signal the server that we can vote for the block. The server will decide whether to construct and
 	// broadcast the vote.
-	fc.Events <- &FastHotStuffEvent{
+	fc.emitEvent(&FastHotStuffEvent{
 		EventType:      FastHotStuffEventTypeVote,
 		TipBlockHash:   fc.tip.block.GetBlockHash(),
 		TipBlockHeight: fc.tip.block.GetHeight(),
 		View:           fc.tip.block.GetView(),
-	}
+	})
 
 	// Schedule the next crank timer and timeout scheduled tasks
 	fc.resetScheduledTasks()
@@ -337,7 +337,7 @@ func (fc *fastHotStuffEventLoop) ProcessValidatorVote(vote VoteMessage) error {
 		// Signal the server that we can construct a QC for the chain tip, and mark that we have
 		// constructed a QC for the current view.
 		fc.hasConstructedQCInCurrentView = true
-		fc.Events <- voteQCEvent
+		fc.emitEvent(voteQCEvent)
 	}
 
 	return nil
@@ -423,7 +423,7 @@ func (fc *fastHotStuffEventLoop) ProcessValidatorTimeout(timeout TimeoutMessage)
 		// Signal the server that we can construct a timeout QC for the current view, and mark
 		// that we have constructed a QC for the current view.
 		fc.hasConstructedQCInCurrentView = true
-		fc.Events <- timeoutQCEvent
+		fc.emitEvent(timeoutQCEvent)
 	}
 
 	return nil
@@ -536,7 +536,7 @@ func (fc *fastHotStuffEventLoop) onCrankTimerTaskExecuted(blockConstructionView 
 	if voteQCEvent := fc.tryConstructVoteQCInCurrentView(); voteQCEvent != nil {
 		// Signal the server that we can construct a QC for the chain tip
 		fc.hasConstructedQCInCurrentView = true
-		fc.Events <- voteQCEvent
+		fc.emitEvent(voteQCEvent)
 		return
 	}
 
@@ -545,7 +545,7 @@ func (fc *fastHotStuffEventLoop) onCrankTimerTaskExecuted(blockConstructionView 
 	if timeoutQCEvent := fc.tryConstructTimeoutQCInCurrentView(); timeoutQCEvent != nil {
 		// Signal the server that we can construct a timeout QC for the current view
 		fc.hasConstructedQCInCurrentView = true
-		fc.Events <- timeoutQCEvent
+		fc.emitEvent(timeoutQCEvent)
 		return
 	}
 }
@@ -777,13 +777,13 @@ func (fc *fastHotStuffEventLoop) onTimeoutScheduledTaskExecuted(timedOutView uin
 	}
 
 	// Signal the server that we are ready to time out
-	fc.Events <- &FastHotStuffEvent{
+	fc.emitEvent(&FastHotStuffEvent{
 		EventType:      FastHotStuffEventTypeTimeout, // The timeout event type
 		View:           timedOutView,                 // The view we timed out
 		TipBlockHash:   fc.tip.block.GetBlockHash(),  // The last block we saw
 		TipBlockHeight: fc.tip.block.GetHeight(),     // The last block we saw
 		QC:             fc.tip.block.GetQC(),         // The highest QC we have
-	}
+	})
 
 	// Cancel the timeout task. The server will reschedule it when it advances the view.
 	fc.nextTimeoutTask.Cancel()
@@ -894,6 +894,15 @@ func (fc *fastHotStuffEventLoop) fetchSafeBlockInfo(blockHash BlockHash) (
 	}
 
 	return false, nil, nil, nil
+}
+
+// emitEvent emits the event via a non-blocking operation. This ensures that even if the Events channel
+// is full, the emit operation completes without blocking. This guarantees that there will be no risk of
+// deadlock when a thread holding the event loop's lock is blocked from emitting an event because another
+// thread that needs to read an emitted event is blocked from doing so because it needs to first operate
+// on the event loop.
+func (fc *fastHotStuffEventLoop) emitEvent(event *FastHotStuffEvent) {
+	go func() { fc.Events <- event }()
 }
 
 func isStaleView(currentView uint64, testView uint64) bool {
