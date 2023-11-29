@@ -94,7 +94,7 @@ func TestIsValidSuperMajorityQuorumCertificate(t *testing.T) {
 }
 
 func TestIsValidSuperMajorityAggregateQuorumCertificate(t *testing.T) {
-	// Test malformed QC
+	// Test malformed aggregate QC
 	{
 		require.False(t, IsValidSuperMajorityAggregateQuorumCertificate(nil, createDummyValidatorList()))
 	}
