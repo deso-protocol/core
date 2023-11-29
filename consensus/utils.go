@@ -53,7 +53,7 @@ func IsValidSuperMajorityAggregateQuorumCertificate(aggQC AggregateQuorumCertifi
 		return false
 	}
 
-	if IsValidSuperMajorityQuorumCertificate(aggQC.GetHighQC(), validators) {
+	if !IsValidSuperMajorityQuorumCertificate(aggQC.GetHighQC(), validators) {
 		return false
 	}
 
