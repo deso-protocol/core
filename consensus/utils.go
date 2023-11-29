@@ -216,7 +216,8 @@ func isProperlyFormedTimeout(timeout TimeoutMessage) bool {
 		return false
 	}
 
-	return true
+	// The high QC must be properly formed on its own
+	return isProperlyFormedQC(timeout.GetHighQC())
 }
 
 func isProperlyFormedQC(qc QuorumCertificate) bool {
@@ -343,13 +344,17 @@ func validatorToPublicKeyString(validator Validator) string {
 }
 
 func createDummyValidatorList() []Validator {
+	return createValidatorListForPrivateKeys(createDummyBLSPrivateKey(), createDummyBLSPrivateKey())
+}
+
+func createValidatorListForPrivateKeys(pk1 *bls.PrivateKey, pk2 *bls.PrivateKey) []Validator {
 	validators := []*validator{
 		{
-			publicKey:   createDummyBLSPublicKey(),
+			publicKey:   pk1.PublicKey(),
 			stakeAmount: uint256.NewInt().SetUint64(100),
 		},
 		{
-			publicKey:   createDummyBLSPublicKey(),
+			publicKey:   pk2.PublicKey(),
 			stakeAmount: uint256.NewInt().SetUint64(50),
 		},
 	}
@@ -363,8 +368,17 @@ func createDummyBlock(view uint64) *block {
 	return &block{
 		blockHash: createDummyBlockHash(),
 		view:      view,
-		height:    1,
+		height:    view,
 		qc:        createDummyQC(view-1, createDummyBlockHash()),
+	}
+}
+
+func createBlockWithParent(parentBlock Block) *block {
+	return &block{
+		blockHash: createDummyBlockHash(),
+		view:      parentBlock.GetView() + 1,
+		height:    parentBlock.GetView() + 1,
+		qc:        createDummyQC(parentBlock.GetView(), parentBlock.GetBlockHash()),
 	}
 }
 
@@ -384,17 +398,21 @@ func createDummyVoteMessage(view uint64) *voteMessage {
 }
 
 func createDummyTimeoutMessage(view uint64) *timeoutMessage {
-	highQC := createDummyQC(view-1, createDummyBlockHash())
+	return createTimeoutMessageWithPrivateKeyAndHighQC(
+		view,
+		createDummyBLSPrivateKey(),
+		createDummyQC(view-1, createDummyBlockHash()),
+	)
+}
 
-	signaturePayload := GetTimeoutSignaturePayload(view, highQC.view)
-
-	blsPrivateKey, _ := bls.NewPrivateKey()
-	blsSignature, _ := blsPrivateKey.Sign(signaturePayload[:])
+func createTimeoutMessageWithPrivateKeyAndHighQC(view uint64, pk *bls.PrivateKey, highQC QuorumCertificate) *timeoutMessage {
+	signaturePayload := GetTimeoutSignaturePayload(view, highQC.GetView())
+	blsSignature, _ := pk.Sign(signaturePayload[:])
 
 	return &timeoutMessage{
 		highQC:    highQC,
 		view:      view,
-		publicKey: blsPrivateKey.PublicKey(),
+		publicKey: pk.PublicKey(),
 		signature: blsSignature,
 	}
 }

@@ -395,6 +395,30 @@ func (fc *fastHotStuffEventLoop) ProcessValidatorTimeout(timeout TimeoutMessage)
 		)
 	}
 
+	// Check if the high QC's block hash is in our safeBlocks slice
+	// - If it is, then the high QC's block has already been validated and is safe to extend from
+	// - If it's not, then we have no knowledge of the block, or the block is not safe to extend from.
+	//   This can happen if the timeout's creator is malicious, or if our node is far enough behind the
+	//   blockchain to not have seen the high QC before other nodes have timed out. In either case, the
+	//   simple and safe option is to reject the timeout and move on.
+	isSafeBlock, _, _, validatorLookup := fc.fetchSafeBlockInfo(timeout.GetHighQC().GetBlockHash())
+	if !isSafeBlock {
+		return errors.Errorf(
+			"FastHotStuffEventLoop.ProcessValidatorTimeout: Timeout from public key %s has an unknown high QC with view %d",
+			timeout.GetPublicKey().ToString(),
+			timeout.GetView(),
+		)
+	}
+
+	// Check if the timeout's public key is in the validator set. If it is not, then the sender is not a validator
+	// at the block height after the high QC.
+	if _, isValidator := validatorLookup[timeout.GetPublicKey().ToString()]; !isValidator {
+		return errors.Errorf(
+			"FastHotStuffEventLoop.ProcessValidatorTimeout: Sender %s for timeout message is not in the validator list",
+			timeout.GetPublicKey().ToString(),
+		)
+	}
+
 	// Compute the value sha3-256(timeout.View, timeout.HighQC.View)
 	timeoutSignaturePayload := GetTimeoutSignaturePayload(timeout.GetView(), timeout.GetHighQC().GetView())
 

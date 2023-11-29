@@ -313,28 +313,36 @@ func TestIsProperlyFormedTimeout(t *testing.T) {
 
 	// Test nil high QC
 	{
-		timeout := createDummyTimeoutMessage(1)
+		timeout := createDummyTimeoutMessage(2)
 		timeout.highQC = nil
 		require.False(t, isProperlyFormedTimeout(timeout))
 	}
 
 	// Test nil public key
 	{
-		timeout := createDummyTimeoutMessage(1)
+		timeout := createDummyTimeoutMessage(2)
 		timeout.publicKey = nil
 		require.False(t, isProperlyFormedTimeout(timeout))
 	}
 
 	// Test nil signature
 	{
-		timeout := createDummyTimeoutMessage(1)
+		timeout := createDummyTimeoutMessage(2)
 		timeout.signature = nil
+		require.False(t, isProperlyFormedTimeout(timeout))
+	}
+
+	// Test malformed high QC
+	{
+		highQC := createDummyQC(1, createDummyBlockHash())
+		highQC.aggregatedSignature = nil
+		timeout := createTimeoutMessageWithPrivateKeyAndHighQC(2, createDummyBLSPrivateKey(), highQC)
 		require.False(t, isProperlyFormedTimeout(timeout))
 	}
 
 	// Test happy path
 	{
-		timeout := createDummyTimeoutMessage(1)
+		timeout := createDummyTimeoutMessage(2)
 		require.True(t, isProperlyFormedTimeout(timeout))
 	}
 }
