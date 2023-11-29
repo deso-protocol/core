@@ -53,6 +53,10 @@ func IsValidSuperMajorityAggregateQuorumCertificate(aggQC AggregateQuorumCertifi
 		return false
 	}
 
+	if IsValidSuperMajorityQuorumCertificate(aggQC.GetHighQC(), validators) {
+		return false
+	}
+
 	hasSuperMajorityStake, signerPublicKeys := isSuperMajorityStakeSignersList(aggQC.GetAggregatedSignature().GetSignersList(), validators)
 	if !hasSuperMajorityStake {
 		return false
@@ -239,12 +243,36 @@ func isProperlyFormedAggregateQC(aggQC AggregateQuorumCertificate) bool {
 	if isInterfaceNil(aggQC) {
 		return false
 	}
-	// The view must be non-zero and the high QC must be properly formed
-	// TODO: Do we need further validation on high qc views? such as non-zero?
-	if aggQC.GetView() == 0 || !isProperlyFormedQC(aggQC.GetHighQC()) || len(aggQC.GetHighQCViews()) == 0 {
+	// The view must be non-zero and the high QC views must be non-empty
+	if aggQC.GetView() == 0 || len(aggQC.GetHighQCViews()) == 0 {
 		return false
 	}
-	return isProperlyFormedAggregateSignature(aggQC.GetAggregatedSignature())
+
+	// The high QC must be properly formed
+	if !isProperlyFormedQC(aggQC.GetHighQC()) {
+		return false
+	}
+
+	// If there was a timeout, it means that we've skipped at least one view. The
+	// timed out view and the high QC's view cannot be consecutive.
+	if aggQC.GetView() <= aggQC.GetHighQC().GetView()+1 {
+		return false
+	}
+
+	// The aggregate signature must be properly formed
+	if !isProperlyFormedAggregateSignature(aggQC.GetAggregatedSignature()) {
+		return false
+	}
+
+	// Validate that all of the high QC views are non-zero
+	for _, view := range aggQC.GetHighQCViews() {
+		if view == 0 {
+			return false
+		}
+	}
+
+	// Happy path
+	return true
 }
 
 func isProperlyFormedAggregateSignature(agg AggregatedSignature) bool {
