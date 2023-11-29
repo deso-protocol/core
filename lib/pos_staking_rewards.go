@@ -197,13 +197,20 @@ func (bav *UtxoView) distributeStakingReward(validatorPKID *PKID, stakerPKID *PK
 	var utxoOperation *UtxoOperation
 	// For case 1, we distribute the rewards by adding them to the staker's staked amount.
 	if stakeEntry != nil && stakeEntry.RewardMethod == StakingRewardMethodRestake {
+		validatorEntry, err := bav.GetValidatorByPKID(stakeEntry.ValidatorPKID)
+		if err != nil {
+			return nil, errors.Wrapf(err, "distributeStakingReward: problem fetching validator entry: ")
+		}
 		utxoOperation = &UtxoOperation{
 			Type:                 OperationTypeStakeDistribution,
 			PrevStakeEntries:     []*StakeEntry{stakeEntry.Copy()},
+			PrevValidatorEntry:   validatorEntry.Copy(),
 			StakeAmountNanosDiff: rewardNanos,
 		}
 		stakeEntry.StakeAmountNanos = uint256.NewInt().Add(stakeEntry.StakeAmountNanos, uint256.NewInt().SetUint64(rewardNanos))
 		bav._setStakeEntryMappings(stakeEntry)
+		validatorEntry.TotalStakeAmountNanos = uint256.NewInt().Add(validatorEntry.TotalStakeAmountNanos, uint256.NewInt().SetUint64(rewardNanos))
+		bav._setValidatorEntryMappings(validatorEntry)
 		return utxoOperation, nil
 	}
 

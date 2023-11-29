@@ -692,17 +692,17 @@ func TestStakingRewardDistribution(t *testing.T) {
 		require.Equal(t, m2Balance, uint64(882))
 
 		// Test reward computation for m3:
-		// - m2's original stake was 50 nanos
-		// - m2's validator m1 has a commission rate of 20%
-		// - m2's original DESO wallet balance was 932 nanos
-		// - m2's rewards will be paid out to its DESO wallet
+		// - m3's original stake was 50 nanos
+		// - m3's validator m1 has a commission rate of 20%
+		// - m3's original DESO wallet balance was 932 nanos
+		// - m3's rewards will be paid out to its DESO wallet
 		//
 		// Reward Computations:
-		// - m2's total reward for its stake is 50 * [e^0.1 - 1] = 5 nanos
-		// - m2's reward lost to m1's commission is: 5 nanos * 0.2 = 1 nano
+		// - m3's total reward for its stake is 50 * [e^0.1 - 1] = 5 nanos
+		// - m3's reward lost to m1's commission is: 5 nanos * 0.2 = 1 nano
 		//
 		// Final DESO wallet balance:
-		// - m2's final DESO wallet balance is: 932 + 5 - 1 = 936 nanos
+		// - m3's final DESO wallet balance is: 932 + 5 - 1 = 936 nanos
 		m3Balance, err := _newUtxoView(testMeta).GetDeSoBalanceNanosForPublicKey(m3PkBytes)
 		require.NoError(t, err)
 		require.Equal(t, m3Balance, uint64(936))
@@ -710,6 +710,17 @@ func TestStakingRewardDistribution(t *testing.T) {
 		// Test that m3's stake is unchanged.
 		require.Equal(t, stakeEntries[3].StakerPKID, m3PKID)
 		require.Equal(t, stakeEntries[3].StakeAmountNanos, uint256.NewInt().SetUint64(50))
+
+		// Make sure the validator's total stake amount is correct.
+		// M0's total stake amount nanos should be the sum of M0 and M2's stakes (444 + 108)
+		validatorEntry, err := _newUtxoView(testMeta).GetValidatorByPKID(m0PKID)
+		require.NoError(t, err)
+		require.Equal(t, validatorEntry.TotalStakeAmountNanos.Uint64(), uint64(444+108))
+
+		// M1's total stake amount nanos should be the sum of M1 and M3's stakes (200 + 50)
+		validatorEntry, err = _newUtxoView(testMeta).GetValidatorByPKID(m1PKID)
+		require.NoError(t, err)
+		require.Equal(t, validatorEntry.TotalStakeAmountNanos.Uint64(), uint64(200+50))
 	}
 
 	{
