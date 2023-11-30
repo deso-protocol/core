@@ -22,6 +22,8 @@ import (
 
 	"github.com/decred/dcrd/dcrec/secp256k1/v4"
 
+	"github.com/deso-protocol/core/consensus"
+
 	"github.com/btcsuite/btcd/btcec"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/davecgh/go-spew/spew"
@@ -1994,7 +1996,7 @@ type MsgDeSoHeader struct {
 	//
 	// In the event of a timeout, this field will contain the aggregate QC constructed from
 	// timeout messages from 2/3 of validators weighted by stake, and proves that they have
-	// timed out. This value is set to null in normal cases where a regular block vote has
+	// timed out. This value is set to nil in normal cases where a regular block vote has
 	// taken place.
 	ValidatorsTimeoutAggregateQC *TimeoutAggregateQuorumCertificate
 
@@ -2005,6 +2007,31 @@ type MsgDeSoHeader struct {
 	// for the block. This signature proves that a particular validator proposed the block,
 	// and also acts as the proposer's vote for the block.
 	ProposerVotePartialSignature *bls.Signature
+}
+
+func (msg *MsgDeSoHeader) GetBlockHash() consensus.BlockHash {
+	hash, err := msg.Hash()
+	if err != nil {
+		glog.Errorf("MsgDeSoHeader.GetBlockHash: Problem hashing header: %v", err)
+		// TODO: Should we return nil?
+		return &BlockHash{}
+	}
+	return hash
+}
+
+func (msg *MsgDeSoHeader) GetHeight() uint64 {
+	return msg.Height
+}
+
+func (msg *MsgDeSoHeader) GetView() uint64 {
+	return msg.ProposedInView
+}
+
+func (msg *MsgDeSoHeader) GetQC() consensus.QuorumCertificate {
+	if msg.ValidatorsTimeoutAggregateQC.isEmpty() {
+		return msg.ValidatorsVoteQC
+	}
+	return msg.ValidatorsTimeoutAggregateQC.ValidatorsHighQC
 }
 
 func HeaderSizeBytes() int {

@@ -97,6 +97,7 @@ func resetBalanceModelBlockHeights() {
 	DeSoTestnetParams.ForkHeights.BalanceModelBlockHeight = uint32(683058)
 	DeSoTestnetParams.ForkHeights.ProofOfStake1StateSetupBlockHeight = uint32(math.MaxUint32)
 	DeSoTestnetParams.ForkHeights.ProofOfStake2ConsensusCutoverBlockHeight = uint32(math.MaxUint32)
+	DeSoTestnetParams.ForkHeights.ProofOfStake2ConsensusCutoverBlockHeight = uint32(math.MaxUint32)
 	DeSoTestnetParams.EncoderMigrationHeights = GetEncoderMigrationHeights(&DeSoTestnetParams.ForkHeights)
 	DeSoTestnetParams.EncoderMigrationHeightsList = GetEncoderMigrationHeightsList(&DeSoTestnetParams.ForkHeights)
 	GlobalDeSoParams = DeSoTestnetParams
@@ -2203,6 +2204,7 @@ func TestBlockRewardPatch(t *testing.T) {
 
 func TestConnectFailingTransaction(t *testing.T) {
 	setBalanceModelBlockHeights(t)
+
 	require := require.New(t)
 	seed := int64(1011)
 	rand := rand.New(rand.NewSource(seed))
