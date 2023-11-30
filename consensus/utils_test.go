@@ -94,7 +94,7 @@ func TestIsValidSuperMajorityQuorumCertificate(t *testing.T) {
 }
 
 func TestIsValidSuperMajorityAggregateQuorumCertificate(t *testing.T) {
-	// Test malformed QC
+	// Test malformed aggregate QC
 	{
 		require.False(t, IsValidSuperMajorityAggregateQuorumCertificate(nil, createDummyValidatorList()))
 	}
@@ -134,16 +134,19 @@ func TestIsValidSuperMajorityAggregateQuorumCertificate(t *testing.T) {
 	signaturePayload := GetVoteSignaturePayload(view, dummyBlockHash)
 
 	// Compute the aggregate signature payload
-	timeoutPayload := GetTimeoutSignaturePayload(view+1, view)
+	timeoutPayload := GetTimeoutSignaturePayload(view+2, view)
 
 	validator1Signature, err := validatorPrivateKey1.Sign(signaturePayload[:])
 	require.NoError(t, err)
+	validator2Signature, err := validatorPrivateKey2.Sign(signaturePayload[:])
+	require.NoError(t, err)
+	aggSig, err := bls.AggregateSignatures([]*bls.Signature{validator1Signature, validator2Signature})
 	highQC := quorumCertificate{
 		blockHash: dummyBlockHash,
 		view:      view,
 		aggregatedSignature: &aggregatedSignature{
-			signersList: bitset.NewBitset().FromBytes([]byte{0x1}), // 0b0001, which represents validator 1
-			signature:   validator1Signature,
+			signersList: bitset.NewBitset().FromBytes([]byte{0x3}), // 0b0011, which represents validators 1 and 2
+			signature:   aggSig,
 		},
 	}
 
@@ -152,7 +155,7 @@ func TestIsValidSuperMajorityAggregateQuorumCertificate(t *testing.T) {
 		validator1TimeoutSignature, err := validatorPrivateKey1.Sign(timeoutPayload[:])
 		require.NoError(t, err)
 		qc := aggregateQuorumCertificate{
-			view:        view + 1,
+			view:        view + 2,
 			highQC:      &highQC,
 			highQCViews: []uint64{view},
 			aggregatedSignature: &aggregatedSignature{
@@ -168,19 +171,19 @@ func TestIsValidSuperMajorityAggregateQuorumCertificate(t *testing.T) {
 		validator1TimeoutSignature, err := validatorPrivateKey1.Sign(timeoutPayload[:])
 		require.NoError(t, err)
 		// For fun, let's have validator 2 sign a timeout payload where its high QC is further behind.
-		validator2TimeoutPayload := GetTimeoutSignaturePayload(view+1, view-1)
+		validator2TimeoutPayload := GetTimeoutSignaturePayload(view+2, view-1)
 		validator2TimeoutSignature, err := validatorPrivateKey2.Sign(validator2TimeoutPayload[:])
 		require.NoError(t, err)
 
-		aggSig, err := bls.AggregateSignatures([]*bls.Signature{validator1TimeoutSignature, validator2TimeoutSignature})
+		timeoutAggSig, err := bls.AggregateSignatures([]*bls.Signature{validator1TimeoutSignature, validator2TimeoutSignature})
 		require.NoError(t, err)
 		qc := aggregateQuorumCertificate{
-			view:        view + 1,
+			view:        view + 2,
 			highQC:      &highQC,
 			highQCViews: []uint64{view, view - 1},
 			aggregatedSignature: &aggregatedSignature{
 				signersList: bitset.NewBitset().FromBytes([]byte{0x3}), // 0b0011, which represents validators 1 and 2
-				signature:   aggSig,
+				signature:   timeoutAggSig,
 			},
 		}
 		require.True(t, IsValidSuperMajorityAggregateQuorumCertificate(&qc, validators))
@@ -313,28 +316,36 @@ func TestIsProperlyFormedTimeout(t *testing.T) {
 
 	// Test nil high QC
 	{
-		timeout := createDummyTimeoutMessage(1)
+		timeout := createDummyTimeoutMessage(2)
 		timeout.highQC = nil
 		require.False(t, IsProperlyFormedTimeout(timeout))
 	}
 
 	// Test nil public key
 	{
-		timeout := createDummyTimeoutMessage(1)
+		timeout := createDummyTimeoutMessage(2)
 		timeout.publicKey = nil
 		require.False(t, IsProperlyFormedTimeout(timeout))
 	}
 
 	// Test nil signature
 	{
-		timeout := createDummyTimeoutMessage(1)
+		timeout := createDummyTimeoutMessage(2)
 		timeout.signature = nil
+		require.False(t, IsProperlyFormedTimeout(timeout))
+	}
+
+	// Test malformed high QC
+	{
+		highQC := createDummyQC(1, createDummyBlockHash())
+		highQC.aggregatedSignature = nil
+		timeout := createTimeoutMessageWithPrivateKeyAndHighQC(2, createDummyBLSPrivateKey(), highQC)
 		require.False(t, IsProperlyFormedTimeout(timeout))
 	}
 
 	// Test happy path
 	{
-		timeout := createDummyTimeoutMessage(1)
+		timeout := createDummyTimeoutMessage(2)
 		require.True(t, IsProperlyFormedTimeout(timeout))
 	}
 }

@@ -166,12 +166,12 @@ func (fc *fastHotStuffEventLoop) ProcessTipBlock(tip BlockWithValidatorList, saf
 
 	// Signal the server that we can vote for the block. The server will decide whether to construct and
 	// broadcast the vote.
-	fc.Events <- &FastHotStuffEvent{
+	fc.emitEvent(&FastHotStuffEvent{
 		EventType:      FastHotStuffEventTypeVote,
 		TipBlockHash:   fc.tip.block.GetBlockHash(),
 		TipBlockHeight: fc.tip.block.GetHeight(),
 		View:           fc.tip.block.GetView(),
-	}
+	})
 
 	// Schedule the next crank timer and timeout scheduled tasks
 	fc.resetScheduledTasks()
@@ -337,7 +337,7 @@ func (fc *fastHotStuffEventLoop) ProcessValidatorVote(vote VoteMessage) error {
 		// Signal the server that we can construct a QC for the chain tip, and mark that we have
 		// constructed a QC for the current view.
 		fc.hasConstructedQCInCurrentView = true
-		fc.Events <- voteQCEvent
+		fc.emitEvent(voteQCEvent)
 	}
 
 	return nil
@@ -395,12 +395,50 @@ func (fc *fastHotStuffEventLoop) ProcessValidatorTimeout(timeout TimeoutMessage)
 		)
 	}
 
+	// Check if the high QC's block hash is in our safeBlocks slice
+	// - If it is, then the high QC's block has already been validated and is safe to extend from
+	// - If it's not, then we have no knowledge of the block, or the block is not safe to extend from.
+	//   This can happen if the timeout's creator is malicious, or if our node is far enough behind the
+	//   blockchain to not have seen the high QC before other nodes have timed out. In either case, the
+	//   simple and safe option is to reject the timeout and move on.
+	isSafeBlock, _, validatorList, validatorLookup := fc.fetchSafeBlockInfo(timeout.GetHighQC().GetBlockHash())
+	if !isSafeBlock {
+		return errors.Errorf(
+			"FastHotStuffEventLoop.ProcessValidatorTimeout: Timeout from public key %s has an unknown high QC with view %d",
+			timeout.GetPublicKey().ToString(),
+			timeout.GetView(),
+		)
+	}
+
+	// Check if the timeout's public key is in the validator set. If it is not, then the sender is not a validator
+	// at the block height after the high QC.
+	if _, isValidator := validatorLookup[timeout.GetPublicKey().ToString()]; !isValidator {
+		return errors.Errorf(
+			"FastHotStuffEventLoop.ProcessValidatorTimeout: Sender %s for timeout message is not in the validator list",
+			timeout.GetPublicKey().ToString(),
+		)
+	}
+
 	// Compute the value sha3-256(timeout.View, timeout.HighQC.View)
 	timeoutSignaturePayload := GetTimeoutSignaturePayload(timeout.GetView(), timeout.GetHighQC().GetView())
 
 	// Verify the vote signature
 	if !isValidSignatureSinglePublicKey(timeout.GetPublicKey(), timeout.GetSignature(), timeoutSignaturePayload[:]) {
-		return errors.New("FastHotStuffEventLoop.ProcessValidatorTimeout: Invalid signature")
+		return errors.Errorf(
+			"FastHotStuffEventLoop.ProcessValidatorTimeout: Invalid signature in timeout message from validator %s for view %d",
+			timeout.GetPublicKey().ToString(),
+			timeout.GetView(),
+		)
+	}
+
+	// Verify the high QC in the timeout message. We can use the validator list at the exact block height of
+	// the high QC's block hash.
+	if !IsValidSuperMajorityQuorumCertificate(timeout.GetHighQC(), validatorList) {
+		return errors.Errorf(
+			"FastHotStuffEventLoop.ProcessValidatorTimeout: Invalid high QC received in timeout message from validator %s for view %d",
+			timeout.GetPublicKey().ToString(),
+			timeout.GetView(),
+		)
 	}
 
 	// Cache the timeout message in case we need it for later
@@ -423,7 +461,7 @@ func (fc *fastHotStuffEventLoop) ProcessValidatorTimeout(timeout TimeoutMessage)
 		// Signal the server that we can construct a timeout QC for the current view, and mark
 		// that we have constructed a QC for the current view.
 		fc.hasConstructedQCInCurrentView = true
-		fc.Events <- timeoutQCEvent
+		fc.emitEvent(timeoutQCEvent)
 	}
 
 	return nil
@@ -498,7 +536,7 @@ func (fc *fastHotStuffEventLoop) resetScheduledTasks() {
 		numTimeouts := fc.currentView - fc.tip.block.GetView() - 1
 
 		// Compute the exponential back-off: nextTimeoutDuration * 2^numTimeouts
-		timeoutDuration = fc.timeoutBaseDuration * time.Duration(powerOfTwo(numTimeouts))
+		timeoutDuration = fc.timeoutBaseDuration * time.Duration(powerOfTwo(numTimeouts, maxConsecutiveTimeouts))
 	}
 
 	// Schedule the next crank timer task. This will run with currentView param.
@@ -536,7 +574,7 @@ func (fc *fastHotStuffEventLoop) onCrankTimerTaskExecuted(blockConstructionView 
 	if voteQCEvent := fc.tryConstructVoteQCInCurrentView(); voteQCEvent != nil {
 		// Signal the server that we can construct a QC for the chain tip
 		fc.hasConstructedQCInCurrentView = true
-		fc.Events <- voteQCEvent
+		fc.emitEvent(voteQCEvent)
 		return
 	}
 
@@ -545,7 +583,7 @@ func (fc *fastHotStuffEventLoop) onCrankTimerTaskExecuted(blockConstructionView 
 	if timeoutQCEvent := fc.tryConstructTimeoutQCInCurrentView(); timeoutQCEvent != nil {
 		// Signal the server that we can construct a timeout QC for the current view
 		fc.hasConstructedQCInCurrentView = true
-		fc.Events <- timeoutQCEvent
+		fc.emitEvent(timeoutQCEvent)
 		return
 	}
 }
@@ -777,13 +815,13 @@ func (fc *fastHotStuffEventLoop) onTimeoutScheduledTaskExecuted(timedOutView uin
 	}
 
 	// Signal the server that we are ready to time out
-	fc.Events <- &FastHotStuffEvent{
+	fc.emitEvent(&FastHotStuffEvent{
 		EventType:      FastHotStuffEventTypeTimeout, // The timeout event type
 		View:           timedOutView,                 // The view we timed out
 		TipBlockHash:   fc.tip.block.GetBlockHash(),  // The last block we saw
 		TipBlockHeight: fc.tip.block.GetHeight(),     // The last block we saw
 		QC:             fc.tip.block.GetQC(),         // The highest QC we have
-	}
+	})
 
 	// Cancel the timeout task. The server will reschedule it when it advances the view.
 	fc.nextTimeoutTask.Cancel()
@@ -791,22 +829,15 @@ func (fc *fastHotStuffEventLoop) onTimeoutScheduledTaskExecuted(timedOutView uin
 
 // Evict all locally stored votes and timeout messages with stale views. We can safely use the current
 // view to determine what is stale. The consensus mechanism will never construct a block with a view
-// that's lower than its current view. Consider the following:
-// - In the event the event update the chain tip, we will vote for that block and the view it was proposed in
-// - In the event we locally time out a view, we will send a timeout message for that view
+// that's lower than its current view. We can use the following to determine which votes & timeouts are
+// stale:
+// - The currentView value is the view that the next block is going to be proposed on
+// - The next block must contain a QC of votes or aggregate QC of timeouts for the previous view
+//   - For votes, currentView = vote.GetView() + 1
+//   - For timeouts, currentView = timeout.GetView() + 1
 //
-// In both cases, we will never roll back the chain tip, or decrement the current view to construct a
-// conflicting block at that lower view that we have previously voted or timed out on. So we are safe to evict
-// locally stored votes and timeout messages with stale views because we expect to never use them for
-// block construction.
-//
-// The eviction works as follows:
-// - Votes: if the next block were to be a regular block with a QC aggregated from votes, then the it must
-// satisfy nextBlock.GetView() = tip.block.GetView() + 1, which means that currentView = tip.block.GetView() + 1.
-// We can safely evict all votes where vote.GetView() < currentView - 1.
-// - Timeouts: if the next block were be an empty block with a timeout QC aggregated from timeout messages,
-// then it must satisfy nextBlock.GetView() = timeout.GetView() + 1. We can safely evict all timeout messages with
-// currentView > timeout.GetView() + 1.
+// Any votes or timeouts with a view that's less than currentView - 1 are stale because they cannot
+// be used in the next block or any future blocks.
 func (fc *fastHotStuffEventLoop) evictStaleVotesAndTimeouts() {
 	// Evict stale vote messages
 	for blockHash, voters := range fc.votesSeenByBlockHash {
@@ -903,6 +934,15 @@ func (fc *fastHotStuffEventLoop) fetchSafeBlockInfo(blockHash BlockHash) (
 	return false, nil, nil, nil
 }
 
+// emitEvent emits the event via a non-blocking operation. This ensures that even if the Events channel
+// is full, the emit operation completes without blocking. This guarantees that there will be no risk of
+// deadlock when a thread holding the event loop's lock is blocked from emitting an event because another
+// thread that needs to read an emitted event is blocked from doing so because it needs to first operate
+// on the event loop.
+func (fc *fastHotStuffEventLoop) emitEvent(event *FastHotStuffEvent) {
+	go func() { fc.Events <- event }()
+}
+
 func isStaleView(currentView uint64, testView uint64) bool {
-	return currentView > testView+1
+	return testView < currentView-1
 }
