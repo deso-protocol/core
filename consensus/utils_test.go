@@ -138,12 +138,15 @@ func TestIsValidSuperMajorityAggregateQuorumCertificate(t *testing.T) {
 
 	validator1Signature, err := validatorPrivateKey1.Sign(signaturePayload[:])
 	require.NoError(t, err)
+	validator2Signature, err := validatorPrivateKey2.Sign(signaturePayload[:])
+	require.NoError(t, err)
+	aggSig, err := bls.AggregateSignatures([]*bls.Signature{validator1Signature, validator2Signature})
 	highQC := quorumCertificate{
 		blockHash: dummyBlockHash,
 		view:      view,
 		aggregatedSignature: &aggregatedSignature{
-			signersList: bitset.NewBitset().FromBytes([]byte{0x1}), // 0b0001, which represents validator 1
-			signature:   validator1Signature,
+			signersList: bitset.NewBitset().FromBytes([]byte{0x3}), // 0b0011, which represents validators 1 and 2
+			signature:   aggSig,
 		},
 	}
 
@@ -172,7 +175,7 @@ func TestIsValidSuperMajorityAggregateQuorumCertificate(t *testing.T) {
 		validator2TimeoutSignature, err := validatorPrivateKey2.Sign(validator2TimeoutPayload[:])
 		require.NoError(t, err)
 
-		aggSig, err := bls.AggregateSignatures([]*bls.Signature{validator1TimeoutSignature, validator2TimeoutSignature})
+		timeoutAggSig, err := bls.AggregateSignatures([]*bls.Signature{validator1TimeoutSignature, validator2TimeoutSignature})
 		require.NoError(t, err)
 		qc := aggregateQuorumCertificate{
 			view:        view + 2,
@@ -180,7 +183,7 @@ func TestIsValidSuperMajorityAggregateQuorumCertificate(t *testing.T) {
 			highQCViews: []uint64{view, view - 1},
 			aggregatedSignature: &aggregatedSignature{
 				signersList: bitset.NewBitset().FromBytes([]byte{0x3}), // 0b0011, which represents validators 1 and 2
-				signature:   aggSig,
+				signature:   timeoutAggSig,
 			},
 		}
 		require.True(t, IsValidSuperMajorityAggregateQuorumCertificate(&qc, validators))
