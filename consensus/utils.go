@@ -410,6 +410,15 @@ func createBlockWithParent(parentBlock Block) *block {
 	}
 }
 
+func createBlockWithParentAndValidators(parentBlock Block, privateKeys []*bls.PrivateKey) *block {
+	return &block{
+		blockHash: createDummyBlockHash(),
+		view:      parentBlock.GetView() + 1,
+		height:    parentBlock.GetView() + 1,
+		qc:        createQCForBlockHashWithValidators(parentBlock.GetView(), parentBlock.GetBlockHash(), privateKeys),
+	}
+}
+
 func createDummyVoteMessage(view uint64) *voteMessage {
 	blockHash := createDummyBlockHash()
 	signaturePayload := GetVoteSignaturePayload(view, blockHash)
@@ -446,16 +455,27 @@ func createTimeoutMessageWithPrivateKeyAndHighQC(view uint64, pk *bls.PrivateKey
 }
 
 func createDummyQC(view uint64, blockHash BlockHash) *quorumCertificate {
+	return createQCForBlockHashWithValidators(
+		view,
+		blockHash,
+		[]*bls.PrivateKey{createDummyBLSPrivateKey(), createDummyBLSPrivateKey()},
+	)
+}
+
+func createQCForBlockHashWithValidators(view uint64, blockHash BlockHash, privateKeys []*bls.PrivateKey) *quorumCertificate {
 	signaturePayload := GetVoteSignaturePayload(view, blockHash)
 
-	blsPrivateKey1, _ := bls.NewPrivateKey()
-	blsSignature1, _ := blsPrivateKey1.Sign(signaturePayload[:])
+	signersList := bitset.NewBitset()
+	signatures := []*bls.Signature{}
 
-	blsPrivateKey2, _ := bls.NewPrivateKey()
-	blsSignature2, _ := blsPrivateKey2.Sign(signaturePayload[:])
+	for ii, pk := range privateKeys {
+		signersList.Set(ii, true)
 
-	signersList := bitset.NewBitset().Set(0, true).Set(1, true)
-	aggregateSignature, _ := bls.AggregateSignatures([]*bls.Signature{blsSignature1, blsSignature2})
+		signature, _ := pk.Sign(signaturePayload[:])
+		signatures = append(signatures, signature)
+	}
+
+	aggregateSignature, _ := bls.AggregateSignatures(signatures)
 
 	return &quorumCertificate{
 		blockHash: blockHash,

@@ -433,13 +433,14 @@ func TestProcessValidatorTimeout(t *testing.T) {
 	validatorPrivateKey1 := createDummyBLSPrivateKey()
 	validatorPrivateKey2 := createDummyBLSPrivateKey()
 
+	privateKeys := []*bls.PrivateKey{validatorPrivateKey1, validatorPrivateKey2}
 	validatorList := createValidatorListForPrivateKeys(validatorPrivateKey1, validatorPrivateKey2)
 
 	// Init the event loop
 	{
 		// BlockHeight = 3, Current View = 4
 		genesisBlock := BlockWithValidatorList{createDummyBlock(2), validatorList}
-		tipBlock := BlockWithValidatorList{createBlockWithParent(genesisBlock.Block), validatorList}
+		tipBlock := BlockWithValidatorList{createBlockWithParentAndValidators(genesisBlock.Block, privateKeys), validatorList}
 		err := fc.Init(oneHourInNanoSecs, oneHourInNanoSecs, tipBlock, []BlockWithValidatorList{tipBlock, genesisBlock})
 		require.NoError(t, err)
 	}
@@ -521,6 +522,15 @@ func TestProcessValidatorTimeout(t *testing.T) {
 		err := fc.ProcessValidatorTimeout(timeout)
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "Invalid signature")
+	}
+
+	// Test invalid high QC
+	{
+		timeout := createTimeoutMessageWithPrivateKeyAndHighQC(4, validatorPrivateKey1, fc.tip.block.GetQC())
+		timeout.highQC = createDummyQC(timeout.highQC.GetView(), timeout.highQC.GetBlockHash())
+		err := fc.ProcessValidatorTimeout(timeout)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "Invalid high QC")
 	}
 
 	// Test happy path
