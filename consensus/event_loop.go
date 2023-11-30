@@ -401,7 +401,7 @@ func (fc *fastHotStuffEventLoop) ProcessValidatorTimeout(timeout TimeoutMessage)
 	//   This can happen if the timeout's creator is malicious, or if our node is far enough behind the
 	//   blockchain to not have seen the high QC before other nodes have timed out. In either case, the
 	//   simple and safe option is to reject the timeout and move on.
-	isSafeBlock, _, _, validatorLookup := fc.fetchSafeBlockInfo(timeout.GetHighQC().GetBlockHash())
+	isSafeBlock, _, validatorList, validatorLookup := fc.fetchSafeBlockInfo(timeout.GetHighQC().GetBlockHash())
 	if !isSafeBlock {
 		return errors.Errorf(
 			"FastHotStuffEventLoop.ProcessValidatorTimeout: Timeout from public key %s has an unknown high QC with view %d",
@@ -424,7 +424,21 @@ func (fc *fastHotStuffEventLoop) ProcessValidatorTimeout(timeout TimeoutMessage)
 
 	// Verify the vote signature
 	if !isValidSignatureSinglePublicKey(timeout.GetPublicKey(), timeout.GetSignature(), timeoutSignaturePayload[:]) {
-		return errors.New("FastHotStuffEventLoop.ProcessValidatorTimeout: Invalid signature")
+		return errors.Errorf(
+			"FastHotStuffEventLoop.ProcessValidatorTimeout: Invalid signature in timeout message from validator %s for view %d",
+			timeout.GetPublicKey().ToString(),
+			timeout.GetView(),
+		)
+	}
+
+	// Verify the high QC in the timeout message. We can use the validator list at the exact block height of
+	// the high QC's block hash.
+	if !IsValidSuperMajorityQuorumCertificate(timeout.GetHighQC(), validatorList) {
+		return errors.Errorf(
+			"FastHotStuffEventLoop.ProcessValidatorTimeout: Invalid high QC received in timeout message from validator %s for view %d",
+			timeout.GetPublicKey().ToString(),
+			timeout.GetView(),
+		)
 	}
 
 	// Cache the timeout message in case we need it for later
