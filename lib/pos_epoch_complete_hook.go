@@ -47,9 +47,10 @@ func (bav *UtxoView) IsLastBlockInCurrentEpoch(blockHeight uint64) (bool, error)
 // - Snapshot the current top N stake entries, who will receive staking rewards.
 //
 // Step 3: Roll over to the next epoch.
+// - Compute the start block height and view number for the next epoch.
 // - Compute the final block height for the next epoch.
 // - Update CurrentEpochEntry to the next epoch's.
-func (bav *UtxoView) RunEpochCompleteHook(blockHeight uint64, blockTimestampNanoSecs uint64) error {
+func (bav *UtxoView) RunEpochCompleteHook(blockHeight uint64, view uint64, blockTimestampNanoSecs uint64) error {
 	// Sanity-check that the current block is the last block in the current epoch.
 	//
 	// Note that this will also return true if we're currently at the ProofOfStake1StateSetupBlockHeight
@@ -84,7 +85,7 @@ func (bav *UtxoView) RunEpochCompleteHook(blockHeight uint64, blockTimestampNano
 	// TODO: Evict old snapshots when safe to do so.
 
 	// Step 3: Roll Over to The Next Epoch
-	if err := bav.runEpochCompleteEpochRollover(currentEpochEntry.EpochNumber, blockHeight, blockTimestampNanoSecs); err != nil {
+	if err := bav.runEpochCompleteEpochRollover(currentEpochEntry.EpochNumber, blockHeight, view, blockTimestampNanoSecs); err != nil {
 		return errors.Wrapf(err, "RunEpochCompleteHook: ")
 	}
 
@@ -137,28 +138,69 @@ func (bav *UtxoView) runEpochCompleteSnapshotGeneration(epochNumber uint64) erro
 	return nil
 }
 
-// Updates the currentEpochEntry to the next epoch's.
-func (bav *UtxoView) runEpochCompleteEpochRollover(epochNumber uint64, blockHeight uint64, blockTimestampNanoSecs uint64) error {
+func (bav *UtxoView) computeNextEpochEntry(currentEpochNumber uint64, currentEpochFinalBlockHeight uint64, currentEpochFinalView uint64, nextEpochBlockTimestampNanoSecs uint64) (*EpochEntry, error) {
 	// Retrieve the SnapshotGlobalParamsEntry to determine the next epoch's final block height. We use the
 	// snapshot global params here because the next epoch begin immediately, and its length is used in the PoS
 	// consensus. The validator set for the next epoch needs to be in agreement on the length of the epoch
 	// before the epoch begins.
-	snapshotGlobalParamsEntry, err := bav.GetSnapshotGlobalParamsEntry()
+	snapshotGlobalParamsEntry, err := bav.GetCurrentSnapshotGlobalParamsEntry()
 	if err != nil {
-		return errors.Wrapf(err, "runEpochCompleteEpochRollover: problem retrieving SnapshotGlobalParamsEntry: ")
+		return nil, errors.Wrapf(err, "computeNextEpochEntry: problem retrieving SnapshotGlobalParamsEntry: ")
 	}
 
-	// Calculate the NextEpochFinalBlockHeight.
-	nextEpochFinalBlockHeight, err := SafeUint64().Add(blockHeight, snapshotGlobalParamsEntry.EpochDurationNumBlocks)
+	// Calculate the NextEpoch's FinalBlockHeight.
+	nextEpochFinalBlockHeight, err := SafeUint64().Add(currentEpochFinalBlockHeight, snapshotGlobalParamsEntry.EpochDurationNumBlocks)
 	if err != nil {
-		return errors.Wrapf(err, "runEpochCompleteEpochRollover: problem calculating NextEpochFinalBlockHeight: ")
+		return nil, errors.Wrapf(err, "computeNextEpochEntry: problem calculating NextEpochFinalBlockHeight: ")
 	}
 
 	// Roll-over a new epoch by setting a new CurrentEpochEntry.
 	nextEpochEntry := &EpochEntry{
-		EpochNumber:                     epochNumber + 1,
+		EpochNumber:                     currentEpochNumber + 1,
+		InitialBlockHeight:              currentEpochFinalBlockHeight + 1,
+		InitialView:                     currentEpochFinalView + 1,
 		FinalBlockHeight:                nextEpochFinalBlockHeight,
-		CreatedAtBlockTimestampNanoSecs: blockTimestampNanoSecs,
+		CreatedAtBlockTimestampNanoSecs: nextEpochBlockTimestampNanoSecs,
+	}
+	return nextEpochEntry, nil
+}
+
+// simulatePrevEpochEntry simulates the block range for the previous epoch given the current epoch's initial
+// block height and epoch number. The view and timestamp for the simulated epoch are left empty since they can't
+// be easily simulated, so DO NOT USE CreatedAtBlockTimestampNanoSecs or InitialView from the returned EpochEntry.
+func (bav *UtxoView) simulatePrevEpochEntry(currentEpochNumber uint64, currentEpochInitialBlockHeight uint64) (*EpochEntry, error) {
+	if currentEpochNumber == 0 {
+		return nil, errors.New("simulatePrevEpochEntry: currentEpochNumber is 0, this should never happen")
+	}
+	snapshotAtEpochNumber, err := bav.ComputeSnapshotEpochNumberForEpoch(currentEpochNumber - 1)
+	if err != nil {
+		return nil, errors.Wrapf(err, "simulatePrevEpochEntry: problem computing snapshot epoch number: ")
+	}
+	snapshotGlobalParamsEntry, err := bav.GetSnapshotGlobalParamsEntryByEpochNumber(snapshotAtEpochNumber)
+	if err != nil {
+		return nil, errors.Wrapf(err, "simulatePrevEpochEntry: problem retrieving snapshot global params entry: ")
+	}
+
+	// Calculate the PrevEpoch's InitialBlockHeight.
+	prevEpochInitialBlockHeight, err := SafeUint64().Sub(currentEpochInitialBlockHeight, snapshotGlobalParamsEntry.EpochDurationNumBlocks)
+	if err != nil {
+		return nil, errors.Wrapf(err, "simulatePrevEpochEntry: problem calculating PrevEpochInitialBlockHeight: ")
+	}
+	prevEpochEntry := &EpochEntry{
+		EpochNumber:                     currentEpochNumber - 1,
+		InitialBlockHeight:              prevEpochInitialBlockHeight,
+		InitialView:                     0,
+		FinalBlockHeight:                currentEpochInitialBlockHeight - 1,
+		CreatedAtBlockTimestampNanoSecs: 0,
+	}
+	return prevEpochEntry, nil
+}
+
+// Updates the currentEpochEntry to the next epoch's.
+func (bav *UtxoView) runEpochCompleteEpochRollover(epochNumber uint64, blockHeight uint64, view uint64, blockTimestampNanoSecs uint64) error {
+	nextEpochEntry, err := bav.computeNextEpochEntry(epochNumber, blockHeight, view, blockTimestampNanoSecs)
+	if err != nil {
+		return errors.Wrap(err, "runEpochCompleteEpochRollover: ")
 	}
 	bav._setCurrentEpochEntry(nextEpochEntry)
 

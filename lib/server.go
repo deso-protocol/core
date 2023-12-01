@@ -1376,20 +1376,20 @@ func (srv *Server) _handleSnapshot(pp *Peer, msg *MsgDeSoSnapshotData) {
 	// the blockNodes in the header chain and set them in the blockchain data structures.
 	err = srv.blockchain.db.Update(func(txn *badger.Txn) error {
 		for ii := uint64(1); ii <= srv.HyperSyncProgress.SnapshotMetadata.SnapshotBlockHeight; ii++ {
-			curretNode := srv.blockchain.bestHeaderChain[ii]
+			currentNode := srv.blockchain.bestHeaderChain[ii]
 			// Do not set the StatusBlockStored flag, because we still need to download the past blocks.
-			curretNode.Status |= StatusBlockProcessed
-			curretNode.Status |= StatusBlockValidated
-			srv.blockchain.blockIndex[*curretNode.Hash] = curretNode
-			srv.blockchain.bestChainMap[*curretNode.Hash] = curretNode
-			srv.blockchain.bestChain = append(srv.blockchain.bestChain, curretNode)
-			err := PutHeightHashToNodeInfoWithTxn(txn, srv.snapshot, curretNode, false /*bitcoinNodes*/, srv.eventManager)
+			currentNode.Status |= StatusBlockProcessed
+			currentNode.Status |= StatusBlockValidated
+			srv.blockchain.addNewBlockNodeToBlockIndex(currentNode)
+			srv.blockchain.bestChainMap[*currentNode.Hash] = currentNode
+			srv.blockchain.bestChain = append(srv.blockchain.bestChain, currentNode)
+			err = PutHeightHashToNodeInfoWithTxn(txn, srv.snapshot, currentNode, false /*bitcoinNodes*/, srv.eventManager)
 			if err != nil {
 				return err
 			}
 		}
 		// We will also set the hash of the block at snapshot height as the best chain hash.
-		err := PutBestHashWithTxn(txn, srv.snapshot, msg.SnapshotMetadata.CurrentEpochBlockHash, ChainTypeDeSoBlock, srv.eventManager)
+		err = PutBestHashWithTxn(txn, srv.snapshot, msg.SnapshotMetadata.CurrentEpochBlockHash, ChainTypeDeSoBlock, srv.eventManager)
 		return err
 	})
 
@@ -1898,7 +1898,7 @@ func (srv *Server) _handleBlock(pp *Peer, blk *MsgDeSoBlock) {
 		glog.V(1).Infof(CLog(Cyan, fmt.Sprintf("Server._handleBlock: Processing block %v WITHOUT "+
 			"signature checking because SyncState=%v for peer %v",
 			blk, srv.blockchain.chainState(), pp)))
-		_, isOrphan, err = srv.blockchain.ProcessBlock(blk, false)
+		_, isOrphan, _, err = srv.blockchain.ProcessBlock(blk, false)
 
 	} else {
 		// TODO: Signature checking slows things down because it acquires the ChainLock.
@@ -1907,7 +1907,7 @@ func (srv *Server) _handleBlock(pp *Peer, blk *MsgDeSoBlock) {
 		glog.V(1).Infof(CLog(Cyan, fmt.Sprintf("Server._handleBlock: Processing block %v WITH "+
 			"signature checking because SyncState=%v for peer %v",
 			blk, srv.blockchain.chainState(), pp)))
-		_, isOrphan, err = srv.blockchain.ProcessBlock(blk, true)
+		_, isOrphan, _, err = srv.blockchain.ProcessBlock(blk, true)
 	}
 
 	// If we hit an error then abort mission entirely. We should generally never

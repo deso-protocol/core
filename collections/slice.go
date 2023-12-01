@@ -37,3 +37,11 @@ func ToMap[TKey comparable, TValue any](slice []TValue, keyFn func(TValue) TKey)
 	}
 	return result
 }
+
+func Reverse[T any](input []T) []T {
+	output := make([]T, len(input))
+	for ii := 0; ii < len(input); ii++ {
+		output[len(input)-1-ii] = input[ii]
+	}
+	return output
+}

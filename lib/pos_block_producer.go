@@ -39,10 +39,10 @@ func NewPosBlockProducer(mp Mempool, params *DeSoParams, proposerPublicKey *Publ
 // during happy path in consensus when a vote QC has been assembled. The block is unsigned, so to indicate its incompleteness,
 // the block is returned as a BlockTemplate.
 func (pbp *PosBlockProducer) CreateUnsignedBlock(latestBlockView *UtxoView, newBlockHeight uint64, view uint64,
-	proposerRandomSeedHash *RandomSeedHash, validatorsVoteQC *QuorumCertificate) (BlockTemplate, error) {
+	proposerRandomSeedSignature *bls.Signature, validatorsVoteQC *QuorumCertificate) (BlockTemplate, error) {
 
 	// Create the block template.
-	block, err := pbp.createBlockTemplate(latestBlockView, newBlockHeight, view, proposerRandomSeedHash)
+	block, err := pbp.createBlockTemplate(latestBlockView, newBlockHeight, view, proposerRandomSeedSignature)
 	if err != nil {
 		return nil, errors.Wrapf(err, "PosBlockProducer.CreateUnsignedTimeoutBlock: Problem creating block template")
 	}
@@ -56,10 +56,10 @@ func (pbp *PosBlockProducer) CreateUnsignedBlock(latestBlockView *UtxoView, newB
 // during a timeout in consensus when a validators timeout aggregate QC has been assembled. The block is unsigned,
 // and so is returned as a BlockTemplate.
 func (pbp *PosBlockProducer) CreateUnsignedTimeoutBlock(latestBlockView *UtxoView, newBlockHeight uint64, view uint64,
-	proposerRandomSeedHash *RandomSeedHash, validatorsTimeoutAggregateQC *TimeoutAggregateQuorumCertificate) (BlockTemplate, error) {
+	proposerRandomSeedSignature *bls.Signature, validatorsTimeoutAggregateQC *TimeoutAggregateQuorumCertificate) (BlockTemplate, error) {
 
 	// Create the block template.
-	block, err := pbp.createBlockTemplate(latestBlockView, newBlockHeight, view, proposerRandomSeedHash)
+	block, err := pbp.createBlockTemplate(latestBlockView, newBlockHeight, view, proposerRandomSeedSignature)
 	if err != nil {
 		return nil, errors.Wrapf(err, "PosBlockProducer.CreateUnsignedTimeoutBlock: Problem creating block template")
 	}
@@ -73,7 +73,7 @@ func (pbp *PosBlockProducer) CreateUnsignedTimeoutBlock(latestBlockView *UtxoVie
 // a partially filled out block with Fee-Time ordered transactions. The returned block is complete except for
 // the qc / aggregateQc fields, and the signature.
 func (pbp *PosBlockProducer) createBlockTemplate(latestBlockView *UtxoView, newBlockHeight uint64, view uint64,
-	proposerRandomSeedHash *RandomSeedHash) (BlockTemplate, error) {
+	proposerRandomSeedSignature *bls.Signature) (BlockTemplate, error) {
 	// First get the block without the header.
 	currentTimestamp := uint64(time.Now().UnixNano())
 	block, err := pbp.createBlockWithoutHeader(latestBlockView, newBlockHeight, currentTimestamp)
@@ -98,7 +98,7 @@ func (pbp *PosBlockProducer) createBlockTemplate(latestBlockView *UtxoView, newB
 	// Set the proposer information.
 	block.Header.ProposerPublicKey = pbp.proposerPublicKey
 	block.Header.ProposerVotingPublicKey = pbp.proposerVotingPublicKey
-	block.Header.ProposerRandomSeedHash = proposerRandomSeedHash
+	block.Header.ProposerRandomSeedSignature = proposerRandomSeedSignature
 	return block, nil
 }
 

@@ -50,6 +50,15 @@ func (bav *UtxoView) FlushToDbWithTxn(txn *badger.Txn, blockHeight uint64) error
 		defer bav.Snapshot.StartAncestralRecordsFlush(true)
 	}
 
+	return bav.FlushToDBWithoutAncestralRecordsFlushWithTxn(txn, blockHeight)
+}
+
+// FlushToDBWithoutAncestralRecordsFlushWithTxn flushes the UtxoView to the DB without
+// calling PrepareAncestralRecordsFlush. This SHOULD ONLY be used when flushing the
+// view within a badger transaction that itself calls PrepareAncestralRecordsFlush
+// and defer StartAncestralRecordsFlush.
+func (bav *UtxoView) FlushToDBWithoutAncestralRecordsFlushWithTxn(txn *badger.Txn, blockHeight uint64) error {
+
 	// Only flush to BadgerDB if Postgres is disabled
 	if bav.Postgres == nil {
 		if err := bav._flushUtxosToDbWithTxn(txn, blockHeight); err != nil {
@@ -150,6 +159,9 @@ func (bav *UtxoView) FlushToDbWithTxn(txn *badger.Txn, blockHeight uint64) error
 	if err := bav._flushValidatorEntriesToDbWithTxn(txn, blockHeight); err != nil {
 		return err
 	}
+	if err := bav._flushValidatorBLSPublicKeyPKIDPairEntryMappingsWithTxn(txn, blockHeight); err != nil {
+		return err
+	}
 	if err := bav._flushStakeEntriesToDbWithTxn(txn, blockHeight); err != nil {
 		return err
 	}
@@ -178,6 +190,9 @@ func (bav *UtxoView) FlushToDbWithTxn(txn *badger.Txn, blockHeight uint64) error
 		return err
 	}
 	if err := bav._flushSnapshotStakesToRewardToDbWithTxn(txn, blockHeight); err != nil {
+		return err
+	}
+	if err := bav._flushSnapshotValidatorBLSPublicKeyPKIDPairEntryToDbWithTxn(txn, blockHeight); err != nil {
 		return err
 	}
 	return nil
