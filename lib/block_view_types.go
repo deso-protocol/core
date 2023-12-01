@@ -127,9 +127,11 @@ const (
 	EncoderTypeBlock EncoderType = 49
 	// EncoderTypeTxn represents a transaction in the blockchain.
 	EncoderTypeTxn EncoderType = 50
+	// EncoderTypeBLSPublicKeyPKIDPairEntry represents a BLS public key <> PKID mapping.
+	EncoderTypeBLSPublicKeyPKIDPairEntry EncoderType = 51
 
 	// EncoderTypeEndBlockView encoder type should be at the end and is used for automated tests.
-	EncoderTypeEndBlockView EncoderType = 51
+	EncoderTypeEndBlockView EncoderType = 52
 )
 
 // Txindex encoder types.
@@ -281,6 +283,8 @@ func (encoderType EncoderType) New() DeSoEncoder {
 		return &LockedBalanceEntry{}
 	case EncoderTypeLockupYieldCurvePoint:
 		return &LockupYieldCurvePoint{}
+	case EncoderTypeBLSPublicKeyPKIDPairEntry:
+		return &BLSPublicKeyPKIDPairEntry{}
 	}
 
 	// Txindex encoder types

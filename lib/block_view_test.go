@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/hex"
 	"fmt"
+	"github.com/deso-protocol/core/bls"
 	"math"
 	_ "net/http/pprof"
 	"reflect"
@@ -1128,6 +1129,9 @@ type TestMeta struct {
 	expectedSenderBalances []uint64
 	savedHeight            uint32
 	feeRateNanosPerKb      uint64
+	posMempool             *PosMempool
+	posBlockProducer       *PosBlockProducer
+	pubKeyToBLSKeyMap      map[string]*bls.PrivateKey
 }
 
 func _executeAllTestRollbackAndFlush(testMeta *TestMeta) {

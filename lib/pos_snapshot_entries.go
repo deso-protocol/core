@@ -3,6 +3,8 @@ package lib
 import (
 	"bytes"
 	"fmt"
+	"github.com/deso-protocol/core/bls"
+	"github.com/deso-protocol/core/collections"
 	"math"
 	"sort"
 
@@ -14,13 +16,17 @@ import (
 
 const SnapshotLookbackNumEpochs uint64 = 2
 
-func (bav *UtxoView) GetSnapshotEpochNumber() (uint64, error) {
+func (bav *UtxoView) GetCurrentSnapshotEpochNumber() (uint64, error) {
 	// Retrieve the CurrentEpochNumber.
 	currentEpochNumber, err := bav.GetCurrentEpochNumber()
 	if err != nil {
-		return 0, errors.Wrapf(err, "GetSnapshotEpochNumber: problem retrieving CurrentEpochNumber: ")
+		return 0, errors.Wrapf(err, "GetCurrentSnapshotEpochNumber: problem retrieving CurrentEpochNumber: ")
 	}
-	if currentEpochNumber < SnapshotLookbackNumEpochs {
+	return bav.ComputeSnapshotEpochNumberForEpoch(currentEpochNumber)
+}
+
+func (bav *UtxoView) ComputeSnapshotEpochNumberForEpoch(epochNumber uint64) (uint64, error) {
+	if epochNumber < SnapshotLookbackNumEpochs {
 		// We want to return 0 in this case and not error. We start snapshotting with our StateSetup block height,
 		// so we should have the correct number of snapshots and not hit this case once we hit the ConsensusCutover
 		// block height. This case will only be hit immediately following the StateSetup block height. We run one
@@ -41,7 +47,7 @@ func (bav *UtxoView) GetSnapshotEpochNumber() (uint64, error) {
 		// then that value will take immediate effect in the first epoch with no lagged snapshot wait period.
 		return 0, nil
 	}
-	return SafeUint64().Sub(currentEpochNumber, SnapshotLookbackNumEpochs)
+	return SafeUint64().Sub(epochNumber, SnapshotLookbackNumEpochs)
 }
 
 //
@@ -52,7 +58,7 @@ func (bav *UtxoView) GetCurrentGlobalParamsEntry() *GlobalParamsEntry {
 	return _mergeGlobalParamEntryDefaults(bav, bav.GlobalParamsEntry)
 }
 
-// GetSnapshotGlobalParamsEntry retrieves a snapshot of the GlobalParamsEntry from n epochs ago. If a snapshot
+// GetCurrentSnapshotGlobalParamsEntry retrieves a snapshot of the GlobalParamsEntry from n epochs ago. If a snapshot
 // does not exist for that epoch, it will return the default values. We snapshot GlobalParams to make sure that
 // the validator set in the PoS consensus is in agreement ahead of time on the params used for an epoch long
 // before that epoch begins. Snapshot GlobalParams are only appropriate to use in two scenarios:
@@ -67,12 +73,16 @@ func (bav *UtxoView) GetCurrentGlobalParamsEntry() *GlobalParamsEntry {
 // snapshotted. This approach ensures that whenever we create a snapshot of the validator set, leader schedule,
 // and stakes to reward... the GlobalParams used to create the snapshots are snapshotted along with that data, and
 // live alongside them.
-func (bav *UtxoView) GetSnapshotGlobalParamsEntry() (*GlobalParamsEntry, error) {
+func (bav *UtxoView) GetCurrentSnapshotGlobalParamsEntry() (*GlobalParamsEntry, error) {
 	// Calculate the SnapshotEpochNumber.
-	snapshotAtEpochNumber, err := bav.GetSnapshotEpochNumber()
+	snapshotAtEpochNumber, err := bav.GetCurrentSnapshotEpochNumber()
 	if err != nil {
-		return nil, errors.Wrapf(err, "GetSnapshotGlobalParamsEntry: problem calculating SnapshotEpochNumber: ")
+		return nil, errors.Wrapf(err, "GetCurrentSnapshotGlobalParamsEntry: problem calculating SnapshotEpochNumber: ")
 	}
+	return bav.GetSnapshotGlobalParamsEntryByEpochNumber(snapshotAtEpochNumber)
+}
+
+func (bav *UtxoView) GetSnapshotGlobalParamsEntryByEpochNumber(snapshotAtEpochNumber uint64) (*GlobalParamsEntry, error) {
 	// Check the UtxoView first.
 	if globalParamsEntry, exists := bav.SnapshotGlobalParamEntries[snapshotAtEpochNumber]; exists {
 		return _mergeGlobalParamEntryDefaults(bav, globalParamsEntry), nil
@@ -82,7 +92,7 @@ func (bav *UtxoView) GetSnapshotGlobalParamsEntry() (*GlobalParamsEntry, error) 
 	if err != nil {
 		return nil, errors.Wrapf(
 			err,
-			"GetSnapshotGlobalParamsEntry: problem retrieving SnapshotGlobalParamsEntry from db: ",
+			"GetSnapshotGlobalParamsEntryByEpochNumber: problem retrieving SnapshotGlobalParamsEntry from db: ",
 		)
 	}
 	if globalParamsEntry != nil {
@@ -231,12 +241,15 @@ type SnapshotValidatorSetMapKey struct {
 	ValidatorPKID         PKID
 }
 
-func (bav *UtxoView) GetSnapshotValidatorSetEntryByPKID(pkid *PKID) (*ValidatorEntry, error) {
+func (bav *UtxoView) GetCurrentSnapshotValidatorSetEntryByPKID(pkid *PKID) (*ValidatorEntry, error) {
 	// Calculate the SnapshotEpochNumber.
-	snapshotAtEpochNumber, err := bav.GetSnapshotEpochNumber()
+	snapshotAtEpochNumber, err := bav.GetCurrentSnapshotEpochNumber()
 	if err != nil {
-		return nil, errors.Wrapf(err, "GetSnapshotValidatorSetEntryByPKID: problem calculating SnapshotEpochNumber: ")
+		return nil, errors.Wrapf(err, "GetCurrentSnapshotValidatorSetEntryByPKID: problem calculating SnapshotEpochNumber: ")
 	}
+	return bav.GetSnapshotValidatorSetEntryByPKIDAtEpochNumber(pkid, snapshotAtEpochNumber)
+}
+func (bav *UtxoView) GetSnapshotValidatorSetEntryByPKIDAtEpochNumber(pkid *PKID, snapshotAtEpochNumber uint64) (*ValidatorEntry, error) {
 	// Check the UtxoView first.
 	mapKey := SnapshotValidatorSetMapKey{SnapshotAtEpochNumber: snapshotAtEpochNumber, ValidatorPKID: *pkid}
 	if validatorEntry, exists := bav.SnapshotValidatorSet[mapKey]; exists {
@@ -247,7 +260,7 @@ func (bav *UtxoView) GetSnapshotValidatorSetEntryByPKID(pkid *PKID) (*ValidatorE
 	if err != nil {
 		return nil, errors.Wrapf(
 			err,
-			"GetSnapshotValidatorSetEntryByPKID: problem retrieving ValidatorEntry from db: ",
+			"GetSnapshotValidatorSetEntryByPKIDAtEpochNumber: problem retrieving ValidatorEntry from db: ",
 		)
 	}
 	if validatorEntry != nil {
@@ -259,11 +272,13 @@ func (bav *UtxoView) GetSnapshotValidatorSetEntryByPKID(pkid *PKID) (*ValidatorE
 
 func (bav *UtxoView) GetSnapshotValidatorSetByStakeAmount(limit uint64) ([]*ValidatorEntry, error) {
 	// Calculate the SnapshotEpochNumber.
-	snapshotAtEpochNumber, err := bav.GetSnapshotEpochNumber()
+	snapshotAtEpochNumber, err := bav.GetCurrentSnapshotEpochNumber()
 	if err != nil {
 		return nil, errors.Wrapf(err, "GetSnapshotValidatorSetEntriesByStake: problem calculating SnapshotEpochNumber: ")
 	}
-
+	return bav.GetSnapshotValidatorSetByStakeAmountAtEpochNumber(snapshotAtEpochNumber, limit)
+}
+func (bav *UtxoView) GetSnapshotValidatorSetByStakeAmountAtEpochNumber(snapshotAtEpochNumber uint64, limit uint64) ([]*ValidatorEntry, error) {
 	// Create a slice of all UtxoView ValidatorEntries to prevent pulling them from the db.
 	var utxoViewValidatorEntries []*ValidatorEntry
 	for mapKey, validatorEntry := range bav.SnapshotValidatorSet {
@@ -278,7 +293,7 @@ func (bav *UtxoView) GetSnapshotValidatorSetByStakeAmount(limit uint64) ([]*Vali
 		bav.Handle, bav.Snapshot, limit, snapshotAtEpochNumber, utxoViewValidatorEntries,
 	)
 	if err != nil {
-		return nil, errors.Wrapf(err, "GetSnapshotValidatorSetEntriesByStake: error retrieving entries from db: ")
+		return nil, errors.Wrapf(err, "GetSnapshotValidatorSetByStakeAmountAtEpochNumber: error retrieving entries from db: ")
 	}
 	// Cache top N active ValidatorEntries from the db in the UtxoView.
 	for _, validatorEntry := range dbValidatorEntries {
@@ -319,6 +334,25 @@ func (bav *UtxoView) GetSnapshotValidatorSetByStakeAmount(limit uint64) ([]*Vali
 	return validatorEntries[0:upperBound], nil
 }
 
+// GetAllSnapshotValidatorSetEntriesByStake returns all validators in the snapshot
+// ordered by stake. This is useful when we need to know all the validators that
+// are in a leader schedule.
+func (bav *UtxoView) GetAllSnapshotValidatorSetEntriesByStake() ([]*ValidatorEntry, error) {
+	snapshotGlobalParams, err := bav.GetCurrentSnapshotGlobalParamsEntry()
+	if err != nil {
+		return nil, errors.Wrapf(err, "GetAllSnapshotValidatorSetEntriesByStake: problem getting SnapshotGlobalParamsEntry: ")
+	}
+	return bav.GetSnapshotValidatorSetByStakeAmount(snapshotGlobalParams.ValidatorSetMaxNumValidators)
+}
+
+func (bav *UtxoView) GetAllSnapshotValidatorSetEntriesByStakeAtEpochNumber(snapshotAtEpochNumber uint64) ([]*ValidatorEntry, error) {
+	snapshotGlobalParams, err := bav.GetSnapshotGlobalParamsEntryByEpochNumber(snapshotAtEpochNumber)
+	if err != nil {
+		return nil, errors.Wrapf(err, "GetAllSnapshotValidatorSetEntriesByStakeAtEpochNumber: problem getting SnapshotGlobalParamsEntry: ")
+	}
+	return bav.GetSnapshotValidatorSetByStakeAmountAtEpochNumber(snapshotAtEpochNumber, snapshotGlobalParams.ValidatorSetMaxNumValidators)
+}
+
 func (bav *UtxoView) _setSnapshotValidatorSetEntry(validatorEntry *ValidatorEntry, snapshotAtEpochNumber uint64) {
 	if validatorEntry == nil {
 		glog.Errorf("_setSnapshotValidatorSetEntry: called with nil entry, this should never happen")
@@ -328,6 +362,8 @@ func (bav *UtxoView) _setSnapshotValidatorSetEntry(validatorEntry *ValidatorEntr
 		SnapshotAtEpochNumber: snapshotAtEpochNumber, ValidatorPKID: *validatorEntry.ValidatorPKID,
 	}
 	bav.SnapshotValidatorSet[mapKey] = validatorEntry.Copy()
+
+	bav._setSnapshotValidatorBLSPublicKeyPKIDPairEntry(validatorEntry.ToBLSPublicKeyPKIDPairEntry(), snapshotAtEpochNumber)
 }
 
 func (bav *UtxoView) _deleteSnapshotValidatorSetEntry(validatorEntry *ValidatorEntry, snapshotAtEpochNumber uint64) {
@@ -589,12 +625,210 @@ func DBEnumerateAllCurrentValidators(handle *badger.DB, pkidsToSkip []*PKID) ([]
 }
 
 //
+// SnapshotValidatorBLSPublicKeyToPKID
+//
+
+type SnapshotValidatorBLSPublicKeyMapKey struct {
+	SnapshotAtEpochNumber uint64
+	ValidatorBLSPublicKey bls.SerializedPublicKey
+}
+
+func (bav *UtxoView) GetCurrentSnapshotValidatorBLSPublicKeyPKIDPairEntry(blsPublicKey *bls.PublicKey) (*BLSPublicKeyPKIDPairEntry, error) {
+	// Calculate the SnapshotEpochNumber.
+	snapshotAtEpochNumber, err := bav.GetCurrentSnapshotEpochNumber()
+	if err != nil {
+		return nil, errors.Wrapf(err, "GetCurrentSnapshotValidatorBLSPublicKeyPKIDPairEntry: problem calculating SnapshotEpochNumber: ")
+	}
+	return bav.GetSnapshotValidatorBLSPublicKeyPKIDPairEntry(blsPublicKey, snapshotAtEpochNumber)
+}
+
+func (bav *UtxoView) GetSnapshotValidatorEntryByBLSPublicKey(blsPublicKey *bls.PublicKey, snapshotAtEpochNumber uint64) (*ValidatorEntry, error) {
+	blsPublicKeyPKIDPairEntry, err := bav.GetSnapshotValidatorBLSPublicKeyPKIDPairEntry(blsPublicKey, snapshotAtEpochNumber)
+	if err != nil {
+		return nil, errors.Wrapf(err, "GetSnapshotValidatorEntryByBLSPublicKey: problem getting BLSPublicKeyPKIDPairEntry: ")
+	}
+	if blsPublicKeyPKIDPairEntry == nil {
+		return nil, nil
+	}
+	return bav.GetSnapshotValidatorSetEntryByPKIDAtEpochNumber(blsPublicKeyPKIDPairEntry.PKID, snapshotAtEpochNumber)
+}
+
+func (bav *UtxoView) GetSnapshotValidatorBLSPublicKeyPKIDPairEntry(blsPublicKey *bls.PublicKey, snapshotAtEpochNumber uint64) (*BLSPublicKeyPKIDPairEntry, error) {
+	// Check the UtxoView first.
+	mapKey := SnapshotValidatorBLSPublicKeyMapKey{
+		SnapshotAtEpochNumber: snapshotAtEpochNumber, ValidatorBLSPublicKey: blsPublicKey.Serialize(),
+	}
+	if blsPublicKeyPKIDPairEntry, exists := bav.SnapshotValidatorBLSPublicKeyPKIDPairEntries[mapKey]; exists {
+		if blsPublicKeyPKIDPairEntry == nil || blsPublicKeyPKIDPairEntry.isDeleted {
+			return nil, nil
+		}
+		return blsPublicKeyPKIDPairEntry, nil
+	}
+
+	// If we don't have it in the UtxoView, check the db.
+	blsPublicKeyPKIDPairEntry, err := DBGetSnapshotValidatorBLSPublicKeyPKIDPairEntry(bav.Handle, bav.Snapshot, blsPublicKey, snapshotAtEpochNumber)
+	if err != nil {
+		return nil, errors.Wrap(
+			err,
+			"GetSnapshotValidatorBLSPublicKeyPKIDPairEntry: problem retrieving BLSPublicKeyPKIDPairEntry from db: ",
+		)
+	}
+
+	if blsPublicKeyPKIDPairEntry != nil {
+		// Cache the result in the UtxoView
+		bav._setSnapshotValidatorBLSPublicKeyPKIDPairEntry(blsPublicKeyPKIDPairEntry, snapshotAtEpochNumber)
+	}
+	return blsPublicKeyPKIDPairEntry, nil
+}
+
+func DBKeyForSnapshotValidatorBLSPublicKeyPKIDPairEntry(blsPublicKeyPKIDPairEntry *BLSPublicKeyPKIDPairEntry, snapshotAtEpochNumber uint64) []byte {
+	key := append([]byte{}, Prefixes.PrefixSnapshotValidatorBLSPublicKeyPKIDPairEntry...)
+	key = append(key, EncodeUint64(snapshotAtEpochNumber)...)
+	key = append(key, blsPublicKeyPKIDPairEntry.BLSPublicKey.ToBytes()...)
+	return key
+}
+
+func DBGetSnapshotValidatorBLSPublicKeyPKIDPairEntry(handle *badger.DB, snap *Snapshot, blsPublicKey *bls.PublicKey, snapshotAtEpochNumber uint64) (*BLSPublicKeyPKIDPairEntry, error) {
+	var ret *BLSPublicKeyPKIDPairEntry
+	err := handle.View(func(txn *badger.Txn) error {
+		var innerErr error
+		ret, innerErr = DBGetSnapshotValidatorBLSPublicKeyPKIDPairEntryWithTxn(txn, snap, blsPublicKey, snapshotAtEpochNumber)
+		return innerErr
+	})
+	return ret, err
+}
+
+func DBGetSnapshotValidatorBLSPublicKeyPKIDPairEntryWithTxn(txn *badger.Txn, snap *Snapshot, blsPublicKey *bls.PublicKey, snapshotAtEpochNumber uint64) (*BLSPublicKeyPKIDPairEntry, error) {
+	// Retrieve from db.
+	key := DBKeyForSnapshotValidatorBLSPublicKeyPKIDPairEntry(&BLSPublicKeyPKIDPairEntry{BLSPublicKey: blsPublicKey}, snapshotAtEpochNumber)
+	blsPublicKeyPKIDPairEntryBytes, err := DBGetWithTxn(txn, snap, key)
+	if err != nil {
+		// We don't want to error if the key isn't found. Instead, return nil.
+		if errors.Is(err, badger.ErrKeyNotFound) {
+			return nil, nil
+		}
+		return nil, errors.Wrapf(err, "DBGetSnapshotValidatorBLSPublicKeyPKIDPairEntryWithTxn: problem retrieving BLSPublicKeyPKIDPairEntry")
+	}
+
+	// Decode from bytes.
+	blsPublicKeyPKIDPairEntry := &BLSPublicKeyPKIDPairEntry{}
+	rr := bytes.NewReader(blsPublicKeyPKIDPairEntryBytes)
+	if exist, err := DecodeFromBytes(blsPublicKeyPKIDPairEntry, rr); !exist || err != nil {
+		return nil, errors.Wrapf(err, "DBGetSnapshotValidatorBLSPublicKeyPKIDPairEntryWithTxn: problem decoding BLSPublicKeyPKIDPairEntry")
+	}
+	return blsPublicKeyPKIDPairEntry, nil
+}
+
+func DBPutSnapshotValidatorBLSPublicKeyPKIDPairEntryWithTxn(
+	txn *badger.Txn,
+	snap *Snapshot,
+	blsPublicKeyPKIDPairEntry *BLSPublicKeyPKIDPairEntry,
+	snapshotAtEpochNumber uint64,
+	blockHeight uint64,
+	eventManager *EventManager,
+) error {
+	if blsPublicKeyPKIDPairEntry == nil {
+		// This should never happen but is a sanity check.
+		glog.Errorf("DBPutSnapshotValidatorBLSPublicKeyPKIDPairEntryWithTxn: called with nil BLSPublicKeyPKIDPairEntry, this should never happen")
+		return nil
+	}
+
+	// Put the BLSPublicKeyPKIDPairEntry in the SnapshotValidatorBLSPublicKeyPKIDPairEntries index.
+	key := DBKeyForSnapshotValidatorBLSPublicKeyPKIDPairEntry(blsPublicKeyPKIDPairEntry, snapshotAtEpochNumber)
+	if err := DBSetWithTxn(txn, snap, key, EncodeToBytes(blockHeight, blsPublicKeyPKIDPairEntry), eventManager); err != nil {
+		return errors.Wrapf(
+			err,
+			"DBPutSnapshotValidatorBLSPublicKeyPKIDPairEntryWithTxn: problem putting BLSPublicKeyPKIDPairEntry in the SnapshotValidatorBLSPublicKeyPKIDPairEntry index: ",
+		)
+	}
+	return nil
+}
+
+func DBDeleteSnapshotValidatorBLSPublicKeyPKIDPairEntryWithTxn(
+	txn *badger.Txn,
+	snap *Snapshot,
+	blsPublicKeyPKIDPairEntry *BLSPublicKeyPKIDPairEntry,
+	snapshotAtEpochNumber uint64,
+	eventManager *EventManager,
+	entryIsDeleted bool,
+) error {
+	if blsPublicKeyPKIDPairEntry == nil {
+		// This should never happen but is a sanity check.
+		glog.Errorf("DBDeleteSnapshotValidatorBLSPublicKeyPKIDPairEntryWithTxn: called with nil BLSPublicKeyPKIDPairEntry, this should never happen")
+		return nil
+	}
+
+	key := DBKeyForSnapshotValidatorBLSPublicKeyPKIDPairEntry(blsPublicKeyPKIDPairEntry, snapshotAtEpochNumber)
+	if err := DBDeleteWithTxn(txn, snap, key, eventManager, entryIsDeleted); err != nil {
+		return errors.Wrap(
+			err, "DBDeleteSnapshotValidatorBLSPublicKeyPKIDPairEntryWithTxn: problem deleting BLSPublicKeyPKIDPairEntry from index PrefixSnapshotValidatorBLSPublicKeyPKIDPairEntry",
+		)
+	}
+	return nil
+}
+
+func (bav *UtxoView) _setSnapshotValidatorBLSPublicKeyPKIDPairEntry(blsPublicKeyPKIDPairEntry *BLSPublicKeyPKIDPairEntry, snapshotAtEpochNumber uint64) {
+	if blsPublicKeyPKIDPairEntry == nil {
+		glog.Errorf("_setSnapshotValidatorBLSPublicKeyPKIDPairEntry: called with nil entry, this should never happen")
+		return
+	}
+
+	bav.SnapshotValidatorBLSPublicKeyPKIDPairEntries[blsPublicKeyPKIDPairEntry.ToSnapshotMapKey(snapshotAtEpochNumber)] = blsPublicKeyPKIDPairEntry
+}
+
+func (bav *UtxoView) _flushSnapshotValidatorBLSPublicKeyPKIDPairEntryToDbWithTxn(txn *badger.Txn, blockHeight uint64) error {
+	// Delete all SnapshotValidatorBLSPublicKeyToPKID entries from the db that are in the UtxoView.
+	for mapKey, blsPublicKeyPKIDPairEntry := range bav.SnapshotValidatorBLSPublicKeyPKIDPairEntries {
+		if blsPublicKeyPKIDPairEntry == nil {
+			return fmt.Errorf(
+				"_flushSnapshotValidatorBLSPublicKeyPKIDPairEntryToDbWithTxn: found nil entry for EpochNumber %d, this should never happen",
+				mapKey.SnapshotAtEpochNumber,
+			)
+		}
+
+		if err := DBDeleteSnapshotValidatorBLSPublicKeyPKIDPairEntryWithTxn(
+			txn, bav.Snapshot, blsPublicKeyPKIDPairEntry, mapKey.SnapshotAtEpochNumber, bav.EventManager, blsPublicKeyPKIDPairEntry.isDeleted,
+		); err != nil {
+			return errors.Wrapf(
+				err,
+				"_flushSnapshotValidatorBLSPublicKeyPKIDPairEntryToDbWithTxn: problem deleting BLSPublicKeyPKIDPairEntry for EpochNumber %d: ",
+				mapKey.SnapshotAtEpochNumber,
+			)
+		}
+	}
+
+	// Put all !isDeleted Snapshot BLSPublicKeyPKIDPairEntries into the db from the UtxoView.
+	for mapKey, blsPublicKeyPKIDPairEntry := range bav.SnapshotValidatorBLSPublicKeyPKIDPairEntries {
+		if blsPublicKeyPKIDPairEntry == nil {
+			return fmt.Errorf(
+				"_flushSnapshotValidatorBLSPublicKeyPKIDPairEntryToDbWithTxn: found nil entry for EpochNumber %d, this should never happen",
+				mapKey.SnapshotAtEpochNumber,
+			)
+		}
+		if blsPublicKeyPKIDPairEntry.isDeleted {
+			// Skip any deleted BLSPublicKeyPKIDPairEntry.
+			continue
+		}
+		if err := DBPutSnapshotValidatorBLSPublicKeyPKIDPairEntryWithTxn(
+			txn, bav.Snapshot, blsPublicKeyPKIDPairEntry, mapKey.SnapshotAtEpochNumber, blockHeight, bav.EventManager,
+		); err != nil {
+			return errors.Wrapf(
+				err,
+				"_flushSnapshotValidatorBLSPublicKeyPKIDPairEntryToDbWithTxn: problem setting BLSPublicKeyPKIDPairEntry for EpochNumber %d: ",
+				mapKey.SnapshotAtEpochNumber,
+			)
+		}
+	}
+	return nil
+}
+
+//
 // SnapshotValidatorSetTotalStakeAmountNanos
 //
 
 func (bav *UtxoView) GetSnapshotValidatorSetTotalStakeAmountNanos() (*uint256.Int, error) {
 	// Calculate the SnapshotEpochNumber.
-	snapshotAtEpochNumber, err := bav.GetSnapshotEpochNumber()
+	snapshotAtEpochNumber, err := bav.GetCurrentSnapshotEpochNumber()
 	if err != nil {
 		return nil, errors.Wrapf(err, "GetSnapshotValidatorSetTotalStakeAmountNanos: problem calculating SnapshotEpochNumber: ")
 	}
@@ -731,7 +965,7 @@ func (bav *UtxoView) _setSnapshotStakeToReward(stakeEntry *StakeEntry, snapshotA
 // GetAllSnapshotStakesToReward returns all snapshotted StakeEntries that are eligible to receive staking
 // rewards for the current snapshot epoch. The order of the returned entries is arbitrary.
 func (bav *UtxoView) GetAllSnapshotStakesToReward() ([]*StakeEntry, error) {
-	snapshotGlobalParams, err := bav.GetSnapshotGlobalParamsEntry()
+	snapshotGlobalParams, err := bav.GetCurrentSnapshotGlobalParamsEntry()
 	if err != nil {
 		return nil, errors.Wrapf(err, "GetAllSnapshotStakesToReward: problem calculating SnapshotEpochNumber: ")
 	}
@@ -743,7 +977,7 @@ func (bav *UtxoView) GetAllSnapshotStakesToReward() ([]*StakeEntry, error) {
 	}
 
 	// Calculate the SnapshotEpochNumber.
-	snapshotAtEpochNumber, err := bav.GetSnapshotEpochNumber()
+	snapshotAtEpochNumber, err := bav.GetCurrentSnapshotEpochNumber()
 	if err != nil {
 		return nil, errors.Wrapf(err, "GetAllSnapshotStakesToReward: problem calculating SnapshotEpochNumber: ")
 	}
@@ -957,14 +1191,14 @@ type SnapshotLeaderScheduleMapKey struct {
 
 func (bav *UtxoView) GetSnapshotLeaderScheduleValidator(leaderIndex uint16) (*ValidatorEntry, error) {
 	// Calculate the SnapshotEpochNumber.
-	snapshotAtEpochNumber, err := bav.GetSnapshotEpochNumber()
+	snapshotAtEpochNumber, err := bav.GetCurrentSnapshotEpochNumber()
 	if err != nil {
 		return nil, errors.Wrapf(err, " GetSnapshotLeaderScheduleValidator: problem calculating SnapshotEpochNumber: ")
 	}
 	// First, check the UtxoView.
 	mapKey := SnapshotLeaderScheduleMapKey{SnapshotAtEpochNumber: snapshotAtEpochNumber, LeaderIndex: leaderIndex}
 	if validatorPKID, exists := bav.SnapshotLeaderSchedule[mapKey]; exists {
-		return bav.GetSnapshotValidatorSetEntryByPKID(validatorPKID)
+		return bav.GetCurrentSnapshotValidatorSetEntryByPKID(validatorPKID)
 	}
 	// Next, check the db.
 	validatorEntry, err := DBGetSnapshotLeaderScheduleValidator(bav.Handle, bav.Snapshot, leaderIndex, snapshotAtEpochNumber)
@@ -976,6 +1210,54 @@ func (bav *UtxoView) GetSnapshotLeaderScheduleValidator(leaderIndex uint16) (*Va
 		bav._setSnapshotLeaderScheduleValidator(validatorEntry.ValidatorPKID, leaderIndex, snapshotAtEpochNumber)
 	}
 	return validatorEntry, nil
+}
+
+type LeaderPKIDAndIndex struct {
+	leaderIdx  uint16
+	leaderPKID *PKID
+}
+
+func (bav *UtxoView) GetCurrentSnapshotLeaderSchedule() ([]*PKID, error) {
+	snapshotAtEpochNumber, err := bav.GetCurrentSnapshotEpochNumber()
+	if err != nil {
+		return nil, errors.Wrapf(err, "GetCurrentSnapshotLeaderSchedule: problem calculating SnapshotEpochNumber: ")
+	}
+	return bav.GetSnapshotLeaderScheduleAtEpochNumber(snapshotAtEpochNumber)
+}
+func (bav *UtxoView) GetSnapshotLeaderScheduleAtEpochNumber(snapshotAtEpochNumber uint64) ([]*PKID, error) {
+	// Seek over DB prefix and merge into view.
+	leaderIdxToValidatorPKIDMap, err := DBSeekSnapshotLeaderSchedule(bav.Handle, snapshotAtEpochNumber)
+	if err != nil {
+		return nil, errors.Wrapf(err, "GetSnapshotLeaderScheduleAtEpochNumber: error retrieving ValidatorPKIDs: ")
+	}
+	// Merge the DB entries into the UtxoView.
+	for leaderIdx, validatorPKID := range leaderIdxToValidatorPKIDMap {
+		snapshotLeaderScheduleMapKey := SnapshotLeaderScheduleMapKey{
+			SnapshotAtEpochNumber: snapshotAtEpochNumber,
+			LeaderIndex:           leaderIdx,
+		}
+		if _, exists := bav.SnapshotLeaderSchedule[snapshotLeaderScheduleMapKey]; !exists {
+			bav._setSnapshotLeaderScheduleValidator(validatorPKID, leaderIdx, snapshotAtEpochNumber)
+		}
+	}
+
+	// First, check the UtxoView.
+	var leaderPKIDAndIndexSlice []LeaderPKIDAndIndex
+	for mapKey, validatorPKID := range bav.SnapshotLeaderSchedule {
+		if mapKey.SnapshotAtEpochNumber == snapshotAtEpochNumber {
+			leaderPKIDAndIndexSlice = append(leaderPKIDAndIndexSlice, LeaderPKIDAndIndex{
+				leaderIdx:  mapKey.LeaderIndex,
+				leaderPKID: validatorPKID,
+			})
+		}
+	}
+	sort.Slice(leaderPKIDAndIndexSlice, func(ii, jj int) bool {
+		return leaderPKIDAndIndexSlice[ii].leaderIdx < leaderPKIDAndIndexSlice[jj].leaderIdx
+	})
+	leaderPKIDs := collections.Transform(leaderPKIDAndIndexSlice, func(index LeaderPKIDAndIndex) *PKID {
+		return index.leaderPKID
+	})
+	return leaderPKIDs, nil
 }
 
 func (bav *UtxoView) _setSnapshotLeaderScheduleValidator(validatorPKID *PKID, index uint16, snapshotAtEpochNumber uint64) {
@@ -1012,6 +1294,12 @@ func DBKeyForSnapshotLeaderScheduleValidator(leaderIndex uint16, snapshotAtEpoch
 	data := append([]byte{}, Prefixes.PrefixSnapshotLeaderSchedule...)
 	data = append(data, EncodeUint64(snapshotAtEpochNumber)...)
 	data = append(data, EncodeUint16(leaderIndex)...)
+	return data
+}
+
+func DBSSeekKeyForSnapshotLeaderSchedule(snapshotAtEpochNumber uint64) []byte {
+	data := append([]byte{}, Prefixes.PrefixSnapshotLeaderSchedule...)
+	data = append(data, EncodeUint64(snapshotAtEpochNumber)...)
 	return data
 }
 
@@ -1056,6 +1344,27 @@ func DBGetSnapshotLeaderScheduleValidatorWithTxn(
 
 	// Retrieve ValidatorEntry by PKID from db.
 	return DBGetSnapshotValidatorSetEntryByPKIDWithTxn(txn, snap, validatorPKID, snapshotAtEpochNumber)
+}
+
+func DBSeekSnapshotLeaderSchedule(
+	handle *badger.DB,
+	snapshotAtEpochNumber uint64,
+) (map[uint16]*PKID, error) {
+	seekKey := DBSSeekKeyForSnapshotLeaderSchedule(snapshotAtEpochNumber)
+	keysFound, valsFound := EnumerateKeysForPrefix(handle, seekKey)
+	leaderIdxToPKID := make(map[uint16]*PKID)
+	for idx, keyFound := range keysFound {
+		// TODO: Make sure this decode is correct
+		leaderIndex := DecodeUint16(keyFound[len(seekKey):])
+		// Decode ValidatorPKID from bytes.
+		validatorPKID := &PKID{}
+		rr := bytes.NewReader(valsFound[idx])
+		if exist, err := DecodeFromBytes(validatorPKID, rr); !exist || err != nil {
+			return nil, errors.Wrapf(err, "DBSeekSnapshotLeaderSchedule: problem decoding ValidatorPKID")
+		}
+		leaderIdxToPKID[leaderIndex] = validatorPKID
+	}
+	return leaderIdxToPKID, nil
 }
 
 func DBPutSnapshotLeaderScheduleValidatorWithTxn(

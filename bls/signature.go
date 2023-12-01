@@ -255,6 +255,16 @@ func (publicKey *PublicKey) IsEmpty() bool {
 	return publicKey == nil || publicKey.flowPublicKey == nil
 }
 
+type SerializedPublicKey string
+
+func (publicKey *PublicKey) Serialize() SerializedPublicKey {
+	return SerializedPublicKey(publicKey.ToString())
+}
+
+func (serializedPublicKey SerializedPublicKey) Deserialize() (*PublicKey, error) {
+	return new(PublicKey).FromString(string(serializedPublicKey))
+}
+
 //
 // TYPES: Signature
 //
@@ -339,6 +349,10 @@ func (signature *Signature) Copy() *Signature {
 	return &Signature{
 		flowSignature: append([]byte{}, signature.flowSignature.Bytes()...),
 	}
+}
+
+func (signature *Signature) IsEmpty() bool {
+	return signature == nil || signature.flowSignature == nil
 }
 
 func extractFlowPublicKeys(publicKeys []*PublicKey) []flowCrypto.PublicKey {

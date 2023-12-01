@@ -56,21 +56,35 @@ func DecodeRandomSeedHash(rr io.Reader) (*RandomSeedHash, error) {
 	return (&RandomSeedHash{}).FromBytes(randomSeedHashBytes)
 }
 
+func (randomSeedHash *RandomSeedHash) isEmpty() bool {
+	return randomSeedHash == nil || randomSeedHash.Eq(&RandomSeedHash{})
+}
+
 //
 // UTXO VIEW UTILS
 //
 
-func (bav *UtxoView) GenerateRandomSeedSignature(signerPrivateKey *bls.PrivateKey) (*bls.Signature, error) {
+func (bav *UtxoView) GenerateNextRandomSeedSignature(signerPrivateKey *bls.PrivateKey) (*bls.Signature, error) {
 	// This function generates a RandomSeedSignature by signing the CurrentRandomSeedHash
 	// with the provided bls.PrivateKey. This signature is deterministic: given the same
 	// CurrentRandomSeedHash and bls.PrivateKey, the same signature will always be generated.
 	currentRandomSeedHash, err := bav.GetCurrentRandomSeedHash()
 	if err != nil {
-		return nil, errors.Wrapf(err, "UtxoView.GenerateRandomSeedSignature: problem retrieving CurrentRandomSeedHash: ")
+		return nil, errors.Wrapf(err, "UtxoView.GenerateNextRandomSeedSignature: problem retrieving CurrentRandomSeedHash: ")
 	}
-	randomSeedSignature, err := signerPrivateKey.Sign(currentRandomSeedHash[:])
+	randomSeedSignature, err := SignRandomSeedHash(signerPrivateKey, currentRandomSeedHash)
 	if err != nil {
-		return nil, errors.Wrapf(err, "UtxoView.GenerateRandomSeedSignature: problem signing CurrentRandomSeedHash: ")
+		return nil, errors.Wrapf(err, "UtxoView.GenerateNextRandomSeedSignature: problem generating RandomSeedSignature: ")
+	}
+	return randomSeedSignature, nil
+}
+
+func SignRandomSeedHash(
+	signerPrivateKey *bls.PrivateKey, randomSeedHash *RandomSeedHash,
+) (*bls.Signature, error) {
+	randomSeedSignature, err := signerPrivateKey.Sign(randomSeedHash[:])
+	if err != nil {
+		return nil, errors.Wrapf(err, "UtxoView.SignRandomSeedHash: problem signing CurrentRandomSeedHash: ")
 	}
 	return randomSeedSignature, nil
 }
@@ -89,20 +103,31 @@ func (bav *UtxoView) VerifyRandomSeedSignature(
 	if err != nil {
 		return nil, errors.Wrapf(err, "UtxoView.VerifyRandomSeedSignature: problem retrieving CurrentRandomSeedHash: ")
 	}
-	isVerified, err := signerPublicKey.Verify(randomSeedSignature, currentRandomSeedHash[:])
+	isVerified, err := verifySignatureOnRandomSeedHash(signerPublicKey, randomSeedSignature, currentRandomSeedHash)
 	if err != nil {
 		return nil, errors.Wrapf(err, "UtxoView.VerifyRandomSeedSignature: problem verifying RandomSeedSignature: ")
 	}
 	if !isVerified {
-		return nil, errors.New("UtxoView.VerifyRandomSeedSignature: invalid RandomSeedSignature provided")
+		return nil, errors.Errorf("UtxoView.VerifyRandomSeedSignature: invalid RandomSeedSignature provided")
 	}
+	return hashRandomSeedSignature(randomSeedSignature)
+}
+
+func verifySignatureOnRandomSeedHash(
+	signerPublicKey *bls.PublicKey, randomSeedSignature *bls.Signature, randomSeedHash *RandomSeedHash,
+) (bool, error) {
+	return signerPublicKey.Verify(randomSeedSignature, randomSeedHash[:])
+}
+
+func hashRandomSeedSignature(randomSeedSignature *bls.Signature) (*RandomSeedHash, error) {
+	// This function takes in a random seed signature and computes the random seed hash for it
 	// Convert the RandomSeedSignature to a RandomSeedHash.
 	randomSeedSHA256 := sha256.Sum256(randomSeedSignature.ToBytes())
-	randomSeedHash, err := (&RandomSeedHash{}).FromBytes(randomSeedSHA256[:])
+	newRandomSeedHash, err := (&RandomSeedHash{}).FromBytes(randomSeedSHA256[:])
 	if err != nil {
-		return nil, errors.Wrapf(err, "UtxoView.VerifyRandomSeedSignature: problem hashing RandomSeedSignature: ")
+		return nil, errors.Wrapf(err, "hashRandomSeedSignature: problem hashing RandomSeedSignature: ")
 	}
-	return randomSeedHash, nil
+	return newRandomSeedHash, nil
 }
 
 func (bav *UtxoView) GetCurrentRandomSeedHash() (*RandomSeedHash, error) {

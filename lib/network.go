@@ -1973,11 +1973,11 @@ type MsgDeSoHeader struct {
 	// The BLS public key of the validator who proposed this block.
 	ProposerVotingPublicKey *bls.PublicKey
 
-	// ProposerRandomSeedHash is only used for Proof of Stake blocks, starting with
+	// ProposerRandomSeedSignature is only used for Proof of Stake blocks, starting with
 	// MsgDeSoHeader version 2. For all earlier versions, this field will default to nil.
 	//
 	// The current block's randomness seed provided by the block's proposer.
-	ProposerRandomSeedHash *RandomSeedHash
+	ProposerRandomSeedSignature *bls.Signature
 
 	// ProposedInView is only used for Proof of Stake blocks, starting with MsgDeSoHeader
 	// version 2. For all earlier versions, this field will default to nil.
@@ -2222,11 +2222,11 @@ func (msg *MsgDeSoHeader) EncodeHeaderVersion2(preSignature bool) ([]byte, error
 	}
 	retBytes = append(retBytes, EncodeBLSPublicKey(msg.ProposerVotingPublicKey)...)
 
-	// ProposerRandomSeedHash
-	if msg.ProposerRandomSeedHash == nil {
-		return nil, fmt.Errorf("EncodeHeaderVersion2: ProposerRandomSeedHash must be non-nil")
+	// ProposerRandomSeedSignature
+	if msg.ProposerRandomSeedSignature == nil {
+		return nil, fmt.Errorf("EncodeHeaderVersion2: ProposerRandomSeedSignature must be non-nil")
 	}
-	retBytes = append(retBytes, EncodeRandomSeedHash(msg.ProposerRandomSeedHash)...)
+	retBytes = append(retBytes, EncodeOptionalBLSSignature(msg.ProposerRandomSeedSignature)...)
 
 	// ProposedInView
 	retBytes = append(retBytes, UintToBuf(msg.ProposedInView)...)
@@ -2444,10 +2444,10 @@ func DecodeHeaderVersion2(rr io.Reader) (*MsgDeSoHeader, error) {
 		return nil, errors.Wrapf(err, "MsgDeSoHeader.FromBytes: Problem decoding ProposerVotingPublicKey")
 	}
 
-	// ProposerRandomSeedHash
-	retHeader.ProposerRandomSeedHash, err = DecodeRandomSeedHash(rr)
+	// ProposerRandomSeedSignature
+	retHeader.ProposerRandomSeedSignature, err = DecodeOptionalBLSSignature(rr)
 	if err != nil {
-		return nil, errors.Wrapf(err, "MsgDeSoHeader.FromBytes: Problem decoding ProposerRandomSeedHash")
+		return nil, errors.Wrapf(err, "MsgDeSoHeader.FromBytes: Problem decoding ProposerRandomSeedSignature")
 	}
 
 	// ProposedInView

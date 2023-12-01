@@ -100,6 +100,16 @@ func (publicKey *PublicKey) IsEmpty() bool {
 	panic(BLSNoRelicError)
 }
 
+type SerializedPublicKey string
+
+func (publicKey *PublicKey) Serialize() SerializedPublicKey {
+	panic(BLSNoRelicError)
+}
+
+func (serializedPublicKey SerializedPublicKey) Deserialize() (*PublicKey, error) {
+	panic(BLSNoRelicError)
+}
+
 //
 // TYPES: Signature
 //
@@ -135,5 +145,9 @@ func (signature *Signature) Eq(other *Signature) bool {
 }
 
 func (signature *Signature) Copy() *Signature {
+	panic(BLSNoRelicError)
+}
+
+func (signature *Signature) IsEmpty() bool {
 	panic(BLSNoRelicError)
 }
