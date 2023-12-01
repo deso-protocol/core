@@ -271,9 +271,8 @@ func isProperlyFormedAggregateQC(aggQC AggregateQuorumCertificate) bool {
 		return false
 	}
 
-	// If there was a timeout, it means that we've skipped at least one view. The
-	// timed out view and the high QC's view cannot be consecutive.
-	if aggQC.GetView() <= aggQC.GetHighQC().GetView()+1 {
+	// The high QC's view must be less than the timed out view
+	if aggQC.GetHighQC().GetView() >= aggQC.GetView() {
 		return false
 	}
 
