@@ -4,6 +4,7 @@ package lib
 
 import (
 	"bytes"
+	"fmt"
 	"math"
 	"math/rand"
 	"testing"
@@ -52,7 +53,7 @@ func TestIsProperlyFormedBlockPoSAndIsBlockTimestampValidRelativeToParentPoS(t *
 			Version:        2,
 			TstampNanoSecs: bc.BlockTip().Header.TstampNanoSecs + 10,
 			Height:         2,
-			ProposedInView: 2,
+			ProposedInView: 3,
 			PrevBlockHash:  bc.BlockTip().Hash,
 			ValidatorsTimeoutAggregateQC: &TimeoutAggregateQuorumCertificate{
 				TimedOutView: 2,
@@ -85,7 +86,7 @@ func TestIsProperlyFormedBlockPoSAndIsBlockTimestampValidRelativeToParentPoS(t *
 	// There should be no error.
 	require.Nil(t, err)
 
-	// Timeout QC should have exactly 1 transaction and that transaction is a block reward.
+	// Timeout QC must have at least one transaction and that transaction must be a block reward txn.
 	block.Txns = nil
 	err = bc.isProperlyFormedBlockPoS(block)
 	require.Equal(t, err, RuleErrorBlockWithNoTxns)
@@ -104,6 +105,14 @@ func TestIsProperlyFormedBlockPoSAndIsBlockTimestampValidRelativeToParentPoS(t *
 		},
 	}
 
+	// Header's Proposed in view must be exactly one greater than the timeout QC's timed out view
+	block.Header.ProposedInView = 2
+	err = bc.isProperlyFormedBlockPoS(block)
+	require.Equal(t, err, RuleErrorPoSTimeoutBlockViewNotOneGreaterThanValidatorsTimeoutQCView)
+
+	// Revert proposed in view
+	block.Header.ProposedInView = 3
+
 	// Timeout QC also must have a merkle root
 	block.Header.TransactionMerkleRoot = nil
 	err = bc.isProperlyFormedBlockPoS(block)
@@ -112,7 +121,7 @@ func TestIsProperlyFormedBlockPoSAndIsBlockTimestampValidRelativeToParentPoS(t *
 	// Make sure block can't have both timeout and vote QC.
 	validatorVoteQC := &QuorumCertificate{
 		BlockHash:      bc.BlockTip().Hash,
-		ProposedInView: 1,
+		ProposedInView: 2,
 		ValidatorsVoteAggregatedSignature: &AggregatedBLSSignature{
 			Signature:   signature,
 			SignersList: bitset.NewBitset(),
@@ -146,6 +155,14 @@ func TestIsProperlyFormedBlockPoSAndIsBlockTimestampValidRelativeToParentPoS(t *
 	// There should be no error.
 	err = bc.isProperlyFormedBlockPoS(block)
 	require.Nil(t, err)
+
+	// Vote QC must have Header's Proposed in view exactly one greater than vote QC's proposed in view.
+	block.Header.ProposedInView = 2
+	err = bc.isProperlyFormedBlockPoS(block)
+	require.Equal(t, err, RuleErrorPoSVoteBlockViewNotOneGreaterThanValidatorsVoteQCView)
+
+	// Revert proposed in view
+	block.Header.ProposedInView = 3
 
 	// Block must have non-nil Merkle root if we have non-zero transactions
 	block.Header.TransactionMerkleRoot = nil
@@ -1031,18 +1048,18 @@ func TestIsValidPoSQuorumCertificate(t *testing.T) {
 
 	// Timeout QC tests
 	// Let's start with a valid timeout QC
-	timeout1Payload := consensus.GetTimeoutSignaturePayload(6, 5)
+	timeout1Payload := consensus.GetTimeoutSignaturePayload(8, 6)
 	timeout1Signature, err := m1VotingPrivateKey.Sign(timeout1Payload[:])
 	require.NoError(t, err)
-	timeout2Payload := consensus.GetTimeoutSignaturePayload(6, 4)
+	timeout2Payload := consensus.GetTimeoutSignaturePayload(8, 5)
 	timeout2Signature, err := m2VotingPrivateKey.Sign(timeout2Payload[:])
 
 	timeoutAggSig, err := bls.AggregateSignatures([]*bls.Signature{timeout1Signature, timeout2Signature})
 	require.NoError(t, err)
 	timeoutQC := &TimeoutAggregateQuorumCertificate{
-		TimedOutView:                 6,
+		TimedOutView:                 8,
 		ValidatorsHighQC:             voteQC,
-		ValidatorsTimeoutHighQCViews: []uint64{5, 4},
+		ValidatorsTimeoutHighQCViews: []uint64{6, 5},
 		ValidatorsTimeoutAggregatedSignature: &AggregatedBLSSignature{
 			SignersList: signersList1And2,
 			Signature:   timeoutAggSig,
@@ -1066,7 +1083,7 @@ func TestIsValidPoSQuorumCertificate(t *testing.T) {
 		require.Equal(t, err, RuleErrorInvalidVoteQC)
 
 		// Nil high QC
-		timeoutQC.TimedOutView = 6
+		timeoutQC.TimedOutView = 8
 		timeoutQC.ValidatorsHighQC = nil
 		err = bc.isValidPoSQuorumCertificate(desoBlock, validatorSet)
 		require.Error(t, err)
@@ -1087,7 +1104,7 @@ func TestIsValidPoSQuorumCertificate(t *testing.T) {
 		require.Equal(t, err, RuleErrorInvalidVoteQC)
 
 		// Nil high QC block hash
-		timeoutQC.ValidatorsTimeoutHighQCViews = []uint64{5, 4}
+		timeoutQC.ValidatorsTimeoutHighQCViews = []uint64{6, 5}
 		timeoutQC.ValidatorsHighQC.BlockHash = nil
 		err = bc.isValidPoSQuorumCertificate(desoBlock, validatorSet)
 		require.Error(t, err)
@@ -1116,8 +1133,18 @@ func TestIsValidPoSQuorumCertificate(t *testing.T) {
 		// Revert high qc aggregated signature
 		timeoutQC.ValidatorsHighQC.ValidatorsVoteAggregatedSignature = &AggregatedBLSSignature{
 			SignersList: signersList1And2,
-			Signature:   timeoutAggSig,
+			Signature:   aggregateSig,
 		}
+
+		err = bc.isValidPoSQuorumCertificate(desoBlock, validatorSet)
+		require.NoError(t, err)
+	}
+	{
+		// Timed out view is not exactly one greater than high QC view
+		timeoutQC.ValidatorsHighQC.ProposedInView = 7
+		err = bc.isValidPoSQuorumCertificate(desoBlock, validatorSet)
+		require.Error(t, err)
+		require.Equal(t, err, RuleErrorInvalidTimeoutQC)
 	}
 	{
 		// Invalid validator set tests
@@ -1686,8 +1713,9 @@ func TestProcessBlockPoS(t *testing.T) {
 	{
 		// Okay let's timeout view 15
 		var timeoutBlock *MsgDeSoBlock
-		timeoutBlock = _generateRealBlock(testMeta, 15, 15, 381, blockHash3, true)
+		timeoutBlock = _generateRealBlock(testMeta, 15, 16, 381, blockHash3, true)
 		success, _, _, err := testMeta.chain.processBlockPoS(timeoutBlock, 15, true)
+		fmt.Println(err)
 		require.True(t, success)
 		timeoutBlockHash, err = timeoutBlock.Hash()
 		require.NoError(t, err)
@@ -1725,9 +1753,11 @@ func TestProcessBlockPoS(t *testing.T) {
 		updateRandomSeedSignature(testMeta, orphanBlock, dummyParentBlock.Header.ProposerRandomSeedSignature)
 		// Set the prev block hash manually on orphan block
 		orphanBlock.Header.PrevBlockHash = dummyParentBlockHash
+		// Create a QC on the dummy parent block
+		orphanBlock.Header.ValidatorsVoteQC = _getVoteQC(testMeta, testMeta.posMempool.readOnlyLatestBlockView, dummyParentBlockHash, 16)
+		updateProposerVotePartialSignatureForBlock(testMeta, orphanBlock)
 		orphanBlockHash, err := orphanBlock.Hash()
 		require.NoError(t, err)
-		updateProposerVotePartialSignatureForBlock(testMeta, orphanBlock)
 		success, isOrphan, missingBlockHashes, err := testMeta.chain.processBlockPoS(orphanBlock, 17, true)
 		require.False(t, success)
 		require.True(t, isOrphan)
@@ -2379,29 +2409,8 @@ func updateProposerVotePartialSignatureForBlock(testMeta *TestMeta, block *MsgDe
 	block.Header.ProposerVotePartialSignature = sig
 }
 
-// _getFullRealBlockTemplate is a helper function that generates a block template with a valid TxnConnectStatusByIndexHash
-// and a valid TxnConnectStatusByIndex, a valid vote or timeout QC, does all the required signing by validators,
-// and generates the proper ProposerVotePartialSignature.
-func _getFullRealBlockTemplate(testMeta *TestMeta, latestBlockView *UtxoView, blockHeight uint64, view uint64, seedSignature *bls.Signature, isTimeout bool) BlockTemplate {
-	blockTemplate, err := testMeta.posBlockProducer.createBlockTemplate(latestBlockView, blockHeight, view, seedSignature)
-	require.NoError(testMeta.t, err)
-	require.NotNil(testMeta.t, blockTemplate)
-	blockTemplate.Header.TxnConnectStatusByIndexHash = HashBitset(blockTemplate.TxnConnectStatusByIndex)
-
-	// Figure out who the leader is supposed to be.
-	leaderPublicKey, leaderPublicKeyBytes := getLeaderForBlockHeightAndView(testMeta, latestBlockView, blockHeight, view)
-	// Get leader voting private key.
-	leaderVotingPrivateKey := testMeta.pubKeyToBLSKeyMap[leaderPublicKey]
-	// Get hash of last block
-	chainTip := testMeta.chain.blockIndexByHash[*blockTemplate.Header.PrevBlockHash]
-	chainTipHash := chainTip.Hash
-	// Get the vote signature payload
-	// Hack to get view numbers working properly w/ PoW blocks.
-	qcView := chainTip.Header.ProposedInView
-	if qcView == 0 {
-		qcView = view - 1
-	}
-	votePayload := consensus.GetVoteSignaturePayload(qcView, chainTipHash)
+func _getVoteQC(testMeta *TestMeta, latestBlockView *UtxoView, qcBlockHash *BlockHash, qcView uint64) *QuorumCertificate {
+	votePayload := consensus.GetVoteSignaturePayload(qcView, qcBlockHash)
 	allSnapshotValidators, err := latestBlockView.GetAllSnapshotValidatorSetEntriesByStake()
 	require.NoError(testMeta.t, err)
 	// QC stuff.
@@ -2424,7 +2433,7 @@ func _getFullRealBlockTemplate(testMeta *TestMeta, latestBlockView *UtxoView, bl
 	require.NoError(testMeta.t, err)
 	// Create the vote QC.
 	voteQC := &QuorumCertificate{
-		BlockHash:      chainTipHash,
+		BlockHash:      qcBlockHash,
 		ProposedInView: qcView,
 		ValidatorsVoteAggregatedSignature: &AggregatedBLSSignature{
 			SignersList: signersList,
@@ -2434,18 +2443,49 @@ func _getFullRealBlockTemplate(testMeta *TestMeta, latestBlockView *UtxoView, bl
 
 	isValid := consensus.IsValidSuperMajorityQuorumCertificate(voteQC, toConsensusValidators(allSnapshotValidators))
 	require.True(testMeta.t, isValid)
+	return voteQC
+}
+
+// _getFullRealBlockTemplate is a helper function that generates a block template with a valid TxnConnectStatusByIndexHash
+// and a valid TxnConnectStatusByIndex, a valid vote or timeout QC, does all the required signing by validators,
+// and generates the proper ProposerVotePartialSignature.
+func _getFullRealBlockTemplate(testMeta *TestMeta, latestBlockView *UtxoView, blockHeight uint64, view uint64, seedSignature *bls.Signature, isTimeout bool) BlockTemplate {
+	blockTemplate, err := testMeta.posBlockProducer.createBlockTemplate(latestBlockView, blockHeight, view, seedSignature)
+	require.NoError(testMeta.t, err)
+	require.NotNil(testMeta.t, blockTemplate)
+	blockTemplate.Header.TxnConnectStatusByIndexHash = HashBitset(blockTemplate.TxnConnectStatusByIndex)
+
+	// Figure out who the leader is supposed to be.
+	leaderPublicKey, leaderPublicKeyBytes := getLeaderForBlockHeightAndView(testMeta, latestBlockView, blockHeight, view)
+	// Get leader voting private key.
+	leaderVotingPrivateKey := testMeta.pubKeyToBLSKeyMap[leaderPublicKey]
+	// Get hash of last block
+	chainTip := testMeta.chain.blockIndexByHash[*blockTemplate.Header.PrevBlockHash]
+	chainTipHash := chainTip.Hash
+	// Get the vote signature payload
+	// Hack to get view numbers working properly w/ PoW blocks.
+	qcView := chainTip.Header.ProposedInView
+	if qcView == 0 {
+		qcView = view - 1
+	}
+
+	// Create the vote QC.
+	voteQC := _getVoteQC(testMeta, latestBlockView, chainTipHash, qcView)
 	if !isTimeout {
 		blockTemplate.Header.ValidatorsVoteQC = voteQC
 	} else {
 		var validatorsTimeoutHighQCViews []uint64
 		timeoutSignersList := bitset.NewBitset()
 		timeoutSigs := []*bls.Signature{}
+		// TODO: Get the latest vote QC. If the current tip isn't a vote QC, then
+		// we need to go further back.
+		prevQC := testMeta.chain.blockTip().Header.ValidatorsVoteQC
 		ii := 0
 		for _, blsPrivKey := range testMeta.pubKeyToBLSKeyMap {
 			// Add timeout high qc view. Just assume it's the view after the vote QC for simplicity.
-			validatorsTimeoutHighQCViews = append(validatorsTimeoutHighQCViews, voteQC.ProposedInView+1)
+			validatorsTimeoutHighQCViews = append(validatorsTimeoutHighQCViews, prevQC.GetView())
 			// Add timeout aggregated signature.
-			newPayload := consensus.GetTimeoutSignaturePayload(view, voteQC.ProposedInView+1)
+			newPayload := consensus.GetTimeoutSignaturePayload(view-1, prevQC.GetView())
 			sig, err := blsPrivKey.Sign(newPayload[:])
 			require.NoError(testMeta.t, err)
 			timeoutSigs = append(timeoutSigs, sig)
@@ -2455,8 +2495,8 @@ func _getFullRealBlockTemplate(testMeta *TestMeta, latestBlockView *UtxoView, bl
 		timeoutAggregatedSignature, err := bls.AggregateSignatures(timeoutSigs)
 		require.NoError(testMeta.t, err)
 		timeoutQC := &TimeoutAggregateQuorumCertificate{
-			TimedOutView:                 view,
-			ValidatorsHighQC:             voteQC,
+			TimedOutView:                 view - 1,
+			ValidatorsHighQC:             prevQC,
 			ValidatorsTimeoutHighQCViews: validatorsTimeoutHighQCViews,
 			ValidatorsTimeoutAggregatedSignature: &AggregatedBLSSignature{
 				SignersList: timeoutSignersList,

@@ -129,7 +129,7 @@ func (bc *Blockchain) processBlockPoS(block *MsgDeSoBlock, currentView uint64, v
 // and simply throw it away. If it fails the other integrity checks, we'll store it
 // as validate failed.
 func (bc *Blockchain) processOrphanBlockPoS(block *MsgDeSoBlock) error {
-	// Construct a UtxoView so we can perform the QC and leader checks.
+	// Construct a UtxoView, so we can perform the QC and leader checks.
 	utxoView, err := NewUtxoView(bc.db, bc.params, nil, bc.snapshot, nil)
 	if err != nil {
 		// We can't validate the QC without a UtxoView. Return an error.
@@ -657,7 +657,17 @@ func (bc *Blockchain) isProperlyFormedBlockPoS(block *MsgDeSoBlock) error {
 		return RuleErrorInvalidMerkleRoot
 	}
 
-	// TODO: What other checks do we need to do here?
+	// If a block has a vote QC, then the Header's proposed in view must be exactly one
+	// greater than the QC's proposed in view.
+	if !isVoteQCEmpty && block.Header.ProposedInView != block.Header.ValidatorsVoteQC.ProposedInView+1 {
+		return RuleErrorPoSVoteBlockViewNotOneGreaterThanValidatorsVoteQCView
+	}
+
+	// If a block has a timeout QC, then the Header's proposed in view be must exactly one
+	// greater than the QC's timed out view.
+	if !isTimeoutQCEmpty && block.Header.ProposedInView != block.Header.ValidatorsTimeoutAggregateQC.TimedOutView+1 {
+		return RuleErrorPoSTimeoutBlockViewNotOneGreaterThanValidatorsTimeoutQCView
+	}
 	return nil
 }
 
@@ -1416,8 +1426,10 @@ const (
 	RuleErrorInvalidPoSBlockHeight       RuleError = "RuleErrorInvalidPoSBlockHeight"
 	RuleErrorPoSBlockBeforeCutoverHeight RuleError = "RuleErrorPoSBlockBeforeCutoverHeight"
 
-	RuleErrorPoSVoteBlockViewNotOneGreaterThanParent RuleError = "RuleErrorPoSVoteBlockViewNotOneGreaterThanParent"
-	RuleErrorPoSTimeoutBlockViewNotGreaterThanParent RuleError = "RuleErrorPoSTimeoutBlockViewNotGreaterThanParent"
+	RuleErrorPoSVoteBlockViewNotOneGreaterThanParent                     RuleError = "RuleErrorPoSVoteBlockViewNotOneGreaterThanParent"
+	RuleErrorPoSVoteBlockViewNotOneGreaterThanValidatorsVoteQCView       RuleError = "RuleErrorPoSVoteBlockViewNotOneGreaterThanValidatorsVoteQCView"
+	RuleErrorPoSTimeoutBlockViewNotGreaterThanParent                     RuleError = "RuleErrorPoSTimeoutBlockViewNotGreaterThanParent"
+	RuleErrorPoSTimeoutBlockViewNotOneGreaterThanValidatorsTimeoutQCView RuleError = "RuleErrorPoSTimeoutBlockViewNotOneGreaterThanValidatorsTimeoutQCView"
 
 	RuleErrorInvalidVoteQC    RuleError = "RuleErrorInvalidVoteQC"
 	RuleErrorInvalidTimeoutQC RuleError = "RuleErrorInvalidTimeoutQC"
