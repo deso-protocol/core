@@ -61,7 +61,7 @@ type Server struct {
 	eventManager  *EventManager
 	TxIndex       *TXIndex
 
-	fastHotStuffConsensus *consensus.FastHotStuffConsensus
+	fastHotStuffEventLoop consensus.FastHotStuffEventLoop
 	// posMempool *PosMemPool TODO: Add the mempool later
 
 	// All messages received from peers get sent from the ConnectionManager to the
@@ -1376,20 +1376,20 @@ func (srv *Server) _handleSnapshot(pp *Peer, msg *MsgDeSoSnapshotData) {
 	// the blockNodes in the header chain and set them in the blockchain data structures.
 	err = srv.blockchain.db.Update(func(txn *badger.Txn) error {
 		for ii := uint64(1); ii <= srv.HyperSyncProgress.SnapshotMetadata.SnapshotBlockHeight; ii++ {
-			curretNode := srv.blockchain.bestHeaderChain[ii]
+			currentNode := srv.blockchain.bestHeaderChain[ii]
 			// Do not set the StatusBlockStored flag, because we still need to download the past blocks.
-			curretNode.Status |= StatusBlockProcessed
-			curretNode.Status |= StatusBlockValidated
-			srv.blockchain.blockIndex[*curretNode.Hash] = curretNode
-			srv.blockchain.bestChainMap[*curretNode.Hash] = curretNode
-			srv.blockchain.bestChain = append(srv.blockchain.bestChain, curretNode)
-			err := PutHeightHashToNodeInfoWithTxn(txn, srv.snapshot, curretNode, false /*bitcoinNodes*/, srv.eventManager)
+			currentNode.Status |= StatusBlockProcessed
+			currentNode.Status |= StatusBlockValidated
+			srv.blockchain.addNewBlockNodeToBlockIndex(currentNode)
+			srv.blockchain.bestChainMap[*currentNode.Hash] = currentNode
+			srv.blockchain.bestChain = append(srv.blockchain.bestChain, currentNode)
+			err = PutHeightHashToNodeInfoWithTxn(txn, srv.snapshot, currentNode, false /*bitcoinNodes*/, srv.eventManager)
 			if err != nil {
 				return err
 			}
 		}
 		// We will also set the hash of the block at snapshot height as the best chain hash.
-		err := PutBestHashWithTxn(txn, srv.snapshot, msg.SnapshotMetadata.CurrentEpochBlockHash, ChainTypeDeSoBlock, srv.eventManager)
+		err = PutBestHashWithTxn(txn, srv.snapshot, msg.SnapshotMetadata.CurrentEpochBlockHash, ChainTypeDeSoBlock, srv.eventManager)
 		return err
 	})
 
@@ -1802,11 +1802,6 @@ func (srv *Server) _handleBlockAccepted(event *BlockEvent) {
 		return
 	}
 
-	// Notify the consensus that a block was accepted.
-	if srv.fastHotStuffConsensus != nil {
-		srv.fastHotStuffConsensus.HandleAcceptedBlock()
-	}
-
 	// Construct an inventory vector to relay to peers.
 	blockHash, _ := blk.Header.Hash()
 	invVect := &InvVect{
@@ -1903,7 +1898,7 @@ func (srv *Server) _handleBlock(pp *Peer, blk *MsgDeSoBlock) {
 		glog.V(1).Infof(CLog(Cyan, fmt.Sprintf("Server._handleBlock: Processing block %v WITHOUT "+
 			"signature checking because SyncState=%v for peer %v",
 			blk, srv.blockchain.chainState(), pp)))
-		_, isOrphan, err = srv.blockchain.ProcessBlock(blk, false)
+		_, isOrphan, _, err = srv.blockchain.ProcessBlock(blk, false)
 
 	} else {
 		// TODO: Signature checking slows things down because it acquires the ChainLock.
@@ -1912,7 +1907,7 @@ func (srv *Server) _handleBlock(pp *Peer, blk *MsgDeSoBlock) {
 		glog.V(1).Infof(CLog(Cyan, fmt.Sprintf("Server._handleBlock: Processing block %v WITH "+
 			"signature checking because SyncState=%v for peer %v",
 			blk, srv.blockchain.chainState(), pp)))
-		_, isOrphan, err = srv.blockchain.ProcessBlock(blk, true)
+		_, isOrphan, _, err = srv.blockchain.ProcessBlock(blk, true)
 	}
 
 	// If we hit an error then abort mission entirely. We should generally never
@@ -2249,7 +2244,7 @@ func (srv *Server) _handlePeerMessages(serverMessage *ServerMessage) {
 	}
 }
 
-func (srv *Server) _handleFastHostStuffBlockProposal(event *consensus.ConsensusEvent) {
+func (srv *Server) _handleFastHostStuffBlockProposal(event *consensus.FastHotStuffEvent) {
 	// The consensus module has signaled that we can propose a block at a certain block
 	// height. We construct the block and broadcast it here:
 	// 1. Verify that the block height we want to propose at is valid
@@ -2263,7 +2258,18 @@ func (srv *Server) _handleFastHostStuffBlockProposal(event *consensus.ConsensusE
 	// 7. Broadcast the block to the network
 }
 
-func (srv *Server) _handleFastHostStuffVote(event *consensus.ConsensusEvent) {
+func (srv *Server) _handleFastHostStuffEmptyTimeoutBlockProposal(event *consensus.FastHotStuffEvent) {
+	// The consensus module has signaled that we have a timeout QC and can propose one at a certain
+	// block height. We construct an empty block with a timeout QC and broadcast it here:
+	// 1. Verify that the block height and view we want to propose at is valid
+	// 2. Get a timeout QC from the consensus module
+	// 3. Construct a block with the timeout QC
+	// 4. Sign the block
+	// 5. Process the block locally
+	// 6. Broadcast the block to the network
+}
+
+func (srv *Server) _handleFastHostStuffVote(event *consensus.FastHotStuffEvent) {
 	// The consensus module has signaled that we can vote on a block. We construct and
 	// broadcast the vote here:
 	// 1. Verify that the block height we want to vote on is valid
@@ -2272,7 +2278,7 @@ func (srv *Server) _handleFastHostStuffVote(event *consensus.ConsensusEvent) {
 	// 4. Broadcast the timeout msg to the network
 }
 
-func (srv *Server) _handleFastHostStuffTimeout(event *consensus.ConsensusEvent) {
+func (srv *Server) _handleFastHostStuffTimeout(event *consensus.FastHotStuffEvent) {
 	// The consensus module has signaled that we have timed out for a view. We construct and
 	// broadcast the timeout here:
 	// 1. Verify the block height and view we want to timeout on are valid
@@ -2281,14 +2287,16 @@ func (srv *Server) _handleFastHostStuffTimeout(event *consensus.ConsensusEvent) 
 	// 4. Broadcast the timeout msg to the network
 }
 
-func (srv *Server) _handleFastHostStuffConsensusEvent(event *consensus.ConsensusEvent) {
+func (srv *Server) _handleFastHostStuffConsensusEvent(event *consensus.FastHotStuffEvent) {
 	switch event.EventType {
-	case consensus.ConsensusEventTypeBlockProposal:
-		srv._handleFastHostStuffBlockProposal(event)
-	case consensus.ConsensusEventTypeVote:
+	case consensus.FastHotStuffEventTypeVote:
 		srv._handleFastHostStuffVote(event)
-	case consensus.ConsensusEventTypeTimeout:
+	case consensus.FastHotStuffEventTypeTimeout:
 		srv._handleFastHostStuffTimeout(event)
+	case consensus.FastHotStuffEventTypeConstructVoteQC:
+		srv._handleFastHostStuffBlockProposal(event)
+	case consensus.FastHotStuffEventTypeConstructTimeoutQC:
+		srv._handleFastHostStuffEmptyTimeoutBlockProposal(event)
 	}
 }
 
@@ -2307,7 +2315,7 @@ func (srv *Server) _handleFastHostStuffConsensusEvent(event *consensus.Consensus
 // control messages from peer, proposed blocks from peers, votes/timeouts, block requests, mempool
 // requests from syncing peers
 // - It listens to consensus events from the Fast HostStuff consensus engine. The consensus signals when
-// it's ready to vote, timeout, or propose a block.
+// it's ready to vote, timeout, propose a block, or propose an empty block with a timeout QC.
 func (srv *Server) _startConsensus() {
 	for {
 		// This is used instead of the shouldQuit control message exist mechanism below. shouldQuit will be true only
@@ -2317,9 +2325,9 @@ func (srv *Server) _startConsensus() {
 		}
 
 		select {
-		case consensusEvent := <-srv.fastHotStuffConsensus.ConsensusEvents:
+		case consensusEvent := <-srv.fastHotStuffEventLoop.GetEvents():
 			{
-				glog.Infof("Server._startConsensus: Received consensus event for block height: %v", consensusEvent.BlockHeight)
+				glog.Infof("Server._startConsensus: Received consensus event for block height: %v", consensusEvent.TipBlockHeight)
 				srv._handleFastHostStuffConsensusEvent(consensusEvent)
 			}
 
@@ -2483,9 +2491,9 @@ func (srv *Server) Stop() {
 	}
 
 	// Stop the PoS block proposer if we have one running.
-	if srv.fastHotStuffConsensus != nil {
-		srv.fastHotStuffConsensus.Stop()
-		glog.Infof(CLog(Yellow, "Server.Stop: Closed the FastHotStuffConsensus"))
+	if srv.fastHotStuffEventLoop != nil {
+		srv.fastHotStuffEventLoop.Stop()
+		glog.Infof(CLog(Yellow, "Server.Stop: Closed the fastHotStuffEventLoop"))
 	}
 
 	// TODO: Stop the PoS mempool if we have one running.
@@ -2558,9 +2566,6 @@ func (srv *Server) Start() {
 	if srv.miner != nil && len(srv.miner.PublicKeys) > 0 {
 		go srv.miner.Start()
 	}
-
-	// TODO: Gate these behind a PoS consensus flag.
-	go srv.fastHotStuffConsensus.Start()
 }
 
 // SyncPrefixProgress keeps track of sync progress on an individual prefix. It is used in

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/hex"
 	"fmt"
+	"github.com/deso-protocol/core/bls"
 	"math"
 	"math/big"
 	"reflect"
@@ -117,6 +118,9 @@ type UtxoView struct {
 
 	// Validator mappings
 	ValidatorPKIDToValidatorEntry map[PKID]*ValidatorEntry
+	// ValidatorBLSPublicKeyPKIDPairEntries is a mapping of BLS Public Key to BLSPublicKeyPKIDPairEntry.
+	// Used for enforcing uniqueness of BLS Public Keys in the validator set.
+	ValidatorBLSPublicKeyPKIDPairEntries map[bls.SerializedPublicKey]*BLSPublicKeyPKIDPairEntry
 
 	// Stake mappings
 	StakeMapKeyToStakeEntry map[StakeMapKey]*StakeEntry
@@ -144,6 +148,11 @@ type UtxoView struct {
 	// It contains the snapshot value of every ValidatorEntry that makes up the validator set at
 	// the given SnapshotAtEpochNumber.
 	SnapshotValidatorSet map[SnapshotValidatorSetMapKey]*ValidatorEntry
+
+	// SnapshotValidatorBLSPublicKeyPKIDPairEntries is a map of <SnapshotAtEpochNumber, bls.SerializedPublicKey>
+	// to a BLSPublicKeyPKIDPairEntry. It contains the snapshot value of the BLSPublicKeyPKIDPairEntry
+	// of every validator that makes up the validator set at the given SnapshotAtEpochNumber.
+	SnapshotValidatorBLSPublicKeyPKIDPairEntries map[SnapshotValidatorBLSPublicKeyMapKey]*BLSPublicKeyPKIDPairEntry
 
 	// SnapshotValidatorSetTotalStakeAmountNanos is a map of SnapshotAtEpochNumber to the sum TotalStakeAmountNanos
 	// for the validator set of for an epoch.
@@ -269,6 +278,8 @@ func (bav *UtxoView) _ResetViewMappingsAfterFlush() {
 
 	// ValidatorEntries
 	bav.ValidatorPKIDToValidatorEntry = make(map[PKID]*ValidatorEntry)
+	// Validator BLS PublicKey to PKID
+	bav.ValidatorBLSPublicKeyPKIDPairEntries = make(map[bls.SerializedPublicKey]*BLSPublicKeyPKIDPairEntry)
 
 	// StakeEntries
 	bav.StakeMapKeyToStakeEntry = make(map[StakeMapKey]*StakeEntry)
@@ -284,6 +295,9 @@ func (bav *UtxoView) _ResetViewMappingsAfterFlush() {
 
 	// SnapshotValidatorSet
 	bav.SnapshotValidatorSet = make(map[SnapshotValidatorSetMapKey]*ValidatorEntry)
+
+	// SnapshotValidatorBLSPublicKeyPKIDPairEntries
+	bav.SnapshotValidatorBLSPublicKeyPKIDPairEntries = make(map[SnapshotValidatorBLSPublicKeyMapKey]*BLSPublicKeyPKIDPairEntry)
 
 	// SnapshotValidatorSetTotalStakeAmountNanos
 	bav.SnapshotValidatorSetTotalStakeAmountNanos = make(map[uint64]*uint256.Int)
@@ -572,6 +586,12 @@ func (bav *UtxoView) CopyUtxoView() (*UtxoView, error) {
 		newView.ValidatorPKIDToValidatorEntry[entryKey] = entry.Copy()
 	}
 
+	// Copy the validator BLS PublicKey to PKID map
+	newView.ValidatorBLSPublicKeyPKIDPairEntries = make(map[bls.SerializedPublicKey]*BLSPublicKeyPKIDPairEntry, len(bav.ValidatorBLSPublicKeyPKIDPairEntries))
+	for entryKey, entry := range bav.ValidatorBLSPublicKeyPKIDPairEntries {
+		newView.ValidatorBLSPublicKeyPKIDPairEntries[entryKey] = entry.Copy()
+	}
+
 	// Copy the StakeEntries
 	newView.StakeMapKeyToStakeEntry = make(map[StakeMapKey]*StakeEntry, len(bav.StakeMapKeyToStakeEntry))
 	for entryKey, entry := range bav.StakeMapKeyToStakeEntry {
@@ -604,6 +624,10 @@ func (bav *UtxoView) CopyUtxoView() (*UtxoView, error) {
 	// Copy the SnapshotValidatorSet
 	for mapKey, validatorEntry := range bav.SnapshotValidatorSet {
 		newView.SnapshotValidatorSet[mapKey] = validatorEntry.Copy()
+	}
+
+	for mapKey, blsPublicKeyPKIDPairEntry := range bav.SnapshotValidatorBLSPublicKeyPKIDPairEntries {
+		newView.SnapshotValidatorBLSPublicKeyPKIDPairEntries[mapKey] = blsPublicKeyPKIDPairEntry.Copy()
 	}
 
 	// Copy the SnapshotValidatorSetTotalStakeAmountNanos
@@ -4537,6 +4561,15 @@ func (bav *UtxoView) GetUnspentUtxoEntrysForPublicKey(pkBytes []byte) ([]*UtxoEn
 // but should be fixed soon.
 func (bav *UtxoView) GetSpendableDeSoBalanceNanosForPublicKey(pkBytes []byte,
 	tipHeight uint32) (_spendableBalance uint64, _err error) {
+	// After the cut-over to Proof Of Stake, we no longer check for immature block rewards.
+	// All block rewards are immediately mature.
+	if tipHeight >= bav.Params.ForkHeights.ProofOfStake2ConsensusCutoverBlockHeight {
+		balanceNanos, err := bav.GetDeSoBalanceNanosForPublicKey(pkBytes)
+		if err != nil {
+			return 0, errors.Wrap(err, "GetSpendableDeSoBalanceNanosForPublicKey: ")
+		}
+		return balanceNanos, nil
+	}
 	// In order to get the spendable balance, we need to account for any immature block rewards.
 	// We get these by starting at the chain tip and iterating backwards until we have collected
 	// all the immature block rewards for this public key.

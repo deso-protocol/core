@@ -30,6 +30,9 @@ func _testValidatorRegistration(t *testing.T, flushToDB bool) {
 	// Local variables
 	var registerMetadata *RegisterAsValidatorMetadata
 	var validatorEntry *ValidatorEntry
+	var blsPublicKeyPKIDPairEntry *BLSPublicKeyPKIDPairEntry
+	var prevBLSPublicKey *bls.PublicKey
+	var prevBLSPrivateKey *bls.PrivateKey
 	var validatorEntries []*ValidatorEntry
 	var err error
 
@@ -226,6 +229,7 @@ func _testValidatorRegistration(t *testing.T, flushToDB bool) {
 		extraData := map[string][]byte{"TestKey": []byte("TestValue1")}
 		_, err = _submitRegisterAsValidatorTxn(testMeta, m0Pub, m0Priv, registerMetadata, extraData, flushToDB)
 		require.NoError(t, err)
+		prevBLSPublicKey = votingPublicKey.Copy()
 	}
 	{
 		// Query: retrieve ValidatorEntry by PKID
@@ -236,6 +240,12 @@ func _testValidatorRegistration(t *testing.T, flushToDB bool) {
 		require.Equal(t, string(validatorEntry.Domains[0]), "https://example.com")
 		require.False(t, validatorEntry.DisableDelegatedStake)
 		require.Equal(t, string(validatorEntry.ExtraData["TestKey"]), "TestValue1")
+
+		// Query: retrieve the BLSPublicKeyPKIDPairEntry for the validator's VotingPublicKey
+		blsPublicKeyPKIDPairEntry, err = utxoView().GetBLSPublicKeyPKIDPairEntry(validatorEntry.VotingPublicKey)
+		require.NoError(t, err)
+		require.True(t, blsPublicKeyPKIDPairEntry.BLSPublicKey.Eq(validatorEntry.VotingPublicKey))
+		require.True(t, blsPublicKeyPKIDPairEntry.PKID.Eq(validatorEntry.ValidatorPKID))
 	}
 	{
 		// Query: retrieve top active ValidatorEntries by stake.
@@ -246,7 +256,7 @@ func _testValidatorRegistration(t *testing.T, flushToDB bool) {
 	}
 	{
 		// Happy path: update a validator
-		votingPublicKey, votingAuthorization := _generateVotingPublicKeyAndAuthorization(t, m0PkBytes)
+		votingPrivateKey, votingPublicKey, votingAuthorization := _generateVotingPrivateKeyPublicKeyAndAuthorization(t, m0PkBytes)
 		registerMetadata = &RegisterAsValidatorMetadata{
 			Domains:               [][]byte{[]byte("https://example1.com"), []byte("https://example2.com")},
 			DisableDelegatedStake: false,
@@ -256,6 +266,8 @@ func _testValidatorRegistration(t *testing.T, flushToDB bool) {
 		extraData := map[string][]byte{"TestKey": []byte("TestValue2")}
 		_, err = _submitRegisterAsValidatorTxn(testMeta, m0Pub, m0Priv, registerMetadata, extraData, flushToDB)
 		require.NoError(t, err)
+		prevBLSPublicKey = votingPublicKey.Copy()
+		prevBLSPrivateKey = votingPrivateKey
 	}
 	{
 		// Query: retrieve ValidatorEntry by PKID, make sure it has been updated
@@ -267,6 +279,28 @@ func _testValidatorRegistration(t *testing.T, flushToDB bool) {
 		require.Equal(t, string(validatorEntry.Domains[1]), "https://example2.com")
 		require.False(t, validatorEntry.DisableDelegatedStake)
 		require.Equal(t, string(validatorEntry.ExtraData["TestKey"]), "TestValue2")
+
+		// Query: retrieve the BLSPublicKeyPKIDPairEntry for the validator's VotingPublicKey
+		// make sure it has been updated.
+		blsPublicKeyPKIDPairEntry, err = utxoView().GetBLSPublicKeyPKIDPairEntry(validatorEntry.VotingPublicKey)
+		require.NoError(t, err)
+		require.True(t, blsPublicKeyPKIDPairEntry.BLSPublicKey.Eq(validatorEntry.VotingPublicKey))
+		require.True(t, blsPublicKeyPKIDPairEntry.PKID.Eq(validatorEntry.ValidatorPKID))
+	}
+	{
+		// Sad path: register validator with same VotingPublicKey as m0
+		var votingAuthorization *bls.Signature
+		votingAuthorization, err = prevBLSPrivateKey.Sign(CreateValidatorVotingAuthorizationPayload(m1PkBytes))
+		require.NoError(t, err)
+		registerMetadata = &RegisterAsValidatorMetadata{
+			Domains:               [][]byte{[]byte("https://example.com")},
+			DisableDelegatedStake: false,
+			VotingPublicKey:       prevBLSPublicKey,
+			VotingAuthorization:   votingAuthorization,
+		}
+		_, err = _submitRegisterAsValidatorTxn(testMeta, m1Pub, m1Priv, registerMetadata, nil, flushToDB)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), RuleErrorVotingPublicKeyDuplicate)
 	}
 	{
 		// Sad path: unregister validator that doesn't exist
@@ -290,6 +324,12 @@ func _testValidatorRegistration(t *testing.T, flushToDB bool) {
 		validatorEntry, err = utxoView().GetValidatorByPKID(m0PKID)
 		require.NoError(t, err)
 		require.Nil(t, validatorEntry)
+	}
+	{
+		// Query: retrieve the BLSPublicKeyPKIDPairEntry for the validator's VotingPublicKey
+		blsPublicKeyPKIDPairEntry, err = utxoView().GetBLSPublicKeyPKIDPairEntry(prevBLSPublicKey)
+		require.NoError(t, err)
+		require.Nil(t, blsPublicKeyPKIDPairEntry)
 	}
 	{
 		// Query: retrieve top active ValidatorEntries by stake
@@ -1982,4 +2022,14 @@ func _generateVotingPublicKeyAndAuthorization(t *testing.T, transactorPkBytes []
 	votingAuthorization, err := blsPrivateKey.Sign(votingAuthorizationPayload)
 	require.NoError(t, err)
 	return votingPublicKey, votingAuthorization
+}
+
+func _generateVotingPrivateKeyPublicKeyAndAuthorization(t *testing.T, transactorPkBytes []byte) (*bls.PrivateKey, *bls.PublicKey, *bls.Signature) {
+	blsPrivateKey, err := bls.NewPrivateKey()
+	require.NoError(t, err)
+	votingPublicKey := blsPrivateKey.PublicKey()
+	votingAuthorizationPayload := CreateValidatorVotingAuthorizationPayload(transactorPkBytes)
+	votingAuthorization, err := blsPrivateKey.Sign(votingAuthorizationPayload)
+	require.NoError(t, err)
+	return blsPrivateKey, votingPublicKey, votingAuthorization
 }
