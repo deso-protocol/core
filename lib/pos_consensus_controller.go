@@ -3,7 +3,6 @@ package lib
 import (
 	"sync"
 
-	"github.com/deso-protocol/core/bls"
 	"github.com/deso-protocol/core/collections"
 	"github.com/deso-protocol/core/consensus"
 	"github.com/pkg/errors"
@@ -157,15 +156,24 @@ func (cc *ConsensusController) handleBlockProposerEvent(
 		)
 	}
 
+	// Compute the random seed hash for the previous block's proposer signature
+	parentBlockRandomSeedHash, err := HashRandomSeedSignature(parentBlock.Header.ProposerRandomSeedSignature)
+	if err != nil {
+		return errors.Wrapf(err, "Error computing random seed hash for block at height %d: ", event.TipBlockHeight+1)
+	}
+
+	// Compute the next proposer random seed signature
+	proposerRandomSeedSignature, err := cc.signer.SignRandomSeedHash(parentBlockRandomSeedHash)
+	if err != nil {
+		return errors.Wrapf(err, "Error signing random seed hash for block at height %d: ", event.TipBlockHeight+1)
+	}
+
 	// Build a UtxoView at the parent block
 	utxoViewAtParent, err := cc.blockchain.getUtxoViewAtBlockHash(*parentBlock.Hash)
 	if err != nil {
 		// This should never happen as long as the parent block is a descendant of the committed tip.
 		return errors.Errorf("Error fetching UtxoView for parent block: %v", parentBlockHash)
 	}
-
-	// TODO: Compute the random seed hash for the block proposer
-	var proposerRandomSeedSignature *bls.Signature
 
 	var block *MsgDeSoBlock
 
