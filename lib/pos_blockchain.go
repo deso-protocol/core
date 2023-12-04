@@ -12,6 +12,14 @@ import (
 	"github.com/pkg/errors"
 )
 
+// ProcessBlockPoS simply acquires the chain lock and calls processBlockPoS.
+func (bc *Blockchain) ProcessBlockPoS(block *MsgDeSoBlock, currentView uint64, verifySignatures bool) (
+	_success bool, _isOrphan bool, _missingBlockHashes []*BlockHash, _err error) {
+	bc.ChainLock.Lock()
+	defer bc.ChainLock.Unlock()
+	return bc.processBlockPoS(block, currentView, verifySignatures)
+}
+
 // processBlockPoS runs the Fast-Hotstuff block connect and commit rule as follows:
 //  1. Determine if we're missing the parent block of this block.
 //     If so, return the hash of the missing block and add this block to the orphans list.

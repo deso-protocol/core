@@ -1082,6 +1082,20 @@ func (bc *Blockchain) HasBlock(blockHash *BlockHash) bool {
 	return true
 }
 
+// This needs to hold a lock on the blockchain because it read from an in-memory map that is
+// not thread-safe.
+func (bc *Blockchain) GetBlockHeaderFromIndex(blockHash *BlockHash) *MsgDeSoHeader {
+	bc.ChainLock.RLock()
+	defer bc.ChainLock.RUnlock()
+
+	block, blockExists := bc.blockIndexByHash[*blockHash]
+	if !blockExists {
+		return nil
+	}
+
+	return block.Header
+}
+
 // Don't need a lock because blocks don't get removed from the db after they're added
 func (bc *Blockchain) GetBlock(blockHash *BlockHash) *MsgDeSoBlock {
 	blk, err := GetBlock(blockHash, bc.db, bc.snapshot)
