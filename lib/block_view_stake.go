@@ -1037,7 +1037,7 @@ func (bc *Blockchain) CreateStakeTxn(
 	metadata *StakeMetadata,
 	extraData map[string][]byte,
 	minFeeRateNanosPerKB uint64,
-	mempool *DeSoMempool,
+	mempool Mempool,
 	additionalOutputs []*DeSoOutput,
 ) (
 	_txn *MsgDeSoTxn,
@@ -1064,7 +1064,7 @@ func (bc *Blockchain) CreateStakeTxn(
 			err, "Blockchain.CreateStakeTxn: problem creating new utxo view: ",
 		)
 	}
-	if mempool != nil {
+	if !isInterfaceValueNil(mempool) {
 		utxoView, err = mempool.GetAugmentedUniversalView()
 		if err != nil {
 			return nil, 0, 0, 0, errors.Wrapf(
@@ -1114,7 +1114,7 @@ func (bc *Blockchain) CreateUnstakeTxn(
 	metadata *UnstakeMetadata,
 	extraData map[string][]byte,
 	minFeeRateNanosPerKB uint64,
-	mempool *DeSoMempool,
+	mempool Mempool,
 	additionalOutputs []*DeSoOutput,
 ) (
 	_txn *MsgDeSoTxn,
@@ -1141,7 +1141,7 @@ func (bc *Blockchain) CreateUnstakeTxn(
 			err, "Blockchain.CreateUnstakeTxn: problem creating new utxo view: ",
 		)
 	}
-	if mempool != nil {
+	if !isInterfaceValueNil(mempool) {
 		utxoView, err = mempool.GetAugmentedUniversalView()
 		if err != nil {
 			return nil, 0, 0, 0, errors.Wrapf(
@@ -1190,7 +1190,7 @@ func (bc *Blockchain) CreateUnlockStakeTxn(
 	metadata *UnlockStakeMetadata,
 	extraData map[string][]byte,
 	minFeeRateNanosPerKB uint64,
-	mempool *DeSoMempool,
+	mempool Mempool,
 	additionalOutputs []*DeSoOutput,
 ) (
 	_txn *MsgDeSoTxn,
@@ -1217,7 +1217,7 @@ func (bc *Blockchain) CreateUnlockStakeTxn(
 			err, "Blockchain.CreateUnlockStakeTxn: problem creating new utxo view: ",
 		)
 	}
-	if mempool != nil {
+	if !isInterfaceValueNil(mempool) {
 		utxoView, err = mempool.GetAugmentedUniversalView()
 		if err != nil {
 			return nil, 0, 0, 0, errors.Wrapf(
