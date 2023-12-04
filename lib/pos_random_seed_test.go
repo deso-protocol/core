@@ -26,8 +26,12 @@ func TestCurrentRandomSeedHash(t *testing.T) {
 
 	// Test generating + verifying RandomSeedSignatures.
 
+	// The initial CurrentRandomSeedHash is the GenesisRandomSeedHash.
+	genesisRandomSeedHash, err := utxoView.GetCurrentRandomSeedHash()
+	require.NoError(t, err)
+
 	// PrivateKey1 creates a new RandomSeedSignature.
-	randomSeedSignature1, err := utxoView.GenerateNextRandomSeedSignature(privateKey1)
+	randomSeedSignature1, err := GenerateNextRandomSeedSignature(genesisRandomSeedHash, privateKey1)
 	require.NoError(t, err)
 	// PublicKey1 is verified to correspond to PrivateKey that signed the RandomSeedSignature.
 	randomSeedHash1, err := utxoView.VerifyRandomSeedSignature(publicKey1, randomSeedSignature1)
@@ -40,7 +44,7 @@ func TestCurrentRandomSeedHash(t *testing.T) {
 	require.Nil(t, randomSeedHash1)
 
 	// PrivateKey2 creates a new RandomSeedSignature.
-	randomSeedSignature2, err := utxoView.GenerateNextRandomSeedSignature(privateKey2)
+	randomSeedSignature2, err := GenerateNextRandomSeedSignature(genesisRandomSeedHash, privateKey2)
 	require.NoError(t, err)
 	// PublicKey1 is not verified to correspond to the PrivateKey that signed the RandomSeedSignature.
 	randomSeedHash2, err := utxoView.VerifyRandomSeedSignature(publicKey1, randomSeedSignature2)
@@ -54,14 +58,8 @@ func TestCurrentRandomSeedHash(t *testing.T) {
 
 	// Test updating CurrentRandomSeedHash.
 
-	// The initial CurrentRandomSeedHash is the GenesisRandomSeedHash.
-	randomSeedHash1, err = utxoView.GetCurrentRandomSeedHash()
-	require.NoError(t, err)
-	require.True(t, randomSeedHash1.Eq(&RandomSeedHash{}))
-	require.True(t, randomSeedHash1.ToUint256().Eq(uint256.NewInt()))
-
-	// PrivateKey1 generates a new RandomSeedSignature.
-	randomSeedSignature1, err = utxoView.GenerateNextRandomSeedSignature(privateKey1)
+	// PrivateKey1 generates a new RandomSeedSignature from genesisRandomSeedHash.
+	randomSeedSignature1, err = GenerateNextRandomSeedSignature(genesisRandomSeedHash, privateKey1)
 	require.NoError(t, err)
 	// PublicKey1 is verified to correspond to the PrivateKey that signed the RandomSeedSignature.
 	randomSeedHash1, err = utxoView.VerifyRandomSeedSignature(publicKey1, randomSeedSignature1)
@@ -73,8 +71,8 @@ func TestCurrentRandomSeedHash(t *testing.T) {
 	utxoView._setCurrentRandomSeedHash(randomSeedHash1)
 	require.NoError(t, utxoView.FlushToDb(blockHeight))
 
-	// PrivateKey2 generates a new RandomSeedSignature.
-	randomSeedSignature2, err = utxoView.GenerateNextRandomSeedSignature(privateKey2)
+	// PrivateKey2 generates a new RandomSeedSignature from randomSeedHash1.
+	randomSeedSignature2, err = GenerateNextRandomSeedSignature(randomSeedHash1, privateKey2)
 	require.NoError(t, err)
 	// PublicKey2 is verified to correspond to the PrivateKey that signed the RandomSeedSignature.
 	randomSeedHash2, err = utxoView.VerifyRandomSeedSignature(publicKey2, randomSeedSignature2)

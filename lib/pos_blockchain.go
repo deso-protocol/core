@@ -747,7 +747,7 @@ func (bc *Blockchain) hasValidProposerRandomSeedSignaturePoS(block *MsgDeSoBlock
 		return false, RuleErrorMissingParentBlock
 	}
 
-	prevRandomSeedHash, err := hashRandomSeedSignature(parentBlock.Header.ProposerRandomSeedSignature)
+	prevRandomSeedHash, err := HashRandomSeedSignature(parentBlock.Header.ProposerRandomSeedSignature)
 	if err != nil {
 		return false, errors.Wrapf(err,
 			"hasValidProposerRandomSeedSignaturePoS: Problem converting prev random seed hash to RandomSeedHash")
