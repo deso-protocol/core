@@ -4,11 +4,12 @@ import (
 	"bytes"
 	"crypto/sha256"
 	"fmt"
-	"github.com/deso-protocol/core/consensus"
 	"io"
 	"math"
 	"net/url"
 	"sort"
+
+	"github.com/deso-protocol/core/consensus"
 
 	"github.com/deso-protocol/core/bls"
 	"github.com/dgraph-io/badger/v3"
@@ -83,14 +84,6 @@ type ValidatorEntry struct {
 
 	ExtraData map[string][]byte
 	isDeleted bool
-}
-
-func (validatorEntry *ValidatorEntry) GetPublicKey() *bls.PublicKey {
-	return validatorEntry.VotingPublicKey
-}
-
-func (validatorEntry *ValidatorEntry) GetStakeAmount() *uint256.Int {
-	return validatorEntry.TotalStakeAmountNanos
 }
 
 func (validatorEntry *ValidatorEntry) Status() ValidatorStatus {

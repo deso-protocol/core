@@ -3,6 +3,7 @@ package lib
 import (
 	"sync"
 
+	"github.com/deso-protocol/core/bls"
 	"github.com/deso-protocol/core/collections"
 	"github.com/deso-protocol/core/consensus"
 	"github.com/pkg/errors"
@@ -121,7 +122,7 @@ func (cc *ConsensusController) handleBlockProposerEvent(
 
 	// Fetch the parent block
 	parentBlockHash := BlockHashFromConsensusInterface(event.QC.GetBlockHash())
-	parentBlock, parentBlockExists := cc.blockchain.blockIndex[*parentBlockHash]
+	parentBlock, parentBlockExists := cc.blockchain.blockIndexByHash[*parentBlockHash]
 	if !parentBlockExists {
 		return errors.Errorf("Error fetching parent block: %v", parentBlockHash)
 	}
@@ -164,7 +165,7 @@ func (cc *ConsensusController) handleBlockProposerEvent(
 	}
 
 	// TODO: Compute the random seed hash for the block proposer
-	var proposerRandomSeedHash *RandomSeedHash
+	var proposerRandomSeedSignature *bls.Signature
 
 	var block *MsgDeSoBlock
 
@@ -174,7 +175,7 @@ func (cc *ConsensusController) handleBlockProposerEvent(
 			utxoViewAtParent,
 			event.TipBlockHeight+1,
 			event.View,
-			proposerRandomSeedHash,
+			proposerRandomSeedSignature,
 			QuorumCertificateFromConsensusInterface(event.QC),
 		)
 		if err != nil {
@@ -186,7 +187,7 @@ func (cc *ConsensusController) handleBlockProposerEvent(
 			utxoViewAtParent,
 			event.TipBlockHeight+1,
 			event.View,
-			proposerRandomSeedHash,
+			proposerRandomSeedSignature,
 			AggregateQuorumCertificateFromConsensusInterface(event.AggregateQC),
 		)
 		if err != nil {
@@ -419,7 +420,7 @@ func (cc *ConsensusController) tryProcessBlockAsNewTip(block *MsgDeSoBlock) ([]*
 	// safe blocks
 
 	// Fetch the safe blocks that are eligible to be extended from by the next incoming tip block
-	safeBlocks, err := cc.blockchain.getSafeBlocks()
+	safeBlocks, err := cc.blockchain.GetSafeBlocks()
 	if err != nil {
 		return nil, errors.Errorf("HandleFastHostStuffBlockProposal: Error fetching safe blocks: %v", err)
 	}
@@ -559,42 +560,11 @@ func getEpochEntryForBlockHeight(blockHeight uint64, epochEntries []*EpochEntry)
 	return nil, errors.Errorf("error finding epoch number for block height: %v", blockHeight)
 }
 
-////////////////////////////////////////////////////////////////////////////////
-// TODO: delete all of the functions below. They are dummy stubbed out functions
-// needed by ConsensusController, but are implemented in other feature branches.
-// We stub them out here to unblock consensus work, and can delete them once other
-// feature branches are merged.
-////////////////////////////////////////////////////////////////////////////////
-
-func (bc *Blockchain) getUtxoViewAtBlockHash(blockHash BlockHash) (*UtxoView, error) {
-	return nil, errors.New("getUtxoViewAtBlockHash: replace me with a real implementation later")
-}
-
 func (bav *UtxoView) SimulateNextEpochEntry(epochEntry *EpochEntry) (*EpochEntry, error) {
-	return nil, errors.New("SimulateNextEpochEntry: replace me with a real implementation later")
-}
-
-func (bav *UtxoView) ComputeSnapshotEpochNumberForEpoch(epochNumber uint64) (uint64, error) {
-	return 0, errors.New("ComputeSnapshotEpochNumberForEpoch: replace me with a real implementation later")
-}
-
-func (bav *UtxoView) GetAllSnapshotValidatorSetEntriesByStakeAtEpochNumber(snapshotAtEpochNumber uint64) ([]*ValidatorEntry, error) {
-	return nil, errors.New("GetAllSnapshotValidatorSetEntriesByStakeAtEpochNumber: replace me with a real implementation later")
-}
-
-func (epochEntry *EpochEntry) ContainsBlockHeight(blockHeight uint64) bool {
-	// TODO: Implement this later
-	return false
-}
-
-func (bc *Blockchain) getSafeBlocks() ([]*MsgDeSoHeader, error) {
-	return nil, errors.New("getSafeBlocks: replace me with a real implementation later")
-}
-
-func (bav *UtxoView) getNextRandomSeedHash() (*RandomSeedHash, error) {
-	return nil, errors.New("getNextRandomSeedHash: replace me with a real implementation later")
-}
-
-func (b *BlockNode) IsValidated() bool {
-	return false
+	return bav.computeNextEpochEntry(
+		epochEntry.EpochNumber,
+		epochEntry.FinalBlockHeight,
+		epochEntry.InitialView,
+		epochEntry.CreatedAtBlockTimestampNanoSecs,
+	)
 }
