@@ -2,12 +2,13 @@ package lib
 
 import (
 	"fmt"
-	"github.com/dgraph-io/badger/v3"
-	"github.com/golang/glog"
-	"github.com/pkg/errors"
 	"path/filepath"
 	"strings"
 	"sync"
+
+	"github.com/dgraph-io/badger/v3"
+	"github.com/golang/glog"
+	"github.com/pkg/errors"
 )
 
 type PosMempoolStatus int

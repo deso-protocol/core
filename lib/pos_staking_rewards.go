@@ -141,7 +141,7 @@ func (bav *UtxoView) computeStakerRewardAndValidatorCommission(
 		// Fetch the ValidatorEntry that the stake is delegated to. The validator is guaranteed to be in the
 		// snapshot validator set, because only stakes from the snapshot validator set are eligible to receive
 		// rewards.
-		validatorEntry, err := bav.GetSnapshotValidatorSetEntryByPKID(snapshotStakeEntry.ValidatorPKID)
+		validatorEntry, err := bav.GetCurrentSnapshotValidatorSetEntryByPKID(snapshotStakeEntry.ValidatorPKID)
 		if err != nil {
 			return 0, 0, errors.Wrapf(err, "computeStakerRewardAndValidatorCommission: problem fetching validator entry: ")
 		}

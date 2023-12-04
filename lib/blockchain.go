@@ -5,6 +5,7 @@ import (
 	"container/list"
 	"encoding/hex"
 	"fmt"
+	"github.com/deso-protocol/core/collections"
 	"math"
 	"math/big"
 	"reflect"
@@ -65,17 +66,42 @@ const (
 	// don't store orphan headers and therefore any header that we do
 	// have in our node index will be known definitively to be valid or
 	// invalid one way or the other.
-	StatusHeaderValidated = 1 << iota
-	StatusHeaderValidateFailed
+	StatusHeaderValidated      = 1 << 0
+	StatusHeaderValidateFailed = 1 << 1
 
-	StatusBlockProcessed
-	StatusBlockStored
-	StatusBlockValidated
-	StatusBlockValidateFailed
+	StatusBlockProcessed      = 1 << 2 // Process means that the block is not an orphan and has been processed. This helps prevent us from reprocessing a block that we've already attempted to validate and add to the block index.
+	StatusBlockStored         = 1 << 3 // Stored means that the block has been added to the block index and stored in the DB.
+	StatusBlockValidated      = 1 << 4 // Validated means that the block has passed validations and is eligible to be part of the best chain.
+	StatusBlockValidateFailed = 1 << 5 // Validate Failed means that the block did not pass validations and will never be part of the best chain.
 
-	StatusBitcoinHeaderValidated      // Deprecated
-	StatusBitcoinHeaderValidateFailed // Deprecated
+	StatusBitcoinHeaderValidated      = 1 << 6 // Deprecated
+	StatusBitcoinHeaderValidateFailed = 1 << 7 // Deprecated
+
+	StatusBlockCommitted = 1 << 8 // Committed means that the block has been committed to the blockchain according to the Fast HotStuff commit rule. Only set on blocks after the cutover for PoS
 )
+
+// IsStored returns true if the BlockNode has been added to the blockIndexByHash and stored in the DB.
+func (nn *BlockNode) IsStored() bool {
+	return nn.Status&StatusBlockStored != 0
+}
+
+// IsValidated returns true if a BlockNode has passed all validations. A BlockNode that is validated is
+// generally always stored first.
+func (nn *BlockNode) IsValidated() bool {
+	return nn.Status&StatusBlockValidated != 0
+}
+
+// IsValidateFailed returns true if a BlockNode has failed validations. A BlockNode that is validate failed
+// will never be added to the best chain.
+func (nn *BlockNode) IsValidateFailed() bool {
+	return nn.Status&StatusBlockValidateFailed != 0
+}
+
+// IsCommitted returns true if a BlockNode has passed all validations, and it has been committed to
+// the Blockchain according to the Fast HotStuff commit rule.
+func (nn *BlockNode) IsCommitted() bool {
+	return nn.Status&StatusBlockCommitted != 0 || !blockNodeProofOfStakeCutoverMigrationTriggered(nn.Height)
+}
 
 // IsFullyProcessed determines if the BlockStatus corresponds to a fully processed and stored block.
 func (blockStatus BlockStatus) IsFullyProcessed() bool {
@@ -287,6 +313,9 @@ func (nn *BlockNode) String() string {
 		tstamp, nn.Header.Height, nn.Hash, parentHash, nn.Status, nn.CumWork)
 }
 
+// NewBlockNode is a helper function to create a BlockNode
+// when running PoW consensus. All blocks in the PoW consensus
+// have a committed status of COMMITTED.
 // TODO: Height not needed in this since it's in the header.
 func NewBlockNode(
 	parent *BlockNode,
@@ -432,8 +461,11 @@ type Blockchain struct {
 	// These should only be accessed after acquiring the ChainLock.
 	//
 	// An in-memory index of the "tree" of blocks we are currently aware of.
-	// This index includes forks and side-chains but does not include unconnectedTxns.
-	blockIndex map[BlockHash]*BlockNode
+	// This index includes forks and side-chains.
+	blockIndexByHash map[BlockHash]*BlockNode
+	// blockIndexByHeight is an in-memory map of block height to block nodes. This is
+	// used to quickly find the safe blocks from which the chain can be extended for PoS
+	blockIndexByHeight map[uint64]map[BlockHash]*BlockNode
 	// An in-memory slice of the blocks on the main chain only. The end of
 	// this slice is the best known tip that we have at any given time.
 	bestChain    []*BlockNode
@@ -461,12 +493,50 @@ type Blockchain struct {
 	timer *Timer
 }
 
-func (bc *Blockchain) CopyBlockIndex() map[BlockHash]*BlockNode {
-	newBlockIndex := make(map[BlockHash]*BlockNode)
-	for kk, vv := range bc.blockIndex {
-		newBlockIndex[kk] = vv
+func (bc *Blockchain) addNewBlockNodeToBlockIndex(blockNode *BlockNode) {
+	bc.blockIndexByHash[*blockNode.Hash] = blockNode
+	if _, exists := bc.blockIndexByHeight[uint64(blockNode.Height)]; !exists {
+		bc.blockIndexByHeight[uint64(blockNode.Height)] = make(map[BlockHash]*BlockNode)
+	}
+	bc.blockIndexByHeight[uint64(blockNode.Height)][*blockNode.Hash] = blockNode
+}
+
+func (bc *Blockchain) CopyBlockIndexes() (_blockIndexByHash map[BlockHash]*BlockNode, _blockIndexByHeight map[uint64]map[BlockHash]*BlockNode) {
+	newBlockIndexByHash := make(map[BlockHash]*BlockNode)
+	newBlockIndexByHeight := make(map[uint64]map[BlockHash]*BlockNode)
+	for kk, vv := range bc.blockIndexByHash {
+		newBlockIndexByHash[kk] = vv
+		blockHeight := uint64(vv.Height)
+		if _, exists := newBlockIndexByHeight[blockHeight]; !exists {
+			newBlockIndexByHeight[blockHeight] = make(map[BlockHash]*BlockNode)
+		}
+		newBlockIndexByHeight[blockHeight][kk] = vv
+	}
+	return newBlockIndexByHash, newBlockIndexByHeight
+}
+
+func (bc *Blockchain) ConstructBlockIndexByHeight() map[uint64]map[BlockHash]*BlockNode {
+	newBlockIndex := make(map[uint64]map[BlockHash]*BlockNode)
+	for _, blockNode := range bc.blockIndexByHash {
+		blockHeight := uint64(blockNode.Height)
+		if _, exists := newBlockIndex[blockHeight]; !exists {
+			newBlockIndex[blockHeight] = make(map[BlockHash]*BlockNode)
+		}
+		newBlockIndex[blockHeight][*blockNode.Hash] = blockNode
 	}
 	return newBlockIndex
+}
+
+func (bc *Blockchain) getAllBlockNodesIndexedAtHeight(blockHeight uint64) []*BlockNode {
+	return collections.MapValues(bc.blockIndexByHeight[blockHeight])
+}
+
+func (bc *Blockchain) hasBlockNodesIndexedAtHeight(blockHeight uint64) bool {
+	blocksAtHeight, hasNestedMapAtHeight := bc.blockIndexByHeight[blockHeight]
+	if !hasNestedMapAtHeight {
+		return false
+	}
+	return len(blocksAtHeight) > 0
 }
 
 func (bc *Blockchain) CopyBestChain() ([]*BlockNode, map[BlockHash]*BlockNode) {
@@ -558,26 +628,27 @@ func (bc *Blockchain) _initChain() error {
 	// add a block's parents, if they exist, before adding the block itself.
 	var err error
 	if bc.postgres != nil {
-		bc.blockIndex, err = bc.postgres.GetBlockIndex()
+		bc.blockIndexByHash, err = bc.postgres.GetBlockIndex()
 	} else {
-		bc.blockIndex, err = GetBlockIndex(bc.db, false /*bitcoinNodes*/)
+		bc.blockIndexByHash, err = GetBlockIndex(bc.db, false /*bitcoinNodes*/)
 	}
 	if err != nil {
 		return errors.Wrapf(err, "_initChain: Problem reading block index from db")
 	}
+	bc.blockIndexByHeight = bc.ConstructBlockIndexByHeight()
 
-	// At this point the blockIndex should contain a full node tree with all
+	// At this point the blockIndexByHash should contain a full node tree with all
 	// nodes pointing to valid parent nodes.
 	{
 		// Find the tip node with the best node hash.
-		tipNode := bc.blockIndex[*bestBlockHash]
+		tipNode := bc.blockIndexByHash[*bestBlockHash]
 		if tipNode == nil {
 			return fmt.Errorf("_initChain(block): Best hash (%#v) not found in block index", bestBlockHash)
 		}
 
 		// Walk back from the best node to the genesis block and store them all
 		// in bestChain.
-		bc.bestChain, err = GetBestChain(tipNode, bc.blockIndex)
+		bc.bestChain, err = GetBestChain(tipNode, bc.blockIndexByHash)
 		if err != nil {
 			return errors.Wrapf(err, "_initChain(block): Problem reading best chain from db")
 		}
@@ -589,14 +660,14 @@ func (bc *Blockchain) _initChain() error {
 	// TODO: This code is a bit repetitive but this seemed clearer than factoring it out.
 	{
 		// Find the tip node with the best node hash.
-		tipNode := bc.blockIndex[*bestHeaderHash]
+		tipNode := bc.blockIndexByHash[*bestHeaderHash]
 		if tipNode == nil {
 			return fmt.Errorf("_initChain(header): Best hash (%#v) not found in block index", bestHeaderHash)
 		}
 
 		// Walk back from the best node to the genesis block and store them all
 		// in bestChain.
-		bc.bestHeaderChain, err = GetBestChain(tipNode, bc.blockIndex)
+		bc.bestHeaderChain, err = GetBestChain(tipNode, bc.blockIndexByHash)
 		if err != nil {
 			return errors.Wrapf(err, "_initChain(header): Problem reading best chain from db")
 		}
@@ -652,8 +723,9 @@ func NewBlockchain(
 		eventManager:                    eventManager,
 		archivalMode:                    archivalMode,
 
-		blockIndex:   make(map[BlockHash]*BlockNode),
-		bestChainMap: make(map[BlockHash]*BlockNode),
+		blockIndexByHash:   make(map[BlockHash]*BlockNode),
+		blockIndexByHeight: make(map[uint64]map[BlockHash]*BlockNode),
+		bestChainMap:       make(map[BlockHash]*BlockNode),
 
 		bestHeaderChainMap: make(map[BlockHash]*BlockNode),
 
@@ -821,7 +893,7 @@ func (bc *Blockchain) LocateBestBlockChainHeaders(locator []*BlockHash, stopHash
 	// where it's currently called is single-threaded via a channel in server.go. Going to
 	// avoid messing with it for now.
 	headers := locateHeaders(locator, stopHash, MaxHeadersPerMsg,
-		bc.blockIndex, bc.bestChain, bc.bestChainMap)
+		bc.blockIndexByHash, bc.bestChain, bc.bestChainMap)
 
 	return headers
 }
@@ -900,9 +972,9 @@ func (bc *Blockchain) LatestLocator(tip *BlockNode) []*BlockHash {
 }
 
 func (bc *Blockchain) HeaderLocatorWithNodeHash(blockHash *BlockHash) ([]*BlockHash, error) {
-	node, exists := bc.blockIndex[*blockHash]
+	node, exists := bc.blockIndexByHash[*blockHash]
 	if !exists {
-		return nil, fmt.Errorf("Blockchain.HeaderLocatorWithNodeHash: Node for hash %v is not in our blockIndex", blockHash)
+		return nil, fmt.Errorf("Blockchain.HeaderLocatorWithNodeHash: Node for hash %v is not in our blockIndexByHash", blockHash)
 	}
 
 	return bc.LatestLocator(node), nil
@@ -981,7 +1053,7 @@ func (bc *Blockchain) GetBlockNodesToFetch(
 }
 
 func (bc *Blockchain) HasHeader(headerHash *BlockHash) bool {
-	_, exists := bc.blockIndex[*headerHash]
+	_, exists := bc.blockIndexByHash[*headerHash]
 	return exists
 }
 
@@ -994,7 +1066,7 @@ func (bc *Blockchain) HeaderAtHeight(blockHeight uint32) *BlockNode {
 }
 
 func (bc *Blockchain) HasBlock(blockHash *BlockHash) bool {
-	node, nodeExists := bc.blockIndex[*blockHash]
+	node, nodeExists := bc.blockIndexByHash[*blockHash]
 	if !nodeExists {
 		glog.V(2).Infof("Blockchain.HasBlock: Node with hash %v does not exist in node index", blockHash)
 		return false
@@ -1295,12 +1367,14 @@ func (bc *Blockchain) SetBestChain(bestChain []*BlockNode) {
 	bc.bestChain = bestChain
 }
 
-func (bc *Blockchain) SetBestChainMap(bestChain []*BlockNode, bestChainMap map[BlockHash]*BlockNode, blockIndex map[BlockHash]*BlockNode) {
+func (bc *Blockchain) SetBestChainMap(bestChain []*BlockNode, bestChainMap map[BlockHash]*BlockNode, blockIndexByHash map[BlockHash]*BlockNode, blockIndexByHeight map[uint64]map[BlockHash]*BlockNode) {
 	bc.bestChain = bestChain
 	bc.bestChainMap = bestChainMap
-	bc.blockIndex = blockIndex
+	bc.blockIndexByHash = blockIndexByHash
+	bc.blockIndexByHeight = blockIndexByHeight
 }
 
+// TODO: update to support validating orphan PoS Blocks
 func (bc *Blockchain) _validateOrphanBlock(desoBlock *MsgDeSoBlock) error {
 	// Error if the block is missing a parent hash or header.
 	if desoBlock.Header == nil {
@@ -1612,7 +1686,7 @@ func (bc *Blockchain) processHeaderPoW(blockHeader *MsgDeSoHeader, headerHash *B
 	// index. If it does, then return an error. We should generally
 	// expect that processHeaderPoW will only be called on headers we
 	// haven't seen before.
-	_, nodeExists := bc.blockIndex[*headerHash]
+	_, nodeExists := bc.blockIndexByHash[*headerHash]
 	if nodeExists {
 		return false, false, HeaderErrorDuplicateHeader
 	}
@@ -1637,7 +1711,7 @@ func (bc *Blockchain) processHeaderPoW(blockHeader *MsgDeSoHeader, headerHash *B
 	if blockHeader.PrevBlockHash == nil {
 		return false, false, HeaderErrorNilPrevHash
 	}
-	parentNode, parentNodeExists := bc.blockIndex[*blockHeader.PrevBlockHash]
+	parentNode, parentNodeExists := bc.blockIndexByHash[*blockHeader.PrevBlockHash]
 	if !parentNodeExists {
 		// This block is an orphan if its parent doesn't exist and we don't
 		// process unconnectedTxns.
@@ -1752,11 +1826,12 @@ func (bc *Blockchain) processHeaderPoW(blockHeader *MsgDeSoHeader, headerHash *B
 	// index. If we're still syncing then it's safe to just set it. Otherwise, we
 	// need to make a copy first since there could be some concurrency issues.
 	if bc.isSyncing() {
-		bc.blockIndex[*newNode.Hash] = newNode
+		bc.addNewBlockNodeToBlockIndex(newNode)
 	} else {
-		newBlockIndex := bc.CopyBlockIndex()
-		newBlockIndex[*newNode.Hash] = newNode
-		bc.blockIndex = newBlockIndex
+		newBlockIndexByHash, newBlockIndexByHeight := bc.CopyBlockIndexes()
+		bc.blockIndexByHash = newBlockIndexByHash
+		bc.blockIndexByHeight = newBlockIndexByHeight
+		bc.addNewBlockNodeToBlockIndex(newNode)
 	}
 
 	// Update the header chain if this header has more cumulative work than
@@ -1807,23 +1882,25 @@ func (bc *Blockchain) ProcessHeader(blockHeader *MsgDeSoHeader, headerHash *Bloc
 	return bc.processHeaderPoW(blockHeader, headerHash)
 }
 
-func (bc *Blockchain) ProcessBlock(desoBlock *MsgDeSoBlock, verifySignatures bool) (_isMainChain bool, _isOrphan bool, _err error) {
+func (bc *Blockchain) ProcessBlock(desoBlock *MsgDeSoBlock, verifySignatures bool) (_isMainChain bool, _isOrphan bool, _missingBlockHashes []*BlockHash, _err error) {
 	bc.ChainLock.Lock()
 	defer bc.ChainLock.Unlock()
 
 	if desoBlock == nil {
 		// If the block is nil then we return an error. Nothing we can do here.
-		return false, false, fmt.Errorf("ProcessBlock: Block is nil")
+		return false, false, nil, fmt.Errorf("ProcessBlock: Block is nil")
 	}
 
 	// If the block's height is after the PoS cut-over fork height, then we use the PoS block processing logic. Otherwise, fall back
 	// to the PoW logic.
 	if desoBlock.Header.Height >= uint64(bc.params.ForkHeights.ProofOfStake2ConsensusCutoverBlockHeight) {
 		// TODO: call bc.processBlockPoS(desoBlock, verifySignatures) instead
-		return bc.processBlockPoW(desoBlock, verifySignatures)
+		isMainChain, isOrphan, err := bc.processBlockPoW(desoBlock, verifySignatures)
+		return isMainChain, isOrphan, nil, err
 	}
 
-	return bc.processBlockPoW(desoBlock, verifySignatures)
+	isMainChain, isOrphan, err := bc.processBlockPoW(desoBlock, verifySignatures)
+	return isMainChain, isOrphan, nil, err
 }
 
 func (bc *Blockchain) processBlockPoW(desoBlock *MsgDeSoBlock, verifySignatures bool) (_isMainChain bool, _isOrphan bool, err error) {
@@ -1906,7 +1983,7 @@ func (bc *Blockchain) processBlockPoW(desoBlock *MsgDeSoBlock, verifySignatures 
 	bc.timer.Start("Blockchain.ProcessBlock: BlockNode")
 
 	// See if a node for the block exists in our node index.
-	nodeToValidate, nodeExists := bc.blockIndex[*blockHash]
+	nodeToValidate, nodeExists := bc.blockIndexByHash[*blockHash]
 	// If no node exists for this block at all, then process the header
 	// first before we do anything. This should create a node and set
 	// the header validation status for it.
@@ -1927,7 +2004,7 @@ func (bc *Blockchain) processBlockPoW(desoBlock *MsgDeSoBlock, verifySignatures 
 
 		// Reset the pointers after having presumably added the header to the
 		// block index.
-		nodeToValidate, nodeExists = bc.blockIndex[*blockHash]
+		nodeToValidate, nodeExists = bc.blockIndexByHash[*blockHash]
 	}
 	// At this point if the node still doesn't exist or if the header's validation
 	// failed then we should return an error for the block. Note that at this point
@@ -1946,7 +2023,7 @@ func (bc *Blockchain) processBlockPoW(desoBlock *MsgDeSoBlock, verifySignatures 
 	// In this case go ahead and return early. If its parents are truly legitimate then we
 	// should re-request it and its parents from a node and reprocess it
 	// once it is no longer an orphan.
-	parentNode, parentNodeExists := bc.blockIndex[*blockHeader.PrevBlockHash]
+	parentNode, parentNodeExists := bc.blockIndexByHash[*blockHeader.PrevBlockHash]
 	if !parentNodeExists || (parentNode.Status&StatusBlockProcessed) == 0 {
 		return false, true, nil
 	}
@@ -2601,23 +2678,6 @@ func (bc *Blockchain) processBlockPoW(desoBlock *MsgDeSoBlock, verifySignatures 
 	return isMainChain, false, nil
 }
 
-// processBlockPoS runs the Fast-Hotstuff block connect and commit rule as follows:
-// 1. Validate on an incoming block and its header
-// 2. Store the block in the db
-// 3. Resolves forks within the last two blocks
-// 4. Connect the block to the blockchain's tip
-// 5. If applicable, flush the incoming block's grandparent to the DB
-// 6. Notify the block proposer, pacemaker, and voting logic that the incoming block has been accepted
-func (bc *Blockchain) processBlockPoS(desoBlock *MsgDeSoBlock, verifySignatures bool) (_isMainChain bool, _isOrphan bool, err error) {
-	// TODO: Implement me
-	return false, false, fmt.Errorf("ProcessBlockPoS: Not implemented yet")
-}
-
-func (bc *Blockchain) GetUncommittedTipView() (*UtxoView, error) {
-	// Connect the uncommitted blocks to the tip so that we can validate subsequent blocks
-	panic("GetUncommittedTipView: Not implemented yet")
-}
-
 // DisconnectBlocksToHeight will rollback blocks from the db and blockchain structs until block tip reaches the provided
 // blockHeight parameter.
 func (bc *Blockchain) DisconnectBlocksToHeight(blockHeight uint64, snap *Snapshot) error {
@@ -2637,10 +2697,10 @@ func (bc *Blockchain) DisconnectBlocksToHeight(blockHeight uint64, snap *Snapsho
 	// is at blockTipHeight. So we delete the block reward at the blockTipHeight + 1 to make sure the state is correct.
 	// TODO: decouple block reward from PutBlockWithTxn.
 	blockTipHeight := bc.bestChain[len(bc.bestChain)-1].Height
-	for hashIter, node := range bc.blockIndex {
+	for hashIter, node := range bc.blockIndexByHash {
 		hash := hashIter.NewBlockHash()
 		if node.Height > blockTipHeight {
-			glog.V(1).Info(CLog(Yellow, fmt.Sprintf("DisconnectBlocksToHeight: Found node in blockIndex with "+
+			glog.V(1).Info(CLog(Yellow, fmt.Sprintf("DisconnectBlocksToHeight: Found node in blockIndexByHash with "+
 				"larger height than the current block tip. Deleting the corresponding block reward. Node: (%v)", node)))
 			blockToDetach, err := GetBlock(hash, bc.db, snap)
 			if err != nil && err != badger.ErrKeyNotFound {

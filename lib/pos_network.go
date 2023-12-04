@@ -3,8 +3,10 @@ package lib
 import (
 	"bytes"
 	"fmt"
-	"golang.org/x/crypto/sha3"
 	"io"
+
+	"github.com/deso-protocol/core/consensus"
+	"golang.org/x/crypto/sha3"
 
 	"github.com/deso-protocol/core/bls"
 	"github.com/deso-protocol/core/collections/bitset"
@@ -39,7 +41,7 @@ type MsgDeSoValidatorVote struct {
 	// The block hash corresponding to the block that this vote is for.
 	BlockHash *BlockHash
 
-	// The view number when the the block was proposed.
+	// The view number when the block was proposed.
 	ProposedInView uint64
 
 	// The validator's partial BLS signature of the (ProposedInView, BlockHash) pair
@@ -258,7 +260,7 @@ func (msg *MsgDeSoValidatorTimeout) FromBytes(data []byte) error {
 
 	// HighQC
 	msg.HighQC = &QuorumCertificate{}
-	if msg.HighQC.FromBytes(rr); err != nil {
+	if err = msg.HighQC.FromBytes(rr); err != nil {
 		return errors.Wrapf(err, "MsgDeSoValidatorTimeout.FromBytes: Error decoding HighQC")
 	}
 
@@ -281,7 +283,7 @@ type QuorumCertificate struct {
 	// The block hash corresponding to the block that this QC authorizes.
 	BlockHash *BlockHash
 
-	// The view number when the the block was proposed.
+	// The view number when the block was proposed.
 	ProposedInView uint64
 
 	// This BLS signature is aggregated from all of the partial BLS signatures for
@@ -293,6 +295,18 @@ type QuorumCertificate struct {
 	// present signers in the provided signers list. We can then use this to determine
 	// if the QC has 2/3rds of the total stake.
 	ValidatorsVoteAggregatedSignature *AggregatedBLSSignature
+}
+
+func (qc *QuorumCertificate) GetBlockHash() consensus.BlockHash {
+	return qc.BlockHash
+}
+
+func (qc *QuorumCertificate) GetView() uint64 {
+	return qc.ProposedInView
+}
+
+func (qc *QuorumCertificate) GetAggregatedSignature() consensus.AggregatedSignature {
+	return qc.ValidatorsVoteAggregatedSignature
 }
 
 // Performs a deep equality check between two QuorumCertificates, and returns true
@@ -314,6 +328,15 @@ func (qc *QuorumCertificate) Eq(other *QuorumCertificate) bool {
 	}
 
 	return bytes.Equal(qcEncodedBytes, otherEncodedBytes)
+}
+
+func (qc *QuorumCertificate) isEmpty() bool {
+	return qc == nil ||
+		qc.BlockHash == nil ||
+		qc.ProposedInView == 0 ||
+		qc.ValidatorsVoteAggregatedSignature == nil ||
+		qc.ValidatorsVoteAggregatedSignature.Signature == nil ||
+		qc.ValidatorsVoteAggregatedSignature.SignersList == nil
 }
 
 func (qc *QuorumCertificate) ToBytes() ([]byte, error) {
@@ -407,6 +430,14 @@ type AggregatedBLSSignature struct {
 	Signature   *bls.Signature
 }
 
+func (sig *AggregatedBLSSignature) GetSignersList() *bitset.Bitset {
+	return sig.SignersList
+}
+
+func (sig *AggregatedBLSSignature) GetSignature() *bls.Signature {
+	return sig.Signature
+}
+
 // Performs a deep equality check between two AggregatedBLSSignatures, and returns true
 // if the two are fully initialized and have identical values. In all other cases,
 // it return false.
@@ -498,6 +529,22 @@ type TimeoutAggregateQuorumCertificate struct {
 	ValidatorsTimeoutAggregatedSignature *AggregatedBLSSignature
 }
 
+func (aggQC *TimeoutAggregateQuorumCertificate) GetView() uint64 {
+	return aggQC.TimedOutView
+}
+
+func (aggQC *TimeoutAggregateQuorumCertificate) GetHighQC() consensus.QuorumCertificate {
+	return aggQC.ValidatorsHighQC
+}
+
+func (aggQC *TimeoutAggregateQuorumCertificate) GetHighQCViews() []uint64 {
+	return aggQC.ValidatorsTimeoutHighQCViews
+}
+
+func (aggQC *TimeoutAggregateQuorumCertificate) GetAggregatedSignature() consensus.AggregatedSignature {
+	return aggQC.ValidatorsTimeoutAggregatedSignature
+}
+
 // Performs a deep equality check between two TimeoutAggregateQuorumCertificates, and
 // returns true if the two are fully initialized and have identical values. In all other
 // cases, it return false.
@@ -562,7 +609,7 @@ func (aggQC *TimeoutAggregateQuorumCertificate) FromBytes(rr io.Reader) error {
 	}
 
 	aggQC.ValidatorsHighQC = &QuorumCertificate{}
-	if aggQC.ValidatorsHighQC.FromBytes(rr); err != nil {
+	if err = aggQC.ValidatorsHighQC.FromBytes(rr); err != nil {
 		return errors.Wrapf(err, "TimeoutAggregateQuorumCertificate.FromBytes: Error decoding ValidatorsHighQC")
 	}
 
@@ -572,11 +619,23 @@ func (aggQC *TimeoutAggregateQuorumCertificate) FromBytes(rr io.Reader) error {
 	}
 
 	aggQC.ValidatorsTimeoutAggregatedSignature = &AggregatedBLSSignature{}
-	if aggQC.ValidatorsTimeoutAggregatedSignature.FromBytes(rr); err != nil {
+	if err = aggQC.ValidatorsTimeoutAggregatedSignature.FromBytes(rr); err != nil {
 		return errors.Wrapf(err, "TimeoutAggregateQuorumCertificate.FromBytes: Error decoding ValidatorsTimeoutAggregatedSignature")
 	}
 
 	return nil
+}
+
+// isEmpty returns true if the TimeoutAggregateQuorumCertificate is nil or if it contains no data.
+// Reference implementation: https://github.com/deso-protocol/hotstuff_pseudocode/blob/6409b51c3a9a953b383e90619076887e9cebf38d/fast_hotstuff_bls.go#L119
+func (aggQC *TimeoutAggregateQuorumCertificate) isEmpty() bool {
+	return aggQC == nil ||
+		aggQC.TimedOutView == 0 ||
+		aggQC.ValidatorsHighQC.isEmpty() ||
+		len(aggQC.ValidatorsTimeoutHighQCViews) == 0 ||
+		aggQC.ValidatorsTimeoutAggregatedSignature == nil ||
+		aggQC.ValidatorsTimeoutAggregatedSignature.Signature == nil ||
+		aggQC.ValidatorsTimeoutAggregatedSignature.SignersList == nil
 }
 
 func EncodeTimeoutAggregateQuorumCertificate(aggQC *TimeoutAggregateQuorumCertificate) ([]byte, error) {
