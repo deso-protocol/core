@@ -5,7 +5,6 @@ import (
 	"container/list"
 	"encoding/hex"
 	"fmt"
-	"github.com/deso-protocol/core/collections"
 	"math"
 	"math/big"
 	"reflect"
@@ -13,6 +12,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/deso-protocol/core/collections"
 
 	"github.com/google/uuid"
 
@@ -1079,6 +1080,20 @@ func (bc *Blockchain) HasBlock(blockHash *BlockHash) bool {
 
 	// Node exists with StatusBlockProcess set means we have it.
 	return true
+}
+
+// This needs to hold a lock on the blockchain because it read from an in-memory map that is
+// not thread-safe.
+func (bc *Blockchain) GetBlockHeaderFromIndex(blockHash *BlockHash) *MsgDeSoHeader {
+	bc.ChainLock.RLock()
+	defer bc.ChainLock.RUnlock()
+
+	block, blockExists := bc.blockIndexByHash[*blockHash]
+	if !blockExists {
+		return nil
+	}
+
+	return block.Header
 }
 
 // Don't need a lock because blocks don't get removed from the db after they're added
