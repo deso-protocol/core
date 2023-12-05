@@ -3,6 +3,7 @@ package lib
 import (
 	"sync"
 
+	"github.com/deso-protocol/core/bls"
 	"github.com/deso-protocol/core/collections"
 	"github.com/deso-protocol/core/consensus"
 	"github.com/pkg/errors"
@@ -28,13 +29,50 @@ func NewConsensusController(params *DeSoParams, blockchain *Blockchain, mempool 
 	}
 }
 
-func (cc *ConsensusController) Init() {
-	// This initializes the FastHotStuffEventLoop based on the blockchain state. This should
-	// only be called once the blockchain has synced, the node is ready to join the validator
-	// network, and the node is able validate blocks in the steady state.
-	//
-	// TODO: Implement this later once the Blockchain struct changes are merged. We need to be
-	// able to fetch the tip block and current persisted view from DB from the Blockchain struct.
+// ConsensusController.Start initializes and starts the FastHotStuffEventLoop based on the
+// blockchain state. This should only be called once the blockchain has synced, the node is
+// ready to join the validator network, and the node is able validate blocks in the steady state.
+func (cc *ConsensusController) Start() error {
+	// Hold the write consensus controller's lock for thread-safety.
+	cc.lock.Lock()
+	defer cc.lock.Unlock()
+
+	// Hold the blockchain's read lock so that the chain cannot be mutated underneath us. In practice,
+	// this is a no-op, but it guarantees thread-safety in the event that other parts of the codebase
+	// change.
+	cc.blockchain.ChainLock.RLock()
+	defer cc.blockchain.ChainLock.RUnlock()
+
+	// Fetch the current tip of the chain
+	tipBlock := cc.blockchain.BlockTip()
+
+	// Fetch the validator set at each safe block
+	tipBlockWithValidators, err := cc.fetchValidatorListsForSafeBlocks([]*MsgDeSoHeader{tipBlock.Header})
+	if err != nil {
+		return errors.Errorf("ConsensusController.Start: Error fetching validator list for tip blocks: %v", err)
+	}
+
+	// Fetch the safe blocks that are eligible to be extended from by the next incoming tip block
+	safeBlocks, err := cc.blockchain.GetSafeBlocks()
+	if err != nil {
+		return errors.Errorf("ConsensusController.Start: Error fetching safe blocks: %v", err)
+	}
+
+	// Fetch the validator set at each safe block
+	safeBlocksWithValidators, err := cc.fetchValidatorListsForSafeBlocks(safeBlocks)
+	if err != nil {
+		return errors.Errorf("ConsensusController.Start: Error fetching validator lists for safe blocks: %v", err)
+	}
+
+	// Initialize and start the event loop. TODO: Pass in the crank timer duration and timeout duration
+	cc.fastHotStuffEventLoop.Init(0, 0, tipBlockWithValidators[0], safeBlocksWithValidators)
+	cc.fastHotStuffEventLoop.Start()
+
+	return nil
+}
+
+func (cc *ConsensusController) IsRunning() bool {
+	return cc.fastHotStuffEventLoop.IsRunning()
 }
 
 // HandleFastHostStuffBlockProposal is called when FastHotStuffEventLoop has signaled that it can
@@ -90,34 +128,15 @@ func (cc *ConsensusController) handleBlockProposerEvent(
 	event *consensus.FastHotStuffEvent,
 	expectedEventType consensus.FastHotStuffEventType,
 ) error {
-	// Validate that the expected event type is a block proposal event type
-	possibleExpectedEventTypes := []consensus.FastHotStuffEventType{
-		consensus.FastHotStuffEventTypeConstructVoteQC,
-		consensus.FastHotStuffEventTypeConstructTimeoutQC,
-	}
-	if !collections.Contains(possibleExpectedEventTypes, expectedEventType) {
-		return errors.Errorf("Invalid expected event type: %v", expectedEventType)
+	// Validate that the event's type is the expected proposal event type
+	if !isValidateBlockProposalEvent(event, expectedEventType) {
+		return errors.Errorf("Unexpected event type: %v vs %v", event.EventType, expectedEventType)
 	}
 
-	// The event's type should match the expected event type
-	if event.EventType != expectedEventType {
-		return errors.Errorf("Unexpected event type: %v", event.EventType)
+	// Validate that the event is properly formed
+	if !isProperlyFormedBlockProposalEvent(event) {
+		return errors.Errorf("Received improperly formed block construction event: %v", event)
 	}
-
-	// If the event is a regular block proposal event, then we validate and process it as a regular block
-	if expectedEventType == consensus.FastHotStuffEventTypeConstructVoteQC {
-		if !consensus.IsProperlyFormedConstructVoteQCEvent(event) {
-			// If the event is not properly formed, we ignore it and log it. This should never happen.
-			return errors.Errorf("Received improperly formed vote QC construction event: %v", event)
-		}
-	} else { // expectedEventType == consensus.FastHotStuffEventTypeConstructTimeoutQC
-		if !consensus.IsProperlyFormedConstructTimeoutQCEvent(event) {
-			// If the event is not properly formed, we ignore it and log it. This should never happen.
-			return errors.Errorf("Received improperly formed timeout QC construction event: %v", event)
-		}
-	}
-
-	// If the block proposal is properly formed, we try to construct and broadcast the block here.
 
 	// Fetch the parent block
 	parentBlockHash := BlockHashFromConsensusInterface(event.QC.GetBlockHash())
@@ -168,53 +187,24 @@ func (cc *ConsensusController) handleBlockProposerEvent(
 		return errors.Wrapf(err, "Error signing random seed hash for block at height %d: ", event.TipBlockHeight+1)
 	}
 
-	// Build a UtxoView at the parent block
-	utxoViewAtParent, err := cc.blockchain.getUtxoViewAtBlockHash(*parentBlock.Hash)
+	// Construct the unsigned block
+	unsignedBlock, err := cc.produceUnsignedBlockForBlockProposalEvent(event, proposerRandomSeedSignature)
 	if err != nil {
-		// This should never happen as long as the parent block is a descendant of the committed tip.
-		return errors.Errorf("Error fetching UtxoView for parent block: %v", parentBlockHash)
-	}
-
-	var block *MsgDeSoBlock
-
-	if expectedEventType == consensus.FastHotStuffEventTypeConstructVoteQC {
-		// Construct an unsigned block
-		block, err = cc.blockProducer.CreateUnsignedBlock(
-			utxoViewAtParent,
-			event.TipBlockHeight+1,
-			event.View,
-			proposerRandomSeedSignature,
-			QuorumCertificateFromConsensusInterface(event.QC),
-		)
-		if err != nil {
-			return errors.Errorf("Error constructing unsigned block: %v", err)
-		}
-	} else { // expectedEventType == consensus.FastHotStuffEventTypeConstructTimeoutQC
-		// Construct an unsigned timeout block
-		block, err = cc.blockProducer.CreateUnsignedTimeoutBlock(
-			utxoViewAtParent,
-			event.TipBlockHeight+1,
-			event.View,
-			proposerRandomSeedSignature,
-			AggregateQuorumCertificateFromConsensusInterface(event.AggregateQC),
-		)
-		if err != nil {
-			return errors.Errorf("Error constructing unsigned timeout block: %v", err)
-		}
+		return errors.Wrapf(err, "Error producing unsigned block for proposal at height %d", event.TipBlockHeight+1)
 	}
 
 	// Sign the block
-	blockHash, err := block.Header.Hash()
+	blockHash, err := unsignedBlock.Header.Hash()
 	if err != nil {
 		return errors.Errorf("Error hashing block: %v", err)
 	}
-	block.Header.ProposerVotePartialSignature, err = cc.signer.SignBlockProposal(block.Header.ProposedInView, blockHash)
+	unsignedBlock.Header.ProposerVotePartialSignature, err = cc.signer.SignBlockProposal(unsignedBlock.Header.ProposedInView, blockHash)
 	if err != nil {
 		return errors.Errorf("Error signing block: %v", err)
 	}
 
 	// Process the block locally
-	missingBlockHashes, err := cc.tryProcessBlockAsNewTip(block)
+	missingBlockHashes, err := cc.tryProcessBlockAsNewTip(unsignedBlock)
 	if err != nil {
 		return errors.Errorf("Error processing block locally: %v", err)
 	}
@@ -364,14 +354,6 @@ func (cc *ConsensusController) HandleFastHostStuffTimeout(event *consensus.FastH
 	return nil
 }
 
-func (cc *ConsensusController) HandleHeaderBundle(pp *Peer, msg *MsgDeSoHeaderBundle) {
-	// TODO
-}
-
-func (cc *ConsensusController) HandleHeader(pp *Peer, msg *MsgDeSoHeader) {
-	// TODO
-}
-
 func (cc *ConsensusController) HandleBlock(pp *Peer, msg *MsgDeSoBlock) error {
 	// Hold a lock on the consensus controller, because we will need to mutate the Blockchain
 	// and the FastHotStuffEventLoop data structures.
@@ -475,6 +457,66 @@ func (cc *ConsensusController) tryProcessBlockAsNewTip(block *MsgDeSoBlock) ([]*
 	return nil, nil
 }
 
+// produceUnsignedBlockForBlockProposalEvent is a helper function that can produce a new block for proposal based
+// on Fast-HotStuff block proposal event. This function expects the event to have been pre-validated by the caller.
+// If the event is malformed or invalid, then the behavior of this function is undefined.
+func (cc *ConsensusController) produceUnsignedBlockForBlockProposalEvent(
+	event *consensus.FastHotStuffEvent,
+	proposerRandomSeedSignature *bls.Signature,
+) (*MsgDeSoBlock, error) {
+	// We need to hold a lock on the blockchain to make sure that it is not mutated underneath as we are trying
+	// to construct a block based on the UtxoView. In practice, this lock ends up being a no-op but it guarantees
+	// thread-safety by making no assumptions about how other parts of the codebase operate outside of this struct.
+	cc.blockchain.ChainLock.RLock()
+	defer cc.blockchain.ChainLock.RUnlock()
+
+	// Get the parent block's hash
+	parentBlockHash := BlockHashFromConsensusInterface(event.QC.GetBlockHash())
+
+	// Build a UtxoView at the parent block
+	utxoViewAtParent, err := cc.blockchain.getUtxoViewAtBlockHash(*BlockHashFromConsensusInterface(event.QC.GetBlockHash()))
+	if err != nil {
+		// This should never happen as long as the parent block is a descendant of the committed tip.
+		return nil, errors.Errorf("Error fetching UtxoView for parent block: %v", parentBlockHash)
+	}
+
+	// Construct an unsigned block
+	if event.EventType == consensus.FastHotStuffEventTypeConstructVoteQC {
+		block, err := cc.blockProducer.CreateUnsignedBlock(
+			utxoViewAtParent,
+			event.TipBlockHeight+1,
+			event.View,
+			proposerRandomSeedSignature,
+			QuorumCertificateFromConsensusInterface(event.QC),
+		)
+		if err != nil {
+			return nil, errors.Errorf("Error constructing unsigned block: %v", err)
+		}
+
+		return block, nil
+	}
+
+	// Construct an unsigned timeout block
+	if event.EventType == consensus.FastHotStuffEventTypeConstructTimeoutQC {
+		block, err := cc.blockProducer.CreateUnsignedTimeoutBlock(
+			utxoViewAtParent,
+			event.TipBlockHeight+1,
+			event.View,
+			proposerRandomSeedSignature,
+			AggregateQuorumCertificateFromConsensusInterface(event.AggregateQC),
+		)
+		if err != nil {
+			return nil, errors.Errorf("Error constructing unsigned timeout block: %v", err)
+		}
+
+		return block, nil
+	}
+
+	// We should never reach this if the event had been pre-validated by the caller. We support this
+	// case here
+	return nil, errors.Errorf("Unexpected FastHotStuffEventType :%v", event.EventType)
+}
+
 // fetchValidatorListsForSafeBlocks takes in a set of safe blocks that can be extended from, and fetches the
 // the validator set for each safe block. The result is returned as type BlockWithValidatorList so it can be
 // passed to the FastHotStuffEventLoop. If the input blocks precede the committed tip or they do no exist within
@@ -508,7 +550,7 @@ func (cc *ConsensusController) fetchValidatorListsForSafeBlocks(blocks []*MsgDeS
 	}
 
 	// Fetch the next epoch entry
-	nextEpochEntryAfterCommittedTip, err := utxoView.SimulateNextEpochEntry(epochEntryAtCommittedTip)
+	nextEpochEntryAfterCommittedTip, err := utxoView.simulateNextEpochEntry(epochEntryAtCommittedTip.EpochNumber, epochEntryAtCommittedTip.FinalBlockHeight)
 	if err != nil {
 		return nil, errors.Errorf("error fetching next epoch entry after committed tip: %v", err)
 	}
@@ -568,11 +610,34 @@ func getEpochEntryForBlockHeight(blockHeight uint64, epochEntries []*EpochEntry)
 	return nil, errors.Errorf("error finding epoch number for block height: %v", blockHeight)
 }
 
-func (bav *UtxoView) SimulateNextEpochEntry(epochEntry *EpochEntry) (*EpochEntry, error) {
-	return bav.computeNextEpochEntry(
-		epochEntry.EpochNumber,
-		epochEntry.FinalBlockHeight,
-		epochEntry.InitialView,
-		epochEntry.CreatedAtBlockTimestampNanoSecs,
-	)
+func isValidateBlockProposalEvent(event *consensus.FastHotStuffEvent, expectedEventType consensus.FastHotStuffEventType) bool {
+	// Validate that the expected event type is a block proposal event type
+	possibleExpectedEventTypes := []consensus.FastHotStuffEventType{
+		consensus.FastHotStuffEventTypeConstructVoteQC,
+		consensus.FastHotStuffEventTypeConstructTimeoutQC,
+	}
+
+	// The event's type must be one of the two block proposal hard-coded values
+	if !collections.Contains(possibleExpectedEventTypes, expectedEventType) {
+		return false
+	}
+
+	// The event's type should match the expected event type
+	if event.EventType != expectedEventType {
+		return false
+	}
+
+	return true
+}
+
+func isProperlyFormedBlockProposalEvent(event *consensus.FastHotStuffEvent) bool {
+	if event.EventType == consensus.FastHotStuffEventTypeConstructVoteQC {
+		return consensus.IsProperlyFormedConstructVoteQCEvent(event)
+	}
+
+	if event.EventType == consensus.FastHotStuffEventTypeConstructTimeoutQC {
+		return consensus.IsProperlyFormedConstructTimeoutQCEvent(event)
+	}
+
+	return false
 }

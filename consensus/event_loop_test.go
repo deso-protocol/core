@@ -891,6 +891,7 @@ func TestTimeoutQCConstructionSignal(t *testing.T) {
 		)
 
 		// Verify that the high QC is the QC from block 2. It should be unchanged.
+		require.Equal(t, signal.QC.GetBlockHash(), block2.GetQC().GetBlockHash())
 		require.Equal(t, signal.AggregateQC.GetHighQC().GetBlockHash(), block2.GetQC().GetBlockHash())
 		require.Equal(t, signal.AggregateQC.GetHighQC().GetView(), block2.GetQC().GetView())
 		require.Equal(t,
