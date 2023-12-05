@@ -16,7 +16,7 @@ import (
 // - PoS Random Seed Signature
 //
 // TODO: We will likely need to associate individual op-codes for each message type that can be signed,
-// so that there no risk of signature collisions between different message types. Ex: the payload
+// so that there is no risk of signature collisions between different message types. Ex: the payload
 // signed per message type must be made up of the following tuples:
 // - Validator Vote:            (0x01, view uint64, blockHash consensus.BlockHash)
 // - Validator Timeout:         (0x02, view uint64, highQCView uint64)
