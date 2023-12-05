@@ -301,6 +301,23 @@ func (cc *ConsensusController) HandleFastHostStuffVote(event *consensus.FastHotS
 	return nil
 }
 
+// HandleValidatorVote is called when we receive a validator vote message from a peer. This function processes
+// the vote locally in the FastHotStuffEventLoop.
+func (cc *ConsensusController) HandleValidatorVote(pp *Peer, msg *MsgDeSoValidatorVote) error {
+	// No need to hold a lock on the consensus controller because this function is a pass-through
+	// for the FastHotStuffEventLoop which guarantees thread-safety for its callers
+
+	// Process the vote message locally in the FastHotStuffEventLoop
+	if err := cc.fastHotStuffEventLoop.ProcessValidatorVote(msg); err != nil {
+		// If we can't process the vote locally, then it must somehow be malformed, stale,
+		// or a duplicate vote/timeout for the same view.
+		return errors.Wrapf(err, "ConsensusController.HandleValidatorVote: Error processing vote: ")
+	}
+
+	// Happy path
+	return nil
+}
+
 // HandleFastHostStuffTimeout is triggered when the FastHotStuffEventLoop has signaled that
 // it is ready to time out the current view. This function validates the timeout signal for
 // staleness. If the signal is valid, then it constructs and broadcasts the timeout msg here.
@@ -366,12 +383,28 @@ func (cc *ConsensusController) HandleFastHostStuffTimeout(event *consensus.FastH
 		// is duplicated for the same view. In any case, something is very wrong. We should not
 		// broadcast this message to the network.
 		return errors.Errorf("ConsensusController.HandleFastHostStuffTimeout: Error processing timeout locally: %v", err)
-
 	}
 
 	// Broadcast the timeout message to the network
 	// TODO: Broadcast the timeout message to the network or alternatively to just the block proposer
 
+	return nil
+}
+
+// HandleValidatorTimeout is called when we receive a validator timeout message from a peer. This function
+// processes the timeout locally in the FastHotStuffEventLoop.
+func (cc *ConsensusController) HandleValidatorTimeout(pp *Peer, msg *MsgDeSoValidatorTimeout) error {
+	// No need to hold a lock on the consensus controller because this function is a pass-through
+	// for the FastHotStuffEventLoop which guarantees thread-safety for its callers.
+
+	// Process the timeout message locally in the FastHotStuffEventLoop
+	if err := cc.fastHotStuffEventLoop.ProcessValidatorTimeout(msg); err != nil {
+		// If we can't process the timeout locally, then it must somehow be malformed, stale,
+		// or a duplicate vote/timeout for the same view.
+		return errors.Wrapf(err, "ConsensusController.HandleValidatorTimeout: Error processing timeout: ")
+	}
+
+	// Happy path
 	return nil
 }
 
