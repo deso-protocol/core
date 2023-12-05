@@ -37,6 +37,11 @@ func (cc *ConsensusController) Start() error {
 	cc.lock.Lock()
 	defer cc.lock.Unlock()
 
+	// The consensus controller can only be kicked off with an uninitialized event loop
+	if cc.fastHotStuffEventLoop.IsInitialized() {
+		return errors.New("ConsensusController.Start: FastHotStuffEventLoop is already initialized")
+	}
+
 	// Hold the blockchain's read lock so that the chain cannot be mutated underneath us. In practice,
 	// this is a no-op, but it guarantees thread-safety in the event that other parts of the codebase
 	// change.
@@ -84,9 +89,13 @@ func (cc *ConsensusController) HandleFastHostStuffBlockProposal(event *consensus
 	cc.lock.Lock()
 	defer cc.lock.Unlock()
 
+	if !cc.fastHotStuffEventLoop.IsRunning() {
+		return errors.Errorf("ConsensusController.HandleFastHostStuffBlockProposal: FastHotStuffEventLoop is not running")
+	}
+
 	// Handle the event as a block proposal event for a regular block
 	if err := cc.handleBlockProposerEvent(event, consensus.FastHotStuffEventTypeConstructVoteQC); err != nil {
-		return errors.Wrapf(err, "HandleFastHostStuffBlockProposal:")
+		return errors.Wrapf(err, "ConsensusController.HandleFastHostStuffBlockProposal: ")
 	}
 
 	// Happy path: nothing left to do
@@ -102,9 +111,13 @@ func (cc *ConsensusController) HandleFastHostStuffEmptyTimeoutBlockProposal(even
 	cc.lock.Lock()
 	defer cc.lock.Unlock()
 
+	if !cc.fastHotStuffEventLoop.IsRunning() {
+		return errors.Errorf("HandleFastHostStuffEmptyTimeoutBlockProposal: FastHotStuffEventLoop is not running")
+	}
+
 	// Handle the event as a block proposal event for a timeout block
 	if err := cc.handleBlockProposerEvent(event, consensus.FastHotStuffEventTypeConstructTimeoutQC); err != nil {
-		return errors.Wrapf(err, "HandleFastHostStuffEmptyTimeoutBlockProposal:")
+		return errors.Wrapf(err, "ConsensusController.HandleFastHostStuffEmptyTimeoutBlockProposal: ")
 	}
 
 	// Happy path: nothing left to do
@@ -238,11 +251,15 @@ func (cc *ConsensusController) HandleFastHostStuffVote(event *consensus.FastHotS
 	cc.lock.Lock()
 	defer cc.lock.Unlock()
 
+	if !cc.fastHotStuffEventLoop.IsRunning() {
+		return errors.Errorf("ConsensusController.HandleFastHostStuffVote: FastHotStuffEventLoop is not running")
+	}
+
 	var err error
 
 	if !consensus.IsProperlyFormedVoteEvent(event) {
 		// If the event is not properly formed, we ignore it and log it. This should never happen.
-		return errors.Errorf("HandleFastHostStuffVote: Received improperly formed vote event: %v", event)
+		return errors.Errorf("ConsensusController.HandleFastHostStuffVote: Received improperly formed vote event: %v", event)
 	}
 
 	// Provided the vote message is properly formed, we construct and broadcast it in a best effort
@@ -267,7 +284,7 @@ func (cc *ConsensusController) HandleFastHostStuffVote(event *consensus.FastHotS
 	voteMsg.VotePartialSignature, err = cc.signer.SignValidatorVote(event.View, event.TipBlockHash)
 	if err != nil {
 		// This should never happen as long as the BLS signer is initialized correctly.
-		return errors.Errorf("HandleFastHostStuffVote: Error signing validator vote: %v", err)
+		return errors.Errorf("ConsensusController.HandleFastHostStuffVote: Error signing validator vote: %v", err)
 	}
 
 	// Process the vote message locally in the FastHotStuffEventLoop
@@ -275,7 +292,7 @@ func (cc *ConsensusController) HandleFastHostStuffVote(event *consensus.FastHotS
 		// If we can't process the vote locally, then it must somehow be malformed, stale,
 		// or a duplicate vote/timeout for the same view. Something is very wrong. We should not
 		// broadcast it to the network.
-		return errors.Errorf("HandleFastHostStuffVote: Error processing vote locally: %v", err)
+		return errors.Errorf("ConsensusController.HandleFastHostStuffVote: Error processing vote locally: %v", err)
 	}
 
 	// Broadcast the vote message to the network
@@ -299,11 +316,15 @@ func (cc *ConsensusController) HandleFastHostStuffTimeout(event *consensus.FastH
 	cc.lock.Lock()
 	defer cc.lock.Unlock()
 
+	if !cc.fastHotStuffEventLoop.IsRunning() {
+		return errors.Errorf("ConsensusController.HandleFastHostStuffTimeout: FastHotStuffEventLoop is not running")
+	}
+
 	var err error
 
 	if !consensus.IsProperlyFormedTimeoutEvent(event) {
 		// If the event is not properly formed, we ignore it and log it. This should never happen.
-		return errors.Errorf("HandleFastHostStuffTimeout: Received improperly formed timeout event: %v", event)
+		return errors.Errorf("ConsensusController.HandleFastHostStuffTimeout: Received improperly formed timeout event: %v", event)
 	}
 
 	if event.View != cc.fastHotStuffEventLoop.GetCurrentView() {
@@ -312,7 +333,7 @@ func (cc *ConsensusController) HandleFastHostStuffTimeout(event *consensus.FastH
 		// and an expected race condition in the steady-state.
 		//
 		// Nothing to do here.
-		return errors.Errorf("HandleFastHostStuffTimeout: Stale timeout event: %v", event)
+		return errors.Errorf("ConsensusController.HandleFastHostStuffTimeout: Stale timeout event: %v", event)
 	}
 
 	// Locally advance the event loop's view so that the node is locally running the Fast-HotStuff
@@ -321,7 +342,7 @@ func (cc *ConsensusController) HandleFastHostStuffTimeout(event *consensus.FastH
 	if _, err := cc.fastHotStuffEventLoop.AdvanceViewOnTimeout(); err != nil {
 		// This should never happen as long as the event loop is running. If it happens, we return
 		// the error and let the caller handle it.
-		return errors.Errorf("HandleFastHostStuffTimeout: Error advancing view on timeout: %v", err)
+		return errors.Errorf("ConsensusController.HandleFastHostStuffTimeout: Error advancing view on timeout: %v", err)
 	}
 
 	// Construct the timeout message
@@ -335,7 +356,7 @@ func (cc *ConsensusController) HandleFastHostStuffTimeout(event *consensus.FastH
 	timeoutMsg.TimeoutPartialSignature, err = cc.signer.SignValidatorTimeout(event.View, event.QC.GetView())
 	if err != nil {
 		// This should never happen as long as the BLS signer is initialized correctly.
-		return errors.Errorf("HandleFastHostStuffTimeout: Error signing validator timeout: %v", err)
+		return errors.Errorf("ConsensusController.HandleFastHostStuffTimeout: Error signing validator timeout: %v", err)
 	}
 
 	// Process the timeout message locally in the FastHotStuffEventLoop
@@ -344,7 +365,7 @@ func (cc *ConsensusController) HandleFastHostStuffTimeout(event *consensus.FastH
 		// beyond the committed tip, the timeout message is malformed, or the timeout message is
 		// is duplicated for the same view. In any case, something is very wrong. We should not
 		// broadcast this message to the network.
-		return errors.Errorf("HandleFastHostStuffTimeout: Error processing timeout locally: %v", err)
+		return errors.Errorf("ConsensusController.HandleFastHostStuffTimeout: Error processing timeout locally: %v", err)
 
 	}
 
@@ -360,6 +381,10 @@ func (cc *ConsensusController) HandleBlock(pp *Peer, msg *MsgDeSoBlock) error {
 	cc.lock.Lock()
 	defer cc.lock.Unlock()
 
+	if !cc.fastHotStuffEventLoop.IsRunning() {
+		return errors.Errorf("ConsensusController.HandleBlock: FastHotStuffEventLoop is not running")
+	}
+
 	// Try to apply the block as the new tip of the blockchain. If the block is an orphan, then
 	// we will get back a list of missing ancestor block hashes. We can fetch the missing blocks
 	// from the network and retry.
@@ -367,7 +392,7 @@ func (cc *ConsensusController) HandleBlock(pp *Peer, msg *MsgDeSoBlock) error {
 	if err != nil {
 		// If we get an error here, it means something went wrong with the block processing algorithm.
 		// Nothing we can do to recover here.
-		return errors.Errorf("HandleBlock: Error processing block as new tip: %v", err)
+		return errors.Errorf("ConsensusController.HandleBlock: Error processing block as new tip: %v", err)
 	}
 
 	// If there are missing block hashes, then we need to fetch the missing blocks from the network
@@ -395,7 +420,7 @@ func (cc *ConsensusController) tryProcessBlockAsNewTip(block *MsgDeSoBlock) ([]*
 		true, // Make sure we verify signatures in the block
 	)
 	if err != nil {
-		return nil, errors.Errorf("HandleFastHostStuffBlockProposal: Error processing block locally: %v", err)
+		return nil, errors.Errorf("Error processing block locally: %v", err)
 	}
 
 	// If the incoming block is an orphan, then there's nothing we can do. We return the missing ancestor
@@ -412,13 +437,13 @@ func (cc *ConsensusController) tryProcessBlockAsNewTip(block *MsgDeSoBlock) ([]*
 	// Fetch the safe blocks that are eligible to be extended from by the next incoming tip block
 	safeBlocks, err := cc.blockchain.GetSafeBlocks()
 	if err != nil {
-		return nil, errors.Errorf("HandleFastHostStuffBlockProposal: Error fetching safe blocks: %v", err)
+		return nil, errors.Errorf("error fetching safe blocks: %v", err)
 	}
 
 	// Fetch the validator set at each safe block
 	safeBlocksWithValidators, err := cc.fetchValidatorListsForSafeBlocks(safeBlocks)
 	if err != nil {
-		return nil, errors.Errorf("HandleFastHostStuffBlockProposal: Error fetching validator lists for safe blocks: %v", err)
+		return nil, errors.Errorf("error fetching validator lists for safe blocks: %v", err)
 	}
 
 	// If the block was processed successfully but was not applied as the new tip, we need up date the safe
@@ -427,7 +452,7 @@ func (cc *ConsensusController) tryProcessBlockAsNewTip(block *MsgDeSoBlock) ([]*
 	if !successfullyAppliedNewTip {
 		// Update the safe blocks to the FastHotStuffEventLoop
 		if err = cc.fastHotStuffEventLoop.UpdateSafeBlocks(safeBlocksWithValidators); err != nil {
-			return nil, errors.Errorf("HandleFastHostStuffBlockProposal: Error processing safe blocks locally: %v", err)
+			return nil, errors.Errorf("Error processing safe blocks locally: %v", err)
 		}
 
 		// Happy path. The safe blocks were successfully updated in the FastHotStuffEventLoop. Nothing left to do.
@@ -445,12 +470,12 @@ func (cc *ConsensusController) tryProcessBlockAsNewTip(block *MsgDeSoBlock) ([]*
 	// Fetch the validator set at the new tip block
 	tipBlockWithValidators, err := cc.fetchValidatorListsForSafeBlocks([]*MsgDeSoHeader{tipBlock})
 	if err != nil {
-		return nil, errors.Errorf("HandleFastHostStuffBlockProposal: Error fetching validator lists for tip block: %v", err)
+		return nil, errors.Errorf("Error fetching validator lists for tip block: %v", err)
 	}
 
 	// Pass the new tip and safe blocks to the FastHotStuffEventLoop
 	if err = cc.fastHotStuffEventLoop.ProcessTipBlock(tipBlockWithValidators[0], safeBlocksWithValidators); err != nil {
-		return nil, errors.Errorf("HandleFastHostStuffBlockProposal: Error processing tip block locally: %v", err)
+		return nil, errors.Errorf("Error processing tip block locally: %v", err)
 	}
 
 	// Happy path. The block was processed successfully and applied as the new tip. Nothing left to do.
@@ -540,19 +565,19 @@ func (cc *ConsensusController) fetchValidatorListsForSafeBlocks(blocks []*MsgDeS
 	// all of the safe blocks.
 	utxoView, err := NewUtxoView(cc.blockchain.db, cc.params, cc.blockchain.postgres, cc.blockchain.snapshot, nil)
 	if err != nil {
-		return nil, errors.Errorf("error creating UtxoView: %v", err)
+		return nil, errors.Errorf("Error creating UtxoView: %v", err)
 	}
 
 	// Fetch the current epoch entry for the committed tip
 	epochEntryAtCommittedTip, err := utxoView.GetCurrentEpochEntry()
 	if err != nil {
-		return nil, errors.Errorf("error fetching epoch entry for committed tip: %v", err)
+		return nil, errors.Errorf("Error fetching epoch entry for committed tip: %v", err)
 	}
 
 	// Fetch the next epoch entry
 	nextEpochEntryAfterCommittedTip, err := utxoView.simulateNextEpochEntry(epochEntryAtCommittedTip.EpochNumber, epochEntryAtCommittedTip.FinalBlockHeight)
 	if err != nil {
-		return nil, errors.Errorf("error fetching next epoch entry after committed tip: %v", err)
+		return nil, errors.Errorf("Error fetching next epoch entry after committed tip: %v", err)
 	}
 
 	// The input blocks can only be part of the current or next epoch entries.
@@ -566,7 +591,7 @@ func (cc *ConsensusController) fetchValidatorListsForSafeBlocks(blocks []*MsgDeS
 		// block to the blockchain, and triggering an epoch transition (if at an epoch boundary).
 		epochEntryForBlock, err := getEpochEntryForBlockHeight(block.Height+1, possibleEpochEntriesForBlocks)
 		if err != nil {
-			return nil, errors.Errorf("error fetching epoch number for block: %v", err)
+			return nil, errors.Errorf("Error fetching epoch number for block: %v", err)
 		}
 
 		// Compute the snapshot epoch number for the block. This is the epoch number that the validator set
@@ -585,7 +610,7 @@ func (cc *ConsensusController) fetchValidatorListsForSafeBlocks(blocks []*MsgDeS
 			// We don't have the validator set for the block cached. Fetch it from the UtxoView.
 			validatorSetAtBlock, err = utxoView.GetAllSnapshotValidatorSetEntriesByStakeAtEpochNumber(snapshotEpochNumber)
 			if err != nil {
-				return nil, errors.Errorf("error fetching validator set for block: %v", err)
+				return nil, errors.Errorf("Error fetching validator set for block: %v", err)
 			}
 		}
 
