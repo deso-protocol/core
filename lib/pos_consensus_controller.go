@@ -80,44 +80,44 @@ func (cc *ConsensusController) IsRunning() bool {
 	return cc.fastHotStuffEventLoop.IsRunning()
 }
 
-// HandleFastHostStuffBlockProposal is called when FastHotStuffEventLoop has signaled that it can
+// HandleLocalBlockProposalEvent is called when FastHotStuffEventLoop has signaled that it can
 // construct a block at a certain block height. This function validates the block proposal signal,
 // constructs, processes locally, and then broadcasts the block.
-func (cc *ConsensusController) HandleFastHostStuffBlockProposal(event *consensus.FastHotStuffEvent) error {
+func (cc *ConsensusController) HandleLocalBlockProposalEvent(event *consensus.FastHotStuffEvent) error {
 	// Hold a read and write lock on the consensus controller. This is because we need to check
 	// the current view of the consensus event loop, and to update the blockchain.
 	cc.lock.Lock()
 	defer cc.lock.Unlock()
 
 	if !cc.fastHotStuffEventLoop.IsRunning() {
-		return errors.Errorf("ConsensusController.HandleFastHostStuffBlockProposal: FastHotStuffEventLoop is not running")
+		return errors.Errorf("ConsensusController.HandleLocalBlockProposalEvent: FastHotStuffEventLoop is not running")
 	}
 
 	// Handle the event as a block proposal event for a regular block
 	if err := cc.handleBlockProposerEvent(event, consensus.FastHotStuffEventTypeConstructVoteQC); err != nil {
-		return errors.Wrapf(err, "ConsensusController.HandleFastHostStuffBlockProposal: ")
+		return errors.Wrapf(err, "ConsensusController.HandleLocalBlockProposalEvent: ")
 	}
 
 	// Happy path: nothing left to do
 	return nil
 }
 
-// HandleFastHostStuffEmptyTimeoutBlockProposal is called when FastHotStuffEventLoop has signaled that it can
+// HandleLocalTimeoutBlockProposalEvent is called when FastHotStuffEventLoop has signaled that it can
 // construct a timeout block at a certain block height. This function validates the timeout block proposal
 // signal, constructs, processes locally, and then broadcasts the block.
-func (cc *ConsensusController) HandleFastHostStuffEmptyTimeoutBlockProposal(event *consensus.FastHotStuffEvent) error {
+func (cc *ConsensusController) HandleLocalTimeoutBlockProposalEvent(event *consensus.FastHotStuffEvent) error {
 	// Hold a read and write lock on the consensus controller. This is because we need to check
 	// the current view of the consensus event loop, and to update the blockchain.
 	cc.lock.Lock()
 	defer cc.lock.Unlock()
 
 	if !cc.fastHotStuffEventLoop.IsRunning() {
-		return errors.Errorf("HandleFastHostStuffEmptyTimeoutBlockProposal: FastHotStuffEventLoop is not running")
+		return errors.Errorf("ConsensusController.HandleLocalTimeoutBlockProposalEvent: FastHotStuffEventLoop is not running")
 	}
 
 	// Handle the event as a block proposal event for a timeout block
 	if err := cc.handleBlockProposerEvent(event, consensus.FastHotStuffEventTypeConstructTimeoutQC); err != nil {
-		return errors.Wrapf(err, "ConsensusController.HandleFastHostStuffEmptyTimeoutBlockProposal: ")
+		return errors.Wrapf(err, "ConsensusController.HandleLocalTimeoutBlockProposalEvent: ")
 	}
 
 	// Happy path: nothing left to do
@@ -236,7 +236,7 @@ func (cc *ConsensusController) handleBlockProposerEvent(
 	return nil
 }
 
-// HandleFastHostStuffVote is triggered when FastHotStuffEventLoop has signaled that it wants to
+// HandleLocalVoteEvent is triggered when FastHotStuffEventLoop has signaled that it wants to
 // vote on the current tip. This functions validates the vote signal, then it constructs the
 // vote message here.
 //
@@ -245,21 +245,21 @@ func (cc *ConsensusController) handleBlockProposerEvent(
 // 2. Construct the vote message
 // 3. Process the vote in the consensus module
 // 4. Broadcast the vote msg to the network
-func (cc *ConsensusController) HandleFastHostStuffVote(event *consensus.FastHotStuffEvent) error {
+func (cc *ConsensusController) HandleLocalVoteEvent(event *consensus.FastHotStuffEvent) error {
 	// Hold a read lock on the consensus controller. This is because we need to check the
 	// current view and block height of the consensus module.
 	cc.lock.Lock()
 	defer cc.lock.Unlock()
 
 	if !cc.fastHotStuffEventLoop.IsRunning() {
-		return errors.Errorf("ConsensusController.HandleFastHostStuffVote: FastHotStuffEventLoop is not running")
+		return errors.Errorf("ConsensusController.HandleLocalVoteEvent: FastHotStuffEventLoop is not running")
 	}
 
 	var err error
 
 	if !consensus.IsProperlyFormedVoteEvent(event) {
 		// If the event is not properly formed, we ignore it and log it. This should never happen.
-		return errors.Errorf("ConsensusController.HandleFastHostStuffVote: Received improperly formed vote event: %v", event)
+		return errors.Errorf("ConsensusController.HandleLocalVoteEvent: Received improperly formed vote event: %v", event)
 	}
 
 	// Provided the vote message is properly formed, we construct and broadcast it in a best effort
@@ -284,7 +284,7 @@ func (cc *ConsensusController) HandleFastHostStuffVote(event *consensus.FastHotS
 	voteMsg.VotePartialSignature, err = cc.signer.SignValidatorVote(event.View, event.TipBlockHash)
 	if err != nil {
 		// This should never happen as long as the BLS signer is initialized correctly.
-		return errors.Errorf("ConsensusController.HandleFastHostStuffVote: Error signing validator vote: %v", err)
+		return errors.Errorf("ConsensusController.HandleLocalVoteEvent: Error signing validator vote: %v", err)
 	}
 
 	// Process the vote message locally in the FastHotStuffEventLoop
@@ -292,7 +292,7 @@ func (cc *ConsensusController) HandleFastHostStuffVote(event *consensus.FastHotS
 		// If we can't process the vote locally, then it must somehow be malformed, stale,
 		// or a duplicate vote/timeout for the same view. Something is very wrong. We should not
 		// broadcast it to the network.
-		return errors.Errorf("ConsensusController.HandleFastHostStuffVote: Error processing vote locally: %v", err)
+		return errors.Errorf("ConsensusController.HandleLocalVoteEvent: Error processing vote locally: %v", err)
 	}
 
 	// Broadcast the vote message to the network
@@ -318,7 +318,7 @@ func (cc *ConsensusController) HandleValidatorVote(pp *Peer, msg *MsgDeSoValidat
 	return nil
 }
 
-// HandleFastHostStuffTimeout is triggered when the FastHotStuffEventLoop has signaled that
+// HandleLocalTimeoutEvent is triggered when the FastHotStuffEventLoop has signaled that
 // it is ready to time out the current view. This function validates the timeout signal for
 // staleness. If the signal is valid, then it constructs and broadcasts the timeout msg here.
 //
@@ -327,21 +327,21 @@ func (cc *ConsensusController) HandleValidatorVote(pp *Peer, msg *MsgDeSoValidat
 // 2. Construct the timeout message
 // 3. Process the timeout in the consensus module
 // 4. Broadcast the timeout msg to the network
-func (cc *ConsensusController) HandleFastHostStuffTimeout(event *consensus.FastHotStuffEvent) error {
+func (cc *ConsensusController) HandleLocalTimeoutEvent(event *consensus.FastHotStuffEvent) error {
 	// Hold a read lock on the consensus controller. This is because we need to check the
 	// current view and block height of the consensus module.
 	cc.lock.Lock()
 	defer cc.lock.Unlock()
 
 	if !cc.fastHotStuffEventLoop.IsRunning() {
-		return errors.Errorf("ConsensusController.HandleFastHostStuffTimeout: FastHotStuffEventLoop is not running")
+		return errors.Errorf("ConsensusController.HandleLocalTimeoutEvent: FastHotStuffEventLoop is not running")
 	}
 
 	var err error
 
 	if !consensus.IsProperlyFormedTimeoutEvent(event) {
 		// If the event is not properly formed, we ignore it and log it. This should never happen.
-		return errors.Errorf("ConsensusController.HandleFastHostStuffTimeout: Received improperly formed timeout event: %v", event)
+		return errors.Errorf("ConsensusController.HandleLocalTimeoutEvent: Received improperly formed timeout event: %v", event)
 	}
 
 	if event.View != cc.fastHotStuffEventLoop.GetCurrentView() {
@@ -350,7 +350,7 @@ func (cc *ConsensusController) HandleFastHostStuffTimeout(event *consensus.FastH
 		// and an expected race condition in the steady-state.
 		//
 		// Nothing to do here.
-		return errors.Errorf("ConsensusController.HandleFastHostStuffTimeout: Stale timeout event: %v", event)
+		return errors.Errorf("ConsensusController.HandleLocalTimeoutEvent: Stale timeout event: %v", event)
 	}
 
 	// Locally advance the event loop's view so that the node is locally running the Fast-HotStuff
@@ -359,7 +359,7 @@ func (cc *ConsensusController) HandleFastHostStuffTimeout(event *consensus.FastH
 	if _, err := cc.fastHotStuffEventLoop.AdvanceViewOnTimeout(); err != nil {
 		// This should never happen as long as the event loop is running. If it happens, we return
 		// the error and let the caller handle it.
-		return errors.Errorf("ConsensusController.HandleFastHostStuffTimeout: Error advancing view on timeout: %v", err)
+		return errors.Errorf("ConsensusController.HandleLocalTimeoutEvent: Error advancing view on timeout: %v", err)
 	}
 
 	// Construct the timeout message
@@ -373,7 +373,7 @@ func (cc *ConsensusController) HandleFastHostStuffTimeout(event *consensus.FastH
 	timeoutMsg.TimeoutPartialSignature, err = cc.signer.SignValidatorTimeout(event.View, event.QC.GetView())
 	if err != nil {
 		// This should never happen as long as the BLS signer is initialized correctly.
-		return errors.Errorf("ConsensusController.HandleFastHostStuffTimeout: Error signing validator timeout: %v", err)
+		return errors.Errorf("ConsensusController.HandleLocalTimeoutEvent: Error signing validator timeout: %v", err)
 	}
 
 	// Process the timeout message locally in the FastHotStuffEventLoop
@@ -382,7 +382,7 @@ func (cc *ConsensusController) HandleFastHostStuffTimeout(event *consensus.FastH
 		// beyond the committed tip, the timeout message is malformed, or the timeout message is
 		// is duplicated for the same view. In any case, something is very wrong. We should not
 		// broadcast this message to the network.
-		return errors.Errorf("ConsensusController.HandleFastHostStuffTimeout: Error processing timeout locally: %v", err)
+		return errors.Errorf("ConsensusController.HandleLocalTimeoutEvent: Error processing timeout locally: %v", err)
 	}
 
 	// Broadcast the timeout message to the network

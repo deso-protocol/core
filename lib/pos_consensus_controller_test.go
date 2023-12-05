@@ -12,7 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestConsensusControllerHandleVoteSignal(t *testing.T) {
+func TestConsensusControllerHandleLocalVoteEvent(t *testing.T) {
 	// Create a test private key for the signer
 	blsPrivateKey, err := bls.NewPrivateKey()
 	require.NoError(t, err)
@@ -66,7 +66,7 @@ func TestConsensusControllerHandleVoteSignal(t *testing.T) {
 			EventType: consensus.FastHotStuffEventTypeVote,
 		}
 
-		err := consensusController.HandleFastHostStuffVote(event)
+		err := consensusController.HandleLocalVoteEvent(event)
 		require.Contains(t, err.Error(), "Received improperly formed vote event")
 	}
 
@@ -78,12 +78,12 @@ func TestConsensusControllerHandleVoteSignal(t *testing.T) {
 			TipBlockHeight: blockHeader.GetView(),
 			TipBlockHash:   blockHash,
 		}
-		err := consensusController.HandleFastHostStuffVote(event)
+		err := consensusController.HandleLocalVoteEvent(event)
 		require.NoError(t, err)
 	}
 }
 
-func TestConsensusControllerHandleTimeoutSignal(t *testing.T) {
+func TestConsensusControllerHandleLocalTimeoutEvent(t *testing.T) {
 	// Create a test private key for the signer
 	blsPrivateKey, err := bls.NewPrivateKey()
 	require.NoError(t, err)
@@ -155,7 +155,7 @@ func TestConsensusControllerHandleTimeoutSignal(t *testing.T) {
 			EventType: consensus.FastHotStuffEventTypeVote,
 		}
 
-		err := consensusController.HandleFastHostStuffTimeout(event)
+		err := consensusController.HandleLocalTimeoutEvent(event)
 		require.Contains(t, err.Error(), "Received improperly formed timeout event")
 	}
 
@@ -168,7 +168,7 @@ func TestConsensusControllerHandleTimeoutSignal(t *testing.T) {
 			TipBlockHash:   blockHash,
 			QC:             blockHeader.ValidatorsVoteQC,
 		}
-		err := consensusController.HandleFastHostStuffTimeout(event)
+		err := consensusController.HandleLocalTimeoutEvent(event)
 		require.Contains(t, err.Error(), "Stale timeout event")
 	}
 
@@ -181,7 +181,7 @@ func TestConsensusControllerHandleTimeoutSignal(t *testing.T) {
 			TipBlockHash:   blockHeader.ValidatorsVoteQC.GetBlockHash(),
 			QC:             blockHeader.ValidatorsVoteQC,
 		}
-		err := consensusController.HandleFastHostStuffTimeout(event)
+		err := consensusController.HandleLocalTimeoutEvent(event)
 		require.NoError(t, err)
 	}
 }
