@@ -2241,6 +2241,10 @@ func (srv *Server) _handlePeerMessages(serverMessage *ServerMessage) {
 		srv._handleMempool(serverMessage.Peer, msg)
 	case *MsgDeSoInv:
 		srv._handleInv(serverMessage.Peer, msg)
+	case *MsgDeSoValidatorVote:
+		srv._handleValidatorVote(serverMessage.Peer, msg)
+	case *MsgDeSoValidatorTimeout:
+		srv._handleValidatorTimeout(serverMessage.Peer, msg)
 	}
 }
 
@@ -2248,19 +2252,45 @@ func (srv *Server) _handleFastHostStuffConsensusEvent(event *consensus.FastHotSt
 	// This should never happen. If the consensus message handler isn't defined, then something went
 	// wrong during the node initialization. We log it and return early to avoid panicking.
 	if srv.consensusController == nil {
-		glog.Errorf("Server._handleFastHostStuffConsensusEvent: Consensus message handler is nil")
+		glog.Errorf("Server._handleFastHostStuffConsensusEvent: Consensus controller is nil")
 		return
 	}
 
 	switch event.EventType {
 	case consensus.FastHotStuffEventTypeVote:
-		srv.consensusController.HandleFastHostStuffVote(event)
+		srv.consensusController.HandleLocalVoteEvent(event)
 	case consensus.FastHotStuffEventTypeTimeout:
-		srv.consensusController.HandleFastHostStuffTimeout(event)
+		srv.consensusController.HandleLocalTimeoutEvent(event)
 	case consensus.FastHotStuffEventTypeConstructVoteQC:
-		srv.consensusController.HandleFastHostStuffBlockProposal(event)
+		srv.consensusController.HandleLocalBlockProposalEvent(event)
 	case consensus.FastHotStuffEventTypeConstructTimeoutQC:
-		srv.consensusController.HandleFastHostStuffEmptyTimeoutBlockProposal(event)
+		srv.consensusController.HandleLocalTimeoutBlockProposalEvent(event)
+	}
+}
+
+func (srv *Server) _handleValidatorVote(pp *Peer, msg *MsgDeSoValidatorVote) {
+	// It's possible that the consensus controller hasn't been initialized. If so,
+	// we log an error and move on.
+	if srv.consensusController == nil {
+		glog.Errorf("Server._handleValidatorVote: Consensus controller is nil")
+		return
+	}
+
+	if err := srv.consensusController.HandleValidatorVote(pp, msg); err != nil {
+		glog.Errorf("Server._handleValidatorVote: Error handling vote message from peer: %v", err)
+	}
+}
+
+func (srv *Server) _handleValidatorTimeout(pp *Peer, msg *MsgDeSoValidatorTimeout) {
+	// It's possible that the consensus controller hasn't been initialized. If so,
+	// we log an error and move on.
+	if srv.consensusController == nil {
+		glog.Errorf("Server._handleValidatorTimeout: Consensus controller is nil")
+		return
+	}
+
+	if err := srv.consensusController.HandleValidatorTimeout(pp, msg); err != nil {
+		glog.Errorf("Server._handleValidatorTimeout: Error handling timeout message from peer: %v", err)
 	}
 }
 
