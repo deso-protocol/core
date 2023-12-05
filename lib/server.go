@@ -56,6 +56,7 @@ type Server struct {
 	snapshot      *Snapshot
 	forceChecksum bool
 	mempool       *DeSoMempool
+	posMempool    *PosMempool
 	miner         *DeSoMiner
 	blockProducer *DeSoBlockProducer
 	eventManager  *EventManager
@@ -218,7 +219,11 @@ func (srv *Server) GetBlockchain() *Blockchain {
 }
 
 // TODO: The hallmark of a messy non-law-of-demeter-following interface...
-func (srv *Server) GetMempool() *DeSoMempool {
+func (srv *Server) GetMempool() Mempool {
+	tip := srv.blockchain.BlockTip()
+	if tip.Height >= srv.blockchain.params.ForkHeights.ProofOfStake2ConsensusCutoverBlockHeight {
+		return srv.posMempool
+	}
 	return srv.mempool
 }
 
