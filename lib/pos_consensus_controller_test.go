@@ -30,6 +30,8 @@ func TestConsensusControllerHandleVoteSignal(t *testing.T) {
 			privateKey: blsPrivateKey,
 		},
 		fastHotStuffEventLoop: &consensus.MockFastHotStuffEventLoop{
+			OnIsInitialized: alwaysReturnTrue,
+			OnIsRunning:     alwaysReturnTrue,
 			OnProcessValidatorVote: func(vote consensus.VoteMessage) error {
 				if !consensus.IsProperlyFormedVote(vote) {
 					return errors.Errorf("Bad vote message")
@@ -103,6 +105,8 @@ func TestConsensusControllerHandleTimeoutSignal(t *testing.T) {
 			privateKey: blsPrivateKey,
 		},
 		fastHotStuffEventLoop: &consensus.MockFastHotStuffEventLoop{
+			OnIsInitialized: alwaysReturnTrue,
+			OnIsRunning:     alwaysReturnTrue,
 			OnGetCurrentView: func() uint64 {
 				return currentView
 			},
@@ -180,4 +184,9 @@ func TestConsensusControllerHandleTimeoutSignal(t *testing.T) {
 		err := consensusController.HandleFastHostStuffTimeout(event)
 		require.NoError(t, err)
 	}
+}
+
+// Mock function that always returns true
+func alwaysReturnTrue() bool {
+	return true
 }
