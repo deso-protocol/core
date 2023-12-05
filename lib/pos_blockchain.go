@@ -1359,6 +1359,9 @@ func (bc *Blockchain) getCommittedTip() (*BlockNode, int) {
 // ancestors have been validated and extending from this block would not
 // change any committed blocks. This means we return the committed tip and
 // all blocks from the committed tip that have been validated.
+//
+// This function is not thread-safe. The caller needs to hold the chain lock before
+// calling this function.
 func (bc *Blockchain) GetSafeBlocks() ([]*MsgDeSoHeader, error) {
 	// First get committed tip.
 	committedTip, idx := bc.getCommittedTip()

@@ -782,6 +782,7 @@ func (fc *fastHotStuffEventLoop) tryConstructTimeoutQCInCurrentView() *FastHotSt
 		View:           fc.currentView,                          // The view that the timeout QC is proposed in
 		TipBlockHash:   validatorsHighQC.GetBlockHash(),         // The block hash that we extend from
 		TipBlockHeight: safeBlock.GetHeight(),                   // The block height that we extend from
+		QC:             validatorsHighQC,                        // The high QC aggregated from the timeout messages
 		AggregateQC: &aggregateQuorumCertificate{
 			view:        fc.currentView - 1, // The timed out view is always the previous view
 			highQC:      validatorsHighQC,   // The high QC aggregated from the timeout messages
