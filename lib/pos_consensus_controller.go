@@ -31,7 +31,7 @@ func NewConsensusController(params *DeSoParams, blockchain *Blockchain, mempool 
 
 // ConsensusController.Start initializes and starts the FastHotStuffEventLoop based on the
 // blockchain state. This should only be called once the blockchain has synced, the node is
-// ready to join the validator network, and the node is able validate blocks in the steady state.
+// ready to join the validator network, and the node is able to validate blocks in the steady state.
 func (cc *ConsensusController) Start() error {
 	// Hold the write consensus controller's lock for thread-safety.
 	cc.lock.Lock()
@@ -129,7 +129,7 @@ func (cc *ConsensusController) handleBlockProposerEvent(
 	expectedEventType consensus.FastHotStuffEventType,
 ) error {
 	// Validate that the event's type is the expected proposal event type
-	if !isValidateBlockProposalEvent(event, expectedEventType) {
+	if !isValidBlockProposalEvent(event, expectedEventType) {
 		return errors.Errorf("Unexpected event type: %v vs %v", event.EventType, expectedEventType)
 	}
 
@@ -474,7 +474,7 @@ func (cc *ConsensusController) produceUnsignedBlockForBlockProposalEvent(
 	parentBlockHash := BlockHashFromConsensusInterface(event.QC.GetBlockHash())
 
 	// Build a UtxoView at the parent block
-	utxoViewAtParent, err := cc.blockchain.getUtxoViewAtBlockHash(*BlockHashFromConsensusInterface(event.QC.GetBlockHash()))
+	utxoViewAtParent, err := cc.blockchain.getUtxoViewAtBlockHash(*parentBlockHash)
 	if err != nil {
 		// This should never happen as long as the parent block is a descendant of the committed tip.
 		return nil, errors.Errorf("Error fetching UtxoView for parent block: %v", parentBlockHash)
@@ -610,7 +610,7 @@ func getEpochEntryForBlockHeight(blockHeight uint64, epochEntries []*EpochEntry)
 	return nil, errors.Errorf("error finding epoch number for block height: %v", blockHeight)
 }
 
-func isValidateBlockProposalEvent(event *consensus.FastHotStuffEvent, expectedEventType consensus.FastHotStuffEventType) bool {
+func isValidBlockProposalEvent(event *consensus.FastHotStuffEvent, expectedEventType consensus.FastHotStuffEventType) bool {
 	// Validate that the expected event type is a block proposal event type
 	possibleExpectedEventTypes := []consensus.FastHotStuffEventType{
 		consensus.FastHotStuffEventTypeConstructVoteQC,
