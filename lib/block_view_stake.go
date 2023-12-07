@@ -225,6 +225,10 @@ func (lockedStakeEntry *LockedStakeEntry) GetEncoderType() EncoderType {
 	return EncoderTypeLockedStakeEntry
 }
 
+func (lockedStakeEntry *LockedStakeEntry) IsDeleted() bool {
+	return lockedStakeEntry.isDeleted
+}
+
 //
 // TYPES: StakeMetadata
 //
