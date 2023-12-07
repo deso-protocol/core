@@ -1576,11 +1576,11 @@ func (srv *Server) _startSync() {
 
 }
 
-func (srv *Server) _handlePeerHandshakeComplete(pp *Peer) {
+func (srv *Server) HandleAcceptedPeer(pp *Peer) {
 	isSyncCandidate := pp.IsSyncCandidate()
 	isSyncing := srv.blockchain.isSyncing()
 	chainState := srv.blockchain.chainState()
-	glog.V(1).Infof("Server._handlePeerHandshakeComplete: Processing NewPeer: (%v); IsSyncCandidate(%v), "+
+	glog.V(1).Infof("Server.HandleAcceptedPeer: Processing NewPeer: (%v); IsSyncCandidate(%v), "+
 		"syncPeerIsNil=(%v), IsSyncing=(%v), ChainState=(%v)",
 		pp, isSyncCandidate, (srv.SyncPeer == nil), isSyncing, chainState)
 
@@ -2230,7 +2230,7 @@ func (srv *Server) _handleControlMessages(serverMessage *ServerMessage) (_should
 	switch serverMessage.Msg.(type) {
 	// Control messages used internally to signal to the server.
 	case *MsgDeSoPeerHandshakeComplete:
-		srv._handlePeerHandshakeComplete(serverMessage.Peer)
+		break
 	case *MsgDeSoDisconnectedPeer:
 		srv._handleDonePeer(serverMessage.Peer)
 	case *MsgDeSoQuit:
