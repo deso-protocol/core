@@ -187,6 +187,30 @@ func (srv *Server) _removeRequest(hash *BlockHash) {
 	srv.inventoryBeingProcessed.Delete(*invVect)
 }
 
+func (srv *Server) GetNumInboundPeers() uint32 {
+	return srv.cmgr.GetNumInboundPeers()
+}
+
+func (srv *Server) GetNumOutboundPeers() uint32 {
+	return srv.cmgr.GetNumOutboundPeers()
+}
+
+func (srv *Server) IsFromRedundantOutboundIPAddress(netAddr *wire.NetAddress) bool {
+	return srv.cmgr.isRedundantGroupKey(netAddr)
+}
+
+func (srv *Server) IsConnectedOutboundIpAddress(netAddr *wire.NetAddress) bool {
+	return srv.cmgr.IsConnectedOutboundIpAddress(netAddr)
+}
+
+func (srv *Server) IsAttemptedOutboundIpAddress(netAddr *wire.NetAddress) bool {
+	return srv.cmgr.IsAttemptedOutboundIpAddress(netAddr)
+}
+
+func (srv *Server) RemoveAttemptedOutboundAddrs(netAddr *wire.NetAddress) {
+	srv.cmgr.RemoveAttemptedOutboundAddrs(netAddr)
+}
+
 // dataLock must be acquired for writing before calling this function.
 func (srv *Server) _expireRequests() {
 	// TODO: It could in theory get slow to do brute force iteration over everything
@@ -230,6 +254,10 @@ func (srv *Server) GetBlockProducer() *DeSoBlockProducer {
 // TODO: The hallmark of a messy non-law-of-demeter-following interface...
 func (srv *Server) GetConnectionManager() *ConnectionManager {
 	return srv.cmgr
+}
+
+func (srv *Server) GetAllPeers() []*Peer {
+	return srv.cmgr.GetAllPeers()
 }
 
 // TODO: The hallmark of a messy non-law-of-demeter-following interface...
@@ -2297,7 +2325,7 @@ func (srv *Server) _startConsensus() {
 		}
 
 		select {
-		case consensusEvent := <-srv.consensusController.fastHotStuffEventLoop.Events:
+		case consensusEvent := <-srv.consensusController.fastHotStuffEventLoop.GetEvents():
 			{
 				glog.Infof("Server._startConsensus: Received consensus event for block height: %v", consensusEvent.TipBlockHeight)
 				srv._handleFastHostStuffConsensusEvent(consensusEvent)
@@ -2449,9 +2477,14 @@ func (srv *Server) AddTimeSample(addrStr string, timeSample time.Time) {
 	srv.cmgr.AddTimeSample(addrStr, timeSample)
 }
 
-func (srv *Server) CreateOutboundConnection(ipAddr string) (_attemptId uint64) {
-	glog.V(2).Infof("Server.ConnectOutboundConnection: Connecting to peer %v", ipAddr)
-	return srv.cmgr.CreateOutboundConnection(ipAddr)
+func (srv *Server) CreatePersistentOutboundConnection(netAddr *wire.NetAddress) (_attemptId uint64) {
+	glog.V(2).Infof("Server.ConnectOutboundConnection: Connecting to peer %v", netAddr.IP.String())
+	return srv.cmgr.CreatePersistentOutboundConnection(netAddr)
+}
+
+func (srv *Server) CreateOutboundConnection(netAddr *wire.NetAddress) (_attemptId uint64) {
+	glog.V(2).Infof("Server.ConnectOutboundConnection: Connecting to peer %v", netAddr.IP.String())
+	return srv.cmgr.CreateOutboundConnection(netAddr)
 }
 
 func (srv *Server) CloseConnection(peerId uint64) {

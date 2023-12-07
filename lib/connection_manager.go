@@ -2,7 +2,6 @@ package lib
 
 import (
 	"fmt"
-	"math"
 	"net"
 	"strconv"
 	"sync/atomic"
@@ -93,8 +92,9 @@ type ConnectionManager struct {
 	inboundPeers    map[uint64]*Peer
 	connectedPeers  map[uint64]*Peer
 
-	connectionAttempts map[uint64]*outboundConnectionAttempt
-	connectionChan     chan *outboundConnection
+	outboundConnectionAttempts map[uint64]*OutboundConnectionAttempt
+	outboundConnectionChan     chan *outboundConnection
+	inboundConnectionChan      chan *inboundConnection
 	// Track the number of outbound peers we have so that this value can
 	// be accessed concurrently when deciding whether or not to add more
 	// outbound peers.
@@ -108,6 +108,7 @@ type ConnectionManager struct {
 	// at once.
 	mtxConnectedOutboundAddrs deadlock.RWMutex
 	connectedOutboundAddrs    map[string]bool
+	attemptedOutboundAddrs    map[string]bool
 
 	// Used to set peer ids. Must be incremented atomically.
 	peerIndex    uint64
@@ -157,21 +158,23 @@ func NewConnectionManager(
 		// self connections.
 		sentNonces: lru.NewCache(1000),
 		timeSource: _timeSource,
+
 		//newestBlock: _newestBlock,
 
 		// Initialize the peer data structures.
-		outboundConnIPGroups:   make(map[string]int),
-		persistentPeers:        make(map[uint64]*Peer),
-		outboundPeers:          make(map[uint64]*Peer),
-		inboundPeers:           make(map[uint64]*Peer),
-		connectedPeers:         make(map[uint64]*Peer),
-		connectionAttempts:     make(map[uint64]*outboundConnectionAttempt),
-		connectedOutboundAddrs: make(map[string]bool),
+		outboundConnIPGroups:       make(map[string]int),
+		persistentPeers:            make(map[uint64]*Peer),
+		outboundPeers:              make(map[uint64]*Peer),
+		inboundPeers:               make(map[uint64]*Peer),
+		connectedPeers:             make(map[uint64]*Peer),
+		outboundConnectionAttempts: make(map[uint64]*OutboundConnectionAttempt),
+		connectedOutboundAddrs:     make(map[string]bool),
+		attemptedOutboundAddrs:     make(map[string]bool),
 
 		// Initialize the channels.
-		newPeerChan:    make(chan *Peer, 100),
-		donePeerChan:   make(chan *Peer, 100),
-		connectionChan: make(chan *outboundConnection, 100),
+		newPeerChan:            make(chan *Peer, 100),
+		donePeerChan:           make(chan *Peer, 100),
+		outboundConnectionChan: make(chan *outboundConnection, 100),
 
 		targetOutboundPeers:            _targetOutboundPeers,
 		maxInboundPeers:                _maxInboundPeers,
@@ -229,23 +232,38 @@ func (cmgr *ConnectionManager) subFromGroupKey(na *wire.NetAddress) {
 	cmgr.mtxOutboundConnIPGroups.Unlock()
 }
 
-func _delayRetry(retryCount int, persistentAddrForLogging *wire.NetAddress) {
-	// No delay if we haven't tried yet or if the number of retries isn't positive.
-	if retryCount <= 0 {
-		time.Sleep(time.Second)
-		return
-	}
-	numSecs := int(math.Pow(2.0, float64(retryCount)))
-	retryDelay := time.Duration(numSecs) * time.Second
+func (cmgr *ConnectionManager) getRandomAddr() *wire.NetAddress {
+	for tries := 0; tries < 100; tries++ {
+		addr := cmgr.AddrMgr.GetAddress()
+		if addr == nil {
+			glog.V(2).Infof("ConnectionManager.getRandomAddr: addr from GetAddressWithExclusions was nil")
+			break
+		}
 
-	if persistentAddrForLogging != nil {
-		glog.V(1).Infof("Retrying connection to outbound persistent peer: "+
-			"(%s:%d) in (%d) seconds.", persistentAddrForLogging.IP.String(),
-			persistentAddrForLogging.Port, numSecs)
-	} else {
-		glog.V(2).Infof("Retrying connection to outbound non-persistent peer in (%d) seconds.", numSecs)
+		// Lock the address map since multiple threads will be trying to read
+		// and modify it at the same time.
+		cmgr.mtxConnectedOutboundAddrs.RLock()
+		ok := cmgr.connectedOutboundAddrs[addrmgr.NetAddressKey(addr.NetAddress())]
+		cmgr.mtxConnectedOutboundAddrs.RUnlock()
+		if ok {
+			glog.V(2).Infof("ConnectionManager.getRandomAddr: Not choosing already connected address %v:%v", addr.NetAddress().IP, addr.NetAddress().Port)
+			continue
+		}
+
+		// We can only have one outbound address per /16. This is similar to
+		// Bitcoin and we do it to prevent Sybil attacks.
+		if cmgr.isRedundantGroupKey(addr.NetAddress()) {
+			glog.V(2).Infof("ConnectionManager.getRandomAddr: Not choosing address due to redundant group key %v:%v", addr.NetAddress().IP, addr.NetAddress().Port)
+			continue
+		}
+
+		glog.V(2).Infof("ConnectionManager.getRandomAddr: Returning %v:%v at %d iterations",
+			addr.NetAddress().IP, addr.NetAddress().Port, tries)
+		return addr.NetAddress()
 	}
-	time.Sleep(retryDelay)
+
+	glog.V(2).Infof("ConnectionManager.getRandomAddr: Returning nil")
+	return nil
 }
 
 func (cmgr *ConnectionManager) enoughOutboundPeers() bool {
@@ -284,83 +302,49 @@ func IPToNetAddr(ipStr string, addrMgr *addrmgr.AddrManager, params *DeSoParams)
 	return netAddr, nil
 }
 
-func (cmgr *ConnectionManager) CreateOutboundConnection(ipStr string) (_attemptId uint64) {
-	netAddr, err := IPToNetAddr(ipStr, cmgr.AddrMgr, cmgr.params)
-	if err != nil {
-		glog.Errorf("ConnectionManager.CreateOutboundConnection: Error parsing ip %s: %v", ipStr, err)
-		return
-	}
-	return cmgr._createOutboundConnection(netAddr)
+func (cmgr *ConnectionManager) IsConnectedOutboundIpAddress(netAddr *wire.NetAddress) bool {
+	// Lock the address map since multiple threads will be trying to read
+	// and modify it at the same time.
+	cmgr.mtxConnectedOutboundAddrs.RLock()
+	defer cmgr.mtxConnectedOutboundAddrs.RUnlock()
+	return cmgr.connectedOutboundAddrs[addrmgr.NetAddressKey(netAddr)]
+}
+
+func (cmgr *ConnectionManager) IsAttemptedOutboundIpAddress(netAddr *wire.NetAddress) bool {
+	return cmgr.attemptedOutboundAddrs[addrmgr.NetAddressKey(netAddr)]
+}
+
+func (cmgr *ConnectionManager) AddAttemptedOutboundAddrs(netAddr *wire.NetAddress) {
+	cmgr.attemptedOutboundAddrs[addrmgr.NetAddressKey(netAddr)] = true
+}
+
+func (cmgr *ConnectionManager) RemoveAttemptedOutboundAddrs(netAddr *wire.NetAddress) {
+	delete(cmgr.attemptedOutboundAddrs, addrmgr.NetAddressKey(netAddr))
+}
+
+func (cmgr *ConnectionManager) CreatePersistentOutboundConnection(persistentAddr *wire.NetAddress) (_attemptId uint64) {
+	return cmgr._createOutboundConnection(persistentAddr, true)
+}
+
+func (cmgr *ConnectionManager) CreateOutboundConnection(addr *wire.NetAddress) (_attemptId uint64) {
+	return cmgr._createOutboundConnection(addr, false)
 }
 
 func (cmgr *ConnectionManager) CloseAttemptedConnection(attemptId uint64) {
-	if attempt, exists := cmgr.connectionAttempts[attemptId]; exists {
+	if attempt, exists := cmgr.outboundConnectionAttempts[attemptId]; exists {
 		attempt.Stop()
 	}
 }
 
-func (cmgr *ConnectionManager) _createOutboundConnection(persistentAddr *wire.NetAddress) (_attemptId uint64) {
+func (cmgr *ConnectionManager) _createOutboundConnection(addr *wire.NetAddress, isPersistent bool) (_attemptId uint64) {
+	attemptId := atomic.AddUint64(&cmgr.attemptIndex, 1)
+	connectionAttempt := NewOutboundConnectionAttempt(attemptId, addr, isPersistent,
+		cmgr.params.DialTimeout, cmgr.outboundConnectionChan)
+	cmgr.outboundConnectionAttempts[connectionAttempt.attemptId] = connectionAttempt
+	cmgr.AddAttemptedOutboundAddrs(addr)
 
-	connectionAttempt := cmgr.newOutboundConnectionAttempt(persistentAddr)
-	cmgr.connectionAttempts[connectionAttempt.attemptId] = connectionAttempt
 	connectionAttempt.Start()
-
-	return connectionAttempt.attemptId
-}
-
-func (cmgr *ConnectionManager) attemptOutboundConnection(netAddr *wire.NetAddress, isPersistent bool) net.Conn {
-	// If the peer is not persistent, update the addrmgr.
-	glog.V(1).Infof("Attempting to connect to addr: %v", netAddr.IP.String())
-	if !isPersistent {
-		cmgr.AddrMgr.Attempt(netAddr)
-	}
-	var err error
-	tcpAddr := net.TCPAddr{
-		IP:   netAddr.IP,
-		Port: int(netAddr.Port),
-	}
-	conn, err := net.DialTimeout(tcpAddr.Network(), tcpAddr.String(), cmgr.params.DialTimeout)
-	if err != nil {
-		// If we failed to connect to this peer, get a new address and try again.
-		glog.V(2).Infof("Connection to addr (%v) failed: %v", tcpAddr, err)
-		return nil
-	}
-
-	return conn
-}
-
-func (cmgr *ConnectionManager) getRandomAddr() *wire.NetAddress {
-	for tries := 0; tries < 100; tries++ {
-		addr := cmgr.AddrMgr.GetAddress()
-		if addr == nil {
-			glog.V(2).Infof("ConnectionManager.getRandomAddr: addr from GetAddressWithExclusions was nil")
-			break
-		}
-
-		// Lock the address map since multiple threads will be trying to read
-		// and modify it at the same time.
-		cmgr.mtxConnectedOutboundAddrs.RLock()
-		ok := cmgr.connectedOutboundAddrs[addrmgr.NetAddressKey(addr.NetAddress())]
-		cmgr.mtxConnectedOutboundAddrs.RUnlock()
-		if ok {
-			glog.V(2).Infof("ConnectionManager.getRandomAddr: Not choosing already connected address %v:%v", addr.NetAddress().IP, addr.NetAddress().Port)
-			continue
-		}
-
-		// We can only have one outbound address per /16. This is similar to
-		// Bitcoin and we do it to prevent Sybil attacks.
-		if cmgr.isRedundantGroupKey(addr.NetAddress()) {
-			glog.V(2).Infof("ConnectionManager.getRandomAddr: Not choosing address due to redundant group key %v:%v", addr.NetAddress().IP, addr.NetAddress().Port)
-			continue
-		}
-
-		glog.V(2).Infof("ConnectionManager.getRandomAddr: Returning %v:%v at %d iterations",
-			addr.NetAddress().IP, addr.NetAddress().Port, tries)
-		return addr.NetAddress()
-	}
-
-	glog.V(2).Infof("ConnectionManager.getRandomAddr: Returning nil")
-	return nil
+	return attemptId
 }
 
 // ConnectPeer connects either an INBOUND or OUTBOUND peer. If Conn == nil,
@@ -388,34 +372,6 @@ func (cmgr *ConnectionManager) ConnectPeer(conn net.Conn, attemptId uint64, isOu
 
 	cmgr.newPeerChan <- peer
 	return nil
-}
-
-func (cmgr *ConnectionManager) _initiateOutboundConnections() {
-	// This is a hack to make outbound connections go away.
-	if cmgr.targetOutboundPeers == 0 {
-		return
-	}
-	if len(cmgr.connectIps) > 0 {
-		// Connect to addresses passed via the --connect-ips flag. These addresses
-		// are persistent in the sense that if we disconnect from one, we will
-		// try to reconnect to the same one.
-		for _, connectIp := range cmgr.connectIps {
-			cmgr.CreateOutboundConnection(connectIp)
-		}
-		return
-	}
-	// Only connect to addresses from the addrmgr if we don't specify --connect-ips.
-	// These addresses are *not* persistent, meaning if we disconnect from one we'll
-	// try a different one.
-	//
-	// TODO: We should try more addresses than we need initially to increase the
-	// speed at which we saturate our outbound connections. The ConnectionManager
-	// will handle the disconnection from peers once we have enough outbound
-	// connections. I had this as the logic before but removed it because it caused
-	// contention of the AddrMgr's lock.
-	for ii := 0; ii < int(cmgr.targetOutboundPeers); ii++ {
-		cmgr._createOutboundConnection(nil)
-	}
 }
 
 func (cmgr *ConnectionManager) _isFromRedundantInboundIPAddress(addrToCheck net.Addr) bool {
@@ -512,11 +468,8 @@ func (cmgr *ConnectionManager) _handleInboundConnections() {
 					continue
 				}
 
-				if err := cmgr.ConnectPeer(conn, 0, false, false); err != nil {
-					glog.Errorf("_handleInboundConnections: Problem connecting "+
-						"to peer %v: %v", conn.RemoteAddr().String(), err)
-					conn.Close()
-					continue
+				cmgr.inboundConnectionChan <- &inboundConnection{
+					connection: conn,
 				}
 			}
 		}(outerListener)
@@ -686,7 +639,7 @@ func (cmgr *ConnectionManager) _maybeReplacePeer(pp *Peer) {
 		if !pp.isPersistent {
 			na = nil
 		}
-		cmgr._createOutboundConnection(na)
+		cmgr._createOutboundConnection(na, pp.isPersistent)
 	}
 }
 
@@ -711,6 +664,14 @@ func (cmgr *ConnectionManager) AddTimeSample(addrStr string, timeSample time.Tim
 	cmgr.timeSource.AddTimeSample(addrStr, timeSample)
 }
 
+func (cmgr *ConnectionManager) GetNumInboundPeers() uint32 {
+	return atomic.LoadUint32(&cmgr.numInboundPeers)
+}
+
+func (cmgr *ConnectionManager) GetNumOutboundPeers() uint32 {
+	return atomic.LoadUint32(&cmgr.numOutboundPeers)
+}
+
 func (cmgr *ConnectionManager) Start() {
 	// Below is a basic description of the ConnectionManager's main loop:
 	//
@@ -731,10 +692,6 @@ func (cmgr *ConnectionManager) Start() {
 	// - Have the peer enter a switch statement listening for all kinds of messages.
 	// - Send addr and getaddr messages as appropriate.
 
-	// Initiate outbound connections with peers either using the --connect-ips passed
-	// in or using the addrmgr.
-	cmgr._initiateOutboundConnections()
-
 	// Accept inbound connections from peers on our listeners.
 	cmgr._handleInboundConnections()
 
@@ -745,26 +702,28 @@ func (cmgr *ConnectionManager) Start() {
 		cmgr._logOutboundPeerData()
 
 		select {
-		case oc := <-cmgr.connectionChan:
-			glog.V(2).Infof("ConnectionManager.Start: Successfully established a connection with "+
+		case oc := <-cmgr.outboundConnectionChan:
+			glog.V(2).Infof("ConnectionManager.Start: Successfully established an outbound connection with "+
 				"(addr= %v)", oc.connection.RemoteAddr())
-			if err := cmgr.ConnectPeer(oc.connection, oc.attemptId, true, oc.isPersistent); err != nil {
-				glog.Errorf("ConnectionManager._createOutboundConnection: Error running ConnectOutboundConnection: %v", err)
-				oc.connection.Close()
-				continue
+			cmgr.serverMessageQueue <- &ServerMessage{
+				Peer: nil,
+				Msg: &MsgDeSoNewConnection{
+					Connection: oc,
+				},
 			}
-			if !oc.isPersistent {
-				cmgr.AddrMgr.Connected(oc.address)
+		case ic := <-cmgr.inboundConnectionChan:
+			glog.V(2).Infof("ConnectionManager.Start: Successfully received an inbound connection from "+
+				"(addr= %v)", ic.connection.RemoteAddr())
+			cmgr.serverMessageQueue <- &ServerMessage{
+				Peer: nil,
+				Msg: &MsgDeSoNewConnection{
+					Connection: ic,
+				},
 			}
 		case pp := <-cmgr.newPeerChan:
 			{
 				// We have successfully connected to a peer and it passed its version
 				// negotiation.
-
-				// Mark the address as good in the addrmgr.
-				if pp.IsOutbound() && !pp.isPersistent {
-					cmgr.AddrMgr.Good(pp.NetAddress())
-				}
 
 				// if this is a non-persistent outbound peer and we already have enough
 				// outbound peers, then don't bother adding this one.
@@ -856,7 +815,7 @@ func (cmgr *ConnectionManager) Stop() {
 		return
 	}
 
-	for _, ca := range cmgr.connectionAttempts {
+	for _, ca := range cmgr.outboundConnectionAttempts {
 		ca.Stop()
 	}
 
@@ -880,93 +839,4 @@ func (cmgr *ConnectionManager) Stop() {
 	for _, listener := range cmgr.listeners {
 		_ = listener.Close()
 	}
-}
-
-type outboundConnectionAttempt struct {
-	attemptId uint64
-
-	persistentAddr        *wire.NetAddress
-	getAddressFunc        func() *wire.NetAddress
-	attemptConnectionFunc func(*wire.NetAddress, bool) net.Conn
-
-	exitChan       chan bool
-	connectionChan chan *outboundConnection
-}
-
-type outboundConnection struct {
-	attemptId    uint64
-	address      *wire.NetAddress
-	connection   net.Conn
-	isPersistent bool
-}
-
-func (cmgr *ConnectionManager) newOutboundConnectionAttempt(persistentAddr *wire.NetAddress) *outboundConnectionAttempt {
-
-	id := atomic.AddUint64(&cmgr.attemptIndex, 1)
-	return &outboundConnectionAttempt{
-		attemptId:             id,
-		persistentAddr:        persistentAddr,
-		getAddressFunc:        cmgr.getRandomAddr,
-		attemptConnectionFunc: cmgr.attemptOutboundConnection,
-		exitChan:              make(chan bool),
-		connectionChan:        cmgr.connectionChan,
-	}
-}
-
-func (aoc *outboundConnectionAttempt) Start() {
-	go aoc.start()
-}
-
-func (aoc *outboundConnectionAttempt) start() {
-	isPersistent := (aoc.persistentAddr != nil)
-	retryCount := 0
-	for {
-		select {
-		case <-aoc.exitChan:
-			return
-		default:
-			// If the peer is persistent use exponential back off delay before retrying.
-			// We want to start backing off exponentially once we've gone through enough
-			// unsuccessful retries. However, we want to give more slack to non-persistent
-			// peers before we start backing off, which is why it's not as cut and dry as
-			// just delaying based on the raw number of retries.
-			adjustedRetryCount := retryCount
-			if !isPersistent {
-				// If the address is not persistent, only start backing off once there
-				// has been a large number of failed attempts in a row as this likely indicates
-				// that there's a connection issue we need to wait out.
-				adjustedRetryCount = retryCount - 5
-			}
-			_delayRetry(adjustedRetryCount, aoc.persistentAddr)
-			retryCount++
-
-			// If we don't have a persistentAddr, pick one from our addrmgr.
-			ipNetAddr := aoc.persistentAddr
-			if ipNetAddr == nil {
-				ipNetAddr = aoc.getAddressFunc()
-			}
-			if ipNetAddr == nil {
-				// This should never happen but if it does, sleep a bit and try again.
-				glog.V(1).Infof("_getOutboundConn: No valid addresses to connect to.")
-				time.Sleep(time.Second)
-				continue
-			}
-			conn := aoc.attemptConnectionFunc(ipNetAddr, isPersistent)
-			if conn == nil {
-				continue
-			}
-
-			aoc.connectionChan <- &outboundConnection{
-				attemptId:    aoc.attemptId,
-				address:      ipNetAddr,
-				connection:   conn,
-				isPersistent: isPersistent,
-			}
-			return
-		}
-	}
-}
-
-func (aoc *outboundConnectionAttempt) Stop() {
-	close(aoc.exitChan)
 }

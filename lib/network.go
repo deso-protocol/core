@@ -24,8 +24,6 @@ import (
 
 	"github.com/deso-protocol/core/consensus"
 
-	"github.com/deso-protocol/core/collections/bitset"
-
 	"github.com/btcsuite/btcd/btcec"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/davecgh/go-spew/spew"
@@ -118,6 +116,8 @@ const (
 	MsgTypeDonePeer             MsgType = ControlMessagesStart + 2
 	MsgTypeBlockAccepted        MsgType = ControlMessagesStart + 3
 	MsgTypeBitcoinManagerUpdate MsgType = ControlMessagesStart + 4 // Deprecated
+	MsgTypeHandshakePeer        MsgType = ControlMessagesStart + 5
+	MsgTypeNewConnection        MsgType = ControlMessagesStart + 6
 
 	// NEXT_TAG = 7
 )
@@ -183,6 +183,8 @@ func (msgType MsgType) String() string {
 		return "BLOCK_ACCEPTED"
 	case MsgTypeBitcoinManagerUpdate:
 		return "BITCOIN_MANAGER_UPDATE"
+	case MsgTypeNewConnection:
+		return "NEW_CONNECTION"
 	case MsgTypeGetSnapshot:
 		return "GET_SNAPSHOT"
 	case MsgTypeSnapshotData:
@@ -867,6 +869,34 @@ func (msg *MsgDeSoDonePeer) ToBytes(preSignature bool) ([]byte, error) {
 
 func (msg *MsgDeSoDonePeer) FromBytes(data []byte) error {
 	return fmt.Errorf("MsgDeSoDonePeer.FromBytes not implemented")
+}
+
+type ConnectionType uint8
+
+const (
+	ConnectionTypeOutbound ConnectionType = iota
+	ConnectionTypeInbound
+)
+
+type Connection interface {
+	GetConnectionType() ConnectionType
+	Close()
+}
+
+type MsgDeSoNewConnection struct {
+	Connection Connection
+}
+
+func (msg *MsgDeSoNewConnection) GetMsgType() MsgType {
+	return MsgTypeNewConnection
+}
+
+func (msg *MsgDeSoNewConnection) ToBytes(preSignature bool) ([]byte, error) {
+	return nil, fmt.Errorf("MsgDeSoNewConnection.ToBytes: Not implemented")
+}
+
+func (msg *MsgDeSoNewConnection) FromBytes(data []byte) error {
+	return fmt.Errorf("MsgDeSoNewConnection.FromBytes not implemented")
 }
 
 // ==================================================================

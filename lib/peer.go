@@ -102,6 +102,8 @@ type Peer struct {
 
 	// Output queue for messages that need to be sent to the peer.
 	outputQueueChan chan DeSoMessage
+	newPeerChan     chan *Peer
+	donePeerChan    chan *Peer
 
 	// Set to zero until Disconnect has been called on the Peer. Used to make it
 	// so that the logic in Disconnect will only be executed once.
@@ -634,6 +636,8 @@ func NewPeer(_id uint64, _attemptId uint64, _conn net.Conn, _isOutbound bool, _n
 		isOutbound:             _isOutbound,
 		isPersistent:           _isPersistent,
 		outputQueueChan:        make(chan DeSoMessage),
+		newPeerChan:            newPeerChan,
+		donePeerChan:           donePeerChan,
 		quit:                   make(chan interface{}),
 		knownInventory:         lru.NewCache(maxKnownInventory),
 		blocksToSend:           make(map[BlockHash]bool),
@@ -1522,9 +1526,7 @@ func (pp *Peer) Disconnect() {
 
 	// Add the Peer to donePeers so that the ConnectionManager and Server can do any
 	// cleanup they need to do.
-	if pp.cmgr != nil && atomic.LoadInt32(&pp.cmgr.shutdown) == 0 && pp.cmgr.donePeerChan != nil {
-		pp.cmgr.donePeerChan <- pp
-	}
+	pp.donePeerChan <- pp
 }
 
 func (pp *Peer) _logVersionSuccess() {
