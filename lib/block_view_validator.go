@@ -268,6 +268,10 @@ func (validatorEntry *ValidatorEntry) ToBLSPublicKeyPKIDPairEntry() *BLSPublicKe
 	}
 }
 
+func (validatorEntry *ValidatorEntry) IsDeleted() bool {
+	return validatorEntry.isDeleted
+}
+
 //
 // TYPES: BLSPublicKeyPKIDPairEntry
 //
