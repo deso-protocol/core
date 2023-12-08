@@ -5,7 +5,6 @@ import (
 	"container/list"
 	"encoding/hex"
 	"fmt"
-	"github.com/deso-protocol/core/collections"
 	"math"
 	"math/big"
 	"reflect"
@@ -13,6 +12,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/deso-protocol/core/collections"
 
 	"github.com/google/uuid"
 
@@ -1081,6 +1082,20 @@ func (bc *Blockchain) HasBlock(blockHash *BlockHash) bool {
 	return true
 }
 
+// This needs to hold a lock on the blockchain because it read from an in-memory map that is
+// not thread-safe.
+func (bc *Blockchain) GetBlockHeaderFromIndex(blockHash *BlockHash) *MsgDeSoHeader {
+	bc.ChainLock.RLock()
+	defer bc.ChainLock.RUnlock()
+
+	block, blockExists := bc.blockIndexByHash[*blockHash]
+	if !blockExists {
+		return nil
+	}
+
+	return block.Header
+}
+
 // Don't need a lock because blocks don't get removed from the db after they're added
 func (bc *Blockchain) GetBlock(blockHash *BlockHash) *MsgDeSoBlock {
 	blk, err := GetBlock(blockHash, bc.db, bc.snapshot)
@@ -1618,6 +1633,7 @@ func CheckTransactionSanity(txn *MsgDeSoTxn, blockHeight uint32, params *DeSoPar
 func GetReorgBlocks(tip *BlockNode, newNode *BlockNode) (_commonAncestor *BlockNode, _detachNodes []*BlockNode, _attachNodes []*BlockNode) {
 	// Find the common ancestor of this block and the main header chain.
 	commonAncestor := _FindCommonAncestor(tip, newNode)
+
 	// Log a warning if the reorg is going to be a big one.
 	numBlocks := tip.Height - commonAncestor.Height
 	if numBlocks > 10 {
@@ -2827,7 +2843,7 @@ func (bc *Blockchain) DisconnectBlocksToHeight(blockHeight uint64, snap *Snapsho
 // passed-in transaction in the pool and connect them before trying to connect the
 // passed-in transaction.
 func (bc *Blockchain) ValidateTransaction(
-	txnMsg *MsgDeSoTxn, blockHeight uint32, verifySignatures bool, mempool *DeSoMempool) error {
+	txnMsg *MsgDeSoTxn, blockHeight uint32, verifySignatures bool, mempool Mempool) error {
 
 	// Create a new UtxoView. If we have access to a mempool object, use it to
 	// get an augmented view that factors in pending transactions.
@@ -2835,7 +2851,7 @@ func (bc *Blockchain) ValidateTransaction(
 	if err != nil {
 		return errors.Wrapf(err, "ValidateTransaction: Problem Problem creating new utxo view: ")
 	}
-	if mempool != nil {
+	if !isInterfaceValueNil(mempool) {
 		utxoView, err = mempool.GetAugmentedUtxoViewForPublicKey(txnMsg.PublicKey, txnMsg)
 		if err != nil {
 			return errors.Wrapf(err, "ValidateTransaction: Problem getting augmented UtxoView from mempool: ")
@@ -2933,7 +2949,7 @@ func ComputeMerkleRoot(txns []*MsgDeSoTxn) (_merkle *BlockHash, _txHashes []*Blo
 	return rootHash, txHashes, nil
 }
 
-func (bc *Blockchain) GetSpendableUtxosForPublicKey(spendPublicKeyBytes []byte, mempool *DeSoMempool, referenceUtxoView *UtxoView) ([]*UtxoEntry, error) {
+func (bc *Blockchain) GetSpendableUtxosForPublicKey(spendPublicKeyBytes []byte, mempool Mempool, referenceUtxoView *UtxoView) ([]*UtxoEntry, error) {
 	// If we have access to a mempool, use it to account for utxos we might not
 	// get otherwise.
 	utxoView, err := NewUtxoView(bc.db, bc.params, bc.postgres, bc.snapshot, bc.eventManager)
@@ -2945,7 +2961,7 @@ func (bc *Blockchain) GetSpendableUtxosForPublicKey(spendPublicKeyBytes []byte, 
 	if referenceUtxoView != nil {
 		utxoView = referenceUtxoView
 	} else {
-		if mempool != nil {
+		if !isInterfaceValueNil(mempool) {
 			utxoView, err = mempool.GetAugmentedUtxoViewForPublicKey(spendPublicKeyBytes, nil)
 			if err != nil {
 				return nil, errors.Wrapf(err, "Blockchain.GetSpendableUtxosForPublicKey: Problem getting augmented UtxoView from mempool: ")
@@ -2989,7 +3005,7 @@ func (bc *Blockchain) GetSpendableUtxosForPublicKey(spendPublicKeyBytes []byte, 
 		}
 
 		// Don't consider utxos that are already consumed by the mempool.
-		if mempool != nil && mempool.CheckSpend(*utxoEntry.UtxoKey) != nil {
+		if !isInterfaceValueNil(mempool) && mempool.CheckSpend(*utxoEntry.UtxoKey) != nil {
 			continue
 		}
 
@@ -3098,7 +3114,7 @@ func (bc *Blockchain) CreatePrivateMessageTxn(
 	senderMessagingPublicKey []byte, senderMessagingKeyName []byte,
 	recipientMessagingPublicKey []byte, recipientMessagingKeyName []byte,
 	tstampNanos uint64, extraData map[string][]byte,
-	minFeeRateNanosPerKB uint64, mempool *DeSoMempool, additionalOutputs []*DeSoOutput) (
+	minFeeRateNanosPerKB uint64, mempool Mempool, additionalOutputs []*DeSoOutput) (
 	_txn *MsgDeSoTxn, _totalInput uint64, _changeAmount uint64, _fees uint64, _err error) {
 
 	var encryptedMessageBytes []byte
@@ -3210,7 +3226,7 @@ func (bc *Blockchain) CreatePrivateMessageTxn(
 
 func (bc *Blockchain) CreateLikeTxn(
 	userPublicKey []byte, likedPostHash BlockHash, isUnlike bool,
-	minFeeRateNanosPerKB uint64, mempool *DeSoMempool, additionalOutputs []*DeSoOutput) (
+	minFeeRateNanosPerKB uint64, mempool Mempool, additionalOutputs []*DeSoOutput) (
 	_txn *MsgDeSoTxn, _totalInput uint64, _changeAmount uint64, _fees uint64,
 	_err error) {
 
@@ -3243,7 +3259,7 @@ func (bc *Blockchain) CreateLikeTxn(
 
 func (bc *Blockchain) CreateFollowTxn(
 	senderPublicKey []byte, followedPublicKey []byte, isUnfollow bool,
-	minFeeRateNanosPerKB uint64, mempool *DeSoMempool, additionalOutputs []*DeSoOutput) (
+	minFeeRateNanosPerKB uint64, mempool Mempool, additionalOutputs []*DeSoOutput) (
 	_txn *MsgDeSoTxn, _totalInput uint64, _changeAmount uint64, _fees uint64,
 	_err error) {
 
@@ -3283,7 +3299,7 @@ func (bc *Blockchain) CreateUpdateGlobalParamsTxn(updaterPublicKey []byte,
 	forbiddenPubKey []byte,
 	maxNonceExpirationBlockHeightOffset int64,
 	// Standard transaction fields
-	extraData map[string][]byte, minFeeRateNanosPerKB uint64, mempool *DeSoMempool, additionalOutputs []*DeSoOutput) (
+	extraData map[string][]byte, minFeeRateNanosPerKB uint64, mempool Mempool, additionalOutputs []*DeSoOutput) (
 	_txn *MsgDeSoTxn, _totalInput uint64, _changeAmount uint64, _fees uint64, _err error) {
 
 	if extraData == nil {
@@ -3341,7 +3357,7 @@ func (bc *Blockchain) CreateUpdateBitcoinUSDExchangeRateTxn(
 	updaterPublicKey []byte,
 	usdCentsPerbitcoin uint64,
 	// Standard transaction fields
-	minFeeRateNanosPerKB uint64, mempool *DeSoMempool, additionalOutputs []*DeSoOutput) (
+	minFeeRateNanosPerKB uint64, mempool Mempool, additionalOutputs []*DeSoOutput) (
 	_txn *MsgDeSoTxn, _totalInput uint64, _changeAmount uint64, _fees uint64, _err error) {
 
 	// Create a transaction containing the UpdateBitcoinUSDExchangeRate fields.
@@ -3383,7 +3399,7 @@ func (bc *Blockchain) CreateSubmitPostTxn(
 	postExtraData map[string][]byte,
 	isHidden bool,
 	// Standard transaction fields
-	minFeeRateNanosPerKB uint64, mempool *DeSoMempool, additionalOutputs []*DeSoOutput) (
+	minFeeRateNanosPerKB uint64, mempool Mempool, additionalOutputs []*DeSoOutput) (
 	_txn *MsgDeSoTxn, _totalInput uint64, _changeAmount uint64, _fees uint64, _err error) {
 
 	// Initialize txnExtraData to postExtraData.
@@ -3453,7 +3469,7 @@ func (bc *Blockchain) CreateUpdateProfileTxn(
 	AdditionalFees uint64,
 	ExtraData map[string][]byte,
 	// Standard transaction fields
-	minFeeRateNanosPerKB uint64, mempool *DeSoMempool, additionalOutputs []*DeSoOutput) (
+	minFeeRateNanosPerKB uint64, mempool Mempool, additionalOutputs []*DeSoOutput) (
 	_txn *MsgDeSoTxn, _totalInput uint64, _changeAmount uint64, _fees uint64, _err error) {
 
 	// Create a transaction containing the profile fields.
@@ -3496,7 +3512,7 @@ func (bc *Blockchain) CreateSwapIdentityTxn(
 	ToPublicKeyBytes []byte,
 
 	// Standard transaction fields
-	minFeeRateNanosPerKB uint64, mempool *DeSoMempool, additionalOutputs []*DeSoOutput) (
+	minFeeRateNanosPerKB uint64, mempool Mempool, additionalOutputs []*DeSoOutput) (
 	_txn *MsgDeSoTxn, _totalInput uint64, _changeAmount uint64, _fees uint64, _err error) {
 
 	// Create a transaction containing the profile fields.
@@ -3538,7 +3554,7 @@ func (bc *Blockchain) CreateCreatorCoinTxn(
 	MinDeSoExpectedNanos uint64,
 	MinCreatorCoinExpectedNanos uint64,
 	// Standard transaction fields
-	minFeeRateNanosPerKB uint64, mempool *DeSoMempool, additionalOutputs []*DeSoOutput) (
+	minFeeRateNanosPerKB uint64, mempool Mempool, additionalOutputs []*DeSoOutput) (
 	_txn *MsgDeSoTxn, _totalInput uint64, _changeAmount uint64, _fees uint64, _err error) {
 
 	// Create a transaction containing the creator coin fields.
@@ -3585,7 +3601,7 @@ func (bc *Blockchain) CreateCreatorCoinTransferTxn(
 	CreatorCoinToTransferNanos uint64,
 	RecipientPublicKey []byte,
 	// Standard transaction fields
-	minFeeRateNanosPerKB uint64, mempool *DeSoMempool, additionalOutputs []*DeSoOutput) (
+	minFeeRateNanosPerKB uint64, mempool Mempool, additionalOutputs []*DeSoOutput) (
 	_txn *MsgDeSoTxn, _totalInput uint64, _changeAmount uint64, _fees uint64, _err error) {
 
 	// Create a transaction containing the creator coin fields.
@@ -3626,7 +3642,7 @@ func (bc *Blockchain) CreateDAOCoinTxn(
 	// See CreatorCoinMetadataa for an explanation of these fields.
 	metadata *DAOCoinMetadata,
 	// Standard transaction fields
-	minFeeRateNanosPerKB uint64, mempool *DeSoMempool, additionalOutputs []*DeSoOutput) (
+	minFeeRateNanosPerKB uint64, mempool Mempool, additionalOutputs []*DeSoOutput) (
 	_txn *MsgDeSoTxn, _totalInput uint64, _changeAmount uint64, _fees uint64, _err error) {
 
 	// Create a transaction containing the creator coin fields.
@@ -3663,7 +3679,7 @@ func (bc *Blockchain) CreateDAOCoinTransferTxn(
 	UpdaterPublicKey []byte,
 	metadata *DAOCoinTransferMetadata,
 	// Standard transaction fields
-	minFeeRateNanosPerKB uint64, mempool *DeSoMempool, additionalOutputs []*DeSoOutput) (
+	minFeeRateNanosPerKB uint64, mempool Mempool, additionalOutputs []*DeSoOutput) (
 	_txn *MsgDeSoTxn, _totalInput uint64, _changeAmount uint64, _fees uint64, _err error) {
 
 	// Create a transaction containing the creator coin fields.
@@ -3700,7 +3716,7 @@ func (bc *Blockchain) CreateDAOCoinLimitOrderTxn(
 	// See DAOCoinLimitOrderMetadata for an explanation of these fields.
 	metadata *DAOCoinLimitOrderMetadata,
 	// Standard transaction fields
-	minFeeRateNanosPerKB uint64, mempool *DeSoMempool, additionalOutputs []*DeSoOutput) (
+	minFeeRateNanosPerKB uint64, mempool Mempool, additionalOutputs []*DeSoOutput) (
 	_txn *MsgDeSoTxn, _totalInput uint64, _changeAmount uint64, _fees uint64, _err error) {
 
 	// Initialize FeeNanos to the maximum uint64 to provide an upper bound on the size of the transaction.
@@ -3723,7 +3739,7 @@ func (bc *Blockchain) CreateDAOCoinLimitOrderTxn(
 		return nil, 0, 0, 0, errors.Wrapf(err,
 			"Blockchain.CreateDAOCoinLimitOrderTxn: Problem creating new utxo view: ")
 	}
-	if mempool != nil {
+	if !isInterfaceValueNil(mempool) {
 		utxoView, err = mempool.GetAugmentedUniversalView()
 		if err != nil {
 			return nil, 0, 0, 0, errors.Wrapf(err,
@@ -3901,7 +3917,7 @@ func (bc *Blockchain) CreateCreateNFTTxn(
 	AdditionalCoinRoyalties map[PublicKey]uint64,
 	ExtraData map[string][]byte,
 	// Standard transaction fields
-	minFeeRateNanosPerKB uint64, mempool *DeSoMempool, additionalOutputs []*DeSoOutput) (
+	minFeeRateNanosPerKB uint64, mempool Mempool, additionalOutputs []*DeSoOutput) (
 	_txn *MsgDeSoTxn, _totalInput uint64, _changeAmount uint64, _fees uint64, _err error) {
 
 	// Create a transaction containing the create NFT fields.
@@ -4028,7 +4044,7 @@ func (bc *Blockchain) CreateNFTBidTxn(
 	SerialNumber uint64,
 	BidAmountNanos uint64,
 	// Standard transaction fields
-	minFeeRateNanosPerKB uint64, mempool *DeSoMempool, additionalOutputs []*DeSoOutput) (
+	minFeeRateNanosPerKB uint64, mempool Mempool, additionalOutputs []*DeSoOutput) (
 	_txn *MsgDeSoTxn, _totalInput uint64, _changeAmount uint64, _fees uint64, _err error) {
 	// Create a transaction containing the NFT bid fields.
 	txn := &MsgDeSoTxn{
@@ -4045,7 +4061,7 @@ func (bc *Blockchain) CreateNFTBidTxn(
 
 	var utxoView *UtxoView
 	var err error
-	if mempool != nil {
+	if !isInterfaceValueNil(mempool) {
 		utxoView, err = mempool.GetAugmentedUniversalView()
 		if err != nil {
 			return nil, 0, 0, 0, errors.Wrapf(err,
@@ -4098,7 +4114,7 @@ func (bc *Blockchain) CreateNFTTransferTxn(
 	SerialNumber uint64,
 	EncryptedUnlockableTextBytes []byte,
 	// Standard transaction fields
-	minFeeRateNanosPerKB uint64, mempool *DeSoMempool, additionalOutputs []*DeSoOutput) (
+	minFeeRateNanosPerKB uint64, mempool Mempool, additionalOutputs []*DeSoOutput) (
 	_txn *MsgDeSoTxn, _totalInput uint64, _changeAmount uint64, _fees uint64, _err error) {
 
 	// Create a transaction containing the NFT transfer fields.
@@ -4137,7 +4153,7 @@ func (bc *Blockchain) CreateAcceptNFTTransferTxn(
 	NFTPostHash *BlockHash,
 	SerialNumber uint64,
 	// Standard transaction fields
-	minFeeRateNanosPerKB uint64, mempool *DeSoMempool, additionalOutputs []*DeSoOutput) (
+	minFeeRateNanosPerKB uint64, mempool Mempool, additionalOutputs []*DeSoOutput) (
 	_txn *MsgDeSoTxn, _totalInput uint64, _changeAmount uint64, _fees uint64, _err error) {
 
 	// Create a transaction containing the accept NFT transfer fields.
@@ -4178,7 +4194,7 @@ func (bc *Blockchain) CreateBurnNFTTxn(
 	NFTPostHash *BlockHash,
 	SerialNumber uint64,
 	// Standard transaction fields
-	minFeeRateNanosPerKB uint64, mempool *DeSoMempool, additionalOutputs []*DeSoOutput) (
+	minFeeRateNanosPerKB uint64, mempool Mempool, additionalOutputs []*DeSoOutput) (
 	_txn *MsgDeSoTxn, _totalInput uint64, _changeAmount uint64, _fees uint64, _err error) {
 
 	// Create a transaction containing the burn NFT fields.
@@ -4218,7 +4234,7 @@ func (bc *Blockchain) CreateAcceptNFTBidTxn(
 	BidAmountNanos uint64,
 	EncryptedUnlockableTextBytes []byte,
 	// Standard transaction fields
-	minFeeRateNanosPerKB uint64, mempool *DeSoMempool, additionalOutputs []*DeSoOutput) (
+	minFeeRateNanosPerKB uint64, mempool Mempool, additionalOutputs []*DeSoOutput) (
 	_txn *MsgDeSoTxn, _totalInput uint64, _changeAmount uint64, _fees uint64, _err error) {
 
 	// Create a new UtxoView. If we have access to a mempool object, use it to
@@ -4228,7 +4244,7 @@ func (bc *Blockchain) CreateAcceptNFTBidTxn(
 		return nil, 0, 0, 0, errors.Wrapf(err,
 			"Blockchain.CreateAcceptNFTBidTxn: Problem creating new utxo view: ")
 	}
-	if mempool != nil {
+	if !isInterfaceValueNil(mempool) {
 		utxoView, err = mempool.GetAugmentedUniversalView()
 		if err != nil {
 			return nil, 0, 0, 0, errors.Wrapf(err,
@@ -4302,7 +4318,7 @@ func (bc *Blockchain) CreateUpdateNFTTxn(
 	IsBuyNow bool,
 	BuyNowPriceNanos uint64,
 	// Standard transaction fields
-	minFeeRateNanosPerKB uint64, mempool *DeSoMempool, additionalOutputs []*DeSoOutput) (
+	minFeeRateNanosPerKB uint64, mempool Mempool, additionalOutputs []*DeSoOutput) (
 	_txn *MsgDeSoTxn, _totalInput uint64, _changeAmount uint64, _fees uint64, _err error) {
 
 	// Create a transaction containing the update NFT fields.
@@ -4353,7 +4369,7 @@ func (bc *Blockchain) CreateAccessGroupTxn(
 	accessGroupKeyName []byte,
 	operationType AccessGroupOperationType,
 	extraData map[string][]byte,
-	minFeeRateNanosPerKB uint64, mempool *DeSoMempool, additionalOutputs []*DeSoOutput) (
+	minFeeRateNanosPerKB uint64, mempool Mempool, additionalOutputs []*DeSoOutput) (
 	_txn *MsgDeSoTxn, _totalInput uint64, _changeAmount uint64, _fees uint64, _err error) {
 
 	txn := &MsgDeSoTxn{
@@ -4389,7 +4405,7 @@ func (bc *Blockchain) CreateAccessGroupMembersTxn(
 	accessGroupMemberList []*AccessGroupMember,
 	operationType AccessGroupMemberOperationType,
 	extraData map[string][]byte,
-	minFeeRateNanosPerKB uint64, mempool *DeSoMempool, additionalOutputs []*DeSoOutput) (
+	minFeeRateNanosPerKB uint64, mempool Mempool, additionalOutputs []*DeSoOutput) (
 	_txn *MsgDeSoTxn, _totalInput uint64, _changeAmount uint64, _fees uint64, _err error) {
 
 	txn := &MsgDeSoTxn{
@@ -4428,7 +4444,7 @@ func (bc *Blockchain) CreateNewMessageTxn(
 	messageType NewMessageType,
 	messageOperation NewMessageOperation,
 	extraData map[string][]byte,
-	minFeeRateNanosPerKB uint64, mempool *DeSoMempool, additionalOutputs []*DeSoOutput) (
+	minFeeRateNanosPerKB uint64, mempool Mempool, additionalOutputs []*DeSoOutput) (
 	_txn *MsgDeSoTxn, _totalInput uint64, _changeAmount uint64, _fees uint64, _err error) {
 
 	txn := &MsgDeSoTxn{
@@ -4530,7 +4546,7 @@ func (bc *Blockchain) CreateCreatorCoinTransferTxnWithDiamonds(
 	DiamondPostHash *BlockHash,
 	DiamondLevel int64,
 	// Standard transaction fields
-	minFeeRateNanosPerKB uint64, mempool *DeSoMempool, additionalOutputs []*DeSoOutput) (
+	minFeeRateNanosPerKB uint64, mempool Mempool, additionalOutputs []*DeSoOutput) (
 	_txn *MsgDeSoTxn, _totalInput uint64, _changeAmount uint64, _fees uint64, _err error) {
 
 	// Create a new UtxoView. If we have access to a mempool object, use it to
@@ -4541,7 +4557,7 @@ func (bc *Blockchain) CreateCreatorCoinTransferTxnWithDiamonds(
 			"Blockchain.CreateCreatorCoinTransferTxnWithDiamonds: "+
 				"Problem creating new utxo view: ")
 	}
-	if mempool != nil {
+	if !isInterfaceValueNil(mempool) {
 		utxoView, err = mempool.GetAugmentedUniversalView()
 		if err != nil {
 			return nil, 0, 0, 0, errors.Wrapf(err,
@@ -4614,7 +4630,7 @@ func (bc *Blockchain) CreateAuthorizeDerivedKeyTxn(
 	memo []byte,
 	transactionSpendingLimitHex string,
 	// Standard transaction fields
-	minFeeRateNanosPerKB uint64, mempool *DeSoMempool, additionalOutputs []*DeSoOutput) (
+	minFeeRateNanosPerKB uint64, mempool Mempool, additionalOutputs []*DeSoOutput) (
 	_txn *MsgDeSoTxn, _totalInput uint64, _changeAmount uint64, _fees uint64, _err error) {
 
 	blockHeight := bc.blockTip().Height + 1
@@ -4719,7 +4735,7 @@ func (bc *Blockchain) CreateMessagingKeyTxn(
 	messagingOwnerKeySignature []byte,
 	members []*MessagingGroupMember,
 	extraData map[string][]byte,
-	minFeeRateNanosPerKB uint64, mempool *DeSoMempool, additionalOutputs []*DeSoOutput) (
+	minFeeRateNanosPerKB uint64, mempool Mempool, additionalOutputs []*DeSoOutput) (
 	_txn *MsgDeSoTxn, _totalInput uint64, _changeAmount uint64, _fees uint64, _err error) {
 
 	// We don't need to validate info here, so just construct the transaction instead.
@@ -4757,7 +4773,7 @@ func (bc *Blockchain) CreateBasicTransferTxnWithDiamonds(
 	DiamondPostHash *BlockHash,
 	DiamondLevel int64,
 	// Standard transaction fields
-	minFeeRateNanosPerKB uint64, mempool *DeSoMempool, additionalOutputs []*DeSoOutput) (
+	minFeeRateNanosPerKB uint64, mempool Mempool, additionalOutputs []*DeSoOutput) (
 	_txn *MsgDeSoTxn, _totalInput uint64, _spendAmount uint64, _changeAmount uint64, _fees uint64, _err error) {
 
 	// Create a new UtxoView. If we have access to a mempool object, use it to
@@ -4768,7 +4784,7 @@ func (bc *Blockchain) CreateBasicTransferTxnWithDiamonds(
 			"Blockchain.CreateBasicTransferTxnWithDiamonds: "+
 				"Problem creating new utxo view: ")
 	}
-	if mempool != nil {
+	if !isInterfaceValueNil(mempool) {
 		utxoView, err = mempool.GetAugmentedUniversalView()
 		if err != nil {
 			return nil, 0, 0, 0, 0, errors.Wrapf(err,
@@ -4836,7 +4852,7 @@ func (bc *Blockchain) CreateBasicTransferTxnWithDiamonds(
 
 func (bc *Blockchain) CreateMaxSpend(
 	senderPkBytes []byte, recipientPkBytes []byte, minFeeRateNanosPerKB uint64,
-	mempool *DeSoMempool, additionalOutputs []*DeSoOutput) (
+	mempool Mempool, additionalOutputs []*DeSoOutput) (
 	_txn *MsgDeSoTxn, _totalInputAdded uint64, _spendAmount uint64, _fee uint64, _err error) {
 
 	txn := &MsgDeSoTxn{
@@ -4856,7 +4872,7 @@ func (bc *Blockchain) CreateMaxSpend(
 	if bc.BlockTip().Height >= bc.params.ForkHeights.BalanceModelBlockHeight {
 		var utxoView *UtxoView
 		var err error
-		if mempool != nil {
+		if !isInterfaceValueNil(mempool) {
 			utxoView, err = mempool.GetAugmentedUniversalView()
 			if err != nil {
 				return nil, 0, 0, 0, errors.Wrapf(err,
@@ -4957,14 +4973,14 @@ func (bc *Blockchain) CreateMaxSpend(
 // An error is returned if there is not enough input associated with this
 // public key to satisfy the transaction's output (subject to the minimum feerate).
 func (bc *Blockchain) AddInputsAndChangeToTransaction(
-	txArg *MsgDeSoTxn, minFeeRateNanosPerKB uint64, mempool *DeSoMempool) (
+	txArg *MsgDeSoTxn, minFeeRateNanosPerKB uint64, mempool Mempool) (
 	_totalInputAdded uint64, _spendAmount uint64, _totalChangeAdded uint64, _fee uint64, _err error) {
 
 	return bc.AddInputsAndChangeToTransactionWithSubsidy(txArg, minFeeRateNanosPerKB, 0, mempool, 0)
 }
 
 func (bc *Blockchain) AddInputsAndChangeToTransactionWithSubsidy(
-	txArg *MsgDeSoTxn, minFeeRateNanosPerKB uint64, inputSubsidy uint64, mempool *DeSoMempool, additionalFees uint64) (
+	txArg *MsgDeSoTxn, minFeeRateNanosPerKB uint64, inputSubsidy uint64, mempool Mempool, additionalFees uint64) (
 	_totalInputAdded uint64, _spendAmount uint64, _totalChangeAdded uint64, _fee uint64, _err error) {
 
 	// The transaction we're working with should never have any inputs
@@ -5254,7 +5270,7 @@ func (bc *Blockchain) CreateCreateUserAssociationTxn(
 	metadata *CreateUserAssociationMetadata,
 	extraData map[string][]byte,
 	minFeeRateNanosPerKB uint64,
-	mempool *DeSoMempool,
+	mempool Mempool,
 	additionalOutputs []*DeSoOutput,
 ) (
 	_txn *MsgDeSoTxn,
@@ -5282,7 +5298,7 @@ func (bc *Blockchain) CreateDeleteUserAssociationTxn(
 	metadata *DeleteUserAssociationMetadata,
 	extraData map[string][]byte,
 	minFeeRateNanosPerKB uint64,
-	mempool *DeSoMempool,
+	mempool Mempool,
 	additionalOutputs []*DeSoOutput,
 ) (
 	_txn *MsgDeSoTxn,
@@ -5310,7 +5326,7 @@ func (bc *Blockchain) CreateCreatePostAssociationTxn(
 	metadata *CreatePostAssociationMetadata,
 	extraData map[string][]byte,
 	minFeeRateNanosPerKB uint64,
-	mempool *DeSoMempool,
+	mempool Mempool,
 	additionalOutputs []*DeSoOutput,
 ) (
 	_txn *MsgDeSoTxn,
@@ -5338,7 +5354,7 @@ func (bc *Blockchain) CreateDeletePostAssociationTxn(
 	metadata *DeletePostAssociationMetadata,
 	extraData map[string][]byte,
 	minFeeRateNanosPerKB uint64,
-	mempool *DeSoMempool,
+	mempool Mempool,
 	additionalOutputs []*DeSoOutput,
 ) (
 	_txn *MsgDeSoTxn,
@@ -5365,7 +5381,7 @@ func (bc *Blockchain) _createAssociationTxn(
 	callingFuncName string,
 	txn *MsgDeSoTxn,
 	minFeeRateNanosPerKB uint64,
-	mempool *DeSoMempool,
+	mempool Mempool,
 ) (
 	_txn *MsgDeSoTxn,
 	_totalInput uint64,
@@ -5381,7 +5397,7 @@ func (bc *Blockchain) _createAssociationTxn(
 			"%s: problem creating new utxo view: %v", callingFuncName, err,
 		)
 	}
-	if mempool != nil {
+	if !isInterfaceValueNil(mempool) {
 		utxoView, err = mempool.GetAugmentedUniversalView()
 		if err != nil {
 			return nil, 0, 0, 0, fmt.Errorf(
@@ -5445,7 +5461,7 @@ func (bc *Blockchain) CreateCoinLockupTxn(
 	UnlockTimestampNanoSecs int64,
 	LockupAmountBaseUnits *uint256.Int,
 	// Standard transaction fields
-	minFeeRateNanosPerKB uint64, mempool *DeSoMempool, additionalOutputs []*DeSoOutput) (
+	minFeeRateNanosPerKB uint64, mempool Mempool, additionalOutputs []*DeSoOutput) (
 	_txn *MsgDeSoTxn, _totalInput uint64, _changeAmount uint64, _fees uint64, _err error) {
 
 	// NOTE: TxInputs is a remnant of the UTXO transaction model.
@@ -5494,7 +5510,7 @@ func (bc *Blockchain) CreateCoinLockupTransferTxn(
 	UnlockTimestampNanoSecs int64,
 	LockedCoinsToTransferBaseUnits *uint256.Int,
 	// Standard transaction fields
-	minFeeRateNanosPerKB uint64, mempool *DeSoMempool, additionalOutputs []*DeSoOutput) (
+	minFeeRateNanosPerKB uint64, mempool Mempool, additionalOutputs []*DeSoOutput) (
 	_txn *MsgDeSoTxn, _totalInput uint64, _changeAmount uint64, _fees uint64, _err error) {
 
 	// NOTE: TxInputs is a remnant of the UTXO transaction model.
@@ -5545,7 +5561,7 @@ func (bc *Blockchain) CreateUpdateCoinLockupParamsTxn(
 	NewLockupTransferRestrictions bool,
 	LockupTransferRestrictionStatus TransferRestrictionStatus,
 	// Standard transaction fields
-	minFeeRateNanosPerKB uint64, mempool *DeSoMempool, additionalOutputs []*DeSoOutput) (
+	minFeeRateNanosPerKB uint64, mempool Mempool, additionalOutputs []*DeSoOutput) (
 	_txn *MsgDeSoTxn, _totalInput uint64, _changeAmount uint64, _fees uint64, _err error) {
 
 	// NOTE: TxInputs is a remnant of the UTXO transaction model.
@@ -5593,7 +5609,7 @@ func (bc *Blockchain) CreateCoinUnlockTxn(
 	TransactorPublicKey []byte,
 	ProfilePublicKey []byte,
 	// Standard transaction fields
-	minFeeRateNanosPerKB uint64, mempool *DeSoMempool, additionalOutputs []*DeSoOutput) (
+	minFeeRateNanosPerKB uint64, mempool Mempool, additionalOutputs []*DeSoOutput) (
 	_txn *MsgDeSoTxn, _totalInput uint64, _chainAmount uint64, _fees uint64, _err error) {
 
 	// NOTE: TxInputs is a remnant of the UTXO transaction model.
