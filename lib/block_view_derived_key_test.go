@@ -399,21 +399,7 @@ func _doTxnWithBlockHeight(
 		operationType = OperationTypeAuthorizeDerivedKey
 	case TxnTypeUpdateProfile:
 		realTxMeta := txnMeta.(*UpdateProfileMetadata)
-		txn, totalInputMake, changeAmountMake, feesMake, err = chain.CreateUpdateProfileTxn(
-			transactorPublicKey,
-			realTxMeta.ProfilePublicKey,
-			string(realTxMeta.NewUsername),
-			string(realTxMeta.NewDescription),
-			string(realTxMeta.NewProfilePic),
-			realTxMeta.NewCreatorBasisPoints,
-			realTxMeta.NewStakeMultipleBasisPoints,
-			realTxMeta.IsHidden,
-			0,
-			nil,
-			feeRateNanosPerKB,
-			testMeta.mempool,
-			nil,
-		)
+		txn, totalInputMake, changeAmountMake, feesMake, err = chain.CreateUpdateProfileTxn(transactorPublicKey, realTxMeta.ProfilePublicKey, string(realTxMeta.NewUsername), string(realTxMeta.NewDescription), string(realTxMeta.NewProfilePic), realTxMeta.NewCreatorBasisPoints, realTxMeta.NewStakeMultipleBasisPoints, realTxMeta.IsHidden, 0, nil, feeRateNanosPerKB, testMeta.mempool, nil, nil)
 		require.NoError(err)
 		operationType = OperationTypeUpdateProfile
 	case TxnTypeSubmitPost:

@@ -125,20 +125,7 @@ func _updateProfileWithExtraData(t *testing.T, chain *Blockchain, db *badger.DB,
 	utxoView, err := NewUtxoView(db, params, chain.postgres, chain.snapshot, chain.eventManager)
 	require.NoError(err)
 
-	txn, totalInputMake, changeAmountMake, feesMake, err := chain.CreateUpdateProfileTxn(
-		updaterPkBytes,
-		profilePubKey,
-		newUsername,
-		newDescription,
-		newProfilePic,
-		newCreatorBasisPoints,
-		newStakeMultipleBasisPoints,
-		isHidden,
-		0,
-		extraData,
-		feeRateNanosPerKB,
-		nil, /*mempool*/
-		[]*DeSoOutput{})
+	txn, totalInputMake, changeAmountMake, feesMake, err := chain.CreateUpdateProfileTxn(updaterPkBytes, profilePubKey, newUsername, newDescription, newProfilePic, newCreatorBasisPoints, newStakeMultipleBasisPoints, isHidden, 0, extraData, feeRateNanosPerKB, nil, []*DeSoOutput{}, nil)
 	if err != nil {
 		return nil, nil, 0, err
 	}
@@ -1230,20 +1217,7 @@ func TestSpamUpdateProfile(t *testing.T) {
 		fmt.Println("Creating txns: ", ii)
 		startTimeCreateTxn := time.Now()
 		moneyPkBytes, _, _ := Base58CheckDecode(moneyPkString)
-		txn, _, _, _, err := chain.CreateUpdateProfileTxn(
-			moneyPkBytes,
-			nil,
-			"money",
-			fmt.Sprintf("this is a new description: %v", ii),
-			"profile pic",
-			5000,  /*CreatorBasisPoints*/
-			12500, /*StakeMultiple*/
-			false, /*isHidden*/
-			0,
-			nil,
-			feeRateNanosPerKB, /*feeRateNanosPerKB*/
-			mempool,           /*mempool*/
-			[]*DeSoOutput{})
+		txn, _, _, _, err := chain.CreateUpdateProfileTxn(moneyPkBytes, nil, "money", fmt.Sprintf("this is a new description: %v", ii), "profile pic", 5000, 12500, false, 0, nil, feeRateNanosPerKB, mempool, []*DeSoOutput{}, nil)
 		require.NoError(err)
 		_signTxn(t, txn, moneyPrivString)
 		fmt.Printf("Creating txn took: %v seconds\n", time.Since(startTimeCreateTxn).Seconds())
@@ -3301,20 +3275,7 @@ func TestUpdateProfileChangeBack(t *testing.T) {
 
 	// m0 takes m0
 	{
-		txn, _, _, _, err := chain.CreateUpdateProfileTxn(
-			m0PkBytes,
-			m0PkBytes,
-			"m0",
-			"",
-			"",
-			0,
-			20000,
-			false,
-			0,
-			nil,
-			100,
-			mempool, /*mempool*/
-			[]*DeSoOutput{})
+		txn, _, _, _, err := chain.CreateUpdateProfileTxn(m0PkBytes, m0PkBytes, "m0", "", "", 0, 20000, false, 0, nil, 100, mempool, []*DeSoOutput{}, nil)
 		require.NoError(err)
 
 		// Sign the transaction now that its inputs are set up.
@@ -3327,20 +3288,7 @@ func TestUpdateProfileChangeBack(t *testing.T) {
 		require.Equal(1, len(mempoolTxsAdded))
 	}
 	{
-		txn, _, _, _, err := chain.CreateUpdateProfileTxn(
-			m1PkBytes,
-			m1PkBytes,
-			"m1",
-			"",
-			"",
-			0,
-			20000,
-			false,
-			0,
-			nil,
-			100,
-			mempool, /*mempool*/
-			[]*DeSoOutput{})
+		txn, _, _, _, err := chain.CreateUpdateProfileTxn(m1PkBytes, m1PkBytes, "m1", "", "", 0, 20000, false, 0, nil, 100, mempool, []*DeSoOutput{}, nil)
 		require.NoError(err)
 
 		// Sign the transaction now that its inputs are set up.
@@ -3360,20 +3308,7 @@ func TestUpdateProfileChangeBack(t *testing.T) {
 
 	// m1 takes m2
 	{
-		txn, _, _, _, err := chain.CreateUpdateProfileTxn(
-			m1PkBytes,
-			m1PkBytes,
-			"m2",
-			"",
-			"",
-			0,
-			20000,
-			false,
-			0,
-			nil,
-			100,
-			mempool, /*mempool*/
-			[]*DeSoOutput{})
+		txn, _, _, _, err := chain.CreateUpdateProfileTxn(m1PkBytes, m1PkBytes, "m2", "", "", 0, 20000, false, 0, nil, 100, mempool, []*DeSoOutput{}, nil)
 		require.NoError(err)
 
 		// Sign the transaction now that its inputs are set up.
@@ -3387,20 +3322,7 @@ func TestUpdateProfileChangeBack(t *testing.T) {
 	}
 	// m0 takes m1
 	{
-		txn, _, _, _, err := chain.CreateUpdateProfileTxn(
-			m0PkBytes,
-			m0PkBytes,
-			"m1",
-			"",
-			"",
-			0,
-			20000,
-			false,
-			0,
-			nil,
-			100,
-			mempool, /*mempool*/
-			[]*DeSoOutput{})
+		txn, _, _, _, err := chain.CreateUpdateProfileTxn(m0PkBytes, m0PkBytes, "m1", "", "", 0, 20000, false, 0, nil, 100, mempool, []*DeSoOutput{}, nil)
 		require.NoError(err)
 
 		// Sign the transaction now that its inputs are set up.
@@ -3422,20 +3344,7 @@ func TestUpdateProfileChangeBack(t *testing.T) {
 	}
 	// m1 takes m0
 	{
-		txn, _, _, _, err := chain.CreateUpdateProfileTxn(
-			m1PkBytes,
-			m1PkBytes,
-			"m0",
-			"",
-			"",
-			0,
-			20000,
-			false,
-			0,
-			nil,
-			100,
-			mempool, /*mempool*/
-			[]*DeSoOutput{})
+		txn, _, _, _, err := chain.CreateUpdateProfileTxn(m1PkBytes, m1PkBytes, "m0", "", "", 0, 20000, false, 0, nil, 100, mempool, []*DeSoOutput{}, nil)
 		require.NoError(err)
 
 		// Sign the transaction now that its inputs are set up.
@@ -3455,20 +3364,7 @@ func TestUpdateProfileChangeBack(t *testing.T) {
 
 	// m2 takes m0 should fail
 	{
-		txn, _, _, _, err := chain.CreateUpdateProfileTxn(
-			m2PkBytes,
-			m2PkBytes,
-			"m0",
-			"",
-			"",
-			0,
-			20000,
-			false,
-			0,
-			nil,
-			100,
-			mempool, /*mempool*/
-			[]*DeSoOutput{})
+		txn, _, _, _, err := chain.CreateUpdateProfileTxn(m2PkBytes, m2PkBytes, "m0", "", "", 0, 20000, false, 0, nil, 100, mempool, []*DeSoOutput{}, nil)
 		require.NoError(err)
 
 		// Sign the transaction now that its inputs are set up.
@@ -3482,20 +3378,7 @@ func TestUpdateProfileChangeBack(t *testing.T) {
 	}
 	// m3 takes m0 should fail
 	{
-		txn, _, _, _, err := chain.CreateUpdateProfileTxn(
-			m3PkBytes,
-			m3PkBytes,
-			"m0",
-			"",
-			"",
-			0,
-			20000,
-			false,
-			0,
-			nil,
-			100,
-			mempool, /*mempool*/
-			[]*DeSoOutput{})
+		txn, _, _, _, err := chain.CreateUpdateProfileTxn(m3PkBytes, m3PkBytes, "m0", "", "", 0, 20000, false, 0, nil, 100, mempool, []*DeSoOutput{}, nil)
 		require.NoError(err)
 
 		// Sign the transaction now that its inputs are set up.

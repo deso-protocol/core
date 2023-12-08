@@ -58,20 +58,7 @@ func TestComputeMaxTPS(t *testing.T) {
 
 		// Create a profile for this key
 		{
-			txn, _, _, _, err := chain.CreateUpdateProfileTxn(
-				pubKeys[len(pubKeys)-1].SerializeCompressed(),
-				nil,
-				fmt.Sprintf("username_%v", ii),
-				"",
-				"",
-				500,
-				12500,
-				false,
-				0,
-				nil,
-				10,
-				mempool, /*mempool*/
-				[]*DeSoOutput{})
+			txn, _, _, _, err := chain.CreateUpdateProfileTxn(pubKeys[len(pubKeys)-1].SerializeCompressed(), nil, fmt.Sprintf("username_%v", ii), "", "", 500, 12500, false, 0, nil, 10, mempool, []*DeSoOutput{}, nil)
 			require.NoError(err)
 			_signTxn(t, txn, currentPrivStr)
 			_, err = mempool.ProcessTransaction(
