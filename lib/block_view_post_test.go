@@ -384,12 +384,7 @@ func TestSubmitPost(t *testing.T) {
 
 		expectedSenderBalances = append(expectedSenderBalances, _getBalance(t, chain, nil, updaterPkBase58Check))
 
-		currentOps, currentTxn, _, err := _updateProfile(
-			t, chain, db, params,
-			feeRateNanosPerKB, updaterPkBase58Check,
-			updaterPrivBase58Check, profilePubKey, newUsername,
-			newDescription, newProfilePic, newCreatorBasisPoints,
-			newStakeMultipleBasisPoints, isHidden)
+		currentOps, currentTxn, _, err := _updateProfile(t, chain, db, params, feeRateNanosPerKB, updaterPkBase58Check, updaterPrivBase58Check, profilePubKey, newUsername, newDescription, newProfilePic, newCreatorBasisPoints, newStakeMultipleBasisPoints, isHidden, nil)
 
 		require.NoError(err)
 

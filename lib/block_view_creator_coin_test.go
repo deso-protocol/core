@@ -462,13 +462,7 @@ func _helpTestCreatorCoinBuySell(
 		} else if testData.TxnType == TxnTypeUpdateProfile {
 			// Create a profile using the testData params
 			profilePkBytes, _, _ := Base58CheckDecode(testData.ProfilePublicKeyBase58Check)
-			utxoOps, txn, _, err = _updateProfile(
-				t, chain, db, params,
-				feeRateNanosPerKB /*feerate*/, testData.UpdaterPublicKeyBase58Check,
-				testData.UpdaterPrivateKeyBase58Check, profilePkBytes, testData.ProfileUsername,
-				testData.ProfileDescription, testData.ProfilePic,
-				testData.ProfileCreatorBasisPoints, /*CreatorBasisPoints*/
-				12500 /*stakeMultipleBasisPoints*/, testData.ProfileIsHidden /*isHidden*/)
+			utxoOps, txn, _, err = _updateProfile(t, chain, db, params, feeRateNanosPerKB, testData.UpdaterPublicKeyBase58Check, testData.UpdaterPrivateKeyBase58Check, profilePkBytes, testData.ProfileUsername, testData.ProfileDescription, testData.ProfilePic, testData.ProfileCreatorBasisPoints, 12500, testData.ProfileIsHidden, nil)
 			require.NoError(err)
 		} else if testData.TxnType == TxnTypeFollow {
 			utxoOps, txn, _, err = _doFollowTxn(
@@ -1061,24 +1055,12 @@ func TestCreatorCoinWithDiamondsFailureCases(t *testing.T) {
 
 	// Create a profile for m0
 	{
-		_, _, _, err = _updateProfile(
-			t, chain, db, params,
-			feeRateNanosPerKB /*feerate*/, m0Pub,
-			m0Priv, nil, "m0",
-			"m0 profile", "",
-			2500, /*CreatorBasisPoints*/
-			12500 /*stakeMultipleBasisPoints*/, false /*isHidden*/)
+		_, _, _, err = _updateProfile(t, chain, db, params, feeRateNanosPerKB, m0Pub, m0Priv, nil, "m0", "m0 profile", "", 2500, 12500, false, nil)
 		require.NoError(err)
 	}
 	// Create a profile for m1
 	{
-		_, _, _, err = _updateProfile(
-			t, chain, db, params,
-			feeRateNanosPerKB /*feerate*/, m1Pub,
-			m1Priv, nil, "m1",
-			"m1 profile", "",
-			2500, /*CreatorBasisPoints*/
-			12500 /*stakeMultipleBasisPoints*/, false /*isHidden*/)
+		_, _, _, err = _updateProfile(t, chain, db, params, feeRateNanosPerKB, m1Pub, m1Priv, nil, "m1", "m1 profile", "", 2500, 12500, false, nil)
 		require.NoError(err)
 	}
 
@@ -1458,24 +1440,12 @@ func TestCreatorCoinDiamondAfterDeSoDiamondsBlockHeight(t *testing.T) {
 
 	// Create a profile for m0.
 	{
-		_, _, _, err = _updateProfile(
-			t, chain, db, params,
-			feeRateNanosPerKB /*feerate*/, m0Pub,
-			m0Priv, nil, "m0",
-			"m0 profile", "",
-			2500, /*CreatorBasisPoints*/
-			12500 /*stakeMultipleBasisPoints*/, false /*isHidden*/)
+		_, _, _, err = _updateProfile(t, chain, db, params, feeRateNanosPerKB, m0Pub, m0Priv, nil, "m0", "m0 profile", "", 2500, 12500, false, nil)
 		require.NoError(err)
 	}
 	// Create a profile for m1.
 	{
-		_, _, _, err = _updateProfile(
-			t, chain, db, params,
-			feeRateNanosPerKB /*feerate*/, m1Pub,
-			m1Priv, nil, "m1",
-			"m1 profile", "",
-			2500, /*CreatorBasisPoints*/
-			12500 /*stakeMultipleBasisPoints*/, false /*isHidden*/)
+		_, _, _, err = _updateProfile(t, chain, db, params, feeRateNanosPerKB, m1Pub, m1Priv, nil, "m1", "m1 profile", "", 2500, 12500, false, nil)
 		require.NoError(err)
 	}
 
@@ -2487,11 +2457,7 @@ func TestCreatorCoinTransferBelowMinThreshold(t *testing.T) {
 		t, chain, db, params, moneyPkString, m6Pub,
 		moneyPrivString, 6*NanosPerUnit /*amount to send*/, feeRateNanosPerKB /*feerate*/)
 
-	_, _, _, err := _updateProfile(
-		t, chain, db, params,
-		feeRateNanosPerKB /*feerate*/, m0Pub, m0Priv, m0PkBytes, "m0",
-		"i am m0", "m0 profile pic", 2500, /*CreatorBasisPoints*/
-		12500 /*stakeMultipleBasisPoints*/, false /*isHidden*/)
+	_, _, _, err := _updateProfile(t, chain, db, params, feeRateNanosPerKB, m0Pub, m0Priv, m0PkBytes, "m0", "i am m0", "m0 profile pic", 2500, 12500, false, nil)
 	require.NoError(err)
 
 	// m1 buys some m0 creator coin.

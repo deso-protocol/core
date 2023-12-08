@@ -96,23 +96,11 @@ func _swapIdentity(t *testing.T, chain *Blockchain, db *badger.DB,
 	return utxoOps, txn, blockHeight, nil
 }
 
-func _updateProfile(t *testing.T, chain *Blockchain, db *badger.DB,
-	params *DeSoParams, feeRateNanosPerKB uint64, updaterPkBase58Check string,
-	updaterPrivBase58Check string, profilePubKey []byte, newUsername string,
-	newDescription string, newProfilePic string, newCreatorBasisPoints uint64,
-	newStakeMultipleBasisPoints uint64, isHidden bool) (
-	_utxoOps []*UtxoOperation, _txn *MsgDeSoTxn, _height uint32, _err error) {
-	return _updateProfileWithExtraData(t, chain, db, params, feeRateNanosPerKB, updaterPkBase58Check,
-		updaterPrivBase58Check, profilePubKey, newUsername, newDescription, newProfilePic, newCreatorBasisPoints,
-		newStakeMultipleBasisPoints, isHidden, nil)
+func _updateProfile(t *testing.T, chain *Blockchain, db *badger.DB, params *DeSoParams, feeRateNanosPerKB uint64, updaterPkBase58Check string, updaterPrivBase58Check string, profilePubKey []byte, newUsername string, newDescription string, newProfilePic string, newCreatorBasisPoints uint64, newStakeMultipleBasisPoints uint64, isHidden bool, feeEstimator *PoSFeeEstimator) (_utxoOps []*UtxoOperation, _txn *MsgDeSoTxn, _height uint32, _err error) {
+	return _updateProfileWithExtraData(t, chain, db, params, feeRateNanosPerKB, updaterPkBase58Check, updaterPrivBase58Check, profilePubKey, newUsername, newDescription, newProfilePic, newCreatorBasisPoints, newStakeMultipleBasisPoints, isHidden, nil, feeEstimator)
 }
 
-func _updateProfileWithExtraData(t *testing.T, chain *Blockchain, db *badger.DB,
-	params *DeSoParams, feeRateNanosPerKB uint64, updaterPkBase58Check string,
-	updaterPrivBase58Check string, profilePubKey []byte, newUsername string,
-	newDescription string, newProfilePic string, newCreatorBasisPoints uint64,
-	newStakeMultipleBasisPoints uint64, isHidden bool, extraData map[string][]byte) (
-	_utxoOps []*UtxoOperation, _txn *MsgDeSoTxn, _height uint32, _err error) {
+func _updateProfileWithExtraData(t *testing.T, chain *Blockchain, db *badger.DB, params *DeSoParams, feeRateNanosPerKB uint64, updaterPkBase58Check string, updaterPrivBase58Check string, profilePubKey []byte, newUsername string, newDescription string, newProfilePic string, newCreatorBasisPoints uint64, newStakeMultipleBasisPoints uint64, isHidden bool, extraData map[string][]byte, feeEstimator *PoSFeeEstimator) (_utxoOps []*UtxoOperation, _txn *MsgDeSoTxn, _height uint32, _err error) {
 
 	assert := assert.New(t)
 	require := require.New(t)
@@ -125,7 +113,7 @@ func _updateProfileWithExtraData(t *testing.T, chain *Blockchain, db *badger.DB,
 	utxoView, err := NewUtxoView(db, params, chain.postgres, chain.snapshot, chain.eventManager)
 	require.NoError(err)
 
-	txn, totalInputMake, changeAmountMake, feesMake, err := chain.CreateUpdateProfileTxn(updaterPkBytes, profilePubKey, newUsername, newDescription, newProfilePic, newCreatorBasisPoints, newStakeMultipleBasisPoints, isHidden, 0, extraData, feeRateNanosPerKB, nil, []*DeSoOutput{}, nil)
+	txn, totalInputMake, changeAmountMake, feesMake, err := chain.CreateUpdateProfileTxn(updaterPkBytes, profilePubKey, newUsername, newDescription, newProfilePic, newCreatorBasisPoints, newStakeMultipleBasisPoints, isHidden, 0, extraData, feeRateNanosPerKB, nil, []*DeSoOutput{}, feeEstimator)
 	if err != nil {
 		return nil, nil, 0, err
 	}
@@ -186,12 +174,7 @@ func _updateProfileWithTestMeta(
 	testMeta.expectedSenderBalances = append(
 		testMeta.expectedSenderBalances, _getBalance(testMeta.t, testMeta.chain, nil, updaterPkBase58Check))
 
-	currentOps, currentTxn, _, err := _updateProfile(
-		testMeta.t, testMeta.chain, testMeta.db, testMeta.params,
-		feeRateNanosPerKB, updaterPkBase58Check,
-		updaterPrivBase58Check, profilePubKey, newUsername,
-		newDescription, newProfilePic, newCreatorBasisPoints,
-		newStakeMultipleBasisPoints, isHidden)
+	currentOps, currentTxn, _, err := _updateProfile(testMeta.t, testMeta.chain, testMeta.db, testMeta.params, feeRateNanosPerKB, updaterPkBase58Check, updaterPrivBase58Check, profilePubKey, newUsername, newDescription, newProfilePic, newCreatorBasisPoints, newStakeMultipleBasisPoints, isHidden, nil)
 
 	require.NoError(testMeta.t, err)
 	testMeta.txnOps = append(testMeta.txnOps, currentOps)
@@ -294,12 +277,7 @@ func TestUpdateProfile(t *testing.T) {
 
 		expectedSenderBalances = append(expectedSenderBalances, _getBalance(t, chain, nil, updaterPkBase58Check))
 
-		currentOps, currentTxn, _, err := _updateProfile(
-			t, chain, db, params,
-			feeRateNanosPerKB, updaterPkBase58Check,
-			updaterPrivBase58Check, profilePubKey, newUsername,
-			newDescription, newProfilePic, newCreatorBasisPoints,
-			newStakeMultipleBasisPoints, isHidden)
+		currentOps, currentTxn, _, err := _updateProfile(t, chain, db, params, feeRateNanosPerKB, updaterPkBase58Check, updaterPrivBase58Check, profilePubKey, newUsername, newDescription, newProfilePic, newCreatorBasisPoints, newStakeMultipleBasisPoints, isHidden, nil)
 
 		require.NoError(err)
 
@@ -350,18 +328,7 @@ func TestUpdateProfile(t *testing.T) {
 	}
 	// Zero input txn should fail.
 	{
-		_, _, _, err = _updateProfile(
-			t, chain, db, params,
-			0,             /*feeRateNanosPerKB*/
-			m0Pub,         /*updaterPkBase58Check*/
-			m0Priv,        /*updaterPrivBase58Check*/
-			[]byte{},      /*profilePubKey*/
-			"m0",          /*newUsername*/
-			"I am the m0", /*newDescription*/
-			shortPic,      /*newProfilePic*/
-			10*100,        /*newCreatorBasisPoints*/
-			2*100*100,     /*newStakeMultipleBasisPoints*/
-			false /*isHidden*/)
+		_, _, _, err = _updateProfile(t, chain, db, params, 0, m0Pub, m0Priv, []byte{}, "m0", "I am the m0", shortPic, 10*100, 2*100*100, false, nil)
 		require.Error(err)
 		blockHeight := chain.blockTip().Height
 		if blockHeight < params.ForkHeights.BalanceModelBlockHeight {
@@ -375,18 +342,7 @@ func TestUpdateProfile(t *testing.T) {
 	{
 		badUsername := string(append([]byte("badUsername: "),
 			RandomBytes(int32(params.MaxUsernameLengthBytes))...))
-		_, _, _, err = _updateProfile(
-			t, chain, db, params,
-			10,            /*feeRateNanosPerKB*/
-			m0Pub,         /*updaterPkBase58Check*/
-			m0Priv,        /*updaterPrivBase58Check*/
-			[]byte{},      /*profilePubKey*/
-			badUsername,   /*newUsername*/
-			"I am the m0", /*newDescription*/
-			shortPic,      /*newProfilePic*/
-			10*100,        /*newCreatorBasisPoints*/
-			2*100*100,     /*newStakeMultipleBasisPoints*/
-			false /*isHidden*/)
+		_, _, _, err = _updateProfile(t, chain, db, params, 10, m0Pub, m0Priv, []byte{}, badUsername, "I am the m0", shortPic, 10*100, 2*100*100, false, nil)
 		require.Error(err)
 		require.Contains(err.Error(), RuleErrorProfileUsernameTooLong)
 	}
@@ -395,108 +351,42 @@ func TestUpdateProfile(t *testing.T) {
 	{
 		badDescription := string(append([]byte("badDescription: "),
 			RandomBytes(int32(params.MaxUserDescriptionLengthBytes))...))
-		_, _, _, err = _updateProfile(
-			t, chain, db, params,
-			2,              /*feeRateNanosPerKB*/
-			m0Pub,          /*updaterPkBase58Check*/
-			m0Priv,         /*updaterPrivBase58Check*/
-			[]byte{},       /*profilePubKey*/
-			"m0",           /*newUsername*/
-			badDescription, /*newDescription*/
-			shortPic,       /*newProfilePic*/
-			10*100,         /*newCreatorBasisPoints*/
-			2*100*100,      /*newStakeMultipleBasisPoints*/
-			false /*isHidden*/)
+		_, _, _, err = _updateProfile(t, chain, db, params, 2, m0Pub, m0Priv, []byte{}, "m0", badDescription, shortPic, 10*100, 2*100*100, false, nil)
 		require.Error(err)
 		require.Contains(err.Error(), RuleErrorProfileDescriptionTooLong)
 	}
 
 	// Profile pic too long should fail.
 	{
-		_, _, _, err = _updateProfile(
-			t, chain, db, params,
-			1,             /*feeRateNanosPerKB*/
-			m0Pub,         /*updaterPkBase58Check*/
-			m0Priv,        /*updaterPrivBase58Check*/
-			[]byte{},      /*profilePubKey*/
-			"m0",          /*newUsername*/
-			"i am the m0", /*newDescription*/
-			longPic,       /*newProfilePic*/
-			10*100,        /*newCreatorBasisPoints*/
-			2*100*100,     /*newStakeMultipleBasisPoints*/
-			false /*isHidden*/)
+		_, _, _, err = _updateProfile(t, chain, db, params, 1, m0Pub, m0Priv, []byte{}, "m0", "i am the m0", longPic, 10*100, 2*100*100, false, nil)
 		require.Error(err)
 		require.Contains(err.Error(), RuleErrorMaxProfilePicSize)
 	}
 
 	// Stake multiple too large should fail long too long should fail.
 	{
-		_, _, _, err = _updateProfile(
-			t, chain, db, params,
-			1,             /*feeRateNanosPerKB*/
-			m0Pub,         /*updaterPkBase58Check*/
-			m0Priv,        /*updaterPrivBase58Check*/
-			[]byte{},      /*profilePubKey*/
-			"m0",          /*newUsername*/
-			"i am the m0", /*newDescription*/
-			shortPic,      /*newProfilePic*/
-			10*100,        /*newCreatorBasisPoints*/
-			100*100*100,   /*newStakeMultipleBasisPoints*/
-			false /*isHidden*/)
+		_, _, _, err = _updateProfile(t, chain, db, params, 1, m0Pub, m0Priv, []byte{}, "m0", "i am the m0", shortPic, 10*100, 100*100*100, false, nil)
 		require.Error(err)
 		require.Contains(err.Error(), RuleErrorProfileStakeMultipleSize)
 	}
 
 	// Stake multiple too small should fail long too long should fail.
 	{
-		_, _, _, err = _updateProfile(
-			t, chain, db, params,
-			1,             /*feeRateNanosPerKB*/
-			m0Pub,         /*updaterPkBase58Check*/
-			m0Priv,        /*updaterPrivBase58Check*/
-			[]byte{},      /*profilePubKey*/
-			"m0",          /*newUsername*/
-			"i am the m0", /*newDescription*/
-			shortPic,      /*newProfilePic*/
-			10*100,        /*newCreatorBasisPoints*/
-			.99*100*100,   /*newStakeMultipleBasisPoints*/
-			false /*isHidden*/)
+		_, _, _, err = _updateProfile(t, chain, db, params, 1, m0Pub, m0Priv, []byte{}, "m0", "i am the m0", shortPic, 10*100, .99*100*100, false, nil)
 		require.Error(err)
 		require.Contains(err.Error(), RuleErrorProfileStakeMultipleSize)
 	}
 
 	// Creator percentage too large should fail.
 	{
-		_, _, _, err = _updateProfile(
-			t, chain, db, params,
-			1,             /*feeRateNanosPerKB*/
-			m0Pub,         /*updaterPkBase58Check*/
-			m0Priv,        /*updaterPrivBase58Check*/
-			[]byte{},      /*profilePubKey*/
-			"m0",          /*newUsername*/
-			"i am the m0", /*newDescription*/
-			shortPic,      /*newProfilePic*/
-			101*100,       /*newCreatorBasisPoints*/
-			1.25*100*100,  /*newStakeMultipleBasisPoints*/
-			false /*isHidden*/)
+		_, _, _, err = _updateProfile(t, chain, db, params, 1, m0Pub, m0Priv, []byte{}, "m0", "i am the m0", shortPic, 101*100, 1.25*100*100, false, nil)
 		require.Error(err)
 		require.Contains(err.Error(), RuleErrorProfileCreatorPercentageSize)
 	}
 
 	// Invalid profile public key should fail.
 	{
-		_, _, _, err = _updateProfile(
-			t, chain, db, params,
-			1,               /*feeRateNanosPerKB*/
-			m0Pub,           /*updaterPkBase58Check*/
-			m0Priv,          /*updaterPrivBase58Check*/
-			RandomBytes(33), /*profilePubKey*/
-			"m0",            /*newUsername*/
-			"i am the m0",   /*newDescription*/
-			shortPic,        /*newProfilePic*/
-			10*100,          /*newCreatorBasisPoints*/
-			1.25*100*100,    /*newStakeMultipleBasisPoints*/
-			false /*isHidden*/)
+		_, _, _, err = _updateProfile(t, chain, db, params, 1, m0Pub, m0Priv, RandomBytes(33), "m0", "i am the m0", shortPic, 10*100, 1.25*100*100, false, nil)
 		require.Error(err)
 		// This returned RuleErrorProfilePubKeyNotAuthorized for me once
 		// "ConnectTransaction: : _connectUpdateProfile: ... RuleErrorProfilePubKeyNotAuthorized"
@@ -505,18 +395,7 @@ func TestUpdateProfile(t *testing.T) {
 
 	// Profile public key that is not authorized should fail.
 	{
-		_, _, _, err = _updateProfile(
-			t, chain, db, params,
-			1,             /*feeRateNanosPerKB*/
-			m0Pub,         /*updaterPkBase58Check*/
-			m0Priv,        /*updaterPrivBase58Check*/
-			m1PkBytes,     /*profilePubKey*/
-			"m0",          /*newUsername*/
-			"i am the m0", /*newDescription*/
-			shortPic,      /*newProfilePic*/
-			10*100,        /*newCreatorBasisPoints*/
-			1.25*100*100,  /*newStakeMultipleBasisPoints*/
-			false /*isHidden*/)
+		_, _, _, err = _updateProfile(t, chain, db, params, 1, m0Pub, m0Priv, m1PkBytes, "m0", "i am the m0", shortPic, 10*100, 1.25*100*100, false, nil)
 		require.Error(err)
 		require.Contains(err.Error(), RuleErrorProfilePubKeyNotAuthorized)
 	}
@@ -538,113 +417,36 @@ func TestUpdateProfile(t *testing.T) {
 
 	// Username that does not match our regex should fail
 	{
-		_, _, _, err = _updateProfile(
-			t, chain, db, params,
-			10,            /*feeRateNanosPerKB*/
-			m1Pub,         /*updaterPkBase58Check*/
-			m1Priv,        /*updaterPrivBase58Check*/
-			[]byte{},      /*profilePubKey*/
-			"m0\x00",      /*newUsername*/
-			"i am the m0", /*newDescription*/
-			shortPic,      /*newProfilePic*/
-			10*100,        /*newCreatorBasisPoints*/
-			1.25*100*100,  /*newStakeMultipleBasisPoints*/
-			false /*isHidden*/)
+		_, _, _, err = _updateProfile(t, chain, db, params, 10, m1Pub, m1Priv, []byte{}, "m0\x00", "i am the m0", shortPic, 10*100, 1.25*100*100, false, nil)
 		require.Error(err)
 		require.Contains(err.Error(), RuleErrorInvalidUsername)
 
-		_, _, _, err = _updateProfile(
-			t, chain, db, params,
-			10,                /*feeRateNanosPerKB*/
-			m1Pub,             /*updaterPkBase58Check*/
-			m1Priv,            /*updaterPrivBase58Check*/
-			[]byte{},          /*profilePubKey*/
-			"m0 with a space", /*newUsername*/
-			"i am the m0",     /*newDescription*/
-			shortPic,          /*newProfilePic*/
-			10*100,            /*newCreatorBasisPoints*/
-			1.25*100*100,      /*newStakeMultipleBasisPoints*/
-			false /*isHidden*/)
+		_, _, _, err = _updateProfile(t, chain, db, params, 10, m1Pub, m1Priv, []byte{}, "m0 with a space", "i am the m0", shortPic, 10*100, 1.25*100*100, false, nil)
 		require.Error(err)
 		require.Contains(err.Error(), RuleErrorInvalidUsername)
 
-		_, _, _, err = _updateProfile(
-			t, chain, db, params,
-			10,                  /*feeRateNanosPerKB*/
-			m1Pub,               /*updaterPkBase58Check*/
-			m1Priv,              /*updaterPrivBase58Check*/
-			[]byte{},            /*profilePubKey*/
-			"m0TraillingSpace ", /*newUsername*/
-			"i am the m0",       /*newDescription*/
-			shortPic,            /*newProfilePic*/
-			10*100,              /*newCreatorBasisPoints*/
-			1.25*100*100,        /*newStakeMultipleBasisPoints*/
-			false /*isHidden*/)
+		_, _, _, err = _updateProfile(t, chain, db, params, 10, m1Pub, m1Priv, []byte{}, "m0TraillingSpace ", "i am the m0", shortPic, 10*100, 1.25*100*100, false, nil)
 		require.Error(err)
 		require.Contains(err.Error(), RuleErrorInvalidUsername)
 
-		_, _, _, err = _updateProfile(
-			t, chain, db, params,
-			10,            /*feeRateNanosPerKB*/
-			m1Pub,         /*updaterPkBase58Check*/
-			m1Priv,        /*updaterPrivBase58Check*/
-			[]byte{},      /*profilePubKey*/
-			"m0-Hyphen",   /*newUsername*/
-			"i am the m0", /*newDescription*/
-			shortPic,      /*newProfilePic*/
-			10*100,        /*newCreatorBasisPoints*/
-			1.25*100*100,  /*newStakeMultipleBasisPoints*/
-			false /*isHidden*/)
+		_, _, _, err = _updateProfile(t, chain, db, params, 10, m1Pub, m1Priv, []byte{}, "m0-Hyphen", "i am the m0", shortPic, 10*100, 1.25*100*100, false, nil)
 		require.Error(err)
 		require.Contains(err.Error(), RuleErrorInvalidUsername)
 
-		_, _, _, err = _updateProfile(
-			t, chain, db, params,
-			10,                    /*feeRateNanosPerKB*/
-			m1Pub,                 /*updaterPkBase58Check*/
-			m1Priv,                /*updaterPrivBase58Check*/
-			[]byte{},              /*profilePubKey*/
-			" m0SpaceAtBeginning", /*newUsername*/
-			"i am the m0",         /*newDescription*/
-			shortPic,              /*newProfilePic*/
-			10*100,                /*newCreatorBasisPoints*/
-			1.25*100*100,          /*newStakeMultipleBasisPoints*/
-			false /*isHidden*/)
+		_, _, _, err = _updateProfile(t, chain, db, params, 10, m1Pub, m1Priv, []byte{}, " m0SpaceAtBeginning", "i am the m0", shortPic, 10*100, 1.25*100*100, false, nil)
 		require.Error(err)
 		require.Contains(err.Error(), RuleErrorInvalidUsername)
 	}
 
 	// Trying to take an already-registered username should fail.
 	{
-		_, _, _, err = _updateProfile(
-			t, chain, db, params,
-			1,             /*feeRateNanosPerKB*/
-			m1Pub,         /*updaterPkBase58Check*/
-			m1Priv,        /*updaterPrivBase58Check*/
-			[]byte{},      /*profilePubKey*/
-			"m0",          /*newUsername*/
-			"i am the m0", /*newDescription*/
-			shortPic,      /*newProfilePic*/
-			10*100,        /*newCreatorBasisPoints*/
-			1.25*100*100,  /*newStakeMultipleBasisPoints*/
-			false /*isHidden*/)
+		_, _, _, err = _updateProfile(t, chain, db, params, 1, m1Pub, m1Priv, []byte{}, "m0", "i am the m0", shortPic, 10*100, 1.25*100*100, false, nil)
 		require.Error(err)
 		require.Contains(err.Error(), RuleErrorProfileUsernameExists)
 
 		// The username should be case-insensitive so creating a duplicate
 		// with different casing should fail.
-		_, _, _, err = _updateProfile(
-			t, chain, db, params,
-			1,             /*feeRateNanosPerKB*/
-			m1Pub,         /*updaterPkBase58Check*/
-			m1Priv,        /*updaterPrivBase58Check*/
-			[]byte{},      /*profilePubKey*/
-			"M0",          /*newUsername*/
-			"i am the m0", /*newDescription*/
-			shortPic,      /*newProfilePic*/
-			10*100,        /*newCreatorBasisPoints*/
-			1.25*100*100,  /*newStakeMultipleBasisPoints*/
-			false /*isHidden*/)
+		_, _, _, err = _updateProfile(t, chain, db, params, 1, m1Pub, m1Priv, []byte{}, "M0", "i am the m0", shortPic, 10*100, 1.25*100*100, false, nil)
 		require.Error(err)
 		require.Contains(err.Error(), RuleErrorProfileUsernameExists)
 
@@ -661,52 +463,19 @@ func TestUpdateProfile(t *testing.T) {
 			1.25*100*100,  /*newStakeMultipleBasisPoints*/
 			false /*isHidden*/)
 
-		_, _, _, err = _updateProfile(
-			t, chain, db, params,
-			1,             /*feeRateNanosPerKB*/
-			m1Pub,         /*updaterPkBase58Check*/
-			m1Priv,        /*updaterPrivBase58Check*/
-			[]byte{},      /*profilePubKey*/
-			"m0",          /*newUsername*/
-			"i am the m0", /*newDescription*/
-			shortPic,      /*newProfilePic*/
-			10*100,        /*newCreatorBasisPoints*/
-			1.25*100*100,  /*newStakeMultipleBasisPoints*/
-			false /*isHidden*/)
+		_, _, _, err = _updateProfile(t, chain, db, params, 1, m1Pub, m1Priv, []byte{}, "m0", "i am the m0", shortPic, 10*100, 1.25*100*100, false, nil)
 		require.Error(err)
 		require.Contains(err.Error(), RuleErrorProfileUsernameExists)
 
 		// The username should be case-insensitive so creating a duplicate
 		// with different casing should fail.
-		_, _, _, err = _updateProfile(
-			t, chain, db, params,
-			1,             /*feeRateNanosPerKB*/
-			m1Pub,         /*updaterPkBase58Check*/
-			m1Priv,        /*updaterPrivBase58Check*/
-			[]byte{},      /*profilePubKey*/
-			"M0",          /*newUsername*/
-			"i am the m0", /*newDescription*/
-			shortPic,      /*newProfilePic*/
-			10*100,        /*newCreatorBasisPoints*/
-			1.25*100*100,  /*newStakeMultipleBasisPoints*/
-			false /*isHidden*/)
+		_, _, _, err = _updateProfile(t, chain, db, params, 1, m1Pub, m1Priv, []byte{}, "M0", "i am the m0", shortPic, 10*100, 1.25*100*100, false, nil)
 		require.Error(err)
 		require.Contains(err.Error(), RuleErrorProfileUsernameExists)
 
 		// The username should be case-insensitive so creating a duplicate
 		// with different casing should fail.
-		_, _, _, err = _updateProfile(
-			t, chain, db, params,
-			1,             /*feeRateNanosPerKB*/
-			m0Pub,         /*updaterPkBase58Check*/
-			m0Priv,        /*updaterPrivBase58Check*/
-			[]byte{},      /*profilePubKey*/
-			"M1",          /*newUsername*/
-			"i am the m0", /*newDescription*/
-			shortPic,      /*newProfilePic*/
-			10*100,        /*newCreatorBasisPoints*/
-			1.25*100*100,  /*newStakeMultipleBasisPoints*/
-			false /*isHidden*/)
+		_, _, _, err = _updateProfile(t, chain, db, params, 1, m0Pub, m0Priv, []byte{}, "M1", "i am the m0", shortPic, 10*100, 1.25*100*100, false, nil)
 		require.Error(err)
 		require.Contains(err.Error(), RuleErrorProfileUsernameExists)
 	}
@@ -785,18 +554,7 @@ func TestUpdateProfile(t *testing.T) {
 
 	// Normal user updating another user's profile should fail.
 	{
-		_, _, _, err = _updateProfile(
-			t, chain, db, params,
-			1,                /*feeRateNanosPerKB*/
-			m1Pub,            /*updaterPkBase58Check*/
-			m1Priv,           /*updaterPrivBase58Check*/
-			m0PkBytes,        /*profilePubKey*/
-			"m0_actually_m1", /*newUsername*/
-			"i am the m1",    /*newDescription*/
-			shortPic,         /*newProfilePic*/
-			10*100,           /*newCreatorBasisPoints*/
-			1.25*100*100,     /*newStakeMultipleBasisPoints*/
-			false /*isHidden*/)
+		_, _, _, err = _updateProfile(t, chain, db, params, 1, m1Pub, m1Priv, m0PkBytes, "m0_actually_m1", "i am the m1", shortPic, 10*100, 1.25*100*100, false, nil)
 		require.Error(err)
 		require.Contains(err.Error(), RuleErrorProfilePubKeyNotAuthorized)
 	}
@@ -843,18 +601,7 @@ func TestUpdateProfile(t *testing.T) {
 			100)
 
 		// m4 does not have enough to create a profile including fee
-		_, _, _, err = _updateProfile(
-			t, chain, db, params,
-			1,
-			m4Pub,
-			m4Priv,
-			m4PkBytes,
-			"m4_username",
-			"m4 desc",
-			shortPic,
-			11*100,
-			1.5*100*100,
-			false)
+		_, _, _, err = _updateProfile(t, chain, db, params, 1, m4Pub, m4Priv, m4PkBytes, "m4_username", "m4 desc", shortPic, 11*100, 1.5*100*100, false, nil)
 		require.Error(err)
 		blockHeight := chain.blockTip().Height + 1
 		if blockHeight >= params.ForkHeights.BalanceModelBlockHeight {
@@ -873,19 +620,7 @@ func TestUpdateProfile(t *testing.T) {
 			1)
 
 		// Update profile fails as the fee is too low
-		_, _, _, err = _updateProfile(
-			t, chain, db, params,
-			1,
-			m4Pub,
-			m4Priv,
-			m4PkBytes,
-			"m4_username",
-			"m4 description",
-			otherShortPic,
-			11*100,
-			1.5*100*100,
-			false,
-		)
+		_, _, _, err = _updateProfile(t, chain, db, params, 1, m4Pub, m4Priv, m4PkBytes, "m4_username", "m4 description", otherShortPic, 11*100, 1.5*100*100, false, nil)
 		require.Error(err)
 		require.Contains(err.Error(), RuleErrorTxnFeeBelowNetworkMinimum)
 		// Update succeeds because fee is high enough and user has enough to meet fee.
@@ -909,23 +644,7 @@ func TestUpdateProfile(t *testing.T) {
 				"otherfield":  []byte("other"),
 			}
 			expectedSenderBalances = append(expectedSenderBalances, _getBalance(t, chain, nil, m4Pub))
-			currentOps, currentTxn, _, err := _updateProfileWithExtraData(
-				t,
-				chain,
-				db,
-				params,
-				10,
-				m4Pub,
-				m4Priv,
-				m4PkBytes,
-				"",
-				"",
-				"",
-				11*100,
-				1.5*100*100,
-				false,
-				extraData,
-			)
+			currentOps, currentTxn, _, err := _updateProfileWithExtraData(t, chain, db, params, 10, m4Pub, m4Priv, m4PkBytes, "", "", "", 11*100, 1.5*100*100, false, extraData, nil)
 			require.NoError(err)
 			txns = append(txns, currentTxn)
 			txnOps = append(txnOps, currentOps)
@@ -945,23 +664,7 @@ func TestUpdateProfile(t *testing.T) {
 				"newfield":    []byte("new"),
 			}
 			expectedSenderBalances = append(expectedSenderBalances, _getBalance(t, chain, nil, m4Pub))
-			currentOps, currentTxn, _, err := _updateProfileWithExtraData(
-				t,
-				chain,
-				db,
-				params,
-				10,
-				m4Pub,
-				m4Priv,
-				m4PkBytes,
-				"",
-				"",
-				"",
-				11*100,
-				1.5*100*100,
-				false,
-				extraData,
-			)
+			currentOps, currentTxn, _, err := _updateProfileWithExtraData(t, chain, db, params, 10, m4Pub, m4Priv, m4PkBytes, "", "", "", 11*100, 1.5*100*100, false, extraData, nil)
 			require.NoError(err)
 			txns = append(txns, currentTxn)
 			txnOps = append(txnOps, currentOps)

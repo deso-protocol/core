@@ -127,42 +127,12 @@ func _derivedKeyVerifyTest(t *testing.T, db *badger.DB, chain *Blockchain, trans
 	require.Equal(_getBalance(t, chain, mempool, recipientPkString), balanceExpected)
 }
 
-func _doTxn(
-	testMeta *TestMeta,
-	feeRateNanosPerKB uint64,
-	TransactorPublicKeyBase58Check string,
-	TransactorPrivKeyBase58Check string,
-	isDerivedTransactor bool,
-	txnType TxnType,
-	txnMeta DeSoTxnMetadata,
-	extraData map[string]interface{},
-	blockHeight uint64) (
-	_utxoOps []*UtxoOperation, _txn *MsgDeSoTxn, _height uint32, _err error) {
+func _doTxn(testMeta *TestMeta, feeRateNanosPerKB uint64, TransactorPublicKeyBase58Check string, TransactorPrivKeyBase58Check string, isDerivedTransactor bool, txnType TxnType, txnMeta DeSoTxnMetadata, extraData map[string]interface{}, blockHeight uint64, feeEstimator *PoSFeeEstimator) (_utxoOps []*UtxoOperation, _txn *MsgDeSoTxn, _height uint32, _err error) {
 
-	return _doTxnWithBlockHeight(
-		testMeta,
-		feeRateNanosPerKB,
-		TransactorPublicKeyBase58Check,
-		TransactorPrivKeyBase58Check,
-		isDerivedTransactor,
-		txnType,
-		txnMeta,
-		extraData,
-		blockHeight,
-	)
+	return _doTxnWithBlockHeight(testMeta, feeRateNanosPerKB, TransactorPublicKeyBase58Check, TransactorPrivKeyBase58Check, isDerivedTransactor, txnType, txnMeta, extraData, blockHeight, nil)
 }
 
-func _doTxnWithBlockHeight(
-	testMeta *TestMeta,
-	feeRateNanosPerKB uint64,
-	TransactorPublicKeyBase58Check string,
-	TransactorPrivKeyBase58Check string,
-	isDerivedTransactor bool,
-	txnType TxnType,
-	txnMeta DeSoTxnMetadata,
-	extraData map[string]interface{},
-	encoderBlockHeight uint64) (
-	_utxoOps []*UtxoOperation, _txn *MsgDeSoTxn, _height uint32, _err error) {
+func _doTxnWithBlockHeight(testMeta *TestMeta, feeRateNanosPerKB uint64, TransactorPublicKeyBase58Check string, TransactorPrivKeyBase58Check string, isDerivedTransactor bool, txnType TxnType, txnMeta DeSoTxnMetadata, extraData map[string]interface{}, encoderBlockHeight uint64, feeEstimator *PoSFeeEstimator) (_utxoOps []*UtxoOperation, _txn *MsgDeSoTxn, _height uint32, _err error) {
 	assert := assert.New(testMeta.t)
 	require := require.New(testMeta.t)
 	_ = assert
@@ -591,9 +561,7 @@ func _doTxnWithTestMetaWithBlockHeight(
 	encoderBlockHeight uint64) {
 	testMeta.expectedSenderBalances = append(testMeta.expectedSenderBalances, _getBalance(testMeta.t, testMeta.chain, nil, TransactorPublicKeyBase58Check))
 
-	currentOps, currentTxn, _, err := _doTxnWithBlockHeight(testMeta,
-		feeRateNanosPerKB, TransactorPublicKeyBase58Check, TransactorPrivateKeyBase58Check, IsDerivedTransactor,
-		TxnType, TxnMeta, ExtraData, encoderBlockHeight)
+	currentOps, currentTxn, _, err := _doTxnWithBlockHeight(testMeta, feeRateNanosPerKB, TransactorPublicKeyBase58Check, TransactorPrivateKeyBase58Check, IsDerivedTransactor, TxnType, TxnMeta, ExtraData, encoderBlockHeight, nil)
 	require.NoError(testMeta.t, err)
 	testMeta.txnOps = append(testMeta.txnOps, currentOps)
 	testMeta.txns = append(testMeta.txns, currentTxn)
@@ -612,9 +580,7 @@ func _doTxnWithTextMetaWithBlockHeightWithError(
 
 	initialBalance := _getBalance(testMeta.t, testMeta.chain, nil, TransactorPublicKeyBase58Check)
 
-	currentOps, currentTxn, _, err := _doTxnWithBlockHeight(testMeta,
-		feeRateNanosPerKB, TransactorPublicKeyBase58Check, TransactorPrivateKeyBase58Check, IsDerivedTransactor,
-		TxnType, TxnMeta, ExtraData, encoderBlockHeight)
+	currentOps, currentTxn, _, err := _doTxnWithBlockHeight(testMeta, feeRateNanosPerKB, TransactorPublicKeyBase58Check, TransactorPrivateKeyBase58Check, IsDerivedTransactor, TxnType, TxnMeta, ExtraData, encoderBlockHeight, nil)
 	if err != nil {
 		return err
 	}
@@ -2782,22 +2748,12 @@ REPEAT:
 		)
 
 		// Attempting to mint DAO again should throw an error because we only authorized 1 mint.
-		_, _, _, err = _doTxn(
-			testMeta,
-			10,
-			m1Pub,
-			derivedPrivBase58Check,
-			true,
-			TxnTypeDAOCoin,
-			&DAOCoinMetadata{
-				ProfilePublicKey: m1PkBytes,
-				OperationType:    DAOCoinOperationTypeMint,
-				CoinsToMintNanos: *uint256.NewInt().SetUint64(100 * NanosPerUnit),
-				CoinsToBurnNanos: *uint256.NewInt(),
-			},
-			nil,
-			blockHeight+1,
-		)
+		_, _, _, err = _doTxn(testMeta, 10, m1Pub, derivedPrivBase58Check, true, TxnTypeDAOCoin, &DAOCoinMetadata{
+			ProfilePublicKey: m1PkBytes,
+			OperationType:    DAOCoinOperationTypeMint,
+			CoinsToMintNanos: *uint256.NewInt().SetUint64(100 * NanosPerUnit),
+			CoinsToBurnNanos: *uint256.NewInt(),
+		}, nil, blockHeight+1, nil)
 		require.Contains(err.Error(), RuleErrorDerivedKeyDAOCoinOperationNotAuthorized)
 	}
 
@@ -2822,21 +2778,11 @@ REPEAT:
 		)
 
 		// Attempting to transfer DAO again should throw an error because we only authorized 1 transfer.
-		_, _, _, err = _doTxn(
-			testMeta,
-			10,
-			m1Pub,
-			derivedPrivBase58Check,
-			true,
-			TxnTypeDAOCoinTransfer,
-			&DAOCoinTransferMetadata{
-				ProfilePublicKey:       m1PkBytes,
-				ReceiverPublicKey:      m0PkBytes,
-				DAOCoinToTransferNanos: *uint256.NewInt().SetUint64(10 * NanosPerUnit),
-			},
-			nil,
-			blockHeight+1,
-		)
+		_, _, _, err = _doTxn(testMeta, 10, m1Pub, derivedPrivBase58Check, true, TxnTypeDAOCoinTransfer, &DAOCoinTransferMetadata{
+			ProfilePublicKey:       m1PkBytes,
+			ReceiverPublicKey:      m0PkBytes,
+			DAOCoinToTransferNanos: *uint256.NewInt().SetUint64(10 * NanosPerUnit),
+		}, nil, blockHeight+1, nil)
 		require.Contains(err.Error(), RuleErrorDerivedKeyDAOCoinOperationNotAuthorized)
 	}
 
@@ -2969,21 +2915,11 @@ REPEAT:
 	{
 		blockHeight, err = GetBlockTipHeight(db, false)
 		require.NoError(err)
-		_, _, _, err = _doTxn(
-			testMeta,
-			10,
-			m1Pub,
-			derivedPrivBase58Check,
-			true,
-			TxnTypeDAOCoin,
-			&DAOCoinMetadata{
-				ProfilePublicKey:          m1PkBytes,
-				OperationType:             DAOCoinOperationTypeUpdateTransferRestrictionStatus,
-				TransferRestrictionStatus: TransferRestrictionStatusProfileOwnerOnly,
-			},
-			nil,
-			blockHeight+1,
-		)
+		_, _, _, err = _doTxn(testMeta, 10, m1Pub, derivedPrivBase58Check, true, TxnTypeDAOCoin, &DAOCoinMetadata{
+			ProfilePublicKey:          m1PkBytes,
+			OperationType:             DAOCoinOperationTypeUpdateTransferRestrictionStatus,
+			TransferRestrictionStatus: TransferRestrictionStatusProfileOwnerOnly,
+		}, nil, blockHeight+1, nil)
 		require.Error(err)
 		require.Contains(err.Error(), RuleErrorDerivedKeyDAOCoinOperationNotAuthorized)
 	}
@@ -3109,21 +3045,11 @@ REPEAT:
 	{
 		blockHeight, err = GetBlockTipHeight(db, false)
 		require.NoError(err)
-		_, _, _, err = _doTxn(
-			testMeta,
-			10,
-			m0Pub,
-			derived0PrivBase58Check,
-			true,
-			TxnTypeCreatorCoin,
-			&CreatorCoinMetadataa{
-				ProfilePublicKey: m1PkBytes,
-				OperationType:    CreatorCoinOperationTypeBuy,
-				DeSoToSellNanos:  10,
-			},
-			nil,
-			blockHeight+1,
-		)
+		_, _, _, err = _doTxn(testMeta, 10, m0Pub, derived0PrivBase58Check, true, TxnTypeCreatorCoin, &CreatorCoinMetadataa{
+			ProfilePublicKey: m1PkBytes,
+			OperationType:    CreatorCoinOperationTypeBuy,
+			DeSoToSellNanos:  10,
+		}, nil, blockHeight+1, nil)
 		require.Error(err)
 		require.Contains(err.Error(), RuleErrorDerivedKeyTxnSpendsMoreThanGlobalDESOLimit)
 	}
@@ -3157,21 +3083,11 @@ REPEAT:
 	{
 		blockHeight, err = GetBlockTipHeight(db, false)
 		require.NoError(err)
-		_, _, _, err = _doTxn(
-			testMeta,
-			10,
-			m0Pub,
-			derived0PrivBase58Check,
-			true,
-			TxnTypeCreatorCoin,
-			&CreatorCoinMetadataa{
-				ProfilePublicKey: m1PkBytes,
-				OperationType:    CreatorCoinOperationTypeBuy,
-				DeSoToSellNanos:  10,
-			},
-			nil,
-			blockHeight+1,
-		)
+		_, _, _, err = _doTxn(testMeta, 10, m0Pub, derived0PrivBase58Check, true, TxnTypeCreatorCoin, &CreatorCoinMetadataa{
+			ProfilePublicKey: m1PkBytes,
+			OperationType:    CreatorCoinOperationTypeBuy,
+			DeSoToSellNanos:  10,
+		}, nil, blockHeight+1, nil)
 		require.Error(err)
 		require.Contains(err.Error(), RuleErrorDerivedKeyCreatorCoinOperationNotAuthorized)
 	}
@@ -3205,21 +3121,11 @@ REPEAT:
 	{
 		blockHeight, err = GetBlockTipHeight(db, false)
 		require.NoError(err)
-		_, _, _, err = _doTxn(
-			testMeta,
-			10,
-			m0Pub,
-			derived0PrivBase58Check,
-			true,
-			TxnTypeCreatorCoin,
-			&CreatorCoinMetadataa{
-				ProfilePublicKey: m1PkBytes,
-				OperationType:    CreatorCoinOperationTypeBuy,
-				DeSoToSellNanos:  10,
-			},
-			nil,
-			blockHeight+1,
-		)
+		_, _, _, err = _doTxn(testMeta, 10, m0Pub, derived0PrivBase58Check, true, TxnTypeCreatorCoin, &CreatorCoinMetadataa{
+			ProfilePublicKey: m1PkBytes,
+			OperationType:    CreatorCoinOperationTypeBuy,
+			DeSoToSellNanos:  10,
+		}, nil, blockHeight+1, nil)
 		require.Error(err)
 		require.Contains(err.Error(), RuleErrorDerivedKeyCreatorCoinOperationNotAuthorized)
 	}
@@ -3348,21 +3254,11 @@ REPEAT:
 	{
 		blockHeight, err = GetBlockTipHeight(db, false)
 		require.NoError(err)
-		_, _, _, err = _doTxn(
-			testMeta,
-			10,
-			m0Pub,
-			derived0PrivBase58Check,
-			true,
-			TxnTypeCreatorCoin,
-			&CreatorCoinMetadataa{
-				ProfilePublicKey: m1PkBytes,
-				OperationType:    CreatorCoinOperationTypeBuy,
-				DeSoToSellNanos:  25,
-			},
-			nil,
-			blockHeight+1,
-		)
+		_, _, _, err = _doTxn(testMeta, 10, m0Pub, derived0PrivBase58Check, true, TxnTypeCreatorCoin, &CreatorCoinMetadataa{
+			ProfilePublicKey: m1PkBytes,
+			OperationType:    CreatorCoinOperationTypeBuy,
+			DeSoToSellNanos:  25,
+		}, nil, blockHeight+1, nil)
 		require.Error(err)
 		require.Contains(err.Error(), RuleErrorDerivedKeyTxnSpendsMoreThanGlobalDESOLimit)
 	}
@@ -3503,21 +3399,11 @@ REPEAT:
 	{
 		blockHeight, err = GetBlockTipHeight(db, false)
 		require.NoError(err)
-		_, _, _, err = _doTxn(
-			testMeta,
-			10,
-			m0Pub,
-			derived0PrivBase58Check,
-			true,
-			TxnTypeNFTBid,
-			&NFTBidMetadata{
-				NFTPostHash:    post1Hash,
-				SerialNumber:   1,
-				BidAmountNanos: 5,
-			},
-			nil,
-			blockHeight+1,
-		)
+		_, _, _, err = _doTxn(testMeta, 10, m0Pub, derived0PrivBase58Check, true, TxnTypeNFTBid, &NFTBidMetadata{
+			NFTPostHash:    post1Hash,
+			SerialNumber:   1,
+			BidAmountNanos: 5,
+		}, nil, blockHeight+1, nil)
 		require.Error(err)
 		require.Contains(err.Error(), RuleErrorDerivedKeyTxnSpendsMoreThanGlobalDESOLimit)
 	}
@@ -3680,17 +3566,7 @@ REPEAT:
 		}
 		blockHeight, err = GetBlockTipHeight(db, false)
 		require.NoError(err)
-		_, _, _, err = _doTxn(
-			testMeta,
-			10,
-			m0Pub,
-			derived0PrivBase58Check,
-			true,
-			TxnTypeDAOCoinLimitOrder,
-			metadata,
-			nil,
-			blockHeight+1,
-		)
+		_, _, _, err = _doTxn(testMeta, 10, m0Pub, derived0PrivBase58Check, true, TxnTypeDAOCoinLimitOrder, metadata, nil, blockHeight+1, nil)
 		require.Error(err)
 		require.Contains(err.Error(), RuleErrorDerivedKeyDAOCoinLimitOrderNotAuthorized)
 
@@ -3727,17 +3603,7 @@ REPEAT:
 		metadata.SellingDAOCoinCreatorPublicKey = NewPublicKey(m1PkBytes)
 		blockHeight, err = GetBlockTipHeight(db, false)
 		require.NoError(err)
-		_, _, _, err = _doTxn(
-			testMeta,
-			10,
-			m0Pub,
-			derived0PrivBase58Check,
-			true,
-			TxnTypeDAOCoinLimitOrder,
-			metadata,
-			nil,
-			blockHeight+1,
-		)
+		_, _, _, err = _doTxn(testMeta, 10, m0Pub, derived0PrivBase58Check, true, TxnTypeDAOCoinLimitOrder, metadata, nil, blockHeight+1, nil)
 		require.Error(err)
 		require.Contains(err.Error(), RuleErrorDerivedKeyDAOCoinLimitOrderNotAuthorized)
 
@@ -3779,19 +3645,9 @@ REPEAT:
 		orderID := *orders[0].OrderID
 		blockHeight, err = GetBlockTipHeight(db, false)
 		require.NoError(err)
-		_, _, _, err = _doTxn(
-			testMeta,
-			10,
-			m0Pub,
-			derived0PrivBase58Check,
-			true,
-			TxnTypeDAOCoinLimitOrder,
-			&DAOCoinLimitOrderMetadata{
-				CancelOrderID: &orderID,
-			},
-			nil,
-			blockHeight+1,
-		)
+		_, _, _, err = _doTxn(testMeta, 10, m0Pub, derived0PrivBase58Check, true, TxnTypeDAOCoinLimitOrder, &DAOCoinLimitOrderMetadata{
+			CancelOrderID: &orderID,
+		}, nil, blockHeight+1, nil)
 		require.Error(err)
 		require.Contains(err.Error(), RuleErrorDerivedKeyDAOCoinLimitOrderNotAuthorized)
 
@@ -3842,19 +3698,9 @@ REPEAT:
 
 		// Cancelling a non-existent order should fail due to an order id lookup, irrespective of the status of the
 		// derived key
-		_, _, _, err = _doTxn(
-			testMeta,
-			10,
-			m0Pub,
-			derived0PrivBase58Check,
-			true,
-			TxnTypeDAOCoinLimitOrder,
-			&DAOCoinLimitOrderMetadata{
-				CancelOrderID: &orderID,
-			},
-			nil,
-			blockHeight+1,
-		)
+		_, _, _, err = _doTxn(testMeta, 10, m0Pub, derived0PrivBase58Check, true, TxnTypeDAOCoinLimitOrder, &DAOCoinLimitOrderMetadata{
+			CancelOrderID: &orderID,
+		}, nil, blockHeight+1, nil)
 		require.Error(err)
 		require.Contains(err.Error(), RuleErrorDerivedKeyInvalidDAOCoinLimitOrderOrderID)
 	}
