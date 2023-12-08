@@ -1087,9 +1087,7 @@ func (bc *Blockchain) CreateStakeTxn(
 
 	// We don't need to make any tweaks to the amount because
 	// it's basically a standard "pay per kilobyte" transaction.
-	totalInput, spendAmount, changeAmount, fees, err := bc.AddInputsAndChangeToTransaction(
-		txn, minFeeRateNanosPerKB, mempool,
-	)
+	totalInput, spendAmount, changeAmount, fees, err := bc.AddInputsAndChangeToTransaction(txn, minFeeRateNanosPerKB, mempool, nil)
 	if err != nil {
 		return nil, 0, 0, 0, errors.Wrapf(
 			err, "Blockchain.CreateStakeTxn: problem adding inputs: ",
@@ -1163,9 +1161,7 @@ func (bc *Blockchain) CreateUnstakeTxn(
 
 	// We don't need to make any tweaks to the amount because
 	// it's basically a standard "pay per kilobyte" transaction.
-	totalInput, spendAmount, changeAmount, fees, err := bc.AddInputsAndChangeToTransaction(
-		txn, minFeeRateNanosPerKB, mempool,
-	)
+	totalInput, spendAmount, changeAmount, fees, err := bc.AddInputsAndChangeToTransaction(txn, minFeeRateNanosPerKB, mempool, nil)
 	if err != nil {
 		return nil, 0, 0, 0, errors.Wrapf(
 			err, "Blockchain.CreateUnstakeTxn: problem adding inputs: ",
@@ -1239,9 +1235,7 @@ func (bc *Blockchain) CreateUnlockStakeTxn(
 
 	// We don't need to make any tweaks to the amount because
 	// it's basically a standard "pay per kilobyte" transaction.
-	totalInput, spendAmount, changeAmount, fees, err := bc.AddInputsAndChangeToTransaction(
-		txn, minFeeRateNanosPerKB, mempool,
-	)
+	totalInput, spendAmount, changeAmount, fees, err := bc.AddInputsAndChangeToTransaction(txn, minFeeRateNanosPerKB, mempool, nil)
 	if err != nil {
 		return nil, 0, 0, 0, errors.Wrapf(
 			err, "Blockchain.CreateUnlockStakeTxn: problem adding inputs: ",

@@ -477,7 +477,7 @@ func _customCreateAccessGroupTxn(
 
 	// Add inputs and change for a standard pay per KB transaction.
 	totalInput, spendAmount, changeAmount, fees, err :=
-		bc.AddInputsAndChangeToTransaction(txn, minFeeRateNanosPerKB, mempool)
+		bc.AddInputsAndChangeToTransaction(txn, minFeeRateNanosPerKB, mempool, nil)
 	if err != nil {
 		return nil, 0, 0, 0, errors.Wrapf(err, "CreateAccessGroupTxn: Problem adding inputs: ")
 	}

@@ -3211,7 +3211,7 @@ func (bc *Blockchain) CreatePrivateMessageTxn(
 	}
 
 	totalInput, spendAmount, changeAmount, fees, err :=
-		bc.AddInputsAndChangeToTransaction(txn, minFeeRateNanosPerKB, mempool)
+		bc.AddInputsAndChangeToTransaction(txn, minFeeRateNanosPerKB, mempool, nil)
 	if err != nil {
 		return nil, 0, 0, 0, errors.Wrapf(err, "CreatePrivateMessageTxn: Problem adding inputs: ")
 	}
@@ -3243,7 +3243,7 @@ func (bc *Blockchain) CreateLikeTxn(
 	}
 
 	totalInput, spendAmount, changeAmount, fees, err :=
-		bc.AddInputsAndChangeToTransaction(txn, minFeeRateNanosPerKB, mempool)
+		bc.AddInputsAndChangeToTransaction(txn, minFeeRateNanosPerKB, mempool, nil)
 	if err != nil {
 		return nil, 0, 0, 0, errors.Wrapf(
 			err, "CreateLikeTxn: Problem adding inputs: ")
@@ -3276,7 +3276,7 @@ func (bc *Blockchain) CreateFollowTxn(
 	}
 
 	totalInput, spendAmount, changeAmount, fees, err :=
-		bc.AddInputsAndChangeToTransaction(txn, minFeeRateNanosPerKB, mempool)
+		bc.AddInputsAndChangeToTransaction(txn, minFeeRateNanosPerKB, mempool, nil)
 	if err != nil {
 		return nil, 0, 0, 0, errors.Wrapf(
 			err, "CreateFollowTxn: Problem adding inputs: ")
@@ -3339,7 +3339,7 @@ func (bc *Blockchain) CreateUpdateGlobalParamsTxn(updaterPublicKey []byte,
 	// We don't need to make any tweaks to the amount because it's basically
 	// a standard "pay per kilobyte" transaction.
 	totalInput, spendAmount, changeAmount, fees, err :=
-		bc.AddInputsAndChangeToTransaction(txn, minFeeRateNanosPerKB, mempool)
+		bc.AddInputsAndChangeToTransaction(txn, minFeeRateNanosPerKB, mempool, nil)
 	if err != nil {
 		return nil, 0, 0, 0, errors.Wrapf(err, "CreateUpdateGlobalParamsTxn: Problem adding inputs: ")
 	}
@@ -3374,7 +3374,7 @@ func (bc *Blockchain) CreateUpdateBitcoinUSDExchangeRateTxn(
 	// We don't need to make any tweaks to the amount because it's basically
 	// a standard "pay per kilobyte" transaction.
 	totalInput, spendAmount, changeAmount, fees, err :=
-		bc.AddInputsAndChangeToTransaction(txn, minFeeRateNanosPerKB, mempool)
+		bc.AddInputsAndChangeToTransaction(txn, minFeeRateNanosPerKB, mempool, nil)
 	if err != nil {
 		return nil, 0, 0, 0, errors.Wrapf(err, "CreateUpdateBitcoinUSDExchangeRateTxn: Problem adding inputs: ")
 	}
@@ -3443,7 +3443,7 @@ func (bc *Blockchain) CreateSubmitPostTxn(
 	// We don't need to make any tweaks to the amount because it's basically
 	// a standard "pay per kilobyte" transaction.
 	totalInput, spendAmount, changeAmount, fees, err :=
-		bc.AddInputsAndChangeToTransaction(txn, minFeeRateNanosPerKB, mempool)
+		bc.AddInputsAndChangeToTransaction(txn, minFeeRateNanosPerKB, mempool, nil)
 	if err != nil {
 		return nil, 0, 0, 0, errors.Wrapf(err, "CreateSubmitPostTxn: Problem adding inputs: ")
 	}
@@ -3493,7 +3493,7 @@ func (bc *Blockchain) CreateUpdateProfileTxn(
 
 	// We directly call AddInputsAndChangeToTransactionWithSubsidy so we can pass through the create profile fee.
 	totalInput, spendAmount, changeAmount, fees, err :=
-		bc.AddInputsAndChangeToTransactionWithSubsidy(txn, minFeeRateNanosPerKB, 0, mempool, AdditionalFees)
+		bc.AddInputsAndChangeToTransactionWithSubsidy(txn, minFeeRateNanosPerKB, 0, mempool, AdditionalFees, nil)
 	if err != nil {
 		return nil, 0, 0, 0, errors.Wrapf(err, "CreateUpdateProfileTxn: Problem adding inputs: ")
 	}
@@ -3530,7 +3530,7 @@ func (bc *Blockchain) CreateSwapIdentityTxn(
 	// We don't need to make any tweaks to the amount because it's basically
 	// a standard "pay per kilobyte" transaction.
 	totalInput, spendAmount, changeAmount, fees, err :=
-		bc.AddInputsAndChangeToTransaction(txn, minFeeRateNanosPerKB, mempool)
+		bc.AddInputsAndChangeToTransaction(txn, minFeeRateNanosPerKB, mempool, nil)
 	if err != nil {
 		return nil, 0, 0, 0, errors.Wrapf(err, "CreateSwapIdentityTxn: Problem adding inputs: ")
 	}
@@ -3575,8 +3575,7 @@ func (bc *Blockchain) CreateCreatorCoinTxn(
 	}
 
 	totalInput, _, changeAmount, fees, err :=
-		bc.AddInputsAndChangeToTransactionWithSubsidy(
-			txn, minFeeRateNanosPerKB, 0, mempool, DeSoToSellNanos)
+		bc.AddInputsAndChangeToTransactionWithSubsidy(txn, minFeeRateNanosPerKB, 0, mempool, DeSoToSellNanos, nil)
 	if err != nil {
 		return nil, 0, 0, 0, errors.Wrapf(err, "CreateCreatorCoinTxn: Problem adding inputs: ")
 	}
@@ -3620,7 +3619,7 @@ func (bc *Blockchain) CreateCreatorCoinTransferTxn(
 	// We don't need to make any tweaks to the amount because it's basically
 	// a standard "pay per kilobyte" transaction.
 	totalInput, spendAmount, changeAmount, fees, err :=
-		bc.AddInputsAndChangeToTransaction(txn, minFeeRateNanosPerKB, mempool)
+		bc.AddInputsAndChangeToTransaction(txn, minFeeRateNanosPerKB, mempool, nil)
 	if err != nil {
 		return nil, 0, 0, 0, errors.Wrapf(err, "CreateCreatorCoinTransferTxn: Problem adding inputs: ")
 	}
@@ -3657,8 +3656,7 @@ func (bc *Blockchain) CreateDAOCoinTxn(
 	// We don't need to make any tweaks to the amount because it's basically
 	// a standard "pay per kilobyte" transaction.
 	totalInput, spendAmount, changeAmount, fees, err :=
-		bc.AddInputsAndChangeToTransaction(
-			txn, minFeeRateNanosPerKB, mempool)
+		bc.AddInputsAndChangeToTransaction(txn, minFeeRateNanosPerKB, mempool, nil)
 	if err != nil {
 		return nil, 0, 0, 0, errors.Wrapf(err, "CreateDAOCoinTxn: Problem adding inputs: ")
 	}
@@ -3694,7 +3692,7 @@ func (bc *Blockchain) CreateDAOCoinTransferTxn(
 	// We don't need to make any tweaks to the amount because it's basically
 	// a standard "pay per kilobyte" transaction.
 	totalInput, spendAmount, changeAmount, fees, err :=
-		bc.AddInputsAndChangeToTransaction(txn, minFeeRateNanosPerKB, mempool)
+		bc.AddInputsAndChangeToTransaction(txn, minFeeRateNanosPerKB, mempool, nil)
 	if err != nil {
 		return nil, 0, 0, 0, errors.Wrapf(err, "CreateDAOCoinTransferTxn: Problem adding inputs: ")
 	}
@@ -3882,7 +3880,7 @@ func (bc *Blockchain) CreateDAOCoinLimitOrderTxn(
 
 	// Add inputs and change for a standard pay per KB transaction.
 	totalInput, _, changeAmount, fees, err :=
-		bc.AddInputsAndChangeToTransactionWithSubsidy(txn, minFeeRateNanosPerKB, 0, mempool, explicitSpend)
+		bc.AddInputsAndChangeToTransactionWithSubsidy(txn, minFeeRateNanosPerKB, 0, mempool, explicitSpend, nil)
 	if err != nil {
 		return nil, 0, 0, 0, errors.Wrapf(err,
 			"CreateDAOCoinLimitOrderTxn: Problem adding inputs: ")
@@ -3978,7 +3976,7 @@ func (bc *Blockchain) CreateCreateNFTTxn(
 
 	// We directly call AddInputsAndChangeToTransactionWithSubsidy so we can pass through the NFT fee.
 	totalInput, _, changeAmount, fees, err :=
-		bc.AddInputsAndChangeToTransactionWithSubsidy(txn, minFeeRateNanosPerKB, 0, mempool, NFTFee)
+		bc.AddInputsAndChangeToTransactionWithSubsidy(txn, minFeeRateNanosPerKB, 0, mempool, NFTFee, nil)
 	if err != nil {
 		return nil, 0, 0, 0, errors.Wrapf(err, "CreateCreateNFTTxn: Problem adding inputs: ")
 	}
@@ -4089,7 +4087,7 @@ func (bc *Blockchain) CreateNFTBidTxn(
 
 	// Add inputs and change for a standard pay per KB transaction.
 	totalInput, _, changeAmount, fees, err :=
-		bc.AddInputsAndChangeToTransactionWithSubsidy(txn, minFeeRateNanosPerKB, 0, mempool, explicitSpend)
+		bc.AddInputsAndChangeToTransactionWithSubsidy(txn, minFeeRateNanosPerKB, 0, mempool, explicitSpend, nil)
 	if err != nil {
 		return nil, 0, 0, 0, errors.Wrapf(err, "CreateNFTBidTxn: Problem adding inputs: ")
 	}
@@ -4133,7 +4131,7 @@ func (bc *Blockchain) CreateNFTTransferTxn(
 
 	// Add inputs and change for a standard pay per KB transaction.
 	totalInput, _, changeAmount, fees, err :=
-		bc.AddInputsAndChangeToTransaction(txn, minFeeRateNanosPerKB, mempool)
+		bc.AddInputsAndChangeToTransaction(txn, minFeeRateNanosPerKB, mempool, nil)
 	if err != nil {
 		return nil, 0, 0, 0, errors.Wrapf(err, "CreateNFTTransferTxn: Problem adding inputs: ")
 	}
@@ -4170,7 +4168,7 @@ func (bc *Blockchain) CreateAcceptNFTTransferTxn(
 
 	// Add inputs and change for a standard pay per KB transaction.
 	totalInput, _, changeAmount, fees, err :=
-		bc.AddInputsAndChangeToTransaction(txn, minFeeRateNanosPerKB, mempool)
+		bc.AddInputsAndChangeToTransaction(txn, minFeeRateNanosPerKB, mempool, nil)
 	if err != nil {
 		return nil, 0, 0, 0, errors.Wrapf(err,
 			"CreateAcceptNFTTransferTxn: Problem adding inputs: ")
@@ -4211,7 +4209,7 @@ func (bc *Blockchain) CreateBurnNFTTxn(
 
 	// Add inputs and change for a standard pay per KB transaction.
 	totalInput, _, changeAmount, fees, err :=
-		bc.AddInputsAndChangeToTransaction(txn, minFeeRateNanosPerKB, mempool)
+		bc.AddInputsAndChangeToTransaction(txn, minFeeRateNanosPerKB, mempool, nil)
 	if err != nil {
 		return nil, 0, 0, 0, errors.Wrapf(err, "CreateBurnNFTTxn: Problem adding inputs: ")
 	}
@@ -4291,7 +4289,7 @@ func (bc *Blockchain) CreateAcceptNFTBidTxn(
 
 	// Add inputs and change for a standard pay per KB transaction.
 	totalInput, _, changeAmount, fees, err :=
-		bc.AddInputsAndChangeToTransaction(txn, minFeeRateNanosPerKB, mempool)
+		bc.AddInputsAndChangeToTransaction(txn, minFeeRateNanosPerKB, mempool, nil)
 	if err != nil {
 		return nil, 0, 0, 0, errors.Wrapf(err, "CreateAcceptNFTBidTxn: Problem adding inputs: ")
 	}
@@ -4344,7 +4342,7 @@ func (bc *Blockchain) CreateUpdateNFTTxn(
 
 	// Add inputs and change for a standard pay per KB transaction.
 	totalInput, spendAmount, changeAmount, fees, err :=
-		bc.AddInputsAndChangeToTransaction(txn, minFeeRateNanosPerKB, mempool)
+		bc.AddInputsAndChangeToTransaction(txn, minFeeRateNanosPerKB, mempool, nil)
 	if err != nil {
 		return nil, 0, 0, 0, errors.Wrapf(err, "CreateUpdateNFTTxn: Problem adding inputs: ")
 	}
@@ -4386,7 +4384,7 @@ func (bc *Blockchain) CreateAccessGroupTxn(
 
 	// Add inputs and change for a standard pay per KB transaction.
 	totalInput, spendAmount, changeAmount, fees, err :=
-		bc.AddInputsAndChangeToTransaction(txn, minFeeRateNanosPerKB, mempool)
+		bc.AddInputsAndChangeToTransaction(txn, minFeeRateNanosPerKB, mempool, nil)
 	if err != nil {
 		return nil, 0, 0, 0, errors.Wrapf(err, "CreateAccessGroupTxn: Problem adding inputs: ")
 	}
@@ -4422,7 +4420,7 @@ func (bc *Blockchain) CreateAccessGroupMembersTxn(
 
 	// Add inputs and change for a standard pay per KB transaction.
 	totalInput, spendAmount, changeAmount, fees, err :=
-		bc.AddInputsAndChangeToTransaction(txn, minFeeRateNanosPerKB, mempool)
+		bc.AddInputsAndChangeToTransaction(txn, minFeeRateNanosPerKB, mempool, nil)
 	if err != nil {
 		return nil, 0, 0, 0, errors.Wrapf(err, "CreateAccessGroupMembersTxn: Problem adding inputs: ")
 	}
@@ -4467,7 +4465,7 @@ func (bc *Blockchain) CreateNewMessageTxn(
 
 	// Add inputs and change for a standard pay per KB transaction.
 	totalInput, spendAmount, changeAmount, fees, err :=
-		bc.AddInputsAndChangeToTransaction(txn, minFeeRateNanosPerKB, mempool)
+		bc.AddInputsAndChangeToTransaction(txn, minFeeRateNanosPerKB, mempool, nil)
 	if err != nil {
 		return nil, 0, 0, 0, errors.Wrapf(err, "CreateNewMessageTxn: Problem adding inputs: ")
 	}
@@ -4599,7 +4597,7 @@ func (bc *Blockchain) CreateCreatorCoinTransferTxnWithDiamonds(
 	// We don't need to make any tweaks to the amount because it's basically
 	// a standard "pay per kilobyte" transaction.
 	totalInput, spendAmount, changeAmount, fees, err :=
-		bc.AddInputsAndChangeToTransaction(txn, minFeeRateNanosPerKB, mempool)
+		bc.AddInputsAndChangeToTransaction(txn, minFeeRateNanosPerKB, mempool, nil)
 	if err != nil {
 		return nil, 0, 0, 0, errors.Wrapf(
 			err, "CreateCreatorCoinTransferTxnWithDiamonds: Problem adding inputs: ")
@@ -4714,7 +4712,7 @@ func (bc *Blockchain) CreateAuthorizeDerivedKeyTxn(
 	// We don't need to make any tweaks to the amount because it's basically
 	// a standard "pay per kilobyte" transaction.
 	totalInput, spendAmount, changeAmount, fees, err :=
-		bc.AddInputsAndChangeToTransaction(txn, minFeeRateNanosPerKB, mempool)
+		bc.AddInputsAndChangeToTransaction(txn, minFeeRateNanosPerKB, mempool, nil)
 	if err != nil {
 		return nil, 0, 0, 0, errors.Wrapf(err, "CreateAuthorizeDerivedKeyTxn: Problem adding inputs: ")
 	}
@@ -4754,7 +4752,7 @@ func (bc *Blockchain) CreateMessagingKeyTxn(
 	// We don't need to make any tweaks to the amount because it's basically
 	// a standard "pay per kilobyte" transaction.
 	totalInput, spendAmount, changeAmount, fees, err :=
-		bc.AddInputsAndChangeToTransaction(txn, minFeeRateNanosPerKB, mempool)
+		bc.AddInputsAndChangeToTransaction(txn, minFeeRateNanosPerKB, mempool, nil)
 	if err != nil {
 		return nil, 0, 0, 0, errors.Wrapf(err, "Blockchain.CreateMessagingKeyTxn: Problem adding inputs: ")
 	}
@@ -4830,7 +4828,7 @@ func (bc *Blockchain) CreateBasicTransferTxnWithDiamonds(
 	// We don't need to make any tweaks to the amount because it's basically
 	// a standard "pay per kilobyte" transaction.
 	totalInput, spendAmount, changeAmount, fees, err :=
-		bc.AddInputsAndChangeToTransaction(txn, minFeeRateNanosPerKB, mempool)
+		bc.AddInputsAndChangeToTransaction(txn, minFeeRateNanosPerKB, mempool, nil)
 	if err != nil {
 		return nil, 0, 0, 0, 0, errors.Wrapf(
 			err, "CreateBasicTransferTxnWithDiamonds: Problem adding inputs: ")
@@ -4972,16 +4970,15 @@ func (bc *Blockchain) CreateMaxSpend(
 //
 // An error is returned if there is not enough input associated with this
 // public key to satisfy the transaction's output (subject to the minimum feerate).
-func (bc *Blockchain) AddInputsAndChangeToTransaction(
-	txArg *MsgDeSoTxn, minFeeRateNanosPerKB uint64, mempool Mempool) (
+func (bc *Blockchain) AddInputsAndChangeToTransaction(txArg *MsgDeSoTxn, minFeeRateNanosPerKB uint64, mempool Mempool,
+	feeEstimator *PoSFeeEstimator) (
 	_totalInputAdded uint64, _spendAmount uint64, _totalChangeAdded uint64, _fee uint64, _err error) {
-
-	return bc.AddInputsAndChangeToTransactionWithSubsidy(txArg, minFeeRateNanosPerKB, 0, mempool, 0)
+	return bc.AddInputsAndChangeToTransactionWithSubsidy(txArg, minFeeRateNanosPerKB, 0, mempool, 0, feeEstimator)
 }
 
-func (bc *Blockchain) AddInputsAndChangeToTransactionWithSubsidy(
-	txArg *MsgDeSoTxn, minFeeRateNanosPerKB uint64, inputSubsidy uint64, mempool Mempool, additionalFees uint64) (
-	_totalInputAdded uint64, _spendAmount uint64, _totalChangeAdded uint64, _fee uint64, _err error) {
+func (bc *Blockchain) AddInputsAndChangeToTransactionWithSubsidy(txArg *MsgDeSoTxn, minFeeRateNanosPerKB uint64,
+	inputSubsidy uint64, mempool Mempool, additionalFees uint64, feeEstimator *PoSFeeEstimator,
+) (_totalInputAdded uint64, _spendAmount uint64, _totalChangeAdded uint64, _fee uint64, _err error) {
 
 	// The transaction we're working with should never have any inputs
 	// set since we'll be setting the inputs here and dealing with a case where
@@ -5028,7 +5025,13 @@ func (bc *Blockchain) AddInputsAndChangeToTransactionWithSubsidy(
 		txArg.TxnFeeNanos = 0
 
 		feeAmountNanos := uint64(0)
-		if txArg.TxnMeta.GetTxnType() != TxnTypeBlockReward && minFeeRateNanosPerKB != 0 {
+		if feeEstimator != nil {
+			txArg.TxnFeeNanos, err = feeEstimator.EstimateFee(txArg, MaxBasisPoints, 100*100, bc.params.MaxBlockSizeBytes)
+			if err != nil {
+				return 0, 0, 0, 0, errors.Wrapf(err,
+					"AddInputsAndChangeToTransaction: Problem estimating fee: ")
+			}
+		} else if txArg.TxnMeta.GetTxnType() != TxnTypeBlockReward && minFeeRateNanosPerKB != 0 {
 			prevFeeAmountNanos := uint64(0)
 			for feeAmountNanos == 0 || feeAmountNanos != prevFeeAmountNanos {
 				prevFeeAmountNanos = feeAmountNanos
@@ -5425,9 +5428,7 @@ func (bc *Blockchain) _createAssociationTxn(
 
 	// We don't need to make any tweaks to the amount because
 	// it's basically a standard "pay per kilobyte" transaction.
-	totalInput, spendAmount, changeAmount, fees, err := bc.AddInputsAndChangeToTransaction(
-		txn, minFeeRateNanosPerKB, mempool,
-	)
+	totalInput, spendAmount, changeAmount, fees, err := bc.AddInputsAndChangeToTransaction(txn, minFeeRateNanosPerKB, mempool, nil)
 	if err != nil {
 		return nil, 0, 0, 0, fmt.Errorf(
 			"%s: problem adding inputs: %v", callingFuncName, err,
@@ -5489,7 +5490,7 @@ func (bc *Blockchain) CreateCoinLockupTxn(
 	//       (Still relevant)     _fee              - Returns the computed fees based on the size of the transaction.
 	//       (Still relevant)     _err              - Necessary for error checking. For obvious reasons.
 	totalInput, spendAmount, _, fees, err :=
-		bc.AddInputsAndChangeToTransaction(txn, minFeeRateNanosPerKB, mempool)
+		bc.AddInputsAndChangeToTransaction(txn, minFeeRateNanosPerKB, mempool, nil)
 	if err != nil {
 		return nil, 0, 0, 0,
 			errors.Wrapf(err, "CreateCoinLockupTxn: Problem adding inputs: ")
@@ -5539,7 +5540,7 @@ func (bc *Blockchain) CreateCoinLockupTransferTxn(
 	//       (Still relevant)     _fee              - Returns the computed fees based on the size of the transaction.
 	//       (Still relevant)     _err              - Necessary for error checking. For obvious reasons.
 	totalInput, spendAmount, _, fees, err :=
-		bc.AddInputsAndChangeToTransaction(txn, minFeeRateNanosPerKB, mempool)
+		bc.AddInputsAndChangeToTransaction(txn, minFeeRateNanosPerKB, mempool, nil)
 	if err != nil {
 		return nil, 0, 0, 0,
 			errors.Wrapf(err, "CreateCoinLockupTransferTxn: Problem adding inputs: ")
@@ -5591,7 +5592,7 @@ func (bc *Blockchain) CreateUpdateCoinLockupParamsTxn(
 	//       (Still relevant)     _fee              - Returns the computed fees based on the size of the transaction.
 	//       (Still relevant)     _err              - Necessary for error checking. For obvious reasons.
 	totalInput, spendAmount, _, fees, err :=
-		bc.AddInputsAndChangeToTransaction(txn, minFeeRateNanosPerKB, mempool)
+		bc.AddInputsAndChangeToTransaction(txn, minFeeRateNanosPerKB, mempool, nil)
 	if err != nil {
 		return nil, 0, 0, 0,
 			errors.Wrapf(err, "CreateCoinLockupTransferTxn: Problem adding inputs: ")
@@ -5633,7 +5634,7 @@ func (bc *Blockchain) CreateCoinUnlockTxn(
 	//       (Still relevant)     _fee              - Returns the computed fees based on the size of the transaction.
 	//       (Still relevant)     _err              - Necessary for error checking. For obvious reasons.
 	totalInput, spendAmount, _, fees, err :=
-		bc.AddInputsAndChangeToTransaction(txn, minFeeRateNanosPerKB, mempool)
+		bc.AddInputsAndChangeToTransaction(txn, minFeeRateNanosPerKB, mempool, nil)
 	if err != nil {
 		return nil, 0, 0, 0,
 			errors.Wrapf(err, "CreateCoinLockupTransferTxn: Problem adding inputs: ")

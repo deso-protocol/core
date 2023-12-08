@@ -1517,7 +1517,7 @@ func TestBasicTransfer(t *testing.T) {
 		}
 
 		totalInput, spendAmount, changeAmount, fees, err :=
-			chain.AddInputsAndChangeToTransaction(txn, 10, nil)
+			chain.AddInputsAndChangeToTransaction(txn, 10, nil, nil)
 		require.NoError(err)
 		require.Equal(totalInput, spendAmount+changeAmount+fees)
 		require.Greater(totalInput, uint64(0))
@@ -1560,7 +1560,7 @@ func TestBasicTransfer(t *testing.T) {
 		utxoView, _ := NewUtxoView(db, params, postgres, chain.snapshot, nil)
 		if blockHeight < params.ForkHeights.BalanceModelBlockHeight {
 			totalInput, spendAmount, changeAmount, fees, err :=
-				chain.AddInputsAndChangeToTransaction(txn, 10, nil)
+				chain.AddInputsAndChangeToTransaction(txn, 10, nil, nil)
 			require.NoError(err)
 			require.Equal(totalInput, spendAmount+changeAmount+fees)
 			require.Greater(totalInput, uint64(0))
@@ -1624,7 +1624,7 @@ func TestBasicTransfer(t *testing.T) {
 		}
 
 		totalInput, spendAmount, changeAmount, fees, err :=
-			chain.AddInputsAndChangeToTransaction(txn, 10, nil)
+			chain.AddInputsAndChangeToTransaction(txn, 10, nil, nil)
 		require.NoError(err)
 		require.Equal(totalInput, spendAmount+changeAmount+fees)
 		require.Greater(totalInput, uint64(0))
@@ -1714,7 +1714,7 @@ func TestBasicTransfer(t *testing.T) {
 		blockHeight := chain.blockTip().Height + 1
 
 		totalInput, spendAmount, changeAmount, fees, err :=
-			chain.AddInputsAndChangeToTransaction(txn, 10, nil)
+			chain.AddInputsAndChangeToTransaction(txn, 10, nil, nil)
 		require.NoError(err)
 		require.Equal(totalInput, spendAmount+changeAmount+fees)
 		require.Greater(totalInput, uint64(0))
@@ -1802,7 +1802,7 @@ func TestBasicTransferSignatures(t *testing.T) {
 		}
 
 		totalInput, spendAmount, changeAmount, fees, err :=
-			chain.AddInputsAndChangeToTransaction(txn, 10, mempool)
+			chain.AddInputsAndChangeToTransaction(txn, 10, mempool, nil)
 		require.NoError(err)
 		require.Equal(totalInput, spendAmount+changeAmount+fees)
 		require.Greater(totalInput, uint64(0))
@@ -2174,7 +2174,7 @@ func TestBlockRewardPatch(t *testing.T) {
 			TxnMeta:   &BasicTransferMetadata{},
 		}
 		_, _, _, _, err :=
-			chain.AddInputsAndChangeToTransaction(txn, testMeta.feeRateNanosPerKb, nil)
+			chain.AddInputsAndChangeToTransaction(txn, testMeta.feeRateNanosPerKb, nil, nil)
 		require.NoError(t, err)
 		_signTxn(t, txn, senderPrivString)
 		utxoView, err := NewUtxoView(db, params, chain.postgres, chain.snapshot, nil)

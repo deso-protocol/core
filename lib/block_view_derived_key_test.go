@@ -65,7 +65,7 @@ func _derivedKeyBasicTransfer(t *testing.T, db *badger.DB, chain *Blockchain, pa
 	}
 
 	totalInput, spendAmount, changeAmount, fees, err :=
-		chain.AddInputsAndChangeToTransaction(txn, 10, mempool)
+		chain.AddInputsAndChangeToTransaction(txn, 10, mempool, nil)
 	require.NoError(err)
 	require.Equal(totalInput, spendAmount+changeAmount+fees)
 	require.Greater(totalInput, uint64(0))
@@ -487,8 +487,7 @@ func _doTxnWithBlockHeight(
 
 		// Add inputs to the transaction and do signing, validation, and broadcast
 		// depending on what the user requested.
-		totalInputMake, _, changeAmountMake, feesMake, err = chain.AddInputsAndChangeToTransaction(
-			txn, feeRateNanosPerKB, testMeta.mempool)
+		totalInputMake, _, changeAmountMake, feesMake, err = chain.AddInputsAndChangeToTransaction(txn, feeRateNanosPerKB, testMeta.mempool, nil)
 		require.NoError(err)
 		operationType = OperationTypeSpendUtxo
 	case TxnTypeDAOCoinLimitOrder:

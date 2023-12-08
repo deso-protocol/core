@@ -984,9 +984,7 @@ func (bc *Blockchain) CreateRegisterAsValidatorTxn(
 
 	// We don't need to make any tweaks to the amount because
 	// it's basically a standard "pay per kilobyte" transaction.
-	totalInput, spendAmount, changeAmount, fees, err := bc.AddInputsAndChangeToTransaction(
-		txn, minFeeRateNanosPerKB, mempool,
-	)
+	totalInput, spendAmount, changeAmount, fees, err := bc.AddInputsAndChangeToTransaction(txn, minFeeRateNanosPerKB, mempool, nil)
 	if err != nil {
 		return nil, 0, 0, 0, errors.Wrapf(
 			err, "Blockchain.CreateRegisterAsValidatorTxn: problem adding inputs: ",
@@ -1060,9 +1058,7 @@ func (bc *Blockchain) CreateUnregisterAsValidatorTxn(
 
 	// We don't need to make any tweaks to the amount because
 	// it's basically a standard "pay per kilobyte" transaction.
-	totalInput, spendAmount, changeAmount, fees, err := bc.AddInputsAndChangeToTransaction(
-		txn, minFeeRateNanosPerKB, mempool,
-	)
+	totalInput, spendAmount, changeAmount, fees, err := bc.AddInputsAndChangeToTransaction(txn, minFeeRateNanosPerKB, mempool, nil)
 	if err != nil {
 		return nil, 0, 0, 0, errors.Wrapf(
 			err, "Blockchain.CreateUnregisterAsValidatorTxn: problem adding inputs: ",
@@ -1136,9 +1132,7 @@ func (bc *Blockchain) CreateUnjailValidatorTxn(
 
 	// We don't need to make any tweaks to the amount because
 	// it's basically a standard "pay per kilobyte" transaction.
-	totalInput, spendAmount, changeAmount, fees, err := bc.AddInputsAndChangeToTransaction(
-		txn, minFeeRateNanosPerKB, mempool,
-	)
+	totalInput, spendAmount, changeAmount, fees, err := bc.AddInputsAndChangeToTransaction(txn, minFeeRateNanosPerKB, mempool, nil)
 	if err != nil {
 		return nil, 0, 0, 0, errors.Wrapf(
 			err, "Blockchain.CreateUnjailValidatorTxn: problem adding inputs: ",

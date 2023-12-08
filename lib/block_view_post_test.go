@@ -1960,7 +1960,7 @@ func TestDeSoDiamondErrorCases(t *testing.T) {
 		// We don't need to make any tweaks to the amount because it's basically
 		// a standard "pay per kilobyte" transaction.
 		totalInput, _, _, fees, err :=
-			chain.AddInputsAndChangeToTransaction(txn, 10, mempool)
+			chain.AddInputsAndChangeToTransaction(txn, 10, mempool, nil)
 		if err != nil {
 			return errors.Wrapf(
 				err, "giveCustomDeSoDiamondTxn: Problem adding inputs: ")
