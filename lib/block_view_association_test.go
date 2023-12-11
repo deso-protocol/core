@@ -2114,6 +2114,7 @@ func _submitAssociationTxn(
 			testMeta.feeRateNanosPerKb,
 			testMeta.mempool,
 			[]*DeSoOutput{},
+			nil,
 		)
 	case TxnTypeDeleteUserAssociation:
 		txn, totalInputMake, changeAmountMake, feesMake, err = testMeta.chain.CreateDeleteUserAssociationTxn(
@@ -2123,6 +2124,7 @@ func _submitAssociationTxn(
 			testMeta.feeRateNanosPerKb,
 			testMeta.mempool,
 			[]*DeSoOutput{},
+			nil,
 		)
 	case TxnTypeCreatePostAssociation:
 		txn, totalInputMake, changeAmountMake, feesMake, err = testMeta.chain.CreateCreatePostAssociationTxn(
@@ -2132,6 +2134,7 @@ func _submitAssociationTxn(
 			testMeta.feeRateNanosPerKb,
 			testMeta.mempool,
 			[]*DeSoOutput{},
+			nil,
 		)
 	case TxnTypeDeletePostAssociation:
 		txn, totalInputMake, changeAmountMake, feesMake, err = testMeta.chain.CreateDeletePostAssociationTxn(
@@ -2141,6 +2144,7 @@ func _submitAssociationTxn(
 			testMeta.feeRateNanosPerKb,
 			testMeta.mempool,
 			[]*DeSoOutput{},
+			nil,
 		)
 	case TxnTypeSubmitPost:
 		// SubmitPost is not technically an association txn type, but we include it
@@ -2159,6 +2163,7 @@ func _submitAssociationTxn(
 			testMeta.feeRateNanosPerKb,
 			testMeta.mempool,
 			[]*DeSoOutput{},
+			nil,
 		)
 	default:
 		err = errors.New("invalid txn type")
@@ -2321,6 +2326,7 @@ func _testAssociationsWithDerivedKey(t *testing.T) {
 				testMeta.feeRateNanosPerKb,
 				mempool,
 				[]*DeSoOutput{},
+				nil,
 			)
 		case TxnTypeDeleteUserAssociation:
 			txn, _, _, _, err = testMeta.chain.CreateDeleteUserAssociationTxn(
@@ -2330,6 +2336,7 @@ func _testAssociationsWithDerivedKey(t *testing.T) {
 				testMeta.feeRateNanosPerKb,
 				mempool,
 				[]*DeSoOutput{},
+				nil,
 			)
 		default:
 			return errors.New("invalid txn type")

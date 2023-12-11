@@ -366,6 +366,7 @@ func _submitRegisterAsValidatorTxn(
 		testMeta.feeRateNanosPerKb,
 		testMeta.mempool,
 		[]*DeSoOutput{},
+		nil,
 	)
 	if err != nil {
 		return 0, err
@@ -417,6 +418,7 @@ func _submitUnregisterAsValidatorTxn(
 		testMeta.feeRateNanosPerKb,
 		testMeta.mempool,
 		[]*DeSoOutput{},
+		nil,
 	)
 	if err != nil {
 		return 0, err
@@ -559,6 +561,7 @@ func TestValidatorRegistrationWithDerivedKey(t *testing.T) {
 				testMeta.feeRateNanosPerKb,
 				mempool,
 				[]*DeSoOutput{},
+				nil,
 			)
 		case TxnTypeUnregisterAsValidator:
 			txn, _, _, _, err = testMeta.chain.CreateUnregisterAsValidatorTxn(
@@ -568,6 +571,7 @@ func TestValidatorRegistrationWithDerivedKey(t *testing.T) {
 				testMeta.feeRateNanosPerKb,
 				mempool,
 				[]*DeSoOutput{},
+				nil,
 			)
 		default:
 			return errors.New("invalid txn type")
@@ -1831,6 +1835,7 @@ func TestUnjailValidatorWithDerivedKey(t *testing.T) {
 			testMeta.feeRateNanosPerKb,
 			mempool,
 			[]*DeSoOutput{},
+			nil,
 		)
 		if err != nil {
 			return err
@@ -1984,6 +1989,7 @@ func _submitUnjailValidatorTxn(
 		testMeta.feeRateNanosPerKb,
 		testMeta.mempool,
 		[]*DeSoOutput{},
+		nil,
 	)
 	if err != nil {
 		return 0, err

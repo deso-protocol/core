@@ -1127,7 +1127,7 @@ func TestCreatorCoinWithDiamondsFailureCases(t *testing.T) {
 			receiverPkBytes,
 			postTxn.Hash(),
 			5,
-			feeRateNanosPerKB, nil, []*DeSoOutput{})
+			feeRateNanosPerKB, nil, []*DeSoOutput{}, nil)
 		require.NoError(err)
 
 		delete(txn.ExtraData, DiamondLevelKey)
@@ -1161,7 +1161,7 @@ func TestCreatorCoinWithDiamondsFailureCases(t *testing.T) {
 			receiverPkBytes,
 			postTxn.Hash(),
 			5,
-			feeRateNanosPerKB, nil, []*DeSoOutput{})
+			feeRateNanosPerKB, nil, []*DeSoOutput{}, nil)
 		require.NoError(err)
 
 		txn.ExtraData[DiamondLevelKey] = IntToBuf(15)
@@ -1194,7 +1194,7 @@ func TestCreatorCoinWithDiamondsFailureCases(t *testing.T) {
 			receiverPkBytes,
 			postTxn.Hash(),
 			5,
-			feeRateNanosPerKB, nil, []*DeSoOutput{})
+			feeRateNanosPerKB, nil, []*DeSoOutput{}, nil)
 		require.NoError(err)
 
 		txn.ExtraData[DiamondLevelKey] = IntToBuf(0)
@@ -1227,7 +1227,7 @@ func TestCreatorCoinWithDiamondsFailureCases(t *testing.T) {
 			receiverPkBytes,
 			postTxn.Hash(),
 			5,
-			feeRateNanosPerKB, nil, []*DeSoOutput{})
+			feeRateNanosPerKB, nil, []*DeSoOutput{}, nil)
 		require.NoError(err)
 
 		txn.TxnMeta.(*CreatorCoinTransferMetadataa).ProfilePublicKey = receiverPkBytes
@@ -1260,7 +1260,7 @@ func TestCreatorCoinWithDiamondsFailureCases(t *testing.T) {
 			receiverPkBytes,
 			postTxn.Hash(),
 			5,
-			feeRateNanosPerKB, nil, []*DeSoOutput{})
+			feeRateNanosPerKB, nil, []*DeSoOutput{}, nil)
 		require.NoError(err)
 
 		txn.TxnMeta.(*CreatorCoinTransferMetadataa).ReceiverPublicKey = senderPkBytes
@@ -1293,7 +1293,7 @@ func TestCreatorCoinWithDiamondsFailureCases(t *testing.T) {
 			receiverPkBytes,
 			postTxn.Hash(),
 			5,
-			feeRateNanosPerKB, nil, []*DeSoOutput{})
+			feeRateNanosPerKB, nil, []*DeSoOutput{}, nil)
 		require.NoError(err)
 
 		emptyHash := &BlockHash{}
@@ -1327,7 +1327,7 @@ func TestCreatorCoinWithDiamondsFailureCases(t *testing.T) {
 			senderPkBytes,
 			postTxn.Hash(),
 			1,
-			feeRateNanosPerKB, nil, []*DeSoOutput{})
+			feeRateNanosPerKB, nil, []*DeSoOutput{}, nil)
 		require.NoError(err)
 
 		txn.ExtraData[DiamondLevelKey] = IntToBuf(7)
@@ -1362,7 +1362,7 @@ func TestCreatorCoinWithDiamondsFailureCases(t *testing.T) {
 				receiverPkBytes,
 				postTxn.Hash(),
 				3,
-				feeRateNanosPerKB, nil, []*DeSoOutput{})
+				feeRateNanosPerKB, nil, []*DeSoOutput{}, nil)
 			require.NoError(err)
 
 			// Sign the transaction now that its inputs are set up.
@@ -1392,7 +1392,7 @@ func TestCreatorCoinWithDiamondsFailureCases(t *testing.T) {
 				receiverPkBytes,
 				postTxn.Hash(),
 				5,
-				feeRateNanosPerKB, mempool, []*DeSoOutput{})
+				feeRateNanosPerKB, mempool, []*DeSoOutput{}, nil)
 			require.NoError(err)
 
 			txn.ExtraData[DiamondLevelKey] = IntToBuf(3)
@@ -1525,7 +1525,7 @@ func TestCreatorCoinDiamondAfterDeSoDiamondsBlockHeight(t *testing.T) {
 			receiverPkBytes,
 			postTxn.Hash(),
 			2,
-			feeRateNanosPerKB, nil, []*DeSoOutput{})
+			feeRateNanosPerKB, nil, []*DeSoOutput{}, nil)
 		require.NoError(err)
 
 		// Sign the transaction now that its inputs are set up.
@@ -4331,7 +4331,8 @@ func _creatorCoinTxn(t *testing.T, chain *Blockchain, db *badger.DB,
 		MinCreatorCoinExpectedNanos,
 		feeRateNanosPerKB,
 		nil, /*mempool*/
-		[]*DeSoOutput{})
+		[]*DeSoOutput{},
+		nil)
 
 	if err != nil {
 		return nil, nil, 0, err
@@ -4442,7 +4443,7 @@ func _doCreatorCoinTransferTxnWithDiamonds(t *testing.T, chain *Blockchain, db *
 		receiverPkBytes,
 		DiamondPostHash,
 		DiamondLevel,
-		feeRateNanosPerKB, nil, []*DeSoOutput{})
+		feeRateNanosPerKB, nil, []*DeSoOutput{}, nil)
 	if err != nil {
 		return nil, nil, 0, err
 	}
@@ -4515,7 +4516,8 @@ func _doCreatorCoinTransferTxn(t *testing.T, chain *Blockchain, db *badger.DB,
 		receiverPkBytes,
 		feeRateNanosPerKB,
 		nil, /*mempool*/
-		[]*DeSoOutput{})
+		[]*DeSoOutput{},
+		nil)
 	if err != nil {
 		return nil, nil, 0, err
 	}

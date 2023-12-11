@@ -73,7 +73,7 @@ func _privateMessageWithExtraData(t *testing.T, chain *Blockchain, db *badger.DB
 	txn, totalInputMake, changeAmountMake, feesMake, err := chain.CreatePrivateMessageTxn(
 		senderPkBytes, recipientPkBytes, unencryptedMessageText, "",
 		[]byte{}, []byte{}, []byte{}, []byte{},
-		tstampNanos, extraData, feeRateNanosPerKB, nil, []*DeSoOutput{})
+		tstampNanos, extraData, feeRateNanosPerKB, nil, []*DeSoOutput{}, nil)
 	if err != nil {
 		return nil, nil, 0, err
 	}
@@ -649,7 +649,7 @@ func _messagingKeyWithExtraData(t *testing.T, chain *Blockchain, db *badger.DB, 
 	require := require.New(t)
 	txn, totalInputMake, changeAmountMake, feesMake, err := chain.CreateMessagingKeyTxn(
 		senderPk, messagingPublicKey, messagingKeyName, keySignature,
-		recipients, extraData, 10, nil, []*DeSoOutput{})
+		recipients, extraData, 10, nil, []*DeSoOutput{}, nil)
 	require.NoError(err)
 	require.Equal(totalInputMake, changeAmountMake+feesMake)
 
@@ -1674,7 +1674,7 @@ func _connectPrivateMessageWithPartyWithExtraData(testMeta *TestMeta, senderPkBy
 	txn, totalInputMake, changeAmountMake, feesMake, err := testMeta.chain.CreatePrivateMessageTxn(
 		senderPkBytes, recipientPkBytes, "", encryptedMessageText,
 		senderMessagingPublicKey, senderMessagingKeyName, recipientMessagingPublicKey,
-		recipientMessagingKeyName, tstampNanos, extraData, 10, nil, []*DeSoOutput{})
+		recipientMessagingKeyName, tstampNanos, extraData, 10, nil, []*DeSoOutput{}, nil)
 	require.NoError(err)
 
 	require.Equal(totalInputMake, changeAmountMake+feesMake)

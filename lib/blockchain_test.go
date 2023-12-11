@@ -980,7 +980,7 @@ func _assembleBasicTransferTxnFullySigned(t *testing.T, chain *Blockchain,
 	}
 
 	totalInputAdded, spendAmount, totalChangeAdded, fee, err :=
-		chain.AddInputsAndChangeToTransaction(txn, feeRateNanosPerKB, mempool)
+		chain.AddInputsAndChangeToTransaction(txn, feeRateNanosPerKB, mempool, nil)
 	require.NoError(err)
 	require.Equal(totalInputAdded, spendAmount+totalChangeAdded+fee)
 
@@ -1006,7 +1006,7 @@ func TestAddInputsAndChangeToTransaction(t *testing.T) {
 		feeRateNanosPerKB := uint64(0)
 
 		totalInputAdded, spendAmount, totalChangeAdded, fee, err :=
-			chain.AddInputsAndChangeToTransaction(txn, feeRateNanosPerKB, nil)
+			chain.AddInputsAndChangeToTransaction(txn, feeRateNanosPerKB, nil, nil)
 		require.NoError(err)
 		require.Equal(0, len(txn.TxInputs))
 		require.Equal(1, len(txn.TxOutputs))
@@ -1023,7 +1023,7 @@ func TestAddInputsAndChangeToTransaction(t *testing.T) {
 		feeRateNanosPerKB := uint64(0)
 
 		_, _, _, _, err :=
-			chain.AddInputsAndChangeToTransaction(txn, feeRateNanosPerKB, nil)
+			chain.AddInputsAndChangeToTransaction(txn, feeRateNanosPerKB, nil, nil)
 		require.Error(err)
 	}
 
@@ -1033,7 +1033,7 @@ func TestAddInputsAndChangeToTransaction(t *testing.T) {
 		feeRateNanosPerKB := uint64(1000)
 
 		_, _, _, _, err :=
-			chain.AddInputsAndChangeToTransaction(txn, feeRateNanosPerKB, nil)
+			chain.AddInputsAndChangeToTransaction(txn, feeRateNanosPerKB, nil, nil)
 		require.Error(err)
 	}
 
@@ -1051,7 +1051,7 @@ func TestAddInputsAndChangeToTransaction(t *testing.T) {
 		feeRateNanosPerKB := uint64(0)
 
 		_, _, _, _, err :=
-			chain.AddInputsAndChangeToTransaction(txn, feeRateNanosPerKB, nil)
+			chain.AddInputsAndChangeToTransaction(txn, feeRateNanosPerKB, nil, nil)
 		require.Error(err)
 	}
 
@@ -1069,7 +1069,7 @@ func TestAddInputsAndChangeToTransaction(t *testing.T) {
 		feeRateNanosPerKB := uint64(testSpend)
 
 		totalInputAdded, spendAmount, totalChangeAdded, fee, err :=
-			chain.AddInputsAndChangeToTransaction(txn, feeRateNanosPerKB, nil)
+			chain.AddInputsAndChangeToTransaction(txn, feeRateNanosPerKB, nil, nil)
 		require.NoError(err)
 		require.Equal(1, len(txn.TxInputs))
 		require.Equal(2, len(txn.TxOutputs))
@@ -1086,7 +1086,7 @@ func TestAddInputsAndChangeToTransaction(t *testing.T) {
 		feeRateNanosPerKB := uint64(0)
 
 		_, _, _, _, err :=
-			chain.AddInputsAndChangeToTransaction(txn, feeRateNanosPerKB, nil)
+			chain.AddInputsAndChangeToTransaction(txn, feeRateNanosPerKB, nil, nil)
 		require.Error(err)
 	}
 
@@ -1100,7 +1100,7 @@ func TestAddInputsAndChangeToTransaction(t *testing.T) {
 		feeRateNanosPerKB := uint64(0)
 
 		_, _, _, _, err :=
-			chain.AddInputsAndChangeToTransaction(txn, feeRateNanosPerKB, nil)
+			chain.AddInputsAndChangeToTransaction(txn, feeRateNanosPerKB, nil, nil)
 		require.NoError(err)
 	}
 }
@@ -1730,7 +1730,8 @@ func TestForbiddenBlockSignaturePubKey(t *testing.T) {
 	blockSignerPkBytes, _, err := Base58CheckDecode(blockSignerPk)
 	require.NoError(err)
 	txn, _, _, _, err := chain.CreateUpdateGlobalParamsTxn(
-		senderPkBytes, -1, -1, -1, -1, -1, blockSignerPkBytes, -1, map[string][]byte{}, 100 /*feeRateNanosPerKB*/, nil, []*DeSoOutput{})
+		senderPkBytes, -1, -1, -1, -1, -1, blockSignerPkBytes, -1, map[string][]byte{}, 100 /*feeRateNanosPerKB*/, nil,
+		[]*DeSoOutput{}, nil)
 	require.NoError(err)
 
 	// Mine a few blocks to give the senderPkString some money.

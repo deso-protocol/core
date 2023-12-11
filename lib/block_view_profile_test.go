@@ -55,7 +55,8 @@ func _swapIdentity(t *testing.T, chain *Blockchain, db *badger.DB,
 		toPublicKey,
 		feeRateNanosPerKB,
 		nil,
-		[]*DeSoOutput{})
+		[]*DeSoOutput{},
+		nil)
 	if err != nil {
 		return nil, nil, 0, err
 	}
@@ -138,7 +139,8 @@ func _updateProfileWithExtraData(t *testing.T, chain *Blockchain, db *badger.DB,
 		extraData,
 		feeRateNanosPerKB,
 		nil, /*mempool*/
-		[]*DeSoOutput{})
+		[]*DeSoOutput{},
+		nil)
 	if err != nil {
 		return nil, nil, 0, err
 	}
@@ -1243,7 +1245,8 @@ func TestSpamUpdateProfile(t *testing.T) {
 			nil,
 			feeRateNanosPerKB, /*feeRateNanosPerKB*/
 			mempool,           /*mempool*/
-			[]*DeSoOutput{})
+			[]*DeSoOutput{},
+			nil)
 		require.NoError(err)
 		_signTxn(t, txn, moneyPrivString)
 		fmt.Printf("Creating txn took: %v seconds\n", time.Since(startTimeCreateTxn).Seconds())
@@ -3314,7 +3317,8 @@ func TestUpdateProfileChangeBack(t *testing.T) {
 			nil,
 			100,
 			mempool, /*mempool*/
-			[]*DeSoOutput{})
+			[]*DeSoOutput{},
+			nil)
 		require.NoError(err)
 
 		// Sign the transaction now that its inputs are set up.
@@ -3340,7 +3344,8 @@ func TestUpdateProfileChangeBack(t *testing.T) {
 			nil,
 			100,
 			mempool, /*mempool*/
-			[]*DeSoOutput{})
+			[]*DeSoOutput{},
+			nil)
 		require.NoError(err)
 
 		// Sign the transaction now that its inputs are set up.
@@ -3373,7 +3378,8 @@ func TestUpdateProfileChangeBack(t *testing.T) {
 			nil,
 			100,
 			mempool, /*mempool*/
-			[]*DeSoOutput{})
+			[]*DeSoOutput{},
+			nil)
 		require.NoError(err)
 
 		// Sign the transaction now that its inputs are set up.
@@ -3400,7 +3406,8 @@ func TestUpdateProfileChangeBack(t *testing.T) {
 			nil,
 			100,
 			mempool, /*mempool*/
-			[]*DeSoOutput{})
+			[]*DeSoOutput{},
+			nil)
 		require.NoError(err)
 
 		// Sign the transaction now that its inputs are set up.
@@ -3435,7 +3442,8 @@ func TestUpdateProfileChangeBack(t *testing.T) {
 			nil,
 			100,
 			mempool, /*mempool*/
-			[]*DeSoOutput{})
+			[]*DeSoOutput{},
+			nil)
 		require.NoError(err)
 
 		// Sign the transaction now that its inputs are set up.
@@ -3468,7 +3476,8 @@ func TestUpdateProfileChangeBack(t *testing.T) {
 			nil,
 			100,
 			mempool, /*mempool*/
-			[]*DeSoOutput{})
+			[]*DeSoOutput{},
+			nil)
 		require.NoError(err)
 
 		// Sign the transaction now that its inputs are set up.
@@ -3495,7 +3504,8 @@ func TestUpdateProfileChangeBack(t *testing.T) {
 			nil,
 			100,
 			mempool, /*mempool*/
-			[]*DeSoOutput{})
+			[]*DeSoOutput{},
+			nil)
 		require.NoError(err)
 
 		// Sign the transaction now that its inputs are set up.

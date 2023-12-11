@@ -1043,6 +1043,7 @@ func (bc *Blockchain) CreateStakeTxn(
 	minFeeRateNanosPerKB uint64,
 	mempool Mempool,
 	additionalOutputs []*DeSoOutput,
+	feeEstimator *PoSFeeEstimator,
 ) (
 	_txn *MsgDeSoTxn,
 	_totalInput uint64,
@@ -1088,7 +1089,7 @@ func (bc *Blockchain) CreateStakeTxn(
 	// We don't need to make any tweaks to the amount because
 	// it's basically a standard "pay per kilobyte" transaction.
 	totalInput, spendAmount, changeAmount, fees, err := bc.AddInputsAndChangeToTransaction(
-		txn, minFeeRateNanosPerKB, mempool,
+		txn, minFeeRateNanosPerKB, mempool, feeEstimator,
 	)
 	if err != nil {
 		return nil, 0, 0, 0, errors.Wrapf(
@@ -1120,6 +1121,7 @@ func (bc *Blockchain) CreateUnstakeTxn(
 	minFeeRateNanosPerKB uint64,
 	mempool Mempool,
 	additionalOutputs []*DeSoOutput,
+	feeEstimator *PoSFeeEstimator,
 ) (
 	_txn *MsgDeSoTxn,
 	_totalInput uint64,
@@ -1164,7 +1166,7 @@ func (bc *Blockchain) CreateUnstakeTxn(
 	// We don't need to make any tweaks to the amount because
 	// it's basically a standard "pay per kilobyte" transaction.
 	totalInput, spendAmount, changeAmount, fees, err := bc.AddInputsAndChangeToTransaction(
-		txn, minFeeRateNanosPerKB, mempool,
+		txn, minFeeRateNanosPerKB, mempool, feeEstimator,
 	)
 	if err != nil {
 		return nil, 0, 0, 0, errors.Wrapf(
@@ -1196,6 +1198,7 @@ func (bc *Blockchain) CreateUnlockStakeTxn(
 	minFeeRateNanosPerKB uint64,
 	mempool Mempool,
 	additionalOutputs []*DeSoOutput,
+	feeEstimator *PoSFeeEstimator,
 ) (
 	_txn *MsgDeSoTxn,
 	_totalInput uint64,
@@ -1240,7 +1243,7 @@ func (bc *Blockchain) CreateUnlockStakeTxn(
 	// We don't need to make any tweaks to the amount because
 	// it's basically a standard "pay per kilobyte" transaction.
 	totalInput, spendAmount, changeAmount, fees, err := bc.AddInputsAndChangeToTransaction(
-		txn, minFeeRateNanosPerKB, mempool,
+		txn, minFeeRateNanosPerKB, mempool, feeEstimator,
 	)
 	if err != nil {
 		return nil, 0, 0, 0, errors.Wrapf(

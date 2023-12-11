@@ -4073,7 +4073,7 @@ func _createDAOCoinLimitOrderTxn(
 	transactorPkBytes, _, err := Base58CheckDecode(publicKey)
 	require.NoError(err)
 	txn, totalInput, changeAmount, fees, err := testMeta.chain.CreateDAOCoinLimitOrderTxn(
-		transactorPkBytes, &metadata, feeRateNanosPerKb, nil, []*DeSoOutput{})
+		transactorPkBytes, &metadata, feeRateNanosPerKb, nil, []*DeSoOutput{}, nil)
 	require.NoError(err)
 	// There is some spend amount that may go to matching orders.
 	// That is why these are not always exactly equal.
@@ -4150,7 +4150,8 @@ func _doDAOCoinLimitOrderTxn(t *testing.T, chain *Blockchain, db *badger.DB,
 		&metadata,
 		feeRateNanosPerKB,
 		nil,
-		[]*DeSoOutput{})
+		[]*DeSoOutput{},
+		nil)
 
 	if err != nil {
 		return nil, nil, 0, err
@@ -4320,7 +4321,8 @@ func TestFlushingDAOCoinLimitOrders(t *testing.T) {
 			&metadata,
 			feeRateNanosPerKb,
 			mempool,
-			[]*DeSoOutput{})
+			[]*DeSoOutput{},
+			nil)
 		require.NoError(t, err)
 
 		// Sign txn.

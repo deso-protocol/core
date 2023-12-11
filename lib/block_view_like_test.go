@@ -25,7 +25,7 @@ func _doLikeTxn(t *testing.T, chain *Blockchain, db *badger.DB,
 	require.NoError(err)
 
 	txn, totalInputMake, changeAmountMake, feesMake, err := chain.CreateLikeTxn(
-		senderPkBytes, likedPostHash, isUnfollow, feeRateNanosPerKB, nil, []*DeSoOutput{})
+		senderPkBytes, likedPostHash, isUnfollow, feeRateNanosPerKB, nil, []*DeSoOutput{}, nil)
 	if err != nil {
 		return nil, nil, 0, err
 	}

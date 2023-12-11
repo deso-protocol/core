@@ -184,7 +184,7 @@ func _updateUSDCentsPerBitcoinExchangeRate(t *testing.T, chain *Blockchain, db *
 		usdCentsPerBitcoin,
 		feeRateNanosPerKB,
 		nil,
-		[]*DeSoOutput{})
+		[]*DeSoOutput{}, nil)
 	if err != nil {
 		return nil, nil, 0, err
 	}
@@ -1922,7 +1922,8 @@ func TestSpendOffOfUnminedTxnsBitcoinExchange(t *testing.T) {
 					map[string][]byte{},
 					100, /*feeRateNanosPerKB*/
 					nil,
-					[]*DeSoOutput{})
+					[]*DeSoOutput{},
+					nil)
 				require.NoError(err)
 				// Sign the transaction now that its inputs are set up.
 				_signTxn(t, rateUpdateTxn, moneyPrivString)
