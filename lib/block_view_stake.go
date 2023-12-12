@@ -2137,6 +2137,40 @@ func (bav *UtxoView) IsValidUnlockStakeMetadata(transactorPkBytes []byte, metada
 	return nil
 }
 
+// IsCorrectValidatorTotalStakeAmountNanos returns true if the total stake amount for the validator
+// matches the total stake amount calculated from the StakeEntries in the UtxoView + DB and false otherwise.
+func (bav *UtxoView) IsCorrectValidatorTotalStakeAmountNanos(validatorEntry *ValidatorEntry) (bool, error) {
+	// Map of all the stake entries for this validator.
+	stakeEntryMap := make(map[StakeMapKey]*StakeEntry)
+
+	dbStakeEntries, err := DBGetStakeEntriesForValidatorPKID(bav.Handle, bav.Snapshot, validatorEntry.ValidatorPKID)
+	if err != nil {
+		return false, errors.Wrapf(err, "IsCorrectValidatorTotalStakeAmountNanos: error retrieving StakeEntries: ")
+	}
+	// Fill the DB entries into the map first.
+	for _, dbStakeEntry := range dbStakeEntries {
+		stakeEntryMap[dbStakeEntry.ToMapKey()] = dbStakeEntry
+	}
+
+	// Merge in results from the view, overwriting results from the DB.
+	for stakeMapKey, stakeEntry := range bav.StakeMapKeyToStakeEntry {
+		// Only add entries for this validator.
+		if stakeEntry.ValidatorPKID.Eq(validatorEntry.ValidatorPKID) {
+			stakeEntryMap[stakeMapKey] = stakeEntry.Copy()
+		}
+	}
+	// Calculate the total stake amount for the validator.
+	totalStakeAmountNanos := uint256.NewInt()
+	for _, stakeEntry := range stakeEntryMap {
+		// If an entry is deleted, we don't count it towards the total.
+		if stakeEntry.isDeleted {
+			continue
+		}
+		totalStakeAmountNanos.Add(totalStakeAmountNanos, stakeEntry.StakeAmountNanos)
+	}
+	return totalStakeAmountNanos.Eq(validatorEntry.TotalStakeAmountNanos), nil
+}
+
 func (bav *UtxoView) SanityCheckStakeTxn(
 	transactorPKID *PKID,
 	utxoOp *UtxoOperation,
@@ -2208,6 +2242,15 @@ func (bav *UtxoView) SanityCheckStakeTxn(
 	}
 	if !uint256.NewInt().SetUint64(transactorBalanceNanosDecrease).Eq(amountNanos) {
 		return errors.New("SanityCheckStakeTxn: TransactorBalance decrease does not match")
+	}
+
+	isCorrectTotalStakeAmountNanos, err := bav.IsCorrectValidatorTotalStakeAmountNanos(currentValidatorEntry)
+	if err != nil {
+		return errors.Wrapf(err, "SanityCheckStakeTxn: error validating ValidatorEntry.TotalStakeAmountNanos: ")
+	}
+	if !isCorrectTotalStakeAmountNanos {
+		return errors.New("SanityCheckStakeTxn: incorrect TotalStakeAmountNanos for validator after " +
+			"connecting transaction")
 	}
 
 	return nil
@@ -2284,6 +2327,15 @@ func (bav *UtxoView) SanityCheckUnstakeTxn(transactorPKID *PKID, utxoOp *UtxoOpe
 	}
 	if !lockedStakeEntryLockedAmountNanosIncrease.Eq(amountNanos) {
 		return errors.New("SanityCheckUnstakeTxn: LockedAmountNanos increase does not match")
+	}
+
+	isCorrectTotalStakeAmountNanos, err := bav.IsCorrectValidatorTotalStakeAmountNanos(currentValidatorEntry)
+	if err != nil {
+		return errors.Wrapf(err, "SanityCheckUnstakeTxn: error validating ValidatorEntry.TotalStakeAmountNanos: ")
+	}
+	if !isCorrectTotalStakeAmountNanos {
+		return errors.New("SanityCheckUnstakeTxn: incorrect TotalStakeAmountNanos for validator after " +
+			"connecting transaction")
 	}
 
 	return nil
