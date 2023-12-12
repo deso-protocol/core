@@ -5029,14 +5029,21 @@ func (bc *Blockchain) AddInputsAndChangeToTransactionWithSubsidy(
 
 		// Initialize to 0.
 		txArg.TxnFeeNanos = 0
-
-		feeAmountNanos := uint64(0)
-		if txArg.TxnMeta.GetTxnType() != TxnTypeBlockReward && minFeeRateNanosPerKB != 0 {
-			prevFeeAmountNanos := uint64(0)
-			for feeAmountNanos == 0 || feeAmountNanos != prevFeeAmountNanos {
-				prevFeeAmountNanos = feeAmountNanos
-				feeAmountNanos = _computeMaxTxV1Fee(txArg, minFeeRateNanosPerKB)
-				txArg.TxnFeeNanos = feeAmountNanos
+		if txArg.TxnMeta.GetTxnType() != TxnTypeBlockReward {
+			if blockHeight >= bc.params.ForkHeights.ProofOfStake2ConsensusCutoverBlockHeight && feeEstimator != nil {
+				txArg.TxnFeeNanos, err = feeEstimator.EstimateFee(txArg, MaxBasisPoints, MaxBasisPoints, bc.params.MaxBlockSizeBytes)
+				if err != nil {
+					return 0, 0, 0, 0, errors.Wrapf(err,
+						"AddInputsAndChangeToTransaction: Problem estimating fee: ")
+				}
+			} else if minFeeRateNanosPerKB != 0 {
+				feeAmountNanos := uint64(0)
+				prevFeeAmountNanos := uint64(0)
+				for feeAmountNanos == 0 || feeAmountNanos != prevFeeAmountNanos {
+					prevFeeAmountNanos = feeAmountNanos
+					feeAmountNanos = _computeMaxTxV1Fee(txArg, minFeeRateNanosPerKB)
+					txArg.TxnFeeNanos = feeAmountNanos
+				}
 			}
 		}
 
