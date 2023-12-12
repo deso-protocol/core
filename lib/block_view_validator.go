@@ -940,6 +940,7 @@ func (bc *Blockchain) CreateRegisterAsValidatorTxn(
 	minFeeRateNanosPerKB uint64,
 	mempool Mempool,
 	additionalOutputs []*DeSoOutput,
+	feeEstimator *PoSFeeEstimator,
 ) (
 	_txn *MsgDeSoTxn,
 	_totalInput uint64,
@@ -985,7 +986,7 @@ func (bc *Blockchain) CreateRegisterAsValidatorTxn(
 	// We don't need to make any tweaks to the amount because
 	// it's basically a standard "pay per kilobyte" transaction.
 	totalInput, spendAmount, changeAmount, fees, err := bc.AddInputsAndChangeToTransaction(
-		txn, minFeeRateNanosPerKB, mempool,
+		txn, minFeeRateNanosPerKB, mempool, feeEstimator,
 	)
 	if err != nil {
 		return nil, 0, 0, 0, errors.Wrapf(
@@ -1017,6 +1018,7 @@ func (bc *Blockchain) CreateUnregisterAsValidatorTxn(
 	minFeeRateNanosPerKB uint64,
 	mempool Mempool,
 	additionalOutputs []*DeSoOutput,
+	feeEstimator *PoSFeeEstimator,
 ) (
 	_txn *MsgDeSoTxn,
 	_totalInput uint64,
@@ -1061,7 +1063,7 @@ func (bc *Blockchain) CreateUnregisterAsValidatorTxn(
 	// We don't need to make any tweaks to the amount because
 	// it's basically a standard "pay per kilobyte" transaction.
 	totalInput, spendAmount, changeAmount, fees, err := bc.AddInputsAndChangeToTransaction(
-		txn, minFeeRateNanosPerKB, mempool,
+		txn, minFeeRateNanosPerKB, mempool, feeEstimator,
 	)
 	if err != nil {
 		return nil, 0, 0, 0, errors.Wrapf(
@@ -1093,6 +1095,7 @@ func (bc *Blockchain) CreateUnjailValidatorTxn(
 	minFeeRateNanosPerKB uint64,
 	mempool Mempool,
 	additionalOutputs []*DeSoOutput,
+	feeEstimator *PoSFeeEstimator,
 ) (
 	_txn *MsgDeSoTxn,
 	_totalInput uint64,
@@ -1137,7 +1140,7 @@ func (bc *Blockchain) CreateUnjailValidatorTxn(
 	// We don't need to make any tweaks to the amount because
 	// it's basically a standard "pay per kilobyte" transaction.
 	totalInput, spendAmount, changeAmount, fees, err := bc.AddInputsAndChangeToTransaction(
-		txn, minFeeRateNanosPerKB, mempool,
+		txn, minFeeRateNanosPerKB, mempool, feeEstimator,
 	)
 	if err != nil {
 		return nil, 0, 0, 0, errors.Wrapf(

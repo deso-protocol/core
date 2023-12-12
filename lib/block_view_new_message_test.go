@@ -795,7 +795,7 @@ func _createSignedNewMessageTransaction(t *testing.T, chain *Blockchain, mempool
 		dataSpace.SenderAccessGroupOwnerPublicKey, dataSpace.SenderAccessGroupKeyName, dataSpace.SenderAccessGroupPublicKey,
 		dataSpace.RecipientAccessGroupOwnerPublicKey, dataSpace.RecipientAccessGroupKeyName, dataSpace.RecipientAccessGroupPublicKey,
 		dataSpace.EncryptedText, dataSpace.TimestampNanos, dataSpace.NewMessageType, dataSpace.NewMessageOperation, dataSpace.extraData,
-		10, mempool, []*DeSoOutput{})
+		10, mempool, []*DeSoOutput{}, nil)
 	if err != nil {
 		return nil, errors.Wrapf(err, "_createSignedNewMessageTransaction: problem for "+
 			"dataSpace %v", dataSpace)

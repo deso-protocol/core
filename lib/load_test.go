@@ -71,7 +71,8 @@ func TestComputeMaxTPS(t *testing.T) {
 				nil,
 				10,
 				mempool, /*mempool*/
-				[]*DeSoOutput{})
+				[]*DeSoOutput{},
+				nil)
 			require.NoError(err)
 			_signTxn(t, txn, currentPrivStr)
 			_, err = mempool.ProcessTransaction(
@@ -101,7 +102,8 @@ func TestComputeMaxTPS(t *testing.T) {
 				false,
 				100,
 				mempool,
-				[]*DeSoOutput{})
+				[]*DeSoOutput{},
+				nil)
 			require.NoError(err)
 
 			// Sign the transaction now that its inputs are set up.

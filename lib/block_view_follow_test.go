@@ -28,7 +28,7 @@ func _doFollowTxn(t *testing.T, chain *Blockchain, db *badger.DB,
 	require.NoError(err)
 
 	txn, totalInputMake, changeAmountMake, feesMake, err := chain.CreateFollowTxn(
-		senderPkBytes, followedPkBytes, isUnfollow, feeRateNanosPerKB, nil, []*DeSoOutput{})
+		senderPkBytes, followedPkBytes, isUnfollow, feeRateNanosPerKB, nil, []*DeSoOutput{}, nil)
 	if err != nil {
 		return nil, nil, 0, err
 	}

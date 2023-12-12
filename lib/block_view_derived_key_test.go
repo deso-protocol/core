@@ -65,7 +65,7 @@ func _derivedKeyBasicTransfer(t *testing.T, db *badger.DB, chain *Blockchain, pa
 	}
 
 	totalInput, spendAmount, changeAmount, fees, err :=
-		chain.AddInputsAndChangeToTransaction(txn, 10, mempool)
+		chain.AddInputsAndChangeToTransaction(txn, 10, mempool, nil)
 	require.NoError(err)
 	require.Equal(totalInput, spendAmount+changeAmount+fees)
 	require.Greater(totalInput, uint64(0))
@@ -195,7 +195,9 @@ func _doTxnWithBlockHeight(
 			realTxMeta.MinCreatorCoinExpectedNanos,
 			feeRateNanosPerKB,
 			testMeta.mempool,
-			nil)
+			nil,
+			nil,
+		)
 		require.NoError(err)
 		operationType = OperationTypeCreatorCoin
 	case TxnTypeCreatorCoinTransfer:
@@ -208,6 +210,7 @@ func _doTxnWithBlockHeight(
 			feeRateNanosPerKB,
 			testMeta.mempool,
 			nil,
+			nil,
 		)
 		require.NoError(err)
 		operationType = OperationTypeCreatorCoinTransfer
@@ -219,6 +222,7 @@ func _doTxnWithBlockHeight(
 			feeRateNanosPerKB,
 			testMeta.mempool,
 			nil,
+			nil,
 		)
 		require.NoError(err)
 		operationType = OperationTypeDAOCoin
@@ -229,6 +233,7 @@ func _doTxnWithBlockHeight(
 			realTxMeta,
 			feeRateNanosPerKB,
 			testMeta.mempool,
+			nil,
 			nil,
 		)
 		require.NoError(err)
@@ -251,6 +256,7 @@ func _doTxnWithBlockHeight(
 			buyNowPriceNanos,
 			feeRateNanosPerKB,
 			testMeta.mempool,
+			nil,
 			nil,
 		)
 		require.NoError(err)
@@ -291,6 +297,7 @@ func _doTxnWithBlockHeight(
 			feeRateNanosPerKB,
 			testMeta.mempool,
 			nil,
+			nil,
 		)
 		require.NoError(err)
 		operationType = OperationTypeCreateNFT
@@ -306,6 +313,7 @@ func _doTxnWithBlockHeight(
 			feeRateNanosPerKB,
 			testMeta.mempool,
 			nil,
+			nil,
 		)
 		require.NoError(err)
 		operationType = OperationTypeAcceptNFTBid
@@ -317,6 +325,7 @@ func _doTxnWithBlockHeight(
 			realTxMeta.SerialNumber,
 			feeRateNanosPerKB,
 			testMeta.mempool,
+			nil,
 			nil,
 		)
 		require.NoError(err)
@@ -330,6 +339,7 @@ func _doTxnWithBlockHeight(
 			realTxMeta.BidAmountNanos,
 			feeRateNanosPerKB,
 			testMeta.mempool,
+			nil,
 			nil,
 		)
 		require.NoError(err)
@@ -350,6 +360,7 @@ func _doTxnWithBlockHeight(
 			feeRateNanosPerKB,
 			testMeta.mempool,
 			nil,
+			nil,
 		)
 		require.NoError(err)
 		operationType = OperationTypeNFTTransfer
@@ -361,6 +372,7 @@ func _doTxnWithBlockHeight(
 			realTxMeta.SerialNumber,
 			feeRateNanosPerKB,
 			testMeta.mempool,
+			nil,
 			nil,
 		)
 		require.NoError(err)
@@ -394,6 +406,7 @@ func _doTxnWithBlockHeight(
 			feeRateNanosPerKB,
 			testMeta.mempool,
 			nil,
+			nil,
 		)
 		require.NoError(err)
 		operationType = OperationTypeAuthorizeDerivedKey
@@ -413,6 +426,7 @@ func _doTxnWithBlockHeight(
 			feeRateNanosPerKB,
 			testMeta.mempool,
 			nil,
+			nil,
 		)
 		require.NoError(err)
 		operationType = OperationTypeUpdateProfile
@@ -431,6 +445,7 @@ func _doTxnWithBlockHeight(
 			realTxMeta.IsHidden,
 			feeRateNanosPerKB,
 			testMeta.mempool,
+			nil,
 			nil,
 		)
 		require.NoError(err)
@@ -460,6 +475,7 @@ func _doTxnWithBlockHeight(
 			feeRateNanosPerKB,
 			testMeta.mempool,
 			nil,
+			nil,
 		)
 		require.NoError(err)
 		operationType = OperationTypeUpdateGlobalParams
@@ -488,7 +504,7 @@ func _doTxnWithBlockHeight(
 		// Add inputs to the transaction and do signing, validation, and broadcast
 		// depending on what the user requested.
 		totalInputMake, _, changeAmountMake, feesMake, err = chain.AddInputsAndChangeToTransaction(
-			txn, feeRateNanosPerKB, testMeta.mempool)
+			txn, feeRateNanosPerKB, testMeta.mempool, nil)
 		require.NoError(err)
 		operationType = OperationTypeSpendUtxo
 	case TxnTypeDAOCoinLimitOrder:
@@ -498,6 +514,7 @@ func _doTxnWithBlockHeight(
 			realTxMeta,
 			feeRateNanosPerKB,
 			testMeta.mempool,
+			nil,
 			nil,
 		)
 		require.NoError(err)
@@ -822,7 +839,8 @@ func _doAuthorizeTxnWithExtraDataAndSpendingLimits(testMeta *TestMeta, utxoView 
 		hex.EncodeToString(transactionSpendingLimitBytes),
 		feeRateNanosPerKB,
 		testMeta.mempool, /*mempool*/
-		[]*DeSoOutput{})
+		[]*DeSoOutput{},
+		nil)
 	if err != nil {
 		return nil, nil, 0, err
 	}
@@ -4241,7 +4259,7 @@ func _createSignedAuthorizeDerivedKeyTransaction(t *testing.T, chain *Blockchain
 	txn, totalInputMake, changeAmountMake, feesMake, err := chain.CreateAuthorizeDerivedKeyTxn(
 		dataSpace.userPublicKey, derivedPk, dataSpace.expirationBlock, derivedKeyMetadata.AccessSignature,
 		deleteKey, dataSpace.derivedKeySignature, dataSpace.extraData, dataSpace.memo, spendingLimitsHex,
-		10, mempool, []*DeSoOutput{})
+		10, mempool, []*DeSoOutput{}, nil)
 	require.NoError(err)
 	require.Equal(totalInputMake, changeAmountMake+feesMake)
 

@@ -35,7 +35,8 @@ func _daoCoinTxn(t *testing.T, chain *Blockchain, db *badger.DB,
 		&metadata,
 		feeRateNanosPerKB,
 		nil, /*mempool*/
-		[]*DeSoOutput{})
+		[]*DeSoOutput{},
+		nil)
 
 	if err != nil {
 		return nil, nil, 0, err
@@ -116,7 +117,8 @@ func _daoCoinTransferTxn(t *testing.T, chain *Blockchain, db *badger.DB,
 		&metadata,
 		feeRateNanosPerKB,
 		nil, /*mempool*/
-		[]*DeSoOutput{})
+		[]*DeSoOutput{},
+		nil)
 
 	if err != nil {
 		return nil, nil, 0, err

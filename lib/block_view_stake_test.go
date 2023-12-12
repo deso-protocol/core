@@ -630,6 +630,7 @@ func _submitStakeTxn(
 		testMeta.feeRateNanosPerKb,
 		testMeta.mempool,
 		[]*DeSoOutput{},
+		nil,
 	)
 	if err != nil {
 		return 0, err
@@ -682,6 +683,7 @@ func _submitUnstakeTxn(
 		testMeta.feeRateNanosPerKb,
 		testMeta.mempool,
 		[]*DeSoOutput{},
+		nil,
 	)
 	if err != nil {
 		return 0, err
@@ -734,6 +736,7 @@ func _submitUnlockStakeTxn(
 		testMeta.feeRateNanosPerKb,
 		testMeta.mempool,
 		[]*DeSoOutput{},
+		nil,
 	)
 	if err != nil {
 		return 0, err
@@ -887,6 +890,7 @@ func TestStakingWithDerivedKey(t *testing.T) {
 				testMeta.feeRateNanosPerKb,
 				mempool,
 				[]*DeSoOutput{},
+				nil,
 			)
 		case TxnTypeUnstake:
 			txn, _, _, _, err = testMeta.chain.CreateUnstakeTxn(
@@ -896,6 +900,7 @@ func TestStakingWithDerivedKey(t *testing.T) {
 				testMeta.feeRateNanosPerKb,
 				mempool,
 				[]*DeSoOutput{},
+				nil,
 			)
 		case TxnTypeUnlockStake:
 			txn, _, _, _, err = testMeta.chain.CreateUnlockStakeTxn(
@@ -905,6 +910,7 @@ func TestStakingWithDerivedKey(t *testing.T) {
 				testMeta.feeRateNanosPerKb,
 				mempool,
 				[]*DeSoOutput{},
+				nil,
 			)
 		default:
 			return 0, errors.New("invalid txn type")

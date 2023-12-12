@@ -70,7 +70,7 @@ func _createNFTWithExtraData(t *testing.T, chain *Blockchain, db *badger.DB, par
 		additionalCoinRoyaltiesMap,
 		extraData,
 		feeRateNanosPerKB,
-		nil, []*DeSoOutput{})
+		nil, []*DeSoOutput{}, nil)
 	if err != nil {
 		return nil, nil, 0, err
 	}
@@ -296,7 +296,8 @@ func _createNFTBid(t *testing.T, chain *Blockchain, db *badger.DB, params *DeSoP
 		bidAmountNanos,
 		feeRateNanosPerKB,
 		nil,
-		[]*DeSoOutput{})
+		[]*DeSoOutput{},
+		nil)
 	if err != nil {
 		return nil, nil, 0, err
 	}
@@ -388,7 +389,8 @@ func _acceptNFTBid(t *testing.T, chain *Blockchain, db *badger.DB, params *DeSoP
 		[]byte(unencryptedUnlockableText),
 		feeRateNanosPerKB,
 		nil,
-		[]*DeSoOutput{})
+		[]*DeSoOutput{},
+		nil)
 	if err != nil {
 		return nil, nil, 0, err
 	}
@@ -502,7 +504,8 @@ func _updateNFT(t *testing.T, chain *Blockchain, db *badger.DB, params *DeSoPara
 		buyNowPriceNanos,
 		feeRateNanosPerKB,
 		nil,
-		[]*DeSoOutput{})
+		[]*DeSoOutput{},
+		nil)
 	if err != nil {
 		return nil, nil, 0, err
 	}
@@ -598,7 +601,8 @@ func _transferNFT(t *testing.T, chain *Blockchain, db *badger.DB, params *DeSoPa
 		[]byte(unlockableText),
 		feeRateNanosPerKB,
 		nil,
-		[]*DeSoOutput{})
+		[]*DeSoOutput{},
+		nil)
 	if err != nil {
 		return nil, nil, 0, err
 	}
@@ -685,7 +689,8 @@ func _acceptNFTTransfer(t *testing.T, chain *Blockchain, db *badger.DB,
 		serialNumber,
 		feeRateNanosPerKB,
 		nil,
-		[]*DeSoOutput{})
+		[]*DeSoOutput{},
+		nil)
 	if err != nil {
 		return nil, nil, 0, err
 	}
@@ -768,7 +773,8 @@ func _burnNFT(t *testing.T, chain *Blockchain, db *badger.DB,
 		serialNumber,
 		feeRateNanosPerKB,
 		nil,
-		[]*DeSoOutput{})
+		[]*DeSoOutput{},
+		nil)
 	if err != nil {
 		return nil, nil, 0, err
 	}

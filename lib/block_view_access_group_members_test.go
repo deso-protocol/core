@@ -1346,7 +1346,7 @@ func _createSignedAccessGroupMembersTransaction(t *testing.T, chain *Blockchain,
 
 	txn, totalInputMake, changeAmountMake, feesMake, err := chain.CreateAccessGroupMembersTxn(
 		accessGroupOwnerPublicKey, accessGroupKeyName, accessGroupMembersList, operationType,
-		nil, 10, mempool, []*DeSoOutput{})
+		nil, 10, mempool, []*DeSoOutput{}, nil)
 	if err != nil {
 		return nil, errors.Wrapf(err, "_createSignedAccessGroupMembersTransaction: ")
 	}
@@ -1724,6 +1724,7 @@ func TestAccessGroupMembersTxnWithDerivedKey(t *testing.T) {
 			testMeta.feeRateNanosPerKb,
 			mempool,
 			[]*DeSoOutput{},
+			nil,
 		)
 		require.NoError(t, err)
 		return txn
@@ -1749,6 +1750,7 @@ func TestAccessGroupMembersTxnWithDerivedKey(t *testing.T) {
 			testMeta.feeRateNanosPerKb,
 			mempool,
 			[]*DeSoOutput{},
+			nil,
 		)
 		require.NoError(t, err)
 		return txn
