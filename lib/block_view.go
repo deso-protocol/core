@@ -1669,7 +1669,11 @@ func (bav *UtxoView) DisconnectBlock(
 				if len(utxoOp.PrevStakeEntries) != 1 {
 					return fmt.Errorf("DisconnectBlock: Expected exactly one prev stake entry for stake distribution op")
 				}
+				if utxoOp.PrevValidatorEntry == nil {
+					return fmt.Errorf("DisconnectBlock: Expected prev validator entry for stake distribution op")
+				}
 				bav._setStakeEntryMappings(utxoOp.PrevStakeEntries[0])
+				bav._setValidatorEntryMappings(utxoOp.PrevValidatorEntry)
 			}
 		}
 	}
