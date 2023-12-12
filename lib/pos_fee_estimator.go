@@ -16,6 +16,10 @@ type PoSFeeEstimator struct {
 	rwLock                        *sync.RWMutex
 }
 
+func NewPoSFeeEstimator() *PoSFeeEstimator {
+	return &PoSFeeEstimator{}
+}
+
 // Init initializes the PoSFeeEstimator with the given mempool and past blocks. The mempool
 // must be running and the number of past blocks must equal the numBlocks param provided.
 // Init will add all the transactions from the past blocks to the pastBlocksTransactionRegister
@@ -30,15 +34,13 @@ func (posFeeEstimator *PoSFeeEstimator) Init(mempool *PosMempool, pastBlocks []*
 	if !mempool.IsRunning() {
 		return errors.New("PoSFeeEstimator.Init: mempool must be running")
 	}
-	if len(pastBlocks) == 0 {
-		return errors.New("PoSFeeEstimator.Init: pastBlocks cannot be empty")
-	}
 	if numBlocks == 0 {
 		return errors.New("PoSFeeEstimator.Init: numBlocks cannot be zero")
 	}
-	if numBlocks != uint64(len(pastBlocks)) {
-		return errors.New("PoSFeeEstimator.Init: numBlocks must equal the number of pastBlocks")
+	if numBlocks < uint64(len(pastBlocks)) {
+		return errors.New("PoSFeeEstimator.Init: numBlocks must greater than or equal the number of pastBlocks")
 	}
+
 	// Sort the past blocks by height just to be safe.
 	sortedPastBlocks := collections.SortStable(pastBlocks, func(ii, jj *MsgDeSoBlock) bool {
 		return ii.Header.Height < jj.Header.Height

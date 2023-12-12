@@ -57,6 +57,7 @@ type Server struct {
 	forceChecksum bool
 	mempool       *DeSoMempool
 	posMempool    *PosMempool
+	feeEstimator  *PoSFeeEstimator
 	miner         *DeSoMiner
 	blockProducer *DeSoBlockProducer
 	eventManager  *EventManager
@@ -225,6 +226,11 @@ func (srv *Server) GetMempool() Mempool {
 		return srv.posMempool
 	}
 	return srv.mempool
+}
+
+// TODO: The hallmark of a messy non-law-of-demeter-following interface...
+func (srv *Server) GetFeeEstimator() *PoSFeeEstimator {
+	return srv.feeEstimator
 }
 
 // TODO: The hallmark of a messy non-law-of-demeter-following interface...
@@ -491,6 +497,37 @@ func NewServer(
 		_minFeeRateNanosPerKB, _blockCypherAPIKey, _runReadOnlyUtxoViewUpdater, _dataDir,
 		_mempoolDumpDir, false)
 
+	// TODO: Initialize PoSMempool properly
+	globalParams := DbGetGlobalParamsEntry(_chain.DB(), _snapshot)
+	// TODO: how do we actually want to construct this?
+	readOnlyLatestBlockView, err := NewUtxoView(_chain.DB(), _params, nil, _snapshot, _chain.eventManager)
+	_posMempool := NewPosMempool(
+		_params, globalParams, readOnlyLatestBlockView,
+		uint64(_chain.blockTip().Height),
+		_mempoolDumpDir+"pos", // TODO: separate arg for mempool dump dir for pos mempool?
+		false,
+		1e9, // TODO: replace with real value for maxMempoolPosSizeBytes
+		1e4, // TODO: replace with real value for mempoolBackupIntervalMillis
+	)
+	if err = _posMempool.Start(); err != nil {
+		return nil, errors.Wrapf(err, "NewServer: Problem starting PoS mempool"), true
+	}
+
+	_feeEstimator := NewPoSFeeEstimator()
+	// Get the latest block for the fee estimator
+	var feeEstimationBlocks []*MsgDeSoBlock
+	if _chain.blockTip() != nil && _chain.blockTip().Hash != nil {
+		var _tipBlock *MsgDeSoBlock
+		_tipBlock, err = GetBlock(_chain.blockTip().Hash, _chain.DB(), _snapshot)
+		if err != nil {
+			return nil, errors.Wrapf(err, "NewServer: Problem getting block for fee estimator"), true
+		}
+		feeEstimationBlocks = append(feeEstimationBlocks, _tipBlock)
+	}
+	if err = _feeEstimator.Init(_posMempool, feeEstimationBlocks, 1); err != nil {
+		return nil, errors.Wrapf(err, "NewServer: Problem initializing fee estimator"), true
+	}
+
 	// Useful for debugging. Every second, it outputs the contents of the mempool
 	// and the contents of the addrmanager.
 	/*
@@ -557,6 +594,9 @@ func NewServer(
 	srv.requestTimeoutSeconds = 10
 
 	srv.statsdClient = statsd
+
+	srv.posMempool = _posMempool
+	srv.feeEstimator = _feeEstimator
 
 	// TODO: Make this configurable
 	//srv.Notifier = NewNotifier(_chain, postgres)
@@ -1761,6 +1801,11 @@ func (srv *Server) _handleBlockMainChainConnectedd(event *BlockEvent) {
 	// we connected the blocks and this wouldn't be guaranteed if we kicked
 	// off a goroutine for each update.
 	srv.mempool.UpdateAfterConnectBlock(blk)
+
+	// TODO: hook up pos mempool updates for after connect block
+	if err := srv.feeEstimator.AddBlock(blk); err != nil {
+		glog.V(2).Infof("Server._handleBlockMainChainConnected: Problem adding block to fee estimator: %v", err)
+	}
 
 	blockHash, _ := blk.Header.Hash()
 	glog.V(1).Infof("_handleBlockMainChainConnected: Block %s height %d connected to "+
