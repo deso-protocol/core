@@ -50,68 +50,70 @@ func (bav *UtxoView) IsLastBlockInCurrentEpoch(blockHeight uint64) (bool, error)
 // - Compute the start block height and view number for the next epoch.
 // - Compute the final block height for the next epoch.
 // - Update CurrentEpochEntry to the next epoch's.
-func (bav *UtxoView) RunEpochCompleteHook(blockHeight uint64, view uint64, blockTimestampNanoSecs uint64) error {
+func (bav *UtxoView) RunEpochCompleteHook(blockHeight uint64, view uint64, blockTimestampNanoSecs uint64) ([]*UtxoOperation, error) {
 	// Sanity-check that the current block is the last block in the current epoch.
 	//
 	// Note that this will also return true if we're currently at the ProofOfStake1StateSetupBlockHeight
 	// so that we can run the hook for the first time to initialize the CurrentEpochEntry.
 	isLastBlockInCurrentEpoch, err := bav.IsLastBlockInCurrentEpoch(blockHeight)
 	if err != nil {
-		return errors.Wrapf(err, "RunEpochCompleteHook: ")
+		return nil, errors.Wrapf(err, "RunEpochCompleteHook: ")
 	}
 	if !isLastBlockInCurrentEpoch {
-		return errors.New("RunEpochCompleteHook: called before current epoch is complete, this should never happen")
+		return nil, errors.New("RunEpochCompleteHook: called before current epoch is complete, this should never happen")
 	}
 
 	// Retrieve the CurrentEpochEntry.
 	currentEpochEntry, err := bav.GetCurrentEpochEntry()
 	if err != nil {
-		return errors.Wrapf(err, "runEpochCompleteSnapshotGeneration: problem retrieving CurrentEpochEntry: ")
+		return nil, errors.Wrapf(err, "runEpochCompleteSnapshotGeneration: problem retrieving CurrentEpochEntry: ")
 	}
 	if currentEpochEntry == nil {
-		return errors.New("runEpochCompleteSnapshotGeneration: CurrentEpochEntry is nil, this should never happen")
+		return nil, errors.New("runEpochCompleteSnapshotGeneration: CurrentEpochEntry is nil, this should never happen")
 	}
 
 	// Step 1: Run All State Mutating Operations
-	if err := bav.runEpochCompleteStateTransition(blockHeight, blockTimestampNanoSecs); err != nil {
-		return errors.Wrapf(err, "RunEpochCompleteHook: ")
+	utxoOperations, err := bav.runEpochCompleteStateTransition(blockHeight, blockTimestampNanoSecs)
+	if err != nil {
+		return nil, errors.Wrapf(err, "RunEpochCompleteHook: ")
 	}
 
 	// Step 2: Run All Snapshotting Operations
-	if err := bav.runEpochCompleteSnapshotGeneration(currentEpochEntry.EpochNumber); err != nil {
-		return errors.Wrapf(err, "RunEpochCompleteHook: ")
+	if err = bav.runEpochCompleteSnapshotGeneration(currentEpochEntry.EpochNumber); err != nil {
+		return nil, errors.Wrapf(err, "RunEpochCompleteHook: ")
 	}
 
 	// TODO: Evict old snapshots when safe to do so.
 
 	// Step 3: Roll Over to The Next Epoch
-	if err := bav.runEpochCompleteEpochRollover(currentEpochEntry.EpochNumber, blockHeight, view, blockTimestampNanoSecs); err != nil {
-		return errors.Wrapf(err, "RunEpochCompleteHook: ")
+	if err = bav.runEpochCompleteEpochRollover(currentEpochEntry.EpochNumber, blockHeight, view, blockTimestampNanoSecs); err != nil {
+		return nil, errors.Wrapf(err, "RunEpochCompleteHook: ")
 	}
 
-	return nil
+	return utxoOperations, nil
 }
 
 // Runs all state-mutating operations required when completing an epoch.
-func (bav *UtxoView) runEpochCompleteStateTransition(blockHeight uint64, blockTimestampNanoSecs uint64) error {
+func (bav *UtxoView) runEpochCompleteStateTransition(blockHeight uint64, blockTimestampNanoSecs uint64) ([]*UtxoOperation, error) {
 	// Jail all inactive validators from the current snapshot validator set. This is an O(n) operation
 	// that loops through all active unjailed validators from current epoch's snapshot validator set
 	// and jails them if they have been inactive.
 	//
 	// Note, this this will only run if we are past the ProofOfStake2ConsensusCutoverBlockHeight fork height.
 	if err := bav.JailAllInactiveSnapshotValidators(blockHeight); err != nil {
-		return errors.Wrapf(err, "runEpochCompleteStateTransition: problem jailing all inactive validators: ")
+		return nil, errors.Wrapf(err, "runEpochCompleteStateTransition: problem jailing all inactive validators: ")
 	}
 
 	// Reward all snapshotted stakes from the current snapshot validator set. This is an O(n) operation
 	// that loops through all of the snapshotted stakes and rewards them.
 	//
 	// Note, this this will only run if we are past the ProofOfStake2ConsensusCutoverBlockHeight fork height.
-	if err := bav.DistributeStakingRewardsToSnapshotStakes(blockHeight, blockTimestampNanoSecs); err != nil {
-		return errors.Wrapf(err, "runEpochCompleteStateTransition: problem rewarding snapshot stakes: ")
+	utxoOperations, err := bav.DistributeStakingRewardsToSnapshotStakes(blockHeight, blockTimestampNanoSecs)
+	if err != nil {
+		return nil, errors.Wrapf(err, "runEpochCompleteStateTransition: problem rewarding snapshot stakes: ")
 	}
 
-	return nil
+	return utxoOperations, nil
 }
 
 // Generates all required snapshots for the current epoch.

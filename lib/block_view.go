@@ -1628,6 +1628,9 @@ func (bav *UtxoView) DisconnectBlock(
 
 	// After the balance model block height, we may have a delete expired nonces utxo operation.
 	// We need to revert this before iterating over the transactions in the block.
+	// After the proof of stake fork height, we may have utxo operations for stake distributions.
+	// Stake distribution UtxoOps may be either an AddBalance or a StakeDistribution operation type.
+	// We need to revert these before iterating over the transactions in the block.
 	if desoBlock.Header.Height >= uint64(bav.Params.ForkHeights.BalanceModelBlockHeight) {
 		if len(utxoOps) != len(desoBlock.Txns)+1 {
 			return fmt.Errorf(
@@ -1635,20 +1638,43 @@ func (bav *UtxoView) DisconnectBlock(
 					" delete expired nonces operation for block %d",
 				desoBlock.Header.Height)
 		}
-		// We need to revert the delete expired nonces operation.
-		deleteExpiredNoncesUtxoOps := utxoOps[len(utxoOps)-1]
-		if deleteExpiredNoncesUtxoOps[0].Type != OperationTypeDeleteExpiredNonces {
-			return fmt.Errorf(
-				"DisconnectBlock: Expected last utxo op to be delete expired nonces operation for block %d",
-				desoBlock.Header.Height)
+		var isLastBlockInEpoch bool
+		isLastBlockInEpoch, err = bav.IsLastBlockInCurrentEpoch(desoBlock.Header.Height)
+		if err != nil {
+			return errors.Wrapf(err, "DisconnectBlock: Problem checking if block is last in epoch")
 		}
-		if len(deleteExpiredNoncesUtxoOps) != 1 {
-			return fmt.Errorf(
-				"DisconnectBlock: Expected exactly utxo op for deleting expired nonces operation for block %d",
-				desoBlock.Header.Height)
-		}
-		for _, nonceEntry := range deleteExpiredNoncesUtxoOps[0].PrevNonceEntries {
-			bav.SetTransactorNonceEntry(nonceEntry)
+		blockLevelUtxoOps := utxoOps[len(utxoOps)-1]
+		for ii := len(blockLevelUtxoOps) - 1; ii >= 0; ii-- {
+			utxoOp := blockLevelUtxoOps[ii]
+			switch utxoOp.Type {
+			case OperationTypeDeleteExpiredNonces:
+				// We need to revert the delete expired nonces operation.
+				for _, nonceEntry := range utxoOp.PrevNonceEntries {
+					bav.SetTransactorNonceEntry(nonceEntry)
+				}
+			case OperationTypeAddBalance:
+				// We don't allow add balance utxo operations unless it's the end of an epoch.
+				if !isLastBlockInEpoch {
+					return fmt.Errorf("DisconnectBlock: Found add balance operation in block %d that is not the end of an epoch", desoBlock.Header.Height)
+				}
+				// We need to revert the add balance operation.
+				if err = bav._unAddBalance(utxoOp.BalanceAmountNanos, utxoOp.BalancePublicKey); err != nil {
+					return errors.Wrapf(err, "DisconnectBlock: Problem unAdding balance %v: ", utxoOp.BalanceAmountNanos)
+				}
+			case OperationTypeStakeDistribution:
+				// We don't allow stake distribution utxo operations unless it's the end of an epoch.
+				if !isLastBlockInEpoch {
+					return fmt.Errorf("DisconnectBlock: Found add balance operation in block %d that is not the end of an epoch", desoBlock.Header.Height)
+				}
+				if len(utxoOp.PrevStakeEntries) != 1 {
+					return fmt.Errorf("DisconnectBlock: Expected exactly one prev stake entry for stake distribution op")
+				}
+				if utxoOp.PrevValidatorEntry == nil {
+					return fmt.Errorf("DisconnectBlock: Expected prev validator entry for stake distribution op")
+				}
+				bav._setStakeEntryMappings(utxoOp.PrevStakeEntries[0])
+				bav._setValidatorEntryMappings(utxoOp.PrevValidatorEntry)
+			}
 		}
 	}
 
@@ -1660,8 +1686,7 @@ func (bav *UtxoView) DisconnectBlock(
 		utxoOpsForTxn := utxoOps[txnIndex]
 		desoBlockHeight := desoBlock.Header.Height
 
-		err := bav.DisconnectTransaction(currentTxn, txnHash, utxoOpsForTxn, uint32(desoBlockHeight))
-		if err != nil {
+		if err = bav.DisconnectTransaction(currentTxn, txnHash, utxoOpsForTxn, uint32(desoBlockHeight)); err != nil {
 			return errors.Wrapf(err, "DisconnectBlock: Problem disconnecting transaction: %v", currentTxn)
 		}
 	}
@@ -4105,16 +4130,39 @@ func (bav *UtxoView) ConnectBlock(
 		return nil, RuleErrorBlockRewardExceedsMaxAllowed
 	}
 
+	// blockLevelUtxoOps are used to track all state mutations that happen
+	// after connecting all transactions in the block. These operations
+	// are always the last utxo operation in a given block.
+	var blockLevelUtxoOps []*UtxoOperation
 	if blockHeight >= uint64(bav.Params.ForkHeights.BalanceModelBlockHeight) {
 		prevNonces := bav.GetTransactorNonceEntriesToDeleteAtBlockHeight(blockHeight)
-		utxoOps = append(utxoOps, []*UtxoOperation{{
+		blockLevelUtxoOps = append(blockLevelUtxoOps, &UtxoOperation{
 			Type:             OperationTypeDeleteExpiredNonces,
 			PrevNonceEntries: prevNonces,
-		}})
+		})
 		for _, prevNonceEntry := range prevNonces {
 			bav.DeleteTransactorNonceEntry(prevNonceEntry)
 		}
 	}
+
+	// If we're past the PoS Setup Fork Height, check if we should run the end of epoch hook.
+	if blockHeight >= uint64(bav.Params.ForkHeights.ProofOfStake1StateSetupBlockHeight) {
+		isLastBlockInEpoch, err := bav.IsLastBlockInCurrentEpoch(blockHeight)
+		if err != nil {
+			return nil, errors.Wrapf(err, "ConnectBlock: error checking if block is last in epoch")
+		}
+		if isLastBlockInEpoch {
+			var utxoOperations []*UtxoOperation
+			utxoOperations, err = bav.RunEpochCompleteHook(blockHeight, blockHeader.ProposedInView, blockHeader.TstampNanoSecs)
+			if err != nil {
+				return nil, errors.Wrapf(err, "ConnectBlock: error running epoch complete hook")
+			}
+			blockLevelUtxoOps = append(blockLevelUtxoOps, utxoOperations...)
+		}
+	}
+
+	// Append all block level utxo operations to the utxo operations for the block.
+	utxoOps = append(utxoOps, blockLevelUtxoOps)
 
 	// If we made it to the end and this block is valid, advance the tip
 	// of the view to reflect that.

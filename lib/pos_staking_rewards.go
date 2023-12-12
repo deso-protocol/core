@@ -7,23 +7,23 @@ import (
 	"github.com/pkg/errors"
 )
 
-func (bav *UtxoView) DistributeStakingRewardsToSnapshotStakes(blockHeight uint64, blockTimestampNanoSecs uint64) error {
+func (bav *UtxoView) DistributeStakingRewardsToSnapshotStakes(blockHeight uint64, blockTimestampNanoSecs uint64) ([]*UtxoOperation, error) {
 	// Check if we have switched from PoW to PoS yet. If we have not, then the PoS consensus
 	// has not started yet. We don't want to distribute any staking rewards until the PoS consensus begins.
 	if blockHeight < uint64(bav.Params.ForkHeights.ProofOfStake2ConsensusCutoverBlockHeight) {
-		return nil
+		return nil, nil
 	}
 
 	// Retrieve the current EpochEntry.
 	currentEpochEntry, err := bav.GetCurrentEpochEntry()
 	if err != nil {
-		return errors.Wrapf(err, "DistributeStakingRewardsToSnapshotStakes: problem retrieving current EpochEntry: ")
+		return nil, errors.Wrapf(err, "DistributeStakingRewardsToSnapshotStakes: problem retrieving current EpochEntry: ")
 	}
 
 	// Check if the current epoch's timestamp is somehow greater than the block timestamp. This should never happen as long
 	// as timestamps are moving forward when connecting each block.
 	if currentEpochEntry.CreatedAtBlockTimestampNanoSecs >= blockTimestampNanoSecs {
-		return errors.Wrapf(RuleErrorBlockTimestampBeforeEpochStartTimestamp, "DistributeStakingRewardsToSnapshotStakes: ")
+		return nil, errors.Wrapf(RuleErrorBlockTimestampBeforeEpochStartTimestamp, "DistributeStakingRewardsToSnapshotStakes: ")
 	}
 
 	// Compute the amount of time that has elapsed since the current epoch started. As long as the elapsed time is > 0,
@@ -36,7 +36,7 @@ func (bav *UtxoView) DistributeStakingRewardsToSnapshotStakes(blockHeight uint64
 	apyBasisPoints := bav.GetCurrentGlobalParamsEntry().StakingRewardsAPYBasisPoints
 	if apyBasisPoints == 0 {
 		// If the APY is zero or not yet defined, then there are no staking rewards to distribute.
-		return nil
+		return nil, nil
 	}
 
 	// Convert the APY from a scaled integer to a float. During the conversion, the interest rate
@@ -49,16 +49,17 @@ func (bav *UtxoView) DistributeStakingRewardsToSnapshotStakes(blockHeight uint64
 	// that loops through all of the snapshotted stakes and rewards them one by one.
 	snapshotStakesToReward, err := bav.GetAllSnapshotStakesToReward()
 	if err != nil {
-		return errors.Wrapf(err, "DistributeStakingRewardsToSnapshotStakes: problem retrieving snapshot stakes to reward: ")
+		return nil, errors.Wrapf(err, "DistributeStakingRewardsToSnapshotStakes: problem retrieving snapshot stakes to reward: ")
 	}
 
 	// If there are no stakes to reward, then there's nothing to be done. Exit early here.
 	if len(snapshotStakesToReward) == 0 {
-		return nil
+		return nil, nil
 	}
 
 	// Loop through all of the snapshot stakes; distribute staking rewards to the staker and commissions to
 	// their validator.
+	var utxoOperations []*UtxoOperation
 	for _, snapshotStakeEntry := range snapshotStakesToReward {
 		if snapshotStakeEntry == nil {
 			// This should never happen. If we encounter a nil entry, then the setter for UtxoView.SnapshotStakesToReward
@@ -71,7 +72,7 @@ func (bav *UtxoView) DistributeStakingRewardsToSnapshotStakes(blockHeight uint64
 			snapshotStakeEntry, elapsedFractionOfYear, apy,
 		)
 		if err != nil {
-			return errors.Wrapf(
+			return nil, errors.Wrapf(
 				err,
 				"DistributeStakingRewardsToSnapshotStakes: problem computing staker reward and validator commission: ",
 			)
@@ -85,20 +86,24 @@ func (bav *UtxoView) DistributeStakingRewardsToSnapshotStakes(blockHeight uint64
 
 		// Reward the staker their portion of the staking reward.
 		if stakerRewardNanos > 0 {
-			if err = bav.distributeStakingReward(snapshotStakeEntry.ValidatorPKID, snapshotStakeEntry.StakerPKID, stakerRewardNanos); err != nil {
-				return errors.Wrapf(err, "DistributeStakingRewardsToSnapshotStakes: problem distributing staker reward: ")
+			var utxoOperation *UtxoOperation
+			if utxoOperation, err = bav.distributeStakingReward(snapshotStakeEntry.ValidatorPKID, snapshotStakeEntry.StakerPKID, stakerRewardNanos); err != nil {
+				return nil, errors.Wrapf(err, "DistributeStakingRewardsToSnapshotStakes: problem distributing staker reward: ")
 			}
+			utxoOperations = append(utxoOperations, utxoOperation)
 		}
 
 		// Reward the validator their commission from the staking reward.
 		if validatorCommissionNanos > 0 {
-			if err = bav.distributeValidatorCommission(snapshotStakeEntry.ValidatorPKID, validatorCommissionNanos); err != nil {
-				return errors.Wrapf(err, "DistributeStakingRewardsToSnapshotStakes: problem distributing validator commission reward: ")
+			var utxoOperation *UtxoOperation
+			if utxoOperation, err = bav.distributeValidatorCommission(snapshotStakeEntry.ValidatorPKID, validatorCommissionNanos); err != nil {
+				return nil, errors.Wrapf(err, "DistributeStakingRewardsToSnapshotStakes: problem distributing validator commission reward: ")
 			}
+			utxoOperations = append(utxoOperations, utxoOperation)
 		}
 	}
 
-	return nil
+	return utxoOperations, nil
 }
 
 func (bav *UtxoView) computeStakerRewardAndValidatorCommission(
@@ -177,11 +182,11 @@ func (bav *UtxoView) computeStakerRewardAndValidatorCommission(
 	return stakerRewardNanos.Uint64(), validatorCommissionNanos.Uint64(), nil
 }
 
-func (bav *UtxoView) distributeStakingReward(validatorPKID *PKID, stakerPKID *PKID, rewardNanos uint64) error {
+func (bav *UtxoView) distributeStakingReward(validatorPKID *PKID, stakerPKID *PKID, rewardNanos uint64) (*UtxoOperation, error) {
 	// Fetch the staker's latest StakeEntry.
 	stakeEntry, err := bav.GetStakeEntry(validatorPKID, stakerPKID)
 	if err != nil {
-		return errors.Wrapf(err, "distributeStakingReward: problem fetching staker's StakeEntry: ")
+		return nil, errors.Wrapf(err, "distributeStakingReward: problem fetching staker's StakeEntry: ")
 	}
 
 	// At this point, there are three possible cases:
@@ -189,12 +194,24 @@ func (bav *UtxoView) distributeStakingReward(validatorPKID *PKID, stakerPKID *PK
 	// 2. The stake entry still exists and does not want to restake their rewards.
 	// 3. The stake entry has unstaked since the snapshot was taken.
 
+	var utxoOperation *UtxoOperation
 	// For case 1, we distribute the rewards by adding them to the staker's staked amount.
 	if stakeEntry != nil && stakeEntry.RewardMethod == StakingRewardMethodRestake {
+		validatorEntry, err := bav.GetValidatorByPKID(stakeEntry.ValidatorPKID)
+		if err != nil {
+			return nil, errors.Wrapf(err, "distributeStakingReward: problem fetching validator entry: ")
+		}
+		utxoOperation = &UtxoOperation{
+			Type:                 OperationTypeStakeDistribution,
+			PrevStakeEntries:     []*StakeEntry{stakeEntry.Copy()},
+			PrevValidatorEntry:   validatorEntry.Copy(),
+			StakeAmountNanosDiff: rewardNanos,
+		}
 		stakeEntry.StakeAmountNanos = uint256.NewInt().Add(stakeEntry.StakeAmountNanos, uint256.NewInt().SetUint64(rewardNanos))
 		bav._setStakeEntryMappings(stakeEntry)
-
-		return nil
+		validatorEntry.TotalStakeAmountNanos = uint256.NewInt().Add(validatorEntry.TotalStakeAmountNanos, uint256.NewInt().SetUint64(rewardNanos))
+		bav._setValidatorEntryMappings(validatorEntry)
+		return utxoOperation, nil
 	}
 
 	// For cases 2 and 3, the staker does not want their rewards restaked. The staker is still
@@ -202,14 +219,14 @@ func (bav *UtxoView) distributeStakingReward(validatorPKID *PKID, stakerPKID *PK
 	// the rewards directly to the staker's wallet.
 
 	stakerPublicKey := bav.GetPublicKeyForPKID(stakerPKID)
-	if _, err = bav._addBalance(rewardNanos, stakerPublicKey); err != nil {
-		return errors.Wrapf(err, "distributeStakingReward: problem adding rewards to staker's DESO balance: ")
+	if utxoOperation, err = bav._addBalance(rewardNanos, stakerPublicKey); err != nil {
+		return nil, errors.Wrapf(err, "distributeStakingReward: problem adding rewards to staker's DESO balance: ")
 	}
 
-	return nil
+	return utxoOperation, nil
 }
 
-func (bav *UtxoView) distributeValidatorCommission(validatorPKID *PKID, commissionNanos uint64) error {
+func (bav *UtxoView) distributeValidatorCommission(validatorPKID *PKID, commissionNanos uint64) (*UtxoOperation, error) {
 	// Here, we treat the validator's commission identically to staking rewards. We view commissions as another source of staking
 	// rewards that validators receive at the end of each epoch. And these commissions are eligible to be restaked if the validator
 	// desires. To determine whether to re-stake commissions or pay out the commissions to the validator's wallet, we rely on the
