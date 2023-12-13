@@ -61,7 +61,7 @@ type Server struct {
 	eventManager  *EventManager
 	TxIndex       *TXIndex
 
-	consensusController *ConsensusController
+	FastHotStuffConsensus *FastHotStuffConsensus
 	// posMempool *PosMemPool TODO: Add the mempool later
 
 	// All messages received from peers get sent from the ConnectionManager to the
@@ -2251,32 +2251,32 @@ func (srv *Server) _handlePeerMessages(serverMessage *ServerMessage) {
 func (srv *Server) _handleFastHostStuffConsensusEvent(event *consensus.FastHotStuffEvent) {
 	// This should never happen. If the consensus message handler isn't defined, then something went
 	// wrong during the node initialization. We log it and return early to avoid panicking.
-	if srv.consensusController == nil {
+	if srv.FastHotStuffConsensus == nil {
 		glog.Errorf("Server._handleFastHostStuffConsensusEvent: Consensus controller is nil")
 		return
 	}
 
 	switch event.EventType {
 	case consensus.FastHotStuffEventTypeVote:
-		srv.consensusController.HandleLocalVoteEvent(event)
+		srv.FastHotStuffConsensus.HandleLocalVoteEvent(event)
 	case consensus.FastHotStuffEventTypeTimeout:
-		srv.consensusController.HandleLocalTimeoutEvent(event)
+		srv.FastHotStuffConsensus.HandleLocalTimeoutEvent(event)
 	case consensus.FastHotStuffEventTypeConstructVoteQC:
-		srv.consensusController.HandleLocalBlockProposalEvent(event)
+		srv.FastHotStuffConsensus.HandleLocalBlockProposalEvent(event)
 	case consensus.FastHotStuffEventTypeConstructTimeoutQC:
-		srv.consensusController.HandleLocalTimeoutBlockProposalEvent(event)
+		srv.FastHotStuffConsensus.HandleLocalTimeoutBlockProposalEvent(event)
 	}
 }
 
 func (srv *Server) _handleValidatorVote(pp *Peer, msg *MsgDeSoValidatorVote) {
 	// It's possible that the consensus controller hasn't been initialized. If so,
 	// we log an error and move on.
-	if srv.consensusController == nil {
+	if srv.FastHotStuffConsensus == nil {
 		glog.Errorf("Server._handleValidatorVote: Consensus controller is nil")
 		return
 	}
 
-	if err := srv.consensusController.HandleValidatorVote(pp, msg); err != nil {
+	if err := srv.FastHotStuffConsensus.HandleValidatorVote(pp, msg); err != nil {
 		glog.Errorf("Server._handleValidatorVote: Error handling vote message from peer: %v", err)
 	}
 }
@@ -2284,12 +2284,12 @@ func (srv *Server) _handleValidatorVote(pp *Peer, msg *MsgDeSoValidatorVote) {
 func (srv *Server) _handleValidatorTimeout(pp *Peer, msg *MsgDeSoValidatorTimeout) {
 	// It's possible that the consensus controller hasn't been initialized. If so,
 	// we log an error and move on.
-	if srv.consensusController == nil {
+	if srv.FastHotStuffConsensus == nil {
 		glog.Errorf("Server._handleValidatorTimeout: Consensus controller is nil")
 		return
 	}
 
-	if err := srv.consensusController.HandleValidatorTimeout(pp, msg); err != nil {
+	if err := srv.FastHotStuffConsensus.HandleValidatorTimeout(pp, msg); err != nil {
 		glog.Errorf("Server._handleValidatorTimeout: Error handling timeout message from peer: %v", err)
 	}
 }
@@ -2319,7 +2319,7 @@ func (srv *Server) _startConsensus() {
 		}
 
 		select {
-		case consensusEvent := <-srv.consensusController.fastHotStuffEventLoop.GetEvents():
+		case consensusEvent := <-srv.FastHotStuffConsensus.fastHotStuffEventLoop.GetEvents():
 			{
 				glog.Infof("Server._startConsensus: Received consensus event for block height: %v", consensusEvent.TipBlockHeight)
 				srv._handleFastHostStuffConsensusEvent(consensusEvent)
@@ -2485,8 +2485,8 @@ func (srv *Server) Stop() {
 	}
 
 	// Stop the PoS block proposer if we have one running.
-	if srv.consensusController != nil {
-		srv.consensusController.fastHotStuffEventLoop.Stop()
+	if srv.FastHotStuffConsensus != nil {
+		srv.FastHotStuffConsensus.fastHotStuffEventLoop.Stop()
 		glog.Infof(CLog(Yellow, "Server.Stop: Closed the fastHotStuffEventLoop"))
 	}
 
