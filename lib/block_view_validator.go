@@ -261,6 +261,10 @@ func (validatorEntry *ValidatorEntry) ToBLSPublicKeyPKIDPairEntry() *BLSPublicKe
 	}
 }
 
+func (validatorEntry *ValidatorEntry) IsDeleted() bool {
+	return validatorEntry.isDeleted
+}
+
 //
 // TYPES: BLSPublicKeyPKIDPairEntry
 //
@@ -927,7 +931,7 @@ func (bc *Blockchain) CreateRegisterAsValidatorTxn(
 	metadata *RegisterAsValidatorMetadata,
 	extraData map[string][]byte,
 	minFeeRateNanosPerKB uint64,
-	mempool *DeSoMempool,
+	mempool Mempool,
 	additionalOutputs []*DeSoOutput,
 ) (
 	_txn *MsgDeSoTxn,
@@ -954,7 +958,7 @@ func (bc *Blockchain) CreateRegisterAsValidatorTxn(
 			err, "Blockchain.CreateRegisterAsValidatorTxn: problem creating new utxo view: ",
 		)
 	}
-	if mempool != nil {
+	if !isInterfaceValueNil(mempool) {
 		utxoView, err = mempool.GetAugmentedUniversalView()
 		if err != nil {
 			return nil, 0, 0, 0, errors.Wrapf(
@@ -1004,7 +1008,7 @@ func (bc *Blockchain) CreateUnregisterAsValidatorTxn(
 	metadata *UnregisterAsValidatorMetadata,
 	extraData map[string][]byte,
 	minFeeRateNanosPerKB uint64,
-	mempool *DeSoMempool,
+	mempool Mempool,
 	additionalOutputs []*DeSoOutput,
 ) (
 	_txn *MsgDeSoTxn,
@@ -1031,7 +1035,7 @@ func (bc *Blockchain) CreateUnregisterAsValidatorTxn(
 			err, "Blockchain.CreateUnregisterAsValidatorTxn: problem creating new utxo view: ",
 		)
 	}
-	if mempool != nil {
+	if !isInterfaceValueNil(mempool) {
 		utxoView, err = mempool.GetAugmentedUniversalView()
 		if err != nil {
 			return nil, 0, 0, 0, errors.Wrapf(
@@ -1080,7 +1084,7 @@ func (bc *Blockchain) CreateUnjailValidatorTxn(
 	metadata *UnjailValidatorMetadata,
 	extraData map[string][]byte,
 	minFeeRateNanosPerKB uint64,
-	mempool *DeSoMempool,
+	mempool Mempool,
 	additionalOutputs []*DeSoOutput,
 ) (
 	_txn *MsgDeSoTxn,
@@ -1107,7 +1111,7 @@ func (bc *Blockchain) CreateUnjailValidatorTxn(
 			err, "Blockchain.CreateUnjailValidatorTxn: problem creating new utxo view: ",
 		)
 	}
-	if mempool != nil {
+	if !isInterfaceValueNil(mempool) {
 		utxoView, err = mempool.GetAugmentedUniversalView()
 		if err != nil {
 			return nil, 0, 0, 0, errors.Wrapf(

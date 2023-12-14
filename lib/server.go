@@ -56,12 +56,13 @@ type Server struct {
 	snapshot      *Snapshot
 	forceChecksum bool
 	mempool       *DeSoMempool
+	posMempool    *PosMempool
 	miner         *DeSoMiner
 	blockProducer *DeSoBlockProducer
 	eventManager  *EventManager
 	TxIndex       *TXIndex
 
-	FastHotStuffConsensus *FastHotStuffConsensus
+	// fastHotStuffEventLoop consensus.FastHotStuffEventLoop
 	// posMempool *PosMemPool TODO: Add the mempool later
 
 	// All messages received from peers get sent from the ConnectionManager to the
@@ -218,7 +219,11 @@ func (srv *Server) GetBlockchain() *Blockchain {
 }
 
 // TODO: The hallmark of a messy non-law-of-demeter-following interface...
-func (srv *Server) GetMempool() *DeSoMempool {
+func (srv *Server) GetMempool() Mempool {
+	tip := srv.blockchain.BlockTip()
+	if tip.Height >= srv.blockchain.params.ForkHeights.ProofOfStake2ConsensusCutoverBlockHeight {
+		return srv.posMempool
+	}
 	return srv.mempool
 }
 
@@ -257,6 +262,14 @@ func (srv *Server) BroadcastTransaction(txn *MsgDeSoTxn) ([]*MempoolTx, error) {
 func (srv *Server) VerifyAndBroadcastTransaction(txn *MsgDeSoTxn) error {
 	// Grab the block tip and use it as the height for validation.
 	blockHeight := srv.blockchain.BlockTip().Height
+	if blockHeight >= srv.blockchain.params.ForkHeights.ProofOfStake2ConsensusCutoverBlockHeight {
+		mtxn := NewMempoolTransaction(txn, uint64(time.Now().UnixMicro()))
+		// AddTransaction also performs validations.
+		if err := srv.posMempool.AddTransaction(mtxn, true /*verifySignatures*/); err != nil {
+			return errors.Wrapf(err, "VerifyAndBroadcastTransaction: problem adding txn to pos mempool")
+		}
+		return nil
+	}
 	err := srv.blockchain.ValidateTransaction(
 		txn,
 		// blockHeight is set to the next block since that's where this
@@ -2319,11 +2332,11 @@ func (srv *Server) _startConsensus() {
 		}
 
 		select {
-		case consensusEvent := <-srv.FastHotStuffConsensus.fastHotStuffEventLoop.GetEvents():
-			{
-				glog.Infof("Server._startConsensus: Received consensus event for block height: %v", consensusEvent.TipBlockHeight)
-				srv._handleFastHostStuffConsensusEvent(consensusEvent)
-			}
+		// case consensusEvent := <-srv.fastHotStuffEventLoop.GetEvents():
+		// 	{
+		// 		glog.Infof("Server._startConsensus: Received consensus event for block height: %v", consensusEvent.TipBlockHeight)
+		// 		srv._handleFastHostStuffConsensusEvent(consensusEvent)
+		// 	}
 
 		case serverMessage := <-srv.incomingMessages:
 			{
@@ -2484,11 +2497,11 @@ func (srv *Server) Stop() {
 		glog.Infof(CLog(Yellow, "Server.Stop: Closed the Miner"))
 	}
 
-	// Stop the PoS block proposer if we have one running.
-	if srv.FastHotStuffConsensus != nil {
-		srv.FastHotStuffConsensus.fastHotStuffEventLoop.Stop()
-		glog.Infof(CLog(Yellow, "Server.Stop: Closed the fastHotStuffEventLoop"))
-	}
+	// // Stop the PoS block proposer if we have one running.
+	// if srv.fastHotStuffEventLoop != nil {
+	// 	srv.fastHotStuffEventLoop.Stop()
+	// 	glog.Infof(CLog(Yellow, "Server.Stop: Closed the fastHotStuffEventLoop"))
+	// }
 
 	// TODO: Stop the PoS mempool if we have one running.
 

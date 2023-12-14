@@ -2628,11 +2628,6 @@ func NewTestPoSBlockchainWithValidators(t *testing.T) *TestMeta {
 	latestBlockView, err := NewUtxoView(db, params, nil, nil, nil)
 	require.NoError(t, err)
 
-	// Run the on epoch complete hook to set the leader schedule.
-	err = latestBlockView.RunEpochCompleteHook(11, 11, uint64(time.Now().UnixNano()))
-	require.NoError(t, err)
-	err = latestBlockView.FlushToDb(11)
-	require.NoError(t, err)
 	maxMempoolPosSizeBytes := uint64(500)
 	mempoolBackupIntervalMillis := uint64(30000)
 	mempool := NewPosMempool(params, _testGetDefaultGlobalParams(), latestBlockView, 11, _dbDirSetup(t), false, maxMempoolPosSizeBytes, mempoolBackupIntervalMillis)

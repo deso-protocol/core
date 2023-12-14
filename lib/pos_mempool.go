@@ -30,6 +30,14 @@ type Mempool interface {
 	Refresh() error
 	UpdateLatestBlock(blockView *UtxoView, blockHeight uint64)
 	UpdateGlobalParams(globalParams *GlobalParamsEntry)
+
+	GetAugmentedUniversalView() (*UtxoView, error)
+	GetAugmentedUtxoViewForPublicKey(pk []byte, optionalTx *MsgDeSoTxn) (*UtxoView, error)
+	CheckSpend(op UtxoKey) *MsgDeSoTxn
+	GetOrderedTransactions() []*MempoolTx
+	IsTransactionInPool(txHash *BlockHash) bool
+	GetMempoolTx(txHash *BlockHash) *MempoolTx
+	GetMempoolSummaryStats() map[string]*SummaryStats
 }
 
 type MempoolIterator interface {
@@ -579,4 +587,51 @@ func (mp *PosMempool) UpdateGlobalParams(globalParams *GlobalParamsEntry) {
 	if err := mp.refreshNoLock(); err != nil {
 		glog.Errorf("PosMempool.UpdateGlobalParams: Problem refreshing mempool: %v", err)
 	}
+}
+
+// Implementation of the Mempool interface
+// These functions are used by the backend to interact with the mempool.
+
+func (mp *PosMempool) GetAugmentedUniversalView() (*UtxoView, error) {
+	if !mp.IsRunning() {
+		return nil, errors.Wrapf(MempoolErrorNotRunning, "PosMempool.GetAugmentedUniversalView: ")
+	}
+	newView, err := mp.readOnlyLatestBlockView.CopyUtxoView()
+	if err != nil {
+		return nil, errors.Wrapf(err, "PosMempool.GetAugmentedUniversalView: Problem copying utxo view")
+	}
+	return newView, nil
+}
+func (mp *PosMempool) GetAugmentedUtxoViewForPublicKey(pk []byte, optionalTx *MsgDeSoTxn) (*UtxoView, error) {
+	return mp.GetAugmentedUniversalView()
+}
+func (mp *PosMempool) CheckSpend(op UtxoKey) *MsgDeSoTxn {
+	panic("implement me")
+}
+
+func (mp *PosMempool) GetOrderedTransactions() []*MempoolTx {
+	mp.RLock()
+	defer mp.RUnlock()
+
+	if !mp.IsRunning() {
+		return nil
+	}
+	return mp.getTransactionsNoLock()
+}
+
+func (mp *PosMempool) IsTransactionInPool(txHash *BlockHash) bool {
+	mp.RLock()
+	defer mp.RUnlock()
+	_, exists := mp.txnRegister.txnMembership[*txHash]
+	return exists
+}
+
+func (mp *PosMempool) GetMempoolTx(txHash *BlockHash) *MempoolTx {
+	mp.RLock()
+	defer mp.RUnlock()
+	return mp.txnRegister.txnMembership[*txHash]
+}
+
+func (mp *PosMempool) GetMempoolSummaryStats() map[string]*SummaryStats {
+	return convertMempoolTxsToSummaryStats(mp.txnRegister.GetFeeTimeTransactions())
 }
