@@ -12,7 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestConsensusControllerHandleLocalVoteEvent(t *testing.T) {
+func TestFastHotStuffConsensusHandleLocalVoteEvent(t *testing.T) {
 	// Create a test private key for the signer
 	blsPrivateKey, err := bls.NewPrivateKey()
 	require.NoError(t, err)
@@ -23,8 +23,8 @@ func TestConsensusControllerHandleLocalVoteEvent(t *testing.T) {
 	blockHash, err := blockHeader.Hash()
 	require.NoError(t, err)
 
-	// Create a mock controller
-	consensusController := ConsensusController{
+	// Create a mock consensus
+	fastHotStuffConsensus := FastHotStuffConsensus{
 		lock: sync.RWMutex{},
 		signer: &BLSSigner{
 			privateKey: blsPrivateKey,
@@ -66,7 +66,7 @@ func TestConsensusControllerHandleLocalVoteEvent(t *testing.T) {
 			EventType: consensus.FastHotStuffEventTypeVote,
 		}
 
-		err := consensusController.HandleLocalVoteEvent(event)
+		err := fastHotStuffConsensus.HandleLocalVoteEvent(event)
 		require.Contains(t, err.Error(), "Received improperly formed vote event")
 	}
 
@@ -78,12 +78,12 @@ func TestConsensusControllerHandleLocalVoteEvent(t *testing.T) {
 			TipBlockHeight: blockHeader.GetView(),
 			TipBlockHash:   blockHash,
 		}
-		err := consensusController.HandleLocalVoteEvent(event)
+		err := fastHotStuffConsensus.HandleLocalVoteEvent(event)
 		require.NoError(t, err)
 	}
 }
 
-func TestConsensusControllerHandleLocalTimeoutEvent(t *testing.T) {
+func TestFastHotStuffConsensusHandleLocalTimeoutEvent(t *testing.T) {
 	// Create a test private key for the signer
 	blsPrivateKey, err := bls.NewPrivateKey()
 	require.NoError(t, err)
@@ -98,8 +98,8 @@ func TestConsensusControllerHandleLocalTimeoutEvent(t *testing.T) {
 	currentView := blockHeader.ValidatorsVoteQC.GetView() + 1
 	nextView := currentView + 1
 
-	// Create a mock controller
-	consensusController := ConsensusController{
+	// Create a mock consensus
+	fastHotStuffConsensus := FastHotStuffConsensus{
 		lock: sync.RWMutex{},
 		signer: &BLSSigner{
 			privateKey: blsPrivateKey,
@@ -155,7 +155,7 @@ func TestConsensusControllerHandleLocalTimeoutEvent(t *testing.T) {
 			EventType: consensus.FastHotStuffEventTypeVote,
 		}
 
-		err := consensusController.HandleLocalTimeoutEvent(event)
+		err := fastHotStuffConsensus.HandleLocalTimeoutEvent(event)
 		require.Contains(t, err.Error(), "Received improperly formed timeout event")
 	}
 
@@ -168,7 +168,7 @@ func TestConsensusControllerHandleLocalTimeoutEvent(t *testing.T) {
 			TipBlockHash:   blockHash,
 			QC:             blockHeader.ValidatorsVoteQC,
 		}
-		err := consensusController.HandleLocalTimeoutEvent(event)
+		err := fastHotStuffConsensus.HandleLocalTimeoutEvent(event)
 		require.Contains(t, err.Error(), "Stale timeout event")
 	}
 
@@ -181,7 +181,7 @@ func TestConsensusControllerHandleLocalTimeoutEvent(t *testing.T) {
 			TipBlockHash:   blockHeader.ValidatorsVoteQC.GetBlockHash(),
 			QC:             blockHeader.ValidatorsVoteQC,
 		}
-		err := consensusController.HandleLocalTimeoutEvent(event)
+		err := fastHotStuffConsensus.HandleLocalTimeoutEvent(event)
 		require.NoError(t, err)
 	}
 }
