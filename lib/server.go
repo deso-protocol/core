@@ -249,7 +249,6 @@ func (srv *Server) GetBlockProducer() *DeSoBlockProducer {
 	return srv.blockProducer
 }
 
-// TODO: The hallmark of a messy non-law-of-demeter-following interface...
 func (srv *Server) GetConnectionManager() *ConnectionManager {
 	return srv.cmgr
 }
@@ -918,15 +917,15 @@ func (srv *Server) _handleHeaderBundle(pp *Peer, msg *MsgDeSoHeaderBundle) {
 		printHeight = uint64(srv.blockchain.headerTip().Height)
 	}
 	glog.Infof(CLog(Yellow, fmt.Sprintf("Received header bundle with %v headers "+
-		"in state %s from peer %v. Downloaded ( %v / %v ) total headers. Current Chain State: %v",
+		"in state %s from peer %v. Downloaded ( %v / %v ) total headers.",
 		len(msg.Headers), srv.blockchain.chainState(), pp,
-		srv.blockchain.headerTip().Header.Height, printHeight, srv.blockchain.ChainState())))
+		srv.blockchain.headerTip().Header.Height, printHeight)))
 
 	// If we get here, it means that the node is not currently running a Fast-HotStuff
 	// validator or that the node is syncing. In either case, we sync headers according
 	// to the blocksync rules.
 
-	// Start by processing all of the headers given to us. They should start
+	// Start by processing all the headers given to us. They should start
 	// right after the tip of our header chain ideally. While going through them
 	// tally up the number that we actually process.
 	numNewHeaders := 0
