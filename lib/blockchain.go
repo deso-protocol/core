@@ -4910,7 +4910,7 @@ func (bc *Blockchain) CreateMaxSpend(
 				feeEstimator != nil {
 				// TODO: replace MaxBasisPoints with variables configured by flags.
 				feeAmountNanos, err = feeEstimator.EstimateFee(txn, MaxBasisPoints, MaxBasisPoints,
-					bc.params.MaxBlockSizeBytes)
+					bc.params.MaxBlockSizeBytes, mempool.(*PosMempool).txnRegister)
 				if err != nil {
 					return nil, 0, 0, 0, errors.Wrapf(err, "CreateMaxSpend: Problem estimating fee: ")
 				}
@@ -5043,7 +5043,7 @@ func (bc *Blockchain) AddInputsAndChangeToTransactionWithSubsidy(
 			if blockHeight >= bc.params.ForkHeights.ProofOfStake2ConsensusCutoverBlockHeight && feeEstimator != nil {
 				// TODO: replace MaxBasisPoints with variables configured by flags.
 				txArg.TxnFeeNanos, err = feeEstimator.EstimateFee(txArg, MaxBasisPoints, MaxBasisPoints,
-					bc.params.MaxBlockSizeBytes)
+					bc.params.MaxBlockSizeBytes, mempool.(*PosMempool).txnRegister)
 				if err != nil {
 					return 0, 0, 0, 0, errors.Wrapf(err,
 						"AddInputsAndChangeToTransaction: Problem estimating fee: ")

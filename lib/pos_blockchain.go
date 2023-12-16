@@ -1068,6 +1068,25 @@ func (bc *Blockchain) upsertBlockAndBlockNodeToDB(block *MsgDeSoBlock, blockNode
 	return nil
 }
 
+func (bc *Blockchain) removeBlockFromTip(index int, blockHash *BlockHash) error {
+	// Sanity-check that the block being removed is indeed the tip.
+	if index != len(bc.bestChain)-1 {
+		return fmt.Errorf("removeBlockFromTip: Block being removed is not the "+
+			"tip: Mismatched index: %v should be %v", index, len(bc.bestChain)-1)
+	}
+	if !blockHash.IsEqual(bc.bestChain[index].Hash) {
+		return fmt.Errorf("removeBlockFromTip: Block being removed is not the "+
+			"tip: Mismatched hashes: %v should be %v", blockHash, bc.bestChain[index].Hash)
+	}
+
+	// Delete the block from the bestChainMap
+	delete(bc.bestChainMap, *blockHash)
+	// Remove the block from the tip of bestChain
+	bc.bestChain = bc.bestChain[:index]
+
+	return nil
+}
+
 // tryApplyNewTip attempts to apply the new tip to the best chain. It will do the following:
 //  1. Check if we should perform a reorg. If so, it will handle the reorg. If reorging causes an error,
 //     return false and error.
@@ -1099,12 +1118,10 @@ func (bc *Blockchain) tryApplyNewTip(blockNode *BlockNode, currentView uint64, l
 	}
 	// Remove all uncommitted blocks. These are all blocks that come after the committedTip
 	// in the best chain.
-	// Delete all blocks from bc.bestChainMap that come after the highest committed block.
-	for ii := idx + 1; ii < len(bc.bestChain); ii++ {
-		delete(bc.bestChainMap, *bc.bestChain[ii].Hash)
+	for ii := len(bc.bestChain) - 1; ii > idx; ii-- {
+		blockHash := bc.bestChain[ii].Hash
+		bc.removeBlockFromTip(ii, blockHash)
 	}
-	// Shorten best chain back to committed tip.
-	bc.bestChain = bc.bestChain[:idx+1]
 	// Add the ancestors of the new tip to the best chain.
 	for _, ancestor := range lineageFromCommittedTip {
 		bc.addBlockToBestChain(ancestor)

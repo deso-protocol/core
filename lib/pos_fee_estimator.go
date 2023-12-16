@@ -1,15 +1,16 @@
 package lib
 
 import (
-	"github.com/deso-protocol/core/collections"
-	"github.com/pkg/errors"
 	"math"
 	"math/big"
 	"sync"
+
+	"github.com/deso-protocol/core/collections"
+	"github.com/pkg/errors"
 )
 
 type PoSFeeEstimator struct {
-	mempoolFeeEstimatorMempool    *PosMempool
+	latestMempoolTxnRegister      *TransactionRegister
 	pastBlocksTransactionRegister *TransactionRegister
 	numBlocks                     uint64
 	cachedBlocks                  []*MsgDeSoBlock
@@ -49,7 +50,6 @@ func (posFeeEstimator *PoSFeeEstimator) Init(mempool *PosMempool, pastBlocks []*
 	if minHeight == 0 {
 		return errors.New("PoSFeeEstimator.Init: minHeight cannot be zero")
 	}
-	posFeeEstimator.mempoolFeeEstimatorMempool = mempool
 	posFeeEstimator.numBlocks = numBlocks
 	// Create a transaction register we can use to estimate fees for past blocks.
 	posFeeEstimator.pastBlocksTransactionRegister = NewTransactionRegister(mempool.globalParams.Copy())
@@ -195,7 +195,9 @@ func (posFeeEstimator *PoSFeeEstimator) EstimateFee(
 ) (uint64, error) {
 	posFeeEstimator.rwLock.RLock()
 	defer posFeeEstimator.rwLock.RUnlock()
-	mempoolFeeEstimate, err := posFeeEstimator.mempoolFeeEstimate(txn, congestionFactorBasisPoints, priorityPercentileBasisPoints, maxBlockSize)
+	mempoolFeeEstimate, err := posFeeEstimator.mempoolFeeEstimate(txn,
+		congestionFactorBasisPoints, priorityPercentileBasisPoints, maxBlockSize,
+		posFeeEstimator.latestMempoolTxnRegister)
 	if err != nil {
 		return 0, errors.Wrap(err, "EstimateFee: Problem computing mempool fee estimate")
 	}
@@ -231,8 +233,11 @@ func (posFeeEstimator *PoSFeeEstimator) mempoolFeeEstimate(
 	congestionFactorBasisPoints uint64,
 	priorityPercentileBasisPoints uint64,
 	maxBlockSize uint64,
+	mempoolTxnRegister *TransactionRegister,
 ) (uint64, error) {
-	txnFee, err := posFeeEstimator.estimateTxnFeeGivenTransactionRegister(txn, posFeeEstimator.mempoolFeeEstimatorMempool.txnRegister, congestionFactorBasisPoints, priorityPercentileBasisPoints, maxBlockSize)
+	txnFee, err := posFeeEstimator.estimateTxnFeeGivenTransactionRegister(txn,
+		mempoolTxnRegister, congestionFactorBasisPoints,
+		priorityPercentileBasisPoints, maxBlockSize)
 	if err != nil {
 		return 0, errors.Wrap(err, "mempoolFeeEstimate: Problem computing txn fee")
 	}
