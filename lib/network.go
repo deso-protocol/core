@@ -17,11 +17,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/deso-protocol/core/collections/bitset"
+	"github.com/decred/dcrd/dcrec/secp256k1/v4"
 	"github.com/golang/glog"
 
-	"github.com/decred/dcrd/dcrec/secp256k1/v4"
-
+	"github.com/deso-protocol/core/collections/bitset"
 	"github.com/deso-protocol/core/consensus"
 
 	"github.com/btcsuite/btcd/btcec"
@@ -183,6 +182,8 @@ func (msgType MsgType) String() string {
 		return "BLOCK_ACCEPTED"
 	case MsgTypeBitcoinManagerUpdate:
 		return "BITCOIN_MANAGER_UPDATE"
+	case MsgTypePeerHandshakeComplete:
+		return "PEER_HANDSHAKE_COMPLETE"
 	case MsgTypeNewConnection:
 		return "NEW_CONNECTION"
 	case MsgTypeGetSnapshot:
@@ -871,6 +872,23 @@ func (msg *MsgDeSoDonePeer) FromBytes(data []byte) error {
 	return fmt.Errorf("MsgDeSoDonePeer.FromBytes not implemented")
 }
 
+// MsgDeSoPeerHandshakeComplete is a control message that is used to internally signal when a peer has
+// connected and completed the Version + Verack handshake and authentication process.
+type MsgDeSoPeerHandshakeComplete struct {
+}
+
+func (msg *MsgDeSoPeerHandshakeComplete) GetMsgType() MsgType {
+	return MsgTypePeerHandshakeComplete
+}
+
+func (msg *MsgDeSoPeerHandshakeComplete) ToBytes(preSignature bool) ([]byte, error) {
+	return nil, fmt.Errorf("MsgDeSoPeerHandshakeComplete.ToBytes: Not implemented")
+}
+
+func (msg *MsgDeSoPeerHandshakeComplete) FromBytes(data []byte) error {
+	return fmt.Errorf("MsgDeSoPeerHandshakeComplete.FromBytes not implemented")
+}
+
 type ConnectionType uint8
 
 const (
@@ -1545,12 +1563,14 @@ type ServiceFlag uint64
 const (
 	// SFFullNodeDeprecated is deprecated, and set on all nodes by default
 	// now. We basically split it into SFHyperSync and SFArchivalMode.
-	SFFullNodeDeprecated ServiceFlag = 1 << iota
+	SFFullNodeDeprecated ServiceFlag = 1 << 0
 	// SFHyperSync is a flag used to indicate that the peer supports hyper sync.
-	SFHyperSync
+	SFHyperSync ServiceFlag = 1 << 1
 	// SFArchivalNode is a flag complementary to SFHyperSync. If node is a hypersync node then
 	// it might not be able to support block sync anymore, unless it has archival mode turned on.
-	SFArchivalNode
+	SFArchivalNode ServiceFlag = 1 << 2
+	// SFPosValidator is a flag used to indicate that the peer is running a PoS validator.
+	SFPosValidator ServiceFlag = 1 << 3
 )
 
 type MsgDeSoVersion struct {
@@ -1896,34 +1916,136 @@ func (msg *MsgDeSoGetAddr) GetMsgType() MsgType {
 // VERACK Message
 // ==================================================================
 
-// VERACK messages have no payload.
+type VerackVersion uint64
+
+const (
+	VerackVersion0 VerackVersion = 0
+	VerackVersion1 VerackVersion = 1
+)
+
+func (vv VerackVersion) ToUint64() uint64 {
+	return uint64(vv)
+}
+
 type MsgDeSoVerack struct {
+	Version VerackVersion
+
 	// A verack message must contain the nonce the peer received in the
 	// initial version message. This ensures the peer that is communicating
 	// with us actually controls the address she says she does similar to
 	// "SYN Cookie" DDOS protection.
-	Nonce uint64
+	NonceReceived uint64
+	NonceSent     uint64
+	TstampMicro   uint64
+
+	PublicKey *bls.PublicKey
+	Signature *bls.Signature
 }
 
 func (msg *MsgDeSoVerack) ToBytes(preSignature bool) ([]byte, error) {
+	switch msg.Version {
+	case VerackVersion0:
+		return msg.EncodeVerackV0()
+	case VerackVersion1:
+		return msg.EncodeVerackV1()
+	default:
+		return nil, fmt.Errorf("MsgDeSoVerack.ToBytes: Unrecognized version: %v", msg.Version)
+	}
+}
+
+func (msg *MsgDeSoVerack) EncodeVerackV0() ([]byte, error) {
 	retBytes := []byte{}
 
 	// Nonce
-	retBytes = append(retBytes, UintToBuf(msg.Nonce)...)
+	retBytes = append(retBytes, UintToBuf(msg.NonceReceived)...)
+	return retBytes, nil
+}
+
+func (msg *MsgDeSoVerack) EncodeVerackV1() ([]byte, error) {
+	retBytes := []byte{}
+
+	// Version
+	retBytes = append(retBytes, UintToBuf(msg.Version.ToUint64())...)
+	// Nonce Received
+	retBytes = append(retBytes, UintToBuf(msg.NonceReceived)...)
+	// Nonce Sent
+	retBytes = append(retBytes, UintToBuf(msg.NonceSent)...)
+	// Tstamp Micro
+	retBytes = append(retBytes, UintToBuf(msg.TstampMicro)...)
+	// PublicKey
+	retBytes = append(retBytes, msg.PublicKey.ToBytes()...)
+	// Signature
+	retBytes = append(retBytes, msg.Signature.ToBytes()...)
+
 	return retBytes, nil
 }
 
 func (msg *MsgDeSoVerack) FromBytes(data []byte) error {
 	rr := bytes.NewReader(data)
-	retMsg := NewMessage(MsgTypeVerack).(*MsgDeSoVerack)
-	{
-		nonce, err := ReadUvarint(rr)
-		if err != nil {
-			return errors.Wrapf(err, "MsgDeSoVerack.FromBytes: Problem reading Nonce")
-		}
-		retMsg.Nonce = nonce
+	if len(data) <= MaxVarintLen64 {
+		return msg.FromBytesV0(data)
 	}
-	*msg = *retMsg
+
+	version, err := ReadUvarint(rr)
+	if err != nil {
+		return errors.Wrapf(err, "MsgDeSoVerack.FromBytes: Problem reading Version")
+	}
+	msg.Version = VerackVersion(version)
+	switch msg.Version {
+	case VerackVersion0:
+		return fmt.Errorf("MsgDeSoVerack.FromBytes: Outdated Version=0 used for new encoding")
+	case VerackVersion1:
+		return msg.FromBytesV1(data)
+	default:
+		return fmt.Errorf("MsgDeSoVerack.FromBytes: Unrecognized version: %v", msg.Version)
+	}
+}
+
+func (msg *MsgDeSoVerack) FromBytesV0(data []byte) error {
+	var err error
+	rr := bytes.NewReader(data)
+	msg.NonceReceived, err = ReadUvarint(rr)
+	if err != nil {
+		return errors.Wrapf(err, "MsgDeSoVerack.FromBytes: Problem reading Nonce")
+	}
+	return nil
+}
+
+func (msg *MsgDeSoVerack) FromBytesV1(data []byte) error {
+	var err error
+	rr := bytes.NewReader(data)
+	version, err := ReadUvarint(rr)
+	if err != nil {
+		return errors.Wrapf(err, "MsgDeSoVerack.FromBytes: Problem reading Version")
+	}
+	msg.Version = VerackVersion(version)
+
+	msg.NonceReceived, err = ReadUvarint(rr)
+	if err != nil {
+		return errors.Wrapf(err, "MsgDeSoVerack.FromBytes: Problem reading Nonce Received")
+	}
+
+	msg.NonceSent, err = ReadUvarint(rr)
+	if err != nil {
+		return errors.Wrapf(err, "MsgDeSoVerack.FromBytes: Problem reading Nonce Sent")
+	}
+
+	msg.TstampMicro, err = ReadUvarint(rr)
+	if err != nil {
+		return errors.Wrapf(err, "MsgDeSoVerack.FromBytes: Problem reading Tstamp Micro")
+	}
+
+	publicKey, err := DecodeBLSPublicKey(rr)
+	if err != nil {
+		return errors.Wrapf(err, "MsgDeSoVerack.FromBytes: Problem reading PublicKey")
+	}
+	msg.PublicKey = publicKey
+
+	signature, err := DecodeBLSSignature(rr)
+	if err != nil {
+		return errors.Wrapf(err, "MsgDeSoVerack.FromBytes: Problem reading Signature")
+	}
+	msg.Signature = signature
 	return nil
 }
 

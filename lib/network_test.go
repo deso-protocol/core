@@ -78,13 +78,13 @@ func TestVerack(t *testing.T) {
 	var buf bytes.Buffer
 
 	nonce := uint64(12345678910)
-	_, err := WriteMessage(&buf, &MsgDeSoVerack{Nonce: nonce}, networkType)
+	_, err := WriteMessage(&buf, &MsgDeSoVerack{Version: VerackVersion0, NonceReceived: nonce}, networkType)
 	require.NoError(err)
 	verBytes := buf.Bytes()
 	testMsg, _, err := ReadMessage(bytes.NewReader(verBytes),
 		networkType)
 	require.NoError(err)
-	require.Equal(&MsgDeSoVerack{Nonce: nonce}, testMsg)
+	require.Equal(&MsgDeSoVerack{Version: VerackVersion0, NonceReceived: nonce}, testMsg)
 }
 
 // Creates fully formatted a PoS block header with random signatures
