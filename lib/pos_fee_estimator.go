@@ -9,48 +9,42 @@ import (
 )
 
 type PoSFeeEstimator struct {
-	mempoolFeeEstimatorMempool    *PosMempool
+	mempoolTransactionRegister    *TransactionRegister
 	pastBlocksTransactionRegister *TransactionRegister
 	numBlocks                     uint64
 	cachedBlocks                  []*MsgDeSoBlock
 	rwLock                        *sync.RWMutex
 }
 
+func NewPoSFeeEstimator() *PoSFeeEstimator {
+	return &PoSFeeEstimator{}
+}
+
 // Init initializes the PoSFeeEstimator with the given mempool and past blocks. The mempool
 // must be running and the number of past blocks must equal the numBlocks param provided.
 // Init will add all the transactions from the past blocks to the pastBlocksTransactionRegister
 // and cache the initial past blocks.
-func (posFeeEstimator *PoSFeeEstimator) Init(mempool *PosMempool, pastBlocks []*MsgDeSoBlock, numBlocks uint64) error {
+func (posFeeEstimator *PoSFeeEstimator) Init(mempoolTransactionRegister *TransactionRegister, pastBlocks []*MsgDeSoBlock, numBlocks uint64, globalParams *GlobalParamsEntry) error {
 	posFeeEstimator.rwLock = &sync.RWMutex{}
 	posFeeEstimator.rwLock.Lock()
 	defer posFeeEstimator.rwLock.Unlock()
-	if mempool == nil {
-		return errors.New("PoSFeeEstimator.Init: mempool cannot be nil")
-	}
-	if !mempool.IsRunning() {
-		return errors.New("PoSFeeEstimator.Init: mempool must be running")
-	}
-	if len(pastBlocks) == 0 {
-		return errors.New("PoSFeeEstimator.Init: pastBlocks cannot be empty")
+	if mempoolTransactionRegister == nil {
+		return errors.New("PoSFeeEstimator.Init: mempoolTransactionRegister cannot be nil")
 	}
 	if numBlocks == 0 {
 		return errors.New("PoSFeeEstimator.Init: numBlocks cannot be zero")
 	}
-	if numBlocks != uint64(len(pastBlocks)) {
-		return errors.New("PoSFeeEstimator.Init: numBlocks must equal the number of pastBlocks")
+	if numBlocks < uint64(len(pastBlocks)) {
+		return errors.New("PoSFeeEstimator.Init: numBlocks must greater than or equal the number of pastBlocks")
 	}
 	// Sort the past blocks by height just to be safe.
 	sortedPastBlocks := collections.SortStable(pastBlocks, func(ii, jj *MsgDeSoBlock) bool {
 		return ii.Header.Height < jj.Header.Height
 	})
-	minHeight := sortedPastBlocks[0].Header.Height
-	if minHeight == 0 {
-		return errors.New("PoSFeeEstimator.Init: minHeight cannot be zero")
-	}
-	posFeeEstimator.mempoolFeeEstimatorMempool = mempool
+	posFeeEstimator.mempoolTransactionRegister = mempoolTransactionRegister
 	posFeeEstimator.numBlocks = numBlocks
 	// Create a transaction register we can use to estimate fees for past blocks.
-	posFeeEstimator.pastBlocksTransactionRegister = NewTransactionRegister(mempool.globalParams.Copy())
+	posFeeEstimator.pastBlocksTransactionRegister = NewTransactionRegister(globalParams.Copy())
 
 	// Add all the txns from the past blocks to the new pastBlocksTransactionRegister.
 	for _, block := range sortedPastBlocks {
@@ -105,7 +99,8 @@ func addBlockToTransactionRegister(txnRegister *TransactionRegister, block *MsgD
 			return errors.Wrap(err, "PoSFeeEstimator.addBlockToTransactionRegister: error creating MempoolTx")
 		}
 		if err = txnRegister.AddTransaction(mtxn); err != nil {
-			return errors.Wrap(err, "PoSFeeEstimator.addBlockToTransactionRegister: error adding txn to pastBlocksTransactionRegister")
+			return errors.Wrap(err,
+				"PoSFeeEstimator.addBlockToTransactionRegister: error adding txn to pastBlocksTransactionRegister")
 		}
 	}
 	return nil
@@ -137,7 +132,8 @@ func (posFeeEstimator *PoSFeeEstimator) removeBlockNoLock(block *MsgDeSoBlock) e
 			return errors.Wrap(err, "PoSFeeEstimator.RemoveBlock: error creating MempoolTx")
 		}
 		if err = posFeeEstimator.pastBlocksTransactionRegister.RemoveTransaction(mtxn); err != nil {
-			return errors.Wrap(err, "PoSFeeEstimator.removeBlockNoLock: error removing txn from pastBlocksTransactionRegister")
+			return errors.Wrap(err,
+				"PoSFeeEstimator.removeBlockNoLock: error removing txn from pastBlocksTransactionRegister")
 		}
 	}
 	blockHash, err := block.Hash()
@@ -151,7 +147,8 @@ func (posFeeEstimator *PoSFeeEstimator) removeBlockNoLock(block *MsgDeSoBlock) e
 			return errors.Wrap(err, "PoSFeeEstimator.removeBlockNoLock: error computing cachedBlockHash")
 		}
 		if blockHash.IsEqual(cachedBlockHash) {
-			posFeeEstimator.cachedBlocks = append(posFeeEstimator.cachedBlocks[:ii], posFeeEstimator.cachedBlocks[ii+1:]...)
+			posFeeEstimator.cachedBlocks = append(posFeeEstimator.cachedBlocks[:ii],
+				posFeeEstimator.cachedBlocks[ii+1:]...)
 			break
 		}
 	}
@@ -175,12 +172,47 @@ func (posFeeEstimator *PoSFeeEstimator) UpdateGlobalParams(globalParams *GlobalP
 
 // sortCachedBlocks sorts the cached blocks by height & tstamp just to be safe.
 func (posFeeEstimator *PoSFeeEstimator) sortCachedBlocks() {
-	posFeeEstimator.cachedBlocks = collections.SortStable(posFeeEstimator.cachedBlocks, func(ii, jj *MsgDeSoBlock) bool {
-		if ii.Header.Height == jj.Header.Height {
-			return ii.Header.TstampNanoSecs < jj.Header.TstampNanoSecs
-		}
-		return ii.Header.Height < jj.Header.Height
-	})
+	posFeeEstimator.cachedBlocks = collections.SortStable(posFeeEstimator.cachedBlocks,
+		func(ii, jj *MsgDeSoBlock) bool {
+			if ii.Header.Height == jj.Header.Height {
+				return ii.Header.TstampNanoSecs < jj.Header.TstampNanoSecs
+			}
+			return ii.Header.Height < jj.Header.Height
+		})
+}
+
+// EstimateFeeRateNanosPerKB estimates the fee rate in nanos per KB for the current mempool
+// and past blocks using the congestionFactorBasisPoints, priorityPercentileBasisPoints, and
+// maxBlockSize params.
+func (posFeeEstimator *PoSFeeEstimator) EstimateFeeRateNanosPerKB(
+	congestionFactorBasisPoints uint64,
+	priorityPercentileBasisPoints uint64,
+	maxBlockSize uint64,
+) (uint64, error) {
+	posFeeEstimator.rwLock.RLock()
+	defer posFeeEstimator.rwLock.RUnlock()
+	pastBlockFeeRate, err := posFeeEstimator.estimateFeeRateNanosPerKBGivenTransactionRegister(
+		posFeeEstimator.pastBlocksTransactionRegister,
+		congestionFactorBasisPoints,
+		priorityPercentileBasisPoints,
+		maxBlockSize,
+	)
+	if err != nil {
+		return 0, errors.Wrap(err, "EstimateFeeRateNanosPerKB: Problem computing past block fee rate")
+	}
+	mempoolFeeRate, err := posFeeEstimator.estimateFeeRateNanosPerKBGivenTransactionRegister(
+		posFeeEstimator.mempoolTransactionRegister,
+		congestionFactorBasisPoints,
+		priorityPercentileBasisPoints,
+		maxBlockSize,
+	)
+	if err != nil {
+		return 0, errors.Wrap(err, "EstimateFeeRateNanosPerKB: Problem computing mempool fee rate")
+	}
+	if pastBlockFeeRate < mempoolFeeRate {
+		return mempoolFeeRate, nil
+	}
+	return pastBlockFeeRate, nil
 }
 
 // EstimateFee estimates the fee in nanos for the provided transaction by taking the
@@ -193,11 +225,21 @@ func (posFeeEstimator *PoSFeeEstimator) EstimateFee(
 ) (uint64, error) {
 	posFeeEstimator.rwLock.RLock()
 	defer posFeeEstimator.rwLock.RUnlock()
-	mempoolFeeEstimate, err := posFeeEstimator.mempoolFeeEstimate(txn, congestionFactorBasisPoints, priorityPercentileBasisPoints, maxBlockSize)
+	mempoolFeeEstimate, err := posFeeEstimator.mempoolFeeEstimate(
+		txn,
+		congestionFactorBasisPoints,
+		priorityPercentileBasisPoints,
+		maxBlockSize,
+	)
 	if err != nil {
 		return 0, errors.Wrap(err, "EstimateFee: Problem computing mempool fee estimate")
 	}
-	pastBlocksFeeEstimate, err := posFeeEstimator.pastBlocksFeeEstimate(txn, congestionFactorBasisPoints, priorityPercentileBasisPoints, maxBlockSize)
+	pastBlocksFeeEstimate, err := posFeeEstimator.pastBlocksFeeEstimate(
+		txn,
+		congestionFactorBasisPoints,
+		priorityPercentileBasisPoints,
+		maxBlockSize,
+	)
 	if err != nil {
 		return 0, errors.Wrap(err, "EstimateFee: Problem computing past blocks fee estimate")
 	}
@@ -215,7 +257,13 @@ func (posFeeEstimator *PoSFeeEstimator) pastBlocksFeeEstimate(
 	priorityPercentileBasisPoints uint64,
 	maxBlockSize uint64,
 ) (uint64, error) {
-	txnFee, err := posFeeEstimator.estimateTxnFeeGivenTransactionRegister(txn, posFeeEstimator.pastBlocksTransactionRegister, congestionFactorBasisPoints, priorityPercentileBasisPoints, maxBlockSize)
+	txnFee, err := posFeeEstimator.estimateTxnFeeGivenTransactionRegister(
+		txn,
+		posFeeEstimator.pastBlocksTransactionRegister,
+		congestionFactorBasisPoints,
+		priorityPercentileBasisPoints,
+		maxBlockSize,
+	)
 	if err != nil {
 		return 0, errors.Wrap(err, "pastBlocksFeeEstimate: Problem computing txn fee")
 	}
@@ -223,14 +271,20 @@ func (posFeeEstimator *PoSFeeEstimator) pastBlocksFeeEstimate(
 }
 
 // mempoolFeeEstimate estimates the fee in nanos for the provided transaction using the
-// mempoolFeeEstimatorMempool's TransactionRegister and fee estimation parameters.
+// mempoolTransactionRegister and fee estimation parameters.
 func (posFeeEstimator *PoSFeeEstimator) mempoolFeeEstimate(
 	txn *MsgDeSoTxn,
 	congestionFactorBasisPoints uint64,
 	priorityPercentileBasisPoints uint64,
 	maxBlockSize uint64,
 ) (uint64, error) {
-	txnFee, err := posFeeEstimator.estimateTxnFeeGivenTransactionRegister(txn, posFeeEstimator.mempoolFeeEstimatorMempool.txnRegister, congestionFactorBasisPoints, priorityPercentileBasisPoints, maxBlockSize)
+	txnFee, err := posFeeEstimator.estimateTxnFeeGivenTransactionRegister(
+		txn,
+		posFeeEstimator.mempoolTransactionRegister,
+		congestionFactorBasisPoints,
+		priorityPercentileBasisPoints,
+		maxBlockSize,
+	)
 	if err != nil {
 		return 0, errors.Wrap(err, "mempoolFeeEstimate: Problem computing txn fee")
 	}
@@ -317,7 +371,12 @@ func (posFeeEstimator *PoSFeeEstimator) estimateTxnFeeGivenTransactionRegister(
 	priorityPercentileBasisPoints uint64,
 	maxBlockSize uint64,
 ) (uint64, error) {
-	feeRateNanosPerKB, err := posFeeEstimator.estimateFeeRateNanosPerKBGivenTransactionRegister(txnRegister, congestionFactorBasisPoints, priorityPercentileBasisPoints, maxBlockSize)
+	feeRateNanosPerKB, err := posFeeEstimator.estimateFeeRateNanosPerKBGivenTransactionRegister(
+		txnRegister,
+		congestionFactorBasisPoints,
+		priorityPercentileBasisPoints,
+		maxBlockSize,
+	)
 	if err != nil {
 		return 0, errors.Wrap(err, "estimateTxnFeeGivenTransactionRegister: Problem computing fee rate")
 	}
@@ -389,7 +448,8 @@ func (posFeeEstimator *PoSFeeEstimator) estimateFeeRateNanosPerKBGivenTransactio
 		txnRegister.minimumNetworkFeeNanosPerKB,
 		txnRegister.feeBucketGrowthRateBasisPoints)
 	if err != nil {
-		return 0, errors.Wrap(err, "estimateFeeRateNanosPerKBGivenTransactionRegister: Problem computing priority fee bucket")
+		return 0, errors.Wrap(err,
+			"estimateFeeRateNanosPerKBGivenTransactionRegister: Problem computing priority fee bucket")
 	}
 	// If the bucketMinFee is less than or equal to the global min fee rate, we return the global min fee rate.
 	if bucketMinFee <= globalMinFeeRate {
@@ -404,7 +464,11 @@ func (posFeeEstimator *PoSFeeEstimator) estimateFeeRateNanosPerKBGivenTransactio
 	// we return one bucket lower than the Priority fee.
 	if totalTxnsSize <= congestionThreshold {
 		// Return one bucket lower than Priority fee
-		oneBucketLowerMinFee, _ := computeFeeTimeBucketRangeFromFeeNanosPerKB(bucketMinFee-1, txnRegister.minimumNetworkFeeNanosPerKB, txnRegister.feeBucketGrowthRateBasisPoints)
+		oneBucketLowerMinFee, _ := computeFeeTimeBucketRangeFromFeeNanosPerKB(
+			bucketMinFee-1,
+			txnRegister.minimumNetworkFeeNanosPerKB,
+			txnRegister.feeBucketGrowthRateBasisPoints,
+		)
 		return oneBucketLowerMinFee, nil
 	}
 	// If the total size of the txns in the mempool is greater than the computed congestion threshold
@@ -428,10 +492,15 @@ func getPriorityFeeBucketFromTxns(
 	minimumNetworkFeeNanosPerKB *big.Float,
 	feeBucketGrowthRateBasisPoints *big.Float,
 ) (uint64, uint64, error) {
-	percentilePosition := uint64(len(feeTimeOrderedTxns)) - ((priorityPercentileBasisPoints * uint64(len(feeTimeOrderedTxns))) / 10000)
+	percentilePosition := uint64(
+		len(feeTimeOrderedTxns)) - ((priorityPercentileBasisPoints * uint64(len(feeTimeOrderedTxns))) / 10000)
 	if percentilePosition >= uint64(len(feeTimeOrderedTxns)) {
 		return 0, 0, errors.New("getPriorityFeeBucketFromTxns: error computing percentile position")
 	}
-	bucketMin, bucketMax := computeFeeTimeBucketRangeFromFeeNanosPerKB(feeTimeOrderedTxns[percentilePosition].FeePerKB, minimumNetworkFeeNanosPerKB, feeBucketGrowthRateBasisPoints)
+	bucketMin, bucketMax := computeFeeTimeBucketRangeFromFeeNanosPerKB(
+		feeTimeOrderedTxns[percentilePosition].FeePerKB,
+		minimumNetworkFeeNanosPerKB,
+		feeBucketGrowthRateBasisPoints,
+	)
 	return bucketMin, bucketMax, nil
 }

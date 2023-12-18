@@ -26,22 +26,27 @@ func TestFeeEstimator(t *testing.T) {
 		maxMempoolPosSizeBytes, mempoolBackupIntervalMillis)
 	require.NoError(t, mempool.Start())
 	require.True(t, mempool.IsRunning())
-	minFeeBucketMin, minFeeBucketMax := computeFeeTimeBucketRangeFromFeeNanosPerKB(globalParams.MinimumNetworkFeeNanosPerKB, big.NewFloat(float64(globalParams.MinimumNetworkFeeNanosPerKB)), mempool.txnRegister.feeBucketGrowthRateBasisPoints)
+	minFeeBucketMin, minFeeBucketMax := computeFeeTimeBucketRangeFromFeeNanosPerKB(
+		globalParams.MinimumNetworkFeeNanosPerKB,
+		big.NewFloat(float64(globalParams.MinimumNetworkFeeNanosPerKB)),
+		mempool.txnRegister.feeBucketGrowthRateBasisPoints)
 	// set the feeMin to the second fee bucket.
 	feeMin := minFeeBucketMax + 1
 	// Construct a FeeEstimator with no transactions in it. We should get the minimum fee bucket.
 	// We make some dummy block to get around validations.
 	posFeeEstimator := &PoSFeeEstimator{}
-	err = posFeeEstimator.Init(mempool, []*MsgDeSoBlock{{
+	err = posFeeEstimator.Init(mempool.txnRegister, []*MsgDeSoBlock{{
 		Header: &MsgDeSoHeader{Height: 10},
-	}}, 1)
+	}}, 1, mempool.globalParams)
 	require.NoError(t, err)
 	// When there's nothing in the mempool, we return the global minimum fee rate.
-	baseFeeRate, err := posFeeEstimator.estimateFeeRateNanosPerKBGivenTransactionRegister(posFeeEstimator.mempoolFeeEstimatorMempool.txnRegister, 10000, 10000, 1000)
+	baseFeeRate, err := posFeeEstimator.estimateFeeRateNanosPerKBGivenTransactionRegister(
+		posFeeEstimator.mempoolTransactionRegister, 10000, 10000, 1000)
 	require.NoError(t, err)
 	require.Equal(t, globalParams.MinimumNetworkFeeNanosPerKB, baseFeeRate)
 	// When there's nothing in the past blocks, we return the global minimum fee rate.
-	baseFeeRate, err = posFeeEstimator.estimateFeeRateNanosPerKBGivenTransactionRegister(posFeeEstimator.pastBlocksTransactionRegister, 10000, 10000, 1000)
+	baseFeeRate, err = posFeeEstimator.estimateFeeRateNanosPerKBGivenTransactionRegister(
+		posFeeEstimator.pastBlocksTransactionRegister, 10000, 10000, 1000)
 	require.NoError(t, err)
 	require.Equal(t, globalParams.MinimumNetworkFeeNanosPerKB, baseFeeRate)
 	// Make a dummy transaction, so we can check the fee rate.
@@ -105,7 +110,10 @@ func TestFeeEstimator(t *testing.T) {
 	err = posFeeEstimator.AddBlock(dummyBlock)
 	require.NoError(t, err)
 	// Compute the next fee bucket min
-	feeBucketMin, feeBucketMax := computeFeeTimeBucketRangeFromFeeNanosPerKB(feeMin, big.NewFloat(float64(globalParams.MinimumNetworkFeeNanosPerKB)), mempool.txnRegister.feeBucketGrowthRateBasisPoints)
+	feeBucketMin, feeBucketMax := computeFeeTimeBucketRangeFromFeeNanosPerKB(
+		feeMin,
+		big.NewFloat(float64(globalParams.MinimumNetworkFeeNanosPerKB)),
+		mempool.txnRegister.feeBucketGrowthRateBasisPoints)
 	nextFeeBucketMin := feeBucketMax + 1
 	var estimatedMempoolFeeRate uint64
 	var estimatedMempoolFee uint64
@@ -124,27 +132,35 @@ func TestFeeEstimator(t *testing.T) {
 		if maxBlockSizeMempool > maxBlockSizePastBlocks {
 			maxBlockSizeHybrid = maxBlockSizeMempool
 		}
-		estimatedMempoolFeeRate, err = posFeeEstimator.estimateFeeRateNanosPerKBGivenTransactionRegister(posFeeEstimator.mempoolFeeEstimatorMempool.txnRegister, congestionFactor, priorityPercentileBasisPoints, maxBlockSizeMempool)
+		estimatedMempoolFeeRate, err = posFeeEstimator.estimateFeeRateNanosPerKBGivenTransactionRegister(
+			posFeeEstimator.mempoolTransactionRegister, congestionFactor, priorityPercentileBasisPoints,
+			maxBlockSizeMempool)
 		require.NoError(t, err)
 		require.Equal(t, nextFeeBucketMin, estimatedMempoolFeeRate)
-		estimatedMempoolFee, err = posFeeEstimator.mempoolFeeEstimate(txn, congestionFactor, priorityPercentileBasisPoints, maxBlockSizeMempool)
+		estimatedMempoolFee, err = posFeeEstimator.mempoolFeeEstimate(txn, congestionFactor,
+			priorityPercentileBasisPoints, maxBlockSizeMempool)
 		require.NoError(t, err)
 		validateTxnFee(t, txn, estimatedMempoolFee, estimatedMempoolFeeRate)
 
 		// Let's do the same for past blocks estimator
-		estimatedPastBlocksFeeRate, err = posFeeEstimator.estimateFeeRateNanosPerKBGivenTransactionRegister(posFeeEstimator.pastBlocksTransactionRegister, congestionFactor, priorityPercentileBasisPoints, maxBlockSizePastBlocks)
+		estimatedPastBlocksFeeRate, err = posFeeEstimator.estimateFeeRateNanosPerKBGivenTransactionRegister(
+			posFeeEstimator.pastBlocksTransactionRegister, congestionFactor, priorityPercentileBasisPoints,
+			maxBlockSizePastBlocks)
 		require.NoError(t, err)
 		require.Equal(t, nextFeeBucketMin, estimatedPastBlocksFeeRate)
-		estimatedPastBlocksFee, err = posFeeEstimator.pastBlocksFeeEstimate(txn, congestionFactor, priorityPercentileBasisPoints, maxBlockSizePastBlocks)
+		estimatedPastBlocksFee, err = posFeeEstimator.pastBlocksFeeEstimate(txn, congestionFactor,
+			priorityPercentileBasisPoints, maxBlockSizePastBlocks)
 		require.NoError(t, err)
 		validateTxnFee(t, txn, estimatedPastBlocksFee, estimatedPastBlocksFeeRate)
 
-		// Both the mempool and next block fee and fee rates should be equal since we have everything in the same fee bucket.
+		// Both the mempool and next block fee and fee rates should be equal since we have
+		// everything in the same fee bucket.
 		require.Equal(t, estimatedMempoolFee, estimatedPastBlocksFee)
 		require.Equal(t, estimatedMempoolFeeRate, estimatedPastBlocksFeeRate)
 
 		// And the hybrid estimator is just the max, but for completeness, we check it.
-		estimatedHybridFee, err = posFeeEstimator.EstimateFee(txn, congestionFactor, priorityPercentileBasisPoints, maxBlockSizeHybrid)
+		estimatedHybridFee, err = posFeeEstimator.EstimateFee(txn, congestionFactor, priorityPercentileBasisPoints,
+			maxBlockSizeHybrid)
 		require.NoError(t, err)
 		require.Equal(t, estimatedMempoolFee, estimatedHybridFee)
 		require.Equal(t, estimatedPastBlocksFee, estimatedHybridFee)
@@ -162,27 +178,35 @@ func TestFeeEstimator(t *testing.T) {
 		if maxBlockSizeMempool > maxBlockSizePastBlocks {
 			maxBlockSizeHybrid = maxBlockSizeMempool
 		}
-		estimatedMempoolFeeRate, err = posFeeEstimator.estimateFeeRateNanosPerKBGivenTransactionRegister(posFeeEstimator.mempoolFeeEstimatorMempool.txnRegister, congestionFactor, priorityPercentileBasisPoints, maxBlockSizeMempool)
+		estimatedMempoolFeeRate, err = posFeeEstimator.estimateFeeRateNanosPerKBGivenTransactionRegister(
+			posFeeEstimator.mempoolTransactionRegister, congestionFactor, priorityPercentileBasisPoints,
+			maxBlockSizeMempool)
 		require.NoError(t, err)
 		require.Equal(t, feeBucketMin, estimatedMempoolFeeRate)
-		estimatedMempoolFee, err = posFeeEstimator.mempoolFeeEstimate(txn, congestionFactor, priorityPercentileBasisPoints, maxBlockSizeMempool)
+		estimatedMempoolFee, err = posFeeEstimator.mempoolFeeEstimate(txn, congestionFactor,
+			priorityPercentileBasisPoints, maxBlockSizeMempool)
 		require.NoError(t, err)
 		validateTxnFee(t, txn, estimatedMempoolFee, estimatedMempoolFeeRate)
 
 		// Let's do the same for past blocks estimator
-		estimatedPastBlocksFeeRate, err = posFeeEstimator.estimateFeeRateNanosPerKBGivenTransactionRegister(posFeeEstimator.pastBlocksTransactionRegister, congestionFactor, priorityPercentileBasisPoints, maxBlockSizePastBlocks)
+		estimatedPastBlocksFeeRate, err = posFeeEstimator.estimateFeeRateNanosPerKBGivenTransactionRegister(
+			posFeeEstimator.pastBlocksTransactionRegister, congestionFactor, priorityPercentileBasisPoints,
+			maxBlockSizePastBlocks)
 		require.NoError(t, err)
 		require.Equal(t, feeBucketMin, estimatedPastBlocksFeeRate)
-		estimatedPastBlocksFee, err = posFeeEstimator.pastBlocksFeeEstimate(txn, congestionFactor, priorityPercentileBasisPoints, maxBlockSizePastBlocks)
+		estimatedPastBlocksFee, err = posFeeEstimator.pastBlocksFeeEstimate(txn, congestionFactor,
+			priorityPercentileBasisPoints, maxBlockSizePastBlocks)
 		require.NoError(t, err)
 		validateTxnFee(t, txn, estimatedPastBlocksFee, estimatedPastBlocksFeeRate)
 
-		// Both the mempool and next block fee and fee rates should be equal since we have everything in the same fee bucket.
+		// Both the mempool and next block fee and fee rates should be equal since we have
+		// everything in the same fee bucket.
 		require.Equal(t, estimatedMempoolFee, estimatedPastBlocksFee)
 		require.Equal(t, estimatedMempoolFeeRate, estimatedPastBlocksFeeRate)
 
 		// And the hybrid estimator is just the max, but for completeness, we check it.
-		estimatedHybridFee, err = posFeeEstimator.EstimateFee(txn, congestionFactor, priorityPercentileBasisPoints, maxBlockSizeHybrid)
+		estimatedHybridFee, err = posFeeEstimator.EstimateFee(txn, congestionFactor, priorityPercentileBasisPoints,
+			maxBlockSizeHybrid)
 		require.NoError(t, err)
 		require.Equal(t, estimatedMempoolFee, estimatedHybridFee)
 		require.Equal(t, estimatedPastBlocksFee, estimatedHybridFee)
@@ -191,6 +215,7 @@ func TestFeeEstimator(t *testing.T) {
 		// Make the max block size 2x-1 the total size of transactions we added and set the congestion factor
 		// to 50%. We should get the same priority fee bucket.
 		congestionFactor := uint64(50 * 100)
+
 		priorityPercentileBasisPoints := uint64(10000)
 		maxBlockSizeMempool := 2*numBytesMempool - 1
 		maxBlockSizePastBlocks := 2*numBytesPastBlocks - 1
@@ -199,27 +224,35 @@ func TestFeeEstimator(t *testing.T) {
 		if maxBlockSizeMempool > maxBlockSizePastBlocks {
 			maxBlockSizeHybrid = maxBlockSizeMempool
 		}
-		estimatedMempoolFeeRate, err = posFeeEstimator.estimateFeeRateNanosPerKBGivenTransactionRegister(posFeeEstimator.mempoolFeeEstimatorMempool.txnRegister, congestionFactor, priorityPercentileBasisPoints, maxBlockSizeMempool)
+		estimatedMempoolFeeRate, err = posFeeEstimator.estimateFeeRateNanosPerKBGivenTransactionRegister(
+			posFeeEstimator.mempoolTransactionRegister, congestionFactor, priorityPercentileBasisPoints,
+			maxBlockSizeMempool)
 		require.NoError(t, err)
 		require.Equal(t, feeBucketMin, estimatedMempoolFeeRate)
-		estimatedMempoolFee, err = posFeeEstimator.mempoolFeeEstimate(txn, congestionFactor, priorityPercentileBasisPoints, maxBlockSizeMempool)
+		estimatedMempoolFee, err = posFeeEstimator.mempoolFeeEstimate(txn, congestionFactor,
+			priorityPercentileBasisPoints, maxBlockSizeMempool)
 		require.NoError(t, err)
 		validateTxnFee(t, txn, estimatedMempoolFee, estimatedMempoolFeeRate)
 
 		// Let's do the same for past blocks estimator
-		estimatedPastBlocksFeeRate, err = posFeeEstimator.estimateFeeRateNanosPerKBGivenTransactionRegister(posFeeEstimator.pastBlocksTransactionRegister, congestionFactor, priorityPercentileBasisPoints, maxBlockSizePastBlocks)
+		estimatedPastBlocksFeeRate, err = posFeeEstimator.estimateFeeRateNanosPerKBGivenTransactionRegister(
+			posFeeEstimator.pastBlocksTransactionRegister, congestionFactor, priorityPercentileBasisPoints,
+			maxBlockSizePastBlocks)
 		require.NoError(t, err)
 		require.Equal(t, feeBucketMin, estimatedPastBlocksFeeRate)
-		estimatedPastBlocksFee, err = posFeeEstimator.pastBlocksFeeEstimate(txn, congestionFactor, priorityPercentileBasisPoints, maxBlockSizePastBlocks)
+		estimatedPastBlocksFee, err = posFeeEstimator.pastBlocksFeeEstimate(txn, congestionFactor,
+			priorityPercentileBasisPoints, maxBlockSizePastBlocks)
 		require.NoError(t, err)
 		validateTxnFee(t, txn, estimatedPastBlocksFee, estimatedPastBlocksFeeRate)
 
-		// Both the mempool and next block fee and fee rates should be equal since we have everything in the same fee bucket.
+		// Both the mempool and next block fee and fee rates should be equal since we have
+		// everything in the same fee bucket.
 		require.Equal(t, estimatedMempoolFee, estimatedPastBlocksFee)
 		require.Equal(t, estimatedMempoolFeeRate, estimatedPastBlocksFeeRate)
 
 		// And the hybrid estimator is just the max, but for completeness, we check it.
-		estimatedHybridFee, err = posFeeEstimator.EstimateFee(txn, congestionFactor, priorityPercentileBasisPoints, maxBlockSizeHybrid)
+		estimatedHybridFee, err = posFeeEstimator.EstimateFee(txn, congestionFactor, priorityPercentileBasisPoints,
+			maxBlockSizeHybrid)
 		require.NoError(t, err)
 		require.Equal(t, estimatedMempoolFee, estimatedHybridFee)
 		require.Equal(t, estimatedPastBlocksFee, estimatedHybridFee)
@@ -237,35 +270,43 @@ func TestFeeEstimator(t *testing.T) {
 		if maxBlockSizeMempool > maxBlockSizePastBlocks {
 			maxBlockSizeHybrid = maxBlockSizeMempool
 		}
-		estimatedMempoolFeeRate, err = posFeeEstimator.estimateFeeRateNanosPerKBGivenTransactionRegister(posFeeEstimator.mempoolFeeEstimatorMempool.txnRegister, congestionFactor, priorityPercentileBasisPoints, maxBlockSizeMempool)
+		estimatedMempoolFeeRate, err = posFeeEstimator.estimateFeeRateNanosPerKBGivenTransactionRegister(
+			posFeeEstimator.mempoolTransactionRegister, congestionFactor, priorityPercentileBasisPoints,
+			maxBlockSizeMempool)
 		require.NoError(t, err)
 		require.Equal(t, minFeeBucketMin, estimatedMempoolFeeRate)
-		estimatedMempoolFee, err = posFeeEstimator.mempoolFeeEstimate(txn, congestionFactor, priorityPercentileBasisPoints, maxBlockSizeMempool)
+		estimatedMempoolFee, err = posFeeEstimator.mempoolFeeEstimate(txn, congestionFactor,
+			priorityPercentileBasisPoints, maxBlockSizeMempool)
 		require.NoError(t, err)
 		validateTxnFee(t, txn, estimatedMempoolFee, estimatedMempoolFeeRate)
 
 		// Let's do the same for past blocks estimator
-		estimatedPastBlocksFeeRate, err = posFeeEstimator.estimateFeeRateNanosPerKBGivenTransactionRegister(posFeeEstimator.pastBlocksTransactionRegister, congestionFactor, priorityPercentileBasisPoints, maxBlockSizePastBlocks)
+		estimatedPastBlocksFeeRate, err = posFeeEstimator.estimateFeeRateNanosPerKBGivenTransactionRegister(
+			posFeeEstimator.pastBlocksTransactionRegister, congestionFactor, priorityPercentileBasisPoints,
+			maxBlockSizePastBlocks)
 		require.NoError(t, err)
 		require.Equal(t, minFeeBucketMin, estimatedPastBlocksFeeRate)
-		estimatedPastBlocksFee, err = posFeeEstimator.pastBlocksFeeEstimate(txn, congestionFactor, priorityPercentileBasisPoints, maxBlockSizePastBlocks)
+		estimatedPastBlocksFee, err = posFeeEstimator.pastBlocksFeeEstimate(txn, congestionFactor,
+			priorityPercentileBasisPoints, maxBlockSizePastBlocks)
 		require.NoError(t, err)
 		validateTxnFee(t, txn, estimatedPastBlocksFee, estimatedPastBlocksFeeRate)
 
-		// Both the mempool and next block fee and fee rates should be equal since we have everything in the same fee bucket.
+		// Both the mempool and next block fee and fee rates should be equal since we have
+		// everything in the same fee bucket.
 		require.Equal(t, estimatedMempoolFee, estimatedPastBlocksFee)
 		require.Equal(t, estimatedMempoolFeeRate, estimatedPastBlocksFeeRate)
 
 		// And the hybrid estimator is just the max, but for completeness, we check it.
-		estimatedHybridFee, err = posFeeEstimator.EstimateFee(txn, congestionFactor, priorityPercentileBasisPoints, maxBlockSizeHybrid)
+		estimatedHybridFee, err = posFeeEstimator.EstimateFee(txn, congestionFactor, priorityPercentileBasisPoints,
+			maxBlockSizeHybrid)
 		require.NoError(t, err)
 		require.Equal(t, estimatedMempoolFee, estimatedHybridFee)
 		require.Equal(t, estimatedPastBlocksFee, estimatedHybridFee)
 	}
 }
 
-func _generateTestTxnWithFeeRate(t *testing.T, rand *rand.Rand, feeRate uint64, pk []byte, priv string, expirationHeight uint64,
-	extraDataBytes int32) *MsgDeSoTxn {
+func _generateTestTxnWithFeeRate(t *testing.T, rand *rand.Rand, feeRate uint64, pk []byte, priv string,
+	expirationHeight uint64, extraDataBytes int32) *MsgDeSoTxn {
 
 	extraData := make(map[string][]byte)
 	extraData["key"] = RandomBytes(extraDataBytes)
