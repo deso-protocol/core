@@ -38,6 +38,7 @@ type Mempool interface {
 	IsTransactionInPool(txHash *BlockHash) bool
 	GetMempoolTx(txHash *BlockHash) *MempoolTx
 	GetMempoolSummaryStats() map[string]*SummaryStats
+	GetFeeEstimator() *PoSFeeEstimator
 }
 
 type MempoolIterator interface {
@@ -115,6 +116,10 @@ type PosMempool struct {
 	maxMempoolPosSizeBytes uint64
 	// mempoolBackupIntervalMillis is the frequency with which pos mempool persists transactions to storage.
 	mempoolBackupIntervalMillis uint64
+
+	// feeEstimator is used to estimate the fee required for a transaction to be included in the next block
+	// based off the current state of the mempool and the most n recent blocks.
+	feeEstimator *PoSFeeEstimator
 }
 
 // PosMempoolIterator is a wrapper around FeeTimeIterator, modified to return MsgDeSoTxn instead of MempoolTx.
@@ -169,6 +174,11 @@ func (mp *PosMempool) Start() error {
 
 	// Create the transaction register, the ledger, and the nonce tracker,
 	mp.txnRegister = NewTransactionRegister(mp.globalParams)
+	mp.feeEstimator = NewPoSFeeEstimator()
+	// TODO: parameterize num blocks. Also, how to pass in blocks.
+	if err := mp.feeEstimator.Init(mp.txnRegister, []*MsgDeSoBlock{}, 1, mp.globalParams); err != nil {
+		return errors.Wrapf(err, "PosMempool.Start: Problem initializing fee estimator")
+	}
 	mp.ledger = NewBalanceLedger()
 	mp.nonceTracker = NewNonceTracker()
 
@@ -634,4 +644,8 @@ func (mp *PosMempool) GetMempoolTx(txHash *BlockHash) *MempoolTx {
 
 func (mp *PosMempool) GetMempoolSummaryStats() map[string]*SummaryStats {
 	return convertMempoolTxsToSummaryStats(mp.txnRegister.GetFeeTimeTransactions())
+}
+
+func (mp *PosMempool) GetFeeEstimator() *PoSFeeEstimator {
+	return mp.feeEstimator
 }

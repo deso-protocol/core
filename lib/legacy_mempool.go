@@ -2422,6 +2422,10 @@ func (mp *DeSoMempool) GetMempoolSummaryStats() (_summaryStatsMap map[string]*Su
 	return convertMempoolTxsToSummaryStats(mp.readOnlyUniversalTransactionList)
 }
 
+func (mp *DeSoMempool) GetFeeEstimator() *PoSFeeEstimator {
+	return nil
+}
+
 func convertMempoolTxsToSummaryStats(mempoolTxs []*MempoolTx) map[string]*SummaryStats {
 	transactionSummaryStats := make(map[string]*SummaryStats)
 	for _, mempoolTx := range mempoolTxs {
