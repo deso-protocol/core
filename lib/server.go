@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"encoding/hex"
 	"fmt"
+	"github.com/btcsuite/btcd/wire"
+	"github.com/deso-protocol/core/consensus"
 	"net"
 	"reflect"
 	"runtime"
@@ -17,9 +19,7 @@ import (
 
 	"github.com/btcsuite/btcd/addrmgr"
 	chainlib "github.com/btcsuite/btcd/blockchain"
-	"github.com/btcsuite/btcd/wire"
 	"github.com/davecgh/go-spew/spew"
-	"github.com/deso-protocol/core/consensus"
 	"github.com/deso-protocol/go-deadlock"
 	"github.com/dgraph-io/badger/v3"
 	"github.com/golang/glog"
@@ -232,7 +232,6 @@ func (srv *Server) GetBlockProducer() *DeSoBlockProducer {
 	return srv.blockProducer
 }
 
-// TODO: The hallmark of a messy non-law-of-demeter-following interface...
 func (srv *Server) GetConnectionManager() *ConnectionManager {
 	return srv.cmgr
 }
@@ -390,7 +389,8 @@ func NewServer(
 	_nodeMessageChan chan NodeMessage,
 	_forceChecksum bool,
 	_stateChangeDir string,
-	_hypersyncMaxQueueSize uint32) (
+	_hypersyncMaxQueueSize uint32,
+	_blsKeystore *BLSKeystore) (
 	_srv *Server, _err error, _shouldRestart bool) {
 
 	var err error
@@ -544,6 +544,8 @@ func NewServer(
 	if _maxSyncBlockHeight > 0 {
 		_miner = nil
 	}
+
+	srv.consensusController = NewConsensusController(_params, _chain, nil, _blsKeystore.GetSigner())
 
 	// Set all the fields on the Server object.
 	srv.cmgr = _cmgr
@@ -713,6 +715,13 @@ func (srv *Server) GetSnapshot(pp *Peer) {
 
 	glog.V(2).Infof("Server.GetSnapshot: Sending a GetSnapshot message to peer (%v) "+
 		"with Prefix (%v) and SnapshotStartEntry (%v)", pp, prefix, lastReceivedKey)
+}
+
+func (srv *Server) NotifyHandshakePeerMessage(peer *Peer) {
+	srv.incomingMessages <- &ServerMessage{
+		Peer: peer,
+		Msg:  &MsgDeSoPeerHandshakeComplete{},
+	}
 }
 
 // GetBlocksToStore is part of the archival mode, which makes the node download all historical blocks after completing
@@ -1569,11 +1578,12 @@ func (srv *Server) _startSync() {
 
 }
 
-func (srv *Server) _handleNewPeer(pp *Peer) {
+func (srv *Server) _handlePeerHandshakeComplete(pp *Peer) {
 	isSyncCandidate := pp.IsSyncCandidate()
 	isSyncing := srv.blockchain.isSyncing()
 	chainState := srv.blockchain.chainState()
-	glog.V(1).Infof("Server._handleNewPeer: Processing NewPeer: (%v); IsSyncCandidate(%v), syncPeerIsNil=(%v), IsSyncing=(%v), ChainState=(%v)",
+	glog.V(1).Infof("Server._handlePeerHandshakeComplete: Processing NewPeer: (%v); IsSyncCandidate(%v), "+
+		"syncPeerIsNil=(%v), IsSyncing=(%v), ChainState=(%v)",
 		pp, isSyncCandidate, (srv.SyncPeer == nil), isSyncing, chainState)
 
 	// Request a sync if we're ready
@@ -2222,7 +2232,9 @@ func (srv *Server) _handleControlMessages(serverMessage *ServerMessage) (_should
 	switch serverMessage.Msg.(type) {
 	// Control messages used internally to signal to the server.
 	case *MsgDeSoNewPeer:
-		srv._handleNewPeer(serverMessage.Peer)
+		break
+	case *MsgDeSoPeerHandshakeComplete:
+		srv._handlePeerHandshakeComplete(serverMessage.Peer)
 	case *MsgDeSoDonePeer:
 		srv._handleDonePeer(serverMessage.Peer)
 	case *MsgDeSoQuit:

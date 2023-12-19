@@ -344,16 +344,19 @@ func (cmgr *ConnectionManager) RemoveAttemptedOutboundAddrs(netAddr *wire.NetAdd
 	delete(cmgr.attemptedOutboundAddrs, addrmgr.NetAddressKey(netAddr))
 }
 
-func (cmgr *ConnectionManager) CreatePersistentOutboundConnection(persistentAddr *wire.NetAddress) (_attemptId uint64) {
-	glog.V(2).Infof("ConnectionManager.CreatePersistentOutboundConnection: Connecting to peer %v", persistentAddr.IP.String())
-	return cmgr._createOutboundConnection(persistentAddr, true)
+// DialPersistentOutboundConnection attempts to connect to a persistent peer.
+func (cmgr *ConnectionManager) DialPersistentOutboundConnection(persistentAddr *wire.NetAddress) (_attemptId uint64) {
+	glog.V(2).Infof("ConnectionManager.DialPersistentOutboundConnection: Connecting to peer %v", persistentAddr.IP.String())
+	return cmgr._dialOutboundConnection(persistentAddr, true)
 }
 
-func (cmgr *ConnectionManager) CreateOutboundConnection(addr *wire.NetAddress) (_attemptId uint64) {
+// DialOutboundConnection attempts to connect to a non-persistent peer.
+func (cmgr *ConnectionManager) DialOutboundConnection(addr *wire.NetAddress) (_attemptId uint64) {
 	glog.V(2).Infof("ConnectionManager.ConnectOutboundConnection: Connecting to peer %v", addr.IP.String())
-	return cmgr._createOutboundConnection(addr, false)
+	return cmgr._dialOutboundConnection(addr, false)
 }
 
+// CloseAttemptedConnection closes an ongoing connection attempt.
 func (cmgr *ConnectionManager) CloseAttemptedConnection(attemptId uint64) {
 	glog.V(2).Infof("ConnectionManager.CloseAttemptedConnection: Closing connection attempt %d", attemptId)
 	if attempt, exists := cmgr.outboundConnectionAttempts[attemptId]; exists {
@@ -361,7 +364,9 @@ func (cmgr *ConnectionManager) CloseAttemptedConnection(attemptId uint64) {
 	}
 }
 
-func (cmgr *ConnectionManager) _createOutboundConnection(addr *wire.NetAddress, isPersistent bool) (_attemptId uint64) {
+// _dialOutboundConnection is the internal method that spawns and initiates an OutboundConnectionAttempt, which handles the
+// connection attempt logic. It returns the attemptId of the attempt that was created.
+func (cmgr *ConnectionManager) _dialOutboundConnection(addr *wire.NetAddress, isPersistent bool) (_attemptId uint64) {
 	attemptId := atomic.AddUint64(&cmgr.attemptIndex, 1)
 	connectionAttempt := NewOutboundConnectionAttempt(attemptId, addr, isPersistent,
 		cmgr.params.DialTimeout, cmgr.outboundConnectionChan)
@@ -378,25 +383,33 @@ func (cmgr *ConnectionManager) _createOutboundConnection(addr *wire.NetAddress, 
 // is set, then we will connect only to that addr. Otherwise, we will use
 // the addrmgr to randomly select addrs and create OUTBOUND connections
 // with them until we find a worthy peer.
-func (cmgr *ConnectionManager) ConnectPeer(conn net.Conn, isOutbound bool, isPersistent bool) error {
-	// At this point Conn is set so create a peer object to do
-	// a version negotiation.
-	ipStr := conn.RemoteAddr().String()
-	na, err := IPToNetAddr(ipStr, cmgr.AddrMgr, cmgr.params)
-	if err != nil {
-		return errors.Wrapf(err, "ConnectOutboundConnection: Problem calling ipToNetAddr for addr: (%s)", conn.RemoteAddr().String())
-	}
-
+func (cmgr *ConnectionManager) ConnectPeer(conn net.Conn, na *wire.NetAddress, attemptId uint64, isOutbound bool, isPersistent bool) *Peer {
+	// At this point Conn is set so create a peer object to do a version negotiation.
 	id := atomic.AddUint64(&cmgr.peerIndex, 1)
-	peer := NewPeer(id, conn, isOutbound, na, isPersistent,
+	peer := NewPeer(id, attemptId, conn, isOutbound, na, isPersistent,
 		cmgr.stallTimeoutSeconds,
 		cmgr.minFeeRateNanosPerKB,
 		cmgr.params,
 		cmgr.srv.incomingMessages, cmgr, cmgr.srv, cmgr.SyncType,
 		cmgr.newPeerChan, cmgr.donePeerChan)
 
-	cmgr.newPeerChan <- peer
-	return nil
+	// Now we can add the peer to our data structures.
+	peer._logAddPeer()
+	cmgr.addPeer(peer)
+
+	// Start the peer's message loop.
+	peer.Start()
+
+	// FIXME: Move this earlier
+	// Signal the server about the new Peer in case it wants to do something with it.
+	go func() {
+		cmgr.serverMessageQueue <- &ServerMessage{
+			Peer: peer,
+			Msg:  &MsgDeSoNewPeer{},
+		}
+	}()
+
+	return peer
 }
 
 func (cmgr *ConnectionManager) _isFromRedundantInboundIPAddress(addrToCheck net.Addr) bool {
@@ -666,7 +679,7 @@ func (cmgr *ConnectionManager) _maybeReplacePeer(pp *Peer) {
 		if !pp.isPersistent {
 			na = nil
 		}
-		cmgr._createOutboundConnection(na, pp.isPersistent)
+		cmgr._dialOutboundConnection(na, pp.isPersistent)
 	}
 }
 
