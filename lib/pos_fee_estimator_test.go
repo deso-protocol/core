@@ -24,6 +24,7 @@ func TestFeeEstimator(t *testing.T) {
 
 	mempool := NewPosMempool(params, globalParams, latestBlockView, 2, dir, false,
 		maxMempoolPosSizeBytes, mempoolBackupIntervalMillis)
+	mempool.Init(nil, 1)
 	require.NoError(t, mempool.Start())
 	require.True(t, mempool.IsRunning())
 	minFeeBucketMin, minFeeBucketMax := computeFeeTimeBucketRangeFromFeeNanosPerKB(
