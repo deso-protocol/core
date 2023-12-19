@@ -5042,7 +5042,7 @@ func (bc *Blockchain) AddInputsAndChangeToTransactionWithSubsidy(
 						"AddInputsAndChangeToTransaction: Problem estimating fee: ")
 				}
 			} else {
-				txArg.TxnFeeNanos = EstimateFee(txArg, minFeeRateNanosPerKB)
+				txArg.TxnFeeNanos = EstimateMaxTxnFeeV1(txArg, minFeeRateNanosPerKB)
 			}
 		}
 
