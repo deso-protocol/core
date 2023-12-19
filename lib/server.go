@@ -703,11 +703,13 @@ func (srv *Server) GetSnapshot(pp *Peer) {
 	}
 	// If operationQueueSemaphore is full, we are already storing too many chunks in memory. Block the thread while
 	// we wait for the queue to clear up.
-	srv.snapshot.operationQueueSemaphore <- struct{}{}
-	// Now send a message to the peer to fetch the snapshot chunk.
-	pp.AddDeSoMessage(&MsgDeSoGetSnapshot{
-		SnapshotStartKey: lastReceivedKey,
-	}, false)
+	go func() {
+		srv.snapshot.operationQueueSemaphore <- struct{}{}
+		// Now send a message to the peer to fetch the snapshot chunk.
+		pp.AddDeSoMessage(&MsgDeSoGetSnapshot{
+			SnapshotStartKey: lastReceivedKey,
+		}, false)
+	}()
 
 	glog.V(2).Infof("Server.GetSnapshot: Sending a GetSnapshot message to peer (%v) "+
 		"with Prefix (%v) and SnapshotStartEntry (%v)", pp, prefix, lastReceivedKey)
@@ -1144,6 +1146,8 @@ func (srv *Server) _handleSnapshot(pp *Peer, msg *MsgDeSoSnapshotData) {
 		"<%v>, Last entry: <%v>), (number of entries: %v), metadata (%v), and isEmpty (%v), from Peer %v",
 		msg.SnapshotChunk[0].Key, msg.SnapshotChunk[len(msg.SnapshotChunk)-1].Key, len(msg.SnapshotChunk),
 		msg.SnapshotMetadata, msg.SnapshotChunk[0].IsEmpty(), pp)))
+	// Free up a slot in the operationQueueSemaphore, now that a chunk has been processed.
+	srv.snapshot.FreeOperationQueueSemaphore()
 
 	// There is a possibility that during hypersync the network entered a new snapshot epoch. We handle this case by
 	// restarting the node and starting hypersync from scratch.
