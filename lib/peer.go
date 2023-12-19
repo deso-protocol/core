@@ -1284,7 +1284,7 @@ func (pp *Peer) ReadDeSoMessage() (DeSoMessage, error) {
 func (pp *Peer) NewVersionMessage(params *DeSoParams) *MsgDeSoVersion {
 	ver := NewMessage(MsgTypeVersion).(*MsgDeSoVersion)
 
-	ver.Version = params.ProtocolVersion
+	ver.Version = params.ProtocolVersion.ToUint64()
 	ver.TstampSecs = time.Now().Unix()
 	// We use an int64 instead of a uint64 for convenience but
 	// this should be fine since we're just looking to generate a
@@ -1324,7 +1324,7 @@ func (pp *Peer) sendVerack() error {
 	verackMsg := NewMessage(MsgTypeVerack)
 	// Include the nonce we received in the peer's version message so
 	// we can validate that we actually control our IP address.
-	verackMsg.(*MsgDeSoVerack).Nonce = pp.VersionNonceReceived
+	verackMsg.(*MsgDeSoVerack).NonceReceived = pp.VersionNonceReceived
 	if err := pp.WriteDeSoMessage(verackMsg); err != nil {
 		return errors.Wrap(err, "sendVerack: ")
 	}
@@ -1343,10 +1343,10 @@ func (pp *Peer) readVerack() error {
 			msg.GetMsgType().String())
 	}
 	verackMsg := msg.(*MsgDeSoVerack)
-	if verackMsg.Nonce != pp.VersionNonceSent {
+	if verackMsg.NonceReceived != pp.VersionNonceSent {
 		return fmt.Errorf(
 			"readVerack: Received VERACK message with nonce %d but expected nonce %d",
-			verackMsg.Nonce, pp.VersionNonceSent)
+			verackMsg.NonceReceived, pp.VersionNonceSent)
 	}
 
 	return nil
@@ -1407,10 +1407,10 @@ func (pp *Peer) readVersion() error {
 	pp.serviceFlags = verMsg.Services
 	pp.advertisedProtocolVersion = verMsg.Version
 	negotiatedVersion := pp.Params.ProtocolVersion
-	if pp.advertisedProtocolVersion < pp.Params.ProtocolVersion {
-		negotiatedVersion = pp.advertisedProtocolVersion
+	if pp.advertisedProtocolVersion < pp.Params.ProtocolVersion.ToUint64() {
+		negotiatedVersion = NewProtocolVersionType(pp.advertisedProtocolVersion)
 	}
-	pp.negotiatedProtocolVersion = negotiatedVersion
+	pp.negotiatedProtocolVersion = negotiatedVersion.ToUint64()
 	pp.PeerInfoMtx.Unlock()
 
 	// Set the stats-related fields.

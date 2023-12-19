@@ -1918,6 +1918,10 @@ func (msg *MsgDeSoGetAddr) GetMsgType() MsgType {
 
 type VerackVersion uint64
 
+func NewVerackVersion(version uint64) VerackVersion {
+	return VerackVersion(version)
+}
+
 const (
 	VerackVersion0 VerackVersion = 0
 	VerackVersion1 VerackVersion = 1
@@ -1928,12 +1932,17 @@ func (vv VerackVersion) ToUint64() uint64 {
 }
 
 type MsgDeSoVerack struct {
+	// The VerackVersion0 message contains only the NonceReceived field, which is the nonce the sender received in the
+	// initial version message from the peer. This ensures the sender controls the network address, similarly to the
+	// "SYN Cookie" DDOS protection. The Version field in the VerackVersion0 message is implied, based on the msg length.
+	//
+	// The VerackVersion1 message contains the tuple of <NonceReceived, NonceSent, TstampMicro> which correspond to the
+	// received and sent nonces in the version message from the sender's perspective, as well as a recent timestamp.
+	// The VerackVersion1 message is used in context of Proof of Stake, where validators register their BLS public keys
+	// as part of their validator entry. The sender of this message must be a registered validator, and he must attach
+	// their public key to the message, along with a BLS signature of the <NonceReceived, NonceSent, TstampMicro> tuple.
 	Version VerackVersion
 
-	// A verack message must contain the nonce the peer received in the
-	// initial version message. This ensures the peer that is communicating
-	// with us actually controls the address she says she does similar to
-	// "SYN Cookie" DDOS protection.
 	NonceReceived uint64
 	NonceSent     uint64
 	TstampMicro   uint64
@@ -1962,6 +1971,10 @@ func (msg *MsgDeSoVerack) EncodeVerackV0() ([]byte, error) {
 }
 
 func (msg *MsgDeSoVerack) EncodeVerackV1() ([]byte, error) {
+	if msg.PublicKey == nil || msg.Signature == nil {
+		return nil, fmt.Errorf("MsgDeSoVerack.EncodeVerackV1: PublicKey and Signature must be set for V1 message")
+	}
+
 	retBytes := []byte{}
 
 	// Version
@@ -1973,15 +1986,16 @@ func (msg *MsgDeSoVerack) EncodeVerackV1() ([]byte, error) {
 	// Tstamp Micro
 	retBytes = append(retBytes, UintToBuf(msg.TstampMicro)...)
 	// PublicKey
-	retBytes = append(retBytes, msg.PublicKey.ToBytes()...)
+	retBytes = append(retBytes, EncodeBLSPublicKey(msg.PublicKey)...)
 	// Signature
-	retBytes = append(retBytes, msg.Signature.ToBytes()...)
+	retBytes = append(retBytes, EncodeBLSSignature(msg.Signature)...)
 
 	return retBytes, nil
 }
 
 func (msg *MsgDeSoVerack) FromBytes(data []byte) error {
 	rr := bytes.NewReader(data)
+	// The V0 verack message is determined from the message length. The V0 message will only contain the NonceReceived field.
 	if len(data) <= MaxVarintLen64 {
 		return msg.FromBytesV0(data)
 	}
@@ -1990,7 +2004,7 @@ func (msg *MsgDeSoVerack) FromBytes(data []byte) error {
 	if err != nil {
 		return errors.Wrapf(err, "MsgDeSoVerack.FromBytes: Problem reading Version")
 	}
-	msg.Version = VerackVersion(version)
+	msg.Version = NewVerackVersion(version)
 	switch msg.Version {
 	case VerackVersion0:
 		return fmt.Errorf("MsgDeSoVerack.FromBytes: Outdated Version=0 used for new encoding")
@@ -2018,7 +2032,7 @@ func (msg *MsgDeSoVerack) FromBytesV1(data []byte) error {
 	if err != nil {
 		return errors.Wrapf(err, "MsgDeSoVerack.FromBytes: Problem reading Version")
 	}
-	msg.Version = VerackVersion(version)
+	msg.Version = NewVerackVersion(version)
 
 	msg.NonceReceived, err = ReadUvarint(rr)
 	if err != nil {
