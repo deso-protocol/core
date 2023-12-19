@@ -232,7 +232,7 @@ func (posFeeEstimator *PoSFeeEstimator) EstimateFee(
 		maxBlockSize,
 	)
 	if err != nil {
-		return 0, errors.Wrap(err, "EstimateFee: Problem computing mempool fee estimate")
+		return 0, errors.Wrap(err, "PoSFeeEstimator.EstimateFee: Problem computing mempool fee estimate")
 	}
 	pastBlocksFeeEstimate, err := posFeeEstimator.pastBlocksFeeEstimate(
 		txn,
@@ -241,7 +241,7 @@ func (posFeeEstimator *PoSFeeEstimator) EstimateFee(
 		maxBlockSize,
 	)
 	if err != nil {
-		return 0, errors.Wrap(err, "EstimateFee: Problem computing past blocks fee estimate")
+		return 0, errors.Wrap(err, "PoSFeeEstimator.EstimateFee: Problem computing past blocks fee estimate")
 	}
 	if mempoolFeeEstimate < pastBlocksFeeEstimate {
 		return pastBlocksFeeEstimate, nil

@@ -231,7 +231,7 @@ type DeSoMempool struct {
 // repo. We'll eventually be deprecating DeSoMempool, so we're not particularly
 // concerned about this.
 
-func (mp *DeSoMempool) Start(_ []*MsgDeSoBlock, _ uint64) error {
+func (mp *DeSoMempool) Start() error {
 	return errors.New("Not implemented")
 }
 
@@ -2422,7 +2422,7 @@ func (mp *DeSoMempool) GetMempoolSummaryStats() (_summaryStatsMap map[string]*Su
 	return convertMempoolTxsToSummaryStats(mp.readOnlyUniversalTransactionList)
 }
 
-func EstimateFee(txn *MsgDeSoTxn, minFeeRateNanosPerKB uint64) uint64 {
+func EstimateMaxTxnFeeV1(txn *MsgDeSoTxn, minFeeRateNanosPerKB uint64) uint64 {
 	if minFeeRateNanosPerKB == 0 {
 		return 0
 	}
@@ -2437,7 +2437,7 @@ func EstimateFee(txn *MsgDeSoTxn, minFeeRateNanosPerKB uint64) uint64 {
 }
 
 func (mp *DeSoMempool) EstimateFee(txn *MsgDeSoTxn, minFeeRateNanosPerKB uint64, _ uint64) (uint64, error) {
-	return EstimateFee(txn, minFeeRateNanosPerKB), nil
+	return EstimateMaxTxnFeeV1(txn, minFeeRateNanosPerKB), nil
 }
 
 func convertMempoolTxsToSummaryStats(mempoolTxs []*MempoolTx) map[string]*SummaryStats {

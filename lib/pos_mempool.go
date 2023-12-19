@@ -14,12 +14,13 @@ import (
 type PosMempoolStatus int
 
 const (
-	PosMempoolStatusRunning PosMempoolStatus = iota
-	PosMempoolStatusNotRunning
+	PosMempoolStatusNotInitialized PosMempoolStatus = iota
+	PosMempoolStatusInitialized
+	PosMempoolStatusRunning
 )
 
 type Mempool interface {
-	Start(feeEstimatorPastBlocks []*MsgDeSoBlock, feeEstimatorNumBlocks uint64) error
+	Start() error
 	Stop()
 	IsRunning() bool
 	AddTransaction(txn *MempoolTransaction, verifySignature bool) error
@@ -152,7 +153,7 @@ func NewPosMempool(params *DeSoParams, globalParams *GlobalParamsEntry, readOnly
 	latestBlockHeight uint64, dir string, inMemoryOnly bool, maxMempoolPosSizeBytes uint64,
 	mempoolBackupIntervalMillis uint64) *PosMempool {
 	return &PosMempool{
-		status:                      PosMempoolStatusNotRunning,
+		status:                      PosMempoolStatusNotInitialized,
 		params:                      params,
 		globalParams:                globalParams,
 		inMemoryOnly:                inMemoryOnly,
@@ -168,18 +169,26 @@ func NewPosMempool(params *DeSoParams, globalParams *GlobalParamsEntry, readOnly
 	}
 }
 
-func (mp *PosMempool) Start(feeEstimatorPastBlocks []*MsgDeSoBlock, feeEstimatorNumBlocks uint64) error {
-	mp.Lock()
-	defer mp.Unlock()
+func (mp *PosMempool) Init(feeEstimatorPastBlocks []*MsgDeSoBlock, feeEstimatorNumBlocks uint64) error {
 
-	if mp.IsRunning() {
-		return nil
+	if mp.status != PosMempoolStatusNotInitialized {
+		return errors.New("PosMempool.Init: PosMempool already initialized")
 	}
-
 	// TODO: parameterize num blocks. Also, how to pass in blocks.
 	if err := mp.feeEstimator.Init(
 		mp.txnRegister, feeEstimatorPastBlocks, feeEstimatorNumBlocks, mp.globalParams); err != nil {
 		return errors.Wrapf(err, "PosMempool.Start: Problem initializing fee estimator")
+	}
+	mp.status = PosMempoolStatusInitialized
+	return nil
+}
+
+func (mp *PosMempool) Start() error {
+	mp.Lock()
+	defer mp.Unlock()
+
+	if mp.status != PosMempoolStatusInitialized {
+		return errors.New("PosMempool.Start: PosMempool not initialized")
 	}
 
 	// Setup the database and create the persister
@@ -227,8 +236,9 @@ func (mp *PosMempool) Stop() {
 	mp.txnRegister.Reset()
 	mp.ledger.Reset()
 	mp.nonceTracker.Reset()
+	mp.feeEstimator = NewPoSFeeEstimator()
 
-	mp.status = PosMempoolStatusNotRunning
+	mp.status = PosMempoolStatusNotInitialized
 }
 
 func (mp *PosMempool) IsRunning() bool {
@@ -509,7 +519,10 @@ func (mp *PosMempool) refreshNoLock() error {
 	// Create the temporary in-memory mempool with the most up-to-date readOnlyLatestBlockView, Height, and globalParams.
 	tempPool := NewPosMempool(mp.params, mp.globalParams, mp.readOnlyLatestBlockView, mp.latestBlockHeight, "", true,
 		mp.maxMempoolPosSizeBytes, mp.mempoolBackupIntervalMillis)
-	if err := tempPool.Start(mp.feeEstimator.cachedBlocks, mp.feeEstimator.numBlocks); err != nil {
+	if err := tempPool.Init(mp.feeEstimator.cachedBlocks, mp.feeEstimator.numBlocks); err != nil {
+		return errors.Wrapf(err, "PosMempool.refreshNoLock: Problem initializing temp pool")
+	}
+	if err := tempPool.Start(); err != nil {
 		return errors.Wrapf(err, "PosMempool.refreshNoLock: Problem starting temp pool")
 	}
 	defer tempPool.Stop()
