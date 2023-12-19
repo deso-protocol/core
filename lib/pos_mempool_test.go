@@ -23,7 +23,7 @@ func TestPosMempoolStart(t *testing.T) {
 
 	mempool := NewPosMempool(&params, globalParams, nil, 0, dir, false,
 		maxMempoolPosSizeBytes, mempoolBackupIntervalMillis)
-	require.NoError(mempool.Start())
+	require.NoError(mempool.Start(nil, 1))
 	require.True(mempool.IsRunning())
 	require.NoError(mempool.Refresh())
 	mempool.Stop()
@@ -50,7 +50,7 @@ func TestPosMempoolRestartWithTransactions(t *testing.T) {
 
 	mempool := NewPosMempool(params, globalParams, latestBlockView, 2, dir, false,
 		maxMempoolPosSizeBytes, mempoolBackupIntervalMillis)
-	require.NoError(mempool.Start())
+	require.NoError(mempool.Start(nil, 1))
 	require.True(mempool.IsRunning())
 
 	txn1 := _generateTestTxn(t, rand, feeMin, feeMax, m0PubBytes, m0Priv, 100, 0)
@@ -67,7 +67,7 @@ func TestPosMempoolRestartWithTransactions(t *testing.T) {
 
 	newPool := NewPosMempool(params, globalParams, latestBlockView, 2, dir, false,
 		maxMempoolPosSizeBytes, mempoolBackupIntervalMillis)
-	require.NoError(newPool.Start())
+	require.NoError(newPool.Start(nil, 1))
 	require.True(newPool.IsRunning())
 	newPoolTxns := newPool.GetTransactions()
 	require.Equal(2, len(newPoolTxns))
@@ -101,7 +101,7 @@ func TestPosMempoolPrune(t *testing.T) {
 
 	mempool := NewPosMempool(params, globalParams, latestBlockView, 2, dir, false,
 		maxMempoolPosSizeBytes, mempoolBackupIntervalMillis)
-	require.NoError(mempool.Start())
+	require.NoError(mempool.Start(nil, 1))
 	require.True(mempool.IsRunning())
 
 	var txns []*MsgDeSoTxn
@@ -135,7 +135,7 @@ func TestPosMempoolPrune(t *testing.T) {
 
 	newPool := NewPosMempool(params, globalParams, latestBlockView, 2, dir, false,
 		maxMempoolPosSizeBytes, mempoolBackupIntervalMillis)
-	require.NoError(newPool.Start())
+	require.NoError(newPool.Start(nil, 1))
 	require.True(newPool.IsRunning())
 	require.Equal(2, len(newPool.GetTransactions()))
 
@@ -193,7 +193,7 @@ func TestPosMempoolUpdateGlobalParams(t *testing.T) {
 
 	mempool := NewPosMempool(params, globalParams, latestBlockView, 2, dir, false,
 		maxMempoolPosSizeBytes, mempoolBackupIntervalMillis)
-	require.NoError(mempool.Start())
+	require.NoError(mempool.Start(nil, 1))
 	require.True(mempool.IsRunning())
 
 	var txns []*MsgDeSoTxn
@@ -219,7 +219,7 @@ func TestPosMempoolUpdateGlobalParams(t *testing.T) {
 
 	newPool := NewPosMempool(params, newGlobalParams, latestBlockView, 2, dir, false,
 		maxMempoolPosSizeBytes, mempoolBackupIntervalMillis)
-	require.NoError(newPool.Start())
+	require.NoError(newPool.Start(nil, 1))
 	require.True(newPool.IsRunning())
 	newPoolTxns := newPool.GetTransactions()
 	require.Equal(0, len(newPoolTxns))
@@ -249,7 +249,7 @@ func TestPosMempoolReplaceWithHigherFee(t *testing.T) {
 
 	mempool := NewPosMempool(params, globalParams, latestBlockView, 2, dir, false,
 		maxMempoolPosSizeBytes, mempoolBackupIntervalMillis)
-	require.NoError(mempool.Start())
+	require.NoError(mempool.Start(nil, 1))
 	require.True(mempool.IsRunning())
 
 	// Add a single transaction from m0

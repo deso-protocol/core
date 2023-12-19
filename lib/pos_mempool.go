@@ -19,7 +19,7 @@ const (
 )
 
 type Mempool interface {
-	Start() error
+	Start(feeEstimatorPastBlocks []*MsgDeSoBlock, feeEstimatorNumBlocks uint64) error
 	Stop()
 	IsRunning() bool
 	AddTransaction(txn *MempoolTransaction, verifySignature bool) error
@@ -38,7 +38,7 @@ type Mempool interface {
 	IsTransactionInPool(txHash *BlockHash) bool
 	GetMempoolTx(txHash *BlockHash) *MempoolTx
 	GetMempoolSummaryStats() map[string]*SummaryStats
-	GetFeeEstimator() *PoSFeeEstimator
+	EstimateFee(txn *MsgDeSoTxn, minFeeRateNanosPerKB uint64, maxBlockSizeBytes uint64) (uint64, error)
 }
 
 type MempoolIterator interface {
@@ -161,10 +161,14 @@ func NewPosMempool(params *DeSoParams, globalParams *GlobalParamsEntry, readOnly
 		latestBlockHeight:           latestBlockHeight,
 		maxMempoolPosSizeBytes:      maxMempoolPosSizeBytes,
 		mempoolBackupIntervalMillis: mempoolBackupIntervalMillis,
+		txnRegister:                 NewTransactionRegister(globalParams),
+		feeEstimator:                NewPoSFeeEstimator(),
+		ledger:                      NewBalanceLedger(),
+		nonceTracker:                NewNonceTracker(),
 	}
 }
 
-func (mp *PosMempool) Start() error {
+func (mp *PosMempool) Start(feeEstimatorPastBlocks []*MsgDeSoBlock, feeEstimatorNumBlocks uint64) error {
 	mp.Lock()
 	defer mp.Unlock()
 
@@ -172,15 +176,11 @@ func (mp *PosMempool) Start() error {
 		return nil
 	}
 
-	// Create the transaction register, the ledger, and the nonce tracker,
-	mp.txnRegister = NewTransactionRegister(mp.globalParams)
-	mp.feeEstimator = NewPoSFeeEstimator()
 	// TODO: parameterize num blocks. Also, how to pass in blocks.
-	if err := mp.feeEstimator.Init(mp.txnRegister, []*MsgDeSoBlock{}, 1, mp.globalParams); err != nil {
+	if err := mp.feeEstimator.Init(
+		mp.txnRegister, feeEstimatorPastBlocks, feeEstimatorNumBlocks, mp.globalParams); err != nil {
 		return errors.Wrapf(err, "PosMempool.Start: Problem initializing fee estimator")
 	}
-	mp.ledger = NewBalanceLedger()
-	mp.nonceTracker = NewNonceTracker()
 
 	// Setup the database and create the persister
 	if !mp.inMemoryOnly {
@@ -509,7 +509,7 @@ func (mp *PosMempool) refreshNoLock() error {
 	// Create the temporary in-memory mempool with the most up-to-date readOnlyLatestBlockView, Height, and globalParams.
 	tempPool := NewPosMempool(mp.params, mp.globalParams, mp.readOnlyLatestBlockView, mp.latestBlockHeight, "", true,
 		mp.maxMempoolPosSizeBytes, mp.mempoolBackupIntervalMillis)
-	if err := tempPool.Start(); err != nil {
+	if err := tempPool.Start(mp.feeEstimator.cachedBlocks, mp.feeEstimator.numBlocks); err != nil {
 		return errors.Wrapf(err, "PosMempool.refreshNoLock: Problem starting temp pool")
 	}
 	defer tempPool.Stop()
@@ -646,6 +646,7 @@ func (mp *PosMempool) GetMempoolSummaryStats() map[string]*SummaryStats {
 	return convertMempoolTxsToSummaryStats(mp.txnRegister.GetFeeTimeTransactions())
 }
 
-func (mp *PosMempool) GetFeeEstimator() *PoSFeeEstimator {
-	return mp.feeEstimator
+func (mp *PosMempool) EstimateFee(txn *MsgDeSoTxn, _ uint64, maxBlockSize uint64) (uint64, error) {
+	// TODO: replace MaxBasisPoints with variables configured by flags.
+	return mp.feeEstimator.EstimateFee(txn, MaxBasisPoints, MaxBasisPoints, maxBlockSize)
 }

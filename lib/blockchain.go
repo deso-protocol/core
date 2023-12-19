@@ -4903,11 +4903,8 @@ func (bc *Blockchain) CreateMaxSpend(
 		prevFeeAmountNanos := uint64(0)
 		for feeAmountNanos == 0 || feeAmountNanos != prevFeeAmountNanos {
 			prevFeeAmountNanos = feeAmountNanos
-			if bc.BlockTip().Height >= bc.params.ForkHeights.ProofOfStake2ConsensusCutoverBlockHeight &&
-				!isInterfaceValueNil(mempool) &&
-				mempool.GetFeeEstimator() != nil {
-				// TODO: replace MaxBasisPoints with variables configured by flags.
-				feeAmountNanos, err = mempool.GetFeeEstimator().EstimateFee(txn, MaxBasisPoints, MaxBasisPoints,
+			if !isInterfaceValueNil(mempool) {
+				feeAmountNanos, err = mempool.EstimateFee(txn, minFeeRateNanosPerKB,
 					bc.params.MaxBlockSizeBytes)
 				if err != nil {
 					return nil, 0, 0, 0, errors.Wrapf(err, "CreateMaxSpend: Problem estimating fee: ")
@@ -5037,25 +5034,15 @@ func (bc *Blockchain) AddInputsAndChangeToTransactionWithSubsidy(
 		// Initialize to 0.
 		txArg.TxnFeeNanos = 0
 
-		feeAmountNanos := uint64(0)
 		if txArg.TxnMeta.GetTxnType() != TxnTypeBlockReward {
-			if blockHeight >= bc.params.ForkHeights.ProofOfStake2ConsensusCutoverBlockHeight &&
-				!isInterfaceValueNil(mempool) &&
-				mempool.GetFeeEstimator() != nil {
-				// TODO: replace MaxBasisPoints with variables configured by flags.
-				txArg.TxnFeeNanos, err = mempool.GetFeeEstimator().EstimateFee(txArg, MaxBasisPoints, MaxBasisPoints,
-					bc.params.MaxBlockSizeBytes)
+			if !isInterfaceValueNil(mempool) {
+				txArg.TxnFeeNanos, err = mempool.EstimateFee(txArg, minFeeRateNanosPerKB, bc.params.MaxBlockSizeBytes)
 				if err != nil {
 					return 0, 0, 0, 0, errors.Wrapf(err,
 						"AddInputsAndChangeToTransaction: Problem estimating fee: ")
 				}
-			} else if minFeeRateNanosPerKB != 0 {
-				prevFeeAmountNanos := uint64(0)
-				for feeAmountNanos == 0 || feeAmountNanos != prevFeeAmountNanos {
-					prevFeeAmountNanos = feeAmountNanos
-					feeAmountNanos = _computeMaxTxV1Fee(txArg, minFeeRateNanosPerKB)
-					txArg.TxnFeeNanos = feeAmountNanos
-				}
+			} else {
+				txArg.TxnFeeNanos = EstimateFee(txArg, minFeeRateNanosPerKB)
 			}
 		}
 
