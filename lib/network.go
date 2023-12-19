@@ -1615,7 +1615,7 @@ func (msg *MsgDeSoVersion) ToBytes(preSignature bool) ([]byte, error) {
 	retBytes = append(retBytes, UintToBuf(uint64(msg.StartBlockHeight))...)
 
 	// MinFeeRateNanosPerKB
-	retBytes = append(retBytes, UintToBuf(uint64(msg.MinFeeRateNanosPerKB))...)
+	retBytes = append(retBytes, UintToBuf(msg.MinFeeRateNanosPerKB)...)
 
 	// JSONAPIPort - deprecated
 	retBytes = append(retBytes, UintToBuf(uint64(0))...)

@@ -112,8 +112,7 @@ func (signer *BLSSigner) SignRandomSeedHash(randomSeedHash *RandomSeedHash) (*bl
 // TODO: Add signing function for PoS blocks
 
 func (signer *BLSSigner) SignPoSValidatorHandshake(nonceSent uint64, nonceReceived uint64, tstampMicro uint64) (*bls.Signature, error) {
-	// FIXME
-	payload := []byte{}
+	payload := GetVerackHandshakePayload(nonceSent, nonceReceived, tstampMicro)
 	return signer.sign(BLSSignatureOpCodePoSValidatorHandshake, payload[:])
 }
 
@@ -141,7 +140,6 @@ func BLSVerifyValidatorTimeout(view uint64, highQCView uint64, signature *bls.Si
 func BLSVerifyPoSValidatorHandshake(nonceSent uint64, nonceReceived uint64, tstampMicro uint64,
 	signature *bls.Signature, publicKey *bls.PublicKey) (bool, error) {
 
-	// FIXME
-	payload := []byte{}
+	payload := GetVerackHandshakePayload(nonceSent, nonceReceived, tstampMicro)
 	return _blsVerify(BLSSignatureOpCodePoSValidatorHandshake, payload[:], signature, publicKey)
 }

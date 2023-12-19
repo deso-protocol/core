@@ -1,0 +1,599 @@
+package lib
+
+import (
+	"encoding/binary"
+	"fmt"
+	"github.com/btcsuite/btcd/wire"
+	"github.com/deso-protocol/core/bls"
+	"github.com/golang/glog"
+	"github.com/pkg/errors"
+	"golang.org/x/crypto/sha3"
+	"net"
+	"sync"
+	"time"
+)
+
+type RemoteNodeStatus int
+
+const (
+	RemoteNodeStatus_NotConnected RemoteNodeStatus = 0
+	RemoteNodeStatus_Connected    RemoteNodeStatus = 1
+	RemoteNodeStatus_Validated    RemoteNodeStatus = 2
+	RemoteNodeStatus_Attempted    RemoteNodeStatus = 3
+	RemoteNodeStatus_Terminated   RemoteNodeStatus = 4
+)
+
+type RemoteNodeId uint64
+
+func NewRemoteNodeId(id uint64) RemoteNodeId {
+	return RemoteNodeId(id)
+}
+
+func (id RemoteNodeId) ToUint64() uint64 {
+	return uint64(id)
+}
+
+// RemoteNode is a consensus-aware wrapper around the network Peer object. It is used to manage the lifecycle of a peer
+// and to store consensus-related metadata about the peer. The RemoteNode can wrap around either an inbound or outbound
+// peer connection. For outbound peers, the RemoteNode is created prior to the connection being established. In this case,
+// the RemoteNode will be first used to initiate an OutboundConnectionAttempt, and then store the resulting connected peer.
+// For inbound peers, the RemoteNode is created after the connection is established in ConnectionManager.
+//
+// Once the RemoteNode's peer is set, the RemoteNode is used to manage the handshake with the peer. The handshake involves
+// rounds of Version and Verack messages being sent between our node and the peer. The handshake is complete when both
+// nodes have sent and received a Version and Verack message. Once the handshake is successful, the RemoteNode will
+// emit a MsgDeSoPeerHandshakeComplete control message via the Server.
+//
+// In steady state, i.e. after the handshake is complete, the RemoteNode can be used to send a message to the peer,
+// retrieve the peer's handshake metadata, and close the connection with the peer. The RemoteNode has a single-use
+// lifecycle. Once the RemoteNode is terminated, it will be disposed of, and a new RemoteNode must be created if we
+// wish to reconnect to the peer in the future.
+type RemoteNode struct {
+	mtx sync.Mutex
+
+	peer *Peer
+	// The id is the unique identifier of this RemoteNode. For outbound connections, the id will be the same as the
+	// attemptId of the OutboundConnectionAttempt, and the subsequent id of the outbound peer. For inbound connections,
+	// the id will be the same as the inbound peer's id.
+	id               RemoteNodeId
+	connectionStatus RemoteNodeStatus
+
+	params *DeSoParams
+	srv    *Server
+	bc     *Blockchain
+	cmgr   *ConnectionManager
+
+	// minTxFeeRateNanosPerKB is the minimum transaction fee rate in nanos per KB that our node will accept.
+	minTxFeeRateNanosPerKB uint64
+	hyperSync              bool
+	archivalMode           bool
+	posValidator           bool
+
+	// handshakeMetadata is used to store the information received from the peer during the handshake.
+	handshakeMetadata *HandshakeMetadata
+	// keystore is a reference to the node's BLS private key storage. In the context of a RemoteNode, the keystore is
+	// used in the Verack message for validator nodes to prove ownership of the validator BLS public key.
+	keystore *BLSKeystore
+
+	// versionTimeExpected is the latest time by which we expect to receive a Version message from the peer.
+	// If the Version message is not received by this time, the connection will be terminated.
+	versionTimeExpected time.Time
+	// verackTimeExpected is the latest time by which we expect to receive a Verack message from the peer.
+	// If the Verack message is not received by this time, the connection will be terminated.
+	verackTimeExpected time.Time
+}
+
+// HandshakeMetadata stores the information received from the peer during the Version and Verack exchange.
+type HandshakeMetadata struct {
+	// ### The following fields are populated during the MsgDeSoVersion exchange.
+	// versionNonceSent is the nonce sent in the Version message to the peer.
+	versionNonceSent uint64
+	// versionNonceReceived is the nonce received in the Version message from the peer.
+	versionNonceReceived uint64
+	// userAgent is a meta level label that can be used to analyze the network.
+	userAgent string
+	// ServiceFlag is a bitfield that indicates the services supported by the peer.
+	ServiceFlag ServiceFlag
+	// StartingBlockHeight is the block height of the peer's block tip during the Version exchange.
+	StartingBlockHeight uint32
+	// minTxFeeRateNanosPerKB is the minimum transaction fee rate in nanos per KB that the peer will accept.
+	minTxFeeRateNanosPerKB uint64
+	// advertisedProtocolVersion is the protocol version advertised by the peer.
+	advertisedProtocolVersion ProtocolVersionType
+	// negotiatedProtocolVersion is the protocol version negotiated between the peer and our node. This is the minimum
+	// of the advertised protocol version and our node's protocol version.
+	negotiatedProtocolVersion ProtocolVersionType
+	// timeConnected is the unix timestamp of the peer, measured when the peer sent their Version message.
+	timeConnected *time.Time
+	// versionNegotiated is true if the peer passed the version negotiation step.
+	versionNegotiated bool
+	// timeOffsetSecs is the time offset between our node and the peer, measured by taking the difference between the
+	// peer's unix timestamp and our node's unix timestamp.
+	timeOffsetSecs int64
+
+	// ### The following fields are populated during the MsgDeSoVerack exchange.
+	// validatorPublicKey is the BLS public key of the peer, if the peer is a validator node.
+	validatorPublicKey *bls.PublicKey
+}
+
+func NewRemoteNode(id RemoteNodeId, srv *Server, bc *Blockchain, cmgr *ConnectionManager, params *DeSoParams,
+	minTxFeeRateNanosPerKB uint64, hyperSync bool, archivalMode bool, posValidator bool) *RemoteNode {
+	return &RemoteNode{
+		id:                     id,
+		connectionStatus:       RemoteNodeStatus_NotConnected,
+		handshakeMetadata:      nil,
+		srv:                    srv,
+		bc:                     bc,
+		cmgr:                   cmgr,
+		params:                 params,
+		minTxFeeRateNanosPerKB: minTxFeeRateNanosPerKB,
+		hyperSync:              hyperSync,
+		archivalMode:           archivalMode,
+		posValidator:           posValidator,
+	}
+}
+
+// setStatusValidated sets the connection status of the remote node to validated.
+func (rn *RemoteNode) setStatusValidated() {
+	rn.connectionStatus = RemoteNodeStatus_Validated
+}
+
+// setStatusConnected sets the connection status of the remote node to connected.
+func (rn *RemoteNode) setStatusConnected() {
+	rn.connectionStatus = RemoteNodeStatus_Connected
+}
+
+// setStatusTerminated sets the connection status of the remote node to terminated.
+func (rn *RemoteNode) setStatusTerminated() {
+	rn.connectionStatus = RemoteNodeStatus_Terminated
+}
+
+// setStatusAttempted sets the connection status of the remote node to attempted.
+func (rn *RemoteNode) setStatusAttempted() {
+	rn.connectionStatus = RemoteNodeStatus_Attempted
+}
+
+func (rn *RemoteNode) GetId() RemoteNodeId {
+	return rn.id
+}
+
+func (rn *RemoteNode) GetPeer() *Peer {
+	return rn.peer
+}
+
+func (rn *RemoteNode) getHandshakeMetadata() *HandshakeMetadata {
+	if rn.handshakeMetadata == nil {
+		rn.handshakeMetadata = &HandshakeMetadata{}
+	}
+	return rn.handshakeMetadata
+}
+
+func (rn *RemoteNode) GetNegotiatedProtocolVersion() ProtocolVersionType {
+	meta := rn.getHandshakeMetadata()
+	return meta.negotiatedProtocolVersion
+}
+
+func (rn *RemoteNode) GetValidatorPublicKey() *bls.PublicKey {
+	meta := rn.getHandshakeMetadata()
+	return meta.validatorPublicKey
+}
+
+func (rn *RemoteNode) IsInbound() bool {
+	return rn.peer != nil && !rn.peer.IsOutbound()
+}
+
+func (rn *RemoteNode) IsOutbound() bool {
+	return rn.peer != nil && rn.peer.IsOutbound()
+}
+
+func (rn *RemoteNode) IsPersistent() bool {
+	return rn.peer != nil && rn.peer.IsPersistent()
+}
+
+func (rn *RemoteNode) IsConnected() bool {
+	return rn.connectionStatus == RemoteNodeStatus_Connected
+}
+
+func (rn *RemoteNode) IsValidator() bool {
+	return rn.posValidator
+}
+
+// DialOutboundConnection dials an outbound connection to the provided netAddr.
+func (rn *RemoteNode) DialOutboundConnection(netAddr *wire.NetAddress) error {
+	if rn.connectionStatus != RemoteNodeStatus_NotConnected {
+		return fmt.Errorf("RemoteNode.DialOutboundConnection: RemoteNode is not in the NotConnected state")
+	}
+
+	rn.mtx.Lock()
+	defer rn.mtx.Unlock()
+
+	rn.cmgr.DialOutboundConnection(netAddr, rn.GetId().ToUint64())
+	rn.setStatusAttempted()
+	return nil
+}
+
+// DialPersistentOutboundConnection dials a persistent outbound connection to the provided netAddr.
+func (rn *RemoteNode) DialPersistentOutboundConnection(netAddr *wire.NetAddress) error {
+	if rn.connectionStatus != RemoteNodeStatus_NotConnected {
+		return fmt.Errorf("RemoteNode.DialPersistentOutboundConnection: RemoteNode is not in the NotConnected state")
+	}
+
+	rn.mtx.Lock()
+	defer rn.mtx.Unlock()
+
+	rn.cmgr.DialPersistentOutboundConnection(netAddr, rn.GetId().ToUint64())
+	rn.setStatusAttempted()
+	return nil
+}
+
+// ConnectInboundPeer connects a peer once a successful inbound connection has been established.
+func (rn *RemoteNode) ConnectInboundPeer(conn net.Conn, na *wire.NetAddress) error {
+	if rn.connectionStatus != RemoteNodeStatus_NotConnected {
+		return fmt.Errorf("RemoteNode.ConnectInboundPeer: RemoteNode is not in the NotConnected state")
+	}
+
+	rn.mtx.Lock()
+	defer rn.mtx.Unlock()
+
+	id := rn.GetId().ToUint64()
+	rn.peer = rn.cmgr.ConnectPeer(id, conn, na, false, false)
+	rn.setStatusConnected()
+	return nil
+}
+
+// ConnectOutboundPeer connects a peer once a successful outbound connection has been established.
+func (rn *RemoteNode) ConnectOutboundPeer(conn net.Conn, na *wire.NetAddress, isPersistent bool) error {
+	if rn.connectionStatus != RemoteNodeStatus_Attempted {
+		return fmt.Errorf("RemoteNode.ConnectOutboundPeer: RemoteNode is not in the Attempted state")
+	}
+
+	rn.mtx.Lock()
+	defer rn.mtx.Unlock()
+
+	id := rn.GetId().ToUint64()
+	rn.peer = rn.cmgr.ConnectPeer(id, conn, na, true, isPersistent)
+	rn.setStatusConnected()
+	return nil
+}
+
+// Disconnect disconnects the remote node, closing the attempted connection or the established connection.
+func (rn *RemoteNode) Disconnect() {
+	rn.mtx.Lock()
+	defer rn.mtx.Unlock()
+
+	id := rn.GetId().ToUint64()
+	switch rn.connectionStatus {
+	case RemoteNodeStatus_Attempted:
+		rn.cmgr.CloseAttemptedConnection(id)
+	case RemoteNodeStatus_Connected, RemoteNodeStatus_Validated:
+		rn.cmgr.CloseConnection(id)
+	}
+	rn.setStatusTerminated()
+}
+
+func (rn *RemoteNode) SendMessage(desoMsg DeSoMessage) error {
+	if rn.connectionStatus != RemoteNodeStatus_Connected && rn.connectionStatus != RemoteNodeStatus_Validated {
+		return fmt.Errorf("SendMessage: Remote node is not connected")
+	}
+
+	if err := rn.cmgr.SendMessage(desoMsg, rn.GetId().ToUint64()); err != nil {
+		return fmt.Errorf("SendMessage: Problem sending message to peer (id= %d): %v", rn.id, err)
+	}
+	return nil
+}
+
+// InitiateHandshake is a starting point for a peer handshake. If the peer is outbound, a version message is sent
+// to the peer. If the peer is inbound, the peer is expected to send a version message to us first.
+func (rn *RemoteNode) InitiateHandshake(nonce uint64) error {
+	if rn.connectionStatus != RemoteNodeStatus_Connected {
+		return fmt.Errorf("InitiateHandshake: Remote node is not connected")
+	}
+
+	if rn.GetPeer().IsOutbound() {
+		rn.versionTimeExpected = time.Now().Add(rn.params.VersionNegotiationTimeout)
+		return rn.sendVersionMessage(nonce)
+	}
+	return nil
+}
+
+// sendVersionMessage generates and sends a version message to a RemoteNode peer. The message will contain the nonce
+// that is passed in as an argument.
+func (rn *RemoteNode) sendVersionMessage(nonce uint64) error {
+	verMsg := rn.newVersionMessage(nonce)
+
+	// Record the nonce of this version message before we send it so we can
+	// detect self connections and so we can validate that the peer actually
+	// controls the IP she's supposedly communicating to us from.
+	vMeta := rn.getHandshakeMetadata()
+	vMeta.versionNonceSent = nonce
+
+	if err := rn.SendMessage(verMsg); err != nil {
+		return fmt.Errorf("sendVersionMessage: Problem sending version message to peer (id= %d): %v", rn.id, err)
+	}
+	return nil
+}
+
+// newVersionMessage returns a new version message that can be sent to a RemoteNode peer. The message will contain the
+// nonce that is passed in as an argument.
+func (rn *RemoteNode) newVersionMessage(nonce uint64) *MsgDeSoVersion {
+	ver := NewMessage(MsgTypeVersion).(*MsgDeSoVersion)
+
+	ver.Version = rn.params.ProtocolVersion.ToUint64()
+	// Set the services bitfield to indicate what services this node supports.
+	ver.Services = SFFullNodeDeprecated
+	if rn.hyperSync {
+		ver.Services |= SFHyperSync
+	}
+	if rn.archivalMode {
+		ver.Services |= SFArchivalNode
+	}
+	if rn.posValidator {
+		ver.Services |= SFPosValidator
+	}
+
+	// We use an int64 instead of a uint64 for convenience.
+	ver.TstampSecs = time.Now().Unix()
+
+	ver.Nonce = nonce
+	ver.UserAgent = rn.params.UserAgent
+
+	// When a node asks you for what height you have, you should reply with the height of the latest actual block you
+	// have. This makes it so that peers who have up-to-date headers but missing blocks won't be considered for initial
+	// block download.
+	ver.StartBlockHeight = uint32(rn.bc.BlockTip().Header.Height)
+
+	// Set the minimum fee rate the peer will accept.
+	ver.MinFeeRateNanosPerKB = rn.minTxFeeRateNanosPerKB
+
+	return ver
+}
+
+// HandleVersionMessage is called upon receiving a version message from the RemoteNode's peer. The peer may be the one
+// initiating the handshake, in which case, we should respond with our own version message. To do this, we pass the
+// responseNonce to this function, which we will use in our response version message.
+func (rn *RemoteNode) HandleVersionMessage(verMsg *MsgDeSoVersion, responseNonce uint64) error {
+	if rn.connectionStatus != RemoteNodeStatus_Connected {
+		return fmt.Errorf("HandleVersionMessage: RemoteNode is not connected")
+	}
+
+	// Verify that the peer's version matches our minimal supported version.
+	if verMsg.Version < rn.params.MinProtocolVersion {
+		return fmt.Errorf("RemoteNode.HandleVersionMessage: Requesting disconnect for id: (%v) "+
+			"protocol version too low. Peer version: %v, min version: %v", rn.id, verMsg.Version, rn.params.MinProtocolVersion)
+		//rn.Disconnect()
+	}
+
+	// Verify that the peer's version message is sent within the version negotiation timeout.
+	if rn.versionTimeExpected.Before(time.Now()) {
+		return fmt.Errorf("RemoteNode.HandleVersionMessage: Requesting disconnect for id: (%v) "+
+			"version timeout. Time expected: %v, now: %v", rn.id, rn.versionTimeExpected.UnixMicro(), time.Now().UnixMicro())
+	}
+
+	vMeta := rn.getHandshakeMetadata()
+	// Record the version the peer is using.
+	vMeta.advertisedProtocolVersion = NewProtocolVersionType(verMsg.Version)
+	// Decide on the protocol version to use for this connection.
+	negotiatedVersion := rn.params.ProtocolVersion
+	if verMsg.Version < rn.params.ProtocolVersion.ToUint64() {
+		negotiatedVersion = NewProtocolVersionType(verMsg.Version)
+	}
+	vMeta.negotiatedProtocolVersion = negotiatedVersion
+
+	// Record the services the peer is advertising.
+	vMeta.ServiceFlag = verMsg.Services
+
+	// Record the tstamp sent by the peer and calculate the time offset.
+	timeConnected := time.Unix(verMsg.TstampSecs, 0)
+	vMeta.timeConnected = &timeConnected
+	currentTime := time.Now().Unix()
+	if currentTime > verMsg.TstampSecs {
+		vMeta.timeOffsetSecs = currentTime - verMsg.TstampSecs
+	} else {
+		vMeta.timeOffsetSecs = verMsg.TstampSecs - currentTime
+	}
+
+	// Save the received version nonce so we can include it in our verack message.
+	vMeta.versionNonceReceived = verMsg.Nonce
+
+	// Set the peer info-related fields.
+	vMeta.userAgent = verMsg.UserAgent
+	vMeta.StartingBlockHeight = verMsg.StartBlockHeight
+	vMeta.minTxFeeRateNanosPerKB = verMsg.MinFeeRateNanosPerKB
+
+	// Respond to the version message if this is an inbound peer.
+	if !rn.peer.IsOutbound() {
+		if err := rn.sendVersionMessage(responseNonce); err != nil {
+			return errors.Wrapf(err, "RemoteNode.HandleVersionMessage: Problem sending version message to peer (id= %d)", rn.id)
+		}
+	}
+
+	// After sending and receiving a compatible version, send the verack message. Notice that we don't wait for the
+	// peer's verack message even if it is an inbound peer. Instead, we just send the verack message right away.
+
+	// Set the latest time by which we should receive a verack message from the peer.
+	rn.verackTimeExpected = time.Now().Add(rn.params.VersionNegotiationTimeout)
+	if err := rn.sendVerack(); err != nil {
+		return errors.Wrapf(err, "RemoteNode.HandleVersionMessage: Problem sending verack message to peer (id= %d)", rn.id)
+	}
+
+	// Update the timeSource now that we've gotten a version message from the peer.
+	rn.cmgr.AddTimeSample(rn.peer.Address(), timeConnected)
+	return nil
+}
+
+// sendVerack constructs and sends a verack message to the peer.
+func (rn *RemoteNode) sendVerack() error {
+	verackMsg, err := rn.newVerackMessage()
+	if err != nil {
+		return err
+	}
+
+	if err := rn.SendMessage(verackMsg); err != nil {
+		return errors.Wrapf(err, "RemoteNode.SendVerack: Problem sending verack message to peer (id= %d): %v", rn.id, err)
+	}
+	return nil
+}
+
+// newVerackMessage constructs a verack message to be sent to the peer.
+func (rn *RemoteNode) newVerackMessage() (*MsgDeSoVerack, error) {
+	verack := NewMessage(MsgTypeVerack).(*MsgDeSoVerack)
+	vMeta := rn.getHandshakeMetadata()
+
+	switch vMeta.negotiatedProtocolVersion {
+	case ProtocolVersion0, ProtocolVersion1:
+		// For protocol versions 0 and 1, we just send back the nonce we received from the peer in the version message.
+		verack.Version = VerackVersion0
+		verack.NonceReceived = vMeta.versionNonceReceived
+	case ProtocolVersion2:
+		// For protocol version 2, we need to send the nonce we received from the peer in their version message.
+		// We also need to send our own nonce, which we generate for our version message. In addition, we need to
+		// send a current timestamp (in microseconds). We then sign the tuple of (nonceReceived, nonceSent, tstampMicro)
+		// using our validator BLS key, and send the signature along with our public key.
+		var err error
+		verack.Version = VerackVersion1
+		verack.NonceReceived = vMeta.versionNonceReceived
+		verack.NonceSent = vMeta.versionNonceSent
+		tstampMicro := uint64(time.Now().UnixMicro())
+		verack.TstampMicro = tstampMicro
+		verack.PublicKey = rn.keystore.GetSigner().GetPublicKey()
+		verack.Signature, err = rn.keystore.GetSigner().SignPoSValidatorHandshake(verack.NonceSent, verack.NonceReceived, tstampMicro)
+		if err != nil {
+			return nil, fmt.Errorf("RemoteNode.newVerackMessage: Problem signing verack message: %v", err)
+		}
+	}
+	return verack, nil
+}
+
+// HandleVerackMessage handles a verack message received from the peer.
+func (rn *RemoteNode) HandleVerackMessage(vrkMsg *MsgDeSoVerack) error {
+	if rn.connectionStatus != RemoteNodeStatus_Connected {
+		return fmt.Errorf("RemoteNode.HandleVerackMessage: Requesting disconnect for id: (%v) "+
+			"verack received while in state: %v", rn.id, rn.connectionStatus)
+	}
+
+	if rn.verackTimeExpected.Before(time.Now()) {
+		return fmt.Errorf("RemoteNode.HandleVerackMessage: Requesting disconnect for id: (%v) "+
+			"verack timeout. Time expected: %v, now: %v", rn.id, rn.verackTimeExpected.UnixMicro(), time.Now().UnixMicro())
+	}
+
+	var err error
+	vMeta := rn.getHandshakeMetadata()
+	switch vMeta.negotiatedProtocolVersion {
+	case ProtocolVersion0, ProtocolVersion1:
+		err = rn.validateVerackPoW(vrkMsg)
+	case ProtocolVersion2:
+		err = rn.validateVerackPoS(vrkMsg)
+	}
+
+	if err != nil {
+		return errors.Wrapf(err, "RemoteNode.HandleVerackMessage: Problem validating verack message from peer (id= %d)", rn.id)
+	}
+
+	// If we get here then the peer has successfully completed the handshake.
+	vMeta.versionNegotiated = true
+	rn._logVersionSuccess(rn.peer)
+	rn.srv.NotifyHandshakePeerMessage(rn.peer)
+	rn.setStatusValidated()
+
+	return nil
+}
+
+func (rn *RemoteNode) validateVerackPoW(vrkMsg *MsgDeSoVerack) error {
+	vMeta := rn.getHandshakeMetadata()
+
+	// Verify that the verack message is formatted correctly according to the PoW standard.
+	if vrkMsg.Version != VerackVersion0 {
+		return fmt.Errorf("RemoteNode.validateVerackPoW: Requesting disconnect for id: (%v) "+
+			"verack version mismatch; message: %v; expected: %v", rn.id, vrkMsg.Version, VerackVersion0)
+	}
+
+	// If the verack message has a nonce that wasn't previously sent to us in the version message, return an error.
+	if vrkMsg.NonceReceived != vMeta.versionNonceSent {
+		return fmt.Errorf("RemoteNode.validateVerackPoW: Requesting disconnect for id: (%v) nonce mismatch; "+
+			"message: %v; nonceSent: %v", rn.id, vrkMsg.NonceReceived, vMeta.versionNonceSent)
+	}
+
+	return nil
+}
+
+func (rn *RemoteNode) validateVerackPoS(vrkMsg *MsgDeSoVerack) error {
+	vMeta := rn.getHandshakeMetadata()
+
+	// Verify that the verack message is formatted correctly according to the PoS standard.
+	if vrkMsg.Version != VerackVersion1 {
+		return fmt.Errorf("RemoteNode.validateVerackPoS: Requesting disconnect for id: (%v) "+
+			"verack version mismatch; message: %v; expected: %v", rn.id, vrkMsg.Version, VerackVersion1)
+	}
+
+	// Verify that the counterparty's verack message's NonceReceived matches the NonceSent we sent.
+	if vrkMsg.NonceReceived != vMeta.versionNonceSent {
+		return fmt.Errorf("RemoteNode.validateVerackPoS: Requesting disconnect for id: (%v) nonce mismatch; "+
+			"message: %v; nonceSent: %v", rn.id, vrkMsg.NonceReceived, vMeta.versionNonceSent)
+	}
+
+	// Verify that the counterparty's verack message's NonceSent matches the NonceReceived we sent.
+	if vrkMsg.NonceSent != vMeta.versionNonceReceived {
+		return fmt.Errorf("RemoteNode.validateVerackPoS: Requesting disconnect for id: (%v) "+
+			"verack nonce mismatch; message: %v; expected: %v", rn.id, vrkMsg.NonceSent, vMeta.versionNonceReceived)
+	}
+
+	// Get the current time in microseconds and make sure the verack message's timestamp is within 15 minutes of it.
+	timeNowMicro := uint64(time.Now().UnixMicro())
+	if vrkMsg.TstampMicro > timeNowMicro-rn.params.HandshakeTimeoutMicroSeconds {
+		return fmt.Errorf("RemoteNode.validateVerackPoS: Requesting disconnect for id: (%v) "+
+			"verack timestamp too far in the past. Time now: %v, verack timestamp: %v", rn.id, timeNowMicro, vrkMsg.TstampMicro)
+	}
+
+	// Make sure the verack message's public key and signature are not nil.
+	if vrkMsg.PublicKey == nil || vrkMsg.Signature == nil {
+		return fmt.Errorf("RemoteNode.validateVerackPoS: Requesting disconnect for id: (%v) "+
+			"verack public key or signature is nil", rn.id)
+	}
+
+	// Verify the verack message's signature.
+	ok, err := BLSVerifyPoSValidatorHandshake(vrkMsg.NonceSent, vrkMsg.NonceReceived, vrkMsg.TstampMicro,
+		vrkMsg.Signature, vrkMsg.PublicKey)
+	if err != nil {
+		return errors.Wrapf(err, "RemoteNode.validateVerackPoS: Requesting disconnect for id: (%v) "+
+			"verack signature verification failed with error", rn.id)
+	}
+	if !ok {
+		return fmt.Errorf("RemoteNode.validateVerackPoS: Requesting disconnect for id: (%v) "+
+			"verack signature verification failed", rn.id)
+	}
+
+	// If we get here then the verack message is valid. Set the validator public key on the peer.
+	vMeta.validatorPublicKey = vrkMsg.PublicKey
+	return nil
+}
+
+func (rn *RemoteNode) _logVersionSuccess(peer *Peer) {
+	inboundStr := "INBOUND"
+	if rn.IsOutbound() {
+		inboundStr = "OUTBOUND"
+	}
+	persistentStr := "PERSISTENT"
+	if !rn.IsPersistent() {
+		persistentStr = "NON-PERSISTENT"
+	}
+	logStr := fmt.Sprintf("SUCCESS version negotiation for (%s) (%s) peer (%v).", inboundStr, persistentStr, peer)
+	glog.V(1).Info(logStr)
+}
+
+func GetVerackHandshakePayload(nonceReceived uint64, nonceSent uint64, tstampMicro uint64) [32]byte {
+	// The payload for the verack message is the two nonces concatenated together.
+	// We do this so that we can sign the nonces and verify the signature on the other side.
+	nonceReceivedBytes := make([]byte, 8)
+	binary.BigEndian.PutUint64(nonceReceivedBytes, nonceReceived)
+
+	nonceSentBytes := make([]byte, 8)
+	binary.BigEndian.PutUint64(nonceSentBytes, nonceSent)
+
+	tstampBytes := make([]byte, 8)
+	binary.BigEndian.PutUint64(tstampBytes, tstampMicro)
+
+	payload := append(nonceReceivedBytes, nonceSentBytes...)
+	payload = append(payload, tstampBytes...)
+
+	return sha3.Sum256(payload)
+}
