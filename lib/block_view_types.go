@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"github.com/spf13/viper"
 	"io"
 	"math"
 	"math/big"
@@ -883,6 +884,17 @@ type UtxoOperation struct {
 	StateChangeMetadata DeSoEncoder
 }
 
+// FIXME: This hackIsRunningStateSyncer() call is a hack to get around the fact that
+// we don't have a way to not require a resync while introducing the state change
+// metadata to the utxo operation struct. We don't want to use a block height to gate
+// this because we want to be able to get state change metadata for ALL transactions.
+// We should replace this with a more elegant solution, a better hack, or bundle it
+// in with a release that requires a resync anyway. We should remove this function
+// when we have a better solution in place.
+func hackIsRunningStateSyncer() bool {
+	return viper.GetString("state-change-dir") != ""
+}
+
 func (op *UtxoOperation) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte {
 	var data []byte
 	// Type
@@ -1199,7 +1211,13 @@ func (op *UtxoOperation) RawEncodeWithoutMetadata(blockHeight uint64, skipMetada
 	}
 
 	// StateChangeMetadata
-	if op.StateChangeMetadata != nil {
+	// FIXME: This hackIsRunningStateSyncer() call is a hack to get around the fact that
+	// we don't have a way to not require a resync while introducing the state change
+	// metadata to the utxo operation struct. We don't want to use a block height to gate
+	// this because we want to be able to get state change metadata for ALL transactions.
+	// We should replace this with a more elegant solution, a better hack, or bundle it
+	// in with a release that requires a resync anyway.
+	if hackIsRunningStateSyncer() && op.StateChangeMetadata != nil {
 		data = append(data, EncodeToBytes(blockHeight, op.StateChangeMetadata, skipMetadata...)...)
 	}
 
@@ -1820,7 +1838,13 @@ func (op *UtxoOperation) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.
 
 	// DeSoEncoder
 	stateChangeMetadata := GetStateChangeMetadataFromOpType(op.Type)
-	if stateChangeMetadata != nil {
+	// FIXME: This hackIsRunningStateSyncer() call is a hack to get around the fact that
+	// we don't have a way to not require a resync while introducing the state change
+	// metadata to the utxo operation struct. We don't want to use a block height to gate
+	// this because we want to be able to get state change metadata for ALL transactions.
+	// We should replace this with a more elegant solution, a better hack, or bundle it
+	// in with a release that requires a resync anyway.
+	if hackIsRunningStateSyncer() && stateChangeMetadata != nil {
 		if exist, err := DecodeFromBytes(stateChangeMetadata, rr); exist && err == nil {
 			op.StateChangeMetadata = stateChangeMetadata
 		} else if err != nil {
