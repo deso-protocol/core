@@ -170,7 +170,6 @@ func NewPosMempool(params *DeSoParams, globalParams *GlobalParamsEntry, readOnly
 }
 
 func (mp *PosMempool) Init(feeEstimatorPastBlocks []*MsgDeSoBlock, feeEstimatorNumBlocks uint64) error {
-
 	if mp.status != PosMempoolStatusNotInitialized {
 		return errors.New("PosMempool.Init: PosMempool already initialized")
 	}
