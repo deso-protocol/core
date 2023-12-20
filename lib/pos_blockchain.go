@@ -12,15 +12,55 @@ import (
 	"github.com/pkg/errors"
 )
 
+// processHeaderPoS validates and stores an incoming block header to build
+// the PoS version of the header chain.
+//
+// The PoS header chain uses a simplified version of the Fast-HotStuff consensus
+// rules. It's used during syncing to build a chain of block headers with the
+// minimum set of validations needed to build a template of what the full PoS
+// blockchain will look like.
+//
+// The PoS header chain uses block integrity checks to perform block validations,
+// and to connect blocks based on their PrevBlockHash. It does not run the commit
+// rule. It does not fully validate QCs or block proposers, or perform any validations
+// that require on-chain state.
+//
+// processHeaderPoS algorithm:
+//  1. Validate that the block header is properly formed.
+//  2. Add the block header to the block index with status STORED.
+//  3. Perform the orphan check on the block header.
+//  4. If the block is an orphan, or its view is less than the current header chain's tip,
+//     then we exit early.
+//  5. If it is not an orphan, and has a higher view than the current header chain, then
+//     we re-org the header chain so that the incoming header is the new tip.
+func (bc *Blockchain) processHeaderPoS(blockHeader *MsgDeSoHeader, headerHash *BlockHash) (
+	_isMainChain bool,
+	_isOrphan bool,
+	_err error,
+) {
+	return false, false, fmt.Errorf("processHeaderPoS: Not implemented")
+}
+
 // ProcessBlockPoS simply acquires the chain lock and calls processBlockPoS.
 func (bc *Blockchain) ProcessBlockPoS(block *MsgDeSoBlock, currentView uint64, verifySignatures bool) (
-	_success bool, _isOrphan bool, _missingBlockHashes []*BlockHash, _err error) {
+	_success bool,
+	_isOrphan bool,
+	_missingBlockHashes []*BlockHash,
+	_err error,
+) {
+	// Grab the chain lock
 	bc.ChainLock.Lock()
 	defer bc.ChainLock.Unlock()
+
+	// Perform a simple nil-check. If the block is nil then we return an error. Nothing we can do here.
+	if block == nil {
+		return false, false, nil, fmt.Errorf("ProcessBlockPoS: Block is nil")
+	}
+
 	return bc.processBlockPoS(block, currentView, verifySignatures)
 }
 
-// processBlockPoS runs the Fast-Hotstuff block connect and commit rule as follows:
+// processBlockPoS runs the Fast-HotStuff block connect and commit rule as follows:
 //  1. Determine if we're missing the parent block of this block.
 //     If so, return the hash of the missing block and add this block to the orphans list.
 //  2. Validate the incoming block, its header, its block height, the leader, and its QCs (vote or timeout)
@@ -28,7 +68,11 @@ func (bc *Blockchain) ProcessBlockPoS(block *MsgDeSoBlock, currentView uint64, v
 //  4. try to apply the incoming block as the tip (performing reorgs as necessary). If it can't be applied, exit here.
 //  5. Run the commit rule - If applicable, flushes the incoming block's grandparent to the DB
 func (bc *Blockchain) processBlockPoS(block *MsgDeSoBlock, currentView uint64, verifySignatures bool) (
-	_success bool, _isOrphan bool, _missingBlockHashes []*BlockHash, _err error) {
+	_success bool,
+	_isOrphan bool,
+	_missingBlockHashes []*BlockHash,
+	_err error,
+) {
 	// If we can't hash the block, we can never store in the block index and we should throw it out immediately.
 	if _, err := block.Hash(); err != nil {
 		return false, false, nil, errors.Wrapf(err, "processBlockPoS: Problem hashing block")

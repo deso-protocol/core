@@ -817,6 +817,16 @@ func (srv *Server) _handleHeaderBundle(pp *Peer, msg *MsgDeSoHeaderBundle) {
 		len(msg.Headers), srv.blockchain.chainState(), pp,
 		srv.blockchain.headerTip().Header.Height, printHeight)))
 
+	// If the node is running a Fast-HotStuff validator and the consensus is running,
+	// in the steady-state, then it means that we don't sync the header chain separately.
+	if srv.fastHotStuffConsensus != nil && srv.fastHotStuffConsensus.IsRunning() {
+		return
+	}
+
+	// If we get here, it means that the node is not currently running a Fast-HotStuff
+	// validator or that the node is syncing. In either case, we sync headers according
+	// to the blocksync rules.
+
 	// Start by processing all of the headers given to us. They should start
 	// right after the tip of our header chain ideally. While going through them
 	// tally up the number that we actually process.
@@ -1114,6 +1124,17 @@ func (srv *Server) _handleGetSnapshot(pp *Peer, msg *MsgDeSoGetSnapshot) {
 // at current snapshot epoch. We will set these entries in our node's database as well as update the checksum.
 func (srv *Server) _handleSnapshot(pp *Peer, msg *MsgDeSoSnapshotData) {
 	srv.timer.End("Get Snapshot")
+
+	// If the node is running a Fast-HotStuff validator and the consensus is running,
+	// in the steady-state, then it means that we don't download and handle snapshots.
+	if srv.fastHotStuffConsensus != nil && srv.fastHotStuffConsensus.IsRunning() {
+		return
+	}
+
+	// If we get here, it means that the node is not currently running a Fast-HotStuff
+	// validator or that the node is syncing. In either case, we handle snapshots according
+	// to the Hypersync rules.
+
 	srv.timer.Start("Server._handleSnapshot Main")
 	// If there are no db entries in the msg, we should also disconnect the peer. There should always be
 	// at least one entry sent, which is either the empty entry or the last key we've requested.
@@ -1848,6 +1869,17 @@ func (srv *Server) _logAndDisconnectPeer(pp *Peer, blockMsg *MsgDeSoBlock, suffi
 func (srv *Server) _handleBlock(pp *Peer, blk *MsgDeSoBlock) {
 	glog.Infof(CLog(Cyan, fmt.Sprintf("Server._handleBlock: Received block ( %v / %v ) from Peer %v",
 		blk.Header.Height, srv.blockchain.headerTip().Height, pp)))
+
+	// If the node is running a Fast-HotStuff validator and the consensus is running,
+	// in the steady-state, then we handle the block according to the consensus rules.
+	if srv.fastHotStuffConsensus != nil && srv.fastHotStuffConsensus.IsRunning() {
+		srv.fastHotStuffConsensus.HandleBlock(pp, blk)
+		return
+	}
+
+	// If we get here, it means that the node is not currently running a Fast-HotStuff
+	// validator or that the node is syncing. In either case, we handle the block
+	// according to the blocksync rules.
 
 	srv.timer.Start("Server._handleBlock: General")
 	// Pull out the header for easy access.
