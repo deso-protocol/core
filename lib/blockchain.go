@@ -4639,6 +4639,7 @@ func (bc *Blockchain) CreateBasicTransferTxnWithDiamonds(
 	SenderPublicKey []byte,
 	DiamondPostHash *BlockHash,
 	DiamondLevel int64,
+	ExtraData map[string][]byte,
 	// Standard transaction fields
 	minFeeRateNanosPerKB uint64, mempool *DeSoMempool, additionalOutputs []*DeSoOutput) (
 	_txn *MsgDeSoTxn, _totalInput uint64, _spendAmount uint64, _changeAmount uint64, _fees uint64, _err error) {
@@ -4688,11 +4689,14 @@ func (bc *Blockchain) CreateBasicTransferTxnWithDiamonds(
 		// This function does not compute a signature.
 	}
 
+	delete(ExtraData, DiamondLevelKey)
+	delete(ExtraData, DiamondPostHashKey)
+
 	// Make a map for the diamond extra data and add it.
 	diamondsExtraData := make(map[string][]byte)
 	diamondsExtraData[DiamondLevelKey] = IntToBuf(DiamondLevel)
 	diamondsExtraData[DiamondPostHashKey] = DiamondPostHash[:]
-	txn.ExtraData = diamondsExtraData
+	txn.ExtraData = mergeExtraData(ExtraData, diamondsExtraData)
 
 	// We don't need to make any tweaks to the amount because it's basically
 	// a standard "pay per kilobyte" transaction.
@@ -4718,7 +4722,7 @@ func (bc *Blockchain) CreateBasicTransferTxnWithDiamonds(
 }
 
 func (bc *Blockchain) CreateMaxSpend(
-	senderPkBytes []byte, recipientPkBytes []byte, minFeeRateNanosPerKB uint64,
+	senderPkBytes []byte, recipientPkBytes []byte, extraData map[string][]byte, minFeeRateNanosPerKB uint64,
 	mempool *DeSoMempool, additionalOutputs []*DeSoOutput) (
 	_txn *MsgDeSoTxn, _totalInputAdded uint64, _spendAmount uint64, _fee uint64, _err error) {
 
@@ -4734,6 +4738,10 @@ func (bc *Blockchain) CreateMaxSpend(
 		}),
 		// TxInputs and TxOutputs will be set below.
 		// This function does not compute a signature.
+	}
+
+	if len(extraData) > 0 {
+		txn.ExtraData = extraData
 	}
 
 	if bc.BlockTip().Height >= bc.params.ForkHeights.BalanceModelBlockHeight {
