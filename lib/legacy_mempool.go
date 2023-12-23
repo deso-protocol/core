@@ -2436,7 +2436,8 @@ func EstimateMaxTxnFeeV1(txn *MsgDeSoTxn, minFeeRateNanosPerKB uint64) uint64 {
 	return feeAmountNanos
 }
 
-func (mp *DeSoMempool) EstimateFee(txn *MsgDeSoTxn, minFeeRateNanosPerKB uint64, _ uint64) (uint64, error) {
+func (mp *DeSoMempool) EstimateFee(txn *MsgDeSoTxn, minFeeRateNanosPerKB uint64,
+	_ uint64, _ uint64, _ uint64, _ uint64, _ uint64) (uint64, error) {
 	return EstimateMaxTxnFeeV1(txn, minFeeRateNanosPerKB), nil
 }
 
