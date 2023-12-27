@@ -2031,17 +2031,15 @@ func (msg *MsgDeSoVerack) FromBytesV1(data []byte) error {
 		return errors.Wrapf(err, "MsgDeSoVerack.FromBytes: Problem reading Tstamp Micro")
 	}
 
-	publicKey, err := DecodeBLSPublicKey(rr)
+	msg.PublicKey, err = DecodeBLSPublicKey(rr)
 	if err != nil {
 		return errors.Wrapf(err, "MsgDeSoVerack.FromBytes: Problem reading PublicKey")
 	}
-	msg.PublicKey = publicKey
 
-	signature, err := DecodeBLSSignature(rr)
+	msg.Signature, err = DecodeBLSSignature(rr)
 	if err != nil {
 		return errors.Wrapf(err, "MsgDeSoVerack.FromBytes: Problem reading Signature")
 	}
-	msg.Signature = signature
 	return nil
 }
 

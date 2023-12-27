@@ -90,10 +90,7 @@ func TestVerackV0(t *testing.T) {
 }
 
 func TestVerackV1(t *testing.T) {
-	assert := assert.New(t)
 	require := require.New(t)
-	_ = assert
-	_ = require
 
 	networkType := NetworkType_MAINNET
 	var buf bytes.Buffer
