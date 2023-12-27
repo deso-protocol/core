@@ -111,12 +111,11 @@ const (
 	// make things more parallelized.
 
 	MsgTypeQuit                  MsgType = ControlMessagesStart
-	MsgTypeNewPeer               MsgType = ControlMessagesStart + 1
-	MsgTypeDonePeer              MsgType = ControlMessagesStart + 2
-	MsgTypeBlockAccepted         MsgType = ControlMessagesStart + 3
-	MsgTypeBitcoinManagerUpdate  MsgType = ControlMessagesStart + 4 // Deprecated
-	MsgTypePeerHandshakeComplete MsgType = ControlMessagesStart + 5
-	MsgTypeNewConnection         MsgType = ControlMessagesStart + 6
+	MsgTypeDisconnectedPeer      MsgType = ControlMessagesStart + 1
+	MsgTypeBlockAccepted         MsgType = ControlMessagesStart + 2
+	MsgTypeBitcoinManagerUpdate  MsgType = ControlMessagesStart + 3 // Deprecated
+	MsgTypePeerHandshakeComplete MsgType = ControlMessagesStart + 4
+	MsgTypeNewConnection         MsgType = ControlMessagesStart + 5
 
 	// NEXT_TAG = 7
 )
@@ -174,9 +173,7 @@ func (msgType MsgType) String() string {
 		return "GET_ADDR"
 	case MsgTypeQuit:
 		return "QUIT"
-	case MsgTypeNewPeer:
-		return "NEW_PEER"
-	case MsgTypeDonePeer:
+	case MsgTypeDisconnectedPeer:
 		return "DONE_PEER"
 	case MsgTypeBlockAccepted:
 		return "BLOCK_ACCEPTED"
@@ -842,34 +839,19 @@ func (msg *MsgDeSoQuit) FromBytes(data []byte) error {
 	return fmt.Errorf("MsgDeSoQuit.FromBytes not implemented")
 }
 
-type MsgDeSoNewPeer struct {
+type MsgDeSoDisconnectedPeer struct {
 }
 
-func (msg *MsgDeSoNewPeer) GetMsgType() MsgType {
-	return MsgTypeNewPeer
+func (msg *MsgDeSoDisconnectedPeer) GetMsgType() MsgType {
+	return MsgTypeDisconnectedPeer
 }
 
-func (msg *MsgDeSoNewPeer) ToBytes(preSignature bool) ([]byte, error) {
-	return nil, fmt.Errorf("MsgDeSoNewPeer.ToBytes: Not implemented")
+func (msg *MsgDeSoDisconnectedPeer) ToBytes(preSignature bool) ([]byte, error) {
+	return nil, fmt.Errorf("MsgDeSoDisconnectedPeer.ToBytes: Not implemented")
 }
 
-func (msg *MsgDeSoNewPeer) FromBytes(data []byte) error {
-	return fmt.Errorf("MsgDeSoNewPeer.FromBytes not implemented")
-}
-
-type MsgDeSoDonePeer struct {
-}
-
-func (msg *MsgDeSoDonePeer) GetMsgType() MsgType {
-	return MsgTypeDonePeer
-}
-
-func (msg *MsgDeSoDonePeer) ToBytes(preSignature bool) ([]byte, error) {
-	return nil, fmt.Errorf("MsgDeSoDonePeer.ToBytes: Not implemented")
-}
-
-func (msg *MsgDeSoDonePeer) FromBytes(data []byte) error {
-	return fmt.Errorf("MsgDeSoDonePeer.FromBytes not implemented")
+func (msg *MsgDeSoDisconnectedPeer) FromBytes(data []byte) error {
+	return fmt.Errorf("MsgDeSoDisconnectedPeer.FromBytes not implemented")
 }
 
 // MsgDeSoPeerHandshakeComplete is a control message that is used to internally signal when a peer has

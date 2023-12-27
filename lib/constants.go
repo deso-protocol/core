@@ -482,8 +482,8 @@ type ProtocolVersionType uint64
 
 const (
 	ProtocolVersion0 ProtocolVersionType = 0
-	ProtocolVersion1
-	ProtocolVersion2
+	ProtocolVersion1 ProtocolVersionType = 1
+	ProtocolVersion2 ProtocolVersionType = 2
 )
 
 func NewProtocolVersionType(version uint64) ProtocolVersionType {
@@ -560,6 +560,9 @@ type DeSoParams struct {
 	DialTimeout time.Duration
 	// The amount of time we wait to receive a version message from a peer.
 	VersionNegotiationTimeout time.Duration
+
+	// The maximum number of addresses to broadcast to peers.
+	MaxAddressesToBroadcast uint32
 
 	// The genesis block to use as the base of our chain.
 	GenesisBlock *MsgDeSoBlock
@@ -1019,6 +1022,8 @@ var DeSoMainnetParams = DeSoParams{
 	DialTimeout:               30 * time.Second,
 	VersionNegotiationTimeout: 30 * time.Second,
 
+	MaxAddressesToBroadcast: 10,
+
 	BlockRewardMaturity: time.Hour * 3,
 
 	V1DifficultyAdjustmentFactor: 10,
@@ -1287,6 +1292,8 @@ var DeSoTestnetParams = DeSoParams{
 
 	DialTimeout:               30 * time.Second,
 	VersionNegotiationTimeout: 30 * time.Second,
+
+	MaxAddressesToBroadcast: 10,
 
 	GenesisBlock:        &GenesisBlock,
 	GenesisBlockHashHex: GenesisBlockHashHex,
