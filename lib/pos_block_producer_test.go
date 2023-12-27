@@ -35,7 +35,7 @@ func TestCreateBlockTemplate(t *testing.T) {
 
 	mempool := NewPosMempool(params, globalParams, latestBlockView, 2, dir, false,
 		maxMempoolPosSizeBytes, mempoolBackupIntervalMillis)
-	require.NoError(mempool.Init(nil, 1))
+	require.NoError(mempool.Init(1, nil, 1))
 	require.NoError(mempool.Start())
 	defer mempool.Stop()
 	require.True(mempool.IsRunning())
@@ -97,7 +97,7 @@ func TestCreateBlockWithoutHeader(t *testing.T) {
 
 	mempool := NewPosMempool(params, globalParams, latestBlockView, 2, dir, false,
 		maxMempoolPosSizeBytes, mempoolBackupIntervalMillis)
-	require.NoError(mempool.Init(nil, 1))
+	require.NoError(mempool.Init(1, nil, 1))
 	require.NoError(mempool.Start())
 	defer mempool.Stop()
 	require.True(mempool.IsRunning())
@@ -153,7 +153,7 @@ func TestGetBlockTransactions(t *testing.T) {
 
 	mempool := NewPosMempool(params, globalParams, latestBlockView, 2, dir, false,
 		maxMempoolPosSizeBytes, mempoolBackupIntervalMillis)
-	require.NoError(mempool.Init(nil, 1))
+	require.NoError(mempool.Init(1, nil, 1))
 	require.NoError(mempool.Start())
 	defer mempool.Stop()
 	require.True(mempool.IsRunning())
@@ -236,7 +236,7 @@ func TestGetBlockTransactions(t *testing.T) {
 	// be returned in the same order as the transaction from getBlockTransactions.
 	testMempool := NewPosMempool(params, globalParams, latestBlockView, 2, "", true,
 		maxMempoolPosSizeBytes, mempoolBackupIntervalMillis)
-	testMempool.Init(nil, 1)
+	testMempool.Init(1, nil, 1)
 	require.NoError(testMempool.Start())
 	defer testMempool.Stop()
 	currentTime := uint64(time.Now().UnixMicro())

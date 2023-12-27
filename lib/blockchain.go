@@ -4904,7 +4904,9 @@ func (bc *Blockchain) CreateMaxSpend(
 		for feeAmountNanos == 0 || feeAmountNanos != prevFeeAmountNanos {
 			prevFeeAmountNanos = feeAmountNanos
 			if !isInterfaceValueNil(mempool) {
+				// TODO: replace MaxBasisPoints with variables configured by flags.
 				feeAmountNanos, err = mempool.EstimateFee(txn, minFeeRateNanosPerKB,
+					MaxBasisPoints, MaxBasisPoints, MaxBasisPoints, MaxBasisPoints,
 					bc.params.MaxBlockSizeBytes)
 				if err != nil {
 					return nil, 0, 0, 0, errors.Wrapf(err, "CreateMaxSpend: Problem estimating fee: ")
@@ -5036,7 +5038,9 @@ func (bc *Blockchain) AddInputsAndChangeToTransactionWithSubsidy(
 
 		if txArg.TxnMeta.GetTxnType() != TxnTypeBlockReward {
 			if !isInterfaceValueNil(mempool) {
-				txArg.TxnFeeNanos, err = mempool.EstimateFee(txArg, minFeeRateNanosPerKB, bc.params.MaxBlockSizeBytes)
+				// TODO: replace MaxBasisPoints with variables configured by flags.
+				txArg.TxnFeeNanos, err = mempool.EstimateFee(txArg, minFeeRateNanosPerKB, MaxBasisPoints,
+					MaxBasisPoints, MaxBasisPoints, MaxBasisPoints, bc.params.MaxBlockSizeBytes)
 				if err != nil {
 					return 0, 0, 0, 0, errors.Wrapf(err,
 						"AddInputsAndChangeToTransaction: Problem estimating fee: ")
