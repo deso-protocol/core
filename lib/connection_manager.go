@@ -891,13 +891,6 @@ func (cmgr *ConnectionManager) Start() {
 
 				// Start the peer's message loop.
 				pp.Start()
-
-				// Signal the server about the new Peer in case it wants to do something with it.
-				cmgr.serverMessageQueue <- &ServerMessage{
-					Peer: pp,
-					Msg:  &MsgDeSoNewPeer{},
-				}
-
 			}
 		case pp := <-cmgr.donePeerChan:
 			{
@@ -920,7 +913,7 @@ func (cmgr *ConnectionManager) Start() {
 				// with it.
 				cmgr.serverMessageQueue <- &ServerMessage{
 					Peer: pp,
-					Msg:  &MsgDeSoDonePeer{},
+					Msg:  &MsgDeSoDisconnectedPeer{},
 				}
 			}
 		}

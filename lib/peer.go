@@ -1153,7 +1153,7 @@ out:
 			// Measure the ping time when we receive a pong.
 			pp.HandlePongMsg(msg)
 
-		case *MsgDeSoNewPeer, *MsgDeSoDonePeer, *MsgDeSoQuit:
+		case *MsgDeSoDisconnectedPeer, *MsgDeSoQuit:
 
 			// We should never receive control messages from a Peer. Disconnect if we do.
 			glog.Errorf("Peer.inHandler: Received control message of type %v from "+
