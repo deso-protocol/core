@@ -27,7 +27,8 @@ import (
 //
 // processHeaderPoS algorithm:
 //  1. Validate that the block header is properly formed.
-//  2. Add the block header to the block index with status STORED.
+//  2. Add the block header to the block index with status
+//     StatusHeaderValidated or StatusHeaderValidateFailed.
 //  3. Perform the orphan check on the block header.
 //  4. If the block is an orphan, or its view is less than the current header chain's tip,
 //     then we exit early.
