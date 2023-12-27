@@ -1676,6 +1676,7 @@ func (bav *UtxoView) _connectUnstake(
 		PrevValidatorEntry:     prevValidatorEntry,
 		PrevStakeEntries:       prevStakeEntries,
 		PrevLockedStakeEntries: prevLockedStakeEntries,
+		LockedAtEpochNumber:    currentEpochNumber,
 	}
 	if err = bav.SanityCheckUnstakeTxn(transactorPKIDEntry.PKID, utxoOpForTxn, txMeta.UnstakeAmountNanos); err != nil {
 		return 0, 0, nil, errors.Wrapf(err, "_connectUnstake: ")

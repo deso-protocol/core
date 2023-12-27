@@ -203,7 +203,8 @@ func SetupRunFlags(cmd *cobra.Command) {
 	cmd.PersistentFlags().Bool("log-db-summary-snapshots", false, "The node will log a snapshot of all DB keys every 30s.")
 	cmd.PersistentFlags().Bool("datadog-profiler", false, "Enable the DataDog profiler for performance testing")
 	cmd.PersistentFlags().Bool("time-events", false, "Enable simple event timer, helpful in hands-on performance testing")
-
+	cmd.PersistentFlags().String("state-change-dir", "", "The directory for state change logs. WARNING: Changing this "+
+		"from an empty string to a non-empty string (or from a non-empty string to the empty string) requires a resync.")
 	cmd.PersistentFlags().VisitAll(func(flag *pflag.Flag) {
 		viper.BindPFlag(flag.Name, flag)
 	})
