@@ -2422,6 +2422,25 @@ func (mp *DeSoMempool) GetMempoolSummaryStats() (_summaryStatsMap map[string]*Su
 	return convertMempoolTxsToSummaryStats(mp.readOnlyUniversalTransactionList)
 }
 
+func EstimateMaxTxnFeeV1(txn *MsgDeSoTxn, minFeeRateNanosPerKB uint64) uint64 {
+	if minFeeRateNanosPerKB == 0 {
+		return 0
+	}
+	prevFeeAmountNanos := uint64(0)
+	feeAmountNanos := uint64(0)
+	for feeAmountNanos == 0 || feeAmountNanos != prevFeeAmountNanos {
+		prevFeeAmountNanos = feeAmountNanos
+		feeAmountNanos = _computeMaxTxV1Fee(txn, minFeeRateNanosPerKB)
+		txn.TxnFeeNanos = feeAmountNanos
+	}
+	return feeAmountNanos
+}
+
+func (mp *DeSoMempool) EstimateFee(txn *MsgDeSoTxn, minFeeRateNanosPerKB uint64,
+	_ uint64, _ uint64, _ uint64, _ uint64, _ uint64) (uint64, error) {
+	return EstimateMaxTxnFeeV1(txn, minFeeRateNanosPerKB), nil
+}
+
 func convertMempoolTxsToSummaryStats(mempoolTxs []*MempoolTx) map[string]*SummaryStats {
 	transactionSummaryStats := make(map[string]*SummaryStats)
 	for _, mempoolTx := range mempoolTxs {
