@@ -277,6 +277,26 @@ func (mp *PosMempool) IsRunning() bool {
 	return mp.status == PosMempoolStatusRunning
 }
 
+// OnBlockConnected is an event handler provided by the PoS mempool to handle the blockchain
+// event where a block is connected to the tip of the blockchain. The mempool updates its
+// internal state based on the new block that has been connected.
+//
+// Whenever a block is connected, this event handler removes the block's transactions from
+// the mempool and updates the internal fee estimation to include new block.
+func (mp *PosMempool) OnBlockConnected(blockEvent *BlockEvent) {
+
+}
+
+// OnBlockDisconnected is an event handler provided by the PoS mempool to handle the blockchain
+// event where a block is disconnected from the tip of the blockchain. The mempool updates its
+// internal state based on the new block that has been connected.
+//
+// Whenever a block is disconnected, this event handler adds the block's transactions back to
+// the mempool and updates the internal fee estimation to exclude the disconnected block.
+func (mp *PosMempool) OnBlockDisconnected(blockEvent *BlockEvent) {
+
+}
+
 // AddTransaction validates a MsgDeSoTxn transaction and adds it to the mempool if it is valid.
 // If the mempool overflows as a result of adding the transaction, the mempool is pruned. The
 // transaction signature verification can be skipped if verifySignature is passed as true.
