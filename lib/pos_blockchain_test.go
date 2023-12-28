@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"crypto/sha256"
+
 	"github.com/deso-protocol/core/bls"
 	"github.com/deso-protocol/core/collections"
 	"github.com/deso-protocol/core/collections/bitset"
@@ -235,7 +236,7 @@ func TestIsProperlyFormedBlockPoSAndIsBlockTimestampValidRelativeToParentPoS(t *
 	// Timestamp validations
 	// Block timestamp must be greater than the previous block timestamp
 	block.Header.TstampNanoSecs = bc.BlockTip().Header.GetTstampSecs() - 1
-	err = bc.isBlockTimestampValidRelativeToParentPoS(block)
+	err = bc.isBlockTimestampValidRelativeToParentPoS(block.Header)
 	require.Equal(t, err, RuleErrorPoSBlockTstampNanoSecsTooOld)
 
 	// Block timestamps can't be in the future.
@@ -261,7 +262,7 @@ func TestIsProperlyFormedBlockPoSAndIsBlockTimestampValidRelativeToParentPoS(t *
 
 	// Parent must exist in the block index.
 	block.Header.PrevBlockHash = NewBlockHash(RandomBytes(32))
-	err = bc.isBlockTimestampValidRelativeToParentPoS(block)
+	err = bc.isBlockTimestampValidRelativeToParentPoS(block.Header)
 	require.Equal(t, err, RuleErrorMissingParentBlock)
 
 	// Nil block header not allowed
@@ -322,22 +323,22 @@ func TestHasValidBlockHeight(t *testing.T) {
 
 	// validate that we've cutover to PoS
 	bc.params.ForkHeights.ProofOfStake2ConsensusCutoverBlockHeight = 3
-	err = bc.hasValidBlockHeightPoS(block)
+	err = bc.hasValidBlockHeightPoS(block.Header)
 	require.Equal(t, err, RuleErrorPoSBlockBeforeCutoverHeight)
 
 	// Update the fork height
 	bc.params.ForkHeights.ProofOfStake2ConsensusCutoverBlockHeight = 0
 
-	err = bc.hasValidBlockHeightPoS(block)
+	err = bc.hasValidBlockHeightPoS(block.Header)
 	require.Nil(t, err)
 
 	block.Header.Height = 1
-	err = bc.hasValidBlockHeightPoS(block)
+	err = bc.hasValidBlockHeightPoS(block.Header)
 	require.Equal(t, err, RuleErrorInvalidPoSBlockHeight)
 
 	block.Header.Height = 2
 	bc.blockIndexByHash = map[BlockHash]*BlockNode{}
-	err = bc.hasValidBlockHeightPoS(block)
+	err = bc.hasValidBlockHeightPoS(block.Header)
 	require.Equal(t, err, RuleErrorMissingParentBlock)
 }
 
@@ -553,29 +554,29 @@ func TestHasValidBlockViewPoS(t *testing.T) {
 	block.Header.ProposedInView = 2
 
 	// Blocks with timeout QCs must have a view strictly greater than the parent.
-	err = bc.hasValidBlockViewPoS(block)
+	err = bc.hasValidBlockViewPoS(block.Header)
 	require.Equal(t, err, RuleErrorPoSTimeoutBlockViewNotGreaterThanParent)
 
 	// Any arbitrary number GREATER than the parent's view is valid.
 	block.Header.ProposedInView = 10
-	err = bc.hasValidBlockViewPoS(block)
+	err = bc.hasValidBlockViewPoS(block.Header)
 	require.Nil(t, err)
 
 	// Now we set the timeout QC to nil and provide a vote QC, with height = 2
 	block.Header.ValidatorsTimeoutAggregateQC = nil
 	block.Header.ValidatorsVoteQC = voteQC
 	block.Header.ProposedInView = 2
-	err = bc.hasValidBlockViewPoS(block)
+	err = bc.hasValidBlockViewPoS(block.Header)
 	require.Equal(t, err, RuleErrorPoSVoteBlockViewNotOneGreaterThanParent)
 
 	// An arbitrary number greater than its parents should fail.
 	block.Header.ProposedInView = 10
-	err = bc.hasValidBlockViewPoS(block)
+	err = bc.hasValidBlockViewPoS(block.Header)
 	require.Equal(t, err, RuleErrorPoSVoteBlockViewNotOneGreaterThanParent)
 
 	// Exactly one great w/ vote QC should pass.
 	block.Header.ProposedInView = 3
-	err = bc.hasValidBlockViewPoS(block)
+	err = bc.hasValidBlockViewPoS(block.Header)
 	require.Nil(t, err)
 }
 
