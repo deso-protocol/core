@@ -478,6 +478,22 @@ func GetEncoderMigrationHeightsList(forkHeights *ForkHeights) (
 	return migrationHeightsList
 }
 
+type ProtocolVersionType uint64
+
+const (
+	ProtocolVersion0 ProtocolVersionType = 0
+	ProtocolVersion1 ProtocolVersionType = 1
+	ProtocolVersion2 ProtocolVersionType = 2
+)
+
+func NewProtocolVersionType(version uint64) ProtocolVersionType {
+	return ProtocolVersionType(version)
+}
+
+func (pvt ProtocolVersionType) ToUint64() uint64 {
+	return uint64(pvt)
+}
+
 // DeSoParams defines the full list of possible parameters for the
 // DeSo network.
 type DeSoParams struct {
@@ -486,7 +502,7 @@ type DeSoParams struct {
 	// Set to true when we're running in regtest mode. This is useful for testing.
 	ExtraRegtestParamUpdaterKeys map[PkMapKey]bool
 	// The current protocol version we're running.
-	ProtocolVersion uint64
+	ProtocolVersion ProtocolVersionType
 	// The minimum protocol version we'll allow a peer we connect to
 	// to have.
 	MinProtocolVersion uint64
@@ -544,6 +560,9 @@ type DeSoParams struct {
 	DialTimeout time.Duration
 	// The amount of time we wait to receive a version message from a peer.
 	VersionNegotiationTimeout time.Duration
+
+	// The maximum number of addresses to broadcast to peers.
+	MaxAddressesToBroadcast uint32
 
 	// The genesis block to use as the base of our chain.
 	GenesisBlock *MsgDeSoBlock
@@ -712,6 +731,9 @@ type DeSoParams struct {
 	// used in BMF calculations. E.g. a value of 2500 means that 25% of the failing transaction's fee is used
 	// in BMF calculations.
 	DefaultFailingTransactionBMFMultiplierBasisPoints uint64
+
+	// HandshakeTimeoutMicroSeconds is the timeout for the peer handshake certificate. The default value is 15 minutes.
+	HandshakeTimeoutMicroSeconds uint64
 
 	ForkHeights ForkHeights
 
@@ -917,7 +939,7 @@ var MainnetForkHeights = ForkHeights{
 // DeSoMainnetParams defines the DeSo parameters for the mainnet.
 var DeSoMainnetParams = DeSoParams{
 	NetworkType:        NetworkType_MAINNET,
-	ProtocolVersion:    1,
+	ProtocolVersion:    ProtocolVersion1,
 	MinProtocolVersion: 1,
 	UserAgent:          "Architect",
 	DNSSeeds: []string{
@@ -999,6 +1021,8 @@ var DeSoMainnetParams = DeSoParams{
 
 	DialTimeout:               30 * time.Second,
 	VersionNegotiationTimeout: 30 * time.Second,
+
+	MaxAddressesToBroadcast: 10,
 
 	BlockRewardMaturity: time.Hour * 3,
 
@@ -1126,6 +1150,9 @@ var DeSoMainnetParams = DeSoParams{
 	// The rate of the failing transaction's fee used in BMF calculations.
 	DefaultFailingTransactionBMFMultiplierBasisPoints: uint64(2500),
 
+	// The peer handshake certificate timeout.
+	HandshakeTimeoutMicroSeconds: uint64(900000000),
+
 	ForkHeights:                 MainnetForkHeights,
 	EncoderMigrationHeights:     GetEncoderMigrationHeights(&MainnetForkHeights),
 	EncoderMigrationHeightsList: GetEncoderMigrationHeightsList(&MainnetForkHeights),
@@ -1222,7 +1249,7 @@ var TestnetForkHeights = ForkHeights{
 // DeSoTestnetParams defines the DeSo parameters for the testnet.
 var DeSoTestnetParams = DeSoParams{
 	NetworkType:        NetworkType_TESTNET,
-	ProtocolVersion:    0,
+	ProtocolVersion:    ProtocolVersion0,
 	MinProtocolVersion: 0,
 	UserAgent:          "Architect",
 	DNSSeeds: []string{
@@ -1265,6 +1292,8 @@ var DeSoTestnetParams = DeSoParams{
 
 	DialTimeout:               30 * time.Second,
 	VersionNegotiationTimeout: 30 * time.Second,
+
+	MaxAddressesToBroadcast: 10,
 
 	GenesisBlock:        &GenesisBlock,
 	GenesisBlockHashHex: GenesisBlockHashHex,
@@ -1392,6 +1421,9 @@ var DeSoTestnetParams = DeSoParams{
 
 	// The rate of the failing transaction's fee used in BMF calculations.
 	DefaultFailingTransactionBMFMultiplierBasisPoints: uint64(2500),
+
+	// The peer handshake certificate timeout.
+	HandshakeTimeoutMicroSeconds: uint64(900000000),
 
 	ForkHeights:                 TestnetForkHeights,
 	EncoderMigrationHeights:     GetEncoderMigrationHeights(&TestnetForkHeights),

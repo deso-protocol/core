@@ -471,8 +471,6 @@ func (snap *Snapshot) Run() {
 				operation.blockHeight); err != nil {
 				glog.Errorf("Snapshot.Run: Problem adding snapshot chunk to the db")
 			}
-			// Free up a slot in the operationQueueSemaphore, now that a chunk has been processed.
-			<-snap.operationQueueSemaphore
 
 		case SnapshotOperationChecksumAdd:
 			if err := snap.Checksum.AddOrRemoveBytesWithMigrations(operation.checksumKey, operation.checksumValue,
@@ -1346,6 +1344,12 @@ func (snap *Snapshot) SetSnapshotChunk(mainDb *badger.DB, mainDbMutex *deadlock.
 	snap.timer.Print("SetSnapshotChunk.Set")
 	snap.timer.Print("SetSnapshotChunk.Checksum")
 	return nil
+}
+
+func (snap *Snapshot) FreeOperationQueueSemaphore() {
+	if len(snap.operationQueueSemaphore) > 0 {
+		<-snap.operationQueueSemaphore
+	}
 }
 
 // -------------------------------------------------------------------------------------
