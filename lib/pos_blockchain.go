@@ -575,23 +575,43 @@ func (bc *Blockchain) validatePreviouslyIndexedBlockPoS(blockHash *BlockHash) (*
 	return bc.validateAndIndexBlockPoS(block)
 }
 
-// isValidBlockPoS performs all basic validations on a block as it relates to
-// the Blockchain struct. Any error resulting from this function implies that
-// the block is invalid.
+// isValidBlockPoS performs all basic block integrity checks. Any error
+// resulting from this function implies that the block is invalid.
 func (bc *Blockchain) isValidBlockPoS(block *MsgDeSoBlock) error {
 	// Surface Level validation of the block
 	if err := bc.isProperlyFormedBlockPoS(block); err != nil {
 		return err
 	}
-	if err := bc.isBlockTimestampValidRelativeToParentPoS(block); err != nil {
+	if err := bc.isBlockTimestampValidRelativeToParentPoS(block.Header); err != nil {
 		return err
 	}
-	// Validate Block Height
-	if err := bc.hasValidBlockHeightPoS(block); err != nil {
+	// Validate block height
+	if err := bc.hasValidBlockHeightPoS(block.Header); err != nil {
 		return err
 	}
-	// Validate View
-	if err := bc.hasValidBlockViewPoS(block); err != nil {
+	// Validate view
+	if err := bc.hasValidBlockViewPoS(block.Header); err != nil {
+		return err
+	}
+	return nil
+}
+
+// isValidBlockHeaderPoS performs all basic block header integrity checks. Any
+// error resulting from this function implies that the block header is invalid.
+func (bc *Blockchain) isValidBlockHeaderPoS(header *MsgDeSoHeader) error {
+	// Surface Level validation of the block header
+	if err := bc.isProperlyFormedBlockHeaderPoS(header); err != nil {
+		return err
+	}
+	if err := bc.isBlockTimestampValidRelativeToParentPoS(header); err != nil {
+		return err
+	}
+	// Validate block height
+	if err := bc.hasValidBlockHeightPoS(header); err != nil {
+		return err
+	}
+	// Validate view
+	if err := bc.hasValidBlockViewPoS(header); err != nil {
 		return err
 	}
 	return nil
@@ -599,69 +619,44 @@ func (bc *Blockchain) isValidBlockPoS(block *MsgDeSoBlock) error {
 
 // isBlockTimestampValidRelativeToParentPoS validates that the block's timestamp is
 // greater than its parent's timestamp.
-func (bc *Blockchain) isBlockTimestampValidRelativeToParentPoS(block *MsgDeSoBlock) error {
+func (bc *Blockchain) isBlockTimestampValidRelativeToParentPoS(header *MsgDeSoHeader) error {
 	// Validate that the timestamp is not less than its parent.
-	parentBlock, exists := bc.blockIndexByHash[*block.Header.PrevBlockHash]
+	parentBlockNode, exists := bc.blockIndexByHash[*header.PrevBlockHash]
 	if !exists {
 		// Note: this should never happen as we only call this function after
 		// we've validated that all ancestors exist in the block index.
 		return RuleErrorMissingParentBlock
 	}
-	if block.Header.TstampNanoSecs < parentBlock.Header.TstampNanoSecs {
+	if header.TstampNanoSecs < parentBlockNode.Header.TstampNanoSecs {
 		return RuleErrorPoSBlockTstampNanoSecsTooOld
 	}
 	return nil
 }
 
-// isProperlyFormedBlockPoS validates the block at a surface level. It checks
-// that the timestamp is valid, that the version of the header is valid,
-// and other general integrity checks (such as not malformed).
+// isProperlyFormedBlockPoS validates the block at a surface level and makes
+// sure that all fields are populated in a valid manner. It does not verify
+// signatures nor validate the blockchain state resulting from the block.
 func (bc *Blockchain) isProperlyFormedBlockPoS(block *MsgDeSoBlock) error {
-	// First make sure we have a non-nil header
-	if block.Header == nil {
-		return RuleErrorNilBlockHeader
+	// First, make sure we have a non-nil block
+	if block == nil {
+		return errors.New("isProperlyFormedBlockPoS: block is nil")
 	}
 
-	// Make sure we have a prevBlockHash
-	if block.Header.PrevBlockHash == nil {
-		return RuleErrorNilPrevBlockHash
+	// Make sure the header is properly formed by itself
+	if err := bc.isProperlyFormedBlockHeaderPoS(block.Header); err != nil {
+		return err
 	}
 
-	// Timestamp validation
-	// First make sure we have a non-nil header
-	if block.Header == nil {
-		return RuleErrorNilBlockHeader
-	}
+	// If the header is properly formed, we can check the rest of the block.
 
-	// Make sure we have a prevBlockHash
-	if block.Header.PrevBlockHash == nil {
-		return RuleErrorNilPrevBlockHash
-	}
-
-	// Timestamp validation
-	// TODO: Add support for putting the drift into global params.
-	if block.Header.TstampNanoSecs > uint64(time.Now().UnixNano())+bc.params.DefaultBlockTimestampDriftNanoSecs {
-		return RuleErrorPoSBlockTstampNanoSecsInFuture
-	}
-
-	// Header validation
-	if block.Header.Version != HeaderVersion2 {
-		return RuleErrorInvalidPoSBlockHeaderVersion
-	}
-
-	// Malformed block checks
 	// All blocks must have at least one txn
 	if len(block.Txns) == 0 {
 		return RuleErrorBlockWithNoTxns
 	}
-	// Must have non-nil TxnConnectStatusByIndex
+
+	// Make sure TxnConnectStatusByIndex is non-nil
 	if block.TxnConnectStatusByIndex == nil {
 		return RuleErrorNilTxnConnectStatusByIndex
-	}
-
-	// Must have TxnConnectStatusByIndexHash
-	if block.Header.TxnConnectStatusByIndexHash == nil {
-		return RuleErrorNilTxnConnectStatusByIndexHash
 	}
 
 	// Make sure the TxnConnectStatusByIndex matches the TxnConnectStatusByIndexHash
@@ -669,9 +664,60 @@ func (bc *Blockchain) isProperlyFormedBlockPoS(block *MsgDeSoBlock) error {
 		return RuleErrorTxnConnectStatusByIndexHashMismatch
 	}
 
+	// Make sure that the first txn in each block is a block reward txn.
+	if block.Txns[0].TxnMeta.GetTxnType() != TxnTypeBlockReward {
+		return RuleErrorBlockDoesNotStartWithRewardTxn
+	}
+
+	// We always need to check the merkle root.
+	if block.Header.TransactionMerkleRoot == nil {
+		return RuleErrorNilMerkleRoot
+	}
+	computedMerkleRoot, _, err := ComputeMerkleRoot(block.Txns)
+	if err != nil {
+		return errors.Wrapf(err, "isProperlyFormedBlockPoS: Problem computing merkle root")
+	}
+	if !block.Header.TransactionMerkleRoot.IsEqual(computedMerkleRoot) {
+		return RuleErrorInvalidMerkleRoot
+	}
+
+	return nil
+}
+
+// isProperlyFormedBlockHeaderPoS validates the block header based on the header's
+// contents alone, and makes sure that all fields are populated in a valid manner.
+// It does not verify signatures in the header, nor cross-validate the block with
+// past blocks in the block index.
+func (bc *Blockchain) isProperlyFormedBlockHeaderPoS(header *MsgDeSoHeader) error {
+	// First make sure we have a non-nil header
+	if header == nil {
+		return RuleErrorNilBlockHeader
+	}
+
+	// Make sure we have a prevBlockHash
+	if header.PrevBlockHash == nil {
+		return RuleErrorNilPrevBlockHash
+	}
+
+	// Timestamp validation
+	// TODO: Add support for putting the drift into global params.
+	if header.TstampNanoSecs > uint64(time.Now().UnixNano())+bc.params.DefaultBlockTimestampDriftNanoSecs {
+		return RuleErrorPoSBlockTstampNanoSecsInFuture
+	}
+
+	// Header validation
+	if header.Version != HeaderVersion2 {
+		return RuleErrorInvalidPoSBlockHeaderVersion
+	}
+
+	// Must have TxnConnectStatusByIndexHash
+	if header.TxnConnectStatusByIndexHash == nil {
+		return RuleErrorNilTxnConnectStatusByIndexHash
+	}
+
 	// Require header to have either vote or timeout QC
-	isTimeoutQCEmpty := block.Header.ValidatorsTimeoutAggregateQC.isEmpty()
-	isVoteQCEmpty := block.Header.ValidatorsVoteQC.isEmpty()
+	isTimeoutQCEmpty := header.ValidatorsTimeoutAggregateQC.isEmpty()
+	isVoteQCEmpty := header.ValidatorsVoteQC.isEmpty()
 	if isTimeoutQCEmpty && isVoteQCEmpty {
 		return RuleErrorNoTimeoutOrVoteQC
 	}
@@ -680,83 +726,62 @@ func (bc *Blockchain) isProperlyFormedBlockPoS(block *MsgDeSoBlock) error {
 		return RuleErrorBothTimeoutAndVoteQC
 	}
 
-	if block.Txns[0].TxnMeta.GetTxnType() != TxnTypeBlockReward {
-		return RuleErrorBlockDoesNotStartWithRewardTxn
-	}
-
-	if block.Header.ProposerVotingPublicKey.IsEmpty() {
+	if header.ProposerVotingPublicKey.IsEmpty() {
 		return RuleErrorInvalidProposerVotingPublicKey
 	}
 
-	if block.Header.ProposerPublicKey == nil || block.Header.ProposerPublicKey.IsZeroPublicKey() {
+	if header.ProposerPublicKey == nil || header.ProposerPublicKey.IsZeroPublicKey() {
 		return RuleErrorInvalidProposerPublicKey
 	}
 
-	if block.Header.ProposerRandomSeedSignature.IsEmpty() {
+	if header.ProposerRandomSeedSignature.IsEmpty() {
 		return RuleErrorInvalidProposerRandomSeedSignature
 	}
 
-	merkleRoot := block.Header.TransactionMerkleRoot
-
-	// We always need to check the merkle root.
-	if merkleRoot == nil {
+	if header.TransactionMerkleRoot == nil {
 		return RuleErrorNilMerkleRoot
-	}
-	computedMerkleRoot, _, err := ComputeMerkleRoot(block.Txns)
-	if err != nil {
-		return errors.Wrapf(err, "isProperlyFormedBlockPoS: Problem computing merkle root")
-	}
-	if !merkleRoot.IsEqual(computedMerkleRoot) {
-		return RuleErrorInvalidMerkleRoot
 	}
 
 	// If a block has a vote QC, then the Header's proposed in view must be exactly one
 	// greater than the QC's proposed in view.
-	if !isVoteQCEmpty && block.Header.ProposedInView != block.Header.ValidatorsVoteQC.ProposedInView+1 {
+	if !isVoteQCEmpty && header.ProposedInView != header.ValidatorsVoteQC.ProposedInView+1 {
 		return RuleErrorPoSVoteBlockViewNotOneGreaterThanValidatorsVoteQCView
 	}
 
 	// If a block has a timeout QC, then the Header's proposed in view be must exactly one
 	// greater than the QC's timed out view.
-	if !isTimeoutQCEmpty && block.Header.ProposedInView != block.Header.ValidatorsTimeoutAggregateQC.TimedOutView+1 {
+	if !isTimeoutQCEmpty && header.ProposedInView != header.ValidatorsTimeoutAggregateQC.TimedOutView+1 {
 		return RuleErrorPoSTimeoutBlockViewNotOneGreaterThanValidatorsTimeoutQCView
 	}
+
 	return nil
 }
 
-// hasValidBlockHeightPoS validates the block height for a given block. First,
+// hasValidBlockHeightPoS validates the block height for a given block header. First,
 // it checks that we've passed the PoS cutover fork height. Then it checks
 // that this block height is exactly one greater than its parent's block height.
-func (bc *Blockchain) hasValidBlockHeightPoS(block *MsgDeSoBlock) error {
-	blockHeight := block.Header.Height
+func (bc *Blockchain) hasValidBlockHeightPoS(header *MsgDeSoHeader) error {
+	blockHeight := header.Height
 	if blockHeight < uint64(bc.params.ForkHeights.ProofOfStake2ConsensusCutoverBlockHeight) {
 		return RuleErrorPoSBlockBeforeCutoverHeight
 	}
 	// Validate that the block height is exactly one greater than its parent.
-	parentBlock, exists := bc.blockIndexByHash[*block.Header.PrevBlockHash]
+	parentBlockNode, exists := bc.blockIndexByHash[*header.PrevBlockHash]
 	if !exists {
 		// Note: this should never happen as we only call this function after
 		// we've validated that all ancestors exist in the block index.
 		return RuleErrorMissingParentBlock
 	}
-	if block.Header.Height != parentBlock.Header.Height+1 {
+	if header.Height != parentBlockNode.Header.Height+1 {
 		return RuleErrorInvalidPoSBlockHeight
 	}
 	return nil
 }
 
-// hasValidBlockViewPoS validates the view for a given block. First, it checks that
-// the view is greater than the latest committed block view. If not,
-// we return an error indicating that we'll never accept this block. Next,
-// it checks that the view is less than or equal to its parent.
-// If not, we return an error indicating that we'll want to add this block as an
-// orphan. Then it will check if that the view is exactly one greater than the
-// latest uncommitted block if we have a regular vote QC. If this block has a
-// timeout QC, it will check that the view is at least greater than the latest
-// uncommitted block's view + 1.
-func (bc *Blockchain) hasValidBlockViewPoS(block *MsgDeSoBlock) error {
+// hasValidBlockViewPoS validates the view for a given block header
+func (bc *Blockchain) hasValidBlockViewPoS(header *MsgDeSoHeader) error {
 	// Validate that the view is greater than the latest uncommitted block.
-	parentBlock, exists := bc.blockIndexByHash[*block.Header.PrevBlockHash]
+	parentBlockNode, exists := bc.blockIndexByHash[*header.PrevBlockHash]
 	if !exists {
 		// Note: this should never happen as we only call this function after
 		// we've validated that all ancestors exist in the block index.
@@ -764,19 +789,19 @@ func (bc *Blockchain) hasValidBlockViewPoS(block *MsgDeSoBlock) error {
 	}
 	// If the parent block was a PoW block, we can't validate this block's view
 	// in comparison.
-	if !blockNodeProofOfStakeCutoverMigrationTriggered(parentBlock.Height) {
+	if !blockNodeProofOfStakeCutoverMigrationTriggered(parentBlockNode.Height) {
 		return nil
 	}
 	// If our current block has a vote QC, then we need to validate that the
 	// view is exactly one greater than the latest uncommitted block.
-	if block.Header.ValidatorsTimeoutAggregateQC.isEmpty() {
-		if block.Header.ProposedInView != parentBlock.Header.ProposedInView+1 {
+	if header.ValidatorsTimeoutAggregateQC.isEmpty() {
+		if header.ProposedInView != parentBlockNode.Header.ProposedInView+1 {
 			return RuleErrorPoSVoteBlockViewNotOneGreaterThanParent
 		}
 	} else {
 		// If our current block has a timeout QC, then we need to validate that the
 		// view is strictly greater than the latest uncommitted block's view.
-		if block.Header.ProposedInView <= parentBlock.Header.ProposedInView {
+		if header.ProposedInView <= parentBlockNode.Header.ProposedInView {
 			return RuleErrorPoSTimeoutBlockViewNotGreaterThanParent
 		}
 	}
