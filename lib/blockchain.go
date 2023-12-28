@@ -1869,15 +1869,6 @@ func (bc *Blockchain) processHeaderPoW(blockHeader *MsgDeSoHeader, headerHash *B
 	return isMainChain, false, nil
 }
 
-// processHeaderPoS is validates and stores an incoming block header as follows:
-// 1. Validating the block header's structure and timestamp
-// 2. Connect the block header to the header chain's tip
-// 3. Store the block header in the db and the in-memory block index
-func (bc *Blockchain) processHeaderPoS(blockHeader *MsgDeSoHeader, headerHash *BlockHash) (_isMainChain bool, _isOrphan bool, _err error) {
-	// TODO
-	return false, false, fmt.Errorf("processHeaderPoS: Not implemented")
-}
-
 // ProcessHeader is a wrapper around processHeaderPoW and processHeaderPoS, which do the leg-work.
 func (bc *Blockchain) ProcessHeader(blockHeader *MsgDeSoHeader, headerHash *BlockHash) (_isMainChain bool, _isOrphan bool, _err error) {
 	bc.ChainLock.Lock()
