@@ -639,7 +639,7 @@ func (bc *Blockchain) isBlockTimestampValidRelativeToParentPoS(header *MsgDeSoHe
 func (bc *Blockchain) isProperlyFormedBlockPoS(block *MsgDeSoBlock) error {
 	// First, make sure we have a non-nil block
 	if block == nil {
-		return errors.New("isProperlyFormedBlockPoS: block is nil")
+		return RuleErrorNilBlock
 	}
 
 	// Make sure the header is properly formed by itself
@@ -1479,6 +1479,7 @@ func (bc *Blockchain) getMaxSequentialBlockHeightAfter(startingHeight uint64) ui
 }
 
 const (
+	RuleErrorNilBlock                                           RuleError = "RuleErrorNilBlock"
 	RuleErrorNilBlockHeader                                     RuleError = "RuleErrorNilBlockHeader"
 	RuleErrorNilPrevBlockHash                                   RuleError = "RuleErrorNilPrevBlockHash"
 	RuleErrorPoSBlockTstampNanoSecsTooOld                       RuleError = "RuleErrorPoSBlockTstampNanoSecsTooOld"
