@@ -39,14 +39,12 @@ func (bc *Blockchain) ProcessHeaderPoS(header *MsgDeSoHeader) (_isMainChain bool
 // that require on-chain state.
 //
 // processHeaderPoS algorithm:
-//  1. Validate that the block header is properly formed.
-//  2. Add the block header to the block index with status
-//     StatusHeaderValidated or StatusHeaderValidateFailed.
-//  3. Perform the orphan check on the block header.
-//  4. If the block is an orphan, or its view is less than the current header chain's tip,
-//     then we exit early.
-//  5. If it is not an orphan, and has a higher view than the current header chain, then
-//     we re-org the header chain so that the incoming header is the new tip.
+//  1. Exit early if the block header already already been indexed in the block index.
+//  2. Skip the block if it is an orphan.
+//  3. Validate the header and its check its parent's header validation status.
+//  4. Add the block header to the block index with status StatusHeaderValidated or StatusHeaderValidateFailed.
+//  5. Exit early if the's view is less than the current header chain's tip.
+//  6. Reorg the best header chain so that the header is the new tip.
 func (bc *Blockchain) processHeaderPoS(header *MsgDeSoHeader) (_isMainChain bool, _isOrphan bool, _err error) {
 	// If we can't hash the block header, we can never store in it the block index and we
 	// should throw it out immediately.
@@ -76,11 +74,14 @@ func (bc *Blockchain) processHeaderPoS(header *MsgDeSoHeader) (_isMainChain bool
 		return false, true, nil
 	}
 
+	// Common error message used when we fail to add a header to the block index with validate failed status.
+	validateFailedErrorMessage := "processHeaderPoS: Problem adding validate failed header to block index"
+
 	// If the parent block header is not valid, then the current block header is not valid.
 	if parentBlockNode.IsHeaderValidateFailed() {
 		// If the block header is not properly formed, we store it as HeaderValidateFailed and exit early.
 		if _, innerErr := bc.storeValidateFailedHeaderInBlockIndex(header); innerErr != nil {
-			return false, false, errors.Wrapf(innerErr, "processHeaderPoS: Problem adding validate failed header to block index")
+			return false, false, errors.Wrapf(innerErr, validateFailedErrorMessage)
 		}
 		return false, false, nil
 	}
@@ -89,7 +90,7 @@ func (bc *Blockchain) processHeaderPoS(header *MsgDeSoHeader) (_isMainChain bool
 	if err := bc.isProperlyFormedBlockHeaderPoS(header); err != nil {
 		// If the block header is not properly formed, we store it as HeaderValidateFailed and exit early.
 		if _, innerErr := bc.storeValidateFailedHeaderInBlockIndex(header); innerErr != nil {
-			return false, false, errors.Wrapf(innerErr, "processHeaderPoS: Problem adding validate failed header to block index: %v", err)
+			return false, false, errors.Wrapf(innerErr, "%s: %v", validateFailedErrorMessage, err)
 		}
 		return false, false, nil
 	}
