@@ -114,7 +114,7 @@ func verifyOutboundConnectionSelect(t *testing.T, connectionChan chan *outboundC
 	case conn := <-connectionChan:
 		verifyOutboundConnection(t, conn, sl, attemptId, isPersistent, failed)
 	case <-time.After(2 * timeoutDuration):
-		t.Fatal("timed out waiting for outbound connection")
+		panic("Timed out waiting for outbound connection.")
 	}
 }
 
