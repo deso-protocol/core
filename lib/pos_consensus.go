@@ -661,8 +661,8 @@ func (cc *FastHotStuffConsensus) fetchValidatorListsForSafeBlocks(blocks []*MsgD
 	return blocksWithValidatorLists, nil
 }
 
-func (f *FastHotStuffConsensus) createBlockProducer(bav *UtxoView) (*PosBlockProducer, error) {
-	blockProducerBlsPublicKey := f.signer.GetPublicKey()
+func (fc *FastHotStuffConsensus) createBlockProducer(bav *UtxoView) (*PosBlockProducer, error) {
+	blockProducerBlsPublicKey := fc.signer.GetPublicKey()
 	blockProducerValidatorEntry, err := bav.GetCurrentSnapshotValidatorBLSPublicKeyPKIDPairEntry(blockProducerBlsPublicKey)
 	if err != nil {
 		return nil, errors.Errorf("Error fetching validator entry for block producer: %v", err)
@@ -672,7 +672,7 @@ func (f *FastHotStuffConsensus) createBlockProducer(bav *UtxoView) (*PosBlockPro
 		return nil, errors.Errorf("Error fetching public key for block producer: %v", err)
 	}
 	blockProducerPublicKey := NewPublicKey(blockProducerPublicKeyBytes.PublicKey)
-	return NewPosBlockProducer(f.mempool, f.params, blockProducerPublicKey, blockProducerBlsPublicKey), nil
+	return NewPosBlockProducer(fc.mempool, fc.params, blockProducerPublicKey, blockProducerBlsPublicKey), nil
 }
 
 // Finds the epoch entry for the block and returns the epoch number.
