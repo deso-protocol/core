@@ -159,8 +159,9 @@ func (bc *Blockchain) ProcessBlockPoS(block *MsgDeSoBlock, currentView uint64, v
 //     If so, return the hash of the missing block and add this block to the orphans list.
 //  2. Validate the incoming block, its header, its block height, the leader, and its QCs (vote or timeout)
 //  3. Store the block in the block index and save to DB.
-//  4. try to apply the incoming block as the tip (performing reorgs as necessary). If it can't be applied, exit here.
-//  5. Run the commit rule - If applicable, flushes the incoming block's grandparent to the DB
+//  4. Process the block's header. This may reorg the header chain and apply the block as the new header chain tip.
+//  5. Try to apply the incoming block as the tip (performing reorgs as necessary). If it can't be applied, exit here.
+//  6. Run the commit rule - If applicable, flushes the incoming block's grandparent to the DB
 func (bc *Blockchain) processBlockPoS(block *MsgDeSoBlock, currentView uint64, verifySignatures bool) (
 	_success bool,
 	_isOrphan bool,
@@ -223,7 +224,13 @@ func (bc *Blockchain) processBlockPoS(block *MsgDeSoBlock, currentView uint64, v
 			"processBlockPoS: Block not validated after performing all validations.")
 	}
 
-	// 4. Try to apply the incoming block as the new tip. This function will
+	// 4. Process the block's header and update the header chain. This may reorg the header chain
+	// and apply the block as the new header chain tip.
+	if _, _, err = bc.processHeaderPoS(block.Header); err != nil {
+		return false, false, nil, errors.Wrap(err, "processBlockPoS: Problem processing header")
+	}
+
+	// 5. Try to apply the incoming block as the new tip. This function will
 	// first perform any required reorgs and then determine if the incoming block
 	// extends the chain tip. If it does, it will apply the block to the best chain
 	// and appliedNewTip will be true and we can continue to running the commit rule.
@@ -232,7 +239,7 @@ func (bc *Blockchain) processBlockPoS(block *MsgDeSoBlock, currentView uint64, v
 		return false, false, nil, errors.Wrap(err, "processBlockPoS: Problem applying new tip: ")
 	}
 
-	// 5. Commit grandparent if possible. Only need to do this if we applied a new tip.
+	// 6. Commit grandparent if possible. Only need to do this if we applied a new tip.
 	if appliedNewTip {
 		if err = bc.runCommitRuleOnBestChain(); err != nil {
 			return false, false, nil, errors.Wrap(err,
@@ -241,7 +248,7 @@ func (bc *Blockchain) processBlockPoS(block *MsgDeSoBlock, currentView uint64, v
 	}
 
 	// Now that we've processed this block, we check for any blocks that were previously
-	// stored as orphans, which are children of this block. We can  process them now.
+	// stored as orphans, which are children of this block. We can process them now.
 	blockNodesAtNextHeight := bc.blockIndexByHeight[uint64(blockNode.Height)+1]
 	for _, blockNodeAtNextHeight := range blockNodesAtNextHeight {
 		if blockNodeAtNextHeight.Header.PrevBlockHash.IsEqual(blockNode.Hash) &&
@@ -265,6 +272,7 @@ func (bc *Blockchain) processBlockPoS(block *MsgDeSoBlock, currentView uint64, v
 			}
 		}
 	}
+
 	// Returns whether a new tip was applied, whether the block is an orphan, and any missing blocks, and an error.
 	return appliedNewTip, false, nil, nil
 }
