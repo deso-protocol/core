@@ -81,6 +81,16 @@ const (
 	StatusBlockCommitted = 1 << 8 // Committed means that the block has been committed to the blockchain according to the Fast HotStuff commit rule. Only set on blocks after the cutover for PoS
 )
 
+// IsHeaderValidated returns true if a BlockNode has passed all the block header integrity checks.
+func (nn *BlockNode) IsHeaderValidated() bool {
+	return nn.Status&StatusHeaderValidated != 0
+}
+
+// IsHeaderValidateFailed returns true if a BlockNode has failed any block header integrity checks.
+func (nn *BlockNode) IsHeaderValidateFailed() bool {
+	return nn.Status&StatusHeaderValidateFailed != 0
+}
+
 // IsStored returns true if the BlockNode has been added to the blockIndexByHash and stored in the DB.
 func (nn *BlockNode) IsStored() bool {
 	return nn.Status&StatusBlockStored != 0
