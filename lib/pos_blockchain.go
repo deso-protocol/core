@@ -1021,6 +1021,52 @@ func (bc *Blockchain) getOrCreateBlockNodeFromBlockIndex(block *MsgDeSoBlock) (*
 	return newBlockNode, nil
 }
 
+func (bc *Blockchain) storeValidatedHeaderInBlockIndex(header *MsgDeSoHeader) (*BlockNode, error) {
+	blockNode, err := bc.getOrCreateBlockNodeFromBlockIndex(&MsgDeSoBlock{Header: header})
+	if err != nil {
+		return nil, errors.Wrapf(err, "storeValidatedHeaderInBlockIndex: Problem getting or creating block node")
+	}
+	// If the block is validated, then this is a no-op.
+	if blockNode.IsHeaderValidated() {
+		return blockNode, nil
+	}
+	// We should throw an error if the BlockNode has failed header validation
+	if blockNode.IsHeaderValidateFailed() {
+		return nil, errors.New(
+			"storeValidatedHeaderInBlockIndex: can't set block node to header validated after it's already been set to validate failed",
+		)
+	}
+	blockNode.Status |= StatusHeaderValidated
+	// If the DB update fails, then we should return an error.
+	if err = bc.upsertBlockNodeToDB(blockNode); err != nil {
+		return nil, errors.Wrapf(err, "storeValidatedHeaderInBlockIndex: Problem upserting block node to DB")
+	}
+	return blockNode, nil
+}
+
+func (bc *Blockchain) storeValidateFailedHeaderInBlockIndex(header *MsgDeSoHeader) (*BlockNode, error) {
+	blockNode, err := bc.getOrCreateBlockNodeFromBlockIndex(&MsgDeSoBlock{Header: header})
+	if err != nil {
+		return nil, errors.Wrapf(err, "storeValidateFailedHeaderInBlockIndex: Problem getting or creating block node")
+	}
+	// If the block has the header validate failed status, then this is a no-op.
+	if blockNode.IsHeaderValidateFailed() {
+		return blockNode, nil
+	}
+	// We should throw an error if the BlockNode has already been validated.
+	if blockNode.IsHeaderValidated() {
+		return nil, errors.New(
+			"storeValidatedHeaderInBlockIndex: can't set block node to header validate failed after it's already been set to validated",
+		)
+	}
+	blockNode.Status |= StatusHeaderValidated
+	// If the DB update fails, then we should return an error.
+	if err = bc.upsertBlockNodeToDB(blockNode); err != nil {
+		return nil, errors.Wrapf(err, "storeValidateFailedHeaderInBlockIndex: Problem upserting block node to DB")
+	}
+	return blockNode, nil
+}
+
 // storeBlockInBlockIndex upserts the blocks into the in-memory block index and updates its status to
 // StatusBlockStored. It also writes the block to the block index in badger
 // by calling upsertBlockAndBlockNodeToDB.
@@ -1121,10 +1167,8 @@ func (bc *Blockchain) upsertBlockAndBlockNodeToDB(block *MsgDeSoBlock, blockNode
 		// Store the new block's node in our node index in the db under the
 		//   <height uin32, blockHash BlockHash> -> <node info>
 		// index.
-		if innerErr := PutHeightHashToNodeInfoWithTxn(
-			txn, bc.snapshot, blockNode, false /*bitcoinNodes*/, bc.eventManager); innerErr != nil {
-			return errors.Wrapf(innerErr,
-				"upsertBlockAndBlockNodeToDB: Problem calling PutHeightHashToNodeInfo before validation")
+		if innerErr := bc.upsertBlockNodeToDBWithTxn(txn, blockNode); innerErr != nil {
+			return errors.Wrapf(innerErr, "upsertBlockAndBlockNodeToDB: ")
 		}
 
 		// Notice we don't call PutBestHash or PutUtxoOperationsForBlockWithTxn because we're not
@@ -1135,6 +1179,27 @@ func (bc *Blockchain) upsertBlockAndBlockNodeToDB(block *MsgDeSoBlock, blockNode
 	if err != nil {
 		return errors.Wrapf(err, "upsertBlockAndBlockNodeToDB: Problem putting block in db: ")
 	}
+	return nil
+}
+
+// upsertBlockNodeToDB is a simpler wrapper that calls upsertBlockNodeToDBWithTxn with a new transaction.
+func (bc *Blockchain) upsertBlockNodeToDB(blockNode *BlockNode) error {
+	return bc.db.Update(func(txn *badger.Txn) error {
+		return bc.upsertBlockNodeToDBWithTxn(txn, blockNode)
+	})
+}
+
+// upsertBlockNodeToDBWithTxn writes the BlockNode to the blockIndexByHash in badger.
+func (bc *Blockchain) upsertBlockNodeToDBWithTxn(txn *badger.Txn, blockNode *BlockNode) error {
+	// Store the new block's node in our node index in the db under the
+	//   <height uin32, blockHash BlockHash> -> <node info>
+	// index.
+	err := PutHeightHashToNodeInfoWithTxn(txn, bc.snapshot, blockNode, false /*bitcoinNodes*/, bc.eventManager)
+	if err != nil {
+		return errors.Wrapf(err,
+			"upsertBlockNodeToDBWithTxn: Problem calling PutHeightHashToNodeInfo before validation")
+	}
+
 	return nil
 }
 
