@@ -170,7 +170,7 @@ func NewPosMempool(params *DeSoParams, globalParams *GlobalParamsEntry, readOnly
 		latestBlockHeight:           latestBlockHeight,
 		maxMempoolPosSizeBytes:      maxMempoolPosSizeBytes,
 		mempoolBackupIntervalMillis: mempoolBackupIntervalMillis,
-		txnRegister:                 NewTransactionRegister(globalParams),
+		txnRegister:                 NewTransactionRegister(),
 		feeEstimator:                NewPoSFeeEstimator(),
 		ledger:                      NewBalanceLedger(),
 		nonceTracker:                NewNonceTracker(),
@@ -185,6 +185,7 @@ func (mp *PosMempool) Init(
 	if mp.status != PosMempoolStatusNotInitialized {
 		return errors.New("PosMempool.Init: PosMempool already initialized")
 	}
+
 	// TODO: parameterize num blocks. Also, how to pass in blocks.
 	if err := mp.feeEstimator.Init(
 		mp.txnRegister, feeEstimatorNumMempoolBlocks, feeEstimatorPastBlocks, feeEstimatorNumPastBlocks,
@@ -204,7 +205,8 @@ func (mp *PosMempool) Start() error {
 	}
 
 	// Create the transaction register, the ledger, and the nonce tracker,
-	mp.txnRegister = NewTransactionRegister(mp.globalParams)
+	mp.txnRegister = NewTransactionRegister()
+	mp.txnRegister.Init(mp.globalParams)
 	mp.ledger = NewBalanceLedger()
 	mp.nonceTracker = NewNonceTracker()
 

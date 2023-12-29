@@ -1,11 +1,12 @@
 package lib
 
 import (
-	"github.com/deso-protocol/core/collections"
-	"github.com/pkg/errors"
 	"math"
 	"math/big"
 	"sync"
+
+	"github.com/deso-protocol/core/collections"
+	"github.com/pkg/errors"
 )
 
 type PoSFeeEstimator struct {
@@ -74,7 +75,8 @@ func (posFeeEstimator *PoSFeeEstimator) Init(
 	posFeeEstimator.numMempoolBlocks = numMempoolBlocks
 	posFeeEstimator.numPastBlocks = numPastBlocks
 	// Create a transaction register we can use to estimate fees for past blocks.
-	posFeeEstimator.pastBlocksTransactionRegister = NewTransactionRegister(globalParams.Copy())
+	posFeeEstimator.pastBlocksTransactionRegister = NewTransactionRegister()
+	posFeeEstimator.pastBlocksTransactionRegister.Init(globalParams.Copy())
 
 	// Add all the txns from the past blocks to the new pastBlocksTransactionRegister.
 	for _, block := range sortedPastBlocks {
@@ -192,7 +194,8 @@ func (posFeeEstimator *PoSFeeEstimator) removeBlockNoLock(block *MsgDeSoBlock) e
 func (posFeeEstimator *PoSFeeEstimator) UpdateGlobalParams(globalParams *GlobalParamsEntry) error {
 	posFeeEstimator.rwLock.Lock()
 	defer posFeeEstimator.rwLock.Unlock()
-	tempTransactionRegister := NewTransactionRegister(globalParams.Copy())
+	tempTransactionRegister := NewTransactionRegister()
+	tempTransactionRegister.Init(globalParams.Copy())
 	for _, block := range posFeeEstimator.cachedBlocks {
 		if err := addBlockToTransactionRegister(tempTransactionRegister, block); err != nil {
 			return errors.Wrap(err, "PosFeeEstimator.UpdateGlobalParams: error adding block to tempTransactionRegister")
