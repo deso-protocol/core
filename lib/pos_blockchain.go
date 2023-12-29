@@ -1054,7 +1054,7 @@ func (bc *Blockchain) storeValidateFailedHeaderInBlockIndex(header *MsgDeSoHeade
 		return blockNode, nil
 	}
 	// We should throw an error if the BlockNode has already been validated.
-	if blockNode.IsHeaderValidateFailed() {
+	if blockNode.IsHeaderValidated() {
 		return nil, errors.New(
 			"storeValidatedHeaderInBlockIndex: can't set block node to header validate failed after it's already been set to validated",
 		)
