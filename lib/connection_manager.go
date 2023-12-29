@@ -652,7 +652,7 @@ func (cmgr *ConnectionManager) Stop() {
 			"shutting down")
 		return
 	}
-	for id, _ := range cmgr.outboundConnectionAttempts {
+	for id := range cmgr.outboundConnectionAttempts {
 		cmgr.CloseAttemptedConnection(id)
 	}
 	glog.Infof("ConnectionManager: Stopping, number of inbound peers (%v), number of outbound "+
