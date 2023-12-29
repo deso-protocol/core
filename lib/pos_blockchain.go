@@ -12,6 +12,19 @@ import (
 	"github.com/pkg/errors"
 )
 
+// ProcessHeaderPoS simply acquires the chain lock and calls processHeaderPoS.
+func (bc *Blockchain) ProcessHeaderPoS(header *MsgDeSoHeader) (_isMainChain bool, _isOrphan bool, _err error) {
+	// Grab the chain lock
+	bc.ChainLock.Lock()
+	defer bc.ChainLock.Unlock()
+
+	if header == nil {
+		return false, false, fmt.Errorf("ProcessHeaderPoS: Header is nil")
+	}
+
+	return bc.processHeaderPoS(header)
+}
+
 // processHeaderPoS validates and stores an incoming block header to build
 // the PoS version of the header chain.
 //
@@ -34,12 +47,91 @@ import (
 //     then we exit early.
 //  5. If it is not an orphan, and has a higher view than the current header chain, then
 //     we re-org the header chain so that the incoming header is the new tip.
-func (bc *Blockchain) processHeaderPoS(blockHeader *MsgDeSoHeader, headerHash *BlockHash) (
-	_isMainChain bool,
-	_isOrphan bool,
-	_err error,
-) {
-	return false, false, fmt.Errorf("processHeaderPoS: Not implemented")
+func (bc *Blockchain) processHeaderPoS(header *MsgDeSoHeader) (_isMainChain bool, _isOrphan bool, _err error) {
+	// If we can't hash the block header, we can never store in it the block index and we
+	// should throw it out immediately.
+	headerHash, err := header.Hash()
+	if err != nil {
+		return false, false, errors.Wrapf(err, "processBlockPoS: Problem hashing block")
+	}
+
+	// Make sure the header has PrevBlockHash field populated
+	if header.PrevBlockHash == nil {
+		return false, false, errors.New("processHeaderPoS: PrevBlockHash is nil")
+	}
+
+	// Check if the block header is already in the block index and has been validated. If it
+	// exists in the block index with a status of StatusHeaderValidated or StatusHeaderValidateFailed,
+	// then we have nothing left to do.
+	blockNode, exists := bc.blockIndexByHash[*headerHash]
+	if exists && (blockNode.IsHeaderValidated() || blockNode.IsHeaderValidateFailed()) {
+		return false, false, nil
+	}
+
+	// Verify that the block header is not an orphan.
+	parentBlockNode, parentBlockNodeExists := bc.blockIndexByHash[*header.PrevBlockHash]
+	if !parentBlockNodeExists {
+		// We do not store the block header in the index if it is an orphan. We do not expect to
+		// receive block headers out of order, so we do not store orphans in the block index.
+		return false, true, nil
+	}
+
+	// If the parent block header is not valid, then the current block header is not valid.
+	if parentBlockNode.IsHeaderValidateFailed() {
+		// If the block header is not properly formed, we store it as HeaderValidateFailed and exit early.
+		if _, innerErr := bc.storeValidateFailedHeaderInBlockIndex(header); innerErr != nil {
+			return false, false, errors.Wrapf(innerErr, "processHeaderPoS: Problem adding validate failed header to block index")
+		}
+		return false, false, nil
+	}
+
+	// Verify that the block header is properly formed.
+	if err := bc.isProperlyFormedBlockHeaderPoS(header); err != nil {
+		// If the block header is not properly formed, we store it as HeaderValidateFailed and exit early.
+		if _, innerErr := bc.storeValidateFailedHeaderInBlockIndex(header); innerErr != nil {
+			return false, false, errors.Wrapf(innerErr, "processHeaderPoS: Problem adding validate failed header to block index: %v", err)
+		}
+		return false, false, nil
+	}
+
+	// If the block header is properly formed, we store it as HeaderValidated.
+	headerBlockNode, err := bc.storeValidatedHeaderInBlockIndex(header)
+	if err != nil {
+		return false, false, errors.Wrapf(err, "processHeaderPoS: Problem adding header to block index: ")
+	}
+
+	// If the block header is an orphan, or its view is less than the current header chain's tip,
+	// then we exit early.
+	if header.ProposedInView <= bc.headerTip().Header.ProposedInView {
+		return false, false, nil
+	}
+
+	// If the header is not an orphan, and has a higher view than the current header chain, then
+	// we re-org the header chain so that the incoming header is the new tip.
+
+	currentTip := bc.headerTip()
+
+	// We only update the header chain if the new block's view is higher than the current tip's.
+	if header.ProposedInView > currentTip.Header.ProposedInView {
+		// Fetch the blocks that need to be detached and attached to reorg the header chain so that
+		// the incoming header is the new tip.
+		_, blocksToDetach, blocksToAttach := GetReorgBlocks(currentTip, headerBlockNode)
+
+		// Update the best header chain in memory.
+		bc.bestHeaderChain, bc.bestHeaderChainMap = updateBestChainInMemory(
+			bc.bestHeaderChain,
+			bc.bestHeaderChainMap,
+			blocksToDetach,
+			blocksToAttach,
+		)
+
+		// Success. The header is at the tip of the best header chain.
+		return true, false, nil
+	}
+
+	// The header is not at the tip of the best header chain. It has been successfully validated,
+	// it is known to not be an orphan, and may be part of a fork.
+	return false, false, nil
 }
 
 // ProcessBlockPoS simply acquires the chain lock and calls processBlockPoS.
