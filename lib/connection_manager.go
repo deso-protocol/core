@@ -93,6 +93,7 @@ type ConnectionManager struct {
 	inboundPeers    map[uint64]*Peer
 	connectedPeers  map[uint64]*Peer
 
+	mtxConnectionAttempts sync.Mutex
 	// outboundConnectionAttempts keeps track of the outbound connections, mapping attemptId [uint64] -> connection attempt.
 	outboundConnectionAttempts map[uint64]*OutboundConnectionAttempt
 	// outboundConnectionChan is used to signal successful outbound connections to the connection manager.
@@ -350,8 +351,11 @@ func (cmgr *ConnectionManager) DialOutboundConnection(addr *wire.NetAddress, att
 // CloseAttemptedConnection closes an ongoing connection attempt.
 func (cmgr *ConnectionManager) CloseAttemptedConnection(attemptId uint64) {
 	glog.V(2).Infof("ConnectionManager.CloseAttemptedConnection: Closing connection attempt %d", attemptId)
+	cmgr.mtxConnectionAttempts.Lock()
+	defer cmgr.mtxConnectionAttempts.Unlock()
 	if attempt, exists := cmgr.outboundConnectionAttempts[attemptId]; exists {
 		attempt.Stop()
+		delete(cmgr.outboundConnectionAttempts, attemptId)
 	}
 }
 
@@ -360,7 +364,9 @@ func (cmgr *ConnectionManager) CloseAttemptedConnection(attemptId uint64) {
 func (cmgr *ConnectionManager) _dialOutboundConnection(addr *wire.NetAddress, attemptId uint64, isPersistent bool) (_attemptId uint64) {
 	connectionAttempt := NewOutboundConnectionAttempt(attemptId, addr, isPersistent,
 		cmgr.params.DialTimeout, cmgr.outboundConnectionChan)
+	cmgr.mtxConnectionAttempts.Lock()
 	cmgr.outboundConnectionAttempts[connectionAttempt.attemptId] = connectionAttempt
+	cmgr.mtxConnectionAttempts.Unlock()
 	cmgr.AddAttemptedOutboundAddrs(addr)
 
 	connectionAttempt.Start()
@@ -646,8 +652,8 @@ func (cmgr *ConnectionManager) Stop() {
 			"shutting down")
 		return
 	}
-	for _, ca := range cmgr.outboundConnectionAttempts {
-		ca.Stop()
+	for id, _ := range cmgr.outboundConnectionAttempts {
+		cmgr.CloseAttemptedConnection(id)
 	}
 	glog.Infof("ConnectionManager: Stopping, number of inbound peers (%v), number of outbound "+
 		"peers (%v), number of persistent peers (%v).", len(cmgr.inboundPeers), len(cmgr.outboundPeers),

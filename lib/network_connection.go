@@ -37,7 +37,7 @@ func (oc *outboundConnection) Close() {
 	oc.terminated = true
 }
 
-// inboundConnection is used to store an established connection with a peer. inboundConnection is created after a
+// inboundConnection is used to store an established connection with a peer. inboundConnection is created after
 // an external peer connects to the node. inboundConnection implements the Connection interface.
 type inboundConnection struct {
 	mtx        sync.Mutex
@@ -94,9 +94,9 @@ type OutboundConnectionAttempt struct {
 type outboundConnectionAttemptStatus int
 
 const (
-	outboundConnectionAttemptUnknown    outboundConnectionAttemptStatus = 0
-	outboundConnectionAttemptStarted    outboundConnectionAttemptStatus = 1
-	outboundConnectionAttemptTerminated outboundConnectionAttemptStatus = 2
+	outboundConnectionAttemptInitialized outboundConnectionAttemptStatus = 0
+	outboundConnectionAttemptRunning     outboundConnectionAttemptStatus = 1
+	outboundConnectionAttemptTerminated  outboundConnectionAttemptStatus = 2
 )
 
 func NewOutboundConnectionAttempt(attemptId uint64, netAddr *wire.NetAddress, isPersistent bool,
@@ -110,7 +110,7 @@ func NewOutboundConnectionAttempt(attemptId uint64, netAddr *wire.NetAddress, is
 		timeoutUnit:    time.Second,
 		exitChan:       make(chan bool),
 		connectionChan: connectionChan,
-		status:         outboundConnectionAttemptUnknown,
+		status:         outboundConnectionAttemptInitialized,
 	}
 }
 
@@ -118,12 +118,12 @@ func (oca *OutboundConnectionAttempt) Start() {
 	oca.mtx.Lock()
 	defer oca.mtx.Unlock()
 
-	if oca.status != outboundConnectionAttemptUnknown {
+	if oca.status != outboundConnectionAttemptInitialized {
 		return
 	}
 
 	go oca.start()
-	oca.status = outboundConnectionAttemptStarted
+	oca.status = outboundConnectionAttemptRunning
 }
 
 func (oca *OutboundConnectionAttempt) start() {
