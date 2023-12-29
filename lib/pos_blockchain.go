@@ -22,11 +22,19 @@ func (bc *Blockchain) ProcessHeaderPoS(header *MsgDeSoHeader) (_isMainChain bool
 		return false, false, fmt.Errorf("ProcessHeaderPoS: Header is nil")
 	}
 
-	return bc.processHeaderPoS(header)
+	headerHash, err := header.Hash()
+	if err != nil {
+		return false, false, errors.Wrapf(err, "ProcessHeaderPoS: Problem hashing header: ")
+	}
+
+	return bc.processHeaderPoS(header, headerHash)
 }
 
 // processHeaderPoS validates and stores an incoming block header to build
-// the PoS version of the header chain.
+// the PoS version of the header chain. It requires callers to call it with
+// headers in order of increasing block height. If called with an orphan header,
+// it still gracefully handles it by returning early and not storing the header
+// in the block index.
 //
 // The PoS header chain uses a simplified version of the Fast-HotStuff consensus
 // rules. It's used during syncing to build a chain of block headers with the
@@ -39,99 +47,129 @@ func (bc *Blockchain) ProcessHeaderPoS(header *MsgDeSoHeader) (_isMainChain bool
 // that require on-chain state.
 //
 // processHeaderPoS algorithm:
-//  1. Validate that the block header is properly formed.
-//  2. Add the block header to the block index with status
+//  1. Exit early if the header has already been indexed in the block index.
+//  2. Do nothing if the header is an orphan.
+//  3. Validate the header and verify that its parent is also valid.
+//  4. Add the block header to the block index with status
 //     StatusHeaderValidated or StatusHeaderValidateFailed.
-//  3. Perform the orphan check on the block header.
-//  4. If the block is an orphan, or its view is less than the current header chain's tip,
-//     then we exit early.
-//  5. If it is not an orphan, and has a higher view than the current header chain, then
-//     we re-org the header chain so that the incoming header is the new tip.
-func (bc *Blockchain) processHeaderPoS(header *MsgDeSoHeader) (_isMainChain bool, _isOrphan bool, _err error) {
-	// If we can't hash the block header, we can never store in it the block index and we
-	// should throw it out immediately.
-	headerHash, err := header.Hash()
+//  5. Exit early if the's view is less than the current header chain's tip.
+//  6. Reorg the best header chain if the header's view is higher than the current tip.
+func (bc *Blockchain) processHeaderPoS(header *MsgDeSoHeader, headerHash *BlockHash) (
+	_isMainChain bool, _isOrphan bool, _err error,
+) {
+	// Validate the header and index it in the block index.
+	blockNode, isOrphan, err := bc.validateAndIndexHeaderPoS(header, headerHash)
 	if err != nil {
-		return false, false, errors.Wrapf(err, "processBlockPoS: Problem hashing block")
+		return false, false, errors.Wrapf(err, "processHeaderPoS: Problem validating and indexing header: ")
 	}
 
-	// Make sure the header has PrevBlockHash field populated
-	if header.PrevBlockHash == nil {
-		return false, false, errors.New("processHeaderPoS: PrevBlockHash is nil")
-	}
-
-	// Check if the block header is already in the block index and has been validated. If it
-	// exists in the block index with a status of StatusHeaderValidated or StatusHeaderValidateFailed,
-	// then we have nothing left to do.
-	blockNode, exists := bc.blockIndexByHash[*headerHash]
-	if exists && (blockNode.IsHeaderValidated() || blockNode.IsHeaderValidateFailed()) {
-		return false, false, nil
-	}
-
-	// Verify that the block header is not an orphan.
-	parentBlockNode, parentBlockNodeExists := bc.blockIndexByHash[*header.PrevBlockHash]
-	if !parentBlockNodeExists {
-		// We do not store the block header in the index if it is an orphan. We do not expect to
-		// receive block headers out of order, so we do not store orphans in the block index.
+	// If the header is an orphan, exit early.
+	if isOrphan {
 		return false, true, nil
 	}
 
-	// If the parent block header is not valid, then the current block header is not valid.
-	if parentBlockNode.IsHeaderValidateFailed() {
-		// If the block header is not properly formed, we store it as HeaderValidateFailed and exit early.
-		if _, innerErr := bc.storeValidateFailedHeaderInBlockIndex(header); innerErr != nil {
-			return false, false, errors.Wrapf(innerErr, "processHeaderPoS: Problem adding validate failed header to block index")
-		}
-		return false, false, nil
-	}
-
-	// Verify that the block header is properly formed.
-	if err := bc.isProperlyFormedBlockHeaderPoS(header); err != nil {
-		// If the block header is not properly formed, we store it as HeaderValidateFailed and exit early.
-		if _, innerErr := bc.storeValidateFailedHeaderInBlockIndex(header); innerErr != nil {
-			return false, false, errors.Wrapf(innerErr, "processHeaderPoS: Problem adding validate failed header to block index: %v", err)
-		}
-		return false, false, nil
-	}
-
-	// If the block header is properly formed, we store it as HeaderValidated.
-	headerBlockNode, err := bc.storeValidatedHeaderInBlockIndex(header)
-	if err != nil {
-		return false, false, errors.Wrapf(err, "processHeaderPoS: Problem adding header to block index: ")
-	}
-
-	// If the block header is an orphan, or its view is less than the current header chain's tip,
-	// then we exit early.
-	if header.ProposedInView <= bc.headerTip().Header.ProposedInView {
-		return false, false, nil
-	}
-
-	// If the header is not an orphan, and has a higher view than the current header chain, then
-	// we re-org the header chain so that the incoming header is the new tip.
-
+	// Exit early if the header's view is less than the current header chain's tip. The header is not
+	// the new tip for the best header chain.
 	currentTip := bc.headerTip()
-
-	// We only update the header chain if the new block's view is higher than the current tip's.
-	if header.ProposedInView > currentTip.Header.ProposedInView {
-		// Fetch the blocks that need to be detached and attached to reorg the header chain so that
-		// the incoming header is the new tip.
-		_, blocksToDetach, blocksToAttach := GetReorgBlocks(currentTip, headerBlockNode)
-
-		// Update the best header chain in memory.
-		bc.bestHeaderChain, bc.bestHeaderChainMap = updateBestChainInMemory(
-			bc.bestHeaderChain,
-			bc.bestHeaderChainMap,
-			blocksToDetach,
-			blocksToAttach,
-		)
-
-		// Success. The header is at the tip of the best header chain.
-		return true, false, nil
+	if header.ProposedInView <= currentTip.Header.ProposedInView {
+		return false, false, nil
 	}
 
-	// The header is not at the tip of the best header chain. It has been successfully validated,
-	// it is known to not be an orphan, and may be part of a fork.
-	return false, false, nil
+	// The header is not an orphan and has a higher view than the current tip. We reorg the header chain
+	// and apply the incoming header is the new tip.
+	_, blocksToDetach, blocksToAttach := GetReorgBlocks(currentTip, blockNode)
+	bc.bestHeaderChain, bc.bestHeaderChainMap = updateBestChainInMemory(
+		bc.bestHeaderChain,
+		bc.bestHeaderChainMap,
+		blocksToDetach,
+		blocksToAttach,
+	)
+
+	// Success. The header is at the tip of the best header chain.
+	return true, false, nil
+}
+
+func (bc *Blockchain) validateAndIndexHeaderPoS(header *MsgDeSoHeader, headerHash *BlockHash) (
+	_headerBlockNode *BlockNode, _isOrphan bool, _err error,
+) {
+	// Look up the header in the block index to check if it has already been validated and indexed.
+	blockNode, exists := bc.blockIndexByHash[*headerHash]
+
+	// ------------------------------------ Base Cases ----------------------------------- //
+
+	// The header is already validated. Exit early.
+	if exists && blockNode.IsHeaderValidated() {
+		return blockNode, false, nil
+	}
+
+	// The header has already failed validations. Exit early.
+	if exists && blockNode.IsHeaderValidateFailed() {
+		return nil, false, errors.New("validateAndIndexHeaderPoS: Header already failed validation")
+	}
+
+	// The header has an invalid PrevBlockHash field. Exit early.
+	if header.PrevBlockHash == nil {
+		return nil, false, errors.New("validateAndIndexHeaderPoS: PrevBlockHash is nil")
+	}
+
+	// The header is an orphan. No need to store it in the block index. Exit early.
+	parentBlockNode, parentBlockNodeExists := bc.blockIndexByHash[*header.PrevBlockHash]
+	if !parentBlockNodeExists {
+		return nil, true, nil
+	}
+
+	// ---------------------------------- Recursive Case ---------------------------------- //
+
+	// Recursively call validateAndIndexHeaderPoS on the header's ancestors. It's possible for
+	// headers to be added to the block index out of order by processBlockPoS. In those cases,
+	// it's possible for ancestors of this header to exist in the block index but not have their
+	// header validation statuses set yet. We set them here recursively.
+	//
+	// This is safe and efficient as long as validateAndIndexHeaderPoS is only called on non-orphan
+	// headers. This guarantees that the recursive case for each header can only be hit once.
+	parentBlockNode, isParentAnOrphan, err := bc.validateAndIndexHeaderPoS(parentBlockNode.Header, header.PrevBlockHash)
+	if err != nil {
+		return nil, false, err
+	}
+
+	// Gracefully handle the case where the parent is still an orphan. This should never happen.
+	if isParentAnOrphan {
+		return nil, true, nil
+	}
+	// Verify that the parent has not previously failed validation. If it has, then the incoming header
+	// is also not valid.
+	if parentBlockNode.IsHeaderValidateFailed() {
+		return nil, false, bc.storeValidateFailedHeaderInBlockIndexWithWrapperError(
+			header, errors.New("validateAndIndexHeaderPoS: Parent header failed validations"),
+		)
+	}
+
+	// Verify that the header is properly formed.
+	if err := bc.isValidBlockHeaderPoS(header); err != nil {
+		return nil, false, bc.storeValidateFailedHeaderInBlockIndexWithWrapperError(
+			header, errors.New("validateAndIndexHeaderPoS: Header failed validations"),
+		)
+	}
+
+	// Validate the header's random seed signature.
+	isValidRandomSeedSignature, err := bc.hasValidProposerRandomSeedSignaturePoS(header)
+	if err != nil {
+		return nil, false, errors.Wrap(err, "validateAndIndexHeaderPoS: Problem validating random seed signature")
+	}
+	if !isValidRandomSeedSignature {
+		return nil, false, bc.storeValidateFailedHeaderInBlockIndexWithWrapperError(
+			header, errors.New("validateAndIndexHeaderPoS: Header has invalid random seed signature"),
+		)
+	}
+
+	// Store it as HeaderValidated now that it has passed all validations.
+	blockNode, err = bc.storeValidatedHeaderInBlockIndex(header)
+	if err != nil {
+		return nil, false, errors.Wrapf(err, "validateAndIndexHeaderPoS: Problem adding header to block index: ")
+	}
+
+	// Happy path. The header is not an orphan and is valid.
+	return blockNode, false, nil
 }
 
 // ProcessBlockPoS simply acquires the chain lock and calls processBlockPoS.
@@ -572,7 +610,7 @@ func (bc *Blockchain) validateAndIndexBlockPoS(block *MsgDeSoBlock) (*BlockNode,
 	}
 
 	// Validate the block's random seed signature
-	isValidRandomSeedSignature, err := bc.hasValidProposerRandomSeedSignaturePoS(block)
+	isValidRandomSeedSignature, err := bc.hasValidProposerRandomSeedSignaturePoS(block.Header)
 	if err != nil {
 		var innerErr error
 		blockNode, innerErr = bc.storeBlockInBlockIndex(block)
@@ -900,9 +938,9 @@ func (bc *Blockchain) hasValidBlockViewPoS(header *MsgDeSoHeader) error {
 	return nil
 }
 
-func (bc *Blockchain) hasValidProposerRandomSeedSignaturePoS(block *MsgDeSoBlock) (bool, error) {
+func (bc *Blockchain) hasValidProposerRandomSeedSignaturePoS(header *MsgDeSoHeader) (bool, error) {
 	// Validate that the leader proposed a valid random seed signature.
-	parentBlock, exists := bc.blockIndexByHash[*block.Header.PrevBlockHash]
+	parentBlock, exists := bc.blockIndexByHash[*header.PrevBlockHash]
 	if !exists {
 		// Note: this should never happen as we only call this function after
 		// we've validated that all ancestors exist in the block index.
@@ -915,7 +953,7 @@ func (bc *Blockchain) hasValidProposerRandomSeedSignaturePoS(block *MsgDeSoBlock
 			"hasValidProposerRandomSeedSignaturePoS: Problem converting prev random seed hash to RandomSeedHash")
 	}
 	isVerified, err := verifySignatureOnRandomSeedHash(
-		block.Header.ProposerVotingPublicKey, block.Header.ProposerRandomSeedSignature, prevRandomSeedHash)
+		header.ProposerVotingPublicKey, header.ProposerRandomSeedSignature, prevRandomSeedHash)
 	if err != nil {
 		return false, errors.Wrapf(err,
 			"hasValidProposerRandomSeedSignaturePoS: Problem verifying proposer random seed signature")
@@ -1134,6 +1172,13 @@ func (bc *Blockchain) storeValidatedHeaderInBlockIndex(header *MsgDeSoHeader) (*
 		return nil, errors.Wrapf(err, "storeValidatedHeaderInBlockIndex: Problem upserting block node to DB")
 	}
 	return blockNode, nil
+}
+
+func (bc *Blockchain) storeValidateFailedHeaderInBlockIndexWithWrapperError(header *MsgDeSoHeader, wrapperError error) error {
+	if _, innerErr := bc.storeValidateFailedHeaderInBlockIndex(header); innerErr != nil {
+		return errors.Wrapf(innerErr, "%v", wrapperError)
+	}
+	return wrapperError
 }
 
 func (bc *Blockchain) storeValidateFailedHeaderInBlockIndex(header *MsgDeSoHeader) (*BlockNode, error) {

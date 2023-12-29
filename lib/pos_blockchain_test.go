@@ -1652,8 +1652,51 @@ func _verifyCommitRuleHelper(testMeta *TestMeta, committedBlocks []*BlockHash, u
 	}
 }
 
+func TestProcessHeaderPoS(t *testing.T) {
+	testMeta := NewTestPoSBlockchainWithValidators(t)
+
+	// Create a bad header and try to process it.
+	{
+		dummyBlock := _generateDummyBlock(testMeta, 12, 12, 887)
+		success, isOrphan, err := testMeta.chain.ProcessHeaderPoS(dummyBlock.Header)
+		require.False(t, success)
+		require.False(t, isOrphan)
+		require.Error(t, err)
+	}
+
+	// Process a good header and verify that the header is now at the tip.
+	var blockHash1 *BlockHash
+	{
+		block := _generateRealBlock(testMeta, 12, 12, 889, testMeta.chain.HeaderTip().Hash, false)
+		success, isOrphan, err := testMeta.chain.ProcessHeaderPoS(block.Header)
+		require.True(t, success)
+		require.False(t, isOrphan)
+		require.NoError(t, err)
+
+		// Okay now we can check the best chain.
+		blockHash1, err = block.Header.Hash()
+		require.NoError(t, err)
+		require.True(t, blockHash1.IsEqual(testMeta.chain.HeaderTip().Hash))
+	}
+
+	// Process another good header and verify that the header is now at the tip.
+	var blockhash2 *BlockHash
+	{
+		block := _generateRealBlock(testMeta, 13, 13, 950, testMeta.chain.HeaderTip().Hash, false)
+		success, isOrphan, err := testMeta.chain.ProcessHeaderPoS(block.Header)
+		require.True(t, success)
+		require.False(t, isOrphan)
+		require.NoError(t, err)
+
+		// Okay now we can check the best chain.
+		blockhash2, err = block.Header.Hash()
+		require.NoError(t, err)
+		require.True(t, blockhash2.IsEqual(testMeta.chain.HeaderTip().Hash))
+	}
+}
+
 // Test the following series of blocks to make sure that ProcessBlockPoS properly handles all cases as expected during the steady state
-// 1. Process a bad block. The block could be bad for any reason, we don't really care the reason, we just want to // see it get rejected.
+// 1. Process a bad block. The block could be bad for any reason, we don't really care the reason, we just want to see it get rejected.
 // 2. Process three good blocks in a row, which tests the commit rule
 // 3. Process a timeout block that reorgs the previous tip
 // 4. Process a regular block that reorgs from the previous tip
@@ -2229,7 +2272,7 @@ func TestHasValidProposerRandomSeedSignaturePoS(t *testing.T) {
 	var realBlock *MsgDeSoBlock
 	realBlock = _generateRealBlock(testMeta, 12, 12, 889, testMeta.chain.BlockTip().Hash, false)
 	// The first PoS block passes the validation.
-	isValid, err := testMeta.chain.hasValidProposerRandomSeedSignaturePoS(realBlock)
+	isValid, err := testMeta.chain.hasValidProposerRandomSeedSignaturePoS(realBlock.Header)
 	require.NoError(t, err)
 	require.True(t, isValid)
 	_, _, _, err = testMeta.chain.ProcessBlockPoS(realBlock, 12, true)
@@ -2247,7 +2290,7 @@ func TestHasValidProposerRandomSeedSignaturePoS(t *testing.T) {
 	var childBlock *MsgDeSoBlock
 	childBlock = _generateRealBlock(testMeta, 13, 13, 273, realBlockNode.Hash, false)
 	{
-		isValid, err = testMeta.chain.hasValidProposerRandomSeedSignaturePoS(childBlock)
+		isValid, err = testMeta.chain.hasValidProposerRandomSeedSignaturePoS(childBlock.Header)
 		require.NoError(t, err)
 		require.True(t, isValid)
 	}
@@ -2256,7 +2299,7 @@ func TestHasValidProposerRandomSeedSignaturePoS(t *testing.T) {
 	{
 		realBlockNode.Header.ProposerRandomSeedSignature, err = (&bls.Signature{}).FromBytes(RandomBytes(32))
 		require.NoError(t, err)
-		isValid, err = testMeta.chain.hasValidProposerRandomSeedSignaturePoS(childBlock)
+		isValid, err = testMeta.chain.hasValidProposerRandomSeedSignaturePoS(childBlock.Header)
 		require.NoError(t, err)
 		require.False(t, isValid)
 	}
@@ -2267,7 +2310,7 @@ func TestHasValidProposerRandomSeedSignaturePoS(t *testing.T) {
 		prevBlockRandomSeedHashBytes := sha256.Sum256(realBlockNode.Header.ProposerRandomSeedSignature.ToBytes())
 		childBlock.Header.ProposerRandomSeedSignature, err = wrongProposerPrivateKey.Sign(prevBlockRandomSeedHashBytes[:])
 		require.NoError(t, err)
-		isValid, err = testMeta.chain.hasValidProposerRandomSeedSignaturePoS(childBlock)
+		isValid, err = testMeta.chain.hasValidProposerRandomSeedSignaturePoS(childBlock.Header)
 		require.NoError(t, err)
 		require.False(t, isValid)
 	}
