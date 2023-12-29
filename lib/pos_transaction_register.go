@@ -43,10 +43,12 @@ type TransactionRegister struct {
 func NewTransactionRegister() *TransactionRegister {
 	feeTimeBucketSet := treeset.NewWith(feeTimeBucketComparator)
 	return &TransactionRegister{
-		feeTimeBucketSet:               feeTimeBucketSet,
-		feeTimeBucketsByMinFeeMap:      make(map[uint64]*FeeTimeBucket),
-		txnMembership:                  make(map[BlockHash]*MempoolTx),
-		totalTxnsSizeBytes:             0,
+		feeTimeBucketSet:          feeTimeBucketSet,
+		feeTimeBucketsByMinFeeMap: make(map[uint64]*FeeTimeBucket),
+		txnMembership:             make(map[BlockHash]*MempoolTx),
+		totalTxnsSizeBytes:        0,
+		// Set default values for the uninitialized fields. This is safe because any transactions
+		// added to the register will be re-bucketed once the params are updated.
 		minimumNetworkFeeNanosPerKB:    big.NewFloat(1),                       // Default to 1 nanos per KB
 		feeBucketGrowthRateBasisPoints: big.NewFloat(float64(MaxBasisPoints)), // Default to 100%
 	}
