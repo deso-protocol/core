@@ -157,27 +157,25 @@ func NewPosMempoolIterator(it *FeeTimeIterator) *PosMempoolIterator {
 	return &PosMempoolIterator{it: it}
 }
 
-func NewPosMempool(params *DeSoParams, globalParams *GlobalParamsEntry, readOnlyLatestBlockView *UtxoView,
-	latestBlockHeight uint64, dir string, inMemoryOnly bool, maxMempoolPosSizeBytes uint64,
-	mempoolBackupIntervalMillis uint64) *PosMempool {
+func NewPosMempool() *PosMempool {
 	return &PosMempool{
-		status:                      PosMempoolStatusNotInitialized,
-		params:                      params,
-		globalParams:                globalParams,
-		inMemoryOnly:                inMemoryOnly,
-		dir:                         dir,
-		readOnlyLatestBlockView:     readOnlyLatestBlockView,
-		latestBlockHeight:           latestBlockHeight,
-		maxMempoolPosSizeBytes:      maxMempoolPosSizeBytes,
-		mempoolBackupIntervalMillis: mempoolBackupIntervalMillis,
-		txnRegister:                 NewTransactionRegister(),
-		feeEstimator:                NewPoSFeeEstimator(),
-		ledger:                      NewBalanceLedger(),
-		nonceTracker:                NewNonceTracker(),
+		status:       PosMempoolStatusNotInitialized,
+		txnRegister:  NewTransactionRegister(),
+		feeEstimator: NewPoSFeeEstimator(),
+		ledger:       NewBalanceLedger(),
+		nonceTracker: NewNonceTracker(),
 	}
 }
 
 func (mp *PosMempool) Init(
+	params *DeSoParams,
+	globalParams *GlobalParamsEntry,
+	readOnlyLatestBlockView *UtxoView,
+	latestBlockHeight uint64,
+	dir string,
+	inMemoryOnly bool,
+	maxMempoolPosSizeBytes uint64,
+	mempoolBackupIntervalMillis uint64,
 	feeEstimatorNumMempoolBlocks uint64,
 	feeEstimatorPastBlocks []*MsgDeSoBlock,
 	feeEstimatorNumPastBlocks uint64,
@@ -186,10 +184,25 @@ func (mp *PosMempool) Init(
 		return errors.New("PosMempool.Init: PosMempool already initialized")
 	}
 
+	// Initialize the parametrized fields.
+	mp.params = params
+	mp.globalParams = globalParams
+	mp.readOnlyLatestBlockView = readOnlyLatestBlockView
+	mp.latestBlockHeight = latestBlockHeight
+	mp.dir = dir
+	mp.inMemoryOnly = inMemoryOnly
+	mp.maxMempoolPosSizeBytes = maxMempoolPosSizeBytes
+	mp.mempoolBackupIntervalMillis = mempoolBackupIntervalMillis
+
 	// TODO: parameterize num blocks. Also, how to pass in blocks.
-	if err := mp.feeEstimator.Init(
-		mp.txnRegister, feeEstimatorNumMempoolBlocks, feeEstimatorPastBlocks, feeEstimatorNumPastBlocks,
-		mp.globalParams); err != nil {
+	err := mp.feeEstimator.Init(
+		mp.txnRegister,
+		feeEstimatorNumMempoolBlocks,
+		feeEstimatorPastBlocks,
+		feeEstimatorNumPastBlocks,
+		mp.globalParams,
+	)
+	if err != nil {
 		return errors.Wrapf(err, "PosMempool.Start: Problem initializing fee estimator")
 	}
 	mp.status = PosMempoolStatusInitialized
@@ -536,10 +549,21 @@ func (mp *PosMempool) Refresh() error {
 
 func (mp *PosMempool) refreshNoLock() error {
 	// Create the temporary in-memory mempool with the most up-to-date readOnlyLatestBlockView, Height, and globalParams.
-	tempPool := NewPosMempool(mp.params, mp.globalParams, mp.readOnlyLatestBlockView, mp.latestBlockHeight, "", true,
-		mp.maxMempoolPosSizeBytes, mp.mempoolBackupIntervalMillis)
-	if err := tempPool.Init(
-		mp.feeEstimator.numMempoolBlocks, mp.feeEstimator.cachedBlocks, mp.feeEstimator.numPastBlocks); err != nil {
+	tempPool := NewPosMempool()
+	err := tempPool.Init(
+		mp.params,
+		mp.globalParams,
+		mp.readOnlyLatestBlockView,
+		mp.latestBlockHeight,
+		"",
+		true,
+		mp.maxMempoolPosSizeBytes,
+		mp.mempoolBackupIntervalMillis,
+		mp.feeEstimator.numMempoolBlocks,
+		mp.feeEstimator.cachedBlocks,
+		mp.feeEstimator.numPastBlocks,
+	)
+	if err != nil {
 		return errors.Wrapf(err, "PosMempool.refreshNoLock: Problem initializing temp pool")
 	}
 	if err := tempPool.Start(); err != nil {
