@@ -22,12 +22,7 @@ func (bc *Blockchain) ProcessHeaderPoS(header *MsgDeSoHeader) (_isMainChain bool
 		return false, false, fmt.Errorf("ProcessHeaderPoS: Header is nil")
 	}
 
-	headerHash, err := header.Hash()
-	if err != nil {
-		return false, false, errors.Wrapf(err, "ProcessHeaderPoS: Problem hashing header")
-	}
-
-	return bc.processHeaderPoS(header, headerHash)
+	return bc.processHeaderPoS(header)
 }
 
 // processHeaderPoS validates and stores an incoming block header to build
@@ -54,9 +49,14 @@ func (bc *Blockchain) ProcessHeaderPoS(header *MsgDeSoHeader) (_isMainChain bool
 //     StatusHeaderValidated or StatusHeaderValidateFailed.
 //  5. Exit early if the's view is less than the current header chain's tip.
 //  6. Reorg the best header chain if the header's view is higher than the current tip.
-func (bc *Blockchain) processHeaderPoS(header *MsgDeSoHeader, headerHash *BlockHash) (
+func (bc *Blockchain) processHeaderPoS(header *MsgDeSoHeader) (
 	_isMainChain bool, _isOrphan bool, _err error,
 ) {
+	headerHash, err := header.Hash()
+	if err != nil {
+		return false, false, errors.Wrapf(err, "processHeaderPoS: Problem hashing header")
+	}
+
 	// Validate the header and index it in the block index.
 	blockNode, isOrphan, err := bc.validateAndIndexHeaderPoS(header, headerHash)
 	if err != nil {
@@ -206,8 +206,7 @@ func (bc *Blockchain) processBlockPoS(block *MsgDeSoBlock, currentView uint64, v
 	_err error,
 ) {
 	// If we can't hash the block, we can never store in the block index and we should throw it out immediately.
-	blockHash, err := block.Hash()
-	if err != nil {
+	if _, err := block.Hash(); err != nil {
 		return false, false, nil, errors.Wrapf(err, "processBlockPoS: Problem hashing block")
 	}
 	// Get all the blocks between the current block and the committed tip. If the block
@@ -268,7 +267,7 @@ func (bc *Blockchain) processBlockPoS(block *MsgDeSoBlock, currentView uint64, v
 	// header and applying it to the header chain will result in the two chains being out of
 	// sync. The header chain is less critical and mutations to it are reversible. So we attempt
 	// to mutate it first before attempting to mutate the block chain.
-	if _, _, err = bc.processHeaderPoS(block.Header, blockHash); err != nil {
+	if _, _, err = bc.processHeaderPoS(block.Header); err != nil {
 		return false, false, nil, errors.Wrap(err, "processBlockPoS: Problem processing header")
 	}
 
