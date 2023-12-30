@@ -1,10 +1,11 @@
 package lib
 
 import (
-	"github.com/stretchr/testify/require"
 	"math/big"
 	"math/rand"
 	"testing"
+
+	"github.com/stretchr/testify/require"
 )
 
 func TestFeeEstimator(t *testing.T) {
@@ -22,9 +23,10 @@ func TestFeeEstimator(t *testing.T) {
 	require.NoError(t, err)
 	dir := _dbDirSetup(t)
 
-	mempool := NewPosMempool(params, globalParams, latestBlockView, 2, dir, false,
-		maxMempoolPosSizeBytes, mempoolBackupIntervalMillis)
-	mempool.Init(1, nil, 1)
+	mempool := NewPosMempool()
+	mempool.Init(
+		params, globalParams, latestBlockView, 2, dir, false, maxMempoolPosSizeBytes, mempoolBackupIntervalMillis, 1, nil, 1,
+	)
 	require.NoError(t, mempool.Start())
 	require.True(t, mempool.IsRunning())
 	minFeeBucketMin, minFeeBucketMax := computeFeeTimeBucketRangeFromFeeNanosPerKB(
