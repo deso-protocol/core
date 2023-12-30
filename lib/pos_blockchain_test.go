@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"crypto/sha256"
+
 	"github.com/deso-protocol/core/bls"
 	"github.com/deso-protocol/core/collections"
 	"github.com/deso-protocol/core/collections/bitset"
@@ -2630,8 +2631,10 @@ func NewTestPoSBlockchainWithValidators(t *testing.T) *TestMeta {
 
 	maxMempoolPosSizeBytes := uint64(500)
 	mempoolBackupIntervalMillis := uint64(30000)
-	mempool := NewPosMempool(params, _testGetDefaultGlobalParams(), latestBlockView, 11, _dbDirSetup(t), false, maxMempoolPosSizeBytes, mempoolBackupIntervalMillis)
-	require.NoError(t, mempool.Init(1, nil, 1))
+	mempool := NewPosMempool()
+	require.NoError(t, mempool.Init(
+		params, _testGetDefaultGlobalParams(), latestBlockView, 11, _dbDirSetup(t), false, maxMempoolPosSizeBytes, mempoolBackupIntervalMillis, 1, nil, 1,
+	))
 	require.NoError(t, mempool.Start())
 	require.True(t, mempool.IsRunning())
 	priv := _generateRandomBLSPrivateKey(t)
@@ -2699,8 +2702,10 @@ func NewTestPoSBlockchain(t *testing.T) *TestMeta {
 	require.NoError(t, err)
 	maxMempoolPosSizeBytes := uint64(500)
 	mempoolBackupIntervalMillis := uint64(30000)
-	mempool := NewPosMempool(params, _testGetDefaultGlobalParams(), latestBlockView, 10, _dbDirSetup(t), false, maxMempoolPosSizeBytes, mempoolBackupIntervalMillis)
-	require.NoError(t, mempool.Init(1, nil, 1))
+	mempool := NewPosMempool()
+	require.NoError(t, mempool.Init(
+		params, _testGetDefaultGlobalParams(), latestBlockView, 10, _dbDirSetup(t), false, maxMempoolPosSizeBytes, mempoolBackupIntervalMillis, 1, nil, 1,
+	))
 	require.NoError(t, mempool.Start())
 	require.True(t, mempool.IsRunning())
 	priv := _generateRandomBLSPrivateKey(t)
