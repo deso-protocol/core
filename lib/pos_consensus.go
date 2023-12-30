@@ -511,9 +511,6 @@ func (cc *FastHotStuffConsensus) tryProcessBlockAsNewTip(block *MsgDeSoBlock) ([
 		return nil, errors.Errorf("Error processing tip block locally: %v", err)
 	}
 
-	// TODO: Remove the new block's txns from the mempool. Add txns back to the mempoool from blocks that have
-	// been reorged away from.
-
 	// Happy path. The block was processed successfully and applied as the new tip. Nothing left to do.
 	return nil, nil
 }
