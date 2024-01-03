@@ -978,6 +978,9 @@ func (srv *Server) _handleHeaderBundle(pp *Peer, msg *MsgDeSoHeaderBundle) {
 				return
 			}
 		} else {
+			// If we are not syncing state via hypersync, make sure the badger db options are set to the performance settings.
+			// This is necessary because the blocksync process syncs indexes with records that are too large for the default
+			// badger options. The large records overflow the default setting value log size and cause the DB to crash.
 			dbDir := GetBadgerDbPath(srv.snapshot.mainDbDirectory)
 			opts := PerformanceBadgerOptions(dbDir)
 			srv.dirtyHackUpdateDbOpts(opts)
