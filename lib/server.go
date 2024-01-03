@@ -975,6 +975,10 @@ func (srv *Server) _handleHeaderBundle(pp *Peer, msg *MsgDeSoHeaderBundle) {
 				srv.GetSnapshot(pp)
 				return
 			}
+		} else {
+			dbDir := GetBadgerDbPath(srv.snapshot.mainDbDirectory)
+			opts := PerformanceBadgerOptions(dbDir)
+			srv.dirtyHackUpdateDbOpts(opts)
 		}
 
 		// If we have finished syncing peer's headers, but previously we have bootstrapped the blockchain through
