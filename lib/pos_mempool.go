@@ -287,11 +287,7 @@ func (mp *PosMempool) OnBlockConnected(blockEvent *BlockEvent) {
 	mp.Lock()
 	defer mp.Unlock()
 
-	if blockEvent == nil || blockEvent.Block == nil || len(blockEvent.Block.Txns) == 0 {
-		return
-	}
-
-	if !mp.IsRunning() {
+	if !isProperlyFormedBlockEvent(blockEvent) || !mp.IsRunning() {
 		return
 	}
 
@@ -325,11 +321,7 @@ func (mp *PosMempool) OnBlockDisconnected(blockEvent *BlockEvent) {
 	mp.Lock()
 	defer mp.Unlock()
 
-	if blockEvent == nil || blockEvent.Block == nil || len(blockEvent.Block.Txns) == 0 {
-		return
-	}
-
-	if !mp.IsRunning() {
+	if !isProperlyFormedBlockEvent(blockEvent) || !mp.IsRunning() {
 		return
 	}
 
@@ -796,4 +788,11 @@ func (mp *PosMempool) EstimateFee(txn *MsgDeSoTxn,
 	return mp.feeEstimator.EstimateFee(
 		txn, mempoolCongestionFactorBasisPoints, mempoolPriorityPercentileBasisPoints,
 		pastBlocksCongestionFactorBasisPoints, pastBlocksPriorityPercentileBasisPoints, maxBlockSize)
+}
+
+func isProperlyFormedBlockEvent(blockEvent *BlockEvent) bool {
+	return blockEvent != nil &&
+		blockEvent.Block != nil &&
+		blockEvent.Block.Header != nil &&
+		len(blockEvent.Block.Txns) > 0
 }
