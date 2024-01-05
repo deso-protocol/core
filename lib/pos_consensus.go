@@ -667,11 +667,11 @@ func (fc *FastHotStuffConsensus) createBlockProducer(bav *UtxoView) (*PosBlockPr
 	if err != nil {
 		return nil, errors.Errorf("Error fetching validator entry for block producer: %v", err)
 	}
-	blockProducerPublicKeyBytes, blockProducerPublicKeyExists := bav.PKIDToPublicKey[*blockProducerValidatorEntry.PKID]
-	if !blockProducerPublicKeyExists {
+	blockProducerPublicKeyBytes := bav.GetPublicKeyForPKID(blockProducerValidatorEntry.PKID)
+	blockProducerPublicKey := NewPublicKey(blockProducerPublicKeyBytes)
+	if blockProducerPublicKey == nil {
 		return nil, errors.Errorf("Error fetching public key for block producer: %v", err)
 	}
-	blockProducerPublicKey := NewPublicKey(blockProducerPublicKeyBytes.PublicKey)
 	return NewPosBlockProducer(fc.mempool, fc.params, blockProducerPublicKey, blockProducerBlsPublicKey), nil
 }
 
