@@ -16,11 +16,20 @@ import (
 type RemoteNodeStatus int
 
 const (
-	RemoteNodeStatus_NotConnected RemoteNodeStatus = 0
-	RemoteNodeStatus_Connected    RemoteNodeStatus = 1
-	RemoteNodeStatus_Validated    RemoteNodeStatus = 2
-	RemoteNodeStatus_Attempted    RemoteNodeStatus = 3
-	RemoteNodeStatus_Terminated   RemoteNodeStatus = 4
+	RemoteNodeStatus_NotConnected       RemoteNodeStatus = 0
+	RemoteNodeStatus_Connected          RemoteNodeStatus = 1
+	RemoteNodeStatus_HandshakeCompleted RemoteNodeStatus = 2
+	RemoteNodeStatus_Attempted          RemoteNodeStatus = 3
+	RemoteNodeStatus_Terminated         RemoteNodeStatus = 4
+)
+
+type HandshakeStage uint8
+
+const (
+	HandshakeStage_NotStarted  HandshakeStage = 0
+	HandshakeStage_VersionSent HandshakeStage = 1
+	HandshakeStage_VerackSent  HandshakeStage = 2
+	HandshakeStage_Completed   HandshakeStage = 3
 )
 
 type RemoteNodeId uint64
@@ -60,12 +69,14 @@ type RemoteNode struct {
 
 	params *DeSoParams
 	srv    *Server
-	bc     *Blockchain
 	cmgr   *ConnectionManager
 
 	// minTxFeeRateNanosPerKB is the minimum transaction fee rate in nanos per KB that our node will accept.
 	minTxFeeRateNanosPerKB uint64
-	nodeServices           ServiceFlag
+	// latestBlockHeight is the block height of our node's block tip.
+	latestBlockHeight uint64
+	// nodeServices is a bitfield that indicates the services supported by our node.
+	nodeServices ServiceFlag
 
 	// handshakeMetadata is used to store the information received from the peer during the handshake.
 	handshakeMetadata *HandshakeMetadata
@@ -90,10 +101,10 @@ type HandshakeMetadata struct {
 	versionNonceReceived uint64
 	// userAgent is a meta level label that can be used to analyze the network.
 	userAgent string
-	// ServiceFlag is a bitfield that indicates the services supported by the peer.
-	ServiceFlag ServiceFlag
-	// StartingBlockHeight is the block height of the peer's block tip during the Version exchange.
-	StartingBlockHeight uint32
+	// serviceFlag is a bitfield that indicates the services supported by the peer.
+	serviceFlag ServiceFlag
+	// latestBlockHeight is the block height of the peer's block tip during the Version exchange.
+	latestBlockHeight uint64
 	// minTxFeeRateNanosPerKB is the minimum transaction fee rate in nanos per KB that the peer will accept.
 	minTxFeeRateNanosPerKB uint64
 	// advertisedProtocolVersion is the protocol version advertised by the peer.
@@ -107,36 +118,41 @@ type HandshakeMetadata struct {
 	versionNegotiated bool
 	// timeOffsetSecs is the time offset between our node and the peer, measured by taking the difference between the
 	// peer's unix timestamp and our node's unix timestamp.
-	timeOffsetSecs int64
+	timeOffsetSecs uint64
 
 	// ### The following fields are populated during the MsgDeSoVerack exchange.
 	// validatorPublicKey is the BLS public key of the peer, if the peer is a validator node.
 	validatorPublicKey *bls.PublicKey
+
+	// ### The following fields are handshake control fields.
+	handshakeStage HandshakeStage
 }
 
 func NewHandshakeMetadata() *HandshakeMetadata {
-	return &HandshakeMetadata{}
+	return &HandshakeMetadata{
+		handshakeStage: HandshakeStage_NotStarted,
+	}
 }
 
-func NewRemoteNode(id RemoteNodeId, srv *Server, bc *Blockchain, cmgr *ConnectionManager, keystore *BLSKeystore,
-	params *DeSoParams, minTxFeeRateNanosPerKB uint64, nodeServices ServiceFlag) *RemoteNode {
+func NewRemoteNode(id RemoteNodeId, srv *Server, cmgr *ConnectionManager, keystore *BLSKeystore,
+	params *DeSoParams, minTxFeeRateNanosPerKB uint64, latestBlockHeight uint64, nodeServices ServiceFlag) *RemoteNode {
 	return &RemoteNode{
 		id:                     id,
 		connectionStatus:       RemoteNodeStatus_NotConnected,
 		handshakeMetadata:      NewHandshakeMetadata(),
 		srv:                    srv,
-		bc:                     bc,
 		cmgr:                   cmgr,
 		keystore:               keystore,
 		params:                 params,
 		minTxFeeRateNanosPerKB: minTxFeeRateNanosPerKB,
+		latestBlockHeight:      latestBlockHeight,
 		nodeServices:           nodeServices,
 	}
 }
 
-// setStatusValidated sets the connection status of the remote node to validated.
-func (rn *RemoteNode) setStatusValidated() {
-	rn.connectionStatus = RemoteNodeStatus_Validated
+// setStatusHandshakeCompleted sets the connection status of the remote node to HandshakeCompleted.
+func (rn *RemoteNode) setStatusHandshakeCompleted() {
+	rn.connectionStatus = RemoteNodeStatus_HandshakeCompleted
 }
 
 // setStatusConnected sets the connection status of the remote node to connected.
@@ -174,6 +190,14 @@ func (rn *RemoteNode) GetUserAgent() string {
 	return rn.handshakeMetadata.userAgent
 }
 
+func (rn *RemoteNode) getHandshakeStage() HandshakeStage {
+	return rn.handshakeMetadata.handshakeStage
+}
+
+func (rn *RemoteNode) setHandshakeStage(stage HandshakeStage) {
+	rn.handshakeMetadata.handshakeStage = stage
+}
+
 func (rn *RemoteNode) IsInbound() bool {
 	return rn.peer != nil && !rn.peer.IsOutbound()
 }
@@ -186,12 +210,16 @@ func (rn *RemoteNode) IsPersistent() bool {
 	return rn.peer != nil && rn.peer.IsPersistent()
 }
 
+func (rn *RemoteNode) IsNotConnected() bool {
+	return rn.connectionStatus == RemoteNodeStatus_NotConnected
+}
+
 func (rn *RemoteNode) IsConnected() bool {
 	return rn.connectionStatus == RemoteNodeStatus_Connected
 }
 
 func (rn *RemoteNode) IsValidated() bool {
-	return rn.connectionStatus == RemoteNodeStatus_Validated
+	return rn.connectionStatus == RemoteNodeStatus_HandshakeCompleted
 }
 
 func (rn *RemoteNode) IsValidator() bool {
@@ -203,7 +231,7 @@ func (rn *RemoteNode) IsValidator() bool {
 
 // DialOutboundConnection dials an outbound connection to the provided netAddr.
 func (rn *RemoteNode) DialOutboundConnection(netAddr *wire.NetAddress) error {
-	if rn.connectionStatus != RemoteNodeStatus_NotConnected {
+	if !rn.IsNotConnected() {
 		return fmt.Errorf("RemoteNode.DialOutboundConnection: RemoteNode is not in the NotConnected state")
 	}
 
@@ -217,7 +245,7 @@ func (rn *RemoteNode) DialOutboundConnection(netAddr *wire.NetAddress) error {
 
 // DialPersistentOutboundConnection dials a persistent outbound connection to the provided netAddr.
 func (rn *RemoteNode) DialPersistentOutboundConnection(netAddr *wire.NetAddress) error {
-	if rn.connectionStatus != RemoteNodeStatus_NotConnected {
+	if !rn.IsNotConnected() {
 		return fmt.Errorf("RemoteNode.DialPersistentOutboundConnection: RemoteNode is not in the NotConnected state")
 	}
 
@@ -231,7 +259,7 @@ func (rn *RemoteNode) DialPersistentOutboundConnection(netAddr *wire.NetAddress)
 
 // ConnectInboundPeer connects a peer once a successful inbound connection has been established.
 func (rn *RemoteNode) ConnectInboundPeer(conn net.Conn, na *wire.NetAddress) error {
-	if rn.connectionStatus != RemoteNodeStatus_NotConnected {
+	if !rn.IsNotConnected() {
 		return fmt.Errorf("RemoteNode.ConnectInboundPeer: RemoteNode is not in the NotConnected state")
 	}
 
@@ -268,14 +296,14 @@ func (rn *RemoteNode) Disconnect() {
 	switch rn.connectionStatus {
 	case RemoteNodeStatus_Attempted:
 		rn.cmgr.CloseAttemptedConnection(id)
-	case RemoteNodeStatus_Connected, RemoteNodeStatus_Validated:
+	case RemoteNodeStatus_Connected, RemoteNodeStatus_HandshakeCompleted:
 		rn.cmgr.CloseConnection(id)
 	}
 	rn.setStatusTerminated()
 }
 
 func (rn *RemoteNode) SendMessage(desoMsg DeSoMessage) error {
-	if rn.connectionStatus != RemoteNodeStatus_Connected && rn.connectionStatus != RemoteNodeStatus_Validated {
+	if rn.connectionStatus != RemoteNodeStatus_Connected && rn.connectionStatus != RemoteNodeStatus_HandshakeCompleted {
 		return fmt.Errorf("SendMessage: Remote node is not connected")
 	}
 
@@ -288,14 +316,23 @@ func (rn *RemoteNode) SendMessage(desoMsg DeSoMessage) error {
 // InitiateHandshake is a starting point for a peer handshake. If the peer is outbound, a version message is sent
 // to the peer. If the peer is inbound, the peer is expected to send a version message to us first.
 func (rn *RemoteNode) InitiateHandshake(nonce uint64) error {
+	rn.mtx.Lock()
+	defer rn.mtx.Unlock()
+
 	if rn.connectionStatus != RemoteNodeStatus_Connected {
 		return fmt.Errorf("InitiateHandshake: Remote node is not connected")
+	}
+	if rn.getHandshakeStage() != HandshakeStage_NotStarted {
+		return fmt.Errorf("InitiateHandshake: Handshake has already been initiated")
 	}
 
 	if rn.GetPeer().IsOutbound() {
 		versionTimeExpected := time.Now().Add(rn.params.VersionNegotiationTimeout)
 		rn.versionTimeExpected = &versionTimeExpected
-		return rn.sendVersionMessage(nonce)
+		if err := rn.sendVersionMessage(nonce); err != nil {
+			return fmt.Errorf("InitiateHandshake: Problem sending version message to peer (id= %d): %v", rn.id, err)
+		}
+		rn.setHandshakeStage(HandshakeStage_VersionSent)
 	}
 	return nil
 }
@@ -313,6 +350,7 @@ func (rn *RemoteNode) sendVersionMessage(nonce uint64) error {
 	if err := rn.SendMessage(verMsg); err != nil {
 		return fmt.Errorf("sendVersionMessage: Problem sending version message to peer (id= %d): %v", rn.id, err)
 	}
+	rn.setHandshakeStage(HandshakeStage_VersionSent)
 	return nil
 }
 
@@ -334,7 +372,7 @@ func (rn *RemoteNode) newVersionMessage(nonce uint64) *MsgDeSoVersion {
 	// When a node asks you for what height you have, you should reply with the height of the latest actual block you
 	// have. This makes it so that peers who have up-to-date headers but missing blocks won't be considered for initial
 	// block download.
-	ver.StartBlockHeight = uint32(rn.bc.BlockTip().Header.Height)
+	ver.LatestBlockHeight = rn.latestBlockHeight
 
 	// Set the minimum fee rate the peer will accept.
 	ver.MinFeeRateNanosPerKB = rn.minTxFeeRateNanosPerKB
@@ -346,8 +384,14 @@ func (rn *RemoteNode) newVersionMessage(nonce uint64) *MsgDeSoVersion {
 // initiating the handshake, in which case, we should respond with our own version message. To do this, we pass the
 // responseNonce to this function, which we will use in our response version message.
 func (rn *RemoteNode) HandleVersionMessage(verMsg *MsgDeSoVersion, responseNonce uint64) error {
+	rn.mtx.Lock()
+	defer rn.mtx.Unlock()
+
 	if rn.connectionStatus != RemoteNodeStatus_Connected {
 		return fmt.Errorf("HandleVersionMessage: RemoteNode is not connected")
+	}
+	if rn.getHandshakeStage() != HandshakeStage_NotStarted && rn.getHandshakeStage() != HandshakeStage_VersionSent {
+		return fmt.Errorf("HandleVersionMessage: Handshake has already been initiated, stage: %v", rn.getHandshakeStage())
 	}
 
 	// Verify that the peer's version matches our minimal supported version.
@@ -373,16 +417,16 @@ func (rn *RemoteNode) HandleVersionMessage(verMsg *MsgDeSoVersion, responseNonce
 	vMeta.negotiatedProtocolVersion = negotiatedVersion
 
 	// Record the services the peer is advertising.
-	vMeta.ServiceFlag = verMsg.Services
+	vMeta.serviceFlag = verMsg.Services
 
 	// Record the tstamp sent by the peer and calculate the time offset.
 	timeConnected := time.Unix(verMsg.TstampSecs, 0)
 	vMeta.timeConnected = &timeConnected
 	currentTime := time.Now().Unix()
 	if currentTime > verMsg.TstampSecs {
-		vMeta.timeOffsetSecs = currentTime - verMsg.TstampSecs
+		vMeta.timeOffsetSecs = uint64(currentTime - verMsg.TstampSecs)
 	} else {
-		vMeta.timeOffsetSecs = verMsg.TstampSecs - currentTime
+		vMeta.timeOffsetSecs = uint64(verMsg.TstampSecs - currentTime)
 	}
 
 	// Save the received version nonce so we can include it in our verack message.
@@ -390,7 +434,7 @@ func (rn *RemoteNode) HandleVersionMessage(verMsg *MsgDeSoVersion, responseNonce
 
 	// Set the peer info-related fields.
 	vMeta.userAgent = verMsg.UserAgent
-	vMeta.StartingBlockHeight = verMsg.StartBlockHeight
+	vMeta.latestBlockHeight = verMsg.LatestBlockHeight
 	vMeta.minTxFeeRateNanosPerKB = verMsg.MinFeeRateNanosPerKB
 
 	// Respond to the version message if this is an inbound peer.
@@ -412,6 +456,7 @@ func (rn *RemoteNode) HandleVersionMessage(verMsg *MsgDeSoVersion, responseNonce
 
 	// Update the timeSource now that we've gotten a version message from the peer.
 	rn.cmgr.AddTimeSample(rn.peer.Address(), timeConnected)
+	rn.setHandshakeStage(HandshakeStage_VerackSent)
 	return nil
 }
 
@@ -461,9 +506,17 @@ func (rn *RemoteNode) newVerackMessage() (*MsgDeSoVerack, error) {
 
 // HandleVerackMessage handles a verack message received from the peer.
 func (rn *RemoteNode) HandleVerackMessage(vrkMsg *MsgDeSoVerack) error {
+	rn.mtx.Lock()
+	defer rn.mtx.Unlock()
+
 	if rn.connectionStatus != RemoteNodeStatus_Connected {
 		return fmt.Errorf("RemoteNode.HandleVerackMessage: Requesting disconnect for id: (%v) "+
 			"verack received while in state: %v", rn.id, rn.connectionStatus)
+	}
+
+	if rn.getHandshakeStage() != HandshakeStage_VerackSent {
+		return fmt.Errorf("RemoteNode.HandleVerackMessage: Requesting disconnect for id: (%v) "+
+			"verack received while in handshake stage: %v", rn.id, rn.getHandshakeStage())
 	}
 
 	if rn.verackTimeExpected != nil && rn.verackTimeExpected.Before(time.Now()) {
@@ -487,7 +540,8 @@ func (rn *RemoteNode) HandleVerackMessage(vrkMsg *MsgDeSoVerack) error {
 	// If we get here then the peer has successfully completed the handshake.
 	vMeta.versionNegotiated = true
 	rn._logVersionSuccess(rn.peer)
-	rn.setStatusValidated()
+	rn.setStatusHandshakeCompleted()
+	rn.setHandshakeStage(HandshakeStage_Completed)
 	rn.srv.NotifyHandshakePeerMessage(rn.peer)
 
 	return nil

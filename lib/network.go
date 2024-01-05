@@ -1578,8 +1578,7 @@ type MsgDeSoVersion struct {
 	// The height of the last block on the main chain for
 	// this node.
 	//
-	// TODO: We need to update this to uint64
-	StartBlockHeight uint32
+	LatestBlockHeight uint64
 
 	// MinFeeRateNanosPerKB is the minimum feerate that a peer will
 	// accept from other peers when validating transactions.
@@ -1611,8 +1610,8 @@ func (msg *MsgDeSoVersion) ToBytes(preSignature bool) ([]byte, error) {
 	retBytes = append(retBytes, UintToBuf(uint64(len(msg.UserAgent)))...)
 	retBytes = append(retBytes, msg.UserAgent...)
 
-	// StartBlockHeight
-	retBytes = append(retBytes, UintToBuf(uint64(msg.StartBlockHeight))...)
+	// LatestBlockHeight
+	retBytes = append(retBytes, UintToBuf(msg.LatestBlockHeight)...)
 
 	// MinFeeRateNanosPerKB
 	retBytes = append(retBytes, UintToBuf(msg.MinFeeRateNanosPerKB)...)
@@ -1689,13 +1688,13 @@ func (msg *MsgDeSoVersion) FromBytes(data []byte) error {
 		retVer.UserAgent = string(userAgent)
 	}
 
-	// StartBlockHeight
+	// LatestBlockHeight
 	{
-		lastBlockHeight, err := ReadUvarint(rr)
-		if err != nil || lastBlockHeight > math.MaxUint32 {
+		latestBlockHeight, err := ReadUvarint(rr)
+		if err != nil || latestBlockHeight > math.MaxUint32 {
 			return errors.Wrapf(err, "MsgDeSoVersion.FromBytes: Problem converting msg.LatestBlockHeight")
 		}
-		retVer.StartBlockHeight = uint32(lastBlockHeight)
+		retVer.LatestBlockHeight = latestBlockHeight
 	}
 
 	// MinFeeRateNanosPerKB

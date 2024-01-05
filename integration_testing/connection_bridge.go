@@ -172,7 +172,7 @@ func (bridge *ConnectionBridge) getVersionMessage(node *cmd.Node) *lib.MsgDeSoVe
 	}
 
 	if node.Server != nil {
-		ver.StartBlockHeight = uint32(node.Server.GetBlockchain().BlockTip().Header.Height)
+		ver.LatestBlockHeight = uint32(node.Server.GetBlockchain().BlockTip().Header.Height)
 	}
 	ver.MinFeeRateNanosPerKB = node.Config.MinFeerate
 	return ver
@@ -186,7 +186,7 @@ func (bridge *ConnectionBridge) startConnection(connection *lib.Peer, otherNode 
 	connection.VersionNonceSent = versionMessage.Nonce
 
 	// Send the version message.
-	fmt.Println("Sending version message:", versionMessage, versionMessage.StartBlockHeight)
+	fmt.Println("Sending version message:", versionMessage, versionMessage.LatestBlockHeight)
 	if err := connection.WriteDeSoMessage(versionMessage); err != nil {
 		return err
 	}
