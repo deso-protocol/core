@@ -12,7 +12,6 @@ import (
 type FastHotStuffConsensus struct {
 	lock                  sync.RWMutex
 	blockchain            *Blockchain
-	blockProducer         *PosBlockProducer
 	fastHotStuffEventLoop consensus.FastHotStuffEventLoop
 	mempool               Mempool
 	params                *DeSoParams
@@ -22,7 +21,6 @@ type FastHotStuffConsensus struct {
 func NewFastHotStuffConsensus(params *DeSoParams, blockchain *Blockchain, mempool Mempool, signer *BLSSigner) *FastHotStuffConsensus {
 	return &FastHotStuffConsensus{
 		blockchain:            blockchain,
-		blockProducer:         NewPosBlockProducer(mempool, params, nil, signer.GetPublicKey()),
 		fastHotStuffEventLoop: consensus.NewFastHotStuffEventLoop(),
 		mempool:               mempool,
 		signer:                signer,
@@ -538,9 +536,15 @@ func (cc *FastHotStuffConsensus) produceUnsignedBlockForBlockProposalEvent(
 		return nil, errors.Errorf("Error fetching UtxoView for parent block: %v", parentBlockHash)
 	}
 
+	// Dynamically create a new block producer at the current block height
+	blockProducer, err := cc.createBlockProducer(utxoViewAtParent)
+	if err != nil {
+		return nil, errors.Errorf("Error creating block producer: %v", err)
+	}
+
 	// Construct an unsigned block
 	if event.EventType == consensus.FastHotStuffEventTypeConstructVoteQC {
-		block, err := cc.blockProducer.CreateUnsignedBlock(
+		block, err := blockProducer.CreateUnsignedBlock(
 			utxoViewAtParent,
 			event.TipBlockHeight+1,
 			event.View,
@@ -556,7 +560,7 @@ func (cc *FastHotStuffConsensus) produceUnsignedBlockForBlockProposalEvent(
 
 	// Construct an unsigned timeout block
 	if event.EventType == consensus.FastHotStuffEventTypeConstructTimeoutQC {
-		block, err := cc.blockProducer.CreateUnsignedTimeoutBlock(
+		block, err := blockProducer.CreateUnsignedTimeoutBlock(
 			utxoViewAtParent,
 			event.TipBlockHeight+1,
 			event.View,
@@ -655,6 +659,20 @@ func (cc *FastHotStuffConsensus) fetchValidatorListsForSafeBlocks(blocks []*MsgD
 
 	// Happy path: we fetched the validator lists for all blocks successfully.
 	return blocksWithValidatorLists, nil
+}
+
+func (fc *FastHotStuffConsensus) createBlockProducer(bav *UtxoView) (*PosBlockProducer, error) {
+	blockProducerBlsPublicKey := fc.signer.GetPublicKey()
+	blockProducerValidatorEntry, err := bav.GetCurrentSnapshotValidatorBLSPublicKeyPKIDPairEntry(blockProducerBlsPublicKey)
+	if err != nil {
+		return nil, errors.Errorf("Error fetching validator entry for block producer: %v", err)
+	}
+	blockProducerPublicKeyBytes := bav.GetPublicKeyForPKID(blockProducerValidatorEntry.PKID)
+	blockProducerPublicKey := NewPublicKey(blockProducerPublicKeyBytes)
+	if blockProducerPublicKey == nil {
+		return nil, errors.Errorf("Error fetching public key for block producer: %v", err)
+	}
+	return NewPosBlockProducer(fc.mempool, fc.params, blockProducerPublicKey, blockProducerBlsPublicKey), nil
 }
 
 // Finds the epoch entry for the block and returns the epoch number.
