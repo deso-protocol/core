@@ -65,9 +65,7 @@ type RemoteNode struct {
 
 	// minTxFeeRateNanosPerKB is the minimum transaction fee rate in nanos per KB that our node will accept.
 	minTxFeeRateNanosPerKB uint64
-	hyperSync              bool
-	archivalMode           bool
-	posValidator           bool
+	nodeServices           ServiceFlag
 
 	// handshakeMetadata is used to store the information received from the peer during the handshake.
 	handshakeMetadata *HandshakeMetadata
@@ -77,10 +75,10 @@ type RemoteNode struct {
 
 	// versionTimeExpected is the latest time by which we expect to receive a Version message from the peer.
 	// If the Version message is not received by this time, the connection will be terminated.
-	versionTimeExpected time.Time
+	versionTimeExpected *time.Time
 	// verackTimeExpected is the latest time by which we expect to receive a Verack message from the peer.
 	// If the Verack message is not received by this time, the connection will be terminated.
-	verackTimeExpected time.Time
+	verackTimeExpected *time.Time
 }
 
 // HandshakeMetadata stores the information received from the peer during the Version and Verack exchange.
@@ -116,20 +114,23 @@ type HandshakeMetadata struct {
 	validatorPublicKey *bls.PublicKey
 }
 
-func NewRemoteNode(id RemoteNodeId, srv *Server, bc *Blockchain, cmgr *ConnectionManager, params *DeSoParams,
-	minTxFeeRateNanosPerKB uint64, hyperSync bool, archivalMode bool, posValidator bool) *RemoteNode {
+func NewHandshakeMetadata() *HandshakeMetadata {
+	return &HandshakeMetadata{}
+}
+
+func NewRemoteNode(id RemoteNodeId, srv *Server, bc *Blockchain, cmgr *ConnectionManager, keystore *BLSKeystore,
+	params *DeSoParams, minTxFeeRateNanosPerKB uint64, nodeServices ServiceFlag) *RemoteNode {
 	return &RemoteNode{
 		id:                     id,
 		connectionStatus:       RemoteNodeStatus_NotConnected,
-		handshakeMetadata:      nil,
+		handshakeMetadata:      NewHandshakeMetadata(),
 		srv:                    srv,
 		bc:                     bc,
 		cmgr:                   cmgr,
+		keystore:               keystore,
 		params:                 params,
 		minTxFeeRateNanosPerKB: minTxFeeRateNanosPerKB,
-		hyperSync:              hyperSync,
-		archivalMode:           archivalMode,
-		posValidator:           posValidator,
+		nodeServices:           nodeServices,
 	}
 }
 
@@ -161,21 +162,16 @@ func (rn *RemoteNode) GetPeer() *Peer {
 	return rn.peer
 }
 
-func (rn *RemoteNode) getHandshakeMetadata() *HandshakeMetadata {
-	if rn.handshakeMetadata == nil {
-		rn.handshakeMetadata = &HandshakeMetadata{}
-	}
-	return rn.handshakeMetadata
-}
-
 func (rn *RemoteNode) GetNegotiatedProtocolVersion() ProtocolVersionType {
-	meta := rn.getHandshakeMetadata()
-	return meta.negotiatedProtocolVersion
+	return rn.handshakeMetadata.negotiatedProtocolVersion
 }
 
 func (rn *RemoteNode) GetValidatorPublicKey() *bls.PublicKey {
-	meta := rn.getHandshakeMetadata()
-	return meta.validatorPublicKey
+	return rn.handshakeMetadata.validatorPublicKey
+}
+
+func (rn *RemoteNode) GetUserAgent() string {
+	return rn.handshakeMetadata.userAgent
 }
 
 func (rn *RemoteNode) IsInbound() bool {
@@ -194,8 +190,15 @@ func (rn *RemoteNode) IsConnected() bool {
 	return rn.connectionStatus == RemoteNodeStatus_Connected
 }
 
+func (rn *RemoteNode) IsValidated() bool {
+	return rn.connectionStatus == RemoteNodeStatus_Validated
+}
+
 func (rn *RemoteNode) IsValidator() bool {
-	return rn.posValidator
+	if !rn.IsValidated() {
+		return false
+	}
+	return rn.GetValidatorPublicKey() != nil
 }
 
 // DialOutboundConnection dials an outbound connection to the provided netAddr.
@@ -290,7 +293,8 @@ func (rn *RemoteNode) InitiateHandshake(nonce uint64) error {
 	}
 
 	if rn.GetPeer().IsOutbound() {
-		rn.versionTimeExpected = time.Now().Add(rn.params.VersionNegotiationTimeout)
+		versionTimeExpected := time.Now().Add(rn.params.VersionNegotiationTimeout)
+		rn.versionTimeExpected = &versionTimeExpected
 		return rn.sendVersionMessage(nonce)
 	}
 	return nil
@@ -304,8 +308,7 @@ func (rn *RemoteNode) sendVersionMessage(nonce uint64) error {
 	// Record the nonce of this version message before we send it so we can
 	// detect self connections and so we can validate that the peer actually
 	// controls the IP she's supposedly communicating to us from.
-	vMeta := rn.getHandshakeMetadata()
-	vMeta.versionNonceSent = nonce
+	rn.handshakeMetadata.versionNonceSent = nonce
 
 	if err := rn.SendMessage(verMsg); err != nil {
 		return fmt.Errorf("sendVersionMessage: Problem sending version message to peer (id= %d): %v", rn.id, err)
@@ -320,16 +323,7 @@ func (rn *RemoteNode) newVersionMessage(nonce uint64) *MsgDeSoVersion {
 
 	ver.Version = rn.params.ProtocolVersion.ToUint64()
 	// Set the services bitfield to indicate what services this node supports.
-	ver.Services = SFFullNodeDeprecated
-	if rn.hyperSync {
-		ver.Services |= SFHyperSync
-	}
-	if rn.archivalMode {
-		ver.Services |= SFArchivalNode
-	}
-	if rn.posValidator {
-		ver.Services |= SFPosValidator
-	}
+	ver.Services = rn.nodeServices
 
 	// We use an int64 instead of a uint64 for convenience.
 	ver.TstampSecs = time.Now().Unix()
@@ -360,16 +354,15 @@ func (rn *RemoteNode) HandleVersionMessage(verMsg *MsgDeSoVersion, responseNonce
 	if verMsg.Version < rn.params.MinProtocolVersion {
 		return fmt.Errorf("RemoteNode.HandleVersionMessage: Requesting disconnect for id: (%v) "+
 			"protocol version too low. Peer version: %v, min version: %v", rn.id, verMsg.Version, rn.params.MinProtocolVersion)
-		//rn.Disconnect()
 	}
 
 	// Verify that the peer's version message is sent within the version negotiation timeout.
-	if rn.versionTimeExpected.Before(time.Now()) {
+	if rn.versionTimeExpected != nil && rn.versionTimeExpected.Before(time.Now()) {
 		return fmt.Errorf("RemoteNode.HandleVersionMessage: Requesting disconnect for id: (%v) "+
 			"version timeout. Time expected: %v, now: %v", rn.id, rn.versionTimeExpected.UnixMicro(), time.Now().UnixMicro())
 	}
 
-	vMeta := rn.getHandshakeMetadata()
+	vMeta := rn.handshakeMetadata
 	// Record the version the peer is using.
 	vMeta.advertisedProtocolVersion = NewProtocolVersionType(verMsg.Version)
 	// Decide on the protocol version to use for this connection.
@@ -411,7 +404,8 @@ func (rn *RemoteNode) HandleVersionMessage(verMsg *MsgDeSoVersion, responseNonce
 	// peer's verack message even if it is an inbound peer. Instead, we just send the verack message right away.
 
 	// Set the latest time by which we should receive a verack message from the peer.
-	rn.verackTimeExpected = time.Now().Add(rn.params.VersionNegotiationTimeout)
+	verackTimeExpected := time.Now().Add(rn.params.VersionNegotiationTimeout)
+	rn.verackTimeExpected = &verackTimeExpected
 	if err := rn.sendVerack(); err != nil {
 		return errors.Wrapf(err, "RemoteNode.HandleVersionMessage: Problem sending verack message to peer (id= %d)", rn.id)
 	}
@@ -437,7 +431,7 @@ func (rn *RemoteNode) sendVerack() error {
 // newVerackMessage constructs a verack message to be sent to the peer.
 func (rn *RemoteNode) newVerackMessage() (*MsgDeSoVerack, error) {
 	verack := NewMessage(MsgTypeVerack).(*MsgDeSoVerack)
-	vMeta := rn.getHandshakeMetadata()
+	vMeta := rn.handshakeMetadata
 
 	switch vMeta.negotiatedProtocolVersion {
 	case ProtocolVersion0, ProtocolVersion1:
@@ -445,6 +439,7 @@ func (rn *RemoteNode) newVerackMessage() (*MsgDeSoVerack, error) {
 		verack.Version = VerackVersion0
 		verack.NonceReceived = vMeta.versionNonceReceived
 	case ProtocolVersion2:
+		// FIXME: resolve the non-validator - validator handshake issues on protocol version 2.
 		// For protocol version 2, we need to send the nonce we received from the peer in their version message.
 		// We also need to send our own nonce, which we generate for our version message. In addition, we need to
 		// send a current timestamp (in microseconds). We then sign the tuple of (nonceReceived, nonceSent, tstampMicro)
@@ -471,13 +466,13 @@ func (rn *RemoteNode) HandleVerackMessage(vrkMsg *MsgDeSoVerack) error {
 			"verack received while in state: %v", rn.id, rn.connectionStatus)
 	}
 
-	if rn.verackTimeExpected.Before(time.Now()) {
+	if rn.verackTimeExpected != nil && rn.verackTimeExpected.Before(time.Now()) {
 		return fmt.Errorf("RemoteNode.HandleVerackMessage: Requesting disconnect for id: (%v) "+
 			"verack timeout. Time expected: %v, now: %v", rn.id, rn.verackTimeExpected.UnixMicro(), time.Now().UnixMicro())
 	}
 
 	var err error
-	vMeta := rn.getHandshakeMetadata()
+	vMeta := rn.handshakeMetadata
 	switch vMeta.negotiatedProtocolVersion {
 	case ProtocolVersion0, ProtocolVersion1:
 		err = rn.validateVerackPoW(vrkMsg)
@@ -492,14 +487,14 @@ func (rn *RemoteNode) HandleVerackMessage(vrkMsg *MsgDeSoVerack) error {
 	// If we get here then the peer has successfully completed the handshake.
 	vMeta.versionNegotiated = true
 	rn._logVersionSuccess(rn.peer)
-	rn.srv.NotifyHandshakePeerMessage(rn.peer)
 	rn.setStatusValidated()
+	rn.srv.NotifyHandshakePeerMessage(rn.peer)
 
 	return nil
 }
 
 func (rn *RemoteNode) validateVerackPoW(vrkMsg *MsgDeSoVerack) error {
-	vMeta := rn.getHandshakeMetadata()
+	vMeta := rn.handshakeMetadata
 
 	// Verify that the verack message is formatted correctly according to the PoW standard.
 	if vrkMsg.Version != VerackVersion0 {
@@ -517,7 +512,7 @@ func (rn *RemoteNode) validateVerackPoW(vrkMsg *MsgDeSoVerack) error {
 }
 
 func (rn *RemoteNode) validateVerackPoS(vrkMsg *MsgDeSoVerack) error {
-	vMeta := rn.getHandshakeMetadata()
+	vMeta := rn.handshakeMetadata
 
 	// Verify that the verack message is formatted correctly according to the PoS standard.
 	if vrkMsg.Version != VerackVersion1 {
@@ -539,7 +534,7 @@ func (rn *RemoteNode) validateVerackPoS(vrkMsg *MsgDeSoVerack) error {
 
 	// Get the current time in microseconds and make sure the verack message's timestamp is within 15 minutes of it.
 	timeNowMicro := uint64(time.Now().UnixMicro())
-	if vrkMsg.TstampMicro > timeNowMicro-rn.params.HandshakeTimeoutMicroSeconds {
+	if vrkMsg.TstampMicro < timeNowMicro-rn.params.HandshakeTimeoutMicroSeconds {
 		return fmt.Errorf("RemoteNode.validateVerackPoS: Requesting disconnect for id: (%v) "+
 			"verack timestamp too far in the past. Time now: %v, verack timestamp: %v", rn.id, timeNowMicro, vrkMsg.TstampMicro)
 	}
