@@ -977,13 +977,6 @@ func (srv *Server) _handleHeaderBundle(pp *Peer, msg *MsgDeSoHeaderBundle) {
 				srv.GetSnapshot(pp)
 				return
 			}
-		} else {
-			// If we are not syncing state via hypersync, make sure the badger db options are set to the performance settings.
-			// This is necessary because the blocksync process syncs indexes with records that are too large for the default
-			// badger options. The large records overflow the default setting value log size and cause the DB to crash.
-			dbDir := GetBadgerDbPath(srv.snapshot.mainDbDirectory)
-			opts := PerformanceBadgerOptions(dbDir)
-			srv.dirtyHackUpdateDbOpts(opts)
 		}
 
 		// If we have finished syncing peer's headers, but previously we have bootstrapped the blockchain through
@@ -1482,6 +1475,10 @@ func (srv *Server) dirtyHackUpdateDbOpts(opts badger.Options) {
 	srv.mempool.bc.db = srv.blockchain.db
 	srv.mempool.backupUniversalUtxoView.Handle = srv.blockchain.db
 	srv.mempool.universalUtxoView.Handle = srv.blockchain.db
+
+	// Save the new options to the DB so that we know what to use if the node restarts.
+	isPerformanceOptions := opts.MemTableSize == PerformanceMemTableSize && opts.ValueLogFileSize == PerformanceLogValueSize
+	SaveBoolToFile(opts.ValueDir, isPerformanceOptions)
 }
 
 func (srv *Server) _startSync() {
