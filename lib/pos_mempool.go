@@ -309,6 +309,12 @@ func (mp *PosMempool) OnBlockConnected(blockEvent *BlockEvent) {
 
 		mp.removeTransactionNoLock(txn, true)
 	}
+
+	// Add the block to the fee estimator. This is a best effort operation. If we fail to add the block
+	// to the fee estimator, we log an error and continue.
+	if err := mp.feeEstimator.AddBlock(blockEvent.Block); err != nil {
+		glog.Errorf("PosMempool.OnBlockConnected: Problem adding block to fee estimator: %v", err)
+	}
 }
 
 // OnBlockDisconnected is an event handler provided by the PoS mempool to handle the blockchain
@@ -334,6 +340,8 @@ func (mp *PosMempool) OnBlockDisconnected(blockEvent *BlockEvent) {
 			continue
 		}
 
+		// Add all transactions in the block to the mempool.
+
 		// Construct the MempoolTx from the MsgDeSoTxn.
 		mempoolTx, err := NewMempoolTx(txn, blockEvent.Block.Header.TstampNanoSecs/1000, mp.latestBlockHeight)
 		if err != nil {
@@ -346,8 +354,14 @@ func (mp *PosMempool) OnBlockDisconnected(blockEvent *BlockEvent) {
 		}
 	}
 
+	// This is a best effort operation. If we fail to prune the mempool, we log an error and continue.
 	if err := mp.pruneNoLock(); err != nil {
 		glog.Errorf("PosMempool.AddTransaction: Problem pruning mempool: %v", err)
+	}
+
+	// Remove the block from the fee estimator.
+	if err := mp.feeEstimator.RemoveBlock(blockEvent.Block); err != nil {
+		glog.Errorf("PosMempool.OnBlockDisconnected: Problem removing block from fee estimator: %v", err)
 	}
 }
 
