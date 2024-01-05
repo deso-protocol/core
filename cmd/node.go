@@ -7,6 +7,7 @@ import (
 	"net"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"sync"
 	"syscall"
 	"time"
@@ -161,10 +162,9 @@ func (node *Node) Start(exitChannels ...*chan struct{}) {
 
 	// If the db options haven't yet been saved, we should base the options on the sync type.
 	if os.IsNotExist(err) {
-		fmt.Printf("Badger options not found. Using sync type to determine db options.\n")
 		performanceOptions = !node.Config.HyperSync
 		// Save the db options for future runs.
-		lib.SaveBoolToFile(node.Config.DataDirectory, performanceOptions)
+		lib.SaveBoolToFile(filepath.Join(node.Config.DataDirectory, lib.PerformanceDbOptsFileName), performanceOptions)
 	} else if err != nil {
 		// If we get an error other than "file does not exist", we should panic.
 		panic(err)

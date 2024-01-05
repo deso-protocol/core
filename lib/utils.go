@@ -307,9 +307,6 @@ func SaveBoolToFile(filename string, value bool) error {
 func ReadBoolFromFile(filename string) (bool, error) {
 	file, err := os.Open(filename)
 	if err != nil {
-		if os.IsNotExist(err) {
-			return false, nil // Return false with no error if the file does not exist
-		}
 		return false, err // Return an error if there's a problem opening the file
 	}
 	defer file.Close()
@@ -319,6 +316,8 @@ func ReadBoolFromFile(filename string) (bool, error) {
 	// Interpret the contents as a boolean value.
 	if scanner.Scan() {
 		return strings.TrimSpace(scanner.Text()) == "true", nil
+	} else {
+		fmt.Printf("FILE IS EMPTY\n")
 	}
 
 	if err := scanner.Err(); err != nil {
