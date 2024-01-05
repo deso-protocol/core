@@ -202,7 +202,13 @@ func (node *Node) Start(exitChannels ...*chan struct{}) {
 	// Setup eventManager
 	eventManager := lib.NewEventManager()
 
-	blsKeystore, err := lib.NewBLSKeystore(node.Config.PosValidatorSeed)
+	var blsKeystore *lib.BLSKeystore
+	if node.Config.PosValidatorSeed != "" {
+		blsKeystore, err = lib.NewBLSKeystore(node.Config.PosValidatorSeed)
+		if err != nil {
+			panic(err)
+		}
+	}
 
 	// Setup the server. ShouldRestart is used whenever we detect an issue and should restart the node after a recovery
 	// process, just in case. These issues usually arise when the node was shutdown unexpectedly mid-operation. The node
