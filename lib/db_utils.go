@@ -10809,10 +10809,15 @@ func _enumerateKeysForPrefixWithLimitOffsetOrderWithTxn(
 
 // Check to see if the badger db has already been initialized with the performance options.
 func DbInitializedWithPerformanceOptions(dataDir string) (bool, error) {
-	filePath := filepath.Join(dataDir, PerformanceDbOptsFileName)
+	filePath := GetDbPerformanceOptionsFilePath(dataDir)
 	performanceOpts, err := ReadBoolFromFile(filePath)
 	if err != nil {
 		return false, err
 	}
 	return performanceOpts, nil
+}
+
+// Get filepath for file indicating which badger options were used to initialize the db.
+func GetDbPerformanceOptionsFilePath(dataDir string) string {
+	return filepath.Join(dataDir, PerformanceDbOptsFileName)
 }

@@ -7,7 +7,6 @@ import (
 	"net"
 	"os"
 	"os/signal"
-	"path/filepath"
 	"sync"
 	"syscall"
 	"time"
@@ -164,7 +163,7 @@ func (node *Node) Start(exitChannels ...*chan struct{}) {
 	if os.IsNotExist(err) {
 		performanceOptions = !node.Config.HyperSync
 		// Save the db options for future runs.
-		lib.SaveBoolToFile(filepath.Join(node.Config.DataDirectory, lib.PerformanceDbOptsFileName), performanceOptions)
+		lib.SaveBoolToFile(lib.GetDbPerformanceOptionsFilePath(node.Config.DataDirectory), performanceOptions)
 	} else if err != nil {
 		// If we get an error other than "file does not exist", we should panic.
 		panic(err)

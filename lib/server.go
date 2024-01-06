@@ -1478,7 +1478,7 @@ func (srv *Server) dirtyHackUpdateDbOpts(opts badger.Options) {
 
 	// Save the new options to the DB so that we know what to use if the node restarts.
 	isPerformanceOptions := opts.MemTableSize == PerformanceMemTableSize && opts.ValueLogFileSize == PerformanceLogValueSize
-	SaveBoolToFile(opts.ValueDir, isPerformanceOptions)
+	SaveBoolToFile(GetDbPerformanceOptionsFilePath(opts.ValueDir), isPerformanceOptions)
 }
 
 func (srv *Server) _startSync() {
