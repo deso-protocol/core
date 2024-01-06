@@ -218,12 +218,12 @@ func (rn *RemoteNode) IsConnected() bool {
 	return rn.connectionStatus == RemoteNodeStatus_Connected
 }
 
-func (rn *RemoteNode) IsValidated() bool {
+func (rn *RemoteNode) IsHandshakeCompleted() bool {
 	return rn.connectionStatus == RemoteNodeStatus_HandshakeCompleted
 }
 
 func (rn *RemoteNode) IsValidator() bool {
-	if !rn.IsValidated() {
+	if !rn.IsHandshakeCompleted() {
 		return false
 	}
 	return rn.GetValidatorPublicKey() != nil
@@ -257,10 +257,10 @@ func (rn *RemoteNode) DialPersistentOutboundConnection(netAddr *wire.NetAddress)
 	return nil
 }
 
-// ConnectInboundPeer connects a peer once a successful inbound connection has been established.
-func (rn *RemoteNode) ConnectInboundPeer(conn net.Conn, na *wire.NetAddress) error {
+// AttachInboundConnection creates an inbound peer once a successful inbound connection has been established.
+func (rn *RemoteNode) AttachInboundConnection(conn net.Conn, na *wire.NetAddress) error {
 	if !rn.IsNotConnected() {
-		return fmt.Errorf("RemoteNode.ConnectInboundPeer: RemoteNode is not in the NotConnected state")
+		return fmt.Errorf("RemoteNode.AttachInboundConnection: RemoteNode is not in the NotConnected state")
 	}
 
 	rn.mtx.Lock()
@@ -272,10 +272,10 @@ func (rn *RemoteNode) ConnectInboundPeer(conn net.Conn, na *wire.NetAddress) err
 	return nil
 }
 
-// ConnectOutboundPeer connects a peer once a successful outbound connection has been established.
-func (rn *RemoteNode) ConnectOutboundPeer(conn net.Conn, na *wire.NetAddress, isPersistent bool) error {
+// AttachOutboundConnection creates an outbound peer once a successful outbound connection has been established.
+func (rn *RemoteNode) AttachOutboundConnection(conn net.Conn, na *wire.NetAddress, isPersistent bool) error {
 	if rn.connectionStatus != RemoteNodeStatus_Attempted {
-		return fmt.Errorf("RemoteNode.ConnectOutboundPeer: RemoteNode is not in the Attempted state")
+		return fmt.Errorf("RemoteNode.AttachOutboundConnection: RemoteNode is not in the Attempted state")
 	}
 
 	rn.mtx.Lock()
@@ -303,10 +303,14 @@ func (rn *RemoteNode) Disconnect() {
 }
 
 func (rn *RemoteNode) SendMessage(desoMsg DeSoMessage) error {
-	if rn.connectionStatus != RemoteNodeStatus_Connected && rn.connectionStatus != RemoteNodeStatus_HandshakeCompleted {
+	if rn.connectionStatus != RemoteNodeStatus_HandshakeCompleted {
 		return fmt.Errorf("SendMessage: Remote node is not connected")
 	}
 
+	return rn.sendMessage(desoMsg)
+}
+
+func (rn *RemoteNode) sendMessage(desoMsg DeSoMessage) error {
 	if err := rn.cmgr.SendMessage(desoMsg, rn.GetId().ToUint64()); err != nil {
 		return fmt.Errorf("SendMessage: Problem sending message to peer (id= %d): %v", rn.id, err)
 	}
@@ -347,10 +351,9 @@ func (rn *RemoteNode) sendVersionMessage(nonce uint64) error {
 	// controls the IP she's supposedly communicating to us from.
 	rn.handshakeMetadata.versionNonceSent = nonce
 
-	if err := rn.SendMessage(verMsg); err != nil {
+	if err := rn.sendMessage(verMsg); err != nil {
 		return fmt.Errorf("sendVersionMessage: Problem sending version message to peer (id= %d): %v", rn.id, err)
 	}
-	rn.setHandshakeStage(HandshakeStage_VersionSent)
 	return nil
 }
 
@@ -467,7 +470,7 @@ func (rn *RemoteNode) sendVerack() error {
 		return err
 	}
 
-	if err := rn.SendMessage(verackMsg); err != nil {
+	if err := rn.sendMessage(verackMsg); err != nil {
 		return errors.Wrapf(err, "RemoteNode.SendVerack: Problem sending verack message to peer (id= %d): %v", rn.id, err)
 	}
 	return nil
