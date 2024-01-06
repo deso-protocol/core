@@ -154,6 +154,9 @@ type Server struct {
 	// This is necessary because the database is closed & re-opened when the node finishes hypersyncing in order
 	// to change the database options from Default options to Performance options.
 	DbMutex deadlock.Mutex
+
+	// DBSettings stores the options used to open the database.
+	DbOptions *badger.Options
 }
 
 func (srv *Server) HasProcessedFirstTransactionBundle() bool {
@@ -373,7 +376,8 @@ func NewServer(
 	_nodeMessageChan chan NodeMessage,
 	_forceChecksum bool,
 	_stateChangeDir string,
-	_hypersyncMaxQueueSize uint32) (
+	_hypersyncMaxQueueSize uint32,
+	_dbOpts *badger.Options) (
 	_srv *Server, _err error, _shouldRestart bool) {
 
 	var err error
@@ -414,6 +418,7 @@ func NewServer(
 		snapshot:                     _snapshot,
 		nodeMessageChannel:           _nodeMessageChan,
 		forceChecksum:                _forceChecksum,
+		DbOptions:                    _dbOpts,
 	}
 
 	if stateChangeSyncer != nil {
@@ -977,6 +982,13 @@ func (srv *Server) _handleHeaderBundle(pp *Peer, msg *MsgDeSoHeaderBundle) {
 				srv.GetSnapshot(pp)
 				return
 			}
+		} else {
+			if !DbOptsArePerformance(srv.DbOptions) {
+				dbDir := GetBadgerDbPath(srv.snapshot.mainDbDirectory)
+				opts := PerformanceBadgerOptions(dbDir)
+				opts.ValueDir = dbDir
+				srv.dirtyHackUpdateDbOpts(opts)
+			}
 		}
 
 		// If we have finished syncing peer's headers, but previously we have bootstrapped the blockchain through
@@ -1477,7 +1489,8 @@ func (srv *Server) dirtyHackUpdateDbOpts(opts badger.Options) {
 	srv.mempool.universalUtxoView.Handle = srv.blockchain.db
 
 	// Save the new options to the DB so that we know what to use if the node restarts.
-	isPerformanceOptions := opts.MemTableSize == PerformanceMemTableSize && opts.ValueLogFileSize == PerformanceLogValueSize
+	isPerformanceOptions := DbOptsArePerformance(&opts)
+	srv.DbOptions = &opts
 	SaveBoolToFile(GetDbPerformanceOptionsFilePath(opts.ValueDir), isPerformanceOptions)
 }
 
