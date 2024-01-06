@@ -43,7 +43,7 @@ var expectedVer = &MsgDeSoVersion{
 	TstampSecs:           2,
 	Nonce:                uint64(0xffffffffffffffff),
 	UserAgent:            "abcdef",
-	StartBlockHeight:     4,
+	LatestBlockHeight:    4,
 	MinFeeRateNanosPerKB: 10,
 }
 
