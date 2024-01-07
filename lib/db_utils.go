@@ -5083,8 +5083,8 @@ func InitDbWithDeSoGenesisBlock(params *DeSoParams, handle *badger.DB,
 		blockHash,
 		0, // Height
 		diffTarget,
-		BytesToBigint(ExpectedWorkForBlockHash(diffTarget)[:]),                            // CumWork
-		genesisBlock.Header,                                                               // Header
+		BytesToBigint(ExpectedWorkForBlockHash(diffTarget)[:]), // CumWork
+		genesisBlock.Header, // Header
 		StatusHeaderValidated|StatusBlockProcessed|StatusBlockStored|StatusBlockValidated, // Status
 	)
 
@@ -9172,7 +9172,7 @@ func DBGetPaginatedPostsOrderedByTime(
 	postIndexKeys, _, err := DBGetPaginatedKeysAndValuesForPrefix(
 		db, startPostPrefix, Prefixes.PrefixTstampNanosPostHash, /*validForPrefix*/
 		len(Prefixes.PrefixTstampNanosPostHash)+len(maxUint64Tstamp)+HashSizeBytes, /*keyLen*/
-		numToFetch, reverse                                                         /*reverse*/, false /*fetchValues*/)
+		numToFetch, reverse /*reverse*/, false /*fetchValues*/)
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("DBGetPaginatedPostsOrderedByTime: %v", err)
 	}
@@ -9299,7 +9299,7 @@ func DBGetPaginatedProfilesByDeSoLocked(
 	profileIndexKeys, _, err := DBGetPaginatedKeysAndValuesForPrefix(
 		db, startProfilePrefix, Prefixes.PrefixCreatorDeSoLockedNanosCreatorPKID, /*validForPrefix*/
 		keyLen /*keyLen*/, numToFetch,
-		true   /*reverse*/, false /*fetchValues*/)
+		true /*reverse*/, false /*fetchValues*/)
 	if err != nil {
 		return nil, nil, fmt.Errorf("DBGetPaginatedProfilesByDeSoLocked: %v", err)
 	}
@@ -10823,13 +10823,5 @@ func GetDbPerformanceOptionsFilePath(dataDir string) string {
 }
 
 func DbOptsArePerformance(opts *badger.Options) bool {
-	fmt.Printf("DbOptsArePerformance: %+v\n", opts)
-	fmt.Printf("Memtable size: %v\n", opts.MemTableSize)
-	fmt.Printf("Memtable size ex: %v\n", PerformanceMemTableSize)
-	fmt.Printf("Memtable size equal: %v\n", opts.MemTableSize == PerformanceMemTableSize)
-	fmt.Printf("Value Log File size: %v\n", opts.ValueLogFileSize)
-	fmt.Printf("Value Log File ex: %v\n", PerformanceLogValueSize)
-	fmt.Printf("Value Log File equal: %v\n", PerformanceLogValueSize == opts.ValueLogFileSize)
-
 	return opts.MemTableSize == PerformanceMemTableSize && opts.ValueLogFileSize == PerformanceLogValueSize
 }

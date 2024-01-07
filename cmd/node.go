@@ -159,11 +159,8 @@ func (node *Node) Start(exitChannels ...*chan struct{}) {
 	// If not, it should be based on the sync type.
 	performanceOptions, err := lib.DbInitializedWithPerformanceOptions(node.Config.DataDirectory)
 
-	fmt.Printf("performanceOptions: %v\n", performanceOptions)
-
 	// If the db options haven't yet been saved, we should base the options on the sync type.
 	if os.IsNotExist(err) {
-		fmt.Printf("Badger options file does not exist. Using sync type to determine db options.\n")
 		performanceOptions = !node.Config.HyperSync
 		// Save the db options for future runs.
 		lib.SaveBoolToFile(lib.GetDbPerformanceOptionsFilePath(node.Config.DataDirectory), performanceOptions)
