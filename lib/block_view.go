@@ -125,6 +125,7 @@ type UtxoView struct {
 	LockedStakeMapKeyToLockedStakeEntry map[LockedStakeMapKey]*LockedStakeEntry
 
 	// Locked DAO coin and locked DESO balance entry mapping.
+	// NOTE: See comment on LockedBalanceEntryKey before altering.
 	LockedBalanceEntryKeyToLockedBalanceEntry map[LockedBalanceEntryKey]*LockedBalanceEntry
 
 	// Lockup yield curve points.
@@ -3200,6 +3201,18 @@ func (bav *UtxoView) _connectUpdateGlobalParams(
 					"_connectUpdateGlobalParams: unable to decode JailInactiveValidatorGracePeriodEpochs as uint64",
 				)
 			}
+		}
+		if len(extraData[MaximumVestedIntersectionsPerLockupTransactionKey]) > 0 {
+			maximumVestedIntersectionsPerLockupTransaction, bytesRead := Varint(
+				extraData[MaximumVestedIntersectionsPerLockupTransactionKey],
+			)
+			if bytesRead <= 0 {
+				return 0, 0, nil, fmt.Errorf(
+					"_connectUpdateGlobalParams: " +
+						"unable to decode MaximumVestedIntersectionsPerLockupTransaction as uint64")
+			}
+			newGlobalParamsEntry.MaximumVestedIntersectionsPerLockupTransaction =
+				int(maximumVestedIntersectionsPerLockupTransaction)
 		}
 		if len(extraData[FeeBucketGrowthRateBasisPointsKey]) > 0 {
 			val, bytesRead := Uvarint(

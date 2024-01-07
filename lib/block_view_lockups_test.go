@@ -62,11 +62,12 @@ func TestCoinLockupsForkHeight(t *testing.T) {
 		}
 
 		_, _, _, err1 := _coinLockupWithConnectTimestamp(
-			t, chain, db, params,
-			feeRateNanosPerKb,
+			t, chain, db, params, feeRateNanosPerKb,
 			m0Pub,
 			m0Priv,
 			m0Pub,
+			m0Pub,
+			1000,
 			1000,
 			uint256.NewInt().SetUint64(100),
 			0)
@@ -231,14 +232,9 @@ func TestCoinLockupTxnRuleErrors(t *testing.T) {
 	// (This should fail -- RuleErrorCoinLockupOfAmountZero)
 	{
 		_, _, _, err := _coinLockupWithConnectTimestamp(
-			t, testMeta.chain, testMeta.db, testMeta.params,
-			testMeta.feeRateNanosPerKb,
-			m0Pub,
-			m0Priv,
-			m0Pub,
-			0,
-			uint256.NewInt(),
-			0)
+			t, testMeta.chain, testMeta.db, testMeta.params, testMeta.feeRateNanosPerKb,
+			m0Pub, m0Priv, m0Pub, m0Pub,
+			0, 0, uint256.NewInt(), 0)
 		require.Contains(t, err.Error(), RuleErrorCoinLockupOfAmountZero)
 	}
 
@@ -246,14 +242,9 @@ func TestCoinLockupTxnRuleErrors(t *testing.T) {
 	// (This should fail -- RuleErrorCoinLockupOnNonExistentProfile)
 	{
 		_, _, _, err := _coinLockupWithConnectTimestamp(
-			t, testMeta.chain, testMeta.db, testMeta.params,
-			testMeta.feeRateNanosPerKb,
-			m0Pub,
-			m0Priv,
-			m2Pub,
-			0,
-			uint256.NewInt().SetUint64(1),
-			0)
+			t, testMeta.chain, testMeta.db, testMeta.params, testMeta.feeRateNanosPerKb,
+			m0Pub, m0Priv, m2Pub, m0Pub,
+			0, 0, uint256.NewInt().SetUint64(1), 0)
 		require.Contains(t, err.Error(), RuleErrorCoinLockupOnNonExistentProfile)
 	}
 
@@ -262,14 +253,9 @@ func TestCoinLockupTxnRuleErrors(t *testing.T) {
 	// NOTE: This also checks that DESO lockups do not require an associated profile.
 	{
 		_, _, _, err := _coinLockupWithConnectTimestamp(
-			t, testMeta.chain, testMeta.db, testMeta.params,
-			testMeta.feeRateNanosPerKb,
-			m0Pub,
-			m0Priv,
-			Base58CheckEncode(ZeroPublicKey.ToBytes(), false, testMeta.params),
-			0,
-			MaxUint256,
-			0)
+			t, testMeta.chain, testMeta.db, testMeta.params, testMeta.feeRateNanosPerKb,
+			m0Pub, m0Priv, Base58CheckEncode(ZeroPublicKey.ToBytes(), false, testMeta.params), m0Pub,
+			0, 0, MaxUint256, 0)
 		require.Contains(t, err.Error(), RuleErrorCoinLockupExcessiveDeSoLockup)
 	}
 
@@ -277,14 +263,9 @@ func TestCoinLockupTxnRuleErrors(t *testing.T) {
 	// (This should fail -- RuleErrorCoinLockupInvalidLockupDuration)
 	{
 		_, _, _, err := _coinLockupWithConnectTimestamp(
-			t, testMeta.chain, testMeta.db, testMeta.params,
-			testMeta.feeRateNanosPerKb,
-			m0Pub,
-			m0Priv,
-			Base58CheckEncode(ZeroPublicKey.ToBytes(), false, testMeta.params),
-			0,
-			uint256.NewInt().SetUint64(1),
-			0)
+			t, testMeta.chain, testMeta.db, testMeta.params, testMeta.feeRateNanosPerKb,
+			m0Pub, m0Priv, Base58CheckEncode(ZeroPublicKey.ToBytes(), false, testMeta.params),
+			m0Pub, 0, 0, uint256.NewInt().SetUint64(1), 0)
 		require.Contains(t, err.Error(), RuleErrorCoinLockupInvalidLockupDuration)
 	}
 
@@ -292,14 +273,9 @@ func TestCoinLockupTxnRuleErrors(t *testing.T) {
 	// (This should fail -- RuleErrorCoinLockupInvalidLockupDuration)
 	{
 		_, _, _, err := _coinLockupWithConnectTimestamp(
-			t, testMeta.chain, testMeta.db, testMeta.params,
-			testMeta.feeRateNanosPerKb,
-			m0Pub,
-			m0Priv,
-			Base58CheckEncode(ZeroPublicKey.ToBytes(), false, testMeta.params),
-			0,
-			uint256.NewInt().SetUint64(1),
-			1)
+			t, testMeta.chain, testMeta.db, testMeta.params, testMeta.feeRateNanosPerKb,
+			m0Pub, m0Priv, Base58CheckEncode(ZeroPublicKey.ToBytes(), false, testMeta.params), m0Pub,
+			0, 0, uint256.NewInt().SetUint64(1), 1)
 		require.Contains(t, err.Error(), RuleErrorCoinLockupInvalidLockupDuration)
 	}
 
@@ -307,14 +283,9 @@ func TestCoinLockupTxnRuleErrors(t *testing.T) {
 	// (This should fail -- RuleErrorCoinLockupInsufficientDeSo)
 	{
 		_, _, _, err := _coinLockupWithConnectTimestamp(
-			t, testMeta.chain, testMeta.db, testMeta.params,
-			testMeta.feeRateNanosPerKb,
-			m0Pub,
-			m0Priv,
-			Base58CheckEncode(ZeroPublicKey.ToBytes(), false, testMeta.params),
-			1,
-			uint256.NewInt().SetUint64(1e10),
-			0)
+			t, testMeta.chain, testMeta.db, testMeta.params, testMeta.feeRateNanosPerKb,
+			m0Pub, m0Priv, Base58CheckEncode(ZeroPublicKey.ToBytes(), false, testMeta.params), m0Pub,
+			1, 1, uint256.NewInt().SetUint64(1e10), 0)
 		require.Contains(t, err.Error(), RuleErrorCoinLockupInsufficientDeSo)
 	}
 
@@ -322,14 +293,9 @@ func TestCoinLockupTxnRuleErrors(t *testing.T) {
 	// (This should fail -- RuleErrorCoinLockupInsufficientCoins)
 	{
 		_, _, _, err := _coinLockupWithConnectTimestamp(
-			t, testMeta.chain, testMeta.db, testMeta.params,
-			testMeta.feeRateNanosPerKb,
-			m0Pub,
-			m0Priv,
-			m0Pub,
-			1,
-			uint256.NewInt().SetUint64(1e10),
-			0)
+			t, testMeta.chain, testMeta.db, testMeta.params, testMeta.feeRateNanosPerKb,
+			m0Pub, m0Priv, m0Pub, m0Pub,
+			1, 1, uint256.NewInt().SetUint64(1e10), 0)
 		require.Contains(t, err.Error(), RuleErrorCoinLockupInsufficientCoins)
 	}
 
@@ -340,14 +306,9 @@ func TestCoinLockupTxnRuleErrors(t *testing.T) {
 	// This should succeed :)
 	{
 		_, _, _, err := _coinLockupWithConnectTimestamp(
-			t, testMeta.chain, testMeta.db, testMeta.params,
-			testMeta.feeRateNanosPerKb,
-			m0Pub,
-			m0Priv,
-			m0Pub,
-			1000,
-			uint256.NewInt().SetUint64(1000),
-			0)
+			t, testMeta.chain, testMeta.db, testMeta.params, testMeta.feeRateNanosPerKb,
+			m0Pub, m0Priv, m0Pub, m0Pub,
+			1000, 1000, uint256.NewInt().SetUint64(1000), 0)
 		require.NoError(t, err)
 	}
 }
@@ -577,15 +538,9 @@ func TestCoinLockupTransferTxnRuleErrors(t *testing.T) {
 
 		// Lockup 1000 M0 coins.
 		_coinLockupWithTestMetaAndConnectTimestamp(
-			testMeta,
-			testMeta.feeRateNanosPerKb,
-			m0Pub,
-			m0Priv,
-			m0Pub,
-			1,
-			uint256.NewInt().SetUint64(1e6),
-			0,
-		)
+			testMeta, testMeta.feeRateNanosPerKb,
+			m0Pub, m0Priv, m0Pub, m0Pub,
+			1, 1, uint256.NewInt().SetUint64(1e6), 0)
 
 		// Send 1000 locked M0 coins to M2.
 		_coinLockupTransferWithTestMeta(
@@ -728,14 +683,9 @@ func TestLockupBasedOverflowsOnProfiles(t *testing.T) {
 	// Try and lockup MaxUint256 m2 coins and ensure CoinsInCirculation and NumberOfHolders decreases
 	{
 		_coinLockupWithTestMetaAndConnectTimestamp(
-			testMeta,
-			testMeta.feeRateNanosPerKb,
-			m2Pub,
-			m2Priv,
-			m2Pub,
-			1000,
-			MaxUint256,
-			0)
+			testMeta, testMeta.feeRateNanosPerKb,
+			m2Pub, m2Priv, m2Pub, m2Pub,
+			1000, 1000, MaxUint256, 0)
 
 		// Ensure CoinsInCirculationNanos and NumberOfHolders are now zero
 		utxoView, err := NewUtxoView(testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot, nil)
@@ -765,14 +715,9 @@ func TestLockupBasedOverflowsOnProfiles(t *testing.T) {
 	// (This should fail -- RuleErrorCoinLockupYieldCausesOverflowInLockedBalanceEntry)
 	{
 		_, _, _, err := _coinLockupWithConnectTimestamp(
-			t, testMeta.chain, testMeta.db, testMeta.params,
-			testMeta.feeRateNanosPerKb,
-			m2Pub,
-			m2Priv,
-			m2Pub,
-			1000,
-			uint256.NewInt().SetUint64(1),
-			0)
+			t, testMeta.chain, testMeta.db, testMeta.params, testMeta.feeRateNanosPerKb,
+			m2Pub, m2Priv, m2Pub, m2Pub,
+			1000, 1000, uint256.NewInt().SetUint64(1), 0)
 		require.Contains(t, err.Error(), RuleErrorCoinLockupYieldCausesOverflowInLockedBalanceEntry)
 	}
 
@@ -792,14 +737,9 @@ func TestLockupBasedOverflowsOnProfiles(t *testing.T) {
 		)
 
 		_, _, _, err := _coinLockupWithConnectTimestamp(
-			t, testMeta.chain, testMeta.db, testMeta.params,
-			testMeta.feeRateNanosPerKb,
-			m2Pub,
-			m2Priv,
-			m2Pub,
-			365*24*60*60*1e9,
-			MaxUint256,
-			0)
+			t, testMeta.chain, testMeta.db, testMeta.params, testMeta.feeRateNanosPerKb,
+			m2Pub, m2Priv, m2Pub, m2Pub,
+			365*24*60*60*1e9, 365*24*60*60*1e9, MaxUint256, 0)
 		require.Contains(t, err.Error(), RuleErrorCoinLockupCoinYieldOverflow)
 	}
 
@@ -821,14 +761,9 @@ func TestLockupBasedOverflowsOnProfiles(t *testing.T) {
 		)
 
 		_, _, _, err := _coinLockupWithConnectTimestamp(
-			t, testMeta.chain, testMeta.db, testMeta.params,
-			testMeta.feeRateNanosPerKb,
-			m2Pub,
-			m2Priv,
-			m2Pub,
-			1,
-			MaxUint256,
-			0)
+			t, testMeta.chain, testMeta.db, testMeta.params, testMeta.feeRateNanosPerKb,
+			m2Pub, m2Priv, m2Pub, m2Pub,
+			1, 1, MaxUint256, 0)
 		require.Contains(t, err.Error(), RuleErrorCoinLockupYieldCausesOverflow)
 
 		// Remove the yield curve point.
@@ -862,15 +797,8 @@ func TestLockupBasedOverflowsOnProfiles(t *testing.T) {
 
 		// Lockup MaxUint256 m2 tokens.
 		_coinLockupWithTestMetaAndConnectTimestamp(
-			testMeta,
-			testMeta.feeRateNanosPerKb,
-			m2Pub,
-			m2Priv,
-			m2Pub,
-			1000,
-			MaxUint256,
-			0,
-		)
+			testMeta, testMeta.feeRateNanosPerKb, m2Pub, m2Priv, m2Pub, m2Pub,
+			1000, 1000, MaxUint256, 0)
 
 		// Try and perform another transfer. This should fail.
 		_, _, _, err := _coinLockupTransfer(
@@ -905,15 +833,9 @@ func TestLockupBasedOverflowsOnProfiles(t *testing.T) {
 
 		// Lockup MaxUint256 m2 tokens at a different timestamp.
 		_coinLockupWithTestMetaAndConnectTimestamp(
-			testMeta,
-			testMeta.feeRateNanosPerKb,
-			m2Pub,
-			m2Priv,
-			m2Pub,
-			1001,
-			MaxUint256,
-			0,
-		)
+			testMeta, testMeta.feeRateNanosPerKb,
+			m2Pub, m2Priv, m2Pub, m2Pub,
+			1001, 1001, MaxUint256, 0)
 
 		// Try and unlock all locked balance entries simultaneously.
 		// This should cause an overflow.
@@ -1022,22 +944,23 @@ func TestLockupStandardProfileFlows(t *testing.T) {
 			m1PkBytes, m1PkBytes, true)
 
 		_coinLockupWithTestMetaAndConnectTimestamp(
-			testMeta,
-			testMeta.feeRateNanosPerKb,
-			m1Pub,
-			m1Priv,
-			m1Pub,
+			testMeta, testMeta.feeRateNanosPerKb,
+			m1Pub, m1Priv, m1Pub, m1Pub,
+			365*24*60*60*1e9+365*12*60*60*1e9,
 			365*24*60*60*1e9+365*12*60*60*1e9,
 			uint256.NewInt().SetUint64(10000),
-			365*24*60*60*1e9,
-		)
+			365*24*60*60*1e9)
 
 		// Check to ensure the resulting locked balance entry has 10000 base units.
 		utxoView, err = NewUtxoView(
 			testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot, nil)
 		require.NoError(t, err)
-		lockedBalanceEntry, err := utxoView.GetLockedBalanceEntryForHODLerPKIDProfilePKIDUnlockTimestampNanoSecs(
-			m1PKID, m1PKID, 365*24*60*60*1e9+365*12*60*60*1e9)
+		lockedBalanceEntry, err :=
+			utxoView.GetLockedBalanceEntryForHODLerPKIDProfilePKIDUnlockTimestampNanoSecsVestingEndTimestampNanoSecs(
+				m1PKID,
+				m1PKID,
+				365*24*60*60*1e9+365*12*60*60*1e9,
+				365*24*60*60*1e9+365*12*60*60*1e9)
 		require.NoError(t, err)
 		require.Equal(t, *uint256.NewInt().SetUint64(10000), lockedBalanceEntry.BalanceBaseUnits)
 
@@ -1066,22 +989,23 @@ func TestLockupStandardProfileFlows(t *testing.T) {
 			m1PkBytes, m1PkBytes, true)
 
 		_coinLockupWithTestMetaAndConnectTimestamp(
-			testMeta,
-			testMeta.feeRateNanosPerKb,
-			m1Pub,
-			m1Priv,
-			m1Pub,
+			testMeta, testMeta.feeRateNanosPerKb,
+			m1Pub, m1Priv, m1Pub, m1Pub,
+			2*365*24*60*60*1e9,
 			2*365*24*60*60*1e9,
 			uint256.NewInt().SetUint64(10000),
-			365*24*60*60*1e9,
-		)
+			365*24*60*60*1e9)
 
 		// Check to ensure the resulting locked balance entry has 10500 base units.
 		utxoView, err = NewUtxoView(
 			testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot, nil)
 		require.NoError(t, err)
-		lockedBalanceEntry, err := utxoView.GetLockedBalanceEntryForHODLerPKIDProfilePKIDUnlockTimestampNanoSecs(
-			m1PKID, m1PKID, 2*365*24*60*60*1e9)
+		lockedBalanceEntry, err :=
+			utxoView.GetLockedBalanceEntryForHODLerPKIDProfilePKIDUnlockTimestampNanoSecsVestingEndTimestampNanoSecs(
+				m1PKID,
+				m1PKID,
+				2*365*24*60*60*1e9,
+				2*365*24*60*60*1e9)
 		require.NoError(t, err)
 		require.Equal(t, *uint256.NewInt().SetUint64(10500), lockedBalanceEntry.BalanceBaseUnits)
 
@@ -1100,15 +1024,12 @@ func TestLockupStandardProfileFlows(t *testing.T) {
 	// NOTE: This is testing the interpolation algorithm for lockups in the middle of two yield curve points.
 	{
 		_coinLockupWithTestMetaAndConnectTimestamp(
-			testMeta,
-			testMeta.feeRateNanosPerKb,
-			m1Pub,
-			m1Priv,
-			m1Pub,
+			testMeta, testMeta.feeRateNanosPerKb,
+			m1Pub, m1Priv, m1Pub, m1Pub,
+			2*365*24*60*60*1e9+365*12*60*60*1e9,
 			2*365*24*60*60*1e9+365*12*60*60*1e9,
 			uint256.NewInt().SetUint64(10000),
-			365*24*60*60*1e9,
-		)
+			365*24*60*60*1e9)
 
 		// Check to ensure the resulting locked balance entry has 10500 base units.
 		utxoView, err := NewUtxoView(
@@ -1116,8 +1037,12 @@ func TestLockupStandardProfileFlows(t *testing.T) {
 		require.NoError(t, err)
 		m1PKIDEntry := utxoView.GetPKIDForPublicKey(m1PkBytes)
 		m1PKID := m1PKIDEntry.PKID
-		lockedBalanceEntry, err := utxoView.GetLockedBalanceEntryForHODLerPKIDProfilePKIDUnlockTimestampNanoSecs(
-			m1PKID, m1PKID, 2*365*24*60*60*1e9+365*12*60*60*1e9)
+		lockedBalanceEntry, err :=
+			utxoView.GetLockedBalanceEntryForHODLerPKIDProfilePKIDUnlockTimestampNanoSecsVestingEndTimestampNanoSecs(
+				m1PKID,
+				m1PKID,
+				2*365*24*60*60*1e9+365*12*60*60*1e9,
+				2*365*24*60*60*1e9+365*12*60*60*1e9)
 		require.NoError(t, err)
 		require.Equal(t, *uint256.NewInt().SetUint64(10500), lockedBalanceEntry.BalanceBaseUnits)
 	}
@@ -1127,15 +1052,12 @@ func TestLockupStandardProfileFlows(t *testing.T) {
 	// We expect this to create a locked balance entry with 12000 base units locked inside.
 	{
 		_coinLockupWithTestMetaAndConnectTimestamp(
-			testMeta,
-			testMeta.feeRateNanosPerKb,
-			m1Pub,
-			m1Priv,
-			m1Pub,
+			testMeta, testMeta.feeRateNanosPerKb,
+			m1Pub, m1Priv, m1Pub, m1Pub,
+			3*365*24*60*60*1e9,
 			3*365*24*60*60*1e9,
 			uint256.NewInt().SetUint64(10000),
-			365*24*60*60*1e9,
-		)
+			365*24*60*60*1e9)
 
 		// Check to ensure the resulting locked balance entry has 12000 base units.
 		utxoView, err := NewUtxoView(
@@ -1143,8 +1065,12 @@ func TestLockupStandardProfileFlows(t *testing.T) {
 		require.NoError(t, err)
 		m1PKIDEntry := utxoView.GetPKIDForPublicKey(m1PkBytes)
 		m1PKID := m1PKIDEntry.PKID
-		lockedBalanceEntry, err := utxoView.GetLockedBalanceEntryForHODLerPKIDProfilePKIDUnlockTimestampNanoSecs(
-			m1PKID, m1PKID, 3*365*24*60*60*1e9)
+		lockedBalanceEntry, err :=
+			utxoView.GetLockedBalanceEntryForHODLerPKIDProfilePKIDUnlockTimestampNanoSecsVestingEndTimestampNanoSecs(
+				m1PKID,
+				m1PKID,
+				3*365*24*60*60*1e9,
+				3*365*24*60*60*1e9)
 		require.NoError(t, err)
 		require.Equal(t, *uint256.NewInt().SetUint64(12000), lockedBalanceEntry.BalanceBaseUnits)
 	}
@@ -1188,8 +1114,12 @@ func TestLockupStandardProfileFlows(t *testing.T) {
 		require.NoError(t, err)
 		m1PKIDEntry := utxoView.GetPKIDForPublicKey(m1PkBytes)
 		m1PKID := m1PKIDEntry.PKID
-		lockedBalanceEntry, err := utxoView.GetLockedBalanceEntryForHODLerPKIDProfilePKIDUnlockTimestampNanoSecs(
-			m1PKID, m1PKID, 2*365*24*60*60*1e9)
+		lockedBalanceEntry, err :=
+			utxoView.GetLockedBalanceEntryForHODLerPKIDProfilePKIDUnlockTimestampNanoSecsVestingEndTimestampNanoSecs(
+				m1PKID,
+				m1PKID,
+				2*365*24*60*60*1e9,
+				2*365*24*60*60*1e9)
 		require.NoError(t, err)
 		require.Equal(t, *uint256.NewInt().SetUint64(9000), lockedBalanceEntry.BalanceBaseUnits)
 	}
@@ -1291,15 +1221,12 @@ func TestLockupStandardDeSoFlows(t *testing.T) {
 		require.NoError(t, err)
 
 		_coinLockupWithTestMetaAndConnectTimestamp(
-			testMeta,
-			testMeta.feeRateNanosPerKb,
-			m1Pub,
-			m1Priv,
-			Base58CheckEncode(ZeroPublicKey.ToBytes(), false, testMeta.params),
+			testMeta, testMeta.feeRateNanosPerKb,
+			m1Pub, m1Priv, Base58CheckEncode(ZeroPublicKey.ToBytes(), false, testMeta.params), m1Pub,
+			365*24*60*60*1e9+365*12*60*60*1e9,
 			365*24*60*60*1e9+365*12*60*60*1e9,
 			uint256.NewInt().SetUint64(500),
-			365*24*60*60*1e9,
-		)
+			365*24*60*60*1e9)
 
 		// Check to ensure the resulting locked balance entry has 525 base units.
 		utxoView, err = NewUtxoView(
@@ -1307,8 +1234,12 @@ func TestLockupStandardDeSoFlows(t *testing.T) {
 		require.NoError(t, err)
 		m1PKIDEntry := utxoView.GetPKIDForPublicKey(m1PkBytes)
 		m1PKID := m1PKIDEntry.PKID
-		lockedBalanceEntry, err := utxoView.GetLockedBalanceEntryForHODLerPKIDProfilePKIDUnlockTimestampNanoSecs(
-			m1PKID, ZeroPKID.NewPKID(), 365*24*60*60*1e9+365*12*60*60*1e9)
+		lockedBalanceEntry, err :=
+			utxoView.GetLockedBalanceEntryForHODLerPKIDProfilePKIDUnlockTimestampNanoSecsVestingEndTimestampNanoSecs(
+				m1PKID,
+				ZeroPKID.NewPKID(),
+				365*24*60*60*1e9+365*12*60*60*1e9,
+				365*24*60*60*1e9+365*12*60*60*1e9)
 		require.NoError(t, err)
 		require.Equal(t, *uint256.NewInt().SetUint64(500), lockedBalanceEntry.BalanceBaseUnits)
 
@@ -1331,15 +1262,12 @@ func TestLockupStandardDeSoFlows(t *testing.T) {
 		require.NoError(t, err)
 
 		_coinLockupWithTestMetaAndConnectTimestamp(
-			testMeta,
-			testMeta.feeRateNanosPerKb,
-			m1Pub,
-			m1Priv,
-			Base58CheckEncode(ZeroPublicKey.ToBytes(), false, testMeta.params),
+			testMeta, testMeta.feeRateNanosPerKb,
+			m1Pub, m1Priv, Base58CheckEncode(ZeroPublicKey.ToBytes(), false, testMeta.params), m1Pub,
+			2*365*24*60*60*1e9,
 			2*365*24*60*60*1e9,
 			uint256.NewInt().SetUint64(500),
-			365*24*60*60*1e9,
-		)
+			365*24*60*60*1e9)
 
 		// Check to ensure the resulting locked balance entry has 525 base units.
 		utxoView, err = NewUtxoView(
@@ -1347,8 +1275,12 @@ func TestLockupStandardDeSoFlows(t *testing.T) {
 		require.NoError(t, err)
 		m1PKIDEntry := utxoView.GetPKIDForPublicKey(m1PkBytes)
 		m1PKID := m1PKIDEntry.PKID
-		lockedBalanceEntry, err := utxoView.GetLockedBalanceEntryForHODLerPKIDProfilePKIDUnlockTimestampNanoSecs(
-			m1PKID, ZeroPKID.NewPKID(), 2*365*24*60*60*1e9)
+		lockedBalanceEntry, err :=
+			utxoView.GetLockedBalanceEntryForHODLerPKIDProfilePKIDUnlockTimestampNanoSecsVestingEndTimestampNanoSecs(
+				m1PKID,
+				ZeroPKID.NewPKID(),
+				2*365*24*60*60*1e9,
+				2*365*24*60*60*1e9)
 		require.NoError(t, err)
 		require.Equal(t, *uint256.NewInt().SetUint64(525), lockedBalanceEntry.BalanceBaseUnits)
 
@@ -1371,15 +1303,12 @@ func TestLockupStandardDeSoFlows(t *testing.T) {
 		require.NoError(t, err)
 
 		_coinLockupWithTestMetaAndConnectTimestamp(
-			testMeta,
-			testMeta.feeRateNanosPerKb,
-			m1Pub,
-			m1Priv,
-			Base58CheckEncode(ZeroPublicKey.ToBytes(), false, testMeta.params),
+			testMeta, testMeta.feeRateNanosPerKb,
+			m1Pub, m1Priv, Base58CheckEncode(ZeroPublicKey.ToBytes(), false, testMeta.params), m1Pub,
+			2*365*24*60*60*1e9+365*12*60*60*1e9,
 			2*365*24*60*60*1e9+365*12*60*60*1e9,
 			uint256.NewInt().SetUint64(500),
-			365*24*60*60*1e9,
-		)
+			365*24*60*60*1e9)
 
 		// Check to ensure the resulting locked balance entry has 525 base units.
 		utxoView, err = NewUtxoView(
@@ -1387,8 +1316,12 @@ func TestLockupStandardDeSoFlows(t *testing.T) {
 		require.NoError(t, err)
 		m1PKIDEntry := utxoView.GetPKIDForPublicKey(m1PkBytes)
 		m1PKID := m1PKIDEntry.PKID
-		lockedBalanceEntry, err := utxoView.GetLockedBalanceEntryForHODLerPKIDProfilePKIDUnlockTimestampNanoSecs(
-			m1PKID, ZeroPKID.NewPKID(), 2*365*24*60*60*1e9+365*12*60*60*1e9)
+		lockedBalanceEntry, err :=
+			utxoView.GetLockedBalanceEntryForHODLerPKIDProfilePKIDUnlockTimestampNanoSecsVestingEndTimestampNanoSecs(
+				m1PKID,
+				ZeroPKID.NewPKID(),
+				2*365*24*60*60*1e9+365*12*60*60*1e9,
+				2*365*24*60*60*1e9+365*12*60*60*1e9)
 		require.NoError(t, err)
 		require.Equal(t, *uint256.NewInt().SetUint64(525), lockedBalanceEntry.BalanceBaseUnits)
 
@@ -1411,15 +1344,12 @@ func TestLockupStandardDeSoFlows(t *testing.T) {
 		require.NoError(t, err)
 
 		_coinLockupWithTestMetaAndConnectTimestamp(
-			testMeta,
-			testMeta.feeRateNanosPerKb,
-			m1Pub,
-			m1Priv,
-			Base58CheckEncode(ZeroPublicKey.ToBytes(), false, testMeta.params),
+			testMeta, testMeta.feeRateNanosPerKb,
+			m1Pub, m1Priv, Base58CheckEncode(ZeroPublicKey.ToBytes(), false, testMeta.params), m1Pub,
+			3*365*24*60*60*1e9,
 			3*365*24*60*60*1e9,
 			uint256.NewInt().SetUint64(500),
-			365*24*60*60*1e9,
-		)
+			365*24*60*60*1e9)
 
 		// Check to ensure the resulting locked balance entry has 525 base units.
 		utxoView, err = NewUtxoView(
@@ -1427,8 +1357,12 @@ func TestLockupStandardDeSoFlows(t *testing.T) {
 		require.NoError(t, err)
 		m1PKIDEntry := utxoView.GetPKIDForPublicKey(m1PkBytes)
 		m1PKID := m1PKIDEntry.PKID
-		lockedBalanceEntry, err := utxoView.GetLockedBalanceEntryForHODLerPKIDProfilePKIDUnlockTimestampNanoSecs(
-			m1PKID, ZeroPKID.NewPKID(), 3*365*24*60*60*1e9)
+		lockedBalanceEntry, err :=
+			utxoView.GetLockedBalanceEntryForHODLerPKIDProfilePKIDUnlockTimestampNanoSecsVestingEndTimestampNanoSecs(
+				m1PKID,
+				ZeroPKID.NewPKID(),
+				3*365*24*60*60*1e9,
+				3*365*24*60*60*1e9)
 		require.NoError(t, err)
 		require.Equal(t, *uint256.NewInt().SetUint64(600), lockedBalanceEntry.BalanceBaseUnits)
 
@@ -1480,8 +1414,12 @@ func TestLockupStandardDeSoFlows(t *testing.T) {
 		require.NoError(t, err)
 		m1PKIDEntry := utxoView.GetPKIDForPublicKey(m1PkBytes)
 		m1PKID := m1PKIDEntry.PKID
-		lockedBalanceEntry, err := utxoView.GetLockedBalanceEntryForHODLerPKIDProfilePKIDUnlockTimestampNanoSecs(
-			m1PKID, ZeroPKID.NewPKID(), 2*365*24*60*60*1e9)
+		lockedBalanceEntry, err :=
+			utxoView.GetLockedBalanceEntryForHODLerPKIDProfilePKIDUnlockTimestampNanoSecsVestingEndTimestampNanoSecs(
+				m1PKID,
+				ZeroPKID.NewPKID(),
+				2*365*24*60*60*1e9,
+				2*365*24*60*60*1e9)
 		require.True(t, lockedBalanceEntry == nil)
 
 		// Check that m1's DESO balance has increased by less than 1025 nDESO (some extra was spent on fees).
@@ -1572,7 +1510,9 @@ func TestLockupWithDerivedKey(t *testing.T) {
 			txn, _, _, _, err = testMeta.chain.CreateCoinLockupTxn(
 				transactorPkBytes,
 				txMeta.ProfilePublicKey.ToBytes(),
+				txMeta.RecipientPublicKey.ToBytes(),
 				txMeta.UnlockTimestampNanoSecs,
+				txMeta.VestingEndTimestampNanoSecs,
 				txMeta.LockupAmountBaseUnits,
 				testMeta.feeRateNanosPerKb, nil, []*DeSoOutput{})
 			require.NoError(t, err)
@@ -1718,9 +1658,11 @@ func TestLockupWithDerivedKey(t *testing.T) {
 
 		// Have m0 try and lockup m0 tokens. (Incorrect profile + correct operation)
 		coinLockupMetadata := &CoinLockupMetadata{
-			ProfilePublicKey:        NewPublicKey(m0PkBytes),
-			UnlockTimestampNanoSecs: 365 * 24 * 60 * 60 * 1e9,
-			LockupAmountBaseUnits:   uint256.NewInt().SetUint64(1000),
+			ProfilePublicKey:            NewPublicKey(m0PkBytes),
+			RecipientPublicKey:          NewPublicKey(m0PkBytes),
+			UnlockTimestampNanoSecs:     365 * 24 * 60 * 60 * 1e9,
+			VestingEndTimestampNanoSecs: 365 * 24 * 60 * 60 * 1e9,
+			LockupAmountBaseUnits:       uint256.NewInt().SetUint64(1000),
 		}
 		_, err = _submitLockupTxnWithDerivedKeyAndTimestamp(
 			m0PkBytes, derivedKeyPriv, MsgDeSoTxn{TxnMeta: coinLockupMetadata}, 0,
@@ -1729,15 +1671,12 @@ func TestLockupWithDerivedKey(t *testing.T) {
 
 		// Have m1 transfer over 1,000 LOCKED m1 tokens for m0 to unlock. (Correct profile + incorrect operation)
 		_coinLockupWithTestMetaAndConnectTimestamp(
-			testMeta,
-			testMeta.feeRateNanosPerKb,
-			m1Pub,
-			m1Priv,
-			m1Pub,
+			testMeta, testMeta.feeRateNanosPerKb,
+			m1Pub, m1Priv, m1Pub, m1Pub,
+			365*24*60*60*1e9,
 			365*24*60*60*1e9,
 			uint256.NewInt().SetUint64(1000),
-			0,
-		)
+			0)
 		_coinLockupTransferWithTestMeta(
 			testMeta,
 			testMeta.feeRateNanosPerKb,
@@ -1762,9 +1701,11 @@ func TestLockupWithDerivedKey(t *testing.T) {
 			ReceiverPublicKey:      m0PkBytes,
 		})
 		coinLockupMetadata = &CoinLockupMetadata{
-			ProfilePublicKey:        NewPublicKey(m1PkBytes),
-			UnlockTimestampNanoSecs: 365 * 24 * 60 * 60 * 1e9,
-			LockupAmountBaseUnits:   uint256.NewInt().SetUint64(1000),
+			ProfilePublicKey:            NewPublicKey(m1PkBytes),
+			RecipientPublicKey:          NewPublicKey(m1PkBytes),
+			UnlockTimestampNanoSecs:     365 * 24 * 60 * 60 * 1e9,
+			VestingEndTimestampNanoSecs: 365 * 24 * 60 * 60 * 1e9,
+			LockupAmountBaseUnits:       uint256.NewInt().SetUint64(1000),
 		}
 		_, err = _submitLockupTxnWithDerivedKeyAndTimestamp(
 			m0PkBytes, derivedKeyPriv, MsgDeSoTxn{TxnMeta: coinLockupMetadata}, 0,
@@ -1778,9 +1719,11 @@ func TestLockupWithDerivedKey(t *testing.T) {
 			ReceiverPublicKey:      m0PkBytes,
 		})
 		coinLockupMetadata = &CoinLockupMetadata{
-			ProfilePublicKey:        NewPublicKey(m1PkBytes),
-			UnlockTimestampNanoSecs: 365 * 24 * 60 * 60 * 1e9,
-			LockupAmountBaseUnits:   uint256.NewInt().SetUint64(1000),
+			ProfilePublicKey:            NewPublicKey(m1PkBytes),
+			RecipientPublicKey:          NewPublicKey(m1PkBytes),
+			UnlockTimestampNanoSecs:     365 * 24 * 60 * 60 * 1e9,
+			VestingEndTimestampNanoSecs: 365 * 24 * 60 * 60 * 1e9,
+			LockupAmountBaseUnits:       uint256.NewInt().SetUint64(1000),
 		}
 		_, err = _submitLockupTxnWithDerivedKeyAndTimestamp(
 			m0PkBytes, derivedKeyPriv, MsgDeSoTxn{TxnMeta: coinLockupMetadata}, 0,
@@ -1815,9 +1758,11 @@ func TestLockupWithDerivedKey(t *testing.T) {
 		// Try to submit a transaction locking up 1000 m1 coins with m0's derived key.
 		// This should fail. (Incorrect Profile PKID + Correct Operation)
 		coinLockupMetadata := &CoinLockupMetadata{
-			ProfilePublicKey:        NewPublicKey(m1PkBytes),
-			UnlockTimestampNanoSecs: 365 * 24 * 60 * 60 * 1e9,
-			LockupAmountBaseUnits:   uint256.NewInt().SetUint64(1000),
+			ProfilePublicKey:            NewPublicKey(m1PkBytes),
+			RecipientPublicKey:          NewPublicKey(m1PkBytes),
+			UnlockTimestampNanoSecs:     365 * 24 * 60 * 60 * 1e9,
+			VestingEndTimestampNanoSecs: 365 * 24 * 60 * 60 * 1e9,
+			LockupAmountBaseUnits:       uint256.NewInt().SetUint64(1000),
 		}
 		_, err = _submitLockupTxnWithDerivedKeyAndTimestamp(
 			m0PkBytes, derivedKeyPriv, MsgDeSoTxn{TxnMeta: coinLockupMetadata}, 0,
@@ -1827,9 +1772,11 @@ func TestLockupWithDerivedKey(t *testing.T) {
 		// Try to submit a transaction locking up 1000 m0 coins with m0's derived key.
 		// This should succeed. (Correct Profile PKID + Correct Operation)
 		coinLockupMetadata = &CoinLockupMetadata{
-			ProfilePublicKey:        NewPublicKey(m0PkBytes),
-			UnlockTimestampNanoSecs: 365 * 24 * 60 * 60 * 1e9,
-			LockupAmountBaseUnits:   uint256.NewInt().SetUint64(1000),
+			ProfilePublicKey:            NewPublicKey(m0PkBytes),
+			RecipientPublicKey:          NewPublicKey(m0PkBytes),
+			UnlockTimestampNanoSecs:     365 * 24 * 60 * 60 * 1e9,
+			VestingEndTimestampNanoSecs: 365 * 24 * 60 * 60 * 1e9,
+			LockupAmountBaseUnits:       uint256.NewInt().SetUint64(1000),
 		}
 		_, err = _submitLockupTxnWithDerivedKeyAndTimestamp(
 			m0PkBytes, derivedKeyPriv, MsgDeSoTxn{TxnMeta: coinLockupMetadata}, 0,
@@ -1847,9 +1794,11 @@ func TestLockupWithDerivedKey(t *testing.T) {
 
 		// Try to submit a subsequent lockup transaction. This should fail as we've exhausted the derived key.
 		coinLockupMetadata = &CoinLockupMetadata{
-			ProfilePublicKey:        NewPublicKey(m0PkBytes),
-			UnlockTimestampNanoSecs: 365 * 24 * 60 * 60 * 1e9,
-			LockupAmountBaseUnits:   uint256.NewInt().SetUint64(1000),
+			ProfilePublicKey:            NewPublicKey(m0PkBytes),
+			RecipientPublicKey:          NewPublicKey(m0PkBytes),
+			UnlockTimestampNanoSecs:     365 * 24 * 60 * 60 * 1e9,
+			VestingEndTimestampNanoSecs: 365 * 24 * 60 * 60 * 1e9,
+			LockupAmountBaseUnits:       uint256.NewInt().SetUint64(1000),
 		}
 		_, err = _submitLockupTxnWithDerivedKeyAndTimestamp(
 			m0PkBytes, derivedKeyPriv, MsgDeSoTxn{TxnMeta: coinLockupMetadata}, 365*24*60*60*1e9+1,
@@ -1880,9 +1829,11 @@ func TestLockupWithDerivedKey(t *testing.T) {
 		// Have m0 lockup 1000 m0 tokens to be unlocked one year into the future.
 		// This should fail. (Correct PKID + Incorrect Operation Type)
 		coinLockupMetadata := &CoinLockupMetadata{
-			ProfilePublicKey:        NewPublicKey(m0PkBytes),
-			UnlockTimestampNanoSecs: 365 * 24 * 60 * 60 * 1e9,
-			LockupAmountBaseUnits:   uint256.NewInt().SetUint64(1000),
+			ProfilePublicKey:            NewPublicKey(m0PkBytes),
+			RecipientPublicKey:          NewPublicKey(m0PkBytes),
+			UnlockTimestampNanoSecs:     365 * 24 * 60 * 60 * 1e9,
+			VestingEndTimestampNanoSecs: 365 * 24 * 60 * 60 * 1e9,
+			LockupAmountBaseUnits:       uint256.NewInt().SetUint64(1000),
 		}
 		_, err = _submitLockupTxnWithDerivedKeyAndTimestamp(
 			m0PkBytes, derivedKeyPriv, MsgDeSoTxn{TxnMeta: coinLockupMetadata}, 0,
@@ -1891,15 +1842,12 @@ func TestLockupWithDerivedKey(t *testing.T) {
 
 		// Have m1 transfer over 1,000 LOCKED m1 tokens for m0 to unlock.
 		_coinLockupWithTestMetaAndConnectTimestamp(
-			testMeta,
-			testMeta.feeRateNanosPerKb,
-			m1Pub,
-			m1Priv,
-			m1Pub,
+			testMeta, testMeta.feeRateNanosPerKb,
+			m1Pub, m1Priv, m1Pub, m1Pub,
+			365*24*60*60*1e9,
 			365*24*60*60*1e9,
 			uint256.NewInt().SetUint64(1000),
-			0,
-		)
+			0)
 		_coinLockupTransferWithTestMeta(
 			testMeta,
 			testMeta.feeRateNanosPerKb,
@@ -1921,9 +1869,11 @@ func TestLockupWithDerivedKey(t *testing.T) {
 
 		// Try to submit a subsequent lockup transaction. This should fail as we've exhausted the derived key.
 		coinLockupMetadata = &CoinLockupMetadata{
-			ProfilePublicKey:        NewPublicKey(m0PkBytes),
-			UnlockTimestampNanoSecs: 365 * 24 * 60 * 60 * 1e9,
-			LockupAmountBaseUnits:   uint256.NewInt().SetUint64(1000),
+			ProfilePublicKey:            NewPublicKey(m0PkBytes),
+			RecipientPublicKey:          NewPublicKey(m0PkBytes),
+			UnlockTimestampNanoSecs:     365 * 24 * 60 * 60 * 1e9,
+			VestingEndTimestampNanoSecs: 365 * 24 * 60 * 60 * 1e9,
+			LockupAmountBaseUnits:       uint256.NewInt().SetUint64(1000),
 		}
 		_, err = _submitLockupTxnWithDerivedKeyAndTimestamp(
 			m0PkBytes, derivedKeyPriv, MsgDeSoTxn{TxnMeta: coinLockupMetadata}, 365*24*60*60*1e9+1,
@@ -2004,9 +1954,11 @@ func TestLockupWithDerivedKey(t *testing.T) {
 
 		// Perform the first lockup operation of 1000 m0 coins at 1yr
 		coinLockupMetadata := &CoinLockupMetadata{
-			ProfilePublicKey:        NewPublicKey(m0PkBytes),
-			UnlockTimestampNanoSecs: 365 * 24 * 60 * 60 * 1e9,
-			LockupAmountBaseUnits:   uint256.NewInt().SetUint64(1000),
+			ProfilePublicKey:            NewPublicKey(m0PkBytes),
+			RecipientPublicKey:          NewPublicKey(m0PkBytes),
+			UnlockTimestampNanoSecs:     365 * 24 * 60 * 60 * 1e9,
+			VestingEndTimestampNanoSecs: 365 * 24 * 60 * 60 * 1e9,
+			LockupAmountBaseUnits:       uint256.NewInt().SetUint64(1000),
 		}
 		_, err = _submitLockupTxnWithDerivedKeyAndTimestamp(
 			m0PkBytes, derivedKeyPriv, MsgDeSoTxn{TxnMeta: coinLockupMetadata}, 0,
@@ -2015,17 +1967,23 @@ func TestLockupWithDerivedKey(t *testing.T) {
 		utxoView, err = NewUtxoView(
 			testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot, nil)
 		require.NoError(t, err)
-		lockedBalanceEntry, err := utxoView.GetLockedBalanceEntryForHODLerPKIDProfilePKIDUnlockTimestampNanoSecs(
-			m0PKID, m0PKID, 365*24*60*60*1e9)
+		lockedBalanceEntry, err :=
+			utxoView.GetLockedBalanceEntryForHODLerPKIDProfilePKIDUnlockTimestampNanoSecsVestingEndTimestampNanoSecs(
+				m0PKID,
+				m0PKID,
+				365*24*60*60*1e9,
+				365*24*60*60*1e9)
 		require.NoError(t, err)
 		require.Equal(t, *uint256.NewInt().SetUint64(1000), lockedBalanceEntry.BalanceBaseUnits)
 		require.Equal(t, int64(365*24*60*60*1e9), lockedBalanceEntry.UnlockTimestampNanoSecs)
 
 		// Perform the second lockup operation of 1000 m0 coins at 2yrs
 		coinLockupMetadata = &CoinLockupMetadata{
-			ProfilePublicKey:        NewPublicKey(m0PkBytes),
-			UnlockTimestampNanoSecs: 2 * 365 * 24 * 60 * 60 * 1e9,
-			LockupAmountBaseUnits:   uint256.NewInt().SetUint64(1000),
+			ProfilePublicKey:            NewPublicKey(m0PkBytes),
+			RecipientPublicKey:          NewPublicKey(m0PkBytes),
+			UnlockTimestampNanoSecs:     2 * 365 * 24 * 60 * 60 * 1e9,
+			VestingEndTimestampNanoSecs: 2 * 365 * 24 * 60 * 60 * 1e9,
+			LockupAmountBaseUnits:       uint256.NewInt().SetUint64(1000),
 		}
 		_, err = _submitLockupTxnWithDerivedKeyAndTimestamp(
 			m0PkBytes, derivedKeyPriv, MsgDeSoTxn{TxnMeta: coinLockupMetadata}, 0,
@@ -2034,8 +1992,12 @@ func TestLockupWithDerivedKey(t *testing.T) {
 		utxoView, err = NewUtxoView(
 			testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot, nil)
 		require.NoError(t, err)
-		lockedBalanceEntry, err = utxoView.GetLockedBalanceEntryForHODLerPKIDProfilePKIDUnlockTimestampNanoSecs(
-			m0PKID, m0PKID, 2*365*24*60*60*1e9)
+		lockedBalanceEntry, err =
+			utxoView.GetLockedBalanceEntryForHODLerPKIDProfilePKIDUnlockTimestampNanoSecsVestingEndTimestampNanoSecs(
+				m0PKID,
+				m0PKID,
+				2*365*24*60*60*1e9,
+				2*365*24*60*60*1e9)
 		require.NoError(t, err)
 		require.Equal(t, *uint256.NewInt().SetUint64(1000), lockedBalanceEntry.BalanceBaseUnits)
 		require.Equal(t, int64(2*365*24*60*60*1e9), lockedBalanceEntry.UnlockTimestampNanoSecs)
@@ -2054,8 +2016,12 @@ func TestLockupWithDerivedKey(t *testing.T) {
 		utxoView, err = NewUtxoView(
 			testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot, nil)
 		require.NoError(t, err)
-		lockedBalanceEntry, err = utxoView.GetLockedBalanceEntryForHODLerPKIDProfilePKIDUnlockTimestampNanoSecs(
-			m1PKID, m0PKID, 365*24*60*60*1e9)
+		lockedBalanceEntry, err =
+			utxoView.GetLockedBalanceEntryForHODLerPKIDProfilePKIDUnlockTimestampNanoSecsVestingEndTimestampNanoSecs(
+				m1PKID,
+				m0PKID,
+				365*24*60*60*1e9,
+				365*24*60*60*1e9)
 		require.NoError(t, err)
 		require.Equal(t, *uint256.NewInt().SetUint64(500), lockedBalanceEntry.BalanceBaseUnits)
 		require.Equal(t, int64(365*24*60*60*1e9), lockedBalanceEntry.UnlockTimestampNanoSecs)
@@ -2074,8 +2040,12 @@ func TestLockupWithDerivedKey(t *testing.T) {
 		utxoView, err = NewUtxoView(
 			testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot, nil)
 		require.NoError(t, err)
-		lockedBalanceEntry, err = utxoView.GetLockedBalanceEntryForHODLerPKIDProfilePKIDUnlockTimestampNanoSecs(
-			m1PKID, m0PKID, 2*365*24*60*60*1e9)
+		lockedBalanceEntry, err =
+			utxoView.GetLockedBalanceEntryForHODLerPKIDProfilePKIDUnlockTimestampNanoSecsVestingEndTimestampNanoSecs(
+				m1PKID,
+				m0PKID,
+				2*365*24*60*60*1e9,
+				2*365*24*60*60*1e9)
 		require.NoError(t, err)
 		require.Equal(t, *uint256.NewInt().SetUint64(500), lockedBalanceEntry.BalanceBaseUnits)
 		require.Equal(t, int64(2*365*24*60*60*1e9), lockedBalanceEntry.UnlockTimestampNanoSecs)
@@ -2098,8 +2068,12 @@ func TestLockupWithDerivedKey(t *testing.T) {
 		require.True(t, balanceEntry.BalanceNanos.Gt(&startingBalance))
 		require.Equal(t, *uint256.NewInt().SetUint64(500),
 			*uint256.NewInt().Sub(&balanceEntry.BalanceNanos, &startingBalance))
-		lockedBalanceEntry, err = utxoView.GetLockedBalanceEntryForHODLerPKIDProfilePKIDUnlockTimestampNanoSecs(
-			m0PKID, m0PKID, 365*24*60*60*1e9)
+		lockedBalanceEntry, err =
+			utxoView.GetLockedBalanceEntryForHODLerPKIDProfilePKIDUnlockTimestampNanoSecsVestingEndTimestampNanoSecs(
+				m0PKID,
+				m0PKID,
+				365*24*60*60*1e9,
+				365*24*60*60*1e9)
 		require.NoError(t, err)
 		require.True(t, lockedBalanceEntry == nil)
 
@@ -2118,16 +2092,22 @@ func TestLockupWithDerivedKey(t *testing.T) {
 		require.True(t, balanceEntry.BalanceNanos.Gt(&startingBalance))
 		require.Equal(t, *uint256.NewInt().SetUint64(1000),
 			*uint256.NewInt().Sub(&balanceEntry.BalanceNanos, &startingBalance))
-		lockedBalanceEntry, err = utxoView.GetLockedBalanceEntryForHODLerPKIDProfilePKIDUnlockTimestampNanoSecs(
-			m0PKID, m0PKID, 2*365*24*60*60*1e9)
+		lockedBalanceEntry, err =
+			utxoView.GetLockedBalanceEntryForHODLerPKIDProfilePKIDUnlockTimestampNanoSecsVestingEndTimestampNanoSecs(
+				m0PKID,
+				m0PKID,
+				2*365*24*60*60*1e9,
+				2*365*24*60*60*1e9)
 		require.NoError(t, err)
 		require.True(t, lockedBalanceEntry == nil)
 
 		// Now we try and perform another operation. This should fail as we've depleted our lockup operations limit.
 		coinLockupMetadata = &CoinLockupMetadata{
-			ProfilePublicKey:        NewPublicKey(m0PkBytes),
-			UnlockTimestampNanoSecs: 3 * 365 * 24 * 60 * 60 * 1e9,
-			LockupAmountBaseUnits:   uint256.NewInt().SetUint64(1000),
+			ProfilePublicKey:            NewPublicKey(m0PkBytes),
+			RecipientPublicKey:          NewPublicKey(m0PkBytes),
+			UnlockTimestampNanoSecs:     3 * 365 * 24 * 60 * 60 * 1e9,
+			VestingEndTimestampNanoSecs: 3 * 365 * 24 * 60 * 60 * 1e9,
+			LockupAmountBaseUnits:       uint256.NewInt().SetUint64(1000),
 		}
 		_, err = _submitLockupTxnWithDerivedKeyAndTimestamp(
 			m0PkBytes, derivedKeyPriv, MsgDeSoTxn{TxnMeta: coinLockupMetadata}, 2*365*24*60*60*1e9+2,
@@ -2150,21 +2130,17 @@ func TestLockupDisconnects(t *testing.T) {
 	// Test Coin Lockup for Profiles
 	//
 	utxoOps1, txn1, _, err := _coinLockupWithConnectTimestamp(
-		t, testMeta.chain, testMeta.db, testMeta.params,
-		testMeta.feeRateNanosPerKb,
-		m0Pub,
-		m0Priv,
-		m0Pub,
+		t, testMeta.chain, testMeta.db, testMeta.params, testMeta.feeRateNanosPerKb,
+		m0Pub, m0Priv, m0Pub, m0Pub,
+		2*365*24*60*60*1e9,
 		2*365*24*60*60*1e9,
 		uint256.NewInt().SetUint64(1000),
 		365*24*60*60*1e9)
 	require.NoError(t, err)
 	utxoOps2, txn2, _, err := _coinLockupWithConnectTimestamp(
-		t, testMeta.chain, testMeta.db, testMeta.params,
-		testMeta.feeRateNanosPerKb,
-		m0Pub,
-		m0Priv,
-		m0Pub,
+		t, testMeta.chain, testMeta.db, testMeta.params, testMeta.feeRateNanosPerKb,
+		m0Pub, m0Priv, m0Pub, m0Pub,
+		2*365*24*60*60*1e9,
 		2*365*24*60*60*1e9,
 		uint256.NewInt().SetUint64(1000),
 		365*24*60*60*1e9)
@@ -2181,8 +2157,12 @@ func TestLockupDisconnects(t *testing.T) {
 		testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot, nil)
 	require.NoError(t, err)
 	m0PKID := utxoView.GetPKIDForPublicKey(m0PkBytes).PKID
-	lockedBalanceEntry, err := utxoView.GetLockedBalanceEntryForHODLerPKIDProfilePKIDUnlockTimestampNanoSecs(
-		m0PKID, m0PKID, 2*365*24*60*60*1e9)
+	lockedBalanceEntry, err :=
+		utxoView.GetLockedBalanceEntryForHODLerPKIDProfilePKIDUnlockTimestampNanoSecsVestingEndTimestampNanoSecs(
+			m0PKID,
+			m0PKID,
+			2*365*24*60*60*1e9,
+			2*365*24*60*60*1e9)
 	require.NoError(t, err)
 	require.Equal(t, *uint256.NewInt().SetUint64(1000), lockedBalanceEntry.BalanceBaseUnits)
 	balanceEntry, _, _ := utxoView.GetBalanceEntryForHODLerPubKeyAndCreatorPubKey(m0PkBytes, m0PkBytes, true)
@@ -2193,8 +2173,12 @@ func TestLockupDisconnects(t *testing.T) {
 	utxoView, err = NewUtxoView(
 		testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot, nil)
 	require.NoError(t, err)
-	lockedBalanceEntry, err = utxoView.GetLockedBalanceEntryForHODLerPKIDProfilePKIDUnlockTimestampNanoSecs(
-		m0PKID, m0PKID, 2*365*24*60*60*1e9)
+	lockedBalanceEntry, err =
+		utxoView.GetLockedBalanceEntryForHODLerPKIDProfilePKIDUnlockTimestampNanoSecsVestingEndTimestampNanoSecs(
+			m0PKID,
+			m0PKID,
+			2*365*24*60*60*1e9,
+			2*365*24*60*60*1e9)
 	require.True(t, lockedBalanceEntry == nil)
 	balanceEntry, _, _ = utxoView.GetBalanceEntryForHODLerPubKeyAndCreatorPubKey(m0PkBytes, m0PkBytes, true)
 	require.Equal(t, *uint256.NewInt().SetUint64(1000000), balanceEntry.BalanceNanos)
@@ -2210,11 +2194,9 @@ func TestLockupDisconnects(t *testing.T) {
 		m2PkBytes, testMeta.chain.BlockTip().Height)
 	require.NoError(t, err)
 	utxoOps1, txn1, _, err = _coinLockupWithConnectTimestamp(
-		t, testMeta.chain, testMeta.db, testMeta.params,
-		testMeta.feeRateNanosPerKb,
-		m2Pub,
-		m2Priv,
-		Base58CheckEncode(ZeroPublicKey.ToBytes(), false, testMeta.params),
+		t, testMeta.chain, testMeta.db, testMeta.params, testMeta.feeRateNanosPerKb,
+		m2Pub, m2Priv, Base58CheckEncode(ZeroPublicKey.ToBytes(), false, testMeta.params), m2Pub,
+		2*365*24*60*60*1e9,
 		2*365*24*60*60*1e9,
 		uint256.NewInt().SetUint64(500),
 		365*24*60*60*1e9)
@@ -2226,11 +2208,9 @@ func TestLockupDisconnects(t *testing.T) {
 		m2PkBytes, testMeta.chain.BlockTip().Height)
 	require.NoError(t, err)
 	utxoOps2, txn2, _, err = _coinLockupWithConnectTimestamp(
-		t, testMeta.chain, testMeta.db, testMeta.params,
-		testMeta.feeRateNanosPerKb,
-		m2Pub,
-		m2Priv,
-		Base58CheckEncode(ZeroPublicKey.ToBytes(), false, testMeta.params),
+		t, testMeta.chain, testMeta.db, testMeta.params, testMeta.feeRateNanosPerKb,
+		m2Pub, m2Priv, Base58CheckEncode(ZeroPublicKey.ToBytes(), false, testMeta.params), m2Pub,
+		2*365*24*60*60*1e9,
 		2*365*24*60*60*1e9,
 		uint256.NewInt().SetUint64(500),
 		365*24*60*60*1e9)
@@ -2247,8 +2227,12 @@ func TestLockupDisconnects(t *testing.T) {
 		testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot, nil)
 	require.NoError(t, err)
 	m2PKID := utxoView.GetPKIDForPublicKey(m2PkBytes).PKID
-	lockedBalanceEntry, err = utxoView.GetLockedBalanceEntryForHODLerPKIDProfilePKIDUnlockTimestampNanoSecs(
-		m2PKID, &ZeroPKID, 2*365*24*60*60*1e9)
+	lockedBalanceEntry, err =
+		utxoView.GetLockedBalanceEntryForHODLerPKIDProfilePKIDUnlockTimestampNanoSecsVestingEndTimestampNanoSecs(
+			m2PKID,
+			&ZeroPKID,
+			2*365*24*60*60*1e9,
+			2*365*24*60*60*1e9)
 	require.NoError(t, err)
 	require.Equal(t, *uint256.NewInt().SetUint64(500), lockedBalanceEntry.BalanceBaseUnits)
 	currentBalance, err := utxoView.GetSpendableDeSoBalanceNanosForPublicKey(
@@ -2261,8 +2245,12 @@ func TestLockupDisconnects(t *testing.T) {
 	utxoView, err = NewUtxoView(
 		testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot, nil)
 	require.NoError(t, err)
-	lockedBalanceEntry, err = utxoView.GetLockedBalanceEntryForHODLerPKIDProfilePKIDUnlockTimestampNanoSecs(
-		m2PKID, &ZeroPKID, 2*365*24*60*60*1e9)
+	lockedBalanceEntry, err =
+		utxoView.GetLockedBalanceEntryForHODLerPKIDProfilePKIDUnlockTimestampNanoSecsVestingEndTimestampNanoSecs(
+			m2PKID,
+			&ZeroPKID,
+			2*365*24*60*60*1e9,
+			2*365*24*60*60*1e9)
 	require.True(t, lockedBalanceEntry == nil)
 	currentBalance, err = utxoView.GetSpendableDeSoBalanceNanosForPublicKey(
 		m2PkBytes, testMeta.chain.BlockTip().Height)
@@ -2478,14 +2466,9 @@ func TestLockupDisconnects(t *testing.T) {
 			TransferRestrictionStatus: 0,
 		})
 	_coinLockupWithTestMetaAndConnectTimestamp(
-		testMeta,
-		testMeta.feeRateNanosPerKb,
-		m3Pub,
-		m3Priv,
-		m3Pub,
-		1000,
-		MaxUint256,
-		0)
+		testMeta, testMeta.feeRateNanosPerKb,
+		m3Pub, m3Priv, m3Pub, m3Pub,
+		1000, 1000, MaxUint256, 0)
 	utxoOps, txn, _, err = _coinLockupTransfer(
 		t, testMeta.chain, testMeta.db, testMeta.params,
 		testMeta.feeRateNanosPerKb,
@@ -2500,8 +2483,18 @@ func TestLockupDisconnects(t *testing.T) {
 	require.NoError(t, err)
 	m3PKID := utxoView.GetPKIDForPublicKey(m3PkBytes).PKID
 	m4PKID := utxoView.GetPKIDForPublicKey(m4PkBytes).PKID
-	m3BalanceEntry, err := utxoView.GetLockedBalanceEntryForHODLerPKIDProfilePKIDUnlockTimestampNanoSecs(m3PKID, m3PKID, 1000)
-	m4BalanceEntry, err := utxoView.GetLockedBalanceEntryForHODLerPKIDProfilePKIDUnlockTimestampNanoSecs(m4PKID, m3PKID, 1000)
+	m3BalanceEntry, err :=
+		utxoView.GetLockedBalanceEntryForHODLerPKIDProfilePKIDUnlockTimestampNanoSecsVestingEndTimestampNanoSecs(
+			m3PKID,
+			m3PKID,
+			1000,
+			1000)
+	m4BalanceEntry, err :=
+		utxoView.GetLockedBalanceEntryForHODLerPKIDProfilePKIDUnlockTimestampNanoSecsVestingEndTimestampNanoSecs(
+			m4PKID,
+			m3PKID,
+			1000,
+			1000)
 	require.True(t, nil == m3BalanceEntry)
 	require.Equal(t, *MaxUint256, m4BalanceEntry.BalanceBaseUnits)
 	txHash = txn.Hash()
@@ -2514,8 +2507,18 @@ func TestLockupDisconnects(t *testing.T) {
 	require.NoError(t, err)
 	m3PKID = utxoView.GetPKIDForPublicKey(m3PkBytes).PKID
 	m4PKID = utxoView.GetPKIDForPublicKey(m4PkBytes).PKID
-	m3BalanceEntry, err = utxoView.GetLockedBalanceEntryForHODLerPKIDProfilePKIDUnlockTimestampNanoSecs(m3PKID, m3PKID, 1000)
-	m4BalanceEntry, err = utxoView.GetLockedBalanceEntryForHODLerPKIDProfilePKIDUnlockTimestampNanoSecs(m4PKID, m3PKID, 1000)
+	m3BalanceEntry, err =
+		utxoView.GetLockedBalanceEntryForHODLerPKIDProfilePKIDUnlockTimestampNanoSecsVestingEndTimestampNanoSecs(
+			m3PKID,
+			m3PKID,
+			1000,
+			1000)
+	m4BalanceEntry, err =
+		utxoView.GetLockedBalanceEntryForHODLerPKIDProfilePKIDUnlockTimestampNanoSecsVestingEndTimestampNanoSecs(
+			m4PKID,
+			m3PKID,
+			1000,
+			1000)
 	require.True(t, nil == m4BalanceEntry)
 	require.Equal(t, *MaxUint256, m3BalanceEntry.BalanceBaseUnits)
 
@@ -2553,20 +2556,19 @@ func TestLockupDisconnects(t *testing.T) {
 			TransferRestrictionStatus: 0,
 		})
 	_coinLockupWithTestMetaAndConnectTimestamp(
-		testMeta,
-		testMeta.feeRateNanosPerKb,
-		m4Pub,
-		m4Priv,
-		m4Pub,
-		1000,
-		MaxUint256,
-		0)
+		testMeta, testMeta.feeRateNanosPerKb,
+		m4Pub, m4Priv, m4Pub, m4Pub,
+		1000, 1000, MaxUint256, 0)
 
 	utxoView, err = NewUtxoView(
 		testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot, nil)
 	require.NoError(t, err)
-	m4LockedBalanceEntry, err := utxoView.GetLockedBalanceEntryForHODLerPKIDProfilePKIDUnlockTimestampNanoSecs(
-		m4PKID, m4PKID, 1000)
+	m4LockedBalanceEntry, err :=
+		utxoView.GetLockedBalanceEntryForHODLerPKIDProfilePKIDUnlockTimestampNanoSecsVestingEndTimestampNanoSecs(
+			m4PKID,
+			m4PKID,
+			1000,
+			1000)
 	m4be, _, _ := utxoView.GetDAOCoinBalanceEntryForHODLerPubKeyAndCreatorPubKey(m4PkBytes, m4PkBytes)
 	require.NoError(t, err)
 	require.Equal(t, *MaxUint256, m4LockedBalanceEntry.BalanceBaseUnits)
@@ -2584,8 +2586,12 @@ func TestLockupDisconnects(t *testing.T) {
 	utxoView, err = NewUtxoView(
 		testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot, nil)
 	require.NoError(t, err)
-	m4LockedBalanceEntry, err = utxoView.GetLockedBalanceEntryForHODLerPKIDProfilePKIDUnlockTimestampNanoSecs(
-		m4PKID, m4PKID, 1000)
+	m4LockedBalanceEntry, err =
+		utxoView.GetLockedBalanceEntryForHODLerPKIDProfilePKIDUnlockTimestampNanoSecsVestingEndTimestampNanoSecs(
+			m4PKID,
+			m4PKID,
+			1000,
+			1000)
 	require.NoError(t, err)
 	m4be, _, _ = utxoView.GetDAOCoinBalanceEntryForHODLerPubKeyAndCreatorPubKey(m4PkBytes, m4PkBytes)
 	require.True(t, nil == m4LockedBalanceEntry)
@@ -2603,8 +2609,12 @@ func TestLockupDisconnects(t *testing.T) {
 	utxoView, err = NewUtxoView(
 		testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot, nil)
 	require.NoError(t, err)
-	m4LockedBalanceEntry, err = utxoView.GetLockedBalanceEntryForHODLerPKIDProfilePKIDUnlockTimestampNanoSecs(
-		m4PKID, m4PKID, 1000)
+	m4LockedBalanceEntry, err =
+		utxoView.GetLockedBalanceEntryForHODLerPKIDProfilePKIDUnlockTimestampNanoSecsVestingEndTimestampNanoSecs(
+			m4PKID,
+			m4PKID,
+			1000,
+			1000)
 	require.NoError(t, err)
 	m4be, _, _ = utxoView.GetDAOCoinBalanceEntryForHODLerPubKeyAndCreatorPubKey(m4PkBytes, m4PkBytes)
 	require.Equal(t, *uint256.NewInt(), m4be.BalanceNanos)
@@ -2622,20 +2632,19 @@ func TestLockupDisconnects(t *testing.T) {
 		m4PkBytes, testMeta.chain.BlockTip().Height)
 	require.NoError(t, err)
 	_coinLockupWithTestMetaAndConnectTimestamp(
-		testMeta,
-		testMeta.feeRateNanosPerKb,
-		m4Pub,
-		m4Priv,
-		Base58CheckEncode(ZeroPublicKey.ToBytes(), false, testMeta.params),
-		1000,
-		uint256.NewInt().SetUint64(500),
-		0)
+		testMeta, testMeta.feeRateNanosPerKb,
+		m4Pub, m4Priv, Base58CheckEncode(ZeroPublicKey.ToBytes(), false, testMeta.params), m4Pub,
+		1000, 1000, uint256.NewInt().SetUint64(500), 0)
 
 	utxoView, err = NewUtxoView(
 		testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot, nil)
 	require.NoError(t, err)
-	m4LockedBalanceEntry, err = utxoView.GetLockedBalanceEntryForHODLerPKIDProfilePKIDUnlockTimestampNanoSecs(
-		m4PKID, &ZeroPKID, 1000)
+	m4LockedBalanceEntry, err =
+		utxoView.GetLockedBalanceEntryForHODLerPKIDProfilePKIDUnlockTimestampNanoSecsVestingEndTimestampNanoSecs(
+			m4PKID,
+			&ZeroPKID,
+			1000,
+			1000)
 	preUnlockBalance, err := utxoView.GetSpendableDeSoBalanceNanosForPublicKey(
 		m4PkBytes, testMeta.chain.BlockTip().Height)
 	require.NoError(t, err)
@@ -2655,8 +2664,12 @@ func TestLockupDisconnects(t *testing.T) {
 	utxoView, err = NewUtxoView(
 		testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot, nil)
 	require.NoError(t, err)
-	m4LockedBalanceEntry, err = utxoView.GetLockedBalanceEntryForHODLerPKIDProfilePKIDUnlockTimestampNanoSecs(
-		m4PKID, &ZeroPKID, 1000)
+	m4LockedBalanceEntry, err =
+		utxoView.GetLockedBalanceEntryForHODLerPKIDProfilePKIDUnlockTimestampNanoSecsVestingEndTimestampNanoSecs(
+			m4PKID,
+			&ZeroPKID,
+			1000,
+			1000)
 	currentBalance, err = utxoView.GetSpendableDeSoBalanceNanosForPublicKey(
 		m4PkBytes, testMeta.chain.BlockTip().Height)
 	require.NoError(t, err)
@@ -2676,8 +2689,12 @@ func TestLockupDisconnects(t *testing.T) {
 	utxoView, err = NewUtxoView(
 		testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot, nil)
 	require.NoError(t, err)
-	m4LockedBalanceEntry, err = utxoView.GetLockedBalanceEntryForHODLerPKIDProfilePKIDUnlockTimestampNanoSecs(
-		m4PKID, &ZeroPKID, 1000)
+	m4LockedBalanceEntry, err =
+		utxoView.GetLockedBalanceEntryForHODLerPKIDProfilePKIDUnlockTimestampNanoSecsVestingEndTimestampNanoSecs(
+			m4PKID,
+			&ZeroPKID,
+			1000,
+			1000)
 	currentBalance, err = utxoView.GetSpendableDeSoBalanceNanosForPublicKey(
 		m4PkBytes, testMeta.chain.BlockTip().Height)
 	require.NoError(t, err)
@@ -2711,12 +2728,20 @@ func TestLockupBlockConnectsAndDisconnects(t *testing.T) {
 	m3BalanceEntry, _, _ := utxoView.GetDAOCoinBalanceEntryForHODLerPubKeyAndCreatorPubKey(m3PkBytes, m0PkBytes)
 	require.Equal(t, *uint256.NewInt().SetUint64(1000000), m0BalanceEntry.BalanceNanos)
 	require.Equal(t, *uint256.NewInt(), m3BalanceEntry.BalanceNanos)
-	m0LockedBalanceEntry, err := utxoView.GetLockedBalanceEntryForHODLerPKIDProfilePKIDUnlockTimestampNanoSecs(
-		m0PKID, m0PKID, tipTimestamp+2e9)
+	m0LockedBalanceEntry, err :=
+		utxoView.GetLockedBalanceEntryForHODLerPKIDProfilePKIDUnlockTimestampNanoSecsVestingEndTimestampNanoSecs(
+			m0PKID,
+			m0PKID,
+			tipTimestamp+2e9,
+			tipTimestamp+2e9)
 	require.NoError(t, err)
 	require.True(t, m0LockedBalanceEntry == nil)
-	m3LockedBalanceEntry, err := utxoView.GetLockedBalanceEntryForHODLerPKIDProfilePKIDUnlockTimestampNanoSecs(
-		m3PKID, m0PKID, tipTimestamp+2e9)
+	m3LockedBalanceEntry, err :=
+		utxoView.GetLockedBalanceEntryForHODLerPKIDProfilePKIDUnlockTimestampNanoSecsVestingEndTimestampNanoSecs(
+			m3PKID,
+			m0PKID,
+			tipTimestamp+2e9,
+			tipTimestamp+2e9)
 	require.NoError(t, err)
 	require.True(t, m3LockedBalanceEntry == nil)
 
@@ -2732,8 +2757,8 @@ func TestLockupBlockConnectsAndDisconnects(t *testing.T) {
 	require.NoError(t, err)
 	_signTxn(t, updateTxn, m0Priv)
 	lockupTxn, _, _, _, err := testMeta.chain.CreateCoinLockupTxn(
-		m0PkBytes, m0PkBytes, tipTimestamp+2e9, uint256.NewInt().SetUint64(1000),
-		testMeta.feeRateNanosPerKb, nil, []*DeSoOutput{})
+		m0PkBytes, m0PkBytes, m0PkBytes, tipTimestamp+2e9, tipTimestamp+2e9,
+		uint256.NewInt().SetUint64(1000), testMeta.feeRateNanosPerKb, nil, []*DeSoOutput{})
 	require.NoError(t, err)
 	_signTxn(t, lockupTxn, m0Priv)
 	transferTxn, _, _, _, err := testMeta.chain.CreateCoinLockupTransferTxn(
@@ -2783,12 +2808,20 @@ func TestLockupBlockConnectsAndDisconnects(t *testing.T) {
 	m3BalanceEntry, _, _ = utxoView.GetDAOCoinBalanceEntryForHODLerPubKeyAndCreatorPubKey(m3PkBytes, m0PkBytes)
 	require.Equal(t, *uint256.NewInt().SetUint64(999000), m0BalanceEntry.BalanceNanos)
 	require.Equal(t, *uint256.NewInt(), m3BalanceEntry.BalanceNanos)
-	m0LockedBalanceEntry, err = utxoView.GetLockedBalanceEntryForHODLerPKIDProfilePKIDUnlockTimestampNanoSecs(
-		m0PKID, m0PKID, tipTimestamp+2e9)
+	m0LockedBalanceEntry, err =
+		utxoView.GetLockedBalanceEntryForHODLerPKIDProfilePKIDUnlockTimestampNanoSecsVestingEndTimestampNanoSecs(
+			m0PKID,
+			m0PKID,
+			tipTimestamp+2e9,
+			tipTimestamp+2e9)
 	require.NoError(t, err)
 	require.True(t, m0LockedBalanceEntry == nil)
-	m3LockedBalanceEntry, err = utxoView.GetLockedBalanceEntryForHODLerPKIDProfilePKIDUnlockTimestampNanoSecs(
-		m3PKID, m0PKID, tipTimestamp+2e9)
+	m3LockedBalanceEntry, err =
+		utxoView.GetLockedBalanceEntryForHODLerPKIDProfilePKIDUnlockTimestampNanoSecsVestingEndTimestampNanoSecs(
+			m3PKID,
+			m0PKID,
+			tipTimestamp+2e9,
+			tipTimestamp+2e9)
 	require.NoError(t, err)
 	require.Equal(t, *uint256.NewInt().SetUint64(1000), m3LockedBalanceEntry.BalanceBaseUnits)
 
@@ -2831,12 +2864,20 @@ func TestLockupBlockConnectsAndDisconnects(t *testing.T) {
 	m3BalanceEntry, _, _ = utxoView.GetDAOCoinBalanceEntryForHODLerPubKeyAndCreatorPubKey(m3PkBytes, m0PkBytes)
 	require.Equal(t, *uint256.NewInt().SetUint64(999000), m0BalanceEntry.BalanceNanos)
 	require.Equal(t, *uint256.NewInt().SetUint64(1000), m3BalanceEntry.BalanceNanos)
-	m0LockedBalanceEntry, err = utxoView.GetLockedBalanceEntryForHODLerPKIDProfilePKIDUnlockTimestampNanoSecs(
-		m0PKID, m0PKID, tipTimestamp+2e9)
+	m0LockedBalanceEntry, err =
+		utxoView.GetLockedBalanceEntryForHODLerPKIDProfilePKIDUnlockTimestampNanoSecsVestingEndTimestampNanoSecs(
+			m0PKID,
+			m0PKID,
+			tipTimestamp+2e9,
+			tipTimestamp+2e9)
 	require.NoError(t, err)
 	require.True(t, m0LockedBalanceEntry == nil)
-	m3LockedBalanceEntry, err = utxoView.GetLockedBalanceEntryForHODLerPKIDProfilePKIDUnlockTimestampNanoSecs(
-		m3PKID, m0PKID, tipTimestamp+2e9)
+	m3LockedBalanceEntry, err =
+		utxoView.GetLockedBalanceEntryForHODLerPKIDProfilePKIDUnlockTimestampNanoSecsVestingEndTimestampNanoSecs(
+			m3PKID,
+			m0PKID,
+			tipTimestamp+2e9,
+			tipTimestamp+2e9)
 	require.NoError(t, err)
 	require.True(t, m3LockedBalanceEntry == nil)
 
@@ -2878,12 +2919,20 @@ func TestLockupBlockConnectsAndDisconnects(t *testing.T) {
 	m3BalanceEntry, _, _ = utxoView.GetDAOCoinBalanceEntryForHODLerPubKeyAndCreatorPubKey(m3PkBytes, m0PkBytes)
 	require.Equal(t, *uint256.NewInt().SetUint64(999000), m0BalanceEntry.BalanceNanos)
 	require.Equal(t, *uint256.NewInt(), m3BalanceEntry.BalanceNanos)
-	m0LockedBalanceEntry, err = utxoView.GetLockedBalanceEntryForHODLerPKIDProfilePKIDUnlockTimestampNanoSecs(
-		m0PKID, m0PKID, tipTimestamp+2e9)
+	m0LockedBalanceEntry, err =
+		utxoView.GetLockedBalanceEntryForHODLerPKIDProfilePKIDUnlockTimestampNanoSecsVestingEndTimestampNanoSecs(
+			m0PKID,
+			m0PKID,
+			tipTimestamp+2e9,
+			tipTimestamp+2e9)
 	require.NoError(t, err)
 	require.True(t, m0LockedBalanceEntry == nil)
-	m3LockedBalanceEntry, err = utxoView.GetLockedBalanceEntryForHODLerPKIDProfilePKIDUnlockTimestampNanoSecs(
-		m3PKID, m0PKID, tipTimestamp+2e9)
+	m3LockedBalanceEntry, err =
+		utxoView.GetLockedBalanceEntryForHODLerPKIDProfilePKIDUnlockTimestampNanoSecsVestingEndTimestampNanoSecs(
+			m3PKID,
+			m0PKID,
+			tipTimestamp+2e9,
+			tipTimestamp+2e9)
 	require.NoError(t, err)
 	require.Equal(t, *uint256.NewInt().SetUint64(1000), m3LockedBalanceEntry.BalanceBaseUnits)
 
@@ -2923,12 +2972,20 @@ func TestLockupBlockConnectsAndDisconnects(t *testing.T) {
 	m3BalanceEntry, _, _ = utxoView.GetDAOCoinBalanceEntryForHODLerPubKeyAndCreatorPubKey(m3PkBytes, m0PkBytes)
 	require.Equal(t, *uint256.NewInt().SetUint64(1000000), m0BalanceEntry.BalanceNanos)
 	require.Equal(t, *uint256.NewInt(), m3BalanceEntry.BalanceNanos)
-	m0LockedBalanceEntry, err = utxoView.GetLockedBalanceEntryForHODLerPKIDProfilePKIDUnlockTimestampNanoSecs(
-		m0PKID, m0PKID, tipTimestamp+2e9)
+	m0LockedBalanceEntry, err =
+		utxoView.GetLockedBalanceEntryForHODLerPKIDProfilePKIDUnlockTimestampNanoSecsVestingEndTimestampNanoSecs(
+			m0PKID,
+			m0PKID,
+			tipTimestamp+2e9,
+			tipTimestamp+2e9)
 	require.NoError(t, err)
 	require.True(t, m0LockedBalanceEntry == nil)
-	m3LockedBalanceEntry, err = utxoView.GetLockedBalanceEntryForHODLerPKIDProfilePKIDUnlockTimestampNanoSecs(
-		m3PKID, m0PKID, tipTimestamp+2e9)
+	m3LockedBalanceEntry, err =
+		utxoView.GetLockedBalanceEntryForHODLerPKIDProfilePKIDUnlockTimestampNanoSecsVestingEndTimestampNanoSecs(
+			m3PKID,
+			m0PKID,
+			tipTimestamp+2e9,
+			tipTimestamp+2e9)
 	require.NoError(t, err)
 	require.True(t, m3LockedBalanceEntry == nil)
 }
@@ -3076,7 +3133,9 @@ func _coinLockupWithTestMetaAndConnectTimestamp(
 	transactorPublicKeyBase58Check string,
 	transactorPrivateKeyBase58Check string,
 	profilePublicKeyBase58Check string,
+	recipientPublicKeyBase58Check string,
 	unlockTimestampNanoSecs int64,
+	vestingEndTimestampNanoSecs int64,
 	lockupAmountBaseUnits *uint256.Int,
 	connectTimestamp int64) {
 
@@ -3085,24 +3144,32 @@ func _coinLockupWithTestMetaAndConnectTimestamp(
 			_getBalance(testMeta.t, testMeta.chain, nil, transactorPublicKeyBase58Check))
 
 	currentOps, currentTxn, _, err := _coinLockupWithConnectTimestamp(
-		testMeta.t, testMeta.chain, testMeta.db, testMeta.params,
-		feeRateNanosPerKB, transactorPublicKeyBase58Check, transactorPrivateKeyBase58Check,
-		profilePublicKeyBase58Check, unlockTimestampNanoSecs, lockupAmountBaseUnits, connectTimestamp)
+		testMeta.t, testMeta.chain, testMeta.db, testMeta.params, feeRateNanosPerKB,
+		transactorPublicKeyBase58Check,
+		transactorPrivateKeyBase58Check,
+		profilePublicKeyBase58Check,
+		recipientPublicKeyBase58Check,
+		unlockTimestampNanoSecs,
+		vestingEndTimestampNanoSecs,
+		lockupAmountBaseUnits,
+		connectTimestamp)
 	require.NoError(testMeta.t, err)
 
 	testMeta.txnOps = append(testMeta.txnOps, currentOps)
 	testMeta.txns = append(testMeta.txns, currentTxn)
 }
 
-func _coinLockupWithConnectTimestamp(t *testing.T, chain *Blockchain, db *badger.DB,
-	params *DeSoParams, feeRateNanosPerKB uint64,
+func _coinLockupWithConnectTimestamp(
+	t *testing.T, chain *Blockchain, db *badger.DB, params *DeSoParams, feeRateNanosPerKB uint64,
 	transactorPublicKeyBase58Check string,
 	transactorPrivateKeyBase58Check string,
 	profilePublicKeyBase58Check string,
+	recipientPublicKeyBase58Check string,
 	unlockTimestampNanoSecs int64,
+	vestingEndTimestampNanoSecs int64,
 	lockupAmountBaseUnits *uint256.Int,
-	connectTimestamp int64) (
-	_utxoOps []*UtxoOperation, _txn *MsgDeSoTxn, _height uint32, _err error) {
+	connectTimestamp int64,
+) (_utxoOps []*UtxoOperation, _txn *MsgDeSoTxn, _height uint32, _err error) {
 
 	assert := assert.New(t)
 	require := require.New(t)
@@ -3115,13 +3182,22 @@ func _coinLockupWithConnectTimestamp(t *testing.T, chain *Blockchain, db *badger
 	profilePkBytes, _, err := Base58CheckDecode(profilePublicKeyBase58Check)
 	require.NoError(err)
 
+	recipientPkBytes, _, err := Base58CheckDecode(recipientPublicKeyBase58Check)
+	require.NoError(err)
+
 	utxoView, err := NewUtxoView(db, params, chain.postgres, chain.snapshot, nil)
 	require.NoError(err)
 
 	// Create the coin lockup transaction.
 	txn, totalInputMake, _, feesMake, err := chain.CreateCoinLockupTxn(
-		transactorPkBytes, profilePkBytes, unlockTimestampNanoSecs,
-		lockupAmountBaseUnits, feeRateNanosPerKB, nil, []*DeSoOutput{})
+		transactorPkBytes,
+		profilePkBytes,
+		recipientPkBytes,
+		unlockTimestampNanoSecs,
+		vestingEndTimestampNanoSecs,
+		lockupAmountBaseUnits,
+		feeRateNanosPerKB,
+		nil, []*DeSoOutput{})
 	if err != nil {
 		return nil, nil, 0, err
 	}

@@ -4016,9 +4016,46 @@ type GlobalParamsEntry struct {
 	// blocks) before they are jailed.
 	JailInactiveValidatorGracePeriodEpochs uint64
 
-	// LockedDESOTransferRestrictions is the transfer restrictions on Locked raw DESO.
-	// We place it here to prevent the creation of a ZeroPKID profile entry.
+	// LockedDESOTransferRestrictions specifies the transfer restriction status
+	// of locked unvested DESO.
 	LockedDESOTransferRestrictions TransferRestrictionStatus
+
+	// MaximumVestedIntersectionsPerLockupTransaction is used to limit the computational complexity of
+	// vested lockup transactions. Essentially, vested lockups may overlap in time creating either
+	// significant complexity on the lockup transaction or the unlock transaction. As a simple example,
+	// consider a user having the following five vested lockups:
+	//
+	//		January 1st 2024 -> January 1st 2025; Amount: 1 DESO
+	//		February 1st 2024 -> February 1st 2025; Amount: 1 DESO
+	//		March 1st 2024 -> March 1st 2025; Amount: 1 DESO
+	//		April 1st 2024 -> April 1st 2025; Amount: 1 DESO
+	//		May 1st 2024 -> May 1st 2025; Amount: 1 DESO
+	//
+	// Notice that between May 1st 2024 and January 1st 2025 anytime the user wants to perform an unlock
+	// on these vested locked balance entries they must read five distinct entries, update them,
+	// possible consolidate them with other existing entries in the db, and write them back to disk. Worse,
+	// this would happen on the unlock transaction which can be triggered every time. To get around this issue,
+	// we consolidate these transactions on the lockup instead. For example, what SHOULD be stored in the database
+	// for these five vested lockups is:
+	//
+	//		January 1st 2024 -> February 1st 2024; Amount: 1 DESO
+	//		February 1st 2024 -> March 1st 2024; Amount: 2 DESO
+	//		March 1st 2024 -> April 1st 2024; Amount: 3 DESO
+	//		April 1st 2024 -> May 1st 2024; Amount: 4 DESO
+	//		May 1st 2024 -> January 1st 2025; Amount: 5 DESO
+	//		January 1st 2025 -> February 1st 2025; Amount: 4 DESO
+	//		February 1st 2025 -> March 1st 2025; Amount: 3 DESO
+	//		March 1st 2025 -> April 1st 2025; Amount: 2 DESO
+	//		April 1st 2025 -> May 1st 2025; Amount: 1 DESO
+	//
+	// Notice that this is functionally identical but at any given point in time we hit exactly one vested
+	// locked balance entry. This consolidation on the lockup transaction operation could be computationally expensive.
+	// Hence, we limit this complexity with the MaximumVestedIntersectionsPerLockupTransactions (default: 100).
+	// When connecting a lockup transaction we check to see how many existing vested locked balance entries
+	// we would intersect with. If we exceed the MaximumVestedIntersectionsPerLockupTransaction, we reject
+	// the transaction. A user must split their single transaction into multiple disjoint time intervals which
+	// satisfies the limit.
+	MaximumVestedIntersectionsPerLockupTransaction int
 
 	// FeeBucketGrowthRateBasisPoints is the rate of growth of the fee bucket ranges. This is part of the new
 	// PoS Mempool. The multiplier is given as basis points. For example a value of 1000 means that the fee bucket
@@ -4035,23 +4072,24 @@ type GlobalParamsEntry struct {
 
 func (gp *GlobalParamsEntry) Copy() *GlobalParamsEntry {
 	return &GlobalParamsEntry{
-		USDCentsPerBitcoin:                         gp.USDCentsPerBitcoin,
-		CreateProfileFeeNanos:                      gp.CreateProfileFeeNanos,
-		CreateNFTFeeNanos:                          gp.CreateNFTFeeNanos,
-		MaxCopiesPerNFT:                            gp.MaxCopiesPerNFT,
-		MinimumNetworkFeeNanosPerKB:                gp.MinimumNetworkFeeNanosPerKB,
-		MaxNonceExpirationBlockHeightOffset:        gp.MaxNonceExpirationBlockHeightOffset,
-		StakeLockupEpochDuration:                   gp.StakeLockupEpochDuration,
-		ValidatorJailEpochDuration:                 gp.ValidatorJailEpochDuration,
-		LeaderScheduleMaxNumValidators:             gp.LeaderScheduleMaxNumValidators,
-		ValidatorSetMaxNumValidators:               gp.ValidatorSetMaxNumValidators,
-		StakingRewardsMaxNumStakes:                 gp.StakingRewardsMaxNumStakes,
-		StakingRewardsAPYBasisPoints:               gp.StakingRewardsAPYBasisPoints,
-		EpochDurationNumBlocks:                     gp.EpochDurationNumBlocks,
-		JailInactiveValidatorGracePeriodEpochs:     gp.JailInactiveValidatorGracePeriodEpochs,
-		LockedDESOTransferRestrictions:             gp.LockedDESOTransferRestrictions,
-		FeeBucketGrowthRateBasisPoints:             gp.FeeBucketGrowthRateBasisPoints,
-		FailingTransactionBMFMultiplierBasisPoints: gp.FailingTransactionBMFMultiplierBasisPoints,
+		USDCentsPerBitcoin:                             gp.USDCentsPerBitcoin,
+		CreateProfileFeeNanos:                          gp.CreateProfileFeeNanos,
+		CreateNFTFeeNanos:                              gp.CreateNFTFeeNanos,
+		MaxCopiesPerNFT:                                gp.MaxCopiesPerNFT,
+		MinimumNetworkFeeNanosPerKB:                    gp.MinimumNetworkFeeNanosPerKB,
+		MaxNonceExpirationBlockHeightOffset:            gp.MaxNonceExpirationBlockHeightOffset,
+		StakeLockupEpochDuration:                       gp.StakeLockupEpochDuration,
+		ValidatorJailEpochDuration:                     gp.ValidatorJailEpochDuration,
+		LeaderScheduleMaxNumValidators:                 gp.LeaderScheduleMaxNumValidators,
+		ValidatorSetMaxNumValidators:                   gp.ValidatorSetMaxNumValidators,
+		StakingRewardsMaxNumStakes:                     gp.StakingRewardsMaxNumStakes,
+		StakingRewardsAPYBasisPoints:                   gp.StakingRewardsAPYBasisPoints,
+		EpochDurationNumBlocks:                         gp.EpochDurationNumBlocks,
+		JailInactiveValidatorGracePeriodEpochs:         gp.JailInactiveValidatorGracePeriodEpochs,
+		LockedDESOTransferRestrictions:                 gp.LockedDESOTransferRestrictions,
+		MaximumVestedIntersectionsPerLockupTransaction: gp.MaximumVestedIntersectionsPerLockupTransaction,
+		FeeBucketGrowthRateBasisPoints:                 gp.FeeBucketGrowthRateBasisPoints,
+		FailingTransactionBMFMultiplierBasisPoints:     gp.FailingTransactionBMFMultiplierBasisPoints,
 	}
 }
 
@@ -4076,6 +4114,7 @@ func (gp *GlobalParamsEntry) RawEncodeWithoutMetadata(blockHeight uint64, skipMe
 		data = append(data, UintToBuf(gp.EpochDurationNumBlocks)...)
 		data = append(data, UintToBuf(gp.JailInactiveValidatorGracePeriodEpochs)...)
 		data = append(data, byte(gp.LockedDESOTransferRestrictions))
+		data = append(data, IntToBuf(int64(gp.MaximumVestedIntersectionsPerLockupTransaction))...)
 		data = append(data, UintToBuf(gp.FeeBucketGrowthRateBasisPoints)...)
 		data = append(data, UintToBuf(gp.FailingTransactionBMFMultiplierBasisPoints)...)
 	}
@@ -4144,11 +4183,17 @@ func (gp *GlobalParamsEntry) RawDecodeWithoutMetadata(blockHeight uint64, rr *by
 		if err != nil {
 			return errors.Wrapf(err, "GlobalParamsEntry.Decode: Problem reading JailInactiveValidatorGracePeriodEpochs: ")
 		}
-		statusByte, err := rr.ReadByte()
+		lockedDESOTransferRestrictions, err := rr.ReadByte()
 		if err != nil {
-			return errors.Wrapf(err, "GlobalParamsEntry.Decode: Problem reading LockedDESOTransferRestrictions")
+			return errors.Wrapf(err, "GlobalParamsEntry.Decode: Problem reading LockedDESOTransferRestrictions: ")
 		}
-		gp.LockedDESOTransferRestrictions = TransferRestrictionStatus(statusByte)
+		gp.LockedDESOTransferRestrictions = TransferRestrictionStatus(lockedDESOTransferRestrictions)
+		maximumVestedIntersectionsPerLockupTransaction, err := ReadVarint(rr)
+		if err != nil {
+			return errors.Wrapf(err,
+				"GlobalParamsEntry.Decode: Problem reading MaximumVestedIntersectionsPerLockupTransaction")
+		}
+		gp.MaximumVestedIntersectionsPerLockupTransaction = int(maximumVestedIntersectionsPerLockupTransaction)
 		gp.FeeBucketGrowthRateBasisPoints, err = ReadUvarint(rr)
 		if err != nil {
 			return errors.Wrapf(err, "GlobalParamsEntry.Decode: Problem reading FeeBucketGrowthRateBasisPoints")

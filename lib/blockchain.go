@@ -5382,11 +5382,14 @@ func (bc *Blockchain) _createAssociationTxn(
 func (bc *Blockchain) CreateCoinLockupTxn(
 	TransactorPublicKey []byte,
 	ProfilePublicKey []byte,
+	RecipientPublicKey []byte,
 	UnlockTimestampNanoSecs int64,
+	VestingEndTimestampNanoSecs int64,
 	LockupAmountBaseUnits *uint256.Int,
-	// Standard transaction fields
-	minFeeRateNanosPerKB uint64, mempool *DeSoMempool, additionalOutputs []*DeSoOutput) (
-	_txn *MsgDeSoTxn, _totalInput uint64, _changeAmount uint64, _fees uint64, _err error) {
+	minFeeRateNanosPerKB uint64,
+	mempool *DeSoMempool,
+	additionalOutputs []*DeSoOutput,
+) (_txn *MsgDeSoTxn, _totalInput uint64, _changeAmount uint64, _fees uint64, _err error) {
 
 	// NOTE: TxInputs is a remnant of the UTXO transaction model.
 	//       It's assumed that lockup transactions follow balance model.
@@ -5396,9 +5399,11 @@ func (bc *Blockchain) CreateCoinLockupTxn(
 	txn := &MsgDeSoTxn{
 		PublicKey: TransactorPublicKey,
 		TxnMeta: &CoinLockupMetadata{
-			ProfilePublicKey:        NewPublicKey(ProfilePublicKey),
-			UnlockTimestampNanoSecs: UnlockTimestampNanoSecs,
-			LockupAmountBaseUnits:   LockupAmountBaseUnits,
+			ProfilePublicKey:            NewPublicKey(ProfilePublicKey),
+			RecipientPublicKey:          NewPublicKey(RecipientPublicKey),
+			UnlockTimestampNanoSecs:     UnlockTimestampNanoSecs,
+			VestingEndTimestampNanoSecs: VestingEndTimestampNanoSecs,
+			LockupAmountBaseUnits:       LockupAmountBaseUnits,
 		},
 		TxOutputs: additionalOutputs,
 		// The signature will be added once other transaction fields are finalized.
