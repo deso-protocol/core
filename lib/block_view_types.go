@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"github.com/spf13/viper"
 	"io"
 	"math"
 	"math/big"
@@ -127,9 +128,11 @@ const (
 	EncoderTypeBlock EncoderType = 49
 	// EncoderTypeTxn represents a transaction in the blockchain.
 	EncoderTypeTxn EncoderType = 50
+	// EncoderTypeBLSPublicKeyPKIDPairEntry represents a BLS public key <> PKID mapping.
+	EncoderTypeBLSPublicKeyPKIDPairEntry EncoderType = 51
 
 	// EncoderTypeEndBlockView encoder type should be at the end and is used for automated tests.
-	EncoderTypeEndBlockView EncoderType = 51
+	EncoderTypeEndBlockView EncoderType = 52
 )
 
 // Txindex encoder types.
@@ -281,6 +284,8 @@ func (encoderType EncoderType) New() DeSoEncoder {
 		return &LockedBalanceEntry{}
 	case EncoderTypeLockupYieldCurvePoint:
 		return &LockupYieldCurvePoint{}
+	case EncoderTypeBLSPublicKeyPKIDPairEntry:
+		return &BLSPublicKeyPKIDPairEntry{}
 	}
 
 	// Txindex encoder types
@@ -660,8 +665,8 @@ const (
 	OperationTypeCoinLockupTransfer           OperationType = 46
 	OperationTypeCoinUnlock                   OperationType = 47
 	OperationTypeUpdateCoinLockupParams       OperationType = 48
-
-	// NEXT_TAG = 49
+	OperationTypeStakeDistribution            OperationType = 49
+	// NEXT_TAG = 50
 )
 
 func (op OperationType) String() string {
@@ -762,6 +767,8 @@ func (op OperationType) String() string {
 		return "OperationTypeCoinLockupTransfer"
 	case OperationTypeCoinUnlock:
 		return "OperationTypeCoinUnlock"
+	case OperationTypeStakeDistribution:
+		return "OperationTypeStakeDistribution"
 	}
 	return "OperationTypeUNKNOWN"
 }
@@ -971,6 +978,12 @@ type UtxoOperation struct {
 	// CoinsInCirculation and NumberOfHolders prior to a lockup transaction.
 	PrevLockedBalanceEntry *LockedBalanceEntry
 
+	// PrevLockupYieldCurvePoint and PrevLockupTransferRestriction are
+	// the previous yield curve and transfer restrictions associated
+	// with an UpdateCoinLockupParams transaction.
+	PrevLockupYieldCurvePoint     *LockupYieldCurvePoint
+	PrevLockupTransferRestriction TransferRestrictionStatus
+
 	// PrevSenderLockedBalanceEntry and PrevReceiverLockedBalanceEntry are the previous LockedBalanceEntry
 	// for both the sender and receiver in the coin lockup transfer operation.
 	PrevSenderLockedBalanceEntry   *LockedBalanceEntry
@@ -979,11 +992,36 @@ type UtxoOperation struct {
 	// PrevLockedBalanceEntries is a slice of LockedBalanceEntry prior to a coin unlock.
 	PrevLockedBalanceEntries []*LockedBalanceEntry
 
-	// PrevLockupYieldCurvePoint and PrevLockupTransferRestriction are
-	// the previous yield curve and transfer restrictions associated
-	// with an UpdateCoinLockupParams transaction.
-	PrevLockupYieldCurvePoint     *LockupYieldCurvePoint
-	PrevLockupTransferRestriction TransferRestrictionStatus
+	// StakeAmountNanosDiff is used by Rosetta to return the amount of DESO that was added
+	// to a StakeEntry during the end-of-epoch hook. It's needed
+	// in order to avoid having to re-run the end of epoch hook.
+	StakeAmountNanosDiff uint64
+
+	// LockedAtEpochNumber is used by Rosetta to uniquely identify a subaccount representing
+	// a locked stake entry that is created during an Unlock transaction. Without this, we
+	// would need to consolidate many LockedStakeEntries into a single subaccount which would
+	// make it difficult to track the history of a particular stake entry and generally lead
+	// to more complexity in rosetta which is undesirable. Another alternative would be to
+	// require Rosetta to be able to compute epoch's based on block height, but this would
+	// require a more structural change to rosetta's codebase so that transaction parsing
+	// would be aware of the block height. This is also undesirable. Although adding a new
+	// field to theUtxoOperation struct is not ideal, the tradeoff is worth it for the
+	// simplicity it provides in rosetta. TODO: When refactoring UtxoOperations in the future,
+	// consider how we can maintain support for rosetta and situations like this where the
+	// transaction metadata itself doesn't specify the information we need to return to
+	// rosetta.
+	LockedAtEpochNumber uint64
+}
+
+// FIXME: This hackIsRunningStateSyncer() call is a hack to get around the fact that
+// we don't have a way to not require a resync while introducing the state change
+// metadata to the utxo operation struct. We don't want to use a block height to gate
+// this because we want to be able to get state change metadata for ALL transactions.
+// We should replace this with a more elegant solution, a better hack, or bundle it
+// in with a release that requires a resync anyway. We should remove this function
+// when we have a better solution in place.
+func hackIsRunningStateSyncer() bool {
+	return viper.GetString("state-change-dir") != ""
 }
 
 func (op *UtxoOperation) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte {
@@ -1301,6 +1339,17 @@ func (op *UtxoOperation) RawEncodeWithoutMetadata(blockHeight uint64, skipMetada
 		}
 	}
 
+	// StateChangeMetadata
+	// FIXME: This hackIsRunningStateSyncer() call is a hack to get around the fact that
+	// we don't have a way to not require a resync while introducing the state change
+	// metadata to the utxo operation struct. We don't want to use a block height to gate
+	// this because we want to be able to get state change metadata for ALL transactions.
+	// We should replace this with a more elegant solution, a better hack, or bundle it
+	// in with a release that requires a resync anyway.
+	if hackIsRunningStateSyncer() && op.StateChangeMetadata != nil {
+		data = append(data, EncodeToBytes(blockHeight, op.StateChangeMetadata, skipMetadata...)...)
+	}
+
 	if MigrationTriggered(blockHeight, ProofOfStake1StateSetupMigration) {
 		// PrevValidatorEntry
 		data = append(data, EncodeToBytes(blockHeight, op.PrevValidatorEntry, skipMetadata...)...)
@@ -1324,14 +1373,14 @@ func (op *UtxoOperation) RawEncodeWithoutMetadata(blockHeight uint64, skipMetada
 		data = append(data, EncodeToBytes(blockHeight, op.PrevSenderLockedBalanceEntry, skipMetadata...)...)
 		data = append(data, EncodeToBytes(blockHeight, op.PrevReceiverLockedBalanceEntry, skipMetadata...)...)
 
-		// PrevTransactorBalanceEntry, PrevLockedBalanceEntries
-		data = append(data, EncodeToBytes(blockHeight, op.PrevTransactorBalanceEntry, skipMetadata...)...)
+		// PrevLockedBalanceEntries
 		data = append(data, EncodeDeSoEncoderSlice(op.PrevLockedBalanceEntries, blockHeight, skipMetadata...)...)
-	}
 
-	// StateChangeMetadata
-	if op.StateChangeMetadata != nil {
-		data = append(data, EncodeToBytes(blockHeight, op.StateChangeMetadata, skipMetadata...)...)
+		// StakeAmountNanosDiff
+		data = append(data, UintToBuf(op.StakeAmountNanosDiff)...)
+
+		// LockedAtEpochNumber
+		data = append(data, UintToBuf(op.LockedAtEpochNumber)...)
 	}
 
 	return data
@@ -1949,6 +1998,22 @@ func (op *UtxoOperation) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.
 		}
 	}
 
+	// DeSoEncoder
+	stateChangeMetadata := GetStateChangeMetadataFromOpType(op.Type)
+	// FIXME: This hackIsRunningStateSyncer() call is a hack to get around the fact that
+	// we don't have a way to not require a resync while introducing the state change
+	// metadata to the utxo operation struct. We don't want to use a block height to gate
+	// this because we want to be able to get state change metadata for ALL transactions.
+	// We should replace this with a more elegant solution, a better hack, or bundle it
+	// in with a release that requires a resync anyway.
+	if hackIsRunningStateSyncer() && stateChangeMetadata != nil {
+		if exist, err := DecodeFromBytes(stateChangeMetadata, rr); exist && err == nil {
+			op.StateChangeMetadata = stateChangeMetadata
+		} else if err != nil {
+			return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading DeSoEncoder")
+		}
+	}
+
 	if MigrationTriggered(blockHeight, ProofOfStake1StateSetupMigration) {
 		// PrevValidatorEntry
 		if op.PrevValidatorEntry, err = DecodeDeSoEncoder(&ValidatorEntry{}, rr); err != nil {
@@ -1990,22 +2055,18 @@ func (op *UtxoOperation) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.
 			return errors.Wrapf(err, "UtxoOperation.Decode: Problem Reading PrevReceiverLockedBalanceEntry: ")
 		}
 
-		// PrevTransactorBalanceEntry, PrevLockedBalanceEntries
-		if op.PrevTransactorBalanceEntry, err = DecodeDeSoEncoder(&BalanceEntry{}, rr); err != nil {
-			return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading PrevTransactorBalanceEntry: ")
-		}
+		// PrevLockedBalanceEntries
 		if op.PrevLockedBalanceEntries, err = DecodeDeSoEncoderSlice[*LockedBalanceEntry](rr); err != nil {
 			return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading PrevLockedBalanceEntry: ")
 		}
-	}
+		// StakeAmountNanosDiff
+		if op.StakeAmountNanosDiff, err = ReadUvarint(rr); err != nil {
+			return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading StakeAmountNanosDiff: ")
+		}
 
-	// DeSoEncoder
-	stateChangeMetadata := GetStateChangeMetadataFromOpType(op.Type)
-	if stateChangeMetadata != nil {
-		if exist, err := DecodeFromBytes(stateChangeMetadata, rr); exist && err == nil {
-			op.StateChangeMetadata = stateChangeMetadata
-		} else if err != nil {
-			return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading DeSoEncoder")
+		// LockedAtEpochNumber
+		if op.LockedAtEpochNumber, err = ReadUvarint(rr); err != nil {
+			return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading LockedAtEpochNumber: ")
 		}
 	}
 

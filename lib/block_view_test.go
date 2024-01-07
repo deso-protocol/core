@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/hex"
 	"fmt"
+	"github.com/deso-protocol/core/bls"
 	"math"
 	_ "net/http/pprof"
 	"reflect"
@@ -96,6 +97,7 @@ func resetBalanceModelBlockHeights() {
 	DeSoTestnetParams.ForkHeights.AssociationsAndAccessGroupsBlockHeight = uint32(596555)
 	DeSoTestnetParams.ForkHeights.BalanceModelBlockHeight = uint32(683058)
 	DeSoTestnetParams.ForkHeights.ProofOfStake1StateSetupBlockHeight = uint32(math.MaxUint32)
+	DeSoTestnetParams.ForkHeights.ProofOfStake2ConsensusCutoverBlockHeight = uint32(math.MaxUint32)
 	DeSoTestnetParams.ForkHeights.ProofOfStake2ConsensusCutoverBlockHeight = uint32(math.MaxUint32)
 	DeSoTestnetParams.EncoderMigrationHeights = GetEncoderMigrationHeights(&DeSoTestnetParams.ForkHeights)
 	DeSoTestnetParams.EncoderMigrationHeightsList = GetEncoderMigrationHeightsList(&DeSoTestnetParams.ForkHeights)
@@ -1127,6 +1129,9 @@ type TestMeta struct {
 	expectedSenderBalances []uint64
 	savedHeight            uint32
 	feeRateNanosPerKb      uint64
+	posMempool             *PosMempool
+	posBlockProducer       *PosBlockProducer
+	pubKeyToBLSKeyMap      map[string]*bls.PrivateKey
 }
 
 func _executeAllTestRollbackAndFlush(testMeta *TestMeta) {
@@ -2203,6 +2208,7 @@ func TestBlockRewardPatch(t *testing.T) {
 
 func TestConnectFailingTransaction(t *testing.T) {
 	setBalanceModelBlockHeights(t)
+
 	require := require.New(t)
 	seed := int64(1011)
 	rand := rand.New(rand.NewSource(seed))

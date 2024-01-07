@@ -1567,7 +1567,7 @@ func CalculateLockupYield(
 
 	// Compute the denominators from the nanosecond to year conversion and the basis point computation.
 	denominators, err := SafeUint256().Mul(
-		uint256.NewInt().SetUint64(_nanoSecsPerYear),
+		uint256.NewInt().SetUint64(NanoSecsPerYear),
 		uint256.NewInt().SetUint64(10000))
 	if err != nil {
 		return nil,

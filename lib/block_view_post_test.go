@@ -147,6 +147,7 @@ func _giveDeSoDiamonds(t *testing.T, chain *Blockchain, db *badger.DB, params *D
 		senderPkBytes,
 		diamondPostHash,
 		diamondLevel,
+		nil,
 		feeRateNanosPerKB,
 		nil,
 		[]*DeSoOutput{})

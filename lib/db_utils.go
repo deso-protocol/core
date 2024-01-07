@@ -228,6 +228,8 @@ type DBPrefixes struct {
 	// <prefix_id, PublicKey [33]byte> -> uint64
 	PrefixPublicKeyToDeSoBalanceNanos []byte `prefix_id:"[52]" is_state:"true" core_state:"true"`
 
+	// DEPRECATED as of the PoS cut-over. Block rewards are no longer stored in the db as
+	// we consider all block rewards to be mature immediately.
 	// Block reward prefix:
 	//   - This index is needed because block rewards take N blocks to mature, which means we need
 	//     a way to deduct them from balance calculations until that point. Without this index, it
@@ -586,7 +588,16 @@ type DBPrefixes struct {
 	// Prefix, <ProfilePKID [33]byte>, <LockupDurationNanoSecs int64> -> <LockupYieldCurvePoint>
 	PrefixLockupYieldCurvePointByProfilePKIDAndDurationNanoSecs []byte `prefix_id:"[94]" is_state:"true"`
 
-	// NEXT_TAG: 95
+	// PrefixValidatorBLSPublicKeyPKIDPairEntry: Retrieve a BLSPublicKeyPKIDPairEntry by BLS public key.
+	// Prefix, <BLSPublicKey [33]byte> -> *BLSPublicKeyPKIDPairEntry
+	PrefixValidatorBLSPublicKeyPKIDPairEntry []byte `prefix_id:"[95]" is_state:"true"`
+
+	// PrefixSnapshotValidatorBLSPublicKeyPKIDPairEntry: Retrieve a snapshotted BLSPublicKeyPKIDPairEntry
+	// by BLS Public Key and SnapshotAtEpochNumber.
+	// Prefix, <SnapshotAtEpochNumber uint64>, <BLSPublicKey []byte> -> *BLSPublicKeyPKIDPairEntry
+	PrefixSnapshotValidatorBLSPublicKeyPKIDPairEntry []byte `prefix_id:"[96]" is_state:"true"`
+
+	// NEXT_TAG: 97
 }
 
 // DecodeStateKey decodes a state key into a DeSoEncoder type. This is useful for encoders which don't have a stored
@@ -877,6 +888,12 @@ func StatePrefixToDeSoEncoder(prefix []byte) (_isEncoder bool, _encoder DeSoEnco
 	} else if bytes.Equal(prefix, Prefixes.PrefixLockupYieldCurvePointByProfilePKIDAndDurationNanoSecs) {
 		// prefix_id:"[94]"
 		return true, &LockupYieldCurvePoint{}
+	} else if bytes.Equal(prefix, Prefixes.PrefixValidatorBLSPublicKeyPKIDPairEntry) {
+		// prefix_id:"[95]"
+		return true, &BLSPublicKeyPKIDPairEntry{}
+	} else if bytes.Equal(prefix, Prefixes.PrefixSnapshotValidatorBLSPublicKeyPKIDPairEntry) {
+		// prefix_id:"[96]"
+		return true, &BLSPublicKeyPKIDPairEntry{}
 	}
 
 	return true, nil
@@ -4799,39 +4816,36 @@ func DeleteUtxoOperationsForBlockWithTxn(txn *badger.Txn, snap *Snapshot, blockH
 	return DBDeleteWithTxn(txn, snap, _DbKeyForUtxoOps(blockHash), eventManager, entryIsDeleted)
 }
 
+func blockNodeProofOfStakeCutoverMigrationTriggered(height uint32) bool {
+	return height >= GlobalDeSoParams.ForkHeights.ProofOfStake2ConsensusCutoverBlockHeight
+}
+
 func SerializeBlockNode(blockNode *BlockNode) ([]byte, error) {
 	data := []byte{}
 
-	// Hash
 	if blockNode.Hash == nil {
 		return nil, fmt.Errorf("SerializeBlockNode: Hash cannot be nil")
 	}
 	data = append(data, blockNode.Hash[:]...)
-
-	// Height
 	data = append(data, UintToBuf(uint64(blockNode.Height))...)
+	if !blockNodeProofOfStakeCutoverMigrationTriggered(blockNode.Height) {
+		// DifficultyTarget
+		if blockNode.DifficultyTarget == nil {
+			return nil, fmt.Errorf("SerializeBlockNode: DifficultyTarget cannot be nil")
+		}
+		data = append(data, blockNode.DifficultyTarget[:]...)
 
-	// DifficultyTarget
-	if blockNode.DifficultyTarget == nil {
-		return nil, fmt.Errorf("SerializeBlockNode: DifficultyTarget cannot be nil")
+		// CumWork
+		data = append(data, BigintToHash(blockNode.CumWork)[:]...)
 	}
-	data = append(data, blockNode.DifficultyTarget[:]...)
-
-	// CumWork
-	data = append(data, BigintToHash(blockNode.CumWork)[:]...)
-
-	// Header
 	serializedHeader, err := blockNode.Header.ToBytes(false)
 	if err != nil {
-		return nil, errors.Wrapf(err, "SerializeBlockNode: Problem serializing header")
+		return nil, fmt.Errorf("serializePoSBlockNode: Problem serializing header: %v", err)
 	}
 	data = append(data, IntToBuf(int64(len(serializedHeader)))...)
 	data = append(data, serializedHeader...)
 
-	// Status
-	// It's assumed this field is one byte long.
 	data = append(data, UintToBuf(uint64(blockNode.Status))...)
-
 	return data, nil
 }
 
@@ -4844,11 +4858,9 @@ func DeserializeBlockNode(data []byte) (*BlockNode, error) {
 		nil,          // CumWork
 		nil,          // Header
 		StatusNone,   // Status
-
 	)
 
 	rr := bytes.NewReader(data)
-
 	// Hash
 	_, err := io.ReadFull(rr, blockNode.Hash[:])
 	if err != nil {
@@ -4862,19 +4874,21 @@ func DeserializeBlockNode(data []byte) (*BlockNode, error) {
 	}
 	blockNode.Height = uint32(height)
 
-	// DifficultyTarget
-	_, err = io.ReadFull(rr, blockNode.DifficultyTarget[:])
-	if err != nil {
-		return nil, errors.Wrapf(err, "DeserializeBlockNode: Problem decoding DifficultyTarget")
-	}
+	if !blockNodeProofOfStakeCutoverMigrationTriggered(blockNode.Height) {
+		// DifficultyTarget
+		_, err = io.ReadFull(rr, blockNode.DifficultyTarget[:])
+		if err != nil {
+			return nil, errors.Wrapf(err, "DeserializeBlockNode: Problem decoding DifficultyTarget")
+		}
 
-	// CumWork
-	tmp := BlockHash{}
-	_, err = io.ReadFull(rr, tmp[:])
-	if err != nil {
-		return nil, errors.Wrapf(err, "DeserializeBlockNode: Problem decoding CumWork")
+		// CumWork
+		tmp := BlockHash{}
+		_, err = io.ReadFull(rr, tmp[:])
+		if err != nil {
+			return nil, errors.Wrapf(err, "DeserializeBlockNode: Problem decoding CumWork")
+		}
+		blockNode.CumWork = HashToBigint(&tmp)
 	}
-	blockNode.CumWork = HashToBigint(&tmp)
 
 	// Header
 	payloadLen, err := ReadVarint(rr)
@@ -4901,7 +4915,6 @@ func DeserializeBlockNode(data []byte) (*BlockNode, error) {
 		return nil, errors.Wrapf(err, "DeserializeBlockNode: Problem decoding Status")
 	}
 	blockNode.Status = BlockStatus(uint32(status))
-
 	return blockNode, nil
 }
 
@@ -5010,33 +5023,39 @@ func GetBlock(blockHash *BlockHash, handle *badger.DB, snap *Snapshot) (*MsgDeSo
 	return blockRet, nil
 }
 
-func PutBlockWithTxn(txn *badger.Txn, snap *Snapshot, desoBlock *MsgDeSoBlock, eventManager *EventManager) error {
-	if desoBlock.Header == nil {
-		return fmt.Errorf("PutBlockWithTxn: Header was nil in block %v", desoBlock)
+func PutBlockHashToBlockWithTxn(txn *badger.Txn, snap *Snapshot, block *MsgDeSoBlock, eventManager *EventManager) error {
+	if block.Header == nil {
+		return fmt.Errorf("PutBlockHashToBlockWithTxn: Header was nil in block %v", block)
 	}
-	blockHash, err := desoBlock.Header.Hash()
+	blockHash, err := block.Header.Hash()
 	if err != nil {
-		return errors.Wrapf(err, "PutBlockWithTxn: Problem hashing header: ")
+		return errors.Wrap(err, "PutBlockHashToBlockWithTxn: Problem hashing header: ")
 	}
 	blockKey := BlockHashToBlockKey(blockHash)
-	data, err := desoBlock.ToBytes(false)
+	data, err := block.ToBytes(false)
 	if err != nil {
 		return err
 	}
 	// First check to see if the block is already in the db.
-	if _, err := DBGetWithTxn(txn, snap, blockKey); err == nil {
+	if _, err = DBGetWithTxn(txn, snap, blockKey); err == nil {
 		// err == nil means the block already exists in the db so
 		// no need to store it.
 		return nil
 	}
 	// If the block is not in the db then set it.
-	if err := DBSetWithTxn(txn, snap, blockKey, data, eventManager); err != nil {
+	if err = DBSetWithTxn(txn, snap, blockKey, data, eventManager); err != nil {
 		return err
 	}
+	return nil
+}
 
-	// Index the block reward. Used for deducting immature block rewards from user balances.
-	if len(desoBlock.Txns) == 0 {
-		return fmt.Errorf("PutBlockWithTxn: Got block without any txns %v", desoBlock)
+func PutBlockWithTxn(txn *badger.Txn, snap *Snapshot, desoBlock *MsgDeSoBlock, eventManager *EventManager) error {
+	blockHash, err := desoBlock.Header.Hash()
+	if err != nil {
+		return errors.Wrapf(err, "PutBlockWithTxn: Problem hashing header: ")
+	}
+	if err = PutBlockHashToBlockWithTxn(txn, snap, desoBlock, eventManager); err != nil {
+		return errors.Wrap(err, "PutBlockWithTxn: Problem putting block hash to block")
 	}
 	blockRewardTxn := desoBlock.Txns[0]
 	if blockRewardTxn.TxnMeta.GetTxnType() != TxnTypeBlockReward {
@@ -5056,7 +5075,7 @@ func PutBlockWithTxn(txn *badger.Txn, snap *Snapshot, desoBlock *MsgDeSoBlock, e
 		pkMapKey := pkMapKeyIter
 
 		blockRewardKey := PublicKeyBlockHashToBlockRewardKey(pkMapKey[:], blockHash)
-		if err := DBSetWithTxn(txn, snap, blockRewardKey, EncodeUint64(blockReward), eventManager); err != nil {
+		if err = DBSetWithTxn(txn, snap, blockRewardKey, EncodeUint64(blockReward), eventManager); err != nil {
 			return err
 		}
 	}
@@ -5168,8 +5187,7 @@ func GetHeightHashToNodeInfoWithTxn(txn *badger.Txn, snap *Snapshot,
 		return nil
 	}
 
-	var blockNode *BlockNode
-	blockNode, err = DeserializeBlockNode(nodeBytes)
+	blockNode, err := DeserializeBlockNode(nodeBytes)
 	if err != nil {
 		return nil
 	}

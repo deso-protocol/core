@@ -225,6 +225,63 @@ type DeSoMempool struct {
 	useDefaultBadgerOptions bool
 }
 
+// Note that all these functions are stubbed out for now. We don't need them
+// but they are required to implement the Mempool interface, so we just
+// return errors for now to simplify the usage of DeSoMempool in the backend
+// repo. We'll eventually be deprecating DeSoMempool, so we're not particularly
+// concerned about this.
+
+func (mp *DeSoMempool) Start() error {
+	return errors.New("Not implemented")
+}
+
+func (mp *DeSoMempool) IsRunning() bool {
+	return !mp.stopped
+}
+
+func (mp *DeSoMempool) AddTransaction(txn *MempoolTransaction, verifySignature bool) error {
+	return errors.New("Not implemented")
+}
+
+func (mp *DeSoMempool) RemoveTransaction(txnHash *BlockHash) error {
+	return errors.New("Not implemented")
+}
+
+func (mp *DeSoMempool) GetTransaction(txnHash *BlockHash) *MempoolTransaction {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (mp *DeSoMempool) GetTransactions() []*MempoolTransaction {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (mp *DeSoMempool) GetIterator() MempoolIterator {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (mp *DeSoMempool) Refresh() error {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (mp *DeSoMempool) UpdateLatestBlock(blockView *UtxoView, blockHeight uint64) {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (mp *DeSoMempool) UpdateGlobalParams(globalParams *GlobalParamsEntry) {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (mp *DeSoMempool) GetOrderedTransactions() []*MempoolTx {
+	orderedTxns, _, _ := mp.GetTransactionsOrderedByTimeAdded()
+	return orderedTxns
+}
+
 func (mp *DeSoMempool) getBadgerOptions(dir string) badger.Options {
 	if mp.useDefaultBadgerOptions {
 		return DefaultBadgerOptions(dir)
@@ -544,7 +601,7 @@ func (mp *DeSoMempool) GetTransactionsOrderedByTimeAdded() (_poolTxns []*Mempool
 	return poolTxns, nil, nil
 }
 
-func (mp *DeSoMempool) GetTransaction(txId *BlockHash) (txn *MempoolTx) {
+func (mp *DeSoMempool) GetMempoolTx(txId *BlockHash) *MempoolTx {
 	return mp.readOnlyUniversalTransactionMap[*txId]
 }
 
@@ -2362,10 +2419,31 @@ func (mp *DeSoMempool) MempoolTxs() []*MempoolTx {
 }
 
 func (mp *DeSoMempool) GetMempoolSummaryStats() (_summaryStatsMap map[string]*SummaryStats) {
-	allTxns := mp.readOnlyUniversalTransactionList
+	return convertMempoolTxsToSummaryStats(mp.readOnlyUniversalTransactionList)
+}
 
+func EstimateMaxTxnFeeV1(txn *MsgDeSoTxn, minFeeRateNanosPerKB uint64) uint64 {
+	if minFeeRateNanosPerKB == 0 {
+		return 0
+	}
+	prevFeeAmountNanos := uint64(0)
+	feeAmountNanos := uint64(0)
+	for feeAmountNanos == 0 || feeAmountNanos != prevFeeAmountNanos {
+		prevFeeAmountNanos = feeAmountNanos
+		feeAmountNanos = _computeMaxTxV1Fee(txn, minFeeRateNanosPerKB)
+		txn.TxnFeeNanos = feeAmountNanos
+	}
+	return feeAmountNanos
+}
+
+func (mp *DeSoMempool) EstimateFee(txn *MsgDeSoTxn, minFeeRateNanosPerKB uint64,
+	_ uint64, _ uint64, _ uint64, _ uint64, _ uint64) (uint64, error) {
+	return EstimateMaxTxnFeeV1(txn, minFeeRateNanosPerKB), nil
+}
+
+func convertMempoolTxsToSummaryStats(mempoolTxs []*MempoolTx) map[string]*SummaryStats {
 	transactionSummaryStats := make(map[string]*SummaryStats)
-	for _, mempoolTx := range allTxns {
+	for _, mempoolTx := range mempoolTxs {
 		// Update the mempool summary stats.
 		updatedSummaryStats := &SummaryStats{}
 		txnType := mempoolTx.Tx.TxnMeta.GetTxnType().String()

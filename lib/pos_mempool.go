@@ -2,19 +2,21 @@ package lib
 
 import (
 	"fmt"
-	"github.com/dgraph-io/badger/v3"
-	"github.com/golang/glog"
-	"github.com/pkg/errors"
 	"path/filepath"
 	"strings"
 	"sync"
+
+	"github.com/dgraph-io/badger/v3"
+	"github.com/golang/glog"
+	"github.com/pkg/errors"
 )
 
 type PosMempoolStatus int
 
 const (
-	PosMempoolStatusRunning PosMempoolStatus = iota
-	PosMempoolStatusNotRunning
+	PosMempoolStatusNotInitialized PosMempoolStatus = iota
+	PosMempoolStatusInitialized
+	PosMempoolStatusRunning
 )
 
 type Mempool interface {
@@ -29,6 +31,23 @@ type Mempool interface {
 	Refresh() error
 	UpdateLatestBlock(blockView *UtxoView, blockHeight uint64)
 	UpdateGlobalParams(globalParams *GlobalParamsEntry)
+
+	GetAugmentedUniversalView() (*UtxoView, error)
+	GetAugmentedUtxoViewForPublicKey(pk []byte, optionalTx *MsgDeSoTxn) (*UtxoView, error)
+	CheckSpend(op UtxoKey) *MsgDeSoTxn
+	GetOrderedTransactions() []*MempoolTx
+	IsTransactionInPool(txHash *BlockHash) bool
+	GetMempoolTx(txHash *BlockHash) *MempoolTx
+	GetMempoolSummaryStats() map[string]*SummaryStats
+	EstimateFee(
+		txn *MsgDeSoTxn,
+		minFeeRateNanosPerKB uint64,
+		mempoolCongestionFactorBasisPoints uint64,
+		mempoolPriorityPercentileBasisPoints uint64,
+		pastBlocksCongestionFactorBasisPoints uint64,
+		pastBlocksPriorityPercentileBasisPoints uint64,
+		maxBlockSize uint64,
+	) (uint64, error)
 }
 
 type MempoolIterator interface {
@@ -106,6 +125,10 @@ type PosMempool struct {
 	maxMempoolPosSizeBytes uint64
 	// mempoolBackupIntervalMillis is the frequency with which pos mempool persists transactions to storage.
 	mempoolBackupIntervalMillis uint64
+
+	// feeEstimator is used to estimate the fee required for a transaction to be included in the next block
+	// based off the current state of the mempool and the most n recent blocks.
+	feeEstimator *PoSFeeEstimator
 }
 
 // PosMempoolIterator is a wrapper around FeeTimeIterator, modified to return MsgDeSoTxn instead of MempoolTx.
@@ -134,32 +157,69 @@ func NewPosMempoolIterator(it *FeeTimeIterator) *PosMempoolIterator {
 	return &PosMempoolIterator{it: it}
 }
 
-func NewPosMempool(params *DeSoParams, globalParams *GlobalParamsEntry, readOnlyLatestBlockView *UtxoView,
-	latestBlockHeight uint64, dir string, inMemoryOnly bool, maxMempoolPosSizeBytes uint64,
-	mempoolBackupIntervalMillis uint64) *PosMempool {
+func NewPosMempool() *PosMempool {
 	return &PosMempool{
-		status:                      PosMempoolStatusNotRunning,
-		params:                      params,
-		globalParams:                globalParams,
-		inMemoryOnly:                inMemoryOnly,
-		dir:                         dir,
-		readOnlyLatestBlockView:     readOnlyLatestBlockView,
-		latestBlockHeight:           latestBlockHeight,
-		maxMempoolPosSizeBytes:      maxMempoolPosSizeBytes,
-		mempoolBackupIntervalMillis: mempoolBackupIntervalMillis,
+		status:       PosMempoolStatusNotInitialized,
+		txnRegister:  NewTransactionRegister(),
+		feeEstimator: NewPoSFeeEstimator(),
+		ledger:       NewBalanceLedger(),
+		nonceTracker: NewNonceTracker(),
 	}
+}
+
+func (mp *PosMempool) Init(
+	params *DeSoParams,
+	globalParams *GlobalParamsEntry,
+	readOnlyLatestBlockView *UtxoView,
+	latestBlockHeight uint64,
+	dir string,
+	inMemoryOnly bool,
+	maxMempoolPosSizeBytes uint64,
+	mempoolBackupIntervalMillis uint64,
+	feeEstimatorNumMempoolBlocks uint64,
+	feeEstimatorPastBlocks []*MsgDeSoBlock,
+	feeEstimatorNumPastBlocks uint64,
+) error {
+	if mp.status != PosMempoolStatusNotInitialized {
+		return errors.New("PosMempool.Init: PosMempool already initialized")
+	}
+
+	// Initialize the parametrized fields.
+	mp.params = params
+	mp.globalParams = globalParams
+	mp.readOnlyLatestBlockView = readOnlyLatestBlockView
+	mp.latestBlockHeight = latestBlockHeight
+	mp.dir = dir
+	mp.inMemoryOnly = inMemoryOnly
+	mp.maxMempoolPosSizeBytes = maxMempoolPosSizeBytes
+	mp.mempoolBackupIntervalMillis = mempoolBackupIntervalMillis
+
+	// TODO: parameterize num blocks. Also, how to pass in blocks.
+	err := mp.feeEstimator.Init(
+		mp.txnRegister,
+		feeEstimatorNumMempoolBlocks,
+		feeEstimatorPastBlocks,
+		feeEstimatorNumPastBlocks,
+		mp.globalParams,
+	)
+	if err != nil {
+		return errors.Wrapf(err, "PosMempool.Start: Problem initializing fee estimator")
+	}
+	mp.status = PosMempoolStatusInitialized
+	return nil
 }
 
 func (mp *PosMempool) Start() error {
 	mp.Lock()
 	defer mp.Unlock()
 
-	if mp.IsRunning() {
-		return nil
+	if mp.status != PosMempoolStatusInitialized {
+		return errors.New("PosMempool.Start: PosMempool not initialized")
 	}
 
 	// Create the transaction register, the ledger, and the nonce tracker,
-	mp.txnRegister = NewTransactionRegister(mp.globalParams)
+	mp.txnRegister = NewTransactionRegister()
+	mp.txnRegister.Init(mp.globalParams)
 	mp.ledger = NewBalanceLedger()
 	mp.nonceTracker = NewNonceTracker()
 
@@ -208,8 +268,9 @@ func (mp *PosMempool) Stop() {
 	mp.txnRegister.Reset()
 	mp.ledger.Reset()
 	mp.nonceTracker.Reset()
+	mp.feeEstimator = NewPoSFeeEstimator()
 
-	mp.status = PosMempoolStatusNotRunning
+	mp.status = PosMempoolStatusNotInitialized
 }
 
 func (mp *PosMempool) IsRunning() bool {
@@ -488,8 +549,23 @@ func (mp *PosMempool) Refresh() error {
 
 func (mp *PosMempool) refreshNoLock() error {
 	// Create the temporary in-memory mempool with the most up-to-date readOnlyLatestBlockView, Height, and globalParams.
-	tempPool := NewPosMempool(mp.params, mp.globalParams, mp.readOnlyLatestBlockView, mp.latestBlockHeight, "", true,
-		mp.maxMempoolPosSizeBytes, mp.mempoolBackupIntervalMillis)
+	tempPool := NewPosMempool()
+	err := tempPool.Init(
+		mp.params,
+		mp.globalParams,
+		mp.readOnlyLatestBlockView,
+		mp.latestBlockHeight,
+		"",
+		true,
+		mp.maxMempoolPosSizeBytes,
+		mp.mempoolBackupIntervalMillis,
+		mp.feeEstimator.numMempoolBlocks,
+		mp.feeEstimator.cachedBlocks,
+		mp.feeEstimator.numPastBlocks,
+	)
+	if err != nil {
+		return errors.Wrapf(err, "PosMempool.refreshNoLock: Problem initializing temp pool")
+	}
 	if err := tempPool.Start(); err != nil {
 		return errors.Wrapf(err, "PosMempool.refreshNoLock: Problem starting temp pool")
 	}
@@ -578,4 +654,64 @@ func (mp *PosMempool) UpdateGlobalParams(globalParams *GlobalParamsEntry) {
 	if err := mp.refreshNoLock(); err != nil {
 		glog.Errorf("PosMempool.UpdateGlobalParams: Problem refreshing mempool: %v", err)
 	}
+}
+
+// Implementation of the Mempool interface
+// These functions are used by the backend to interact with the mempool.
+
+func (mp *PosMempool) GetAugmentedUniversalView() (*UtxoView, error) {
+	if !mp.IsRunning() {
+		return nil, errors.Wrapf(MempoolErrorNotRunning, "PosMempool.GetAugmentedUniversalView: ")
+	}
+	newView, err := mp.readOnlyLatestBlockView.CopyUtxoView()
+	if err != nil {
+		return nil, errors.Wrapf(err, "PosMempool.GetAugmentedUniversalView: Problem copying utxo view")
+	}
+	return newView, nil
+}
+func (mp *PosMempool) GetAugmentedUtxoViewForPublicKey(pk []byte, optionalTx *MsgDeSoTxn) (*UtxoView, error) {
+	return mp.GetAugmentedUniversalView()
+}
+func (mp *PosMempool) CheckSpend(op UtxoKey) *MsgDeSoTxn {
+	panic("implement me")
+}
+
+func (mp *PosMempool) GetOrderedTransactions() []*MempoolTx {
+	mp.RLock()
+	defer mp.RUnlock()
+
+	if !mp.IsRunning() {
+		return nil
+	}
+	return mp.getTransactionsNoLock()
+}
+
+func (mp *PosMempool) IsTransactionInPool(txHash *BlockHash) bool {
+	mp.RLock()
+	defer mp.RUnlock()
+	_, exists := mp.txnRegister.txnMembership[*txHash]
+	return exists
+}
+
+func (mp *PosMempool) GetMempoolTx(txHash *BlockHash) *MempoolTx {
+	mp.RLock()
+	defer mp.RUnlock()
+	return mp.txnRegister.txnMembership[*txHash]
+}
+
+func (mp *PosMempool) GetMempoolSummaryStats() map[string]*SummaryStats {
+	return convertMempoolTxsToSummaryStats(mp.txnRegister.GetFeeTimeTransactions())
+}
+
+func (mp *PosMempool) EstimateFee(txn *MsgDeSoTxn,
+	_ uint64,
+	mempoolCongestionFactorBasisPoints uint64,
+	mempoolPriorityPercentileBasisPoints uint64,
+	pastBlocksCongestionFactorBasisPoints uint64,
+	pastBlocksPriorityPercentileBasisPoints uint64,
+	maxBlockSize uint64) (uint64, error) {
+	// TODO: replace MaxBasisPoints with variables configured by flags.
+	return mp.feeEstimator.EstimateFee(
+		txn, mempoolCongestionFactorBasisPoints, mempoolPriorityPercentileBasisPoints,
+		pastBlocksCongestionFactorBasisPoints, pastBlocksPriorityPercentileBasisPoints, maxBlockSize)
 }

@@ -460,7 +460,7 @@ func _customCreateAccessGroupTxn(
 	accessGroupKeyName []byte,
 	operationType AccessGroupOperationType,
 	extraData map[string][]byte,
-	minFeeRateNanosPerKB uint64, mempool *DeSoMempool, additionalOutputs []*DeSoOutput) (
+	minFeeRateNanosPerKB uint64, mempool Mempool, additionalOutputs []*DeSoOutput) (
 	_txn *MsgDeSoTxn, _totalInput uint64, _changeAmount uint64, _fees uint64, _err error) {
 
 	txn := &MsgDeSoTxn{

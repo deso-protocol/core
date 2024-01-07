@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"crypto/sha256"
 	"fmt"
+	"github.com/deso-protocol/core/consensus"
 	"io"
 	"math"
 	"net/url"
@@ -84,6 +85,14 @@ type ValidatorEntry struct {
 	isDeleted bool
 }
 
+func (validatorEntry *ValidatorEntry) GetPublicKey() *bls.PublicKey {
+	return validatorEntry.VotingPublicKey
+}
+
+func (validatorEntry *ValidatorEntry) GetStakeAmount() *uint256.Int {
+	return validatorEntry.TotalStakeAmountNanos
+}
+
 func (validatorEntry *ValidatorEntry) Status() ValidatorStatus {
 	// ValidatorEntry.Status() is a virtual/derived field that is not stored in
 	// the database, but instead constructed from other ValidatorEntry fields.
@@ -97,6 +106,14 @@ func (validatorEntry *ValidatorEntry) Status() ValidatorStatus {
 		return ValidatorStatusJailed
 	}
 	return ValidatorStatusActive
+}
+
+func toConsensusValidators(validatorEntries []*ValidatorEntry) []consensus.Validator {
+	var consensusValidators []consensus.Validator
+	for _, validatorEntry := range validatorEntries {
+		consensusValidators = append(consensusValidators, validatorEntry)
+	}
+	return consensusValidators
 }
 
 type ValidatorStatus uint8
@@ -241,6 +258,75 @@ func (validatorEntry *ValidatorEntry) GetVersionByte(blockHeight uint64) byte {
 
 func (validatorEntry *ValidatorEntry) GetEncoderType() EncoderType {
 	return EncoderTypeValidatorEntry
+}
+
+func (validatorEntry *ValidatorEntry) ToBLSPublicKeyPKIDPairEntry() *BLSPublicKeyPKIDPairEntry {
+	return &BLSPublicKeyPKIDPairEntry{
+		BLSPublicKey: validatorEntry.VotingPublicKey.Copy(),
+		PKID:         validatorEntry.ValidatorPKID.NewPKID(),
+		isDeleted:    validatorEntry.isDeleted,
+	}
+}
+
+func (validatorEntry *ValidatorEntry) IsDeleted() bool {
+	return validatorEntry.isDeleted
+}
+
+//
+// TYPES: BLSPublicKeyPKIDPairEntry
+//
+
+type BLSPublicKeyPKIDPairEntry struct {
+	BLSPublicKey *bls.PublicKey
+	PKID         *PKID
+	isDeleted    bool
+}
+
+func (blsPublicKeyPKIDPairEntry *BLSPublicKeyPKIDPairEntry) Copy() *BLSPublicKeyPKIDPairEntry {
+	return &BLSPublicKeyPKIDPairEntry{
+		BLSPublicKey: blsPublicKeyPKIDPairEntry.BLSPublicKey.Copy(),
+		PKID:         blsPublicKeyPKIDPairEntry.PKID.NewPKID(),
+		isDeleted:    blsPublicKeyPKIDPairEntry.isDeleted,
+	}
+}
+
+func (blsPublicKeyPKIDPairEntry *BLSPublicKeyPKIDPairEntry) ToMapKey() bls.SerializedPublicKey {
+	return blsPublicKeyPKIDPairEntry.BLSPublicKey.Serialize()
+}
+
+func (blsPublicKeyPKIDPairEntry *BLSPublicKeyPKIDPairEntry) ToSnapshotMapKey(snapshotAtEpoch uint64) SnapshotValidatorBLSPublicKeyMapKey {
+	return SnapshotValidatorBLSPublicKeyMapKey{
+		SnapshotAtEpochNumber: snapshotAtEpoch,
+		ValidatorBLSPublicKey: blsPublicKeyPKIDPairEntry.BLSPublicKey.Serialize(),
+	}
+}
+
+func (blsPublicKeyPKIDPairEntry *BLSPublicKeyPKIDPairEntry) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte {
+	var data []byte
+	data = append(data, EncodeBLSPublicKey(blsPublicKeyPKIDPairEntry.BLSPublicKey)...)
+	data = append(data, EncodeToBytes(blockHeight, blsPublicKeyPKIDPairEntry.PKID, skipMetadata...)...)
+	return data
+}
+
+func (blsPublicKeyPKIDPairEntry *BLSPublicKeyPKIDPairEntry) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.Reader) error {
+	var err error
+	blsPublicKeyPKIDPairEntry.BLSPublicKey, err = DecodeBLSPublicKey(rr)
+	if err != nil {
+		return errors.Wrapf(err, "BLSPublicKeyPKIDPairEntry.Decode: Problem reading BLSPublicKey: ")
+	}
+	blsPublicKeyPKIDPairEntry.PKID, err = DecodeDeSoEncoder(&PKID{}, rr)
+	if err != nil {
+		return errors.Wrapf(err, "BLSPublicKeyPKIDPairEntry.Decode: Problem reading PKID: ")
+	}
+	return nil
+}
+
+func (blsPublicKeyPKIDPairEntry *BLSPublicKeyPKIDPairEntry) GetVersionByte(blockHeight uint64) byte {
+	return 0
+}
+
+func (blsPublicKeyPKIDPairEntry *BLSPublicKeyPKIDPairEntry) GetEncoderType() EncoderType {
+	return EncoderTypeBLSPublicKeyPKIDPairEntry
 }
 
 //
@@ -575,6 +661,10 @@ func (txindexMetadata *UnjailValidatorTxindexMetadata) GetEncoderType() EncoderT
 // DB UTILS
 //
 
+//
+// ValidatorEntry DB UTILS
+//
+
 func DBKeyForValidatorByPKID(validatorEntry *ValidatorEntry) []byte {
 	key := append([]byte{}, Prefixes.PrefixValidatorByPKID...)
 	key = append(key, validatorEntry.ValidatorPKID.ToBytes()...)
@@ -760,6 +850,86 @@ func DBDeleteValidatorWithTxn(txn *badger.Txn, snap *Snapshot, validatorPKID *PK
 }
 
 //
+// BLSPublicKeyPKIDPairEntry DB Utils
+//
+
+func DBKeyForValidatorBLSPublicKeyToPKIDPairEntry(blsPublicKey *bls.PublicKey) []byte {
+	key := append([]byte{}, Prefixes.PrefixValidatorBLSPublicKeyPKIDPairEntry...)
+	key = append(key, blsPublicKey.ToBytes()...)
+	return key
+}
+
+func DBPutValidatorBLSPublicKeyPKIDPairEntryWithTxn(
+	txn *badger.Txn,
+	snap *Snapshot,
+	validatorBLSPublicKeyPKIDPairEntry *BLSPublicKeyPKIDPairEntry,
+	blockHeight uint64,
+	eventManager *EventManager,
+) error {
+	if validatorBLSPublicKeyPKIDPairEntry == nil {
+		// This should never happen but is a sanity check.
+		glog.Errorf("DBPutValidatorBLSPublicKeyPKIDPairEntryWithTxn: called with nil BLSPublicKeyPKIDPairEntry")
+		return nil
+	}
+
+	key := DBKeyForValidatorBLSPublicKeyToPKIDPairEntry(validatorBLSPublicKeyPKIDPairEntry.BLSPublicKey)
+	if err := DBSetWithTxn(txn, snap, key, EncodeToBytes(blockHeight, validatorBLSPublicKeyPKIDPairEntry), eventManager); err != nil {
+		return errors.Wrapf(
+			err, "DBPutValidatorBLSPublicKeyPKIDPairEntryWithTxn: problem storing BLSPublicKeyPKIDPairEntry in index PrefixValidatorBLSPublicKeyPKIDPairEntry",
+		)
+	}
+
+	return nil
+}
+
+func DBDeleteBLSPublicKeyPKIDPairEntryWithTxn(txn *badger.Txn, snap *Snapshot, blsPublicKey *bls.PublicKey, eventManager *EventManager, entryIsDeleted bool) error {
+	if blsPublicKey == nil {
+		// This should never happen but is a sanity check.
+		glog.Errorf("DBDeleteBLSPublicKeyPKIDPairEntryWithTxn: called with nil blsPublicKey")
+		return nil
+	}
+
+	key := DBKeyForValidatorBLSPublicKeyToPKIDPairEntry(blsPublicKey)
+	if err := DBDeleteWithTxn(txn, snap, key, eventManager, entryIsDeleted); err != nil {
+		return errors.Wrapf(
+			err, "DBDeleteBLSPublicKeyPKIDPairEntryWithTxn: problem deleting BLSPublicKeyPKIDPairEntry from index PrefixValidatorBLSPublicKeyPKIDPairEntry",
+		)
+	}
+	return nil
+}
+
+func DBGetValidatorBLSPublicKeyPKIDPairEntry(handle *badger.DB, snap *Snapshot, blsPublicKey *bls.PublicKey) (*BLSPublicKeyPKIDPairEntry, error) {
+	var ret *BLSPublicKeyPKIDPairEntry
+	err := handle.View(func(txn *badger.Txn) error {
+		var innerErr error
+		ret, innerErr = DBGetValidatorBLSPublicKeyPKIDPairEntryWithTxn(txn, snap, blsPublicKey)
+		return innerErr
+	})
+	return ret, err
+}
+
+func DBGetValidatorBLSPublicKeyPKIDPairEntryWithTxn(txn *badger.Txn, snap *Snapshot, blsPublicKey *bls.PublicKey) (*BLSPublicKeyPKIDPairEntry, error) {
+	// Retrieve ValidatorEntry from db.
+	key := DBKeyForValidatorBLSPublicKeyToPKIDPairEntry(blsPublicKey)
+	validatorBytes, err := DBGetWithTxn(txn, snap, key)
+	if err != nil {
+		// We don't want to error if the key isn't found. Instead, return nil.
+		if errors.Is(err, badger.ErrKeyNotFound) {
+			return nil, nil
+		}
+		return nil, errors.Wrapf(err, "DBGetValidatorBLSPublicKeyPKIDPairEntryWithTxn: problem retrieving BLSPublicKeyPKIDPairEntry")
+	}
+
+	// Decode ValidatorEntry from bytes.
+	blsPublicKeyPKIDPairEntry := &BLSPublicKeyPKIDPairEntry{}
+	rr := bytes.NewReader(validatorBytes)
+	if exist, err := DecodeFromBytes(blsPublicKeyPKIDPairEntry, rr); !exist || err != nil {
+		return nil, errors.Wrapf(err, "DBGetValidatorBLSPublicKeyPKIDPairEntryWithTxn: problem decoding BLSPublicKeyPKIDPairEntry")
+	}
+	return blsPublicKeyPKIDPairEntry, nil
+}
+
+//
 // BLOCKCHAIN UTILS
 //
 
@@ -768,7 +938,7 @@ func (bc *Blockchain) CreateRegisterAsValidatorTxn(
 	metadata *RegisterAsValidatorMetadata,
 	extraData map[string][]byte,
 	minFeeRateNanosPerKB uint64,
-	mempool *DeSoMempool,
+	mempool Mempool,
 	additionalOutputs []*DeSoOutput,
 ) (
 	_txn *MsgDeSoTxn,
@@ -795,7 +965,7 @@ func (bc *Blockchain) CreateRegisterAsValidatorTxn(
 			err, "Blockchain.CreateRegisterAsValidatorTxn: problem creating new utxo view: ",
 		)
 	}
-	if mempool != nil {
+	if !isInterfaceValueNil(mempool) {
 		utxoView, err = mempool.GetAugmentedUniversalView()
 		if err != nil {
 			return nil, 0, 0, 0, errors.Wrapf(
@@ -845,7 +1015,7 @@ func (bc *Blockchain) CreateUnregisterAsValidatorTxn(
 	metadata *UnregisterAsValidatorMetadata,
 	extraData map[string][]byte,
 	minFeeRateNanosPerKB uint64,
-	mempool *DeSoMempool,
+	mempool Mempool,
 	additionalOutputs []*DeSoOutput,
 ) (
 	_txn *MsgDeSoTxn,
@@ -872,7 +1042,7 @@ func (bc *Blockchain) CreateUnregisterAsValidatorTxn(
 			err, "Blockchain.CreateUnregisterAsValidatorTxn: problem creating new utxo view: ",
 		)
 	}
-	if mempool != nil {
+	if !isInterfaceValueNil(mempool) {
 		utxoView, err = mempool.GetAugmentedUniversalView()
 		if err != nil {
 			return nil, 0, 0, 0, errors.Wrapf(
@@ -921,7 +1091,7 @@ func (bc *Blockchain) CreateUnjailValidatorTxn(
 	metadata *UnjailValidatorMetadata,
 	extraData map[string][]byte,
 	minFeeRateNanosPerKB uint64,
-	mempool *DeSoMempool,
+	mempool Mempool,
 	additionalOutputs []*DeSoOutput,
 ) (
 	_txn *MsgDeSoTxn,
@@ -948,7 +1118,7 @@ func (bc *Blockchain) CreateUnjailValidatorTxn(
 			err, "Blockchain.CreateUnjailValidatorTxn: problem creating new utxo view: ",
 		)
 	}
-	if mempool != nil {
+	if !isInterfaceValueNil(mempool) {
 		utxoView, err = mempool.GetAugmentedUniversalView()
 		if err != nil {
 			return nil, 0, 0, 0, errors.Wrapf(
@@ -1055,7 +1225,8 @@ func (bav *UtxoView) _connectRegisterAsValidator(
 	}
 	// Delete the existing ValidatorEntry, if exists. There will be an existing ValidatorEntry
 	// if the transactor is updating their ValidatorEntry. There will not be one if the transactor
-	// is registering a ValidatorEntry for the first time (or it was previously unregistered).
+	// is registering a ValidatorEntry for the first time (or it was previously unregistered). If
+	// we have a prevValidatorEntry, we know there must be a prevBLSPublicKeyPKIDPairEntry as well.
 	// Note that we don't need to check isDeleted because the Get returns nil if isDeleted=true.
 	if prevValidatorEntry != nil {
 		bav._deleteValidatorEntryMappings(prevValidatorEntry)
@@ -1635,6 +1806,16 @@ func (bav *UtxoView) IsValidRegisterAsValidatorMetadata(
 		}
 	}
 
+	// Error if VotingPublicKey is already taken.
+	validatorBLSPublicKeyPKIDPairEntry, err := bav.GetBLSPublicKeyPKIDPairEntry(metadata.VotingPublicKey)
+	if validatorBLSPublicKeyPKIDPairEntry != nil {
+		// If there is already a BLS PKID Entry for the provided VotingPublicKey,
+		// we want to make sure that it has the same PKID as the same as the TransactorPKIDEntry.
+		if !validatorBLSPublicKeyPKIDPairEntry.PKID.Eq(transactorPKIDEntry.PKID) {
+			return errors.Wrap(
+				RuleErrorVotingPublicKeyDuplicate, "UtxoView.IsValidRegisterAsValidatorMetadata: ")
+		}
+	}
 	return nil
 }
 
@@ -1652,6 +1833,15 @@ func (bav *UtxoView) IsValidUnregisterAsValidatorMetadata(transactorPublicKey []
 	}
 	if validatorEntry == nil || validatorEntry.isDeleted {
 		return errors.Wrapf(RuleErrorValidatorNotFound, "UtxoView.IsValidUnregisterAsValidatorMetadata: ")
+	}
+
+	// Validate BLSPublicKeyPKIDPairEntry exists
+	blsPublicKeyPKIDPairEntry, err := bav.GetBLSPublicKeyPKIDPairEntry(validatorEntry.VotingPublicKey)
+	if err != nil {
+		return errors.Wrap(err, "UtxoView.IsValidUnregisterAsValidatorMetadata: ")
+	}
+	if blsPublicKeyPKIDPairEntry == nil {
+		return errors.Wrap(RuleErrorValidatorBLSPublicKeyPKIDPairEntryNotFound, "UtxoView.IsValidUnregisterAsValidatorMetadata: ")
 	}
 
 	return nil
@@ -1800,6 +1990,31 @@ func (bav *UtxoView) GetValidatorByPublicKey(validatorPublicKey *PublicKey) (*Va
 	return validatorEntry, nil
 }
 
+func (bav *UtxoView) GetBLSPublicKeyPKIDPairEntry(blsPublicKey *bls.PublicKey) (*BLSPublicKeyPKIDPairEntry, error) {
+	blsPublicKeyPKIDPairEntry, exists := bav.ValidatorBLSPublicKeyPKIDPairEntries[blsPublicKey.Serialize()]
+	if exists {
+		if blsPublicKeyPKIDPairEntry.isDeleted {
+			return nil, nil
+		}
+		// If we get to this point, we found a matching
+		// !isDeleted BLSPublicKeyPKIDPairEntry for the given blsPublicKey.
+		return blsPublicKeyPKIDPairEntry, nil
+	}
+	// At this point, we know there was no matching BLSPublicKeyPKIDPairEntry in the view.
+
+	// If no BLSPublicKeyPKIDPairEntry (either isDeleted or !isDeleted) was found
+	// in the UtxoView for the given blsPublicKey, check the database.
+	dbBLSPublicKeyPKIDPairEntry, err := DBGetValidatorBLSPublicKeyPKIDPairEntry(bav.Handle, bav.Snapshot, blsPublicKey)
+	if err != nil {
+		return nil, errors.Wrapf(err, "UtxoView.GetBLSPublicKeyPKIDPairEntry: ")
+	}
+	if dbBLSPublicKeyPKIDPairEntry != nil {
+		// Cache the BLSPublicKeyPKIDPairEntry from the db in the UtxoView.
+		bav._setValidatorBLSPublicKeyPKIDPairEntryMappings(dbBLSPublicKeyPKIDPairEntry)
+	}
+	return dbBLSPublicKeyPKIDPairEntry, nil
+}
+
 func (bav *UtxoView) GetTopActiveValidatorsByStakeAmount(limit uint64) ([]*ValidatorEntry, error) {
 	// Validate limit param.
 	if limit == uint64(0) {
@@ -1865,10 +2080,11 @@ func (bav *UtxoView) JailAllInactiveSnapshotValidators(blockHeight uint64) error
 		return nil
 	}
 
+	// TODO: We can replace this with a call to GetAllSnapshotValidatorSetEntriesByStake
 	// Fetch the ValidatorSetMaxNumValidators from the snapshot global params. We use the snapshot global
 	// params here because the value used to snapshot the size of the validator set was snapshotted along
 	// with the validator set.
-	snapshotGlobalParams, err := bav.GetSnapshotGlobalParamsEntry()
+	snapshotGlobalParams, err := bav.GetCurrentSnapshotGlobalParamsEntry()
 	if err != nil {
 		return errors.Wrapf(err, "UtxoView.JailAllInactiveSnapshotValidators: error retrieving SnapshotGlobalParamsEntry: ")
 	}
@@ -1993,6 +2209,10 @@ func (bav *UtxoView) _setValidatorEntryMappings(validatorEntry *ValidatorEntry) 
 		return
 	}
 	bav.ValidatorPKIDToValidatorEntry[*validatorEntry.ValidatorPKID] = validatorEntry
+
+	// We always construct the BLSPublicKeyPKIDPairEntry from the ValidatorEntry. This is to
+	// ensure that the two always line up.
+	bav._setValidatorBLSPublicKeyPKIDPairEntryMappings(validatorEntry.ToBLSPublicKeyPKIDPairEntry())
 }
 
 func (bav *UtxoView) _deleteValidatorEntryMappings(validatorEntry *ValidatorEntry) {
@@ -2047,6 +2267,58 @@ func (bav *UtxoView) _flushValidatorEntriesToDbWithTxn(txn *badger.Txn, blockHei
 		}
 	}
 
+	return nil
+}
+
+// Note that we only explicitly call this _set function when we are caching a BLSPublicKeyPKIDPairEntry
+// that we fetched from badger. We should never call this explicitly in transaction connection
+// logic as _setValidatorEntryMappings handles this for us.
+func (bav *UtxoView) _setValidatorBLSPublicKeyPKIDPairEntryMappings(blsPublicKeyPKIDPairEntry *BLSPublicKeyPKIDPairEntry) {
+	if blsPublicKeyPKIDPairEntry == nil {
+		glog.Errorf("_setValidatorBLSPublicKeyPKIDPairEntryMappings: called with nil entry, this should never happen")
+		return
+	}
+	bav.ValidatorBLSPublicKeyPKIDPairEntries[blsPublicKeyPKIDPairEntry.ToMapKey()] = blsPublicKeyPKIDPairEntry
+}
+
+func (bav *UtxoView) _flushValidatorBLSPublicKeyPKIDPairEntryMappingsWithTxn(txn *badger.Txn, blockHeight uint64) error {
+	// Delete all entries in the ValidatorBLSPublicKeyPKIDPairEntries UtxoView map.
+	for blsPublicKeyIter, blsPublicKeyPKIDPairEntryIter := range bav.ValidatorBLSPublicKeyPKIDPairEntries {
+		// Make a copy of the iterators since we make references to them below.
+		blsPublicKey := blsPublicKeyIter
+		blsPublicKeyPKIDPairEntry := *blsPublicKeyPKIDPairEntryIter
+
+		// Sanity-check that the entry matches the map key.
+		blsPublicKeyInEntry := blsPublicKeyPKIDPairEntry.BLSPublicKey.Serialize()
+		if blsPublicKeyInEntry != blsPublicKey {
+			return fmt.Errorf(
+				"_flushValidatorBLSPublicKeyPKIDPairEntryMappingsWithTxn: BLSPublicKeyPKIDPairEntry key %v doesn't match MapKey %v",
+				&blsPublicKeyInEntry,
+				&blsPublicKey,
+			)
+		}
+
+		// Delete the existing mappings in the db for this BLSPublicKey. They
+		// will be re-added if the corresponding entry in memory has isDeleted=false.
+		if err := DBDeleteBLSPublicKeyPKIDPairEntryWithTxn(txn, bav.Snapshot, blsPublicKeyPKIDPairEntry.BLSPublicKey, bav.EventManager, blsPublicKeyPKIDPairEntry.isDeleted); err != nil {
+			return errors.Wrap(err, "_flushValidatorBLSPublicKeyPKIDPairEntryMappingsWithTxn: ")
+		}
+	}
+
+	// Set any !isDeleted BLSPublicKeyPKIDPairEntries in the ValidatorBLSPublicKeyPKIDPairEntries UtxoView map.
+	for _, blsPublicKeyPKIDPairEntryIter := range bav.ValidatorBLSPublicKeyPKIDPairEntries {
+		blsPublicKeyPKIDPairEntry := *blsPublicKeyPKIDPairEntryIter
+		if blsPublicKeyPKIDPairEntry.isDeleted {
+			// If BLSPublicKeyPKIDPairEntry.isDeleted then there's nothing to
+			// do because we already deleted the entry above.
+		} else {
+			// If !BLSPublicKeyPKIDPairEntry.isDeleted then we put the
+			// corresponding mappings for it into the db.
+			if err := DBPutValidatorBLSPublicKeyPKIDPairEntryWithTxn(txn, bav.Snapshot, &blsPublicKeyPKIDPairEntry, blockHeight, bav.EventManager); err != nil {
+				return errors.Wrap(err, "_flushValidatorBLSPublicKeyPKIDPairEntryMappingsWithTxn: ")
+			}
+		}
+	}
 	return nil
 }
 
@@ -2273,10 +2545,12 @@ const RuleErrorValidatorInvalidDomain RuleError = "RuleErrorValidatorInvalidDoma
 const RuleErrorValidatorDuplicateDomains RuleError = "RuleErrorValidatorDuplicateDomains"
 const RuleErrorValidatorInvalidCommissionBasisPoints RuleError = "RuleErrorValidatorInvalidCommissionBasisPoints"
 const RuleErrorValidatorNotFound RuleError = "RuleErrorValidatorNotFound"
+const RuleErrorValidatorBLSPublicKeyPKIDPairEntryNotFound RuleError = "RuleErrorValidatorBLSPublicKeyPKIDPairEntryNotFound"
 const RuleErrorValidatorMissingVotingPublicKey RuleError = "RuleErrorValidatorMissingVotingPublicKey"
 const RuleErrorValidatorMissingVotingAuthorization RuleError = "RuleErrorValidatorMissingVotingAuthorization"
 const RuleErrorValidatorInvalidVotingAuthorization RuleError = "RuleErrorValidatorInvalidVotingAuthorization"
 const RuleErrorValidatorDisablingExistingDelegatedStakers RuleError = "RuleErrorValidatorDisablingExistingDelegatedStakers"
+const RuleErrorVotingPublicKeyDuplicate RuleError = "RuleErrorVotingPublicKeyDuplicate"
 const RuleErrorUnjailingNonjailedValidator RuleError = "RuleErrorUnjailingNonjailedValidator"
 const RuleErrorUnjailingValidatorTooEarly RuleError = "RuleErrorUnjailingValidatorTooEarly"
 

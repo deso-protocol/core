@@ -1,3 +1,5 @@
+//go:build relic
+
 package lib
 
 import (
@@ -31,8 +33,10 @@ func TestCreateBlockTemplate(t *testing.T) {
 	require.NoError(err)
 	dir := _dbDirSetup(t)
 
-	mempool := NewPosMempool(params, globalParams, latestBlockView, 2, dir, false,
-		maxMempoolPosSizeBytes, mempoolBackupIntervalMillis)
+	mempool := NewPosMempool()
+	require.NoError(mempool.Init(
+		params, globalParams, latestBlockView, 2, dir, false, maxMempoolPosSizeBytes, mempoolBackupIntervalMillis, 1, nil, 1,
+	))
 	require.NoError(mempool.Start())
 	defer mempool.Stop()
 	require.True(mempool.IsRunning())
@@ -51,13 +55,13 @@ func TestCreateBlockTemplate(t *testing.T) {
 	priv, err := bls.NewPrivateKey()
 	require.NoError(err)
 	pub := priv.PublicKey()
-	seedHash := &RandomSeedHash{}
-	_, err = seedHash.FromBytes(Sha256DoubleHash([]byte("seed")).ToBytes())
+	seedSignature := &bls.Signature{}
+	_, err = seedSignature.FromBytes(Sha256DoubleHash([]byte("seed")).ToBytes())
 	require.NoError(err)
 	m0Pk := NewPublicKey(m0PubBytes)
 	pbp := NewPosBlockProducer(mempool, params, m0Pk, pub)
 
-	blockTemplate, err := pbp.createBlockTemplate(latestBlockView, 3, 10, seedHash)
+	blockTemplate, err := pbp.createBlockTemplate(latestBlockView, 3, 10, seedSignature)
 	require.NoError(err)
 	require.NotNil(blockTemplate)
 	require.NotNil(blockTemplate.Header)
@@ -71,7 +75,7 @@ func TestCreateBlockTemplate(t *testing.T) {
 	require.Equal(blockTemplate.Header.ProposedInView, uint64(10))
 	require.Equal(blockTemplate.Header.ProposerPublicKey, m0Pk)
 	require.Equal(blockTemplate.Header.ProposerVotingPublicKey, pub)
-	require.Equal(blockTemplate.Header.ProposerRandomSeedHash, seedHash)
+	require.True(blockTemplate.Header.ProposerRandomSeedSignature.Eq(seedSignature))
 }
 
 func TestCreateBlockWithoutHeader(t *testing.T) {
@@ -92,8 +96,10 @@ func TestCreateBlockWithoutHeader(t *testing.T) {
 	require.NoError(err)
 	dir := _dbDirSetup(t)
 
-	mempool := NewPosMempool(params, globalParams, latestBlockView, 2, dir, false,
-		maxMempoolPosSizeBytes, mempoolBackupIntervalMillis)
+	mempool := NewPosMempool()
+	require.NoError(mempool.Init(
+		params, globalParams, latestBlockView, 2, dir, false, maxMempoolPosSizeBytes, mempoolBackupIntervalMillis, 1, nil, 1,
+	))
 	require.NoError(mempool.Start())
 	defer mempool.Stop()
 	require.True(mempool.IsRunning())
@@ -147,8 +153,10 @@ func TestGetBlockTransactions(t *testing.T) {
 	require.NoError(err)
 	dir := _dbDirSetup(t)
 
-	mempool := NewPosMempool(params, globalParams, latestBlockView, 2, dir, false,
-		maxMempoolPosSizeBytes, mempoolBackupIntervalMillis)
+	mempool := NewPosMempool()
+	require.NoError(mempool.Init(
+		params, globalParams, latestBlockView, 2, dir, false, maxMempoolPosSizeBytes, mempoolBackupIntervalMillis, 1, nil, 1,
+	))
 	require.NoError(mempool.Start())
 	defer mempool.Stop()
 	require.True(mempool.IsRunning())
@@ -229,8 +237,10 @@ func TestGetBlockTransactions(t *testing.T) {
 	// Create an in-memory mempool instance and add the transactions to it. Each transaction will be added with a
 	// Simulated Transaction Timestamp and afterward, mempool will be queried for the transactions. The transactions should
 	// be returned in the same order as the transaction from getBlockTransactions.
-	testMempool := NewPosMempool(params, globalParams, latestBlockView, 2, "", true,
-		maxMempoolPosSizeBytes, mempoolBackupIntervalMillis)
+	testMempool := NewPosMempool()
+	testMempool.Init(
+		params, globalParams, latestBlockView, 2, "", true, maxMempoolPosSizeBytes, mempoolBackupIntervalMillis, 1, nil, 1,
+	)
 	require.NoError(testMempool.Start())
 	defer testMempool.Stop()
 	currentTime := uint64(time.Now().UnixMicro())
