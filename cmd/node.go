@@ -157,19 +157,20 @@ func (node *Node) Start(exitChannels ...*chan struct{}) {
 	// Check to see if this node has already been initialized with performance or default options.
 	// If so, we should continue to use those options.
 	// If not, it should be based on the sync type.
-	//performanceOptions, err := lib.DbInitializedWithPerformanceOptions(node.Config.DataDirectory)
-	//
-	//// If the db options haven't yet been saved, we should base the options on the sync type.
-	//if os.IsNotExist(err) {
-	//	performanceOptions = !node.Config.HyperSync
-	//	// Save the db options for future runs.
-	//	lib.SaveBoolToFile(lib.GetDbPerformanceOptionsFilePath(node.Config.DataDirectory), performanceOptions)
-	//} else if err != nil {
-	//	// If we get an error other than "file does not exist", we should panic.
-	//	panic(err)
-	//}
+	performanceOptions, err := lib.DbInitializedWithPerformanceOptions(node.Config.DataDirectory)
 
-	performanceOptions := !node.Config.HyperSync
+	fmt.Printf("performanceOptions: %v\n", performanceOptions)
+
+	// If the db options haven't yet been saved, we should base the options on the sync type.
+	if os.IsNotExist(err) {
+		fmt.Printf("Badger options file does not exist. Using sync type to determine db options.\n")
+		performanceOptions = !node.Config.HyperSync
+		// Save the db options for future runs.
+		lib.SaveBoolToFile(lib.GetDbPerformanceOptionsFilePath(node.Config.DataDirectory), performanceOptions)
+	} else if err != nil {
+		// If we get an error other than "file does not exist", we should panic.
+		panic(err)
+	}
 
 	if performanceOptions {
 		opts = lib.PerformanceBadgerOptions(dbDir)
@@ -262,8 +263,7 @@ func (node *Node) Start(exitChannels ...*chan struct{}) {
 		node.nodeMessageChan,
 		node.Config.ForceChecksum,
 		node.Config.StateChangeDir,
-		node.Config.HypersyncMaxQueueSize,
-		&opts)
+		node.Config.HypersyncMaxQueueSize)
 	if err != nil {
 		// shouldRestart can be true if, on the previous run, we did not finish flushing all ancestral
 		// records to the DB. In this case, the snapshot is corrupted and needs to be computed. See the

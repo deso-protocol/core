@@ -287,6 +287,7 @@ func DecodeStringUint64MapFromBytes(rr *bytes.Reader) (map[string]uint64, error)
 
 // SaveBoolToFile saves a boolean value to a file.
 func SaveBoolToFile(filename string, value bool) error {
+	fmt.Printf("*********SAVING BOOL TO FILE: %v\n", filename)
 	file, err := os.Create(filename)
 	if err != nil {
 		return err
@@ -316,8 +317,6 @@ func ReadBoolFromFile(filename string) (bool, error) {
 	// Interpret the contents as a boolean value.
 	if scanner.Scan() {
 		return strings.TrimSpace(scanner.Text()) == "true", nil
-	} else {
-		fmt.Printf("FILE IS EMPTY\n")
 	}
 
 	if err := scanner.Err(); err != nil {
