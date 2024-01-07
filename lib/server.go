@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"net"
+	"path/filepath"
 	"reflect"
 	"runtime"
 	"strings"
@@ -1479,7 +1480,7 @@ func (srv *Server) dirtyHackUpdateDbOpts(opts badger.Options) {
 	// Save the new options to the DB so that we know what to use if the node restarts.
 	isPerformanceOptions := DbOptsArePerformance(&opts)
 	fmt.Printf("Server._handleSnapshot: Saving performance options to file: (%v)\n", isPerformanceOptions)
-	err = SaveBoolToFile(GetDbPerformanceOptionsFilePath(opts.ValueDir), isPerformanceOptions)
+	err = SaveBoolToFile(GetDbPerformanceOptionsFilePath(filepath.Dir(opts.ValueDir)), isPerformanceOptions)
 	if err != nil {
 		glog.Errorf("Server._handleSnapshot: Problem saving performance options to file, error: (%v)", err)
 		fmt.Printf("Server._handleSnapshot: Problem saving performance options to file, error: (%v)", err)
