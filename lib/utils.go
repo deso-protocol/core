@@ -290,6 +290,7 @@ func SaveBoolToFile(filename string, value bool) error {
 	fmt.Printf("*********SAVING BOOL TO FILE: %v\n", filename)
 	file, err := os.Create(filename)
 	if err != nil {
+		fmt.Printf("Error creating file: %v\n", err)
 		return err
 	}
 	defer file.Close()
