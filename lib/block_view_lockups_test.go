@@ -3119,6 +3119,171 @@ func TestVestedDeSoLockupAsInvalid(t *testing.T) {
 	}
 }
 
+func TestSimpleVestedLockup(t *testing.T) {
+	// Initialize test chain, miner, and testMeta
+	testMeta := _setUpMinerAndTestMetaForTimestampBasedLockupTests(t)
+
+	// Initialize m0, m1, m2, m3, m4, and paramUpdater
+	_setUpProfilesAndMintM0M1DAOCoins(testMeta)
+
+	// Perform a simple vested lockup in the future over 1000ns.
+	{
+		_, _, _, err := _coinLockupWithConnectTimestamp(
+			t, testMeta.chain, testMeta.db, testMeta.params, testMeta.feeRateNanosPerKb,
+			m0Pub, m0Priv, m0Pub, m0Pub,
+			1000, 2000, uint256.NewInt().SetUint64(1000), 0)
+		require.NoError(t, err)
+	}
+
+	// Get the original m0 balance entry base units.
+	utxoView, err := NewUtxoView(testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot, nil)
+	require.NoError(t, err)
+	m0PKIDEntry := utxoView.GetPKIDForPublicKey(m0PkBytes)
+	m0PKID := m0PKIDEntry.PKID
+	originalBalanceEntry, _, _ :=
+		utxoView.GetBalanceEntryForHODLerPubKeyAndCreatorPubKey(m0PkBytes, m0PkBytes, true)
+
+	// Perform a simple unlock halfway through the vest. Ensure the payout is 500 base units.
+	{
+		_, _, _, err := _coinUnlockWithConnectTimestamp(
+			t, testMeta.chain, testMeta.db, testMeta.params, testMeta.feeRateNanosPerKb,
+			m0Pub,
+			m0Priv,
+			m0Pub,
+			1500,
+		)
+		require.NoError(t, err)
+	}
+
+	// Verify that the locked balance entry was credited.
+	utxoView, err = NewUtxoView(testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot, nil)
+	require.NoError(t, err)
+
+	// Check m0 LockedBalanceEntry
+	m0LockedBalanceEntry, err := utxoView.GetLockedBalanceEntryForLockedBalanceEntryKey(&LockedBalanceEntryKey{
+		HODLerPKID:                  *m0PKID,
+		ProfilePKID:                 *m0PKID,
+		UnlockTimestampNanoSecs:     1000,
+		VestingEndTimestampNanoSecs: 2000,
+	})
+	require.NoError(t, err)
+	require.True(t, m0LockedBalanceEntry == nil)
+	m0LockedBalanceEntry, err = utxoView.GetLockedBalanceEntryForLockedBalanceEntryKey(&LockedBalanceEntryKey{
+		HODLerPKID:                  *m0PKID,
+		ProfilePKID:                 *m0PKID,
+		UnlockTimestampNanoSecs:     1500,
+		VestingEndTimestampNanoSecs: 2000,
+	})
+	require.NoError(t, err)
+	require.True(t, m0LockedBalanceEntry != nil)
+	require.True(t, m0LockedBalanceEntry.BalanceBaseUnits.Eq(uint256.NewInt().SetUint64(500)))
+
+	// Get the updated m0 balance entry base units and ensure it's been credited 500 base units.
+	utxoView, err = NewUtxoView(testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot, nil)
+	require.NoError(t, err)
+	updatedBalanceEntry, _, _ :=
+		utxoView.GetBalanceEntryForHODLerPubKeyAndCreatorPubKey(m0PkBytes, m0PkBytes, true)
+	require.True(t, uint256.NewInt().SetUint64(500).Eq(
+		uint256.NewInt().Sub(
+			&updatedBalanceEntry.BalanceNanos,
+			&originalBalanceEntry.BalanceNanos)))
+	originalBalanceEntry = updatedBalanceEntry
+
+	// Perform another simple unlock halfway through the remaining vest. Ensure the payout is 250 base units.
+	{
+		_, _, _, err := _coinUnlockWithConnectTimestamp(
+			t, testMeta.chain, testMeta.db, testMeta.params, testMeta.feeRateNanosPerKb,
+			m0Pub,
+			m0Priv,
+			m0Pub,
+			1750,
+		)
+		require.NoError(t, err)
+	}
+
+	// Verify that the locked balance entry was credited.
+	utxoView, err = NewUtxoView(testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot, nil)
+	require.NoError(t, err)
+
+	// Check m0 LockedBalanceEntry
+	m0LockedBalanceEntry, err = utxoView.GetLockedBalanceEntryForLockedBalanceEntryKey(&LockedBalanceEntryKey{
+		HODLerPKID:                  *m0PKID,
+		ProfilePKID:                 *m0PKID,
+		UnlockTimestampNanoSecs:     1500,
+		VestingEndTimestampNanoSecs: 2000,
+	})
+	require.NoError(t, err)
+	require.True(t, m0LockedBalanceEntry == nil)
+	m0LockedBalanceEntry, err = utxoView.GetLockedBalanceEntryForLockedBalanceEntryKey(&LockedBalanceEntryKey{
+		HODLerPKID:                  *m0PKID,
+		ProfilePKID:                 *m0PKID,
+		UnlockTimestampNanoSecs:     1750,
+		VestingEndTimestampNanoSecs: 2000,
+	})
+	require.NoError(t, err)
+	require.True(t, m0LockedBalanceEntry != nil)
+	require.True(t, m0LockedBalanceEntry.BalanceBaseUnits.Eq(uint256.NewInt().SetUint64(250)))
+
+	// Get the updated m0 balance entry base units and ensure it's been credited 250 base units.
+	utxoView, err = NewUtxoView(testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot, nil)
+	require.NoError(t, err)
+	updatedBalanceEntry, _, _ =
+		utxoView.GetBalanceEntryForHODLerPubKeyAndCreatorPubKey(m0PkBytes, m0PkBytes, true)
+	require.True(t, uint256.NewInt().SetUint64(250).Eq(
+		uint256.NewInt().Sub(
+			&updatedBalanceEntry.BalanceNanos,
+			&originalBalanceEntry.BalanceNanos)))
+	originalBalanceEntry = updatedBalanceEntry
+
+	// Try and unlock the remaining amount.
+	{
+		_, _, _, err := _coinUnlockWithConnectTimestamp(
+			t, testMeta.chain, testMeta.db, testMeta.params, testMeta.feeRateNanosPerKb,
+			m0Pub,
+			m0Priv,
+			m0Pub,
+			2000,
+		)
+		require.NoError(t, err)
+	}
+
+	// Verify that the locked balance entry was credited.
+	utxoView, err = NewUtxoView(testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot, nil)
+	require.NoError(t, err)
+
+	// Check m0 LockedBalanceEntry
+	m0LockedBalanceEntry, err = utxoView.GetLockedBalanceEntryForLockedBalanceEntryKey(&LockedBalanceEntryKey{
+		HODLerPKID:                  *m0PKID,
+		ProfilePKID:                 *m0PKID,
+		UnlockTimestampNanoSecs:     1750,
+		VestingEndTimestampNanoSecs: 2000,
+	})
+	require.NoError(t, err)
+	require.True(t, m0LockedBalanceEntry == nil)
+	m0LockedBalanceEntry, err = utxoView.GetLockedBalanceEntryForLockedBalanceEntryKey(&LockedBalanceEntryKey{
+		HODLerPKID:                  *m0PKID,
+		ProfilePKID:                 *m0PKID,
+		UnlockTimestampNanoSecs:     2000,
+		VestingEndTimestampNanoSecs: 2000,
+	})
+	require.NoError(t, err)
+	require.True(t, m0LockedBalanceEntry == nil)
+
+	// Get the updated m0 balance entry base units and ensure it's been credited 250 base units.
+	utxoView, err = NewUtxoView(testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot, nil)
+	require.NoError(t, err)
+	updatedBalanceEntry, _, _ =
+		utxoView.GetBalanceEntryForHODLerPubKeyAndCreatorPubKey(m0PkBytes, m0PkBytes, true)
+	require.True(t, uint256.NewInt().SetUint64(250).Eq(
+		uint256.NewInt().Sub(
+			&updatedBalanceEntry.BalanceNanos,
+			&originalBalanceEntry.BalanceNanos)))
+	originalBalanceEntry = updatedBalanceEntry
+
+	// Check that we're back to where we started (1e6 base units)
+	require.True(t, uint256.NewInt().SetUint64(1e6).Eq(&updatedBalanceEntry.BalanceNanos))
+}
+
 //----------------------------------------------------------
 // (Testing) Lockup Setup Helper Functions
 //----------------------------------------------------------

@@ -2376,6 +2376,15 @@ func (bav *UtxoView) _connectCoinUnlock(
 			// Create and modify a copy to prevent pointer reuse.
 			modifiedLockedBalanceEntry := unlockableLockedBalanceEntry.Copy()
 			modifiedLockedBalanceEntry.UnlockTimestampNanoSecs = blockTimestampNanoSecs
+			newBalanceBaseUnits, err := SafeUint256().Sub(
+				&modifiedLockedBalanceEntry.BalanceBaseUnits,
+				amountToUnlock)
+			if err != nil {
+				return 0, 0, nil,
+					errors.New("_connectCoinUnlock: newBalanceBaseUnits underflow; " +
+						"this shouldn't be possible")
+			}
+			modifiedLockedBalanceEntry.BalanceBaseUnits = *newBalanceBaseUnits
 
 			// SET the modified key.
 			bav._setLockedBalanceEntry(modifiedLockedBalanceEntry)
@@ -2461,28 +2470,27 @@ func CalculateVestedEarnings(
 	// Here we know that:
 	// UnlockTimestampNanoSecs < blockTimestampNanoSecs < VestingEndTimestampNanoSecs
 	// Now we compute the fraction of time that's passed.
-	numerator := blockTimestampNanoSecs - lockedBalanceEntry.UnlockTimestampNanoSecs
-	denominator := lockedBalanceEntry.VestingEndTimestampNanoSecs - lockedBalanceEntry.UnlockTimestampNanoSecs
-	fractionEarned, err := SafeUint256().Div(
-		uint256.NewInt().SetUint64(uint64(numerator)),
-		uint256.NewInt().SetUint64(uint64(denominator)))
+	numerator := uint256.NewInt().SetUint64(
+		uint64(blockTimestampNanoSecs - lockedBalanceEntry.UnlockTimestampNanoSecs))
+	denominator := uint256.NewInt().SetUint64(
+		uint64(lockedBalanceEntry.VestingEndTimestampNanoSecs - lockedBalanceEntry.UnlockTimestampNanoSecs))
+
+	// Compute the numerator (lockedBalanceEntry.BalanceBaseUnits * numerator).
+	var err error
+	numerator, err = SafeUint256().Mul(
+		&lockedBalanceEntry.BalanceBaseUnits,
+		numerator)
 	if err != nil {
 		return uint256.NewInt(),
-			errors.Wrap(err, "ComputeVestedEarnings failed to compute fraction of time elapsed")
-	}
-
-	// Sanity check that fractionEarned <= 1.
-	if fractionEarned.Gt(uint256.NewInt().SetUint64(1)) {
-		return uint256.NewInt(),
-			errors.New("ComputeVestedEarnings: Found fractionEarned > 1; this shouldn't be possible")
+			errors.Wrap(err, "ComputeVestedEarnings failed to compute multiplication (time elapsed * balance)")
 	}
 
 	// Compute the vested earnings.
-	vestedEarnings, err := SafeUint256().Mul(
-		&lockedBalanceEntry.BalanceBaseUnits,
-		fractionEarned)
+	vestedEarnings, err := SafeUint256().Div(numerator, denominator)
 	if err != nil {
-		return uint256.NewInt(), errors.Wrap(err, "ComputeVestedEarnings failed to compute vested earnings")
+		return uint256.NewInt(),
+			errors.Wrap(err, "ComputeVestedEarnings failed to compute division "+
+				"((time elapsed * balance) / total time)")
 	}
 
 	// Sanity check that vestedEarnings < BalanceBaseUnits
