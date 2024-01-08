@@ -1549,7 +1549,7 @@ func TestLockupWithDerivedKey(t *testing.T) {
 				txMeta.UnlockTimestampNanoSecs,
 				txMeta.VestingEndTimestampNanoSecs,
 				txMeta.LockupAmountBaseUnits,
-				testMeta.feeRateNanosPerKb, nil, []*DeSoOutput{})
+				nil, testMeta.feeRateNanosPerKb, nil, []*DeSoOutput{})
 			require.NoError(t, err)
 		case TxnTypeUpdateCoinLockupParams:
 			txMeta := inputTxn.TxnMeta.(*UpdateCoinLockupParamsMetadata)
@@ -1560,7 +1560,7 @@ func TestLockupWithDerivedKey(t *testing.T) {
 				txMeta.RemoveYieldCurvePoint,
 				txMeta.NewLockupTransferRestrictions,
 				txMeta.LockupTransferRestrictionStatus,
-				testMeta.feeRateNanosPerKb, nil, []*DeSoOutput{})
+				nil, testMeta.feeRateNanosPerKb, nil, []*DeSoOutput{})
 			require.NoError(t, err)
 		case TxnTypeCoinLockupTransfer:
 			txMeta := inputTxn.TxnMeta.(*CoinLockupTransferMetadata)
@@ -1570,14 +1570,14 @@ func TestLockupWithDerivedKey(t *testing.T) {
 				txMeta.ProfilePublicKey.ToBytes(),
 				txMeta.UnlockTimestampNanoSecs,
 				txMeta.LockedCoinsToTransferBaseUnits,
-				testMeta.feeRateNanosPerKb, nil, []*DeSoOutput{})
+				nil, testMeta.feeRateNanosPerKb, nil, []*DeSoOutput{})
 			require.NoError(t, err)
 		case TxnTypeCoinUnlock:
 			txMeta := inputTxn.TxnMeta.(*CoinUnlockMetadata)
 			txn, _, _, _, err = testMeta.chain.CreateCoinUnlockTxn(
 				transactorPkBytes,
 				txMeta.ProfilePublicKey.ToBytes(),
-				testMeta.feeRateNanosPerKb, nil, []*DeSoOutput{})
+				nil, testMeta.feeRateNanosPerKb, nil, []*DeSoOutput{})
 			require.NoError(t, err)
 		default:
 			return 0, errors.New("invalid txn type")
@@ -2788,17 +2788,17 @@ func TestLockupBlockConnectsAndDisconnects(t *testing.T) {
 	updateTxn, _, _, _, err := testMeta.chain.CreateUpdateCoinLockupParamsTxn(
 		m0PkBytes, 365*24*60*60*1e9, 1000, false,
 		true, TransferRestrictionStatusProfileOwnerOnly,
-		testMeta.feeRateNanosPerKb, nil, []*DeSoOutput{})
+		nil, testMeta.feeRateNanosPerKb, nil, []*DeSoOutput{})
 	require.NoError(t, err)
 	_signTxn(t, updateTxn, m0Priv)
 	lockupTxn, _, _, _, err := testMeta.chain.CreateCoinLockupTxn(
 		m0PkBytes, m0PkBytes, m0PkBytes, tipTimestamp+2e9, tipTimestamp+2e9,
-		uint256.NewInt().SetUint64(1000), testMeta.feeRateNanosPerKb, nil, []*DeSoOutput{})
+		uint256.NewInt().SetUint64(1000), nil, testMeta.feeRateNanosPerKb, nil, []*DeSoOutput{})
 	require.NoError(t, err)
 	_signTxn(t, lockupTxn, m0Priv)
 	transferTxn, _, _, _, err := testMeta.chain.CreateCoinLockupTransferTxn(
 		m0PkBytes, m3PkBytes, m0PkBytes, tipTimestamp+2e9,
-		uint256.NewInt().SetUint64(1000), testMeta.feeRateNanosPerKb, nil, []*DeSoOutput{})
+		uint256.NewInt().SetUint64(1000), nil, testMeta.feeRateNanosPerKb, nil, []*DeSoOutput{})
 	require.NoError(t, err)
 	_signTxn(t, transferTxn, m0Priv)
 
@@ -2866,7 +2866,7 @@ func TestLockupBlockConnectsAndDisconnects(t *testing.T) {
 
 	// Construct transactions
 	unlockTxn, _, _, _, err := testMeta.chain.CreateCoinUnlockTxn(
-		m3PkBytes, m0PkBytes, testMeta.feeRateNanosPerKb, nil, []*DeSoOutput{})
+		m3PkBytes, m0PkBytes, nil, testMeta.feeRateNanosPerKb, nil, []*DeSoOutput{})
 	require.NoError(t, err)
 	_signTxn(t, unlockTxn, m3Priv)
 
@@ -3490,6 +3490,7 @@ func _coinLockupWithConnectTimestamp(
 		unlockTimestampNanoSecs,
 		vestingEndTimestampNanoSecs,
 		lockupAmountBaseUnits,
+		nil,
 		feeRateNanosPerKB,
 		nil, []*DeSoOutput{})
 	if err != nil {
@@ -3578,7 +3579,7 @@ func _updateCoinLockupParams(t *testing.T, chain *Blockchain, db *badger.DB,
 	// Create the update coin lockup params transaction.
 	txn, totalInputMake, _, feesMake, err := chain.CreateUpdateCoinLockupParamsTxn(
 		transactorPkBytes, lockupYieldDurationNanoSecs, lockupYieldAPYBasisPoints, removeYieldCurvePoint,
-		newLockupTransferRestrictions, lockupTransferRestrictionStatus, feeRateNanosPerKB, nil, []*DeSoOutput{})
+		newLockupTransferRestrictions, lockupTransferRestrictionStatus, nil, feeRateNanosPerKB, nil, []*DeSoOutput{})
 	if err != nil {
 		return nil, nil, 0, err
 	}
@@ -3657,7 +3658,7 @@ func _coinLockupTransfer(t *testing.T, chain *Blockchain, db *badger.DB,
 	// Create the update coin lockup params transaction.
 	txn, totalInputMake, _, feesMake, err := chain.CreateCoinLockupTransferTxn(
 		transactorPkBytes, recipientPublicKey.ToBytes(), profilePublicKey.ToBytes(), unlockTimestampNanoSecs,
-		lockedCoinsToTransferBaseUnits, feeRateNanosPerKB, nil, []*DeSoOutput{})
+		lockedCoinsToTransferBaseUnits, nil, feeRateNanosPerKB, nil, []*DeSoOutput{})
 	if err != nil {
 		return nil, nil, 0, err
 	}
@@ -3734,7 +3735,7 @@ func _coinUnlockWithConnectTimestamp(t *testing.T, chain *Blockchain, db *badger
 
 	// Create the coin unlock transaction.
 	txn, totalInputMake, _, feesMake, err := chain.CreateCoinUnlockTxn(
-		transactorPkBytes, profilePkBytes, feeRateNanosPerKB, nil, []*DeSoOutput{})
+		transactorPkBytes, profilePkBytes, nil, feeRateNanosPerKB, nil, []*DeSoOutput{})
 	if err != nil {
 		return nil, nil, 0, err
 	}
