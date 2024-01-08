@@ -189,7 +189,7 @@ func (pp *Peer) HandleGetTransactionsMsg(getTxnMsg *MsgDeSoGetTransactions) {
 	// We fetch the request txns from the PoS mempool because the PoS mempool contains
 	// all txns that have been added to the PoW and PoS mempools.
 	for _, txHash := range getTxnMsg.HashList {
-		mempoolTx := pp.srv.posMempool.GetTransaction(txHash)
+		mempoolTx := pp.srv.GetMempool().GetTransaction(txHash)
 		// If the transaction isn't in the pool, just continue without adding
 		// it. It is generally OK to respond with only a subset of the transactions
 		// that were requested.

@@ -219,6 +219,9 @@ func (srv *Server) GetBlockchain() *Blockchain {
 
 // TODO: The hallmark of a messy non-law-of-demeter-following interface...
 func (srv *Server) GetMempool() Mempool {
+	srv.blockchain.ChainLock.RLock()
+	defer srv.blockchain.ChainLock.RUnlock()
+
 	tip := srv.blockchain.BlockTip()
 	if tip.Height >= srv.blockchain.params.ForkHeights.ProofOfStake2ConsensusCutoverBlockHeight {
 		return srv.posMempool
@@ -1691,7 +1694,7 @@ func (srv *Server) _relayTransactions() {
 	// We pull the transactions from the PoS mempool even if we are running the PoW
 	// protocol. This is because the PoS mempool contains all transactions that have
 	// accepted by both the PoW and PoS mempools.
-	txnList := srv.posMempool.GetTransactions()
+	txnList := srv.GetMempool().GetTransactions()
 
 	for _, pp := range allPeers {
 		if !pp.canReceiveInvMessagess {
@@ -1783,6 +1786,7 @@ func (srv *Server) _handleBlockMainChainConnectedd(event *BlockEvent) {
 	// we connected the blocks and this wouldn't be guaranteed if we kicked
 	// off a goroutine for each update.
 	srv.mempool.UpdateAfterConnectBlock(blk)
+	srv.posMempool.OnBlockConnected(blk)
 
 	blockHash, _ := blk.Header.Hash()
 	glog.V(1).Infof("_handleBlockMainChainConnected: Block %s height %d connected to "+
@@ -1806,6 +1810,7 @@ func (srv *Server) _handleBlockMainChainDisconnectedd(event *BlockEvent) {
 	// we connected the blocks and this wouldn't be guaranteed if we kicked
 	// off a goroutine for each update.
 	srv.mempool.UpdateAfterDisconnectBlock(blk)
+	srv.posMempool.OnBlockDisconnected(blk)
 
 	blockHash, _ := blk.Header.Hash()
 	glog.V(1).Infof("_handleBlockMainChainDisconnect: Block %s height %d disconnected from "+
@@ -2180,6 +2185,10 @@ func (srv *Server) StartStatsdReporter() {
 				// Report mempool size
 				mempoolTotal := len(srv.mempool.readOnlyUniversalTransactionList)
 				srv.statsdClient.Gauge("MEMPOOL.COUNT", float64(mempoolTotal), tags, 1)
+
+				// Report PoS Mempool size
+				posMempoolTotal := srv.posMempool.txnRegister.Count()
+				srv.statsdClient.Gauge("POS_MEMPOOL.COUNT", float64(posMempoolTotal), tags, 1)
 
 				// Report block + headers height
 				blocksHeight := srv.blockchain.BlockTip().Height
@@ -2577,6 +2586,7 @@ func (srv *Server) Stop() {
 		if !srv.mempool.stopped {
 			srv.mempool.Stop()
 		}
+		srv.posMempool.Stop()
 		glog.Infof(CLog(Yellow, "Server.Stop: Closed Mempool"))
 	}
 

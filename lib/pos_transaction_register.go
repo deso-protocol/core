@@ -214,6 +214,13 @@ func (tr *TransactionRegister) Size() uint64 {
 	return tr.totalTxnsSizeBytes
 }
 
+func (tr *TransactionRegister) Count() uint64 {
+	tr.RLock()
+	defer tr.RUnlock()
+
+	return uint64(len(tr.txnMembership))
+}
+
 func (tr *TransactionRegister) Includes(txn *MempoolTx) bool {
 	tr.RLock()
 	defer tr.RUnlock()
