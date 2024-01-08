@@ -997,7 +997,7 @@ func (bav *UtxoView) _connectCoinLockup(
 
 	// In the vested case, validate that the underlying profile is the transactor.
 	if txMeta.VestingEndTimestampNanoSecs > txMeta.UnlockTimestampNanoSecs &&
-		!reflect.DeepEqual(txn.PublicKey, txMeta.ProfilePublicKey) {
+		!reflect.DeepEqual(txn.PublicKey, txMeta.ProfilePublicKey.ToBytes()) {
 		return 0, 0, nil,
 			errors.Wrapf(RuleErrorCoinLockupInvalidVestedTransactor, "_connectCoinLockup: Profile "+
 				"pub key: %v, signer public key: %v", PkToString(txn.PublicKey, bav.Params),
@@ -1008,6 +1008,10 @@ func (bav *UtxoView) _connectCoinLockup(
 	if len(txMeta.RecipientPublicKey) != btcec.PubKeyBytesLenCompressed {
 		return 0, 0, nil,
 			errors.Wrap(RuleErrorCoinLockupInvalidRecipientPubKey, "_connectCoinLockup")
+	}
+	if txMeta.RecipientPublicKey.IsZeroPublicKey() {
+		return 0, 0, nil,
+			errors.Wrap(RuleErrorCoinLockupZeroPublicKeyAsRecipient, "_connectCoinLockup")
 	}
 	recipientPKIDEntry := bav.GetPKIDForPublicKey(txMeta.RecipientPublicKey.ToBytes())
 	if recipientPKIDEntry == nil || recipientPKIDEntry.isDeleted {
@@ -2030,6 +2034,10 @@ func (bav *UtxoView) _connectCoinLockupTransfer(
 	// Fetch PKIDs for the recipient, sender, and profile.
 	senderPKIDEntry := bav.GetPKIDForPublicKey(txn.PublicKey)
 	senderPKID := senderPKIDEntry.PKID
+	if txMeta.RecipientPublicKey.IsZeroPublicKey() {
+		return 0, 0, nil,
+			errors.Wrap(RuleErrorCoinLockupTransferToZeroPublicKey, "_connectCoinLockupTransfer")
+	}
 	receiverPKIDEntry := bav.GetPKIDForPublicKey(txMeta.RecipientPublicKey.ToBytes())
 	receiverPKID := receiverPKIDEntry.PKID
 	profilePKIDEntry := bav.GetPKIDForPublicKey(txMeta.ProfilePublicKey.ToBytes())

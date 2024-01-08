@@ -279,6 +279,26 @@ func TestCoinLockupTxnRuleErrors(t *testing.T) {
 		require.Contains(t, err.Error(), RuleErrorCoinLockupInvalidLockupDuration)
 	}
 
+	// Attempt to perform a vested lockup with a logically invalid vesting schedule (vest goes into the past).
+	// (This should fail -- RuleErrorCoinLockupInvalidLockupDuration)
+	{
+		_, _, _, err := _coinLockupWithConnectTimestamp(
+			t, testMeta.chain, testMeta.db, testMeta.params, testMeta.feeRateNanosPerKb,
+			m0Pub, m0Priv, Base58CheckEncode(ZeroPublicKey.ToBytes(), false, testMeta.params), m0Pub,
+			1000, 900, uint256.NewInt().SetUint64(1), 950)
+		require.Contains(t, err.Error(), RuleErrorCoinLockupInvalidVestingEndTimestamp)
+	}
+
+	// Attempt to perform an unvested lockup with the ZeroPublicKey as the recipient.
+	// (This should fail -- RuleErrorCoinLockupZeroPublicKeyAsRecipient)
+	{
+		_, _, _, err := _coinLockupWithConnectTimestamp(
+			t, testMeta.chain, testMeta.db, testMeta.params, testMeta.feeRateNanosPerKb,
+			m0Pub, m0Priv, m0Pub, Base58CheckEncode(ZeroPublicKey.ToBytes(), false, testMeta.params),
+			1000, 1000, uint256.NewInt().SetUint64(1), 950)
+		require.Contains(t, err.Error(), RuleErrorCoinLockupZeroPublicKeyAsRecipient)
+	}
+
 	// Attempt to perform a lockup in excess of the user's DESO balance.
 	// (This should fail -- RuleErrorCoinLockupInsufficientDeSo)
 	{
@@ -503,6 +523,21 @@ func TestCoinLockupTransferTxnRuleErrors(t *testing.T) {
 			0,
 			MaxUint256)
 		require.Contains(t, err.Error(), RuleErrorCoinLockupTransferSenderEqualsReceiver)
+	}
+
+	// Attempt to perform a coin lockup transfer where the receiver is the ZeroPublicKey.
+	// (This should fail -- RuleErrorCoinLockupTransferSenderEqualsReceiver)
+	{
+		_, _, _, err := _coinLockupTransfer(
+			t, testMeta.chain, testMeta.db, testMeta.params,
+			testMeta.feeRateNanosPerKb,
+			m0Pub,
+			m0Priv,
+			&ZeroPublicKey,
+			NewPublicKey(m0PkBytes),
+			0,
+			MaxUint256)
+		require.Contains(t, err.Error(), RuleErrorCoinLockupTransferToZeroPublicKey)
 	}
 
 	// Attempt to perform an excessive coin lockup transfer.
@@ -2988,6 +3023,100 @@ func TestLockupBlockConnectsAndDisconnects(t *testing.T) {
 			tipTimestamp+2e9)
 	require.NoError(t, err)
 	require.True(t, m3LockedBalanceEntry == nil)
+}
+
+func TestCoinLockupIndirectRecipients(t *testing.T) {
+	// Initialize test chain, miner, and testMeta
+	testMeta := _setUpMinerAndTestMetaForTimestampBasedLockupTests(t)
+
+	// Initialize m0, m1, m2, m3, m4, and paramUpdater
+	_setUpProfilesAndMintM0M1DAOCoins(testMeta)
+
+	// Attempt to create an indirect recipient of an unvested lockup by having m0 lockup and give to m3.
+	{
+		_, _, _, err := _coinLockupWithConnectTimestamp(
+			t, testMeta.chain, testMeta.db, testMeta.params, testMeta.feeRateNanosPerKb,
+			m0Pub, m0Priv, m0Pub, m3Pub,
+			1000, 1000, uint256.NewInt().SetUint64(1000), 0)
+		require.NoError(t, err)
+	}
+
+	// Verify that m3 received the lockup (not m0) and that m0 was credited properly.
+	utxoView, err := NewUtxoView(testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot, nil)
+	require.NoError(t, err)
+	m3PKIDEntry := utxoView.GetPKIDForPublicKey(m3PkBytes)
+	m3PKID := m3PKIDEntry.PKID
+	m0PKIDEntry := utxoView.GetPKIDForPublicKey(m0PkBytes)
+	m0PKID := m0PKIDEntry.PKID
+
+	// Check m3 LockedBalanceEntry
+	m3LockedBalanceEntry, err := utxoView.GetLockedBalanceEntryForLockedBalanceEntryKey(&LockedBalanceEntryKey{
+		HODLerPKID:                  *m3PKID,
+		ProfilePKID:                 *m0PKID,
+		UnlockTimestampNanoSecs:     1000,
+		VestingEndTimestampNanoSecs: 1000,
+	})
+	require.NoError(t, err)
+	require.True(t, m3LockedBalanceEntry != nil)
+	require.True(t, m3LockedBalanceEntry.BalanceBaseUnits.Eq(uint256.NewInt().SetUint64(1000)))
+
+	// Check the m0 LockedBalanceEntry as non-existent
+	m0LockedBalanceEntry, err := utxoView.GetLockedBalanceEntryForLockedBalanceEntryKey(&LockedBalanceEntryKey{
+		HODLerPKID:                  *m0PKID,
+		ProfilePKID:                 *m0PKID,
+		UnlockTimestampNanoSecs:     1000,
+		VestingEndTimestampNanoSecs: 1000,
+	})
+	require.NoError(t, err)
+	require.True(t, m0LockedBalanceEntry == nil)
+
+	// Attempt to create an indirect recipient of a vested lockup by having m0 lockup and give to m3.
+	{
+		_, _, _, err := _coinLockupWithConnectTimestamp(
+			t, testMeta.chain, testMeta.db, testMeta.params, testMeta.feeRateNanosPerKb,
+			m0Pub, m0Priv, m0Pub, m3Pub,
+			1050, 1100, uint256.NewInt().SetUint64(1000), 0)
+		require.NoError(t, err)
+	}
+
+	// Check m3 LockedBalanceEntry
+	m3LockedBalanceEntry, err = utxoView.GetLockedBalanceEntryForLockedBalanceEntryKey(&LockedBalanceEntryKey{
+		HODLerPKID:                  *m3PKID,
+		ProfilePKID:                 *m0PKID,
+		UnlockTimestampNanoSecs:     1050,
+		VestingEndTimestampNanoSecs: 1100,
+	})
+	require.NoError(t, err)
+	require.True(t, m3LockedBalanceEntry != nil)
+	require.True(t, m3LockedBalanceEntry.BalanceBaseUnits.Eq(uint256.NewInt().SetUint64(1000)))
+
+	// Check the m0 LockedBalanceEntry as non-existent
+	m0LockedBalanceEntry, err = utxoView.GetLockedBalanceEntryForLockedBalanceEntryKey(&LockedBalanceEntryKey{
+		HODLerPKID:                  *m0PKID,
+		ProfilePKID:                 *m0PKID,
+		UnlockTimestampNanoSecs:     1050,
+		VestingEndTimestampNanoSecs: 1100,
+	})
+	require.NoError(t, err)
+	require.True(t, m0LockedBalanceEntry == nil)
+}
+
+func TestVestedDeSoLockupAsInvalid(t *testing.T) {
+	// Initialize test chain, miner, and testMeta
+	testMeta := _setUpMinerAndTestMetaForTimestampBasedLockupTests(t)
+
+	// Initialize m0, m1, m2, m3, m4, and paramUpdater
+	_setUpProfilesAndMintM0M1DAOCoins(testMeta)
+
+	// Ensure that it's impossible for m0 to lockup deso in a vested lockup.
+	{
+		zeroPkString := Base58CheckEncode(ZeroPublicKey.ToBytes(), false, testMeta.params)
+		_, _, _, err := _coinLockupWithConnectTimestamp(
+			t, testMeta.chain, testMeta.db, testMeta.params, testMeta.feeRateNanosPerKb,
+			m0Pub, m0Priv, zeroPkString, m0Pub,
+			1050, 1100, uint256.NewInt().SetUint64(1000), 0)
+		require.Contains(t, err.Error(), RuleErrorCoinLockupInvalidVestedTransactor)
+	}
 }
 
 //----------------------------------------------------------
