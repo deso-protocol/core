@@ -244,7 +244,7 @@ func (srv *Server) GetMiner() *DeSoMiner {
 	return srv.miner
 }
 
-func (srv *Server) BroadcastTransaction(txn *MsgDeSoTxn) ([]*MempoolTx, error) {
+func (srv *Server) BroadcastTransaction(txn *MsgDeSoTxn) ([]*MsgDeSoTxn, error) {
 	// Use the backendServer to add the transaction to the mempool and
 	// relay it to peers. When a transaction is created by the user there
 	// is no need to consider a rateLimit and also no need to verifySignatures
@@ -253,10 +253,6 @@ func (srv *Server) BroadcastTransaction(txn *MsgDeSoTxn) ([]*MempoolTx, error) {
 	if err != nil {
 		return nil, errors.Wrapf(err, "BroadcastTransaction: ")
 	}
-
-	// At this point, we know the transaction has been run through the mempool.
-	// Now wait for an update of the ReadOnlyUtxoView so we don't break anything.
-	srv.mempool.BlockUntilReadOnlyViewRegenerated()
 
 	return mempoolTxs, nil
 }
@@ -276,12 +272,6 @@ func (srv *Server) VerifyAndBroadcastTransaction(txn *MsgDeSoTxn) error {
 		if err != nil {
 			return fmt.Errorf("VerifyAndBroadcastTransaction: Problem validating txn: %v", err)
 		}
-	}
-
-	// Always add the txn to the PoS mempool.
-	mempoolTxn := NewMempoolTransaction(txn, uint64(time.Now().UnixMicro()))
-	if err := srv.posMempool.AddTransaction(mempoolTxn, true /*verifySignatures*/); err != nil {
-		return errors.Wrapf(err, "VerifyAndBroadcastTransaction: problem adding txn to pos mempool")
 	}
 
 	if _, err := srv.BroadcastTransaction(txn); err != nil {
@@ -1727,7 +1717,7 @@ func (srv *Server) _relayTransactions() {
 }
 
 func (srv *Server) _addNewTxn(
-	pp *Peer, txn *MsgDeSoTxn, rateLimit bool, verifySignatures bool) ([]*MempoolTx, error) {
+	pp *Peer, txn *MsgDeSoTxn, rateLimit bool, verifySignatures bool) ([]*MsgDeSoTxn, error) {
 
 	if srv.ReadOnlyMode {
 		err := fmt.Errorf("Server._addNewTxnAndRelay: Not processing txn from peer %v "+
@@ -1753,16 +1743,35 @@ func (srv *Server) _addNewTxn(
 	}
 
 	srv.blockchain.ChainLock.RLock()
-	newlyAcceptedTxns, err := srv.mempool.ProcessTransaction(
-		txn, true /*allowUnconnectedTxn*/, rateLimit, peerID, verifySignatures)
-	srv.blockchain.ChainLock.RUnlock()
-	if err != nil {
-		return nil, errors.Wrapf(err, "Server._handleTransaction: Problem adding transaction to mempool: ")
+	defer srv.blockchain.ChainLock.RUnlock()
+
+	// Only attempt to add the transaction to the PoW mempool if we're on the
+	// PoW protocol. If we're on the PoW protocol, then we use the PoW mempool's,
+	// txn validity checks to signal whether the txn has been added or not. The PoW
+	// mempool has stricter txn validity checks than the PoW mempool, so this works
+	// out conveniently, as it allows us to always add a txn to the PoS mempool.
+	blockHeight := srv.blockchain.BlockTip().Height
+	if blockHeight < srv.blockchain.params.ForkHeights.ProofOfStake2ConsensusCutoverBlockHeight {
+		_, err := srv.mempool.ProcessTransaction(
+			txn, true /*allowUnconnectedTxn*/, rateLimit, peerID, verifySignatures)
+		if err != nil {
+			return nil, errors.Wrapf(err, "Server._addNewTxn: Problem adding transaction to mempool: ")
+		}
+
+		// At this point, we know the transaction has been run through the mempool.
+		// Now wait for an update of the ReadOnlyUtxoView so we don't break anything.
+		srv.mempool.BlockUntilReadOnlyViewRegenerated()
+
+		glog.V(1).Infof("Server._addNewTxn: newly accepted txn: %v, Peer: %v", txn, pp)
 	}
 
-	glog.V(1).Infof("Server._addNewTxnAndRelay: newlyAcceptedTxns: %v, Peer: %v", newlyAcceptedTxns, pp)
+	// Always add the txn to the PoS mempool.
+	mempoolTxn := NewMempoolTransaction(txn, uint64(time.Now().UnixMicro()))
+	if err := srv.posMempool.AddTransaction(mempoolTxn, true /*verifySignatures*/); err != nil {
+		return nil, errors.Wrapf(err, "VerifyAndBroadcastTransaction: problem adding txn to pos mempool")
+	}
 
-	return newlyAcceptedTxns, nil
+	return []*MsgDeSoTxn{txn}, nil
 }
 
 // It's assumed that the caller will hold the ChainLock for reading so
