@@ -6,8 +6,6 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"github.com/btcsuite/btcutil"
-	"github.com/gernest/mention"
 	"log"
 	"math"
 	"os"
@@ -17,6 +15,9 @@ import (
 	"strings"
 	"sync/atomic"
 	"time"
+
+	"github.com/btcsuite/btcutil"
+	"github.com/gernest/mention"
 
 	"github.com/dgraph-io/badger/v3"
 
@@ -248,8 +249,11 @@ func (mp *DeSoMempool) RemoveTransaction(txnHash *BlockHash) error {
 }
 
 func (mp *DeSoMempool) GetTransaction(txnHash *BlockHash) *MempoolTransaction {
-	//TODO implement me
-	panic("implement me")
+	mempoolTx, exists := mp.readOnlyUniversalTransactionMap[*txnHash]
+	if !exists {
+		return nil
+	}
+	return NewMempoolTransaction(mempoolTx.Tx, uint64(mempoolTx.Added.UnixMicro()))
 }
 
 func (mp *DeSoMempool) GetTransactions() []*MempoolTransaction {
