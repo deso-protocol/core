@@ -199,6 +199,7 @@ func (bc *Blockchain) ProcessBlockPoS(block *MsgDeSoBlock, currentView uint64, v
 //  4. Process the block's header. This may reorg the header chain and apply the block as the new header chain tip.
 //  5. Try to apply the incoming block as the tip (performing reorgs as necessary). If it can't be applied, exit here.
 //  6. Run the commit rule - If applicable, flushes the incoming block's grandparent to the DB
+//  7. Notify listeners via the EventManager of which blocks have been removed and added.
 func (bc *Blockchain) processBlockPoS(block *MsgDeSoBlock, currentView uint64, verifySignatures bool) (
 	_success bool,
 	_isOrphan bool,
@@ -275,7 +276,9 @@ func (bc *Blockchain) processBlockPoS(block *MsgDeSoBlock, currentView uint64, v
 	// first perform any required reorgs and then determine if the incoming block
 	// extends the chain tip. If it does, it will apply the block to the best chain
 	// and appliedNewTip will be true and we can continue to running the commit rule.
-	appliedNewTip, err := bc.tryApplyNewTip(blockNode, currentView, lineageFromCommittedTip)
+	appliedNewTip, connectedBlockHashes, disconnectedBlockHashes, err := bc.tryApplyNewTip(
+		blockNode, currentView, lineageFromCommittedTip,
+	)
 	if err != nil {
 		return false, false, nil, errors.Wrap(err, "processBlockPoS: Problem applying new tip: ")
 	}
@@ -286,6 +289,24 @@ func (bc *Blockchain) processBlockPoS(block *MsgDeSoBlock, currentView uint64, v
 			return false, false, nil, errors.Wrap(err,
 				"processBlockPoS: error running commit rule: ")
 		}
+	}
+
+	// 7. Notify listeners via the EventManager of which blocks have been removed and added.
+	for ii := len(disconnectedBlockHashes) - 1; ii >= 0; ii-- {
+		disconnectedBlock := bc.GetBlock(&disconnectedBlockHashes[ii])
+		if disconnectedBlock == nil {
+			glog.Errorf("processBlockPoS: Problem getting disconnected block %v", disconnectedBlockHashes[ii])
+			continue
+		}
+		bc.eventManager.blockDisconnected(&BlockEvent{Block: disconnectedBlock})
+	}
+	for ii := 0; ii < len(connectedBlockHashes); ii++ {
+		connectedBlock := bc.GetBlock(&connectedBlockHashes[ii])
+		if connectedBlock == nil {
+			glog.Errorf("processBlockPoS: Problem getting connected block %v", connectedBlockHashes[ii])
+			continue
+		}
+		bc.eventManager.blockConnected(&BlockEvent{Block: connectedBlock})
 	}
 
 	// Now that we've processed this block, we check for any blocks that were previously
@@ -1358,33 +1379,51 @@ func (bc *Blockchain) upsertBlockNodeToDBWithTxn(txn *badger.Txn, blockNode *Blo
 //  2. Check if the incoming block extends the chain tip after reorg. If not, return false and nil
 //  3. If the incoming block extends the chain tip, we can apply it by calling addBlockToBestChain. Return true and nil.
 func (bc *Blockchain) tryApplyNewTip(blockNode *BlockNode, currentView uint64, lineageFromCommittedTip []*BlockNode) (
-	_appliedNewTip bool, _err error) {
+	_appliedNewTip bool,
+	_connectedBlockHashes []BlockHash,
+	_disconnectedBlocksHashes []BlockHash,
+	_err error,
+) {
 
 	// Check if the incoming block extends the chain tip. If so, we don't need to reorg
 	// and can just add this block to the best chain.
 	chainTip := bc.BlockTip()
 	if chainTip.Hash.IsEqual(blockNode.Header.PrevBlockHash) {
 		bc.addTipBlockToBestChain(blockNode)
-		return true, nil
+		return true, []BlockHash{*blockNode.Hash}, nil, nil
 	}
 	// Check if we should perform a reorg here.
 	// If we shouldn't reorg AND the incoming block doesn't extend the chain tip, we know that
 	// the incoming block will not get applied as the new tip.
 	if !bc.shouldReorg(blockNode, currentView) {
-		return false, nil
+		return false, nil, nil, nil
 	}
+
+	// We need to track the hashes of the blocks that we connected and disconnected during the reorg.
+	connectedBlockHashes := []BlockHash{}
+	disconnectedBlockHashes := []BlockHash{}
 
 	// We need to perform a reorg here. For simplicity, we remove all uncommitted blocks and then re-add them.
 	for !bc.blockTip().IsCommitted() {
-		bc.removeTipBlockFromBestChain()
+		disconnectedBlockNode := bc.removeTipBlockFromBestChain()
+		disconnectedBlockHashes = append(disconnectedBlockHashes, *disconnectedBlockNode.Hash)
 	}
 	// Add the ancestors of the new tip to the best chain.
 	for _, ancestor := range lineageFromCommittedTip {
 		bc.addTipBlockToBestChain(ancestor)
+		connectedBlockHashes = append(connectedBlockHashes, *ancestor.Hash)
 	}
 	// Add the new tip to the best chain.
 	bc.addTipBlockToBestChain(blockNode)
-	return true, nil
+	connectedBlockHashes = append(connectedBlockHashes, *blockNode.Hash)
+
+	// We need to dedupe the added and removed block hashes because we may have removed a
+	// block and added it back during the reorg.
+	uniqueConnectedBlockHashes, uniqueDisconnectedBlockHashes := collections.RemoveDuplicates(
+		connectedBlockHashes,
+		disconnectedBlockHashes,
+	)
+	return true, uniqueConnectedBlockHashes, uniqueDisconnectedBlockHashes, nil
 }
 
 // shouldReorg determines if we should reorg to the block provided. We should reorg if
