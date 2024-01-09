@@ -1712,6 +1712,17 @@ func (srv *Server) _relayTransactions() {
 	// send them an inv.
 	allPeers := srv.cmgr.GetAllPeers()
 
+	srv.blockchain.ChainLock.RLock()
+	blockHeight := srv.blockchain.BlockTip().Height
+	srv.blockchain.ChainLock.RUnlock()
+
+	// If we're on the PoW protocol, we need to wait for the mempool readOnlyView to regenerate.
+	if blockHeight < srv.blockchain.params.ForkHeights.ProofOfStake2ConsensusCutoverBlockHeight {
+		glog.V(1).Infof("Server._relayTransactions: Waiting for mempool readOnlyView to regenerate")
+		srv.mempool.BlockUntilReadOnlyViewRegenerated()
+		glog.V(1).Infof("Server._relayTransactions: Mempool view has regenerated")
+	}
+
 	// We pull the transactions from either the PoW mempool or the PoS mempool depending
 	// on the current block height.
 	txnList := srv.GetMempool().GetTransactions()
@@ -2140,12 +2151,12 @@ func (srv *Server) ProcessSingleTxnWithChainLock(pp *Peer, txn *MsgDeSoTxn) ([]*
 	// prevent spam on its own.
 
 	// Only attempt to add the transaction to the PoW mempool if we're on the
-	// PoW protocol. If we're on the PoW protocol, then we use the PoW mempool's,
+	// PoW protocol. If we're on the PoW protocol, then we use the PoW mempool's
 	// txn validity checks to signal whether the txn has been added or not. The PoW
-	// mempool has stricter txn validity checks than the PoW mempool, so this works
+	// mempool has stricter txn validity checks than the PoS mempool, so this works
 	// out conveniently, as it allows us to always add a txn to the PoS mempool.
 	blockHeight := srv.blockchain.blockTip().Height
-	if blockHeight < srv.blockchain.params.ForkHeights.BalanceModelBlockHeight {
+	if blockHeight < srv.blockchain.params.ForkHeights.ProofOfStake2ConsensusCutoverBlockHeight {
 		_, err := srv.mempool.ProcessTransaction(
 			txn,
 			true,  /*allowUnconnectedTxn*/
@@ -2649,10 +2660,10 @@ func (srv *Server) Stop() {
 		if !srv.mempool.stopped {
 			srv.mempool.Stop()
 		}
-		srv.posMempool.Stop()
 		glog.Infof(CLog(Yellow, "Server.Stop: Closed Mempool"))
 	}
 
+	glog.Infof(CLog(Yellow, "Server.Stop: Closed PosMempool"))
 	srv.posMempool.Stop()
 
 	// Stop the block producer

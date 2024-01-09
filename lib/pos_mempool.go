@@ -302,12 +302,12 @@ func (mp *PosMempool) OnBlockConnected(block *MsgDeSoBlock) {
 
 		// Get the transaction from the register. If the txn doesn't exist in the register,
 		// then there's nothing left to do.
-		txn := mp.txnRegister.GetTransaction(txnHash)
-		if txn == nil {
+		existingTxn := mp.txnRegister.GetTransaction(txnHash)
+		if existingTxn == nil {
 			continue
 		}
 
-		mp.removeTransactionNoLock(txn, true)
+		mp.removeTransactionNoLock(existingTxn, true)
 	}
 
 	// Add the block to the fee estimator. This is a best effort operation. If we fail to add the block
@@ -319,7 +319,7 @@ func (mp *PosMempool) OnBlockConnected(block *MsgDeSoBlock) {
 
 // OnBlockDisconnected is an event handler provided by the PoS mempool to handle the blockchain
 // event where a block is disconnected from the tip of the blockchain. The mempool updates its
-// internal state based on the new block that has been connected.
+// internal state based on the block that has been disconnected.
 //
 // Whenever a block is disconnected, this event handler adds the block's transactions back to
 // the mempool and updates the internal fee estimation to exclude the disconnected block.
