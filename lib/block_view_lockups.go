@@ -1210,7 +1210,7 @@ func (bav *UtxoView) _connectCoinLockup(
 		// (1) Check for overlapping locked balance entries
 		lockedBalanceEntries, err := bav.GetLimitedVestedLockedBalanceEntriesOverTimeInterval(
 			hodlerPKID, profilePKID, txMeta.UnlockTimestampNanoSecs, txMeta.VestingEndTimestampNanoSecs,
-			bav.GlobalParamsEntry.MaximumVestedIntersectionsPerLockupTransaction)
+			bav.GetCurrentGlobalParamsEntry().MaximumVestedIntersectionsPerLockupTransaction)
 		if err != nil && errors.Is(err, RuleErrorCoinLockupViolatesVestingIntersectionLimit) {
 			return 0, 0, nil,
 				errors.Wrap(RuleErrorCoinLockupViolatesVestingIntersectionLimit, "_connectCoinLockup")
@@ -1255,7 +1255,7 @@ func (bav *UtxoView) _connectCoinLockup(
 				BalanceBaseUnits:            *lockupValue,
 			}
 
-			for ii, lockedBalanceEntry := range lockedBalanceEntries {
+			for ii, existingLockedBalanceEntry := range lockedBalanceEntries {
 				// (3b-i) Determine if there is left overhang by either the existing or the proposed locked balance entry
 				// e.g.           UnlockTimestampNanoSecs --------------------- VestingEndTimestampNanoSecs
 				//            UnlockTimestampNanoSecs --------------------- VestingEndTimestampNanoSecs
@@ -1264,37 +1264,46 @@ func (bav *UtxoView) _connectCoinLockup(
 				// We will break any overhang off into its own separate locked balance entry.
 
 				// Check for left overhang by the existing locked balance entry
-				if lockedBalanceEntry.UnlockTimestampNanoSecs < proposedLockedBalanceEntry.UnlockTimestampNanoSecs {
+				if existingLockedBalanceEntry.UnlockTimestampNanoSecs <
+					proposedLockedBalanceEntry.UnlockTimestampNanoSecs {
+					// Split the overhanging portion off the existing locked balance entry.
+					// Following the split, the existing and the remaining should have the same start time.
 					splitLockedBalanceEntry, remainingLockedBalanceEntry, err := SplitVestedLockedBalanceEntry(
-						proposedLockedBalanceEntry,
-						lockedBalanceEntry.UnlockTimestampNanoSecs,
-						proposedLockedBalanceEntry.UnlockTimestampNanoSecs)
+						existingLockedBalanceEntry,
+						existingLockedBalanceEntry.UnlockTimestampNanoSecs,
+						proposedLockedBalanceEntry.UnlockTimestampNanoSecs-1)
 					if err != nil {
 						return 0, 0, nil,
 							errors.Wrap(err, "_connectCoinLockup failed to compute vested split")
 					}
 
+					// Set the splitLockedBalanceEntry into the view.
 					// NOTE: While it may seem as though we need to check for a conflicting vested
 					//       locked balance entry here, by design we only ever have one vested locked
 					//       balance entry across any given time interval thus by splitting the locked
 					//       balance entry in half it's impossible to intersect an existing
 					//       vested locked balance entry.
 					bav._setLockedBalanceEntry(splitLockedBalanceEntry)
-					proposedLockedBalanceEntry = remainingLockedBalanceEntry
+
+					// We update the existingLockedBalanceEntry as broke the left overhanging portion off.
+					existingLockedBalanceEntry = remainingLockedBalanceEntry
 				}
 
 				// Check for left overhang by the proposed locked balance entry
-				if proposedLockedBalanceEntry.UnlockTimestampNanoSecs < lockedBalanceEntry.UnlockTimestampNanoSecs {
+				if proposedLockedBalanceEntry.UnlockTimestampNanoSecs < existingLockedBalanceEntry.UnlockTimestampNanoSecs {
 					splitLockedBalanceEntry, remainingLockedBalanceEntry, err := SplitVestedLockedBalanceEntry(
 						proposedLockedBalanceEntry,
 						proposedLockedBalanceEntry.UnlockTimestampNanoSecs,
-						lockedBalanceEntry.UnlockTimestampNanoSecs)
+						existingLockedBalanceEntry.UnlockTimestampNanoSecs-1)
 					if err != nil {
 						return 0, 0, nil,
 							errors.Wrap(err, "_connectCoinLockup failed to compute vested split")
 					}
 
+					// Set the splitLockedBalanceEntry into the view.
 					bav._setLockedBalanceEntry(splitLockedBalanceEntry)
+
+					// We update the proposedLockedBalanceEntry as the left overhanging portion was broken off.
 					proposedLockedBalanceEntry = remainingLockedBalanceEntry
 				}
 
@@ -1306,68 +1315,75 @@ func (bav *UtxoView) _connectCoinLockup(
 				// We will break any overhang off into its own separate locked balance entry.
 
 				// Check for right overhang by the existing locked balance entry
-				if lockedBalanceEntry.VestingEndTimestampNanoSecs >
+				if existingLockedBalanceEntry.VestingEndTimestampNanoSecs >
 					proposedLockedBalanceEntry.VestingEndTimestampNanoSecs {
 					splitLockedBalanceEntry, remainingLockedBalanceEntry, err := SplitVestedLockedBalanceEntry(
-						proposedLockedBalanceEntry,
-						proposedLockedBalanceEntry.VestingEndTimestampNanoSecs,
-						lockedBalanceEntry.VestingEndTimestampNanoSecs)
+						existingLockedBalanceEntry,
+						proposedLockedBalanceEntry.VestingEndTimestampNanoSecs+1,
+						existingLockedBalanceEntry.VestingEndTimestampNanoSecs)
 					if err != nil {
 						return 0, 0, nil,
 							errors.Wrap(err, "_connectCoinLockup failed to compute vested split")
 					}
 
+					// Set the splitLockedBalanceEntry into the view.
 					bav._setLockedBalanceEntry(splitLockedBalanceEntry)
-					proposedLockedBalanceEntry = remainingLockedBalanceEntry
 
-					// (3b-iii) On the final iteration, consolidate the remaining portions
-					// e.g.          UnlockTimestampNanoSecs --------------------- VestingEndTimestampNanoSecs
-					//               UnlockTimestampNanoSecs --------------------- VestingEndTimestampNanoSecs
-					// We know them to be aligned at this step as the previous step truncated them, however
-					// we will perform a sanity check just to be safe.
-					if ii == len(lockedBalanceEntries)-1 &&
-						(lockedBalanceEntry.UnlockTimestampNanoSecs !=
-							proposedLockedBalanceEntry.UnlockTimestampNanoSecs) ||
-						(lockedBalanceEntry.VestingEndTimestampNanoSecs !=
-							proposedLockedBalanceEntry.VestingEndTimestampNanoSecs) {
-						return 0, 0, nil,
-							errors.New("_connectCoinLockup found mismatched unlock and vesting end " +
-								"timestamps; this shouldn't happen")
-					}
-					if ii == len(lockedBalanceEntries)-1 {
-						finalConsolidatedBalance, err := SafeUint256().Add(
-							&proposedLockedBalanceEntry.BalanceBaseUnits, &lockedBalanceEntry.BalanceBaseUnits)
-						if err != nil {
-							return 0, 0, nil,
-								errors.Wrap(RuleErrorCoinLockupYieldCausesOverflowInLockedBalanceEntry,
-									"_connectCoinLockup")
-						}
-						proposedLockedBalanceEntry.BalanceBaseUnits = *finalConsolidatedBalance
-						bav._setLockedBalanceEntry(proposedLockedBalanceEntry)
-					}
+					// We update the existingLockedBalanceEntry as broke the right overhanging portion off.
+					existingLockedBalanceEntry = remainingLockedBalanceEntry
 				}
 
 				// Check for right overhang by the proposed locked balance entry
 				if proposedLockedBalanceEntry.VestingEndTimestampNanoSecs >
-					lockedBalanceEntry.VestingEndTimestampNanoSecs {
+					existingLockedBalanceEntry.VestingEndTimestampNanoSecs {
+					// NOTE: This case is particularly interesting as there's two situations in
+					// which we might find ourselves.
+					//
+					// First case:
+					// proposed:   <----------------------------------------->
+					// existing:   <------------------>
+					//                                 ^                     ^ Overhang
+					// Second case:
+					// proposed:   <----------------------------------------->
+					// existing:   <------------------>            <--------->
+					//                                 ^          ^ Overhang
+					// In the second case there exists another conflicting LockedBalanceEntry
+					// sometime in the future that we must be aware of. Also note that
+					// the first case is only possible in the very last iteration.
+					//
+					// To account for this, we split from the proposed LockedBalanceEntry
+					// and combine the left overlapping portion. This leaves us with two
+					// remaining cases:
+					// First case:
+					// proposed:                       <--------------------->
+					// existing:
+					//
+					// Second case:
+					// proposed:                       <--------------------->
+					// existing:                                   <--------->
+					//
+					// The second case is fine to leave as it will be taken care of in the
+					// subsequent iteration. However, we make a special note to capture the
+					// remaining LockedBalanceEntry present in the first case.
+
 					// We check if there's another locked balance entry sometime in the future.
-					splitTimestampEnd := lockedBalanceEntry.VestingEndTimestampNanoSecs
+					splitTimestampEnd := existingLockedBalanceEntry.VestingEndTimestampNanoSecs
 					if ii != len(lockedBalanceEntries)-1 {
-						splitTimestampEnd = lockedBalanceEntries[ii+1].UnlockTimestampNanoSecs
+						splitTimestampEnd = lockedBalanceEntries[ii+1].UnlockTimestampNanoSecs - 1
 					}
 					splitLockedBalanceEntry, remainingLockedBalanceEntry, err := SplitVestedLockedBalanceEntry(
 						proposedLockedBalanceEntry,
-						lockedBalanceEntry.VestingEndTimestampNanoSecs,
+						existingLockedBalanceEntry.UnlockTimestampNanoSecs,
 						splitTimestampEnd)
 					if err != nil {
 						return 0, 0, nil,
 							errors.Wrap(err, "_connectCoinLockup failed to compute vested split")
 					}
 
-					// Consolidate the overlapping special case.
+					// Consolidate the split and existing locked balance entry.
 					combinedBalanceBaseUnits, err := SafeUint256().Add(
 						&splitLockedBalanceEntry.BalanceBaseUnits,
-						&lockedBalanceEntry.BalanceBaseUnits)
+						&existingLockedBalanceEntry.BalanceBaseUnits)
 					if err != nil {
 						return 0, 0, nil,
 							errors.Wrap(RuleErrorCoinLockupYieldCausesOverflowInLockedBalanceEntry,
@@ -1375,7 +1391,10 @@ func (bav *UtxoView) _connectCoinLockup(
 					}
 					splitLockedBalanceEntry.BalanceBaseUnits = *combinedBalanceBaseUnits
 
+					// Set the now combined splitLockedBalanceEntry into the view.
 					bav._setLockedBalanceEntry(splitLockedBalanceEntry)
+
+					// Update the proposed locked balance entry with the remaining portion.
 					proposedLockedBalanceEntry = remainingLockedBalanceEntry
 
 					// (3b-iii) On the final iteration, the remaining proposedLockedBalanceEntry
@@ -1383,6 +1402,27 @@ func (bav *UtxoView) _connectCoinLockup(
 					if ii == len(lockedBalanceEntries)-1 {
 						bav._setLockedBalanceEntry(proposedLockedBalanceEntry)
 					}
+				}
+
+				// (3b-iv) By now, we know the edges to be trimmed as best possible.
+				// We check if the existing and proposed now overlap perfectly in time and combine if so.
+				if (existingLockedBalanceEntry.UnlockTimestampNanoSecs ==
+					proposedLockedBalanceEntry.UnlockTimestampNanoSecs) &&
+					(existingLockedBalanceEntry.VestingEndTimestampNanoSecs ==
+						proposedLockedBalanceEntry.VestingEndTimestampNanoSecs) {
+					// Combine the remaining balance.
+					combinedBalanceBaseUnits, err := SafeUint256().Add(
+						&existingLockedBalanceEntry.BalanceBaseUnits,
+						&proposedLockedBalanceEntry.BalanceBaseUnits)
+					if err != nil {
+						return 0, 0, nil,
+							errors.Wrap(RuleErrorCoinLockupYieldCausesOverflowInLockedBalanceEntry,
+								"_connectCoinLockup")
+					}
+
+					// Update the remaining entry.
+					proposedLockedBalanceEntry.BalanceBaseUnits = *combinedBalanceBaseUnits
+					bav._setLockedBalanceEntry(proposedLockedBalanceEntry)
 				}
 			}
 		}
@@ -1446,12 +1486,17 @@ func SplitVestedLockedBalanceEntry(
 	}
 
 	// Create the remaining locked balance entry.
+	// NOTE: The SplitVestedLockedBalanceEntry function is designed such that
+	// the portion being split off from the LockedBalanceEntry either starts
+	// at the lockedBalanceEntry.UnlockTimestampNanoSecs OR ends at the
+	// lockedBalanceEntry.VestingEndTimestampNanoSecs. Based on these two cases
+	// we can determine the remaining LockedBalanceEntry.
 	var remainingLockedBalanceEntry *LockedBalanceEntry
 	if startSplitTimestampNanoSecs == lockedBalanceEntry.UnlockTimestampNanoSecs {
 		remainingLockedBalanceEntry = &LockedBalanceEntry{
 			HODLerPKID:                  lockedBalanceEntry.HODLerPKID,
 			ProfilePKID:                 lockedBalanceEntry.ProfilePKID,
-			UnlockTimestampNanoSecs:     startSplitTimestampNanoSecs + 1,
+			UnlockTimestampNanoSecs:     endSplitTimestampNanoSecs + 1,
 			VestingEndTimestampNanoSecs: lockedBalanceEntry.VestingEndTimestampNanoSecs,
 			BalanceBaseUnits:            uint256.Int{},
 		}
@@ -1461,19 +1506,36 @@ func SplitVestedLockedBalanceEntry(
 			HODLerPKID:                  lockedBalanceEntry.HODLerPKID,
 			ProfilePKID:                 lockedBalanceEntry.ProfilePKID,
 			UnlockTimestampNanoSecs:     lockedBalanceEntry.UnlockTimestampNanoSecs,
-			VestingEndTimestampNanoSecs: endSplitTimestampNanoSecs - 1,
+			VestingEndTimestampNanoSecs: startSplitTimestampNanoSecs - 1,
 			BalanceBaseUnits:            uint256.Int{},
 		}
 	}
 
 	// Compute the balance in the split locked balance entry.
-	splitValue, err := CalculateLockupSplitValue(
-		lockedBalanceEntry, startSplitTimestampNanoSecs, endSplitTimestampNanoSecs)
-	if err != nil {
-		return nil, nil,
-			errors.Wrap(err, "SplitVestedLockedBalanceEntry failed to compute split value")
+	// NOTE: The reason we add 1 in the first case is because a 1 nanosecond loss occurs
+	// between the end of the splitLockedBalanceEntry and the beginning of the remainingLockedBalanceEntry
+	// that would cause small numerical differences between both cases otherwise. It's easier
+	// to see this by drawing a straight line to represent time and imagining where the
+	// startSplitTimestampNanoSecs and endSplitTimestampNanoSecs are on the line in both cases.
+	var splitValue *uint256.Int
+	var err error
+	if startSplitTimestampNanoSecs == lockedBalanceEntry.UnlockTimestampNanoSecs {
+		splitValue, err = CalculateLockupSplitValue(
+			lockedBalanceEntry, startSplitTimestampNanoSecs, endSplitTimestampNanoSecs+1)
+		if err != nil {
+			return nil, nil,
+				errors.Wrap(err, "SplitVestedLockedBalanceEntry failed to compute split value")
+		}
+		splitLockedBalanceEntry.BalanceBaseUnits = *splitValue
+	} else {
+		splitValue, err = CalculateLockupSplitValue(
+			lockedBalanceEntry, startSplitTimestampNanoSecs, endSplitTimestampNanoSecs)
+		if err != nil {
+			return nil, nil,
+				errors.Wrap(err, "SplitVestedLockedBalanceEntry failed to compute split value")
+		}
+		splitLockedBalanceEntry.BalanceBaseUnits = *splitValue
 	}
-	splitLockedBalanceEntry.BalanceBaseUnits = *splitValue
 
 	// Compute the balance in the remaining locked balance entry.
 	remainingValue, err := SafeUint256().Sub(&lockedBalanceEntry.BalanceBaseUnits, splitValue)
@@ -1503,7 +1565,7 @@ func SplitVestedLockedBalanceEntry(
 
 func CalculateLockupSplitValue(
 	lockedBalanceEntry *LockedBalanceEntry,
-	starTimestampNanoSecs int64,
+	startTimestampNanoSecs int64,
 	endTimestampNanoSecs int64,
 ) (
 	_splitValue *uint256.Int,
@@ -1512,7 +1574,7 @@ func CalculateLockupSplitValue(
 	// Compute the time that passes over the interval [startTimestampNanoSecs, endTimestampNanoSecs]
 	numerator, err := SafeUint256().Sub(
 		uint256.NewInt().SetUint64(uint64(endTimestampNanoSecs)),
-		uint256.NewInt().SetUint64(uint64(starTimestampNanoSecs)))
+		uint256.NewInt().SetUint64(uint64(startTimestampNanoSecs)))
 	if err != nil {
 		return nil, errors.Wrap(err, "CalculateLockupSplitValue: "+
 			"(start timestamp - end timestamp) underflow")
@@ -1535,12 +1597,12 @@ func CalculateLockupSplitValue(
 	numerator, err = SafeUint256().Mul(numerator, &lockedBalanceEntry.BalanceBaseUnits)
 	if err != nil {
 		return nil, errors.Wrap(err, "CalculateLockupSplitValue: "+
-			"(start timestamp - end timestamp) * lockedBalanceEntry.Balance overflow")
+			"((start timestamp - end timestamp) + 1) * lockedBalanceEntry.Balance overflow")
 	}
 	splitValue, err := SafeUint256().Div(numerator, denominator)
 	if err != nil {
 		return nil, errors.Wrap(err, "CalculateLockupSplitValue: "+
-			"((start timestamp - end timestamp) * lockedBalanceEntry.Balance overflow)) / "+
+			"(((start timestamp - end timestamp) + 1) * lockedBalanceEntry.Balance overflow)) / "+
 			"(lockedBalanceEntry.UnlockTimestamp - lockedBalanceEntry.VestingEndTimestamp) has zero denominator")
 	}
 

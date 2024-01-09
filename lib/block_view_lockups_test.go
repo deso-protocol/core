@@ -3284,6 +3284,321 @@ func TestSimpleVestedLockup(t *testing.T) {
 	require.True(t, uint256.NewInt().SetUint64(1e6).Eq(&updatedBalanceEntry.BalanceNanos))
 }
 
+func TestNoOverlapVestedLockupConsolidation(t *testing.T) {
+	// Initialize test chain, miner, and testMeta
+	testMeta := _setUpMinerAndTestMetaForTimestampBasedLockupTests(t)
+
+	// Initialize m0, m1, m2, m3, m4, and paramUpdater
+	_setUpProfilesAndMintM0M1DAOCoins(testMeta)
+
+	// Perform a simple vested lockup in the future over 1000ns.
+	{
+		_, _, _, err := _coinLockupWithConnectTimestamp(
+			t, testMeta.chain, testMeta.db, testMeta.params, testMeta.feeRateNanosPerKb,
+			m0Pub, m0Priv, m0Pub, m0Pub,
+			1000, 2000, uint256.NewInt().SetUint64(1000), 0)
+		require.NoError(t, err)
+	}
+
+	// Perform a second simple vested lockup in the future that causes a left overhang.
+	{
+		_, _, _, err := _coinLockupWithConnectTimestamp(
+			t, testMeta.chain, testMeta.db, testMeta.params, testMeta.feeRateNanosPerKb,
+			m0Pub, m0Priv, m0Pub, m0Pub,
+			3000, 4000, uint256.NewInt().SetUint64(1000), 0)
+		require.NoError(t, err)
+	}
+
+	// Verify that the left overhang was computed correctly.
+	utxoView, err :=
+		NewUtxoView(testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot, nil)
+	require.NoError(t, err)
+
+	// Check m0 LockedBalanceEntry
+	m0PKIDEntry := utxoView.GetPKIDForPublicKey(m0PkBytes)
+	m0PKID := m0PKIDEntry.PKID
+	m0LockedBalanceEntry, err := utxoView.GetLockedBalanceEntryForLockedBalanceEntryKey(&LockedBalanceEntryKey{
+		HODLerPKID:                  *m0PKID,
+		ProfilePKID:                 *m0PKID,
+		UnlockTimestampNanoSecs:     1000,
+		VestingEndTimestampNanoSecs: 2000,
+	})
+	require.NoError(t, err)
+	require.True(t, m0LockedBalanceEntry != nil)
+	require.True(t, m0LockedBalanceEntry.BalanceBaseUnits.Eq(uint256.NewInt().SetUint64(1000)))
+	m0LockedBalanceEntry, err = utxoView.GetLockedBalanceEntryForLockedBalanceEntryKey(&LockedBalanceEntryKey{
+		HODLerPKID:                  *m0PKID,
+		ProfilePKID:                 *m0PKID,
+		UnlockTimestampNanoSecs:     3000,
+		VestingEndTimestampNanoSecs: 4000,
+	})
+	require.NoError(t, err)
+	require.True(t, m0LockedBalanceEntry != nil)
+	require.True(t, m0LockedBalanceEntry.BalanceBaseUnits.Eq(uint256.NewInt().SetUint64(1000)))
+}
+
+func TestPerfectOverlapVestedLockupConsolidation(t *testing.T) {
+	// Initialize test chain, miner, and testMeta
+	testMeta := _setUpMinerAndTestMetaForTimestampBasedLockupTests(t)
+
+	// Initialize m0, m1, m2, m3, m4, and paramUpdater
+	_setUpProfilesAndMintM0M1DAOCoins(testMeta)
+
+	// Perform a simple vested lockup in the future over 1000ns.
+	{
+		_, _, _, err := _coinLockupWithConnectTimestamp(
+			t, testMeta.chain, testMeta.db, testMeta.params, testMeta.feeRateNanosPerKb,
+			m0Pub, m0Priv, m0Pub, m0Pub,
+			1000, 2000, uint256.NewInt().SetUint64(1000), 0)
+		require.NoError(t, err)
+	}
+
+	// Perform a second simple vested lockup in the future that causes a left overhang.
+	{
+		_, _, _, err := _coinLockupWithConnectTimestamp(
+			t, testMeta.chain, testMeta.db, testMeta.params, testMeta.feeRateNanosPerKb,
+			m0Pub, m0Priv, m0Pub, m0Pub,
+			1000, 2000, uint256.NewInt().SetUint64(1000), 0)
+		require.NoError(t, err)
+	}
+
+	// Verify that the left overhang was computed correctly.
+	utxoView, err :=
+		NewUtxoView(testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot, nil)
+	require.NoError(t, err)
+
+	// Check m0 LockedBalanceEntry
+	m0PKIDEntry := utxoView.GetPKIDForPublicKey(m0PkBytes)
+	m0PKID := m0PKIDEntry.PKID
+	m0LockedBalanceEntry, err := utxoView.GetLockedBalanceEntryForLockedBalanceEntryKey(&LockedBalanceEntryKey{
+		HODLerPKID:                  *m0PKID,
+		ProfilePKID:                 *m0PKID,
+		UnlockTimestampNanoSecs:     1000,
+		VestingEndTimestampNanoSecs: 2000,
+	})
+	require.NoError(t, err)
+	require.True(t, m0LockedBalanceEntry != nil)
+	require.True(t, m0LockedBalanceEntry.BalanceBaseUnits.Eq(uint256.NewInt().SetUint64(2000)))
+}
+
+func TestLeftOverhangVestedLockupConsolidation(t *testing.T) {
+	// Initialize test chain, miner, and testMeta
+	testMeta := _setUpMinerAndTestMetaForTimestampBasedLockupTests(t)
+
+	// Initialize m0, m1, m2, m3, m4, and paramUpdater
+	_setUpProfilesAndMintM0M1DAOCoins(testMeta)
+
+	// Submit a transaction updating the MaximumVestedIntersectionsPerLockupTransaction
+
+	// First we test the following vested lockup consolidation type:
+	// existing lockup:       --------------------------------
+	// proposed lockup:                    -------------------
+	// overhang:              ^            ^
+	//
+	// In theory the below operation should generate just two locked balance entries.
+
+	// Perform a simple vested lockup in the future over 1000ns.
+	{
+		_, _, _, err := _coinLockupWithConnectTimestamp(
+			t, testMeta.chain, testMeta.db, testMeta.params, testMeta.feeRateNanosPerKb,
+			m0Pub, m0Priv, m0Pub, m0Pub,
+			1000, 2000, uint256.NewInt().SetUint64(1000), 0)
+		require.NoError(t, err)
+	}
+
+	// Perform a second simple vested lockup in the future that causes a left overhang.
+	{
+		_, _, _, err := _coinLockupWithConnectTimestamp(
+			t, testMeta.chain, testMeta.db, testMeta.params, testMeta.feeRateNanosPerKb,
+			m0Pub, m0Priv, m0Pub, m0Pub,
+			1500, 2000, uint256.NewInt().SetUint64(1000), 0)
+		require.NoError(t, err)
+	}
+
+	// Verify that the left overhang was computed correctly.
+	utxoView, err :=
+		NewUtxoView(testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot, nil)
+	require.NoError(t, err)
+
+	// Check m0 LockedBalanceEntry
+	m0PKIDEntry := utxoView.GetPKIDForPublicKey(m0PkBytes)
+	m0PKID := m0PKIDEntry.PKID
+	m0LockedBalanceEntry, err := utxoView.GetLockedBalanceEntryForLockedBalanceEntryKey(&LockedBalanceEntryKey{
+		HODLerPKID:                  *m0PKID,
+		ProfilePKID:                 *m0PKID,
+		UnlockTimestampNanoSecs:     1000,
+		VestingEndTimestampNanoSecs: 1499,
+	})
+	require.NoError(t, err)
+	require.True(t, m0LockedBalanceEntry != nil)
+	require.True(t, m0LockedBalanceEntry.BalanceBaseUnits.Eq(uint256.NewInt().SetUint64(500)))
+	m0LockedBalanceEntry, err = utxoView.GetLockedBalanceEntryForLockedBalanceEntryKey(&LockedBalanceEntryKey{
+		HODLerPKID:                  *m0PKID,
+		ProfilePKID:                 *m0PKID,
+		UnlockTimestampNanoSecs:     1500,
+		VestingEndTimestampNanoSecs: 2000,
+	})
+	require.NoError(t, err)
+	require.True(t, m0LockedBalanceEntry != nil)
+	require.True(t, m0LockedBalanceEntry.BalanceBaseUnits.Eq(uint256.NewInt().SetUint64(1500)))
+
+	// Now we test the opposite vested lockup consolidation type:
+	// existing lockup:                    -------------------
+	// proposed lockup:       --------------------------------
+	// overhang:              ^            ^
+	//
+	// In theory the below operation should generate just two locked balance entries.
+
+	// Perform a simple vested lockup in the future over 1000ns.
+	{
+		_, _, _, err := _coinLockupWithConnectTimestamp(
+			t, testMeta.chain, testMeta.db, testMeta.params, testMeta.feeRateNanosPerKb,
+			m1Pub, m1Priv, m1Pub, m1Pub,
+			1500, 2000, uint256.NewInt().SetUint64(1000), 0)
+		require.NoError(t, err)
+	}
+
+	// Perform a second simple vested lockup in the future that causes a left overhang.
+	{
+		_, _, _, err := _coinLockupWithConnectTimestamp(
+			t, testMeta.chain, testMeta.db, testMeta.params, testMeta.feeRateNanosPerKb,
+			m1Pub, m1Priv, m1Pub, m1Pub,
+			1000, 2000, uint256.NewInt().SetUint64(1000), 0)
+		require.NoError(t, err)
+	}
+
+	// Check m0 LockedBalanceEntry
+	m1PKIDEntry := utxoView.GetPKIDForPublicKey(m1PkBytes)
+	m1PKID := m1PKIDEntry.PKID
+	m1LockedBalanceEntry, err := utxoView.GetLockedBalanceEntryForLockedBalanceEntryKey(&LockedBalanceEntryKey{
+		HODLerPKID:                  *m1PKID,
+		ProfilePKID:                 *m1PKID,
+		UnlockTimestampNanoSecs:     1000,
+		VestingEndTimestampNanoSecs: 1499,
+	})
+	require.NoError(t, err)
+	require.True(t, m1LockedBalanceEntry != nil)
+	require.True(t, m1LockedBalanceEntry.BalanceBaseUnits.Eq(uint256.NewInt().SetUint64(500)))
+	m1LockedBalanceEntry, err = utxoView.GetLockedBalanceEntryForLockedBalanceEntryKey(&LockedBalanceEntryKey{
+		HODLerPKID:                  *m1PKID,
+		ProfilePKID:                 *m1PKID,
+		UnlockTimestampNanoSecs:     1500,
+		VestingEndTimestampNanoSecs: 2000,
+	})
+	require.NoError(t, err)
+	require.True(t, m1LockedBalanceEntry != nil)
+	require.True(t, m1LockedBalanceEntry.BalanceBaseUnits.Eq(uint256.NewInt().SetUint64(1500)))
+}
+
+func TestRightOverhangVestedLockupConsolidation(t *testing.T) {
+	// Initialize test chain, miner, and testMeta
+	testMeta := _setUpMinerAndTestMetaForTimestampBasedLockupTests(t)
+
+	// Initialize m0, m1, m2, m3, m4, and paramUpdater
+	_setUpProfilesAndMintM0M1DAOCoins(testMeta)
+
+	// Submit a transaction updating the MaximumVestedIntersectionsPerLockupTransaction
+
+	// First we test the following vested lockup consolidation type:
+	// existing lockup:       --------------------------------
+	// proposed lockup:       -------------------
+	// overhang:                                ^            ^
+	//
+	// In theory the below operation should generate just two locked balance entries.
+
+	// Perform a simple vested lockup in the future over 1000ns.
+	{
+		_, _, _, err := _coinLockupWithConnectTimestamp(
+			t, testMeta.chain, testMeta.db, testMeta.params, testMeta.feeRateNanosPerKb,
+			m0Pub, m0Priv, m0Pub, m0Pub,
+			1000, 2000, uint256.NewInt().SetUint64(1000), 0)
+		require.NoError(t, err)
+	}
+
+	// Perform a second simple vested lockup in the future that causes a left overhang.
+	{
+		_, _, _, err := _coinLockupWithConnectTimestamp(
+			t, testMeta.chain, testMeta.db, testMeta.params, testMeta.feeRateNanosPerKb,
+			m0Pub, m0Priv, m0Pub, m0Pub,
+			1000, 1499, uint256.NewInt().SetUint64(1000), 0)
+		require.NoError(t, err)
+	}
+
+	// Verify that the left overhang was computed correctly.
+	utxoView, err :=
+		NewUtxoView(testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot, nil)
+	require.NoError(t, err)
+
+	// Check m0 LockedBalanceEntry
+	m0PKIDEntry := utxoView.GetPKIDForPublicKey(m0PkBytes)
+	m0PKID := m0PKIDEntry.PKID
+	m0LockedBalanceEntry, err := utxoView.GetLockedBalanceEntryForLockedBalanceEntryKey(&LockedBalanceEntryKey{
+		HODLerPKID:                  *m0PKID,
+		ProfilePKID:                 *m0PKID,
+		UnlockTimestampNanoSecs:     1000,
+		VestingEndTimestampNanoSecs: 1499,
+	})
+	require.NoError(t, err)
+	require.True(t, m0LockedBalanceEntry != nil)
+	require.True(t, m0LockedBalanceEntry.BalanceBaseUnits.Eq(uint256.NewInt().SetUint64(1500)))
+	m0LockedBalanceEntry, err = utxoView.GetLockedBalanceEntryForLockedBalanceEntryKey(&LockedBalanceEntryKey{
+		HODLerPKID:                  *m0PKID,
+		ProfilePKID:                 *m0PKID,
+		UnlockTimestampNanoSecs:     1500,
+		VestingEndTimestampNanoSecs: 2000,
+	})
+	require.NoError(t, err)
+	require.True(t, m0LockedBalanceEntry != nil)
+	require.True(t, m0LockedBalanceEntry.BalanceBaseUnits.Eq(uint256.NewInt().SetUint64(500)))
+
+	// Now we test the opposite vested lockup consolidation type:
+	// existing lockup:       -------------------
+	// proposed lockup:       --------------------------------
+	// overhang:                                 ^            ^
+	//
+	// In theory the below operation should generate just two locked balance entries.
+
+	// Perform a simple vested lockup in the future over 1000ns.
+	{
+		_, _, _, err := _coinLockupWithConnectTimestamp(
+			t, testMeta.chain, testMeta.db, testMeta.params, testMeta.feeRateNanosPerKb,
+			m1Pub, m1Priv, m1Pub, m1Pub,
+			1000, 1499, uint256.NewInt().SetUint64(1000), 0)
+		require.NoError(t, err)
+	}
+
+	// Perform a second simple vested lockup in the future that causes a left overhang.
+	{
+		_, _, _, err := _coinLockupWithConnectTimestamp(
+			t, testMeta.chain, testMeta.db, testMeta.params, testMeta.feeRateNanosPerKb,
+			m1Pub, m1Priv, m1Pub, m1Pub,
+			1000, 2000, uint256.NewInt().SetUint64(1000), 0)
+		require.NoError(t, err)
+	}
+
+	// Check m0 LockedBalanceEntry
+	m1PKIDEntry := utxoView.GetPKIDForPublicKey(m1PkBytes)
+	m1PKID := m1PKIDEntry.PKID
+	m1LockedBalanceEntry, err := utxoView.GetLockedBalanceEntryForLockedBalanceEntryKey(&LockedBalanceEntryKey{
+		HODLerPKID:                  *m1PKID,
+		ProfilePKID:                 *m1PKID,
+		UnlockTimestampNanoSecs:     1000,
+		VestingEndTimestampNanoSecs: 1499,
+	})
+	require.NoError(t, err)
+	require.True(t, m1LockedBalanceEntry != nil)
+	require.True(t, m1LockedBalanceEntry.BalanceBaseUnits.Eq(uint256.NewInt().SetUint64(1500)))
+	m1LockedBalanceEntry, err = utxoView.GetLockedBalanceEntryForLockedBalanceEntryKey(&LockedBalanceEntryKey{
+		HODLerPKID:                  *m1PKID,
+		ProfilePKID:                 *m1PKID,
+		UnlockTimestampNanoSecs:     1500,
+		VestingEndTimestampNanoSecs: 2000,
+	})
+	require.NoError(t, err)
+	require.True(t, m1LockedBalanceEntry != nil)
+	require.True(t, m1LockedBalanceEntry.BalanceBaseUnits.Eq(uint256.NewInt().SetUint64(500)))
+}
+
 //----------------------------------------------------------
 // (Testing) Lockup Setup Helper Functions
 //----------------------------------------------------------
