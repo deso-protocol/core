@@ -72,7 +72,7 @@ func (hc *HandshakeController) handlePoSHandshakePeerMessage(remoteNode *RemoteN
 	}
 
 	// If there's already a validator connected with the same public key, disconnect the peer.
-	if _, ok := hc.rnManager.GetRemoteNodeIndexer().GetValidatorIndex().Get(*validatorPk); ok {
+	if _, ok := hc.rnManager.GetRemoteNodeIndexer().GetValidatorIndex().Get(validatorPk.Serialize()); ok {
 		hc.rnManager.Disconnect(remoteNode)
 		return
 	}
@@ -122,14 +122,20 @@ func (hc *HandshakeController) _handleVersionMessage(origin *Peer, desoMsg DeSoM
 	msgNonce := verMsg.Nonce
 	if hc.usedNonces.Contains(msgNonce) {
 		hc.usedNonces.Delete(msgNonce)
-		glog.V(1).Infof("HandshakeController._handleVersionMessage: Requesting PeerDisconnect for id: (%v) "+
+		glog.Errorf("HandshakeController._handleVersionMessage: Requesting PeerDisconnect for id: (%v) "+
 			"nonce collision", origin.ID)
-		rn.Disconnect()
+		hc.rnManager.Disconnect(rn)
 		return
 	}
 
 	responseNonce := uint64(RandInt64(math.MaxInt64))
-	rn.HandleVersionMessage(verMsg, responseNonce)
+	if err := rn.HandleVersionMessage(verMsg, responseNonce); err != nil {
+		glog.Errorf("HandshakeController._handleVersionMessage: Requesting PeerDisconnect for id: (%v) "+
+			"error handling version message: %v", origin.ID, err)
+		hc.rnManager.Disconnect(rn)
+		return
+
+	}
 	hc.usedNonces.Add(responseNonce)
 }
 
@@ -151,12 +157,17 @@ func (hc *HandshakeController) _handleVerackMessage(origin *Peer, desoMsg DeSoMe
 	}
 
 	if !ok {
-		glog.V(1).Infof("HandshakeController._handleVerackMessage: Requesting PeerDisconnect for id: (%v) "+
+		glog.Errorf("HandshakeController._handleVerackMessage: Requesting PeerDisconnect for id: (%v) "+
 			"nonce not found for peer", origin.ID)
 		rn.Disconnect()
 		return
 	}
 
-	rn.HandleVerackMessage(vrkMsg)
+	if err := rn.HandleVerackMessage(vrkMsg); err != nil {
+		glog.Errorf("HandshakeController._handleVerackMessage: Requesting PeerDisconnect for id: (%v) "+
+			"error handling verack message: %v", origin.ID, err)
+		hc.rnManager.Disconnect(rn)
+		return
+	}
 	return
 }
