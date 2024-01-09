@@ -58,6 +58,10 @@ func SetupRunFlags(cmd *cobra.Command) {
 	cmd.PersistentFlags().String("postgres-uri", "", "BETA: Use Postgres as the backing store for chain data."+
 		"When enabled, most data is stored in postgres although badger is still currently used for some state. Run your "+
 		"Postgres instance on the same machine as your node for optimal performance.")
+	cmd.PersistentFlags().String("pos-validator-seed", "", "The private key of the Proof of Stake validator. "+
+		"The private key should be passed as hex, optionally prefixed with a '0x', and map to a valid BLS12_381 private key. "+
+		"The private key must be 32 bytes, or 64 characters, in length (excluding the '0x' prefix). Setting this flag automatically "+
+		"makes the node run Proof of Stake Validator.")
 	cmd.PersistentFlags().Uint32("max-sync-block-height", 0,
 		"Max sync block height")
 	// Hyper Sync

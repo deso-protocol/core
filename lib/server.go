@@ -383,7 +383,8 @@ func NewServer(
 	_nodeMessageChan chan NodeMessage,
 	_forceChecksum bool,
 	_stateChangeDir string,
-	_hypersyncMaxQueueSize uint32) (
+	_hypersyncMaxQueueSize uint32,
+	_blsKeystore *BLSKeystore) (
 	_srv *Server, _err error, _shouldRestart bool) {
 
 	var err error
@@ -566,6 +567,11 @@ func NewServer(
 	// _maxSyncBlockHeight is used for development.
 	if _maxSyncBlockHeight > 0 {
 		_miner = nil
+	}
+
+	// Only initialize the FastHotStuffConsensus if the node is a validator with a BLS keystore
+	if _blsKeystore != nil {
+		srv.fastHotStuffConsensus = NewFastHotStuffConsensus(_params, _chain, _posMempool, _blsKeystore.GetSigner())
 	}
 
 	// Set all the fields on the Server object.
