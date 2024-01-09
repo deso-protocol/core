@@ -72,7 +72,7 @@ func (hc *HandshakeController) handlePoSHandshakePeerMessage(remoteNode *RemoteN
 	}
 
 	// If there's already a validator connected with the same public key, disconnect the peer.
-	if _, ok := hc.rnManager.GetRemoteNodeIndexer().GetValidatorIndex().Get(validatorPk.Serialize()); ok {
+	if _, ok := hc.rnManager.GetValidatorIndex().Get(validatorPk.Serialize()); ok {
 		hc.rnManager.Disconnect(remoteNode)
 		return
 	}
