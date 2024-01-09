@@ -383,7 +383,8 @@ func NewServer(
 	_nodeMessageChan chan NodeMessage,
 	_forceChecksum bool,
 	_stateChangeDir string,
-	_hypersyncMaxQueueSize uint32) (
+	_hypersyncMaxQueueSize uint32,
+	_blsKeystore *BLSKeystore) (
 	_srv *Server, _err error, _shouldRestart bool) {
 
 	var err error
@@ -566,6 +567,11 @@ func NewServer(
 	// _maxSyncBlockHeight is used for development.
 	if _maxSyncBlockHeight > 0 {
 		_miner = nil
+	}
+
+	// Only initialize the FastHotStuffConsensus if the node is a validator with a BLS keystore
+	if _blsKeystore != nil {
+		srv.fastHotStuffConsensus = NewFastHotStuffConsensus(_params, _chain, _posMempool, _blsKeystore.GetSigner())
 	}
 
 	// Set all the fields on the Server object.
@@ -2112,9 +2118,28 @@ func (srv *Server) _handleBlock(pp *Peer, blk *MsgDeSoBlock) {
 		return
 	}
 
-	// If we get here, it means we're in SyncStateFullySynced, which is great.
+	// If we get here, it means we're in SyncStateFullyCurrent, which is great.
 	// In this case we shoot a MEMPOOL message over to the peer to bootstrap the mempool.
 	srv._maybeRequestSync(pp)
+
+	///////////////////// PoS Validator Consensus Initialization /////////////////////
+
+	// Exit early if the chain isn't SyncStateFullyCurrent.
+	if srv.blockchain.chainState() != SyncStateFullyCurrent {
+		return
+	}
+
+	// Exit early if the current tip height is below the PoS cutover height.
+	tipHeight := srv.blockchain.blockTip().Height
+	if tipHeight < srv.blockchain.params.ForkHeights.ProofOfStake2ConsensusCutoverBlockHeight {
+		return
+	}
+
+	// If the PoS validator FastHotStuffConsensus is initialized but not yet running, then
+	// we can start the validator consensus, and transition to it in the steady-state.
+	if srv.fastHotStuffConsensus != nil && !srv.fastHotStuffConsensus.IsRunning() {
+		srv.fastHotStuffConsensus.Start()
+	}
 }
 
 func (srv *Server) _handleInv(peer *Peer, msg *MsgDeSoInv) {
@@ -2638,6 +2663,11 @@ func (srv *Server) Stop() {
 	if srv.miner != nil {
 		srv.miner.Stop()
 		glog.Infof(CLog(Yellow, "Server.Stop: Closed the Miner"))
+	}
+
+	// Stop the PoS validator consensus if one is running
+	if srv.fastHotStuffConsensus != nil {
+		srv.fastHotStuffConsensus.Stop()
 	}
 
 	// Stop the PoS block proposer if we have one running.

@@ -1,11 +1,12 @@
 package cmd
 
 import (
+	"os"
+	"path/filepath"
+
 	"github.com/deso-protocol/core/lib"
 	"github.com/golang/glog"
 	"github.com/spf13/viper"
-	"os"
-	"path/filepath"
 )
 
 type Config struct {
@@ -17,6 +18,7 @@ type Config struct {
 	TXIndex              bool
 	Regtest              bool
 	PostgresURI          string
+	PosValidatorSeedHex  string
 
 	// Peers
 	ConnectIPs          []string
@@ -103,6 +105,7 @@ func LoadConfig() *Config {
 	config.TXIndex = viper.GetBool("txindex")
 	config.Regtest = viper.GetBool("regtest")
 	config.PostgresURI = viper.GetString("postgres-uri")
+	config.PosValidatorSeedHex = viper.GetString("pos-validator-seed-hex")
 	config.HyperSync = viper.GetBool("hypersync")
 	config.ForceChecksum = viper.GetBool("force-checksum")
 	config.SyncType = lib.NodeSyncType(viper.GetString("sync-type"))
@@ -174,6 +177,10 @@ func (config *Config) Print() {
 
 	if config.PostgresURI != "" {
 		glog.Infof("Postgres URI: %s", config.PostgresURI)
+	}
+
+	if config.PosValidatorSeedHex != "" {
+		glog.Infof(lib.CLog(lib.Blue, "PoS Validator: ON"))
 	}
 
 	if config.HyperSync {
