@@ -486,7 +486,7 @@ func NewServer(
 	_posMempool := NewPosMempool()
 
 	// Initialize the PoS mempool. We need to initialize a best-effort UtxoView based on the current
-	// known state of the chain. These will all be overwritten as we process blocks later on.
+	// known state of the chain. This will all be overwritten as we process blocks later on.
 	currentUtxoView, err := _chain.GetUncommittedTipView()
 	if err != nil {
 		return nil, errors.Wrapf(err, "NewServer: Problem initializing latest UtxoView"), true
