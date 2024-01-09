@@ -18,7 +18,7 @@ type Config struct {
 	TXIndex              bool
 	Regtest              bool
 	PostgresURI          string
-	PosValidatorSeed     string
+	PosValidatorSeedHex  string
 
 	// Peers
 	ConnectIPs          []string
@@ -105,7 +105,7 @@ func LoadConfig() *Config {
 	config.TXIndex = viper.GetBool("txindex")
 	config.Regtest = viper.GetBool("regtest")
 	config.PostgresURI = viper.GetString("postgres-uri")
-	config.PosValidatorSeed = viper.GetString("pos-validator-seed")
+	config.PosValidatorSeedHex = viper.GetString("pos-validator-seed-hex")
 	config.HyperSync = viper.GetBool("hypersync")
 	config.ForceChecksum = viper.GetBool("force-checksum")
 	config.SyncType = lib.NodeSyncType(viper.GetString("sync-type"))
@@ -179,7 +179,7 @@ func (config *Config) Print() {
 		glog.Infof("Postgres URI: %s", config.PostgresURI)
 	}
 
-	if config.PosValidatorSeed != "" {
+	if config.PosValidatorSeedHex != "" {
 		glog.Infof(lib.CLog(lib.Blue, "PoS Validator: ON"))
 	}
 

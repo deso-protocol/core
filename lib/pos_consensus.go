@@ -31,7 +31,7 @@ func NewFastHotStuffConsensus(params *DeSoParams, blockchain *Blockchain, mempoo
 // blockchain state. This should only be called once the blockchain has synced, the node is
 // ready to join the validator network, and the node is able to validate blocks in the steady state.
 func (cc *FastHotStuffConsensus) Start() error {
-	// Hold the consensus's write lock for thread-safety.
+	// Hold the consensus' write lock for thread-safety.
 	cc.lock.Lock()
 	defer cc.lock.Unlock()
 
@@ -79,7 +79,7 @@ func (cc *FastHotStuffConsensus) IsRunning() bool {
 }
 
 func (fc *FastHotStuffConsensus) Stop() {
-	// Hold the consensus's write lock for thread-safety.
+	// Hold the consensus' write lock for thread-safety.
 	fc.lock.Lock()
 	defer fc.lock.Unlock()
 

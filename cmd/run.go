@@ -61,7 +61,7 @@ func SetupRunFlags(cmd *cobra.Command) {
 	cmd.PersistentFlags().String("pos-validator-seed", "", "The private key of the Proof of Stake validator. "+
 		"The private key should be passed as hex, optionally prefixed with a '0x', and map to a valid BLS12_381 private key. "+
 		"The private key must be 32 bytes, or 64 characters, in length (excluding the '0x' prefix). Setting this flag automatically "+
-		"makes the node run Proof of Stake Validator.")
+		"makes the node run as a Proof of Stake Validator.")
 	cmd.PersistentFlags().Uint32("max-sync-block-height", 0,
 		"Max sync block height")
 	// Hyper Sync
