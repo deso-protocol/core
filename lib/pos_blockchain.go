@@ -1375,17 +1375,7 @@ func (bc *Blockchain) tryApplyNewTip(blockNode *BlockNode, currentView uint64, l
 	}
 
 	// We need to perform a reorg here. For simplicity, we remove all uncommitted blocks and then re-add them.
-	committedTip, committedTipIdx := bc.getCommittedTip()
-	if committedTip == nil || committedTipIdx == -1 {
-		// This is an edge case we'll never hit in practice since all the PoW blocks
-		// are committed.
-		return false, errors.New("tryApplyNewTip: No committed blocks found")
-	}
-	// Remove all uncommitted blocks. These are all blocks that come after the committedTip
-	// in the best chain. Remove all blocks from bc.bestChainMap that come after the highest
-	// committed block.
-	numBlocksToRemove := len(bc.bestChain) - committedTipIdx - 1
-	for ii := 0; ii < numBlocksToRemove; ii++ {
+	for !bc.blockTip().IsCommitted() {
 		bc.removeTipBlockFromBestChain()
 	}
 	// Add the ancestors of the new tip to the best chain.
@@ -1411,7 +1401,7 @@ func (bc *Blockchain) shouldReorg(blockNode *BlockNode, currentView uint64) bool
 	return blockNode.Header.ProposedInView >= currentView
 }
 
-// addBlockToBestChain adds the block as the new tip of the best chain.
+// addTipBlockToBestChain adds the block as the new tip of the best chain.
 func (bc *Blockchain) addTipBlockToBestChain(blockNode *BlockNode) {
 	bc.bestChain = append(bc.bestChain, blockNode)
 	bc.bestChainMap[*blockNode.Hash] = blockNode
