@@ -63,7 +63,6 @@ type Server struct {
 	TxIndex       *TXIndex
 
 	fastHotStuffConsensus *FastHotStuffConsensus
-	// posMempool *PosMemPool TODO: Add the mempool later
 
 	// All messages received from peers get sent from the ConnectionManager to the
 	// Server through this channel.
@@ -220,6 +219,9 @@ func (srv *Server) GetBlockchain() *Blockchain {
 
 // TODO: The hallmark of a messy non-law-of-demeter-following interface...
 func (srv *Server) GetMempool() Mempool {
+	srv.blockchain.ChainLock.RLock()
+	defer srv.blockchain.ChainLock.RUnlock()
+
 	tip := srv.blockchain.BlockTip()
 	if tip.Height >= srv.blockchain.params.ForkHeights.ProofOfStake2ConsensusCutoverBlockHeight {
 		return srv.posMempool
@@ -242,7 +244,7 @@ func (srv *Server) GetMiner() *DeSoMiner {
 	return srv.miner
 }
 
-func (srv *Server) BroadcastTransaction(txn *MsgDeSoTxn) ([]*MempoolTx, error) {
+func (srv *Server) BroadcastTransaction(txn *MsgDeSoTxn) ([]*MsgDeSoTxn, error) {
 	// Use the backendServer to add the transaction to the mempool and
 	// relay it to peers. When a transaction is created by the user there
 	// is no need to consider a rateLimit and also no need to verifySignatures
@@ -252,33 +254,24 @@ func (srv *Server) BroadcastTransaction(txn *MsgDeSoTxn) ([]*MempoolTx, error) {
 		return nil, errors.Wrapf(err, "BroadcastTransaction: ")
 	}
 
-	// At this point, we know the transaction has been run through the mempool.
-	// Now wait for an update of the ReadOnlyUtxoView so we don't break anything.
-	srv.mempool.BlockUntilReadOnlyViewRegenerated()
-
 	return mempoolTxs, nil
 }
 
 func (srv *Server) VerifyAndBroadcastTransaction(txn *MsgDeSoTxn) error {
 	// Grab the block tip and use it as the height for validation.
 	blockHeight := srv.blockchain.BlockTip().Height
-	if blockHeight >= srv.blockchain.params.ForkHeights.ProofOfStake2ConsensusCutoverBlockHeight {
-		mtxn := NewMempoolTransaction(txn, uint64(time.Now().UnixMicro()))
-		// AddTransaction also performs validations.
-		if err := srv.posMempool.AddTransaction(mtxn, true /*verifySignatures*/); err != nil {
-			return errors.Wrapf(err, "VerifyAndBroadcastTransaction: problem adding txn to pos mempool")
+	// Only add the txn to the PoW mempool if we are below the PoS cutover height.
+	if blockHeight < srv.blockchain.params.ForkHeights.ProofOfStake2ConsensusCutoverBlockHeight {
+		err := srv.blockchain.ValidateTransaction(
+			txn,
+			// blockHeight is set to the next block since that's where this
+			// transaction will be mined at the earliest.
+			blockHeight+1,
+			true,
+			srv.mempool)
+		if err != nil {
+			return fmt.Errorf("VerifyAndBroadcastTransaction: Problem validating txn: %v", err)
 		}
-		return nil
-	}
-	err := srv.blockchain.ValidateTransaction(
-		txn,
-		// blockHeight is set to the next block since that's where this
-		// transaction will be mined at the earliest.
-		blockHeight+1,
-		true,
-		srv.mempool)
-	if err != nil {
-		return fmt.Errorf("VerifyAndBroadcastTransaction: Problem validating txn: %v", err)
 	}
 
 	if _, err := srv.BroadcastTransaction(txn); err != nil {
@@ -490,6 +483,36 @@ func NewServer(
 	_mempool := NewDeSoMempool(_chain, _rateLimitFeerateNanosPerKB,
 		_minFeeRateNanosPerKB, _blockCypherAPIKey, _runReadOnlyUtxoViewUpdater, _dataDir,
 		_mempoolDumpDir, false)
+	_posMempool := NewPosMempool()
+
+	// Initialize the PoS mempool. We need to initialize a best-effort UtxoView based on the current
+	// known state of the chain. This will all be overwritten as we process blocks later on.
+	currentUtxoView, err := _chain.GetUncommittedTipView()
+	if err != nil {
+		return nil, errors.Wrapf(err, "NewServer: Problem initializing latest UtxoView"), true
+	}
+	currentGlobalParamsEntry := currentUtxoView.GetCurrentGlobalParamsEntry()
+	latestBlockHash := _chain.blockTip().Hash
+	latestBlock := _chain.GetBlock(latestBlockHash)
+	if latestBlock == nil {
+		return nil, errors.New("NewServer: Problem getting latest block from chain"), true
+	}
+	err = _posMempool.Init(
+		_params,
+		currentGlobalParamsEntry,
+		currentUtxoView,
+		uint64(_chain.blockTip().Height),
+		_mempoolDumpDir,
+		false,
+		1024*1024*1024*3, // Max mempool Size = 3GB; TODO make this a param
+		60*1000,          // Mempool dumper frequency = 60 seconds; TODO make this a param
+		1,                // Fee estimator mempool blocks; TODO make this a param
+		[]*MsgDeSoBlock{latestBlock},
+		1, // Fee estimator past blocks; TODO make this a param
+	)
+	if err != nil {
+		return nil, errors.Wrapf(err, "NewServer: Problem initializing PoS mempool"), true
+	}
 
 	// Useful for debugging. Every second, it outputs the contents of the mempool
 	// and the contents of the addrmanager.
@@ -549,6 +572,7 @@ func NewServer(
 	srv.cmgr = _cmgr
 	srv.blockchain = _chain
 	srv.mempool = _mempool
+	srv.posMempool = _posMempool
 	srv.miner = _miner
 	srv.blockProducer = _blockProducer
 	srv.incomingMessages = _incomingMessages
@@ -1684,14 +1708,25 @@ func (srv *Server) _handleDonePeer(pp *Peer) {
 }
 
 func (srv *Server) _relayTransactions() {
-	glog.V(1).Infof("Server._relayTransactions: Waiting for mempool readOnlyView to regenerate")
-	srv.mempool.BlockUntilReadOnlyViewRegenerated()
-	glog.V(1).Infof("Server._relayTransactions: Mempool view has regenerated")
-
 	// For each peer, compute the transactions they're missing from the mempool and
 	// send them an inv.
 	allPeers := srv.cmgr.GetAllPeers()
-	txnList := srv.mempool.readOnlyUniversalTransactionList
+
+	srv.blockchain.ChainLock.RLock()
+	blockHeight := srv.blockchain.BlockTip().Height
+	srv.blockchain.ChainLock.RUnlock()
+
+	// If we're on the PoW protocol, we need to wait for the mempool readOnlyView to regenerate.
+	if blockHeight < srv.blockchain.params.ForkHeights.ProofOfStake2ConsensusCutoverBlockHeight {
+		glog.V(1).Infof("Server._relayTransactions: Waiting for mempool readOnlyView to regenerate")
+		srv.mempool.BlockUntilReadOnlyViewRegenerated()
+		glog.V(1).Infof("Server._relayTransactions: Mempool view has regenerated")
+	}
+
+	// We pull the transactions from either the PoW mempool or the PoS mempool depending
+	// on the current block height.
+	txnList := srv.GetMempool().GetTransactions()
+
 	for _, pp := range allPeers {
 		if !pp.canReceiveInvMessagess {
 			glog.V(1).Infof("Skipping invs for peer %v because not ready "+
@@ -1704,7 +1739,7 @@ func (srv *Server) _relayTransactions() {
 		for _, newTxn := range txnList {
 			invVect := &InvVect{
 				Type: InvTypeTx,
-				Hash: *newTxn.Hash,
+				Hash: *newTxn.Hash(),
 			}
 
 			// If the peer has this txn already then skip it.
@@ -1723,7 +1758,7 @@ func (srv *Server) _relayTransactions() {
 }
 
 func (srv *Server) _addNewTxn(
-	pp *Peer, txn *MsgDeSoTxn, rateLimit bool, verifySignatures bool) ([]*MempoolTx, error) {
+	pp *Peer, txn *MsgDeSoTxn, rateLimit bool, verifySignatures bool) ([]*MsgDeSoTxn, error) {
 
 	if srv.ReadOnlyMode {
 		err := fmt.Errorf("Server._addNewTxnAndRelay: Not processing txn from peer %v "+
@@ -1749,16 +1784,36 @@ func (srv *Server) _addNewTxn(
 	}
 
 	srv.blockchain.ChainLock.RLock()
-	newlyAcceptedTxns, err := srv.mempool.ProcessTransaction(
-		txn, true /*allowUnconnectedTxn*/, rateLimit, peerID, verifySignatures)
-	srv.blockchain.ChainLock.RUnlock()
-	if err != nil {
-		return nil, errors.Wrapf(err, "Server._handleTransaction: Problem adding transaction to mempool: ")
+	defer srv.blockchain.ChainLock.RUnlock()
+
+	// Only attempt to add the transaction to the PoW mempool if we're on the
+	// PoW protocol. If we're on the PoW protocol, then we use the PoW mempool's,
+	// txn validity checks to signal whether the txn has been added or not. The PoW
+	// mempool has stricter txn validity checks than the PoW mempool, so this works
+	// out conveniently, as it allows us to always add a txn to the PoS mempool.
+	blockHeight := srv.blockchain.BlockTip().Height
+	if blockHeight < srv.blockchain.params.ForkHeights.ProofOfStake2ConsensusCutoverBlockHeight {
+		_, err := srv.mempool.ProcessTransaction(
+			txn, true /*allowUnconnectedTxn*/, rateLimit, peerID, verifySignatures)
+		if err != nil {
+			return nil, errors.Wrapf(err, "Server._addNewTxn: Problem adding transaction to mempool: ")
+		}
+
+		// At this point, we know the transaction has been run through the mempool.
+		// Now wait for an update of the ReadOnlyUtxoView so we don't break anything.
+		srv.mempool.BlockUntilReadOnlyViewRegenerated()
+
+		glog.V(1).Infof("Server._addNewTxn: newly accepted txn: %v, Peer: %v", txn, pp)
 	}
 
-	glog.V(1).Infof("Server._addNewTxnAndRelay: newlyAcceptedTxns: %v, Peer: %v", newlyAcceptedTxns, pp)
+	// Always add the txn to the PoS mempool. This should always succeed if the txn
+	// addition into the PoW mempool succeeded above.
+	mempoolTxn := NewMempoolTransaction(txn, uint64(time.Now().UnixMicro()))
+	if err := srv.posMempool.AddTransaction(mempoolTxn, true /*verifySignatures*/); err != nil {
+		return nil, errors.Wrapf(err, "Server._addNewTxn: problem adding txn to pos mempool")
+	}
 
-	return newlyAcceptedTxns, nil
+	return []*MsgDeSoTxn{txn}, nil
 }
 
 // It's assumed that the caller will hold the ChainLock for reading so
@@ -1782,6 +1837,11 @@ func (srv *Server) _handleBlockMainChainConnectedd(event *BlockEvent) {
 	// we connected the blocks and this wouldn't be guaranteed if we kicked
 	// off a goroutine for each update.
 	srv.mempool.UpdateAfterConnectBlock(blk)
+	srv.posMempool.OnBlockConnected(blk)
+
+	if err := srv._updatePosMempoolAfterTipChange(); err != nil {
+		glog.Errorf("Server._handleBlockMainChainDisconnected: Problem updating pos mempool after tip change: %v", err)
+	}
 
 	blockHash, _ := blk.Header.Hash()
 	glog.V(1).Infof("_handleBlockMainChainConnected: Block %s height %d connected to "+
@@ -1805,10 +1865,30 @@ func (srv *Server) _handleBlockMainChainDisconnectedd(event *BlockEvent) {
 	// we connected the blocks and this wouldn't be guaranteed if we kicked
 	// off a goroutine for each update.
 	srv.mempool.UpdateAfterDisconnectBlock(blk)
+	srv.posMempool.OnBlockDisconnected(blk)
+
+	if err := srv._updatePosMempoolAfterTipChange(); err != nil {
+		glog.Errorf("Server._handleBlockMainChainDisconnected: Problem updating pos mempool after tip change: %v", err)
+	}
 
 	blockHash, _ := blk.Header.Hash()
 	glog.V(1).Infof("_handleBlockMainChainDisconnect: Block %s height %d disconnected from "+
 		"main chain and chain is current.", hex.EncodeToString(blockHash[:]), blk.Header.Height)
+}
+
+// _updatePosMempoolAfterTipChange updates the PoS mempool's latest UtxoView, block height, and
+// global params.
+func (srv *Server) _updatePosMempoolAfterTipChange() error {
+	// Update the PoS mempool's global params
+	currentBlockHeight := srv.blockchain.BlockTip().Height
+	currentUtxoView, err := srv.blockchain.GetUncommittedTipView()
+	if err != nil {
+		return err
+	}
+	currentGlobalParams := currentUtxoView.GetCurrentGlobalParamsEntry()
+	srv.posMempool.UpdateLatestBlock(currentUtxoView, uint64(currentBlockHeight))
+	srv.posMempool.UpdateGlobalParams(currentGlobalParams)
+	return nil
 }
 
 func (srv *Server) _maybeRequestSync(pp *Peer) {
@@ -2058,25 +2138,52 @@ func (srv *Server) _handleGetTransactions(pp *Peer, msg *MsgDeSoGetTransactions)
 	pp.AddDeSoMessage(msg, true /*inbound*/)
 }
 
-func (srv *Server) ProcessSingleTxnWithChainLock(
-	pp *Peer, txn *MsgDeSoTxn) ([]*MempoolTx, error) {
+func (srv *Server) ProcessSingleTxnWithChainLock(pp *Peer, txn *MsgDeSoTxn) ([]*MsgDeSoTxn, error) {
 	// Lock the chain for reading so that transactions don't shift under our feet
 	// when processing this bundle. Not doing this could cause us to miss transactions
 	// erroneously.
 	//
 	// TODO(performance): We should probably do this less frequently.
 	srv.blockchain.ChainLock.RLock()
-	defer func() {
-		srv.blockchain.ChainLock.RUnlock()
-	}()
+	defer srv.blockchain.ChainLock.RUnlock()
+
 	// Note we set rateLimit=false because we have a global minimum txn fee that should
 	// prevent spam on its own.
-	return srv.mempool.ProcessTransaction(
-		txn, true /*allowUnconnectedTxn*/, false, /*rateLimit*/
-		pp.ID, true /*verifySignatures*/)
+
+	// Only attempt to add the transaction to the PoW mempool if we're on the
+	// PoW protocol. If we're on the PoW protocol, then we use the PoW mempool's
+	// txn validity checks to signal whether the txn has been added or not. The PoW
+	// mempool has stricter txn validity checks than the PoS mempool, so this works
+	// out conveniently, as it allows us to always add a txn to the PoS mempool.
+	blockHeight := srv.blockchain.blockTip().Height
+	if blockHeight < srv.blockchain.params.ForkHeights.ProofOfStake2ConsensusCutoverBlockHeight {
+		_, err := srv.mempool.ProcessTransaction(
+			txn,
+			true,  /*allowUnconnectedTxn*/
+			false, /*rateLimit*/
+			pp.ID,
+			true, /*verifySignatures*/
+		)
+
+		// If we're on the PoW chain, and the txn doesn't pass the PoW mempool's validity checks, then
+		// it's an invalid txn.
+		if err != nil {
+			return nil, errors.Wrapf(err, "Server.ProcessSingleTxnWithChainLock: Problem adding transaction to PoW mempool: ")
+		}
+	}
+
+	// Regardless of the consensus protocol we're running (PoW or PoS), we use the PoS mempool's to house all
+	// mempool txns. If a txn can't make it into the PoS mempool, which uses a looser unspent balance check for
+	// the the transactor, then it must be invalid.
+	if err := srv.posMempool.AddTransaction(NewMempoolTransaction(txn, uint64(time.Now().UnixMicro())), true); err != nil {
+		return nil, errors.Wrapf(err, "Server.ProcessSingleTxnWithChainLock: Problem adding transaction to PoS mempool: ")
+	}
+
+	// Happy path, the txn was successfully added to the PoS (and optionally PoW) mempool.
+	return []*MsgDeSoTxn{txn}, nil
 }
 
-func (srv *Server) _processTransactions(pp *Peer, transactions []*MsgDeSoTxn) []*MempoolTx {
+func (srv *Server) _processTransactions(pp *Peer, transactions []*MsgDeSoTxn) []*MsgDeSoTxn {
 	// Try and add all the transactions to our mempool in the order we received
 	// them. If any fail to get added, just log an error.
 	//
@@ -2087,7 +2194,7 @@ func (srv *Server) _processTransactions(pp *Peer, transactions []*MsgDeSoTxn) []
 	// will eventually add it as opposed to just forgetting about it.
 	glog.V(2).Infof("Server._processTransactions: Processing %d transactions from "+
 		"peer %v", len(transactions), pp)
-	transactionsToRelay := []*MempoolTx{}
+	transactionsToRelay := []*MsgDeSoTxn{}
 	for _, txn := range transactions {
 		// Process the transaction with rate-limiting while allowing unconnectedTxns and
 		// verifying signatures.
@@ -2152,6 +2259,10 @@ func (srv *Server) StartStatsdReporter() {
 				// Report mempool size
 				mempoolTotal := len(srv.mempool.readOnlyUniversalTransactionList)
 				srv.statsdClient.Gauge("MEMPOOL.COUNT", float64(mempoolTotal), tags, 1)
+
+				// Report PoS Mempool size
+				posMempoolTotal := srv.posMempool.txnRegister.Count()
+				srv.statsdClient.Gauge("POS_MEMPOOL.COUNT", float64(posMempoolTotal), tags, 1)
 
 				// Report block + headers height
 				blocksHeight := srv.blockchain.BlockTip().Height
@@ -2552,6 +2663,9 @@ func (srv *Server) Stop() {
 		glog.Infof(CLog(Yellow, "Server.Stop: Closed Mempool"))
 	}
 
+	glog.Infof(CLog(Yellow, "Server.Stop: Closed PosMempool"))
+	srv.posMempool.Stop()
+
 	// Stop the block producer
 	if srv.blockProducer != nil {
 		if srv.blockchain.MaxSyncBlockHeight == 0 {
@@ -2595,6 +2709,8 @@ func (srv *Server) Start() {
 	go srv._startAddressRelayer()
 
 	go srv._startTransactionRelayer()
+
+	srv.posMempool.Start()
 
 	// Once the ConnectionManager is started, peers will be found and connected to and
 	// messages will begin to flow in to be processed.

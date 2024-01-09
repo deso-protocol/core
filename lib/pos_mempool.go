@@ -277,6 +277,94 @@ func (mp *PosMempool) IsRunning() bool {
 	return mp.status == PosMempoolStatusRunning
 }
 
+// OnBlockConnected is an event handler provided by the PoS mempool to handle the blockchain
+// event where a block is connected to the tip of the blockchain. The mempool updates its
+// internal state based on the new block that has been connected.
+//
+// Whenever a block is connected, this event handler removes the block's transactions from
+// the mempool and updates the internal fee estimation to include new block.
+func (mp *PosMempool) OnBlockConnected(block *MsgDeSoBlock) {
+	mp.Lock()
+	defer mp.Unlock()
+
+	if block.Header == nil || !mp.IsRunning() {
+		return
+	}
+
+	// Remove all transactions in the block from the mempool.
+	for _, txn := range block.Txns {
+		txnHash := txn.Hash()
+
+		// This should never happen. We perform a nil check on the txn hash to avoid a panic.
+		if txnHash == nil {
+			continue
+		}
+
+		// Get the transaction from the register. If the txn doesn't exist in the register,
+		// then there's nothing left to do.
+		existingTxn := mp.txnRegister.GetTransaction(txnHash)
+		if existingTxn == nil {
+			continue
+		}
+
+		mp.removeTransactionNoLock(existingTxn, true)
+	}
+
+	// Add the block to the fee estimator. This is a best effort operation. If we fail to add the block
+	// to the fee estimator, we log an error and continue.
+	if err := mp.feeEstimator.AddBlock(block); err != nil {
+		glog.Errorf("PosMempool.OnBlockConnected: Problem adding block to fee estimator: %v", err)
+	}
+}
+
+// OnBlockDisconnected is an event handler provided by the PoS mempool to handle the blockchain
+// event where a block is disconnected from the tip of the blockchain. The mempool updates its
+// internal state based on the block that has been disconnected.
+//
+// Whenever a block is disconnected, this event handler adds the block's transactions back to
+// the mempool and updates the internal fee estimation to exclude the disconnected block.
+func (mp *PosMempool) OnBlockDisconnected(block *MsgDeSoBlock) {
+	mp.Lock()
+	defer mp.Unlock()
+
+	if block.Header == nil || !mp.IsRunning() {
+		return
+	}
+
+	// Remove all transactions in the block from the mempool.
+	for _, txn := range block.Txns {
+		txnHash := txn.Hash()
+
+		// This should never happen. We perform a nil check on the txn hash to avoid a panic.
+		if txnHash == nil {
+			continue
+		}
+
+		// Add all transactions in the block to the mempool.
+
+		// Construct the MempoolTx from the MsgDeSoTxn.
+		mempoolTx, err := NewMempoolTx(txn, block.Header.TstampNanoSecs/1000, mp.latestBlockHeight)
+		if err != nil {
+			continue
+		}
+
+		// Add the transaction to the mempool and then prune if needed.
+		if err := mp.addTransactionNoLock(mempoolTx, true); err != nil {
+			glog.Errorf("PosMempool.AddTransaction: Problem adding transaction to mempool: %v", err)
+		}
+	}
+
+	// This is a best effort operation. If we fail to prune the mempool, we log an error and continue.
+	if err := mp.pruneNoLock(); err != nil {
+		glog.Errorf("PosMempool.AddTransaction: Problem pruning mempool: %v", err)
+	}
+
+	// Remove the block from the fee estimator.
+	if err := mp.feeEstimator.RemoveBlock(block); err != nil {
+		glog.Errorf("PosMempool.OnBlockDisconnected: Problem removing block from fee estimator: %v", err)
+	}
+}
+
 // AddTransaction validates a MsgDeSoTxn transaction and adds it to the mempool if it is valid.
 // If the mempool overflows as a result of adding the transaction, the mempool is pruned. The
 // transaction signature verification can be skipped if verifySignature is passed as true.
