@@ -2653,6 +2653,8 @@ func (srv *Server) Stop() {
 		glog.Infof(CLog(Yellow, "Server.Stop: Closed Mempool"))
 	}
 
+	srv.posMempool.Stop()
+
 	// Stop the block producer
 	if srv.blockProducer != nil {
 		if srv.blockchain.MaxSyncBlockHeight == 0 {
@@ -2696,6 +2698,8 @@ func (srv *Server) Start() {
 	go srv._startAddressRelayer()
 
 	go srv._startTransactionRelayer()
+
+	srv.posMempool.Start()
 
 	// Once the ConnectionManager is started, peers will be found and connected to and
 	// messages will begin to flow in to be processed.
