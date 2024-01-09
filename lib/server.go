@@ -483,6 +483,36 @@ func NewServer(
 	_mempool := NewDeSoMempool(_chain, _rateLimitFeerateNanosPerKB,
 		_minFeeRateNanosPerKB, _blockCypherAPIKey, _runReadOnlyUtxoViewUpdater, _dataDir,
 		_mempoolDumpDir, false)
+	_posMempool := NewPosMempool()
+
+	// Initialize the PoS mempool. We need to initialize a best-effort UtxoView based on the current
+	// known state of the chain. These will all be overwritten as we process blocks later on.
+	currentUtxoView, err := _chain.GetUncommittedTipView()
+	if err != nil {
+		return nil, errors.Wrapf(err, "NewServer: Problem initializing latest UtxoView"), true
+	}
+	currentGlobalParamsEntry := currentUtxoView.GetCurrentGlobalParamsEntry()
+	latestBlockHash := _chain.blockTip().Hash
+	latestBlock := _chain.GetBlock(latestBlockHash)
+	if latestBlock == nil {
+		return nil, errors.New("NewServer: Problem getting latest block from chain"), true
+	}
+	err = _posMempool.Init(
+		_params,
+		currentGlobalParamsEntry,
+		currentUtxoView,
+		uint64(_chain.blockTip().Height),
+		_mempoolDumpDir,
+		false,
+		1024*1024*1024*3, // Max mempool Size = 3GB; TODO make this a param
+		60*1000,          // Mempool dumper frequency = 60 seconds; TODO make this a param
+		1,                // Fee estimator mempool blocks; TODO make this a param
+		[]*MsgDeSoBlock{latestBlock},
+		1, // Fee estimator past blocks; TODO make this a param
+	)
+	if err != nil {
+		return nil, errors.Wrapf(err, "NewServer: Problem initializing PoS mempool"), true
+	}
 
 	// Useful for debugging. Every second, it outputs the contents of the mempool
 	// and the contents of the addrmanager.
@@ -542,6 +572,7 @@ func NewServer(
 	srv.cmgr = _cmgr
 	srv.blockchain = _chain
 	srv.mempool = _mempool
+	srv.posMempool = _posMempool
 	srv.miner = _miner
 	srv.blockProducer = _blockProducer
 	srv.incomingMessages = _incomingMessages
@@ -1681,9 +1712,8 @@ func (srv *Server) _relayTransactions() {
 	// send them an inv.
 	allPeers := srv.cmgr.GetAllPeers()
 
-	// We pull the transactions from the PoS mempool even if we are running the PoW
-	// protocol. This is because the PoS mempool contains all transactions that have
-	// accepted by both the PoW and PoS mempools.
+	// We pull the transactions from either the PoW mempool or the PoS mempool depending
+	// on the current block height.
 	txnList := srv.GetMempool().GetTransactions()
 
 	for _, pp := range allPeers {
@@ -1765,10 +1795,11 @@ func (srv *Server) _addNewTxn(
 		glog.V(1).Infof("Server._addNewTxn: newly accepted txn: %v, Peer: %v", txn, pp)
 	}
 
-	// Always add the txn to the PoS mempool.
+	// Always add the txn to the PoS mempool. This should always succeed if the txn
+	// addition into the PoW mempool succeeded above.
 	mempoolTxn := NewMempoolTransaction(txn, uint64(time.Now().UnixMicro()))
 	if err := srv.posMempool.AddTransaction(mempoolTxn, true /*verifySignatures*/); err != nil {
-		return nil, errors.Wrapf(err, "VerifyAndBroadcastTransaction: problem adding txn to pos mempool")
+		return nil, errors.Wrapf(err, "Server._addNewTxn: problem adding txn to pos mempool")
 	}
 
 	return []*MsgDeSoTxn{txn}, nil
@@ -1797,6 +1828,10 @@ func (srv *Server) _handleBlockMainChainConnectedd(event *BlockEvent) {
 	srv.mempool.UpdateAfterConnectBlock(blk)
 	srv.posMempool.OnBlockConnected(blk)
 
+	if err := srv._updatePosMempoolAfterTipChange(); err != nil {
+		glog.Errorf("Server._handleBlockMainChainDisconnected: Problem updating pos mempool after tip change: %v", err)
+	}
+
 	blockHash, _ := blk.Header.Hash()
 	glog.V(1).Infof("_handleBlockMainChainConnected: Block %s height %d connected to "+
 		"main chain and chain is current.", hex.EncodeToString(blockHash[:]), blk.Header.Height)
@@ -1821,9 +1856,28 @@ func (srv *Server) _handleBlockMainChainDisconnectedd(event *BlockEvent) {
 	srv.mempool.UpdateAfterDisconnectBlock(blk)
 	srv.posMempool.OnBlockDisconnected(blk)
 
+	if err := srv._updatePosMempoolAfterTipChange(); err != nil {
+		glog.Errorf("Server._handleBlockMainChainDisconnected: Problem updating pos mempool after tip change: %v", err)
+	}
+
 	blockHash, _ := blk.Header.Hash()
 	glog.V(1).Infof("_handleBlockMainChainDisconnect: Block %s height %d disconnected from "+
 		"main chain and chain is current.", hex.EncodeToString(blockHash[:]), blk.Header.Height)
+}
+
+// _updatePosMempoolAfterTipChange updates the PoS mempool's latest UtxoView, block height, and
+// global params.
+func (srv *Server) _updatePosMempoolAfterTipChange() error {
+	// Update the PoS mempool's global params
+	currentBlockHeight := srv.blockchain.BlockTip().Height
+	currentUtxoView, err := srv.blockchain.GetUncommittedTipView()
+	if err != nil {
+		return err
+	}
+	currentGlobalParams := currentUtxoView.GetCurrentGlobalParamsEntry()
+	srv.posMempool.UpdateLatestBlock(currentUtxoView, uint64(currentBlockHeight))
+	srv.posMempool.UpdateGlobalParams(currentGlobalParams)
+	return nil
 }
 
 func (srv *Server) _maybeRequestSync(pp *Peer) {
