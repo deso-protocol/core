@@ -1291,9 +1291,9 @@ func TestTryApplyNewTip(t *testing.T) {
 			ProposedInView: 4,
 		},
 	}
-	bc.addBlockToBestChain(bn1)
-	bc.addBlockToBestChain(bn2)
-	bc.addBlockToBestChain(bn3)
+	bc.addTipBlockToBestChain(bn1)
+	bc.addTipBlockToBestChain(bn2)
+	bc.addTipBlockToBestChain(bn3)
 	bc.blockIndexByHash[*hash1] = bn1
 	bc.blockIndexByHash[*hash2] = bn2
 	bc.blockIndexByHash[*hash3] = bn3
@@ -1349,7 +1349,7 @@ func TestTryApplyNewTip(t *testing.T) {
 	bc.bestChain = bc.bestChain[:len(bc.bestChain)-1]
 	delete(bc.bestChainMap, *newBlockHash)
 	// Add block 3 back
-	bc.addBlockToBestChain(bn3)
+	bc.addTipBlockToBestChain(bn3)
 
 	// Add a series of blocks that are not part of the best chain
 	// to the block index and reorg to them
@@ -1418,8 +1418,8 @@ func TestTryApplyNewTip(t *testing.T) {
 	bc.bestChain = bc.bestChain[:len(bc.bestChain)-3]
 
 	// Add block 2 and 3 back.
-	bc.addBlockToBestChain(bn2)
-	bc.addBlockToBestChain(bn3)
+	bc.addTipBlockToBestChain(bn2)
+	bc.addTipBlockToBestChain(bn3)
 
 	// No reorg tests
 	// currentView > newBlock.View
@@ -2403,7 +2403,7 @@ func _generateBlockAndAddToBestChain(testMeta *TestMeta, blockHeight uint64, vie
 	require.NoError(testMeta.t, err)
 	newBlockNode, exists := testMeta.chain.blockIndexByHash[*newBlockHash]
 	require.True(testMeta.t, exists)
-	testMeta.chain.addBlockToBestChain(newBlockNode)
+	testMeta.chain.addTipBlockToBestChain(newBlockNode)
 	// Update the latest block view
 	latestBlockView, err := testMeta.chain.GetUncommittedTipView()
 	require.NoError(testMeta.t, err)

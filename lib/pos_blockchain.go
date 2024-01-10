@@ -1364,7 +1364,7 @@ func (bc *Blockchain) tryApplyNewTip(blockNode *BlockNode, currentView uint64, l
 	// and can just add this block to the best chain.
 	chainTip := bc.BlockTip()
 	if chainTip.Hash.IsEqual(blockNode.Header.PrevBlockHash) {
-		bc.addBlockToBestChain(blockNode)
+		bc.addTipBlockToBestChain(blockNode)
 		return true, nil
 	}
 	// Check if we should perform a reorg here.
@@ -1375,26 +1375,15 @@ func (bc *Blockchain) tryApplyNewTip(blockNode *BlockNode, currentView uint64, l
 	}
 
 	// We need to perform a reorg here. For simplicity, we remove all uncommitted blocks and then re-add them.
-	committedTip, idx := bc.getCommittedTip()
-	if committedTip == nil || idx == -1 {
-		// This is an edge case we'll never hit in practice since all the PoW blocks
-		// are committed.
-		return false, errors.New("tryApplyNewTip: No committed blocks found")
+	for !bc.blockTip().IsCommitted() {
+		bc.removeTipBlockFromBestChain()
 	}
-	// Remove all uncommitted blocks. These are all blocks that come after the committedTip
-	// in the best chain.
-	// Delete all blocks from bc.bestChainMap that come after the highest committed block.
-	for ii := idx + 1; ii < len(bc.bestChain); ii++ {
-		delete(bc.bestChainMap, *bc.bestChain[ii].Hash)
-	}
-	// Shorten best chain back to committed tip.
-	bc.bestChain = bc.bestChain[:idx+1]
 	// Add the ancestors of the new tip to the best chain.
 	for _, ancestor := range lineageFromCommittedTip {
-		bc.addBlockToBestChain(ancestor)
+		bc.addTipBlockToBestChain(ancestor)
 	}
 	// Add the new tip to the best chain.
-	bc.addBlockToBestChain(blockNode)
+	bc.addTipBlockToBestChain(blockNode)
 	return true, nil
 }
 
@@ -1412,10 +1401,22 @@ func (bc *Blockchain) shouldReorg(blockNode *BlockNode, currentView uint64) bool
 	return blockNode.Header.ProposedInView >= currentView
 }
 
-// addBlockToBestChain adds the block to the best chain.
-func (bc *Blockchain) addBlockToBestChain(blockNode *BlockNode) {
+// addTipBlockToBestChain adds the block as the new tip of the best chain.
+func (bc *Blockchain) addTipBlockToBestChain(blockNode *BlockNode) {
 	bc.bestChain = append(bc.bestChain, blockNode)
 	bc.bestChainMap[*blockNode.Hash] = blockNode
+}
+
+// removeTipBlockFromBestChain removes the current tip from the best chain. It
+// naively removes the tip regardless of the tip's status (committed or not).
+// This function is a general purpose helper function that bundles mutations to
+// the bestChain slice and bestChainMap map.
+func (bc *Blockchain) removeTipBlockFromBestChain() *BlockNode {
+	// Remove the last block from the best chain.
+	lastBlock := bc.bestChain[len(bc.bestChain)-1]
+	delete(bc.bestChainMap, *lastBlock.Hash)
+	bc.bestChain = bc.bestChain[:len(bc.bestChain)-1]
+	return lastBlock
 }
 
 // runCommitRuleOnBestChain commits the grandparent of the block if possible.
