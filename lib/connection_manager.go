@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"math"
 	"net"
-	"strconv"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -14,7 +13,6 @@ import (
 	"github.com/btcsuite/btcd/wire"
 	"github.com/decred/dcrd/lru"
 	"github.com/golang/glog"
-	"github.com/pkg/errors"
 )
 
 // connection_manager.go contains most of the logic for creating and managing
@@ -36,24 +34,10 @@ type ConnectionManager struct {
 	// doesn't need a reference to the Server object. But for now we keep things lazy.
 	srv *Server
 
-	// When --connectips is set, we don't connect to anything from the addrmgr.
-	connectIps []string
-
-	// The address manager keeps track of peer addresses we're aware of. When
-	// we need to connect to a new outbound peer, it chooses one of the addresses
-	// it's aware of at random and provides it to us.
-	AddrMgr *addrmgr.AddrManager
 	// The interfaces we listen on for new incoming connections.
 	listeners []net.Listener
 	// The parameters we are initialized with.
 	params *DeSoParams
-	// The target number of outbound peers we want to have.
-	targetOutboundPeers uint32
-	// The maximum number of inbound peers we allow.
-	maxInboundPeers uint32
-	// When true, only one connection per IP is allowed. Prevents eclipse attacks
-	// among other things.
-	limitOneInboundConnectionPerIP bool
 
 	// When --hypersync is set to true we will attempt fast block synchronization
 	HyperSync bool
@@ -136,10 +120,8 @@ type ConnectionManager struct {
 }
 
 func NewConnectionManager(
-	_params *DeSoParams, _addrMgr *addrmgr.AddrManager, _listeners []net.Listener,
+	_params *DeSoParams, _listeners []net.Listener,
 	_connectIps []string, _timeSource chainlib.MedianTimeSource,
-	_targetOutboundPeers uint32, _maxInboundPeers uint32,
-	_limitOneInboundConnectionPerIP bool,
 	_hyperSync bool,
 	_syncType NodeSyncType,
 	_stallTimeoutSeconds uint64,
@@ -150,16 +132,13 @@ func NewConnectionManager(
 	ValidateHyperSyncFlags(_hyperSync, _syncType)
 
 	return &ConnectionManager{
-		srv:        _srv,
-		params:     _params,
-		AddrMgr:    _addrMgr,
-		listeners:  _listeners,
-		connectIps: _connectIps,
+		srv:       _srv,
+		params:    _params,
+		listeners: _listeners,
 		// We keep track of the last N nonces we've sent in order to detect
 		// self connections.
 		sentNonces: lru.NewCache(1000),
 		timeSource: _timeSource,
-
 		//newestBlock: _newestBlock,
 
 		// Initialize the peer data structures.
@@ -176,15 +155,13 @@ func NewConnectionManager(
 		newPeerChan:            make(chan *Peer, 100),
 		donePeerChan:           make(chan *Peer, 100),
 		outboundConnectionChan: make(chan *outboundConnection, 100),
+		inboundConnectionChan:  make(chan *inboundConnection, 100),
 
-		targetOutboundPeers:            _targetOutboundPeers,
-		maxInboundPeers:                _maxInboundPeers,
-		limitOneInboundConnectionPerIP: _limitOneInboundConnectionPerIP,
-		HyperSync:                      _hyperSync,
-		SyncType:                       _syncType,
-		serverMessageQueue:             _serverMessageQueue,
-		stallTimeoutSeconds:            _stallTimeoutSeconds,
-		minFeeRateNanosPerKB:           _minFeeRateNanosPerKB,
+		HyperSync:            _hyperSync,
+		SyncType:             _syncType,
+		serverMessageQueue:   _serverMessageQueue,
+		stallTimeoutSeconds:  _stallTimeoutSeconds,
+		minFeeRateNanosPerKB: _minFeeRateNanosPerKB,
 	}
 }
 
@@ -224,40 +201,6 @@ func (cmgr *ConnectionManager) subFromGroupKey(na *wire.NetAddress) {
 	cmgr.mtxOutboundConnIPGroups.Unlock()
 }
 
-func (cmgr *ConnectionManager) getRandomAddr() *wire.NetAddress {
-	for tries := 0; tries < 100; tries++ {
-		addr := cmgr.AddrMgr.GetAddress()
-		if addr == nil {
-			glog.V(2).Infof("ConnectionManager.getRandomAddr: addr from GetAddressWithExclusions was nil")
-			break
-		}
-
-		// Lock the address map since multiple threads will be trying to read
-		// and modify it at the same time.
-		cmgr.mtxAddrsMaps.RLock()
-		ok := cmgr.connectedOutboundAddrs[addrmgr.NetAddressKey(addr.NetAddress())]
-		cmgr.mtxAddrsMaps.RUnlock()
-		if ok {
-			glog.V(2).Infof("ConnectionManager.getRandomAddr: Not choosing already connected address %v:%v", addr.NetAddress().IP, addr.NetAddress().Port)
-			continue
-		}
-
-		// We can only have one outbound address per /16. This is similar to
-		// Bitcoin and we do it to prevent Sybil attacks.
-		if cmgr.IsFromRedundantOutboundIPAddress(addr.NetAddress()) {
-			glog.V(2).Infof("ConnectionManager.getRandomAddr: Not choosing address due to redundant group key %v:%v", addr.NetAddress().IP, addr.NetAddress().Port)
-			continue
-		}
-
-		glog.V(2).Infof("ConnectionManager.getRandomAddr: Returning %v:%v at %d iterations",
-			addr.NetAddress().IP, addr.NetAddress().Port, tries)
-		return addr.NetAddress()
-	}
-
-	glog.V(2).Infof("ConnectionManager.getRandomAddr: Returning nil")
-	return nil
-}
-
 func _delayRetry(retryCount uint64, persistentAddrForLogging *wire.NetAddress, unit time.Duration) (_retryDuration time.Duration) {
 	// No delay if we haven't tried yet or if the number of retries isn't positive.
 	if retryCount <= 0 {
@@ -274,42 +217,6 @@ func _delayRetry(retryCount uint64, persistentAddrForLogging *wire.NetAddress, u
 		glog.V(2).Infof("Retrying connection to outbound non-persistent peer in (%d) seconds.", numSecs)
 	}
 	return retryDelay
-}
-
-func (cmgr *ConnectionManager) enoughOutboundPeers() bool {
-	val := atomic.LoadUint32(&cmgr.numOutboundPeers)
-	if val > cmgr.targetOutboundPeers {
-		glog.Errorf("enoughOutboundPeers: Connected to too many outbound "+
-			"peers: (%d). Should be "+
-			"no more than (%d).", val, cmgr.targetOutboundPeers)
-		return true
-	}
-
-	if val == cmgr.targetOutboundPeers {
-		return true
-	}
-	return false
-}
-
-func IPToNetAddr(ipStr string, addrMgr *addrmgr.AddrManager, params *DeSoParams) (*wire.NetAddress, error) {
-	port := params.DefaultSocketPort
-	host, portstr, err := net.SplitHostPort(ipStr)
-	if err != nil {
-		// No port specified so leave port=default and set
-		// host to the ipStr.
-		host = ipStr
-	} else {
-		pp, err := strconv.ParseUint(portstr, 10, 16)
-		if err != nil {
-			return nil, errors.Wrapf(err, "IPToNetAddr: Can not parse port from %s for ip", ipStr)
-		}
-		port = uint16(pp)
-	}
-	netAddr, err := addrMgr.HostToNetAddress(host, port, 0)
-	if err != nil {
-		return nil, errors.Wrapf(err, "IPToNetAddr: Can not parse port from %s for ip", ipStr)
-	}
-	return netAddr, nil
 }
 
 func (cmgr *ConnectionManager) IsConnectedOutboundIpAddress(netAddr *wire.NetAddress) bool {
@@ -338,13 +245,15 @@ func (cmgr *ConnectionManager) RemoveAttemptedOutboundAddrs(netAddr *wire.NetAdd
 
 // DialPersistentOutboundConnection attempts to connect to a persistent peer.
 func (cmgr *ConnectionManager) DialPersistentOutboundConnection(persistentAddr *wire.NetAddress, attemptId uint64) (_attemptId uint64) {
-	glog.V(2).Infof("ConnectionManager.DialPersistentOutboundConnection: Connecting to peer %v", persistentAddr.IP.String())
+	glog.V(2).Infof("ConnectionManager.DialPersistentOutboundConnection: Connecting to peer  (IP=%v, Port=%v)",
+		persistentAddr.IP.String(), persistentAddr.Port)
 	return cmgr._dialOutboundConnection(persistentAddr, attemptId, true)
 }
 
 // DialOutboundConnection attempts to connect to a non-persistent peer.
 func (cmgr *ConnectionManager) DialOutboundConnection(addr *wire.NetAddress, attemptId uint64) {
-	glog.V(2).Infof("ConnectionManager.ConnectOutboundConnection: Connecting to peer %v", addr.IP.String())
+	glog.V(2).Infof("ConnectionManager.ConnectOutboundConnection: Connecting to peer (IP=%v, Port=%v)",
+		addr.IP.String(), addr.Port)
 	cmgr._dialOutboundConnection(addr, attemptId, false)
 }
 
@@ -400,7 +309,7 @@ func (cmgr *ConnectionManager) ConnectPeer(id uint64, conn net.Conn, na *wire.Ne
 	return peer
 }
 
-func (cmgr *ConnectionManager) IsFromRedundantInboundIPAddress(netAddr *wire.NetAddress) bool {
+func (cmgr *ConnectionManager) IsDuplicateInboundIPAddress(netAddr *wire.NetAddress) bool {
 	cmgr.mtxPeerMaps.RLock()
 	defer cmgr.mtxPeerMaps.RUnlock()
 
@@ -412,7 +321,7 @@ func (cmgr *ConnectionManager) IsFromRedundantInboundIPAddress(netAddr *wire.Net
 	// nodes on a local machine.
 	// TODO: Should this be a flag?
 	if net.IP([]byte{127, 0, 0, 1}).Equal(netAddr.IP) {
-		glog.V(1).Infof("ConnectionManager._isFromRedundantInboundIPAddress: Allowing " +
+		glog.V(1).Infof("ConnectionManager.IsDuplicateInboundIPAddress: Allowing " +
 			"localhost IP address to connect")
 		return false
 	}

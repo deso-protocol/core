@@ -1543,8 +1543,7 @@ func (msg *MsgDeSoPong) FromBytes(data []byte) error {
 type ServiceFlag uint64
 
 const (
-	// SFFullNodeDeprecated is deprecated, and set on all nodes by default
-	// now. We basically split it into SFHyperSync and SFArchivalMode.
+	// SFFullNodeDeprecated is deprecated, and set on all nodes by default now.
 	SFFullNodeDeprecated ServiceFlag = 1 << 0
 	// SFHyperSync is a flag used to indicate that the peer supports hyper sync.
 	SFHyperSync ServiceFlag = 1 << 1
@@ -1554,6 +1553,10 @@ const (
 	// SFPosValidator is a flag used to indicate that the peer is running a PoS validator.
 	SFPosValidator ServiceFlag = 1 << 3
 )
+
+func (sf ServiceFlag) HasService(serviceFlag ServiceFlag) bool {
+	return sf&serviceFlag == serviceFlag
+}
 
 type MsgDeSoVersion struct {
 	// What is the current version we're on?
@@ -1952,10 +1955,6 @@ func (msg *MsgDeSoVerack) EncodeVerackV0() ([]byte, error) {
 }
 
 func (msg *MsgDeSoVerack) EncodeVerackV1() ([]byte, error) {
-	if msg.PublicKey == nil || msg.Signature == nil {
-		return nil, fmt.Errorf("MsgDeSoVerack.EncodeVerackV1: PublicKey and Signature must be set for V1 message")
-	}
-
 	retBytes := []byte{}
 
 	// Version

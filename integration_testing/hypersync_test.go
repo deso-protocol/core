@@ -53,6 +53,7 @@ func TestSimpleHyperSync(t *testing.T) {
 	//compareNodesByDB(t, node1, node2, 0)
 	compareNodesByChecksum(t, node1, node2)
 	fmt.Println("Databases match!")
+	bridge.Disconnect()
 	node1.Stop()
 	node2.Stop()
 }
@@ -122,6 +123,8 @@ func TestHyperSyncFromHyperSyncedNode(t *testing.T) {
 	compareNodesByChecksum(t, node2, node3)
 
 	fmt.Println("Databases match!")
+	bridge12.Disconnect()
+	bridge23.Disconnect()
 	node1.Stop()
 	node2.Stop()
 	node3.Stop()
@@ -178,6 +181,7 @@ func TestSimpleHyperSyncRestart(t *testing.T) {
 	compareNodesByChecksum(t, node1, node2)
 	fmt.Println("Random restart successful! Random sync prefix was", syncPrefix)
 	fmt.Println("Databases match!")
+	bridge.Disconnect()
 	node1.Stop()
 	node2.Stop()
 }
@@ -255,6 +259,8 @@ func TestSimpleHyperSyncDisconnectWithSwitchingToNewPeer(t *testing.T) {
 	compareNodesByChecksum(t, node1, node2)
 	fmt.Println("Random restart successful! Random sync prefix was", syncPrefix)
 	fmt.Println("Databases match!")
+	bridge12.Disconnect()
+	bridge23.Disconnect()
 	node1.Stop()
 	node2.Stop()
 	node3.Stop()
@@ -349,6 +355,7 @@ func TestArchivalMode(t *testing.T) {
 	//compareNodesByDB(t, node1, node2, 0)
 	compareNodesByChecksum(t, node1, node2)
 	fmt.Println("Databases match!")
+	bridge.Disconnect()
 	node1.Stop()
 	node2.Stop()
 }
@@ -406,6 +413,9 @@ func TestBlockSyncFromArchivalModeHyperSync(t *testing.T) {
 	//compareNodesByDB(t, node1, node2, 0)
 	compareNodesByChecksum(t, node1, node2)
 	fmt.Println("Databases match!")
+	bridge12.Disconnect()
+	bridge23.Disconnect()
 	node1.Stop()
 	node2.Stop()
+	node3.Stop()
 }

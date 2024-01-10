@@ -5,8 +5,10 @@ import (
 	"github.com/btcsuite/btcd/wire"
 	"github.com/deso-protocol/core/bls"
 	"github.com/deso-protocol/core/collections"
+	"github.com/golang/glog"
 	"github.com/pkg/errors"
 	"net"
+	"sync"
 	"sync/atomic"
 )
 
@@ -14,6 +16,8 @@ import (
 // and stopping remote node connections. It is also responsible for organizing the remote nodes into indices for easy
 // access, through the RemoteNodeIndexer.
 type RemoteNodeManager struct {
+	mtx sync.Mutex
+
 	// remoteNodeIndexer is a structure that stores and indexes all created remote nodes.
 	remoteNodeIndexer *RemoteNodeIndexer
 
@@ -62,13 +66,19 @@ func (manager *RemoteNodeManager) ProcessCompletedHandshake(remoteNode *RemoteNo
 
 	if remoteNode.IsValidator() {
 		manager.SetValidator(remoteNode)
+		manager.UnsetNonValidator(remoteNode)
 	} else {
+		manager.UnsetValidator(remoteNode)
 		manager.SetNonValidator(remoteNode)
 	}
 	manager.srv.HandleAcceptedPeer(remoteNode.GetPeer())
 }
 
 func (manager *RemoteNodeManager) Disconnect(rn *RemoteNode) {
+	if rn == nil {
+		return
+	}
+	glog.V(2).Infof("RemoteNodeManager.Disconnect: Disconnecting from remote node %v", rn.GetId())
 	rn.Disconnect()
 	manager.removeRemoteNodeFromIndexer(rn)
 }
@@ -83,17 +93,29 @@ func (manager *RemoteNodeManager) DisconnectById(id RemoteNodeId) {
 }
 
 func (manager *RemoteNodeManager) removeRemoteNodeFromIndexer(rn *RemoteNode) {
+	manager.mtx.Lock()
+	defer manager.mtx.Unlock()
+
 	if rn == nil {
 		return
 	}
 
 	indexer := manager.remoteNodeIndexer
 	indexer.GetAllRemoteNodes().Remove(rn.GetId())
-	if rn.validatorPublicKey != nil {
-		indexer.GetValidatorIndex().Remove(rn.validatorPublicKey.Serialize())
-	}
 	indexer.GetNonValidatorOutboundIndex().Remove(rn.GetId())
 	indexer.GetNonValidatorInboundIndex().Remove(rn.GetId())
+
+	// Try to evict the remote node from the validator index. If the remote node is not a validator, then there is nothing to do.
+	if rn.GetValidatorPublicKey() == nil {
+		return
+	}
+	// Only remove from the validator index if the fetched remote node is the same as the one we are trying to remove.
+	// Otherwise, we could have a fun edge-case where a duplicated validator connection ends up removing an
+	// existing validator connection from the index.
+	fetchedRn, ok := indexer.GetValidatorIndex().Get(rn.GetValidatorPublicKey().Serialize())
+	if ok && fetchedRn.GetId() == rn.GetId() {
+		indexer.GetValidatorIndex().Remove(rn.GetValidatorPublicKey().Serialize())
+	}
 }
 
 func (manager *RemoteNodeManager) SendMessage(rn *RemoteNode, desoMessage DeSoMessage) error {
@@ -111,6 +133,10 @@ func (manager *RemoteNodeManager) SendMessage(rn *RemoteNode, desoMessage DeSoMe
 func (manager *RemoteNodeManager) CreateValidatorConnection(netAddr *wire.NetAddress, publicKey *bls.PublicKey) error {
 	if netAddr == nil || publicKey == nil {
 		return fmt.Errorf("RemoteNodeManager.CreateValidatorConnection: netAddr or public key is nil")
+	}
+
+	if _, ok := manager.GetValidatorIndex().Get(publicKey.Serialize()); ok {
+		return fmt.Errorf("RemoteNodeManager.CreateValidatorConnection: RemoteNode already exists for public key: %v", publicKey)
 	}
 
 	remoteNode := manager.newRemoteNode(publicKey)
@@ -190,6 +216,9 @@ func (manager *RemoteNodeManager) AttachOutboundConnection(conn net.Conn, na *wi
 // ###########################
 
 func (manager *RemoteNodeManager) setRemoteNode(rn *RemoteNode) {
+	manager.mtx.Lock()
+	defer manager.mtx.Unlock()
+
 	if rn == nil {
 		return
 	}
@@ -198,36 +227,39 @@ func (manager *RemoteNodeManager) setRemoteNode(rn *RemoteNode) {
 }
 
 func (manager *RemoteNodeManager) SetNonValidator(rn *RemoteNode) {
+	manager.mtx.Lock()
+	defer manager.mtx.Unlock()
+
 	if rn == nil {
 		return
 	}
 
 	if rn.IsOutbound() {
 		manager.GetNonValidatorOutboundIndex().Set(rn.GetId(), rn)
-	} else if rn.IsInbound() {
-		manager.GetNonValidatorInboundIndex().Set(rn.GetId(), rn)
 	} else {
-		manager.Disconnect(rn)
-		return
+		manager.GetNonValidatorInboundIndex().Set(rn.GetId(), rn)
 	}
-
-	manager.UnsetValidator(rn)
 }
 
 func (manager *RemoteNodeManager) SetValidator(remoteNode *RemoteNode) {
+	manager.mtx.Lock()
+	defer manager.mtx.Unlock()
+
 	if remoteNode == nil {
 		return
 	}
 
 	pk := remoteNode.GetValidatorPublicKey()
 	if pk == nil {
-		manager.Disconnect(remoteNode)
 		return
 	}
 	manager.GetValidatorIndex().Set(pk.Serialize(), remoteNode)
 }
 
 func (manager *RemoteNodeManager) UnsetValidator(remoteNode *RemoteNode) {
+	manager.mtx.Lock()
+	defer manager.mtx.Unlock()
+
 	if remoteNode == nil {
 		return
 	}
@@ -240,16 +272,17 @@ func (manager *RemoteNodeManager) UnsetValidator(remoteNode *RemoteNode) {
 }
 
 func (manager *RemoteNodeManager) UnsetNonValidator(rn *RemoteNode) {
+	manager.mtx.Lock()
+	defer manager.mtx.Unlock()
+
 	if rn == nil {
 		return
 	}
 
 	if rn.IsOutbound() {
 		manager.GetNonValidatorOutboundIndex().Remove(rn.GetId())
-	} else if rn.IsInbound() {
-		manager.GetNonValidatorInboundIndex().Remove(rn.GetId())
 	} else {
-		manager.Disconnect(rn)
+		manager.GetNonValidatorInboundIndex().Remove(rn.GetId())
 	}
 }
 

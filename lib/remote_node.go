@@ -191,6 +191,10 @@ func (rn *RemoteNode) GetValidatorPublicKey() *bls.PublicKey {
 	return rn.validatorPublicKey
 }
 
+func (rn *RemoteNode) GetServiceFlag() ServiceFlag {
+	return rn.handshakeMetadata.serviceFlag
+}
+
 func (rn *RemoteNode) GetUserAgent() string {
 	return rn.handshakeMetadata.userAgent
 }
@@ -223,7 +227,11 @@ func (rn *RemoteNode) IsValidator() bool {
 	if !rn.IsHandshakeCompleted() {
 		return false
 	}
-	return rn.GetValidatorPublicKey() != nil
+	return rn.hasValidatorServiceFlag()
+}
+
+func (rn *RemoteNode) hasValidatorServiceFlag() bool {
+	return rn.GetServiceFlag().HasService(SFPosValidator)
 }
 
 // DialOutboundConnection dials an outbound connection to the provided netAddr.
@@ -359,7 +367,7 @@ func (rn *RemoteNode) sendVersionMessage(nonce uint64) error {
 	return nil
 }
 
-// newVersionMessage returns a new version message that can be sent to a RemoteNode peer. The message will contain the
+// newVersionMessage returns a new version message that can be sent to a RemoteNode. The message will contain the
 // nonce that is passed in as an argument.
 func (rn *RemoteNode) newVersionMessage(nonce uint64) *MsgDeSoVersion {
 	ver := NewMessage(MsgTypeVersion).(*MsgDeSoVersion)
@@ -412,6 +420,12 @@ func (rn *RemoteNode) HandleVersionMessage(verMsg *MsgDeSoVersion, responseNonce
 	vMeta := rn.handshakeMetadata
 	// Record the version the peer is using.
 	vMeta.advertisedProtocolVersion = NewProtocolVersionType(verMsg.Version)
+	// Make sure the latest supported protocol version is ProtocolVersion2.
+	if vMeta.advertisedProtocolVersion.After(ProtocolVersion2) {
+		return fmt.Errorf("RemoteNode.HandleVersionMessage: Requesting disconnect for id: (%v) "+
+			"protocol version too high. Peer version: %v, max version: %v", rn.id, verMsg.Version, ProtocolVersion2)
+	}
+
 	// Decide on the protocol version to use for this connection.
 	negotiatedVersion := rn.params.ProtocolVersion
 	if verMsg.Version < rn.params.ProtocolVersion.ToUint64() {
@@ -430,6 +444,17 @@ func (rn *RemoteNode) HandleVersionMessage(verMsg *MsgDeSoVersion, responseNonce
 
 	// Record the services the peer is advertising.
 	vMeta.serviceFlag = verMsg.Services
+	// If the RemoteNode was connected with an expectation of being a validator, make sure that its advertised ServiceFlag
+	// indicates that it is a validator.
+	if !rn.hasValidatorServiceFlag() && rn.validatorPublicKey != nil {
+		return fmt.Errorf("RemoteNode.HandleVersionMessage: Requesting disconnect for id: (%v). "+
+			"Expected validator, but received invalid ServiceFlag: %v", rn.id, verMsg.Services)
+	}
+	// If the RemoteNode is on ProtocolVersion1, then it must not have the validator service flag set.
+	if rn.hasValidatorServiceFlag() && vMeta.advertisedProtocolVersion.Before(ProtocolVersion2) {
+		return fmt.Errorf("RemoteNode.HandleVersionMessage: Requesting disconnect for id: (%v). "+
+			"RemoteNode has SFValidator service flag, but doesn't have ProtocolVersion2 or later", rn.id)
+	}
 
 	// Record the tstamp sent by the peer and calculate the time offset.
 	timeConnected := time.Unix(verMsg.TstampSecs, 0)
@@ -450,7 +475,7 @@ func (rn *RemoteNode) HandleVersionMessage(verMsg *MsgDeSoVersion, responseNonce
 	vMeta.minTxFeeRateNanosPerKB = verMsg.MinFeeRateNanosPerKB
 
 	// Respond to the version message if this is an inbound peer.
-	if !rn.IsOutbound() {
+	if rn.IsInbound() {
 		if err := rn.sendVersionMessage(responseNonce); err != nil {
 			return errors.Wrapf(err, "RemoteNode.HandleVersionMessage: Problem sending version message to peer (id= %d)", rn.id)
 		}
@@ -460,7 +485,7 @@ func (rn *RemoteNode) HandleVersionMessage(verMsg *MsgDeSoVersion, responseNonce
 	// peer's verack message even if it is an inbound peer. Instead, we just send the verack message right away.
 
 	// Set the latest time by which we should receive a verack message from the peer.
-	verackTimeExpected := time.Now().Add(rn.params.VersionNegotiationTimeout)
+	verackTimeExpected := time.Now().Add(rn.params.VerackNegotiationTimeout)
 	rn.verackTimeExpected = &verackTimeExpected
 	if err := rn.sendVerack(); err != nil {
 		return errors.Wrapf(err, "RemoteNode.HandleVersionMessage: Problem sending verack message to peer (id= %d)", rn.id)
@@ -496,7 +521,6 @@ func (rn *RemoteNode) newVerackMessage() (*MsgDeSoVerack, error) {
 		verack.Version = VerackVersion0
 		verack.NonceReceived = vMeta.versionNonceReceived
 	case ProtocolVersion2:
-		// FIXME: resolve the non-validator - validator handshake issues on protocol version 2.
 		// For protocol version 2, we need to send the nonce we received from the peer in their version message.
 		// We also need to send our own nonce, which we generate for our version message. In addition, we need to
 		// send a current timestamp (in microseconds). We then sign the tuple of (nonceReceived, nonceSent, tstampMicro)
@@ -507,6 +531,10 @@ func (rn *RemoteNode) newVerackMessage() (*MsgDeSoVerack, error) {
 		verack.NonceSent = vMeta.versionNonceSent
 		tstampMicro := uint64(time.Now().UnixMicro())
 		verack.TstampMicro = tstampMicro
+		// If the RemoteNode is not a validator, then we don't need to sign the verack message.
+		if !rn.nodeServices.HasService(SFPosValidator) {
+			break
+		}
 		verack.PublicKey = rn.keystore.GetSigner().GetPublicKey()
 		verack.Signature, err = rn.keystore.GetSigner().SignPoSValidatorHandshake(verack.NonceSent, verack.NonceReceived, tstampMicro)
 		if err != nil {
@@ -599,6 +627,11 @@ func (rn *RemoteNode) validateVerackPoS(vrkMsg *MsgDeSoVerack) error {
 			"verack timestamp too far in the past. Time now: %v, verack timestamp: %v", rn.id, timeNowMicro, vrkMsg.TstampMicro)
 	}
 
+	// If the RemoteNode is not a validator, then we don't need to verify the verack message's signature.
+	if !rn.hasValidatorServiceFlag() {
+		return nil
+	}
+
 	// Make sure the verack message's public key and signature are not nil.
 	if vrkMsg.PublicKey == nil || vrkMsg.Signature == nil {
 		return fmt.Errorf("RemoteNode.validateVerackPoS: Requesting disconnect for id: (%v) "+
@@ -617,7 +650,7 @@ func (rn *RemoteNode) validateVerackPoS(vrkMsg *MsgDeSoVerack) error {
 			"verack signature verification failed", rn.id)
 	}
 
-	if rn.validatorPublicKey != nil || rn.validatorPublicKey.Serialize() != vrkMsg.PublicKey.Serialize() {
+	if rn.validatorPublicKey != nil && rn.validatorPublicKey.Serialize() != vrkMsg.PublicKey.Serialize() {
 		return fmt.Errorf("RemoteNode.validateVerackPoS: Requesting disconnect for id: (%v) "+
 			"verack public key mismatch; message: %v; expected: %v", rn.id, vrkMsg.PublicKey, rn.validatorPublicKey)
 	}

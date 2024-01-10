@@ -93,12 +93,12 @@ func TestVerackV1(t *testing.T) {
 	require := require.New(t)
 
 	networkType := NetworkType_MAINNET
-	var buf bytes.Buffer
+	var buf1, buf2 bytes.Buffer
 
 	nonceReceived := uint64(12345678910)
 	nonceSent := nonceReceived + 1
 	tstamp := uint64(2345678910)
-	// First, test that nil public key and signature are not allowed.
+	// First, test that nil public key and signature are allowed.
 	msg := &MsgDeSoVerack{
 		Version:       VerackVersion1,
 		NonceReceived: nonceReceived,
@@ -107,8 +107,8 @@ func TestVerackV1(t *testing.T) {
 		PublicKey:     nil,
 		Signature:     nil,
 	}
-	_, err := WriteMessage(&buf, msg, networkType)
-	require.Error(err)
+	_, err := WriteMessage(&buf1, msg, networkType)
+	require.NoError(err)
 	payload := append(UintToBuf(nonceReceived), UintToBuf(nonceSent)...)
 	payload = append(payload, UintToBuf(tstamp)...)
 	hash := sha3.Sum256(payload)
@@ -118,10 +118,10 @@ func TestVerackV1(t *testing.T) {
 	msg.PublicKey = priv.PublicKey()
 	msg.Signature, err = priv.Sign(hash[:])
 	require.NoError(err)
-	_, err = WriteMessage(&buf, msg, networkType)
+	_, err = WriteMessage(&buf2, msg, networkType)
 	require.NoError(err)
 
-	verBytes := buf.Bytes()
+	verBytes := buf2.Bytes()
 	testMsg, _, err := ReadMessage(bytes.NewReader(verBytes), networkType)
 	require.NoError(err)
 	require.Equal(msg, testMsg)
