@@ -58,13 +58,19 @@ func (id RemoteNodeId) ToUint64() uint64 {
 // lifecycle. Once the RemoteNode is terminated, it will be disposed of, and a new RemoteNode must be created if we
 // wish to reconnect to the peer in the future.
 type RemoteNode struct {
-	mtx sync.Mutex
+	mtx sync.RWMutex
 
 	peer *Peer
 	// The id is the unique identifier of this RemoteNode. For outbound connections, the id will be the same as the
 	// attemptId of the OutboundConnectionAttempt, and the subsequent id of the outbound peer. For inbound connections,
 	// the id will be the same as the inbound peer's id.
-	id               RemoteNodeId
+	id RemoteNodeId
+	// validatorPublicKey is the BLS public key of the validator node. This is only set for validator nodes. For
+	// non-validator nodes, this will be nil. For outbound validators nodes, the validatorPublicKey will be set when
+	// the RemoteNode is instantiated. And for inbound validator nodes, the validatorPublicKey will be set when the
+	// handshake is completed.
+	validatorPublicKey *bls.PublicKey
+
 	connectionStatus RemoteNodeStatus
 
 	params *DeSoParams
@@ -134,10 +140,11 @@ func NewHandshakeMetadata() *HandshakeMetadata {
 	}
 }
 
-func NewRemoteNode(id RemoteNodeId, srv *Server, cmgr *ConnectionManager, keystore *BLSKeystore,
+func NewRemoteNode(id RemoteNodeId, validatorPublicKey *bls.PublicKey, srv *Server, cmgr *ConnectionManager, keystore *BLSKeystore,
 	params *DeSoParams, minTxFeeRateNanosPerKB uint64, latestBlockHeight uint64, nodeServices ServiceFlag) *RemoteNode {
 	return &RemoteNode{
 		id:                     id,
+		validatorPublicKey:     validatorPublicKey,
 		connectionStatus:       RemoteNodeStatus_NotConnected,
 		handshakeMetadata:      NewHandshakeMetadata(),
 		srv:                    srv,
@@ -183,7 +190,7 @@ func (rn *RemoteNode) GetNegotiatedProtocolVersion() ProtocolVersionType {
 }
 
 func (rn *RemoteNode) GetValidatorPublicKey() *bls.PublicKey {
-	return rn.handshakeMetadata.validatorPublicKey
+	return rn.validatorPublicKey
 }
 
 func (rn *RemoteNode) GetUserAgent() string {
@@ -231,12 +238,12 @@ func (rn *RemoteNode) IsValidator() bool {
 
 // DialOutboundConnection dials an outbound connection to the provided netAddr.
 func (rn *RemoteNode) DialOutboundConnection(netAddr *wire.NetAddress) error {
+	rn.mtx.Lock()
+	defer rn.mtx.Unlock()
+
 	if !rn.IsNotConnected() {
 		return fmt.Errorf("RemoteNode.DialOutboundConnection: RemoteNode is not in the NotConnected state")
 	}
-
-	rn.mtx.Lock()
-	defer rn.mtx.Unlock()
 
 	rn.cmgr.DialOutboundConnection(netAddr, rn.GetId().ToUint64())
 	rn.setStatusAttempted()
@@ -245,12 +252,12 @@ func (rn *RemoteNode) DialOutboundConnection(netAddr *wire.NetAddress) error {
 
 // DialPersistentOutboundConnection dials a persistent outbound connection to the provided netAddr.
 func (rn *RemoteNode) DialPersistentOutboundConnection(netAddr *wire.NetAddress) error {
+	rn.mtx.Lock()
+	defer rn.mtx.Unlock()
+
 	if !rn.IsNotConnected() {
 		return fmt.Errorf("RemoteNode.DialPersistentOutboundConnection: RemoteNode is not in the NotConnected state")
 	}
-
-	rn.mtx.Lock()
-	defer rn.mtx.Unlock()
 
 	rn.cmgr.DialPersistentOutboundConnection(netAddr, rn.GetId().ToUint64())
 	rn.setStatusAttempted()
@@ -259,12 +266,12 @@ func (rn *RemoteNode) DialPersistentOutboundConnection(netAddr *wire.NetAddress)
 
 // AttachInboundConnection creates an inbound peer once a successful inbound connection has been established.
 func (rn *RemoteNode) AttachInboundConnection(conn net.Conn, na *wire.NetAddress) error {
+	rn.mtx.Lock()
+	defer rn.mtx.Unlock()
+
 	if !rn.IsNotConnected() {
 		return fmt.Errorf("RemoteNode.AttachInboundConnection: RemoteNode is not in the NotConnected state")
 	}
-
-	rn.mtx.Lock()
-	defer rn.mtx.Unlock()
 
 	id := rn.GetId().ToUint64()
 	rn.peer = rn.cmgr.ConnectPeer(id, conn, na, false, false)
@@ -274,12 +281,12 @@ func (rn *RemoteNode) AttachInboundConnection(conn net.Conn, na *wire.NetAddress
 
 // AttachOutboundConnection creates an outbound peer once a successful outbound connection has been established.
 func (rn *RemoteNode) AttachOutboundConnection(conn net.Conn, na *wire.NetAddress, isPersistent bool) error {
+	rn.mtx.Lock()
+	defer rn.mtx.Unlock()
+
 	if rn.connectionStatus != RemoteNodeStatus_Attempted {
 		return fmt.Errorf("RemoteNode.AttachOutboundConnection: RemoteNode is not in the Attempted state")
 	}
-
-	rn.mtx.Lock()
-	defer rn.mtx.Unlock()
 
 	id := rn.GetId().ToUint64()
 	rn.peer = rn.cmgr.ConnectPeer(id, conn, na, true, isPersistent)
@@ -292,6 +299,10 @@ func (rn *RemoteNode) Disconnect() {
 	rn.mtx.Lock()
 	defer rn.mtx.Unlock()
 
+	if rn.connectionStatus == RemoteNodeStatus_Terminated {
+		return
+	}
+
 	id := rn.GetId().ToUint64()
 	switch rn.connectionStatus {
 	case RemoteNodeStatus_Attempted:
@@ -303,6 +314,9 @@ func (rn *RemoteNode) Disconnect() {
 }
 
 func (rn *RemoteNode) SendMessage(desoMsg DeSoMessage) error {
+	rn.mtx.RLock()
+	rn.mtx.RUnlock()
+
 	if rn.connectionStatus != RemoteNodeStatus_HandshakeCompleted {
 		return fmt.Errorf("SendMessage: Remote node is not connected")
 	}
@@ -614,8 +628,14 @@ func (rn *RemoteNode) validateVerackPoS(vrkMsg *MsgDeSoVerack) error {
 			"verack signature verification failed", rn.id)
 	}
 
+	if rn.validatorPublicKey != nil || rn.validatorPublicKey.Serialize() != vrkMsg.PublicKey.Serialize() {
+		return fmt.Errorf("RemoteNode.validateVerackPoS: Requesting disconnect for id: (%v) "+
+			"verack public key mismatch; message: %v; expected: %v", rn.id, vrkMsg.PublicKey, rn.validatorPublicKey)
+	}
+
 	// If we get here then the verack message is valid. Set the validator public key on the peer.
 	vMeta.validatorPublicKey = vrkMsg.PublicKey
+	rn.validatorPublicKey = vrkMsg.PublicKey
 	return nil
 }
 
