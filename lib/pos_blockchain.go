@@ -1409,8 +1409,8 @@ func (bc *Blockchain) addTipBlockToBestChain(blockNode *BlockNode) {
 
 // removeTipBlockFromBestChain removes the current tip from the best chain. It
 // naively removes the tip regardless of the tip's status (committed or not).
-// This function is meant as a general purpose helper function that bundles
-// mutations to the bestChain slice and bestChainMap map.
+// This function is a general purpose helper function that bundles mutations to
+// the bestChain slice and bestChainMap map.
 func (bc *Blockchain) removeTipBlockFromBestChain() *BlockNode {
 	// Remove the last block from the best chain.
 	lastBlock := bc.bestChain[len(bc.bestChain)-1]
