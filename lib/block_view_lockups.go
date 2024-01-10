@@ -331,6 +331,12 @@ func (bav *UtxoView) GetLimitedVestedLockedBalanceEntriesOverTimeInterval(
 		}
 	}
 
+	// Step 4: Sort by unlock time.
+	sort.Slice(lockedBalanceEntries, func(ii, jj int) bool {
+		return lockedBalanceEntries[ii].UnlockTimestampNanoSecs <
+			lockedBalanceEntries[jj].UnlockTimestampNanoSecs
+	})
+
 	return lockedBalanceEntries, nil
 }
 
@@ -1371,14 +1377,10 @@ func (bav *UtxoView) _connectCoinLockup(
 					// remaining LockedBalanceEntry present in the first case.
 
 					// We check if there's another locked balance entry sometime in the future.
-					splitTimestampEnd := existingLockedBalanceEntry.VestingEndTimestampNanoSecs
-					if ii != len(lockedBalanceEntries)-1 {
-						splitTimestampEnd = lockedBalanceEntries[ii+1].UnlockTimestampNanoSecs - 1
-					}
 					splitLockedBalanceEntry, remainingLockedBalanceEntry, err := SplitVestedLockedBalanceEntry(
 						proposedLockedBalanceEntry,
 						existingLockedBalanceEntry.UnlockTimestampNanoSecs,
-						splitTimestampEnd)
+						existingLockedBalanceEntry.VestingEndTimestampNanoSecs)
 					if err != nil {
 						return 0, 0, nil,
 							errors.Wrap(err, "_connectCoinLockup failed to compute vested split")
