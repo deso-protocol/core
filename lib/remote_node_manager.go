@@ -153,12 +153,12 @@ func (manager *RemoteNodeManager) CreateNonValidatorOutboundConnection(netAddr *
 	return nil
 }
 
-func (manager *RemoteNodeManager) CreateRemoteNodeFromInboundConnection(conn net.Conn,
+func (manager *RemoteNodeManager) AttachInboundConnection(conn net.Conn,
 	na *wire.NetAddress) (*RemoteNode, error) {
 
 	remoteNode := manager.newRemoteNode(nil)
 	if err := remoteNode.AttachInboundConnection(conn, na); err != nil {
-		return nil, errors.Wrapf(err, "RemoteNodeManager.CreateRemoteNodeFromInboundConnection: Problem calling CreateRemoteNodeFromInboundConnection "+
+		return nil, errors.Wrapf(err, "RemoteNodeManager.AttachInboundConnection: Problem calling AttachInboundConnection "+
 			"for addr: (%s)", conn.RemoteAddr().String())
 	}
 
@@ -166,19 +166,19 @@ func (manager *RemoteNodeManager) CreateRemoteNodeFromInboundConnection(conn net
 	return remoteNode, nil
 }
 
-func (manager *RemoteNodeManager) CreateRemoteNodeFromOutboundConnection(conn net.Conn, na *wire.NetAddress,
-	attemptId uint64, isPersistent bool) (*RemoteNode, error) {
+func (manager *RemoteNodeManager) AttachOutboundConnection(conn net.Conn, na *wire.NetAddress,
+	remoteNodeId uint64, isPersistent bool) (*RemoteNode, error) {
 
-	existingId := NewRemoteNodeId(attemptId)
-	remoteNode := manager.GetRemoteNodeById(existingId)
+	id := NewRemoteNodeId(remoteNodeId)
+	remoteNode := manager.GetRemoteNodeById(id)
 	if remoteNode == nil {
-		return nil, fmt.Errorf("RemoteNodeManager.CreateRemoteNodeFromOutboundConnection: Problem getting remote node by id (%d)",
-			existingId.ToUint64())
+		return nil, fmt.Errorf("RemoteNodeManager.AttachOutboundConnection: Problem getting remote node by id (%d)",
+			id.ToUint64())
 	}
 
 	if err := remoteNode.AttachOutboundConnection(conn, na, isPersistent); err != nil {
 		manager.Disconnect(remoteNode)
-		return nil, errors.Wrapf(err, "RemoteNodeManager.CreateRemoteNodeFromOutboundConnection: Problem calling CreateRemoteNodeFromOutboundConnection "+
+		return nil, errors.Wrapf(err, "RemoteNodeManager.AttachOutboundConnection: Problem calling AttachOutboundConnection "+
 			"for addr: (%s)", conn.RemoteAddr().String())
 	}
 
