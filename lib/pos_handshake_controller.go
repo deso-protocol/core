@@ -7,27 +7,14 @@ import (
 	"math"
 )
 
-// TODO: Replace this
-func getActiveValidators() map[bls.PublicKey]*ValidatorEntry {
-	// TODO: replace with a getter to retrieve all active validators.
-	activeValidators := []*ValidatorEntry{}
-	allValidatorsMap := make(map[bls.PublicKey]*ValidatorEntry)
-	for _, validator := range activeValidators {
-		pk := validator.VotingPublicKey
-		if pk == nil {
-			continue
-		}
-		allValidatorsMap[*pk] = validator
-	}
-
-	return allValidatorsMap
-}
-
+// HandshakeController is a structure that handles the handshake process with remote nodes. It is the entry point for
+// initiating a handshake with a remote node. It is also responsible for handling version/verack messages from remote
+// nodes. And for handling the handshake complete control message.
 type HandshakeController struct {
 	rnManager              *RemoteNodeManager
 	usedNonces             lru.Cache
-	protocolOnProofOfStake func() bool                              // TODO
-	getActiveValidators    func() map[bls.PublicKey]*ValidatorEntry // TODO
+	protocolOnProofOfStake func() bool
+	getActiveValidators    func() map[bls.PublicKey]*ValidatorEntry
 }
 
 func NewHandshakeController(rnManager *RemoteNodeManager) *HandshakeController {
@@ -35,7 +22,8 @@ func NewHandshakeController(rnManager *RemoteNodeManager) *HandshakeController {
 	vm := &HandshakeController{
 		rnManager:              rnManager,
 		usedNonces:             lru.NewCache(1000),
-		protocolOnProofOfStake: func() bool { return false },
+		protocolOnProofOfStake: protocolOnProofOfStake,
+		getActiveValidators:    getActiveValidators,
 	}
 
 	return vm
@@ -170,4 +158,24 @@ func (hc *HandshakeController) _handleVerackMessage(origin *Peer, desoMsg DeSoMe
 		return
 	}
 	return
+}
+
+// TODO: Replace this
+func getActiveValidators() map[bls.PublicKey]*ValidatorEntry {
+	// TODO: replace with a getter to retrieve all active validators.
+	activeValidators := []*ValidatorEntry{}
+	allValidatorsMap := make(map[bls.PublicKey]*ValidatorEntry)
+	for _, validator := range activeValidators {
+		pk := validator.VotingPublicKey
+		if pk == nil {
+			continue
+		}
+		allValidatorsMap[*pk] = validator
+	}
+
+	return allValidatorsMap
+}
+
+func protocolOnProofOfStake() bool {
+	return true
 }
