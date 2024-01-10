@@ -1322,13 +1322,15 @@ func TestTryApplyNewTip(t *testing.T) {
 		Header: newBlock.Header,
 		Hash:   newBlockHash,
 	}
-	appliedNewTip, err := bc.tryApplyNewTip(newBlockNode, 9, ancestors)
+	appliedNewTip, connectedBlockHashes, disconnectedBlockHashes, err := bc.tryApplyNewTip(newBlockNode, 9, ancestors)
 	require.NoError(t, err)
 	require.True(t, appliedNewTip)
 	// hash 3 should no longer be in the best chain or best chain map
 	_, hash3ExistsInBestChainMap := bc.bestChainMap[*hash3]
 	require.False(t, hash3ExistsInBestChainMap)
 	require.False(t, checkBestChainForHash(hash3))
+	require.Len(t, connectedBlockHashes, 1)
+	require.Len(t, disconnectedBlockHashes, 1)
 
 	// newBlock should be in the best chain and the best chain map and should be the tip.
 	_, newBlockExistsInBestChainMap := bc.bestChainMap[*newBlockHash]
@@ -1389,7 +1391,7 @@ func TestTryApplyNewTip(t *testing.T) {
 	require.NoError(t, err)
 
 	// Try to apply newBlock as tip.
-	appliedNewTip, err = bc.tryApplyNewTip(newBlockNode, 6, ancestors)
+	appliedNewTip, connectedBlockHashes, disconnectedBlockHashes, err = bc.tryApplyNewTip(newBlockNode, 6, ancestors)
 	require.NoError(t, err)
 	require.True(t, appliedNewTip)
 	// newBlockHash should be tip.
@@ -1411,6 +1413,10 @@ func TestTryApplyNewTip(t *testing.T) {
 	require.True(t, hash5ExistsInBestChainMap)
 	require.True(t, checkBestChainForHash(hash5))
 
+	// We have added three blocks and removed two blocks
+	require.Len(t, connectedBlockHashes, 3)
+	require.Len(t, disconnectedBlockHashes, 2)
+
 	// Reset the state of the best chain.
 	delete(bc.bestChainMap, *hash4)
 	delete(bc.bestChainMap, *hash5)
@@ -1426,9 +1432,13 @@ func TestTryApplyNewTip(t *testing.T) {
 	newBlockNode.Header.ProposedInView = 8
 
 	// we should not apply the new tip if it doesn't extend the current tip.
-	appliedNewTip, err = bc.tryApplyNewTip(newBlockNode, 9, ancestors)
+	appliedNewTip, connectedBlockHashes, disconnectedBlockHashes, err = bc.tryApplyNewTip(newBlockNode, 9, ancestors)
 	require.False(t, appliedNewTip)
 	require.NoError(t, err)
+
+	// No blocks have been removed or added.
+	require.Len(t, connectedBlockHashes, 0)
+	require.Len(t, disconnectedBlockHashes, 0)
 
 	// Super Happy path: no reorg, just extending tip.
 	newBlockNode.Header.ProposedInView = 10
@@ -1438,11 +1448,15 @@ func TestTryApplyNewTip(t *testing.T) {
 	require.NoError(t, err)
 	ancestors, err = bc.getLineageFromCommittedTip(newBlock)
 	require.NoError(t, err)
-	appliedNewTip, err = bc.tryApplyNewTip(newBlockNode, 6, ancestors)
+	appliedNewTip, connectedBlockHashes, disconnectedBlockHashes, err = bc.tryApplyNewTip(newBlockNode, 6, ancestors)
 	require.True(t, appliedNewTip)
 	require.NoError(t, err)
 	// newBlockHash should be tip.
 	require.True(t, bc.BlockTip().Hash.IsEqual(newBlockHash))
+
+	// One block has been added to the best chain.
+	require.Len(t, connectedBlockHashes, 1)
+	require.Len(t, disconnectedBlockHashes, 0)
 }
 
 // TestCanCommitGrandparent tests the canCommitGrandparent function
