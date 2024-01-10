@@ -307,7 +307,8 @@ func (bav *UtxoView) GetLimitedVestedLockedBalanceEntriesOverTimeInterval(
 		// A relevant vested locked balance entry satisfies all the following conditions:
 		//	(1) Matching profile PKID
 		//  (2) Matching hodler PKID
-		//  (3) An unlock OR end timestamp within the specified (unlock, end) bounds
+		//  (3) An unlock OR end timestamp within the specified (unlock, end) bounds OR
+		//		the lockedBalanceEntry interval is a superset of the specified (unlock, end) bounds
 		//	(4) A mismatched unlock and vesting end timestamp (vesting condition)
 		//  (5) Not deleted
 		if lockedBalanceEntry.ProfilePKID.Eq(profilePKID) &&
@@ -315,7 +316,9 @@ func (bav *UtxoView) GetLimitedVestedLockedBalanceEntriesOverTimeInterval(
 			((lockedBalanceEntry.UnlockTimestampNanoSecs >= unlockTimestampNanoSecs &&
 				lockedBalanceEntry.UnlockTimestampNanoSecs <= vestingEndTimestampNanoSecs) ||
 				(lockedBalanceEntry.VestingEndTimestampNanoSecs >= unlockTimestampNanoSecs &&
-					lockedBalanceEntry.VestingEndTimestampNanoSecs <= vestingEndTimestampNanoSecs)) &&
+					lockedBalanceEntry.VestingEndTimestampNanoSecs <= vestingEndTimestampNanoSecs) ||
+				(lockedBalanceEntry.UnlockTimestampNanoSecs < unlockTimestampNanoSecs &&
+					lockedBalanceEntry.VestingEndTimestampNanoSecs > vestingEndTimestampNanoSecs)) &&
 			lockedBalanceEntry.UnlockTimestampNanoSecs != lockedBalanceEntry.VestingEndTimestampNanoSecs &&
 			!lockedBalanceEntry.isDeleted {
 			lockedBalanceEntries = append(lockedBalanceEntries, lockedBalanceEntry)
@@ -1290,7 +1293,8 @@ func (bav *UtxoView) _connectCoinLockup(
 				}
 
 				// Check for left overhang by the proposed locked balance entry
-				if proposedLockedBalanceEntry.UnlockTimestampNanoSecs < existingLockedBalanceEntry.UnlockTimestampNanoSecs {
+				if proposedLockedBalanceEntry.UnlockTimestampNanoSecs <
+					existingLockedBalanceEntry.UnlockTimestampNanoSecs {
 					splitLockedBalanceEntry, remainingLockedBalanceEntry, err := SplitVestedLockedBalanceEntry(
 						proposedLockedBalanceEntry,
 						proposedLockedBalanceEntry.UnlockTimestampNanoSecs,
@@ -1449,6 +1453,39 @@ func SplitVestedLockedBalanceEntry(
 	_remainingLockedBalanceEntry *LockedBalanceEntry,
 	_err error,
 ) {
+	// SplitVestedLockedBalanceEntry performs simple split operations where
+	// either startSplitTimestampNanoSecs or endSplitTimestampNanoSecs corresponds with the
+	// start or end timestamp in lockedBalanceEntry.
+	//
+	// This means the function can take in one of the two following configurations:
+	//
+	// Valid Input Configuration 1:
+	//             lockedBalanceEntry <start-------------------------------end>
+	//    startSplitTimestampNanoSecs ^
+	//      endSplitTimestampNanoSecs                 ^
+	//
+	// Valid Input Configuration 2:
+	//             lockedBalanceEntry <start-------------------------------end>
+	//    startSplitTimestampNanoSecs                      ^
+	//      endSplitTimestampNanoSecs                                         ^
+	//
+	// NOTE: We can imagine the split operation taking a lockedBalanceEntry with interval [t1, t2] and
+	// splitting it into two separate lockedBalanceEntry intervals: [t3, t4] & [t5, t6] where t4 + 1 = t5.
+	// Notice however that there is a 1 nanosecond loss in this that we must account for between
+	// t4 and t5. This becomes computationally tricky when trying to consistently compute the split's value.
+	// To deal with this, we always let the lockedBalanceEntry using the split off interval
+	// (passed as [startSplitTimestampNanoSecs, endSplitTimestampNanoSecs]) take on the extra 1 nanosecond of
+	// value. This ends up being the best way to ensure numerical consistency for all caller of this function,
+	// but other decisions on where to put the extra nanosecond of value can be made as well, and they will also work.
+	//
+	// Stated another way: While we return lockedBalanceEntries with intervals [t3, t4] & [t5, t6]
+	// where t4 + 1 = t5, we compute the balance in each of those entries based on the time elapsed
+	// in the intervals [t3, t5) and [t5, t6]. This ensures a computationally consistent means of computing
+	// the value in the returned lockedBalanceEntries.
+	//
+	// You can see this implemented below where CalculateLockupValueOverElapsedDuration is called
+	// with (endSplitTimestampNanoSecs - startSplitTimestampNanoSecs + 1) as the elapsed duration.
+
 	// Sanity check to ensure the start timestamp is before the end timestamp.
 	if startSplitTimestampNanoSecs >= endSplitTimestampNanoSecs {
 		return nil, nil,
@@ -1512,30 +1549,15 @@ func SplitVestedLockedBalanceEntry(
 	}
 
 	// Compute the balance in the split locked balance entry.
-	// NOTE: The reason we add 1 in the first case is because a 1 nanosecond loss occurs
-	// between the end of the splitLockedBalanceEntry and the beginning of the remainingLockedBalanceEntry
-	// that would cause small numerical differences between both cases otherwise. It's easier
-	// to see this by drawing a straight line to represent time and imagining where the
-	// startSplitTimestampNanoSecs and endSplitTimestampNanoSecs are on the line in both cases.
-	var splitValue *uint256.Int
-	var err error
-	if startSplitTimestampNanoSecs == lockedBalanceEntry.UnlockTimestampNanoSecs {
-		splitValue, err = CalculateLockupSplitValue(
-			lockedBalanceEntry, startSplitTimestampNanoSecs, endSplitTimestampNanoSecs+1)
-		if err != nil {
-			return nil, nil,
-				errors.Wrap(err, "SplitVestedLockedBalanceEntry failed to compute split value")
-		}
-		splitLockedBalanceEntry.BalanceBaseUnits = *splitValue
-	} else {
-		splitValue, err = CalculateLockupSplitValue(
-			lockedBalanceEntry, startSplitTimestampNanoSecs, endSplitTimestampNanoSecs)
-		if err != nil {
-			return nil, nil,
-				errors.Wrap(err, "SplitVestedLockedBalanceEntry failed to compute split value")
-		}
-		splitLockedBalanceEntry.BalanceBaseUnits = *splitValue
+	// See the note at the top of this function for why we do this.
+	splitValue, err := CalculateLockupValueOverElapsedDuration(
+		lockedBalanceEntry,
+		endSplitTimestampNanoSecs-startSplitTimestampNanoSecs+1)
+	if err != nil {
+		return nil, nil,
+			errors.Wrap(err, "SplitVestedLockedBalanceEntry failed to compute split value")
 	}
+	splitLockedBalanceEntry.BalanceBaseUnits = *splitValue
 
 	// Compute the balance in the remaining locked balance entry.
 	remainingValue, err := SafeUint256().Sub(&lockedBalanceEntry.BalanceBaseUnits, splitValue)
@@ -1563,22 +1585,21 @@ func SplitVestedLockedBalanceEntry(
 	return splitLockedBalanceEntry, remainingLockedBalanceEntry, nil
 }
 
-func CalculateLockupSplitValue(
+func CalculateLockupValueOverElapsedDuration(
 	lockedBalanceEntry *LockedBalanceEntry,
-	startTimestampNanoSecs int64,
-	endTimestampNanoSecs int64,
+	elapsedDuration int64,
 ) (
 	_splitValue *uint256.Int,
 	_err error,
 ) {
-	// Compute the time that passes over the interval [startTimestampNanoSecs, endTimestampNanoSecs]
-	numerator, err := SafeUint256().Sub(
-		uint256.NewInt().SetUint64(uint64(endTimestampNanoSecs)),
-		uint256.NewInt().SetUint64(uint64(startTimestampNanoSecs)))
-	if err != nil {
-		return nil, errors.Wrap(err, "CalculateLockupSplitValue: "+
-			"(start timestamp - end timestamp) underflow")
+	// Sanity check the passed values.
+	if elapsedDuration <= 0 {
+		return nil, errors.New("CalculateLockupSplitValue: " +
+			"elapsedDuration specified is either zero or negative.")
 	}
+
+	// Convert the elapsedDuration to an uint256
+	numerator := uint256.NewInt().SetUint64(uint64(elapsedDuration))
 
 	// Compute the time that passes over the duration of the locked balance entry
 	denominator, err := SafeUint256().Sub(
@@ -1602,7 +1623,7 @@ func CalculateLockupSplitValue(
 	splitValue, err := SafeUint256().Div(numerator, denominator)
 	if err != nil {
 		return nil, errors.Wrap(err, "CalculateLockupSplitValue: "+
-			"(((start timestamp - end timestamp) + 1) * lockedBalanceEntry.Balance overflow)) / "+
+			"(elapsedDuration * lockedBalanceEntry.BalanceBaseUnits) / "+
 			"(lockedBalanceEntry.UnlockTimestamp - lockedBalanceEntry.VestingEndTimestamp) has zero denominator")
 	}
 

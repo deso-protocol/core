@@ -3388,8 +3388,6 @@ func TestLeftOverhangVestedLockupConsolidation(t *testing.T) {
 	// Initialize m0, m1, m2, m3, m4, and paramUpdater
 	_setUpProfilesAndMintM0M1DAOCoins(testMeta)
 
-	// Submit a transaction updating the MaximumVestedIntersectionsPerLockupTransaction
-
 	// First we test the following vested lockup consolidation type:
 	// existing lockup:       --------------------------------
 	// proposed lockup:                    -------------------
@@ -3497,8 +3495,6 @@ func TestRightOverhangVestedLockupConsolidation(t *testing.T) {
 	// Initialize m0, m1, m2, m3, m4, and paramUpdater
 	_setUpProfilesAndMintM0M1DAOCoins(testMeta)
 
-	// Submit a transaction updating the MaximumVestedIntersectionsPerLockupTransaction
-
 	// First we test the following vested lockup consolidation type:
 	// existing lockup:       --------------------------------
 	// proposed lockup:       -------------------
@@ -3540,7 +3536,7 @@ func TestRightOverhangVestedLockupConsolidation(t *testing.T) {
 	})
 	require.NoError(t, err)
 	require.True(t, m0LockedBalanceEntry != nil)
-	require.True(t, m0LockedBalanceEntry.BalanceBaseUnits.Eq(uint256.NewInt().SetUint64(1500)))
+	require.True(t, m0LockedBalanceEntry.BalanceBaseUnits.Eq(uint256.NewInt().SetUint64(1499)))
 	m0LockedBalanceEntry, err = utxoView.GetLockedBalanceEntryForLockedBalanceEntryKey(&LockedBalanceEntryKey{
 		HODLerPKID:                  *m0PKID,
 		ProfilePKID:                 *m0PKID,
@@ -3549,7 +3545,7 @@ func TestRightOverhangVestedLockupConsolidation(t *testing.T) {
 	})
 	require.NoError(t, err)
 	require.True(t, m0LockedBalanceEntry != nil)
-	require.True(t, m0LockedBalanceEntry.BalanceBaseUnits.Eq(uint256.NewInt().SetUint64(500)))
+	require.True(t, m0LockedBalanceEntry.BalanceBaseUnits.Eq(uint256.NewInt().SetUint64(501)))
 
 	// Now we test the opposite vested lockup consolidation type:
 	// existing lockup:       -------------------
@@ -3576,7 +3572,7 @@ func TestRightOverhangVestedLockupConsolidation(t *testing.T) {
 		require.NoError(t, err)
 	}
 
-	// Check m0 LockedBalanceEntry
+	// Check m1 LockedBalanceEntry
 	m1PKIDEntry := utxoView.GetPKIDForPublicKey(m1PkBytes)
 	m1PKID := m1PKIDEntry.PKID
 	m1LockedBalanceEntry, err := utxoView.GetLockedBalanceEntryForLockedBalanceEntryKey(&LockedBalanceEntryKey{
@@ -3597,6 +3593,260 @@ func TestRightOverhangVestedLockupConsolidation(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, m1LockedBalanceEntry != nil)
 	require.True(t, m1LockedBalanceEntry.BalanceBaseUnits.Eq(uint256.NewInt().SetUint64(500)))
+}
+
+func TestExternalThreeWayLockupConsolidation(t *testing.T) {
+	// Initialize test chain, miner, and testMeta
+	testMeta := _setUpMinerAndTestMetaForTimestampBasedLockupTests(t)
+
+	// Initialize m0, m1, m2, m3, m4, and paramUpdater
+	_setUpProfilesAndMintM0M1DAOCoins(testMeta)
+
+	// First we test the following vested lockup consolidation type:
+	// existing lockup:         --------------------------------
+	// proposed lockup:   -------------------
+	//
+	// In theory the below operation should generate three locked balance entries.
+
+	// Perform a simple vested lockup in the future over 1000ns.
+	{
+		_, _, _, err := _coinLockupWithConnectTimestamp(
+			t, testMeta.chain, testMeta.db, testMeta.params, testMeta.feeRateNanosPerKb,
+			m0Pub, m0Priv, m0Pub, m0Pub,
+			1250, 1750, uint256.NewInt().SetUint64(1000), 0)
+		require.NoError(t, err)
+	}
+
+	// Perform a second simple vested lockup in the future that causes a three-way split.
+	{
+		_, _, _, err := _coinLockupWithConnectTimestamp(
+			t, testMeta.chain, testMeta.db, testMeta.params, testMeta.feeRateNanosPerKb,
+			m0Pub, m0Priv, m0Pub, m0Pub,
+			1000, 1500, uint256.NewInt().SetUint64(1000), 0)
+		require.NoError(t, err)
+	}
+
+	// Validate that the split was performed correctly.
+	utxoView, err :=
+		NewUtxoView(testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot, nil)
+	require.NoError(t, err)
+
+	// Check m0 LockedBalanceEntry
+	m0PKIDEntry := utxoView.GetPKIDForPublicKey(m0PkBytes)
+	m0PKID := m0PKIDEntry.PKID
+	m0LockedBalanceEntry, err := utxoView.GetLockedBalanceEntryForLockedBalanceEntryKey(&LockedBalanceEntryKey{
+		HODLerPKID:                  *m0PKID,
+		ProfilePKID:                 *m0PKID,
+		UnlockTimestampNanoSecs:     1000,
+		VestingEndTimestampNanoSecs: 1249,
+	})
+	require.NoError(t, err)
+	require.True(t, m0LockedBalanceEntry != nil)
+	require.True(t, m0LockedBalanceEntry.BalanceBaseUnits.Eq(uint256.NewInt().SetUint64(500)))
+	m0LockedBalanceEntry, err = utxoView.GetLockedBalanceEntryForLockedBalanceEntryKey(&LockedBalanceEntryKey{
+		HODLerPKID:                  *m0PKID,
+		ProfilePKID:                 *m0PKID,
+		UnlockTimestampNanoSecs:     1501,
+		VestingEndTimestampNanoSecs: 1750,
+	})
+	require.NoError(t, err)
+	require.True(t, m0LockedBalanceEntry != nil)
+	require.True(t, m0LockedBalanceEntry.BalanceBaseUnits.Eq(uint256.NewInt().SetUint64(500)))
+	m0LockedBalanceEntry, err = utxoView.GetLockedBalanceEntryForLockedBalanceEntryKey(&LockedBalanceEntryKey{
+		HODLerPKID:                  *m0PKID,
+		ProfilePKID:                 *m0PKID,
+		UnlockTimestampNanoSecs:     1250,
+		VestingEndTimestampNanoSecs: 1500,
+	})
+	require.NoError(t, err)
+	require.True(t, m0LockedBalanceEntry != nil)
+	require.True(t, m0LockedBalanceEntry.BalanceBaseUnits.Eq(uint256.NewInt().SetUint64(1000)))
+	m0LockedBalanceEntry, err = utxoView.GetLockedBalanceEntryForLockedBalanceEntryKey(&LockedBalanceEntryKey{
+		HODLerPKID:                  *m0PKID,
+		ProfilePKID:                 *m0PKID,
+		UnlockTimestampNanoSecs:     1250,
+		VestingEndTimestampNanoSecs: 1750,
+	})
+	require.NoError(t, err)
+	require.True(t, m0LockedBalanceEntry == nil)
+
+	// Now we test the opposite vested lockup consolidation type:
+	// existing lockup:     ------------------
+	// proposed lockup:              ---------------------------------
+	//
+	// In theory the below operation should generate three locked balance entries.
+
+	// Perform a simple vested lockup in the future over 1000ns.
+	{
+		_, _, _, err := _coinLockupWithConnectTimestamp(
+			t, testMeta.chain, testMeta.db, testMeta.params, testMeta.feeRateNanosPerKb,
+			m1Pub, m1Priv, m1Pub, m1Pub,
+			1000, 1500, uint256.NewInt().SetUint64(1000), 0)
+		require.NoError(t, err)
+	}
+
+	// Perform a second simple vested lockup in the future that causes a three-way split.
+	{
+		_, _, _, err := _coinLockupWithConnectTimestamp(
+			t, testMeta.chain, testMeta.db, testMeta.params, testMeta.feeRateNanosPerKb,
+			m1Pub, m1Priv, m1Pub, m1Pub,
+			1250, 1750, uint256.NewInt().SetUint64(1000), 0)
+		require.NoError(t, err)
+	}
+
+	// Check m1 LockedBalanceEntry
+	m1PKIDEntry := utxoView.GetPKIDForPublicKey(m1PkBytes)
+	m1PKID := m1PKIDEntry.PKID
+	m1LockedBalanceEntry, err := utxoView.GetLockedBalanceEntryForLockedBalanceEntryKey(&LockedBalanceEntryKey{
+		HODLerPKID:                  *m1PKID,
+		ProfilePKID:                 *m1PKID,
+		UnlockTimestampNanoSecs:     1000,
+		VestingEndTimestampNanoSecs: 1249,
+	})
+	require.NoError(t, err)
+	require.True(t, m1LockedBalanceEntry != nil)
+	require.True(t, m1LockedBalanceEntry.BalanceBaseUnits.Eq(uint256.NewInt().SetUint64(500)))
+	m1LockedBalanceEntry, err = utxoView.GetLockedBalanceEntryForLockedBalanceEntryKey(&LockedBalanceEntryKey{
+		HODLerPKID:                  *m1PKID,
+		ProfilePKID:                 *m1PKID,
+		UnlockTimestampNanoSecs:     1250,
+		VestingEndTimestampNanoSecs: 1500,
+	})
+	require.NoError(t, err)
+	require.True(t, m1LockedBalanceEntry != nil)
+	require.True(t, m1LockedBalanceEntry.BalanceBaseUnits.Eq(uint256.NewInt().SetUint64(1002)))
+	m1LockedBalanceEntry, err = utxoView.GetLockedBalanceEntryForLockedBalanceEntryKey(&LockedBalanceEntryKey{
+		HODLerPKID:                  *m1PKID,
+		ProfilePKID:                 *m1PKID,
+		UnlockTimestampNanoSecs:     1501,
+		VestingEndTimestampNanoSecs: 1750,
+	})
+	require.NoError(t, err)
+	require.True(t, m1LockedBalanceEntry != nil)
+	require.True(t, m1LockedBalanceEntry.BalanceBaseUnits.Eq(uint256.NewInt().SetUint64(498)))
+}
+
+func TestInternalThreeWayLockupConsolidation(t *testing.T) {
+	// Initialize test chain, miner, and testMeta
+	testMeta := _setUpMinerAndTestMetaForTimestampBasedLockupTests(t)
+
+	// Initialize m0, m1, m2, m3, m4, and paramUpdater
+	_setUpProfilesAndMintM0M1DAOCoins(testMeta)
+
+	// First we test the following vested lockup consolidation type:
+	// existing lockup:       --------------------------------
+	// proposed lockup:              -------------------
+	//
+	// In theory the below operation should generate three locked balance entries.
+
+	// Perform a simple vested lockup in the future over 1000ns.
+	{
+		_, _, _, err := _coinLockupWithConnectTimestamp(
+			t, testMeta.chain, testMeta.db, testMeta.params, testMeta.feeRateNanosPerKb,
+			m0Pub, m0Priv, m0Pub, m0Pub,
+			1000, 2000, uint256.NewInt().SetUint64(1000), 0)
+		require.NoError(t, err)
+	}
+
+	// Perform a second simple vested lockup in the future that causes a three-way split.
+	{
+		_, _, _, err := _coinLockupWithConnectTimestamp(
+			t, testMeta.chain, testMeta.db, testMeta.params, testMeta.feeRateNanosPerKb,
+			m0Pub, m0Priv, m0Pub, m0Pub,
+			1250, 1750, uint256.NewInt().SetUint64(1000), 0)
+		require.NoError(t, err)
+	}
+
+	// Validate that the split was performed correctly.
+	utxoView, err :=
+		NewUtxoView(testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot, nil)
+	require.NoError(t, err)
+
+	// Check m0 LockedBalanceEntry
+	m0PKIDEntry := utxoView.GetPKIDForPublicKey(m0PkBytes)
+	m0PKID := m0PKIDEntry.PKID
+	m0LockedBalanceEntry, err := utxoView.GetLockedBalanceEntryForLockedBalanceEntryKey(&LockedBalanceEntryKey{
+		HODLerPKID:                  *m0PKID,
+		ProfilePKID:                 *m0PKID,
+		UnlockTimestampNanoSecs:     1000,
+		VestingEndTimestampNanoSecs: 1249,
+	})
+	require.NoError(t, err)
+	require.True(t, m0LockedBalanceEntry != nil)
+	require.True(t, m0LockedBalanceEntry.BalanceBaseUnits.Eq(uint256.NewInt().SetUint64(250)))
+	m0LockedBalanceEntry, err = utxoView.GetLockedBalanceEntryForLockedBalanceEntryKey(&LockedBalanceEntryKey{
+		HODLerPKID:                  *m0PKID,
+		ProfilePKID:                 *m0PKID,
+		UnlockTimestampNanoSecs:     1250,
+		VestingEndTimestampNanoSecs: 1750,
+	})
+	require.NoError(t, err)
+	require.True(t, m0LockedBalanceEntry != nil)
+	require.True(t, m0LockedBalanceEntry.BalanceBaseUnits.Eq(uint256.NewInt().SetUint64(1500)))
+	m0LockedBalanceEntry, err = utxoView.GetLockedBalanceEntryForLockedBalanceEntryKey(&LockedBalanceEntryKey{
+		HODLerPKID:                  *m0PKID,
+		ProfilePKID:                 *m0PKID,
+		UnlockTimestampNanoSecs:     1751,
+		VestingEndTimestampNanoSecs: 2000,
+	})
+	require.NoError(t, err)
+	require.True(t, m0LockedBalanceEntry != nil)
+	require.True(t, m0LockedBalanceEntry.BalanceBaseUnits.Eq(uint256.NewInt().SetUint64(250)))
+
+	// Now we test the opposite vested lockup consolidation type:
+	// existing lockup:             ------------------
+	// proposed lockup:        ---------------------------------
+	//
+	// In theory the below operation should generate three locked balance entries.
+
+	// Perform a simple vested lockup in the future over 500ns.
+	{
+		_, _, _, err := _coinLockupWithConnectTimestamp(
+			t, testMeta.chain, testMeta.db, testMeta.params, testMeta.feeRateNanosPerKb,
+			m1Pub, m1Priv, m1Pub, m1Pub,
+			1250, 1750, uint256.NewInt().SetUint64(1000), 0)
+		require.NoError(t, err)
+	}
+
+	// Perform a second simple vested lockup in the future that causes a three-way split.
+	{
+		_, _, _, err := _coinLockupWithConnectTimestamp(
+			t, testMeta.chain, testMeta.db, testMeta.params, testMeta.feeRateNanosPerKb,
+			m1Pub, m1Priv, m1Pub, m1Pub,
+			1000, 2000, uint256.NewInt().SetUint64(1000), 0)
+		require.NoError(t, err)
+	}
+
+	// Check m1 LockedBalanceEntry
+	m1PKIDEntry := utxoView.GetPKIDForPublicKey(m1PkBytes)
+	m1PKID := m1PKIDEntry.PKID
+	m1LockedBalanceEntry, err := utxoView.GetLockedBalanceEntryForLockedBalanceEntryKey(&LockedBalanceEntryKey{
+		HODLerPKID:                  *m1PKID,
+		ProfilePKID:                 *m1PKID,
+		UnlockTimestampNanoSecs:     1000,
+		VestingEndTimestampNanoSecs: 1249,
+	})
+	require.NoError(t, err)
+	require.True(t, m1LockedBalanceEntry != nil)
+	require.True(t, m1LockedBalanceEntry.BalanceBaseUnits.Eq(uint256.NewInt().SetUint64(250)))
+	m1LockedBalanceEntry, err = utxoView.GetLockedBalanceEntryForLockedBalanceEntryKey(&LockedBalanceEntryKey{
+		HODLerPKID:                  *m1PKID,
+		ProfilePKID:                 *m1PKID,
+		UnlockTimestampNanoSecs:     1250,
+		VestingEndTimestampNanoSecs: 1750,
+	})
+	require.NoError(t, err)
+	require.True(t, m1LockedBalanceEntry != nil)
+	require.True(t, m1LockedBalanceEntry.BalanceBaseUnits.Eq(uint256.NewInt().SetUint64(1501)))
+	m1LockedBalanceEntry, err = utxoView.GetLockedBalanceEntryForLockedBalanceEntryKey(&LockedBalanceEntryKey{
+		HODLerPKID:                  *m1PKID,
+		ProfilePKID:                 *m1PKID,
+		UnlockTimestampNanoSecs:     1751,
+		VestingEndTimestampNanoSecs: 2000,
+	})
+	require.NoError(t, err)
+	require.True(t, m1LockedBalanceEntry != nil)
+	require.True(t, m1LockedBalanceEntry.BalanceBaseUnits.Eq(uint256.NewInt().SetUint64(249)))
 }
 
 //----------------------------------------------------------
