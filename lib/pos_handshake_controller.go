@@ -38,6 +38,23 @@ func (hc *HandshakeController) InitiateHandshake(rn *RemoteNode) {
 	}
 }
 
+func (hc *HandshakeController) _handleHandshakePeerMessage(origin *Peer, desoMsg DeSoMessage) {
+	if desoMsg.GetMsgType() != MsgTypePeerHandshakeComplete {
+		return
+	}
+
+	// Get the handshake information of this peer.
+	remoteNode := hc.rnManager.GetRemoteNodeFromPeer(origin)
+	if remoteNode == nil {
+		return
+	}
+
+	if hc.protocolOnProofOfStake() {
+		hc.handlePoSHandshakePeerMessage(remoteNode)
+	}
+	hc.rnManager.ProcessCompletedHandshake(remoteNode)
+}
+
 func (hc *HandshakeController) handlePoSHandshakePeerMessage(remoteNode *RemoteNode) {
 	if !hc.protocolOnProofOfStake() {
 		return
@@ -69,23 +86,6 @@ func (hc *HandshakeController) handlePoSHandshakePeerMessage(remoteNode *RemoteN
 	if _, ok := activeValidators[*validatorPk]; !ok {
 		return
 	}
-}
-
-func (hc *HandshakeController) _handleHandshakePeerMessage(origin *Peer, desoMsg DeSoMessage) {
-	if desoMsg.GetMsgType() != MsgTypePeerHandshakeComplete {
-		return
-	}
-
-	// Get the handshake information of this peer.
-	remoteNode := hc.rnManager.GetRemoteNodeFromPeer(origin)
-	if remoteNode == nil {
-		return
-	}
-
-	if hc.protocolOnProofOfStake() {
-		hc.handlePoSHandshakePeerMessage(remoteNode)
-	}
-	hc.rnManager.ProcessCompletedHandshake(remoteNode)
 }
 
 func (hc *HandshakeController) _handleVersionMessage(origin *Peer, desoMsg DeSoMessage) {
