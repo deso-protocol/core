@@ -1,8 +1,8 @@
 package lib
 
 import (
+	"fmt"
 	"github.com/decred/dcrd/lru"
-	"github.com/deso-protocol/core/bls"
 	"github.com/golang/glog"
 	"math"
 )
@@ -11,24 +11,21 @@ import (
 // initiating a handshake with a remote node. It is also responsible for handling version/verack messages from remote
 // nodes. And for handling the handshake complete control message.
 type HandshakeController struct {
-	rnManager              *RemoteNodeManager
-	usedNonces             lru.Cache
-	protocolOnProofOfStake func() bool
-	getActiveValidators    func() map[bls.PublicKey]*ValidatorEntry
+	rnManager  *RemoteNodeManager
+	usedNonces lru.Cache
 }
 
 func NewHandshakeController(rnManager *RemoteNodeManager) *HandshakeController {
 
 	vm := &HandshakeController{
-		rnManager:              rnManager,
-		usedNonces:             lru.NewCache(1000),
-		protocolOnProofOfStake: protocolOnProofOfStake,
-		getActiveValidators:    getActiveValidators,
+		rnManager:  rnManager,
+		usedNonces: lru.NewCache(1000),
 	}
 
 	return vm
 }
 
+// InitiateHandshake kicks off handshake with a remote node.
 func (hc *HandshakeController) InitiateHandshake(rn *RemoteNode) {
 
 	nonce := uint64(RandInt64(math.MaxInt64))
@@ -36,9 +33,11 @@ func (hc *HandshakeController) InitiateHandshake(rn *RemoteNode) {
 		glog.Errorf("RemoteNode.InitiateHandshake: Error initiating handshake: %v", err)
 		hc.rnManager.Disconnect(rn)
 	}
+	hc.usedNonces.Add(nonce)
 }
 
-func (hc *HandshakeController) _handleHandshakePeerMessage(origin *Peer, desoMsg DeSoMessage) {
+// _handleHandshakeCompleteMessage handles HandshakeComplete control messages, sent by RemoteNodes.
+func (hc *HandshakeController) _handleHandshakeCompleteMessage(origin *Peer, desoMsg DeSoMessage) {
 	if desoMsg.GetMsgType() != MsgTypePeerHandshakeComplete {
 		return
 	}
@@ -49,45 +48,48 @@ func (hc *HandshakeController) _handleHandshakePeerMessage(origin *Peer, desoMsg
 		return
 	}
 
-	if hc.protocolOnProofOfStake() {
-		hc.handlePoSHandshakePeerMessage(remoteNode)
+	if remoteNode.GetNegotiatedProtocolVersion() == ProtocolVersion2 {
+		if err := hc.handlePoSHandshakePeerMessage(remoteNode); err != nil {
+			glog.Errorf("HandshakeController._handleHandshakeCompleteMessage: Error handling PoS handshake peer message: %v", err)
+			hc.rnManager.Disconnect(remoteNode)
+			return
+		}
 	}
 	hc.rnManager.ProcessCompletedHandshake(remoteNode)
 }
 
-func (hc *HandshakeController) handlePoSHandshakePeerMessage(remoteNode *RemoteNode) {
-	if !hc.protocolOnProofOfStake() {
-		return
-	}
+func (hc *HandshakeController) handlePoSHandshakePeerMessage(remoteNode *RemoteNode) error {
 
-	// Make sure the peer is on the right proof of stake version
-	if remoteNode.GetNegotiatedProtocolVersion() != ProtocolVersion2 {
-		// Disconnect the peer because we only accept validators running proof of stake.
-		hc.rnManager.Disconnect(remoteNode)
-		return
-	}
-
-	// Get all active validators and see if the peer is one of them.
-	activeValidators := hc.getActiveValidators()
 	validatorPk := remoteNode.GetValidatorPublicKey()
+	// If the remote node is not a potential validator, we don't need to do anything.
 	if validatorPk == nil {
-		// Disconnect the peer because we only accept validators running proof of stake.
-		hc.rnManager.Disconnect(remoteNode)
-		return
+		return nil
 	}
 
-	// If there's already a validator connected with the same public key, disconnect the peer.
-	if _, ok := hc.rnManager.GetValidatorIndex().Get(validatorPk.Serialize()); ok {
+	// Lookup the validator in the ValidatorIndex with the same public key.
+	existingValidator, ok := hc.rnManager.GetValidatorIndex().Get(validatorPk.Serialize())
+	// For inbound RemoteNodes, we should ensure that there isn't an existing validator connected with the same public key.
+	// Inbound nodes are not initiated by us, so we shouldn't have added the RemoteNode to the ValidatorIndex yet.
+	if remoteNode.IsInbound() && ok {
 		hc.rnManager.Disconnect(remoteNode)
-		return
+		return fmt.Errorf("HandshakeController.handlePoSHandshakePeerMessage: Inbound RemoteNode with duplicate validator public key")
 	}
-
-	// If the peer is not an active validator, there is nothing else to check so return.
-	if _, ok := activeValidators[*validatorPk]; !ok {
-		return
+	// For outbound RemoteNodes, we have two possible scenarios. Either the RemoteNode has been initiated as a validator,
+	// in which case it should already be in the ValidatorIndex. Or the RemoteNode has been initiated as a regular node,
+	// in which case it should not be in the ValidatorIndex, but in the NonValidatorOutboundIndex. So to ensure there is
+	// no duplicate connection with the same public key, we only check whether there is a validator is in the ValidatorIndex
+	// with the RemoteNode's public key. If there is one, we want to ensure that these two RemoteNodes have identical ids.
+	if remoteNode.IsOutbound() && ok {
+		if remoteNode.GetId() != existingValidator.GetId() {
+			hc.rnManager.Disconnect(remoteNode)
+			return fmt.Errorf("HandshakeController.handlePoSHandshakePeerMessage: Outbound RemoteNode with duplicate validator public key. "+
+				"Existing validator id: %v, new validator id: %v", existingValidator.GetId().ToUint64(), remoteNode.GetId().ToUint64())
+		}
 	}
+	return nil
 }
 
+// _handleVersionMessage handles version messages, sent by RemoteNodes.
 func (hc *HandshakeController) _handleVersionMessage(origin *Peer, desoMsg DeSoMessage) {
 	if desoMsg.GetMsgType() != MsgTypeVersion {
 		return
@@ -95,27 +97,30 @@ func (hc *HandshakeController) _handleVersionMessage(origin *Peer, desoMsg DeSoM
 
 	rn := hc.rnManager.GetRemoteNodeFromPeer(origin)
 	if rn == nil {
+		// This should never happen.
 		return
 	}
 
 	var verMsg *MsgDeSoVersion
 	var ok bool
 	if verMsg, ok = desoMsg.(*MsgDeSoVersion); !ok {
+		glog.Errorf("HandshakeController._handleVersionMessage: Disconnecting RemoteNode with id: (%v) "+
+			"error casting version message", origin.ID)
 		hc.rnManager.Disconnect(rn)
 		return
 	}
 
-	// If we've sent this nonce before then return an error since this is
-	// a connection from ourselves.
+	// If we've seen this nonce before then return an error since this is a connection from ourselves.
 	msgNonce := verMsg.Nonce
 	if hc.usedNonces.Contains(msgNonce) {
 		hc.usedNonces.Delete(msgNonce)
-		glog.Errorf("HandshakeController._handleVersionMessage: Requesting PeerDisconnect for id: (%v) "+
+		glog.Errorf("HandshakeController._handleVersionMessage: Disconnecting RemoteNode with id: (%v) "+
 			"nonce collision", origin.ID)
 		hc.rnManager.Disconnect(rn)
 		return
 	}
 
+	// Call HandleVersionMessage on the RemoteNode.
 	responseNonce := uint64(RandInt64(math.MaxInt64))
 	if err := rn.HandleVersionMessage(verMsg, responseNonce); err != nil {
 		glog.Errorf("HandshakeController._handleVersionMessage: Requesting PeerDisconnect for id: (%v) "+
@@ -127,6 +132,7 @@ func (hc *HandshakeController) _handleVersionMessage(origin *Peer, desoMsg DeSoM
 	hc.usedNonces.Add(responseNonce)
 }
 
+// _handleVerackMessage handles verack messages, sent by RemoteNodes.
 func (hc *HandshakeController) _handleVerackMessage(origin *Peer, desoMsg DeSoMessage) {
 	if desoMsg.GetMsgType() != MsgTypeVerack {
 		return
@@ -134,48 +140,24 @@ func (hc *HandshakeController) _handleVerackMessage(origin *Peer, desoMsg DeSoMe
 
 	rn := hc.rnManager.GetRemoteNodeFromPeer(origin)
 	if rn == nil {
+		// This should never happen.
 		return
 	}
 
 	var vrkMsg *MsgDeSoVerack
 	var ok bool
 	if vrkMsg, ok = desoMsg.(*MsgDeSoVerack); !ok {
+		glog.Errorf("HandshakeController._handleVerackMessage: Disconnecting RemoteNode with id: (%v) "+
+			"error casting verack message", origin.ID)
 		hc.rnManager.Disconnect(rn)
 		return
 	}
 
-	if !ok {
-		glog.Errorf("HandshakeController._handleVerackMessage: Requesting PeerDisconnect for id: (%v) "+
-			"nonce not found for peer", origin.ID)
-		rn.Disconnect()
-		return
-	}
-
+	// Call HandleVerackMessage on the RemoteNode.
 	if err := rn.HandleVerackMessage(vrkMsg); err != nil {
 		glog.Errorf("HandshakeController._handleVerackMessage: Requesting PeerDisconnect for id: (%v) "+
 			"error handling verack message: %v", origin.ID, err)
 		hc.rnManager.Disconnect(rn)
-		return
 	}
 	return
-}
-
-// TODO: Replace this
-func getActiveValidators() map[bls.PublicKey]*ValidatorEntry {
-	// TODO: replace with a getter to retrieve all active validators.
-	activeValidators := []*ValidatorEntry{}
-	allValidatorsMap := make(map[bls.PublicKey]*ValidatorEntry)
-	for _, validator := range activeValidators {
-		pk := validator.VotingPublicKey
-		if pk == nil {
-			continue
-		}
-		allValidatorsMap[*pk] = validator
-	}
-
-	return allValidatorsMap
-}
-
-func protocolOnProofOfStake() bool {
-	return true
 }

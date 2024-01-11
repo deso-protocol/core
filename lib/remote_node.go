@@ -415,8 +415,17 @@ func (rn *RemoteNode) HandleVersionMessage(verMsg *MsgDeSoVersion, responseNonce
 	// Decide on the protocol version to use for this connection.
 	negotiatedVersion := rn.params.ProtocolVersion
 	if verMsg.Version < rn.params.ProtocolVersion.ToUint64() {
+		// In order to smoothly transition to the PoS fork, we prevent establishing new outbound connections with
+		// outdated nodes that run on ProtocolVersion1. This is because ProtocolVersion1 nodes will not be able to
+		// validate the PoS blocks and will be stuck on the PoW chain, unless they upgrade to ProtocolVersion2.
+		if rn.params.ProtocolVersion == ProtocolVersion2 && rn.IsOutbound() {
+			return fmt.Errorf("RemoteNode.HandleVersionMessage: Requesting disconnect for id: (%v). Version too low. "+
+				"Outbound RemoteNodes must use at least ProtocolVersion2, instead received version: %v", rn.id, verMsg.Version)
+		}
+
 		negotiatedVersion = NewProtocolVersionType(verMsg.Version)
 	}
+
 	vMeta.negotiatedProtocolVersion = negotiatedVersion
 
 	// Record the services the peer is advertising.
@@ -441,7 +450,7 @@ func (rn *RemoteNode) HandleVersionMessage(verMsg *MsgDeSoVersion, responseNonce
 	vMeta.minTxFeeRateNanosPerKB = verMsg.MinFeeRateNanosPerKB
 
 	// Respond to the version message if this is an inbound peer.
-	if !rn.peer.IsOutbound() {
+	if !rn.IsOutbound() {
 		if err := rn.sendVersionMessage(responseNonce); err != nil {
 			return errors.Wrapf(err, "RemoteNode.HandleVersionMessage: Problem sending version message to peer (id= %d)", rn.id)
 		}
@@ -537,7 +546,7 @@ func (rn *RemoteNode) HandleVerackMessage(vrkMsg *MsgDeSoVerack) error {
 
 	// If we get here then the peer has successfully completed the handshake.
 	vMeta.versionNegotiated = true
-	rn._logVersionSuccess(rn.peer)
+	rn._logVersionSuccess()
 	rn.setStatusHandshakeCompleted()
 	rn.srv.NotifyHandshakePeerMessage(rn.peer)
 
@@ -619,7 +628,7 @@ func (rn *RemoteNode) validateVerackPoS(vrkMsg *MsgDeSoVerack) error {
 	return nil
 }
 
-func (rn *RemoteNode) _logVersionSuccess(peer *Peer) {
+func (rn *RemoteNode) _logVersionSuccess() {
 	inboundStr := "INBOUND"
 	if rn.IsOutbound() {
 		inboundStr = "OUTBOUND"
@@ -628,7 +637,7 @@ func (rn *RemoteNode) _logVersionSuccess(peer *Peer) {
 	if !rn.IsPersistent() {
 		persistentStr = "NON-PERSISTENT"
 	}
-	logStr := fmt.Sprintf("SUCCESS version negotiation for (%s) (%s) peer (%v).", inboundStr, persistentStr, peer)
+	logStr := fmt.Sprintf("SUCCESS version negotiation for (%s) (%s) id=(%v).", inboundStr, persistentStr, rn.id.ToUint64())
 	glog.V(1).Info(logStr)
 }
 
