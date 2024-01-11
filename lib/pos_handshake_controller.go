@@ -78,7 +78,7 @@ func (hc *HandshakeController) handleHandshakeCompletePoSMessage(remoteNode *Rem
 	// For outbound RemoteNodes, we have two possible scenarios. Either the RemoteNode has been initiated as a validator,
 	// in which case it should already be in the ValidatorIndex. Or the RemoteNode has been initiated as a regular node,
 	// in which case it should not be in the ValidatorIndex, but in the NonValidatorOutboundIndex. So to ensure there is
-	// no duplicate connection with the same public key, we only check whether there is a validator is in the ValidatorIndex
+	// no duplicate connection with the same public key, we only check whether there is a validator in the ValidatorIndex
 	// with the RemoteNode's public key. If there is one, we want to ensure that these two RemoteNodes have identical ids.
 	if remoteNode.IsOutbound() && ok {
 		if remoteNode.GetId() != existingValidator.GetId() {
