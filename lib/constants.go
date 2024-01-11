@@ -494,6 +494,10 @@ func (pvt ProtocolVersionType) ToUint64() uint64 {
 	return uint64(pvt)
 }
 
+func (pvt ProtocolVersionType) Before(version ProtocolVersionType) bool {
+	return pvt.ToUint64() < version.ToUint64()
+}
+
 // DeSoParams defines the full list of possible parameters for the
 // DeSo network.
 type DeSoParams struct {

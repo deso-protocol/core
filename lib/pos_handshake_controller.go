@@ -47,12 +47,15 @@ func (hc *HandshakeController) _handleHandshakeCompleteMessage(origin *Peer, des
 		return
 	}
 
-	if remoteNode.GetNegotiatedProtocolVersion() == ProtocolVersion2 {
-		if err := hc.handleHandshakeCompletePoSMessage(remoteNode); err != nil {
-			glog.Errorf("HandshakeController._handleHandshakeCompleteMessage: Error handling PoS handshake peer message: %v", err)
-			hc.rnManager.Disconnect(remoteNode)
-			return
-		}
+	if remoteNode.GetNegotiatedProtocolVersion().Before(ProtocolVersion2) {
+		hc.rnManager.ProcessCompletedHandshake(remoteNode)
+		return
+	}
+
+	if err := hc.handleHandshakeCompletePoSMessage(remoteNode); err != nil {
+		glog.Errorf("HandshakeController._handleHandshakeCompleteMessage: Error handling PoS handshake peer message: %v", err)
+		hc.rnManager.Disconnect(remoteNode)
+		return
 	}
 	hc.rnManager.ProcessCompletedHandshake(remoteNode)
 }
