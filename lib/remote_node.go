@@ -207,6 +207,13 @@ func (rn *RemoteNode) GetUserAgent() string {
 	return rn.handshakeMetadata.userAgent
 }
 
+func (rn *RemoteNode) GetNetAddress() *wire.NetAddress {
+	if !rn.IsHandshakeCompleted() || rn.GetPeer() == nil {
+		return nil
+	}
+	return rn.GetPeer().NetAddress()
+}
+
 func (rn *RemoteNode) IsInbound() bool {
 	return rn.peer != nil && !rn.peer.IsOutbound()
 }
