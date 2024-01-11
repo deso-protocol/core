@@ -27,7 +27,6 @@ func NewHandshakeController(rnManager *RemoteNodeManager) *HandshakeController {
 
 // InitiateHandshake kicks off handshake with a remote node.
 func (hc *HandshakeController) InitiateHandshake(rn *RemoteNode) {
-
 	nonce := uint64(RandInt64(math.MaxInt64))
 	if err := rn.InitiateHandshake(nonce); err != nil {
 		glog.Errorf("RemoteNode.InitiateHandshake: Error initiating handshake: %v", err)
@@ -49,7 +48,7 @@ func (hc *HandshakeController) _handleHandshakeCompleteMessage(origin *Peer, des
 	}
 
 	if remoteNode.GetNegotiatedProtocolVersion() == ProtocolVersion2 {
-		if err := hc.handlePoSHandshakePeerMessage(remoteNode); err != nil {
+		if err := hc.handleHandshakeCompleteMessage(remoteNode); err != nil {
 			glog.Errorf("HandshakeController._handleHandshakeCompleteMessage: Error handling PoS handshake peer message: %v", err)
 			hc.rnManager.Disconnect(remoteNode)
 			return
@@ -58,7 +57,7 @@ func (hc *HandshakeController) _handleHandshakeCompleteMessage(origin *Peer, des
 	hc.rnManager.ProcessCompletedHandshake(remoteNode)
 }
 
-func (hc *HandshakeController) handlePoSHandshakePeerMessage(remoteNode *RemoteNode) error {
+func (hc *HandshakeController) handleHandshakeCompleteMessage(remoteNode *RemoteNode) error {
 
 	validatorPk := remoteNode.GetValidatorPublicKey()
 	// If the remote node is not a potential validator, we don't need to do anything.
@@ -71,8 +70,7 @@ func (hc *HandshakeController) handlePoSHandshakePeerMessage(remoteNode *RemoteN
 	// For inbound RemoteNodes, we should ensure that there isn't an existing validator connected with the same public key.
 	// Inbound nodes are not initiated by us, so we shouldn't have added the RemoteNode to the ValidatorIndex yet.
 	if remoteNode.IsInbound() && ok {
-		hc.rnManager.Disconnect(remoteNode)
-		return fmt.Errorf("HandshakeController.handlePoSHandshakePeerMessage: Inbound RemoteNode with duplicate validator public key")
+		return fmt.Errorf("HandshakeController.handleHandshakeCompleteMessage: Inbound RemoteNode with duplicate validator public key")
 	}
 	// For outbound RemoteNodes, we have two possible scenarios. Either the RemoteNode has been initiated as a validator,
 	// in which case it should already be in the ValidatorIndex. Or the RemoteNode has been initiated as a regular node,
@@ -81,8 +79,7 @@ func (hc *HandshakeController) handlePoSHandshakePeerMessage(remoteNode *RemoteN
 	// with the RemoteNode's public key. If there is one, we want to ensure that these two RemoteNodes have identical ids.
 	if remoteNode.IsOutbound() && ok {
 		if remoteNode.GetId() != existingValidator.GetId() {
-			hc.rnManager.Disconnect(remoteNode)
-			return fmt.Errorf("HandshakeController.handlePoSHandshakePeerMessage: Outbound RemoteNode with duplicate validator public key. "+
+			return fmt.Errorf("HandshakeController.handleHandshakeCompleteMessage: Outbound RemoteNode with duplicate validator public key. "+
 				"Existing validator id: %v, new validator id: %v", existingValidator.GetId().ToUint64(), remoteNode.GetId().ToUint64())
 		}
 	}
