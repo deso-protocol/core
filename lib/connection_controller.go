@@ -97,11 +97,11 @@ func (cc *ConnectionController) Start() {
 	go cc.startRemoteNodeCleanup()
 
 	cc.startGroup.Wait()
-	cc.exitGroup.Add(4)
 }
 
 func (cc *ConnectionController) Stop() {
 	if !DisableNetworkManagerRoutines {
+		cc.exitGroup.Add(4)
 		close(cc.exitChan)
 		cc.exitGroup.Wait()
 	}
@@ -199,22 +199,6 @@ func (cc *ConnectionController) _handleDonePeerMessage(origin *Peer, desoMsg DeS
 			cc.persistentIpToRemoteNodeIdsMap.Remove(ip)
 		}
 	}
-}
-
-func (cc *ConnectionController) _handleAddrMessage(origin *Peer, desoMsg DeSoMessage) {
-	if desoMsg.GetMsgType() != MsgTypeAddr {
-		return
-	}
-
-	// TODO
-}
-
-func (cc *ConnectionController) _handleGetAddrMessage(origin *Peer, desoMsg DeSoMessage) {
-	if desoMsg.GetMsgType() != MsgTypeGetAddr {
-		return
-	}
-
-	// TODO
 }
 
 // _handleNewConnectionMessage is called when a new outbound or inbound connection is established. It is responsible
