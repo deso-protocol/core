@@ -5483,8 +5483,9 @@ func (bc *Blockchain) CreateCoinLockupTxn(
 	UnlockTimestampNanoSecs int64,
 	VestingEndTimestampNanoSecs int64,
 	LockupAmountBaseUnits *uint256.Int,
+	extraData map[string][]byte,
 	minFeeRateNanosPerKB uint64,
-	mempool *DeSoMempool,
+	mempool Mempool,
 	additionalOutputs []*DeSoOutput,
 ) (_txn *MsgDeSoTxn, _totalInput uint64, _changeAmount uint64, _fees uint64, _err error) {
 
@@ -5503,6 +5504,7 @@ func (bc *Blockchain) CreateCoinLockupTxn(
 			LockupAmountBaseUnits:       LockupAmountBaseUnits,
 		},
 		TxOutputs: additionalOutputs,
+		ExtraData: extraData,
 		// The signature will be added once other transaction fields are finalized.
 	}
 
@@ -5536,7 +5538,7 @@ func (bc *Blockchain) CreateCoinLockupTransferTxn(
 	UnlockTimestampNanoSecs int64,
 	LockedCoinsToTransferBaseUnits *uint256.Int,
 	// Standard transaction fields
-	minFeeRateNanosPerKB uint64, mempool Mempool, additionalOutputs []*DeSoOutput) (
+	extraData map[string][]byte, minFeeRateNanosPerKB uint64, mempool Mempool, additionalOutputs []*DeSoOutput) (
 	_txn *MsgDeSoTxn, _totalInput uint64, _changeAmount uint64, _fees uint64, _err error) {
 
 	// NOTE: TxInputs is a remnant of the UTXO transaction model.
@@ -5553,6 +5555,7 @@ func (bc *Blockchain) CreateCoinLockupTransferTxn(
 			LockedCoinsToTransferBaseUnits: LockedCoinsToTransferBaseUnits,
 		},
 		TxOutputs: additionalOutputs,
+		ExtraData: extraData,
 		// The signature will be added once other transaction fields are finalized.
 	}
 
@@ -5587,7 +5590,7 @@ func (bc *Blockchain) CreateUpdateCoinLockupParamsTxn(
 	NewLockupTransferRestrictions bool,
 	LockupTransferRestrictionStatus TransferRestrictionStatus,
 	// Standard transaction fields
-	minFeeRateNanosPerKB uint64, mempool Mempool, additionalOutputs []*DeSoOutput) (
+	extraData map[string][]byte, minFeeRateNanosPerKB uint64, mempool Mempool, additionalOutputs []*DeSoOutput) (
 	_txn *MsgDeSoTxn, _totalInput uint64, _changeAmount uint64, _fees uint64, _err error) {
 
 	// NOTE: TxInputs is a remnant of the UTXO transaction model.
@@ -5605,6 +5608,7 @@ func (bc *Blockchain) CreateUpdateCoinLockupParamsTxn(
 			LockupTransferRestrictionStatus: LockupTransferRestrictionStatus,
 		},
 		TxOutputs: additionalOutputs,
+		ExtraData: extraData,
 		// The signature will be added once other transaction fields are finalized.
 	}
 
@@ -5635,7 +5639,7 @@ func (bc *Blockchain) CreateCoinUnlockTxn(
 	TransactorPublicKey []byte,
 	ProfilePublicKey []byte,
 	// Standard transaction fields
-	minFeeRateNanosPerKB uint64, mempool Mempool, additionalOutputs []*DeSoOutput) (
+	extraData map[string][]byte, minFeeRateNanosPerKB uint64, mempool Mempool, additionalOutputs []*DeSoOutput) (
 	_txn *MsgDeSoTxn, _totalInput uint64, _chainAmount uint64, _fees uint64, _err error) {
 
 	// NOTE: TxInputs is a remnant of the UTXO transaction model.
@@ -5647,6 +5651,7 @@ func (bc *Blockchain) CreateCoinUnlockTxn(
 		PublicKey: TransactorPublicKey,
 		TxnMeta:   &CoinUnlockMetadata{ProfilePublicKey: NewPublicKey(ProfilePublicKey)},
 		TxOutputs: additionalOutputs,
+		ExtraData: extraData,
 		// The signature will be added once other transaction fields are finalized.
 	}
 

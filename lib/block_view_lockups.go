@@ -527,6 +527,10 @@ func (lockupYieldCurvePoint *LockupYieldCurvePoint) ToMapKey() LockupYieldCurveP
 	}
 }
 
+func (lockupYieldCurvePoint *LockupYieldCurvePoint) IsDeleted() bool {
+	return lockupYieldCurvePoint.isDeleted
+}
+
 // DeSoEncoder Interface Implementation for LockupYieldCurvePoint
 
 func (lockupYieldCurvePoint *LockupYieldCurvePoint) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte {
@@ -704,6 +708,36 @@ func (bav *UtxoView) GetLocalYieldCurvePoints(profilePKID *PKID, lockupDuration 
 	}
 
 	return leftLockupPoint, rightLockupPoint, nil
+}
+
+func (bav *UtxoView) GetAllYieldCurvePoints(profilePKID *PKID) (map[LockupYieldCurvePointKey]*LockupYieldCurvePoint, error) {
+	// Fetch all yield curve points in the db.
+	dbYieldCurvePoints, err := DBGetAllYieldCurvePointsByProfilePKID(
+		bav.GetDbAdapter().badgerDb, bav.Snapshot, profilePKID)
+	if err != nil {
+		return nil, errors.Wrap(err, "GetLocalYieldCurvePoints")
+	}
+
+	// Cache the db points in the view.
+	// While there's more efficient ways to do this with specialized badger seek operations, this is sufficient for now.
+	if len(dbYieldCurvePoints) > 0 {
+		// Check if there's a yield curve in the view for the associated profile.
+		if _, mapInView := bav.PKIDToLockupYieldCurvePointKeyToLockupYieldCurvePoints[*profilePKID]; !mapInView {
+			bav.PKIDToLockupYieldCurvePointKeyToLockupYieldCurvePoints[*profilePKID] =
+				make(map[LockupYieldCurvePointKey]*LockupYieldCurvePoint)
+		}
+
+		// Check if any of the points needs to be cached in the view.
+		for _, yieldCurvePoint := range dbYieldCurvePoints {
+			_, pointInView :=
+				bav.PKIDToLockupYieldCurvePointKeyToLockupYieldCurvePoints[*profilePKID][yieldCurvePoint.ToMapKey()]
+			if !pointInView {
+				bav._setLockupYieldCurvePoint(yieldCurvePoint)
+			}
+		}
+	}
+
+	return bav.PKIDToLockupYieldCurvePointKeyToLockupYieldCurvePoints[*profilePKID], nil
 }
 
 //
