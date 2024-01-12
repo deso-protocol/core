@@ -4218,6 +4218,31 @@ func TestRealWorldLockupsUseCase(t *testing.T) {
 		totalLocked = uint256.NewInt().Add(
 			totalLocked, uint256.NewInt().SetUint64(1000))
 	}
+
+	// Verify the locked balance entries in the db.
+	utxoView, err :=
+		NewUtxoView(testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot, nil)
+	require.NoError(t, err)
+	m0PKIDEntry := utxoView.GetPKIDForPublicKey(m0PkBytes)
+	m0PKID := m0PKIDEntry.PKID
+	lockedBalanceEntries, err := utxoView.GetAllLockedBalanceEntriesForHodlerPKID(m0PKID)
+	require.NoError(t, err)
+
+	// Verify the lockedBalanceEntries locked the correct amount and that the entries are consecutive.
+	totalLockedFound := uint256.NewInt()
+	for ii, lockedBalanceEntry := range lockedBalanceEntries {
+		// Add to the balance found.
+		totalLockedFound = uint256.NewInt().Add(
+			totalLockedFound, &lockedBalanceEntry.BalanceBaseUnits)
+
+		// Check if we're consecutive.
+		if ii != len(lockedBalanceEntries)-1 {
+			require.Equal(t,
+				lockedBalanceEntry.VestingEndTimestampNanoSecs+1,
+				lockedBalanceEntries[ii+1].UnlockTimestampNanoSecs)
+		}
+	}
+	require.True(t, totalLockedFound.Eq(totalLocked))
 }
 
 //----------------------------------------------------------

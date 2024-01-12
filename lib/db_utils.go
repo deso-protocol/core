@@ -10863,6 +10863,12 @@ func _dbKeyForLockedBalanceEntry(lockedBalanceEntry *LockedBalanceEntry) []byte 
 	return append(key, EncodeUint64(uint64(lockedBalanceEntry.VestingEndTimestampNanoSecs))...)
 }
 
+func DBPrefixForLockedBalanceEntriesOnHodler(lockedBalanceEntry *LockedBalanceEntry) []byte {
+	key := append([]byte{}, Prefixes.PrefixLockedBalanceEntry...)
+	key = append(key, lockedBalanceEntry.HODLerPKID[:]...)
+	return key
+}
+
 func DBPrefixForVestedLockedBalanceEntriesOnUnlockTimestamp(lockedBalanceEntry *LockedBalanceEntry) ([]byte, error) {
 	key := append([]byte{}, Prefixes.PrefixLockedBalanceEntry...)
 	key = append(key, lockedBalanceEntry.HODLerPKID[:]...)
@@ -11010,6 +11016,84 @@ func DBGetLockedBalanceEntryForLockedBalanceEntryKeyWithTxn(
 	}
 
 	return DecodeDeSoEncoder(&LockedBalanceEntry{}, bytes.NewReader(lockedBalanceEntryBytes))
+}
+
+func DBGetAllLockedBalanceEntriesForHodlerPKID(
+	handle *badger.DB,
+	snap *Snapshot,
+	hodlerPKID *PKID,
+) (
+	_lockedBalanceEntries []*LockedBalanceEntry,
+	_err error,
+) {
+	var lockedBalanceEntries []*LockedBalanceEntry
+	var err error
+	handle.View(func(txn *badger.Txn) error {
+		lockedBalanceEntries, err = DBGetAllLockedBalanceEntriesForHodlerPKIDWithTxn(
+			txn, snap, hodlerPKID)
+		return nil
+	})
+	return lockedBalanceEntries, err
+}
+
+func DBGetAllLockedBalanceEntriesForHodlerPKIDWithTxn(
+	txn *badger.Txn,
+	snap *Snapshot,
+	hodlerPKID *PKID,
+) (
+	_lockedBalanceEntries []*LockedBalanceEntry,
+	_err error,
+) {
+	// Start at <prefix, hodler>
+	startKey := DBPrefixForLockedBalanceEntriesOnHodler(&LockedBalanceEntry{
+		HODLerPKID: hodlerPKID,
+	})
+
+	// Valid for prefix <prefix, hodler>
+	prefixKey := DBPrefixForLockedBalanceEntriesOnHodler(&LockedBalanceEntry{
+		HODLerPKID: hodlerPKID,
+	})
+
+	// Create a reverse iterator.
+	opts := badger.DefaultIteratorOptions
+	iterator := txn.NewIterator(opts)
+	defer iterator.Close()
+
+	// Store relevant LockedBalanceEntries to return.
+	var lockedBalanceEntries []*LockedBalanceEntry
+
+	// Loop until we've exhausted all unlockable unvested locked balance entries.
+	for iterator.Seek(startKey); iterator.ValidForPrefix(prefixKey); iterator.Next() {
+		// Retrieve the LockedBalanceEntryBytes.
+		lockedBalanceEntryBytes, err := iterator.Item().ValueCopy(nil)
+		if err != nil {
+			return nil,
+				errors.Wrapf(err, "DBGetAllLockedBalanceEntriesForHodlerPKIDWithTxn: "+
+					"error retrieveing LockedBalanceEntry: ")
+		}
+
+		// Convert the LockedBalanceEntryBytes to LockedBalanceEntry.
+		rr := bytes.NewReader(lockedBalanceEntryBytes)
+		lockedBalanceEntry, err := DecodeDeSoEncoder(&LockedBalanceEntry{}, rr)
+		if err != nil {
+			return nil,
+				errors.Wrapf(err, "DBGetAllLockedBalanceEntriesForHodlerPKIDWithTxn: "+
+					"error decoding LockedBalanceEntry: ")
+		}
+
+		// Sanity check the locked balance entry as relevant.
+		if !lockedBalanceEntry.HODLerPKID.Eq(hodlerPKID) {
+			return nil,
+				errors.New("DBGetAllLockedBalanceEntriesForHodlerPKIDWithTxn: " +
+					"found invalid LockedBalanceEntry; this shouldn't happen")
+		}
+
+		// Add the locked balance entry to the return list.
+		lockedBalanceEntries = append(lockedBalanceEntries, lockedBalanceEntry)
+	}
+
+	return lockedBalanceEntries, nil
+
 }
 
 func DBGetUnlockableLockedBalanceEntries(

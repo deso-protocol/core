@@ -224,6 +224,44 @@ func (bav *UtxoView) _deleteLockedBalanceEntry(lockedBalanceEntry *LockedBalance
 
 // Get Helper Functions for LockedBalanceEntry
 
+func (bav *UtxoView) GetAllLockedBalanceEntriesForHodlerPKID(
+	hodlerPKID *PKID,
+) (
+	_lockedBalanceEntries []*LockedBalanceEntry,
+	_err error,
+) {
+	// Pull entries from db.
+	dbLockedBalanceEntries, err := DBGetAllLockedBalanceEntriesForHodlerPKID(
+		bav.Handle, bav.Snapshot, hodlerPKID)
+	if err != nil {
+		return nil,
+			errors.Wrap(err, "GetLockedBalanceEntryForLockedBalanceEntryKey")
+	}
+
+	// Cache entries found in the db.
+	for _, lockedBalanceEntry := range dbLockedBalanceEntries {
+		if _, exists := bav.LockedBalanceEntryKeyToLockedBalanceEntry[lockedBalanceEntry.ToMapKey()]; !exists {
+			bav._setLockedBalanceEntry(lockedBalanceEntry)
+		}
+	}
+
+	// Pull relevant entries from the view and return.
+	var lockedBalanceEntries []*LockedBalanceEntry
+	for _, lockedBalanceEntry := range bav.LockedBalanceEntryKeyToLockedBalanceEntry {
+		if lockedBalanceEntry.HODLerPKID.Eq(hodlerPKID) && !lockedBalanceEntry.isDeleted {
+			lockedBalanceEntries = append(lockedBalanceEntries, lockedBalanceEntry)
+		}
+	}
+
+	// Sort by unlock time for convenience.
+	sort.Slice(lockedBalanceEntries, func(ii, jj int) bool {
+		return lockedBalanceEntries[ii].UnlockTimestampNanoSecs <
+			lockedBalanceEntries[jj].UnlockTimestampNanoSecs
+	})
+
+	return lockedBalanceEntries, nil
+}
+
 func (bav *UtxoView) GetLockedBalanceEntryForLockedBalanceEntryKey(
 	lockedBalanceEntryKey *LockedBalanceEntryKey,
 ) (
@@ -568,6 +606,36 @@ func (bav *UtxoView) _deleteLockupYieldCurvePoint(point *LockupYieldCurvePoint) 
 }
 
 // Get Helper Functions for LockupYieldCurvePoint
+
+func (bav *UtxoView) GetAllYieldCurvePoints(profilePKID *PKID) (map[LockupYieldCurvePointKey]*LockupYieldCurvePoint, error) {
+	// Fetch all yield curve points in the db.
+	dbYieldCurvePoints, err := DBGetAllYieldCurvePointsByProfilePKID(
+		bav.GetDbAdapter().badgerDb, bav.Snapshot, profilePKID)
+	if err != nil {
+		return nil, errors.Wrap(err, "GetLocalYieldCurvePoints")
+	}
+
+	// Cache the db points in the view.
+	// While there's more efficient ways to do this with specialized badger seek operations, this is sufficient for now.
+	if len(dbYieldCurvePoints) > 0 {
+		// Check if there's a yield curve in the view for the associated profile.
+		if _, mapInView := bav.PKIDToLockupYieldCurvePointKeyToLockupYieldCurvePoints[*profilePKID]; !mapInView {
+			bav.PKIDToLockupYieldCurvePointKeyToLockupYieldCurvePoints[*profilePKID] =
+				make(map[LockupYieldCurvePointKey]*LockupYieldCurvePoint)
+		}
+
+		// Check if any of the points needs to be cached in the view.
+		for _, yieldCurvePoint := range dbYieldCurvePoints {
+			_, pointInView :=
+				bav.PKIDToLockupYieldCurvePointKeyToLockupYieldCurvePoints[*profilePKID][yieldCurvePoint.ToMapKey()]
+			if !pointInView {
+				bav._setLockupYieldCurvePoint(yieldCurvePoint)
+			}
+		}
+	}
+
+	return bav.PKIDToLockupYieldCurvePointKeyToLockupYieldCurvePoints[*profilePKID], nil
+}
 
 func (bav *UtxoView) GetYieldCurvePointByProfilePKIDAndDurationNanoSecs(profilePKID *PKID,
 	lockupDurationNanoSecs int64) (_lockupYieldCurvePoint *LockupYieldCurvePoint, _err error) {
