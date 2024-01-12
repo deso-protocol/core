@@ -710,7 +710,12 @@ func (bav *UtxoView) GetLocalYieldCurvePoints(profilePKID *PKID, lockupDuration 
 	return leftLockupPoint, rightLockupPoint, nil
 }
 
-func (bav *UtxoView) GetAllYieldCurvePoints(profilePKID *PKID) (map[LockupYieldCurvePointKey]*LockupYieldCurvePoint, error) {
+func (bav *UtxoView) GetAllYieldCurvePoints(
+	profilePKID *PKID,
+) (
+	map[LockupYieldCurvePointKey]*LockupYieldCurvePoint,
+	error,
+) {
 	// Fetch all yield curve points in the db.
 	dbYieldCurvePoints, err := DBGetAllYieldCurvePointsByProfilePKID(
 		bav.GetDbAdapter().badgerDb, bav.Snapshot, profilePKID)
