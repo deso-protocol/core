@@ -11350,8 +11350,9 @@ func DBGetLimitedVestedLockedBalanceEntriesWithTxn(
 
 		// Check if we've found too many entries.
 		if entriesFound > limitToFetch {
-			return nil, errors.New("DBGetLimitedVestedLockedBalanceEntriesWithTxn: " +
-				"limit exhausted. Found too many relevant LockedBalanceEntries.")
+			return nil, errors.Wrap(RuleErrorCoinLockupViolatesVestingIntersectionLimit,
+				"DBGetLimitedVestedLockedBalanceEntriesWithTxn: "+
+					"limit exhausted. Found too many relevant LockedBalanceEntries.")
 		}
 	}
 

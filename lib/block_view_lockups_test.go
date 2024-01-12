@@ -4012,6 +4012,124 @@ func TestSimpleDisjointExistingVestedLockups(t *testing.T) {
 	require.True(t, m0LockedBalanceEntry.BalanceBaseUnits.Eq(uint256.NewInt().SetUint64(500)))
 }
 
+func TestVestingIntersectionLimit(t *testing.T) {
+	// Initialize test chain, miner, and testMeta
+	testMeta := _setUpMinerAndTestMetaForTimestampBasedLockupTests(t)
+
+	// Initialize m0, m1, m2, m3, m4, and paramUpdater
+	_setUpProfilesAndMintM0M1DAOCoins(testMeta)
+
+	// Validate the default value of the MaximumVestedIntersectionsPerLockupTransaction parameter.
+	utxoView, err :=
+		NewUtxoView(testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot, nil)
+	require.NoError(t, err)
+	require.Equal(t, utxoView.GetCurrentGlobalParamsEntry().MaximumVestedIntersectionsPerLockupTransaction, 100)
+
+	// Generate consecutive vested locked balance entries equal to this limit.
+	for ii := 0; ii < utxoView.GetCurrentGlobalParamsEntry().MaximumVestedIntersectionsPerLockupTransaction; ii++ {
+		{
+			_, _, _, err := _coinLockupWithConnectTimestamp(
+				t, testMeta.chain, testMeta.db, testMeta.params, testMeta.feeRateNanosPerKb,
+				m0Pub, m0Priv, m0Pub, m0Pub,
+				int64(ii*1000)+1, int64(ii*1000)+1000, uint256.NewInt().SetUint64(1000), 0)
+			require.NoError(t, err)
+		}
+	}
+
+	// Ensure we can consolidate on top of .
+	maxIntersections := utxoView.GetCurrentGlobalParamsEntry().MaximumVestedIntersectionsPerLockupTransaction
+	{
+		_, _, _, err := _coinLockupWithConnectTimestamp(
+			t, testMeta.chain, testMeta.db, testMeta.params, testMeta.feeRateNanosPerKb,
+			m0Pub, m0Priv, m0Pub, m0Pub,
+			1, int64((maxIntersections-1)*1000)+1000,
+			uint256.NewInt().SetUint64(uint64(maxIntersections)*1000), 0)
+		require.NoError(t, err)
+	}
+
+	// Validate the consolidation.
+	m0PKIDEntry := utxoView.GetPKIDForPublicKey(m0PkBytes)
+	m0PKID := m0PKIDEntry.PKID
+	utxoView, err =
+		NewUtxoView(testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot, nil)
+	require.NoError(t, err)
+	for ii := 0; ii < utxoView.GetCurrentGlobalParamsEntry().MaximumVestedIntersectionsPerLockupTransaction; ii++ {
+		m0LockedBalanceEntry, err := utxoView.GetLockedBalanceEntryForLockedBalanceEntryKey(&LockedBalanceEntryKey{
+			HODLerPKID:                  *m0PKID,
+			ProfilePKID:                 *m0PKID,
+			UnlockTimestampNanoSecs:     int64(ii*1000) + 1,
+			VestingEndTimestampNanoSecs: int64(ii*1000) + 1000,
+		})
+		require.NoError(t, err)
+		require.True(t, m0LockedBalanceEntry != nil)
+		require.True(t, m0LockedBalanceEntry.BalanceBaseUnits.Eq(uint256.NewInt().SetUint64(2000)))
+	}
+
+	// Now add another vested lockup, pushing us over the limit.
+	{
+		_, _, _, err := _coinLockupWithConnectTimestamp(
+			t, testMeta.chain, testMeta.db, testMeta.params, testMeta.feeRateNanosPerKb,
+			m0Pub, m0Priv, m0Pub, m0Pub,
+			int64(maxIntersections*1000)+1,
+			int64(maxIntersections*1000)+1000,
+			uint256.NewInt().SetUint64(1000), 0)
+		require.NoError(t, err)
+	}
+
+	// Now try to consolidate on top of all previous entries.
+	// (This should fail -- RuleErrorCoinLockupViolatesVestingIntersectionLimit)
+	{
+		_, _, _, err := _coinLockupWithConnectTimestamp(
+			t, testMeta.chain, testMeta.db, testMeta.params, testMeta.feeRateNanosPerKb,
+			m0Pub, m0Priv, m0Pub, m0Pub,
+			1, int64((maxIntersections)*1000)+1000,
+			uint256.NewInt().SetUint64(uint64(maxIntersections)*1000), 0)
+		require.Contains(t, err.Error(), RuleErrorCoinLockupViolatesVestingIntersectionLimit)
+	}
+
+	// Now we try to consolidate on top of all previous entries with offset bounds to ensure db reads are
+	// functioning properly.
+	// (This should fail -- RuleErrorCoinLockupViolatesVestingIntersectionLimit)
+	{
+		_, _, _, err := _coinLockupWithConnectTimestamp(
+			t, testMeta.chain, testMeta.db, testMeta.params, testMeta.feeRateNanosPerKb,
+			m0Pub, m0Priv, m0Pub, m0Pub,
+			1000, int64((maxIntersections)*1000)+1,
+			uint256.NewInt().SetUint64(uint64(maxIntersections)*1000), 0)
+		require.Contains(t, err.Error(), RuleErrorCoinLockupViolatesVestingIntersectionLimit)
+	}
+
+	// Now we try to unlock all previous entries just to ensure GetUnlockableLockedBalanceEntries is functioning.
+	utxoView, err =
+		NewUtxoView(testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot, nil)
+	startingBalanceEntry, _, _ := utxoView.GetDAOCoinBalanceEntryForHODLerPubKeyAndCreatorPubKey(m0PkBytes, m0PkBytes)
+	require.True(t, startingBalanceEntry != nil)
+	{
+		_, _, _, err := _coinUnlockWithConnectTimestamp(
+			t, testMeta.chain, testMeta.db, testMeta.params, testMeta.feeRateNanosPerKb,
+			m0Pub,
+			m0Priv,
+			m0Pub,
+			int64(maxIntersections*1000)+1001,
+		)
+		require.NoError(t, err)
+	}
+	utxoView, err =
+		NewUtxoView(testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot, nil)
+	finalBalanceEntry, _, _ := utxoView.GetDAOCoinBalanceEntryForHODLerPubKeyAndCreatorPubKey(m0PkBytes, m0PkBytes)
+	require.True(t, finalBalanceEntry != nil)
+	require.True(t,
+		uint256.NewInt().Sub(&finalBalanceEntry.BalanceNanos, &startingBalanceEntry.BalanceNanos).Eq(
+			uint256.NewInt().SetUint64(uint64(maxIntersections)*2000+1000)))
+
+	// Now just to be extra sure, check to make sure there's no more unlockable locked balance entries.
+	unvestedUnlockable, vestedUnlockable, err :=
+		utxoView.GetUnlockableLockedBalanceEntries(m0PKID, m0PKID, int64(maxIntersections*1000)+1001)
+	require.NoError(t, err)
+	require.True(t, len(unvestedUnlockable) == 0)
+	require.True(t, len(vestedUnlockable) == 0)
+}
+
 //----------------------------------------------------------
 // (Testing) Lockup Setup Helper Functions
 //----------------------------------------------------------
