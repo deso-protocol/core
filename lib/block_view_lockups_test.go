@@ -8,6 +8,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"testing"
+	"time"
 )
 
 func TestCoinLockupsForkHeight(t *testing.T) {
@@ -4128,6 +4129,95 @@ func TestVestingIntersectionLimit(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, len(unvestedUnlockable) == 0)
 	require.True(t, len(vestedUnlockable) == 0)
+}
+
+func TestRealWorldLockupsUseCase(t *testing.T) {
+	// Initialize test chain, miner, and testMeta
+	testMeta := _setUpMinerAndTestMetaForTimestampBasedLockupTests(t)
+
+	// Initialize m0, m1, m2, m3, m4, and paramUpdater
+	_setUpProfilesAndMintM0M1DAOCoins(testMeta)
+
+	// We'll assume the following:
+	// -- Weekly Deposits
+	// -- Unlock starts the 1st day of the month 1 years in the future
+	// -- Unlocks end 1st day of the month 5 years in the future
+	// -- We'll simulate this for 5 years (it becomes repetitive after this)
+	//
+	// Since we're doing months as the granularity, the most we can intersect
+	// at any given time using this strategy is 48 which is below the intersection limit
+	// for vested lockups. Hence, we should not expect that error to trigger here.
+	//
+	// Note that this will simulate 3,650/7 lockups. At 1,000 DAO coin base units per day locked up,
+	// this means we require ~500k m0 DAO coin base units to correctly simulate. Additionally,
+	// it would require (ballpark) ~500k nDESO to process the transaction properly.
+
+	// Mint more m0 DAO coins to ensure we have enough.
+	{
+		_daoCoinTxnWithTestMeta(
+			testMeta,
+			testMeta.feeRateNanosPerKb,
+			m0Pub,
+			m0Priv,
+			DAOCoinMetadata{
+				ProfilePublicKey:          m0PkBytes,
+				OperationType:             DAOCoinOperationTypeMint,
+				CoinsToMintNanos:          *uint256.NewInt().SetUint64(1e7),
+				CoinsToBurnNanos:          uint256.Int{},
+				TransferRestrictionStatus: 0,
+			})
+	}
+
+	// Have the miner send m0 sufficient DESO over to cover all transaction fees.
+	_registerOrTransferWithTestMeta(testMeta, "m0", senderPkString, m0Pub, senderPrivString, 1e7)
+
+	// Construct a time simplification function.
+	simplifyTime := func(t time.Time) time.Time {
+		return time.Date(t.Year(), t.Month(), 1, 14, 0, 0, 0, time.UTC)
+	}
+
+	// We'll start the simulation at 9am January 1st, 2024.
+	startTime := time.Date(2024, time.January, 1, 14, 0, 0, 0, time.UTC)
+
+	// We iterate for 10 years.
+	totalLocked := uint256.NewInt()
+	for ii := 0; ii < 365*5; ii++ {
+		// Check if it's time for a deposit.
+		if ii%7 != 0 {
+			continue
+		}
+
+		// We simulate the block connect time as well for fun.
+		blockConnectTime := startTime.AddDate(0, 0, ii)
+
+		// Find the lockup start time in 1 year.
+		nextLockupStartTime := startTime.AddDate(1, 0, ii)
+
+		// Find the lockup end time in 5 years.
+		nextLockupEndTime := startTime.AddDate(5, 0, ii)
+
+		// Simplify both to increase lockup overlap probabilities.
+		nextLockupStartTime = simplifyTime(nextLockupStartTime)
+		nextLockupEndTime = simplifyTime(nextLockupEndTime)
+
+		// Construct and execute the lockup.
+		{
+			// NOTE: Subtracting 1 nanosecond from the end time is important and prevents
+			// annoying "empty balance" errors from consolidation in the future.
+			_, _, _, err := _coinLockupWithConnectTimestamp(
+				t, testMeta.chain, testMeta.db, testMeta.params, testMeta.feeRateNanosPerKb,
+				m0Pub, m0Priv, m0Pub, m0Pub,
+				nextLockupStartTime.UnixNano(),
+				nextLockupEndTime.UnixNano()-1,
+				uint256.NewInt().SetUint64(1000),
+				blockConnectTime.UnixNano())
+			require.NoError(t, err)
+		}
+
+		// Add to total locked.
+		totalLocked = uint256.NewInt().Add(
+			totalLocked, uint256.NewInt().SetUint64(1000))
+	}
 }
 
 //----------------------------------------------------------
