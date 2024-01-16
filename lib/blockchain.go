@@ -1548,7 +1548,7 @@ func _FindCommonAncestor(node1 *BlockNode, node2 *BlockNode) *BlockNode {
 	// reach the end of the lists. We only need to check node1 for nil
 	// since they're the same height and we are iterating both back
 	// in tandem.
-	for node1 != nil && node1 != node2 {
+	for node1 != nil && !node1.Hash.IsEqual(node2.Hash) {
 		node1 = node1.Parent
 		node2 = node2.Parent
 	}
