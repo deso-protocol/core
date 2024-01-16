@@ -3661,8 +3661,8 @@ func (bc *Blockchain) CreateDAOCoinLimitOrderTxn(
 				lastSeenOrder = matchingOrder
 
 				var matchingOrderDESOBalanceNanos uint64
-				matchingOrderDESOBalanceNanos, err = utxoView.GetDeSoBalanceNanosForPublicKey(
-					utxoView.GetPublicKeyForPKID(matchingOrder.TransactorPKID))
+				matchingOrderDESOBalanceNanos, err = utxoView.GetSpendableDeSoBalanceNanosForPublicKey(
+					utxoView.GetPublicKeyForPKID(matchingOrder.TransactorPKID), blockHeight-1)
 				if err != nil {
 					return nil, 0, 0, 0, errors.Wrapf(
 						err, "Blockchain.CreateDAOCoinLimitOrderTxn: error getting DeSo balance for matching bid order: ")
@@ -3687,9 +3687,12 @@ func (bc *Blockchain) CreateDAOCoinLimitOrderTxn(
 					return nil, 0, 0, 0, fmt.Errorf("Blockchain.CreateDAOCoinLimitOrderTxn: order cost overflows $DESO")
 				}
 
+				matchingOrderDESOBalanceNanosMinusExistingOrders := matchingOrderDESOBalanceNanos -
+					desoNanosToConsumeMap[*matchingOrder.TransactorPKID]
+
 				// Check if matching order has enough $DESO to
 				// fulfill their order. Skip if not.
-				if desoNanosExchanged.GtUint64(matchingOrderDESOBalanceNanos) {
+				if desoNanosExchanged.GtUint64(matchingOrderDESOBalanceNanosMinusExistingOrders) {
 					continue
 				}
 
