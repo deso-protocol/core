@@ -1007,7 +1007,7 @@ func (bav *UtxoView) _connectCoinLockup(
 	var utxoOpsForTxn []*UtxoOperation
 
 	// Validate the starting block height.
-	if blockHeight < bav.Params.ForkHeights.ProofOfStake1StateSetupBlockHeight ||
+	if blockHeight < bav.Params.ForkHeights.LockupsBlockHeight ||
 		blockHeight < bav.Params.ForkHeights.BalanceModelBlockHeight {
 		return 0, 0, nil,
 			errors.Wrap(RuleErrorLockupTxnBeforeBlockHeight, "_connectCoinLockup")
@@ -1884,7 +1884,7 @@ func (bav *UtxoView) _connectUpdateCoinLockupParams(
 	var utxoOpsForTxn []*UtxoOperation
 
 	// Validate the starting block height.
-	if blockHeight < bav.Params.ForkHeights.ProofOfStake1StateSetupBlockHeight ||
+	if blockHeight < bav.Params.ForkHeights.LockupsBlockHeight ||
 		blockHeight < bav.Params.ForkHeights.BalanceModelBlockHeight {
 		return 0, 0, nil,
 			errors.Wrap(RuleErrorLockupTxnBeforeBlockHeight, "_connectUpdateCoinLockupParams")
@@ -2140,7 +2140,7 @@ func (bav *UtxoView) _connectCoinLockupTransfer(
 	var utxoOpsForTxn []*UtxoOperation
 
 	// Validate the starting block height.
-	if blockHeight < bav.Params.ForkHeights.ProofOfStake1StateSetupBlockHeight ||
+	if blockHeight < bav.Params.ForkHeights.LockupsBlockHeight ||
 		blockHeight < bav.Params.ForkHeights.BalanceModelBlockHeight {
 		return 0, 0, nil,
 			errors.Wrap(RuleErrorLockupTxnBeforeBlockHeight, "_connectCoinLockupTransfer")
@@ -2415,7 +2415,7 @@ func (bav *UtxoView) _connectCoinUnlock(
 	var utxoOpsForTxn []*UtxoOperation
 
 	// Validate the starting block height.
-	if blockHeight < bav.Params.ForkHeights.ProofOfStake1StateSetupBlockHeight ||
+	if blockHeight < bav.Params.ForkHeights.LockupsBlockHeight ||
 		blockHeight < bav.Params.ForkHeights.BalanceModelBlockHeight {
 		return 0, 0, nil,
 			errors.Wrap(RuleErrorLockupTxnBeforeBlockHeight, "_connectCoinUnlock")

@@ -339,6 +339,13 @@ type ForkHeights struct {
 	// leader schedule snapshots to be generated in advance.
 	ProofOfStake1StateSetupBlockHeight uint32
 
+	// LockupsBlockHeight defines the height at which we begin accepting lockup
+	// related transactions. These can include things like CoinLockup, UpdateCoinLockupParams,
+	// CoinLockupTransfer, and CoinUnlock.
+	//
+	// We specify this separately to enable independent testing when compared with other features.
+	LockupsBlockHeight uint32
+
 	// ProofOfStake2ConsensusCutoverBlockHeight defines the height at which we cut over
 	// from PoW consensus to PoS consensus.
 	ProofOfStake2ConsensusCutoverBlockHeight uint32
@@ -756,6 +763,8 @@ var RegtestForkHeights = ForkHeights{
 	// FIXME: set to real block height when ready
 	ProofOfStake2ConsensusCutoverBlockHeight: uint32(math.MaxUint32),
 
+	LockupsBlockHeight: uint32(1),
+
 	BlockRewardPatchBlockHeight: uint32(0),
 
 	// Be sure to update EncoderMigrationHeights as well via
@@ -914,6 +923,9 @@ var MainnetForkHeights = ForkHeights{
 
 	// FIXME: set to real block height when ready
 	ProofOfStake2ConsensusCutoverBlockHeight: uint32(math.MaxUint32),
+
+	// FIXME: set to real block height when ready
+	LockupsBlockHeight: uint32(math.MaxUint32),
 
 	// Be sure to update EncoderMigrationHeights as well via
 	// GetEncoderMigrationHeights if you're modifying schema.
@@ -1222,6 +1234,9 @@ var TestnetForkHeights = ForkHeights{
 
 	// FIXME: set to real block height when ready
 	ProofOfStake2ConsensusCutoverBlockHeight: uint32(math.MaxUint32),
+
+	// FIXME: set to real block height when ready
+	LockupsBlockHeight: uint32(math.MaxUint32),
 
 	// Be sure to update EncoderMigrationHeights as well via
 	// GetEncoderMigrationHeights if you're modifying schema.

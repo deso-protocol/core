@@ -13,7 +13,7 @@ import (
 
 func TestCoinLockupsForkHeight(t *testing.T) {
 	// Test and ensure lockup transactions cannot trigger without:
-	//    (a) ProofOfStake1StateSetupBlockHeight Fork
+	//    (a) LockupsBlockHeight Fork
 
 	// Initialize balance model fork heights.
 	setBalanceModelBlockHeights(t)
@@ -27,7 +27,7 @@ func TestCoinLockupsForkHeight(t *testing.T) {
 	params.ForkHeights.BalanceModelBlockHeight = uint32(1)
 
 	// Initialize PoS fork heights.
-	params.ForkHeights.ProofOfStake1StateSetupBlockHeight = uint32(25)
+	params.ForkHeights.LockupsBlockHeight = uint32(25)
 	GlobalDeSoParams.EncoderMigrationHeights = GetEncoderMigrationHeights(&params.ForkHeights)
 	GlobalDeSoParams.EncoderMigrationHeightsList = GetEncoderMigrationHeightsList(&params.ForkHeights)
 
@@ -58,7 +58,7 @@ func TestCoinLockupsForkHeight(t *testing.T) {
 		_, err := miner.MineAndProcessSingleBlock(0, mempool)
 		require.NoError(t, err)
 		currentBlockHeight := uint64(chain.blockTip().Height) + 1
-		if currentBlockHeight == uint64(params.ForkHeights.ProofOfStake1StateSetupBlockHeight) {
+		if currentBlockHeight == uint64(params.ForkHeights.LockupsBlockHeight) {
 			break
 		}
 
@@ -100,7 +100,7 @@ func TestCoinLockupsForkHeight(t *testing.T) {
 			m0Pub,
 			0)
 
-		if currentBlockHeight < uint64(params.ForkHeights.ProofOfStake1StateSetupBlockHeight) {
+		if currentBlockHeight < uint64(params.ForkHeights.LockupsBlockHeight) {
 			require.Contains(t, err1.Error(), RuleErrorLockupTxnBeforeBlockHeight)
 			require.Contains(t, err2.Error(), RuleErrorLockupTxnBeforeBlockHeight)
 			require.Contains(t, err3.Error(), RuleErrorLockupTxnBeforeBlockHeight)
@@ -4351,9 +4351,8 @@ func _setUpMinerAndTestMetaForTimestampBasedLockupTests(t *testing.T) *TestMeta 
 	// Ensure DAO coins are enabled (a pre-requisite for lockups)
 	params.ForkHeights.DAOCoinBlockHeight = uint32(0)
 
-	// Initialize PoS fork heights.
-	params.ForkHeights.ProofOfStake1StateSetupBlockHeight = uint32(1)
-	params.ForkHeights.ProofOfStake2ConsensusCutoverBlockHeight = uint32(1)
+	// Initialize lockups block height.
+	params.ForkHeights.LockupsBlockHeight = uint32(1)
 	GlobalDeSoParams.EncoderMigrationHeights = GetEncoderMigrationHeights(&params.ForkHeights)
 	GlobalDeSoParams.EncoderMigrationHeightsList = GetEncoderMigrationHeightsList(&params.ForkHeights)
 
