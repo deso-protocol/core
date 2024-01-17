@@ -143,6 +143,9 @@ func (bav *UtxoView) runEpochCompleteSnapshotGeneration(epochNumber uint64) erro
 // simulateNextEpochEntry simulates the block range for the next epoch given the current epoch's final
 // block height and epoch number. The view and timestamp for the simulated epoch are left empty since they can't
 // be easily simulated, so DO NOT USE CreatedAtBlockTimestampNanoSecs or InitialView from the returned EpochEntry.
+//
+// We use this function to simulate the next epoch's entry so we can predict the leader schedule and validator set
+// for the next epoch before the current epoch is over. This is useful for validating orphan blocks.
 func (bav *UtxoView) simulateNextEpochEntry(currentEpochNumber uint64, currentEpochFinalBlockHeight uint64) (*EpochEntry, error) {
 	return bav.computeNextEpochEntry(
 		currentEpochNumber,

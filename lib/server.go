@@ -505,11 +505,11 @@ func NewServer(
 		uint64(_chain.blockTip().Height),
 		_mempoolDumpDir,
 		false,
-		1024*1024*1024*3, // Max mempool Size = 3GB; TODO make this a param
-		60*1000,          // Mempool dumper frequency = 60 seconds; TODO make this a param
-		1,                // Fee estimator mempool blocks; TODO make this a param
+		1024*1024*1024*3, // Max mempool Size = 3GB; TODO make this a flag
+		60*1000,          // Mempool dumper frequency = 60 seconds; TODO make this a flag
+		1,                // Fee estimator mempool blocks; TODO make this a flag
 		[]*MsgDeSoBlock{latestBlock},
-		1, // Fee estimator past blocks; TODO make this a param
+		1, // Fee estimator past blocks; TODO make this a flag
 	)
 	if err != nil {
 		return nil, errors.Wrapf(err, "NewServer: Problem initializing PoS mempool"), true
@@ -1790,14 +1790,14 @@ func (srv *Server) _addNewTxn(
 	}
 
 	srv.blockchain.ChainLock.RLock()
-	defer srv.blockchain.ChainLock.RUnlock()
+	blockHeight := srv.blockchain.BlockTip().Height
+	srv.blockchain.ChainLock.RUnlock()
 
 	// Only attempt to add the transaction to the PoW mempool if we're on the
 	// PoW protocol. If we're on the PoW protocol, then we use the PoW mempool's,
 	// txn validity checks to signal whether the txn has been added or not. The PoW
 	// mempool has stricter txn validity checks than the PoW mempool, so this works
 	// out conveniently, as it allows us to always add a txn to the PoS mempool.
-	blockHeight := srv.blockchain.BlockTip().Height
 	if blockHeight < srv.blockchain.params.ForkHeights.ProofOfStake2ConsensusCutoverBlockHeight {
 		_, err := srv.mempool.ProcessTransaction(
 			txn, true /*allowUnconnectedTxn*/, rateLimit, peerID, verifySignatures)
