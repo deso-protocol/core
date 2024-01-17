@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"net"
+	"path/filepath"
 	"reflect"
 	"runtime"
 	"strings"
@@ -1475,6 +1476,13 @@ func (srv *Server) dirtyHackUpdateDbOpts(opts badger.Options) {
 	srv.mempool.bc.db = srv.blockchain.db
 	srv.mempool.backupUniversalUtxoView.Handle = srv.blockchain.db
 	srv.mempool.universalUtxoView.Handle = srv.blockchain.db
+
+	// Save the new options to the DB so that we know what to use if the node restarts.
+	isPerformanceOptions := DbOptsArePerformance(&opts)
+	err = SaveBoolToFile(GetDbPerformanceOptionsFilePath(filepath.Dir(opts.ValueDir)), isPerformanceOptions)
+	if err != nil {
+		glog.Errorf("Server._handleSnapshot: Problem saving performance options to file, error: (%v)", err)
+	}
 }
 
 func (srv *Server) _startSync() {
