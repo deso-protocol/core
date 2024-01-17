@@ -6,7 +6,7 @@ social network. Its architecture is similar to Bitcoin, only it supports complex
 social network data like profiles, posts, follows, creator coin transactions, and
 more.
 
-[Read about the vision](https://docs.deso.org/the-vision)
+[Read about the vision](https://docs.deso.org)
 
 # About this Repo
 
@@ -30,7 +30,7 @@ such that anyone in the world can run it, and it consists of three repositories:
 The repo that is most interesting for understanding the role of DeSo core is
 [backend](https://github.com/deso-protocol/backend) because it effectively includes core
 as a library to run a node. Then, it builds on core's basic functionality to expose
-[a rich API](https://docs.deso.org/devs/backend-api) of its own that can be used to 
+[a rich API](https://docs.deso.org/deso-backend) of its own that can be used to 
 construct transactions, submit transactions to the network, manage user data, and 
 much more.
 
