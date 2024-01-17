@@ -4857,7 +4857,7 @@ func (bc *Blockchain) CreateBasicTransferTxnWithDiamonds(
 
 func (bc *Blockchain) CreateMaxSpend(
 	senderPkBytes []byte, recipientPkBytes []byte, extraData map[string][]byte, minFeeRateNanosPerKB uint64,
-	mempool *DeSoMempool, additionalOutputs []*DeSoOutput) (
+	mempool Mempool, additionalOutputs []*DeSoOutput) (
 	_txn *MsgDeSoTxn, _totalInputAdded uint64, _spendAmount uint64, _fee uint64, _err error) {
 
 	txn := &MsgDeSoTxn{
