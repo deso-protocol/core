@@ -1349,5 +1349,5 @@ const MaxAssociationValueByteLength int = 256
 const AssociationTypeReservedPrefix = "DESO"
 const AssociationNullTerminator = byte(0)
 
-// THe name of the txt file that contains whether the current Badger DB is using performance or default options.
+// The name of the txt file that contains whether the current Badger DB is using performance or default options.
 const PerformanceDbOptsFileName = "performance_db_opts.txt"
