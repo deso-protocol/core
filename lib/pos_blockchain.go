@@ -570,17 +570,23 @@ func (bc *Blockchain) validateLeaderAndQC(block *MsgDeSoBlock) (_passedSpamPreve
 	if !isValidPartialSig {
 		return false, nil
 	}
-	// 2. Validate QC
-	validatorsByStake, err := utxoView.GetAllSnapshotValidatorSetEntriesByStake()
+
+	// 2. Fetch the validator set for the current and previous block heights.
+	validatorSetByBlockHeight, err := bc.getValidatorSetsForBlockHeights([]uint64{block.Header.Height, block.Header.Height - 1})
 	if err != nil {
-		// This should never happen. If the parent is validated and extends from the tip, then we should
-		// be able to fetch the validator set at its block height for it. This failure can only happen due
-		// to transient badger issues. We return false for failed spam prevention check and the error.
-		return false, errors.Wrap(err, "validateLeaderAndQC: Problem getting validator set")
+		return false, errors.Wrap(err, "validateLeaderAndQC: Problem getting validator sets")
+	}
+	currentValidatorSetByStake, ok := validatorSetByBlockHeight[block.Header.Height]
+	if !ok {
+		return false, errors.Errorf("validateLeaderAndQC: Validator set for block height %d not found", block.Header.Height)
+	}
+	prevValidatorSetSetByStake, ok := validatorSetByBlockHeight[block.Header.Height-1]
+	if !ok {
+		return false, errors.Errorf("validateLeaderAndQC: Validator set for block height %d not found", block.Header.Height-1)
 	}
 
-	// Validate the block's QC. If it's invalid, we return true for failed spam prevention check.
-	if err = bc.isValidPoSQuorumCertificate(block, validatorsByStake, validatorsByStake); err != nil {
+	// 3. Validate the block's QC. If it's invalid, we return true for failed spam prevention check.
+	if err = bc.isValidPoSQuorumCertificate(block, currentValidatorSetByStake, prevValidatorSetSetByStake); err != nil {
 		return false, nil
 	}
 
