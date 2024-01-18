@@ -572,21 +572,23 @@ func (bc *Blockchain) validateLeaderAndQC(block *MsgDeSoBlock) (_passedSpamPreve
 	}
 
 	// 2. Fetch the validator set for the current and previous block heights.
-	validatorSetByBlockHeight, err := bc.getValidatorSetsForBlockHeights([]uint64{block.Header.Height, block.Header.Height - 1})
+	validatorSetByBlockHeight, err := utxoView.GetSnapshotValidatorSetsForBlockHeights([]uint64{
+		block.Header.Height, block.Header.Height - 1,
+	})
 	if err != nil {
 		return false, errors.Wrap(err, "validateLeaderAndQC: Problem getting validator sets")
 	}
-	currentValidatorSetByStake, ok := validatorSetByBlockHeight[block.Header.Height]
+	currentBlockValidatorSet, ok := validatorSetByBlockHeight[block.Header.Height]
 	if !ok {
 		return false, errors.Errorf("validateLeaderAndQC: Validator set for block height %d not found", block.Header.Height)
 	}
-	prevValidatorSetSetByStake, ok := validatorSetByBlockHeight[block.Header.Height-1]
+	prevBlockValidatorSetSet, ok := validatorSetByBlockHeight[block.Header.Height-1]
 	if !ok {
 		return false, errors.Errorf("validateLeaderAndQC: Validator set for block height %d not found", block.Header.Height-1)
 	}
 
 	// 3. Validate the block's QC. If it's invalid, we return true for failed spam prevention check.
-	if err = bc.isValidPoSQuorumCertificate(block, currentValidatorSetByStake, prevValidatorSetSetByStake); err != nil {
+	if err = bc.isValidPoSQuorumCertificate(block, currentBlockValidatorSet, prevBlockValidatorSetSet); err != nil {
 		return false, nil
 	}
 
