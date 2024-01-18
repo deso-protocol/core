@@ -602,61 +602,30 @@ func (cc *FastHotStuffConsensus) fetchValidatorListsForSafeBlocks(blocks []*MsgD
 		return nil, nil
 	}
 
-	// Create a map to cache the validator set entries by epoch number. Two blocks in the same epoch will have
-	// the same validator set, so we can use an in-memory cache to optimize the validator set lookup for them.
-	validatorSetEntriesBySnapshotEpochNumber := make(map[uint64][]*ValidatorEntry)
+	blockHeights := collections.Transform(blocks, func(block *MsgDeSoHeader) uint64 {
+		// We add 1 to the block height because we need the validator set that results AFTER connecting the
+		// block to the blockchain, and triggering an epoch transition (if at an epoch boundary).
+		return block.Height + 1
+	})
 
-	// Create a UtxoView for the committed tip block. We will use this to fetch the validator set for
-	// all of the safe blocks.
-	utxoView, err := NewUtxoView(cc.blockchain.db, cc.params, cc.blockchain.postgres, cc.blockchain.snapshot, nil)
+	// Create a UtxoView for the committed tip block. We will use this view to simulate all epoch entries.
+	utxoView, err := NewUtxoView(cc.blockchain.db, cc.blockchain.params, cc.blockchain.postgres, cc.blockchain.snapshot, nil)
 	if err != nil {
 		return nil, errors.Errorf("Error creating UtxoView: %v", err)
 	}
 
-	// Fetch the current epoch entry for the committed tip
-	epochEntryAtCommittedTip, err := utxoView.GetCurrentEpochEntry()
+	// Fetch the validator set for each block
+	validatorSetByBlockHeight, err := utxoView.GetSnapshotValidatorSetsForBlockHeights(blockHeights)
 	if err != nil {
-		return nil, errors.Errorf("Error fetching epoch entry for committed tip: %v", err)
+		return nil, errors.Errorf("Error fetching validator set for blocks: %v", err)
 	}
 
-	// Fetch the next epoch entry
-	nextEpochEntryAfterCommittedTip, err := utxoView.simulateNextEpochEntry(epochEntryAtCommittedTip.EpochNumber, epochEntryAtCommittedTip.FinalBlockHeight)
-	if err != nil {
-		return nil, errors.Errorf("Error fetching next epoch entry after committed tip: %v", err)
-	}
-
-	// The input blocks can only be part of the current or next epoch entries.
-	possibleEpochEntriesForBlocks := []*EpochEntry{epochEntryAtCommittedTip, nextEpochEntryAfterCommittedTip}
-
-	// Fetch the validator set at each block
+	// Extract the validator set at each block
 	blocksWithValidatorLists := make([]consensus.BlockWithValidatorList, len(blocks))
 	for ii, block := range blocks {
-		// Find the epoch entry for the block. It'll either be the current epoch entry or the next one.
-		// We add 1 to the block height because we need the validator set that results AFTER connecting the
-		// block to the blockchain, and triggering an epoch transition (if at an epoch boundary).
-		epochEntryForBlock, err := getEpochEntryForBlockHeight(block.Height+1, possibleEpochEntriesForBlocks)
-		if err != nil {
-			return nil, errors.Errorf("Error fetching epoch number for block: %v", err)
-		}
-
-		// Compute the snapshot epoch number for the block. This is the epoch number that the validator set
-		// for the block was snapshotted in.
-		snapshotEpochNumber, err := utxoView.ComputeSnapshotEpochNumberForEpoch(epochEntryForBlock.EpochNumber)
-		if err != nil {
-			return nil, errors.Errorf("error computing snapshot epoch number for epoch: %v", err)
-		}
-
-		var validatorSetAtBlock []*ValidatorEntry
-		var ok bool
-
-		// If the validator set for the block is already cached by the snapshot epoch number, then use it.
-		// Otherwise, fetch it from the UtxoView.
-		if validatorSetAtBlock, ok = validatorSetEntriesBySnapshotEpochNumber[snapshotEpochNumber]; !ok {
-			// We don't have the validator set for the block cached. Fetch it from the UtxoView.
-			validatorSetAtBlock, err = utxoView.GetAllSnapshotValidatorSetEntriesByStakeAtEpochNumber(snapshotEpochNumber)
-			if err != nil {
-				return nil, errors.Errorf("Error fetching validator set for block: %v", err)
-			}
+		validatorSetAtBlock, ok := validatorSetByBlockHeight[block.Height+1]
+		if !ok {
+			return nil, errors.Errorf("Error fetching validator set for block: %v", block)
 		}
 
 		blocksWithValidatorLists[ii] = consensus.BlockWithValidatorList{
@@ -681,17 +650,6 @@ func (fc *FastHotStuffConsensus) createBlockProducer(bav *UtxoView) (*PosBlockPr
 		return nil, errors.Errorf("Error fetching public key for block producer: %v", err)
 	}
 	return NewPosBlockProducer(fc.mempool, fc.params, blockProducerPublicKey, blockProducerBlsPublicKey), nil
-}
-
-// Finds the epoch entry for the block and returns the epoch number.
-func getEpochEntryForBlockHeight(blockHeight uint64, epochEntries []*EpochEntry) (*EpochEntry, error) {
-	for _, epochEntry := range epochEntries {
-		if epochEntry.ContainsBlockHeight(blockHeight) {
-			return epochEntry, nil
-		}
-	}
-
-	return nil, errors.Errorf("error finding epoch number for block height: %v", blockHeight)
 }
 
 func isValidBlockProposalEvent(event *consensus.FastHotStuffEvent, expectedEventType consensus.FastHotStuffEventType) bool {
