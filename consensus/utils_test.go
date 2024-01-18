@@ -96,12 +96,13 @@ func TestIsValidSuperMajorityQuorumCertificate(t *testing.T) {
 func TestIsValidSuperMajorityAggregateQuorumCertificate(t *testing.T) {
 	// Test malformed aggregate QC
 	{
-		require.False(t, IsValidSuperMajorityAggregateQuorumCertificate(nil, createDummyValidatorList()))
+		validatorList := createDummyValidatorList()
+		require.False(t, IsValidSuperMajorityAggregateQuorumCertificate(nil, validatorList, validatorList))
 	}
 
 	// Test malformed validator set
 	{
-		require.False(t, IsValidSuperMajorityAggregateQuorumCertificate(createDummyAggQc(2, 1), nil))
+		require.False(t, IsValidSuperMajorityAggregateQuorumCertificate(createDummyAggQc(2, 1), nil, nil))
 	}
 
 	// Set up test validator data
@@ -163,7 +164,7 @@ func TestIsValidSuperMajorityAggregateQuorumCertificate(t *testing.T) {
 				signature:   validator1TimeoutSignature,
 			},
 		}
-		require.False(t, IsValidSuperMajorityAggregateQuorumCertificate(&qc, validators))
+		require.False(t, IsValidSuperMajorityAggregateQuorumCertificate(&qc, validators, validators))
 	}
 
 	// Test with 5/6 super-majority stake
@@ -186,7 +187,7 @@ func TestIsValidSuperMajorityAggregateQuorumCertificate(t *testing.T) {
 				signature:   timeoutAggSig,
 			},
 		}
-		require.True(t, IsValidSuperMajorityAggregateQuorumCertificate(&qc, validators))
+		require.True(t, IsValidSuperMajorityAggregateQuorumCertificate(&qc, validators, validators))
 	}
 }
 

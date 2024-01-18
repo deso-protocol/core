@@ -66,16 +66,26 @@ func IsValidSuperMajorityQuorumCertificate(qc QuorumCertificate, validators []Va
 	return isValidSignatureManyPublicKeys(validatorPublicKeysInQC, qc.GetAggregatedSignature().GetSignature(), signaturePayload[:])
 }
 
-func IsValidSuperMajorityAggregateQuorumCertificate(aggQC AggregateQuorumCertificate, validators []Validator) bool {
-	if !isProperlyFormedAggregateQC(aggQC) || !isProperlyFormedValidatorSet(validators) {
+// IsValidSuperMajorityAggregateQuorumCertificate validates that the aggregate QC is properly formed and signed
+// by a super-majority of validators in the network. It takes in two sets of validator sets because the validator
+// set may shift between the view that is timed out and the high QC view. The two validator
+// sets are defined as:
+// - aggQCValidators: The validator set that signed the timeouts for the view that has timed out (the view in the aggregate QC)
+// - highQCValidators: The validator set that signed the high QC (the view in the high QC)
+func IsValidSuperMajorityAggregateQuorumCertificate(aggQC AggregateQuorumCertificate, aggQCValidators []Validator, highQCValidators []Validator) bool {
+	if !isProperlyFormedAggregateQC(aggQC) {
 		return false
 	}
 
-	if !IsValidSuperMajorityQuorumCertificate(aggQC.GetHighQC(), validators) {
+	if !isProperlyFormedValidatorSet(aggQCValidators) || !isProperlyFormedValidatorSet(highQCValidators) {
 		return false
 	}
 
-	hasSuperMajorityStake, signerPublicKeys := isSuperMajorityStakeSignersList(aggQC.GetAggregatedSignature().GetSignersList(), validators)
+	if !IsValidSuperMajorityQuorumCertificate(aggQC.GetHighQC(), highQCValidators) {
+		return false
+	}
+
+	hasSuperMajorityStake, signerPublicKeys := isSuperMajorityStakeSignersList(aggQC.GetAggregatedSignature().GetSignersList(), aggQCValidators)
 	if !hasSuperMajorityStake {
 		return false
 	}

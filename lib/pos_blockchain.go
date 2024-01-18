@@ -503,7 +503,7 @@ func (bc *Blockchain) processOrphanBlockPoS(block *MsgDeSoBlock) error {
 		}
 	}
 	// Okay now we have the validator set ordered by stake, we can validate the QC.
-	if err = bc.isValidPoSQuorumCertificate(block, validatorsByStake); err != nil {
+	if err = bc.isValidPoSQuorumCertificate(block, validatorsByStake, validatorsByStake); err != nil {
 		// If we hit an error, we know that the QC is invalid, and we'll never accept this block,
 		// As a spam-prevention measure, we just throw away this block and don't store it.
 		return nil
@@ -580,7 +580,7 @@ func (bc *Blockchain) validateLeaderAndQC(block *MsgDeSoBlock) (_passedSpamPreve
 	}
 
 	// Validate the block's QC. If it's invalid, we return true for failed spam prevention check.
-	if err = bc.isValidPoSQuorumCertificate(block, validatorsByStake); err != nil {
+	if err = bc.isValidPoSQuorumCertificate(block, validatorsByStake, validatorsByStake); err != nil {
 		return false, nil
 	}
 
@@ -1122,11 +1122,12 @@ func (bav *UtxoView) hasValidBlockProposerPoS(block *MsgDeSoBlock) (_isValidBloc
 
 // isValidPoSQuorumCertificate validates that the QC of this block is valid, meaning a super majority
 // of the validator set has voted (or timed out). Assumes ValidatorEntry list is sorted.
-func (bc *Blockchain) isValidPoSQuorumCertificate(block *MsgDeSoBlock, validatorSet []*ValidatorEntry) error {
+func (bc *Blockchain) isValidPoSQuorumCertificate(block *MsgDeSoBlock, validatorSet []*ValidatorEntry, previousValidatorSet []*ValidatorEntry) error {
 	validators := toConsensusValidators(validatorSet)
+	previousValidators := toConsensusValidators(previousValidatorSet)
 	if !block.Header.ValidatorsTimeoutAggregateQC.isEmpty() {
 		if !consensus.IsValidSuperMajorityAggregateQuorumCertificate(
-			block.Header.ValidatorsTimeoutAggregateQC, validators) {
+			block.Header.ValidatorsTimeoutAggregateQC, validators, previousValidators) {
 			return RuleErrorInvalidTimeoutQC
 		}
 		return nil
