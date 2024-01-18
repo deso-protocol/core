@@ -608,8 +608,14 @@ func (cc *FastHotStuffConsensus) fetchValidatorListsForSafeBlocks(blocks []*MsgD
 		return block.Height + 1
 	})
 
+	// Create a UtxoView for the committed tip block. We will use this view to simulate all epoch entries.
+	utxoView, err := NewUtxoView(cc.blockchain.db, cc.blockchain.params, cc.blockchain.postgres, cc.blockchain.snapshot, nil)
+	if err != nil {
+		return nil, errors.Errorf("Error creating UtxoView: %v", err)
+	}
+
 	// Fetch the validator set for each block
-	validatorSetByBlockHeight, err := cc.blockchain.GetValidatorSetsForBlockHeights(blockHeights)
+	validatorSetByBlockHeight, err := utxoView.GetSnapshotValidatorSetsForBlockHeights(blockHeights)
 	if err != nil {
 		return nil, errors.Errorf("Error fetching validator set for blocks: %v", err)
 	}
