@@ -1700,16 +1700,14 @@ func (bc *Blockchain) GetValidatorSetsForBlockHeights(blockHeights []uint64) (ma
 	return bc.getValidatorSetsForBlockHeights(blockHeights)
 }
 
-// GetValidatorSetsForBlockHeights returns the validator set for each block height provided. It requires all
-// input block heights to be in the previous, current, or next epoch from the committed tip. Given a slice of
-// block heights, it returns a map that maps each block height to the validator set at that height.
+// getValidatorSetsForBlockHeights returns the validator set for each block height provided. It requires all
+// input block heights to be in the previous, current, or next epoch relative to the current committed tip.
 func (bc *Blockchain) getValidatorSetsForBlockHeights(blockHeights []uint64) (map[uint64][]*ValidatorEntry, error) {
 	// Create a map to cache the validator set entries by epoch number. Two blocks in the same epoch will have
 	// the same validator set, so we can use an in-memory cache to optimize the validator set lookup for them.
 	validatorSetEntriesBySnapshotEpochNumber := make(map[uint64][]*ValidatorEntry)
 
-	// Create a UtxoView for the committed tip block. We will use this to fetch the validator set for
-	// all of the safe blocks.
+	// Create a UtxoView for the committed tip block. We will use this view to simulate all epoch entries.
 	utxoView, err := NewUtxoView(bc.db, bc.params, bc.postgres, bc.snapshot, nil)
 	if err != nil {
 		return nil, errors.Errorf("Error creating UtxoView: %v", err)
@@ -1733,8 +1731,12 @@ func (bc *Blockchain) getValidatorSetsForBlockHeights(blockHeights []uint64) (ma
 		return nil, errors.Errorf("Error fetching next epoch entry after committed tip: %v", err)
 	}
 
-	// The supported block can only be part of the previous, current, or next epoch.
-	possibleEpochEntriesForBlocks := []*EpochEntry{prevEpochEntryAfterCommittedTip, epochEntryAtCommittedTip, nextEpochEntryAfterCommittedTip}
+	// The supported block heights can only be part of the previous, current, or next epoch.
+	possibleEpochEntriesForBlocks := []*EpochEntry{
+		prevEpochEntryAfterCommittedTip,
+		epochEntryAtCommittedTip,
+		nextEpochEntryAfterCommittedTip,
+	}
 
 	// Output map that will hold the validator set for each block height
 	validatorSetByBlockHeight := map[uint64][]*ValidatorEntry{}
