@@ -168,6 +168,10 @@ func NewConnectionManager(
 // Check if the address passed shares a group with any addresses already in our data structures.
 func (cmgr *ConnectionManager) IsFromRedundantOutboundIPAddress(na *wire.NetAddress) bool {
 	groupKey := addrmgr.GroupKey(na)
+	// For the sake of running multiple nodes on the same machine, we allow localhost connections.
+	if groupKey == "local" {
+		return false
+	}
 
 	cmgr.mtxOutboundConnIPGroups.Lock()
 	numGroupsForKey := cmgr.outboundConnIPGroups[groupKey]
@@ -185,7 +189,7 @@ func (cmgr *ConnectionManager) IsFromRedundantOutboundIPAddress(na *wire.NetAddr
 	return true
 }
 
-func (cmgr *ConnectionManager) addToGroupKey(na *wire.NetAddress) {
+func (cmgr *ConnectionManager) AddToGroupKey(na *wire.NetAddress) {
 	groupKey := addrmgr.GroupKey(na)
 
 	cmgr.mtxOutboundConnIPGroups.Lock()
@@ -429,7 +433,6 @@ func (cmgr *ConnectionManager) addPeer(pp *Peer) {
 		// number of outbound peers. Also add the peer's address to
 		// our map.
 		if _, ok := peerList[pp.ID]; !ok {
-			cmgr.addToGroupKey(pp.netAddr)
 			atomic.AddUint32(&cmgr.numOutboundPeers, 1)
 
 			cmgr.mtxAddrsMaps.Lock()
@@ -528,16 +531,6 @@ func (cmgr *ConnectionManager) _logOutboundPeerData() {
 	numInboundPeers := int(atomic.LoadUint32(&cmgr.numInboundPeers))
 	numPersistentPeers := int(atomic.LoadUint32(&cmgr.numPersistentPeers))
 	glog.V(1).Infof("Num peers: OUTBOUND(%d) INBOUND(%d) PERSISTENT(%d)", numOutboundPeers, numInboundPeers, numPersistentPeers)
-
-	cmgr.mtxOutboundConnIPGroups.Lock()
-	for _, vv := range cmgr.outboundConnIPGroups {
-		if vv != 0 && vv != 1 {
-			glog.V(1).Infof("_logOutboundPeerData: Peer group count != (0 or 1). "+
-				"Is (%d) instead. This "+
-				"should never happen.", vv)
-		}
-	}
-	cmgr.mtxOutboundConnIPGroups.Unlock()
 }
 
 func (cmgr *ConnectionManager) AddTimeSample(addrStr string, timeSample time.Time) {
@@ -617,8 +610,13 @@ func (cmgr *ConnectionManager) Start() {
 
 		select {
 		case oc := <-cmgr.outboundConnectionChan:
-			glog.V(2).Infof("ConnectionManager.Start: Successfully established an outbound connection with "+
-				"(addr= %v)", oc.connection.RemoteAddr())
+			if oc.failed {
+				glog.V(2).Infof("ConnectionManager.Start: Failed to establish an outbound connection with "+
+					"(id= %v)", oc.attemptId)
+			} else {
+				glog.V(2).Infof("ConnectionManager.Start: Successfully established an outbound connection with "+
+					"(addr= %v)", oc.connection.RemoteAddr())
+			}
 			delete(cmgr.outboundConnectionAttempts, oc.attemptId)
 			cmgr.serverMessageQueue <- &ServerMessage{
 				Peer: nil,

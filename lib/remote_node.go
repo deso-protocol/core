@@ -219,8 +219,20 @@ func (rn *RemoteNode) IsConnected() bool {
 	return rn.connectionStatus == RemoteNodeStatus_Connected
 }
 
+func (rn *RemoteNode) IsVersionSent() bool {
+	return rn.connectionStatus == RemoteNodeStatus_VersionSent
+}
+
+func (rn *RemoteNode) IsVerackSent() bool {
+	return rn.connectionStatus == RemoteNodeStatus_VerackSent
+}
+
 func (rn *RemoteNode) IsHandshakeCompleted() bool {
 	return rn.connectionStatus == RemoteNodeStatus_HandshakeCompleted
+}
+
+func (rn *RemoteNode) IsTerminated() bool {
+	return rn.connectionStatus == RemoteNodeStatus_Terminated
 }
 
 func (rn *RemoteNode) IsValidator() bool {
@@ -340,9 +352,9 @@ func (rn *RemoteNode) InitiateHandshake(nonce uint64) error {
 		return fmt.Errorf("InitiateHandshake: Remote node is not connected")
 	}
 
+	versionTimeExpected := time.Now().Add(rn.params.VersionNegotiationTimeout)
+	rn.versionTimeExpected = &versionTimeExpected
 	if rn.GetPeer().IsOutbound() {
-		versionTimeExpected := time.Now().Add(rn.params.VersionNegotiationTimeout)
-		rn.versionTimeExpected = &versionTimeExpected
 		if err := rn.sendVersionMessage(nonce); err != nil {
 			return fmt.Errorf("InitiateHandshake: Problem sending version message to peer (id= %d): %v", rn.id, err)
 		}
@@ -393,6 +405,16 @@ func (rn *RemoteNode) newVersionMessage(nonce uint64) *MsgDeSoVersion {
 	return ver
 }
 
+func (rn *RemoteNode) IsTimedOut() bool {
+	if rn.IsConnected() || rn.IsVersionSent() {
+		return rn.versionTimeExpected.Before(time.Now())
+	}
+	if rn.IsVerackSent() {
+		return rn.verackTimeExpected.Before(time.Now())
+	}
+	return false
+}
+
 // HandleVersionMessage is called upon receiving a version message from the RemoteNode's peer. The peer may be the one
 // initiating the handshake, in which case, we should respond with our own version message. To do this, we pass the
 // responseNonce to this function, which we will use in our response version message.
@@ -400,7 +422,7 @@ func (rn *RemoteNode) HandleVersionMessage(verMsg *MsgDeSoVersion, responseNonce
 	rn.mtx.Lock()
 	defer rn.mtx.Unlock()
 
-	if rn.connectionStatus != RemoteNodeStatus_Connected && rn.connectionStatus != RemoteNodeStatus_VersionSent {
+	if !rn.IsConnected() && !rn.IsVersionSent() {
 		return fmt.Errorf("HandleVersionMessage: RemoteNode is not connected or version exchange has already "+
 			"been completed, connectionStatus: %v", rn.connectionStatus)
 	}
@@ -412,7 +434,7 @@ func (rn *RemoteNode) HandleVersionMessage(verMsg *MsgDeSoVersion, responseNonce
 	}
 
 	// Verify that the peer's version message is sent within the version negotiation timeout.
-	if rn.versionTimeExpected != nil && rn.versionTimeExpected.Before(time.Now()) {
+	if rn.versionTimeExpected.Before(time.Now()) {
 		return fmt.Errorf("RemoteNode.HandleVersionMessage: Requesting disconnect for id: (%v) "+
 			"version timeout. Time expected: %v, now: %v", rn.id, rn.versionTimeExpected.UnixMicro(), time.Now().UnixMicro())
 	}
