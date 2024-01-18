@@ -52,6 +52,13 @@ func (bc *Blockchain) ProcessHeaderPoS(header *MsgDeSoHeader) (_isMainChain bool
 func (bc *Blockchain) processHeaderPoS(header *MsgDeSoHeader) (
 	_isMainChain bool, _isOrphan bool, _err error,
 ) {
+	if header.Height < uint64(bc.params.ForkHeights.ProofOfStake2ConsensusCutoverBlockHeight) {
+		return false, false, errors.Errorf(
+			"processHeaderPoS: Header height %d is less than the ProofOfStake2ConsensusCutoverBlockHeight %d",
+			header.Height, bc.params.ForkHeights.ProofOfStake2ConsensusCutoverBlockHeight,
+		)
+	}
+
 	headerHash, err := header.Hash()
 	if err != nil {
 		return false, false, errors.Wrapf(err, "processHeaderPoS: Problem hashing header")
@@ -206,6 +213,13 @@ func (bc *Blockchain) processBlockPoS(block *MsgDeSoBlock, currentView uint64, v
 	_missingBlockHashes []*BlockHash,
 	_err error,
 ) {
+	if block.Header.Height < uint64(bc.params.ForkHeights.ProofOfStake2ConsensusCutoverBlockHeight) {
+		return false, false, nil, errors.Errorf(
+			"processHeaderPoS: Header height %d is less than the ProofOfStake2ConsensusCutoverBlockHeight %d",
+			block.Header.Height, bc.params.ForkHeights.ProofOfStake2ConsensusCutoverBlockHeight,
+		)
+	}
+
 	// If we can't hash the block, we can never store in the block index and we should throw it out immediately.
 	if _, err := block.Hash(); err != nil {
 		return false, false, nil, errors.Wrapf(err, "processBlockPoS: Problem hashing block")
