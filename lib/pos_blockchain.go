@@ -1693,6 +1693,97 @@ func (bc *Blockchain) getCommittedTip() (*BlockNode, int) {
 	return nil, -1
 }
 
+func (bc *Blockchain) GetValidatorSetsForBlockHeights(blockHeights []uint64) (map[uint64][]*ValidatorEntry, error) {
+	bc.ChainLock.RLock()
+	defer bc.ChainLock.RUnlock()
+
+	return bc.getValidatorSetsForBlockHeights(blockHeights)
+}
+
+// GetValidatorSetsForBlockHeights returns the validator set for each block height provided. It requires all
+// input block heights to be in the previous, current, or next epoch from the committed tip. Given a slice of
+// block heights, it returns a map that maps each block height to the validator set at that height.
+func (bc *Blockchain) getValidatorSetsForBlockHeights(blockHeights []uint64) (map[uint64][]*ValidatorEntry, error) {
+	// Create a map to cache the validator set entries by epoch number. Two blocks in the same epoch will have
+	// the same validator set, so we can use an in-memory cache to optimize the validator set lookup for them.
+	validatorSetEntriesBySnapshotEpochNumber := make(map[uint64][]*ValidatorEntry)
+
+	// Create a UtxoView for the committed tip block. We will use this to fetch the validator set for
+	// all of the safe blocks.
+	utxoView, err := NewUtxoView(bc.db, bc.params, bc.postgres, bc.snapshot, nil)
+	if err != nil {
+		return nil, errors.Errorf("Error creating UtxoView: %v", err)
+	}
+
+	// Fetch the current epoch entry for the committed tip
+	epochEntryAtCommittedTip, err := utxoView.GetCurrentEpochEntry()
+	if err != nil {
+		return nil, errors.Errorf("Error fetching epoch entry for committed tip: %v", err)
+	}
+
+	// Fetch the previous epoch entry
+	prevEpochEntryAfterCommittedTip, err := utxoView.simulatePrevEpochEntry(epochEntryAtCommittedTip.EpochNumber, epochEntryAtCommittedTip.FinalBlockHeight)
+	if err != nil {
+		return nil, errors.Errorf("Error fetching previous epoch entry before committed tip: %v", err)
+	}
+
+	// Fetch the next epoch entry
+	nextEpochEntryAfterCommittedTip, err := utxoView.simulateNextEpochEntry(epochEntryAtCommittedTip.EpochNumber, epochEntryAtCommittedTip.FinalBlockHeight)
+	if err != nil {
+		return nil, errors.Errorf("Error fetching next epoch entry after committed tip: %v", err)
+	}
+
+	// The supported block can only be part of the previous, current, or next epoch.
+	possibleEpochEntriesForBlocks := []*EpochEntry{prevEpochEntryAfterCommittedTip, epochEntryAtCommittedTip, nextEpochEntryAfterCommittedTip}
+
+	// Output map that will hold the validator set for each block height
+	validatorSetByBlockHeight := map[uint64][]*ValidatorEntry{}
+
+	// Fetch the validator set at each block height
+	for _, blockHeight := range blockHeights {
+		epochEntryForBlock, err := findEpochEntryForBlockHeight(blockHeight, possibleEpochEntriesForBlocks)
+		if err != nil {
+			return nil, errors.Errorf("Error fetching epoch number for block height %d: %v", blockHeight, err)
+		}
+
+		// Compute the snapshot epoch number for the block height. This is the epoch number that the validator set
+		// for the block was snapshotted in.
+		snapshotEpochNumber, err := utxoView.ComputeSnapshotEpochNumberForEpoch(epochEntryForBlock.EpochNumber)
+		if err != nil {
+			return nil, errors.Errorf("error computing snapshot epoch number for epoch: %v", err)
+		}
+
+		var validatorSet []*ValidatorEntry
+		var ok bool
+
+		// If the validator set for the block is already cached by the snapshot epoch number, then use it.
+		// Otherwise, fetch it from the UtxoView.
+		if validatorSet, ok = validatorSetEntriesBySnapshotEpochNumber[snapshotEpochNumber]; !ok {
+			// We don't have the validator set for the block cached. Fetch it from the UtxoView.
+			validatorSet, err = utxoView.GetAllSnapshotValidatorSetEntriesByStakeAtEpochNumber(snapshotEpochNumber)
+			if err != nil {
+				return nil, errors.Errorf("Error fetching validator set for block: %v", err)
+			}
+		}
+
+		validatorSetByBlockHeight[blockHeight] = validatorSet
+	}
+
+	// Happy path: we fetched the validator lists for all block heights successfully.
+	return validatorSetByBlockHeight, nil
+}
+
+// Given a list of epoch entries, this finds the epoch entry for the given block height.
+func findEpochEntryForBlockHeight(blockHeight uint64, epochEntries []*EpochEntry) (*EpochEntry, error) {
+	for _, epochEntry := range epochEntries {
+		if epochEntry.ContainsBlockHeight(blockHeight) {
+			return epochEntry, nil
+		}
+	}
+
+	return nil, errors.Errorf("error finding epoch entry for block height: %v", blockHeight)
+}
+
 // GetSafeBlocks returns all headers of blocks from which the chain can safely extend.
 // A safe block is defined as a block that has been validated and all of its
 // ancestors have been validated and extending from this block would not
