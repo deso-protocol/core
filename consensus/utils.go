@@ -37,7 +37,7 @@ func IsProperlyFormedVoteEvent(event *FastHotStuffEvent) bool {
 		event.View > 0 && // The view the tip block was proposed in is non-zero
 		event.TipBlockHeight > 0 && // Tip block height voted on is non-zero
 		!isInterfaceNil(event.TipBlockHash) && // Tip block hash voted on is non-nil
-		!isInterfaceNil(event.QC) // The high QC is non-nil
+		isInterfaceNil(event.QC) // The high QC is nil
 }
 
 func IsProperlyFormedTimeoutEvent(event *FastHotStuffEvent) bool {
