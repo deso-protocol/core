@@ -56,9 +56,6 @@ func (cc *FastHotStuffConsensus) Start() error {
 		)
 	}
 
-	// Fetch the current tip of the chain
-	tipBlock = cc.blockchain.BlockTip()
-
 	// Fetch the validator set at each safe block
 	tipBlockWithValidators, err := cc.fetchValidatorListsForSafeBlocks([]*MsgDeSoHeader{tipBlock.Header})
 	if err != nil {
