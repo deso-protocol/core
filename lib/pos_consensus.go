@@ -362,6 +362,12 @@ func (cc *FastHotStuffConsensus) HandleLocalTimeoutEvent(event *consensus.FastHo
 		return errors.Errorf("FastHotStuffConsensus.HandleLocalTimeoutEvent: FastHotStuffEventLoop is not running")
 	}
 
+	// Hold the blockchain's write lock so that the chain cannot be mutated underneath us.
+	// In practice, this is a no-op, but it guarantees thread-safety in the event that other
+	// parts of the codebase change.
+	cc.blockchain.ChainLock.RLock()
+	defer cc.blockchain.ChainLock.RUnlock()
+
 	var err error
 
 	if !consensus.IsProperlyFormedTimeoutEvent(event) {
