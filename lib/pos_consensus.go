@@ -46,6 +46,12 @@ func (cc *FastHotStuffConsensus) Start() error {
 	cc.blockchain.ChainLock.RLock()
 	defer cc.blockchain.ChainLock.RUnlock()
 
+	// If the consensus is starting for the first time and is at the final PoW block height, then we need
+	// to inject the synthetic genesis blocks.
+	if err := cc.tryInjectSyntheticGenesisBlocks(); err != nil {
+		return errors.Errorf("Error injecting synthetic genesis blocks: %v", err)
+	}
+
 	// Fetch the current tip of the chain
 	tipBlock := cc.blockchain.BlockTip()
 
@@ -99,6 +105,12 @@ func (cc *FastHotStuffConsensus) HandleLocalBlockProposalEvent(event *consensus.
 		return errors.Errorf("FastHotStuffConsensus.HandleLocalBlockProposalEvent: FastHotStuffEventLoop is not running")
 	}
 
+	// Hold the blockchain's write lock so that the chain cannot be mutated underneath us.
+	// In practice,/ this is a no-op, but it guarantees thread-safety in the event that other
+	// parts of the codebase change.
+	cc.blockchain.ChainLock.Lock()
+	defer cc.blockchain.ChainLock.Unlock()
+
 	// Handle the event as a block proposal event for a regular block
 	if err := cc.handleBlockProposerEvent(event, consensus.FastHotStuffEventTypeConstructVoteQC); err != nil {
 		return errors.Wrapf(err, "FastHotStuffConsensus.HandleLocalBlockProposalEvent: ")
@@ -120,6 +132,12 @@ func (cc *FastHotStuffConsensus) HandleLocalTimeoutBlockProposalEvent(event *con
 	if !cc.fastHotStuffEventLoop.IsRunning() {
 		return errors.Errorf("FastHotStuffConsensus.HandleLocalTimeoutBlockProposalEvent: FastHotStuffEventLoop is not running")
 	}
+
+	// Hold the blockchain's write lock so that the chain cannot be mutated underneath us.
+	// In practice,/ this is a no-op, but it guarantees thread-safety in the event that other
+	// parts of the codebase change.
+	cc.blockchain.ChainLock.Lock()
+	defer cc.blockchain.ChainLock.Unlock()
 
 	// Handle the event as a block proposal event for a timeout block
 	if err := cc.handleBlockProposerEvent(event, consensus.FastHotStuffEventTypeConstructTimeoutQC); err != nil {
@@ -424,6 +442,12 @@ func (cc *FastHotStuffConsensus) HandleBlock(pp *Peer, msg *MsgDeSoBlock) error 
 		return errors.Errorf("FastHotStuffConsensus.HandleBlock: FastHotStuffEventLoop is not running")
 	}
 
+	// Hold the blockchain's write lock so that the chain cannot be mutated underneath us.
+	// In practice,/ this is a no-op, but it guarantees thread-safety in the event that other
+	// parts of the codebase change.
+	cc.blockchain.ChainLock.Lock()
+	defer cc.blockchain.ChainLock.Unlock()
+
 	// Try to apply the block as the new tip of the blockchain. If the block is an orphan, then
 	// we will get back a list of missing ancestor block hashes. We can fetch the missing blocks
 	// from the network and retry.
@@ -452,6 +476,12 @@ func (cc *FastHotStuffConsensus) HandleBlock(pp *Peer, msg *MsgDeSoBlock) error 
 // Reference Implementation:
 // https://github.com/deso-protocol/hotstuff_pseudocode/blob/6409b51c3a9a953b383e90619076887e9cebf38d/fast_hotstuff_bls.go#L573
 func (cc *FastHotStuffConsensus) tryProcessBlockAsNewTip(block *MsgDeSoBlock) ([]*BlockHash, error) {
+	// If the consensus is starting for the first time and is at the final PoW block height, then we need
+	// to inject the synthetic genesis blocks.
+	if err := cc.tryInjectSyntheticGenesisBlocks(); err != nil {
+		return nil, errors.Errorf("Error injecting synthetic genesis blocks: %v", err)
+	}
+
 	// Try to apply the block locally as the new tip of the blockchain
 	successfullyAppliedNewTip, _, missingBlockHashes, err := cc.blockchain.processBlockPoS(
 		block, // Pass in the block itself
@@ -650,6 +680,10 @@ func (fc *FastHotStuffConsensus) createBlockProducer(bav *UtxoView) (*PosBlockPr
 		return nil, errors.Errorf("Error fetching public key for block producer: %v", err)
 	}
 	return NewPosBlockProducer(fc.mempool, fc.params, blockProducerPublicKey, blockProducerBlsPublicKey), nil
+}
+
+func (fc *FastHotStuffConsensus) tryInjectSyntheticGenesisBlocks() error {
+	return nil
 }
 
 func isValidBlockProposalEvent(event *consensus.FastHotStuffEvent, expectedEventType consensus.FastHotStuffEventType) bool {
