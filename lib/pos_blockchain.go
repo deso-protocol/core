@@ -491,7 +491,7 @@ func (bc *Blockchain) processOrphanBlockPoS(block *MsgDeSoBlock) error {
 	}
 
 	// Get the validator set for the current and previous block heights.
-	validatorSetByBlockHeight, err := utxoView.GetSnapshotValidatorSetsForBlockHeights([]uint64{
+	validatorSetByBlockHeight, err := utxoView.GetSnapshotValidatorSetsByBlockHeights([]uint64{
 		block.Header.Height, block.Header.Height - 1,
 	})
 	if err != nil {
@@ -578,7 +578,7 @@ func (bc *Blockchain) validateLeaderAndQC(block *MsgDeSoBlock) (_passedSpamPreve
 	}
 
 	// 2. Fetch the validator set for the current and previous block heights.
-	validatorSetByBlockHeight, err := utxoView.GetSnapshotValidatorSetsForBlockHeights([]uint64{
+	validatorSetByBlockHeight, err := utxoView.GetSnapshotValidatorSetsByBlockHeights([]uint64{
 		block.Header.Height, block.Header.Height - 1,
 	})
 	if err != nil {

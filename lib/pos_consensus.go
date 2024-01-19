@@ -615,7 +615,7 @@ func (cc *FastHotStuffConsensus) fetchValidatorListsForSafeBlocks(blocks []*MsgD
 	}
 
 	// Fetch the validator set for each block
-	validatorSetByBlockHeight, err := utxoView.GetSnapshotValidatorSetsForBlockHeights(blockHeights)
+	validatorSetByBlockHeight, err := utxoView.GetSnapshotValidatorSetsByBlockHeights(blockHeights)
 	if err != nil {
 		return nil, errors.Errorf("Error fetching validator set for blocks: %v", err)
 	}
