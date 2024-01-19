@@ -215,12 +215,6 @@ func TestIsProperlyFormedBlock(t *testing.T) {
 		require.False(t, isProperlyFormedBlock(&block))
 	}
 
-	// Test nil QC
-	{
-		block := block{height: 1, view: 1, blockHash: createDummyBlockHash(), qc: nil}
-		require.False(t, isProperlyFormedBlock(&block))
-	}
-
 	// Test valid block
 	{
 		require.True(t, isProperlyFormedBlock(createDummyBlock(2)))

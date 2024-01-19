@@ -120,14 +120,6 @@ type Block interface {
 	GetBlockHash() BlockHash
 	GetHeight() uint64
 	GetView() uint64
-	// This is a hybrid function that returns the QC from the block.
-	// - If the block is a normal block, this returns the QC from validators' votes for the previous block
-	// - If the block contains a timeout QC, this returns the validator high QC aggregated from
-	//   validators' timeout messages
-	// We are able to simplify the GetQC() to this behavior because this QC is only needed to construct
-	// a timeout QC for the next block in the event of a timeout. So, this QC will always be the latest QC
-	// at the current chain's tip that subsequent blocks will build on top of.
-	GetQC() QuorumCertificate
 }
 
 type BlockWithValidatorList struct {

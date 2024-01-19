@@ -839,7 +839,6 @@ func (fc *fastHotStuffEventLoop) onTimeoutScheduledTaskExecuted(timedOutView uin
 		View:           timedOutView,                 // The view we timed out
 		TipBlockHash:   fc.tip.block.GetBlockHash(),  // The last block we saw
 		TipBlockHeight: fc.tip.block.GetHeight(),     // The last block we saw
-		QC:             fc.tip.block.GetQC(),         // The highest QC we have
 	})
 
 	// Cancel the timeout task. The server will reschedule it when it advances the view.

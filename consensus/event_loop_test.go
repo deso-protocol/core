@@ -465,6 +465,7 @@ func TestProcessValidatorTimeout(t *testing.T) {
 	validatorList := createValidatorListForPrivateKeys(validatorPrivateKey1, validatorPrivateKey2)
 
 	// Init the event loop
+
 	{
 		// BlockHeight = 3, Current View = 4
 		genesisBlock := createDummyBlock(2)
@@ -498,7 +499,7 @@ func TestProcessValidatorTimeout(t *testing.T) {
 
 	// Test with stale view
 	{
-		timeout := createTimeoutMessageWithPrivateKeyAndHighQC(3, validatorPrivateKey1, fc.tip.block.GetQC())
+		timeout := createTimeoutMessageWithPrivateKeyAndHighQC(3, validatorPrivateKey1, fc.tip.block.(*block).GetQC())
 		err := fc.ProcessValidatorTimeout(timeout)
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "Timeout has a stale view")
@@ -533,7 +534,7 @@ func TestProcessValidatorTimeout(t *testing.T) {
 
 	// Test unknown high QC
 	{
-		timeout := createTimeoutMessageWithPrivateKeyAndHighQC(4, validatorPrivateKey1, fc.tip.block.GetQC())
+		timeout := createTimeoutMessageWithPrivateKeyAndHighQC(4, validatorPrivateKey1, fc.tip.block.(*block).GetQC())
 		timeout.highQC = createDummyQC(2, createDummyBlockHash())
 		err := fc.ProcessValidatorTimeout(timeout)
 		require.Error(t, err)
@@ -542,7 +543,7 @@ func TestProcessValidatorTimeout(t *testing.T) {
 
 	// Test unknown public key in timeout message
 	{
-		timeout := createTimeoutMessageWithPrivateKeyAndHighQC(4, validatorPrivateKey1, fc.tip.block.GetQC())
+		timeout := createTimeoutMessageWithPrivateKeyAndHighQC(4, validatorPrivateKey1, fc.tip.block.(*block).GetQC())
 		timeout.publicKey = createDummyBLSPublicKey()
 		err := fc.ProcessValidatorTimeout(timeout)
 		require.Error(t, err)
@@ -551,7 +552,7 @@ func TestProcessValidatorTimeout(t *testing.T) {
 
 	// Test invalid signature
 	{
-		timeout := createTimeoutMessageWithPrivateKeyAndHighQC(4, validatorPrivateKey1, fc.tip.block.GetQC())
+		timeout := createTimeoutMessageWithPrivateKeyAndHighQC(4, validatorPrivateKey1, fc.tip.block.(*block).GetQC())
 		timeout.signature = createDummyBLSSignature()
 		err := fc.ProcessValidatorTimeout(timeout)
 		require.Error(t, err)
@@ -560,7 +561,7 @@ func TestProcessValidatorTimeout(t *testing.T) {
 
 	// Test invalid high QC
 	{
-		timeout := createTimeoutMessageWithPrivateKeyAndHighQC(4, validatorPrivateKey1, fc.tip.block.GetQC())
+		timeout := createTimeoutMessageWithPrivateKeyAndHighQC(4, validatorPrivateKey1, fc.tip.block.(*block).GetQC())
 		timeout.highQC = createDummyQC(timeout.highQC.GetView(), timeout.highQC.GetBlockHash())
 		err := fc.ProcessValidatorTimeout(timeout)
 		require.Error(t, err)
@@ -569,7 +570,7 @@ func TestProcessValidatorTimeout(t *testing.T) {
 
 	// Test happy path
 	{
-		timeout := createTimeoutMessageWithPrivateKeyAndHighQC(4, validatorPrivateKey1, fc.tip.block.GetQC())
+		timeout := createTimeoutMessageWithPrivateKeyAndHighQC(4, validatorPrivateKey1, fc.tip.block.(*block).GetQC())
 		err := fc.ProcessValidatorTimeout(timeout)
 		require.NoError(t, err)
 	}
@@ -616,7 +617,6 @@ func TestTimeoutScheduledTaskExecuted(t *testing.T) {
 	require.Equal(t, timeoutSignal.EventType, FastHotStuffEventTypeTimeout)
 	require.Equal(t, timeoutSignal.View, dummyBlock.GetView()+2)
 	require.Equal(t, timeoutSignal.TipBlockHash.GetValue(), dummyBlock.GetBlockHash().GetValue())
-	require.Equal(t, timeoutSignal.QC.GetBlockHash().GetValue(), dummyBlock.qc.GetBlockHash().GetValue())
 
 	// Confirm that the timeout is no longer running
 	require.False(t, fc.nextTimeoutTask.IsScheduled())

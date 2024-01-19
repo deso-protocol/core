@@ -375,7 +375,8 @@ func (node *validatorNode) handleTimeoutEvent(event *FastHotStuffEvent) {
 }
 
 func (node *validatorNode) broadcastTimeout(event *FastHotStuffEvent) {
-	payload := GetTimeoutSignaturePayload(event.View, event.QC.GetView())
+	highQC := node.safeBlocks[event.TipBlockHash.GetValue()].GetQC()
+	payload := GetTimeoutSignaturePayload(event.View, highQC.GetView())
 	signature, err := node.privateKey.Sign(payload[:])
 	if err != nil {
 		panic(err)
@@ -383,7 +384,7 @@ func (node *validatorNode) broadcastTimeout(event *FastHotStuffEvent) {
 
 	timeout := &timeoutMessage{
 		view:      event.View,
-		highQC:    event.QC,
+		highQC:    highQC,
 		publicKey: node.privateKey.PublicKey(),
 		signature: signature,
 	}
