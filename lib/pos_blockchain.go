@@ -213,6 +213,7 @@ func (bc *Blockchain) processBlockPoS(block *MsgDeSoBlock, currentView uint64, v
 	_missingBlockHashes []*BlockHash,
 	_err error,
 ) {
+	// If the incoming block's height is under the PoS cutover fork height, then we can't process it. Exit early.
 	if block.Header.Height < uint64(bc.params.ForkHeights.ProofOfStake2ConsensusCutoverBlockHeight) {
 		return false, false, nil, errors.Errorf(
 			"processHeaderPoS: Header height %d is less than the ProofOfStake2ConsensusCutoverBlockHeight %d",
