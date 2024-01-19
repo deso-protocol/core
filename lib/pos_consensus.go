@@ -393,15 +393,24 @@ func (cc *FastHotStuffConsensus) HandleLocalTimeoutEvent(event *consensus.FastHo
 		return errors.Errorf("FastHotStuffConsensus.HandleLocalTimeoutEvent: Error advancing view on timeout: %v", err)
 	}
 
+	// Extract the tip block hash from the timeout message
+	tipBlockHash := BlockHashFromConsensusInterface(event.TipBlockHash)
+
+	// Fetch the HighQC from the Blockchain struct
+	tipBlockNode, tipBlockExists := cc.blockchain.blockIndexByHash[*tipBlockHash]
+	if !tipBlockExists {
+		return errors.Errorf("FastHotStuffConsensus.HandleLocalTimeoutEvent: Error fetching tip block: %v", tipBlockHash)
+	}
+
 	// Construct the timeout message
 	timeoutMsg := NewMessage(MsgTypeValidatorTimeout).(*MsgDeSoValidatorTimeout)
 	timeoutMsg.MsgVersion = MsgValidatorTimeoutVersion0
 	timeoutMsg.TimedOutView = event.View
 	timeoutMsg.VotingPublicKey = cc.signer.GetPublicKey()
-	timeoutMsg.HighQC = QuorumCertificateFromConsensusInterface(event.QC)
+	timeoutMsg.HighQC = QuorumCertificateFromConsensusInterface(tipBlockNode.Header.GetQC())
 
 	// Sign the timeout message
-	timeoutMsg.TimeoutPartialSignature, err = cc.signer.SignValidatorTimeout(event.View, event.QC.GetView())
+	timeoutMsg.TimeoutPartialSignature, err = cc.signer.SignValidatorTimeout(event.View, tipBlockNode.Header.GetQC().GetView())
 	if err != nil {
 		// This should never happen as long as the BLS signer is initialized correctly.
 		return errors.Errorf("FastHotStuffConsensus.HandleLocalTimeoutEvent: Error signing validator timeout: %v", err)
