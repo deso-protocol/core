@@ -8,6 +8,7 @@ import (
 
 	"github.com/deso-protocol/core/bls"
 	"github.com/deso-protocol/core/consensus"
+	"github.com/deso-protocol/go-deadlock"
 	"github.com/pkg/errors"
 	"github.com/stretchr/testify/require"
 )
@@ -103,6 +104,9 @@ func TestFastHotStuffConsensusHandleLocalTimeoutEvent(t *testing.T) {
 		lock: sync.RWMutex{},
 		signer: &BLSSigner{
 			privateKey: blsPrivateKey,
+		},
+		blockchain: &Blockchain{
+			ChainLock: deadlock.RWMutex{},
 		},
 		fastHotStuffEventLoop: &consensus.MockFastHotStuffEventLoop{
 			OnIsInitialized: alwaysReturnTrue,
