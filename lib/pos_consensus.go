@@ -40,12 +40,6 @@ func (cc *FastHotStuffConsensus) Start() error {
 		return errors.New("FastHotStuffConsensus.Start: FastHotStuffEventLoop is already initialized")
 	}
 
-	// Hold the blockchain's read lock so that the chain cannot be mutated underneath us. In practice,
-	// this is a no-op, but it guarantees thread-safety in the event that other parts of the codebase
-	// change.
-	cc.blockchain.ChainLock.RLock()
-	defer cc.blockchain.ChainLock.RUnlock()
-
 	// Fetch the current tip of the chain
 	tipBlock := cc.blockchain.BlockTip()
 
