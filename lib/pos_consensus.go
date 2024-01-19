@@ -46,14 +46,24 @@ func (cc *FastHotStuffConsensus) Start() error {
 	cc.blockchain.ChainLock.RLock()
 	defer cc.blockchain.ChainLock.RUnlock()
 
+	// Fetch the current tip of the chain
+	tipBlock := cc.blockchain.BlockTip()
+
+	// If the chain is not at the final PoW block height or higher, then we cannot start the PoS consensus.
+	if tipBlock.Height < cc.blockchain.params.ForkHeights.ProofOfStake2ConsensusCutoverBlockHeight-1 {
+		return errors.Errorf(
+			"FastHotStuffConsensus.Start: Block tip %d is not at the final PoW block height", tipBlock.Height,
+		)
+	}
+
 	// If the consensus is starting for the first time and is at the final PoW block height, then we need
-	// to inject the synthetic genesis blocks.
-	if err := cc.tryInjectSyntheticGenesisBlocks(); err != nil {
-		return errors.Errorf("Error injecting synthetic genesis blocks: %v", err)
+	// to inject the genesis blocks.
+	if err := cc.tryInjectGenesisBlocks(); err != nil {
+		return errors.Errorf("Error injecting genesis blocks: %v", err)
 	}
 
 	// Fetch the current tip of the chain
-	tipBlock := cc.blockchain.BlockTip()
+	tipBlock = cc.blockchain.BlockTip()
 
 	// Fetch the validator set at each safe block
 	tipBlockWithValidators, err := cc.fetchValidatorListsForSafeBlocks([]*MsgDeSoHeader{tipBlock.Header})
@@ -476,12 +486,6 @@ func (cc *FastHotStuffConsensus) HandleBlock(pp *Peer, msg *MsgDeSoBlock) error 
 // Reference Implementation:
 // https://github.com/deso-protocol/hotstuff_pseudocode/blob/6409b51c3a9a953b383e90619076887e9cebf38d/fast_hotstuff_bls.go#L573
 func (cc *FastHotStuffConsensus) tryProcessBlockAsNewTip(block *MsgDeSoBlock) ([]*BlockHash, error) {
-	// If the consensus is starting for the first time and is at the final PoW block height, then we need
-	// to inject the synthetic genesis blocks.
-	if err := cc.tryInjectSyntheticGenesisBlocks(); err != nil {
-		return nil, errors.Errorf("Error injecting synthetic genesis blocks: %v", err)
-	}
-
 	// Try to apply the block locally as the new tip of the blockchain
 	successfullyAppliedNewTip, _, missingBlockHashes, err := cc.blockchain.processBlockPoS(
 		block, // Pass in the block itself
@@ -682,9 +686,9 @@ func (fc *FastHotStuffConsensus) createBlockProducer(bav *UtxoView) (*PosBlockPr
 	return NewPosBlockProducer(fc.mempool, fc.params, blockProducerPublicKey, blockProducerBlsPublicKey), nil
 }
 
-// tryInjectSyntheticGenesisBlocks checks if the current chain tip is at the final PoW block height. If so,
-// it injects three synthetic PoS genesis blocks in order to bootstrap the PoS portion of the chain.
-func (fc *FastHotStuffConsensus) tryInjectSyntheticGenesisBlocks() error {
+// tryInjectGenesisBlocks checks if the current chain tip is at the final PoW block height. If so,
+// it injects three PoS genesis blocks in order to bootstrap the PoS portion of the chain.
+func (fc *FastHotStuffConsensus) tryInjectGenesisBlocks() error {
 	// TODO: Implement me
 	return nil
 }
