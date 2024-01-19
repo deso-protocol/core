@@ -682,7 +682,10 @@ func (fc *FastHotStuffConsensus) createBlockProducer(bav *UtxoView) (*PosBlockPr
 	return NewPosBlockProducer(fc.mempool, fc.params, blockProducerPublicKey, blockProducerBlsPublicKey), nil
 }
 
+// tryInjectSyntheticGenesisBlocks checks if the current chain tip is at the final PoW block height. If so,
+// it injects three synthetic PoS genesis blocks in order to bootstrap the PoS portion of the chain.
 func (fc *FastHotStuffConsensus) tryInjectSyntheticGenesisBlocks() error {
+	// TODO: Implement me
 	return nil
 }
 
