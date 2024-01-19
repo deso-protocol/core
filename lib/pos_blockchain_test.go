@@ -1812,7 +1812,7 @@ func testProcessBlockPoS(t *testing.T, testMeta *TestMeta) {
 		// Set the prev block hash manually on orphan block
 		orphanBlock.Header.PrevBlockHash = dummyParentBlockHash
 		// Create a QC on the dummy parent block
-		orphanBlock.Header.ValidatorsVoteQC = _getVoteQC(testMeta, testMeta.posMempool.readOnlyLatestBlockView, dummyParentBlockHash, 16)
+		orphanBlock.Header.ValidatorsVoteQC = _getVoteQC(testMeta, testMeta.posMempool.readOnlyLatestBlockView, orphanBlock.Header.Height, dummyParentBlockHash, 16)
 		updateProposerVotePartialSignatureForBlock(testMeta, orphanBlock)
 		orphanBlockHash, err := orphanBlock.Hash()
 		require.NoError(t, err)
@@ -2467,28 +2467,43 @@ func updateProposerVotePartialSignatureForBlock(testMeta *TestMeta, block *MsgDe
 	block.Header.ProposerVotePartialSignature = sig
 }
 
-func _getVoteQC(testMeta *TestMeta, latestBlockView *UtxoView, qcBlockHash *BlockHash, qcView uint64) *QuorumCertificate {
-	votePayload := consensus.GetVoteSignaturePayload(qcView, qcBlockHash)
-	allSnapshotValidators, err := latestBlockView.GetAllSnapshotValidatorSetEntriesByStake()
-	require.NoError(testMeta.t, err)
-	// QC stuff.
+func _getVoteQC(testMeta *TestMeta, latestBlockView *UtxoView, blockHeight uint64, qcBlockHash *BlockHash, qcView uint64) *QuorumCertificate {
+	var validators []consensus.Validator
+	var signersList *bitset.Bitset
+	var aggregatedSignature *bls.Signature
 
-	// Get all the bls keys for the validators that aren't the leader.
-	signersList := bitset.NewBitset()
-	var signatures []*bls.Signature
-	require.NoError(testMeta.t, err)
-	for ii, validatorEntry := range allSnapshotValidators {
-		validatorPublicKeyBytes := latestBlockView.GetPublicKeyForPKID(validatorEntry.ValidatorPKID)
-		validatorPublicKey := Base58CheckEncode(validatorPublicKeyBytes, false, testMeta.chain.params)
-		validatorBLSPrivateKey := testMeta.pubKeyToBLSKeyMap[validatorPublicKey]
-		sig, err := validatorBLSPrivateKey.Sign(votePayload[:])
+	if blockHeight == uint64(testMeta.params.ForkHeights.ProofOfStake2ConsensusCutoverBlockHeight) {
+		posCutoverValidator, err := BuildProofOfStakeCutoverValidator()
 		require.NoError(testMeta.t, err)
-		signatures = append(signatures, sig)
-		signersList = signersList.Set(ii, true)
+
+		aggregatedSignature, signersList, err = BuildQuorumCertificateAsProofOfStakeCutoverValidator(qcView, qcBlockHash)
+		require.NoError(testMeta.t, err)
+		validators = []consensus.Validator{posCutoverValidator}
+	} else {
+		votePayload := consensus.GetVoteSignaturePayload(qcView, qcBlockHash)
+		allSnapshotValidators, err := latestBlockView.GetAllSnapshotValidatorSetEntriesByStake()
+		require.NoError(testMeta.t, err)
+		validators = toConsensusValidators(allSnapshotValidators)
+
+		// Get all the bls keys for the validators that aren't the leader.
+		signersList = bitset.NewBitset()
+		var signatures []*bls.Signature
+		require.NoError(testMeta.t, err)
+		for ii, validatorEntry := range allSnapshotValidators {
+			validatorPublicKeyBytes := latestBlockView.GetPublicKeyForPKID(validatorEntry.ValidatorPKID)
+			validatorPublicKey := Base58CheckEncode(validatorPublicKeyBytes, false, testMeta.chain.params)
+			validatorBLSPrivateKey := testMeta.pubKeyToBLSKeyMap[validatorPublicKey]
+			sig, err := validatorBLSPrivateKey.Sign(votePayload[:])
+			require.NoError(testMeta.t, err)
+			signatures = append(signatures, sig)
+			signersList = signersList.Set(ii, true)
+		}
+
+		// Create the aggregated signature.
+		aggregatedSignature, err = bls.AggregateSignatures(signatures)
+		require.NoError(testMeta.t, err)
 	}
-	// Create the aggregated signature.
-	aggregatedSignature, err := bls.AggregateSignatures(signatures)
-	require.NoError(testMeta.t, err)
+
 	// Create the vote QC.
 	voteQC := &QuorumCertificate{
 		BlockHash:      qcBlockHash,
@@ -2499,7 +2514,7 @@ func _getVoteQC(testMeta *TestMeta, latestBlockView *UtxoView, qcBlockHash *Bloc
 		},
 	}
 
-	isValid := consensus.IsValidSuperMajorityQuorumCertificate(voteQC, toConsensusValidators(allSnapshotValidators))
+	isValid := consensus.IsValidSuperMajorityQuorumCertificate(voteQC, validators)
 	require.True(testMeta.t, isValid)
 	return voteQC
 }
@@ -2528,7 +2543,7 @@ func _getFullRealBlockTemplate(testMeta *TestMeta, latestBlockView *UtxoView, bl
 	}
 
 	// Create the vote QC.
-	voteQC := _getVoteQC(testMeta, latestBlockView, chainTipHash, qcView)
+	voteQC := _getVoteQC(testMeta, latestBlockView, blockHeight, chainTipHash, qcView)
 	if !isTimeout {
 		blockTemplate.Header.ValidatorsVoteQC = voteQC
 	} else {

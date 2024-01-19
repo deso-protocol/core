@@ -1122,19 +1122,39 @@ func (bav *UtxoView) hasValidBlockProposerPoS(block *MsgDeSoBlock) (_isValidBloc
 }
 
 // isValidPoSQuorumCertificate validates that the QC of this block is valid, meaning a super majority
-// of the validator set has voted (or timed out). Assumes ValidatorEntry list is sorted.
+// of the validator set has voted (or timed out). It special cases the first block after the PoS cutover
+// by overriding the validator set used to validate the vote QC or high QC in the first block after the
+// PoS cutover.
 func (bc *Blockchain) isValidPoSQuorumCertificate(block *MsgDeSoBlock, validatorSet []*ValidatorEntry) error {
-	validators := toConsensusValidators(validatorSet)
-	if !block.Header.ValidatorsTimeoutAggregateQC.isEmpty() {
-		if !consensus.IsValidSuperMajorityAggregateQuorumCertificate(
-			block.Header.ValidatorsTimeoutAggregateQC, validators, validators) {
+	voteQCValidators := toConsensusValidators(validatorSet)
+	aggregateQCValidators := voteQCValidators
+
+	voteQC := block.Header.ValidatorsVoteQC
+	timeoutAggregateQC := block.Header.ValidatorsTimeoutAggregateQC
+
+	// If the block is the first block after the PoS cutover, it must contain a synthetic QC signed by the
+	// PoS cutover validator. We need to override the vote QC validator set here.
+	if block.Header.Height == uint64(bc.params.ForkHeights.ProofOfStake2ConsensusCutoverBlockHeight) {
+		posCutoverValidator, err := BuildProofOfStakeCutoverValidator()
+		if err != nil {
+			return errors.Wrapf(err, "isValidPoSQuorumCertificate: Problem building PoS cutover validator")
+		}
+		voteQCValidators = []consensus.Validator{posCutoverValidator}
+	}
+
+	// Validate the timeout aggregate QC.
+	if !timeoutAggregateQC.isEmpty() {
+		if !consensus.IsValidSuperMajorityAggregateQuorumCertificate(timeoutAggregateQC, aggregateQCValidators, voteQCValidators) {
 			return RuleErrorInvalidTimeoutQC
 		}
 		return nil
 	}
-	if !consensus.IsValidSuperMajorityQuorumCertificate(block.Header.ValidatorsVoteQC, validators) {
+
+	// Validate the vote QC.
+	if !consensus.IsValidSuperMajorityQuorumCertificate(voteQC, voteQCValidators) {
 		return RuleErrorInvalidVoteQC
 	}
+
 	return nil
 }
 
