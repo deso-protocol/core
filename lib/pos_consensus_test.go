@@ -30,6 +30,13 @@ func TestFastHotStuffConsensusHandleLocalVoteEvent(t *testing.T) {
 		signer: &BLSSigner{
 			privateKey: blsPrivateKey,
 		},
+		blockchain: &Blockchain{
+			params:    &DeSoTestnetParams,
+			ChainLock: deadlock.RWMutex{},
+			blockIndexByHash: map[BlockHash]*BlockNode{
+				*blockHash: {Header: blockHeader},
+			},
+		},
 		fastHotStuffEventLoop: &consensus.MockFastHotStuffEventLoop{
 			OnIsInitialized: alwaysReturnTrue,
 			OnIsRunning:     alwaysReturnTrue,
@@ -106,6 +113,7 @@ func TestFastHotStuffConsensusHandleLocalTimeoutEvent(t *testing.T) {
 			privateKey: blsPrivateKey,
 		},
 		blockchain: &Blockchain{
+			params:    &DeSoTestnetParams,
 			ChainLock: deadlock.RWMutex{},
 		},
 		fastHotStuffEventLoop: &consensus.MockFastHotStuffEventLoop{

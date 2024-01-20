@@ -113,7 +113,7 @@ func (cc *FastHotStuffConsensus) HandleLocalBlockProposalEvent(event *consensus.
 	defer cc.blockchain.ChainLock.Unlock()
 
 	// Handle the event as a block proposal event for a regular block
-	if err := cc.handleBlockProposerEvent(event, consensus.FastHotStuffEventTypeConstructVoteQC); err != nil {
+	if err := cc.handleBlockProposalEvent(event, consensus.FastHotStuffEventTypeConstructVoteQC); err != nil {
 		return errors.Wrapf(err, "FastHotStuffConsensus.HandleLocalBlockProposalEvent: ")
 	}
 
@@ -141,7 +141,7 @@ func (cc *FastHotStuffConsensus) HandleLocalTimeoutBlockProposalEvent(event *con
 	defer cc.blockchain.ChainLock.Unlock()
 
 	// Handle the event as a block proposal event for a timeout block
-	if err := cc.handleBlockProposerEvent(event, consensus.FastHotStuffEventTypeConstructTimeoutQC); err != nil {
+	if err := cc.handleBlockProposalEvent(event, consensus.FastHotStuffEventTypeConstructTimeoutQC); err != nil {
 		return errors.Wrapf(err, "FastHotStuffConsensus.HandleLocalTimeoutBlockProposalEvent: ")
 	}
 
@@ -149,7 +149,7 @@ func (cc *FastHotStuffConsensus) HandleLocalTimeoutBlockProposalEvent(event *con
 	return nil
 }
 
-// handleBlockProposerEvent is a helper function that can process a block proposal event for either
+// handleBlockProposalEvent is a helper function that can process a block proposal event for either
 // a regular block or a timeout block. It can be called with a expectedEventType param that toggles
 // whether the event should be validated and processed as normal block or timeout block proposal.
 //
@@ -162,7 +162,7 @@ func (cc *FastHotStuffConsensus) HandleLocalTimeoutBlockProposalEvent(event *con
 //     - This will connect the block to the blockchain, remove the transactions from the
 //     mempool, and process the vote in the FastHotStuffEventLoop
 //  6. Broadcast the block to the network
-func (cc *FastHotStuffConsensus) handleBlockProposerEvent(
+func (cc *FastHotStuffConsensus) handleBlockProposalEvent(
 	event *consensus.FastHotStuffEvent,
 	expectedEventType consensus.FastHotStuffEventType,
 ) error {
@@ -280,6 +280,12 @@ func (cc *FastHotStuffConsensus) HandleLocalVoteEvent(event *consensus.FastHotSt
 		return errors.Errorf("FastHotStuffConsensus.HandleLocalVoteEvent: FastHotStuffEventLoop is not running")
 	}
 
+	// Hold the blockchain's read lock so that the chain cannot be mutated underneath us.
+	// In practice, this is a no-op, but it guarantees thread-safety in the event that other
+	// parts of the codebase change.
+	cc.blockchain.ChainLock.RLock()
+	defer cc.blockchain.ChainLock.RUnlock()
+
 	var err error
 
 	if !consensus.IsProperlyFormedVoteEvent(event) {
@@ -295,6 +301,20 @@ func (cc *FastHotStuffConsensus) HandleLocalVoteEvent(event *consensus.FastHotSt
 	// The block acceptance rules in Blockchain.ProcessBlockPoS guarantee that we cannot vote more
 	// than once per view, so this best effort approach is safe, and in-line with the Fast-HotStuff
 	// protocol.
+
+	blockHashToVoteOn := BlockHashFromConsensusInterface(event.TipBlockHash)
+
+	// Fetch the block that we are voting on
+	blockToVoteOn, blockToVoteOnExists := cc.blockchain.blockIndexByHash[*blockHashToVoteOn]
+	if !blockToVoteOnExists {
+		return errors.Errorf("FastHotStuffConsensus.HandleLocalVoteEvent: Error fetching voted on block: %v", blockHashToVoteOn)
+	}
+
+	// If the block's height is before the PoS cutover, then it must be the final PoW block. The final PoW block
+	// has a synthetic genesis QC, so we don't vote on it.
+	if blockToVoteOn.Height < uint32(cc.blockchain.params.ForkHeights.ProofOfStake2ConsensusCutoverBlockHeight) {
+		return nil
+	}
 
 	// Construct the vote message
 	voteMsg := NewMessage(MsgTypeValidatorVote).(*MsgDeSoValidatorVote)
