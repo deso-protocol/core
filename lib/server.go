@@ -257,6 +257,19 @@ func (srv *Server) BroadcastTransaction(txn *MsgDeSoTxn) ([]*MsgDeSoTxn, error) 
 	return mempoolTxs, nil
 }
 
+func (srv *Server) BroadcastTransactions(txns []*MsgDeSoTxn) ([]*MsgDeSoTxn, error) {
+	// Use the backendServer to add the transactions to the mempool and
+	// relay it to peers. When a transaction is created by the user there
+	// is no need to consider a rateLimit and also no need to verifySignatures
+	// because we generally will have done that already.
+	mempoolTxs, err := srv._addNewTxns(nil /*peer*/, txns, false /*rateLimit*/, false /*verifySignatures*/)
+	if err != nil {
+		return nil, errors.Wrapf(err, "BroadcastTransaction: ")
+	}
+
+	return mempoolTxs, nil
+}
+
 func (srv *Server) VerifyAndBroadcastTransaction(txn *MsgDeSoTxn) error {
 	// Grab the block tip and use it as the height for validation.
 	blockHeight := srv.blockchain.BlockTip().Height
@@ -276,6 +289,27 @@ func (srv *Server) VerifyAndBroadcastTransaction(txn *MsgDeSoTxn) error {
 
 	if _, err := srv.BroadcastTransaction(txn); err != nil {
 		return fmt.Errorf("VerifyAndBroadcastTransaction: Problem broadcasting txn: %v", err)
+	}
+
+	return nil
+}
+
+func (srv *Server) VerifyAndBroadcastTransactions(txns []*MsgDeSoTxn) error {
+	// Grab the block tip and use it as the height for validation.
+	blockHeight := srv.blockchain.BlockTip().Height
+	err := srv.blockchain.ValidateTransactions(
+		txns,
+		// blockHeight is set to the next block since that's where this
+		// transaction will be mined at the earliest.
+		blockHeight+1,
+		true,
+		srv.GetMempool())
+	if err != nil {
+		return fmt.Errorf("VerifyAndBroadcastTransactions: Problem validating txn: %v", err)
+	}
+
+	if _, err := srv.BroadcastTransactions(txns); err != nil {
+		return fmt.Errorf("VerifyAndBroadcastTransactions: Problem broadcasting txn: %v", err)
 	}
 
 	return nil
@@ -1820,6 +1854,49 @@ func (srv *Server) _addNewTxn(
 	}
 
 	return []*MsgDeSoTxn{txn}, nil
+}
+
+func (srv *Server) _addNewTxns(
+	pp *Peer, txns []*MsgDeSoTxn, rateLimit bool, verifySignatures bool) ([]*MsgDeSoTxn, error) {
+
+	if srv.ReadOnlyMode {
+		err := fmt.Errorf("Server._addNewTxnAndRelay: Not processing txn from peer %v "+
+			"because peer is in read-only mode: %v", pp, srv.ReadOnlyMode)
+		glog.V(1).Infof(err.Error())
+		return nil, err
+	}
+
+	if srv.blockchain.chainState() != SyncStateFullyCurrent {
+
+		err := fmt.Errorf("Server._addNewTxnAndRelay: Cannot process txn "+
+			"from peer %v while syncing: %v", pp, srv.blockchain.chainState())
+		glog.Error(err)
+		return nil, err
+	}
+
+	addedTxns := []*MsgDeSoTxn{}
+	for _, txn := range txns {
+		glog.V(1).Infof("Server._addNewTxnAndRelay: txn: %v, peer: %v", txn, pp)
+		// Always add the txn to the PoS mempool. This should always succeed if the txn
+		// addition into the PoW mempool succeeded above.
+		mempoolTxn := NewMempoolTransaction(txn, uint64(time.Now().UnixMicro()))
+		if err := srv.posMempool.AddTransaction(mempoolTxn, true /*verifySignatures*/); err != nil {
+			// If we fail to add a transaction to the PoS mempool, we need to unadd all the added transactions.
+			for _, addedTxn := range addedTxns {
+				if innerErr := srv.posMempool.RemoveTransaction(addedTxn.Hash()); innerErr != nil {
+					// this error is not fatal, but we should log it. Basically, we can only hit
+					// an error if the transaction was already removed from the mempool or the mempool
+					// isn't running.
+					// TODO: so we CONFIRM that the assumptions in the above are correct. If not,
+					// then this may not be atomic, which is a problem.
+					glog.Errorf("Server._addNewTxn: Problem unadding transaction from pos mempool: %v", innerErr)
+				}
+			}
+			return nil, errors.Wrapf(err, "Server._addNewTxn: problem adding txn to pos mempool")
+		}
+	}
+
+	return addedTxns, nil
 }
 
 // It's assumed that the caller will hold the ChainLock for reading so

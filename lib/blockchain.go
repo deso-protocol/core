@@ -2876,6 +2876,45 @@ func (bc *Blockchain) ValidateTransaction(
 	return nil
 }
 
+// ValidateTransactions creates a UtxoView and sees if the transactions can be connected
+// to it. If a mempool is provided, this function tries to find dependencies of the
+// passed-in transactions in the pool and connect them before trying to connect the
+// passed-in transactions.
+func (bc *Blockchain) ValidateTransactions(
+	txns []*MsgDeSoTxn, blockHeight uint32, verifySignatures bool, mempool Mempool) error {
+
+	// Create a new UtxoView. If we have access to a mempool object, use it to
+	// get an augmented view that factors in pending transactions.
+	utxoView, err := NewUtxoView(bc.db, bc.params, bc.postgres, bc.snapshot, bc.eventManager)
+	if err != nil {
+		return errors.Wrapf(err, "ValidateTransactions: Problem creating new utxo view: ")
+	}
+	if !isInterfaceValueNil(mempool) {
+		utxoView, err = mempool.GetAugmentedUniversalView()
+		if err != nil {
+			return errors.Wrapf(err, "ValidateTransactions: Problem getting augmented UtxoView from mempool: ")
+		}
+	}
+
+	for _, txnMsg := range txns {
+		// Hash the transaction.
+		txHash := txnMsg.Hash()
+		txnBytes, err := txnMsg.ToBytes(false)
+		if err != nil {
+			return errors.Wrapf(err, "ValidateTransaction: Error serializing txn: %v", err)
+		}
+		txnSize := int64(len(txnBytes))
+		// We don't care about the utxoOps or the fee it returns.
+		_, _, _, _, err = utxoView._connectTransaction(
+			txnMsg, txHash, txnSize, blockHeight, 0, verifySignatures, false)
+		if err != nil {
+			return errors.Wrapf(err, "ValidateTransaction: Problem validating transaction: ")
+		}
+	}
+
+	return nil
+}
+
 var (
 	maxHash = BlockHash{
 		0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
