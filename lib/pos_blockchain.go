@@ -371,7 +371,7 @@ func (bc *Blockchain) processOrphanBlockPoS(block *MsgDeSoBlock) error {
 		// We can't validate the QC without getting the current epoch entry.
 		return errors.Wrap(err, "processOrphanBlockPoS: Problem getting current epoch entry")
 	}
-
+	var validatorsByStake []*ValidatorEntry
 	// If the block is in a previous or future epoch, we need to compute the
 	// proper validator set for the block. We do this by computing the prev/next
 	// epoch entry and then fetching the validator set at the snapshot of the
@@ -458,6 +458,13 @@ func (bc *Blockchain) processOrphanBlockPoS(block *MsgDeSoBlock) error {
 			// potential leaders. As a spam-prevention measure, we simply return nil and throw it away.
 			return nil
 		}
+		validatorsByStake, err = utxoView.GetAllSnapshotValidatorSetEntriesByStakeAtEpochNumber(
+			epochEntrySnapshotAtEpochNumber)
+		if err != nil {
+			return errors.Wrapf(err,
+				"processOrphanBlockPoS: Problem getting validator set at snapshot at epoch number %d",
+				epochEntrySnapshotAtEpochNumber)
+		}
 	} else {
 		// This block is in the current epoch!
 		// First we validate the proposer vote partial signature
@@ -489,31 +496,19 @@ func (bc *Blockchain) processOrphanBlockPoS(block *MsgDeSoBlock) error {
 			// measure, we just throw away this block and don't store it.
 			return nil
 		}
+		// If we get here, we know we have the correct block proposer. We now fetch the validators ordered by
+		// stake, so we can validate the QC.
+		validatorsByStake, err = utxoView.GetAllSnapshotValidatorSetEntriesByStake()
+		if err != nil {
+			return errors.Wrap(err, "processOrphanBlockPoS: Problem getting validator set")
+		}
 	}
-
-	// Get the validator set for the current and previous block heights.
-	validatorSetByBlockHeight, err := utxoView.GetSnapshotValidatorSetsByBlockHeights([]uint64{
-		block.Header.Height, block.Header.Height - 1,
-	})
-	if err != nil {
-		return errors.Wrap(err, "processOrphanBlockPoS: Problem getting validator sets")
-	}
-	currentBlockValidatorSet, ok := validatorSetByBlockHeight[block.Header.Height]
-	if !ok {
-		return errors.Errorf("processOrphanBlockPoS: Validator set for block height %d not found", block.Header.Height)
-	}
-	prevBlockValidatorSet, ok := validatorSetByBlockHeight[block.Header.Height-1]
-	if !ok {
-		return errors.Errorf("processOrphanBlockPoS: Validator set for block height %d not found", block.Header.Height-1)
-	}
-
 	// Okay now we have the validator set ordered by stake, we can validate the QC.
-	if err = bc.isValidPoSQuorumCertificate(block, currentBlockValidatorSet, prevBlockValidatorSet); err != nil {
+	if err = bc.isValidPoSQuorumCertificate(block, validatorsByStake, validatorsByStake); err != nil {
 		// If we hit an error, we know that the QC is invalid, and we'll never accept this block,
 		// As a spam-prevention measure, we just throw away this block and don't store it.
 		return nil
 	}
-
 	// All blocks should pass the basic integrity validations, which ensure the block
 	// is not malformed. If the block is malformed, we should store it as ValidateFailed.
 	if err = bc.isProperlyFormedBlockPoS(block); err != nil {
@@ -523,7 +518,6 @@ func (bc *Blockchain) processOrphanBlockPoS(block *MsgDeSoBlock) error {
 		}
 		return nil
 	}
-
 	// Add to blockIndexByHash with status STORED only as we are not sure if it's valid yet.
 	_, err = bc.storeBlockInBlockIndex(block)
 	return errors.Wrap(err, "processBlockPoS: Problem adding block to block index: ")
