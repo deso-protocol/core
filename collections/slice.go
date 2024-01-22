@@ -55,3 +55,13 @@ func Reverse[T any](input []T) []T {
 	}
 	return output
 }
+
+func Filter[T any](input []T, predicate func(T) bool) []T {
+	output := make([]T, 0)
+	for _, val := range input {
+		if predicate(val) {
+			output = append(output, val)
+		}
+	}
+	return output
+}

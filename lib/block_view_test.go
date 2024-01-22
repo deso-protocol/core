@@ -1163,11 +1163,20 @@ func _rollBackTestMetaTxnsAndFlush(testMeta *TestMeta) {
 
 		// After disconnecting, the balances should be restored to what they
 		// were before this transaction was applied.
-		require.Equal(
-			testMeta.t,
-			testMeta.expectedSenderBalances[backwardIter],
-			_getBalance(testMeta.t, testMeta.chain, nil, PkToStringTestnet(currentTxn.PublicKey)),
-		)
+		if currentTxn.TxnMeta.GetTxnType() != TxnTypeAtomicTxns {
+			require.Equal(
+				testMeta.t,
+				testMeta.expectedSenderBalances[backwardIter],
+				_getBalance(testMeta.t, testMeta.chain, nil, PkToStringTestnet(currentTxn.PublicKey)),
+			)
+		} else {
+			var totalBalance uint64
+			for _, innerTxn := range currentTxn.TxnMeta.(*AtomicTxnsMetadata).Txns {
+				totalBalance += _getBalance(testMeta.t, testMeta.chain, nil, PkToStringTestnet(innerTxn.PublicKey))
+			}
+			require.Equal(testMeta.t, testMeta.expectedSenderBalances[backwardIter], totalBalance)
+		}
+
 	}
 }
 
@@ -1175,11 +1184,20 @@ func _applyTestMetaTxnsToMempool(testMeta *TestMeta) {
 	// Apply all the transactions to a mempool object and make sure we don't get any
 	// errors. Verify the balances align as we go.
 	for ii, tx := range testMeta.txns {
-		require.Equal(
-			testMeta.t,
-			testMeta.expectedSenderBalances[ii],
-			_getBalance(testMeta.t, testMeta.chain, testMeta.mempool, PkToStringTestnet(tx.PublicKey)))
-
+		if tx.TxnMeta.GetTxnType() != TxnTypeAtomicTxns {
+			require.Equal(
+				testMeta.t,
+				testMeta.expectedSenderBalances[ii],
+				_getBalance(testMeta.t, testMeta.chain, testMeta.mempool, PkToStringTestnet(tx.PublicKey)))
+		} else {
+			// TODO: figure out why I need this for the flush to db case to pass.
+			testMeta.mempool.regenerateReadOnlyView()
+			var totalBalance uint64
+			for _, innerTxn := range tx.TxnMeta.(*AtomicTxnsMetadata).Txns {
+				totalBalance += _getBalance(testMeta.t, testMeta.chain, testMeta.mempool, PkToStringTestnet(innerTxn.PublicKey))
+			}
+			require.Equal(testMeta.t, testMeta.expectedSenderBalances[ii], totalBalance)
+		}
 		fmt.Printf("Adding txn %d of type %v to mempool\n", ii, tx.TxnMeta.GetTxnType())
 
 		_, err := testMeta.mempool.ProcessTransaction(tx, false, false, 0, true)

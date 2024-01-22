@@ -529,6 +529,17 @@ const (
 	RuleErrorUpdateCoinLockupParamsUpdatingNonExistentProfile           RuleError = "RuleErrorUpdateCoinLockupParamsUpdatingNonExistentProfile"
 	RuleErrorUpdateCoinLockupParamsUpdatingPermanentTransferRestriction RuleError = "RuleErrorUpdateCoinLockupParamsUpdatingPermanentTransferRestriction"
 
+	// Atomic txns
+	RuleErrorAtomicTxnBeforeBlockHeight         RuleError = "RuleErrorAtomicTxnBeforeBlockHeight"
+	RuleErrorAtomicTxnPublicKeyMustBeZero       RuleError = "RuleErrorAtomicTxnPublicKeyMustBeZero"
+	RuleErrorAtomicTxnMustHaveZeroOutputs       RuleError = "RuleErrorAtomicTxnMustHaveZeroOutputs"
+	RuleErrorAtomicTxnMustHaveZeroFee           RuleError = "RuleErrorAtomicTxnMustHaveZeroFee"
+	RuleErrorAtomicTxnMustHaveZeroExtraData     RuleError = "RuleErrorAtomicTxnMustHaveZeroExtraData"
+	RuleErrorAtomicTxnMetaTypeMustBeAtomicTxns  RuleError = "RuleErrorAtomicTxnMetaTypeMustBeAtomicTxns"
+	RuleErrorAtomicTxnSignatureMustBeNil        RuleError = "RuleErrorAtomicTxnSignatureMustBeNil"
+	RuleErrorAtomicTxnInnerTxnCannotBeAtomicTxn RuleError = "RuleErrorAtomicTxnInnerTxnCannotBeAtomicTxn"
+	RuleErrorAtomicTxnHasNonZeroFee             RuleError = "RuleErrorAtomicTxnHasNonZeroFee"
+
 	HeaderErrorDuplicateHeader                                                   RuleError = "HeaderErrorDuplicateHeader"
 	HeaderErrorNilPrevHash                                                       RuleError = "HeaderErrorNilPrevHash"
 	HeaderErrorInvalidParent                                                     RuleError = "HeaderErrorInvalidParent"
@@ -552,6 +563,7 @@ const (
 	// Mempool
 	MempoolErrorNotRunning          RuleError = "MempoolErrorNotRunning"
 	MempoolFailedReplaceByHigherFee RuleError = "MempoolFailedReplaceByHigherFee"
+	MempoolFailedReplaceSubTxn      RuleError = "MempoolFailedReplaceSubTxn"
 )
 
 func (e RuleError) Error() string {

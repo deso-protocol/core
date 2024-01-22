@@ -112,6 +112,10 @@ type PosMempool struct {
 	// mempool transaction with a new transaction having the same nonce but higher fee.
 	nonceTracker *NonceTracker
 
+	// atomicTransactionNonceTracker is responsible for tracking nonces of sub txns in atomic transactions.
+	// sub txns in atomic transaction CANNOT be replaced.
+	atomicTransactionNonceTracker *NonceTracker
+
 	// readOnlyLatestBlockView is used to check if a transaction is valid before being added to the mempool. The readOnlyLatestBlockView
 	// checks if the transaction has a valid signature and if the transaction's sender has enough funds to cover the fee.
 	// The readOnlyLatestBlockView should be updated whenever a new block is added to the blockchain via UpdateLatestBlock.
@@ -159,11 +163,12 @@ func NewPosMempoolIterator(it *FeeTimeIterator) *PosMempoolIterator {
 
 func NewPosMempool() *PosMempool {
 	return &PosMempool{
-		status:       PosMempoolStatusNotInitialized,
-		txnRegister:  NewTransactionRegister(),
-		feeEstimator: NewPoSFeeEstimator(),
-		ledger:       NewBalanceLedger(),
-		nonceTracker: NewNonceTracker(),
+		status:                        PosMempoolStatusNotInitialized,
+		txnRegister:                   NewTransactionRegister(),
+		feeEstimator:                  NewPoSFeeEstimator(),
+		ledger:                        NewBalanceLedger(),
+		nonceTracker:                  NewNonceTracker(),
+		atomicTransactionNonceTracker: NewNonceTracker(),
 	}
 }
 
@@ -268,6 +273,7 @@ func (mp *PosMempool) Stop() {
 	mp.txnRegister.Reset()
 	mp.ledger.Reset()
 	mp.nonceTracker.Reset()
+	mp.atomicTransactionNonceTracker.Reset()
 	mp.feeEstimator = NewPoSFeeEstimator()
 
 	mp.status = PosMempoolStatusNotInitialized
@@ -340,16 +346,18 @@ func (mp *PosMempool) validateTransaction(txn *MsgDeSoTxn, verifySignature bool)
 	}
 
 	// Check transaction signature.
-	if _, err := mp.readOnlyLatestBlockView.VerifySignature(txn, uint32(mp.latestBlockHeight)); err != nil {
+	if err := mp.readOnlyLatestBlockView.VerifySignature(txn, uint32(mp.latestBlockHeight)); err != nil {
 		return errors.Wrapf(err, "PosMempool.AddTransaction: Signature validation failed")
 	}
 
 	return nil
 }
 
+// TODO: modify to support atomic transactions.
 func (mp *PosMempool) addTransactionNoLock(txn *MempoolTx, persistToDb bool) error {
 	userPk := NewPublicKey(txn.Tx.PublicKey)
 	txnFee := txn.Tx.TxnFeeNanos
+	var innerMempoolTxs []*MempoolTx
 
 	// Validate that the user has enough balance to cover the transaction fees.
 	spendableBalanceNanos, err := mp.readOnlyLatestBlockView.GetSpendableDeSoBalanceNanosForPublicKey(userPk.ToBytes(),
@@ -362,11 +370,45 @@ func (mp *PosMempool) addTransactionNoLock(txn *MempoolTx, persistToDb bool) err
 			"hash %v, fee %v", txn.Tx.Hash(), txnFee)
 	}
 
+	if txn.Tx.TxnMeta.GetTxnType() == TxnTypeAtomicTxns {
+		// Validate that each subtxn's user has enough balance to cover the transaction fees.
+		for _, innerTxn := range txn.Tx.TxnMeta.(*AtomicTxnsMetadata).Txns {
+			innerTxnFee := innerTxn.TxnFeeNanos
+			innerUserPk := NewPublicKey(innerTxn.PublicKey)
+			innerSpendableBalanceNanos, err := mp.readOnlyLatestBlockView.GetSpendableDeSoBalanceNanosForPublicKey(
+				innerUserPk.ToBytes(),
+				uint32(mp.latestBlockHeight))
+			if err != nil {
+				return errors.Wrapf(err,
+					"PosMempool.addTransactionNoLock: Problem getting spendable balance for inner txn")
+			}
+			if err = mp.ledger.CanIncreaseEntryWithLimit(
+				*innerUserPk, innerTxnFee, innerSpendableBalanceNanos); err != nil {
+				return errors.Wrapf(err, "PosMempool.addTransactionNoLock: Problem checking balance increase for "+
+					"inner transaction with hash %v, fee %v", innerTxn.Hash(), innerTxnFee)
+			}
+			// TODO: how can I make this create safer? unix micro and height should exactly match parent.
+			innerMempoolTx, err := NewMempoolTx(innerTxn, uint64(txn.Added.UnixMicro()), uint64(txn.Height))
+			if err != nil {
+				return errors.Wrapf(err, "PosMempool.addTransactionNoLock: Problem constructing MempoolTx for inner txn")
+			}
+			innerMempoolTxs = append(innerMempoolTxs, innerMempoolTx)
+		}
+	}
+
 	// Check the nonceTracker to see if this transaction is meant to replace an existing one.
+	// Note that the parent transaction in an atomic transaction MUST have a fee of 0 and thus
+	// cannot be replaced.
 	existingTxn := mp.nonceTracker.GetTxnByPublicKeyNonce(*userPk, *txn.Tx.TxnNonce)
 	if existingTxn != nil && existingTxn.FeePerKB > txn.FeePerKB {
 		return errors.Wrapf(MempoolFailedReplaceByHigherFee, "PosMempool.AddTransaction: Problem replacing transaction "+
 			"by higher fee failed. New transaction has lower fee.")
+	}
+
+	existingSubTxn := mp.atomicTransactionNonceTracker.GetTxnByPublicKeyNonce(*userPk, *txn.Tx.TxnNonce)
+	if existingSubTxn != nil {
+		return errors.Wrapf(MempoolFailedReplaceSubTxn, "PosMempool.AddTransaction: cannot replace a sub-transaction of"+
+			" an atomic transaction")
 	}
 
 	// If we get here, it means that the transaction's sender has enough balance to cover transaction fees. Moreover, if
@@ -388,6 +430,16 @@ func (mp *PosMempool) addTransactionNoLock(txn *MempoolTx, persistToDb bool) err
 	// At this point the transaction is in the mempool. We can now update the ledger and nonce tracker.
 	mp.ledger.IncreaseEntry(*userPk, txnFee)
 	mp.nonceTracker.AddTxnByPublicKeyNonce(txn, *userPk, *txn.Tx.TxnNonce)
+
+	if txn.Tx.TxnMeta.GetTxnType() == TxnTypeAtomicTxns {
+		// Update the ledger and nonce tracker for each subtxn.
+		for _, innerTxn := range innerMempoolTxs {
+			innerTxnFee := innerTxn.Tx.TxnFeeNanos
+			innerUserPk := NewPublicKey(innerTxn.Tx.PublicKey)
+			mp.ledger.IncreaseEntry(*innerUserPk, innerTxnFee)
+			mp.nonceTracker.AddTxnByPublicKeyNonce(innerTxn, *innerUserPk, *innerTxn.Tx.TxnNonce)
+		}
+	}
 
 	// Emit an event for the newly added transaction.
 	if persistToDb && !mp.inMemoryOnly {
@@ -452,6 +504,16 @@ func (mp *PosMempool) removeTransactionNoLock(txn *MempoolTx, persistToDb bool) 
 	// Remove the txn from the balance ledger and the nonce tracker.
 	mp.ledger.DecreaseEntry(*userPk, txn.Fee)
 	mp.nonceTracker.RemoveTxnByPublicKeyNonce(*userPk, *txn.Tx.TxnNonce)
+
+	if txn.Tx.TxnMeta.GetTxnType() == TxnTypeAtomicTxns {
+		// Remove the txn from the balance ledger and the nonce tracker for each subtxn.
+		for _, innerTxn := range txn.Tx.TxnMeta.(*AtomicTxnsMetadata).Txns {
+			innerTxnFee := innerTxn.TxnFeeNanos
+			innerUserPk := NewPublicKey(innerTxn.PublicKey)
+			mp.ledger.DecreaseEntry(*innerUserPk, innerTxnFee)
+			mp.nonceTracker.RemoveTxnByPublicKeyNonce(*innerUserPk, *innerTxn.TxnNonce)
+		}
+	}
 
 	// Emit an event for the removed transaction.
 	if persistToDb && !mp.inMemoryOnly {

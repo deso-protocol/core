@@ -84,6 +84,14 @@ func ValidateDeSoTxnMetadata(txn *MsgDeSoTxn) error {
 	if _, err := NewTxnMetadata(txn.TxnMeta.GetTxnType()); err != nil {
 		return errors.Wrapf(err, "ValidateDeSoTxnMetadata: Problem parsing TxnType")
 	}
+	if txn.TxnMeta.GetTxnType() == TxnTypeAtomicTxns {
+		for _, innerTxn := range txn.TxnMeta.(*AtomicTxnsMetadata).Txns {
+			if err := ValidateDeSoTxnMetadata(innerTxn); err != nil {
+				return errors.Wrapf(err, "ValidateDeSoTxnMetadata: ")
+			}
+		}
+		return nil
+	}
 	return nil
 }
 
@@ -97,6 +105,14 @@ func ValidateDeSoTxnHash(txn *MsgDeSoTxn) error {
 	if txn.Hash() == nil {
 		return fmt.Errorf("ValidateDeSoTxnHash: Problem computing tx hash")
 	}
+	if txn.TxnMeta.GetTxnType() == TxnTypeAtomicTxns {
+		for _, innerTxn := range txn.TxnMeta.(*AtomicTxnsMetadata).Txns {
+			if err := ValidateDeSoTxnHash(innerTxn); err != nil {
+				return errors.Wrapf(err, "ValidateDeSoTxnHash: ")
+			}
+		}
+		return nil
+	}
 	return nil
 }
 
@@ -104,6 +120,18 @@ func ValidateDeSoTxnHash(txn *MsgDeSoTxn) error {
 func ValidateDeSoTxnPublicKey(txn *MsgDeSoTxn) error {
 	if txn == nil {
 		return fmt.Errorf("ValidateDeSoTxnPublicKey: Transaction cannot be nil")
+	}
+
+	if txn.TxnMeta.GetTxnType() == TxnTypeAtomicTxns {
+		for _, innerTxn := range txn.TxnMeta.(*AtomicTxnsMetadata).Txns {
+			if err := ValidateDeSoTxnPublicKey(innerTxn); err != nil {
+				return errors.Wrapf(err, "ValidateDeSoTxnPublicKey: ")
+			}
+		}
+		if !NewPublicKey(txn.PublicKey).IsZeroPublicKey() {
+			return fmt.Errorf("ValidateDeSoTxnPublicKey: Atomic transactions should not have a public key")
+		}
+		return nil
 	}
 
 	// Validate public key
@@ -126,17 +154,29 @@ func ValidateDeSoTxnFormatBalanceModel(txn *MsgDeSoTxn, blockHeight uint64, glob
 		return fmt.Errorf("ValidateDeSoTxnFormatBalanceModel: DeSoTxnVersion0 is outdated in balance model")
 	}
 
-	if txn.TxnNonce == nil {
-		return errors.Wrapf(TxErrorNoNonceAfterBalanceModelBlockHeight, "ValidateDeSoTxnFormatBalanceModel: Transaction "+
-			"does not have a nonce.")
-	}
-	if txn.TxnNonce.ExpirationBlockHeight < blockHeight {
-		return errors.Wrapf(TxErrorNonceExpired, "ValidateDeSoTxnFormatBalanceModel: Transaction nonce has expired")
-	}
-	if globalParams.MaxNonceExpirationBlockHeightOffset != 0 &&
-		txn.TxnNonce.ExpirationBlockHeight > blockHeight+globalParams.MaxNonceExpirationBlockHeightOffset {
-		return errors.Wrapf(TxErrorNonceExpirationBlockHeightOffsetExceeded, "ValidateDeSoTxnFormatBalanceModel: Transaction "+
-			"nonce expiration block height offset exceeded")
+	if txn.TxnMeta.GetTxnType() == TxnTypeAtomicTxns {
+		for _, innerTxn := range txn.TxnMeta.(*AtomicTxnsMetadata).Txns {
+			if err = ValidateDeSoTxnFormatBalanceModel(innerTxn, blockHeight, globalParams); err != nil {
+				return errors.Wrapf(err, "ValidateDeSoTxnFormatBalanceModel: ")
+			}
+		}
+		if txn.TxnNonce != nil {
+			return fmt.Errorf("ValidateDeSoTxnFormatBalanceModel: Atomic transactions should not have a nonce")
+		}
+		return nil
+	} else {
+		if txn.TxnNonce == nil {
+			return errors.Wrapf(TxErrorNoNonceAfterBalanceModelBlockHeight, "ValidateDeSoTxnFormatBalanceModel: Transaction "+
+				"does not have a nonce.")
+		}
+		if txn.TxnNonce.ExpirationBlockHeight < blockHeight {
+			return errors.Wrapf(TxErrorNonceExpired, "ValidateDeSoTxnFormatBalanceModel: Transaction nonce has expired")
+		}
+		if globalParams.MaxNonceExpirationBlockHeightOffset != 0 &&
+			txn.TxnNonce.ExpirationBlockHeight > blockHeight+globalParams.MaxNonceExpirationBlockHeightOffset {
+			return errors.Wrapf(TxErrorNonceExpirationBlockHeightOffsetExceeded, "ValidateDeSoTxnFormatBalanceModel: Transaction "+
+				"nonce expiration block height offset exceeded")
+		}
 	}
 
 	// Verify inputs/outputs.
@@ -175,12 +215,26 @@ func ValidateDeSoTxnMinimalNetworkFee(txn *MsgDeSoTxn, globalParams *GlobalParam
 	if txn == nil || globalParams == nil {
 		return fmt.Errorf("ValidateDeSoTxnMinimalNetworkFee: Transaction and globalParams cannot be nil")
 	}
-
+	var feeNanosPerKb uint64
+	var err error
+	if txn.TxnMeta.GetTxnType() == TxnTypeAtomicTxns {
+		if txn.TxnFeeNanos != 0 {
+			return errors.Wrapf(RuleErrorAtomicTxnHasNonZeroFee, "ValidateDeSoTxnMinimalNetworkFee: Atomic transactions "+
+				"should not have a fee")
+		}
+		// Make sure the individual transactions meet the minimum.
+		for _, innerTxn := range txn.TxnMeta.(*AtomicTxnsMetadata).Txns {
+			if err = ValidateDeSoTxnMinimalNetworkFee(innerTxn, globalParams); err != nil {
+				return errors.Wrapf(err, "ValidateDeSoTxnMinimalNetworkFee: ")
+			}
+		}
+	}
 	// Verify the transaction fee
-	feeNanosPerKb, err := txn.ComputeFeeRatePerKBNanos()
+	feeNanosPerKb, err = txn.ComputeFeeRatePerKBNanos()
 	if err != nil {
 		return errors.Wrapf(err, "ValidateDeSoTxnMinimalNetworkFee: Problem computing fee per KB")
 	}
+
 	if feeNanosPerKb < globalParams.MinimumNetworkFeeNanosPerKB {
 		return errors.Wrapf(RuleErrorTxnFeeBelowNetworkMinimum, "ValidateDeSoTxnMinimalNetworkFee: Transaction fee "+
 			"per KB %d is less than the network minimum %d", feeNanosPerKb, globalParams.MinimumNetworkFeeNanosPerKB)

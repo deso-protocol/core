@@ -50,6 +50,13 @@ func NewMempoolTx(txn *MsgDeSoTxn, addedUnixMicro uint64, blockHeight uint64) (*
 	if txnHash == nil {
 		return nil, errors.Errorf("PosMempool.GetMempoolTx: Problem hashing txn")
 	}
+	fee := txn.TxnFeeNanos
+	if txn.TxnMeta.GetTxnType() == TxnTypeAtomicTxns {
+		fee, err = txn.TxnMeta.(*AtomicTxnsMetadata).GetTotalFee()
+		if err != nil {
+			return nil, errors.Wrapf(err, "PosMempool.GetMempoolTx: Problem computing fee")
+		}
+	}
 	feePerKb, err := txn.ComputeFeeRatePerKBNanos()
 	if err != nil {
 		return nil, errors.Wrapf(err, "PosMempool.GetMempoolTx: Problem computing fee per KB")
@@ -62,7 +69,7 @@ func NewMempoolTx(txn *MsgDeSoTxn, addedUnixMicro uint64, blockHeight uint64) (*
 		TxSizeBytes: serializedLen,
 		Added:       added,
 		Height:      uint32(blockHeight),
-		Fee:         txn.TxnFeeNanos,
+		Fee:         fee,
 		FeePerKB:    feePerKb,
 	}, nil
 }

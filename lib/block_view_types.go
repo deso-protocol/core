@@ -666,6 +666,7 @@ const (
 	OperationTypeCoinUnlock                   OperationType = 47
 	OperationTypeUpdateCoinLockupParams       OperationType = 48
 	OperationTypeStakeDistribution            OperationType = 49
+	OperationTypeAtomicTxns                   OperationType = 50
 	// NEXT_TAG = 50
 )
 
@@ -1011,6 +1012,10 @@ type UtxoOperation struct {
 	// transaction metadata itself doesn't specify the information we need to return to
 	// rosetta.
 	LockedAtEpochNumber uint64
+
+	// Only populated for AtomicTxns. Used to uniquely identify with sub-txns this utxo operation
+	// belong to.
+	TxnHash *BlockHash
 }
 
 // FIXME: This hackIsRunningStateSyncer() call is a hack to get around the fact that
@@ -1381,6 +1386,9 @@ func (op *UtxoOperation) RawEncodeWithoutMetadata(blockHeight uint64, skipMetada
 
 		// LockedAtEpochNumber
 		data = append(data, UintToBuf(op.LockedAtEpochNumber)...)
+
+		// Atomic Txn field
+		data = append(data, EncodeOptionalBlockHash(op.TxnHash)...)
 	}
 
 	return data
@@ -2067,6 +2075,11 @@ func (op *UtxoOperation) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.
 		// LockedAtEpochNumber
 		if op.LockedAtEpochNumber, err = ReadUvarint(rr); err != nil {
 			return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading LockedAtEpochNumber: ")
+		}
+
+		// TxnHash
+		if op.TxnHash, err = ReadOptionalBlockHash(rr); err != nil {
+			return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading TxnHash: ")
 		}
 	}
 
