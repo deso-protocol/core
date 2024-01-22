@@ -68,9 +68,7 @@ func IsValidSuperMajorityQuorumCertificate(qc QuorumCertificate, validators []Va
 }
 
 // IsValidSuperMajorityAggregateQuorumCertificate validates that the aggregate QC is properly formed and signed
-// by a super-majority of validators in the network. It takes in two sets of validator sets because the validator
-// set may shift between the view that is timed out and the high QC view. The two validator
-// sets are defined as:
+// by a super-majority of validators in the network. It takes in two sets of validators defines as:
 // - aggQCValidators: The validator set that signed the timeouts for the view that has timed out (the view in the aggregate QC)
 // - highQCValidators: The validator set that signed the high QC (the view in the high QC)
 func IsValidSuperMajorityAggregateQuorumCertificate(aggQC AggregateQuorumCertificate, aggQCValidators []Validator, highQCValidators []Validator) bool {
