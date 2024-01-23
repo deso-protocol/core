@@ -49,6 +49,13 @@ func (cc *FastHotStuffConsensus) Start() error {
 	// Fetch the current tip of the chain
 	tipBlock := cc.blockchain.BlockTip()
 
+	// If the chain is not at the final PoW block height or higher, then we cannot start the PoS consensus.
+	if tipBlock.Height < cc.blockchain.params.ForkHeights.ProofOfStake2ConsensusCutoverBlockHeight-1 {
+		return errors.Errorf(
+			"FastHotStuffConsensus.Start: Block tip %d is not at the final PoW block height", tipBlock.Height,
+		)
+	}
+
 	// Fetch the validator set at each safe block
 	tipBlockWithValidators, err := cc.fetchValidatorListsForSafeBlocks([]*MsgDeSoHeader{tipBlock.Header})
 	if err != nil {
@@ -99,6 +106,12 @@ func (cc *FastHotStuffConsensus) HandleLocalBlockProposalEvent(event *consensus.
 		return errors.Errorf("FastHotStuffConsensus.HandleLocalBlockProposalEvent: FastHotStuffEventLoop is not running")
 	}
 
+	// Hold the blockchain's write lock so that the chain cannot be mutated underneath us.
+	// In practice, this is a no-op, but it guarantees thread-safety in the event that other
+	// parts of the codebase change.
+	cc.blockchain.ChainLock.Lock()
+	defer cc.blockchain.ChainLock.Unlock()
+
 	// Handle the event as a block proposal event for a regular block
 	if err := cc.handleBlockProposerEvent(event, consensus.FastHotStuffEventTypeConstructVoteQC); err != nil {
 		return errors.Wrapf(err, "FastHotStuffConsensus.HandleLocalBlockProposalEvent: ")
@@ -120,6 +133,12 @@ func (cc *FastHotStuffConsensus) HandleLocalTimeoutBlockProposalEvent(event *con
 	if !cc.fastHotStuffEventLoop.IsRunning() {
 		return errors.Errorf("FastHotStuffConsensus.HandleLocalTimeoutBlockProposalEvent: FastHotStuffEventLoop is not running")
 	}
+
+	// Hold the blockchain's write lock so that the chain cannot be mutated underneath us.
+	// In practice, this is a no-op, but it guarantees thread-safety in the event that other
+	// parts of the codebase change.
+	cc.blockchain.ChainLock.Lock()
+	defer cc.blockchain.ChainLock.Unlock()
 
 	// Handle the event as a block proposal event for a timeout block
 	if err := cc.handleBlockProposerEvent(event, consensus.FastHotStuffEventTypeConstructTimeoutQC); err != nil {
@@ -343,6 +362,12 @@ func (cc *FastHotStuffConsensus) HandleLocalTimeoutEvent(event *consensus.FastHo
 		return errors.Errorf("FastHotStuffConsensus.HandleLocalTimeoutEvent: FastHotStuffEventLoop is not running")
 	}
 
+	// Hold the blockchain's write lock so that the chain cannot be mutated underneath us.
+	// In practice, this is a no-op, but it guarantees thread-safety in the event that other
+	// parts of the codebase change.
+	cc.blockchain.ChainLock.RLock()
+	defer cc.blockchain.ChainLock.RUnlock()
+
 	var err error
 
 	if !consensus.IsProperlyFormedTimeoutEvent(event) {
@@ -423,6 +448,12 @@ func (cc *FastHotStuffConsensus) HandleBlock(pp *Peer, msg *MsgDeSoBlock) error 
 	if !cc.fastHotStuffEventLoop.IsRunning() {
 		return errors.Errorf("FastHotStuffConsensus.HandleBlock: FastHotStuffEventLoop is not running")
 	}
+
+	// Hold the blockchain's write lock so that the chain cannot be mutated underneath us.
+	// In practice, this is a no-op, but it guarantees thread-safety in the event that other
+	// parts of the codebase change.
+	cc.blockchain.ChainLock.Lock()
+	defer cc.blockchain.ChainLock.Unlock()
 
 	// Try to apply the block as the new tip of the blockchain. If the block is an orphan, then
 	// we will get back a list of missing ancestor block hashes. We can fetch the missing blocks
