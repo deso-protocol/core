@@ -1132,9 +1132,11 @@ func (bc *Blockchain) isValidPoSQuorumCertificate(block *MsgDeSoBlock, validator
 	voteQC := block.Header.ValidatorsVoteQC
 	timeoutAggregateQC := block.Header.ValidatorsTimeoutAggregateQC
 
-	// If the block is the first block after the PoS cutover, it must contain a synthetic QC signed by the
-	// PoS cutover validator. We need to override the vote QC validator set here.
-	if block.Header.Height == uint64(bc.params.ForkHeights.ProofOfStake2ConsensusCutoverBlockHeight) {
+	cutoverHeight := uint64(bc.params.ForkHeights.ProofOfStake2ConsensusCutoverBlockHeight)
+
+	// If the block is the first block after the PoS cutover and has a timeout aggregate QC, then the
+	// highQC must be a synthetic QC. We need to override the validator set used to validate the high QC.
+	if block.Header.Height == cutoverHeight && !timeoutAggregateQC.isEmpty() {
 		posCutoverValidator, err := BuildProofOfStakeCutoverValidator()
 		if err != nil {
 			return errors.Wrapf(err, "isValidPoSQuorumCertificate: Problem building PoS cutover validator")
