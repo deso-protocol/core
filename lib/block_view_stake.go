@@ -37,6 +37,7 @@ type StakingRewardMethod = uint8
 const (
 	StakingRewardMethodPayToBalance StakingRewardMethod = 0
 	StakingRewardMethodRestake      StakingRewardMethod = 1
+	StakingRewardMethodUnknown      StakingRewardMethod = 2
 )
 
 type StakeEntry struct {
