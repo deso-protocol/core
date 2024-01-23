@@ -25,6 +25,9 @@ func NewFastHotStuffEventLoop() *fastHotStuffEventLoop {
 // params:
 //   - crankTimerInterval: crank timer interval duration must be > 0
 //   - timeoutBaseDuration: timeout base duration must be > 0
+//   - genesisQC: a quorum certificate at the genesis for the chain. This QC is a trusted input
+//     that is used to override the highQC in timeout messages and timeout aggregate QCs when there
+//     is a timeout at the first block height of the chain.
 //   - tip: the current tip of the blockchain, with the validator list at that block height. This may
 //     be a committed or uncommitted block.
 //   - safeBlocks: an unordered slice of blocks including the committed tip, the uncommitted tip,
@@ -37,6 +40,7 @@ func NewFastHotStuffEventLoop() *fastHotStuffEventLoop {
 func (fc *fastHotStuffEventLoop) Init(
 	crankTimerInterval time.Duration,
 	timeoutBaseDuration time.Duration,
+	genesisQC QuorumCertificate,
 	tip BlockWithValidatorList,
 	safeBlocks []BlockWithValidatorList,
 ) error {
@@ -56,6 +60,9 @@ func (fc *fastHotStuffEventLoop) Init(
 	if timeoutBaseDuration <= 0 {
 		return errors.New("FastHotStuffEventLoop.Init: Timeout base duration must be > 0")
 	}
+
+	// Store the genesis QC
+	fc.genesisQC = genesisQC
 
 	// Validate the safe blocks and validator lists, and store them
 	if err := fc.storeBlocks(tip, safeBlocks); err != nil {
