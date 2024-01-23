@@ -2,6 +2,7 @@ package lib
 
 import (
 	"github.com/deso-protocol/core/bls"
+	"github.com/deso-protocol/core/collections/bitset"
 	"github.com/deso-protocol/core/consensus"
 	"github.com/holiman/uint256"
 	"github.com/pkg/errors"
@@ -27,4 +28,27 @@ func BuildProofOfStakeCutoverValidator() (consensus.Validator, error) {
 		TotalStakeAmountNanos: uint256.NewInt().SetUint64(1e9),
 	}
 	return validatorEntry, nil
+}
+
+func BuildQuorumCertificateAsProofOfStakeCutoverValidator(view uint64, blockHash *BlockHash) (
+	_aggregatedSignature *bls.Signature,
+	_signersList *bitset.Bitset,
+	_err error,
+) {
+	// Construct the payload first
+	votePayload := consensus.GetVoteSignaturePayload(view, blockHash)
+
+	// Build the validator's private key
+	privateKey, err := BuildProofOfStakeCutoverValidatorBLSPrivateKey()
+	if err != nil {
+		return nil, nil, errors.Errorf("BuildQuorumCertificateAsProofOfStakeCutoverValidator: %v", err)
+	}
+
+	// Sign the payload
+	signature, err := privateKey.Sign(votePayload[:])
+	if err != nil {
+		return nil, nil, errors.Errorf("BuildQuorumCertificateAsProofOfStakeCutoverValidator: Error signing payload: %v", err)
+	}
+
+	return signature, bitset.NewBitset().Set(0, true), nil
 }
