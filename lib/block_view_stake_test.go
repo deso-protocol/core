@@ -968,45 +968,15 @@ func TestStakingWithDerivedKey(t *testing.T) {
 		require.NoError(t, err)
 	}
 	{
-		// RuleErrorTransactionSpendingLimitInvalidStaker
-		// sender tries to create a DerivedKey that would allow
-		// m1 to stake 100 $DESO nanos with m0. Errors.
-		stakeLimitKey := MakeStakeLimitKey(m0PKID, m1PKID)
-		txnSpendingLimit := &TransactionSpendingLimit{
-			GlobalDESOLimit: NanosPerUnit, // 1 $DESO spending limit
-			TransactionCountLimitMap: map[TxnType]uint64{
-				TxnTypeAuthorizeDerivedKey: 1,
-			},
-			StakeLimitMap: map[StakeLimitKey]*uint256.Int{stakeLimitKey: uint256.NewInt().SetUint64(100)},
-		}
-		derivedKeyPriv, err = _submitAuthorizeDerivedKeyTxn(txnSpendingLimit)
-		require.Error(t, err)
-	}
-	{
 		// RuleErrorTransactionSpendingLimitInvalidValidator
 		// sender tries to create a DerivedKey to stake with m2. Validator doesn't exist. Errors.
-		stakeLimitKey := MakeStakeLimitKey(m2PKID, senderPKID)
+		stakeLimitKey := MakeStakeLimitKey(m2PKID)
 		txnSpendingLimit := &TransactionSpendingLimit{
 			GlobalDESOLimit: NanosPerUnit, // 1 $DESO spending limit
 			TransactionCountLimitMap: map[TxnType]uint64{
 				TxnTypeAuthorizeDerivedKey: 1,
 			},
 			StakeLimitMap: map[StakeLimitKey]*uint256.Int{stakeLimitKey: uint256.NewInt().SetUint64(100)},
-		}
-		derivedKeyPriv, err = _submitAuthorizeDerivedKeyTxn(txnSpendingLimit)
-		require.Error(t, err)
-	}
-	{
-		// RuleErrorTransactionSpendingLimitInvalidStaker
-		// sender tries to create a DerivedKey that would allow
-		// m1 to unstake 100 $DESO nanos from m0. Errors.
-		stakeLimitKey := MakeStakeLimitKey(m0PKID, m1PKID)
-		txnSpendingLimit := &TransactionSpendingLimit{
-			GlobalDESOLimit: NanosPerUnit, // 1 $DESO spending limit
-			TransactionCountLimitMap: map[TxnType]uint64{
-				TxnTypeAuthorizeDerivedKey: 1,
-			},
-			UnstakeLimitMap: map[StakeLimitKey]*uint256.Int{stakeLimitKey: uint256.NewInt().SetUint64(100)},
 		}
 		derivedKeyPriv, err = _submitAuthorizeDerivedKeyTxn(txnSpendingLimit)
 		require.Error(t, err)
@@ -1014,7 +984,7 @@ func TestStakingWithDerivedKey(t *testing.T) {
 	{
 		// RuleErrorTransactionSpendingLimitInvalidValidator
 		// sender tries to create a DerivedKey to unstake from m2. Validator doesn't exist. Errors.
-		stakeLimitKey := MakeStakeLimitKey(m2PKID, senderPKID)
+		stakeLimitKey := MakeStakeLimitKey(m2PKID)
 		txnSpendingLimit := &TransactionSpendingLimit{
 			GlobalDESOLimit: NanosPerUnit, // 1 $DESO spending limit
 			TransactionCountLimitMap: map[TxnType]uint64{
@@ -1026,24 +996,9 @@ func TestStakingWithDerivedKey(t *testing.T) {
 		require.Error(t, err)
 	}
 	{
-		// RuleErrorTransactionSpendingLimitInvalidStaker
-		// sender tries to create a DerivedKey that would allow
-		// m1 to unlock stake from m0. Errors.
-		stakeLimitKey := MakeStakeLimitKey(m0PKID, m1PKID)
-		txnSpendingLimit := &TransactionSpendingLimit{
-			GlobalDESOLimit: NanosPerUnit, // 1 $DESO spending limit
-			TransactionCountLimitMap: map[TxnType]uint64{
-				TxnTypeAuthorizeDerivedKey: 1,
-			},
-			UnlockStakeLimitMap: map[StakeLimitKey]uint64{stakeLimitKey: 100},
-		}
-		derivedKeyPriv, err = _submitAuthorizeDerivedKeyTxn(txnSpendingLimit)
-		require.Error(t, err)
-	}
-	{
 		// RuleErrorTransactionSpendingLimitInvalidValidator
 		// sender tries to create a DerivedKey to stake with m2. Validator doesn't exist. Errors.
-		stakeLimitKey := MakeStakeLimitKey(m2PKID, senderPKID)
+		stakeLimitKey := MakeStakeLimitKey(m2PKID)
 		txnSpendingLimit := &TransactionSpendingLimit{
 			GlobalDESOLimit: NanosPerUnit, // 1 $DESO spending limit
 			TransactionCountLimitMap: map[TxnType]uint64{
@@ -1058,7 +1013,7 @@ func TestStakingWithDerivedKey(t *testing.T) {
 		// sender stakes with m0 using a DerivedKey.
 
 		// sender creates a DerivedKey to stake up to 100 $DESO nanos with m0.
-		stakeLimitKey := MakeStakeLimitKey(m0PKID, senderPKID)
+		stakeLimitKey := MakeStakeLimitKey(m0PKID)
 		txnSpendingLimit := &TransactionSpendingLimit{
 			GlobalDESOLimit: NanosPerUnit, // 1 $DESO spending limit
 			TransactionCountLimitMap: map[TxnType]uint64{
@@ -1116,7 +1071,7 @@ func TestStakingWithDerivedKey(t *testing.T) {
 		// sender unstakes from m0 using a DerivedKey.
 
 		// sender creates a DerivedKey to unstake up to 50 $DESO nanos from m0.
-		stakeLimitKey := MakeStakeLimitKey(m0PKID, senderPKID)
+		stakeLimitKey := MakeStakeLimitKey(m0PKID)
 		txnSpendingLimit := &TransactionSpendingLimit{
 			GlobalDESOLimit: NanosPerUnit, // 1 $DESO spending limit
 			TransactionCountLimitMap: map[TxnType]uint64{
@@ -1207,7 +1162,7 @@ func TestStakingWithDerivedKey(t *testing.T) {
 		// sender unlocks stake using a DerivedKey.
 
 		// sender creates a DerivedKey to perform 1 unlock stake operation with m0.
-		stakeLimitKey := MakeStakeLimitKey(m0PKID, senderPKID)
+		stakeLimitKey := MakeStakeLimitKey(m0PKID)
 		txnSpendingLimit := &TransactionSpendingLimit{
 			GlobalDESOLimit: NanosPerUnit, // 1 $DESO spending limit
 			TransactionCountLimitMap: map[TxnType]uint64{
@@ -1307,7 +1262,7 @@ func TestStakingWithDerivedKey(t *testing.T) {
 		// sender stakes, unstakes, and unlocks stake using a DerivedKey scoped to any validator.
 
 		// sender creates a DerivedKey that can stake, unstake, and unlock stake with any validator.
-		stakeLimitKey := MakeStakeLimitKey(&ZeroPKID, senderPKID)
+		stakeLimitKey := MakeStakeLimitKey(&ZeroPKID)
 		txnSpendingLimit := &TransactionSpendingLimit{
 			GlobalDESOLimit: NanosPerUnit, // 1 $DESO spending limit
 			TransactionCountLimitMap: map[TxnType]uint64{
@@ -1461,8 +1416,8 @@ func TestStakingWithDerivedKey(t *testing.T) {
 		// any validator to cover their staking + unstaking + unlocking stake txns.
 
 		// sender creates a DerivedKey to stake, unstake, and unlock stake with m1 or any validator.
-		scopedStakeLimitKey := MakeStakeLimitKey(m1PKID, senderPKID)
-		globalStakeLimitKey := MakeStakeLimitKey(&ZeroPKID, senderPKID)
+		scopedStakeLimitKey := MakeStakeLimitKey(m1PKID)
+		globalStakeLimitKey := MakeStakeLimitKey(&ZeroPKID)
 		txnSpendingLimit := &TransactionSpendingLimit{
 			GlobalDESOLimit: NanosPerUnit, // 1 $DESO spending limit
 			TransactionCountLimitMap: map[TxnType]uint64{
@@ -1545,8 +1500,8 @@ func TestStakingWithDerivedKey(t *testing.T) {
 	}
 	{
 		// Test TransactionSpendingLimit.ToMetamaskString() scoped to one validator.
-		stakeLimitKey1 := MakeStakeLimitKey(m0PKID, senderPKID)
-		stakeLimitKey2 := MakeStakeLimitKey(m1PKID, senderPKID)
+		stakeLimitKey1 := MakeStakeLimitKey(m0PKID)
+		stakeLimitKey2 := MakeStakeLimitKey(m1PKID)
 		txnSpendingLimit := &TransactionSpendingLimit{
 			GlobalDESOLimit: NanosPerUnit, // 1 $DESO spending limit
 			TransactionCountLimitMap: map[TxnType]uint64{
@@ -1570,36 +1525,31 @@ func TestStakingWithDerivedKey(t *testing.T) {
 				"\tStaking Restrictions:\n"+
 				"\t\t[\n"+
 				"\t\t\tValidator PKID: "+m0Pub+"\n"+
-				"\t\t\tStaker PKID: "+senderPkString+"\n"+
 				"\t\t\tStaking Limit: 1.50 $DESO\n"+
 				"\t\t]\n"+
 				"\t\t[\n"+
 				"\t\t\tValidator PKID: "+m1Pub+"\n"+
-				"\t\t\tStaker PKID: "+senderPkString+"\n"+
 				"\t\t\tStaking Limit: 2.00 $DESO\n"+
 				"\t\t]\n"+
 				"\tUnstaking Restrictions:\n"+
 				"\t\t[\n"+
 				"\t\t\tValidator PKID: "+m0Pub+"\n"+
-				"\t\t\tStaker PKID: "+senderPkString+"\n"+
 				"\t\t\tUnstaking Limit: 3.25 $DESO\n"+
 				"\t\t]\n"+
 				"\tUnlocking Stake Restrictions:\n"+
 				"\t\t[\n"+
 				"\t\t\tValidator PKID: "+m0Pub+"\n"+
-				"\t\t\tStaker PKID: "+senderPkString+"\n"+
 				"\t\t\tTransaction Count: 2\n"+
 				"\t\t]\n"+
 				"\t\t[\n"+
 				"\t\t\tValidator PKID: "+m1Pub+"\n"+
-				"\t\t\tStaker PKID: "+senderPkString+"\n"+
 				"\t\t\tTransaction Count: 3\n"+
 				"\t\t]\n",
 		)
 	}
 	{
 		// Test TransactionSpendingLimit.ToMetamaskString() scoped to any validator.
-		stakeLimitKey := MakeStakeLimitKey(&ZeroPKID, senderPKID)
+		stakeLimitKey := MakeStakeLimitKey(&ZeroPKID)
 		txnSpendingLimit := &TransactionSpendingLimit{
 			GlobalDESOLimit: NanosPerUnit, // 1 $DESO spending limit
 			TransactionCountLimitMap: map[TxnType]uint64{
@@ -1622,19 +1572,16 @@ func TestStakingWithDerivedKey(t *testing.T) {
 				"\tStaking Restrictions:\n"+
 				"\t\t[\n"+
 				"\t\t\tValidator PKID: Any\n"+
-				"\t\t\tStaker PKID: "+senderPkString+"\n"+
 				"\t\t\tStaking Limit: 0.65 $DESO\n"+
 				"\t\t]\n"+
 				"\tUnstaking Restrictions:\n"+
 				"\t\t[\n"+
 				"\t\t\tValidator PKID: Any\n"+
-				"\t\t\tStaker PKID: "+senderPkString+"\n"+
 				"\t\t\tUnstaking Limit: 2.10 $DESO\n"+
 				"\t\t]\n"+
 				"\tUnlocking Stake Restrictions:\n"+
 				"\t\t[\n"+
 				"\t\t\tValidator PKID: Any\n"+
-				"\t\t\tStaker PKID: "+senderPkString+"\n"+
 				"\t\t\tTransaction Count: 1\n"+
 				"\t\t]\n",
 		)
