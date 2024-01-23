@@ -2867,7 +2867,8 @@ func (bc *Blockchain) ValidateTransaction(
 	txnSize := int64(len(txnBytes))
 	// We don't care about the utxoOps or the fee it returns.
 	_, _, _, _, err = utxoView._connectTransaction(
-		txnMsg, txHash, txnSize, blockHeight, 0, verifySignatures, false)
+		txnMsg, txHash, txnSize, blockHeight, time.Now().UnixNano(),
+		verifySignatures, false)
 	if err != nil {
 		return errors.Wrapf(err, "ValidateTransaction: Problem validating transaction: ")
 	}
