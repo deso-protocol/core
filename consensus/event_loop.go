@@ -449,9 +449,9 @@ func (fc *fastHotStuffEventLoop) ProcessValidatorTimeout(timeout TimeoutMessage)
 		)
 	}
 
-	// Verify the high QC in the timeout message. We can use the validator list at the exact block height of
-	// the high QC's block hash.
-	if !IsValidSuperMajorityQuorumCertificate(timeout.GetHighQC(), validatorList) {
+	// Verify the high QC in the timeout message. The highQC is valid if it exactly matches the genesis QC or it is a
+	// valid QC signed by a super-majority of validators for a safe block.
+	if !IsEqualQC(timeout.GetHighQC(), fc.genesisQC) && !IsValidSuperMajorityQuorumCertificate(timeout.GetHighQC(), validatorList) {
 		return errors.Errorf(
 			"FastHotStuffEventLoop.ProcessValidatorTimeout: Invalid high QC received in timeout message from validator %s for view %d",
 			timeout.GetPublicKey().ToString(),
