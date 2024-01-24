@@ -417,10 +417,20 @@ func (cc *FastHotStuffConsensus) HandleLocalTimeoutEvent(event *consensus.FastHo
 	timeoutMsg.MsgVersion = MsgValidatorTimeoutVersion0
 	timeoutMsg.TimedOutView = event.View
 	timeoutMsg.VotingPublicKey = cc.signer.GetPublicKey()
-	timeoutMsg.HighQC = QuorumCertificateFromConsensusInterface(tipBlockNode.Header.GetQC())
+
+	if cc.isFinalPoWBlockHeight(tipBlockNode.Header.Height) {
+		// If the tip block is the final block of the PoW chain, then we can use the PoS chain's genesis block
+		// as the highQC for it.
+		if timeoutMsg.HighQC, err = cc.createGenesisQC(tipBlockNode.Hash, tipBlockNode.Header.Height); err != nil {
+			return errors.Errorf("FastHotStuffConsensus.Start: Error creating PoS cutover genesis QC: %v", err)
+		}
+	} else {
+		// Otherwise, we use the QC from the tip block as the highQC
+		timeoutMsg.HighQC = QuorumCertificateFromConsensusInterface(tipBlockNode.Header.GetQC())
+	}
 
 	// Sign the timeout message
-	timeoutMsg.TimeoutPartialSignature, err = cc.signer.SignValidatorTimeout(event.View, tipBlockNode.Header.GetQC().GetView())
+	timeoutMsg.TimeoutPartialSignature, err = cc.signer.SignValidatorTimeout(event.View, timeoutMsg.HighQC.GetView())
 	if err != nil {
 		// This should never happen as long as the BLS signer is initialized correctly.
 		return errors.Errorf("FastHotStuffConsensus.HandleLocalTimeoutEvent: Error signing validator timeout: %v", err)
@@ -773,6 +783,10 @@ func (fc *FastHotStuffConsensus) getFinalCommittedPoWBlock() (*BlockNode, error)
 		"Error fetching committed cutover block node before height %d",
 		fc.params.ForkHeights.ProofOfStake2ConsensusCutoverBlockHeight-1,
 	)
+}
+
+func (fc *FastHotStuffConsensus) isFinalPoWBlockHeight(blockHeight uint64) bool {
+	return blockHeight == uint64(fc.params.ForkHeights.ProofOfStake2ConsensusCutoverBlockHeight-1)
 }
 
 // Finds the epoch entry for the block and returns the epoch number.

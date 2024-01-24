@@ -105,6 +105,7 @@ func TestFastHotStuffConsensusHandleLocalTimeoutEvent(t *testing.T) {
 		signer: &BLSSigner{
 			privateKey: blsPrivateKey,
 		},
+		params: &DeSoTestnetParams,
 		blockchain: &Blockchain{
 			ChainLock: deadlock.RWMutex{},
 			blockIndexByHash: map[BlockHash]*BlockNode{
