@@ -93,6 +93,10 @@ func (validatorEntry *ValidatorEntry) GetStakeAmount() *uint256.Int {
 	return validatorEntry.TotalStakeAmountNanos
 }
 
+func (validatorEntry *ValidatorEntry) GetDomains() [][]byte {
+	return validatorEntry.Domains
+}
+
 func (validatorEntry *ValidatorEntry) Status() ValidatorStatus {
 	// ValidatorEntry.Status() is a virtual/derived field that is not stored in
 	// the database, but instead constructed from other ValidatorEntry fields.

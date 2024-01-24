@@ -449,7 +449,7 @@ func NewServer(
 	timesource := chainlib.NewMedianTime()
 
 	// Create a new connection manager but note that it won't be initialized until Start().
-	_incomingMessages := make(chan *ServerMessage, (_targetOutboundPeers+_maxInboundPeers)*3)
+	_incomingMessages := make(chan *ServerMessage, 100+(_targetOutboundPeers+_maxInboundPeers)*3)
 	_cmgr := NewConnectionManager(
 		_params, _listeners, _connectIps, timesource,
 		_hyperSync, _syncType, _stallTimeoutSeconds, _minFeeRateNanosPerKB,
@@ -734,13 +734,6 @@ func (srv *Server) GetSnapshot(pp *Peer) {
 
 	glog.V(2).Infof("Server.GetSnapshot: Sending a GetSnapshot message to peer (%v) "+
 		"with Prefix (%v) and SnapshotStartEntry (%v)", pp, prefix, lastReceivedKey)
-}
-
-func (srv *Server) NotifyHandshakePeerMessage(peer *Peer) {
-	srv.incomingMessages <- &ServerMessage{
-		Peer: peer,
-		Msg:  &MsgDeSoPeerHandshakeComplete{},
-	}
 }
 
 // GetBlocksToStore is part of the archival mode, which makes the node download all historical blocks after completing
@@ -2254,8 +2247,6 @@ func (srv *Server) _handleGetAddrMessage(pp *Peer, msg *MsgDeSoGetAddr) {
 func (srv *Server) _handleControlMessages(serverMessage *ServerMessage) (_shouldQuit bool) {
 	switch serverMessage.Msg.(type) {
 	// Control messages used internally to signal to the server.
-	case *MsgDeSoPeerHandshakeComplete:
-		srv.handshakeController._handleHandshakeCompleteMessage(serverMessage.Peer, serverMessage.Msg)
 	case *MsgDeSoDisconnectedPeer:
 		srv._handleDonePeer(serverMessage.Peer)
 		srv.connectionController._handleDonePeerMessage(serverMessage.Peer, serverMessage.Msg)

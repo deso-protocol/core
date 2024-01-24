@@ -5,6 +5,7 @@ import (
 	"github.com/decred/dcrd/lru"
 	"net"
 	"sort"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -140,6 +141,9 @@ type Peer struct {
 	// SyncType indicates whether blocksync should not be requested for this peer. If set to true
 	// then we'll only hypersync from this peer.
 	syncType NodeSyncType
+
+	// startGroup ensures that all the Peer's go routines are started when we call Start().
+	startGroup sync.WaitGroup
 }
 
 func (pp *Peer) GetId() uint64 {
@@ -550,6 +554,7 @@ func (pp *Peer) cleanupMessageProcessor() {
 }
 
 func (pp *Peer) StartDeSoMessageProcessor() {
+	pp.startGroup.Done()
 	glog.Infof("StartDeSoMessageProcessor: Starting for peer %v", pp)
 	for {
 		if pp.disconnected != 0 {
@@ -739,6 +744,7 @@ func (pp *Peer) HandlePongMsg(msg *MsgDeSoPong) {
 }
 
 func (pp *Peer) PingHandler() {
+	pp.startGroup.Done()
 	glog.V(1).Infof("Peer.PingHandler: Starting ping handler for Peer %v", pp)
 	pingTicker := time.NewTicker(pingInterval)
 	defer pingTicker.Stop()
@@ -908,6 +914,7 @@ func (pp *Peer) _setKnownAddressesMap(key string, val bool) {
 }
 
 func (pp *Peer) outHandler() {
+	pp.startGroup.Done()
 	glog.V(1).Infof("Peer.outHandler: Starting outHandler for Peer %v", pp)
 	stallTicker := time.NewTicker(time.Second)
 out:
@@ -1087,6 +1094,7 @@ func (pp *Peer) _handleInExpectedResponse(rmsg DeSoMessage) error {
 // inHandler handles all incoming messages for the peer. It must be run as a
 // goroutine.
 func (pp *Peer) inHandler() {
+	pp.startGroup.Done()
 	glog.V(1).Infof("Peer.inHandler: Starting inHandler for Peer %v", pp)
 
 	// The timer is stopped when a new message is received and reset after it
@@ -1184,10 +1192,12 @@ func (pp *Peer) Start() {
 	glog.Infof("Peer.Start: Starting peer %v", pp)
 	// The protocol has been negotiated successfully so start processing input
 	// and output messages.
+	pp.startGroup.Add(4)
 	go pp.PingHandler()
 	go pp.outHandler()
 	go pp.inHandler()
 	go pp.StartDeSoMessageProcessor()
+	pp.startGroup.Wait()
 
 	// If the address manager needs more addresses, then send a GetAddr message
 	// to the peer. This is best-effort.
@@ -1290,7 +1300,7 @@ func (pp *Peer) Disconnect() {
 	}
 	atomic.AddInt32(&pp.disconnected, 1)
 
-	glog.V(1).Infof("Peer.Disconnect: Running Disconnect for the first time for Peer %v", pp)
+	glog.V(2).Infof("Peer.Disconnect: Running Disconnect for the first time for Peer %v", pp)
 
 	// Close the connection object.
 	pp.Conn.Close()

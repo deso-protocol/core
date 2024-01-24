@@ -63,6 +63,12 @@ type RemoteNode struct {
 	// the RemoteNode is instantiated. And for inbound validator nodes, the validatorPublicKey will be set when the
 	// handshake is completed.
 	validatorPublicKey *bls.PublicKey
+	// isPersistent identifies whether the RemoteNode is persistent or not. Persistent RemoteNodes is a sub-category of
+	// outbound RemoteNodes. They are different from non-persistent RemoteNodes from the very moment they are created.
+	// Initially, an outbound RemoteNode is in an "attempted" state, meaning we dial the connection to the peer. The
+	// non-persistent RemoteNode is terminated after the first failed dial, while a persistent RemoteNode will keep
+	// trying to dial the peer indefinitely until the connection is established, or the node stops.
+	isPersistent bool
 
 	connectionStatus RemoteNodeStatus
 
@@ -128,11 +134,13 @@ func NewHandshakeMetadata() *HandshakeMetadata {
 	return &HandshakeMetadata{}
 }
 
-func NewRemoteNode(id RemoteNodeId, validatorPublicKey *bls.PublicKey, srv *Server, cmgr *ConnectionManager, keystore *BLSKeystore,
-	params *DeSoParams, minTxFeeRateNanosPerKB uint64, latestBlockHeight uint64, nodeServices ServiceFlag) *RemoteNode {
+func NewRemoteNode(id RemoteNodeId, validatorPublicKey *bls.PublicKey, isPersistent bool, srv *Server,
+	cmgr *ConnectionManager, keystore *BLSKeystore, params *DeSoParams, minTxFeeRateNanosPerKB uint64,
+	latestBlockHeight uint64, nodeServices ServiceFlag) *RemoteNode {
 	return &RemoteNode{
 		id:                     id,
 		validatorPublicKey:     validatorPublicKey,
+		isPersistent:           isPersistent,
 		connectionStatus:       RemoteNodeStatus_NotConnected,
 		handshakeMetadata:      NewHandshakeMetadata(),
 		srv:                    srv,
@@ -208,7 +216,7 @@ func (rn *RemoteNode) IsOutbound() bool {
 }
 
 func (rn *RemoteNode) IsPersistent() bool {
-	return rn.peer != nil && rn.peer.IsPersistent()
+	return rn.isPersistent
 }
 
 func (rn *RemoteNode) IsNotConnected() bool {
@@ -217,6 +225,14 @@ func (rn *RemoteNode) IsNotConnected() bool {
 
 func (rn *RemoteNode) IsConnected() bool {
 	return rn.connectionStatus == RemoteNodeStatus_Connected
+}
+
+func (rn *RemoteNode) IsVersionSent() bool {
+	return rn.connectionStatus == RemoteNodeStatus_VersionSent
+}
+
+func (rn *RemoteNode) IsVerackSent() bool {
+	return rn.connectionStatus == RemoteNodeStatus_VerackSent
 }
 
 func (rn *RemoteNode) IsHandshakeCompleted() bool {
@@ -232,6 +248,10 @@ func (rn *RemoteNode) IsValidator() bool {
 		return false
 	}
 	return rn.hasValidatorServiceFlag()
+}
+
+func (rn *RemoteNode) IsExpectedValidator() bool {
+	return rn.GetValidatorPublicKey() != nil
 }
 
 func (rn *RemoteNode) hasValidatorServiceFlag() bool {
@@ -304,6 +324,8 @@ func (rn *RemoteNode) Disconnect() {
 	if rn.connectionStatus == RemoteNodeStatus_Terminated {
 		return
 	}
+	glog.V(2).Infof("RemoteNode.Disconnect: Disconnecting from peer (id= %d, status= %v)",
+		rn.id, rn.connectionStatus)
 
 	id := rn.GetId().ToUint64()
 	switch rn.connectionStatus {
@@ -344,9 +366,9 @@ func (rn *RemoteNode) InitiateHandshake(nonce uint64) error {
 		return fmt.Errorf("InitiateHandshake: Remote node is not connected")
 	}
 
+	versionTimeExpected := time.Now().Add(rn.params.VersionNegotiationTimeout)
+	rn.versionTimeExpected = &versionTimeExpected
 	if rn.GetPeer().IsOutbound() {
-		versionTimeExpected := time.Now().Add(rn.params.VersionNegotiationTimeout)
-		rn.versionTimeExpected = &versionTimeExpected
 		if err := rn.sendVersionMessage(nonce); err != nil {
 			return fmt.Errorf("InitiateHandshake: Problem sending version message to peer (id= %d): %v", rn.id, err)
 		}
@@ -397,6 +419,19 @@ func (rn *RemoteNode) newVersionMessage(nonce uint64) *MsgDeSoVersion {
 	return ver
 }
 
+func (rn *RemoteNode) IsTimedOut() bool {
+	if rn.IsTerminated() {
+		return true
+	}
+	if rn.IsConnected() || rn.IsVersionSent() {
+		return rn.versionTimeExpected.Before(time.Now())
+	}
+	if rn.IsVerackSent() {
+		return rn.verackTimeExpected.Before(time.Now())
+	}
+	return false
+}
+
 // HandleVersionMessage is called upon receiving a version message from the RemoteNode's peer. The peer may be the one
 // initiating the handshake, in which case, we should respond with our own version message. To do this, we pass the
 // responseNonce to this function, which we will use in our response version message.
@@ -404,7 +439,7 @@ func (rn *RemoteNode) HandleVersionMessage(verMsg *MsgDeSoVersion, responseNonce
 	rn.mtx.Lock()
 	defer rn.mtx.Unlock()
 
-	if rn.connectionStatus != RemoteNodeStatus_Connected && rn.connectionStatus != RemoteNodeStatus_VersionSent {
+	if !rn.IsConnected() && !rn.IsVersionSent() {
 		return fmt.Errorf("HandleVersionMessage: RemoteNode is not connected or version exchange has already "+
 			"been completed, connectionStatus: %v", rn.connectionStatus)
 	}
@@ -416,7 +451,7 @@ func (rn *RemoteNode) HandleVersionMessage(verMsg *MsgDeSoVersion, responseNonce
 	}
 
 	// Verify that the peer's version message is sent within the version negotiation timeout.
-	if rn.versionTimeExpected != nil && rn.versionTimeExpected.Before(time.Now()) {
+	if rn.versionTimeExpected.Before(time.Now()) {
 		return fmt.Errorf("RemoteNode.HandleVersionMessage: Requesting disconnect for id: (%v) "+
 			"version timeout. Time expected: %v, now: %v", rn.id, rn.versionTimeExpected.UnixMicro(), time.Now().UnixMicro())
 	}
@@ -580,7 +615,6 @@ func (rn *RemoteNode) HandleVerackMessage(vrkMsg *MsgDeSoVerack) error {
 	vMeta.versionNegotiated = true
 	rn._logVersionSuccess()
 	rn.setStatusHandshakeCompleted()
-	rn.srv.NotifyHandshakePeerMessage(rn.peer)
 
 	return nil
 }

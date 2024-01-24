@@ -8,11 +8,11 @@ import (
 )
 
 func TestConnectionControllerNonValidator(t *testing.T) {
+	SetDisableNetworkManagerRoutines(t)
 	require := require.New(t)
 
 	node1 := spawnNonValidatorNodeProtocol2(t, 18000, "node1")
 	node1 = startNode(t, node1)
-	defer node1.Stop()
 
 	// Make sure NonValidator Node1 can create an outbound connection to NonValidator Node2
 	node2 := spawnNonValidatorNodeProtocol2(t, 18001, "node2")
@@ -47,7 +47,6 @@ func TestConnectionControllerNonValidator(t *testing.T) {
 	require.NoError(err)
 	node4 := spawnValidatorNodeProtocol2(t, 18003, "node4", blsPriv4)
 	node4 = startNode(t, node4)
-	defer node4.Stop()
 
 	cc = node1.Server.GetConnectionController()
 	require.NoError(cc.CreateNonValidatorOutboundConnection(node4.Listeners[0].Addr().String()))
@@ -57,13 +56,13 @@ func TestConnectionControllerNonValidator(t *testing.T) {
 }
 
 func TestConnectionControllerValidator(t *testing.T) {
+	SetDisableNetworkManagerRoutines(t)
 	require := require.New(t)
 
 	blsPriv1, err := bls.NewPrivateKey()
 	require.NoError(err)
 	node1 := spawnValidatorNodeProtocol2(t, 18000, "node1", blsPriv1)
 	node1 = startNode(t, node1)
-	defer node1.Stop()
 
 	// Make sure Validator Node1 can create an outbound connection to Validator Node2
 	blsPriv2, err := bls.NewPrivateKey()
@@ -99,7 +98,6 @@ func TestConnectionControllerValidator(t *testing.T) {
 	require.NoError(err)
 	node4 := spawnValidatorNodeProtocol2(t, 18003, "node4", blsPriv4)
 	node4 = startNode(t, node4)
-	defer node4.Stop()
 
 	cc = node1.Server.GetConnectionController()
 	require.NoError(cc.CreateNonValidatorOutboundConnection(node4.Listeners[0].Addr().String()))
@@ -109,6 +107,7 @@ func TestConnectionControllerValidator(t *testing.T) {
 }
 
 func TestConnectionControllerHandshakeDataErrors(t *testing.T) {
+	SetDisableNetworkManagerRoutines(t)
 	require := require.New(t)
 
 	blsPriv1, err := bls.NewPrivateKey()
@@ -123,8 +122,6 @@ func TestConnectionControllerHandshakeDataErrors(t *testing.T) {
 
 	node1 = startNode(t, node1)
 	node2 = startNode(t, node2)
-	defer node1.Stop()
-	defer node2.Stop()
 
 	cc := node2.Server.GetConnectionController()
 	require.NoError(cc.CreateNonValidatorOutboundConnection(node1.Listeners[0].Addr().String()))
@@ -138,7 +135,6 @@ func TestConnectionControllerHandshakeDataErrors(t *testing.T) {
 	node3 := spawnValidatorNodeProtocol2(t, 18002, "node3", blsPriv3)
 	node3.Params.ProtocolVersion = lib.ProtocolVersionType(3)
 	node3 = startNode(t, node3)
-	defer node3.Stop()
 
 	cc = node1.Server.GetConnectionController()
 	require.NoError(cc.CreateNonValidatorOutboundConnection(node3.Listeners[0].Addr().String()))
@@ -150,7 +146,6 @@ func TestConnectionControllerHandshakeDataErrors(t *testing.T) {
 	node4 := spawnNonValidatorNodeProtocol2(t, 18003, "node4")
 	node4.Params.ProtocolVersion = lib.ProtocolVersion0
 	node4 = startNode(t, node4)
-	defer node4.Stop()
 
 	cc = node1.Server.GetConnectionController()
 	require.NoError(cc.CreateNonValidatorOutboundConnection(node4.Listeners[0].Addr().String()))
@@ -165,7 +160,6 @@ func TestConnectionControllerHandshakeDataErrors(t *testing.T) {
 	require.NoError(err)
 	node5 := spawnValidatorNodeProtocol2(t, 18004, "node5", blsPriv5)
 	node5 = startNode(t, node5)
-	defer node5.Stop()
 
 	cc = node1.Server.GetConnectionController()
 	require.NoError(cc.CreateValidatorConnection(node5.Listeners[0].Addr().String(), blsPriv5Wrong.PublicKey()))
@@ -178,7 +172,6 @@ func TestConnectionControllerHandshakeDataErrors(t *testing.T) {
 	require.NoError(err)
 	node6 := spawnNonValidatorNodeProtocol2(t, 18005, "node6")
 	node6 = startNode(t, node6)
-	defer node6.Stop()
 
 	cc = node1.Server.GetConnectionController()
 	require.NoError(cc.CreateValidatorConnection(node6.Listeners[0].Addr().String(), blsPriv6.PublicKey()))
@@ -190,7 +183,6 @@ func TestConnectionControllerHandshakeDataErrors(t *testing.T) {
 	node7 := spawnNonValidatorNodeProtocol2(t, 18006, "node7")
 	node7.Params.ProtocolVersion = lib.ProtocolVersion1
 	node7 = startNode(t, node7)
-	defer node7.Stop()
 
 	cc = node1.Server.GetConnectionController()
 	require.NoError(cc.CreateNonValidatorOutboundConnection(node7.Listeners[0].Addr().String()))
@@ -200,17 +192,16 @@ func TestConnectionControllerHandshakeDataErrors(t *testing.T) {
 }
 
 func TestConnectionControllerHandshakeTimeouts(t *testing.T) {
+	SetDisableNetworkManagerRoutines(t)
 	require := require.New(t)
 
 	// Set version negotiation timeout to 0 to make sure that the node will be disconnected
 	node1 := spawnNonValidatorNodeProtocol2(t, 18000, "node1")
 	node1.Params.VersionNegotiationTimeout = 0
 	node1 = startNode(t, node1)
-	defer node1.Stop()
 
 	node2 := spawnNonValidatorNodeProtocol2(t, 18001, "node2")
 	node2 = startNode(t, node2)
-	defer node2.Stop()
 
 	cc := node1.Server.GetConnectionController()
 	require.NoError(cc.CreateNonValidatorOutboundConnection(node2.Listeners[0].Addr().String()))
@@ -223,7 +214,6 @@ func TestConnectionControllerHandshakeTimeouts(t *testing.T) {
 	node3 := spawnNonValidatorNodeProtocol2(t, 18002, "node3")
 	node3.Params.VerackNegotiationTimeout = 0
 	node3 = startNode(t, node3)
-	defer node3.Stop()
 
 	cc = node3.Server.GetConnectionController()
 	require.NoError(cc.CreateNonValidatorOutboundConnection(node1.Listeners[0].Addr().String()))
@@ -237,13 +227,11 @@ func TestConnectionControllerHandshakeTimeouts(t *testing.T) {
 	node4 := spawnValidatorNodeProtocol2(t, 18003, "node4", blsPriv4)
 	node4.Params.HandshakeTimeoutMicroSeconds = 0
 	node4 = startNode(t, node4)
-	defer node4.Stop()
 
 	blsPriv5, err := bls.NewPrivateKey()
 	require.NoError(err)
 	node5 := spawnValidatorNodeProtocol2(t, 18004, "node5", blsPriv5)
 	node5 = startNode(t, node5)
-	defer node5.Stop()
 
 	cc = node4.Server.GetConnectionController()
 	require.NoError(cc.CreateValidatorConnection(node5.Listeners[0].Addr().String(), blsPriv5.PublicKey()))
@@ -253,11 +241,11 @@ func TestConnectionControllerHandshakeTimeouts(t *testing.T) {
 }
 
 func TestConnectionControllerValidatorDuplication(t *testing.T) {
+	SetDisableNetworkManagerRoutines(t)
 	require := require.New(t)
 
 	node1 := spawnNonValidatorNodeProtocol2(t, 18000, "node1")
 	node1 = startNode(t, node1)
-	defer node1.Stop()
 
 	// Create a validator Node2
 	blsPriv2, err := bls.NewPrivateKey()
@@ -294,11 +282,9 @@ func TestConnectionControllerValidatorDuplication(t *testing.T) {
 	require.NoError(err)
 	node4 := spawnValidatorNodeProtocol2(t, 18003, "node4", blsPriv4)
 	node4 = startNode(t, node4)
-	defer node4.Stop()
 
 	node5 := spawnValidatorNodeProtocol2(t, 18004, "node5", blsPriv4)
 	node5 = startNode(t, node5)
-	defer node5.Stop()
 
 	// Create validator connections from Node4 to Node1 and from Node5 to Node1
 	cc4 := node4.Server.GetConnectionController()
@@ -313,13 +299,13 @@ func TestConnectionControllerValidatorDuplication(t *testing.T) {
 }
 
 func TestConnectionControllerProtocolDifference(t *testing.T) {
+	SetDisableNetworkManagerRoutines(t)
 	require := require.New(t)
 
 	// Create a ProtocolVersion1 Node1
 	node1 := spawnNonValidatorNodeProtocol2(t, 18000, "node1")
 	node1.Params.ProtocolVersion = lib.ProtocolVersion1
 	node1 = startNode(t, node1)
-	defer node1.Stop()
 
 	// Create a ProtocolVersion2 NonValidator Node2
 	node2 := spawnNonValidatorNodeProtocol2(t, 18001, "node2")
@@ -353,7 +339,6 @@ func TestConnectionControllerProtocolDifference(t *testing.T) {
 	require.NoError(err)
 	node4 := spawnValidatorNodeProtocol2(t, 18003, "node4", blsPriv4)
 	node4 = startNode(t, node4)
-	defer node4.Stop()
 
 	// Attempt to create non-validator connection from Node4 to Node1
 	cc = node4.Server.GetConnectionController()
@@ -371,7 +356,6 @@ func TestConnectionControllerProtocolDifference(t *testing.T) {
 	// Create a ProtocolVersion2 non-validator Node5
 	node5 := spawnNonValidatorNodeProtocol2(t, 18004, "node5")
 	node5 = startNode(t, node5)
-	defer node5.Stop()
 
 	// Attempt to create non-validator connection from Node5 to Node1
 	cc = node5.Server.GetConnectionController()
@@ -382,6 +366,7 @@ func TestConnectionControllerProtocolDifference(t *testing.T) {
 }
 
 func TestConnectionControllerPersistentConnection(t *testing.T) {
+	SetDisableNetworkManagerRoutines(t)
 	require := require.New(t)
 
 	// Create a NonValidator Node1
@@ -423,7 +408,6 @@ func TestConnectionControllerPersistentConnection(t *testing.T) {
 	require.NoError(err)
 	node4 := spawnValidatorNodeProtocol2(t, 18003, "node4", blsPriv4)
 	node4 = startNode(t, node4)
-	defer node4.Stop()
 
 	// Create a non-validator Node5
 	node5 := spawnNonValidatorNodeProtocol2(t, 18004, "node5")
@@ -444,7 +428,6 @@ func TestConnectionControllerPersistentConnection(t *testing.T) {
 	require.NoError(err)
 	node6 := spawnValidatorNodeProtocol2(t, 18005, "node6", blsPriv6)
 	node6 = startNode(t, node6)
-	defer node6.Stop()
 
 	// Create a persistent connection from Node4 to Node6
 	_, err = cc.CreateNonValidatorPersistentOutboundConnection(node6.Listeners[0].Addr().String())

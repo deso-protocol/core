@@ -39,7 +39,18 @@ func (cm *ConcurrentMap[Key, Value]) Get(key Key) (Value, bool) {
 	return val, ok
 }
 
-func (cm *ConcurrentMap[Key, Value]) Copy() map[Key]Value {
+func (cm *ConcurrentMap[Key, Value]) Clone() *ConcurrentMap[Key, Value] {
+	cm.mtx.RLock()
+	defer cm.mtx.RUnlock()
+
+	clone := NewConcurrentMap[Key, Value]()
+	for key, val := range cm.m {
+		clone.Set(key, val)
+	}
+	return clone
+}
+
+func (cm *ConcurrentMap[Key, Value]) ToMap() map[Key]Value {
 	cm.mtx.RLock()
 	defer cm.mtx.RUnlock()
 

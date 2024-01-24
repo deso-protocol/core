@@ -486,7 +486,7 @@ func waitForCondition(t *testing.T, id string, condition func() bool) {
 				signalChan <- struct{}{}
 				return
 			}
-			time.Sleep(1 * time.Millisecond)
+			time.Sleep(100 * time.Millisecond)
 		}
 	}()
 
