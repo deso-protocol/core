@@ -87,12 +87,13 @@ func NewConnectionController(params *DeSoParams, cmgr *ConnectionManager, handsh
 }
 
 func (cc *ConnectionController) Start() {
-	cc.startGroup.Add(2)
+	cc.startGroup.Add(3)
 	go cc.startPersistentConnector()
 	go cc.startValidatorConnector()
+	go cc.startNonValidatorConnector()
 
 	cc.startGroup.Wait()
-	cc.exitGroup.Add(2)
+	cc.exitGroup.Add(3)
 }
 
 func (cc *ConnectionController) Stop() {
@@ -133,6 +134,26 @@ func (cc *ConnectionController) startValidatorConnector() {
 			activeValidatorsMap := GetActiveValidatorImpl()
 			cc.refreshValidatorIndex(activeValidatorsMap)
 			cc.connectValidators(activeValidatorsMap)
+		}
+	}
+}
+
+// startNonValidatorConnector is responsible for ensuring that the node is connected to the target number of outbound
+// and inbound remote nodes. To do this, it periodically checks the number of outbound and inbound remote nodes, and
+// if the number is above the target number, it disconnects the excess remote nodes. If the number is below the target
+// number, it attempts to connect to new remote nodes.
+func (cc *ConnectionController) startNonValidatorConnector() {
+	cc.startGroup.Done()
+
+	for {
+		select {
+		case <-cc.exitChan:
+			cc.exitGroup.Done()
+			return
+		case <-time.After(1 * time.Second):
+			cc.refreshNonValidatorOutboundIndex()
+			cc.refreshNonValidatorInboundIndex()
+			cc.connectNonValidators()
 		}
 	}
 }
@@ -328,6 +349,131 @@ func (cc *ConnectionController) connectValidators(activeValidatorsMap *collectio
 			continue
 		}
 	}
+}
+
+// ###########################
+// ## NonValidator Connections
+// ###########################
+
+// refreshNonValidatorOutboundIndex is called periodically by the peer connector. It is responsible for disconnecting excess
+// outbound remote nodes.
+func (cc *ConnectionController) refreshNonValidatorOutboundIndex() {
+	// There are three categories of outbound remote nodes: attempted, connected, and persistent. All of these
+	// remote nodes are stored in the same non-validator outbound index. We want to disconnect excess remote nodes that
+	// are not persistent, starting with the attempted nodes first.
+
+	// First let's run a quick check to see if the number of our non-validator remote nodes exceeds our target. Note that
+	// this number will include the persistent nodes.
+	numOutboundRemoteNodes := uint32(cc.rnManager.GetNonValidatorOutboundIndex().Count())
+	if numOutboundRemoteNodes <= cc.targetNonValidatorOutboundRemoteNodes {
+		return
+	}
+
+	// If we get here, it means that we should potentially disconnect some remote nodes. Let's first separate the
+	// attempted and connected remote nodes, ignoring the persistent ones.
+	allOutboundRemoteNodes := cc.rnManager.GetNonValidatorOutboundIndex().GetAll()
+	var attemptedOutboundRemoteNodes, connectedOutboundRemoteNodes []*RemoteNode
+	for _, rn := range allOutboundRemoteNodes {
+		if rn.IsPersistent() {
+			// We do nothing for persistent remote nodes.
+			continue
+		} else if rn.IsHandshakeCompleted() {
+			connectedOutboundRemoteNodes = append(connectedOutboundRemoteNodes, rn)
+		} else {
+			attemptedOutboundRemoteNodes = append(attemptedOutboundRemoteNodes, rn)
+		}
+	}
+
+	// Having separated the attempted and connected remote nodes, we can now find the actual number of attempted and
+	// connected remote nodes. We can then find out how many remote nodes we need to disconnect.
+	numOutboundRemoteNodes = uint32(len(attemptedOutboundRemoteNodes) + len(connectedOutboundRemoteNodes))
+	excessiveOutboundRemoteNodes := uint32(0)
+	if numOutboundRemoteNodes > cc.targetNonValidatorOutboundRemoteNodes {
+		excessiveOutboundRemoteNodes = numOutboundRemoteNodes - cc.targetNonValidatorOutboundRemoteNodes
+	}
+
+	// First disconnect the attempted remote nodes.
+	for _, rn := range attemptedOutboundRemoteNodes {
+		if excessiveOutboundRemoteNodes == 0 {
+			break
+		}
+		cc.rnManager.Disconnect(rn)
+		excessiveOutboundRemoteNodes--
+	}
+	// Now disconnect the connected remote nodes, if we still have too many remote nodes.
+	for _, rn := range connectedOutboundRemoteNodes {
+		if excessiveOutboundRemoteNodes == 0 {
+			break
+		}
+		cc.rnManager.Disconnect(rn)
+		excessiveOutboundRemoteNodes--
+	}
+}
+
+// refreshNonValidatorInboundIndex is called periodically by the non-validator connector. It is responsible for
+// disconnecting excess inbound remote nodes.
+func (cc *ConnectionController) refreshNonValidatorInboundIndex() {
+	// First let's check if we have an excess number of inbound remote nodes. If we do, we'll disconnect some of them.
+	numConnectedInboundRemoteNodes := uint32(cc.rnManager.GetNonValidatorInboundIndex().Count())
+	excessiveInboundRemoteNodes := uint32(0)
+	if numConnectedInboundRemoteNodes > cc.targetNonValidatorInboundRemoteNodes {
+		excessiveInboundRemoteNodes = numConnectedInboundRemoteNodes - cc.targetNonValidatorInboundRemoteNodes
+	}
+	// Disconnect random inbound non-validators if we have too many of them.
+	inboundRemoteNodes := cc.rnManager.GetNonValidatorInboundIndex().GetAll()
+	for _, rn := range inboundRemoteNodes {
+		if excessiveInboundRemoteNodes == 0 {
+			break
+		}
+		cc.rnManager.Disconnect(rn)
+		excessiveInboundRemoteNodes--
+	}
+}
+
+func (cc *ConnectionController) connectNonValidators() {
+	numOutboundPeers := uint32(cc.rnManager.GetNonValidatorOutboundIndex().Count())
+
+	remainingOutboundPeers := uint32(0)
+	if numOutboundPeers < cc.targetNonValidatorOutboundRemoteNodes {
+		remainingOutboundPeers = cc.targetNonValidatorOutboundRemoteNodes - numOutboundPeers
+	}
+	for ii := uint32(0); ii < remainingOutboundPeers; ii++ {
+		addr := cc.getRandomUnconnectedAddress()
+		if addr == nil {
+			break
+		}
+		cc.AddrMgr.Attempt(addr)
+		if err := cc.rnManager.CreateNonValidatorOutboundConnection(addr); err != nil {
+			glog.V(2).Infof("ConnectionController.connectNonValidators: Problem connecting to addr %v: %v", addr, err)
+		}
+	}
+}
+
+func (cc *ConnectionController) getRandomUnconnectedAddress() *wire.NetAddress {
+	for tries := 0; tries < 100; tries++ {
+		addr := cc.AddrMgr.GetAddress()
+		if addr == nil {
+			break
+		}
+
+		if cc.cmgr.IsConnectedOutboundIpAddress(addr.NetAddress()) {
+			continue
+		}
+
+		if cc.cmgr.IsAttemptedOutboundIpAddress(addr.NetAddress()) {
+			continue
+		}
+
+		// We can only have one outbound address per /16. This is similar to
+		// Bitcoin and we do it to prevent Sybil attacks.
+		if cc.cmgr.IsFromRedundantOutboundIPAddress(addr.NetAddress()) {
+			continue
+		}
+
+		return addr.NetAddress()
+	}
+
+	return nil
 }
 
 func (cc *ConnectionController) CreateValidatorConnection(ipStr string, publicKey *bls.PublicKey) error {
