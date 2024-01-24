@@ -58,7 +58,7 @@ func NewBLSKeystore(seedPhrase string) (*BLSKeystore, error) {
 	}
 
 	if _, err = privateKey.FromSeed(seedBytes); err != nil {
-		return nil, errors.Wrapf(err, "NewBLSKeystore: Problem retrieving private key from seed phrase")
+		return nil, errors.Wrapf(err, "NewBLSKeystore: Problem generating private key from seed phrase")
 	}
 
 	signer, err := NewBLSSigner(privateKey)
