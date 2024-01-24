@@ -2569,13 +2569,13 @@ func (bav *UtxoView) _checkAndUpdateDerivedKeySpendingLimit(
 	case TxnTypeUnstake:
 		txnMeta := txn.TxnMeta.(*UnstakeMetadata)
 		if derivedKeyEntry, err = bav._checkUnstakeTxnSpendingLimitAndUpdateDerivedKey(
-			derivedKeyEntry, txn.PublicKey, txnMeta); err != nil {
+			derivedKeyEntry, txnMeta); err != nil {
 			return utxoOpsForTxn, err
 		}
 	case TxnTypeUnlockStake:
 		txnMeta := txn.TxnMeta.(*UnlockStakeMetadata)
 		if derivedKeyEntry, err = bav._checkUnlockStakeTxnSpendingLimitAndUpdateDerivedKey(
-			derivedKeyEntry, txn.PublicKey, txnMeta); err != nil {
+			derivedKeyEntry, txnMeta); err != nil {
 			return utxoOpsForTxn, err
 		}
 	default:
