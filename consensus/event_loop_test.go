@@ -49,7 +49,7 @@ func TestInit(t *testing.T) {
 	{
 		fc := NewFastHotStuffEventLoop()
 		genesisBlock := createDummyBlock(2)
-		fakeGenesisBlock := createDummyBlock(20)
+		fakeGenesisBlock := createDummyBlock(4)
 		err := fc.Init(1, 1,
 			fakeGenesisBlock.GetQC(), // genesisQC
 			BlockWithValidatorList{genesisBlock, createDummyValidatorList()},     // tip
