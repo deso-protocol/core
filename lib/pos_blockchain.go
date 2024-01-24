@@ -940,7 +940,7 @@ func (bc *Blockchain) isProperlyFormedBlockHeaderPoS(header *MsgDeSoHeader) erro
 // that this block height is exactly one greater than its parent's block height.
 func (bc *Blockchain) hasValidBlockHeightPoS(header *MsgDeSoHeader) error {
 	blockHeight := header.Height
-	if blockHeight < bc.GetFirstPoSBlockHeight() {
+	if !bc.IsPoSBlockHeight(blockHeight) {
 		return RuleErrorPoSBlockBeforeCutoverHeight
 	}
 	// Validate that the block height is exactly one greater than its parent.
