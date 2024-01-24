@@ -160,19 +160,19 @@ func (manager *RemoteNodeManager) CreateValidatorConnection(netAddr *wire.NetAdd
 	return nil
 }
 
-func (manager *RemoteNodeManager) CreateNonValidatorPersistentOutboundConnection(netAddr *wire.NetAddress) error {
+func (manager *RemoteNodeManager) CreateNonValidatorPersistentOutboundConnection(netAddr *wire.NetAddress) (RemoteNodeId, error) {
 	if netAddr == nil {
-		return fmt.Errorf("RemoteNodeManager.CreateNonValidatorPersistentOutboundConnection: netAddr is nil")
+		return 0, fmt.Errorf("RemoteNodeManager.CreateNonValidatorPersistentOutboundConnection: netAddr is nil")
 	}
 
 	remoteNode := manager.newRemoteNode(nil)
 	if err := remoteNode.DialPersistentOutboundConnection(netAddr); err != nil {
-		return errors.Wrapf(err, "RemoteNodeManager.CreateNonValidatorPersistentOutboundConnection: Problem calling DialPersistentOutboundConnection "+
+		return 0, errors.Wrapf(err, "RemoteNodeManager.CreateNonValidatorPersistentOutboundConnection: Problem calling DialPersistentOutboundConnection "+
 			"for addr: (%s:%v)", netAddr.IP.String(), netAddr.Port)
 	}
 	manager.setRemoteNode(remoteNode)
 	manager.GetNonValidatorOutboundIndex().Set(remoteNode.GetId(), remoteNode)
-	return nil
+	return remoteNode.GetId(), nil
 }
 
 func (manager *RemoteNodeManager) CreateNonValidatorOutboundConnection(netAddr *wire.NetAddress) error {

@@ -7,7 +7,6 @@ import (
 	"github.com/deso-protocol/core/lib"
 	"os"
 	"testing"
-	"time"
 )
 
 func waitForValidatorConnection(t *testing.T, node1 *cmd.Node, node2 *cmd.Node) {
@@ -223,7 +222,5 @@ func spawnValidatorNodeProtocol2(t *testing.T, port uint32, id string, blsPriv *
 	node := cmd.NewNode(config)
 	node.Params.UserAgent = id
 	node.Params.ProtocolVersion = lib.ProtocolVersion2
-	node.Params.VersionNegotiationTimeout = 1 * time.Second
-	node.Params.VerackNegotiationTimeout = 1 * time.Second
 	return node
 }

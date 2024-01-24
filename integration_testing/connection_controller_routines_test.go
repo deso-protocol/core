@@ -256,13 +256,15 @@ func TestConnectionControllerNonValidatorConnector(t *testing.T) {
 	require := require.New(t)
 
 	// Spawn 6 non-validators node1, node2, node3, node4, node5, node6. Set node1's targetOutboundPeers to 3. Then make
-	// node1 create outbound connections to node2, node3, and node4, as well as 2 attempted persistent connections to
-	// non-existing ips.
+	// node1 create persistent outbound connections to node2, node3, and node4, as well as non-validator connections to
+	// node5 and node6.
 	node1 := spawnNonValidatorNodeProtocol2(t, 18000, "node1")
-	node1.Config.TargetOutboundPeers = 3
+	node1.Config.TargetOutboundPeers = 0
 	node2 := spawnNonValidatorNodeProtocol2(t, 18001, "node2")
 	node3 := spawnNonValidatorNodeProtocol2(t, 18002, "node3")
 	node4 := spawnNonValidatorNodeProtocol2(t, 18003, "node4")
+	node5 := spawnNonValidatorNodeProtocol2(t, 18004, "node5")
+	node6 := spawnNonValidatorNodeProtocol2(t, 18005, "node6")
 
 	node2 = startNode(t, node2)
 	defer node2.Stop()
@@ -270,6 +272,10 @@ func TestConnectionControllerNonValidatorConnector(t *testing.T) {
 	defer node3.Stop()
 	node4 = startNode(t, node4)
 	defer node4.Stop()
+	node5 = startNode(t, node5)
+	defer node5.Stop()
+	node6 = startNode(t, node6)
+	defer node6.Stop()
 
 	node1.Config.ConnectIPs = []string{
 		node2.Listeners[0].Addr().String(),
@@ -280,10 +286,13 @@ func TestConnectionControllerNonValidatorConnector(t *testing.T) {
 	defer node1.Stop()
 
 	cc := node1.Server.GetConnectionController()
-	require.NoError(cc.CreateNonValidatorPersistentOutboundConnection("127.0.0.1:18004"))
-	require.NoError(cc.CreateNonValidatorPersistentOutboundConnection("127.0.0.1:18005"))
+	require.NoError(cc.CreateNonValidatorOutboundConnection(node5.Listeners[0].Addr().String()))
+	require.NoError(cc.CreateNonValidatorOutboundConnection(node6.Listeners[0].Addr().String()))
 
 	waitForCountRemoteNodeIndexer(t, node1, 3, 0, 3, 0)
+	waitForNonValidatorOutboundConnection(t, node1, node2)
+	waitForNonValidatorOutboundConnection(t, node1, node3)
+	waitForNonValidatorOutboundConnection(t, node1, node4)
 }
 
 func TestConnectionControllerNonValidatorCircularConnectIps(t *testing.T) {

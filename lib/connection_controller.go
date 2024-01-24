@@ -43,8 +43,12 @@ type ConnectionController struct {
 	// it's aware of at random and provides it to us.
 	AddrMgr *addrmgr.AddrManager
 
-	// When --connectips is set, we don't connect to anything from the addrmgr.
+	// When --connect-ips is set, we don't connect to anything from the addrmgr.
 	connectIps []string
+	// persistentIpToRemoteNodeIdsMap maps persistent IP addresses, like the --connect-ips, to the RemoteNodeIds of the
+	// corresponding RemoteNodes. This is used to ensure that we don't connect to the same persistent IP address twice.
+	// And that we can reconnect to the same persistent IP address if we disconnect from it.
+	persistentIpToRemoteNodeIdsMap map[string]RemoteNodeId
 
 	// The target number of non-validator outbound remote nodes we want to have. We will disconnect remote nodes once
 	// we've exceeded this number of outbound connections.
@@ -74,6 +78,7 @@ func NewConnectionController(params *DeSoParams, cmgr *ConnectionManager, handsh
 		rnManager:                             rnManager,
 		AddrMgr:                               addrMgr,
 		connectIps:                            connectIps,
+		persistentIpToRemoteNodeIdsMap:        make(map[string]RemoteNodeId),
 		targetNonValidatorOutboundRemoteNodes: targetNonValidatorOutboundRemoteNodes,
 		targetNonValidatorInboundRemoteNodes:  targetNonValidatorInboundRemoteNodes,
 		limitOneInboundRemoteNodePerIP:        limitOneInboundConnectionPerIP,
@@ -82,15 +87,14 @@ func NewConnectionController(params *DeSoParams, cmgr *ConnectionManager, handsh
 }
 
 func (cc *ConnectionController) Start() {
-	cc.startGroup.Add(3)
-	cc.initiatePersistentConnections()
-	// Start the validator connector
+	cc.startGroup.Add(4)
+	go cc.startPersistentConnector()
 	go cc.startValidatorConnector()
 	go cc.startNonValidatorConnector()
 	go cc.startRemoteNodeCleanup()
 
 	cc.startGroup.Wait()
-	cc.exitGroup.Add(3)
+	cc.exitGroup.Add(4)
 }
 
 func (cc *ConnectionController) Stop() {
@@ -102,16 +106,15 @@ func (cc *ConnectionController) GetRemoteNodeManager() *RemoteNodeManager {
 	return cc.rnManager
 }
 
-func (cc *ConnectionController) initiatePersistentConnections() {
-	// Connect to addresses passed via the --connect-ips flag. These addresses are persistent in the sense that if we
-	// disconnect from one, we will try to reconnect to the same one.
-	if len(cc.connectIps) > 0 {
-		for _, connectIp := range cc.connectIps {
-			glog.Infof("ConnectionController.initiatePersistentConnections: Connecting to connectIp: %v", connectIp)
-			if err := cc.CreateNonValidatorPersistentOutboundConnection(connectIp); err != nil {
-				glog.Errorf("ConnectionController.initiatePersistentConnections: Problem connecting "+
-					"to connectIp %v: %v", connectIp, err)
-			}
+func (cc *ConnectionController) startPersistentConnector() {
+	cc.startGroup.Done()
+	for {
+		select {
+		case <-cc.exitChan:
+			cc.exitGroup.Done()
+			return
+		case <-time.After(1 * time.Second):
+			cc.refreshConnectIps()
 		}
 	}
 }
@@ -164,8 +167,8 @@ func (cc *ConnectionController) startRemoteNodeCleanup() {
 		case <-cc.exitChan:
 			cc.exitGroup.Done()
 			return
-		case <-time.After(1 * time.Second):
-			//cc.rnManager.Cleanup()
+		case <-time.After(30 * time.Second):
+			cc.rnManager.Cleanup()
 		}
 	}
 
@@ -181,6 +184,12 @@ func (cc *ConnectionController) _handleDonePeerMessage(origin *Peer, desoMsg DeS
 	}
 
 	cc.rnManager.DisconnectById(NewRemoteNodeId(origin.ID))
+	// Update the persistentIpToRemoteNodeIdsMap.
+	for ip, id := range cc.persistentIpToRemoteNodeIdsMap {
+		if id.ToUint64() == origin.ID {
+			delete(cc.persistentIpToRemoteNodeIdsMap, ip)
+		}
+	}
 }
 
 func (cc *ConnectionController) _handleAddrMessage(origin *Peer, desoMsg DeSoMessage) {
@@ -254,6 +263,30 @@ func (cc *ConnectionController) cleanupFailedOutboundConnection(connection Conne
 	}
 	oc.Close()
 	cc.cmgr.RemoveAttemptedOutboundAddrs(oc.address)
+}
+
+// ###########################
+// ## Persistent Connections
+// ###########################
+
+func (cc *ConnectionController) refreshConnectIps() {
+	// Connect to addresses passed via the --connect-ips flag. These addresses are persistent in the sense that if we
+	// disconnect from one, we will try to reconnect to the same one.
+	for _, connectIp := range cc.connectIps {
+		if _, ok := cc.persistentIpToRemoteNodeIdsMap[connectIp]; ok {
+			continue
+		}
+
+		glog.Infof("ConnectionController.initiatePersistentConnections: Connecting to connectIp: %v", connectIp)
+		id, err := cc.CreateNonValidatorPersistentOutboundConnection(connectIp)
+		if err != nil {
+			glog.Errorf("ConnectionController.initiatePersistentConnections: Problem connecting "+
+				"to connectIp %v: %v", connectIp, err)
+			continue
+		}
+
+		cc.persistentIpToRemoteNodeIdsMap[connectIp] = id
+	}
 }
 
 // ###########################
@@ -341,23 +374,40 @@ func (cc *ConnectionController) connectValidators(activeValidatorsMap *collectio
 // refreshNonValidatorOutboundIndex is called periodically by the peer connector. It is responsible for disconnecting excess
 // outbound remote nodes.
 func (cc *ConnectionController) refreshNonValidatorOutboundIndex() {
-	// First let's check if we have an excess number of outbound remote nodes. If we do, we'll disconnect some of them.
+	// There are three categories of outbound remote nodes: attempted, connected, and persistent. All of these
+	// remote nodes are stored in the same non-validator outbound index. We want to disconnect excess remote nodes that
+	// are not persistent, starting with the attempted nodes first.
+
+	// First let's run a quick check to see if the number of our non-validator remote nodes exceeds our target. Note that
+	// this number will include the persistent nodes.
 	numOutboundRemoteNodes := uint32(cc.rnManager.GetNonValidatorOutboundIndex().Count())
-	excessiveOutboundRemoteNodes := uint32(0)
-	if numOutboundRemoteNodes > cc.targetNonValidatorOutboundRemoteNodes {
-		excessiveOutboundRemoteNodes = numOutboundRemoteNodes - cc.targetNonValidatorOutboundRemoteNodes
+	if numOutboundRemoteNodes <= cc.targetNonValidatorOutboundRemoteNodes {
+		return
 	}
-	// We group the outbound remote nodes into two categories: attempted and connected. We disconnect the attempted
-	// remote nodes first, and then the connected remote nodes.
+
+	// If we get here, it means that we should potentially disconnect some remote nodes. Let's first separate the
+	// attempted and connected remote nodes, ignoring the persistent ones.
 	allOutboundRemoteNodes := cc.rnManager.GetNonValidatorOutboundIndex().GetAll()
 	var attemptedOutboundRemoteNodes, connectedOutboundRemoteNodes []*RemoteNode
 	for _, rn := range allOutboundRemoteNodes {
-		if rn.IsHandshakeCompleted() {
+		if rn.IsPersistent() {
+			// We do nothing for persistent remote nodes.
+			continue
+		} else if rn.IsHandshakeCompleted() {
 			connectedOutboundRemoteNodes = append(connectedOutboundRemoteNodes, rn)
 		} else {
 			attemptedOutboundRemoteNodes = append(attemptedOutboundRemoteNodes, rn)
 		}
 	}
+
+	// Having separated the attempted and connected remote nodes, we can now find the actual number of attempted and
+	// connected remote nodes. We can then find out how many remote nodes we need to disconnect.
+	numOutboundRemoteNodes = uint32(len(attemptedOutboundRemoteNodes) + len(connectedOutboundRemoteNodes))
+	excessiveOutboundRemoteNodes := uint32(0)
+	if numOutboundRemoteNodes > cc.targetNonValidatorOutboundRemoteNodes {
+		excessiveOutboundRemoteNodes = numOutboundRemoteNodes - cc.targetNonValidatorOutboundRemoteNodes
+	}
+
 	// First disconnect the attempted remote nodes.
 	for _, rn := range attemptedOutboundRemoteNodes {
 		if excessiveOutboundRemoteNodes == 0 {
@@ -465,10 +515,10 @@ func (cc *ConnectionController) CreateValidatorConnection(ipStr string, publicKe
 	return cc.rnManager.CreateValidatorConnection(netAddr, publicKey)
 }
 
-func (cc *ConnectionController) CreateNonValidatorPersistentOutboundConnection(ipStr string) error {
+func (cc *ConnectionController) CreateNonValidatorPersistentOutboundConnection(ipStr string) (RemoteNodeId, error) {
 	netAddr, err := cc.ConvertIPStringToNetAddress(ipStr)
 	if err != nil {
-		return err
+		return 0, err
 	}
 	return cc.rnManager.CreateNonValidatorPersistentOutboundConnection(netAddr)
 }
