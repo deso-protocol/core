@@ -36,7 +36,8 @@ func IsProperlyFormedVoteEvent(event *FastHotStuffEvent) bool {
 		event.EventType == FastHotStuffEventTypeVote && // Event type is vote
 		event.View > 0 && // The view the tip block was proposed in is non-zero
 		event.TipBlockHeight > 0 && // Tip block height voted on is non-zero
-		!isInterfaceNil(event.TipBlockHash) // Tip block hash voted on is non-nil
+		!isInterfaceNil(event.TipBlockHash) && // Tip block hash voted on is non-nil
+		isInterfaceNil(event.QC) // The high QC is nil
 }
 
 func IsProperlyFormedTimeoutEvent(event *FastHotStuffEvent) bool {
@@ -45,7 +46,7 @@ func IsProperlyFormedTimeoutEvent(event *FastHotStuffEvent) bool {
 		event.View > 0 && // The view that was timed out is non-zero
 		event.TipBlockHeight > 0 && // Tip block height is non-zero
 		!isInterfaceNil(event.TipBlockHash) && // Tip block hash is non-nil
-		!isInterfaceNil(event.QC) // The high QC is non-nil
+		isInterfaceNil(event.QC) // The high QC is nil. The receiver will determine their own high QC.
 }
 
 // Given a QC and a sorted validator list, this function returns true if the QC contains a valid
@@ -67,9 +68,7 @@ func IsValidSuperMajorityQuorumCertificate(qc QuorumCertificate, validators []Va
 }
 
 // IsValidSuperMajorityAggregateQuorumCertificate validates that the aggregate QC is properly formed and signed
-// by a super-majority of validators in the network. It takes in two sets of validator sets because the validator
-// set may shift between the view that is timed out and the high QC view. The two validator
-// sets are defined as:
+// by a super-majority of validators in the network. It takes in two sets of validators defines as:
 // - aggQCValidators: The validator set that signed the timeouts for the view that has timed out (the view in the aggregate QC)
 // - highQCValidators: The validator set that signed the high QC (the view in the high QC)
 func IsValidSuperMajorityAggregateQuorumCertificate(aggQC AggregateQuorumCertificate, aggQCValidators []Validator, highQCValidators []Validator) bool {
@@ -184,12 +183,7 @@ func isProperlyFormedBlock(block Block) bool {
 	}
 
 	// The block hash and QC must be non-nil
-	if isInterfaceNil(block.GetBlockHash()) || !isProperlyFormedQC(block.GetQC()) {
-		return false
-	}
-
-	// The QC's view must be less than the block's view
-	if block.GetQC().GetView() >= block.GetView() {
+	if isInterfaceNil(block.GetBlockHash()) {
 		return false
 	}
 

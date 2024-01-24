@@ -107,6 +107,9 @@ func TestFastHotStuffConsensusHandleLocalTimeoutEvent(t *testing.T) {
 		},
 		blockchain: &Blockchain{
 			ChainLock: deadlock.RWMutex{},
+			blockIndexByHash: map[BlockHash]*BlockNode{
+				*blockHash: {Header: blockHeader},
+			},
 		},
 		fastHotStuffEventLoop: &consensus.MockFastHotStuffEventLoop{
 			OnIsInitialized: alwaysReturnTrue,
@@ -170,7 +173,6 @@ func TestFastHotStuffConsensusHandleLocalTimeoutEvent(t *testing.T) {
 			View:           currentView - 1,
 			TipBlockHeight: currentView - 1,
 			TipBlockHash:   blockHash,
-			QC:             blockHeader.ValidatorsVoteQC,
 		}
 		err := fastHotStuffConsensus.HandleLocalTimeoutEvent(event)
 		require.Contains(t, err.Error(), "Stale timeout event")
@@ -182,8 +184,7 @@ func TestFastHotStuffConsensusHandleLocalTimeoutEvent(t *testing.T) {
 			EventType:      consensus.FastHotStuffEventTypeTimeout,
 			View:           currentView,
 			TipBlockHeight: currentView,
-			TipBlockHash:   blockHeader.ValidatorsVoteQC.GetBlockHash(),
-			QC:             blockHeader.ValidatorsVoteQC,
+			TipBlockHash:   blockHash,
 		}
 		err := fastHotStuffConsensus.HandleLocalTimeoutEvent(event)
 		require.NoError(t, err)
