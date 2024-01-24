@@ -189,8 +189,9 @@ type fastHotStuffEventLoop struct {
 	hasCrankTimerRunForCurrentView bool
 	hasConstructedQCInCurrentView  bool
 
-	// QC for the genesis block of the chain. This is used as an override to the high QC in the event
-	// of a timeout at the first block height of the chain.
+	// Quorum certificate used as the genesis for the PoS chain. This QC is a trusted input that is used
+	// to override the highQC in timeout messages and timeout aggregate QCs when there is a timeout at the
+	// first block height of the PoS chain.
 	genesisQC QuorumCertificate
 
 	// Block hash of the current tip of the block-chain.

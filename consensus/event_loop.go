@@ -25,9 +25,9 @@ func NewFastHotStuffEventLoop() *fastHotStuffEventLoop {
 // params:
 //   - crankTimerInterval: crank timer interval duration must be > 0
 //   - timeoutBaseDuration: timeout base duration must be > 0
-//   - genesisQC: a quorum certificate at the genesis for the chain. This QC is a trusted input
+//   - genesisQC: quorum certificate used as the genesis for the PoS chain. This QC is a trusted input
 //     that is used to override the highQC in timeout messages and timeout aggregate QCs when there
-//     is a timeout at the first block height of the chain.
+//     is a timeout at the first block height of the PoS chain.
 //   - tip: the current tip of the blockchain, with the validator list at that block height. This may
 //     be a committed or uncommitted block.
 //   - safeBlocks: an unordered slice of blocks including the committed tip, the uncommitted tip,
