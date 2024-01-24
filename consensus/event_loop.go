@@ -237,6 +237,17 @@ func (fc *fastHotStuffEventLoop) storeBlocks(tip BlockWithValidatorList, safeBlo
 		return errors.New("Invalid safe blocks or validator lists")
 	}
 
+	// Sanity check: the tip block and safe blocks must not have lower views than the genesis QC's view.
+	if tip.Block.GetView() < fc.genesisQC.GetView() {
+		return errors.New("Tip block view must be greater than or qual to the genesis QC view")
+	}
+
+	for _, block := range safeBlocks {
+		if block.Block.GetView() < fc.genesisQC.GetView() {
+			return errors.New("Safe block view must be greater than or equal to the genesis QC view")
+		}
+	}
+
 	// Extract the block hashes for the tip block and safe blocks
 	tipBlockHash := tip.Block.GetBlockHash()
 	safeBlockHashes := collections.Transform(safeBlocks, extractBlockHash)

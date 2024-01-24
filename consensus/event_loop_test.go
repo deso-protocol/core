@@ -45,6 +45,19 @@ func TestInit(t *testing.T) {
 		require.Error(t, err)
 	}
 
+	// Test Init() function with invalid genesis QC and tip block views
+	{
+		fc := NewFastHotStuffEventLoop()
+		genesisBlock := createDummyBlock(2)
+		fakeGenesisBlock := createDummyBlock(4)
+		err := fc.Init(1, 1,
+			fakeGenesisBlock.GetQC(), // genesisQC
+			BlockWithValidatorList{genesisBlock, createDummyValidatorList()},     // tip
+			[]BlockWithValidatorList{{genesisBlock, createDummyValidatorList()}}, // safeBlocks
+		)
+		require.Error(t, err)
+	}
+
 	// Test Init() function with malformed tip block
 	{
 		fc := NewFastHotStuffEventLoop()
