@@ -56,12 +56,12 @@ func (cc *FastHotStuffConsensus) Start() error {
 		)
 	}
 
-	cutoverParentBlock, err := cc.getCommittedCutoverParentBlock()
+	finalPoWBlock, err := cc.getFinalCommittedPoWBlock()
 	if err != nil {
-		return errors.Errorf("FastHotStuffConsensus.Start: Error fetching cutover parent block: %v", err)
+		return errors.Errorf("FastHotStuffConsensus.Start: Error fetching final PoW block: %v", err)
 	}
 
-	cutoverGenesisQC, err := cc.createCutoverGenesisQC(cutoverParentBlock.Hash, uint64(cutoverParentBlock.Height))
+	genesisQC, err := cc.createGenesisQC(finalPoWBlock.Hash, uint64(finalPoWBlock.Height))
 	if err != nil {
 		return errors.Errorf("FastHotStuffConsensus.Start: Error creating PoS cutover genesis QC: %v", err)
 	}
@@ -85,7 +85,7 @@ func (cc *FastHotStuffConsensus) Start() error {
 	}
 
 	// Initialize and start the event loop. TODO: Pass in the crank timer duration and timeout duration
-	cc.fastHotStuffEventLoop.Init(0, 0, cutoverGenesisQC, tipBlockWithValidators[0], safeBlocksWithValidators)
+	cc.fastHotStuffEventLoop.Init(0, 0, genesisQC, tipBlockWithValidators[0], safeBlocksWithValidators)
 	cc.fastHotStuffEventLoop.Start()
 
 	return nil
@@ -724,7 +724,7 @@ func (fc *FastHotStuffConsensus) createBlockProducer(bav *UtxoView) (*PosBlockPr
 	return NewPosBlockProducer(fc.mempool, fc.params, blockProducerPublicKey, blockProducerBlsPublicKey), nil
 }
 
-func (fc *FastHotStuffConsensus) createCutoverGenesisQC(blockHash *BlockHash, view uint64) (*QuorumCertificate, error) {
+func (fc *FastHotStuffConsensus) createGenesisQC(blockHash *BlockHash, view uint64) (*QuorumCertificate, error) {
 	aggregatedSignature, signersList, err := BuildQuorumCertificateAsProofOfStakeCutoverValidator(view, blockHash)
 	if err != nil {
 		return nil, err
@@ -742,7 +742,7 @@ func (fc *FastHotStuffConsensus) createCutoverGenesisQC(blockHash *BlockHash, vi
 	return qc, nil
 }
 
-func (fc *FastHotStuffConsensus) getCommittedCutoverParentBlock() (*BlockNode, error) {
+func (fc *FastHotStuffConsensus) getFinalCommittedPoWBlock() (*BlockNode, error) {
 	// Fetch the block node for the cutover block
 	blockNodes, blockNodesExist :=
 		fc.blockchain.blockIndexByHeight[uint64(fc.params.ForkHeights.ProofOfStake2ConsensusCutoverBlockHeight-1)]
