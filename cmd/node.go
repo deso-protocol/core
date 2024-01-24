@@ -203,8 +203,8 @@ func (node *Node) Start(exitChannels ...*chan struct{}) {
 	eventManager := lib.NewEventManager()
 
 	var blsKeystore *lib.BLSKeystore
-	if node.Config.PosValidatorSeedHex != "" {
-		blsKeystore, err = lib.NewBLSKeystore(node.Config.PosValidatorSeedHex)
+	if node.Config.PosValidatorSeed != "" {
+		blsKeystore, err = lib.NewBLSKeystore(node.Config.PosValidatorSeed)
 		if err != nil {
 			panic(err)
 		}

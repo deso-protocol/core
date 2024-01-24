@@ -115,6 +115,18 @@ func (privateKey *PrivateKey) ToString() string {
 	return privateKey.flowPrivateKey.String()
 }
 
+func (privateKey *PrivateKey) FromSeed(seed []byte) (*PrivateKey, error) {
+	var err error
+
+	if privateKey == nil {
+		return nil, nil
+	}
+
+	// Generate a new private key from the seed.
+	privateKey.flowPrivateKey, err = flowCrypto.GeneratePrivateKey(signingAlgorithm, seed)
+	return privateKey, err
+}
+
 func (privateKey *PrivateKey) FromString(privateKeyString string) (*PrivateKey, error) {
 	if privateKey == nil || privateKeyString == "" {
 		return nil, nil

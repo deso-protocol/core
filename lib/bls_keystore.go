@@ -4,6 +4,7 @@ import (
 	"github.com/deso-protocol/core/bls"
 	"github.com/deso-protocol/core/consensus"
 	"github.com/pkg/errors"
+	"github.com/tyler-smith/go-bip39"
 )
 
 // BLSSigner is a wrapper for the bls.PrivateKey type, which abstracts away the private key
@@ -45,13 +46,19 @@ type BLSKeystore struct {
 	signer *BLSSigner
 }
 
-func NewBLSKeystore(seed string) (*BLSKeystore, error) {
+func NewBLSKeystore(seedPhrase string) (*BLSKeystore, error) {
+	seedBytes, err := bip39.NewSeedWithErrorChecking(seedPhrase, "")
+	if err != nil {
+		return nil, errors.Wrapf(err, "NewBLSKeystore: Problem generating seed bytes from seed phrase")
+	}
+
 	privateKey, err := bls.NewPrivateKey()
 	if err != nil {
-		return nil, errors.Wrapf(err, "NewBLSKeystore: Problem generating private key from seed: %s", seed)
+		return nil, errors.Wrapf(err, "NewBLSKeystore: Problem generating private key from seed phrase")
 	}
-	if _, err = privateKey.FromString(seed); err != nil {
-		return nil, errors.Wrapf(err, "NewBLSKeystore: Problem retrieving private key from seed: %s", seed)
+
+	if _, err = privateKey.FromSeed(seedBytes); err != nil {
+		return nil, errors.Wrapf(err, "NewBLSKeystore: Problem generating private key from seed phrase")
 	}
 
 	signer, err := NewBLSSigner(privateKey)
