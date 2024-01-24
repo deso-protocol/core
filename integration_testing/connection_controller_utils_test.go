@@ -69,6 +69,14 @@ func waitForNonValidatorInboundConnection(t *testing.T, node1 *cmd.Node, node2 *
 	waitForCondition(t, fmt.Sprintf("Waiting for Node (%s) to connect to inbound non-validator Node (%s)", userAgentN1, userAgentN2), condition)
 }
 
+func waitForNonValidatorInboundConnectionDynamic(t *testing.T, node1 *cmd.Node, node2 *cmd.Node, inactiveValidator bool) {
+	userAgentN1 := node1.Params.UserAgent
+	userAgentN2 := node2.Params.UserAgent
+	condition := conditionNonValidatorInboundConnectionDynamic(t, node1, node2, inactiveValidator)
+	waitForCondition(t, fmt.Sprintf("Waiting for Node (%s) to connect to inbound non-validator Node (%s), "+
+		"inactiveValidator (%v)", userAgentN1, userAgentN2, inactiveValidator), condition)
+}
+
 func conditionNonValidatorInboundConnection(t *testing.T, node1 *cmd.Node, node2 *cmd.Node) func() bool {
 	return conditionNonValidatorInboundConnectionDynamic(t, node1, node2, false)
 }
