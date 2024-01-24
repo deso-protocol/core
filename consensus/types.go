@@ -76,6 +76,7 @@ type BlockHash interface {
 type Validator interface {
 	GetPublicKey() *bls.PublicKey
 	GetStakeAmount() *uint256.Int
+	GetDomains() [][]byte
 }
 
 type AggregateQuorumCertificate interface {

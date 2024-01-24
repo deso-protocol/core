@@ -129,6 +129,18 @@ func waitForCountRemoteNodeIndexer(t *testing.T, node1 *cmd.Node, allCount int, 
 	waitForCondition(t, fmt.Sprintf("Waiting for Node (%s) to have appropriate RemoteNodes counts", userAgent), condition)
 }
 
+func waitForCountRemoteNodeIndexerHandshakeCompleted(t *testing.T, node1 *cmd.Node, allCount, validatorCount int,
+	nonValidatorOutboundCount int, nonValidatorInboundCount int) {
+
+	userAgent := node1.Params.UserAgent
+	rnManager := node1.Server.GetConnectionController().GetRemoteNodeManager()
+	condition := func() bool {
+		return checkRemoteNodeIndexerCountHandshakeCompleted(rnManager, allCount, validatorCount,
+			nonValidatorOutboundCount, nonValidatorInboundCount)
+	}
+	waitForCondition(t, fmt.Sprintf("Waiting for Node (%s) to have appropriate RemoteNodes counts", userAgent), condition)
+}
+
 func checkRemoteNodeIndexerUserAgent(manager *lib.RemoteNodeManager, userAgent string, validator bool,
 	nonValidatorOutbound bool, nonValidatorInbound bool) bool {
 
@@ -162,6 +174,42 @@ func checkRemoteNodeIndexerCount(manager *lib.RemoteNodeManager, allCount int, v
 	}
 	if nonValidatorInboundCount != manager.GetNonValidatorInboundIndex().Count() {
 		return false
+	}
+
+	return true
+}
+
+func checkRemoteNodeIndexerCountHandshakeCompleted(manager *lib.RemoteNodeManager, allCount int, validatorCount int,
+	nonValidatorOutboundCount int, nonValidatorInboundCount int) bool {
+
+	if allCount != manager.GetAllRemoteNodes().Count() {
+		return false
+	}
+	if validatorCount != manager.GetValidatorIndex().Count() {
+		return false
+	}
+	for _, rn := range manager.GetValidatorIndex().GetAll() {
+		if !rn.IsHandshakeCompleted() {
+			return false
+		}
+	}
+
+	if nonValidatorOutboundCount != manager.GetNonValidatorOutboundIndex().Count() {
+		return false
+	}
+	for _, rn := range manager.GetNonValidatorOutboundIndex().GetAll() {
+		if !rn.IsHandshakeCompleted() {
+			return false
+		}
+	}
+
+	if nonValidatorInboundCount != manager.GetNonValidatorInboundIndex().Count() {
+		return false
+	}
+	for _, rn := range manager.GetNonValidatorInboundIndex().GetAll() {
+		if !rn.IsHandshakeCompleted() {
+			return false
+		}
 	}
 
 	return true
@@ -231,4 +279,11 @@ func spawnValidatorNodeProtocol2(t *testing.T, port uint32, id string, blsPriv *
 	node.Params.UserAgent = id
 	node.Params.ProtocolVersion = lib.ProtocolVersion2
 	return node
+}
+
+func SetDisableNetworkManagerRoutines(t *testing.T) {
+	lib.DisableNetworkManagerRoutines = true
+	t.Cleanup(func() {
+		lib.DisableNetworkManagerRoutines = false
+	})
 }

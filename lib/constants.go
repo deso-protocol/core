@@ -43,6 +43,10 @@ const (
 	MessagesToFetchPerInboxCall = 10000
 )
 
+// DisableNetworkManagerRoutines is used to disable the network manager routines.
+// This is useful for testing.
+var DisableNetworkManagerRoutines = false
+
 type NodeMessage uint32
 
 const (

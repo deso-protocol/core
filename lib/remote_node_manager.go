@@ -51,12 +51,19 @@ func NewRemoteNodeManager(srv *Server, bc *Blockchain, cmgr *ConnectionManager, 
 	}
 }
 
-func (manager *RemoteNodeManager) newRemoteNode(validatorPublicKey *bls.PublicKey) *RemoteNode {
+func (manager *RemoteNodeManager) DisconnectAll() {
+	for _, rn := range manager.GetAllRemoteNodes().GetAll() {
+		glog.V(2).Infof("RemoteNodeManager.DisconnectAll: Disconnecting from remote node (id=%v)", rn.GetId())
+		manager.Disconnect(rn)
+	}
+}
+
+func (manager *RemoteNodeManager) newRemoteNode(validatorPublicKey *bls.PublicKey, isPersistent bool) *RemoteNode {
 	id := atomic.AddUint64(&manager.remoteNodeIndex, 1)
 	remoteNodeId := NewRemoteNodeId(id)
 	latestBlockHeight := uint64(manager.bc.BlockTip().Height)
-	return NewRemoteNode(remoteNodeId, validatorPublicKey, manager.srv, manager.cmgr, manager.keystore, manager.params,
-		manager.minTxFeeRateNanosPerKB, latestBlockHeight, manager.nodeServices)
+	return NewRemoteNode(remoteNodeId, validatorPublicKey, isPersistent, manager.srv, manager.cmgr, manager.keystore,
+		manager.params, manager.minTxFeeRateNanosPerKB, latestBlockHeight, manager.nodeServices)
 }
 
 func (manager *RemoteNodeManager) ProcessCompletedHandshake(remoteNode *RemoteNode) {
@@ -78,7 +85,7 @@ func (manager *RemoteNodeManager) Disconnect(rn *RemoteNode) {
 	if rn == nil {
 		return
 	}
-	glog.V(2).Infof("RemoteNodeManager.Disconnect: Disconnecting from remote node %v", rn.GetId())
+	glog.V(2).Infof("RemoteNodeManager.Disconnect: Disconnecting from remote node id=%v", rn.GetId())
 	rn.Disconnect()
 	manager.removeRemoteNodeFromIndexer(rn)
 }
@@ -126,6 +133,18 @@ func (manager *RemoteNodeManager) SendMessage(rn *RemoteNode, desoMessage DeSoMe
 	return rn.SendMessage(desoMessage)
 }
 
+func (manager *RemoteNodeManager) Cleanup() {
+	manager.mtx.Lock()
+	defer manager.mtx.Unlock()
+
+	for _, rn := range manager.GetAllRemoteNodes().GetAll() {
+		if rn.IsTimedOut() {
+			glog.V(2).Infof("RemoteNodeManager.Cleanup: Disconnecting from remote node (id=%v)", rn.GetId())
+			manager.Disconnect(rn)
+		}
+	}
+}
+
 // ###########################
 // ## Create RemoteNode
 // ###########################
@@ -139,7 +158,7 @@ func (manager *RemoteNodeManager) CreateValidatorConnection(netAddr *wire.NetAdd
 		return fmt.Errorf("RemoteNodeManager.CreateValidatorConnection: RemoteNode already exists for public key: %v", publicKey)
 	}
 
-	remoteNode := manager.newRemoteNode(publicKey)
+	remoteNode := manager.newRemoteNode(publicKey, false)
 	if err := remoteNode.DialOutboundConnection(netAddr); err != nil {
 		return errors.Wrapf(err, "RemoteNodeManager.CreateValidatorConnection: Problem calling DialPersistentOutboundConnection "+
 			"for addr: (%s:%v)", netAddr.IP.String(), netAddr.Port)
@@ -154,7 +173,7 @@ func (manager *RemoteNodeManager) CreateNonValidatorPersistentOutboundConnection
 		return 0, fmt.Errorf("RemoteNodeManager.CreateNonValidatorPersistentOutboundConnection: netAddr is nil")
 	}
 
-	remoteNode := manager.newRemoteNode(nil)
+	remoteNode := manager.newRemoteNode(nil, true)
 	if err := remoteNode.DialPersistentOutboundConnection(netAddr); err != nil {
 		return 0, errors.Wrapf(err, "RemoteNodeManager.CreateNonValidatorPersistentOutboundConnection: Problem calling DialPersistentOutboundConnection "+
 			"for addr: (%s:%v)", netAddr.IP.String(), netAddr.Port)
@@ -169,7 +188,7 @@ func (manager *RemoteNodeManager) CreateNonValidatorOutboundConnection(netAddr *
 		return fmt.Errorf("RemoteNodeManager.CreateNonValidatorOutboundConnection: netAddr is nil")
 	}
 
-	remoteNode := manager.newRemoteNode(nil)
+	remoteNode := manager.newRemoteNode(nil, false)
 	if err := remoteNode.DialOutboundConnection(netAddr); err != nil {
 		return errors.Wrapf(err, "RemoteNodeManager.CreateNonValidatorOutboundConnection: Problem calling DialOutboundConnection "+
 			"for addr: (%s:%v)", netAddr.IP.String(), netAddr.Port)
@@ -182,7 +201,7 @@ func (manager *RemoteNodeManager) CreateNonValidatorOutboundConnection(netAddr *
 func (manager *RemoteNodeManager) AttachInboundConnection(conn net.Conn,
 	na *wire.NetAddress) (*RemoteNode, error) {
 
-	remoteNode := manager.newRemoteNode(nil)
+	remoteNode := manager.newRemoteNode(nil, false)
 	if err := remoteNode.AttachInboundConnection(conn, na); err != nil {
 		return remoteNode, errors.Wrapf(err, "RemoteNodeManager.AttachInboundConnection: Problem calling AttachInboundConnection "+
 			"for addr: (%s)", conn.RemoteAddr().String())
@@ -205,7 +224,7 @@ func (manager *RemoteNodeManager) AttachOutboundConnection(conn net.Conn, na *wi
 	if err := remoteNode.AttachOutboundConnection(conn, na, isPersistent); err != nil {
 		manager.Disconnect(remoteNode)
 		return nil, errors.Wrapf(err, "RemoteNodeManager.AttachOutboundConnection: Problem calling AttachOutboundConnection "+
-			"for addr: (%s)", conn.RemoteAddr().String())
+			"for addr: (%s). Disconnecting remote node (id=%v)", conn.RemoteAddr().String(), remoteNode.GetId())
 	}
 
 	return remoteNode, nil

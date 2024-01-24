@@ -615,9 +615,11 @@ func (cmgr *ConnectionManager) Start() {
 					"(id= %v)", oc.attemptId)
 			} else {
 				glog.V(2).Infof("ConnectionManager.Start: Successfully established an outbound connection with "+
-					"(addr= %v)", oc.connection.RemoteAddr())
+					"(addr= %v) (id= %v)", oc.connection.RemoteAddr(), oc.attemptId)
 			}
+			cmgr.mtxConnectionAttempts.Lock()
 			delete(cmgr.outboundConnectionAttempts, oc.attemptId)
+			cmgr.mtxConnectionAttempts.Unlock()
 			cmgr.serverMessageQueue <- &ServerMessage{
 				Peer: nil,
 				Msg: &MsgDeSoNewConnection{
@@ -639,7 +641,7 @@ func (cmgr *ConnectionManager) Start() {
 				// has already been called, since that is what's responsible for adding the peer
 				// to this queue in the first place.
 
-				glog.V(1).Infof("Done with peer (%v).", pp)
+				glog.V(1).Infof("Done with peer (id=%v).", pp.ID)
 
 				// Remove the peer from our data structures.
 				cmgr.removePeer(pp)

@@ -5,16 +5,15 @@ import (
 	"github.com/deso-protocol/core/bls"
 	"github.com/deso-protocol/core/cmd"
 	"github.com/deso-protocol/core/collections"
+	"github.com/deso-protocol/core/consensus"
 	"github.com/deso-protocol/core/lib"
 	"github.com/stretchr/testify/require"
 	"testing"
+	"time"
 )
 
 func TestConnectionControllerInitiatePersistentConnections(t *testing.T) {
 	require := require.New(t)
-	t.Cleanup(func() {
-		setGetActiveValidatorImpl(lib.BasicGetActiveValidators)
-	})
 
 	// NonValidator Node1 will set its --connect-ips to two non-validators node2 and node3,
 	// and two validators node4 and node5.
@@ -33,8 +32,6 @@ func TestConnectionControllerInitiatePersistentConnections(t *testing.T) {
 	node4 = startNode(t, node4)
 	node5 = startNode(t, node5)
 
-	setGetActiveValidatorImplWithValidatorNodes(t, node4, node5)
-
 	node1.Config.ConnectIPs = []string{
 		node2.Listeners[0].Addr().String(),
 		node3.Listeners[0].Addr().String(),
@@ -42,16 +39,18 @@ func TestConnectionControllerInitiatePersistentConnections(t *testing.T) {
 		node5.Listeners[0].Addr().String(),
 	}
 	node1 = startNode(t, node1)
+	activeValidatorsMap := getActiveValidatorsMapWithValidatorNodes(t, node4, node5)
+	setActiveValidators(activeValidatorsMap, node1, node2, node3, node4, node5)
 	waitForNonValidatorOutboundConnection(t, node1, node2)
 	waitForNonValidatorOutboundConnection(t, node1, node3)
 	waitForValidatorConnection(t, node1, node4)
 	waitForValidatorConnection(t, node1, node5)
 	waitForValidatorConnection(t, node4, node5)
-	waitForCountRemoteNodeIndexer(t, node1, 4, 2, 2, 0)
-	waitForCountRemoteNodeIndexer(t, node2, 1, 0, 0, 1)
-	waitForCountRemoteNodeIndexer(t, node3, 1, 0, 0, 1)
-	waitForCountRemoteNodeIndexer(t, node4, 2, 1, 0, 1)
-	waitForCountRemoteNodeIndexer(t, node5, 2, 1, 0, 1)
+	waitForCountRemoteNodeIndexerHandshakeCompleted(t, node1, 4, 2, 2, 0)
+	waitForCountRemoteNodeIndexerHandshakeCompleted(t, node2, 1, 0, 0, 1)
+	waitForCountRemoteNodeIndexerHandshakeCompleted(t, node3, 1, 0, 0, 1)
+	waitForCountRemoteNodeIndexerHandshakeCompleted(t, node4, 2, 1, 0, 1)
+	waitForCountRemoteNodeIndexerHandshakeCompleted(t, node5, 2, 1, 0, 1)
 	node1.Stop()
 	t.Logf("Test #1 passed | Successfully run non-validator node1 with --connect-ips set to node2, node3, node4, node5")
 
@@ -66,30 +65,92 @@ func TestConnectionControllerInitiatePersistentConnections(t *testing.T) {
 		node5.Listeners[0].Addr().String(),
 	}
 	node6 = startNode(t, node6)
-	setGetActiveValidatorImplWithValidatorNodes(t, node4, node5, node6)
+	activeValidatorsMap = getActiveValidatorsMapWithValidatorNodes(t, node4, node5, node6)
+	setActiveValidators(activeValidatorsMap, node1, node2, node3, node4, node5, node6)
 	waitForNonValidatorOutboundConnection(t, node6, node2)
 	waitForNonValidatorOutboundConnection(t, node6, node3)
 	waitForValidatorConnection(t, node6, node4)
 	waitForValidatorConnection(t, node6, node5)
 	waitForValidatorConnection(t, node4, node5)
-	waitForCountRemoteNodeIndexer(t, node6, 4, 2, 2, 0)
-	waitForCountRemoteNodeIndexer(t, node2, 1, 1, 0, 0)
-	waitForCountRemoteNodeIndexer(t, node3, 1, 1, 0, 0)
-	waitForCountRemoteNodeIndexer(t, node4, 2, 2, 0, 0)
-	waitForCountRemoteNodeIndexer(t, node5, 2, 2, 0, 0)
-	node2.Stop()
-	node3.Stop()
-	node4.Stop()
-	node5.Stop()
-	node6.Stop()
+	waitForCountRemoteNodeIndexerHandshakeCompleted(t, node6, 4, 2, 2, 0)
+	waitForCountRemoteNodeIndexerHandshakeCompleted(t, node2, 1, 1, 0, 0)
+	waitForCountRemoteNodeIndexerHandshakeCompleted(t, node3, 1, 1, 0, 0)
+	waitForCountRemoteNodeIndexerHandshakeCompleted(t, node4, 2, 2, 0, 0)
+	waitForCountRemoteNodeIndexerHandshakeCompleted(t, node5, 2, 2, 0, 0)
 	t.Logf("Test #2 passed | Successfully run validator node6 with --connect-ips set to node2, node3, node4, node5")
+}
+
+func TestConnectionControllerNonValidatorCircularConnectIps(t *testing.T) {
+	node1 := spawnNonValidatorNodeProtocol2(t, 18000, "node1")
+	node2 := spawnNonValidatorNodeProtocol2(t, 18001, "node2")
+
+	node1.Config.ConnectIPs = []string{"127.0.0.1:18001"}
+	node2.Config.ConnectIPs = []string{"127.0.0.1:18000"}
+
+	node1 = startNode(t, node1)
+	node2 = startNode(t, node2)
+
+	waitForCountRemoteNodeIndexerHandshakeCompleted(t, node1, 2, 0, 1, 1)
+	waitForCountRemoteNodeIndexerHandshakeCompleted(t, node2, 2, 0, 1, 1)
+}
+
+func TestNetworkManagerPersistentConnectorReconnect(t *testing.T) {
+	require := require.New(t)
+
+	// Ensure that a node that is disconnected from a persistent connection will be reconnected to.
+	// Spawn three nodes: a non-validator node1, and node2, and a validator node3. Then set node1 connectIps
+	// to node2, node3, as well as a non-existing ip. Then we will stop node2, and wait for node1 to drop the
+	// connection. Then we will restart node2, and wait for node1 to reconnect to node2. We will repeat this
+	// process for node3.
+
+	node1 := spawnNonValidatorNodeProtocol2(t, 18000, "node1")
+	// Set TargetOutboundPeers to 0 to ensure the non-validator connector doesn't interfere.
+	node1.Config.TargetOutboundPeers = 0
+
+	node2 := spawnNonValidatorNodeProtocol2(t, 18001, "node2")
+	blsPriv3, err := bls.NewPrivateKey()
+	require.NoError(err)
+	node3 := spawnValidatorNodeProtocol2(t, 18002, "node3", blsPriv3)
+
+	node2 = startNode(t, node2)
+	node3 = startNode(t, node3)
+
+	node1.Config.ConnectIPs = []string{
+		node2.Listeners[0].Addr().String(),
+		node3.Listeners[0].Addr().String(),
+		"127.0.0.1:18003",
+	}
+	node1 = startNode(t, node1)
+	activeValidatorsMap := getActiveValidatorsMapWithValidatorNodes(t, node3)
+	setActiveValidators(activeValidatorsMap, node1, node2, node3)
+
+	waitForNonValidatorOutboundConnection(t, node1, node2)
+	waitForValidatorConnection(t, node1, node3)
+	waitForCountRemoteNodeIndexer(t, node1, 3, 1, 2, 0)
+
+	node2.Stop()
+	waitForCountRemoteNodeIndexer(t, node1, 2, 1, 1, 0)
+	// node1 should reopen the connection to node2, and it should be re-indexed as a non-validator (attempted).
+	waitForCountRemoteNodeIndexer(t, node1, 3, 1, 2, 0)
+	node2 = startNode(t, node2)
+	setActiveValidators(activeValidatorsMap, node2)
+	waitForCountRemoteNodeIndexer(t, node1, 3, 1, 2, 0)
+	t.Logf("Test #1 passed | Successfully run reconnect test with non-validator node1 with --connect-ips for node2")
+
+	// Now we will do the same for node3.
+	node3.Stop()
+	waitForCountRemoteNodeIndexer(t, node1, 2, 0, 2, 0)
+	// node1 should reopen the connection to node3, and it should be re-indexed as a non-validator (attempted).
+	waitForCountRemoteNodeIndexer(t, node1, 3, 0, 3, 0)
+	node3 = startNode(t, node3)
+	setActiveValidators(activeValidatorsMap, node3)
+	waitForValidatorConnection(t, node1, node3)
+	waitForCountRemoteNodeIndexer(t, node1, 3, 1, 2, 0)
+	t.Logf("Test #2 passed | Successfully run reconnect test with non-validator node1 with --connect-ips for node3")
 }
 
 func TestConnectionControllerValidatorConnector(t *testing.T) {
 	require := require.New(t)
-	t.Cleanup(func() {
-		setGetActiveValidatorImpl(lib.BasicGetActiveValidators)
-	})
 
 	// Spawn 5 validators node1, node2, node3, node4, node5 and two non-validators node6 and node7.
 	// All the validators are initially in the validator set. And later, node1 and node2 will be removed from the
@@ -116,16 +177,10 @@ func TestConnectionControllerValidatorConnector(t *testing.T) {
 	node7 := spawnNonValidatorNodeProtocol2(t, 18006, "node7")
 
 	node1 = startNode(t, node1)
-	defer node1.Stop()
 	node2 = startNode(t, node2)
-	defer node2.Stop()
 	node3 = startNode(t, node3)
-	defer node3.Stop()
 	node4 = startNode(t, node4)
-	defer node4.Stop()
 	node5 = startNode(t, node5)
-	defer node5.Stop()
-	setGetActiveValidatorImplWithValidatorNodes(t, node1, node2, node3, node4, node5)
 
 	node6.Config.ConnectIPs = []string{
 		node1.Listeners[0].Addr().String(),
@@ -136,9 +191,9 @@ func TestConnectionControllerValidatorConnector(t *testing.T) {
 	}
 	node7.Config.ConnectIPs = node6.Config.ConnectIPs
 	node6 = startNode(t, node6)
-	defer node6.Stop()
 	node7 = startNode(t, node7)
-	defer node7.Stop()
+	activeValidatorsMap := getActiveValidatorsMapWithValidatorNodes(t, node1, node2, node3, node4, node5)
+	setActiveValidators(activeValidatorsMap, node1, node2, node3, node4, node5, node6, node7)
 
 	// Verify full graph between active validators.
 	waitForValidatorFullGraph(t, node1, node2, node3, node4, node5)
@@ -162,7 +217,8 @@ func TestConnectionControllerValidatorConnector(t *testing.T) {
 	t.Logf("Test #1 passed | Successfully run validators node1, node2, node3, node4, node5; non-validators node6, node7")
 
 	// Remove node1 and node2 from the validator set.
-	setGetActiveValidatorImplWithValidatorNodes(t, node3, node4, node5)
+	activeValidatorsMap = getActiveValidatorsMapWithValidatorNodes(t, node3, node4, node5)
+	setActiveValidators(activeValidatorsMap, node1, node2, node3, node4, node5, node6, node7)
 	// Verify full graph between active validators.
 	waitForValidatorFullGraph(t, node3, node4, node5)
 	// Verify connections of non-validators.
@@ -185,13 +241,14 @@ func TestConnectionControllerValidatorConnector(t *testing.T) {
 		waitForMinNonValidatorCountRemoteNodeIndexer(t, validator, 6, 3, 0, 2)
 	}
 	// Verify connection counts of non-validators.
-	waitForCountRemoteNodeIndexer(t, node6, 5, 3, 2, 0)
-	waitForCountRemoteNodeIndexer(t, node7, 5, 3, 2, 0)
+	waitForCountRemoteNodeIndexerHandshakeCompleted(t, node6, 5, 3, 2, 0)
+	waitForCountRemoteNodeIndexerHandshakeCompleted(t, node7, 5, 3, 2, 0)
 	t.Logf("Test #2 passed | Successfully run validators node3, node4, node5; inactive-validators node1, node2; " +
 		"non-validators node6, node7")
 
 	// Remove node3 from the validator set. Make node1 active again.
-	setGetActiveValidatorImplWithValidatorNodes(t, node1, node4, node5)
+	activeValidatorsMap = getActiveValidatorsMapWithValidatorNodes(t, node1, node4, node5)
+	setActiveValidators(activeValidatorsMap, node1, node2, node3, node4, node5, node6, node7)
 	// Verify full graph between active validators.
 	waitForValidatorFullGraph(t, node1, node4, node5)
 	// Verify connections of non-validators.
@@ -214,13 +271,14 @@ func TestConnectionControllerValidatorConnector(t *testing.T) {
 		waitForMinNonValidatorCountRemoteNodeIndexer(t, validator, 6, 3, 0, 2)
 	}
 	// Verify connection counts of non-validators.
-	waitForCountRemoteNodeIndexer(t, node6, 5, 3, 2, 0)
-	waitForCountRemoteNodeIndexer(t, node7, 5, 3, 2, 0)
+	waitForCountRemoteNodeIndexerHandshakeCompleted(t, node6, 5, 3, 2, 0)
+	waitForCountRemoteNodeIndexerHandshakeCompleted(t, node7, 5, 3, 2, 0)
 	t.Logf("Test #3 passed | Successfully run validators node1, node4, node5; inactive validators node2, node3; " +
 		"non-validators node6, node7")
 
 	// Make all validators inactive.
-	setGetActiveValidatorImplWithValidatorNodes(t)
+	activeValidatorsMap = getActiveValidatorsMapWithValidatorNodes(t)
+	setActiveValidators(activeValidatorsMap, node1, node2, node3, node4, node5, node6, node7)
 	// NOOP Verify full graph between active validators.
 	// NOOP Verify connections of non-validators.
 	// Verify connections of initial validators.
@@ -246,17 +304,14 @@ func TestConnectionControllerValidatorConnector(t *testing.T) {
 		waitForMinNonValidatorCountRemoteNodeIndexer(t, validator, 6, 0, 0, 2)
 	}
 	// Verify connection counts of non-validators.
-	waitForCountRemoteNodeIndexer(t, node6, 5, 0, 5, 0)
-	waitForCountRemoteNodeIndexer(t, node7, 5, 0, 5, 0)
+	waitForCountRemoteNodeIndexerHandshakeCompleted(t, node6, 5, 0, 5, 0)
+	waitForCountRemoteNodeIndexerHandshakeCompleted(t, node7, 5, 0, 5, 0)
 	t.Logf("Test #4 passed | Successfully run inactive validators node1, node2, node3, node4, node5; " +
 		"non-validators node6, node7")
 }
 
 func TestConnectionControllerValidatorInboundDeduplication(t *testing.T) {
 	require := require.New(t)
-	t.Cleanup(func() {
-		setGetActiveValidatorImpl(lib.BasicGetActiveValidators)
-	})
 
 	// Spawn a non-validator node1, and two validators node2, node3. The validator nodes will have the same public key.
 	// Node2 and node3 will not initially be in the validator set. First, node2 will start an outbound connection to
@@ -272,11 +327,8 @@ func TestConnectionControllerValidatorInboundDeduplication(t *testing.T) {
 	node3 := spawnValidatorNodeProtocol2(t, 18002, "node3", blsPriv2)
 
 	node1 = startNode(t, node1)
-	defer node1.Stop()
 	node2 = startNode(t, node2)
-	defer node2.Stop()
 	node3 = startNode(t, node3)
-	defer node3.Stop()
 
 	cc2 := node2.Server.GetConnectionController()
 	require.NoError(cc2.CreateNonValidatorOutboundConnection(node1.Listeners[0].Addr().String()))
@@ -296,13 +348,14 @@ func TestConnectionControllerValidatorInboundDeduplication(t *testing.T) {
 	waitForNonValidatorOutboundConnection(t, node3, node1)
 
 	// Now add node2 and node3 to the validator set.
-	setGetActiveValidatorImplWithValidatorNodes(t, node2)
+	activeValidatorsMap := getActiveValidatorsMapWithValidatorNodes(t, node2)
+	setActiveValidators(activeValidatorsMap, node1, node2, node3)
 	// Now wait for node1 to disconnect from either node2 or node3.
-	waitForCountRemoteNodeIndexer(t, node1, 1, 1, 0, 0)
+	waitForCountRemoteNodeIndexerHandshakeCompleted(t, node1, 1, 1, 0, 0)
 	t.Logf("Test #1 passed | Successfully run non-validator node1; validators node2, node3 with duplicate public key")
 }
 
-func TestConnectionControllerNonValidatorConnector(t *testing.T) {
+func TestConnectionControllerNonValidatorConnectorOutbound(t *testing.T) {
 	require := require.New(t)
 
 	// Spawn 6 non-validators node1, node2, node3, node4, node5, node6. Set node1's targetOutboundPeers to 3. Then make
@@ -317,15 +370,10 @@ func TestConnectionControllerNonValidatorConnector(t *testing.T) {
 	node6 := spawnNonValidatorNodeProtocol2(t, 18005, "node6")
 
 	node2 = startNode(t, node2)
-	defer node2.Stop()
 	node3 = startNode(t, node3)
-	defer node3.Stop()
 	node4 = startNode(t, node4)
-	defer node4.Stop()
 	node5 = startNode(t, node5)
-	defer node5.Stop()
 	node6 = startNode(t, node6)
-	defer node6.Stop()
 
 	node1.Config.ConnectIPs = []string{
 		node2.Listeners[0].Addr().String(),
@@ -333,38 +381,123 @@ func TestConnectionControllerNonValidatorConnector(t *testing.T) {
 		node4.Listeners[0].Addr().String(),
 	}
 	node1 = startNode(t, node1)
-	defer node1.Stop()
 
 	cc := node1.Server.GetConnectionController()
 	require.NoError(cc.CreateNonValidatorOutboundConnection(node5.Listeners[0].Addr().String()))
 	require.NoError(cc.CreateNonValidatorOutboundConnection(node6.Listeners[0].Addr().String()))
 
-	waitForCountRemoteNodeIndexer(t, node1, 3, 0, 3, 0)
+	waitForCountRemoteNodeIndexerHandshakeCompleted(t, node1, 3, 0, 3, 0)
 	waitForNonValidatorOutboundConnection(t, node1, node2)
 	waitForNonValidatorOutboundConnection(t, node1, node3)
 	waitForNonValidatorOutboundConnection(t, node1, node4)
 }
 
-func TestConnectionControllerNonValidatorCircularConnectIps(t *testing.T) {
-	node1 := spawnNonValidatorNodeProtocol2(t, 18000, "node1")
-	node2 := spawnNonValidatorNodeProtocol2(t, 18001, "node2")
+func TestConnectionControllerNonValidatorConnectorInbound(t *testing.T) {
+	require := require.New(t)
 
-	node1.Config.ConnectIPs = []string{"127.0.0.1:18001"}
-	node2.Config.ConnectIPs = []string{"127.0.0.1:18000"}
+	// Spawn validators node1, node2, node3, node4, node5, node6. Also spawn non-validators node7, node8, node9, node10.
+	// Set node1's targetOutboundPeers to 0 and targetInboundPeers to 1. Then make node1 create outbound connections to
+	// node2, node3, and make node4, node5, node6 create inbound connections to node1. Then make node1 create outbound
+	// connections to node7, node8, and make node9, node10 create inbound connections to node1.
+	blsPriv1, err := bls.NewPrivateKey()
+	require.NoError(err)
+	node1 := spawnValidatorNodeProtocol2(t, 18000, "node1", blsPriv1)
+	node1.Config.TargetOutboundPeers = 0
+	node1.Config.MaxInboundPeers = 1
+	node1.Params.DialTimeout = 1 * time.Second
+	node1.Params.VerackNegotiationTimeout = 1 * time.Second
+	node1.Params.VersionNegotiationTimeout = 1 * time.Second
+
+	blsPriv2, err := bls.NewPrivateKey()
+	require.NoError(err)
+	node2 := spawnValidatorNodeProtocol2(t, 18001, "node2", blsPriv2)
+	node2.Config.GlogV = 0
+	blsPriv3, err := bls.NewPrivateKey()
+	require.NoError(err)
+	node3 := spawnValidatorNodeProtocol2(t, 18002, "node3", blsPriv3)
+	node3.Config.GlogV = 0
+	blsPriv4, err := bls.NewPrivateKey()
+	require.NoError(err)
+	node4 := spawnValidatorNodeProtocol2(t, 18003, "node4", blsPriv4)
+	node4.Config.GlogV = 0
+	blsPriv5, err := bls.NewPrivateKey()
+	require.NoError(err)
+	node5 := spawnValidatorNodeProtocol2(t, 18004, "node5", blsPriv5)
+	node5.Config.GlogV = 0
+	blsPriv6, err := bls.NewPrivateKey()
+	require.NoError(err)
+	node6 := spawnValidatorNodeProtocol2(t, 18005, "node6", blsPriv6)
+	node6.Config.GlogV = 0
+
+	node7 := spawnNonValidatorNodeProtocol2(t, 18006, "node7")
+	node8 := spawnNonValidatorNodeProtocol2(t, 18007, "node8")
+	node9 := spawnNonValidatorNodeProtocol2(t, 18008, "node9")
+	node10 := spawnNonValidatorNodeProtocol2(t, 18009, "node10")
 
 	node1 = startNode(t, node1)
 	node2 = startNode(t, node2)
-	defer node1.Stop()
-	defer node2.Stop()
+	node3 = startNode(t, node3)
+	node4 = startNode(t, node4)
+	node5 = startNode(t, node5)
+	node6 = startNode(t, node6)
+	node7 = startNode(t, node7)
+	node8 = startNode(t, node8)
+	node9 = startNode(t, node9)
+	node10 = startNode(t, node10)
 
-	waitForCountRemoteNodeIndexer(t, node1, 2, 0, 1, 1)
-	waitForCountRemoteNodeIndexer(t, node2, 2, 0, 1, 1)
+	// Connect node1 to node2, node3, node7, and node8.
+	cc1 := node1.Server.GetConnectionController()
+	require.NoError(cc1.CreateNonValidatorOutboundConnection(node2.Listeners[0].Addr().String()))
+	require.NoError(cc1.CreateNonValidatorOutboundConnection(node3.Listeners[0].Addr().String()))
+	require.NoError(cc1.CreateNonValidatorOutboundConnection(node7.Listeners[0].Addr().String()))
+	require.NoError(cc1.CreateNonValidatorOutboundConnection(node8.Listeners[0].Addr().String()))
+	// Connect node4, node5, node6 to node1.
+	cc4 := node4.Server.GetConnectionController()
+	require.NoError(cc4.CreateNonValidatorOutboundConnection(node1.Listeners[0].Addr().String()))
+	cc5 := node5.Server.GetConnectionController()
+	require.NoError(cc5.CreateNonValidatorOutboundConnection(node1.Listeners[0].Addr().String()))
+	cc6 := node6.Server.GetConnectionController()
+	require.NoError(cc6.CreateNonValidatorOutboundConnection(node1.Listeners[0].Addr().String()))
+
+	// Connect node9, node10 to node1.
+	cc9 := node9.Server.GetConnectionController()
+	require.NoError(cc9.CreateNonValidatorOutboundConnection(node1.Listeners[0].Addr().String()))
+	cc10 := node10.Server.GetConnectionController()
+	require.NoError(cc10.CreateNonValidatorOutboundConnection(node1.Listeners[0].Addr().String()))
+
+	activeValidatorsMap := getActiveValidatorsMapWithValidatorNodes(t, node1, node2, node3, node4, node5, node6)
+	setActiveValidators(activeValidatorsMap, node1, node2, node3, node4, node5, node6, node7, node8, node9, node10)
+
+	waitForValidatorConnection(t, node1, node2)
+	waitForValidatorConnection(t, node1, node3)
+	waitForValidatorConnection(t, node1, node4)
+	waitForValidatorConnection(t, node1, node5)
+	waitForValidatorConnection(t, node1, node6)
+	waitForCountRemoteNodeIndexerHandshakeCompleted(t, node1, 6, 5, 0, 1)
 }
 
-func setGetActiveValidatorImplWithValidatorNodes(t *testing.T, validators ...*cmd.Node) {
+func TestConnectionControllerNonValidatorConnectorAddressMgr(t *testing.T) {
+	require := require.New(t)
+	// Spawn a non-validator node1. Set node1's targetOutboundPeers to 2 and targetInboundPeers to 0. Then
+	// add two ip addresses to AddrMgr. Make sure that node1 creates outbound connections to these nodes.
+	node1 := spawnNonValidatorNodeProtocol2(t, 18000, "node1")
+	node1.Config.TargetOutboundPeers = 2
+	node1.Config.MaxInboundPeers = 0
+
+	node1 = startNode(t, node1)
+	cc := node1.Server.GetConnectionController()
+	na1, err := cc.ConvertIPStringToNetAddress("deso-seed-2.io:17000")
+	na2, err := cc.ConvertIPStringToNetAddress("deso-seed-3.io:17000")
+	require.NoError(err)
+	cc.AddrMgr.AddAddress(na1, na1)
+	cc.AddrMgr.AddAddress(na2, na2)
+	waitForCountRemoteNodeIndexer(t, node1, 2, 0, 2, 0)
+}
+
+func getActiveValidatorsMapWithValidatorNodes(t *testing.T, validators ...*cmd.Node) *collections.ConcurrentMap[bls.SerializedPublicKey, consensus.Validator] {
 	require := require.New(t)
 
-	mapping := collections.NewConcurrentMap[bls.SerializedPublicKey, *lib.ValidatorEntry]()
+	mapping := collections.NewConcurrentMap[bls.SerializedPublicKey, consensus.Validator]()
 	for _, validator := range validators {
 		seed := validator.Config.PosValidatorSeed
 		if seed == "" {
@@ -374,13 +507,13 @@ func setGetActiveValidatorImplWithValidatorNodes(t *testing.T, validators ...*cm
 		require.NoError(err)
 		mapping.Set(keystore.GetSigner().GetPublicKey().Serialize(), createSimpleValidatorEntry(validator))
 	}
-	setGetActiveValidatorImpl(func() *collections.ConcurrentMap[bls.SerializedPublicKey, *lib.ValidatorEntry] {
-		return mapping
-	})
+	return mapping
 }
 
-func setGetActiveValidatorImpl(mapping func() *collections.ConcurrentMap[bls.SerializedPublicKey, *lib.ValidatorEntry]) {
-	lib.GetActiveValidatorImpl = mapping
+func setActiveValidators(validatorMap *collections.ConcurrentMap[bls.SerializedPublicKey, consensus.Validator], nodes ...*cmd.Node) {
+	for _, node := range nodes {
+		node.Server.GetConnectionController().SetValidatorMap(validatorMap)
+	}
 }
 
 func createSimpleValidatorEntry(node *cmd.Node) *lib.ValidatorEntry {
