@@ -52,7 +52,7 @@ func (bc *Blockchain) ProcessHeaderPoS(header *MsgDeSoHeader) (_isMainChain bool
 func (bc *Blockchain) processHeaderPoS(header *MsgDeSoHeader) (
 	_isMainChain bool, _isOrphan bool, _err error,
 ) {
-	if header.Height < bc.GetFirstPoSBlockHeight() {
+	if !bc.IsPoSBlockHeight(header.Height) {
 		return false, false, errors.Errorf(
 			"processHeaderPoS: Header height %d is less than the ProofOfStake2ConsensusCutoverBlockHeight %d",
 			header.Height, bc.GetFirstPoSBlockHeight(),
@@ -214,7 +214,7 @@ func (bc *Blockchain) processBlockPoS(block *MsgDeSoBlock, currentView uint64, v
 	_err error,
 ) {
 	// If the incoming block's height is under the PoS cutover fork height, then we can't process it. Exit early.
-	if block.Header.Height < bc.GetFirstPoSBlockHeight() {
+	if !bc.IsPoSBlockHeight(block.Header.Height) {
 		return false, false, nil, errors.Errorf(
 			"processHeaderPoS: Header height %d is less than the ProofOfStake2ConsensusCutoverBlockHeight %d",
 			block.Header.Height, bc.GetFirstPoSBlockHeight(),
