@@ -40,10 +40,11 @@ type DeSoBlockProducer struct {
 
 	latestBlockTemplateStats *BlockTemplateStats
 
-	mempool  *DeSoMempool
-	chain    *Blockchain
-	params   *DeSoParams
-	postgres *Postgres
+	mempool               *DeSoMempool
+	chain                 *Blockchain
+	params                *DeSoParams
+	postgres              *Postgres
+	fastHotStuffConsensus *FastHotStuffConsensus
 
 	// producerWaitGroup allows us to wait until the producer has properly closed.
 	producerWaitGroup sync.WaitGroup
@@ -76,6 +77,7 @@ func NewDeSoBlockProducer(
 	chain *Blockchain,
 	params *DeSoParams,
 	postgres *Postgres,
+	fastHotStuffConsensus *FastHotStuffConsensus,
 ) (*DeSoBlockProducer, error) {
 
 	var privKey *btcec.PrivateKey
@@ -98,10 +100,11 @@ func NewDeSoBlockProducer(
 		blockProducerPrivateKey:       privKey,
 		recentBlockTemplatesProduced:  make(map[BlockHash]*MsgDeSoBlock),
 
-		mempool:  mempool,
-		chain:    chain,
-		params:   params,
-		postgres: postgres,
+		mempool:               mempool,
+		chain:                 chain,
+		params:                params,
+		postgres:              postgres,
+		fastHotStuffConsensus: fastHotStuffConsensus,
 	}, nil
 }
 

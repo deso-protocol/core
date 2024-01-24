@@ -2024,6 +2024,9 @@ func (msg *MsgDeSoHeader) GetHeight() uint64 {
 }
 
 func (msg *MsgDeSoHeader) GetView() uint64 {
+	if msg.Version < HeaderVersion2 {
+		return msg.Height
+	}
 	return msg.ProposedInView
 }
 

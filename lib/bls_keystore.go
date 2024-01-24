@@ -88,12 +88,16 @@ func NewBLSSigner(privateKey *bls.PrivateKey) (*BLSSigner, error) {
 }
 
 func (signer *BLSSigner) sign(opCode BLSSignatureOpCode, payload []byte) (*bls.Signature, error) {
-	newPayload := append(opCode.Bytes(), payload...)
-	return signer.privateKey.Sign(newPayload)
+	// newPayload := append(opCode.Bytes(), payload...)
+	return signer.privateKey.Sign(payload)
 }
 
 func (signer *BLSSigner) GetPublicKey() *bls.PublicKey {
 	return signer.privateKey.PublicKey()
+}
+
+func (signer *BLSSigner) Sign(payload []byte) (*bls.Signature, error) {
+	return signer.privateKey.Sign(payload)
 }
 
 func (signer *BLSSigner) SignBlockProposal(view uint64, blockHash consensus.BlockHash) (*bls.Signature, error) {
@@ -127,8 +131,8 @@ func (signer *BLSSigner) SignPoSValidatorHandshake(nonceSent uint64, nonceReceiv
 //////////////////////////////////////////////////////////
 
 func _blsVerify(opCode BLSSignatureOpCode, payload []byte, signature *bls.Signature, publicKey *bls.PublicKey) (bool, error) {
-	newPayload := append(opCode.Bytes(), payload...)
-	return publicKey.Verify(signature, newPayload)
+	// newPayload := append(opCode.Bytes(), payload...)
+	return publicKey.Verify(signature, payload)
 }
 
 func BLSVerifyValidatorVote(view uint64, blockHash consensus.BlockHash, signature *bls.Signature, publicKey *bls.PublicKey) (bool, error) {

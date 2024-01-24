@@ -1,11 +1,14 @@
 package lib
 
 import (
+	"fmt"
 	"sync"
+	"time"
 
 	"github.com/deso-protocol/core/bls"
 	"github.com/deso-protocol/core/collections"
 	"github.com/deso-protocol/core/consensus"
+	"github.com/golang/glog"
 	"github.com/pkg/errors"
 )
 
@@ -82,8 +85,17 @@ func (cc *FastHotStuffConsensus) Start() error {
 	}
 
 	// Initialize and start the event loop. TODO: Pass in the crank timer duration and timeout duration
-	cc.fastHotStuffEventLoop.Init(0, 0, genesisQC, tipBlockWithValidators[0], safeBlocksWithValidators)
+	if err = cc.fastHotStuffEventLoop.Init(500*time.Millisecond, 10*time.Second, genesisQC, tipBlockWithValidators[0], safeBlocksWithValidators); err != nil {
+		return errors.Errorf("FastHotStuffConsensus.Start: Error initializing FastHotStuffEventLoop: %v", err)
+	}
+
 	cc.fastHotStuffEventLoop.Start()
+
+	glog.Infof(
+		"FastHotStuffConsensus.Start: Fast-HotStuff Consensus Started With Tip Height %d With %d Validators",
+		tipBlock.Height,
+		len(tipBlockWithValidators[0].ValidatorList),
+	)
 
 	return nil
 }
@@ -264,6 +276,28 @@ func (cc *FastHotStuffConsensus) handleBlockProposalEvent(
 	}
 
 	// TODO: Broadcast the block proposal to the network
+	aggQCView := uint64(0)
+	aggQCNumValidators := 0
+	aggQCHighQCViews := ""
+	if !unsignedBlock.Header.ValidatorsTimeoutAggregateQC.isEmpty() {
+		aggQCView = unsignedBlock.Header.ValidatorsTimeoutAggregateQC.GetView()
+		aggQCNumValidators = unsignedBlock.Header.ValidatorsTimeoutAggregateQC.GetAggregatedSignature().GetSignersList().Size()
+		aggQCHighQCViews = fmt.Sprint(unsignedBlock.Header.ValidatorsTimeoutAggregateQC.GetHighQCViews())
+	}
+	glog.Infof(
+		"\n================== YOU PROPOSED A NEW FAST-HOTSTUFF BLOCK! =================="+
+			"\n  Timestamp: %d, View: %d, Height: %d, BlockHash: %v"+
+			"\n  Proposer PKey: %s, Proposer Voting PKey: %s, Proposer Signature: %s"+
+			"\n  High QC View: %d, High QC Num Validators: %d, High QC BlockHash: %s"+
+			"\n  Timeout Agg QC View: %d, Timeout Agg QC Num Validators: %d, Timeout High QC Views: [%s]"+
+			"\n  Num Block Transactions: %d, Num Transactions Remaining In Mempool: %d"+
+			"\n============================================================================",
+		unsignedBlock.Header.GetTstampSecs(), unsignedBlock.Header.GetView(), unsignedBlock.Header.Height, blockHash.String(),
+		PkToString(unsignedBlock.Header.ProposerPublicKey.ToBytes(), cc.params), unsignedBlock.Header.ProposerVotingPublicKey.ToString()[0:20], unsignedBlock.Header.ProposerVotePartialSignature.ToString()[0:20],
+		unsignedBlock.Header.GetQC().GetView(), unsignedBlock.Header.GetQC().GetAggregatedSignature().GetSignersList().Size(), unsignedBlock.Header.PrevBlockHash.String(),
+		aggQCView, aggQCNumValidators, aggQCHighQCViews,
+		len(unsignedBlock.Txns), len(cc.mempool.GetTransactions()),
+	)
 
 	return nil
 }

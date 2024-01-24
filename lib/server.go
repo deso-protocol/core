@@ -548,6 +548,11 @@ func NewServer(
 		}()
 	*/
 
+	// Only initialize the FastHotStuffConsensus if the node is a validator with a BLS keystore
+	if _blsKeystore != nil {
+		srv.fastHotStuffConsensus = NewFastHotStuffConsensus(_params, _chain, _posMempool, _blsKeystore.GetSigner())
+	}
+
 	// Initialize the BlockProducer
 	// TODO(miner): Should figure out a way to get this into main.
 	var _blockProducer *DeSoBlockProducer
@@ -556,7 +561,9 @@ func NewServer(
 			_minBlockUpdateIntervalSeconds, _maxBlockTemplatesToCache,
 			_blockProducerSeed,
 			_mempool, _chain,
-			_params, postgres)
+			_params, postgres,
+			srv.fastHotStuffConsensus,
+		)
 		if err != nil {
 			panic(err)
 		}
@@ -578,11 +585,6 @@ func NewServer(
 	// _maxSyncBlockHeight is used for development.
 	if _maxSyncBlockHeight > 0 {
 		_miner = nil
-	}
-
-	// Only initialize the FastHotStuffConsensus if the node is a validator with a BLS keystore
-	if _blsKeystore != nil {
-		srv.fastHotStuffConsensus = NewFastHotStuffConsensus(_params, _chain, _posMempool, _blsKeystore.GetSigner())
 	}
 
 	// Set all the fields on the Server object.
@@ -2524,7 +2526,11 @@ func (srv *Server) _startConsensus() {
 		select {
 		case consensusEvent := <-srv._getFastHotStuffConsensusEventChannel():
 			{
-				glog.Infof("Server._startConsensus: Received consensus event for block height: %v", consensusEvent.TipBlockHeight)
+				glog.Infof(
+					"Server._startConsensus: Received consensus event of type %v for block height: %v",
+					consensusEvent.EventType,
+					consensusEvent.TipBlockHeight,
+				)
 				srv._handleFastHostStuffConsensusEvent(consensusEvent)
 			}
 

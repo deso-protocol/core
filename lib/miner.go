@@ -15,6 +15,7 @@ import (
 
 	"github.com/btcsuite/btcd/wire"
 	"github.com/deso-protocol/core/desohash"
+	"github.com/holiman/uint256"
 
 	"github.com/btcsuite/btcd/btcec"
 	"github.com/davecgh/go-spew/spew"
@@ -30,8 +31,8 @@ type DeSoMiner struct {
 	numThreads    uint32
 	BlockProducer *DeSoBlockProducer
 	params        *DeSoParams
-
-	stopping int32
+	txnQueue      []*MsgDeSoTxn
+	stopping      int32
 }
 
 func NewDeSoMiner(_minerPublicKeys []string, _numThreads uint32,
@@ -281,12 +282,108 @@ func (desoMiner *DeSoMiner) _startThread(threadIndex uint32) {
 			continue
 		}
 
-		newBlock, err := desoMiner.MineAndProcessSingleBlock(threadIndex, nil /*mempoolToUpdate*/)
+		newBlock, err := desoMiner.MineAndProcessSingleBlock(threadIndex, desoMiner.BlockProducer.mempool)
 		if err != nil {
 			glog.Errorf(err.Error())
 		}
-		isFinished := (newBlock == nil)
-		if isFinished {
+
+		if newBlock.Header.Height == uint64(desoMiner.params.ForkHeights.ProofOfStake1StateSetupBlockHeight) {
+			glog.Infof(CLog(Yellow, "Reached ProofOfStake1StateSetupMigration.Height. Setting Up PoS Validator"))
+
+			blsSigner := desoMiner.BlockProducer.fastHotStuffConsensus.signer
+			privKey := desoMiner.BlockProducer.blockProducerPrivateKey
+			pubKey := privKey.PubKey()
+			transactorPubKey := pubKey.SerializeCompressed()
+
+			votingAuthorizationPayload := CreateValidatorVotingAuthorizationPayload(transactorPubKey)
+			votingAuthorization, err := blsSigner.Sign(votingAuthorizationPayload)
+			if err != nil {
+				panic(err)
+			}
+
+			txnMeta := RegisterAsValidatorMetadata{
+				Domains:                             [][]byte{[]byte("https://google.com")},
+				DisableDelegatedStake:               false,
+				DelegatedStakeCommissionBasisPoints: 100,
+				VotingPublicKey:                     blsSigner.GetPublicKey(),
+				VotingAuthorization:                 votingAuthorization,
+			}
+
+			txn, _, _, _, err := desoMiner.BlockProducer.chain.CreateRegisterAsValidatorTxn(
+				transactorPubKey,
+				&txnMeta,
+				make(map[string][]byte),
+				110,
+				desoMiner.BlockProducer.mempool,
+				[]*DeSoOutput{},
+			)
+			if err != nil {
+				panic(err)
+			}
+
+			txnSignature, err := txn.Sign(privKey)
+			if err != nil {
+				panic(err)
+			}
+
+			txn.Signature.SetSignature(txnSignature)
+
+			_, _, err = desoMiner.BlockProducer.mempool.TryAcceptTransaction(txn, false, true)
+			if err != nil {
+				panic(err)
+			}
+
+		}
+
+		if newBlock.Header.Height == uint64(desoMiner.params.ForkHeights.ProofOfStake1StateSetupBlockHeight+3) {
+			glog.Infof(CLog(Yellow, "Reached ProofOfStake1StateSetupMigration.Height. Setting Up PoS Staker"))
+
+			privKey := desoMiner.BlockProducer.blockProducerPrivateKey
+			pubKey := privKey.PubKey()
+			transactorPubKey := pubKey.SerializeCompressed()
+
+			stakeTxnMeta := StakeMetadata{
+				ValidatorPublicKey: NewPublicKey(transactorPubKey),
+				RewardMethod:       StakingRewardMethodPayToBalance,
+				StakeAmountNanos:   uint256.NewInt().SetUint64(10),
+			}
+
+			stakeTxn, _, _, _, err := desoMiner.BlockProducer.chain.CreateStakeTxn(
+				transactorPubKey,
+				&stakeTxnMeta,
+				make(map[string][]byte),
+				100,
+				desoMiner.BlockProducer.mempool,
+				[]*DeSoOutput{},
+			)
+			if err != nil {
+				panic(err)
+			}
+
+			stakeTxnSignature, err := stakeTxn.Sign(privKey)
+			if err != nil {
+				panic(err)
+			}
+
+			stakeTxn.Signature.SetSignature(stakeTxnSignature)
+
+			_, _, err = desoMiner.BlockProducer.mempool.TryAcceptTransaction(stakeTxn, false, true)
+			if err != nil {
+				panic(err)
+			}
+		}
+
+		if newBlock.Header.Height == uint64(desoMiner.params.ForkHeights.ProofOfStake2ConsensusCutoverBlockHeight-1) {
+			if err = desoMiner.BlockProducer.fastHotStuffConsensus.Start(); err != nil {
+				glog.Errorf(CLog(Yellow, "DeSoMiner._startThread: Error starting fast hotstuff consensus: %v"), err)
+			}
+			glog.Infof(
+				CLog(Yellow, "DeSoMiner._startThread: Reached ProofOfStake2ConsensusCutoverBlockHeight %d; stopping miner"),
+				desoMiner.params.ForkHeights.ProofOfStake2ConsensusCutoverBlockHeight,
+			)
+			return
+		}
+		if newBlock == nil {
 			return
 		}
 	}

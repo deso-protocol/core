@@ -347,7 +347,7 @@ func NewTestMiner(t *testing.T, chain *Blockchain, params *DeSoParams, isSender 
 		0, 10,
 		blockSignerSeed,
 		mempool, chain,
-		params, chain.postgres)
+		params, chain.postgres, nil)
 	require.NoError(err)
 
 	newMiner, err := NewDeSoMiner(minerPubKeys, 1 /*numThreads*/, blockProducer, params)

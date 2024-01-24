@@ -752,11 +752,9 @@ var RegtestForkHeights = ForkHeights{
 	AssociationsDerivedKeySpendingLimitBlockHeight:       uint32(0),
 	// For convenience, we set the block height to 1 since the
 	// genesis block was created using the utxo model.
-	BalanceModelBlockHeight:            uint32(1),
-	ProofOfStake1StateSetupBlockHeight: uint32(1),
-
-	// FIXME: set to real block height when ready
-	ProofOfStake2ConsensusCutoverBlockHeight: uint32(math.MaxUint32),
+	BalanceModelBlockHeight:                  uint32(5),
+	ProofOfStake1StateSetupBlockHeight:       uint32(5),
+	ProofOfStake2ConsensusCutoverBlockHeight: uint32(20),
 
 	BlockRewardPatchBlockHeight: uint32(0),
 
@@ -789,6 +787,12 @@ func (params *DeSoParams) EnableRegtest() {
 
 	// Allow block rewards to be spent instantly
 	params.BlockRewardMaturity = 0
+
+	// Set the PoS epoch duration to 2 blocks
+	params.DefaultEpochDurationNumBlocks = 5
+	params.DefaultStakingRewardsAPYBasisPoints = 1000
+	params.DefaultJailInactiveValidatorGracePeriodEpochs = 10000
+	params.DefaultStakingRewardsAPYBasisPoints = 1000000
 
 	// In regtest, we start all the fork heights at zero. These can be adjusted
 	// for testing purposes to ensure that a transition does not cause issues.

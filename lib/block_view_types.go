@@ -4241,7 +4241,12 @@ func (gp *GlobalParamsEntry) GetEncoderType() EncoderType {
 func (gp *GlobalParamsEntry) ComputeFeeTimeBucketMinimumFeeAndMultiplier() (
 	_minimumRate *big.Float, _bucketMultiplier *big.Float) {
 
-	minimumNetworkFeeNanosPerKB := NewFloat().SetUint64(gp.MinimumNetworkFeeNanosPerKB)
+	minNetworkFeeNanosPerKB := gp.MinimumNetworkFeeNanosPerKB
+	if minNetworkFeeNanosPerKB == 0 {
+		minNetworkFeeNanosPerKB = 1000
+	}
+
+	minimumNetworkFeeNanosPerKB := NewFloat().SetUint64(minNetworkFeeNanosPerKB)
 	feeBucketMultiplier := NewFloat().SetUint64(10000 + gp.FeeBucketGrowthRateBasisPoints)
 	feeBucketMultiplier.Quo(feeBucketMultiplier, NewFloat().SetUint64(10000))
 	return minimumNetworkFeeNanosPerKB, feeBucketMultiplier
