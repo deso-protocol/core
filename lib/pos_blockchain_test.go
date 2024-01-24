@@ -2472,37 +2472,28 @@ func _getVoteQC(testMeta *TestMeta, latestBlockView *UtxoView, blockHeight uint6
 	var signersList *bitset.Bitset
 	var aggregatedSignature *bls.Signature
 
-	if blockHeight == uint64(testMeta.params.ForkHeights.ProofOfStake2ConsensusCutoverBlockHeight) {
-		posCutoverValidator, err := BuildProofOfStakeCutoverValidator()
-		require.NoError(testMeta.t, err)
+	votePayload := consensus.GetVoteSignaturePayload(qcView, qcBlockHash)
+	allSnapshotValidators, err := latestBlockView.GetAllSnapshotValidatorSetEntriesByStake()
+	require.NoError(testMeta.t, err)
+	validators = toConsensusValidators(allSnapshotValidators)
 
-		aggregatedSignature, signersList, err = BuildQuorumCertificateAsProofOfStakeCutoverValidator(qcView, qcBlockHash)
+	// Get all the bls keys for the validators that aren't the leader.
+	signersList = bitset.NewBitset()
+	var signatures []*bls.Signature
+	require.NoError(testMeta.t, err)
+	for ii, validatorEntry := range allSnapshotValidators {
+		validatorPublicKeyBytes := latestBlockView.GetPublicKeyForPKID(validatorEntry.ValidatorPKID)
+		validatorPublicKey := Base58CheckEncode(validatorPublicKeyBytes, false, testMeta.chain.params)
+		validatorBLSPrivateKey := testMeta.pubKeyToBLSKeyMap[validatorPublicKey]
+		sig, err := validatorBLSPrivateKey.Sign(votePayload[:])
 		require.NoError(testMeta.t, err)
-		validators = []consensus.Validator{posCutoverValidator}
-	} else {
-		votePayload := consensus.GetVoteSignaturePayload(qcView, qcBlockHash)
-		allSnapshotValidators, err := latestBlockView.GetAllSnapshotValidatorSetEntriesByStake()
-		require.NoError(testMeta.t, err)
-		validators = toConsensusValidators(allSnapshotValidators)
-
-		// Get all the bls keys for the validators that aren't the leader.
-		signersList = bitset.NewBitset()
-		var signatures []*bls.Signature
-		require.NoError(testMeta.t, err)
-		for ii, validatorEntry := range allSnapshotValidators {
-			validatorPublicKeyBytes := latestBlockView.GetPublicKeyForPKID(validatorEntry.ValidatorPKID)
-			validatorPublicKey := Base58CheckEncode(validatorPublicKeyBytes, false, testMeta.chain.params)
-			validatorBLSPrivateKey := testMeta.pubKeyToBLSKeyMap[validatorPublicKey]
-			sig, err := validatorBLSPrivateKey.Sign(votePayload[:])
-			require.NoError(testMeta.t, err)
-			signatures = append(signatures, sig)
-			signersList = signersList.Set(ii, true)
-		}
-
-		// Create the aggregated signature.
-		aggregatedSignature, err = bls.AggregateSignatures(signatures)
-		require.NoError(testMeta.t, err)
+		signatures = append(signatures, sig)
+		signersList = signersList.Set(ii, true)
 	}
+
+	// Create the aggregated signature.
+	aggregatedSignature, err = bls.AggregateSignatures(signatures)
+	require.NoError(testMeta.t, err)
 
 	// Create the vote QC.
 	voteQC := &QuorumCertificate{
