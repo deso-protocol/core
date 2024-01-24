@@ -1,8 +1,6 @@
 package lib
 
 import (
-	"encoding/hex"
-
 	"github.com/deso-protocol/core/bls"
 	"github.com/deso-protocol/core/consensus"
 	"github.com/pkg/errors"
@@ -54,14 +52,12 @@ func NewBLSKeystore(seedPhrase string) (*BLSKeystore, error) {
 		return nil, errors.Wrapf(err, "NewBLSKeystore: Problem generating seed bytes from seed phrase")
 	}
 
-	seedHex := hex.EncodeToString(seedBytes)
-
 	privateKey, err := bls.NewPrivateKey()
 	if err != nil {
 		return nil, errors.Wrapf(err, "NewBLSKeystore: Problem generating private key from seed phrase")
 	}
 
-	if _, err = privateKey.FromString(seedHex); err != nil {
+	if _, err = privateKey.FromSeed(seedBytes); err != nil {
 		return nil, errors.Wrapf(err, "NewBLSKeystore: Problem retrieving private key from seed phrase")
 	}
 
