@@ -402,3 +402,39 @@ func TestIsSuperMajorityStake(t *testing.T) {
 		require.True(t, isSuperMajorityStake(totalStake, totalStake))
 	}
 }
+
+func TestIsEqualQC(t *testing.T) {
+	// Test nil QCs
+	{
+		require.False(t, IsEqualQC(nil, nil))
+	}
+
+	// Test one nil and one non-nil QC
+	{
+		require.False(t, IsEqualQC(nil, createDummyQC(1, createDummyBlockHash())))
+		require.False(t, IsEqualQC(createDummyQC(1, createDummyBlockHash()), nil))
+	}
+
+	// Test two non-equal non-nil QCs with different block hashes
+	{
+		require.False(t, IsEqualQC(createDummyQC(1, createDummyBlockHash()), createDummyQC(1, createDummyBlockHash())))
+	}
+
+	// Test two non-equal non-nil QCs with different views
+	{
+		blockHash := createDummyBlockHash()
+		require.False(t, IsEqualQC(createDummyQC(1, blockHash), createDummyQC(2, blockHash)))
+	}
+
+	// Test two non-equal non-nil QCs with different aggregated signatures
+	{
+		blockHash := createDummyBlockHash()
+		require.False(t, IsEqualQC(createDummyQC(1, blockHash), createDummyQC(1, blockHash)))
+	}
+
+	// Test two equal QCs
+	{
+		qc := createDummyQC(1, createDummyBlockHash())
+		require.True(t, IsEqualQC(qc, qc))
+	}
+}
