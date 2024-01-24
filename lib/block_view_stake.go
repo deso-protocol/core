@@ -2917,20 +2917,17 @@ func (bav *UtxoView) CreateUnlockStakeTxindexMetadata(utxoOp *UtxoOperation, txn
 
 type StakeLimitKey struct {
 	ValidatorPKID PKID
-	StakerPKID    PKID
 }
 
-func MakeStakeLimitKey(validatorPKID *PKID, stakerPKID *PKID) StakeLimitKey {
+func MakeStakeLimitKey(validatorPKID *PKID) StakeLimitKey {
 	return StakeLimitKey{
 		ValidatorPKID: *validatorPKID,
-		StakerPKID:    *stakerPKID,
 	}
 }
 
 func (stakeLimitKey *StakeLimitKey) Encode() []byte {
 	var data []byte
 	data = append(data, stakeLimitKey.ValidatorPKID.ToBytes()...)
-	data = append(data, stakeLimitKey.StakerPKID.ToBytes()...)
 	return data
 }
 
@@ -2944,13 +2941,6 @@ func (stakeLimitKey *StakeLimitKey) Decode(rr *bytes.Reader) error {
 	}
 	stakeLimitKey.ValidatorPKID = *validatorPKID
 
-	// StakerPKID
-	stakerPKID := &PKID{}
-	if err = stakerPKID.FromBytes(rr); err != nil {
-		return errors.Wrap(err, "StakeLimitKey.Decode: Problem reading StakerPKID: ")
-	}
-	stakeLimitKey.StakerPKID = *stakerPKID
-
 	return nil
 }
 
@@ -2960,14 +2950,8 @@ func (bav *UtxoView) _checkStakeTxnSpendingLimitAndUpdateDerivedKey(
 	txMeta *StakeMetadata,
 ) (DerivedKeyEntry, error) {
 	// The DerivedKeyEntry.TransactionSpendingLimit for staking maps
-	// ValidatorPKID || StakerPKID to the amount of stake-able DESO
+	// ValidatorPKID to the amount of stake-able DESO
 	// nanos allowed for this derived key.
-
-	// Convert TransactorPublicKeyBytes to StakerPKID.
-	stakerPKIDEntry := bav.GetPKIDForPublicKey(transactorPublicKeyBytes)
-	if stakerPKIDEntry == nil || stakerPKIDEntry.isDeleted {
-		return derivedKeyEntry, errors.Wrapf(RuleErrorInvalidStakerPKID, "UtxoView._checkStakeTxnSpendingLimitAndUpdateDerivedKey: ")
-	}
 
 	// Convert ValidatorPublicKey to ValidatorPKID.
 	validatorEntry, err := bav.GetValidatorByPublicKey(txMeta.ValidatorPublicKey)
@@ -2984,7 +2968,7 @@ func (bav *UtxoView) _checkStakeTxnSpendingLimitAndUpdateDerivedKey(
 
 	for _, validatorPKID := range []*PKID{validatorEntry.ValidatorPKID, &ZeroPKID} {
 		// Retrieve DerivedKeyEntry.TransactionSpendingLimit.
-		stakeLimitKey := MakeStakeLimitKey(validatorPKID, stakerPKIDEntry.PKID)
+		stakeLimitKey := MakeStakeLimitKey(validatorPKID)
 		spendingLimit, exists := derivedKeyEntry.TransactionSpendingLimitTracker.StakeLimitMap[stakeLimitKey]
 		if !exists {
 			continue
@@ -3036,18 +3020,11 @@ func (bav *UtxoView) _checkStakeTxnSpendingLimitAndUpdateDerivedKey(
 // to consolidate in the future.
 func (bav *UtxoView) _checkUnstakeTxnSpendingLimitAndUpdateDerivedKey(
 	derivedKeyEntry DerivedKeyEntry,
-	transactorPublicKeyBytes []byte,
 	txMeta *UnstakeMetadata,
 ) (DerivedKeyEntry, error) {
 	// The DerivedKeyEntry.TransactionSpendingLimit for unstaking maps
-	// ValidatorPKID || StakerPKID to the amount of unstake-able DESO
+	// ValidatorPKID to the amount of unstake-able DESO
 	// nanos allowed for this derived key.
-
-	// Convert TransactorPublicKeyBytes to StakerPKID.
-	stakerPKIDEntry := bav.GetPKIDForPublicKey(transactorPublicKeyBytes)
-	if stakerPKIDEntry == nil || stakerPKIDEntry.isDeleted {
-		return derivedKeyEntry, errors.Wrapf(RuleErrorInvalidStakerPKID, "UtxoView._checkUnstakeTxnSpendingLimitAndUpdateDerivedKey: ")
-	}
 
 	// Convert ValidatorPublicKey to ValidatorPKID.
 	validatorEntry, err := bav.GetValidatorByPublicKey(txMeta.ValidatorPublicKey)
@@ -3064,7 +3041,7 @@ func (bav *UtxoView) _checkUnstakeTxnSpendingLimitAndUpdateDerivedKey(
 
 	for _, validatorPKID := range []*PKID{validatorEntry.ValidatorPKID, &ZeroPKID} {
 		// Retrieve DerivedKeyEntry.TransactionSpendingLimit.
-		stakeLimitKey := MakeStakeLimitKey(validatorPKID, stakerPKIDEntry.PKID)
+		stakeLimitKey := MakeStakeLimitKey(validatorPKID)
 		spendingLimit, exists := derivedKeyEntry.TransactionSpendingLimitTracker.UnstakeLimitMap[stakeLimitKey]
 		if !exists {
 			continue
@@ -3112,18 +3089,11 @@ func (bav *UtxoView) _checkUnstakeTxnSpendingLimitAndUpdateDerivedKey(
 
 func (bav *UtxoView) _checkUnlockStakeTxnSpendingLimitAndUpdateDerivedKey(
 	derivedKeyEntry DerivedKeyEntry,
-	transactorPublicKeyBytes []byte,
 	txMeta *UnlockStakeMetadata,
 ) (DerivedKeyEntry, error) {
 	// The DerivedKeyEntry.TransactionSpendingLimit for unlocking stake maps
-	// ValidatorPKID || StakerPKID to the number of UnlockStake transactions
+	// ValidatorPKID to the number of UnlockStake transactions
 	// this derived key is allowed to perform.
-
-	// Convert TransactorPublicKeyBytes to StakerPKID.
-	stakerPKIDEntry := bav.GetPKIDForPublicKey(transactorPublicKeyBytes)
-	if stakerPKIDEntry == nil || stakerPKIDEntry.isDeleted {
-		return derivedKeyEntry, errors.Wrapf(RuleErrorInvalidStakerPKID, "UtxoView._checkUnlockStakeTxnSpendingLimitAndUpdateDerivedKey: ")
-	}
 
 	// Convert ValidatorPublicKey to ValidatorPKID.
 	validatorEntry, err := bav.GetValidatorByPublicKey(txMeta.ValidatorPublicKey)
@@ -3138,7 +3108,7 @@ func (bav *UtxoView) _checkUnlockStakeTxnSpendingLimitAndUpdateDerivedKey(
 	// If not found, check spending limit for any validator.
 	for _, validatorPKID := range []*PKID{validatorEntry.ValidatorPKID, &ZeroPKID} {
 		// Retrieve DerivedKeyEntry.TransactionSpendingLimit.
-		stakeLimitKey := MakeStakeLimitKey(validatorPKID, stakerPKIDEntry.PKID)
+		stakeLimitKey := MakeStakeLimitKey(validatorPKID)
 		spendingLimit, exists := derivedKeyEntry.TransactionSpendingLimitTracker.UnlockStakeLimitMap[stakeLimitKey]
 		if !exists || spendingLimit <= 0 {
 			continue
@@ -3164,11 +3134,6 @@ func (bav *UtxoView) IsValidStakeLimitKey(transactorPublicKeyBytes []byte, stake
 	// Convert TransactorPublicKeyBytes to TransactorPKID.
 	transactorPKIDEntry := bav.GetPKIDForPublicKey(transactorPublicKeyBytes)
 	if transactorPKIDEntry == nil || transactorPKIDEntry.isDeleted {
-		return errors.Wrapf(RuleErrorTransactionSpendingLimitInvalidStaker, "UtxoView.IsValidStakeLimitKey: ")
-	}
-
-	// Verify TransactorPKID == StakerPKID.
-	if !transactorPKIDEntry.PKID.Eq(&stakeLimitKey.StakerPKID) {
 		return errors.Wrapf(RuleErrorTransactionSpendingLimitInvalidStaker, "UtxoView.IsValidStakeLimitKey: ")
 	}
 
