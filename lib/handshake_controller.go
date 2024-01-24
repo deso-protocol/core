@@ -5,12 +5,15 @@ import (
 	"github.com/decred/dcrd/lru"
 	"github.com/golang/glog"
 	"math"
+	"sync"
 )
 
 // HandshakeController is a structure that handles the handshake process with remote nodes. It is the entry point for
 // initiating a handshake with a remote node. It is also responsible for handling version/verack messages from remote
 // nodes. And for handling the handshake complete control message.
 type HandshakeController struct {
+	mtxHandshakeComplete sync.Mutex
+
 	rnManager  *RemoteNodeManager
 	usedNonces lru.Cache
 }
@@ -37,6 +40,10 @@ func (hc *HandshakeController) InitiateHandshake(rn *RemoteNode) {
 
 // _handleHandshakeCompleteMessage handles HandshakeComplete control messages, sent by RemoteNodes.
 func (hc *HandshakeController) _handleHandshakeCompleteMessage(origin *Peer, desoMsg DeSoMessage) {
+	// Prevent race conditions while handling handshake complete messages.
+	hc.mtxHandshakeComplete.Lock()
+	defer hc.mtxHandshakeComplete.Unlock()
+
 	if desoMsg.GetMsgType() != MsgTypePeerHandshakeComplete {
 		return
 	}

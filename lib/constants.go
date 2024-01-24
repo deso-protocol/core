@@ -498,6 +498,10 @@ func (pvt ProtocolVersionType) Before(version ProtocolVersionType) bool {
 	return pvt.ToUint64() < version.ToUint64()
 }
 
+func (pvt ProtocolVersionType) After(version ProtocolVersionType) bool {
+	return pvt.ToUint64() > version.ToUint64()
+}
+
 // DeSoParams defines the full list of possible parameters for the
 // DeSo network.
 type DeSoParams struct {
@@ -564,6 +568,8 @@ type DeSoParams struct {
 	DialTimeout time.Duration
 	// The amount of time we wait to receive a version message from a peer.
 	VersionNegotiationTimeout time.Duration
+	// The amount of time we wait to receive a verack message from a peer.
+	VerackNegotiationTimeout time.Duration
 
 	// The maximum number of addresses to broadcast to peers.
 	MaxAddressesToBroadcast uint32
@@ -1025,6 +1031,7 @@ var DeSoMainnetParams = DeSoParams{
 
 	DialTimeout:               30 * time.Second,
 	VersionNegotiationTimeout: 30 * time.Second,
+	VerackNegotiationTimeout:  30 * time.Second,
 
 	MaxAddressesToBroadcast: 10,
 
@@ -1296,6 +1303,7 @@ var DeSoTestnetParams = DeSoParams{
 
 	DialTimeout:               30 * time.Second,
 	VersionNegotiationTimeout: 30 * time.Second,
+	VerackNegotiationTimeout:  30 * time.Second,
 
 	MaxAddressesToBroadcast: 10,
 

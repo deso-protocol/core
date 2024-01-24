@@ -62,7 +62,9 @@ type Server struct {
 	eventManager  *EventManager
 	TxIndex       *TXIndex
 
+	handshakeController *HandshakeController
 	// fastHotStuffEventLoop consensus.FastHotStuffEventLoop
+	connectionController *ConnectionController
 	// posMempool *PosMemPool TODO: Add the mempool later
 
 	// All messages received from peers get sent from the ConnectionManager to the
@@ -173,6 +175,10 @@ func (srv *Server) ResetRequestQueues() {
 	glog.V(2).Infof("Server.ResetRequestQueues: Resetting request queues")
 
 	srv.requestedTransactionsMap = make(map[BlockHash]*GetDataRequestInfo)
+}
+
+func (srv *Server) GetConnectionController() *ConnectionController {
+	return srv.connectionController
 }
 
 // dataLock must be acquired for writing before calling this function.
@@ -445,8 +451,7 @@ func NewServer(
 	// Create a new connection manager but note that it won't be initialized until Start().
 	_incomingMessages := make(chan *ServerMessage, (_targetOutboundPeers+_maxInboundPeers)*3)
 	_cmgr := NewConnectionManager(
-		_params, _desoAddrMgr, _listeners, _connectIps, timesource,
-		_targetOutboundPeers, _maxInboundPeers, _limitOneInboundConnectionPerIP,
+		_params, _listeners, _connectIps, timesource,
 		_hyperSync, _syncType, _stallTimeoutSeconds, _minFeeRateNanosPerKB,
 		_incomingMessages, srv)
 
@@ -480,6 +485,22 @@ func NewServer(
 		_chain.blockTip().Height,
 		hex.EncodeToString(_chain.blockTip().Hash[:]),
 		hex.EncodeToString(BigintToHash(_chain.blockTip().CumWork)[:]))
+
+	nodeServices := SFFullNodeDeprecated
+	if _hyperSync {
+		nodeServices |= SFHyperSync
+	}
+	if archivalMode {
+		nodeServices |= SFArchivalNode
+	}
+	if _blsKeystore != nil {
+		nodeServices |= SFPosValidator
+	}
+	rnManager := NewRemoteNodeManager(srv, _chain, _cmgr, _blsKeystore, _params, _minFeeRateNanosPerKB, nodeServices)
+
+	srv.handshakeController = NewHandshakeController(rnManager)
+	srv.connectionController = NewConnectionController(_params, _cmgr, srv.handshakeController, rnManager,
+		_blsKeystore, _desoAddrMgr, _targetOutboundPeers, _maxInboundPeers, _limitOneInboundConnectionPerIP)
 
 	if srv.stateChangeSyncer != nil {
 		srv.stateChangeSyncer.BlockHeight = uint64(_chain.headerTip().Height)
@@ -2176,7 +2197,9 @@ func (srv *Server) _handleAddrMessage(pp *Peer, msg *MsgDeSoAddr) {
 		netAddrsReceived = append(
 			netAddrsReceived, addrAsNetAddr)
 	}
-	srv.cmgr.AddrMgr.AddAddresses(netAddrsReceived, pp.netAddr)
+	// TODO: temporary
+	addressMgr := addrmgr.New("", net.LookupIP)
+	addressMgr.AddAddresses(netAddrsReceived, pp.netAddr)
 
 	// If the message had <= 10 addrs in it, then queue all the addresses for relaying
 	// on the next cycle.
@@ -2207,7 +2230,9 @@ func (srv *Server) _handleGetAddrMessage(pp *Peer, msg *MsgDeSoGetAddr) {
 	glog.V(1).Infof("Server._handleGetAddrMessage: Received GetAddr from peer %v", pp)
 	// When we get a GetAddr message, choose MaxAddrsPerMsg from the AddrMgr
 	// and send them back to the peer.
-	netAddrsFound := srv.cmgr.AddrMgr.AddressCache()
+	// TODO: temporary
+	addressMgr := addrmgr.New("", net.LookupIP)
+	netAddrsFound := addressMgr.AddressCache()
 	if len(netAddrsFound) > MaxAddrsPerAddrMsg {
 		netAddrsFound = netAddrsFound[:MaxAddrsPerAddrMsg]
 	}
@@ -2230,9 +2255,12 @@ func (srv *Server) _handleControlMessages(serverMessage *ServerMessage) (_should
 	switch serverMessage.Msg.(type) {
 	// Control messages used internally to signal to the server.
 	case *MsgDeSoPeerHandshakeComplete:
-		break
+		srv.handshakeController._handleHandshakeCompleteMessage(serverMessage.Peer, serverMessage.Msg)
 	case *MsgDeSoDisconnectedPeer:
 		srv._handleDonePeer(serverMessage.Peer)
+		srv.connectionController._handleDonePeerMessage(serverMessage.Peer, serverMessage.Msg)
+	case *MsgDeSoNewConnection:
+		srv.connectionController._handleNewConnectionMessage(serverMessage.Peer, serverMessage.Msg)
 	case *MsgDeSoQuit:
 		return true
 	}
@@ -2244,6 +2272,10 @@ func (srv *Server) _handlePeerMessages(serverMessage *ServerMessage) {
 	// Handle all non-control message types from our Peers.
 	switch msg := serverMessage.Msg.(type) {
 	// Messages sent among peers.
+	case *MsgDeSoAddr:
+		srv.connectionController._handleAddrMessage(serverMessage.Peer, serverMessage.Msg)
+	case *MsgDeSoGetAddr:
+		srv.connectionController._handleGetAddrMessage(serverMessage.Peer, serverMessage.Msg)
 	case *MsgDeSoGetHeaders:
 		srv._handleGetHeaders(serverMessage.Peer, msg)
 	case *MsgDeSoHeaderBundle:
@@ -2266,6 +2298,10 @@ func (srv *Server) _handlePeerMessages(serverMessage *ServerMessage) {
 		srv._handleMempool(serverMessage.Peer, msg)
 	case *MsgDeSoInv:
 		srv._handleInv(serverMessage.Peer, msg)
+	case *MsgDeSoVersion:
+		srv.handshakeController._handleVersionMessage(serverMessage.Peer, serverMessage.Msg)
+	case *MsgDeSoVerack:
+		srv.handshakeController._handleVerackMessage(serverMessage.Peer, serverMessage.Msg)
 	}
 }
 
@@ -2443,10 +2479,12 @@ func (srv *Server) _startAddressRelayer() {
 		}
 		// For the first ten minutes after the server starts, relay our address to all
 		// peers. After the first ten minutes, do it once every 24 hours.
+		// TODO: temporary
+		addressMgr := addrmgr.New("", net.LookupIP)
 		glog.V(1).Infof("Server.Start._startAddressRelayer: Relaying our own addr to peers")
 		if numMinutesPassed < 10 || numMinutesPassed%(RebroadcastNodeAddrIntervalMinutes) == 0 {
 			for _, pp := range srv.cmgr.GetAllPeers() {
-				bestAddress := srv.cmgr.AddrMgr.GetBestLocalAddress(pp.netAddr)
+				bestAddress := addressMgr.GetBestLocalAddress(pp.netAddr)
 				if bestAddress != nil {
 					glog.V(2).Infof("Server.Start._startAddressRelayer: Relaying address %v to "+
 						"peer %v", bestAddress.IP.String(), pp)

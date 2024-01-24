@@ -59,6 +59,7 @@ func TestEncoderMigrations(t *testing.T) {
 
 	compareNodesByChecksum(t, node1, node2)
 	fmt.Println("Databases match!")
+	bridge.Disconnect()
 	node1.Stop()
 	node2.Stop()
 }
