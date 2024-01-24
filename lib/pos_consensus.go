@@ -48,15 +48,16 @@ func (cc *FastHotStuffConsensus) Start() error {
 
 	// Fetch the current tip of the chain
 	tipBlock := cc.blockchain.BlockTip()
+	tipHeight := tipBlock.Header.Height
 
 	// If the chain is not at the final PoW block height or higher, then we cannot start the PoS consensus.
-	if tipBlock.Height < cc.blockchain.params.ForkHeights.ProofOfStake2ConsensusCutoverBlockHeight-1 {
+	if cc.blockchain.IsPoWBlockHeight(tipHeight) && !cc.blockchain.IsFinalPoWBlockHeight(tipHeight) {
 		return errors.Errorf(
 			"FastHotStuffConsensus.Start: Block tip %d is not at the final PoW block height", tipBlock.Height,
 		)
 	}
 
-	finalPoWBlock, err := cc.getFinalCommittedPoWBlock()
+	finalPoWBlock, err := cc.blockchain.GetFinalCommittedPoWBlock()
 	if err != nil {
 		return errors.Errorf("FastHotStuffConsensus.Start: Error fetching final PoW block: %v", err)
 	}
@@ -418,7 +419,7 @@ func (cc *FastHotStuffConsensus) HandleLocalTimeoutEvent(event *consensus.FastHo
 	timeoutMsg.TimedOutView = event.View
 	timeoutMsg.VotingPublicKey = cc.signer.GetPublicKey()
 
-	if cc.isFinalPoWBlockHeight(tipBlockNode.Header.Height) {
+	if cc.blockchain.IsFinalPoWBlockHeight(tipBlockNode.Header.Height) {
 		// If the tip block is the final block of the PoW chain, then we can use the PoS chain's genesis block
 		// as the highQC for it.
 		if timeoutMsg.HighQC, err = cc.createGenesisQC(tipBlockNode.Hash, tipBlockNode.Header.Height); err != nil {
@@ -759,34 +760,6 @@ func (fc *FastHotStuffConsensus) createGenesisQC(blockHash *BlockHash, view uint
 	}
 
 	return qc, nil
-}
-
-func (fc *FastHotStuffConsensus) getFinalCommittedPoWBlock() (*BlockNode, error) {
-	// Fetch the block node for the cutover block
-	blockNodes, blockNodesExist :=
-		fc.blockchain.blockIndexByHeight[uint64(fc.params.ForkHeights.ProofOfStake2ConsensusCutoverBlockHeight-1)]
-	if !blockNodesExist {
-		return nil, errors.Errorf(
-			"Error fetching cutover block nodes before height %d",
-			fc.params.ForkHeights.ProofOfStake2ConsensusCutoverBlockHeight-1,
-		)
-	}
-
-	// Fetch the block node with the committed status
-	for _, blockNode := range blockNodes {
-		if blockNode.Status == StatusBlockCommitted {
-			return blockNode, nil
-		}
-	}
-
-	return nil, errors.Errorf(
-		"Error fetching committed cutover block node before height %d",
-		fc.params.ForkHeights.ProofOfStake2ConsensusCutoverBlockHeight-1,
-	)
-}
-
-func (fc *FastHotStuffConsensus) isFinalPoWBlockHeight(blockHeight uint64) bool {
-	return blockHeight == uint64(fc.params.ForkHeights.ProofOfStake2ConsensusCutoverBlockHeight-1)
 }
 
 // Finds the epoch entry for the block and returns the epoch number.
