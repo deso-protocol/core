@@ -381,6 +381,25 @@ func containsBlockHash(blockHashes []BlockHash, blockHash BlockHash) bool {
 	})
 }
 
+func IsEqualQC(qc1 QuorumCertificate, qc2 QuorumCertificate) bool {
+	if !isProperlyFormedQC(qc1) || !isProperlyFormedQC(qc2) {
+		return false
+	}
+
+	return qc1.GetView() == qc2.GetView() &&
+		IsEqualBlockHash(qc1.GetBlockHash(), qc2.GetBlockHash()) &&
+		IsEqualAggregatedSignature(qc1.GetAggregatedSignature(), qc2.GetAggregatedSignature())
+}
+
+func IsEqualAggregatedSignature(agg1 AggregatedSignature, agg2 AggregatedSignature) bool {
+	if !isProperlyFormedAggregateSignature(agg1) || !isProperlyFormedAggregateSignature(agg2) {
+		return false
+	}
+
+	return agg1.GetSignature().Eq(agg2.GetSignature()) &&
+		agg1.GetSignersList().Eq(agg2.GetSignersList())
+}
+
 func IsEqualBlockHash(hash1 BlockHash, hash2 BlockHash) bool {
 	hash1Value := hash1.GetValue()
 	hash2Value := hash2.GetValue()

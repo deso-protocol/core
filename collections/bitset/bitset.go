@@ -85,3 +85,10 @@ func (b *Bitset) FromBytes(bytes []byte) *Bitset {
 	b.store.SetBytes(bytes)
 	return b
 }
+
+func (b *Bitset) Eq(other *Bitset) bool {
+	if b == nil || other == nil {
+		return false
+	}
+	return b.store.Cmp(other.store) == 0
+}
