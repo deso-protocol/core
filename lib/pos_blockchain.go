@@ -1785,7 +1785,11 @@ func (bc *Blockchain) GetFinalCommittedPoWBlock() (*BlockNode, error) {
 }
 
 func (bc *Blockchain) IsPoWBlockHeight(blockHeight uint64) bool {
-	return blockHeight <= bc.GetFinalPoWBlockHeight()
+	return !bc.IsPoSBlockHeight(blockHeight)
+}
+
+func (bc *Blockchain) IsPoSBlockHeight(blockHeight uint64) bool {
+	return blockHeight >= bc.GetFirstPoSBlockHeight()
 }
 
 func (bc *Blockchain) IsFinalPoWBlockHeight(blockHeight uint64) bool {
