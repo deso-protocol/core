@@ -499,8 +499,8 @@ func NewServer(
 	rnManager := NewRemoteNodeManager(srv, _chain, _cmgr, _blsKeystore, _params, _minFeeRateNanosPerKB, nodeServices)
 
 	srv.handshakeController = NewHandshakeController(rnManager)
-	srv.connectionController = NewConnectionController(_params, _cmgr, srv.handshakeController, rnManager,
-		_blsKeystore, _desoAddrMgr, _targetOutboundPeers, _maxInboundPeers, _limitOneInboundConnectionPerIP)
+	srv.connectionController = NewConnectionController(_params, _cmgr, srv.handshakeController, rnManager, _blsKeystore,
+		_desoAddrMgr, _connectIps, _targetOutboundPeers, _maxInboundPeers, _limitOneInboundConnectionPerIP)
 
 	if srv.stateChangeSyncer != nil {
 		srv.stateChangeSyncer.BlockHeight = uint64(_chain.headerTip().Height)
@@ -2547,6 +2547,9 @@ func (srv *Server) Stop() {
 	srv.cmgr.Stop()
 	glog.Infof(CLog(Yellow, "Server.Stop: Closed the ConnectionManger"))
 
+	srv.connectionController.Stop()
+	glog.Infof(CLog(Yellow, "Server.Stop: Closed the ConnectionController"))
+
 	// Stop the miner if we have one running.
 	if srv.miner != nil {
 		srv.miner.Stop()
@@ -2629,6 +2632,8 @@ func (srv *Server) Start() {
 	if srv.miner != nil && len(srv.miner.PublicKeys) > 0 {
 		go srv.miner.Start()
 	}
+
+	srv.connectionController.Start()
 }
 
 // SyncPrefixProgress keeps track of sync progress on an individual prefix. It is used in

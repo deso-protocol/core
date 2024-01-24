@@ -140,7 +140,7 @@ func (manager *RemoteNodeManager) CreateValidatorConnection(netAddr *wire.NetAdd
 	}
 
 	remoteNode := manager.newRemoteNode(publicKey)
-	if err := remoteNode.DialPersistentOutboundConnection(netAddr); err != nil {
+	if err := remoteNode.DialOutboundConnection(netAddr); err != nil {
 		return errors.Wrapf(err, "RemoteNodeManager.CreateValidatorConnection: Problem calling DialPersistentOutboundConnection "+
 			"for addr: (%s:%v)", netAddr.IP.String(), netAddr.Port)
 	}
@@ -149,19 +149,19 @@ func (manager *RemoteNodeManager) CreateValidatorConnection(netAddr *wire.NetAdd
 	return nil
 }
 
-func (manager *RemoteNodeManager) CreateNonValidatorPersistentOutboundConnection(netAddr *wire.NetAddress) error {
+func (manager *RemoteNodeManager) CreateNonValidatorPersistentOutboundConnection(netAddr *wire.NetAddress) (RemoteNodeId, error) {
 	if netAddr == nil {
-		return fmt.Errorf("RemoteNodeManager.CreateNonValidatorPersistentOutboundConnection: netAddr is nil")
+		return 0, fmt.Errorf("RemoteNodeManager.CreateNonValidatorPersistentOutboundConnection: netAddr is nil")
 	}
 
 	remoteNode := manager.newRemoteNode(nil)
 	if err := remoteNode.DialPersistentOutboundConnection(netAddr); err != nil {
-		return errors.Wrapf(err, "RemoteNodeManager.CreateNonValidatorPersistentOutboundConnection: Problem calling DialPersistentOutboundConnection "+
+		return 0, errors.Wrapf(err, "RemoteNodeManager.CreateNonValidatorPersistentOutboundConnection: Problem calling DialPersistentOutboundConnection "+
 			"for addr: (%s:%v)", netAddr.IP.String(), netAddr.Port)
 	}
 	manager.setRemoteNode(remoteNode)
 	manager.GetNonValidatorOutboundIndex().Set(remoteNode.GetId(), remoteNode)
-	return nil
+	return remoteNode.GetId(), nil
 }
 
 func (manager *RemoteNodeManager) CreateNonValidatorOutboundConnection(netAddr *wire.NetAddress) error {
@@ -184,7 +184,7 @@ func (manager *RemoteNodeManager) AttachInboundConnection(conn net.Conn,
 
 	remoteNode := manager.newRemoteNode(nil)
 	if err := remoteNode.AttachInboundConnection(conn, na); err != nil {
-		return nil, errors.Wrapf(err, "RemoteNodeManager.AttachInboundConnection: Problem calling AttachInboundConnection "+
+		return remoteNode, errors.Wrapf(err, "RemoteNodeManager.AttachInboundConnection: Problem calling AttachInboundConnection "+
 			"for addr: (%s)", conn.RemoteAddr().String())
 	}
 
@@ -219,7 +219,7 @@ func (manager *RemoteNodeManager) setRemoteNode(rn *RemoteNode) {
 	manager.mtx.Lock()
 	defer manager.mtx.Unlock()
 
-	if rn == nil {
+	if rn == nil || rn.IsTerminated() {
 		return
 	}
 
@@ -230,7 +230,7 @@ func (manager *RemoteNodeManager) SetNonValidator(rn *RemoteNode) {
 	manager.mtx.Lock()
 	defer manager.mtx.Unlock()
 
-	if rn == nil {
+	if rn == nil || rn.IsTerminated() {
 		return
 	}
 
@@ -245,7 +245,7 @@ func (manager *RemoteNodeManager) SetValidator(remoteNode *RemoteNode) {
 	manager.mtx.Lock()
 	defer manager.mtx.Unlock()
 
-	if remoteNode == nil {
+	if remoteNode == nil || remoteNode.IsTerminated() {
 		return
 	}
 
@@ -260,7 +260,7 @@ func (manager *RemoteNodeManager) UnsetValidator(remoteNode *RemoteNode) {
 	manager.mtx.Lock()
 	defer manager.mtx.Unlock()
 
-	if remoteNode == nil {
+	if remoteNode == nil || remoteNode.IsTerminated() {
 		return
 	}
 
@@ -275,7 +275,7 @@ func (manager *RemoteNodeManager) UnsetNonValidator(rn *RemoteNode) {
 	manager.mtx.Lock()
 	defer manager.mtx.Unlock()
 
-	if rn == nil {
+	if rn == nil || rn.IsTerminated() {
 		return
 	}
 

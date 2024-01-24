@@ -122,7 +122,7 @@ func (hc *HandshakeController) _handleVersionMessage(origin *Peer, desoMsg DeSoM
 	if hc.usedNonces.Contains(msgNonce) {
 		hc.usedNonces.Delete(msgNonce)
 		glog.Errorf("HandshakeController._handleVersionMessage: Disconnecting RemoteNode with id: (%v) "+
-			"nonce collision", origin.ID)
+			"nonce collision, nonce (%v)", origin.ID, msgNonce)
 		hc.rnManager.Disconnect(rn)
 		return
 	}

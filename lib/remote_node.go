@@ -223,6 +223,10 @@ func (rn *RemoteNode) IsHandshakeCompleted() bool {
 	return rn.connectionStatus == RemoteNodeStatus_HandshakeCompleted
 }
 
+func (rn *RemoteNode) IsTerminated() bool {
+	return rn.connectionStatus == RemoteNodeStatus_Terminated
+}
+
 func (rn *RemoteNode) IsValidator() bool {
 	if !rn.IsHandshakeCompleted() {
 		return false

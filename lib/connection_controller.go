@@ -5,11 +5,22 @@ import (
 	"github.com/btcsuite/btcd/addrmgr"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/deso-protocol/core/bls"
+	"github.com/deso-protocol/core/collections"
 	"github.com/golang/glog"
 	"github.com/pkg/errors"
 	"net"
 	"strconv"
+	"sync"
+	"time"
 )
+
+type GetActiveValidatorsFunc func() *collections.ConcurrentMap[bls.SerializedPublicKey, *ValidatorEntry]
+
+var GetActiveValidatorImpl GetActiveValidatorsFunc = BasicGetActiveValidators
+
+func BasicGetActiveValidators() *collections.ConcurrentMap[bls.SerializedPublicKey, *ValidatorEntry] {
+	return collections.NewConcurrentMap[bls.SerializedPublicKey, *ValidatorEntry]()
+}
 
 // ConnectionController is a structure that oversees all connections to remote nodes. It is responsible for kicking off
 // the initial connections a node makes to the network. It is also responsible for creating RemoteNodes from all
@@ -32,8 +43,12 @@ type ConnectionController struct {
 	// it's aware of at random and provides it to us.
 	AddrMgr *addrmgr.AddrManager
 
-	// When --connectips is set, we don't connect to anything from the addrmgr.
+	// When --connect-ips is set, we don't connect to anything from the addrmgr.
 	connectIps []string
+	// persistentIpToRemoteNodeIdsMap maps persistent IP addresses, like the --connect-ips, to the RemoteNodeIds of the
+	// corresponding RemoteNodes. This is used to ensure that we don't connect to the same persistent IP address twice.
+	// And that we can reconnect to the same persistent IP address if we disconnect from it.
+	persistentIpToRemoteNodeIdsMap map[string]RemoteNodeId
 
 	// The target number of non-validator outbound remote nodes we want to have. We will disconnect remote nodes once
 	// we've exceeded this number of outbound connections.
@@ -44,11 +59,16 @@ type ConnectionController struct {
 	// When true, only one connection per IP is allowed. Prevents eclipse attacks
 	// among other things.
 	limitOneInboundRemoteNodePerIP bool
+
+	startGroup sync.WaitGroup
+	exitChan   chan struct{}
+	exitGroup  sync.WaitGroup
 }
 
 func NewConnectionController(params *DeSoParams, cmgr *ConnectionManager, handshakeController *HandshakeController,
-	rnManager *RemoteNodeManager, blsKeystore *BLSKeystore, addrMgr *addrmgr.AddrManager, targetNonValidatorOutboundRemoteNodes uint32,
-	targetNonValidatorInboundRemoteNodes uint32, limitOneInboundConnectionPerIP bool) *ConnectionController {
+	rnManager *RemoteNodeManager, blsKeystore *BLSKeystore, addrMgr *addrmgr.AddrManager, connectIps []string,
+	targetNonValidatorOutboundRemoteNodes uint32, targetNonValidatorInboundRemoteNodes uint32,
+	limitOneInboundConnectionPerIP bool) *ConnectionController {
 
 	return &ConnectionController{
 		params:                                params,
@@ -57,14 +77,43 @@ func NewConnectionController(params *DeSoParams, cmgr *ConnectionManager, handsh
 		handshake:                             handshakeController,
 		rnManager:                             rnManager,
 		AddrMgr:                               addrMgr,
+		connectIps:                            connectIps,
+		persistentIpToRemoteNodeIdsMap:        make(map[string]RemoteNodeId),
 		targetNonValidatorOutboundRemoteNodes: targetNonValidatorOutboundRemoteNodes,
 		targetNonValidatorInboundRemoteNodes:  targetNonValidatorInboundRemoteNodes,
 		limitOneInboundRemoteNodePerIP:        limitOneInboundConnectionPerIP,
+		exitChan:                              make(chan struct{}),
 	}
+}
+
+func (cc *ConnectionController) Start() {
+	cc.startGroup.Add(1)
+	go cc.startPersistentConnector()
+
+	cc.startGroup.Wait()
+	cc.exitGroup.Add(1)
+}
+
+func (cc *ConnectionController) Stop() {
+	close(cc.exitChan)
+	cc.exitGroup.Wait()
 }
 
 func (cc *ConnectionController) GetRemoteNodeManager() *RemoteNodeManager {
 	return cc.rnManager
+}
+
+func (cc *ConnectionController) startPersistentConnector() {
+	cc.startGroup.Done()
+	for {
+		select {
+		case <-cc.exitChan:
+			cc.exitGroup.Done()
+			return
+		case <-time.After(1 * time.Second):
+			cc.refreshConnectIps()
+		}
+	}
 }
 
 // ###########################
@@ -77,6 +126,12 @@ func (cc *ConnectionController) _handleDonePeerMessage(origin *Peer, desoMsg DeS
 	}
 
 	cc.rnManager.DisconnectById(NewRemoteNodeId(origin.ID))
+	// Update the persistentIpToRemoteNodeIdsMap.
+	for ip, id := range cc.persistentIpToRemoteNodeIdsMap {
+		if id.ToUint64() == origin.ID {
+			delete(cc.persistentIpToRemoteNodeIdsMap, ip)
+		}
+	}
 }
 
 func (cc *ConnectionController) _handleAddrMessage(origin *Peer, desoMsg DeSoMessage) {
@@ -114,7 +169,7 @@ func (cc *ConnectionController) _handleNewConnectionMessage(origin *Peer, desoMs
 		remoteNode, err = cc.processInboundConnection(msg.Connection)
 		if err != nil {
 			glog.Errorf("ConnectionController.handleNewConnectionMessage: Problem handling inbound connection: %v", err)
-			msg.Connection.Close()
+			cc.cleanupFailedInboundConnection(remoteNode, msg.Connection)
 			return
 		}
 	case ConnectionTypeOutbound:
@@ -130,6 +185,13 @@ func (cc *ConnectionController) _handleNewConnectionMessage(origin *Peer, desoMs
 	cc.handshake.InitiateHandshake(remoteNode)
 }
 
+func (cc *ConnectionController) cleanupFailedInboundConnection(remoteNode *RemoteNode, connection Connection) {
+	if remoteNode != nil {
+		cc.rnManager.Disconnect(remoteNode)
+	}
+	connection.Close()
+}
+
 func (cc *ConnectionController) cleanupFailedOutboundConnection(connection Connection) {
 	oc, ok := connection.(*outboundConnection)
 	if !ok {
@@ -141,12 +203,33 @@ func (cc *ConnectionController) cleanupFailedOutboundConnection(connection Conne
 	if rn != nil {
 		cc.rnManager.Disconnect(rn)
 	}
+	oc.Close()
 	cc.cmgr.RemoveAttemptedOutboundAddrs(oc.address)
 }
 
 // ###########################
-// ## Connections
+// ## Persistent Connections
 // ###########################
+
+func (cc *ConnectionController) refreshConnectIps() {
+	// Connect to addresses passed via the --connect-ips flag. These addresses are persistent in the sense that if we
+	// disconnect from one, we will try to reconnect to the same one.
+	for _, connectIp := range cc.connectIps {
+		if _, ok := cc.persistentIpToRemoteNodeIdsMap[connectIp]; ok {
+			continue
+		}
+
+		glog.Infof("ConnectionController.initiatePersistentConnections: Connecting to connectIp: %v", connectIp)
+		id, err := cc.CreateNonValidatorPersistentOutboundConnection(connectIp)
+		if err != nil {
+			glog.Errorf("ConnectionController.initiatePersistentConnections: Problem connecting "+
+				"to connectIp %v: %v", connectIp, err)
+			continue
+		}
+
+		cc.persistentIpToRemoteNodeIdsMap[connectIp] = id
+	}
+}
 
 func (cc *ConnectionController) CreateValidatorConnection(ipStr string, publicKey *bls.PublicKey) error {
 	netAddr, err := cc.ConvertIPStringToNetAddress(ipStr)
@@ -156,10 +239,10 @@ func (cc *ConnectionController) CreateValidatorConnection(ipStr string, publicKe
 	return cc.rnManager.CreateValidatorConnection(netAddr, publicKey)
 }
 
-func (cc *ConnectionController) CreateNonValidatorPersistentOutboundConnection(ipStr string) error {
+func (cc *ConnectionController) CreateNonValidatorPersistentOutboundConnection(ipStr string) (RemoteNodeId, error) {
 	netAddr, err := cc.ConvertIPStringToNetAddress(ipStr)
 	if err != nil {
-		return err
+		return 0, err
 	}
 	return cc.rnManager.CreateNonValidatorPersistentOutboundConnection(netAddr)
 }
@@ -235,8 +318,8 @@ func (cc *ConnectionController) processOutboundConnection(conn Connection) (*Rem
 	}
 
 	if oc.failed {
-		return nil, fmt.Errorf("ConnectionController.handleOutboundConnection: Failed to connect to peer (%s)",
-			oc.address.IP.String())
+		return nil, fmt.Errorf("ConnectionController.handleOutboundConnection: Failed to connect to peer (%s:%v)",
+			oc.address.IP.String(), oc.address.Port)
 	}
 
 	if !oc.isPersistent {
@@ -263,11 +346,35 @@ func (cc *ConnectionController) processOutboundConnection(conn Connection) (*Rem
 			"for addr: (%s)", oc.connection.RemoteAddr().String())
 	}
 
+	// Attach the connection before additional validation steps because it is already established.
 	remoteNode, err := cc.rnManager.AttachOutboundConnection(oc.connection, na, oc.attemptId, oc.isPersistent)
 	if remoteNode == nil || err != nil {
 		return nil, errors.Wrapf(err, "ConnectionController.handleOutboundConnection: Problem calling rnManager.AttachOutboundConnection "+
 			"for addr: (%s)", oc.connection.RemoteAddr().String())
 	}
+
+	// If this is a persistent remote node or a validator, we don't need to do any extra connection validation.
+	if remoteNode.IsPersistent() || remoteNode.GetValidatorPublicKey() != nil {
+		return remoteNode, nil
+	}
+
+	// If we get here, it means we're dealing with a non-persistent or non-validator remote node. We perform additional
+	// connection validation.
+
+	// If we already have enough outbound peers, then don't bother adding this one.
+	if cc.enoughNonValidatorOutboundConnections() {
+		return nil, fmt.Errorf("ConnectionController.handleOutboundConnection: Connected to maximum number of outbound "+
+			"peers (%d)", cc.targetNonValidatorOutboundRemoteNodes)
+	}
+
+	// If the group key overlaps with another peer we're already connected to then abort mission. We only connect to
+	// one peer per IP group in order to prevent Sybil attacks.
+	if cc.cmgr.IsFromRedundantOutboundIPAddress(oc.address) {
+		return nil, fmt.Errorf("ConnectionController.handleOutboundConnection: Rejecting OUTBOUND NON-PERSISTENT "+
+			"connection with redundant group key (%s).", addrmgr.GroupKey(oc.address))
+	}
+	cc.cmgr.AddToGroupKey(na)
+
 	return remoteNode, nil
 }
 

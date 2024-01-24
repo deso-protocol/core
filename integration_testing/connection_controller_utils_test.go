@@ -26,14 +26,24 @@ func waitForValidatorConnection(t *testing.T, node1 *cmd.Node, node2 *cmd.Node) 
 		}
 		return true
 	}
-	waitForCondition(t, fmt.Sprintf("Waiting for Node (%s) to connect to outbound non-validator Node (%s)", userAgentN1, userAgentN2), n1ValidatedN2)
+	waitForCondition(t, fmt.Sprintf("Waiting for Node (%s) to connect to validator Node (%s)", userAgentN1, userAgentN2), n1ValidatedN2)
 }
 
 func waitForNonValidatorOutboundConnection(t *testing.T, node1 *cmd.Node, node2 *cmd.Node) {
 	userAgentN1 := node1.Params.UserAgent
 	userAgentN2 := node2.Params.UserAgent
+	condition := conditionNonValidatorOutboundConnection(t, node1, node2)
+	waitForCondition(t, fmt.Sprintf("Waiting for Node (%s) to connect to outbound non-validator Node (%s)", userAgentN1, userAgentN2), condition)
+}
+
+func conditionNonValidatorOutboundConnection(t *testing.T, node1 *cmd.Node, node2 *cmd.Node) func() bool {
+	return conditionNonValidatorOutboundConnectionDynamic(t, node1, node2, false)
+}
+
+func conditionNonValidatorOutboundConnectionDynamic(t *testing.T, node1 *cmd.Node, node2 *cmd.Node, inactiveValidator bool) func() bool {
+	userAgentN2 := node2.Params.UserAgent
 	rnManagerN1 := node1.Server.GetConnectionController().GetRemoteNodeManager()
-	n1ValidatedN2 := func() bool {
+	return func() bool {
 		if true != checkRemoteNodeIndexerUserAgent(rnManagerN1, userAgentN2, false, true, false) {
 			return false
 		}
@@ -44,19 +54,29 @@ func waitForNonValidatorOutboundConnection(t *testing.T, node1 *cmd.Node, node2 
 		if !rnFromN2.IsHandshakeCompleted() {
 			return false
 		}
-		if rnFromN2.GetValidatorPublicKey() != nil {
-			return false
+		// inactiveValidator should have the public key.
+		if inactiveValidator {
+			return rnFromN2.GetValidatorPublicKey() != nil
 		}
-		return true
+		return rnFromN2.GetValidatorPublicKey() == nil
 	}
-	waitForCondition(t, fmt.Sprintf("Waiting for Node (%s) to connect to outbound non-validator Node (%s)", userAgentN1, userAgentN2), n1ValidatedN2)
 }
 
 func waitForNonValidatorInboundConnection(t *testing.T, node1 *cmd.Node, node2 *cmd.Node) {
 	userAgentN1 := node1.Params.UserAgent
 	userAgentN2 := node2.Params.UserAgent
+	condition := conditionNonValidatorInboundConnection(t, node1, node2)
+	waitForCondition(t, fmt.Sprintf("Waiting for Node (%s) to connect to inbound non-validator Node (%s)", userAgentN1, userAgentN2), condition)
+}
+
+func conditionNonValidatorInboundConnection(t *testing.T, node1 *cmd.Node, node2 *cmd.Node) func() bool {
+	return conditionNonValidatorInboundConnectionDynamic(t, node1, node2, false)
+}
+
+func conditionNonValidatorInboundConnectionDynamic(t *testing.T, node1 *cmd.Node, node2 *cmd.Node, inactiveValidator bool) func() bool {
+	userAgentN2 := node2.Params.UserAgent
 	rnManagerN1 := node1.Server.GetConnectionController().GetRemoteNodeManager()
-	n1ValidatedN2 := func() bool {
+	return func() bool {
 		if true != checkRemoteNodeIndexerUserAgent(rnManagerN1, userAgentN2, false, false, true) {
 			return false
 		}
@@ -67,12 +87,12 @@ func waitForNonValidatorInboundConnection(t *testing.T, node1 *cmd.Node, node2 *
 		if !rnFromN2.IsHandshakeCompleted() {
 			return false
 		}
-		if rnFromN2.GetValidatorPublicKey() != nil {
-			return false
+		// inactiveValidator should have the public key.
+		if inactiveValidator {
+			return rnFromN2.GetValidatorPublicKey() != nil
 		}
-		return true
+		return rnFromN2.GetValidatorPublicKey() == nil
 	}
-	waitForCondition(t, fmt.Sprintf("Waiting for Node (%s) to connect to inbound non-validator Node (%s)", userAgentN1, userAgentN2), n1ValidatedN2)
 }
 
 func waitForEmptyRemoteNodeIndexer(t *testing.T, node1 *cmd.Node) {
@@ -90,15 +110,15 @@ func waitForEmptyRemoteNodeIndexer(t *testing.T, node1 *cmd.Node) {
 func waitForCountRemoteNodeIndexer(t *testing.T, node1 *cmd.Node, allCount int, validatorCount int,
 	nonValidatorOutboundCount int, nonValidatorInboundCount int) {
 
-	userAgentN1 := node1.Params.UserAgent
-	rnManagerN1 := node1.Server.GetConnectionController().GetRemoteNodeManager()
-	n1ValidatedN2 := func() bool {
-		if true != checkRemoteNodeIndexerCount(rnManagerN1, allCount, validatorCount, nonValidatorOutboundCount, nonValidatorInboundCount) {
+	userAgent := node1.Params.UserAgent
+	rnManager := node1.Server.GetConnectionController().GetRemoteNodeManager()
+	condition := func() bool {
+		if true != checkRemoteNodeIndexerCount(rnManager, allCount, validatorCount, nonValidatorOutboundCount, nonValidatorInboundCount) {
 			return false
 		}
 		return true
 	}
-	waitForCondition(t, fmt.Sprintf("Waiting for Node (%s) to have appropriate RemoteNodes counts", userAgentN1), n1ValidatedN2)
+	waitForCondition(t, fmt.Sprintf("Waiting for Node (%s) to have appropriate RemoteNodes counts", userAgent), condition)
 }
 
 func checkRemoteNodeIndexerUserAgent(manager *lib.RemoteNodeManager, userAgent string, validator bool,
