@@ -51,7 +51,7 @@ type BlockHashValue = [32]byte
 type FastHotStuffEventLoop interface {
 	GetEvents() chan *FastHotStuffEvent
 
-	Init(time.Duration, time.Duration, BlockWithValidatorList, []BlockWithValidatorList) error
+	Init(time.Duration, time.Duration, QuorumCertificate, BlockWithValidatorList, []BlockWithValidatorList) error
 	GetCurrentView() uint64
 	AdvanceViewOnTimeout() (uint64, error)
 	ProcessTipBlock(BlockWithValidatorList, []BlockWithValidatorList) error
@@ -188,6 +188,11 @@ type fastHotStuffEventLoop struct {
 	// the crank timer has elapsed, and only signal for QC construction once per view.
 	hasCrankTimerRunForCurrentView bool
 	hasConstructedQCInCurrentView  bool
+
+	// Quorum certificate used as the genesis for the PoS chain. This QC is a trusted input that is used
+	// to override the highQC in timeout messages and timeout aggregate QCs when there is a timeout at the
+	// first block height of the PoS chain.
+	genesisQC QuorumCertificate
 
 	// Block hash of the current tip of the block-chain.
 	tip blockWithValidatorLookup

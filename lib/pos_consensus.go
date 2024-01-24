@@ -56,6 +56,16 @@ func (cc *FastHotStuffConsensus) Start() error {
 		)
 	}
 
+	finalPoWBlock, err := cc.getFinalCommittedPoWBlock()
+	if err != nil {
+		return errors.Errorf("FastHotStuffConsensus.Start: Error fetching final PoW block: %v", err)
+	}
+
+	genesisQC, err := cc.createGenesisQC(finalPoWBlock.Hash, uint64(finalPoWBlock.Height))
+	if err != nil {
+		return errors.Errorf("FastHotStuffConsensus.Start: Error creating PoS cutover genesis QC: %v", err)
+	}
+
 	// Fetch the validator set at each safe block
 	tipBlockWithValidators, err := cc.fetchValidatorListsForSafeBlocks([]*MsgDeSoHeader{tipBlock.Header})
 	if err != nil {
@@ -75,7 +85,7 @@ func (cc *FastHotStuffConsensus) Start() error {
 	}
 
 	// Initialize and start the event loop. TODO: Pass in the crank timer duration and timeout duration
-	cc.fastHotStuffEventLoop.Init(0, 0, tipBlockWithValidators[0], safeBlocksWithValidators)
+	cc.fastHotStuffEventLoop.Init(0, 0, genesisQC, tipBlockWithValidators[0], safeBlocksWithValidators)
 	cc.fastHotStuffEventLoop.Start()
 
 	return nil
@@ -712,6 +722,48 @@ func (fc *FastHotStuffConsensus) createBlockProducer(bav *UtxoView) (*PosBlockPr
 		return nil, errors.Errorf("Error fetching public key for block producer: %v", err)
 	}
 	return NewPosBlockProducer(fc.mempool, fc.params, blockProducerPublicKey, blockProducerBlsPublicKey), nil
+}
+
+func (fc *FastHotStuffConsensus) createGenesisQC(blockHash *BlockHash, view uint64) (*QuorumCertificate, error) {
+	aggregatedSignature, signersList, err := BuildQuorumCertificateAsProofOfStakeCutoverValidator(view, blockHash)
+	if err != nil {
+		return nil, err
+	}
+
+	qc := &QuorumCertificate{
+		BlockHash:      blockHash,
+		ProposedInView: view,
+		ValidatorsVoteAggregatedSignature: &AggregatedBLSSignature{
+			Signature:   aggregatedSignature,
+			SignersList: signersList,
+		},
+	}
+
+	return qc, nil
+}
+
+func (fc *FastHotStuffConsensus) getFinalCommittedPoWBlock() (*BlockNode, error) {
+	// Fetch the block node for the cutover block
+	blockNodes, blockNodesExist :=
+		fc.blockchain.blockIndexByHeight[uint64(fc.params.ForkHeights.ProofOfStake2ConsensusCutoverBlockHeight-1)]
+	if !blockNodesExist {
+		return nil, errors.Errorf(
+			"Error fetching cutover block nodes before height %d",
+			fc.params.ForkHeights.ProofOfStake2ConsensusCutoverBlockHeight-1,
+		)
+	}
+
+	// Fetch the block node with the committed status
+	for _, blockNode := range blockNodes {
+		if blockNode.Status == StatusBlockCommitted {
+			return blockNode, nil
+		}
+	}
+
+	return nil, errors.Errorf(
+		"Error fetching committed cutover block node before height %d",
+		fc.params.ForkHeights.ProofOfStake2ConsensusCutoverBlockHeight-1,
+	)
 }
 
 // Finds the epoch entry for the block and returns the epoch number.
