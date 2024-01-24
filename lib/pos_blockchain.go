@@ -52,10 +52,10 @@ func (bc *Blockchain) ProcessHeaderPoS(header *MsgDeSoHeader) (_isMainChain bool
 func (bc *Blockchain) processHeaderPoS(header *MsgDeSoHeader) (
 	_isMainChain bool, _isOrphan bool, _err error,
 ) {
-	if header.Height < uint64(bc.params.ForkHeights.ProofOfStake2ConsensusCutoverBlockHeight) {
+	if !bc.IsPoSBlockHeight(header.Height) {
 		return false, false, errors.Errorf(
 			"processHeaderPoS: Header height %d is less than the ProofOfStake2ConsensusCutoverBlockHeight %d",
-			header.Height, bc.params.ForkHeights.ProofOfStake2ConsensusCutoverBlockHeight,
+			header.Height, bc.GetFirstPoSBlockHeight(),
 		)
 	}
 
@@ -214,10 +214,10 @@ func (bc *Blockchain) processBlockPoS(block *MsgDeSoBlock, currentView uint64, v
 	_err error,
 ) {
 	// If the incoming block's height is under the PoS cutover fork height, then we can't process it. Exit early.
-	if block.Header.Height < uint64(bc.params.ForkHeights.ProofOfStake2ConsensusCutoverBlockHeight) {
+	if !bc.IsPoSBlockHeight(block.Header.Height) {
 		return false, false, nil, errors.Errorf(
 			"processHeaderPoS: Header height %d is less than the ProofOfStake2ConsensusCutoverBlockHeight %d",
-			block.Header.Height, bc.params.ForkHeights.ProofOfStake2ConsensusCutoverBlockHeight,
+			block.Header.Height, bc.GetFirstPoSBlockHeight(),
 		)
 	}
 
@@ -940,7 +940,7 @@ func (bc *Blockchain) isProperlyFormedBlockHeaderPoS(header *MsgDeSoHeader) erro
 // that this block height is exactly one greater than its parent's block height.
 func (bc *Blockchain) hasValidBlockHeightPoS(header *MsgDeSoHeader) error {
 	blockHeight := header.Height
-	if blockHeight < uint64(bc.params.ForkHeights.ProofOfStake2ConsensusCutoverBlockHeight) {
+	if !bc.IsPoSBlockHeight(blockHeight) {
 		return RuleErrorPoSBlockBeforeCutoverHeight
 	}
 	// Validate that the block height is exactly one greater than its parent.
@@ -1132,11 +1132,9 @@ func (bc *Blockchain) isValidPoSQuorumCertificate(block *MsgDeSoBlock, validator
 	voteQC := block.Header.ValidatorsVoteQC
 	timeoutAggregateQC := block.Header.ValidatorsTimeoutAggregateQC
 
-	cutoverHeight := uint64(bc.params.ForkHeights.ProofOfStake2ConsensusCutoverBlockHeight)
-
 	// If the block is the first block after the PoS cutover and has a timeout aggregate QC, then the
 	// highQC must be a synthetic QC. We need to override the validator set used to validate the high QC.
-	if block.Header.Height == cutoverHeight && !timeoutAggregateQC.isEmpty() {
+	if block.Header.Height == bc.GetFirstPoSBlockHeight() && !timeoutAggregateQC.isEmpty() {
 		posCutoverValidator, err := BuildProofOfStakeCutoverValidator()
 		if err != nil {
 			return errors.Wrapf(err, "isValidPoSQuorumCertificate: Problem building PoS cutover validator")
@@ -1767,6 +1765,43 @@ func (bc *Blockchain) getMaxSequentialBlockHeightAfter(startingHeight uint64) ui
 		hasBlocksAtCurrentHeight = bc.hasBlockNodesIndexedAtHeight(currentHeight)
 	}
 	return maxSequentialHeightWithBlocks
+}
+
+func (bc *Blockchain) GetFinalCommittedPoWBlock() (*BlockNode, error) {
+	// Fetch the block node for the cutover block
+	blockNodes, blockNodesExist := bc.blockIndexByHeight[bc.GetFinalPoWBlockHeight()]
+	if !blockNodesExist {
+		return nil, errors.Errorf("Error fetching cutover block nodes before height %d", bc.GetFinalPoWBlockHeight())
+	}
+
+	// Fetch the block node with the committed status
+	for _, blockNode := range blockNodes {
+		if blockNode.Status == StatusBlockCommitted {
+			return blockNode, nil
+		}
+	}
+
+	return nil, errors.Errorf("Error fetching committed cutover block node before height %d", bc.GetFinalPoWBlockHeight())
+}
+
+func (bc *Blockchain) IsPoWBlockHeight(blockHeight uint64) bool {
+	return !bc.IsPoSBlockHeight(blockHeight)
+}
+
+func (bc *Blockchain) IsPoSBlockHeight(blockHeight uint64) bool {
+	return blockHeight >= bc.GetFirstPoSBlockHeight()
+}
+
+func (bc *Blockchain) IsFinalPoWBlockHeight(blockHeight uint64) bool {
+	return blockHeight == bc.GetFinalPoWBlockHeight()
+}
+
+func (bc *Blockchain) GetFinalPoWBlockHeight() uint64 {
+	return uint64(bc.params.ForkHeights.ProofOfStake2ConsensusCutoverBlockHeight - 1)
+}
+
+func (bc *Blockchain) GetFirstPoSBlockHeight() uint64 {
+	return uint64(bc.params.ForkHeights.ProofOfStake2ConsensusCutoverBlockHeight)
 }
 
 const (

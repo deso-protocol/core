@@ -222,8 +222,7 @@ func (srv *Server) GetMempool() Mempool {
 	srv.blockchain.ChainLock.RLock()
 	defer srv.blockchain.ChainLock.RUnlock()
 
-	tip := srv.blockchain.BlockTip()
-	if tip.Height >= srv.blockchain.params.ForkHeights.ProofOfStake2ConsensusCutoverBlockHeight {
+	if srv.blockchain.IsPoSBlockHeight(uint64(srv.blockchain.BlockTip().Height)) {
 		return srv.posMempool
 	}
 	return srv.mempool
@@ -259,14 +258,17 @@ func (srv *Server) BroadcastTransaction(txn *MsgDeSoTxn) ([]*MsgDeSoTxn, error) 
 
 func (srv *Server) VerifyAndBroadcastTransaction(txn *MsgDeSoTxn) error {
 	// Grab the block tip and use it as the height for validation.
-	blockHeight := srv.blockchain.BlockTip().Height
+	srv.blockchain.ChainLock.RLock()
+	tipHeight := srv.blockchain.BlockTip().Height
+	srv.blockchain.ChainLock.RUnlock()
+
 	// Only add the txn to the PoW mempool if we are below the PoS cutover height.
-	if blockHeight < srv.blockchain.params.ForkHeights.ProofOfStake2ConsensusCutoverBlockHeight {
+	if srv.blockchain.IsPoWBlockHeight(uint64(tipHeight)) {
 		err := srv.blockchain.ValidateTransaction(
 			txn,
 			// blockHeight is set to the next block since that's where this
 			// transaction will be mined at the earliest.
-			blockHeight+1,
+			tipHeight+1,
 			true,
 			srv.mempool)
 		if err != nil {
@@ -1719,11 +1721,11 @@ func (srv *Server) _relayTransactions() {
 	allPeers := srv.cmgr.GetAllPeers()
 
 	srv.blockchain.ChainLock.RLock()
-	blockHeight := srv.blockchain.BlockTip().Height
+	tipHeight := uint64(srv.blockchain.BlockTip().Height)
 	srv.blockchain.ChainLock.RUnlock()
 
 	// If we're on the PoW protocol, we need to wait for the mempool readOnlyView to regenerate.
-	if blockHeight < srv.blockchain.params.ForkHeights.ProofOfStake2ConsensusCutoverBlockHeight {
+	if srv.blockchain.IsPoWBlockHeight(tipHeight) {
 		glog.V(1).Infof("Server._relayTransactions: Waiting for mempool readOnlyView to regenerate")
 		srv.mempool.BlockUntilReadOnlyViewRegenerated()
 		glog.V(1).Infof("Server._relayTransactions: Mempool view has regenerated")
@@ -1790,7 +1792,7 @@ func (srv *Server) _addNewTxn(
 	}
 
 	srv.blockchain.ChainLock.RLock()
-	blockHeight := srv.blockchain.BlockTip().Height
+	tipHeight := uint64(srv.blockchain.BlockTip().Height)
 	srv.blockchain.ChainLock.RUnlock()
 
 	// Only attempt to add the transaction to the PoW mempool if we're on the
@@ -1798,7 +1800,7 @@ func (srv *Server) _addNewTxn(
 	// txn validity checks to signal whether the txn has been added or not. The PoW
 	// mempool has stricter txn validity checks than the PoW mempool, so this works
 	// out conveniently, as it allows us to always add a txn to the PoS mempool.
-	if blockHeight < srv.blockchain.params.ForkHeights.ProofOfStake2ConsensusCutoverBlockHeight {
+	if srv.blockchain.IsPoWBlockHeight(tipHeight) {
 		_, err := srv.mempool.ProcessTransaction(
 			txn, true /*allowUnconnectedTxn*/, rateLimit, peerID, verifySignatures)
 		if err != nil {
@@ -2132,8 +2134,8 @@ func (srv *Server) _handleBlock(pp *Peer, blk *MsgDeSoBlock) {
 	// Exit early if the current tip height is below the PoS cutover height. We are ready to enable
 	// the PoS validator FastHotStuffConsensus once we reach the final block of the PoW protocol.
 	// This requires the block height check to use ProofOfStake2ConsensusCutoverBlockHeight-1
-	tipHeight := srv.blockchain.blockTip().Height
-	if tipHeight < srv.blockchain.params.ForkHeights.ProofOfStake2ConsensusCutoverBlockHeight-1 {
+	tipHeight := uint64(srv.blockchain.blockTip().Height)
+	if tipHeight < srv.blockchain.GetFinalPoWBlockHeight() {
 		return
 	}
 
@@ -2182,8 +2184,8 @@ func (srv *Server) ProcessSingleTxnWithChainLock(pp *Peer, txn *MsgDeSoTxn) ([]*
 	// txn validity checks to signal whether the txn has been added or not. The PoW
 	// mempool has stricter txn validity checks than the PoS mempool, so this works
 	// out conveniently, as it allows us to always add a txn to the PoS mempool.
-	blockHeight := srv.blockchain.blockTip().Height
-	if blockHeight < srv.blockchain.params.ForkHeights.ProofOfStake2ConsensusCutoverBlockHeight {
+	tipHeight := uint64(srv.blockchain.blockTip().Height)
+	if srv.blockchain.IsPoWBlockHeight(tipHeight) {
 		_, err := srv.mempool.ProcessTransaction(
 			txn,
 			true,  /*allowUnconnectedTxn*/
