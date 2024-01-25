@@ -1776,7 +1776,7 @@ func (bc *Blockchain) GetFinalCommittedPoWBlock() (*BlockNode, error) {
 
 	// Fetch the block node with the committed status
 	for _, blockNode := range blockNodes {
-		if blockNode.Status == StatusBlockCommitted {
+		if blockNode.IsCommitted() {
 			return blockNode, nil
 		}
 	}
