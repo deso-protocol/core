@@ -255,6 +255,8 @@ func (node *Node) Start(exitChannels ...*chan struct{}) {
 		blsKeystore,
 		node.Config.MaxMempoolPosSizeBytes,
 		node.Config.MempoolBackupIntervalMillis,
+		node.Config.MempoolFeeEstimatorNumMempoolBlocks,
+		node.Config.MempoolFeeEstimatorNumPastBlocks,
 	)
 	if err != nil {
 		// shouldRestart can be true if, on the previous run, we did not finish flushing all ancestral

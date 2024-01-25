@@ -389,6 +389,8 @@ func NewServer(
 	_blsKeystore *BLSKeystore,
 	_maxMempoolPosSizeBytes uint64,
 	_mempoolBackupIntervalMillis uint64,
+	_mempoolFeeEstimatorNumMempoolBlocks uint64,
+	_mempoolFeeEstimatorNumPastBlocks uint64,
 ) (
 	_srv *Server,
 	_err error,
@@ -515,9 +517,9 @@ func NewServer(
 		false,
 		_maxMempoolPosSizeBytes,
 		_mempoolBackupIntervalMillis,
-		1, // Fee estimator mempool blocks; TODO make this a flag
+		_mempoolFeeEstimatorNumMempoolBlocks,
 		[]*MsgDeSoBlock{latestBlock},
-		1, // Fee estimator past blocks; TODO make this a flag
+		_mempoolFeeEstimatorNumPastBlocks,
 	)
 	if err != nil {
 		return nil, errors.Wrapf(err, "NewServer: Problem initializing PoS mempool"), true
