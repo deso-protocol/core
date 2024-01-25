@@ -386,8 +386,16 @@ func NewServer(
 	_forceChecksum bool,
 	_stateChangeDir string,
 	_hypersyncMaxQueueSize uint32,
-	_blsKeystore *BLSKeystore) (
-	_srv *Server, _err error, _shouldRestart bool) {
+	_blsKeystore *BLSKeystore,
+	_maxMempoolPosSizeBytes uint64,
+	_mempoolBackupIntervalMillis uint64,
+	_mempoolFeeEstimatorNumMempoolBlocks uint64,
+	_mempoolFeeEstimatorNumPastBlocks uint64,
+) (
+	_srv *Server,
+	_err error,
+	_shouldRestart bool,
+) {
 
 	var err error
 
@@ -486,7 +494,6 @@ func NewServer(
 	_mempool := NewDeSoMempool(_chain, _rateLimitFeerateNanosPerKB,
 		_minFeeRateNanosPerKB, _blockCypherAPIKey, _runReadOnlyUtxoViewUpdater, _dataDir,
 		_mempoolDumpDir, false)
-	_posMempool := NewPosMempool()
 
 	// Initialize the PoS mempool. We need to initialize a best-effort UtxoView based on the current
 	// known state of the chain. This will all be overwritten as we process blocks later on.
@@ -500,6 +507,7 @@ func NewServer(
 	if latestBlock == nil {
 		return nil, errors.New("NewServer: Problem getting latest block from chain"), true
 	}
+	_posMempool := NewPosMempool()
 	err = _posMempool.Init(
 		_params,
 		currentGlobalParamsEntry,
@@ -507,11 +515,11 @@ func NewServer(
 		uint64(_chain.blockTip().Height),
 		_mempoolDumpDir,
 		false,
-		1024*1024*1024*3, // Max mempool Size = 3GB; TODO make this a flag
-		60*1000,          // Mempool dumper frequency = 60 seconds; TODO make this a flag
-		1,                // Fee estimator mempool blocks; TODO make this a flag
+		_maxMempoolPosSizeBytes,
+		_mempoolBackupIntervalMillis,
+		_mempoolFeeEstimatorNumMempoolBlocks,
 		[]*MsgDeSoBlock{latestBlock},
-		1, // Fee estimator past blocks; TODO make this a flag
+		_mempoolFeeEstimatorNumPastBlocks,
 	)
 	if err != nil {
 		return nil, errors.Wrapf(err, "NewServer: Problem initializing PoS mempool"), true
