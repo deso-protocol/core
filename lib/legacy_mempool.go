@@ -22,6 +22,7 @@ import (
 	"github.com/dgraph-io/badger/v3"
 
 	"github.com/btcsuite/btcd/btcec"
+	"github.com/deso-protocol/core/collections"
 	"github.com/deso-protocol/go-deadlock"
 	"github.com/golang/glog"
 	"github.com/pkg/errors"
@@ -257,8 +258,11 @@ func (mp *DeSoMempool) GetTransaction(txnHash *BlockHash) *MempoolTransaction {
 }
 
 func (mp *DeSoMempool) GetTransactions() []*MempoolTransaction {
-	//TODO implement me
-	panic("implement me")
+	return collections.Transform(
+		mp.GetOrderedTransactions(), func(mempoolTx *MempoolTx) *MempoolTransaction {
+			return NewMempoolTransaction(mempoolTx.Tx, uint64(mempoolTx.Added.UnixMicro()))
+		},
+	)
 }
 
 func (mp *DeSoMempool) GetIterator() MempoolIterator {
