@@ -17,6 +17,7 @@ func NewFastHotStuffEventLoop() *fastHotStuffEventLoop {
 		status:          eventLoopStatusNotInitialized,
 		crankTimerTask:  NewScheduledTask[uint64](),
 		nextTimeoutTask: NewScheduledTask[uint64](),
+		Events:          make(chan *FastHotStuffEvent, signalChannelBufferSize),
 	}
 }
 
@@ -79,9 +80,6 @@ func (fc *fastHotStuffEventLoop) Init(
 	// Reset all internal data structures for votes and timeouts
 	fc.votesSeenByBlockHash = make(map[BlockHashValue]map[string]VoteMessage)
 	fc.timeoutsSeenByView = make(map[uint64]map[string]TimeoutMessage)
-
-	// Reset the external channel used for signaling
-	fc.Events = make(chan *FastHotStuffEvent, signalChannelBufferSize)
 
 	// Set the crank timer interval and timeout base duration
 	fc.crankTimerInterval = crankTimerInterval
