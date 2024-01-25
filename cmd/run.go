@@ -92,7 +92,7 @@ func SetupRunFlags(cmd *cobra.Command) {
 			"The default value is 30 seconds, or 30,000 milliseconds.")
 	cmd.PersistentFlags().Uint64("max-mempool-pos-size-bytes", 3000000000,
 		"The maximum size of the PoS mempool in bytes. The default value is 3GB.")
-	cmd.PersistentFlags().Uint64("mempool-fee-estimator-num-mempool-blocks", 50,
+	cmd.PersistentFlags().Uint64("mempool-fee-estimator-num-mempool-blocks", 1,
 		"The number of future blocks to break the PoS mempool into when estimating txn fee for the next block.")
 	cmd.PersistentFlags().Uint64("mempool-fee-estimator-num-past-blocks", 50,
 		"The number of past blocks to use when estimating txn fee for the next block from the PoS mempool.")
