@@ -57,12 +57,7 @@ func (cc *FastHotStuffConsensus) Start() error {
 		)
 	}
 
-	finalPoWBlock, err := cc.blockchain.GetFinalCommittedPoWBlock()
-	if err != nil {
-		return errors.Errorf("FastHotStuffConsensus.Start: Error fetching final PoW block: %v", err)
-	}
-
-	genesisQC, err := cc.createGenesisQC(finalPoWBlock.Hash, uint64(finalPoWBlock.Height))
+	genesisQC, err := cc.blockchain.GetProofOfStakeGenesisQuorumCertificate()
 	if err != nil {
 		return errors.Errorf("FastHotStuffConsensus.Start: Error creating PoS cutover genesis QC: %v", err)
 	}
@@ -422,7 +417,7 @@ func (cc *FastHotStuffConsensus) HandleLocalTimeoutEvent(event *consensus.FastHo
 	if cc.blockchain.IsFinalPoWBlockHeight(tipBlockNode.Header.Height) {
 		// If the tip block is the final block of the PoW chain, then we can use the PoS chain's genesis block
 		// as the highQC for it.
-		if timeoutMsg.HighQC, err = cc.createGenesisQC(tipBlockNode.Hash, tipBlockNode.Header.Height); err != nil {
+		if timeoutMsg.HighQC, err = cc.blockchain.GetProofOfStakeGenesisQuorumCertificate(); err != nil {
 			return errors.Errorf("FastHotStuffConsensus.Start: Error creating PoS cutover genesis QC: %v", err)
 		}
 	} else {
@@ -742,24 +737,6 @@ func (fc *FastHotStuffConsensus) createBlockProducer(bav *UtxoView) (*PosBlockPr
 		return nil, errors.Errorf("Error fetching public key for block producer: %v", err)
 	}
 	return NewPosBlockProducer(fc.mempool, fc.params, blockProducerPublicKey, blockProducerBlsPublicKey), nil
-}
-
-func (fc *FastHotStuffConsensus) createGenesisQC(blockHash *BlockHash, view uint64) (*QuorumCertificate, error) {
-	aggregatedSignature, signersList, err := BuildQuorumCertificateAsProofOfStakeCutoverValidator(view, blockHash)
-	if err != nil {
-		return nil, err
-	}
-
-	qc := &QuorumCertificate{
-		BlockHash:      blockHash,
-		ProposedInView: view,
-		ValidatorsVoteAggregatedSignature: &AggregatedBLSSignature{
-			Signature:   aggregatedSignature,
-			SignersList: signersList,
-		},
-	}
-
-	return qc, nil
 }
 
 // Finds the epoch entry for the block and returns the epoch number.
