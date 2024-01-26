@@ -28,7 +28,7 @@ func IsProperlyFormedConstructTimeoutQCEvent(event *FastHotStuffEvent) bool {
 		event.View > 0 && // The view the block was proposed in is non-zero
 		event.TipBlockHeight > 0 && // Tip block height is non-zero
 		!isInterfaceNil(event.TipBlockHash) && // Tip block hash is non-nil
-		!isProperlyFormedAggregateQC(event.AggregateQC) // The high QC is non-nil
+		isProperlyFormedAggregateQC(event.AggregateQC) // The high QC is properly formed
 }
 
 func IsProperlyFormedVoteEvent(event *FastHotStuffEvent) bool {
