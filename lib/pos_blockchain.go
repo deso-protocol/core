@@ -1135,11 +1135,20 @@ func (bc *Blockchain) isValidPoSQuorumCertificate(block *MsgDeSoBlock, validator
 	// If the block is the first block after the PoS cutover and has a timeout aggregate QC, then the
 	// highQC must be a synthetic QC. We need to override the validator set used to validate the high QC.
 	if block.Header.Height == bc.GetFirstPoSBlockHeight() && !timeoutAggregateQC.isEmpty() {
-		posCutoverValidator, err := BuildProofOfStakeCutoverValidator()
+		genesisQC, err := bc.GetProofOfStakeGenesisQuorumCertificate()
 		if err != nil {
-			return errors.Wrapf(err, "isValidPoSQuorumCertificate: Problem building PoS cutover validator")
+			return errors.Wrapf(err, "isValidPoSQuorumCertificate: Problem getting PoS genesis QC")
 		}
-		voteQCValidators = []consensus.Validator{posCutoverValidator}
+
+		// Only override the validator set if the high QC is the genesis QC. Otherwise, we should use the
+		// true validator set at the current epoch.
+		if consensus.IsEqualQC(genesisQC, timeoutAggregateQC.GetHighQC()) {
+			posCutoverValidator, err := BuildProofOfStakeCutoverValidator()
+			if err != nil {
+				return errors.Wrapf(err, "isValidPoSQuorumCertificate: Problem building PoS cutover validator")
+			}
+			voteQCValidators = []consensus.Validator{posCutoverValidator}
+		}
 	}
 
 	// Validate the timeout aggregate QC.
@@ -1765,6 +1774,29 @@ func (bc *Blockchain) getMaxSequentialBlockHeightAfter(startingHeight uint64) ui
 		hasBlocksAtCurrentHeight = bc.hasBlockNodesIndexedAtHeight(currentHeight)
 	}
 	return maxSequentialHeightWithBlocks
+}
+
+func (bc *Blockchain) GetProofOfStakeGenesisQuorumCertificate() (*QuorumCertificate, error) {
+	finalPoWBlock, err := bc.GetFinalCommittedPoWBlock()
+	if err != nil {
+		return nil, err
+	}
+
+	aggregatedSignature, signersList, err := BuildQuorumCertificateAsProofOfStakeCutoverValidator(finalPoWBlock.Header.Height, finalPoWBlock.Hash)
+	if err != nil {
+		return nil, err
+	}
+
+	qc := &QuorumCertificate{
+		BlockHash:      finalPoWBlock.Hash,
+		ProposedInView: finalPoWBlock.Header.Height,
+		ValidatorsVoteAggregatedSignature: &AggregatedBLSSignature{
+			Signature:   aggregatedSignature,
+			SignersList: signersList,
+		},
+	}
+
+	return qc, nil
 }
 
 func (bc *Blockchain) GetFinalCommittedPoWBlock() (*BlockNode, error) {
