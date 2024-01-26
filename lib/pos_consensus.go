@@ -23,6 +23,7 @@ func NewFastHotStuffConsensus(params *DeSoParams, blockchain *Blockchain, mempoo
 		blockchain:            blockchain,
 		fastHotStuffEventLoop: consensus.NewFastHotStuffEventLoop(),
 		mempool:               mempool,
+		params:                params,
 		signer:                signer,
 	}
 }
@@ -584,12 +585,6 @@ func (cc *FastHotStuffConsensus) produceUnsignedBlockForBlockProposalEvent(
 	event *consensus.FastHotStuffEvent,
 	proposerRandomSeedSignature *bls.Signature,
 ) (*MsgDeSoBlock, error) {
-	// We need to hold a lock on the blockchain to make sure that it is not mutated underneath as we are trying
-	// to construct a block based on the UtxoView. In practice, this lock ends up being a no-op but it guarantees
-	// thread-safety by making no assumptions about how other parts of the codebase operate outside of this struct.
-	cc.blockchain.ChainLock.RLock()
-	defer cc.blockchain.ChainLock.RUnlock()
-
 	// Get the parent block's hash
 	parentBlockHash := BlockHashFromConsensusInterface(event.QC.GetBlockHash())
 
