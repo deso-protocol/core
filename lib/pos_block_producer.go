@@ -99,6 +99,9 @@ func (pbp *PosBlockProducer) createBlockTemplate(latestBlockView *UtxoView, newB
 	block.Header.ProposerPublicKey = pbp.proposerPublicKey
 	block.Header.ProposerVotingPublicKey = pbp.proposerVotingPublicKey
 	block.Header.ProposerRandomSeedSignature = proposerRandomSeedSignature
+
+	// Hash the TxnConnectStatusByIndex
+	block.Header.TxnConnectStatusByIndexHash = HashBitset(block.TxnConnectStatusByIndex)
 	return block, nil
 }
 
@@ -112,6 +115,8 @@ func (pbp *PosBlockProducer) createBlockWithoutHeader(
 	blockRewardTxn := NewMessage(MsgTypeTxn).(*MsgDeSoTxn)
 	blockRewardOutput := &DeSoOutput{}
 	blockRewardOutput.AmountNanos = math.MaxUint64
+	blockRewardOutput.PublicKey = pbp.proposerPublicKey.ToBytes()
+	blockRewardTxn.PublicKey = pbp.proposerPublicKey.ToBytes()
 	blockRewardTxn.TxOutputs = append(blockRewardTxn.TxOutputs, blockRewardOutput)
 	blockRewardTxn.TxnMeta = &BlockRewardMetadataa{}
 	blockRewardTxnSizeBytes, err := blockRewardTxn.ToBytes(true)
