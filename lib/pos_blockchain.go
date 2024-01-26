@@ -1813,7 +1813,7 @@ func (bc *Blockchain) GetFinalCommittedPoWBlock() (*BlockNode, error) {
 		}
 	}
 
-	return nil, errors.Errorf("Error fetching committed cutover block node before height %d", bc.GetFinalPoWBlockHeight())
+	return nil, errors.Errorf("Error fetching committed cutover block node with height %d", bc.GetFinalPoWBlockHeight())
 }
 
 func (bc *Blockchain) IsPoWBlockHeight(blockHeight uint64) bool {
