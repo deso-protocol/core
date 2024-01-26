@@ -116,7 +116,6 @@ func (pbp *PosBlockProducer) createBlockWithoutHeader(
 	blockRewardOutput := &DeSoOutput{}
 	blockRewardOutput.AmountNanos = math.MaxUint64
 	blockRewardOutput.PublicKey = pbp.proposerPublicKey.ToBytes()
-	blockRewardTxn.PublicKey = pbp.proposerPublicKey.ToBytes()
 	blockRewardTxn.TxOutputs = append(blockRewardTxn.TxOutputs, blockRewardOutput)
 	blockRewardTxn.TxnMeta = &BlockRewardMetadataa{}
 	blockRewardTxnSizeBytes, err := blockRewardTxn.ToBytes(true)
@@ -143,9 +142,16 @@ func (pbp *PosBlockProducer) createBlockWithoutHeader(
 
 // getBlockTransactions is used to retrieve fee-time ordered transactions from the mempool.
 func (pbp *PosBlockProducer) getBlockTransactions(
-	latestBlockView *UtxoView, newBlockHeight uint64, newBlockTimestampNanoSecs uint64,
-	maxBlockSizeBytes uint64) (_txns []*MsgDeSoTxn, _txnConnectStatusByIndex *bitset.Bitset,
-	_maxUtilityFee uint64, _err error) {
+	latestBlockView *UtxoView,
+	newBlockHeight uint64,
+	newBlockTimestampNanoSecs uint64,
+	maxBlockSizeBytes uint64,
+) (
+	_txns []*MsgDeSoTxn,
+	_txnConnectStatusByIndex *bitset.Bitset,
+	_maxUtilityFee uint64,
+	_err error,
+) {
 	// Get Fee-Time ordered transactions from the mempool
 	feeTimeTxns := pbp.mp.GetTransactions()
 

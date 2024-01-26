@@ -76,6 +76,7 @@ func TestCreateBlockTemplate(t *testing.T) {
 	require.Equal(blockTemplate.Header.ProposerPublicKey, m0Pk)
 	require.Equal(blockTemplate.Header.ProposerVotingPublicKey, pub)
 	require.True(blockTemplate.Header.ProposerRandomSeedSignature.Eq(seedSignature))
+	require.Equal(blockTemplate.Header.TxnConnectStatusByIndexHash, HashBitset(blockTemplate.TxnConnectStatusByIndex))
 }
 
 func TestCreateBlockWithoutHeader(t *testing.T) {
@@ -87,6 +88,7 @@ func TestCreateBlockWithoutHeader(t *testing.T) {
 	feeMax := uint64(2000)
 	passingTransactions := 50
 	m0PubBytes, _, _ := Base58CheckDecode(m0Pub)
+	blsPubKey, _ := _generateValidatorVotingPublicKeyAndSignature(t)
 	params, db := _posTestBlockchainSetupWithBalances(t, 200000, 200000)
 	params.ForkHeights.ProofOfStake2ConsensusCutoverBlockHeight = 1
 	maxMempoolPosSizeBytes := uint64(3000000000)
@@ -115,7 +117,7 @@ func TestCreateBlockWithoutHeader(t *testing.T) {
 		_wrappedPosMempoolAddTransaction(t, mempool, txn)
 	}
 
-	pbp := NewPosBlockProducer(mempool, params, nil, nil)
+	pbp := NewPosBlockProducer(mempool, params, NewPublicKey(m0PubBytes), blsPubKey)
 	txns, txnConnectStatus, maxUtilityFee, err := pbp.getBlockTransactions(
 		latestBlockView, 3, 0, 50000)
 	require.NoError(err)
