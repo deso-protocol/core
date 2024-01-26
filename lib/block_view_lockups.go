@@ -192,6 +192,10 @@ func (lockedBalanceEntry *LockedBalanceEntry) GetEncoderType() EncoderType {
 	return EncoderTypeLockedBalanceEntry
 }
 
+func (lockedBalanceEntry *LockedBalanceEntry) IsDeleted() bool {
+	return lockedBalanceEntry.isDeleted
+}
+
 // Set and Delete Functions for LockedBalanceEntry
 
 func (bav *UtxoView) _setLockedBalanceEntry(lockedBalanceEntry *LockedBalanceEntry) {
