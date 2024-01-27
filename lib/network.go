@@ -264,8 +264,8 @@ const (
 	TxnTypeUpdateCoinLockupParams       TxnType = 41
 	TxnTypeCoinLockupTransfer           TxnType = 42
 	TxnTypeCoinUnlock                   TxnType = 43
-
-	// NEXT_ID = 44
+	TxnTypeAtomicTxns                   TxnType = 44
+	// NEXT_ID = 45
 )
 
 type TxnString string
@@ -315,6 +315,7 @@ const (
 	TxnStringUpdateCoinLockupParams       TxnString = "UPDATE_COIN_LOCKUP_PARAMS"
 	TxnStringCoinLockupTransfer           TxnString = "COIN_LOCKUP_TRANSFER"
 	TxnStringCoinUnlock                   TxnString = "COIN_UNLOCK"
+	TxnStringAtomicTxns                   TxnString = "ATOMIC_TXNS"
 )
 
 var (
@@ -329,6 +330,7 @@ var (
 		TxnTypeAccessGroup, TxnTypeAccessGroupMembers, TxnTypeNewMessage, TxnTypeRegisterAsValidator,
 		TxnTypeUnregisterAsValidator, TxnTypeStake, TxnTypeUnstake, TxnTypeUnlockStake, TxnTypeUnjailValidator,
 		TxnTypeCoinLockup, TxnTypeUpdateCoinLockupParams, TxnTypeCoinLockupTransfer, TxnTypeCoinUnlock,
+		TxnTypeAtomicTxns,
 	}
 	AllTxnString = []TxnString{
 		TxnStringUnset, TxnStringBlockReward, TxnStringBasicTransfer, TxnStringBitcoinExchange, TxnStringPrivateMessage,
@@ -341,6 +343,7 @@ var (
 		TxnStringAccessGroup, TxnStringAccessGroupMembers, TxnStringNewMessage, TxnStringRegisterAsValidator,
 		TxnStringUnregisterAsValidator, TxnStringStake, TxnStringUnstake, TxnStringUnlockStake, TxnStringUnjailValidator,
 		TxnStringCoinLockup, TxnStringUpdateCoinLockupParams, TxnStringCoinLockupTransfer, TxnStringCoinUnlock,
+		TxnStringAtomicTxns,
 	}
 )
 
@@ -440,6 +443,8 @@ func (txnType TxnType) GetTxnString() TxnString {
 		return TxnStringCoinLockupTransfer
 	case TxnTypeCoinUnlock:
 		return TxnStringCoinUnlock
+	case TxnTypeAtomicTxns:
+		return TxnStringAtomicTxns
 	default:
 		return TxnStringUndefined
 	}
@@ -533,6 +538,8 @@ func GetTxnTypeFromString(txnString TxnString) TxnType {
 		return TxnTypeCoinLockupTransfer
 	case TxnStringCoinUnlock:
 		return TxnTypeCoinUnlock
+	case TxnStringAtomicTxns:
+		return TxnTypeAtomicTxns
 	default:
 		// TxnTypeUnset means we couldn't find a matching txn type
 		return TxnTypeUnset
@@ -634,6 +641,8 @@ func NewTxnMetadata(txType TxnType) (DeSoTxnMetadata, error) {
 		return (&CoinLockupTransferMetadata{}).New(), nil
 	case TxnTypeCoinUnlock:
 		return (&CoinUnlockMetadata{}).New(), nil
+	case TxnTypeAtomicTxns:
+		return (&AtomicTxnsMetadata{}).New(), nil
 	default:
 		return nil, fmt.Errorf("NewTxnMetadata: Unrecognized TxnType: %v; make sure you add the new type of transaction to NewTxnMetadata", txType)
 	}
@@ -3982,10 +3991,6 @@ func (msg *MsgDeSoTxn) UnmarshalJSON(data []byte) error {
 // ComputeFeeRatePerKBNanos computes the fee rate per KB for a signed transaction. This function should not be used for
 // unsigned transactions because the fee rate will not be accurate.
 func (txn *MsgDeSoTxn) ComputeFeeRatePerKBNanos() (uint64, error) {
-	if txn.Signature.Sign == nil {
-		return 0, fmt.Errorf("ComputeFeeRatePerKBNanos: Cannot compute fee rate for unsigned txn")
-	}
-
 	txBytes, err := txn.ToBytes(false)
 	if err != nil {
 		return 0, errors.Wrapf(err, "ComputeFeeRatePerKBNanos: Problem converting txn to bytes")
@@ -3994,13 +3999,18 @@ func (txn *MsgDeSoTxn) ComputeFeeRatePerKBNanos() (uint64, error) {
 	if serializedLen == 0 {
 		return 0, fmt.Errorf("ComputeFeeRatePerKBNanos: Txn has zero length")
 	}
-
-	fees := txn.TxnFeeNanos
-	if fees != ((fees * 1000) / 1000) {
+	feeNanos := txn.TxnFeeNanos
+	if txn.TxnMeta.GetTxnType() == TxnTypeAtomicTxns {
+		feeNanos, err = txn.TxnMeta.(*AtomicTxnsMetadata).GetTotalFee()
+		if err != nil {
+			return 0, errors.Wrapf(err, "ComputeFeeRatePerKBNanos: Problem computing total fee")
+		}
+	}
+	if feeNanos != ((feeNanos * 1000) / 1000) {
 		return 0, errors.Wrapf(RuleErrorOverflowDetectedInFeeRateCalculation, "ComputeFeeRatePerKBNanos: Overflow detected in fee rate calculation")
 	}
 
-	return (fees * 1000) / serializedLen, nil
+	return (feeNanos * 1000) / serializedLen, nil
 }
 
 // ==================================================================

@@ -1347,7 +1347,8 @@ func (bav *UtxoView) DisconnectTransaction(currentTxn *MsgDeSoTxn, txnHash *Bloc
 	utxoOpsForTxn []*UtxoOperation, blockHeight uint32) error {
 
 	// Start by resetting the expected nonce for this txn's public key.
-	if blockHeight >= bav.Params.ForkHeights.BalanceModelBlockHeight && currentTxn.TxnMeta.GetTxnType() != TxnTypeBlockReward {
+	if blockHeight >= bav.Params.ForkHeights.BalanceModelBlockHeight &&
+		currentTxn.TxnMeta.GetTxnType() != TxnTypeBlockReward {
 
 		// Make sure we haven't seen the nonce yet
 		pkidEntry := bav.GetPKIDForPublicKey(currentTxn.PublicKey)
@@ -1522,7 +1523,8 @@ func (bav *UtxoView) DisconnectTransaction(currentTxn *MsgDeSoTxn, txnHash *Bloc
 			OperationTypeCoinLockupTransfer, currentTxn, txnHash, utxoOpsForTxn, blockHeight)
 	case TxnTypeCoinUnlock:
 		return bav._disconnectCoinUnlock(OperationTypeCoinUnlock, currentTxn, txnHash, utxoOpsForTxn, blockHeight)
-
+	case TxnTypeAtomicTxns:
+		return bav._disconnectAtomicTxns(OperationTypeAtomicTxns, currentTxn, txnHash, utxoOpsForTxn, blockHeight)
 	}
 
 	return fmt.Errorf("DisconnectBlock: Unimplemented txn type %v", currentTxn.TxnMeta.GetTxnType().String())
@@ -1717,23 +1719,34 @@ func _isEntryImmatureBlockReward(utxoEntry *UtxoEntry, blockHeight uint32, param
 	return false
 }
 
-func (bav *UtxoView) VerifySignature(txn *MsgDeSoTxn, blockHeight uint32) (_derivedPkBytes []byte, _err error) {
+func (bav *UtxoView) VerifySignature(txn *MsgDeSoTxn, blockHeight uint32) (_err error) {
 	return bav._verifySignature(txn, blockHeight)
 }
 
-func (bav *UtxoView) _verifySignature(txn *MsgDeSoTxn, blockHeight uint32) (_derivedPkBytes []byte, _err error) {
+// Note: this function does
+func (bav *UtxoView) _verifySignature(txn *MsgDeSoTxn, blockHeight uint32) (_err error) {
+	if txn.TxnMeta.GetTxnType() == TxnTypeAtomicTxns {
+		if txn.Signature.Sign != nil {
+			return fmt.Errorf("_verifySignature: Atomic transaction signature is not empty")
+		}
+		for _, innerTxn := range txn.TxnMeta.(*AtomicTxnsMetadata).Txns {
+			if err := bav._verifySignature(innerTxn, blockHeight); err != nil {
+
+			}
+		}
+	}
 	if txn.Signature.Sign == nil {
-		return nil, fmt.Errorf("_verifySignature: Transaction signature is empty")
+		return fmt.Errorf("_verifySignature: Transaction signature is empty")
 	}
 	if blockHeight >= bav.Params.ForkHeights.AssociationsAndAccessGroupsBlockHeight {
 		if txn.Signature.HasHighS() {
-			return nil, errors.Wrapf(RuleErrorTxnSigHasHighS, "_verifySignature: high-S deteceted")
+			return errors.Wrapf(RuleErrorTxnSigHasHighS, "_verifySignature: high-S deteceted")
 		}
 	}
 	// Compute a hash of the transaction.
 	txBytes, err := txn.ToBytes(true /*preSignature*/)
 	if err != nil {
-		return nil, errors.Wrapf(err, "_verifySignature: Problem serializing txn without signature: ")
+		return errors.Wrapf(err, "_verifySignature: Problem serializing txn without signature: ")
 	}
 	txHash := Sha256DoubleHash(txBytes)
 
@@ -1744,14 +1757,14 @@ func (bav *UtxoView) _verifySignature(txn *MsgDeSoTxn, blockHeight uint32) (_der
 	var derivedPk *btcec.PublicKey
 	derivedPkBytes, isDerived, err := IsDerivedSignature(txn, blockHeight)
 	if err != nil {
-		return nil, errors.Wrapf(err, "_verifySignature: Something went wrong while checking for "+
+		return errors.Wrapf(err, "_verifySignature: Something went wrong while checking for "+
 			"derived key signature")
 	}
 	// If we got a derived key then try parsing it.
 	if isDerived {
 		derivedPk, err = btcec.ParsePubKey(derivedPkBytes, btcec.S256())
 		if err != nil {
-			return nil, fmt.Errorf("%v %v", RuleErrorDerivedKeyInvalidExtraData, RuleErrorDerivedKeyInvalidRecoveryId)
+			return fmt.Errorf("%v %v", RuleErrorDerivedKeyInvalidExtraData, RuleErrorDerivedKeyInvalidRecoveryId)
 		}
 	}
 
@@ -1759,7 +1772,7 @@ func (bav *UtxoView) _verifySignature(txn *MsgDeSoTxn, blockHeight uint32) (_der
 	ownerPkBytes := txn.PublicKey
 	ownerPk, err := btcec.ParsePubKey(ownerPkBytes, btcec.S256())
 	if err != nil {
-		return nil, errors.Wrapf(err, "_verifySignature: Problem parsing owner public key: ")
+		return errors.Wrapf(err, "_verifySignature: Problem parsing owner public key: ")
 	}
 
 	// If no derived key was used, we check if transaction was signed by the owner.
@@ -1767,24 +1780,24 @@ func (bav *UtxoView) _verifySignature(txn *MsgDeSoTxn, blockHeight uint32) (_der
 	if derivedPk == nil {
 		// Verify that the transaction is signed by the specified key.
 		if txn.Signature.Verify(txHash[:], ownerPk) {
-			return nil, nil
+			return nil
 		}
 	} else {
 		// Look for a derived key entry in UtxoView and DB, check to make sure it exists and is not isDeleted.
-		if err := bav.ValidateDerivedKey(ownerPkBytes, derivedPkBytes, uint64(blockHeight)); err != nil {
-			return nil, err
+		if err = bav.ValidateDerivedKey(ownerPkBytes, derivedPkBytes, uint64(blockHeight)); err != nil {
+			return err
 		}
 
 		// All checks passed so we try to verify the signature. This step can be avoided for DeSo-DER signatures
 		// but we run it redundantly just in case.
 		if txn.Signature.Verify(txHash[:], derivedPk) {
-			return derivedPk.SerializeCompressed(), nil
+			return nil
 		}
 
-		return nil, errors.Wrapf(RuleErrorDerivedKeyNotAuthorized, "Signature check failed: ")
+		return errors.Wrapf(RuleErrorDerivedKeyNotAuthorized, "Signature check failed: ")
 	}
 
-	return nil, RuleErrorInvalidTransactionSignature
+	return RuleErrorInvalidTransactionSignature
 }
 
 // ValidateDerivedKey checks if a derived key is authorized and valid.
@@ -2050,7 +2063,8 @@ func (bav *UtxoView) _connectBasicTransferWithExtraSpend(
 	// balance. This ensures we never enter situations where we are calling _addDeSo
 	// before we call _spendBalance to verify that the transactor has the coins.
 	if blockHeight >= bav.Params.ForkHeights.BalanceModelBlockHeight &&
-		txn.TxnMeta.GetTxnType() != TxnTypeBlockReward {
+		txn.TxnMeta.GetTxnType() != TxnTypeBlockReward &&
+		txn.TxnMeta.GetTxnType() != TxnTypeAtomicTxns {
 
 		var err error
 		feePlusExtraSpend := txn.TxnFeeNanos
@@ -2238,7 +2252,7 @@ func (bav *UtxoView) _verifyTxnSignature(txn *MsgDeSoTxn, blockHeight uint32) er
 			return RuleErrorBlockRewardTxnNotAllowedToHaveSignature
 		}
 	} else {
-		if _, err := bav._verifySignature(txn, blockHeight); err != nil {
+		if err := bav._verifySignature(txn, blockHeight); err != nil {
 			return errors.Wrapf(err, "_connectBasicTransferWithExtraSpend Problem verifying txn signature: ")
 		}
 	}
@@ -3676,7 +3690,9 @@ func (bav *UtxoView) _connectTransaction(
 		totalInput, totalOutput, utxoOpsForTxn, err = bav._connectCoinLockupTransfer(txn, txHash, blockHeight, verifySignatures)
 	case TxnTypeCoinUnlock:
 		totalInput, totalOutput, utxoOpsForTxn, err = bav._connectCoinUnlock(txn, txHash, blockHeight, blockTimestampNanoSecs, verifySignatures)
-
+	case TxnTypeAtomicTxns:
+		totalInput, totalOutput, utxoOpsForTxn, err = bav._connectAtomicTxns(
+			txn, txHash, blockHeight, blockTimestampNanoSecs, verifySignatures, ignoreUtxos)
 	default:
 		err = fmt.Errorf("ConnectTransaction: Unimplemented txn type %v", txn.TxnMeta.GetTxnType().String())
 	}
@@ -3699,6 +3715,12 @@ func (bav *UtxoView) _connectTransaction(
 		// cannot be assumed to be equal to total input - total output.
 		if blockHeight >= bav.Params.ForkHeights.BalanceModelBlockHeight {
 			fees = txn.TxnFeeNanos
+			if txn.TxnMeta.GetTxnType() == TxnTypeAtomicTxns {
+				fees, err = txn.TxnMeta.(*AtomicTxnsMetadata).GetTotalFee()
+				if err != nil {
+					return nil, 0, 0, 0, errors.Wrapf(err, "ConnectTransaction: ")
+				}
+			}
 		}
 	}
 	// Validate that totalInput - totalOutput is equal to the fee specified in the transaction metadata.

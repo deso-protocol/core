@@ -1011,6 +1011,20 @@ func (mp *DeSoMempool) rebuildBackupView() {
 	}
 }
 
+func (mp *DeSoMempool) validateNonce(tx *MsgDeSoTxn, blockHeight uint64) error {
+	if tx.TxnNonce == nil {
+		return TxErrorNoNonceAfterBalanceModelBlockHeight
+	}
+	if tx.TxnNonce.ExpirationBlockHeight < blockHeight {
+		return TxErrorNonceExpired
+	}
+	if mp.universalUtxoView.GlobalParamsEntry.MaxNonceExpirationBlockHeightOffset != 0 &&
+		tx.TxnNonce.ExpirationBlockHeight > blockHeight+mp.universalUtxoView.GlobalParamsEntry.MaxNonceExpirationBlockHeightOffset {
+		return TxErrorNonceExpirationBlockHeightOffsetExceeded
+	}
+	return nil
+}
+
 // See TryAcceptTransaction. The write lock must be held when calling this function.
 //
 // TODO: Allow replacing a transaction with a higher fee.
@@ -1025,15 +1039,15 @@ func (mp *DeSoMempool) tryAcceptTransaction(
 	}
 
 	if blockHeight >= uint64(mp.bc.params.ForkHeights.BalanceModelBlockHeight) {
-		if tx.TxnNonce == nil {
-			return nil, nil, TxErrorNoNonceAfterBalanceModelBlockHeight
+		if tx.TxnMeta.GetTxnType() == TxnTypeAtomicTxns {
+			for _, innerTx := range tx.TxnMeta.(*AtomicTxnsMetadata).Txns {
+				if err := mp.validateNonce(innerTx, blockHeight); err != nil {
+					return nil, nil, err
+				}
+			}
 		}
-		if tx.TxnNonce.ExpirationBlockHeight < blockHeight {
-			return nil, nil, TxErrorNonceExpired
-		}
-		if mp.universalUtxoView.GlobalParamsEntry.MaxNonceExpirationBlockHeightOffset != 0 &&
-			tx.TxnNonce.ExpirationBlockHeight > blockHeight+mp.universalUtxoView.GlobalParamsEntry.MaxNonceExpirationBlockHeightOffset {
-			return nil, nil, TxErrorNonceExpirationBlockHeightOffsetExceeded
+		if err := mp.validateNonce(tx, blockHeight); err != nil {
+			return nil, nil, err
 		}
 	}
 

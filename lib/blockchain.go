@@ -1565,8 +1565,16 @@ func CheckTransactionSanity(txn *MsgDeSoTxn, blockHeight uint32, params *DeSoPar
 		return nil
 	}
 
+	if txn.TxnMeta.GetTxnType() == TxnTypeAtomicTxns {
+		for _, innerTxn := range txn.TxnMeta.(*AtomicTxnsMetadata).Txns {
+			if err := CheckTransactionSanity(innerTxn, blockHeight, params); err != nil {
+				return err
+			}
+		}
+	}
+
 	// Prior to the switch from UTXOs to a balance model, every txn was required to have
-	// least one input unless it is one of the following transaction types:
+	// at least one input unless it is one of the following transaction types:
 	// - BitcoinExchange transactions don't need a PublicKey because the public key can
 	//   easily be derived from the BitcoinTransaction embedded in the TxnMeta.
 	requiresPublicKey := txn.TxnMeta.GetTxnType() != TxnTypeBitcoinExchange
@@ -5044,7 +5052,8 @@ func (bc *Blockchain) AddInputsAndChangeToTransactionWithSubsidy(
 		// Initialize to 0.
 		txArg.TxnFeeNanos = 0
 
-		if txArg.TxnMeta.GetTxnType() != TxnTypeBlockReward {
+		if txArg.TxnMeta.GetTxnType() != TxnTypeBlockReward &&
+			txArg.TxnMeta.GetTxnType() != TxnTypeAtomicTxns {
 			if !isInterfaceValueNil(mempool) {
 				// TODO: replace MaxBasisPoints with variables configured by flags.
 				txArg.TxnFeeNanos, err = mempool.EstimateFee(txArg, minFeeRateNanosPerKB, MaxBasisPoints,
