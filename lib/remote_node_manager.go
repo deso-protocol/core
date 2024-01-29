@@ -79,6 +79,7 @@ func (manager *RemoteNodeManager) ProcessCompletedHandshake(remoteNode *RemoteNo
 		manager.SetNonValidator(remoteNode)
 	}
 	manager.srv.HandleAcceptedPeer(remoteNode.GetPeer())
+	manager.srv.maybeRequestAddresses(remoteNode)
 }
 
 func (manager *RemoteNodeManager) Disconnect(rn *RemoteNode) {

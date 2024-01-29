@@ -1625,6 +1625,22 @@ func (srv *Server) HandleAcceptedPeer(pp *Peer) {
 	}
 }
 
+func (srv *Server) maybeRequestAddresses(remoteNode *RemoteNode) {
+	if remoteNode == nil {
+		return
+	}
+	// If the address manager needs more addresses, then send a GetAddr message
+	// to the peer. This is best-effort.
+	if !srv.AddrMgr.NeedMoreAddresses() {
+		return
+	}
+
+	if err := remoteNode.SendMessage(&MsgDeSoGetAddr{}); err != nil {
+		glog.Errorf("Server.maybeRequestAddresses: Problem sending GetAddr message to "+
+			"remoteNode (id= %v); err: %v", remoteNode, err)
+	}
+}
+
 func (srv *Server) _cleanupDonePeerState(pp *Peer) {
 	// Grab the dataLock since we'll be modifying requestedBlocks
 	srv.dataLock.Lock()
@@ -2261,6 +2277,9 @@ func (srv *Server) _handleGetAddrMessage(pp *Peer, desoMsg DeSoMessage) {
 	// When we get a GetAddr message, choose MaxAddrsPerMsg from the AddrMgr
 	// and send them back to the peer.
 	netAddrsFound := srv.AddrMgr.AddressCache()
+	if len(netAddrsFound) == 0 {
+		return
+	}
 	if len(netAddrsFound) > MaxAddrsPerAddrMsg {
 		netAddrsFound = netAddrsFound[:MaxAddrsPerAddrMsg]
 	}
