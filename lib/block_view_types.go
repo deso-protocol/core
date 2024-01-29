@@ -112,23 +112,25 @@ const (
 	EncoderTypeDmThreadEntry                     EncoderType = 37
 	EncoderTypeDeSoNonce                         EncoderType = 38
 	EncoderTypeTransactorNonceEntry              EncoderType = 39
-	EncoderTypeValidatorEntry                    EncoderType = 40
-	EncoderTypeStakeEntry                        EncoderType = 41
-	EncoderTypeLockedStakeEntry                  EncoderType = 42
-	EncoderTypeEpochEntry                        EncoderType = 43
-	EncoderTypeLockedBalanceEntry                EncoderType = 44
-	EncoderTypeLockupYieldCurvePoint             EncoderType = 45
 
 	// EncoderTypeStateChangeEntry represents a state change to a DeSo encoder entry.
-	EncoderTypeStateChangeEntry EncoderType = 46
+	EncoderTypeStateChangeEntry EncoderType = 40
 	// EncoderTypeFollowEntry represents a follow relationship between two pkids.
-	EncoderTypeFollowEntry EncoderType = 47
+	EncoderTypeFollowEntry EncoderType = 41
 	// EncoderTypeDeSoBalanceEntry represents a balance of DeSo for a particular public key.
-	EncoderTypeDeSoBalanceEntry EncoderType = 48
+	EncoderTypeDeSoBalanceEntry EncoderType = 42
 	// EncoderTypeBlock represents a block in the blockchain, including all transactions in said block.
-	EncoderTypeBlock EncoderType = 49
+	EncoderTypeBlock EncoderType = 43
 	// EncoderTypeTxn represents a transaction in the blockchain.
-	EncoderTypeTxn EncoderType = 50
+	EncoderTypeTxn EncoderType = 44
+
+	EncoderTypeValidatorEntry        EncoderType = 45
+	EncoderTypeStakeEntry            EncoderType = 46
+	EncoderTypeLockedStakeEntry      EncoderType = 47
+	EncoderTypeEpochEntry            EncoderType = 48
+	EncoderTypeLockedBalanceEntry    EncoderType = 49
+	EncoderTypeLockupYieldCurvePoint EncoderType = 50
+
 	// EncoderTypeBLSPublicKeyPKIDPairEntry represents a BLS public key <> PKID mapping.
 	EncoderTypeBLSPublicKeyPKIDPairEntry EncoderType = 51
 
