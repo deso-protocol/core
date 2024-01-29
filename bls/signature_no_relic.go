@@ -38,6 +38,10 @@ func (privateKey *PrivateKey) ToString() string {
 	panic(BLSNoRelicError)
 }
 
+func (privateKey *PrivateKey) FromSeed(seed []byte) (*PrivateKey, error) {
+	panic(BLSNoRelicError)
+}
+
 func (privateKey *PrivateKey) FromString(privateKeyString string) (*PrivateKey, error) {
 	panic(BLSNoRelicError)
 }
