@@ -16,9 +16,9 @@ import (
 // - PoS Validator Connection Handshakes
 // - PoS Random Seed Signature
 //
-// TODO: We will likely need to associate individual op-codes for each message type that can be signed,
-// so that there is no risk of signature collisions between different message types. Ex: the payload
-// signed per message type must be made up of the following tuples:
+// We need to associate individual op-codes for each message type that can be signed, so that there is no risk
+// of signature collisions between different message types. The payload signed per message type must be made
+// up of the following tuples:
 // - Validator Vote:            (0x01, view uint64, blockHash consensus.BlockHash)
 // - Validator Timeout:         (0x02, view uint64, highQCView uint64)
 // - PoS Block Proposal:        (0x03, view uint64, blockHash consensus.BlockHash)
@@ -116,8 +116,6 @@ func (signer *BLSSigner) SignRandomSeedHash(randomSeedHash *RandomSeedHash) (*bl
 	return SignRandomSeedHash(signer.privateKey, randomSeedHash)
 }
 
-// TODO: Add signing function for PoS blocks
-
 func (signer *BLSSigner) SignPoSValidatorHandshake(nonceSent uint64, nonceReceived uint64, tstampMicro uint64) (*bls.Signature, error) {
 	// FIXME
 	payload := []byte{}
@@ -143,11 +141,13 @@ func BLSVerifyValidatorTimeout(view uint64, highQCView uint64, signature *bls.Si
 	return _blsVerify(BLSSignatureOpCodeValidatorTimeout, payload[:], signature, publicKey)
 }
 
-// TODO: Add Verifier function for PoS blocks
-
-func BLSVerifyPoSValidatorHandshake(nonceSent uint64, nonceReceived uint64, tstampMicro uint64,
-	signature *bls.Signature, publicKey *bls.PublicKey) (bool, error) {
-
+func BLSVerifyPoSValidatorHandshake(
+	nonceSent uint64,
+	nonceReceived uint64,
+	tstampMicro uint64,
+	signature *bls.Signature,
+	publicKey *bls.PublicKey,
+) (bool, error) {
 	// FIXME
 	payload := []byte{}
 	return _blsVerify(BLSSignatureOpCodePoSValidatorHandshake, payload[:], signature, publicKey)
