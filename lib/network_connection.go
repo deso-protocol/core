@@ -33,7 +33,9 @@ func (oc *outboundConnection) Close() {
 	if oc.terminated {
 		return
 	}
-	oc.connection.Close()
+	if oc.connection != nil {
+		oc.connection.Close()
+	}
 	oc.terminated = true
 }
 
@@ -58,7 +60,9 @@ func (ic *inboundConnection) Close() {
 		return
 	}
 
-	ic.connection.Close()
+	if ic.connection != nil {
+		ic.connection.Close()
+	}
 	ic.terminated = true
 }
 

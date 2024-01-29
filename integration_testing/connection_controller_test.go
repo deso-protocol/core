@@ -396,7 +396,8 @@ func TestConnectionControllerPersistentConnection(t *testing.T) {
 
 	// Create a persistent connection from Node1 to Node2
 	cc := node1.Server.GetConnectionController()
-	require.NoError(cc.CreateNonValidatorPersistentOutboundConnection(node2.Listeners[0].Addr().String()))
+	_, err = cc.CreateNonValidatorPersistentOutboundConnection(node2.Listeners[0].Addr().String())
+	require.NoError(err)
 	waitForValidatorConnection(t, node1, node2)
 	waitForNonValidatorInboundConnection(t, node2, node1)
 	node2.Stop()
@@ -408,7 +409,8 @@ func TestConnectionControllerPersistentConnection(t *testing.T) {
 	node3 = startNode(t, node3)
 
 	// Create a persistent connection from Node1 to Node3
-	require.NoError(cc.CreateNonValidatorPersistentOutboundConnection(node3.Listeners[0].Addr().String()))
+	_, err = cc.CreateNonValidatorPersistentOutboundConnection(node3.Listeners[0].Addr().String())
+	require.NoError(err)
 	waitForNonValidatorOutboundConnection(t, node1, node3)
 	waitForNonValidatorInboundConnection(t, node3, node1)
 	node3.Stop()
@@ -429,7 +431,8 @@ func TestConnectionControllerPersistentConnection(t *testing.T) {
 
 	// Create a persistent connection from Node4 to Node5
 	cc = node4.Server.GetConnectionController()
-	require.NoError(cc.CreateNonValidatorPersistentOutboundConnection(node5.Listeners[0].Addr().String()))
+	_, err = cc.CreateNonValidatorPersistentOutboundConnection(node5.Listeners[0].Addr().String())
+	require.NoError(err)
 	waitForNonValidatorOutboundConnection(t, node4, node5)
 	waitForValidatorConnection(t, node5, node4)
 	node5.Stop()
@@ -444,7 +447,8 @@ func TestConnectionControllerPersistentConnection(t *testing.T) {
 	defer node6.Stop()
 
 	// Create a persistent connection from Node4 to Node6
-	require.NoError(cc.CreateNonValidatorPersistentOutboundConnection(node6.Listeners[0].Addr().String()))
+	_, err = cc.CreateNonValidatorPersistentOutboundConnection(node6.Listeners[0].Addr().String())
+	require.NoError(err)
 	waitForValidatorConnection(t, node4, node6)
 	waitForValidatorConnection(t, node6, node4)
 	t.Logf("Test #4 passed | Successfuly created persistent connection from validator Node4 to validator Node6")
