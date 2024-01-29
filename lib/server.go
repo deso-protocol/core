@@ -442,6 +442,7 @@ func NewServer(
 		snapshot:                     _snapshot,
 		nodeMessageChannel:           _nodeMessageChan,
 		forceChecksum:                _forceChecksum,
+		AddrMgr:                      _desoAddrMgr,
 	}
 
 	if stateChangeSyncer != nil {
