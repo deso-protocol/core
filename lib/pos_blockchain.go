@@ -1488,6 +1488,8 @@ func (bc *Blockchain) shouldReorg(blockNode *BlockNode, currentView uint64) bool
 func (bc *Blockchain) addTipBlockToBestChain(blockNode *BlockNode) {
 	bc.bestChain = append(bc.bestChain, blockNode)
 	bc.bestChainMap[*blockNode.Hash] = blockNode
+	bc.bestHeaderChain = append(bc.bestHeaderChain, blockNode)
+	bc.bestHeaderChainMap[*blockNode.Hash] = blockNode
 }
 
 // removeTipBlockFromBestChain removes the current tip from the best chain. It
@@ -1499,6 +1501,8 @@ func (bc *Blockchain) removeTipBlockFromBestChain() *BlockNode {
 	lastBlock := bc.bestChain[len(bc.bestChain)-1]
 	delete(bc.bestChainMap, *lastBlock.Hash)
 	bc.bestChain = bc.bestChain[:len(bc.bestChain)-1]
+	bc.bestHeaderChain = bc.bestHeaderChain[:len(bc.bestChain)]
+	delete(bc.bestHeaderChainMap, *lastBlock.Hash)
 	return lastBlock
 }
 
