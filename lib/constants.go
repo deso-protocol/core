@@ -1611,3 +1611,9 @@ const MaxAssociationTypeByteLength int = 64
 const MaxAssociationValueByteLength int = 256
 const AssociationTypeReservedPrefix = "DESO"
 const AssociationNullTerminator = byte(0)
+
+// Constants used for staking rewards.
+const MaxBasisPoints = uint64(10000)                     // 1e4
+const NanoSecsPerYear = uint64(365) * 24 * 60 * 60 * 1e9 // 365 days * 24 hours * 60 minutes * 60 seconds * 1e9 nanoseconds
+
+const BytesPerKB = 1000

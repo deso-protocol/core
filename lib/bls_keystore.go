@@ -4,6 +4,7 @@ import (
 	"github.com/deso-protocol/core/bls"
 	"github.com/deso-protocol/core/consensus"
 	"github.com/pkg/errors"
+	"github.com/tyler-smith/go-bip39"
 )
 
 // BLSSigner is a wrapper for the bls.PrivateKey type, which abstracts away the private key
@@ -15,9 +16,9 @@ import (
 // - PoS Validator Connection Handshakes
 // - PoS Random Seed Signature
 //
-// TODO: We will likely need to associate individual op-codes for each message type that can be signed,
-// so that there is no risk of signature collisions between different message types. Ex: the payload
-// signed per message type must be made up of the following tuples:
+// We need to associate individual op-codes for each message type that can be signed, so that there is no risk
+// of signature collisions between different message types. The payload signed per message type must be made
+// up of the following tuples:
 // - Validator Vote:            (0x01, view uint64, blockHash consensus.BlockHash)
 // - Validator Timeout:         (0x02, view uint64, highQCView uint64)
 // - PoS Block Proposal:        (0x03, view uint64, blockHash consensus.BlockHash)
@@ -45,13 +46,19 @@ type BLSKeystore struct {
 	signer *BLSSigner
 }
 
-func NewBLSKeystore(seed string) (*BLSKeystore, error) {
+func NewBLSKeystore(seedPhrase string) (*BLSKeystore, error) {
+	seedBytes, err := bip39.NewSeedWithErrorChecking(seedPhrase, "")
+	if err != nil {
+		return nil, errors.Wrapf(err, "NewBLSKeystore: Problem generating seed bytes from seed phrase")
+	}
+
 	privateKey, err := bls.NewPrivateKey()
 	if err != nil {
-		return nil, errors.Wrapf(err, "NewBLSKeystore: Problem generating private key from seed: %s", seed)
+		return nil, errors.Wrapf(err, "NewBLSKeystore: Problem generating private key from seed phrase")
 	}
-	if _, err = privateKey.FromString(seed); err != nil {
-		return nil, errors.Wrapf(err, "NewBLSKeystore: Problem retrieving private key from seed: %s", seed)
+
+	if _, err = privateKey.FromSeed(seedBytes); err != nil {
+		return nil, errors.Wrapf(err, "NewBLSKeystore: Problem generating private key from seed phrase")
 	}
 
 	signer, err := NewBLSSigner(privateKey)
@@ -109,10 +116,9 @@ func (signer *BLSSigner) SignRandomSeedHash(randomSeedHash *RandomSeedHash) (*bl
 	return SignRandomSeedHash(signer.privateKey, randomSeedHash)
 }
 
-// TODO: Add signing function for PoS blocks
-
 func (signer *BLSSigner) SignPoSValidatorHandshake(nonceSent uint64, nonceReceived uint64, tstampMicro uint64) (*bls.Signature, error) {
-	payload := GetVerackHandshakePayload(nonceSent, nonceReceived, tstampMicro)
+	// FIXME
+	payload := []byte{}
 	return signer.sign(BLSSignatureOpCodePoSValidatorHandshake, payload[:])
 }
 
@@ -135,11 +141,14 @@ func BLSVerifyValidatorTimeout(view uint64, highQCView uint64, signature *bls.Si
 	return _blsVerify(BLSSignatureOpCodeValidatorTimeout, payload[:], signature, publicKey)
 }
 
-// TODO: Add Verifier function for PoS blocks
-
-func BLSVerifyPoSValidatorHandshake(nonceSent uint64, nonceReceived uint64, tstampMicro uint64,
-	signature *bls.Signature, publicKey *bls.PublicKey) (bool, error) {
-
-	payload := GetVerackHandshakePayload(nonceSent, nonceReceived, tstampMicro)
+func BLSVerifyPoSValidatorHandshake(
+	nonceSent uint64,
+	nonceReceived uint64,
+	tstampMicro uint64,
+	signature *bls.Signature,
+	publicKey *bls.PublicKey,
+) (bool, error) {
+	// FIXME
+	payload := []byte{}
 	return _blsVerify(BLSSignatureOpCodePoSValidatorHandshake, payload[:], signature, publicKey)
 }

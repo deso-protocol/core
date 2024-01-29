@@ -2568,13 +2568,13 @@ func (bav *UtxoView) _checkAndUpdateDerivedKeySpendingLimit(
 	case TxnTypeUnstake:
 		txnMeta := txn.TxnMeta.(*UnstakeMetadata)
 		if derivedKeyEntry, err = bav._checkUnstakeTxnSpendingLimitAndUpdateDerivedKey(
-			derivedKeyEntry, txn.PublicKey, txnMeta); err != nil {
+			derivedKeyEntry, txnMeta); err != nil {
 			return utxoOpsForTxn, err
 		}
 	case TxnTypeUnlockStake:
 		txnMeta := txn.TxnMeta.(*UnlockStakeMetadata)
 		if derivedKeyEntry, err = bav._checkUnlockStakeTxnSpendingLimitAndUpdateDerivedKey(
-			derivedKeyEntry, txn.PublicKey, txnMeta); err != nil {
+			derivedKeyEntry, txnMeta); err != nil {
 			return utxoOpsForTxn, err
 		}
 	default:
@@ -3254,10 +3254,10 @@ func (bav *UtxoView) _connectUpdateGlobalParams(
 			val, bytesRead := Uvarint(
 				extraData[FeeBucketGrowthRateBasisPointsKey],
 			)
-			if val > _maxBasisPoints {
+			if val > MaxBasisPoints {
 				return 0, 0, nil, fmt.Errorf(
 					"_connectUpdateGlobalParams: FeeBucketGrowthRateBasisPoints must be <= %d",
-					_maxBasisPoints,
+					MaxBasisPoints,
 				)
 			}
 			newGlobalParamsEntry.FeeBucketGrowthRateBasisPoints = val
@@ -3271,10 +3271,10 @@ func (bav *UtxoView) _connectUpdateGlobalParams(
 			val, bytesRead := Uvarint(
 				extraData[FailingTransactionBMFMultiplierBasisPointsKey],
 			)
-			if val > _maxBasisPoints {
+			if val > MaxBasisPoints {
 				return 0, 0, nil, fmt.Errorf(
 					"_connectUpdateGlobalParams: FailingTransactionBMFMultiplierBasisPoints must be <= %d",
-					_maxBasisPoints,
+					MaxBasisPoints,
 				)
 			}
 			newGlobalParamsEntry.FailingTransactionBMFMultiplierBasisPoints = val

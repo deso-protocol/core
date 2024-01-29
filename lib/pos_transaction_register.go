@@ -3,12 +3,13 @@ package lib
 import (
 	"bytes"
 	"fmt"
-	"github.com/emirpasic/gods/sets/treeset"
-	"github.com/golang/glog"
-	"github.com/pkg/errors"
 	"math"
 	"math/big"
 	"sync"
+
+	"github.com/emirpasic/gods/sets/treeset"
+	"github.com/golang/glog"
+	"github.com/pkg/errors"
 )
 
 // ========================
@@ -39,17 +40,24 @@ type TransactionRegister struct {
 	feeBucketGrowthRateBasisPoints *big.Float
 }
 
-func NewTransactionRegister(globalParams *GlobalParamsEntry) *TransactionRegister {
+func NewTransactionRegister() *TransactionRegister {
 	feeTimeBucketSet := treeset.NewWith(feeTimeBucketComparator)
-	minNetworkFee, bucketMultiplier := globalParams.ComputeFeeTimeBucketMinimumFeeAndMultiplier()
 	return &TransactionRegister{
-		feeTimeBucketSet:               feeTimeBucketSet,
-		feeTimeBucketsByMinFeeMap:      make(map[uint64]*FeeTimeBucket),
-		txnMembership:                  make(map[BlockHash]*MempoolTx),
-		totalTxnsSizeBytes:             0,
-		minimumNetworkFeeNanosPerKB:    minNetworkFee,
-		feeBucketGrowthRateBasisPoints: bucketMultiplier,
+		feeTimeBucketSet:          feeTimeBucketSet,
+		feeTimeBucketsByMinFeeMap: make(map[uint64]*FeeTimeBucket),
+		txnMembership:             make(map[BlockHash]*MempoolTx),
+		totalTxnsSizeBytes:        0,
+		// Set default values for the uninitialized fields. This is safe because any transactions
+		// added to the register will be re-bucketed once the params are updated.
+		minimumNetworkFeeNanosPerKB:    big.NewFloat(1),                       // Default to 1 nanos per KB
+		feeBucketGrowthRateBasisPoints: big.NewFloat(float64(MaxBasisPoints)), // Default to 100%
 	}
+}
+
+func (tr *TransactionRegister) Init(globalParams *GlobalParamsEntry) {
+	minNetworkFee, bucketMultiplier := globalParams.ComputeFeeTimeBucketMinimumFeeAndMultiplier()
+	tr.minimumNetworkFeeNanosPerKB = minNetworkFee
+	tr.feeBucketGrowthRateBasisPoints = bucketMultiplier
 }
 
 // feeTimeBucketComparator is a comparator function for FeeTimeBucket objects. It is used to order FeeTimeBucket objects

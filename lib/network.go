@@ -6326,9 +6326,6 @@ func (tsl *TransactionSpendingLimit) ToMetamaskString(params *DeSoParams) string
 				validatorPublicKeyBase58Check = Base58CheckEncode(limitKey.ValidatorPKID.ToBytes(), false, params)
 			}
 			opString += _indt(indentationCounter) + "Validator PKID: " + validatorPublicKeyBase58Check + "\n"
-			// StakerPKID
-			stakerPublicKeyBase58Check := Base58CheckEncode(limitKey.StakerPKID.ToBytes(), false, params)
-			opString += _indt(indentationCounter) + "Staker PKID: " + stakerPublicKeyBase58Check + "\n"
 			// StakeLimit
 			stakeLimitDESO := NewFloat().Quo(
 				NewFloat().SetInt(limit.ToBig()), NewFloat().SetUint64(NanosPerUnit),
@@ -6359,9 +6356,6 @@ func (tsl *TransactionSpendingLimit) ToMetamaskString(params *DeSoParams) string
 				validatorPublicKeyBase58Check = Base58CheckEncode(limitKey.ValidatorPKID.ToBytes(), false, params)
 			}
 			opString += _indt(indentationCounter) + "Validator PKID: " + validatorPublicKeyBase58Check + "\n"
-			// StakerPKID
-			stakerPublicKeyBase58Check := Base58CheckEncode(limitKey.StakerPKID.ToBytes(), false, params)
-			opString += _indt(indentationCounter) + "Staker PKID: " + stakerPublicKeyBase58Check + "\n"
 			// UnstakeLimit
 			unstakeLimitDESO := NewFloat().Quo(
 				NewFloat().SetInt(limit.ToBig()), NewFloat().SetUint64(NanosPerUnit),
@@ -6392,9 +6386,6 @@ func (tsl *TransactionSpendingLimit) ToMetamaskString(params *DeSoParams) string
 				validatorPublicKeyBase58Check = Base58CheckEncode(limitKey.ValidatorPKID.ToBytes(), false, params)
 			}
 			opString += _indt(indentationCounter) + "Validator PKID: " + validatorPublicKeyBase58Check + "\n"
-			// StakerPKID
-			stakerPublicKeyBase58Check := Base58CheckEncode(limitKey.StakerPKID.ToBytes(), false, params)
-			opString += _indt(indentationCounter) + "Staker PKID: " + stakerPublicKeyBase58Check + "\n"
 			// UnlockStakeLimit
 			opString += _indt(indentationCounter) + "Transaction Count: " + strconv.FormatUint(limit, 10) + "\n"
 

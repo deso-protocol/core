@@ -1,11 +1,12 @@
 package lib
 
 import (
+	"math"
+	"time"
+
 	"github.com/deso-protocol/core/bls"
 	"github.com/deso-protocol/core/collections/bitset"
 	"github.com/pkg/errors"
-	"math"
-	"time"
 )
 
 // BlockTemplate is a dummy type that is used to label incomplete blocks. The only purpose of this type is to make it
@@ -32,11 +33,6 @@ func NewPosBlockProducer(mp Mempool, params *DeSoParams, proposerPublicKey *Publ
 		proposerPublicKey:       proposerPublicKey,
 		proposerVotingPublicKey: proposerVotingPublicKey,
 	}
-}
-
-func (pbp *PosBlockProducer) SignBlock(blockTemplate BlockTemplate, signerPrivateKey *bls.PrivateKey) (*MsgDeSoBlock, error) {
-	// TODO
-	return nil, nil
 }
 
 // CreateUnsignedBlock constructs an unsigned, PoS block with Fee-Time ordered transactions. This function should be used
@@ -103,6 +99,9 @@ func (pbp *PosBlockProducer) createBlockTemplate(latestBlockView *UtxoView, newB
 	block.Header.ProposerPublicKey = pbp.proposerPublicKey
 	block.Header.ProposerVotingPublicKey = pbp.proposerVotingPublicKey
 	block.Header.ProposerRandomSeedSignature = proposerRandomSeedSignature
+
+	// Hash the TxnConnectStatusByIndex
+	block.Header.TxnConnectStatusByIndexHash = HashBitset(block.TxnConnectStatusByIndex)
 	return block, nil
 }
 
@@ -116,6 +115,7 @@ func (pbp *PosBlockProducer) createBlockWithoutHeader(
 	blockRewardTxn := NewMessage(MsgTypeTxn).(*MsgDeSoTxn)
 	blockRewardOutput := &DeSoOutput{}
 	blockRewardOutput.AmountNanos = math.MaxUint64
+	blockRewardOutput.PublicKey = pbp.proposerPublicKey.ToBytes()
 	blockRewardTxn.TxOutputs = append(blockRewardTxn.TxOutputs, blockRewardOutput)
 	blockRewardTxn.TxnMeta = &BlockRewardMetadataa{}
 	blockRewardTxnSizeBytes, err := blockRewardTxn.ToBytes(true)
@@ -142,9 +142,16 @@ func (pbp *PosBlockProducer) createBlockWithoutHeader(
 
 // getBlockTransactions is used to retrieve fee-time ordered transactions from the mempool.
 func (pbp *PosBlockProducer) getBlockTransactions(
-	latestBlockView *UtxoView, newBlockHeight uint64, newBlockTimestampNanoSecs uint64,
-	maxBlockSizeBytes uint64) (_txns []*MsgDeSoTxn, _txnConnectStatusByIndex *bitset.Bitset,
-	_maxUtilityFee uint64, _err error) {
+	latestBlockView *UtxoView,
+	newBlockHeight uint64,
+	newBlockTimestampNanoSecs uint64,
+	maxBlockSizeBytes uint64,
+) (
+	_txns []*MsgDeSoTxn,
+	_txnConnectStatusByIndex *bitset.Bitset,
+	_maxUtilityFee uint64,
+	_err error,
+) {
 	// Get Fee-Time ordered transactions from the mempool
 	feeTimeTxns := pbp.mp.GetTransactions()
 

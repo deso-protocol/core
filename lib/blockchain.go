@@ -1548,7 +1548,7 @@ func _FindCommonAncestor(node1 *BlockNode, node2 *BlockNode) *BlockNode {
 	// reach the end of the lists. We only need to check node1 for nil
 	// since they're the same height and we are iterating both back
 	// in tandem.
-	for node1 != nil && node1 != node2 {
+	for node1 != nil && !node1.Hash.IsEqual(node2.Hash) {
 		node1 = node1.Parent
 		node2 = node2.Parent
 	}
@@ -4772,6 +4772,7 @@ func (bc *Blockchain) CreateBasicTransferTxnWithDiamonds(
 	SenderPublicKey []byte,
 	DiamondPostHash *BlockHash,
 	DiamondLevel int64,
+	ExtraData map[string][]byte,
 	// Standard transaction fields
 	minFeeRateNanosPerKB uint64, mempool Mempool, additionalOutputs []*DeSoOutput) (
 	_txn *MsgDeSoTxn, _totalInput uint64, _spendAmount uint64, _changeAmount uint64, _fees uint64, _err error) {
@@ -4821,11 +4822,14 @@ func (bc *Blockchain) CreateBasicTransferTxnWithDiamonds(
 		// This function does not compute a signature.
 	}
 
+	delete(ExtraData, DiamondLevelKey)
+	delete(ExtraData, DiamondPostHashKey)
+
 	// Make a map for the diamond extra data and add it.
 	diamondsExtraData := make(map[string][]byte)
 	diamondsExtraData[DiamondLevelKey] = IntToBuf(DiamondLevel)
 	diamondsExtraData[DiamondPostHashKey] = DiamondPostHash[:]
-	txn.ExtraData = diamondsExtraData
+	txn.ExtraData = mergeExtraData(ExtraData, diamondsExtraData)
 
 	// We don't need to make any tweaks to the amount because it's basically
 	// a standard "pay per kilobyte" transaction.
@@ -4851,7 +4855,7 @@ func (bc *Blockchain) CreateBasicTransferTxnWithDiamonds(
 }
 
 func (bc *Blockchain) CreateMaxSpend(
-	senderPkBytes []byte, recipientPkBytes []byte, minFeeRateNanosPerKB uint64,
+	senderPkBytes []byte, recipientPkBytes []byte, extraData map[string][]byte, minFeeRateNanosPerKB uint64,
 	mempool Mempool, additionalOutputs []*DeSoOutput) (
 	_txn *MsgDeSoTxn, _totalInputAdded uint64, _spendAmount uint64, _fee uint64, _err error) {
 
@@ -4867,6 +4871,10 @@ func (bc *Blockchain) CreateMaxSpend(
 		}),
 		// TxInputs and TxOutputs will be set below.
 		// This function does not compute a signature.
+	}
+
+	if len(extraData) > 0 {
+		txn.ExtraData = extraData
 	}
 
 	if bc.BlockTip().Height >= bc.params.ForkHeights.BalanceModelBlockHeight {
@@ -4899,12 +4907,21 @@ func (bc *Blockchain) CreateMaxSpend(
 				err,
 				"Blockchain.CreateMaxSpend: Problem getting next nonce: ")
 		}
-
 		feeAmountNanos := uint64(0)
 		prevFeeAmountNanos := uint64(0)
 		for feeAmountNanos == 0 || feeAmountNanos != prevFeeAmountNanos {
 			prevFeeAmountNanos = feeAmountNanos
-			feeAmountNanos = _computeMaxTxV1Fee(txn, minFeeRateNanosPerKB)
+			if !isInterfaceValueNil(mempool) {
+				// TODO: replace MaxBasisPoints with variables configured by flags.
+				feeAmountNanos, err = mempool.EstimateFee(txn, minFeeRateNanosPerKB,
+					MaxBasisPoints, MaxBasisPoints, MaxBasisPoints, MaxBasisPoints,
+					bc.params.MaxBlockSizeBytes)
+				if err != nil {
+					return nil, 0, 0, 0, errors.Wrapf(err, "CreateMaxSpend: Problem estimating fee: ")
+				}
+			} else {
+				feeAmountNanos = _computeMaxTxV1Fee(txn, minFeeRateNanosPerKB)
+			}
 			txn.TxnFeeNanos = feeAmountNanos
 			txn.TxOutputs[len(txn.TxOutputs)-1].AmountNanos = spendableBalance - feeAmountNanos
 		}
@@ -5027,13 +5044,17 @@ func (bc *Blockchain) AddInputsAndChangeToTransactionWithSubsidy(
 		// Initialize to 0.
 		txArg.TxnFeeNanos = 0
 
-		feeAmountNanos := uint64(0)
-		if txArg.TxnMeta.GetTxnType() != TxnTypeBlockReward && minFeeRateNanosPerKB != 0 {
-			prevFeeAmountNanos := uint64(0)
-			for feeAmountNanos == 0 || feeAmountNanos != prevFeeAmountNanos {
-				prevFeeAmountNanos = feeAmountNanos
-				feeAmountNanos = _computeMaxTxV1Fee(txArg, minFeeRateNanosPerKB)
-				txArg.TxnFeeNanos = feeAmountNanos
+		if txArg.TxnMeta.GetTxnType() != TxnTypeBlockReward {
+			if !isInterfaceValueNil(mempool) {
+				// TODO: replace MaxBasisPoints with variables configured by flags.
+				txArg.TxnFeeNanos, err = mempool.EstimateFee(txArg, minFeeRateNanosPerKB, MaxBasisPoints,
+					MaxBasisPoints, MaxBasisPoints, MaxBasisPoints, bc.params.MaxBlockSizeBytes)
+				if err != nil {
+					return 0, 0, 0, 0, errors.Wrapf(err,
+						"AddInputsAndChangeToTransaction: Problem estimating fee: ")
+				}
+			} else {
+				txArg.TxnFeeNanos = EstimateMaxTxnFeeV1(txArg, minFeeRateNanosPerKB)
 			}
 		}
 
