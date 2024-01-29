@@ -18,13 +18,14 @@ import (
 func TestSimpleBlockSync(t *testing.T) {
 	node1 := spawnNodeProtocol1(t, 18000, "node1")
 	node1.Config.ConnectIPs = []string{"deso-seed-2.io:17000"}
-	node2 := spawnNodeProtocol1(t, 18001, "node2")
 	node1 = startNode(t, node1)
-	node2.Config.ConnectIPs = []string{"127.0.0.1:18000"}
-	node2 = startNode(t, node2)
 
 	// wait for node1 to sync blocks
 	waitForNodeToFullySync(node1)
+
+	node2 := spawnNodeProtocol1(t, 18001, "node2")
+	node2.Config.ConnectIPs = []string{"127.0.0.1:18000"}
+	node2 = startNode(t, node2)
 
 	// wait for node2 to sync blocks.
 	waitForNodeToFullySync(node2)
@@ -42,33 +43,26 @@ func TestSimpleBlockSync(t *testing.T) {
 //  6. node2 reconnects with node1 and syncs remaining blocks.
 //  7. compare node1 db matches node2 db.
 func TestSimpleSyncRestart(t *testing.T) {
-	require := require.New(t)
-
 	node1 := spawnNodeProtocol1(t, 18000, "node1")
 	node1.Config.ConnectIPs = []string{"deso-seed-2.io:17000"}
 	node1 = startNode(t, node1)
+
+	// wait for node1 to sync blocks
+	waitForNodeToFullySync(node1)
 
 	node2 := spawnNodeProtocol1(t, 18001, "node2")
 	node2.Config.ConnectIPs = []string{"127.0.0.1:18000"}
 	node2 = startNode(t, node2)
 
-	// wait for node1 to sync blocks
-	waitForNodeToFullySync(node1)
-
-	// bridge the nodes together.
-	bridge := NewConnectionBridge(node1, node2)
-	require.NoError(bridge.Start())
-
 	randomHeight := randomUint32Between(t, 10, node2.Config.MaxSyncBlockHeight)
-	fmt.Println("Random height for a restart (re-use if test failed):", randomHeight)
+	t.Logf("Random height for a restart (re-use if test failed): %v", randomHeight)
 	// Reboot node2 at a specific height and reconnect it with node1
-	node2, bridge = restartAtHeightAndReconnectNode(t, node2, node1, bridge, randomHeight)
+	restartAtHeight(t, node2, randomHeight)
 	waitForNodeToFullySync(node2)
 
 	compareNodesByDB(t, node1, node2, 0)
-	fmt.Println("Random restart successful! Random height was", randomHeight)
-	fmt.Println("Databases match!")
-	bridge.Disconnect()
+	t.Logf("Random restart successful! Random height was: %v", randomHeight)
+	t.Logf("Databases match!")
 	node1.Stop()
 	node2.Stop()
 }

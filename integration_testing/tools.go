@@ -427,6 +427,11 @@ func restartAtHeightAndReconnectNode(t *testing.T, node *cmd.Node, source *cmd.N
 	return newNode, bridge
 }
 
+func restartAtHeight(t *testing.T, node *cmd.Node, height uint32) *cmd.Node {
+	<-listenForBlockHeight(node, height)
+	return restartNode(t, node)
+}
+
 // listenForSyncPrefix will wait until the node starts downloading the provided syncPrefix in hypersync, and then sends
 // a message to the provided signal channel.
 func listenForSyncPrefix(t *testing.T, node *cmd.Node, syncPrefix []byte, signal chan<- bool) {
