@@ -57,7 +57,7 @@ func TestSimpleSyncRestart(t *testing.T) {
 	randomHeight := randomUint32Between(t, 10, node2.Config.MaxSyncBlockHeight)
 	t.Logf("Random height for a restart (re-use if test failed): %v", randomHeight)
 	// Reboot node2 at a specific height and reconnect it with node1
-	restartAtHeight(t, node2, randomHeight)
+	node2 = restartAtHeight(t, node2, randomHeight)
 	waitForNodeToFullySync(node2)
 
 	compareNodesByDB(t, node1, node2, 0)

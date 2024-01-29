@@ -203,6 +203,10 @@ func (rn *RemoteNode) GetServiceFlag() ServiceFlag {
 	return rn.handshakeMetadata.serviceFlag
 }
 
+func (rn *RemoteNode) GetLatestBlockHeight() uint64 {
+	return rn.handshakeMetadata.latestBlockHeight
+}
+
 func (rn *RemoteNode) GetUserAgent() string {
 	return rn.handshakeMetadata.userAgent
 }

@@ -48,7 +48,6 @@ type Peer struct {
 	StatsMtx       deadlock.RWMutex
 	TimeOffsetSecs int64
 	TimeConnected  time.Time
-	startingHeight uint32
 	ID             uint64
 	// Ping-related fields.
 	LastPingNonce  uint64
@@ -70,6 +69,7 @@ type Peer struct {
 	// Basic state.
 	PeerInfoMtx            deadlock.Mutex
 	serviceFlags           ServiceFlag
+	latestHeight           uint64
 	addrStr                string
 	netAddr                *wire.NetAddress
 	minTxFeeRateNanosPerKB uint64
@@ -665,10 +665,10 @@ func (pp *Peer) MinFeeRateNanosPerKB() uint64 {
 }
 
 // StartingBlockHeight is the height of the peer's blockchain tip.
-func (pp *Peer) StartingBlockHeight() uint32 {
+func (pp *Peer) StartingBlockHeight() uint64 {
 	pp.StatsMtx.RLock()
 	defer pp.StatsMtx.RUnlock()
-	return pp.startingHeight
+	return pp.latestHeight
 }
 
 // NumBlocksToSend is the number of blocks the Peer has requested from
@@ -891,6 +891,13 @@ func (pp *Peer) _setKnownAddressesMap(key string, val bool) {
 	defer pp.knownAddressesMapLock.Unlock()
 
 	pp.knownAddressesMap[key] = val
+}
+
+func (pp *Peer) SetLatestBlockHeight(height uint64) {
+	pp.StatsMtx.Lock()
+	defer pp.StatsMtx.Unlock()
+
+	pp.latestHeight = height
 }
 
 func (pp *Peer) SetServiceFlag(sf ServiceFlag) {
