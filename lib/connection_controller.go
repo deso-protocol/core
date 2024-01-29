@@ -86,7 +86,7 @@ func NewConnectionController(params *DeSoParams, cmgr *ConnectionManager, handsh
 }
 
 func (cc *ConnectionController) Start() {
-	if DisableNetworkManagerRoutines {
+	if cc.params.DisableNetworkManagerRoutines {
 		return
 	}
 
@@ -101,7 +101,7 @@ func (cc *ConnectionController) Start() {
 }
 
 func (cc *ConnectionController) Stop() {
-	if !DisableNetworkManagerRoutines {
+	if !cc.params.DisableNetworkManagerRoutines {
 		close(cc.exitChan)
 		cc.exitGroup.Wait()
 	}

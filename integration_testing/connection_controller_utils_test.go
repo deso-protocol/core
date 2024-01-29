@@ -280,10 +280,3 @@ func spawnValidatorNodeProtocol2(t *testing.T, port uint32, id string, blsPriv *
 	node.Params.ProtocolVersion = lib.ProtocolVersion2
 	return node
 }
-
-func SetDisableNetworkManagerRoutines(t *testing.T) {
-	lib.DisableNetworkManagerRoutines = true
-	t.Cleanup(func() {
-		lib.DisableNetworkManagerRoutines = false
-	})
-}

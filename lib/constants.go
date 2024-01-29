@@ -43,10 +43,6 @@ const (
 	MessagesToFetchPerInboxCall = 10000
 )
 
-// DisableNetworkManagerRoutines is used to disable the network manager routines.
-// This is useful for testing.
-var DisableNetworkManagerRoutines = false
-
 type NodeMessage uint32
 
 const (
@@ -749,6 +745,9 @@ type DeSoParams struct {
 	// HandshakeTimeoutMicroSeconds is the timeout for the peer handshake certificate. The default value is 15 minutes.
 	HandshakeTimeoutMicroSeconds uint64
 
+	// DisableNetworkManagerRoutines is a testing flag that disables the network manager routines.
+	DisableNetworkManagerRoutines bool
+
 	ForkHeights ForkHeights
 
 	EncoderMigrationHeights     *EncoderMigrationHeights
@@ -1168,6 +1167,9 @@ var DeSoMainnetParams = DeSoParams{
 	// The peer handshake certificate timeout.
 	HandshakeTimeoutMicroSeconds: uint64(900000000),
 
+	// DisableNetworkManagerRoutines is a testing flag that disables the network manager routines.
+	DisableNetworkManagerRoutines: false,
+
 	ForkHeights:                 MainnetForkHeights,
 	EncoderMigrationHeights:     GetEncoderMigrationHeights(&MainnetForkHeights),
 	EncoderMigrationHeightsList: GetEncoderMigrationHeightsList(&MainnetForkHeights),
@@ -1440,6 +1442,9 @@ var DeSoTestnetParams = DeSoParams{
 
 	// The peer handshake certificate timeout.
 	HandshakeTimeoutMicroSeconds: uint64(900000000),
+
+	// DisableNetworkManagerRoutines is a testing flag that disables the network manager routines.
+	DisableNetworkManagerRoutines: false,
 
 	ForkHeights:                 TestnetForkHeights,
 	EncoderMigrationHeights:     GetEncoderMigrationHeights(&TestnetForkHeights),

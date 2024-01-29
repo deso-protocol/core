@@ -13,18 +13,16 @@ import (
 )
 
 func TestConnectionControllerInitiatePersistentConnections(t *testing.T) {
-	require := require.New(t)
-
 	// NonValidator Node1 will set its --connect-ips to two non-validators node2 and node3,
 	// and two validators node4 and node5.
 	node1 := spawnNonValidatorNodeProtocol2(t, 18000, "node1")
 	node2 := spawnNonValidatorNodeProtocol2(t, 18001, "node2")
 	node3 := spawnNonValidatorNodeProtocol2(t, 18002, "node3")
 	blsPriv4, err := bls.NewPrivateKey()
-	require.NoError(err)
+	require.NoError(t, err)
 	node4 := spawnValidatorNodeProtocol2(t, 18003, "node4", blsPriv4)
 	blsPriv5, err := bls.NewPrivateKey()
-	require.NoError(err)
+	require.NoError(t, err)
 	node5 := spawnValidatorNodeProtocol2(t, 18004, "node5", blsPriv5)
 
 	node2 = startNode(t, node2)
@@ -56,7 +54,7 @@ func TestConnectionControllerInitiatePersistentConnections(t *testing.T) {
 
 	// Now try again with a validator node6, with connect-ips set to node2, node3, node4, node5.
 	blsPriv6, err := bls.NewPrivateKey()
-	require.NoError(err)
+	require.NoError(t, err)
 	node6 := spawnValidatorNodeProtocol2(t, 18005, "node6", blsPriv6)
 	node6.Config.ConnectIPs = []string{
 		node2.Listeners[0].Addr().String(),
@@ -95,8 +93,6 @@ func TestConnectionControllerNonValidatorCircularConnectIps(t *testing.T) {
 }
 
 func TestNetworkManagerPersistentConnectorReconnect(t *testing.T) {
-	require := require.New(t)
-
 	// Ensure that a node that is disconnected from a persistent connection will be reconnected to.
 	// Spawn three nodes: a non-validator node1, and node2, and a validator node3. Then set node1 connectIps
 	// to node2, node3, as well as a non-existing ip. Then we will stop node2, and wait for node1 to drop the
@@ -109,7 +105,7 @@ func TestNetworkManagerPersistentConnectorReconnect(t *testing.T) {
 
 	node2 := spawnNonValidatorNodeProtocol2(t, 18001, "node2")
 	blsPriv3, err := bls.NewPrivateKey()
-	require.NoError(err)
+	require.NoError(t, err)
 	node3 := spawnValidatorNodeProtocol2(t, 18002, "node3", blsPriv3)
 
 	node2 = startNode(t, node2)
@@ -150,27 +146,25 @@ func TestNetworkManagerPersistentConnectorReconnect(t *testing.T) {
 }
 
 func TestConnectionControllerValidatorConnector(t *testing.T) {
-	require := require.New(t)
-
 	// Spawn 5 validators node1, node2, node3, node4, node5 and two non-validators node6 and node7.
 	// All the validators are initially in the validator set. And later, node1 and node2 will be removed from the
 	// validator set. Then, make node3 inactive, and node2 active again. Then, make all the validators inactive.
 	// Make node6, and node7 connect-ips to all the validators.
 
 	blsPriv1, err := bls.NewPrivateKey()
-	require.NoError(err)
+	require.NoError(t, err)
 	node1 := spawnValidatorNodeProtocol2(t, 18000, "node1", blsPriv1)
 	blsPriv2, err := bls.NewPrivateKey()
-	require.NoError(err)
+	require.NoError(t, err)
 	node2 := spawnValidatorNodeProtocol2(t, 18001, "node2", blsPriv2)
 	blsPriv3, err := bls.NewPrivateKey()
-	require.NoError(err)
+	require.NoError(t, err)
 	node3 := spawnValidatorNodeProtocol2(t, 18002, "node3", blsPriv3)
 	blsPriv4, err := bls.NewPrivateKey()
-	require.NoError(err)
+	require.NoError(t, err)
 	node4 := spawnValidatorNodeProtocol2(t, 18003, "node4", blsPriv4)
 	blsPriv5, err := bls.NewPrivateKey()
-	require.NoError(err)
+	require.NoError(t, err)
 	node5 := spawnValidatorNodeProtocol2(t, 18004, "node5", blsPriv5)
 
 	node6 := spawnNonValidatorNodeProtocol2(t, 18005, "node6")
@@ -311,8 +305,6 @@ func TestConnectionControllerValidatorConnector(t *testing.T) {
 }
 
 func TestConnectionControllerValidatorInboundDeduplication(t *testing.T) {
-	require := require.New(t)
-
 	// Spawn a non-validator node1, and two validators node2, node3. The validator nodes will have the same public key.
 	// Node2 and node3 will not initially be in the validator set. First, node2 will start an outbound connection to
 	// node1. We wait until the node2 is re-indexed as non-validator by node1, and then we make node3 open an outbound
@@ -322,7 +314,7 @@ func TestConnectionControllerValidatorInboundDeduplication(t *testing.T) {
 
 	node1 := spawnNonValidatorNodeProtocol2(t, 18000, "node1")
 	blsPriv2, err := bls.NewPrivateKey()
-	require.NoError(err)
+	require.NoError(t, err)
 	node2 := spawnValidatorNodeProtocol2(t, 18001, "node2", blsPriv2)
 	node3 := spawnValidatorNodeProtocol2(t, 18002, "node3", blsPriv2)
 
@@ -331,7 +323,7 @@ func TestConnectionControllerValidatorInboundDeduplication(t *testing.T) {
 	node3 = startNode(t, node3)
 
 	cc2 := node2.Server.GetConnectionController()
-	require.NoError(cc2.CreateNonValidatorOutboundConnection(node1.Listeners[0].Addr().String()))
+	require.NoError(t, cc2.CreateNonValidatorOutboundConnection(node1.Listeners[0].Addr().String()))
 	// First wait for node2 to be indexed as a validator by node1.
 	waitForValidatorConnection(t, node1, node2)
 	// Now wait for node2 to be re-indexed as a non-validator.
@@ -340,7 +332,7 @@ func TestConnectionControllerValidatorInboundDeduplication(t *testing.T) {
 
 	// Now connect node3 to node1.
 	cc3 := node3.Server.GetConnectionController()
-	require.NoError(cc3.CreateNonValidatorOutboundConnection(node1.Listeners[0].Addr().String()))
+	require.NoError(t, cc3.CreateNonValidatorOutboundConnection(node1.Listeners[0].Addr().String()))
 	// First wait for node3 to be indexed as a validator by node1.
 	waitForValidatorConnection(t, node1, node3)
 	// Now wait for node3 to be re-indexed as a non-validator.
@@ -356,8 +348,6 @@ func TestConnectionControllerValidatorInboundDeduplication(t *testing.T) {
 }
 
 func TestConnectionControllerNonValidatorConnectorOutbound(t *testing.T) {
-	require := require.New(t)
-
 	// Spawn 6 non-validators node1, node2, node3, node4, node5, node6. Set node1's targetOutboundPeers to 3. Then make
 	// node1 create persistent outbound connections to node2, node3, and node4, as well as non-validator connections to
 	// node5 and node6.
@@ -383,8 +373,8 @@ func TestConnectionControllerNonValidatorConnectorOutbound(t *testing.T) {
 	node1 = startNode(t, node1)
 
 	cc := node1.Server.GetConnectionController()
-	require.NoError(cc.CreateNonValidatorOutboundConnection(node5.Listeners[0].Addr().String()))
-	require.NoError(cc.CreateNonValidatorOutboundConnection(node6.Listeners[0].Addr().String()))
+	require.NoError(t, cc.CreateNonValidatorOutboundConnection(node5.Listeners[0].Addr().String()))
+	require.NoError(t, cc.CreateNonValidatorOutboundConnection(node6.Listeners[0].Addr().String()))
 
 	waitForCountRemoteNodeIndexerHandshakeCompleted(t, node1, 3, 0, 3, 0)
 	waitForNonValidatorOutboundConnection(t, node1, node2)
@@ -393,14 +383,12 @@ func TestConnectionControllerNonValidatorConnectorOutbound(t *testing.T) {
 }
 
 func TestConnectionControllerNonValidatorConnectorInbound(t *testing.T) {
-	require := require.New(t)
-
 	// Spawn validators node1, node2, node3, node4, node5, node6. Also spawn non-validators node7, node8, node9, node10.
 	// Set node1's targetOutboundPeers to 0 and targetInboundPeers to 1. Then make node1 create outbound connections to
 	// node2, node3, and make node4, node5, node6 create inbound connections to node1. Then make node1 create outbound
 	// connections to node7, node8, and make node9, node10 create inbound connections to node1.
 	blsPriv1, err := bls.NewPrivateKey()
-	require.NoError(err)
+	require.NoError(t, err)
 	node1 := spawnValidatorNodeProtocol2(t, 18000, "node1", blsPriv1)
 	node1.Config.TargetOutboundPeers = 0
 	node1.Config.MaxInboundPeers = 1
@@ -409,23 +397,23 @@ func TestConnectionControllerNonValidatorConnectorInbound(t *testing.T) {
 	node1.Params.VersionNegotiationTimeout = 1 * time.Second
 
 	blsPriv2, err := bls.NewPrivateKey()
-	require.NoError(err)
+	require.NoError(t, err)
 	node2 := spawnValidatorNodeProtocol2(t, 18001, "node2", blsPriv2)
 	node2.Config.GlogV = 0
 	blsPriv3, err := bls.NewPrivateKey()
-	require.NoError(err)
+	require.NoError(t, err)
 	node3 := spawnValidatorNodeProtocol2(t, 18002, "node3", blsPriv3)
 	node3.Config.GlogV = 0
 	blsPriv4, err := bls.NewPrivateKey()
-	require.NoError(err)
+	require.NoError(t, err)
 	node4 := spawnValidatorNodeProtocol2(t, 18003, "node4", blsPriv4)
 	node4.Config.GlogV = 0
 	blsPriv5, err := bls.NewPrivateKey()
-	require.NoError(err)
+	require.NoError(t, err)
 	node5 := spawnValidatorNodeProtocol2(t, 18004, "node5", blsPriv5)
 	node5.Config.GlogV = 0
 	blsPriv6, err := bls.NewPrivateKey()
-	require.NoError(err)
+	require.NoError(t, err)
 	node6 := spawnValidatorNodeProtocol2(t, 18005, "node6", blsPriv6)
 	node6.Config.GlogV = 0
 
@@ -447,23 +435,23 @@ func TestConnectionControllerNonValidatorConnectorInbound(t *testing.T) {
 
 	// Connect node1 to node2, node3, node7, and node8.
 	cc1 := node1.Server.GetConnectionController()
-	require.NoError(cc1.CreateNonValidatorOutboundConnection(node2.Listeners[0].Addr().String()))
-	require.NoError(cc1.CreateNonValidatorOutboundConnection(node3.Listeners[0].Addr().String()))
-	require.NoError(cc1.CreateNonValidatorOutboundConnection(node7.Listeners[0].Addr().String()))
-	require.NoError(cc1.CreateNonValidatorOutboundConnection(node8.Listeners[0].Addr().String()))
+	require.NoError(t, cc1.CreateNonValidatorOutboundConnection(node2.Listeners[0].Addr().String()))
+	require.NoError(t, cc1.CreateNonValidatorOutboundConnection(node3.Listeners[0].Addr().String()))
+	require.NoError(t, cc1.CreateNonValidatorOutboundConnection(node7.Listeners[0].Addr().String()))
+	require.NoError(t, cc1.CreateNonValidatorOutboundConnection(node8.Listeners[0].Addr().String()))
 	// Connect node4, node5, node6 to node1.
 	cc4 := node4.Server.GetConnectionController()
-	require.NoError(cc4.CreateNonValidatorOutboundConnection(node1.Listeners[0].Addr().String()))
+	require.NoError(t, cc4.CreateNonValidatorOutboundConnection(node1.Listeners[0].Addr().String()))
 	cc5 := node5.Server.GetConnectionController()
-	require.NoError(cc5.CreateNonValidatorOutboundConnection(node1.Listeners[0].Addr().String()))
+	require.NoError(t, cc5.CreateNonValidatorOutboundConnection(node1.Listeners[0].Addr().String()))
 	cc6 := node6.Server.GetConnectionController()
-	require.NoError(cc6.CreateNonValidatorOutboundConnection(node1.Listeners[0].Addr().String()))
+	require.NoError(t, cc6.CreateNonValidatorOutboundConnection(node1.Listeners[0].Addr().String()))
 
 	// Connect node9, node10 to node1.
 	cc9 := node9.Server.GetConnectionController()
-	require.NoError(cc9.CreateNonValidatorOutboundConnection(node1.Listeners[0].Addr().String()))
+	require.NoError(t, cc9.CreateNonValidatorOutboundConnection(node1.Listeners[0].Addr().String()))
 	cc10 := node10.Server.GetConnectionController()
-	require.NoError(cc10.CreateNonValidatorOutboundConnection(node1.Listeners[0].Addr().String()))
+	require.NoError(t, cc10.CreateNonValidatorOutboundConnection(node1.Listeners[0].Addr().String()))
 
 	activeValidatorsMap := getActiveValidatorsMapWithValidatorNodes(t, node1, node2, node3, node4, node5, node6)
 	setActiveValidators(activeValidatorsMap, node1, node2, node3, node4, node5, node6, node7, node8, node9, node10)
@@ -477,7 +465,6 @@ func TestConnectionControllerNonValidatorConnectorInbound(t *testing.T) {
 }
 
 func TestConnectionControllerNonValidatorConnectorAddressMgr(t *testing.T) {
-	require := require.New(t)
 	// Spawn a non-validator node1. Set node1's targetOutboundPeers to 2 and targetInboundPeers to 0. Then
 	// add two ip addresses to AddrMgr. Make sure that node1 creates outbound connections to these nodes.
 	node1 := spawnNonValidatorNodeProtocol2(t, 18000, "node1")
@@ -488,15 +475,13 @@ func TestConnectionControllerNonValidatorConnectorAddressMgr(t *testing.T) {
 	cc := node1.Server.GetConnectionController()
 	na1, err := cc.ConvertIPStringToNetAddress("deso-seed-2.io:17000")
 	na2, err := cc.ConvertIPStringToNetAddress("deso-seed-3.io:17000")
-	require.NoError(err)
+	require.NoError(t, err)
 	cc.AddrMgr.AddAddress(na1, na1)
 	cc.AddrMgr.AddAddress(na2, na2)
 	waitForCountRemoteNodeIndexer(t, node1, 2, 0, 2, 0)
 }
 
 func getActiveValidatorsMapWithValidatorNodes(t *testing.T, validators ...*cmd.Node) *collections.ConcurrentMap[bls.SerializedPublicKey, consensus.Validator] {
-	require := require.New(t)
-
 	mapping := collections.NewConcurrentMap[bls.SerializedPublicKey, consensus.Validator]()
 	for _, validator := range validators {
 		seed := validator.Config.PosValidatorSeed
@@ -504,7 +489,7 @@ func getActiveValidatorsMapWithValidatorNodes(t *testing.T, validators ...*cmd.N
 			t.Fatalf("Validator node %s does not have a PosValidatorSeed set", validator.Params.UserAgent)
 		}
 		keystore, err := lib.NewBLSKeystore(seed)
-		require.NoError(err)
+		require.NoError(t, err)
 		mapping.Set(keystore.GetSigner().GetPublicKey().Serialize(), createSimpleValidatorEntry(validator))
 	}
 	return mapping
