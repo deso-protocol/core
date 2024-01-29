@@ -1199,12 +1199,11 @@ func (pp *Peer) Start() {
 	// If the address manager needs more addresses, then send a GetAddr message
 	// to the peer. This is best-effort.
 	if pp.cmgr != nil {
-		// TODO: Move this to ConnectionController.
-		/*if pp.cmgr.AddrMgr.NeedMoreAddresses() {
+		if pp.srv.AddrMgr.NeedMoreAddresses() {
 			go func() {
 				pp.QueueMessage(&MsgDeSoGetAddr{})
 			}()
-		}*/
+		}
 	}
 
 	// Send our verack message now that the IO processing machinery has started.

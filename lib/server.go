@@ -63,9 +63,9 @@ type Server struct {
 	eventManager  *EventManager
 	TxIndex       *TXIndex
 
-	handshakeController *HandshakeController
+	handshakeController *HandshakeManager
 	// fastHotStuffEventLoop consensus.FastHotStuffEventLoop
-	connectionController *ConnectionController
+	connectionController *NetworkManager
 	// posMempool *PosMemPool TODO: Add the mempool later
 
 	params *DeSoParams
@@ -182,7 +182,7 @@ func (srv *Server) ResetRequestQueues() {
 	srv.requestedTransactionsMap = make(map[BlockHash]*GetDataRequestInfo)
 }
 
-func (srv *Server) GetConnectionController() *ConnectionController {
+func (srv *Server) GetConnectionController() *NetworkManager {
 	return srv.connectionController
 }
 
@@ -2330,9 +2330,9 @@ func (srv *Server) _handlePeerMessages(serverMessage *ServerMessage) {
 	case *MsgDeSoInv:
 		srv._handleInv(serverMessage.Peer, msg)
 	case *MsgDeSoVersion:
-		srv.handshakeController._handleVersionMessage(serverMessage.Peer, serverMessage.Msg)
+		srv.handshakeController.handleVersionMessage(serverMessage.Peer, serverMessage.Msg)
 	case *MsgDeSoVerack:
-		srv.handshakeController._handleVerackMessage(serverMessage.Peer, serverMessage.Msg)
+		srv.handshakeController.handleVerackMessage(serverMessage.Peer, serverMessage.Msg)
 	}
 }
 
@@ -2583,7 +2583,7 @@ func (srv *Server) Stop() {
 	glog.Infof(CLog(Yellow, "Server.Stop: Closed the ConnectionManger"))
 
 	srv.connectionController.Stop()
-	glog.Infof(CLog(Yellow, "Server.Stop: Closed the ConnectionController"))
+	glog.Infof(CLog(Yellow, "Server.Stop: Closed the NetworkManager"))
 
 	// Stop the miner if we have one running.
 	if srv.miner != nil {
