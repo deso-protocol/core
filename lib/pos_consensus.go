@@ -493,6 +493,12 @@ func (cc *FastHotStuffConsensus) HandleBlock(pp *Peer, msg *MsgDeSoBlock) error 
 
 	// If there are missing block hashes, then we need to fetch the missing blocks from the network
 	// and retry processing the block as a new tip. We'll request the blocks from the same peer.
+	//
+	// If we need to optimize this in the future, we can additionally send the block hash of our
+	// current committed tip. The peer can then send us all of the blocks that are missing starting
+	// from our current committed tip all the way through to the requested block hashes.
+	//
+	// See https://github.com/deso-protocol/core/pull/875#discussion_r1460183510 for more details.
 	if len(missingBlockHashes) > 0 {
 		pp.QueueMessage(&MsgDeSoGetBlocks{
 			HashList: missingBlockHashes,
