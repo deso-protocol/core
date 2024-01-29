@@ -87,11 +87,12 @@ func NewConnectionController(params *DeSoParams, cmgr *ConnectionManager, handsh
 }
 
 func (cc *ConnectionController) Start() {
-	cc.startGroup.Add(1)
+	cc.startGroup.Add(2)
 	go cc.startPersistentConnector()
+	go cc.startValidatorConnector()
 
 	cc.startGroup.Wait()
-	cc.exitGroup.Add(1)
+	cc.exitGroup.Add(2)
 }
 
 func (cc *ConnectionController) Stop() {
@@ -112,6 +113,26 @@ func (cc *ConnectionController) startPersistentConnector() {
 			return
 		case <-time.After(1 * time.Second):
 			cc.refreshConnectIps()
+		}
+	}
+}
+
+// startValidatorConnector is responsible for ensuring that the node is connected to all active validators. It does
+// this in two steps. First, it looks through the already established connections and checks if any of these connections
+// are validators. If they are, it adds them to the validator index. It also checks if any of the existing validators
+// are no longer active and removes them from the validator index. Second, it checks if any of the active validators
+// are missing from the validator index. If they are, it attempts to connect to them.
+func (cc *ConnectionController) startValidatorConnector() {
+	cc.startGroup.Done()
+	for {
+		select {
+		case <-cc.exitChan:
+			cc.exitGroup.Done()
+			return
+		case <-time.After(1 * time.Second):
+			activeValidatorsMap := GetActiveValidatorImpl()
+			cc.refreshValidatorIndex(activeValidatorsMap)
+			cc.connectValidators(activeValidatorsMap)
 		}
 	}
 }
@@ -228,6 +249,84 @@ func (cc *ConnectionController) refreshConnectIps() {
 		}
 
 		cc.persistentIpToRemoteNodeIdsMap[connectIp] = id
+	}
+}
+
+// ###########################
+// ## Validator Connections
+// ###########################
+
+// refreshValidatorIndex re-indexes validators based on the activeValidatorsMap. It is called periodically by the
+// validator connector.
+func (cc *ConnectionController) refreshValidatorIndex(activeValidatorsMap *collections.ConcurrentMap[bls.SerializedPublicKey, *ValidatorEntry]) {
+	// De-index inactive validators. We skip any checks regarding RemoteNodes connection status, nor do we verify whether
+	// de-indexing the validator would result in an excess number of outbound/inbound connections. Any excess connections
+	// will be cleaned up by the peer connector.
+	validatorRemoteNodeMap := cc.rnManager.GetValidatorIndex().Copy()
+	for pk, rn := range validatorRemoteNodeMap {
+		// If the validator is no longer active, de-index it.
+		if _, ok := activeValidatorsMap.Get(pk); !ok {
+			cc.rnManager.SetNonValidator(rn)
+			cc.rnManager.UnsetValidator(rn)
+		}
+	}
+
+	// Look for validators in our existing outbound / inbound connections.
+	allNonValidators := cc.rnManager.GetAllNonValidators()
+	for _, rn := range allNonValidators {
+		// It is possible for a RemoteNode to be in the non-validator indices, and still have a public key. This can happen
+		// if the RemoteNode advertised support for the SFValidator service flag during handshake, and provided us
+		// with a public key, and a corresponding proof of possession signature.
+		pk := rn.GetValidatorPublicKey()
+		if pk == nil {
+			continue
+		}
+		// It is possible that through unlikely concurrence, and malevolence, two non-validators happen to have the same
+		// public key, which goes undetected during handshake. To prevent this from affecting the indexing of the validator
+		// set, we check that the non-validator's public key is not already present in the validator index.
+		if _, ok := cc.rnManager.GetValidatorIndex().Get(pk.Serialize()); ok {
+			cc.rnManager.Disconnect(rn)
+			continue
+		}
+
+		// If the RemoteNode turns out to be in the validator set, index it.
+		if _, ok := activeValidatorsMap.Get(pk.Serialize()); ok {
+			cc.rnManager.SetValidator(rn)
+			cc.rnManager.UnsetNonValidator(rn)
+		}
+	}
+}
+
+// connectValidators attempts to connect to all active validators that are not already connected. It is called
+// periodically by the validator connector.
+func (cc *ConnectionController) connectValidators(activeValidatorsMap *collections.ConcurrentMap[bls.SerializedPublicKey, *ValidatorEntry]) {
+	// Look through the active validators and connect to any that we're not already connected to.
+	if cc.blsKeystore == nil {
+		return
+	}
+
+	validators := activeValidatorsMap.Copy()
+	for pk, validator := range validators {
+		_, exists := cc.rnManager.GetValidatorIndex().Get(pk)
+		// If we're already connected to the validator, continue.
+		if exists {
+			continue
+		}
+		if cc.blsKeystore.GetSigner().GetPublicKey().Serialize() == pk {
+			continue
+		}
+
+		publicKey, err := pk.Deserialize()
+		if err != nil {
+			continue
+		}
+
+		// For now, we only dial the first domain in the validator's domain list.
+		address := string(validator.Domains[0])
+		if err := cc.CreateValidatorConnection(address, publicKey); err != nil {
+			glog.V(2).Infof("ConnectionController.connectValidators: Problem connecting to validator %v: %v", address, err)
+			continue
+		}
 	}
 }
 
