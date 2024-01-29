@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"net"
+	"path/filepath"
 	"reflect"
 	"runtime"
 	"strings"
@@ -622,7 +623,9 @@ func NewServer(
 	// This can happen if the node was terminated mid-operation last time it was running. The recovery process rolls back
 	// blocks to the beginning of the current snapshot epoch and resets to the state checksum to the epoch checksum.
 	if shouldRestart {
-		stateChangeSyncer.Reset()
+		if stateChangeSyncer != nil {
+			stateChangeSyncer.Reset()
+		}
 		glog.Errorf(CLog(Red, "NewServer: Forcing a rollback to the last snapshot epoch because node was not closed "+
 			"properly last time"))
 		if err := _snapshot.ForceResetToLastSnapshot(_chain); err != nil {
@@ -1551,6 +1554,13 @@ func (srv *Server) dirtyHackUpdateDbOpts(opts badger.Options) {
 	srv.mempool.bc.db = srv.blockchain.db
 	srv.mempool.backupUniversalUtxoView.Handle = srv.blockchain.db
 	srv.mempool.universalUtxoView.Handle = srv.blockchain.db
+
+	// Save the new options to the DB so that we know what to use if the node restarts.
+	isPerformanceOptions := DbOptsArePerformance(&opts)
+	err = SaveBoolToFile(GetDbPerformanceOptionsFilePath(filepath.Dir(opts.ValueDir)), isPerformanceOptions)
+	if err != nil {
+		glog.Errorf("Server._handleSnapshot: Problem saving performance options to file, error: (%v)", err)
+	}
 }
 
 func (srv *Server) _startSync() {

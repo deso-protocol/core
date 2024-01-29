@@ -1,6 +1,7 @@
 package lib
 
 import (
+	"bufio"
 	"bytes"
 	"encoding/hex"
 	"fmt"
@@ -10,6 +11,7 @@ import (
 	"github.com/pkg/errors"
 	"github.com/unrolled/secure"
 	"math/big"
+	"os"
 	"reflect"
 	"sort"
 	"strings"
@@ -281,4 +283,44 @@ func DecodeStringUint64MapFromBytes(rr *bytes.Reader) (map[string]uint64, error)
 		mapToReturn[string(key)] = value
 	}
 	return mapToReturn, nil
+}
+
+// SaveBoolToFile saves a boolean value to a file.
+func SaveBoolToFile(filename string, value bool) error {
+	file, err := os.Create(filename)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+
+	writer := bufio.NewWriter(file)
+	_, err = writer.WriteString(fmt.Sprintf("%v", value))
+	if err != nil {
+		return err
+	}
+
+	return writer.Flush()
+}
+
+// ReadBool reads a boolean value from a file.
+// Returns an error if the file exists but can't be read properly.
+func ReadBoolFromFile(filename string) (bool, error) {
+	file, err := os.Open(filename)
+	if err != nil {
+		return false, err // Return an error if there's a problem opening the file
+	}
+	defer file.Close()
+
+	scanner := bufio.NewScanner(file)
+	// Scan the contents of the file, if there's anything to read.
+	// Interpret the contents as a boolean value.
+	if scanner.Scan() {
+		return strings.TrimSpace(scanner.Text()) == "true", nil
+	}
+
+	if err := scanner.Err(); err != nil {
+		return false, err // Return an error if there's a problem reading the file
+	}
+
+	return false, nil // Return false if there's no content to read
 }
