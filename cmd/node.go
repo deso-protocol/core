@@ -151,13 +151,35 @@ func (node *Node) Start(exitChannels ...*chan struct{}) {
 	// size.
 	//
 	// FIXME: We should rewrite the code so that PrefixBlockHashToUtxoOperations is either removed or written
-	// to badger in such a way as to not require the use of PerformanceBadgerOptions. Seet he comment on
+	// to badger in such a way as to not require the use of PerformanceBadgerOptions. See the comment on
 	// dirtyHackUpdateDbOpts.
-	if node.Config.HyperSync {
-		opts = lib.DefaultBadgerOptions(dbDir)
-	} else {
-		opts = lib.PerformanceBadgerOptions(dbDir)
+
+	// Check to see if this node has already been initialized with performance or default options.
+	// If so, we should continue to use those options.
+	// If not, it should be based on the sync type.
+	// The reason we do this check is because once a badger database is initialized with performance options,
+	// re-opening it with non-performance options results in a memory error panic. In order to prevent this transition
+	// from default -> performance -> default settings, we save the db options to a file. This takes the form of a
+	// boolean which indicates whether the db was initialized with performance options or not. Upon restart, if the
+	// file exists, we use the same options. If the file does not exist, we use the options based on the sync type.
+	performanceOptions, err := lib.DbInitializedWithPerformanceOptions(node.Config.DataDirectory)
+
+	// If the db options haven't yet been saved, we should base the options on the sync type.
+	if os.IsNotExist(err) {
+		performanceOptions = !node.Config.HyperSync
+		// Save the db options for future runs.
+		lib.SaveBoolToFile(lib.GetDbPerformanceOptionsFilePath(node.Config.DataDirectory), performanceOptions)
+	} else if err != nil {
+		// If we get an error other than "file does not exist", we should panic.
+		panic(err)
 	}
+
+	if performanceOptions {
+		opts = lib.PerformanceBadgerOptions(dbDir)
+	} else {
+		opts = lib.DefaultBadgerOptions(dbDir)
+	}
+
 	opts.ValueDir = dbDir
 	node.ChainDB, err = badger.Open(opts)
 	if err != nil {

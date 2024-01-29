@@ -5,13 +5,14 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"github.com/spf13/viper"
 	"io"
 	"math"
 	"math/big"
 	"reflect"
 	"sort"
 	"strings"
+
+	"github.com/spf13/viper"
 
 	"github.com/btcsuite/btcd/btcec"
 	"github.com/golang/glog"

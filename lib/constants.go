@@ -1612,6 +1612,9 @@ const MaxAssociationValueByteLength int = 256
 const AssociationTypeReservedPrefix = "DESO"
 const AssociationNullTerminator = byte(0)
 
+// The name of the txt file that contains whether the current Badger DB is using performance or default options.
+const PerformanceDbOptsFileName = "performance_db_opts.txt"
+
 // Constants used for staking rewards.
 const MaxBasisPoints = uint64(10000)                     // 1e4
 const NanoSecsPerYear = uint64(365) * 24 * 60 * 60 * 1e9 // 365 days * 24 hours * 60 minutes * 60 seconds * 1e9 nanoseconds
