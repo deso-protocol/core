@@ -10,7 +10,7 @@ import (
 	"math/big"
 	"math/rand"
 	"reflect"
-	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/btcsuite/btcd/wire"
@@ -31,9 +31,7 @@ type DeSoMiner struct {
 	BlockProducer *DeSoBlockProducer
 	params        *DeSoParams
 
-	startGroup sync.WaitGroup
-	exitChan   chan struct{}
-	exitGroup  sync.WaitGroup
+	stopping int32
 }
 
 func NewDeSoMiner(_minerPublicKeys []string, _numThreads uint32,
@@ -58,13 +56,11 @@ func NewDeSoMiner(_minerPublicKeys []string, _numThreads uint32,
 		numThreads:    _numThreads,
 		BlockProducer: _blockProducer,
 		params:        _params,
-		exitChan:      make(chan struct{}),
 	}, nil
 }
 
 func (desoMiner *DeSoMiner) Stop() {
-	close(desoMiner.exitChan)
-	desoMiner.exitGroup.Wait()
+	atomic.AddInt32(&desoMiner.stopping, 1)
 }
 
 func (desoMiner *DeSoMiner) _getBlockToMine(threadIndex uint32) (
@@ -95,6 +91,10 @@ func (desoMiner *DeSoMiner) _mineSingleBlock(threadIndex uint32) (_diffTarget *B
 	for {
 		// This provides a way for outside processes to pause the miner.
 		if len(desoMiner.PublicKeys) == 0 {
+			if atomic.LoadInt32(&desoMiner.stopping) == 1 {
+				glog.V(1).Infof("DeSoMiner._startThread: Stopping thread %d", threadIndex)
+				break
+			}
 			time.Sleep(1 * time.Second)
 			continue
 		}
@@ -128,6 +128,11 @@ func (desoMiner *DeSoMiner) _mineSingleBlock(threadIndex uint32) (_diffTarget *B
 		if err != nil {
 			// If there's an error just log it and break out.
 			glog.Error(errors.Wrapf(err, "DeSoMiner._startThread: Problem while mining: "))
+			break
+		}
+
+		if atomic.LoadInt32(&desoMiner.stopping) == 1 {
+			glog.V(1).Infof("DeSoMiner._startThread: Stopping thread %d", threadIndex)
 			break
 		}
 
@@ -262,30 +267,27 @@ func (desoMiner *DeSoMiner) MineAndProcessSingleBlock(threadIndex uint32, mempoo
 	diffTargetBigint := HashToBigint(diffTarget)
 	glog.V(1).Infof("Difficulty factor (1 = 1 core running): %v", float32(big.NewInt(0).Div(diffTargetBaselineBigint, diffTargetBigint).Int64())/float32(decimalPlaces))
 
+	if atomic.LoadInt32(&desoMiner.stopping) == 1 {
+		return nil, fmt.Errorf("DeSoMiner._startThread: Stopping thread %d", threadIndex)
+	}
+
 	return blockToMine, nil
 }
 
 func (desoMiner *DeSoMiner) _startThread(threadIndex uint32) {
-	desoMiner.startGroup.Done()
-	defer desoMiner.exitGroup.Done()
 	for {
-		select {
-		case <-desoMiner.exitChan:
-			return
-		default:
-			if desoMiner.BlockProducer.chain.chainState() != SyncStateFullyCurrent {
-				time.Sleep(1 * time.Second)
-				continue
-			}
+		if desoMiner.BlockProducer.chain.chainState() != SyncStateFullyCurrent {
+			time.Sleep(1 * time.Second)
+			continue
+		}
 
-			newBlock, err := desoMiner.MineAndProcessSingleBlock(threadIndex, nil /*mempoolToUpdate*/)
-			if err != nil {
-				glog.Errorf(err.Error())
-			}
-			isFinished := (newBlock == nil)
-			if isFinished {
-				return
-			}
+		newBlock, err := desoMiner.MineAndProcessSingleBlock(threadIndex, nil /*mempoolToUpdate*/)
+		if err != nil {
+			glog.Errorf(err.Error())
+		}
+		isFinished := (newBlock == nil)
+		if isFinished {
+			return
 		}
 	}
 }
@@ -303,12 +305,11 @@ func (desoMiner *DeSoMiner) Start() {
 		blockTip.Header.Height, BigintToHash(blockTip.CumWork), blockTip.DifficultyTarget)
 	// Start a bunch of threads to mine for blocks.
 	for threadIndex := uint32(0); threadIndex < desoMiner.numThreads; threadIndex++ {
-		desoMiner.startGroup.Add(1)
-		desoMiner.exitGroup.Add(1)
-		glog.V(1).Infof("DeSoMiner.Start: Starting thread %d", threadIndex)
-		go desoMiner._startThread(threadIndex)
+		go func(threadIndex uint32) {
+			glog.V(1).Infof("DeSoMiner.Start: Starting thread %d", threadIndex)
+			desoMiner._startThread(threadIndex)
+		}(threadIndex)
 	}
-	desoMiner.startGroup.Wait()
 }
 
 func CopyBytesIntoBlockHash(data []byte) *BlockHash {

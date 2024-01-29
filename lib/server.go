@@ -11,7 +11,7 @@ import (
 	"reflect"
 	"runtime"
 	"strings"
-	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/decred/dcrd/lru"
@@ -90,6 +90,13 @@ type Server struct {
 	// so that we only send a reply to the first peer that sent us the inv, which
 	// is more efficient.
 	inventoryBeingProcessed lru.Cache
+	// hasRequestedSync indicates whether we've bootstrapped our mempool
+	// by requesting all mempool transactions from a
+	// peer. It's initially false
+	// when the server boots up but gets set to true after we make a Mempool
+	// request once we're fully synced.
+	// The waitGroup is used to manage the cleanup of the Server.
+	waitGroup deadlock.WaitGroup
 
 	// During initial block download, we request headers and blocks from a single
 	// peer. Note: These fields should only be accessed from the messageHandler thread.
@@ -149,13 +156,10 @@ type Server struct {
 	// It is basically a backlink to the node that calls Stop() and Start().
 	nodeMessageChannel chan NodeMessage
 
+	shutdown int32
 	// timer is a helper variable that allows timing events for development purposes.
 	// It can be used to find computational bottlenecks.
 	timer *Timer
-
-	startGroup sync.WaitGroup
-	exitGroup  sync.WaitGroup
-	exitChan   chan struct{}
 
 	stateChangeSyncer *StateChangeSyncer
 	// DbMutex protects the badger database from concurrent access when it's being closed & re-opened.
@@ -438,7 +442,6 @@ func NewServer(
 		snapshot:                     _snapshot,
 		nodeMessageChannel:           _nodeMessageChan,
 		forceChecksum:                _forceChecksum,
-		exitChan:                     make(chan struct{}),
 	}
 
 	if stateChangeSyncer != nil {
@@ -548,6 +551,9 @@ func NewServer(
 		if err != nil {
 			panic(err)
 		}
+		go func() {
+			_blockProducer.Start()
+		}()
 	}
 
 	// TODO(miner): Make the miner its own binary and pull it out of here.
@@ -581,6 +587,11 @@ func NewServer(
 	// TODO: Make this configurable
 	//srv.Notifier = NewNotifier(_chain, postgres)
 	//srv.Notifier.Start()
+
+	// Start statsd reporter
+	if srv.statsdClient != nil {
+		srv.StartStatsdReporter()
+	}
 
 	// Initialize the addrs to broadcast map.
 	srv.addrsToBroadcast = make(map[string][]*SingleAddr)
@@ -2139,27 +2150,29 @@ func (srv *Server) _handleMempool(pp *Peer, msg *MsgDeSoMempool) {
 }
 
 func (srv *Server) StartStatsdReporter() {
-	srv.startGroup.Done()
-	for {
-		select {
-		case <-srv.exitChan:
-			srv.exitGroup.Done()
-			return
-		case <-time.After(5 * time.Second):
-			tags := []string{}
+	go func() {
+	out:
+		for {
+			select {
+			case <-time.After(5 * time.Second):
+				tags := []string{}
 
-			// Report mempool size
-			mempoolTotal := len(srv.mempool.readOnlyUniversalTransactionList)
-			srv.statsdClient.Gauge("MEMPOOL.COUNT", float64(mempoolTotal), tags, 1)
+				// Report mempool size
+				mempoolTotal := len(srv.mempool.readOnlyUniversalTransactionList)
+				srv.statsdClient.Gauge("MEMPOOL.COUNT", float64(mempoolTotal), tags, 1)
 
-			// Report block + headers height
-			blocksHeight := srv.blockchain.BlockTip().Height
-			srv.statsdClient.Gauge("BLOCKS.HEIGHT", float64(blocksHeight), tags, 1)
+				// Report block + headers height
+				blocksHeight := srv.blockchain.BlockTip().Height
+				srv.statsdClient.Gauge("BLOCKS.HEIGHT", float64(blocksHeight), tags, 1)
 
-			headersHeight := srv.blockchain.HeaderTip().Height
-			srv.statsdClient.Gauge("HEADERS.HEIGHT", float64(headersHeight), tags, 1)
+				headersHeight := srv.blockchain.HeaderTip().Height
+				srv.statsdClient.Gauge("HEADERS.HEIGHT", float64(headersHeight), tags, 1)
+
+			case <-srv.mempool.quit:
+				break out
+			}
 		}
-	}
+	}()
 }
 
 func (srv *Server) _handleAddrMessage(origin *Peer, desoMsg DeSoMessage) {
@@ -2395,18 +2408,20 @@ func (srv *Server) _handleFastHostStuffConsensusEvent(event *consensus.FastHotSt
 // - It listens to consensus events from the Fast HostStuff consensus engine. The consensus signals when
 // it's ready to vote, timeout, propose a block, or propose an empty block with a timeout QC.
 func (srv *Server) _startConsensus() {
-	srv.startGroup.Done()
-	defer srv.exitGroup.Done()
 	for {
+		// This is used instead of the shouldQuit control message exist mechanism below. shouldQuit will be true only
+		// when all incoming messages have been processed, on the other hand this shutdown will quit immediately.
+		if atomic.LoadInt32(&srv.shutdown) >= 1 {
+			break
+		}
+
 		select {
-		case <-srv.exitChan:
-			glog.V(2).Info("Server._startConsensus: Stopping")
-			return
 		// case consensusEvent := <-srv.fastHotStuffEventLoop.GetEvents():
 		// 	{
 		// 		glog.Infof("Server._startConsensus: Received consensus event for block height: %v", consensusEvent.TipBlockHeight)
 		// 		srv._handleFastHostStuffConsensusEvent(consensusEvent)
 		// 	}
+
 		case serverMessage := <-srv.incomingMessages:
 			{
 				// There is an incoming network message from a peer.
@@ -2420,12 +2435,17 @@ func (srv *Server) _startConsensus() {
 				// Peer's inHandler so any control message we get at this point should be bona fide.
 				shouldQuit := srv._handleControlMessages(serverMessage)
 				if shouldQuit {
-					return
+					break
 				}
 			}
 
 		}
 	}
+
+	// If we broke out of the select statement then it's time to allow things to
+	// clean up.
+	srv.waitGroup.Done()
+	glog.V(2).Info("Server.Start: Server done")
 }
 
 func (srv *Server) getAddrsToBroadcast() []*SingleAddr {
@@ -2470,91 +2490,81 @@ func (srv *Server) getAddrsToBroadcast() []*SingleAddr {
 // Must be run inside a goroutine. Relays addresses to peers at regular intervals
 // and relays our own address to peers once every 24 hours.
 func (srv *Server) _startAddressRelayer() {
-	srv.startGroup.Done()
-	numMinutesPassed := 0
-	for {
-		select {
-		case <-srv.exitChan:
-			srv.exitGroup.Done()
-			return
-		case <-time.After(AddrRelayIntervalSeconds * time.Second):
-			// For the first ten minutes after the connection controller starts, relay our address to all
-			// peers. After the first ten minutes, do it once every 24 hours.
-			glog.V(1).Infof("Server.startAddressRelayer: Relaying our own addr to peers")
-			remoteNodes := srv.connectionController.rnManager.GetAllRemoteNodes().GetAll()
-			if numMinutesPassed < 10 || numMinutesPassed%(RebroadcastNodeAddrIntervalMinutes) == 0 {
-				for _, rn := range remoteNodes {
-					if !rn.IsHandshakeCompleted() {
-						continue
-					}
-					netAddr := rn.GetNetAddress()
-					if netAddr == nil {
-						continue
-					}
-					bestAddress := srv.AddrMgr.GetBestLocalAddress(netAddr)
-					if bestAddress != nil {
-						glog.V(2).Infof("Server.startAddressRelayer: Relaying address %v to "+
-							"RemoteNode (id= %v)", bestAddress.IP.String(), rn.GetId())
-						if err := rn.SendMessage(&MsgDeSoAddr{
-							AddrList: []*SingleAddr{
-								{
-									Timestamp: time.Now(),
-									IP:        bestAddress.IP,
-									Port:      bestAddress.Port,
-									Services:  (ServiceFlag)(bestAddress.Services),
-								},
-							},
-						}); err != nil {
-							glog.Errorf("Server.startAddressRelayer: Problem sending "+
-								"MsgDeSoAddr to RemoteNode (id= %v): %v", rn.GetId(), err)
-						}
-					}
-				}
-			}
-
-			glog.V(2).Infof("Server.startAddressRelayer: Seeing if there are addrs to relay...")
-			// Broadcast the addrs we have to all of our peers.
-			addrsToBroadcast := srv.getAddrsToBroadcast()
-			if len(addrsToBroadcast) == 0 {
-				glog.V(2).Infof("Server.startAddressRelayer: No addrs to relay.")
-				continue
-			}
-
-			glog.V(2).Infof("Server.startAddressRelayer: Found %d addrs to "+
-				"relay: %v", len(addrsToBroadcast), spew.Sdump(addrsToBroadcast))
-			// Iterate over all our peers and broadcast the addrs to all of them.
+	for numMinutesPassed := 0; ; numMinutesPassed++ {
+		if atomic.LoadInt32(&srv.shutdown) >= 1 {
+			break
+		}
+		// For the first ten minutes after the connection controller starts, relay our address to all
+		// peers. After the first ten minutes, do it once every 24 hours.
+		glog.V(1).Infof("Server.startAddressRelayer: Relaying our own addr to peers")
+		remoteNodes := srv.connectionController.rnManager.GetAllRemoteNodes().GetAll()
+		if numMinutesPassed < 10 || numMinutesPassed%(RebroadcastNodeAddrIntervalMinutes) == 0 {
 			for _, rn := range remoteNodes {
 				if !rn.IsHandshakeCompleted() {
 					continue
 				}
-				if err := rn.SendMessage(&MsgDeSoAddr{
-					AddrList: addrsToBroadcast,
-				}); err != nil {
-					glog.Errorf("Server.startAddressRelayer: Problem sending "+
-						"MsgDeSoAddr to RemoteNode (id= %v): %v", rn.GetId(), err)
+				netAddr := rn.GetNetAddress()
+				if netAddr == nil {
+					continue
+				}
+				bestAddress := srv.AddrMgr.GetBestLocalAddress(netAddr)
+				if bestAddress != nil {
+					glog.V(2).Infof("Server.startAddressRelayer: Relaying address %v to "+
+						"RemoteNode (id= %v)", bestAddress.IP.String(), rn.GetId())
+					if err := rn.SendMessage(&MsgDeSoAddr{
+						AddrList: []*SingleAddr{
+							{
+								Timestamp: time.Now(),
+								IP:        bestAddress.IP,
+								Port:      bestAddress.Port,
+								Services:  (ServiceFlag)(bestAddress.Services),
+							},
+						},
+					}); err != nil {
+						glog.Errorf("Server.startAddressRelayer: Problem sending "+
+							"MsgDeSoAddr to RemoteNode (id= %v): %v", rn.GetId(), err)
+					}
 				}
 			}
-			numMinutesPassed++
 		}
+
+		glog.V(2).Infof("Server.startAddressRelayer: Seeing if there are addrs to relay...")
+		// Broadcast the addrs we have to all of our peers.
+		addrsToBroadcast := srv.getAddrsToBroadcast()
+		if len(addrsToBroadcast) == 0 {
+			glog.V(2).Infof("Server.startAddressRelayer: No addrs to relay.")
+			time.Sleep(AddrRelayIntervalSeconds * time.Second)
+			continue
+		}
+
+		glog.V(2).Infof("Server.startAddressRelayer: Found %d addrs to "+
+			"relay: %v", len(addrsToBroadcast), spew.Sdump(addrsToBroadcast))
+		// Iterate over all our peers and broadcast the addrs to all of them.
+		for _, rn := range remoteNodes {
+			if !rn.IsHandshakeCompleted() {
+				continue
+			}
+			if err := rn.SendMessage(&MsgDeSoAddr{
+				AddrList: addrsToBroadcast,
+			}); err != nil {
+				glog.Errorf("Server.startAddressRelayer: Problem sending "+
+					"MsgDeSoAddr to RemoteNode (id= %v): %v", rn.GetId(), err)
+			}
+		}
+		time.Sleep(AddrRelayIntervalSeconds * time.Second)
+		continue
 	}
 }
 
 func (srv *Server) _startTransactionRelayer() {
-	srv.startGroup.Done()
-	defer srv.exitGroup.Done()
 	// If we've set a maximum sync height, we will not relay transactions.
 	if srv.blockchain.MaxSyncBlockHeight > 0 {
 		return
 	}
 
 	for {
-		select {
-		case <-srv.exitChan:
-			return
-		default:
-			// Just continuously relay transactions to peers that don't have them.
-			srv._relayTransactions()
-		}
+		// Just continuously relay transactions to peers that don't have them.
+		srv._relayTransactions()
 	}
 }
 
@@ -2563,8 +2573,7 @@ func (srv *Server) Stop() {
 
 	// Iterate through all the peers and flush their logs before we quit.
 	glog.Info("Server.Stop: Flushing logs for all peers")
-	close(srv.exitChan)
-	srv.exitGroup.Wait()
+	atomic.AddInt32(&srv.shutdown, 1)
 
 	// Stop the ConnectionManager
 	srv.cmgr.Stop()
@@ -2604,7 +2613,9 @@ func (srv *Server) Stop() {
 
 	// Stop the block producer
 	if srv.blockProducer != nil {
-		srv.blockProducer.Stop()
+		if srv.blockchain.MaxSyncBlockHeight == 0 {
+			srv.blockProducer.Stop()
+		}
 		glog.Infof(CLog(Yellow, "Server.Stop: Closed BlockProducer"))
 	}
 
@@ -2620,6 +2631,8 @@ func (srv *Server) Stop() {
 	}()
 
 	// Wait for the server to fully shut down.
+	// TODO: shouldn't we wait for all modules to shutdown?
+	srv.waitGroup.Wait()
 	glog.Info("Server.Stop: Successfully shut down Server")
 }
 
@@ -2634,31 +2647,22 @@ func (srv *Server) Start() {
 	// Start the Server so that it will be ready to process messages once the ConnectionManager
 	// finds some Peers.
 	glog.Info("Server.Start: Starting Server")
+	srv.waitGroup.Add(1)
 
-	srv.startGroup.Add(3)
-	srv.exitGroup.Add(3)
 	go srv._startConsensus()
+
 	go srv._startAddressRelayer()
+
 	go srv._startTransactionRelayer()
-	// Start statsd reporter
-	if srv.statsdClient != nil {
-		srv.startGroup.Add(1)
-		srv.exitGroup.Add(1)
-		go srv.StartStatsdReporter()
-	}
-	srv.startGroup.Wait()
+
 	// Once the ConnectionManager is started, peers will be found and connected to and
 	// messages will begin to flow in to be processed.
-	if srv.blockProducer != nil {
-		srv.blockProducer.Start()
-	}
-
 	if !srv.DisableNetworking {
-		srv.cmgr.Start()
+		go srv.cmgr.Start()
 	}
 
 	if srv.miner != nil && len(srv.miner.PublicKeys) > 0 {
-		srv.miner.Start()
+		go srv.miner.Start()
 	}
 
 	srv.connectionController.Start()
