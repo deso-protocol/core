@@ -997,17 +997,6 @@ type UtxoOperation struct {
 	StakeAmountNanosDiff uint64
 }
 
-// FIXME: This hackIsRunningStateSyncer() call is a hack to get around the fact that
-// we don't have a way to not require a resync while introducing the state change
-// metadata to the utxo operation struct. We don't want to use a block height to gate
-// this because we want to be able to get state change metadata for ALL transactions.
-// We should replace this with a more elegant solution, a better hack, or bundle it
-// in with a release that requires a resync anyway. We should remove this function
-// when we have a better solution in place.
-func hackIsRunningStateSyncer() bool {
-	return viper.GetString("state-change-dir") != ""
-}
-
 func (op *UtxoOperation) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte {
 	var data []byte
 	// Type
