@@ -1370,7 +1370,7 @@ func (op *UtxoOperation) RawEncodeWithoutMetadata(blockHeight uint64, skipMetada
 		data = append(data, EncodeToBytes(blockHeight, op.PrevLockupYieldCurvePoint, skipMetadata...)...)
 		data = append(data, byte(op.PrevLockupTransferRestriction))
 
-		// PrevSenderLockedBalanceEntry, PrevReceiverL*ockedBalanceEntry
+		// PrevSenderLockedBalanceEntry, PrevReceiverLockedBalanceEntry
 		data = append(data, EncodeToBytes(blockHeight, op.PrevSenderLockedBalanceEntry, skipMetadata...)...)
 		data = append(data, EncodeToBytes(blockHeight, op.PrevReceiverLockedBalanceEntry, skipMetadata...)...)
 
