@@ -4,6 +4,7 @@ import (
 	"github.com/deso-protocol/core/bls"
 	"github.com/deso-protocol/core/lib"
 	"github.com/stretchr/testify/require"
+	"github.com/tyler-smith/go-bip39"
 	"testing"
 )
 
@@ -27,9 +28,9 @@ func TestConnectionControllerNonValidator(t *testing.T) {
 	t.Logf("Test #1 passed | Successfully created outbound connection from NonValidator Node1 to NonValidator Node2")
 
 	// Make sure NonValidator Node1 can create an outbound connection to validator Node3
-	blsPriv3, err := bls.NewPrivateKey()
+	blsSeedPhrase3, err := bip39.NewMnemonic(lib.RandomBytes(32))
 	require.NoError(t, err)
-	node3 := spawnValidatorNodeProtocol2(t, 18002, "node3", blsPriv3)
+	node3 := spawnValidatorNodeProtocol2(t, 18002, "node3", blsSeedPhrase3)
 	node3.Params.DisableNetworkManagerRoutines = true
 	node3 = startNode(t, node3)
 
@@ -43,9 +44,9 @@ func TestConnectionControllerNonValidator(t *testing.T) {
 	t.Logf("Test #2 passed | Successfully created outbound connection from NonValidator Node1 to Validator Node3")
 
 	// Make sure NonValidator Node1 can create a non-validator connection to validator Node4
-	blsPriv4, err := bls.NewPrivateKey()
+	blsSeedPhrase4, err := bip39.NewMnemonic(lib.RandomBytes(32))
 	require.NoError(t, err)
-	node4 := spawnValidatorNodeProtocol2(t, 18003, "node4", blsPriv4)
+	node4 := spawnValidatorNodeProtocol2(t, 18003, "node4", blsSeedPhrase4)
 	node4.Params.DisableNetworkManagerRoutines = true
 	node4 = startNode(t, node4)
 
@@ -57,17 +58,19 @@ func TestConnectionControllerNonValidator(t *testing.T) {
 }
 
 func TestConnectionControllerValidator(t *testing.T) {
-	blsPriv1, err := bls.NewPrivateKey()
+	blsSeedPhrase1, err := bip39.NewMnemonic(lib.RandomBytes(32))
 	require.NoError(t, err)
-	node1 := spawnValidatorNodeProtocol2(t, 18000, "node1", blsPriv1)
+	node1 := spawnValidatorNodeProtocol2(t, 18000, "node1", blsSeedPhrase1)
 	node1.Params.DisableNetworkManagerRoutines = true
 	node1 = startNode(t, node1)
 
 	// Make sure Validator Node1 can create an outbound connection to Validator Node2
-	blsPriv2, err := bls.NewPrivateKey()
-	blsPub2 := blsPriv2.PublicKey()
+	blsSeedPhrase2, err := bip39.NewMnemonic(lib.RandomBytes(32))
 	require.NoError(t, err)
-	node2 := spawnValidatorNodeProtocol2(t, 18001, "node2", blsPriv2)
+	blsKeyStore2, err := lib.NewBLSKeystore(blsSeedPhrase2)
+	require.NoError(t, err)
+	blsPub2 := blsKeyStore2.GetSigner().GetPublicKey()
+	node2 := spawnValidatorNodeProtocol2(t, 18001, "node2", blsSeedPhrase2)
 	node2.Params.DisableNetworkManagerRoutines = true
 	node2 = startNode(t, node2)
 
@@ -95,9 +98,9 @@ func TestConnectionControllerValidator(t *testing.T) {
 	t.Logf("Test #2 passed | Successfully created outbound connection from Validator Node1 to NonValidator Node3")
 
 	// Make sure Validator Node1 can create an outbound non-validator connection to Validator Node4
-	blsPriv4, err := bls.NewPrivateKey()
+	blsSeedPhrase4, err := bip39.NewMnemonic(lib.RandomBytes(32))
 	require.NoError(t, err)
-	node4 := spawnValidatorNodeProtocol2(t, 18003, "node4", blsPriv4)
+	node4 := spawnValidatorNodeProtocol2(t, 18003, "node4", blsSeedPhrase4)
 	node4.Params.DisableNetworkManagerRoutines = true
 	node4 = startNode(t, node4)
 
@@ -109,15 +112,15 @@ func TestConnectionControllerValidator(t *testing.T) {
 }
 
 func TestConnectionControllerHandshakeDataErrors(t *testing.T) {
-	blsPriv1, err := bls.NewPrivateKey()
+	blsSeedPhrase1, err := bip39.NewMnemonic(lib.RandomBytes(32))
 	require.NoError(t, err)
-	node1 := spawnValidatorNodeProtocol2(t, 18000, "node1", blsPriv1)
+	node1 := spawnValidatorNodeProtocol2(t, 18000, "node1", blsSeedPhrase1)
 	node1.Params.DisableNetworkManagerRoutines = true
 
 	// This node should have ProtocolVersion2, but it has ProtocolVersion1 as we want it to disconnect.
-	blsPriv2, err := bls.NewPrivateKey()
+	blsSeedPhrase2, err := bip39.NewMnemonic(lib.RandomBytes(32))
 	require.NoError(t, err)
-	node2 := spawnValidatorNodeProtocol2(t, 18001, "node2", blsPriv2)
+	node2 := spawnValidatorNodeProtocol2(t, 18001, "node2", blsSeedPhrase2)
 	node2.Params.DisableNetworkManagerRoutines = true
 	node2.Params.ProtocolVersion = lib.ProtocolVersion1
 
@@ -131,9 +134,9 @@ func TestConnectionControllerHandshakeDataErrors(t *testing.T) {
 	t.Logf("Test #1 passed | Successfuly disconnected node with SFValidator flag and ProtocolVersion1 mismatch")
 
 	// This node shouldn't have ProtocolVersion3, which is beyond latest ProtocolVersion2, meaning nodes should disconnect.
-	blsPriv3, err := bls.NewPrivateKey()
+	blsSeedPhrase3, err := bip39.NewMnemonic(lib.RandomBytes(32))
 	require.NoError(t, err)
-	node3 := spawnValidatorNodeProtocol2(t, 18002, "node3", blsPriv3)
+	node3 := spawnValidatorNodeProtocol2(t, 18002, "node3", blsSeedPhrase3)
 	node3.Params.DisableNetworkManagerRoutines = true
 	node3.Params.ProtocolVersion = lib.ProtocolVersionType(3)
 	node3 = startNode(t, node3)
@@ -157,16 +160,18 @@ func TestConnectionControllerHandshakeDataErrors(t *testing.T) {
 	t.Logf("Test #3 passed | Successfuly disconnected node with ProtocolVersion0")
 
 	// This node will have a different public key than the one it's supposed to have.
-	blsPriv5, err := bls.NewPrivateKey()
+	blsSeedPhrase5, err := bip39.NewMnemonic(lib.RandomBytes(32))
 	require.NoError(t, err)
-	blsPriv5Wrong, err := bls.NewPrivateKey()
+	blsSeedPhrase5Wrong, err := bip39.NewMnemonic(lib.RandomBytes(32))
 	require.NoError(t, err)
-	node5 := spawnValidatorNodeProtocol2(t, 18004, "node5", blsPriv5)
+	blsKeyStore5Wrong, err := lib.NewBLSKeystore(blsSeedPhrase5Wrong)
+	require.NoError(t, err)
+	node5 := spawnValidatorNodeProtocol2(t, 18004, "node5", blsSeedPhrase5)
 	node5.Params.DisableNetworkManagerRoutines = true
 	node5 = startNode(t, node5)
 
 	cc = node1.Server.GetConnectionController()
-	require.NoError(t, cc.CreateValidatorConnection(node5.Listeners[0].Addr().String(), blsPriv5Wrong.PublicKey()))
+	require.NoError(t, cc.CreateValidatorConnection(node5.Listeners[0].Addr().String(), blsKeyStore5Wrong.GetSigner().GetPublicKey()))
 	waitForEmptyRemoteNodeIndexer(t, node1)
 	waitForEmptyRemoteNodeIndexer(t, node5)
 	t.Logf("Test #4 passed | Successfuly disconnected node with public key mismatch")
@@ -228,21 +233,23 @@ func TestConnectionControllerHandshakeTimeouts(t *testing.T) {
 	t.Logf("Test #2 passed | Successfuly disconnected node after verack exchange timeout")
 
 	// Now let's try timing out handshake between two validators node4 and node5
-	blsPriv4, err := bls.NewPrivateKey()
+	blsSeedPhrase4, err := bip39.NewMnemonic(lib.RandomBytes(32))
 	require.NoError(t, err)
-	node4 := spawnValidatorNodeProtocol2(t, 18003, "node4", blsPriv4)
+	node4 := spawnValidatorNodeProtocol2(t, 18003, "node4", blsSeedPhrase4)
 	node4.Params.DisableNetworkManagerRoutines = true
 	node4.Params.HandshakeTimeoutMicroSeconds = 0
 	node4 = startNode(t, node4)
 
-	blsPriv5, err := bls.NewPrivateKey()
+	blsSeedPhrase5, err := bip39.NewMnemonic(lib.RandomBytes(32))
 	require.NoError(t, err)
-	node5 := spawnValidatorNodeProtocol2(t, 18004, "node5", blsPriv5)
+	blsKeyStore5, err := lib.NewBLSKeystore(blsSeedPhrase5)
+	require.NoError(t, err)
+	node5 := spawnValidatorNodeProtocol2(t, 18004, "node5", blsSeedPhrase5)
 	node5.Params.DisableNetworkManagerRoutines = true
 	node5 = startNode(t, node5)
 
 	cc = node4.Server.GetConnectionController()
-	require.NoError(t, cc.CreateValidatorConnection(node5.Listeners[0].Addr().String(), blsPriv5.PublicKey()))
+	require.NoError(t, cc.CreateValidatorConnection(node5.Listeners[0].Addr().String(), blsKeyStore5.GetSigner().GetPublicKey()))
 	waitForEmptyRemoteNodeIndexer(t, node4)
 	waitForEmptyRemoteNodeIndexer(t, node5)
 	t.Logf("Test #3 passed | Successfuly disconnected validator node after handshake timeout")
@@ -254,22 +261,24 @@ func TestConnectionControllerValidatorDuplication(t *testing.T) {
 	node1 = startNode(t, node1)
 
 	// Create a validator Node2
-	blsPriv2, err := bls.NewPrivateKey()
+	blsSeedPhrase2, err := bip39.NewMnemonic(lib.RandomBytes(32))
 	require.NoError(t, err)
-	node2 := spawnValidatorNodeProtocol2(t, 18001, "node2", blsPriv2)
+	blsKeyStore2, err := lib.NewBLSKeystore(blsSeedPhrase2)
+	require.NoError(t, err)
+	node2 := spawnValidatorNodeProtocol2(t, 18001, "node2", blsSeedPhrase2)
 	node2.Params.DisableNetworkManagerRoutines = true
 	node2 = startNode(t, node2)
 
 	// Create a duplicate validator Node3
-	node3 := spawnValidatorNodeProtocol2(t, 18002, "node3", blsPriv2)
+	node3 := spawnValidatorNodeProtocol2(t, 18002, "node3", blsSeedPhrase2)
 	node3.Params.DisableNetworkManagerRoutines = true
 	node3 = startNode(t, node3)
 
 	// Create validator connection from Node1 to Node2 and from Node1 to Node3
 	cc := node1.Server.GetConnectionController()
-	require.NoError(t, cc.CreateValidatorConnection(node2.Listeners[0].Addr().String(), blsPriv2.PublicKey()))
+	require.NoError(t, cc.CreateValidatorConnection(node2.Listeners[0].Addr().String(), blsKeyStore2.GetSigner().GetPublicKey()))
 	// This should fail out right because Node3 has a duplicate public key.
-	require.Error(t, cc.CreateValidatorConnection(node3.Listeners[0].Addr().String(), blsPriv2.PublicKey()))
+	require.Error(t, cc.CreateValidatorConnection(node3.Listeners[0].Addr().String(), blsKeyStore2.GetSigner().GetPublicKey()))
 	waitForValidatorConnection(t, node1, node2)
 	waitForNonValidatorInboundConnection(t, node2, node1)
 
@@ -286,13 +295,13 @@ func TestConnectionControllerValidatorDuplication(t *testing.T) {
 	waitForEmptyRemoteNodeIndexer(t, node1)
 
 	// Create two more validators Node4, Node5 with duplicate public keys
-	blsPriv4, err := bls.NewPrivateKey()
+	blsSeedPhrase4, err := bip39.NewMnemonic(lib.RandomBytes(32))
 	require.NoError(t, err)
-	node4 := spawnValidatorNodeProtocol2(t, 18003, "node4", blsPriv4)
+	node4 := spawnValidatorNodeProtocol2(t, 18003, "node4", blsSeedPhrase4)
 	node4.Params.DisableNetworkManagerRoutines = true
 	node4 = startNode(t, node4)
 
-	node5 := spawnValidatorNodeProtocol2(t, 18004, "node5", blsPriv4)
+	node5 := spawnValidatorNodeProtocol2(t, 18004, "node5", blsSeedPhrase4)
 	node5.Params.DisableNetworkManagerRoutines = true
 	node5 = startNode(t, node5)
 
@@ -328,14 +337,16 @@ func TestConnectionControllerProtocolDifference(t *testing.T) {
 	t.Logf("Test #1 passed | Successfuly connected to a ProtocolVersion1 node with a ProtocolVersion2 non-validator")
 
 	// Create a ProtocolVersion2 Validator Node3
-	blsPriv3, err := bls.NewPrivateKey()
+	blsSeedPhrase3, err := bip39.NewMnemonic(lib.RandomBytes(32))
 	require.NoError(t, err)
-	node3 := spawnValidatorNodeProtocol2(t, 18002, "node3", blsPriv3)
+	blsKeyStore3, err := lib.NewBLSKeystore(blsSeedPhrase3)
+	require.NoError(t, err)
+	node3 := spawnValidatorNodeProtocol2(t, 18002, "node3", blsSeedPhrase3)
 	node3.Params.DisableNetworkManagerRoutines = true
 	node3 = startNode(t, node3)
 
 	// Create validator connection from Node1 to Node3
-	require.NoError(t, cc.CreateValidatorConnection(node3.Listeners[0].Addr().String(), blsPriv3.PublicKey()))
+	require.NoError(t, cc.CreateValidatorConnection(node3.Listeners[0].Addr().String(), blsKeyStore3.GetSigner().GetPublicKey()))
 	waitForValidatorConnection(t, node1, node3)
 	waitForNonValidatorInboundConnection(t, node3, node1)
 	t.Logf("Test #2 passed | Successfuly connected to a ProtocolVersion1 node with a ProtocolVersion2 validator")
@@ -345,9 +356,11 @@ func TestConnectionControllerProtocolDifference(t *testing.T) {
 	waitForEmptyRemoteNodeIndexer(t, node1)
 
 	// Create a ProtocolVersion2 validator Node4
-	blsPriv4, err := bls.NewPrivateKey()
+	blsSeedPhrase4, err := bip39.NewMnemonic(lib.RandomBytes(32))
 	require.NoError(t, err)
-	node4 := spawnValidatorNodeProtocol2(t, 18003, "node4", blsPriv4)
+	blsKeyStore4, err := lib.NewBLSKeystore(blsSeedPhrase4)
+	require.NoError(t, err)
+	node4 := spawnValidatorNodeProtocol2(t, 18003, "node4", blsSeedPhrase4)
 	node4.Params.DisableNetworkManagerRoutines = true
 	node4 = startNode(t, node4)
 
@@ -359,7 +372,7 @@ func TestConnectionControllerProtocolDifference(t *testing.T) {
 	t.Logf("Test #3 passed | Successfuly rejected outbound connection from ProtocolVersion2 node to ProtcolVersion1 node")
 
 	// Attempt to create validator connection from Node4 to Node1
-	require.NoError(t, cc.CreateValidatorConnection(node1.Listeners[0].Addr().String(), blsPriv4.PublicKey()))
+	require.NoError(t, cc.CreateValidatorConnection(node1.Listeners[0].Addr().String(), blsKeyStore4.GetSigner().GetPublicKey()))
 	waitForEmptyRemoteNodeIndexer(t, node4)
 	waitForEmptyRemoteNodeIndexer(t, node1)
 	t.Logf("Test #4 passed | Successfuly rejected validator connection from ProtocolVersion2 node to ProtcolVersion1 node")
@@ -384,9 +397,9 @@ func TestConnectionControllerPersistentConnection(t *testing.T) {
 	node1 = startNode(t, node1)
 
 	// Create a Validator Node2
-	blsPriv2, err := bls.NewPrivateKey()
+	blsSeedPhrase2, err := bip39.NewMnemonic(lib.RandomBytes(32))
 	require.NoError(t, err)
-	node2 := spawnValidatorNodeProtocol2(t, 18001, "node2", blsPriv2)
+	node2 := spawnValidatorNodeProtocol2(t, 18001, "node2", blsSeedPhrase2)
 	node2.Params.DisableNetworkManagerRoutines = true
 	node2 = startNode(t, node2)
 
@@ -416,9 +429,9 @@ func TestConnectionControllerPersistentConnection(t *testing.T) {
 	t.Logf("Test #2 passed | Successfuly created persistent connection from non-validator Node1 to non-validator Node3")
 
 	// Create a Validator Node4
-	blsPriv4, err := bls.NewPrivateKey()
+	blsSeedPhrase4, err := bip39.NewMnemonic(lib.RandomBytes(32))
 	require.NoError(t, err)
-	node4 := spawnValidatorNodeProtocol2(t, 18003, "node4", blsPriv4)
+	node4 := spawnValidatorNodeProtocol2(t, 18003, "node4", blsSeedPhrase4)
 	node4.Params.DisableNetworkManagerRoutines = true
 	node4 = startNode(t, node4)
 
@@ -438,9 +451,9 @@ func TestConnectionControllerPersistentConnection(t *testing.T) {
 	t.Logf("Test #3 passed | Successfuly created persistent connection from validator Node4 to non-validator Node5")
 
 	// Create a Validator Node6
-	blsPriv6, err := bls.NewPrivateKey()
+	blsSeedPhrase6, err := bip39.NewMnemonic(lib.RandomBytes(32))
 	require.NoError(t, err)
-	node6 := spawnValidatorNodeProtocol2(t, 18005, "node6", blsPriv6)
+	node6 := spawnValidatorNodeProtocol2(t, 18005, "node6", blsSeedPhrase6)
 	node6.Params.DisableNetworkManagerRoutines = true
 	node6 = startNode(t, node6)
 

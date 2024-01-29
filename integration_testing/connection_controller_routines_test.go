@@ -8,6 +8,7 @@ import (
 	"github.com/deso-protocol/core/consensus"
 	"github.com/deso-protocol/core/lib"
 	"github.com/stretchr/testify/require"
+	"github.com/tyler-smith/go-bip39"
 	"testing"
 	"time"
 )
@@ -18,12 +19,12 @@ func TestConnectionControllerInitiatePersistentConnections(t *testing.T) {
 	node1 := spawnNonValidatorNodeProtocol2(t, 18000, "node1")
 	node2 := spawnNonValidatorNodeProtocol2(t, 18001, "node2")
 	node3 := spawnNonValidatorNodeProtocol2(t, 18002, "node3")
-	blsPriv4, err := bls.NewPrivateKey()
+	blsSeedPhrase4, err := bip39.NewMnemonic(lib.RandomBytes(32))
 	require.NoError(t, err)
-	node4 := spawnValidatorNodeProtocol2(t, 18003, "node4", blsPriv4)
-	blsPriv5, err := bls.NewPrivateKey()
+	node4 := spawnValidatorNodeProtocol2(t, 18003, "node4", blsSeedPhrase4)
+	blsSeedPhrase5, err := bip39.NewMnemonic(lib.RandomBytes(32))
 	require.NoError(t, err)
-	node5 := spawnValidatorNodeProtocol2(t, 18004, "node5", blsPriv5)
+	node5 := spawnValidatorNodeProtocol2(t, 18004, "node5", blsSeedPhrase5)
 
 	node2 = startNode(t, node2)
 	node3 = startNode(t, node3)
@@ -53,9 +54,9 @@ func TestConnectionControllerInitiatePersistentConnections(t *testing.T) {
 	t.Logf("Test #1 passed | Successfully run non-validator node1 with --connect-ips set to node2, node3, node4, node5")
 
 	// Now try again with a validator node6, with connect-ips set to node2, node3, node4, node5.
-	blsPriv6, err := bls.NewPrivateKey()
+	blsSeedPhrase6, err := bip39.NewMnemonic(lib.RandomBytes(32))
 	require.NoError(t, err)
-	node6 := spawnValidatorNodeProtocol2(t, 18005, "node6", blsPriv6)
+	node6 := spawnValidatorNodeProtocol2(t, 18005, "node6", blsSeedPhrase6)
 	node6.Config.ConnectIPs = []string{
 		node2.Listeners[0].Addr().String(),
 		node3.Listeners[0].Addr().String(),
@@ -104,9 +105,9 @@ func TestNetworkManagerPersistentConnectorReconnect(t *testing.T) {
 	node1.Config.TargetOutboundPeers = 0
 
 	node2 := spawnNonValidatorNodeProtocol2(t, 18001, "node2")
-	blsPriv3, err := bls.NewPrivateKey()
+	blsSeedPhrase3, err := bip39.NewMnemonic(lib.RandomBytes(32))
 	require.NoError(t, err)
-	node3 := spawnValidatorNodeProtocol2(t, 18002, "node3", blsPriv3)
+	node3 := spawnValidatorNodeProtocol2(t, 18002, "node3", blsSeedPhrase3)
 
 	node2 = startNode(t, node2)
 	node3 = startNode(t, node3)
@@ -151,21 +152,21 @@ func TestConnectionControllerValidatorConnector(t *testing.T) {
 	// validator set. Then, make node3 inactive, and node2 active again. Then, make all the validators inactive.
 	// Make node6, and node7 connect-ips to all the validators.
 
-	blsPriv1, err := bls.NewPrivateKey()
+	blsSeedPhrase1, err := bip39.NewMnemonic(lib.RandomBytes(32))
 	require.NoError(t, err)
-	node1 := spawnValidatorNodeProtocol2(t, 18000, "node1", blsPriv1)
-	blsPriv2, err := bls.NewPrivateKey()
+	node1 := spawnValidatorNodeProtocol2(t, 18000, "node1", blsSeedPhrase1)
+	blsSeedPhrase2, err := bip39.NewMnemonic(lib.RandomBytes(32))
 	require.NoError(t, err)
-	node2 := spawnValidatorNodeProtocol2(t, 18001, "node2", blsPriv2)
-	blsPriv3, err := bls.NewPrivateKey()
+	node2 := spawnValidatorNodeProtocol2(t, 18001, "node2", blsSeedPhrase2)
+	blsSeedPhrase3, err := bip39.NewMnemonic(lib.RandomBytes(32))
 	require.NoError(t, err)
-	node3 := spawnValidatorNodeProtocol2(t, 18002, "node3", blsPriv3)
-	blsPriv4, err := bls.NewPrivateKey()
+	node3 := spawnValidatorNodeProtocol2(t, 18002, "node3", blsSeedPhrase3)
+	blsSeedPhrase4, err := bip39.NewMnemonic(lib.RandomBytes(32))
 	require.NoError(t, err)
-	node4 := spawnValidatorNodeProtocol2(t, 18003, "node4", blsPriv4)
-	blsPriv5, err := bls.NewPrivateKey()
+	node4 := spawnValidatorNodeProtocol2(t, 18003, "node4", blsSeedPhrase4)
+	blsSeedPhrase5, err := bip39.NewMnemonic(lib.RandomBytes(32))
 	require.NoError(t, err)
-	node5 := spawnValidatorNodeProtocol2(t, 18004, "node5", blsPriv5)
+	node5 := spawnValidatorNodeProtocol2(t, 18004, "node5", blsSeedPhrase5)
 
 	node6 := spawnNonValidatorNodeProtocol2(t, 18005, "node6")
 	node7 := spawnNonValidatorNodeProtocol2(t, 18006, "node7")
@@ -313,10 +314,10 @@ func TestConnectionControllerValidatorInboundDeduplication(t *testing.T) {
 	// either node2 or node3 because of duplicate public key.
 
 	node1 := spawnNonValidatorNodeProtocol2(t, 18000, "node1")
-	blsPriv2, err := bls.NewPrivateKey()
+	blsSeedPhrase2, err := bip39.NewMnemonic(lib.RandomBytes(32))
 	require.NoError(t, err)
-	node2 := spawnValidatorNodeProtocol2(t, 18001, "node2", blsPriv2)
-	node3 := spawnValidatorNodeProtocol2(t, 18002, "node3", blsPriv2)
+	node2 := spawnValidatorNodeProtocol2(t, 18001, "node2", blsSeedPhrase2)
+	node3 := spawnValidatorNodeProtocol2(t, 18002, "node3", blsSeedPhrase2)
 
 	node1 = startNode(t, node1)
 	node2 = startNode(t, node2)
@@ -387,34 +388,34 @@ func TestConnectionControllerNonValidatorConnectorInbound(t *testing.T) {
 	// Set node1's targetOutboundPeers to 0 and targetInboundPeers to 1. Then make node1 create outbound connections to
 	// node2, node3, and make node4, node5, node6 create inbound connections to node1. Then make node1 create outbound
 	// connections to node7, node8, and make node9, node10 create inbound connections to node1.
-	blsPriv1, err := bls.NewPrivateKey()
+	blsSeedPhrase1, err := bip39.NewMnemonic(lib.RandomBytes(32))
 	require.NoError(t, err)
-	node1 := spawnValidatorNodeProtocol2(t, 18000, "node1", blsPriv1)
+	node1 := spawnValidatorNodeProtocol2(t, 18000, "node1", blsSeedPhrase1)
 	node1.Config.TargetOutboundPeers = 0
 	node1.Config.MaxInboundPeers = 1
 	node1.Params.DialTimeout = 1 * time.Second
 	node1.Params.VerackNegotiationTimeout = 1 * time.Second
 	node1.Params.VersionNegotiationTimeout = 1 * time.Second
 
-	blsPriv2, err := bls.NewPrivateKey()
+	blsSeedPhrase2, err := bip39.NewMnemonic(lib.RandomBytes(32))
 	require.NoError(t, err)
-	node2 := spawnValidatorNodeProtocol2(t, 18001, "node2", blsPriv2)
+	node2 := spawnValidatorNodeProtocol2(t, 18001, "node2", blsSeedPhrase2)
 	node2.Config.GlogV = 0
-	blsPriv3, err := bls.NewPrivateKey()
+	blsSeedPhrase3, err := bip39.NewMnemonic(lib.RandomBytes(32))
 	require.NoError(t, err)
-	node3 := spawnValidatorNodeProtocol2(t, 18002, "node3", blsPriv3)
+	node3 := spawnValidatorNodeProtocol2(t, 18002, "node3", blsSeedPhrase3)
 	node3.Config.GlogV = 0
-	blsPriv4, err := bls.NewPrivateKey()
+	blsSeedPhrase4, err := bip39.NewMnemonic(lib.RandomBytes(32))
 	require.NoError(t, err)
-	node4 := spawnValidatorNodeProtocol2(t, 18003, "node4", blsPriv4)
+	node4 := spawnValidatorNodeProtocol2(t, 18003, "node4", blsSeedPhrase4)
 	node4.Config.GlogV = 0
-	blsPriv5, err := bls.NewPrivateKey()
+	blsSeedPhrase5, err := bip39.NewMnemonic(lib.RandomBytes(32))
 	require.NoError(t, err)
-	node5 := spawnValidatorNodeProtocol2(t, 18004, "node5", blsPriv5)
+	node5 := spawnValidatorNodeProtocol2(t, 18004, "node5", blsSeedPhrase5)
 	node5.Config.GlogV = 0
-	blsPriv6, err := bls.NewPrivateKey()
+	blsSeedPhrase6, err := bip39.NewMnemonic(lib.RandomBytes(32))
 	require.NoError(t, err)
-	node6 := spawnValidatorNodeProtocol2(t, 18005, "node6", blsPriv6)
+	node6 := spawnValidatorNodeProtocol2(t, 18005, "node6", blsSeedPhrase6)
 	node6.Config.GlogV = 0
 
 	node7 := spawnNonValidatorNodeProtocol2(t, 18006, "node7")

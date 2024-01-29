@@ -2,7 +2,6 @@ package integration_testing
 
 import (
 	"fmt"
-	"github.com/deso-protocol/core/bls"
 	"github.com/deso-protocol/core/cmd"
 	"github.com/deso-protocol/core/lib"
 	"os"
@@ -267,14 +266,14 @@ func spawnNonValidatorNodeProtocol2(t *testing.T, port uint32, id string) *cmd.N
 	return node
 }
 
-func spawnValidatorNodeProtocol2(t *testing.T, port uint32, id string, blsPriv *bls.PrivateKey) *cmd.Node {
+func spawnValidatorNodeProtocol2(t *testing.T, port uint32, id string, blsSeedPhrase string) *cmd.Node {
 	dbDir := getDirectory(t)
 	t.Cleanup(func() {
 		os.RemoveAll(dbDir)
 	})
 	config := generateConfig(t, port, dbDir, 10)
 	config.SyncType = lib.NodeSyncTypeBlockSync
-	config.PosValidatorSeed = blsPriv.ToString()
+	config.PosValidatorSeed = blsSeedPhrase
 	node := cmd.NewNode(config)
 	node.Params.UserAgent = id
 	node.Params.ProtocolVersion = lib.ProtocolVersion2
