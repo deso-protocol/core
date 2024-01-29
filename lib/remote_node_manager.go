@@ -78,7 +78,7 @@ func (manager *RemoteNodeManager) ProcessCompletedHandshake(remoteNode *RemoteNo
 		manager.UnsetValidator(remoteNode)
 		manager.SetNonValidator(remoteNode)
 	}
-	manager.srv.HandleAcceptedPeer(remoteNode.GetPeer())
+	manager.srv.HandleAcceptedPeer(remoteNode)
 	manager.srv.maybeRequestAddresses(remoteNode)
 }
 

@@ -442,6 +442,7 @@ func NewServer(
 		nodeMessageChannel:           _nodeMessageChan,
 		forceChecksum:                _forceChecksum,
 		AddrMgr:                      _desoAddrMgr,
+		params:                       _params,
 	}
 
 	if stateChangeSyncer != nil {
@@ -1602,7 +1603,13 @@ func (srv *Server) _startSync() {
 
 }
 
-func (srv *Server) HandleAcceptedPeer(pp *Peer) {
+func (srv *Server) HandleAcceptedPeer(rn *RemoteNode) {
+	if rn == nil || rn.GetPeer() == nil {
+		return
+	}
+	pp := rn.GetPeer()
+	pp.SetServiceFlag(rn.GetServiceFlag())
+
 	isSyncCandidate := pp.IsSyncCandidate()
 	isSyncing := srv.blockchain.isSyncing()
 	chainState := srv.blockchain.chainState()
