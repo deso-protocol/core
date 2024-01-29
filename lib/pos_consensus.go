@@ -120,7 +120,7 @@ func (cc *FastHotStuffConsensus) HandleLocalBlockProposalEvent(event *consensus.
 	defer cc.blockchain.ChainLock.Unlock()
 
 	// Handle the event as a block proposal event for a regular block
-	if err := cc.handleBlockProposerEvent(event, consensus.FastHotStuffEventTypeConstructVoteQC); err != nil {
+	if err := cc.handleBlockProposalEvent(event, consensus.FastHotStuffEventTypeConstructVoteQC); err != nil {
 		return errors.Wrapf(err, "FastHotStuffConsensus.HandleLocalBlockProposalEvent: ")
 	}
 
@@ -148,7 +148,7 @@ func (cc *FastHotStuffConsensus) HandleLocalTimeoutBlockProposalEvent(event *con
 	defer cc.blockchain.ChainLock.Unlock()
 
 	// Handle the event as a block proposal event for a timeout block
-	if err := cc.handleBlockProposerEvent(event, consensus.FastHotStuffEventTypeConstructTimeoutQC); err != nil {
+	if err := cc.handleBlockProposalEvent(event, consensus.FastHotStuffEventTypeConstructTimeoutQC); err != nil {
 		return errors.Wrapf(err, "FastHotStuffConsensus.HandleLocalTimeoutBlockProposalEvent: ")
 	}
 
@@ -156,7 +156,7 @@ func (cc *FastHotStuffConsensus) HandleLocalTimeoutBlockProposalEvent(event *con
 	return nil
 }
 
-// handleBlockProposerEvent is a helper function that can process a block proposal event for either
+// handleBlockProposalEvent is a helper function that can process a block proposal event for either
 // a regular block or a timeout block. It can be called with a expectedEventType param that toggles
 // whether the event should be validated and processed as normal block or timeout block proposal.
 //
@@ -169,7 +169,7 @@ func (cc *FastHotStuffConsensus) HandleLocalTimeoutBlockProposalEvent(event *con
 //     - This will connect the block to the blockchain, remove the transactions from the
 //     mempool, and process the vote in the FastHotStuffEventLoop
 //  6. Broadcast the block to the network
-func (cc *FastHotStuffConsensus) handleBlockProposerEvent(
+func (cc *FastHotStuffConsensus) handleBlockProposalEvent(
 	event *consensus.FastHotStuffEvent,
 	expectedEventType consensus.FastHotStuffEventType,
 ) error {
