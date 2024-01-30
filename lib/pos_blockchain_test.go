@@ -2408,6 +2408,11 @@ func _generateDummyBlock(testMeta *TestMeta, blockHeight uint64, view uint64, se
 	require.True(testMeta.t, blockNode.IsStored())
 	_, exists := testMeta.chain.blockIndexByHash[*newBlockHash]
 	require.True(testMeta.t, exists)
+	// Remove the transactions from this block from the mempool.
+	// This prevents nonce reuse issues when trying to make failing blocks.
+	for _, txn := range passingTxns {
+		testMeta.posMempool.RemoveTransaction(txn.Hash())
+	}
 	return blockTemplate
 }
 
@@ -2701,7 +2706,8 @@ func NewTestPoSBlockchainWithValidators(t *testing.T) *TestMeta {
 	mempoolBackupIntervalMillis := uint64(30000)
 	mempool := NewPosMempool()
 	require.NoError(t, mempool.Init(
-		params, _testGetDefaultGlobalParams(), latestBlockView, 11, _dbDirSetup(t), false, maxMempoolPosSizeBytes, mempoolBackupIntervalMillis, 1, nil, 1,
+		params, _testGetDefaultGlobalParams(), latestBlockView, 11, _dbDirSetup(t), false, maxMempoolPosSizeBytes,
+		mempoolBackupIntervalMillis, 1, nil, 1, 100,
 	))
 	require.NoError(t, mempool.Start())
 	require.True(t, mempool.IsRunning())
