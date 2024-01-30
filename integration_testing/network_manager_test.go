@@ -18,7 +18,7 @@ func TestConnectionControllerNonValidator(t *testing.T) {
 	node2.Params.DisableNetworkManagerRoutines = true
 	node2 = startNode(t, node2)
 
-	nm := node1.Server.GetConnectionController()
+	nm := node1.Server.GetNetworkManager()
 	require.NoError(t, nm.CreateNonValidatorOutboundConnection(node2.Listeners[0].Addr().String()))
 	waitForNonValidatorOutboundConnection(t, node1, node2)
 	waitForNonValidatorInboundConnection(t, node2, node1)
@@ -34,7 +34,7 @@ func TestConnectionControllerNonValidator(t *testing.T) {
 	node3.Params.DisableNetworkManagerRoutines = true
 	node3 = startNode(t, node3)
 
-	nm = node1.Server.GetConnectionController()
+	nm = node1.Server.GetNetworkManager()
 	require.NoError(t, nm.CreateNonValidatorOutboundConnection(node3.Listeners[0].Addr().String()))
 	waitForValidatorConnection(t, node1, node3)
 	waitForNonValidatorInboundConnection(t, node3, node1)
@@ -50,7 +50,7 @@ func TestConnectionControllerNonValidator(t *testing.T) {
 	node4.Params.DisableNetworkManagerRoutines = true
 	node4 = startNode(t, node4)
 
-	nm = node1.Server.GetConnectionController()
+	nm = node1.Server.GetNetworkManager()
 	require.NoError(t, nm.CreateNonValidatorOutboundConnection(node4.Listeners[0].Addr().String()))
 	waitForValidatorConnection(t, node1, node4)
 	waitForNonValidatorInboundConnection(t, node4, node1)
@@ -74,7 +74,7 @@ func TestConnectionControllerValidator(t *testing.T) {
 	node2.Params.DisableNetworkManagerRoutines = true
 	node2 = startNode(t, node2)
 
-	nm := node1.Server.GetConnectionController()
+	nm := node1.Server.GetNetworkManager()
 	require.NoError(t, nm.CreateValidatorConnection(node2.Listeners[0].Addr().String(), blsPub2))
 	waitForValidatorConnection(t, node1, node2)
 	waitForValidatorConnection(t, node2, node1)
@@ -88,7 +88,7 @@ func TestConnectionControllerValidator(t *testing.T) {
 	node3.Params.DisableNetworkManagerRoutines = true
 	node3 = startNode(t, node3)
 
-	nm = node1.Server.GetConnectionController()
+	nm = node1.Server.GetNetworkManager()
 	require.NoError(t, nm.CreateNonValidatorOutboundConnection(node3.Listeners[0].Addr().String()))
 	waitForNonValidatorOutboundConnection(t, node1, node3)
 	waitForValidatorConnection(t, node3, node1)
@@ -104,7 +104,7 @@ func TestConnectionControllerValidator(t *testing.T) {
 	node4.Params.DisableNetworkManagerRoutines = true
 	node4 = startNode(t, node4)
 
-	nm = node1.Server.GetConnectionController()
+	nm = node1.Server.GetNetworkManager()
 	require.NoError(t, nm.CreateNonValidatorOutboundConnection(node4.Listeners[0].Addr().String()))
 	waitForValidatorConnection(t, node1, node4)
 	waitForValidatorConnection(t, node4, node1)
@@ -127,7 +127,7 @@ func TestConnectionControllerHandshakeDataErrors(t *testing.T) {
 	node1 = startNode(t, node1)
 	node2 = startNode(t, node2)
 
-	nm := node2.Server.GetConnectionController()
+	nm := node2.Server.GetNetworkManager()
 	require.NoError(t, nm.CreateNonValidatorOutboundConnection(node1.Listeners[0].Addr().String()))
 	waitForEmptyRemoteNodeIndexer(t, node1)
 	waitForEmptyRemoteNodeIndexer(t, node2)
@@ -141,7 +141,7 @@ func TestConnectionControllerHandshakeDataErrors(t *testing.T) {
 	node3.Params.ProtocolVersion = lib.ProtocolVersionType(3)
 	node3 = startNode(t, node3)
 
-	nm = node1.Server.GetConnectionController()
+	nm = node1.Server.GetNetworkManager()
 	require.NoError(t, nm.CreateNonValidatorOutboundConnection(node3.Listeners[0].Addr().String()))
 	waitForEmptyRemoteNodeIndexer(t, node1)
 	waitForEmptyRemoteNodeIndexer(t, node3)
@@ -153,7 +153,7 @@ func TestConnectionControllerHandshakeDataErrors(t *testing.T) {
 	node4.Params.ProtocolVersion = lib.ProtocolVersion0
 	node4 = startNode(t, node4)
 
-	nm = node1.Server.GetConnectionController()
+	nm = node1.Server.GetNetworkManager()
 	require.NoError(t, nm.CreateNonValidatorOutboundConnection(node4.Listeners[0].Addr().String()))
 	waitForEmptyRemoteNodeIndexer(t, node1)
 	waitForEmptyRemoteNodeIndexer(t, node4)
@@ -170,7 +170,7 @@ func TestConnectionControllerHandshakeDataErrors(t *testing.T) {
 	node5.Params.DisableNetworkManagerRoutines = true
 	node5 = startNode(t, node5)
 
-	nm = node1.Server.GetConnectionController()
+	nm = node1.Server.GetNetworkManager()
 	require.NoError(t, nm.CreateValidatorConnection(node5.Listeners[0].Addr().String(), blsKeyStore5Wrong.GetSigner().GetPublicKey()))
 	waitForEmptyRemoteNodeIndexer(t, node1)
 	waitForEmptyRemoteNodeIndexer(t, node5)
@@ -183,7 +183,7 @@ func TestConnectionControllerHandshakeDataErrors(t *testing.T) {
 	node6.Params.DisableNetworkManagerRoutines = true
 	node6 = startNode(t, node6)
 
-	nm = node1.Server.GetConnectionController()
+	nm = node1.Server.GetNetworkManager()
 	require.NoError(t, nm.CreateValidatorConnection(node6.Listeners[0].Addr().String(), blsPriv6.PublicKey()))
 	waitForEmptyRemoteNodeIndexer(t, node1)
 	waitForEmptyRemoteNodeIndexer(t, node6)
@@ -195,7 +195,7 @@ func TestConnectionControllerHandshakeDataErrors(t *testing.T) {
 	node7.Params.ProtocolVersion = lib.ProtocolVersion1
 	node7 = startNode(t, node7)
 
-	nm = node1.Server.GetConnectionController()
+	nm = node1.Server.GetNetworkManager()
 	require.NoError(t, nm.CreateNonValidatorOutboundConnection(node7.Listeners[0].Addr().String()))
 	waitForEmptyRemoteNodeIndexer(t, node1)
 	waitForEmptyRemoteNodeIndexer(t, node7)
@@ -213,7 +213,7 @@ func TestConnectionControllerHandshakeTimeouts(t *testing.T) {
 	node2.Params.DisableNetworkManagerRoutines = true
 	node2 = startNode(t, node2)
 
-	nm := node1.Server.GetConnectionController()
+	nm := node1.Server.GetNetworkManager()
 	require.NoError(t, nm.CreateNonValidatorOutboundConnection(node2.Listeners[0].Addr().String()))
 	waitForEmptyRemoteNodeIndexer(t, node1)
 	waitForEmptyRemoteNodeIndexer(t, node2)
@@ -226,7 +226,7 @@ func TestConnectionControllerHandshakeTimeouts(t *testing.T) {
 	node3.Params.VerackNegotiationTimeout = 0
 	node3 = startNode(t, node3)
 
-	nm = node3.Server.GetConnectionController()
+	nm = node3.Server.GetNetworkManager()
 	require.NoError(t, nm.CreateNonValidatorOutboundConnection(node1.Listeners[0].Addr().String()))
 	waitForEmptyRemoteNodeIndexer(t, node1)
 	waitForEmptyRemoteNodeIndexer(t, node3)
@@ -248,7 +248,7 @@ func TestConnectionControllerHandshakeTimeouts(t *testing.T) {
 	node5.Params.DisableNetworkManagerRoutines = true
 	node5 = startNode(t, node5)
 
-	nm = node4.Server.GetConnectionController()
+	nm = node4.Server.GetNetworkManager()
 	require.NoError(t, nm.CreateValidatorConnection(node5.Listeners[0].Addr().String(), blsKeyStore5.GetSigner().GetPublicKey()))
 	waitForEmptyRemoteNodeIndexer(t, node4)
 	waitForEmptyRemoteNodeIndexer(t, node5)
@@ -275,7 +275,7 @@ func TestConnectionControllerValidatorDuplication(t *testing.T) {
 	node3 = startNode(t, node3)
 
 	// Create validator connection from Node1 to Node2 and from Node1 to Node3
-	nm := node1.Server.GetConnectionController()
+	nm := node1.Server.GetNetworkManager()
 	require.NoError(t, nm.CreateValidatorConnection(node2.Listeners[0].Addr().String(), blsKeyStore2.GetSigner().GetPublicKey()))
 	// This should fail out right because Node3 has a duplicate public key.
 	require.Error(t, nm.CreateValidatorConnection(node3.Listeners[0].Addr().String(), blsKeyStore2.GetSigner().GetPublicKey()))
@@ -284,7 +284,7 @@ func TestConnectionControllerValidatorDuplication(t *testing.T) {
 
 	// Now create an outbound connection from Node3 to Node1, which should pass handshake, but then fail because
 	// Node1 already has a validator connection to Node2 with the same public key.
-	nm3 := node3.Server.GetConnectionController()
+	nm3 := node3.Server.GetNetworkManager()
 	require.NoError(t, nm3.CreateNonValidatorOutboundConnection(node1.Listeners[0].Addr().String()))
 	waitForEmptyRemoteNodeIndexer(t, node3)
 	waitForCountRemoteNodeIndexer(t, node1, 1, 1, 0, 0)
@@ -306,11 +306,11 @@ func TestConnectionControllerValidatorDuplication(t *testing.T) {
 	node5 = startNode(t, node5)
 
 	// Create validator connections from Node4 to Node1 and from Node5 to Node1
-	nm4 := node4.Server.GetConnectionController()
+	nm4 := node4.Server.GetNetworkManager()
 	require.NoError(t, nm4.CreateNonValidatorOutboundConnection(node1.Listeners[0].Addr().String()))
 	waitForValidatorConnection(t, node1, node4)
 	waitForNonValidatorOutboundConnection(t, node4, node1)
-	nm5 := node5.Server.GetConnectionController()
+	nm5 := node5.Server.GetNetworkManager()
 	require.NoError(t, nm5.CreateNonValidatorOutboundConnection(node1.Listeners[0].Addr().String()))
 	waitForEmptyRemoteNodeIndexer(t, node5)
 	waitForCountRemoteNodeIndexer(t, node1, 1, 1, 0, 0)
@@ -330,7 +330,7 @@ func TestConnectionControllerProtocolDifference(t *testing.T) {
 	node2 = startNode(t, node2)
 
 	// Create non-validator connection from Node1 to Node2
-	nm := node1.Server.GetConnectionController()
+	nm := node1.Server.GetNetworkManager()
 	require.NoError(t, nm.CreateNonValidatorOutboundConnection(node2.Listeners[0].Addr().String()))
 	waitForNonValidatorOutboundConnection(t, node1, node2)
 	waitForNonValidatorInboundConnection(t, node2, node1)
@@ -365,7 +365,7 @@ func TestConnectionControllerProtocolDifference(t *testing.T) {
 	node4 = startNode(t, node4)
 
 	// Attempt to create non-validator connection from Node4 to Node1
-	nm = node4.Server.GetConnectionController()
+	nm = node4.Server.GetNetworkManager()
 	require.NoError(t, nm.CreateNonValidatorOutboundConnection(node1.Listeners[0].Addr().String()))
 	waitForEmptyRemoteNodeIndexer(t, node4)
 	waitForEmptyRemoteNodeIndexer(t, node1)
@@ -383,7 +383,7 @@ func TestConnectionControllerProtocolDifference(t *testing.T) {
 	node5 = startNode(t, node5)
 
 	// Attempt to create non-validator connection from Node5 to Node1
-	nm = node5.Server.GetConnectionController()
+	nm = node5.Server.GetNetworkManager()
 	require.NoError(t, nm.CreateNonValidatorOutboundConnection(node1.Listeners[0].Addr().String()))
 	waitForEmptyRemoteNodeIndexer(t, node5)
 	waitForEmptyRemoteNodeIndexer(t, node1)
@@ -404,7 +404,7 @@ func TestConnectionControllerPersistentConnection(t *testing.T) {
 	node2 = startNode(t, node2)
 
 	// Create a persistent connection from Node1 to Node2
-	nm := node1.Server.GetConnectionController()
+	nm := node1.Server.GetNetworkManager()
 	_, err = nm.CreateNonValidatorPersistentOutboundConnection(node2.Listeners[0].Addr().String())
 	require.NoError(t, err)
 	waitForValidatorConnection(t, node1, node2)
@@ -441,7 +441,7 @@ func TestConnectionControllerPersistentConnection(t *testing.T) {
 	node5 = startNode(t, node5)
 
 	// Create a persistent connection from Node4 to Node5
-	nm = node4.Server.GetConnectionController()
+	nm = node4.Server.GetNetworkManager()
 	_, err = nm.CreateNonValidatorPersistentOutboundConnection(node5.Listeners[0].Addr().String())
 	require.NoError(t, err)
 	waitForNonValidatorOutboundConnection(t, node4, node5)

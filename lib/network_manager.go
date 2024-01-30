@@ -63,8 +63,8 @@ type NetworkManager struct {
 	exitGroup  sync.WaitGroup
 }
 
-func NewConnectionController(params *DeSoParams, cmgr *ConnectionManager, handshakeController *HandshakeManager,
-	rnManager *RemoteNodeManager, blsKeystore *BLSKeystore, addrMgr *addrmgr.AddrManager, connectIps []string,
+func NewConnectionController(params *DeSoParams, cmgr *ConnectionManager, rnManager *RemoteNodeManager,
+	blsKeystore *BLSKeystore, addrMgr *addrmgr.AddrManager, connectIps []string,
 	targetNonValidatorOutboundRemoteNodes uint32, targetNonValidatorInboundRemoteNodes uint32,
 	limitOneInboundConnectionPerIP bool) *NetworkManager {
 
@@ -72,7 +72,7 @@ func NewConnectionController(params *DeSoParams, cmgr *ConnectionManager, handsh
 		params:                                params,
 		cmgr:                                  cmgr,
 		blsKeystore:                           blsKeystore,
-		handshake:                             handshakeController,
+		handshake:                             NewHandshakeController(rnManager),
 		rnManager:                             rnManager,
 		AddrMgr:                               addrMgr,
 		connectIps:                            connectIps,

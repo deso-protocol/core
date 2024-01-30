@@ -63,9 +63,8 @@ type Server struct {
 	eventManager  *EventManager
 	TxIndex       *TXIndex
 
-	handshakeController *HandshakeManager
 	// fastHotStuffEventLoop consensus.FastHotStuffEventLoop
-	connectionController *NetworkManager
+	networkManager *NetworkManager
 	// posMempool *PosMemPool TODO: Add the mempool later
 
 	params *DeSoParams
@@ -182,8 +181,8 @@ func (srv *Server) ResetRequestQueues() {
 	srv.requestedTransactionsMap = make(map[BlockHash]*GetDataRequestInfo)
 }
 
-func (srv *Server) GetConnectionController() *NetworkManager {
-	return srv.connectionController
+func (srv *Server) GetNetworkManager() *NetworkManager {
+	return srv.networkManager
 }
 
 // dataLock must be acquired for writing before calling this function.
@@ -503,10 +502,8 @@ func NewServer(
 		nodeServices |= SFPosValidator
 	}
 	rnManager := NewRemoteNodeManager(srv, _chain, _cmgr, _blsKeystore, _params, _minFeeRateNanosPerKB, nodeServices)
-
-	srv.handshakeController = NewHandshakeController(rnManager)
-	srv.connectionController = NewConnectionController(_params, _cmgr, srv.handshakeController, rnManager, _blsKeystore,
-		_desoAddrMgr, _connectIps, _targetOutboundPeers, _maxInboundPeers, _limitOneInboundConnectionPerIP)
+	srv.networkManager = NewConnectionController(_params, _cmgr, rnManager, _blsKeystore, _desoAddrMgr,
+		_connectIps, _targetOutboundPeers, _maxInboundPeers, _limitOneInboundConnectionPerIP)
 
 	if srv.stateChangeSyncer != nil {
 		srv.stateChangeSyncer.BlockHeight = uint64(_chain.headerTip().Height)
@@ -2202,7 +2199,7 @@ func (srv *Server) _handleAddrMessage(pp *Peer, desoMsg DeSoMessage) {
 	var ok bool
 	if msg, ok = desoMsg.(*MsgDeSoAddr); !ok {
 		glog.Errorf("Server._handleAddrMessage: Problem decoding MsgDeSoAddr: %v", spew.Sdump(desoMsg))
-		srv.connectionController.rnManager.DisconnectById(id)
+		srv.networkManager.rnManager.DisconnectById(id)
 		return
 	}
 
@@ -2218,7 +2215,7 @@ func (srv *Server) _handleAddrMessage(pp *Peer, desoMsg DeSoMessage) {
 			"Peer id=%v for sending us an addr message with %d transactions, which exceeds "+
 			"the max allowed %d",
 			pp.ID, len(msg.AddrList), MaxAddrsPerAddrMsg))
-		srv.connectionController.rnManager.DisconnectById(id)
+		srv.networkManager.rnManager.DisconnectById(id)
 		return
 	}
 
@@ -2269,7 +2266,7 @@ func (srv *Server) _handleGetAddrMessage(pp *Peer, desoMsg DeSoMessage) {
 	if _, ok := desoMsg.(*MsgDeSoGetAddr); !ok {
 		glog.Errorf("Server._handleAddrMessage: Problem decoding "+
 			"MsgDeSoAddr: %v", spew.Sdump(desoMsg))
-		srv.connectionController.rnManager.DisconnectById(id)
+		srv.networkManager.rnManager.DisconnectById(id)
 		return
 	}
 
@@ -2295,10 +2292,10 @@ func (srv *Server) _handleGetAddrMessage(pp *Peer, desoMsg DeSoMessage) {
 		}
 		res.AddrList = append(res.AddrList, singleAddr)
 	}
-	rn := srv.connectionController.rnManager.GetRemoteNodeById(id)
-	if err := srv.connectionController.rnManager.SendMessage(rn, res); err != nil {
+	rn := srv.networkManager.rnManager.GetRemoteNodeById(id)
+	if err := srv.networkManager.rnManager.SendMessage(rn, res); err != nil {
 		glog.Errorf("Server._handleGetAddrMessage: Problem sending addr message to peer %v: %v", pp, err)
-		srv.connectionController.rnManager.DisconnectById(id)
+		srv.networkManager.rnManager.DisconnectById(id)
 		return
 	}
 }
@@ -2308,9 +2305,9 @@ func (srv *Server) _handleControlMessages(serverMessage *ServerMessage) (_should
 	// Control messages used internally to signal to the server.
 	case *MsgDeSoDisconnectedPeer:
 		srv._handleDonePeer(serverMessage.Peer)
-		srv.connectionController._handleDonePeerMessage(serverMessage.Peer, serverMessage.Msg)
+		srv.networkManager._handleDonePeerMessage(serverMessage.Peer, serverMessage.Msg)
 	case *MsgDeSoNewConnection:
-		srv.connectionController._handleNewConnectionMessage(serverMessage.Peer, serverMessage.Msg)
+		srv.networkManager._handleNewConnectionMessage(serverMessage.Peer, serverMessage.Msg)
 	case *MsgDeSoQuit:
 		return true
 	}
@@ -2349,9 +2346,9 @@ func (srv *Server) _handlePeerMessages(serverMessage *ServerMessage) {
 	case *MsgDeSoInv:
 		srv._handleInv(serverMessage.Peer, msg)
 	case *MsgDeSoVersion:
-		srv.handshakeController.handleVersionMessage(serverMessage.Peer, serverMessage.Msg)
+		srv.networkManager._handleVersionMessage(serverMessage.Peer, serverMessage.Msg)
 	case *MsgDeSoVerack:
-		srv.handshakeController.handleVerackMessage(serverMessage.Peer, serverMessage.Msg)
+		srv.networkManager._handleVerackMessage(serverMessage.Peer, serverMessage.Msg)
 	}
 }
 
@@ -2517,7 +2514,7 @@ func (srv *Server) _startAddressRelayer() {
 		// For the first ten minutes after the connection controller starts, relay our address to all
 		// peers. After the first ten minutes, do it once every 24 hours.
 		glog.V(1).Infof("Server.startAddressRelayer: Relaying our own addr to peers")
-		remoteNodes := srv.connectionController.rnManager.GetAllRemoteNodes().GetAll()
+		remoteNodes := srv.networkManager.rnManager.GetAllRemoteNodes().GetAll()
 		if numMinutesPassed < 10 || numMinutesPassed%(RebroadcastNodeAddrIntervalMinutes) == 0 {
 			for _, rn := range remoteNodes {
 				if !rn.IsHandshakeCompleted() {
@@ -2601,7 +2598,7 @@ func (srv *Server) Stop() {
 	srv.cmgr.Stop()
 	glog.Infof(CLog(Yellow, "Server.Stop: Closed the ConnectionManger"))
 
-	srv.connectionController.Stop()
+	srv.networkManager.Stop()
 	glog.Infof(CLog(Yellow, "Server.Stop: Closed the NetworkManager"))
 
 	// Stop the miner if we have one running.
@@ -2687,7 +2684,7 @@ func (srv *Server) Start() {
 		go srv.miner.Start()
 	}
 
-	srv.connectionController.Start()
+	srv.networkManager.Start()
 }
 
 // SyncPrefixProgress keeps track of sync progress on an individual prefix. It is used in
