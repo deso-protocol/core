@@ -737,7 +737,14 @@ func (fc *FastHotStuffConsensus) createBlockProducer(bav *UtxoView) (*PosBlockPr
 	if blockProducerPublicKey == nil {
 		return nil, errors.Errorf("Error fetching public key for block producer: %v", err)
 	}
-	return NewPosBlockProducer(fc.mempool, fc.params, blockProducerPublicKey, blockProducerBlsPublicKey), nil
+	blockProducer := NewPosBlockProducer(
+		fc.mempool,
+		fc.params,
+		fc.blockchain.timeSource,
+		blockProducerPublicKey,
+		blockProducerBlsPublicKey,
+	)
+	return blockProducer, nil
 }
 
 // Finds the epoch entry for the block and returns the epoch number.
