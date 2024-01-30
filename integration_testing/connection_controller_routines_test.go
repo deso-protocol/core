@@ -498,7 +498,7 @@ func getActiveValidatorsMapWithValidatorNodes(t *testing.T, validators ...*cmd.N
 
 func setActiveValidators(validatorMap *collections.ConcurrentMap[bls.SerializedPublicKey, consensus.Validator], nodes ...*cmd.Node) {
 	for _, node := range nodes {
-		node.Server.GetConnectionController().SetValidatorMap(validatorMap)
+		node.Server.GetConnectionController().SetActiveValidatorsMap(validatorMap)
 	}
 }
 

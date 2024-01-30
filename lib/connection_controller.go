@@ -43,10 +43,10 @@ type ConnectionController struct {
 	// And that we can reconnect to the same persistent IP address if we disconnect from it.
 	persistentIpToRemoteNodeIdsMap *collections.ConcurrentMap[string, RemoteNodeId]
 
-	validatorMapLock sync.RWMutex
-	// validatorMap is a list of all validators that we are connected to. It will be updated periodically by the
-	// owner of the ConnectionController.
-	validatorMap *collections.ConcurrentMap[bls.SerializedPublicKey, consensus.Validator]
+	activeValidatorsMapLock sync.RWMutex
+	// activeValidatorsMap is a map of all currently active validators registered in consensus. It will be updated
+	// periodically by the owner of the ConnectionController.
+	activeValidatorsMap *collections.ConcurrentMap[bls.SerializedPublicKey, consensus.Validator]
 
 	// The target number of non-validator outbound remote nodes we want to have. We will disconnect remote nodes once
 	// we've exceeded this number of outbound connections.
@@ -77,7 +77,7 @@ func NewConnectionController(params *DeSoParams, cmgr *ConnectionManager, handsh
 		AddrMgr:                               addrMgr,
 		connectIps:                            connectIps,
 		persistentIpToRemoteNodeIdsMap:        collections.NewConcurrentMap[string, RemoteNodeId](),
-		validatorMap:                          collections.NewConcurrentMap[bls.SerializedPublicKey, consensus.Validator](),
+		activeValidatorsMap:                   collections.NewConcurrentMap[bls.SerializedPublicKey, consensus.Validator](),
 		targetNonValidatorOutboundRemoteNodes: targetNonValidatorOutboundRemoteNodes,
 		targetNonValidatorInboundRemoteNodes:  targetNonValidatorInboundRemoteNodes,
 		limitOneInboundRemoteNodePerIP:        limitOneInboundConnectionPerIP,
@@ -138,7 +138,7 @@ func (cc *ConnectionController) startValidatorConnector() {
 			cc.exitGroup.Done()
 			return
 		case <-time.After(1 * time.Second):
-			activeValidatorsMap := cc.getValidatorMap()
+			activeValidatorsMap := cc.getActiveValidatorsMap()
 			cc.refreshValidatorIndex(activeValidatorsMap)
 			cc.connectValidators(activeValidatorsMap)
 		}
@@ -304,17 +304,17 @@ func (cc *ConnectionController) refreshConnectIps() {
 // ## Validator Connections
 // ###########################
 
-func (cc *ConnectionController) SetValidatorMap(validatorMap *collections.ConcurrentMap[bls.SerializedPublicKey, consensus.Validator]) {
-	cc.validatorMapLock.Lock()
-	defer cc.validatorMapLock.Unlock()
-	cc.validatorMap = validatorMap.Clone()
+func (cc *ConnectionController) SetActiveValidatorsMap(activeValidatorsMap *collections.ConcurrentMap[bls.SerializedPublicKey, consensus.Validator]) {
+	cc.activeValidatorsMapLock.Lock()
+	defer cc.activeValidatorsMapLock.Unlock()
+	cc.activeValidatorsMap = activeValidatorsMap.Clone()
 
 }
 
-func (cc *ConnectionController) getValidatorMap() *collections.ConcurrentMap[bls.SerializedPublicKey, consensus.Validator] {
-	cc.validatorMapLock.RLock()
-	defer cc.validatorMapLock.RUnlock()
-	return cc.validatorMap.Clone()
+func (cc *ConnectionController) getActiveValidatorsMap() *collections.ConcurrentMap[bls.SerializedPublicKey, consensus.Validator] {
+	cc.activeValidatorsMapLock.RLock()
+	defer cc.activeValidatorsMapLock.RUnlock()
+	return cc.activeValidatorsMap.Clone()
 }
 
 // refreshValidatorIndex re-indexes validators based on the activeValidatorsMap. It is called periodically by the
