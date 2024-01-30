@@ -854,23 +854,6 @@ func (msg *MsgDeSoDisconnectedPeer) FromBytes(data []byte) error {
 	return fmt.Errorf("MsgDeSoDisconnectedPeer.FromBytes not implemented")
 }
 
-// MsgDeSoPeerHandshakeComplete is a control message that is used to internally signal when a peer has
-// connected and completed the Version + Verack handshake and authentication process.
-type MsgDeSoPeerHandshakeComplete struct {
-}
-
-func (msg *MsgDeSoPeerHandshakeComplete) GetMsgType() MsgType {
-	return MsgTypePeerHandshakeComplete
-}
-
-func (msg *MsgDeSoPeerHandshakeComplete) ToBytes(preSignature bool) ([]byte, error) {
-	return nil, fmt.Errorf("MsgDeSoPeerHandshakeComplete.ToBytes: Not implemented")
-}
-
-func (msg *MsgDeSoPeerHandshakeComplete) FromBytes(data []byte) error {
-	return fmt.Errorf("MsgDeSoPeerHandshakeComplete.FromBytes not implemented")
-}
-
 type ConnectionType uint8
 
 const (

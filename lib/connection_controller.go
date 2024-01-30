@@ -6,6 +6,7 @@ import (
 	"github.com/btcsuite/btcd/wire"
 	"github.com/deso-protocol/core/bls"
 	"github.com/deso-protocol/core/collections"
+	"github.com/deso-protocol/core/consensus"
 	"github.com/golang/glog"
 	"github.com/pkg/errors"
 	"net"
@@ -13,14 +14,6 @@ import (
 	"sync"
 	"time"
 )
-
-type GetActiveValidatorsFunc func() *collections.ConcurrentMap[bls.SerializedPublicKey, *ValidatorEntry]
-
-var GetActiveValidatorImpl GetActiveValidatorsFunc = BasicGetActiveValidators
-
-func BasicGetActiveValidators() *collections.ConcurrentMap[bls.SerializedPublicKey, *ValidatorEntry] {
-	return collections.NewConcurrentMap[bls.SerializedPublicKey, *ValidatorEntry]()
-}
 
 // ConnectionController is a structure that oversees all connections to remote nodes. It is responsible for kicking off
 // the initial connections a node makes to the network. It is also responsible for creating RemoteNodes from all
@@ -48,7 +41,12 @@ type ConnectionController struct {
 	// persistentIpToRemoteNodeIdsMap maps persistent IP addresses, like the --connect-ips, to the RemoteNodeIds of the
 	// corresponding RemoteNodes. This is used to ensure that we don't connect to the same persistent IP address twice.
 	// And that we can reconnect to the same persistent IP address if we disconnect from it.
-	persistentIpToRemoteNodeIdsMap map[string]RemoteNodeId
+	persistentIpToRemoteNodeIdsMap *collections.ConcurrentMap[string, RemoteNodeId]
+
+	activeValidatorsMapLock sync.RWMutex
+	// activeValidatorsMap is a map of all currently active validators registered in consensus. It will be updated
+	// periodically by the owner of the ConnectionController.
+	activeValidatorsMap *collections.ConcurrentMap[bls.SerializedPublicKey, consensus.Validator]
 
 	// The target number of non-validator outbound remote nodes we want to have. We will disconnect remote nodes once
 	// we've exceeded this number of outbound connections.
@@ -78,7 +76,8 @@ func NewConnectionController(params *DeSoParams, cmgr *ConnectionManager, handsh
 		rnManager:                             rnManager,
 		AddrMgr:                               addrMgr,
 		connectIps:                            connectIps,
-		persistentIpToRemoteNodeIdsMap:        make(map[string]RemoteNodeId),
+		persistentIpToRemoteNodeIdsMap:        collections.NewConcurrentMap[string, RemoteNodeId](),
+		activeValidatorsMap:                   collections.NewConcurrentMap[bls.SerializedPublicKey, consensus.Validator](),
 		targetNonValidatorOutboundRemoteNodes: targetNonValidatorOutboundRemoteNodes,
 		targetNonValidatorInboundRemoteNodes:  targetNonValidatorInboundRemoteNodes,
 		limitOneInboundRemoteNodePerIP:        limitOneInboundConnectionPerIP,
@@ -87,18 +86,26 @@ func NewConnectionController(params *DeSoParams, cmgr *ConnectionManager, handsh
 }
 
 func (cc *ConnectionController) Start() {
-	cc.startGroup.Add(3)
+	if cc.params.DisableNetworkManagerRoutines {
+		return
+	}
+
+	cc.startGroup.Add(4)
 	go cc.startPersistentConnector()
 	go cc.startValidatorConnector()
 	go cc.startNonValidatorConnector()
+	go cc.startRemoteNodeCleanup()
 
 	cc.startGroup.Wait()
-	cc.exitGroup.Add(3)
+	cc.exitGroup.Add(4)
 }
 
 func (cc *ConnectionController) Stop() {
-	close(cc.exitChan)
-	cc.exitGroup.Wait()
+	if !cc.params.DisableNetworkManagerRoutines {
+		close(cc.exitChan)
+		cc.exitGroup.Wait()
+	}
+	cc.rnManager.DisconnectAll()
 }
 
 func (cc *ConnectionController) GetRemoteNodeManager() *RemoteNodeManager {
@@ -131,7 +138,7 @@ func (cc *ConnectionController) startValidatorConnector() {
 			cc.exitGroup.Done()
 			return
 		case <-time.After(1 * time.Second):
-			activeValidatorsMap := GetActiveValidatorImpl()
+			activeValidatorsMap := cc.getActiveValidatorsMap()
 			cc.refreshValidatorIndex(activeValidatorsMap)
 			cc.connectValidators(activeValidatorsMap)
 		}
@@ -158,6 +165,21 @@ func (cc *ConnectionController) startNonValidatorConnector() {
 	}
 }
 
+func (cc *ConnectionController) startRemoteNodeCleanup() {
+	cc.startGroup.Done()
+
+	for {
+		select {
+		case <-cc.exitChan:
+			cc.exitGroup.Done()
+			return
+		case <-time.After(1 * time.Second):
+			cc.rnManager.Cleanup()
+		}
+	}
+
+}
+
 // ###########################
 // ## Handlers (Peer, DeSoMessage)
 // ###########################
@@ -167,11 +189,14 @@ func (cc *ConnectionController) _handleDonePeerMessage(origin *Peer, desoMsg DeS
 		return
 	}
 
+	glog.V(2).Infof("ConnectionController.handleDonePeerMessage: Handling disconnected peer message for "+
+		"id=%v", origin.ID)
 	cc.rnManager.DisconnectById(NewRemoteNodeId(origin.ID))
 	// Update the persistentIpToRemoteNodeIdsMap.
-	for ip, id := range cc.persistentIpToRemoteNodeIdsMap {
+	ipRemoteNodeIdMap := cc.persistentIpToRemoteNodeIdsMap.ToMap()
+	for ip, id := range ipRemoteNodeIdMap {
 		if id.ToUint64() == origin.ID {
-			delete(cc.persistentIpToRemoteNodeIdsMap, ip)
+			cc.persistentIpToRemoteNodeIdsMap.Remove(ip)
 		}
 	}
 }
@@ -228,6 +253,7 @@ func (cc *ConnectionController) _handleNewConnectionMessage(origin *Peer, desoMs
 }
 
 func (cc *ConnectionController) cleanupFailedInboundConnection(remoteNode *RemoteNode, connection Connection) {
+	glog.V(2).Infof("ConnectionController.cleanupFailedInboundConnection: Cleaning up failed inbound connection")
 	if remoteNode != nil {
 		cc.rnManager.Disconnect(remoteNode)
 	}
@@ -239,6 +265,7 @@ func (cc *ConnectionController) cleanupFailedOutboundConnection(connection Conne
 	if !ok {
 		return
 	}
+	glog.V(2).Infof("ConnectionController.cleanupFailedOutboundConnection: Cleaning up failed outbound connection")
 
 	id := NewRemoteNodeId(oc.attemptId)
 	rn := cc.rnManager.GetRemoteNodeById(id)
@@ -257,7 +284,7 @@ func (cc *ConnectionController) refreshConnectIps() {
 	// Connect to addresses passed via the --connect-ips flag. These addresses are persistent in the sense that if we
 	// disconnect from one, we will try to reconnect to the same one.
 	for _, connectIp := range cc.connectIps {
-		if _, ok := cc.persistentIpToRemoteNodeIdsMap[connectIp]; ok {
+		if _, ok := cc.persistentIpToRemoteNodeIdsMap.Get(connectIp); ok {
 			continue
 		}
 
@@ -269,7 +296,7 @@ func (cc *ConnectionController) refreshConnectIps() {
 			continue
 		}
 
-		cc.persistentIpToRemoteNodeIdsMap[connectIp] = id
+		cc.persistentIpToRemoteNodeIdsMap.Set(connectIp, id)
 	}
 }
 
@@ -277,13 +304,26 @@ func (cc *ConnectionController) refreshConnectIps() {
 // ## Validator Connections
 // ###########################
 
+func (cc *ConnectionController) SetActiveValidatorsMap(activeValidatorsMap *collections.ConcurrentMap[bls.SerializedPublicKey, consensus.Validator]) {
+	cc.activeValidatorsMapLock.Lock()
+	defer cc.activeValidatorsMapLock.Unlock()
+	cc.activeValidatorsMap = activeValidatorsMap.Clone()
+
+}
+
+func (cc *ConnectionController) getActiveValidatorsMap() *collections.ConcurrentMap[bls.SerializedPublicKey, consensus.Validator] {
+	cc.activeValidatorsMapLock.RLock()
+	defer cc.activeValidatorsMapLock.RUnlock()
+	return cc.activeValidatorsMap.Clone()
+}
+
 // refreshValidatorIndex re-indexes validators based on the activeValidatorsMap. It is called periodically by the
 // validator connector.
-func (cc *ConnectionController) refreshValidatorIndex(activeValidatorsMap *collections.ConcurrentMap[bls.SerializedPublicKey, *ValidatorEntry]) {
+func (cc *ConnectionController) refreshValidatorIndex(activeValidatorsMap *collections.ConcurrentMap[bls.SerializedPublicKey, consensus.Validator]) {
 	// De-index inactive validators. We skip any checks regarding RemoteNodes connection status, nor do we verify whether
 	// de-indexing the validator would result in an excess number of outbound/inbound connections. Any excess connections
 	// will be cleaned up by the peer connector.
-	validatorRemoteNodeMap := cc.rnManager.GetValidatorIndex().Copy()
+	validatorRemoteNodeMap := cc.rnManager.GetValidatorIndex().ToMap()
 	for pk, rn := range validatorRemoteNodeMap {
 		// If the validator is no longer active, de-index it.
 		if _, ok := activeValidatorsMap.Get(pk); !ok {
@@ -306,6 +346,8 @@ func (cc *ConnectionController) refreshValidatorIndex(activeValidatorsMap *colle
 		// public key, which goes undetected during handshake. To prevent this from affecting the indexing of the validator
 		// set, we check that the non-validator's public key is not already present in the validator index.
 		if _, ok := cc.rnManager.GetValidatorIndex().Get(pk.Serialize()); ok {
+			glog.V(2).Infof("ConnectionController.refreshValidatorIndex: Disconnecting Validator RemoteNode "+
+				"(%v) has validator public key (%v) that is already present in validator index", rn, pk)
 			cc.rnManager.Disconnect(rn)
 			continue
 		}
@@ -320,13 +362,13 @@ func (cc *ConnectionController) refreshValidatorIndex(activeValidatorsMap *colle
 
 // connectValidators attempts to connect to all active validators that are not already connected. It is called
 // periodically by the validator connector.
-func (cc *ConnectionController) connectValidators(activeValidatorsMap *collections.ConcurrentMap[bls.SerializedPublicKey, *ValidatorEntry]) {
+func (cc *ConnectionController) connectValidators(activeValidatorsMap *collections.ConcurrentMap[bls.SerializedPublicKey, consensus.Validator]) {
 	// Look through the active validators and connect to any that we're not already connected to.
 	if cc.blsKeystore == nil {
 		return
 	}
 
-	validators := activeValidatorsMap.Copy()
+	validators := activeValidatorsMap.ToMap()
 	for pk, validator := range validators {
 		_, exists := cc.rnManager.GetValidatorIndex().Get(pk)
 		// If we're already connected to the validator, continue.
@@ -343,7 +385,10 @@ func (cc *ConnectionController) connectValidators(activeValidatorsMap *collectio
 		}
 
 		// For now, we only dial the first domain in the validator's domain list.
-		address := string(validator.Domains[0])
+		if len(validator.GetDomains()) == 0 {
+			continue
+		}
+		address := string(validator.GetDomains()[0])
 		if err := cc.CreateValidatorConnection(address, publicKey); err != nil {
 			glog.V(2).Infof("ConnectionController.connectValidators: Problem connecting to validator %v: %v", address, err)
 			continue
@@ -374,8 +419,8 @@ func (cc *ConnectionController) refreshNonValidatorOutboundIndex() {
 	allOutboundRemoteNodes := cc.rnManager.GetNonValidatorOutboundIndex().GetAll()
 	var attemptedOutboundRemoteNodes, connectedOutboundRemoteNodes []*RemoteNode
 	for _, rn := range allOutboundRemoteNodes {
-		if rn.IsPersistent() {
-			// We do nothing for persistent remote nodes.
+		if rn.IsPersistent() || rn.IsExpectedValidator() {
+			// We do nothing for persistent remote nodes or expected validators.
 			continue
 		} else if rn.IsHandshakeCompleted() {
 			connectedOutboundRemoteNodes = append(connectedOutboundRemoteNodes, rn)
@@ -397,6 +442,8 @@ func (cc *ConnectionController) refreshNonValidatorOutboundIndex() {
 		if excessiveOutboundRemoteNodes == 0 {
 			break
 		}
+		glog.V(2).Infof("ConnectionController.refreshNonValidatorOutboundIndex: Disconnecting attempted remote "+
+			"node (id=%v) due to excess outbound peers", rn.GetId())
 		cc.rnManager.Disconnect(rn)
 		excessiveOutboundRemoteNodes--
 	}
@@ -405,6 +452,8 @@ func (cc *ConnectionController) refreshNonValidatorOutboundIndex() {
 		if excessiveOutboundRemoteNodes == 0 {
 			break
 		}
+		glog.V(2).Infof("ConnectionController.refreshNonValidatorOutboundIndex: Disconnecting connected remote "+
+			"node (id=%v) due to excess outbound peers", rn.GetId())
 		cc.rnManager.Disconnect(rn)
 		excessiveOutboundRemoteNodes--
 	}
@@ -415,16 +464,30 @@ func (cc *ConnectionController) refreshNonValidatorOutboundIndex() {
 func (cc *ConnectionController) refreshNonValidatorInboundIndex() {
 	// First let's check if we have an excess number of inbound remote nodes. If we do, we'll disconnect some of them.
 	numConnectedInboundRemoteNodes := uint32(cc.rnManager.GetNonValidatorInboundIndex().Count())
+	if numConnectedInboundRemoteNodes <= cc.targetNonValidatorInboundRemoteNodes {
+		return
+	}
+
+	// Disconnect random inbound non-validators if we have too many of them.
+	inboundRemoteNodes := cc.rnManager.GetNonValidatorInboundIndex().GetAll()
+	var connectedInboundRemoteNodes []*RemoteNode
+	for _, rn := range inboundRemoteNodes {
+		// We only want to disconnect remote nodes that have completed handshake.
+		if rn.IsHandshakeCompleted() {
+			connectedInboundRemoteNodes = append(connectedInboundRemoteNodes, rn)
+		}
+	}
+
 	excessiveInboundRemoteNodes := uint32(0)
 	if numConnectedInboundRemoteNodes > cc.targetNonValidatorInboundRemoteNodes {
 		excessiveInboundRemoteNodes = numConnectedInboundRemoteNodes - cc.targetNonValidatorInboundRemoteNodes
 	}
-	// Disconnect random inbound non-validators if we have too many of them.
-	inboundRemoteNodes := cc.rnManager.GetNonValidatorInboundIndex().GetAll()
-	for _, rn := range inboundRemoteNodes {
+	for _, rn := range connectedInboundRemoteNodes {
 		if excessiveInboundRemoteNodes == 0 {
 			break
 		}
+		glog.V(2).Infof("ConnectionController.refreshNonValidatorInboundIndex: Disconnecting inbound remote "+
+			"node (id=%v) due to excess inbound peers", rn.GetId())
 		cc.rnManager.Disconnect(rn)
 		excessiveInboundRemoteNodes--
 	}
@@ -444,7 +507,8 @@ func (cc *ConnectionController) connectNonValidators() {
 		}
 		cc.AddrMgr.Attempt(addr)
 		if err := cc.rnManager.CreateNonValidatorOutboundConnection(addr); err != nil {
-			glog.V(2).Infof("ConnectionController.connectNonValidators: Problem connecting to addr %v: %v", addr, err)
+			glog.V(2).Infof("ConnectionController.connectNonValidators: Problem creating non-validator outbound "+
+				"connection to addr: %v; err: %v", addr, err)
 		}
 	}
 }
@@ -504,14 +568,6 @@ func (cc *ConnectionController) SetTargetOutboundPeers(numPeers uint32) {
 	cc.targetNonValidatorOutboundRemoteNodes = numPeers
 }
 
-func (cc *ConnectionController) enoughNonValidatorInboundConnections() bool {
-	return uint32(cc.rnManager.GetNonValidatorInboundIndex().Count()) >= cc.targetNonValidatorInboundRemoteNodes
-}
-
-func (cc *ConnectionController) enoughNonValidatorOutboundConnections() bool {
-	return uint32(cc.rnManager.GetNonValidatorOutboundIndex().Count()) >= cc.targetNonValidatorOutboundRemoteNodes
-}
-
 // processInboundConnection is called when a new inbound connection is established. At this point, the connection is not validated,
 // nor is it assigned to a RemoteNode. This function is responsible for validating the connection and creating a RemoteNode from it.
 // Once the RemoteNode is created, we will initiate handshake.
@@ -520,12 +576,6 @@ func (cc *ConnectionController) processInboundConnection(conn Connection) (*Remo
 	var ok bool
 	if ic, ok = conn.(*inboundConnection); !ok {
 		return nil, fmt.Errorf("ConnectionController.handleInboundConnection: Connection is not an inboundConnection")
-	}
-
-	// Reject the peer if we have too many inbound connections already.
-	if cc.enoughNonValidatorInboundConnections() {
-		return nil, fmt.Errorf("ConnectionController.handleInboundConnection: Rejecting INBOUND peer (%s) due to max "+
-			"inbound peers (%d) hit", ic.connection.RemoteAddr().String(), cc.targetNonValidatorInboundRemoteNodes)
 	}
 
 	// If we want to limit inbound connections to one per IP address, check to make sure this address isn't already connected.
@@ -572,12 +622,6 @@ func (cc *ConnectionController) processOutboundConnection(conn Connection) (*Rem
 		cc.AddrMgr.Good(oc.address)
 	}
 
-	// if this is a non-persistent outbound peer, and we already have enough outbound peers, then don't bother adding this one.
-	if !oc.isPersistent && cc.enoughNonValidatorOutboundConnections() {
-		return nil, fmt.Errorf("ConnectionController.handleOutboundConnection: Connected to maximum number of outbound "+
-			"peers (%d)", cc.targetNonValidatorOutboundRemoteNodes)
-	}
-
 	// If this is a non-persistent outbound peer and the group key overlaps with another peer we're already connected to then
 	// abort mission. We only connect to one peer per IP group in order to prevent Sybil attacks.
 	if !oc.isPersistent && cc.cmgr.IsFromRedundantOutboundIPAddress(oc.address) {
@@ -599,18 +643,12 @@ func (cc *ConnectionController) processOutboundConnection(conn Connection) (*Rem
 	}
 
 	// If this is a persistent remote node or a validator, we don't need to do any extra connection validation.
-	if remoteNode.IsPersistent() || remoteNode.GetValidatorPublicKey() != nil {
+	if remoteNode.IsPersistent() || remoteNode.IsExpectedValidator() {
 		return remoteNode, nil
 	}
 
 	// If we get here, it means we're dealing with a non-persistent or non-validator remote node. We perform additional
 	// connection validation.
-
-	// If we already have enough outbound peers, then don't bother adding this one.
-	if cc.enoughNonValidatorOutboundConnections() {
-		return nil, fmt.Errorf("ConnectionController.handleOutboundConnection: Connected to maximum number of outbound "+
-			"peers (%d)", cc.targetNonValidatorOutboundRemoteNodes)
-	}
 
 	// If the group key overlaps with another peer we're already connected to then abort mission. We only connect to
 	// one peer per IP group in order to prevent Sybil attacks.

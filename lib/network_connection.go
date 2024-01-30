@@ -91,8 +91,9 @@ type OutboundConnectionAttempt struct {
 	// connectionChan is used to send the result of the connection attempt to the caller thread.
 	connectionChan chan *outboundConnection
 
-	exitChan chan bool
-	status   outboundConnectionAttemptStatus
+	startGroup sync.WaitGroup
+	exitChan   chan bool
+	status     outboundConnectionAttemptStatus
 }
 
 type outboundConnectionAttemptStatus int
@@ -126,11 +127,14 @@ func (oca *OutboundConnectionAttempt) Start() {
 		return
 	}
 
+	oca.startGroup.Add(1)
 	go oca.start()
+	oca.startGroup.Wait()
 	oca.status = outboundConnectionAttemptRunning
 }
 
 func (oca *OutboundConnectionAttempt) start() {
+	oca.startGroup.Done()
 	oca.retryCount = 0
 
 out:
@@ -198,7 +202,7 @@ func (oca *OutboundConnectionAttempt) SetTimeoutUnit(timeoutUnit time.Duration) 
 // Otherwise, it will return nil.
 func (oca *OutboundConnectionAttempt) attemptOutboundConnection() net.Conn {
 	// If the peer is not persistent, update the addrmgr.
-	glog.V(1).Infof("Attempting to connect to addr: %v", oca.netAddr.IP.String())
+	glog.V(1).Infof("Attempting to connect to addr: %v:%v", oca.netAddr.IP.String(), oca.netAddr.Port)
 
 	var err error
 	tcpAddr := net.TCPAddr{

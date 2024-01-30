@@ -38,18 +38,13 @@ func (hc *HandshakeController) InitiateHandshake(rn *RemoteNode) {
 	hc.usedNonces.Add(nonce)
 }
 
-// _handleHandshakeCompleteMessage handles HandshakeComplete control messages, sent by RemoteNodes.
-func (hc *HandshakeController) _handleHandshakeCompleteMessage(origin *Peer, desoMsg DeSoMessage) {
+// handleHandshakeComplete handles HandshakeComplete control messages, sent by RemoteNodes.
+func (hc *HandshakeController) handleHandshakeComplete(remoteNode *RemoteNode) {
 	// Prevent race conditions while handling handshake complete messages.
 	hc.mtxHandshakeComplete.Lock()
 	defer hc.mtxHandshakeComplete.Unlock()
 
-	if desoMsg.GetMsgType() != MsgTypePeerHandshakeComplete {
-		return
-	}
-
 	// Get the handshake information of this peer.
-	remoteNode := hc.rnManager.GetRemoteNodeFromPeer(origin)
 	if remoteNode == nil {
 		return
 	}
@@ -60,7 +55,8 @@ func (hc *HandshakeController) _handleHandshakeCompleteMessage(origin *Peer, des
 	}
 
 	if err := hc.handleHandshakeCompletePoSMessage(remoteNode); err != nil {
-		glog.Errorf("HandshakeController._handleHandshakeCompleteMessage: Error handling PoS handshake peer message: %v", err)
+		glog.Errorf("HandshakeController.handleHandshakeComplete: Error handling PoS handshake peer message: %v, "+
+			"remoteNodePk (%s)", err, remoteNode.GetValidatorPublicKey().Serialize())
 		hc.rnManager.Disconnect(remoteNode)
 		return
 	}
@@ -165,6 +161,8 @@ func (hc *HandshakeController) _handleVerackMessage(origin *Peer, desoMsg DeSoMe
 		glog.Errorf("HandshakeController._handleVerackMessage: Requesting PeerDisconnect for id: (%v) "+
 			"error handling verack message: %v", origin.ID, err)
 		hc.rnManager.Disconnect(rn)
+		return
 	}
-	return
+
+	hc.handleHandshakeComplete(rn)
 }

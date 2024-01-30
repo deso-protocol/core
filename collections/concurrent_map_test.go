@@ -36,7 +36,7 @@ func TestConcurrentMap(t *testing.T) {
 	}
 
 	// test copy
-	copy := m.Copy()
+	copy := m.ToMap()
 	for key, val := range control {
 		if mVal, ok := copy[key]; !ok || mVal != val {
 			t.Errorf("Expected %d, got %d", val, m.m[key])
