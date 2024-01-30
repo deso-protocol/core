@@ -19,7 +19,7 @@ import (
 // the initial connections a node makes to the network. It is also responsible for creating RemoteNodes from all
 // successful outbound and inbound connections. The NetworkManager also ensures that the node is connected to
 // the active validators, once the node reaches Proof of Stake.
-// TODO: Document more in later PRs
+// TODO: Document more
 type NetworkManager struct {
 	// The parameters we are initialized with.
 	params *DeSoParams
