@@ -69,7 +69,7 @@ func generateConfig(t *testing.T, port uint32, dataDir string, maxPeers uint32) 
 	config.MaxSyncBlockHeight = 0
 	config.ConnectIPs = []string{}
 	config.PrivateMode = true
-	config.GlogV = 2
+	config.GlogV = 0
 	config.GlogVmodule = "*bitcoin_manager*=0,*balance*=0,*view*=0,*frontend*=0,*peer*=0,*addr*=0,*network*=0,*utils*=0,*connection*=0,*main*=0,*server*=0,*mempool*=0,*miner*=0,*blockchain*=0"
 	config.MaxInboundPeers = maxPeers
 	config.TargetOutboundPeers = maxPeers
@@ -427,6 +427,16 @@ func restartAtHeightAndReconnectNode(t *testing.T, node *cmd.Node, source *cmd.N
 	return newNode, bridge
 }
 
+func restartAtHeight(t *testing.T, node *cmd.Node, height uint32) *cmd.Node {
+	<-listenForBlockHeight(node, height)
+	return restartNode(t, node)
+}
+
+func shutdownAtHeight(t *testing.T, node *cmd.Node, height uint32) *cmd.Node {
+	<-listenForBlockHeight(node, height)
+	return shutdownNode(t, node)
+}
+
 // listenForSyncPrefix will wait until the node starts downloading the provided syncPrefix in hypersync, and then sends
 // a message to the provided signal channel.
 func listenForSyncPrefix(t *testing.T, node *cmd.Node, syncPrefix []byte, signal chan<- bool) {
@@ -468,6 +478,20 @@ func restartAtSyncPrefixAndReconnectNode(t *testing.T, node *cmd.Node, source *c
 	bridge := NewConnectionBridge(newNode, source)
 	require.NoError(bridge.Start())
 	return newNode, bridge
+}
+
+func restartAtSyncPrefix(t *testing.T, node *cmd.Node, syncPrefix []byte) *cmd.Node {
+	listener := make(chan bool)
+	listenForSyncPrefix(t, node, syncPrefix, listener)
+	<-listener
+	return restartNode(t, node)
+}
+
+func shutdownAtSyncPrefix(t *testing.T, node *cmd.Node, syncPrefix []byte) *cmd.Node {
+	listener := make(chan bool)
+	listenForSyncPrefix(t, node, syncPrefix, listener)
+	<-listener
+	return shutdownNode(t, node)
 }
 
 func randomUint32Between(t *testing.T, min, max uint32) uint32 {

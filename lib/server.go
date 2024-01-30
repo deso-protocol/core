@@ -442,6 +442,7 @@ func NewServer(
 		nodeMessageChannel:           _nodeMessageChan,
 		forceChecksum:                _forceChecksum,
 		AddrMgr:                      _desoAddrMgr,
+		params:                       _params,
 	}
 
 	if stateChangeSyncer != nil {
@@ -837,8 +838,8 @@ func (srv *Server) GetBlocks(pp *Peer, maxHeight int) {
 
 func (srv *Server) _handleHeaderBundle(pp *Peer, msg *MsgDeSoHeaderBundle) {
 	printHeight := pp.StartingBlockHeight()
-	if srv.blockchain.headerTip().Height > printHeight {
-		printHeight = srv.blockchain.headerTip().Height
+	if uint64(srv.blockchain.headerTip().Height) > printHeight {
+		printHeight = uint64(srv.blockchain.headerTip().Height)
 	}
 	glog.Infof(CLog(Yellow, fmt.Sprintf("Received header bundle with %v headers "+
 		"in state %s from peer %v. Downloaded ( %v / %v ) total headers",
@@ -1545,6 +1546,7 @@ func (srv *Server) _startSync() {
 	// Find a peer with StartingHeight bigger than our best header tip.
 	var bestPeer *Peer
 	for _, peer := range srv.cmgr.GetAllPeers() {
+
 		if !peer.IsSyncCandidate() {
 			glog.Infof("Peer is not sync candidate: %v (isOutbound: %v)", peer, peer.isOutbound)
 			continue
@@ -1552,7 +1554,7 @@ func (srv *Server) _startSync() {
 
 		// Choose the peer with the best height out of everyone who's a
 		// valid sync candidate.
-		if peer.StartingBlockHeight() < bestHeight {
+		if peer.StartingBlockHeight() < uint64(bestHeight) {
 			continue
 		}
 
@@ -1602,7 +1604,14 @@ func (srv *Server) _startSync() {
 
 }
 
-func (srv *Server) HandleAcceptedPeer(pp *Peer) {
+func (srv *Server) HandleAcceptedPeer(rn *RemoteNode) {
+	if rn == nil || rn.GetPeer() == nil {
+		return
+	}
+	pp := rn.GetPeer()
+	pp.SetServiceFlag(rn.GetServiceFlag())
+	pp.SetLatestBlockHeight(rn.GetLatestBlockHeight())
+
 	isSyncCandidate := pp.IsSyncCandidate()
 	isSyncing := srv.blockchain.isSyncing()
 	chainState := srv.blockchain.chainState()

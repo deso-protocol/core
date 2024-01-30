@@ -48,7 +48,6 @@ type Peer struct {
 	StatsMtx       deadlock.RWMutex
 	TimeOffsetSecs int64
 	TimeConnected  time.Time
-	startingHeight uint32
 	ID             uint64
 	// Ping-related fields.
 	LastPingNonce  uint64
@@ -64,32 +63,16 @@ type Peer struct {
 	Params              *DeSoParams
 	MessageChan         chan *ServerMessage
 
-	// In order to complete a version negotiation successfully, the peer must
-	// reply to the initial version message we send them with a verack message
-	// containing the nonce from that initial version message. This ensures that
-	// the peer's IP isn't being spoofed since the only way to actually produce
-	// a verack with the appropriate response is to actually own the IP that
-	// the peer claims it has. As such, we maintain the version nonce we sent
-	// the peer and the version nonce they sent us here.
-	//
-	// TODO: The way we synchronize the version nonce is currently a bit
-	// messy; ideally we could do it without keeping global state.
-	VersionNonceSent     uint64
-	VersionNonceReceived uint64
-
 	// A pointer to the Server
 	srv *Server
 
 	// Basic state.
-	PeerInfoMtx               deadlock.Mutex
-	serviceFlags              ServiceFlag
-	addrStr                   string
-	netAddr                   *wire.NetAddress
-	userAgent                 string
-	advertisedProtocolVersion uint64
-	negotiatedProtocolVersion uint64
-	VersionNegotiated         bool
-	minTxFeeRateNanosPerKB    uint64
+	PeerInfoMtx            deadlock.Mutex
+	serviceFlags           ServiceFlag
+	latestHeight           uint64
+	addrStr                string
+	netAddr                *wire.NetAddress
+	minTxFeeRateNanosPerKB uint64
 	// Messages for which we are expecting a reply within a fixed
 	// amount of time. This list is always sorted by ExpectedTime,
 	// with the item having the earliest time at the front.
@@ -682,10 +665,10 @@ func (pp *Peer) MinFeeRateNanosPerKB() uint64 {
 }
 
 // StartingBlockHeight is the height of the peer's blockchain tip.
-func (pp *Peer) StartingBlockHeight() uint32 {
+func (pp *Peer) StartingBlockHeight() uint64 {
 	pp.StatsMtx.RLock()
 	defer pp.StatsMtx.RUnlock()
-	return pp.startingHeight
+	return pp.latestHeight
 }
 
 // NumBlocksToSend is the number of blocks the Peer has requested from
@@ -908,6 +891,20 @@ func (pp *Peer) _setKnownAddressesMap(key string, val bool) {
 	defer pp.knownAddressesMapLock.Unlock()
 
 	pp.knownAddressesMap[key] = val
+}
+
+func (pp *Peer) SetLatestBlockHeight(height uint64) {
+	pp.StatsMtx.Lock()
+	defer pp.StatsMtx.Unlock()
+
+	pp.latestHeight = height
+}
+
+func (pp *Peer) SetServiceFlag(sf ServiceFlag) {
+	pp.PeerInfoMtx.Lock()
+	defer pp.PeerInfoMtx.Unlock()
+
+	pp.serviceFlags = sf
 }
 
 func (pp *Peer) outHandler() {
