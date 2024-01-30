@@ -432,6 +432,11 @@ func restartAtHeight(t *testing.T, node *cmd.Node, height uint32) *cmd.Node {
 	return restartNode(t, node)
 }
 
+func shutdownAtHeight(t *testing.T, node *cmd.Node, height uint32) *cmd.Node {
+	<-listenForBlockHeight(node, height)
+	return shutdownNode(t, node)
+}
+
 // listenForSyncPrefix will wait until the node starts downloading the provided syncPrefix in hypersync, and then sends
 // a message to the provided signal channel.
 func listenForSyncPrefix(t *testing.T, node *cmd.Node, syncPrefix []byte, signal chan<- bool) {
@@ -473,6 +478,20 @@ func restartAtSyncPrefixAndReconnectNode(t *testing.T, node *cmd.Node, source *c
 	bridge := NewConnectionBridge(newNode, source)
 	require.NoError(bridge.Start())
 	return newNode, bridge
+}
+
+func restartAtSyncPrefix(t *testing.T, node *cmd.Node, syncPrefix []byte) *cmd.Node {
+	listener := make(chan bool)
+	listenForSyncPrefix(t, node, syncPrefix, listener)
+	<-listener
+	return restartNode(t, node)
+}
+
+func shutdownAtSyncPrefix(t *testing.T, node *cmd.Node, syncPrefix []byte) *cmd.Node {
+	listener := make(chan bool)
+	listenForSyncPrefix(t, node, syncPrefix, listener)
+	<-listener
+	return shutdownNode(t, node)
 }
 
 func randomUint32Between(t *testing.T, min, max uint32) uint32 {

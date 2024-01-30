@@ -2,10 +2,6 @@ package integration_testing
 
 import (
 	"fmt"
-	"github.com/deso-protocol/core/cmd"
-	"github.com/deso-protocol/core/lib"
-	"github.com/stretchr/testify/require"
-	"os"
 	"testing"
 )
 
@@ -63,8 +59,6 @@ func TestSimpleSyncRestart(t *testing.T) {
 	compareNodesByDB(t, node1, node2, 0)
 	t.Logf("Random restart successful! Random height was: %v", randomHeight)
 	t.Logf("Databases match!")
-	node1.Stop()
-	node2.Stop()
 }
 
 // TestSimpleSyncDisconnectWithSwitchingToNewPeer tests if a node can successfully restart while syncing blocks, and
@@ -78,62 +72,35 @@ func TestSimpleSyncRestart(t *testing.T) {
 //  7. compare node1 state matches node2 state.
 //  8. compare node3 state matches node2 state.
 func TestSimpleSyncDisconnectWithSwitchingToNewPeer(t *testing.T) {
-	require := require.New(t)
-	_ = require
-
-	dbDir1 := getDirectory(t)
-	dbDir2 := getDirectory(t)
-	dbDir3 := getDirectory(t)
-	defer os.RemoveAll(dbDir1)
-	defer os.RemoveAll(dbDir2)
-	defer os.RemoveAll(dbDir3)
-
-	config1 := generateConfig(t, 18000, dbDir1, 10)
-	config1.SyncType = lib.NodeSyncTypeBlockSync
-	config2 := generateConfig(t, 18001, dbDir2, 10)
-	config2.SyncType = lib.NodeSyncTypeBlockSync
-	config3 := generateConfig(t, 18002, dbDir3, 10)
-	config3.SyncType = lib.NodeSyncTypeBlockSync
-
-	config1.ConnectIPs = []string{"deso-seed-2.io:17000"}
-	config3.ConnectIPs = []string{"deso-seed-2.io:17000"}
-
-	node1 := cmd.NewNode(config1)
-	node2 := cmd.NewNode(config2)
-	node3 := cmd.NewNode(config3)
-
+	node1 := spawnNodeProtocol1(t, 18000, "node1")
+	node1.Config.ConnectIPs = []string{"deso-seed-2.io:17000"}
 	node1 = startNode(t, node1)
-	node2 = startNode(t, node2)
-	node3 = startNode(t, node3)
 
 	// wait for node1 to sync blocks
 	waitForNodeToFullySync(node1)
+
+	node3 := spawnNodeProtocol1(t, 18002, "node3")
+	node3.Config.ConnectIPs = []string{"deso-seed-2.io:17000"}
+	node3 = startNode(t, node3)
+
 	// wait for node3 to sync blocks
 	waitForNodeToFullySync(node3)
 
-	// bridge the nodes together.
-	bridge12 := NewConnectionBridge(node1, node2)
-	require.NoError(bridge12.Start())
+	node2 := spawnNodeProtocol1(t, 18001, "node2")
+	node2.Config.ConnectIPs = []string{"127.0.0.1:18000"}
+	node2 = startNode(t, node2)
 
-	randomHeight := randomUint32Between(t, 10, config2.MaxSyncBlockHeight)
-	fmt.Println("Random height for a restart (re-use if test failed):", randomHeight)
-	disconnectAtBlockHeight(node2, bridge12, randomHeight)
+	randomHeight := randomUint32Between(t, 10, node2.Config.MaxSyncBlockHeight)
+	t.Logf("Random height for a restart (re-use if test failed): %v", randomHeight)
 
-	// bridge the nodes together.
-	bridge23 := NewConnectionBridge(node2, node3)
-	require.NoError(bridge23.Start())
-
-	// Reboot node2 at a specific height and reconnect it with node1
-	//node2, bridge12 = restartAtHeightAndReconnectNode(t, node2, node1, bridge12, randomHeight)
+	// Reboot node2 at a specific height and reconnect it with node3
+	node2 = shutdownAtHeight(t, node2, randomHeight)
+	node2.Config.ConnectIPs = []string{"127.0.0.1:18002"}
+	node2 = startNode(t, node2)
 	waitForNodeToFullySync(node2)
 
 	compareNodesByDB(t, node1, node2, 0)
 	compareNodesByDB(t, node3, node2, 0)
-	fmt.Println("Random restart successful! Random height was", randomHeight)
-	fmt.Println("Databases match!")
-	bridge12.Disconnect()
-	bridge23.Disconnect()
-	node1.Stop()
-	node2.Stop()
-	node3.Stop()
+	t.Logf("Random restart successful! Random height was %v", randomHeight)
+	t.Logf("Databases match!")
 }
