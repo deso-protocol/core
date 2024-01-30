@@ -3728,8 +3728,10 @@ func (key *DerivedKeyEntry) RawDecodeWithoutMetadata(blockHeight uint64, rr *byt
 }
 
 func (key *DerivedKeyEntry) GetVersionByte(blockHeight uint64) byte {
+	// Remember to update this every time there an encoder migration that impacts
+	// the TransactionSpendingLimit struct.
 	return GetMigrationVersion(blockHeight, UnlimitedDerivedKeysMigration, AssociationsAndAccessGroupsMigration,
-		BalanceModelMigration)
+		BalanceModelMigration, ProofOfStake1StateSetupMigration)
 }
 
 func (key *DerivedKeyEntry) GetEncoderType() EncoderType {

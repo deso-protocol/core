@@ -3886,7 +3886,7 @@ func (bav *UtxoView) _connectFailingTransaction(txn *MsgDeSoTxn, blockHeight uin
 	_utxoOps []*UtxoOperation, _burnFee uint64, _utilityFee uint64, _err error) {
 
 	// Failing transactions are only allowed after ProofOfStake2ConsensusCutoverBlockHeight.
-	if blockHeight <= bav.Params.ForkHeights.ProofOfStake2ConsensusCutoverBlockHeight {
+	if blockHeight < bav.Params.ForkHeights.ProofOfStake2ConsensusCutoverBlockHeight {
 		return nil, 0, 0, fmt.Errorf("_connectFailingTransaction: Failing transactions " +
 			"not allowed before ProofOfStake2ConsensusCutoverBlockHeight")
 	}
@@ -4053,8 +4053,23 @@ func (bav *UtxoView) ConnectBlock(
 		// which a miner is trying to spam the network, which should generally never happen.
 		utxoOpsForTxn, totalInput, totalOutput, currentFees, err := bav.ConnectTransaction(txn, txHash, 0, uint32(blockHeader.Height), int64(blockHeader.TstampNanoSecs), verifySignatures, false)
 		_, _ = totalInput, totalOutput // A bit surprising we don't use these
-		if err != nil {
+		// After the PoS cutover, we need to check if the transaction is a failing transaction.
+		txnConnects := blockHeight < uint64(bav.Params.ForkHeights.ProofOfStake2ConsensusCutoverBlockHeight) ||
+			(txIndex == 0 && txn.TxnMeta.GetTxnType() == TxnTypeBlockReward) ||
+			desoBlock.TxnConnectStatusByIndex.Get(txIndex-1)
+		if txnConnects && err != nil {
 			return nil, errors.Wrapf(err, "ConnectBlock: error connecting txn #%d", txIndex)
+		} else if !txnConnects {
+			if err == nil {
+				return nil, errors.Wrapf(err, "ConnectBlock: txn #%d should not connect based on "+
+					"TxnConnectStatusByIndex but err is nil", txIndex)
+			}
+			var burnFee, utilityFee uint64
+			utxoOpsForTxn, burnFee, utilityFee, err = bav._connectFailingTransaction(txn, uint32(blockHeader.Height), verifySignatures)
+			if err != nil {
+				return nil, errors.Wrapf(err, "ConnectBlock: error connecting failing txn #%d", txIndex)
+			}
+			_, _ = burnFee, utilityFee // TODO: figure out what we're supposed to do with these ones.
 		}
 
 		// After the block reward patch block height, we only include fees from transactions

@@ -496,6 +496,7 @@ func TestUpsertBlockAndBlockNodeToDB(t *testing.T) {
 // greater than its parent's view.
 func TestHasValidBlockViewPoS(t *testing.T) {
 	setBalanceModelBlockHeights(t)
+	setPoSBlockHeights(t, 1, 1)
 	bc, _, _ := NewTestBlockchain(t)
 	hash1 := NewBlockHash(RandomBytes(32))
 	hash2 := NewBlockHash(RandomBytes(32))
@@ -587,6 +588,8 @@ func TestHasValidBlockViewPoS(t *testing.T) {
 func TestHasValidBlockProposerPoS(t *testing.T) {
 	// Initialize balance model fork heights.
 	setBalanceModelBlockHeights(t)
+	// Initialize PoS fork heights.
+	setPoSBlockHeights(t, 11, 12)
 
 	// Initialize test chain, miner, and testMeta
 	testMeta := _setUpMinerAndTestMetaForEpochCompleteTest(t)
@@ -1743,11 +1746,13 @@ func TestProcessBlockPoS(t *testing.T) {
 		require.True(t, exists)
 		require.False(t, timeoutBlockNode.IsCommitted())
 	}
+	var dummyParentBlockHash, orphanBlockHash *BlockHash
 	{
 		// Let's process an orphan block.
 		var dummyParentBlock *MsgDeSoBlock
+		var err error
 		dummyParentBlock = _generateRealBlock(testMeta, 16, 16, 272, reorgBlockHash, false)
-		dummyParentBlockHash, err := dummyParentBlock.Hash()
+		dummyParentBlockHash, err = dummyParentBlock.Hash()
 		require.NoError(t, err)
 		var orphanBlock *MsgDeSoBlock
 		orphanBlock = _generateRealBlock(testMeta, 17, 17, 9273, reorgBlockHash, false)
@@ -1757,7 +1762,7 @@ func TestProcessBlockPoS(t *testing.T) {
 		// Create a QC on the dummy parent block
 		orphanBlock.Header.ValidatorsVoteQC = _getVoteQC(testMeta, testMeta.posMempool.readOnlyLatestBlockView, dummyParentBlockHash, 16)
 		updateProposerVotePartialSignatureForBlock(testMeta, orphanBlock)
-		orphanBlockHash, err := orphanBlock.Hash()
+		orphanBlockHash, err = orphanBlock.Hash()
 		require.NoError(t, err)
 		success, isOrphan, missingBlockHashes, err := testMeta.chain.ProcessBlockPoS(orphanBlock, 17, true)
 		require.False(t, success)
@@ -1781,6 +1786,8 @@ func TestProcessBlockPoS(t *testing.T) {
 		require.NotNil(t, orphanBlockInIndex)
 		require.True(t, orphanBlockInIndex.IsStored())
 		require.True(t, orphanBlockInIndex.IsValidated())
+		_verifyCommitRuleHelper(testMeta, []*BlockHash{blockHash1, blockHash2, blockHash3, reorgBlockHash},
+			[]*BlockHash{dummyParentBlockHash, orphanBlockHash}, reorgBlockHash)
 	}
 	{
 		// Let's process a block that is an orphan, but is malformed.
@@ -1812,6 +1819,18 @@ func TestProcessBlockPoS(t *testing.T) {
 		require.False(t, isOrphan)
 		require.Len(t, missingBlockHashes, 0)
 		require.Error(t, err)
+	}
+	var blockWithFailingTxnHash *BlockHash
+	{
+		var blockWithFailingTxn *MsgDeSoBlock
+		blockWithFailingTxn = _generateRealBlockWithFailingTxn(testMeta, 18, 18, 123722, orphanBlockHash, false, 1)
+		require.Equal(t, blockWithFailingTxn.TxnConnectStatusByIndex.Get(len(blockWithFailingTxn.Txns)-1), false)
+		success, _, _, err := testMeta.chain.ProcessBlockPoS(blockWithFailingTxn, 18, true)
+		require.True(t, success)
+		blockWithFailingTxnHash, err = blockWithFailingTxn.Hash()
+		require.NoError(t, err)
+		_verifyCommitRuleHelper(testMeta, []*BlockHash{blockHash1, blockHash2, blockHash3, reorgBlockHash, dummyParentBlockHash},
+			[]*BlockHash{orphanBlockHash, blockWithFailingTxnHash}, dummyParentBlockHash)
 	}
 }
 
@@ -1851,7 +1870,7 @@ func TestGetSafeBlocks(t *testing.T) {
 	require.True(t, bn3.Hash.IsEqual(block3Hash))
 	// Add block 3' only as stored
 	var block3Prime *MsgDeSoBlock
-	block3Prime = _generateRealBlock(testMeta, uint64(testMeta.savedHeight+2), uint64(testMeta.savedHeight+3), 13717, block2Hash, false)
+	block3Prime = _generateRealBlock(testMeta, uint64(testMeta.savedHeight+2), uint64(testMeta.savedHeight+3), 137175, block2Hash, false)
 	bn3Prime, err := testMeta.chain.storeBlockInBlockIndex(block3Prime)
 	require.NoError(t, err)
 	block3PrimeHash, err := block3Prime.Hash()
@@ -2277,6 +2296,11 @@ func TestHasValidProposerRandomSeedSignaturePoS(t *testing.T) {
 // PosMempool, generating a RandomSeedHash, updating the latestBlockView in the PosBlockProducer, and calling _getFullRealBlockTemplate.
 // It can be used to generate a block w/ either a vote or timeout QC.
 func _generateRealBlock(testMeta *TestMeta, blockHeight uint64, view uint64, seed int64, prevBlockHash *BlockHash, isTimeout bool) BlockTemplate {
+	return _generateRealBlockWithFailingTxn(testMeta, blockHeight, view, seed, prevBlockHash, isTimeout, 0)
+}
+
+func _generateRealBlockWithFailingTxn(testMeta *TestMeta, blockHeight uint64, view uint64, seed int64,
+	prevBlockHash *BlockHash, isTimeout bool, numFailingTxns uint64) BlockTemplate {
 	globalParams := _testGetDefaultGlobalParams()
 	randSource := rand.New(rand.NewSource(seed))
 	passingTxns := []*MsgDeSoTxn{}
@@ -2293,6 +2317,17 @@ func _generateRealBlock(testMeta *TestMeta, blockHeight uint64, view uint64, see
 		_wrappedPosMempoolAddTransaction(testMeta.t, testMeta.posMempool, txn)
 	}
 
+	failingTxns := []*MsgDeSoTxn{}
+	for jj := 0; jj < int(numFailingTxns); jj++ {
+		// make a like on a non-existent post
+		txn, _, _, _, err := testMeta.chain.CreateLikeTxn(
+			m0PubBytes, ZeroBlockHash, false, feeMax, nil, []*DeSoOutput{})
+		failingTxns = append(failingTxns, txn)
+		require.NoError(testMeta.t, err)
+		_signTxn(testMeta.t, txn, m0Priv)
+		_wrappedPosMempoolAddTransaction(testMeta.t, testMeta.posMempool, txn)
+	}
+
 	// TODO: Get real seed signature.
 	prevBlock, exists := testMeta.chain.blockIndexByHash[*prevBlockHash]
 	require.True(testMeta.t, exists)
@@ -2302,7 +2337,16 @@ func _generateRealBlock(testMeta *TestMeta, blockHeight uint64, view uint64, see
 	require.NoError(testMeta.t, err)
 	latestBlockHeight := testMeta.chain.blockIndexByHash[*prevBlockHash].Height
 	testMeta.posMempool.UpdateLatestBlock(latestBlockView, uint64(latestBlockHeight))
-	return _getFullRealBlockTemplate(testMeta, testMeta.posMempool.readOnlyLatestBlockView, blockHeight, view, seedSignature, isTimeout)
+	fullBlockTemplate := _getFullRealBlockTemplate(testMeta, testMeta.posMempool.readOnlyLatestBlockView, blockHeight, view, seedSignature, isTimeout)
+	// Remove the transactions from this block from the mempool.
+	// This prevents nonce reuse issues when trying to make reorg blocks.
+	for _, txn := range passingTxns {
+		testMeta.posMempool.RemoveTransaction(txn.Hash())
+	}
+	for _, txn := range failingTxns {
+		testMeta.posMempool.RemoveTransaction(txn.Hash())
+	}
+	return fullBlockTemplate
 }
 
 // _generateDummyBlock generates a BlockTemplate with dummy data by adding 50 test transactions to the
@@ -2579,12 +2623,8 @@ func _generateRandomBLSPrivateKey(t *testing.T) *bls.PrivateKey {
 // PoS Cutover height to 12.
 func NewTestPoSBlockchainWithValidators(t *testing.T) *TestMeta {
 	setBalanceModelBlockHeights(t)
-	// Set the PoS Setup Height to block 11.
-	DeSoTestnetParams.ForkHeights.ProofOfStake1StateSetupBlockHeight = 11
-	DeSoTestnetParams.ForkHeights.ProofOfStake2ConsensusCutoverBlockHeight = 12
-	DeSoTestnetParams.EncoderMigrationHeights = GetEncoderMigrationHeights(&DeSoTestnetParams.ForkHeights)
-	DeSoTestnetParams.EncoderMigrationHeightsList = GetEncoderMigrationHeightsList(&DeSoTestnetParams.ForkHeights)
-	GlobalDeSoParams = DeSoTestnetParams
+	// Set the PoS Setup Height to block 11 and cutover to 12.
+	setPoSBlockHeights(t, 11, 12)
 
 	chain, params, db := NewLowDifficultyBlockchain(t)
 	oldPool, miner := NewTestMiner(t, chain, params, true)
@@ -2629,7 +2669,7 @@ func NewTestPoSBlockchainWithValidators(t *testing.T) *TestMeta {
 	latestBlockView, err := NewUtxoView(db, params, nil, nil, nil)
 	require.NoError(t, err)
 
-	maxMempoolPosSizeBytes := uint64(500)
+	maxMempoolPosSizeBytes := uint64(1024 * 1024 * 1000)
 	mempoolBackupIntervalMillis := uint64(30000)
 	mempool := NewPosMempool()
 	require.NoError(t, mempool.Init(
@@ -2675,11 +2715,8 @@ func NewTestPoSBlockchainWithValidators(t *testing.T) *TestMeta {
 // block height is set to 9 and the cutover is set to 11.
 func NewTestPoSBlockchain(t *testing.T) *TestMeta {
 	setBalanceModelBlockHeights(t)
-	DeSoTestnetParams.ForkHeights.ProofOfStake1StateSetupBlockHeight = 9
-	DeSoTestnetParams.ForkHeights.ProofOfStake2ConsensusCutoverBlockHeight = 11
-	DeSoTestnetParams.EncoderMigrationHeights = GetEncoderMigrationHeights(&DeSoTestnetParams.ForkHeights)
-	DeSoTestnetParams.EncoderMigrationHeightsList = GetEncoderMigrationHeightsList(&DeSoTestnetParams.ForkHeights)
-	GlobalDeSoParams = DeSoTestnetParams
+	// Set the PoS Setup Height to block 9 and cutover to 11.
+	setPoSBlockHeights(t, 9, 11)
 	chain, params, db := NewLowDifficultyBlockchain(t)
 	params.ForkHeights.BalanceModelBlockHeight = 1
 	oldPool, miner := NewTestMiner(t, chain, params, true)
