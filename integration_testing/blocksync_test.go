@@ -1,7 +1,6 @@
 package integration_testing
 
 import (
-	"fmt"
 	"testing"
 )
 
@@ -27,7 +26,7 @@ func TestSimpleBlockSync(t *testing.T) {
 	waitForNodeToFullySync(node2)
 
 	compareNodesByDB(t, node1, node2, 0)
-	fmt.Println("Databases match!")
+	t.Logf("Databases match!")
 }
 
 // TestSimpleSyncRestart tests if a node can successfully restart while syncing blocks.
