@@ -114,11 +114,11 @@ func (desoBlockProducer *DeSoBlockProducer) _updateBlockTimestamp(blk *MsgDeSoBl
 	// the timestamp set in the last block then set the time based on the last
 	// block's timestamp instead. We do this because consensus rules require a
 	// monotonically increasing timestamp.
-	blockTstamp := uint32(desoBlockProducer.chain.timeSource.AdjustedTime().Unix())
-	if blockTstamp <= uint32(lastNode.Header.GetTstampSecs()) {
-		blockTstamp = uint32(lastNode.Header.GetTstampSecs()) + 1
+	blockTstamp := desoBlockProducer.chain.timeSource.AdjustedTime().Unix()
+	if blockTstamp <= lastNode.Header.GetTstampSecs() {
+		blockTstamp = lastNode.Header.GetTstampSecs() + 1
 	}
-	blk.Header.SetTstampSecs(uint64(blockTstamp))
+	blk.Header.SetTstampSecs(blockTstamp)
 }
 
 func (desoBlockProducer *DeSoBlockProducer) _getBlockTemplate(publicKey []byte) (

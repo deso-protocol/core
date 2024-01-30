@@ -75,7 +75,7 @@ func (pbp *PosBlockProducer) CreateUnsignedTimeoutBlock(latestBlockView *UtxoVie
 func (pbp *PosBlockProducer) createBlockTemplate(latestBlockView *UtxoView, newBlockHeight uint64, view uint64,
 	proposerRandomSeedSignature *bls.Signature) (BlockTemplate, error) {
 	// First get the block without the header.
-	currentTimestamp := uint64(time.Now().UnixNano())
+	currentTimestamp := time.Now().UnixNano()
 	block, err := pbp.createBlockWithoutHeader(latestBlockView, newBlockHeight, currentTimestamp)
 	if err != nil {
 		return nil, errors.Wrapf(err, "PosBlockProducer.CreateBlockTemplate: Problem creating block without header")
@@ -108,7 +108,7 @@ func (pbp *PosBlockProducer) createBlockTemplate(latestBlockView *UtxoView, newB
 // createBlockWithoutHeader is a helper function used by createBlockTemplate. It constructs a partially filled out
 // block with Fee-Time ordered transactions. The returned block all its contents filled, except for the header.
 func (pbp *PosBlockProducer) createBlockWithoutHeader(
-	latestBlockView *UtxoView, newBlockHeight uint64, newBlockTimestampNanoSecs uint64) (BlockTemplate, error) {
+	latestBlockView *UtxoView, newBlockHeight uint64, newBlockTimestampNanoSecs int64) (BlockTemplate, error) {
 	block := NewMessage(MsgTypeBlock).(*MsgDeSoBlock)
 
 	// Create the block reward transaction.
@@ -144,7 +144,7 @@ func (pbp *PosBlockProducer) createBlockWithoutHeader(
 func (pbp *PosBlockProducer) getBlockTransactions(
 	latestBlockView *UtxoView,
 	newBlockHeight uint64,
-	newBlockTimestampNanoSecs uint64,
+	newBlockTimestampNanoSecs int64,
 	maxBlockSizeBytes uint64,
 ) (
 	_txns []*MsgDeSoTxn,
@@ -179,7 +179,7 @@ func (pbp *PosBlockProducer) getBlockTransactions(
 			return nil, nil, 0, errors.Wrapf(err, "Error copying UtxoView: ")
 		}
 		_, _, _, fees, err := blockUtxoViewCopy._connectTransaction(
-			txn.GetTxn(), txn.Hash(), int64(len(txnBytes)), uint32(newBlockHeight), int64(newBlockTimestampNanoSecs),
+			txn.GetTxn(), txn.Hash(), int64(len(txnBytes)), uint32(newBlockHeight), newBlockTimestampNanoSecs,
 			true, false)
 
 		// Check if the transaction connected.
