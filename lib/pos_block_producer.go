@@ -2,8 +2,8 @@ package lib
 
 import (
 	"math"
-	"time"
 
+	chainlib "github.com/btcsuite/btcd/blockchain"
 	"github.com/deso-protocol/core/bls"
 	"github.com/deso-protocol/core/collections/bitset"
 	"github.com/pkg/errors"
@@ -24,14 +24,22 @@ type PosBlockProducer struct {
 	params                  *DeSoParams
 	proposerPublicKey       *PublicKey
 	proposerVotingPublicKey *bls.PublicKey
+	timeSource              chainlib.MedianTimeSource
 }
 
-func NewPosBlockProducer(mp Mempool, params *DeSoParams, proposerPublicKey *PublicKey, proposerVotingPublicKey *bls.PublicKey) *PosBlockProducer {
+func NewPosBlockProducer(
+	mp Mempool,
+	params *DeSoParams,
+	timeSource chainlib.MedianTimeSource,
+	proposerPublicKey *PublicKey,
+	proposerVotingPublicKey *bls.PublicKey,
+) *PosBlockProducer {
 	return &PosBlockProducer{
 		mp:                      mp,
 		params:                  params,
 		proposerPublicKey:       proposerPublicKey,
 		proposerVotingPublicKey: proposerVotingPublicKey,
+		timeSource:              timeSource,
 	}
 }
 
@@ -75,7 +83,7 @@ func (pbp *PosBlockProducer) CreateUnsignedTimeoutBlock(latestBlockView *UtxoVie
 func (pbp *PosBlockProducer) createBlockTemplate(latestBlockView *UtxoView, newBlockHeight uint64, view uint64,
 	proposerRandomSeedSignature *bls.Signature) (BlockTemplate, error) {
 	// First get the block without the header.
-	currentTimestamp := uint64(time.Now().UnixNano())
+	currentTimestamp := uint64(pbp.timeSource.AdjustedTime().UnixNano())
 	block, err := pbp.createBlockWithoutHeader(latestBlockView, newBlockHeight, currentTimestamp)
 	if err != nil {
 		return nil, errors.Wrapf(err, "PosBlockProducer.CreateBlockTemplate: Problem creating block without header")

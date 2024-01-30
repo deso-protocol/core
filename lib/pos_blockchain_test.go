@@ -2702,7 +2702,7 @@ func NewTestPoSBlockchainWithValidators(t *testing.T) *TestMeta {
 	require.True(t, mempool.IsRunning())
 	priv := _generateRandomBLSPrivateKey(t)
 	m0Pk := NewPublicKey(m0PubBytes)
-	posBlockProducer := NewPosBlockProducer(mempool, params, m0Pk, priv.PublicKey())
+	posBlockProducer := NewPosBlockProducer(mempool, params, chain.timeSource, m0Pk, priv.PublicKey())
 	// TODO: do we need to update the encoder migration stuff for global params. Probably.
 	testMeta.mempool = nil
 	testMeta.posMempool = mempool
@@ -2773,7 +2773,7 @@ func NewTestPoSBlockchain(t *testing.T) *TestMeta {
 	require.True(t, mempool.IsRunning())
 	priv := _generateRandomBLSPrivateKey(t)
 	m0Pk := NewPublicKey(m0PubBytes)
-	posBlockProducer := NewPosBlockProducer(mempool, params, m0Pk, priv.PublicKey())
+	posBlockProducer := NewPosBlockProducer(mempool, params, chain.timeSource, m0Pk, priv.PublicKey())
 	testMeta := &TestMeta{
 		t:                t,
 		chain:            chain,
