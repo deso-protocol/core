@@ -13,8 +13,6 @@ import (
 	"github.com/deso-protocol/core/bls"
 	"github.com/deso-protocol/core/collections/bitset"
 
-	"github.com/deso-protocol/core/bls"
-
 	"github.com/btcsuite/btcd/wire"
 	"github.com/holiman/uint256"
 
