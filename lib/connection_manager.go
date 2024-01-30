@@ -105,8 +105,8 @@ type ConnectionManager struct {
 	// peers' time.
 	timeSource chainlib.MedianTimeSource
 
-	// peerDisconnectChan is notified whenever a peer exits.
-	peerDisconnectChan chan *Peer
+	// peerDisconnectedChan is notified whenever a peer exits.
+	peerDisconnectedChan chan *Peer
 
 	// stallTimeoutSeconds is how long we wait to receive responses from Peers
 	// for certain types of messages.
@@ -151,7 +151,7 @@ func NewConnectionManager(
 		attemptedOutboundAddrs:     make(map[string]bool),
 
 		// Initialize the channels.
-		peerDisconnectChan:     make(chan *Peer, 100),
+		peerDisconnectedChan:   make(chan *Peer, 100),
 		outboundConnectionChan: make(chan *outboundConnection, 100),
 		inboundConnectionChan:  make(chan *inboundConnection, 100),
 
@@ -299,7 +299,7 @@ func (cmgr *ConnectionManager) ConnectPeer(id uint64, conn net.Conn, na *wire.Ne
 		cmgr.minFeeRateNanosPerKB,
 		cmgr.params,
 		cmgr.srv.incomingMessages, cmgr, cmgr.srv, cmgr.SyncType,
-		cmgr.peerDisconnectChan)
+		cmgr.peerDisconnectedChan)
 
 	// Now we can add the peer to our data structures.
 	peer._logAddPeer()
@@ -633,7 +633,7 @@ func (cmgr *ConnectionManager) Start() {
 					Connection: ic,
 				},
 			}
-		case pp := <-cmgr.peerDisconnectChan:
+		case pp := <-cmgr.peerDisconnectedChan:
 			{
 				// By the time we get here, it can be assumed that the Peer's Disconnect function
 				// has already been called, since that is what's responsible for adding the peer
