@@ -190,7 +190,10 @@ func (pbp *PosBlockProducer) getBlockTransactions(
 			currentBlockSize += uint64(len(txnBytes))
 			// Compute BMF for the transaction.
 			_, utilityFee := computeBMF(fees)
-			maxUtilityFee += utilityFee
+			maxUtilityFee, err = SafeUint64().Add(maxUtilityFee, utilityFee)
+			if err != nil {
+				return nil, nil, 0, errors.Wrapf(err, "Error computing max utility fee: ")
+			}
 			continue
 		}
 		// If the transaction didn't connect, we will try to add it as a failing transaction.
@@ -211,7 +214,10 @@ func (pbp *PosBlockProducer) getBlockTransactions(
 		txnConnectStatusByIndex.Set(len(blocksTxns), false)
 		blocksTxns = append(blocksTxns, txn.GetTxn())
 		currentBlockSize += uint64(len(txnBytes))
-		maxUtilityFee += utilityFee
+		maxUtilityFee, err = SafeUint64().Add(maxUtilityFee, utilityFee)
+		if err != nil {
+			return nil, nil, 0, errors.Wrapf(err, "Error computing max utility fee: ")
+		}
 	}
 
 	return blocksTxns, txnConnectStatusByIndex, maxUtilityFee, nil

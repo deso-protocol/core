@@ -3971,6 +3971,10 @@ func (bav *UtxoView) _connectFailingTransaction(txn *MsgDeSoTxn, blockHeight uin
 //
 //	burnFee := fee - log_2(fee), utilityFee := log_2(fee).
 func computeBMF(fee uint64) (_burnFee uint64, _utilityFee uint64) {
+	// If no fee, burn and utility fee are both 0.
+	if fee == 0 {
+		return 0, 0
+	}
 	// Compute the utility fee as log_2(fee). We can find it by taking the bit length of fee.
 	// Alternatively: uint64(bits.Len64(fee))
 	utilityFee, _ := BigFloatLog2(NewFloat().SetUint64(fee)).Uint64()
@@ -4049,6 +4053,7 @@ func (bav *UtxoView) ConnectBlock(
 	// keep track of the total fees throughout.
 	var totalFees uint64
 	utxoOps := [][]*UtxoOperation{}
+	var maxUtilityFee uint64
 	for txIndex, txn := range desoBlock.Txns {
 		txHash := txHashes[txIndex]
 
@@ -4066,19 +4071,21 @@ func (bav *UtxoView) ConnectBlock(
 		txnConnects := blockHeight < uint64(bav.Params.ForkHeights.ProofOfStake2ConsensusCutoverBlockHeight) ||
 			(txIndex == 0 && txn.TxnMeta.GetTxnType() == TxnTypeBlockReward) ||
 			desoBlock.TxnConnectStatusByIndex.Get(txIndex-1)
-		if txnConnects && err != nil {
-			return nil, errors.Wrapf(err, "ConnectBlock: error connecting txn #%d", txIndex)
-		} else if !txnConnects {
+		var utilityFee uint64
+		if txnConnects {
+			if err != nil {
+				return nil, errors.Wrapf(err, "ConnectBlock: error connecting txn #%d", txIndex)
+			}
+			_, utilityFee = computeBMF(currentFees)
+		} else {
 			if err == nil {
 				return nil, errors.Wrapf(err, "ConnectBlock: txn #%d should not connect based on "+
 					"TxnConnectStatusByIndex but err is nil", txIndex)
 			}
-			var burnFee, utilityFee uint64
-			utxoOpsForTxn, burnFee, utilityFee, err = bav._connectFailingTransaction(txn, uint32(blockHeader.Height), verifySignatures)
+			utxoOpsForTxn, _, utilityFee, err = bav._connectFailingTransaction(txn, uint32(blockHeader.Height), verifySignatures)
 			if err != nil {
 				return nil, errors.Wrapf(err, "ConnectBlock: error connecting failing txn #%d", txIndex)
 			}
-			_, _ = burnFee, utilityFee // TODO: figure out what we're supposed to do with these ones.
 		}
 
 		// After the block reward patch block height, we only include fees from transactions
@@ -4103,6 +4110,15 @@ func (bav *UtxoView) ConnectBlock(
 				return nil, RuleErrorTxnOutputWithInvalidAmount
 			}
 			totalFees += currentFees
+
+			// For PoS, the maximum block reward is based on the maximum utility fee.
+			// Add the utility fees to the max utility fees. If any overflow
+			// occurs mark the block as invalid and return a rule error.
+			maxUtilityFee, err = SafeUint64().Add(maxUtilityFee, utilityFee)
+			if err != nil {
+				return nil, errors.Wrapf(RuleErrorPoSBlockRewardWithInvalidAmount,
+					"ConnectBlock: error computing maxUtilityFee: %v", err)
+			}
 		}
 
 		// Add the utxo operations to our list for all the txns.
@@ -4146,6 +4162,9 @@ func (bav *UtxoView) ConnectBlock(
 		return nil, RuleErrorBlockRewardOverflow
 	}
 	maxBlockReward := blockReward + totalFees
+	if blockHeight >= uint64(bav.Params.ForkHeights.ProofOfStake2ConsensusCutoverBlockHeight) {
+		maxBlockReward = maxUtilityFee
+	}
 	// If the outputs of the block reward txn exceed the max block reward
 	// allowed then mark the block as invalid and return an error.
 	if blockRewardOutput > maxBlockReward {

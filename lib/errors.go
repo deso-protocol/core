@@ -37,6 +37,7 @@ const (
 	RuleErrorInputSpendsImmatureBlockReward       RuleError = "RuleErrorInputSpendsImmatureBlockReward"
 	RuleErrorInputSpendsOutputWithInvalidAmount   RuleError = "RuleErrorInputSpendsOutputWithInvalidAmount"
 	RuleErrorTxnOutputWithInvalidAmount           RuleError = "RuleErrorTxnOutputWithInvalidAmount"
+	RuleErrorPoSBlockRewardWithInvalidAmount      RuleError = "RuleErrorPoSBlockRewardWithInvalidAmount"
 	RuleErrorTxnOutputExceedsInput                RuleError = "RuleErrorTxnOutputExceedsInput"
 	RuleErrorTxnFeeBelowNetworkMinimum            RuleError = "RuleErrorTxnFeeBelowNetworkMinimum"
 	RuleErrorOverflowDetectedInFeeRateCalculation RuleError = "RuleErrorOverflowDetectedInFeeRateCalculation"
