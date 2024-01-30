@@ -11,7 +11,7 @@ import (
 func waitForValidatorConnection(t *testing.T, node1 *cmd.Node, node2 *cmd.Node) {
 	userAgentN1 := node1.Params.UserAgent
 	userAgentN2 := node2.Params.UserAgent
-	rnManagerN1 := node1.Server.GetConnectionController().GetRemoteNodeManager()
+	rnManagerN1 := node1.Server.GetNetworkManager().GetRemoteNodeManager()
 	n1ValidatedN2 := func() bool {
 		if true != checkRemoteNodeIndexerUserAgent(rnManagerN1, userAgentN2, true, false, false) {
 			return false
@@ -41,7 +41,7 @@ func conditionNonValidatorOutboundConnection(t *testing.T, node1 *cmd.Node, node
 
 func conditionNonValidatorOutboundConnectionDynamic(t *testing.T, node1 *cmd.Node, node2 *cmd.Node, inactiveValidator bool) func() bool {
 	userAgentN2 := node2.Params.UserAgent
-	rnManagerN1 := node1.Server.GetConnectionController().GetRemoteNodeManager()
+	rnManagerN1 := node1.Server.GetNetworkManager().GetRemoteNodeManager()
 	return func() bool {
 		if true != checkRemoteNodeIndexerUserAgent(rnManagerN1, userAgentN2, false, true, false) {
 			return false
@@ -82,7 +82,7 @@ func conditionNonValidatorInboundConnection(t *testing.T, node1 *cmd.Node, node2
 
 func conditionNonValidatorInboundConnectionDynamic(t *testing.T, node1 *cmd.Node, node2 *cmd.Node, inactiveValidator bool) func() bool {
 	userAgentN2 := node2.Params.UserAgent
-	rnManagerN1 := node1.Server.GetConnectionController().GetRemoteNodeManager()
+	rnManagerN1 := node1.Server.GetNetworkManager().GetRemoteNodeManager()
 	return func() bool {
 		if true != checkRemoteNodeIndexerUserAgent(rnManagerN1, userAgentN2, false, false, true) {
 			return false
@@ -104,7 +104,7 @@ func conditionNonValidatorInboundConnectionDynamic(t *testing.T, node1 *cmd.Node
 
 func waitForEmptyRemoteNodeIndexer(t *testing.T, node1 *cmd.Node) {
 	userAgentN1 := node1.Params.UserAgent
-	rnManagerN1 := node1.Server.GetConnectionController().GetRemoteNodeManager()
+	rnManagerN1 := node1.Server.GetNetworkManager().GetRemoteNodeManager()
 	n1ValidatedN2 := func() bool {
 		if true != checkRemoteNodeIndexerEmpty(rnManagerN1) {
 			return false
@@ -118,7 +118,7 @@ func waitForCountRemoteNodeIndexer(t *testing.T, node1 *cmd.Node, allCount int, 
 	nonValidatorOutboundCount int, nonValidatorInboundCount int) {
 
 	userAgent := node1.Params.UserAgent
-	rnManager := node1.Server.GetConnectionController().GetRemoteNodeManager()
+	rnManager := node1.Server.GetNetworkManager().GetRemoteNodeManager()
 	condition := func() bool {
 		if true != checkRemoteNodeIndexerCount(rnManager, allCount, validatorCount, nonValidatorOutboundCount, nonValidatorInboundCount) {
 			return false
@@ -132,7 +132,7 @@ func waitForCountRemoteNodeIndexerHandshakeCompleted(t *testing.T, node1 *cmd.No
 	nonValidatorOutboundCount int, nonValidatorInboundCount int) {
 
 	userAgent := node1.Params.UserAgent
-	rnManager := node1.Server.GetConnectionController().GetRemoteNodeManager()
+	rnManager := node1.Server.GetNetworkManager().GetRemoteNodeManager()
 	condition := func() bool {
 		return checkRemoteNodeIndexerCountHandshakeCompleted(rnManager, allCount, validatorCount,
 			nonValidatorOutboundCount, nonValidatorInboundCount)
@@ -243,7 +243,7 @@ func checkUserAgentInRemoteNodeList(userAgent string, rnList []*lib.RemoteNode) 
 }
 
 func getRemoteNodeWithUserAgent(node *cmd.Node, userAgent string) *lib.RemoteNode {
-	rnManager := node.Server.GetConnectionController().GetRemoteNodeManager()
+	rnManager := node.Server.GetNetworkManager().GetRemoteNodeManager()
 	rnList := rnManager.GetAllRemoteNodes().GetAll()
 	for _, rn := range rnList {
 		if rn.GetUserAgent() == userAgent {

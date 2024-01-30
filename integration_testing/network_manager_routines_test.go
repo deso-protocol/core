@@ -323,8 +323,8 @@ func TestConnectionControllerValidatorInboundDeduplication(t *testing.T) {
 	node2 = startNode(t, node2)
 	node3 = startNode(t, node3)
 
-	cc2 := node2.Server.GetConnectionController()
-	require.NoError(t, cc2.CreateNonValidatorOutboundConnection(node1.Listeners[0].Addr().String()))
+	nm2 := node2.Server.GetNetworkManager()
+	require.NoError(t, nm2.CreateNonValidatorOutboundConnection(node1.Listeners[0].Addr().String()))
 	// First wait for node2 to be indexed as a validator by node1.
 	waitForValidatorConnection(t, node1, node2)
 	// Now wait for node2 to be re-indexed as a non-validator.
@@ -332,8 +332,8 @@ func TestConnectionControllerValidatorInboundDeduplication(t *testing.T) {
 	waitForNonValidatorOutboundConnection(t, node2, node1)
 
 	// Now connect node3 to node1.
-	cc3 := node3.Server.GetConnectionController()
-	require.NoError(t, cc3.CreateNonValidatorOutboundConnection(node1.Listeners[0].Addr().String()))
+	nm3 := node3.Server.GetNetworkManager()
+	require.NoError(t, nm3.CreateNonValidatorOutboundConnection(node1.Listeners[0].Addr().String()))
 	// First wait for node3 to be indexed as a validator by node1.
 	waitForValidatorConnection(t, node1, node3)
 	// Now wait for node3 to be re-indexed as a non-validator.
@@ -373,9 +373,9 @@ func TestConnectionControllerNonValidatorConnectorOutbound(t *testing.T) {
 	}
 	node1 = startNode(t, node1)
 
-	cc := node1.Server.GetConnectionController()
-	require.NoError(t, cc.CreateNonValidatorOutboundConnection(node5.Listeners[0].Addr().String()))
-	require.NoError(t, cc.CreateNonValidatorOutboundConnection(node6.Listeners[0].Addr().String()))
+	nm := node1.Server.GetNetworkManager()
+	require.NoError(t, nm.CreateNonValidatorOutboundConnection(node5.Listeners[0].Addr().String()))
+	require.NoError(t, nm.CreateNonValidatorOutboundConnection(node6.Listeners[0].Addr().String()))
 
 	waitForCountRemoteNodeIndexerHandshakeCompleted(t, node1, 3, 0, 3, 0)
 	waitForNonValidatorOutboundConnection(t, node1, node2)
@@ -435,24 +435,24 @@ func TestConnectionControllerNonValidatorConnectorInbound(t *testing.T) {
 	node10 = startNode(t, node10)
 
 	// Connect node1 to node2, node3, node7, and node8.
-	cc1 := node1.Server.GetConnectionController()
-	require.NoError(t, cc1.CreateNonValidatorOutboundConnection(node2.Listeners[0].Addr().String()))
-	require.NoError(t, cc1.CreateNonValidatorOutboundConnection(node3.Listeners[0].Addr().String()))
-	require.NoError(t, cc1.CreateNonValidatorOutboundConnection(node7.Listeners[0].Addr().String()))
-	require.NoError(t, cc1.CreateNonValidatorOutboundConnection(node8.Listeners[0].Addr().String()))
+	nm1 := node1.Server.GetNetworkManager()
+	require.NoError(t, nm1.CreateNonValidatorOutboundConnection(node2.Listeners[0].Addr().String()))
+	require.NoError(t, nm1.CreateNonValidatorOutboundConnection(node3.Listeners[0].Addr().String()))
+	require.NoError(t, nm1.CreateNonValidatorOutboundConnection(node7.Listeners[0].Addr().String()))
+	require.NoError(t, nm1.CreateNonValidatorOutboundConnection(node8.Listeners[0].Addr().String()))
 	// Connect node4, node5, node6 to node1.
-	cc4 := node4.Server.GetConnectionController()
-	require.NoError(t, cc4.CreateNonValidatorOutboundConnection(node1.Listeners[0].Addr().String()))
-	cc5 := node5.Server.GetConnectionController()
-	require.NoError(t, cc5.CreateNonValidatorOutboundConnection(node1.Listeners[0].Addr().String()))
-	cc6 := node6.Server.GetConnectionController()
-	require.NoError(t, cc6.CreateNonValidatorOutboundConnection(node1.Listeners[0].Addr().String()))
+	nm4 := node4.Server.GetNetworkManager()
+	require.NoError(t, nm4.CreateNonValidatorOutboundConnection(node1.Listeners[0].Addr().String()))
+	nm5 := node5.Server.GetNetworkManager()
+	require.NoError(t, nm5.CreateNonValidatorOutboundConnection(node1.Listeners[0].Addr().String()))
+	nm6 := node6.Server.GetNetworkManager()
+	require.NoError(t, nm6.CreateNonValidatorOutboundConnection(node1.Listeners[0].Addr().String()))
 
 	// Connect node9, node10 to node1.
-	cc9 := node9.Server.GetConnectionController()
-	require.NoError(t, cc9.CreateNonValidatorOutboundConnection(node1.Listeners[0].Addr().String()))
-	cc10 := node10.Server.GetConnectionController()
-	require.NoError(t, cc10.CreateNonValidatorOutboundConnection(node1.Listeners[0].Addr().String()))
+	nm9 := node9.Server.GetNetworkManager()
+	require.NoError(t, nm9.CreateNonValidatorOutboundConnection(node1.Listeners[0].Addr().String()))
+	nm10 := node10.Server.GetNetworkManager()
+	require.NoError(t, nm10.CreateNonValidatorOutboundConnection(node1.Listeners[0].Addr().String()))
 
 	activeValidatorsMap := getActiveValidatorsMapWithValidatorNodes(t, node1, node2, node3, node4, node5, node6)
 	setActiveValidators(activeValidatorsMap, node1, node2, node3, node4, node5, node6, node7, node8, node9, node10)
@@ -473,12 +473,12 @@ func TestConnectionControllerNonValidatorConnectorAddressMgr(t *testing.T) {
 	node1.Config.MaxInboundPeers = 0
 
 	node1 = startNode(t, node1)
-	cc := node1.Server.GetConnectionController()
-	na1, err := cc.ConvertIPStringToNetAddress("deso-seed-2.io:17000")
-	na2, err := cc.ConvertIPStringToNetAddress("deso-seed-3.io:17000")
+	nm := node1.Server.GetNetworkManager()
+	na1, err := nm.ConvertIPStringToNetAddress("deso-seed-2.io:17000")
+	na2, err := nm.ConvertIPStringToNetAddress("deso-seed-3.io:17000")
 	require.NoError(t, err)
-	cc.AddrMgr.AddAddress(na1, na1)
-	cc.AddrMgr.AddAddress(na2, na2)
+	nm.AddrMgr.AddAddress(na1, na1)
+	nm.AddrMgr.AddAddress(na2, na2)
 	waitForCountRemoteNodeIndexer(t, node1, 2, 0, 2, 0)
 }
 
@@ -498,7 +498,7 @@ func getActiveValidatorsMapWithValidatorNodes(t *testing.T, validators ...*cmd.N
 
 func setActiveValidators(validatorMap *collections.ConcurrentMap[bls.SerializedPublicKey, consensus.Validator], nodes ...*cmd.Node) {
 	for _, node := range nodes {
-		node.Server.GetConnectionController().SetActiveValidatorsMap(validatorMap)
+		node.Server.GetNetworkManager().SetActiveValidatorsMap(validatorMap)
 	}
 }
 
@@ -539,7 +539,7 @@ func waitForMinNonValidatorCountRemoteNodeIndexer(t *testing.T, node *cmd.Node, 
 	minNonValidatorOutboundCount int, minNonValidatorInboundCount int) {
 
 	userAgent := node.Params.UserAgent
-	rnManager := node.Server.GetConnectionController().GetRemoteNodeManager()
+	rnManager := node.Server.GetNetworkManager().GetRemoteNodeManager()
 	condition := func() bool {
 		return checkRemoteNodeIndexerMinNonValidatorCount(rnManager, allCount, validatorCount,
 			minNonValidatorOutboundCount, minNonValidatorInboundCount)

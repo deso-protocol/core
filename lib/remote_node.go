@@ -304,6 +304,8 @@ func (rn *RemoteNode) AttachInboundConnection(conn net.Conn, na *wire.NetAddress
 
 	id := rn.GetId().ToUint64()
 	rn.peer = rn.cmgr.ConnectPeer(id, conn, na, false, false)
+	versionTimeExpected := time.Now().Add(rn.params.VersionNegotiationTimeout)
+	rn.versionTimeExpected = &versionTimeExpected
 	rn.setStatusConnected()
 	return nil
 }
@@ -319,6 +321,8 @@ func (rn *RemoteNode) AttachOutboundConnection(conn net.Conn, na *wire.NetAddres
 
 	id := rn.GetId().ToUint64()
 	rn.peer = rn.cmgr.ConnectPeer(id, conn, na, true, isPersistent)
+	versionTimeExpected := time.Now().Add(rn.params.VersionNegotiationTimeout)
+	rn.versionTimeExpected = &versionTimeExpected
 	rn.setStatusConnected()
 	return nil
 }
@@ -373,8 +377,6 @@ func (rn *RemoteNode) InitiateHandshake(nonce uint64) error {
 		return fmt.Errorf("InitiateHandshake: Remote node is not connected")
 	}
 
-	versionTimeExpected := time.Now().Add(rn.params.VersionNegotiationTimeout)
-	rn.versionTimeExpected = &versionTimeExpected
 	if rn.GetPeer().IsOutbound() {
 		if err := rn.sendVersionMessage(nonce); err != nil {
 			return fmt.Errorf("InitiateHandshake: Problem sending version message to peer (id= %d): %v", rn.id, err)
