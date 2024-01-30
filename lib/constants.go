@@ -63,7 +63,7 @@ func NanoSecondsToSeconds(nanos int64) int64 {
 	return nanos / NanoSecondsPerSecond
 }
 
-func NanoSecondsToUint64MicroSecondS(nanos int64) uint64 {
+func NanoSecondsToUint64MicroSeconds(nanos int64) uint64 {
 	if nanos < 0 {
 		return 0
 	}
