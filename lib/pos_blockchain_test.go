@@ -1533,10 +1533,10 @@ func TestCanCommitGrandparent(t *testing.T) {
 // 5. Adding a fifth block (block5) w/ parent (block4) and block5's view = block4's view + 1 to the best chain does not result in block3 being committed.
 // 6. Adding a sixth block (block6) w/ parent (block5) and block6's view = block5's view + 1 to the best chain results in block3 and block4 being committed.
 func TestRunCommitRuleOnBestChain(t *testing.T) {
-	testMeta := NewTestPoSBlockchain(t)
+	testMeta := NewTestPoSBlockchainWithValidators(t)
 
 	// Create a single block and add it to the best chain.
-	blockTemplate1 := _generateBlockAndAddToBestChain(testMeta, 11, 11, 887)
+	blockTemplate1 := _generateBlockAndAddToBestChain(testMeta, 12, 12, 887)
 	// Okay now try to run the commit rule. Nothing will happen.
 	// We expect the block to be uncommitted.
 	err := testMeta.chain.runCommitRuleOnBestChain()
@@ -1548,7 +1548,7 @@ func TestRunCommitRuleOnBestChain(t *testing.T) {
 	_verifyCommitRuleHelper(testMeta, []*BlockHash{}, []*BlockHash{blockHash1}, nil)
 
 	// Add one more block to best chain. Should still not trigger commit rule
-	blockTemplate2 := _generateBlockAndAddToBestChain(testMeta, 12, 12, 813)
+	blockTemplate2 := _generateBlockAndAddToBestChain(testMeta, 13, 13, 813)
 
 	// Run commit rule again. Nothing should happen.
 	// We expect both block 1 and block 2 to be uncommitted.
@@ -1561,7 +1561,7 @@ func TestRunCommitRuleOnBestChain(t *testing.T) {
 	_verifyCommitRuleHelper(testMeta, []*BlockHash{}, []*BlockHash{blockHash1, blockHash2}, nil)
 
 	// Okay add one MORE block to the best chain. This should trigger the commit rule.
-	blockTemplate3 := _generateBlockAndAddToBestChain(testMeta, 13, 13, 513)
+	blockTemplate3 := _generateBlockAndAddToBestChain(testMeta, 14, 14, 513)
 
 	// Run the commit rule again. This time we expect block 1 to be committed.
 	err = testMeta.chain.runCommitRuleOnBestChain()
@@ -1652,6 +1652,23 @@ func _verifyCommitRuleHelper(testMeta *TestMeta, committedBlocks []*BlockHash, u
 		require.True(testMeta.t, exists)
 		require.False(testMeta.t, blockNode.IsCommitted())
 		// TODO: Verify DB results?? Kinda silly to make sure everything is missing.
+	}
+	utxoView, err := testMeta.chain.GetUncommittedTipView()
+	require.NoError(testMeta.t, err)
+	currentEpoch, err := utxoView.GetCurrentEpochEntry()
+	require.NoError(testMeta.t, err)
+	currentEpochNumber := currentEpoch.EpochNumber
+	prevEpoch, err := utxoView.simulatePrevEpochEntry(currentEpochNumber, currentEpoch.InitialBlockHeight)
+	require.NoError(testMeta.t, err)
+	prevEpochNumber := prevEpoch.EpochNumber
+	for pubKeyString := range testMeta.pubKeyToBLSKeyMap {
+		publicKeyBytes := MustBase58CheckDecode(pubKeyString)
+		validatorEntry, err := utxoView.GetValidatorByPublicKey(NewPublicKey(publicKeyBytes))
+		require.NoError(testMeta.t, err)
+		// Validator should be active in either the last epoch or the current epoch
+		// since the epoch turns over at every other block.
+		require.True(testMeta.t, validatorEntry.LastActiveAtEpochNumber == prevEpochNumber ||
+			validatorEntry.LastActiveAtEpochNumber == currentEpochNumber)
 	}
 }
 
@@ -2331,12 +2348,12 @@ func _generateRealBlockWithFailingTxn(testMeta *TestMeta, blockHeight uint64, vi
 	// TODO: Get real seed signature.
 	prevBlock, exists := testMeta.chain.blockIndexByHash[*prevBlockHash]
 	require.True(testMeta.t, exists)
-	seedSignature := getRandomSeedSignature(testMeta, blockHeight, view, prevBlock.Header.ProposerRandomSeedSignature)
 	// Always update the testMeta latestBlockView
 	latestBlockView, err := testMeta.chain.getUtxoViewAtBlockHash(*prevBlockHash)
 	require.NoError(testMeta.t, err)
 	latestBlockHeight := testMeta.chain.blockIndexByHash[*prevBlockHash].Height
 	testMeta.posMempool.UpdateLatestBlock(latestBlockView, uint64(latestBlockHeight))
+	seedSignature := getRandomSeedSignature(testMeta, blockHeight, view, prevBlock.Header.ProposerRandomSeedSignature)
 	fullBlockTemplate := _getFullRealBlockTemplate(testMeta, testMeta.posMempool.readOnlyLatestBlockView, blockHeight, view, seedSignature, isTimeout)
 	// Remove the transactions from this block from the mempool.
 	// This prevents nonce reuse issues when trying to make reorg blocks.
@@ -2394,14 +2411,19 @@ func _generateDummyBlock(testMeta *TestMeta, blockHeight uint64, view uint64, se
 	return blockTemplate
 }
 
-// _generateBlockAndAddToBestChain generates a dummy BlockTemplate by calling _generateDummyBlock and then adds it to the best chain.
-// Finally it updates the PosMempool's latest block view.
+// _generateBlockAndAddToBestChain generates a BlockTemplate by calling _generateRealBlock and then adds it to the
+// best chain. Finally it updates the PosMempool's latest block view.
 func _generateBlockAndAddToBestChain(testMeta *TestMeta, blockHeight uint64, view uint64, seed int64) *MsgDeSoBlock {
-	blockTemplate := _generateDummyBlock(testMeta, blockHeight, view, seed)
+	blockTemplate := _generateRealBlock(testMeta, blockHeight, view, seed, testMeta.chain.BlockTip().Hash, false)
 	var msgDesoBlock *MsgDeSoBlock
 	msgDesoBlock = blockTemplate
 	newBlockHash, err := msgDesoBlock.Hash()
 	require.NoError(testMeta.t, err)
+	// Add block to block index.
+	blockNode, err := testMeta.chain.storeValidatedBlockInBlockIndex(msgDesoBlock)
+	require.NoError(testMeta.t, err)
+	require.True(testMeta.t, blockNode.IsStored())
+	require.True(testMeta.t, blockNode.IsValidated())
 	newBlockNode, exists := testMeta.chain.blockIndexByHash[*newBlockHash]
 	require.True(testMeta.t, exists)
 	testMeta.chain.addBlockToBestChain(newBlockNode)
@@ -2625,6 +2647,12 @@ func NewTestPoSBlockchainWithValidators(t *testing.T) *TestMeta {
 	setBalanceModelBlockHeights(t)
 	// Set the PoS Setup Height to block 11 and cutover to 12.
 	setPoSBlockHeights(t, 11, 12)
+	// Set Epoch length to 2 block for testing.
+	DeSoTestnetParams.DefaultEpochDurationNumBlocks = 2
+	t.Cleanup(func() {
+		DeSoTestnetParams.DefaultEpochDurationNumBlocks = 3600
+		GlobalDeSoParams = DeSoTestnetParams
+	})
 
 	chain, params, db := NewLowDifficultyBlockchain(t)
 	oldPool, miner := NewTestMiner(t, chain, params, true)
@@ -2702,69 +2730,6 @@ func NewTestPoSBlockchainWithValidators(t *testing.T) *TestMeta {
 	//	//savedHeight:            0,
 	//	//feeRateNanosPerKb:      0,
 	//}
-	t.Cleanup(func() {
-		mempool.Stop()
-	})
-	return testMeta
-}
-
-// NewTestPoSBlockchain creates a new low-difficulty Blockchain for use in tests.
-// It first creates a new Blockchain, then mines 10 blocks to give the senderPkString
-// some DESO to send to m0 and m1. Then it stops the miner and PoW Mempool. Finally,
-// it creates a PoSMempool and PoSBlockProducer and sets the PoS fork heights. The setup
-// block height is set to 9 and the cutover is set to 11.
-func NewTestPoSBlockchain(t *testing.T) *TestMeta {
-	setBalanceModelBlockHeights(t)
-	// Set the PoS Setup Height to block 9 and cutover to 11.
-	setPoSBlockHeights(t, 9, 11)
-	chain, params, db := NewLowDifficultyBlockchain(t)
-	params.ForkHeights.BalanceModelBlockHeight = 1
-	oldPool, miner := NewTestMiner(t, chain, params, true)
-	// Mine a few blocks to give the senderPkString some money.
-	for ii := 0; ii < 10; ii++ {
-		_, err := miner.MineAndProcessSingleBlock(0 /*threadIndex*/, oldPool)
-		require.NoError(t, err)
-	}
-
-	m0PubBytes, _, _ := Base58CheckDecode(m0Pub)
-	publicKeys := []string{m0Pub, m1Pub, m2Pub, m3Pub, m4Pub, m5Pub, m6Pub}
-	for _, publicKey := range publicKeys {
-		_, _, _ = _doBasicTransferWithViewFlush(
-			t, chain, db, params, senderPkString, publicKey,
-			senderPrivString, 1e9, 1000)
-	}
-	oldPool.Stop()
-	miner.Stop()
-	latestBlockView, err := NewUtxoView(db, params, nil, nil, nil)
-	require.NoError(t, err)
-	maxMempoolPosSizeBytes := uint64(500)
-	mempoolBackupIntervalMillis := uint64(30000)
-	mempool := NewPosMempool()
-	require.NoError(t, mempool.Init(
-		params, _testGetDefaultGlobalParams(), latestBlockView, 10, _dbDirSetup(t), false, maxMempoolPosSizeBytes, mempoolBackupIntervalMillis, 1, nil, 1,
-	))
-	require.NoError(t, mempool.Start())
-	require.True(t, mempool.IsRunning())
-	priv := _generateRandomBLSPrivateKey(t)
-	m0Pk := NewPublicKey(m0PubBytes)
-	posBlockProducer := NewPosBlockProducer(mempool, params, m0Pk, priv.PublicKey())
-	testMeta := &TestMeta{
-		t:                t,
-		chain:            chain,
-		db:               db,
-		params:           params,
-		posMempool:       mempool,
-		posBlockProducer: posBlockProducer,
-		// TODO: what else do we need here?
-		feeRateNanosPerKb: 1000,
-		savedHeight:       10,
-		//miner:                  nil,
-		//txnOps:                 nil,
-		//txns:                   nil,
-		//expectedSenderBalances: nil,
-		//savedHeight:            0,
-		//feeRateNanosPerKb:      0,
-	}
 	t.Cleanup(func() {
 		mempool.Stop()
 	})
