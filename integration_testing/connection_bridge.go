@@ -113,13 +113,12 @@ func (bridge *ConnectionBridge) createInboundConnection(node *cmd.Node) *lib.Pee
 
 	// This channel is redundant in our setting.
 	messagesFromPeer := make(chan *lib.ServerMessage, 100)
-	newPeerChan := make(chan *lib.Peer, 100)
 	donePeerChan := make(chan *lib.Peer, 100)
 	// Because it is an inbound Peer of the node, it is simultaneously a "fake" outbound Peer of the bridge.
 	// Hence, we will mark the _isOutbound parameter as "true" in NewPeer.
 	peer := lib.NewPeer(uint64(lib.RandInt64(math.MaxInt64)), conn, true,
 		netAddress, true, 10000, 0, &lib.DeSoMainnetParams,
-		messagesFromPeer, nil, nil, lib.NodeSyncTypeAny, newPeerChan, donePeerChan)
+		messagesFromPeer, nil, nil, lib.NodeSyncTypeAny, donePeerChan)
 	return peer
 }
 
@@ -144,11 +143,10 @@ func (bridge *ConnectionBridge) createOutboundConnection(node *cmd.Node, otherNo
 		addrMgr := addrmgr.New("", net.LookupIP)
 		na, err := lib.IPToNetAddr(conn.RemoteAddr().String(), addrMgr, otherNode.Params)
 		messagesFromPeer := make(chan *lib.ServerMessage, 100)
-		newPeerChan := make(chan *lib.Peer, 100)
 		donePeerChan := make(chan *lib.Peer, 100)
 		peer := lib.NewPeer(uint64(lib.RandInt64(math.MaxInt64)), conn,
 			false, na, false, 10000, 0, bridge.nodeB.Params,
-			messagesFromPeer, nil, nil, lib.NodeSyncTypeAny, newPeerChan, donePeerChan)
+			messagesFromPeer, nil, nil, lib.NodeSyncTypeAny, donePeerChan)
 		bridge.newPeerChan <- peer
 		//}
 	}(ll)

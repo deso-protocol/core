@@ -68,6 +68,8 @@ type Server struct {
 	connectionController *ConnectionController
 	// posMempool *PosMemPool TODO: Add the mempool later
 
+	params *DeSoParams
+
 	// All messages received from peers get sent from the ConnectionManager to the
 	// Server through this channel.
 	//
@@ -130,7 +132,9 @@ type Server struct {
 	// It is organized in this way so that we can limit the number of addresses we
 	// are distributing for a single peer to avoid a DOS attack.
 	addrsToBroadcastLock deadlock.RWMutex
-	addrsToBroadcastt    map[string][]*SingleAddr
+	addrsToBroadcast     map[string][]*SingleAddr
+
+	AddrMgr *addrmgr.AddrManager
 
 	// When set to true, we disable the ConnectionManager
 	DisableNetworking bool
@@ -438,6 +442,7 @@ func NewServer(
 		snapshot:                     _snapshot,
 		nodeMessageChannel:           _nodeMessageChan,
 		forceChecksum:                _forceChecksum,
+		AddrMgr:                      _desoAddrMgr,
 	}
 
 	if stateChangeSyncer != nil {
@@ -590,7 +595,7 @@ func NewServer(
 	}
 
 	// Initialize the addrs to broadcast map.
-	srv.addrsToBroadcastt = make(map[string][]*SingleAddr)
+	srv.addrsToBroadcast = make(map[string][]*SingleAddr)
 
 	// This will initialize the request queues.
 	srv.ResetRequestQueues()
@@ -2171,20 +2176,33 @@ func (srv *Server) StartStatsdReporter() {
 	}()
 }
 
-func (srv *Server) _handleAddrMessage(pp *Peer, msg *MsgDeSoAddr) {
+func (srv *Server) _handleAddrMessage(pp *Peer, desoMsg DeSoMessage) {
+	if desoMsg.GetMsgType() != MsgTypeAddr {
+		return
+	}
+
+	id := NewRemoteNodeId(pp.ID)
+	var msg *MsgDeSoAddr
+	var ok bool
+	if msg, ok = desoMsg.(*MsgDeSoAddr); !ok {
+		glog.Errorf("Server._handleAddrMessage: Problem decoding MsgDeSoAddr: %v", spew.Sdump(desoMsg))
+		srv.connectionController.rnManager.DisconnectById(id)
+		return
+	}
+
 	srv.addrsToBroadcastLock.Lock()
 	defer srv.addrsToBroadcastLock.Unlock()
 
-	glog.V(1).Infof("Server._handleAddrMessage: Received Addr from peer %v with addrs %v", pp, spew.Sdump(msg.AddrList))
+	glog.V(1).Infof("Server._handleAddrMessage: Received Addr from peer id=%v with addrs %v", pp.ID, spew.Sdump(msg.AddrList))
 
 	// If this addr message contains more than the maximum allowed number of addresses
 	// then disconnect this peer.
 	if len(msg.AddrList) > MaxAddrsPerAddrMsg {
 		glog.Errorf(fmt.Sprintf("Server._handleAddrMessage: Disconnecting "+
-			"Peer %v for sending us an addr message with %d transactions, which exceeds "+
+			"Peer id=%v for sending us an addr message with %d transactions, which exceeds "+
 			"the max allowed %d",
-			pp, len(msg.AddrList), MaxAddrsPerAddrMsg))
-		pp.Disconnect()
+			pp.ID, len(msg.AddrList), MaxAddrsPerAddrMsg))
+		srv.connectionController.rnManager.DisconnectById(id)
 		return
 	}
 
@@ -2193,19 +2211,16 @@ func (srv *Server) _handleAddrMessage(pp *Peer, msg *MsgDeSoAddr) {
 	for _, addr := range msg.AddrList {
 		addrAsNetAddr := wire.NewNetAddressIPPort(addr.IP, addr.Port, (wire.ServiceFlag)(addr.Services))
 		if !addrmgr.IsRoutable(addrAsNetAddr) {
-			glog.V(1).Infof("Dropping address %v from peer %v because it is not routable", addr, pp)
+			glog.V(1).Infof("Server._handleAddrMessage: Dropping address %v from peer %v because it is not routable", addr, pp)
 			continue
 		}
 
 		netAddrsReceived = append(
 			netAddrsReceived, addrAsNetAddr)
 	}
-	// TODO: temporary
-	addressMgr := addrmgr.New("", net.LookupIP)
-	addressMgr.AddAddresses(netAddrsReceived, pp.netAddr)
+	srv.AddrMgr.AddAddresses(netAddrsReceived, pp.netAddr)
 
-	// If the message had <= 10 addrs in it, then queue all the addresses for relaying
-	// on the next cycle.
+	// If the message had <= 10 addrs in it, then queue all the addresses for relaying on the next cycle.
 	if len(msg.AddrList) <= 10 {
 		glog.V(1).Infof("Server._handleAddrMessage: Queueing %d addrs for forwarding from "+
 			"peer %v", len(msg.AddrList), pp)
@@ -2215,7 +2230,7 @@ func (srv *Server) _handleAddrMessage(pp *Peer, msg *MsgDeSoAddr) {
 			Port:      pp.netAddr.Port,
 			Services:  pp.serviceFlags,
 		}
-		listToAddTo, hasSeenSource := srv.addrsToBroadcastt[sourceAddr.StringWithPort(false /*includePort*/)]
+		listToAddTo, hasSeenSource := srv.addrsToBroadcast[sourceAddr.StringWithPort(false /*includePort*/)]
 		if !hasSeenSource {
 			listToAddTo = []*SingleAddr{}
 		}
@@ -2225,17 +2240,27 @@ func (srv *Server) _handleAddrMessage(pp *Peer, msg *MsgDeSoAddr) {
 			listToAddTo = listToAddTo[:MaxAddrsPerAddrMsg/2]
 		}
 		listToAddTo = append(listToAddTo, msg.AddrList...)
-		srv.addrsToBroadcastt[sourceAddr.StringWithPort(false /*includePort*/)] = listToAddTo
+		srv.addrsToBroadcast[sourceAddr.StringWithPort(false /*includePort*/)] = listToAddTo
 	}
 }
 
-func (srv *Server) _handleGetAddrMessage(pp *Peer, msg *MsgDeSoGetAddr) {
+func (srv *Server) _handleGetAddrMessage(pp *Peer, desoMsg DeSoMessage) {
+	if desoMsg.GetMsgType() != MsgTypeGetAddr {
+		return
+	}
+
+	id := NewRemoteNodeId(pp.ID)
+	if _, ok := desoMsg.(*MsgDeSoGetAddr); !ok {
+		glog.Errorf("Server._handleAddrMessage: Problem decoding "+
+			"MsgDeSoAddr: %v", spew.Sdump(desoMsg))
+		srv.connectionController.rnManager.DisconnectById(id)
+		return
+	}
+
 	glog.V(1).Infof("Server._handleGetAddrMessage: Received GetAddr from peer %v", pp)
 	// When we get a GetAddr message, choose MaxAddrsPerMsg from the AddrMgr
 	// and send them back to the peer.
-	// TODO: temporary
-	addressMgr := addrmgr.New("", net.LookupIP)
-	netAddrsFound := addressMgr.AddressCache()
+	netAddrsFound := srv.AddrMgr.AddressCache()
 	if len(netAddrsFound) > MaxAddrsPerAddrMsg {
 		netAddrsFound = netAddrsFound[:MaxAddrsPerAddrMsg]
 	}
@@ -2251,7 +2276,12 @@ func (srv *Server) _handleGetAddrMessage(pp *Peer, msg *MsgDeSoGetAddr) {
 		}
 		res.AddrList = append(res.AddrList, singleAddr)
 	}
-	pp.AddDeSoMessage(res, false)
+	rn := srv.connectionController.rnManager.GetRemoteNodeById(id)
+	if err := srv.connectionController.rnManager.SendMessage(rn, res); err != nil {
+		glog.Errorf("Server._handleGetAddrMessage: Problem sending addr message to peer %v: %v", pp, err)
+		srv.connectionController.rnManager.DisconnectById(id)
+		return
+	}
 }
 
 func (srv *Server) _handleControlMessages(serverMessage *ServerMessage) (_shouldQuit bool) {
@@ -2274,9 +2304,9 @@ func (srv *Server) _handlePeerMessages(serverMessage *ServerMessage) {
 	switch msg := serverMessage.Msg.(type) {
 	// Messages sent among peers.
 	case *MsgDeSoAddr:
-		srv.connectionController._handleAddrMessage(serverMessage.Peer, serverMessage.Msg)
+		srv._handleAddrMessage(serverMessage.Peer, serverMessage.Msg)
 	case *MsgDeSoGetAddr:
-		srv.connectionController._handleGetAddrMessage(serverMessage.Peer, serverMessage.Msg)
+		srv._handleGetAddrMessage(serverMessage.Peer, serverMessage.Msg)
 	case *MsgDeSoGetHeaders:
 		srv._handleGetHeaders(serverMessage.Peer, msg)
 	case *MsgDeSoHeaderBundle:
@@ -2399,20 +2429,6 @@ func (srv *Server) _startConsensus() {
 
 				glog.V(2).Infof("Server._startConsensus: Handling message of type %v from Peer %v",
 					serverMessage.Msg.GetMsgType(), serverMessage.Peer)
-
-				// If the message is an addr message we handle it independent of whether or
-				// not the BitcoinManager is synced.
-				if serverMessage.Msg.GetMsgType() == MsgTypeAddr {
-					srv._handleAddrMessage(serverMessage.Peer, serverMessage.Msg.(*MsgDeSoAddr))
-					continue
-				}
-				// If the message is a GetAddr message we handle it independent of whether or
-				// not the BitcoinManager is synced.
-				if serverMessage.Msg.GetMsgType() == MsgTypeGetAddr {
-					srv._handleGetAddrMessage(serverMessage.Peer, serverMessage.Msg.(*MsgDeSoGetAddr))
-					continue
-				}
-
 				srv._handlePeerMessages(serverMessage)
 
 				// Always check for and handle control messages regardless of whether the
@@ -2433,35 +2449,36 @@ func (srv *Server) _startConsensus() {
 	glog.V(2).Info("Server.Start: Server done")
 }
 
-func (srv *Server) _getAddrsToBroadcast() []*SingleAddr {
+func (srv *Server) getAddrsToBroadcast() []*SingleAddr {
 	srv.addrsToBroadcastLock.Lock()
 	defer srv.addrsToBroadcastLock.Unlock()
 
 	// If there's nothing in the map, return.
-	if len(srv.addrsToBroadcastt) == 0 {
+	if len(srv.addrsToBroadcast) == 0 {
 		return []*SingleAddr{}
 	}
 
 	// If we get here then we have some addresses to broadcast.
 	addrsToBroadcast := []*SingleAddr{}
-	for len(addrsToBroadcast) < 10 && len(srv.addrsToBroadcastt) > 0 {
+	for uint32(len(addrsToBroadcast)) < srv.params.MaxAddressesToBroadcast &&
+		len(srv.addrsToBroadcast) > 0 {
 		// Choose a key at random. This works because map iteration is random in golang.
 		bucket := ""
-		for kk := range srv.addrsToBroadcastt {
+		for kk := range srv.addrsToBroadcast {
 			bucket = kk
 			break
 		}
 
 		// Remove the last element from the slice for the given bucket.
-		currentAddrList := srv.addrsToBroadcastt[bucket]
+		currentAddrList := srv.addrsToBroadcast[bucket]
 		if len(currentAddrList) > 0 {
 			lastIndex := len(currentAddrList) - 1
 			currentAddr := currentAddrList[lastIndex]
 			currentAddrList = currentAddrList[:lastIndex]
 			if len(currentAddrList) == 0 {
-				delete(srv.addrsToBroadcastt, bucket)
+				delete(srv.addrsToBroadcast, bucket)
 			} else {
-				srv.addrsToBroadcastt[bucket] = currentAddrList
+				srv.addrsToBroadcast[bucket] = currentAddrList
 			}
 
 			addrsToBroadcast = append(addrsToBroadcast, currentAddr)
@@ -2478,18 +2495,24 @@ func (srv *Server) _startAddressRelayer() {
 		if atomic.LoadInt32(&srv.shutdown) >= 1 {
 			break
 		}
-		// For the first ten minutes after the server starts, relay our address to all
+		// For the first ten minutes after the connection controller starts, relay our address to all
 		// peers. After the first ten minutes, do it once every 24 hours.
-		// TODO: temporary
-		addressMgr := addrmgr.New("", net.LookupIP)
-		glog.V(1).Infof("Server.Start._startAddressRelayer: Relaying our own addr to peers")
+		glog.V(1).Infof("Server.startAddressRelayer: Relaying our own addr to peers")
+		remoteNodes := srv.connectionController.rnManager.GetAllRemoteNodes().GetAll()
 		if numMinutesPassed < 10 || numMinutesPassed%(RebroadcastNodeAddrIntervalMinutes) == 0 {
-			for _, pp := range srv.cmgr.GetAllPeers() {
-				bestAddress := addressMgr.GetBestLocalAddress(pp.netAddr)
+			for _, rn := range remoteNodes {
+				if !rn.IsHandshakeCompleted() {
+					continue
+				}
+				netAddr := rn.GetNetAddress()
+				if netAddr == nil {
+					continue
+				}
+				bestAddress := srv.AddrMgr.GetBestLocalAddress(netAddr)
 				if bestAddress != nil {
-					glog.V(2).Infof("Server.Start._startAddressRelayer: Relaying address %v to "+
-						"peer %v", bestAddress.IP.String(), pp)
-					pp.AddDeSoMessage(&MsgDeSoAddr{
+					glog.V(2).Infof("Server.startAddressRelayer: Relaying address %v to "+
+						"RemoteNode (id= %v)", bestAddress.IP.String(), rn.GetId())
+					addrMsg := &MsgDeSoAddr{
 						AddrList: []*SingleAddr{
 							{
 								Timestamp: time.Now(),
@@ -2498,27 +2521,38 @@ func (srv *Server) _startAddressRelayer() {
 								Services:  (ServiceFlag)(bestAddress.Services),
 							},
 						},
-					}, false)
+					}
+					if err := rn.SendMessage(addrMsg); err != nil {
+						glog.Errorf("Server.startAddressRelayer: Problem sending "+
+							"MsgDeSoAddr to RemoteNode (id= %v): %v", rn.GetId(), err)
+					}
 				}
 			}
 		}
 
-		glog.V(2).Infof("Server.Start._startAddressRelayer: Seeing if there are addrs to relay...")
+		glog.V(2).Infof("Server.startAddressRelayer: Seeing if there are addrs to relay...")
 		// Broadcast the addrs we have to all of our peers.
-		addrsToBroadcast := srv._getAddrsToBroadcast()
+		addrsToBroadcast := srv.getAddrsToBroadcast()
 		if len(addrsToBroadcast) == 0 {
-			glog.V(2).Infof("Server.Start._startAddressRelayer: No addrs to relay.")
+			glog.V(2).Infof("Server.startAddressRelayer: No addrs to relay.")
 			time.Sleep(AddrRelayIntervalSeconds * time.Second)
 			continue
 		}
 
-		glog.V(2).Infof("Server.Start._startAddressRelayer: Found %d addrs to "+
+		glog.V(2).Infof("Server.startAddressRelayer: Found %d addrs to "+
 			"relay: %v", len(addrsToBroadcast), spew.Sdump(addrsToBroadcast))
 		// Iterate over all our peers and broadcast the addrs to all of them.
-		for _, pp := range srv.cmgr.GetAllPeers() {
-			pp.AddDeSoMessage(&MsgDeSoAddr{
+		for _, rn := range remoteNodes {
+			if !rn.IsHandshakeCompleted() {
+				continue
+			}
+			addrMsg := &MsgDeSoAddr{
 				AddrList: addrsToBroadcast,
-			}, false)
+			}
+			if err := rn.SendMessage(addrMsg); err != nil {
+				glog.Errorf("Server.startAddressRelayer: Problem sending "+
+					"MsgDeSoAddr to RemoteNode (id= %v): %v", rn.GetId(), err)
+			}
 		}
 		time.Sleep(AddrRelayIntervalSeconds * time.Second)
 		continue
