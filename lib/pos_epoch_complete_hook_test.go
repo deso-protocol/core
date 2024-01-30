@@ -57,7 +57,8 @@ func TestIsLastBlockInCurrentEpoch(t *testing.T) {
 func TestRunEpochCompleteHook(t *testing.T) {
 	// Initialize balance model fork heights.
 	setBalanceModelBlockHeights(t)
-
+	// Initialize PoS fork heights.
+	setPoSBlockHeights(t, 11, 11)
 	// Initialize test chain, miner, and testMeta
 	testMeta := _setUpMinerAndTestMetaForEpochCompleteTest(t)
 
@@ -520,7 +521,8 @@ func TestStakingRewardDistribution(t *testing.T) {
 	defer resetDefaultEpochDurationNumBlocks()
 	// Initialize balance model fork heights.
 	setBalanceModelBlockHeights(t)
-
+	// Initialize PoS fork heights.
+	setPoSBlockHeights(t, 11, 11)
 	// Initialize test chain, miner, and testMeta
 	testMeta := _setUpMinerAndTestMetaForEpochCompleteTest(t)
 
@@ -805,12 +807,6 @@ func _setUpMinerAndTestMetaForEpochCompleteTest(t *testing.T) *TestMeta {
 	// Initialize test chain and miner.
 	chain, params, db := NewLowDifficultyBlockchain(t)
 	mempool, miner := NewTestMiner(t, chain, params, true)
-
-	// Initialize PoS fork heights.
-	params.ForkHeights.ProofOfStake1StateSetupBlockHeight = uint32(1)
-	params.ForkHeights.ProofOfStake2ConsensusCutoverBlockHeight = uint32(1)
-	GlobalDeSoParams.EncoderMigrationHeights = GetEncoderMigrationHeights(&params.ForkHeights)
-	GlobalDeSoParams.EncoderMigrationHeightsList = GetEncoderMigrationHeightsList(&params.ForkHeights)
 
 	// Mine a few blocks to give the senderPkString some money.
 	for ii := 0; ii < 10; ii++ {

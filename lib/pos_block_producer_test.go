@@ -273,7 +273,7 @@ func _testProduceBlockNoSizeLimit(t *testing.T, mp *PosMempool, pbp *PosBlockPro
 	require.NoError(err)
 	require.Equal(latestBlockViewCopy, latestBlockView)
 	require.Equal(totalAcceptedTxns, len(txns))
-	require.Equal(true, totalAcceptedTxns >= txnConnectStatus.Size())
+	require.True(totalAcceptedTxns >= txnConnectStatus.Size())
 	numConnected := 0
 	for ii := range txns {
 		if txnConnectStatus.Get(ii) {

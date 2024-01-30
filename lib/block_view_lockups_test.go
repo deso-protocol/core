@@ -3032,18 +3032,15 @@ func _setUpMinerAndTestMetaForTimestampBasedLockupTests(t *testing.T) *TestMeta 
 	// Initialize balance model fork heights.
 	setBalanceModelBlockHeights(t)
 
+	// Initialize pos fork heights.
+	setPoSBlockHeights(t, 11, 100)
+
 	// Initialize test chain and miner.
 	chain, params, db := NewLowDifficultyBlockchain(t)
 	mempool, miner := NewTestMiner(t, chain, params, true)
 
 	// Ensure DAO coins are enabled (a pre-requisite for lockups)
 	params.ForkHeights.DAOCoinBlockHeight = uint32(0)
-
-	// Initialize PoS fork heights.
-	params.ForkHeights.ProofOfStake1StateSetupBlockHeight = uint32(1)
-	params.ForkHeights.ProofOfStake2ConsensusCutoverBlockHeight = uint32(1)
-	GlobalDeSoParams.EncoderMigrationHeights = GetEncoderMigrationHeights(&params.ForkHeights)
-	GlobalDeSoParams.EncoderMigrationHeightsList = GetEncoderMigrationHeightsList(&params.ForkHeights)
 
 	// Mine a few blocks to give the senderPkString some money.
 	for ii := 0; ii < 10; ii++ {

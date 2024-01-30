@@ -112,23 +112,25 @@ const (
 	EncoderTypeDmThreadEntry                     EncoderType = 37
 	EncoderTypeDeSoNonce                         EncoderType = 38
 	EncoderTypeTransactorNonceEntry              EncoderType = 39
-	EncoderTypeValidatorEntry                    EncoderType = 40
-	EncoderTypeStakeEntry                        EncoderType = 41
-	EncoderTypeLockedStakeEntry                  EncoderType = 42
-	EncoderTypeEpochEntry                        EncoderType = 43
-	EncoderTypeLockedBalanceEntry                EncoderType = 44
-	EncoderTypeLockupYieldCurvePoint             EncoderType = 45
 
 	// EncoderTypeStateChangeEntry represents a state change to a DeSo encoder entry.
-	EncoderTypeStateChangeEntry EncoderType = 46
+	EncoderTypeStateChangeEntry EncoderType = 40
 	// EncoderTypeFollowEntry represents a follow relationship between two pkids.
-	EncoderTypeFollowEntry EncoderType = 47
+	EncoderTypeFollowEntry EncoderType = 41
 	// EncoderTypeDeSoBalanceEntry represents a balance of DeSo for a particular public key.
-	EncoderTypeDeSoBalanceEntry EncoderType = 48
+	EncoderTypeDeSoBalanceEntry EncoderType = 42
 	// EncoderTypeBlock represents a block in the blockchain, including all transactions in said block.
-	EncoderTypeBlock EncoderType = 49
+	EncoderTypeBlock EncoderType = 43
 	// EncoderTypeTxn represents a transaction in the blockchain.
-	EncoderTypeTxn EncoderType = 50
+	EncoderTypeTxn EncoderType = 44
+
+	EncoderTypeValidatorEntry        EncoderType = 45
+	EncoderTypeStakeEntry            EncoderType = 46
+	EncoderTypeLockedStakeEntry      EncoderType = 47
+	EncoderTypeEpochEntry            EncoderType = 48
+	EncoderTypeLockedBalanceEntry    EncoderType = 49
+	EncoderTypeLockupYieldCurvePoint EncoderType = 50
+
 	// EncoderTypeBLSPublicKeyPKIDPairEntry represents a BLS public key <> PKID mapping.
 	EncoderTypeBLSPublicKeyPKIDPairEntry EncoderType = 51
 
@@ -618,56 +620,57 @@ const (
 	// used when rolling back a txn to determine what kind of operations need
 	// to be performed. For example, rolling back a BitcoinExchange may require
 	// rolling back an AddUtxo operation.
-	OperationTypeAddUtxo                      OperationType = 0
-	OperationTypeSpendUtxo                    OperationType = 1
-	OperationTypeBitcoinExchange              OperationType = 2
-	OperationTypePrivateMessage               OperationType = 3
-	OperationTypeSubmitPost                   OperationType = 4
-	OperationTypeUpdateProfile                OperationType = 5
-	OperationTypeDeletePost                   OperationType = 7
-	OperationTypeUpdateBitcoinUSDExchangeRate OperationType = 8
-	OperationTypeFollow                       OperationType = 9
-	OperationTypeLike                         OperationType = 10
-	OperationTypeCreatorCoin                  OperationType = 11
-	OperationTypeSwapIdentity                 OperationType = 12
-	OperationTypeUpdateGlobalParams           OperationType = 13
-	OperationTypeCreatorCoinTransfer          OperationType = 14
-	OperationTypeCreateNFT                    OperationType = 15
-	OperationTypeUpdateNFT                    OperationType = 16
-	OperationTypeAcceptNFTBid                 OperationType = 17
-	OperationTypeNFTBid                       OperationType = 18
-	OperationTypeDeSoDiamond                  OperationType = 19
-	OperationTypeNFTTransfer                  OperationType = 20
-	OperationTypeAcceptNFTTransfer            OperationType = 21
-	OperationTypeBurnNFT                      OperationType = 22
-	OperationTypeAuthorizeDerivedKey          OperationType = 23
-	OperationTypeMessagingKey                 OperationType = 24
-	OperationTypeDAOCoin                      OperationType = 25
-	OperationTypeDAOCoinTransfer              OperationType = 26
-	OperationTypeSpendingLimitAccounting      OperationType = 27
-	OperationTypeDAOCoinLimitOrder            OperationType = 28
-	OperationTypeCreateUserAssociation        OperationType = 29
-	OperationTypeDeleteUserAssociation        OperationType = 30
-	OperationTypeCreatePostAssociation        OperationType = 31
-	OperationTypeDeletePostAssociation        OperationType = 32
-	OperationTypeAccessGroup                  OperationType = 33
-	OperationTypeAccessGroupMembers           OperationType = 34
-	OperationTypeNewMessage                   OperationType = 35
-	OperationTypeAddBalance                   OperationType = 36
-	OperationTypeSpendBalance                 OperationType = 37
-	OperationTypeDeleteExpiredNonces          OperationType = 38
-	OperationTypeRegisterAsValidator          OperationType = 39
-	OperationTypeUnregisterAsValidator        OperationType = 40
-	OperationTypeStake                        OperationType = 41
-	OperationTypeUnstake                      OperationType = 42
-	OperationTypeUnlockStake                  OperationType = 43
-	OperationTypeUnjailValidator              OperationType = 44
-	OperationTypeCoinLockup                   OperationType = 45
-	OperationTypeCoinLockupTransfer           OperationType = 46
-	OperationTypeCoinUnlock                   OperationType = 47
-	OperationTypeUpdateCoinLockupParams       OperationType = 48
-	OperationTypeStakeDistribution            OperationType = 49
-	// NEXT_TAG = 50
+	OperationTypeAddUtxo                       OperationType = 0
+	OperationTypeSpendUtxo                     OperationType = 1
+	OperationTypeBitcoinExchange               OperationType = 2
+	OperationTypePrivateMessage                OperationType = 3
+	OperationTypeSubmitPost                    OperationType = 4
+	OperationTypeUpdateProfile                 OperationType = 5
+	OperationTypeDeletePost                    OperationType = 7
+	OperationTypeUpdateBitcoinUSDExchangeRate  OperationType = 8
+	OperationTypeFollow                        OperationType = 9
+	OperationTypeLike                          OperationType = 10
+	OperationTypeCreatorCoin                   OperationType = 11
+	OperationTypeSwapIdentity                  OperationType = 12
+	OperationTypeUpdateGlobalParams            OperationType = 13
+	OperationTypeCreatorCoinTransfer           OperationType = 14
+	OperationTypeCreateNFT                     OperationType = 15
+	OperationTypeUpdateNFT                     OperationType = 16
+	OperationTypeAcceptNFTBid                  OperationType = 17
+	OperationTypeNFTBid                        OperationType = 18
+	OperationTypeDeSoDiamond                   OperationType = 19
+	OperationTypeNFTTransfer                   OperationType = 20
+	OperationTypeAcceptNFTTransfer             OperationType = 21
+	OperationTypeBurnNFT                       OperationType = 22
+	OperationTypeAuthorizeDerivedKey           OperationType = 23
+	OperationTypeMessagingKey                  OperationType = 24
+	OperationTypeDAOCoin                       OperationType = 25
+	OperationTypeDAOCoinTransfer               OperationType = 26
+	OperationTypeSpendingLimitAccounting       OperationType = 27
+	OperationTypeDAOCoinLimitOrder             OperationType = 28
+	OperationTypeCreateUserAssociation         OperationType = 29
+	OperationTypeDeleteUserAssociation         OperationType = 30
+	OperationTypeCreatePostAssociation         OperationType = 31
+	OperationTypeDeletePostAssociation         OperationType = 32
+	OperationTypeAccessGroup                   OperationType = 33
+	OperationTypeAccessGroupMembers            OperationType = 34
+	OperationTypeNewMessage                    OperationType = 35
+	OperationTypeAddBalance                    OperationType = 36
+	OperationTypeSpendBalance                  OperationType = 37
+	OperationTypeDeleteExpiredNonces           OperationType = 38
+	OperationTypeRegisterAsValidator           OperationType = 39
+	OperationTypeUnregisterAsValidator         OperationType = 40
+	OperationTypeStake                         OperationType = 41
+	OperationTypeUnstake                       OperationType = 42
+	OperationTypeUnlockStake                   OperationType = 43
+	OperationTypeUnjailValidator               OperationType = 44
+	OperationTypeCoinLockup                    OperationType = 45
+	OperationTypeCoinLockupTransfer            OperationType = 46
+	OperationTypeCoinUnlock                    OperationType = 47
+	OperationTypeUpdateCoinLockupParams        OperationType = 48
+	OperationTypeStakeDistribution             OperationType = 49
+	OperationTypeSetValidatorLastActiveAtEpoch OperationType = 50
+	// NEXT_TAG = 51
 )
 
 func (op OperationType) String() string {
@@ -3726,8 +3729,10 @@ func (key *DerivedKeyEntry) RawDecodeWithoutMetadata(blockHeight uint64, rr *byt
 }
 
 func (key *DerivedKeyEntry) GetVersionByte(blockHeight uint64) byte {
+	// Remember to update this every time there an encoder migration that impacts
+	// the TransactionSpendingLimit struct.
 	return GetMigrationVersion(blockHeight, UnlimitedDerivedKeysMigration, AssociationsAndAccessGroupsMigration,
-		BalanceModelMigration)
+		BalanceModelMigration, ProofOfStake1StateSetupMigration)
 }
 
 func (key *DerivedKeyEntry) GetEncoderType() EncoderType {
