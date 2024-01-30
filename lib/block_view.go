@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"github.com/deso-protocol/core/bls"
+	"github.com/deso-protocol/core/collections/bitset"
 	"math"
 	"math/big"
 	"reflect"
@@ -1655,7 +1656,8 @@ func (bav *UtxoView) DisconnectBlock(
 			case OperationTypeAddBalance:
 				// We don't allow add balance utxo operations unless it's the end of an epoch.
 				if !isLastBlockInEpoch {
-					return fmt.Errorf("DisconnectBlock: Found add balance operation in block %d that is not the end of an epoch", desoBlock.Header.Height)
+					return fmt.Errorf("DisconnectBlock: Found add balance operation in block %d that is not the end "+
+						"of an epoch", desoBlock.Header.Height)
 				}
 				// We need to revert the add balance operation.
 				if err = bav._unAddBalance(utxoOp.BalanceAmountNanos, utxoOp.BalancePublicKey); err != nil {
@@ -1664,7 +1666,8 @@ func (bav *UtxoView) DisconnectBlock(
 			case OperationTypeStakeDistribution:
 				// We don't allow stake distribution utxo operations unless it's the end of an epoch.
 				if !isLastBlockInEpoch {
-					return fmt.Errorf("DisconnectBlock: Found add balance operation in block %d that is not the end of an epoch", desoBlock.Header.Height)
+					return fmt.Errorf("DisconnectBlock: Found add balance operation in block %d that is not the end "+
+						"of an epoch", desoBlock.Header.Height)
 				}
 				if len(utxoOp.PrevStakeEntries) != 1 {
 					return fmt.Errorf("DisconnectBlock: Expected exactly one prev stake entry for stake distribution op")
@@ -1673,6 +1676,12 @@ func (bav *UtxoView) DisconnectBlock(
 					return fmt.Errorf("DisconnectBlock: Expected prev validator entry for stake distribution op")
 				}
 				bav._setStakeEntryMappings(utxoOp.PrevStakeEntries[0])
+				bav._setValidatorEntryMappings(utxoOp.PrevValidatorEntry)
+			case OperationTypeSetValidatorLastActiveAtEpoch:
+				if utxoOp.PrevValidatorEntry == nil {
+					return fmt.Errorf("DisconnectBlock: Expected prev validator entry for set validator last active " +
+						"at epoch op")
+				}
 				bav._setValidatorEntryMappings(utxoOp.PrevValidatorEntry)
 			}
 		}
@@ -4157,6 +4166,57 @@ func (bav *UtxoView) ConnectBlock(
 		})
 		for _, prevNonceEntry := range prevNonces {
 			bav.DeleteTransactorNonceEntry(prevNonceEntry)
+		}
+	}
+
+	// If we're past the PoS cutover, we need to track which validators were active.
+	if blockHeight >= uint64(bav.Params.ForkHeights.ProofOfStake2ConsensusCutoverBlockHeight) {
+		// Get the active validators for the block.
+		var signersList *bitset.Bitset
+		if !desoBlock.Header.ValidatorsVoteQC.isEmpty() {
+			signersList = desoBlock.Header.ValidatorsVoteQC.ValidatorsVoteAggregatedSignature.SignersList
+		} else {
+			signersList = desoBlock.Header.ValidatorsTimeoutAggregateQC.ValidatorsTimeoutAggregatedSignature.SignersList
+		}
+		allSnapshotValidators, err := bav.GetAllSnapshotValidatorSetEntriesByStake()
+		if err != nil {
+			return nil, errors.Wrapf(err, "ConnectBlock: error getting all snapshot validator set entries by stake")
+		}
+		currentEpochNumber, err := bav.GetCurrentEpochNumber()
+		if err != nil {
+			return nil, errors.Wrapf(err, "ConnectBlock: error getting current epoch number")
+		}
+		for ii, validator := range allSnapshotValidators {
+			// Skip validators who didn't sign
+			if !signersList.Get(ii) {
+				continue
+			}
+			// Get the current validator entry
+			validatorEntry, err := bav.GetValidatorByPKID(validator.ValidatorPKID)
+			if err != nil {
+				return nil, errors.Wrapf(err, "ConnectBlock: error getting validator by PKID")
+			}
+			// It's possible for the validator to have unregistered since two epochs ago, but is continuing
+			// to vote. If the validatorEntry is nil or IsDeleted, we skip it here.
+			if validatorEntry == nil || validatorEntry.IsDeleted() {
+				continue
+			}
+			// It's possible for the validator to be in the snapshot validator set, but to have been jailed
+			// in the previous epoch due to inactivity. In the edge case where the validator now comes back
+			// online, we maintain its jailed status until it unjails itself explicitly again.
+			if validatorEntry.Status() == ValidatorStatusJailed {
+				continue
+			}
+			if validatorEntry.LastActiveAtEpochNumber != currentEpochNumber {
+				blockLevelUtxoOps = append(blockLevelUtxoOps, &UtxoOperation{
+					Type:               OperationTypeSetValidatorLastActiveAtEpoch,
+					PrevValidatorEntry: validatorEntry.Copy(),
+				})
+				// Set the last active at epoch number to the current epoch number
+				// and set the validator entry on the view.
+				validatorEntry.LastActiveAtEpochNumber = currentEpochNumber
+				bav._setValidatorEntryMappings(validatorEntry)
+			}
 		}
 	}
 
