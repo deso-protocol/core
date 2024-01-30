@@ -2522,7 +2522,7 @@ func (srv *Server) _startConsensus() {
 		}
 
 		select {
-		case consensusEvent := <-srv.fastHotStuffConsensus.fastHotStuffEventLoop.GetEvents():
+		case consensusEvent := <-srv._getFastHotStuffConsensusEventChannel():
 			{
 				glog.Infof("Server._startConsensus: Received consensus event for block height: %v", consensusEvent.TipBlockHeight)
 				srv._handleFastHostStuffConsensusEvent(consensusEvent)
@@ -2656,6 +2656,13 @@ func (srv *Server) _startAddressRelayer() {
 		time.Sleep(AddrRelayIntervalSeconds * time.Second)
 		continue
 	}
+}
+
+func (srv *Server) _getFastHotStuffConsensusEventChannel() chan *consensus.FastHotStuffEvent {
+	if srv.fastHotStuffConsensus == nil {
+		return nil
+	}
+	return srv.fastHotStuffConsensus.fastHotStuffEventLoop.GetEvents()
 }
 
 func (srv *Server) _startTransactionRelayer() {
