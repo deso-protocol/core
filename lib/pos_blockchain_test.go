@@ -2763,9 +2763,7 @@ func NewTestPoSBlockchainWithValidators(t *testing.T) *TestMeta {
 	maxMempoolPosSizeBytes := uint64(1024 * 1024 * 1000)
 	mempoolBackupIntervalMillis := uint64(30000)
 	mempool := NewPosMempool()
-	require.NoError(t, mempool.Init(
-		params, _testGetDefaultGlobalParams(), latestBlockView, 11, _dbDirSetup(t), false, maxMempoolPosSizeBytes, mempoolBackupIntervalMillis, 1, nil, 1,
-	))
+	require.NoError(t, mempool.Init(params, _testGetDefaultGlobalParams(), latestBlockView, 11, _dbDirSetup(t), false, maxMempoolPosSizeBytes, mempoolBackupIntervalMillis, 1, nil, 1, 100))
 	require.NoError(t, mempool.Start())
 	require.True(t, mempool.IsRunning())
 	priv := _generateRandomBLSPrivateKey(t)

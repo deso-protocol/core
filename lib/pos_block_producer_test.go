@@ -35,9 +35,7 @@ func TestCreateBlockTemplate(t *testing.T) {
 	dir := _dbDirSetup(t)
 
 	mempool := NewPosMempool()
-	require.NoError(mempool.Init(
-		params, globalParams, latestBlockView, 2, dir, false, maxMempoolPosSizeBytes, mempoolBackupIntervalMillis, 1, nil, 1,
-	))
+	require.NoError(mempool.Init(params, globalParams, latestBlockView, 2, dir, false, maxMempoolPosSizeBytes, mempoolBackupIntervalMillis, 1, nil, 1, 100))
 	require.NoError(mempool.Start())
 	defer mempool.Stop()
 	require.True(mempool.IsRunning())
@@ -101,9 +99,7 @@ func TestCreateBlockWithoutHeader(t *testing.T) {
 	dir := _dbDirSetup(t)
 
 	mempool := NewPosMempool()
-	require.NoError(mempool.Init(
-		params, globalParams, latestBlockView, 2, dir, false, maxMempoolPosSizeBytes, mempoolBackupIntervalMillis, 1, nil, 1,
-	))
+	require.NoError(mempool.Init(params, globalParams, latestBlockView, 2, dir, false, maxMempoolPosSizeBytes, mempoolBackupIntervalMillis, 1, nil, 1, 100))
 	require.NoError(mempool.Start())
 	defer mempool.Stop()
 	require.True(mempool.IsRunning())
@@ -177,9 +173,7 @@ func TestGetBlockTransactions(t *testing.T) {
 	dir := _dbDirSetup(t)
 
 	mempool := NewPosMempool()
-	require.NoError(mempool.Init(
-		params, globalParams, latestBlockView, 2, dir, false, maxMempoolPosSizeBytes, mempoolBackupIntervalMillis, 1, nil, 1,
-	))
+	require.NoError(mempool.Init(params, globalParams, latestBlockView, 2, dir, false, maxMempoolPosSizeBytes, mempoolBackupIntervalMillis, 1, nil, 1, 100))
 	require.NoError(mempool.Start())
 	defer mempool.Stop()
 	require.True(mempool.IsRunning())
@@ -261,9 +255,7 @@ func TestGetBlockTransactions(t *testing.T) {
 	// Simulated Transaction Timestamp and afterward, mempool will be queried for the transactions. The transactions should
 	// be returned in the same order as the transaction from getBlockTransactions.
 	testMempool := NewPosMempool()
-	testMempool.Init(
-		params, globalParams, latestBlockView, 2, "", true, maxMempoolPosSizeBytes, mempoolBackupIntervalMillis, 1, nil, 1,
-	)
+	testMempool.Init(params, globalParams, latestBlockView, 2, "", true, maxMempoolPosSizeBytes, mempoolBackupIntervalMillis, 1, nil, 1, 100)
 	require.NoError(testMempool.Start())
 	defer testMempool.Stop()
 	currentTime := uint64(time.Now().UnixMicro())

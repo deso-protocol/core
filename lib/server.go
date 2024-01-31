@@ -509,19 +509,7 @@ func NewServer(
 		return nil, errors.New("NewServer: Problem getting latest block from chain"), true
 	}
 	_posMempool := NewPosMempool()
-	err = _posMempool.Init(
-		_params,
-		currentGlobalParamsEntry,
-		currentUtxoView,
-		uint64(_chain.blockTip().Height),
-		_mempoolDumpDir,
-		false,
-		_maxMempoolPosSizeBytes,
-		_mempoolBackupIntervalMillis,
-		_mempoolFeeEstimatorNumMempoolBlocks,
-		[]*MsgDeSoBlock{latestBlock},
-		_mempoolFeeEstimatorNumPastBlocks,
-	)
+	err = _posMempool.Init(_params, currentGlobalParamsEntry, currentUtxoView, uint64(_chain.blockTip().Height), _mempoolDumpDir, false, _maxMempoolPosSizeBytes, _mempoolBackupIntervalMillis, _mempoolFeeEstimatorNumMempoolBlocks, []*MsgDeSoBlock{latestBlock}, _mempoolFeeEstimatorNumPastBlocks, 100)
 	if err != nil {
 		return nil, errors.Wrapf(err, "NewServer: Problem initializing PoS mempool"), true
 	}
@@ -1840,6 +1828,7 @@ func (srv *Server) _addNewTxn(
 	if err := srv.posMempool.AddTransaction(mempoolTxn, true /*verifySignatures*/); err != nil {
 		return nil, errors.Wrapf(err, "Server._addNewTxn: problem adding txn to pos mempool")
 	}
+	srv.posMempool.BlockUntilReadOnlyViewRegenerated()
 
 	return []*MsgDeSoTxn{txn}, nil
 }
