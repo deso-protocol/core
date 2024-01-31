@@ -35,8 +35,8 @@ func (id RemoteNodeId) ToUint64() uint64 {
 	return uint64(id)
 }
 
-// RemoteNode is a consensus-aware wrapper around the network Peer object. It is used to manage the lifecycle of a peer
-// and to store consensus-related metadata about the peer. The RemoteNode can wrap around either an inbound or outbound
+// RemoteNode is a chain-aware wrapper around the network Peer object. It is used to manage the lifecycle of a peer
+// and to store blockchain-related metadata about the peer. The RemoteNode can wrap around either an inbound or outbound
 // peer connection. For outbound peers, the RemoteNode is created prior to the connection being established. In this case,
 // the RemoteNode will be first used to initiate an OutboundConnectionAttempt, and then store the resulting connected peer.
 // For inbound peers, the RemoteNode is created after the connection is established in ConnectionManager.
