@@ -1,11 +1,13 @@
 package lib
 
 import (
+	"fmt"
 	"sync"
 
 	"github.com/deso-protocol/core/bls"
 	"github.com/deso-protocol/core/collections"
 	"github.com/deso-protocol/core/consensus"
+	"github.com/golang/glog"
 	"github.com/pkg/errors"
 )
 
@@ -265,6 +267,7 @@ func (cc *FastHotStuffConsensus) handleBlockProposalEvent(
 
 	// TODO: Broadcast the block proposal to the network
 
+	cc.logBlockProposal(unsignedBlock)
 	return nil
 }
 
@@ -788,4 +791,37 @@ func isProperlyFormedBlockProposalEvent(event *consensus.FastHotStuffEvent) bool
 	}
 
 	return false
+}
+
+////////////////////////////////////////// Logging Helper Functions ///////////////////////////////////////////////
+
+func (fc *FastHotStuffConsensus) logBlockProposal(block *MsgDeSoBlock) {
+	aggQCView := uint64(0)
+	aggQCNumValidators := 0
+	aggQCHighQCViews := "[]"
+
+	if !block.Header.ValidatorsTimeoutAggregateQC.isEmpty() {
+		aggQCView = block.Header.ValidatorsTimeoutAggregateQC.GetView()
+		aggQCNumValidators = block.Header.ValidatorsTimeoutAggregateQC.GetAggregatedSignature().GetSignersList().Size()
+		aggQCHighQCViews = fmt.Sprint(block.Header.ValidatorsTimeoutAggregateQC.GetHighQCViews())
+	}
+
+	glog.Infof(
+		"\n==================================== YOU PROPOSED A NEW FAST-HOTSTUFF BLOCK! ===================================="+
+			"\n  Timestamp: %d, View: %d, Height: %d, BlockHash: %v"+
+			"\n  Proposer PKey: %s"+
+			"\n  Proposer Voting PKey: %s"+
+			"\n  Proposer Signature: %s"+
+			"\n  High QC View: %d, High QC Num Validators: %d, High QC BlockHash: %s"+
+			"\n  Timeout Agg QC View: %d, Timeout Agg QC Num Validators: %d, Timeout High QC Views: %s"+
+			"\n  Num Block Transactions: %d, Num Transactions Remaining In Mempool: %d"+
+			"\n=================================================================================================================",
+		block.Header.GetTstampSecs(), block.Header.GetView(), block.Header.Height, block.String(),
+		PkToString(block.Header.ProposerPublicKey.ToBytes(), fc.params),
+		block.Header.ProposerVotingPublicKey.ToString(),
+		block.Header.ProposerVotePartialSignature.ToString(),
+		block.Header.GetQC().GetView(), block.Header.GetQC().GetAggregatedSignature().GetSignersList().Size(), block.Header.PrevBlockHash.String(),
+		aggQCView, aggQCNumValidators, aggQCHighQCViews,
+		len(block.Txns), len(fc.mempool.GetTransactions()),
+	)
 }
