@@ -13,7 +13,7 @@ func TestCurrentEpoch(t *testing.T) {
 	// Initialize blockchain.
 	chain, params, db := NewLowDifficultyBlockchain(t)
 	blockHeight := uint64(chain.blockTip().Height) + 1
-	blockTimestampNanoSecs := uint64(chain.blockTip().Header.TstampNanoSecs) + 1e9
+	blockTimestampNanoSecs := chain.blockTip().Header.TstampNanoSecs + 1e9
 	utxoView, err := NewUtxoView(db, params, chain.postgres, chain.snapshot, chain.eventManager)
 	require.NoError(t, err)
 

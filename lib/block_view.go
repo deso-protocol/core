@@ -4,13 +4,14 @@ import (
 	"bytes"
 	"encoding/hex"
 	"fmt"
-	"github.com/deso-protocol/core/bls"
-	"github.com/deso-protocol/core/collections/bitset"
 	"math"
 	"math/big"
 	"reflect"
 	"strings"
 	"time"
+
+	"github.com/deso-protocol/core/bls"
+	"github.com/deso-protocol/core/collections/bitset"
 
 	"github.com/btcsuite/btcd/wire"
 	"github.com/holiman/uint256"
@@ -4065,7 +4066,7 @@ func (bav *UtxoView) ConnectBlock(
 		// would slow down block processing significantly. We should figure out a way to
 		// enforce this check in the future, but for now the only attack vector is one in
 		// which a miner is trying to spam the network, which should generally never happen.
-		utxoOpsForTxn, totalInput, totalOutput, currentFees, err := bav.ConnectTransaction(txn, txHash, 0, uint32(blockHeader.Height), int64(blockHeader.TstampNanoSecs), verifySignatures, false)
+		utxoOpsForTxn, totalInput, totalOutput, currentFees, err := bav.ConnectTransaction(txn, txHash, 0, uint32(blockHeader.Height), blockHeader.TstampNanoSecs, verifySignatures, false)
 		_, _ = totalInput, totalOutput // A bit surprising we don't use these
 		// After the PoS cutover, we need to check if the transaction is a failing transaction.
 		txnConnects := blockHeight < uint64(bav.Params.ForkHeights.ProofOfStake2ConsensusCutoverBlockHeight) ||
