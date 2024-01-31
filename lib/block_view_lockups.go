@@ -1045,7 +1045,7 @@ func (bav *UtxoView) _connectCoinLockup(
 
 	// NOTE: The zero key could be used to enable locking up DESO.
 	// If this feature is desired, it can be restored with the following PR:
-	// TODO: Add relevant PR here.
+	// https://github.com/deso-protocol/core/pull/991
 	if txMeta.ProfilePublicKey.IsZeroPublicKey() {
 		return 0, 0, nil,
 			errors.Wrap(RuleErrorCoinLockupCannotLockupZeroKey, "_connectCoinLockup")
