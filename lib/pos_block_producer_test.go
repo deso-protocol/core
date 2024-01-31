@@ -70,12 +70,13 @@ func TestCreateBlockTemplate(t *testing.T) {
 	root, _, err := ComputeMerkleRoot(blockTemplate.Txns)
 	require.NoError(err)
 	require.Equal(blockTemplate.Header.TransactionMerkleRoot, root)
-	require.Equal(true, blockTemplate.Header.TstampNanoSecs < uint64(time.Now().UnixNano()))
+	require.Equal(true, blockTemplate.Header.TstampNanoSecs < time.Now().UnixNano())
 	require.Equal(blockTemplate.Header.Height, uint64(3))
 	require.Equal(blockTemplate.Header.ProposedInView, uint64(10))
 	require.Equal(blockTemplate.Header.ProposerPublicKey, m0Pk)
 	require.Equal(blockTemplate.Header.ProposerVotingPublicKey, pub)
 	require.True(blockTemplate.Header.ProposerRandomSeedSignature.Eq(seedSignature))
+	require.Equal(blockTemplate.Header.TxnConnectStatusByIndexHash, HashBitset(blockTemplate.TxnConnectStatusByIndex))
 }
 
 func TestCreateBlockWithoutHeader(t *testing.T) {
@@ -87,6 +88,7 @@ func TestCreateBlockWithoutHeader(t *testing.T) {
 	feeMax := uint64(2000)
 	passingTransactions := 50
 	m0PubBytes, _, _ := Base58CheckDecode(m0Pub)
+	blsPubKey, _ := _generateValidatorVotingPublicKeyAndSignature(t)
 	params, db := _posTestBlockchainSetupWithBalances(t, 200000, 200000)
 	params.ForkHeights.ProofOfStake2ConsensusCutoverBlockHeight = 1
 	maxMempoolPosSizeBytes := uint64(3000000000)
@@ -115,7 +117,7 @@ func TestCreateBlockWithoutHeader(t *testing.T) {
 		_wrappedPosMempoolAddTransaction(t, mempool, txn)
 	}
 
-	pbp := NewPosBlockProducer(mempool, params, nil, nil)
+	pbp := NewPosBlockProducer(mempool, params, NewPublicKey(m0PubBytes), blsPubKey)
 	txns, txnConnectStatus, maxUtilityFee, err := pbp.getBlockTransactions(
 		latestBlockView, 3, 0, 50000)
 	require.NoError(err)
@@ -270,7 +272,7 @@ func _testProduceBlockNoSizeLimit(t *testing.T, mp *PosMempool, pbp *PosBlockPro
 	require.NoError(err)
 	require.Equal(latestBlockViewCopy, latestBlockView)
 	require.Equal(totalAcceptedTxns, len(txns))
-	require.Equal(true, totalAcceptedTxns >= txnConnectStatus.Size())
+	require.True(totalAcceptedTxns >= txnConnectStatus.Size())
 	numConnected := 0
 	for ii := range txns {
 		if txnConnectStatus.Get(ii) {

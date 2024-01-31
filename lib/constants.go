@@ -52,15 +52,22 @@ const (
 
 // Time constants
 const (
-	NanoSecondsPerSecond = uint64(1000000000)
+	NanoSecondsPerSecond = int64(1000000000)
 )
 
-func SecondsToNanoSeconds(secs uint64) uint64 {
+func SecondsToNanoSeconds(secs int64) int64 {
 	return secs * NanoSecondsPerSecond
 }
 
-func NanoSecondsToSeconds(nanos uint64) uint64 {
+func NanoSecondsToSeconds(nanos int64) int64 {
 	return nanos / NanoSecondsPerSecond
+}
+
+func NanoSecondsToUint64MicroSeconds(nanos int64) uint64 {
+	if nanos < 0 {
+		return 0
+	}
+	return uint64(nanos / 1000)
 }
 
 // Snapshot constants
@@ -709,7 +716,7 @@ type DeSoParams struct {
 	// TODO: add support for putting the drift in global params.
 	// DefaultBlockTimestampDriftNanoSecs is the default number of nanoseconds
 	// from the current timestamp that we will allow a PoS block to be submitted.
-	DefaultBlockTimestampDriftNanoSecs uint64
+	DefaultBlockTimestampDriftNanoSecs int64
 
 	// DefaultFeeBucketGrowthRateBasisPoints is the rate of growth of the fee bucket ranges. The multiplier is given
 	// as basis points. For example a value of 1000 means that the fee bucket ranges will grow by 10% each time.
@@ -1135,7 +1142,7 @@ var DeSoMainnetParams = DeSoParams{
 	DefaultJailInactiveValidatorGracePeriodEpochs: uint64(48),
 
 	// The number of nanoseconds from the current timestamp that we will allow a PoS block to be submitted.
-	DefaultBlockTimestampDriftNanoSecs: uint64((time.Minute * 10).Nanoseconds()),
+	DefaultBlockTimestampDriftNanoSecs: (time.Minute * 10).Nanoseconds(),
 
 	// The rate of growth of the fee bucket ranges.
 	DefaultFeeBucketGrowthRateBasisPoints: uint64(1000),
@@ -1408,7 +1415,7 @@ var DeSoTestnetParams = DeSoParams{
 	DefaultJailInactiveValidatorGracePeriodEpochs: uint64(48),
 
 	// The number of nanoseconds from the current timestamp that we will allow a PoS block to be submitted.
-	DefaultBlockTimestampDriftNanoSecs: uint64((time.Minute * 10).Nanoseconds()),
+	DefaultBlockTimestampDriftNanoSecs: (time.Minute * 10).Nanoseconds(),
 
 	// The rate of growth of the fee bucket ranges.
 	DefaultFeeBucketGrowthRateBasisPoints: uint64(1000),
@@ -1594,6 +1601,9 @@ const MaxAssociationTypeByteLength int = 64
 const MaxAssociationValueByteLength int = 256
 const AssociationTypeReservedPrefix = "DESO"
 const AssociationNullTerminator = byte(0)
+
+// The name of the txt file that contains whether the current Badger DB is using performance or default options.
+const PerformanceDbOptsFileName = "performance_db_opts.txt"
 
 // Constants used for staking rewards.
 const MaxBasisPoints = uint64(10000)                     // 1e4

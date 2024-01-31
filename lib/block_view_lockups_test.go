@@ -1,13 +1,14 @@
 package lib
 
 import (
+	"testing"
+
 	"github.com/btcsuite/btcd/btcec"
 	"github.com/dgraph-io/badger/v3"
 	"github.com/holiman/uint256"
 	"github.com/pkg/errors"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"testing"
 	"time"
 )
 
@@ -2813,7 +2814,7 @@ func TestLockupBlockConnectsAndDisconnects(t *testing.T) {
 	blk1Root, _, err := ComputeMerkleRoot(blk1.Txns)
 	require.NoError(t, err)
 	blk1.Header.TransactionMerkleRoot = blk1Root
-	blk1.Header.TstampNanoSecs = uint64(tipTimestamp + 1e9)
+	blk1.Header.TstampNanoSecs = tipTimestamp + 1e9
 
 	// Mine the first block to ensure the difficulty is sufficient for ProcessBlock
 	// NOTE: 10000 iterations is presumed sufficient for testing as seen in TestBasicTransfer.
@@ -2878,7 +2879,7 @@ func TestLockupBlockConnectsAndDisconnects(t *testing.T) {
 	blk2Root, _, err := ComputeMerkleRoot(blk2.Txns)
 	require.NoError(t, err)
 	blk2.Header.TransactionMerkleRoot = blk2Root
-	blk2.Header.TstampNanoSecs = uint64(tipTimestamp + 3e9)
+	blk2.Header.TstampNanoSecs = tipTimestamp + 3e9
 
 	// Mine the second block to ensure the difficulty is sufficient for ProcessBlock
 	// NOTE: 10000 iterations is presumed sufficient for testing as seen in TestBasicTransfer.
@@ -4343,6 +4344,9 @@ func _setUpProfilesAndMintM0M1DAOCoins(testMeta *TestMeta) {
 func _setUpMinerAndTestMetaForTimestampBasedLockupTests(t *testing.T) *TestMeta {
 	// Initialize balance model fork heights.
 	setBalanceModelBlockHeights(t)
+
+	// Initialize pos fork heights.
+	setPoSBlockHeights(t, 11, 100)
 
 	// Initialize test chain and miner.
 	chain, params, db := NewLowDifficultyBlockchain(t)

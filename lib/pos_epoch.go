@@ -21,7 +21,7 @@ type EpochEntry struct {
 	// This captures the on-chain timestamp when this epoch entry was created. This does not
 	// represent the timestamp for first block of the epoch, but rather when this epoch entry
 	// was created during that epoch transition at the end of the previous epoch.
-	CreatedAtBlockTimestampNanoSecs uint64
+	CreatedAtBlockTimestampNanoSecs int64
 }
 
 func (epochEntry *EpochEntry) Copy() *EpochEntry {
@@ -40,7 +40,7 @@ func (epochEntry *EpochEntry) RawEncodeWithoutMetadata(blockHeight uint64, skipM
 	data = append(data, UintToBuf(epochEntry.InitialBlockHeight)...)
 	data = append(data, UintToBuf(epochEntry.InitialView)...)
 	data = append(data, UintToBuf(epochEntry.FinalBlockHeight)...)
-	data = append(data, UintToBuf(epochEntry.CreatedAtBlockTimestampNanoSecs)...)
+	data = append(data, IntToBuf(epochEntry.CreatedAtBlockTimestampNanoSecs)...)
 	return data
 }
 
@@ -72,7 +72,7 @@ func (epochEntry *EpochEntry) RawDecodeWithoutMetadata(blockHeight uint64, rr *b
 	}
 
 	// CreatedAtBlockTimestampNanoSecs
-	epochEntry.CreatedAtBlockTimestampNanoSecs, err = ReadUvarint(rr)
+	epochEntry.CreatedAtBlockTimestampNanoSecs, err = ReadVarint(rr)
 	if err != nil {
 		return errors.Wrapf(err, "EpochEntry.Decode: Problem reading CreatedAtBlockTimestampNanoSecs: ")
 	}

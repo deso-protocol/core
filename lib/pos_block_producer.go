@@ -1,11 +1,12 @@
 package lib
 
 import (
+	"math"
+	"time"
+
 	"github.com/deso-protocol/core/bls"
 	"github.com/deso-protocol/core/collections/bitset"
 	"github.com/pkg/errors"
-	"math"
-	"time"
 )
 
 // BlockTemplate is a dummy type that is used to label incomplete blocks. The only purpose of this type is to make it
@@ -32,11 +33,6 @@ func NewPosBlockProducer(mp Mempool, params *DeSoParams, proposerPublicKey *Publ
 		proposerPublicKey:       proposerPublicKey,
 		proposerVotingPublicKey: proposerVotingPublicKey,
 	}
-}
-
-func (pbp *PosBlockProducer) SignBlock(blockTemplate BlockTemplate, signerPrivateKey *bls.PrivateKey) (*MsgDeSoBlock, error) {
-	// TODO
-	return nil, nil
 }
 
 // CreateUnsignedBlock constructs an unsigned, PoS block with Fee-Time ordered transactions. This function should be used
@@ -79,7 +75,7 @@ func (pbp *PosBlockProducer) CreateUnsignedTimeoutBlock(latestBlockView *UtxoVie
 func (pbp *PosBlockProducer) createBlockTemplate(latestBlockView *UtxoView, newBlockHeight uint64, view uint64,
 	proposerRandomSeedSignature *bls.Signature) (BlockTemplate, error) {
 	// First get the block without the header.
-	currentTimestamp := uint64(time.Now().UnixNano())
+	currentTimestamp := time.Now().UnixNano()
 	block, err := pbp.createBlockWithoutHeader(latestBlockView, newBlockHeight, currentTimestamp)
 	if err != nil {
 		return nil, errors.Wrapf(err, "PosBlockProducer.CreateBlockTemplate: Problem creating block without header")
@@ -103,19 +99,23 @@ func (pbp *PosBlockProducer) createBlockTemplate(latestBlockView *UtxoView, newB
 	block.Header.ProposerPublicKey = pbp.proposerPublicKey
 	block.Header.ProposerVotingPublicKey = pbp.proposerVotingPublicKey
 	block.Header.ProposerRandomSeedSignature = proposerRandomSeedSignature
+
+	// Hash the TxnConnectStatusByIndex
+	block.Header.TxnConnectStatusByIndexHash = HashBitset(block.TxnConnectStatusByIndex)
 	return block, nil
 }
 
 // createBlockWithoutHeader is a helper function used by createBlockTemplate. It constructs a partially filled out
 // block with Fee-Time ordered transactions. The returned block all its contents filled, except for the header.
 func (pbp *PosBlockProducer) createBlockWithoutHeader(
-	latestBlockView *UtxoView, newBlockHeight uint64, newBlockTimestampNanoSecs uint64) (BlockTemplate, error) {
+	latestBlockView *UtxoView, newBlockHeight uint64, newBlockTimestampNanoSecs int64) (BlockTemplate, error) {
 	block := NewMessage(MsgTypeBlock).(*MsgDeSoBlock)
 
 	// Create the block reward transaction.
 	blockRewardTxn := NewMessage(MsgTypeTxn).(*MsgDeSoTxn)
 	blockRewardOutput := &DeSoOutput{}
 	blockRewardOutput.AmountNanos = math.MaxUint64
+	blockRewardOutput.PublicKey = pbp.proposerPublicKey.ToBytes()
 	blockRewardTxn.TxOutputs = append(blockRewardTxn.TxOutputs, blockRewardOutput)
 	blockRewardTxn.TxnMeta = &BlockRewardMetadataa{}
 	blockRewardTxnSizeBytes, err := blockRewardTxn.ToBytes(true)
@@ -142,9 +142,16 @@ func (pbp *PosBlockProducer) createBlockWithoutHeader(
 
 // getBlockTransactions is used to retrieve fee-time ordered transactions from the mempool.
 func (pbp *PosBlockProducer) getBlockTransactions(
-	latestBlockView *UtxoView, newBlockHeight uint64, newBlockTimestampNanoSecs uint64,
-	maxBlockSizeBytes uint64) (_txns []*MsgDeSoTxn, _txnConnectStatusByIndex *bitset.Bitset,
-	_maxUtilityFee uint64, _err error) {
+	latestBlockView *UtxoView,
+	newBlockHeight uint64,
+	newBlockTimestampNanoSecs int64,
+	maxBlockSizeBytes uint64,
+) (
+	_txns []*MsgDeSoTxn,
+	_txnConnectStatusByIndex *bitset.Bitset,
+	_maxUtilityFee uint64,
+	_err error,
+) {
 	// Get Fee-Time ordered transactions from the mempool
 	feeTimeTxns := pbp.mp.GetTransactions()
 
@@ -172,7 +179,7 @@ func (pbp *PosBlockProducer) getBlockTransactions(
 			return nil, nil, 0, errors.Wrapf(err, "Error copying UtxoView: ")
 		}
 		_, _, _, fees, err := blockUtxoViewCopy._connectTransaction(
-			txn.GetTxn(), txn.Hash(), int64(len(txnBytes)), uint32(newBlockHeight), int64(newBlockTimestampNanoSecs),
+			txn.GetTxn(), txn.Hash(), int64(len(txnBytes)), uint32(newBlockHeight), newBlockTimestampNanoSecs,
 			true, false)
 
 		// Check if the transaction connected.
@@ -183,7 +190,10 @@ func (pbp *PosBlockProducer) getBlockTransactions(
 			currentBlockSize += uint64(len(txnBytes))
 			// Compute BMF for the transaction.
 			_, utilityFee := computeBMF(fees)
-			maxUtilityFee += utilityFee
+			maxUtilityFee, err = SafeUint64().Add(maxUtilityFee, utilityFee)
+			if err != nil {
+				return nil, nil, 0, errors.Wrapf(err, "Error computing max utility fee: ")
+			}
 			continue
 		}
 		// If the transaction didn't connect, we will try to add it as a failing transaction.
@@ -204,7 +214,10 @@ func (pbp *PosBlockProducer) getBlockTransactions(
 		txnConnectStatusByIndex.Set(len(blocksTxns), false)
 		blocksTxns = append(blocksTxns, txn.GetTxn())
 		currentBlockSize += uint64(len(txnBytes))
-		maxUtilityFee += utilityFee
+		maxUtilityFee, err = SafeUint64().Add(maxUtilityFee, utilityFee)
+		if err != nil {
+			return nil, nil, 0, errors.Wrapf(err, "Error computing max utility fee: ")
+		}
 	}
 
 	return blocksTxns, txnConnectStatusByIndex, maxUtilityFee, nil
