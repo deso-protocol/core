@@ -1708,6 +1708,11 @@ func updateBestChainInMemory(mainChainList []*BlockNode, mainChainMap map[BlockH
 
 // Caller must acquire the ChainLock for writing prior to calling this.
 func (bc *Blockchain) processHeaderPoW(blockHeader *MsgDeSoHeader, headerHash *BlockHash) (_isMainChain bool, _isOrphan bool, _err error) {
+	// Only accept the header if its height is below the PoS cutover height.
+	if !bc.IsPoWBlockHeight(blockHeader.Height) {
+		return false, false, HeaderErrorBlockHeightAfterProofOfStakeCutover
+	}
+
 	// Start by checking if the header already exists in our node
 	// index. If it does, then return an error. We should generally
 	// expect that processHeaderPoW will only be called on headers we
@@ -1889,11 +1894,10 @@ func (bc *Blockchain) ProcessHeader(blockHeader *MsgDeSoHeader, headerHash *Bloc
 		return false, false, fmt.Errorf("ProcessHeader: Header is nil")
 	}
 
-	// If the header's height is after the PoS cut-over fork height, then we use the PoS header processing logic. Otherwise, fall back
-	// to the PoW logic.
-	if blockHeader.Height >= uint64(bc.params.ForkHeights.ProofOfStake2ConsensusCutoverBlockHeight) {
-		// TODO: call bc.processHeaderPoS(blockHeader, headerHash) instead
-		return bc.processHeaderPoW(blockHeader, headerHash)
+	// If the header's height is after the PoS cut-over fork height, then we use the PoS header processing logic.
+	// Otherwise, fall back to the PoW logic.
+	if bc.IsPoSBlockHeight(blockHeader.Height) {
+		return bc.processHeaderPoS(blockHeader)
 	}
 
 	return bc.processHeaderPoW(blockHeader, headerHash)
@@ -1908,12 +1912,10 @@ func (bc *Blockchain) ProcessBlock(desoBlock *MsgDeSoBlock, verifySignatures boo
 		return false, false, nil, fmt.Errorf("ProcessBlock: Block is nil")
 	}
 
-	// If the block's height is after the PoS cut-over fork height, then we use the PoS block processing logic. Otherwise, fall back
-	// to the PoW logic.
-	if desoBlock.Header.Height >= uint64(bc.params.ForkHeights.ProofOfStake2ConsensusCutoverBlockHeight) {
-		// TODO: call bc.processBlockPoS(desoBlock, verifySignatures) instead
-		isMainChain, isOrphan, err := bc.processBlockPoW(desoBlock, verifySignatures)
-		return isMainChain, isOrphan, nil, err
+	// If the block's height is after the PoS cut-over fork height, then we use the PoS block processing logic.
+	// Otherwise, fall back to the PoW logic.
+	if bc.IsPoSBlockHeight(desoBlock.Header.Height) {
+		return bc.processBlockPoS(desoBlock, 1, verifySignatures)
 	}
 
 	isMainChain, isOrphan, err := bc.processBlockPoW(desoBlock, verifySignatures)
@@ -1921,7 +1923,10 @@ func (bc *Blockchain) ProcessBlock(desoBlock *MsgDeSoBlock, verifySignatures boo
 }
 
 func (bc *Blockchain) processBlockPoW(desoBlock *MsgDeSoBlock, verifySignatures bool) (_isMainChain bool, _isOrphan bool, err error) {
-	// TODO: Move this to be more isolated.
+	// Only accept the block if its height is below the PoS cutover height.
+	if !bc.IsPoWBlockHeight(desoBlock.Header.Height) {
+		return false, false, RuleErrorBlockHeightAfterProofOfStakeCutover
+	}
 
 	blockHeight := uint64(bc.BlockTip().Height + 1)
 
