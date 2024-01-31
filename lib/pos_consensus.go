@@ -3,6 +3,7 @@ package lib
 import (
 	"fmt"
 	"sync"
+	"time"
 
 	"github.com/deso-protocol/core/bls"
 	"github.com/deso-protocol/core/collections"
@@ -12,21 +13,32 @@ import (
 )
 
 type FastHotStuffConsensus struct {
-	lock                  sync.RWMutex
-	blockchain            *Blockchain
-	fastHotStuffEventLoop consensus.FastHotStuffEventLoop
-	mempool               Mempool
-	params                *DeSoParams
-	signer                *BLSSigner
+	lock                                sync.RWMutex
+	blockchain                          *Blockchain
+	fastHotStuffEventLoop               consensus.FastHotStuffEventLoop
+	mempool                             Mempool
+	params                              *DeSoParams
+	signer                              *BLSSigner
+	blockProductionIntervalMilliseconds uint64
+	timeoutBaseDurationMilliseconds     uint64
 }
 
-func NewFastHotStuffConsensus(params *DeSoParams, blockchain *Blockchain, mempool Mempool, signer *BLSSigner) *FastHotStuffConsensus {
+func NewFastHotStuffConsensus(
+	params *DeSoParams,
+	blockchain *Blockchain,
+	mempool Mempool,
+	signer *BLSSigner,
+	blockProductionIntervalMilliseconds uint64,
+	timeoutBaseDurationMilliseconds uint64,
+) *FastHotStuffConsensus {
 	return &FastHotStuffConsensus{
-		blockchain:            blockchain,
-		fastHotStuffEventLoop: consensus.NewFastHotStuffEventLoop(),
-		mempool:               mempool,
-		params:                params,
-		signer:                signer,
+		blockchain:                          blockchain,
+		fastHotStuffEventLoop:               consensus.NewFastHotStuffEventLoop(),
+		mempool:                             mempool,
+		params:                              params,
+		signer:                              signer,
+		blockProductionIntervalMilliseconds: blockProductionIntervalMilliseconds,
+		timeoutBaseDurationMilliseconds:     timeoutBaseDurationMilliseconds,
 	}
 }
 
@@ -83,8 +95,12 @@ func (cc *FastHotStuffConsensus) Start() error {
 		return errors.Errorf("FastHotStuffConsensus.Start: Error fetching validator lists for safe blocks: %v", err)
 	}
 
-	// Initialize and start the event loop. TODO: Pass in the crank timer duration and timeout duration
-	cc.fastHotStuffEventLoop.Init(0, 0, genesisQC, tipBlockWithValidators[0], safeBlocksWithValidators)
+	// Compute the block production internal and timeout base duration as time.Duration
+	blockProductionInterval := time.Millisecond * time.Duration(cc.blockProductionIntervalMilliseconds)
+	timeoutBaseDuration := time.Millisecond * time.Duration(cc.timeoutBaseDurationMilliseconds)
+
+	// Initialize and start the event loop
+	cc.fastHotStuffEventLoop.Init(blockProductionInterval, timeoutBaseDuration, genesisQC, tipBlockWithValidators[0], safeBlocksWithValidators)
 	cc.fastHotStuffEventLoop.Start()
 
 	return nil

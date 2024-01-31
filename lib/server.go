@@ -392,6 +392,8 @@ func NewServer(
 	_mempoolBackupIntervalMillis uint64,
 	_mempoolFeeEstimatorNumMempoolBlocks uint64,
 	_mempoolFeeEstimatorNumPastBlocks uint64,
+	_posBlockProductionIntervalMilliseconds uint64,
+	_posTimeoutBaseDurationMilliseconds uint64,
 ) (
 	_srv *Server,
 	_err error,
@@ -582,7 +584,14 @@ func NewServer(
 
 	// Only initialize the FastHotStuffConsensus if the node is a validator with a BLS keystore
 	if _blsKeystore != nil {
-		srv.fastHotStuffConsensus = NewFastHotStuffConsensus(_params, _chain, _posMempool, _blsKeystore.GetSigner())
+		srv.fastHotStuffConsensus = NewFastHotStuffConsensus(
+			_params,
+			_chain,
+			_posMempool,
+			_blsKeystore.GetSigner(),
+			_posBlockProductionIntervalMilliseconds,
+			_posTimeoutBaseDurationMilliseconds,
+		)
 	}
 
 	// Set all the fields on the Server object.

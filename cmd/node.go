@@ -279,6 +279,8 @@ func (node *Node) Start(exitChannels ...*chan struct{}) {
 		node.Config.MempoolBackupIntervalMillis,
 		node.Config.MempoolFeeEstimatorNumMempoolBlocks,
 		node.Config.MempoolFeeEstimatorNumPastBlocks,
+		node.Config.PosBlockProductionIntervalMilliseconds,
+		node.Config.PosTimeoutBaseDurationMilliseconds,
 	)
 	if err != nil {
 		// shouldRestart can be true if, on the previous run, we did not finish flushing all ancestral
