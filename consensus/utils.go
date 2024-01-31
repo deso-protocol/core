@@ -146,9 +146,13 @@ func isSuperMajorityStakeSignersList(signersList *bitset.Bitset, validators []Va
 func GetVoteSignaturePayload(view uint64, blockHash BlockHash) [32]byte {
 	viewBytes := make([]byte, 8)
 	binary.BigEndian.PutUint64(viewBytes, view)
+
 	blockHashBytes := blockHash.GetValue()
 
-	return sha3.Sum256(append(viewBytes, blockHashBytes[:]...))
+	payload := append(SignatureTypeOpCodeValidatorVote.ToBytes(), viewBytes...)
+	payload = append(payload, blockHashBytes[:]...)
+
+	return sha3.Sum256(payload)
 }
 
 // When timing out for a view, validators sign the payload sha3-256(View, HighQCView) with their BLS
@@ -161,7 +165,10 @@ func GetTimeoutSignaturePayload(view uint64, highQCView uint64) [32]byte {
 	highQCViewBytes := make([]byte, 8)
 	binary.BigEndian.PutUint64(highQCViewBytes, highQCView)
 
-	return sha3.Sum256(append(viewBytes, highQCViewBytes...))
+	payload := append(SignatureTypeOpCodeValidatorTimeout.ToBytes(), viewBytes...)
+	payload = append(payload, highQCViewBytes...)
+
+	return sha3.Sum256(payload)
 }
 
 func isProperlyFormedBlockWithValidatorList(block BlockWithValidatorList) bool {
