@@ -17,19 +17,21 @@ import (
 
 // NetworkManager is a structure that oversees all connections to RemoteNodes. NetworkManager has the following
 // responsibilities in regard to the lifecycle of RemoteNodes:
-//  - Maintain a list of all RemoteNodes that the node is connected to through the RemoteNodeManager.
-//	- Initialize RemoteNodes from established outbound and inbound peer connections.
-//  - Initiate and handle the communication of the handshake process with RemoteNodes.
+//   - Maintain a list of all RemoteNodes that the node is connected to through the RemoteNodeManager.
+//   - Initialize RemoteNodes from established outbound and inbound peer connections.
+//   - Initiate and handle the communication of the handshake process with RemoteNodes.
+//
 // The NetworkManager is also responsible for opening and closing connections. It does this by running a set of
 // goroutines that periodically check the state of different categories of RemoteNodes, and disconnects or connects
 // RemoteNodes as needed. These categories of RemoteNodes include:
-//  - Persistent RemoteNodes: These are RemoteNodes that we want to maintain a persistent (constant) connection to.
-//    These are specified by the --connect-ips flag.
-//  - Validators: These are RemoteNodes that are in the active validators set. We want to maintain a connection to
-// 	  all active validators. We also want to disconnect from any validators that are no longer active.
-//  - Non-Validators: These are RemoteNodes that are not in the active validators set. We want to maintain a connection
-//    to at most a target number of outbound and inbound non-validators. If we have more than the target number of
-//    outbound or inbound non-validators, we will disconnect the excess RemoteNodes.
+//   - Persistent RemoteNodes: These are RemoteNodes that we want to maintain a persistent (constant) connection to.
+//     These are specified by the --connect-ips flag.
+//   - Validators: These are RemoteNodes that are in the active validators set. We want to maintain a connection to
+//     all active validators. We also want to disconnect from any validators that are no longer active.
+//   - Non-Validators: These are RemoteNodes that are not in the active validators set. We want to maintain a connection
+//     to at most a target number of outbound and inbound non-validators. If we have more than the target number of
+//     outbound or inbound non-validators, we will disconnect the excess RemoteNodes.
+//
 // The NetworkManager also runs an auxiliary goroutine that periodically cleans up RemoteNodes that may have timed out
 // the handshake process, or became invalid for some other reason.
 type NetworkManager struct {
