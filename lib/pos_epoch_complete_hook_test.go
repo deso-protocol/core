@@ -4,9 +4,10 @@ package lib
 
 import (
 	"fmt"
-	"github.com/deso-protocol/core/bls"
 	"sort"
 	"testing"
+
+	"github.com/deso-protocol/core/bls"
 
 	"github.com/holiman/uint256"
 	"github.com/stretchr/testify/require"
@@ -896,7 +897,7 @@ func _runOnEpochCompleteHook(testMeta *TestMeta, blockHeight uint64, viewNumber 
 	tmpUtxoView := _newUtxoView(testMeta)
 	// Set blockTimestampNanoSecs to 1 year * block height. Every time the block height increments,
 	// the timestamp increases by 1 year
-	blockTimestampNanoSecs := blockHeight * 365 * 24 * 3600 * 1e9
+	blockTimestampNanoSecs := int64(blockHeight) * 365 * 24 * 3600 * 1e9
 	_, err := tmpUtxoView.RunEpochCompleteHook(blockHeight, viewNumber, blockTimestampNanoSecs)
 	require.NoError(testMeta.t, err)
 	require.NoError(testMeta.t, tmpUtxoView.FlushToDb(blockHeight))

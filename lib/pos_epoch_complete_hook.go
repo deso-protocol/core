@@ -50,7 +50,7 @@ func (bav *UtxoView) IsLastBlockInCurrentEpoch(blockHeight uint64) (bool, error)
 // - Compute the start block height and view number for the next epoch.
 // - Compute the final block height for the next epoch.
 // - Update CurrentEpochEntry to the next epoch's.
-func (bav *UtxoView) RunEpochCompleteHook(blockHeight uint64, view uint64, blockTimestampNanoSecs uint64) ([]*UtxoOperation, error) {
+func (bav *UtxoView) RunEpochCompleteHook(blockHeight uint64, view uint64, blockTimestampNanoSecs int64) ([]*UtxoOperation, error) {
 	// Sanity-check that the current block is the last block in the current epoch.
 	//
 	// Note that this will also return true if we're currently at the ProofOfStake1StateSetupBlockHeight
@@ -94,7 +94,7 @@ func (bav *UtxoView) RunEpochCompleteHook(blockHeight uint64, view uint64, block
 }
 
 // Runs all state-mutating operations required when completing an epoch.
-func (bav *UtxoView) runEpochCompleteStateTransition(blockHeight uint64, blockTimestampNanoSecs uint64) ([]*UtxoOperation, error) {
+func (bav *UtxoView) runEpochCompleteStateTransition(blockHeight uint64, blockTimestampNanoSecs int64) ([]*UtxoOperation, error) {
 	// Jail all inactive validators from the current snapshot validator set. This is an O(n) operation
 	// that loops through all active unjailed validators from current epoch's snapshot validator set
 	// and jails them if they have been inactive.
@@ -155,7 +155,7 @@ func (bav *UtxoView) simulateNextEpochEntry(currentEpochNumber uint64, currentEp
 	)
 }
 
-func (bav *UtxoView) computeNextEpochEntry(currentEpochNumber uint64, currentEpochFinalBlockHeight uint64, currentEpochFinalView uint64, nextEpochBlockTimestampNanoSecs uint64) (*EpochEntry, error) {
+func (bav *UtxoView) computeNextEpochEntry(currentEpochNumber uint64, currentEpochFinalBlockHeight uint64, currentEpochFinalView uint64, nextEpochBlockTimestampNanoSecs int64) (*EpochEntry, error) {
 	// Retrieve the SnapshotGlobalParamsEntry to determine the next epoch's final block height. We use the
 	// snapshot global params here because the next epoch begin immediately, and its length is used in the PoS
 	// consensus. The validator set for the next epoch needs to be in agreement on the length of the epoch
@@ -218,7 +218,7 @@ func (bav *UtxoView) simulatePrevEpochEntry(currentEpochNumber uint64, currentEp
 }
 
 // Updates the currentEpochEntry to the next epoch's.
-func (bav *UtxoView) runEpochCompleteEpochRollover(epochNumber uint64, blockHeight uint64, view uint64, blockTimestampNanoSecs uint64) error {
+func (bav *UtxoView) runEpochCompleteEpochRollover(epochNumber uint64, blockHeight uint64, view uint64, blockTimestampNanoSecs int64) error {
 	nextEpochEntry, err := bav.computeNextEpochEntry(epochNumber, blockHeight, view, blockTimestampNanoSecs)
 	if err != nil {
 		return errors.Wrap(err, "runEpochCompleteEpochRollover: ")

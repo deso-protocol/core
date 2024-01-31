@@ -879,7 +879,7 @@ func (bc *Blockchain) isProperlyFormedBlockHeaderPoS(header *MsgDeSoHeader) erro
 
 	// Timestamp validation
 	// TODO: Add support for putting the drift into global params.
-	if header.TstampNanoSecs > uint64(time.Now().UnixNano())+bc.params.DefaultBlockTimestampDriftNanoSecs {
+	if header.TstampNanoSecs > time.Now().UnixNano()+bc.params.DefaultBlockTimestampDriftNanoSecs {
 		return RuleErrorPoSBlockTstampNanoSecsInFuture
 	}
 

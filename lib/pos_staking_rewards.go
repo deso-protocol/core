@@ -7,7 +7,7 @@ import (
 	"github.com/pkg/errors"
 )
 
-func (bav *UtxoView) DistributeStakingRewardsToSnapshotStakes(blockHeight uint64, blockTimestampNanoSecs uint64) ([]*UtxoOperation, error) {
+func (bav *UtxoView) DistributeStakingRewardsToSnapshotStakes(blockHeight uint64, blockTimestampNanoSecs int64) ([]*UtxoOperation, error) {
 	// Check if we have switched from PoW to PoS yet. If we have not, then the PoS consensus
 	// has not started yet. We don't want to distribute any staking rewards until the PoS consensus begins.
 	if blockHeight < uint64(bav.Params.ForkHeights.ProofOfStake2ConsensusCutoverBlockHeight) {
@@ -266,8 +266,8 @@ func convertAPYBasisPointsToFloat(apyBasisPoints uint64) *big.Float {
 	return NewFloat().Quo(apyBasisPointsAsFloat, _basisPointsAsFloat)
 }
 
-func computeFractionOfYearAsFloat(nanoSecs uint64) *big.Float {
-	nanoSecsAsFloat := NewFloat().SetUint64(nanoSecs)
+func computeFractionOfYearAsFloat(nanoSecs int64) *big.Float {
+	nanoSecsAsFloat := NewFloat().SetInt64(nanoSecs)
 	return NewFloat().Quo(nanoSecsAsFloat, _nanoSecsPerYearAsFloat)
 }
 

@@ -59,7 +59,7 @@ func GetTestParamsCopy(
 		big.NewInt(0),
 		// We are bastardizing the DeSo header to store Bitcoin information here.
 		&MsgDeSoHeader{
-			TstampNanoSecs: SecondsToNanoSeconds(uint64(startHeader.Timestamp.Unix())),
+			TstampNanoSecs: SecondsToNanoSeconds(startHeader.Timestamp.Unix()),
 			Height:         0,
 		},
 		StatusBitcoinHeaderValidated,

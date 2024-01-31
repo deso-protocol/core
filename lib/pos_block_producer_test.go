@@ -71,7 +71,7 @@ func TestCreateBlockTemplate(t *testing.T) {
 	root, _, err := ComputeMerkleRoot(blockTemplate.Txns)
 	require.NoError(err)
 	require.Equal(blockTemplate.Header.TransactionMerkleRoot, root)
-	require.Equal(true, blockTemplate.Header.TstampNanoSecs < uint64(time.Now().UnixNano()))
+	require.Equal(true, blockTemplate.Header.TstampNanoSecs < time.Now().UnixNano())
 	require.Equal(blockTemplate.Header.Height, uint64(3))
 	require.Equal(blockTemplate.Header.ProposedInView, uint64(10))
 	require.Equal(blockTemplate.Header.ProposerPublicKey, m0Pk)

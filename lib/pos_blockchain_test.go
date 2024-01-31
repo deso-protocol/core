@@ -240,7 +240,7 @@ func TestIsProperlyFormedBlockPoSAndIsBlockTimestampValidRelativeToParentPoS(t *
 	require.Equal(t, err, RuleErrorPoSBlockTstampNanoSecsTooOld)
 
 	// Block timestamps can't be in the future.
-	block.Header.TstampNanoSecs = uint64(time.Now().UnixNano() + (11 * time.Minute).Nanoseconds())
+	block.Header.TstampNanoSecs = time.Now().UnixNano() + (11 * time.Minute).Nanoseconds()
 	err = bc.isProperlyFormedBlockPoS(block)
 	require.Equal(t, err, RuleErrorPoSBlockTstampNanoSecsInFuture)
 
@@ -278,10 +278,10 @@ func TestIsProperlyFormedBlockPoSAndIsBlockTimestampValidRelativeToParentPoS(t *
 func TestHasValidBlockHeight(t *testing.T) {
 	bc, _, _ := NewTestBlockchain(t)
 	hash := NewBlockHash(RandomBytes(32))
-	nowTimestamp := uint64(time.Now().UnixNano())
+	nowTimestamp := time.Now().UnixNano()
 	genesisBlock := NewBlockNode(nil, hash, 1, nil, nil, &MsgDeSoHeader{
 		Version:                      2,
-		TstampNanoSecs:               nowTimestamp - uint64(time.Minute.Nanoseconds()),
+		TstampNanoSecs:               nowTimestamp - time.Minute.Nanoseconds(),
 		Height:                       1,
 		ProposedInView:               1,
 		ValidatorsVoteQC:             nil,
@@ -298,7 +298,7 @@ func TestHasValidBlockHeight(t *testing.T) {
 		Header: &MsgDeSoHeader{
 			PrevBlockHash:  genesisBlock.Hash,
 			Version:        2,
-			TstampNanoSecs: uint64(time.Now().UnixNano()) - 10,
+			TstampNanoSecs: time.Now().UnixNano() - 10,
 			Height:         2,
 			ProposedInView: 1,
 			ValidatorsTimeoutAggregateQC: &TimeoutAggregateQuorumCertificate{
@@ -386,7 +386,7 @@ func TestUpsertBlockAndBlockNodeToDB(t *testing.T) {
 		Header: &MsgDeSoHeader{
 			PrevBlockHash:                hash2,
 			Version:                      2,
-			TstampNanoSecs:               uint64(time.Now().UnixNano()) - 10,
+			TstampNanoSecs:               time.Now().UnixNano() - 10,
 			Height:                       2,
 			ProposedInView:               1,
 			ProposerPublicKey:            NewPublicKey(RandomBytes(33)),
@@ -536,7 +536,7 @@ func TestHasValidBlockViewPoS(t *testing.T) {
 		Header: &MsgDeSoHeader{
 			PrevBlockHash:  hash2,
 			Version:        2,
-			TstampNanoSecs: uint64(time.Now().UnixNano()) - 10,
+			TstampNanoSecs: time.Now().UnixNano() - 10,
 			Height:         2,
 			ProposedInView: 1,
 			ValidatorsTimeoutAggregateQC: &TimeoutAggregateQuorumCertificate{
@@ -2638,11 +2638,11 @@ func _getFullRealBlockTemplate(testMeta *TestMeta, latestBlockView *UtxoView, bl
 	blockTemplate.Header.ProposerPublicKey = NewPublicKey(leaderPublicKeyBytes)
 	blockTemplate.Header.ProposerVotingPublicKey = leaderVotingPrivateKey.PublicKey()
 	// Ugh we need to adjust the timestamp.
-	blockTemplate.Header.TstampNanoSecs = uint64(time.Now().UnixNano())
+	blockTemplate.Header.TstampNanoSecs = time.Now().UnixNano()
 	if chainTip.Header.TstampNanoSecs > blockTemplate.Header.TstampNanoSecs {
 		blockTemplate.Header.TstampNanoSecs = chainTip.Header.TstampNanoSecs + 1
 	}
-	require.Less(testMeta.t, blockTemplate.Header.TstampNanoSecs, uint64(time.Now().UnixNano())+testMeta.chain.params.DefaultBlockTimestampDriftNanoSecs)
+	require.Less(testMeta.t, blockTemplate.Header.TstampNanoSecs, time.Now().UnixNano()+testMeta.chain.params.DefaultBlockTimestampDriftNanoSecs)
 	var proposerVotePartialSignature *bls.Signature
 	// Just hack it so the leader gets the block reward.
 	blockTemplate.Txns[0].TxOutputs[0].PublicKey = leaderPublicKeyBytes

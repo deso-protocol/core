@@ -343,7 +343,7 @@ func (mp *PosMempool) OnBlockDisconnected(block *MsgDeSoBlock) {
 		// Add all transactions in the block to the mempool.
 
 		// Construct the MempoolTx from the MsgDeSoTxn.
-		mempoolTx, err := NewMempoolTx(txn, block.Header.TstampNanoSecs/1000, mp.latestBlockHeight)
+		mempoolTx, err := NewMempoolTx(txn, NanoSecondsToUint64MicroSeconds(block.Header.TstampNanoSecs), mp.latestBlockHeight)
 		if err != nil {
 			continue
 		}
