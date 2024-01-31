@@ -4083,6 +4083,10 @@ type GlobalParamsEntry struct {
 	// blocks) before they are jailed.
 	JailInactiveValidatorGracePeriodEpochs uint64
 
+	// LockedDESOTransferRestrictions specifies the transfer restriction status
+	// of locked unvested DESO.
+	LockedDESOTransferRestrictions TransferRestrictionStatus
+
 	// MaximumVestedIntersectionsPerLockupTransaction is used to limit the computational complexity of
 	// vested lockup transactions. Essentially, vested lockups may overlap in time creating either
 	// significant complexity on the lockup transaction or the unlock transaction. As a simple example,
@@ -4149,6 +4153,7 @@ func (gp *GlobalParamsEntry) Copy() *GlobalParamsEntry {
 		StakingRewardsAPYBasisPoints:                   gp.StakingRewardsAPYBasisPoints,
 		EpochDurationNumBlocks:                         gp.EpochDurationNumBlocks,
 		JailInactiveValidatorGracePeriodEpochs:         gp.JailInactiveValidatorGracePeriodEpochs,
+		LockedDESOTransferRestrictions:                 gp.LockedDESOTransferRestrictions,
 		MaximumVestedIntersectionsPerLockupTransaction: gp.MaximumVestedIntersectionsPerLockupTransaction,
 		FeeBucketGrowthRateBasisPoints:                 gp.FeeBucketGrowthRateBasisPoints,
 		FailingTransactionBMFMultiplierBasisPoints:     gp.FailingTransactionBMFMultiplierBasisPoints,
@@ -4175,6 +4180,7 @@ func (gp *GlobalParamsEntry) RawEncodeWithoutMetadata(blockHeight uint64, skipMe
 		data = append(data, UintToBuf(gp.StakingRewardsAPYBasisPoints)...)
 		data = append(data, UintToBuf(gp.EpochDurationNumBlocks)...)
 		data = append(data, UintToBuf(gp.JailInactiveValidatorGracePeriodEpochs)...)
+		data = append(data, byte(gp.LockedDESOTransferRestrictions))
 		data = append(data, IntToBuf(int64(gp.MaximumVestedIntersectionsPerLockupTransaction))...)
 		data = append(data, UintToBuf(gp.FeeBucketGrowthRateBasisPoints)...)
 		data = append(data, UintToBuf(gp.FailingTransactionBMFMultiplierBasisPoints)...)
@@ -4244,6 +4250,11 @@ func (gp *GlobalParamsEntry) RawDecodeWithoutMetadata(blockHeight uint64, rr *by
 		if err != nil {
 			return errors.Wrapf(err, "GlobalParamsEntry.Decode: Problem reading JailInactiveValidatorGracePeriodEpochs: ")
 		}
+		lockedDESOTransferRestrictions, err := rr.ReadByte()
+		if err != nil {
+			return errors.Wrapf(err, "GlobalParamsEntry.Decode: Problem reading LockedDESOTransferRestrictions: ")
+		}
+		gp.LockedDESOTransferRestrictions = TransferRestrictionStatus(lockedDESOTransferRestrictions)
 		maximumVestedIntersectionsPerLockupTransaction, err := ReadVarint(rr)
 		if err != nil {
 			return errors.Wrapf(err,
