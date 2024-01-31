@@ -36,6 +36,22 @@ type FastHotStuffEvent struct {
 	AggregateQC    AggregateQuorumCertificate
 }
 
+// SignatureOpCode is a way for the FastHotStuffEventLoop to differentiate between different types of
+// BLS signatures. This is used to ensure that the event loop doesn't accidentally sign two different
+// message types with the same signature.
+//   - SignatureOpCodeValidatorVote: The BLS signature is for a validator vote message
+//   - SignatureOpCodeValidatorTimeout: The BLS signature is for a validator timeout message
+type SignatureOpCode byte
+
+const (
+	SignatureOpCodeValidatorVote    SignatureOpCode = 1
+	SignatureOpCodeValidatorTimeout SignatureOpCode = 2
+)
+
+func (opCode SignatureOpCode) ToBytes() []byte {
+	return []byte{byte(opCode)}
+}
+
 // The maximum number of consecutive timeouts that can occur before the event loop stops
 // its exponential back-off. This is a safety valve that helps ensure that the event loop
 // doesn't get stuck in a near indefinite back-off state.
