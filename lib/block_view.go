@@ -4058,35 +4058,52 @@ func (bav *UtxoView) ConnectBlock(
 	for txIndex, txn := range desoBlock.Txns {
 		txHash := txHashes[txIndex]
 
-		// ConnectTransaction validates all of the transactions in the block and
-		// is responsible for verifying signatures.
-		//
-		// TODO: We currently don't check that the min transaction fee is satisfied when
-		// connecting blocks. We skip this check because computing the transaction's size
-		// would slow down block processing significantly. We should figure out a way to
-		// enforce this check in the future, but for now the only attack vector is one in
-		// which a miner is trying to spam the network, which should generally never happen.
-		utxoOpsForTxn, totalInput, totalOutput, currentFees, err := bav.ConnectTransaction(txn, txHash, 0, uint32(blockHeader.Height), blockHeader.TstampNanoSecs, verifySignatures, false)
-		_, _ = totalInput, totalOutput // A bit surprising we don't use these
 		// After the PoS cutover, we need to check if the transaction is a failing transaction.
 		txnConnects := blockHeight < uint64(bav.Params.ForkHeights.ProofOfStake2ConsensusCutoverBlockHeight) ||
 			(txIndex == 0 && txn.TxnMeta.GetTxnType() == TxnTypeBlockReward) ||
 			desoBlock.TxnConnectStatusByIndex.Get(txIndex-1)
+
 		var utilityFee uint64
+		var utxoOpsForTxn []*UtxoOperation
+		var err error
+		var currentFees uint64
 		if txnConnects {
+			// ConnectTransaction validates all of the transactions in the block and
+			// is responsible for verifying signatures.
+			//
+			// TODO: We currently don't check that the min transaction fee is satisfied when
+			// connecting blocks. We skip this check because computing the transaction's size
+			// would slow down block processing significantly. We should figure out a way to
+			// enforce this check in the future, but for now the only attack vector is one in
+			// which a miner is trying to spam the network, which should generally never happen.
+			utxoOpsForTxn, _, _, currentFees, err = bav.ConnectTransaction(
+				txn, txHash, 0, uint32(blockHeader.Height), blockHeader.TstampNanoSecs, verifySignatures, false)
 			if err != nil {
 				return nil, errors.Wrapf(err, "ConnectBlock: error connecting txn #%d", txIndex)
 			}
 			_, utilityFee = computeBMF(currentFees)
 		} else {
-			if err == nil {
-				return nil, errors.Wrapf(err, "ConnectBlock: txn #%d should not connect based on "+
-					"TxnConnectStatusByIndex but err is nil", txIndex)
+			// If the transaction is not supposed to connect, we need to verify that it won't connect.
+			// We need to construct a copy of the view to verify that the transaction won't connect
+			// without side effects.
+			var utxoViewCopy *UtxoView
+			utxoViewCopy, err = bav.CopyUtxoView()
+			if err != nil {
+				return nil, errors.Wrapf(err, "ConnectBlock: error copying UtxoView")
 			}
-			utxoOpsForTxn, _, utilityFee, err = bav._connectFailingTransaction(txn, uint32(blockHeader.Height), verifySignatures)
+			_, _, _, _, err = utxoViewCopy.ConnectTransaction(
+				txn, txHash, 0, uint32(blockHeader.Height), blockHeader.TstampNanoSecs, verifySignatures, false)
+			if err == nil {
+				return nil, errors.Wrapf(err, "ConnectBlock: txn #%d should not connect but err is nil", txIndex)
+			}
+			var burnFee uint64
+			// Connect the failing transaction to get the fees and utility fee.
+			utxoOpsForTxn, burnFee, utilityFee, err = bav._connectFailingTransaction(
+				txn, uint32(blockHeader.Height), verifySignatures)
 			if err != nil {
 				return nil, errors.Wrapf(err, "ConnectBlock: error connecting failing txn #%d", txIndex)
 			}
+			currentFees = burnFee + utilityFee
 		}
 
 		// After the block reward patch block height, we only include fees from transactions
