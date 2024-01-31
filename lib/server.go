@@ -1711,8 +1711,8 @@ func (srv *Server) _cleanupDonePeerState(pp *Peer) {
 	}, false)
 }
 
-func (srv *Server) _handleDonePeer(pp *Peer) {
-	glog.V(1).Infof("Server._handleDonePeer: Processing DonePeer: %v", pp)
+func (srv *Server) _handleDisconnectedPeerMessage(pp *Peer) {
+	glog.V(1).Infof("Server._handleDisconnectedPeerMessage: Processing DonePeer: %v", pp)
 
 	srv._cleanupDonePeerState(pp)
 
@@ -2313,8 +2313,8 @@ func (srv *Server) _handleControlMessages(serverMessage *ServerMessage) (_should
 	switch serverMessage.Msg.(type) {
 	// Control messages used internally to signal to the server.
 	case *MsgDeSoDisconnectedPeer:
-		srv._handleDonePeer(serverMessage.Peer)
-		srv.networkManager._handleDonePeerMessage(serverMessage.Peer, serverMessage.Msg)
+		srv._handleDisconnectedPeerMessage(serverMessage.Peer)
+		srv.networkManager._handleDisconnectedPeerMessage(serverMessage.Peer, serverMessage.Msg)
 	case *MsgDeSoNewConnection:
 		srv.networkManager._handleNewConnectionMessage(serverMessage.Peer, serverMessage.Msg)
 	case *MsgDeSoQuit:
