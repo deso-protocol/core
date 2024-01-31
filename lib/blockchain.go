@@ -1154,7 +1154,7 @@ func (bc *Blockchain) isTipCurrent(tip *BlockNode) bool {
 	minChainWorkBytes, _ := hex.DecodeString(bc.params.MinChainWorkHex)
 
 	// Not current if the cumulative work is below the threshold.
-	if tip.CumWork.Cmp(BytesToBigint(minChainWorkBytes)) < 0 {
+	if bc.IsPoWBlockHeight(uint64(tip.Height)) && tip.CumWork.Cmp(BytesToBigint(minChainWorkBytes)) < 0 {
 		//glog.V(2).Infof("Blockchain.isTipCurrent: Tip not current because "+
 		//"CumWork (%v) is less than minChainWorkBytes (%v)",
 		//tip.CumWork, BytesToBigint(minChainWorkBytes))
