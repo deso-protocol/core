@@ -8,7 +8,6 @@ import (
 	"github.com/golang/glog"
 	"github.com/holiman/uint256"
 	"github.com/pkg/errors"
-	"math/big"
 	"reflect"
 	"sort"
 )
@@ -1039,38 +1038,37 @@ func (bav *UtxoView) _connectCoinLockup(
 
 	// Check that the target profile public key is valid and that a profile corresponding to that public key exists.
 	// We also go ahead and fetch the profile PKID as we will use it later.
-	var profileEntry *ProfileEntry
-	var profilePKID *PKID
 	if len(txMeta.ProfilePublicKey) != btcec.PubKeyBytesLenCompressed {
 		return 0, 0, nil,
 			errors.Wrap(RuleErrorCoinLockupInvalidProfilePubKey, "_connectCoinLockup")
 	}
-	if !txMeta.ProfilePublicKey.IsZeroPublicKey() {
-		profileEntry = bav.GetProfileEntryForPublicKey(txMeta.ProfilePublicKey.ToBytes())
-		if profileEntry == nil || profileEntry.isDeleted {
-			return 0, 0, nil,
-				errors.Wrap(RuleErrorCoinLockupOnNonExistentProfile, "_connectCoinLockup")
-		}
-		profilePKIDEntry := bav.GetPKIDForPublicKey(txMeta.ProfilePublicKey.ToBytes())
-		if profilePKIDEntry == nil || profilePKIDEntry.isDeleted {
-			return 0, 0, nil,
-				errors.Wrap(RuleErrorCoinLockupNonExistentProfile, "_connectCoinLockup")
-		}
-		profilePKID = profilePKIDEntry.PKID.NewPKID()
-	} else {
-		profilePKID = ZeroPKID.NewPKID()
+
+	// NOTE: The zero key could be used to enable locking up DESO.
+	// If this feature is desired, it can be restored with the following PR:
+	// TODO: Add relevant PR here.
+	if txMeta.ProfilePublicKey.IsZeroPublicKey() {
+		return 0, 0, nil,
+			errors.Wrap(RuleErrorCoinLockupCannotLockupZeroKey, "_connectCoinLockup")
+
 	}
+
+	// Check that the profile specified exists.
+	profileEntry := bav.GetProfileEntryForPublicKey(txMeta.ProfilePublicKey.ToBytes())
+	if profileEntry == nil || profileEntry.isDeleted {
+		return 0, 0, nil,
+			errors.Wrap(RuleErrorCoinLockupOnNonExistentProfile, "_connectCoinLockup")
+	}
+	profilePKIDEntry := bav.GetPKIDForPublicKey(txMeta.ProfilePublicKey.ToBytes())
+	if profilePKIDEntry == nil || profilePKIDEntry.isDeleted {
+		return 0, 0, nil,
+			errors.Wrap(RuleErrorCoinLockupNonExistentProfile, "_connectCoinLockup")
+	}
+	profilePKID := profilePKIDEntry.PKID.NewPKID()
 
 	// Validate the lockup amount as non-zero. This is meant to prevent wasteful "no-op" transactions.
 	if txMeta.LockupAmountBaseUnits.IsZero() {
 		return 0, 0, nil,
 			errors.Wrap(RuleErrorCoinLockupOfAmountZero, "_connectCoinLockup")
-	}
-
-	// If this is a DeSo lockup, ensure the amount is less than 2**64 (maximum DeSo balance).
-	if txMeta.ProfilePublicKey.IsZeroPublicKey() && !txMeta.LockupAmountBaseUnits.IsUint64() {
-		return 0, 0, nil,
-			errors.Wrap(RuleErrorCoinLockupExcessiveDeSoLockup, "_connectCoinLockup")
 	}
 
 	// Validate the lockup expires in the future.
@@ -1110,73 +1108,42 @@ func (bav *UtxoView) _connectCoinLockup(
 	}
 	hodlerPKID := recipientPKIDEntry.PKID
 
-	// Validate the transactor as having sufficient DAO Coin or DESO balance for the transaction.
-	var transactorBalanceNanos256 *uint256.Int
-	var prevTransactorBalanceEntry *BalanceEntry
-	var prevCoinEntry *CoinEntry
-	if profilePKID.IsZeroPKID() {
-		// NOTE: When spending balances, we need to check for immature block rewards. Since we don't have
-		//       the block rewards yet for the current block, we subtract one from the current block height
-		//        when spending balances.
-
-		// Check the DeSo balance of the user.
-		transactorBalanceNanos, err := bav.GetSpendableDeSoBalanceNanosForPublicKey(txn.PublicKey, blockHeight-1)
-		if err != nil {
-			return 0, 0, nil, errors.Wrap(err, "_connectCoinLockup")
-		}
-
-		// Construct a uint256 balance and validate the transactor as having sufficient DeSo.
-		transactorBalanceNanos256, _ = uint256.FromBig(big.NewInt(0).SetUint64(transactorBalanceNanos))
-		if txMeta.LockupAmountBaseUnits.Gt(transactorBalanceNanos256) {
-			return 0, 0, nil,
-				errors.Wrap(RuleErrorCoinLockupInsufficientDeSo, "_connectCoinLockup")
-		}
-
-		// Spend the transactor's DeSo balance.
-		lockupAmount64 := txMeta.LockupAmountBaseUnits.Uint64()
-		newUtxoOp, err := bav._spendBalance(lockupAmount64, txn.PublicKey, blockHeight-1)
-		if err != nil {
-			return 0, 0, nil, errors.Wrap(err, "_connectCoinLockup")
-		}
-		utxoOpsForTxn = append(utxoOpsForTxn, newUtxoOp)
-	} else {
-		// Check the BalanceEntry of the user.
-		transactorBalanceEntry, _, _ := bav.GetBalanceEntryForHODLerPubKeyAndCreatorPubKey(
-			txn.PublicKey,
-			txMeta.ProfilePublicKey.ToBytes(),
-			true)
-		if transactorBalanceEntry == nil || transactorBalanceEntry.isDeleted {
-			return 0, 0, nil,
-				errors.Wrap(RuleErrorCoinLockupBalanceEntryDoesNotExist, "_connectCoinLockup")
-		}
-
-		// Validate the balance entry as having sufficient funds.
-		transactorBalanceNanos256 = transactorBalanceEntry.BalanceNanos.Clone()
-		if txMeta.LockupAmountBaseUnits.Gt(transactorBalanceNanos256) {
-			return 0, 0, nil,
-				errors.Wrap(RuleErrorCoinLockupInsufficientCoins, "_connectCoinLockup")
-		}
-
-		// We store the previous transactor balance entry in the event we need to revert the transaction.
-		prevTransactorBalanceEntry = transactorBalanceEntry.Copy()
-
-		// Spend the transactor's DAO coin balance.
-		transactorBalanceEntry.BalanceNanos =
-			*uint256.NewInt().Sub(&transactorBalanceEntry.BalanceNanos, txMeta.LockupAmountBaseUnits)
-		bav._setDAOCoinBalanceEntryMappings(transactorBalanceEntry)
-
-		// Create a copy of the associated CoinEntry in the event we must roll back the transaction.
-		prevCoinEntry = profileEntry.DAOCoinEntry.Copy()
-
-		// Update CoinsInCirculation and NumberOfHolders associated with the DAO coin balance.
-		profileEntry.DAOCoinEntry.CoinsInCirculationNanos = *uint256.NewInt().Sub(
-			&profileEntry.DAOCoinEntry.CoinsInCirculationNanos,
-			txMeta.LockupAmountBaseUnits)
-		if transactorBalanceEntry.BalanceNanos.IsZero() && !prevTransactorBalanceEntry.BalanceNanos.IsZero() {
-			profileEntry.DAOCoinEntry.NumberOfHolders--
-		}
-		bav._setProfileEntryMappings(profileEntry)
+	// Check the BalanceEntry of the user.
+	transactorBalanceEntry, _, _ := bav.GetBalanceEntryForHODLerPubKeyAndCreatorPubKey(
+		txn.PublicKey,
+		txMeta.ProfilePublicKey.ToBytes(),
+		true)
+	if transactorBalanceEntry == nil || transactorBalanceEntry.isDeleted {
+		return 0, 0, nil,
+			errors.Wrap(RuleErrorCoinLockupBalanceEntryDoesNotExist, "_connectCoinLockup")
 	}
+
+	// Validate the balance entry as having sufficient funds.
+	transactorBalanceNanos256 := transactorBalanceEntry.BalanceNanos.Clone()
+	if txMeta.LockupAmountBaseUnits.Gt(transactorBalanceNanos256) {
+		return 0, 0, nil,
+			errors.Wrap(RuleErrorCoinLockupInsufficientCoins, "_connectCoinLockup")
+	}
+
+	// We store the previous transactor balance entry in the event we need to revert the transaction.
+	prevTransactorBalanceEntry := transactorBalanceEntry.Copy()
+
+	// Spend the transactor's DAO coin balance.
+	transactorBalanceEntry.BalanceNanos =
+		*uint256.NewInt().Sub(&transactorBalanceEntry.BalanceNanos, txMeta.LockupAmountBaseUnits)
+	bav._setDAOCoinBalanceEntryMappings(transactorBalanceEntry)
+
+	// Create a copy of the associated CoinEntry in the event we must roll back the transaction.
+	prevCoinEntry := profileEntry.DAOCoinEntry.Copy()
+
+	// Update CoinsInCirculation and NumberOfHolders associated with the DAO coin balance.
+	profileEntry.DAOCoinEntry.CoinsInCirculationNanos = *uint256.NewInt().Sub(
+		&profileEntry.DAOCoinEntry.CoinsInCirculationNanos,
+		txMeta.LockupAmountBaseUnits)
+	if transactorBalanceEntry.BalanceNanos.IsZero() && !prevTransactorBalanceEntry.BalanceNanos.IsZero() {
+		profileEntry.DAOCoinEntry.NumberOfHolders--
+	}
+	bav._setProfileEntryMappings(profileEntry)
 
 	// If this is an unvested lockup, compute any accrued yield.
 	// In the vested lockup case, the yield earned is always zero.
@@ -1276,12 +1243,6 @@ func (bav *UtxoView) _connectCoinLockup(
 			return 0, 0, nil,
 				errors.Wrap(RuleErrorCoinLockupYieldCausesOverflowInLockedBalanceEntry,
 					"_connectCoinLockup: New Locked Balance Entry Balance")
-		}
-		// Ensure in the case of DESO the resulting locked amount is less than 2**64.
-		if profilePKID.IsZeroPKID() && !newLockedBalanceEntryBalance.IsUint64() {
-			return 0, 0, nil,
-				errors.Wrap(RuleErrorCoinLockupYieldCausesOverflow, "_connectCoinLockup: "+
-					"New DESO Locked Balance Entry Balance")
 		}
 
 		// (4) Set the new locked balance entry in the view
@@ -1912,20 +1873,12 @@ func (bav *UtxoView) _connectUpdateCoinLockupParams(
 	txMeta := txn.TxnMeta.(*UpdateCoinLockupParamsMetadata)
 
 	// Get the profilePKID from the transactor public key.
-	var profilePKID *PKID
-	_, updaterIsParamUpdater := GetParamUpdaterPublicKeys(blockHeight, bav.Params)[MakePkMapKey(txn.PublicKey)]
-	if updaterIsParamUpdater {
-		// NOTE: The implication here is ParamUpdaters share write access to the DeSo lockup parameters.
-		//       As further implication, this means ParamUpdaters cannot specify their own coin's lockup parameters.
-		profilePKID = ZeroPKID.NewPKID()
-	} else {
-		profilePKIDEntry := bav.GetPKIDForPublicKey(txn.PublicKey)
-		if profilePKIDEntry == nil || profilePKIDEntry.isDeleted {
-			return 0, 0, nil, errors.Wrap(RuleErrorUpdateCoinLockupParamsOnInvalidPKID,
-				"_connectUpdateCoinLockupParams")
-		}
-		profilePKID = profilePKIDEntry.PKID
+	profilePKIDEntry := bav.GetPKIDForPublicKey(txn.PublicKey)
+	if profilePKIDEntry == nil || profilePKIDEntry.isDeleted {
+		return 0, 0, nil, errors.Wrap(RuleErrorUpdateCoinLockupParamsOnInvalidPKID,
+			"_connectUpdateCoinLockupParams")
 	}
+	profilePKID := profilePKIDEntry.PKID
 
 	// Sanity check the lockup duration as valid.
 	if txMeta.LockupYieldDurationNanoSecs < 0 {
@@ -1975,7 +1928,7 @@ func (bav *UtxoView) _connectUpdateCoinLockupParams(
 
 	// Check if we're updating transfer restriction.
 	var prevLockupTransferRestriction TransferRestrictionStatus
-	if txMeta.NewLockupTransferRestrictions && !profilePKID.IsZeroPKID() {
+	if txMeta.NewLockupTransferRestrictions {
 		// Fetch the profile entry and LockupTransferRestriction status.
 		profileEntry := bav.GetProfileEntryForPKID(profilePKID)
 		if profileEntry == nil || profileEntry.isDeleted {
@@ -1989,13 +1942,6 @@ func (bav *UtxoView) _connectUpdateCoinLockupParams(
 		// Update the transfer restrictions.
 		profileEntry.DAOCoinEntry.LockupTransferRestrictionStatus = txMeta.LockupTransferRestrictionStatus
 		bav._setProfileEntryMappings(profileEntry)
-	}
-	if txMeta.NewLockupTransferRestrictions && profilePKID.IsZeroPKID() {
-		// Store a copy of the previous TransferRestrictionStatus.
-		prevLockupTransferRestriction = bav.GlobalParamsEntry.LockedDESOTransferRestrictions
-
-		// Update the transfer restrictions in global params.
-		bav.GlobalParamsEntry.LockedDESOTransferRestrictions = txMeta.LockupTransferRestrictionStatus
 	}
 
 	// Check that the new transfer restriction is valid.
@@ -2051,18 +1997,12 @@ func (bav *UtxoView) _disconnectUpdateCoinLockupParams(
 	txMeta := currentTxn.TxnMeta.(*UpdateCoinLockupParamsMetadata)
 
 	// Fetch the profilePKID for the transactor.
-	var profilePKID *PKID
-	_, updaterIsParamUpdater := GetParamUpdaterPublicKeys(blockHeight, bav.Params)[MakePkMapKey(currentTxn.PublicKey)]
-	if updaterIsParamUpdater {
-		profilePKID = ZeroPKID.NewPKID()
-	} else {
-		profilePKIDEntry := bav.GetPKIDForPublicKey(currentTxn.PublicKey)
-		if profilePKIDEntry == nil || profilePKIDEntry.isDeleted {
-			return errors.Wrap(RuleErrorUpdateCoinLockupParamsOnInvalidPKID,
-				"_connectUpdateCoinLockupParams")
-		}
-		profilePKID = profilePKIDEntry.PKID
+	profilePKIDEntry := bav.GetPKIDForPublicKey(currentTxn.PublicKey)
+	if profilePKIDEntry == nil || profilePKIDEntry.isDeleted {
+		return errors.Wrap(RuleErrorUpdateCoinLockupParamsOnInvalidPKID,
+			"_connectUpdateCoinLockupParams")
 	}
+	profilePKID := profilePKIDEntry.PKID
 
 	// Check if the transaction added a yield curve point. If it did, we restore the previous point.
 	// If the previous point is nil meaning this point didn't have a previous, then we simply delete the current point.
@@ -2096,7 +2036,7 @@ func (bav *UtxoView) _disconnectUpdateCoinLockupParams(
 	}
 
 	// Check if the transaction updated transfer restrictions. If it did, we reset the previous transfer restrictions.
-	if txMeta.NewLockupTransferRestrictions && !profilePKID.IsZeroPKID() {
+	if txMeta.NewLockupTransferRestrictions {
 		// Fetch the profile entry and LockupTransferRestriction status.
 		profileEntry := bav.GetProfileEntryForPKID(profilePKID)
 		if profileEntry == nil || profileEntry.isDeleted {
@@ -2107,9 +2047,6 @@ func (bav *UtxoView) _disconnectUpdateCoinLockupParams(
 		// Update the transfer restrictions.
 		profileEntry.DAOCoinEntry.LockupTransferRestrictionStatus = operationData.PrevLockupTransferRestriction
 		bav._setProfileEntryMappings(profileEntry)
-	}
-	if txMeta.NewLockupTransferRestrictions && profilePKID.IsZeroPKID() {
-		bav.GlobalParamsEntry.LockedDESOTransferRestrictions = operationData.PrevLockupTransferRestriction
 	}
 
 	// Decrement the operationIndex. We expect to find the basic transfer UtxoOps next.
@@ -2173,12 +2110,6 @@ func (bav *UtxoView) _connectCoinLockupTransfer(
 			"_connectCoinLockupTransfer")
 	}
 
-	// If this is a DeSo lockup, ensure the amount is less than 2**64.
-	if txMeta.ProfilePublicKey.IsZeroPublicKey() && !txMeta.LockedCoinsToTransferBaseUnits.IsUint64() {
-		return 0, 0, nil, errors.Wrap(RuleErrorCoinLockupTransferOfDeSoCausesOverflow,
-			"_connectCoinLockupTransfer")
-	}
-
 	// Validate recipient and profile public keys as valid.
 	var profileEntry *ProfileEntry
 	if len(txMeta.RecipientPublicKey) != btcec.PubKeyBytesLenCompressed {
@@ -2189,12 +2120,12 @@ func (bav *UtxoView) _connectCoinLockupTransfer(
 		return 0, 0, nil,
 			errors.Wrap(RuleErrorCoinLockupTransferInvalidProfilePubKey, "_connectCoinLockupTransfer")
 	}
-	if !txMeta.ProfilePublicKey.IsZeroPublicKey() {
-		profileEntry = bav.GetProfileEntryForPublicKey(txMeta.ProfilePublicKey.ToBytes())
-		if profileEntry == nil || profileEntry.isDeleted {
-			return 0, 0, nil,
-				errors.Wrap(RuleErrorCoinLockupTransferOnNonExistentProfile, "_connectCoinLockupTransfer")
-		}
+
+	// Ensure the locked profile exists.
+	profileEntry = bav.GetProfileEntryForPublicKey(txMeta.ProfilePublicKey.ToBytes())
+	if profileEntry == nil || profileEntry.isDeleted {
+		return 0, 0, nil,
+			errors.Wrap(RuleErrorCoinLockupTransferOnNonExistentProfile, "_connectCoinLockupTransfer")
 	}
 
 	// Fetch PKIDs for the recipient, sender, and profile.
@@ -2267,12 +2198,7 @@ func (bav *UtxoView) _connectCoinLockupTransfer(
 	prevReceiverLockedBalanceEntry := receiverLockedBalanceEntry.Copy()
 
 	// Fetch the transfer restrictions attached to the transfer.
-	var transferRestrictionStatus TransferRestrictionStatus
-	if profilePKID.IsZeroPKID() {
-		transferRestrictionStatus = bav.GlobalParamsEntry.LockedDESOTransferRestrictions
-	} else {
-		transferRestrictionStatus = profileEntry.DAOCoinEntry.LockupTransferRestrictionStatus
-	}
+	transferRestrictionStatus := profileEntry.DAOCoinEntry.LockupTransferRestrictionStatus
 
 	// Check if transfers are limited to profile owner only.
 	if transferRestrictionStatus == TransferRestrictionStatusProfileOwnerOnly && !profilePKID.Eq(senderPKID) {
@@ -2449,12 +2375,18 @@ func (bav *UtxoView) _connectCoinUnlock(
 		return 0, 0, nil, errors.Wrap(RuleErrorDAOCoinInvalidPubKey,
 			"_connectCoinUnlock")
 	}
-	if !txMeta.ProfilePublicKey.IsZeroPublicKey() {
-		profileEntry = bav.GetProfileEntryForPublicKey(txMeta.ProfilePublicKey.ToBytes())
-		if profileEntry == nil || profileEntry.isDeleted {
-			return 0, 0, nil, errors.Wrap(RuleErrorCoinUnlockOnNonExistentProfile,
-				"_connectCoinUnlock")
-		}
+
+	// Check that we're not unlocking the zero public key.
+	if txMeta.ProfilePublicKey.IsZeroPublicKey() {
+		return 0, 0, nil, errors.Wrap(RuleErrorCoinUnlockCannotUnlockZeroPublicKey,
+			"_connectCoinUnlock")
+	}
+
+	// Check that the associated public key exists.
+	profileEntry = bav.GetProfileEntryForPublicKey(txMeta.ProfilePublicKey.ToBytes())
+	if profileEntry == nil || profileEntry.isDeleted {
+		return 0, 0, nil, errors.Wrap(RuleErrorCoinUnlockOnNonExistentProfile,
+			"_connectCoinUnlock")
 	}
 
 	// Convert the TransactorPublicKey to HODLerPKID
@@ -2466,17 +2398,12 @@ func (bav *UtxoView) _connectCoinUnlock(
 	hodlerPKID := transactorPKIDEntry.PKID
 
 	// Convert the ProfilePublicKey to ProfilePKID.
-	var profilePKID *PKID
-	if txMeta.ProfilePublicKey.IsZeroPublicKey() {
-		profilePKID = ZeroPKID.NewPKID()
-	} else {
-		profilePKIDEntry := bav.GetPKIDForPublicKey(txMeta.ProfilePublicKey.ToBytes())
-		if profilePKIDEntry == nil || profilePKIDEntry.isDeleted {
-			return 0, 0, nil, errors.Wrap(RuleErrorCoinUnlockInvalidProfilePKID,
-				"_connectCoinUnlock")
-		}
-		profilePKID = profilePKIDEntry.PKID
+	profilePKIDEntry := bav.GetPKIDForPublicKey(txMeta.ProfilePublicKey.ToBytes())
+	if profilePKIDEntry == nil || profilePKIDEntry.isDeleted {
+		return 0, 0, nil, errors.Wrap(RuleErrorCoinUnlockInvalidProfilePKID,
+			"_connectCoinUnlock")
 	}
+	profilePKID := profilePKIDEntry.PKID
 
 	// Retrieve unlockable locked balance entries.
 	unvestedUnlockableLockedBalanceEntries, vestedUnlockableLockedBalanceEntries, err :=
@@ -2558,52 +2485,33 @@ func (bav *UtxoView) _connectCoinUnlock(
 	}
 
 	// Credit the transactor with either DAO coins or DeSo for this unlock.
-	var prevTransactorBalanceEntry *BalanceEntry
-	var prevCoinEntry *CoinEntry
-	if profilePKID.IsZeroPKID() {
-		// Ensure the uint256 can be properly represented as a uint64.
-		if !unlockedBalance.IsUint64() {
-			return 0, 0, nil,
-				errors.Wrap(RuleErrorCoinUnlockUnlockableDeSoOverflow, "_connectCoinUnlock")
-		}
+	prevTransactorBalanceEntry :=
+		bav._getBalanceEntryForHODLerPKIDAndCreatorPKID(hodlerPKID, profilePKID, true)
 
-		// Add the unlockedBalance to the transactors DeSo balance.
-		// NOTE: _addBalance checks for balance overflow.
-		utxoOp, err := bav._addBalance(unlockedBalance.Uint64(), txn.PublicKey)
-		if err != nil {
-			return 0, 0, nil, errors.Wrap(err, "_connectCoinUnlock: error"+
-				"adding CoinToUnlockBaseUnits to the transactor balance: ")
-		}
-		utxoOpsForTxn = append(utxoOpsForTxn, utxoOp)
-	} else {
-		prevTransactorBalanceEntry =
-			bav._getBalanceEntryForHODLerPKIDAndCreatorPKID(hodlerPKID, profilePKID, true)
-
-		// Credit the transactor with the unlock amount.
-		newTransactorBalanceEntry := prevTransactorBalanceEntry.Copy()
-		newTransactorBalanceNanos, err := SafeUint256().Add(&newTransactorBalanceEntry.BalanceNanos, unlockedBalance)
-		if err != nil {
-			return 0, 0, nil, errors.Wrap(RuleErrorCoinUnlockCausesBalanceOverflow,
-				"_connectCoinUnlock")
-		}
-		newTransactorBalanceEntry.BalanceNanos = *newTransactorBalanceNanos
-		bav._setBalanceEntryMappings(newTransactorBalanceEntry, true)
-
-		// Update CoinsInCirculation and NumberOfHolders to accurately reflect the changing balance.
-		prevCoinEntry = profileEntry.DAOCoinEntry.Copy()
-		newCoinsInCirculationNanos, err := SafeUint256().Add(
-			&profileEntry.DAOCoinEntry.CoinsInCirculationNanos,
-			unlockedBalance)
-		if err != nil {
-			return 0, 0, nil,
-				errors.Wrap(RuleErrorCoinUnlockCausesCoinsInCirculationOverflow, "_connectCoinUnlock")
-		}
-		profileEntry.DAOCoinEntry.CoinsInCirculationNanos = *newCoinsInCirculationNanos
-		if prevTransactorBalanceEntry.BalanceNanos.IsZero() && !newTransactorBalanceEntry.BalanceNanos.IsZero() {
-			profileEntry.DAOCoinEntry.NumberOfHolders++
-		}
-		bav._setProfileEntryMappings(profileEntry)
+	// Credit the transactor with the unlock amount.
+	newTransactorBalanceEntry := prevTransactorBalanceEntry.Copy()
+	newTransactorBalanceNanos, err := SafeUint256().Add(&newTransactorBalanceEntry.BalanceNanos, unlockedBalance)
+	if err != nil {
+		return 0, 0, nil, errors.Wrap(RuleErrorCoinUnlockCausesBalanceOverflow,
+			"_connectCoinUnlock")
 	}
+	newTransactorBalanceEntry.BalanceNanos = *newTransactorBalanceNanos
+	bav._setBalanceEntryMappings(newTransactorBalanceEntry, true)
+
+	// Update CoinsInCirculation and NumberOfHolders to accurately reflect the changing balance.
+	prevCoinEntry := profileEntry.DAOCoinEntry.Copy()
+	newCoinsInCirculationNanos, err := SafeUint256().Add(
+		&profileEntry.DAOCoinEntry.CoinsInCirculationNanos,
+		unlockedBalance)
+	if err != nil {
+		return 0, 0, nil,
+			errors.Wrap(RuleErrorCoinUnlockCausesCoinsInCirculationOverflow, "_connectCoinUnlock")
+	}
+	profileEntry.DAOCoinEntry.CoinsInCirculationNanos = *newCoinsInCirculationNanos
+	if prevTransactorBalanceEntry.BalanceNanos.IsZero() && !newTransactorBalanceEntry.BalanceNanos.IsZero() {
+		profileEntry.DAOCoinEntry.NumberOfHolders++
+	}
+	bav._setProfileEntryMappings(profileEntry)
 
 	// Create a UtxoOp for the operation.
 	utxoOpsForTxn = append(utxoOpsForTxn, &UtxoOperation{
@@ -2734,60 +2642,37 @@ func (bav *UtxoView) _disconnectCoinUnlock(
 		bav._setLockedBalanceEntry(prevLockedBalanceEntry)
 	}
 
-	// Reverting the BalanceEntry (if applicable) should not result in more coins.
+	// Reverting the BalanceEntry should not result in more coins.
 	profilePKID := operationData.PrevLockedBalanceEntries[0].ProfilePKID
 	hodlerPKID := operationData.PrevLockedBalanceEntries[0].HODLerPKID
-	if !profilePKID.IsZeroPKID() {
-		balanceEntry := bav._getBalanceEntryForHODLerPKIDAndCreatorPKID(hodlerPKID, profilePKID, true)
-		if operationData.PrevTransactorBalanceEntry == nil || operationData.PrevTransactorBalanceEntry.isDeleted {
-			return fmt.Errorf("_disconnectCoinUnlock: Trying to revert OperationTypeCoinUnlock " +
-				"but found nil or deleted previous balance entry")
-		}
-		if operationData.PrevTransactorBalanceEntry.BalanceNanos.Gt(&balanceEntry.BalanceNanos) {
-			return fmt.Errorf("_disconnectCoinUnlock: Trying to revert OperationTypeCoinUnlock " +
-				"would cause balance entry balance to increase")
-		}
-		if operationData.PrevTransactorBalanceEntry.BalanceNanos.IsZero() {
-			bav._deleteBalanceEntryMappingsWithPKIDs(operationData.PrevTransactorBalanceEntry,
-				hodlerPKID, profilePKID, true)
-		} else {
-			bav._setBalanceEntryMappings(operationData.PrevTransactorBalanceEntry, true)
-		}
+	balanceEntry := bav._getBalanceEntryForHODLerPKIDAndCreatorPKID(hodlerPKID, profilePKID, true)
+	if operationData.PrevTransactorBalanceEntry == nil || operationData.PrevTransactorBalanceEntry.isDeleted {
+		return fmt.Errorf("_disconnectCoinUnlock: Trying to revert OperationTypeCoinUnlock " +
+			"but found nil or deleted previous balance entry")
+	}
+	if operationData.PrevTransactorBalanceEntry.BalanceNanos.Gt(&balanceEntry.BalanceNanos) {
+		return fmt.Errorf("_disconnectCoinUnlock: Trying to revert OperationTypeCoinUnlock " +
+			"would cause balance entry balance to increase")
+	}
+	if operationData.PrevTransactorBalanceEntry.BalanceNanos.IsZero() {
+		bav._deleteBalanceEntryMappingsWithPKIDs(operationData.PrevTransactorBalanceEntry,
+			hodlerPKID, profilePKID, true)
+	} else {
+		bav._setBalanceEntryMappings(operationData.PrevTransactorBalanceEntry, true)
 	}
 
-	// Reverting the CoinEntry (if applicable) should not result in more coins in circulation.
-	if !profilePKID.IsZeroPKID() {
-		profileEntry := bav.GetProfileEntryForPKID(profilePKID)
-		if profileEntry == nil || profileEntry.isDeleted {
-			return fmt.Errorf("_disconnectCoinUnlock: Trying to revert coin unlock " +
-				"but found nil profile entry; this shouldn't be possible")
-		}
-		if operationData.PrevCoinEntry.CoinsInCirculationNanos.Gt(&profileEntry.DAOCoinEntry.CoinsInCirculationNanos) {
-			return fmt.Errorf("_disconnectCoinUnlock: Trying to revert OperationTypeCoinUnlock " +
-				"would cause profile entry coin entry balance to increase")
-		}
-		profileEntry.DAOCoinEntry = *operationData.PrevCoinEntry
-		bav._setProfileEntryMappings(profileEntry)
+	// Reverting the CoinEntry should not result in more coins in circulation.
+	profileEntry := bav.GetProfileEntryForPKID(profilePKID)
+	if profileEntry == nil || profileEntry.isDeleted {
+		return fmt.Errorf("_disconnectCoinUnlock: Trying to revert coin unlock " +
+			"but found nil profile entry; this shouldn't be possible")
 	}
-
-	// Reverting the DeSo addition should not result in more coins.
-	if profilePKID.IsZeroPKID() {
-		// Revert the DeSo add.
-		operationData = utxoOpsForTxn[operationIndex]
-		if operationData.Type != OperationTypeAddBalance {
-			return fmt.Errorf("_disconnectCoinLockup: Trying to revert OperationTypeAddBalance "+
-				"but found type %v", operationData.Type)
-		}
-		if !bytes.Equal(operationData.BalancePublicKey, currentTxn.PublicKey) {
-			return fmt.Errorf("_disconnectCoinLockup: Trying to revert OperationTypeAddBalance " +
-				"but found mismatched public keys")
-		}
-		err := bav._unAddBalance(operationData.BalanceAmountNanos, operationData.BalancePublicKey)
-		if err != nil {
-			return errors.Wrapf(err, "_disconnectCoinLockup: Problem unAdding balance of %v for the "+
-				"transactor", operationData.BalanceAmountNanos)
-		}
+	if operationData.PrevCoinEntry.CoinsInCirculationNanos.Gt(&profileEntry.DAOCoinEntry.CoinsInCirculationNanos) {
+		return fmt.Errorf("_disconnectCoinUnlock: Trying to revert OperationTypeCoinUnlock " +
+			"would cause profile entry coin entry balance to increase")
 	}
+	profileEntry.DAOCoinEntry = *operationData.PrevCoinEntry
+	bav._setProfileEntryMappings(profileEntry)
 
 	// By here we only need to disconnect the basic transfer associated with the transaction.
 	basicTransferOps := utxoOpsForTxn[:operationIndex]
