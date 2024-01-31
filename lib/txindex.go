@@ -419,7 +419,8 @@ func (txi *TXIndex) Update() error {
 			// - add all its mappings to the db.
 			for txnIndexInBlock, txn := range blockMsg.Txns {
 				txnMeta, err := ConnectTxnAndComputeTransactionMetadata(
-					txn, utxoView, blockToAttach.Hash, blockToAttach.Height, uint64(txnIndexInBlock))
+					txn, utxoView, blockToAttach.Hash, blockToAttach.Height,
+					int64(blockToAttach.Header.TstampNanoSecs), uint64(txnIndexInBlock))
 				if err != nil {
 					return fmt.Errorf("Update: Problem connecting txn %v to txindex: %v",
 						txn, err)

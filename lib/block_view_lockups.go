@@ -135,6 +135,10 @@ func (lockedBalanceEntry *LockedBalanceEntry) ToMapKey() LockedBalanceEntryKey {
 	}
 }
 
+func (lockedBalanceEntry *LockedBalanceEntry) IsDeleted() bool {
+	return lockedBalanceEntry.isDeleted
+}
+
 // DeSoEncoder Interface Implementation for LockedBalanceEntry
 
 func (lockedBalanceEntry *LockedBalanceEntry) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte {

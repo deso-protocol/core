@@ -295,7 +295,7 @@ func (desoBlockProducer *DeSoBlockProducer) _getBlockTemplate(publicKey []byte) 
 		var feeNanos uint64
 		_, _, _, feeNanos, err = feesUtxoView._connectTransaction(
 			txnInBlock, txnInBlock.Hash(), 0, uint32(blockRet.Header.Height),
-			0, false, false)
+			int64(blockRet.Header.TstampNanoSecs), false, false)
 		if err != nil {
 			return nil, nil, nil, fmt.Errorf(
 				"DeSoBlockProducer._getBlockTemplate: Error attaching txn to UtxoView for computed block: %v", err)
