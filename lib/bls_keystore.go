@@ -21,7 +21,6 @@ import (
 // up of the following tuples:
 // - PoS Validator Vote:        (0x01, view uint64, blockHash consensus.BlockHash)
 // - PoS Validator Timeout:     (0x02, view uint64, highQCView uint64)
-// - PoS Block Proposal:        (0x01, view uint64, blockHash consensus.BlockHash)
 // - PoS Validator Handshake:   (0x04, peer's random nonce, our node's random nonce)
 // - PoS Random Seed Signature: (previous block's random seed hash)
 
@@ -30,7 +29,7 @@ type BLSSignatureOpCode byte
 const (
 	BLSSignatureOpCodeValidatorVote         BLSSignatureOpCode = BLSSignatureOpCode(consensus.SignatureOpCodeValidatorVote)
 	BLSSignatureOpCodeValidatorTimeout      BLSSignatureOpCode = BLSSignatureOpCode(consensus.SignatureOpCodeValidatorTimeout)
-	BLSSignatureOpCodePoSValidatorHandshake BLSSignatureOpCode = 4
+	BLSSignatureOpCodePoSValidatorHandshake BLSSignatureOpCode = 3
 )
 
 func GetAllBLSSignatureOpCodes() []BLSSignatureOpCode {
