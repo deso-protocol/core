@@ -44,7 +44,9 @@ type Config struct {
 	HypersyncMaxQueueSize     uint32
 
 	// PoS Validator
-	PosValidatorSeed string
+	PosValidatorSeed                       string
+	PosBlockProductionIntervalMilliseconds uint64
+	PosTimeoutBaseDurationMilliseconds     uint64
 
 	// Mempool
 	MempoolBackupIntervalMillis         uint64
@@ -119,6 +121,8 @@ func LoadConfig() *Config {
 
 	// PoS Validator
 	config.PosValidatorSeed = viper.GetString("pos-validator-seed")
+	config.PosBlockProductionIntervalMilliseconds = viper.GetUint64("pos-block-production-interval-milliseconds")
+	config.PosTimeoutBaseDurationMilliseconds = viper.GetUint64("pos-timeout-base-duration-milliseconds")
 
 	// Mempool
 	config.MempoolBackupIntervalMillis = viper.GetUint64("mempool-backup-time-millis")
