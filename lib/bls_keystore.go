@@ -28,8 +28,8 @@ import (
 type BLSSignatureOpCode byte
 
 const (
-	BLSSignatureOpCodeValidatorVote         BLSSignatureOpCode = BLSSignatureOpCode(consensus.SignatureTypeOpCodeValidatorVote)
-	BLSSignatureOpCodeValidatorTimeout      BLSSignatureOpCode = BLSSignatureOpCode(consensus.SignatureTypeOpCodeValidatorTimeout)
+	BLSSignatureOpCodeValidatorVote         BLSSignatureOpCode = BLSSignatureOpCode(consensus.SignatureOpCodeValidatorVote)
+	BLSSignatureOpCodeValidatorTimeout      BLSSignatureOpCode = BLSSignatureOpCode(consensus.SignatureOpCodeValidatorTimeout)
 	BLSSignatureOpCodePoSValidatorHandshake BLSSignatureOpCode = 4
 )
 

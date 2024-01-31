@@ -36,19 +36,19 @@ type FastHotStuffEvent struct {
 	AggregateQC    AggregateQuorumCertificate
 }
 
-// SignatureTypeOpCode is a way for the FastHotStuffEventLoop to differentiate between different types of
+// SignatureOpCode is a way for the FastHotStuffEventLoop to differentiate between different types of
 // BLS signatures. This is used to ensure that the event loop doesn't accidentally sign two different
 // message types with the same signature.
-//   - SignatureTypeOpCodeValidatorVote: The BLS signature is for a validator vote message
-//   - SignatureTypeOpCodeValidatorTimeout: The BLS signature is for a validator timeout message
-type SignatureTypeOpCode byte
+//   - SignatureOpCodeValidatorVote: The BLS signature is for a validator vote message
+//   - SignatureOpCodeValidatorTimeout: The BLS signature is for a validator timeout message
+type SignatureOpCode byte
 
 const (
-	SignatureTypeOpCodeValidatorVote    SignatureTypeOpCode = 1
-	SignatureTypeOpCodeValidatorTimeout SignatureTypeOpCode = 2
+	SignatureOpCodeValidatorVote    SignatureOpCode = 1
+	SignatureOpCodeValidatorTimeout SignatureOpCode = 2
 )
 
-func (opCode SignatureTypeOpCode) ToBytes() []byte {
+func (opCode SignatureOpCode) ToBytes() []byte {
 	return []byte{byte(opCode)}
 }
 

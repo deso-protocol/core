@@ -149,7 +149,7 @@ func GetVoteSignaturePayload(view uint64, blockHash BlockHash) [32]byte {
 
 	blockHashBytes := blockHash.GetValue()
 
-	payload := append(SignatureTypeOpCodeValidatorVote.ToBytes(), viewBytes...)
+	payload := append(SignatureOpCodeValidatorVote.ToBytes(), viewBytes...)
 	payload = append(payload, blockHashBytes[:]...)
 
 	return sha3.Sum256(payload)
@@ -165,7 +165,7 @@ func GetTimeoutSignaturePayload(view uint64, highQCView uint64) [32]byte {
 	highQCViewBytes := make([]byte, 8)
 	binary.BigEndian.PutUint64(highQCViewBytes, highQCView)
 
-	payload := append(SignatureTypeOpCodeValidatorTimeout.ToBytes(), viewBytes...)
+	payload := append(SignatureOpCodeValidatorTimeout.ToBytes(), viewBytes...)
 	payload = append(payload, highQCViewBytes...)
 
 	return sha3.Sum256(payload)
