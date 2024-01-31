@@ -1834,7 +1834,7 @@ func testProcessBlockPoS(t *testing.T, testMeta *TestMeta) {
 		// Set the prev block hash manually on orphan block
 		orphanBlock.Header.PrevBlockHash = dummyParentBlockHash
 		// Create a QC on the dummy parent block
-		orphanBlock.Header.ValidatorsVoteQC = _getVoteQC(testMeta, testMeta.posMempool.readOnlyLatestBlockView, orphanBlock.Header.Height, dummyParentBlockHash, 16)
+		orphanBlock.Header.ValidatorsVoteQC = _getVoteQC(testMeta, orphanBlock.Header.Height, dummyParentBlockHash, 16)
 		updateProposerVotePartialSignatureForBlock(testMeta, orphanBlock)
 		orphanBlockHash, err = orphanBlock.Hash()
 		require.NoError(t, err)
@@ -2411,7 +2411,7 @@ func _generateRealBlockWithFailingTxn(testMeta *TestMeta, blockHeight uint64, vi
 	latestBlockHeight := testMeta.chain.blockIndexByHash[*prevBlockHash].Height
 	testMeta.posMempool.UpdateLatestBlock(latestBlockView, uint64(latestBlockHeight))
 	seedSignature := getRandomSeedSignature(testMeta, blockHeight, view, prevBlock.Header.ProposerRandomSeedSignature)
-	fullBlockTemplate := _getFullRealBlockTemplate(testMeta, testMeta.posMempool.readOnlyLatestBlockView, blockHeight, view, seedSignature, isTimeout)
+	fullBlockTemplate := _getFullRealBlockTemplate(testMeta, blockHeight, view, seedSignature, isTimeout)
 	// Remove the transactions from this block from the mempool.
 	// This prevents nonce reuse issues when trying to make reorg blocks.
 	for _, txn := range passingTxns {
@@ -2465,6 +2465,11 @@ func _generateDummyBlock(testMeta *TestMeta, blockHeight uint64, view uint64, se
 	require.True(testMeta.t, blockNode.IsStored())
 	_, exists := testMeta.chain.blockIndexByHash[*newBlockHash]
 	require.True(testMeta.t, exists)
+	// Remove the transactions from this block from the mempool.
+	// This prevents nonce reuse issues when trying to make failing blocks.
+	for _, txn := range passingTxns {
+		testMeta.posMempool.RemoveTransaction(txn.Hash())
+	}
 	return blockTemplate
 }
 
@@ -2492,7 +2497,10 @@ func _generateBlockAndAddToBestChain(testMeta *TestMeta, blockHeight uint64, vie
 	return blockTemplate
 }
 
-func getLeaderForBlockHeightAndView(testMeta *TestMeta, latestBlockView *UtxoView, blockHeight uint64, view uint64) (string, []byte) {
+func getLeaderForBlockHeightAndView(testMeta *TestMeta, blockHeight uint64, view uint64) (string, []byte) {
+	testMeta.posMempool.Lock()
+	defer testMeta.posMempool.Unlock()
+	latestBlockView := testMeta.posMempool.readOnlyLatestBlockView
 	currentEpochEntry, err := latestBlockView.GetCurrentEpochEntry()
 	require.NoError(testMeta.t, err)
 	leaders, err := latestBlockView.GetCurrentSnapshotLeaderSchedule()
@@ -2510,7 +2518,7 @@ func getLeaderForBlockHeightAndView(testMeta *TestMeta, latestBlockView *UtxoVie
 }
 
 func getRandomSeedSignature(testMeta *TestMeta, height uint64, view uint64, prevRandomSeedSignature *bls.Signature) *bls.Signature {
-	leaderPublicKey, _ := getLeaderForBlockHeightAndView(testMeta, testMeta.posMempool.readOnlyLatestBlockView, height, view)
+	leaderPublicKey, _ := getLeaderForBlockHeightAndView(testMeta, height, view)
 	leaderBLSPrivKey := testMeta.pubKeyToBLSKeyMap[leaderPublicKey]
 	prevRandomSeedHashSHA256 := sha256.Sum256(prevRandomSeedSignature.ToBytes())
 	newRandomSeedSignature, err := leaderBLSPrivKey.Sign(prevRandomSeedHashSHA256[:])
@@ -2525,7 +2533,7 @@ func updateRandomSeedSignature(testMeta *TestMeta, block *MsgDeSoBlock, prevRand
 func updateProposerVotePartialSignatureForBlock(testMeta *TestMeta, block *MsgDeSoBlock) {
 	blockHash, err := block.Hash()
 	require.NoError(testMeta.t, err)
-	leaderPublicKey, _ := getLeaderForBlockHeightAndView(testMeta, testMeta.posMempool.readOnlyLatestBlockView, block.Header.Height, block.Header.ProposedInView)
+	leaderPublicKey, _ := getLeaderForBlockHeightAndView(testMeta, block.Header.Height, block.Header.ProposedInView)
 	leaderBlsPrivKey := testMeta.pubKeyToBLSKeyMap[leaderPublicKey]
 	partialSigPayload := consensus.GetVoteSignaturePayload(block.Header.ProposedInView, blockHash)
 	sig, err := leaderBlsPrivKey.Sign(partialSigPayload[:])
@@ -2533,12 +2541,14 @@ func updateProposerVotePartialSignatureForBlock(testMeta *TestMeta, block *MsgDe
 	block.Header.ProposerVotePartialSignature = sig
 }
 
-func _getVoteQC(testMeta *TestMeta, latestBlockView *UtxoView, blockHeight uint64, qcBlockHash *BlockHash, qcView uint64) *QuorumCertificate {
+func _getVoteQC(testMeta *TestMeta, blockHeight uint64, qcBlockHash *BlockHash, qcView uint64) *QuorumCertificate {
 	var validators []consensus.Validator
 	var signersList *bitset.Bitset
 	var aggregatedSignature *bls.Signature
-
 	votePayload := consensus.GetVoteSignaturePayload(qcView, qcBlockHash)
+	testMeta.posMempool.Lock()
+	defer testMeta.posMempool.Unlock()
+	latestBlockView := testMeta.posMempool.readOnlyLatestBlockView
 	allSnapshotValidators, err := latestBlockView.GetAllSnapshotValidatorSetEntriesByStake()
 	require.NoError(testMeta.t, err)
 	validators = toConsensusValidators(allSnapshotValidators)
@@ -2579,14 +2589,15 @@ func _getVoteQC(testMeta *TestMeta, latestBlockView *UtxoView, blockHeight uint6
 // _getFullRealBlockTemplate is a helper function that generates a block template with a valid TxnConnectStatusByIndexHash
 // and a valid TxnConnectStatusByIndex, a valid vote or timeout QC, does all the required signing by validators,
 // and generates the proper ProposerVotePartialSignature.
-func _getFullRealBlockTemplate(testMeta *TestMeta, latestBlockView *UtxoView, blockHeight uint64, view uint64, seedSignature *bls.Signature, isTimeout bool) BlockTemplate {
-	blockTemplate, err := testMeta.posBlockProducer.createBlockTemplate(latestBlockView, blockHeight, view, seedSignature)
+func _getFullRealBlockTemplate(testMeta *TestMeta, blockHeight uint64, view uint64, seedSignature *bls.Signature, isTimeout bool) BlockTemplate {
+	blockTemplate, err := testMeta.posBlockProducer.createBlockTemplate(
+		testMeta.posMempool.readOnlyLatestBlockView, blockHeight, view, seedSignature)
 	require.NoError(testMeta.t, err)
 	require.NotNil(testMeta.t, blockTemplate)
 	blockTemplate.Header.TxnConnectStatusByIndexHash = HashBitset(blockTemplate.TxnConnectStatusByIndex)
 
 	// Figure out who the leader is supposed to be.
-	leaderPublicKey, leaderPublicKeyBytes := getLeaderForBlockHeightAndView(testMeta, latestBlockView, blockHeight, view)
+	leaderPublicKey, leaderPublicKeyBytes := getLeaderForBlockHeightAndView(testMeta, blockHeight, view)
 	// Get leader voting private key.
 	leaderVotingPrivateKey := testMeta.pubKeyToBLSKeyMap[leaderPublicKey]
 	// Get hash of last block
@@ -2600,7 +2611,7 @@ func _getFullRealBlockTemplate(testMeta *TestMeta, latestBlockView *UtxoView, bl
 	}
 
 	// Create the vote QC.
-	voteQC := _getVoteQC(testMeta, latestBlockView, blockHeight, chainTipHash, qcView)
+	voteQC := _getVoteQC(testMeta, blockHeight, chainTipHash, qcView)
 	if !isTimeout {
 		blockTemplate.Header.ValidatorsVoteQC = voteQC
 	} else {
@@ -2764,7 +2775,8 @@ func NewTestPoSBlockchainWithValidators(t *testing.T) *TestMeta {
 	mempoolBackupIntervalMillis := uint64(30000)
 	mempool := NewPosMempool()
 	require.NoError(t, mempool.Init(
-		params, _testGetDefaultGlobalParams(), latestBlockView, 11, _dbDirSetup(t), false, maxMempoolPosSizeBytes, mempoolBackupIntervalMillis, 1, nil, 1,
+		params, _testGetDefaultGlobalParams(), latestBlockView, 11, _dbDirSetup(t), false, maxMempoolPosSizeBytes,
+		mempoolBackupIntervalMillis, 1, nil, 1, 100,
 	))
 	require.NoError(t, mempool.Start())
 	require.True(t, mempool.IsRunning())

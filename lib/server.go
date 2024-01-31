@@ -392,6 +392,7 @@ func NewServer(
 	_mempoolBackupIntervalMillis uint64,
 	_mempoolFeeEstimatorNumMempoolBlocks uint64,
 	_mempoolFeeEstimatorNumPastBlocks uint64,
+	_augmentedBlockViewRefreshIntervalMillis uint64,
 	_posBlockProductionIntervalMilliseconds uint64,
 	_posTimeoutBaseDurationMilliseconds uint64,
 ) (
@@ -523,6 +524,7 @@ func NewServer(
 		_mempoolFeeEstimatorNumMempoolBlocks,
 		[]*MsgDeSoBlock{latestBlock},
 		_mempoolFeeEstimatorNumPastBlocks,
+		_augmentedBlockViewRefreshIntervalMillis,
 	)
 	if err != nil {
 		return nil, errors.Wrapf(err, "NewServer: Problem initializing PoS mempool"), true
@@ -1834,10 +1836,6 @@ func (srv *Server) _addNewTxn(
 			return nil, errors.Wrapf(err, "Server._addNewTxn: Problem adding transaction to mempool: ")
 		}
 
-		// At this point, we know the transaction has been run through the mempool.
-		// Now wait for an update of the ReadOnlyUtxoView so we don't break anything.
-		srv.mempool.BlockUntilReadOnlyViewRegenerated()
-
 		glog.V(1).Infof("Server._addNewTxn: newly accepted txn: %v, Peer: %v", txn, pp)
 	}
 
@@ -1847,6 +1845,10 @@ func (srv *Server) _addNewTxn(
 	if err := srv.posMempool.AddTransaction(mempoolTxn, true /*verifySignatures*/); err != nil {
 		return nil, errors.Wrapf(err, "Server._addNewTxn: problem adding txn to pos mempool")
 	}
+
+	// At this point, we know the transaction has been run through the mempool.
+	// Now wait for an update of the ReadOnlyUtxoView so we don't break anything.
+	srv.GetMempool().BlockUntilReadOnlyViewRegenerated()
 
 	return []*MsgDeSoTxn{txn}, nil
 }

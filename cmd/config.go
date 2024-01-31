@@ -49,10 +49,11 @@ type Config struct {
 	PosTimeoutBaseDurationMilliseconds     uint64
 
 	// Mempool
-	MempoolBackupIntervalMillis         uint64
-	MaxMempoolPosSizeBytes              uint64
-	MempoolFeeEstimatorNumMempoolBlocks uint64
-	MempoolFeeEstimatorNumPastBlocks    uint64
+	MempoolBackupIntervalMillis             uint64
+	MaxMempoolPosSizeBytes                  uint64
+	MempoolFeeEstimatorNumMempoolBlocks     uint64
+	MempoolFeeEstimatorNumPastBlocks        uint64
+	AugmentedBlockViewRefreshIntervalMillis uint64
 
 	// Mining
 	MinerPublicKeys  []string
@@ -129,6 +130,7 @@ func LoadConfig() *Config {
 	config.MaxMempoolPosSizeBytes = viper.GetUint64("max-mempool-pos-size-bytes")
 	config.MempoolFeeEstimatorNumMempoolBlocks = viper.GetUint64("mempool-fee-estimator-num-mempool-blocks")
 	config.MempoolFeeEstimatorNumPastBlocks = viper.GetUint64("mempool-fee-estimator-num-past-blocks")
+	config.AugmentedBlockViewRefreshIntervalMillis = viper.GetUint64("augmented-block-view-refresh-interval-millis")
 
 	// Peers
 	config.ConnectIPs = viper.GetStringSlice("connect-ips")
