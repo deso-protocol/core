@@ -267,7 +267,7 @@ func (cc *FastHotStuffConsensus) handleBlockProposalEvent(
 
 	// TODO: Broadcast the block proposal to the network
 
-	cc.logBlockProposal(unsignedBlock)
+	cc.logBlockProposal(unsignedBlock, blockHash)
 	return nil
 }
 
@@ -795,7 +795,7 @@ func isProperlyFormedBlockProposalEvent(event *consensus.FastHotStuffEvent) bool
 
 ////////////////////////////////////////// Logging Helper Functions ///////////////////////////////////////////////
 
-func (fc *FastHotStuffConsensus) logBlockProposal(block *MsgDeSoBlock) {
+func (fc *FastHotStuffConsensus) logBlockProposal(block *MsgDeSoBlock, blockHash *BlockHash) {
 	aggQCView := uint64(0)
 	aggQCNumValidators := 0
 	aggQCHighQCViews := "[]"
@@ -816,7 +816,7 @@ func (fc *FastHotStuffConsensus) logBlockProposal(block *MsgDeSoBlock) {
 			"\n  Timeout Agg QC View: %d, Timeout Agg QC Num Validators: %d, Timeout High QC Views: %s"+
 			"\n  Num Block Transactions: %d, Num Transactions Remaining In Mempool: %d"+
 			"\n=================================================================================================================",
-		block.Header.GetTstampSecs(), block.Header.GetView(), block.Header.Height, block.String(),
+		block.Header.GetTstampSecs(), block.Header.GetView(), block.Header.Height, blockHash.String(),
 		PkToString(block.Header.ProposerPublicKey.ToBytes(), fc.params),
 		block.Header.ProposerVotingPublicKey.ToString(),
 		block.Header.ProposerVotePartialSignature.ToString(),
