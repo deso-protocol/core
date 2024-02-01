@@ -50,8 +50,8 @@ func NewTransactionRegister() *TransactionRegister {
 		totalTxnsSizeBytes:        0,
 		// Set default values for the uninitialized fields. This is safe because any transactions
 		// added to the register will be re-bucketed once the params are updated.
-		minimumNetworkFeeNanosPerKB:    minimumNetworkFeeNanosPerKB, // Default to 1 nano per KB
-		feeBucketGrowthRateBasisPoints: feeBucketMultiplier,         // Default to 100%
+		minimumNetworkFeeNanosPerKB:    minimumNetworkFeeNanosPerKB, // Default to 1000 nanos per KB
+		feeBucketGrowthRateBasisPoints: feeBucketMultiplier,         // Default to 10%
 	}
 }
 
@@ -697,7 +697,7 @@ func _isValidMinimumFeeAndMultiplier(minimumNetworkFeeNanosPerKB *big.Float, fee
 }
 
 func _getFallbackSafeMinimumFeeAndMultiplier() (*big.Float, *big.Float) {
-	minimumNetworkFeeNanosPerKB := big.NewFloat(1)               // Default to 1 nano per KB
-	feeBucketMultiplier := big.NewFloat(float64(MaxBasisPoints)) // Default to 100%
+	minimumNetworkFeeNanosPerKB := big.NewFloat(1000) // Default to 1000 nanos per KB
+	feeBucketMultiplier := big.NewFloat(1000)         // Default to 10%
 	return minimumNetworkFeeNanosPerKB, feeBucketMultiplier
 }
