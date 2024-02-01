@@ -55,10 +55,11 @@ func NewDeSoMiner(_minerPublicKeys []string, _numThreads uint32,
 	}
 
 	return &DeSoMiner{
-		PublicKeys:    _pubKeys,
-		numThreads:    _numThreads,
-		BlockProducer: _blockProducer,
-		params:        _params,
+		PublicKeys:          _pubKeys,
+		numThreads:          _numThreads,
+		BlockProducer:       _blockProducer,
+		params:              _params,
+		blockMinedListeners: collections.NewConcurrentList[func(*MsgDeSoBlock)](),
 	}, nil
 }
 
