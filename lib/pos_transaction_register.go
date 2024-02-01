@@ -42,6 +42,7 @@ type TransactionRegister struct {
 
 func NewTransactionRegister() *TransactionRegister {
 	feeTimeBucketSet := treeset.NewWith(feeTimeBucketComparator)
+	minimumNetworkFeeNanosPerKB, feeBucketMultiplier := _getFallbackSafeMinimumFeeAndMultiplier()
 	return &TransactionRegister{
 		feeTimeBucketSet:          feeTimeBucketSet,
 		feeTimeBucketsByMinFeeMap: make(map[uint64]*FeeTimeBucket),
@@ -49,13 +50,21 @@ func NewTransactionRegister() *TransactionRegister {
 		totalTxnsSizeBytes:        0,
 		// Set default values for the uninitialized fields. This is safe because any transactions
 		// added to the register will be re-bucketed once the params are updated.
-		minimumNetworkFeeNanosPerKB:    big.NewFloat(1),                       // Default to 1 nanos per KB
-		feeBucketGrowthRateBasisPoints: big.NewFloat(float64(MaxBasisPoints)), // Default to 100%
+		minimumNetworkFeeNanosPerKB:    minimumNetworkFeeNanosPerKB, // Default to 1000 nanos per KB
+		feeBucketGrowthRateBasisPoints: feeBucketMultiplier,         // Default to 10%
 	}
 }
 
 func (tr *TransactionRegister) Init(globalParams *GlobalParamsEntry) {
 	minNetworkFee, bucketMultiplier := globalParams.ComputeFeeTimeBucketMinimumFeeAndMultiplier()
+	if !_isValidMinimumFeeAndMultiplier(minNetworkFee, bucketMultiplier) {
+		minNetworkFee, bucketMultiplier = _getFallbackSafeMinimumFeeAndMultiplier()
+		glog.Warningf(
+			"TransactionRegister.Init: Invalid minimumNetworkFeeNanosPerKB or feeBucketMultiplier. "+
+				"Using fallback values: minimumNetworkFeeNanosPerKB: %v, feeBucketMultiplier: %v",
+			minNetworkFee, bucketMultiplier,
+		)
+	}
 	tr.minimumNetworkFeeNanosPerKB = minNetworkFee
 	tr.feeBucketGrowthRateBasisPoints = bucketMultiplier
 }
@@ -673,4 +682,22 @@ func computeFeeTimeBucketExponentFromFeeNanosPerKB(feeNanosPerKB uint64, minimum
 
 	// If we get here, then the computed exponent is correct.
 	return feeTimeBucketExponent
+}
+
+func _isValidMinimumFeeAndMultiplier(minimumNetworkFeeNanosPerKB *big.Float, feeBucketMultiplier *big.Float) bool {
+	if minimumNetworkFeeNanosPerKB == nil || feeBucketMultiplier == nil {
+		return false
+	}
+
+	if minimumNetworkFeeNanosPerKB.Sign() <= 0 || feeBucketMultiplier.Sign() <= 0 {
+		return false
+	}
+
+	return true
+}
+
+func _getFallbackSafeMinimumFeeAndMultiplier() (*big.Float, *big.Float) {
+	minimumNetworkFeeNanosPerKB := big.NewFloat(1000) // Default to 1000 nanos per KB
+	feeBucketMultiplier := big.NewFloat(1000)         // Default to 10%
+	return minimumNetworkFeeNanosPerKB, feeBucketMultiplier
 }

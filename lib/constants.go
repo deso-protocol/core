@@ -755,8 +755,9 @@ var RegtestForkHeights = ForkHeights{
 	BalanceModelBlockHeight:            uint32(1),
 	ProofOfStake1StateSetupBlockHeight: uint32(1),
 
-	// FIXME: set to real block height when ready
-	ProofOfStake2ConsensusCutoverBlockHeight: uint32(math.MaxUint32),
+	// For convenience, we set the PoS cutover block height to 50
+	// so that enough DESO is minted to allow for testing.
+	ProofOfStake2ConsensusCutoverBlockHeight: uint32(50),
 
 	BlockRewardPatchBlockHeight: uint32(0),
 
@@ -789,6 +790,9 @@ func (params *DeSoParams) EnableRegtest() {
 
 	// Allow block rewards to be spent instantly
 	params.BlockRewardMaturity = 0
+
+	// Set the PoS epoch duration to 10 blocks
+	params.DefaultEpochDurationNumBlocks = 10
 
 	// In regtest, we start all the fork heights at zero. These can be adjusted
 	// for testing purposes to ensure that a transition does not cause issues.
