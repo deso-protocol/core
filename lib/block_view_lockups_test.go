@@ -1618,7 +1618,7 @@ func TestLockupWithDerivedKey(t *testing.T) {
 		transactorPublicKeyBase58Check := Base58CheckEncode(transactorPkBytes, false, testMeta.params)
 		prevBalance := _getBalance(testMeta.t, testMeta.chain, testMeta.mempool, transactorPublicKeyBase58Check)
 		// Connect txn.
-		utxoOps, _, _, fees, err := utxoView.ConnectTransaction(txn, txn.Hash(), getTxnSize(*txn),
+		utxoOps, _, _, fees, err := utxoView.ConnectTransaction(txn, txn.Hash(),
 			testMeta.savedHeight, blockTimestamp, true, false)
 		if err != nil {
 			return 0, err
@@ -3133,7 +3133,7 @@ func _coinLockupWithConnectTimestamp(t *testing.T, chain *Blockchain, db *badger
 	blockHeight := chain.BlockTip().Height + 1
 	utxoOps, totalInput, totalOutput, fees, err :=
 		utxoView.ConnectTransaction(
-			txn, txHash, getTxnSize(*txn), blockHeight, connectTimestamp, true, false)
+			txn, txHash, blockHeight, connectTimestamp, true, false)
 	if err != nil {
 		return nil, nil, 0, err
 	}
@@ -3220,7 +3220,7 @@ func _updateCoinLockupParams(t *testing.T, chain *Blockchain, db *badger.DB,
 	blockHeight := chain.BlockTip().Height + 1
 	utxoOps, totalInput, totalOutput, fees, err :=
 		utxoView.ConnectTransaction(
-			txn, txHash, getTxnSize(*txn), blockHeight, 0, true, false)
+			txn, txHash, blockHeight, 0, true, false)
 	if err != nil {
 		return nil, nil, 0, err
 	}
@@ -3299,7 +3299,7 @@ func _coinLockupTransfer(t *testing.T, chain *Blockchain, db *badger.DB,
 	blockHeight := chain.BlockTip().Height + 1
 	utxoOps, totalInput, totalOutput, fees, err :=
 		utxoView.ConnectTransaction(
-			txn, txHash, getTxnSize(*txn), blockHeight, 0, true, false)
+			txn, txHash, blockHeight, 0, true, false)
 	if err != nil {
 		return nil, nil, 0, err
 	}
@@ -3376,7 +3376,7 @@ func _coinUnlockWithConnectTimestamp(t *testing.T, chain *Blockchain, db *badger
 	blockHeight := chain.BlockTip().Height + 1
 	utxoOps, totalInput, totalOutput, fees, err :=
 		utxoView.ConnectTransaction(
-			txn, txHash, getTxnSize(*txn), blockHeight, connectTimestamp, true, false)
+			txn, txHash, blockHeight, connectTimestamp, true, false)
 	if err != nil {
 		return nil, nil, 0, err
 	}

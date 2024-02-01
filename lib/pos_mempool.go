@@ -301,7 +301,7 @@ func (mp *PosMempool) startAugmentedViewRefreshRoutine() {
 						continue
 					}
 					_, _, _, _, err = copiedView.ConnectTransaction(
-						txn.GetTxn(), txn.Hash(), 0, uint32(mp.latestBlockHeight)+1, time.Now().UnixNano(), false,
+						txn.GetTxn(), txn.Hash(), uint32(mp.latestBlockHeight)+1, time.Now().UnixNano(), false,
 						false)
 					// If the transaction successfully connects, we set the newView to the copiedView
 					// and proceed to the next transaction.

@@ -3429,16 +3429,15 @@ func (bav *UtxoView) ValidateDiamondsAndGetNumDeSoNanos(
 }
 
 func (bav *UtxoView) ConnectTransaction(
-	txn *MsgDeSoTxn, txHash *BlockHash, txnSizeBytes int64,
+	txn *MsgDeSoTxn, txHash *BlockHash,
 	blockHeight uint32, blockTimestampNanoSecs int64, verifySignatures bool,
 	ignoreUtxos bool) (_utxoOps []*UtxoOperation, _totalInput uint64, _totalOutput uint64, _fees uint64, _err error) {
-	return bav._connectTransaction(txn, txHash, txnSizeBytes,
-		blockHeight, blockTimestampNanoSecs, verifySignatures, ignoreUtxos)
+	return bav._connectTransaction(txn, txHash, blockHeight, blockTimestampNanoSecs, verifySignatures, ignoreUtxos)
 
 }
 
 func (bav *UtxoView) _connectTransaction(
-	txn *MsgDeSoTxn, txHash *BlockHash, txnSizeBytes int64, blockHeight uint32,
+	txn *MsgDeSoTxn, txHash *BlockHash, blockHeight uint32,
 	blockTimestampNanoSecs int64, verifySignatures bool,
 	ignoreUtxos bool) (_utxoOps []*UtxoOperation, _totalInput uint64, _totalOutput uint64, _fees uint64, _err error) {
 	// Do a quick sanity check before trying to connect.
@@ -3452,7 +3451,8 @@ func (bav *UtxoView) _connectTransaction(
 		return nil, 0, 0, 0, errors.Wrapf(
 			err, "_connectTransaction: Problem serializing transaction: ")
 	}
-	if len(txnBytes) > int(bav.Params.MaxBlockSizeBytes/2) {
+	txnSizeBytes := uint64(len(txnBytes))
+	if txnSizeBytes > bav.Params.MaxBlockSizeBytes/2 {
 		return nil, 0, 0, 0, RuleErrorTxnTooBig
 	}
 
@@ -4077,7 +4077,7 @@ func (bav *UtxoView) ConnectBlock(
 			// enforce this check in the future, but for now the only attack vector is one in
 			// which a miner is trying to spam the network, which should generally never happen.
 			utxoOpsForTxn, _, _, currentFees, err = bav.ConnectTransaction(
-				txn, txHash, 0, uint32(blockHeader.Height), blockHeader.TstampNanoSecs, verifySignatures, false)
+				txn, txHash, uint32(blockHeader.Height), blockHeader.TstampNanoSecs, verifySignatures, false)
 			if err != nil {
 				return nil, errors.Wrapf(err, "ConnectBlock: error connecting txn #%d", txIndex)
 			}
@@ -4092,7 +4092,7 @@ func (bav *UtxoView) ConnectBlock(
 				return nil, errors.Wrapf(err, "ConnectBlock: error copying UtxoView")
 			}
 			_, _, _, _, err = utxoViewCopy.ConnectTransaction(
-				txn, txHash, 0, uint32(blockHeader.Height), blockHeader.TstampNanoSecs, verifySignatures, false)
+				txn, txHash, uint32(blockHeader.Height), blockHeader.TstampNanoSecs, verifySignatures, false)
 			if err == nil {
 				return nil, errors.Wrapf(err, "ConnectBlock: txn #%d should not connect but err is nil", txIndex)
 			}

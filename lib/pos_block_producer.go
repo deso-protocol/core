@@ -193,7 +193,7 @@ func (pbp *PosBlockProducer) getBlockTransactions(
 			return nil, nil, 0, errors.Wrapf(err, "Error copying UtxoView: ")
 		}
 		_, _, _, fees, err := blockUtxoViewCopy._connectTransaction(
-			txn.GetTxn(), txn.Hash(), int64(len(txnBytes)), uint32(newBlockHeight), newBlockTimestampNanoSecs,
+			txn.GetTxn(), txn.Hash(), uint32(newBlockHeight), newBlockTimestampNanoSecs,
 			true, false)
 
 		// Check if the transaction connected.
