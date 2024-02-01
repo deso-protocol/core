@@ -598,8 +598,7 @@ func NewServer(
 		// to be also a PoS validator, then we attach block mined listeners to the miner to kick
 		// off the PoS consensus once the miner is done.
 		if _params.NetworkType == NetworkType_TESTNET && _miner != nil && _blockProducer != nil {
-			_miner.AddBlockMinedListener(srv.submitRegtestRegisterAsValidatorTxn)
-			_miner.AddBlockMinedListener(srv.submitRegtestStakeTxn)
+			_miner.AddBlockMinedListener(srv.submitRegtestValidatorRegistrationTxns)
 			_miner.AddBlockMinedListener(srv.startRegtestFastHotStuffConsensus)
 		}
 	}
