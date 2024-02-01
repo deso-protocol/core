@@ -466,10 +466,10 @@ func TestConnectionControllerNonValidatorConnectorInbound(t *testing.T) {
 }
 
 func TestConnectionControllerNonValidatorConnectorAddressMgr(t *testing.T) {
-	// Spawn a non-validator node1. Set node1's targetOutboundPeers to 2 and targetInboundPeers to 0. Then
-	// add two ip addresses to AddrMgr. Make sure that node1 creates outbound connections to these nodes.
+	// Spawn a non-validator node1. Set node1's targetOutboundPeers to 1 and targetInboundPeers to 0. Then
+	// add one ip address to AddrMgr. Make sure that node1 creates outbound connections to this node.
 	node1 := spawnNodeProtocol1(t, 18000, "node1")
-	node1.Config.TargetOutboundPeers = 2
+	node1.Config.TargetOutboundPeers = 1
 	node1.Config.MaxInboundPeers = 0
 	node1.Config.MaxSyncBlockHeight = 1
 
@@ -483,7 +483,7 @@ func TestConnectionControllerNonValidatorConnectorAddressMgr(t *testing.T) {
 
 func TestConnectionControllerNonValidatorConnectorAddIps(t *testing.T) {
 	// Spawn a non-validator node1. Set node1's targetOutboundPeers to 2 and targetInboundPeers to 0. Then
-	// add two ip addresses to the ConnectIPs. Make sure that node1 creates outbound connections to these nodes.
+	// add two ip addresses to AddIps. Make sure that node1 creates outbound connections to these nodes.
 	node1 := spawnNodeProtocol1(t, 18000, "node1")
 	node1.Config.TargetOutboundPeers = 2
 	node1.Config.MaxInboundPeers = 0
