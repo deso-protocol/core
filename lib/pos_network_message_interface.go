@@ -21,8 +21,10 @@ func (msg *MsgDeSoHeader) GetBlockHash() consensus.BlockHash {
 	hash, err := msg.Hash()
 	if err != nil {
 		glog.Errorf("MsgDeSoHeader.GetBlockHash: Problem hashing header: %v", err)
-		// If we can't generate the block hash, return nil and have the caller handle it.
-		return nil
+		// If we can't generate the block hash, return an empty hash. We return a non-nil
+		// value to avoid panics. An empty block hash will always have a value that can
+		// be compared to other block hashes.
+		return &BlockHash{}
 	}
 	return hash
 }
