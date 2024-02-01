@@ -4094,7 +4094,7 @@ func (bav *UtxoView) ConnectBlock(
 			_, _, _, _, err = utxoViewCopy.ConnectTransaction(
 				txn, txHash, uint32(blockHeader.Height), blockHeader.TstampNanoSecs, verifySignatures, false)
 			if err == nil {
-				return nil, errors.Wrapf(err, "ConnectBlock: txn #%d should not connect but err is nil", txIndex)
+				return nil, errors.Errorf("ConnectBlock: txn #%d should not connect but err is nil", txIndex)
 			}
 			var burnFee uint64
 			// Connect the failing transaction to get the fees and utility fee.
