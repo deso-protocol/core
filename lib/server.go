@@ -594,6 +594,14 @@ func NewServer(
 			_posBlockProductionIntervalMilliseconds,
 			_posTimeoutBaseDurationMilliseconds,
 		)
+		// On testnet, if the node is configured to be a PoW block producer, and it is configured
+		// to be also a PoS validator, then we attach block mined listeners to the miner to kick
+		// off the PoS consensus once the miner is done.
+		if _params.NetworkType == NetworkType_TESTNET && _miner != nil && _blockProducer != nil {
+			_miner.AddBlockMinedListener(srv.submitRegtestRegisterAsValidatorTxn)
+			_miner.AddBlockMinedListener(srv.submitRegtestStakeTxn)
+			_miner.AddBlockMinedListener(srv.startRegtestFastHotStuffConsensus)
+		}
 	}
 
 	// Set all the fields on the Server object.
