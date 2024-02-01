@@ -1123,8 +1123,7 @@ func (bav *UtxoView) hasValidBlockProposerPoS(block *MsgDeSoBlock) (_isValidBloc
 
 // isValidPoSQuorumCertificate validates that the QC of this block is valid, meaning a super majority
 // of the validator set has voted (or timed out). It special cases the first block after the PoS cutover
-// by overriding the validator set used to validate the vote QC or high QC in the first block after the
-// PoS cutover.
+// by overriding the validator set used to validate the high QC in the first block after the PoS cutover.
 func (bc *Blockchain) isValidPoSQuorumCertificate(block *MsgDeSoBlock, validatorSet []*ValidatorEntry) error {
 	voteQCValidators := toConsensusValidators(validatorSet)
 	aggregateQCValidators := voteQCValidators
