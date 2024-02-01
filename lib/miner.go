@@ -190,6 +190,10 @@ func (desoMiner *DeSoMiner) MineAndProcessSingleBlock(threadIndex uint32, mempoo
 		return nil, fmt.Errorf("DeSoMiner._startThread: _mineSingleBlock returned nil; should only happen if we're stopping")
 	}
 
+	if blockToMine.Header.Height >= uint64(desoMiner.params.ForkHeights.ProofOfStake2ConsensusCutoverBlockHeight) {
+		return nil, fmt.Errorf("DeSoMiner._startThread: _mineSingleBlock returned a block that is past the Proof of Stake Cutover")
+	}
+
 	// Log information on the block we just mined.
 	bestHash, _ := blockToMine.Hash()
 	glog.Infof("================== YOU MINED A NEW BLOCK! ================== Height: %d, Hash: %s", blockToMine.Header.Height, hex.EncodeToString(bestHash[:]))
