@@ -52,7 +52,8 @@ func NewRemoteNodeManager(srv *Server, bc *Blockchain, cmgr *ConnectionManager, 
 }
 
 func (manager *RemoteNodeManager) DisconnectAll() {
-	for _, rn := range manager.GetAllRemoteNodes().GetAll() {
+	allRemoteNodes := manager.GetAllRemoteNodes().GetAll()
+	for _, rn := range allRemoteNodes {
 		glog.V(2).Infof("RemoteNodeManager.DisconnectAll: Disconnecting from remote node (id=%v)", rn.GetId())
 		manager.Disconnect(rn)
 	}
@@ -135,10 +136,8 @@ func (manager *RemoteNodeManager) SendMessage(rn *RemoteNode, desoMessage DeSoMe
 }
 
 func (manager *RemoteNodeManager) Cleanup() {
-	manager.mtx.Lock()
-	defer manager.mtx.Unlock()
-
-	for _, rn := range manager.GetAllRemoteNodes().GetAll() {
+	allRemoteNodes := manager.GetAllRemoteNodes().GetAll()
+	for _, rn := range allRemoteNodes {
 		if rn.IsTimedOut() {
 			glog.V(2).Infof("RemoteNodeManager.Cleanup: Disconnecting from remote node (id=%v)", rn.GetId())
 			manager.Disconnect(rn)

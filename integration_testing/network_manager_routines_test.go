@@ -468,17 +468,29 @@ func TestConnectionControllerNonValidatorConnectorInbound(t *testing.T) {
 func TestConnectionControllerNonValidatorConnectorAddressMgr(t *testing.T) {
 	// Spawn a non-validator node1. Set node1's targetOutboundPeers to 2 and targetInboundPeers to 0. Then
 	// add two ip addresses to AddrMgr. Make sure that node1 creates outbound connections to these nodes.
-	node1 := spawnNonValidatorNodeProtocol2(t, 18000, "node1")
+	node1 := spawnNodeProtocol1(t, 18000, "node1")
 	node1.Config.TargetOutboundPeers = 2
 	node1.Config.MaxInboundPeers = 0
+	node1.Config.MaxSyncBlockHeight = 1
 
 	node1 = startNode(t, node1)
 	nm := node1.Server.GetNetworkManager()
 	na1, err := nm.ConvertIPStringToNetAddress("deso-seed-2.io:17000")
-	na2, err := nm.ConvertIPStringToNetAddress("deso-seed-3.io:17000")
 	require.NoError(t, err)
 	nm.AddrMgr.AddAddress(na1, na1)
-	nm.AddrMgr.AddAddress(na2, na2)
+	waitForCountRemoteNodeIndexerHandshakeCompleted(t, node1, 1, 0, 1, 0)
+}
+
+func TestConnectionControllerNonValidatorConnectorAddIps(t *testing.T) {
+	// Spawn a non-validator node1. Set node1's targetOutboundPeers to 2 and targetInboundPeers to 0. Then
+	// add two ip addresses to the ConnectIPs. Make sure that node1 creates outbound connections to these nodes.
+	node1 := spawnNodeProtocol1(t, 18000, "node1")
+	node1.Config.TargetOutboundPeers = 2
+	node1.Config.MaxInboundPeers = 0
+	node1.Config.MaxSyncBlockHeight = 1
+	node1.Config.AddIPs = []string{"deso-seed-2.io", "deso-seed-3.io"}
+
+	node1 = startNode(t, node1)
 	waitForCountRemoteNodeIndexer(t, node1, 2, 0, 2, 0)
 }
 
