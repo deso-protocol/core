@@ -4,6 +4,7 @@ import (
 	"github.com/deso-protocol/core/bls"
 	"github.com/deso-protocol/core/collections/bitset"
 	"github.com/deso-protocol/core/consensus"
+	"github.com/golang/glog"
 	"github.com/holiman/uint256"
 )
 
@@ -13,6 +14,41 @@ import (
 // package to run the Fast-HotStuff protocol. This file is a good spot to       //
 // place all translations between types defined in lib and consensus packages.  //
 //////////////////////////////////////////////////////////////////////////////////
+
+// MsgDeSoHeader struct <-> consensus.Block interface translation
+
+func (msg *MsgDeSoHeader) GetBlockHash() consensus.BlockHash {
+	hash, err := msg.Hash()
+	if err != nil {
+		glog.Errorf("MsgDeSoHeader.GetBlockHash: Problem hashing header: %v", err)
+		// If we can't generate the block hash, return an empty hash. We return a non-nil
+		// value to avoid panics. An empty block hash will always have a value that can
+		// be compared to other block hashes.
+		return &BlockHash{}
+	}
+	return hash
+}
+
+func (msg *MsgDeSoHeader) GetView() uint64 {
+	// Header version 0 and 1 are Proof of Work block header versions, and do not have a view.
+	// In order to be able to extend from a PoW block once the PoS chain begins, we need some
+	// way to attach a "view" to it. Using the PoW block's height as its view allows us to do
+	// this in a simple and self-contained way.
+	//
+	// With this change, PoW blocks can be considered to always have their view = height. As
+	// a result, PoS blocks will always have their view >= height.
+	if msg.Version < HeaderVersion2 {
+		return msg.Height
+	}
+	return msg.ProposedInView
+}
+
+func (msg *MsgDeSoHeader) GetQC() consensus.QuorumCertificate {
+	if msg.ValidatorsTimeoutAggregateQC.isEmpty() {
+		return msg.ValidatorsVoteQC
+	}
+	return msg.ValidatorsTimeoutAggregateQC.ValidatorsHighQC
+}
 
 // MsgDeSoValidatorVote struct <-> consensus.VoteMessage interface translation
 
