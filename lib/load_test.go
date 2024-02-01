@@ -134,7 +134,7 @@ func TestComputeMaxTPS(t *testing.T) {
 
 		timeStart := time.Now()
 		for _, tx := range txns {
-			_, _, _, _, err := utxoView.ConnectTransaction(tx, tx.Hash(), 0, 1, 0, false, false)
+			_, _, _, _, err := utxoView.ConnectTransaction(tx, tx.Hash(), 1, 0, false, false)
 			require.NoError(err)
 		}
 		//require.NoError(utxoView.FlushToDb())

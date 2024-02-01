@@ -2866,14 +2866,9 @@ func (bc *Blockchain) ValidateTransaction(
 
 	// Hash the transaction.
 	txHash := txnMsg.Hash()
-	txnBytes, err := txnMsg.ToBytes(false)
-	if err != nil {
-		return errors.Wrapf(err, "ValidateTransaction: Error serializing txn: %v", err)
-	}
-	txnSize := int64(len(txnBytes))
 	// We don't care about the utxoOps or the fee it returns.
 	_, _, _, _, err = utxoView._connectTransaction(
-		txnMsg, txHash, txnSize, blockHeight, 0, verifySignatures, false)
+		txnMsg, txHash, blockHeight, 0, verifySignatures, false)
 	if err != nil {
 		return errors.Wrapf(err, "ValidateTransaction: Problem validating transaction: ")
 	}
@@ -5264,7 +5259,7 @@ func (bc *Blockchain) EstimateDefaultFeeRateNanosPerKB(
 		}
 		numBytesInTxn := len(txnBytes)
 		_, _, _, fees, err := utxoView.ConnectTransaction(
-			txn, txn.Hash(), int64(numBytesInTxn), tipNode.Height, int64(tipNode.Header.TstampNanoSecs),
+			txn, txn.Hash(), tipNode.Height, tipNode.Header.TstampNanoSecs,
 			false, false)
 		if err != nil {
 			return minFeeRateNanosPerKB

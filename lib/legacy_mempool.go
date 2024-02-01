@@ -905,7 +905,7 @@ func (mp *DeSoMempool) addTransaction(
 	// Add it to the universal view. We assume the txn was already added to the
 	// backup view.
 	_, _, _, _, err = mp.universalUtxoView._connectTransaction(
-		mempoolTx.Tx, mempoolTx.Hash, int64(mempoolTx.TxSizeBytes), height,
+		mempoolTx.Tx, mempoolTx.Hash, height,
 		timestamp, false, false)
 	if err != nil {
 		return nil, errors.Wrap(err, "ERROR addTransaction: _connectTransaction "+
@@ -915,7 +915,7 @@ func (mp *DeSoMempool) addTransaction(
 	mp.universalTransactionList = append(mp.universalTransactionList, mempoolTx)
 	if updateBackupView {
 		_, _, _, _, err = mp.backupUniversalUtxoView._connectTransaction(mempoolTx.Tx, mempoolTx.Hash,
-			int64(mempoolTx.TxSizeBytes), height, timestamp, false, false)
+			height, timestamp, false, false)
 		if err != nil {
 			return nil, errors.Wrap(err, "ERROR addTransaction: _connectTransaction "+
 				"failed on backupUniversalUtxoView; this is a HUGE problem and should never happen")
@@ -996,7 +996,7 @@ func (mp *DeSoMempool) _quickCheckBitcoinExchangeTxn(
 	// has the block corresponding to the transaction.
 	// We skip verifying txn size for bitcoin exchange transactions.
 	_, _, _, txFee, err := utxoView._connectTransaction(
-		tx, txHash, 0, bestHeight, 0, false, false)
+		tx, txHash, bestHeight, 0, false, false)
 	if err != nil {
 		// Note this can happen in odd cases where a transaction's dependency was removed
 		// but the transaction depending on it was not. See the comment on
@@ -1088,9 +1088,8 @@ func (mp *DeSoMempool) tryAcceptTransaction(
 	usdCentsPerBitcoinBefore := mp.backupUniversalUtxoView.GetCurrentUSDCentsPerBitcoin()
 	bestHeight := uint32(mp.bc.blockTip().Height + 1)
 	bestTimestamp := time.Now().UnixNano()
-	// We can skip verifying the transaction size as related to the minimum fee here.
 	utxoOps, totalInput, totalOutput, txFee, err := mp.backupUniversalUtxoView._connectTransaction(
-		tx, txHash, 0, bestHeight, bestTimestamp, verifySignatures, false)
+		tx, txHash, bestHeight, bestTimestamp, verifySignatures, false)
 	if err != nil {
 		mp.rebuildBackupView()
 		return nil, nil, errors.Wrapf(err, "tryAcceptTransaction: Problem "+
@@ -2137,7 +2136,7 @@ func ConnectTxnAndComputeTransactionMetadata(
 	totalNanosPurchasedBefore := utxoView.NanosPurchased
 	usdCentsPerBitcoinBefore := utxoView.GetCurrentUSDCentsPerBitcoin()
 	utxoOps, totalInput, totalOutput, fees, err := utxoView._connectTransaction(
-		txn, txn.Hash(), 0, blockHeight, 0, false, false)
+		txn, txn.Hash(), blockHeight, 0, false, false)
 	if err != nil {
 		return nil, fmt.Errorf(
 			"UpdateTxindex: Error connecting txn to UtxoView: %v", err)
