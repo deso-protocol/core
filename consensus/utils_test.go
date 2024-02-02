@@ -189,6 +189,31 @@ func TestIsValidSuperMajorityAggregateQuorumCertificate(t *testing.T) {
 		}
 		require.True(t, IsValidSuperMajorityAggregateQuorumCertificate(&qc, validators, validators))
 	}
+
+	// Test highQC with view lower than the highest view in the highQCViews.
+	{
+		// Compute the aggregate signature payload
+		validator1TimeoutPayload := GetTimeoutSignaturePayload(view+3, view)
+		validator1TimeoutSignature, err := validatorPrivateKey1.Sign(validator1TimeoutPayload[:])
+		require.NoError(t, err)
+		// Let's have validator 2 sign a timeout payload where high QC is for higher view.
+		validator2TimeoutPayload := GetTimeoutSignaturePayload(view+3, view+1)
+		validator2TimeoutSignature, err := validatorPrivateKey2.Sign(validator2TimeoutPayload[:])
+		require.NoError(t, err)
+
+		timeoutAggSig, err := bls.AggregateSignatures([]*bls.Signature{validator1TimeoutSignature, validator2TimeoutSignature})
+		require.NoError(t, err)
+		qc := aggregateQuorumCertificate{
+			view:        view + 3,
+			highQC:      &highQC,
+			highQCViews: []uint64{view, view + 1},
+			aggregatedSignature: &aggregatedSignature{
+				signersList: bitset.NewBitset().FromBytes([]byte{0x3}), // 0b0011, which represents validators 1 and 2
+				signature:   timeoutAggSig,
+			},
+		}
+		require.False(t, IsValidSuperMajorityAggregateQuorumCertificate(&qc, validators, validators))
+	}
 }
 
 func TestIsProperlyFormedBlock(t *testing.T) {
