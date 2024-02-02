@@ -135,6 +135,10 @@ type UtxoView struct {
 	LockedBalanceEntryKeyToLockedBalanceEntry map[LockedBalanceEntryKey]*LockedBalanceEntry
 
 	// Lockup yield curve points.
+	// NOTE: While the nested map does break convention, this enables us to quickly read, scan, and modify
+	// lockup yield curve points without needing to traverse yield curve points held by other PKIDs.
+	// This enables us to have a high performance means of computing yield during lockup transactions without
+	// having to scan all yield curve points for all users stored in the view.
 	PKIDToLockupYieldCurvePointKeyToLockupYieldCurvePoints map[PKID]map[LockupYieldCurvePointKey]*LockupYieldCurvePoint
 
 	// Current EpochEntry

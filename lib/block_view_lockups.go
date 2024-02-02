@@ -124,7 +124,7 @@ func (lockedBalanceEntry *LockedBalanceEntry) Copy() *LockedBalanceEntry {
 		ProfilePKID:                 lockedBalanceEntry.ProfilePKID.NewPKID(),
 		UnlockTimestampNanoSecs:     lockedBalanceEntry.UnlockTimestampNanoSecs,
 		VestingEndTimestampNanoSecs: lockedBalanceEntry.VestingEndTimestampNanoSecs,
-		BalanceBaseUnits:            lockedBalanceEntry.BalanceBaseUnits,
+		BalanceBaseUnits:            *lockedBalanceEntry.BalanceBaseUnits.Clone(),
 		isDeleted:                   lockedBalanceEntry.isDeleted,
 	}
 }
@@ -238,8 +238,7 @@ func (bav *UtxoView) GetAllLockedBalanceEntriesForHodlerPKID(
 	_err error,
 ) {
 	// Pull entries from db.
-	dbLockedBalanceEntries, err := DBGetAllLockedBalanceEntriesForHodlerPKID(
-		bav.Handle, bav.Snapshot, hodlerPKID)
+	dbLockedBalanceEntries, err := DBGetAllLockedBalanceEntriesForHodlerPKID(bav.Handle, hodlerPKID)
 	if err != nil {
 		return nil,
 			errors.Wrap(err, "GetLockedBalanceEntryForLockedBalanceEntryKey")
@@ -321,7 +320,6 @@ func (bav *UtxoView) GetLimitedVestedLockedBalanceEntriesOverTimeInterval(
 	//		   as a result of over-reading the db or from other db errors.
 	vestedLockedBalanceEntries, err := DBGetLimitedVestedLockedBalanceEntries(
 		bav.Handle,
-		bav.Snapshot,
 		hodlerPKID,
 		profilePKID,
 		unlockTimestampNanoSecs,
@@ -449,7 +447,7 @@ func (bav *UtxoView) GetUnlockableLockedBalanceEntries(
 
 	// First, pull unlockable LockedBalanceEntries from the db and cache them in the UtxoView.
 	dbUnvestedUnlockableLockedBalanceEntries, dbVestedUnlockableLockedBalanceEntries, err :=
-		DBGetUnlockableLockedBalanceEntries(bav.Handle, bav.Snapshot, hodlerPKID, profilePKID, currentTimestampNanoSecs)
+		DBGetUnlockableLockedBalanceEntries(bav.Handle, hodlerPKID, profilePKID, currentTimestampNanoSecs)
 	if err != nil {
 		return nil, nil,
 			errors.Wrap(err, "UtxoView.GetUnlockableLockedBalanceEntries")

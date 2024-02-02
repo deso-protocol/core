@@ -11020,7 +11020,6 @@ func DBGetLockedBalanceEntryForLockedBalanceEntryKeyWithTxn(
 
 func DBGetAllLockedBalanceEntriesForHodlerPKID(
 	handle *badger.DB,
-	snap *Snapshot,
 	hodlerPKID *PKID,
 ) (
 	_lockedBalanceEntries []*LockedBalanceEntry,
@@ -11029,8 +11028,7 @@ func DBGetAllLockedBalanceEntriesForHodlerPKID(
 	var lockedBalanceEntries []*LockedBalanceEntry
 	var err error
 	handle.View(func(txn *badger.Txn) error {
-		lockedBalanceEntries, err = DBGetAllLockedBalanceEntriesForHodlerPKIDWithTxn(
-			txn, snap, hodlerPKID)
+		lockedBalanceEntries, err = DBGetAllLockedBalanceEntriesForHodlerPKIDWithTxn(txn, hodlerPKID)
 		return nil
 	})
 	return lockedBalanceEntries, err
@@ -11038,7 +11036,6 @@ func DBGetAllLockedBalanceEntriesForHodlerPKID(
 
 func DBGetAllLockedBalanceEntriesForHodlerPKIDWithTxn(
 	txn *badger.Txn,
-	snap *Snapshot,
 	hodlerPKID *PKID,
 ) (
 	_lockedBalanceEntries []*LockedBalanceEntry,
@@ -11098,7 +11095,6 @@ func DBGetAllLockedBalanceEntriesForHodlerPKIDWithTxn(
 
 func DBGetUnlockableLockedBalanceEntries(
 	handle *badger.DB,
-	snap *Snapshot,
 	hodlerPKID *PKID,
 	profilePKID *PKID,
 	currentTimestampUnixNanoSecs int64,
@@ -11113,7 +11109,7 @@ func DBGetUnlockableLockedBalanceEntries(
 	var err error
 	handle.View(func(txn *badger.Txn) error {
 		unvested, vested, err = DBGetUnlockableLockedBalanceEntriesWithTxn(
-			txn, snap, hodlerPKID, profilePKID, currentTimestampUnixNanoSecs)
+			txn, hodlerPKID, profilePKID, currentTimestampUnixNanoSecs)
 		return nil
 	})
 	return unvested, vested, err
@@ -11121,7 +11117,6 @@ func DBGetUnlockableLockedBalanceEntries(
 
 func DBGetUnlockableLockedBalanceEntriesWithTxn(
 	txn *badger.Txn,
-	snap *Snapshot,
 	hodlerPKID *PKID,
 	profilePKID *PKID,
 	currentTimestampUnixNanoSecs int64,
@@ -11132,7 +11127,7 @@ func DBGetUnlockableLockedBalanceEntriesWithTxn(
 ) {
 	// Get vested unlockable locked balance entries.
 	unlockableVestedLockedBalanceEntries, err := DBGetUnlockableVestedLockedBalanceEntriesWithTxn(
-		txn, snap, hodlerPKID, profilePKID, currentTimestampUnixNanoSecs)
+		txn, hodlerPKID, profilePKID, currentTimestampUnixNanoSecs)
 	if err != nil {
 		return nil, nil,
 			errors.Wrap(err, "DBGetUnlockableLockedBalanceEntriesWithTxn")
@@ -11140,7 +11135,7 @@ func DBGetUnlockableLockedBalanceEntriesWithTxn(
 
 	// Get unvested unlockable locked balance entries.
 	unlockableUnvestedLockedBalanceEntries, err := DBGetUnlockableUnvestedLockedBalanceEntriesWithTxn(
-		txn, snap, hodlerPKID, profilePKID, currentTimestampUnixNanoSecs)
+		txn, hodlerPKID, profilePKID, currentTimestampUnixNanoSecs)
 	if err != nil {
 		return nil, nil,
 			errors.Wrap(err, "DBGetUnlockableLockedBalanceEntriesWithTxn")
@@ -11151,7 +11146,6 @@ func DBGetUnlockableLockedBalanceEntriesWithTxn(
 
 func DBGetUnlockableVestedLockedBalanceEntriesWithTxn(
 	txn *badger.Txn,
-	snap *Snapshot,
 	hodlerPKID *PKID,
 	profilePKID *PKID,
 	currentTimestampUnixNanoSecs int64,
@@ -11223,7 +11217,6 @@ func DBGetUnlockableVestedLockedBalanceEntriesWithTxn(
 
 func DBGetUnlockableUnvestedLockedBalanceEntriesWithTxn(
 	txn *badger.Txn,
-	snap *Snapshot,
 	hodlerPKID *PKID,
 	profilePKID *PKID,
 	currentTimestampUnixNanoSecs int64,
@@ -11293,7 +11286,6 @@ func DBGetUnlockableUnvestedLockedBalanceEntriesWithTxn(
 
 func DBGetLimitedVestedLockedBalanceEntries(
 	handle *badger.DB,
-	snap *Snapshot,
 	hodlerPKID *PKID,
 	profilePKID *PKID,
 	unlockTimestampNanoSecs int64,
@@ -11320,7 +11312,7 @@ func DBGetLimitedVestedLockedBalanceEntries(
 	var err error
 	handle.View(func(txn *badger.Txn) error {
 		lockedBalanceEntries, err = DBGetLimitedVestedLockedBalanceEntriesWithTxn(
-			txn, snap, hodlerPKID, profilePKID, unlockTimestampNanoSecs, vestingEndTimestampNanoSecs, limitToFetch)
+			txn, hodlerPKID, profilePKID, unlockTimestampNanoSecs, vestingEndTimestampNanoSecs, limitToFetch)
 		return nil
 	})
 	return lockedBalanceEntries, err
@@ -11328,7 +11320,6 @@ func DBGetLimitedVestedLockedBalanceEntries(
 
 func DBGetLimitedVestedLockedBalanceEntriesWithTxn(
 	txn *badger.Txn,
-	snap *Snapshot,
 	hodlerPKID *PKID,
 	profilePKID *PKID,
 	unlockTimestampNanoSecs int64,
