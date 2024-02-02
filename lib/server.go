@@ -2187,7 +2187,7 @@ func (srv *Server) _handleBlock(pp *Peer, blk *MsgDeSoBlock) {
 	// the PoS validator FastHotStuffConsensus once we reach the final block of the PoW protocol.
 	// This requires the block height check to use ProofOfStake2ConsensusCutoverBlockHeight-1
 	tipHeight := uint64(srv.blockchain.blockTip().Height)
-	if tipHeight < srv.params.GetFinalPoWBlockHeight() {
+	if srv.params.IsFinalPoWBlockHeight(tipHeight) || srv.params.IsPoSBlockHeight(tipHeight) {
 		return
 	}
 
