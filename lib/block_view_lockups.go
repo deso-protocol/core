@@ -651,6 +651,17 @@ func (bav *UtxoView) GetYieldCurvePointByProfilePKIDAndDurationNanoSecs(profileP
 	return lockupYieldCurvePoint, nil
 }
 
+// GetLocalYieldCurvePoints is used when trying to figure out what yield to award a user for a coin lockup
+// transaction. Consider a profile who has generated the following yield curve: {0.5 years: 5%, 2 years: 10%}
+// While this yield curve is simple, what should happen in the event where a lockup of length 1 year occurs?
+// In this case it's convenient to provide the "local" points meaning those points on the yield curve closest
+// to the one year lockup duration. If GetLocalYieldCurvePoints was called in this case, it would return
+// 0.5 years @ 5% as the leftLockupPoint and 2 years @ 10% as the rightLockupPoint.
+//
+// To be more specific, the leftLockupPoint returned will always be greatest yield curve point with a
+// LockupDurationNanoSecs less than the lockupDuration provided. The rightLockupPoint returned will
+// always be the least yield curve point with a LockupDurationNanoSecs greater than or equal to the lockupDuration
+// provided.
 func (bav *UtxoView) GetLocalYieldCurvePoints(profilePKID *PKID, lockupDuration int64) (
 	_leftLockupPoint *LockupYieldCurvePoint, _rightLockupPoint *LockupYieldCurvePoint, _err error) {
 	var leftLockupPoint *LockupYieldCurvePoint
