@@ -3493,7 +3493,7 @@ func TestVestingIntersectionLimit(t *testing.T) {
 	utxoView, err :=
 		NewUtxoView(testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot, nil)
 	require.NoError(t, err)
-	require.Equal(t, utxoView.GetCurrentGlobalParamsEntry().MaximumVestedIntersectionsPerLockupTransaction, 100)
+	require.Equal(t, utxoView.GetCurrentGlobalParamsEntry().MaximumVestedIntersectionsPerLockupTransaction, 1000)
 
 	// Generate consecutive vested locked balance entries equal to this limit.
 	for ii := 0; ii < utxoView.GetCurrentGlobalParamsEntry().MaximumVestedIntersectionsPerLockupTransaction; ii++ {
@@ -3506,7 +3506,24 @@ func TestVestingIntersectionLimit(t *testing.T) {
 		}
 	}
 
-	// Ensure we can consolidate on top of .
+	// Create 1,000,000,000 m0 dao coins held by m0.
+	// We require this otherwise we will hit downstream (correct) RuleErrorCoinLockupInsufficientCoins errors.
+	{
+		_daoCoinTxnWithTestMeta(
+			testMeta,
+			testMeta.feeRateNanosPerKb,
+			m0Pub,
+			m0Priv,
+			DAOCoinMetadata{
+				ProfilePublicKey:          m0PkBytes,
+				OperationType:             DAOCoinOperationTypeMint,
+				CoinsToMintNanos:          *uint256.NewInt().SetUint64(1e9),
+				CoinsToBurnNanos:          uint256.Int{},
+				TransferRestrictionStatus: 0,
+			})
+	}
+
+	// Ensure we can consolidate on top of all these locked balance entries.
 	maxIntersections := utxoView.GetCurrentGlobalParamsEntry().MaximumVestedIntersectionsPerLockupTransaction
 	{
 		_, _, _, err := _coinLockupWithConnectTimestamp(
@@ -3735,7 +3752,7 @@ func TestRealWorldLockupsUseCase(t *testing.T) {
 // paramUpdaterPub - 10,000 nDESO
 func _setUpProfilesAndMintM0M1DAOCoins(testMeta *TestMeta) {
 	// Create on-chain public keys with DESO sent from miner
-	_registerOrTransferWithTestMeta(testMeta, "m0", senderPkString, m0Pub, senderPrivString, 10000)
+	_registerOrTransferWithTestMeta(testMeta, "m0", senderPkString, m0Pub, senderPrivString, 100000)
 	_registerOrTransferWithTestMeta(testMeta, "m1", senderPkString, m1Pub, senderPrivString, 10000)
 	_registerOrTransferWithTestMeta(testMeta, "m2", senderPkString, m2Pub, senderPrivString, 10000)
 	_registerOrTransferWithTestMeta(testMeta, "m3", senderPkString, m3Pub, senderPrivString, 10000)

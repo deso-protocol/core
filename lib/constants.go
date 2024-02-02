@@ -1151,7 +1151,7 @@ var DeSoMainnetParams = DeSoParams{
 	DefaultFailingTransactionBMFMultiplierBasisPoints: uint64(2500),
 
 	// The maximum number of vested lockup intersections in a lockup transaction.
-	DefaultMaximumVestedIntersectionsPerLockupTransaction: 100,
+	DefaultMaximumVestedIntersectionsPerLockupTransaction: 1000,
 
 	ForkHeights:                 MainnetForkHeights,
 	EncoderMigrationHeights:     GetEncoderMigrationHeights(&MainnetForkHeights),
@@ -1424,7 +1424,7 @@ var DeSoTestnetParams = DeSoParams{
 	DefaultFailingTransactionBMFMultiplierBasisPoints: uint64(2500),
 
 	// The maximum number of vested lockup intersections in a lockup transaction.
-	DefaultMaximumVestedIntersectionsPerLockupTransaction: 100,
+	DefaultMaximumVestedIntersectionsPerLockupTransaction: 1000,
 
 	ForkHeights:                 TestnetForkHeights,
 	EncoderMigrationHeights:     GetEncoderMigrationHeights(&TestnetForkHeights),

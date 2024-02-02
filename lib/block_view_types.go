@@ -4113,7 +4113,7 @@ type GlobalParamsEntry struct {
 	//
 	// Notice that this is functionally identical but at any given point in time we hit exactly one vested
 	// locked balance entry. This consolidation on the lockup transaction operation could be computationally expensive.
-	// Hence, we limit this complexity with the MaximumVestedIntersectionsPerLockupTransactions (default: 100).
+	// Hence, we limit this complexity with the MaximumVestedIntersectionsPerLockupTransactions (default: 1000).
 	// When connecting a lockup transaction we check to see how many existing vested locked balance entries
 	// we would intersect with. If we exceed the MaximumVestedIntersectionsPerLockupTransaction, we reject
 	// the transaction. A user must split their single transaction into multiple disjoint time intervals which
