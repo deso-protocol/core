@@ -803,6 +803,7 @@ func TestGetLineageFromCommittedTip(t *testing.T) {
 	}
 	block := &MsgDeSoBlock{
 		Header: &MsgDeSoHeader{
+			Version:        HeaderVersion2,
 			PrevBlockHash:  hash1,
 			ProposedInView: 3,
 			Height:         3,
