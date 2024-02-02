@@ -530,6 +530,7 @@ const (
 	RuleErrorUpdateCoinLockupParamsOnInvalidPKID                        RuleError = "RuleErrorUpdateCoinLockupParamsOnInvalidPKID"
 	RuleErrorUpdateCoinLockupParamsInvalidRestrictions                  RuleError = "RuleErrorUpdateCoinLockupParamsInvalidRestrictions"
 	RuleErrorUpdateCoinLockupParamsNegativeDuration                     RuleError = "RuleErrorUpdateCoinLockupParamsInvalidRestrictions"
+	RuleErrorUpdateCoinLockupParamsIsNoOp                               RuleError = "RuleErrorUpdateCoinLockupParamsIsNoOp"
 	RuleErrorUpdateCoinLockupParamsDeletingNonExistentPoint             RuleError = "RuleErrorUpdateCoinLockupParamsDeletingNonExistentPoint"
 	RuleErrorUpdateCoinLockupParamsUpdatingNonExistentProfile           RuleError = "RuleErrorUpdateCoinLockupParamsUpdatingNonExistentProfile"
 	RuleErrorUpdateCoinLockupParamsUpdatingPermanentTransferRestriction RuleError = "RuleErrorUpdateCoinLockupParamsUpdatingPermanentTransferRestriction"

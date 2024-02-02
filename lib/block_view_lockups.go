@@ -1970,6 +1970,13 @@ func (bav *UtxoView) _connectUpdateCoinLockupParams(
 			"_connectUpdateCoinLockupParams")
 	}
 
+	// Check to ensure this transaction is not a no-op.
+	if !txMeta.NewLockupTransferRestrictions && txMeta.LockupYieldDurationNanoSecs == 0 {
+		return 0, 0, nil, errors.Wrap(RuleErrorUpdateCoinLockupParamsIsNoOp,
+			"_connectUpdateCoinLockupParams")
+
+	}
+
 	// Fetch the previous yield curve point associated with this <profilePKID, lockupDurationNanoSecs> pair.
 	prevLockupYieldCurvePoint, err :=
 		bav.GetYieldCurvePointByProfilePKIDAndDurationNanoSecs(profilePKID, txMeta.LockupYieldDurationNanoSecs)
