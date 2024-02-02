@@ -1177,7 +1177,7 @@ func (bc *Blockchain) getLineageFromCommittedTip(block *MsgDeSoBlock) ([]*BlockN
 	currentHash := block.Header.PrevBlockHash.NewBlockHash()
 	ancestors := []*BlockNode{}
 	prevHeight := block.Header.Height
-	prevView := block.Header.ProposedInView
+	prevView := block.Header.GetView()
 	for {
 		currentBlock, exists := bc.blockIndexByHash[*currentHash]
 		if !exists {
@@ -1192,16 +1192,16 @@ func (bc *Blockchain) getLineageFromCommittedTip(block *MsgDeSoBlock) ([]*BlockN
 		if currentBlock.IsValidateFailed() {
 			return nil, RuleErrorAncestorBlockValidationFailed
 		}
-		if currentBlock.Header.ProposedInView >= prevView {
-			return nil, RuleErrorParentBlockHasViewGreaterOrEqualToChildBlock
-		}
 		if uint64(currentBlock.Header.Height)+1 != prevHeight {
 			return nil, RuleErrorParentBlockHeightNotSequentialWithChildBlockHeight
+		}
+		if currentBlock.Header.GetView() >= prevView {
+			return nil, RuleErrorParentBlockHasViewGreaterOrEqualToChildBlock
 		}
 		ancestors = append(ancestors, currentBlock)
 		currentHash = currentBlock.Header.PrevBlockHash
 		prevHeight = currentBlock.Header.Height
-		prevView = currentBlock.Header.ProposedInView
+		prevView = currentBlock.Header.GetView()
 	}
 	return collections.Reverse(ancestors), nil
 }
