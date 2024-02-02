@@ -4065,14 +4065,11 @@ func (bav *UtxoView) ConnectBlock(
 		// height. Otherwise, the transaction is expected to connect.
 		hasPoWBlockHeight := bav.Params.IsPoWBlockHeight(blockHeight)
 		// Also, the first transaction in the block, the block reward transaction, should always be a connecting transaction.
-		isBlockRewardTxn := false
-		if txIndex == 0 {
-			isBlockRewardTxn = txn.TxnMeta.GetTxnType() == TxnTypeBlockReward
-		}
+		isBlockRewardTxn := (txIndex == 0) && (txn.TxnMeta.GetTxnType() == TxnTypeBlockReward)
 		// Finally, if the transaction is not the first in the block, we check the TxnConnectStatusByIndex to see if
 		// it's marked by the block producer as a connecting transaction. PoS blocks should reflect this in TxnConnectStatusByIndex.
 		hasConnectingPoSTxnStatus := false
-		if txIndex > 0 && desoBlock.TxnConnectStatusByIndex != nil {
+		if bav.Params.IsPoSBlockHeight(blockHeight) && (txIndex > 0) && (desoBlock.TxnConnectStatusByIndex != nil) {
 			// Note that TxnConnectStatusByIndex doesn't include the first block reward transaction.
 			hasConnectingPoSTxnStatus = desoBlock.TxnConnectStatusByIndex.Get(txIndex - 1)
 		}
