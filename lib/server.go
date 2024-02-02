@@ -2009,7 +2009,9 @@ func (srv *Server) _handleBlock(pp *Peer, blk *MsgDeSoBlock) {
 	// If the node is running a Fast-HotStuff validator and the consensus is running,
 	// in the steady-state, then we handle the block according to the consensus rules.
 	if srv.fastHotStuffConsensus != nil && srv.fastHotStuffConsensus.IsRunning() {
-		srv.fastHotStuffConsensus.HandleBlock(pp, blk)
+		if err := srv.fastHotStuffConsensus.HandleBlock(pp, blk); err != nil {
+			glog.Errorf("Server._handleBlock: Problem handling block with FastHotStuffConsensus: %v", err)
+		}
 		return
 	}
 
