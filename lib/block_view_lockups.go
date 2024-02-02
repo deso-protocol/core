@@ -931,9 +931,16 @@ func (txnData *UpdateCoinLockupParamsMetadata) New() DeSoTxnMetadata {
 //
 
 type CoinLockupTransferMetadata struct {
-	RecipientPublicKey             *PublicKey
-	ProfilePublicKey               *PublicKey
-	UnlockTimestampNanoSecs        int64
+	// The recipient of the locked coins.
+	RecipientPublicKey *PublicKey
+
+	// The profile whose locked coins are being transferred.
+	ProfilePublicKey *PublicKey
+
+	// The UnlockTimestampNanoSecs to source the locked coins from.
+	UnlockTimestampNanoSecs int64
+
+	// The amount of locked coins to transfer.
 	LockedCoinsToTransferBaseUnits *uint256.Int
 }
 
@@ -991,6 +998,7 @@ func (txnData *CoinLockupTransferMetadata) New() DeSoTxnMetadata {
 //
 
 type CoinUnlockMetadata struct {
+	// The public key whose associated locked coins should be unlocked.
 	ProfilePublicKey *PublicKey
 }
 
@@ -1418,6 +1426,11 @@ func (bav *UtxoView) _connectCoinLockup(
 				//                                                                                    ^  ^
 				//                                                                               right overhang
 				// We will break any overhang off into its own separate locked balance entry.
+				//
+				// NOTE: Because in the previous portion of the code we trim any locked balance entries that
+				// have "left overhang" we know the UnlockTimestampNanoSecs to be lined up between
+				// both the existing and proposed LockedBalanceEntry. This is important as it means after
+				// we remove any existing right overhang the two locked balance entries will be perfectly lined up.
 
 				// Check for right overhang by the existing locked balance entry
 				if existingLockedBalanceEntry.VestingEndTimestampNanoSecs >
@@ -2214,7 +2227,7 @@ func (bav *UtxoView) _connectCoinLockupTransfer(
 			senderPKID, profilePKID, txMeta.UnlockTimestampNanoSecs, txMeta.UnlockTimestampNanoSecs)
 	if err != nil {
 		return 0, 0, nil,
-			errors.Wrap(err, "connectCoinLockupTransfer failed to fetch senderLockedBalanceEntry:w")
+			errors.Wrap(err, "connectCoinLockupTransfer failed to fetch senderLockedBalanceEntry")
 	}
 	if senderLockedBalanceEntry == nil || senderLockedBalanceEntry.isDeleted {
 		senderLockedBalanceEntry = &LockedBalanceEntry{
@@ -2290,6 +2303,46 @@ func (bav *UtxoView) _connectCoinLockupTransfer(
 	// Update the balances in the view.
 	bav._setLockedBalanceEntry(senderLockedBalanceEntry)
 	bav._setLockedBalanceEntry(receiverLockedBalanceEntry)
+
+	// SAFEGUARD: Ensure no locked coins were printed by accident.
+	prevTotalBalance, err := SafeUint256().Add(
+		&prevSenderLockedBalanceEntry.BalanceBaseUnits,
+		&prevReceiverLockedBalanceEntry.BalanceBaseUnits)
+	if err != nil {
+		return 0, 0, nil, errors.New("_connectCoinLockupTransfer" +
+			" cannot verify balance change safeguard check due to previous balance overflow")
+	}
+	newSenderLockedBalanceEntry, err :=
+		bav.GetLockedBalanceEntryForHODLerPKIDProfilePKIDUnlockTimestampNanoSecsVestingEndTimestampNanoSecs(
+			senderPKID,
+			profilePKID,
+			txMeta.UnlockTimestampNanoSecs,
+			txMeta.UnlockTimestampNanoSecs)
+	if err != nil {
+		return 0, 0, nil, errors.New("_connectCoinLockupTransfer" +
+			" cannot verify balance change safeguard check; cannot fetch new sender locked balance entry")
+	}
+	newReceiverLockedBalanceEntry, err :=
+		bav.GetLockedBalanceEntryForHODLerPKIDProfilePKIDUnlockTimestampNanoSecsVestingEndTimestampNanoSecs(
+			receiverPKID,
+			profilePKID,
+			txMeta.UnlockTimestampNanoSecs,
+			txMeta.UnlockTimestampNanoSecs)
+	if err != nil {
+		return 0, 0, nil, errors.New("_connectCoinLockupTransfer" +
+			" cannot verify balance change safeguard check; cannot fetch new receiver locked balance entry")
+	}
+	newTotalBalance, err := SafeUint256().Add(
+		&newSenderLockedBalanceEntry.BalanceBaseUnits,
+		&newReceiverLockedBalanceEntry.BalanceBaseUnits)
+	if err != nil {
+		return 0, 0, nil, errors.New("_connectCoinLockupTransfer" +
+			" cannot verify balance change safeguard check due to new balance overflow")
+	}
+	if !prevTotalBalance.Eq(newTotalBalance) {
+		return 0, 0, nil, errors.New("_connectCoinLockupTransfer" +
+			" failed coin printing safeguard check; this should not be possible")
+	}
 
 	// Create a UtxoOperation for easily disconnecting the transaction.
 	utxoOpsForTxn = append(utxoOpsForTxn, &UtxoOperation{
