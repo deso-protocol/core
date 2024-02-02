@@ -10974,7 +10974,7 @@ func DbDeleteLockedBalanceEntryWithTxn(
 func DBGetLockedBalanceEntryForLockedBalanceEntryKey(
 	handle *badger.DB,
 	snap *Snapshot,
-	lockedBalanceEntryKey *LockedBalanceEntryKey,
+	lockedBalanceEntryKey LockedBalanceEntryKey,
 ) (
 	_lockedBalanceEntry *LockedBalanceEntry,
 	_err error,
@@ -10991,7 +10991,7 @@ func DBGetLockedBalanceEntryForLockedBalanceEntryKey(
 func DBGetLockedBalanceEntryForLockedBalanceEntryKeyWithTxn(
 	txn *badger.Txn,
 	snap *Snapshot,
-	lockedBalanceEntryKey *LockedBalanceEntryKey,
+	lockedBalanceEntryKey LockedBalanceEntryKey,
 ) (
 	_lockedBalanceEntry *LockedBalanceEntry,
 	_err error,
@@ -11027,6 +11027,13 @@ func DBGetAllLockedBalanceEntriesForHodlerPKID(
 ) {
 	var lockedBalanceEntries []*LockedBalanceEntry
 	var err error
+
+	// Validate profilePKID is not nil.
+	if hodlerPKID == nil {
+		return nil, errors.New("DBGetAllLockedBalanceEntriesForHodlerPKID: " +
+			"called with nil hodlerPKID; this shouldn't happen")
+	}
+
 	handle.View(func(txn *badger.Txn) error {
 		lockedBalanceEntries, err = DBGetAllLockedBalanceEntriesForHodlerPKIDWithTxn(txn, hodlerPKID)
 		return nil
@@ -11103,6 +11110,17 @@ func DBGetUnlockableLockedBalanceEntries(
 	_vestedUnlockableLockedEntries []*LockedBalanceEntry,
 	_err error,
 ) {
+	// Validate profilePKID and holderPKID are not nil.
+	if profilePKID == nil {
+		return nil, nil,
+			errors.New("DBGetUnlockableLockedBalanceEntries: " +
+				"called with nil profilePKID; this shouldn't happen")
+	}
+	if hodlerPKID == nil {
+		return nil, nil,
+			errors.New("DBGetUnlockableLockedBalanceEntries: " +
+				"called with nil hodlerPKID; this shouldn't happen")
+	}
 
 	var unvested []*LockedBalanceEntry
 	var vested []*LockedBalanceEntry
@@ -11307,6 +11325,16 @@ func DBGetLimitedVestedLockedBalanceEntries(
 	// However, because we know that there is no overlap we can simply do a reverse
 	// iteration on the specified unlockTimestampNanoSecs, check for an overlapping
 	// entry, and move on.
+
+	// Validate profilePKID and holderPKID are not nil.
+	if profilePKID == nil {
+		return nil, errors.New("DBGetLimitedVestedLockedBalanceEntries: " +
+			"called with nil profilePKID; this shouldn't happen")
+	}
+	if hodlerPKID == nil {
+		return nil, errors.New("DBGetLimitedVestedLockedBalanceEntries: " +
+			"called with nil hodlerPKID; this shouldn't happen")
+	}
 
 	var lockedBalanceEntries []*LockedBalanceEntry
 	var err error
@@ -11518,6 +11546,13 @@ func DbDeleteLockupYieldCurvePointWithTxn(txn *badger.Txn, snap *Snapshot,
 func DBGetAllYieldCurvePointsByProfilePKID(handle *badger.DB, snap *Snapshot,
 	profilePKID *PKID) (_lockupYieldCurvePoints []*LockupYieldCurvePoint, _err error) {
 	var lockupYieldCurvePoints []*LockupYieldCurvePoint
+
+	// Validate profilePKID is not nil.
+	if profilePKID == nil {
+		return nil, errors.New("DBGetAllYieldCurvePointsByProfilePKID: " +
+			"called with nil profilePKID; this shouldn't happen")
+	}
+
 	err := handle.View(func(txn *badger.Txn) error {
 		var err error
 		lockupYieldCurvePoints, err = DBGetAllYieldCurvePointsByProfilePKIDWithTxn(
@@ -11571,6 +11606,13 @@ func DBGetAllYieldCurvePointsByProfilePKIDWithTxn(txn *badger.Txn, snap *Snapsho
 func DBGetYieldCurvePointsByProfilePKIDAndDurationNanoSecs(handle *badger.DB, snap *Snapshot, profilePKID *PKID,
 	lockupDurationNanoSecs int64) (_lockupYieldCurvePoint *LockupYieldCurvePoint, _err error) {
 	var lockupYieldCurvePoint *LockupYieldCurvePoint
+
+	// Validate profilePKID is not nil.
+	if profilePKID == nil {
+		return nil, errors.New("DBGetYieldCurvePointsByProfilePKIDAndDurationNanoSecs: " +
+			"called with nil profilePKID; this shouldn't happen")
+	}
+
 	err := handle.View(func(txn *badger.Txn) error {
 		var err error
 		lockupYieldCurvePoint, err = DBGetYieldCurvePointsByProfilePKIDAndDurationNanoSecsWithTxn(

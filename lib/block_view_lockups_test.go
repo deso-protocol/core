@@ -2538,7 +2538,7 @@ func TestCoinLockupIndirectRecipients(t *testing.T) {
 	m0PKID := m0PKIDEntry.PKID
 
 	// Check m3 LockedBalanceEntry
-	m3LockedBalanceEntry, err := utxoView.GetLockedBalanceEntryForLockedBalanceEntryKey(&LockedBalanceEntryKey{
+	m3LockedBalanceEntry, err := utxoView.GetLockedBalanceEntryForLockedBalanceEntryKey(LockedBalanceEntryKey{
 		HODLerPKID:                  *m3PKID,
 		ProfilePKID:                 *m0PKID,
 		UnlockTimestampNanoSecs:     1000,
@@ -2549,7 +2549,7 @@ func TestCoinLockupIndirectRecipients(t *testing.T) {
 	require.True(t, m3LockedBalanceEntry.BalanceBaseUnits.Eq(uint256.NewInt().SetUint64(1000)))
 
 	// Check the m0 LockedBalanceEntry as non-existent
-	m0LockedBalanceEntry, err := utxoView.GetLockedBalanceEntryForLockedBalanceEntryKey(&LockedBalanceEntryKey{
+	m0LockedBalanceEntry, err := utxoView.GetLockedBalanceEntryForLockedBalanceEntryKey(LockedBalanceEntryKey{
 		HODLerPKID:                  *m0PKID,
 		ProfilePKID:                 *m0PKID,
 		UnlockTimestampNanoSecs:     1000,
@@ -2568,7 +2568,7 @@ func TestCoinLockupIndirectRecipients(t *testing.T) {
 	}
 
 	// Check m3 LockedBalanceEntry
-	m3LockedBalanceEntry, err = utxoView.GetLockedBalanceEntryForLockedBalanceEntryKey(&LockedBalanceEntryKey{
+	m3LockedBalanceEntry, err = utxoView.GetLockedBalanceEntryForLockedBalanceEntryKey(LockedBalanceEntryKey{
 		HODLerPKID:                  *m3PKID,
 		ProfilePKID:                 *m0PKID,
 		UnlockTimestampNanoSecs:     1050,
@@ -2579,7 +2579,7 @@ func TestCoinLockupIndirectRecipients(t *testing.T) {
 	require.True(t, m3LockedBalanceEntry.BalanceBaseUnits.Eq(uint256.NewInt().SetUint64(1000)))
 
 	// Check the m0 LockedBalanceEntry as non-existent
-	m0LockedBalanceEntry, err = utxoView.GetLockedBalanceEntryForLockedBalanceEntryKey(&LockedBalanceEntryKey{
+	m0LockedBalanceEntry, err = utxoView.GetLockedBalanceEntryForLockedBalanceEntryKey(LockedBalanceEntryKey{
 		HODLerPKID:                  *m0PKID,
 		ProfilePKID:                 *m0PKID,
 		UnlockTimestampNanoSecs:     1050,
@@ -2630,7 +2630,7 @@ func TestSimpleVestedLockup(t *testing.T) {
 	require.NoError(t, err)
 
 	// Check m0 LockedBalanceEntry
-	m0LockedBalanceEntry, err := utxoView.GetLockedBalanceEntryForLockedBalanceEntryKey(&LockedBalanceEntryKey{
+	m0LockedBalanceEntry, err := utxoView.GetLockedBalanceEntryForLockedBalanceEntryKey(LockedBalanceEntryKey{
 		HODLerPKID:                  *m0PKID,
 		ProfilePKID:                 *m0PKID,
 		UnlockTimestampNanoSecs:     1000,
@@ -2638,7 +2638,7 @@ func TestSimpleVestedLockup(t *testing.T) {
 	})
 	require.NoError(t, err)
 	require.True(t, m0LockedBalanceEntry == nil)
-	m0LockedBalanceEntry, err = utxoView.GetLockedBalanceEntryForLockedBalanceEntryKey(&LockedBalanceEntryKey{
+	m0LockedBalanceEntry, err = utxoView.GetLockedBalanceEntryForLockedBalanceEntryKey(LockedBalanceEntryKey{
 		HODLerPKID:                  *m0PKID,
 		ProfilePKID:                 *m0PKID,
 		UnlockTimestampNanoSecs:     1500,
@@ -2676,7 +2676,7 @@ func TestSimpleVestedLockup(t *testing.T) {
 	require.NoError(t, err)
 
 	// Check m0 LockedBalanceEntry
-	m0LockedBalanceEntry, err = utxoView.GetLockedBalanceEntryForLockedBalanceEntryKey(&LockedBalanceEntryKey{
+	m0LockedBalanceEntry, err = utxoView.GetLockedBalanceEntryForLockedBalanceEntryKey(LockedBalanceEntryKey{
 		HODLerPKID:                  *m0PKID,
 		ProfilePKID:                 *m0PKID,
 		UnlockTimestampNanoSecs:     1500,
@@ -2684,7 +2684,7 @@ func TestSimpleVestedLockup(t *testing.T) {
 	})
 	require.NoError(t, err)
 	require.True(t, m0LockedBalanceEntry == nil)
-	m0LockedBalanceEntry, err = utxoView.GetLockedBalanceEntryForLockedBalanceEntryKey(&LockedBalanceEntryKey{
+	m0LockedBalanceEntry, err = utxoView.GetLockedBalanceEntryForLockedBalanceEntryKey(LockedBalanceEntryKey{
 		HODLerPKID:                  *m0PKID,
 		ProfilePKID:                 *m0PKID,
 		UnlockTimestampNanoSecs:     1750,
@@ -2722,7 +2722,7 @@ func TestSimpleVestedLockup(t *testing.T) {
 	require.NoError(t, err)
 
 	// Check m0 LockedBalanceEntry
-	m0LockedBalanceEntry, err = utxoView.GetLockedBalanceEntryForLockedBalanceEntryKey(&LockedBalanceEntryKey{
+	m0LockedBalanceEntry, err = utxoView.GetLockedBalanceEntryForLockedBalanceEntryKey(LockedBalanceEntryKey{
 		HODLerPKID:                  *m0PKID,
 		ProfilePKID:                 *m0PKID,
 		UnlockTimestampNanoSecs:     1750,
@@ -2730,7 +2730,7 @@ func TestSimpleVestedLockup(t *testing.T) {
 	})
 	require.NoError(t, err)
 	require.True(t, m0LockedBalanceEntry == nil)
-	m0LockedBalanceEntry, err = utxoView.GetLockedBalanceEntryForLockedBalanceEntryKey(&LockedBalanceEntryKey{
+	m0LockedBalanceEntry, err = utxoView.GetLockedBalanceEntryForLockedBalanceEntryKey(LockedBalanceEntryKey{
 		HODLerPKID:                  *m0PKID,
 		ProfilePKID:                 *m0PKID,
 		UnlockTimestampNanoSecs:     2000,
@@ -2787,7 +2787,7 @@ func TestNoOverlapVestedLockupConsolidation(t *testing.T) {
 	// Check m0 LockedBalanceEntry
 	m0PKIDEntry := utxoView.GetPKIDForPublicKey(m0PkBytes)
 	m0PKID := m0PKIDEntry.PKID
-	m0LockedBalanceEntry, err := utxoView.GetLockedBalanceEntryForLockedBalanceEntryKey(&LockedBalanceEntryKey{
+	m0LockedBalanceEntry, err := utxoView.GetLockedBalanceEntryForLockedBalanceEntryKey(LockedBalanceEntryKey{
 		HODLerPKID:                  *m0PKID,
 		ProfilePKID:                 *m0PKID,
 		UnlockTimestampNanoSecs:     1000,
@@ -2796,7 +2796,7 @@ func TestNoOverlapVestedLockupConsolidation(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, m0LockedBalanceEntry != nil)
 	require.True(t, m0LockedBalanceEntry.BalanceBaseUnits.Eq(uint256.NewInt().SetUint64(1000)))
-	m0LockedBalanceEntry, err = utxoView.GetLockedBalanceEntryForLockedBalanceEntryKey(&LockedBalanceEntryKey{
+	m0LockedBalanceEntry, err = utxoView.GetLockedBalanceEntryForLockedBalanceEntryKey(LockedBalanceEntryKey{
 		HODLerPKID:                  *m0PKID,
 		ProfilePKID:                 *m0PKID,
 		UnlockTimestampNanoSecs:     3000,
@@ -2840,7 +2840,7 @@ func TestPerfectOverlapVestedLockupConsolidation(t *testing.T) {
 	// Check m0 LockedBalanceEntry
 	m0PKIDEntry := utxoView.GetPKIDForPublicKey(m0PkBytes)
 	m0PKID := m0PKIDEntry.PKID
-	m0LockedBalanceEntry, err := utxoView.GetLockedBalanceEntryForLockedBalanceEntryKey(&LockedBalanceEntryKey{
+	m0LockedBalanceEntry, err := utxoView.GetLockedBalanceEntryForLockedBalanceEntryKey(LockedBalanceEntryKey{
 		HODLerPKID:                  *m0PKID,
 		ProfilePKID:                 *m0PKID,
 		UnlockTimestampNanoSecs:     1000,
@@ -2891,7 +2891,7 @@ func TestLeftOverhangVestedLockupConsolidation(t *testing.T) {
 	// Check m0 LockedBalanceEntry
 	m0PKIDEntry := utxoView.GetPKIDForPublicKey(m0PkBytes)
 	m0PKID := m0PKIDEntry.PKID
-	m0LockedBalanceEntry, err := utxoView.GetLockedBalanceEntryForLockedBalanceEntryKey(&LockedBalanceEntryKey{
+	m0LockedBalanceEntry, err := utxoView.GetLockedBalanceEntryForLockedBalanceEntryKey(LockedBalanceEntryKey{
 		HODLerPKID:                  *m0PKID,
 		ProfilePKID:                 *m0PKID,
 		UnlockTimestampNanoSecs:     1000,
@@ -2900,7 +2900,7 @@ func TestLeftOverhangVestedLockupConsolidation(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, m0LockedBalanceEntry != nil)
 	require.True(t, m0LockedBalanceEntry.BalanceBaseUnits.Eq(uint256.NewInt().SetUint64(500)))
-	m0LockedBalanceEntry, err = utxoView.GetLockedBalanceEntryForLockedBalanceEntryKey(&LockedBalanceEntryKey{
+	m0LockedBalanceEntry, err = utxoView.GetLockedBalanceEntryForLockedBalanceEntryKey(LockedBalanceEntryKey{
 		HODLerPKID:                  *m0PKID,
 		ProfilePKID:                 *m0PKID,
 		UnlockTimestampNanoSecs:     1500,
@@ -2938,7 +2938,7 @@ func TestLeftOverhangVestedLockupConsolidation(t *testing.T) {
 	// Check m0 LockedBalanceEntry
 	m1PKIDEntry := utxoView.GetPKIDForPublicKey(m1PkBytes)
 	m1PKID := m1PKIDEntry.PKID
-	m1LockedBalanceEntry, err := utxoView.GetLockedBalanceEntryForLockedBalanceEntryKey(&LockedBalanceEntryKey{
+	m1LockedBalanceEntry, err := utxoView.GetLockedBalanceEntryForLockedBalanceEntryKey(LockedBalanceEntryKey{
 		HODLerPKID:                  *m1PKID,
 		ProfilePKID:                 *m1PKID,
 		UnlockTimestampNanoSecs:     1000,
@@ -2947,7 +2947,7 @@ func TestLeftOverhangVestedLockupConsolidation(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, m1LockedBalanceEntry != nil)
 	require.True(t, m1LockedBalanceEntry.BalanceBaseUnits.Eq(uint256.NewInt().SetUint64(500)))
-	m1LockedBalanceEntry, err = utxoView.GetLockedBalanceEntryForLockedBalanceEntryKey(&LockedBalanceEntryKey{
+	m1LockedBalanceEntry, err = utxoView.GetLockedBalanceEntryForLockedBalanceEntryKey(LockedBalanceEntryKey{
 		HODLerPKID:                  *m1PKID,
 		ProfilePKID:                 *m1PKID,
 		UnlockTimestampNanoSecs:     1500,
@@ -2998,7 +2998,7 @@ func TestRightOverhangVestedLockupConsolidation(t *testing.T) {
 	// Check m0 LockedBalanceEntry
 	m0PKIDEntry := utxoView.GetPKIDForPublicKey(m0PkBytes)
 	m0PKID := m0PKIDEntry.PKID
-	m0LockedBalanceEntry, err := utxoView.GetLockedBalanceEntryForLockedBalanceEntryKey(&LockedBalanceEntryKey{
+	m0LockedBalanceEntry, err := utxoView.GetLockedBalanceEntryForLockedBalanceEntryKey(LockedBalanceEntryKey{
 		HODLerPKID:                  *m0PKID,
 		ProfilePKID:                 *m0PKID,
 		UnlockTimestampNanoSecs:     1000,
@@ -3007,7 +3007,7 @@ func TestRightOverhangVestedLockupConsolidation(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, m0LockedBalanceEntry != nil)
 	require.True(t, m0LockedBalanceEntry.BalanceBaseUnits.Eq(uint256.NewInt().SetUint64(1499)))
-	m0LockedBalanceEntry, err = utxoView.GetLockedBalanceEntryForLockedBalanceEntryKey(&LockedBalanceEntryKey{
+	m0LockedBalanceEntry, err = utxoView.GetLockedBalanceEntryForLockedBalanceEntryKey(LockedBalanceEntryKey{
 		HODLerPKID:                  *m0PKID,
 		ProfilePKID:                 *m0PKID,
 		UnlockTimestampNanoSecs:     1500,
@@ -3045,7 +3045,7 @@ func TestRightOverhangVestedLockupConsolidation(t *testing.T) {
 	// Check m1 LockedBalanceEntry
 	m1PKIDEntry := utxoView.GetPKIDForPublicKey(m1PkBytes)
 	m1PKID := m1PKIDEntry.PKID
-	m1LockedBalanceEntry, err := utxoView.GetLockedBalanceEntryForLockedBalanceEntryKey(&LockedBalanceEntryKey{
+	m1LockedBalanceEntry, err := utxoView.GetLockedBalanceEntryForLockedBalanceEntryKey(LockedBalanceEntryKey{
 		HODLerPKID:                  *m1PKID,
 		ProfilePKID:                 *m1PKID,
 		UnlockTimestampNanoSecs:     1000,
@@ -3054,7 +3054,7 @@ func TestRightOverhangVestedLockupConsolidation(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, m1LockedBalanceEntry != nil)
 	require.True(t, m1LockedBalanceEntry.BalanceBaseUnits.Eq(uint256.NewInt().SetUint64(1500)))
-	m1LockedBalanceEntry, err = utxoView.GetLockedBalanceEntryForLockedBalanceEntryKey(&LockedBalanceEntryKey{
+	m1LockedBalanceEntry, err = utxoView.GetLockedBalanceEntryForLockedBalanceEntryKey(LockedBalanceEntryKey{
 		HODLerPKID:                  *m1PKID,
 		ProfilePKID:                 *m1PKID,
 		UnlockTimestampNanoSecs:     1500,
@@ -3104,7 +3104,7 @@ func TestExternalThreeWayLockupConsolidation(t *testing.T) {
 	// Check m0 LockedBalanceEntry
 	m0PKIDEntry := utxoView.GetPKIDForPublicKey(m0PkBytes)
 	m0PKID := m0PKIDEntry.PKID
-	m0LockedBalanceEntry, err := utxoView.GetLockedBalanceEntryForLockedBalanceEntryKey(&LockedBalanceEntryKey{
+	m0LockedBalanceEntry, err := utxoView.GetLockedBalanceEntryForLockedBalanceEntryKey(LockedBalanceEntryKey{
 		HODLerPKID:                  *m0PKID,
 		ProfilePKID:                 *m0PKID,
 		UnlockTimestampNanoSecs:     1000,
@@ -3113,7 +3113,7 @@ func TestExternalThreeWayLockupConsolidation(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, m0LockedBalanceEntry != nil)
 	require.True(t, m0LockedBalanceEntry.BalanceBaseUnits.Eq(uint256.NewInt().SetUint64(500)))
-	m0LockedBalanceEntry, err = utxoView.GetLockedBalanceEntryForLockedBalanceEntryKey(&LockedBalanceEntryKey{
+	m0LockedBalanceEntry, err = utxoView.GetLockedBalanceEntryForLockedBalanceEntryKey(LockedBalanceEntryKey{
 		HODLerPKID:                  *m0PKID,
 		ProfilePKID:                 *m0PKID,
 		UnlockTimestampNanoSecs:     1501,
@@ -3122,7 +3122,7 @@ func TestExternalThreeWayLockupConsolidation(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, m0LockedBalanceEntry != nil)
 	require.True(t, m0LockedBalanceEntry.BalanceBaseUnits.Eq(uint256.NewInt().SetUint64(500)))
-	m0LockedBalanceEntry, err = utxoView.GetLockedBalanceEntryForLockedBalanceEntryKey(&LockedBalanceEntryKey{
+	m0LockedBalanceEntry, err = utxoView.GetLockedBalanceEntryForLockedBalanceEntryKey(LockedBalanceEntryKey{
 		HODLerPKID:                  *m0PKID,
 		ProfilePKID:                 *m0PKID,
 		UnlockTimestampNanoSecs:     1250,
@@ -3131,7 +3131,7 @@ func TestExternalThreeWayLockupConsolidation(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, m0LockedBalanceEntry != nil)
 	require.True(t, m0LockedBalanceEntry.BalanceBaseUnits.Eq(uint256.NewInt().SetUint64(1000)))
-	m0LockedBalanceEntry, err = utxoView.GetLockedBalanceEntryForLockedBalanceEntryKey(&LockedBalanceEntryKey{
+	m0LockedBalanceEntry, err = utxoView.GetLockedBalanceEntryForLockedBalanceEntryKey(LockedBalanceEntryKey{
 		HODLerPKID:                  *m0PKID,
 		ProfilePKID:                 *m0PKID,
 		UnlockTimestampNanoSecs:     1250,
@@ -3167,7 +3167,7 @@ func TestExternalThreeWayLockupConsolidation(t *testing.T) {
 	// Check m1 LockedBalanceEntry
 	m1PKIDEntry := utxoView.GetPKIDForPublicKey(m1PkBytes)
 	m1PKID := m1PKIDEntry.PKID
-	m1LockedBalanceEntry, err := utxoView.GetLockedBalanceEntryForLockedBalanceEntryKey(&LockedBalanceEntryKey{
+	m1LockedBalanceEntry, err := utxoView.GetLockedBalanceEntryForLockedBalanceEntryKey(LockedBalanceEntryKey{
 		HODLerPKID:                  *m1PKID,
 		ProfilePKID:                 *m1PKID,
 		UnlockTimestampNanoSecs:     1000,
@@ -3176,7 +3176,7 @@ func TestExternalThreeWayLockupConsolidation(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, m1LockedBalanceEntry != nil)
 	require.True(t, m1LockedBalanceEntry.BalanceBaseUnits.Eq(uint256.NewInt().SetUint64(500)))
-	m1LockedBalanceEntry, err = utxoView.GetLockedBalanceEntryForLockedBalanceEntryKey(&LockedBalanceEntryKey{
+	m1LockedBalanceEntry, err = utxoView.GetLockedBalanceEntryForLockedBalanceEntryKey(LockedBalanceEntryKey{
 		HODLerPKID:                  *m1PKID,
 		ProfilePKID:                 *m1PKID,
 		UnlockTimestampNanoSecs:     1250,
@@ -3185,7 +3185,7 @@ func TestExternalThreeWayLockupConsolidation(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, m1LockedBalanceEntry != nil)
 	require.True(t, m1LockedBalanceEntry.BalanceBaseUnits.Eq(uint256.NewInt().SetUint64(1002)))
-	m1LockedBalanceEntry, err = utxoView.GetLockedBalanceEntryForLockedBalanceEntryKey(&LockedBalanceEntryKey{
+	m1LockedBalanceEntry, err = utxoView.GetLockedBalanceEntryForLockedBalanceEntryKey(LockedBalanceEntryKey{
 		HODLerPKID:                  *m1PKID,
 		ProfilePKID:                 *m1PKID,
 		UnlockTimestampNanoSecs:     1501,
@@ -3235,7 +3235,7 @@ func TestInternalThreeWayLockupConsolidation(t *testing.T) {
 	// Check m0 LockedBalanceEntry
 	m0PKIDEntry := utxoView.GetPKIDForPublicKey(m0PkBytes)
 	m0PKID := m0PKIDEntry.PKID
-	m0LockedBalanceEntry, err := utxoView.GetLockedBalanceEntryForLockedBalanceEntryKey(&LockedBalanceEntryKey{
+	m0LockedBalanceEntry, err := utxoView.GetLockedBalanceEntryForLockedBalanceEntryKey(LockedBalanceEntryKey{
 		HODLerPKID:                  *m0PKID,
 		ProfilePKID:                 *m0PKID,
 		UnlockTimestampNanoSecs:     1000,
@@ -3244,7 +3244,7 @@ func TestInternalThreeWayLockupConsolidation(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, m0LockedBalanceEntry != nil)
 	require.True(t, m0LockedBalanceEntry.BalanceBaseUnits.Eq(uint256.NewInt().SetUint64(250)))
-	m0LockedBalanceEntry, err = utxoView.GetLockedBalanceEntryForLockedBalanceEntryKey(&LockedBalanceEntryKey{
+	m0LockedBalanceEntry, err = utxoView.GetLockedBalanceEntryForLockedBalanceEntryKey(LockedBalanceEntryKey{
 		HODLerPKID:                  *m0PKID,
 		ProfilePKID:                 *m0PKID,
 		UnlockTimestampNanoSecs:     1250,
@@ -3253,7 +3253,7 @@ func TestInternalThreeWayLockupConsolidation(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, m0LockedBalanceEntry != nil)
 	require.True(t, m0LockedBalanceEntry.BalanceBaseUnits.Eq(uint256.NewInt().SetUint64(1500)))
-	m0LockedBalanceEntry, err = utxoView.GetLockedBalanceEntryForLockedBalanceEntryKey(&LockedBalanceEntryKey{
+	m0LockedBalanceEntry, err = utxoView.GetLockedBalanceEntryForLockedBalanceEntryKey(LockedBalanceEntryKey{
 		HODLerPKID:                  *m0PKID,
 		ProfilePKID:                 *m0PKID,
 		UnlockTimestampNanoSecs:     1751,
@@ -3290,7 +3290,7 @@ func TestInternalThreeWayLockupConsolidation(t *testing.T) {
 	// Check m1 LockedBalanceEntry
 	m1PKIDEntry := utxoView.GetPKIDForPublicKey(m1PkBytes)
 	m1PKID := m1PKIDEntry.PKID
-	m1LockedBalanceEntry, err := utxoView.GetLockedBalanceEntryForLockedBalanceEntryKey(&LockedBalanceEntryKey{
+	m1LockedBalanceEntry, err := utxoView.GetLockedBalanceEntryForLockedBalanceEntryKey(LockedBalanceEntryKey{
 		HODLerPKID:                  *m1PKID,
 		ProfilePKID:                 *m1PKID,
 		UnlockTimestampNanoSecs:     1000,
@@ -3299,7 +3299,7 @@ func TestInternalThreeWayLockupConsolidation(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, m1LockedBalanceEntry != nil)
 	require.True(t, m1LockedBalanceEntry.BalanceBaseUnits.Eq(uint256.NewInt().SetUint64(250)))
-	m1LockedBalanceEntry, err = utxoView.GetLockedBalanceEntryForLockedBalanceEntryKey(&LockedBalanceEntryKey{
+	m1LockedBalanceEntry, err = utxoView.GetLockedBalanceEntryForLockedBalanceEntryKey(LockedBalanceEntryKey{
 		HODLerPKID:                  *m1PKID,
 		ProfilePKID:                 *m1PKID,
 		UnlockTimestampNanoSecs:     1250,
@@ -3308,7 +3308,7 @@ func TestInternalThreeWayLockupConsolidation(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, m1LockedBalanceEntry != nil)
 	require.True(t, m1LockedBalanceEntry.BalanceBaseUnits.Eq(uint256.NewInt().SetUint64(1501)))
-	m1LockedBalanceEntry, err = utxoView.GetLockedBalanceEntryForLockedBalanceEntryKey(&LockedBalanceEntryKey{
+	m1LockedBalanceEntry, err = utxoView.GetLockedBalanceEntryForLockedBalanceEntryKey(LockedBalanceEntryKey{
 		HODLerPKID:                  *m1PKID,
 		ProfilePKID:                 *m1PKID,
 		UnlockTimestampNanoSecs:     1751,
@@ -3367,7 +3367,7 @@ func TestSimpleJointExistingVestedLockups(t *testing.T) {
 	// Check m0 LockedBalanceEntry
 	m0PKIDEntry := utxoView.GetPKIDForPublicKey(m0PkBytes)
 	m0PKID := m0PKIDEntry.PKID
-	m0LockedBalanceEntry, err := utxoView.GetLockedBalanceEntryForLockedBalanceEntryKey(&LockedBalanceEntryKey{
+	m0LockedBalanceEntry, err := utxoView.GetLockedBalanceEntryForLockedBalanceEntryKey(LockedBalanceEntryKey{
 		HODLerPKID:                  *m0PKID,
 		ProfilePKID:                 *m0PKID,
 		UnlockTimestampNanoSecs:     1000,
@@ -3376,7 +3376,7 @@ func TestSimpleJointExistingVestedLockups(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, m0LockedBalanceEntry != nil)
 	require.True(t, m0LockedBalanceEntry.BalanceBaseUnits.Eq(uint256.NewInt().SetUint64(1501)))
-	m0LockedBalanceEntry, err = utxoView.GetLockedBalanceEntryForLockedBalanceEntryKey(&LockedBalanceEntryKey{
+	m0LockedBalanceEntry, err = utxoView.GetLockedBalanceEntryForLockedBalanceEntryKey(LockedBalanceEntryKey{
 		HODLerPKID:                  *m0PKID,
 		ProfilePKID:                 *m0PKID,
 		UnlockTimestampNanoSecs:     1501,
@@ -3435,7 +3435,7 @@ func TestSimpleDisjointExistingVestedLockups(t *testing.T) {
 	// Check m0 LockedBalanceEntry
 	m0PKIDEntry := utxoView.GetPKIDForPublicKey(m0PkBytes)
 	m0PKID := m0PKIDEntry.PKID
-	m0LockedBalanceEntry, err := utxoView.GetLockedBalanceEntryForLockedBalanceEntryKey(&LockedBalanceEntryKey{
+	m0LockedBalanceEntry, err := utxoView.GetLockedBalanceEntryForLockedBalanceEntryKey(LockedBalanceEntryKey{
 		HODLerPKID:                  *m0PKID,
 		ProfilePKID:                 *m0PKID,
 		UnlockTimestampNanoSecs:     1000,
@@ -3444,7 +3444,7 @@ func TestSimpleDisjointExistingVestedLockups(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, m0LockedBalanceEntry != nil)
 	require.True(t, m0LockedBalanceEntry.BalanceBaseUnits.Eq(uint256.NewInt().SetUint64(500)))
-	m0LockedBalanceEntry, err = utxoView.GetLockedBalanceEntryForLockedBalanceEntryKey(&LockedBalanceEntryKey{
+	m0LockedBalanceEntry, err = utxoView.GetLockedBalanceEntryForLockedBalanceEntryKey(LockedBalanceEntryKey{
 		HODLerPKID:                  *m0PKID,
 		ProfilePKID:                 *m0PKID,
 		UnlockTimestampNanoSecs:     1500,
@@ -3453,7 +3453,7 @@ func TestSimpleDisjointExistingVestedLockups(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, m0LockedBalanceEntry != nil)
 	require.True(t, m0LockedBalanceEntry.BalanceBaseUnits.Eq(uint256.NewInt().SetUint64(750)))
-	m0LockedBalanceEntry, err = utxoView.GetLockedBalanceEntryForLockedBalanceEntryKey(&LockedBalanceEntryKey{
+	m0LockedBalanceEntry, err = utxoView.GetLockedBalanceEntryForLockedBalanceEntryKey(LockedBalanceEntryKey{
 		HODLerPKID:                  *m0PKID,
 		ProfilePKID:                 *m0PKID,
 		UnlockTimestampNanoSecs:     2001,
@@ -3462,7 +3462,7 @@ func TestSimpleDisjointExistingVestedLockups(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, m0LockedBalanceEntry != nil)
 	require.True(t, m0LockedBalanceEntry.BalanceBaseUnits.Eq(uint256.NewInt().SetUint64(499)))
-	m0LockedBalanceEntry, err = utxoView.GetLockedBalanceEntryForLockedBalanceEntryKey(&LockedBalanceEntryKey{
+	m0LockedBalanceEntry, err = utxoView.GetLockedBalanceEntryForLockedBalanceEntryKey(LockedBalanceEntryKey{
 		HODLerPKID:                  *m0PKID,
 		ProfilePKID:                 *m0PKID,
 		UnlockTimestampNanoSecs:     3000,
@@ -3471,7 +3471,7 @@ func TestSimpleDisjointExistingVestedLockups(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, m0LockedBalanceEntry != nil)
 	require.True(t, m0LockedBalanceEntry.BalanceBaseUnits.Eq(uint256.NewInt().SetUint64(751)))
-	m0LockedBalanceEntry, err = utxoView.GetLockedBalanceEntryForLockedBalanceEntryKey(&LockedBalanceEntryKey{
+	m0LockedBalanceEntry, err = utxoView.GetLockedBalanceEntryForLockedBalanceEntryKey(LockedBalanceEntryKey{
 		HODLerPKID:                  *m0PKID,
 		ProfilePKID:                 *m0PKID,
 		UnlockTimestampNanoSecs:     3501,
@@ -3541,7 +3541,7 @@ func TestVestingIntersectionLimit(t *testing.T) {
 		NewUtxoView(testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot, nil)
 	require.NoError(t, err)
 	for ii := 0; ii < utxoView.GetCurrentGlobalParamsEntry().MaximumVestedIntersectionsPerLockupTransaction; ii++ {
-		m0LockedBalanceEntry, err := utxoView.GetLockedBalanceEntryForLockedBalanceEntryKey(&LockedBalanceEntryKey{
+		m0LockedBalanceEntry, err := utxoView.GetLockedBalanceEntryForLockedBalanceEntryKey(LockedBalanceEntryKey{
 			HODLerPKID:                  *m0PKID,
 			ProfilePKID:                 *m0PKID,
 			UnlockTimestampNanoSecs:     int64(ii*1000) + 1,

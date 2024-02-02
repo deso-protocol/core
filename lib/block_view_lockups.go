@@ -269,14 +269,14 @@ func (bav *UtxoView) GetAllLockedBalanceEntriesForHodlerPKID(
 }
 
 func (bav *UtxoView) GetLockedBalanceEntryForLockedBalanceEntryKey(
-	lockedBalanceEntryKey *LockedBalanceEntryKey,
+	lockedBalanceEntryKey LockedBalanceEntryKey,
 ) (
 	_lockedBalanceEntry *LockedBalanceEntry,
 	_err error,
 ) {
 	// Check if the key exists in the view.
 	if viewEntry, viewEntryExists :=
-		bav.LockedBalanceEntryKeyToLockedBalanceEntry[*lockedBalanceEntryKey]; viewEntryExists {
+		bav.LockedBalanceEntryKeyToLockedBalanceEntry[lockedBalanceEntryKey]; viewEntryExists {
 		if viewEntry == nil || viewEntry.isDeleted {
 			return nil, nil
 		}
@@ -411,7 +411,7 @@ func (bav *UtxoView) GetLockedBalanceEntryForHODLerPKIDProfilePKIDUnlockTimestam
 
 	// No mapping exists in the view, check for an entry in the DB.
 	lockedBalanceEntry, err :=
-		DBGetLockedBalanceEntryForLockedBalanceEntryKey(bav.Handle, bav.Snapshot, &lockedBalanceEntryKey)
+		DBGetLockedBalanceEntryForLockedBalanceEntryKey(bav.Handle, bav.Snapshot, lockedBalanceEntryKey)
 	if err != nil {
 		return nil,
 			errors.Wrap(err,
@@ -1271,7 +1271,7 @@ func (bav *UtxoView) _connectCoinLockup(
 
 		// (1) Check for a locked balance entry with the same unlock time
 		lockedBalanceEntry, err := bav.GetLockedBalanceEntryForLockedBalanceEntryKey(
-			&LockedBalanceEntryKey{
+			LockedBalanceEntryKey{
 				HODLerPKID:                  *hodlerPKID,
 				ProfilePKID:                 *profilePKID,
 				UnlockTimestampNanoSecs:     txMeta.UnlockTimestampNanoSecs,
