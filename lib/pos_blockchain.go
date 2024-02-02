@@ -1792,7 +1792,7 @@ func (bc *Blockchain) GetProofOfStakeGenesisQuorumCertificate() (*QuorumCertific
 
 	qc := &QuorumCertificate{
 		BlockHash:      finalPoWBlock.Hash,
-		ProposedInView: finalPoWBlock.Header.Height,
+		ProposedInView: finalPoWBlock.Header.GetView(),
 		ValidatorsVoteAggregatedSignature: &AggregatedBLSSignature{
 			Signature:   aggregatedSignature,
 			SignersList: signersList,
