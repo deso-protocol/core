@@ -801,6 +801,26 @@ func (params *DeSoParams) EnableRegtest() {
 	params.EncoderMigrationHeightsList = GetEncoderMigrationHeightsList(&params.ForkHeights)
 }
 
+func (params *DeSoParams) IsPoWBlockHeight(blockHeight uint64) bool {
+	return !params.IsPoSBlockHeight(blockHeight)
+}
+
+func (params *DeSoParams) IsPoSBlockHeight(blockHeight uint64) bool {
+	return blockHeight >= params.GetFirstPoSBlockHeight()
+}
+
+func (params *DeSoParams) IsFinalPoWBlockHeight(blockHeight uint64) bool {
+	return blockHeight == params.GetFinalPoWBlockHeight()
+}
+
+func (params *DeSoParams) GetFinalPoWBlockHeight() uint64 {
+	return uint64(params.ForkHeights.ProofOfStake2ConsensusCutoverBlockHeight - 1)
+}
+
+func (params *DeSoParams) GetFirstPoSBlockHeight() uint64 {
+	return uint64(params.ForkHeights.ProofOfStake2ConsensusCutoverBlockHeight)
+}
+
 // GenesisBlock defines the genesis block used for the DeSo mainnet and testnet
 var (
 	ArchitectPubKeyBase58Check = "BC1YLg3oh6Boj8e2boCo1vQCYHLk1rjsHF6jthBdvSw79bixQvKK6Qa"

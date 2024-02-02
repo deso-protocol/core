@@ -66,7 +66,7 @@ func (cc *FastHotStuffConsensus) Start() error {
 	tipHeight := tipBlock.Header.Height
 
 	// If the chain is not at the final PoW block height or higher, then we cannot start the PoS consensus.
-	if cc.blockchain.IsPoWBlockHeight(tipHeight) && !cc.blockchain.IsFinalPoWBlockHeight(tipHeight) {
+	if cc.params.IsPoWBlockHeight(tipHeight) && !cc.params.IsFinalPoWBlockHeight(tipHeight) {
 		return errors.Errorf(
 			"FastHotStuffConsensus.Start: Block tip %d is not at the final PoW block height", tipBlock.Height,
 		)
@@ -434,7 +434,7 @@ func (cc *FastHotStuffConsensus) HandleLocalTimeoutEvent(event *consensus.FastHo
 	timeoutMsg.TimedOutView = event.View
 	timeoutMsg.VotingPublicKey = cc.signer.GetPublicKey()
 
-	if cc.blockchain.IsFinalPoWBlockHeight(tipBlockNode.Header.Height) {
+	if cc.params.IsFinalPoWBlockHeight(tipBlockNode.Header.Height) {
 		// If the tip block is the final block of the PoW chain, then we can use the PoS chain's genesis block
 		// as the highQC for it.
 		if timeoutMsg.HighQC, err = cc.blockchain.GetProofOfStakeGenesisQuorumCertificate(); err != nil {

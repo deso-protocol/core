@@ -4058,10 +4058,23 @@ func (bav *UtxoView) ConnectBlock(
 	for txIndex, txn := range desoBlock.Txns {
 		txHash := txHashes[txIndex]
 
-		// After the PoS cutover, we need to check if the transaction is a failing transaction.
-		txnConnects := blockHeight < uint64(bav.Params.ForkHeights.ProofOfStake2ConsensusCutoverBlockHeight) ||
-			(txIndex == 0 && txn.TxnMeta.GetTxnType() == TxnTypeBlockReward) ||
-			desoBlock.TxnConnectStatusByIndex.Get(txIndex-1)
+		// PoS introduced a concept of a failing transaction, or transactions that fail UtxoView's ConnectTransaction.
+		// In PoS, these failing transactions are included in the block and their fees are burned.
+
+		// To determine if we're dealing with a connecting or failing transaction, we first check if we're on a PoS block
+		// height. Otherwise, the transaction is expected to connect.
+		hasPoWBlockHeight := bav.Params.IsPoWBlockHeight(blockHeight)
+		// Also, the first transaction in the block, the block reward transaction, should always be a connecting transaction.
+		isBlockRewardTxn := (txIndex == 0) && (txn.TxnMeta.GetTxnType() == TxnTypeBlockReward)
+		// Finally, if the transaction is not the first in the block, we check the TxnConnectStatusByIndex to see if
+		// it's marked by the block producer as a connecting transaction. PoS blocks should reflect this in TxnConnectStatusByIndex.
+		hasConnectingPoSTxnStatus := false
+		if bav.Params.IsPoSBlockHeight(blockHeight) && (txIndex > 0) && (desoBlock.TxnConnectStatusByIndex != nil) {
+			// Note that TxnConnectStatusByIndex doesn't include the first block reward transaction.
+			hasConnectingPoSTxnStatus = desoBlock.TxnConnectStatusByIndex.Get(txIndex - 1)
+		}
+		// Now, we can determine if the transaction is expected to connect.
+		txnConnects := hasPoWBlockHeight || isBlockRewardTxn || hasConnectingPoSTxnStatus
 
 		var utilityFee uint64
 		var utxoOpsForTxn []*UtxoOperation
