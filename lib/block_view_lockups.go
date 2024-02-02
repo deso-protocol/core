@@ -46,16 +46,20 @@ type LockedBalanceEntry struct {
 	isDeleted                   bool
 }
 
-// LockedBalanceEntryKey is a very crucial struct in the design of lockups.
+// LockedBalanceEntryKey is a very crucial struct in the design of lockup
 //
 // Consider a naive utilization of LockedBalanceEntryMapKey in the context of two subsequent vested unlocks
-// WITHOUT flushing to db in-between:
+// WITHOUT flushing to db in-between. Assume that there exists a vested locked balance entry in the db
+// and that the view is empty at the start. We will step through how the code would read from disk and the
+// UtxoView when performing these two unlocks:
 //
 //		(1st Unlock, blockTimestampNanoSecs=x+100)
 //			(1) We read from disk the LockedBalanceEntry with UnlockTimestampNanoSecs=x
 //	     	(2) We cache the entry found in-memory (i.e. in the UtxoView)
 //	     	(3) We read from the in-memory cache the LockedBalanceEntry with UnlockTimestampNanoSecs=x
-//			(4) We update the in-memory entry to have UnlockTimestampNanoSecs=x+100
+//			(4) We update the in-memory entry to have UnlockTimestampNanoSecs=x+100.
+//				NOTE: At this step, there is no entry in the UtxoView view with an UnlockTimestampNanoSecs=x.
+//					  This is an issue as we will see in the next unlock as we will read duplicate entries from the db.
 //		(2nd Unlock, blockTimestampNanoSecs=x+150)
 //			(1) We read from disk the LockedBalanceEntry with UnlockTimestampNanoSecs=x
 //	       	(2) Because no other entry in-memory has UnlockTimestampNanoSecs=x, we cache a duplicate entry in-memory
@@ -753,11 +757,29 @@ func (bav *UtxoView) GetAllYieldCurvePoints(
 //
 
 type CoinLockupMetadata struct {
-	ProfilePublicKey            *PublicKey
-	RecipientPublicKey          *PublicKey
-	UnlockTimestampNanoSecs     int64
+	// The profile public key is the profile who's associated DAO coins we wish to lockup.
+	ProfilePublicKey *PublicKey
+
+	// The recipient of the locked DAO coins following execution of the transaction.
+	RecipientPublicKey *PublicKey
+
+	// The UnlockTimestampNanoSecs specifies when the recipient should begin to be able to unlock
+	// their locked DAO coins.
+	UnlockTimestampNanoSecs int64
+
+	// If VestingEndTimestampNanoSecs is equal to UnlockTimestampNanoSecs, the user will be able to unlock
+	// all locked DAO coins associated with this transaction once a block whose header timestamp is
+	// greater to or equal to UnlockTimestampNanoSecs. This is the "unvested" or "point" case.
+	//
+	// If not equal to UnlockTimestampNanoSecs, the user can unlock the associated DAO coins once
+	// a block with header timestamp greater to or equal to UnlockTimestampNanoSecs, but will only
+	// receive tokens in proportion to the amount of time that has passed between UnlockTimestampNanoSecs
+	// and VestingEndTimestampNanoSecs. This is the "vested" case.
 	VestingEndTimestampNanoSecs int64
-	LockupAmountBaseUnits       *uint256.Int
+
+	// LockupAmountBaseUnits specifies The amount of locked ProfilePublicKey DAO coins to be
+	// placed in a LockedBalanceEntry and given to RecipientPublicKey.
+	LockupAmountBaseUnits *uint256.Int
 }
 
 func (txnData *CoinLockupMetadata) GetTxnType() TxnType {
@@ -1084,6 +1106,14 @@ func (bav *UtxoView) _connectCoinLockup(
 	}
 
 	// In the vested case, validate that the underlying profile is the transactor.
+	// NOTE: This check exists because there's several attack vectors that exist in letting
+	//		 any user perform vested lockups and send them to other users. For example, in the
+	// 		 current implementation we rely on consolidation in the lockup transaction to provide
+	//		 quick unlock transactions by users. A malicious user could knowingly send vested
+	// 		 lockups with small durations in the attempt to fragment the targeted users locked balance
+	//	  	 entries. This would result in the user being unable to easily receive future vested lockups.
+	//		 Attack vectors exist in various vested lockup designs and as a result it was decided
+	//		 best to only allow the transacting public key to perform vested lockups.
 	if txMeta.VestingEndTimestampNanoSecs > txMeta.UnlockTimestampNanoSecs &&
 		!reflect.DeepEqual(txn.PublicKey, txMeta.ProfilePublicKey.ToBytes()) {
 		return 0, 0, nil,
@@ -1145,10 +1175,31 @@ func (bav *UtxoView) _connectCoinLockup(
 	}
 	bav._setProfileEntryMappings(profileEntry)
 
+	// SAFEGUARD: We perform a redundant check if the profile has ANY yield curve points.
+	// This could be removed for added performance, but it adds an extra sanity check before we compute
+	// any associated yield. Specifically this helps protect against unforeseen issues with GetLocalYieldCurvePoints
+	// which is meant to be an optimized DB implementation capable of quickly fetching the yield
+	profileEnablesYield := false
+	if txMeta.UnlockTimestampNanoSecs == txMeta.VestingEndTimestampNanoSecs {
+		// Fetch ALL yield curve points associated with the profilePKID.
+		yieldCurvePointsMap, err := bav.GetAllYieldCurvePoints(profilePKID)
+		if err != nil {
+			return 0, 0, nil,
+				errors.Wrap(err, "_connectCoinLockup failed to perform yield curve safeguard check")
+		}
+
+		// Check if any yield curve points exist, updating profileEnablesYield if so.
+		for _, yieldCurvePoint := range yieldCurvePointsMap {
+			if !yieldCurvePoint.isDeleted {
+				profileEnablesYield = true
+			}
+		}
+	}
+
 	// If this is an unvested lockup, compute any accrued yield.
 	// In the vested lockup case, the yield earned is always zero.
 	yieldFromTxn := uint256.NewInt()
-	if txMeta.UnlockTimestampNanoSecs == txMeta.VestingEndTimestampNanoSecs {
+	if profileEnablesYield && txMeta.UnlockTimestampNanoSecs == txMeta.VestingEndTimestampNanoSecs {
 		// Compute the lockup duration in nanoseconds.
 		lockupDurationNanoSeconds := txMeta.UnlockTimestampNanoSecs - blockTimestampNanoSecs
 
@@ -1246,6 +1297,9 @@ func (bav *UtxoView) _connectCoinLockup(
 		}
 
 		// (4) Set the new locked balance entry in the view
+		// NOTE: An astute reader may have noticed the comment on the LockedBalanceEntryKey definition
+		// and be confused why we are not deleting then setting the lockedBalanceEntry below. This is because
+		// we do not modify the key in this case, making it safe to just set the lockedBalanceEntry.
 		lockedBalanceEntry.BalanceBaseUnits = *newLockedBalanceEntryBalance
 		bav._setLockedBalanceEntry(lockedBalanceEntry)
 
@@ -1293,10 +1347,9 @@ func (bav *UtxoView) _connectCoinLockup(
 				VestingEndTimestampNanoSecs: txMeta.VestingEndTimestampNanoSecs,
 				BalanceBaseUnits:            *lockupValue,
 			})
-		}
+		} else if len(lockedBalanceEntries) > 0 {
+			// (3b) Go through each existing locked balance entry and consolidate
 
-		// (3b) Go through each existing locked balance entry and consolidate
-		if len(lockedBalanceEntries) > 0 {
 			// Construct a "proposed" locked balance entry from the transaction's metadata.
 			proposedLockedBalanceEntry := &LockedBalanceEntry{
 				HODLerPKID:                  hodlerPKID,
@@ -1488,6 +1541,15 @@ func (bav *UtxoView) _connectCoinLockup(
 	return totalInput, totalOutput, utxoOpsForTxn, nil
 }
 
+// SplitVestedLockedBalanceEntry is used for splitting a vested locked balance entry into two pieces.
+// It is assumed that the startSplitTimestamp lines up with the UnlockTimestampNanoSecs of the lockedBalanceEntry
+// passed or endSplitTimestampNanoSecs lines up with the VestingEndTimestampNanoSecs of
+// the lockedBalanceEntry passed.
+//
+// On return a splitLockedBalanceEntry will be returned with UnlockTimestampNanoSecs=startSplitTimestampNanoSecs
+// and VestingEndTimestampNanoSecs=endSplitTimestampNanoSecs.
+// In addition, a remainingLockedBalanceEntry will be returned whose UnlockTimestampNanoSecs and
+// VestingEndTimestampNanoSecs is whatever remains of the lockedBalanceEntry passed minus the splitLockedBalanceEntry.
 func SplitVestedLockedBalanceEntry(
 	lockedBalanceEntry *LockedBalanceEntry,
 	startSplitTimestampNanoSecs int64,
@@ -2541,30 +2603,13 @@ func CalculateVestedEarnings(
 		return &lockedBalanceEntry.BalanceBaseUnits, nil
 	}
 
-	// Here we know that:
-	// UnlockTimestampNanoSecs < blockTimestampNanoSecs < VestingEndTimestampNanoSecs
-	// Now we compute the fraction of time that's passed.
-	numerator := uint256.NewInt().SetUint64(
-		uint64(blockTimestampNanoSecs - lockedBalanceEntry.UnlockTimestampNanoSecs))
-	denominator := uint256.NewInt().SetUint64(
-		uint64(lockedBalanceEntry.VestingEndTimestampNanoSecs - lockedBalanceEntry.UnlockTimestampNanoSecs))
-
-	// Compute the numerator (lockedBalanceEntry.BalanceBaseUnits * numerator).
-	var err error
-	numerator, err = SafeUint256().Mul(
-		&lockedBalanceEntry.BalanceBaseUnits,
-		numerator)
+	// Compute the vested earnings using CalculateLockupValueOverElapsedDuration
+	vestedEarnings, err := CalculateLockupValueOverElapsedDuration(
+		lockedBalanceEntry,
+		blockTimestampNanoSecs-lockedBalanceEntry.UnlockTimestampNanoSecs)
 	if err != nil {
 		return uint256.NewInt(),
-			errors.Wrap(err, "ComputeVestedEarnings failed to compute multiplication (time elapsed * balance)")
-	}
-
-	// Compute the vested earnings.
-	vestedEarnings, err := SafeUint256().Div(numerator, denominator)
-	if err != nil {
-		return uint256.NewInt(),
-			errors.Wrap(err, "ComputeVestedEarnings failed to compute division "+
-				"((time elapsed * balance) / total time)")
+			errors.Wrap(err, "CalculateVestedEarnings failed to compute vestedEarnings")
 	}
 
 	// Sanity check that vestedEarnings < BalanceBaseUnits
