@@ -52,10 +52,10 @@ func (bc *Blockchain) ProcessHeaderPoS(header *MsgDeSoHeader) (_isMainChain bool
 func (bc *Blockchain) processHeaderPoS(header *MsgDeSoHeader) (
 	_isMainChain bool, _isOrphan bool, _err error,
 ) {
-	if !bc.IsPoSBlockHeight(header.Height) {
+	if !bc.params.IsPoSBlockHeight(header.Height) {
 		return false, false, errors.Errorf(
 			"processHeaderPoS: Header height %d is less than the ProofOfStake2ConsensusCutoverBlockHeight %d",
-			header.Height, bc.GetFirstPoSBlockHeight(),
+			header.Height, bc.params.GetFirstPoSBlockHeight(),
 		)
 	}
 
@@ -214,10 +214,10 @@ func (bc *Blockchain) processBlockPoS(block *MsgDeSoBlock, currentView uint64, v
 	_err error,
 ) {
 	// If the incoming block's height is under the PoS cutover fork height, then we can't process it. Exit early.
-	if !bc.IsPoSBlockHeight(block.Header.Height) {
+	if !bc.params.IsPoSBlockHeight(block.Header.Height) {
 		return false, false, nil, errors.Errorf(
 			"processHeaderPoS: Header height %d is less than the ProofOfStake2ConsensusCutoverBlockHeight %d",
-			block.Header.Height, bc.GetFirstPoSBlockHeight(),
+			block.Header.Height, bc.params.GetFirstPoSBlockHeight(),
 		)
 	}
 
@@ -940,7 +940,7 @@ func (bc *Blockchain) isProperlyFormedBlockHeaderPoS(header *MsgDeSoHeader) erro
 // that this block height is exactly one greater than its parent's block height.
 func (bc *Blockchain) hasValidBlockHeightPoS(header *MsgDeSoHeader) error {
 	blockHeight := header.Height
-	if !bc.IsPoSBlockHeight(blockHeight) {
+	if !bc.params.IsPoSBlockHeight(blockHeight) {
 		return RuleErrorPoSBlockBeforeCutoverHeight
 	}
 	// Validate that the block height is exactly one greater than its parent.
@@ -1133,7 +1133,7 @@ func (bc *Blockchain) isValidPoSQuorumCertificate(block *MsgDeSoBlock, validator
 
 	// If the block is the first block after the PoS cutover and has a timeout aggregate QC, then the
 	// highQC must be a synthetic QC. We need to override the validator set used to validate the high QC.
-	if block.Header.Height == bc.GetFirstPoSBlockHeight() && !timeoutAggregateQC.isEmpty() {
+	if block.Header.Height == bc.params.GetFirstPoSBlockHeight() && !timeoutAggregateQC.isEmpty() {
 		genesisQC, err := bc.GetProofOfStakeGenesisQuorumCertificate()
 		if err != nil {
 			return errors.Wrapf(err, "isValidPoSQuorumCertificate: Problem getting PoS genesis QC")
@@ -1804,9 +1804,9 @@ func (bc *Blockchain) GetProofOfStakeGenesisQuorumCertificate() (*QuorumCertific
 
 func (bc *Blockchain) GetFinalCommittedPoWBlock() (*BlockNode, error) {
 	// Fetch the block node for the cutover block
-	blockNodes, blockNodesExist := bc.blockIndexByHeight[bc.GetFinalPoWBlockHeight()]
+	blockNodes, blockNodesExist := bc.blockIndexByHeight[bc.params.GetFinalPoWBlockHeight()]
 	if !blockNodesExist {
-		return nil, errors.Errorf("Error fetching cutover block nodes before height %d", bc.GetFinalPoWBlockHeight())
+		return nil, errors.Errorf("Error fetching cutover block nodes before height %d", bc.params.GetFinalPoWBlockHeight())
 	}
 
 	// Fetch the block node with the committed status
@@ -1816,27 +1816,7 @@ func (bc *Blockchain) GetFinalCommittedPoWBlock() (*BlockNode, error) {
 		}
 	}
 
-	return nil, errors.Errorf("Error fetching committed cutover block node with height %d", bc.GetFinalPoWBlockHeight())
-}
-
-func (bc *Blockchain) IsPoWBlockHeight(blockHeight uint64) bool {
-	return !bc.IsPoSBlockHeight(blockHeight)
-}
-
-func (bc *Blockchain) IsPoSBlockHeight(blockHeight uint64) bool {
-	return blockHeight >= bc.GetFirstPoSBlockHeight()
-}
-
-func (bc *Blockchain) IsFinalPoWBlockHeight(blockHeight uint64) bool {
-	return blockHeight == bc.GetFinalPoWBlockHeight()
-}
-
-func (bc *Blockchain) GetFinalPoWBlockHeight() uint64 {
-	return uint64(bc.params.ForkHeights.ProofOfStake2ConsensusCutoverBlockHeight - 1)
-}
-
-func (bc *Blockchain) GetFirstPoSBlockHeight() uint64 {
-	return uint64(bc.params.ForkHeights.ProofOfStake2ConsensusCutoverBlockHeight)
+	return nil, errors.Errorf("Error fetching committed cutover block node with height %d", bc.params.GetFinalPoWBlockHeight())
 }
 
 const (
