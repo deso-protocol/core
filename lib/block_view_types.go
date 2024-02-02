@@ -994,7 +994,13 @@ type UtxoOperation struct {
 	PrevReceiverLockedBalanceEntry *LockedBalanceEntry
 
 	// PrevLockedBalanceEntries is a slice of LockedBalanceEntry prior to a coin unlock.
-	PrevLockedBalanceEntries []*LockedBalanceEntry
+	// ModifiedLockedBalanceEntry is required due to the dynamic nature of the LockedBalanceEntryKey
+	// in the coin unlock transaction. Essentially we need to know what LockedBalanceEntryKey
+	// did not exist prior to the coin unlock to ensure it is properly deleted during a disconnect.
+	// There is at most one modified locked balance entry per unlock (a vested locked balance entry
+	// that has not fully expired yet).
+	PrevLockedBalanceEntries   []*LockedBalanceEntry
+	ModifiedLockedBalanceEntry *LockedBalanceEntry
 
 	// StakeAmountNanosDiff is used by Rosetta to return the amount of DESO that was added
 	// to a StakeEntry during the end-of-epoch hook. It's needed
@@ -1377,8 +1383,9 @@ func (op *UtxoOperation) RawEncodeWithoutMetadata(blockHeight uint64, skipMetada
 		data = append(data, EncodeToBytes(blockHeight, op.PrevSenderLockedBalanceEntry, skipMetadata...)...)
 		data = append(data, EncodeToBytes(blockHeight, op.PrevReceiverLockedBalanceEntry, skipMetadata...)...)
 
-		// PrevLockedBalanceEntries
+		// PrevLockedBalanceEntries, ModifiedLockedBalanceEntry
 		data = append(data, EncodeDeSoEncoderSlice(op.PrevLockedBalanceEntries, blockHeight, skipMetadata...)...)
+		data = append(data, EncodeToBytes(blockHeight, op.ModifiedLockedBalanceEntry, skipMetadata...)...)
 
 		// StakeAmountNanosDiff
 		data = append(data, UintToBuf(op.StakeAmountNanosDiff)...)
@@ -2063,6 +2070,11 @@ func (op *UtxoOperation) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.
 		if op.PrevLockedBalanceEntries, err = DecodeDeSoEncoderSlice[*LockedBalanceEntry](rr); err != nil {
 			return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading PrevLockedBalanceEntry: ")
 		}
+		// ModifiedLockedBalanceEntry
+		if op.ModifiedLockedBalanceEntry, err = DecodeDeSoEncoder(&LockedBalanceEntry{}, rr); err != nil {
+			return errors.Wrapf(err, "UtxoOperation.Decode: Problem Reading ModifiedLockedBalanceEntry: ")
+		}
+
 		// StakeAmountNanosDiff
 		if op.StakeAmountNanosDiff, err = ReadUvarint(rr); err != nil {
 			return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading StakeAmountNanosDiff: ")

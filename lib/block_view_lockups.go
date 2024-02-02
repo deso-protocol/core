@@ -2570,7 +2570,7 @@ func (bav *UtxoView) _connectCoinUnlock(
 
 	// Unlock all vested locked balance entries.
 	// NOTE: See the comment on LockedBalanceEntryKey for how we deal with modified vested locked balance entries.
-	var prevVestedLockedBalanceEntries []*LockedBalanceEntry
+	var modifiedLockedBalanceEntry *LockedBalanceEntry
 	for _, unlockableLockedBalanceEntry := range vestedUnlockableLockedBalanceEntries {
 		// Depending on the time of unlock, compute how much from the balance can be unlocked.
 		amountToUnlock, err := CalculateVestedEarnings(unlockableLockedBalanceEntry, blockTimestampNanoSecs)
@@ -2588,7 +2588,7 @@ func (bav *UtxoView) _connectCoinUnlock(
 		}
 
 		// Append the original LockedBalanceEntry in the event we rollback the transaction.
-		prevVestedLockedBalanceEntries = append(prevVestedLockedBalanceEntries, unlockableLockedBalanceEntry.Copy())
+		prevLockedBalanceEntries = append(prevLockedBalanceEntries, unlockableLockedBalanceEntry.Copy())
 
 		// Depending on when the unlock occurs, we either DELETE or MODIFY the locked balance entry.
 		if blockTimestampNanoSecs >= unlockableLockedBalanceEntry.VestingEndTimestampNanoSecs {
@@ -2598,7 +2598,7 @@ func (bav *UtxoView) _connectCoinUnlock(
 			bav._deleteLockedBalanceEntry(unlockableLockedBalanceEntry)
 
 			// Create and modify a copy to prevent pointer reuse.
-			modifiedLockedBalanceEntry := unlockableLockedBalanceEntry.Copy()
+			modifiedLockedBalanceEntry = unlockableLockedBalanceEntry.Copy()
 			modifiedLockedBalanceEntry.UnlockTimestampNanoSecs = blockTimestampNanoSecs
 			newBalanceBaseUnits, err := SafeUint256().Sub(
 				&modifiedLockedBalanceEntry.BalanceBaseUnits,
@@ -2657,6 +2657,7 @@ func (bav *UtxoView) _connectCoinUnlock(
 		Type:                       OperationTypeCoinUnlock,
 		PrevTransactorBalanceEntry: prevTransactorBalanceEntry,
 		PrevLockedBalanceEntries:   prevLockedBalanceEntries,
+		ModifiedLockedBalanceEntry: modifiedLockedBalanceEntry,
 		PrevCoinEntry:              prevCoinEntry,
 	})
 
@@ -2737,8 +2738,14 @@ func (bav *UtxoView) _disconnectCoinUnlock(
 	}
 
 	// Sanity check the data within the CoinUnlock.
-	// Reverting an unlock of LockedBalanceEntry should not result in less coins.
+	// Reverting an unlock of LockedBalanceEntry for unvested lockups should not result in less coins.
 	for _, prevLockedBalanceEntry := range operationData.PrevLockedBalanceEntries {
+		// Skip the balance decrease check for vested lockups.
+		if prevLockedBalanceEntry.UnlockTimestampNanoSecs < prevLockedBalanceEntry.VestingEndTimestampNanoSecs {
+			bav._setLockedBalanceEntry(prevLockedBalanceEntry)
+			continue
+		}
+
 		lockedBalanceEntry, err :=
 			bav.GetLockedBalanceEntryForHODLerPKIDProfilePKIDUnlockTimestampNanoSecsVestingEndTimestampNanoSecs(
 				prevLockedBalanceEntry.HODLerPKID,
@@ -2762,6 +2769,13 @@ func (bav *UtxoView) _disconnectCoinUnlock(
 				"would cause locked balance entry balance to decrease")
 		}
 		bav._setLockedBalanceEntry(prevLockedBalanceEntry)
+	}
+
+	// If a modified vested locked balance entry exists, we must delete this from the view to ensure proper reversion.
+	// This is because the underlying key for the vested lockup may have changed, and we
+	// would otherwise leave this lingering in the view.
+	if operationData.ModifiedLockedBalanceEntry != nil {
+		bav._deleteLockedBalanceEntry(operationData.ModifiedLockedBalanceEntry)
 	}
 
 	// Reverting the BalanceEntry should not result in more coins.
