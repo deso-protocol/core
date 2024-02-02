@@ -12,19 +12,6 @@ import (
 	"github.com/pkg/errors"
 )
 
-// ProcessHeaderPoS simply acquires the chain lock and calls processHeaderPoS.
-func (bc *Blockchain) ProcessHeaderPoS(header *MsgDeSoHeader) (_isMainChain bool, _isOrphan bool, _err error) {
-	// Grab the chain lock
-	bc.ChainLock.Lock()
-	defer bc.ChainLock.Unlock()
-
-	if header == nil {
-		return false, false, fmt.Errorf("ProcessHeaderPoS: Header is nil")
-	}
-
-	return bc.processHeaderPoS(header)
-}
-
 // processHeaderPoS validates and stores an incoming block header to build
 // the PoS version of the header chain. It requires callers to call it with
 // headers in order of increasing block height. If called with an orphan header,
@@ -123,6 +110,12 @@ func (bc *Blockchain) validateAndIndexHeaderPoS(header *MsgDeSoHeader, headerHas
 	parentBlockNode, parentBlockNodeExists := bc.blockIndexByHash[*header.PrevBlockHash]
 	if !parentBlockNodeExists {
 		return nil, true, nil
+	}
+
+	// Sanity-check that the parent block is an ancestor of the current block.
+	if parentBlockNode.Height+1 != blockNode.Height {
+		return nil, false, errors.New("validateAndIndexHeaderPoS: Parent header has " +
+			"greater or equal height compared to the current header.")
 	}
 
 	// ---------------------------------- Recursive Case ---------------------------------- //
