@@ -2183,9 +2183,10 @@ func (srv *Server) _handleBlock(pp *Peer, blk *MsgDeSoBlock) {
 		return
 	}
 
-	// Exit early if the current tip height is below the PoS cutover height. We are ready to enable
-	// the PoS validator FastHotStuffConsensus once we reach the final block of the PoW protocol.
-	// This requires the block height check to use ProofOfStake2ConsensusCutoverBlockHeight-1
+	// Exit early if the current tip height is below the final PoW block's height. We are ready to
+	// enable the FastHotStuffConsensus once we reach the final block of the PoW protocol.
+	//
+	// Enable the FastHotStuffConsensus once the tipHeight >= ProofOfStake2ConsensusCutoverBlockHeight-1
 	tipHeight := uint64(srv.blockchain.blockTip().Height)
 	if tipHeight < srv.params.GetFinalPoWBlockHeight() {
 		return
