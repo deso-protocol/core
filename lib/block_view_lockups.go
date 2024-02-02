@@ -150,7 +150,7 @@ func (lockedBalanceEntry *LockedBalanceEntry) RawEncodeWithoutMetadata(blockHeig
 	data = append(data, EncodeToBytes(blockHeight, lockedBalanceEntry.ProfilePKID, skipMetadata...)...)
 	data = append(data, IntToBuf(lockedBalanceEntry.UnlockTimestampNanoSecs)...)
 	data = append(data, IntToBuf(lockedBalanceEntry.VestingEndTimestampNanoSecs)...)
-	data = append(data, VariableEncodeUint256(&lockedBalanceEntry.BalanceBaseUnits)...)
+	data = append(data, EncodeByteArray(lockedBalanceEntry.BalanceBaseUnits.Bytes())...)
 	return data
 }
 
@@ -182,11 +182,11 @@ func (lockedBalanceEntry *LockedBalanceEntry) RawDecodeWithoutMetadata(blockHeig
 	}
 
 	// BalanceBaseUnits
-	balanceBaseUnits, err := VariableDecodeUint256(rr)
+	balanceBaseUnitsBytes, err := DecodeByteArray(rr)
 	if err != nil {
 		return errors.Wrap(err, "LockedBalanceEntry.Decode: Problem reading BalanceBaseUnits")
 	}
-	lockedBalanceEntry.BalanceBaseUnits = *balanceBaseUnits
+	lockedBalanceEntry.BalanceBaseUnits = *uint256.NewInt().SetBytes(balanceBaseUnitsBytes)
 
 	return nil
 }
