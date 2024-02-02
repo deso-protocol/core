@@ -980,7 +980,13 @@ type UtxoOperation struct {
 	// PrevLockedBalanceEntry is the previous LockedBalanceEntry prior
 	// to a DAO coin lockup. PrevCoinEntry defined above stores the
 	// CoinsInCirculation and NumberOfHolders prior to a lockup transaction.
-	PrevLockedBalanceEntry *LockedBalanceEntry
+	//
+	// Vested lockups are a bit more confusing as we delete then set numerous locked balance entries.
+	// To revert this we must know what locked balance entries were set as well as what locked
+	// balance entries were deleted. We use PrevLockedBalanceEntries below and SetLockedBalanceEntries to convey
+	// these two pieces of state change for disconnects.
+	PrevLockedBalanceEntry  *LockedBalanceEntry
+	SetLockedBalanceEntries []*LockedBalanceEntry
 
 	// PrevLockupYieldCurvePoint and PrevLockupTransferRestriction are
 	// the previous yield curve and transfer restrictions associated
@@ -1372,8 +1378,9 @@ func (op *UtxoOperation) RawEncodeWithoutMetadata(blockHeight uint64, skipMetada
 
 		// Lockup Fields
 
-		// PrevLockedBalanceEntry
+		// PrevLockedBalanceEntry, SetLockedBalanceEntries
 		data = append(data, EncodeToBytes(blockHeight, op.PrevLockedBalanceEntry, skipMetadata...)...)
+		data = append(data, EncodeDeSoEncoderSlice(op.SetLockedBalanceEntries, blockHeight, skipMetadata...)...)
 
 		// PrevLockupYieldCurvePoint, PrevLockupTransferRestrictions
 		data = append(data, EncodeToBytes(blockHeight, op.PrevLockupYieldCurvePoint, skipMetadata...)...)
@@ -2043,9 +2050,12 @@ func (op *UtxoOperation) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.
 
 		// Lockup Fields
 
-		// PrevLockedBalanceEntry
+		// PrevLockedBalanceEntry, SetLockedBalanceEntries
 		if op.PrevLockedBalanceEntry, err = DecodeDeSoEncoder(&LockedBalanceEntry{}, rr); err != nil {
 			return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading PrevLockedBalanceEntry: ")
+		}
+		if op.SetLockedBalanceEntries, err = DecodeDeSoEncoderSlice[*LockedBalanceEntry](rr); err != nil {
+			return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading SetLockedBalanceEntries: ")
 		}
 
 		// PrevLockupYieldCurvePoint, PrevLockupTransferRestriction
