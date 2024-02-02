@@ -2611,6 +2611,14 @@ func (bav *UtxoView) _connectCoinUnlock(
 	// Credit the transactor with either DAO coins or DeSo for this unlock.
 	prevTransactorBalanceEntry :=
 		bav._getBalanceEntryForHODLerPKIDAndCreatorPKID(hodlerPKID, profilePKID, true)
+	if prevTransactorBalanceEntry == nil || prevTransactorBalanceEntry.isDeleted {
+		prevTransactorBalanceEntry = &BalanceEntry{
+			HODLerPKID:   hodlerPKID,
+			CreatorPKID:  profilePKID,
+			BalanceNanos: uint256.Int{},
+			HasPurchased: false,
+		}
+	}
 
 	// Credit the transactor with the unlock amount.
 	newTransactorBalanceEntry := prevTransactorBalanceEntry.Copy()
