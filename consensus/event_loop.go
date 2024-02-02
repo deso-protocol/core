@@ -237,7 +237,7 @@ func (fc *fastHotStuffEventLoop) storeBlocks(tip BlockWithValidatorList, safeBlo
 
 	// Sanity check: the tip block and safe blocks must not have lower views than the genesis QC's view.
 	if tip.Block.GetView() < fc.genesisQC.GetView() {
-		return errors.New("Tip block view must be greater than or qual to the genesis QC view")
+		return errors.New("Tip block view must be greater than or equal to the genesis QC view")
 	}
 
 	for _, block := range safeBlocks {
