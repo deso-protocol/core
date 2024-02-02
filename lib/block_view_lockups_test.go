@@ -1173,8 +1173,9 @@ func TestLockupStandardProfileFlows(t *testing.T) {
 		originalBalanceEntry, _, _ := utxoView.GetBalanceEntryForHODLerPubKeyAndCreatorPubKey(
 			m2PkBytes, m1PkBytes, true)
 
-		_, _, _, err = _coinUnlockWithConnectTimestamp(
-			t, testMeta.chain, testMeta.db, testMeta.params, testMeta.feeRateNanosPerKb,
+		_coinUnlockWithTestMetaAndConnectTimestamp(
+			testMeta,
+			testMeta.feeRateNanosPerKb,
 			m2Pub,
 			m2Priv,
 			m1Pub,

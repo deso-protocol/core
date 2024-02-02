@@ -1846,11 +1846,6 @@ func (bav *UtxoView) _disconnectCoinLockup(
 		return fmt.Errorf("_disconnectCoinLockup: Trying to revert OperationTypeCoinLockup " +
 			"but found nil or deleted previous locked balance entry")
 	}
-	operationIndex--
-	if operationIndex < 0 {
-		return fmt.Errorf("_disconnectCoinLockup: Trying to revert OperationTypeCoinLockup " +
-			"but malformed utxoOpsForTxn")
-	}
 
 	// Depending on whether this was a vested or unvested lockup, we disconnect differently.
 	if operationData.PrevLockedBalanceEntry != nil {
@@ -2144,13 +2139,6 @@ func (bav *UtxoView) _disconnectUpdateCoinLockupParams(
 		bav._setProfileEntryMappings(profileEntry)
 	}
 
-	// Decrement the operationIndex. We expect to find the basic transfer UtxoOps next.
-	operationIndex--
-	if operationIndex < 0 {
-		return fmt.Errorf("_disconnectUpdateCoinLockupParams: Trying to revert OperationTypeUpdateCoinLockupParams " +
-			"but found malformed utxoOpsForTxn")
-	}
-
 	// By here we only need to disconnect the basic transfer associated with the transaction.
 	basicTransferOps := utxoOpsForTxn[:operationIndex]
 	err := bav._disconnectBasicTransfer(currentTxn, txnHash, basicTransferOps, blockHeight)
@@ -2393,11 +2381,6 @@ func (bav *UtxoView) _disconnectCoinLockupTransfer(
 
 	// Sanity check the OperationTypeCoinLockupTransfer exists.
 	operationData := utxoOpsForTxn[operationIndex]
-	operationIndex--
-	if operationIndex < 0 {
-		return fmt.Errorf("_disconnectCoinLockupTransfer: Trying to revert OperationTypeCoinLockupTransfer " +
-			"but malformed utxoOpsForTxn")
-	}
 	if operationData.PrevSenderLockedBalanceEntry == nil || operationData.PrevSenderLockedBalanceEntry.isDeleted {
 		return fmt.Errorf("_disconnectCoinLockupTransfer: Trying to revert OperationTypeCoinLockupTransfer " +
 			"but found nil or deleted PrevSenderLockedBalanceEntry")
@@ -2734,11 +2717,6 @@ func (bav *UtxoView) _disconnectCoinUnlock(
 			return fmt.Errorf("_disconnectCoinUnlock: Trying to revert OperationTypeCoinUnlock " +
 				"but found nil or deleted previous locked balance entry")
 		}
-	}
-	operationIndex--
-	if operationIndex < 0 {
-		return fmt.Errorf("_disconnectCoinUnlock: Trying to revert OperationTypeCoinUnlock " +
-			"but found malformed utxoOpsForTxn")
 	}
 
 	// Sanity check the data within the CoinUnlock.
