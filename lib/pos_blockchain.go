@@ -125,6 +125,12 @@ func (bc *Blockchain) validateAndIndexHeaderPoS(header *MsgDeSoHeader, headerHas
 		return nil, true, nil
 	}
 
+	// Sanity-check that the parent block is an ancestor of the current block.
+	if parentBlockNode.Height+1 != blockNode.Height {
+		return nil, false, errors.New("validateAndIndexHeaderPoS: Parent header has " +
+			"greater or equal height compared to the current header.")
+	}
+
 	// ---------------------------------- Recursive Case ---------------------------------- //
 
 	// Recursively call validateAndIndexHeaderPoS on the header's ancestors. It's possible for
