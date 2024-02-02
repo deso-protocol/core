@@ -292,11 +292,19 @@ func isProperlyFormedAggregateQC(aggQC AggregateQuorumCertificate) bool {
 		return false
 	}
 
-	// Validate that all of the high QC views are non-zero
-	for _, view := range aggQC.GetHighQCViews() {
-		if view == 0 {
+	// Verify that AggregateSignature's HighQC view is the highest view in the HighQCViews.
+	// Also validate that all of the high QC views are non-zero
+	highestView := uint64(0)
+	for _, highQCView := range aggQC.GetHighQCViews() {
+		if highQCView == 0 {
 			return false
 		}
+		if highQCView > highestView {
+			highestView = highQCView
+		}
+	}
+	if highestView != aggQC.GetHighQC().GetView() {
+		return false
 	}
 
 	// Happy path
