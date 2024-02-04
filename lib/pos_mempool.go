@@ -121,12 +121,12 @@ type PosMempool struct {
 	// PosMempool only needs read-access to the block view. It isn't necessary to copy the block view before passing it
 	// to the mempool.
 	readOnlyLatestBlockView *UtxoView
-	// augmentedLatestBlockView is a copy of the latest block view with all the transactions in the mempool applied to
+	// augmentedReadOnlyLatestBlockView is a copy of the latest block view with all the transactions in the mempool applied to
 	// it. This allows the backend to display the current state of the blockchain including the mempool.
-	// The augmentedLatestBlockView is updated every 100 milliseconds to reflect the latest state of the mempool.
-	augmentedLatestBlockView *UtxoView
-	// augmentedLatestBlockViewMutex is used to protect the augmentedLatestBlockView from concurrent access.
-	augmentedLatestBlockViewMutex sync.RWMutex
+	// The augmentedReadOnlyLatestBlockView is updated every 10 milliseconds to reflect the latest state of the mempool.
+	augmentedReadOnlyLatestBlockView *UtxoView
+	// augmentedReadOnlyLatestBlockViewMutex is used to protect the augmentedLatestBlockView from concurrent access.
+	augmentedReadOnlyLatestBlockViewMutex sync.RWMutex
 	// Signals that the mempool is now in the stopped state.
 	quit chan interface{}
 	// latestBlockNode is used to infer the latest block height. The latestBlockNode should be updated whenever a new
@@ -211,7 +211,7 @@ func (mp *PosMempool) Init(
 	mp.readOnlyLatestBlockView = readOnlyLatestBlockView
 	var err error
 	if readOnlyLatestBlockView != nil {
-		mp.augmentedLatestBlockView, err = readOnlyLatestBlockView.CopyUtxoView()
+		mp.augmentedReadOnlyLatestBlockView, err = readOnlyLatestBlockView.CopyUtxoView()
 		if err != nil {
 			return errors.Wrapf(err, "PosMempool.Init: Problem copying utxo view")
 		}
@@ -288,12 +288,13 @@ func (mp *PosMempool) startAugmentedViewRefreshRoutine() {
 				}
 				// Update the augmentedLatestBlockView with the latest block view.
 				mp.RLock()
-				newView, err := mp.readOnlyLatestBlockView.CopyUtxoView()
+				readOnlyViewPointer := mp.readOnlyLatestBlockView
+				mp.RUnlock()
+				newView, err := readOnlyViewPointer.CopyUtxoView()
 				if err != nil {
-					glog.Errorf("PosMempool.startAugmentedViewRefreshRoutine: Problem copying utxo view: %v", err)
+					glog.Errorf("PosMempool.startAugmentedViewRefreshRoutine: Problem copying utxo view outer: %v", err)
 					continue
 				}
-				mp.RUnlock()
 				for _, txn := range mp.GetTransactions() {
 					copiedView, err := newView.CopyUtxoView()
 					if err != nil {
@@ -312,19 +313,27 @@ func (mp *PosMempool) startAugmentedViewRefreshRoutine() {
 					// If the transaction failed to connect, we connect the transaction as a failed txn
 					// directly on newView.
 					if mp.latestBlockHeight+1 >= uint64(mp.params.ForkHeights.ProofOfStake2ConsensusCutoverBlockHeight) {
+						// Copy the view again in case we hit an error.
+						copiedView, err = newView.CopyUtxoView()
+						if err != nil {
+							glog.Errorf("PosMempool.startAugmentedViewRefreshRoutine: Problem copying utxo view inner: %v", err)
+							continue
+						}
 						// Try to connect as failing txn directly to newView
-						_, _, _, err = newView._connectFailingTransaction(
+						_, _, _, err = copiedView._connectFailingTransaction(
 							txn.GetTxn(), uint32(mp.latestBlockHeight), false)
 						if err != nil {
 							glog.Errorf(
 								"PosMempool.startAugmentedViewRefreshRoutine: Problem connecting transaction: %v", err)
+							continue
 						}
+						newView = copiedView
 					}
 				}
 				// Grab the augmentedLatestBlockViewMutex write lock and update the augmentedLatestBlockView.
-				mp.augmentedLatestBlockViewMutex.Lock()
-				mp.augmentedLatestBlockView = newView
-				mp.augmentedLatestBlockViewMutex.Unlock()
+				mp.augmentedReadOnlyLatestBlockViewMutex.Lock()
+				mp.augmentedReadOnlyLatestBlockView = newView
+				mp.augmentedReadOnlyLatestBlockViewMutex.Unlock()
 				// Increment the augmentedLatestBlockViewSequenceNumber.
 				atomic.AddInt64(&mp.augmentedLatestBlockViewSequenceNumber, 1)
 			case <-mp.quit:
@@ -840,9 +849,10 @@ func (mp *PosMempool) GetAugmentedUniversalView() (*UtxoView, error) {
 	if !mp.IsRunning() {
 		return nil, errors.Wrapf(MempoolErrorNotRunning, "PosMempool.GetAugmentedUniversalView: ")
 	}
-	mp.augmentedLatestBlockViewMutex.RLock()
-	defer mp.augmentedLatestBlockViewMutex.RUnlock()
-	newView, err := mp.augmentedLatestBlockView.CopyUtxoView()
+	mp.augmentedReadOnlyLatestBlockViewMutex.RLock()
+	readOnlyViewPointer := mp.augmentedReadOnlyLatestBlockView
+	mp.augmentedReadOnlyLatestBlockViewMutex.RUnlock()
+	newView, err := readOnlyViewPointer.CopyUtxoView()
 	if err != nil {
 		return nil, errors.Wrapf(err, "PosMempool.GetAugmentedUniversalView: Problem copying utxo view")
 	}
@@ -854,9 +864,13 @@ func (mp *PosMempool) GetAugmentedUtxoViewForPublicKey(pk []byte, optionalTx *Ms
 func (mp *PosMempool) BlockUntilReadOnlyViewRegenerated() {
 	oldSeqNum := atomic.LoadInt64(&mp.augmentedLatestBlockViewSequenceNumber)
 	newSeqNum := oldSeqNum
+	// Check fairly often. Not too often.
+	checkIntervalMillis := mp.augmentedBlockViewRefreshIntervalMillis / 5
+	if checkIntervalMillis == 0 {
+		checkIntervalMillis = 1
+	}
 	for newSeqNum == oldSeqNum {
-		// Check fairly often. Not too often.
-		time.Sleep(25 * time.Millisecond)
+		time.Sleep(time.Duration(checkIntervalMillis) * time.Millisecond)
 		newSeqNum = atomic.LoadInt64(&mp.augmentedLatestBlockViewSequenceNumber)
 	}
 }

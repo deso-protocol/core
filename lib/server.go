@@ -1563,8 +1563,8 @@ func (srv *Server) dirtyHackUpdateDbOpts(opts badger.Options) {
 	// Make sure that the pos mempool process doesn't try to access the DB while we're closing and re-opening it.
 	srv.posMempool.Lock()
 	defer srv.posMempool.Unlock()
-	srv.posMempool.augmentedLatestBlockViewMutex.Lock()
-	defer srv.posMempool.augmentedLatestBlockViewMutex.Unlock()
+	srv.posMempool.augmentedReadOnlyLatestBlockViewMutex.Lock()
+	defer srv.posMempool.augmentedReadOnlyLatestBlockViewMutex.Unlock()
 	// Make sure that a server process doesn't try to access the DB while we're closing and re-opening it.
 	srv.DbMutex.Lock()
 	defer srv.DbMutex.Unlock()
@@ -1583,8 +1583,8 @@ func (srv *Server) dirtyHackUpdateDbOpts(opts badger.Options) {
 	if srv.posMempool.readOnlyLatestBlockView != nil {
 		srv.posMempool.readOnlyLatestBlockView.Handle = srv.blockchain.db
 	}
-	if srv.posMempool.augmentedLatestBlockView != nil {
-		srv.posMempool.augmentedLatestBlockView.Handle = srv.blockchain.db
+	if srv.posMempool.augmentedReadOnlyLatestBlockView != nil {
+		srv.posMempool.augmentedReadOnlyLatestBlockView.Handle = srv.blockchain.db
 	}
 
 	// Save the new options to the DB so that we know what to use if the node restarts.
