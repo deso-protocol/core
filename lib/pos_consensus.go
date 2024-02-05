@@ -66,7 +66,7 @@ func (cc *FastHotStuffConsensus) Start() error {
 	tipHeight := tipBlock.Header.Height
 
 	// If the chain is not at the final PoW block height or higher, then we cannot start the PoS consensus.
-	if cc.params.IsPoWBlockHeight(tipHeight) && !cc.params.IsFinalPoWBlockHeight(tipHeight) {
+	if tipHeight < cc.params.GetFinalPoWBlockHeight() {
 		return errors.Errorf(
 			"FastHotStuffConsensus.Start: Block tip %d is not at the final PoW block height", tipBlock.Height,
 		)
