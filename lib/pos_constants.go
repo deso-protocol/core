@@ -10,7 +10,13 @@ import (
 
 // The Proof of Work -> Proof of Stake cutover requires a synthetic QC to protect against a timeout
 // during the exact point of the cutover. This synthetic QC is built and signed locally by every node
-// using a known and consistent private key.
+// using a known and hard-coded private key.
+//
+// We need a synthetic QC for the final PoW block in case we have a timeout during the first 1-2 block
+// heights of the PoS chain. If we have such timeouts, validators need to be able to send a high QC
+// for the final PoW block. To guarantee that validators can do this, we have a synthetic QC that
+// can only be built and signed by this hard-coded private key. The synthetic QC can only be applied
+// to the final PoW block. Every validator has access to this private key and can build this QC.
 const proofOfStakeCutoverValidatorBLSPrivateKeyHex = "0x0570b78ce822f902b203ee075a7e2147d6b9a420a9409c038154589de64eec96"
 
 func BuildProofOfStakeCutoverValidatorBLSPrivateKey() (*bls.PrivateKey, error) {
