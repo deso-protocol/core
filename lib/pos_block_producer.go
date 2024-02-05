@@ -2,8 +2,8 @@ package lib
 
 import (
 	"math"
+	"time"
 
-	chainlib "github.com/btcsuite/btcd/blockchain"
 	"github.com/deso-protocol/core/bls"
 	"github.com/deso-protocol/core/collections/bitset"
 	"github.com/pkg/errors"
@@ -20,26 +20,26 @@ type BlockTemplate *MsgDeSoBlock
 // CreateUnsignedTimeoutBlock methods. As such, PosBlockProducer exists primarily for the purpose of cleaner separation of
 // concerns. Instantiating the PosBlockProducer can also be optional for nodes who do not wish to produce blocks.
 type PosBlockProducer struct {
-	mp                      Mempool
-	params                  *DeSoParams
-	proposerPublicKey       *PublicKey
-	proposerVotingPublicKey *bls.PublicKey
-	timeSource              chainlib.MedianTimeSource
+	mp                             Mempool
+	params                         *DeSoParams
+	proposerPublicKey              *PublicKey
+	proposerVotingPublicKey        *bls.PublicKey
+	previousBlockTimestampNanoSecs int64
 }
 
 func NewPosBlockProducer(
 	mp Mempool,
 	params *DeSoParams,
-	timeSource chainlib.MedianTimeSource,
 	proposerPublicKey *PublicKey,
 	proposerVotingPublicKey *bls.PublicKey,
+	previousBlockTimestampNanoSecs int64,
 ) *PosBlockProducer {
 	return &PosBlockProducer{
-		mp:                      mp,
-		params:                  params,
-		proposerPublicKey:       proposerPublicKey,
-		proposerVotingPublicKey: proposerVotingPublicKey,
-		timeSource:              timeSource,
+		mp:                             mp,
+		params:                         params,
+		proposerPublicKey:              proposerPublicKey,
+		proposerVotingPublicKey:        proposerVotingPublicKey,
+		previousBlockTimestampNanoSecs: previousBlockTimestampNanoSecs,
 	}
 }
 
@@ -83,7 +83,7 @@ func (pbp *PosBlockProducer) CreateUnsignedTimeoutBlock(latestBlockView *UtxoVie
 func (pbp *PosBlockProducer) createBlockTemplate(latestBlockView *UtxoView, newBlockHeight uint64, view uint64,
 	proposerRandomSeedSignature *bls.Signature) (BlockTemplate, error) {
 	// First get the block without the header.
-	currentTimestamp := pbp.timeSource.AdjustedTime().UnixNano()
+	currentTimestamp := _maxInt64(time.Now().UnixNano(), pbp.previousBlockTimestampNanoSecs+1)
 	block, err := pbp.createBlockWithoutHeader(latestBlockView, newBlockHeight, currentTimestamp)
 	if err != nil {
 		return nil, errors.Wrapf(err, "PosBlockProducer.CreateBlockTemplate: Problem creating block without header")
@@ -252,4 +252,11 @@ func (pbp *PosBlockProducer) getBlockTransactions(
 	}
 
 	return blocksTxns, txnConnectStatusByIndex, maxUtilityFee, nil
+}
+
+func _maxInt64(a, b int64) int64 {
+	if a > b {
+		return a
+	}
+	return b
 }
