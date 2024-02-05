@@ -613,6 +613,12 @@ func (cc *FastHotStuffConsensus) produceUnsignedBlockForBlockProposalEvent(
 	// Get the parent block's hash
 	parentBlockHash := BlockHashFromConsensusInterface(event.QC.GetBlockHash())
 
+	// Fetch the parent block
+	parentBlock, parentBlockExists := cc.blockchain.blockIndexByHash[*parentBlockHash]
+	if !parentBlockExists {
+		return nil, errors.Errorf("Error fetching parent block: %v", parentBlockHash)
+	}
+
 	// Build a UtxoView at the parent block
 	utxoViewAtParent, err := cc.blockchain.getUtxoViewAtBlockHash(*parentBlockHash)
 	if err != nil {
@@ -621,7 +627,7 @@ func (cc *FastHotStuffConsensus) produceUnsignedBlockForBlockProposalEvent(
 	}
 
 	// Dynamically create a new block producer at the current block height
-	blockProducer, err := cc.createBlockProducer(utxoViewAtParent)
+	blockProducer, err := cc.createBlockProducer(utxoViewAtParent, parentBlock.Header.TstampNanoSecs)
 	if err != nil {
 		return nil, errors.Errorf("Error creating block producer: %v", err)
 	}
@@ -745,7 +751,7 @@ func (cc *FastHotStuffConsensus) fetchValidatorListsForSafeBlocks(blocks []*MsgD
 	return blocksWithValidatorLists, nil
 }
 
-func (fc *FastHotStuffConsensus) createBlockProducer(bav *UtxoView) (*PosBlockProducer, error) {
+func (fc *FastHotStuffConsensus) createBlockProducer(bav *UtxoView, previousBlockTimestampNanoSecs int64) (*PosBlockProducer, error) {
 	blockProducerBlsPublicKey := fc.signer.GetPublicKey()
 	blockProducerValidatorEntry, err := bav.GetCurrentSnapshotValidatorBLSPublicKeyPKIDPairEntry(blockProducerBlsPublicKey)
 	if err != nil {
@@ -759,9 +765,9 @@ func (fc *FastHotStuffConsensus) createBlockProducer(bav *UtxoView) (*PosBlockPr
 	blockProducer := NewPosBlockProducer(
 		fc.mempool,
 		fc.params,
-		fc.blockchain.timeSource,
 		blockProducerPublicKey,
 		blockProducerBlsPublicKey,
+		previousBlockTimestampNanoSecs,
 	)
 	return blockProducer, nil
 }

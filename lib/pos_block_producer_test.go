@@ -8,7 +8,6 @@ import (
 	"testing"
 	"time"
 
-	chainlib "github.com/btcsuite/btcd/blockchain"
 	"github.com/deso-protocol/core/bls"
 	"github.com/deso-protocol/core/collections/bitset"
 	"github.com/stretchr/testify/require"
@@ -61,7 +60,7 @@ func TestCreateBlockTemplate(t *testing.T) {
 	_, err = seedSignature.FromBytes(Sha256DoubleHash([]byte("seed")).ToBytes())
 	require.NoError(err)
 	m0Pk := NewPublicKey(m0PubBytes)
-	pbp := NewPosBlockProducer(mempool, params, chainlib.NewMedianTime(), m0Pk, pub)
+	pbp := NewPosBlockProducer(mempool, params, m0Pk, pub, time.Now().UnixNano())
 
 	blockTemplate, err := pbp.createBlockTemplate(latestBlockView, 3, 10, seedSignature)
 	require.NoError(err)
@@ -123,7 +122,7 @@ func TestCreateBlockWithoutHeader(t *testing.T) {
 
 	// Test cases where the block producer is the transactor for the mempool txns
 	{
-		pbp := NewPosBlockProducer(mempool, params, chainlib.NewMedianTime(), NewPublicKey(m0PubBytes), blsPubKey)
+		pbp := NewPosBlockProducer(mempool, params, NewPublicKey(m0PubBytes), blsPubKey, time.Now().UnixNano())
 		txns, txnConnectStatus, _, err := pbp.getBlockTransactions(
 			NewPublicKey(m0PubBytes), latestBlockView, 3, 0, 50000)
 		require.NoError(err)
@@ -139,7 +138,7 @@ func TestCreateBlockWithoutHeader(t *testing.T) {
 
 	// Test cases where the block producer is not the transactor for the mempool txns
 	{
-		pbp := NewPosBlockProducer(mempool, params, chainlib.NewMedianTime(), NewPublicKey(m1PubBytes), blsPubKey)
+		pbp := NewPosBlockProducer(mempool, params, NewPublicKey(m1PubBytes), blsPubKey, time.Now().UnixNano())
 		txns, txnConnectStatus, maxUtilityFee, err := pbp.getBlockTransactions(
 			NewPublicKey(m1PubBytes), latestBlockView, 3, 0, 50000)
 		require.NoError(err)
@@ -198,7 +197,7 @@ func TestGetBlockTransactions(t *testing.T) {
 		_wrappedPosMempoolAddTransaction(t, mempool, txn)
 	}
 
-	pbp := NewPosBlockProducer(mempool, params, chainlib.NewMedianTime(), NewPublicKey(m1PubBytes), nil)
+	pbp := NewPosBlockProducer(mempool, params, NewPublicKey(m1PubBytes), nil, time.Now().UnixNano())
 	_testProduceBlockNoSizeLimit(t, mempool, pbp, latestBlockView, 3,
 		len(passingTxns), 0, 0)
 
