@@ -255,6 +255,10 @@ func (srv *Server) BroadcastTransaction(txn *MsgDeSoTxn) ([]*MsgDeSoTxn, error) 
 		return nil, errors.Wrapf(err, "BroadcastTransaction: ")
 	}
 
+	// At this point, we know the transaction has been run through the mempool.
+	// Now wait for an update of the ReadOnlyUtxoView so we don't break anything.
+	srv.GetMempool().BlockUntilReadOnlyViewRegenerated()
+
 	return mempoolTxs, nil
 }
 
@@ -1866,10 +1870,6 @@ func (srv *Server) _addNewTxn(
 	if err := srv.posMempool.AddTransaction(mempoolTxn, true /*verifySignatures*/); err != nil {
 		return nil, errors.Wrapf(err, "Server._addNewTxn: problem adding txn to pos mempool")
 	}
-
-	// At this point, we know the transaction has been run through the mempool.
-	// Now wait for an update of the ReadOnlyUtxoView so we don't break anything.
-	srv.GetMempool().BlockUntilReadOnlyViewRegenerated()
 
 	return []*MsgDeSoTxn{txn}, nil
 }
