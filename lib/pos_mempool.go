@@ -536,6 +536,15 @@ func (mp *PosMempool) addTransactionNoLock(txn *MempoolTx, persistToDb bool) err
 	userPk := NewPublicKey(txn.Tx.PublicKey)
 	txnFee := txn.Tx.TxnFeeNanos
 
+	txnBytes, err := txn.Tx.ToBytes(false)
+	if err != nil {
+		return errors.Wrapf(err, "PosMempool.AddTransaction: Problem serializing transaction")
+	}
+
+	if uint64(len(txnBytes)) > (mp.params.MinerMaxBlockSizeBytes / 2) {
+		return errors.New("PosMempool.AddTransaction: Transaction size too big")
+	}
+
 	// Validate that the user has enough balance to cover the transaction fees.
 	spendableBalanceNanos, err := mp.readOnlyLatestBlockView.GetSpendableDeSoBalanceNanosForPublicKey(userPk.ToBytes(),
 		uint32(mp.latestBlockHeight))
