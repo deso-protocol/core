@@ -312,7 +312,7 @@ func (mp *PosMempool) startAugmentedViewRefreshRoutine() {
 					}
 					// If the transaction failed to connect, we connect the transaction as a failed txn
 					// directly on newView.
-					if mp.latestBlockHeight+1 >= uint64(mp.params.ForkHeights.ProofOfStake2ConsensusCutoverBlockHeight) {
+					if mp.params.IsPoSBlockHeight(mp.latestBlockHeight + 1) {
 						// Copy the view again in case we hit an error.
 						copiedView, err = newView.CopyUtxoView()
 						if err != nil {
@@ -321,7 +321,7 @@ func (mp *PosMempool) startAugmentedViewRefreshRoutine() {
 						}
 						// Try to connect as failing txn directly to newView
 						_, _, _, err = copiedView._connectFailingTransaction(
-							txn.GetTxn(), uint32(mp.latestBlockHeight), false)
+							txn.GetTxn(), uint32(mp.latestBlockHeight+1), false)
 						if err != nil {
 							glog.Errorf(
 								"PosMempool.startAugmentedViewRefreshRoutine: Problem connecting transaction: %v", err)
