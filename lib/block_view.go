@@ -3923,21 +3923,40 @@ func (bav *UtxoView) _connectFailingTransaction(txn *MsgDeSoTxn, blockHeight uin
 
 	failingTransactionRate := uint256.NewInt().SetUint64(gp.FailingTransactionBMFMultiplierBasisPoints)
 	failingTransactionFee := uint256.NewInt().SetUint64(txn.TxnFeeNanos)
-	basisPointsAsUint256 := uint256.NewInt().SetUint64(10000)
+	basisPointsAsUint256 := uint256.NewInt().SetUint64(MaxBasisPoints)
 
-	effectiveFeeU256 := failingTransactionRate.Mul(failingTransactionRate, failingTransactionFee)
+	effectiveFeeU256 := uint256.NewInt()
+	if effectiveFeeU256.MulOverflow(failingTransactionRate, failingTransactionFee) {
+		return nil, 0, 0, fmt.Errorf("_connectFailingTransaction: Problem computing effective fee")
+	}
 	effectiveFeeU256.Div(effectiveFeeU256, basisPointsAsUint256)
+
 	// We should never overflow on the effective fee, since FailingTransactionBMFMultiplierBasisPoints is <= 10000.
 	// But if for some magical reason we do, we set the effective fee to the max uint64. We don't error, and
 	// instead let _spendBalance handle the overflow.
 	if !effectiveFeeU256.IsUint64() {
 		effectiveFeeU256.SetUint64(math.MaxUint64)
 	}
+
 	effectiveFee := effectiveFeeU256.Uint64()
+
+	// Make sure there isn't overflow in the fee.
+	if effectiveFee != ((effectiveFee * 1000) / 1000) {
+		return nil, 0, 0, fmt.Errorf("_connectFailingTransaction: Transaction fee computation overflows uint64")
+	}
+
+	// Serialize the transaction to bytes so we can compute its side.
+	txnBytes, err := txn.ToBytes(false)
+	if err != nil {
+		return nil, 0, 0, errors.Wrapf(err, "_connectFailingTransaction: Problem serializing transaction: ")
+	}
+	txnSizeBytes := uint64(len(txnBytes))
+
 	// If the effective fee is less than the minimum network fee, we set it to the minimum network fee.
-	if effectiveFee < gp.MinimumNetworkFeeNanosPerKB {
+	if (effectiveFee*1000)/uint64(txnSizeBytes) < bav.GlobalParamsEntry.MinimumNetworkFeeNanosPerKB {
 		effectiveFee = gp.MinimumNetworkFeeNanosPerKB
 	}
+
 	burnFee, utilityFee := computeBMF(effectiveFee)
 
 	var utxoOps []*UtxoOperation
