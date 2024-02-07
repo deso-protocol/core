@@ -5,6 +5,7 @@ package lib
 import (
 	"bytes"
 	"fmt"
+	"golang.org/x/crypto/sha3"
 	"math"
 	"math/rand"
 	"testing"
@@ -2521,7 +2522,7 @@ func getLeaderForBlockHeightAndView(testMeta *TestMeta, blockHeight uint64, view
 func getRandomSeedSignature(testMeta *TestMeta, height uint64, view uint64, prevRandomSeedSignature *bls.Signature) *bls.Signature {
 	leaderPublicKey, _ := getLeaderForBlockHeightAndView(testMeta, height, view)
 	leaderBLSPrivKey := testMeta.pubKeyToBLSKeyMap[leaderPublicKey]
-	prevRandomSeedHashSHA256 := sha256.Sum256(prevRandomSeedSignature.ToBytes())
+	prevRandomSeedHashSHA256 := sha3.Sum256(prevRandomSeedSignature.ToBytes())
 	newRandomSeedSignature, err := leaderBLSPrivKey.Sign(prevRandomSeedHashSHA256[:])
 	require.NoError(testMeta.t, err)
 	return newRandomSeedSignature
