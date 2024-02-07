@@ -36,3 +36,19 @@ func TestNewBLSKeystore(t *testing.T) {
 		require.Equal(t, keystore.GetSigner().privateKey.ToString(), "0x13b5febb384a3d3dec5c579724872607cd0ddb97adef592efaf144f6d25a70d7")
 	}
 }
+
+func TestUniqueBLSSignatureOpCodes(t *testing.T) {
+	opCodes := GetAllBLSSignatureOpCodes()
+	require.Len(t, opCodes, 3)
+	require.Contains(t, opCodes, BLSSignatureOpCodeValidatorVote)
+	require.Contains(t, opCodes, BLSSignatureOpCodeValidatorTimeout)
+	require.Contains(t, opCodes, BLSSignatureOpCodePoSValidatorHandshake)
+
+	// Ensure no duplicates
+	uniqueOpCodes := make(map[BLSSignatureOpCode]struct{})
+	for _, opCode := range opCodes {
+		_, exists := uniqueOpCodes[opCode]
+		require.False(t, exists)
+		uniqueOpCodes[opCode] = struct{}{}
+	}
+}

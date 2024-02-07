@@ -13,12 +13,31 @@ import (
 	"golang.org/x/crypto/sha3"
 )
 
+func IsProperlyFormedConstructVoteQCEvent(event *FastHotStuffEvent) bool {
+	return event != nil && // Event non-nil
+		event.EventType == FastHotStuffEventTypeConstructVoteQC && // Event type is QC construction
+		event.View > 0 && // The view the block was proposed in is non-zero
+		event.TipBlockHeight > 0 && // Tip block height is non-zero
+		!isInterfaceNil(event.TipBlockHash) && // Tip block hash is non-nil
+		!isInterfaceNil(event.QC) // The high QC is non-nil
+}
+
+func IsProperlyFormedConstructTimeoutQCEvent(event *FastHotStuffEvent) bool {
+	return event != nil && // Event non-nil
+		event.EventType == FastHotStuffEventTypeConstructTimeoutQC && // Event type is timeout QC construction
+		event.View > 0 && // The view the block was proposed in is non-zero
+		event.TipBlockHeight > 0 && // Tip block height is non-zero
+		!isInterfaceNil(event.TipBlockHash) && // Tip block hash is non-nil
+		isProperlyFormedAggregateQC(event.AggregateQC) // The high QC is properly formed
+}
+
 func IsProperlyFormedVoteEvent(event *FastHotStuffEvent) bool {
 	return event != nil && // Event non-nil
 		event.EventType == FastHotStuffEventTypeVote && // Event type is vote
 		event.View > 0 && // The view the tip block was proposed in is non-zero
 		event.TipBlockHeight > 0 && // Tip block height voted on is non-zero
-		!isInterfaceNil(event.TipBlockHash) // Tip block hash voted on is non-nil
+		!isInterfaceNil(event.TipBlockHash) && // Tip block hash voted on is non-nil
+		isInterfaceNil(event.QC) // The high QC is nil
 }
 
 func IsProperlyFormedTimeoutEvent(event *FastHotStuffEvent) bool {
@@ -27,7 +46,7 @@ func IsProperlyFormedTimeoutEvent(event *FastHotStuffEvent) bool {
 		event.View > 0 && // The view that was timed out is non-zero
 		event.TipBlockHeight > 0 && // Tip block height is non-zero
 		!isInterfaceNil(event.TipBlockHash) && // Tip block hash is non-nil
-		!isInterfaceNil(event.QC) // The high QC is non-nil
+		isInterfaceNil(event.QC) // The high QC is nil. The receiver will determine their own high QC.
 }
 
 // Given a QC and a sorted validator list, this function returns true if the QC contains a valid
@@ -48,16 +67,24 @@ func IsValidSuperMajorityQuorumCertificate(qc QuorumCertificate, validators []Va
 	return isValidSignatureManyPublicKeys(validatorPublicKeysInQC, qc.GetAggregatedSignature().GetSignature(), signaturePayload[:])
 }
 
-func IsValidSuperMajorityAggregateQuorumCertificate(aggQC AggregateQuorumCertificate, validators []Validator) bool {
-	if !isProperlyFormedAggregateQC(aggQC) || !isProperlyFormedValidatorSet(validators) {
+// IsValidSuperMajorityAggregateQuorumCertificate validates that the aggregate QC is properly formed and signed
+// by a super-majority of validators in the network. It takes in two sets of validators defined as:
+// - aggQCValidators: The validator set that signed the timeouts for the view that has timed out (the view in the aggregate QC)
+// - highQCValidators: The validator set that signed the high QC (the view in the high QC)
+func IsValidSuperMajorityAggregateQuorumCertificate(aggQC AggregateQuorumCertificate, aggQCValidators []Validator, highQCValidators []Validator) bool {
+	if !isProperlyFormedAggregateQC(aggQC) {
 		return false
 	}
 
-	if !IsValidSuperMajorityQuorumCertificate(aggQC.GetHighQC(), validators) {
+	if !isProperlyFormedValidatorSet(aggQCValidators) || !isProperlyFormedValidatorSet(highQCValidators) {
 		return false
 	}
 
-	hasSuperMajorityStake, signerPublicKeys := isSuperMajorityStakeSignersList(aggQC.GetAggregatedSignature().GetSignersList(), validators)
+	if !IsValidSuperMajorityQuorumCertificate(aggQC.GetHighQC(), highQCValidators) {
+		return false
+	}
+
+	hasSuperMajorityStake, signerPublicKeys := isSuperMajorityStakeSignersList(aggQC.GetAggregatedSignature().GetSignersList(), aggQCValidators)
 	if !hasSuperMajorityStake {
 		return false
 	}
@@ -119,9 +146,13 @@ func isSuperMajorityStakeSignersList(signersList *bitset.Bitset, validators []Va
 func GetVoteSignaturePayload(view uint64, blockHash BlockHash) [32]byte {
 	viewBytes := make([]byte, 8)
 	binary.BigEndian.PutUint64(viewBytes, view)
+
 	blockHashBytes := blockHash.GetValue()
 
-	return sha3.Sum256(append(viewBytes, blockHashBytes[:]...))
+	payload := append(SignatureOpCodeValidatorVote.ToBytes(), viewBytes...)
+	payload = append(payload, blockHashBytes[:]...)
+
+	return sha3.Sum256(payload)
 }
 
 // When timing out for a view, validators sign the payload sha3-256(View, HighQCView) with their BLS
@@ -134,7 +165,10 @@ func GetTimeoutSignaturePayload(view uint64, highQCView uint64) [32]byte {
 	highQCViewBytes := make([]byte, 8)
 	binary.BigEndian.PutUint64(highQCViewBytes, highQCView)
 
-	return sha3.Sum256(append(viewBytes, highQCViewBytes...))
+	payload := append(SignatureOpCodeValidatorTimeout.ToBytes(), viewBytes...)
+	payload = append(payload, highQCViewBytes...)
+
+	return sha3.Sum256(payload)
 }
 
 func isProperlyFormedBlockWithValidatorList(block BlockWithValidatorList) bool {
@@ -156,12 +190,7 @@ func isProperlyFormedBlock(block Block) bool {
 	}
 
 	// The block hash and QC must be non-nil
-	if isInterfaceNil(block.GetBlockHash()) || !isProperlyFormedQC(block.GetQC()) {
-		return false
-	}
-
-	// The QC's view must be less than the block's view
-	if block.GetQC().GetView() >= block.GetView() {
+	if isInterfaceNil(block.GetBlockHash()) {
 		return false
 	}
 
@@ -180,7 +209,7 @@ func isProperlyFormedValidatorSet(validators []Validator) bool {
 	})
 }
 
-func isProperlyFormedVote(vote VoteMessage) bool {
+func IsProperlyFormedVote(vote VoteMessage) bool {
 	// The vote must be non-nil
 	if vote == nil {
 		return false
@@ -199,7 +228,7 @@ func isProperlyFormedVote(vote VoteMessage) bool {
 	return true
 }
 
-func isProperlyFormedTimeout(timeout TimeoutMessage) bool {
+func IsProperlyFormedTimeout(timeout TimeoutMessage) bool {
 	// The timeout must be non-nil
 	if isInterfaceNil(timeout) {
 		return false
@@ -263,11 +292,19 @@ func isProperlyFormedAggregateQC(aggQC AggregateQuorumCertificate) bool {
 		return false
 	}
 
-	// Validate that all of the high QC views are non-zero
-	for _, view := range aggQC.GetHighQCViews() {
-		if view == 0 {
+	// Verify that AggregateSignature's HighQC view is the highest view in the HighQCViews.
+	// Also validate that all of the high QC views are non-zero
+	highestView := uint64(0)
+	for _, highQCView := range aggQC.GetHighQCViews() {
+		if highQCView == 0 {
 			return false
 		}
+		if highQCView > highestView {
+			highestView = highQCView
+		}
+	}
+	if highestView != aggQC.GetHighQC().GetView() {
+		return false
 	}
 
 	// Happy path
@@ -355,11 +392,30 @@ func extractBlockHash(block BlockWithValidatorList) BlockHash {
 
 func containsBlockHash(blockHashes []BlockHash, blockHash BlockHash) bool {
 	return collections.Any(blockHashes, func(b BlockHash) bool {
-		return isEqualBlockHashes(b, blockHash)
+		return IsEqualBlockHash(b, blockHash)
 	})
 }
 
-func isEqualBlockHashes(hash1 BlockHash, hash2 BlockHash) bool {
+func IsEqualQC(qc1 QuorumCertificate, qc2 QuorumCertificate) bool {
+	if !isProperlyFormedQC(qc1) || !isProperlyFormedQC(qc2) {
+		return false
+	}
+
+	return qc1.GetView() == qc2.GetView() &&
+		IsEqualBlockHash(qc1.GetBlockHash(), qc2.GetBlockHash()) &&
+		IsEqualAggregatedSignature(qc1.GetAggregatedSignature(), qc2.GetAggregatedSignature())
+}
+
+func IsEqualAggregatedSignature(agg1 AggregatedSignature, agg2 AggregatedSignature) bool {
+	if !isProperlyFormedAggregateSignature(agg1) || !isProperlyFormedAggregateSignature(agg2) {
+		return false
+	}
+
+	return agg1.GetSignature().Eq(agg2.GetSignature()) &&
+		agg1.GetSignersList().Eq(agg2.GetSignersList())
+}
+
+func IsEqualBlockHash(hash1 BlockHash, hash2 BlockHash) bool {
 	hash1Value := hash1.GetValue()
 	hash2Value := hash2.GetValue()
 

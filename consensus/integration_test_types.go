@@ -62,6 +62,7 @@ func (node *validatorNode) Init(
 	return node.eventLoop.Init(
 		crankTimerInterval,
 		timeoutBaseDuration,
+		genesisBlock.qc,
 		BlockWithValidatorList{genesisBlock, node.getValidators()},
 		[]BlockWithValidatorList{
 			{genesisBlock, node.getValidators()},
@@ -69,7 +70,7 @@ func (node *validatorNode) Init(
 	)
 }
 
-func (node *validatorNode) Resync(tipBlock *block, safeBlocks []*block) error {
+func (node *validatorNode) Resync(genesisBlock *block, tipBlock *block, safeBlocks []*block) error {
 	node.lock.Lock()
 	defer node.lock.Unlock()
 
@@ -81,6 +82,7 @@ func (node *validatorNode) Resync(tipBlock *block, safeBlocks []*block) error {
 	return node.eventLoop.Init(
 		node.eventLoop.crankTimerInterval,
 		node.eventLoop.timeoutBaseDuration,
+		genesisBlock.qc,
 		BlockWithValidatorList{tipBlock, node.getValidators()},
 		collections.Transform(safeBlocks, func(bb *block) BlockWithValidatorList {
 			return BlockWithValidatorList{bb, node.getValidators()}
@@ -373,7 +375,8 @@ func (node *validatorNode) handleTimeoutEvent(event *FastHotStuffEvent) {
 }
 
 func (node *validatorNode) broadcastTimeout(event *FastHotStuffEvent) {
-	payload := GetTimeoutSignaturePayload(event.View, event.QC.GetView())
+	highQC := node.safeBlocks[event.TipBlockHash.GetValue()].GetQC()
+	payload := GetTimeoutSignaturePayload(event.View, highQC.GetView())
 	signature, err := node.privateKey.Sign(payload[:])
 	if err != nil {
 		panic(err)
@@ -381,7 +384,7 @@ func (node *validatorNode) broadcastTimeout(event *FastHotStuffEvent) {
 
 	timeout := &timeoutMessage{
 		view:      event.View,
-		highQC:    event.QC,
+		highQC:    highQC,
 		publicKey: node.privateKey.PublicKey(),
 		signature: signature,
 	}

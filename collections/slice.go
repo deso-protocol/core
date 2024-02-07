@@ -18,6 +18,12 @@ func Any[T any](slice []T, predicate func(T) bool) bool {
 	return false
 }
 
+func Contains[T comparable](slice []T, value T) bool {
+	return Any(slice, func(val T) bool {
+		return val == value
+	})
+}
+
 func Transform[TInput any, TOutput any](slice []TInput, transformFn func(TInput) TOutput) []TOutput {
 	var result []TOutput
 	for _, val := range slice {
@@ -54,4 +60,29 @@ func Reverse[T any](input []T) []T {
 		output[len(input)-1-ii] = input[ii]
 	}
 	return output
+}
+
+// RemoveDuplicates takes in two slices A and B and returns two slices A' and B' such that
+// A' contains all elements of A that are not in B, and B' contains all elements of B that
+// are not in A. The order of the elements in the output slices is maintained from the originals.
+func RemoveDuplicates[T comparable](slice1 []T, slice2 []T) (_slice1Unique []T, _slice2Unique []T) {
+	slice1Contents := ToMap(slice1, func(val T) T { return val })
+	slice2Contents := ToMap(slice2, func(val T) T { return val })
+
+	var slice1Unique []T
+	var slice2Unique []T
+
+	for _, val := range slice1 {
+		if !MapContains(slice2Contents, val) {
+			slice1Unique = append(slice1Unique, val)
+		}
+	}
+
+	for _, val := range slice2 {
+		if !MapContains(slice1Contents, val) {
+			slice2Unique = append(slice2Unique, val)
+		}
+	}
+
+	return slice1Unique, slice2Unique
 }

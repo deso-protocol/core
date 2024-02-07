@@ -5365,7 +5365,7 @@ func InitDbWithDeSoGenesisBlock(params *DeSoParams, handle *badger.DB,
 		// Set txnSizeBytes to 0 here as the minimum network fee is 0 at genesis block, so there is no need to serialize
 		// these transactions to check if they meet the minimum network fee requirement.
 		var utxoOpsForTxn []*UtxoOperation
-		utxoOpsForTxn, _, _, _, err = utxoView.ConnectTransaction(txn, txn.Hash(), 0, 0, 0, false, true)
+		utxoOpsForTxn, _, _, _, err = utxoView.ConnectTransaction(txn, txn.Hash(), 0, 0, false, true)
 		if err != nil {
 			return fmt.Errorf(
 				"InitDbWithDeSoGenesisBlock: Error connecting transaction: %v, "+

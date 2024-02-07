@@ -1,11 +1,12 @@
 package cmd
 
 import (
+	"os"
+	"path/filepath"
+
 	"github.com/deso-protocol/core/lib"
 	"github.com/golang/glog"
 	"github.com/spf13/viper"
-	"os"
-	"path/filepath"
 )
 
 type Config struct {
@@ -42,9 +43,17 @@ type Config struct {
 	DisableEncoderMigrations  bool
 	HypersyncMaxQueueSize     uint32
 
+	// PoS Validator
+	PosValidatorSeed                       string
+	PosBlockProductionIntervalMilliseconds uint64
+	PosTimeoutBaseDurationMilliseconds     uint64
+
 	// Mempool
-	MempoolBackupIntervalMillis uint64
-	MaxMempoolPosSizeBytes      uint64
+	MempoolBackupIntervalMillis             uint64
+	MaxMempoolPosSizeBytes                  uint64
+	MempoolFeeEstimatorNumMempoolBlocks     uint64
+	MempoolFeeEstimatorNumPastBlocks        uint64
+	AugmentedBlockViewRefreshIntervalMillis uint64
 
 	// Mining
 	MinerPublicKeys  []string
@@ -111,9 +120,17 @@ func LoadConfig() *Config {
 	config.DisableEncoderMigrations = viper.GetBool("disable-encoder-migrations")
 	config.HypersyncMaxQueueSize = viper.GetUint32("hypersync-max-queue-size")
 
+	// PoS Validator
+	config.PosValidatorSeed = viper.GetString("pos-validator-seed")
+	config.PosBlockProductionIntervalMilliseconds = viper.GetUint64("pos-block-production-interval-milliseconds")
+	config.PosTimeoutBaseDurationMilliseconds = viper.GetUint64("pos-timeout-base-duration-milliseconds")
+
 	// Mempool
 	config.MempoolBackupIntervalMillis = viper.GetUint64("mempool-backup-time-millis")
 	config.MaxMempoolPosSizeBytes = viper.GetUint64("max-mempool-pos-size-bytes")
+	config.MempoolFeeEstimatorNumMempoolBlocks = viper.GetUint64("mempool-fee-estimator-num-mempool-blocks")
+	config.MempoolFeeEstimatorNumPastBlocks = viper.GetUint64("mempool-fee-estimator-num-past-blocks")
+	config.AugmentedBlockViewRefreshIntervalMillis = viper.GetUint64("augmented-block-view-refresh-interval-millis")
 
 	// Peers
 	config.ConnectIPs = viper.GetStringSlice("connect-ips")
@@ -174,6 +191,10 @@ func (config *Config) Print() {
 
 	if config.PostgresURI != "" {
 		glog.Infof("Postgres URI: %s", config.PostgresURI)
+	}
+
+	if config.PosValidatorSeed != "" {
+		glog.Infof(lib.CLog(lib.Blue, "PoS Validator: ON"))
 	}
 
 	if config.HyperSync {

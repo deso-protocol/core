@@ -2,7 +2,7 @@ package lib
 
 import (
 	"bytes"
-	"crypto/sha256"
+	"golang.org/x/crypto/sha3"
 	"io"
 
 	"github.com/deso-protocol/core/bls"
@@ -60,18 +60,10 @@ func (randomSeedHash *RandomSeedHash) isEmpty() bool {
 	return randomSeedHash == nil || randomSeedHash.Eq(&RandomSeedHash{})
 }
 
-//
-// UTXO VIEW UTILS
-//
-
-func (bav *UtxoView) GenerateNextRandomSeedSignature(signerPrivateKey *bls.PrivateKey) (*bls.Signature, error) {
+func GenerateNextRandomSeedSignature(currentRandomSeedHash *RandomSeedHash, signerPrivateKey *bls.PrivateKey) (*bls.Signature, error) {
 	// This function generates a RandomSeedSignature by signing the CurrentRandomSeedHash
 	// with the provided bls.PrivateKey. This signature is deterministic: given the same
 	// CurrentRandomSeedHash and bls.PrivateKey, the same signature will always be generated.
-	currentRandomSeedHash, err := bav.GetCurrentRandomSeedHash()
-	if err != nil {
-		return nil, errors.Wrapf(err, "UtxoView.GenerateNextRandomSeedSignature: problem retrieving CurrentRandomSeedHash: ")
-	}
 	randomSeedSignature, err := SignRandomSeedHash(signerPrivateKey, currentRandomSeedHash)
 	if err != nil {
 		return nil, errors.Wrapf(err, "UtxoView.GenerateNextRandomSeedSignature: problem generating RandomSeedSignature: ")
@@ -110,7 +102,7 @@ func (bav *UtxoView) VerifyRandomSeedSignature(
 	if !isVerified {
 		return nil, errors.Errorf("UtxoView.VerifyRandomSeedSignature: invalid RandomSeedSignature provided")
 	}
-	return hashRandomSeedSignature(randomSeedSignature)
+	return HashRandomSeedSignature(randomSeedSignature)
 }
 
 func verifySignatureOnRandomSeedHash(
@@ -119,16 +111,20 @@ func verifySignatureOnRandomSeedHash(
 	return signerPublicKey.Verify(randomSeedSignature, randomSeedHash[:])
 }
 
-func hashRandomSeedSignature(randomSeedSignature *bls.Signature) (*RandomSeedHash, error) {
+func HashRandomSeedSignature(randomSeedSignature *bls.Signature) (*RandomSeedHash, error) {
 	// This function takes in a random seed signature and computes the random seed hash for it
 	// Convert the RandomSeedSignature to a RandomSeedHash.
-	randomSeedSHA256 := sha256.Sum256(randomSeedSignature.ToBytes())
+	randomSeedSHA256 := sha3.Sum256(randomSeedSignature.ToBytes())
 	newRandomSeedHash, err := (&RandomSeedHash{}).FromBytes(randomSeedSHA256[:])
 	if err != nil {
 		return nil, errors.Wrapf(err, "hashRandomSeedSignature: problem hashing RandomSeedSignature: ")
 	}
 	return newRandomSeedHash, nil
 }
+
+//
+// UTXO VIEW UTILS
+//
 
 func (bav *UtxoView) GetCurrentRandomSeedHash() (*RandomSeedHash, error) {
 	// First, check the UtxoView.

@@ -201,10 +201,6 @@ func NewBlockHash(input []byte) *BlockHash {
 	return blockHash
 }
 
-func (bh *BlockHash) GetValue() [HashSizeBytes]byte {
-	return *bh
-}
-
 func (bh *BlockHash) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte {
 	return EncodeByteArray(bh[:])
 }

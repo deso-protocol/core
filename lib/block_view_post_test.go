@@ -72,7 +72,7 @@ func _submitPost(t *testing.T, chain *Blockchain, db *badger.DB,
 	blockHeight := chain.blockTip().Height + 1
 	utxoView.GlobalParamsEntry.MinimumNetworkFeeNanosPerKB = 1
 	utxoOps, totalInput, totalOutput, fees, err :=
-		utxoView.ConnectTransaction(txn, txHash, getTxnSize(*txn), blockHeight, 0, true, false)
+		utxoView.ConnectTransaction(txn, txHash, blockHeight, 0, true, false)
 	// ConnectTransaction should treat the amount locked as contributing to the
 	// output.
 	if err != nil {
@@ -170,7 +170,7 @@ func _giveDeSoDiamonds(t *testing.T, chain *Blockchain, db *badger.DB, params *D
 	// get mined into the next block.
 	blockHeight := chain.blockTip().Height + 1
 	utxoOps, totalInput, totalOutput, fees, err :=
-		utxoView.ConnectTransaction(txn, txHash, getTxnSize(*txn), blockHeight, 0, true, false)
+		utxoView.ConnectTransaction(txn, txHash, blockHeight, 0, true, false)
 	if err != nil {
 		return nil, nil, 0, err
 	}
@@ -266,7 +266,7 @@ func _doSubmitPostTxn(t *testing.T, chain *Blockchain, db *badger.DB,
 	// get mined into the next block.
 	blockHeight := chain.blockTip().Height + 1
 	utxoOps, totalInput, totalOutput, fees, err :=
-		utxoView.ConnectTransaction(txn, txHash, getTxnSize(*txn), blockHeight, 0, true, false)
+		utxoView.ConnectTransaction(txn, txHash, blockHeight, 0, true, false)
 	// ConnectTransaction should treat the amount locked as contributing to the
 	// output.
 	if err != nil {
@@ -1552,7 +1552,7 @@ func TestSubmitPost(t *testing.T) {
 		txHash := txn.Hash()
 		blockHeight := chain.blockTip().Height + 1
 		_, _, _, _, err =
-			utxoView.ConnectTransaction(txn, txHash, getTxnSize(*txn), blockHeight, 0, true, false)
+			utxoView.ConnectTransaction(txn, txHash, blockHeight, 0, true, false)
 		require.NoError(err)
 
 		// Assert "after" comment counts are correct at a few different spots
@@ -1983,7 +1983,7 @@ func TestDeSoDiamondErrorCases(t *testing.T) {
 		// get mined into the next block.
 		blockHeight := chain.blockTip().Height + 1
 		utxoOps, totalInput, totalOutput, fees, err :=
-			utxoView.ConnectTransaction(txn, txHash, getTxnSize(*txn), blockHeight, 0, true, false)
+			utxoView.ConnectTransaction(txn, txHash, blockHeight, 0, true, false)
 		if err != nil {
 			return err
 		}

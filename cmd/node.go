@@ -224,6 +224,14 @@ func (node *Node) Start(exitChannels ...*chan struct{}) {
 	// Setup eventManager
 	eventManager := lib.NewEventManager()
 
+	var blsKeystore *lib.BLSKeystore
+	if node.Config.PosValidatorSeed != "" {
+		blsKeystore, err = lib.NewBLSKeystore(node.Config.PosValidatorSeed)
+		if err != nil {
+			panic(err)
+		}
+	}
+
 	// Setup the server. ShouldRestart is used whenever we detect an issue and should restart the node after a recovery
 	// process, just in case. These issues usually arise when the node was shutdown unexpectedly mid-operation. The node
 	// performs regular health checks to detect whenever this occurs.
@@ -265,7 +273,16 @@ func (node *Node) Start(exitChannels ...*chan struct{}) {
 		node.nodeMessageChan,
 		node.Config.ForceChecksum,
 		node.Config.StateChangeDir,
-		node.Config.HypersyncMaxQueueSize)
+		node.Config.HypersyncMaxQueueSize,
+		blsKeystore,
+		node.Config.MaxMempoolPosSizeBytes,
+		node.Config.MempoolBackupIntervalMillis,
+		node.Config.MempoolFeeEstimatorNumMempoolBlocks,
+		node.Config.MempoolFeeEstimatorNumPastBlocks,
+		node.Config.AugmentedBlockViewRefreshIntervalMillis,
+		node.Config.PosBlockProductionIntervalMilliseconds,
+		node.Config.PosTimeoutBaseDurationMilliseconds,
+	)
 	if err != nil {
 		// shouldRestart can be true if, on the previous run, we did not finish flushing all ancestral
 		// records to the DB. In this case, the snapshot is corrupted and needs to be computed. See the

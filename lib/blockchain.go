@@ -81,6 +81,16 @@ const (
 	StatusBlockCommitted = 1 << 8 // Committed means that the block has been committed to the blockchain according to the Fast HotStuff commit rule. Only set on blocks after the cutover for PoS
 )
 
+// IsHeaderValidated returns true if a BlockNode has passed all the block header integrity checks.
+func (nn *BlockNode) IsHeaderValidated() bool {
+	return nn.Status&StatusHeaderValidated != 0
+}
+
+// IsHeaderValidateFailed returns true if a BlockNode has failed any block header integrity checks.
+func (nn *BlockNode) IsHeaderValidateFailed() bool {
+	return nn.Status&StatusHeaderValidateFailed != 0
+}
+
 // IsStored returns true if the BlockNode has been added to the blockIndexByHash and stored in the DB.
 func (nn *BlockNode) IsStored() bool {
 	return nn.Status&StatusBlockStored != 0
@@ -1144,7 +1154,7 @@ func (bc *Blockchain) isTipCurrent(tip *BlockNode) bool {
 	minChainWorkBytes, _ := hex.DecodeString(bc.params.MinChainWorkHex)
 
 	// Not current if the cumulative work is below the threshold.
-	if tip.CumWork.Cmp(BytesToBigint(minChainWorkBytes)) < 0 {
+	if bc.params.IsPoWBlockHeight(uint64(tip.Height)) && tip.CumWork.Cmp(BytesToBigint(minChainWorkBytes)) < 0 {
 		//glog.V(2).Infof("Blockchain.isTipCurrent: Tip not current because "+
 		//"CumWork (%v) is less than minChainWorkBytes (%v)",
 		//tip.CumWork, BytesToBigint(minChainWorkBytes))
@@ -1698,6 +1708,11 @@ func updateBestChainInMemory(mainChainList []*BlockNode, mainChainMap map[BlockH
 
 // Caller must acquire the ChainLock for writing prior to calling this.
 func (bc *Blockchain) processHeaderPoW(blockHeader *MsgDeSoHeader, headerHash *BlockHash) (_isMainChain bool, _isOrphan bool, _err error) {
+	// Only accept the header if its height is below the PoS cutover height.
+	if !bc.params.IsPoWBlockHeight(blockHeader.Height) {
+		return false, false, HeaderErrorBlockHeightAfterProofOfStakeCutover
+	}
+
 	// Start by checking if the header already exists in our node
 	// index. If it does, then return an error. We should generally
 	// expect that processHeaderPoW will only be called on headers we
@@ -1869,15 +1884,6 @@ func (bc *Blockchain) processHeaderPoW(blockHeader *MsgDeSoHeader, headerHash *B
 	return isMainChain, false, nil
 }
 
-// processHeaderPoS is validates and stores an incoming block header as follows:
-// 1. Validating the block header's structure and timestamp
-// 2. Connect the block header to the header chain's tip
-// 3. Store the block header in the db and the in-memory block index
-func (bc *Blockchain) processHeaderPoS(blockHeader *MsgDeSoHeader, headerHash *BlockHash) (_isMainChain bool, _isOrphan bool, _err error) {
-	// TODO
-	return false, false, fmt.Errorf("processHeaderPoS: Not implemented")
-}
-
 // ProcessHeader is a wrapper around processHeaderPoW and processHeaderPoS, which do the leg-work.
 func (bc *Blockchain) ProcessHeader(blockHeader *MsgDeSoHeader, headerHash *BlockHash) (_isMainChain bool, _isOrphan bool, _err error) {
 	bc.ChainLock.Lock()
@@ -1888,11 +1894,10 @@ func (bc *Blockchain) ProcessHeader(blockHeader *MsgDeSoHeader, headerHash *Bloc
 		return false, false, fmt.Errorf("ProcessHeader: Header is nil")
 	}
 
-	// If the header's height is after the PoS cut-over fork height, then we use the PoS header processing logic. Otherwise, fall back
-	// to the PoW logic.
-	if blockHeader.Height >= uint64(bc.params.ForkHeights.ProofOfStake2ConsensusCutoverBlockHeight) {
-		// TODO: call bc.processHeaderPoS(blockHeader, headerHash) instead
-		return bc.processHeaderPoW(blockHeader, headerHash)
+	// If the header's height is after the PoS cut-over fork height, then we use the PoS header processing logic.
+	// Otherwise, fall back to the PoW logic.
+	if bc.params.IsPoSBlockHeight(blockHeader.Height) {
+		return bc.processHeaderPoS(blockHeader)
 	}
 
 	return bc.processHeaderPoW(blockHeader, headerHash)
@@ -1907,12 +1912,10 @@ func (bc *Blockchain) ProcessBlock(desoBlock *MsgDeSoBlock, verifySignatures boo
 		return false, false, nil, fmt.Errorf("ProcessBlock: Block is nil")
 	}
 
-	// If the block's height is after the PoS cut-over fork height, then we use the PoS block processing logic. Otherwise, fall back
-	// to the PoW logic.
-	if desoBlock.Header.Height >= uint64(bc.params.ForkHeights.ProofOfStake2ConsensusCutoverBlockHeight) {
-		// TODO: call bc.processBlockPoS(desoBlock, verifySignatures) instead
-		isMainChain, isOrphan, err := bc.processBlockPoW(desoBlock, verifySignatures)
-		return isMainChain, isOrphan, nil, err
+	// If the block's height is after the PoS cut-over fork height, then we use the PoS block processing logic.
+	// Otherwise, fall back to the PoW logic.
+	if bc.params.IsPoSBlockHeight(desoBlock.Header.Height) {
+		return bc.processBlockPoS(desoBlock, 1, verifySignatures)
 	}
 
 	isMainChain, isOrphan, err := bc.processBlockPoW(desoBlock, verifySignatures)
@@ -1920,7 +1923,10 @@ func (bc *Blockchain) ProcessBlock(desoBlock *MsgDeSoBlock, verifySignatures boo
 }
 
 func (bc *Blockchain) processBlockPoW(desoBlock *MsgDeSoBlock, verifySignatures bool) (_isMainChain bool, _isOrphan bool, err error) {
-	// TODO: Move this to be more isolated.
+	// Only accept the block if its height is below the PoS cutover height.
+	if !bc.params.IsPoWBlockHeight(desoBlock.Header.Height) {
+		return false, false, RuleErrorBlockHeightAfterProofOfStakeCutover
+	}
 
 	blockHeight := uint64(bc.BlockTip().Height + 1)
 
@@ -2860,14 +2866,9 @@ func (bc *Blockchain) ValidateTransaction(
 
 	// Hash the transaction.
 	txHash := txnMsg.Hash()
-	txnBytes, err := txnMsg.ToBytes(false)
-	if err != nil {
-		return errors.Wrapf(err, "ValidateTransaction: Error serializing txn: %v", err)
-	}
-	txnSize := int64(len(txnBytes))
 	// We don't care about the utxoOps or the fee it returns.
 	_, _, _, _, err = utxoView._connectTransaction(
-		txnMsg, txHash, txnSize, blockHeight, 0, verifySignatures, false)
+		txnMsg, txHash, blockHeight, 0, verifySignatures, false)
 	if err != nil {
 		return errors.Wrapf(err, "ValidateTransaction: Problem validating transaction: ")
 	}
@@ -5258,7 +5259,7 @@ func (bc *Blockchain) EstimateDefaultFeeRateNanosPerKB(
 		}
 		numBytesInTxn := len(txnBytes)
 		_, _, _, fees, err := utxoView.ConnectTransaction(
-			txn, txn.Hash(), int64(numBytesInTxn), tipNode.Height, int64(tipNode.Header.TstampNanoSecs),
+			txn, txn.Hash(), tipNode.Height, tipNode.Header.TstampNanoSecs,
 			false, false)
 		if err != nil {
 			return minFeeRateNanosPerKB
