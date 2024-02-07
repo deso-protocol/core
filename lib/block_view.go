@@ -3937,24 +3937,25 @@ func (bav *UtxoView) _connectFailingTransaction(txn *MsgDeSoTxn, blockHeight uin
 	if !effectiveFeeU256.IsUint64() {
 		effectiveFeeU256.SetUint64(math.MaxUint64)
 	}
-
 	effectiveFee := effectiveFeeU256.Uint64()
 
-	// Make sure there isn't overflow in the fee.
-	if effectiveFee != ((effectiveFee * 1000) / 1000) {
-		return nil, 0, 0, fmt.Errorf("_connectFailingTransaction: Transaction fee computation overflows uint64")
-	}
-
-	// Serialize the transaction to bytes so we can compute its side.
+	// Serialize the transaction to bytes so we can compute its size.
 	txnBytes, err := txn.ToBytes(false)
 	if err != nil {
 		return nil, 0, 0, errors.Wrapf(err, "_connectFailingTransaction: Problem serializing transaction: ")
 	}
 	txnSizeBytes := uint64(len(txnBytes))
 
-	// If the effective fee is less than the minimum network fee, we set it to the minimum network fee.
-	if (effectiveFee*1000)/uint64(txnSizeBytes) < bav.GlobalParamsEntry.MinimumNetworkFeeNanosPerKB {
-		effectiveFee = gp.MinimumNetworkFeeNanosPerKB
+	// If the effective fee rate per KB is less than the minimum network fee rate per KB, we set it to the minimum
+	// network fee rate per KB. We multiply by 1000 and divide by the txn bytes to convert the txn's total effective
+	// fee to a fee rate per KB.
+	//
+	// The effectiveFee * 1000 computation is guaranteed to not overflow because an overflow check is already
+	// performed in ValidateDeSoTxnSanityBalanceModel above.
+	effectiveFeeRateNanosPerKB := (effectiveFee * 1000) / txnSizeBytes
+	if effectiveFeeRateNanosPerKB < gp.MinimumNetworkFeeNanosPerKB {
+		// The minimum effective fee for the txn is the txn size * the minimum network fee rate per KB.
+		effectiveFee = (gp.MinimumNetworkFeeNanosPerKB * txnSizeBytes) / 1000
 	}
 
 	burnFee, utilityFee := computeBMF(effectiveFee)
