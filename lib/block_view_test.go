@@ -4,12 +4,13 @@ import (
 	"bytes"
 	"encoding/hex"
 	"fmt"
-	"github.com/deso-protocol/core/bls"
 	"math"
 	_ "net/http/pprof"
 	"reflect"
 	"sort"
 	"testing"
+
+	"github.com/deso-protocol/core/bls"
 
 	"math/rand"
 
@@ -2243,19 +2244,8 @@ func TestConnectFailingTransaction(t *testing.T) {
 		senderPrivString, 200000, 11)
 
 	blockHeight := chain.BlockTip().Height + 1
-	blockView, err := NewUtxoView(db, params, nil, nil, chain.eventManager)
-	require.NoError(err)
-	txn1 := _generateTestTxn(t, rand, feeMin, feeMax, m0PubBytes, m0Priv, 100, 0)
-	utxoOps, burnFee, utilityFee, err := blockView._connectFailingTransaction(txn1, blockHeight, true)
-	require.NoError(err)
-	require.Equal(1, len(utxoOps))
-	expectedBurnFee, expectedUtilityFee := _getBMFForTxn(txn1, globalParams)
-	require.Equal(expectedBurnFee, burnFee)
-	require.Equal(expectedUtilityFee, utilityFee)
 
-	err = blockView.FlushToDb(uint64(blockHeight))
-
-	// Also test updating the global params for FailingTransactionBMFMultiplierBasisPoints and FeeBucketGrowthRateBasisPoints.
+	// Set up the test meta.
 	testMeta := &TestMeta{
 		t:                 t,
 		chain:             chain,
@@ -2268,42 +2258,119 @@ func TestConnectFailingTransaction(t *testing.T) {
 	}
 	// Allow m0 to update global params.
 	params.ExtraRegtestParamUpdaterKeys[MakePkMapKey(m0PubBytes)] = true
-	{
-		// Set FailingTransactionBMFMultiplierBasisPoints=7000 or 70%.
-		_updateGlobalParamsEntryWithExtraData(
-			testMeta,
-			testMeta.feeRateNanosPerKb,
-			m0Pub,
-			m0Priv,
-			map[string][]byte{FailingTransactionBMFMultiplierBasisPointsKey: UintToBuf(7000)},
-		)
-	}
-	{
-		// Set FeeBucketGrowthRateBasisPoints=7000 or 70%.
-		_updateGlobalParamsEntryWithExtraData(
-			testMeta,
-			testMeta.feeRateNanosPerKb,
-			m0Pub,
-			m0Priv,
-			map[string][]byte{FeeBucketGrowthRateBasisPointsKey: UintToBuf(7000)},
-		)
-	}
-	blockView, err = NewUtxoView(db, params, nil, nil, chain.eventManager)
-	require.NoError(err)
-	newParams := blockView.GetCurrentGlobalParamsEntry()
-	require.Equal(uint64(7000), newParams.FailingTransactionBMFMultiplierBasisPoints)
-	require.Equal(uint64(7000), newParams.FeeBucketGrowthRateBasisPoints)
 
-	// Try connecting another failing transaction, and make sure the burn and utility fees are computed accurately.
-	txn2 := _generateTestTxn(t, rand, feeMin, feeMax, m0PubBytes, m0Priv, 100, 0)
-	utxoOps, burnFee, utilityFee, err = blockView._connectFailingTransaction(txn2, blockHeight, true)
-	require.NoError(err)
-	require.Equal(1, len(utxoOps))
-	expectedBurnFee, expectedUtilityFee = _getBMFForTxn(txn2, newParams)
-	require.Equal(expectedBurnFee, burnFee)
-	require.Equal(expectedUtilityFee, utilityFee)
+	// Test failing txn with default global params
+	{
+		blockView, err := NewUtxoView(db, params, nil, nil, chain.eventManager)
+		require.NoError(err)
+		txn := _generateTestTxn(t, rand, feeMin, feeMax, m0PubBytes, m0Priv, 100, 0)
+		utxoOps, burnFee, utilityFee, err := blockView._connectFailingTransaction(txn, blockHeight, true)
+		require.NoError(err)
+		require.Equal(1, len(utxoOps))
+		expectedBurnFee, expectedUtilityFee := _getBMFForTxn(txn, globalParams)
+		require.Equal(expectedBurnFee, burnFee)
+		require.Equal(expectedUtilityFee, utilityFee)
 
-	err = blockView.FlushToDb(uint64(blockHeight))
+		err = blockView.FlushToDb(uint64(blockHeight))
+		require.NoError(err)
+	}
+
+	// Test case where the failing txn fee rate is applied as expected.
+	{
+
+		{
+			// Set FailingTransactionBMFMultiplierBasisPoints=7000 or 70%.
+			_updateGlobalParamsEntryWithExtraData(
+				testMeta,
+				testMeta.feeRateNanosPerKb,
+				m0Pub,
+				m0Priv,
+				map[string][]byte{FailingTransactionBMFMultiplierBasisPointsKey: UintToBuf(7000)},
+			)
+		}
+		blockView, err := NewUtxoView(db, params, nil, nil, chain.eventManager)
+		require.NoError(err)
+
+		newParams := blockView.GetCurrentGlobalParamsEntry()
+		require.Equal(uint64(7000), newParams.FailingTransactionBMFMultiplierBasisPoints)
+
+		startingBalance, err := blockView.GetDeSoBalanceNanosForPublicKey(m0PubBytes)
+		require.NoError(err)
+
+		// Try connecting another failing transaction, and make sure the burn and utility fees are computed accurately.
+		txn := _generateTestTxn(t, rand, feeMin, feeMax, m0PubBytes, m0Priv, 100, 0)
+
+		utxoOps, burnFee, utilityFee, err := blockView._connectFailingTransaction(txn, blockHeight, true)
+		require.NoError(err)
+		require.Equal(1, len(utxoOps))
+
+		// The final balance is m0's starting balance minus the failing txn fee paid.
+		finalBalance, err := blockView.GetDeSoBalanceNanosForPublicKey(m0PubBytes)
+		require.NoError(err)
+
+		// Recompute the failing txn fee, which is expected to use the minimum network fee rate because
+		// the failing txn fee rate is too low on its own.
+		expectedFailingTxnFee := txn.TxnFeeNanos * newParams.FailingTransactionBMFMultiplierBasisPoints / MaxBasisPoints
+		require.Equal(startingBalance, finalBalance+expectedFailingTxnFee)
+
+		expectedBurnFee, expectedUtilityFee := _getBMFForTxn(txn, newParams)
+		require.Equal(expectedBurnFee, burnFee)
+		require.Equal(expectedUtilityFee, utilityFee)
+
+		err = blockView.FlushToDb(uint64(blockHeight))
+		require.NoError(err)
+	}
+
+	// Test case where the failing txn fee rate is too low and replaced by the minimum network fee.
+	{
+		{
+			// Set FailingTransactionBMFMultiplierBasisPoints=1 or 0.01%.
+			_updateGlobalParamsEntryWithExtraData(
+				testMeta,
+				testMeta.feeRateNanosPerKb,
+				m0Pub,
+				m0Priv,
+				map[string][]byte{FailingTransactionBMFMultiplierBasisPointsKey: UintToBuf(1)},
+			)
+		}
+
+		// Set the txn fee to ~1000 nanos, which guarantees that the effective failing txn fee rate is too low.
+		feeMin := uint64(1000)
+		feeMax := uint64(1001)
+
+		blockView, err := NewUtxoView(db, params, nil, nil, chain.eventManager)
+		require.NoError(err)
+
+		newParams := blockView.GetCurrentGlobalParamsEntry()
+		require.Equal(uint64(1), newParams.FailingTransactionBMFMultiplierBasisPoints)
+
+		startingBalance, err := blockView.GetDeSoBalanceNanosForPublicKey(m0PubBytes)
+		require.NoError(err)
+
+		txn := _generateTestTxn(t, rand, feeMin, feeMax, m0PubBytes, m0Priv, 100, 0)
+		utxoOps, burnFee, utilityFee, err := blockView._connectFailingTransaction(txn, blockHeight, true)
+		require.NoError(err)
+		require.Equal(1, len(utxoOps))
+
+		// The final balance is m0's starting balance minus the failing txn fee paid.
+		finalBalance, err := blockView.GetDeSoBalanceNanosForPublicKey(m0PubBytes)
+		require.NoError(err)
+
+		txnBytes, err := txn.ToBytes(false)
+		require.NoError(err)
+
+		// Recompute the failing txn fee, which is expected to use the minimum network fee rate because
+		// the failing txn fee rate is too low on its own.
+		expectedFailingTxnFee := uint64(len(txnBytes)) * newParams.MinimumNetworkFeeNanosPerKB / 1000
+		require.Equal(startingBalance, finalBalance+expectedFailingTxnFee)
+
+		expectedBurnFee, expectedUtilityFee := computeBMF(expectedFailingTxnFee)
+		require.Equal(expectedBurnFee, burnFee)
+		require.Equal(expectedUtilityFee, utilityFee)
+
+		err = blockView.FlushToDb(uint64(blockHeight))
+		require.NoError(err)
+	}
 }
 
 func _getBMFForTxn(txn *MsgDeSoTxn, gp *GlobalParamsEntry) (_burnFee uint64, _utilityFee uint64) {
