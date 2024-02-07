@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/btcsuite/btcd/wire"
+	"github.com/deso-protocol/core/collections"
 	"github.com/deso-protocol/core/desohash"
 
 	"github.com/btcsuite/btcd/btcec"
@@ -30,6 +31,8 @@ type DeSoMiner struct {
 	numThreads    uint32
 	BlockProducer *DeSoBlockProducer
 	params        *DeSoParams
+
+	blockMinedListeners *collections.ConcurrentList[func(*MsgDeSoBlock)]
 
 	stopping int32
 }
@@ -52,11 +55,16 @@ func NewDeSoMiner(_minerPublicKeys []string, _numThreads uint32,
 	}
 
 	return &DeSoMiner{
-		PublicKeys:    _pubKeys,
-		numThreads:    _numThreads,
-		BlockProducer: _blockProducer,
-		params:        _params,
+		PublicKeys:          _pubKeys,
+		numThreads:          _numThreads,
+		BlockProducer:       _blockProducer,
+		params:              _params,
+		blockMinedListeners: collections.NewConcurrentList[func(*MsgDeSoBlock)](),
 	}, nil
+}
+
+func (desoMiner *DeSoMiner) AddBlockMinedListener(ff func(*MsgDeSoBlock)) {
+	desoMiner.blockMinedListeners.Add(ff)
 }
 
 func (desoMiner *DeSoMiner) Stop() {
@@ -190,6 +198,10 @@ func (desoMiner *DeSoMiner) MineAndProcessSingleBlock(threadIndex uint32, mempoo
 		return nil, fmt.Errorf("DeSoMiner._startThread: _mineSingleBlock returned nil; should only happen if we're stopping")
 	}
 
+	if desoMiner.params.IsPoSBlockHeight(blockToMine.Header.Height) {
+		return nil, fmt.Errorf("DeSoMiner._startThread: _mineSingleBlock returned a block that is past the Proof of Stake Cutover")
+	}
+
 	// Log information on the block we just mined.
 	bestHash, _ := blockToMine.Hash()
 	glog.Infof("================== YOU MINED A NEW BLOCK! ================== Height: %d, Hash: %s", blockToMine.Header.Height, hex.EncodeToString(bestHash[:]))
@@ -285,9 +297,15 @@ func (desoMiner *DeSoMiner) _startThread(threadIndex uint32) {
 		if err != nil {
 			glog.Errorf(err.Error())
 		}
+
 		isFinished := (newBlock == nil)
 		if isFinished {
 			return
+		}
+
+		blockMinedListeners := desoMiner.blockMinedListeners.GetAll()
+		for _, listener := range blockMinedListeners {
+			listener(newBlock)
 		}
 	}
 }

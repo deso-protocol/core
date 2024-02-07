@@ -171,14 +171,16 @@ func (pp *Peer) HandleGetTransactionsMsg(getTxnMsg *MsgDeSoGetTransactions) {
 		"MsgDeSoGetTransactions message with %v txns from peer %v",
 		len(getTxnMsg.HashList), pp)
 
-	mempoolTxs := []*MempoolTx{}
-	txnMap := pp.srv.mempool.readOnlyUniversalTransactionMap
+	mempoolTxs := []*MempoolTransaction{}
+
+	// We fetch the requested txns from either the PoW mempool or the PoS mempool
+	// whichever one is used for the consensus protocol at the current block height.
 	for _, txHash := range getTxnMsg.HashList {
-		mempoolTx, exists := txnMap[*txHash]
+		mempoolTx := pp.srv.GetMempool().GetTransaction(txHash)
 		// If the transaction isn't in the pool, just continue without adding
 		// it. It is generally OK to respond with only a subset of the transactions
 		// that were requested.
-		if !exists {
+		if mempoolTx == nil {
 			continue
 		}
 
@@ -189,13 +191,13 @@ func (pp *Peer) HandleGetTransactionsMsg(getTxnMsg *MsgDeSoGetTransactions) {
 	// Doing this helps the Peer when they go to add the transactions by reducing
 	// unconnectedTxns and transactions being rejected due to missing dependencies.
 	sort.Slice(mempoolTxs, func(ii, jj int) bool {
-		return mempoolTxs[ii].Added.Before(mempoolTxs[jj].Added)
+		return mempoolTxs[ii].TimestampUnixMicro < mempoolTxs[jj].TimestampUnixMicro
 	})
 
 	// Create a list of the fetched transactions to a response.
 	txnList := []*MsgDeSoTxn{}
 	for _, mempoolTx := range mempoolTxs {
-		txnList = append(txnList, mempoolTx.Tx)
+		txnList = append(txnList, mempoolTx.MsgDeSoTxn)
 	}
 
 	// At this point the txnList should have all of the transactions that

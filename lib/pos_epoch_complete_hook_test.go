@@ -4,9 +4,10 @@ package lib
 
 import (
 	"fmt"
-	"github.com/deso-protocol/core/bls"
 	"sort"
 	"testing"
+
+	"github.com/deso-protocol/core/bls"
 
 	"github.com/holiman/uint256"
 	"github.com/stretchr/testify/require"
@@ -57,7 +58,8 @@ func TestIsLastBlockInCurrentEpoch(t *testing.T) {
 func TestRunEpochCompleteHook(t *testing.T) {
 	// Initialize balance model fork heights.
 	setBalanceModelBlockHeights(t)
-
+	// Initialize PoS fork heights.
+	setPoSBlockHeights(t, 11, 11)
 	// Initialize test chain, miner, and testMeta
 	testMeta := _setUpMinerAndTestMetaForEpochCompleteTest(t)
 
@@ -520,7 +522,8 @@ func TestStakingRewardDistribution(t *testing.T) {
 	defer resetDefaultEpochDurationNumBlocks()
 	// Initialize balance model fork heights.
 	setBalanceModelBlockHeights(t)
-
+	// Initialize PoS fork heights.
+	setPoSBlockHeights(t, 11, 11)
 	// Initialize test chain, miner, and testMeta
 	testMeta := _setUpMinerAndTestMetaForEpochCompleteTest(t)
 
@@ -806,12 +809,6 @@ func _setUpMinerAndTestMetaForEpochCompleteTest(t *testing.T) *TestMeta {
 	chain, params, db := NewLowDifficultyBlockchain(t)
 	mempool, miner := NewTestMiner(t, chain, params, true)
 
-	// Initialize PoS fork heights.
-	params.ForkHeights.ProofOfStake1StateSetupBlockHeight = uint32(1)
-	params.ForkHeights.ProofOfStake2ConsensusCutoverBlockHeight = uint32(1)
-	GlobalDeSoParams.EncoderMigrationHeights = GetEncoderMigrationHeights(&params.ForkHeights)
-	GlobalDeSoParams.EncoderMigrationHeightsList = GetEncoderMigrationHeightsList(&params.ForkHeights)
-
 	// Mine a few blocks to give the senderPkString some money.
 	for ii := 0; ii < 10; ii++ {
 		_, err := miner.MineAndProcessSingleBlock(0, mempool)
@@ -900,7 +897,7 @@ func _runOnEpochCompleteHook(testMeta *TestMeta, blockHeight uint64, viewNumber 
 	tmpUtxoView := _newUtxoView(testMeta)
 	// Set blockTimestampNanoSecs to 1 year * block height. Every time the block height increments,
 	// the timestamp increases by 1 year
-	blockTimestampNanoSecs := blockHeight * 365 * 24 * 3600 * 1e9
+	blockTimestampNanoSecs := int64(blockHeight) * 365 * 24 * 3600 * 1e9
 	_, err := tmpUtxoView.RunEpochCompleteHook(blockHeight, viewNumber, blockTimestampNanoSecs)
 	require.NoError(testMeta.t, err)
 	require.NoError(testMeta.t, tmpUtxoView.FlushToDb(blockHeight))

@@ -573,12 +573,13 @@ type DBPrefixes struct {
 	// Note, we parse the ValidatorPKID and StakerPKID from the key.
 	PrefixSnapshotStakeToRewardByValidatorAndStaker []byte `prefix_id:"[92]" is_state:"true"`
 
-	// PrefixLockedBalanceEntryByHODLerPKIDProfilePKIDUnlockTimestampNanoSecs:
+	// PrefixLockedBalanceEntry:
 	// Retrieves LockedBalanceEntries that may or may not be claimable for unlock.
-	// LockedBalanceEntries can be retrieved by HodlerPKID and CreatorPKID are have their
-	// corresponding unlock timestamp appended to sort by timestamp.
-	// Prefix, <HodlerPKID [33]byte>, <ProfilePKID [33]byte>, <UnlockTimestampNanoSecs int64> -> <LockedBalanceEntry>
-	PrefixLockedBalanceEntryByHODLerPKIDProfilePKIDUnlockTimestampNanoSecs []byte `prefix_id:"[93]" is_state:"true"`
+	// A discriminator byte it placed before the UnlockTimestampNanoSecs to allow for separation
+	// among the vested and unvested locked balance entries without separate indexes.
+	// Prefix, <HodlerPKID [33]byte>, <ProfilePKID [33]byte>, <vested/unvested byte>,
+	// <UnlockTimestampNanoSecs [8]byte>, <VestingEndTimestampNanoSecs [8]byte> -> <LockedBalanceEntry>
+	PrefixLockedBalanceEntry []byte `prefix_id:"[93]" is_state:"true"`
 
 	// PrefixLockupYieldCurvePointByProfilePKIDAndDurationNanoSecs:
 	// Retrieves a LockupYieldCurvePoint.
@@ -881,7 +882,7 @@ func StatePrefixToDeSoEncoder(prefix []byte) (_isEncoder bool, _encoder DeSoEnco
 	} else if bytes.Equal(prefix, Prefixes.PrefixSnapshotStakeToRewardByValidatorAndStaker) {
 		// prefix_id:"[92]"
 		return true, &StakeEntry{}
-	} else if bytes.Equal(prefix, Prefixes.PrefixLockedBalanceEntryByHODLerPKIDProfilePKIDUnlockTimestampNanoSecs) {
+	} else if bytes.Equal(prefix, Prefixes.PrefixLockedBalanceEntry) {
 		// prefix_id:"[93]"
 		return true, &LockedBalanceEntry{}
 	} else if bytes.Equal(prefix, Prefixes.PrefixLockupYieldCurvePointByProfilePKIDAndDurationNanoSecs) {
@@ -5365,7 +5366,7 @@ func InitDbWithDeSoGenesisBlock(params *DeSoParams, handle *badger.DB,
 		// Set txnSizeBytes to 0 here as the minimum network fee is 0 at genesis block, so there is no need to serialize
 		// these transactions to check if they meet the minimum network fee requirement.
 		var utxoOpsForTxn []*UtxoOperation
-		utxoOpsForTxn, _, _, _, err = utxoView.ConnectTransaction(txn, txn.Hash(), 0, 0, 0, false, true)
+		utxoOpsForTxn, _, _, _, err = utxoView.ConnectTransaction(txn, txn.Hash(), 0, 0, false, true)
 		if err != nil {
 			return fmt.Errorf(
 				"InitDbWithDeSoGenesisBlock: Error connecting transaction: %v, "+
@@ -10835,24 +10836,91 @@ func DBDeletePostAssociationWithTxn(txn *badger.Txn, snap *Snapshot, association
 
 // LockedBalanceEntry DB Key Operations
 
-func _dbKeyForLockedBalanceEntry(lockedBalanceEntry LockedBalanceEntry) []byte {
-	key := append([]byte{}, Prefixes.PrefixLockedBalanceEntryByHODLerPKIDProfilePKIDUnlockTimestampNanoSecs...)
+const (
+	// NOTE: By delineating the vested and unvested locked balance entries with the byte below,
+	// we know that all vested keys will be lexicographically less than all unvested keys. This enables
+	// us to construct db key prefixes based on either the vested or unvested keys and use said prefixes
+	// for seeks through either the unvested or vested keys. This is a convenient optimization that prevents
+	// us from needing seperate indexes with the addition of only a single added key.
+
+	VestedLockedBalanceEntriesKeyByte   = 0
+	UnvestedLockedBalanceEntriesKeyByte = 1
+)
+
+func _dbKeyForLockedBalanceEntry(lockedBalanceEntry *LockedBalanceEntry) []byte {
+	key := append([]byte{}, Prefixes.PrefixLockedBalanceEntry...)
 	key = append(key, lockedBalanceEntry.HODLerPKID[:]...)
 	key = append(key, lockedBalanceEntry.ProfilePKID[:]...)
-	return append(key, EncodeUint64(uint64(lockedBalanceEntry.UnlockTimestampNanoSecs))...)
+
+	// Delineate between vested and unvested locked balance entries.
+	if lockedBalanceEntry.UnlockTimestampNanoSecs == lockedBalanceEntry.VestingEndTimestampNanoSecs {
+		key = append(key, UnvestedLockedBalanceEntriesKeyByte)
+	} else {
+		key = append(key, VestedLockedBalanceEntriesKeyByte)
+	}
+
+	key = append(key, EncodeUint64(uint64(lockedBalanceEntry.UnlockTimestampNanoSecs))...)
+	return append(key, EncodeUint64(uint64(lockedBalanceEntry.VestingEndTimestampNanoSecs))...)
 }
 
-func DBPrefixKeyForLockedBalanceEntryByHODLerPKIDandProfilePKID(lockedBalanceEntry *LockedBalanceEntry) []byte {
-	data := append([]byte{}, Prefixes.PrefixLockedBalanceEntryByHODLerPKIDProfilePKIDUnlockTimestampNanoSecs...)
-	data = append(data, lockedBalanceEntry.HODLerPKID.ToBytes()...)
-	data = append(data, lockedBalanceEntry.ProfilePKID.ToBytes()...)
-	return data
+func DBPrefixForLockedBalanceEntriesOnHodler(lockedBalanceEntry *LockedBalanceEntry) []byte {
+	key := append([]byte{}, Prefixes.PrefixLockedBalanceEntry...)
+	key = append(key, lockedBalanceEntry.HODLerPKID[:]...)
+	return key
+}
+
+func DBPrefixForVestedLockedBalanceEntriesOnUnlockTimestamp(lockedBalanceEntry *LockedBalanceEntry) ([]byte, error) {
+	key := append([]byte{}, Prefixes.PrefixLockedBalanceEntry...)
+	key = append(key, lockedBalanceEntry.HODLerPKID[:]...)
+	key = append(key, lockedBalanceEntry.ProfilePKID[:]...)
+
+	// Delineate between vested and unvested locked balance entries.
+	if lockedBalanceEntry.UnlockTimestampNanoSecs == lockedBalanceEntry.VestingEndTimestampNanoSecs {
+		return nil, errors.New("DBPrefixForVestedLockedBalanceEntries: called with unvested lockedBalanceEntry")
+	} else {
+		key = append(key, VestedLockedBalanceEntriesKeyByte)
+	}
+
+	return append(key, EncodeUint64(uint64(lockedBalanceEntry.UnlockTimestampNanoSecs))...), nil
+}
+
+func DBPrefixForLockedBalanceEntriesOnType(lockedBalanceEntry *LockedBalanceEntry) []byte {
+	key := append([]byte{}, Prefixes.PrefixLockedBalanceEntry...)
+	key = append(key, lockedBalanceEntry.HODLerPKID[:]...)
+	key = append(key, lockedBalanceEntry.ProfilePKID[:]...)
+
+	// Delineate between vested and unvested locked balance entries.
+	if lockedBalanceEntry.UnlockTimestampNanoSecs == lockedBalanceEntry.VestingEndTimestampNanoSecs {
+		key = append(key, UnvestedLockedBalanceEntriesKeyByte)
+	} else {
+		key = append(key, VestedLockedBalanceEntriesKeyByte)
+	}
+
+	return key
+}
+
+func DBKeyForUnvestedLockedBalanceEntryWithVestedType(lockedBalanceEntry *LockedBalanceEntry) []byte {
+	// NOTE: This key seems odd, but it's used for seeking through vested locked balance entries
+	// given the current timestamp. Since the current timestamp must be used for both
+	// the UnlockTimestampNanoSecs and VestingEndTimestampNanoSecs, the other DBKey functions would not
+	// use the VestedLockedBalanceEntriesKeyByte but rather the UnvestedLockedBalanceEntriesKeyByte.
+	key := append([]byte{}, Prefixes.PrefixLockedBalanceEntry...)
+	key = append(key, lockedBalanceEntry.HODLerPKID[:]...)
+	key = append(key, lockedBalanceEntry.ProfilePKID[:]...)
+	key = append(key, VestedLockedBalanceEntriesKeyByte)
+	key = append(key, EncodeUint64(uint64(lockedBalanceEntry.UnlockTimestampNanoSecs))...)
+	return append(key, EncodeUint64(uint64(lockedBalanceEntry.VestingEndTimestampNanoSecs))...)
 }
 
 // LockedBalanceEntry Put/Delete Operations (Badger Writes)
 
-func DbPutLockedBalanceEntryMappingsWithTxn(txn *badger.Txn, snap *Snapshot, blockHeight uint64,
-	lockedBalanceEntry LockedBalanceEntry, eventManager *EventManager) error {
+func DbPutLockedBalanceEntryMappingsWithTxn(
+	txn *badger.Txn,
+	snap *Snapshot,
+	blockHeight uint64,
+	lockedBalanceEntry LockedBalanceEntry,
+	eventManager *EventManager,
+) error {
 	// Sanity check the fields in the LockedBalanceEntry used in constructing the key.
 	if len(lockedBalanceEntry.HODLerPKID) != btcec.PubKeyBytesLenCompressed {
 		return fmt.Errorf("DbPutLockedBalanceEntryMappingsWithTxn: HODLer PKID "+
@@ -10863,7 +10931,7 @@ func DbPutLockedBalanceEntryMappingsWithTxn(txn *badger.Txn, snap *Snapshot, blo
 			"length %d != %d", len(lockedBalanceEntry.ProfilePKID), btcec.PubKeyBytesLenCompressed)
 	}
 
-	if err := DBSetWithTxn(txn, snap, _dbKeyForLockedBalanceEntry(lockedBalanceEntry),
+	if err := DBSetWithTxn(txn, snap, _dbKeyForLockedBalanceEntry(&lockedBalanceEntry),
 		EncodeToBytes(blockHeight, &lockedBalanceEntry), eventManager); err != nil {
 		return errors.Wrapf(err, "DbPutLockedBalanceEntryMappingsWithTxn: "+
 			"Problem adding locked balance entry to db")
@@ -10871,10 +10939,15 @@ func DbPutLockedBalanceEntryMappingsWithTxn(txn *badger.Txn, snap *Snapshot, blo
 	return nil
 }
 
-func DbDeleteLockedBalanceEntryWithTxn(txn *badger.Txn, snap *Snapshot, lockedBalanceEntry LockedBalanceEntry,
-	eventManager *EventManager, entryIsDeleted bool) error {
+func DbDeleteLockedBalanceEntryWithTxn(
+	txn *badger.Txn,
+	snap *Snapshot,
+	lockedBalanceEntry LockedBalanceEntry,
+	eventManager *EventManager,
+	entryIsDeleted bool,
+) error {
 	// First check that a mapping exists. If one doesn't then there's nothing to do.
-	_, err := DBGetWithTxn(txn, snap, _dbKeyForLockedBalanceEntry(lockedBalanceEntry))
+	_, err := DBGetWithTxn(txn, snap, _dbKeyForLockedBalanceEntry(&lockedBalanceEntry))
 	if errors.Is(err, badger.ErrKeyNotFound) {
 		return nil
 	}
@@ -10887,7 +10960,7 @@ func DbDeleteLockedBalanceEntryWithTxn(txn *badger.Txn, snap *Snapshot, lockedBa
 
 	// When a locked balance entry exists, delete the locked balance entry mapping.
 	if err := DBDeleteWithTxn(txn, snap,
-		_dbKeyForLockedBalanceEntry(lockedBalanceEntry), eventManager, entryIsDeleted); err != nil {
+		_dbKeyForLockedBalanceEntry(&lockedBalanceEntry), eventManager, entryIsDeleted); err != nil {
 		return errors.Wrapf(err, "DbDeleteLockedBalanceEntryWithTxn: Deleting "+
 			"locked balance entry for HODLer PKID %s, Profile PKID %s, expiration timestamp %d",
 			lockedBalanceEntry.HODLerPKID.ToString(), lockedBalanceEntry.ProfilePKID.ToString(),
@@ -10898,28 +10971,37 @@ func DbDeleteLockedBalanceEntryWithTxn(txn *badger.Txn, snap *Snapshot, lockedBa
 
 // LockedBalanceEntry Get Operations (Badger Reads)
 
-func DBGetLockedBalanceEntryForHODLerPKIDProfilePKIDUnlockTimestampNanoSecs(
-	handle *badger.DB, snap *Snapshot, hodlerPKID *PKID, profilePKID *PKID,
-	unlockTimestamp int64) (_lockedBalanceEntry *LockedBalanceEntry, _err error) {
-
+func DBGetLockedBalanceEntryForLockedBalanceEntryKey(
+	handle *badger.DB,
+	snap *Snapshot,
+	lockedBalanceEntryKey LockedBalanceEntryKey,
+) (
+	_lockedBalanceEntry *LockedBalanceEntry,
+	_err error,
+) {
 	var ret *LockedBalanceEntry
 	err := handle.View(func(txn *badger.Txn) error {
 		var err error
-		ret, err = DBGetLockedBalanceEntryForHODLerPKIDProfilePKIDUnlockTimestampNanoSecsWithTxn(
-			txn, snap, hodlerPKID, profilePKID, unlockTimestamp)
+		ret, err = DBGetLockedBalanceEntryForLockedBalanceEntryKeyWithTxn(txn, snap, lockedBalanceEntryKey)
 		return err
 	})
 	return ret, err
 }
 
-func DBGetLockedBalanceEntryForHODLerPKIDProfilePKIDUnlockTimestampNanoSecsWithTxn(
-	txn *badger.Txn, snap *Snapshot, hodlerPKID *PKID, profilePKID *PKID,
-	unlockTimestamp int64) (_lockedBalanceEntry *LockedBalanceEntry, _err error) {
-
-	key := _dbKeyForLockedBalanceEntry(LockedBalanceEntry{
-		HODLerPKID:              hodlerPKID,
-		ProfilePKID:             profilePKID,
-		UnlockTimestampNanoSecs: unlockTimestamp,
+func DBGetLockedBalanceEntryForLockedBalanceEntryKeyWithTxn(
+	txn *badger.Txn,
+	snap *Snapshot,
+	lockedBalanceEntryKey LockedBalanceEntryKey,
+) (
+	_lockedBalanceEntry *LockedBalanceEntry,
+	_err error,
+) {
+	// Construct a key from the LockedBalanceEntry.
+	key := _dbKeyForLockedBalanceEntry(&LockedBalanceEntry{
+		HODLerPKID:                  &lockedBalanceEntryKey.HODLerPKID,
+		ProfilePKID:                 &lockedBalanceEntryKey.ProfilePKID,
+		UnlockTimestampNanoSecs:     lockedBalanceEntryKey.UnlockTimestampNanoSecs,
+		VestingEndTimestampNanoSecs: lockedBalanceEntryKey.VestingEndTimestampNanoSecs,
 	})
 
 	// Get the key from the db.
@@ -10929,92 +11011,451 @@ func DBGetLockedBalanceEntryForHODLerPKIDProfilePKIDUnlockTimestampNanoSecsWithT
 	}
 	if err != nil {
 		return nil,
-			errors.Wrap(err, "DBGetLockedBalanceEntryForHODLerPKIDProfilePKIDUnlockTimestampNanoSecsWithTxn")
+			errors.Wrap(err,
+				"DBGetLockedBalanceEntryForLockedBalanceEntryKeyWithTxn")
 	}
 
 	return DecodeDeSoEncoder(&LockedBalanceEntry{}, bytes.NewReader(lockedBalanceEntryBytes))
 }
 
+func DBGetAllLockedBalanceEntriesForHodlerPKID(
+	handle *badger.DB,
+	hodlerPKID *PKID,
+) (
+	_lockedBalanceEntries []*LockedBalanceEntry,
+	_err error,
+) {
+	var lockedBalanceEntries []*LockedBalanceEntry
+	var err error
+
+	// Validate profilePKID is not nil.
+	if hodlerPKID == nil {
+		return nil, errors.New("DBGetAllLockedBalanceEntriesForHodlerPKID: " +
+			"called with nil hodlerPKID; this shouldn't happen")
+	}
+
+	handle.View(func(txn *badger.Txn) error {
+		lockedBalanceEntries, err = DBGetAllLockedBalanceEntriesForHodlerPKIDWithTxn(txn, hodlerPKID)
+		return nil
+	})
+	return lockedBalanceEntries, err
+}
+
+func DBGetAllLockedBalanceEntriesForHodlerPKIDWithTxn(
+	txn *badger.Txn,
+	hodlerPKID *PKID,
+) (
+	_lockedBalanceEntries []*LockedBalanceEntry,
+	_err error,
+) {
+	// Start at <prefix, hodler>
+	startKey := DBPrefixForLockedBalanceEntriesOnHodler(&LockedBalanceEntry{
+		HODLerPKID: hodlerPKID,
+	})
+
+	// Valid for prefix <prefix, hodler>
+	prefixKey := DBPrefixForLockedBalanceEntriesOnHodler(&LockedBalanceEntry{
+		HODLerPKID: hodlerPKID,
+	})
+
+	// Create a reverse iterator.
+	opts := badger.DefaultIteratorOptions
+	iterator := txn.NewIterator(opts)
+	defer iterator.Close()
+
+	// Store relevant LockedBalanceEntries to return.
+	var lockedBalanceEntries []*LockedBalanceEntry
+
+	// Loop until we've exhausted all unlockable unvested locked balance entries.
+	for iterator.Seek(startKey); iterator.ValidForPrefix(prefixKey); iterator.Next() {
+		// Retrieve the LockedBalanceEntryBytes.
+		lockedBalanceEntryBytes, err := iterator.Item().ValueCopy(nil)
+		if err != nil {
+			return nil,
+				errors.Wrapf(err, "DBGetAllLockedBalanceEntriesForHodlerPKIDWithTxn: "+
+					"error retrieveing LockedBalanceEntry: ")
+		}
+
+		// Convert the LockedBalanceEntryBytes to LockedBalanceEntry.
+		rr := bytes.NewReader(lockedBalanceEntryBytes)
+		lockedBalanceEntry, err := DecodeDeSoEncoder(&LockedBalanceEntry{}, rr)
+		if err != nil {
+			return nil,
+				errors.Wrapf(err, "DBGetAllLockedBalanceEntriesForHodlerPKIDWithTxn: "+
+					"error decoding LockedBalanceEntry: ")
+		}
+
+		// Sanity check the locked balance entry as relevant.
+		if !lockedBalanceEntry.HODLerPKID.Eq(hodlerPKID) {
+			return nil,
+				errors.New("DBGetAllLockedBalanceEntriesForHodlerPKIDWithTxn: " +
+					"found invalid LockedBalanceEntry; this shouldn't happen")
+		}
+
+		// Add the locked balance entry to the return list.
+		lockedBalanceEntries = append(lockedBalanceEntries, lockedBalanceEntry)
+	}
+
+	return lockedBalanceEntries, nil
+
+}
+
 func DBGetUnlockableLockedBalanceEntries(
 	handle *badger.DB,
-	snap *Snapshot,
 	hodlerPKID *PKID,
 	profilePKID *PKID,
 	currentTimestampUnixNanoSecs int64,
-) ([]*LockedBalanceEntry, error) {
-	var ret []*LockedBalanceEntry
+) (
+	_unvestedUnlockabeLockedBalanceEntries []*LockedBalanceEntry,
+	_vestedUnlockableLockedEntries []*LockedBalanceEntry,
+	_err error,
+) {
+	// Validate profilePKID and holderPKID are not nil.
+	if profilePKID == nil {
+		return nil, nil,
+			errors.New("DBGetUnlockableLockedBalanceEntries: " +
+				"called with nil profilePKID; this shouldn't happen")
+	}
+	if hodlerPKID == nil {
+		return nil, nil,
+			errors.New("DBGetUnlockableLockedBalanceEntries: " +
+				"called with nil hodlerPKID; this shouldn't happen")
+	}
+
+	var unvested []*LockedBalanceEntry
+	var vested []*LockedBalanceEntry
 	var err error
 	handle.View(func(txn *badger.Txn) error {
-		ret, err = DBGetUnlockableLockedBalanceEntriesWithTxn(
-			txn, snap, hodlerPKID, profilePKID, currentTimestampUnixNanoSecs)
+		unvested, vested, err = DBGetUnlockableLockedBalanceEntriesWithTxn(
+			txn, hodlerPKID, profilePKID, currentTimestampUnixNanoSecs)
 		return nil
 	})
-	return ret, err
+	return unvested, vested, err
 }
 
 func DBGetUnlockableLockedBalanceEntriesWithTxn(
 	txn *badger.Txn,
-	snap *Snapshot,
 	hodlerPKID *PKID,
 	profilePKID *PKID,
 	currentTimestampUnixNanoSecs int64,
-) ([]*LockedBalanceEntry, error) {
-	// Retrieve all LockedBalanceEntries from db matching hodlerPKID, profilePKID, and
-	// UnlockTimestampNanoSecs <= currentTimestampUnixNanoSecs.
-	// NOTE: While ideally we would start with <prefix, HODLerPKID, ProfilePKID> and
-	//       seek till <prefix, HODLerPKID, ProfilePKID, currentTimestampUnixNanoSecs>,
-	//       Badger does not support this functionality as the ValidForPrefix() function
-	//       stops when a mismatched prefix occurs, not a "lexicographically less than" prefix.
-	//       For this reason, we start with <prefix, HODLerPKID, ProfilePKID, currentTimestampUnixNanoSecs>
-	//       and iterate backwards while we're valid for the prefix <prefix, HODLerPKID, ProfilePKID>.
-
-	if currentTimestampUnixNanoSecs < 0 || currentTimestampUnixNanoSecs == math.MaxInt64-1 {
-		return nil, fmt.Errorf("DBGetUnlockableLockedBalanceEntriesWithTxn: invalid " +
-			"block timestamp; this shouldn't be possible")
+) (
+	_unlockableUnvestedLockedBalanceEntries []*LockedBalanceEntry,
+	_unlockableVestedLockedBalanceEntries []*LockedBalanceEntry,
+	_err error,
+) {
+	// Get vested unlockable locked balance entries.
+	unlockableVestedLockedBalanceEntries, err := DBGetUnlockableVestedLockedBalanceEntriesWithTxn(
+		txn, hodlerPKID, profilePKID, currentTimestampUnixNanoSecs)
+	if err != nil {
+		return nil, nil,
+			errors.Wrap(err, "DBGetUnlockableLockedBalanceEntriesWithTxn")
 	}
 
-	// Start at <prefix, HODLerPKID, ProfilePKID, CurrentTimestampNanoSecs>
-	startKey := _dbKeyForLockedBalanceEntry(LockedBalanceEntry{
-		HODLerPKID:              hodlerPKID,
-		ProfilePKID:             profilePKID,
-		UnlockTimestampNanoSecs: currentTimestampUnixNanoSecs,
+	// Get unvested unlockable locked balance entries.
+	unlockableUnvestedLockedBalanceEntries, err := DBGetUnlockableUnvestedLockedBalanceEntriesWithTxn(
+		txn, hodlerPKID, profilePKID, currentTimestampUnixNanoSecs)
+	if err != nil {
+		return nil, nil,
+			errors.Wrap(err, "DBGetUnlockableLockedBalanceEntriesWithTxn")
+	}
+
+	return unlockableUnvestedLockedBalanceEntries, unlockableVestedLockedBalanceEntries, nil
+}
+
+func DBGetUnlockableVestedLockedBalanceEntriesWithTxn(
+	txn *badger.Txn,
+	hodlerPKID *PKID,
+	profilePKID *PKID,
+	currentTimestampUnixNanoSecs int64,
+) (
+	_unlockableVestedLockedBalanceEntries []*LockedBalanceEntry,
+	_err error,
+) {
+	// Start at <prefix, hodler, profile, vested, current timestamp, current timestamp>
+	startKey := DBKeyForUnvestedLockedBalanceEntryWithVestedType(&LockedBalanceEntry{
+		HODLerPKID:                  hodlerPKID,
+		ProfilePKID:                 profilePKID,
+		UnlockTimestampNanoSecs:     currentTimestampUnixNanoSecs,
+		VestingEndTimestampNanoSecs: currentTimestampUnixNanoSecs,
 	})
 
-	// Valid for prefix <prefix, HODLerPKID, ProfilePKID>
-	prefixKey := DBPrefixKeyForLockedBalanceEntryByHODLerPKIDandProfilePKID(&LockedBalanceEntry{
-		HODLerPKID:  hodlerPKID,
-		ProfilePKID: profilePKID,
+	// Valid for prefix <prefix, hodler, profile, vested>
+	// We set the VestingEndTimestampNanoSecs to currentTimestampUnixNanoSecs + 1 to
+	// make a pusedo-vested LockedBalanceEntry for the purpose of constructing a key prefix.
+	prefixKey := DBPrefixForLockedBalanceEntriesOnType(&LockedBalanceEntry{
+		HODLerPKID:                  hodlerPKID,
+		ProfilePKID:                 profilePKID,
+		UnlockTimestampNanoSecs:     currentTimestampUnixNanoSecs,
+		VestingEndTimestampNanoSecs: currentTimestampUnixNanoSecs + 1,
 	})
 
-	// Create an iterator. We set the iterator to reverse as per the comment at the top of this function.
+	// Create a reverse iterator.
 	opts := badger.DefaultIteratorOptions
 	opts.Reverse = true
 	iterator := txn.NewIterator(opts)
 	defer iterator.Close()
 
-	// Store matching LockedBalanceEntries to return
+	// Store relevant LockedBalanceEntries to return.
 	var lockedBalanceEntries []*LockedBalanceEntry
 
-	// Loop.
+	// Loop until we've exhausted all unlockable unvested locked balance entries.
 	for iterator.Seek(startKey); iterator.ValidForPrefix(prefixKey); iterator.Next() {
 		// Retrieve the LockedBalanceEntryBytes.
 		lockedBalanceEntryBytes, err := iterator.Item().ValueCopy(nil)
 		if err != nil {
-			return nil, errors.Wrapf(err, "DBGetUnlockableLockedBalanceEntriesWithTxn: "+
-				"error retrieveing LockedBalanceEntry: ")
+			return nil,
+				errors.Wrapf(err, "DBGetLimitedVestedLockedBalanceEntriesWithTxn: "+
+					"error retrieveing LockedBalanceEntry: ")
 		}
 
-		// Convert LockedBalanceEntryBytes to LockedBalanceEntry.
+		// Convert the LockedBalanceEntryBytes to LockedBalanceEntry.
 		rr := bytes.NewReader(lockedBalanceEntryBytes)
 		lockedBalanceEntry, err := DecodeDeSoEncoder(&LockedBalanceEntry{}, rr)
 		if err != nil {
-			return nil, errors.Wrapf(err, "DBGetUnlockableLockedBalanceEntriesWithTxn: "+
+			return nil,
+				errors.Wrapf(err, "DBGetLimitedVestedLockedBalanceEntriesWithTxn: "+
+					"error decoding LockedBalanceEntry: ")
+		}
+
+		// Sanity check the locked balance entry as relevant.
+		if !lockedBalanceEntry.HODLerPKID.Eq(hodlerPKID) ||
+			!lockedBalanceEntry.ProfilePKID.Eq(profilePKID) ||
+			lockedBalanceEntry.UnlockTimestampNanoSecs > currentTimestampUnixNanoSecs {
+			return nil,
+				errors.New("DBGetLimitedVestedLockedBalanceEntriesWithTxn: " +
+					"found invalid LockedBalanceEntry; this shouldn't happen")
+		}
+
+		// Add the locked balance entry to the return list.
+		lockedBalanceEntries = append(lockedBalanceEntries, lockedBalanceEntry)
+	}
+
+	return lockedBalanceEntries, nil
+}
+
+func DBGetUnlockableUnvestedLockedBalanceEntriesWithTxn(
+	txn *badger.Txn,
+	hodlerPKID *PKID,
+	profilePKID *PKID,
+	currentTimestampUnixNanoSecs int64,
+) (
+	_unlockableUnvestedLockedBalanceEntries []*LockedBalanceEntry,
+	_err error,
+) {
+	// Start at <prefix, hodler, profile, unvested, current timestamp, current timestamp>
+	startKey := _dbKeyForLockedBalanceEntry(&LockedBalanceEntry{
+		HODLerPKID:                  hodlerPKID,
+		ProfilePKID:                 profilePKID,
+		UnlockTimestampNanoSecs:     currentTimestampUnixNanoSecs,
+		VestingEndTimestampNanoSecs: currentTimestampUnixNanoSecs,
+	})
+
+	// Valid for prefix <prefix, hodler, profile, unvested>
+	prefixKey := DBPrefixForLockedBalanceEntriesOnType(&LockedBalanceEntry{
+		HODLerPKID:                  hodlerPKID,
+		ProfilePKID:                 profilePKID,
+		UnlockTimestampNanoSecs:     currentTimestampUnixNanoSecs,
+		VestingEndTimestampNanoSecs: currentTimestampUnixNanoSecs,
+	})
+
+	// Create a reverse iterator.
+	opts := badger.DefaultIteratorOptions
+	opts.Reverse = true
+	iterator := txn.NewIterator(opts)
+	defer iterator.Close()
+
+	// Store relevant LockedBalanceEntries to return.
+	var lockedBalanceEntries []*LockedBalanceEntry
+
+	// Loop until we've exhausted all unlockable unvested locked balance entries.
+	for iterator.Seek(startKey); iterator.ValidForPrefix(prefixKey); iterator.Next() {
+		// Retrieve the LockedBalanceEntryBytes.
+		lockedBalanceEntryBytes, err := iterator.Item().ValueCopy(nil)
+		if err != nil {
+			return nil,
+				errors.Wrapf(err, "DBGetLimitedVestedLockedBalanceEntriesWithTxn: "+
+					"error retrieveing LockedBalanceEntry: ")
+		}
+
+		// Convert the LockedBalanceEntryBytes to LockedBalanceEntry.
+		rr := bytes.NewReader(lockedBalanceEntryBytes)
+		lockedBalanceEntry, err := DecodeDeSoEncoder(&LockedBalanceEntry{}, rr)
+		if err != nil {
+			return nil,
+				errors.Wrapf(err, "DBGetLimitedVestedLockedBalanceEntriesWithTxn: "+
+					"error decoding LockedBalanceEntry: ")
+		}
+
+		// Sanity check the locked balance entry as relevant.
+		if !lockedBalanceEntry.HODLerPKID.Eq(hodlerPKID) ||
+			!lockedBalanceEntry.ProfilePKID.Eq(profilePKID) ||
+			lockedBalanceEntry.UnlockTimestampNanoSecs > currentTimestampUnixNanoSecs {
+			return nil,
+				errors.New("DBGetLimitedVestedLockedBalanceEntriesWithTxn: " +
+					"found invalid LockedBalanceEntry; this shouldn't happen")
+		}
+
+		// Add the locked balance entry to the return list.
+		lockedBalanceEntries = append(lockedBalanceEntries, lockedBalanceEntry)
+	}
+
+	return lockedBalanceEntries, nil
+}
+
+func DBGetLimitedVestedLockedBalanceEntries(
+	handle *badger.DB,
+	hodlerPKID *PKID,
+	profilePKID *PKID,
+	unlockTimestampNanoSecs int64,
+	vestingEndTimestampNanoSecs int64,
+	limitToFetch int,
+) (
+	_lockedBalanceEntries []*LockedBalanceEntry,
+	_err error,
+) {
+	// NOTE: For this operation to work properly, it's important to understand that
+	// no two vested locked balance entries for a given hodler and profile pair can
+	// ever overlap in time. This is by design, as during the lockup transaction any
+	// consolidation to ensure no two vested locked balance entries results in
+	// overlap occurs. Why is this important? If you imagine a world in which
+	// overlapping entries are allowed, it makes it extremely inefficient to find
+	// those entries which straddle unlockTimestampNanoSecs without making a second
+	// index based on vestingEndTimestampNanoSecs. Our index sorts on
+	// unlockTimestampNanoSecs first and then vestingEndTimestampNanoSecs later.
+	// However, because we know that there is no overlap we can simply do a reverse
+	// iteration on the specified unlockTimestampNanoSecs, check for an overlapping
+	// entry, and move on.
+
+	// Validate profilePKID and holderPKID are not nil.
+	if profilePKID == nil {
+		return nil, errors.New("DBGetLimitedVestedLockedBalanceEntries: " +
+			"called with nil profilePKID; this shouldn't happen")
+	}
+	if hodlerPKID == nil {
+		return nil, errors.New("DBGetLimitedVestedLockedBalanceEntries: " +
+			"called with nil hodlerPKID; this shouldn't happen")
+	}
+
+	var lockedBalanceEntries []*LockedBalanceEntry
+	var err error
+	handle.View(func(txn *badger.Txn) error {
+		lockedBalanceEntries, err = DBGetLimitedVestedLockedBalanceEntriesWithTxn(
+			txn, hodlerPKID, profilePKID, unlockTimestampNanoSecs, vestingEndTimestampNanoSecs, limitToFetch)
+		return nil
+	})
+	return lockedBalanceEntries, err
+}
+
+func DBGetLimitedVestedLockedBalanceEntriesWithTxn(
+	txn *badger.Txn,
+	hodlerPKID *PKID,
+	profilePKID *PKID,
+	unlockTimestampNanoSecs int64,
+	vestingEndTimestampNanoSecs int64,
+	limitToFetch int,
+) (
+	_lockedBalanceEntries []*LockedBalanceEntry,
+	_err error,
+) {
+	// Start at <prefix, hodler, profile, vested, unlock timestamp>
+	startKey, err := DBPrefixForVestedLockedBalanceEntriesOnUnlockTimestamp(&LockedBalanceEntry{
+		HODLerPKID:                  hodlerPKID,
+		ProfilePKID:                 profilePKID,
+		UnlockTimestampNanoSecs:     unlockTimestampNanoSecs,
+		VestingEndTimestampNanoSecs: vestingEndTimestampNanoSecs,
+	})
+	if err != nil {
+		return nil, errors.Wrap(err, "DBGetLimitedVestedLockedBalanceEntries")
+	}
+
+	// Valid for prefix <prefix, hodler, profile, vested>
+	prefixKey := DBPrefixForLockedBalanceEntriesOnType(&LockedBalanceEntry{
+		HODLerPKID:                  hodlerPKID,
+		ProfilePKID:                 profilePKID,
+		UnlockTimestampNanoSecs:     unlockTimestampNanoSecs,
+		VestingEndTimestampNanoSecs: vestingEndTimestampNanoSecs,
+	})
+
+	// Store matching LockedBalanceEntries to return and track entries found.
+	var lockedBalanceEntries []*LockedBalanceEntry
+	var entriesFound int
+
+	// Create a backwards iterator.
+	backwardOpts := badger.DefaultIteratorOptions
+	backwardOpts.Reverse = true
+	backwardIterator := txn.NewIterator(backwardOpts)
+	defer backwardIterator.Close()
+
+	// Seek backwards and check for a vested locked balance entry which straddles the start time.
+	// NOTE: Per the comment on the badger Seek implementation, the Seek operation in the reverse direction will find
+	// the largest key less than the specified start key. Because the specified startKey doesn't ever have an
+	// exact match (as we're using a prefix of an actual key), we know this operation can only ever return either an
+	// invalid lockedBalanceEntry or a lockedBalanceEntry which straddles the unlockTimestampNanoSecs specified.
+	// In the case the lockedBalanceEntry straddles the unlockTimestampNanoSecs, we add it to the lockedBalanceEntries
+	// list and increment the entriesFound.
+	backwardIterator.Seek(startKey)
+	if backwardIterator.ValidForPrefix(prefixKey) {
+		// Retrieve the LockedBalanceEntryBytes.
+		lockedBalanceEntryBytes, err := backwardIterator.Item().ValueCopy(nil)
+		if err != nil {
+			return nil, errors.Wrapf(err, "DBGetLimitedVestedLockedBalanceEntriesWithTxn: "+
+				"error retrieveing LockedBalanceEntry: ")
+		}
+
+		// Convert the LockedBalanceEntryBytes to LockedBalanceEntry.
+		rr := bytes.NewReader(lockedBalanceEntryBytes)
+		lockedBalanceEntry, err := DecodeDeSoEncoder(&LockedBalanceEntry{}, rr)
+		if err != nil {
+			return nil, errors.Wrapf(err, "DBGetLimitedVestedLockedBalanceEntriesWithTxn: "+
 				"error decoding LockedBalanceEntry: ")
 		}
 
-		// This check is redundant. It's included to be extra safe only unlockable locked balance entries are included.
-		if lockedBalanceEntry.UnlockTimestampNanoSecs < currentTimestampUnixNanoSecs {
+		// Check if the LockedBalanceEntry straddles the start time of the period specified.
+		if lockedBalanceEntry.HODLerPKID.Eq(hodlerPKID) &&
+			lockedBalanceEntry.ProfilePKID.Eq(profilePKID) &&
+			lockedBalanceEntry.UnlockTimestampNanoSecs < unlockTimestampNanoSecs &&
+			lockedBalanceEntry.VestingEndTimestampNanoSecs >= unlockTimestampNanoSecs {
 			lockedBalanceEntries = append(lockedBalanceEntries, lockedBalanceEntry)
+			entriesFound++
+		}
+	}
+
+	// Create a forward iterator. We will use t
+	forwardOpts := badger.DefaultIteratorOptions
+	forwardIterator := txn.NewIterator(forwardOpts)
+	defer forwardIterator.Close()
+
+	// Loop until we find an out of range vested locked balance entry.
+	for forwardIterator.Seek(startKey); forwardIterator.ValidForPrefix(prefixKey); forwardIterator.Next() {
+		// Retrieve the LockedBalanceEntryBytes.
+		lockedBalanceEntryBytes, err := forwardIterator.Item().ValueCopy(nil)
+		if err != nil {
+			return nil, errors.Wrapf(err, "DBGetLimitedVestedLockedBalanceEntriesWithTxn: "+
+				"error retrieveing LockedBalanceEntry: ")
+		}
+
+		// Convert the LockedBalanceEntryBytes to LockedBalanceEntry.
+		rr := bytes.NewReader(lockedBalanceEntryBytes)
+		lockedBalanceEntry, err := DecodeDeSoEncoder(&LockedBalanceEntry{}, rr)
+		if err != nil {
+			return nil, errors.Wrapf(err, "DBGetLimitedVestedLockedBalanceEntriesWithTxn: "+
+				"error decoding LockedBalanceEntry: ")
+		}
+
+		// Check if the LockedBalanceEntry is relevant to the limited query.
+		if lockedBalanceEntry.HODLerPKID.Eq(hodlerPKID) &&
+			lockedBalanceEntry.ProfilePKID.Eq(profilePKID) &&
+			lockedBalanceEntry.UnlockTimestampNanoSecs >= unlockTimestampNanoSecs &&
+			lockedBalanceEntry.UnlockTimestampNanoSecs <= vestingEndTimestampNanoSecs {
+			lockedBalanceEntries = append(lockedBalanceEntries, lockedBalanceEntry)
+			entriesFound++
+		}
+
+		// Check if we've found too many entries.
+		if entriesFound > limitToFetch {
+			return nil, errors.Wrap(RuleErrorCoinLockupViolatesVestingIntersectionLimit,
+				"DBGetLimitedVestedLockedBalanceEntriesWithTxn: "+
+					"limit exhausted. Found too many relevant LockedBalanceEntries.")
 		}
 	}
 
@@ -11105,6 +11546,13 @@ func DbDeleteLockupYieldCurvePointWithTxn(txn *badger.Txn, snap *Snapshot,
 func DBGetAllYieldCurvePointsByProfilePKID(handle *badger.DB, snap *Snapshot,
 	profilePKID *PKID) (_lockupYieldCurvePoints []*LockupYieldCurvePoint, _err error) {
 	var lockupYieldCurvePoints []*LockupYieldCurvePoint
+
+	// Validate profilePKID is not nil.
+	if profilePKID == nil {
+		return nil, errors.New("DBGetAllYieldCurvePointsByProfilePKID: " +
+			"called with nil profilePKID; this shouldn't happen")
+	}
+
 	err := handle.View(func(txn *badger.Txn) error {
 		var err error
 		lockupYieldCurvePoints, err = DBGetAllYieldCurvePointsByProfilePKIDWithTxn(
@@ -11158,6 +11606,13 @@ func DBGetAllYieldCurvePointsByProfilePKIDWithTxn(txn *badger.Txn, snap *Snapsho
 func DBGetYieldCurvePointsByProfilePKIDAndDurationNanoSecs(handle *badger.DB, snap *Snapshot, profilePKID *PKID,
 	lockupDurationNanoSecs int64) (_lockupYieldCurvePoint *LockupYieldCurvePoint, _err error) {
 	var lockupYieldCurvePoint *LockupYieldCurvePoint
+
+	// Validate profilePKID is not nil.
+	if profilePKID == nil {
+		return nil, errors.New("DBGetYieldCurvePointsByProfilePKIDAndDurationNanoSecs: " +
+			"called with nil profilePKID; this shouldn't happen")
+	}
+
 	err := handle.View(func(txn *badger.Txn) error {
 		var err error
 		lockupYieldCurvePoint, err = DBGetYieldCurvePointsByProfilePKIDAndDurationNanoSecsWithTxn(

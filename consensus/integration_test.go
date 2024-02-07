@@ -234,7 +234,7 @@ func TestNetworkRecoveryAfterCatastrophicFailure(t *testing.T) {
 	// After a catastrophic network failure, nodes with a super-majority of stake need to somehow
 	// agree on a starting state of the chain. As long as they are able to sync from or to any peer
 	// that eventually becomes a block proposer, the network will recover.
-	node3.Resync(node1.eventLoop.tip.block.(*block), collections.MapValues(node1.safeBlocks))
+	node3.Resync(genesisBlock, node1.eventLoop.tip.block.(*block), collections.MapValues(node1.safeBlocks))
 	node3.Start()
 
 	// Let all nodes run for 10 seconds. Eventually all nodes will converge on a single view and

@@ -17,6 +17,7 @@ func NewFastHotStuffEventLoop() *fastHotStuffEventLoop {
 		status:          eventLoopStatusNotInitialized,
 		crankTimerTask:  NewScheduledTask[uint64](),
 		nextTimeoutTask: NewScheduledTask[uint64](),
+		Events:          make(chan *FastHotStuffEvent, signalChannelBufferSize),
 	}
 }
 
@@ -25,6 +26,9 @@ func NewFastHotStuffEventLoop() *fastHotStuffEventLoop {
 // params:
 //   - crankTimerInterval: crank timer interval duration must be > 0
 //   - timeoutBaseDuration: timeout base duration must be > 0
+//   - genesisQC: quorum certificate used as the genesis for the PoS chain. This QC is a trusted input
+//     that is used to override the highQC in timeout messages and timeout aggregate QCs when there
+//     is a timeout at the first block height of the PoS chain.
 //   - tip: the current tip of the blockchain, with the validator list at that block height. This may
 //     be a committed or uncommitted block.
 //   - safeBlocks: an unordered slice of blocks including the committed tip, the uncommitted tip,
@@ -37,6 +41,7 @@ func NewFastHotStuffEventLoop() *fastHotStuffEventLoop {
 func (fc *fastHotStuffEventLoop) Init(
 	crankTimerInterval time.Duration,
 	timeoutBaseDuration time.Duration,
+	genesisQC QuorumCertificate,
 	tip BlockWithValidatorList,
 	safeBlocks []BlockWithValidatorList,
 ) error {
@@ -57,6 +62,9 @@ func (fc *fastHotStuffEventLoop) Init(
 		return errors.New("FastHotStuffEventLoop.Init: Timeout base duration must be > 0")
 	}
 
+	// Store the genesis QC
+	fc.genesisQC = genesisQC
+
 	// Validate the safe blocks and validator lists, and store them
 	if err := fc.storeBlocks(tip, safeBlocks); err != nil {
 		return errors.Wrap(err, "FastHotStuffEventLoop.Init: ")
@@ -72,9 +80,6 @@ func (fc *fastHotStuffEventLoop) Init(
 	// Reset all internal data structures for votes and timeouts
 	fc.votesSeenByBlockHash = make(map[BlockHashValue]map[string]VoteMessage)
 	fc.timeoutsSeenByView = make(map[uint64]map[string]TimeoutMessage)
-
-	// Reset the external channel used for signaling
-	fc.Events = make(chan *FastHotStuffEvent, signalChannelBufferSize)
 
 	// Set the crank timer interval and timeout base duration
 	fc.crankTimerInterval = crankTimerInterval
@@ -230,6 +235,17 @@ func (fc *fastHotStuffEventLoop) storeBlocks(tip BlockWithValidatorList, safeBlo
 		return errors.New("Invalid safe blocks or validator lists")
 	}
 
+	// Sanity check: the tip block and safe blocks must not have lower views than the genesis QC's view.
+	if tip.Block.GetView() < fc.genesisQC.GetView() {
+		return errors.New("Tip block view must be greater than or equal to the genesis QC view")
+	}
+
+	for _, block := range safeBlocks {
+		if block.Block.GetView() < fc.genesisQC.GetView() {
+			return errors.New("Safe block view must be greater than or equal to the genesis QC view")
+		}
+	}
+
 	// Extract the block hashes for the tip block and safe blocks
 	tipBlockHash := tip.Block.GetBlockHash()
 	safeBlockHashes := collections.Transform(safeBlocks, extractBlockHash)
@@ -281,7 +297,7 @@ func (fc *fastHotStuffEventLoop) ProcessValidatorVote(vote VoteMessage) error {
 	}
 
 	// Do a basic integrity check on the vote message
-	if !isProperlyFormedVote(vote) {
+	if !IsProperlyFormedVote(vote) {
 		return errors.New("FastHotStuffEventLoop.ProcessValidatorVote: Malformed vote message")
 	}
 
@@ -366,7 +382,7 @@ func (fc *fastHotStuffEventLoop) ProcessValidatorTimeout(timeout TimeoutMessage)
 	}
 
 	// Do a basic integrity check on the timeout message
-	if !isProperlyFormedTimeout(timeout) {
+	if !IsProperlyFormedTimeout(timeout) {
 		return errors.New("FastHotStuffEventLoop.ProcessValidatorTimeout: Malformed timeout message")
 	}
 
@@ -431,9 +447,9 @@ func (fc *fastHotStuffEventLoop) ProcessValidatorTimeout(timeout TimeoutMessage)
 		)
 	}
 
-	// Verify the high QC in the timeout message. We can use the validator list at the exact block height of
-	// the high QC's block hash.
-	if !IsValidSuperMajorityQuorumCertificate(timeout.GetHighQC(), validatorList) {
+	// Verify the high QC in the timeout message. The highQC is valid if it exactly matches the genesis QC or it is a
+	// valid QC signed by a super-majority of validators for a safe block.
+	if !IsEqualQC(timeout.GetHighQC(), fc.genesisQC) && !IsValidSuperMajorityQuorumCertificate(timeout.GetHighQC(), validatorList) {
 		return errors.Errorf(
 			"FastHotStuffEventLoop.ProcessValidatorTimeout: Invalid high QC received in timeout message from validator %s for view %d",
 			timeout.GetPublicKey().ToString(),
@@ -782,6 +798,7 @@ func (fc *fastHotStuffEventLoop) tryConstructTimeoutQCInCurrentView() *FastHotSt
 		View:           fc.currentView,                          // The view that the timeout QC is proposed in
 		TipBlockHash:   validatorsHighQC.GetBlockHash(),         // The block hash that we extend from
 		TipBlockHeight: safeBlock.GetHeight(),                   // The block height that we extend from
+		QC:             validatorsHighQC,                        // The high QC aggregated from the timeout messages
 		AggregateQC: &aggregateQuorumCertificate{
 			view:        fc.currentView - 1, // The timed out view is always the previous view
 			highQC:      validatorsHighQC,   // The high QC aggregated from the timeout messages
@@ -820,7 +837,6 @@ func (fc *fastHotStuffEventLoop) onTimeoutScheduledTaskExecuted(timedOutView uin
 		View:           timedOutView,                 // The view we timed out
 		TipBlockHash:   fc.tip.block.GetBlockHash(),  // The last block we saw
 		TipBlockHeight: fc.tip.block.GetHeight(),     // The last block we saw
-		QC:             fc.tip.block.GetQC(),         // The highest QC we have
 	})
 
 	// Cancel the timeout task. The server will reschedule it when it advances the view.
@@ -926,7 +942,7 @@ func (fc *fastHotStuffEventLoop) fetchSafeBlockInfo(blockHash BlockHash) (
 	// (one committed, two uncommitted). In the worse case, where the network has an unlucky series of
 	// timeout -> block -> timeout -> block,... it can still be expected to have < 10 blocks.
 	for _, block := range fc.safeBlocks {
-		if isEqualBlockHashes(block.block.GetBlockHash(), blockHash) {
+		if IsEqualBlockHash(block.block.GetBlockHash(), blockHash) {
 			return true, block.block, block.validatorList, block.validatorLookup
 		}
 	}

@@ -126,7 +126,7 @@ func addBlockToTransactionRegister(txnRegister *TransactionRegister, block *MsgD
 		if txn.TxnMeta.GetTxnType() == TxnTypeBlockReward {
 			continue
 		}
-		mtxn, err := NewMempoolTx(txn, block.Header.TstampNanoSecs, block.Header.Height)
+		mtxn, err := NewMempoolTx(txn, NanoSecondsToUint64MicroSeconds(block.Header.TstampNanoSecs), block.Header.Height)
 		if err != nil {
 			return errors.Wrap(err, "PoSFeeEstimator.addBlockToTransactionRegister: error creating MempoolTx")
 		}
@@ -159,7 +159,7 @@ func (posFeeEstimator *PoSFeeEstimator) removeBlockNoLock(block *MsgDeSoBlock) e
 		if txn.TxnMeta.GetTxnType() == TxnTypeBlockReward {
 			continue
 		}
-		mtxn, err := NewMempoolTx(txn, block.Header.TstampNanoSecs, block.Header.Height)
+		mtxn, err := NewMempoolTx(txn, NanoSecondsToUint64MicroSeconds(block.Header.TstampNanoSecs), block.Header.Height)
 		if err != nil {
 			return errors.Wrap(err, "PoSFeeEstimator.RemoveBlock: error creating MempoolTx")
 		}

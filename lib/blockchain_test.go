@@ -254,7 +254,7 @@ func NewLowDifficultyBlockchainWithParamsAndDb(t *testing.T, params *DeSoParams,
 		}
 	}
 	chain, err := NewBlockchain([]string{blockSignerPk}, 0, 0,
-		&testParams, timesource, db, postgresDb, nil, snap, false)
+		&testParams, timesource, db, postgresDb, NewEventManager(), snap, false)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -1250,7 +1250,7 @@ func TestCalcNextDifficultyTargetHalvingDoublingHitLimit(t *testing.T) {
 			nil,
 			&MsgDeSoHeader{
 				// Blocks generating every 1 second, which is 2x too fast.
-				TstampNanoSecs: SecondsToNanoSeconds(uint64(ii)),
+				TstampNanoSecs: SecondsToNanoSeconds(int64(ii)),
 			},
 			StatusNone,
 		))
@@ -1287,7 +1287,7 @@ func TestCalcNextDifficultyTargetHalvingDoublingHitLimit(t *testing.T) {
 			nil,
 			&MsgDeSoHeader{
 				// Blocks generating every 4 second, which is 2x too slow.
-				TstampNanoSecs: SecondsToNanoSeconds(uint64(ii * 4)),
+				TstampNanoSecs: SecondsToNanoSeconds(int64(ii * 4)),
 			},
 			StatusNone,
 		))
@@ -1346,7 +1346,7 @@ func TestCalcNextDifficultyTargetHittingLimitsSlow(t *testing.T) {
 			nil,
 			&MsgDeSoHeader{
 				// Blocks generating every 1 second, which is 2x too fast.
-				TstampNanoSecs: SecondsToNanoSeconds(uint64(ii)),
+				TstampNanoSecs: SecondsToNanoSeconds(int64(ii)),
 			},
 			StatusNone,
 		))
@@ -1383,7 +1383,7 @@ func TestCalcNextDifficultyTargetHittingLimitsSlow(t *testing.T) {
 			nil,
 			&MsgDeSoHeader{
 				// Blocks generating every 8 second, which is >2x too slow.
-				TstampNanoSecs: SecondsToNanoSeconds(uint64(ii * 4)),
+				TstampNanoSecs: SecondsToNanoSeconds(int64(ii * 4)),
 			},
 			StatusNone,
 		))
@@ -1497,7 +1497,7 @@ func TestCalcNextDifficultyTargetJustRight(t *testing.T) {
 			nil,
 			&MsgDeSoHeader{
 				// Blocks generating every 2 second, which is under the limit.
-				TstampNanoSecs: SecondsToNanoSeconds(uint64(ii * 2)),
+				TstampNanoSecs: SecondsToNanoSeconds(int64(ii * 2)),
 			},
 			StatusNone,
 		))
@@ -1552,7 +1552,7 @@ func TestCalcNextDifficultyTargetSlightlyOff(t *testing.T) {
 			nil,
 			&MsgDeSoHeader{
 				// Blocks generating every 1 second, which is 2x too fast.
-				TstampNanoSecs: SecondsToNanoSeconds(uint64(ii)),
+				TstampNanoSecs: SecondsToNanoSeconds(int64(ii)),
 			},
 			StatusNone,
 		))
@@ -1589,7 +1589,7 @@ func TestCalcNextDifficultyTargetSlightlyOff(t *testing.T) {
 			nil,
 			&MsgDeSoHeader{
 				// Blocks generating every 3 seconds, which is slow but under the limit.
-				TstampNanoSecs: SecondsToNanoSeconds(uint64(float32(ii) * 3)),
+				TstampNanoSecs: SecondsToNanoSeconds(int64(ii) * 3),
 			},
 			StatusNone,
 		))

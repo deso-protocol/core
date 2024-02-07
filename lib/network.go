@@ -17,11 +17,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/decred/dcrd/dcrec/secp256k1/v4"
+	"github.com/deso-protocol/core/collections/bitset"
 	"github.com/golang/glog"
 
-	"github.com/deso-protocol/core/collections/bitset"
-	"github.com/deso-protocol/core/consensus"
+	"github.com/decred/dcrd/dcrec/secp256k1/v4"
 
 	"github.com/btcsuite/btcd/btcec"
 	"github.com/btcsuite/btcd/wire"
@@ -2060,7 +2059,7 @@ type MsgDeSoHeader struct {
 	// use the SetTstampSecs() and GetTstampSecs() public methods.
 
 	// The unix timestamp (in nanoseconds) specifying when this block was produced.
-	TstampNanoSecs uint64
+	TstampNanoSecs int64
 
 	// The height of the block this header corresponds to.
 	Height uint64
@@ -2138,29 +2137,8 @@ type MsgDeSoHeader struct {
 	ProposerVotePartialSignature *bls.Signature
 }
 
-func (msg *MsgDeSoHeader) GetBlockHash() consensus.BlockHash {
-	hash, err := msg.Hash()
-	if err != nil {
-		glog.Errorf("MsgDeSoHeader.GetBlockHash: Problem hashing header: %v", err)
-		// TODO: Should we return nil?
-		return &BlockHash{}
-	}
-	return hash
-}
-
 func (msg *MsgDeSoHeader) GetHeight() uint64 {
 	return msg.Height
-}
-
-func (msg *MsgDeSoHeader) GetView() uint64 {
-	return msg.ProposedInView
-}
-
-func (msg *MsgDeSoHeader) GetQC() consensus.QuorumCertificate {
-	if msg.ValidatorsTimeoutAggregateQC.isEmpty() {
-		return msg.ValidatorsVoteQC
-	}
-	return msg.ValidatorsTimeoutAggregateQC.ValidatorsHighQC
 }
 
 func HeaderSizeBytes() int {
@@ -2169,11 +2147,11 @@ func HeaderSizeBytes() int {
 	return len(headerBytes)
 }
 
-func (msg *MsgDeSoHeader) SetTstampSecs(tstampSecs uint64) {
+func (msg *MsgDeSoHeader) SetTstampSecs(tstampSecs int64) {
 	msg.TstampNanoSecs = SecondsToNanoSeconds(tstampSecs)
 }
 
-func (msg *MsgDeSoHeader) GetTstampSecs() uint64 {
+func (msg *MsgDeSoHeader) GetTstampSecs() int64 {
 	return NanoSecondsToSeconds(msg.TstampNanoSecs)
 }
 
@@ -2253,7 +2231,7 @@ func (msg *MsgDeSoHeader) EncodeHeaderVersion1(preSignature bool) ([]byte, error
 	// TstampSecs
 	{
 		scratchBytes := [8]byte{}
-		binary.BigEndian.PutUint64(scratchBytes[:], msg.GetTstampSecs())
+		binary.BigEndian.PutUint64(scratchBytes[:], uint64(msg.GetTstampSecs()))
 		retBytes = append(retBytes, scratchBytes[:]...)
 
 		// TODO: Don't allow this field to exceed 32-bits for now. This will
@@ -2323,7 +2301,7 @@ func (msg *MsgDeSoHeader) EncodeHeaderVersion2(preSignature bool) ([]byte, error
 
 	// TstampNanosSecs: this field can be encoded to take up to the full 64 bits now
 	// that MsgDeSoHeader version 2 does not need to be backwards compatible.
-	retBytes = append(retBytes, UintToBuf(msg.TstampNanoSecs)...)
+	retBytes = append(retBytes, IntToBuf(msg.TstampNanoSecs)...)
 
 	// Height: similar to the field above, this field can be encoded to take
 	// up to the full 64 bits now that MsgDeSoHeader version 2 does not need to
@@ -2438,7 +2416,7 @@ func DecodeHeaderVersion0(rr io.Reader) (*MsgDeSoHeader, error) {
 		if err != nil {
 			return nil, errors.Wrapf(err, "MsgDeSoHeader.FromBytes: Problem decoding TstampSecs")
 		}
-		retHeader.SetTstampSecs(uint64(binary.LittleEndian.Uint32(scratchBytes[:])))
+		retHeader.SetTstampSecs(int64(binary.LittleEndian.Uint32(scratchBytes[:])))
 	}
 
 	// Height
@@ -2486,7 +2464,7 @@ func DecodeHeaderVersion1(rr io.Reader) (*MsgDeSoHeader, error) {
 		if err != nil {
 			return nil, errors.Wrapf(err, "MsgDeSoHeader.FromBytes: Problem decoding TstampSecs")
 		}
-		retHeader.SetTstampSecs(binary.BigEndian.Uint64(scratchBytes[:]))
+		retHeader.SetTstampSecs(int64(binary.BigEndian.Uint64(scratchBytes[:])))
 	}
 
 	// Height
@@ -2538,7 +2516,7 @@ func DecodeHeaderVersion2(rr io.Reader) (*MsgDeSoHeader, error) {
 	}
 
 	// TstampNanoSecs
-	retHeader.TstampNanoSecs, err = ReadUvarint(rr)
+	retHeader.TstampNanoSecs, err = ReadVarint(rr)
 	if err != nil {
 		return nil, errors.Wrapf(err, "MsgDeSoHeader.FromBytes: Problem decoding TstampNanoSecs")
 	}

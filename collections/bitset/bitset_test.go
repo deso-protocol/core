@@ -94,3 +94,40 @@ func TestEmptyBitsetByteEncodeDecode(t *testing.T) {
 
 	require.Zero(t, decodedBitset.Size())
 }
+
+func TestEquality(t *testing.T) {
+	// Test nil bitsets
+	{
+		var bitset1 *Bitset
+		var bitset2 *Bitset
+
+		require.False(t, bitset1.Eq(bitset2))
+	}
+
+	// Test one nil and one non-nil bitset
+	{
+		var bitset1 *Bitset
+		bitset2 := NewBitset().Set(0, true)
+
+		require.False(t, bitset1.Eq(bitset2))
+		require.False(t, bitset2.Eq(bitset1))
+	}
+
+	// Test two non-equal non-nil bitsets
+	{
+		bitset1 := NewBitset().Set(0, true)
+		bitset2 := NewBitset().Set(1, true)
+
+		require.False(t, bitset1.Eq(bitset2))
+		require.False(t, bitset2.Eq(bitset1))
+	}
+
+	// Test two equal non-nil bitsets
+	{
+		bitset1 := NewBitset().Set(0, true)
+		bitset2 := NewBitset().Set(0, true).Set(1, false)
+
+		require.True(t, bitset1.Eq(bitset2))
+		require.True(t, bitset2.Eq(bitset1))
+	}
+}

@@ -52,15 +52,22 @@ const (
 
 // Time constants
 const (
-	NanoSecondsPerSecond = uint64(1000000000)
+	NanoSecondsPerSecond = int64(1000000000)
 )
 
-func SecondsToNanoSeconds(secs uint64) uint64 {
+func SecondsToNanoSeconds(secs int64) int64 {
 	return secs * NanoSecondsPerSecond
 }
 
-func NanoSecondsToSeconds(nanos uint64) uint64 {
+func NanoSecondsToSeconds(nanos int64) int64 {
 	return nanos / NanoSecondsPerSecond
+}
+
+func NanoSecondsToUint64MicroSeconds(nanos int64) uint64 {
+	if nanos < 0 {
+		return 0
+	}
+	return uint64(nanos / 1000)
 }
 
 // Snapshot constants
@@ -338,6 +345,13 @@ type ForkHeights struct {
 	// register, stake to be assigned, and the validator set, consensus params, and
 	// leader schedule snapshots to be generated in advance.
 	ProofOfStake1StateSetupBlockHeight uint32
+
+	// LockupsBlockHeight defines the height at which we begin accepting lockup
+	// related transactions. These can include things like CoinLockup, UpdateCoinLockupParams,
+	// CoinLockupTransfer, and CoinUnlock.
+	//
+	// We specify this separately to enable independent testing when compared with other features.
+	LockupsBlockHeight uint32
 
 	// ProofOfStake2ConsensusCutoverBlockHeight defines the height at which we cut over
 	// from PoW consensus to PoS consensus.
@@ -731,7 +745,7 @@ type DeSoParams struct {
 	// TODO: add support for putting the drift in global params.
 	// DefaultBlockTimestampDriftNanoSecs is the default number of nanoseconds
 	// from the current timestamp that we will allow a PoS block to be submitted.
-	DefaultBlockTimestampDriftNanoSecs uint64
+	DefaultBlockTimestampDriftNanoSecs int64
 
 	// DefaultFeeBucketGrowthRateBasisPoints is the rate of growth of the fee bucket ranges. The multiplier is given
 	// as basis points. For example a value of 1000 means that the fee bucket ranges will grow by 10% each time.
@@ -741,6 +755,11 @@ type DeSoParams struct {
 	// used in BMF calculations. E.g. a value of 2500 means that 25% of the failing transaction's fee is used
 	// in BMF calculations.
 	DefaultFailingTransactionBMFMultiplierBasisPoints uint64
+
+	// DefaultMaximumVestedIntersectionsPerLockupTransaction is the default value for
+	// GlobalParamsEntry.MaximumVestedIntersectionsPerLockupTransaction. See the comment
+	// in GlobalParamsEntry for a detailed description of its usage.
+	DefaultMaximumVestedIntersectionsPerLockupTransaction int
 
 	// HandshakeTimeoutMicroSeconds is the timeout for the peer handshake certificate. The default value is 15 minutes.
 	HandshakeTimeoutMicroSeconds uint64
@@ -783,8 +802,11 @@ var RegtestForkHeights = ForkHeights{
 	BalanceModelBlockHeight:            uint32(1),
 	ProofOfStake1StateSetupBlockHeight: uint32(1),
 
-	// FIXME: set to real block height when ready
-	ProofOfStake2ConsensusCutoverBlockHeight: uint32(math.MaxUint32),
+	// For convenience, we set the PoS cutover block height to 50
+	// so that enough DESO is minted to allow for testing.
+	ProofOfStake2ConsensusCutoverBlockHeight: uint32(50),
+
+	LockupsBlockHeight: uint32(1),
 
 	BlockRewardPatchBlockHeight: uint32(0),
 
@@ -818,11 +840,34 @@ func (params *DeSoParams) EnableRegtest() {
 	// Allow block rewards to be spent instantly
 	params.BlockRewardMaturity = 0
 
+	// Set the PoS epoch duration to 10 blocks
+	params.DefaultEpochDurationNumBlocks = 10
+
 	// In regtest, we start all the fork heights at zero. These can be adjusted
 	// for testing purposes to ensure that a transition does not cause issues.
 	params.ForkHeights = RegtestForkHeights
 	params.EncoderMigrationHeights = GetEncoderMigrationHeights(&params.ForkHeights)
 	params.EncoderMigrationHeightsList = GetEncoderMigrationHeightsList(&params.ForkHeights)
+}
+
+func (params *DeSoParams) IsPoWBlockHeight(blockHeight uint64) bool {
+	return !params.IsPoSBlockHeight(blockHeight)
+}
+
+func (params *DeSoParams) IsPoSBlockHeight(blockHeight uint64) bool {
+	return blockHeight >= params.GetFirstPoSBlockHeight()
+}
+
+func (params *DeSoParams) IsFinalPoWBlockHeight(blockHeight uint64) bool {
+	return blockHeight == params.GetFinalPoWBlockHeight()
+}
+
+func (params *DeSoParams) GetFinalPoWBlockHeight() uint64 {
+	return uint64(params.ForkHeights.ProofOfStake2ConsensusCutoverBlockHeight - 1)
+}
+
+func (params *DeSoParams) GetFirstPoSBlockHeight() uint64 {
+	return uint64(params.ForkHeights.ProofOfStake2ConsensusCutoverBlockHeight)
 }
 
 // GenesisBlock defines the genesis block used for the DeSo mainnet and testnet
@@ -944,6 +989,9 @@ var MainnetForkHeights = ForkHeights{
 
 	// FIXME: set to real block height when ready
 	ProofOfStake2ConsensusCutoverBlockHeight: uint32(math.MaxUint32),
+
+	// FIXME: set to real block height when ready
+	LockupsBlockHeight: uint32(math.MaxUint32),
 
 	// Be sure to update EncoderMigrationHeights as well via
 	// GetEncoderMigrationHeights if you're modifying schema.
@@ -1156,13 +1204,16 @@ var DeSoMainnetParams = DeSoParams{
 	DefaultJailInactiveValidatorGracePeriodEpochs: uint64(48),
 
 	// The number of nanoseconds from the current timestamp that we will allow a PoS block to be submitted.
-	DefaultBlockTimestampDriftNanoSecs: uint64((time.Minute * 10).Nanoseconds()),
+	DefaultBlockTimestampDriftNanoSecs: (time.Minute * 10).Nanoseconds(),
 
 	// The rate of growth of the fee bucket ranges.
 	DefaultFeeBucketGrowthRateBasisPoints: uint64(1000),
 
 	// The rate of the failing transaction's fee used in BMF calculations.
 	DefaultFailingTransactionBMFMultiplierBasisPoints: uint64(2500),
+
+	// The maximum number of vested lockup intersections in a lockup transaction.
+	DefaultMaximumVestedIntersectionsPerLockupTransaction: 1000,
 
 	// The peer handshake certificate timeout.
 	HandshakeTimeoutMicroSeconds: uint64(900000000),
@@ -1258,6 +1309,9 @@ var TestnetForkHeights = ForkHeights{
 
 	// FIXME: set to real block height when ready
 	ProofOfStake2ConsensusCutoverBlockHeight: uint32(math.MaxUint32),
+
+	// FIXME: set to real block height when ready
+	LockupsBlockHeight: uint32(math.MaxUint32),
 
 	// Be sure to update EncoderMigrationHeights as well via
 	// GetEncoderMigrationHeights if you're modifying schema.
@@ -1432,13 +1486,16 @@ var DeSoTestnetParams = DeSoParams{
 	DefaultJailInactiveValidatorGracePeriodEpochs: uint64(48),
 
 	// The number of nanoseconds from the current timestamp that we will allow a PoS block to be submitted.
-	DefaultBlockTimestampDriftNanoSecs: uint64((time.Minute * 10).Nanoseconds()),
+	DefaultBlockTimestampDriftNanoSecs: (time.Minute * 10).Nanoseconds(),
 
 	// The rate of growth of the fee bucket ranges.
 	DefaultFeeBucketGrowthRateBasisPoints: uint64(1000),
 
 	// The rate of the failing transaction's fee used in BMF calculations.
 	DefaultFailingTransactionBMFMultiplierBasisPoints: uint64(2500),
+
+	// The maximum number of vested lockup intersections in a lockup transaction.
+	DefaultMaximumVestedIntersectionsPerLockupTransaction: 1000,
 
 	// The peer handshake certificate timeout.
 	HandshakeTimeoutMicroSeconds: uint64(900000000),
@@ -1483,23 +1540,24 @@ const (
 	IsFrozenKey = "IsFrozen"
 
 	// Keys for a GlobalParamUpdate transaction's extra data map.
-	USDCentsPerBitcoinKey                         = "USDCentsPerBitcoin"
-	MinNetworkFeeNanosPerKBKey                    = "MinNetworkFeeNanosPerKB"
-	CreateProfileFeeNanosKey                      = "CreateProfileFeeNanos"
-	CreateNFTFeeNanosKey                          = "CreateNFTFeeNanos"
-	MaxCopiesPerNFTKey                            = "MaxCopiesPerNFT"
-	MaxNonceExpirationBlockHeightOffsetKey        = "MaxNonceExpirationBlockHeightOffset"
-	ForbiddenBlockSignaturePubKeyKey              = "ForbiddenBlockSignaturePubKey"
-	StakeLockupEpochDurationKey                   = "StakeLockupEpochDuration"
-	ValidatorJailEpochDurationKey                 = "ValidatorJailEpochDuration"
-	LeaderScheduleMaxNumValidatorsKey             = "LeaderScheduleMaxNumValidators"
-	ValidatorSetMaxNumValidatorsKey               = "ValidatorSetMaxNumValidators"
-	StakingRewardsMaxNumStakesKey                 = "StakingRewardsMaxNumStakes"
-	StakingRewardsAPYBasisPointsKey               = "StakingRewardsAPYBasisPoints"
-	EpochDurationNumBlocksKey                     = "EpochDurationNumBlocks"
-	JailInactiveValidatorGracePeriodEpochsKey     = "JailInactiveValidatorGracePeriodEpochs"
-	FeeBucketGrowthRateBasisPointsKey             = "FeeBucketGrowthRateBasisPointsKey"
-	FailingTransactionBMFMultiplierBasisPointsKey = "FailingTransactionBMFMultiplierBasisPoints"
+	USDCentsPerBitcoinKey                             = "USDCentsPerBitcoin"
+	MinNetworkFeeNanosPerKBKey                        = "MinNetworkFeeNanosPerKB"
+	CreateProfileFeeNanosKey                          = "CreateProfileFeeNanos"
+	CreateNFTFeeNanosKey                              = "CreateNFTFeeNanos"
+	MaxCopiesPerNFTKey                                = "MaxCopiesPerNFT"
+	MaxNonceExpirationBlockHeightOffsetKey            = "MaxNonceExpirationBlockHeightOffset"
+	ForbiddenBlockSignaturePubKeyKey                  = "ForbiddenBlockSignaturePubKey"
+	StakeLockupEpochDurationKey                       = "StakeLockupEpochDuration"
+	ValidatorJailEpochDurationKey                     = "ValidatorJailEpochDuration"
+	LeaderScheduleMaxNumValidatorsKey                 = "LeaderScheduleMaxNumValidators"
+	ValidatorSetMaxNumValidatorsKey                   = "ValidatorSetMaxNumValidators"
+	StakingRewardsMaxNumStakesKey                     = "StakingRewardsMaxNumStakes"
+	StakingRewardsAPYBasisPointsKey                   = "StakingRewardsAPYBasisPoints"
+	EpochDurationNumBlocksKey                         = "EpochDurationNumBlocks"
+	JailInactiveValidatorGracePeriodEpochsKey         = "JailInactiveValidatorGracePeriodEpochs"
+	MaximumVestedIntersectionsPerLockupTransactionKey = "MaximumVestedIntersectionsPerLockupTransaction"
+	FeeBucketGrowthRateBasisPointsKey                 = "FeeBucketGrowthRateBasisPointsKey"
+	FailingTransactionBMFMultiplierBasisPointsKey     = "FailingTransactionBMFMultiplierBasisPoints"
 
 	DiamondLevelKey    = "DiamondLevel"
 	DiamondPostHashKey = "DiamondPostHash"

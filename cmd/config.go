@@ -1,11 +1,12 @@
 package cmd
 
 import (
+	"os"
+	"path/filepath"
+
 	"github.com/deso-protocol/core/lib"
 	"github.com/golang/glog"
 	"github.com/spf13/viper"
-	"os"
-	"path/filepath"
 )
 
 type Config struct {
@@ -17,7 +18,6 @@ type Config struct {
 	TXIndex              bool
 	Regtest              bool
 	PostgresURI          string
-	PosValidatorSeed     string
 
 	// Peers
 	ConnectIPs          []string
@@ -43,9 +43,17 @@ type Config struct {
 	DisableEncoderMigrations  bool
 	HypersyncMaxQueueSize     uint32
 
+	// PoS Validator
+	PosValidatorSeed                       string
+	PosBlockProductionIntervalMilliseconds uint64
+	PosTimeoutBaseDurationMilliseconds     uint64
+
 	// Mempool
-	MempoolBackupIntervalMillis uint64
-	MaxMempoolPosSizeBytes      uint64
+	MempoolBackupIntervalMillis             uint64
+	MaxMempoolPosSizeBytes                  uint64
+	MempoolFeeEstimatorNumMempoolBlocks     uint64
+	MempoolFeeEstimatorNumPastBlocks        uint64
+	AugmentedBlockViewRefreshIntervalMillis uint64
 
 	// Mining
 	MinerPublicKeys  []string
@@ -104,7 +112,6 @@ func LoadConfig() *Config {
 	config.TXIndex = viper.GetBool("txindex")
 	config.Regtest = viper.GetBool("regtest")
 	config.PostgresURI = viper.GetString("postgres-uri")
-	config.PosValidatorSeed = viper.GetString("pos-validator-seed")
 	config.HyperSync = viper.GetBool("hypersync")
 	config.ForceChecksum = viper.GetBool("force-checksum")
 	config.SyncType = lib.NodeSyncType(viper.GetString("sync-type"))
@@ -113,9 +120,17 @@ func LoadConfig() *Config {
 	config.DisableEncoderMigrations = viper.GetBool("disable-encoder-migrations")
 	config.HypersyncMaxQueueSize = viper.GetUint32("hypersync-max-queue-size")
 
+	// PoS Validator
+	config.PosValidatorSeed = viper.GetString("pos-validator-seed")
+	config.PosBlockProductionIntervalMilliseconds = viper.GetUint64("pos-block-production-interval-milliseconds")
+	config.PosTimeoutBaseDurationMilliseconds = viper.GetUint64("pos-timeout-base-duration-milliseconds")
+
 	// Mempool
 	config.MempoolBackupIntervalMillis = viper.GetUint64("mempool-backup-time-millis")
 	config.MaxMempoolPosSizeBytes = viper.GetUint64("max-mempool-pos-size-bytes")
+	config.MempoolFeeEstimatorNumMempoolBlocks = viper.GetUint64("mempool-fee-estimator-num-mempool-blocks")
+	config.MempoolFeeEstimatorNumPastBlocks = viper.GetUint64("mempool-fee-estimator-num-past-blocks")
+	config.AugmentedBlockViewRefreshIntervalMillis = viper.GetUint64("augmented-block-view-refresh-interval-millis")
 
 	// Peers
 	config.ConnectIPs = viper.GetStringSlice("connect-ips")

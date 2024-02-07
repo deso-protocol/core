@@ -36,6 +36,22 @@ type FastHotStuffEvent struct {
 	AggregateQC    AggregateQuorumCertificate
 }
 
+// SignatureOpCode is a way for the FastHotStuffEventLoop to differentiate between different types of
+// BLS signatures. This is used to ensure that the event loop doesn't accidentally sign two different
+// message types with the same signature.
+//   - SignatureOpCodeValidatorVote: The BLS signature is for a validator vote message
+//   - SignatureOpCodeValidatorTimeout: The BLS signature is for a validator timeout message
+type SignatureOpCode byte
+
+const (
+	SignatureOpCodeValidatorVote    SignatureOpCode = 1
+	SignatureOpCodeValidatorTimeout SignatureOpCode = 2
+)
+
+func (opCode SignatureOpCode) ToBytes() []byte {
+	return []byte{byte(opCode)}
+}
+
 // The maximum number of consecutive timeouts that can occur before the event loop stops
 // its exponential back-off. This is a safety valve that helps ensure that the event loop
 // doesn't get stuck in a near indefinite back-off state.
@@ -51,7 +67,7 @@ type BlockHashValue = [32]byte
 type FastHotStuffEventLoop interface {
 	GetEvents() chan *FastHotStuffEvent
 
-	Init(time.Duration, time.Duration, BlockWithValidatorList, []BlockWithValidatorList) error
+	Init(time.Duration, time.Duration, QuorumCertificate, BlockWithValidatorList, []BlockWithValidatorList) error
 	GetCurrentView() uint64
 	AdvanceViewOnTimeout() (uint64, error)
 	ProcessTipBlock(BlockWithValidatorList, []BlockWithValidatorList) error
@@ -121,14 +137,6 @@ type Block interface {
 	GetBlockHash() BlockHash
 	GetHeight() uint64
 	GetView() uint64
-	// This is a hybrid function that returns the QC from the block.
-	// - If the block is a normal block, this returns the QC from validators' votes for the previous block
-	// - If the block contains a timeout QC, this returns the validator high QC aggregated from
-	//   validators' timeout messages
-	// We are able to simplify the GetQC() to this behavior because this QC is only needed to construct
-	// a timeout QC for the next block in the event of a timeout. So, this QC will always be the latest QC
-	// at the current chain's tip that subsequent blocks will build on top of.
-	GetQC() QuorumCertificate
 }
 
 type BlockWithValidatorList struct {
@@ -189,6 +197,11 @@ type fastHotStuffEventLoop struct {
 	// the crank timer has elapsed, and only signal for QC construction once per view.
 	hasCrankTimerRunForCurrentView bool
 	hasConstructedQCInCurrentView  bool
+
+	// Quorum certificate used as the genesis for the PoS chain. This QC is a trusted input that is used
+	// to override the highQC in timeout messages and timeout aggregate QCs when there is a timeout at the
+	// first block height of the PoS chain.
+	genesisQC QuorumCertificate
 
 	// Block hash of the current tip of the block-chain.
 	tip blockWithValidatorLookup

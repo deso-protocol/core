@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
+	"time"
 
 	"github.com/dgraph-io/badger/v3"
 	"github.com/golang/glog"
@@ -34,6 +36,7 @@ type Mempool interface {
 
 	GetAugmentedUniversalView() (*UtxoView, error)
 	GetAugmentedUtxoViewForPublicKey(pk []byte, optionalTx *MsgDeSoTxn) (*UtxoView, error)
+	BlockUntilReadOnlyViewRegenerated()
 	CheckSpend(op UtxoKey) *MsgDeSoTxn
 	GetOrderedTransactions() []*MempoolTx
 	IsTransactionInPool(txHash *BlockHash) bool
@@ -118,6 +121,14 @@ type PosMempool struct {
 	// PosMempool only needs read-access to the block view. It isn't necessary to copy the block view before passing it
 	// to the mempool.
 	readOnlyLatestBlockView *UtxoView
+	// augmentedReadOnlyLatestBlockView is a copy of the latest block view with all the transactions in the mempool applied to
+	// it. This allows the backend to display the current state of the blockchain including the mempool.
+	// The augmentedReadOnlyLatestBlockView is updated every 10 milliseconds to reflect the latest state of the mempool.
+	augmentedReadOnlyLatestBlockView *UtxoView
+	// augmentedReadOnlyLatestBlockViewMutex is used to protect the augmentedLatestBlockView from concurrent access.
+	augmentedReadOnlyLatestBlockViewMutex sync.RWMutex
+	// Signals that the mempool is now in the stopped state.
+	quit chan interface{}
 	// latestBlockNode is used to infer the latest block height. The latestBlockNode should be updated whenever a new
 	// block is added to the blockchain via UpdateLatestBlock.
 	latestBlockHeight uint64
@@ -129,6 +140,14 @@ type PosMempool struct {
 	// feeEstimator is used to estimate the fee required for a transaction to be included in the next block
 	// based off the current state of the mempool and the most n recent blocks.
 	feeEstimator *PoSFeeEstimator
+
+	// augmentedBlockViewRefreshIntervalMillis is the frequency with which the augmentedLatestBlockView is updated.
+	augmentedBlockViewRefreshIntervalMillis uint64
+
+	// augmentedLatestBlockViewSequenceNumber is the sequence number of the readOnlyLatestBlockView. It is incremented
+	// every time augmentedLatestBlockView is updated. It can be used by obtainers of the augmentedLatestBlockView to
+	// wait until a particular transaction has been connected.
+	augmentedLatestBlockViewSequenceNumber int64
 }
 
 // PosMempoolIterator is a wrapper around FeeTimeIterator, modified to return MsgDeSoTxn instead of MempoolTx.
@@ -164,6 +183,7 @@ func NewPosMempool() *PosMempool {
 		feeEstimator: NewPoSFeeEstimator(),
 		ledger:       NewBalanceLedger(),
 		nonceTracker: NewNonceTracker(),
+		quit:         make(chan interface{}),
 	}
 }
 
@@ -179,6 +199,7 @@ func (mp *PosMempool) Init(
 	feeEstimatorNumMempoolBlocks uint64,
 	feeEstimatorPastBlocks []*MsgDeSoBlock,
 	feeEstimatorNumPastBlocks uint64,
+	augmentedBlockViewRefreshIntervalMillis uint64,
 ) error {
 	if mp.status != PosMempoolStatusNotInitialized {
 		return errors.New("PosMempool.Init: PosMempool already initialized")
@@ -188,14 +209,22 @@ func (mp *PosMempool) Init(
 	mp.params = params
 	mp.globalParams = globalParams
 	mp.readOnlyLatestBlockView = readOnlyLatestBlockView
+	var err error
+	if readOnlyLatestBlockView != nil {
+		mp.augmentedReadOnlyLatestBlockView, err = readOnlyLatestBlockView.CopyUtxoView()
+		if err != nil {
+			return errors.Wrapf(err, "PosMempool.Init: Problem copying utxo view")
+		}
+	}
 	mp.latestBlockHeight = latestBlockHeight
 	mp.dir = dir
 	mp.inMemoryOnly = inMemoryOnly
 	mp.maxMempoolPosSizeBytes = maxMempoolPosSizeBytes
 	mp.mempoolBackupIntervalMillis = mempoolBackupIntervalMillis
+	mp.augmentedBlockViewRefreshIntervalMillis = augmentedBlockViewRefreshIntervalMillis
 
 	// TODO: parameterize num blocks. Also, how to pass in blocks.
-	err := mp.feeEstimator.Init(
+	err = mp.feeEstimator.Init(
 		mp.txnRegister,
 		feeEstimatorNumMempoolBlocks,
 		feeEstimatorPastBlocks,
@@ -241,9 +270,77 @@ func (mp *PosMempool) Start() error {
 			return errors.Wrapf(err, "PosMempool.Start: Problem loading persisted transactions")
 		}
 	}
+	mp.startAugmentedViewRefreshRoutine()
 
 	mp.status = PosMempoolStatusRunning
 	return nil
+}
+
+func (mp *PosMempool) startAugmentedViewRefreshRoutine() {
+	go func() {
+		for {
+			select {
+			case <-time.After(time.Duration(mp.augmentedBlockViewRefreshIntervalMillis) * time.Millisecond):
+				// If we're not within 10 blocks of the PoS cutover, we don't need to update the
+				// augmentedLatestBlockView.
+				if mp.latestBlockHeight+10 < uint64(mp.params.ForkHeights.ProofOfStake2ConsensusCutoverBlockHeight) {
+					continue
+				}
+				// Update the augmentedLatestBlockView with the latest block view.
+				mp.RLock()
+				readOnlyViewPointer := mp.readOnlyLatestBlockView
+				mp.RUnlock()
+				newView, err := readOnlyViewPointer.CopyUtxoView()
+				if err != nil {
+					glog.Errorf("PosMempool.startAugmentedViewRefreshRoutine: Problem copying utxo view outer: %v", err)
+					continue
+				}
+				for _, txn := range mp.GetTransactions() {
+					copiedView, err := newView.CopyUtxoView()
+					if err != nil {
+						glog.Errorf("PosMempool.startAugmentedViewRefreshRoutine: Problem copying utxo view: %v", err)
+						continue
+					}
+					_, _, _, _, err = copiedView.ConnectTransaction(
+						txn.GetTxn(), txn.Hash(), uint32(mp.latestBlockHeight)+1, time.Now().UnixNano(), false,
+						false)
+					// If the transaction successfully connects, we set the newView to the copiedView
+					// and proceed to the next transaction.
+					if err == nil {
+						newView = copiedView
+						continue
+					}
+					// If the transaction failed to connect, we connect the transaction as a failed txn
+					// directly on newView.
+					if mp.params.IsPoSBlockHeight(mp.latestBlockHeight + 1) {
+						// Copy the view again in case we hit an error.
+						copiedView, err = newView.CopyUtxoView()
+						if err != nil {
+							glog.Errorf("PosMempool.startAugmentedViewRefreshRoutine: Problem copying utxo view inner: %v", err)
+							continue
+						}
+						// Try to connect as failing txn directly to newView
+						_, _, _, err = copiedView._connectFailingTransaction(
+							txn.GetTxn(), uint32(mp.latestBlockHeight+1), false)
+						if err != nil {
+							glog.Errorf(
+								"PosMempool.startAugmentedViewRefreshRoutine: Problem connecting transaction: %v", err)
+							continue
+						}
+						newView = copiedView
+					}
+				}
+				// Grab the augmentedLatestBlockViewMutex write lock and update the augmentedLatestBlockView.
+				mp.augmentedReadOnlyLatestBlockViewMutex.Lock()
+				mp.augmentedReadOnlyLatestBlockView = newView
+				mp.augmentedReadOnlyLatestBlockViewMutex.Unlock()
+				// Increment the augmentedLatestBlockViewSequenceNumber.
+				atomic.AddInt64(&mp.augmentedLatestBlockViewSequenceNumber, 1)
+			case <-mp.quit:
+				return
+			}
+		}
+	}()
 }
 
 func (mp *PosMempool) Stop() {
@@ -269,12 +366,100 @@ func (mp *PosMempool) Stop() {
 	mp.ledger.Reset()
 	mp.nonceTracker.Reset()
 	mp.feeEstimator = NewPoSFeeEstimator()
-
+	close(mp.quit)
 	mp.status = PosMempoolStatusNotInitialized
 }
 
 func (mp *PosMempool) IsRunning() bool {
 	return mp.status == PosMempoolStatusRunning
+}
+
+// OnBlockConnected is an event handler provided by the PoS mempool to handle the blockchain
+// event where a block is connected to the tip of the blockchain. The mempool updates its
+// internal state based on the new block that has been connected.
+//
+// Whenever a block is connected, this event handler removes the block's transactions from
+// the mempool and updates the internal fee estimation to include new block.
+func (mp *PosMempool) OnBlockConnected(block *MsgDeSoBlock) {
+	mp.Lock()
+	defer mp.Unlock()
+
+	if block.Header == nil || !mp.IsRunning() {
+		return
+	}
+
+	// Remove all transactions in the block from the mempool.
+	for _, txn := range block.Txns {
+		txnHash := txn.Hash()
+
+		// This should never happen. We perform a nil check on the txn hash to avoid a panic.
+		if txnHash == nil {
+			continue
+		}
+
+		// Get the transaction from the register. If the txn doesn't exist in the register,
+		// then there's nothing left to do.
+		existingTxn := mp.txnRegister.GetTransaction(txnHash)
+		if existingTxn == nil {
+			continue
+		}
+
+		mp.removeTransactionNoLock(existingTxn, true)
+	}
+
+	// Add the block to the fee estimator. This is a best effort operation. If we fail to add the block
+	// to the fee estimator, we log an error and continue.
+	if err := mp.feeEstimator.AddBlock(block); err != nil {
+		glog.Errorf("PosMempool.OnBlockConnected: Problem adding block to fee estimator: %v", err)
+	}
+}
+
+// OnBlockDisconnected is an event handler provided by the PoS mempool to handle the blockchain
+// event where a block is disconnected from the tip of the blockchain. The mempool updates its
+// internal state based on the block that has been disconnected.
+//
+// Whenever a block is disconnected, this event handler adds the block's transactions back to
+// the mempool and updates the internal fee estimation to exclude the disconnected block.
+func (mp *PosMempool) OnBlockDisconnected(block *MsgDeSoBlock) {
+	mp.Lock()
+	defer mp.Unlock()
+
+	if block.Header == nil || !mp.IsRunning() {
+		return
+	}
+
+	// Remove all transactions in the block from the mempool.
+	for _, txn := range block.Txns {
+		txnHash := txn.Hash()
+
+		// This should never happen. We perform a nil check on the txn hash to avoid a panic.
+		if txnHash == nil {
+			continue
+		}
+
+		// Add all transactions in the block to the mempool.
+
+		// Construct the MempoolTx from the MsgDeSoTxn.
+		mempoolTx, err := NewMempoolTx(txn, NanoSecondsToUint64MicroSeconds(block.Header.TstampNanoSecs), mp.latestBlockHeight)
+		if err != nil {
+			continue
+		}
+
+		// Add the transaction to the mempool and then prune if needed.
+		if err := mp.addTransactionNoLock(mempoolTx, true); err != nil {
+			glog.Errorf("PosMempool.AddTransaction: Problem adding transaction to mempool: %v", err)
+		}
+	}
+
+	// This is a best effort operation. If we fail to prune the mempool, we log an error and continue.
+	if err := mp.pruneNoLock(); err != nil {
+		glog.Errorf("PosMempool.AddTransaction: Problem pruning mempool: %v", err)
+	}
+
+	// Remove the block from the fee estimator.
+	if err := mp.feeEstimator.RemoveBlock(block); err != nil {
+		glog.Errorf("PosMempool.OnBlockDisconnected: Problem removing block from fee estimator: %v", err)
+	}
 }
 
 // AddTransaction validates a MsgDeSoTxn transaction and adds it to the mempool if it is valid.
@@ -562,6 +747,7 @@ func (mp *PosMempool) refreshNoLock() error {
 		mp.feeEstimator.numMempoolBlocks,
 		mp.feeEstimator.cachedBlocks,
 		mp.feeEstimator.numPastBlocks,
+		mp.augmentedBlockViewRefreshIntervalMillis,
 	)
 	if err != nil {
 		return errors.Wrapf(err, "PosMempool.refreshNoLock: Problem initializing temp pool")
@@ -663,7 +849,10 @@ func (mp *PosMempool) GetAugmentedUniversalView() (*UtxoView, error) {
 	if !mp.IsRunning() {
 		return nil, errors.Wrapf(MempoolErrorNotRunning, "PosMempool.GetAugmentedUniversalView: ")
 	}
-	newView, err := mp.readOnlyLatestBlockView.CopyUtxoView()
+	mp.augmentedReadOnlyLatestBlockViewMutex.RLock()
+	readOnlyViewPointer := mp.augmentedReadOnlyLatestBlockView
+	mp.augmentedReadOnlyLatestBlockViewMutex.RUnlock()
+	newView, err := readOnlyViewPointer.CopyUtxoView()
 	if err != nil {
 		return nil, errors.Wrapf(err, "PosMempool.GetAugmentedUniversalView: Problem copying utxo view")
 	}
@@ -671,6 +860,19 @@ func (mp *PosMempool) GetAugmentedUniversalView() (*UtxoView, error) {
 }
 func (mp *PosMempool) GetAugmentedUtxoViewForPublicKey(pk []byte, optionalTx *MsgDeSoTxn) (*UtxoView, error) {
 	return mp.GetAugmentedUniversalView()
+}
+func (mp *PosMempool) BlockUntilReadOnlyViewRegenerated() {
+	oldSeqNum := atomic.LoadInt64(&mp.augmentedLatestBlockViewSequenceNumber)
+	newSeqNum := oldSeqNum
+	// Check fairly often. Not too often.
+	checkIntervalMillis := mp.augmentedBlockViewRefreshIntervalMillis / 5
+	if checkIntervalMillis == 0 {
+		checkIntervalMillis = 1
+	}
+	for newSeqNum == oldSeqNum {
+		time.Sleep(time.Duration(checkIntervalMillis) * time.Millisecond)
+		newSeqNum = atomic.LoadInt64(&mp.augmentedLatestBlockViewSequenceNumber)
+	}
 }
 func (mp *PosMempool) CheckSpend(op UtxoKey) *MsgDeSoTxn {
 	panic("implement me")

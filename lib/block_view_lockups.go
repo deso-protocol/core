@@ -8,7 +8,7 @@ import (
 	"github.com/golang/glog"
 	"github.com/holiman/uint256"
 	"github.com/pkg/errors"
-	"math/big"
+	"reflect"
 	"sort"
 )
 
@@ -16,36 +16,130 @@ import (
 // TYPES: LockedBalanceEntry
 //
 
+// LockedBalanceEntry is a simple struct with different disjoint states:
+//
+//		(1) UnlockTimestampNanoSecs == VestingEndTimestampNanoSecs
+//			This is the unvested case. It represents a lump sum unlock at a given time.
+//			The user can unlock the full BalanceBaseUnits AFTER UnlockTimestampNanoSecs.
+//			When written to disk, we add a special 'byte' to the database entry key such
+//			that we can quickly find all unvested LockedBalanceEntries.
+//		(2) UnlockTimestampNanoSecs < VestingEndTimestampNanoSecs
+//			This is the vested case. It represents a vest schedule for locked DeSo tokens.
+//			The user can unlock a portion of BalanceBaseUnits proportional to
+//			how much of the time between (UnlockTimestampNanoSecs, VestingEndTimestampNanoSecs)
+//			has passed by the time the balance is unlocked. When writing this LockedBalanceEntry
+//	        to disk, we add a special 'byte' to the database entry key such that
+//	        we can quickly find all vested LockedBalanceEntries.
+//		(3) UnlockTimestampNanoSecs > VestingEndTimestampNanoSecs
+//			This shouldn't be possible. Any LockedBalanceEntries where this is the case
+//		    are degenerate and should not exist.
+//
+// These states delineate between vested and unvested LockedBalanceEntries. It's important to note that
+// by only specifying the remaining BalanceBaseUnits, UnlockTimestampNanoSecs, and VestingEndTimestampNanoSecs
+// this vesting schedule implementation is linear.
 type LockedBalanceEntry struct {
-	HODLerPKID              *PKID
-	ProfilePKID             *PKID
-	UnlockTimestampNanoSecs int64
-	BalanceBaseUnits        uint256.Int
-	isDeleted               bool
+	HODLerPKID                  *PKID
+	ProfilePKID                 *PKID
+	UnlockTimestampNanoSecs     int64
+	VestingEndTimestampNanoSecs int64
+	BalanceBaseUnits            uint256.Int
+	isDeleted                   bool
 }
 
+// LockedBalanceEntryKey is a very crucial struct in the design of lockup
+//
+// Consider a naive utilization of LockedBalanceEntryMapKey in the context of two subsequent vested unlocks
+// WITHOUT flushing to db in-between. Assume that there exists a vested locked balance entry in the db
+// and that the view is empty at the start. We will step through how the code would read from disk and the
+// UtxoView when performing these two unlocks:
+//
+//		(1st Unlock, blockTimestampNanoSecs=x+100)
+//			(1) We read from disk the LockedBalanceEntry with UnlockTimestampNanoSecs=x
+//	     	(2) We cache the entry found in-memory (i.e. in the UtxoView)
+//	     	(3) We read from the in-memory cache the LockedBalanceEntry with UnlockTimestampNanoSecs=x
+//			(4) We update the in-memory entry to have UnlockTimestampNanoSecs=x+100.
+//				NOTE: At this step, there is no entry in the UtxoView view with an UnlockTimestampNanoSecs=x.
+//					  This is an issue as we will see in the next unlock as we will read duplicate entries from the db.
+//		(2nd Unlock, blockTimestampNanoSecs=x+150)
+//			(1) We read from disk the LockedBalanceEntry with UnlockTimestampNanoSecs=x
+//	       	(2) Because no other entry in-memory has UnlockTimestampNanoSecs=x, we cache a duplicate entry in-memory
+//			(3) We read from the in-memory cache the two LockedBalanceEntries with UnlockTimestampNanoSecs={x,x+100}
+//	       	(4) We update the in-memory entries to both {x+150,x+150}
+//	       	(5) <buggy behavior to follow>
+//
+// NOTE: While it may seem that there's an error on the 1st unlock step #4 as we do not check to see if there's
+// a conflicting on-disk LockedBalanceEntry with UnlockTimestampNanoSecs=x+100 that must be consolidated,
+// we're assuming that consolidation happens on the lockup transaction rather than the unlock transaction.
+// This means that it's impossible there's two vested LockedBalanceEntries who have ANY overlap in their
+// (UnlockTimestampNanoSecs, VestingEndTimestampNanoSecs) pairs. That is to say, this would not cause
+// a bug in this specific implementation.
+//
+// At the heart, this problem exists because what is semantically the same LockedBalanceEntry did not have a
+// way of deduplicating the on-disk and in-memory versions given the updated UnlockTimestampNanoSecs.
+// This is not ideal, and would likely be the root of more complicated problems if not dealt with.
+//
+// To solve this problem, we opt to deduplicate the in-memory and on-disk entries via a careful utilization of
+// the isDeleted field in the various transaction connects related to lockups. For instance, in the case
+// where we deal with two subsequent unlocks we must both mark the previous in-memory entry with isDeleted=true and
+// store a semantically duplicate entry with the updatedUnlockTimestampNanoSecs with isDeleted=false. To show how
+// this would work on the previous example:
+//
+//		(1st Unlock, blockTimestampNanoSecs=x+100)
+//			(1) We read from disk the LockedBalanceEntry with UnlockTimestampNanoSecs=x
+//		    (2) We cache the entry found in-memory (i.e. in the UtxoView)
+//		    (3) We read from the in-memory cache the LockedBalanceEntry with UnlockTimestampNanoSecs=x
+//			(4) We update the entry to have UnlockTimestampNanoSecs=x+100
+//	        (5) We delete the original LockedBalanceEntry with UnlockTimestampNanoSecs from the view
+//	        (6) We set the updated LockedBalanceEntry in-memory
+//		(2nd Unlock, blockTimestampNanoSecs=x+150)
+//			(1) We read from disk the LockedBalanceEntry with UnlockTimestampNanoSecs=x
+//			(2) We see an equivalent entry in the view with isDeleted=true,
+//				meaning we do NOT cache this entry in-memory.
+//			(3) We read from the in-memory cache the LockedBalanceEntry with UnlockTimestampNanoSecs=x+100
+//		    (4) We update the entry to have UnlockTimestampNanoSecs=x+100
+//		    (5) We set the updated LockedBalanceEntry in-memory
+//
+// The difference here is the LockedBalanceEntry is not duplicated in-memory on repetitive reads between flushes.
+// This is a crucial difference to prevent odd and dangerous caching bugs from happening. It's important
+// to note we could instead utilize a UUID on the LockedBalanceEntry that persists across transactions,
+// but this creates difficulties around consolidations and (possible) future transfers. While ideally we would
+// opt to avoid consolidations, consolidations are inevitable either on lockup or on unlock to ensure on-disk
+// entries do not get inadvertently overwritten.
+//
+// In summary, whenever changing logic that touches in-memory (i.e. in the UtxoView) LockedBalanceEntries,
+// make sure of the following:
+// IF modifying a LockedBalanceEntry in the UtxoView, THEN ensure to delete the original
+// LockedBalanceEntry under the original LockedBalanceEntryKey AND set the new LockedBalanceEntry
+// under the new and different LockedBalanceEntryKey in the view.
 type LockedBalanceEntryKey struct {
-	HODLerPKID              PKID
-	ProfilePKID             PKID
-	UnlockTimestampNanoSecs int64
+	HODLerPKID                  PKID
+	ProfilePKID                 PKID
+	UnlockTimestampNanoSecs     int64
+	VestingEndTimestampNanoSecs int64
 }
 
 func (lockedBalanceEntry *LockedBalanceEntry) Copy() *LockedBalanceEntry {
 	return &LockedBalanceEntry{
-		HODLerPKID:              lockedBalanceEntry.HODLerPKID.NewPKID(),
-		ProfilePKID:             lockedBalanceEntry.ProfilePKID.NewPKID(),
-		UnlockTimestampNanoSecs: lockedBalanceEntry.UnlockTimestampNanoSecs,
-		BalanceBaseUnits:        lockedBalanceEntry.BalanceBaseUnits,
-		isDeleted:               lockedBalanceEntry.isDeleted,
+		HODLerPKID:                  lockedBalanceEntry.HODLerPKID.NewPKID(),
+		ProfilePKID:                 lockedBalanceEntry.ProfilePKID.NewPKID(),
+		UnlockTimestampNanoSecs:     lockedBalanceEntry.UnlockTimestampNanoSecs,
+		VestingEndTimestampNanoSecs: lockedBalanceEntry.VestingEndTimestampNanoSecs,
+		BalanceBaseUnits:            *lockedBalanceEntry.BalanceBaseUnits.Clone(),
+		isDeleted:                   lockedBalanceEntry.isDeleted,
 	}
 }
 
 func (lockedBalanceEntry *LockedBalanceEntry) ToMapKey() LockedBalanceEntryKey {
 	return LockedBalanceEntryKey{
-		HODLerPKID:              *lockedBalanceEntry.HODLerPKID,
-		ProfilePKID:             *lockedBalanceEntry.ProfilePKID,
-		UnlockTimestampNanoSecs: lockedBalanceEntry.UnlockTimestampNanoSecs,
+		HODLerPKID:                  *lockedBalanceEntry.HODLerPKID,
+		ProfilePKID:                 *lockedBalanceEntry.ProfilePKID,
+		UnlockTimestampNanoSecs:     lockedBalanceEntry.UnlockTimestampNanoSecs,
+		VestingEndTimestampNanoSecs: lockedBalanceEntry.VestingEndTimestampNanoSecs,
 	}
+}
+
+func (lockedBalanceEntry *LockedBalanceEntry) IsDeleted() bool {
+	return lockedBalanceEntry.isDeleted
 }
 
 // DeSoEncoder Interface Implementation for LockedBalanceEntry
@@ -55,7 +149,8 @@ func (lockedBalanceEntry *LockedBalanceEntry) RawEncodeWithoutMetadata(blockHeig
 	data = append(data, EncodeToBytes(blockHeight, lockedBalanceEntry.HODLerPKID, skipMetadata...)...)
 	data = append(data, EncodeToBytes(blockHeight, lockedBalanceEntry.ProfilePKID, skipMetadata...)...)
 	data = append(data, IntToBuf(lockedBalanceEntry.UnlockTimestampNanoSecs)...)
-	data = append(data, VariableEncodeUint256(&lockedBalanceEntry.BalanceBaseUnits)...)
+	data = append(data, IntToBuf(lockedBalanceEntry.VestingEndTimestampNanoSecs)...)
+	data = append(data, EncodeByteArray(lockedBalanceEntry.BalanceBaseUnits.Bytes())...)
 	return data
 }
 
@@ -80,12 +175,18 @@ func (lockedBalanceEntry *LockedBalanceEntry) RawDecodeWithoutMetadata(blockHeig
 		return errors.Wrap(err, "LockedBalanceEntry.Decode: Problem reading UnlockTimestampNanoSecs")
 	}
 
+	// VestingEndTimestampNanoSecs
+	lockedBalanceEntry.VestingEndTimestampNanoSecs, err = ReadVarint(rr)
+	if err != nil {
+		return errors.Wrap(err, "LockedBalanceEntry.Decode: Problem reading VestingEndTimestampNanoSecs")
+	}
+
 	// BalanceBaseUnits
-	balanceBaseUnits, err := VariableDecodeUint256(rr)
+	balanceBaseUnitsBytes, err := DecodeByteArray(rr)
 	if err != nil {
 		return errors.Wrap(err, "LockedBalanceEntry.Decode: Problem reading BalanceBaseUnits")
 	}
-	lockedBalanceEntry.BalanceBaseUnits = *balanceBaseUnits
+	lockedBalanceEntry.BalanceBaseUnits = *uint256.NewInt().SetBytes(balanceBaseUnitsBytes)
 
 	return nil
 }
@@ -103,7 +204,7 @@ func (lockedBalanceEntry *LockedBalanceEntry) GetEncoderType() EncoderType {
 func (bav *UtxoView) _setLockedBalanceEntry(lockedBalanceEntry *LockedBalanceEntry) {
 	// This function shouldn't be called with nil.
 	if lockedBalanceEntry == nil {
-		glog.Errorf("_setLockedBalanceEntryMappingsWithPKIDsTimestampType: Called with nil LockedBalanceEntry; " +
+		glog.Errorf("_setLockedBalanceEntry: Called with nil LockedBalanceEntry; " +
 			"this should never happen.")
 		return
 	}
@@ -130,13 +231,173 @@ func (bav *UtxoView) _deleteLockedBalanceEntry(lockedBalanceEntry *LockedBalance
 
 // Get Helper Functions for LockedBalanceEntry
 
-func (bav *UtxoView) GetLockedBalanceEntryForHODLerPKIDProfilePKIDUnlockTimestampNanoSecs(
-	hodlerPKID *PKID, profilePKID *PKID, unlockTimestampNanoSecs int64) (_lockedBalanceEntry *LockedBalanceEntry, _err error) {
+func (bav *UtxoView) GetAllLockedBalanceEntriesForHodlerPKID(
+	hodlerPKID *PKID,
+) (
+	_lockedBalanceEntries []*LockedBalanceEntry,
+	_err error,
+) {
+	// Pull entries from db.
+	dbLockedBalanceEntries, err := DBGetAllLockedBalanceEntriesForHodlerPKID(bav.Handle, hodlerPKID)
+	if err != nil {
+		return nil,
+			errors.Wrap(err, "GetLockedBalanceEntryForLockedBalanceEntryKey")
+	}
+
+	// Cache entries found in the db.
+	for _, lockedBalanceEntry := range dbLockedBalanceEntries {
+		if _, exists := bav.LockedBalanceEntryKeyToLockedBalanceEntry[lockedBalanceEntry.ToMapKey()]; !exists {
+			bav._setLockedBalanceEntry(lockedBalanceEntry)
+		}
+	}
+
+	// Pull relevant entries from the view and return.
+	var lockedBalanceEntries []*LockedBalanceEntry
+	for _, lockedBalanceEntry := range bav.LockedBalanceEntryKeyToLockedBalanceEntry {
+		if lockedBalanceEntry.HODLerPKID.Eq(hodlerPKID) && !lockedBalanceEntry.isDeleted {
+			lockedBalanceEntries = append(lockedBalanceEntries, lockedBalanceEntry)
+		}
+	}
+
+	// Sort by unlock time for convenience.
+	sort.Slice(lockedBalanceEntries, func(ii, jj int) bool {
+		return lockedBalanceEntries[ii].UnlockTimestampNanoSecs <
+			lockedBalanceEntries[jj].UnlockTimestampNanoSecs
+	})
+
+	return lockedBalanceEntries, nil
+}
+
+func (bav *UtxoView) GetLockedBalanceEntryForLockedBalanceEntryKey(
+	lockedBalanceEntryKey LockedBalanceEntryKey,
+) (
+	_lockedBalanceEntry *LockedBalanceEntry,
+	_err error,
+) {
+	// Check if the key exists in the view.
+	if viewEntry, viewEntryExists :=
+		bav.LockedBalanceEntryKeyToLockedBalanceEntry[lockedBalanceEntryKey]; viewEntryExists {
+		if viewEntry == nil || viewEntry.isDeleted {
+			return nil, nil
+		}
+		return viewEntry, nil
+	}
+
+	// No mapping exists in the view, check for an entry in the db.
+	lockedBalanceEntry, err := DBGetLockedBalanceEntryForLockedBalanceEntryKey(
+		bav.Handle, bav.Snapshot, lockedBalanceEntryKey)
+	if err != nil {
+		return nil,
+			errors.Wrap(err, "GetLockedBalanceEntryForLockedBalanceEntryKey")
+	}
+
+	// Cache the DB entry in the in-memory map.
+	if lockedBalanceEntry != nil {
+		bav._setLockedBalanceEntry(lockedBalanceEntry)
+	}
+
+	return lockedBalanceEntry, nil
+}
+
+func (bav *UtxoView) GetLimitedVestedLockedBalanceEntriesOverTimeInterval(
+	hodlerPKID *PKID,
+	profilePKID *PKID,
+	unlockTimestampNanoSecs int64,
+	vestingEndTimestampNanoSecs int64,
+	limitToFetch int,
+) (
+	_lockedBalanceEntries []*LockedBalanceEntry,
+	_err error,
+) {
+	// Step 1: Fetch a limited number of vested locked balance entries from the view.
+	// 		   Any modified/deleted locked balance entries should have .isDeleted=true
+	//         preventing them from being re-read into the view. The fact that modified
+	//         locked balance entries have .isDeleted=True is a unique feature that
+	//		   occurs because keys on locked balance entries can change with time for the same
+	//         semantically equivalent value.
+	//		   Also note, we read a limited number of entries based on the passed limitToFetch
+	//         to prevent excessive reads to the db. We explicitly check if the error occurs
+	//		   as a result of over-reading the db or from other db errors.
+	vestedLockedBalanceEntries, err := DBGetLimitedVestedLockedBalanceEntries(
+		bav.Handle,
+		hodlerPKID,
+		profilePKID,
+		unlockTimestampNanoSecs,
+		vestingEndTimestampNanoSecs,
+		limitToFetch)
+	if err != nil {
+		return nil,
+			errors.Wrap(err, "GetLimitedVestedLockedBalanceEntriesOverTimeInterval")
+	}
+
+	// Step 2: Cache the fetched locked balance entries from the view into the db.
+	//		   Again, any existing modified/deleted vested locked balance entries should result in no insert.
+	for _, lockedBalanceEntry := range vestedLockedBalanceEntries {
+		if _, exists := bav.LockedBalanceEntryKeyToLockedBalanceEntry[lockedBalanceEntry.ToMapKey()]; !exists {
+			bav._setLockedBalanceEntry(lockedBalanceEntry)
+		}
+	}
+
+	// Step 3: Read from the view the relevant vested locked balance entries.
+	//		   Note that if we over-read the view, meaning we find more than limitToFetch relevant entries,
+	// 		   we will throw a rule error.
+	//		   Also note, this operation is currently quite inefficient as it iterates through all locked
+	//		   balance entries in the view. In the future, it may be necessary to replace the
+	//		   LockedBalanceEntryKeyToLockedBalanceEntry field of UtxoView with an optimized B-tree implementation.
+	//		   We could opt to use an ordered map, but the Go implementation would sort on insertion time.
+	var lockedBalanceEntries []*LockedBalanceEntry
+	for _, lockedBalanceEntry := range bav.LockedBalanceEntryKeyToLockedBalanceEntry {
+		// A relevant vested locked balance entry satisfies all the following conditions:
+		//	(1) Matching profile PKID
+		//  (2) Matching hodler PKID
+		//  (3) An unlock OR end timestamp within the specified (unlock, end) bounds OR
+		//		the lockedBalanceEntry interval is a superset of the specified (unlock, end) bounds
+		//	(4) A mismatched unlock and vesting end timestamp (vesting condition)
+		//  (5) Not deleted
+		if lockedBalanceEntry.ProfilePKID.Eq(profilePKID) &&
+			lockedBalanceEntry.HODLerPKID.Eq(hodlerPKID) &&
+			((lockedBalanceEntry.UnlockTimestampNanoSecs >= unlockTimestampNanoSecs &&
+				lockedBalanceEntry.UnlockTimestampNanoSecs <= vestingEndTimestampNanoSecs) ||
+				(lockedBalanceEntry.VestingEndTimestampNanoSecs >= unlockTimestampNanoSecs &&
+					lockedBalanceEntry.VestingEndTimestampNanoSecs <= vestingEndTimestampNanoSecs) ||
+				(lockedBalanceEntry.UnlockTimestampNanoSecs < unlockTimestampNanoSecs &&
+					lockedBalanceEntry.VestingEndTimestampNanoSecs > vestingEndTimestampNanoSecs)) &&
+			lockedBalanceEntry.UnlockTimestampNanoSecs != lockedBalanceEntry.VestingEndTimestampNanoSecs &&
+			!lockedBalanceEntry.isDeleted {
+			lockedBalanceEntries = append(lockedBalanceEntries, lockedBalanceEntry)
+		}
+
+		// If we've fetched more than we're permitted, we throw an error.
+		if len(lockedBalanceEntries) > limitToFetch {
+			return nil, errors.Wrap(RuleErrorCoinLockupViolatesVestingIntersectionLimit,
+				"GetLimitedVestedLockedBalanceEntriesOverTimeInterval")
+		}
+	}
+
+	// Step 4: Sort by unlock time.
+	sort.Slice(lockedBalanceEntries, func(ii, jj int) bool {
+		return lockedBalanceEntries[ii].UnlockTimestampNanoSecs <
+			lockedBalanceEntries[jj].UnlockTimestampNanoSecs
+	})
+
+	return lockedBalanceEntries, nil
+}
+
+func (bav *UtxoView) GetLockedBalanceEntryForHODLerPKIDProfilePKIDUnlockTimestampNanoSecsVestingEndTimestampNanoSecs(
+	hodlerPKID *PKID,
+	profilePKID *PKID,
+	unlockTimestampNanoSecs int64,
+	vestingEndTimestampNanoSecs int64,
+) (
+	_lockedBalanceEntry *LockedBalanceEntry,
+	_err error,
+) {
 	// Create a key associated with the LockedBalanceEntry.
 	lockedBalanceEntryKey := (&LockedBalanceEntry{
-		HODLerPKID:              hodlerPKID,
-		ProfilePKID:             profilePKID,
-		UnlockTimestampNanoSecs: unlockTimestampNanoSecs,
+		HODLerPKID:                  hodlerPKID,
+		ProfilePKID:                 profilePKID,
+		UnlockTimestampNanoSecs:     unlockTimestampNanoSecs,
+		VestingEndTimestampNanoSecs: vestingEndTimestampNanoSecs,
 	}).ToMapKey()
 
 	// Check if the key exists in the view.
@@ -149,11 +410,12 @@ func (bav *UtxoView) GetLockedBalanceEntryForHODLerPKIDProfilePKIDUnlockTimestam
 	}
 
 	// No mapping exists in the view, check for an entry in the DB.
-	lockedBalanceEntry, err := DBGetLockedBalanceEntryForHODLerPKIDProfilePKIDUnlockTimestampNanoSecs(
-		bav.Handle, bav.Snapshot, hodlerPKID, profilePKID, unlockTimestampNanoSecs)
+	lockedBalanceEntry, err :=
+		DBGetLockedBalanceEntryForLockedBalanceEntryKey(bav.Handle, bav.Snapshot, lockedBalanceEntryKey)
 	if err != nil {
 		return nil,
-			errors.Wrap(err, "GetLockedBalanceEntryForHODLerPKIDProfilePKIDUnlockTimestampNanoSecs")
+			errors.Wrap(err,
+				"GetLockedBalanceEntryForHODLerPKIDProfilePKIDUnlockTimestampNanoSecsVestingEndTimestampNanoSecs")
 	}
 
 	// Cache the DB entry in the in-memory map.
@@ -168,22 +430,35 @@ func (bav *UtxoView) GetUnlockableLockedBalanceEntries(
 	hodlerPKID *PKID,
 	profilePKID *PKID,
 	currentTimestampNanoSecs int64,
-) ([]*LockedBalanceEntry, error) {
+) (
+	_unvestedUnlockabeLockedBalanceEntries []*LockedBalanceEntry,
+	_vestedUnlockableLockedEntries []*LockedBalanceEntry,
+	_err error,
+) {
 	// Validate inputs.
 	if hodlerPKID == nil {
-		return nil, errors.New("UtxoView.GetUnlockableLockedBalanceEntries: nil hodlerPKID provided as input")
+		return nil, nil,
+			errors.New("UtxoView.GetUnlockableLockedBalanceEntries: nil hodlerPKID provided as input")
 	}
 	if profilePKID == nil {
-		return nil, errors.New("UtxoView.GetUnlockableLockedBalanceEntries: nil profilePKID provided as input")
+		return nil, nil,
+			errors.New("UtxoView.GetUnlockableLockedBalanceEntries: nil profilePKID provided as input")
 	}
 
 	// First, pull unlockable LockedBalanceEntries from the db and cache them in the UtxoView.
-	dbUnlockableLockedBalanceEntries, err := DBGetUnlockableLockedBalanceEntries(
-		bav.Handle, bav.Snapshot, hodlerPKID, profilePKID, currentTimestampNanoSecs)
+	dbUnvestedUnlockableLockedBalanceEntries, dbVestedUnlockableLockedBalanceEntries, err :=
+		DBGetUnlockableLockedBalanceEntries(bav.Handle, hodlerPKID, profilePKID, currentTimestampNanoSecs)
 	if err != nil {
-		return nil, errors.Wrap(err, "UtxoView.GetUnlockableLockedBalanceEntries")
+		return nil, nil,
+			errors.Wrap(err, "UtxoView.GetUnlockableLockedBalanceEntries")
 	}
-	for _, lockedBalanceEntry := range dbUnlockableLockedBalanceEntries {
+	for _, lockedBalanceEntry := range dbUnvestedUnlockableLockedBalanceEntries {
+		// Cache results in the UtxoView.
+		if _, exists := bav.LockedBalanceEntryKeyToLockedBalanceEntry[lockedBalanceEntry.ToMapKey()]; !exists {
+			bav._setLockedBalanceEntry(lockedBalanceEntry)
+		}
+	}
+	for _, lockedBalanceEntry := range dbVestedUnlockableLockedBalanceEntries {
 		// Cache results in the UtxoView.
 		if _, exists := bav.LockedBalanceEntryKeyToLockedBalanceEntry[lockedBalanceEntry.ToMapKey()]; !exists {
 			bav._setLockedBalanceEntry(lockedBalanceEntry)
@@ -191,25 +466,34 @@ func (bav *UtxoView) GetUnlockableLockedBalanceEntries(
 	}
 
 	// Then, pull unlockable LockedBalanceEntries from the UtxoView.
-	var unlockableLockedBalanceEntries []*LockedBalanceEntry
+	var unlockableUnvestedLockedBalanceEntries []*LockedBalanceEntry
+	var unlockableVestedLockedBalanceEntries []*LockedBalanceEntry
 	for _, lockedBalanceEntry := range bav.LockedBalanceEntryKeyToLockedBalanceEntry {
 		// Filter to matching LockedBalanceEntries.
 		if !lockedBalanceEntry.HODLerPKID.Eq(hodlerPKID) ||
 			!lockedBalanceEntry.ProfilePKID.Eq(profilePKID) ||
-			lockedBalanceEntry.UnlockTimestampNanoSecs > currentTimestampNanoSecs ||
+			lockedBalanceEntry.UnlockTimestampNanoSecs >= currentTimestampNanoSecs ||
 			lockedBalanceEntry.BalanceBaseUnits.IsZero() ||
 			lockedBalanceEntry.isDeleted {
 			continue
 		}
-		unlockableLockedBalanceEntries = append(unlockableLockedBalanceEntries, lockedBalanceEntry)
+		if lockedBalanceEntry.UnlockTimestampNanoSecs == lockedBalanceEntry.VestingEndTimestampNanoSecs {
+			unlockableUnvestedLockedBalanceEntries = append(unlockableUnvestedLockedBalanceEntries, lockedBalanceEntry)
+		} else {
+			unlockableVestedLockedBalanceEntries = append(unlockableVestedLockedBalanceEntries, lockedBalanceEntry)
+		}
 	}
 
 	// Sort UnlockableLockedBalanceEntries by timestamp ASC.
-	sort.Slice(unlockableLockedBalanceEntries, func(ii, jj int) bool {
-		return unlockableLockedBalanceEntries[ii].UnlockTimestampNanoSecs <
-			unlockableLockedBalanceEntries[jj].UnlockTimestampNanoSecs
+	sort.Slice(unlockableUnvestedLockedBalanceEntries, func(ii, jj int) bool {
+		return unlockableUnvestedLockedBalanceEntries[ii].UnlockTimestampNanoSecs <
+			unlockableUnvestedLockedBalanceEntries[jj].UnlockTimestampNanoSecs
 	})
-	return unlockableLockedBalanceEntries, nil
+	sort.Slice(unlockableVestedLockedBalanceEntries, func(ii, jj int) bool {
+		return unlockableVestedLockedBalanceEntries[ii].UnlockTimestampNanoSecs <
+			unlockableVestedLockedBalanceEntries[jj].UnlockTimestampNanoSecs
+	})
+	return unlockableUnvestedLockedBalanceEntries, unlockableVestedLockedBalanceEntries, nil
 }
 
 //
@@ -246,6 +530,10 @@ func (lockupYieldCurvePoint *LockupYieldCurvePoint) ToMapKey() LockupYieldCurveP
 		ProfilePKID:            *lockupYieldCurvePoint.ProfilePKID,
 		LockupDurationNanoSecs: lockupYieldCurvePoint.LockupDurationNanoSecs,
 	}
+}
+
+func (lockupYieldCurvePoint *LockupYieldCurvePoint) IsDeleted() bool {
+	return lockupYieldCurvePoint.isDeleted
 }
 
 // DeSoEncoder Interface Implementation for LockupYieldCurvePoint
@@ -363,6 +651,17 @@ func (bav *UtxoView) GetYieldCurvePointByProfilePKIDAndDurationNanoSecs(profileP
 	return lockupYieldCurvePoint, nil
 }
 
+// GetLocalYieldCurvePoints is used when trying to figure out what yield to award a user for a coin lockup
+// transaction. Consider a profile who has generated the following yield curve: {0.5 years: 5%, 2 years: 10%}
+// While this yield curve is simple, what should happen in the event where a lockup of length 1 year occurs?
+// In this case it's convenient to provide the "local" points meaning those points on the yield curve closest
+// to the one year lockup duration. If GetLocalYieldCurvePoints was called in this case, it would return
+// 0.5 years @ 5% as the leftLockupPoint and 2 years @ 10% as the rightLockupPoint.
+//
+// To be more specific, the leftLockupPoint returned will always be greatest yield curve point with a
+// LockupDurationNanoSecs less than the lockupDuration provided. The rightLockupPoint returned will
+// always be the least yield curve point with a LockupDurationNanoSecs greater than or equal to the lockupDuration
+// provided.
 func (bav *UtxoView) GetLocalYieldCurvePoints(profilePKID *PKID, lockupDuration int64) (
 	_leftLockupPoint *LockupYieldCurvePoint, _rightLockupPoint *LockupYieldCurvePoint, _err error) {
 	var leftLockupPoint *LockupYieldCurvePoint
@@ -427,14 +726,69 @@ func (bav *UtxoView) GetLocalYieldCurvePoints(profilePKID *PKID, lockupDuration 
 	return leftLockupPoint, rightLockupPoint, nil
 }
 
+func (bav *UtxoView) GetAllYieldCurvePoints(
+	profilePKID *PKID,
+) (
+	map[LockupYieldCurvePointKey]*LockupYieldCurvePoint,
+	error,
+) {
+	// Fetch all yield curve points in the db.
+	dbYieldCurvePoints, err := DBGetAllYieldCurvePointsByProfilePKID(
+		bav.GetDbAdapter().badgerDb, bav.Snapshot, profilePKID)
+	if err != nil {
+		return nil, errors.Wrap(err, "GetLocalYieldCurvePoints")
+	}
+
+	// Cache the db points in the view.
+	// While there's more efficient ways to do this with specialized badger seek operations, this is sufficient for now.
+	if len(dbYieldCurvePoints) > 0 {
+		// Check if there's a yield curve in the view for the associated profile.
+		if _, mapInView := bav.PKIDToLockupYieldCurvePointKeyToLockupYieldCurvePoints[*profilePKID]; !mapInView {
+			bav.PKIDToLockupYieldCurvePointKeyToLockupYieldCurvePoints[*profilePKID] =
+				make(map[LockupYieldCurvePointKey]*LockupYieldCurvePoint)
+		}
+
+		// Check if any of the points needs to be cached in the view.
+		for _, yieldCurvePoint := range dbYieldCurvePoints {
+			_, pointInView :=
+				bav.PKIDToLockupYieldCurvePointKeyToLockupYieldCurvePoints[*profilePKID][yieldCurvePoint.ToMapKey()]
+			if !pointInView {
+				bav._setLockupYieldCurvePoint(yieldCurvePoint)
+			}
+		}
+	}
+
+	return bav.PKIDToLockupYieldCurvePointKeyToLockupYieldCurvePoints[*profilePKID], nil
+}
+
 //
 // TYPES: CoinLockupMetadata
 //
 
 type CoinLockupMetadata struct {
-	ProfilePublicKey        *PublicKey
+	// The profile public key is the profile who's associated DAO coins we wish to lockup.
+	ProfilePublicKey *PublicKey
+
+	// The recipient of the locked DAO coins following execution of the transaction.
+	RecipientPublicKey *PublicKey
+
+	// The UnlockTimestampNanoSecs specifies when the recipient should begin to be able to unlock
+	// their locked DAO coins.
 	UnlockTimestampNanoSecs int64
-	LockupAmountBaseUnits   *uint256.Int
+
+	// If VestingEndTimestampNanoSecs is equal to UnlockTimestampNanoSecs, the user will be able to unlock
+	// all locked DAO coins associated with this transaction once a block whose header timestamp is
+	// greater to or equal to UnlockTimestampNanoSecs. This is the "unvested" or "point" case.
+	//
+	// If not equal to UnlockTimestampNanoSecs, the user can unlock the associated DAO coins once
+	// a block with header timestamp greater to or equal to UnlockTimestampNanoSecs, but will only
+	// receive tokens in proportion to the amount of time that has passed between UnlockTimestampNanoSecs
+	// and VestingEndTimestampNanoSecs. This is the "vested" case.
+	VestingEndTimestampNanoSecs int64
+
+	// LockupAmountBaseUnits specifies The amount of locked ProfilePublicKey DAO coins to be
+	// placed in a LockedBalanceEntry and given to RecipientPublicKey.
+	LockupAmountBaseUnits *uint256.Int
 }
 
 func (txnData *CoinLockupMetadata) GetTxnType() TxnType {
@@ -444,7 +798,9 @@ func (txnData *CoinLockupMetadata) GetTxnType() TxnType {
 func (txnData *CoinLockupMetadata) ToBytes(preSignature bool) ([]byte, error) {
 	var data []byte
 	data = append(data, EncodeByteArray(txnData.ProfilePublicKey.ToBytes())...)
+	data = append(data, EncodeByteArray(txnData.RecipientPublicKey.ToBytes())...)
 	data = append(data, IntToBuf(txnData.UnlockTimestampNanoSecs)...)
+	data = append(data, IntToBuf(txnData.VestingEndTimestampNanoSecs)...)
 	data = append(data, VariableEncodeUint256(txnData.LockupAmountBaseUnits)...)
 	return data, nil
 }
@@ -459,10 +815,24 @@ func (txnData *CoinLockupMetadata) FromBytes(data []byte) error {
 	}
 	txnData.ProfilePublicKey = NewPublicKey(profilePublicKeyBytes)
 
+	// RecipientPublicKey
+	recipientPublicKey, err := DecodeByteArray(rr)
+	if err != nil {
+		return errors.Wrap(err, "CoinLockupMetadata.FromBytes: Problem reading RecipientPublicKey")
+	}
+	txnData.RecipientPublicKey = NewPublicKey(recipientPublicKey)
+
 	// UnlockTimestampNanoSecs
 	txnData.UnlockTimestampNanoSecs, err = ReadVarint(rr)
 	if err != nil {
 		return errors.Wrap(err, "CoinLockupMetadata.FromBytes: Problem reading UnlockTimestampNanoSecs")
+	}
+
+	// VestingEndTimestampNanoSecs
+	txnData.VestingEndTimestampNanoSecs, err = ReadVarint(rr)
+	if err != nil {
+		return errors.Wrap(err,
+			"CoinLockupMetadata.FromBytes: Problem reading VestingEndTimestampNanoSecs")
 	}
 
 	// LockupAmountBaseUnits
@@ -570,9 +940,16 @@ func (txnData *UpdateCoinLockupParamsMetadata) New() DeSoTxnMetadata {
 //
 
 type CoinLockupTransferMetadata struct {
-	RecipientPublicKey             *PublicKey
-	ProfilePublicKey               *PublicKey
-	UnlockTimestampNanoSecs        int64
+	// The recipient of the locked coins.
+	RecipientPublicKey *PublicKey
+
+	// The profile whose locked coins are being transferred.
+	ProfilePublicKey *PublicKey
+
+	// The UnlockTimestampNanoSecs to source the locked coins from.
+	UnlockTimestampNanoSecs int64
+
+	// The amount of locked coins to transfer.
 	LockedCoinsToTransferBaseUnits *uint256.Int
 }
 
@@ -630,6 +1007,7 @@ func (txnData *CoinLockupTransferMetadata) New() DeSoTxnMetadata {
 //
 
 type CoinUnlockMetadata struct {
+	// The public key whose associated locked coins should be unlocked.
 	ProfilePublicKey *PublicKey
 }
 
@@ -671,7 +1049,7 @@ func (bav *UtxoView) _connectCoinLockup(
 	var utxoOpsForTxn []*UtxoOperation
 
 	// Validate the starting block height.
-	if blockHeight < bav.Params.ForkHeights.ProofOfStake1StateSetupBlockHeight ||
+	if blockHeight < bav.Params.ForkHeights.LockupsBlockHeight ||
 		blockHeight < bav.Params.ForkHeights.BalanceModelBlockHeight {
 		return 0, 0, nil,
 			errors.Wrap(RuleErrorLockupTxnBeforeBlockHeight, "_connectCoinLockup")
@@ -699,38 +1077,37 @@ func (bav *UtxoView) _connectCoinLockup(
 
 	// Check that the target profile public key is valid and that a profile corresponding to that public key exists.
 	// We also go ahead and fetch the profile PKID as we will use it later.
-	var profileEntry *ProfileEntry
-	var profilePKID *PKID
 	if len(txMeta.ProfilePublicKey) != btcec.PubKeyBytesLenCompressed {
 		return 0, 0, nil,
 			errors.Wrap(RuleErrorCoinLockupInvalidProfilePubKey, "_connectCoinLockup")
 	}
-	if !txMeta.ProfilePublicKey.IsZeroPublicKey() {
-		profileEntry = bav.GetProfileEntryForPublicKey(txMeta.ProfilePublicKey.ToBytes())
-		if profileEntry == nil || profileEntry.isDeleted {
-			return 0, 0, nil,
-				errors.Wrap(RuleErrorCoinLockupOnNonExistentProfile, "_connectCoinLockup")
-		}
-		profilePKIDEntry := bav.GetPKIDForPublicKey(txMeta.ProfilePublicKey.ToBytes())
-		if profilePKIDEntry == nil || profilePKIDEntry.isDeleted {
-			return 0, 0, nil,
-				errors.Wrap(RuleErrorCoinLockupNonExistentProfile, "_connectCoinLockup")
-		}
-		profilePKID = profilePKIDEntry.PKID.NewPKID()
-	} else {
-		profilePKID = ZeroPKID.NewPKID()
+
+	// NOTE: The zero key could be used to enable locking up DESO.
+	// If this feature is desired, it can be restored with the following PR:
+	// https://github.com/deso-protocol/core/pull/991
+	if txMeta.ProfilePublicKey.IsZeroPublicKey() {
+		return 0, 0, nil,
+			errors.Wrap(RuleErrorCoinLockupCannotLockupZeroKey, "_connectCoinLockup")
+
 	}
+
+	// Check that the profile specified exists.
+	profileEntry := bav.GetProfileEntryForPublicKey(txMeta.ProfilePublicKey.ToBytes())
+	if profileEntry == nil || profileEntry.isDeleted {
+		return 0, 0, nil,
+			errors.Wrap(RuleErrorCoinLockupOnNonExistentProfile, "_connectCoinLockup")
+	}
+	profilePKIDEntry := bav.GetPKIDForPublicKey(txMeta.ProfilePublicKey.ToBytes())
+	if profilePKIDEntry == nil || profilePKIDEntry.isDeleted {
+		return 0, 0, nil,
+			errors.Wrap(RuleErrorCoinLockupNonExistentProfile, "_connectCoinLockup")
+	}
+	profilePKID := profilePKIDEntry.PKID.NewPKID()
 
 	// Validate the lockup amount as non-zero. This is meant to prevent wasteful "no-op" transactions.
 	if txMeta.LockupAmountBaseUnits.IsZero() {
 		return 0, 0, nil,
 			errors.Wrap(RuleErrorCoinLockupOfAmountZero, "_connectCoinLockup")
-	}
-
-	// If this is a DeSo lockup, ensure the amount is less than 2**64 (maximum DeSo balance).
-	if txMeta.ProfilePublicKey.IsZeroPublicKey() && !txMeta.LockupAmountBaseUnits.IsUint64() {
-		return 0, 0, nil,
-			errors.Wrap(RuleErrorCoinLockupExcessiveDeSoLockup, "_connectCoinLockup")
 	}
 
 	// Validate the lockup expires in the future.
@@ -739,186 +1116,657 @@ func (bav *UtxoView) _connectCoinLockup(
 			errors.Wrap(RuleErrorCoinLockupInvalidLockupDuration, "_connectCoinLockup")
 	}
 
-	// Compute the lockup duration in nanoseconds.
-	lockupDurationNanoSeconds := txMeta.UnlockTimestampNanoSecs - blockTimestampNanoSecs
-
-	// Determine the hodler PKID to use.
-	transactorPKIDEntry := bav.GetPKIDForPublicKey(txn.PublicKey)
-	if transactorPKIDEntry == nil || transactorPKIDEntry.isDeleted {
+	// Validate the vesting end timestamp as expiring at a logically valid time.
+	if txMeta.VestingEndTimestampNanoSecs < txMeta.UnlockTimestampNanoSecs {
 		return 0, 0, nil,
-			errors.Wrap(RuleErrorCoinLockupInvalidTransactorPKID, "_connectCoinLockup")
+			errors.Wrap(RuleErrorCoinLockupInvalidVestingEndTimestamp, "_connectCoinLockup")
 	}
-	hodlerPKID := transactorPKIDEntry.PKID
 
-	// Validate the transactor as having sufficient DAO Coin or DESO balance for the transaction.
-	var transactorBalanceNanos256 *uint256.Int
-	var prevTransactorBalanceEntry *BalanceEntry
-	var prevCoinEntry *CoinEntry
-	if profilePKID.IsZeroPKID() {
-		// NOTE: When spending balances, we need to check for immature block rewards. Since we don't have
-		//       the block rewards yet for the current block, we subtract one from the current block height
-		//        when spending balances.
+	// In the vested case, validate that the underlying profile is the transactor.
+	// NOTE: This check exists because there's several attack vectors that exist in letting
+	//		 any user perform vested lockups and send them to other users. For example, in the
+	// 		 current implementation we rely on consolidation in the lockup transaction to provide
+	//		 quick unlock transactions by users. A malicious user could knowingly send vested
+	// 		 lockups with small durations in the attempt to fragment the targeted users locked balance
+	//	  	 entries. This would result in the user being unable to easily receive future vested lockups.
+	//		 Attack vectors exist in various vested lockup designs and as a result it was decided
+	//		 best to only allow the transacting public key to perform vested lockups.
+	if txMeta.VestingEndTimestampNanoSecs > txMeta.UnlockTimestampNanoSecs &&
+		!reflect.DeepEqual(txn.PublicKey, txMeta.ProfilePublicKey.ToBytes()) {
+		return 0, 0, nil,
+			errors.Wrapf(RuleErrorCoinLockupInvalidVestedTransactor, "_connectCoinLockup: Profile "+
+				"pub key: %v, signer public key: %v", PkToString(txn.PublicKey, bav.Params),
+				PkToString(txn.PublicKey, bav.Params))
+	}
 
-		// Check the DeSo balance of the user.
-		transactorBalanceNanos, err := bav.GetSpendableDeSoBalanceNanosForPublicKey(txn.PublicKey, blockHeight-1)
+	// Determine the recipient PKID to use.
+	if len(txMeta.RecipientPublicKey) != btcec.PubKeyBytesLenCompressed {
+		return 0, 0, nil,
+			errors.Wrap(RuleErrorCoinLockupInvalidRecipientPubKey, "_connectCoinLockup")
+	}
+	if txMeta.RecipientPublicKey.IsZeroPublicKey() {
+		return 0, 0, nil,
+			errors.Wrap(RuleErrorCoinLockupZeroPublicKeyAsRecipient, "_connectCoinLockup")
+	}
+	recipientPKIDEntry := bav.GetPKIDForPublicKey(txMeta.RecipientPublicKey.ToBytes())
+	if recipientPKIDEntry == nil || recipientPKIDEntry.isDeleted {
+		return 0, 0, nil,
+			errors.Wrap(RuleErrorCoinLockupInvalidRecipientPKID, "_connectCoinLockup")
+	}
+	hodlerPKID := recipientPKIDEntry.PKID
+
+	// Check the BalanceEntry of the user.
+	transactorBalanceEntry, _, _ := bav.GetBalanceEntryForHODLerPubKeyAndCreatorPubKey(
+		txn.PublicKey,
+		txMeta.ProfilePublicKey.ToBytes(),
+		true)
+	if transactorBalanceEntry == nil || transactorBalanceEntry.isDeleted {
+		return 0, 0, nil,
+			errors.Wrap(RuleErrorCoinLockupBalanceEntryDoesNotExist, "_connectCoinLockup")
+	}
+
+	// Validate the balance entry as having sufficient funds.
+	transactorBalanceNanos256 := transactorBalanceEntry.BalanceNanos.Clone()
+	if txMeta.LockupAmountBaseUnits.Gt(transactorBalanceNanos256) {
+		return 0, 0, nil,
+			errors.Wrap(RuleErrorCoinLockupInsufficientCoins, "_connectCoinLockup")
+	}
+
+	// We store the previous transactor balance entry in the event we need to revert the transaction.
+	prevTransactorBalanceEntry := transactorBalanceEntry.Copy()
+
+	// Spend the transactor's DAO coin balance.
+	transactorBalanceEntry.BalanceNanos =
+		*uint256.NewInt().Sub(&transactorBalanceEntry.BalanceNanos, txMeta.LockupAmountBaseUnits)
+	bav._setDAOCoinBalanceEntryMappings(transactorBalanceEntry)
+
+	// Create a copy of the associated CoinEntry in the event we must roll back the transaction.
+	prevCoinEntry := profileEntry.DAOCoinEntry.Copy()
+
+	// Update CoinsInCirculation and NumberOfHolders associated with the DAO coin balance.
+	profileEntry.DAOCoinEntry.CoinsInCirculationNanos = *uint256.NewInt().Sub(
+		&profileEntry.DAOCoinEntry.CoinsInCirculationNanos,
+		txMeta.LockupAmountBaseUnits)
+	if transactorBalanceEntry.BalanceNanos.IsZero() && !prevTransactorBalanceEntry.BalanceNanos.IsZero() {
+		profileEntry.DAOCoinEntry.NumberOfHolders--
+	}
+	bav._setProfileEntryMappings(profileEntry)
+
+	// SAFEGUARD: We perform a redundant check if the profile has ANY yield curve points.
+	// This could be removed for added performance, but it adds an extra sanity check before we compute
+	// any associated yield. Specifically this helps protect against unforeseen issues with GetLocalYieldCurvePoints
+	// which is meant to be an optimized DB implementation capable of quickly fetching the yield
+	profileEnablesYield := false
+	if txMeta.UnlockTimestampNanoSecs == txMeta.VestingEndTimestampNanoSecs {
+		// Fetch ALL yield curve points associated with the profilePKID.
+		yieldCurvePointsMap, err := bav.GetAllYieldCurvePoints(profilePKID)
+		if err != nil {
+			return 0, 0, nil,
+				errors.Wrap(err, "_connectCoinLockup failed to perform yield curve safeguard check")
+		}
+
+		// Check if any yield curve points exist, updating profileEnablesYield if so.
+		for _, yieldCurvePoint := range yieldCurvePointsMap {
+			if !yieldCurvePoint.isDeleted {
+				profileEnablesYield = true
+			}
+		}
+	}
+
+	// If this is an unvested lockup, compute any accrued yield.
+	// In the vested lockup case, the yield earned is always zero.
+	yieldFromTxn := uint256.NewInt()
+	if profileEnablesYield && txMeta.UnlockTimestampNanoSecs == txMeta.VestingEndTimestampNanoSecs {
+		// Compute the lockup duration in nanoseconds.
+		lockupDurationNanoSeconds := txMeta.UnlockTimestampNanoSecs - blockTimestampNanoSecs
+
+		// By now we know the transaction to be valid. We now source yield information from either
+		// the profile's yield curve or the raw DeSo yield curve. Because there's some choice in how
+		// to determine the yield when the lockup duration falls between two profile-specified yield curve
+		// points, we return here the two local points and choose/interpolate between them below.
+		leftYieldCurvePoint, rightYieldCurvePoint, err :=
+			bav.GetLocalYieldCurvePoints(profilePKID, lockupDurationNanoSeconds)
+		if err != nil {
+			return 0, 0, nil,
+				errors.Wrap(err, "_connectCoinLockup failed to fetch yield curve points")
+		}
+
+		// Here we interpolate (choose) the yield between the two returned local yield curve points.
+		//
+		// If we fall between two points, we choose the left yield curve point (i.e. the one with lesser lockup duration).
+		// The transactor earns yield only for the lockup duration specified by the left yield curve point but will
+		// be unable to unlock the coins until the transaction specified lockup duration expires.
+		txnYieldBasisPoints := uint64(0)
+		txnYieldEarningDurationNanoSecs := int64(0)
+		if leftYieldCurvePoint != nil &&
+			leftYieldCurvePoint.LockupDurationNanoSecs < lockupDurationNanoSeconds {
+			txnYieldBasisPoints = leftYieldCurvePoint.LockupYieldAPYBasisPoints
+			txnYieldEarningDurationNanoSecs = leftYieldCurvePoint.LockupDurationNanoSecs
+		}
+		if rightYieldCurvePoint != nil &&
+			rightYieldCurvePoint.LockupDurationNanoSecs == lockupDurationNanoSeconds {
+			txnYieldBasisPoints = rightYieldCurvePoint.LockupYieldAPYBasisPoints
+			txnYieldEarningDurationNanoSecs = rightYieldCurvePoint.LockupDurationNanoSecs
+		}
+
+		// Convert variables to a consistent uint256 representation. This is to use them in SafeUint256 math.
+		txnYieldBasisPoints256 := uint256.NewInt().SetUint64(txnYieldBasisPoints)
+		txnYieldEarningDurationNanoSecs256 := uint256.NewInt().SetUint64(uint64(txnYieldEarningDurationNanoSecs))
+
+		// Compute the yield associated with this operation, checking to ensure there's no overflow.
+		yieldFromTxn, err =
+			CalculateLockupYield(
+				txMeta.LockupAmountBaseUnits, txnYieldBasisPoints256, txnYieldEarningDurationNanoSecs256)
 		if err != nil {
 			return 0, 0, nil, errors.Wrap(err, "_connectCoinLockup")
 		}
-
-		// Construct a uint256 balance and validate the transactor as having sufficient DeSo.
-		transactorBalanceNanos256, _ = uint256.FromBig(big.NewInt(0).SetUint64(transactorBalanceNanos))
-		if txMeta.LockupAmountBaseUnits.Gt(transactorBalanceNanos256) {
-			return 0, 0, nil,
-				errors.Wrap(RuleErrorCoinLockupInsufficientDeSo, "_connectCoinLockup")
-		}
-
-		// Spend the transactor's DeSo balance.
-		lockupAmount64 := txMeta.LockupAmountBaseUnits.Uint64()
-		newUtxoOp, err := bav._spendBalance(lockupAmount64, txn.PublicKey, blockHeight-1)
-		if err != nil {
-			return 0, 0, nil, errors.Wrap(err, "_connectCoinLockup")
-		}
-		utxoOpsForTxn = append(utxoOpsForTxn, newUtxoOp)
-	} else {
-		// Check the BalanceEntry of the user.
-		transactorBalanceEntry, _, _ := bav.GetBalanceEntryForHODLerPubKeyAndCreatorPubKey(
-			txn.PublicKey,
-			txMeta.ProfilePublicKey.ToBytes(),
-			true)
-		if transactorBalanceEntry == nil || transactorBalanceEntry.isDeleted {
-			return 0, 0, nil,
-				errors.Wrap(RuleErrorCoinLockupBalanceEntryDoesNotExist, "_connectCoinLockup")
-		}
-
-		// Validate the balance entry as having sufficient funds.
-		transactorBalanceNanos256 = transactorBalanceEntry.BalanceNanos.Clone()
-		if txMeta.LockupAmountBaseUnits.Gt(transactorBalanceNanos256) {
-			return 0, 0, nil,
-				errors.Wrap(RuleErrorCoinLockupInsufficientCoins, "_connectCoinLockup")
-		}
-
-		// We store the previous transactor balance entry in the event we need to revert the transaction.
-		prevTransactorBalanceEntry = transactorBalanceEntry.Copy()
-
-		// Spend the transactor's DAO coin balance.
-		transactorBalanceEntry.BalanceNanos =
-			*uint256.NewInt().Sub(&transactorBalanceEntry.BalanceNanos, txMeta.LockupAmountBaseUnits)
-		bav._setDAOCoinBalanceEntryMappings(transactorBalanceEntry)
-
-		// Create a copy of the associated CoinEntry in the event we must roll back the transaction.
-		prevCoinEntry = profileEntry.DAOCoinEntry.Copy()
-
-		// Update CoinsInCirculation and NumberOfHolders associated with the DAO coin balance.
-		profileEntry.DAOCoinEntry.CoinsInCirculationNanos = *uint256.NewInt().Sub(
-			&profileEntry.DAOCoinEntry.CoinsInCirculationNanos,
-			txMeta.LockupAmountBaseUnits)
-		if transactorBalanceEntry.BalanceNanos.IsZero() && !prevTransactorBalanceEntry.BalanceNanos.IsZero() {
-			profileEntry.DAOCoinEntry.NumberOfHolders--
-		}
-		bav._setProfileEntryMappings(profileEntry)
 	}
 
-	// By now we know the transaction to be valid. We now source yield information from either
-	// the profile's yield curve or the raw DeSo yield curve. Because there's some choice in how
-	// to determine the yield when the lockup duration falls between two profile-specified yield curve
-	// points, we return here the two local points and choose/interpolate between them below.
-	leftYieldCurvePoint, rightYieldCurvePoint, err :=
-		bav.GetLocalYieldCurvePoints(profilePKID, lockupDurationNanoSeconds)
-	if err != nil {
-		return 0, 0, nil,
-			errors.Wrap(err, "_connectCoinLockup failed to fetch yield curve points")
-	}
-
-	// Here we interpolate (choose) the yield between the two returned local yield curve points.
-	//
-	// If we fall between two points, we choose the left yield curve point (i.e. the one with lesser lockup duration).
-	// The transactor earns yield only for the lockup duration specified by the left yield curve point but will
-	// be unable to unlock the coins until the transaction specified lockup duration expires.
-	txnYieldBasisPoints := uint64(0)
-	txnYieldEarningDurationNanoSecs := int64(0)
-	if leftYieldCurvePoint != nil &&
-		leftYieldCurvePoint.LockupDurationNanoSecs < lockupDurationNanoSeconds {
-		txnYieldBasisPoints = leftYieldCurvePoint.LockupYieldAPYBasisPoints
-		txnYieldEarningDurationNanoSecs = leftYieldCurvePoint.LockupDurationNanoSecs
-	}
-	if rightYieldCurvePoint != nil &&
-		rightYieldCurvePoint.LockupDurationNanoSecs == lockupDurationNanoSeconds {
-		txnYieldBasisPoints = rightYieldCurvePoint.LockupYieldAPYBasisPoints
-		txnYieldEarningDurationNanoSecs = rightYieldCurvePoint.LockupDurationNanoSecs
-	}
-
-	// Convert variables to a consistent uint256 representation. This is to use them in SafeUint256 math.
-	txnYieldBasisPoints256 := uint256.NewInt().SetUint64(txnYieldBasisPoints)
-	txnYieldEarningDurationNanoSecs256 := uint256.NewInt().SetUint64(uint64(txnYieldEarningDurationNanoSecs))
-
-	// Compute the yield associated with this operation, checking to ensure there's no overflow.
-	yieldFromTxn, err :=
-		CalculateLockupYield(txMeta.LockupAmountBaseUnits, txnYieldBasisPoints256, txnYieldEarningDurationNanoSecs256)
-	if err != nil {
-		return 0, 0, nil, errors.Wrap(err, "_connectCoinLockup")
-	}
-
-	// Compute the amount awarded to the HODLer on unlock.
+	// Compute the total amount to be locked up in this transaction.
 	lockupValue, err := SafeUint256().Add(txMeta.LockupAmountBaseUnits, yieldFromTxn)
 	if err != nil {
 		return 0, 0, nil,
 			errors.Wrap(RuleErrorCoinLockupYieldCausesOverflow, "_connectCoinLockup: lockupValue")
 	}
 
-	// For consolidation, we fetch equivalent LockedBalanceEntries.
-	// An equivalent LockedBalanceEntry has the same unlock timestamp and the same profile PKID.
-	lockedBalanceEntry, err := bav.GetLockedBalanceEntryForHODLerPKIDProfilePKIDUnlockTimestampNanoSecs(
-		hodlerPKID, profilePKID, txMeta.UnlockTimestampNanoSecs)
-	if err != nil {
-		return 0, 0, nil,
-			errors.Wrap(err, "_connectCoinLockup failed to fetch lockedBalanceEntry")
-	}
-	if lockedBalanceEntry == nil || lockedBalanceEntry.isDeleted {
-		lockedBalanceEntry = &LockedBalanceEntry{
-			HODLerPKID:              hodlerPKID,
-			ProfilePKID:             profilePKID,
-			UnlockTimestampNanoSecs: txMeta.UnlockTimestampNanoSecs,
-			BalanceBaseUnits:        *uint256.NewInt(),
+	// Now we must consolidate the locked balance entry along with those already present
+	// in the UtxoView and the DB.
+	// In the unvested case this is simple as we only look for an existing locked balance entry
+	// with the same unlock time, store the previous locked balance entry, and set the new locked balance entry
+	// in the view. An equivalent LockedBalanceEntry has the same unlock timestamp and the same profile PKID.
+	// In the vested case we must make careful modifications to the existing locked balance entry/entries.
+	var previousLockedBalanceEntry *LockedBalanceEntry
+	var previousLockedBalanceEntries []*LockedBalanceEntry
+	var setLockedBalanceEntries []*LockedBalanceEntry
+	if txMeta.UnlockTimestampNanoSecs == txMeta.VestingEndTimestampNanoSecs {
+		// Unvested consolidation case:
+
+		// (1) Check for a locked balance entry with the same unlock time
+		lockedBalanceEntry, err := bav.GetLockedBalanceEntryForLockedBalanceEntryKey(
+			LockedBalanceEntryKey{
+				HODLerPKID:                  *hodlerPKID,
+				ProfilePKID:                 *profilePKID,
+				UnlockTimestampNanoSecs:     txMeta.UnlockTimestampNanoSecs,
+				VestingEndTimestampNanoSecs: txMeta.VestingEndTimestampNanoSecs,
+			})
+		if err != nil {
+			return 0, 0, nil,
+				errors.Wrap(err, "_connectCoinLockup failed to fetch unvested lockedBalanceEntry")
+		}
+		if lockedBalanceEntry == nil || lockedBalanceEntry.isDeleted {
+			lockedBalanceEntry = &LockedBalanceEntry{
+				HODLerPKID:                  hodlerPKID,
+				ProfilePKID:                 profilePKID,
+				UnlockTimestampNanoSecs:     txMeta.UnlockTimestampNanoSecs,
+				VestingEndTimestampNanoSecs: txMeta.VestingEndTimestampNanoSecs,
+				BalanceBaseUnits:            *uint256.NewInt(),
+			}
+		}
+
+		// (2) Store the previous locked balance entry
+		previousLockedBalanceEntry = lockedBalanceEntry.Copy()
+
+		// (3) Check for consolidation overflow
+		newLockedBalanceEntryBalance, err := SafeUint256().Add(&lockedBalanceEntry.BalanceBaseUnits, lockupValue)
+		if err != nil {
+			return 0, 0, nil,
+				errors.Wrap(RuleErrorCoinLockupYieldCausesOverflowInLockedBalanceEntry,
+					"_connectCoinLockup: New Locked Balance Entry Balance")
+		}
+
+		// (4) Set the new locked balance entry in the view
+		// NOTE: An astute reader may have noticed the comment on the LockedBalanceEntryKey definition
+		// and be confused why we are not deleting then setting the lockedBalanceEntry below. This is because
+		// we do not modify the key in this case, making it safe to just set the lockedBalanceEntry.
+		lockedBalanceEntry.BalanceBaseUnits = *newLockedBalanceEntryBalance
+		bav._setLockedBalanceEntry(lockedBalanceEntry)
+
+		// NOTE: While we could check for "global" overflow here, we let this occur on the unlock transaction instead.
+		//       Global overflow is where the yield causes fields like CoinEntry.CoinsInCirculationNanos to overflow.
+		//       Performing the check here would be redundant and may lead to worse UX in the case of coins being
+		//       burned in the future making current lockups no longer an overflow. Checking here would also
+		//       create a DoS attack vector where a malicious entity takes out an extremely long-dated lockup
+		//       with the sole intent of saturating the CoinsInCirculationNanos field preventing others from locking up.
+	} else {
+		// Vested consolidation case:
+
+		// (1) Check for overlapping locked balance entries
+		lockedBalanceEntries, err := bav.GetLimitedVestedLockedBalanceEntriesOverTimeInterval(
+			hodlerPKID, profilePKID, txMeta.UnlockTimestampNanoSecs, txMeta.VestingEndTimestampNanoSecs,
+			bav.GetCurrentGlobalParamsEntry().MaximumVestedIntersectionsPerLockupTransaction)
+		if err != nil && errors.Is(err, RuleErrorCoinLockupViolatesVestingIntersectionLimit) {
+			return 0, 0, nil,
+				errors.Wrap(RuleErrorCoinLockupViolatesVestingIntersectionLimit, "_connectCoinLockup")
+		}
+		if err != nil {
+			return 0, 0, nil,
+				errors.Wrap(err, "_connectCoinLockup failed to fetch vested locked balance entries")
+		}
+
+		// (2a) Store the previous locked balance entries in the event of disconnect
+		for _, lockedBalanceEntry := range lockedBalanceEntries {
+			previousLockedBalanceEntries = append(previousLockedBalanceEntries, lockedBalanceEntry.Copy())
+		}
+
+		// (2b) Delete the previous locked balance entries in the view
+		//      See the comment on LockedBalanceEntryKey to understand why.
+		for _, lockedBalanceEntry := range lockedBalanceEntries {
+			bav._deleteLockedBalanceEntry(lockedBalanceEntry)
+		}
+
+		// (3) Consolidate vested locked balance entries
+
+		// (3a) First check if there's no existing vested locked balance entries, this is the no-consolidation case
+		if len(lockedBalanceEntries) == 0 {
+			newLockedBalanceEntry := &LockedBalanceEntry{
+				HODLerPKID:                  hodlerPKID,
+				ProfilePKID:                 profilePKID,
+				UnlockTimestampNanoSecs:     txMeta.UnlockTimestampNanoSecs,
+				VestingEndTimestampNanoSecs: txMeta.VestingEndTimestampNanoSecs,
+				BalanceBaseUnits:            *lockupValue,
+			}
+			bav._setLockedBalanceEntry(newLockedBalanceEntry)
+			setLockedBalanceEntries = append(setLockedBalanceEntries, newLockedBalanceEntry.Copy())
+		} else if len(lockedBalanceEntries) > 0 {
+			// (3b) Go through each existing locked balance entry and consolidate
+
+			// Construct a "proposed" locked balance entry from the transaction's metadata.
+			proposedLockedBalanceEntry := &LockedBalanceEntry{
+				HODLerPKID:                  hodlerPKID,
+				ProfilePKID:                 profilePKID,
+				UnlockTimestampNanoSecs:     txMeta.UnlockTimestampNanoSecs,
+				VestingEndTimestampNanoSecs: txMeta.VestingEndTimestampNanoSecs,
+				BalanceBaseUnits:            *lockupValue,
+			}
+
+			for ii, existingLockedBalanceEntry := range lockedBalanceEntries {
+				// (3b-i) Determine if there is left overhang by either the existing or the proposed locked balance entry
+				// e.g.           UnlockTimestampNanoSecs --------------------- VestingEndTimestampNanoSecs
+				//            UnlockTimestampNanoSecs --------------------- VestingEndTimestampNanoSecs
+				//            ^  ^
+				//         left overhang
+				// We will break any overhang off into its own separate locked balance entry.
+
+				// Check for left overhang by the existing locked balance entry
+				if existingLockedBalanceEntry.UnlockTimestampNanoSecs <
+					proposedLockedBalanceEntry.UnlockTimestampNanoSecs {
+					// Split the overhanging portion off the existing locked balance entry.
+					// Following the split, the existing and the remaining should have the same start time.
+					splitLockedBalanceEntry, remainingLockedBalanceEntry, err := SplitVestedLockedBalanceEntry(
+						existingLockedBalanceEntry,
+						existingLockedBalanceEntry.UnlockTimestampNanoSecs,
+						proposedLockedBalanceEntry.UnlockTimestampNanoSecs-1)
+					if err != nil {
+						return 0, 0, nil,
+							errors.Wrap(err, "_connectCoinLockup failed to compute vested split")
+					}
+
+					// Set the splitLockedBalanceEntry into the view.
+					// NOTE: While it may seem as though we need to check for a conflicting vested
+					//       locked balance entry here, by design we only ever have one vested locked
+					//       balance entry across any given time interval thus by splitting the locked
+					//       balance entry in half it's impossible to intersect an existing
+					//       vested locked balance entry.
+					bav._setLockedBalanceEntry(splitLockedBalanceEntry)
+					setLockedBalanceEntries = append(setLockedBalanceEntries, splitLockedBalanceEntry.Copy())
+
+					// We update the existingLockedBalanceEntry as broke the left overhanging portion off.
+					existingLockedBalanceEntry = remainingLockedBalanceEntry
+				}
+
+				// Check for left overhang by the proposed locked balance entry
+				if proposedLockedBalanceEntry.UnlockTimestampNanoSecs <
+					existingLockedBalanceEntry.UnlockTimestampNanoSecs {
+					splitLockedBalanceEntry, remainingLockedBalanceEntry, err := SplitVestedLockedBalanceEntry(
+						proposedLockedBalanceEntry,
+						proposedLockedBalanceEntry.UnlockTimestampNanoSecs,
+						existingLockedBalanceEntry.UnlockTimestampNanoSecs-1)
+					if err != nil {
+						return 0, 0, nil,
+							errors.Wrap(err, "_connectCoinLockup failed to compute vested split")
+					}
+
+					// Set the splitLockedBalanceEntry into the view.
+					bav._setLockedBalanceEntry(splitLockedBalanceEntry)
+					setLockedBalanceEntries = append(setLockedBalanceEntries, splitLockedBalanceEntry.Copy())
+
+					// We update the proposedLockedBalanceEntry as the left overhanging portion was broken off.
+					proposedLockedBalanceEntry = remainingLockedBalanceEntry
+				}
+
+				// (3b-ii) Determine if there is right overhang by either the existing or proposed locked balance entry
+				// e.g.      UnlockTimestampNanoSecs --------------------- VestingEndTimestampNanoSecs
+				//               UnlockTimestampNanoSecs --------------------- VestingEndTimestampNanoSecs
+				//                                                                                    ^  ^
+				//                                                                               right overhang
+				// We will break any overhang off into its own separate locked balance entry.
+				//
+				// NOTE: Because in the previous portion of the code we trim any locked balance entries that
+				// have "left overhang" we know the UnlockTimestampNanoSecs to be lined up between
+				// both the existing and proposed LockedBalanceEntry. This is important as it means after
+				// we remove any existing right overhang the two locked balance entries will be perfectly lined up.
+
+				// Check for right overhang by the existing locked balance entry
+				if existingLockedBalanceEntry.VestingEndTimestampNanoSecs >
+					proposedLockedBalanceEntry.VestingEndTimestampNanoSecs {
+					splitLockedBalanceEntry, remainingLockedBalanceEntry, err := SplitVestedLockedBalanceEntry(
+						existingLockedBalanceEntry,
+						proposedLockedBalanceEntry.VestingEndTimestampNanoSecs+1,
+						existingLockedBalanceEntry.VestingEndTimestampNanoSecs)
+					if err != nil {
+						return 0, 0, nil,
+							errors.Wrap(err, "_connectCoinLockup failed to compute vested split")
+					}
+
+					// Set the splitLockedBalanceEntry into the view.
+					bav._setLockedBalanceEntry(splitLockedBalanceEntry)
+					setLockedBalanceEntries = append(setLockedBalanceEntries, splitLockedBalanceEntry.Copy())
+
+					// We update the existingLockedBalanceEntry as broke the right overhanging portion off.
+					existingLockedBalanceEntry = remainingLockedBalanceEntry
+				}
+
+				// Check for right overhang by the proposed locked balance entry
+				if proposedLockedBalanceEntry.VestingEndTimestampNanoSecs >
+					existingLockedBalanceEntry.VestingEndTimestampNanoSecs {
+					// NOTE: This case is particularly interesting as there's two situations in
+					// which we might find ourselves.
+					//
+					// First case:
+					// proposed:   <----------------------------------------->
+					// existing:   <------------------>
+					//                                 ^                     ^ Overhang
+					// Second case:
+					// proposed:   <----------------------------------------->
+					// existing:   <------------------>            <--------->
+					//                                 ^          ^ Overhang
+					// In the second case there exists another conflicting LockedBalanceEntry
+					// sometime in the future that we must be aware of. Also note that
+					// the first case is only possible in the very last iteration.
+					//
+					// To account for this, we split from the proposed LockedBalanceEntry
+					// and combine the left overlapping portion. This leaves us with two
+					// remaining cases:
+					// First case:
+					// proposed:                       <--------------------->
+					// existing:
+					//
+					// Second case:
+					// proposed:                       <--------------------->
+					// existing:                                   <--------->
+					//
+					// The second case is fine to leave as it will be taken care of in the
+					// subsequent iteration. However, we make a special note to capture the
+					// remaining LockedBalanceEntry present in the first case.
+
+					// We check if there's another locked balance entry sometime in the future.
+					splitLockedBalanceEntry, remainingLockedBalanceEntry, err := SplitVestedLockedBalanceEntry(
+						proposedLockedBalanceEntry,
+						existingLockedBalanceEntry.UnlockTimestampNanoSecs,
+						existingLockedBalanceEntry.VestingEndTimestampNanoSecs)
+					if err != nil {
+						return 0, 0, nil,
+							errors.Wrap(err, "_connectCoinLockup failed to compute vested split")
+					}
+
+					// Consolidate the split and existing locked balance entry.
+					combinedBalanceBaseUnits, err := SafeUint256().Add(
+						&splitLockedBalanceEntry.BalanceBaseUnits,
+						&existingLockedBalanceEntry.BalanceBaseUnits)
+					if err != nil {
+						return 0, 0, nil,
+							errors.Wrap(RuleErrorCoinLockupYieldCausesOverflowInLockedBalanceEntry,
+								"_connectCoinLockup")
+					}
+					splitLockedBalanceEntry.BalanceBaseUnits = *combinedBalanceBaseUnits
+
+					// Set the now combined splitLockedBalanceEntry into the view.
+					bav._setLockedBalanceEntry(splitLockedBalanceEntry)
+					setLockedBalanceEntries = append(setLockedBalanceEntries, splitLockedBalanceEntry.Copy())
+
+					// Update the proposed locked balance entry with the remaining portion.
+					proposedLockedBalanceEntry = remainingLockedBalanceEntry
+
+					// (3b-iii) On the final iteration, the remaining proposedLockedBalanceEntry
+					//          is the only vesting schedule left.
+					if ii == len(lockedBalanceEntries)-1 {
+						bav._setLockedBalanceEntry(proposedLockedBalanceEntry)
+						setLockedBalanceEntries = append(setLockedBalanceEntries, proposedLockedBalanceEntry.Copy())
+					}
+				}
+
+				// (3b-iv) By now, we know the edges to be trimmed as best possible.
+				// We check if the existing and proposed now overlap perfectly in time and combine if so.
+				if (existingLockedBalanceEntry.UnlockTimestampNanoSecs ==
+					proposedLockedBalanceEntry.UnlockTimestampNanoSecs) &&
+					(existingLockedBalanceEntry.VestingEndTimestampNanoSecs ==
+						proposedLockedBalanceEntry.VestingEndTimestampNanoSecs) {
+					// Combine the remaining balance.
+					combinedBalanceBaseUnits, err := SafeUint256().Add(
+						&existingLockedBalanceEntry.BalanceBaseUnits,
+						&proposedLockedBalanceEntry.BalanceBaseUnits)
+					if err != nil {
+						return 0, 0, nil,
+							errors.Wrap(RuleErrorCoinLockupYieldCausesOverflowInLockedBalanceEntry,
+								"_connectCoinLockup")
+					}
+
+					// Update the remaining entry.
+					proposedLockedBalanceEntry.BalanceBaseUnits = *combinedBalanceBaseUnits
+					bav._setLockedBalanceEntry(proposedLockedBalanceEntry)
+					setLockedBalanceEntries = append(setLockedBalanceEntries, proposedLockedBalanceEntry.Copy())
+				}
+			}
 		}
 	}
-	previousLockedBalanceEntry := *lockedBalanceEntry
-
-	// Attempt to add the value of this lockup transaction to the locked balance entry.
-	newLockedBalanceEntryBalance, err := SafeUint256().Add(&lockedBalanceEntry.BalanceBaseUnits, lockupValue)
-	if err != nil {
-		return 0, 0, nil,
-			errors.Wrap(RuleErrorCoinLockupYieldCausesOverflowInLockedBalanceEntry,
-				"_connectCoinLockup: New Locked Balance Entry Balance")
-	}
-
-	// Ensure in the case of DESO the resulting locked amount is less than 2**64.
-	if profilePKID.IsZeroPKID() && !newLockedBalanceEntryBalance.IsUint64() {
-		return 0, 0, nil,
-			errors.Wrap(RuleErrorCoinLockupYieldCausesOverflow, "_connectCoinLockup: "+
-				"New DESO Locked Balance Entry Balance")
-	}
-
-	// NOTE: While we could check for "global" overflow here, we let this occur on the unlock transaction instead.
-	//       Global overflow is where the yield causes fields like CoinEntry.CoinsInCirculationNanos to overflow.
-	//       Performing the check here would be redundant and may lead to worse UX in the case of coins being
-	//       burned in the future making current lockups no longer an overflow. Checking here would also
-	//       create a DoS attack vector where a malicious entity takes out an extremely long-dated lockup
-	//       with the sole intent of saturating the CoinsInCirculationNanos field preventing others from locking up.
-
-	// Update the lockedBalanceEntry and update the view.
-	lockedBalanceEntry.BalanceBaseUnits = *newLockedBalanceEntryBalance
-	bav._setLockedBalanceEntry(lockedBalanceEntry)
 
 	// Add a UtxoOperation for easy reversion during disconnect.
 	utxoOpsForTxn = append(utxoOpsForTxn, &UtxoOperation{
 		Type:                       OperationTypeCoinLockup,
 		PrevTransactorBalanceEntry: prevTransactorBalanceEntry,
-		PrevLockedBalanceEntry:     &previousLockedBalanceEntry,
+		PrevLockedBalanceEntry:     previousLockedBalanceEntry,
+		PrevLockedBalanceEntries:   previousLockedBalanceEntries,
+		SetLockedBalanceEntries:    setLockedBalanceEntries,
 		PrevCoinEntry:              prevCoinEntry,
 	})
 
 	// Construct UtxoOps in the event this transaction is reverted.
 	return totalInput, totalOutput, utxoOpsForTxn, nil
+}
+
+// SplitVestedLockedBalanceEntry is used for splitting a vested locked balance entry into two pieces.
+// It is assumed that the startSplitTimestamp lines up with the UnlockTimestampNanoSecs of the lockedBalanceEntry
+// passed or endSplitTimestampNanoSecs lines up with the VestingEndTimestampNanoSecs of
+// the lockedBalanceEntry passed.
+//
+// On return a splitLockedBalanceEntry will be returned with UnlockTimestampNanoSecs=startSplitTimestampNanoSecs
+// and VestingEndTimestampNanoSecs=endSplitTimestampNanoSecs.
+// In addition, a remainingLockedBalanceEntry will be returned whose UnlockTimestampNanoSecs and
+// VestingEndTimestampNanoSecs is whatever remains of the lockedBalanceEntry passed minus the splitLockedBalanceEntry.
+func SplitVestedLockedBalanceEntry(
+	lockedBalanceEntry *LockedBalanceEntry,
+	startSplitTimestampNanoSecs int64,
+	endSplitTimestampNanoSecs int64,
+) (
+	_splitLockedBalanceEntry *LockedBalanceEntry,
+	_remainingLockedBalanceEntry *LockedBalanceEntry,
+	_err error,
+) {
+	// SplitVestedLockedBalanceEntry performs simple split operations where
+	// either startSplitTimestampNanoSecs or endSplitTimestampNanoSecs corresponds with the
+	// start or end timestamp in lockedBalanceEntry.
+	//
+	// This means the function can take in one of the two following configurations:
+	//
+	// Valid Input Configuration 1:
+	//             lockedBalanceEntry <start-------------------------------end>
+	//    startSplitTimestampNanoSecs ^
+	//      endSplitTimestampNanoSecs                 ^
+	//
+	// Valid Input Configuration 2:
+	//             lockedBalanceEntry <start-------------------------------end>
+	//    startSplitTimestampNanoSecs                      ^
+	//      endSplitTimestampNanoSecs                                         ^
+	//
+	// NOTE: We can imagine the split operation taking a lockedBalanceEntry with interval [t1, t2] and
+	// splitting it into two separate lockedBalanceEntry intervals: [t3, t4] & [t5, t6] where t4 + 1 = t5.
+	// Notice however that there is a 1 nanosecond loss in this that we must account for between
+	// t4 and t5. This becomes computationally tricky when trying to consistently compute the split's value.
+	// To deal with this, we always let the lockedBalanceEntry using the split off interval
+	// (passed as [startSplitTimestampNanoSecs, endSplitTimestampNanoSecs]) take on the extra 1 nanosecond of
+	// value. This ends up being the best way to ensure numerical consistency for all caller of this function,
+	// but other decisions on where to put the extra nanosecond of value can be made as well, and they will also work.
+	//
+	// Stated another way: While we return lockedBalanceEntries with intervals [t3, t4] & [t5, t6]
+	// where t4 + 1 = t5, we compute the balance in each of those entries based on the time elapsed
+	// in the intervals [t3, t5) and [t5, t6]. This ensures a computationally consistent means of computing
+	// the value in the returned lockedBalanceEntries.
+	//
+	// You can see this implemented below where CalculateLockupValueOverElapsedDuration is called
+	// with (endSplitTimestampNanoSecs - startSplitTimestampNanoSecs + 1) as the elapsed duration.
+
+	// Sanity check to ensure the start timestamp is before the end timestamp.
+	if startSplitTimestampNanoSecs >= endSplitTimestampNanoSecs {
+		return nil, nil,
+			errors.New("SplitVestedLockedBalanceEntry: cannot use reversed split timestamps")
+	}
+
+	// Check to ensure the start and end timestamps are within the bounds
+	if startSplitTimestampNanoSecs < lockedBalanceEntry.UnlockTimestampNanoSecs ||
+		endSplitTimestampNanoSecs > lockedBalanceEntry.VestingEndTimestampNanoSecs {
+		return nil, nil,
+			errors.New("SplitVestedLockedBalanceEntry: split timestamps must be within bounds")
+	}
+
+	// Check to ensure the split will not form three pieces.
+	if startSplitTimestampNanoSecs != lockedBalanceEntry.UnlockTimestampNanoSecs &&
+		endSplitTimestampNanoSecs != lockedBalanceEntry.VestingEndTimestampNanoSecs {
+		return nil, nil,
+			errors.New("SplitVestedLockedBalanceEntry: split would create three pieces")
+	}
+
+	// Check to ensure the split will not form one.
+	if startSplitTimestampNanoSecs == lockedBalanceEntry.UnlockTimestampNanoSecs &&
+		endSplitTimestampNanoSecs == lockedBalanceEntry.VestingEndTimestampNanoSecs {
+		return nil, nil,
+			errors.New("SplitVestedLockedBalanceEntry: split would result in no-op")
+	}
+
+	// Create a split locked balance entry.
+	splitLockedBalanceEntry := &LockedBalanceEntry{
+		HODLerPKID:                  lockedBalanceEntry.HODLerPKID,
+		ProfilePKID:                 lockedBalanceEntry.ProfilePKID,
+		UnlockTimestampNanoSecs:     startSplitTimestampNanoSecs,
+		VestingEndTimestampNanoSecs: endSplitTimestampNanoSecs,
+		BalanceBaseUnits:            uint256.Int{},
+	}
+
+	// Create the remaining locked balance entry.
+	// NOTE: The SplitVestedLockedBalanceEntry function is designed such that
+	// the portion being split off from the LockedBalanceEntry either starts
+	// at the lockedBalanceEntry.UnlockTimestampNanoSecs OR ends at the
+	// lockedBalanceEntry.VestingEndTimestampNanoSecs. Based on these two cases
+	// we can determine the remaining LockedBalanceEntry.
+	var remainingLockedBalanceEntry *LockedBalanceEntry
+	if startSplitTimestampNanoSecs == lockedBalanceEntry.UnlockTimestampNanoSecs {
+		remainingLockedBalanceEntry = &LockedBalanceEntry{
+			HODLerPKID:                  lockedBalanceEntry.HODLerPKID,
+			ProfilePKID:                 lockedBalanceEntry.ProfilePKID,
+			UnlockTimestampNanoSecs:     endSplitTimestampNanoSecs + 1,
+			VestingEndTimestampNanoSecs: lockedBalanceEntry.VestingEndTimestampNanoSecs,
+			BalanceBaseUnits:            uint256.Int{},
+		}
+	}
+	if endSplitTimestampNanoSecs == lockedBalanceEntry.VestingEndTimestampNanoSecs {
+		remainingLockedBalanceEntry = &LockedBalanceEntry{
+			HODLerPKID:                  lockedBalanceEntry.HODLerPKID,
+			ProfilePKID:                 lockedBalanceEntry.ProfilePKID,
+			UnlockTimestampNanoSecs:     lockedBalanceEntry.UnlockTimestampNanoSecs,
+			VestingEndTimestampNanoSecs: startSplitTimestampNanoSecs - 1,
+			BalanceBaseUnits:            uint256.Int{},
+		}
+	}
+
+	// Compute the balance in the split locked balance entry.
+	// See the note at the top of this function for why we do this.
+	splitValue, err := CalculateLockupValueOverElapsedDuration(
+		lockedBalanceEntry,
+		endSplitTimestampNanoSecs-startSplitTimestampNanoSecs+1)
+	if err != nil {
+		return nil, nil,
+			errors.Wrap(err, "SplitVestedLockedBalanceEntry failed to compute split value")
+	}
+	splitLockedBalanceEntry.BalanceBaseUnits = *splitValue
+
+	// Compute the balance in the remaining locked balance entry.
+	remainingValue, err := SafeUint256().Sub(&lockedBalanceEntry.BalanceBaseUnits, splitValue)
+	if err != nil {
+		return nil, nil,
+			errors.Wrap(err, "SplitVestedLockedBalanceEntry failed to compute remaining value")
+	}
+	remainingLockedBalanceEntry.BalanceBaseUnits = *remainingValue
+
+	// Sanity check the split does not print money.
+	if uint256.NewInt().Add(
+		&splitLockedBalanceEntry.BalanceBaseUnits, &remainingLockedBalanceEntry.BalanceBaseUnits).
+		Gt(&lockedBalanceEntry.BalanceBaseUnits) {
+		return nil, nil,
+			errors.New("SplitVestedLockedBalanceEntry: split would print tokens/DESO")
+	}
+
+	// Sanity check the split does not result in empty locked balance entries.
+	if splitLockedBalanceEntry.BalanceBaseUnits.IsZero() ||
+		remainingLockedBalanceEntry.BalanceBaseUnits.IsZero() {
+		return nil, nil,
+			errors.New("SplitVestedLockedBalanceEntry: split would result in empty locked balance entry")
+	}
+
+	return splitLockedBalanceEntry, remainingLockedBalanceEntry, nil
+}
+
+func CalculateLockupValueOverElapsedDuration(
+	lockedBalanceEntry *LockedBalanceEntry,
+	elapsedDuration int64,
+) (
+	_splitValue *uint256.Int,
+	_err error,
+) {
+	// Sanity check the passed values.
+	if elapsedDuration <= 0 {
+		return nil, errors.New("CalculateLockupSplitValue: " +
+			"elapsedDuration specified is either zero or negative.")
+	}
+
+	// Convert the elapsedDuration to an uint256
+	numerator := uint256.NewInt().SetUint64(uint64(elapsedDuration))
+
+	// Compute the time that passes over the duration of the locked balance entry
+	denominator, err := SafeUint256().Sub(
+		uint256.NewInt().SetUint64(uint64(lockedBalanceEntry.VestingEndTimestampNanoSecs)),
+		uint256.NewInt().SetUint64(uint64(lockedBalanceEntry.UnlockTimestampNanoSecs)))
+	if err != nil {
+		return nil, errors.Wrap(err, "CalculateLockupSplitValue: "+
+			"(lockedBalanceEntry.UnlockTimestamp - lockedBalanceEntry.VestingEndTimestamp) underflow")
+	}
+
+	// Rather than creating a floating point for the fraction of time that passes, we keep
+	// everything as uint256 by multiplying the locked balance entry value by the numerator and
+	// dividing by the denominator. We know uint256 division to produce a quotient strictly less
+	// than the true infinite precision quotient. This approach is an extra layer of protection against
+	// money printer bugs.
+	numerator, err = SafeUint256().Mul(numerator, &lockedBalanceEntry.BalanceBaseUnits)
+	if err != nil {
+		return nil, errors.Wrap(err, "CalculateLockupSplitValue: "+
+			"((start timestamp - end timestamp) + 1) * lockedBalanceEntry.Balance overflow")
+	}
+	splitValue, err := SafeUint256().Div(numerator, denominator)
+	if err != nil {
+		return nil, errors.Wrap(err, "CalculateLockupSplitValue: "+
+			"(elapsedDuration * lockedBalanceEntry.BalanceBaseUnits) / "+
+			"(lockedBalanceEntry.UnlockTimestamp - lockedBalanceEntry.VestingEndTimestamp) has zero denominator")
+	}
+
+	return splitValue, nil
 }
 
 func CalculateLockupYield(
@@ -998,78 +1846,70 @@ func (bav *UtxoView) _disconnectCoinLockup(
 		return fmt.Errorf("_disconnectCoinLockup: Trying to revert OperationTypeCoinLockup " +
 			"but found nil or deleted previous locked balance entry")
 	}
-	operationIndex--
-	if operationIndex < 0 {
-		return fmt.Errorf("_disconnectCoinLockup: Trying to revert OperationTypeCoinLockup " +
-			"but malformed utxoOpsForTxn")
-	}
 
-	// Sanity check the data within the CoinLockup. Reverting a lockup should not result in more coins.
-	lockedBalanceEntry, err := bav.GetLockedBalanceEntryForHODLerPKIDProfilePKIDUnlockTimestampNanoSecs(
-		operationData.PrevLockedBalanceEntry.HODLerPKID, operationData.PrevLockedBalanceEntry.ProfilePKID,
-		operationData.PrevLockedBalanceEntry.UnlockTimestampNanoSecs)
-	if err != nil {
-		return errors.Wrap(err, "_disconnectCoinLockup failed to fetch current lockedBalanceEntry")
-	}
-	if lockedBalanceEntry == nil || lockedBalanceEntry.isDeleted {
-		lockedBalanceEntry = &LockedBalanceEntry{
-			HODLerPKID:              operationData.PrevLockedBalanceEntry.HODLerPKID,
-			ProfilePKID:             operationData.PrevLockedBalanceEntry.ProfilePKID,
-			UnlockTimestampNanoSecs: operationData.PrevLockedBalanceEntry.UnlockTimestampNanoSecs,
-			BalanceBaseUnits:        *uint256.NewInt(),
-		}
-	}
-	if lockedBalanceEntry.BalanceBaseUnits.Lt(&operationData.PrevLockedBalanceEntry.BalanceBaseUnits) {
-		return fmt.Errorf("_disconnectCoinLockup: Reversion of coin lockup would result in " +
-			"more coins in the lockup")
-	}
-
-	// Reset the transactor's LockedBalanceEntry to what it was previously.
-	bav._setLockedBalanceEntry(operationData.PrevLockedBalanceEntry)
-
-	// Depending on whether the lockup dealt with DeSo, we should have either a UtxoOp or a PrevTransactorBalanceEntry.
-	isDeSoLockup := operationData.PrevLockedBalanceEntry.ProfilePKID.IsZeroPKID()
-	if isDeSoLockup {
-		// Revert the spent DeSo.
-		operationData = utxoOpsForTxn[operationIndex]
-		if operationData.Type != OperationTypeSpendBalance {
-			return fmt.Errorf("_disconnectCoinLockup: Trying to revert OperationTypeSpendBalance "+
-				"but found type %v", operationData.Type)
-		}
-		if !bytes.Equal(operationData.BalancePublicKey, currentTxn.PublicKey) {
-			return fmt.Errorf("_disconnectCoinLockup: Trying to revert OperationTypeSpendBalance but found " +
-				"mismatched public keys")
-		}
-		err := bav._unSpendBalance(operationData.BalanceAmountNanos, currentTxn.PublicKey)
+	// Depending on whether this was a vested or unvested lockup, we disconnect differently.
+	if operationData.PrevLockedBalanceEntry != nil {
+		// Sanity check the data within the CoinLockup. Reverting an unvested lockup should not result in more coins.
+		lockedBalanceEntry, err :=
+			bav.GetLockedBalanceEntryForHODLerPKIDProfilePKIDUnlockTimestampNanoSecsVestingEndTimestampNanoSecs(
+				operationData.PrevLockedBalanceEntry.HODLerPKID,
+				operationData.PrevLockedBalanceEntry.ProfilePKID,
+				operationData.PrevLockedBalanceEntry.UnlockTimestampNanoSecs,
+				operationData.PrevLockedBalanceEntry.VestingEndTimestampNanoSecs)
 		if err != nil {
-			return errors.Wrapf(err, "_disconnectCoinLockup: Problem unSpending balance of %v "+
-				"for the transactor", operationData.BalanceAmountNanos)
+			return errors.Wrap(err, "_disconnectCoinLockup failed to fetch current lockedBalanceEntry")
 		}
+		if lockedBalanceEntry == nil || lockedBalanceEntry.isDeleted {
+			lockedBalanceEntry = &LockedBalanceEntry{
+				HODLerPKID:                  operationData.PrevLockedBalanceEntry.HODLerPKID,
+				ProfilePKID:                 operationData.PrevLockedBalanceEntry.ProfilePKID,
+				UnlockTimestampNanoSecs:     operationData.PrevLockedBalanceEntry.UnlockTimestampNanoSecs,
+				VestingEndTimestampNanoSecs: operationData.PrevLockedBalanceEntry.VestingEndTimestampNanoSecs,
+				BalanceBaseUnits:            *uint256.NewInt(),
+			}
+		}
+		if lockedBalanceEntry.BalanceBaseUnits.Lt(&operationData.PrevLockedBalanceEntry.BalanceBaseUnits) {
+			return fmt.Errorf("_disconnectCoinLockup: Reversion of coin lockup would result in " +
+				"more coins in the lockup")
+		}
+
+		// Reset the transactor's LockedBalanceEntry to what it was previously.
+		bav._setLockedBalanceEntry(operationData.PrevLockedBalanceEntry)
 	} else {
-		// Revert the transactor's DAO coin balance.
-		bav._setBalanceEntryMappings(operationData.PrevTransactorBalanceEntry, true)
-
-		// Fetch the profile entry associated with the lockup.
-		profileEntry := bav.GetProfileEntryForPKID(operationData.PrevLockedBalanceEntry.ProfilePKID)
-		if profileEntry == nil || profileEntry.isDeleted {
-			return fmt.Errorf("_disconnectCoinLockup: Trying to revert coin entry " +
-				"update but found nil profile entry; this shouldn't be possible")
+		// Delete any set locked balance entries.
+		for _, setLockedBalanceEntry := range operationData.SetLockedBalanceEntries {
+			bav._setLockedBalanceEntry(setLockedBalanceEntry)
 		}
 
-		// Ensure the PrevCoinEntry is not nil. This shouldn't be possible.
-		if operationData.PrevCoinEntry == nil {
-			return fmt.Errorf("_disconnectCoinLockup: Trying to revert coin entry " +
-				"update but found nil prev coin entry; this shouldn't be possible")
+		// Set any previous locked balance entries.
+		for _, prevLockedBalanceEntry := range operationData.PrevLockedBalanceEntries {
+			bav._setLockedBalanceEntry(prevLockedBalanceEntry)
 		}
-
-		// Revert the coin entry.
-		profileEntry.DAOCoinEntry = *operationData.PrevCoinEntry
-		bav._setProfileEntryMappings(profileEntry)
 	}
+
+	// Revert the transactor's DAO coin balance.
+	bav._setBalanceEntryMappings(operationData.PrevTransactorBalanceEntry, true)
+
+	// Fetch the profile entry associated with the lockup.
+	profileEntry := bav.GetProfileEntryForPKID(operationData.PrevLockedBalanceEntry.ProfilePKID)
+	if profileEntry == nil || profileEntry.isDeleted {
+		return fmt.Errorf("_disconnectCoinLockup: Trying to revert coin entry " +
+			"update but found nil profile entry; this shouldn't be possible")
+	}
+
+	// Ensure the PrevCoinEntry is not nil. This shouldn't be possible.
+	if operationData.PrevCoinEntry == nil {
+		return fmt.Errorf("_disconnectCoinLockup: Trying to revert coin entry " +
+			"update but found nil prev coin entry; this shouldn't be possible")
+	}
+
+	// Revert the coin entry.
+	profileEntry.DAOCoinEntry = *operationData.PrevCoinEntry
+	bav._setProfileEntryMappings(profileEntry)
 
 	// By here we only need to disconnect the basic transfer associated with the transaction.
 	basicTransferOps := utxoOpsForTxn[:operationIndex]
-	err = bav._disconnectBasicTransfer(currentTxn, txnHash, basicTransferOps, blockHeight)
+	err := bav._disconnectBasicTransfer(currentTxn, txnHash, basicTransferOps, blockHeight)
 	if err != nil {
 		return errors.Wrap(err, "_disconnectCoinLockup")
 	}
@@ -1092,7 +1932,7 @@ func (bav *UtxoView) _connectUpdateCoinLockupParams(
 	var utxoOpsForTxn []*UtxoOperation
 
 	// Validate the starting block height.
-	if blockHeight < bav.Params.ForkHeights.ProofOfStake1StateSetupBlockHeight ||
+	if blockHeight < bav.Params.ForkHeights.LockupsBlockHeight ||
 		blockHeight < bav.Params.ForkHeights.BalanceModelBlockHeight {
 		return 0, 0, nil,
 			errors.Wrap(RuleErrorLockupTxnBeforeBlockHeight, "_connectUpdateCoinLockupParams")
@@ -1116,25 +1956,24 @@ func (bav *UtxoView) _connectUpdateCoinLockupParams(
 	txMeta := txn.TxnMeta.(*UpdateCoinLockupParamsMetadata)
 
 	// Get the profilePKID from the transactor public key.
-	var profilePKID *PKID
-	_, updaterIsParamUpdater := GetParamUpdaterPublicKeys(blockHeight, bav.Params)[MakePkMapKey(txn.PublicKey)]
-	if updaterIsParamUpdater {
-		// NOTE: The implication here is ParamUpdaters share write access to the DeSo lockup parameters.
-		//       As further implication, this means ParamUpdaters cannot specify their own coin's lockup parameters.
-		profilePKID = ZeroPKID.NewPKID()
-	} else {
-		profilePKIDEntry := bav.GetPKIDForPublicKey(txn.PublicKey)
-		if profilePKIDEntry == nil || profilePKIDEntry.isDeleted {
-			return 0, 0, nil, errors.Wrap(RuleErrorUpdateCoinLockupParamsOnInvalidPKID,
-				"_connectUpdateCoinLockupParams")
-		}
-		profilePKID = profilePKIDEntry.PKID
+	profilePKIDEntry := bav.GetPKIDForPublicKey(txn.PublicKey)
+	if profilePKIDEntry == nil || profilePKIDEntry.isDeleted {
+		return 0, 0, nil, errors.Wrap(RuleErrorUpdateCoinLockupParamsOnInvalidPKID,
+			"_connectUpdateCoinLockupParams")
 	}
+	profilePKID := profilePKIDEntry.PKID
 
 	// Sanity check the lockup duration as valid.
 	if txMeta.LockupYieldDurationNanoSecs < 0 {
 		return 0, 0, nil, errors.Wrap(RuleErrorUpdateCoinLockupParamsNegativeDuration,
 			"_connectUpdateCoinLockupParams")
+	}
+
+	// Check to ensure this transaction is not a no-op.
+	if !txMeta.NewLockupTransferRestrictions && txMeta.LockupYieldDurationNanoSecs == 0 {
+		return 0, 0, nil, errors.Wrap(RuleErrorUpdateCoinLockupParamsIsNoOp,
+			"_connectUpdateCoinLockupParams")
+
 	}
 
 	// Fetch the previous yield curve point associated with this <profilePKID, lockupDurationNanoSecs> pair.
@@ -1179,7 +2018,7 @@ func (bav *UtxoView) _connectUpdateCoinLockupParams(
 
 	// Check if we're updating transfer restriction.
 	var prevLockupTransferRestriction TransferRestrictionStatus
-	if txMeta.NewLockupTransferRestrictions && !profilePKID.IsZeroPKID() {
+	if txMeta.NewLockupTransferRestrictions {
 		// Fetch the profile entry and LockupTransferRestriction status.
 		profileEntry := bav.GetProfileEntryForPKID(profilePKID)
 		if profileEntry == nil || profileEntry.isDeleted {
@@ -1193,13 +2032,6 @@ func (bav *UtxoView) _connectUpdateCoinLockupParams(
 		// Update the transfer restrictions.
 		profileEntry.DAOCoinEntry.LockupTransferRestrictionStatus = txMeta.LockupTransferRestrictionStatus
 		bav._setProfileEntryMappings(profileEntry)
-	}
-	if txMeta.NewLockupTransferRestrictions && profilePKID.IsZeroPKID() {
-		// Store a copy of the previous TransferRestrictionStatus.
-		prevLockupTransferRestriction = bav.GlobalParamsEntry.LockedDESOTransferRestrictions
-
-		// Update the transfer restrictions in global params.
-		bav.GlobalParamsEntry.LockedDESOTransferRestrictions = txMeta.LockupTransferRestrictionStatus
 	}
 
 	// Check that the new transfer restriction is valid.
@@ -1255,18 +2087,12 @@ func (bav *UtxoView) _disconnectUpdateCoinLockupParams(
 	txMeta := currentTxn.TxnMeta.(*UpdateCoinLockupParamsMetadata)
 
 	// Fetch the profilePKID for the transactor.
-	var profilePKID *PKID
-	_, updaterIsParamUpdater := GetParamUpdaterPublicKeys(blockHeight, bav.Params)[MakePkMapKey(currentTxn.PublicKey)]
-	if updaterIsParamUpdater {
-		profilePKID = ZeroPKID.NewPKID()
-	} else {
-		profilePKIDEntry := bav.GetPKIDForPublicKey(currentTxn.PublicKey)
-		if profilePKIDEntry == nil || profilePKIDEntry.isDeleted {
-			return errors.Wrap(RuleErrorUpdateCoinLockupParamsOnInvalidPKID,
-				"_connectUpdateCoinLockupParams")
-		}
-		profilePKID = profilePKIDEntry.PKID
+	profilePKIDEntry := bav.GetPKIDForPublicKey(currentTxn.PublicKey)
+	if profilePKIDEntry == nil || profilePKIDEntry.isDeleted {
+		return errors.Wrap(RuleErrorUpdateCoinLockupParamsOnInvalidPKID,
+			"_connectUpdateCoinLockupParams")
 	}
+	profilePKID := profilePKIDEntry.PKID
 
 	// Check if the transaction added a yield curve point. If it did, we restore the previous point.
 	// If the previous point is nil meaning this point didn't have a previous, then we simply delete the current point.
@@ -1300,7 +2126,7 @@ func (bav *UtxoView) _disconnectUpdateCoinLockupParams(
 	}
 
 	// Check if the transaction updated transfer restrictions. If it did, we reset the previous transfer restrictions.
-	if txMeta.NewLockupTransferRestrictions && !profilePKID.IsZeroPKID() {
+	if txMeta.NewLockupTransferRestrictions {
 		// Fetch the profile entry and LockupTransferRestriction status.
 		profileEntry := bav.GetProfileEntryForPKID(profilePKID)
 		if profileEntry == nil || profileEntry.isDeleted {
@@ -1311,16 +2137,6 @@ func (bav *UtxoView) _disconnectUpdateCoinLockupParams(
 		// Update the transfer restrictions.
 		profileEntry.DAOCoinEntry.LockupTransferRestrictionStatus = operationData.PrevLockupTransferRestriction
 		bav._setProfileEntryMappings(profileEntry)
-	}
-	if txMeta.NewLockupTransferRestrictions && profilePKID.IsZeroPKID() {
-		bav.GlobalParamsEntry.LockedDESOTransferRestrictions = operationData.PrevLockupTransferRestriction
-	}
-
-	// Decrement the operationIndex. We expect to find the basic transfer UtxoOps next.
-	operationIndex--
-	if operationIndex < 0 {
-		return fmt.Errorf("_disconnectUpdateCoinLockupParams: Trying to revert OperationTypeUpdateCoinLockupParams " +
-			"but found malformed utxoOpsForTxn")
 	}
 
 	// By here we only need to disconnect the basic transfer associated with the transaction.
@@ -1348,7 +2164,7 @@ func (bav *UtxoView) _connectCoinLockupTransfer(
 	var utxoOpsForTxn []*UtxoOperation
 
 	// Validate the starting block height.
-	if blockHeight < bav.Params.ForkHeights.ProofOfStake1StateSetupBlockHeight ||
+	if blockHeight < bav.Params.ForkHeights.LockupsBlockHeight ||
 		blockHeight < bav.Params.ForkHeights.BalanceModelBlockHeight {
 		return 0, 0, nil,
 			errors.Wrap(RuleErrorLockupTxnBeforeBlockHeight, "_connectCoinLockupTransfer")
@@ -1377,12 +2193,6 @@ func (bav *UtxoView) _connectCoinLockupTransfer(
 			"_connectCoinLockupTransfer")
 	}
 
-	// If this is a DeSo lockup, ensure the amount is less than 2**64.
-	if txMeta.ProfilePublicKey.IsZeroPublicKey() && !txMeta.LockedCoinsToTransferBaseUnits.IsUint64() {
-		return 0, 0, nil, errors.Wrap(RuleErrorCoinLockupTransferOfDeSoCausesOverflow,
-			"_connectCoinLockupTransfer")
-	}
-
 	// Validate recipient and profile public keys as valid.
 	var profileEntry *ProfileEntry
 	if len(txMeta.RecipientPublicKey) != btcec.PubKeyBytesLenCompressed {
@@ -1393,17 +2203,21 @@ func (bav *UtxoView) _connectCoinLockupTransfer(
 		return 0, 0, nil,
 			errors.Wrap(RuleErrorCoinLockupTransferInvalidProfilePubKey, "_connectCoinLockupTransfer")
 	}
-	if !txMeta.ProfilePublicKey.IsZeroPublicKey() {
-		profileEntry = bav.GetProfileEntryForPublicKey(txMeta.ProfilePublicKey.ToBytes())
-		if profileEntry == nil || profileEntry.isDeleted {
-			return 0, 0, nil,
-				errors.Wrap(RuleErrorCoinLockupTransferOnNonExistentProfile, "_connectCoinLockupTransfer")
-		}
+
+	// Ensure the locked profile exists.
+	profileEntry = bav.GetProfileEntryForPublicKey(txMeta.ProfilePublicKey.ToBytes())
+	if profileEntry == nil || profileEntry.isDeleted {
+		return 0, 0, nil,
+			errors.Wrap(RuleErrorCoinLockupTransferOnNonExistentProfile, "_connectCoinLockupTransfer")
 	}
 
 	// Fetch PKIDs for the recipient, sender, and profile.
 	senderPKIDEntry := bav.GetPKIDForPublicKey(txn.PublicKey)
 	senderPKID := senderPKIDEntry.PKID
+	if txMeta.RecipientPublicKey.IsZeroPublicKey() {
+		return 0, 0, nil,
+			errors.Wrap(RuleErrorCoinLockupTransferToZeroPublicKey, "_connectCoinLockupTransfer")
+	}
 	receiverPKIDEntry := bav.GetPKIDForPublicKey(txMeta.RecipientPublicKey.ToBytes())
 	receiverPKID := receiverPKIDEntry.PKID
 	profilePKIDEntry := bav.GetPKIDForPublicKey(txMeta.ProfilePublicKey.ToBytes())
@@ -1416,18 +2230,20 @@ func (bav *UtxoView) _connectCoinLockupTransfer(
 	}
 
 	// Fetch the sender's balance entries.
-	senderLockedBalanceEntry, err := bav.GetLockedBalanceEntryForHODLerPKIDProfilePKIDUnlockTimestampNanoSecs(
-		senderPKID, profilePKID, txMeta.UnlockTimestampNanoSecs)
+	senderLockedBalanceEntry, err :=
+		bav.GetLockedBalanceEntryForHODLerPKIDProfilePKIDUnlockTimestampNanoSecsVestingEndTimestampNanoSecs(
+			senderPKID, profilePKID, txMeta.UnlockTimestampNanoSecs, txMeta.UnlockTimestampNanoSecs)
 	if err != nil {
 		return 0, 0, nil,
-			errors.Wrap(err, "connectCoinLockupTransfer failed to fetch senderLockedBalanceEntry:w")
+			errors.Wrap(err, "connectCoinLockupTransfer failed to fetch senderLockedBalanceEntry")
 	}
 	if senderLockedBalanceEntry == nil || senderLockedBalanceEntry.isDeleted {
 		senderLockedBalanceEntry = &LockedBalanceEntry{
-			HODLerPKID:              senderPKID,
-			ProfilePKID:             profilePKID,
-			UnlockTimestampNanoSecs: txMeta.UnlockTimestampNanoSecs,
-			BalanceBaseUnits:        *uint256.NewInt(),
+			HODLerPKID:                  senderPKID,
+			ProfilePKID:                 profilePKID,
+			UnlockTimestampNanoSecs:     txMeta.UnlockTimestampNanoSecs,
+			VestingEndTimestampNanoSecs: txMeta.UnlockTimestampNanoSecs,
+			BalanceBaseUnits:            *uint256.NewInt(),
 		}
 	}
 	prevSenderLockedBalanceEntry := senderLockedBalanceEntry.Copy()
@@ -1443,29 +2259,29 @@ func (bav *UtxoView) _connectCoinLockupTransfer(
 		&senderLockedBalanceEntry.BalanceBaseUnits, txMeta.LockedCoinsToTransferBaseUnits)
 
 	// Fetch the recipient's balance entry.
-	receiverLockedBalanceEntry, err := bav.GetLockedBalanceEntryForHODLerPKIDProfilePKIDUnlockTimestampNanoSecs(
-		receiverPKID, profilePKID, txMeta.UnlockTimestampNanoSecs)
+	receiverLockedBalanceEntry, err :=
+		bav.GetLockedBalanceEntryForHODLerPKIDProfilePKIDUnlockTimestampNanoSecsVestingEndTimestampNanoSecs(
+			receiverPKID,
+			profilePKID,
+			txMeta.UnlockTimestampNanoSecs,
+			txMeta.UnlockTimestampNanoSecs)
 	if err != nil {
 		return 0, 0, nil,
 			errors.Wrap(err, "connectCoinLockupTransfer failed to fetch receiverLockedBalanceEntry")
 	}
 	if receiverLockedBalanceEntry == nil || receiverLockedBalanceEntry.isDeleted {
 		receiverLockedBalanceEntry = &LockedBalanceEntry{
-			HODLerPKID:              receiverPKID,
-			ProfilePKID:             profilePKID,
-			UnlockTimestampNanoSecs: txMeta.UnlockTimestampNanoSecs,
-			BalanceBaseUnits:        *uint256.NewInt(),
+			HODLerPKID:                  receiverPKID,
+			ProfilePKID:                 profilePKID,
+			UnlockTimestampNanoSecs:     txMeta.UnlockTimestampNanoSecs,
+			VestingEndTimestampNanoSecs: txMeta.UnlockTimestampNanoSecs,
+			BalanceBaseUnits:            *uint256.NewInt(),
 		}
 	}
 	prevReceiverLockedBalanceEntry := receiverLockedBalanceEntry.Copy()
 
 	// Fetch the transfer restrictions attached to the transfer.
-	var transferRestrictionStatus TransferRestrictionStatus
-	if profilePKID.IsZeroPKID() {
-		transferRestrictionStatus = bav.GlobalParamsEntry.LockedDESOTransferRestrictions
-	} else {
-		transferRestrictionStatus = profileEntry.DAOCoinEntry.LockupTransferRestrictionStatus
-	}
+	transferRestrictionStatus := profileEntry.DAOCoinEntry.LockupTransferRestrictionStatus
 
 	// Check if transfers are limited to profile owner only.
 	if transferRestrictionStatus == TransferRestrictionStatusProfileOwnerOnly && !profilePKID.Eq(senderPKID) {
@@ -1496,6 +2312,46 @@ func (bav *UtxoView) _connectCoinLockupTransfer(
 	bav._setLockedBalanceEntry(senderLockedBalanceEntry)
 	bav._setLockedBalanceEntry(receiverLockedBalanceEntry)
 
+	// SAFEGUARD: Ensure no locked coins were printed by accident.
+	prevTotalBalance, err := SafeUint256().Add(
+		&prevSenderLockedBalanceEntry.BalanceBaseUnits,
+		&prevReceiverLockedBalanceEntry.BalanceBaseUnits)
+	if err != nil {
+		return 0, 0, nil, errors.New("_connectCoinLockupTransfer" +
+			" cannot verify balance change safeguard check due to previous balance overflow")
+	}
+	newSenderLockedBalanceEntry, err :=
+		bav.GetLockedBalanceEntryForHODLerPKIDProfilePKIDUnlockTimestampNanoSecsVestingEndTimestampNanoSecs(
+			senderPKID,
+			profilePKID,
+			txMeta.UnlockTimestampNanoSecs,
+			txMeta.UnlockTimestampNanoSecs)
+	if err != nil {
+		return 0, 0, nil, errors.New("_connectCoinLockupTransfer" +
+			" cannot verify balance change safeguard check; cannot fetch new sender locked balance entry")
+	}
+	newReceiverLockedBalanceEntry, err :=
+		bav.GetLockedBalanceEntryForHODLerPKIDProfilePKIDUnlockTimestampNanoSecsVestingEndTimestampNanoSecs(
+			receiverPKID,
+			profilePKID,
+			txMeta.UnlockTimestampNanoSecs,
+			txMeta.UnlockTimestampNanoSecs)
+	if err != nil {
+		return 0, 0, nil, errors.New("_connectCoinLockupTransfer" +
+			" cannot verify balance change safeguard check; cannot fetch new receiver locked balance entry")
+	}
+	newTotalBalance, err := SafeUint256().Add(
+		&newSenderLockedBalanceEntry.BalanceBaseUnits,
+		&newReceiverLockedBalanceEntry.BalanceBaseUnits)
+	if err != nil {
+		return 0, 0, nil, errors.New("_connectCoinLockupTransfer" +
+			" cannot verify balance change safeguard check due to new balance overflow")
+	}
+	if !prevTotalBalance.Eq(newTotalBalance) {
+		return 0, 0, nil, errors.New("_connectCoinLockupTransfer" +
+			" failed coin printing safeguard check; this should not be possible")
+	}
+
 	// Create a UtxoOperation for easily disconnecting the transaction.
 	utxoOpsForTxn = append(utxoOpsForTxn, &UtxoOperation{
 		Type:                           OperationTypeCoinLockupTransfer,
@@ -1525,11 +2381,6 @@ func (bav *UtxoView) _disconnectCoinLockupTransfer(
 
 	// Sanity check the OperationTypeCoinLockupTransfer exists.
 	operationData := utxoOpsForTxn[operationIndex]
-	operationIndex--
-	if operationIndex < 0 {
-		return fmt.Errorf("_disconnectCoinLockupTransfer: Trying to revert OperationTypeCoinLockupTransfer " +
-			"but malformed utxoOpsForTxn")
-	}
 	if operationData.PrevSenderLockedBalanceEntry == nil || operationData.PrevSenderLockedBalanceEntry.isDeleted {
 		return fmt.Errorf("_disconnectCoinLockupTransfer: Trying to revert OperationTypeCoinLockupTransfer " +
 			"but found nil or deleted PrevSenderLockedBalanceEntry")
@@ -1540,34 +2391,40 @@ func (bav *UtxoView) _disconnectCoinLockupTransfer(
 	}
 
 	// Fetch the LockedBalanceEntries in the view.
-	senderLockedBalanceEntry, err := bav.GetLockedBalanceEntryForHODLerPKIDProfilePKIDUnlockTimestampNanoSecs(
-		operationData.PrevSenderLockedBalanceEntry.HODLerPKID,
-		operationData.PrevSenderLockedBalanceEntry.ProfilePKID,
-		operationData.PrevSenderLockedBalanceEntry.UnlockTimestampNanoSecs)
+	senderLockedBalanceEntry, err :=
+		bav.GetLockedBalanceEntryForHODLerPKIDProfilePKIDUnlockTimestampNanoSecsVestingEndTimestampNanoSecs(
+			operationData.PrevSenderLockedBalanceEntry.HODLerPKID,
+			operationData.PrevSenderLockedBalanceEntry.ProfilePKID,
+			operationData.PrevSenderLockedBalanceEntry.UnlockTimestampNanoSecs,
+			operationData.PrevSenderLockedBalanceEntry.UnlockTimestampNanoSecs)
 	if err != nil {
 		return errors.Wrap(err, "_disconnectCoinLockupTransfer failed to fetch senderLockedBalanceEntry")
 	}
 	if senderLockedBalanceEntry == nil || senderLockedBalanceEntry.isDeleted {
 		senderLockedBalanceEntry = &LockedBalanceEntry{
-			HODLerPKID:              operationData.PrevSenderLockedBalanceEntry.HODLerPKID,
-			ProfilePKID:             operationData.PrevSenderLockedBalanceEntry.ProfilePKID,
-			UnlockTimestampNanoSecs: operationData.PrevSenderLockedBalanceEntry.UnlockTimestampNanoSecs,
-			BalanceBaseUnits:        *uint256.NewInt(),
+			HODLerPKID:                  operationData.PrevSenderLockedBalanceEntry.HODLerPKID,
+			ProfilePKID:                 operationData.PrevSenderLockedBalanceEntry.ProfilePKID,
+			UnlockTimestampNanoSecs:     operationData.PrevSenderLockedBalanceEntry.UnlockTimestampNanoSecs,
+			VestingEndTimestampNanoSecs: operationData.PrevSenderLockedBalanceEntry.VestingEndTimestampNanoSecs,
+			BalanceBaseUnits:            *uint256.NewInt(),
 		}
 	}
-	receiverLockedBalanceEntry, err := bav.GetLockedBalanceEntryForHODLerPKIDProfilePKIDUnlockTimestampNanoSecs(
-		operationData.PrevReceiverLockedBalanceEntry.HODLerPKID,
-		operationData.PrevReceiverLockedBalanceEntry.ProfilePKID,
-		operationData.PrevReceiverLockedBalanceEntry.UnlockTimestampNanoSecs)
+	receiverLockedBalanceEntry, err :=
+		bav.GetLockedBalanceEntryForHODLerPKIDProfilePKIDUnlockTimestampNanoSecsVestingEndTimestampNanoSecs(
+			operationData.PrevReceiverLockedBalanceEntry.HODLerPKID,
+			operationData.PrevReceiverLockedBalanceEntry.ProfilePKID,
+			operationData.PrevReceiverLockedBalanceEntry.UnlockTimestampNanoSecs,
+			operationData.PrevReceiverLockedBalanceEntry.UnlockTimestampNanoSecs)
 	if err != nil {
 		return errors.Wrap(err, "_disconnectCoinLockupTransfer failed to fetch receiverLockedBalanceEntry")
 	}
 	if receiverLockedBalanceEntry == nil || receiverLockedBalanceEntry.isDeleted {
 		receiverLockedBalanceEntry = &LockedBalanceEntry{
-			HODLerPKID:              operationData.PrevReceiverLockedBalanceEntry.HODLerPKID,
-			ProfilePKID:             operationData.PrevReceiverLockedBalanceEntry.ProfilePKID,
-			UnlockTimestampNanoSecs: operationData.PrevReceiverLockedBalanceEntry.UnlockTimestampNanoSecs,
-			BalanceBaseUnits:        *uint256.NewInt(),
+			HODLerPKID:                  operationData.PrevReceiverLockedBalanceEntry.HODLerPKID,
+			ProfilePKID:                 operationData.PrevReceiverLockedBalanceEntry.ProfilePKID,
+			UnlockTimestampNanoSecs:     operationData.PrevReceiverLockedBalanceEntry.UnlockTimestampNanoSecs,
+			VestingEndTimestampNanoSecs: operationData.PrevReceiverLockedBalanceEntry.VestingEndTimestampNanoSecs,
+			BalanceBaseUnits:            *uint256.NewInt(),
 		}
 	}
 
@@ -1606,7 +2463,7 @@ func (bav *UtxoView) _connectCoinUnlock(
 	var utxoOpsForTxn []*UtxoOperation
 
 	// Validate the starting block height.
-	if blockHeight < bav.Params.ForkHeights.ProofOfStake1StateSetupBlockHeight ||
+	if blockHeight < bav.Params.ForkHeights.LockupsBlockHeight ||
 		blockHeight < bav.Params.ForkHeights.BalanceModelBlockHeight {
 		return 0, 0, nil,
 			errors.Wrap(RuleErrorLockupTxnBeforeBlockHeight, "_connectCoinUnlock")
@@ -1636,12 +2493,18 @@ func (bav *UtxoView) _connectCoinUnlock(
 		return 0, 0, nil, errors.Wrap(RuleErrorDAOCoinInvalidPubKey,
 			"_connectCoinUnlock")
 	}
-	if !txMeta.ProfilePublicKey.IsZeroPublicKey() {
-		profileEntry = bav.GetProfileEntryForPublicKey(txMeta.ProfilePublicKey.ToBytes())
-		if profileEntry == nil || profileEntry.isDeleted {
-			return 0, 0, nil, errors.Wrap(RuleErrorCoinUnlockOnNonExistentProfile,
-				"_connectCoinUnlock")
-		}
+
+	// Check that we're not unlocking the zero public key.
+	if txMeta.ProfilePublicKey.IsZeroPublicKey() {
+		return 0, 0, nil, errors.Wrap(RuleErrorCoinUnlockCannotUnlockZeroPublicKey,
+			"_connectCoinUnlock")
+	}
+
+	// Check that the associated public key exists.
+	profileEntry = bav.GetProfileEntryForPublicKey(txMeta.ProfilePublicKey.ToBytes())
+	if profileEntry == nil || profileEntry.isDeleted {
+		return 0, 0, nil, errors.Wrap(RuleErrorCoinUnlockOnNonExistentProfile,
+			"_connectCoinUnlock")
 	}
 
 	// Convert the TransactorPublicKey to HODLerPKID
@@ -1653,33 +2516,30 @@ func (bav *UtxoView) _connectCoinUnlock(
 	hodlerPKID := transactorPKIDEntry.PKID
 
 	// Convert the ProfilePublicKey to ProfilePKID.
-	var profilePKID *PKID
-	if txMeta.ProfilePublicKey.IsZeroPublicKey() {
-		profilePKID = ZeroPKID.NewPKID()
-	} else {
-		profilePKIDEntry := bav.GetPKIDForPublicKey(txMeta.ProfilePublicKey.ToBytes())
-		if profilePKIDEntry == nil || profilePKIDEntry.isDeleted {
-			return 0, 0, nil, errors.Wrap(RuleErrorCoinUnlockInvalidProfilePKID,
-				"_connectCoinUnlock")
-		}
-		profilePKID = profilePKIDEntry.PKID
+	profilePKIDEntry := bav.GetPKIDForPublicKey(txMeta.ProfilePublicKey.ToBytes())
+	if profilePKIDEntry == nil || profilePKIDEntry.isDeleted {
+		return 0, 0, nil, errors.Wrap(RuleErrorCoinUnlockInvalidProfilePKID,
+			"_connectCoinUnlock")
 	}
+	profilePKID := profilePKIDEntry.PKID
 
 	// Retrieve unlockable locked balance entries.
-	unlockableLockedBalanceEntries, err := bav.GetUnlockableLockedBalanceEntries(
-		hodlerPKID, profilePKID, blockTimestampNanoSecs)
+	unvestedUnlockableLockedBalanceEntries, vestedUnlockableLockedBalanceEntries, err :=
+		bav.GetUnlockableLockedBalanceEntries(hodlerPKID, profilePKID, blockTimestampNanoSecs)
 	if err != nil {
 		return 0, 0, nil, errors.Wrap(err, "_connectCoinUnlock")
 	}
-	if len(unlockableLockedBalanceEntries) == 0 {
-		return 0, 0, nil, errors.Wrap(RuleErrorCoinUnlockNoUnlockableCoinsFound,
-			"_connectCoinUnlock")
+	if len(unvestedUnlockableLockedBalanceEntries) == 0 && len(vestedUnlockableLockedBalanceEntries) == 0 {
+		return 0, 0, nil,
+			errors.Wrap(RuleErrorCoinUnlockNoUnlockableCoinsFound, "_connectCoinUnlock")
 	}
 
-	// Unlock all unlockable locked balance entries.
-	var prevLockedBalanceEntries []*LockedBalanceEntry
+	// Create an unlockedBalance uint256 to track what will be given back to the user.
 	unlockedBalance := uint256.NewInt()
-	for _, unlockableLockedBalanceEntry := range unlockableLockedBalanceEntries {
+
+	// Unlock all unvested unlockable locked balance entries.
+	var prevLockedBalanceEntries []*LockedBalanceEntry
+	for _, unlockableLockedBalanceEntry := range unvestedUnlockableLockedBalanceEntries {
 		unlockedBalance, err =
 			SafeUint256().Add(unlockedBalance, &unlockableLockedBalanceEntry.BalanceBaseUnits)
 		if err != nil {
@@ -1695,63 +2555,137 @@ func (bav *UtxoView) _connectCoinUnlock(
 		bav._deleteLockedBalanceEntry(unlockableLockedBalanceEntry)
 	}
 
-	// Credit the transactor with either DAO coins or DeSo for this unlock.
-	var prevTransactorBalanceEntry *BalanceEntry
-	var prevCoinEntry *CoinEntry
-	if profilePKID.IsZeroPKID() {
-		// Ensure the uint256 can be properly represented as a uint64.
-		if !unlockedBalance.IsUint64() {
-			return 0, 0, nil,
-				errors.Wrap(RuleErrorCoinUnlockUnlockableDeSoOverflow, "_connectCoinUnlock")
-		}
-
-		// Add the unlockedBalance to the transactors DeSo balance.
-		// NOTE: _addBalance checks for balance overflow.
-		utxoOp, err := bav._addBalance(unlockedBalance.Uint64(), txn.PublicKey)
-		if err != nil {
-			return 0, 0, nil, errors.Wrap(err, "_connectCoinUnlock: error"+
-				"adding CoinToUnlockBaseUnits to the transactor balance: ")
-		}
-		utxoOpsForTxn = append(utxoOpsForTxn, utxoOp)
-	} else {
-		prevTransactorBalanceEntry =
-			bav._getBalanceEntryForHODLerPKIDAndCreatorPKID(hodlerPKID, profilePKID, true)
-
-		// Credit the transactor with the unlock amount.
-		newTransactorBalanceEntry := prevTransactorBalanceEntry.Copy()
-		newTransactorBalanceNanos, err := SafeUint256().Add(&newTransactorBalanceEntry.BalanceNanos, unlockedBalance)
-		if err != nil {
-			return 0, 0, nil, errors.Wrap(RuleErrorCoinUnlockCausesBalanceOverflow,
-				"_connectCoinUnlock")
-		}
-		newTransactorBalanceEntry.BalanceNanos = *newTransactorBalanceNanos
-		bav._setBalanceEntryMappings(newTransactorBalanceEntry, true)
-
-		// Update CoinsInCirculation and NumberOfHolders to accurately reflect the changing balance.
-		prevCoinEntry = profileEntry.DAOCoinEntry.Copy()
-		newCoinsInCirculationNanos, err := SafeUint256().Add(
-			&profileEntry.DAOCoinEntry.CoinsInCirculationNanos,
-			unlockedBalance)
+	// Unlock all vested locked balance entries.
+	// NOTE: See the comment on LockedBalanceEntryKey for how we deal with modified vested locked balance entries.
+	var modifiedLockedBalanceEntry *LockedBalanceEntry
+	for _, unlockableLockedBalanceEntry := range vestedUnlockableLockedBalanceEntries {
+		// Depending on the time of unlock, compute how much from the balance can be unlocked.
+		amountToUnlock, err := CalculateVestedEarnings(unlockableLockedBalanceEntry, blockTimestampNanoSecs)
 		if err != nil {
 			return 0, 0, nil,
-				errors.Wrap(RuleErrorCoinUnlockCausesCoinsInCirculationOverflow, "_connectCoinUnlock")
+				errors.Wrap(err, "_connectCoinUnlock: error computing vested earnings")
 		}
-		profileEntry.DAOCoinEntry.CoinsInCirculationNanos = *newCoinsInCirculationNanos
-		if prevTransactorBalanceEntry.BalanceNanos.IsZero() && !newTransactorBalanceEntry.BalanceNanos.IsZero() {
-			profileEntry.DAOCoinEntry.NumberOfHolders++
+
+		// Add the unlocked amount and check for overflow.
+		unlockedBalance, err =
+			SafeUint256().Add(unlockedBalance, amountToUnlock)
+		if err != nil {
+			return 0, 0, nil,
+				errors.Wrap(RuleErrorCoinUnlockUnlockableCoinsOverflow, "_connectCoinUnlock")
 		}
-		bav._setProfileEntryMappings(profileEntry)
+
+		// Append the original LockedBalanceEntry in the event we rollback the transaction.
+		prevLockedBalanceEntries = append(prevLockedBalanceEntries, unlockableLockedBalanceEntry.Copy())
+
+		// Depending on when the unlock occurs, we either DELETE or MODIFY the locked balance entry.
+		if blockTimestampNanoSecs >= unlockableLockedBalanceEntry.VestingEndTimestampNanoSecs {
+			bav._deleteLockedBalanceEntry(unlockableLockedBalanceEntry)
+		} else {
+			// DELETE the previous key.
+			bav._deleteLockedBalanceEntry(unlockableLockedBalanceEntry)
+
+			// Create and modify a copy to prevent pointer reuse.
+			modifiedLockedBalanceEntry = unlockableLockedBalanceEntry.Copy()
+			modifiedLockedBalanceEntry.UnlockTimestampNanoSecs = blockTimestampNanoSecs
+			newBalanceBaseUnits, err := SafeUint256().Sub(
+				&modifiedLockedBalanceEntry.BalanceBaseUnits,
+				amountToUnlock)
+			if err != nil {
+				return 0, 0, nil,
+					errors.New("_connectCoinUnlock: newBalanceBaseUnits underflow; " +
+						"this shouldn't be possible")
+			}
+			modifiedLockedBalanceEntry.BalanceBaseUnits = *newBalanceBaseUnits
+
+			// SET the modified key.
+			bav._setLockedBalanceEntry(modifiedLockedBalanceEntry)
+		}
 	}
+
+	// Credit the transactor with either DAO coins or DeSo for this unlock.
+	prevTransactorBalanceEntry :=
+		bav._getBalanceEntryForHODLerPKIDAndCreatorPKID(hodlerPKID, profilePKID, true)
+	if prevTransactorBalanceEntry == nil || prevTransactorBalanceEntry.isDeleted {
+		prevTransactorBalanceEntry = &BalanceEntry{
+			HODLerPKID:   hodlerPKID,
+			CreatorPKID:  profilePKID,
+			BalanceNanos: uint256.Int{},
+			HasPurchased: false,
+		}
+	}
+
+	// Credit the transactor with the unlock amount.
+	newTransactorBalanceEntry := prevTransactorBalanceEntry.Copy()
+	newTransactorBalanceNanos, err := SafeUint256().Add(&newTransactorBalanceEntry.BalanceNanos, unlockedBalance)
+	if err != nil {
+		return 0, 0, nil, errors.Wrap(RuleErrorCoinUnlockCausesBalanceOverflow,
+			"_connectCoinUnlock")
+	}
+	newTransactorBalanceEntry.BalanceNanos = *newTransactorBalanceNanos
+	bav._setBalanceEntryMappings(newTransactorBalanceEntry, true)
+
+	// Update CoinsInCirculation and NumberOfHolders to accurately reflect the changing balance.
+	prevCoinEntry := profileEntry.DAOCoinEntry.Copy()
+	newCoinsInCirculationNanos, err := SafeUint256().Add(
+		&profileEntry.DAOCoinEntry.CoinsInCirculationNanos,
+		unlockedBalance)
+	if err != nil {
+		return 0, 0, nil,
+			errors.Wrap(RuleErrorCoinUnlockCausesCoinsInCirculationOverflow, "_connectCoinUnlock")
+	}
+	profileEntry.DAOCoinEntry.CoinsInCirculationNanos = *newCoinsInCirculationNanos
+	if prevTransactorBalanceEntry.BalanceNanos.IsZero() && !newTransactorBalanceEntry.BalanceNanos.IsZero() {
+		profileEntry.DAOCoinEntry.NumberOfHolders++
+	}
+	bav._setProfileEntryMappings(profileEntry)
 
 	// Create a UtxoOp for the operation.
 	utxoOpsForTxn = append(utxoOpsForTxn, &UtxoOperation{
 		Type:                       OperationTypeCoinUnlock,
 		PrevTransactorBalanceEntry: prevTransactorBalanceEntry,
 		PrevLockedBalanceEntries:   prevLockedBalanceEntries,
+		ModifiedLockedBalanceEntry: modifiedLockedBalanceEntry,
 		PrevCoinEntry:              prevCoinEntry,
 	})
 
 	return totalInput, totalOutput, utxoOpsForTxn, nil
+}
+
+func CalculateVestedEarnings(
+	lockedBalanceEntry *LockedBalanceEntry,
+	blockTimestampNanoSecs int64,
+) (
+	_vestedEarnings *uint256.Int,
+	_err error,
+) {
+	// Check if this lockup should not be unlocked right now.
+	if blockTimestampNanoSecs <= lockedBalanceEntry.UnlockTimestampNanoSecs {
+		return uint256.NewInt(), nil
+	}
+
+	// Check if this lockup should be fully unlocked.
+	if blockTimestampNanoSecs >= lockedBalanceEntry.VestingEndTimestampNanoSecs {
+		return &lockedBalanceEntry.BalanceBaseUnits, nil
+	}
+
+	// Compute the vested earnings using CalculateLockupValueOverElapsedDuration
+	vestedEarnings, err := CalculateLockupValueOverElapsedDuration(
+		lockedBalanceEntry,
+		blockTimestampNanoSecs-lockedBalanceEntry.UnlockTimestampNanoSecs)
+	if err != nil {
+		return uint256.NewInt(),
+			errors.Wrap(err, "CalculateVestedEarnings failed to compute vestedEarnings")
+	}
+
+	// Sanity check that vestedEarnings < BalanceBaseUnits
+	if vestedEarnings.Gt(&lockedBalanceEntry.BalanceBaseUnits) ||
+		vestedEarnings.Eq(&lockedBalanceEntry.BalanceBaseUnits) {
+		return uint256.NewInt(),
+			errors.New("ComputeVestedEarnings: " +
+				"vested earnings >= outstanding balance; this shouldn't be possible")
+	}
+
+	return vestedEarnings, nil
 }
 
 func (bav *UtxoView) _disconnectCoinUnlock(
@@ -1784,28 +2718,32 @@ func (bav *UtxoView) _disconnectCoinUnlock(
 				"but found nil or deleted previous locked balance entry")
 		}
 	}
-	operationIndex--
-	if operationIndex < 0 {
-		return fmt.Errorf("_disconnectCoinUnlock: Trying to revert OperationTypeCoinUnlock " +
-			"but found malformed utxoOpsForTxn")
-	}
 
 	// Sanity check the data within the CoinUnlock.
-	// Reverting an unlock of LockedBalanceEntry should not result in less coins.
+	// Reverting an unlock of LockedBalanceEntry for unvested lockups should not result in less coins.
 	for _, prevLockedBalanceEntry := range operationData.PrevLockedBalanceEntries {
-		lockedBalanceEntry, err := bav.GetLockedBalanceEntryForHODLerPKIDProfilePKIDUnlockTimestampNanoSecs(
-			prevLockedBalanceEntry.HODLerPKID,
-			prevLockedBalanceEntry.ProfilePKID,
-			prevLockedBalanceEntry.UnlockTimestampNanoSecs)
+		// Skip the balance decrease check for vested lockups -- the changing map key makes this an inaccurate test.
+		if prevLockedBalanceEntry.UnlockTimestampNanoSecs < prevLockedBalanceEntry.VestingEndTimestampNanoSecs {
+			bav._setLockedBalanceEntry(prevLockedBalanceEntry)
+			continue
+		}
+
+		lockedBalanceEntry, err :=
+			bav.GetLockedBalanceEntryForHODLerPKIDProfilePKIDUnlockTimestampNanoSecsVestingEndTimestampNanoSecs(
+				prevLockedBalanceEntry.HODLerPKID,
+				prevLockedBalanceEntry.ProfilePKID,
+				prevLockedBalanceEntry.UnlockTimestampNanoSecs,
+				prevLockedBalanceEntry.VestingEndTimestampNanoSecs)
 		if err != nil {
 			return errors.Wrap(err, "_disconnectCoinUnlock failed to fetch lockedBalanceEntry")
 		}
 		if lockedBalanceEntry == nil || lockedBalanceEntry.isDeleted {
 			lockedBalanceEntry = &LockedBalanceEntry{
-				HODLerPKID:              prevLockedBalanceEntry.HODLerPKID,
-				ProfilePKID:             prevLockedBalanceEntry.ProfilePKID,
-				UnlockTimestampNanoSecs: prevLockedBalanceEntry.UnlockTimestampNanoSecs,
-				BalanceBaseUnits:        *uint256.NewInt(),
+				HODLerPKID:                  prevLockedBalanceEntry.HODLerPKID,
+				ProfilePKID:                 prevLockedBalanceEntry.ProfilePKID,
+				UnlockTimestampNanoSecs:     prevLockedBalanceEntry.UnlockTimestampNanoSecs,
+				VestingEndTimestampNanoSecs: prevLockedBalanceEntry.VestingEndTimestampNanoSecs,
+				BalanceBaseUnits:            *uint256.NewInt(),
 			}
 		}
 		if prevLockedBalanceEntry.BalanceBaseUnits.Lt(&lockedBalanceEntry.BalanceBaseUnits) {
@@ -1815,66 +2753,50 @@ func (bav *UtxoView) _disconnectCoinUnlock(
 		bav._setLockedBalanceEntry(prevLockedBalanceEntry)
 	}
 
-	// Reverting the BalanceEntry (if applicable) should not result in more coins.
+	// If a modified vested locked balance entry exists, we must delete this from the view to ensure proper reversion.
+	// This is because the underlying key for the vested lockup may have changed, and we
+	// would otherwise leave this lingering in the view.
+	if operationData.ModifiedLockedBalanceEntry != nil {
+		bav._deleteLockedBalanceEntry(operationData.ModifiedLockedBalanceEntry)
+	}
+
+	// Reverting the BalanceEntry should not result in more coins.
 	profilePKID := operationData.PrevLockedBalanceEntries[0].ProfilePKID
 	hodlerPKID := operationData.PrevLockedBalanceEntries[0].HODLerPKID
-	if !profilePKID.IsZeroPKID() {
-		balanceEntry := bav._getBalanceEntryForHODLerPKIDAndCreatorPKID(hodlerPKID, profilePKID, true)
-		if operationData.PrevTransactorBalanceEntry == nil || operationData.PrevTransactorBalanceEntry.isDeleted {
-			return fmt.Errorf("_disconnectCoinUnlock: Trying to revert OperationTypeCoinUnlock " +
-				"but found nil or deleted previous balance entry")
-		}
-		if operationData.PrevTransactorBalanceEntry.BalanceNanos.Gt(&balanceEntry.BalanceNanos) {
-			return fmt.Errorf("_disconnectCoinUnlock: Trying to revert OperationTypeCoinUnlock " +
-				"would cause balance entry balance to increase")
-		}
-		if operationData.PrevTransactorBalanceEntry.BalanceNanos.IsZero() {
-			bav._deleteBalanceEntryMappingsWithPKIDs(operationData.PrevTransactorBalanceEntry,
-				hodlerPKID, profilePKID, true)
-		} else {
-			bav._setBalanceEntryMappings(operationData.PrevTransactorBalanceEntry, true)
-		}
+	balanceEntry := bav._getBalanceEntryForHODLerPKIDAndCreatorPKID(hodlerPKID, profilePKID, true)
+	if operationData.PrevTransactorBalanceEntry == nil || operationData.PrevTransactorBalanceEntry.isDeleted {
+		return fmt.Errorf("_disconnectCoinUnlock: Trying to revert OperationTypeCoinUnlock " +
+			"but found nil or deleted previous balance entry")
+	}
+	if operationData.PrevTransactorBalanceEntry.BalanceNanos.Gt(&balanceEntry.BalanceNanos) {
+		return fmt.Errorf("_disconnectCoinUnlock: Trying to revert OperationTypeCoinUnlock " +
+			"would cause balance entry balance to increase")
+	}
+	if operationData.PrevTransactorBalanceEntry.BalanceNanos.IsZero() {
+		bav._deleteBalanceEntryMappingsWithPKIDs(operationData.PrevTransactorBalanceEntry,
+			hodlerPKID, profilePKID, true)
+	} else {
+		bav._setBalanceEntryMappings(operationData.PrevTransactorBalanceEntry, true)
 	}
 
-	// Reverting the CoinEntry (if applicable) should not result in more coins in circulation.
-	if !profilePKID.IsZeroPKID() {
-		profileEntry := bav.GetProfileEntryForPKID(profilePKID)
-		if profileEntry == nil || profileEntry.isDeleted {
-			return fmt.Errorf("_disconnectCoinUnlock: Trying to revert coin unlock " +
-				"but found nil profile entry; this shouldn't be possible")
-		}
-		if operationData.PrevCoinEntry.CoinsInCirculationNanos.Gt(&profileEntry.DAOCoinEntry.CoinsInCirculationNanos) {
-			return fmt.Errorf("_disconnectCoinUnlock: Trying to revert OperationTypeCoinUnlock " +
-				"would cause profile entry coin entry balance to increase")
-		}
-		profileEntry.DAOCoinEntry = *operationData.PrevCoinEntry
-		bav._setProfileEntryMappings(profileEntry)
+	// Reverting the CoinEntry should not result in more coins in circulation.
+	profileEntry := bav.GetProfileEntryForPKID(profilePKID)
+	if profileEntry == nil || profileEntry.isDeleted {
+		return fmt.Errorf("_disconnectCoinUnlock: Trying to revert coin unlock " +
+			"but found nil profile entry; this shouldn't be possible")
 	}
-
-	// Reverting the DeSo addition should not result in more coins.
-	if profilePKID.IsZeroPKID() {
-		// Revert the DeSo add.
-		operationData = utxoOpsForTxn[operationIndex]
-		if operationData.Type != OperationTypeAddBalance {
-			return fmt.Errorf("_disconnectCoinLockup: Trying to revert OperationTypeAddBalance "+
-				"but found type %v", operationData.Type)
-		}
-		if !bytes.Equal(operationData.BalancePublicKey, currentTxn.PublicKey) {
-			return fmt.Errorf("_disconnectCoinLockup: Trying to revert OperationTypeAddBalance " +
-				"but found mismatched public keys")
-		}
-		err := bav._unAddBalance(operationData.BalanceAmountNanos, operationData.BalancePublicKey)
-		if err != nil {
-			return errors.Wrapf(err, "_disconnectCoinLockup: Problem unAdding balance of %v for the "+
-				"transactor", operationData.BalanceAmountNanos)
-		}
+	if operationData.PrevCoinEntry.CoinsInCirculationNanos.Gt(&profileEntry.DAOCoinEntry.CoinsInCirculationNanos) {
+		return fmt.Errorf("_disconnectCoinUnlock: Trying to revert OperationTypeCoinUnlock " +
+			"would cause profile entry coin entry balance to increase")
 	}
+	profileEntry.DAOCoinEntry = *operationData.PrevCoinEntry
+	bav._setProfileEntryMappings(profileEntry)
 
 	// By here we only need to disconnect the basic transfer associated with the transaction.
 	basicTransferOps := utxoOpsForTxn[:operationIndex]
 	err := bav._disconnectBasicTransfer(currentTxn, txnHash, basicTransferOps, blockHeight)
 	if err != nil {
-		return errors.Wrap(err, "_disconnectCoinLockup")
+		return errors.Wrap(err, "_disconnectCoinUnlock")
 	}
 	return nil
 }

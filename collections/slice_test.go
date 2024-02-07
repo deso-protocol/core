@@ -109,3 +109,49 @@ func TestSliceToMap(t *testing.T) {
 		require.Equal(t, "2", result["b"].Value)
 	}
 }
+
+func TestRemoveDuplicates(t *testing.T) {
+	// Test empty slices
+	{
+		slices1 := []int{}
+		slices2 := []int{}
+
+		slice1Unique, slice2Unique := RemoveDuplicates(slices1, slices2)
+
+		require.Equal(t, 0, len(slice1Unique))
+		require.Equal(t, 0, len(slice2Unique))
+	}
+
+	// Test slices with no duplicates
+	{
+		slices1 := []int{1, 2, 3, 4, 5}
+		slices2 := []int{6, 7, 8, 9, 10}
+
+		slice1Unique, slice2Unique := RemoveDuplicates(slices1, slices2)
+
+		require.Equal(t, slices1, slice1Unique)
+		require.Equal(t, slices2, slice2Unique)
+	}
+
+	// Test slices with only duplicates
+	{
+		slices1 := []int{1, 2, 3, 4, 5}
+		slices2 := []int{1, 2, 3, 4, 5}
+
+		slice1Unique, slice2Unique := RemoveDuplicates(slices1, slices2)
+
+		require.Equal(t, 0, len(slice1Unique))
+		require.Equal(t, 0, len(slice2Unique))
+	}
+
+	// Test slices with both duplicate and unique values
+	{
+		slices1 := []int{1, 2, 3, 4, 5}
+		slices2 := []int{2, 3, 4, 5, 6, 7, 8, 9, 10}
+
+		slice1Unique, slice2Unique := RemoveDuplicates(slices1, slices2)
+
+		require.Equal(t, slice1Unique, []int{1})
+		require.Equal(t, slice2Unique, []int{6, 7, 8, 9, 10})
+	}
+}

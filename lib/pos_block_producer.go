@@ -20,18 +20,26 @@ type BlockTemplate *MsgDeSoBlock
 // CreateUnsignedTimeoutBlock methods. As such, PosBlockProducer exists primarily for the purpose of cleaner separation of
 // concerns. Instantiating the PosBlockProducer can also be optional for nodes who do not wish to produce blocks.
 type PosBlockProducer struct {
-	mp                      Mempool
-	params                  *DeSoParams
-	proposerPublicKey       *PublicKey
-	proposerVotingPublicKey *bls.PublicKey
+	mp                             Mempool
+	params                         *DeSoParams
+	proposerPublicKey              *PublicKey
+	proposerVotingPublicKey        *bls.PublicKey
+	previousBlockTimestampNanoSecs int64
 }
 
-func NewPosBlockProducer(mp Mempool, params *DeSoParams, proposerPublicKey *PublicKey, proposerVotingPublicKey *bls.PublicKey) *PosBlockProducer {
+func NewPosBlockProducer(
+	mp Mempool,
+	params *DeSoParams,
+	proposerPublicKey *PublicKey,
+	proposerVotingPublicKey *bls.PublicKey,
+	previousBlockTimestampNanoSecs int64,
+) *PosBlockProducer {
 	return &PosBlockProducer{
-		mp:                      mp,
-		params:                  params,
-		proposerPublicKey:       proposerPublicKey,
-		proposerVotingPublicKey: proposerVotingPublicKey,
+		mp:                             mp,
+		params:                         params,
+		proposerPublicKey:              proposerPublicKey,
+		proposerVotingPublicKey:        proposerVotingPublicKey,
+		previousBlockTimestampNanoSecs: previousBlockTimestampNanoSecs,
 	}
 }
 
@@ -75,7 +83,7 @@ func (pbp *PosBlockProducer) CreateUnsignedTimeoutBlock(latestBlockView *UtxoVie
 func (pbp *PosBlockProducer) createBlockTemplate(latestBlockView *UtxoView, newBlockHeight uint64, view uint64,
 	proposerRandomSeedSignature *bls.Signature) (BlockTemplate, error) {
 	// First get the block without the header.
-	currentTimestamp := uint64(time.Now().UnixNano())
+	currentTimestamp := _maxInt64(time.Now().UnixNano(), pbp.previousBlockTimestampNanoSecs+1)
 	block, err := pbp.createBlockWithoutHeader(latestBlockView, newBlockHeight, currentTimestamp)
 	if err != nil {
 		return nil, errors.Wrapf(err, "PosBlockProducer.CreateBlockTemplate: Problem creating block without header")
@@ -108,7 +116,7 @@ func (pbp *PosBlockProducer) createBlockTemplate(latestBlockView *UtxoView, newB
 // createBlockWithoutHeader is a helper function used by createBlockTemplate. It constructs a partially filled out
 // block with Fee-Time ordered transactions. The returned block all its contents filled, except for the header.
 func (pbp *PosBlockProducer) createBlockWithoutHeader(
-	latestBlockView *UtxoView, newBlockHeight uint64, newBlockTimestampNanoSecs uint64) (BlockTemplate, error) {
+	latestBlockView *UtxoView, newBlockHeight uint64, newBlockTimestampNanoSecs int64) (BlockTemplate, error) {
 	block := NewMessage(MsgTypeBlock).(*MsgDeSoBlock)
 
 	// Create the block reward transaction.
@@ -125,8 +133,12 @@ func (pbp *PosBlockProducer) createBlockWithoutHeader(
 
 	// Get block transactions from the mempool.
 	feeTimeTxns, txnConnectStatusByIndex, maxUtilityFee, err := pbp.getBlockTransactions(
-		latestBlockView, newBlockHeight, newBlockTimestampNanoSecs,
-		pbp.params.MinerMaxBlockSizeBytes-uint64(len(blockRewardTxnSizeBytes)))
+		pbp.proposerPublicKey,
+		latestBlockView,
+		newBlockHeight,
+		newBlockTimestampNanoSecs,
+		pbp.params.MinerMaxBlockSizeBytes-uint64(len(blockRewardTxnSizeBytes)),
+	)
 	if err != nil {
 		return nil, errors.Wrapf(err, "PosBlockProducer.createBlockWithoutHeader: Problem retrieving block transactions: ")
 	}
@@ -142,9 +154,10 @@ func (pbp *PosBlockProducer) createBlockWithoutHeader(
 
 // getBlockTransactions is used to retrieve fee-time ordered transactions from the mempool.
 func (pbp *PosBlockProducer) getBlockTransactions(
+	blockProducerPublicKey *PublicKey,
 	latestBlockView *UtxoView,
 	newBlockHeight uint64,
-	newBlockTimestampNanoSecs uint64,
+	newBlockTimestampNanoSecs int64,
 	maxBlockSizeBytes uint64,
 ) (
 	_txns []*MsgDeSoTxn,
@@ -169,6 +182,7 @@ func (pbp *PosBlockProducer) getBlockTransactions(
 		if err != nil {
 			return nil, nil, 0, errors.Wrapf(err, "Error getting transaction size: ")
 		}
+
 		// Skip over transactions that are too big.
 		if currentBlockSize+uint64(len(txnBytes)) > maxBlockSizeBytes {
 			continue
@@ -179,7 +193,7 @@ func (pbp *PosBlockProducer) getBlockTransactions(
 			return nil, nil, 0, errors.Wrapf(err, "Error copying UtxoView: ")
 		}
 		_, _, _, fees, err := blockUtxoViewCopy._connectTransaction(
-			txn.GetTxn(), txn.Hash(), int64(len(txnBytes)), uint32(newBlockHeight), int64(newBlockTimestampNanoSecs),
+			txn.GetTxn(), txn.Hash(), uint32(newBlockHeight), newBlockTimestampNanoSecs,
 			true, false)
 
 		// Check if the transaction connected.
@@ -188,16 +202,28 @@ func (pbp *PosBlockProducer) getBlockTransactions(
 			txnConnectStatusByIndex.Set(len(blocksTxns), true)
 			blocksTxns = append(blocksTxns, txn.GetTxn())
 			currentBlockSize += uint64(len(txnBytes))
+
+			// If the transactor is the block producer, then they won't receive the utility
+			// fee.
+			if blockProducerPublicKey.Equal(*NewPublicKey(txn.PublicKey)) {
+				continue
+			}
+
 			// Compute BMF for the transaction.
 			_, utilityFee := computeBMF(fees)
-			maxUtilityFee += utilityFee
+			maxUtilityFee, err = SafeUint64().Add(maxUtilityFee, utilityFee)
+			if err != nil {
+				return nil, nil, 0, errors.Wrapf(err, "Error computing max utility fee: ")
+			}
 			continue
 		}
+
 		// If the transaction didn't connect, we will try to add it as a failing transaction.
 		blockUtxoViewCopy, err = blockUtxoView.CopyUtxoView()
 		if err != nil {
 			return nil, nil, 0, errors.Wrapf(err, "Error copying UtxoView: ")
 		}
+
 		_, _, utilityFee, err := blockUtxoViewCopy._connectFailingTransaction(txn.GetTxn(), uint32(newBlockHeight), true)
 		if err != nil {
 			// If the transaction still doesn't connect, this means we encountered an invalid transaction. We will skip
@@ -205,14 +231,32 @@ func (pbp *PosBlockProducer) getBlockTransactions(
 			// process, so we don't need to worry about it here.
 			continue
 		}
+
 		// If we get to this point, it means the transaction didn't connect but it was a valid transaction. We will
 		// add it to the block as a failing transaction.
 		blockUtxoView = blockUtxoViewCopy
 		txnConnectStatusByIndex.Set(len(blocksTxns), false)
 		blocksTxns = append(blocksTxns, txn.GetTxn())
 		currentBlockSize += uint64(len(txnBytes))
-		maxUtilityFee += utilityFee
+
+		// If the transactor is the block producer, then they won't receive the utility
+		// fee.
+		if blockProducerPublicKey.Equal(*NewPublicKey(txn.PublicKey)) {
+			continue
+		}
+
+		maxUtilityFee, err = SafeUint64().Add(maxUtilityFee, utilityFee)
+		if err != nil {
+			return nil, nil, 0, errors.Wrapf(err, "Error computing max utility fee: ")
+		}
 	}
 
 	return blocksTxns, txnConnectStatusByIndex, maxUtilityFee, nil
+}
+
+func _maxInt64(a, b int64) int64 {
+	if a > b {
+		return a
+	}
+	return b
 }

@@ -58,10 +58,6 @@ func SetupRunFlags(cmd *cobra.Command) {
 	cmd.PersistentFlags().String("postgres-uri", "", "BETA: Use Postgres as the backing store for chain data."+
 		"When enabled, most data is stored in postgres although badger is still currently used for some state. Run your "+
 		"Postgres instance on the same machine as your node for optimal performance.")
-	cmd.PersistentFlags().String("pos-validator-seed", "", "The private key of the Proof of Stake validator. "+
-		"The private key should be passed as hex, optionally prefixed with a '0x', and map to a valid BLS12_381 private key. "+
-		"The private key must be 32 bytes, or 64 characters, in length (excluding the '0x' prefix). Setting this flag automatically "+
-		"makes the node run Proof of Stake Validator.")
 	cmd.PersistentFlags().Uint32("max-sync-block-height", 0,
 		"Max sync block height")
 	// Hyper Sync
@@ -86,12 +82,28 @@ func SetupRunFlags(cmd *cobra.Command) {
 		- hypersync: Will sync by downloading historical state, and will NOT
 		  download historical blocks. Can only be set if HyperSync is true.`)
 
+	// PoS Validator
+	cmd.PersistentFlags().String("pos-validator-seed", "", "A BIP39 seed phrase used to generate the private key of the "+
+		"Proof of Stake validator. Setting this flag automatically makes the node run as a Proof of Stake Validator.")
+	cmd.PersistentFlags().Uint64("pos-block-production-interval-milliseconds", 1500, "The interval in milliseconds "+
+		"between blocks produced by the Proof of Stake block proposer. The default value is 1.5 seconds, or 1500 milliseconds.")
+	cmd.PersistentFlags().Uint64("pos-timeout-base-duration-milliseconds", 30000, "The base duration in milliseconds "+
+		"that the Proof of Stake block proposer waits before timing out and producing a block. The default value is "+
+		"30 seconds, or 30000 milliseconds.")
+
 	// Mempool
 	cmd.PersistentFlags().Uint64("mempool-backup-time-millis", 30000,
 		"The frequency in milliseconds with which the mempool will persist its state to disk. "+
 			"The default value is 30 seconds, or 30,000 milliseconds.")
 	cmd.PersistentFlags().Uint64("max-mempool-pos-size-bytes", 3000000000,
 		"The maximum size of the PoS mempool in bytes. The default value is 3GB.")
+	cmd.PersistentFlags().Uint64("mempool-fee-estimator-num-mempool-blocks", 1,
+		"The number of future blocks to break the PoS mempool into when estimating txn fee for the next block.")
+	cmd.PersistentFlags().Uint64("mempool-fee-estimator-num-past-blocks", 50,
+		"The number of past blocks to use when estimating txn fee for the next block from the PoS mempool.")
+	cmd.PersistentFlags().Uint64("augmented-block-view-refresh-interval-millis", 10,
+		"The frequency in milliseconds with which the augmented block view will be refreshed. "+
+			"The default value is 100 milliseconds.")
 
 	// Peers
 	cmd.PersistentFlags().StringSlice("connect-ips", []string{},

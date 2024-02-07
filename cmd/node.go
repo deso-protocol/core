@@ -274,7 +274,15 @@ func (node *Node) Start(exitChannels ...*chan struct{}) {
 		node.Config.ForceChecksum,
 		node.Config.StateChangeDir,
 		node.Config.HypersyncMaxQueueSize,
-		blsKeystore)
+		blsKeystore,
+		node.Config.MaxMempoolPosSizeBytes,
+		node.Config.MempoolBackupIntervalMillis,
+		node.Config.MempoolFeeEstimatorNumMempoolBlocks,
+		node.Config.MempoolFeeEstimatorNumPastBlocks,
+		node.Config.AugmentedBlockViewRefreshIntervalMillis,
+		node.Config.PosBlockProductionIntervalMilliseconds,
+		node.Config.PosTimeoutBaseDurationMilliseconds,
+	)
 	if err != nil {
 		// shouldRestart can be true if, on the previous run, we did not finish flushing all ancestral
 		// records to the DB. In this case, the snapshot is corrupted and needs to be computed. See the

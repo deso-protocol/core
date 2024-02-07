@@ -114,11 +114,11 @@ func (desoBlockProducer *DeSoBlockProducer) _updateBlockTimestamp(blk *MsgDeSoBl
 	// the timestamp set in the last block then set the time based on the last
 	// block's timestamp instead. We do this because consensus rules require a
 	// monotonically increasing timestamp.
-	blockTstamp := uint32(desoBlockProducer.chain.timeSource.AdjustedTime().Unix())
-	if blockTstamp <= uint32(lastNode.Header.GetTstampSecs()) {
-		blockTstamp = uint32(lastNode.Header.GetTstampSecs()) + 1
+	blockTstamp := desoBlockProducer.chain.timeSource.AdjustedTime().Unix()
+	if blockTstamp <= lastNode.Header.GetTstampSecs() {
+		blockTstamp = lastNode.Header.GetTstampSecs() + 1
 	}
-	blk.Header.SetTstampSecs(uint64(blockTstamp))
+	blk.Header.SetTstampSecs(blockTstamp)
 }
 
 func (desoBlockProducer *DeSoBlockProducer) _getBlockTemplate(publicKey []byte) (
@@ -225,7 +225,7 @@ func (desoBlockProducer *DeSoBlockProducer) _getBlockTemplate(publicKey []byte) 
 			if err != nil {
 				return nil, nil, nil, errors.Wrapf(err, "Error copying UtxoView: ")
 			}
-			_, _, _, _, err = utxoViewCopy._connectTransaction(mempoolTx.Tx, mempoolTx.Hash, int64(mempoolTx.TxSizeBytes),
+			_, _, _, _, err = utxoViewCopy._connectTransaction(mempoolTx.Tx, mempoolTx.Hash,
 				uint32(blockRet.Header.Height), int64(blockRet.Header.TstampNanoSecs), true, false)
 			if err != nil {
 				// Skip failing txns. This should happen super rarely.
@@ -236,7 +236,7 @@ func (desoBlockProducer *DeSoBlockProducer) _getBlockTemplate(publicKey []byte) 
 				continue
 			}
 			// At this point, we know the transaction isn't going to break our view so attach it.
-			_, _, _, _, err = utxoView._connectTransaction(mempoolTx.Tx, mempoolTx.Hash, int64(mempoolTx.TxSizeBytes),
+			_, _, _, _, err = utxoView._connectTransaction(mempoolTx.Tx, mempoolTx.Hash,
 				uint32(blockRet.Header.Height), int64(blockRet.Header.TstampNanoSecs), true, false)
 			if err != nil {
 				// We should never get an error here since we just attached a txn to an indentical
@@ -294,8 +294,8 @@ func (desoBlockProducer *DeSoBlockProducer) _getBlockTemplate(publicKey []byte) 
 	for _, txnInBlock := range blockRet.Txns[1:] {
 		var feeNanos uint64
 		_, _, _, feeNanos, err = feesUtxoView._connectTransaction(
-			txnInBlock, txnInBlock.Hash(), 0, uint32(blockRet.Header.Height),
-			0, false, false)
+			txnInBlock, txnInBlock.Hash(), uint32(blockRet.Header.Height), blockRet.Header.TstampNanoSecs, false, false,
+		)
 		if err != nil {
 			return nil, nil, nil, fmt.Errorf(
 				"DeSoBlockProducer._getBlockTemplate: Error attaching txn to UtxoView for computed block: %v", err)
