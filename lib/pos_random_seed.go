@@ -2,7 +2,7 @@ package lib
 
 import (
 	"bytes"
-	"crypto/sha256"
+	"golang.org/x/crypto/sha3"
 	"io"
 
 	"github.com/deso-protocol/core/bls"
@@ -114,7 +114,7 @@ func verifySignatureOnRandomSeedHash(
 func HashRandomSeedSignature(randomSeedSignature *bls.Signature) (*RandomSeedHash, error) {
 	// This function takes in a random seed signature and computes the random seed hash for it
 	// Convert the RandomSeedSignature to a RandomSeedHash.
-	randomSeedSHA256 := sha256.Sum256(randomSeedSignature.ToBytes())
+	randomSeedSHA256 := sha3.Sum256(randomSeedSignature.ToBytes())
 	newRandomSeedHash, err := (&RandomSeedHash{}).FromBytes(randomSeedSHA256[:])
 	if err != nil {
 		return nil, errors.Wrapf(err, "hashRandomSeedSignature: problem hashing RandomSeedSignature: ")
