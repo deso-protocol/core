@@ -4,7 +4,7 @@ import "time"
 
 type MockFastHotStuffEventLoop struct {
 	OnGetEvents               func() chan *FastHotStuffEvent
-	OnInit                    func(time.Duration, time.Duration, BlockWithValidatorList, []BlockWithValidatorList) error
+	OnInit                    func(time.Duration, time.Duration, QuorumCertificate, BlockWithValidatorList, []BlockWithValidatorList) error
 	OnGetCurrentView          func() uint64
 	OnAdvanceViewOnTimeout    func() (uint64, error)
 	OnProcessTipBlock         func(BlockWithValidatorList, []BlockWithValidatorList) error
@@ -20,8 +20,8 @@ type MockFastHotStuffEventLoop struct {
 func (fc *MockFastHotStuffEventLoop) GetEvents() chan *FastHotStuffEvent {
 	return fc.OnGetEvents()
 }
-func (fc *MockFastHotStuffEventLoop) Init(crankTimerInterval time.Duration, timeoutBaseDuration time.Duration, tip BlockWithValidatorList, safeBlocks []BlockWithValidatorList) error {
-	return fc.OnInit(crankTimerInterval, timeoutBaseDuration, tip, safeBlocks)
+func (fc *MockFastHotStuffEventLoop) Init(crankTimerInterval time.Duration, timeoutBaseDuration time.Duration, genesisQC QuorumCertificate, tip BlockWithValidatorList, safeBlocks []BlockWithValidatorList) error {
+	return fc.OnInit(crankTimerInterval, timeoutBaseDuration, genesisQC, tip, safeBlocks)
 }
 
 func (fc *MockFastHotStuffEventLoop) GetCurrentView() uint64 {

@@ -5,6 +5,7 @@ package lib
 import (
 	"bytes"
 	"fmt"
+	"golang.org/x/crypto/sha3"
 	"math"
 	"math/rand"
 	"testing"
@@ -236,7 +237,7 @@ func TestIsProperlyFormedBlockPoSAndIsBlockTimestampValidRelativeToParentPoS(t *
 	// Timestamp validations
 	// Block timestamp must be greater than the previous block timestamp
 	block.Header.TstampNanoSecs = bc.BlockTip().Header.GetTstampSecs() - 1
-	err = bc.isBlockTimestampValidRelativeToParentPoS(block)
+	err = bc.isBlockTimestampValidRelativeToParentPoS(block.Header)
 	require.Equal(t, err, RuleErrorPoSBlockTstampNanoSecsTooOld)
 
 	// Block timestamps can't be in the future.
@@ -262,7 +263,7 @@ func TestIsProperlyFormedBlockPoSAndIsBlockTimestampValidRelativeToParentPoS(t *
 
 	// Parent must exist in the block index.
 	block.Header.PrevBlockHash = NewBlockHash(RandomBytes(32))
-	err = bc.isBlockTimestampValidRelativeToParentPoS(block)
+	err = bc.isBlockTimestampValidRelativeToParentPoS(block.Header)
 	require.Equal(t, err, RuleErrorMissingParentBlock)
 
 	// Nil block header not allowed
@@ -323,22 +324,22 @@ func TestHasValidBlockHeight(t *testing.T) {
 
 	// validate that we've cutover to PoS
 	bc.params.ForkHeights.ProofOfStake2ConsensusCutoverBlockHeight = 3
-	err = bc.hasValidBlockHeightPoS(block)
+	err = bc.hasValidBlockHeightPoS(block.Header)
 	require.Equal(t, err, RuleErrorPoSBlockBeforeCutoverHeight)
 
 	// Update the fork height
 	bc.params.ForkHeights.ProofOfStake2ConsensusCutoverBlockHeight = 0
 
-	err = bc.hasValidBlockHeightPoS(block)
+	err = bc.hasValidBlockHeightPoS(block.Header)
 	require.Nil(t, err)
 
 	block.Header.Height = 1
-	err = bc.hasValidBlockHeightPoS(block)
+	err = bc.hasValidBlockHeightPoS(block.Header)
 	require.Equal(t, err, RuleErrorInvalidPoSBlockHeight)
 
 	block.Header.Height = 2
 	bc.blockIndexByHash = map[BlockHash]*BlockNode{}
-	err = bc.hasValidBlockHeightPoS(block)
+	err = bc.hasValidBlockHeightPoS(block.Header)
 	require.Equal(t, err, RuleErrorMissingParentBlock)
 }
 
@@ -555,29 +556,29 @@ func TestHasValidBlockViewPoS(t *testing.T) {
 	block.Header.ProposedInView = 2
 
 	// Blocks with timeout QCs must have a view strictly greater than the parent.
-	err = bc.hasValidBlockViewPoS(block)
+	err = bc.hasValidBlockViewPoS(block.Header)
 	require.Equal(t, err, RuleErrorPoSTimeoutBlockViewNotGreaterThanParent)
 
 	// Any arbitrary number GREATER than the parent's view is valid.
 	block.Header.ProposedInView = 10
-	err = bc.hasValidBlockViewPoS(block)
+	err = bc.hasValidBlockViewPoS(block.Header)
 	require.Nil(t, err)
 
 	// Now we set the timeout QC to nil and provide a vote QC, with height = 2
 	block.Header.ValidatorsTimeoutAggregateQC = nil
 	block.Header.ValidatorsVoteQC = voteQC
 	block.Header.ProposedInView = 2
-	err = bc.hasValidBlockViewPoS(block)
+	err = bc.hasValidBlockViewPoS(block.Header)
 	require.Equal(t, err, RuleErrorPoSVoteBlockViewNotOneGreaterThanParent)
 
 	// An arbitrary number greater than its parents should fail.
 	block.Header.ProposedInView = 10
-	err = bc.hasValidBlockViewPoS(block)
+	err = bc.hasValidBlockViewPoS(block.Header)
 	require.Equal(t, err, RuleErrorPoSVoteBlockViewNotOneGreaterThanParent)
 
 	// Exactly one great w/ vote QC should pass.
 	block.Header.ProposedInView = 3
-	err = bc.hasValidBlockViewPoS(block)
+	err = bc.hasValidBlockViewPoS(block.Header)
 	require.Nil(t, err)
 }
 
@@ -803,6 +804,7 @@ func TestGetLineageFromCommittedTip(t *testing.T) {
 	}
 	block := &MsgDeSoBlock{
 		Header: &MsgDeSoHeader{
+			Version:        HeaderVersion2,
 			PrevBlockHash:  hash1,
 			ProposedInView: 3,
 			Height:         3,
@@ -1294,9 +1296,9 @@ func TestTryApplyNewTip(t *testing.T) {
 			ProposedInView: 4,
 		},
 	}
-	bc.addBlockToBestChain(bn1)
-	bc.addBlockToBestChain(bn2)
-	bc.addBlockToBestChain(bn3)
+	bc.addTipBlockToBestChain(bn1)
+	bc.addTipBlockToBestChain(bn2)
+	bc.addTipBlockToBestChain(bn3)
 	bc.blockIndexByHash[*hash1] = bn1
 	bc.blockIndexByHash[*hash2] = bn2
 	bc.blockIndexByHash[*hash3] = bn3
@@ -1325,13 +1327,15 @@ func TestTryApplyNewTip(t *testing.T) {
 		Header: newBlock.Header,
 		Hash:   newBlockHash,
 	}
-	appliedNewTip, err := bc.tryApplyNewTip(newBlockNode, 9, ancestors)
+	appliedNewTip, connectedBlockHashes, disconnectedBlockHashes, err := bc.tryApplyNewTip(newBlockNode, 9, ancestors)
 	require.NoError(t, err)
 	require.True(t, appliedNewTip)
 	// hash 3 should no longer be in the best chain or best chain map
 	_, hash3ExistsInBestChainMap := bc.bestChainMap[*hash3]
 	require.False(t, hash3ExistsInBestChainMap)
 	require.False(t, checkBestChainForHash(hash3))
+	require.Len(t, connectedBlockHashes, 1)
+	require.Len(t, disconnectedBlockHashes, 1)
 
 	// newBlock should be in the best chain and the best chain map and should be the tip.
 	_, newBlockExistsInBestChainMap := bc.bestChainMap[*newBlockHash]
@@ -1352,7 +1356,7 @@ func TestTryApplyNewTip(t *testing.T) {
 	bc.bestChain = bc.bestChain[:len(bc.bestChain)-1]
 	delete(bc.bestChainMap, *newBlockHash)
 	// Add block 3 back
-	bc.addBlockToBestChain(bn3)
+	bc.addTipBlockToBestChain(bn3)
 
 	// Add a series of blocks that are not part of the best chain
 	// to the block index and reorg to them
@@ -1392,7 +1396,7 @@ func TestTryApplyNewTip(t *testing.T) {
 	require.NoError(t, err)
 
 	// Try to apply newBlock as tip.
-	appliedNewTip, err = bc.tryApplyNewTip(newBlockNode, 6, ancestors)
+	appliedNewTip, connectedBlockHashes, disconnectedBlockHashes, err = bc.tryApplyNewTip(newBlockNode, 6, ancestors)
 	require.NoError(t, err)
 	require.True(t, appliedNewTip)
 	// newBlockHash should be tip.
@@ -1414,6 +1418,10 @@ func TestTryApplyNewTip(t *testing.T) {
 	require.True(t, hash5ExistsInBestChainMap)
 	require.True(t, checkBestChainForHash(hash5))
 
+	// We have added three blocks and removed two blocks
+	require.Len(t, connectedBlockHashes, 3)
+	require.Len(t, disconnectedBlockHashes, 2)
+
 	// Reset the state of the best chain.
 	delete(bc.bestChainMap, *hash4)
 	delete(bc.bestChainMap, *hash5)
@@ -1421,17 +1429,21 @@ func TestTryApplyNewTip(t *testing.T) {
 	bc.bestChain = bc.bestChain[:len(bc.bestChain)-3]
 
 	// Add block 2 and 3 back.
-	bc.addBlockToBestChain(bn2)
-	bc.addBlockToBestChain(bn3)
+	bc.addTipBlockToBestChain(bn2)
+	bc.addTipBlockToBestChain(bn3)
 
 	// No reorg tests
 	// currentView > newBlock.View
 	newBlockNode.Header.ProposedInView = 8
 
 	// we should not apply the new tip if it doesn't extend the current tip.
-	appliedNewTip, err = bc.tryApplyNewTip(newBlockNode, 9, ancestors)
+	appliedNewTip, connectedBlockHashes, disconnectedBlockHashes, err = bc.tryApplyNewTip(newBlockNode, 9, ancestors)
 	require.False(t, appliedNewTip)
 	require.NoError(t, err)
+
+	// No blocks have been removed or added.
+	require.Len(t, connectedBlockHashes, 0)
+	require.Len(t, disconnectedBlockHashes, 0)
 
 	// Super Happy path: no reorg, just extending tip.
 	newBlockNode.Header.ProposedInView = 10
@@ -1441,11 +1453,15 @@ func TestTryApplyNewTip(t *testing.T) {
 	require.NoError(t, err)
 	ancestors, err = bc.getLineageFromCommittedTip(newBlock)
 	require.NoError(t, err)
-	appliedNewTip, err = bc.tryApplyNewTip(newBlockNode, 6, ancestors)
+	appliedNewTip, connectedBlockHashes, disconnectedBlockHashes, err = bc.tryApplyNewTip(newBlockNode, 6, ancestors)
 	require.True(t, appliedNewTip)
 	require.NoError(t, err)
 	// newBlockHash should be tip.
 	require.True(t, bc.BlockTip().Hash.IsEqual(newBlockHash))
+
+	// One block has been added to the best chain.
+	require.Len(t, connectedBlockHashes, 1)
+	require.Len(t, disconnectedBlockHashes, 0)
 }
 
 // TestCanCommitGrandparent tests the canCommitGrandparent function
@@ -1672,15 +1688,58 @@ func _verifyCommitRuleHelper(testMeta *TestMeta, committedBlocks []*BlockHash, u
 	}
 }
 
+func TestProcessHeaderPoS(t *testing.T) {
+	// Initialize the chain and test metadata.
+	testMeta := NewTestPoSBlockchainWithValidators(t)
+
+	// Capture the starting block height, view, and block hash for the best chain and best header chain.
+	initialBlockHeight := testMeta.chain.BlockTip().Height
+	initialView := testMeta.chain.BlockTip().Header.ProposedInView
+	initialBlockHash := testMeta.chain.BlockTip().Hash
+
+	initialHeaderHeight := testMeta.chain.HeaderTip().Height
+	initialHeaderView := testMeta.chain.HeaderTip().Header.ProposedInView
+	initialHeaderHash := testMeta.chain.HeaderTip().Hash
+
+	require.Equal(t, initialBlockHeight, initialHeaderHeight)
+	require.Equal(t, initialView, initialHeaderView)
+	require.True(t, initialBlockHash.IsEqual(initialHeaderHash))
+
+	// Run the ProcessBlockPoS tests end to end. ProcessHeaderPoS is called within ProcessBlockPoS.
+	// The header chain should progress identically to the block chain, and it should reorg when then
+	// block chain reorgs.
+	testProcessBlockPoS(t, testMeta)
+
+	// Capture the final block height, view, and block hash for the best chain and best header chain.
+	finalBlockHeight := testMeta.chain.BlockTip().Height
+	finalView := testMeta.chain.BlockTip().Header.ProposedInView
+	finalBlockHash := testMeta.chain.BlockTip().Hash
+
+	finalHeaderHeight := testMeta.chain.HeaderTip().Height
+	finalHeaderView := testMeta.chain.HeaderTip().Header.ProposedInView
+	finalHeaderHash := testMeta.chain.HeaderTip().Hash
+
+	require.Equal(t, finalBlockHeight, finalHeaderHeight)
+	require.Equal(t, finalView, finalHeaderView)
+	require.True(t, finalBlockHash.IsEqual(finalHeaderHash))
+
+	// Verify that the header chain has advanced from the initial state.
+	require.Greater(t, finalBlockHeight, initialBlockHeight)
+	require.Greater(t, finalView, initialView)
+	require.False(t, finalBlockHash.IsEqual(initialBlockHash))
+}
+
+func TestProcessBlockPoS(t *testing.T) {
+	testProcessBlockPoS(t, NewTestPoSBlockchainWithValidators(t))
+}
+
 // Test the following series of blocks to make sure that ProcessBlockPoS properly handles all cases as expected during the steady state
-// 1. Process a bad block. The block could be bad for any reason, we don't really care the reason, we just want to // see it get rejected.
+// 1. Process a bad block. The block could be bad for any reason, we don't really care the reason, we just want to see it get rejected.
 // 2. Process three good blocks in a row, which tests the commit rule
 // 3. Process a timeout block that reorgs the previous tip
 // 4. Process a regular block that reorgs from the previous tip
 // 5. Process an orphan, which tests the block's storage and the return value of missingBlockHashes
-func TestProcessBlockPoS(t *testing.T) {
-	testMeta := NewTestPoSBlockchainWithValidators(t)
-
+func testProcessBlockPoS(t *testing.T, testMeta *TestMeta) {
 	{
 		// Create a bad block and try to process it.
 		dummyBlock := _generateDummyBlock(testMeta, 12, 12, 887)
@@ -1777,7 +1836,7 @@ func TestProcessBlockPoS(t *testing.T) {
 		// Set the prev block hash manually on orphan block
 		orphanBlock.Header.PrevBlockHash = dummyParentBlockHash
 		// Create a QC on the dummy parent block
-		orphanBlock.Header.ValidatorsVoteQC = _getVoteQC(testMeta, testMeta.posMempool.readOnlyLatestBlockView, dummyParentBlockHash, 16)
+		orphanBlock.Header.ValidatorsVoteQC = _getVoteQC(testMeta, orphanBlock.Header.Height, dummyParentBlockHash, 16)
 		updateProposerVotePartialSignatureForBlock(testMeta, orphanBlock)
 		orphanBlockHash, err = orphanBlock.Hash()
 		require.NoError(t, err)
@@ -2265,7 +2324,7 @@ func TestHasValidProposerRandomSeedSignaturePoS(t *testing.T) {
 	var realBlock *MsgDeSoBlock
 	realBlock = _generateRealBlock(testMeta, 12, 12, 889, testMeta.chain.BlockTip().Hash, false)
 	// The first PoS block passes the validation.
-	isValid, err := testMeta.chain.hasValidProposerRandomSeedSignaturePoS(realBlock)
+	isValid, err := testMeta.chain.hasValidProposerRandomSeedSignaturePoS(realBlock.Header)
 	require.NoError(t, err)
 	require.True(t, isValid)
 	_, _, _, err = testMeta.chain.ProcessBlockPoS(realBlock, 12, true)
@@ -2283,7 +2342,7 @@ func TestHasValidProposerRandomSeedSignaturePoS(t *testing.T) {
 	var childBlock *MsgDeSoBlock
 	childBlock = _generateRealBlock(testMeta, 13, 13, 273, realBlockNode.Hash, false)
 	{
-		isValid, err = testMeta.chain.hasValidProposerRandomSeedSignaturePoS(childBlock)
+		isValid, err = testMeta.chain.hasValidProposerRandomSeedSignaturePoS(childBlock.Header)
 		require.NoError(t, err)
 		require.True(t, isValid)
 	}
@@ -2292,7 +2351,7 @@ func TestHasValidProposerRandomSeedSignaturePoS(t *testing.T) {
 	{
 		realBlockNode.Header.ProposerRandomSeedSignature, err = (&bls.Signature{}).FromBytes(RandomBytes(32))
 		require.NoError(t, err)
-		isValid, err = testMeta.chain.hasValidProposerRandomSeedSignaturePoS(childBlock)
+		isValid, err = testMeta.chain.hasValidProposerRandomSeedSignaturePoS(childBlock.Header)
 		require.NoError(t, err)
 		require.False(t, isValid)
 	}
@@ -2303,7 +2362,7 @@ func TestHasValidProposerRandomSeedSignaturePoS(t *testing.T) {
 		prevBlockRandomSeedHashBytes := sha256.Sum256(realBlockNode.Header.ProposerRandomSeedSignature.ToBytes())
 		childBlock.Header.ProposerRandomSeedSignature, err = wrongProposerPrivateKey.Sign(prevBlockRandomSeedHashBytes[:])
 		require.NoError(t, err)
-		isValid, err = testMeta.chain.hasValidProposerRandomSeedSignaturePoS(childBlock)
+		isValid, err = testMeta.chain.hasValidProposerRandomSeedSignaturePoS(childBlock.Header)
 		require.NoError(t, err)
 		require.False(t, isValid)
 	}
@@ -2354,7 +2413,7 @@ func _generateRealBlockWithFailingTxn(testMeta *TestMeta, blockHeight uint64, vi
 	latestBlockHeight := testMeta.chain.blockIndexByHash[*prevBlockHash].Height
 	testMeta.posMempool.UpdateLatestBlock(latestBlockView, uint64(latestBlockHeight))
 	seedSignature := getRandomSeedSignature(testMeta, blockHeight, view, prevBlock.Header.ProposerRandomSeedSignature)
-	fullBlockTemplate := _getFullRealBlockTemplate(testMeta, testMeta.posMempool.readOnlyLatestBlockView, blockHeight, view, seedSignature, isTimeout)
+	fullBlockTemplate := _getFullRealBlockTemplate(testMeta, blockHeight, view, seedSignature, isTimeout)
 	// Remove the transactions from this block from the mempool.
 	// This prevents nonce reuse issues when trying to make reorg blocks.
 	for _, txn := range passingTxns {
@@ -2408,6 +2467,11 @@ func _generateDummyBlock(testMeta *TestMeta, blockHeight uint64, view uint64, se
 	require.True(testMeta.t, blockNode.IsStored())
 	_, exists := testMeta.chain.blockIndexByHash[*newBlockHash]
 	require.True(testMeta.t, exists)
+	// Remove the transactions from this block from the mempool.
+	// This prevents nonce reuse issues when trying to make failing blocks.
+	for _, txn := range passingTxns {
+		testMeta.posMempool.RemoveTransaction(txn.Hash())
+	}
 	return blockTemplate
 }
 
@@ -2426,7 +2490,7 @@ func _generateBlockAndAddToBestChain(testMeta *TestMeta, blockHeight uint64, vie
 	require.True(testMeta.t, blockNode.IsValidated())
 	newBlockNode, exists := testMeta.chain.blockIndexByHash[*newBlockHash]
 	require.True(testMeta.t, exists)
-	testMeta.chain.addBlockToBestChain(newBlockNode)
+	testMeta.chain.addTipBlockToBestChain(newBlockNode)
 	// Update the latest block view
 	latestBlockView, err := testMeta.chain.GetUncommittedTipView()
 	require.NoError(testMeta.t, err)
@@ -2435,7 +2499,10 @@ func _generateBlockAndAddToBestChain(testMeta *TestMeta, blockHeight uint64, vie
 	return blockTemplate
 }
 
-func getLeaderForBlockHeightAndView(testMeta *TestMeta, latestBlockView *UtxoView, blockHeight uint64, view uint64) (string, []byte) {
+func getLeaderForBlockHeightAndView(testMeta *TestMeta, blockHeight uint64, view uint64) (string, []byte) {
+	testMeta.posMempool.Lock()
+	defer testMeta.posMempool.Unlock()
+	latestBlockView := testMeta.posMempool.readOnlyLatestBlockView
 	currentEpochEntry, err := latestBlockView.GetCurrentEpochEntry()
 	require.NoError(testMeta.t, err)
 	leaders, err := latestBlockView.GetCurrentSnapshotLeaderSchedule()
@@ -2453,9 +2520,9 @@ func getLeaderForBlockHeightAndView(testMeta *TestMeta, latestBlockView *UtxoVie
 }
 
 func getRandomSeedSignature(testMeta *TestMeta, height uint64, view uint64, prevRandomSeedSignature *bls.Signature) *bls.Signature {
-	leaderPublicKey, _ := getLeaderForBlockHeightAndView(testMeta, testMeta.posMempool.readOnlyLatestBlockView, height, view)
+	leaderPublicKey, _ := getLeaderForBlockHeightAndView(testMeta, height, view)
 	leaderBLSPrivKey := testMeta.pubKeyToBLSKeyMap[leaderPublicKey]
-	prevRandomSeedHashSHA256 := sha256.Sum256(prevRandomSeedSignature.ToBytes())
+	prevRandomSeedHashSHA256 := sha3.Sum256(prevRandomSeedSignature.ToBytes())
 	newRandomSeedSignature, err := leaderBLSPrivKey.Sign(prevRandomSeedHashSHA256[:])
 	require.NoError(testMeta.t, err)
 	return newRandomSeedSignature
@@ -2468,7 +2535,7 @@ func updateRandomSeedSignature(testMeta *TestMeta, block *MsgDeSoBlock, prevRand
 func updateProposerVotePartialSignatureForBlock(testMeta *TestMeta, block *MsgDeSoBlock) {
 	blockHash, err := block.Hash()
 	require.NoError(testMeta.t, err)
-	leaderPublicKey, _ := getLeaderForBlockHeightAndView(testMeta, testMeta.posMempool.readOnlyLatestBlockView, block.Header.Height, block.Header.ProposedInView)
+	leaderPublicKey, _ := getLeaderForBlockHeightAndView(testMeta, block.Header.Height, block.Header.ProposedInView)
 	leaderBlsPrivKey := testMeta.pubKeyToBLSKeyMap[leaderPublicKey]
 	partialSigPayload := consensus.GetVoteSignaturePayload(block.Header.ProposedInView, blockHash)
 	sig, err := leaderBlsPrivKey.Sign(partialSigPayload[:])
@@ -2476,14 +2543,20 @@ func updateProposerVotePartialSignatureForBlock(testMeta *TestMeta, block *MsgDe
 	block.Header.ProposerVotePartialSignature = sig
 }
 
-func _getVoteQC(testMeta *TestMeta, latestBlockView *UtxoView, qcBlockHash *BlockHash, qcView uint64) *QuorumCertificate {
+func _getVoteQC(testMeta *TestMeta, blockHeight uint64, qcBlockHash *BlockHash, qcView uint64) *QuorumCertificate {
+	var validators []consensus.Validator
+	var signersList *bitset.Bitset
+	var aggregatedSignature *bls.Signature
 	votePayload := consensus.GetVoteSignaturePayload(qcView, qcBlockHash)
+	testMeta.posMempool.Lock()
+	defer testMeta.posMempool.Unlock()
+	latestBlockView := testMeta.posMempool.readOnlyLatestBlockView
 	allSnapshotValidators, err := latestBlockView.GetAllSnapshotValidatorSetEntriesByStake()
 	require.NoError(testMeta.t, err)
-	// QC stuff.
+	validators = toConsensusValidators(allSnapshotValidators)
 
 	// Get all the bls keys for the validators that aren't the leader.
-	signersList := bitset.NewBitset()
+	signersList = bitset.NewBitset()
 	var signatures []*bls.Signature
 	require.NoError(testMeta.t, err)
 	for ii, validatorEntry := range allSnapshotValidators {
@@ -2495,9 +2568,11 @@ func _getVoteQC(testMeta *TestMeta, latestBlockView *UtxoView, qcBlockHash *Bloc
 		signatures = append(signatures, sig)
 		signersList = signersList.Set(ii, true)
 	}
+
 	// Create the aggregated signature.
-	aggregatedSignature, err := bls.AggregateSignatures(signatures)
+	aggregatedSignature, err = bls.AggregateSignatures(signatures)
 	require.NoError(testMeta.t, err)
+
 	// Create the vote QC.
 	voteQC := &QuorumCertificate{
 		BlockHash:      qcBlockHash,
@@ -2508,7 +2583,7 @@ func _getVoteQC(testMeta *TestMeta, latestBlockView *UtxoView, qcBlockHash *Bloc
 		},
 	}
 
-	isValid := consensus.IsValidSuperMajorityQuorumCertificate(voteQC, toConsensusValidators(allSnapshotValidators))
+	isValid := consensus.IsValidSuperMajorityQuorumCertificate(voteQC, validators)
 	require.True(testMeta.t, isValid)
 	return voteQC
 }
@@ -2516,14 +2591,15 @@ func _getVoteQC(testMeta *TestMeta, latestBlockView *UtxoView, qcBlockHash *Bloc
 // _getFullRealBlockTemplate is a helper function that generates a block template with a valid TxnConnectStatusByIndexHash
 // and a valid TxnConnectStatusByIndex, a valid vote or timeout QC, does all the required signing by validators,
 // and generates the proper ProposerVotePartialSignature.
-func _getFullRealBlockTemplate(testMeta *TestMeta, latestBlockView *UtxoView, blockHeight uint64, view uint64, seedSignature *bls.Signature, isTimeout bool) BlockTemplate {
-	blockTemplate, err := testMeta.posBlockProducer.createBlockTemplate(latestBlockView, blockHeight, view, seedSignature)
+func _getFullRealBlockTemplate(testMeta *TestMeta, blockHeight uint64, view uint64, seedSignature *bls.Signature, isTimeout bool) BlockTemplate {
+	blockTemplate, err := testMeta.posBlockProducer.createBlockTemplate(
+		testMeta.posMempool.readOnlyLatestBlockView, blockHeight, view, seedSignature)
 	require.NoError(testMeta.t, err)
 	require.NotNil(testMeta.t, blockTemplate)
 	blockTemplate.Header.TxnConnectStatusByIndexHash = HashBitset(blockTemplate.TxnConnectStatusByIndex)
 
 	// Figure out who the leader is supposed to be.
-	leaderPublicKey, leaderPublicKeyBytes := getLeaderForBlockHeightAndView(testMeta, latestBlockView, blockHeight, view)
+	leaderPublicKey, leaderPublicKeyBytes := getLeaderForBlockHeightAndView(testMeta, blockHeight, view)
 	// Get leader voting private key.
 	leaderVotingPrivateKey := testMeta.pubKeyToBLSKeyMap[leaderPublicKey]
 	// Get hash of last block
@@ -2537,7 +2613,7 @@ func _getFullRealBlockTemplate(testMeta *TestMeta, latestBlockView *UtxoView, bl
 	}
 
 	// Create the vote QC.
-	voteQC := _getVoteQC(testMeta, latestBlockView, chainTipHash, qcView)
+	voteQC := _getVoteQC(testMeta, blockHeight, chainTipHash, qcView)
 	if !isTimeout {
 		blockTemplate.Header.ValidatorsVoteQC = voteQC
 	} else {
@@ -2701,13 +2777,14 @@ func NewTestPoSBlockchainWithValidators(t *testing.T) *TestMeta {
 	mempoolBackupIntervalMillis := uint64(30000)
 	mempool := NewPosMempool()
 	require.NoError(t, mempool.Init(
-		params, _testGetDefaultGlobalParams(), latestBlockView, 11, _dbDirSetup(t), false, maxMempoolPosSizeBytes, mempoolBackupIntervalMillis, 1, nil, 1,
+		params, _testGetDefaultGlobalParams(), latestBlockView, 11, _dbDirSetup(t), false, maxMempoolPosSizeBytes,
+		mempoolBackupIntervalMillis, 1, nil, 1, 100,
 	))
 	require.NoError(t, mempool.Start())
 	require.True(t, mempool.IsRunning())
 	priv := _generateRandomBLSPrivateKey(t)
 	m0Pk := NewPublicKey(m0PubBytes)
-	posBlockProducer := NewPosBlockProducer(mempool, params, m0Pk, priv.PublicKey())
+	posBlockProducer := NewPosBlockProducer(mempool, params, m0Pk, priv.PublicKey(), time.Now().UnixNano())
 	// TODO: do we need to update the encoder migration stuff for global params. Probably.
 	testMeta.mempool = nil
 	testMeta.posMempool = mempool

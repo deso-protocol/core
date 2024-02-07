@@ -225,7 +225,7 @@ func (desoBlockProducer *DeSoBlockProducer) _getBlockTemplate(publicKey []byte) 
 			if err != nil {
 				return nil, nil, nil, errors.Wrapf(err, "Error copying UtxoView: ")
 			}
-			_, _, _, _, err = utxoViewCopy._connectTransaction(mempoolTx.Tx, mempoolTx.Hash, int64(mempoolTx.TxSizeBytes),
+			_, _, _, _, err = utxoViewCopy._connectTransaction(mempoolTx.Tx, mempoolTx.Hash,
 				uint32(blockRet.Header.Height), int64(blockRet.Header.TstampNanoSecs), true, false)
 			if err != nil {
 				// Skip failing txns. This should happen super rarely.
@@ -236,7 +236,7 @@ func (desoBlockProducer *DeSoBlockProducer) _getBlockTemplate(publicKey []byte) 
 				continue
 			}
 			// At this point, we know the transaction isn't going to break our view so attach it.
-			_, _, _, _, err = utxoView._connectTransaction(mempoolTx.Tx, mempoolTx.Hash, int64(mempoolTx.TxSizeBytes),
+			_, _, _, _, err = utxoView._connectTransaction(mempoolTx.Tx, mempoolTx.Hash,
 				uint32(blockRet.Header.Height), int64(blockRet.Header.TstampNanoSecs), true, false)
 			if err != nil {
 				// We should never get an error here since we just attached a txn to an indentical
@@ -294,8 +294,8 @@ func (desoBlockProducer *DeSoBlockProducer) _getBlockTemplate(publicKey []byte) 
 	for _, txnInBlock := range blockRet.Txns[1:] {
 		var feeNanos uint64
 		_, _, _, feeNanos, err = feesUtxoView._connectTransaction(
-			txnInBlock, txnInBlock.Hash(), 0, uint32(blockRet.Header.Height),
-			int64(blockRet.Header.TstampNanoSecs), false, false)
+			txnInBlock, txnInBlock.Hash(), uint32(blockRet.Header.Height), blockRet.Header.TstampNanoSecs, false, false,
+		)
 		if err != nil {
 			return nil, nil, nil, fmt.Errorf(
 				"DeSoBlockProducer._getBlockTemplate: Error attaching txn to UtxoView for computed block: %v", err)

@@ -12,23 +12,208 @@ import (
 	"github.com/pkg/errors"
 )
 
+// processHeaderPoS validates and stores an incoming block header to build
+// the PoS version of the header chain. It requires callers to call it with
+// headers in order of increasing block height. If called with an orphan header,
+// it still gracefully handles it by returning early and not storing the header
+// in the block index.
+//
+// The PoS header chain uses a simplified version of the Fast-HotStuff consensus
+// rules. It's used during syncing to build a chain of block headers with the
+// minimum set of validations needed to build a template of what the full PoS
+// blockchain will look like.
+//
+// The PoS header chain uses block integrity checks to perform block validations,
+// and to connect blocks based on their PrevBlockHash. It does not run the commit
+// rule. It does not fully validate QCs or block proposers, or perform any validations
+// that require on-chain state.
+//
+// processHeaderPoS algorithm:
+//  1. Exit early if the header has already been indexed in the block index.
+//  2. Do nothing if the header is an orphan.
+//  3. Validate the header and verify that its parent is also valid.
+//  4. Add the block header to the block index with status
+//     StatusHeaderValidated or StatusHeaderValidateFailed.
+//  5. Exit early if the's view is less than the current header chain's tip.
+//  6. Reorg the best header chain if the header's view is higher than the current tip.
+func (bc *Blockchain) processHeaderPoS(header *MsgDeSoHeader) (
+	_isMainChain bool, _isOrphan bool, _err error,
+) {
+	if !bc.params.IsPoSBlockHeight(header.Height) {
+		return false, false, errors.Errorf(
+			"processHeaderPoS: Header height %d is less than the ProofOfStake2ConsensusCutoverBlockHeight %d",
+			header.Height, bc.params.GetFirstPoSBlockHeight(),
+		)
+	}
+
+	headerHash, err := header.Hash()
+	if err != nil {
+		return false, false, errors.Wrapf(err, "processHeaderPoS: Problem hashing header")
+	}
+
+	// Validate the header and index it in the block index.
+	blockNode, isOrphan, err := bc.validateAndIndexHeaderPoS(header, headerHash)
+	if err != nil {
+		return false, false, errors.Wrapf(err, "processHeaderPoS: Problem validating and indexing header: ")
+	}
+
+	// Exit early if the header is an orphan.
+	if isOrphan {
+		return false, true, nil
+	}
+
+	// Exit early if the header's view is less than the current header chain's tip. The header is not
+	// the new tip for the best header chain.
+	currentTip := bc.headerTip()
+	if header.ProposedInView <= currentTip.Header.ProposedInView {
+		return false, false, nil
+	}
+
+	// The header is not an orphan and has a higher view than the current tip. We reorg the header chain
+	// and apply the incoming header is the new tip.
+	_, blocksToDetach, blocksToAttach := GetReorgBlocks(currentTip, blockNode)
+	bc.bestHeaderChain, bc.bestHeaderChainMap = updateBestChainInMemory(
+		bc.bestHeaderChain,
+		bc.bestHeaderChainMap,
+		blocksToDetach,
+		blocksToAttach,
+	)
+
+	// Success. The header is at the tip of the best header chain.
+	return true, false, nil
+}
+
+func (bc *Blockchain) validateAndIndexHeaderPoS(header *MsgDeSoHeader, headerHash *BlockHash) (
+	_headerBlockNode *BlockNode, _isOrphan bool, _err error,
+) {
+	// Look up the header in the block index to check if it has already been validated and indexed.
+	blockNode, exists := bc.blockIndexByHash[*headerHash]
+
+	// ------------------------------------ Base Cases ----------------------------------- //
+
+	// The header is already validated. Exit early.
+	if exists && blockNode.IsHeaderValidated() {
+		return blockNode, false, nil
+	}
+
+	// The header has already failed validations. Exit early.
+	if exists && blockNode.IsHeaderValidateFailed() {
+		return nil, false, errors.New("validateAndIndexHeaderPoS: Header already failed validation")
+	}
+
+	// The header has an invalid PrevBlockHash field. Exit early.
+	if header.PrevBlockHash == nil {
+		return nil, false, errors.New("validateAndIndexHeaderPoS: PrevBlockHash is nil")
+	}
+
+	// The header is an orphan. No need to store it in the block index. Exit early.
+	parentBlockNode, parentBlockNodeExists := bc.blockIndexByHash[*header.PrevBlockHash]
+	if !parentBlockNodeExists {
+		return nil, true, nil
+	}
+
+	// Sanity-check that the parent block is an ancestor of the current block.
+	if parentBlockNode.Height+1 != blockNode.Height {
+		return nil, false, errors.New("validateAndIndexHeaderPoS: Parent header has " +
+			"greater or equal height compared to the current header.")
+	}
+
+	// ---------------------------------- Recursive Case ---------------------------------- //
+
+	// Recursively call validateAndIndexHeaderPoS on the header's ancestors. It's possible for
+	// headers to be added to the block index out of order by processBlockPoS. In those cases,
+	// it's possible for ancestors of this header to exist in the block index but not have their
+	// header validation statuses set yet. We set them here recursively.
+	//
+	// This is safe and efficient as long as validateAndIndexHeaderPoS is only called on non-orphan
+	// headers. This guarantees that the recursive case for each header can only be hit once.
+	parentBlockNode, isParentAnOrphan, err := bc.validateAndIndexHeaderPoS(parentBlockNode.Header, header.PrevBlockHash)
+	if err != nil {
+		return nil, false, err
+	}
+
+	// Gracefully handle the case where the parent is still an orphan. This should never happen.
+	if isParentAnOrphan {
+		return nil, true, nil
+	}
+	// Verify that the parent has not previously failed validation. If it has, then the incoming header
+	// is also not valid.
+	if parentBlockNode.IsHeaderValidateFailed() {
+		return nil, false, bc.storeValidateFailedHeaderInBlockIndexWithWrapperError(
+			header, errors.New("validateAndIndexHeaderPoS: Parent header failed validations"),
+		)
+	}
+
+	// Verify that the header is properly formed.
+	if err := bc.isValidBlockHeaderPoS(header); err != nil {
+		return nil, false, bc.storeValidateFailedHeaderInBlockIndexWithWrapperError(
+			header, errors.New("validateAndIndexHeaderPoS: Header failed validations"),
+		)
+	}
+
+	// Validate the header's random seed signature.
+	isValidRandomSeedSignature, err := bc.hasValidProposerRandomSeedSignaturePoS(header)
+	if err != nil {
+		return nil, false, errors.Wrap(err, "validateAndIndexHeaderPoS: Problem validating random seed signature")
+	}
+	if !isValidRandomSeedSignature {
+		return nil, false, bc.storeValidateFailedHeaderInBlockIndexWithWrapperError(
+			header, errors.New("validateAndIndexHeaderPoS: Header has invalid random seed signature"),
+		)
+	}
+
+	// Store it as HeaderValidated now that it has passed all validations.
+	blockNode, err = bc.storeValidatedHeaderInBlockIndex(header)
+	if err != nil {
+		return nil, false, errors.Wrapf(err, "validateAndIndexHeaderPoS: Problem adding header to block index: ")
+	}
+
+	// Happy path. The header is not an orphan and is valid.
+	return blockNode, false, nil
+}
+
 // ProcessBlockPoS simply acquires the chain lock and calls processBlockPoS.
 func (bc *Blockchain) ProcessBlockPoS(block *MsgDeSoBlock, currentView uint64, verifySignatures bool) (
-	_success bool, _isOrphan bool, _missingBlockHashes []*BlockHash, _err error) {
+	_success bool,
+	_isOrphan bool,
+	_missingBlockHashes []*BlockHash,
+	_err error,
+) {
+	// Grab the chain lock
 	bc.ChainLock.Lock()
 	defer bc.ChainLock.Unlock()
+
+	// Perform a simple nil-check. If the block is nil then we return an error. Nothing we can do here.
+	if block == nil {
+		return false, false, nil, fmt.Errorf("ProcessBlockPoS: Block is nil")
+	}
+
 	return bc.processBlockPoS(block, currentView, verifySignatures)
 }
 
-// processBlockPoS runs the Fast-Hotstuff block connect and commit rule as follows:
+// processBlockPoS runs the Fast-HotStuff block connect and commit rule as follows:
 //  1. Determine if we're missing the parent block of this block.
 //     If so, return the hash of the missing block and add this block to the orphans list.
 //  2. Validate the incoming block, its header, its block height, the leader, and its QCs (vote or timeout)
 //  3. Store the block in the block index and save to DB.
-//  4. try to apply the incoming block as the tip (performing reorgs as necessary). If it can't be applied, exit here.
-//  5. Run the commit rule - If applicable, flushes the incoming block's grandparent to the DB
+//  4. Process the block's header. This may reorg the header chain and apply the block as the new header chain tip.
+//  5. Try to apply the incoming block as the tip (performing reorgs as necessary). If it can't be applied, exit here.
+//  6. Run the commit rule - If applicable, flushes the incoming block's grandparent to the DB
+//  7. Notify listeners via the EventManager of which blocks have been removed and added.
 func (bc *Blockchain) processBlockPoS(block *MsgDeSoBlock, currentView uint64, verifySignatures bool) (
-	_success bool, _isOrphan bool, _missingBlockHashes []*BlockHash, _err error) {
+	_success bool,
+	_isOrphan bool,
+	_missingBlockHashes []*BlockHash,
+	_err error,
+) {
+	// If the incoming block's height is under the PoS cutover fork height, then we can't process it. Exit early.
+	if !bc.params.IsPoSBlockHeight(block.Header.Height) {
+		return false, false, nil, errors.Errorf(
+			"processHeaderPoS: Header height %d is less than the ProofOfStake2ConsensusCutoverBlockHeight %d",
+			block.Header.Height, bc.params.GetFirstPoSBlockHeight(),
+		)
+	}
+
 	// If we can't hash the block, we can never store in the block index and we should throw it out immediately.
 	if _, err := block.Hash(); err != nil {
 		return false, false, nil, errors.Wrapf(err, "processBlockPoS: Problem hashing block")
@@ -85,16 +270,28 @@ func (bc *Blockchain) processBlockPoS(block *MsgDeSoBlock, currentView uint64, v
 			"processBlockPoS: Block not validated after performing all validations.")
 	}
 
-	// 4. Try to apply the incoming block as the new tip. This function will
+	// 4. Process the block's header and update the header chain. We call processHeaderPoS
+	// here after verifying that the block is not an orphan and has passed all validations,
+	// but directly before applying the block as the new tip. Any failure when validating the
+	// header and applying it to the header chain will result in the two chains being out of
+	// sync. The header chain is less critical and mutations to it are reversible. So we attempt
+	// to mutate it first before attempting to mutate the block chain.
+	if _, _, err = bc.processHeaderPoS(block.Header); err != nil {
+		return false, false, nil, errors.Wrap(err, "processBlockPoS: Problem processing header")
+	}
+
+	// 5. Try to apply the incoming block as the new tip. This function will
 	// first perform any required reorgs and then determine if the incoming block
 	// extends the chain tip. If it does, it will apply the block to the best chain
 	// and appliedNewTip will be true and we can continue to running the commit rule.
-	appliedNewTip, err := bc.tryApplyNewTip(blockNode, currentView, lineageFromCommittedTip)
+	appliedNewTip, connectedBlockHashes, disconnectedBlockHashes, err := bc.tryApplyNewTip(
+		blockNode, currentView, lineageFromCommittedTip,
+	)
 	if err != nil {
 		return false, false, nil, errors.Wrap(err, "processBlockPoS: Problem applying new tip: ")
 	}
 
-	// 5. Commit grandparent if possible. Only need to do this if we applied a new tip.
+	// 6. Commit grandparent if possible. Only need to do this if we applied a new tip.
 	if appliedNewTip {
 		if err = bc.runCommitRuleOnBestChain(); err != nil {
 			return false, false, nil, errors.Wrap(err,
@@ -102,8 +299,26 @@ func (bc *Blockchain) processBlockPoS(block *MsgDeSoBlock, currentView uint64, v
 		}
 	}
 
+	// 7. Notify listeners via the EventManager of which blocks have been removed and added.
+	for ii := len(disconnectedBlockHashes) - 1; ii >= 0; ii-- {
+		disconnectedBlock := bc.GetBlock(&disconnectedBlockHashes[ii])
+		if disconnectedBlock == nil {
+			glog.Errorf("processBlockPoS: Problem getting disconnected block %v", disconnectedBlockHashes[ii])
+			continue
+		}
+		bc.eventManager.blockDisconnected(&BlockEvent{Block: disconnectedBlock})
+	}
+	for ii := 0; ii < len(connectedBlockHashes); ii++ {
+		connectedBlock := bc.GetBlock(&connectedBlockHashes[ii])
+		if connectedBlock == nil {
+			glog.Errorf("processBlockPoS: Problem getting connected block %v", connectedBlockHashes[ii])
+			continue
+		}
+		bc.eventManager.blockConnected(&BlockEvent{Block: connectedBlock})
+	}
+
 	// Now that we've processed this block, we check for any blocks that were previously
-	// stored as orphans, which are children of this block. We can  process them now.
+	// stored as orphans, which are children of this block. We can process them now.
 	blockNodesAtNextHeight := bc.blockIndexByHeight[uint64(blockNode.Height)+1]
 	for _, blockNodeAtNextHeight := range blockNodesAtNextHeight {
 		if blockNodeAtNextHeight.Header.PrevBlockHash.IsEqual(blockNode.Hash) &&
@@ -127,6 +342,7 @@ func (bc *Blockchain) processBlockPoS(block *MsgDeSoBlock, currentView uint64, v
 			}
 		}
 	}
+
 	// Returns whether a new tip was applied, whether the block is an orphan, and any missing blocks, and an error.
 	return appliedNewTip, false, nil, nil
 }
@@ -435,7 +651,7 @@ func (bc *Blockchain) validateAndIndexBlockPoS(block *MsgDeSoBlock) (*BlockNode,
 	}
 
 	// Validate the block's random seed signature
-	isValidRandomSeedSignature, err := bc.hasValidProposerRandomSeedSignaturePoS(block)
+	isValidRandomSeedSignature, err := bc.hasValidProposerRandomSeedSignaturePoS(block.Header)
 	if err != nil {
 		var innerErr error
 		blockNode, innerErr = bc.storeBlockInBlockIndex(block)
@@ -530,23 +746,43 @@ func (bc *Blockchain) validatePreviouslyIndexedBlockPoS(blockHash *BlockHash) (*
 	return bc.validateAndIndexBlockPoS(block)
 }
 
-// isValidBlockPoS performs all basic validations on a block as it relates to
-// the Blockchain struct. Any error resulting from this function implies that
-// the block is invalid.
+// isValidBlockPoS performs all basic block integrity checks. Any error
+// resulting from this function implies that the block is invalid.
 func (bc *Blockchain) isValidBlockPoS(block *MsgDeSoBlock) error {
 	// Surface Level validation of the block
 	if err := bc.isProperlyFormedBlockPoS(block); err != nil {
 		return err
 	}
-	if err := bc.isBlockTimestampValidRelativeToParentPoS(block); err != nil {
+	if err := bc.isBlockTimestampValidRelativeToParentPoS(block.Header); err != nil {
 		return err
 	}
-	// Validate Block Height
-	if err := bc.hasValidBlockHeightPoS(block); err != nil {
+	// Validate block height
+	if err := bc.hasValidBlockHeightPoS(block.Header); err != nil {
 		return err
 	}
-	// Validate View
-	if err := bc.hasValidBlockViewPoS(block); err != nil {
+	// Validate view
+	if err := bc.hasValidBlockViewPoS(block.Header); err != nil {
+		return err
+	}
+	return nil
+}
+
+// isValidBlockHeaderPoS performs all basic block header integrity checks. Any
+// error resulting from this function implies that the block header is invalid.
+func (bc *Blockchain) isValidBlockHeaderPoS(header *MsgDeSoHeader) error {
+	// Surface Level validation of the block header
+	if err := bc.isProperlyFormedBlockHeaderPoS(header); err != nil {
+		return err
+	}
+	if err := bc.isBlockTimestampValidRelativeToParentPoS(header); err != nil {
+		return err
+	}
+	// Validate block height
+	if err := bc.hasValidBlockHeightPoS(header); err != nil {
+		return err
+	}
+	// Validate view
+	if err := bc.hasValidBlockViewPoS(header); err != nil {
 		return err
 	}
 	return nil
@@ -554,69 +790,44 @@ func (bc *Blockchain) isValidBlockPoS(block *MsgDeSoBlock) error {
 
 // isBlockTimestampValidRelativeToParentPoS validates that the block's timestamp is
 // greater than its parent's timestamp.
-func (bc *Blockchain) isBlockTimestampValidRelativeToParentPoS(block *MsgDeSoBlock) error {
+func (bc *Blockchain) isBlockTimestampValidRelativeToParentPoS(header *MsgDeSoHeader) error {
 	// Validate that the timestamp is not less than its parent.
-	parentBlock, exists := bc.blockIndexByHash[*block.Header.PrevBlockHash]
+	parentBlockNode, exists := bc.blockIndexByHash[*header.PrevBlockHash]
 	if !exists {
 		// Note: this should never happen as we only call this function after
 		// we've validated that all ancestors exist in the block index.
 		return RuleErrorMissingParentBlock
 	}
-	if block.Header.TstampNanoSecs < parentBlock.Header.TstampNanoSecs {
+	if header.TstampNanoSecs < parentBlockNode.Header.TstampNanoSecs {
 		return RuleErrorPoSBlockTstampNanoSecsTooOld
 	}
 	return nil
 }
 
-// isProperlyFormedBlockPoS validates the block at a surface level. It checks
-// that the timestamp is valid, that the version of the header is valid,
-// and other general integrity checks (such as not malformed).
+// isProperlyFormedBlockPoS validates the block at a surface level and makes
+// sure that all fields are populated in a valid manner. It does not verify
+// signatures nor validate the blockchain state resulting from the block.
 func (bc *Blockchain) isProperlyFormedBlockPoS(block *MsgDeSoBlock) error {
-	// First make sure we have a non-nil header
-	if block.Header == nil {
-		return RuleErrorNilBlockHeader
+	// First, make sure we have a non-nil block
+	if block == nil {
+		return RuleErrorNilBlock
 	}
 
-	// Make sure we have a prevBlockHash
-	if block.Header.PrevBlockHash == nil {
-		return RuleErrorNilPrevBlockHash
+	// Make sure the header is properly formed by itself
+	if err := bc.isProperlyFormedBlockHeaderPoS(block.Header); err != nil {
+		return err
 	}
 
-	// Timestamp validation
-	// First make sure we have a non-nil header
-	if block.Header == nil {
-		return RuleErrorNilBlockHeader
-	}
+	// If the header is properly formed, we can check the rest of the block.
 
-	// Make sure we have a prevBlockHash
-	if block.Header.PrevBlockHash == nil {
-		return RuleErrorNilPrevBlockHash
-	}
-
-	// Timestamp validation
-	// TODO: Add support for putting the drift into global params.
-	if block.Header.TstampNanoSecs > time.Now().UnixNano()+bc.params.DefaultBlockTimestampDriftNanoSecs {
-		return RuleErrorPoSBlockTstampNanoSecsInFuture
-	}
-
-	// Header validation
-	if block.Header.Version != HeaderVersion2 {
-		return RuleErrorInvalidPoSBlockHeaderVersion
-	}
-
-	// Malformed block checks
 	// All blocks must have at least one txn
 	if len(block.Txns) == 0 {
 		return RuleErrorBlockWithNoTxns
 	}
-	// Must have non-nil TxnConnectStatusByIndex
+
+	// Make sure TxnConnectStatusByIndex is non-nil
 	if block.TxnConnectStatusByIndex == nil {
 		return RuleErrorNilTxnConnectStatusByIndex
-	}
-
-	// Must have TxnConnectStatusByIndexHash
-	if block.Header.TxnConnectStatusByIndexHash == nil {
-		return RuleErrorNilTxnConnectStatusByIndexHash
 	}
 
 	// Make sure the TxnConnectStatusByIndex matches the TxnConnectStatusByIndexHash
@@ -624,9 +835,60 @@ func (bc *Blockchain) isProperlyFormedBlockPoS(block *MsgDeSoBlock) error {
 		return RuleErrorTxnConnectStatusByIndexHashMismatch
 	}
 
+	// Make sure that the first txn in each block is a block reward txn.
+	if block.Txns[0].TxnMeta.GetTxnType() != TxnTypeBlockReward {
+		return RuleErrorBlockDoesNotStartWithRewardTxn
+	}
+
+	// We always need to check the merkle root.
+	if block.Header.TransactionMerkleRoot == nil {
+		return RuleErrorNilMerkleRoot
+	}
+	computedMerkleRoot, _, err := ComputeMerkleRoot(block.Txns)
+	if err != nil {
+		return errors.Wrapf(err, "isProperlyFormedBlockPoS: Problem computing merkle root")
+	}
+	if !block.Header.TransactionMerkleRoot.IsEqual(computedMerkleRoot) {
+		return RuleErrorInvalidMerkleRoot
+	}
+
+	return nil
+}
+
+// isProperlyFormedBlockHeaderPoS validates the block header based on the header's
+// contents alone, and makes sure that all fields are populated in a valid manner.
+// It does not verify signatures in the header, nor cross-validate the block with
+// past blocks in the block index.
+func (bc *Blockchain) isProperlyFormedBlockHeaderPoS(header *MsgDeSoHeader) error {
+	// First make sure we have a non-nil header
+	if header == nil {
+		return RuleErrorNilBlockHeader
+	}
+
+	// Make sure we have a prevBlockHash
+	if header.PrevBlockHash == nil {
+		return RuleErrorNilPrevBlockHash
+	}
+
+	// Timestamp validation
+	// TODO: Add support for putting the drift into global params.
+	if header.TstampNanoSecs > time.Now().UnixNano()+bc.params.DefaultBlockTimestampDriftNanoSecs {
+		return RuleErrorPoSBlockTstampNanoSecsInFuture
+	}
+
+	// Header validation
+	if header.Version != HeaderVersion2 {
+		return RuleErrorInvalidPoSBlockHeaderVersion
+	}
+
+	// Must have TxnConnectStatusByIndexHash
+	if header.TxnConnectStatusByIndexHash == nil {
+		return RuleErrorNilTxnConnectStatusByIndexHash
+	}
+
 	// Require header to have either vote or timeout QC
-	isTimeoutQCEmpty := block.Header.ValidatorsTimeoutAggregateQC.isEmpty()
-	isVoteQCEmpty := block.Header.ValidatorsVoteQC.isEmpty()
+	isTimeoutQCEmpty := header.ValidatorsTimeoutAggregateQC.isEmpty()
+	isVoteQCEmpty := header.ValidatorsVoteQC.isEmpty()
 	if isTimeoutQCEmpty && isVoteQCEmpty {
 		return RuleErrorNoTimeoutOrVoteQC
 	}
@@ -635,83 +897,62 @@ func (bc *Blockchain) isProperlyFormedBlockPoS(block *MsgDeSoBlock) error {
 		return RuleErrorBothTimeoutAndVoteQC
 	}
 
-	if block.Txns[0].TxnMeta.GetTxnType() != TxnTypeBlockReward {
-		return RuleErrorBlockDoesNotStartWithRewardTxn
-	}
-
-	if block.Header.ProposerVotingPublicKey.IsEmpty() {
+	if header.ProposerVotingPublicKey.IsEmpty() {
 		return RuleErrorInvalidProposerVotingPublicKey
 	}
 
-	if block.Header.ProposerPublicKey == nil || block.Header.ProposerPublicKey.IsZeroPublicKey() {
+	if header.ProposerPublicKey == nil || header.ProposerPublicKey.IsZeroPublicKey() {
 		return RuleErrorInvalidProposerPublicKey
 	}
 
-	if block.Header.ProposerRandomSeedSignature.IsEmpty() {
+	if header.ProposerRandomSeedSignature.IsEmpty() {
 		return RuleErrorInvalidProposerRandomSeedSignature
 	}
 
-	merkleRoot := block.Header.TransactionMerkleRoot
-
-	// We always need to check the merkle root.
-	if merkleRoot == nil {
+	if header.TransactionMerkleRoot == nil {
 		return RuleErrorNilMerkleRoot
-	}
-	computedMerkleRoot, _, err := ComputeMerkleRoot(block.Txns)
-	if err != nil {
-		return errors.Wrapf(err, "isProperlyFormedBlockPoS: Problem computing merkle root")
-	}
-	if !merkleRoot.IsEqual(computedMerkleRoot) {
-		return RuleErrorInvalidMerkleRoot
 	}
 
 	// If a block has a vote QC, then the Header's proposed in view must be exactly one
 	// greater than the QC's proposed in view.
-	if !isVoteQCEmpty && block.Header.ProposedInView != block.Header.ValidatorsVoteQC.ProposedInView+1 {
+	if !isVoteQCEmpty && header.ProposedInView != header.ValidatorsVoteQC.ProposedInView+1 {
 		return RuleErrorPoSVoteBlockViewNotOneGreaterThanValidatorsVoteQCView
 	}
 
 	// If a block has a timeout QC, then the Header's proposed in view be must exactly one
 	// greater than the QC's timed out view.
-	if !isTimeoutQCEmpty && block.Header.ProposedInView != block.Header.ValidatorsTimeoutAggregateQC.TimedOutView+1 {
+	if !isTimeoutQCEmpty && header.ProposedInView != header.ValidatorsTimeoutAggregateQC.TimedOutView+1 {
 		return RuleErrorPoSTimeoutBlockViewNotOneGreaterThanValidatorsTimeoutQCView
 	}
+
 	return nil
 }
 
-// hasValidBlockHeightPoS validates the block height for a given block. First,
+// hasValidBlockHeightPoS validates the block height for a given block header. First,
 // it checks that we've passed the PoS cutover fork height. Then it checks
 // that this block height is exactly one greater than its parent's block height.
-func (bc *Blockchain) hasValidBlockHeightPoS(block *MsgDeSoBlock) error {
-	blockHeight := block.Header.Height
-	if blockHeight < uint64(bc.params.ForkHeights.ProofOfStake2ConsensusCutoverBlockHeight) {
+func (bc *Blockchain) hasValidBlockHeightPoS(header *MsgDeSoHeader) error {
+	blockHeight := header.Height
+	if !bc.params.IsPoSBlockHeight(blockHeight) {
 		return RuleErrorPoSBlockBeforeCutoverHeight
 	}
 	// Validate that the block height is exactly one greater than its parent.
-	parentBlock, exists := bc.blockIndexByHash[*block.Header.PrevBlockHash]
+	parentBlockNode, exists := bc.blockIndexByHash[*header.PrevBlockHash]
 	if !exists {
 		// Note: this should never happen as we only call this function after
 		// we've validated that all ancestors exist in the block index.
 		return RuleErrorMissingParentBlock
 	}
-	if block.Header.Height != parentBlock.Header.Height+1 {
+	if header.Height != parentBlockNode.Header.Height+1 {
 		return RuleErrorInvalidPoSBlockHeight
 	}
 	return nil
 }
 
-// hasValidBlockViewPoS validates the view for a given block. First, it checks that
-// the view is greater than the latest committed block view. If not,
-// we return an error indicating that we'll never accept this block. Next,
-// it checks that the view is less than or equal to its parent.
-// If not, we return an error indicating that we'll want to add this block as an
-// orphan. Then it will check if that the view is exactly one greater than the
-// latest uncommitted block if we have a regular vote QC. If this block has a
-// timeout QC, it will check that the view is at least greater than the latest
-// uncommitted block's view + 1.
-func (bc *Blockchain) hasValidBlockViewPoS(block *MsgDeSoBlock) error {
+// hasValidBlockViewPoS validates the view for a given block header
+func (bc *Blockchain) hasValidBlockViewPoS(header *MsgDeSoHeader) error {
 	// Validate that the view is greater than the latest uncommitted block.
-	parentBlock, exists := bc.blockIndexByHash[*block.Header.PrevBlockHash]
+	parentBlockNode, exists := bc.blockIndexByHash[*header.PrevBlockHash]
 	if !exists {
 		// Note: this should never happen as we only call this function after
 		// we've validated that all ancestors exist in the block index.
@@ -719,41 +960,41 @@ func (bc *Blockchain) hasValidBlockViewPoS(block *MsgDeSoBlock) error {
 	}
 	// If the parent block was a PoW block, we can't validate this block's view
 	// in comparison.
-	if !blockNodeProofOfStakeCutoverMigrationTriggered(parentBlock.Height) {
+	if !blockNodeProofOfStakeCutoverMigrationTriggered(parentBlockNode.Height) {
 		return nil
 	}
 	// If our current block has a vote QC, then we need to validate that the
 	// view is exactly one greater than the latest uncommitted block.
-	if block.Header.ValidatorsTimeoutAggregateQC.isEmpty() {
-		if block.Header.ProposedInView != parentBlock.Header.ProposedInView+1 {
+	if header.ValidatorsTimeoutAggregateQC.isEmpty() {
+		if header.ProposedInView != parentBlockNode.Header.ProposedInView+1 {
 			return RuleErrorPoSVoteBlockViewNotOneGreaterThanParent
 		}
 	} else {
 		// If our current block has a timeout QC, then we need to validate that the
 		// view is strictly greater than the latest uncommitted block's view.
-		if block.Header.ProposedInView <= parentBlock.Header.ProposedInView {
+		if header.ProposedInView <= parentBlockNode.Header.ProposedInView {
 			return RuleErrorPoSTimeoutBlockViewNotGreaterThanParent
 		}
 	}
 	return nil
 }
 
-func (bc *Blockchain) hasValidProposerRandomSeedSignaturePoS(block *MsgDeSoBlock) (bool, error) {
+func (bc *Blockchain) hasValidProposerRandomSeedSignaturePoS(header *MsgDeSoHeader) (bool, error) {
 	// Validate that the leader proposed a valid random seed signature.
-	parentBlock, exists := bc.blockIndexByHash[*block.Header.PrevBlockHash]
+	parentBlock, exists := bc.blockIndexByHash[*header.PrevBlockHash]
 	if !exists {
 		// Note: this should never happen as we only call this function after
 		// we've validated that all ancestors exist in the block index.
 		return false, RuleErrorMissingParentBlock
 	}
 
-	prevRandomSeedHash, err := hashRandomSeedSignature(parentBlock.Header.ProposerRandomSeedSignature)
+	prevRandomSeedHash, err := HashRandomSeedSignature(parentBlock.Header.ProposerRandomSeedSignature)
 	if err != nil {
 		return false, errors.Wrapf(err,
 			"hasValidProposerRandomSeedSignaturePoS: Problem converting prev random seed hash to RandomSeedHash")
 	}
 	isVerified, err := verifySignatureOnRandomSeedHash(
-		block.Header.ProposerVotingPublicKey, block.Header.ProposerRandomSeedSignature, prevRandomSeedHash)
+		header.ProposerVotingPublicKey, header.ProposerRandomSeedSignature, prevRandomSeedHash)
 	if err != nil {
 		return false, errors.Wrapf(err,
 			"hasValidProposerRandomSeedSignaturePoS: Problem verifying proposer random seed signature")
@@ -874,19 +1115,47 @@ func (bav *UtxoView) hasValidBlockProposerPoS(block *MsgDeSoBlock) (_isValidBloc
 }
 
 // isValidPoSQuorumCertificate validates that the QC of this block is valid, meaning a super majority
-// of the validator set has voted (or timed out). Assumes ValidatorEntry list is sorted.
+// of the validator set has voted (or timed out). It special cases the first block after the PoS cutover
+// by overriding the validator set used to validate the high QC in the first block after the PoS cutover.
 func (bc *Blockchain) isValidPoSQuorumCertificate(block *MsgDeSoBlock, validatorSet []*ValidatorEntry) error {
-	validators := toConsensusValidators(validatorSet)
-	if !block.Header.ValidatorsTimeoutAggregateQC.isEmpty() {
-		if !consensus.IsValidSuperMajorityAggregateQuorumCertificate(
-			block.Header.ValidatorsTimeoutAggregateQC, validators) {
+	voteQCValidators := toConsensusValidators(validatorSet)
+	aggregateQCValidators := voteQCValidators
+
+	voteQC := block.Header.ValidatorsVoteQC
+	timeoutAggregateQC := block.Header.ValidatorsTimeoutAggregateQC
+
+	// If the block is the first block after the PoS cutover and has a timeout aggregate QC, then the
+	// highQC must be a synthetic QC. We need to override the validator set used to validate the high QC.
+	if block.Header.Height == bc.params.GetFirstPoSBlockHeight() && !timeoutAggregateQC.isEmpty() {
+		genesisQC, err := bc.GetProofOfStakeGenesisQuorumCertificate()
+		if err != nil {
+			return errors.Wrapf(err, "isValidPoSQuorumCertificate: Problem getting PoS genesis QC")
+		}
+
+		// Only override the validator set if the high QC is the genesis QC. Otherwise, we should use the
+		// true validator set at the current epoch.
+		if consensus.IsEqualQC(genesisQC, timeoutAggregateQC.GetHighQC()) {
+			posCutoverValidator, err := BuildProofOfStakeCutoverValidator()
+			if err != nil {
+				return errors.Wrapf(err, "isValidPoSQuorumCertificate: Problem building PoS cutover validator")
+			}
+			voteQCValidators = []consensus.Validator{posCutoverValidator}
+		}
+	}
+
+	// Validate the timeout aggregate QC.
+	if !timeoutAggregateQC.isEmpty() {
+		if !consensus.IsValidSuperMajorityAggregateQuorumCertificate(timeoutAggregateQC, aggregateQCValidators, voteQCValidators) {
 			return RuleErrorInvalidTimeoutQC
 		}
 		return nil
 	}
-	if !consensus.IsValidSuperMajorityQuorumCertificate(block.Header.ValidatorsVoteQC, validators) {
+
+	// Validate the vote QC.
+	if !consensus.IsValidSuperMajorityQuorumCertificate(voteQC, voteQCValidators) {
 		return RuleErrorInvalidVoteQC
 	}
+
 	return nil
 }
 
@@ -901,7 +1170,7 @@ func (bc *Blockchain) getLineageFromCommittedTip(block *MsgDeSoBlock) ([]*BlockN
 	currentHash := block.Header.PrevBlockHash.NewBlockHash()
 	ancestors := []*BlockNode{}
 	prevHeight := block.Header.Height
-	prevView := block.Header.ProposedInView
+	prevView := block.Header.GetView()
 	for {
 		currentBlock, exists := bc.blockIndexByHash[*currentHash]
 		if !exists {
@@ -916,16 +1185,16 @@ func (bc *Blockchain) getLineageFromCommittedTip(block *MsgDeSoBlock) ([]*BlockN
 		if currentBlock.IsValidateFailed() {
 			return nil, RuleErrorAncestorBlockValidationFailed
 		}
-		if currentBlock.Header.ProposedInView >= prevView {
-			return nil, RuleErrorParentBlockHasViewGreaterOrEqualToChildBlock
-		}
 		if uint64(currentBlock.Header.Height)+1 != prevHeight {
 			return nil, RuleErrorParentBlockHeightNotSequentialWithChildBlockHeight
+		}
+		if currentBlock.Header.GetView() >= prevView {
+			return nil, RuleErrorParentBlockHasViewGreaterOrEqualToChildBlock
 		}
 		ancestors = append(ancestors, currentBlock)
 		currentHash = currentBlock.Header.PrevBlockHash
 		prevHeight = currentBlock.Header.Height
-		prevView = currentBlock.Header.ProposedInView
+		prevView = currentBlock.Header.GetView()
 	}
 	return collections.Reverse(ancestors), nil
 }
@@ -949,6 +1218,59 @@ func (bc *Blockchain) getOrCreateBlockNodeFromBlockIndex(block *MsgDeSoBlock) (*
 	newBlockNode := NewBlockNode(prevBlockNode, hash, uint32(block.Header.Height), nil, nil, block.Header, StatusNone)
 	bc.addNewBlockNodeToBlockIndex(newBlockNode)
 	return newBlockNode, nil
+}
+
+func (bc *Blockchain) storeValidatedHeaderInBlockIndex(header *MsgDeSoHeader) (*BlockNode, error) {
+	blockNode, err := bc.getOrCreateBlockNodeFromBlockIndex(&MsgDeSoBlock{Header: header})
+	if err != nil {
+		return nil, errors.Wrapf(err, "storeValidatedHeaderInBlockIndex: Problem getting or creating block node")
+	}
+	// If the block is validated, then this is a no-op.
+	if blockNode.IsHeaderValidated() {
+		return blockNode, nil
+	}
+	// We should throw an error if the BlockNode has failed header validation
+	if blockNode.IsHeaderValidateFailed() {
+		return nil, errors.New(
+			"storeValidatedHeaderInBlockIndex: can't set block node to header validated after it's already been set to validate failed",
+		)
+	}
+	blockNode.Status |= StatusHeaderValidated
+	// If the DB update fails, then we should return an error.
+	if err = bc.upsertBlockNodeToDB(blockNode); err != nil {
+		return nil, errors.Wrapf(err, "storeValidatedHeaderInBlockIndex: Problem upserting block node to DB")
+	}
+	return blockNode, nil
+}
+
+func (bc *Blockchain) storeValidateFailedHeaderInBlockIndexWithWrapperError(header *MsgDeSoHeader, wrapperError error) error {
+	if _, innerErr := bc.storeValidateFailedHeaderInBlockIndex(header); innerErr != nil {
+		return errors.Wrapf(innerErr, "%v", wrapperError)
+	}
+	return wrapperError
+}
+
+func (bc *Blockchain) storeValidateFailedHeaderInBlockIndex(header *MsgDeSoHeader) (*BlockNode, error) {
+	blockNode, err := bc.getOrCreateBlockNodeFromBlockIndex(&MsgDeSoBlock{Header: header})
+	if err != nil {
+		return nil, errors.Wrapf(err, "storeValidateFailedHeaderInBlockIndex: Problem getting or creating block node")
+	}
+	// If the block has the header validate failed status, then this is a no-op.
+	if blockNode.IsHeaderValidateFailed() {
+		return blockNode, nil
+	}
+	// We should throw an error if the BlockNode has already been validated.
+	if blockNode.IsHeaderValidated() {
+		return nil, errors.New(
+			"storeValidatedHeaderInBlockIndex: can't set block node to header validate failed after it's already been set to validated",
+		)
+	}
+	blockNode.Status |= StatusHeaderValidated
+	// If the DB update fails, then we should return an error.
+	if err = bc.upsertBlockNodeToDB(blockNode); err != nil {
+		return nil, errors.Wrapf(err, "storeValidateFailedHeaderInBlockIndex: Problem upserting block node to DB")
+	}
+	return blockNode, nil
 }
 
 // storeBlockInBlockIndex upserts the blocks into the in-memory block index and updates its status to
@@ -1051,10 +1373,8 @@ func (bc *Blockchain) upsertBlockAndBlockNodeToDB(block *MsgDeSoBlock, blockNode
 		// Store the new block's node in our node index in the db under the
 		//   <height uin32, blockHash BlockHash> -> <node info>
 		// index.
-		if innerErr := PutHeightHashToNodeInfoWithTxn(
-			txn, bc.snapshot, blockNode, false /*bitcoinNodes*/, bc.eventManager); innerErr != nil {
-			return errors.Wrapf(innerErr,
-				"upsertBlockAndBlockNodeToDB: Problem calling PutHeightHashToNodeInfo before validation")
+		if innerErr := bc.upsertBlockNodeToDBWithTxn(txn, blockNode); innerErr != nil {
+			return errors.Wrapf(innerErr, "upsertBlockAndBlockNodeToDB: ")
 		}
 
 		// Notice we don't call PutBestHash or PutUtxoOperationsForBlockWithTxn because we're not
@@ -1068,50 +1388,78 @@ func (bc *Blockchain) upsertBlockAndBlockNodeToDB(block *MsgDeSoBlock, blockNode
 	return nil
 }
 
+// upsertBlockNodeToDB is a simpler wrapper that calls upsertBlockNodeToDBWithTxn with a new transaction.
+func (bc *Blockchain) upsertBlockNodeToDB(blockNode *BlockNode) error {
+	return bc.db.Update(func(txn *badger.Txn) error {
+		return bc.upsertBlockNodeToDBWithTxn(txn, blockNode)
+	})
+}
+
+// upsertBlockNodeToDBWithTxn writes the BlockNode to the blockIndexByHash in badger.
+func (bc *Blockchain) upsertBlockNodeToDBWithTxn(txn *badger.Txn, blockNode *BlockNode) error {
+	// Store the new block's node in our node index in the db under the
+	//   <height uin32, blockHash BlockHash> -> <node info>
+	// index.
+	err := PutHeightHashToNodeInfoWithTxn(txn, bc.snapshot, blockNode, false /*bitcoinNodes*/, bc.eventManager)
+	if err != nil {
+		return errors.Wrapf(err,
+			"upsertBlockNodeToDBWithTxn: Problem calling PutHeightHashToNodeInfo before validation")
+	}
+
+	return nil
+}
+
 // tryApplyNewTip attempts to apply the new tip to the best chain. It will do the following:
 //  1. Check if we should perform a reorg. If so, it will handle the reorg. If reorging causes an error,
 //     return false and error.
 //  2. Check if the incoming block extends the chain tip after reorg. If not, return false and nil
 //  3. If the incoming block extends the chain tip, we can apply it by calling addBlockToBestChain. Return true and nil.
 func (bc *Blockchain) tryApplyNewTip(blockNode *BlockNode, currentView uint64, lineageFromCommittedTip []*BlockNode) (
-	_appliedNewTip bool, _err error) {
+	_appliedNewTip bool,
+	_connectedBlockHashes []BlockHash,
+	_disconnectedBlocksHashes []BlockHash,
+	_err error,
+) {
 
 	// Check if the incoming block extends the chain tip. If so, we don't need to reorg
 	// and can just add this block to the best chain.
 	chainTip := bc.BlockTip()
 	if chainTip.Hash.IsEqual(blockNode.Header.PrevBlockHash) {
-		bc.addBlockToBestChain(blockNode)
-		return true, nil
+		bc.addTipBlockToBestChain(blockNode)
+		return true, []BlockHash{*blockNode.Hash}, nil, nil
 	}
 	// Check if we should perform a reorg here.
 	// If we shouldn't reorg AND the incoming block doesn't extend the chain tip, we know that
 	// the incoming block will not get applied as the new tip.
 	if !bc.shouldReorg(blockNode, currentView) {
-		return false, nil
+		return false, nil, nil, nil
 	}
 
+	// We need to track the hashes of the blocks that we connected and disconnected during the reorg.
+	connectedBlockHashes := []BlockHash{}
+	disconnectedBlockHashes := []BlockHash{}
+
 	// We need to perform a reorg here. For simplicity, we remove all uncommitted blocks and then re-add them.
-	committedTip, idx := bc.getCommittedTip()
-	if committedTip == nil || idx == -1 {
-		// This is an edge case we'll never hit in practice since all the PoW blocks
-		// are committed.
-		return false, errors.New("tryApplyNewTip: No committed blocks found")
+	for !bc.blockTip().IsCommitted() {
+		disconnectedBlockNode := bc.removeTipBlockFromBestChain()
+		disconnectedBlockHashes = append(disconnectedBlockHashes, *disconnectedBlockNode.Hash)
 	}
-	// Remove all uncommitted blocks. These are all blocks that come after the committedTip
-	// in the best chain.
-	// Delete all blocks from bc.bestChainMap that come after the highest committed block.
-	for ii := idx + 1; ii < len(bc.bestChain); ii++ {
-		delete(bc.bestChainMap, *bc.bestChain[ii].Hash)
-	}
-	// Shorten best chain back to committed tip.
-	bc.bestChain = bc.bestChain[:idx+1]
 	// Add the ancestors of the new tip to the best chain.
 	for _, ancestor := range lineageFromCommittedTip {
-		bc.addBlockToBestChain(ancestor)
+		bc.addTipBlockToBestChain(ancestor)
+		connectedBlockHashes = append(connectedBlockHashes, *ancestor.Hash)
 	}
 	// Add the new tip to the best chain.
-	bc.addBlockToBestChain(blockNode)
-	return true, nil
+	bc.addTipBlockToBestChain(blockNode)
+	connectedBlockHashes = append(connectedBlockHashes, *blockNode.Hash)
+
+	// We need to dedupe the added and removed block hashes because we may have removed a
+	// block and added it back during the reorg.
+	uniqueConnectedBlockHashes, uniqueDisconnectedBlockHashes := collections.RemoveDuplicates(
+		connectedBlockHashes,
+		disconnectedBlockHashes,
+	)
+	return true, uniqueConnectedBlockHashes, uniqueDisconnectedBlockHashes, nil
 }
 
 // shouldReorg determines if we should reorg to the block provided. We should reorg if
@@ -1128,10 +1476,26 @@ func (bc *Blockchain) shouldReorg(blockNode *BlockNode, currentView uint64) bool
 	return blockNode.Header.ProposedInView >= currentView
 }
 
-// addBlockToBestChain adds the block to the best chain.
-func (bc *Blockchain) addBlockToBestChain(blockNode *BlockNode) {
+// addTipBlockToBestChain adds the block as the new tip of the best chain.
+func (bc *Blockchain) addTipBlockToBestChain(blockNode *BlockNode) {
 	bc.bestChain = append(bc.bestChain, blockNode)
 	bc.bestChainMap[*blockNode.Hash] = blockNode
+	bc.bestHeaderChain = append(bc.bestHeaderChain, blockNode)
+	bc.bestHeaderChainMap[*blockNode.Hash] = blockNode
+}
+
+// removeTipBlockFromBestChain removes the current tip from the best chain. It
+// naively removes the tip regardless of the tip's status (committed or not).
+// This function is a general purpose helper function that bundles mutations to
+// the bestChain slice and bestChainMap map.
+func (bc *Blockchain) removeTipBlockFromBestChain() *BlockNode {
+	// Remove the last block from the best chain.
+	lastBlock := bc.bestChain[len(bc.bestChain)-1]
+	delete(bc.bestChainMap, *lastBlock.Hash)
+	bc.bestChain = bc.bestChain[:len(bc.bestChain)-1]
+	bc.bestHeaderChain = bc.bestHeaderChain[:len(bc.bestChain)]
+	delete(bc.bestHeaderChainMap, *lastBlock.Hash)
+	return lastBlock
 }
 
 // runCommitRuleOnBestChain commits the grandparent of the block if possible.
@@ -1359,6 +1723,9 @@ func (bc *Blockchain) getCommittedTip() (*BlockNode, int) {
 // ancestors have been validated and extending from this block would not
 // change any committed blocks. This means we return the committed tip and
 // all blocks from the committed tip that have been validated.
+//
+// This function is not thread-safe. The caller needs to hold the chain lock before
+// calling this function.
 func (bc *Blockchain) GetSafeBlocks() ([]*MsgDeSoHeader, error) {
 	// First get committed tip.
 	committedTip, idx := bc.getCommittedTip()
@@ -1405,7 +1772,48 @@ func (bc *Blockchain) getMaxSequentialBlockHeightAfter(startingHeight uint64) ui
 	return maxSequentialHeightWithBlocks
 }
 
+func (bc *Blockchain) GetProofOfStakeGenesisQuorumCertificate() (*QuorumCertificate, error) {
+	finalPoWBlock, err := bc.GetFinalCommittedPoWBlock()
+	if err != nil {
+		return nil, err
+	}
+
+	aggregatedSignature, signersList, err := BuildQuorumCertificateAsProofOfStakeCutoverValidator(finalPoWBlock.Header.Height, finalPoWBlock.Hash)
+	if err != nil {
+		return nil, err
+	}
+
+	qc := &QuorumCertificate{
+		BlockHash:      finalPoWBlock.Hash,
+		ProposedInView: finalPoWBlock.Header.GetView(),
+		ValidatorsVoteAggregatedSignature: &AggregatedBLSSignature{
+			Signature:   aggregatedSignature,
+			SignersList: signersList,
+		},
+	}
+
+	return qc, nil
+}
+
+func (bc *Blockchain) GetFinalCommittedPoWBlock() (*BlockNode, error) {
+	// Fetch the block node for the cutover block
+	blockNodes, blockNodesExist := bc.blockIndexByHeight[bc.params.GetFinalPoWBlockHeight()]
+	if !blockNodesExist {
+		return nil, errors.Errorf("Error fetching cutover block nodes before height %d", bc.params.GetFinalPoWBlockHeight())
+	}
+
+	// Fetch the block node with the committed status
+	for _, blockNode := range blockNodes {
+		if blockNode.IsCommitted() {
+			return blockNode, nil
+		}
+	}
+
+	return nil, errors.Errorf("Error fetching committed cutover block node with height %d", bc.params.GetFinalPoWBlockHeight())
+}
+
 const (
+	RuleErrorNilBlock                                           RuleError = "RuleErrorNilBlock"
 	RuleErrorNilBlockHeader                                     RuleError = "RuleErrorNilBlockHeader"
 	RuleErrorNilPrevBlockHash                                   RuleError = "RuleErrorNilPrevBlockHash"
 	RuleErrorPoSBlockTstampNanoSecsTooOld                       RuleError = "RuleErrorPoSBlockTstampNanoSecsTooOld"

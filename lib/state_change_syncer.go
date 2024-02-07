@@ -688,7 +688,7 @@ func (stateChangeSyncer *StateChangeSyncer) SyncMempoolToStateSyncer(server *Ser
 	currentTimestamp := time.Now().UnixNano()
 	for _, mempoolTx := range mempoolTxns {
 		utxoOpsForTxn, _, _, _, err := mempoolTxUtxoView.ConnectTransaction(
-			mempoolTx.Tx, mempoolTx.Hash, 0, uint32(blockHeight+1),
+			mempoolTx.Tx, mempoolTx.Hash, uint32(blockHeight+1),
 			currentTimestamp, false, false /*ignoreUtxos*/)
 		if err != nil {
 			return false, errors.Wrapf(err, "StateChangeSyncer.SyncMempoolToStateSyncer ConnectTransaction: ")

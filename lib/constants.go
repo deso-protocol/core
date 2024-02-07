@@ -767,8 +767,9 @@ var RegtestForkHeights = ForkHeights{
 	BalanceModelBlockHeight:            uint32(1),
 	ProofOfStake1StateSetupBlockHeight: uint32(1),
 
-	// FIXME: set to real block height when ready
-	ProofOfStake2ConsensusCutoverBlockHeight: uint32(math.MaxUint32),
+	// For convenience, we set the PoS cutover block height to 50
+	// so that enough DESO is minted to allow for testing.
+	ProofOfStake2ConsensusCutoverBlockHeight: uint32(50),
 
 	LockupsBlockHeight: uint32(1),
 
@@ -804,11 +805,34 @@ func (params *DeSoParams) EnableRegtest() {
 	// Allow block rewards to be spent instantly
 	params.BlockRewardMaturity = 0
 
+	// Set the PoS epoch duration to 10 blocks
+	params.DefaultEpochDurationNumBlocks = 10
+
 	// In regtest, we start all the fork heights at zero. These can be adjusted
 	// for testing purposes to ensure that a transition does not cause issues.
 	params.ForkHeights = RegtestForkHeights
 	params.EncoderMigrationHeights = GetEncoderMigrationHeights(&params.ForkHeights)
 	params.EncoderMigrationHeightsList = GetEncoderMigrationHeightsList(&params.ForkHeights)
+}
+
+func (params *DeSoParams) IsPoWBlockHeight(blockHeight uint64) bool {
+	return !params.IsPoSBlockHeight(blockHeight)
+}
+
+func (params *DeSoParams) IsPoSBlockHeight(blockHeight uint64) bool {
+	return blockHeight >= params.GetFirstPoSBlockHeight()
+}
+
+func (params *DeSoParams) IsFinalPoWBlockHeight(blockHeight uint64) bool {
+	return blockHeight == params.GetFinalPoWBlockHeight()
+}
+
+func (params *DeSoParams) GetFinalPoWBlockHeight() uint64 {
+	return uint64(params.ForkHeights.ProofOfStake2ConsensusCutoverBlockHeight - 1)
+}
+
+func (params *DeSoParams) GetFirstPoSBlockHeight() uint64 {
+	return uint64(params.ForkHeights.ProofOfStake2ConsensusCutoverBlockHeight)
 }
 
 // GenesisBlock defines the genesis block used for the DeSo mainnet and testnet

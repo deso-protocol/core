@@ -7,3 +7,8 @@ func MapValues[TKey comparable, TValue any](m map[TKey]TValue) []TValue {
 	}
 	return result
 }
+
+func MapContains[TKey comparable, TValue any](m map[TKey]TValue, key TKey) bool {
+	_, ok := m[key]
+	return ok
+}
