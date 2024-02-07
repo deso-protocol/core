@@ -2131,12 +2131,13 @@ func _computeBitcoinExchangeFields(params *DeSoParams,
 
 func ConnectTxnAndComputeTransactionMetadata(
 	txn *MsgDeSoTxn, utxoView *UtxoView, blockHash *BlockHash,
-	blockHeight uint32, txnIndexInBlock uint64) (*TransactionMetadata, error) {
+	blockHeight uint32, blockTimestampNanoSecs int64, txnIndexInBlock uint64) (*TransactionMetadata, error) {
 
 	totalNanosPurchasedBefore := utxoView.NanosPurchased
 	usdCentsPerBitcoinBefore := utxoView.GetCurrentUSDCentsPerBitcoin()
 	utxoOps, totalInput, totalOutput, fees, err := utxoView._connectTransaction(
-		txn, txn.Hash(), blockHeight, 0, false, false)
+		txn, txn.Hash(), blockHeight, blockTimestampNanoSecs, false, false,
+	)
 	if err != nil {
 		return nil, fmt.Errorf(
 			"UpdateTxindex: Error connecting txn to UtxoView: %v", err)

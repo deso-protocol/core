@@ -346,6 +346,13 @@ type ForkHeights struct {
 	// leader schedule snapshots to be generated in advance.
 	ProofOfStake1StateSetupBlockHeight uint32
 
+	// LockupsBlockHeight defines the height at which we begin accepting lockup
+	// related transactions. These can include things like CoinLockup, UpdateCoinLockupParams,
+	// CoinLockupTransfer, and CoinUnlock.
+	//
+	// We specify this separately to enable independent testing when compared with other features.
+	LockupsBlockHeight uint32
+
 	// ProofOfStake2ConsensusCutoverBlockHeight defines the height at which we cut over
 	// from PoW consensus to PoS consensus.
 	ProofOfStake2ConsensusCutoverBlockHeight uint32
@@ -720,6 +727,11 @@ type DeSoParams struct {
 	// in BMF calculations.
 	DefaultFailingTransactionBMFMultiplierBasisPoints uint64
 
+	// DefaultMaximumVestedIntersectionsPerLockupTransaction is the default value for
+	// GlobalParamsEntry.MaximumVestedIntersectionsPerLockupTransaction. See the comment
+	// in GlobalParamsEntry for a detailed description of its usage.
+	DefaultMaximumVestedIntersectionsPerLockupTransaction int
+
 	ForkHeights ForkHeights
 
 	EncoderMigrationHeights     *EncoderMigrationHeights
@@ -758,6 +770,8 @@ var RegtestForkHeights = ForkHeights{
 	// For convenience, we set the PoS cutover block height to 50
 	// so that enough DESO is minted to allow for testing.
 	ProofOfStake2ConsensusCutoverBlockHeight: uint32(50),
+
+	LockupsBlockHeight: uint32(1),
 
 	BlockRewardPatchBlockHeight: uint32(0),
 
@@ -940,6 +954,9 @@ var MainnetForkHeights = ForkHeights{
 
 	// FIXME: set to real block height when ready
 	ProofOfStake2ConsensusCutoverBlockHeight: uint32(math.MaxUint32),
+
+	// FIXME: set to real block height when ready
+	LockupsBlockHeight: uint32(math.MaxUint32),
 
 	// Be sure to update EncoderMigrationHeights as well via
 	// GetEncoderMigrationHeights if you're modifying schema.
@@ -1157,6 +1174,9 @@ var DeSoMainnetParams = DeSoParams{
 	// The rate of the failing transaction's fee used in BMF calculations.
 	DefaultFailingTransactionBMFMultiplierBasisPoints: uint64(2500),
 
+	// The maximum number of vested lockup intersections in a lockup transaction.
+	DefaultMaximumVestedIntersectionsPerLockupTransaction: 1000,
+
 	ForkHeights:                 MainnetForkHeights,
 	EncoderMigrationHeights:     GetEncoderMigrationHeights(&MainnetForkHeights),
 	EncoderMigrationHeightsList: GetEncoderMigrationHeightsList(&MainnetForkHeights),
@@ -1245,6 +1265,9 @@ var TestnetForkHeights = ForkHeights{
 
 	// FIXME: set to real block height when ready
 	ProofOfStake2ConsensusCutoverBlockHeight: uint32(math.MaxUint32),
+
+	// FIXME: set to real block height when ready
+	LockupsBlockHeight: uint32(math.MaxUint32),
 
 	// Be sure to update EncoderMigrationHeights as well via
 	// GetEncoderMigrationHeights if you're modifying schema.
@@ -1424,6 +1447,9 @@ var DeSoTestnetParams = DeSoParams{
 	// The rate of the failing transaction's fee used in BMF calculations.
 	DefaultFailingTransactionBMFMultiplierBasisPoints: uint64(2500),
 
+	// The maximum number of vested lockup intersections in a lockup transaction.
+	DefaultMaximumVestedIntersectionsPerLockupTransaction: 1000,
+
 	ForkHeights:                 TestnetForkHeights,
 	EncoderMigrationHeights:     GetEncoderMigrationHeights(&TestnetForkHeights),
 	EncoderMigrationHeightsList: GetEncoderMigrationHeightsList(&TestnetForkHeights),
@@ -1461,23 +1487,24 @@ const (
 	IsFrozenKey = "IsFrozen"
 
 	// Keys for a GlobalParamUpdate transaction's extra data map.
-	USDCentsPerBitcoinKey                         = "USDCentsPerBitcoin"
-	MinNetworkFeeNanosPerKBKey                    = "MinNetworkFeeNanosPerKB"
-	CreateProfileFeeNanosKey                      = "CreateProfileFeeNanos"
-	CreateNFTFeeNanosKey                          = "CreateNFTFeeNanos"
-	MaxCopiesPerNFTKey                            = "MaxCopiesPerNFT"
-	MaxNonceExpirationBlockHeightOffsetKey        = "MaxNonceExpirationBlockHeightOffset"
-	ForbiddenBlockSignaturePubKeyKey              = "ForbiddenBlockSignaturePubKey"
-	StakeLockupEpochDurationKey                   = "StakeLockupEpochDuration"
-	ValidatorJailEpochDurationKey                 = "ValidatorJailEpochDuration"
-	LeaderScheduleMaxNumValidatorsKey             = "LeaderScheduleMaxNumValidators"
-	ValidatorSetMaxNumValidatorsKey               = "ValidatorSetMaxNumValidators"
-	StakingRewardsMaxNumStakesKey                 = "StakingRewardsMaxNumStakes"
-	StakingRewardsAPYBasisPointsKey               = "StakingRewardsAPYBasisPoints"
-	EpochDurationNumBlocksKey                     = "EpochDurationNumBlocks"
-	JailInactiveValidatorGracePeriodEpochsKey     = "JailInactiveValidatorGracePeriodEpochs"
-	FeeBucketGrowthRateBasisPointsKey             = "FeeBucketGrowthRateBasisPointsKey"
-	FailingTransactionBMFMultiplierBasisPointsKey = "FailingTransactionBMFMultiplierBasisPoints"
+	USDCentsPerBitcoinKey                             = "USDCentsPerBitcoin"
+	MinNetworkFeeNanosPerKBKey                        = "MinNetworkFeeNanosPerKB"
+	CreateProfileFeeNanosKey                          = "CreateProfileFeeNanos"
+	CreateNFTFeeNanosKey                              = "CreateNFTFeeNanos"
+	MaxCopiesPerNFTKey                                = "MaxCopiesPerNFT"
+	MaxNonceExpirationBlockHeightOffsetKey            = "MaxNonceExpirationBlockHeightOffset"
+	ForbiddenBlockSignaturePubKeyKey                  = "ForbiddenBlockSignaturePubKey"
+	StakeLockupEpochDurationKey                       = "StakeLockupEpochDuration"
+	ValidatorJailEpochDurationKey                     = "ValidatorJailEpochDuration"
+	LeaderScheduleMaxNumValidatorsKey                 = "LeaderScheduleMaxNumValidators"
+	ValidatorSetMaxNumValidatorsKey                   = "ValidatorSetMaxNumValidators"
+	StakingRewardsMaxNumStakesKey                     = "StakingRewardsMaxNumStakes"
+	StakingRewardsAPYBasisPointsKey                   = "StakingRewardsAPYBasisPoints"
+	EpochDurationNumBlocksKey                         = "EpochDurationNumBlocks"
+	JailInactiveValidatorGracePeriodEpochsKey         = "JailInactiveValidatorGracePeriodEpochs"
+	MaximumVestedIntersectionsPerLockupTransactionKey = "MaximumVestedIntersectionsPerLockupTransaction"
+	FeeBucketGrowthRateBasisPointsKey                 = "FeeBucketGrowthRateBasisPointsKey"
+	FailingTransactionBMFMultiplierBasisPointsKey     = "FailingTransactionBMFMultiplierBasisPoints"
 
 	DiamondLevelKey    = "DiamondLevel"
 	DiamondPostHashKey = "DiamondPostHash"

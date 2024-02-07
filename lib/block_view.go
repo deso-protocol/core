@@ -131,9 +131,14 @@ type UtxoView struct {
 	LockedStakeMapKeyToLockedStakeEntry map[LockedStakeMapKey]*LockedStakeEntry
 
 	// Locked DAO coin and locked DESO balance entry mapping.
+	// NOTE: See comment on LockedBalanceEntryKey before altering.
 	LockedBalanceEntryKeyToLockedBalanceEntry map[LockedBalanceEntryKey]*LockedBalanceEntry
 
 	// Lockup yield curve points.
+	// NOTE: While the nested map does break convention, this enables us to quickly read, scan, and modify
+	// lockup yield curve points without needing to traverse yield curve points held by other PKIDs.
+	// This enables us to have a high performance means of computing yield during lockup transactions without
+	// having to scan all yield curve points for all users stored in the view.
 	PKIDToLockupYieldCurvePointKeyToLockupYieldCurvePoints map[PKID]map[LockupYieldCurvePointKey]*LockupYieldCurvePoint
 
 	// Current EpochEntry
@@ -3259,6 +3264,18 @@ func (bav *UtxoView) _connectUpdateGlobalParams(
 					"_connectUpdateGlobalParams: unable to decode JailInactiveValidatorGracePeriodEpochs as uint64",
 				)
 			}
+		}
+		if len(extraData[MaximumVestedIntersectionsPerLockupTransactionKey]) > 0 {
+			maximumVestedIntersectionsPerLockupTransaction, bytesRead := Varint(
+				extraData[MaximumVestedIntersectionsPerLockupTransactionKey],
+			)
+			if bytesRead <= 0 {
+				return 0, 0, nil, fmt.Errorf(
+					"_connectUpdateGlobalParams: " +
+						"unable to decode MaximumVestedIntersectionsPerLockupTransaction as uint64")
+			}
+			newGlobalParamsEntry.MaximumVestedIntersectionsPerLockupTransaction =
+				int(maximumVestedIntersectionsPerLockupTransaction)
 		}
 		if len(extraData[FeeBucketGrowthRateBasisPointsKey]) > 0 {
 			val, bytesRead := Uvarint(

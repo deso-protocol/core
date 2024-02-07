@@ -144,6 +144,10 @@ func _mergeGlobalParamEntryDefaults(bav *UtxoView, globalParamsEntry *GlobalPara
 	if globalParamsEntryCopy.FailingTransactionBMFMultiplierBasisPoints == 0 {
 		globalParamsEntryCopy.FailingTransactionBMFMultiplierBasisPoints = bav.Params.DefaultFailingTransactionBMFMultiplierBasisPoints
 	}
+	if globalParamsEntryCopy.MaximumVestedIntersectionsPerLockupTransaction == 0 {
+		globalParamsEntryCopy.MaximumVestedIntersectionsPerLockupTransaction =
+			bav.Params.DefaultMaximumVestedIntersectionsPerLockupTransaction
+	}
 
 	// Return the merged result.
 	return globalParamsEntryCopy
