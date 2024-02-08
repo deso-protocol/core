@@ -524,7 +524,7 @@ func NewServer(
 		currentUtxoView,
 		uint64(_chain.blockTip().Height),
 		_mempoolDumpDir,
-		false,
+		_mempoolDumpDir == "", // If no mempool dump dir is set, then the mempool will be in memory only
 		_maxMempoolPosSizeBytes,
 		_mempoolBackupIntervalMillis,
 		_mempoolFeeEstimatorNumMempoolBlocks,
