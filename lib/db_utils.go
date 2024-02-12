@@ -493,7 +493,7 @@ type DBPrefixes struct {
 
 	// PrefixValidatorByPKID: Retrieve a validator by PKID.
 	// Prefix, <ValidatorPKID [33]byte> -> ValidatorEntry
-	PrefixValidatorByPKID []byte `prefix_id:"[80]" is_state:"true"`
+	PrefixValidatorByPKID []byte `prefix_id:"[80]" is_state:"true" core_state:"true"`
 
 	// PrefixValidatorByStatusAndStakeAmount: Retrieve the top N active validators by stake.
 	// Prefix, <Status uint8>, <TotalStakeAmountNanos *uint256.Int>, <ValidatorPKID [33]byte> -> nil
@@ -502,7 +502,7 @@ type DBPrefixes struct {
 
 	// PrefixStakeByValidatorAndStaker: Retrieve a StakeEntry.
 	// Prefix, <ValidatorPKID [33]byte>, <StakerPKID [33]byte> -> StakeEntry
-	PrefixStakeByValidatorAndStaker []byte `prefix_id:"[82]" is_state:"true"`
+	PrefixStakeByValidatorAndStaker []byte `prefix_id:"[82]" is_state:"true" core_state:"true"`
 
 	// PrefixStakeByStakeAmount: Retrieve the top N stake entries by stake amount.
 	// Prefix, <TotalStakeAmountNanos *uint256.Int>, <ValidatorPKID [33]byte>, <StakerPKID [33]byte> -> nil
@@ -533,15 +533,15 @@ type DBPrefixes struct {
 	//   (CurrentEpoch - LockedAtEpochNumber) = 133 - 123 = 10, which is greater than
 	//   cooldown=3. Thus the UnlockStake will succeed, which will result in the
 	//   LockedStakeEntry being deleted and 25 DESO being added to the user's balance.
-	PrefixLockedStakeByValidatorAndStakerAndLockedAt []byte `prefix_id:"[84]" is_state:"true"`
+	PrefixLockedStakeByValidatorAndStakerAndLockedAt []byte `prefix_id:"[84]" is_state:"true" core_state:"true"`
 
 	// PrefixCurrentEpoch: Retrieve the current EpochEntry.
 	// Prefix -> EpochEntry
-	PrefixCurrentEpoch []byte `prefix_id:"[85]" is_state:"true"`
+	PrefixCurrentEpoch []byte `prefix_id:"[85]" is_state:"true" core_state:"true"`
 
 	// PrefixCurrentRandomSeedHash: Retrieve the current RandomSeedHash.
 	// Prefix -> <RandomSeedHash [32]byte>.
-	PrefixCurrentRandomSeedHash []byte `prefix_id:"[86]" is_state:"true"`
+	PrefixCurrentRandomSeedHash []byte `prefix_id:"[86]" is_state:"true" core_state:"true"`
 
 	// PrefixSnapshotGlobalParamsEntry: Retrieve a snapshot GlobalParamsEntry by SnapshotAtEpochNumber.
 	// Prefix, <SnapshotAtEpochNumber uint64> -> *GlobalParamsEntry
@@ -579,23 +579,23 @@ type DBPrefixes struct {
 	// among the vested and unvested locked balance entries without separate indexes.
 	// Prefix, <HodlerPKID [33]byte>, <ProfilePKID [33]byte>, <vested/unvested byte>,
 	// <UnlockTimestampNanoSecs [8]byte>, <VestingEndTimestampNanoSecs [8]byte> -> <LockedBalanceEntry>
-	PrefixLockedBalanceEntry []byte `prefix_id:"[93]" is_state:"true"`
+	PrefixLockedBalanceEntry []byte `prefix_id:"[93]" is_state:"true" core_state:"true"`
 
 	// PrefixLockupYieldCurvePointByProfilePKIDAndDurationNanoSecs:
 	// Retrieves a LockupYieldCurvePoint.
 	// The structure of the key enables quick lookups for a (ProfilePKID, Duration) pair as well
 	// as quick construction of yield curve plots over time.
 	// Prefix, <ProfilePKID [33]byte>, <LockupDurationNanoSecs int64> -> <LockupYieldCurvePoint>
-	PrefixLockupYieldCurvePointByProfilePKIDAndDurationNanoSecs []byte `prefix_id:"[94]" is_state:"true"`
+	PrefixLockupYieldCurvePointByProfilePKIDAndDurationNanoSecs []byte `prefix_id:"[94]" is_state:"true" core_state:"true"`
 
 	// PrefixValidatorBLSPublicKeyPKIDPairEntry: Retrieve a BLSPublicKeyPKIDPairEntry by BLS public key.
 	// Prefix, <BLSPublicKey [33]byte> -> *BLSPublicKeyPKIDPairEntry
-	PrefixValidatorBLSPublicKeyPKIDPairEntry []byte `prefix_id:"[95]" is_state:"true"`
+	PrefixValidatorBLSPublicKeyPKIDPairEntry []byte `prefix_id:"[95]" is_state:"true" core_state:"true"`
 
 	// PrefixSnapshotValidatorBLSPublicKeyPKIDPairEntry: Retrieve a snapshotted BLSPublicKeyPKIDPairEntry
 	// by BLS Public Key and SnapshotAtEpochNumber.
 	// Prefix, <SnapshotAtEpochNumber uint64>, <BLSPublicKey []byte> -> *BLSPublicKeyPKIDPairEntry
-	PrefixSnapshotValidatorBLSPublicKeyPKIDPairEntry []byte `prefix_id:"[96]" is_state:"true"`
+	PrefixSnapshotValidatorBLSPublicKeyPKIDPairEntry []byte `prefix_id:"[96]" is_state:"true" core_state:"true"`
 
 	// NEXT_TAG: 97
 }
