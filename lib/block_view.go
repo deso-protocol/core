@@ -3322,29 +3322,21 @@ func (bav *UtxoView) _connectUpdateGlobalParams(
 				)
 			}
 		}
-	}
-
-	if blockHeight >= bav.Params.ForkHeights.ProofOfStake2ConsensusCutoverBlockHeight {
-		var bytesRead int
-		if len(extraData[FeeBucketGrowthRateBasisPointsKey]) > 0 {
-			newGlobalParamsEntry.FeeBucketGrowthRateBasisPoints, bytesRead = Uvarint(
-				extraData[FeeBucketGrowthRateBasisPointsKey],
+		if len(extraData[BlockTimestampDriftNanoSecsKey]) > 0 {
+			val, bytesRead := Varint(
+				extraData[BlockTimestampDriftNanoSecsKey],
 			)
 			if bytesRead <= 0 {
 				return 0, 0, nil, fmt.Errorf(
-					"_connectUpdateGlobalParams: unable to decode FeeBucketGrowthRateBasisPoints as uint64",
+					"_connectUpdateGlobalParams: unable to decode BlockTimestampDriftNanoSecs as int64",
 				)
 			}
-		}
-		if len(extraData[FailingTransactionBMFMultiplierBasisPointsKey]) > 0 {
-			newGlobalParamsEntry.FailingTransactionBMFMultiplierBasisPoints, bytesRead = Uvarint(
-				extraData[FailingTransactionBMFMultiplierBasisPointsKey],
-			)
-			if bytesRead <= 0 {
+			if val < 0 {
 				return 0, 0, nil, fmt.Errorf(
-					"_connectUpdateGlobalParams: unable to decode FailingTransactionBMFMultiplierBasisPoints as uint64",
+					"_connectUpdateGlobalParams: BlockTimestampDriftNanoSecs must be >= 0",
 				)
 			}
+			newGlobalParamsEntry.BlockTimestampDriftNanoSecs = val
 		}
 	}
 

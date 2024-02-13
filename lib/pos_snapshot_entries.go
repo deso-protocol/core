@@ -148,6 +148,9 @@ func _mergeGlobalParamEntryDefaults(bav *UtxoView, globalParamsEntry *GlobalPara
 		globalParamsEntryCopy.MaximumVestedIntersectionsPerLockupTransaction =
 			bav.Params.DefaultMaximumVestedIntersectionsPerLockupTransaction
 	}
+	if globalParamsEntryCopy.BlockTimestampDriftNanoSecs == 0 {
+		globalParamsEntryCopy.BlockTimestampDriftNanoSecs = bav.Params.DefaultBlockTimestampDriftNanoSecs
+	}
 
 	// Return the merged result.
 	return globalParamsEntryCopy

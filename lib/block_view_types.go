@@ -4157,6 +4157,10 @@ type GlobalParamsEntry struct {
 	// BMF. The value is expressed in basis points. For example a value of 2500 means that 25% of the fee will be
 	// failing transaction fee will be used in the BMF algorithm.
 	FailingTransactionBMFMultiplierBasisPoints uint64
+
+	// BlockTimestampDriftNanoSecs is the maximum number of nanoseconds from the current timestamp that
+	// we will allow a PoS block to be submitted.
+	BlockTimestampDriftNanoSecs int64
 }
 
 func (gp *GlobalParamsEntry) Copy() *GlobalParamsEntry {
@@ -4178,6 +4182,7 @@ func (gp *GlobalParamsEntry) Copy() *GlobalParamsEntry {
 		MaximumVestedIntersectionsPerLockupTransaction: gp.MaximumVestedIntersectionsPerLockupTransaction,
 		FeeBucketGrowthRateBasisPoints:                 gp.FeeBucketGrowthRateBasisPoints,
 		FailingTransactionBMFMultiplierBasisPoints:     gp.FailingTransactionBMFMultiplierBasisPoints,
+		BlockTimestampDriftNanoSecs:                    gp.BlockTimestampDriftNanoSecs,
 	}
 }
 
@@ -4204,6 +4209,7 @@ func (gp *GlobalParamsEntry) RawEncodeWithoutMetadata(blockHeight uint64, skipMe
 		data = append(data, IntToBuf(int64(gp.MaximumVestedIntersectionsPerLockupTransaction))...)
 		data = append(data, UintToBuf(gp.FeeBucketGrowthRateBasisPoints)...)
 		data = append(data, UintToBuf(gp.FailingTransactionBMFMultiplierBasisPoints)...)
+		data = append(data, IntToBuf(gp.BlockTimestampDriftNanoSecs)...)
 	}
 	return data
 }
@@ -4283,6 +4289,10 @@ func (gp *GlobalParamsEntry) RawDecodeWithoutMetadata(blockHeight uint64, rr *by
 		gp.FailingTransactionBMFMultiplierBasisPoints, err = ReadUvarint(rr)
 		if err != nil {
 			return errors.Wrapf(err, "GlobalParamsEntry.Decode: Problem reading FailingTransactionBMFMultiplierBasisPoints")
+		}
+		gp.BlockTimestampDriftNanoSecs, err = ReadVarint(rr)
+		if err != nil {
+			return errors.Wrapf(err, "GlobalParamsEntry.Decode: Problem reading BlockTimestampDriftNanoSecs")
 		}
 	}
 	return nil
