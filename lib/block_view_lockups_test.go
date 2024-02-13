@@ -310,6 +310,86 @@ func TestCoinLockupTxnRuleErrors(t *testing.T) {
 		require.Contains(t, err.Error(), RuleErrorCoinLockupInsufficientCoins)
 	}
 
+	// Set m0 locked transfer restrictions to profile owner only and send m1, m2 unlocked m0 tokens.
+	// We do this to test transfer restriction status on lockups.
+	_updateCoinLockupParamsWithTestMeta(
+		testMeta,
+		testMeta.feeRateNanosPerKb,
+		m0Pub,
+		m0Priv,
+		0,
+		0,
+		false,
+		true,
+		TransferRestrictionStatusProfileOwnerOnly,
+	)
+	_daoCoinTransferTxnWithTestMeta(testMeta, testMeta.feeRateNanosPerKb, m0Pub, m0Priv, DAOCoinTransferMetadata{
+		ProfilePublicKey:       m0PkBytes,
+		DAOCoinToTransferNanos: *uint256.NewInt().SetUint64(1000),
+		ReceiverPublicKey:      m1PkBytes,
+	})
+	_daoCoinTransferTxnWithTestMeta(testMeta, testMeta.feeRateNanosPerKb, m0Pub, m0Priv, DAOCoinTransferMetadata{
+		ProfilePublicKey:       m0PkBytes,
+		DAOCoinToTransferNanos: *uint256.NewInt().SetUint64(1000),
+		ReceiverPublicKey:      m2PkBytes,
+	})
+
+	// Attempt to perform a m0 lockup where the transactor is not m0.
+	// (This should fail -- RuleErrorCoinLockupRestrictedToProfileOwner)
+	{
+		_, _, _, err := _coinLockupWithConnectTimestamp(
+			t, testMeta.chain, testMeta.db, testMeta.params, testMeta.feeRateNanosPerKb,
+			m1Pub, m1Priv, m0Pub, m0Pub,
+			1000, 1000, uint256.NewInt().SetUint64(1000), 0)
+		require.Contains(t, err.Error(), RuleErrorCoinLockupTransferRestrictedToProfileOwner)
+	}
+
+	// Update transfer restrictions to DAO members only.
+	_updateCoinLockupParamsWithTestMeta(
+		testMeta,
+		testMeta.feeRateNanosPerKb,
+		m0Pub,
+		m0Priv,
+		0,
+		0,
+		false,
+		true,
+		TransferRestrictionStatusDAOMembersOnly,
+	)
+
+	// Attempt to perform a m0 lockup where the receiver m3 is not in the DAO.
+	// (This should fail -- RuleErrorCoinLockupRestrictedToDAOMembers)
+	{
+		_, _, _, err := _coinLockupWithConnectTimestamp(
+			t, testMeta.chain, testMeta.db, testMeta.params, testMeta.feeRateNanosPerKb,
+			m1Pub, m1Priv, m0Pub, m3Pub,
+			1000, 1000, uint256.NewInt().SetUint64(1000), 0)
+		require.Contains(t, err.Error(), RuleErrorCoinLockupTransferRestrictedToDAOMembers)
+	}
+
+	// Try the same m0 lockup but where DAO member m2 is the recipient.
+	// This should succeed :)
+	{
+		_, _, _, err := _coinLockupWithConnectTimestamp(
+			t, testMeta.chain, testMeta.db, testMeta.params, testMeta.feeRateNanosPerKb,
+			m1Pub, m1Priv, m0Pub, m2Pub,
+			1000, 1000, uint256.NewInt().SetUint64(1000), 0)
+		require.NoError(t, err)
+	}
+
+	// Restore default transfer restrictions.
+	_updateCoinLockupParamsWithTestMeta(
+		testMeta,
+		testMeta.feeRateNanosPerKb,
+		m0Pub,
+		m0Priv,
+		0,
+		0,
+		false,
+		true,
+		TransferRestrictionStatusUnrestricted,
+	)
+
 	// NOTE: The only other rule errors for coin lockup txns are related to yield curve overflows.
 	//       This is tested separately and more comprehensively in a different test.
 
@@ -3842,7 +3922,8 @@ func _setUpMinerAndTestMetaForTimestampBasedLockupTests(t *testing.T) *TestMeta 
 	params.ForkHeights.DAOCoinBlockHeight = uint32(0)
 
 	// Initialize lockups block height.
-	params.ForkHeights.LockupsBlockHeight = uint32(1)
+	params.ForkHeights.LockupsBlockHeight = uint32(11)
+	params.ForkHeights.ProofOfStake1StateSetupBlockHeight = uint32(11)
 	GlobalDeSoParams.EncoderMigrationHeights = GetEncoderMigrationHeights(&params.ForkHeights)
 	GlobalDeSoParams.EncoderMigrationHeightsList = GetEncoderMigrationHeightsList(&params.ForkHeights)
 
