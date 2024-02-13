@@ -700,6 +700,47 @@ func (bc *Blockchain) _initChain() error {
 	return nil
 }
 
+func (bc *Blockchain) _applyUncommittedBlocksToBestChain() error {
+	// For Proof of Stake, we need to update the in-memory data structures to
+	// include uncommitted blocks that are part of the best chain. This is because
+	// the initialization above only includes blocks that have been committed.
+	safeBlockNodes, err := bc.getSafeBlockNodes()
+	if err != nil {
+		return errors.Wrapf(err, "_applyUncommittedBlocksToBestChain: ")
+	}
+
+	// Filter out the committed tip from the safe block nodes.
+	safeBlockNodes = collections.Filter(safeBlockNodes, func(node *BlockNode) bool {
+		return !node.IsCommitted()
+	})
+
+	// If there are no uncommitted blocks, we're done.
+	if len(safeBlockNodes) == 0 {
+		return nil
+	}
+
+	// Find the safe block with the highest view. That block is the uncommitted tip.
+	uncommittedTipBlocNode := safeBlockNodes[0]
+	for _, blockNode := range safeBlockNodes {
+		if blockNode.Header.ProposedInView > uncommittedTipBlocNode.Header.ProposedInView {
+			uncommittedTipBlocNode = blockNode
+		}
+	}
+
+	// Fetch the lineage of blocks from the committed tip through the uncommitted tip.
+	lineageFromCommittedTip, err := bc.getLineageFromCommittedTip(uncommittedTipBlocNode.Header)
+	if err != nil {
+		return errors.Wrapf(err, "NewBlockchain: ")
+	}
+
+	// Add the uncommitted blocks to the in-memory data structures.
+	if _, _, _, err := bc.tryApplyNewTip(uncommittedTipBlocNode, 0, lineageFromCommittedTip); err != nil {
+		return errors.Wrapf(err, "NewBlockchain: ")
+	}
+
+	return nil
+}
+
 // NewBlockchain returns a new blockchain object. It initializes some in-memory
 // data structures by reading from the db. It also initializes the db if it hasn't
 // been initialized in the past. This function should only be called once per
@@ -760,6 +801,11 @@ func NewBlockchain(
 	// from the db. This function creates an initial database state containing
 	// only the genesis block if we've never initialized the database before.
 	if err := bc._initChain(); err != nil {
+		return nil, errors.Wrapf(err, "NewBlockchain: ")
+	}
+
+	// Update the best chain and best header chain to include uncommitted blocks.
+	if err := bc._applyUncommittedBlocksToBestChain(); err != nil {
 		return nil, errors.Wrapf(err, "NewBlockchain: ")
 	}
 
