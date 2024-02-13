@@ -12,12 +12,11 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/spf13/viper"
-
 	"github.com/btcsuite/btcd/btcec"
 	"github.com/golang/glog"
 	"github.com/holiman/uint256"
 	"github.com/pkg/errors"
+	"github.com/spf13/viper"
 )
 
 type UtxoType uint8
