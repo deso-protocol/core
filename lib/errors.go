@@ -494,8 +494,6 @@ const (
 	// Lockups
 	RuleErrorLockupTxnBeforeBlockHeight                                 RuleError = "RuleErrorLockupTxnBeforeBlockHeight"
 	RuleErrorCoinLockupInvalidSenderPKID                                RuleError = "RuleErrorCoinLockupInvalidSenderPKID"
-	RuleErrorCoinLockupRestrictedToProfileOwner                         RuleError = "RuleErrorCoinLockupRestrictedToCreator"
-	RuleErrorCoinLockupRestrictedToDAOMembers                           RuleError = "RuleErrorCoinLockupRestrictedToDAOMembers"
 	RuleErrorCoinLockupInvalidRecipientPKID                             RuleError = "RuleErrorCoinLockupInvalidRecipientPKID"
 	RuleErrorCoinLockupInvalidLockupDuration                            RuleError = "RuleErrorCoinLockupInvalidLockupDuration"
 	RuleErrorCoinLockupInvalidVestingEndTimestamp                       RuleError = "RuleErrorCoinLockupInvalidVestingEndTimestamp"

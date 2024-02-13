@@ -341,7 +341,7 @@ func TestCoinLockupTxnRuleErrors(t *testing.T) {
 			t, testMeta.chain, testMeta.db, testMeta.params, testMeta.feeRateNanosPerKb,
 			m1Pub, m1Priv, m0Pub, m0Pub,
 			1000, 1000, uint256.NewInt().SetUint64(1000), 0)
-		require.Contains(t, err.Error(), RuleErrorCoinLockupRestrictedToProfileOwner)
+		require.Contains(t, err.Error(), RuleErrorCoinLockupTransferRestrictedToProfileOwner)
 	}
 
 	// Update transfer restrictions to DAO members only.
@@ -364,7 +364,7 @@ func TestCoinLockupTxnRuleErrors(t *testing.T) {
 			t, testMeta.chain, testMeta.db, testMeta.params, testMeta.feeRateNanosPerKb,
 			m1Pub, m1Priv, m0Pub, m3Pub,
 			1000, 1000, uint256.NewInt().SetUint64(1000), 0)
-		require.Contains(t, err.Error(), RuleErrorCoinLockupRestrictedToDAOMembers)
+		require.Contains(t, err.Error(), RuleErrorCoinLockupTransferRestrictedToDAOMembers)
 	}
 
 	// Try the same m0 lockup but where DAO member m2 is the recipient.
