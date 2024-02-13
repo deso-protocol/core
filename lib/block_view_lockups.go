@@ -1303,6 +1303,36 @@ func (bav *UtxoView) _connectCoinLockup(
 			}
 		}
 
+		// (1.5) Verify  transfer restriction statuses as being respected
+
+		// Fetch the transfer restrictions attached to the transfer.
+		transferRestrictionStatus := profileEntry.DAOCoinEntry.LockupTransferRestrictionStatus
+
+		// Fetch the "sender" (transactor's) PKID entry.
+		senderPKIDEntry := bav.GetPKIDForPublicKey(txn.PublicKey)
+		if senderPKIDEntry == nil || senderPKIDEntry.isDeleted {
+			return 0, 0, nil,
+				errors.Wrap(RuleErrorCoinLockupInvalidSenderPKID, "_connectCoinLockup")
+		}
+		senderPKID := senderPKIDEntry.PKID
+
+		// Check if transfer restrictions are respected from the lockup.
+		if transferRestrictionStatus == TransferRestrictionStatusProfileOwnerOnly && !profilePKID.Eq(senderPKID) {
+			return 0, 0, nil,
+				errors.Wrap(RuleErrorCoinLockupRestrictedToProfileOwner, "_connectCoinLockup")
+		}
+
+		// Check if the lockup respects transfer limited to DAO members only.
+		// Here, a "DAO member" is anyone who holds either unlocked or locked DAO coins associated with the profile.
+		if transferRestrictionStatus == TransferRestrictionStatusDAOMembersOnly {
+			receiverBalanceEntry :=
+				bav._getBalanceEntryForHODLerPKIDAndCreatorPKID(hodlerPKID, profilePKID, true)
+			if receiverBalanceEntry.BalanceNanos.IsZero() && lockedBalanceEntry.BalanceBaseUnits.IsZero() {
+				return 0, 0, nil,
+					errors.Wrap(RuleErrorCoinLockupRestrictedToDAOMembers, "_connectCoinLockup")
+			}
+		}
+
 		// (2) Store the previous locked balance entry
 		previousLockedBalanceEntry = lockedBalanceEntry.Copy()
 
