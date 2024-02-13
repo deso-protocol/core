@@ -307,7 +307,9 @@ func (bc *Blockchain) processBlockPoS(block *MsgDeSoBlock, currentView uint64, v
 			glog.Errorf("processBlockPoS: Problem getting disconnected block %v", disconnectedBlockHashes[ii])
 			continue
 		}
-		bc.eventManager.blockDisconnected(&BlockEvent{Block: disconnectedBlock})
+		if bc.eventManager != nil {
+			bc.eventManager.blockDisconnected(&BlockEvent{Block: disconnectedBlock})
+		}
 	}
 	for ii := 0; ii < len(connectedBlockHashes); ii++ {
 		connectedBlock := bc.GetBlock(&connectedBlockHashes[ii])
@@ -315,7 +317,9 @@ func (bc *Blockchain) processBlockPoS(block *MsgDeSoBlock, currentView uint64, v
 			glog.Errorf("processBlockPoS: Problem getting connected block %v", connectedBlockHashes[ii])
 			continue
 		}
-		bc.eventManager.blockConnected(&BlockEvent{Block: connectedBlock})
+		if bc.eventManager != nil {
+			bc.eventManager.blockConnected(&BlockEvent{Block: connectedBlock})
+		}
 	}
 
 	// Now that we've processed this block, we check for any blocks that were previously
@@ -1311,6 +1315,11 @@ func (bc *Blockchain) storeValidatedBlockInBlockIndex(block *MsgDeSoBlock) (*Blo
 	// If the BlockNode is not already stored, we should set its status to stored.
 	if !blockNode.IsStored() {
 		blockNode.Status |= StatusBlockStored
+	}
+	// If the BlockNode is not already processed, we should set its status to processed.
+	// This ensures that bc.IsFullyStored will return true for this block.
+	if !blockNode.IsProcessed() {
+		blockNode.Status |= StatusBlockProcessed
 	}
 	// If the DB update fails, then we should return an error.
 	if err = bc.upsertBlockAndBlockNodeToDB(block, blockNode, true); err != nil {
