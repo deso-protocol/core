@@ -2,6 +2,7 @@ package lib
 
 import (
 	"fmt"
+	"github.com/google/uuid"
 	"math"
 	"time"
 
@@ -1639,6 +1640,15 @@ func (bc *Blockchain) commitBlockPoS(blockHash *BlockHash) error {
 			UtxoView: utxoView,
 			UtxoOps:  utxoOpsForBlock,
 		})
+		// TODO: check w/ Z if this is right....
+		// Signal the state syncer that we've flushed to the DB so state syncer
+		// will pick up the latest changes after committing this block.
+		if !bc.eventManager.isMempoolManager {
+			bc.eventManager.stateSyncerFlushed(&StateSyncerFlushedEvent{
+				FlushId:   uuid.Nil,
+				Succeeded: true,
+			})
+		}
 	}
 	// TODO: What else do we need to do in here?
 	return nil
