@@ -223,21 +223,22 @@ func (txi *TXIndex) GetTxindexUpdateBlockNodes() (
 	blockIndexByHashCopy, _ := txi.TXIndexChain.CopyBlockIndexes()
 	txindexTipNode := blockIndexByHashCopy[*txindexTipHash.Hash]
 
+	// Get the committed tip.
+	committedTip, _ := txi.CoreChain.getCommittedTip()
 	if txindexTipNode == nil {
 		glog.Info("GetTxindexUpdateBlockNodes: Txindex tip was not found; building txindex starting at genesis block")
 
 		newTxIndexBestChain, _ := txi.TXIndexChain.CopyBestChain()
 		newBlockchainBestChain, _ := txi.CoreChain.CopyBestChain()
 
-		return txindexTipNode, txi.CoreChain.BlockTip(), nil, newTxIndexBestChain, newBlockchainBestChain
+		return txindexTipNode, committedTip, nil, newTxIndexBestChain, newBlockchainBestChain
 	}
 
 	// At this point, we know our txindex tip is in our block index so
 	// there must be a common ancestor between the tip and the block tip.
-	blockTip := txi.CoreChain.BlockTip()
-	commonAncestor, detachBlocks, attachBlocks := GetReorgBlocks(txindexTipNode, blockTip)
+	commonAncestor, detachBlocks, attachBlocks := GetReorgBlocks(txindexTipNode, committedTip)
 
-	return txindexTipNode, blockTip, commonAncestor, detachBlocks, attachBlocks
+	return txindexTipNode, committedTip, commonAncestor, detachBlocks, attachBlocks
 }
 
 // Update syncs the transaction index with the blockchain.

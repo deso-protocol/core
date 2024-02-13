@@ -96,6 +96,14 @@ func (nn *BlockNode) IsStored() bool {
 	return nn.Status&StatusBlockStored != 0
 }
 
+// IsProcessed returns true if the BlockNode has been processed and is not an orphan.
+// This status is effectively replaced with IsStored for PoS, but is applied to
+// blocks once validated to ensure checks for the processed status behave as expected
+// in other portions of the codebase.
+func (nn *BlockNode) IsProcessed() bool {
+	return nn.Status&StatusBlockProcessed != 0
+}
+
 // IsValidated returns true if a BlockNode has passed all validations. A BlockNode that is validated is
 // generally always stored first.
 func (nn *BlockNode) IsValidated() bool {
