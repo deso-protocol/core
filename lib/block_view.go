@@ -1001,6 +1001,16 @@ func (bav *UtxoView) _addBalance(amountNanos uint64, balancePublicKey []byte,
 	}, nil
 }
 
+func (bav *UtxoView) _addBalanceForStakeReward(amountNanos uint64, balancePublicKey []byte,
+) (*UtxoOperation, error) {
+	utxoOp, err := bav._addBalance(amountNanos, balancePublicKey)
+	if err != nil {
+		return nil, errors.Wrapf(err, "_addBalanceForStakeReward: ")
+	}
+	utxoOp.Type = OperationTypeStakeDistributionPayToBalance
+	return utxoOp, nil
+}
+
 func (bav *UtxoView) _addDESO(amountNanos uint64, publicKey []byte, utxoEntry *UtxoEntry, blockHeight uint32,
 ) (*UtxoOperation, error) {
 	if blockHeight >= bav.Params.ForkHeights.BalanceModelBlockHeight {
@@ -1659,7 +1669,7 @@ func (bav *UtxoView) DisconnectBlock(
 				for _, nonceEntry := range utxoOp.PrevNonceEntries {
 					bav.SetTransactorNonceEntry(nonceEntry)
 				}
-			case OperationTypeAddBalance:
+			case OperationTypeStakeDistributionPayToBalance:
 				// We don't allow add balance utxo operations unless it's the end of an epoch.
 				if !isLastBlockInEpoch {
 					return fmt.Errorf("DisconnectBlock: Found add balance operation in block %d that is not the end "+
@@ -1669,7 +1679,7 @@ func (bav *UtxoView) DisconnectBlock(
 				if err = bav._unAddBalance(utxoOp.BalanceAmountNanos, utxoOp.BalancePublicKey); err != nil {
 					return errors.Wrapf(err, "DisconnectBlock: Problem unAdding balance %v: ", utxoOp.BalanceAmountNanos)
 				}
-			case OperationTypeStakeDistribution:
+			case OperationTypeStakeDistributionRestake:
 				// We don't allow stake distribution utxo operations unless it's the end of an epoch.
 				if !isLastBlockInEpoch {
 					return fmt.Errorf("DisconnectBlock: Found add balance operation in block %d that is not the end "+

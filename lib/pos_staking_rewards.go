@@ -87,7 +87,9 @@ func (bav *UtxoView) DistributeStakingRewardsToSnapshotStakes(blockHeight uint64
 		// Reward the staker their portion of the staking reward.
 		if stakerRewardNanos > 0 {
 			var utxoOperation *UtxoOperation
-			if utxoOperation, err = bav.distributeStakingReward(snapshotStakeEntry.ValidatorPKID, snapshotStakeEntry.StakerPKID, stakerRewardNanos); err != nil {
+			if utxoOperation, err = bav.distributeStakingReward(
+				snapshotStakeEntry.ValidatorPKID, snapshotStakeEntry.StakerPKID, stakerRewardNanos, false,
+			); err != nil {
 				return nil, errors.Wrapf(err, "DistributeStakingRewardsToSnapshotStakes: problem distributing staker reward: ")
 			}
 			utxoOperations = append(utxoOperations, utxoOperation)
@@ -96,7 +98,8 @@ func (bav *UtxoView) DistributeStakingRewardsToSnapshotStakes(blockHeight uint64
 		// Reward the validator their commission from the staking reward.
 		if validatorCommissionNanos > 0 {
 			var utxoOperation *UtxoOperation
-			if utxoOperation, err = bav.distributeValidatorCommission(snapshotStakeEntry.ValidatorPKID, validatorCommissionNanos); err != nil {
+			if utxoOperation, err = bav.distributeValidatorCommission(
+				snapshotStakeEntry.ValidatorPKID, validatorCommissionNanos); err != nil {
 				return nil, errors.Wrapf(err, "DistributeStakingRewardsToSnapshotStakes: problem distributing validator commission reward: ")
 			}
 			utxoOperations = append(utxoOperations, utxoOperation)
@@ -182,7 +185,12 @@ func (bav *UtxoView) computeStakerRewardAndValidatorCommission(
 	return stakerRewardNanos.Uint64(), validatorCommissionNanos.Uint64(), nil
 }
 
-func (bav *UtxoView) distributeStakingReward(validatorPKID *PKID, stakerPKID *PKID, rewardNanos uint64) (*UtxoOperation, error) {
+func (bav *UtxoView) distributeStakingReward(
+	validatorPKID *PKID,
+	stakerPKID *PKID,
+	rewardNanos uint64,
+	isValidatorCommission bool,
+) (*UtxoOperation, error) {
 	// Fetch the staker's latest StakeEntry.
 	stakeEntry, err := bav.GetStakeEntry(validatorPKID, stakerPKID)
 	if err != nil {
@@ -202,10 +210,17 @@ func (bav *UtxoView) distributeStakingReward(validatorPKID *PKID, stakerPKID *PK
 			return nil, errors.Wrapf(err, "distributeStakingReward: problem fetching validator entry: ")
 		}
 		utxoOperation = &UtxoOperation{
-			Type:                 OperationTypeStakeDistribution,
+			Type:                 OperationTypeStakeDistributionRestake,
 			PrevStakeEntries:     []*StakeEntry{stakeEntry.Copy()},
 			PrevValidatorEntry:   validatorEntry.Copy(),
 			StakeAmountNanosDiff: rewardNanos,
+			StateChangeMetadata: &StakeRewardStateChangeMetadata{
+				ValidatorPKID:         validatorPKID,
+				StakerPKID:            stakerPKID,
+				RewardNanos:           rewardNanos,
+				StakingRewardMethod:   StakingRewardMethodRestake,
+				IsValidatorCommission: isValidatorCommission,
+			},
 		}
 		stakeEntry.StakeAmountNanos = uint256.NewInt().Add(stakeEntry.StakeAmountNanos, uint256.NewInt().SetUint64(rewardNanos))
 		bav._setStakeEntryMappings(stakeEntry)
@@ -219,8 +234,15 @@ func (bav *UtxoView) distributeStakingReward(validatorPKID *PKID, stakerPKID *PK
 	// the rewards directly to the staker's wallet.
 
 	stakerPublicKey := bav.GetPublicKeyForPKID(stakerPKID)
-	if utxoOperation, err = bav._addBalance(rewardNanos, stakerPublicKey); err != nil {
+	if utxoOperation, err = bav._addBalanceForStakeReward(rewardNanos, stakerPublicKey); err != nil {
 		return nil, errors.Wrapf(err, "distributeStakingReward: problem adding rewards to staker's DESO balance: ")
+	}
+	utxoOperation.StateChangeMetadata = &StakeRewardStateChangeMetadata{
+		ValidatorPKID:         validatorPKID,
+		StakerPKID:            stakerPKID,
+		RewardNanos:           rewardNanos,
+		StakingRewardMethod:   StakingRewardMethodPayToBalance,
+		IsValidatorCommission: isValidatorCommission,
 	}
 
 	return utxoOperation, nil
@@ -247,7 +269,7 @@ func (bav *UtxoView) distributeValidatorCommission(validatorPKID *PKID, commissi
 	// they can stake to themselves using a separate wallet and only enable reward restaking for that StakeEntry.
 	//
 	// If the above isn't desired the behavior, then we can alternatively always pay out validator's commission directly to their wallet.
-	return bav.distributeStakingReward(validatorPKID, validatorPKID, commissionNanos)
+	return bav.distributeStakingReward(validatorPKID, validatorPKID, commissionNanos, true)
 }
 
 var (
