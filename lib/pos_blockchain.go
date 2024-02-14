@@ -89,17 +89,17 @@ func (bc *Blockchain) validateAndIndexHeaderPoS(header *MsgDeSoHeader, headerHas
 	_headerBlockNode *BlockNode, _isOrphan bool, _err error,
 ) {
 	// Look up the header in the block index to check if it has already been validated and indexed.
-	blockNode, exists := bc.blockIndexByHash[*headerHash]
+	blockNode, blockNodeExists := bc.blockIndexByHash[*headerHash]
 
 	// ------------------------------------ Base Cases ----------------------------------- //
 
 	// The header is already validated. Exit early.
-	if exists && blockNode.IsHeaderValidated() {
+	if blockNodeExists && blockNode.IsHeaderValidated() {
 		return blockNode, false, nil
 	}
 
 	// The header has already failed validations. Exit early.
-	if exists && blockNode.IsHeaderValidateFailed() {
+	if blockNodeExists && blockNode.IsHeaderValidateFailed() {
 		return nil, false, errors.New("validateAndIndexHeaderPoS: Header already failed validation")
 	}
 
@@ -115,7 +115,7 @@ func (bc *Blockchain) validateAndIndexHeaderPoS(header *MsgDeSoHeader, headerHas
 	}
 
 	// Sanity-check that the parent block is an ancestor of the current block.
-	if parentBlockNode.Height+1 != blockNode.Height {
+	if blockNodeExists && (parentBlockNode.Height+1 != blockNode.Height) {
 		return nil, false, errors.New("validateAndIndexHeaderPoS: Parent header has " +
 			"greater or equal height compared to the current header.")
 	}
