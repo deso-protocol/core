@@ -95,12 +95,6 @@ func SetupRunFlags(cmd *cobra.Command) {
 	cmd.PersistentFlags().Uint64("mempool-backup-time-millis", 30000,
 		"The frequency in milliseconds with which the mempool will persist its state to disk. "+
 			"The default value is 30 seconds, or 30,000 milliseconds.")
-	cmd.PersistentFlags().Uint64("max-mempool-pos-size-bytes", 3000000000,
-		"The maximum size of the PoS mempool in bytes. The default value is 3GB.")
-	cmd.PersistentFlags().Uint64("mempool-fee-estimator-num-mempool-blocks", 1,
-		"The number of future blocks to break the PoS mempool into when estimating txn fee for the next block.")
-	cmd.PersistentFlags().Uint64("mempool-fee-estimator-num-past-blocks", 50,
-		"The number of past blocks to use when estimating txn fee for the next block from the PoS mempool.")
 	cmd.PersistentFlags().Uint64("augmented-block-view-refresh-interval-millis", 10,
 		"The frequency in milliseconds with which the augmented block view will be refreshed. "+
 			"The default value is 100 milliseconds.")
