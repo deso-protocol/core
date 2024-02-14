@@ -132,8 +132,6 @@ type PosMempool struct {
 	// latestBlockNode is used to infer the latest block height. The latestBlockNode should be updated whenever a new
 	// block is added to the blockchain via UpdateLatestBlock.
 	latestBlockHeight uint64
-	// maxMempoolPosSizeBytes is the maximum aggregate number of bytes of transactions included in the PoS mempool.
-	maxMempoolPosSizeBytes uint64
 	// mempoolBackupIntervalMillis is the frequency with which pos mempool persists transactions to storage.
 	mempoolBackupIntervalMillis uint64
 
@@ -216,7 +214,6 @@ func (mp *PosMempool) Init(
 	mp.latestBlockHeight = latestBlockHeight
 	mp.dir = dir
 	mp.inMemoryOnly = inMemoryOnly
-	mp.maxMempoolPosSizeBytes = globalParams.MempoolMaxSizeBytes
 	mp.mempoolBackupIntervalMillis = mempoolBackupIntervalMillis
 	mp.augmentedBlockViewRefreshIntervalMillis = augmentedBlockViewRefreshIntervalMillis
 
@@ -787,11 +784,11 @@ func (mp *PosMempool) refreshNoLock() error {
 // are removed in lowest to highest Fee-Time priority, i.e. opposite way that transactions are ordered in
 // GetTransactions().
 func (mp *PosMempool) pruneNoLock() error {
-	if mp.txnRegister.Size() < mp.maxMempoolPosSizeBytes {
+	if mp.txnRegister.Size() < mp.globalParams.MempoolMaxSizeBytes {
 		return nil
 	}
 
-	prunedTxns, err := mp.txnRegister.PruneToSize(mp.maxMempoolPosSizeBytes)
+	prunedTxns, err := mp.txnRegister.PruneToSize(mp.globalParams.MempoolMaxSizeBytes)
 	if err != nil {
 		return errors.Wrapf(err, "PosMempool.pruneNoLock: Problem pruning mempool")
 	}
