@@ -2,9 +2,10 @@ package lib
 
 import (
 	"fmt"
-	"github.com/google/uuid"
 	"math"
 	"time"
+
+	"github.com/google/uuid"
 
 	"github.com/deso-protocol/core/collections"
 	"github.com/deso-protocol/core/consensus"
@@ -223,7 +224,7 @@ func (bc *Blockchain) processBlockPoS(block *MsgDeSoBlock, currentView uint64, v
 	// is an orphan, then we store it after performing basic validations.
 	// If the block extends from any committed block other than the committed tip,
 	// then we throw it away.
-	lineageFromCommittedTip, err := bc.getLineageFromCommittedTip(block)
+	lineageFromCommittedTip, err := bc.getLineageFromCommittedTip(block.Header)
 	if err == RuleErrorDoesNotExtendCommittedTip ||
 		err == RuleErrorParentBlockHasViewGreaterOrEqualToChildBlock ||
 		err == RuleErrorParentBlockHeightNotSequentialWithChildBlockHeight ||
@@ -1167,15 +1168,15 @@ func (bc *Blockchain) isValidPoSQuorumCertificate(block *MsgDeSoBlock, validator
 // getLineageFromCommittedTip returns the ancestors of the block provided up to, but not
 // including the committed tip. The first block in the returned slice is the first uncommitted
 // ancestor.
-func (bc *Blockchain) getLineageFromCommittedTip(block *MsgDeSoBlock) ([]*BlockNode, error) {
+func (bc *Blockchain) getLineageFromCommittedTip(header *MsgDeSoHeader) ([]*BlockNode, error) {
 	highestCommittedBlock, idx := bc.getCommittedTip()
 	if idx == -1 || highestCommittedBlock == nil {
 		return nil, errors.New("getLineageFromCommittedTip: No committed blocks found")
 	}
-	currentHash := block.Header.PrevBlockHash.NewBlockHash()
+	currentHash := header.PrevBlockHash.NewBlockHash()
 	ancestors := []*BlockNode{}
-	prevHeight := block.Header.Height
-	prevView := block.Header.GetView()
+	prevHeight := header.Height
+	prevView := header.GetView()
 	for {
 		currentBlock, exists := bc.blockIndexByHash[*currentHash]
 		if !exists {
@@ -1746,13 +1747,25 @@ func (bc *Blockchain) getCommittedTip() (*BlockNode, int) {
 // This function is not thread-safe. The caller needs to hold the chain lock before
 // calling this function.
 func (bc *Blockchain) GetSafeBlocks() ([]*MsgDeSoHeader, error) {
+	safeBlocks, err := bc.getSafeBlockNodes()
+	if err != nil {
+		return nil, errors.Wrapf(err, "GetSafeBlocks: Problem getting safe block nodes")
+	}
+	headers := []*MsgDeSoHeader{}
+	for _, blockNode := range safeBlocks {
+		headers = append(headers, blockNode.Header)
+	}
+	return headers, nil
+}
+
+func (bc *Blockchain) getSafeBlockNodes() ([]*BlockNode, error) {
 	// First get committed tip.
 	committedTip, idx := bc.getCommittedTip()
 	if idx == -1 || committedTip == nil {
-		return nil, errors.New("GetSafeBlocks: No committed blocks found")
+		return nil, errors.New("getSafeBlockNodes: No committed blocks found")
 	}
 	// Now get all blocks from the committed tip to the best chain tip.
-	safeBlocks := []*MsgDeSoHeader{committedTip.Header}
+	safeBlocks := []*BlockNode{committedTip}
 	maxHeightWithSafeBlocks := bc.getMaxSequentialBlockHeightAfter(uint64(committedTip.Height))
 	for ii := uint64(committedTip.Height + 1); ii < maxHeightWithSafeBlocks+1; ii++ {
 		// If we don't have any blocks at this height, we know that any blocks at a later height are not safe blocks.
@@ -1765,7 +1778,7 @@ func (bc *Blockchain) GetSafeBlocks() ([]*MsgDeSoHeader, error) {
 			// TODO: Are there other conditions we should consider?
 			if blockNode.IsValidated() {
 				hasSeenValidatedBlockAtThisHeight = true
-				safeBlocks = append(safeBlocks, blockNode.Header)
+				safeBlocks = append(safeBlocks, blockNode)
 			}
 		}
 		// If we didn't see any validated blocks at this height, we know
