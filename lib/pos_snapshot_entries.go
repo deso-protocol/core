@@ -3,10 +3,11 @@ package lib
 import (
 	"bytes"
 	"fmt"
-	"github.com/deso-protocol/core/bls"
-	"github.com/deso-protocol/core/collections"
 	"math"
 	"sort"
+
+	"github.com/deso-protocol/core/bls"
+	"github.com/deso-protocol/core/collections"
 
 	"github.com/dgraph-io/badger/v3"
 	"github.com/golang/glog"
@@ -147,6 +148,18 @@ func _mergeGlobalParamEntryDefaults(bav *UtxoView, globalParamsEntry *GlobalPara
 	if globalParamsEntryCopy.MaximumVestedIntersectionsPerLockupTransaction == 0 {
 		globalParamsEntryCopy.MaximumVestedIntersectionsPerLockupTransaction =
 			bav.Params.DefaultMaximumVestedIntersectionsPerLockupTransaction
+	}
+	if globalParamsEntryCopy.BlockTimestampDriftNanoSecs == 0 {
+		globalParamsEntryCopy.BlockTimestampDriftNanoSecs = bav.Params.DefaultBlockTimestampDriftNanoSecs
+	}
+	if globalParamsEntryCopy.MempoolMaxSizeBytes == 0 {
+		globalParamsEntryCopy.MempoolMaxSizeBytes = bav.Params.DefaultMempoolMaxSizeBytes
+	}
+	if globalParamsEntryCopy.MempoolFeeEstimatorNumMempoolBlocks == 0 {
+		globalParamsEntryCopy.MempoolFeeEstimatorNumMempoolBlocks = bav.Params.DefaultMempoolFeeEstimatorNumMempoolBlocks
+	}
+	if globalParamsEntryCopy.MempoolFeeEstimatorNumPastBlocks == 0 {
+		globalParamsEntryCopy.MempoolFeeEstimatorNumPastBlocks = bav.Params.DefaultMempoolFeeEstimatorNumPastBlocks
 	}
 
 	// Return the merged result.

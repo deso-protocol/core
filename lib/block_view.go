@@ -3322,29 +3322,69 @@ func (bav *UtxoView) _connectUpdateGlobalParams(
 				)
 			}
 		}
-	}
-
-	if blockHeight >= bav.Params.ForkHeights.ProofOfStake2ConsensusCutoverBlockHeight {
-		var bytesRead int
-		if len(extraData[FeeBucketGrowthRateBasisPointsKey]) > 0 {
-			newGlobalParamsEntry.FeeBucketGrowthRateBasisPoints, bytesRead = Uvarint(
-				extraData[FeeBucketGrowthRateBasisPointsKey],
+		if len(extraData[BlockTimestampDriftNanoSecsKey]) > 0 {
+			val, bytesRead := Varint(
+				extraData[BlockTimestampDriftNanoSecsKey],
 			)
 			if bytesRead <= 0 {
 				return 0, 0, nil, fmt.Errorf(
-					"_connectUpdateGlobalParams: unable to decode FeeBucketGrowthRateBasisPoints as uint64",
+					"_connectUpdateGlobalParams: unable to decode BlockTimestampDriftNanoSecs as int64",
 				)
 			}
+			if val < 0 {
+				return 0, 0, nil, fmt.Errorf(
+					"_connectUpdateGlobalParams: BlockTimestampDriftNanoSecs must be >= 0",
+				)
+			}
+			newGlobalParamsEntry.BlockTimestampDriftNanoSecs = val
 		}
-		if len(extraData[FailingTransactionBMFMultiplierBasisPointsKey]) > 0 {
-			newGlobalParamsEntry.FailingTransactionBMFMultiplierBasisPoints, bytesRead = Uvarint(
-				extraData[FailingTransactionBMFMultiplierBasisPointsKey],
+		if len(extraData[MempoolMaxSizeBytesKey]) > 0 {
+			val, bytesRead := Uvarint(
+				extraData[MempoolMaxSizeBytesKey],
 			)
 			if bytesRead <= 0 {
 				return 0, 0, nil, fmt.Errorf(
-					"_connectUpdateGlobalParams: unable to decode FailingTransactionBMFMultiplierBasisPoints as uint64",
+					"_connectUpdateGlobalParams: unable to decode MempoolMaxSizeBytes as uint64",
 				)
 			}
+			if val <= 0 {
+				return 0, 0, nil, fmt.Errorf(
+					"_connectUpdateGlobalParams: MempoolMaxSizeBytes must be > 0",
+				)
+			}
+			newGlobalParamsEntry.MempoolMaxSizeBytes = val
+		}
+		if len(extraData[MempoolFeeEstimatorNumMempoolBlocksKey]) > 0 {
+			val, bytesRead := Uvarint(
+				extraData[MempoolFeeEstimatorNumMempoolBlocksKey],
+			)
+			if bytesRead <= 0 {
+				return 0, 0, nil, fmt.Errorf(
+					"_connectUpdateGlobalParams: unable to decode MempoolFeeEstimatorNumMempoolBlocks as uint64",
+				)
+			}
+			if val <= 0 {
+				return 0, 0, nil, fmt.Errorf(
+					"_connectUpdateGlobalParams: MempoolFeeEstimatorNumMempoolBlocks must be > 0",
+				)
+			}
+			newGlobalParamsEntry.MempoolFeeEstimatorNumMempoolBlocks = val
+		}
+		if len(extraData[MempoolFeeEstimatorNumPastBlocksKey]) > 0 {
+			val, bytesRead := Uvarint(
+				extraData[MempoolFeeEstimatorNumPastBlocksKey],
+			)
+			if bytesRead <= 0 {
+				return 0, 0, nil, fmt.Errorf(
+					"_connectUpdateGlobalParams: unable to decode MempoolFeeEstimatorNumPastBlocks as uint64",
+				)
+			}
+			if val <= 0 {
+				return 0, 0, nil, fmt.Errorf(
+					"_connectUpdateGlobalParams: MempoolFeeEstimatorNumPastBlocks must be > 0",
+				)
+			}
+			newGlobalParamsEntry.MempoolFeeEstimatorNumPastBlocks = val
 		}
 	}
 

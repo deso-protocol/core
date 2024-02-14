@@ -742,7 +742,6 @@ type DeSoParams struct {
 	// before they are jailed.
 	DefaultJailInactiveValidatorGracePeriodEpochs uint64
 
-	// TODO: add support for putting the drift in global params.
 	// DefaultBlockTimestampDriftNanoSecs is the default number of nanoseconds
 	// from the current timestamp that we will allow a PoS block to be submitted.
 	DefaultBlockTimestampDriftNanoSecs int64
@@ -760,6 +759,20 @@ type DeSoParams struct {
 	// GlobalParamsEntry.MaximumVestedIntersectionsPerLockupTransaction. See the comment
 	// in GlobalParamsEntry for a detailed description of its usage.
 	DefaultMaximumVestedIntersectionsPerLockupTransaction int
+
+	// DefaultMempoolMaxSizeBytes is the default value for GlobalParamsEntry.MempoolMaxSizeBytes.
+	// See the comment in GlobalParamsEntry for a description of its usage.
+	DefaultMempoolMaxSizeBytes uint64
+
+	// DefaultMempoolFeeEstimatorNumMempoolBlocks is the default value for
+	// GlobalParamsEntry.MempoolFeeEstimatorNumMempoolBlocks. See the comment in GlobalParamsEntry
+	// for a description of its usage.
+	DefaultMempoolFeeEstimatorNumMempoolBlocks uint64
+
+	// DefaultMempoolFeeEstimatorNumPastBlocks is the default value for
+	// GlobalParamsEntry.MempoolFeeEstimatorNumPastBlocks. See the comment in GlobalParamsEntry
+	// for a description of its usage.
+	DefaultMempoolFeeEstimatorNumPastBlocks uint64
 
 	// HandshakeTimeoutMicroSeconds is the timeout for the peer handshake certificate. The default value is 15 minutes.
 	HandshakeTimeoutMicroSeconds uint64
@@ -1216,6 +1229,15 @@ var DeSoMainnetParams = DeSoParams{
 	// The maximum number of vested lockup intersections in a lockup transaction.
 	DefaultMaximumVestedIntersectionsPerLockupTransaction: 1000,
 
+	// The maximum size of the mempool in bytes.
+	DefaultMempoolMaxSizeBytes: 3 * 1024 * 1024 * 1024, // 3GB
+
+	// The number of future blocks to consider when estimating the mempool fee.
+	DefaultMempoolFeeEstimatorNumMempoolBlocks: 1,
+
+	// The number of past blocks to consider when estimating the mempool fee.
+	DefaultMempoolFeeEstimatorNumPastBlocks: 50,
+
 	// The peer handshake certificate timeout.
 	HandshakeTimeoutMicroSeconds: uint64(900000000),
 
@@ -1498,6 +1520,15 @@ var DeSoTestnetParams = DeSoParams{
 	// The maximum number of vested lockup intersections in a lockup transaction.
 	DefaultMaximumVestedIntersectionsPerLockupTransaction: 1000,
 
+	// The maximum size of the mempool in bytes.
+	DefaultMempoolMaxSizeBytes: 3 * 1024 * 1024 * 1024, // 3GB
+
+	// The number of future blocks to consider when estimating the mempool fee.
+	DefaultMempoolFeeEstimatorNumMempoolBlocks: 1,
+
+	// The number of past blocks to consider when estimating the mempool fee.
+	DefaultMempoolFeeEstimatorNumPastBlocks: 50,
+
 	// The peer handshake certificate timeout.
 	HandshakeTimeoutMicroSeconds: uint64(900000000),
 
@@ -1559,6 +1590,10 @@ const (
 	MaximumVestedIntersectionsPerLockupTransactionKey = "MaximumVestedIntersectionsPerLockupTransaction"
 	FeeBucketGrowthRateBasisPointsKey                 = "FeeBucketGrowthRateBasisPointsKey"
 	FailingTransactionBMFMultiplierBasisPointsKey     = "FailingTransactionBMFMultiplierBasisPoints"
+	BlockTimestampDriftNanoSecsKey                    = "BlockTimestampDriftNanoSecs"
+	MempoolMaxSizeBytesKey                            = "MempoolMaxSizeBytes"
+	MempoolFeeEstimatorNumMempoolBlocksKey            = "MempoolFeeEstimatorNumMempoolBlocks"
+	MempoolFeeEstimatorNumPastBlocksKey               = "MempoolFeeEstimatorNumPastBlocks"
 
 	DiamondLevelKey    = "DiamondLevel"
 	DiamondPostHashKey = "DiamondPostHash"
