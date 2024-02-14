@@ -731,6 +731,20 @@ type DeSoParams struct {
 	// in GlobalParamsEntry for a detailed description of its usage.
 	DefaultMaximumVestedIntersectionsPerLockupTransaction int
 
+	// DefaultMempoolMaxSizeBytes is the default value for GlobalParamsEntry.MempoolMaxSizeBytes.
+	// See the comment in GlobalParamsEntry for a description of its usage.
+	DefaultMempoolMaxSizeBytes uint64
+
+	// DefaultMempoolFeeEstimatorNumMempoolBlocks is the default value for
+	// GlobalParamsEntry.MempoolFeeEstimatorNumMempoolBlocks. See the comment in GlobalParamsEntry
+	// for a description of its usage.
+	DefaultMempoolFeeEstimatorNumMempoolBlocks uint64
+
+	// DefaultMempoolFeeEstimatorNumPastBlocks is the default value for
+	// GlobalParamsEntry.MempoolFeeEstimatorNumPastBlocks. See the comment in GlobalParamsEntry
+	// for a description of its usage.
+	DefaultMempoolFeeEstimatorNumPastBlocks uint64
+
 	ForkHeights ForkHeights
 
 	EncoderMigrationHeights     *EncoderMigrationHeights
@@ -1177,6 +1191,15 @@ var DeSoMainnetParams = DeSoParams{
 	// The maximum number of vested lockup intersections in a lockup transaction.
 	DefaultMaximumVestedIntersectionsPerLockupTransaction: 1000,
 
+	// The maximum size of the mempool in bytes.
+	DefaultMempoolMaxSizeBytes: 3 * 1024 * 1024 * 1024, // 3GB
+
+	// The number of future blocks to consider when estimating the mempool fee.
+	DefaultMempoolFeeEstimatorNumMempoolBlocks: 1,
+
+	// The number of past blocks to consider when estimating the mempool fee.
+	DefaultMempoolFeeEstimatorNumPastBlocks: 50,
+
 	ForkHeights:                 MainnetForkHeights,
 	EncoderMigrationHeights:     GetEncoderMigrationHeights(&MainnetForkHeights),
 	EncoderMigrationHeightsList: GetEncoderMigrationHeightsList(&MainnetForkHeights),
@@ -1449,6 +1472,15 @@ var DeSoTestnetParams = DeSoParams{
 
 	// The maximum number of vested lockup intersections in a lockup transaction.
 	DefaultMaximumVestedIntersectionsPerLockupTransaction: 1000,
+
+	// The maximum size of the mempool in bytes.
+	DefaultMempoolMaxSizeBytes: 3 * 1024 * 1024 * 1024, // 3GB
+
+	// The number of future blocks to consider when estimating the mempool fee.
+	DefaultMempoolFeeEstimatorNumMempoolBlocks: 1,
+
+	// The number of past blocks to consider when estimating the mempool fee.
+	DefaultMempoolFeeEstimatorNumPastBlocks: 50,
 
 	ForkHeights:                 TestnetForkHeights,
 	EncoderMigrationHeights:     GetEncoderMigrationHeights(&TestnetForkHeights),

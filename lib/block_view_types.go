@@ -4161,6 +4161,17 @@ type GlobalParamsEntry struct {
 	// BlockTimestampDriftNanoSecs is the maximum number of nanoseconds from the current timestamp that
 	// we will allow a PoS block to be submitted.
 	BlockTimestampDriftNanoSecs int64
+
+	// MempoolMaxSizeBytes is the maximum size of the mempool in bytes.
+	MempoolMaxSizeBytes uint64
+
+	// MempoolFeeEstimatorNumMempoolBlocks is the number of possible future blocks to a txn may be placed
+	// into when consider when estimating the fee for a new txn.
+	MempoolFeeEstimatorNumMempoolBlocks uint64
+
+	// MempoolFeeEstimatorNumPastBlocks is the number of past blocks to reference txn fees from when estimating
+	// the fee for a new txn.
+	MempoolFeeEstimatorNumPastBlocks uint64
 }
 
 func (gp *GlobalParamsEntry) Copy() *GlobalParamsEntry {
@@ -4183,6 +4194,9 @@ func (gp *GlobalParamsEntry) Copy() *GlobalParamsEntry {
 		FeeBucketGrowthRateBasisPoints:                 gp.FeeBucketGrowthRateBasisPoints,
 		FailingTransactionBMFMultiplierBasisPoints:     gp.FailingTransactionBMFMultiplierBasisPoints,
 		BlockTimestampDriftNanoSecs:                    gp.BlockTimestampDriftNanoSecs,
+		MempoolMaxSizeBytes:                            gp.MempoolMaxSizeBytes,
+		MempoolFeeEstimatorNumMempoolBlocks:            gp.MempoolFeeEstimatorNumMempoolBlocks,
+		MempoolFeeEstimatorNumPastBlocks:               gp.MempoolFeeEstimatorNumPastBlocks,
 	}
 }
 
@@ -4210,6 +4224,9 @@ func (gp *GlobalParamsEntry) RawEncodeWithoutMetadata(blockHeight uint64, skipMe
 		data = append(data, UintToBuf(gp.FeeBucketGrowthRateBasisPoints)...)
 		data = append(data, UintToBuf(gp.FailingTransactionBMFMultiplierBasisPoints)...)
 		data = append(data, IntToBuf(gp.BlockTimestampDriftNanoSecs)...)
+		data = append(data, UintToBuf(gp.MempoolMaxSizeBytes)...)
+		data = append(data, UintToBuf(gp.MempoolFeeEstimatorNumMempoolBlocks)...)
+		data = append(data, UintToBuf(gp.MempoolFeeEstimatorNumPastBlocks)...)
 	}
 	return data
 }
@@ -4293,6 +4310,18 @@ func (gp *GlobalParamsEntry) RawDecodeWithoutMetadata(blockHeight uint64, rr *by
 		gp.BlockTimestampDriftNanoSecs, err = ReadVarint(rr)
 		if err != nil {
 			return errors.Wrapf(err, "GlobalParamsEntry.Decode: Problem reading BlockTimestampDriftNanoSecs")
+		}
+		gp.MempoolMaxSizeBytes, err = ReadUvarint(rr)
+		if err != nil {
+			return errors.Wrapf(err, "GlobalParamsEntry.Decode: Problem reading MempoolMaxSizeBytes")
+		}
+		gp.MempoolFeeEstimatorNumMempoolBlocks, err = ReadUvarint(rr)
+		if err != nil {
+			return errors.Wrapf(err, "GlobalParamsEntry.Decode: Problem reading MempoolFeeEstimatorNumMempoolBlocks")
+		}
+		gp.MempoolFeeEstimatorNumPastBlocks, err = ReadUvarint(rr)
+		if err != nil {
+			return errors.Wrapf(err, "GlobalParamsEntry.Decode: Problem reading MempoolFeeEstimatorNumPastBlocks")
 		}
 	}
 	return nil
