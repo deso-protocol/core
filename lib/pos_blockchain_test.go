@@ -83,15 +83,19 @@ func TestIsProperlyFormedBlockPoSAndIsBlockTimestampValidRelativeToParentPoS(t *
 		Txns:                    txns,
 		TxnConnectStatusByIndex: bitset.NewBitset().Set(0, true),
 	}
+	utxoView, err := NewUtxoView(bc.db, bc.params, nil, nil, nil)
+	require.NoError(t, err)
+	globalParams, err := utxoView.GetCurrentSnapshotGlobalParamsEntry()
+	require.NoError(t, err)
 
 	// Validate the block with a valid timeout QC and header.
-	err = bc.isProperlyFormedBlockPoS(block)
+	err = bc.isProperlyFormedBlockPoS(block, globalParams)
 	// There should be no error.
 	require.Nil(t, err)
 
 	// Timeout QC must have at least one transaction and that transaction must be a block reward txn.
 	block.Txns = nil
-	err = bc.isProperlyFormedBlockPoS(block)
+	err = bc.isProperlyFormedBlockPoS(block, globalParams)
 	require.Equal(t, err, RuleErrorBlockWithNoTxns)
 
 	block.Txns = []*MsgDeSoTxn{
@@ -99,7 +103,7 @@ func TestIsProperlyFormedBlockPoSAndIsBlockTimestampValidRelativeToParentPoS(t *
 			TxnMeta: &BasicTransferMetadata{},
 		},
 	}
-	err = bc.isProperlyFormedBlockPoS(block)
+	err = bc.isProperlyFormedBlockPoS(block, globalParams)
 	require.Equal(t, err, RuleErrorBlockDoesNotStartWithRewardTxn)
 	// Revert txns to be valid.
 	block.Txns = []*MsgDeSoTxn{
@@ -110,7 +114,7 @@ func TestIsProperlyFormedBlockPoSAndIsBlockTimestampValidRelativeToParentPoS(t *
 
 	// Header's Proposed in view must be exactly one greater than the timeout QC's timed out view
 	block.Header.ProposedInView = 2
-	err = bc.isProperlyFormedBlockPoS(block)
+	err = bc.isProperlyFormedBlockPoS(block, globalParams)
 	require.Equal(t, err, RuleErrorPoSTimeoutBlockViewNotOneGreaterThanValidatorsTimeoutQCView)
 
 	// Revert proposed in view
@@ -118,7 +122,7 @@ func TestIsProperlyFormedBlockPoSAndIsBlockTimestampValidRelativeToParentPoS(t *
 
 	// Timeout QC also must have a merkle root
 	block.Header.TransactionMerkleRoot = nil
-	err = bc.isProperlyFormedBlockPoS(block)
+	err = bc.isProperlyFormedBlockPoS(block, globalParams)
 	require.Equal(t, err, RuleErrorNilMerkleRoot)
 
 	// Make sure block can't have both timeout and vote QC.
@@ -131,13 +135,13 @@ func TestIsProperlyFormedBlockPoSAndIsBlockTimestampValidRelativeToParentPoS(t *
 		},
 	}
 	block.Header.ValidatorsVoteQC = validatorVoteQC
-	err = bc.isProperlyFormedBlockPoS(block)
+	err = bc.isProperlyFormedBlockPoS(block, globalParams)
 	require.Equal(t, err, RuleErrorBothTimeoutAndVoteQC)
 
 	// Make sure block has either timeout or vote QC.
 	block.Header.ValidatorsTimeoutAggregateQC = nil
 	block.Header.ValidatorsVoteQC = nil
-	err = bc.isProperlyFormedBlockPoS(block)
+	err = bc.isProperlyFormedBlockPoS(block, globalParams)
 	require.Equal(t, err, RuleErrorNoTimeoutOrVoteQC)
 
 	// Reset validator vote QC.
@@ -156,12 +160,12 @@ func TestIsProperlyFormedBlockPoSAndIsBlockTimestampValidRelativeToParentPoS(t *
 	require.NoError(t, err)
 	block.Header.TransactionMerkleRoot = merkleRoot
 	// There should be no error.
-	err = bc.isProperlyFormedBlockPoS(block)
+	err = bc.isProperlyFormedBlockPoS(block, globalParams)
 	require.Nil(t, err)
 
 	// Vote QC must have Header's Proposed in view exactly one greater than vote QC's proposed in view.
 	block.Header.ProposedInView = 2
-	err = bc.isProperlyFormedBlockPoS(block)
+	err = bc.isProperlyFormedBlockPoS(block, globalParams)
 	require.Equal(t, err, RuleErrorPoSVoteBlockViewNotOneGreaterThanValidatorsVoteQCView)
 
 	// Revert proposed in view
@@ -169,12 +173,12 @@ func TestIsProperlyFormedBlockPoSAndIsBlockTimestampValidRelativeToParentPoS(t *
 
 	// Block must have non-nil Merkle root if we have non-zero transactions
 	block.Header.TransactionMerkleRoot = nil
-	err = bc.isProperlyFormedBlockPoS(block)
+	err = bc.isProperlyFormedBlockPoS(block, globalParams)
 	require.Equal(t, err, RuleErrorNilMerkleRoot)
 
 	// Block must have a matching merkle root
 	block.Header.TransactionMerkleRoot = &ZeroBlockHash
-	err = bc.isProperlyFormedBlockPoS(block)
+	err = bc.isProperlyFormedBlockPoS(block, globalParams)
 	require.Equal(t, err, RuleErrorInvalidMerkleRoot)
 
 	// Reset transactions
@@ -187,27 +191,27 @@ func TestIsProperlyFormedBlockPoSAndIsBlockTimestampValidRelativeToParentPoS(t *
 	// TxnConnectStatusByIndex tests
 	// TxnConnectStatusByIndex must be non-nil
 	block.TxnConnectStatusByIndex = nil
-	err = bc.isProperlyFormedBlockPoS(block)
+	err = bc.isProperlyFormedBlockPoS(block, globalParams)
 	require.Equal(t, err, RuleErrorNilTxnConnectStatusByIndex)
 	// TxnConnectStatusByIndexHash must be non-nil
 	block.TxnConnectStatusByIndex = bitset.NewBitset().Set(0, true)
 	block.Header.TxnConnectStatusByIndexHash = nil
-	err = bc.isProperlyFormedBlockPoS(block)
+	err = bc.isProperlyFormedBlockPoS(block, globalParams)
 	require.Equal(t, err, RuleErrorNilTxnConnectStatusByIndexHash)
 	// The hashed version of TxnConnectStatusByIndex must match the actual TxnConnectStatusByIndexHash
 	block.Header.TxnConnectStatusByIndexHash = HashBitset(bitset.NewBitset().Set(0, false))
-	err = bc.isProperlyFormedBlockPoS(block)
+	err = bc.isProperlyFormedBlockPoS(block, globalParams)
 	require.Equal(t, err, RuleErrorTxnConnectStatusByIndexHashMismatch)
 	// Reset TxnConnectStatusByIndexHash
 	block.Header.TxnConnectStatusByIndexHash = HashBitset(block.TxnConnectStatusByIndex)
 
 	// Block must have valid proposer voting public key
 	block.Header.ProposerVotingPublicKey = nil
-	err = bc.isProperlyFormedBlockPoS(block)
+	err = bc.isProperlyFormedBlockPoS(block, globalParams)
 	require.Equal(t, err, RuleErrorInvalidProposerVotingPublicKey)
 
 	block.Header.ProposerVotingPublicKey = &bls.PublicKey{}
-	err = bc.isProperlyFormedBlockPoS(block)
+	err = bc.isProperlyFormedBlockPoS(block, globalParams)
 	require.Equal(t, err, RuleErrorInvalidProposerVotingPublicKey)
 
 	// Reset proposer voting public key
@@ -215,22 +219,22 @@ func TestIsProperlyFormedBlockPoSAndIsBlockTimestampValidRelativeToParentPoS(t *
 
 	// Block must have valid proposer public key
 	block.Header.ProposerPublicKey = nil
-	err = bc.isProperlyFormedBlockPoS(block)
+	err = bc.isProperlyFormedBlockPoS(block, globalParams)
 	require.Equal(t, err, RuleErrorInvalidProposerPublicKey)
 
 	block.Header.ProposerPublicKey = &ZeroPublicKey
-	err = bc.isProperlyFormedBlockPoS(block)
+	err = bc.isProperlyFormedBlockPoS(block, globalParams)
 	require.Equal(t, err, RuleErrorInvalidProposerPublicKey)
 
 	block.Header.ProposerPublicKey = NewPublicKey(RandomBytes(33))
 
 	// Block must have valid proposer random seed hash
 	block.Header.ProposerRandomSeedSignature = nil
-	err = bc.isProperlyFormedBlockPoS(block)
+	err = bc.isProperlyFormedBlockPoS(block, globalParams)
 	require.Equal(t, err, RuleErrorInvalidProposerRandomSeedSignature)
 
 	block.Header.ProposerRandomSeedSignature = &bls.Signature{}
-	err = bc.isProperlyFormedBlockPoS(block)
+	err = bc.isProperlyFormedBlockPoS(block, globalParams)
 	require.Equal(t, err, RuleErrorInvalidProposerRandomSeedSignature)
 
 	block.Header.ProposerRandomSeedSignature = signature
@@ -243,7 +247,7 @@ func TestIsProperlyFormedBlockPoSAndIsBlockTimestampValidRelativeToParentPoS(t *
 
 	// Block timestamps can't be in the future.
 	block.Header.TstampNanoSecs = time.Now().UnixNano() + (11 * time.Minute).Nanoseconds()
-	err = bc.isProperlyFormedBlockPoS(block)
+	err = bc.isProperlyFormedBlockPoS(block, globalParams)
 	require.Equal(t, err, RuleErrorPoSBlockTstampNanoSecsInFuture)
 
 	// Revert the Header's timestamp
@@ -251,7 +255,7 @@ func TestIsProperlyFormedBlockPoSAndIsBlockTimestampValidRelativeToParentPoS(t *
 
 	//  Block Header version must be 2
 	block.Header.Version = 1
-	err = bc.isProperlyFormedBlockPoS(block)
+	err = bc.isProperlyFormedBlockPoS(block, globalParams)
 	require.Equal(t, err, RuleErrorInvalidPoSBlockHeaderVersion)
 
 	// Revert block header version
@@ -259,7 +263,7 @@ func TestIsProperlyFormedBlockPoSAndIsBlockTimestampValidRelativeToParentPoS(t *
 
 	// Nil prev block hash not allowed
 	block.Header.PrevBlockHash = nil
-	err = bc.isProperlyFormedBlockPoS(block)
+	err = bc.isProperlyFormedBlockPoS(block, globalParams)
 	require.Equal(t, err, RuleErrorNilPrevBlockHash)
 
 	// Parent must exist in the block index.
@@ -269,7 +273,7 @@ func TestIsProperlyFormedBlockPoSAndIsBlockTimestampValidRelativeToParentPoS(t *
 
 	// Nil block header not allowed
 	block.Header = nil
-	err = bc.isProperlyFormedBlockPoS(block)
+	err = bc.isProperlyFormedBlockPoS(block, globalParams)
 	require.Equal(t, err, RuleErrorNilBlockHeader)
 }
 

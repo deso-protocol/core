@@ -713,7 +713,6 @@ type DeSoParams struct {
 	// before they are jailed.
 	DefaultJailInactiveValidatorGracePeriodEpochs uint64
 
-	// TODO: add support for putting the drift in global params.
 	// DefaultBlockTimestampDriftNanoSecs is the default number of nanoseconds
 	// from the current timestamp that we will allow a PoS block to be submitted.
 	DefaultBlockTimestampDriftNanoSecs int64
@@ -1506,6 +1505,7 @@ const (
 	MaximumVestedIntersectionsPerLockupTransactionKey = "MaximumVestedIntersectionsPerLockupTransaction"
 	FeeBucketGrowthRateBasisPointsKey                 = "FeeBucketGrowthRateBasisPointsKey"
 	FailingTransactionBMFMultiplierBasisPointsKey     = "FailingTransactionBMFMultiplierBasisPoints"
+	BlockTimestampDriftNanoSecsKey                    = "BlockTimestampDriftNanoSecs"
 
 	DiamondLevelKey    = "DiamondLevel"
 	DiamondPostHashKey = "DiamondPostHash"
