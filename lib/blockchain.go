@@ -720,22 +720,22 @@ func (bc *Blockchain) _applyUncommittedBlocksToBestChain() error {
 	}
 
 	// Find the safe block with the highest view. That block is the uncommitted tip.
-	uncommittedTipBlocNode := safeBlockNodes[0]
+	uncommittedTipBlockNode := safeBlockNodes[0]
 	for _, blockNode := range safeBlockNodes {
-		if blockNode.Header.ProposedInView > uncommittedTipBlocNode.Header.ProposedInView {
-			uncommittedTipBlocNode = blockNode
+		if blockNode.Header.ProposedInView > uncommittedTipBlockNode.Header.ProposedInView {
+			uncommittedTipBlockNode = blockNode
 		}
 	}
 
 	// Fetch the lineage of blocks from the committed tip through the uncommitted tip.
-	lineageFromCommittedTip, err := bc.getLineageFromCommittedTip(uncommittedTipBlocNode.Header)
+	lineageFromCommittedTip, err := bc.getLineageFromCommittedTip(uncommittedTipBlockNode.Header)
 	if err != nil {
-		return errors.Wrapf(err, "NewBlockchain: ")
+		return errors.Wrapf(err, "_applyUncommittedBlocksToBestChain: ")
 	}
 
 	// Add the uncommitted blocks to the in-memory data structures.
-	if _, _, _, err := bc.tryApplyNewTip(uncommittedTipBlocNode, 0, lineageFromCommittedTip); err != nil {
-		return errors.Wrapf(err, "NewBlockchain: ")
+	if _, _, _, err := bc.tryApplyNewTip(uncommittedTipBlockNode, 0, lineageFromCommittedTip); err != nil {
+		return errors.Wrapf(err, "_applyUncommittedBlocksToBestChain: ")
 	}
 
 	return nil
