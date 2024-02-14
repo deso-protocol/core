@@ -6,7 +6,7 @@ import (
 )
 
 func (srv *Server) submitRegtestValidatorRegistrationTxns(block *MsgDeSoBlock) {
-	if block.Header.Height != uint64(srv.blockchain.params.ForkHeights.ProofOfStake1StateSetupBlockHeight+5) {
+	if block.Header.Height != uint64(srv.blockchain.params.ForkHeights.ProofOfStake1StateSetupBlockHeight+15) {
 		return
 	}
 
@@ -62,7 +62,7 @@ func (srv *Server) submitRegtestValidatorRegistrationTxns(block *MsgDeSoBlock) {
 		stakeTxnMeta := StakeMetadata{
 			ValidatorPublicKey: NewPublicKey(transactorPubKey),
 			RewardMethod:       StakingRewardMethodPayToBalance,
-			StakeAmountNanos:   uint256.NewInt().SetUint64(10),
+			StakeAmountNanos:   uint256.NewInt().SetUint64(10 * 1e9),
 		}
 
 		stakeTxn, _, _, _, err := srv.blockProducer.chain.CreateStakeTxn(

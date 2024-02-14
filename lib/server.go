@@ -4,8 +4,6 @@ import (
 	"bytes"
 	"encoding/hex"
 	"fmt"
-	"github.com/btcsuite/btcd/wire"
-	"github.com/deso-protocol/core/consensus"
 	"net"
 	"path/filepath"
 	"reflect"
@@ -13,6 +11,9 @@ import (
 	"strings"
 	"sync/atomic"
 	"time"
+
+	"github.com/btcsuite/btcd/wire"
+	"github.com/deso-protocol/core/consensus"
 
 	"github.com/decred/dcrd/lru"
 
@@ -546,7 +547,7 @@ func NewServer(
 		currentUtxoView,
 		uint64(_chain.blockTip().Height),
 		_mempoolDumpDir,
-		false,
+		_mempoolDumpDir == "", // If no mempool dump dir is set, then the mempool will be in memory only
 		_maxMempoolPosSizeBytes,
 		_mempoolBackupIntervalMillis,
 		_mempoolFeeEstimatorNumMempoolBlocks,
@@ -2651,7 +2652,7 @@ func (srv *Server) _startConsensus() {
 		select {
 		case consensusEvent := <-srv._getFastHotStuffConsensusEventChannel():
 			{
-				glog.Infof("Server._startConsensus: Received consensus event for block height: %v", consensusEvent.TipBlockHeight)
+				glog.Infof("Server._startConsensus: Received consensus event: %s", consensusEvent.ToString())
 				srv._handleFastHostStuffConsensusEvent(consensusEvent)
 			}
 
@@ -2918,6 +2919,18 @@ func (srv *Server) Start() {
 	}
 
 	srv.networkManager.Start()
+
+	// On testnet, if the node is configured to be a PoW block producer, and it is configured
+	// to be also a PoS validator, then we attach block mined listeners to the miner to kick
+	// off the PoS consensus once the miner is done.
+	if srv.params.NetworkType == NetworkType_TESTNET && srv.fastHotStuffConsensus != nil {
+		tipHeight := uint64(srv.blockchain.blockTip().Height)
+		if srv.params.IsFinalPoWBlockHeight(tipHeight) || srv.params.IsPoSBlockHeight(tipHeight) {
+			if err := srv.fastHotStuffConsensus.Start(); err != nil {
+				glog.Errorf("NewServer: Error starting fast hotstuff consensus %v", err)
+			}
+		}
+	}
 }
 
 // SyncPrefixProgress keeps track of sync progress on an individual prefix. It is used in

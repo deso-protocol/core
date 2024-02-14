@@ -493,6 +493,7 @@ const (
 
 	// Lockups
 	RuleErrorLockupTxnBeforeBlockHeight                                 RuleError = "RuleErrorLockupTxnBeforeBlockHeight"
+	RuleErrorCoinLockupInvalidSenderPKID                                RuleError = "RuleErrorCoinLockupInvalidSenderPKID"
 	RuleErrorCoinLockupInvalidRecipientPKID                             RuleError = "RuleErrorCoinLockupInvalidRecipientPKID"
 	RuleErrorCoinLockupInvalidLockupDuration                            RuleError = "RuleErrorCoinLockupInvalidLockupDuration"
 	RuleErrorCoinLockupInvalidVestingEndTimestamp                       RuleError = "RuleErrorCoinLockupInvalidVestingEndTimestamp"

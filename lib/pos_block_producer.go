@@ -1,6 +1,7 @@
 package lib
 
 import (
+	"github.com/btcsuite/btcd/wire"
 	"math"
 	"time"
 
@@ -125,7 +126,13 @@ func (pbp *PosBlockProducer) createBlockWithoutHeader(
 	blockRewardOutput.AmountNanos = math.MaxUint64
 	blockRewardOutput.PublicKey = pbp.proposerPublicKey.ToBytes()
 	blockRewardTxn.TxOutputs = append(blockRewardTxn.TxOutputs, blockRewardOutput)
-	blockRewardTxn.TxnMeta = &BlockRewardMetadataa{}
+	extraNonce, err := wire.RandomUint64()
+	if err != nil {
+		return nil, errors.Wrapf(err, "Error generating random nonce: ")
+	}
+	blockRewardTxn.TxnMeta = &BlockRewardMetadataa{
+		ExtraData: UintToBuf(extraNonce),
+	}
 	blockRewardTxnSizeBytes, err := blockRewardTxn.ToBytes(true)
 	if err != nil {
 		return nil, errors.Wrapf(err, "Error computing block reward txn size: ")

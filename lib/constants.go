@@ -848,6 +848,7 @@ func (params *DeSoParams) EnableRegtest() {
 	params.ForkHeights = RegtestForkHeights
 	params.EncoderMigrationHeights = GetEncoderMigrationHeights(&params.ForkHeights)
 	params.EncoderMigrationHeightsList = GetEncoderMigrationHeightsList(&params.ForkHeights)
+	params.DefaultStakingRewardsAPYBasisPoints = 10 * 100 // 10% for regtest
 }
 
 func (params *DeSoParams) IsPoWBlockHeight(blockHeight uint64) bool {

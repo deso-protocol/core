@@ -12,12 +12,11 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/spf13/viper"
-
 	"github.com/btcsuite/btcd/btcec"
 	"github.com/golang/glog"
 	"github.com/holiman/uint256"
 	"github.com/pkg/errors"
+	"github.com/spf13/viper"
 )
 
 type UtxoType uint8
@@ -668,9 +667,10 @@ const (
 	OperationTypeCoinLockupTransfer            OperationType = 46
 	OperationTypeCoinUnlock                    OperationType = 47
 	OperationTypeUpdateCoinLockupParams        OperationType = 48
-	OperationTypeStakeDistribution             OperationType = 49
-	OperationTypeSetValidatorLastActiveAtEpoch OperationType = 50
-	// NEXT_TAG = 51
+	OperationTypeStakeDistributionRestake      OperationType = 49
+	OperationTypeStakeDistributionPayToBalance OperationType = 50
+	OperationTypeSetValidatorLastActiveAtEpoch OperationType = 51
+	// NEXT_TAG = 52
 )
 
 func (op OperationType) String() string {
@@ -771,8 +771,12 @@ func (op OperationType) String() string {
 		return "OperationTypeCoinLockupTransfer"
 	case OperationTypeCoinUnlock:
 		return "OperationTypeCoinUnlock"
-	case OperationTypeStakeDistribution:
-		return "OperationTypeStakeDistribution"
+	case OperationTypeStakeDistributionRestake:
+		return "OperationTypeStakeDistributionRestake"
+	case OperationTypeSetValidatorLastActiveAtEpoch:
+		return "OperationTypeSetValidatorLastActiveAtEpoch"
+	case OperationTypeStakeDistributionPayToBalance:
+		return "OperationTypeStakeDistributionPayToBalance"
 	}
 	return "OperationTypeUNKNOWN"
 }
