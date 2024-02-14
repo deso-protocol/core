@@ -12,7 +12,6 @@ func TestFeeEstimator(t *testing.T) {
 	randSource := rand.New(rand.NewSource(2373))
 	globalParams := _testGetDefaultGlobalParams()
 
-	maxMempoolPosSizeBytes := uint64(1e9)
 	mempoolBackupIntervalMillis := uint64(30000)
 
 	params, db := _posTestBlockchainSetup(t)
@@ -24,10 +23,7 @@ func TestFeeEstimator(t *testing.T) {
 	dir := _dbDirSetup(t)
 
 	mempool := NewPosMempool()
-	err = mempool.Init(
-		params, globalParams, latestBlockView, 2, dir, false, maxMempoolPosSizeBytes, mempoolBackupIntervalMillis, 1,
-		nil, 1, 100,
-	)
+	err = mempool.Init(params, globalParams, latestBlockView, 2, dir, false, mempoolBackupIntervalMillis, nil, 100)
 	require.NoError(t, err)
 	require.NoError(t, mempool.Start())
 	require.True(t, mempool.IsRunning())

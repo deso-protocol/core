@@ -2778,12 +2778,10 @@ func NewTestPoSBlockchainWithValidators(t *testing.T) *TestMeta {
 	latestBlockView, err := NewUtxoView(db, params, nil, nil, nil)
 	require.NoError(t, err)
 
-	maxMempoolPosSizeBytes := uint64(1024 * 1024 * 1000)
 	mempoolBackupIntervalMillis := uint64(30000)
 	mempool := NewPosMempool()
 	require.NoError(t, mempool.Init(
-		params, _testGetDefaultGlobalParams(), latestBlockView, 11, _dbDirSetup(t), false, maxMempoolPosSizeBytes,
-		mempoolBackupIntervalMillis, 1, nil, 1, 100,
+		params, _testGetDefaultGlobalParams(), latestBlockView, 11, _dbDirSetup(t), false, mempoolBackupIntervalMillis, nil, 100,
 	))
 	require.NoError(t, mempool.Start())
 	require.True(t, mempool.IsRunning())

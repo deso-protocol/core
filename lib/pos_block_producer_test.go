@@ -24,7 +24,6 @@ func TestCreateBlockTemplate(t *testing.T) {
 	m0PubBytes, _, _ := Base58CheckDecode(m0Pub)
 
 	// Set the frequency of mempool's database backup.
-	maxMempoolPosSizeBytes := uint64(3000000000)
 	mempoolBackupIntervalMillis := uint64(30000)
 
 	params, db := _posTestBlockchainSetupWithBalances(t, 200000, 200000)
@@ -34,10 +33,7 @@ func TestCreateBlockTemplate(t *testing.T) {
 	dir := _dbDirSetup(t)
 
 	mempool := NewPosMempool()
-	require.NoError(mempool.Init(
-		params, globalParams, latestBlockView, 2, dir, false, maxMempoolPosSizeBytes, mempoolBackupIntervalMillis, 1,
-		nil, 1, 100,
-	))
+	require.NoError(mempool.Init(params, globalParams, latestBlockView, 2, dir, false, mempoolBackupIntervalMillis, nil, 100))
 	require.NoError(mempool.Start())
 	defer mempool.Stop()
 	require.True(mempool.IsRunning())
@@ -93,7 +89,6 @@ func TestCreateBlockWithoutHeader(t *testing.T) {
 	blsPubKey, _ := _generateValidatorVotingPublicKeyAndSignature(t)
 	params, db := _posTestBlockchainSetupWithBalances(t, 200000, 200000)
 	params.ForkHeights.ProofOfStake2ConsensusCutoverBlockHeight = 1
-	maxMempoolPosSizeBytes := uint64(3000000000)
 	mempoolBackupIntervalMillis := uint64(30000)
 
 	latestBlockView, err := NewUtxoView(db, params, nil, nil, nil)
@@ -101,10 +96,7 @@ func TestCreateBlockWithoutHeader(t *testing.T) {
 	dir := _dbDirSetup(t)
 
 	mempool := NewPosMempool()
-	require.NoError(mempool.Init(
-		params, globalParams, latestBlockView, 2, dir, false, maxMempoolPosSizeBytes, mempoolBackupIntervalMillis, 1,
-		nil, 1, 100,
-	))
+	require.NoError(mempool.Init(params, globalParams, latestBlockView, 2, dir, false, mempoolBackupIntervalMillis, nil, 100))
 	require.NoError(mempool.Start())
 	defer mempool.Stop()
 	require.True(mempool.IsRunning())
@@ -165,7 +157,6 @@ func TestGetBlockTransactions(t *testing.T) {
 	globalParams := _testGetDefaultGlobalParams()
 	feeMin := globalParams.MinimumNetworkFeeNanosPerKB
 	feeMax := uint64(2000)
-	maxMempoolPosSizeBytes := uint64(3000000000)
 	mempoolBackupIntervalMillis := uint64(30000)
 
 	params, db := _posTestBlockchainSetupWithBalances(t, 200000, m1InitialBalance)
@@ -179,9 +170,7 @@ func TestGetBlockTransactions(t *testing.T) {
 
 	mempool := NewPosMempool()
 	require.NoError(mempool.Init(
-		params, globalParams, latestBlockView, 2, dir, false, maxMempoolPosSizeBytes, mempoolBackupIntervalMillis, 1,
-		nil, 1, 100,
-	))
+		params, globalParams, latestBlockView, 2, dir, false, mempoolBackupIntervalMillis, nil, 100))
 	require.NoError(mempool.Start())
 	defer mempool.Stop()
 	require.True(mempool.IsRunning())
@@ -264,9 +253,7 @@ func TestGetBlockTransactions(t *testing.T) {
 	// be returned in the same order as the transaction from getBlockTransactions.
 	testMempool := NewPosMempool()
 	testMempool.Init(
-		params, globalParams, latestBlockView, 2, "", true, maxMempoolPosSizeBytes, mempoolBackupIntervalMillis, 1,
-		nil, 1, 100,
-	)
+		params, globalParams, latestBlockView, 2, "", true, mempoolBackupIntervalMillis, nil, 100)
 	require.NoError(testMempool.Start())
 	defer testMempool.Stop()
 	currentTime := uint64(time.Now().UnixMicro())

@@ -194,11 +194,8 @@ func (mp *PosMempool) Init(
 	latestBlockHeight uint64,
 	dir string,
 	inMemoryOnly bool,
-	maxMempoolPosSizeBytes uint64,
 	mempoolBackupIntervalMillis uint64,
-	feeEstimatorNumMempoolBlocks uint64,
 	feeEstimatorPastBlocks []*MsgDeSoBlock,
-	feeEstimatorNumPastBlocks uint64,
 	augmentedBlockViewRefreshIntervalMillis uint64,
 ) error {
 	if mp.status != PosMempoolStatusNotInitialized {
@@ -219,16 +216,15 @@ func (mp *PosMempool) Init(
 	mp.latestBlockHeight = latestBlockHeight
 	mp.dir = dir
 	mp.inMemoryOnly = inMemoryOnly
-	mp.maxMempoolPosSizeBytes = maxMempoolPosSizeBytes
+	mp.maxMempoolPosSizeBytes = globalParams.MempoolMaxSizeBytes
 	mp.mempoolBackupIntervalMillis = mempoolBackupIntervalMillis
 	mp.augmentedBlockViewRefreshIntervalMillis = augmentedBlockViewRefreshIntervalMillis
 
-	// TODO: parameterize num blocks. Also, how to pass in blocks.
 	err = mp.feeEstimator.Init(
 		mp.txnRegister,
-		feeEstimatorNumMempoolBlocks,
+		globalParams.MempoolFeeEstimatorNumMempoolBlocks,
 		feeEstimatorPastBlocks,
-		feeEstimatorNumPastBlocks,
+		globalParams.MempoolFeeEstimatorNumPastBlocks,
 		mp.globalParams,
 	)
 	if err != nil {
@@ -742,11 +738,8 @@ func (mp *PosMempool) refreshNoLock() error {
 		mp.latestBlockHeight,
 		"",
 		true,
-		mp.maxMempoolPosSizeBytes,
 		mp.mempoolBackupIntervalMillis,
-		mp.feeEstimator.numMempoolBlocks,
 		mp.feeEstimator.cachedBlocks,
-		mp.feeEstimator.numPastBlocks,
 		mp.augmentedBlockViewRefreshIntervalMillis,
 	)
 	if err != nil {

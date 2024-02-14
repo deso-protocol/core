@@ -525,11 +525,8 @@ func NewServer(
 		uint64(_chain.blockTip().Height),
 		_mempoolDumpDir,
 		_mempoolDumpDir == "", // If no mempool dump dir is set, then the mempool will be in memory only
-		_maxMempoolPosSizeBytes,
 		_mempoolBackupIntervalMillis,
-		_mempoolFeeEstimatorNumMempoolBlocks,
 		[]*MsgDeSoBlock{latestBlock},
-		_mempoolFeeEstimatorNumPastBlocks,
 		_augmentedBlockViewRefreshIntervalMillis,
 	)
 	if err != nil {
