@@ -1538,6 +1538,9 @@ const (
 	FeeBucketGrowthRateBasisPointsKey                 = "FeeBucketGrowthRateBasisPointsKey"
 	FailingTransactionBMFMultiplierBasisPointsKey     = "FailingTransactionBMFMultiplierBasisPoints"
 	BlockTimestampDriftNanoSecsKey                    = "BlockTimestampDriftNanoSecs"
+	MempoolMaxSizeBytesKey                            = "MempoolMaxSizeBytes"
+	MempoolFeeEstimatorNumMempoolBlocksKey            = "MempoolFeeEstimatorNumMempoolBlocks"
+	MempoolFeeEstimatorNumPastBlocksKey               = "MempoolFeeEstimatorNumPastBlocks"
 
 	DiamondLevelKey    = "DiamondLevel"
 	DiamondPostHashKey = "DiamondPostHash"

@@ -3338,6 +3338,54 @@ func (bav *UtxoView) _connectUpdateGlobalParams(
 			}
 			newGlobalParamsEntry.BlockTimestampDriftNanoSecs = val
 		}
+		if len(extraData[MempoolMaxSizeBytesKey]) > 0 {
+			val, bytesRead := Uvarint(
+				extraData[MempoolMaxSizeBytesKey],
+			)
+			if bytesRead <= 0 {
+				return 0, 0, nil, fmt.Errorf(
+					"_connectUpdateGlobalParams: unable to decode MempoolMaxSizeBytes as uint64",
+				)
+			}
+			if val <= 0 {
+				return 0, 0, nil, fmt.Errorf(
+					"_connectUpdateGlobalParams: MempoolMaxSizeBytes must be > 0",
+				)
+			}
+			newGlobalParamsEntry.MempoolMaxSizeBytes = val
+		}
+		if len(extraData[MempoolFeeEstimatorNumMempoolBlocksKey]) > 0 {
+			val, bytesRead := Uvarint(
+				extraData[MempoolFeeEstimatorNumMempoolBlocksKey],
+			)
+			if bytesRead <= 0 {
+				return 0, 0, nil, fmt.Errorf(
+					"_connectUpdateGlobalParams: unable to decode MempoolFeeEstimatorNumMempoolBlocks as uint64",
+				)
+			}
+			if val <= 0 {
+				return 0, 0, nil, fmt.Errorf(
+					"_connectUpdateGlobalParams: MempoolFeeEstimatorNumMempoolBlocks must be > 0",
+				)
+			}
+			newGlobalParamsEntry.MempoolFeeEstimatorNumMempoolBlocks = val
+		}
+		if len(extraData[MempoolFeeEstimatorNumPastBlocksKey]) > 0 {
+			val, bytesRead := Uvarint(
+				extraData[MempoolFeeEstimatorNumPastBlocksKey],
+			)
+			if bytesRead <= 0 {
+				return 0, 0, nil, fmt.Errorf(
+					"_connectUpdateGlobalParams: unable to decode MempoolFeeEstimatorNumPastBlocks as uint64",
+				)
+			}
+			if val <= 0 {
+				return 0, 0, nil, fmt.Errorf(
+					"_connectUpdateGlobalParams: MempoolFeeEstimatorNumPastBlocks must be > 0",
+				)
+			}
+			newGlobalParamsEntry.MempoolFeeEstimatorNumPastBlocks = val
+		}
 	}
 
 	var newForbiddenPubKeyEntry *ForbiddenPubKeyEntry
