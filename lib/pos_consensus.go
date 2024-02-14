@@ -251,23 +251,23 @@ func (cc *FastHotStuffConsensus) handleBlockProposalEvent(
 	}
 
 	// Construct the unsigned block
-	unsignedBlock, err := cc.produceUnsignedBlockForBlockProposalEvent(event, proposerRandomSeedSignature)
+	blockProposal, err := cc.produceUnsignedBlockForBlockProposalEvent(event, proposerRandomSeedSignature)
 	if err != nil {
 		return errors.Wrapf(err, "Error producing unsigned block for proposal at height %d", event.TipBlockHeight+1)
 	}
 
 	// Sign the block
-	blockHash, err := unsignedBlock.Header.Hash()
+	blockHash, err := blockProposal.Header.Hash()
 	if err != nil {
 		return errors.Errorf("Error hashing block: %v", err)
 	}
-	unsignedBlock.Header.ProposerVotePartialSignature, err = cc.signer.SignBlockProposal(unsignedBlock.Header.ProposedInView, blockHash)
+	blockProposal.Header.ProposerVotePartialSignature, err = cc.signer.SignBlockProposal(blockProposal.Header.ProposedInView, blockHash)
 	if err != nil {
 		return errors.Errorf("Error signing block: %v", err)
 	}
 
 	// Process the block locally
-	missingBlockHashes, err := cc.tryProcessBlockAsNewTip(unsignedBlock)
+	missingBlockHashes, err := cc.tryProcessBlockAsNewTip(blockProposal)
 	if err != nil {
 		return errors.Errorf("Error processing block locally: %v", err)
 	}
@@ -283,7 +283,7 @@ func (cc *FastHotStuffConsensus) handleBlockProposalEvent(
 
 	// TODO: Broadcast the block proposal to the network
 
-	cc.logBlockProposal(unsignedBlock, blockHash)
+	cc.logBlockProposal(blockProposal, blockHash)
 	return nil
 }
 
