@@ -844,6 +844,9 @@ func (params *DeSoParams) EnableRegtest() {
 	// Clear the seeds
 	params.DNSSeeds = []string{}
 
+	// Set the protocol version
+	params.ProtocolVersion = ProtocolVersion2
+
 	// Mine blocks incredibly quickly
 	params.TimeBetweenBlocks = 2 * time.Second
 	params.TimeBetweenDifficultyRetargets = 6 * time.Second
