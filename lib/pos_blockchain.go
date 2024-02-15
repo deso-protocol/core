@@ -842,6 +842,18 @@ func (bc *Blockchain) isBlockTimestampValidRelativeToParentPoS(header *MsgDeSoHe
 // future. We use the snapshotted global params specifically so that the drift timestamp check behaves
 // consistently even for orphan blocks that are 1 epoch in the future..
 func (bc *Blockchain) isBlockTimestampTooFarInFuturePoS(header *MsgDeSoHeader) (bool, error) {
+	// If the block's timestamp is lower than the current time, then there's no reason to check for
+	// timestamp drift. The check is guaranteed to pass.
+	currentTstampNanoSecs := time.Now().UnixNano()
+	if header.TstampNanoSecs <= currentTstampNanoSecs {
+		return false, nil
+	}
+
+	// We use NewUtxoView here, which generates a UtxoView at the current committed tip. We can use the view
+	// to fetch the snapshot global params for the previous epoch, current epoch, and next epoch. As long as
+	// the block's height is within 3600 blocks of the committed tip, this will always work. In practice,
+	// we should never be more than 3600 blocks behind or ahead of the tip, while also failing the above
+	// header.TstampNanoSecs <= currentTstampNanoSecs check.
 	utxoView, err := NewUtxoView(bc.db, bc.params, nil, bc.snapshot, nil)
 	if err != nil {
 		return false, errors.Wrap(err, "isBlockTimestampTooFarInFuturePoS: Problem initializing UtxoView")
