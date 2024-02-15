@@ -145,18 +145,9 @@ func (bc *Blockchain) validateAndIndexHeaderPoS(header *MsgDeSoHeader, headerHas
 			header, errors.New("validateAndIndexHeaderPoS: Parent header failed validations"),
 		)
 	}
-	utxoView, err := bc.getUtxoViewAtBlockHash(*header.PrevBlockHash)
-	if err != nil {
-		return nil, false, errors.Wrap(err, "validateAndIndexHeaderPoS: Problem getting UtxoView")
-	}
-	// We use the snapshot global params to make the drift timestamp check work properly,
-	// specifically for orphan blocks.
-	snapshotGlobalParams, err := utxoView.GetCurrentSnapshotGlobalParamsEntry()
-	if err != nil {
-		return nil, false, errors.Wrap(err, "validateAndIndexHeaderPoS: Problem getting snapshot global params")
-	}
+
 	// Verify that the header is properly formed.
-	if err := bc.isValidBlockHeaderPoS(header, snapshotGlobalParams); err != nil {
+	if err := bc.isValidBlockHeaderPoS(header); err != nil {
 		return nil, false, bc.storeValidateFailedHeaderInBlockIndexWithWrapperError(
 			header, errors.New("validateAndIndexHeaderPoS: Header failed validations"),
 		)
@@ -805,9 +796,9 @@ func (bc *Blockchain) isValidBlockPoS(block *MsgDeSoBlock, snapshotGlobalParams 
 
 // isValidBlockHeaderPoS performs all basic block header integrity checks. Any
 // error resulting from this function implies that the block header is invalid.
-func (bc *Blockchain) isValidBlockHeaderPoS(header *MsgDeSoHeader, snapshotGlobalParams *GlobalParamsEntry) error {
+func (bc *Blockchain) isValidBlockHeaderPoS(header *MsgDeSoHeader) error {
 	// Surface Level validation of the block header
-	if err := bc.isProperlyFormedBlockHeaderPoS(header, snapshotGlobalParams); err != nil {
+	if err := bc.isProperlyFormedBlockHeaderPoS(header); err != nil {
 		return err
 	}
 	if err := bc.isBlockTimestampValidRelativeToParentPoS(header); err != nil {
@@ -851,8 +842,14 @@ func (bc *Blockchain) isProperlyFormedBlockPoS(block *MsgDeSoBlock, snapshotGlob
 	}
 
 	// Make sure the header is properly formed by itself
-	if err := bc.isProperlyFormedBlockHeaderPoS(block.Header, snapshotGlobalParams); err != nil {
+	if err := bc.isProperlyFormedBlockHeaderPoS(block.Header); err != nil {
 		return err
+	}
+
+	// Timestamp validation. We use the snapshotted global params to validate the timestamp, specifically
+	// so that the drift timestamp check behaves properly even for orphan blocks.
+	if block.Header.TstampNanoSecs > time.Now().UnixNano()+snapshotGlobalParams.BlockTimestampDriftNanoSecs {
+		return RuleErrorPoSBlockTstampNanoSecsInFuture
 	}
 
 	// If the header is properly formed, we can check the rest of the block.
@@ -896,8 +893,7 @@ func (bc *Blockchain) isProperlyFormedBlockPoS(block *MsgDeSoBlock, snapshotGlob
 // contents alone, and makes sure that all fields are populated in a valid manner.
 // It does not verify signatures in the header, nor cross-validate the block with
 // past blocks in the block index.
-func (bc *Blockchain) isProperlyFormedBlockHeaderPoS(header *MsgDeSoHeader, snapshotGlobalParams *GlobalParamsEntry,
-) error {
+func (bc *Blockchain) isProperlyFormedBlockHeaderPoS(header *MsgDeSoHeader) error {
 	// First make sure we have a non-nil header
 	if header == nil {
 		return RuleErrorNilBlockHeader
@@ -906,12 +902,6 @@ func (bc *Blockchain) isProperlyFormedBlockHeaderPoS(header *MsgDeSoHeader, snap
 	// Make sure we have a prevBlockHash
 	if header.PrevBlockHash == nil {
 		return RuleErrorNilPrevBlockHash
-	}
-
-	// Timestamp validation. We use the snapshotted global params to validate the timestamp, specifically
-	// so that the drift timestamp check behaves properly even for orphan blocks.
-	if header.TstampNanoSecs > time.Now().UnixNano()+snapshotGlobalParams.BlockTimestampDriftNanoSecs {
-		return RuleErrorPoSBlockTstampNanoSecsInFuture
 	}
 
 	// Header validation
