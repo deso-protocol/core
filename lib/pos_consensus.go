@@ -284,7 +284,18 @@ func (fc *FastHotStuffConsensus) handleBlockProposalEvent(
 		)
 	}
 
-	// TODO: Broadcast the block proposal to the network
+	// Broadcast the block to the validator network
+	validators := fc.networkManager.rnManager.GetValidatorIndex().GetAll()
+	for _, validator := range validators {
+		validator.SendMessage(blockProposal)
+	}
+
+	// Broadcast the block to all inbound non-validator peers. This allows them to sync
+	// blocks from us.
+	nonValidators := fc.networkManager.rnManager.GetNonValidatorInboundIndex().GetAll()
+	for _, nonValidator := range nonValidators {
+		nonValidator.SendMessage(blockProposal)
+	}
 
 	fc.logBlockProposal(blockProposal, blockHash)
 	return nil
@@ -349,7 +360,7 @@ func (fc *FastHotStuffConsensus) HandleLocalVoteEvent(event *consensus.FastHotSt
 		return errors.Errorf("FastHotStuffConsensus.HandleLocalVoteEvent: Error processing vote locally: %v", err)
 	}
 
-	// Broadcast the vote message to the network
+	// Broadcast the block to the validator network
 	validators := fc.networkManager.rnManager.GetValidatorIndex().GetAll()
 	for _, validator := range validators {
 		validator.SendMessage(voteMsg)
@@ -467,7 +478,7 @@ func (fc *FastHotStuffConsensus) HandleLocalTimeoutEvent(event *consensus.FastHo
 		return errors.Errorf("FastHotStuffConsensus.HandleLocalTimeoutEvent: Error processing timeout locally: %v", err)
 	}
 
-	// Broadcast the timeout message to the network
+	// Broadcast the block to the validator network
 	validators := fc.networkManager.rnManager.GetValidatorIndex().GetAll()
 	for _, validator := range validators {
 		validator.SendMessage(timeoutMsg)
