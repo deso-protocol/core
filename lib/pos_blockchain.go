@@ -371,7 +371,6 @@ func (bc *Blockchain) processOrphanBlockPoS(block *MsgDeSoBlock) error {
 		return errors.Wrap(err, "processOrphanBlockPoS: Problem getting current epoch entry")
 	}
 	var validatorsByStake []*ValidatorEntry
-	var snapshotGlobalParams *GlobalParamsEntry
 	// If the block is in a previous or future epoch, we need to compute the
 	// proper validator set for the block. We do this by computing the prev/next
 	// epoch entry and then fetching the validator set at the snapshot of the
@@ -465,13 +464,6 @@ func (bc *Blockchain) processOrphanBlockPoS(block *MsgDeSoBlock) error {
 				"processOrphanBlockPoS: Problem getting validator set at snapshot at epoch number %d",
 				epochEntrySnapshotAtEpochNumber)
 		}
-		// Get the snapshot global params based on the snapshot at epoch number for this orphan block.
-		snapshotGlobalParams, err = utxoView.GetSnapshotGlobalParamsEntryByEpochNumber(epochEntrySnapshotAtEpochNumber)
-		if err != nil {
-			return errors.Wrapf(err,
-				"processOrphanBlockPoS: Problem getting snapshot global params at snapshot at epoch number %d",
-				epochEntrySnapshotAtEpochNumber)
-		}
 	} else {
 		// This block is in the current epoch!
 		// First we validate the proposer vote partial signature
@@ -509,11 +501,6 @@ func (bc *Blockchain) processOrphanBlockPoS(block *MsgDeSoBlock) error {
 		if err != nil {
 			return errors.Wrap(err, "processOrphanBlockPoS: Problem getting validator set")
 		}
-		// Get the snapshot global params based on the current snapshot epoch number.
-		snapshotGlobalParams, err = utxoView.GetCurrentSnapshotGlobalParamsEntry()
-		if err != nil {
-			return errors.Wrap(err, "processOrphanBlockPoS: Problem getting snapshot global params")
-		}
 	}
 	// Okay now we have the validator set ordered by stake, we can validate the QC.
 	if err = bc.isValidPoSQuorumCertificate(block, validatorsByStake); err != nil {
@@ -526,7 +513,7 @@ func (bc *Blockchain) processOrphanBlockPoS(block *MsgDeSoBlock) error {
 	}
 	// All blocks should pass the basic integrity validations, which ensure the block
 	// is not malformed. If the block is malformed, we should store it as ValidateFailed.
-	if err = bc.isProperlyFormedBlockPoS(block, snapshotGlobalParams); err != nil {
+	if err = bc.isProperlyFormedBlockPoS(block); err != nil {
 		if _, innerErr := bc.storeValidateFailedBlockInBlockIndex(block); innerErr != nil {
 			return errors.Wrapf(innerErr,
 				"processOrphanBlockPoS: Problem adding validate failed block to block index: %v", err)
@@ -696,14 +683,21 @@ func (bc *Blockchain) validateAndIndexBlockPoS(block *MsgDeSoBlock) (*BlockNode,
 		return blockNode, errors.Wrap(err, "validateAndIndexBlockPoS: Problem getting UtxoView")
 	}
 
+	// Check if the block is properly formed and passes all basic validations.
+	if err = bc.isValidBlockPoS(block); err != nil {
+		return bc.storeValidateFailedBlockWithWrappedError(block, err)
+	}
+
 	snapshotGlobalParams, err := utxoView.GetCurrentSnapshotGlobalParamsEntry()
 	if err != nil {
 		return nil, errors.Wrap(err, "validateAndIndexBlockPoS: Problem getting snapshot global params")
 	}
 
-	// Check if the block is properly formed and passes all basic validations.
-	if err = bc.isValidBlockPoS(block, snapshotGlobalParams); err != nil {
-		return bc.storeValidateFailedBlockWithWrappedError(block, err)
+	// We use the snapshotted global params to validate that the block's timestamp isn't too far ahead in the
+	// future. We use the snapshotted global params specifically so that the drift timestamp check behaves
+	// consistently even for orphan blocks that are 1 epoch in the future..
+	if bc.isBlockTimestampTooFarInFuturePoS(block.Header, snapshotGlobalParams) {
+		return bc.storeBlockInBlockIndex(block)
 	}
 
 	// Connect this block to the parent block's UtxoView.
@@ -775,9 +769,9 @@ func (bc *Blockchain) validatePreviouslyIndexedBlockPoS(blockHash *BlockHash) (*
 
 // isValidBlockPoS performs all basic block integrity checks. Any error
 // resulting from this function implies that the block is invalid.
-func (bc *Blockchain) isValidBlockPoS(block *MsgDeSoBlock, snapshotGlobalParams *GlobalParamsEntry) error {
+func (bc *Blockchain) isValidBlockPoS(block *MsgDeSoBlock) error {
 	// Surface Level validation of the block
-	if err := bc.isProperlyFormedBlockPoS(block, snapshotGlobalParams); err != nil {
+	if err := bc.isProperlyFormedBlockPoS(block); err != nil {
 		return err
 	}
 	if err := bc.isBlockTimestampValidRelativeToParentPoS(block.Header); err != nil {
@@ -831,11 +825,16 @@ func (bc *Blockchain) isBlockTimestampValidRelativeToParentPoS(header *MsgDeSoHe
 	return nil
 }
 
+// isBlockTimestampTooFarInFuturePoS validates that the block's timestamp is not too far in the future based
+// on the configured block timestamp drift.
+func (bc *Blockchain) isBlockTimestampTooFarInFuturePoS(header *MsgDeSoHeader, snapshotGlobalParams *GlobalParamsEntry) bool {
+	return header.TstampNanoSecs > time.Now().UnixNano()+snapshotGlobalParams.BlockTimestampDriftNanoSecs
+}
+
 // isProperlyFormedBlockPoS validates the block at a surface level and makes
 // sure that all fields are populated in a valid manner. It does not verify
 // signatures nor validate the blockchain state resulting from the block.
-func (bc *Blockchain) isProperlyFormedBlockPoS(block *MsgDeSoBlock, snapshotGlobalParams *GlobalParamsEntry,
-) error {
+func (bc *Blockchain) isProperlyFormedBlockPoS(block *MsgDeSoBlock) error {
 	// First, make sure we have a non-nil block
 	if block == nil {
 		return RuleErrorNilBlock
@@ -844,12 +843,6 @@ func (bc *Blockchain) isProperlyFormedBlockPoS(block *MsgDeSoBlock, snapshotGlob
 	// Make sure the header is properly formed by itself
 	if err := bc.isProperlyFormedBlockHeaderPoS(block.Header); err != nil {
 		return err
-	}
-
-	// Timestamp validation. We use the snapshotted global params to validate the timestamp, specifically
-	// so that the drift timestamp check behaves properly even for orphan blocks.
-	if block.Header.TstampNanoSecs > time.Now().UnixNano()+snapshotGlobalParams.BlockTimestampDriftNanoSecs {
-		return RuleErrorPoSBlockTstampNanoSecsInFuture
 	}
 
 	// If the header is properly formed, we can check the rest of the block.
