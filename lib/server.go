@@ -617,6 +617,7 @@ func NewServer(
 	if _blsKeystore != nil {
 		srv.fastHotStuffConsensus = NewFastHotStuffConsensus(
 			_params,
+			srv.networkManager,
 			_chain,
 			_posMempool,
 			_blsKeystore.GetSigner(),

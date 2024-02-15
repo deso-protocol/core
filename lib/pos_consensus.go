@@ -14,6 +14,7 @@ import (
 
 type FastHotStuffConsensus struct {
 	lock                                sync.RWMutex
+	networkManager                      *NetworkManager
 	blockchain                          *Blockchain
 	fastHotStuffEventLoop               consensus.FastHotStuffEventLoop
 	mempool                             Mempool
@@ -25,6 +26,7 @@ type FastHotStuffConsensus struct {
 
 func NewFastHotStuffConsensus(
 	params *DeSoParams,
+	networkManager *NetworkManager,
 	blockchain *Blockchain,
 	mempool Mempool,
 	signer *BLSSigner,
@@ -32,6 +34,7 @@ func NewFastHotStuffConsensus(
 	timeoutBaseDurationMilliseconds uint64,
 ) *FastHotStuffConsensus {
 	return &FastHotStuffConsensus{
+		networkManager:                      networkManager,
 		blockchain:                          blockchain,
 		fastHotStuffEventLoop:               consensus.NewFastHotStuffEventLoop(),
 		mempool:                             mempool,
@@ -347,7 +350,10 @@ func (fc *FastHotStuffConsensus) HandleLocalVoteEvent(event *consensus.FastHotSt
 	}
 
 	// Broadcast the vote message to the network
-	// TODO: Broadcast the vote message to the network or alternatively to just the block proposer
+	validators := fc.networkManager.rnManager.GetValidatorIndex().GetAll()
+	for _, validator := range validators {
+		validator.SendMessage(voteMsg)
+	}
 
 	return nil
 }
@@ -462,7 +468,10 @@ func (fc *FastHotStuffConsensus) HandleLocalTimeoutEvent(event *consensus.FastHo
 	}
 
 	// Broadcast the timeout message to the network
-	// TODO: Broadcast the timeout message to the network or alternatively to just the block proposer
+	validators := fc.networkManager.rnManager.GetValidatorIndex().GetAll()
+	for _, validator := range validators {
+		validator.SendMessage(timeoutMsg)
+	}
 
 	return nil
 }
