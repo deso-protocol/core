@@ -515,7 +515,7 @@ func NewServer(
 		nodeServices |= SFPosValidator
 	}
 	rnManager := NewRemoteNodeManager(srv, _chain, _cmgr, _blsKeystore, _params, _minFeeRateNanosPerKB, nodeServices)
-	srv.networkManager = NewConnectionController(_params, _cmgr, rnManager, _blsKeystore, _desoAddrMgr,
+	srv.networkManager = NewNetworkManager(_params, _cmgr, rnManager, _blsKeystore, _desoAddrMgr,
 		_connectIps, _targetOutboundPeers, _maxInboundPeers, _limitOneInboundConnectionPerIP)
 
 	if srv.stateChangeSyncer != nil {
