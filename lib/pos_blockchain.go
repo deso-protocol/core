@@ -614,7 +614,8 @@ func (bc *Blockchain) validateLeaderAndQC(block *MsgDeSoBlock) (_passedSpamPreve
 //     block.
 //
 // The recursive function's invariant is described as follows:
-//   - Base case: If block is VALIDATED or VALIDATE_FAILED, return the BlockNode as-is.
+//   - Base case: If block is VALIDATED or VALIDATE_FAILED, return the BlockNode as-is. If the block is STORED and
+//     has a timestamp too far in the future, we also return the BlockNode as-is.
 //   - Recursive case: If the block is not VALIDATED or VALIDATE_FAILED in the blockIndexByHash, we will perform all
 //     validations and add the block to the block index with the appropriate status (VALIDATED OR VALIDATE_FAILED) and
 //     return the new BlockNode.
