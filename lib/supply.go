@@ -93,9 +93,13 @@ var (
 )
 
 // CalcBlockRewardNanos computes the block reward for a given block height.
-func CalcBlockRewardNanos(blockHeight uint32) uint64 {
+func CalcBlockRewardNanos(blockHeight uint32, params *DeSoParams) uint64 {
 	if blockHeight == 0 {
 		return MiningSupplyIntervals[0].BlockRewardNanos
+	}
+
+	if params.IsPoSBlockHeight(uint64(blockHeight)) {
+		return 0
 	}
 
 	// Skip the first interval since we know we're past block height zero.
