@@ -70,6 +70,10 @@ func NanoSecondsToUint64MicroSeconds(nanos int64) uint64 {
 	return uint64(nanos / 1000)
 }
 
+func NanoSecondsToTime(nanos int64) time.Time {
+	return time.Unix(0, nanos)
+}
+
 // Snapshot constants
 const (
 	// GetSnapshotTimeout is used in Peer when we fetch a snapshot chunk, and we need to retry.

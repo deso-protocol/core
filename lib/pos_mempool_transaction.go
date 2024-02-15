@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"github.com/pkg/errors"
+	"math"
 	"time"
 )
 
@@ -39,7 +40,7 @@ type MempoolTx struct {
 	index int
 }
 
-func NewMempoolTx(txn *MsgDeSoTxn, addedUnixMicro uint64, blockHeight uint64) (*MempoolTx, error) {
+func NewMempoolTx(txn *MsgDeSoTxn, addedUnixMicro time.Time, blockHeight uint64) (*MempoolTx, error) {
 	txnBytes, err := txn.ToBytes(false)
 	if err != nil {
 		return nil, errors.Wrapf(err, "PosMempool.GetMempoolTx: Problem serializing txn")
@@ -54,13 +55,12 @@ func NewMempoolTx(txn *MsgDeSoTxn, addedUnixMicro uint64, blockHeight uint64) (*
 	if err != nil {
 		return nil, errors.Wrapf(err, "PosMempool.GetMempoolTx: Problem computing fee per KB")
 	}
-	added := time.UnixMicro(int64(addedUnixMicro))
 
 	return &MempoolTx{
 		Tx:          txn,
 		Hash:        txnHash,
 		TxSizeBytes: serializedLen,
-		Added:       added,
+		Added:       addedUnixMicro,
 		Height:      uint32(blockHeight),
 		Fee:         txn.TxnFeeNanos,
 		FeePerKB:    feePerKb,
@@ -115,9 +115,13 @@ func (mempoolTx *MempoolTx) FromBytes(rr *bytes.Reader) error {
 	if err != nil {
 		return errors.Wrapf(err, "MempoolTx.Decode: Problem reading timestamp")
 	}
+	if timestampUnixMicro > math.MaxInt64 {
+		return errors.Errorf("MempoolTx.Decode: Invalid timestamp %d exceeds max int64 %d",
+			timestampUnixMicro, math.MaxInt64)
+	}
 
 	// Create a new MempoolTx
-	newTxn, err := NewMempoolTx(txn, timestampUnixMicro, height)
+	newTxn, err := NewMempoolTx(txn, time.UnixMicro(int64(timestampUnixMicro)), height)
 	*mempoolTx = *newTxn
 	return nil
 }

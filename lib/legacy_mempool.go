@@ -254,13 +254,13 @@ func (mp *DeSoMempool) GetTransaction(txnHash *BlockHash) *MempoolTransaction {
 	if !exists {
 		return nil
 	}
-	return NewMempoolTransaction(mempoolTx.Tx, uint64(mempoolTx.Added.UnixMicro()))
+	return NewMempoolTransaction(mempoolTx.Tx, mempoolTx.Added)
 }
 
 func (mp *DeSoMempool) GetTransactions() []*MempoolTransaction {
 	return collections.Transform(
 		mp.GetOrderedTransactions(), func(mempoolTx *MempoolTx) *MempoolTransaction {
-			return NewMempoolTransaction(mempoolTx.Tx, uint64(mempoolTx.Added.UnixMicro()))
+			return NewMempoolTransaction(mempoolTx.Tx, mempoolTx.Added)
 		},
 	)
 }
