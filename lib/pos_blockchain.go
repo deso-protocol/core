@@ -260,8 +260,7 @@ func (bc *Blockchain) processBlockPoS(block *MsgDeSoBlock, currentView uint64, v
 		return false, false, nil, errors.New("processBlockPoS: Block failed spam prevention check")
 	}
 
-	// TODO: Is there any error that would require special handling? If that's the case, we should
-	// probably push that logic in validateAndIndexBlockPoS anyway.
+	// Validate the block and store it in the block index. The block is guaranteed to not be an orphan.
 	blockNode, err := bc.validateAndIndexBlockPoS(block)
 	if err != nil {
 		return false, false, nil, errors.Wrap(err,
@@ -371,7 +370,6 @@ func (bc *Blockchain) processOrphanBlockPoS(block *MsgDeSoBlock) error {
 		return errors.Wrap(err, "processOrphanBlockPoS: Problem getting current epoch entry")
 	}
 	var validatorsByStake []*ValidatorEntry
-	var snapshotGlobalParams *GlobalParamsEntry
 	// If the block is in a previous or future epoch, we need to compute the
 	// proper validator set for the block. We do this by computing the prev/next
 	// epoch entry and then fetching the validator set at the snapshot of the
@@ -465,13 +463,6 @@ func (bc *Blockchain) processOrphanBlockPoS(block *MsgDeSoBlock) error {
 				"processOrphanBlockPoS: Problem getting validator set at snapshot at epoch number %d",
 				epochEntrySnapshotAtEpochNumber)
 		}
-		// Get the snapshot global params based on the snapshot at epoch number for this orphan block.
-		snapshotGlobalParams, err = utxoView.GetSnapshotGlobalParamsEntryByEpochNumber(epochEntrySnapshotAtEpochNumber)
-		if err != nil {
-			return errors.Wrapf(err,
-				"processOrphanBlockPoS: Problem getting snapshot global params at snapshot at epoch number %d",
-				epochEntrySnapshotAtEpochNumber)
-		}
 	} else {
 		// This block is in the current epoch!
 		// First we validate the proposer vote partial signature
@@ -509,11 +500,6 @@ func (bc *Blockchain) processOrphanBlockPoS(block *MsgDeSoBlock) error {
 		if err != nil {
 			return errors.Wrap(err, "processOrphanBlockPoS: Problem getting validator set")
 		}
-		// Get the snapshot global params based on the current snapshot epoch number.
-		snapshotGlobalParams, err = utxoView.GetCurrentSnapshotGlobalParamsEntry()
-		if err != nil {
-			return errors.Wrap(err, "processOrphanBlockPoS: Problem getting snapshot global params")
-		}
 	}
 	// Okay now we have the validator set ordered by stake, we can validate the QC.
 	if err = bc.isValidPoSQuorumCertificate(block, validatorsByStake); err != nil {
@@ -526,7 +512,7 @@ func (bc *Blockchain) processOrphanBlockPoS(block *MsgDeSoBlock) error {
 	}
 	// All blocks should pass the basic integrity validations, which ensure the block
 	// is not malformed. If the block is malformed, we should store it as ValidateFailed.
-	if err = bc.isProperlyFormedBlockPoS(block, snapshotGlobalParams); err != nil {
+	if err = bc.isProperlyFormedBlockPoS(block); err != nil {
 		if _, innerErr := bc.storeValidateFailedBlockInBlockIndex(block); innerErr != nil {
 			return errors.Wrapf(innerErr,
 				"processOrphanBlockPoS: Problem adding validate failed block to block index: %v", err)
@@ -628,7 +614,8 @@ func (bc *Blockchain) validateLeaderAndQC(block *MsgDeSoBlock) (_passedSpamPreve
 //     block.
 //
 // The recursive function's invariant is described as follows:
-//   - Base case: If block is VALIDATED or VALIDATE_FAILED, return the BlockNode as-is.
+//   - Base case: If block is VALIDATED or VALIDATE_FAILED, return the BlockNode as-is. If the block is STORED and
+//     has a timestamp too far in the future, we also return the BlockNode as-is.
 //   - Recursive case: If the block is not VALIDATED or VALIDATE_FAILED in the blockIndexByHash, we will perform all
 //     validations and add the block to the block index with the appropriate status (VALIDATED OR VALIDATE_FAILED) and
 //     return the new BlockNode.
@@ -644,6 +631,19 @@ func (bc *Blockchain) validateAndIndexBlockPoS(block *MsgDeSoBlock) (*BlockNode,
 	blockNode, exists := bc.blockIndexByHash[*blockHash]
 	if exists && (blockNode.IsValidateFailed() || blockNode.IsValidated()) {
 		return blockNode, nil
+	}
+
+	// Base case - Check if the block has already been stored and fails the timestamp drift check.
+	// If it fails the check, then we leave it as stored and return early.
+	if exists && blockNode.IsStored() {
+		// If the block is too far in the future, we leave it as STORED and return early.
+		failsTimestampDriftCheck, err := bc.isBlockTimestampTooFarInFuturePoS(block.Header)
+		if err != nil {
+			return blockNode, errors.Wrap(err, "validateAndIndexBlockPoS: Problem checking block timestamp")
+		}
+		if failsTimestampDriftCheck {
+			return blockNode, nil
+		}
 	}
 
 	// Run the validation for the parent and update the block index with the parent's status. We first
@@ -696,13 +696,8 @@ func (bc *Blockchain) validateAndIndexBlockPoS(block *MsgDeSoBlock) (*BlockNode,
 		return blockNode, errors.Wrap(err, "validateAndIndexBlockPoS: Problem getting UtxoView")
 	}
 
-	snapshotGlobalParams, err := utxoView.GetCurrentSnapshotGlobalParamsEntry()
-	if err != nil {
-		return nil, errors.Wrap(err, "validateAndIndexBlockPoS: Problem getting snapshot global params")
-	}
-
 	// Check if the block is properly formed and passes all basic validations.
-	if err = bc.isValidBlockPoS(block, snapshotGlobalParams); err != nil {
+	if err = bc.isValidBlockPoS(block); err != nil {
 		return bc.storeValidateFailedBlockWithWrappedError(block, err)
 	}
 
@@ -715,6 +710,15 @@ func (bc *Blockchain) validateAndIndexBlockPoS(block *MsgDeSoBlock) (*BlockNode,
 	if _, err = utxoView.ConnectBlock(block, txHashes, true, nil, block.Header.Height); err != nil {
 		// If it doesn't connect, we want to mark it as ValidateFailed.
 		return bc.storeValidateFailedBlockWithWrappedError(block, err)
+	}
+
+	// If the block is too far in the future, we leave it as STORED and return early.
+	failsTimestampDriftCheck, err := bc.isBlockTimestampTooFarInFuturePoS(block.Header)
+	if err != nil {
+		return blockNode, errors.Wrap(err, "validateAndIndexBlockPoS: Problem checking block timestamp")
+	}
+	if failsTimestampDriftCheck {
+		return bc.storeBlockInBlockIndex(block)
 	}
 
 	// We can now add this block to the block index since we have performed all basic validations.
@@ -775,9 +779,9 @@ func (bc *Blockchain) validatePreviouslyIndexedBlockPoS(blockHash *BlockHash) (*
 
 // isValidBlockPoS performs all basic block integrity checks. Any error
 // resulting from this function implies that the block is invalid.
-func (bc *Blockchain) isValidBlockPoS(block *MsgDeSoBlock, snapshotGlobalParams *GlobalParamsEntry) error {
+func (bc *Blockchain) isValidBlockPoS(block *MsgDeSoBlock) error {
 	// Surface Level validation of the block
-	if err := bc.isProperlyFormedBlockPoS(block, snapshotGlobalParams); err != nil {
+	if err := bc.isProperlyFormedBlockPoS(block); err != nil {
 		return err
 	}
 	if err := bc.isBlockTimestampValidRelativeToParentPoS(block.Header); err != nil {
@@ -831,11 +835,53 @@ func (bc *Blockchain) isBlockTimestampValidRelativeToParentPoS(header *MsgDeSoHe
 	return nil
 }
 
+// isBlockTimestampTooFarInFuturePoS validates that the block's timestamp is not too far in the future based
+// on the configured block timestamp drift.
+//
+// We use the snapshotted global params to validate that the block's timestamp isn't too far ahead in the
+// future. We use the snapshotted global params specifically so that the drift timestamp check behaves
+// consistently even for orphan blocks that are 1 epoch in the future..
+func (bc *Blockchain) isBlockTimestampTooFarInFuturePoS(header *MsgDeSoHeader) (bool, error) {
+	// If the block's timestamp is lower than the current time, then there's no reason to check for
+	// timestamp drift. The check is guaranteed to pass.
+	currentTstampNanoSecs := time.Now().UnixNano()
+	if header.TstampNanoSecs <= currentTstampNanoSecs {
+		return false, nil
+	}
+
+	// We use NewUtxoView here, which generates a UtxoView at the current committed tip. We can use the view
+	// to fetch the snapshot global params for the previous epoch, current epoch, and next epoch. As long as
+	// the block's height is within 3600 blocks of the committed tip, this will always work. In practice,
+	// the incoming block never be more than 3600 blocks behind or ahead of the tip, while also failing the
+	// above header.TstampNanoSecs <= currentTstampNanoSecs check.
+	utxoView, err := NewUtxoView(bc.db, bc.params, nil, bc.snapshot, nil)
+	if err != nil {
+		return false, errors.Wrap(err, "isBlockTimestampTooFarInFuturePoS: Problem initializing UtxoView")
+	}
+
+	simulatedEpochEntryForBlock, err := utxoView.SimulateAdjacentEpochEntryForBlockHeight(header.Height)
+	if err != nil {
+		return false, errors.Wrapf(err, "isBlockTimestampTooFarInFuturePoS: Problem simulating epoch entry")
+	}
+
+	snapshotEpochNumber, err := utxoView.ComputeSnapshotEpochNumberForEpoch(simulatedEpochEntryForBlock.EpochNumber)
+	if err != nil {
+		return false, errors.Wrapf(err, "isBlockTimestampTooFarInFuturePoS: Problem getting snapshot epoch number for epoch #%d",
+			simulatedEpochEntryForBlock.EpochNumber)
+	}
+
+	snapshotGlobalParams, err := utxoView.GetSnapshotGlobalParamsEntryByEpochNumber(snapshotEpochNumber)
+	if err != nil {
+		return false, errors.Wrapf(err, "isBlockTimestampTooFarInFuturePoS: Problem getting snapshot global params")
+	}
+
+	return header.TstampNanoSecs > time.Now().UnixNano()+snapshotGlobalParams.BlockTimestampDriftNanoSecs, nil
+}
+
 // isProperlyFormedBlockPoS validates the block at a surface level and makes
 // sure that all fields are populated in a valid manner. It does not verify
 // signatures nor validate the blockchain state resulting from the block.
-func (bc *Blockchain) isProperlyFormedBlockPoS(block *MsgDeSoBlock, snapshotGlobalParams *GlobalParamsEntry,
-) error {
+func (bc *Blockchain) isProperlyFormedBlockPoS(block *MsgDeSoBlock) error {
 	// First, make sure we have a non-nil block
 	if block == nil {
 		return RuleErrorNilBlock
@@ -844,12 +890,6 @@ func (bc *Blockchain) isProperlyFormedBlockPoS(block *MsgDeSoBlock, snapshotGlob
 	// Make sure the header is properly formed by itself
 	if err := bc.isProperlyFormedBlockHeaderPoS(block.Header); err != nil {
 		return err
-	}
-
-	// Timestamp validation. We use the snapshotted global params to validate the timestamp, specifically
-	// so that the drift timestamp check behaves properly even for orphan blocks.
-	if block.Header.TstampNanoSecs > time.Now().UnixNano()+snapshotGlobalParams.BlockTimestampDriftNanoSecs {
-		return RuleErrorPoSBlockTstampNanoSecsInFuture
 	}
 
 	// If the header is properly formed, we can check the rest of the block.
