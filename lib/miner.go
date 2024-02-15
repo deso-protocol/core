@@ -166,7 +166,7 @@ func (desoMiner *DeSoMiner) _mineSingleBlock(threadIndex uint32) (_diffTarget *B
 		// the header we were just mining on.
 		blockToMine.Txns[0].TxOutputs[0].PublicKey = publicKey
 		blockToMine.Txns[0].TxnMeta.(*BlockRewardMetadataa).ExtraData = UintToBuf(extraNonces[0])
-		blockToMine, err = RecomputeBlockRewardWithBlockRewardOutputPublicKey(blockToMine, publicKey)
+		blockToMine, err = RecomputeBlockRewardWithBlockRewardOutputPublicKey(blockToMine, publicKey, desoMiner.params)
 		if err != nil {
 			glog.Errorf("DeSoMiner._startThread: Error recomputing block reward: %v", err)
 			time.Sleep(1 * time.Second)

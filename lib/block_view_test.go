@@ -1657,7 +1657,7 @@ func TestBasicTransfer(t *testing.T) {
 	}
 
 	// A block with too much block reward should fail.
-	allowedBlockReward := CalcBlockRewardNanos(chain.blockTip().Height)
+	allowedBlockReward := CalcBlockRewardNanos(chain.blockTip().Height, params)
 	assert.Equal(int64(allowedBlockReward), int64(1*NanosPerUnit))
 	blockToMine, _, _, err := miner._getBlockToMine(0 /*threadIndex*/)
 	require.NoError(err)

@@ -995,8 +995,7 @@ func TestAddInputsAndChangeToTransaction(t *testing.T) {
 	_ = assert
 	_ = require
 
-	chain, _, db := NewLowDifficultyBlockchain(t)
-	_ = db
+	chain, params, _ := NewLowDifficultyBlockchain(t)
 
 	_, _, blockB1, blockB2, blockB3, _, _ := getForkedChain(t)
 
@@ -1038,7 +1037,7 @@ func TestAddInputsAndChangeToTransaction(t *testing.T) {
 	}
 
 	// Save the block reward in the first block to use it for testing.
-	firstBlockReward := CalcBlockRewardNanos(1)
+	firstBlockReward := CalcBlockRewardNanos(1, params)
 
 	// Connect a block. The sender address should have mined some DeSo but
 	// it should be unspendable until the block after this one. See
@@ -1111,13 +1110,12 @@ func TestValidateBasicTransfer(t *testing.T) {
 	_ = assert
 	_ = require
 
-	chain, _, db := NewLowDifficultyBlockchain(t)
-	_ = db
+	chain, params, _ := NewLowDifficultyBlockchain(t)
 
 	_, _, blockB1, blockB2, _, _, _ := getForkedChain(t)
 
 	// Save the block reward in the first block to use it for testing.
-	firstBlockReward := CalcBlockRewardNanos(1)
+	firstBlockReward := CalcBlockRewardNanos(1, params)
 
 	// Connect a block. The sender address should have mined some DeSo but
 	// it should be unspendable until the block after this one. See

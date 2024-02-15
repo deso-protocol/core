@@ -4273,7 +4273,7 @@ func (bav *UtxoView) ConnectBlock(
 	}
 	// Verify that the block reward does not overflow when added to
 	// the block's fees.
-	blockReward := CalcBlockRewardNanos(uint32(blockHeader.Height))
+	blockReward := CalcBlockRewardNanos(uint32(blockHeader.Height), bav.Params)
 	if totalFees > MaxNanos ||
 		blockReward > (math.MaxUint64-totalFees) {
 
