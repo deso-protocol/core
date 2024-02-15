@@ -1200,6 +1200,13 @@ func (bc *Blockchain) isTipMaxed(tip *BlockNode) bool {
 	return false
 }
 
+func (bc *Blockchain) getMaxTipAge(tip *BlockNode) time.Duration {
+	if bc.params.IsPoSBlockHeight(uint64(tip.Height)) {
+		return bc.params.MaxTipAgePoS
+	}
+	return bc.params.MaxTipAgePoW
+}
+
 func (bc *Blockchain) isTipCurrent(tip *BlockNode) bool {
 	if bc.MaxSyncBlockHeight > 0 {
 		return tip.Height >= bc.MaxSyncBlockHeight
@@ -1217,8 +1224,8 @@ func (bc *Blockchain) isTipCurrent(tip *BlockNode) bool {
 
 	// Not current if the tip has a timestamp older than the maximum
 	// tip age.
-	tipTime := time.Unix(int64(tip.Header.GetTstampSecs()), 0)
-	oldestAllowedTipTime := bc.timeSource.AdjustedTime().Add(-1 * bc.params.MaxTipAge)
+	tipTime := time.Unix(tip.Header.GetTstampSecs(), 0)
+	oldestAllowedTipTime := bc.timeSource.AdjustedTime().Add(-1 * bc.getMaxTipAge(tip))
 
 	return !tipTime.Before(oldestAllowedTipTime)
 }
