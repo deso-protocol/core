@@ -330,7 +330,8 @@ func (desoBlockProducer *DeSoBlockProducer) _getBlockTemplate(publicKey []byte) 
 
 	// Now that the total fees have been computed, set the value of the block reward
 	// output.
-	blockRewardOutput.AmountNanos = CalcBlockRewardNanos(uint32(blockRet.Header.Height)) + totalFeeNanos
+	blockRewardOutput.AmountNanos = CalcBlockRewardNanos(uint32(blockRet.Header.Height), desoBlockProducer.params) +
+		totalFeeNanos
 
 	// Compute the merkle root for the block now that all of the transactions have
 	// been added.
@@ -434,7 +435,11 @@ func (desoBlockProducer *DeSoBlockProducer) AddBlockTemplate(block *MsgDeSoBlock
 	}
 }
 
-func RecomputeBlockRewardWithBlockRewardOutputPublicKey(block *MsgDeSoBlock, blockRewardOutputPublicKeyBytes []byte) (*MsgDeSoBlock, error) {
+func RecomputeBlockRewardWithBlockRewardOutputPublicKey(
+	block *MsgDeSoBlock,
+	blockRewardOutputPublicKeyBytes []byte,
+	params *DeSoParams,
+) (*MsgDeSoBlock, error) {
 	blockRewardOutputPublicKey, err := btcec.ParsePubKey(blockRewardOutputPublicKeyBytes, btcec.S256())
 	if err != nil {
 		return nil, errors.Wrap(
@@ -458,7 +463,7 @@ func RecomputeBlockRewardWithBlockRewardOutputPublicKey(block *MsgDeSoBlock, blo
 			}
 		}
 	}
-	block.Txns[0].TxOutputs[0].AmountNanos = CalcBlockRewardNanos(uint32(block.Header.Height)) + totalFees
+	block.Txns[0].TxOutputs[0].AmountNanos = CalcBlockRewardNanos(uint32(block.Header.Height), params) + totalFees
 	return block, nil
 }
 
@@ -490,7 +495,8 @@ func (blockProducer *DeSoBlockProducer) GetHeadersAndExtraDatas(
 
 	// Swap out the public key in the block
 	latestBLockCopy.Txns[0].TxOutputs[0].PublicKey = publicKeyBytes
-	latestBLockCopy, err = RecomputeBlockRewardWithBlockRewardOutputPublicKey(latestBLockCopy, publicKeyBytes)
+	latestBLockCopy, err = RecomputeBlockRewardWithBlockRewardOutputPublicKey(
+		latestBLockCopy, publicKeyBytes, blockProducer.params)
 	if err != nil {
 		return "", nil, nil, nil, errors.Wrap(
 			fmt.Errorf("GetBlockTemplate: Problem recomputing block reward: %v", err), "")

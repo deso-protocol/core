@@ -140,6 +140,44 @@ func (bav *UtxoView) runEpochCompleteSnapshotGeneration(epochNumber uint64) erro
 	return nil
 }
 
+// SimulateEpochEntryForBlockHeight returns a simulated for the given block height. It only supports block
+// heights within the current, previous, and next epochs. The view and timestamp for the simulated epoch
+// entries are left empty since they can't be easily simulated, so DO NOT USE CreatedAtBlockTimestampNanoSecs
+// or InitialView from the returned EpochEntry.
+//
+// We use this function to simulate epoch entries so we can perform block validations for blocks within the
+// previous, current, and next epochs.
+func (bav *UtxoView) SimulateAdjacentEpochEntryForBlockHeight(blockHeight uint64) (*EpochEntry, error) {
+	currentEpochEntry, err := bav.GetCurrentEpochEntry()
+	if err != nil {
+		return nil, errors.Wrap(err, "Problem getting current epoch entry")
+	}
+
+	if currentEpochEntry.ContainsBlockHeight(blockHeight) {
+		return currentEpochEntry, nil
+	}
+
+	var adjacentEpochEntry *EpochEntry
+
+	if blockHeight > currentEpochEntry.FinalBlockHeight {
+		adjacentEpochEntry, err = bav.simulateNextEpochEntry(currentEpochEntry.EpochNumber, currentEpochEntry.FinalBlockHeight)
+		if err != nil {
+			return nil, errors.Wrap(err, "Problem simulating next epoch entry")
+		}
+	} else {
+		adjacentEpochEntry, err = bav.simulatePrevEpochEntry(currentEpochEntry.EpochNumber, currentEpochEntry.InitialBlockHeight)
+		if err != nil {
+			return nil, errors.Wrap(err, "Problem simulating prev epoch entry")
+		}
+	}
+
+	if adjacentEpochEntry.ContainsBlockHeight(blockHeight) {
+		return adjacentEpochEntry, nil
+	}
+
+	return nil, errors.Errorf("Block height %d is not within the current, previous, or next epoch", blockHeight)
+}
+
 // simulateNextEpochEntry simulates the block range for the next epoch given the current epoch's final
 // block height and epoch number. The view and timestamp for the simulated epoch are left empty since they can't
 // be easily simulated, so DO NOT USE CreatedAtBlockTimestampNanoSecs or InitialView from the returned EpochEntry.

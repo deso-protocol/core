@@ -608,9 +608,15 @@ type DeSoParams struct {
 	// disk-fill attacks, among other things.
 	MinChainWorkHex string
 
-	// This is used for determining whether we are still in initial block download.
+	// This is used for determining whether we are still in initial block download
+	// when the chain is running PoW.
 	// If our tip is older than this, we continue with IBD.
-	MaxTipAge time.Duration
+	MaxTipAgePoW time.Duration
+
+	// This is used for determining whether we are still in initial block download
+	// when the chain is running PoS.
+	// If our tip is older than this, we continue with initial block download.
+	MaxTipAgePoS time.Duration
 
 	// Do not allow the difficulty to change by more than a factor of this
 	// variable during each adjustment period.
@@ -851,7 +857,8 @@ func (params *DeSoParams) EnableRegtest() {
 	params.TimeBetweenBlocks = 2 * time.Second
 	params.TimeBetweenDifficultyRetargets = 6 * time.Second
 	// Make sure we don't care about blockchain tip age.
-	params.MaxTipAge = 1000000 * time.Hour
+	params.MaxTipAgePoW = 1000000 * time.Hour
+	params.MaxTipAgePoS = 1000000 * time.Hour
 
 	// Allow block rewards to be spent instantly
 	params.BlockRewardMaturity = 0
@@ -1047,7 +1054,8 @@ var DeSoMainnetParams = DeSoParams{
 	// Run with --v=2 and look for "cum work" output from miner.go
 	MinChainWorkHex: "000000000000000000000000000000000000000000000000006314f9a85a949b",
 
-	MaxTipAge: 24 * time.Hour,
+	MaxTipAgePoW: 24 * time.Hour,
+	MaxTipAgePoS: time.Hour,
 
 	// ===================================================================================
 	// Mainnet Bitcoin config
@@ -1409,7 +1417,8 @@ var DeSoTestnetParams = DeSoParams{
 
 	// TODO: Set to one day when we launch the testnet. In the meantime this value
 	// is more useful for local testing.
-	MaxTipAge: time.Hour * 24,
+	MaxTipAgePoW: time.Hour * 24,
+	MaxTipAgePoS: time.Hour,
 
 	// Difficulty can't decrease to below 50% of its previous value or increase
 	// to above 200% of its previous value.
