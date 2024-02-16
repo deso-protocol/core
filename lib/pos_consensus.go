@@ -539,9 +539,11 @@ func (fc *FastHotStuffConsensus) HandleBlock(pp *Peer, msg *MsgDeSoBlock) error 
 	//
 	// See https://github.com/deso-protocol/core/pull/875#discussion_r1460183510 for more details.
 	if len(missingBlockHashes) > 0 {
-		pp.QueueMessage(&MsgDeSoGetBlocks{
-			HashList: missingBlockHashes,
-		})
+		remoteNode := fc.networkManager.rnManager.GetRemoteNodeFromPeer(pp)
+		if remoteNode == nil {
+			return errors.Errorf("FastHotStuffConsensus.HandleBlock: RemoteNode not found for peer: %v", pp)
+		}
+		sendMessageToRemoteNodeAsync(remoteNode, &MsgDeSoGetBlocks{HashList: missingBlockHashes})
 	}
 
 	return nil
