@@ -22,6 +22,7 @@ const (
 	EncoderTypeCreatePostAssociationStateChangeMetadata EncoderType = 2000013
 	EncoderTypeDeletePostAssociationStateChangeMetadata EncoderType = 2000014
 	EncoderTypeStakeRewardStateChangeMetadata           EncoderType = 2000015
+	EncoderTypeUnjailValidatorStateChangeMetadata       EncoderType = 2000016
 )
 
 func GetStateChangeMetadataFromOpType(opType OperationType) DeSoEncoder {
@@ -594,4 +595,42 @@ func (stakeRewardSCM *StakeRewardStateChangeMetadata) GetVersionByte(blockHeight
 
 func (stakeRewardSCM *StakeRewardStateChangeMetadata) GetEncoderType() EncoderType {
 	return EncoderTypeStakeRewardStateChangeMetadata
+}
+
+type UnjailValidatorStateChangeMetadata struct {
+	ValidatorPKID         *PKID
+	JailedAtEpochNumber   uint64
+	UnjailedAtEpochNumber uint64
+}
+
+func (metadata *UnjailValidatorStateChangeMetadata) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte {
+	var data []byte
+	data = append(data, EncodeToBytes(blockHeight, metadata.ValidatorPKID, skipMetadata...)...)
+	data = append(data, UintToBuf(metadata.JailedAtEpochNumber)...)
+	data = append(data, UintToBuf(metadata.UnjailedAtEpochNumber)...)
+	return data
+}
+
+func (metadata *UnjailValidatorStateChangeMetadata) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.Reader) error {
+	var err error
+	if metadata.ValidatorPKID, err = DecodeDeSoEncoder(&PKID{}, rr); err != nil {
+		return errors.Wrapf(err, "UnjailValidatorStateChangeMetadata.Decode: Problem reading ValidatorPKID")
+	}
+	metadata.JailedAtEpochNumber, err = ReadUvarint(rr)
+	if err != nil {
+		return errors.Wrapf(err, "UnjailValidatorStateChangeMetadata.Decode: Problem reading JailedAtEpochNumber")
+	}
+	metadata.UnjailedAtEpochNumber, err = ReadUvarint(rr)
+	if err != nil {
+		return errors.Wrapf(err, "UnjailValidatorStateChangeMetadata.Decode: Problem reading UnjailedAtEpochNumber")
+	}
+	return nil
+}
+
+func (metadata *UnjailValidatorStateChangeMetadata) GetVersionByte(blockHeight uint64) byte {
+	return 0
+}
+
+func (metadata *UnjailValidatorStateChangeMetadata) GetEncoderType() EncoderType {
+	return EncoderTypeUnjailValidatorStateChangeMetadata
 }
