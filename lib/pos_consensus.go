@@ -14,6 +14,7 @@ import (
 
 type FastHotStuffConsensus struct {
 	lock                                sync.RWMutex
+	networkManager                      *NetworkManager
 	blockchain                          *Blockchain
 	fastHotStuffEventLoop               consensus.FastHotStuffEventLoop
 	mempool                             Mempool
@@ -25,6 +26,7 @@ type FastHotStuffConsensus struct {
 
 func NewFastHotStuffConsensus(
 	params *DeSoParams,
+	networkManager *NetworkManager,
 	blockchain *Blockchain,
 	mempool Mempool,
 	signer *BLSSigner,
@@ -32,6 +34,7 @@ func NewFastHotStuffConsensus(
 	timeoutBaseDurationMilliseconds uint64,
 ) *FastHotStuffConsensus {
 	return &FastHotStuffConsensus{
+		networkManager:                      networkManager,
 		blockchain:                          blockchain,
 		fastHotStuffEventLoop:               consensus.NewFastHotStuffEventLoop(),
 		mempool:                             mempool,
@@ -281,7 +284,18 @@ func (fc *FastHotStuffConsensus) handleBlockProposalEvent(
 		)
 	}
 
-	// TODO: Broadcast the block proposal to the network
+	// Broadcast the block to the validator network
+	validators := fc.networkManager.rnManager.GetValidatorIndex().GetAll()
+	for _, validator := range validators {
+		sendMessageToRemoteNodeAsync(validator, blockProposal)
+	}
+
+	// Broadcast the block to all inbound non-validator peers. This allows them to sync
+	// blocks from us.
+	nonValidators := fc.networkManager.rnManager.GetNonValidatorInboundIndex().GetAll()
+	for _, nonValidator := range nonValidators {
+		sendMessageToRemoteNodeAsync(nonValidator, blockProposal)
+	}
 
 	fc.logBlockProposal(blockProposal, blockHash)
 	return nil
@@ -346,8 +360,11 @@ func (fc *FastHotStuffConsensus) HandleLocalVoteEvent(event *consensus.FastHotSt
 		return errors.Errorf("FastHotStuffConsensus.HandleLocalVoteEvent: Error processing vote locally: %v", err)
 	}
 
-	// Broadcast the vote message to the network
-	// TODO: Broadcast the vote message to the network or alternatively to just the block proposer
+	// Broadcast the block to the validator network
+	validators := fc.networkManager.rnManager.GetValidatorIndex().GetAll()
+	for _, validator := range validators {
+		sendMessageToRemoteNodeAsync(validator, voteMsg)
+	}
 
 	return nil
 }
@@ -461,8 +478,11 @@ func (fc *FastHotStuffConsensus) HandleLocalTimeoutEvent(event *consensus.FastHo
 		return errors.Errorf("FastHotStuffConsensus.HandleLocalTimeoutEvent: Error processing timeout locally: %v", err)
 	}
 
-	// Broadcast the timeout message to the network
-	// TODO: Broadcast the timeout message to the network or alternatively to just the block proposer
+	// Broadcast the block to the validator network
+	validators := fc.networkManager.rnManager.GetValidatorIndex().GetAll()
+	for _, validator := range validators {
+		sendMessageToRemoteNodeAsync(validator, timeoutMsg)
+	}
 
 	return nil
 }
@@ -813,6 +833,10 @@ func isProperlyFormedBlockProposalEvent(event *consensus.FastHotStuffEvent) bool
 	}
 
 	return false
+}
+
+func sendMessageToRemoteNodeAsync(remoteNode *RemoteNode, msg DeSoMessage) {
+	go func(rn *RemoteNode, m DeSoMessage) { rn.SendMessage(m) }(remoteNode, msg)
 }
 
 ////////////////////////////////////////// Logging Helper Functions ///////////////////////////////////////////////
