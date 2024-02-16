@@ -287,14 +287,14 @@ func (fc *FastHotStuffConsensus) handleBlockProposalEvent(
 	// Broadcast the block to the validator network
 	validators := fc.networkManager.rnManager.GetValidatorIndex().GetAll()
 	for _, validator := range validators {
-		validator.SendMessage(blockProposal)
+		sendMessageToRemoteNodeAsync(validator, blockProposal)
 	}
 
 	// Broadcast the block to all inbound non-validator peers. This allows them to sync
 	// blocks from us.
 	nonValidators := fc.networkManager.rnManager.GetNonValidatorInboundIndex().GetAll()
 	for _, nonValidator := range nonValidators {
-		nonValidator.SendMessage(blockProposal)
+		sendMessageToRemoteNodeAsync(nonValidator, blockProposal)
 	}
 
 	fc.logBlockProposal(blockProposal, blockHash)
@@ -363,7 +363,7 @@ func (fc *FastHotStuffConsensus) HandleLocalVoteEvent(event *consensus.FastHotSt
 	// Broadcast the block to the validator network
 	validators := fc.networkManager.rnManager.GetValidatorIndex().GetAll()
 	for _, validator := range validators {
-		validator.SendMessage(voteMsg)
+		sendMessageToRemoteNodeAsync(validator, voteMsg)
 	}
 
 	return nil
@@ -481,7 +481,7 @@ func (fc *FastHotStuffConsensus) HandleLocalTimeoutEvent(event *consensus.FastHo
 	// Broadcast the block to the validator network
 	validators := fc.networkManager.rnManager.GetValidatorIndex().GetAll()
 	for _, validator := range validators {
-		validator.SendMessage(timeoutMsg)
+		sendMessageToRemoteNodeAsync(validator, timeoutMsg)
 	}
 
 	return nil
@@ -833,6 +833,10 @@ func isProperlyFormedBlockProposalEvent(event *consensus.FastHotStuffEvent) bool
 	}
 
 	return false
+}
+
+func sendMessageToRemoteNodeAsync(remoteNode *RemoteNode, msg DeSoMessage) {
+	go func(rn *RemoteNode, m DeSoMessage) { rn.SendMessage(m) }(remoteNode, msg)
 }
 
 ////////////////////////////////////////// Logging Helper Functions ///////////////////////////////////////////////
