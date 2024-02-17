@@ -13,6 +13,7 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -118,8 +119,10 @@ type UnconnectedTx struct {
 // to aggregate transactions and mine them into blocks.
 type DeSoMempool struct {
 	// Stops the mempool's services.
-	quit    chan struct{}
-	stopped bool
+	startGroup sync.WaitGroup
+	exitChan   chan struct{}
+	exitGroup  sync.WaitGroup
+	stopped    bool
 
 	// A reference to a blockchain object that can be used to validate transactions before
 	// adding them to the pool.
@@ -2537,40 +2540,38 @@ func (mp *DeSoMempool) InefficientRemoveTransaction(tx *MsgDeSoTxn) {
 }
 
 func (mp *DeSoMempool) StartReadOnlyUtxoViewRegenerator() {
+	mp.startGroup.Done()
 	glog.Info("Calling StartReadOnlyUtxoViewRegenerator...")
 
-	go func() {
-		var oldSeqNum int64
-	out:
-		for {
-			select {
-			case <-time.After(time.Duration(ReadOnlyUtxoViewRegenerationIntervalSeconds) * time.Second):
-				if mp.bc.chainState() == SyncStateSyncingSnapshot {
-					continue
-				}
-				glog.V(2).Infof("StartReadOnlyUtxoViewRegenerator: Woke up!")
-
-				// When we wake up, only do an update if one didn't occur since before
-				// we slept. Note that the number of transactions being processed can
-				// also trigger an update, which is why this check is necessary.
-				newSeqNum := atomic.LoadInt64(&mp.readOnlyUtxoViewSequenceNumber)
-				if oldSeqNum == newSeqNum {
-					glog.V(2).Infof("StartReadOnlyUtxoViewRegenerator: Updating view at prescribed interval")
-					// Acquire a read lock when we do this.
-					mp.RegenerateReadOnlyView()
-					glog.V(2).Infof("StartReadOnlyUtxoViewRegenerator: Finished view update at prescribed interval")
-				} else {
-					glog.V(2).Infof("StartReadOnlyUtxoViewRegenerator: View updated while sleeping; nothing to do")
-				}
-
-				// Get the sequence number before our timer hits.
-				oldSeqNum = atomic.LoadInt64(&mp.readOnlyUtxoViewSequenceNumber)
-
-			case <-mp.quit:
-				break out
+	var oldSeqNum int64
+	for {
+		select {
+		case <-mp.exitChan:
+			mp.exitGroup.Done()
+			return
+		case <-time.After(time.Duration(ReadOnlyUtxoViewRegenerationIntervalSeconds) * time.Second):
+			if mp.bc.chainState() == SyncStateSyncingSnapshot {
+				continue
 			}
+			glog.V(2).Infof("StartReadOnlyUtxoViewRegenerator: Woke up!")
+
+			// When we wake up, only do an update if one didn't occur since before
+			// we slept. Note that the number of transactions being processed can
+			// also trigger an update, which is why this check is necessary.
+			newSeqNum := atomic.LoadInt64(&mp.readOnlyUtxoViewSequenceNumber)
+			if oldSeqNum == newSeqNum {
+				glog.V(2).Infof("StartReadOnlyUtxoViewRegenerator: Updating view at prescribed interval")
+				// Acquire a read lock when we do this.
+				mp.RegenerateReadOnlyView()
+				glog.V(2).Infof("StartReadOnlyUtxoViewRegenerator: Finished view update at prescribed interval")
+			} else {
+				glog.V(2).Infof("StartReadOnlyUtxoViewRegenerator: View updated while sleeping; nothing to do")
+			}
+
+			// Get the sequence number before our timer hits.
+			oldSeqNum = atomic.LoadInt64(&mp.readOnlyUtxoViewSequenceNumber)
 		}
-	}()
+	}
 }
 
 func (mp *DeSoMempool) regenerateReadOnlyView() error {
@@ -2616,23 +2617,21 @@ func (mp *DeSoMempool) BlockUntilReadOnlyViewRegenerated() {
 }
 
 func (mp *DeSoMempool) StartMempoolDBDumper() {
+	mp.startGroup.Done()
 	// If we were instructed to dump txns to the db, then do so periodically
 	// Note this acquired a very minimal lock on the universalTransactionList
-	go func() {
-	out:
-		for {
-			select {
-			case <-time.After(30 * time.Second):
-				glog.Info("StartMempoolDBDumper: Waking up! Dumping txns now...")
+	for {
+		select {
+		case <-mp.exitChan:
+			mp.exitGroup.Done()
+			return
+		case <-time.After(30 * time.Second):
+			glog.Info("StartMempoolDBDumper: Waking up! Dumping txns now...")
 
-				// Dump the txns and time it.
-				mp.DumpTxnsToDB()
-
-			case <-mp.quit:
-				break out
-			}
+			// Dump the txns and time it.
+			mp.DumpTxnsToDB()
 		}
-	}()
+	}
 }
 
 func (mp *DeSoMempool) LoadTxnsFromDB() {
@@ -2689,8 +2688,9 @@ func (mp *DeSoMempool) LoadTxnsFromDB() {
 }
 
 func (mp *DeSoMempool) Stop() {
-	close(mp.quit)
+	close(mp.exitChan)
 	mp.stopped = true
+	mp.exitGroup.Wait()
 }
 
 // Create a new pool with no transactions in it.
@@ -2702,7 +2702,7 @@ func NewDeSoMempool(_bc *Blockchain, _rateLimitFeerateNanosPerKB uint64,
 	backupUtxoView, _ := NewUtxoView(_bc.db, _bc.params, _bc.postgres, _bc.snapshot, _bc.eventManager)
 	readOnlyUtxoView, _ := NewUtxoView(_bc.db, _bc.params, _bc.postgres, _bc.snapshot, _bc.eventManager)
 	newPool := &DeSoMempool{
-		quit:                            make(chan struct{}),
+		exitChan:                        make(chan struct{}),
 		bc:                              _bc,
 		rateLimitFeeRateNanosPerKB:      _rateLimitFeerateNanosPerKB,
 		minFeeRateNanosPerKB:            _minFeerateNanosPerKB,
@@ -2730,12 +2730,17 @@ func NewDeSoMempool(_bc *Blockchain, _rateLimitFeerateNanosPerKB uint64,
 	// If the caller wants the readOnlyUtxoView to update periodically then kick
 	// that off here.
 	if newPool.generateReadOnlyUtxoView {
-		newPool.StartReadOnlyUtxoViewRegenerator()
+		newPool.startGroup.Add(1)
+		newPool.exitGroup.Add(1)
+		go newPool.StartReadOnlyUtxoViewRegenerator()
 	}
 
 	if newPool.mempoolDir != "" {
-		newPool.StartMempoolDBDumper()
+		newPool.startGroup.Add(1)
+		newPool.exitGroup.Add(1)
+		go newPool.StartMempoolDBDumper()
 	}
+	newPool.startGroup.Wait()
 
 	return newPool
 }
