@@ -847,8 +847,12 @@ func _registerValidatorAndStake(
 	if testMeta.pubKeyToBLSKeyMap == nil {
 		testMeta.pubKeyToBLSKeyMap = make(map[string]*bls.PrivateKey)
 	}
+	if testMeta.blsPubKeyToBLSKeyMap == nil {
+		testMeta.blsPubKeyToBLSKeyMap = make(map[string]*bls.PrivateKey)
+	}
 	// Stash the voting private key in testmeta for convenience
 	testMeta.pubKeyToBLSKeyMap[publicKey] = votingPrivateKey
+	testMeta.blsPubKeyToBLSKeyMap[votingPublicKey.ToString()] = votingPrivateKey
 	registerMetadata := &RegisterAsValidatorMetadata{
 		Domains:                             [][]byte{[]byte(fmt.Sprintf("https://%s.com", publicKey))},
 		VotingPublicKey:                     votingPublicKey,

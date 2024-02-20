@@ -148,7 +148,6 @@ func createTestBlockHeaderVersion2(t *testing.T, includeTimeoutQC bool) *MsgDeSo
 		Nonce:                       uint64(0),
 		ExtraNonce:                  uint64(0),
 		TxnConnectStatusByIndexHash: &testTxnConnectStatusByIndex,
-		ProposerPublicKey:           NewPublicKey(pkForTesting1),
 		ProposerVotingPublicKey:     testBLSPublicKey,
 		ProposerRandomSeedSignature: testBLSSignature,
 		ProposedInView:              uint64(1432101234),
@@ -211,7 +210,7 @@ func TestHeaderConversionAndReadWriteMessage(t *testing.T) {
 		require.NoError(err)
 		require.Equal(hdrPayload, data)
 
-		require.Equalf(15, reflect.TypeOf(expectedBlockHeader).Elem().NumField(),
+		require.Equalf(14, reflect.TypeOf(expectedBlockHeader).Elem().NumField(),
 			"Number of fields in HEADER message is different from expected. "+
 				"Did you add a new field? If so, make sure the serialization code "+
 				"works, add the new field to the test case, and fix this error.")
