@@ -198,10 +198,6 @@ func (desoMiner *DeSoMiner) MineAndProcessSingleBlock(threadIndex uint32, mempoo
 		return nil, fmt.Errorf("DeSoMiner._startThread: _mineSingleBlock returned nil; should only happen if we're stopping")
 	}
 
-	if desoMiner.params.IsPoSBlockHeight(blockToMine.Header.Height) {
-		return nil, fmt.Errorf("DeSoMiner._startThread: _mineSingleBlock returned a block that is past the Proof of Stake Cutover")
-	}
-
 	// Log information on the block we just mined.
 	bestHash, _ := blockToMine.Hash()
 	glog.Infof("================== YOU MINED A NEW BLOCK! ================== Height: %d, Hash: %s", blockToMine.Header.Height, hex.EncodeToString(bestHash[:]))
@@ -291,6 +287,12 @@ func (desoMiner *DeSoMiner) _startThread(threadIndex uint32) {
 		if desoMiner.BlockProducer.chain.chainState() != SyncStateFullyCurrent {
 			time.Sleep(1 * time.Second)
 			continue
+		}
+
+		// Exit if blockchain has connected a block at the final PoW block height.
+		currentTip := desoMiner.BlockProducer.chain.blockTip()
+		if currentTip.Header.Height >= desoMiner.params.GetFinalPoWBlockHeight() {
+			return
 		}
 
 		newBlock, err := desoMiner.MineAndProcessSingleBlock(threadIndex, nil /*mempoolToUpdate*/)
