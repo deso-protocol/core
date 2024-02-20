@@ -3176,3 +3176,85 @@ func _checkLimitKeyAndUpdateDerivedKeyEntry(key LockupLimitKey, derivedKeyEntry 
 	// Return true because we found the key and decremented the remaining operations
 	return true
 }
+
+// TXINDEX STUBS
+
+// TYPES: CoinLockupTxindexMetadata
+type CoinLockupTxindexMetadata struct {
+}
+
+func (txindexMetadata *CoinLockupTxindexMetadata) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte {
+	return []byte{}
+}
+
+func (txindexMetadata *CoinLockupTxindexMetadata) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.Reader) error {
+	return nil
+}
+
+func (txindexMetadata *CoinLockupTxindexMetadata) GetVersionByte(blockHeight uint64) byte {
+	return 0
+}
+
+func (txindexMetadata *CoinLockupTxindexMetadata) GetEncoderType() EncoderType {
+	return EncoderTypeCoinLockupTxindexMetadata
+}
+
+// TYPES: UpdateCoinLockupParamsTxindexMetadata
+type UpdateCoinLockupParamsTxindexMetadata struct {
+}
+
+func (txindexMetadata *UpdateCoinLockupParamsTxindexMetadata) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte {
+	return []byte{}
+}
+
+func (txindexMetadata *UpdateCoinLockupParamsTxindexMetadata) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.Reader) error {
+	return nil
+}
+
+func (txindexMetadata *UpdateCoinLockupParamsTxindexMetadata) GetVersionByte(blockHeight uint64) byte {
+	return 0
+}
+
+func (txindexMetadata *UpdateCoinLockupParamsTxindexMetadata) GetEncoderType() EncoderType {
+	return EncoderTypeUpdateCoinLockupParamsTxindexMetadata
+}
+
+// TYPES: CoinLockupTransferTxindexMetadata
+type CoinLockupTransferTxindexMetadata struct {
+}
+
+func (txindexMetadata *CoinLockupTransferTxindexMetadata) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte {
+	return []byte{}
+}
+
+func (txindexMetadata *CoinLockupTransferTxindexMetadata) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.Reader) error {
+	return nil
+}
+
+func (txindexMetadata *CoinLockupTransferTxindexMetadata) GetVersionByte(blockHeight uint64) byte {
+	return 0
+}
+
+func (txindexMetadata *CoinLockupTransferTxindexMetadata) GetEncoderType() EncoderType {
+	return EncoderTypeCoinLockupTransferTxindexMetadata
+}
+
+// TYPES: CoinUnlockTxindexMetadata
+type CoinUnlockTxindexMetadata struct {
+}
+
+func (txindexMetadata *CoinUnlockTxindexMetadata) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte {
+	return []byte{}
+}
+
+func (txindexMetadata *CoinUnlockTxindexMetadata) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.Reader) error {
+	return nil
+}
+
+func (txindexMetadata *CoinUnlockTxindexMetadata) GetVersionByte(blockHeight uint64) byte {
+	return 0
+}
+
+func (txindexMetadata *CoinUnlockTxindexMetadata) GetEncoderType() EncoderType {
+	return EncoderTypeCoinUnlockTxindexMetadata
+}
