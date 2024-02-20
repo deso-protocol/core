@@ -1666,6 +1666,11 @@ func (bav *UtxoView) _connectUnjailValidator(
 	utxoOpsForTxn = append(utxoOpsForTxn, &UtxoOperation{
 		Type:               OperationTypeUnjailValidator,
 		PrevValidatorEntry: prevValidatorEntry,
+		StateChangeMetadata: &UnjailValidatorStateChangeMetadata{
+			ValidatorPKID:         transactorPKIDEntry.PKID,
+			JailedAtEpochNumber:   prevValidatorEntry.JailedAtEpochNumber,
+			UnjailedAtEpochNumber: currentEpochNumber,
+		},
 	})
 	return totalInput, totalOutput, utxoOpsForTxn, nil
 }

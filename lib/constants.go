@@ -70,6 +70,10 @@ func NanoSecondsToUint64MicroSeconds(nanos int64) uint64 {
 	return uint64(nanos / 1000)
 }
 
+func NanoSecondsToTime(nanos int64) time.Time {
+	return time.Unix(0, nanos)
+}
+
 // Snapshot constants
 const (
 	// GetSnapshotTimeout is used in Peer when we fetch a snapshot chunk, and we need to retry.
@@ -865,6 +869,8 @@ func (params *DeSoParams) EnableRegtest() {
 
 	// Set the PoS epoch duration to 10 blocks
 	params.DefaultEpochDurationNumBlocks = 10
+	// Set the PoS default jail inactive validator grace period epochs to 3.
+	params.DefaultJailInactiveValidatorGracePeriodEpochs = 3
 
 	// In regtest, we start all the fork heights at zero. These can be adjusted
 	// for testing purposes to ensure that a transition does not cause issues.

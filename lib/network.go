@@ -2089,12 +2089,6 @@ type MsgDeSoHeader struct {
 	// proposer. The full index is stored in the block to offload space complexity.
 	TxnConnectStatusByIndexHash *BlockHash
 
-	// ProposerPublicKey is only used for Proof of Stake blocks, starting with MsgDeSoHeader
-	// version 2. For all earlier versions, this field will default to nil.
-	//
-	// The ECDSA public key of the validator who proposed this block.
-	ProposerPublicKey *PublicKey
-
 	// ProposerVotingPublicKey is only used for Proof of Stake blocks, starting with
 	// MsgDeSoHeader version 2. For all earlier versions, this field will default to nil.
 	//
@@ -2317,12 +2311,6 @@ func (msg *MsgDeSoHeader) EncodeHeaderVersion2(preSignature bool) ([]byte, error
 	}
 	retBytes = append(retBytes, msg.TxnConnectStatusByIndexHash[:]...)
 
-	// ProposerPublicKey
-	if msg.ProposerPublicKey == nil {
-		return nil, fmt.Errorf("EncodeHeaderVersion2: ProposerPublicKey must be non-nil")
-	}
-	retBytes = append(retBytes, msg.ProposerPublicKey.ToBytes()...)
-
 	// ProposerVotingPublicKey
 	if msg.ProposerVotingPublicKey == nil {
 		return nil, fmt.Errorf("EncodeHeaderVersion2: ProposerVotingPublicKey must be non-nil")
@@ -2537,12 +2525,6 @@ func DecodeHeaderVersion2(rr io.Reader) (*MsgDeSoHeader, error) {
 	_, err = io.ReadFull(rr, retHeader.TxnConnectStatusByIndexHash[:])
 	if err != nil {
 		return nil, errors.Wrapf(err, "MsgDeSoHeader.FromBytes: Problem decoding TxnConnectStatusByIndexHash")
-	}
-
-	// ProposerPublicKey
-	retHeader.ProposerPublicKey, err = ReadPublicKey(rr)
-	if err != nil {
-		return nil, errors.Wrapf(err, "MsgDeSoHeader.FromBytes: Problem decoding ProposerPublicKey")
 	}
 
 	// ProposerVotingPublicKey

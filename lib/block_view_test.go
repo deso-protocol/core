@@ -1144,6 +1144,7 @@ type TestMeta struct {
 	posMempool             *PosMempool
 	posBlockProducer       *PosBlockProducer
 	pubKeyToBLSKeyMap      map[string]*bls.PrivateKey
+	blsPubKeyToBLSKeyMap   map[string]*bls.PrivateKey
 }
 
 func _executeAllTestRollbackAndFlush(testMeta *TestMeta) {

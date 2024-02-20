@@ -857,7 +857,6 @@ func (fc *FastHotStuffConsensus) logBlockProposal(block *MsgDeSoBlock, blockHash
 	glog.Infof(
 		"\n==================================== YOU PROPOSED A NEW FAST-HOTSTUFF BLOCK! ===================================="+
 			"\n  Timestamp: %d, View: %d, Height: %d, BlockHash: %v"+
-			"\n  Proposer PKey: %s"+
 			"\n  Proposer Voting PKey: %s"+
 			"\n  Proposer Signature: %s"+
 			"\n  High QC View: %d, High QC Num Validators: %d, High QC BlockHash: %s"+
@@ -865,7 +864,6 @@ func (fc *FastHotStuffConsensus) logBlockProposal(block *MsgDeSoBlock, blockHash
 			"\n  Num Block Transactions: %d, Num Transactions Remaining In Mempool: %d"+
 			"\n=================================================================================================================",
 		block.Header.GetTstampSecs(), block.Header.GetView(), block.Header.Height, blockHash.String(),
-		PkToString(block.Header.ProposerPublicKey.ToBytes(), fc.params),
 		block.Header.ProposerVotingPublicKey.ToString(),
 		block.Header.ProposerVotePartialSignature.ToString(),
 		block.Header.GetQC().GetView(), block.Header.GetQC().GetAggregatedSignature().GetSignersList().Size(), block.Header.PrevBlockHash.String(),

@@ -969,10 +969,6 @@ func (bc *Blockchain) isProperlyFormedBlockHeaderPoS(header *MsgDeSoHeader) erro
 		return RuleErrorInvalidProposerVotingPublicKey
 	}
 
-	if header.ProposerPublicKey == nil || header.ProposerPublicKey.IsZeroPublicKey() {
-		return RuleErrorInvalidProposerPublicKey
-	}
-
 	if header.ProposerRandomSeedSignature.IsEmpty() {
 		return RuleErrorInvalidProposerRandomSeedSignature
 	}
@@ -1930,7 +1926,6 @@ const (
 	RuleErrorNilMerkleRoot                      RuleError = "RuleErrorNilMerkleRoot"
 	RuleErrorInvalidMerkleRoot                  RuleError = "RuleErrorInvalidMerkleRoot"
 	RuleErrorInvalidProposerVotingPublicKey     RuleError = "RuleErrorInvalidProposerVotingPublicKey"
-	RuleErrorInvalidProposerPublicKey           RuleError = "RuleErrorInvalidProposerPublicKey"
 	RuleErrorInvalidProposerRandomSeedSignature RuleError = "RuleErrorInvalidProposerRandomSeedSignature"
 
 	RuleErrorInvalidPoSBlockHeight       RuleError = "RuleErrorInvalidPoSBlockHeight"

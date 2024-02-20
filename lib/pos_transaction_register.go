@@ -59,11 +59,6 @@ func (tr *TransactionRegister) Init(globalParams *GlobalParamsEntry) {
 	minNetworkFee, bucketMultiplier := globalParams.ComputeFeeTimeBucketMinimumFeeAndMultiplier()
 	if !_isValidMinimumFeeAndMultiplier(minNetworkFee, bucketMultiplier) {
 		minNetworkFee, bucketMultiplier = _getFallbackSafeMinimumFeeAndMultiplier()
-		glog.Warningf(
-			"TransactionRegister.Init: Invalid minimumNetworkFeeNanosPerKB or feeBucketMultiplier. "+
-				"Using fallback values: minimumNetworkFeeNanosPerKB: %v, feeBucketMultiplier: %v",
-			minNetworkFee, bucketMultiplier,
-		)
 	}
 	tr.minimumNetworkFeeNanosPerKB = minNetworkFee
 	tr.feeBucketGrowthRateBasisPoints = bucketMultiplier

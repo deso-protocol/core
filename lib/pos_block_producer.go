@@ -1,9 +1,10 @@
 package lib
 
 import (
-	"github.com/btcsuite/btcd/wire"
 	"math"
 	"time"
+
+	"github.com/btcsuite/btcd/wire"
 
 	"github.com/deso-protocol/core/bls"
 	"github.com/deso-protocol/core/collections/bitset"
@@ -105,7 +106,6 @@ func (pbp *PosBlockProducer) createBlockTemplate(latestBlockView *UtxoView, newB
 	block.Header.ProposedInView = view
 
 	// Set the proposer information.
-	block.Header.ProposerPublicKey = pbp.proposerPublicKey
 	block.Header.ProposerVotingPublicKey = pbp.proposerVotingPublicKey
 	block.Header.ProposerRandomSeedSignature = proposerRandomSeedSignature
 
