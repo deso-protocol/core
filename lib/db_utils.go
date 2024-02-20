@@ -106,7 +106,7 @@ type DBPrefixes struct {
 	// How much Bitcoin is work in USD cents.
 	PrefixUSDCentsPerBitcoinExchangeRate []byte `prefix_id:"[27]" is_state:"true"`
 	// <prefix_id, key> -> <GlobalParamsEntry encoded>
-	PrefixGlobalParams []byte `prefix_id:"[40]" is_state:"true"`
+	PrefixGlobalParams []byte `prefix_id:"[40]" is_state:"true" core_state:"true"`
 
 	// The prefix for the Bitcoin TxID map. If a key is set for a TxID that means this
 	// particular TxID has been processed as part of a BitcoinExchange transaction. If
