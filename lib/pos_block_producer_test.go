@@ -74,7 +74,6 @@ func TestCreateBlockTemplate(t *testing.T) {
 	require.Equal(true, blockTemplate.Header.TstampNanoSecs < time.Now().UnixNano())
 	require.Equal(blockTemplate.Header.Height, uint64(3))
 	require.Equal(blockTemplate.Header.ProposedInView, uint64(10))
-	require.Equal(blockTemplate.Header.ProposerPublicKey, m0Pk)
 	require.Equal(blockTemplate.Header.ProposerVotingPublicKey, pub)
 	require.True(blockTemplate.Header.ProposerRandomSeedSignature.Eq(seedSignature))
 	require.Equal(blockTemplate.Header.TxnConnectStatusByIndexHash, HashBitset(blockTemplate.TxnConnectStatusByIndex))

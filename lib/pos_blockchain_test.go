@@ -75,7 +75,6 @@ func TestIsProperlyFormedBlockPoSAndIsBlockTimestampValidRelativeToParentPoS(t *
 				},
 			},
 			ProposerRandomSeedSignature: signature,
-			ProposerPublicKey:           NewPublicKey(RandomBytes(33)),
 			ProposerVotingPublicKey:     randomBLSPrivateKey.PublicKey(),
 			TransactionMerkleRoot:       merkleRoot,
 			TxnConnectStatusByIndexHash: HashBitset(bitset.NewBitset().Set(0, true)),
@@ -212,17 +211,6 @@ func TestIsProperlyFormedBlockPoSAndIsBlockTimestampValidRelativeToParentPoS(t *
 
 	// Reset proposer voting public key
 	block.Header.ProposerVotingPublicKey = randomBLSPrivateKey.PublicKey()
-
-	// Block must have valid proposer public key
-	block.Header.ProposerPublicKey = nil
-	err = bc.isProperlyFormedBlockPoS(block)
-	require.Equal(t, err, RuleErrorInvalidProposerPublicKey)
-
-	block.Header.ProposerPublicKey = &ZeroPublicKey
-	err = bc.isProperlyFormedBlockPoS(block)
-	require.Equal(t, err, RuleErrorInvalidProposerPublicKey)
-
-	block.Header.ProposerPublicKey = NewPublicKey(RandomBytes(33))
 
 	// Block must have valid proposer random seed hash
 	block.Header.ProposerRandomSeedSignature = nil
@@ -386,7 +374,6 @@ func TestUpsertBlockAndBlockNodeToDB(t *testing.T) {
 			TstampNanoSecs:               time.Now().UnixNano() - 10,
 			Height:                       2,
 			ProposedInView:               1,
-			ProposerPublicKey:            NewPublicKey(RandomBytes(33)),
 			ProposerVotingPublicKey:      blsPrivKey.PublicKey(),
 			ProposerRandomSeedSignature:  signature,
 			ProposerVotePartialSignature: signature,
@@ -478,12 +465,6 @@ func TestUpsertBlockAndBlockNodeToDB(t *testing.T) {
 	require.True(t, byHeightBlockNodes[*updatedBlockHash].Hash.IsEqual(updatedBlockHash))
 	require.True(t, bc.hasBlockNodesIndexedAtHeight(2))
 	require.Len(t, bc.getAllBlockNodesIndexedAtHeight(2), 2)
-
-	// If we're missing a field in the header, we should get an error
-	// as we can't compute the hash.
-	block.Header.ProposerPublicKey = nil
-	_, err = bc.storeBlockInBlockIndex(block)
-	require.Error(t, err)
 }
 
 // TestHasValidBlockView tests that hasValidBlockViewPoS works as expected.
@@ -705,13 +686,11 @@ func TestHasValidBlockProposerPoS(t *testing.T) {
 		// First block, we should have the first leader.
 		leader0PKID := leaderSchedule[0]
 		leader0Entry := validatorPKIDToValidatorEntryMap[*leader0PKID]
-		leader0PublicKey := utxoView.GetPublicKeyForPKID(leader0PKID)
 		dummyBlock := &MsgDeSoBlock{
 			Header: &MsgDeSoHeader{
 				PrevBlockHash:           testMeta.chain.BlockTip().Hash,
 				ProposedInView:          viewNumber + 1,
 				Height:                  blockHeight + 1,
-				ProposerPublicKey:       NewPublicKey(leader0PublicKey),
 				ProposerVotingPublicKey: leader0Entry.VotingPublicKey,
 			},
 		}
@@ -2062,13 +2041,7 @@ func TestProcessOrphanBlockPoS(t *testing.T) {
 		require.NoError(t, err)
 		require.True(t, currentEpochEntry.ContainsBlockHeight(12))
 		// Change the block proposer to some any other validator's public key.
-		wrongBlockProposer := NewPublicKey(m0PkBytes)
-		if wrongBlockProposer.Equal(*realBlock.Header.ProposerPublicKey) {
-			wrongBlockProposer = NewPublicKey(m1PkBytes)
-		}
-		wrongBlockProposerVotingPublicKey := testMeta.pubKeyToBLSKeyMap[Base58CheckEncode(wrongBlockProposer.ToBytes(), false, testMeta.chain.params)].PublicKey()
-		realBlock.Header.ProposerPublicKey = wrongBlockProposer
-		realBlock.Header.ProposerVotingPublicKey = wrongBlockProposerVotingPublicKey
+		realBlock.Header.ProposerVotingPublicKey = _generateRandomBLSPrivateKey(t).PublicKey()
 		updateProposerVotePartialSignatureForBlock(testMeta, realBlock)
 		// There should be no error, but the block should be marked as ValidateFailed.
 		err = testMeta.chain.processOrphanBlockPoS(realBlock)
@@ -2280,30 +2253,7 @@ func TestHasValidProposerPartialSignaturePoS(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, isValid)
 
-	realProposerPublicKey := realBlock.Header.ProposerPublicKey
-	realProposerPublicKeyBase58Check := Base58CheckEncode(realProposerPublicKey.ToBytes(), false, testMeta.params)
-	wrongProposerPublicKey := NewPublicKey(m1PkBytes)
-	if wrongProposerPublicKey.Equal(*realProposerPublicKey) {
-		wrongProposerPublicKey = NewPublicKey(m2PkBytes)
-	}
-	wrongProposerPublicKeyBase58Check := Base58CheckEncode(wrongProposerPublicKey.ToBytes(), false, testMeta.params)
-	// Using a different validator's public key as ProposerPublicKey should fail
-	{
-		realBlock.Header.ProposerPublicKey = wrongProposerPublicKey
-		isValid, err = utxoView.hasValidProposerPartialSignaturePoS(realBlock, snapshotEpochNumber)
-		require.NoError(t, err)
-		require.False(t, isValid)
-	}
-	// Using a non-validator's public key as ProposerPublicKey should fail.
-	{
-		realBlock.Header.ProposerPublicKey = NewPublicKey(paramUpdaterPkBytes)
-		isValid, err = utxoView.hasValidProposerPartialSignaturePoS(realBlock, snapshotEpochNumber)
-		require.NoError(t, err)
-		require.False(t, isValid)
-		// Reset the proposer public key
-		realBlock.Header.ProposerPublicKey = realProposerPublicKey
-	}
-	// If the block proposer's voting public key doesn't match the snapshot, it should fail.
+	// If the block proposer's voting public key doesn't match the signature, it should fail.
 	realVotingPublicKey := realBlock.Header.ProposerVotingPublicKey
 	{
 		realBlock.Header.ProposerVotingPublicKey = _generateRandomBLSPrivateKey(t).PublicKey()
@@ -2313,21 +2263,15 @@ func TestHasValidProposerPartialSignaturePoS(t *testing.T) {
 		// Reset the proposer voting public key
 		realBlock.Header.ProposerVotingPublicKey = realVotingPublicKey
 	}
-	// Signature on incorrect payload should fail.
-	{
-		incorrectPayload := consensus.GetVoteSignaturePayload(13, testMeta.chain.BlockTip().Hash)
-		realBlock.Header.ProposerVotePartialSignature, err = testMeta.pubKeyToBLSKeyMap[realProposerPublicKeyBase58Check].Sign(incorrectPayload[:])
-		isValid, err = utxoView.hasValidProposerPartialSignaturePoS(realBlock, snapshotEpochNumber)
-		require.NoError(t, err)
-		require.False(t, isValid)
-	}
+
 	// Signature on correct payload from wrong public key should fail.
 	{
 		var realBlockHash *BlockHash
 		realBlockHash, err = realBlock.Hash()
 		require.NoError(t, err)
 		correctPayload := consensus.GetVoteSignaturePayload(12, realBlockHash)
-		realBlock.Header.ProposerVotePartialSignature, err = testMeta.pubKeyToBLSKeyMap[wrongProposerPublicKeyBase58Check].Sign(correctPayload[:])
+		wrongPrivateKey := _generateRandomBLSPrivateKey(t)
+		realBlock.Header.ProposerVotePartialSignature, err = wrongPrivateKey.Sign(correctPayload[:])
 		isValid, err = utxoView.hasValidProposerPartialSignaturePoS(realBlock, snapshotEpochNumber)
 		require.NoError(t, err)
 		require.False(t, isValid)
@@ -2683,7 +2627,6 @@ func _getFullRealBlockTemplate(
 		}
 		blockTemplate.Header.ValidatorsTimeoutAggregateQC = timeoutQC
 	}
-	blockTemplate.Header.ProposerPublicKey = NewPublicKey(leaderPublicKeyBytes)
 	blockTemplate.Header.ProposerVotingPublicKey = leaderVotingPrivateKey.PublicKey()
 	// Ugh we need to adjust the timestamp.
 	blockTemplate.Header.TstampNanoSecs = time.Now().UnixNano() + blockTimestampOffset.Nanoseconds()
