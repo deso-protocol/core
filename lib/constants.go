@@ -831,6 +831,8 @@ func (params *DeSoParams) EnableRegtest() {
 
 	// Set the PoS epoch duration to 10 blocks
 	params.DefaultEpochDurationNumBlocks = 10
+	// Set the PoS default jail inactive validator grace period epochs to 3.
+	params.DefaultJailInactiveValidatorGracePeriodEpochs = 3
 
 	// In regtest, we start all the fork heights at zero. These can be adjusted
 	// for testing purposes to ensure that a transition does not cause issues.
