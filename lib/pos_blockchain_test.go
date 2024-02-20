@@ -465,6 +465,12 @@ func TestUpsertBlockAndBlockNodeToDB(t *testing.T) {
 	require.True(t, byHeightBlockNodes[*updatedBlockHash].Hash.IsEqual(updatedBlockHash))
 	require.True(t, bc.hasBlockNodesIndexedAtHeight(2))
 	require.Len(t, bc.getAllBlockNodesIndexedAtHeight(2), 2)
+
+	// If we're missing a field in the header, we should get an error
+	// as we can't compute the hash.
+	block.Header.ProposerVotingPublicKey = nil
+	_, err = bc.storeBlockInBlockIndex(block)
+	require.Error(t, err)
 }
 
 // TestHasValidBlockView tests that hasValidBlockViewPoS works as expected.
@@ -2262,6 +2268,16 @@ func TestHasValidProposerPartialSignaturePoS(t *testing.T) {
 		require.False(t, isValid)
 		// Reset the proposer voting public key
 		realBlock.Header.ProposerVotingPublicKey = realVotingPublicKey
+	}
+
+	// Signature on incorrect payload should fail.
+	{
+		incorrectPayload := consensus.GetVoteSignaturePayload(13, testMeta.chain.BlockTip().Hash)
+		realBlock.Header.ProposerVotePartialSignature, err =
+			testMeta.pubKeyToBLSKeyMap[realBlock.Header.ProposerVotingPublicKey.ToString()].Sign(incorrectPayload[:])
+		isValid, err = utxoView.hasValidProposerPartialSignaturePoS(realBlock, snapshotEpochNumber)
+		require.NoError(t, err)
+		require.False(t, isValid)
 	}
 
 	// Signature on correct payload from wrong public key should fail.
