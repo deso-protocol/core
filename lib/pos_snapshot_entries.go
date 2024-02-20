@@ -56,7 +56,7 @@ func (bav *UtxoView) ComputeSnapshotEpochNumberForEpoch(epochNumber uint64) (uin
 //
 
 func (bav *UtxoView) GetCurrentGlobalParamsEntry() *GlobalParamsEntry {
-	return _mergeGlobalParamEntryDefaults(bav, bav.GlobalParamsEntry)
+	return MergeGlobalParamEntryDefaults(bav.GlobalParamsEntry, bav.Params)
 }
 
 // GetCurrentSnapshotGlobalParamsEntry retrieves a snapshot of the GlobalParamsEntry from n epochs ago. If a snapshot
@@ -86,7 +86,7 @@ func (bav *UtxoView) GetCurrentSnapshotGlobalParamsEntry() (*GlobalParamsEntry, 
 func (bav *UtxoView) GetSnapshotGlobalParamsEntryByEpochNumber(snapshotAtEpochNumber uint64) (*GlobalParamsEntry, error) {
 	// Check the UtxoView first.
 	if globalParamsEntry, exists := bav.SnapshotGlobalParamEntries[snapshotAtEpochNumber]; exists {
-		return _mergeGlobalParamEntryDefaults(bav, globalParamsEntry), nil
+		return MergeGlobalParamEntryDefaults(globalParamsEntry, bav.Params), nil
 	}
 	// If we don't have it in the UtxoView, check the db.
 	globalParamsEntry, err := DBGetSnapshotGlobalParamsEntry(bav.Handle, bav.Snapshot, snapshotAtEpochNumber)
@@ -100,10 +100,10 @@ func (bav *UtxoView) GetSnapshotGlobalParamsEntryByEpochNumber(snapshotAtEpochNu
 		// Cache the result in the UtxoView.
 		bav._setSnapshotGlobalParamsEntry(globalParamsEntry, snapshotAtEpochNumber)
 	}
-	return _mergeGlobalParamEntryDefaults(bav, globalParamsEntry), nil
+	return MergeGlobalParamEntryDefaults(globalParamsEntry, bav.Params), nil
 }
 
-func _mergeGlobalParamEntryDefaults(bav *UtxoView, globalParamsEntry *GlobalParamsEntry) *GlobalParamsEntry {
+func MergeGlobalParamEntryDefaults(globalParamsEntry *GlobalParamsEntry, params *DeSoParams) *GlobalParamsEntry {
 	// Merge the input GlobalParamsEntry with the default param values.
 	if globalParamsEntry == nil {
 		// This could happen before we have any SnapshotGlobalParamEntries set.
@@ -116,50 +116,50 @@ func _mergeGlobalParamEntryDefaults(bav *UtxoView, globalParamsEntry *GlobalPara
 
 	// Merge the default values.
 	if globalParamsEntryCopy.StakeLockupEpochDuration == 0 {
-		globalParamsEntryCopy.StakeLockupEpochDuration = bav.Params.DefaultStakeLockupEpochDuration
+		globalParamsEntryCopy.StakeLockupEpochDuration = params.DefaultStakeLockupEpochDuration
 	}
 	if globalParamsEntryCopy.ValidatorJailEpochDuration == 0 {
-		globalParamsEntryCopy.ValidatorJailEpochDuration = bav.Params.DefaultValidatorJailEpochDuration
+		globalParamsEntryCopy.ValidatorJailEpochDuration = params.DefaultValidatorJailEpochDuration
 	}
 	if globalParamsEntryCopy.LeaderScheduleMaxNumValidators == 0 {
-		globalParamsEntryCopy.LeaderScheduleMaxNumValidators = bav.Params.DefaultLeaderScheduleMaxNumValidators
+		globalParamsEntryCopy.LeaderScheduleMaxNumValidators = params.DefaultLeaderScheduleMaxNumValidators
 	}
 	if globalParamsEntryCopy.ValidatorSetMaxNumValidators == 0 {
-		globalParamsEntryCopy.ValidatorSetMaxNumValidators = bav.Params.DefaultValidatorSetMaxNumValidators
+		globalParamsEntryCopy.ValidatorSetMaxNumValidators = params.DefaultValidatorSetMaxNumValidators
 	}
 	if globalParamsEntryCopy.StakingRewardsMaxNumStakes == 0 {
-		globalParamsEntryCopy.StakingRewardsMaxNumStakes = bav.Params.DefaultStakingRewardsMaxNumStakes
+		globalParamsEntryCopy.StakingRewardsMaxNumStakes = params.DefaultStakingRewardsMaxNumStakes
 	}
 	if globalParamsEntryCopy.StakingRewardsAPYBasisPoints == 0 {
-		globalParamsEntryCopy.StakingRewardsAPYBasisPoints = bav.Params.DefaultStakingRewardsAPYBasisPoints
+		globalParamsEntryCopy.StakingRewardsAPYBasisPoints = params.DefaultStakingRewardsAPYBasisPoints
 	}
 	if globalParamsEntryCopy.EpochDurationNumBlocks == 0 {
-		globalParamsEntryCopy.EpochDurationNumBlocks = bav.Params.DefaultEpochDurationNumBlocks
+		globalParamsEntryCopy.EpochDurationNumBlocks = params.DefaultEpochDurationNumBlocks
 	}
 	if globalParamsEntryCopy.JailInactiveValidatorGracePeriodEpochs == 0 {
-		globalParamsEntryCopy.JailInactiveValidatorGracePeriodEpochs = bav.Params.DefaultJailInactiveValidatorGracePeriodEpochs
+		globalParamsEntryCopy.JailInactiveValidatorGracePeriodEpochs = params.DefaultJailInactiveValidatorGracePeriodEpochs
 	}
 	if globalParamsEntryCopy.FeeBucketGrowthRateBasisPoints == 0 {
-		globalParamsEntryCopy.FeeBucketGrowthRateBasisPoints = bav.Params.DefaultFeeBucketGrowthRateBasisPoints
+		globalParamsEntryCopy.FeeBucketGrowthRateBasisPoints = params.DefaultFeeBucketGrowthRateBasisPoints
 	}
 	if globalParamsEntryCopy.FailingTransactionBMFMultiplierBasisPoints == 0 {
-		globalParamsEntryCopy.FailingTransactionBMFMultiplierBasisPoints = bav.Params.DefaultFailingTransactionBMFMultiplierBasisPoints
+		globalParamsEntryCopy.FailingTransactionBMFMultiplierBasisPoints = params.DefaultFailingTransactionBMFMultiplierBasisPoints
 	}
 	if globalParamsEntryCopy.MaximumVestedIntersectionsPerLockupTransaction == 0 {
 		globalParamsEntryCopy.MaximumVestedIntersectionsPerLockupTransaction =
-			bav.Params.DefaultMaximumVestedIntersectionsPerLockupTransaction
+			params.DefaultMaximumVestedIntersectionsPerLockupTransaction
 	}
 	if globalParamsEntryCopy.BlockTimestampDriftNanoSecs == 0 {
-		globalParamsEntryCopy.BlockTimestampDriftNanoSecs = bav.Params.DefaultBlockTimestampDriftNanoSecs
+		globalParamsEntryCopy.BlockTimestampDriftNanoSecs = params.DefaultBlockTimestampDriftNanoSecs
 	}
 	if globalParamsEntryCopy.MempoolMaxSizeBytes == 0 {
-		globalParamsEntryCopy.MempoolMaxSizeBytes = bav.Params.DefaultMempoolMaxSizeBytes
+		globalParamsEntryCopy.MempoolMaxSizeBytes = params.DefaultMempoolMaxSizeBytes
 	}
 	if globalParamsEntryCopy.MempoolFeeEstimatorNumMempoolBlocks == 0 {
-		globalParamsEntryCopy.MempoolFeeEstimatorNumMempoolBlocks = bav.Params.DefaultMempoolFeeEstimatorNumMempoolBlocks
+		globalParamsEntryCopy.MempoolFeeEstimatorNumMempoolBlocks = params.DefaultMempoolFeeEstimatorNumMempoolBlocks
 	}
 	if globalParamsEntryCopy.MempoolFeeEstimatorNumPastBlocks == 0 {
-		globalParamsEntryCopy.MempoolFeeEstimatorNumPastBlocks = bav.Params.DefaultMempoolFeeEstimatorNumPastBlocks
+		globalParamsEntryCopy.MempoolFeeEstimatorNumPastBlocks = params.DefaultMempoolFeeEstimatorNumPastBlocks
 	}
 
 	// Return the merged result.
