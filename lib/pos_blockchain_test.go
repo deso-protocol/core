@@ -2274,7 +2274,7 @@ func TestHasValidProposerPartialSignaturePoS(t *testing.T) {
 	{
 		incorrectPayload := consensus.GetVoteSignaturePayload(13, testMeta.chain.BlockTip().Hash)
 		realBlock.Header.ProposerVotePartialSignature, err =
-			testMeta.pubKeyToBLSKeyMap[realBlock.Header.ProposerVotingPublicKey.ToString()].Sign(incorrectPayload[:])
+			testMeta.blsPubKeyToBLSKeyMap[realBlock.Header.ProposerVotingPublicKey.ToString()].Sign(incorrectPayload[:])
 		isValid, err = utxoView.hasValidProposerPartialSignaturePoS(realBlock, snapshotEpochNumber)
 		require.NoError(t, err)
 		require.False(t, isValid)
