@@ -838,6 +838,11 @@ func (fc *FastHotStuffConsensus) updateActiveValidatorConnections() error {
 	// allows us to pre-connect to the next epoch's validator set. In the event that there is a timeout at
 	// the epoch transition, reverting us to the previous epoch, this allows us to maintain connections to the
 	// next epoch's validators.
+	//
+	// TODO: There is an optimization we can add here to only fetch the next epoch's validator list once we're
+	// within 300 blocks of the next epoch. This way, we don't prematurely attempt connections to the next
+	// epoch's validators. In production, this will reduce the lead time with which we connect to the next epoch's
+	// validator set from 1 hour to 5 minutes.
 	nextValidatorList, err := utxoView.GetAllSnapshotValidatorSetEntriesByStakeAtEpochNumber(snapshotEpochNumber + 1)
 	if err != nil {
 		return errors.Errorf("FastHotStuffConsensus.Start: Error fetching validator list: %v", err)
