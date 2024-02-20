@@ -102,9 +102,21 @@ func (fc *FastHotStuffConsensus) Start() error {
 	blockProductionInterval := time.Millisecond * time.Duration(fc.blockProductionIntervalMilliseconds)
 	timeoutBaseDuration := time.Millisecond * time.Duration(fc.timeoutBaseDurationMilliseconds)
 
-	// Initialize and start the event loop
-	fc.fastHotStuffEventLoop.Init(blockProductionInterval, timeoutBaseDuration, genesisQC, tipBlockWithValidators[0], safeBlocksWithValidators)
+	// Initialize the event loop. This should never fail. If it does, we return the error to the caller.
+	// The caller handle the error and decide when to retry.
+	err = fc.fastHotStuffEventLoop.Init(blockProductionInterval, timeoutBaseDuration, genesisQC, tipBlockWithValidators[0], safeBlocksWithValidators)
+	if err != nil {
+		return errors.Errorf("FastHotStuffConsensus.Start: Error initializing FastHotStuffEventLoop: %v", err)
+	}
+
+	// Start the event loop
 	fc.fastHotStuffEventLoop.Start()
+
+	// Update the validator connections in the NetworkManager. This is a best effort operation. If it fails,
+	// we log the error and continue.
+	if err = fc.updateActiveValidatorConnections(); err != nil {
+		glog.Errorf("FastHotStuffConsensus.tryProcessBlockAsNewTip: Error updating validator connections: %v", err)
+	}
 
 	return nil
 }
@@ -621,6 +633,12 @@ func (fc *FastHotStuffConsensus) tryProcessBlockAsNewTip(block *MsgDeSoBlock) ([
 		return nil, errors.Errorf("Error processing tip block locally: %v", err)
 	}
 
+	// Update the validator connections in the NetworkManager. This is a best effort operation. If it fails,
+	// we log the error and continue.
+	if err = fc.updateActiveValidatorConnections(); err != nil {
+		glog.Errorf("FastHotStuffConsensus.tryProcessBlockAsNewTip: Error updating validator connections: %v", err)
+	}
+
 	// Happy path. The block was processed successfully and applied as the new tip. Nothing left to do.
 	return nil, nil
 }
@@ -792,6 +810,54 @@ func (fc *FastHotStuffConsensus) createBlockProducer(bav *UtxoView, previousBloc
 		previousBlockTimestampNanoSecs,
 	)
 	return blockProducer, nil
+}
+
+func (fc *FastHotStuffConsensus) updateActiveValidatorConnections() error {
+	// Fetch the committed tip view. This ends up being as good as using the uncommitted tip view
+	// but without the overhead of connecting at least two blocks' worth of txns to the view.
+	utxoView, err := fc.blockchain.GetCommittedTipView()
+	if err != nil {
+		return errors.Errorf("FastHotStuffConsensus.Start: Error fetching uncommitted tip view: %v", err)
+	}
+
+	// Get the current snapshot epoch number from the committed tip. This will be behind the uncommitted tip
+	// by up to two blocks, but this is fine since we fetch both the current epoch's and next epoch's validator
+	// sets.
+	snapshotEpochNumber, err := utxoView.GetCurrentSnapshotEpochNumber()
+	if err != nil {
+		return errors.Errorf("FastHotStuffConsensus.Start: Error fetching snapshot epoch number: %v", err)
+	}
+
+	// Fetch the current snapshot epoch's validator set.
+	currentValidatorList, err := utxoView.GetAllSnapshotValidatorSetEntriesByStakeAtEpochNumber(snapshotEpochNumber)
+	if err != nil {
+		return errors.Errorf("FastHotStuffConsensus.Start: Error fetching validator list: %v", err)
+	}
+
+	// Fetch the next snapshot epoch's validator set. This is useful when we're close to epoch transitions and
+	// allows us to pre-connect to the next epoch's validator set. In the event that there is a timeout at
+	// the epoch transition, reverting us to the previous epoch, this allows us to maintain connections to the
+	// next epoch's validators.
+	nextValidatorList, err := utxoView.GetAllSnapshotValidatorSetEntriesByStakeAtEpochNumber(snapshotEpochNumber + 1)
+	if err != nil {
+		return errors.Errorf("FastHotStuffConsensus.Start: Error fetching validator list: %v", err)
+	}
+
+	// Merge the current and next validator lists. Place the current epoch's validators last so that they override
+	// the next epoch's validators in the event of a conflict.
+	mergedValidatorList := append(nextValidatorList, currentValidatorList...)
+	validatorsMap := collections.NewConcurrentMap[bls.SerializedPublicKey, consensus.Validator]()
+	for _, validator := range mergedValidatorList {
+		if validator.VotingPublicKey.Eq(fc.signer.GetPublicKey()) {
+			continue
+		}
+		validatorsMap.Set(validator.VotingPublicKey.Serialize(), validator)
+	}
+
+	// Update the active validators map in the network manager
+	fc.networkManager.SetActiveValidatorsMap(validatorsMap)
+
+	return nil
 }
 
 // Finds the epoch entry for the block and returns the epoch number.
