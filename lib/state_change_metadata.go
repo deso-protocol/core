@@ -59,6 +59,8 @@ func GetStateChangeMetadataFromOpType(opType OperationType) DeSoEncoder {
 		return &DeletePostAssociationStateChangeMetadata{}
 	case OperationTypeStakeDistributionRestake, OperationTypeStakeDistributionPayToBalance:
 		return &StakeRewardStateChangeMetadata{}
+	case OperationTypeUnjailValidator:
+		return &UnjailValidatorStateChangeMetadata{}
 	default:
 		return nil
 	}
