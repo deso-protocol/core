@@ -139,42 +139,46 @@ const (
 
 // Txindex encoder types.
 const (
-	EncoderTypeTransactionMetadata                  EncoderType = 1000000
-	EncoderTypeBasicTransferTxindexMetadata         EncoderType = 1000001
-	EncoderTypeBitcoinExchangeTxindexMetadata       EncoderType = 1000002
-	EncoderTypeCreatorCoinTxindexMetadata           EncoderType = 1000003
-	EncoderTypeCreatorCoinTransferTxindexMetadata   EncoderType = 1000004
-	EncoderTypeDAOCoinTransferTxindexMetadata       EncoderType = 1000005
-	EncoderTypeFilledDAOCoinLimitOrderMetadata      EncoderType = 1000006
-	EncoderTypeDAOCoinLimitOrderTxindexMetadata     EncoderType = 1000007
-	EncoderTypeUpdateProfileTxindexMetadata         EncoderType = 1000008
-	EncoderTypeSubmitPostTxindexMetadata            EncoderType = 1000009
-	EncoderTypeLikeTxindexMetadata                  EncoderType = 1000010
-	EncoderTypeFollowTxindexMetadata                EncoderType = 1000011
-	EncoderTypePrivateMessageTxindexMetadata        EncoderType = 1000012
-	EncoderTypeSwapIdentityTxindexMetadata          EncoderType = 1000013
-	EncoderTypeNFTRoyaltiesMetadata                 EncoderType = 1000014
-	EncoderTypeNFTBidTxindexMetadata                EncoderType = 1000015
-	EncoderTypeAcceptNFTBidTxindexMetadata          EncoderType = 1000016
-	EncoderTypeNFTTransferTxindexMetadata           EncoderType = 1000017
-	EncoderTypeAcceptNFTTransferTxindexMetadata     EncoderType = 1000018
-	EncoderTypeBurnNFTTxindexMetadata               EncoderType = 1000019
-	EncoderTypeDAOCoinTxindexMetadata               EncoderType = 1000020
-	EncoderTypeCreateNFTTxindexMetadata             EncoderType = 1000021
-	EncoderTypeUpdateNFTTxindexMetadata             EncoderType = 1000022
-	EncoderTypeCreateUserAssociationTxindexMetadata EncoderType = 1000023
-	EncoderTypeDeleteUserAssociationTxindexMetadata EncoderType = 1000024
-	EncoderTypeCreatePostAssociationTxindexMetadata EncoderType = 1000025
-	EncoderTypeDeletePostAssociationTxindexMetadata EncoderType = 1000026
-	EncoderTypeAccessGroupTxindexMetadata           EncoderType = 1000027
-	EncoderTypeAccessGroupMembersTxindexMetadata    EncoderType = 1000028
-	EncoderTypeNewMessageTxindexMetadata            EncoderType = 1000029
-	EncoderTypeRegisterAsValidatorTxindexMetadata   EncoderType = 1000030
-	EncoderTypeUnregisterAsValidatorTxindexMetadata EncoderType = 1000031
-	EncoderTypeStakeTxindexMetadata                 EncoderType = 1000032
-	EncoderTypeUnstakeTxindexMetadata               EncoderType = 1000033
-	EncoderTypeUnlockStakeTxindexMetadata           EncoderType = 1000034
-	EncoderTypeUnjailValidatorTxindexMetadata       EncoderType = 1000035
+	EncoderTypeTransactionMetadata                   EncoderType = 1000000
+	EncoderTypeBasicTransferTxindexMetadata          EncoderType = 1000001
+	EncoderTypeBitcoinExchangeTxindexMetadata        EncoderType = 1000002
+	EncoderTypeCreatorCoinTxindexMetadata            EncoderType = 1000003
+	EncoderTypeCreatorCoinTransferTxindexMetadata    EncoderType = 1000004
+	EncoderTypeDAOCoinTransferTxindexMetadata        EncoderType = 1000005
+	EncoderTypeFilledDAOCoinLimitOrderMetadata       EncoderType = 1000006
+	EncoderTypeDAOCoinLimitOrderTxindexMetadata      EncoderType = 1000007
+	EncoderTypeUpdateProfileTxindexMetadata          EncoderType = 1000008
+	EncoderTypeSubmitPostTxindexMetadata             EncoderType = 1000009
+	EncoderTypeLikeTxindexMetadata                   EncoderType = 1000010
+	EncoderTypeFollowTxindexMetadata                 EncoderType = 1000011
+	EncoderTypePrivateMessageTxindexMetadata         EncoderType = 1000012
+	EncoderTypeSwapIdentityTxindexMetadata           EncoderType = 1000013
+	EncoderTypeNFTRoyaltiesMetadata                  EncoderType = 1000014
+	EncoderTypeNFTBidTxindexMetadata                 EncoderType = 1000015
+	EncoderTypeAcceptNFTBidTxindexMetadata           EncoderType = 1000016
+	EncoderTypeNFTTransferTxindexMetadata            EncoderType = 1000017
+	EncoderTypeAcceptNFTTransferTxindexMetadata      EncoderType = 1000018
+	EncoderTypeBurnNFTTxindexMetadata                EncoderType = 1000019
+	EncoderTypeDAOCoinTxindexMetadata                EncoderType = 1000020
+	EncoderTypeCreateNFTTxindexMetadata              EncoderType = 1000021
+	EncoderTypeUpdateNFTTxindexMetadata              EncoderType = 1000022
+	EncoderTypeCreateUserAssociationTxindexMetadata  EncoderType = 1000023
+	EncoderTypeDeleteUserAssociationTxindexMetadata  EncoderType = 1000024
+	EncoderTypeCreatePostAssociationTxindexMetadata  EncoderType = 1000025
+	EncoderTypeDeletePostAssociationTxindexMetadata  EncoderType = 1000026
+	EncoderTypeAccessGroupTxindexMetadata            EncoderType = 1000027
+	EncoderTypeAccessGroupMembersTxindexMetadata     EncoderType = 1000028
+	EncoderTypeNewMessageTxindexMetadata             EncoderType = 1000029
+	EncoderTypeRegisterAsValidatorTxindexMetadata    EncoderType = 1000030
+	EncoderTypeUnregisterAsValidatorTxindexMetadata  EncoderType = 1000031
+	EncoderTypeStakeTxindexMetadata                  EncoderType = 1000032
+	EncoderTypeUnstakeTxindexMetadata                EncoderType = 1000033
+	EncoderTypeUnlockStakeTxindexMetadata            EncoderType = 1000034
+	EncoderTypeUnjailValidatorTxindexMetadata        EncoderType = 1000035
+	EncoderTypeCoinLockupTxindexMetadata             EncoderType = 1000036
+	EncoderTypeUpdateCoinLockupParamsTxindexMetadata EncoderType = 1000037
+	EncoderTypeCoinLockupTransferTxindexMetadata     EncoderType = 1000038
+	EncoderTypeCoinUnlockTxindexMetadata             EncoderType = 1000039
 
 	// EncoderTypeEndTxIndex encoder type should be at the end and is used for automated tests.
 	EncoderTypeEndTxIndex EncoderType = 1000036
@@ -364,6 +368,14 @@ func (encoderType EncoderType) New() DeSoEncoder {
 		return &UnlockStakeTxindexMetadata{}
 	case EncoderTypeUnjailValidatorTxindexMetadata:
 		return &UnjailValidatorTxindexMetadata{}
+	case EncoderTypeCoinLockupTxindexMetadata:
+		return &CoinLockupTxindexMetadata{}
+	case EncoderTypeUpdateCoinLockupParamsTxindexMetadata:
+		return &UpdateCoinLockupParamsTxindexMetadata{}
+	case EncoderTypeCoinLockupTransferTxindexMetadata:
+		return &CoinLockupTransferTxindexMetadata{}
+	case EncoderTypeCoinUnlockTxindexMetadata:
+		return &CoinUnlockTxindexMetadata{}
 	default:
 		return nil
 	}

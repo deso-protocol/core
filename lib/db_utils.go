@@ -7001,39 +7001,43 @@ type TransactionMetadata struct {
 	// when looking up output amounts
 	TxnOutputs []*DeSoOutput
 
-	BasicTransferTxindexMetadata         *BasicTransferTxindexMetadata         `json:",omitempty"`
-	BitcoinExchangeTxindexMetadata       *BitcoinExchangeTxindexMetadata       `json:",omitempty"`
-	CreatorCoinTxindexMetadata           *CreatorCoinTxindexMetadata           `json:",omitempty"`
-	CreatorCoinTransferTxindexMetadata   *CreatorCoinTransferTxindexMetadata   `json:",omitempty"`
-	UpdateProfileTxindexMetadata         *UpdateProfileTxindexMetadata         `json:",omitempty"`
-	SubmitPostTxindexMetadata            *SubmitPostTxindexMetadata            `json:",omitempty"`
-	LikeTxindexMetadata                  *LikeTxindexMetadata                  `json:",omitempty"`
-	FollowTxindexMetadata                *FollowTxindexMetadata                `json:",omitempty"`
-	PrivateMessageTxindexMetadata        *PrivateMessageTxindexMetadata        `json:",omitempty"`
-	SwapIdentityTxindexMetadata          *SwapIdentityTxindexMetadata          `json:",omitempty"`
-	NFTBidTxindexMetadata                *NFTBidTxindexMetadata                `json:",omitempty"`
-	AcceptNFTBidTxindexMetadata          *AcceptNFTBidTxindexMetadata          `json:",omitempty"`
-	NFTTransferTxindexMetadata           *NFTTransferTxindexMetadata           `json:",omitempty"`
-	AcceptNFTTransferTxindexMetadata     *AcceptNFTTransferTxindexMetadata     `json:",omitempty"`
-	BurnNFTTxindexMetadata               *BurnNFTTxindexMetadata               `json:",omitempty"`
-	DAOCoinTxindexMetadata               *DAOCoinTxindexMetadata               `json:",omitempty"`
-	DAOCoinTransferTxindexMetadata       *DAOCoinTransferTxindexMetadata       `json:",omitempty"`
-	CreateNFTTxindexMetadata             *CreateNFTTxindexMetadata             `json:",omitempty"`
-	UpdateNFTTxindexMetadata             *UpdateNFTTxindexMetadata             `json:",omitempty"`
-	DAOCoinLimitOrderTxindexMetadata     *DAOCoinLimitOrderTxindexMetadata     `json:",omitempty"`
-	CreateUserAssociationTxindexMetadata *CreateUserAssociationTxindexMetadata `json:",omitempty"`
-	DeleteUserAssociationTxindexMetadata *DeleteUserAssociationTxindexMetadata `json:",omitempty"`
-	CreatePostAssociationTxindexMetadata *CreatePostAssociationTxindexMetadata `json:",omitempty"`
-	DeletePostAssociationTxindexMetadata *DeletePostAssociationTxindexMetadata `json:",omitempty"`
-	AccessGroupTxindexMetadata           *AccessGroupTxindexMetadata           `json:",omitempty"`
-	AccessGroupMembersTxindexMetadata    *AccessGroupMembersTxindexMetadata    `json:",omitempty"`
-	NewMessageTxindexMetadata            *NewMessageTxindexMetadata            `json:",omitempty"`
-	RegisterAsValidatorTxindexMetadata   *RegisterAsValidatorTxindexMetadata   `json:",omitempty"`
-	UnregisterAsValidatorTxindexMetadata *UnregisterAsValidatorTxindexMetadata `json:",omitempty"`
-	StakeTxindexMetadata                 *StakeTxindexMetadata                 `json:",omitempty"`
-	UnstakeTxindexMetadata               *UnstakeTxindexMetadata               `json:",omitempty"`
-	UnlockStakeTxindexMetadata           *UnlockStakeTxindexMetadata           `json:",omitempty"`
-	UnjailValidatorTxindexMetadata       *UnjailValidatorTxindexMetadata       `json:",omitempty"`
+	BasicTransferTxindexMetadata          *BasicTransferTxindexMetadata          `json:",omitempty"`
+	BitcoinExchangeTxindexMetadata        *BitcoinExchangeTxindexMetadata        `json:",omitempty"`
+	CreatorCoinTxindexMetadata            *CreatorCoinTxindexMetadata            `json:",omitempty"`
+	CreatorCoinTransferTxindexMetadata    *CreatorCoinTransferTxindexMetadata    `json:",omitempty"`
+	UpdateProfileTxindexMetadata          *UpdateProfileTxindexMetadata          `json:",omitempty"`
+	SubmitPostTxindexMetadata             *SubmitPostTxindexMetadata             `json:",omitempty"`
+	LikeTxindexMetadata                   *LikeTxindexMetadata                   `json:",omitempty"`
+	FollowTxindexMetadata                 *FollowTxindexMetadata                 `json:",omitempty"`
+	PrivateMessageTxindexMetadata         *PrivateMessageTxindexMetadata         `json:",omitempty"`
+	SwapIdentityTxindexMetadata           *SwapIdentityTxindexMetadata           `json:",omitempty"`
+	NFTBidTxindexMetadata                 *NFTBidTxindexMetadata                 `json:",omitempty"`
+	AcceptNFTBidTxindexMetadata           *AcceptNFTBidTxindexMetadata           `json:",omitempty"`
+	NFTTransferTxindexMetadata            *NFTTransferTxindexMetadata            `json:",omitempty"`
+	AcceptNFTTransferTxindexMetadata      *AcceptNFTTransferTxindexMetadata      `json:",omitempty"`
+	BurnNFTTxindexMetadata                *BurnNFTTxindexMetadata                `json:",omitempty"`
+	DAOCoinTxindexMetadata                *DAOCoinTxindexMetadata                `json:",omitempty"`
+	DAOCoinTransferTxindexMetadata        *DAOCoinTransferTxindexMetadata        `json:",omitempty"`
+	CreateNFTTxindexMetadata              *CreateNFTTxindexMetadata              `json:",omitempty"`
+	UpdateNFTTxindexMetadata              *UpdateNFTTxindexMetadata              `json:",omitempty"`
+	DAOCoinLimitOrderTxindexMetadata      *DAOCoinLimitOrderTxindexMetadata      `json:",omitempty"`
+	CreateUserAssociationTxindexMetadata  *CreateUserAssociationTxindexMetadata  `json:",omitempty"`
+	DeleteUserAssociationTxindexMetadata  *DeleteUserAssociationTxindexMetadata  `json:",omitempty"`
+	CreatePostAssociationTxindexMetadata  *CreatePostAssociationTxindexMetadata  `json:",omitempty"`
+	DeletePostAssociationTxindexMetadata  *DeletePostAssociationTxindexMetadata  `json:",omitempty"`
+	AccessGroupTxindexMetadata            *AccessGroupTxindexMetadata            `json:",omitempty"`
+	AccessGroupMembersTxindexMetadata     *AccessGroupMembersTxindexMetadata     `json:",omitempty"`
+	NewMessageTxindexMetadata             *NewMessageTxindexMetadata             `json:",omitempty"`
+	RegisterAsValidatorTxindexMetadata    *RegisterAsValidatorTxindexMetadata    `json:",omitempty"`
+	UnregisterAsValidatorTxindexMetadata  *UnregisterAsValidatorTxindexMetadata  `json:",omitempty"`
+	StakeTxindexMetadata                  *StakeTxindexMetadata                  `json:",omitempty"`
+	UnstakeTxindexMetadata                *UnstakeTxindexMetadata                `json:",omitempty"`
+	UnlockStakeTxindexMetadata            *UnlockStakeTxindexMetadata            `json:",omitempty"`
+	UnjailValidatorTxindexMetadata        *UnjailValidatorTxindexMetadata        `json:",omitempty"`
+	CoinLockupTxindexMetadata             *CoinLockupTxindexMetadata             `json:",omitempty"`
+	UpdateCoinLockupParamsTxindexMetadata *UpdateCoinLockupParamsTxindexMetadata `json:",omitempty"`
+	CoinLockupTransferTxindexMetadata     *CoinLockupTransferTxindexMetadata     `json:",omitempty"`
+	CoinUnlockTxindexMetadata             *CoinUnlockTxindexMetadata             `json:",omitempty"`
 }
 
 func (txnMeta *TransactionMetadata) GetEncoderForTxType(txnType TxnType) DeSoEncoder {
@@ -7092,6 +7096,26 @@ func (txnMeta *TransactionMetadata) GetEncoderForTxType(txnType TxnType) DeSoEnc
 		return txnMeta.AccessGroupMembersTxindexMetadata
 	case TxnTypeNewMessage:
 		return txnMeta.NewMessageTxindexMetadata
+	case TxnTypeRegisterAsValidator:
+		return txnMeta.RegisterAsValidatorTxindexMetadata
+	case TxnTypeUnregisterAsValidator:
+		return txnMeta.UnregisterAsValidatorTxindexMetadata
+	case TxnTypeStake:
+		return txnMeta.StakeTxindexMetadata
+	case TxnTypeUnstake:
+		return txnMeta.UnstakeTxindexMetadata
+	case TxnTypeUnlockStake:
+		return txnMeta.UnlockStakeTxindexMetadata
+	case TxnTypeUnjailValidator:
+		return txnMeta.UnjailValidatorTxindexMetadata
+	case TxnTypeCoinLockup:
+		return txnMeta.CoinLockupTxindexMetadata
+	case TxnTypeUpdateCoinLockupParams:
+		return txnMeta.UpdateCoinLockupParamsTxindexMetadata
+	case TxnTypeCoinLockupTransfer:
+		return txnMeta.CoinLockupTransferTxindexMetadata
+	case TxnTypeCoinUnlock:
+		return txnMeta.CoinUnlockTxindexMetadata
 	default:
 		return nil
 	}
