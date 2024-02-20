@@ -1722,6 +1722,11 @@ func (bc *Blockchain) commitBlockPoS(blockHash *BlockHash) error {
 	return nil
 }
 
+// GetCommittedTipView builds a UtxoView to the committed tip.
+func (bc *Blockchain) GetCommittedTipView() (*UtxoView, error) {
+	return NewUtxoView(bc.db, bc.params, bc.postgres, bc.snapshot, nil)
+}
+
 // GetUncommittedTipView builds a UtxoView to the uncommitted tip.
 func (bc *Blockchain) GetUncommittedTipView() (*UtxoView, error) {
 	// Connect the uncommitted blocks to the tip so that we can validate subsequent blocks
