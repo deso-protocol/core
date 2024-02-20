@@ -5,6 +5,7 @@ import (
 	"github.com/deso-protocol/core/consensus"
 	"github.com/pkg/errors"
 	"github.com/tyler-smith/go-bip39"
+	"strings"
 )
 
 // BLSSigner is a wrapper for the bls.PrivateKey type, which abstracts away the private key
@@ -48,19 +49,26 @@ type BLSKeystore struct {
 	signer *BLSSigner
 }
 
-func NewBLSKeystore(seedPhrase string) (*BLSKeystore, error) {
-	seedBytes, err := bip39.NewSeedWithErrorChecking(seedPhrase, "")
-	if err != nil {
-		return nil, errors.Wrapf(err, "NewBLSKeystore: Problem generating seed bytes from seed phrase")
-	}
-
+// NewBLSKeystore creates a new BLSKeystore from either a seed phrase or a seed hex.
+// If the seed begins with 0x, it is assumed to be a hex seed. Otherwise, it is assumed to be a seed phrase.
+func NewBLSKeystore(seed string) (*BLSKeystore, error) {
 	privateKey, err := bls.NewPrivateKey()
 	if err != nil {
 		return nil, errors.Wrapf(err, "NewBLSKeystore: Problem generating private key from seed phrase")
 	}
-
-	if _, err = privateKey.FromSeed(seedBytes); err != nil {
-		return nil, errors.Wrapf(err, "NewBLSKeystore: Problem generating private key from seed phrase")
+	if strings.HasPrefix(seed, "0x") {
+		if _, err = privateKey.FromString(seed); err != nil {
+			return nil, errors.Wrapf(err, "NewBLSKeystore: Problem generating private key from seed hex")
+		}
+	} else {
+		var seedBytes []byte
+		seedBytes, err = bip39.NewSeedWithErrorChecking(seed, "")
+		if err != nil {
+			return nil, errors.Wrapf(err, "NewBLSKeystore: Problem generating seed bytes from seed phrase")
+		}
+		if _, err = privateKey.FromSeed(seedBytes); err != nil {
+			return nil, errors.Wrapf(err, "NewBLSKeystore: Problem generating private key from seed phrase")
+		}
 	}
 
 	signer, err := NewBLSSigner(privateKey)

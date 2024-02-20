@@ -32,6 +32,11 @@ func TestNewBLSKeystore(t *testing.T) {
 	{
 		keystore, err := NewBLSKeystore("vapor educate wood post fiber proof cannon chunk luggage hedgehog merit dove network lemon scorpion job law more salt market excuse auction refuse apart")
 		require.NoError(t, err)
+		require.Equal(t, keystore.GetSigner().privateKey.ToString(), "0x13b5febb384a3d3dec5c579724872607cd0ddb97adef592efaf144f6d25a70d7")
+	}
+	// Test valid seed hex
+	{
+		keystore, err := NewBLSKeystore("0x13b5febb384a3d3dec5c579724872607cd0ddb97adef592efaf144f6d25a70d7")
 		require.NoError(t, err)
 		require.Equal(t, keystore.GetSigner().privateKey.ToString(), "0x13b5febb384a3d3dec5c579724872607cd0ddb97adef592efaf144f6d25a70d7")
 	}
