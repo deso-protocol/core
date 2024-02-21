@@ -1669,6 +1669,22 @@ func _verifyCommitRuleHelper(testMeta *TestMeta, committedBlocks []*BlockHash, u
 	}
 }
 
+// _verifyRandomSeedHashHelper is a helper function that verifies the random seed hash is set
+// after connect a new tip block.
+func _verifyRandomSeedHashHelper(testMeta *TestMeta, tipBlock *MsgDeSoBlock) {
+	// Get the utxo view for the tip block.
+	utxoView, err := testMeta.chain.GetUncommittedTipView()
+	require.NoError(testMeta.t, err)
+	// Verify that the random seed hash is set.
+	randomSeedHash, err := utxoView.GetCurrentRandomSeedHash()
+	require.NoError(testMeta.t, err)
+
+	// Verify that the random seed hash is set based on the random seed signature on the block.
+	expectedRandomSeedHash, err := HashRandomSeedSignature(tipBlock.Header.ProposerRandomSeedSignature)
+	require.NoError(testMeta.t, err)
+	require.True(testMeta.t, expectedRandomSeedHash.Eq(randomSeedHash))
+}
+
 func TestProcessHeaderPoS(t *testing.T) {
 	// Initialize the chain and test metadata.
 	testMeta := NewTestPoSBlockchainWithValidators(t)
@@ -1746,6 +1762,7 @@ func testProcessBlockPoS(t *testing.T, testMeta *TestMeta) {
 		blockHash1, err = realBlock.Hash()
 		require.NoError(t, err)
 		_verifyCommitRuleHelper(testMeta, []*BlockHash{}, []*BlockHash{blockHash1}, nil)
+		_verifyRandomSeedHashHelper(testMeta, realBlock)
 	}
 
 	var blockHash2, blockHash3, futureBlockHash *BlockHash
@@ -1768,6 +1785,7 @@ func testProcessBlockPoS(t *testing.T, testMeta *TestMeta) {
 		require.NoError(t, err)
 
 		_verifyCommitRuleHelper(testMeta, []*BlockHash{blockHash1}, []*BlockHash{blockHash2, blockHash3}, blockHash1)
+		_verifyRandomSeedHashHelper(testMeta, realBlock3)
 
 		// Now let's try adding a block that has a timestamp too far in the future, and make sure it's stored.
 		var futureBlock *MsgDeSoBlock
@@ -1816,6 +1834,7 @@ func testProcessBlockPoS(t *testing.T, testMeta *TestMeta) {
 		// We expect blockHash1 and blockHash2 to be committed, but blockHash3 and reorgBlockHash to not be committed.
 		// Timeout block will no longer be in best chain, and will still be in an uncommitted state in the block index
 		_verifyCommitRuleHelper(testMeta, []*BlockHash{blockHash1, blockHash2}, []*BlockHash{blockHash3, reorgBlockHash}, blockHash2)
+		_verifyRandomSeedHashHelper(testMeta, reorgBlock)
 		_, exists := testMeta.chain.bestChainMap[*timeoutBlockHash]
 		require.False(t, exists)
 
