@@ -251,6 +251,18 @@ func (msg *MsgDeSoValidatorTimeout) FromBytes(data []byte) error {
 	return nil
 }
 
+func (msg *MsgDeSoValidatorTimeout) ToString() string {
+	return fmt.Sprintf(
+		"{MsgVersion: %d, VotingPublicKey: %s, TimedOutView: %d, HighQCView: %v, HighQCBlockHash: %v, TimeoutPartialSignature: %s}",
+		msg.MsgVersion,
+		msg.VotingPublicKey.ToAbbreviatedString(),
+		msg.TimedOutView,
+		msg.HighQC.ProposedInView,
+		msg.HighQC.BlockHash,
+		msg.TimeoutPartialSignature.ToAbbreviatedString(),
+	)
+}
+
 // A QuorumCertificate contains an aggregated signature from 2/3rds of the validators
 // on the network, weighted by stake. The signatures are associated with a block hash
 // and a view, both of which are identified in the certificate.

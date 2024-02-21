@@ -505,6 +505,8 @@ func (fc *FastHotStuffConsensus) HandleLocalTimeoutEvent(event *consensus.FastHo
 // HandleValidatorTimeout is called when we receive a validator timeout message from a peer. This function
 // processes the timeout locally in the FastHotStuffEventLoop.
 func (fc *FastHotStuffConsensus) HandleValidatorTimeout(pp *Peer, msg *MsgDeSoValidatorTimeout) error {
+	glog.Infof("FastHotStuffConsensus.HandleLocalTimeoutEvent: Received timeout msg: %s", msg.ToString())
+
 	// No need to hold a lock on the consensus because this function is a pass-through
 	// for the FastHotStuffEventLoop which guarantees thread-safety for its callers.
 
@@ -512,7 +514,8 @@ func (fc *FastHotStuffConsensus) HandleValidatorTimeout(pp *Peer, msg *MsgDeSoVa
 	if err := fc.fastHotStuffEventLoop.ProcessValidatorTimeout(msg); err != nil {
 		// If we can't process the timeout locally, then it must somehow be malformed, stale,
 		// or a duplicate vote/timeout for the same view.
-		return errors.Wrapf(err, "FastHotStuffConsensus.HandleValidatorTimeout: Error processing timeout: ")
+		glog.Errorf("FastHotStuffConsensus.HandleValidatorTimeout: Error processing timeout msg: %v", err)
+		return errors.Wrapf(err, "FastHotStuffConsensus.HandleValidatorTimeout: Error processing timeout msg: ")
 	}
 
 	// Happy path
