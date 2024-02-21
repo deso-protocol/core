@@ -1355,11 +1355,6 @@ func (bc *Blockchain) upsertBlockAndBlockNodeToDB(block *MsgDeSoBlock, blockNode
 ) error {
 	// Store the block in badger
 	err := bc.db.Update(func(txn *badger.Txn) error {
-		if bc.snapshot != nil {
-			bc.snapshot.PrepareAncestralRecordsFlush()
-			defer bc.snapshot.StartAncestralRecordsFlush(true)
-			glog.V(2).Infof("upsertBlockAndBlockNodeToDB: Preparing snapshot flush")
-		}
 		if storeFullBlock {
 			if innerErr := PutBlockHashToBlockWithTxn(txn, bc.snapshot, block, bc.eventManager); innerErr != nil {
 				return errors.Wrapf(innerErr, "upsertBlockAndBlockNodeToDB: Problem calling PutBlockHashToBlockWithTxn")
@@ -1639,6 +1634,9 @@ func (bc *Blockchain) commitBlockPoS(blockHash *BlockHash) error {
 			UtxoView: utxoView,
 			UtxoOps:  utxoOpsForBlock,
 		})
+	}
+	if bc.snapshot != nil {
+		bc.snapshot.FinishProcessBlock(blockNode)
 	}
 	// TODO: What else do we need to do in here?
 	return nil
