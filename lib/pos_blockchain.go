@@ -263,7 +263,7 @@ func (bc *Blockchain) processBlockPoS(block *MsgDeSoBlock, currentView uint64, v
 	}
 	if !passedSpamPreventionCheck {
 		// If the block fails the spam prevention check, we throw it away.
-		return false, false, nil, errors.New("processBlockPoS: Block failed spam prevention check")
+		return false, false, nil, errors.Wrapf(RuleErrorFailedSpamPreventionsCheck, "processBlockPoS: Block failed spam prevention check: ")
 	}
 
 	// Validate the block and store it in the block index. The block is guaranteed to not be an orphan.
@@ -1929,6 +1929,7 @@ const (
 	RuleErrorAncestorBlockValidationFailed                      RuleError = "RuleErrorAncestorBlockValidationFailed"
 	RuleErrorParentBlockHasViewGreaterOrEqualToChildBlock       RuleError = "RuleErrorParentBlockHasViewGreaterOrEqualToChildBlock"
 	RuleErrorParentBlockHeightNotSequentialWithChildBlockHeight RuleError = "RuleErrorParentBlockHeightNotSequentialWithChildBlockHeight"
+	RuleErrorFailedSpamPreventionsCheck                         RuleError = "RuleErrorFailedSpamPreventionsCheck"
 
 	RuleErrorNilMerkleRoot                      RuleError = "RuleErrorNilMerkleRoot"
 	RuleErrorInvalidMerkleRoot                  RuleError = "RuleErrorInvalidMerkleRoot"

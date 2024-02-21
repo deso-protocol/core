@@ -2155,20 +2155,28 @@ func (srv *Server) _handleBlock(pp *Peer, blk *MsgDeSoBlock) {
 			// headers comment above but in the future we should probably try and figure
 			// out a way to be more strict about things.
 			glog.Warningf("Got duplicate block %v from peer %v", blk, pp)
+		} else if strings.Contains(err.Error(), RuleErrorFailedSpamPreventionsCheck.Error()) {
+			// If the block fails the spam prevention check, then it must be signed by the
+			// bad block proposer signature or it has a bad QC. In either case, we should
+			// disconnect the peer.
+			srv._logAndDisconnectPeer(pp, blk, errors.Wrapf(err, "Error while processing block: ").Error())
+			return
 		} else {
-			srv._logAndDisconnectPeer(
-				pp, blk,
-				errors.Wrapf(err, "Error while processing block: ").Error())
+			// For any other error, we log the error and continue.
+			glog.Errorf("Server._handleBlock: Error while processing block: %v", err)
 			return
 		}
 	}
+
 	if isOrphan {
-		// We should generally never receive orphan blocks. It indicates something
-		// went wrong in our headers syncing.
-		glog.Errorf("ERROR: Received orphan block with hash %v height %v. "+
+		// It's possible to receive an orphan block if we're connected directly to the
+		// block producer, and they are broadcasting blocks in the steady state. We log
+		// a warning in this case and move on.
+		glog.Warningf("ERROR: Received orphan block with hash %v height %v. "+
 			"This should never happen", blockHash, blk.Header.Height)
 		return
 	}
+
 	srv.timer.End("Server._handleBlock: Process Block")
 
 	srv.timer.Print("Server._handleBlock: General")
