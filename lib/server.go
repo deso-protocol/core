@@ -2102,14 +2102,12 @@ func (srv *Server) _handleBlock(pp *Peer, blk *MsgDeSoBlock) {
 		return
 	}
 
-	if pp != nil {
-		if _, exists := pp.requestedBlocks[*blockHash]; !exists {
-			glog.Errorf("_handleBlock: Getting a block that we haven't requested before, "+
-				"block hash (%v)", *blockHash)
-		}
-		delete(pp.requestedBlocks, *blockHash)
-	} else {
-		glog.Errorf("_handleBlock: Called with nil peer, this should never happen.")
+	// Log a warning if we receive a block we haven't requested yet. It is still possible to receive
+	// a block in this case if we're connected directly to the block producer and they send us a block
+	// directly.
+	if _, exists := pp.requestedBlocks[*blockHash]; !exists {
+		glog.Warningf("_handleBlock: Getting a block that we haven't requested before, "+
+			"block hash (%v)", *blockHash)
 	}
 
 	// Check that the mempool has not received a transaction that would forbid this block's signature pubkey.
