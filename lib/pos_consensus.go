@@ -384,6 +384,8 @@ func (fc *FastHotStuffConsensus) HandleLocalVoteEvent(event *consensus.FastHotSt
 // HandleValidatorVote is called when we receive a validator vote message from a peer. This function processes
 // the vote locally in the FastHotStuffEventLoop.
 func (fc *FastHotStuffConsensus) HandleValidatorVote(pp *Peer, msg *MsgDeSoValidatorVote) error {
+	glog.Infof("FastHotStuffConsensus.HandleValidatorVote: Received vote msg %s", msg.ToString())
+
 	// No need to hold a lock on the consensus because this function is a pass-through
 	// for the FastHotStuffEventLoop which guarantees thread-safety for its callers
 
@@ -391,7 +393,8 @@ func (fc *FastHotStuffConsensus) HandleValidatorVote(pp *Peer, msg *MsgDeSoValid
 	if err := fc.fastHotStuffEventLoop.ProcessValidatorVote(msg); err != nil {
 		// If we can't process the vote locally, then it must somehow be malformed, stale,
 		// or a duplicate vote/timeout for the same view.
-		return errors.Wrapf(err, "FastHotStuffConsensus.HandleValidatorVote: Error processing vote: ")
+		glog.Errorf("FastHotStuffConsensus.HandleValidatorVote: Error processing vote msg: %v", err)
+		return errors.Wrapf(err, "FastHotStuffConsensus.HandleValidatorVote: Error processing vote msg: ")
 	}
 
 	// Happy path
@@ -936,7 +939,7 @@ func (fc *FastHotStuffConsensus) logBlockProposal(block *MsgDeSoBlock, blockHash
 			"\n  High QC View: %d, High QC Num Validators: %d, High QC BlockHash: %s"+
 			"\n  Timeout Agg QC View: %d, Timeout Agg QC Num Validators: %d, Timeout High QC Views: %s"+
 			"\n  Num Block Transactions: %d, Num Transactions Remaining In Mempool: %d"+
-			"\n=================================================================================================================",
+			"\n=================================================================================================================\n",
 		block.Header.GetTstampSecs(), block.Header.GetView(), block.Header.Height, blockHash.String(),
 		block.Header.ProposerVotingPublicKey.ToString(),
 		block.Header.ProposerVotePartialSignature.ToString(),
