@@ -2178,9 +2178,7 @@ func (srv *Server) _handleBlock(pp *Peer, blk *MsgDeSoBlock) {
 
 	// We shouldn't be receiving blocks while syncing headers.
 	if srv.blockchain.chainState() == SyncStateSyncingHeaders {
-		srv._logAndDisconnectPeer(
-			pp, blk,
-			"We should never get blocks when we're syncing headers")
+		glog.Warningf("Server._handleBlock: Received block while syncing headers: %v", blk)
 		return
 	}
 
