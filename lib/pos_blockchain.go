@@ -53,6 +53,12 @@ func (bc *Blockchain) processHeaderPoS(header *MsgDeSoHeader) (
 		return false, false, errors.Wrapf(err, "processHeaderPoS: Problem hashing header")
 	}
 
+	// If the incoming header is already part of the best header chain, then we can exit early.
+	// The header is not part of a fork, and is already an ancestor of the current header chain tip.
+	if _, isInBestHeaderChain := bc.bestHeaderChainMap[*headerHash]; isInBestHeaderChain {
+		return true, false, nil
+	}
+
 	// Validate the header and index it in the block index.
 	blockNode, isOrphan, err := bc.validateAndIndexHeaderPoS(header, headerHash)
 	if err != nil {
@@ -1549,8 +1555,6 @@ func (bc *Blockchain) shouldReorg(blockNode *BlockNode, currentView uint64) bool
 func (bc *Blockchain) addTipBlockToBestChain(blockNode *BlockNode) {
 	bc.bestChain = append(bc.bestChain, blockNode)
 	bc.bestChainMap[*blockNode.Hash] = blockNode
-	bc.bestHeaderChain = append(bc.bestHeaderChain, blockNode)
-	bc.bestHeaderChainMap[*blockNode.Hash] = blockNode
 }
 
 // removeTipBlockFromBestChain removes the current tip from the best chain. It
@@ -1562,8 +1566,6 @@ func (bc *Blockchain) removeTipBlockFromBestChain() *BlockNode {
 	lastBlock := bc.bestChain[len(bc.bestChain)-1]
 	delete(bc.bestChainMap, *lastBlock.Hash)
 	bc.bestChain = bc.bestChain[:len(bc.bestChain)-1]
-	bc.bestHeaderChain = bc.bestHeaderChain[:len(bc.bestChain)]
-	delete(bc.bestHeaderChainMap, *lastBlock.Hash)
 	return lastBlock
 }
 
