@@ -1146,6 +1146,14 @@ func (bc *Blockchain) HasBlock(blockHash *BlockHash) bool {
 	return true
 }
 
+func (bc *Blockchain) HasBlockInBlockIndex(blockHash *BlockHash) bool {
+	bc.ChainLock.RLock()
+	defer bc.ChainLock.RUnlock()
+
+	_, exists := bc.blockIndexByHash[*blockHash]
+	return exists
+}
+
 // This needs to hold a lock on the blockchain because it read from an in-memory map that is
 // not thread-safe.
 func (bc *Blockchain) GetBlockHeaderFromIndex(blockHash *BlockHash) *MsgDeSoHeader {

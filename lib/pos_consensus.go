@@ -507,8 +507,23 @@ func (fc *FastHotStuffConsensus) HandleLocalTimeoutEvent(event *consensus.FastHo
 func (fc *FastHotStuffConsensus) HandleValidatorTimeout(pp *Peer, msg *MsgDeSoValidatorTimeout) error {
 	glog.V(2).Infof("FastHotStuffConsensus.HandleLocalTimeoutEvent: Received timeout msg: %s", msg.ToString())
 
-	// No need to hold a lock on the consensus because this function is a pass-through
-	// for the FastHotStuffEventLoop which guarantees thread-safety for its callers.
+	// Hold a write lock on the consensus, since we need to update the timeout message in the
+	// FastHotStuffEventLoop.
+	fc.lock.Lock()
+	defer fc.lock.Unlock()
+
+	if !fc.fastHotStuffEventLoop.IsRunning() {
+		return errors.Errorf("FastHotStuffConsensus.HandleValidatorTimeout: FastHotStuffEventLoop is not running")
+	}
+
+	// If we don't have the highQC's block on hand, then we need to request it from the peer. We do
+	// that first before storing the timeout message locally in the FastHotStuffEventLoop. This
+	// prevents spamming of timeout messages by peers.
+	if !fc.blockchain.HasBlockInBlockIndex(msg.HighQC.BlockHash) {
+		fc.trySendMessageToPeer(pp, &MsgDeSoGetBlocks{HashList: []*BlockHash{msg.HighQC.BlockHash}})
+		glog.Errorf("FastHotStuffConsensus.HandleValidatorTimeout: Requesting missing highQC's block: %v", msg.HighQC.BlockHash)
+		return errors.Errorf("FastHotStuffConsensus.HandleValidatorTimeout: Missing highQC's block: %v", msg.HighQC.BlockHash)
+	}
 
 	// Process the timeout message locally in the FastHotStuffEventLoop
 	if err := fc.fastHotStuffEventLoop.ProcessValidatorTimeout(msg); err != nil {
@@ -872,6 +887,17 @@ func (fc *FastHotStuffConsensus) updateActiveValidatorConnections() error {
 	fc.networkManager.SetActiveValidatorsMap(validatorsMap)
 
 	return nil
+}
+
+func (fc *FastHotStuffConsensus) trySendMessageToPeer(pp *Peer, msg DeSoMessage) {
+	remoteNode := fc.networkManager.rnManager.GetRemoteNodeFromPeer(pp)
+	if remoteNode == nil {
+		glog.Errorf("FastHotStuffConsensus.trySendMessageToPeer: RemoteNode not found for peer: %v", pp)
+		return
+	}
+
+	// Send the message to the peer
+	remoteNode.SendMessage(msg)
 }
 
 // Finds the epoch entry for the block and returns the epoch number.
