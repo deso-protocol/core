@@ -123,6 +123,17 @@ func (msg *MsgDeSoValidatorVote) FromBytes(data []byte) error {
 	return nil
 }
 
+func (msg *MsgDeSoValidatorVote) ToString() string {
+	return fmt.Sprintf(
+		"{MsgVersion: %d, VotingPublicKey: %s, BlockHash: %v, ProposedInView: %d, VotePartialSignature: %v}",
+		msg.MsgVersion,
+		msg.VotingPublicKey.ToAbbreviatedString(),
+		msg.BlockHash,
+		msg.ProposedInView,
+		msg.VotePartialSignature.ToAbbreviatedString(),
+	)
+}
+
 // ==================================================================
 // Proof of Stake Timeout Message
 // ==================================================================
