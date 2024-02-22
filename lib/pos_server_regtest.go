@@ -25,7 +25,7 @@ func (srv *Server) submitRegtestValidatorRegistrationTxns(block *MsgDeSoBlock) {
 		}
 
 		txnMeta := RegisterAsValidatorMetadata{
-			Domains:                             [][]byte{[]byte("https://deso.com")},
+			Domains:                             [][]byte{[]byte("http://localhost:18000")},
 			DisableDelegatedStake:               false,
 			DelegatedStakeCommissionBasisPoints: 100,
 			VotingPublicKey:                     blsSigner.GetPublicKey(),
