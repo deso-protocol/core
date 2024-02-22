@@ -1670,7 +1670,7 @@ func _verifyCommitRuleHelper(testMeta *TestMeta, committedBlocks []*BlockHash, u
 }
 
 // _verifyRandomSeedHashHelper is a helper function that verifies the random seed hash is set
-// after connect a new tip block.
+// after connecting a new tip block.
 func _verifyRandomSeedHashHelper(testMeta *TestMeta, tipBlock *MsgDeSoBlock) {
 	// Get the utxo view for the tip block.
 	utxoView, err := testMeta.chain.GetUncommittedTipView()
