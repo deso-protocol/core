@@ -59,6 +59,13 @@ func (bc *Blockchain) processHeaderPoS(header *MsgDeSoHeader) (
 		return true, false, nil
 	}
 
+	// If the incoming header is part of a reorg that uncommits the committed tip from the best chain,
+	// then we exit early. Such headers are invalid and should not be synced.
+	committedBlockchainTip, _ := bc.getCommittedTip()
+	if committedBlockchainTip != nil && committedBlockchainTip.Header.Height >= header.Height {
+		return false, false, errors.New("processHeaderPoS: Header conflicts view less than or equal to committed tip")
+	}
+
 	// Validate the header and index it in the block index.
 	blockNode, isOrphan, err := bc.validateAndIndexHeaderPoS(header, headerHash)
 	if err != nil {
