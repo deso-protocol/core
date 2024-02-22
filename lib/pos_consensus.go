@@ -507,24 +507,19 @@ func (fc *FastHotStuffConsensus) HandleLocalTimeoutEvent(event *consensus.FastHo
 func (fc *FastHotStuffConsensus) HandleValidatorTimeout(pp *Peer, msg *MsgDeSoValidatorTimeout) error {
 	glog.V(2).Infof("FastHotStuffConsensus.HandleLocalTimeoutEvent: Received timeout msg: %s", msg.ToString())
 
-	// Hold a read lock on the consensus. We will need to read the blockchain data structure.
-	fc.lock.RLock()
-	defer fc.lock.RUnlock()
+	// Hold a write lock on the consensus, since we need to update the timeout message in the
+	// FastHotStuffEventLoop.
+	fc.lock.Lock()
+	defer fc.lock.Unlock()
 
 	if !fc.fastHotStuffEventLoop.IsRunning() {
 		return errors.Errorf("FastHotStuffConsensus.HandleValidatorTimeout: FastHotStuffEventLoop is not running")
 	}
 
-	// Hold the blockchain's read lock so that the chain cannot be mutated underneath us.
-	// In practice, this is a no-op, but it guarantees thread-safety in the event that other
-	// parts of the codebase change.
-	fc.blockchain.ChainLock.Lock()
-	defer fc.blockchain.ChainLock.Unlock()
-
-	// If we don't have the highQC's block on-hand, then we need to request it from the peer. We do that
-	// first before storing the timeout message locally in the FastHotStuffEventLoop. This prevents
-	// spamming of timeout messages by peers.
-	if _, highQCExists := fc.blockchain.blockIndexByHash[*msg.HighQC.BlockHash]; !highQCExists {
+	// If we don't have the highQC's block on hand, then we need to request it from the peer. We do
+	// that first before storing the timeout message locally in the FastHotStuffEventLoop. This
+	// prevents spamming of timeout messages by peers.
+	if !fc.blockchain.HasBlockInBlockIndex(msg.HighQC.BlockHash) {
 		fc.trySendMessageToPeer(pp, &MsgDeSoGetBlocks{HashList: []*BlockHash{msg.HighQC.BlockHash}})
 		glog.Errorf("FastHotStuffConsensus.HandleValidatorTimeout: Requesting missing highQC's block: %v", msg.HighQC.BlockHash)
 		return errors.Errorf("FastHotStuffConsensus.HandleValidatorTimeout: Missing highQC's block: %v", msg.HighQC.BlockHash)
