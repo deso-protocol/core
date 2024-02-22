@@ -2102,15 +2102,14 @@ func (srv *Server) _handleBlock(pp *Peer, blk *MsgDeSoBlock) {
 		return
 	}
 
-	if pp != nil {
-		if _, exists := pp.requestedBlocks[*blockHash]; !exists {
-			glog.Errorf("_handleBlock: Getting a block that we haven't requested before, "+
-				"block hash (%v)", *blockHash)
-		}
-		delete(pp.requestedBlocks, *blockHash)
-	} else {
-		glog.Errorf("_handleBlock: Called with nil peer, this should never happen.")
+	// Log a warning if we receive a block we haven't requested yet. It is still possible to receive
+	// a block in this case if we're connected directly to the block producer and they send us a block
+	// directly.
+	if _, exists := pp.requestedBlocks[*blockHash]; !exists {
+		glog.Warningf("_handleBlock: Getting a block that we haven't requested before, "+
+			"block hash (%v)", *blockHash)
 	}
+	delete(pp.requestedBlocks, *blockHash)
 
 	// Check that the mempool has not received a transaction that would forbid this block's signature pubkey.
 	// This is a minimal check, a more thorough check is made in the ProcessBlock function. This check is
@@ -2157,20 +2156,28 @@ func (srv *Server) _handleBlock(pp *Peer, blk *MsgDeSoBlock) {
 			// headers comment above but in the future we should probably try and figure
 			// out a way to be more strict about things.
 			glog.Warningf("Got duplicate block %v from peer %v", blk, pp)
+		} else if strings.Contains(err.Error(), RuleErrorFailedSpamPreventionsCheck.Error()) {
+			// If the block fails the spam prevention check, then it must be signed by the
+			// bad block proposer signature or it has a bad QC. In either case, we should
+			// disconnect the peer.
+			srv._logAndDisconnectPeer(pp, blk, errors.Wrapf(err, "Error while processing block: ").Error())
+			return
 		} else {
-			srv._logAndDisconnectPeer(
-				pp, blk,
-				errors.Wrapf(err, "Error while processing block: ").Error())
+			// For any other error, we log the error and continue.
+			glog.Errorf("Server._handleBlock: Error while processing block: %v", err)
 			return
 		}
 	}
+
 	if isOrphan {
-		// We should generally never receive orphan blocks. It indicates something
-		// went wrong in our headers syncing.
-		glog.Errorf("ERROR: Received orphan block with hash %v height %v. "+
+		// It's possible to receive an orphan block if we're connected directly to the
+		// block producer, and they are broadcasting blocks in the steady state. We log
+		// a warning in this case and move on.
+		glog.Warningf("ERROR: Received orphan block with hash %v height %v. "+
 			"This should never happen", blockHash, blk.Header.Height)
 		return
 	}
+
 	srv.timer.End("Server._handleBlock: Process Block")
 
 	srv.timer.Print("Server._handleBlock: General")
@@ -2178,9 +2185,7 @@ func (srv *Server) _handleBlock(pp *Peer, blk *MsgDeSoBlock) {
 
 	// We shouldn't be receiving blocks while syncing headers.
 	if srv.blockchain.chainState() == SyncStateSyncingHeaders {
-		srv._logAndDisconnectPeer(
-			pp, blk,
-			"We should never get blocks when we're syncing headers")
+		glog.Warningf("Server._handleBlock: Received block while syncing headers: %v", blk)
 		return
 	}
 
