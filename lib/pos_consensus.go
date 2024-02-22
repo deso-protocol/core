@@ -505,6 +505,8 @@ func (fc *FastHotStuffConsensus) HandleLocalTimeoutEvent(event *consensus.FastHo
 // HandleValidatorTimeout is called when we receive a validator timeout message from a peer. This function
 // processes the timeout locally in the FastHotStuffEventLoop.
 func (fc *FastHotStuffConsensus) HandleValidatorTimeout(pp *Peer, msg *MsgDeSoValidatorTimeout) error {
+	glog.V(2).Infof("FastHotStuffConsensus.HandleLocalTimeoutEvent: Received timeout msg: %s", msg.ToString())
+
 	// No need to hold a lock on the consensus because this function is a pass-through
 	// for the FastHotStuffEventLoop which guarantees thread-safety for its callers.
 
@@ -512,7 +514,8 @@ func (fc *FastHotStuffConsensus) HandleValidatorTimeout(pp *Peer, msg *MsgDeSoVa
 	if err := fc.fastHotStuffEventLoop.ProcessValidatorTimeout(msg); err != nil {
 		// If we can't process the timeout locally, then it must somehow be malformed, stale,
 		// or a duplicate vote/timeout for the same view.
-		return errors.Wrapf(err, "FastHotStuffConsensus.HandleValidatorTimeout: Error processing timeout: ")
+		glog.Errorf("FastHotStuffConsensus.HandleValidatorTimeout: Error processing timeout msg: %v", err)
+		return errors.Wrapf(err, "FastHotStuffConsensus.HandleValidatorTimeout: Error processing timeout msg: ")
 	}
 
 	// Happy path
@@ -936,6 +939,7 @@ func (fc *FastHotStuffConsensus) logBlockProposal(block *MsgDeSoBlock, blockHash
 			"\n  Timestamp: %d, View: %d, Height: %d, BlockHash: %v"+
 			"\n  Proposer Voting PKey: %s"+
 			"\n  Proposer Signature: %s"+
+			"\n  Proposer Random Seed Signature: %s"+
 			"\n  High QC View: %d, High QC Num Validators: %d, High QC BlockHash: %s"+
 			"\n  Timeout Agg QC View: %d, Timeout Agg QC Num Validators: %d, Timeout High QC Views: %s"+
 			"\n  Num Block Transactions: %d, Num Transactions Remaining In Mempool: %d"+
@@ -943,6 +947,7 @@ func (fc *FastHotStuffConsensus) logBlockProposal(block *MsgDeSoBlock, blockHash
 		block.Header.GetTstampSecs(), block.Header.GetView(), block.Header.Height, blockHash.String(),
 		block.Header.ProposerVotingPublicKey.ToString(),
 		block.Header.ProposerVotePartialSignature.ToString(),
+		block.Header.ProposerRandomSeedSignature.ToString(),
 		block.Header.GetQC().GetView(), block.Header.GetQC().GetAggregatedSignature().GetSignersList().Size(), block.Header.PrevBlockHash.String(),
 		aggQCView, aggQCNumValidators, aggQCHighQCViews,
 		len(block.Txns), len(fc.mempool.GetTransactions()),
