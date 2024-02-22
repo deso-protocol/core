@@ -4111,6 +4111,17 @@ func (bav *UtxoView) ConnectBlock(
 		return nil, fmt.Errorf("ConnectBlock: Parent hash of block being connected does not match tip")
 	}
 
+	// If the block height is past the Proof of Stake cutover, then we update the random seed hash.
+	// We do this first before connecting any transactions so that the latest seed hash is used for
+	// transactions that use on-chain randomness.
+	if blockHeight >= uint64(bav.Params.ForkHeights.ProofOfStake2ConsensusCutoverBlockHeight) {
+		randomSeedHash, err := HashRandomSeedSignature(desoBlock.Header.ProposerRandomSeedSignature)
+		if err != nil {
+			return nil, errors.Wrapf(err, "ConnectBlock: Problem hashing random seed signature")
+		}
+		bav._setCurrentRandomSeedHash(randomSeedHash)
+	}
+
 	blockHeader := desoBlock.Header
 	var blockRewardOutputPublicKey *btcec.PublicKey
 	// If the block height is greater than or equal to the block reward patch height,
