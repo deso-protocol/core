@@ -667,6 +667,10 @@ func NewServer(
 	timer.Initialize()
 	srv.timer = timer
 
+	if srv.stateChangeSyncer != nil {
+		srv.stateChangeSyncer.StartMempoolSyncRoutine(srv)
+	}
+
 	// If shouldRestart is true, it means that the state checksum is likely corrupted, and we need to enter a recovery mode.
 	// This can happen if the node was terminated mid-operation last time it was running. The recovery process rolls back
 	// blocks to the beginning of the current snapshot epoch and resets to the state checksum to the epoch checksum.

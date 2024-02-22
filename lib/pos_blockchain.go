@@ -1731,6 +1731,45 @@ func (bc *Blockchain) commitBlockPoS(blockHash *BlockHash) error {
 	return nil
 }
 
+// GetUncommittedFullBlocks is a helper that the state syncer uses to fetch all uncommitted
+// blocks, so it can flush them just like we would with mempool transactions. It returns
+// all uncommitted blocks from the specified tip to the last uncommitted block.
+// Note: it would be more efficient if we cached these results.
+func (bc *Blockchain) GetUncommittedFullBlocks(tipHash *BlockHash) ([]*MsgDeSoBlock, error) {
+	if tipHash == nil {
+		tipHash = bc.BlockTip().Hash
+	}
+	bc.ChainLock.RLock()
+	defer bc.ChainLock.RUnlock()
+	tipBlock, exists := bc.bestChainMap[*tipHash]
+	if !exists {
+		return nil, errors.Errorf("GetUncommittedFullBlocks: Block %v not found in best chain map", tipHash.String())
+	}
+	// If the tip block is committed, we can't get uncommitted blocks from it so we return an empty slice.
+	if tipBlock.IsCommitted() {
+		return []*MsgDeSoBlock{}, nil
+	}
+	var uncommittedBlocks []*MsgDeSoBlock
+	currentBlock := tipBlock
+	for !currentBlock.IsCommitted() {
+		fullBlock, err := GetBlock(currentBlock.Hash, bc.db, bc.snapshot)
+		if err != nil {
+			return nil, errors.Wrapf(err, "GetUncommittedFullBlocks: Problem fetching block %v",
+				currentBlock.Hash.String())
+		}
+		uncommittedBlocks = append(uncommittedBlocks, fullBlock)
+		currentParentHash := currentBlock.Header.PrevBlockHash
+		if currentParentHash == nil {
+			return nil, errors.Errorf("GetUncommittedFullBlocks: Block %v has nil PrevBlockHash", currentBlock.Hash)
+		}
+		currentBlock = bc.blockIndexByHash[*currentParentHash]
+		if currentBlock == nil {
+			return nil, errors.Errorf("GetUncommittedFullBlocks: Block %v not found in block index", currentBlock.Hash)
+		}
+	}
+	return collections.Reverse(uncommittedBlocks), nil
+}
+
 // GetCommittedTipView builds a UtxoView to the committed tip.
 func (bc *Blockchain) GetCommittedTipView() (*UtxoView, error) {
 	return NewUtxoView(bc.db, bc.params, bc.postgres, bc.snapshot, nil)
