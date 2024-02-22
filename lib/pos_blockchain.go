@@ -63,7 +63,7 @@ func (bc *Blockchain) processHeaderPoS(header *MsgDeSoHeader) (
 	// then we exit early. Such headers are invalid and should not be synced.
 	committedBlockchainTip, _ := bc.getCommittedTip()
 	if committedBlockchainTip != nil && committedBlockchainTip.Header.Height >= header.Height {
-		return false, false, errors.New("processHeaderPoS: Header conflicts view less than or equal to committed tip")
+		return false, false, errors.New("processHeaderPoS: Header conflicts with committed tip")
 	}
 
 	// Validate the header and index it in the block index.
