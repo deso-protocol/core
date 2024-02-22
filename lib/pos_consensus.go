@@ -757,6 +757,9 @@ func (fc *FastHotStuffConsensus) createBlockProducer(bav *UtxoView, previousBloc
 	if err != nil {
 		return nil, errors.Errorf("Error fetching validator entry for block producer: %v", err)
 	}
+	if blockProducerValidatorEntry == nil {
+		return nil, errors.New("Error fetching validator entry for block producer")
+	}
 	blockProducerPublicKeyBytes := bav.GetPublicKeyForPKID(blockProducerValidatorEntry.PKID)
 	blockProducerPublicKey := NewPublicKey(blockProducerPublicKeyBytes)
 	if blockProducerPublicKey == nil {
