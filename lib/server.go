@@ -2109,6 +2109,7 @@ func (srv *Server) _handleBlock(pp *Peer, blk *MsgDeSoBlock) {
 		glog.Warningf("_handleBlock: Getting a block that we haven't requested before, "+
 			"block hash (%v)", *blockHash)
 	}
+	delete(pp.requestedBlocks, *blockHash)
 
 	// Check that the mempool has not received a transaction that would forbid this block's signature pubkey.
 	// This is a minimal check, a more thorough check is made in the ProcessBlock function. This check is
