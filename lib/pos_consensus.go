@@ -384,7 +384,7 @@ func (fc *FastHotStuffConsensus) HandleLocalVoteEvent(event *consensus.FastHotSt
 // HandleValidatorVote is called when we receive a validator vote message from a peer. This function processes
 // the vote locally in the FastHotStuffEventLoop.
 func (fc *FastHotStuffConsensus) HandleValidatorVote(pp *Peer, msg *MsgDeSoValidatorVote) error {
-	glog.Infof("FastHotStuffConsensus.HandleValidatorVote: Received vote msg %s", msg.ToString())
+	glog.V(2).Infof("FastHotStuffConsensus.HandleValidatorVote: Received vote msg %s", msg.ToString())
 
 	// No need to hold a lock on the consensus because this function is a pass-through
 	// for the FastHotStuffEventLoop which guarantees thread-safety for its callers
