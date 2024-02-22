@@ -2658,7 +2658,7 @@ func (srv *Server) _startConsensus() {
 		select {
 		case consensusEvent := <-srv._getFastHotStuffConsensusEventChannel():
 			{
-				glog.Infof("Server._startConsensus: Received consensus event: %s", consensusEvent.ToString())
+				glog.V(2).Infof("Server._startConsensus: Received consensus event: %s", consensusEvent.ToString())
 				srv._handleFastHostStuffConsensusEvent(consensusEvent)
 			}
 
