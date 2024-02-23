@@ -10,6 +10,7 @@ import (
 	"github.com/pkg/errors"
 	"os"
 	"path/filepath"
+	"strconv"
 	"sync"
 	"time"
 )
@@ -476,7 +477,17 @@ func (stateChangeSyncer *StateChangeSyncer) _handleStateSyncerFlush(event *State
 			// If any of the keys that the mempool is currently tracking weren't included in the flush, the state syncer
 			// mempool is bad and needs to be reset.
 			if _, ok := stateChangeSyncer.MempoolFlushKeySet[key]; !ok {
-				fmt.Printf("\n********* Mempool entry ejected from mempool for key %s. Resetting mempool. *********\n", key)
+				opType, keyBytes, err := parseMempoolTxKey(key)
+				if err != nil {
+					glog.Errorf("StateChangeSyncer._handleStateSyncerFlush: Error parsing mempool tx key: %v", err)
+					return
+				}
+
+				fmt.Printf("\n********* Mempool entry ejected from mempool for key %v and operation type %v. Resetting mempool. *********\n", keyBytes, opType)
+				if isEncoder, encoder := StateKeyToDeSoEncoder(keyBytes); isEncoder && encoder != nil {
+					fmt.Printf("Encoder type: %v\n", encoder.GetEncoderType())
+					fmt.Printf("Encoder: %+v\n", encoder)
+				}
 				stateChangeSyncer.ResetMempool()
 				return
 			}
@@ -619,6 +630,25 @@ func (stateChangeSyncer *StateChangeSyncer) FlushTransactionsToFile(event *State
 
 func createMempoolTxKey(operationType StateSyncerOperationType, keyBytes []byte) string {
 	return fmt.Sprintf("%v%v", operationType, string(keyBytes))
+}
+
+func parseMempoolTxKey(mempoolTxKeyString string) (StateSyncerOperationType, []byte, error) {
+	if len(mempoolTxKeyString) < 1 {
+		return 0, nil, fmt.Errorf("input string is too short")
+	}
+
+	// Assuming the operationType is stored as the first character
+	operationTypeRune := mempoolTxKeyString[0]
+	operationTypeInt, err := strconv.Atoi(string(operationTypeRune))
+	if err != nil {
+		return 0, nil, fmt.Errorf("failed to parse operation type: %w", err)
+	}
+	operationType := StateSyncerOperationType(operationTypeInt)
+
+	// The rest of the string are the key bytes
+	keyBytes := []byte(mempoolTxKeyString[1:])
+
+	return operationType, keyBytes, nil
 }
 
 // SyncMempoolToStateSyncer flushes all mempool transactions to the db, capturing those state changes
