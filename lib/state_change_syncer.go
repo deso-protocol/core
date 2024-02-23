@@ -489,12 +489,13 @@ func (stateChangeSyncer *StateChangeSyncer) _handleStateSyncerFlush(event *State
 					fmt.Printf("Encoder: %+v\n", encoder)
 				} else {
 					keyEncoder, err := DecodeStateKey(keyBytes, value)
+					fmt.Printf("Value: %v\n", value)
 					if err != nil {
-						glog.Errorf("StateChangeSyncer._handleStateSyncerFlush: Error decoding state key: %v", err)
-						return
+						fmt.Printf("StateChangeSyncer._handleStateSyncerFlush: Error decoding state key: %v", err)
+					} else {
+						fmt.Printf("Encoder type: %v\n", keyEncoder.GetEncoderType())
+						fmt.Printf("Encoder: %+v\n", keyEncoder)
 					}
-					fmt.Printf("Encoder type: %v\n", keyEncoder.GetEncoderType())
-					fmt.Printf("Encoder: %+v\n", keyEncoder)
 				}
 				stateChangeSyncer.ResetMempool()
 				return
