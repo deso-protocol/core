@@ -473,7 +473,7 @@ func (stateChangeSyncer *StateChangeSyncer) _handleStateSyncerFlush(event *State
 		// This would mean that an entry was ejected from the mempool.
 		// When this happens, we need to reset the mempool and start from scratch, so that the consumer can revert the
 		// mempool transactions it currently has and sync the mempool from scratch.
-		for key := range stateChangeSyncer.MempoolKeyValueMap {
+		for key, value := range stateChangeSyncer.MempoolKeyValueMap {
 			// If any of the keys that the mempool is currently tracking weren't included in the flush, the state syncer
 			// mempool is bad and needs to be reset.
 			if _, ok := stateChangeSyncer.MempoolFlushKeySet[key]; !ok {
@@ -487,6 +487,14 @@ func (stateChangeSyncer *StateChangeSyncer) _handleStateSyncerFlush(event *State
 				if isEncoder, encoder := StateKeyToDeSoEncoder(keyBytes); isEncoder && encoder != nil {
 					fmt.Printf("Encoder type: %v\n", encoder.GetEncoderType())
 					fmt.Printf("Encoder: %+v\n", encoder)
+				} else {
+					keyEncoder, err := DecodeStateKey(keyBytes, value)
+					if err != nil {
+						glog.Errorf("StateChangeSyncer._handleStateSyncerFlush: Error decoding state key: %v", err)
+						return
+					}
+					fmt.Printf("Encoder type: %v\n", keyEncoder.GetEncoderType())
+					fmt.Printf("Encoder: %+v\n", keyEncoder)
 				}
 				stateChangeSyncer.ResetMempool()
 				return
