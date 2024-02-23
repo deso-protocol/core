@@ -476,7 +476,7 @@ func (stateChangeSyncer *StateChangeSyncer) _handleStateSyncerFlush(event *State
 			// If any of the keys that the mempool is currently tracking weren't included in the flush, the state syncer
 			// mempool is bad and needs to be reset.
 			if _, ok := stateChangeSyncer.MempoolFlushKeySet[key]; !ok {
-				fmt.Printf("\n********* Mempool entry ejected from mempool. Resetting mempool. *********\n")
+				fmt.Printf("\n********* Mempool entry ejected from mempool for key %s. Resetting mempool. *********\n", key)
 				stateChangeSyncer.ResetMempool()
 				return
 			}
