@@ -475,6 +475,11 @@ func NewServer(
 		_minFeeRateNanosPerKB, _blockCypherAPIKey, _runReadOnlyUtxoViewUpdater, _dataDir,
 		_mempoolDumpDir, false)
 
+	// Initialize state syncer mempool job, if needed.
+	if srv.stateChangeSyncer != nil {
+		srv.stateChangeSyncer.StartMempoolSyncRoutine(srv)
+	}
+
 	// Useful for debugging. Every second, it outputs the contents of the mempool
 	// and the contents of the addrmanager.
 	/*
@@ -1550,12 +1555,6 @@ func (srv *Server) _startSync() {
 		"header tip height %v from peer %v", bestHeight, bestPeer)
 
 	srv.SyncPeer = bestPeer
-
-	// Initialize state syncer mempool job, if needed.
-	if srv.stateChangeSyncer != nil {
-		srv.stateChangeSyncer.StartMempoolSyncRoutine(srv)
-	}
-
 }
 
 func (srv *Server) _handleNewPeer(pp *Peer) {
