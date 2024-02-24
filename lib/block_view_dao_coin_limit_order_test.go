@@ -3891,6 +3891,255 @@ func TestCalculateDAOCoinsTransferredInLimitOrderMatch(t *testing.T) {
 	}
 }
 
+func TestDAOCoinLimitOrderFixOrderBookSkipInvalidMatchesBlockHeight(t *testing.T) {
+	// Test constants
+	const feeRateNanosPerKb = uint64(101)
+
+	// Initialize test chain and miner.
+	require := require.New(t)
+	chain, params, db := NewLowDifficultyBlockchain(t)
+	defer func() {
+		if chain.postgres != nil {
+			require.NoError(ResetPostgres(chain.postgres))
+		}
+	}()
+	mempool, miner := NewTestMiner(t, chain, params, true)
+
+	params.ForkHeights.DAOCoinBlockHeight = uint32(0)
+	params.ForkHeights.DAOCoinLimitOrderBlockHeight = uint32(0)
+	params.ForkHeights.OrderBookDBFetchOptimizationBlockHeight = uint32(0)
+	params.BlockRewardMaturity = time.Second
+
+	// Mine a few blocks to give the senderPkString some money.
+	_, err := miner.MineAndProcessSingleBlock(0, mempool)
+	require.NoError(err)
+	_, err = miner.MineAndProcessSingleBlock(0, mempool)
+	require.NoError(err)
+	_, err = miner.MineAndProcessSingleBlock(0, mempool)
+	require.NoError(err)
+	_, err = miner.MineAndProcessSingleBlock(0, mempool)
+	require.NoError(err)
+
+	// We take the block tip to be the blockchain height rather than the header chain height.
+	savedHeight := chain.blockTip().Height + 1
+
+	// We build the testMeta obj after mining blocks so that we save the correct block height.
+	testMeta := &TestMeta{
+		t:           t,
+		chain:       chain,
+		params:      params,
+		db:          db,
+		mempool:     mempool,
+		miner:       miner,
+		savedHeight: savedHeight,
+	}
+
+	_registerOrTransferWithTestMeta(testMeta, "m0", senderPkString, m0Pub, senderPrivString, 7000)
+	_registerOrTransferWithTestMeta(testMeta, "m1", senderPkString, m1Pub, senderPrivString, 4000)
+	_registerOrTransferWithTestMeta(testMeta, "m2", senderPkString, m2Pub, senderPrivString, 1400)
+	_registerOrTransferWithTestMeta(testMeta, "m3", senderPkString, m3Pub, senderPrivString, 210)
+	_registerOrTransferWithTestMeta(testMeta, "m4", senderPkString, m4Pub, senderPrivString, 200)
+	_registerOrTransferWithTestMeta(testMeta, "", senderPkString, paramUpdaterPub, senderPrivString, 100)
+
+	params.ExtraRegtestParamUpdaterKeys[MakePkMapKey(paramUpdaterPkBytes)] = true
+	// Param Updater set min fee rate to 101 nanos per KB
+	{
+		_updateGlobalParamsEntryWithTestMeta(
+			testMeta,
+			feeRateNanosPerKb,
+			paramUpdaterPub,
+			paramUpdaterPriv,
+			-1, int64(feeRateNanosPerKb), -1, -1,
+			-1, /*maxCopiesPerNFT*/
+		)
+	}
+
+	m0PKID := DBGetPKIDEntryForPublicKey(db, chain.snapshot, m0PkBytes)
+	m1PKID := DBGetPKIDEntryForPublicKey(db, chain.snapshot, m1PkBytes)
+	m2PKID := DBGetPKIDEntryForPublicKey(db, chain.snapshot, m2PkBytes)
+	m4PKID := DBGetPKIDEntryForPublicKey(db, chain.snapshot, m4PkBytes)
+	_, _, _, _ = m0PKID, m1PKID, m2PKID, m4PKID
+
+	// Create a profile for m0.
+	{
+		_updateProfileWithTestMeta(
+			testMeta,
+			feeRateNanosPerKb, /*feeRateNanosPerKB*/
+			m0Pub,             /*updaterPkBase58Check*/
+			m0Priv,            /*updaterPrivBase58Check*/
+			[]byte{},          /*profilePubKey*/
+			"m0",              /*newUsername*/
+			"i am the m0",     /*newDescription*/
+			shortPic,          /*newProfilePic*/
+			10*100,            /*newCreatorBasisPoints*/
+			1.25*100*100,      /*newStakeMultipleBasisPoints*/
+			false,             /*isHidden*/
+		)
+	}
+
+	// Mint DAO coins and transfer to m1.
+	{
+		daoCoinMintMetadata := DAOCoinMetadata{
+			ProfilePublicKey: m0PkBytes,
+			OperationType:    DAOCoinOperationTypeMint,
+			CoinsToMintNanos: *uint256.NewInt().SetUint64(1e4),
+		}
+
+		_daoCoinTxnWithTestMeta(testMeta, feeRateNanosPerKb, m0Pub, m0Priv, daoCoinMintMetadata)
+
+		daoCoinTransferMetadata := DAOCoinTransferMetadata{
+			ProfilePublicKey:       m0PkBytes,
+			DAOCoinToTransferNanos: *uint256.NewInt().SetUint64(3000),
+			ReceiverPublicKey:      m1PkBytes,
+		}
+
+		_daoCoinTransferTxnWithTestMeta(testMeta, feeRateNanosPerKb, m0Pub, m0Priv, daoCoinTransferMetadata)
+	}
+
+	// Helpers
+	type User struct {
+		Pub       string
+		Priv      string
+		PkBytes   []byte
+		PublicKey *PublicKey
+		Pkid      *PKID
+	}
+	//
+	//deso := User{
+	//	PublicKey: &ZeroPublicKey,
+	//	Pkid:      &ZeroPKID,
+	//}
+
+	m0 := User{
+		Pub:       m0Pub,
+		Priv:      m0Priv,
+		PkBytes:   m0PkBytes,
+		PublicKey: NewPublicKey(m0PkBytes),
+		Pkid:      DBGetPKIDEntryForPublicKey(db, chain.snapshot, m0PkBytes).PKID,
+	}
+
+	m1 := User{
+		Pub:       m1Pub,
+		Priv:      m1Priv,
+		PkBytes:   m1PkBytes,
+		PublicKey: NewPublicKey(m1PkBytes),
+		Pkid:      DBGetPKIDEntryForPublicKey(db, chain.snapshot, m1PkBytes).PKID,
+	}
+	submitOrder := func(user User, metadata DAOCoinLimitOrderMetadata) {
+		// Create txn.
+		txn, _, _, _, err := chain.CreateDAOCoinLimitOrderTxn(
+			user.PkBytes,
+			&metadata,
+			feeRateNanosPerKb,
+			mempool,
+			[]*DeSoOutput{})
+		require.NoError(err)
+
+		// Sign txn.
+		_signTxn(t, txn, user.Priv)
+
+		// Connect txn.
+		_, err = mempool.ProcessTransaction(txn, false, false, 0, true)
+		require.NoError(err)
+	}
+
+	submitOrderWithError := func(user User, metadata DAOCoinLimitOrderMetadata) error {
+		// Create txn.
+		txn, _, _, _, err := chain.CreateDAOCoinLimitOrderTxn(
+			user.PkBytes,
+			&metadata,
+			feeRateNanosPerKb,
+			mempool,
+			[]*DeSoOutput{})
+		if err != nil {
+			return err
+		}
+
+		// Sign txn.
+		_signTxn(t, txn, user.Priv)
+
+		// Connect txn.
+		_, err = mempool.ProcessTransaction(txn, false, false, 0, true)
+		return err
+	}
+
+	// Store how many $DESO and DAO coin units will be transferred.
+	daoCoinQuantityChange := uint256.NewInt().SetUint64(100)
+	//desoQuantityChange := uint256.NewInt().SetUint64(10)
+
+	// Construct metadata for a m0 limit order:
+	//   * Buying: 	 DAO coin
+	//   * Selling:  $DESO
+	//   * Price: 	 0.1 $DESO / DAO coin
+	//   * Quantity: 100 DAO coins
+	exchangeRate, err := CalculateScaledExchangeRate(0.1)
+	require.NoError(err)
+	metadataM0 := DAOCoinLimitOrderMetadata{
+		BuyingDAOCoinCreatorPublicKey:             NewPublicKey(m0PkBytes),
+		SellingDAOCoinCreatorPublicKey:            &ZeroPublicKey,
+		ScaledExchangeRateCoinsToSellPerCoinToBuy: exchangeRate,
+		QuantityToFillInBaseUnits:                 daoCoinQuantityChange,
+		OperationType:                             DAOCoinLimitOrderOperationTypeBID,
+		FillType:                                  DAOCoinLimitOrderFillTypeGoodTillCancelled,
+	}
+
+	// m0 submits limit order buying 100 DAO coin units @ 0.1 $DESO / DAO coin.
+	// Happy path: update quantity and resubmit. m0's order should be stored.
+	{
+		// Perform txn.
+		submitOrder(m0, metadataM0)
+	}
+
+	// m1 submits limit order buying 100 DAO coin units @ 0.01 $DESO / DAO coin.
+
+	exchangeRateM1, err := CalculateScaledExchangeRate(0.01)
+	require.NoError(err)
+	metadataM1 := DAOCoinLimitOrderMetadata{
+		BuyingDAOCoinCreatorPublicKey:             NewPublicKey(m0PkBytes),
+		SellingDAOCoinCreatorPublicKey:            &ZeroPublicKey,
+		ScaledExchangeRateCoinsToSellPerCoinToBuy: exchangeRateM1,
+		QuantityToFillInBaseUnits:                 daoCoinQuantityChange,
+		OperationType:                             DAOCoinLimitOrderOperationTypeBID,
+		FillType:                                  DAOCoinLimitOrderFillTypeGoodTillCancelled,
+	}
+
+	// m1 submits limit order buying 100 DAO coin units @ 0.01 $DESO / DAO coin.
+	// Happy path: update quantity and resubmit. m1's order should be stored in the mempool
+	// not in the db
+	{
+
+		submitOrder(m1, metadataM1)
+	}
+
+	// m1 submits limit order selling 100 DAO coin units @ 0.01 $DESO / DAO coin.
+	// If m0s order didn't exist, it would match against m1's order, which is not allowed.
+	// However, we were previously too strict with the check and would reject m1's order
+	// even though it would get filled before matching their own order.
+	// * Buying: $DESO
+	// * Selling: DAO coin
+	// * Price: 100 DAO coin / $DESO = 0.01 $DESO / DAO coin
+	// * Quantity: 10 $DESO
+	exchangeRateM1Sale, err := CalculateScaledExchangeRate(100)
+	metadataM1Sell := DAOCoinLimitOrderMetadata{
+		BuyingDAOCoinCreatorPublicKey:             &ZeroPublicKey,
+		SellingDAOCoinCreatorPublicKey:            NewPublicKey(m0PkBytes),
+		ScaledExchangeRateCoinsToSellPerCoinToBuy: exchangeRateM1Sale,
+		QuantityToFillInBaseUnits:                 uint256.NewInt().SetUint64(10),
+		OperationType:                             DAOCoinLimitOrderOperationTypeBID,
+		FillType:                                  DAOCoinLimitOrderFillTypeGoodTillCancelled,
+	}
+	{
+		err = submitOrderWithError(m1, metadataM1Sell)
+		require.Error(err)
+		require.Contains(err.Error(), RuleErrorDAOCoinLimitOrderMatchingOwnOrder)
+	}
+
+	{
+		params.ForkHeights.FixOrderBookSkipInvalidMatchesBlockHeight = uint32(0)
+		submitOrder(m1, metadataM1Sell)
+	}
+}
+
 func TestComputeBaseUnitsToBuyUint256(t *testing.T) {
 	require := require.New(t)
 

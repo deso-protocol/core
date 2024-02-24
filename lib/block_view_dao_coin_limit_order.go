@@ -1041,12 +1041,18 @@ func (bav *UtxoView) GetNextLimitOrdersToFill(
 		// It just means that the matching order isn't actually a viable match.
 		err := bav.IsValidDAOCoinLimitOrderMatch(transactorOrder, matchingOrder)
 		if err != nil {
-			// If matching own order, fail immediately. Otherwise just skip this order.
-			if err == RuleErrorDAOCoinLimitOrderMatchingOwnOrder {
-				return nil, err
-			}
+			if blockHeight >= bav.Params.ForkHeights.FixOrderBookSkipInvalidMatchesBlockHeight {
+				if err != RuleErrorDAOCoinLimitOrderMatchingOwnOrder {
+					continue
+				}
+			} else {
+				// If matching own order, fail immediately. Otherwise just skip this order.
+				if err == RuleErrorDAOCoinLimitOrderMatchingOwnOrder {
+					return nil, err
+				}
 
-			continue
+				continue
+			}
 		}
 
 		// We should have seen this order already.
@@ -1068,6 +1074,13 @@ func (bav *UtxoView) GetNextLimitOrdersToFill(
 	transactorOrderQuantityToFill := transactorOrder.QuantityToFillInBaseUnits.Clone()
 
 	for _, matchingOrder := range sortedMatchingOrders {
+		if blockHeight >= bav.Params.ForkHeights.FixOrderBookSkipInvalidMatchesBlockHeight {
+			// Skip invalid matches. This should only happen if matching against your own order.
+			err = bav.IsValidDAOCoinLimitOrderMatch(transactorOrder, matchingOrder)
+			if err != nil {
+				return nil, err
+			}
+		}
 		outputMatchingOrders = append(outputMatchingOrders, matchingOrder)
 
 		// Calculate transactor's updated quantity
