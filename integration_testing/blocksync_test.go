@@ -2,11 +2,12 @@ package integration_testing
 
 import (
 	"fmt"
+	"os"
+	"testing"
+
 	"github.com/deso-protocol/core/cmd"
 	"github.com/deso-protocol/core/lib"
 	"github.com/stretchr/testify/require"
-	"os"
-	"testing"
 )
 
 // TestSimpleBlockSync test if a node can successfully sync from another node:

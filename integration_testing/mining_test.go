@@ -1,11 +1,12 @@
 package integration_testing
 
 import (
+	"os"
+	"testing"
+
 	"github.com/deso-protocol/core/cmd"
 	"github.com/deso-protocol/core/lib"
 	"github.com/stretchr/testify/require"
-	"os"
-	"testing"
 )
 
 // TestSimpleBlockSync test if a node can mine blocks on regtest

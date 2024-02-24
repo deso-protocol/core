@@ -2,11 +2,12 @@ package integration_testing
 
 import (
 	"fmt"
+	"os"
+	"testing"
+
 	"github.com/deso-protocol/core/cmd"
 	"github.com/deso-protocol/core/lib"
 	"github.com/stretchr/testify/require"
-	"os"
-	"testing"
 )
 
 // TestSimpleHyperSync test if a node can successfully hyper sync from another node:
