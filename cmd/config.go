@@ -55,6 +55,12 @@ type Config struct {
 	MempoolFeeEstimatorNumPastBlocks        uint64
 	AugmentedBlockViewRefreshIntervalMillis uint64
 
+	// Mempool Fee Estimator
+	MempoolCongestionFactorBasisPoints      uint64
+	MempoolPriorityPercentileBasisPoints    uint64
+	PastBlocksCongestionFactorBasisPoints   uint64
+	PastBlocksPriorityPercentileBasisPoints uint64
+
 	// Mining
 	MinerPublicKeys  []string
 	NumMiningThreads uint64
@@ -131,6 +137,12 @@ func LoadConfig() *Config {
 	config.MempoolFeeEstimatorNumMempoolBlocks = viper.GetUint64("mempool-fee-estimator-num-mempool-blocks")
 	config.MempoolFeeEstimatorNumPastBlocks = viper.GetUint64("mempool-fee-estimator-num-past-blocks")
 	config.AugmentedBlockViewRefreshIntervalMillis = viper.GetUint64("augmented-block-view-refresh-interval-millis")
+
+	// Mempool Fee Estimator
+	config.MempoolCongestionFactorBasisPoints = viper.GetUint64("mempool-congestion-factor-basis-points")
+	config.MempoolPriorityPercentileBasisPoints = viper.GetUint64("mempool-priority-percentile-basis-points")
+	config.PastBlocksCongestionFactorBasisPoints = viper.GetUint64("past-blocks-congestion-factor-basis-points")
+	config.PastBlocksPriorityPercentileBasisPoints = viper.GetUint64("past-blocks-priority-percentile-basis-points")
 
 	// Peers
 	config.ConnectIPs = viper.GetStringSlice("connect-ips")
