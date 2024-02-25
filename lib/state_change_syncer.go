@@ -722,13 +722,21 @@ func (stateChangeSyncer *StateChangeSyncer) SyncMempoolToStateSyncer(server *Ser
 	fmt.Printf("*** Flushed entries in %v\n", time.Since(stateChangeSyncer.LastTime))
 	stateChangeSyncer.LastTime = time.Now()
 
+	// Capture how long it takes collectively to connect all transactions.
+	var totalConnectTime time.Duration
+	var totalEmitTxnTime time.Duration
+	var totalEmitUtxoOpTime time.Duration
+
 	for _, mempoolTx := range mempoolTxns {
+		connectStartTime := time.Now()
 		utxoOpsForTxn, _, _, _, err := mempoolTxUtxoView.ConnectTransaction(
 			mempoolTx.Tx, mempoolTx.Hash, 0, uint32(blockHeight+1), false, false /*ignoreUtxos*/)
 		if err != nil {
 			return false, errors.Wrapf(err, "StateChangeSyncer.SyncMempoolToStateSyncer ConnectTransaction: ")
 		}
+		totalConnectTime += time.Since(connectStartTime)
 
+		emitTxnStartTime := time.Now()
 		// Emit transaction state change.
 		mempoolUtxoView.EventManager.stateSyncerOperation(&StateSyncerOperationEvent{
 			StateChangeEntry: &StateChangeEntry{
@@ -739,6 +747,7 @@ func (stateChangeSyncer *StateChangeSyncer) SyncMempoolToStateSyncer(server *Ser
 			FlushId:      uuid.Nil,
 			IsMempoolTxn: true,
 		})
+		totalEmitTxnTime += time.Since(emitTxnStartTime)
 
 		// Capture the utxo ops for the transaction in a UTXOOp bundle.
 		utxoOpBundle := &UtxoOperationBundle{
@@ -747,6 +756,7 @@ func (stateChangeSyncer *StateChangeSyncer) SyncMempoolToStateSyncer(server *Ser
 
 		utxoOpBundle.UtxoOpBundle = append(utxoOpBundle.UtxoOpBundle, utxoOpsForTxn)
 
+		emitUtxoOpStartTime := time.Now()
 		// Emit UTXOOp bundle event
 		mempoolUtxoView.EventManager.stateSyncerOperation(&StateSyncerOperationEvent{
 			StateChangeEntry: &StateChangeEntry{
@@ -757,7 +767,12 @@ func (stateChangeSyncer *StateChangeSyncer) SyncMempoolToStateSyncer(server *Ser
 			FlushId:      uuid.Nil,
 			IsMempoolTxn: true,
 		})
+		totalEmitUtxoOpTime += time.Since(emitUtxoOpStartTime)
 	}
+
+	fmt.Printf("*** Connected Txns in %v\n", totalConnectTime)
+	fmt.Printf("*** Emitted Txns in %v\n", totalEmitTxnTime)
+	fmt.Printf("*** Emitted UtxoOps in %v\n", totalEmitUtxoOpTime)
 
 	fmt.Printf("*** Looped through Txns in %v\n", time.Since(stateChangeSyncer.LastTime))
 	stateChangeSyncer.LastTime = time.Now()
@@ -810,7 +825,7 @@ func (stateChangeSyncer *StateChangeSyncer) StartMempoolSyncRoutine(server *Serv
 			if err != nil {
 				glog.Errorf("StateChangeSyncer.StartMempoolSyncRoutine: Error syncing mempool to state syncer: %v", err)
 			} else {
-				fmt.Printf("*** Synced mempool to state syncer in %v\n", time.Since(stateChangeSyncer.StartTime))
+				fmt.Printf("\n*** Synced mempool to state syncer in %v\n\n", time.Since(stateChangeSyncer.StartTime))
 			}
 		}
 	}()
