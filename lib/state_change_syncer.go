@@ -258,6 +258,9 @@ type StateChangeSyncer struct {
 	// of each entry, the consumer only has to sync the most recent version of each entry.
 	// BlocksyncCompleteEntriesFlushed is used to track whether this one time flush has been completed.
 	BlocksyncCompleteEntriesFlushed bool
+
+	StartTime time.Time
+	LastTime  time.Time
 }
 
 // Open a file, create if it doesn't exist.
@@ -640,6 +643,9 @@ func (stateChangeSyncer *StateChangeSyncer) SyncMempoolToStateSyncer(server *Ser
 		return false, errors.Wrapf(err, "StateChangeSyncer.SyncMempoolToStateSyncer: ")
 	}
 
+	fmt.Printf("*** Got mempool UTXO View in %v\n", time.Since(stateChangeSyncer.StartTime))
+	stateChangeSyncer.LastTime = time.Now()
+
 	// Create a copy of the event manager, assign it to this utxo view.
 	mempoolEventManager := *mempoolUtxoView.EventManager
 
@@ -666,6 +672,9 @@ func (stateChangeSyncer *StateChangeSyncer) SyncMempoolToStateSyncer(server *Ser
 
 	err = mempoolUtxoView.FlushToDbWithTxn(txn, uint64(server.blockchain.bestChain[len(server.blockchain.bestChain)-1].Height))
 
+	fmt.Printf("*** Flushed entries to db in %v\n", time.Since(stateChangeSyncer.LastTime))
+	stateChangeSyncer.LastTime = time.Now()
+
 	mempoolTxUtxoView, err := NewUtxoView(server.blockchain.db, server.blockchain.params, server.blockchain.postgres, nil, &mempoolEventManager)
 	if err != nil {
 		return false, errors.Wrapf(err, "StateChangeSyncer.SyncMempoolToStateSyncer: CreateMempoolTxUtxoView: ")
@@ -684,6 +693,9 @@ func (stateChangeSyncer *StateChangeSyncer) SyncMempoolToStateSyncer(server *Ser
 		})
 		return false, errors.Wrapf(err, "StateChangeSyncer.SyncMempoolToStateSyncer: ")
 	}
+
+	fmt.Printf("*** Flushed entries in %v\n", time.Since(stateChangeSyncer.StartTime))
+	stateChangeSyncer.LastTime = time.Now()
 
 	for _, mempoolTx := range mempoolTxns {
 		utxoOpsForTxn, _, _, _, err := mempoolTxUtxoView.ConnectTransaction(
@@ -722,6 +734,9 @@ func (stateChangeSyncer *StateChangeSyncer) SyncMempoolToStateSyncer(server *Ser
 		})
 	}
 
+	fmt.Printf("*** Looped through Txns in %v\n", time.Since(stateChangeSyncer.StartTime))
+	stateChangeSyncer.LastTime = time.Now()
+
 	// Before flushing the mempool to the state change file, check if a block has mined. If so, abort the flush.
 	if err != nil || originalCommittedFlushId != stateChangeSyncer.BlockSyncFlushId {
 		mempoolUtxoView.EventManager.stateSyncerFlushed(&StateSyncerFlushedEvent{
@@ -738,6 +753,9 @@ func (stateChangeSyncer *StateChangeSyncer) SyncMempoolToStateSyncer(server *Ser
 		IsMempoolFlush:   true,
 		BlockSyncFlushId: originalCommittedFlushId,
 	})
+
+	fmt.Printf("*** Flushed Txns in %v\n", time.Since(stateChangeSyncer.StartTime))
+	stateChangeSyncer.LastTime = time.Now()
 
 	return false, nil
 }
@@ -760,14 +778,14 @@ func (stateChangeSyncer *StateChangeSyncer) StartMempoolSyncRoutine(server *Serv
 			// Sleep for a short while to avoid a tight loop.
 			time.Sleep(5 * time.Millisecond)
 			// Get the current time.
-			currentTime := time.Now()
+			stateChangeSyncer.StartTime = time.Now()
 			var err error
 			// If the mempool is not empty, sync the mempool to the state syncer.
 			mempoolClosed, err = stateChangeSyncer.SyncMempoolToStateSyncer(server)
 			if err != nil {
 				glog.Errorf("StateChangeSyncer.StartMempoolSyncRoutine: Error syncing mempool to state syncer: %v", err)
 			} else {
-				fmt.Printf("*** Synced mempool to state syncer in %v\n", time.Since(currentTime))
+				fmt.Printf("*** Synced mempool to state syncer in %v\n", time.Since(stateChangeSyncer.StartTime))
 			}
 		}
 	}()
