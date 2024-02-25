@@ -10,6 +10,7 @@ import (
 	"github.com/pkg/errors"
 	"os"
 	"path/filepath"
+	"strconv"
 	"sync"
 	"time"
 )
@@ -456,6 +457,25 @@ func (stateChangeSyncer *StateChangeSyncer) _handleStateSyncerOperation(event *S
 	stateChangeSyncer.addTransactionToQueue(stateChangeEntry.FlushId, writeBytes)
 }
 
+func parseMempoolTxKey(mempoolTxKeyString string) (StateSyncerOperationType, []byte, error) {
+	if len(mempoolTxKeyString) < 1 {
+		return 0, nil, fmt.Errorf("input string is too short")
+	}
+
+	// Assuming the operationType is stored as the first character
+	operationTypeRune := mempoolTxKeyString[0]
+	operationTypeInt, err := strconv.Atoi(string(operationTypeRune))
+	if err != nil {
+		return 0, nil, fmt.Errorf("failed to parse operation type: %w", err)
+	}
+	operationType := StateSyncerOperationType(operationTypeInt)
+
+	// The rest of the string are the key bytes
+	keyBytes := []byte(mempoolTxKeyString[1:])
+
+	return operationType, keyBytes, nil
+}
+
 // _handleStateSyncerFlush is called when a Badger db flush takes place. It calls a helper function that takes the bytes that
 // have been cached on the StateChangeSyncer and writes them to the state change file.
 func (stateChangeSyncer *StateChangeSyncer) _handleStateSyncerFlush(event *StateSyncerFlushedEvent) {
@@ -479,6 +499,11 @@ func (stateChangeSyncer *StateChangeSyncer) _handleStateSyncerFlush(event *State
 			// If any of the keys that the mempool is currently tracking weren't included in the flush, the state syncer
 			// mempool is bad and needs to be reset.
 			if _, ok := stateChangeSyncer.MempoolFlushKeySet[key]; !ok {
+				fmt.Printf("***Resetting mempool due to key %v not being in the flush set\n", key)
+				keyBytes, opType, err := parseMempoolTxKey(key)
+				if err == nil {
+					fmt.Printf("Key: %v, OpType: %v\n", keyBytes, opType)
+				}
 				stateChangeSyncer.ResetMempool()
 				return
 			}
@@ -694,7 +719,7 @@ func (stateChangeSyncer *StateChangeSyncer) SyncMempoolToStateSyncer(server *Ser
 		return false, errors.Wrapf(err, "StateChangeSyncer.SyncMempoolToStateSyncer: ")
 	}
 
-	fmt.Printf("*** Flushed entries in %v\n", time.Since(stateChangeSyncer.StartTime))
+	fmt.Printf("*** Flushed entries in %v\n", time.Since(stateChangeSyncer.LastTime))
 	stateChangeSyncer.LastTime = time.Now()
 
 	for _, mempoolTx := range mempoolTxns {
@@ -734,7 +759,7 @@ func (stateChangeSyncer *StateChangeSyncer) SyncMempoolToStateSyncer(server *Ser
 		})
 	}
 
-	fmt.Printf("*** Looped through Txns in %v\n", time.Since(stateChangeSyncer.StartTime))
+	fmt.Printf("*** Looped through Txns in %v\n", time.Since(stateChangeSyncer.LastTime))
 	stateChangeSyncer.LastTime = time.Now()
 
 	// Before flushing the mempool to the state change file, check if a block has mined. If so, abort the flush.
@@ -754,7 +779,7 @@ func (stateChangeSyncer *StateChangeSyncer) SyncMempoolToStateSyncer(server *Ser
 		BlockSyncFlushId: originalCommittedFlushId,
 	})
 
-	fmt.Printf("*** Flushed Txns in %v\n", time.Since(stateChangeSyncer.StartTime))
+	fmt.Printf("*** Flushed Txns in %v\n", time.Since(stateChangeSyncer.LastTime))
 	stateChangeSyncer.LastTime = time.Now()
 
 	return false, nil
