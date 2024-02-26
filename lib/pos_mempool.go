@@ -51,6 +51,14 @@ type Mempool interface {
 		pastBlocksPriorityPercentileBasisPoints uint64,
 		maxBlockSize uint64,
 	) (uint64, error)
+	EstimateFeeRate(
+		minFeeRateNanosPerKB uint64,
+		mempoolCongestionFactorBasisPoints uint64,
+		mempoolPriorityPercentileBasisPoints uint64,
+		pastBlocksCongestionFactorBasisPoints uint64,
+		pastBlocksPriorityPercentileBasisPoints uint64,
+		maxBlockSize uint64,
+	) (uint64, error)
 }
 
 type MempoolIterator interface {
@@ -911,8 +919,19 @@ func (mp *PosMempool) EstimateFee(txn *MsgDeSoTxn,
 	pastBlocksCongestionFactorBasisPoints uint64,
 	pastBlocksPriorityPercentileBasisPoints uint64,
 	maxBlockSize uint64) (uint64, error) {
-	// TODO: replace MaxBasisPoints with variables configured by flags.
 	return mp.feeEstimator.EstimateFee(
 		txn, mempoolCongestionFactorBasisPoints, mempoolPriorityPercentileBasisPoints,
+		pastBlocksCongestionFactorBasisPoints, pastBlocksPriorityPercentileBasisPoints, maxBlockSize)
+}
+
+func (mp *PosMempool) EstimateFeeRate(
+	_ uint64,
+	mempoolCongestionFactorBasisPoints uint64,
+	mempoolPriorityPercentileBasisPoints uint64,
+	pastBlocksCongestionFactorBasisPoints uint64,
+	pastBlocksPriorityPercentileBasisPoints uint64,
+	maxBlockSize uint64) (uint64, error) {
+	return mp.feeEstimator.EstimateFeeRateNanosPerKB(
+		mempoolCongestionFactorBasisPoints, mempoolPriorityPercentileBasisPoints,
 		pastBlocksCongestionFactorBasisPoints, pastBlocksPriorityPercentileBasisPoints, maxBlockSize)
 }
