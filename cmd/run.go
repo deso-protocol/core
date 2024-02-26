@@ -106,6 +106,20 @@ func SetupRunFlags(cmd *cobra.Command) {
 		"The frequency in milliseconds with which the augmented block view will be refreshed. "+
 			"The default value is 100 milliseconds.")
 
+	// TODO: what are the proper defaults here?
+	cmd.PersistentFlags().Uint64("mempool-congestion-factor-basis-points", lib.MaxBasisPoints,
+		"The congestion factor (in basis points) applied to the mempool used when computing fee rate. "+
+			"Defaults to 10000, which is 100%")
+	cmd.PersistentFlags().Uint64("mempool-priority-percentile-basis-points", lib.MaxBasisPoints,
+		"The priority percentile (in basis points) of the mempool used when computing fee rate. "+
+			"Defaults to 10000, which is 100%")
+	cmd.PersistentFlags().Uint64("past-blocks-congestion-factor-basis-points", lib.MaxBasisPoints,
+		"The congestion factor (in basis points) applied to the past blocks used when computing fee rate. "+
+			"Defaults to 10000, which is 100%")
+	cmd.PersistentFlags().Uint64("past-blocks-priority-percentile-basis-points", lib.MaxBasisPoints,
+		"The priority percentile (in basis points) of the past blocks used when computing fee rate. "+
+			"Defaults to 10000, which is 100%")
+
 	// Peers
 	cmd.PersistentFlags().StringSlice("connect-ips", []string{},
 		"A comma-separated list of ip:port addresses that we should connect to on startup. "+

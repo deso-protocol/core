@@ -409,6 +409,10 @@ func NewServer(
 	_augmentedBlockViewRefreshIntervalMillis uint64,
 	_posBlockProductionIntervalMilliseconds uint64,
 	_posTimeoutBaseDurationMilliseconds uint64,
+	_mempoolCongestionFactorBasisPoints uint64,
+	_mempoolPriorityPercentileBasisPoints uint64,
+	_pastBlocksCongestionFactorBasisPoints uint64,
+	_pastBlocksPriorityPercentileBasisPoints uint64,
 ) (
 	_srv *Server,
 	_err error,
