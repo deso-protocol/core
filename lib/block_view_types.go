@@ -682,7 +682,8 @@ const (
 	OperationTypeStakeDistributionRestake      OperationType = 49
 	OperationTypeStakeDistributionPayToBalance OperationType = 50
 	OperationTypeSetValidatorLastActiveAtEpoch OperationType = 51
-	// NEXT_TAG = 52
+	OperationTypeFailingTxn                    OperationType = 52
+	// NEXT_TAG = 53
 )
 
 func (op OperationType) String() string {
