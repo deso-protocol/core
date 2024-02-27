@@ -1502,24 +1502,27 @@ func (srv *Server) _handleSnapshot(pp *Peer, msg *MsgDeSoSnapshotData) {
 	// already synced all the state corresponding to the sub-blockchain ending at the snapshot
 	// height, we will now mark all these blocks as processed. To do so, we will iterate through
 	// the blockNodes in the header chain and set them in the blockchain data structures.
-	err = srv.blockchain.db.Update(func(txn *badger.Txn) error {
-		for ii := uint64(1); ii <= srv.HyperSyncProgress.SnapshotMetadata.SnapshotBlockHeight; ii++ {
-			currentNode := srv.blockchain.bestHeaderChain[ii]
-			// Do not set the StatusBlockStored flag, because we still need to download the past blocks.
-			currentNode.Status |= StatusBlockProcessed
-			currentNode.Status |= StatusBlockValidated
-			srv.blockchain.addNewBlockNodeToBlockIndex(currentNode)
-			srv.blockchain.bestChainMap[*currentNode.Hash] = currentNode
-			srv.blockchain.bestChain = append(srv.blockchain.bestChain, currentNode)
-			err = PutHeightHashToNodeInfoWithTxn(txn, srv.snapshot, currentNode, false /*bitcoinNodes*/, srv.eventManager)
-			if err != nil {
-				return err
-			}
+	//err = srv.blockchain.db.Update(func(txn *badger.Txn) error {
+	for ii := uint64(1); ii <= srv.HyperSyncProgress.SnapshotMetadata.SnapshotBlockHeight; ii++ {
+		currentNode := srv.blockchain.bestHeaderChain[ii]
+		// Do not set the StatusBlockStored flag, because we still need to download the past blocks.
+		currentNode.Status |= StatusBlockProcessed
+		currentNode.Status |= StatusBlockValidated
+		srv.blockchain.addNewBlockNodeToBlockIndex(currentNode)
+		srv.blockchain.bestChainMap[*currentNode.Hash] = currentNode
+		srv.blockchain.bestChain = append(srv.blockchain.bestChain, currentNode)
+		err = PutHeightHashToNodeInfo(srv.blockchain.db, srv.snapshot, currentNode, false /*bitcoinNodes*/, srv.eventManager)
+		if err != nil {
+			glog.Errorf("Server._handleSnapshot: Problem putting height hash to node info: %v", err)
+			return
 		}
-		// We will also set the hash of the block at snapshot height as the best chain hash.
-		err = PutBestHashWithTxn(txn, srv.snapshot, msg.SnapshotMetadata.CurrentEpochBlockHash, ChainTypeDeSoBlock, srv.eventManager)
-		return err
-	})
+	}
+	// We will also set the hash of the block at snapshot height as the best chain hash.
+	err = PutBestHash(srv.blockchain.db, srv.snapshot, msg.SnapshotMetadata.CurrentEpochBlockHash, ChainTypeDeSoBlock, srv.eventManager)
+	if err != nil {
+		glog.Errorf("Server._handleSnapshot: Problem putting best hash with txn: %v", err)
+		return
+	}
 
 	if err != nil {
 		glog.Errorf("Server._handleSnapshot: Problem updating snapshot blocknodes, error: (%v)", err)
