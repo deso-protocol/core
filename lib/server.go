@@ -1028,6 +1028,11 @@ func (srv *Server) _handleHeaderBundle(pp *Peer, msg *MsgDeSoHeaderBundle) {
 			if srv.cmgr.HyperSync {
 				bestHeaderHeight := uint64(srv.blockchain.headerTip().Height)
 				expectedSnapshotHeight := bestHeaderHeight - (bestHeaderHeight % srv.snapshot.SnapshotBlockHeightPeriod)
+				// The peer's snapshot block height period before the first PoS fork height is expected to be the
+				// PoW default value. After the fork height, it's expected to be the value defined in the params.
+				if bestHeaderHeight < uint64(srv.params.ForkHeights.ProofOfStake1StateSetupBlockHeight) {
+					expectedSnapshotHeight = bestHeaderHeight - (bestHeaderHeight % srv.params.DefaultPoWSnapshotBlockHeightPeriod)
+				}
 				srv.blockchain.snapshot.Migrations.CleanupMigrations(expectedSnapshotHeight)
 
 				if len(srv.HyperSyncProgress.PrefixProgress) != 0 {
