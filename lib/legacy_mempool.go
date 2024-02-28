@@ -286,6 +286,8 @@ func (mp *DeSoMempool) UpdateGlobalParams(globalParams *GlobalParamsEntry) {
 }
 
 func (mp *DeSoMempool) GetOrderedTransactions() []*MempoolTx {
+	mp.mtx.RLock()
+	defer mp.mtx.RUnlock()
 	orderedTxns, _, _ := mp.GetTransactionsOrderedByTimeAdded()
 	return orderedTxns
 }
