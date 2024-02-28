@@ -2700,6 +2700,7 @@ func (bc *Blockchain) processBlockPoW(desoBlock *MsgDeSoBlock, verifySignatures 
 	return isMainChain, false, nil
 }
 
+// DEPRECATED: This function is no longer used in PoS.
 // DisconnectBlocksToHeight will rollback blocks from the db and blockchain structs until block tip reaches the provided
 // blockHeight parameter.
 func (bc *Blockchain) DisconnectBlocksToHeight(blockHeight uint64, snap *Snapshot) error {

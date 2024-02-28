@@ -519,6 +519,7 @@ func (snap *Snapshot) Stop() {
 	// It's important!!!
 }
 
+// DEPRECATED: This function is no longer used in PoS.
 // ForceResetToLastSnapshot is a doomsday scenario recovery mode. It will be triggered if the node was shutdown midway,
 // resulting in a corrupted ancestral records or checksum. To recover from this situation, we will revert to the beginning
 // of the current snapshot epoch. We do this by disconnecting blocks from the tip to the epoch's start and resetting the checksum.
