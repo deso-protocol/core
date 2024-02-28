@@ -4037,6 +4037,7 @@ func (bav *UtxoView) _connectFailingTransaction(txn *MsgDeSoTxn, blockHeight uin
 			"spending balance")
 	}
 	utxoOps = append(utxoOps, feeUtxoOp)
+	utxoOps = append(utxoOps, &UtxoOperation{Type: OperationTypeFailingTxn})
 
 	// If verifySignatures is passed, we check transaction signature.
 	if verifySignatures {
