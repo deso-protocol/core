@@ -5220,6 +5220,17 @@ func PutHeightHashToNodeInfoWithTxn(txn *badger.Txn, snap *Snapshot,
 	return nil
 }
 
+func PutHeightHashToNodeInfoBatchWithTxn(txn *badger.Txn, snap *Snapshot,
+	nodes []*BlockNode, bitcoinNodes bool, eventManager *EventManager) error {
+
+	for _, node := range nodes {
+		if err := PutHeightHashToNodeInfoWithTxn(txn, snap, node, bitcoinNodes, eventManager); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func PutHeightHashToNodeInfo(handle *badger.DB, snap *Snapshot, node *BlockNode, bitcoinNodes bool, eventManager *EventManager) error {
 	err := handle.Update(func(txn *badger.Txn) error {
 		return PutHeightHashToNodeInfoWithTxn(txn, snap, node, bitcoinNodes, eventManager)
