@@ -2129,24 +2129,6 @@ func _computeBitcoinExchangeFields(params *DeSoParams,
 	}, PkToString(publicKey.SerializeCompressed(), params), nil
 }
 
-func ConnectTxnAndComputeTransactionMetadata(
-	txn *MsgDeSoTxn, utxoView *UtxoView, blockHash *BlockHash,
-	blockHeight uint32, blockTimestampNanoSecs int64, txnIndexInBlock uint64) (*TransactionMetadata, error) {
-
-	totalNanosPurchasedBefore := utxoView.NanosPurchased
-	usdCentsPerBitcoinBefore := utxoView.GetCurrentUSDCentsPerBitcoin()
-	utxoOps, totalInput, totalOutput, fees, err := utxoView._connectTransaction(
-		txn, txn.Hash(), blockHeight, blockTimestampNanoSecs, false, false,
-	)
-	if err != nil {
-		return nil, fmt.Errorf(
-			"UpdateTxindex: Error connecting txn to UtxoView: %v", err)
-	}
-
-	return ComputeTransactionMetadata(txn, utxoView, blockHash, totalNanosPurchasedBefore,
-		usdCentsPerBitcoinBefore, totalInput, totalOutput, fees, txnIndexInBlock, utxoOps, uint64(blockHeight)), nil
-}
-
 // This is the main function used for adding a new txn to the pool. It will
 // run all needed validation on the txn before adding it, and it will only
 // accept the txn if these validations pass.
