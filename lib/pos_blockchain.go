@@ -61,7 +61,7 @@ func (bc *Blockchain) processHeaderPoS(header *MsgDeSoHeader) (
 
 	// If the incoming header is part of a reorg that uncommits the committed tip from the best chain,
 	// then we exit early. Such headers are invalid and should not be synced.
-	committedBlockchainTip, _ := bc.getCommittedTip()
+	committedBlockchainTip, _ := bc.GetCommittedTip()
 	if committedBlockchainTip != nil && committedBlockchainTip.Header.Height >= header.Height {
 		return false, false, errors.New("processHeaderPoS: Header conflicts with committed tip")
 	}
@@ -1240,7 +1240,7 @@ func (bc *Blockchain) isValidPoSQuorumCertificate(block *MsgDeSoBlock, validator
 // including the committed tip. The first block in the returned slice is the first uncommitted
 // ancestor.
 func (bc *Blockchain) getLineageFromCommittedTip(header *MsgDeSoHeader) ([]*BlockNode, error) {
-	highestCommittedBlock, idx := bc.getCommittedTip()
+	highestCommittedBlock, idx := bc.GetCommittedTip()
 	if idx == -1 || highestCommittedBlock == nil {
 		return nil, errors.New("getLineageFromCommittedTip: No committed blocks found")
 	}
@@ -1588,7 +1588,7 @@ func (bc *Blockchain) runCommitRuleOnBestChain() error {
 		return nil
 	}
 	// Find all uncommitted ancestors of block to commit
-	_, idx := bc.getCommittedTip()
+	_, idx := bc.GetCommittedTip()
 	if idx == -1 {
 		// This is an edge case we'll never hit in practice since all the PoW blocks
 		// are committed.
@@ -1792,7 +1792,7 @@ func (bc *Blockchain) getUtxoViewAtBlockHash(blockHash BlockHash) (*UtxoView, er
 	// If the provided block is committed, we need to make sure it's the committed tip.
 	// Otherwise, we return an error.
 	if currentBlock.IsCommitted() {
-		highestCommittedBlock, _ := bc.getCommittedTip()
+		highestCommittedBlock, _ := bc.GetCommittedTip()
 		if highestCommittedBlock == nil {
 			return nil, errors.Errorf("getUtxoViewAtBlockHash: No committed blocks found")
 		}
@@ -1839,8 +1839,8 @@ func (bc *Blockchain) getUtxoViewAtBlockHash(blockHash BlockHash) (*UtxoView, er
 	return utxoView, nil
 }
 
-// getCommittedTip returns the highest committed block and its index in the best chain.
-func (bc *Blockchain) getCommittedTip() (*BlockNode, int) {
+// GetCommittedTip returns the highest committed block and its index in the best chain.
+func (bc *Blockchain) GetCommittedTip() (*BlockNode, int) {
 	for ii := len(bc.bestChain) - 1; ii >= 0; ii-- {
 		if bc.bestChain[ii].IsCommitted() {
 			return bc.bestChain[ii], ii
@@ -1871,7 +1871,7 @@ func (bc *Blockchain) GetSafeBlocks() ([]*MsgDeSoHeader, error) {
 
 func (bc *Blockchain) getSafeBlockNodes() ([]*BlockNode, error) {
 	// First get committed tip.
-	committedTip, idx := bc.getCommittedTip()
+	committedTip, idx := bc.GetCommittedTip()
 	if idx == -1 || committedTip == nil {
 		return nil, errors.New("getSafeBlockNodes: No committed blocks found")
 	}
