@@ -496,13 +496,23 @@ func NewServer(
 		return nil, errors.Wrapf(err, "NewServer: Problem initializing blockchain"), true
 	}
 
+	headerCumWorkStr := "<nil>"
+	headerCumWork := BigintToHash(_chain.headerTip().CumWork)
+	if headerCumWork != nil {
+		headerCumWorkStr = hex.EncodeToString(headerCumWork[:])
+	}
+	blockCumWorkStr := "<nil>"
+	blockCumWork := BigintToHash(_chain.blockTip().CumWork)
+	if blockCumWork != nil {
+		blockCumWorkStr = hex.EncodeToString(blockCumWork[:])
+	}
 	glog.V(1).Infof("Initialized chain: Best Header Height: %d, Header Hash: %s, Header CumWork: %s, Best Block Height: %d, Block Hash: %s, Block CumWork: %s",
 		_chain.headerTip().Height,
 		hex.EncodeToString(_chain.headerTip().Hash[:]),
-		hex.EncodeToString(BigintToHash(_chain.headerTip().CumWork)[:]),
+		headerCumWorkStr,
 		_chain.blockTip().Height,
 		hex.EncodeToString(_chain.blockTip().Hash[:]),
-		hex.EncodeToString(BigintToHash(_chain.blockTip().CumWork)[:]))
+		blockCumWorkStr)
 
 	nodeServices := SFFullNodeDeprecated
 	if _hyperSync {
