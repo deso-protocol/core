@@ -4047,6 +4047,26 @@ func (bav *UtxoView) _connectFailingTransaction(txn *MsgDeSoTxn, blockHeight uin
 		}
 	}
 
+	if blockHeight >= bav.Params.ForkHeights.DerivedKeyTrackSpendingLimitsBlockHeight {
+		if derivedPkBytes, isDerivedSig, err := IsDerivedSignature(txn, blockHeight); isDerivedSig {
+			if err != nil {
+				return nil, 0, 0, errors.Wrapf(err, "_connectFailingTransaction "+
+					"It looks like this transaction was signed with a derived key, but the signature is malformed: ")
+			}
+			// Now we check the transaction limits on the derived key.
+			// At this point we know that the transaction was signed by a derived key and the signature passes validation
+			// against the provided derived key. We will now verify that the spending limit for this derived key allows for
+			// this transaction, and error otherwise. If everything checks out, we will update the spending limit for this
+			// derived key to reflect the new spending limit after the transaction has been performed.
+			utxoOps, err = bav._checkAndUpdateDerivedKeySpendingLimit(
+				txn, derivedPkBytes, effectiveFee, utxoOps, blockHeight)
+			if err != nil {
+				return nil, 0, 0, errors.Wrapf(err, "_connectFailingTransaction: Problem "+
+					"checking and updating derived key spending limit")
+			}
+		}
+	}
+
 	return utxoOps, burnFee, utilityFee, nil
 }
 
