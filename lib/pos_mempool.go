@@ -115,9 +115,6 @@ type PosMempool struct {
 	// The persister runs on its dedicated thread and events are used to notify the persister thread whenever
 	// transactions are added/removed from the mempool. The persister thread then updates the database accordingly.
 	persister *MempoolPersister
-	// ledger is a simple data structure that keeps track of cumulative transaction fees in the mempool.
-	// The ledger keeps track of how much each user would have spent in fees across all their transactions in the mempool.
-	ledger *BalanceLedger
 	// nonceTracker is responsible for keeping track of a (public key, nonce) -> Txn index. The index is useful in
 	// facilitating a "replace by higher fee" feature. This feature gives users the ability to replace their existing
 	// mempool transaction with a new transaction having the same nonce but higher fee.
@@ -188,7 +185,6 @@ func NewPosMempool() *PosMempool {
 		status:       PosMempoolStatusNotInitialized,
 		txnRegister:  NewTransactionRegister(),
 		feeEstimator: NewPoSFeeEstimator(),
-		ledger:       NewBalanceLedger(),
 		nonceTracker: NewNonceTracker(),
 		quit:         make(chan interface{}),
 	}
@@ -256,7 +252,6 @@ func (mp *PosMempool) Start() error {
 	// Create the transaction register, the ledger, and the nonce tracker,
 	mp.txnRegister = NewTransactionRegister()
 	mp.txnRegister.Init(mp.globalParams)
-	mp.ledger = NewBalanceLedger()
 	mp.nonceTracker = NewNonceTracker()
 
 	// Setup the database and create the persister
@@ -370,7 +365,6 @@ func (mp *PosMempool) Stop() {
 
 	// Reset the transaction register, the ledger, and the nonce tracker.
 	mp.txnRegister.Reset()
-	mp.ledger.Reset()
 	mp.nonceTracker.Reset()
 	mp.feeEstimator = NewPoSFeeEstimator()
 	close(mp.quit)
@@ -477,10 +471,14 @@ func (mp *PosMempool) AddTransaction(mtxn *MempoolTransaction, verifySignature b
 		return fmt.Errorf("PosMempool.AddTransaction: Cannot add a nil transaction")
 	}
 
+	viewToConnectTo, err := mp.getViewToConnectTransactionTo(mtxn)
+	if err != nil {
+		return errors.Wrapf(err, "PosMempool.AddTransaction: Problem getting view to connect transaction to")
+	}
 	// First, validate that the transaction is properly formatted according to BalanceModel. We acquire a read lock on
 	// the mempool. This allows multiple goroutines to safely perform transaction validation concurrently. In particular,
 	// transaction signature verification can be parallelized.
-	if err := mp.validateTransaction(mtxn.GetTxn(), verifySignature); err != nil {
+	if _, err = mp.validateTransaction(mtxn, viewToConnectTo, verifySignature); err != nil {
 		return errors.Wrapf(err, "PosMempool.AddTransaction: Problem verifying transaction")
 	}
 
@@ -500,59 +498,99 @@ func (mp *PosMempool) AddTransaction(mtxn *MempoolTransaction, verifySignature b
 	}
 
 	// Add the transaction to the mempool and then prune if needed.
-	if err := mp.addTransactionNoLock(mempoolTx, true); err != nil {
+	if err = mp.addTransactionNoLock(mempoolTx, true); err != nil {
 		return errors.Wrapf(err, "PosMempool.AddTransaction: Problem adding transaction to mempool")
 	}
 
-	if err := mp.pruneNoLock(); err != nil {
+	if err = mp.pruneNoLock(); err != nil {
 		glog.Errorf("PosMempool.AddTransaction: Problem pruning mempool: %v", err)
 	}
 
 	return nil
 }
 
-func (mp *PosMempool) validateTransaction(txn *MsgDeSoTxn, verifySignature bool) error {
+func (mp *PosMempool) validateTransaction(txn *MempoolTransaction, viewToConnectTo *UtxoView, verifySignature bool) (
+	*UtxoView, error) {
 	mp.RLock()
 	defer mp.RUnlock()
-
-	if err := CheckTransactionSanity(txn, uint32(mp.latestBlockHeight), mp.params); err != nil {
-		return errors.Wrapf(err, "PosMempool.AddTransaction: Problem validating transaction sanity")
+	// Copy View to connect to
+	newView, err := viewToConnectTo.CopyUtxoView()
+	if err != nil {
+		return nil, errors.Wrapf(err, "PosMempool.validateTransaction: Problem copying utxo view")
 	}
-
-	if err := ValidateDeSoTxnSanityBalanceModel(txn, mp.latestBlockHeight, mp.params, mp.globalParams); err != nil {
-		return errors.Wrapf(err, "PosMempool.AddTransaction: Problem validating transaction sanity")
+	// Connect the transaction to the copied view to check if it's valid.
+	_, _, _, _, err = newView.ConnectTransaction(
+		txn.MsgDeSoTxn, txn.Hash(), uint32(mp.latestBlockHeight), time.Now().UnixNano(), verifySignature, false)
+	if err != nil {
+		return nil, errors.Wrapf(err, "PosMempool.validateTransaction: Problem connecting new transaction")
 	}
+	return newView, nil
+}
 
-	if err := mp.readOnlyLatestBlockView.ValidateTransactionNonce(txn, mp.latestBlockHeight); err != nil {
-		return errors.Wrapf(err, "PosMempool.AddTransaction: Problem validating transaction nonce")
+func (mp *PosMempool) getViewToConnectTransactionTo(txn *MempoolTransaction) (*UtxoView, error) {
+	// TODO: more efficient locking?
+	mp.RLock()
+	defer mp.RUnlock()
+	// Get fee rate for txn
+	feePerKb, err := txn.ComputeFeeRatePerKBNanos()
+	if err != nil {
+		return nil, errors.Wrapf(err, "PosMempool.getViewToConnectTransactionTo: Problem computing fee per KB")
 	}
-
-	if !verifySignature {
-		return nil
+	bucketMinFeeRate, _ := computeFeeTimeBucketRangeFromFeeNanosPerKB(
+		feePerKb, mp.txnRegister.minimumNetworkFeeNanosPerKB, mp.txnRegister.feeBucketGrowthRateBasisPoints)
+	// Get ordered transactions
+	transactions := mp.GetOrderedTransactions()
+	// Create a new view
+	newView, err := mp.readOnlyLatestBlockView.CopyUtxoView()
+	if err != nil {
+		return nil, errors.Wrapf(err, "PosMempool.getViewToConnectTransactionTo: Problem copying read-only utxo view")
 	}
+	for _, mempoolTx := range transactions {
+		// If the next transaction in the mempool has a fee rate lower than the bucketMinFeeRate, then the new
+		// transaction will be in a higher fee bucket and thus would have priority. As such, we have found the proper
+		// place to connect the new transaction to the view and can return.
+		if mempoolTx.FeePerKB < bucketMinFeeRate {
+			break
+		}
+		var copiedView *UtxoView
+		// Create a copy of the view to connect the transactions to in the event we have a failing txn.
+		copiedView, err = newView.CopyUtxoView()
+		if err != nil {
+			return nil, errors.Wrapf(err, "PosMempool.getViewToConnectTransactionTo: Problem copying utxo view to "+
+				"connect higher fee bucket txns to.")
+		}
+		// Try to connect the transaction normally.
+		_, _, _, _, err = copiedView.ConnectTransaction(
+			mempoolTx.Tx, mempoolTx.Hash, uint32(mp.latestBlockHeight), time.Now().UnixNano(), true, false)
+		// If the transaction successfully connects, we set the newView to the copiedView and proceed to the next
+		// transaction.
+		if err == nil {
+			newView = copiedView
+			continue
+		}
 
-	// Check transaction signature.
-	if _, err := mp.readOnlyLatestBlockView.VerifySignature(txn, uint32(mp.latestBlockHeight)); err != nil {
-		return errors.Wrapf(err, "PosMempool.AddTransaction: Signature validation failed")
+		// If the transaction failed to connect, we connect the transaction as a failed txn. We need to copy
+		// the view again first in the event that this transaction fails to connect as a failing transaction.
+		// If a transaction fails to connect as a failing transaction, it will be ejected from the mempool
+		// after the next block is received.
+		copiedView, err = newView.CopyUtxoView()
+		if err != nil {
+			return nil, errors.Wrapf(err, "PosMempool.getViewToConnectTransactionTo: Problem copying utxo view to "+
+				"connect failing txn to.")
+		}
+		// Try to connect as failing txn to the copied view.
+		_, _, _, err = copiedView._connectFailingTransaction(
+			mempoolTx.Tx, uint32(mp.latestBlockHeight), true)
+		if err != nil {
+			continue
+		}
+		newView = copiedView
 	}
-
-	return nil
+	return newView, nil
 }
 
 func (mp *PosMempool) addTransactionNoLock(txn *MempoolTx, persistToDb bool) error {
 	userPk := NewPublicKey(txn.Tx.PublicKey)
-	txnFee := txn.Tx.TxnFeeNanos
-
-	// Validate that the user has enough balance to cover the transaction fees.
-	spendableBalanceNanos, err := mp.readOnlyLatestBlockView.GetSpendableDeSoBalanceNanosForPublicKey(userPk.ToBytes(),
-		uint32(mp.latestBlockHeight))
-	if err != nil {
-		return errors.Wrapf(err, "PosMempool.addTransactionNoLock: Problem getting spendable balance")
-	}
-	if err := mp.ledger.CanIncreaseEntryWithLimit(*userPk, txnFee, spendableBalanceNanos); err != nil {
-		return errors.Wrapf(err, "PosMempool.addTransactionNoLock: Problem checking balance increase for transaction with"+
-			"hash %v, fee %v", txn.Tx.Hash(), txnFee)
-	}
 
 	// Check the nonceTracker to see if this transaction is meant to replace an existing one.
 	existingTxn := mp.nonceTracker.GetTxnByPublicKeyNonce(*userPk, *txn.Tx.TxnNonce)
@@ -577,8 +615,7 @@ func (mp *PosMempool) addTransactionNoLock(txn *MempoolTx, persistToDb bool) err
 		}
 	}
 
-	// At this point the transaction is in the mempool. We can now update the ledger and nonce tracker.
-	mp.ledger.IncreaseEntry(*userPk, txnFee)
+	// At this point the transaction is in the mempool. We can now update nonce tracker.
 	mp.nonceTracker.AddTxnByPublicKeyNonce(txn, *userPk, *txn.Tx.TxnNonce)
 
 	// Emit an event for the newly added transaction.
@@ -641,8 +678,7 @@ func (mp *PosMempool) removeTransactionNoLock(txn *MempoolTx, persistToDb bool) 
 		return errors.Wrapf(err, "PosMempool.removeTransactionNoLock: Problem removing txn from register")
 	}
 
-	// Remove the txn from the balance ledger and the nonce tracker.
-	mp.ledger.DecreaseEntry(*userPk, txn.Fee)
+	// Remove the txn from the nonce tracker.
 	mp.nonceTracker.RemoveTxnByPublicKeyNonce(*userPk, *txn.Tx.TxnNonce)
 
 	// Emit an event for the removed transaction.
@@ -767,15 +803,26 @@ func (mp *PosMempool) refreshNoLock() error {
 	// Add all transactions from the main mempool to the temp mempool. Skip signature verification.
 	var txnsToRemove []*MempoolTx
 	txns := mp.getTransactionsNoLock()
+	viewToConnectTo, err := mp.readOnlyLatestBlockView.CopyUtxoView()
+	if err != nil {
+		return errors.Wrapf(err, "PosMempool.refreshNoLock: Problem copying utxo view")
+	}
 	for _, txn := range txns {
 		mtxn := NewMempoolTransaction(txn.Tx, txn.Added)
-		err := tempPool.AddTransaction(mtxn, false)
+		viewToConnectTo, err = mp.validateTransaction(mtxn, viewToConnectTo, false)
 		if err == nil {
+			if err = tempPool.addTransactionNoLock(txn, true); err != nil {
+				glog.Errorf("PosMempool.refreshNoLock: Problem adding transaction to temp mempool: %v", err)
+			}
 			continue
 		}
 
 		// If we've encountered an error while adding the transaction to the temp mempool, we add it to our txnsToRemove list.
 		txnsToRemove = append(txnsToRemove, txn)
+	}
+	// We only call pruneNoLock once after adding all transactions to the temp mempool.
+	if err = mp.pruneNoLock(); err != nil {
+		glog.Errorf("PosMempool.refreshNoLock: Problem pruning mempool: %v", err)
 	}
 
 	// Now remove all transactions from the txnsToRemove list from the main mempool.
