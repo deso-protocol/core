@@ -551,16 +551,16 @@ func waitForMinNonValidatorCountRemoteNodeIndexer(t *testing.T, node *cmd.Node, 
 	minNonValidatorOutboundCount int, minNonValidatorInboundCount int) {
 
 	userAgent := node.Params.UserAgent
-	rnManager := node.Server.GetNetworkManager().GetRemoteNodeManager()
+	nm := node.Server.GetNetworkManager()
 	condition := func() bool {
-		return checkRemoteNodeIndexerMinNonValidatorCount(rnManager, allCount, validatorCount,
+		return checkRemoteNodeIndexerMinNonValidatorCount(nm, allCount, validatorCount,
 			minNonValidatorOutboundCount, minNonValidatorInboundCount)
 	}
 	waitForCondition(t, fmt.Sprintf("Waiting for Node (%s) to have at least %d non-validator outbound nodes and %d non-validator inbound nodes",
 		userAgent, minNonValidatorOutboundCount, minNonValidatorInboundCount), condition)
 }
 
-func checkRemoteNodeIndexerMinNonValidatorCount(manager *lib.RemoteNodeManager, allCount int, validatorCount int,
+func checkRemoteNodeIndexerMinNonValidatorCount(manager *lib.NetworkManager, allCount int, validatorCount int,
 	minNonValidatorOutboundCount int, minNonValidatorInboundCount int) bool {
 
 	if allCount != manager.GetAllRemoteNodes().Count() {

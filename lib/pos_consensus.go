@@ -297,14 +297,14 @@ func (fc *FastHotStuffConsensus) handleBlockProposalEvent(
 	}
 
 	// Broadcast the block to the validator network
-	validators := fc.networkManager.rnManager.GetValidatorIndex().GetAll()
+	validators := fc.networkManager.GetValidatorIndex().GetAll()
 	for _, validator := range validators {
 		sendMessageToRemoteNodeAsync(validator, blockProposal)
 	}
 
 	// Broadcast the block to all inbound non-validator peers. This allows them to sync
 	// blocks from us.
-	nonValidators := fc.networkManager.rnManager.GetNonValidatorInboundIndex().GetAll()
+	nonValidators := fc.networkManager.GetNonValidatorInboundIndex().GetAll()
 	for _, nonValidator := range nonValidators {
 		sendMessageToRemoteNodeAsync(nonValidator, blockProposal)
 	}
@@ -373,7 +373,7 @@ func (fc *FastHotStuffConsensus) HandleLocalVoteEvent(event *consensus.FastHotSt
 	}
 
 	// Broadcast the block to the validator network
-	validators := fc.networkManager.rnManager.GetValidatorIndex().GetAll()
+	validators := fc.networkManager.GetValidatorIndex().GetAll()
 	for _, validator := range validators {
 		sendMessageToRemoteNodeAsync(validator, voteMsg)
 	}
@@ -494,7 +494,7 @@ func (fc *FastHotStuffConsensus) HandleLocalTimeoutEvent(event *consensus.FastHo
 	}
 
 	// Broadcast the block to the validator network
-	validators := fc.networkManager.rnManager.GetValidatorIndex().GetAll()
+	validators := fc.networkManager.GetValidatorIndex().GetAll()
 	for _, validator := range validators {
 		sendMessageToRemoteNodeAsync(validator, timeoutMsg)
 	}
@@ -572,7 +572,7 @@ func (fc *FastHotStuffConsensus) HandleBlock(pp *Peer, msg *MsgDeSoBlock) error 
 	//
 	// See https://github.com/deso-protocol/core/pull/875#discussion_r1460183510 for more details.
 	if len(missingBlockHashes) > 0 {
-		remoteNode := fc.networkManager.rnManager.GetRemoteNodeFromPeer(pp)
+		remoteNode := fc.networkManager.GetRemoteNodeFromPeer(pp)
 		if remoteNode == nil {
 			return errors.Errorf("FastHotStuffConsensus.HandleBlock: RemoteNode not found for peer: %v", pp)
 		}
@@ -591,9 +591,9 @@ func (fc *FastHotStuffConsensus) HandleBlock(pp *Peer, msg *MsgDeSoBlock) error 
 func (fc *FastHotStuffConsensus) tryProcessBlockAsNewTip(block *MsgDeSoBlock) ([]*BlockHash, error) {
 	// Try to apply the block locally as the new tip of the blockchain
 	successfullyAppliedNewTip, _, missingBlockHashes, err := fc.blockchain.processBlockPoS(
-		block, // Pass in the block itself
+		block,                                     // Pass in the block itself
 		fc.fastHotStuffEventLoop.GetCurrentView(), // Pass in the current view to ensure we don't process a stale block
-		true, // Make sure we verify signatures in the block
+		true,                                      // Make sure we verify signatures in the block
 	)
 	if err != nil {
 		return nil, errors.Errorf("Error processing block locally: %v", err)
@@ -890,7 +890,7 @@ func (fc *FastHotStuffConsensus) updateActiveValidatorConnections() error {
 }
 
 func (fc *FastHotStuffConsensus) trySendMessageToPeer(pp *Peer, msg DeSoMessage) {
-	remoteNode := fc.networkManager.rnManager.GetRemoteNodeFromPeer(pp)
+	remoteNode := fc.networkManager.GetRemoteNodeFromPeer(pp)
 	if remoteNode == nil {
 		glog.Errorf("FastHotStuffConsensus.trySendMessageToPeer: RemoteNode not found for peer: %v", pp)
 		return
