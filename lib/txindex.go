@@ -224,7 +224,7 @@ func (txi *TXIndex) GetTxindexUpdateBlockNodes() (
 	txindexTipNode := blockIndexByHashCopy[*txindexTipHash.Hash]
 
 	// Get the committed tip.
-	committedTip, _ := txi.CoreChain.getCommittedTip()
+	committedTip, _ := txi.CoreChain.GetCommittedTip()
 	if txindexTipNode == nil {
 		glog.Info("GetTxindexUpdateBlockNodes: Txindex tip was not found; building txindex starting at genesis block")
 
