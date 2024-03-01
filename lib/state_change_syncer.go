@@ -259,6 +259,8 @@ type StateChangeSyncer struct {
 	// of each entry, the consumer only has to sync the most recent version of each entry.
 	// BlocksyncCompleteEntriesFlushed is used to track whether this one time flush has been completed.
 	BlocksyncCompleteEntriesFlushed bool
+
+	MempoolTxnSyncLimit uint64
 }
 
 // Open a file, create if it doesn't exist.
@@ -276,7 +278,8 @@ func openOrCreateLogFile(filePath string) (*os.File, error) {
 }
 
 // NewStateChangeSyncer initializes necessary log files and returns a StateChangeSyncer.
-func NewStateChangeSyncer(stateChangeDir string, nodeSyncType NodeSyncType) *StateChangeSyncer {
+func NewStateChangeSyncer(stateChangeDir string, nodeSyncType NodeSyncType, mempoolTxnSyncLimit uint64,
+) *StateChangeSyncer {
 	stateChangeFilePath := filepath.Join(stateChangeDir, StateChangeFileName)
 	stateChangeIndexFilePath := filepath.Join(stateChangeDir, StateChangeIndexFileName)
 	stateChangeMempoolFilePath := filepath.Join(stateChangeDir, StateChangeMempoolFileName)
@@ -323,6 +326,7 @@ func NewStateChangeSyncer(stateChangeDir string, nodeSyncType NodeSyncType) *Sta
 		StateSyncerMutex:                &sync.Mutex{},
 		SyncType:                        nodeSyncType,
 		BlocksyncCompleteEntriesFlushed: blocksyncCompleteEntriesFlushed,
+		MempoolTxnSyncLimit:             mempoolTxnSyncLimit,
 	}
 }
 
@@ -725,10 +729,8 @@ func (stateChangeSyncer *StateChangeSyncer) SyncMempoolToStateSyncer(server *Ser
 	}
 
 	currentTimestamp := time.Now().UnixNano()
-	// TODO: introduce flag to control the number of mempool txns to sync to the state change file.
-	numMempoolTxLimit := 10000
 	for ii, mempoolTx := range mempoolTxns {
-		if server.params.IsPoSBlockHeight(blockHeight) && ii > numMempoolTxLimit {
+		if server.params.IsPoSBlockHeight(blockHeight) && uint64(ii) > stateChangeSyncer.MempoolTxnSyncLimit {
 			break
 		}
 		var utxoOpsForTxn []*UtxoOperation
