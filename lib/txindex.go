@@ -149,7 +149,11 @@ func NewTXIndex(coreChain *Blockchain, params *DeSoParams, dataDirectory string)
 }
 
 func (txi *TXIndex) FinishedSyncing() bool {
-	return txi.TXIndexChain.BlockTip().Height == txi.CoreChain.BlockTip().Height
+	committedTip, idx := txi.CoreChain.GetCommittedTip()
+	if idx == -1 {
+		return false
+	}
+	return txi.TXIndexChain.BlockTip().Height == committedTip.Height
 }
 
 func (txi *TXIndex) Start() {
@@ -408,10 +412,16 @@ func (txi *TXIndex) Update() error {
 			return fmt.Errorf(
 				"Update: Error initializing UtxoView: %v", err)
 		}
+		if blockToAttach.Header.PrevBlockHash != nil {
+			utxoView, err = txi.TXIndexChain.getUtxoViewAtBlockHash(*blockToAttach.Header.PrevBlockHash)
+			if err != nil {
+				return fmt.Errorf("Update: Problem getting UtxoView at block hash %v: %v",
+					blockToAttach.Header.PrevBlockHash, err)
+			}
+		}
 
 		// Do each block update in a single transaction so we're safe in case the node
 		// restarts.
-		blockHeight := uint64(txi.CoreChain.BlockTip().Height)
 		err = txi.TXIndexChain.DB().Update(func(dbTxn *badger.Txn) error {
 
 			// Iterate through each transaction in the block and do the following:
@@ -425,7 +435,7 @@ func (txi *TXIndex) Update() error {
 				// Finally, if the transaction is not the first in the block, we check the TxnConnectStatusByIndex to see if
 				// it's marked by the block producer as a connecting transaction. PoS blocks should reflect this in TxnConnectStatusByIndex.
 				hasConnectingPoSTxnStatus := false
-				if txi.Params.IsPoSBlockHeight(blockHeight) && (txnIndexInBlock > 0) && (blockMsg.TxnConnectStatusByIndex != nil) {
+				if txi.Params.IsPoSBlockHeight(blockMsg.Header.Height) && (txnIndexInBlock > 0) && (blockMsg.TxnConnectStatusByIndex != nil) {
 					// Note that TxnConnectStatusByIndex doesn't include the first block reward transaction.
 					hasConnectingPoSTxnStatus = blockMsg.TxnConnectStatusByIndex.Get(txnIndexInBlock - 1)
 				}
@@ -439,7 +449,7 @@ func (txi *TXIndex) Update() error {
 						txn, err)
 				}
 
-				err = DbPutTxindexTransactionMappingsWithTxn(dbTxn, nil, blockHeight,
+				err = DbPutTxindexTransactionMappingsWithTxn(dbTxn, nil, blockMsg.Header.Height,
 					txn, txi.Params, txnMeta, txi.CoreChain.eventManager)
 				if err != nil {
 					return fmt.Errorf("Update: Problem adding txn %v to txindex: %v",
