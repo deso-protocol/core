@@ -114,8 +114,10 @@ func (stateChangeEntry *StateChangeEntry) RawEncodeWithoutMetadata(blockHeight u
 	// Encode the block height.
 	data = append(data, UintToBuf(blockHeight)...)
 
-	// Encode the transaction.
-	data = append(data, EncodeToBytes(blockHeight, stateChangeEntry.Block)...)
+	if stateChangeEntry.EncoderType == EncoderTypeUtxoOperation {
+		// Encode the transaction.
+		data = append(data, EncodeToBytes(blockHeight, stateChangeEntry.Block)...)
+	}
 
 	return data
 }
@@ -174,11 +176,13 @@ func (stateChangeEntry *StateChangeEntry) RawDecodeWithoutMetadata(blockHeight u
 	}
 	stateChangeEntry.BlockHeight = entryBlockHeight
 
-	block := &MsgDeSoBlock{}
-	if exist, err := DecodeFromBytes(block, rr); exist && err == nil {
-		stateChangeEntry.Block = block
-	} else if err != nil {
-		return errors.Wrapf(err, "StateChangeEntry.RawDecodeWithoutMetadata: error decoding block")
+	if stateChangeEntry.EncoderType == EncoderTypeUtxoOperation {
+		block := &MsgDeSoBlock{}
+		if exist, err := DecodeFromBytes(block, rr); exist && err == nil {
+			stateChangeEntry.Block = block
+		} else if err != nil {
+			return errors.Wrapf(err, "StateChangeEntry.RawDecodeWithoutMetadata: error decoding block")
+		}
 	}
 
 	return nil
