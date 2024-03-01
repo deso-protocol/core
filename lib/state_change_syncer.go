@@ -762,7 +762,7 @@ func (stateChangeSyncer *StateChangeSyncer) StartMempoolSyncRoutine(server *Serv
 		mempoolClosed := server.mempool.stopped
 		for !mempoolClosed {
 			// Sleep for a short while to avoid a tight loop.
-			time.Sleep(100 * time.Millisecond)
+			time.Sleep(1 * time.Millisecond)
 			var err error
 			// If the mempool is not empty, sync the mempool to the state syncer.
 			mempoolClosed, err = stateChangeSyncer.SyncMempoolToStateSyncer(server)
