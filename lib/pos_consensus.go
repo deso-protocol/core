@@ -591,9 +591,9 @@ func (fc *FastHotStuffConsensus) HandleBlock(pp *Peer, msg *MsgDeSoBlock) error 
 func (fc *FastHotStuffConsensus) tryProcessBlockAsNewTip(block *MsgDeSoBlock) ([]*BlockHash, error) {
 	// Try to apply the block locally as the new tip of the blockchain
 	successfullyAppliedNewTip, _, missingBlockHashes, err := fc.blockchain.processBlockPoS(
-		block,                                     // Pass in the block itself
+		block, // Pass in the block itself
 		fc.fastHotStuffEventLoop.GetCurrentView(), // Pass in the current view to ensure we don't process a stale block
-		true,                                      // Make sure we verify signatures in the block
+		true, // Make sure we verify signatures in the block
 	)
 	if err != nil {
 		return nil, errors.Errorf("Error processing block locally: %v", err)
