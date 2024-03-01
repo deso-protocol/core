@@ -1511,6 +1511,7 @@ func (srv *Server) _handleSnapshot(pp *Peer, msg *MsgDeSoSnapshotData) {
 		// Do not set the StatusBlockStored flag, because we still need to download the past blocks.
 		currentNode.Status |= StatusBlockProcessed
 		currentNode.Status |= StatusBlockValidated
+		currentNode.Status |= StatusBlockCommitted
 		srv.blockchain.addNewBlockNodeToBlockIndex(currentNode)
 		srv.blockchain.bestChainMap[*currentNode.Hash] = currentNode
 		srv.blockchain.bestChain = append(srv.blockchain.bestChain, currentNode)
@@ -1528,9 +1529,7 @@ func (srv *Server) _handleSnapshot(pp *Peer, msg *MsgDeSoSnapshotData) {
 		blockNodeBatch = []*BlockNode{}
 	}
 
-	err = srv.blockchain.db.Update(func(txn *badger.Txn) error {
-		return PutBestHashWithTxn(txn, srv.snapshot, msg.SnapshotMetadata.CurrentEpochBlockHash, ChainTypeDeSoBlock, srv.eventManager)
-	})
+	err = PutBestHash(srv.blockchain.db, srv.snapshot, msg.SnapshotMetadata.CurrentEpochBlockHash, ChainTypeDeSoBlock, srv.eventManager)
 	if err != nil {
 		glog.Errorf("Server._handleSnapshot: Problem updating best hash, error: (%v)", err)
 	}
