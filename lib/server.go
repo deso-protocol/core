@@ -1027,12 +1027,10 @@ func (srv *Server) _handleHeaderBundle(pp *Peer, msg *MsgDeSoHeaderBundle) {
 			// If node is a hyper sync node and we haven't finished syncing state yet, we will kick off state sync.
 			if srv.cmgr.HyperSync {
 				bestHeaderHeight := uint64(srv.blockchain.headerTip().Height)
-				expectedSnapshotHeight := bestHeaderHeight - (bestHeaderHeight % srv.snapshot.SnapshotBlockHeightPeriod)
 				// The peer's snapshot block height period before the first PoS fork height is expected to be the
 				// PoW default value. After the fork height, it's expected to be the value defined in the params.
-				if bestHeaderHeight < uint64(srv.params.ForkHeights.ProofOfStake1StateSetupBlockHeight) {
-					expectedSnapshotHeight = bestHeaderHeight - (bestHeaderHeight % srv.params.DefaultPoWSnapshotBlockHeightPeriod)
-				}
+				snapshotBlockHeightPeriod := srv.params.GetSnapshotBlockHeightPeriod(bestHeaderHeight, srv.snapshot.SnapshotBlockHeightPeriod)
+				expectedSnapshotHeight := bestHeaderHeight - (bestHeaderHeight % snapshotBlockHeightPeriod)
 				srv.blockchain.snapshot.Migrations.CleanupMigrations(expectedSnapshotHeight)
 
 				if len(srv.HyperSyncProgress.PrefixProgress) != 0 {

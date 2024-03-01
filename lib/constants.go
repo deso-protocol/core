@@ -877,6 +877,13 @@ func (params *DeSoParams) GetFirstPoSBlockHeight() uint64 {
 	return uint64(params.ForkHeights.ProofOfStake2ConsensusCutoverBlockHeight)
 }
 
+func (params *DeSoParams) GetSnapshotBlockHeightPeriod(blockHeight uint64, currentSnapshotBlockHeightPeriod uint64) uint64 {
+	if blockHeight < uint64(params.ForkHeights.ProofOfStake1StateSetupBlockHeight) {
+		return params.DefaultPoWSnapshotBlockHeightPeriod
+	}
+	return currentSnapshotBlockHeightPeriod
+}
+
 // GenesisBlock defines the genesis block used for the DeSo mainnet and testnet
 var (
 	ArchitectPubKeyBase58Check = "BC1YLg3oh6Boj8e2boCo1vQCYHLk1rjsHF6jthBdvSw79bixQvKK6Qa"
