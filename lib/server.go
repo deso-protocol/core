@@ -409,6 +409,7 @@ func NewServer(
 	_augmentedBlockViewRefreshIntervalMillis uint64,
 	_posBlockProductionIntervalMilliseconds uint64,
 	_posTimeoutBaseDurationMilliseconds uint64,
+	_stateSyncerMempoolTxnSyncLimit uint64,
 ) (
 	_srv *Server,
 	_err error,
@@ -422,7 +423,7 @@ func NewServer(
 	if _stateChangeDir != "" {
 		// Create the state change syncer to handle syncing state changes to disk, and assign some of its methods
 		// to the event manager.
-		stateChangeSyncer = NewStateChangeSyncer(_stateChangeDir, _syncType)
+		stateChangeSyncer = NewStateChangeSyncer(_stateChangeDir, _syncType, _stateSyncerMempoolTxnSyncLimit)
 		eventManager.OnStateSyncerOperation(stateChangeSyncer._handleStateSyncerOperation)
 		eventManager.OnStateSyncerFlushed(stateChangeSyncer._handleStateSyncerFlush)
 	}
