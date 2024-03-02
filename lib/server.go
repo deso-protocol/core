@@ -1502,27 +1502,36 @@ func (srv *Server) _handleSnapshot(pp *Peer, msg *MsgDeSoSnapshotData) {
 	// already synced all the state corresponding to the sub-blockchain ending at the snapshot
 	// height, we will now mark all these blocks as processed. To do so, we will iterate through
 	// the blockNodes in the header chain and set them in the blockchain data structures.
-	err = srv.blockchain.db.Update(func(txn *badger.Txn) error {
-		for ii := uint64(1); ii <= srv.HyperSyncProgress.SnapshotMetadata.SnapshotBlockHeight; ii++ {
-			currentNode := srv.blockchain.bestHeaderChain[ii]
-			// Do not set the StatusBlockStored flag, because we still need to download the past blocks.
-			currentNode.Status |= StatusBlockProcessed
-			currentNode.Status |= StatusBlockValidated
-			srv.blockchain.addNewBlockNodeToBlockIndex(currentNode)
-			srv.blockchain.bestChainMap[*currentNode.Hash] = currentNode
-			srv.blockchain.bestChain = append(srv.blockchain.bestChain, currentNode)
-			err = PutHeightHashToNodeInfoWithTxn(txn, srv.snapshot, currentNode, false /*bitcoinNodes*/, srv.eventManager)
-			if err != nil {
-				return err
-			}
+	//
+	// We split the db update into batches of 10,000 block nodes to avoid a single transaction
+	// being too large and possibly causing an error in badger.
+	var blockNodeBatch []*BlockNode
+	for ii := uint64(1); ii <= srv.HyperSyncProgress.SnapshotMetadata.SnapshotBlockHeight; ii++ {
+		currentNode := srv.blockchain.bestHeaderChain[ii]
+		// Do not set the StatusBlockStored flag, because we still need to download the past blocks.
+		currentNode.Status |= StatusBlockProcessed
+		currentNode.Status |= StatusBlockValidated
+		currentNode.Status |= StatusBlockCommitted
+		srv.blockchain.addNewBlockNodeToBlockIndex(currentNode)
+		srv.blockchain.bestChainMap[*currentNode.Hash] = currentNode
+		srv.blockchain.bestChain = append(srv.blockchain.bestChain, currentNode)
+		blockNodeBatch = append(blockNodeBatch, currentNode)
+		if len(blockNodeBatch) < 10000 {
+			continue
 		}
-		// We will also set the hash of the block at snapshot height as the best chain hash.
-		err = PutBestHashWithTxn(txn, srv.snapshot, msg.SnapshotMetadata.CurrentEpochBlockHash, ChainTypeDeSoBlock, srv.eventManager)
-		return err
-	})
+		err = srv.blockchain.db.Update(func(txn *badger.Txn) error {
+			return PutHeightHashToNodeInfoBatchWithTxn(txn, srv.snapshot, blockNodeBatch, false /*bitcoinNodes*/, srv.eventManager)
+		})
+		if err != nil {
+			glog.Errorf("Server._handleSnapshot: Problem updating snapshot block nodes, error: (%v)", err)
+			break
+		}
+		blockNodeBatch = []*BlockNode{}
+	}
 
+	err = PutBestHash(srv.blockchain.db, srv.snapshot, msg.SnapshotMetadata.CurrentEpochBlockHash, ChainTypeDeSoBlock, srv.eventManager)
 	if err != nil {
-		glog.Errorf("Server._handleSnapshot: Problem updating snapshot blocknodes, error: (%v)", err)
+		glog.Errorf("Server._handleSnapshot: Problem updating best hash, error: (%v)", err)
 	}
 	// We also reset the in-memory snapshot cache, because it is populated with stale records after
 	// we've initialized the chain with seed transactions.
