@@ -666,7 +666,13 @@ func (snap *Snapshot) FinishProcessBlock(blockNode *BlockNode) {
 
 	snap.CurrentEpochSnapshotMetadata.updateMutex.Lock()
 	defer snap.CurrentEpochSnapshotMetadata.updateMutex.Unlock()
-	if uint64(blockNode.Height)%snap.SnapshotBlockHeightPeriod == 0 &&
+
+	// If the block height is divisible by the snapshot block height period, we update the snapshot metadata.
+	// For PoW blocks, until the first PoS fork height, we use the default snapshot block height period of 1000.
+	// For blocks after the first PoS fork height, we use the snapshot block height period defined in the params.
+	snapshotBlockHeightPeriod := snap.params.GetSnapshotBlockHeightPeriod(uint64(blockNode.Height), snap.SnapshotBlockHeightPeriod)
+
+	if uint64(blockNode.Height)%snapshotBlockHeightPeriod == 0 &&
 		uint64(blockNode.Height) > snap.CurrentEpochSnapshotMetadata.SnapshotBlockHeight {
 
 		snap.CurrentEpochSnapshotMetadata.SnapshotBlockHeight = uint64(blockNode.Height)
