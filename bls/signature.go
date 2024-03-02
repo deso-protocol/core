@@ -227,6 +227,14 @@ func (publicKey *PublicKey) FromString(publicKeyString string) (*PublicKey, erro
 	return publicKey, err
 }
 
+func (publicKey *PublicKey) ToAbbreviatedString() string {
+	str := publicKey.ToString()
+	if len(str) <= 8 {
+		return str
+	}
+	return str[:8] + "..." + str[len(str)-8:]
+}
+
 func (publicKey *PublicKey) MarshalJSON() ([]byte, error) {
 	// This is called automatically by the JSON library when converting a
 	// bls.PublicKey to JSON. This is useful when passing a bls.PublicKey
@@ -322,6 +330,14 @@ func (signature *Signature) FromString(signatureString string) (*Signature, erro
 	// Convert from byte slice to bls.Signature.
 	signature.flowSignature = signatureBytes
 	return signature, nil
+}
+
+func (signature *Signature) ToAbbreviatedString() string {
+	str := signature.ToString()
+	if len(str) <= 8 {
+		return str
+	}
+	return str[:8] + "..." + str[len(str)-8:]
 }
 
 func (signature *Signature) MarshalJSON() ([]byte, error) {

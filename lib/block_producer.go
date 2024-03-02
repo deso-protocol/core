@@ -4,6 +4,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"math"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -80,15 +81,26 @@ func NewDeSoBlockProducer(
 
 	var privKey *btcec.PrivateKey
 	if blockProducerSeed != "" {
-		seedBytes, err := bip39.NewSeedWithErrorChecking(blockProducerSeed, "")
-		if err != nil {
-			return nil, fmt.Errorf("NewDeSoBlockProducer: Error converting mnemonic: %+v", err)
-		}
+		// If a blockProducerSeed is provided then we use it to generate a private key.
+		// If the block producer seed beings with 0x, we treat it as a hex seed. Otherwise,
+		// we treat it as a seed phrase.
+		if strings.HasPrefix(blockProducerSeed, "0x") {
+			privKeyBytes, err := hex.DecodeString(blockProducerSeed[2:])
+			if err != nil {
+				return nil, fmt.Errorf("NewDeSoBlockProducer: Error decoding hex seed: %+v", err)
+			}
+			privKey, _ = btcec.PrivKeyFromBytes(btcec.S256(), privKeyBytes)
+		} else {
+			seedBytes, err := bip39.NewSeedWithErrorChecking(blockProducerSeed, "")
+			if err != nil {
+				return nil, fmt.Errorf("NewDeSoBlockProducer: Error converting mnemonic: %+v", err)
+			}
 
-		_, privKey, _, err = ComputeKeysFromSeed(seedBytes, 0, params)
-		if err != nil {
-			return nil, fmt.Errorf(
-				"NewDeSoBlockProducer: Error computing keys from seed: %+v", err)
+			_, privKey, _, err = ComputeKeysFromSeed(seedBytes, 0, params)
+			if err != nil {
+				return nil, fmt.Errorf(
+					"NewDeSoBlockProducer: Error computing keys from seed: %+v", err)
+			}
 		}
 	}
 
@@ -330,7 +342,8 @@ func (desoBlockProducer *DeSoBlockProducer) _getBlockTemplate(publicKey []byte) 
 
 	// Now that the total fees have been computed, set the value of the block reward
 	// output.
-	blockRewardOutput.AmountNanos = CalcBlockRewardNanos(uint32(blockRet.Header.Height)) + totalFeeNanos
+	blockRewardOutput.AmountNanos = CalcBlockRewardNanos(uint32(blockRet.Header.Height), desoBlockProducer.params) +
+		totalFeeNanos
 
 	// Compute the merkle root for the block now that all of the transactions have
 	// been added.
@@ -434,7 +447,11 @@ func (desoBlockProducer *DeSoBlockProducer) AddBlockTemplate(block *MsgDeSoBlock
 	}
 }
 
-func RecomputeBlockRewardWithBlockRewardOutputPublicKey(block *MsgDeSoBlock, blockRewardOutputPublicKeyBytes []byte) (*MsgDeSoBlock, error) {
+func RecomputeBlockRewardWithBlockRewardOutputPublicKey(
+	block *MsgDeSoBlock,
+	blockRewardOutputPublicKeyBytes []byte,
+	params *DeSoParams,
+) (*MsgDeSoBlock, error) {
 	blockRewardOutputPublicKey, err := btcec.ParsePubKey(blockRewardOutputPublicKeyBytes, btcec.S256())
 	if err != nil {
 		return nil, errors.Wrap(
@@ -458,7 +475,7 @@ func RecomputeBlockRewardWithBlockRewardOutputPublicKey(block *MsgDeSoBlock, blo
 			}
 		}
 	}
-	block.Txns[0].TxOutputs[0].AmountNanos = CalcBlockRewardNanos(uint32(block.Header.Height)) + totalFees
+	block.Txns[0].TxOutputs[0].AmountNanos = CalcBlockRewardNanos(uint32(block.Header.Height), params) + totalFees
 	return block, nil
 }
 
@@ -490,7 +507,8 @@ func (blockProducer *DeSoBlockProducer) GetHeadersAndExtraDatas(
 
 	// Swap out the public key in the block
 	latestBLockCopy.Txns[0].TxOutputs[0].PublicKey = publicKeyBytes
-	latestBLockCopy, err = RecomputeBlockRewardWithBlockRewardOutputPublicKey(latestBLockCopy, publicKeyBytes)
+	latestBLockCopy, err = RecomputeBlockRewardWithBlockRewardOutputPublicKey(
+		latestBLockCopy, publicKeyBytes, blockProducer.params)
 	if err != nil {
 		return "", nil, nil, nil, errors.Wrap(
 			fmt.Errorf("GetBlockTemplate: Problem recomputing block reward: %v", err), "")

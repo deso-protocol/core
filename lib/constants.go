@@ -70,6 +70,10 @@ func NanoSecondsToUint64MicroSeconds(nanos int64) uint64 {
 	return uint64(nanos / 1000)
 }
 
+func NanoSecondsToTime(nanos int64) time.Time {
+	return time.Unix(0, nanos)
+}
+
 // Snapshot constants
 const (
 	// GetSnapshotTimeout is used in Peer when we fetch a snapshot chunk, and we need to retry.
@@ -608,9 +612,15 @@ type DeSoParams struct {
 	// disk-fill attacks, among other things.
 	MinChainWorkHex string
 
-	// This is used for determining whether we are still in initial block download.
+	// This is used for determining whether we are still in initial block download
+	// when the chain is running PoW.
 	// If our tip is older than this, we continue with IBD.
-	MaxTipAge time.Duration
+	MaxTipAgePoW time.Duration
+
+	// This is used for determining whether we are still in initial block download
+	// when the chain is running PoS.
+	// If our tip is older than this, we continue with initial block download.
+	MaxTipAgePoS time.Duration
 
 	// Do not allow the difficulty to change by more than a factor of this
 	// variable during each adjustment period.
@@ -749,7 +759,6 @@ type DeSoParams struct {
 	// before they are jailed.
 	DefaultJailInactiveValidatorGracePeriodEpochs uint64
 
-	// TODO: add support for putting the drift in global params.
 	// DefaultBlockTimestampDriftNanoSecs is the default number of nanoseconds
 	// from the current timestamp that we will allow a PoS block to be submitted.
 	DefaultBlockTimestampDriftNanoSecs int64
@@ -767,6 +776,20 @@ type DeSoParams struct {
 	// GlobalParamsEntry.MaximumVestedIntersectionsPerLockupTransaction. See the comment
 	// in GlobalParamsEntry for a detailed description of its usage.
 	DefaultMaximumVestedIntersectionsPerLockupTransaction int
+
+	// DefaultMempoolMaxSizeBytes is the default value for GlobalParamsEntry.MempoolMaxSizeBytes.
+	// See the comment in GlobalParamsEntry for a description of its usage.
+	DefaultMempoolMaxSizeBytes uint64
+
+	// DefaultMempoolFeeEstimatorNumMempoolBlocks is the default value for
+	// GlobalParamsEntry.MempoolFeeEstimatorNumMempoolBlocks. See the comment in GlobalParamsEntry
+	// for a description of its usage.
+	DefaultMempoolFeeEstimatorNumMempoolBlocks uint64
+
+	// DefaultMempoolFeeEstimatorNumPastBlocks is the default value for
+	// GlobalParamsEntry.MempoolFeeEstimatorNumPastBlocks. See the comment in GlobalParamsEntry
+	// for a description of its usage.
+	DefaultMempoolFeeEstimatorNumPastBlocks uint64
 
 	// HandshakeTimeoutMicroSeconds is the timeout for the peer handshake certificate. The default value is 15 minutes.
 	HandshakeTimeoutMicroSeconds uint64
@@ -838,23 +861,30 @@ func (params *DeSoParams) EnableRegtest() {
 	// Clear the seeds
 	params.DNSSeeds = []string{}
 
+	// Set the protocol version
+	params.ProtocolVersion = ProtocolVersion2
+
 	// Mine blocks incredibly quickly
 	params.TimeBetweenBlocks = 2 * time.Second
 	params.TimeBetweenDifficultyRetargets = 6 * time.Second
 	// Make sure we don't care about blockchain tip age.
-	params.MaxTipAge = 1000000 * time.Hour
+	params.MaxTipAgePoW = 1000000 * time.Hour
+	params.MaxTipAgePoS = 1000000 * time.Hour
 
 	// Allow block rewards to be spent instantly
 	params.BlockRewardMaturity = 0
 
 	// Set the PoS epoch duration to 10 blocks
 	params.DefaultEpochDurationNumBlocks = 10
+	// Set the PoS default jail inactive validator grace period epochs to 3.
+	params.DefaultJailInactiveValidatorGracePeriodEpochs = 3
 
 	// In regtest, we start all the fork heights at zero. These can be adjusted
 	// for testing purposes to ensure that a transition does not cause issues.
 	params.ForkHeights = RegtestForkHeights
 	params.EncoderMigrationHeights = GetEncoderMigrationHeights(&params.ForkHeights)
 	params.EncoderMigrationHeightsList = GetEncoderMigrationHeightsList(&params.ForkHeights)
+	params.DefaultStakingRewardsAPYBasisPoints = 10 * 100 // 10% for regtest
 }
 
 func (params *DeSoParams) IsPoWBlockHeight(blockHeight uint64) bool {
@@ -1044,7 +1074,8 @@ var DeSoMainnetParams = DeSoParams{
 	// Run with --v=2 and look for "cum work" output from miner.go
 	MinChainWorkHex: "000000000000000000000000000000000000000000000000006314f9a85a949b",
 
-	MaxTipAge: 24 * time.Hour,
+	MaxTipAgePoW: 24 * time.Hour,
+	MaxTipAgePoS: time.Hour,
 
 	// ===================================================================================
 	// Mainnet Bitcoin config
@@ -1231,6 +1262,15 @@ var DeSoMainnetParams = DeSoParams{
 	// The maximum number of vested lockup intersections in a lockup transaction.
 	DefaultMaximumVestedIntersectionsPerLockupTransaction: 1000,
 
+	// The maximum size of the mempool in bytes.
+	DefaultMempoolMaxSizeBytes: 3 * 1024 * 1024 * 1024, // 3GB
+
+	// The number of future blocks to consider when estimating the mempool fee.
+	DefaultMempoolFeeEstimatorNumMempoolBlocks: 1,
+
+	// The number of past blocks to consider when estimating the mempool fee.
+	DefaultMempoolFeeEstimatorNumPastBlocks: 50,
+
 	// The peer handshake certificate timeout.
 	HandshakeTimeoutMicroSeconds: uint64(900000000),
 
@@ -1399,7 +1439,8 @@ var DeSoTestnetParams = DeSoParams{
 
 	// TODO: Set to one day when we launch the testnet. In the meantime this value
 	// is more useful for local testing.
-	MaxTipAge: time.Hour * 24,
+	MaxTipAgePoW: time.Hour * 24,
+	MaxTipAgePoS: time.Hour,
 
 	// Difficulty can't decrease to below 50% of its previous value or increase
 	// to above 200% of its previous value.
@@ -1514,6 +1555,15 @@ var DeSoTestnetParams = DeSoParams{
 	// The maximum number of vested lockup intersections in a lockup transaction.
 	DefaultMaximumVestedIntersectionsPerLockupTransaction: 1000,
 
+	// The maximum size of the mempool in bytes.
+	DefaultMempoolMaxSizeBytes: 3 * 1024 * 1024 * 1024, // 3GB
+
+	// The number of future blocks to consider when estimating the mempool fee.
+	DefaultMempoolFeeEstimatorNumMempoolBlocks: 1,
+
+	// The number of past blocks to consider when estimating the mempool fee.
+	DefaultMempoolFeeEstimatorNumPastBlocks: 50,
+
 	// The peer handshake certificate timeout.
 	HandshakeTimeoutMicroSeconds: uint64(900000000),
 
@@ -1575,6 +1625,10 @@ const (
 	MaximumVestedIntersectionsPerLockupTransactionKey = "MaximumVestedIntersectionsPerLockupTransaction"
 	FeeBucketGrowthRateBasisPointsKey                 = "FeeBucketGrowthRateBasisPointsKey"
 	FailingTransactionBMFMultiplierBasisPointsKey     = "FailingTransactionBMFMultiplierBasisPoints"
+	BlockTimestampDriftNanoSecsKey                    = "BlockTimestampDriftNanoSecs"
+	MempoolMaxSizeBytesKey                            = "MempoolMaxSizeBytes"
+	MempoolFeeEstimatorNumMempoolBlocksKey            = "MempoolFeeEstimatorNumMempoolBlocks"
+	MempoolFeeEstimatorNumPastBlocksKey               = "MempoolFeeEstimatorNumPastBlocks"
 
 	DiamondLevelKey    = "DiamondLevel"
 	DiamondPostHashKey = "DiamondPostHash"

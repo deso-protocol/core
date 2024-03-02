@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/deso-protocol/core/bls"
+	"github.com/deso-protocol/core/collections"
 	"github.com/deso-protocol/core/consensus"
 	"github.com/deso-protocol/go-deadlock"
 	"github.com/pkg/errors"
@@ -26,7 +27,8 @@ func TestFastHotStuffConsensusHandleLocalVoteEvent(t *testing.T) {
 
 	// Create a mock consensus
 	fastHotStuffConsensus := FastHotStuffConsensus{
-		lock: sync.RWMutex{},
+		lock:           sync.RWMutex{},
+		networkManager: _createMockNetworkManagerForConsensus(),
 		blockchain: &Blockchain{
 			params: &DeSoTestnetParams,
 		},
@@ -104,7 +106,8 @@ func TestFastHotStuffConsensusHandleLocalTimeoutEvent(t *testing.T) {
 
 	// Create a mock consensus
 	fastHotStuffConsensus := FastHotStuffConsensus{
-		lock: sync.RWMutex{},
+		lock:           sync.RWMutex{},
+		networkManager: _createMockNetworkManagerForConsensus(),
 		signer: &BLSSigner{
 			privateKey: blsPrivateKey,
 		},
@@ -199,4 +202,17 @@ func TestFastHotStuffConsensusHandleLocalTimeoutEvent(t *testing.T) {
 // Mock function that always returns true
 func alwaysReturnTrue() bool {
 	return true
+}
+
+func _createMockNetworkManagerForConsensus() *NetworkManager {
+	return &NetworkManager{
+		rnManager: &RemoteNodeManager{
+			remoteNodeIndexer: &RemoteNodeIndexer{
+				AllRemoteNodes:            collections.NewConcurrentMap[RemoteNodeId, *RemoteNode](),
+				ValidatorIndex:            collections.NewConcurrentMap[bls.SerializedPublicKey, *RemoteNode](),
+				NonValidatorOutboundIndex: collections.NewConcurrentMap[RemoteNodeId, *RemoteNode](),
+				NonValidatorInboundIndex:  collections.NewConcurrentMap[RemoteNodeId, *RemoteNode](),
+			},
+		},
+	}
 }

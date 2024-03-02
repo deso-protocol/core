@@ -12,12 +12,11 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/spf13/viper"
-
 	"github.com/btcsuite/btcd/btcec"
 	"github.com/golang/glog"
 	"github.com/holiman/uint256"
 	"github.com/pkg/errors"
+	"github.com/spf13/viper"
 )
 
 type UtxoType uint8
@@ -140,42 +139,46 @@ const (
 
 // Txindex encoder types.
 const (
-	EncoderTypeTransactionMetadata                  EncoderType = 1000000
-	EncoderTypeBasicTransferTxindexMetadata         EncoderType = 1000001
-	EncoderTypeBitcoinExchangeTxindexMetadata       EncoderType = 1000002
-	EncoderTypeCreatorCoinTxindexMetadata           EncoderType = 1000003
-	EncoderTypeCreatorCoinTransferTxindexMetadata   EncoderType = 1000004
-	EncoderTypeDAOCoinTransferTxindexMetadata       EncoderType = 1000005
-	EncoderTypeFilledDAOCoinLimitOrderMetadata      EncoderType = 1000006
-	EncoderTypeDAOCoinLimitOrderTxindexMetadata     EncoderType = 1000007
-	EncoderTypeUpdateProfileTxindexMetadata         EncoderType = 1000008
-	EncoderTypeSubmitPostTxindexMetadata            EncoderType = 1000009
-	EncoderTypeLikeTxindexMetadata                  EncoderType = 1000010
-	EncoderTypeFollowTxindexMetadata                EncoderType = 1000011
-	EncoderTypePrivateMessageTxindexMetadata        EncoderType = 1000012
-	EncoderTypeSwapIdentityTxindexMetadata          EncoderType = 1000013
-	EncoderTypeNFTRoyaltiesMetadata                 EncoderType = 1000014
-	EncoderTypeNFTBidTxindexMetadata                EncoderType = 1000015
-	EncoderTypeAcceptNFTBidTxindexMetadata          EncoderType = 1000016
-	EncoderTypeNFTTransferTxindexMetadata           EncoderType = 1000017
-	EncoderTypeAcceptNFTTransferTxindexMetadata     EncoderType = 1000018
-	EncoderTypeBurnNFTTxindexMetadata               EncoderType = 1000019
-	EncoderTypeDAOCoinTxindexMetadata               EncoderType = 1000020
-	EncoderTypeCreateNFTTxindexMetadata             EncoderType = 1000021
-	EncoderTypeUpdateNFTTxindexMetadata             EncoderType = 1000022
-	EncoderTypeCreateUserAssociationTxindexMetadata EncoderType = 1000023
-	EncoderTypeDeleteUserAssociationTxindexMetadata EncoderType = 1000024
-	EncoderTypeCreatePostAssociationTxindexMetadata EncoderType = 1000025
-	EncoderTypeDeletePostAssociationTxindexMetadata EncoderType = 1000026
-	EncoderTypeAccessGroupTxindexMetadata           EncoderType = 1000027
-	EncoderTypeAccessGroupMembersTxindexMetadata    EncoderType = 1000028
-	EncoderTypeNewMessageTxindexMetadata            EncoderType = 1000029
-	EncoderTypeRegisterAsValidatorTxindexMetadata   EncoderType = 1000030
-	EncoderTypeUnregisterAsValidatorTxindexMetadata EncoderType = 1000031
-	EncoderTypeStakeTxindexMetadata                 EncoderType = 1000032
-	EncoderTypeUnstakeTxindexMetadata               EncoderType = 1000033
-	EncoderTypeUnlockStakeTxindexMetadata           EncoderType = 1000034
-	EncoderTypeUnjailValidatorTxindexMetadata       EncoderType = 1000035
+	EncoderTypeTransactionMetadata                   EncoderType = 1000000
+	EncoderTypeBasicTransferTxindexMetadata          EncoderType = 1000001
+	EncoderTypeBitcoinExchangeTxindexMetadata        EncoderType = 1000002
+	EncoderTypeCreatorCoinTxindexMetadata            EncoderType = 1000003
+	EncoderTypeCreatorCoinTransferTxindexMetadata    EncoderType = 1000004
+	EncoderTypeDAOCoinTransferTxindexMetadata        EncoderType = 1000005
+	EncoderTypeFilledDAOCoinLimitOrderMetadata       EncoderType = 1000006
+	EncoderTypeDAOCoinLimitOrderTxindexMetadata      EncoderType = 1000007
+	EncoderTypeUpdateProfileTxindexMetadata          EncoderType = 1000008
+	EncoderTypeSubmitPostTxindexMetadata             EncoderType = 1000009
+	EncoderTypeLikeTxindexMetadata                   EncoderType = 1000010
+	EncoderTypeFollowTxindexMetadata                 EncoderType = 1000011
+	EncoderTypePrivateMessageTxindexMetadata         EncoderType = 1000012
+	EncoderTypeSwapIdentityTxindexMetadata           EncoderType = 1000013
+	EncoderTypeNFTRoyaltiesMetadata                  EncoderType = 1000014
+	EncoderTypeNFTBidTxindexMetadata                 EncoderType = 1000015
+	EncoderTypeAcceptNFTBidTxindexMetadata           EncoderType = 1000016
+	EncoderTypeNFTTransferTxindexMetadata            EncoderType = 1000017
+	EncoderTypeAcceptNFTTransferTxindexMetadata      EncoderType = 1000018
+	EncoderTypeBurnNFTTxindexMetadata                EncoderType = 1000019
+	EncoderTypeDAOCoinTxindexMetadata                EncoderType = 1000020
+	EncoderTypeCreateNFTTxindexMetadata              EncoderType = 1000021
+	EncoderTypeUpdateNFTTxindexMetadata              EncoderType = 1000022
+	EncoderTypeCreateUserAssociationTxindexMetadata  EncoderType = 1000023
+	EncoderTypeDeleteUserAssociationTxindexMetadata  EncoderType = 1000024
+	EncoderTypeCreatePostAssociationTxindexMetadata  EncoderType = 1000025
+	EncoderTypeDeletePostAssociationTxindexMetadata  EncoderType = 1000026
+	EncoderTypeAccessGroupTxindexMetadata            EncoderType = 1000027
+	EncoderTypeAccessGroupMembersTxindexMetadata     EncoderType = 1000028
+	EncoderTypeNewMessageTxindexMetadata             EncoderType = 1000029
+	EncoderTypeRegisterAsValidatorTxindexMetadata    EncoderType = 1000030
+	EncoderTypeUnregisterAsValidatorTxindexMetadata  EncoderType = 1000031
+	EncoderTypeStakeTxindexMetadata                  EncoderType = 1000032
+	EncoderTypeUnstakeTxindexMetadata                EncoderType = 1000033
+	EncoderTypeUnlockStakeTxindexMetadata            EncoderType = 1000034
+	EncoderTypeUnjailValidatorTxindexMetadata        EncoderType = 1000035
+	EncoderTypeCoinLockupTxindexMetadata             EncoderType = 1000036
+	EncoderTypeUpdateCoinLockupParamsTxindexMetadata EncoderType = 1000037
+	EncoderTypeCoinLockupTransferTxindexMetadata     EncoderType = 1000038
+	EncoderTypeCoinUnlockTxindexMetadata             EncoderType = 1000039
 
 	// EncoderTypeEndTxIndex encoder type should be at the end and is used for automated tests.
 	EncoderTypeEndTxIndex EncoderType = 1000036
@@ -365,6 +368,14 @@ func (encoderType EncoderType) New() DeSoEncoder {
 		return &UnlockStakeTxindexMetadata{}
 	case EncoderTypeUnjailValidatorTxindexMetadata:
 		return &UnjailValidatorTxindexMetadata{}
+	case EncoderTypeCoinLockupTxindexMetadata:
+		return &CoinLockupTxindexMetadata{}
+	case EncoderTypeUpdateCoinLockupParamsTxindexMetadata:
+		return &UpdateCoinLockupParamsTxindexMetadata{}
+	case EncoderTypeCoinLockupTransferTxindexMetadata:
+		return &CoinLockupTransferTxindexMetadata{}
+	case EncoderTypeCoinUnlockTxindexMetadata:
+		return &CoinUnlockTxindexMetadata{}
 	default:
 		return nil
 	}
@@ -668,9 +679,11 @@ const (
 	OperationTypeCoinLockupTransfer            OperationType = 46
 	OperationTypeCoinUnlock                    OperationType = 47
 	OperationTypeUpdateCoinLockupParams        OperationType = 48
-	OperationTypeStakeDistribution             OperationType = 49
-	OperationTypeSetValidatorLastActiveAtEpoch OperationType = 50
-	// NEXT_TAG = 51
+	OperationTypeStakeDistributionRestake      OperationType = 49
+	OperationTypeStakeDistributionPayToBalance OperationType = 50
+	OperationTypeSetValidatorLastActiveAtEpoch OperationType = 51
+	OperationTypeFailingTxn                    OperationType = 52
+	// NEXT_TAG = 53
 )
 
 func (op OperationType) String() string {
@@ -771,8 +784,12 @@ func (op OperationType) String() string {
 		return "OperationTypeCoinLockupTransfer"
 	case OperationTypeCoinUnlock:
 		return "OperationTypeCoinUnlock"
-	case OperationTypeStakeDistribution:
-		return "OperationTypeStakeDistribution"
+	case OperationTypeStakeDistributionRestake:
+		return "OperationTypeStakeDistributionRestake"
+	case OperationTypeSetValidatorLastActiveAtEpoch:
+		return "OperationTypeSetValidatorLastActiveAtEpoch"
+	case OperationTypeStakeDistributionPayToBalance:
+		return "OperationTypeStakeDistributionPayToBalance"
 	}
 	return "OperationTypeUNKNOWN"
 }
@@ -4153,6 +4170,21 @@ type GlobalParamsEntry struct {
 	// BMF. The value is expressed in basis points. For example a value of 2500 means that 25% of the fee will be
 	// failing transaction fee will be used in the BMF algorithm.
 	FailingTransactionBMFMultiplierBasisPoints uint64
+
+	// BlockTimestampDriftNanoSecs is the maximum number of nanoseconds from the current timestamp that
+	// we will allow a PoS block to be submitted.
+	BlockTimestampDriftNanoSecs int64
+
+	// MempoolMaxSizeBytes is the maximum size of the mempool in bytes.
+	MempoolMaxSizeBytes uint64
+
+	// MempoolFeeEstimatorNumMempoolBlocks is the number of possible future blocks to a txn may be placed
+	// into when consider when estimating the fee for a new txn.
+	MempoolFeeEstimatorNumMempoolBlocks uint64
+
+	// MempoolFeeEstimatorNumPastBlocks is the number of past blocks to reference txn fees from when estimating
+	// the fee for a new txn.
+	MempoolFeeEstimatorNumPastBlocks uint64
 }
 
 func (gp *GlobalParamsEntry) Copy() *GlobalParamsEntry {
@@ -4174,6 +4206,10 @@ func (gp *GlobalParamsEntry) Copy() *GlobalParamsEntry {
 		MaximumVestedIntersectionsPerLockupTransaction: gp.MaximumVestedIntersectionsPerLockupTransaction,
 		FeeBucketGrowthRateBasisPoints:                 gp.FeeBucketGrowthRateBasisPoints,
 		FailingTransactionBMFMultiplierBasisPoints:     gp.FailingTransactionBMFMultiplierBasisPoints,
+		BlockTimestampDriftNanoSecs:                    gp.BlockTimestampDriftNanoSecs,
+		MempoolMaxSizeBytes:                            gp.MempoolMaxSizeBytes,
+		MempoolFeeEstimatorNumMempoolBlocks:            gp.MempoolFeeEstimatorNumMempoolBlocks,
+		MempoolFeeEstimatorNumPastBlocks:               gp.MempoolFeeEstimatorNumPastBlocks,
 	}
 }
 
@@ -4200,6 +4236,10 @@ func (gp *GlobalParamsEntry) RawEncodeWithoutMetadata(blockHeight uint64, skipMe
 		data = append(data, IntToBuf(int64(gp.MaximumVestedIntersectionsPerLockupTransaction))...)
 		data = append(data, UintToBuf(gp.FeeBucketGrowthRateBasisPoints)...)
 		data = append(data, UintToBuf(gp.FailingTransactionBMFMultiplierBasisPoints)...)
+		data = append(data, IntToBuf(gp.BlockTimestampDriftNanoSecs)...)
+		data = append(data, UintToBuf(gp.MempoolMaxSizeBytes)...)
+		data = append(data, UintToBuf(gp.MempoolFeeEstimatorNumMempoolBlocks)...)
+		data = append(data, UintToBuf(gp.MempoolFeeEstimatorNumPastBlocks)...)
 	}
 	return data
 }
@@ -4279,6 +4319,22 @@ func (gp *GlobalParamsEntry) RawDecodeWithoutMetadata(blockHeight uint64, rr *by
 		gp.FailingTransactionBMFMultiplierBasisPoints, err = ReadUvarint(rr)
 		if err != nil {
 			return errors.Wrapf(err, "GlobalParamsEntry.Decode: Problem reading FailingTransactionBMFMultiplierBasisPoints")
+		}
+		gp.BlockTimestampDriftNanoSecs, err = ReadVarint(rr)
+		if err != nil {
+			return errors.Wrapf(err, "GlobalParamsEntry.Decode: Problem reading BlockTimestampDriftNanoSecs")
+		}
+		gp.MempoolMaxSizeBytes, err = ReadUvarint(rr)
+		if err != nil {
+			return errors.Wrapf(err, "GlobalParamsEntry.Decode: Problem reading MempoolMaxSizeBytes")
+		}
+		gp.MempoolFeeEstimatorNumMempoolBlocks, err = ReadUvarint(rr)
+		if err != nil {
+			return errors.Wrapf(err, "GlobalParamsEntry.Decode: Problem reading MempoolFeeEstimatorNumMempoolBlocks")
+		}
+		gp.MempoolFeeEstimatorNumPastBlocks, err = ReadUvarint(rr)
+		if err != nil {
+			return errors.Wrapf(err, "GlobalParamsEntry.Decode: Problem reading MempoolFeeEstimatorNumPastBlocks")
 		}
 	}
 	return nil

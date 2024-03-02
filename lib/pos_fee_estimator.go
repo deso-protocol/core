@@ -126,7 +126,7 @@ func addBlockToTransactionRegister(txnRegister *TransactionRegister, block *MsgD
 		if txn.TxnMeta.GetTxnType() == TxnTypeBlockReward {
 			continue
 		}
-		mtxn, err := NewMempoolTx(txn, NanoSecondsToUint64MicroSeconds(block.Header.TstampNanoSecs), block.Header.Height)
+		mtxn, err := NewMempoolTx(txn, NanoSecondsToTime(block.Header.TstampNanoSecs), block.Header.Height)
 		if err != nil {
 			return errors.Wrap(err, "PoSFeeEstimator.addBlockToTransactionRegister: error creating MempoolTx")
 		}
@@ -159,7 +159,7 @@ func (posFeeEstimator *PoSFeeEstimator) removeBlockNoLock(block *MsgDeSoBlock) e
 		if txn.TxnMeta.GetTxnType() == TxnTypeBlockReward {
 			continue
 		}
-		mtxn, err := NewMempoolTx(txn, NanoSecondsToUint64MicroSeconds(block.Header.TstampNanoSecs), block.Header.Height)
+		mtxn, err := NewMempoolTx(txn, NanoSecondsToTime(block.Header.TstampNanoSecs), block.Header.Height)
 		if err != nil {
 			return errors.Wrap(err, "PoSFeeEstimator.RemoveBlock: error creating MempoolTx")
 		}
@@ -230,16 +230,18 @@ func (posFeeEstimator *PoSFeeEstimator) sortCachedBlocks() {
 // and past blocks using the congestionFactorBasisPoints, priorityPercentileBasisPoints, and
 // maxBlockSize params.
 func (posFeeEstimator *PoSFeeEstimator) EstimateFeeRateNanosPerKB(
-	congestionFactorBasisPoints uint64,
-	priorityPercentileBasisPoints uint64,
+	mempoolCongestionFactorBasisPoints uint64,
+	mempoolPriorityPercentileBasisPoints uint64,
+	pastBlocksCongestionFactorBasisPoints uint64,
+	pastBlocksPriorityPercentileBasisPoints uint64,
 	maxBlockSize uint64,
 ) (uint64, error) {
 	posFeeEstimator.rwLock.RLock()
 	defer posFeeEstimator.rwLock.RUnlock()
 	pastBlockFeeRate, err := posFeeEstimator.estimateFeeRateNanosPerKBGivenTransactionRegister(
 		posFeeEstimator.pastBlocksTransactionRegister,
-		congestionFactorBasisPoints,
-		priorityPercentileBasisPoints,
+		pastBlocksCongestionFactorBasisPoints,
+		pastBlocksPriorityPercentileBasisPoints,
 		posFeeEstimator.numPastBlocks,
 		maxBlockSize,
 	)
@@ -248,8 +250,8 @@ func (posFeeEstimator *PoSFeeEstimator) EstimateFeeRateNanosPerKB(
 	}
 	mempoolFeeRate, err := posFeeEstimator.estimateFeeRateNanosPerKBGivenTransactionRegister(
 		posFeeEstimator.mempoolTransactionRegister,
-		congestionFactorBasisPoints,
-		priorityPercentileBasisPoints,
+		mempoolCongestionFactorBasisPoints,
+		mempoolPriorityPercentileBasisPoints,
 		posFeeEstimator.numMempoolBlocks,
 		maxBlockSize,
 	)

@@ -254,13 +254,13 @@ func (mp *DeSoMempool) GetTransaction(txnHash *BlockHash) *MempoolTransaction {
 	if !exists {
 		return nil
 	}
-	return NewMempoolTransaction(mempoolTx.Tx, uint64(mempoolTx.Added.UnixMicro()))
+	return NewMempoolTransaction(mempoolTx.Tx, mempoolTx.Added)
 }
 
 func (mp *DeSoMempool) GetTransactions() []*MempoolTransaction {
 	return collections.Transform(
 		mp.GetOrderedTransactions(), func(mempoolTx *MempoolTx) *MempoolTransaction {
-			return NewMempoolTransaction(mempoolTx.Tx, uint64(mempoolTx.Added.UnixMicro()))
+			return NewMempoolTransaction(mempoolTx.Tx, mempoolTx.Added)
 		},
 	)
 }
@@ -286,6 +286,8 @@ func (mp *DeSoMempool) UpdateGlobalParams(globalParams *GlobalParamsEntry) {
 }
 
 func (mp *DeSoMempool) GetOrderedTransactions() []*MempoolTx {
+	mp.mtx.RLock()
+	defer mp.mtx.RUnlock()
 	orderedTxns, _, _ := mp.GetTransactionsOrderedByTimeAdded()
 	return orderedTxns
 }
@@ -2129,24 +2131,6 @@ func _computeBitcoinExchangeFields(params *DeSoParams,
 	}, PkToString(publicKey.SerializeCompressed(), params), nil
 }
 
-func ConnectTxnAndComputeTransactionMetadata(
-	txn *MsgDeSoTxn, utxoView *UtxoView, blockHash *BlockHash,
-	blockHeight uint32, blockTimestampNanoSecs int64, txnIndexInBlock uint64) (*TransactionMetadata, error) {
-
-	totalNanosPurchasedBefore := utxoView.NanosPurchased
-	usdCentsPerBitcoinBefore := utxoView.GetCurrentUSDCentsPerBitcoin()
-	utxoOps, totalInput, totalOutput, fees, err := utxoView._connectTransaction(
-		txn, txn.Hash(), blockHeight, blockTimestampNanoSecs, false, false,
-	)
-	if err != nil {
-		return nil, fmt.Errorf(
-			"UpdateTxindex: Error connecting txn to UtxoView: %v", err)
-	}
-
-	return ComputeTransactionMetadata(txn, utxoView, blockHash, totalNanosPurchasedBefore,
-		usdCentsPerBitcoinBefore, totalInput, totalOutput, fees, txnIndexInBlock, utxoOps, uint64(blockHeight)), nil
-}
-
 // This is the main function used for adding a new txn to the pool. It will
 // run all needed validation on the txn before adding it, and it will only
 // accept the txn if these validations pass.
@@ -2446,7 +2430,21 @@ func EstimateMaxTxnFeeV1(txn *MsgDeSoTxn, minFeeRateNanosPerKB uint64) uint64 {
 
 func (mp *DeSoMempool) EstimateFee(txn *MsgDeSoTxn, minFeeRateNanosPerKB uint64,
 	_ uint64, _ uint64, _ uint64, _ uint64, _ uint64) (uint64, error) {
-	return EstimateMaxTxnFeeV1(txn, minFeeRateNanosPerKB), nil
+	feeRate, _ := mp.EstimateFeeRate(minFeeRateNanosPerKB, 0, 0, 0, 0, 0)
+	return EstimateMaxTxnFeeV1(txn, feeRate), nil
+}
+
+func (mp *DeSoMempool) EstimateFeeRate(
+	minFeeRateNanosPerKB uint64,
+	_ uint64,
+	_ uint64,
+	_ uint64,
+	_ uint64,
+	_ uint64) (uint64, error) {
+	if minFeeRateNanosPerKB < mp.readOnlyUtxoView.GlobalParamsEntry.MinimumNetworkFeeNanosPerKB {
+		return mp.readOnlyUtxoView.GlobalParamsEntry.MinimumNetworkFeeNanosPerKB, nil
+	}
+	return minFeeRateNanosPerKB, nil
 }
 
 func convertMempoolTxsToSummaryStats(mempoolTxs []*MempoolTx) map[string]*SummaryStats {

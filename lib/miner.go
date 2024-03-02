@@ -166,7 +166,7 @@ func (desoMiner *DeSoMiner) _mineSingleBlock(threadIndex uint32) (_diffTarget *B
 		// the header we were just mining on.
 		blockToMine.Txns[0].TxOutputs[0].PublicKey = publicKey
 		blockToMine.Txns[0].TxnMeta.(*BlockRewardMetadataa).ExtraData = UintToBuf(extraNonces[0])
-		blockToMine, err = RecomputeBlockRewardWithBlockRewardOutputPublicKey(blockToMine, publicKey)
+		blockToMine, err = RecomputeBlockRewardWithBlockRewardOutputPublicKey(blockToMine, publicKey, desoMiner.params)
 		if err != nil {
 			glog.Errorf("DeSoMiner._startThread: Error recomputing block reward: %v", err)
 			time.Sleep(1 * time.Second)
@@ -196,10 +196,6 @@ func (desoMiner *DeSoMiner) MineAndProcessSingleBlock(threadIndex uint32, mempoo
 	diffTarget, blockToMine := desoMiner._mineSingleBlock(threadIndex)
 	if blockToMine == nil {
 		return nil, fmt.Errorf("DeSoMiner._startThread: _mineSingleBlock returned nil; should only happen if we're stopping")
-	}
-
-	if desoMiner.params.IsPoSBlockHeight(blockToMine.Header.Height) {
-		return nil, fmt.Errorf("DeSoMiner._startThread: _mineSingleBlock returned a block that is past the Proof of Stake Cutover")
 	}
 
 	// Log information on the block we just mined.
@@ -293,6 +289,12 @@ func (desoMiner *DeSoMiner) _startThread(threadIndex uint32) {
 			continue
 		}
 
+		// Exit if blockchain has connected a block at the final PoW block height.
+		currentTip := desoMiner.BlockProducer.chain.blockTip()
+		if currentTip.Header.Height >= desoMiner.params.GetFinalPoWBlockHeight() {
+			return
+		}
+
 		newBlock, err := desoMiner.MineAndProcessSingleBlock(threadIndex, nil /*mempoolToUpdate*/)
 		if err != nil {
 			glog.Errorf(err.Error())
@@ -317,8 +319,12 @@ func (desoMiner *DeSoMiner) Start() {
 			"start the miner")
 		return
 	}
-	glog.Infof("DeSoMiner.Start: Starting miner with difficulty target %s", desoMiner.params.MinDifficultyTargetHex)
 	blockTip := desoMiner.BlockProducer.chain.blockTip()
+	if desoMiner.params.IsPoSBlockHeight(blockTip.Header.Height) {
+		glog.Infof("DeSoMiner.Start: NOT starting miner because we are at a PoS block height %d", blockTip.Header.Height)
+		return
+	}
+	glog.Infof("DeSoMiner.Start: Starting miner with difficulty target %s", desoMiner.params.MinDifficultyTargetHex)
 	glog.Infof("DeSoMiner.Start: Block tip height %d, cum work %v, and difficulty %v",
 		blockTip.Header.Height, BigintToHash(blockTip.CumWork), blockTip.DifficultyTarget)
 	// Start a bunch of threads to mine for blocks.
@@ -400,6 +406,10 @@ func HashToBigint(hash *BlockHash) *big.Int {
 }
 
 func BigintToHash(bigint *big.Int) *BlockHash {
+	if bigint == nil {
+		glog.Errorf("BigintToHash: Bigint is nil")
+		return nil
+	}
 	hexStr := bigint.Text(16)
 	if len(hexStr)%2 != 0 {
 		// If we have an odd number of bytes add one to the beginning (remember
@@ -410,6 +420,7 @@ func BigintToHash(bigint *big.Int) *BlockHash {
 	if err != nil {
 		glog.Errorf("Failed in converting bigint (%#v) with hex "+
 			"string (%s) to hash.", bigint, hexStr)
+		return nil
 	}
 	if len(hexBytes) > HashSizeBytes {
 		glog.Errorf("BigintToHash: Bigint %v overflows the hash size %d", bigint, HashSizeBytes)

@@ -50,7 +50,7 @@ func NewTransactionRegister() *TransactionRegister {
 		totalTxnsSizeBytes:        0,
 		// Set default values for the uninitialized fields. This is safe because any transactions
 		// added to the register will be re-bucketed once the params are updated.
-		minimumNetworkFeeNanosPerKB:    minimumNetworkFeeNanosPerKB, // Default to 1000 nanos per KB
+		minimumNetworkFeeNanosPerKB:    minimumNetworkFeeNanosPerKB, // Default to 100 nanos per KB
 		feeBucketGrowthRateBasisPoints: feeBucketMultiplier,         // Default to 10%
 	}
 }
@@ -59,11 +59,6 @@ func (tr *TransactionRegister) Init(globalParams *GlobalParamsEntry) {
 	minNetworkFee, bucketMultiplier := globalParams.ComputeFeeTimeBucketMinimumFeeAndMultiplier()
 	if !_isValidMinimumFeeAndMultiplier(minNetworkFee, bucketMultiplier) {
 		minNetworkFee, bucketMultiplier = _getFallbackSafeMinimumFeeAndMultiplier()
-		glog.Warningf(
-			"TransactionRegister.Init: Invalid minimumNetworkFeeNanosPerKB or feeBucketMultiplier. "+
-				"Using fallback values: minimumNetworkFeeNanosPerKB: %v, feeBucketMultiplier: %v",
-			minNetworkFee, bucketMultiplier,
-		)
 	}
 	tr.minimumNetworkFeeNanosPerKB = minNetworkFee
 	tr.feeBucketGrowthRateBasisPoints = bucketMultiplier
@@ -697,7 +692,7 @@ func _isValidMinimumFeeAndMultiplier(minimumNetworkFeeNanosPerKB *big.Float, fee
 }
 
 func _getFallbackSafeMinimumFeeAndMultiplier() (*big.Float, *big.Float) {
-	minimumNetworkFeeNanosPerKB := big.NewFloat(1000) // Default to 1000 nanos per KB
-	feeBucketMultiplier := big.NewFloat(1000)         // Default to 10%
+	minimumNetworkFeeNanosPerKB := big.NewFloat(100) // Default to 100 nanos per KB
+	feeBucketMultiplier := big.NewFloat(1000)        // Default to 10%
 	return minimumNetworkFeeNanosPerKB, feeBucketMultiplier
 }

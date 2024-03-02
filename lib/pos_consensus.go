@@ -14,6 +14,7 @@ import (
 
 type FastHotStuffConsensus struct {
 	lock                                sync.RWMutex
+	networkManager                      *NetworkManager
 	blockchain                          *Blockchain
 	fastHotStuffEventLoop               consensus.FastHotStuffEventLoop
 	mempool                             Mempool
@@ -25,6 +26,7 @@ type FastHotStuffConsensus struct {
 
 func NewFastHotStuffConsensus(
 	params *DeSoParams,
+	networkManager *NetworkManager,
 	blockchain *Blockchain,
 	mempool Mempool,
 	signer *BLSSigner,
@@ -32,6 +34,7 @@ func NewFastHotStuffConsensus(
 	timeoutBaseDurationMilliseconds uint64,
 ) *FastHotStuffConsensus {
 	return &FastHotStuffConsensus{
+		networkManager:                      networkManager,
 		blockchain:                          blockchain,
 		fastHotStuffEventLoop:               consensus.NewFastHotStuffEventLoop(),
 		mempool:                             mempool,
@@ -45,69 +48,81 @@ func NewFastHotStuffConsensus(
 // FastHotStuffConsensus.Start initializes and starts the FastHotStuffEventLoop based on the
 // blockchain state. This should only be called once the blockchain has synced, the node is
 // ready to join the validator network, and the node is able to validate blocks in the steady state.
-func (cc *FastHotStuffConsensus) Start() error {
+func (fc *FastHotStuffConsensus) Start() error {
 	// Hold the consensus' write lock for thread-safety.
-	cc.lock.Lock()
-	defer cc.lock.Unlock()
+	fc.lock.Lock()
+	defer fc.lock.Unlock()
 
 	// The consensus can only be kicked off with an uninitialized event loop
-	if cc.fastHotStuffEventLoop.IsInitialized() {
+	if fc.fastHotStuffEventLoop.IsInitialized() {
 		return errors.New("FastHotStuffConsensus.Start: FastHotStuffEventLoop is already initialized")
 	}
 
 	// Hold the blockchain's read lock so that the chain cannot be mutated underneath us. In practice,
 	// this is a no-op, but it guarantees thread-safety in the event that other parts of the codebase
 	// change.
-	cc.blockchain.ChainLock.RLock()
-	defer cc.blockchain.ChainLock.RUnlock()
+	fc.blockchain.ChainLock.RLock()
+	defer fc.blockchain.ChainLock.RUnlock()
 
 	// Fetch the current tip of the chain
-	tipBlock := cc.blockchain.BlockTip()
+	tipBlock := fc.blockchain.BlockTip()
 	tipHeight := tipBlock.Header.Height
 
 	// If the chain is not at the final PoW block height or higher, then we cannot start the PoS consensus.
-	if tipHeight < cc.params.GetFinalPoWBlockHeight() {
+	if tipHeight < fc.params.GetFinalPoWBlockHeight() {
 		return errors.Errorf(
 			"FastHotStuffConsensus.Start: Block tip %d is not at the final PoW block height", tipBlock.Height,
 		)
 	}
 
-	genesisQC, err := cc.blockchain.GetProofOfStakeGenesisQuorumCertificate()
+	genesisQC, err := fc.blockchain.GetProofOfStakeGenesisQuorumCertificate()
 	if err != nil {
 		return errors.Errorf("FastHotStuffConsensus.Start: Error creating PoS cutover genesis QC: %v", err)
 	}
 
 	// Fetch the validator set at each safe block
-	tipBlockWithValidators, err := cc.fetchValidatorListsForSafeBlocks([]*MsgDeSoHeader{tipBlock.Header})
+	tipBlockWithValidators, err := fc.fetchValidatorListsForSafeBlocks([]*MsgDeSoHeader{tipBlock.Header})
 	if err != nil {
 		return errors.Errorf("FastHotStuffConsensus.Start: Error fetching validator list for tip blocks: %v", err)
 	}
 
 	// Fetch the safe blocks that are eligible to be extended from by the next incoming tip block
-	safeBlocks, err := cc.blockchain.GetSafeBlocks()
+	safeBlocks, err := fc.blockchain.GetSafeBlocks()
 	if err != nil {
 		return errors.Errorf("FastHotStuffConsensus.Start: Error fetching safe blocks: %v", err)
 	}
 
 	// Fetch the validator set at each safe block
-	safeBlocksWithValidators, err := cc.fetchValidatorListsForSafeBlocks(safeBlocks)
+	safeBlocksWithValidators, err := fc.fetchValidatorListsForSafeBlocks(safeBlocks)
 	if err != nil {
 		return errors.Errorf("FastHotStuffConsensus.Start: Error fetching validator lists for safe blocks: %v", err)
 	}
 
 	// Compute the block production internal and timeout base duration as time.Duration
-	blockProductionInterval := time.Millisecond * time.Duration(cc.blockProductionIntervalMilliseconds)
-	timeoutBaseDuration := time.Millisecond * time.Duration(cc.timeoutBaseDurationMilliseconds)
+	blockProductionInterval := time.Millisecond * time.Duration(fc.blockProductionIntervalMilliseconds)
+	timeoutBaseDuration := time.Millisecond * time.Duration(fc.timeoutBaseDurationMilliseconds)
 
-	// Initialize and start the event loop
-	cc.fastHotStuffEventLoop.Init(blockProductionInterval, timeoutBaseDuration, genesisQC, tipBlockWithValidators[0], safeBlocksWithValidators)
-	cc.fastHotStuffEventLoop.Start()
+	// Initialize the event loop. This should never fail. If it does, we return the error to the caller.
+	// The caller handle the error and decide when to retry.
+	err = fc.fastHotStuffEventLoop.Init(blockProductionInterval, timeoutBaseDuration, genesisQC, tipBlockWithValidators[0], safeBlocksWithValidators)
+	if err != nil {
+		return errors.Errorf("FastHotStuffConsensus.Start: Error initializing FastHotStuffEventLoop: %v", err)
+	}
+
+	// Start the event loop
+	fc.fastHotStuffEventLoop.Start()
+
+	// Update the validator connections in the NetworkManager. This is a best effort operation. If it fails,
+	// we log the error and continue.
+	if err = fc.updateActiveValidatorConnections(); err != nil {
+		glog.Errorf("FastHotStuffConsensus.tryProcessBlockAsNewTip: Error updating validator connections: %v", err)
+	}
 
 	return nil
 }
 
-func (cc *FastHotStuffConsensus) IsRunning() bool {
-	return cc.fastHotStuffEventLoop.IsRunning()
+func (fc *FastHotStuffConsensus) IsRunning() bool {
+	return fc.fastHotStuffEventLoop.IsRunning()
 }
 
 func (fc *FastHotStuffConsensus) Stop() {
@@ -121,24 +136,24 @@ func (fc *FastHotStuffConsensus) Stop() {
 // HandleLocalBlockProposalEvent is called when FastHotStuffEventLoop has signaled that it can
 // construct a block at a certain block height. This function validates the block proposal signal,
 // constructs, processes locally, and then broadcasts the block.
-func (cc *FastHotStuffConsensus) HandleLocalBlockProposalEvent(event *consensus.FastHotStuffEvent) error {
+func (fc *FastHotStuffConsensus) HandleLocalBlockProposalEvent(event *consensus.FastHotStuffEvent) error {
 	// Hold a read and write lock on the consensus. This is because we need to check
 	// the current view of the consensus event loop, and to update the blockchain.
-	cc.lock.Lock()
-	defer cc.lock.Unlock()
+	fc.lock.Lock()
+	defer fc.lock.Unlock()
 
-	if !cc.fastHotStuffEventLoop.IsRunning() {
+	if !fc.fastHotStuffEventLoop.IsRunning() {
 		return errors.Errorf("FastHotStuffConsensus.HandleLocalBlockProposalEvent: FastHotStuffEventLoop is not running")
 	}
 
 	// Hold the blockchain's write lock so that the chain cannot be mutated underneath us.
 	// In practice, this is a no-op, but it guarantees thread-safety in the event that other
 	// parts of the codebase change.
-	cc.blockchain.ChainLock.Lock()
-	defer cc.blockchain.ChainLock.Unlock()
+	fc.blockchain.ChainLock.Lock()
+	defer fc.blockchain.ChainLock.Unlock()
 
 	// Handle the event as a block proposal event for a regular block
-	if err := cc.handleBlockProposalEvent(event, consensus.FastHotStuffEventTypeConstructVoteQC); err != nil {
+	if err := fc.handleBlockProposalEvent(event, consensus.FastHotStuffEventTypeConstructVoteQC); err != nil {
 		return errors.Wrapf(err, "FastHotStuffConsensus.HandleLocalBlockProposalEvent: ")
 	}
 
@@ -149,24 +164,24 @@ func (cc *FastHotStuffConsensus) HandleLocalBlockProposalEvent(event *consensus.
 // HandleLocalTimeoutBlockProposalEvent is called when FastHotStuffEventLoop has signaled that it can
 // construct a timeout block at a certain block height. This function validates the timeout block proposal
 // signal, constructs, processes locally, and then broadcasts the block.
-func (cc *FastHotStuffConsensus) HandleLocalTimeoutBlockProposalEvent(event *consensus.FastHotStuffEvent) error {
+func (fc *FastHotStuffConsensus) HandleLocalTimeoutBlockProposalEvent(event *consensus.FastHotStuffEvent) error {
 	// Hold a read and write lock on the consensus. This is because we need to check
 	// the current view of the consensus event loop, and to update the blockchain.
-	cc.lock.Lock()
-	defer cc.lock.Unlock()
+	fc.lock.Lock()
+	defer fc.lock.Unlock()
 
-	if !cc.fastHotStuffEventLoop.IsRunning() {
+	if !fc.fastHotStuffEventLoop.IsRunning() {
 		return errors.Errorf("FastHotStuffConsensus.HandleLocalTimeoutBlockProposalEvent: FastHotStuffEventLoop is not running")
 	}
 
 	// Hold the blockchain's write lock so that the chain cannot be mutated underneath us.
 	// In practice, this is a no-op, but it guarantees thread-safety in the event that other
 	// parts of the codebase change.
-	cc.blockchain.ChainLock.Lock()
-	defer cc.blockchain.ChainLock.Unlock()
+	fc.blockchain.ChainLock.Lock()
+	defer fc.blockchain.ChainLock.Unlock()
 
 	// Handle the event as a block proposal event for a timeout block
-	if err := cc.handleBlockProposalEvent(event, consensus.FastHotStuffEventTypeConstructTimeoutQC); err != nil {
+	if err := fc.handleBlockProposalEvent(event, consensus.FastHotStuffEventTypeConstructTimeoutQC); err != nil {
 		return errors.Wrapf(err, "FastHotStuffConsensus.HandleLocalTimeoutBlockProposalEvent: ")
 	}
 
@@ -187,7 +202,7 @@ func (cc *FastHotStuffConsensus) HandleLocalTimeoutBlockProposalEvent(event *con
 //     - This will connect the block to the blockchain, remove the transactions from the
 //     mempool, and process the vote in the FastHotStuffEventLoop
 //  6. Broadcast the block to the network
-func (cc *FastHotStuffConsensus) handleBlockProposalEvent(
+func (fc *FastHotStuffConsensus) handleBlockProposalEvent(
 	event *consensus.FastHotStuffEvent,
 	expectedEventType consensus.FastHotStuffEventType,
 ) error {
@@ -203,7 +218,7 @@ func (cc *FastHotStuffConsensus) handleBlockProposalEvent(
 
 	// Fetch the parent block
 	parentBlockHash := BlockHashFromConsensusInterface(event.QC.GetBlockHash())
-	parentBlock, parentBlockExists := cc.blockchain.blockIndexByHash[*parentBlockHash]
+	parentBlock, parentBlockExists := fc.blockchain.blockIndexByHash[*parentBlockHash]
 	if !parentBlockExists {
 		return errors.Errorf("Error fetching parent block: %v", parentBlockHash)
 	}
@@ -229,7 +244,7 @@ func (cc *FastHotStuffConsensus) handleBlockProposalEvent(
 	// Validate that the event's view is not stale. If the view is stale, then it means that the consensus
 	// has advanced to the next view after queuing this block proposal event. This is normal and an expected
 	// race condition in the steady-state.
-	currentView := cc.fastHotStuffEventLoop.GetCurrentView()
+	currentView := fc.fastHotStuffEventLoop.GetCurrentView()
 	if currentView > event.View {
 		return errors.Errorf(
 			"Error constructing block at height %d. Stale view %d",
@@ -245,29 +260,29 @@ func (cc *FastHotStuffConsensus) handleBlockProposalEvent(
 	}
 
 	// Compute the next proposer random seed signature
-	proposerRandomSeedSignature, err := cc.signer.SignRandomSeedHash(parentBlockRandomSeedHash)
+	proposerRandomSeedSignature, err := fc.signer.SignRandomSeedHash(parentBlockRandomSeedHash)
 	if err != nil {
 		return errors.Wrapf(err, "Error signing random seed hash for block at height %d: ", event.TipBlockHeight+1)
 	}
 
 	// Construct the unsigned block
-	unsignedBlock, err := cc.produceUnsignedBlockForBlockProposalEvent(event, proposerRandomSeedSignature)
+	blockProposal, err := fc.produceUnsignedBlockForBlockProposalEvent(event, proposerRandomSeedSignature)
 	if err != nil {
 		return errors.Wrapf(err, "Error producing unsigned block for proposal at height %d", event.TipBlockHeight+1)
 	}
 
 	// Sign the block
-	blockHash, err := unsignedBlock.Header.Hash()
+	blockHash, err := blockProposal.Header.Hash()
 	if err != nil {
 		return errors.Errorf("Error hashing block: %v", err)
 	}
-	unsignedBlock.Header.ProposerVotePartialSignature, err = cc.signer.SignBlockProposal(unsignedBlock.Header.ProposedInView, blockHash)
+	blockProposal.Header.ProposerVotePartialSignature, err = fc.signer.SignBlockProposal(blockProposal.Header.ProposedInView, blockHash)
 	if err != nil {
 		return errors.Errorf("Error signing block: %v", err)
 	}
 
 	// Process the block locally
-	missingBlockHashes, err := cc.tryProcessBlockAsNewTip(unsignedBlock)
+	missingBlockHashes, err := fc.tryProcessBlockAsNewTip(blockProposal)
 	if err != nil {
 		return errors.Errorf("Error processing block locally: %v", err)
 	}
@@ -281,9 +296,20 @@ func (cc *FastHotStuffConsensus) handleBlockProposalEvent(
 		)
 	}
 
-	// TODO: Broadcast the block proposal to the network
+	// Broadcast the block to the validator network
+	validators := fc.networkManager.rnManager.GetValidatorIndex().GetAll()
+	for _, validator := range validators {
+		sendMessageToRemoteNodeAsync(validator, blockProposal)
+	}
 
-	cc.logBlockProposal(unsignedBlock, blockHash)
+	// Broadcast the block to all inbound non-validator peers. This allows them to sync
+	// blocks from us.
+	nonValidators := fc.networkManager.rnManager.GetNonValidatorInboundIndex().GetAll()
+	for _, nonValidator := range nonValidators {
+		sendMessageToRemoteNodeAsync(nonValidator, blockProposal)
+	}
+
+	fc.logBlockProposal(blockProposal, blockHash)
 	return nil
 }
 
@@ -296,13 +322,13 @@ func (cc *FastHotStuffConsensus) handleBlockProposalEvent(
 // 2. Construct the vote message
 // 3. Process the vote in the consensus module
 // 4. Broadcast the vote msg to the network
-func (cc *FastHotStuffConsensus) HandleLocalVoteEvent(event *consensus.FastHotStuffEvent) error {
+func (fc *FastHotStuffConsensus) HandleLocalVoteEvent(event *consensus.FastHotStuffEvent) error {
 	// Hold a read lock on the consensus. This is because we need to check the
 	// current view and block height of the consensus module.
-	cc.lock.Lock()
-	defer cc.lock.Unlock()
+	fc.lock.Lock()
+	defer fc.lock.Unlock()
 
-	if !cc.fastHotStuffEventLoop.IsRunning() {
+	if !fc.fastHotStuffEventLoop.IsRunning() {
 		return errors.Errorf("FastHotStuffConsensus.HandleLocalVoteEvent: FastHotStuffEventLoop is not running")
 	}
 
@@ -326,43 +352,49 @@ func (cc *FastHotStuffConsensus) HandleLocalVoteEvent(event *consensus.FastHotSt
 	voteMsg := NewMessage(MsgTypeValidatorVote).(*MsgDeSoValidatorVote)
 	voteMsg.MsgVersion = MsgValidatorVoteVersion0
 	voteMsg.ProposedInView = event.View
-	voteMsg.VotingPublicKey = cc.signer.GetPublicKey()
+	voteMsg.VotingPublicKey = fc.signer.GetPublicKey()
 
 	// Get the block hash
 	voteMsg.BlockHash = BlockHashFromConsensusInterface(event.TipBlockHash)
 
 	// Sign the vote message
-	voteMsg.VotePartialSignature, err = cc.signer.SignValidatorVote(event.View, event.TipBlockHash)
+	voteMsg.VotePartialSignature, err = fc.signer.SignValidatorVote(event.View, event.TipBlockHash)
 	if err != nil {
 		// This should never happen as long as the BLS signer is initialized correctly.
 		return errors.Errorf("FastHotStuffConsensus.HandleLocalVoteEvent: Error signing validator vote: %v", err)
 	}
 
 	// Process the vote message locally in the FastHotStuffEventLoop
-	if err := cc.fastHotStuffEventLoop.ProcessValidatorVote(voteMsg); err != nil {
+	if err := fc.fastHotStuffEventLoop.ProcessValidatorVote(voteMsg); err != nil {
 		// If we can't process the vote locally, then it must somehow be malformed, stale,
 		// or a duplicate vote/timeout for the same view. Something is very wrong. We should not
 		// broadcast it to the network.
 		return errors.Errorf("FastHotStuffConsensus.HandleLocalVoteEvent: Error processing vote locally: %v", err)
 	}
 
-	// Broadcast the vote message to the network
-	// TODO: Broadcast the vote message to the network or alternatively to just the block proposer
+	// Broadcast the block to the validator network
+	validators := fc.networkManager.rnManager.GetValidatorIndex().GetAll()
+	for _, validator := range validators {
+		sendMessageToRemoteNodeAsync(validator, voteMsg)
+	}
 
 	return nil
 }
 
 // HandleValidatorVote is called when we receive a validator vote message from a peer. This function processes
 // the vote locally in the FastHotStuffEventLoop.
-func (cc *FastHotStuffConsensus) HandleValidatorVote(pp *Peer, msg *MsgDeSoValidatorVote) error {
+func (fc *FastHotStuffConsensus) HandleValidatorVote(pp *Peer, msg *MsgDeSoValidatorVote) error {
+	glog.V(2).Infof("FastHotStuffConsensus.HandleValidatorVote: Received vote msg %s", msg.ToString())
+
 	// No need to hold a lock on the consensus because this function is a pass-through
 	// for the FastHotStuffEventLoop which guarantees thread-safety for its callers
 
 	// Process the vote message locally in the FastHotStuffEventLoop
-	if err := cc.fastHotStuffEventLoop.ProcessValidatorVote(msg); err != nil {
+	if err := fc.fastHotStuffEventLoop.ProcessValidatorVote(msg); err != nil {
 		// If we can't process the vote locally, then it must somehow be malformed, stale,
 		// or a duplicate vote/timeout for the same view.
-		return errors.Wrapf(err, "FastHotStuffConsensus.HandleValidatorVote: Error processing vote: ")
+		glog.Errorf("FastHotStuffConsensus.HandleValidatorVote: Error processing vote msg: %v", err)
+		return errors.Wrapf(err, "FastHotStuffConsensus.HandleValidatorVote: Error processing vote msg: ")
 	}
 
 	// Happy path
@@ -378,21 +410,21 @@ func (cc *FastHotStuffConsensus) HandleValidatorVote(pp *Peer, msg *MsgDeSoValid
 // 2. Construct the timeout message
 // 3. Process the timeout in the consensus module
 // 4. Broadcast the timeout msg to the network
-func (cc *FastHotStuffConsensus) HandleLocalTimeoutEvent(event *consensus.FastHotStuffEvent) error {
+func (fc *FastHotStuffConsensus) HandleLocalTimeoutEvent(event *consensus.FastHotStuffEvent) error {
 	// Hold a read lock on the consensus. This is because we need to check the
 	// current view and block height of the consensus module.
-	cc.lock.Lock()
-	defer cc.lock.Unlock()
+	fc.lock.Lock()
+	defer fc.lock.Unlock()
 
-	if !cc.fastHotStuffEventLoop.IsRunning() {
+	if !fc.fastHotStuffEventLoop.IsRunning() {
 		return errors.Errorf("FastHotStuffConsensus.HandleLocalTimeoutEvent: FastHotStuffEventLoop is not running")
 	}
 
 	// Hold the blockchain's write lock so that the chain cannot be mutated underneath us.
 	// In practice, this is a no-op, but it guarantees thread-safety in the event that other
 	// parts of the codebase change.
-	cc.blockchain.ChainLock.RLock()
-	defer cc.blockchain.ChainLock.RUnlock()
+	fc.blockchain.ChainLock.RLock()
+	defer fc.blockchain.ChainLock.RUnlock()
 
 	var err error
 
@@ -401,7 +433,7 @@ func (cc *FastHotStuffConsensus) HandleLocalTimeoutEvent(event *consensus.FastHo
 		return errors.Errorf("FastHotStuffConsensus.HandleLocalTimeoutEvent: Received improperly formed timeout event: %v", event)
 	}
 
-	if event.View != cc.fastHotStuffEventLoop.GetCurrentView() {
+	if event.View != fc.fastHotStuffEventLoop.GetCurrentView() {
 		// It's possible that the event loop signaled to timeout, but at the same time, we
 		// received a block proposal from the network and advanced the view. This is normal
 		// and an expected race condition in the steady-state.
@@ -413,7 +445,7 @@ func (cc *FastHotStuffConsensus) HandleLocalTimeoutEvent(event *consensus.FastHo
 	// Locally advance the event loop's view so that the node is locally running the Fast-HotStuff
 	// protocol correctly. Any errors below related to broadcasting the timeout message should not
 	// affect the correctness of the protocol's local execution.
-	if _, err := cc.fastHotStuffEventLoop.AdvanceViewOnTimeout(); err != nil {
+	if _, err := fc.fastHotStuffEventLoop.AdvanceViewOnTimeout(); err != nil {
 		// This should never happen as long as the event loop is running. If it happens, we return
 		// the error and let the caller handle it.
 		return errors.Errorf("FastHotStuffConsensus.HandleLocalTimeoutEvent: Error advancing view on timeout: %v", err)
@@ -423,7 +455,7 @@ func (cc *FastHotStuffConsensus) HandleLocalTimeoutEvent(event *consensus.FastHo
 	tipBlockHash := BlockHashFromConsensusInterface(event.TipBlockHash)
 
 	// Fetch the HighQC from the Blockchain struct
-	tipBlockNode, tipBlockExists := cc.blockchain.blockIndexByHash[*tipBlockHash]
+	tipBlockNode, tipBlockExists := fc.blockchain.blockIndexByHash[*tipBlockHash]
 	if !tipBlockExists {
 		return errors.Errorf("FastHotStuffConsensus.HandleLocalTimeoutEvent: Error fetching tip block: %v", tipBlockHash)
 	}
@@ -432,12 +464,12 @@ func (cc *FastHotStuffConsensus) HandleLocalTimeoutEvent(event *consensus.FastHo
 	timeoutMsg := NewMessage(MsgTypeValidatorTimeout).(*MsgDeSoValidatorTimeout)
 	timeoutMsg.MsgVersion = MsgValidatorTimeoutVersion0
 	timeoutMsg.TimedOutView = event.View
-	timeoutMsg.VotingPublicKey = cc.signer.GetPublicKey()
+	timeoutMsg.VotingPublicKey = fc.signer.GetPublicKey()
 
-	if cc.params.IsFinalPoWBlockHeight(tipBlockNode.Header.Height) {
+	if fc.params.IsFinalPoWBlockHeight(tipBlockNode.Header.Height) {
 		// If the tip block is the final block of the PoW chain, then we can use the PoS chain's genesis block
 		// as the highQC for it.
-		if timeoutMsg.HighQC, err = cc.blockchain.GetProofOfStakeGenesisQuorumCertificate(); err != nil {
+		if timeoutMsg.HighQC, err = fc.blockchain.GetProofOfStakeGenesisQuorumCertificate(); err != nil {
 			return errors.Errorf("FastHotStuffConsensus.Start: Error creating PoS cutover genesis QC: %v", err)
 		}
 	} else {
@@ -446,14 +478,14 @@ func (cc *FastHotStuffConsensus) HandleLocalTimeoutEvent(event *consensus.FastHo
 	}
 
 	// Sign the timeout message
-	timeoutMsg.TimeoutPartialSignature, err = cc.signer.SignValidatorTimeout(event.View, timeoutMsg.HighQC.GetView())
+	timeoutMsg.TimeoutPartialSignature, err = fc.signer.SignValidatorTimeout(event.View, timeoutMsg.HighQC.GetView())
 	if err != nil {
 		// This should never happen as long as the BLS signer is initialized correctly.
 		return errors.Errorf("FastHotStuffConsensus.HandleLocalTimeoutEvent: Error signing validator timeout: %v", err)
 	}
 
 	// Process the timeout message locally in the FastHotStuffEventLoop
-	if err := cc.fastHotStuffEventLoop.ProcessValidatorTimeout(timeoutMsg); err != nil {
+	if err := fc.fastHotStuffEventLoop.ProcessValidatorTimeout(timeoutMsg); err != nil {
 		// This should never happen. If we error here, it means that the timeout message is stale
 		// beyond the committed tip, the timeout message is malformed, or the timeout message is
 		// is duplicated for the same view. In any case, something is very wrong. We should not
@@ -461,49 +493,70 @@ func (cc *FastHotStuffConsensus) HandleLocalTimeoutEvent(event *consensus.FastHo
 		return errors.Errorf("FastHotStuffConsensus.HandleLocalTimeoutEvent: Error processing timeout locally: %v", err)
 	}
 
-	// Broadcast the timeout message to the network
-	// TODO: Broadcast the timeout message to the network or alternatively to just the block proposer
+	// Broadcast the block to the validator network
+	validators := fc.networkManager.rnManager.GetValidatorIndex().GetAll()
+	for _, validator := range validators {
+		sendMessageToRemoteNodeAsync(validator, timeoutMsg)
+	}
 
 	return nil
 }
 
 // HandleValidatorTimeout is called when we receive a validator timeout message from a peer. This function
 // processes the timeout locally in the FastHotStuffEventLoop.
-func (cc *FastHotStuffConsensus) HandleValidatorTimeout(pp *Peer, msg *MsgDeSoValidatorTimeout) error {
-	// No need to hold a lock on the consensus because this function is a pass-through
-	// for the FastHotStuffEventLoop which guarantees thread-safety for its callers.
+func (fc *FastHotStuffConsensus) HandleValidatorTimeout(pp *Peer, msg *MsgDeSoValidatorTimeout) error {
+	glog.V(2).Infof("FastHotStuffConsensus.HandleLocalTimeoutEvent: Received timeout msg: %s", msg.ToString())
+
+	// Hold a write lock on the consensus, since we need to update the timeout message in the
+	// FastHotStuffEventLoop.
+	fc.lock.Lock()
+	defer fc.lock.Unlock()
+
+	if !fc.fastHotStuffEventLoop.IsRunning() {
+		return errors.Errorf("FastHotStuffConsensus.HandleValidatorTimeout: FastHotStuffEventLoop is not running")
+	}
+
+	// If we don't have the highQC's block on hand, then we need to request it from the peer. We do
+	// that first before storing the timeout message locally in the FastHotStuffEventLoop. This
+	// prevents spamming of timeout messages by peers.
+	if !fc.blockchain.HasBlockInBlockIndex(msg.HighQC.BlockHash) {
+		fc.trySendMessageToPeer(pp, &MsgDeSoGetBlocks{HashList: []*BlockHash{msg.HighQC.BlockHash}})
+		glog.Errorf("FastHotStuffConsensus.HandleValidatorTimeout: Requesting missing highQC's block: %v", msg.HighQC.BlockHash)
+		return errors.Errorf("FastHotStuffConsensus.HandleValidatorTimeout: Missing highQC's block: %v", msg.HighQC.BlockHash)
+	}
 
 	// Process the timeout message locally in the FastHotStuffEventLoop
-	if err := cc.fastHotStuffEventLoop.ProcessValidatorTimeout(msg); err != nil {
+	if err := fc.fastHotStuffEventLoop.ProcessValidatorTimeout(msg); err != nil {
 		// If we can't process the timeout locally, then it must somehow be malformed, stale,
 		// or a duplicate vote/timeout for the same view.
-		return errors.Wrapf(err, "FastHotStuffConsensus.HandleValidatorTimeout: Error processing timeout: ")
+		glog.Errorf("FastHotStuffConsensus.HandleValidatorTimeout: Error processing timeout msg: %v", err)
+		return errors.Wrapf(err, "FastHotStuffConsensus.HandleValidatorTimeout: Error processing timeout msg: ")
 	}
 
 	// Happy path
 	return nil
 }
 
-func (cc *FastHotStuffConsensus) HandleBlock(pp *Peer, msg *MsgDeSoBlock) error {
+func (fc *FastHotStuffConsensus) HandleBlock(pp *Peer, msg *MsgDeSoBlock) error {
 	// Hold a lock on the consensus, because we will need to mutate the Blockchain
 	// and the FastHotStuffEventLoop data structures.
-	cc.lock.Lock()
-	defer cc.lock.Unlock()
+	fc.lock.Lock()
+	defer fc.lock.Unlock()
 
-	if !cc.fastHotStuffEventLoop.IsRunning() {
+	if !fc.fastHotStuffEventLoop.IsRunning() {
 		return errors.Errorf("FastHotStuffConsensus.HandleBlock: FastHotStuffEventLoop is not running")
 	}
 
 	// Hold the blockchain's write lock so that the chain cannot be mutated underneath us.
 	// In practice, this is a no-op, but it guarantees thread-safety in the event that other
 	// parts of the codebase change.
-	cc.blockchain.ChainLock.Lock()
-	defer cc.blockchain.ChainLock.Unlock()
+	fc.blockchain.ChainLock.Lock()
+	defer fc.blockchain.ChainLock.Unlock()
 
 	// Try to apply the block as the new tip of the blockchain. If the block is an orphan, then
 	// we will get back a list of missing ancestor block hashes. We can fetch the missing blocks
 	// from the network and retry.
-	missingBlockHashes, err := cc.tryProcessBlockAsNewTip(msg)
+	missingBlockHashes, err := fc.tryProcessBlockAsNewTip(msg)
 	if err != nil {
 		// If we get an error here, it means something went wrong with the block processing algorithm.
 		// Nothing we can do to recover here.
@@ -519,9 +572,11 @@ func (cc *FastHotStuffConsensus) HandleBlock(pp *Peer, msg *MsgDeSoBlock) error 
 	//
 	// See https://github.com/deso-protocol/core/pull/875#discussion_r1460183510 for more details.
 	if len(missingBlockHashes) > 0 {
-		pp.QueueMessage(&MsgDeSoGetBlocks{
-			HashList: missingBlockHashes,
-		})
+		remoteNode := fc.networkManager.rnManager.GetRemoteNodeFromPeer(pp)
+		if remoteNode == nil {
+			return errors.Errorf("FastHotStuffConsensus.HandleBlock: RemoteNode not found for peer: %v", pp)
+		}
+		sendMessageToRemoteNodeAsync(remoteNode, &MsgDeSoGetBlocks{HashList: missingBlockHashes})
 	}
 
 	return nil
@@ -533,11 +588,11 @@ func (cc *FastHotStuffConsensus) HandleBlock(pp *Peer, msg *MsgDeSoBlock) error 
 //
 // Reference Implementation:
 // https://github.com/deso-protocol/hotstuff_pseudocode/blob/6409b51c3a9a953b383e90619076887e9cebf38d/fast_hotstuff_bls.go#L573
-func (cc *FastHotStuffConsensus) tryProcessBlockAsNewTip(block *MsgDeSoBlock) ([]*BlockHash, error) {
+func (fc *FastHotStuffConsensus) tryProcessBlockAsNewTip(block *MsgDeSoBlock) ([]*BlockHash, error) {
 	// Try to apply the block locally as the new tip of the blockchain
-	successfullyAppliedNewTip, _, missingBlockHashes, err := cc.blockchain.processBlockPoS(
+	successfullyAppliedNewTip, _, missingBlockHashes, err := fc.blockchain.processBlockPoS(
 		block, // Pass in the block itself
-		cc.fastHotStuffEventLoop.GetCurrentView(), // Pass in the current view to ensure we don't process a stale block
+		fc.fastHotStuffEventLoop.GetCurrentView(), // Pass in the current view to ensure we don't process a stale block
 		true, // Make sure we verify signatures in the block
 	)
 	if err != nil {
@@ -556,13 +611,13 @@ func (cc *FastHotStuffConsensus) tryProcessBlockAsNewTip(block *MsgDeSoBlock) ([
 	// safe blocks
 
 	// Fetch the safe blocks that are eligible to be extended from by the next incoming tip block
-	safeBlocks, err := cc.blockchain.GetSafeBlocks()
+	safeBlocks, err := fc.blockchain.GetSafeBlocks()
 	if err != nil {
 		return nil, errors.Errorf("error fetching safe blocks: %v", err)
 	}
 
 	// Fetch the validator set at each safe block
-	safeBlocksWithValidators, err := cc.fetchValidatorListsForSafeBlocks(safeBlocks)
+	safeBlocksWithValidators, err := fc.fetchValidatorListsForSafeBlocks(safeBlocks)
 	if err != nil {
 		return nil, errors.Errorf("error fetching validator lists for safe blocks: %v", err)
 	}
@@ -572,7 +627,7 @@ func (cc *FastHotStuffConsensus) tryProcessBlockAsNewTip(block *MsgDeSoBlock) ([
 	// it did not result in a new tip.
 	if !successfullyAppliedNewTip {
 		// Update the safe blocks to the FastHotStuffEventLoop
-		if err = cc.fastHotStuffEventLoop.UpdateSafeBlocks(safeBlocksWithValidators); err != nil {
+		if err = fc.fastHotStuffEventLoop.UpdateSafeBlocks(safeBlocksWithValidators); err != nil {
 			return nil, errors.Errorf("Error processing safe blocks locally: %v", err)
 		}
 
@@ -586,17 +641,23 @@ func (cc *FastHotStuffConsensus) tryProcessBlockAsNewTip(block *MsgDeSoBlock) ([
 	// Fetch the new tip from the blockchain. Note: the new tip may or may not be the input block itself.
 	// It's possible that there was a descendant of the tip block that was previously stored as an orphan
 	// in the Blockchain, and was applied as the new tip.
-	tipBlock := cc.blockchain.BlockTip().Header
+	tipBlock := fc.blockchain.BlockTip().Header
 
 	// Fetch the validator set at the new tip block
-	tipBlockWithValidators, err := cc.fetchValidatorListsForSafeBlocks([]*MsgDeSoHeader{tipBlock})
+	tipBlockWithValidators, err := fc.fetchValidatorListsForSafeBlocks([]*MsgDeSoHeader{tipBlock})
 	if err != nil {
 		return nil, errors.Errorf("Error fetching validator lists for tip block: %v", err)
 	}
 
 	// Pass the new tip and safe blocks to the FastHotStuffEventLoop
-	if err = cc.fastHotStuffEventLoop.ProcessTipBlock(tipBlockWithValidators[0], safeBlocksWithValidators); err != nil {
+	if err = fc.fastHotStuffEventLoop.ProcessTipBlock(tipBlockWithValidators[0], safeBlocksWithValidators); err != nil {
 		return nil, errors.Errorf("Error processing tip block locally: %v", err)
+	}
+
+	// Update the validator connections in the NetworkManager. This is a best effort operation. If it fails,
+	// we log the error and continue.
+	if err = fc.updateActiveValidatorConnections(); err != nil {
+		glog.Errorf("FastHotStuffConsensus.tryProcessBlockAsNewTip: Error updating validator connections: %v", err)
 	}
 
 	// Happy path. The block was processed successfully and applied as the new tip. Nothing left to do.
@@ -606,7 +667,7 @@ func (cc *FastHotStuffConsensus) tryProcessBlockAsNewTip(block *MsgDeSoBlock) ([
 // produceUnsignedBlockForBlockProposalEvent is a helper function that can produce a new block for proposal based
 // on Fast-HotStuff block proposal event. This function expects the event to have been pre-validated by the caller.
 // If the event is malformed or invalid, then the behavior of this function is undefined.
-func (cc *FastHotStuffConsensus) produceUnsignedBlockForBlockProposalEvent(
+func (fc *FastHotStuffConsensus) produceUnsignedBlockForBlockProposalEvent(
 	event *consensus.FastHotStuffEvent,
 	proposerRandomSeedSignature *bls.Signature,
 ) (*MsgDeSoBlock, error) {
@@ -614,20 +675,20 @@ func (cc *FastHotStuffConsensus) produceUnsignedBlockForBlockProposalEvent(
 	parentBlockHash := BlockHashFromConsensusInterface(event.QC.GetBlockHash())
 
 	// Fetch the parent block
-	parentBlock, parentBlockExists := cc.blockchain.blockIndexByHash[*parentBlockHash]
+	parentBlock, parentBlockExists := fc.blockchain.blockIndexByHash[*parentBlockHash]
 	if !parentBlockExists {
 		return nil, errors.Errorf("Error fetching parent block: %v", parentBlockHash)
 	}
 
 	// Build a UtxoView at the parent block
-	utxoViewAtParent, err := cc.blockchain.getUtxoViewAtBlockHash(*parentBlockHash)
+	utxoViewAtParent, err := fc.blockchain.getUtxoViewAtBlockHash(*parentBlockHash)
 	if err != nil {
 		// This should never happen as long as the parent block is a descendant of the committed tip.
 		return nil, errors.Errorf("Error fetching UtxoView for parent block: %v", parentBlockHash)
 	}
 
 	// Dynamically create a new block producer at the current block height
-	blockProducer, err := cc.createBlockProducer(utxoViewAtParent, parentBlock.Header.TstampNanoSecs)
+	blockProducer, err := fc.createBlockProducer(utxoViewAtParent, parentBlock.Header.TstampNanoSecs)
 	if err != nil {
 		return nil, errors.Errorf("Error creating block producer: %v", err)
 	}
@@ -675,7 +736,7 @@ func (cc *FastHotStuffConsensus) produceUnsignedBlockForBlockProposalEvent(
 // the current or next epoch after the committed tip, then this function returns an error. Note: it is not possible
 // for safe blocks to precede the committed tip or to belong to an epoch that is more than one epoch ahead of the
 // committed tip.
-func (cc *FastHotStuffConsensus) fetchValidatorListsForSafeBlocks(blocks []*MsgDeSoHeader) (
+func (fc *FastHotStuffConsensus) fetchValidatorListsForSafeBlocks(blocks []*MsgDeSoHeader) (
 	[]consensus.BlockWithValidatorList,
 	error,
 ) {
@@ -690,7 +751,7 @@ func (cc *FastHotStuffConsensus) fetchValidatorListsForSafeBlocks(blocks []*MsgD
 
 	// Create a UtxoView for the committed tip block. We will use this to fetch the validator set for
 	// all of the safe blocks.
-	utxoView, err := NewUtxoView(cc.blockchain.db, cc.params, cc.blockchain.postgres, cc.blockchain.snapshot, nil)
+	utxoView, err := NewUtxoView(fc.blockchain.db, fc.params, fc.blockchain.postgres, fc.blockchain.snapshot, nil)
 	if err != nil {
 		return nil, errors.Errorf("Error creating UtxoView: %v", err)
 	}
@@ -757,6 +818,9 @@ func (fc *FastHotStuffConsensus) createBlockProducer(bav *UtxoView, previousBloc
 	if err != nil {
 		return nil, errors.Errorf("Error fetching validator entry for block producer: %v", err)
 	}
+	if blockProducerValidatorEntry == nil {
+		return nil, errors.New("Error fetching validator entry for block producer")
+	}
 	blockProducerPublicKeyBytes := bav.GetPublicKeyForPKID(blockProducerValidatorEntry.PKID)
 	blockProducerPublicKey := NewPublicKey(blockProducerPublicKeyBytes)
 	if blockProducerPublicKey == nil {
@@ -770,6 +834,70 @@ func (fc *FastHotStuffConsensus) createBlockProducer(bav *UtxoView, previousBloc
 		previousBlockTimestampNanoSecs,
 	)
 	return blockProducer, nil
+}
+
+func (fc *FastHotStuffConsensus) updateActiveValidatorConnections() error {
+	// Fetch the committed tip view. This ends up being as good as using the uncommitted tip view
+	// but without the overhead of connecting at least two blocks' worth of txns to the view.
+	utxoView, err := fc.blockchain.GetCommittedTipView()
+	if err != nil {
+		return errors.Errorf("FastHotStuffConsensus.Start: Error fetching uncommitted tip view: %v", err)
+	}
+
+	// Get the current snapshot epoch number from the committed tip. This will be behind the uncommitted tip
+	// by up to two blocks, but this is fine since we fetch both the current epoch's and next epoch's validator
+	// sets.
+	snapshotEpochNumber, err := utxoView.GetCurrentSnapshotEpochNumber()
+	if err != nil {
+		return errors.Errorf("FastHotStuffConsensus.Start: Error fetching snapshot epoch number: %v", err)
+	}
+
+	// Fetch the current snapshot epoch's validator set.
+	currentValidatorList, err := utxoView.GetAllSnapshotValidatorSetEntriesByStakeAtEpochNumber(snapshotEpochNumber)
+	if err != nil {
+		return errors.Errorf("FastHotStuffConsensus.Start: Error fetching validator list: %v", err)
+	}
+
+	// Fetch the next snapshot epoch's validator set. This is useful when we're close to epoch transitions and
+	// allows us to pre-connect to the next epoch's validator set. In the event that there is a timeout at
+	// the epoch transition, reverting us to the previous epoch, this allows us to maintain connections to the
+	// next epoch's validators.
+	//
+	// TODO: There is an optimization we can add here to only fetch the next epoch's validator list once we're
+	// within 300 blocks of the next epoch. This way, we don't prematurely attempt connections to the next
+	// epoch's validators. In production, this will reduce the lead time with which we connect to the next epoch's
+	// validator set from 1 hour to 5 minutes.
+	nextValidatorList, err := utxoView.GetAllSnapshotValidatorSetEntriesByStakeAtEpochNumber(snapshotEpochNumber + 1)
+	if err != nil {
+		return errors.Errorf("FastHotStuffConsensus.Start: Error fetching validator list: %v", err)
+	}
+
+	// Merge the current and next validator lists. Place the current epoch's validators last so that they override
+	// the next epoch's validators in the event of a conflict.
+	mergedValidatorList := append(nextValidatorList, currentValidatorList...)
+	validatorsMap := collections.NewConcurrentMap[bls.SerializedPublicKey, consensus.Validator]()
+	for _, validator := range mergedValidatorList {
+		if validator.VotingPublicKey.Eq(fc.signer.GetPublicKey()) {
+			continue
+		}
+		validatorsMap.Set(validator.VotingPublicKey.Serialize(), validator)
+	}
+
+	// Update the active validators map in the network manager
+	fc.networkManager.SetActiveValidatorsMap(validatorsMap)
+
+	return nil
+}
+
+func (fc *FastHotStuffConsensus) trySendMessageToPeer(pp *Peer, msg DeSoMessage) {
+	remoteNode := fc.networkManager.rnManager.GetRemoteNodeFromPeer(pp)
+	if remoteNode == nil {
+		glog.Errorf("FastHotStuffConsensus.trySendMessageToPeer: RemoteNode not found for peer: %v", pp)
+		return
+	}
+
+	// Send the message to the peer
+	remoteNode.SendMessage(msg)
 }
 
 // Finds the epoch entry for the block and returns the epoch number.
@@ -815,6 +943,10 @@ func isProperlyFormedBlockProposalEvent(event *consensus.FastHotStuffEvent) bool
 	return false
 }
 
+func sendMessageToRemoteNodeAsync(remoteNode *RemoteNode, msg DeSoMessage) {
+	go func(rn *RemoteNode, m DeSoMessage) { rn.SendMessage(m) }(remoteNode, msg)
+}
+
 ////////////////////////////////////////// Logging Helper Functions ///////////////////////////////////////////////
 
 func (fc *FastHotStuffConsensus) logBlockProposal(block *MsgDeSoBlock, blockHash *BlockHash) {
@@ -831,17 +963,17 @@ func (fc *FastHotStuffConsensus) logBlockProposal(block *MsgDeSoBlock, blockHash
 	glog.Infof(
 		"\n==================================== YOU PROPOSED A NEW FAST-HOTSTUFF BLOCK! ===================================="+
 			"\n  Timestamp: %d, View: %d, Height: %d, BlockHash: %v"+
-			"\n  Proposer PKey: %s"+
 			"\n  Proposer Voting PKey: %s"+
 			"\n  Proposer Signature: %s"+
+			"\n  Proposer Random Seed Signature: %s"+
 			"\n  High QC View: %d, High QC Num Validators: %d, High QC BlockHash: %s"+
 			"\n  Timeout Agg QC View: %d, Timeout Agg QC Num Validators: %d, Timeout High QC Views: %s"+
 			"\n  Num Block Transactions: %d, Num Transactions Remaining In Mempool: %d"+
-			"\n=================================================================================================================",
+			"\n=================================================================================================================\n",
 		block.Header.GetTstampSecs(), block.Header.GetView(), block.Header.Height, blockHash.String(),
-		PkToString(block.Header.ProposerPublicKey.ToBytes(), fc.params),
 		block.Header.ProposerVotingPublicKey.ToString(),
 		block.Header.ProposerVotePartialSignature.ToString(),
+		block.Header.ProposerRandomSeedSignature.ToString(),
 		block.Header.GetQC().GetView(), block.Header.GetQC().GetAggregatedSignature().GetSignersList().Size(), block.Header.PrevBlockHash.String(),
 		aggQCView, aggQCNumValidators, aggQCHighQCViews,
 		len(block.Txns), len(fc.mempool.GetTransactions()),

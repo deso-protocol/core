@@ -4,6 +4,8 @@ import (
 	"math"
 	"time"
 
+	"github.com/btcsuite/btcd/wire"
+
 	"github.com/deso-protocol/core/bls"
 	"github.com/deso-protocol/core/collections/bitset"
 	"github.com/pkg/errors"
@@ -104,7 +106,6 @@ func (pbp *PosBlockProducer) createBlockTemplate(latestBlockView *UtxoView, newB
 	block.Header.ProposedInView = view
 
 	// Set the proposer information.
-	block.Header.ProposerPublicKey = pbp.proposerPublicKey
 	block.Header.ProposerVotingPublicKey = pbp.proposerVotingPublicKey
 	block.Header.ProposerRandomSeedSignature = proposerRandomSeedSignature
 
@@ -125,7 +126,13 @@ func (pbp *PosBlockProducer) createBlockWithoutHeader(
 	blockRewardOutput.AmountNanos = math.MaxUint64
 	blockRewardOutput.PublicKey = pbp.proposerPublicKey.ToBytes()
 	blockRewardTxn.TxOutputs = append(blockRewardTxn.TxOutputs, blockRewardOutput)
-	blockRewardTxn.TxnMeta = &BlockRewardMetadataa{}
+	extraNonce, err := wire.RandomUint64()
+	if err != nil {
+		return nil, errors.Wrapf(err, "Error generating random nonce: ")
+	}
+	blockRewardTxn.TxnMeta = &BlockRewardMetadataa{
+		ExtraData: UintToBuf(extraNonce),
+	}
 	blockRewardTxnSizeBytes, err := blockRewardTxn.ToBytes(true)
 	if err != nil {
 		return nil, errors.Wrapf(err, "Error computing block reward txn size: ")

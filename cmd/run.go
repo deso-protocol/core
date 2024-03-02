@@ -83,8 +83,9 @@ func SetupRunFlags(cmd *cobra.Command) {
 		  download historical blocks. Can only be set if HyperSync is true.`)
 
 	// PoS Validator
-	cmd.PersistentFlags().String("pos-validator-seed", "", "A BIP39 seed phrase used to generate the private key of the "+
-		"Proof of Stake validator. Setting this flag automatically makes the node run as a Proof of Stake Validator.")
+	cmd.PersistentFlags().String("pos-validator-seed", "", "A BIP39 seed phrase or seed hex used to generate the "+
+		"private key of the Proof of Stake validator. Setting this flag automatically makes the node run as a Proof "+
+		"of Stake Validator.")
 	cmd.PersistentFlags().Uint64("pos-block-production-interval-milliseconds", 1500, "The interval in milliseconds "+
 		"between blocks produced by the Proof of Stake block proposer. The default value is 1.5 seconds, or 1500 milliseconds.")
 	cmd.PersistentFlags().Uint64("pos-timeout-base-duration-milliseconds", 30000, "The base duration in milliseconds "+
@@ -221,6 +222,8 @@ func SetupRunFlags(cmd *cobra.Command) {
 	cmd.PersistentFlags().Bool("time-events", false, "Enable simple event timer, helpful in hands-on performance testing")
 	cmd.PersistentFlags().String("state-change-dir", "", "The directory for state change logs. WARNING: Changing this "+
 		"from an empty string to a non-empty string (or from a non-empty string to the empty string) requires a resync.")
+	cmd.PersistentFlags().Uint("state-syncer-mempool-txn-sync-limit", 10000, "The maximum number of transactions to "+
+		"process in the mempool tx state syncer at a time.")
 	cmd.PersistentFlags().VisitAll(func(flag *pflag.Flag) {
 		viper.BindPFlag(flag.Name, flag)
 	})

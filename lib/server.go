@@ -4,8 +4,6 @@ import (
 	"bytes"
 	"encoding/hex"
 	"fmt"
-	"github.com/btcsuite/btcd/wire"
-	"github.com/deso-protocol/core/consensus"
 	"net"
 	"path/filepath"
 	"reflect"
@@ -13,6 +11,9 @@ import (
 	"strings"
 	"sync/atomic"
 	"time"
+
+	"github.com/btcsuite/btcd/wire"
+	"github.com/deso-protocol/core/consensus"
 
 	"github.com/decred/dcrd/lru"
 
@@ -408,6 +409,7 @@ func NewServer(
 	_augmentedBlockViewRefreshIntervalMillis uint64,
 	_posBlockProductionIntervalMilliseconds uint64,
 	_posTimeoutBaseDurationMilliseconds uint64,
+	_stateSyncerMempoolTxnSyncLimit uint64,
 ) (
 	_srv *Server,
 	_err error,
@@ -421,7 +423,7 @@ func NewServer(
 	if _stateChangeDir != "" {
 		// Create the state change syncer to handle syncing state changes to disk, and assign some of its methods
 		// to the event manager.
-		stateChangeSyncer = NewStateChangeSyncer(_stateChangeDir, _syncType)
+		stateChangeSyncer = NewStateChangeSyncer(_stateChangeDir, _syncType, _stateSyncerMempoolTxnSyncLimit)
 		eventManager.OnStateSyncerOperation(stateChangeSyncer._handleStateSyncerOperation)
 		eventManager.OnStateSyncerFlushed(stateChangeSyncer._handleStateSyncerFlush)
 	}
@@ -495,13 +497,23 @@ func NewServer(
 		return nil, errors.Wrapf(err, "NewServer: Problem initializing blockchain"), true
 	}
 
+	headerCumWorkStr := "<nil>"
+	headerCumWork := BigintToHash(_chain.headerTip().CumWork)
+	if headerCumWork != nil {
+		headerCumWorkStr = hex.EncodeToString(headerCumWork[:])
+	}
+	blockCumWorkStr := "<nil>"
+	blockCumWork := BigintToHash(_chain.blockTip().CumWork)
+	if blockCumWork != nil {
+		blockCumWorkStr = hex.EncodeToString(blockCumWork[:])
+	}
 	glog.V(1).Infof("Initialized chain: Best Header Height: %d, Header Hash: %s, Header CumWork: %s, Best Block Height: %d, Block Hash: %s, Block CumWork: %s",
 		_chain.headerTip().Height,
 		hex.EncodeToString(_chain.headerTip().Hash[:]),
-		hex.EncodeToString(BigintToHash(_chain.headerTip().CumWork)[:]),
+		headerCumWorkStr,
 		_chain.blockTip().Height,
 		hex.EncodeToString(_chain.blockTip().Hash[:]),
-		hex.EncodeToString(BigintToHash(_chain.blockTip().CumWork)[:]))
+		blockCumWorkStr)
 
 	nodeServices := SFFullNodeDeprecated
 	if _hyperSync {
@@ -514,7 +526,7 @@ func NewServer(
 		nodeServices |= SFPosValidator
 	}
 	rnManager := NewRemoteNodeManager(srv, _chain, _cmgr, _blsKeystore, _params, _minFeeRateNanosPerKB, nodeServices)
-	srv.networkManager = NewConnectionController(_params, _cmgr, rnManager, _blsKeystore, _desoAddrMgr,
+	srv.networkManager = NewNetworkManager(_params, _cmgr, rnManager, _blsKeystore, _desoAddrMgr,
 		_connectIps, _targetOutboundPeers, _maxInboundPeers, _limitOneInboundConnectionPerIP)
 
 	if srv.stateChangeSyncer != nil {
@@ -546,7 +558,7 @@ func NewServer(
 		currentUtxoView,
 		uint64(_chain.blockTip().Height),
 		_mempoolDumpDir,
-		false,
+		_mempoolDumpDir == "", // If no mempool dump dir is set, then the mempool will be in memory only
 		_maxMempoolPosSizeBytes,
 		_mempoolBackupIntervalMillis,
 		_mempoolFeeEstimatorNumMempoolBlocks,
@@ -616,6 +628,7 @@ func NewServer(
 	if _blsKeystore != nil {
 		srv.fastHotStuffConsensus = NewFastHotStuffConsensus(
 			_params,
+			srv.networkManager,
 			_chain,
 			_posMempool,
 			_blsKeystore.GetSigner(),
@@ -664,6 +677,10 @@ func NewServer(
 	timer := &Timer{}
 	timer.Initialize()
 	srv.timer = timer
+
+	if srv.stateChangeSyncer != nil {
+		srv.stateChangeSyncer.StartMempoolSyncRoutine(srv)
+	}
 
 	// If shouldRestart is true, it means that the state checksum is likely corrupted, and we need to enter a recovery mode.
 	// This can happen if the node was terminated mid-operation last time it was running. The recovery process rolls back
@@ -1927,7 +1944,7 @@ func (srv *Server) _addNewTxn(
 
 	// Always add the txn to the PoS mempool. This should always succeed if the txn
 	// addition into the PoW mempool succeeded above.
-	mempoolTxn := NewMempoolTransaction(txn, uint64(time.Now().UnixMicro()))
+	mempoolTxn := NewMempoolTransaction(txn, time.Now())
 	if err := srv.posMempool.AddTransaction(mempoolTxn, true /*verifySignatures*/); err != nil {
 		return nil, errors.Wrapf(err, "Server._addNewTxn: problem adding txn to pos mempool")
 	}
@@ -2110,15 +2127,14 @@ func (srv *Server) _handleBlock(pp *Peer, blk *MsgDeSoBlock) {
 		return
 	}
 
-	if pp != nil {
-		if _, exists := pp.requestedBlocks[*blockHash]; !exists {
-			glog.Errorf("_handleBlock: Getting a block that we haven't requested before, "+
-				"block hash (%v)", *blockHash)
-		}
-		delete(pp.requestedBlocks, *blockHash)
-	} else {
-		glog.Errorf("_handleBlock: Called with nil peer, this should never happen.")
+	// Log a warning if we receive a block we haven't requested yet. It is still possible to receive
+	// a block in this case if we're connected directly to the block producer and they send us a block
+	// directly.
+	if _, exists := pp.requestedBlocks[*blockHash]; !exists {
+		glog.Warningf("_handleBlock: Getting a block that we haven't requested before, "+
+			"block hash (%v)", *blockHash)
 	}
+	delete(pp.requestedBlocks, *blockHash)
 
 	// Check that the mempool has not received a transaction that would forbid this block's signature pubkey.
 	// This is a minimal check, a more thorough check is made in the ProcessBlock function. This check is
@@ -2165,20 +2181,28 @@ func (srv *Server) _handleBlock(pp *Peer, blk *MsgDeSoBlock) {
 			// headers comment above but in the future we should probably try and figure
 			// out a way to be more strict about things.
 			glog.Warningf("Got duplicate block %v from peer %v", blk, pp)
+		} else if strings.Contains(err.Error(), RuleErrorFailedSpamPreventionsCheck.Error()) {
+			// If the block fails the spam prevention check, then it must be signed by the
+			// bad block proposer signature or it has a bad QC. In either case, we should
+			// disconnect the peer.
+			srv._logAndDisconnectPeer(pp, blk, errors.Wrapf(err, "Error while processing block: ").Error())
+			return
 		} else {
-			srv._logAndDisconnectPeer(
-				pp, blk,
-				errors.Wrapf(err, "Error while processing block: ").Error())
+			// For any other error, we log the error and continue.
+			glog.Errorf("Server._handleBlock: Error while processing block: %v", err)
 			return
 		}
 	}
+
 	if isOrphan {
-		// We should generally never receive orphan blocks. It indicates something
-		// went wrong in our headers syncing.
-		glog.Errorf("ERROR: Received orphan block with hash %v height %v. "+
+		// It's possible to receive an orphan block if we're connected directly to the
+		// block producer, and they are broadcasting blocks in the steady state. We log
+		// a warning in this case and move on.
+		glog.Warningf("ERROR: Received orphan block with hash %v height %v. "+
 			"This should never happen", blockHash, blk.Header.Height)
 		return
 	}
+
 	srv.timer.End("Server._handleBlock: Process Block")
 
 	srv.timer.Print("Server._handleBlock: General")
@@ -2186,9 +2210,7 @@ func (srv *Server) _handleBlock(pp *Peer, blk *MsgDeSoBlock) {
 
 	// We shouldn't be receiving blocks while syncing headers.
 	if srv.blockchain.chainState() == SyncStateSyncingHeaders {
-		srv._logAndDisconnectPeer(
-			pp, blk,
-			"We should never get blocks when we're syncing headers")
+		glog.Warningf("Server._handleBlock: Received block while syncing headers: %v", blk)
 		return
 	}
 
@@ -2318,7 +2340,7 @@ func (srv *Server) ProcessSingleTxnWithChainLock(pp *Peer, txn *MsgDeSoTxn) ([]*
 	// Regardless of the consensus protocol we're running (PoW or PoS), we use the PoS mempool's to house all
 	// mempool txns. If a txn can't make it into the PoS mempool, which uses a looser unspent balance check for
 	// the the transactor, then it must be invalid.
-	if err := srv.posMempool.AddTransaction(NewMempoolTransaction(txn, uint64(time.Now().UnixMicro())), true); err != nil {
+	if err := srv.posMempool.AddTransaction(NewMempoolTransaction(txn, time.Now()), true); err != nil {
 		return nil, errors.Wrapf(err, "Server.ProcessSingleTxnWithChainLock: Problem adding transaction to PoS mempool: ")
 	}
 
@@ -2661,7 +2683,7 @@ func (srv *Server) _startConsensus() {
 		select {
 		case consensusEvent := <-srv._getFastHotStuffConsensusEventChannel():
 			{
-				glog.Infof("Server._startConsensus: Received consensus event for block height: %v", consensusEvent.TipBlockHeight)
+				glog.V(2).Infof("Server._startConsensus: Received consensus event: %s", consensusEvent.ToString())
 				srv._handleFastHostStuffConsensusEvent(consensusEvent)
 			}
 
@@ -2928,6 +2950,18 @@ func (srv *Server) Start() {
 	}
 
 	srv.networkManager.Start()
+
+	// On testnet, if the node is configured to be a PoW block producer, and it is configured
+	// to be also a PoS validator, then we attach block mined listeners to the miner to kick
+	// off the PoS consensus once the miner is done.
+	if srv.params.NetworkType == NetworkType_TESTNET && srv.fastHotStuffConsensus != nil {
+		tipHeight := uint64(srv.blockchain.blockTip().Height)
+		if srv.params.IsFinalPoWBlockHeight(tipHeight) || srv.params.IsPoSBlockHeight(tipHeight) {
+			if err := srv.fastHotStuffConsensus.Start(); err != nil {
+				glog.Errorf("NewServer: Error starting fast hotstuff consensus %v", err)
+			}
+		}
+	}
 }
 
 // SyncPrefixProgress keeps track of sync progress on an individual prefix. It is used in

@@ -5,11 +5,12 @@ package lib
 import (
 	"bytes"
 	"fmt"
-	"golang.org/x/crypto/sha3"
 	"math"
 	"math/rand"
 	"testing"
 	"time"
+
+	"golang.org/x/crypto/sha3"
 
 	"crypto/sha256"
 
@@ -74,7 +75,6 @@ func TestIsProperlyFormedBlockPoSAndIsBlockTimestampValidRelativeToParentPoS(t *
 				},
 			},
 			ProposerRandomSeedSignature: signature,
-			ProposerPublicKey:           NewPublicKey(RandomBytes(33)),
 			ProposerVotingPublicKey:     randomBLSPrivateKey.PublicKey(),
 			TransactionMerkleRoot:       merkleRoot,
 			TxnConnectStatusByIndexHash: HashBitset(bitset.NewBitset().Set(0, true)),
@@ -212,17 +212,6 @@ func TestIsProperlyFormedBlockPoSAndIsBlockTimestampValidRelativeToParentPoS(t *
 	// Reset proposer voting public key
 	block.Header.ProposerVotingPublicKey = randomBLSPrivateKey.PublicKey()
 
-	// Block must have valid proposer public key
-	block.Header.ProposerPublicKey = nil
-	err = bc.isProperlyFormedBlockPoS(block)
-	require.Equal(t, err, RuleErrorInvalidProposerPublicKey)
-
-	block.Header.ProposerPublicKey = &ZeroPublicKey
-	err = bc.isProperlyFormedBlockPoS(block)
-	require.Equal(t, err, RuleErrorInvalidProposerPublicKey)
-
-	block.Header.ProposerPublicKey = NewPublicKey(RandomBytes(33))
-
 	// Block must have valid proposer random seed hash
 	block.Header.ProposerRandomSeedSignature = nil
 	err = bc.isProperlyFormedBlockPoS(block)
@@ -239,11 +228,6 @@ func TestIsProperlyFormedBlockPoSAndIsBlockTimestampValidRelativeToParentPoS(t *
 	block.Header.TstampNanoSecs = bc.BlockTip().Header.GetTstampSecs() - 1
 	err = bc.isBlockTimestampValidRelativeToParentPoS(block.Header)
 	require.Equal(t, err, RuleErrorPoSBlockTstampNanoSecsTooOld)
-
-	// Block timestamps can't be in the future.
-	block.Header.TstampNanoSecs = time.Now().UnixNano() + (11 * time.Minute).Nanoseconds()
-	err = bc.isProperlyFormedBlockPoS(block)
-	require.Equal(t, err, RuleErrorPoSBlockTstampNanoSecsInFuture)
 
 	// Revert the Header's timestamp
 	block.Header.TstampNanoSecs = bc.BlockTip().Header.TstampNanoSecs + 10
@@ -390,7 +374,6 @@ func TestUpsertBlockAndBlockNodeToDB(t *testing.T) {
 			TstampNanoSecs:               time.Now().UnixNano() - 10,
 			Height:                       2,
 			ProposedInView:               1,
-			ProposerPublicKey:            NewPublicKey(RandomBytes(33)),
 			ProposerVotingPublicKey:      blsPrivKey.PublicKey(),
 			ProposerRandomSeedSignature:  signature,
 			ProposerVotePartialSignature: signature,
@@ -485,7 +468,7 @@ func TestUpsertBlockAndBlockNodeToDB(t *testing.T) {
 
 	// If we're missing a field in the header, we should get an error
 	// as we can't compute the hash.
-	block.Header.ProposerPublicKey = nil
+	block.Header.ProposerVotingPublicKey = nil
 	_, err = bc.storeBlockInBlockIndex(block)
 	require.Error(t, err)
 }
@@ -709,13 +692,11 @@ func TestHasValidBlockProposerPoS(t *testing.T) {
 		// First block, we should have the first leader.
 		leader0PKID := leaderSchedule[0]
 		leader0Entry := validatorPKIDToValidatorEntryMap[*leader0PKID]
-		leader0PublicKey := utxoView.GetPublicKeyForPKID(leader0PKID)
 		dummyBlock := &MsgDeSoBlock{
 			Header: &MsgDeSoHeader{
 				PrevBlockHash:           testMeta.chain.BlockTip().Hash,
 				ProposedInView:          viewNumber + 1,
 				Height:                  blockHeight + 1,
-				ProposerPublicKey:       NewPublicKey(leader0PublicKey),
 				ProposerVotingPublicKey: leader0Entry.VotingPublicKey,
 			},
 		}
@@ -811,13 +792,13 @@ func TestGetLineageFromCommittedTip(t *testing.T) {
 		},
 	}
 	// If parent is committed tip, we'll have 0 ancestors.
-	ancestors, err := bc.getLineageFromCommittedTip(block)
+	ancestors, err := bc.getLineageFromCommittedTip(block.Header)
 	require.NoError(t, err)
 	require.Len(t, ancestors, 0)
 
 	// If parent block is not in block index, we should get an error
 	block.Header.PrevBlockHash = NewBlockHash(RandomBytes(32))
-	ancestors, err = bc.getLineageFromCommittedTip(block)
+	ancestors, err = bc.getLineageFromCommittedTip(block.Header)
 	require.Error(t, err)
 	require.Equal(t, err, RuleErrorMissingAncestorBlock)
 	require.Nil(t, ancestors)
@@ -834,7 +815,7 @@ func TestGetLineageFromCommittedTip(t *testing.T) {
 	}, StatusBlockStored|StatusBlockValidated|StatusBlockCommitted)
 	bc.bestChain = append(bc.bestChain, block2)
 	bc.blockIndexByHash[*hash2] = block2
-	ancestors, err = bc.getLineageFromCommittedTip(block)
+	ancestors, err = bc.getLineageFromCommittedTip(block.Header)
 	require.Error(t, err)
 	require.Equal(t, err, RuleErrorDoesNotExtendCommittedTip)
 
@@ -842,14 +823,14 @@ func TestGetLineageFromCommittedTip(t *testing.T) {
 	block2.Status = StatusBlockStored | StatusBlockValidated
 	// set new block's parent as block 2.
 	block.Header.PrevBlockHash = hash2
-	ancestors, err = bc.getLineageFromCommittedTip(block)
+	ancestors, err = bc.getLineageFromCommittedTip(block.Header)
 	require.NoError(t, err)
 	require.Len(t, ancestors, 1)
 
 	// Testing error cases
 	// Set block 2 to be ValidateFailed
 	block2.Status = StatusBlockStored | StatusBlockValidateFailed
-	ancestors, err = bc.getLineageFromCommittedTip(block)
+	ancestors, err = bc.getLineageFromCommittedTip(block.Header)
 	require.Error(t, err)
 	require.Equal(t, err, RuleErrorAncestorBlockValidationFailed)
 
@@ -857,13 +838,13 @@ func TestGetLineageFromCommittedTip(t *testing.T) {
 	block2.Status = StatusBlockStored | StatusBlockValidated
 	// Set block's height to be <= block2's height
 	block.Header.Height = 2
-	ancestors, err = bc.getLineageFromCommittedTip(block)
+	ancestors, err = bc.getLineageFromCommittedTip(block.Header)
 	require.Error(t, err)
 	require.Equal(t, err, RuleErrorParentBlockHeightNotSequentialWithChildBlockHeight)
 	// Revert block 2's height and set block's view to be <= block2's view
 	block.Header.Height = 3
 	block.Header.ProposedInView = 2
-	ancestors, err = bc.getLineageFromCommittedTip(block)
+	ancestors, err = bc.getLineageFromCommittedTip(block.Header)
 	require.Error(t, err)
 	require.Equal(t, err, RuleErrorParentBlockHasViewGreaterOrEqualToChildBlock)
 }
@@ -1314,7 +1295,7 @@ func TestTryApplyNewTip(t *testing.T) {
 	newBlockHash, err := newBlock.Hash()
 	require.NoError(t, err)
 
-	ancestors, err := bc.getLineageFromCommittedTip(newBlock)
+	ancestors, err := bc.getLineageFromCommittedTip(newBlock.Header)
 	require.NoError(t, err)
 	checkBestChainForHash := func(hash *BlockHash) bool {
 		return collections.Any(bc.bestChain, func(bn *BlockNode) bool {
@@ -1392,7 +1373,7 @@ func TestTryApplyNewTip(t *testing.T) {
 	newBlockNode.Header.Height = 7
 	newBlockNode.Height = 7
 	require.NoError(t, err)
-	ancestors, err = bc.getLineageFromCommittedTip(newBlock)
+	ancestors, err = bc.getLineageFromCommittedTip(newBlock.Header)
 	require.NoError(t, err)
 
 	// Try to apply newBlock as tip.
@@ -1451,7 +1432,7 @@ func TestTryApplyNewTip(t *testing.T) {
 	newBlockNode.Header.Height = 5
 	newBlockNode.Height = 5
 	require.NoError(t, err)
-	ancestors, err = bc.getLineageFromCommittedTip(newBlock)
+	ancestors, err = bc.getLineageFromCommittedTip(newBlock.Header)
 	require.NoError(t, err)
 	appliedNewTip, connectedBlockHashes, disconnectedBlockHashes, err = bc.tryApplyNewTip(newBlockNode, 6, ancestors)
 	require.True(t, appliedNewTip)
@@ -1688,6 +1669,22 @@ func _verifyCommitRuleHelper(testMeta *TestMeta, committedBlocks []*BlockHash, u
 	}
 }
 
+// _verifyRandomSeedHashHelper is a helper function that verifies the random seed hash is set
+// after connecting a new tip block.
+func _verifyRandomSeedHashHelper(testMeta *TestMeta, tipBlock *MsgDeSoBlock) {
+	// Get the utxo view for the tip block.
+	utxoView, err := testMeta.chain.GetUncommittedTipView()
+	require.NoError(testMeta.t, err)
+	// Verify that the random seed hash is set.
+	randomSeedHash, err := utxoView.GetCurrentRandomSeedHash()
+	require.NoError(testMeta.t, err)
+
+	// Verify that the random seed hash is set based on the random seed signature on the block.
+	expectedRandomSeedHash, err := HashRandomSeedSignature(tipBlock.Header.ProposerRandomSeedSignature)
+	require.NoError(testMeta.t, err)
+	require.True(testMeta.t, expectedRandomSeedHash.Eq(randomSeedHash))
+}
+
 func TestProcessHeaderPoS(t *testing.T) {
 	// Initialize the chain and test metadata.
 	testMeta := NewTestPoSBlockchainWithValidators(t)
@@ -1765,9 +1762,10 @@ func testProcessBlockPoS(t *testing.T, testMeta *TestMeta) {
 		blockHash1, err = realBlock.Hash()
 		require.NoError(t, err)
 		_verifyCommitRuleHelper(testMeta, []*BlockHash{}, []*BlockHash{blockHash1}, nil)
+		_verifyRandomSeedHashHelper(testMeta, realBlock)
 	}
 
-	var blockHash2, blockHash3 *BlockHash
+	var blockHash2, blockHash3, futureBlockHash *BlockHash
 	{
 		// Now let's try adding two more blocks on top of this one to make sure commit rule works properly.
 		var realBlock2 *MsgDeSoBlock
@@ -1787,6 +1785,27 @@ func testProcessBlockPoS(t *testing.T, testMeta *TestMeta) {
 		require.NoError(t, err)
 
 		_verifyCommitRuleHelper(testMeta, []*BlockHash{blockHash1}, []*BlockHash{blockHash2, blockHash3}, blockHash1)
+		_verifyRandomSeedHashHelper(testMeta, realBlock3)
+
+		// Now let's try adding a block that has a timestamp too far in the future, and make sure it's stored.
+		var futureBlock *MsgDeSoBlock
+		futureBlock = _generateRealBlockWithTimestampOffset(testMeta, 15, 15, 870, blockHash3, false, time.Hour)
+
+		success, isOrphan, missingBlockHashes, err := testMeta.chain.ProcessBlockPoS(futureBlock, 15, true)
+		require.False(t, success)
+		require.False(t, isOrphan)
+		require.Len(t, missingBlockHashes, 0)
+		require.Error(t, err)
+
+		futureBlockHash, err = futureBlock.Hash()
+		require.NoError(t, err)
+
+		futureBlockNode, exists := testMeta.chain.blockIndexByHash[*futureBlockHash]
+		require.True(t, exists)
+		require.False(t, futureBlockNode.IsCommitted())
+		require.True(t, futureBlockNode.IsStored())
+		require.False(t, futureBlockNode.IsValidated())
+		require.False(t, futureBlockNode.IsValidateFailed())
 	}
 
 	var timeoutBlockHash *BlockHash
@@ -1815,6 +1834,7 @@ func testProcessBlockPoS(t *testing.T, testMeta *TestMeta) {
 		// We expect blockHash1 and blockHash2 to be committed, but blockHash3 and reorgBlockHash to not be committed.
 		// Timeout block will no longer be in best chain, and will still be in an uncommitted state in the block index
 		_verifyCommitRuleHelper(testMeta, []*BlockHash{blockHash1, blockHash2}, []*BlockHash{blockHash3, reorgBlockHash}, blockHash2)
+		_verifyRandomSeedHashHelper(testMeta, reorgBlock)
 		_, exists := testMeta.chain.bestChainMap[*timeoutBlockHash]
 		require.False(t, exists)
 
@@ -1899,7 +1919,7 @@ func testProcessBlockPoS(t *testing.T, testMeta *TestMeta) {
 	var blockWithFailingTxnHash *BlockHash
 	{
 		var blockWithFailingTxn *MsgDeSoBlock
-		blockWithFailingTxn = _generateRealBlockWithFailingTxn(testMeta, 18, 18, 123722, orphanBlockHash, false, 1)
+		blockWithFailingTxn = _generateRealBlockWithFailingTxn(testMeta, 18, 18, 123722, orphanBlockHash, false, 1, 0)
 		require.Equal(t, blockWithFailingTxn.TxnConnectStatusByIndex.Get(len(blockWithFailingTxn.Txns)-1), false)
 		success, _, _, err := testMeta.chain.ProcessBlockPoS(blockWithFailingTxn, 18, true)
 		require.True(t, success)
@@ -2046,13 +2066,7 @@ func TestProcessOrphanBlockPoS(t *testing.T) {
 		require.NoError(t, err)
 		require.True(t, currentEpochEntry.ContainsBlockHeight(12))
 		// Change the block proposer to some any other validator's public key.
-		wrongBlockProposer := NewPublicKey(m0PkBytes)
-		if wrongBlockProposer.Equal(*realBlock.Header.ProposerPublicKey) {
-			wrongBlockProposer = NewPublicKey(m1PkBytes)
-		}
-		wrongBlockProposerVotingPublicKey := testMeta.pubKeyToBLSKeyMap[Base58CheckEncode(wrongBlockProposer.ToBytes(), false, testMeta.chain.params)].PublicKey()
-		realBlock.Header.ProposerPublicKey = wrongBlockProposer
-		realBlock.Header.ProposerVotingPublicKey = wrongBlockProposerVotingPublicKey
+		realBlock.Header.ProposerVotingPublicKey = _generateRandomBLSPrivateKey(t).PublicKey()
 		updateProposerVotePartialSignatureForBlock(testMeta, realBlock)
 		// There should be no error, but the block should be marked as ValidateFailed.
 		err = testMeta.chain.processOrphanBlockPoS(realBlock)
@@ -2264,30 +2278,7 @@ func TestHasValidProposerPartialSignaturePoS(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, isValid)
 
-	realProposerPublicKey := realBlock.Header.ProposerPublicKey
-	realProposerPublicKeyBase58Check := Base58CheckEncode(realProposerPublicKey.ToBytes(), false, testMeta.params)
-	wrongProposerPublicKey := NewPublicKey(m1PkBytes)
-	if wrongProposerPublicKey.Equal(*realProposerPublicKey) {
-		wrongProposerPublicKey = NewPublicKey(m2PkBytes)
-	}
-	wrongProposerPublicKeyBase58Check := Base58CheckEncode(wrongProposerPublicKey.ToBytes(), false, testMeta.params)
-	// Using a different validator's public key as ProposerPublicKey should fail
-	{
-		realBlock.Header.ProposerPublicKey = wrongProposerPublicKey
-		isValid, err = utxoView.hasValidProposerPartialSignaturePoS(realBlock, snapshotEpochNumber)
-		require.NoError(t, err)
-		require.False(t, isValid)
-	}
-	// Using a non-validator's public key as ProposerPublicKey should fail.
-	{
-		realBlock.Header.ProposerPublicKey = NewPublicKey(paramUpdaterPkBytes)
-		isValid, err = utxoView.hasValidProposerPartialSignaturePoS(realBlock, snapshotEpochNumber)
-		require.NoError(t, err)
-		require.False(t, isValid)
-		// Reset the proposer public key
-		realBlock.Header.ProposerPublicKey = realProposerPublicKey
-	}
-	// If the block proposer's voting public key doesn't match the snapshot, it should fail.
+	// If the block proposer's voting public key doesn't match the signature, it should fail.
 	realVotingPublicKey := realBlock.Header.ProposerVotingPublicKey
 	{
 		realBlock.Header.ProposerVotingPublicKey = _generateRandomBLSPrivateKey(t).PublicKey()
@@ -2297,21 +2288,25 @@ func TestHasValidProposerPartialSignaturePoS(t *testing.T) {
 		// Reset the proposer voting public key
 		realBlock.Header.ProposerVotingPublicKey = realVotingPublicKey
 	}
+
 	// Signature on incorrect payload should fail.
 	{
 		incorrectPayload := consensus.GetVoteSignaturePayload(13, testMeta.chain.BlockTip().Hash)
-		realBlock.Header.ProposerVotePartialSignature, err = testMeta.pubKeyToBLSKeyMap[realProposerPublicKeyBase58Check].Sign(incorrectPayload[:])
+		realBlock.Header.ProposerVotePartialSignature, err =
+			testMeta.blsPubKeyToBLSKeyMap[realBlock.Header.ProposerVotingPublicKey.ToString()].Sign(incorrectPayload[:])
 		isValid, err = utxoView.hasValidProposerPartialSignaturePoS(realBlock, snapshotEpochNumber)
 		require.NoError(t, err)
 		require.False(t, isValid)
 	}
+
 	// Signature on correct payload from wrong public key should fail.
 	{
 		var realBlockHash *BlockHash
 		realBlockHash, err = realBlock.Hash()
 		require.NoError(t, err)
 		correctPayload := consensus.GetVoteSignaturePayload(12, realBlockHash)
-		realBlock.Header.ProposerVotePartialSignature, err = testMeta.pubKeyToBLSKeyMap[wrongProposerPublicKeyBase58Check].Sign(correctPayload[:])
+		wrongPrivateKey := _generateRandomBLSPrivateKey(t)
+		realBlock.Header.ProposerVotePartialSignature, err = wrongPrivateKey.Sign(correctPayload[:])
 		isValid, err = utxoView.hasValidProposerPartialSignaturePoS(realBlock, snapshotEpochNumber)
 		require.NoError(t, err)
 		require.False(t, isValid)
@@ -2372,11 +2367,23 @@ func TestHasValidProposerRandomSeedSignaturePoS(t *testing.T) {
 // PosMempool, generating a RandomSeedHash, updating the latestBlockView in the PosBlockProducer, and calling _getFullRealBlockTemplate.
 // It can be used to generate a block w/ either a vote or timeout QC.
 func _generateRealBlock(testMeta *TestMeta, blockHeight uint64, view uint64, seed int64, prevBlockHash *BlockHash, isTimeout bool) BlockTemplate {
-	return _generateRealBlockWithFailingTxn(testMeta, blockHeight, view, seed, prevBlockHash, isTimeout, 0)
+	return _generateRealBlockWithFailingTxn(testMeta, blockHeight, view, seed, prevBlockHash, isTimeout, 0, 0)
+}
+
+func _generateRealBlockWithTimestampOffset(
+	testMeta *TestMeta,
+	blockHeight uint64,
+	view uint64,
+	seed int64,
+	prevBlockHash *BlockHash,
+	isTimeout bool,
+	blockTimestampOffset time.Duration,
+) BlockTemplate {
+	return _generateRealBlockWithFailingTxn(testMeta, blockHeight, view, seed, prevBlockHash, isTimeout, 0, blockTimestampOffset)
 }
 
 func _generateRealBlockWithFailingTxn(testMeta *TestMeta, blockHeight uint64, view uint64, seed int64,
-	prevBlockHash *BlockHash, isTimeout bool, numFailingTxns uint64) BlockTemplate {
+	prevBlockHash *BlockHash, isTimeout bool, numFailingTxns uint64, blockTimestampOffset time.Duration) BlockTemplate {
 	globalParams := _testGetDefaultGlobalParams()
 	randSource := rand.New(rand.NewSource(seed))
 	passingTxns := []*MsgDeSoTxn{}
@@ -2413,7 +2420,7 @@ func _generateRealBlockWithFailingTxn(testMeta *TestMeta, blockHeight uint64, vi
 	latestBlockHeight := testMeta.chain.blockIndexByHash[*prevBlockHash].Height
 	testMeta.posMempool.UpdateLatestBlock(latestBlockView, uint64(latestBlockHeight))
 	seedSignature := getRandomSeedSignature(testMeta, blockHeight, view, prevBlock.Header.ProposerRandomSeedSignature)
-	fullBlockTemplate := _getFullRealBlockTemplate(testMeta, blockHeight, view, seedSignature, isTimeout)
+	fullBlockTemplate := _getFullRealBlockTemplate(testMeta, blockHeight, view, seedSignature, isTimeout, blockTimestampOffset)
 	// Remove the transactions from this block from the mempool.
 	// This prevents nonce reuse issues when trying to make reorg blocks.
 	for _, txn := range passingTxns {
@@ -2591,7 +2598,14 @@ func _getVoteQC(testMeta *TestMeta, blockHeight uint64, qcBlockHash *BlockHash, 
 // _getFullRealBlockTemplate is a helper function that generates a block template with a valid TxnConnectStatusByIndexHash
 // and a valid TxnConnectStatusByIndex, a valid vote or timeout QC, does all the required signing by validators,
 // and generates the proper ProposerVotePartialSignature.
-func _getFullRealBlockTemplate(testMeta *TestMeta, blockHeight uint64, view uint64, seedSignature *bls.Signature, isTimeout bool) BlockTemplate {
+func _getFullRealBlockTemplate(
+	testMeta *TestMeta,
+	blockHeight uint64,
+	view uint64,
+	seedSignature *bls.Signature,
+	isTimeout bool,
+	blockTimestampOffset time.Duration,
+) BlockTemplate {
 	blockTemplate, err := testMeta.posBlockProducer.createBlockTemplate(
 		testMeta.posMempool.readOnlyLatestBlockView, blockHeight, view, seedSignature)
 	require.NoError(testMeta.t, err)
@@ -2648,14 +2662,12 @@ func _getFullRealBlockTemplate(testMeta *TestMeta, blockHeight uint64, view uint
 		}
 		blockTemplate.Header.ValidatorsTimeoutAggregateQC = timeoutQC
 	}
-	blockTemplate.Header.ProposerPublicKey = NewPublicKey(leaderPublicKeyBytes)
 	blockTemplate.Header.ProposerVotingPublicKey = leaderVotingPrivateKey.PublicKey()
 	// Ugh we need to adjust the timestamp.
-	blockTemplate.Header.TstampNanoSecs = time.Now().UnixNano()
+	blockTemplate.Header.TstampNanoSecs = time.Now().UnixNano() + blockTimestampOffset.Nanoseconds()
 	if chainTip.Header.TstampNanoSecs > blockTemplate.Header.TstampNanoSecs {
 		blockTemplate.Header.TstampNanoSecs = chainTip.Header.TstampNanoSecs + 1
 	}
-	require.Less(testMeta.t, blockTemplate.Header.TstampNanoSecs, time.Now().UnixNano()+testMeta.chain.params.DefaultBlockTimestampDriftNanoSecs)
 	var proposerVotePartialSignature *bls.Signature
 	// Just hack it so the leader gets the block reward.
 	blockTemplate.Txns[0].TxOutputs[0].PublicKey = leaderPublicKeyBytes

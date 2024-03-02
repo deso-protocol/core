@@ -155,3 +155,33 @@ func TestRemoveDuplicates(t *testing.T) {
 		require.Equal(t, slice2Unique, []int{6, 7, 8, 9, 10})
 	}
 }
+
+func TestFilter(t *testing.T) {
+	// Predicate: all values > 0
+	predicate := func(val int) bool {
+		return val > 0
+	}
+
+	// Test example where no values are > 0
+	{
+		slice := []int{-1, -2, -3, -4, -5}
+		result := Filter(slice, predicate)
+		require.Equal(t, 0, len(result))
+	}
+
+	// Test example where some values are > 0
+	{
+		slice := []int{-1, 2, 3, 4, 5}
+		result := Filter(slice, predicate)
+		require.Equal(t, 4, len(result))
+		require.Equal(t, []int{2, 3, 4, 5}, result)
+	}
+
+	// Test example where all values are > 0
+	{
+		slice := []int{1, 2, 3, 4, 5}
+		result := Filter(slice, predicate)
+		require.Equal(t, 5, len(result))
+		require.Equal(t, []int{1, 2, 3, 4, 5}, result)
+	}
+}

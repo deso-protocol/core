@@ -65,12 +65,6 @@ func (msg *MsgDeSoValidatorVote) ToBytes(bool) ([]byte, error) {
 	// MsgVersion
 	retBytes = append(retBytes, msg.MsgVersion)
 
-	// PublicKey
-	if msg.PublicKey == nil {
-		return nil, errors.New("MsgDeSoValidatorVote.ToBytes: PublicKey must not be nil")
-	}
-	retBytes = append(retBytes, msg.PublicKey.ToBytes()...)
-
 	// VotingPublicKey
 	if msg.VotingPublicKey == nil {
 		return nil, errors.New("MsgDeSoValidatorVote.ToBytes: VotingPublicKey must not be nil")
@@ -108,12 +102,6 @@ func (msg *MsgDeSoValidatorVote) FromBytes(data []byte) error {
 	}
 	msg.MsgVersion = msgVersion
 
-	// PublicKey
-	msg.PublicKey, err = ReadPublicKey(rr)
-	if err != nil {
-		return errors.Wrapf(err, "MsgDeSoValidatorVote.FromBytes: Error decoding PublicKey")
-	}
-
 	// VotingPublicKey
 	msg.VotingPublicKey, err = DecodeBLSPublicKey(rr)
 	if err != nil {
@@ -141,6 +129,17 @@ func (msg *MsgDeSoValidatorVote) FromBytes(data []byte) error {
 	return nil
 }
 
+func (msg *MsgDeSoValidatorVote) ToString() string {
+	return fmt.Sprintf(
+		"{MsgVersion: %d, VotingPublicKey: %s, BlockHash: %v, ProposedInView: %d, VotePartialSignature: %v}",
+		msg.MsgVersion,
+		msg.VotingPublicKey.ToAbbreviatedString(),
+		msg.BlockHash,
+		msg.ProposedInView,
+		msg.VotePartialSignature.ToAbbreviatedString(),
+	)
+}
+
 // ==================================================================
 // Proof of Stake Timeout Message
 // ==================================================================
@@ -154,10 +153,6 @@ type MsgDeSoValidatorTimeout struct {
 	// encode and decode the message.
 	MsgVersion MsgValidatorTimeoutVersion
 
-	// The ECDSA public key for the validator who constructed this timeout message.
-	// Given the validator's ECDSA public key, we can look up their Validator PKID.
-	// This allows us to verify that the timeout originated from a registered validator.
-	PublicKey *PublicKey
 	// The BLS voting public key for the validator who constructed this timeout. The BLS
 	// public key is included in the timeout message because it allows us to easily
 	// verify that the BLS TimeoutPartialSignature is correctly formed, without having to
@@ -193,12 +188,6 @@ func (msg *MsgDeSoValidatorTimeout) ToBytes(bool) ([]byte, error) {
 
 	// MsgVersion
 	retBytes = append(retBytes, msg.MsgVersion)
-
-	// PublicKey
-	if msg.PublicKey == nil {
-		return nil, errors.New("MsgDeSoValidatorTimeout.ToBytes: PublicKey must not be nil")
-	}
-	retBytes = append(retBytes, msg.PublicKey.ToBytes()...)
 
 	// VotingPublicKey
 	if msg.VotingPublicKey == nil {
@@ -241,12 +230,6 @@ func (msg *MsgDeSoValidatorTimeout) FromBytes(data []byte) error {
 	}
 	msg.MsgVersion = msgVersion
 
-	// PublicKey
-	msg.PublicKey, err = ReadPublicKey(rr)
-	if err != nil {
-		return errors.Wrapf(err, "MsgDeSoValidatorTimeout.FromBytes: Error decoding PublicKey")
-	}
-
 	// VotingPublicKey
 	msg.VotingPublicKey, err = DecodeBLSPublicKey(rr)
 	if err != nil {
@@ -272,6 +255,18 @@ func (msg *MsgDeSoValidatorTimeout) FromBytes(data []byte) error {
 	}
 
 	return nil
+}
+
+func (msg *MsgDeSoValidatorTimeout) ToString() string {
+	return fmt.Sprintf(
+		"{MsgVersion: %d, VotingPublicKey: %s, TimedOutView: %d, HighQCView: %v, HighQCBlockHash: %v, TimeoutPartialSignature: %s}",
+		msg.MsgVersion,
+		msg.VotingPublicKey.ToAbbreviatedString(),
+		msg.TimedOutView,
+		msg.HighQC.ProposedInView,
+		msg.HighQC.BlockHash,
+		msg.TimeoutPartialSignature.ToAbbreviatedString(),
+	)
 }
 
 // A QuorumCertificate contains an aggregated signature from 2/3rds of the validators

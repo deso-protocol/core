@@ -1144,6 +1144,7 @@ type TestMeta struct {
 	posMempool             *PosMempool
 	posBlockProducer       *PosBlockProducer
 	pubKeyToBLSKeyMap      map[string]*bls.PrivateKey
+	blsPubKeyToBLSKeyMap   map[string]*bls.PrivateKey
 }
 
 func _executeAllTestRollbackAndFlush(testMeta *TestMeta) {
@@ -1657,7 +1658,7 @@ func TestBasicTransfer(t *testing.T) {
 	}
 
 	// A block with too much block reward should fail.
-	allowedBlockReward := CalcBlockRewardNanos(chain.blockTip().Height)
+	allowedBlockReward := CalcBlockRewardNanos(chain.blockTip().Height, params)
 	assert.Equal(int64(allowedBlockReward), int64(1*NanosPerUnit))
 	blockToMine, _, _, err := miner._getBlockToMine(0 /*threadIndex*/)
 	require.NoError(err)
@@ -2266,7 +2267,7 @@ func TestConnectFailingTransaction(t *testing.T) {
 		txn := _generateTestTxn(t, rand, feeMin, feeMax, m0PubBytes, m0Priv, 100, 0)
 		utxoOps, burnFee, utilityFee, err := blockView._connectFailingTransaction(txn, blockHeight, true)
 		require.NoError(err)
-		require.Equal(1, len(utxoOps))
+		require.Equal(2, len(utxoOps))
 		expectedBurnFee, expectedUtilityFee := _getBMFForTxn(txn, globalParams)
 		require.Equal(expectedBurnFee, burnFee)
 		require.Equal(expectedUtilityFee, utilityFee)
@@ -2302,7 +2303,7 @@ func TestConnectFailingTransaction(t *testing.T) {
 
 		utxoOps, burnFee, utilityFee, err := blockView._connectFailingTransaction(txn, blockHeight, true)
 		require.NoError(err)
-		require.Equal(1, len(utxoOps))
+		require.Equal(2, len(utxoOps))
 
 		// The final balance is m0's starting balance minus the failing txn fee paid.
 		finalBalance, err := blockView.GetDeSoBalanceNanosForPublicKey(m0PubBytes)
@@ -2350,7 +2351,7 @@ func TestConnectFailingTransaction(t *testing.T) {
 		txn := _generateTestTxn(t, rand, feeMin, feeMax, m0PubBytes, m0Priv, 100, 0)
 		utxoOps, burnFee, utilityFee, err := blockView._connectFailingTransaction(txn, blockHeight, true)
 		require.NoError(err)
-		require.Equal(1, len(utxoOps))
+		require.Equal(2, len(utxoOps))
 
 		// The final balance is m0's starting balance minus the failing txn fee paid.
 		finalBalance, err := blockView.GetDeSoBalanceNanosForPublicKey(m0PubBytes)

@@ -2,6 +2,11 @@ package lib
 
 import (
 	"fmt"
+	"net"
+	"strconv"
+	"sync"
+	"time"
+
 	"github.com/btcsuite/btcd/addrmgr"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/deso-protocol/core/bls"
@@ -9,10 +14,6 @@ import (
 	"github.com/deso-protocol/core/consensus"
 	"github.com/golang/glog"
 	"github.com/pkg/errors"
-	"net"
-	"strconv"
-	"sync"
-	"time"
 )
 
 // NetworkManager is a structure that oversees all connections to RemoteNodes. NetworkManager has the following
@@ -76,7 +77,7 @@ type NetworkManager struct {
 	exitGroup  sync.WaitGroup
 }
 
-func NewConnectionController(params *DeSoParams, cmgr *ConnectionManager, rnManager *RemoteNodeManager,
+func NewNetworkManager(params *DeSoParams, cmgr *ConnectionManager, rnManager *RemoteNodeManager,
 	blsKeystore *BLSKeystore, addrMgr *addrmgr.AddrManager, connectIps []string,
 	targetNonValidatorOutboundRemoteNodes uint32, targetNonValidatorInboundRemoteNodes uint32,
 	limitOneInboundConnectionPerIP bool) *NetworkManager {

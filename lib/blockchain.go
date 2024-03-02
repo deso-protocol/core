@@ -96,6 +96,14 @@ func (nn *BlockNode) IsStored() bool {
 	return nn.Status&StatusBlockStored != 0
 }
 
+// IsProcessed returns true if the BlockNode has been processed and is not an orphan.
+// This status is effectively replaced with IsStored for PoS, but is applied to
+// blocks once validated to ensure checks for the processed status behave as expected
+// in other portions of the codebase.
+func (nn *BlockNode) IsProcessed() bool {
+	return nn.Status&StatusBlockProcessed != 0
+}
+
 // IsValidated returns true if a BlockNode has passed all validations. A BlockNode that is validated is
 // generally always stored first.
 func (nn *BlockNode) IsValidated() bool {
@@ -692,6 +700,47 @@ func (bc *Blockchain) _initChain() error {
 	return nil
 }
 
+func (bc *Blockchain) _applyUncommittedBlocksToBestChain() error {
+	// For Proof of Stake, we need to update the in-memory data structures to
+	// include uncommitted blocks that are part of the best chain. This is because
+	// the initialization above only includes blocks that have been committed.
+	safeBlockNodes, err := bc.getSafeBlockNodes()
+	if err != nil {
+		return errors.Wrapf(err, "_applyUncommittedBlocksToBestChain: ")
+	}
+
+	// Filter out the committed tip from the safe block nodes.
+	safeBlockNodes = collections.Filter(safeBlockNodes, func(node *BlockNode) bool {
+		return !node.IsCommitted()
+	})
+
+	// If there are no uncommitted blocks, we're done.
+	if len(safeBlockNodes) == 0 {
+		return nil
+	}
+
+	// Find the safe block with the highest view. That block is the uncommitted tip.
+	uncommittedTipBlockNode := safeBlockNodes[0]
+	for _, blockNode := range safeBlockNodes {
+		if blockNode.Header.ProposedInView > uncommittedTipBlockNode.Header.ProposedInView {
+			uncommittedTipBlockNode = blockNode
+		}
+	}
+
+	// Fetch the lineage of blocks from the committed tip through the uncommitted tip.
+	lineageFromCommittedTip, err := bc.getLineageFromCommittedTip(uncommittedTipBlockNode.Header)
+	if err != nil {
+		return errors.Wrapf(err, "_applyUncommittedBlocksToBestChain: ")
+	}
+
+	// Add the uncommitted blocks to the in-memory data structures.
+	if _, _, _, err := bc.tryApplyNewTip(uncommittedTipBlockNode, 0, lineageFromCommittedTip); err != nil {
+		return errors.Wrapf(err, "_applyUncommittedBlocksToBestChain: ")
+	}
+
+	return nil
+}
+
 // NewBlockchain returns a new blockchain object. It initializes some in-memory
 // data structures by reading from the db. It also initializes the db if it hasn't
 // been initialized in the past. This function should only be called once per
@@ -752,6 +801,11 @@ func NewBlockchain(
 	// from the db. This function creates an initial database state containing
 	// only the genesis block if we've never initialized the database before.
 	if err := bc._initChain(); err != nil {
+		return nil, errors.Wrapf(err, "NewBlockchain: ")
+	}
+
+	// Update the best chain and best header chain to include uncommitted blocks.
+	if err := bc._applyUncommittedBlocksToBestChain(); err != nil {
 		return nil, errors.Wrapf(err, "NewBlockchain: ")
 	}
 
@@ -1092,6 +1146,14 @@ func (bc *Blockchain) HasBlock(blockHash *BlockHash) bool {
 	return true
 }
 
+func (bc *Blockchain) HasBlockInBlockIndex(blockHash *BlockHash) bool {
+	bc.ChainLock.RLock()
+	defer bc.ChainLock.RUnlock()
+
+	_, exists := bc.blockIndexByHash[*blockHash]
+	return exists
+}
+
 // This needs to hold a lock on the blockchain because it read from an in-memory map that is
 // not thread-safe.
 func (bc *Blockchain) GetBlockHeaderFromIndex(blockHash *BlockHash) *MsgDeSoHeader {
@@ -1146,6 +1208,13 @@ func (bc *Blockchain) isTipMaxed(tip *BlockNode) bool {
 	return false
 }
 
+func (bc *Blockchain) getMaxTipAge(tip *BlockNode) time.Duration {
+	if bc.params.IsPoSBlockHeight(uint64(tip.Height)) {
+		return bc.params.MaxTipAgePoS
+	}
+	return bc.params.MaxTipAgePoW
+}
+
 func (bc *Blockchain) isTipCurrent(tip *BlockNode) bool {
 	if bc.MaxSyncBlockHeight > 0 {
 		return tip.Height >= bc.MaxSyncBlockHeight
@@ -1163,8 +1232,8 @@ func (bc *Blockchain) isTipCurrent(tip *BlockNode) bool {
 
 	// Not current if the tip has a timestamp older than the maximum
 	// tip age.
-	tipTime := time.Unix(int64(tip.Header.GetTstampSecs()), 0)
-	oldestAllowedTipTime := bc.timeSource.AdjustedTime().Add(-1 * bc.params.MaxTipAge)
+	tipTime := time.Unix(tip.Header.GetTstampSecs(), 0)
+	oldestAllowedTipTime := bc.timeSource.AdjustedTime().Add(-1 * bc.getMaxTipAge(tip))
 
 	return !tipTime.Before(oldestAllowedTipTime)
 }

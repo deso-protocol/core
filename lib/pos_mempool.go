@@ -51,6 +51,14 @@ type Mempool interface {
 		pastBlocksPriorityPercentileBasisPoints uint64,
 		maxBlockSize uint64,
 	) (uint64, error)
+	EstimateFeeRate(
+		minFeeRateNanosPerKB uint64,
+		mempoolCongestionFactorBasisPoints uint64,
+		mempoolPriorityPercentileBasisPoints uint64,
+		pastBlocksCongestionFactorBasisPoints uint64,
+		pastBlocksPriorityPercentileBasisPoints uint64,
+		maxBlockSize uint64,
+	) (uint64, error)
 }
 
 type MempoolIterator interface {
@@ -62,13 +70,13 @@ type MempoolIterator interface {
 // MempoolTransaction is a simple wrapper around MsgDeSoTxn that adds a timestamp field.
 type MempoolTransaction struct {
 	*MsgDeSoTxn
-	TimestampUnixMicro uint64
+	TimestampUnixMicro time.Time
 }
 
-func NewMempoolTransaction(txn *MsgDeSoTxn, timestampUnixMicro uint64) *MempoolTransaction {
+func NewMempoolTransaction(txn *MsgDeSoTxn, timestamp time.Time) *MempoolTransaction {
 	return &MempoolTransaction{
 		MsgDeSoTxn:         txn,
-		TimestampUnixMicro: timestampUnixMicro,
+		TimestampUnixMicro: timestamp,
 	}
 }
 
@@ -76,7 +84,7 @@ func (mtxn *MempoolTransaction) GetTxn() *MsgDeSoTxn {
 	return mtxn.MsgDeSoTxn
 }
 
-func (mtxn *MempoolTransaction) GetTimestampUnixMicro() uint64 {
+func (mtxn *MempoolTransaction) GetTimestamp() time.Time {
 	return mtxn.TimestampUnixMicro
 }
 
@@ -164,8 +172,7 @@ func (it *PosMempoolIterator) Value() (*MempoolTransaction, bool) {
 	if txn == nil || txn.Tx == nil {
 		return nil, ok
 	}
-	added := uint64(txn.Added.UnixMicro())
-	return NewMempoolTransaction(txn.Tx, added), ok
+	return NewMempoolTransaction(txn.Tx, txn.Added), ok
 }
 
 func (it *PosMempoolIterator) Initialized() bool {
@@ -440,7 +447,7 @@ func (mp *PosMempool) OnBlockDisconnected(block *MsgDeSoBlock) {
 		// Add all transactions in the block to the mempool.
 
 		// Construct the MempoolTx from the MsgDeSoTxn.
-		mempoolTx, err := NewMempoolTx(txn, NanoSecondsToUint64MicroSeconds(block.Header.TstampNanoSecs), mp.latestBlockHeight)
+		mempoolTx, err := NewMempoolTx(txn, NanoSecondsToTime(block.Header.TstampNanoSecs), mp.latestBlockHeight)
 		if err != nil {
 			continue
 		}
@@ -487,7 +494,7 @@ func (mp *PosMempool) AddTransaction(mtxn *MempoolTransaction, verifySignature b
 	}
 
 	// Construct the MempoolTx from the MsgDeSoTxn.
-	mempoolTx, err := NewMempoolTx(mtxn.GetTxn(), mtxn.GetTimestampUnixMicro(), mp.latestBlockHeight)
+	mempoolTx, err := NewMempoolTx(mtxn.GetTxn(), mtxn.GetTimestamp(), mp.latestBlockHeight)
 	if err != nil {
 		return errors.Wrapf(err, "PosMempool.AddTransaction: Problem constructing MempoolTx")
 	}
@@ -664,7 +671,7 @@ func (mp *PosMempool) GetTransaction(txnHash *BlockHash) *MempoolTransaction {
 		return nil
 	}
 
-	return NewMempoolTransaction(txn.Tx, uint64(txn.Added.UnixMicro()))
+	return NewMempoolTransaction(txn.Tx, txn.Added)
 }
 
 // GetTransactions returns all transactions in the mempool ordered by the Fee-Time algorithm. This function is thread-safe.
@@ -683,7 +690,7 @@ func (mp *PosMempool) GetTransactions() []*MempoolTransaction {
 			continue
 		}
 
-		mtxn := NewMempoolTransaction(txn.Tx, uint64(txn.Added.UnixMicro()))
+		mtxn := NewMempoolTransaction(txn.Tx, txn.Added)
 		mempoolTxns = append(mempoolTxns, mtxn)
 	}
 	return mempoolTxns
@@ -761,7 +768,7 @@ func (mp *PosMempool) refreshNoLock() error {
 	var txnsToRemove []*MempoolTx
 	txns := mp.getTransactionsNoLock()
 	for _, txn := range txns {
-		mtxn := NewMempoolTransaction(txn.Tx, uint64(txn.Added.UnixMicro()))
+		mtxn := NewMempoolTransaction(txn.Tx, txn.Added)
 		err := tempPool.AddTransaction(mtxn, false)
 		if err == nil {
 			continue
@@ -912,8 +919,19 @@ func (mp *PosMempool) EstimateFee(txn *MsgDeSoTxn,
 	pastBlocksCongestionFactorBasisPoints uint64,
 	pastBlocksPriorityPercentileBasisPoints uint64,
 	maxBlockSize uint64) (uint64, error) {
-	// TODO: replace MaxBasisPoints with variables configured by flags.
 	return mp.feeEstimator.EstimateFee(
 		txn, mempoolCongestionFactorBasisPoints, mempoolPriorityPercentileBasisPoints,
+		pastBlocksCongestionFactorBasisPoints, pastBlocksPriorityPercentileBasisPoints, maxBlockSize)
+}
+
+func (mp *PosMempool) EstimateFeeRate(
+	_ uint64,
+	mempoolCongestionFactorBasisPoints uint64,
+	mempoolPriorityPercentileBasisPoints uint64,
+	pastBlocksCongestionFactorBasisPoints uint64,
+	pastBlocksPriorityPercentileBasisPoints uint64,
+	maxBlockSize uint64) (uint64, error) {
+	return mp.feeEstimator.EstimateFeeRateNanosPerKB(
+		mempoolCongestionFactorBasisPoints, mempoolPriorityPercentileBasisPoints,
 		pastBlocksCongestionFactorBasisPoints, pastBlocksPriorityPercentileBasisPoints, maxBlockSize)
 }

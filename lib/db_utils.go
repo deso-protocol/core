@@ -106,7 +106,7 @@ type DBPrefixes struct {
 	// How much Bitcoin is work in USD cents.
 	PrefixUSDCentsPerBitcoinExchangeRate []byte `prefix_id:"[27]" is_state:"true"`
 	// <prefix_id, key> -> <GlobalParamsEntry encoded>
-	PrefixGlobalParams []byte `prefix_id:"[40]" is_state:"true"`
+	PrefixGlobalParams []byte `prefix_id:"[40]" is_state:"true" core_state:"true"`
 
 	// The prefix for the Bitcoin TxID map. If a key is set for a TxID that means this
 	// particular TxID has been processed as part of a BitcoinExchange transaction. If
@@ -493,7 +493,7 @@ type DBPrefixes struct {
 
 	// PrefixValidatorByPKID: Retrieve a validator by PKID.
 	// Prefix, <ValidatorPKID [33]byte> -> ValidatorEntry
-	PrefixValidatorByPKID []byte `prefix_id:"[80]" is_state:"true"`
+	PrefixValidatorByPKID []byte `prefix_id:"[80]" is_state:"true" core_state:"true"`
 
 	// PrefixValidatorByStatusAndStakeAmount: Retrieve the top N active validators by stake.
 	// Prefix, <Status uint8>, <TotalStakeAmountNanos *uint256.Int>, <ValidatorPKID [33]byte> -> nil
@@ -502,7 +502,7 @@ type DBPrefixes struct {
 
 	// PrefixStakeByValidatorAndStaker: Retrieve a StakeEntry.
 	// Prefix, <ValidatorPKID [33]byte>, <StakerPKID [33]byte> -> StakeEntry
-	PrefixStakeByValidatorAndStaker []byte `prefix_id:"[82]" is_state:"true"`
+	PrefixStakeByValidatorAndStaker []byte `prefix_id:"[82]" is_state:"true" core_state:"true"`
 
 	// PrefixStakeByStakeAmount: Retrieve the top N stake entries by stake amount.
 	// Prefix, <TotalStakeAmountNanos *uint256.Int>, <ValidatorPKID [33]byte>, <StakerPKID [33]byte> -> nil
@@ -533,11 +533,11 @@ type DBPrefixes struct {
 	//   (CurrentEpoch - LockedAtEpochNumber) = 133 - 123 = 10, which is greater than
 	//   cooldown=3. Thus the UnlockStake will succeed, which will result in the
 	//   LockedStakeEntry being deleted and 25 DESO being added to the user's balance.
-	PrefixLockedStakeByValidatorAndStakerAndLockedAt []byte `prefix_id:"[84]" is_state:"true"`
+	PrefixLockedStakeByValidatorAndStakerAndLockedAt []byte `prefix_id:"[84]" is_state:"true" core_state:"true"`
 
 	// PrefixCurrentEpoch: Retrieve the current EpochEntry.
 	// Prefix -> EpochEntry
-	PrefixCurrentEpoch []byte `prefix_id:"[85]" is_state:"true"`
+	PrefixCurrentEpoch []byte `prefix_id:"[85]" is_state:"true" core_state:"true"`
 
 	// PrefixCurrentRandomSeedHash: Retrieve the current RandomSeedHash.
 	// Prefix -> <RandomSeedHash [32]byte>.
@@ -565,7 +565,7 @@ type DBPrefixes struct {
 
 	// PrefixSnapshotLeaderSchedule: Retrieve a ValidatorPKID by <SnapshotAtEpochNumber, LeaderIndex>.
 	// Prefix, <SnapshotAtEpochNumber uint64>, <LeaderIndex uint16> -> ValidatorPKID
-	PrefixSnapshotLeaderSchedule []byte `prefix_id:"[91]" is_state:"true"`
+	PrefixSnapshotLeaderSchedule []byte `prefix_id:"[91]" is_state:"true" core_state:"true"`
 
 	// PrefixSnapshotStakeToRewardByValidatorAndStaker: Retrieves snapshotted StakeEntries that are eligible to
 	// receive staking rewards for an epoch. StakeEntries can be retrieved by ValidatorPKID and StakerPKID.
@@ -579,23 +579,23 @@ type DBPrefixes struct {
 	// among the vested and unvested locked balance entries without separate indexes.
 	// Prefix, <HodlerPKID [33]byte>, <ProfilePKID [33]byte>, <vested/unvested byte>,
 	// <UnlockTimestampNanoSecs [8]byte>, <VestingEndTimestampNanoSecs [8]byte> -> <LockedBalanceEntry>
-	PrefixLockedBalanceEntry []byte `prefix_id:"[93]" is_state:"true"`
+	PrefixLockedBalanceEntry []byte `prefix_id:"[93]" is_state:"true" core_state:"true"`
 
 	// PrefixLockupYieldCurvePointByProfilePKIDAndDurationNanoSecs:
 	// Retrieves a LockupYieldCurvePoint.
 	// The structure of the key enables quick lookups for a (ProfilePKID, Duration) pair as well
 	// as quick construction of yield curve plots over time.
 	// Prefix, <ProfilePKID [33]byte>, <LockupDurationNanoSecs int64> -> <LockupYieldCurvePoint>
-	PrefixLockupYieldCurvePointByProfilePKIDAndDurationNanoSecs []byte `prefix_id:"[94]" is_state:"true"`
+	PrefixLockupYieldCurvePointByProfilePKIDAndDurationNanoSecs []byte `prefix_id:"[94]" is_state:"true" core_state:"true"`
 
 	// PrefixValidatorBLSPublicKeyPKIDPairEntry: Retrieve a BLSPublicKeyPKIDPairEntry by BLS public key.
 	// Prefix, <BLSPublicKey [33]byte> -> *BLSPublicKeyPKIDPairEntry
-	PrefixValidatorBLSPublicKeyPKIDPairEntry []byte `prefix_id:"[95]" is_state:"true"`
+	PrefixValidatorBLSPublicKeyPKIDPairEntry []byte `prefix_id:"[95]" is_state:"true" core_state:"true"`
 
 	// PrefixSnapshotValidatorBLSPublicKeyPKIDPairEntry: Retrieve a snapshotted BLSPublicKeyPKIDPairEntry
 	// by BLS Public Key and SnapshotAtEpochNumber.
 	// Prefix, <SnapshotAtEpochNumber uint64>, <BLSPublicKey []byte> -> *BLSPublicKeyPKIDPairEntry
-	PrefixSnapshotValidatorBLSPublicKeyPKIDPairEntry []byte `prefix_id:"[96]" is_state:"true"`
+	PrefixSnapshotValidatorBLSPublicKeyPKIDPairEntry []byte `prefix_id:"[96]" is_state:"true" core_state:"true"`
 
 	// NEXT_TAG: 97
 }
@@ -7012,39 +7012,43 @@ type TransactionMetadata struct {
 	// when looking up output amounts
 	TxnOutputs []*DeSoOutput
 
-	BasicTransferTxindexMetadata         *BasicTransferTxindexMetadata         `json:",omitempty"`
-	BitcoinExchangeTxindexMetadata       *BitcoinExchangeTxindexMetadata       `json:",omitempty"`
-	CreatorCoinTxindexMetadata           *CreatorCoinTxindexMetadata           `json:",omitempty"`
-	CreatorCoinTransferTxindexMetadata   *CreatorCoinTransferTxindexMetadata   `json:",omitempty"`
-	UpdateProfileTxindexMetadata         *UpdateProfileTxindexMetadata         `json:",omitempty"`
-	SubmitPostTxindexMetadata            *SubmitPostTxindexMetadata            `json:",omitempty"`
-	LikeTxindexMetadata                  *LikeTxindexMetadata                  `json:",omitempty"`
-	FollowTxindexMetadata                *FollowTxindexMetadata                `json:",omitempty"`
-	PrivateMessageTxindexMetadata        *PrivateMessageTxindexMetadata        `json:",omitempty"`
-	SwapIdentityTxindexMetadata          *SwapIdentityTxindexMetadata          `json:",omitempty"`
-	NFTBidTxindexMetadata                *NFTBidTxindexMetadata                `json:",omitempty"`
-	AcceptNFTBidTxindexMetadata          *AcceptNFTBidTxindexMetadata          `json:",omitempty"`
-	NFTTransferTxindexMetadata           *NFTTransferTxindexMetadata           `json:",omitempty"`
-	AcceptNFTTransferTxindexMetadata     *AcceptNFTTransferTxindexMetadata     `json:",omitempty"`
-	BurnNFTTxindexMetadata               *BurnNFTTxindexMetadata               `json:",omitempty"`
-	DAOCoinTxindexMetadata               *DAOCoinTxindexMetadata               `json:",omitempty"`
-	DAOCoinTransferTxindexMetadata       *DAOCoinTransferTxindexMetadata       `json:",omitempty"`
-	CreateNFTTxindexMetadata             *CreateNFTTxindexMetadata             `json:",omitempty"`
-	UpdateNFTTxindexMetadata             *UpdateNFTTxindexMetadata             `json:",omitempty"`
-	DAOCoinLimitOrderTxindexMetadata     *DAOCoinLimitOrderTxindexMetadata     `json:",omitempty"`
-	CreateUserAssociationTxindexMetadata *CreateUserAssociationTxindexMetadata `json:",omitempty"`
-	DeleteUserAssociationTxindexMetadata *DeleteUserAssociationTxindexMetadata `json:",omitempty"`
-	CreatePostAssociationTxindexMetadata *CreatePostAssociationTxindexMetadata `json:",omitempty"`
-	DeletePostAssociationTxindexMetadata *DeletePostAssociationTxindexMetadata `json:",omitempty"`
-	AccessGroupTxindexMetadata           *AccessGroupTxindexMetadata           `json:",omitempty"`
-	AccessGroupMembersTxindexMetadata    *AccessGroupMembersTxindexMetadata    `json:",omitempty"`
-	NewMessageTxindexMetadata            *NewMessageTxindexMetadata            `json:",omitempty"`
-	RegisterAsValidatorTxindexMetadata   *RegisterAsValidatorTxindexMetadata   `json:",omitempty"`
-	UnregisterAsValidatorTxindexMetadata *UnregisterAsValidatorTxindexMetadata `json:",omitempty"`
-	StakeTxindexMetadata                 *StakeTxindexMetadata                 `json:",omitempty"`
-	UnstakeTxindexMetadata               *UnstakeTxindexMetadata               `json:",omitempty"`
-	UnlockStakeTxindexMetadata           *UnlockStakeTxindexMetadata           `json:",omitempty"`
-	UnjailValidatorTxindexMetadata       *UnjailValidatorTxindexMetadata       `json:",omitempty"`
+	BasicTransferTxindexMetadata          *BasicTransferTxindexMetadata          `json:",omitempty"`
+	BitcoinExchangeTxindexMetadata        *BitcoinExchangeTxindexMetadata        `json:",omitempty"`
+	CreatorCoinTxindexMetadata            *CreatorCoinTxindexMetadata            `json:",omitempty"`
+	CreatorCoinTransferTxindexMetadata    *CreatorCoinTransferTxindexMetadata    `json:",omitempty"`
+	UpdateProfileTxindexMetadata          *UpdateProfileTxindexMetadata          `json:",omitempty"`
+	SubmitPostTxindexMetadata             *SubmitPostTxindexMetadata             `json:",omitempty"`
+	LikeTxindexMetadata                   *LikeTxindexMetadata                   `json:",omitempty"`
+	FollowTxindexMetadata                 *FollowTxindexMetadata                 `json:",omitempty"`
+	PrivateMessageTxindexMetadata         *PrivateMessageTxindexMetadata         `json:",omitempty"`
+	SwapIdentityTxindexMetadata           *SwapIdentityTxindexMetadata           `json:",omitempty"`
+	NFTBidTxindexMetadata                 *NFTBidTxindexMetadata                 `json:",omitempty"`
+	AcceptNFTBidTxindexMetadata           *AcceptNFTBidTxindexMetadata           `json:",omitempty"`
+	NFTTransferTxindexMetadata            *NFTTransferTxindexMetadata            `json:",omitempty"`
+	AcceptNFTTransferTxindexMetadata      *AcceptNFTTransferTxindexMetadata      `json:",omitempty"`
+	BurnNFTTxindexMetadata                *BurnNFTTxindexMetadata                `json:",omitempty"`
+	DAOCoinTxindexMetadata                *DAOCoinTxindexMetadata                `json:",omitempty"`
+	DAOCoinTransferTxindexMetadata        *DAOCoinTransferTxindexMetadata        `json:",omitempty"`
+	CreateNFTTxindexMetadata              *CreateNFTTxindexMetadata              `json:",omitempty"`
+	UpdateNFTTxindexMetadata              *UpdateNFTTxindexMetadata              `json:",omitempty"`
+	DAOCoinLimitOrderTxindexMetadata      *DAOCoinLimitOrderTxindexMetadata      `json:",omitempty"`
+	CreateUserAssociationTxindexMetadata  *CreateUserAssociationTxindexMetadata  `json:",omitempty"`
+	DeleteUserAssociationTxindexMetadata  *DeleteUserAssociationTxindexMetadata  `json:",omitempty"`
+	CreatePostAssociationTxindexMetadata  *CreatePostAssociationTxindexMetadata  `json:",omitempty"`
+	DeletePostAssociationTxindexMetadata  *DeletePostAssociationTxindexMetadata  `json:",omitempty"`
+	AccessGroupTxindexMetadata            *AccessGroupTxindexMetadata            `json:",omitempty"`
+	AccessGroupMembersTxindexMetadata     *AccessGroupMembersTxindexMetadata     `json:",omitempty"`
+	NewMessageTxindexMetadata             *NewMessageTxindexMetadata             `json:",omitempty"`
+	RegisterAsValidatorTxindexMetadata    *RegisterAsValidatorTxindexMetadata    `json:",omitempty"`
+	UnregisterAsValidatorTxindexMetadata  *UnregisterAsValidatorTxindexMetadata  `json:",omitempty"`
+	StakeTxindexMetadata                  *StakeTxindexMetadata                  `json:",omitempty"`
+	UnstakeTxindexMetadata                *UnstakeTxindexMetadata                `json:",omitempty"`
+	UnlockStakeTxindexMetadata            *UnlockStakeTxindexMetadata            `json:",omitempty"`
+	UnjailValidatorTxindexMetadata        *UnjailValidatorTxindexMetadata        `json:",omitempty"`
+	CoinLockupTxindexMetadata             *CoinLockupTxindexMetadata             `json:",omitempty"`
+	UpdateCoinLockupParamsTxindexMetadata *UpdateCoinLockupParamsTxindexMetadata `json:",omitempty"`
+	CoinLockupTransferTxindexMetadata     *CoinLockupTransferTxindexMetadata     `json:",omitempty"`
+	CoinUnlockTxindexMetadata             *CoinUnlockTxindexMetadata             `json:",omitempty"`
 }
 
 func (txnMeta *TransactionMetadata) GetEncoderForTxType(txnType TxnType) DeSoEncoder {
@@ -7103,6 +7107,26 @@ func (txnMeta *TransactionMetadata) GetEncoderForTxType(txnType TxnType) DeSoEnc
 		return txnMeta.AccessGroupMembersTxindexMetadata
 	case TxnTypeNewMessage:
 		return txnMeta.NewMessageTxindexMetadata
+	case TxnTypeRegisterAsValidator:
+		return txnMeta.RegisterAsValidatorTxindexMetadata
+	case TxnTypeUnregisterAsValidator:
+		return txnMeta.UnregisterAsValidatorTxindexMetadata
+	case TxnTypeStake:
+		return txnMeta.StakeTxindexMetadata
+	case TxnTypeUnstake:
+		return txnMeta.UnstakeTxindexMetadata
+	case TxnTypeUnlockStake:
+		return txnMeta.UnlockStakeTxindexMetadata
+	case TxnTypeUnjailValidator:
+		return txnMeta.UnjailValidatorTxindexMetadata
+	case TxnTypeCoinLockup:
+		return txnMeta.CoinLockupTxindexMetadata
+	case TxnTypeUpdateCoinLockupParams:
+		return txnMeta.UpdateCoinLockupParamsTxindexMetadata
+	case TxnTypeCoinLockupTransfer:
+		return txnMeta.CoinLockupTransferTxindexMetadata
+	case TxnTypeCoinUnlock:
+		return txnMeta.CoinUnlockTxindexMetadata
 	default:
 		return nil
 	}

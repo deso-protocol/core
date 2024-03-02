@@ -84,6 +84,10 @@ func (publicKey *PublicKey) FromString(publicKeyString string) (*PublicKey, erro
 	panic(BLSNoRelicError)
 }
 
+func (publicKey *PublicKey) ToAbbreviatedString() string {
+	panic(BLSNoRelicError)
+}
+
 func (publicKey *PublicKey) MarshalJSON() ([]byte, error) {
 	panic(BLSNoRelicError)
 }
@@ -133,6 +137,10 @@ func (signature *Signature) ToString() string {
 }
 
 func (signature *Signature) FromString(signatureString string) (*Signature, error) {
+	panic(BLSNoRelicError)
+}
+
+func (signature *Signature) ToAbbreviatedString() string {
 	panic(BLSNoRelicError)
 }
 

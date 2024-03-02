@@ -21,6 +21,8 @@ const (
 	EncoderTypeDeleteUserAssociationStateChangeMetadata EncoderType = 2000012
 	EncoderTypeCreatePostAssociationStateChangeMetadata EncoderType = 2000013
 	EncoderTypeDeletePostAssociationStateChangeMetadata EncoderType = 2000014
+	EncoderTypeStakeRewardStateChangeMetadata           EncoderType = 2000015
+	EncoderTypeUnjailValidatorStateChangeMetadata       EncoderType = 2000016
 )
 
 func GetStateChangeMetadataFromOpType(opType OperationType) DeSoEncoder {
@@ -55,6 +57,10 @@ func GetStateChangeMetadataFromOpType(opType OperationType) DeSoEncoder {
 		return &CreatePostAssociationStateChangeMetadata{}
 	case OperationTypeDeletePostAssociation:
 		return &DeletePostAssociationStateChangeMetadata{}
+	case OperationTypeStakeDistributionRestake, OperationTypeStakeDistributionPayToBalance:
+		return &StakeRewardStateChangeMetadata{}
+	case OperationTypeUnjailValidator:
+		return &UnjailValidatorStateChangeMetadata{}
 	default:
 		return nil
 	}
@@ -541,4 +547,92 @@ func (deletePostAssociationSCM *DeletePostAssociationStateChangeMetadata) GetVer
 
 func (deletePostAssociationSCM *DeletePostAssociationStateChangeMetadata) GetEncoderType() EncoderType {
 	return EncoderTypeDeletePostAssociationStateChangeMetadata
+}
+
+type StakeRewardStateChangeMetadata struct {
+	ValidatorPKID         *PKID
+	StakerPKID            *PKID
+	RewardNanos           uint64
+	StakingRewardMethod   StakingRewardMethod
+	IsValidatorCommission bool
+}
+
+func (stakeRewardSCM *StakeRewardStateChangeMetadata) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte {
+	var data []byte
+	data = append(data, EncodeToBytes(blockHeight, stakeRewardSCM.ValidatorPKID, skipMetadata...)...)
+	data = append(data, EncodeToBytes(blockHeight, stakeRewardSCM.StakerPKID, skipMetadata...)...)
+	data = append(data, UintToBuf(stakeRewardSCM.RewardNanos)...)
+	data = append(data, UintToBuf(uint64(stakeRewardSCM.StakingRewardMethod))...)
+	data = append(data, BoolToByte(stakeRewardSCM.IsValidatorCommission))
+	return data
+}
+
+func (stakeRewardSCM *StakeRewardStateChangeMetadata) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.Reader) error {
+	var err error
+	if stakeRewardSCM.ValidatorPKID, err = DecodeDeSoEncoder(&PKID{}, rr); err != nil {
+		return errors.Wrapf(err, "StakeRewardStateChangeMetadata.Decode: Problem reading ValidatorPKID")
+	}
+	if stakeRewardSCM.StakerPKID, err = DecodeDeSoEncoder(&PKID{}, rr); err != nil {
+		return errors.Wrapf(err, "StakeRewardStateChangeMetadata.Decode: Problem reading StakerPKID")
+	}
+	stakeRewardSCM.RewardNanos, err = ReadUvarint(rr)
+	if err != nil {
+		return errors.Wrapf(err, "StakeRewardStateChangeMetadata.Decode: Problem reading RewardNanos")
+	}
+	stakingRewardMethod, err := ReadUvarint(rr)
+	if err != nil {
+		return errors.Wrapf(err, "StakeRewardStateChangeMetadata.Decode: Problem reading StakingRewardMethod")
+	}
+	stakeRewardSCM.StakingRewardMethod = StakingRewardMethod(stakingRewardMethod)
+	stakeRewardSCM.IsValidatorCommission, err = ReadBoolByte(rr)
+	if err != nil {
+		return errors.Wrapf(err, "StakeRewardStateChangeMetadata.Decode: Problem reading IsValidatorCommission")
+	}
+	return nil
+}
+
+func (stakeRewardSCM *StakeRewardStateChangeMetadata) GetVersionByte(blockHeight uint64) byte {
+	return 0
+}
+
+func (stakeRewardSCM *StakeRewardStateChangeMetadata) GetEncoderType() EncoderType {
+	return EncoderTypeStakeRewardStateChangeMetadata
+}
+
+type UnjailValidatorStateChangeMetadata struct {
+	ValidatorPKID         *PKID
+	JailedAtEpochNumber   uint64
+	UnjailedAtEpochNumber uint64
+}
+
+func (metadata *UnjailValidatorStateChangeMetadata) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte {
+	var data []byte
+	data = append(data, EncodeToBytes(blockHeight, metadata.ValidatorPKID, skipMetadata...)...)
+	data = append(data, UintToBuf(metadata.JailedAtEpochNumber)...)
+	data = append(data, UintToBuf(metadata.UnjailedAtEpochNumber)...)
+	return data
+}
+
+func (metadata *UnjailValidatorStateChangeMetadata) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.Reader) error {
+	var err error
+	if metadata.ValidatorPKID, err = DecodeDeSoEncoder(&PKID{}, rr); err != nil {
+		return errors.Wrapf(err, "UnjailValidatorStateChangeMetadata.Decode: Problem reading ValidatorPKID")
+	}
+	metadata.JailedAtEpochNumber, err = ReadUvarint(rr)
+	if err != nil {
+		return errors.Wrapf(err, "UnjailValidatorStateChangeMetadata.Decode: Problem reading JailedAtEpochNumber")
+	}
+	metadata.UnjailedAtEpochNumber, err = ReadUvarint(rr)
+	if err != nil {
+		return errors.Wrapf(err, "UnjailValidatorStateChangeMetadata.Decode: Problem reading UnjailedAtEpochNumber")
+	}
+	return nil
+}
+
+func (metadata *UnjailValidatorStateChangeMetadata) GetVersionByte(blockHeight uint64) byte {
+	return 0
+}
+
+func (metadata *UnjailValidatorStateChangeMetadata) GetEncoderType() EncoderType {
+	return EncoderTypeUnjailValidatorStateChangeMetadata
 }

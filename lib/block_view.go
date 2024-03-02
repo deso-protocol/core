@@ -1001,6 +1001,16 @@ func (bav *UtxoView) _addBalance(amountNanos uint64, balancePublicKey []byte,
 	}, nil
 }
 
+func (bav *UtxoView) _addBalanceForStakeReward(amountNanos uint64, balancePublicKey []byte,
+) (*UtxoOperation, error) {
+	utxoOp, err := bav._addBalance(amountNanos, balancePublicKey)
+	if err != nil {
+		return nil, errors.Wrapf(err, "_addBalanceForStakeReward: ")
+	}
+	utxoOp.Type = OperationTypeStakeDistributionPayToBalance
+	return utxoOp, nil
+}
+
 func (bav *UtxoView) _addDESO(amountNanos uint64, publicKey []byte, utxoEntry *UtxoEntry, blockHeight uint32,
 ) (*UtxoOperation, error) {
 	if blockHeight >= bav.Params.ForkHeights.BalanceModelBlockHeight {
@@ -1659,7 +1669,7 @@ func (bav *UtxoView) DisconnectBlock(
 				for _, nonceEntry := range utxoOp.PrevNonceEntries {
 					bav.SetTransactorNonceEntry(nonceEntry)
 				}
-			case OperationTypeAddBalance:
+			case OperationTypeStakeDistributionPayToBalance:
 				// We don't allow add balance utxo operations unless it's the end of an epoch.
 				if !isLastBlockInEpoch {
 					return fmt.Errorf("DisconnectBlock: Found add balance operation in block %d that is not the end "+
@@ -1669,7 +1679,7 @@ func (bav *UtxoView) DisconnectBlock(
 				if err = bav._unAddBalance(utxoOp.BalanceAmountNanos, utxoOp.BalancePublicKey); err != nil {
 					return errors.Wrapf(err, "DisconnectBlock: Problem unAdding balance %v: ", utxoOp.BalanceAmountNanos)
 				}
-			case OperationTypeStakeDistribution:
+			case OperationTypeStakeDistributionRestake:
 				// We don't allow stake distribution utxo operations unless it's the end of an epoch.
 				if !isLastBlockInEpoch {
 					return fmt.Errorf("DisconnectBlock: Found add balance operation in block %d that is not the end "+
@@ -3312,29 +3322,69 @@ func (bav *UtxoView) _connectUpdateGlobalParams(
 				)
 			}
 		}
-	}
-
-	if blockHeight >= bav.Params.ForkHeights.ProofOfStake2ConsensusCutoverBlockHeight {
-		var bytesRead int
-		if len(extraData[FeeBucketGrowthRateBasisPointsKey]) > 0 {
-			newGlobalParamsEntry.FeeBucketGrowthRateBasisPoints, bytesRead = Uvarint(
-				extraData[FeeBucketGrowthRateBasisPointsKey],
+		if len(extraData[BlockTimestampDriftNanoSecsKey]) > 0 {
+			val, bytesRead := Varint(
+				extraData[BlockTimestampDriftNanoSecsKey],
 			)
 			if bytesRead <= 0 {
 				return 0, 0, nil, fmt.Errorf(
-					"_connectUpdateGlobalParams: unable to decode FeeBucketGrowthRateBasisPoints as uint64",
+					"_connectUpdateGlobalParams: unable to decode BlockTimestampDriftNanoSecs as int64",
 				)
 			}
+			if val < 0 {
+				return 0, 0, nil, fmt.Errorf(
+					"_connectUpdateGlobalParams: BlockTimestampDriftNanoSecs must be >= 0",
+				)
+			}
+			newGlobalParamsEntry.BlockTimestampDriftNanoSecs = val
 		}
-		if len(extraData[FailingTransactionBMFMultiplierBasisPointsKey]) > 0 {
-			newGlobalParamsEntry.FailingTransactionBMFMultiplierBasisPoints, bytesRead = Uvarint(
-				extraData[FailingTransactionBMFMultiplierBasisPointsKey],
+		if len(extraData[MempoolMaxSizeBytesKey]) > 0 {
+			val, bytesRead := Uvarint(
+				extraData[MempoolMaxSizeBytesKey],
 			)
 			if bytesRead <= 0 {
 				return 0, 0, nil, fmt.Errorf(
-					"_connectUpdateGlobalParams: unable to decode FailingTransactionBMFMultiplierBasisPoints as uint64",
+					"_connectUpdateGlobalParams: unable to decode MempoolMaxSizeBytes as uint64",
 				)
 			}
+			if val <= 0 {
+				return 0, 0, nil, fmt.Errorf(
+					"_connectUpdateGlobalParams: MempoolMaxSizeBytes must be > 0",
+				)
+			}
+			newGlobalParamsEntry.MempoolMaxSizeBytes = val
+		}
+		if len(extraData[MempoolFeeEstimatorNumMempoolBlocksKey]) > 0 {
+			val, bytesRead := Uvarint(
+				extraData[MempoolFeeEstimatorNumMempoolBlocksKey],
+			)
+			if bytesRead <= 0 {
+				return 0, 0, nil, fmt.Errorf(
+					"_connectUpdateGlobalParams: unable to decode MempoolFeeEstimatorNumMempoolBlocks as uint64",
+				)
+			}
+			if val <= 0 {
+				return 0, 0, nil, fmt.Errorf(
+					"_connectUpdateGlobalParams: MempoolFeeEstimatorNumMempoolBlocks must be > 0",
+				)
+			}
+			newGlobalParamsEntry.MempoolFeeEstimatorNumMempoolBlocks = val
+		}
+		if len(extraData[MempoolFeeEstimatorNumPastBlocksKey]) > 0 {
+			val, bytesRead := Uvarint(
+				extraData[MempoolFeeEstimatorNumPastBlocksKey],
+			)
+			if bytesRead <= 0 {
+				return 0, 0, nil, fmt.Errorf(
+					"_connectUpdateGlobalParams: unable to decode MempoolFeeEstimatorNumPastBlocks as uint64",
+				)
+			}
+			if val <= 0 {
+				return 0, 0, nil, fmt.Errorf(
+					"_connectUpdateGlobalParams: MempoolFeeEstimatorNumPastBlocks must be > 0",
+				)
+			}
+			newGlobalParamsEntry.MempoolFeeEstimatorNumPastBlocks = val
 		}
 	}
 
@@ -3987,6 +4037,7 @@ func (bav *UtxoView) _connectFailingTransaction(txn *MsgDeSoTxn, blockHeight uin
 			"spending balance")
 	}
 	utxoOps = append(utxoOps, feeUtxoOp)
+	utxoOps = append(utxoOps, &UtxoOperation{Type: OperationTypeFailingTxn})
 
 	// If verifySignatures is passed, we check transaction signature.
 	if verifySignatures {
@@ -4059,6 +4110,17 @@ func (bav *UtxoView) ConnectBlock(
 	// can only add a block to the current tip. We do this to keep the API simple.
 	if *desoBlock.Header.PrevBlockHash != *bav.TipHash {
 		return nil, fmt.Errorf("ConnectBlock: Parent hash of block being connected does not match tip")
+	}
+
+	// If the block height is past the Proof of Stake cutover, then we update the random seed hash.
+	// We do this first before connecting any transactions so that the latest seed hash is used for
+	// transactions that use on-chain randomness.
+	if blockHeight >= uint64(bav.Params.ForkHeights.ProofOfStake2ConsensusCutoverBlockHeight) {
+		randomSeedHash, err := HashRandomSeedSignature(desoBlock.Header.ProposerRandomSeedSignature)
+		if err != nil {
+			return nil, errors.Wrapf(err, "ConnectBlock: Problem hashing random seed signature")
+		}
+		bav._setCurrentRandomSeedHash(randomSeedHash)
 	}
 
 	blockHeader := desoBlock.Header
@@ -4223,7 +4285,7 @@ func (bav *UtxoView) ConnectBlock(
 	}
 	// Verify that the block reward does not overflow when added to
 	// the block's fees.
-	blockReward := CalcBlockRewardNanos(uint32(blockHeader.Height))
+	blockReward := CalcBlockRewardNanos(uint32(blockHeader.Height), bav.Params)
 	if totalFees > MaxNanos ||
 		blockReward > (math.MaxUint64-totalFees) {
 

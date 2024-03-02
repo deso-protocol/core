@@ -5,6 +5,8 @@ import (
 	"math"
 	"time"
 
+	"github.com/google/uuid"
+
 	"github.com/deso-protocol/core/collections"
 	"github.com/deso-protocol/core/consensus"
 	"github.com/dgraph-io/badger/v3"
@@ -51,6 +53,19 @@ func (bc *Blockchain) processHeaderPoS(header *MsgDeSoHeader) (
 		return false, false, errors.Wrapf(err, "processHeaderPoS: Problem hashing header")
 	}
 
+	// If the incoming header is already part of the best header chain, then we can exit early.
+	// The header is not part of a fork, and is already an ancestor of the current header chain tip.
+	if _, isInBestHeaderChain := bc.bestHeaderChainMap[*headerHash]; isInBestHeaderChain {
+		return true, false, nil
+	}
+
+	// If the incoming header is part of a reorg that uncommits the committed tip from the best chain,
+	// then we exit early. Such headers are invalid and should not be synced.
+	committedBlockchainTip, _ := bc.GetCommittedTip()
+	if committedBlockchainTip != nil && committedBlockchainTip.Header.Height >= header.Height {
+		return false, false, errors.New("processHeaderPoS: Header conflicts with committed tip")
+	}
+
 	// Validate the header and index it in the block index.
 	blockNode, isOrphan, err := bc.validateAndIndexHeaderPoS(header, headerHash)
 	if err != nil {
@@ -87,17 +102,17 @@ func (bc *Blockchain) validateAndIndexHeaderPoS(header *MsgDeSoHeader, headerHas
 	_headerBlockNode *BlockNode, _isOrphan bool, _err error,
 ) {
 	// Look up the header in the block index to check if it has already been validated and indexed.
-	blockNode, exists := bc.blockIndexByHash[*headerHash]
+	blockNode, blockNodeExists := bc.blockIndexByHash[*headerHash]
 
 	// ------------------------------------ Base Cases ----------------------------------- //
 
 	// The header is already validated. Exit early.
-	if exists && blockNode.IsHeaderValidated() {
+	if blockNodeExists && blockNode.IsHeaderValidated() {
 		return blockNode, false, nil
 	}
 
 	// The header has already failed validations. Exit early.
-	if exists && blockNode.IsHeaderValidateFailed() {
+	if blockNodeExists && blockNode.IsHeaderValidateFailed() {
 		return nil, false, errors.New("validateAndIndexHeaderPoS: Header already failed validation")
 	}
 
@@ -113,7 +128,7 @@ func (bc *Blockchain) validateAndIndexHeaderPoS(header *MsgDeSoHeader, headerHas
 	}
 
 	// Sanity-check that the parent block is an ancestor of the current block.
-	if parentBlockNode.Height+1 != blockNode.Height {
+	if blockNodeExists && (parentBlockNode.Height+1 != blockNode.Height) {
 		return nil, false, errors.New("validateAndIndexHeaderPoS: Parent header has " +
 			"greater or equal height compared to the current header.")
 	}
@@ -222,7 +237,7 @@ func (bc *Blockchain) processBlockPoS(block *MsgDeSoBlock, currentView uint64, v
 	// is an orphan, then we store it after performing basic validations.
 	// If the block extends from any committed block other than the committed tip,
 	// then we throw it away.
-	lineageFromCommittedTip, err := bc.getLineageFromCommittedTip(block)
+	lineageFromCommittedTip, err := bc.getLineageFromCommittedTip(block.Header)
 	if err == RuleErrorDoesNotExtendCommittedTip ||
 		err == RuleErrorParentBlockHasViewGreaterOrEqualToChildBlock ||
 		err == RuleErrorParentBlockHeightNotSequentialWithChildBlockHeight ||
@@ -255,11 +270,10 @@ func (bc *Blockchain) processBlockPoS(block *MsgDeSoBlock, currentView uint64, v
 	}
 	if !passedSpamPreventionCheck {
 		// If the block fails the spam prevention check, we throw it away.
-		return false, false, nil, errors.New("processBlockPoS: Block failed spam prevention check")
+		return false, false, nil, errors.Wrapf(RuleErrorFailedSpamPreventionsCheck, "processBlockPoS: Block failed spam prevention check: ")
 	}
 
-	// TODO: Is there any error that would require special handling? If that's the case, we should
-	// probably push that logic in validateAndIndexBlockPoS anyway.
+	// Validate the block and store it in the block index. The block is guaranteed to not be an orphan.
 	blockNode, err := bc.validateAndIndexBlockPoS(block)
 	if err != nil {
 		return false, false, nil, errors.Wrap(err,
@@ -306,7 +320,9 @@ func (bc *Blockchain) processBlockPoS(block *MsgDeSoBlock, currentView uint64, v
 			glog.Errorf("processBlockPoS: Problem getting disconnected block %v", disconnectedBlockHashes[ii])
 			continue
 		}
-		bc.eventManager.blockDisconnected(&BlockEvent{Block: disconnectedBlock})
+		if bc.eventManager != nil {
+			bc.eventManager.blockDisconnected(&BlockEvent{Block: disconnectedBlock})
+		}
 	}
 	for ii := 0; ii < len(connectedBlockHashes); ii++ {
 		connectedBlock := bc.GetBlock(&connectedBlockHashes[ii])
@@ -314,7 +330,9 @@ func (bc *Blockchain) processBlockPoS(block *MsgDeSoBlock, currentView uint64, v
 			glog.Errorf("processBlockPoS: Problem getting connected block %v", connectedBlockHashes[ii])
 			continue
 		}
-		bc.eventManager.blockConnected(&BlockEvent{Block: connectedBlock})
+		if bc.eventManager != nil {
+			bc.eventManager.blockConnected(&BlockEvent{Block: connectedBlock})
+		}
 	}
 
 	// Now that we've processed this block, we check for any blocks that were previously
@@ -502,6 +520,9 @@ func (bc *Blockchain) processOrphanBlockPoS(block *MsgDeSoBlock) error {
 		// As a spam-prevention measure, we just throw away this block and don't store it.
 		return nil
 	}
+	if err != nil {
+		return errors.Wrap(err, "processOrphanBlockPoS: Problem getting snapshot global params")
+	}
 	// All blocks should pass the basic integrity validations, which ensure the block
 	// is not malformed. If the block is malformed, we should store it as ValidateFailed.
 	if err = bc.isProperlyFormedBlockPoS(block); err != nil {
@@ -606,7 +627,8 @@ func (bc *Blockchain) validateLeaderAndQC(block *MsgDeSoBlock) (_passedSpamPreve
 //     block.
 //
 // The recursive function's invariant is described as follows:
-//   - Base case: If block is VALIDATED or VALIDATE_FAILED, return the BlockNode as-is.
+//   - Base case: If block is VALIDATED or VALIDATE_FAILED, return the BlockNode as-is. If the block is STORED and
+//     has a timestamp too far in the future, we also return the BlockNode as-is.
 //   - Recursive case: If the block is not VALIDATED or VALIDATE_FAILED in the blockIndexByHash, we will perform all
 //     validations and add the block to the block index with the appropriate status (VALIDATED OR VALIDATE_FAILED) and
 //     return the new BlockNode.
@@ -622,6 +644,19 @@ func (bc *Blockchain) validateAndIndexBlockPoS(block *MsgDeSoBlock) (*BlockNode,
 	blockNode, exists := bc.blockIndexByHash[*blockHash]
 	if exists && (blockNode.IsValidateFailed() || blockNode.IsValidated()) {
 		return blockNode, nil
+	}
+
+	// Base case - Check if the block has already been stored and fails the timestamp drift check.
+	// If it fails the check, then we leave it as stored and return early.
+	if exists && blockNode.IsStored() {
+		// If the block is too far in the future, we leave it as STORED and return early.
+		failsTimestampDriftCheck, err := bc.isBlockTimestampTooFarInFuturePoS(block.Header)
+		if err != nil {
+			return blockNode, errors.Wrap(err, "validateAndIndexBlockPoS: Problem checking block timestamp")
+		}
+		if failsTimestampDriftCheck {
+			return blockNode, nil
+		}
 	}
 
 	// Run the validation for the parent and update the block index with the parent's status. We first
@@ -643,11 +678,6 @@ func (bc *Blockchain) validateAndIndexBlockPoS(block *MsgDeSoBlock) (*BlockNode,
 	// despite trying. The current block will also be stored as a Stored block.
 	if !parentBlockNode.IsValidated() {
 		return bc.storeBlockInBlockIndex(block)
-	}
-
-	// Check if the block is properly formed and passes all basic validations.
-	if err = bc.isValidBlockPoS(block); err != nil {
-		return bc.storeValidateFailedBlockWithWrappedError(block, err)
 	}
 
 	// Validate the block's random seed signature
@@ -679,6 +709,11 @@ func (bc *Blockchain) validateAndIndexBlockPoS(block *MsgDeSoBlock) (*BlockNode,
 		return blockNode, errors.Wrap(err, "validateAndIndexBlockPoS: Problem getting UtxoView")
 	}
 
+	// Check if the block is properly formed and passes all basic validations.
+	if err = bc.isValidBlockPoS(block); err != nil {
+		return bc.storeValidateFailedBlockWithWrappedError(block, err)
+	}
+
 	// Connect this block to the parent block's UtxoView.
 	txHashes := collections.Transform(block.Txns, func(txn *MsgDeSoTxn) *BlockHash {
 		return txn.Hash()
@@ -688,6 +723,15 @@ func (bc *Blockchain) validateAndIndexBlockPoS(block *MsgDeSoBlock) (*BlockNode,
 	if _, err = utxoView.ConnectBlock(block, txHashes, true, nil, block.Header.Height); err != nil {
 		// If it doesn't connect, we want to mark it as ValidateFailed.
 		return bc.storeValidateFailedBlockWithWrappedError(block, err)
+	}
+
+	// If the block is too far in the future, we leave it as STORED and return early.
+	failsTimestampDriftCheck, err := bc.isBlockTimestampTooFarInFuturePoS(block.Header)
+	if err != nil {
+		return blockNode, errors.Wrap(err, "validateAndIndexBlockPoS: Problem checking block timestamp")
+	}
+	if failsTimestampDriftCheck {
+		return bc.storeBlockInBlockIndex(block)
 	}
 
 	// We can now add this block to the block index since we have performed all basic validations.
@@ -804,6 +848,49 @@ func (bc *Blockchain) isBlockTimestampValidRelativeToParentPoS(header *MsgDeSoHe
 	return nil
 }
 
+// isBlockTimestampTooFarInFuturePoS validates that the block's timestamp is not too far in the future based
+// on the configured block timestamp drift.
+//
+// We use the snapshotted global params to validate that the block's timestamp isn't too far ahead in the
+// future. We use the snapshotted global params specifically so that the drift timestamp check behaves
+// consistently even for orphan blocks that are 1 epoch in the future..
+func (bc *Blockchain) isBlockTimestampTooFarInFuturePoS(header *MsgDeSoHeader) (bool, error) {
+	// If the block's timestamp is lower than the current time, then there's no reason to check for
+	// timestamp drift. The check is guaranteed to pass.
+	currentTstampNanoSecs := time.Now().UnixNano()
+	if header.TstampNanoSecs <= currentTstampNanoSecs {
+		return false, nil
+	}
+
+	// We use NewUtxoView here, which generates a UtxoView at the current committed tip. We can use the view
+	// to fetch the snapshot global params for the previous epoch, current epoch, and next epoch. As long as
+	// the block's height is within 3600 blocks of the committed tip, this will always work. In practice,
+	// the incoming block never be more than 3600 blocks behind or ahead of the tip, while also failing the
+	// above header.TstampNanoSecs <= currentTstampNanoSecs check.
+	utxoView, err := NewUtxoView(bc.db, bc.params, nil, bc.snapshot, nil)
+	if err != nil {
+		return false, errors.Wrap(err, "isBlockTimestampTooFarInFuturePoS: Problem initializing UtxoView")
+	}
+
+	simulatedEpochEntryForBlock, err := utxoView.SimulateAdjacentEpochEntryForBlockHeight(header.Height)
+	if err != nil {
+		return false, errors.Wrapf(err, "isBlockTimestampTooFarInFuturePoS: Problem simulating epoch entry")
+	}
+
+	snapshotEpochNumber, err := utxoView.ComputeSnapshotEpochNumberForEpoch(simulatedEpochEntryForBlock.EpochNumber)
+	if err != nil {
+		return false, errors.Wrapf(err, "isBlockTimestampTooFarInFuturePoS: Problem getting snapshot epoch number for epoch #%d",
+			simulatedEpochEntryForBlock.EpochNumber)
+	}
+
+	snapshotGlobalParams, err := utxoView.GetSnapshotGlobalParamsEntryByEpochNumber(snapshotEpochNumber)
+	if err != nil {
+		return false, errors.Wrapf(err, "isBlockTimestampTooFarInFuturePoS: Problem getting snapshot global params")
+	}
+
+	return header.TstampNanoSecs > time.Now().UnixNano()+snapshotGlobalParams.BlockTimestampDriftNanoSecs, nil
+}
+
 // isProperlyFormedBlockPoS validates the block at a surface level and makes
 // sure that all fields are populated in a valid manner. It does not verify
 // signatures nor validate the blockchain state resulting from the block.
@@ -870,12 +957,6 @@ func (bc *Blockchain) isProperlyFormedBlockHeaderPoS(header *MsgDeSoHeader) erro
 		return RuleErrorNilPrevBlockHash
 	}
 
-	// Timestamp validation
-	// TODO: Add support for putting the drift into global params.
-	if header.TstampNanoSecs > time.Now().UnixNano()+bc.params.DefaultBlockTimestampDriftNanoSecs {
-		return RuleErrorPoSBlockTstampNanoSecsInFuture
-	}
-
 	// Header validation
 	if header.Version != HeaderVersion2 {
 		return RuleErrorInvalidPoSBlockHeaderVersion
@@ -899,10 +980,6 @@ func (bc *Blockchain) isProperlyFormedBlockHeaderPoS(header *MsgDeSoHeader) erro
 
 	if header.ProposerVotingPublicKey.IsEmpty() {
 		return RuleErrorInvalidProposerVotingPublicKey
-	}
-
-	if header.ProposerPublicKey == nil || header.ProposerPublicKey.IsZeroPublicKey() {
-		return RuleErrorInvalidProposerPublicKey
 	}
 
 	if header.ProposerRandomSeedSignature.IsEmpty() {
@@ -1162,15 +1239,15 @@ func (bc *Blockchain) isValidPoSQuorumCertificate(block *MsgDeSoBlock, validator
 // getLineageFromCommittedTip returns the ancestors of the block provided up to, but not
 // including the committed tip. The first block in the returned slice is the first uncommitted
 // ancestor.
-func (bc *Blockchain) getLineageFromCommittedTip(block *MsgDeSoBlock) ([]*BlockNode, error) {
-	highestCommittedBlock, idx := bc.getCommittedTip()
+func (bc *Blockchain) getLineageFromCommittedTip(header *MsgDeSoHeader) ([]*BlockNode, error) {
+	highestCommittedBlock, idx := bc.GetCommittedTip()
 	if idx == -1 || highestCommittedBlock == nil {
 		return nil, errors.New("getLineageFromCommittedTip: No committed blocks found")
 	}
-	currentHash := block.Header.PrevBlockHash.NewBlockHash()
+	currentHash := header.PrevBlockHash.NewBlockHash()
 	ancestors := []*BlockNode{}
-	prevHeight := block.Header.Height
-	prevView := block.Header.GetView()
+	prevHeight := header.Height
+	prevView := header.GetView()
 	for {
 		currentBlock, exists := bc.blockIndexByHash[*currentHash]
 		if !exists {
@@ -1310,6 +1387,11 @@ func (bc *Blockchain) storeValidatedBlockInBlockIndex(block *MsgDeSoBlock) (*Blo
 	// If the BlockNode is not already stored, we should set its status to stored.
 	if !blockNode.IsStored() {
 		blockNode.Status |= StatusBlockStored
+	}
+	// If the BlockNode is not already processed, we should set its status to processed.
+	// This ensures that bc.IsFullyStored will return true for this block.
+	if !blockNode.IsProcessed() {
+		blockNode.Status |= StatusBlockProcessed
 	}
 	// If the DB update fails, then we should return an error.
 	if err = bc.upsertBlockAndBlockNodeToDB(block, blockNode, true); err != nil {
@@ -1475,8 +1557,6 @@ func (bc *Blockchain) shouldReorg(blockNode *BlockNode, currentView uint64) bool
 func (bc *Blockchain) addTipBlockToBestChain(blockNode *BlockNode) {
 	bc.bestChain = append(bc.bestChain, blockNode)
 	bc.bestChainMap[*blockNode.Hash] = blockNode
-	bc.bestHeaderChain = append(bc.bestHeaderChain, blockNode)
-	bc.bestHeaderChainMap[*blockNode.Hash] = blockNode
 }
 
 // removeTipBlockFromBestChain removes the current tip from the best chain. It
@@ -1488,8 +1568,6 @@ func (bc *Blockchain) removeTipBlockFromBestChain() *BlockNode {
 	lastBlock := bc.bestChain[len(bc.bestChain)-1]
 	delete(bc.bestChainMap, *lastBlock.Hash)
 	bc.bestChain = bc.bestChain[:len(bc.bestChain)-1]
-	bc.bestHeaderChain = bc.bestHeaderChain[:len(bc.bestChain)]
-	delete(bc.bestHeaderChainMap, *lastBlock.Hash)
 	return lastBlock
 }
 
@@ -1505,7 +1583,7 @@ func (bc *Blockchain) runCommitRuleOnBestChain() error {
 		return nil
 	}
 	// Find all uncommitted ancestors of block to commit
-	_, idx := bc.getCommittedTip()
+	_, idx := bc.GetCommittedTip()
 	if idx == -1 {
 		// This is an edge case we'll never hit in practice since all the PoW blocks
 		// are committed.
@@ -1634,12 +1712,65 @@ func (bc *Blockchain) commitBlockPoS(blockHash *BlockHash) error {
 			UtxoView: utxoView,
 			UtxoOps:  utxoOpsForBlock,
 		})
+		// TODO: check w/ Z if this is right....
+		// Signal the state syncer that we've flushed to the DB so state syncer
+		// will pick up the latest changes after committing this block.
+		if !bc.eventManager.isMempoolManager {
+			bc.eventManager.stateSyncerFlushed(&StateSyncerFlushedEvent{
+				FlushId:   uuid.Nil,
+				Succeeded: true,
+			})
+		}
 	}
 	if bc.snapshot != nil {
 		bc.snapshot.FinishProcessBlock(blockNode)
 	}
 	// TODO: What else do we need to do in here?
 	return nil
+}
+
+// GetUncommittedFullBlocks is a helper that the state syncer uses to fetch all uncommitted
+// blocks, so it can flush them just like we would with mempool transactions. It returns
+// all uncommitted blocks from the specified tip to the last uncommitted block.
+// Note: it would be more efficient if we cached these results.
+func (bc *Blockchain) GetUncommittedFullBlocks(tipHash *BlockHash) ([]*MsgDeSoBlock, error) {
+	if tipHash == nil {
+		tipHash = bc.BlockTip().Hash
+	}
+	bc.ChainLock.RLock()
+	defer bc.ChainLock.RUnlock()
+	tipBlock, exists := bc.bestChainMap[*tipHash]
+	if !exists {
+		return nil, errors.Errorf("GetUncommittedFullBlocks: Block %v not found in best chain map", tipHash.String())
+	}
+	// If the tip block is committed, we can't get uncommitted blocks from it so we return an empty slice.
+	if tipBlock.IsCommitted() {
+		return []*MsgDeSoBlock{}, nil
+	}
+	var uncommittedBlocks []*MsgDeSoBlock
+	currentBlock := tipBlock
+	for !currentBlock.IsCommitted() {
+		fullBlock, err := GetBlock(currentBlock.Hash, bc.db, bc.snapshot)
+		if err != nil {
+			return nil, errors.Wrapf(err, "GetUncommittedFullBlocks: Problem fetching block %v",
+				currentBlock.Hash.String())
+		}
+		uncommittedBlocks = append(uncommittedBlocks, fullBlock)
+		currentParentHash := currentBlock.Header.PrevBlockHash
+		if currentParentHash == nil {
+			return nil, errors.Errorf("GetUncommittedFullBlocks: Block %v has nil PrevBlockHash", currentBlock.Hash)
+		}
+		currentBlock = bc.blockIndexByHash[*currentParentHash]
+		if currentBlock == nil {
+			return nil, errors.Errorf("GetUncommittedFullBlocks: Block %v not found in block index", currentBlock.Hash)
+		}
+	}
+	return collections.Reverse(uncommittedBlocks), nil
+}
+
+// GetCommittedTipView builds a UtxoView to the committed tip.
+func (bc *Blockchain) GetCommittedTipView() (*UtxoView, error) {
+	return NewUtxoView(bc.db, bc.params, bc.postgres, bc.snapshot, nil)
 }
 
 // GetUncommittedTipView builds a UtxoView to the uncommitted tip.
@@ -1659,7 +1790,7 @@ func (bc *Blockchain) getUtxoViewAtBlockHash(blockHash BlockHash) (*UtxoView, er
 	// If the provided block is committed, we need to make sure it's the committed tip.
 	// Otherwise, we return an error.
 	if currentBlock.IsCommitted() {
-		highestCommittedBlock, _ := bc.getCommittedTip()
+		highestCommittedBlock, _ := bc.GetCommittedTip()
 		if highestCommittedBlock == nil {
 			return nil, errors.Errorf("getUtxoViewAtBlockHash: No committed blocks found")
 		}
@@ -1706,8 +1837,8 @@ func (bc *Blockchain) getUtxoViewAtBlockHash(blockHash BlockHash) (*UtxoView, er
 	return utxoView, nil
 }
 
-// getCommittedTip returns the highest committed block and its index in the best chain.
-func (bc *Blockchain) getCommittedTip() (*BlockNode, int) {
+// GetCommittedTip returns the highest committed block and its index in the best chain.
+func (bc *Blockchain) GetCommittedTip() (*BlockNode, int) {
 	for ii := len(bc.bestChain) - 1; ii >= 0; ii-- {
 		if bc.bestChain[ii].IsCommitted() {
 			return bc.bestChain[ii], ii
@@ -1725,13 +1856,25 @@ func (bc *Blockchain) getCommittedTip() (*BlockNode, int) {
 // This function is not thread-safe. The caller needs to hold the chain lock before
 // calling this function.
 func (bc *Blockchain) GetSafeBlocks() ([]*MsgDeSoHeader, error) {
+	safeBlocks, err := bc.getSafeBlockNodes()
+	if err != nil {
+		return nil, errors.Wrapf(err, "GetSafeBlocks: Problem getting safe block nodes")
+	}
+	headers := []*MsgDeSoHeader{}
+	for _, blockNode := range safeBlocks {
+		headers = append(headers, blockNode.Header)
+	}
+	return headers, nil
+}
+
+func (bc *Blockchain) getSafeBlockNodes() ([]*BlockNode, error) {
 	// First get committed tip.
-	committedTip, idx := bc.getCommittedTip()
+	committedTip, idx := bc.GetCommittedTip()
 	if idx == -1 || committedTip == nil {
-		return nil, errors.New("GetSafeBlocks: No committed blocks found")
+		return nil, errors.New("getSafeBlockNodes: No committed blocks found")
 	}
 	// Now get all blocks from the committed tip to the best chain tip.
-	safeBlocks := []*MsgDeSoHeader{committedTip.Header}
+	safeBlocks := []*BlockNode{committedTip}
 	maxHeightWithSafeBlocks := bc.getMaxSequentialBlockHeightAfter(uint64(committedTip.Height))
 	for ii := uint64(committedTip.Height + 1); ii < maxHeightWithSafeBlocks+1; ii++ {
 		// If we don't have any blocks at this height, we know that any blocks at a later height are not safe blocks.
@@ -1744,7 +1887,7 @@ func (bc *Blockchain) GetSafeBlocks() ([]*MsgDeSoHeader, error) {
 			// TODO: Are there other conditions we should consider?
 			if blockNode.IsValidated() {
 				hasSeenValidatedBlockAtThisHeight = true
-				safeBlocks = append(safeBlocks, blockNode.Header)
+				safeBlocks = append(safeBlocks, blockNode)
 			}
 		}
 		// If we didn't see any validated blocks at this height, we know
@@ -1830,11 +1973,11 @@ const (
 	RuleErrorAncestorBlockValidationFailed                      RuleError = "RuleErrorAncestorBlockValidationFailed"
 	RuleErrorParentBlockHasViewGreaterOrEqualToChildBlock       RuleError = "RuleErrorParentBlockHasViewGreaterOrEqualToChildBlock"
 	RuleErrorParentBlockHeightNotSequentialWithChildBlockHeight RuleError = "RuleErrorParentBlockHeightNotSequentialWithChildBlockHeight"
+	RuleErrorFailedSpamPreventionsCheck                         RuleError = "RuleErrorFailedSpamPreventionsCheck"
 
 	RuleErrorNilMerkleRoot                      RuleError = "RuleErrorNilMerkleRoot"
 	RuleErrorInvalidMerkleRoot                  RuleError = "RuleErrorInvalidMerkleRoot"
 	RuleErrorInvalidProposerVotingPublicKey     RuleError = "RuleErrorInvalidProposerVotingPublicKey"
-	RuleErrorInvalidProposerPublicKey           RuleError = "RuleErrorInvalidProposerPublicKey"
 	RuleErrorInvalidProposerRandomSeedSignature RuleError = "RuleErrorInvalidProposerRandomSeedSignature"
 
 	RuleErrorInvalidPoSBlockHeight       RuleError = "RuleErrorInvalidPoSBlockHeight"

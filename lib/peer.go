@@ -191,7 +191,7 @@ func (pp *Peer) HandleGetTransactionsMsg(getTxnMsg *MsgDeSoGetTransactions) {
 	// Doing this helps the Peer when they go to add the transactions by reducing
 	// unconnectedTxns and transactions being rejected due to missing dependencies.
 	sort.Slice(mempoolTxs, func(ii, jj int) bool {
-		return mempoolTxs[ii].TimestampUnixMicro < mempoolTxs[jj].TimestampUnixMicro
+		return mempoolTxs[ii].TimestampUnixMicro.Before(mempoolTxs[jj].TimestampUnixMicro)
 	})
 
 	// Create a list of the fetched transactions to a response.

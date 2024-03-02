@@ -74,7 +74,6 @@ func TestCreateBlockTemplate(t *testing.T) {
 	require.Equal(true, blockTemplate.Header.TstampNanoSecs < time.Now().UnixNano())
 	require.Equal(blockTemplate.Header.Height, uint64(3))
 	require.Equal(blockTemplate.Header.ProposedInView, uint64(10))
-	require.Equal(blockTemplate.Header.ProposerPublicKey, m0Pk)
 	require.Equal(blockTemplate.Header.ProposerVotingPublicKey, pub)
 	require.True(blockTemplate.Header.ProposerRandomSeedSignature.Eq(seedSignature))
 	require.Equal(blockTemplate.Header.TxnConnectStatusByIndexHash, HashBitset(blockTemplate.TxnConnectStatusByIndex))
@@ -269,10 +268,10 @@ func TestGetBlockTransactions(t *testing.T) {
 	)
 	require.NoError(testMempool.Start())
 	defer testMempool.Stop()
-	currentTime := uint64(time.Now().UnixMicro())
+	currentTime := time.Now()
 	for ii, txn := range txns {
 		// Use the Simulated Transaction Timestamp.
-		mtxn := NewMempoolTransaction(txn, currentTime+uint64(ii))
+		mtxn := NewMempoolTransaction(txn, currentTime.Add(time.Duration(ii)*time.Microsecond))
 		require.NoError(testMempool.AddTransaction(mtxn, false))
 	}
 	newTxns := testMempool.GetTransactions()
