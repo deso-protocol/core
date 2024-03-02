@@ -674,9 +674,7 @@ func NewServer(
 		}
 		glog.Errorf(CLog(Red, "NewServer: Forcing a rollback to the last snapshot epoch because node was not closed "+
 			"properly last time"))
-		if err := _snapshot.ForceResetToLastSnapshot(_chain); err != nil {
-			return nil, errors.Wrapf(err, "NewServer: Problem in ForceResetToLastSnapshot"), true
-		}
+		return nil, errors.Wrapf(err, "NewServer: Restart required"), true
 	}
 
 	return srv, nil, shouldRestart
