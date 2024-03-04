@@ -537,6 +537,19 @@ const (
 	RuleErrorUpdateCoinLockupParamsUpdatingNonExistentProfile           RuleError = "RuleErrorUpdateCoinLockupParamsUpdatingNonExistentProfile"
 	RuleErrorUpdateCoinLockupParamsUpdatingPermanentTransferRestriction RuleError = "RuleErrorUpdateCoinLockupParamsUpdatingPermanentTransferRestriction"
 
+	// Atomic Transactions
+	RuleErrorAtomicTxnBeforeBlockHeight             RuleError = "RuleErrorAtomicTxnBeforeBlockHeight"
+	RuleErrorAtomicTxnsWrapperPublicKeyMustBeZero   RuleError = "RuleErrorAtomicTxnPublicKeyMustBeZero"
+	RuleErrorAtomicTxnsWrapperMustHaveZeroOutputs   RuleError = "RuleErrorAtomicTxnMustHaveZeroOutputs"
+	RuleErrorAtomicTxnsWrapperMustHaveZeroFee       RuleError = "RuleErrorAtomicTxnMustHaveZeroFee"
+	RuleErrorAtomicTxnsWrapperMustHaveZeroExtraData RuleError = "RuleErrorAtomicTxnMustHaveZeroExtraData"
+	RuleErrorAtomicTxnsWrapperSignatureMustBeNil    RuleError = "RuleErrorAtomicTxnSignatureMustBeNil"
+	RuleErrorAtomicTxnsWrapperMustHaveZeroedNonce   RuleError = "RuleErrorAtomicTxnsWrapperMustHaveZeroedNonce"
+	RuleErrorAtomicTxnsMustStartWithChainLength     RuleError = "RuleErrorAtomicTxnsMustStartWithChainLength"
+	RuleErrorAtomicTxnsHasMoreThanOneStartPoint     RuleError = "RuleErrorAtomicTxnsHasMoreThanOneStartPoint"
+	RuleErrorAtomicTxnsHasNonAtomicInnerTxn         RuleError = "RuleErrorAtomicTxnsHasNonAtomicInnerTxn"
+	RuleErrorAtomicTxnsHasBrokenChain               RuleError = "RuleErrorAtomicTxnsHasBrokenChain"
+
 	HeaderErrorDuplicateHeader                                                   RuleError = "HeaderErrorDuplicateHeader"
 	HeaderErrorNilPrevHash                                                       RuleError = "HeaderErrorNilPrevHash"
 	HeaderErrorInvalidParent                                                     RuleError = "HeaderErrorInvalidParent"

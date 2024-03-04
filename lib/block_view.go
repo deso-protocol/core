@@ -1539,6 +1539,8 @@ func (bav *UtxoView) DisconnectTransaction(currentTxn *MsgDeSoTxn, txnHash *Bloc
 			OperationTypeCoinLockupTransfer, currentTxn, txnHash, utxoOpsForTxn, blockHeight)
 	case TxnTypeCoinUnlock:
 		return bav._disconnectCoinUnlock(OperationTypeCoinUnlock, currentTxn, txnHash, utxoOpsForTxn, blockHeight)
+	case TxnTypeAtomicTxns:
+		return bav._disconnectAtomicTxns(OperationTypeAtomicTxns, currentTxn, txnHash, utxoOpsForTxn, blockHeight)
 
 	}
 
@@ -3753,6 +3755,8 @@ func (bav *UtxoView) _connectTransaction(
 		totalInput, totalOutput, utxoOpsForTxn, err = bav._connectCoinLockupTransfer(txn, txHash, blockHeight, verifySignatures)
 	case TxnTypeCoinUnlock:
 		totalInput, totalOutput, utxoOpsForTxn, err = bav._connectCoinUnlock(txn, txHash, blockHeight, blockTimestampNanoSecs, verifySignatures)
+	case TxnTypeAtomicTxns:
+		totalInput, totalOutput, utxoOpsForTxn, err = bav._connectAtomicTxns(txn, txHash, blockHeight, blockTimestampNanoSecs, verifySignatures)
 
 	default:
 		err = fmt.Errorf("ConnectTransaction: Unimplemented txn type %v", txn.TxnMeta.GetTxnType().String())
