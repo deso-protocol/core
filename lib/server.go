@@ -525,9 +525,9 @@ func NewServer(
 	if _blsKeystore != nil {
 		nodeServices |= SFPosValidator
 	}
-	rnManager := NewRemoteNodeManager(srv, _chain, _cmgr, _blsKeystore, _params, _minFeeRateNanosPerKB, nodeServices)
-	srv.networkManager = NewNetworkManager(_params, _cmgr, rnManager, _blsKeystore, _desoAddrMgr,
-		_connectIps, _targetOutboundPeers, _maxInboundPeers, _limitOneInboundConnectionPerIP)
+	srv.networkManager = NewNetworkManager(_params, srv, _chain, _cmgr, _blsKeystore, _desoAddrMgr,
+		_connectIps, _targetOutboundPeers, _maxInboundPeers, _limitOneInboundConnectionPerIP,
+		_minFeeRateNanosPerKB, nodeServices)
 
 	if srv.stateChangeSyncer != nil {
 		srv.stateChangeSyncer.BlockHeight = uint64(_chain.headerTip().Height)
@@ -2443,7 +2443,7 @@ func (srv *Server) _handleAddrMessage(pp *Peer, desoMsg DeSoMessage) {
 	var ok bool
 	if msg, ok = desoMsg.(*MsgDeSoAddr); !ok {
 		glog.Errorf("Server._handleAddrMessage: Problem decoding MsgDeSoAddr: %v", spew.Sdump(desoMsg))
-		srv.networkManager.rnManager.DisconnectById(id)
+		srv.networkManager.DisconnectById(id)
 		return
 	}
 
@@ -2459,7 +2459,7 @@ func (srv *Server) _handleAddrMessage(pp *Peer, desoMsg DeSoMessage) {
 			"Peer id=%v for sending us an addr message with %d transactions, which exceeds "+
 			"the max allowed %d",
 			pp.ID, len(msg.AddrList), MaxAddrsPerAddrMsg))
-		srv.networkManager.rnManager.DisconnectById(id)
+		srv.networkManager.DisconnectById(id)
 		return
 	}
 
@@ -2510,7 +2510,7 @@ func (srv *Server) _handleGetAddrMessage(pp *Peer, desoMsg DeSoMessage) {
 	if _, ok := desoMsg.(*MsgDeSoGetAddr); !ok {
 		glog.Errorf("Server._handleAddrMessage: Problem decoding "+
 			"MsgDeSoAddr: %v", spew.Sdump(desoMsg))
-		srv.networkManager.rnManager.DisconnectById(id)
+		srv.networkManager.DisconnectById(id)
 		return
 	}
 
@@ -2536,10 +2536,10 @@ func (srv *Server) _handleGetAddrMessage(pp *Peer, desoMsg DeSoMessage) {
 		}
 		res.AddrList = append(res.AddrList, singleAddr)
 	}
-	rn := srv.networkManager.rnManager.GetRemoteNodeById(id)
-	if err := srv.networkManager.rnManager.SendMessage(rn, res); err != nil {
+	rn := srv.networkManager.GetRemoteNodeById(id)
+	if err := srv.networkManager.SendMessage(rn, res); err != nil {
 		glog.Errorf("Server._handleGetAddrMessage: Problem sending addr message to peer %v: %v", pp, err)
-		srv.networkManager.rnManager.DisconnectById(id)
+		srv.networkManager.DisconnectById(id)
 		return
 	}
 }
@@ -2752,7 +2752,7 @@ func (srv *Server) _startAddressRelayer() {
 		// For the first ten minutes after the connection controller starts, relay our address to all
 		// peers. After the first ten minutes, do it once every 24 hours.
 		glog.V(1).Infof("Server.startAddressRelayer: Relaying our own addr to peers")
-		remoteNodes := srv.networkManager.rnManager.GetAllRemoteNodes().GetAll()
+		remoteNodes := srv.networkManager.GetAllRemoteNodes().GetAll()
 		if numMinutesPassed < 10 || numMinutesPassed%(RebroadcastNodeAddrIntervalMinutes) == 0 {
 			for _, rn := range remoteNodes {
 				if !rn.IsHandshakeCompleted() {
