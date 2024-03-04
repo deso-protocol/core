@@ -307,7 +307,7 @@ func _verifyAtomicTxnsWrapper(txn *MsgDeSoTxn) error {
 	for _, innerTxn := range txn.TxnMeta.(*AtomicTxnsMetadata).Txns {
 		totalInnerTxnFees, err = SafeUint64().Add(totalInnerTxnFees, innerTxn.TxnFeeNanos)
 		if err != nil {
-			return RuleErrorAtomicTxnsWrapperHasInteralFeeOverflow
+			return RuleErrorAtomicTxnsWrapperHasInternalFeeOverflow
 		}
 	}
 	if txn.TxnFeeNanos != totalInnerTxnFees {
@@ -330,11 +330,17 @@ func _verifyAtomicTxnsWrapper(txn *MsgDeSoTxn) error {
 
 func _verifyAtomicTxnsChain(txnMeta *AtomicTxnsMetadata) error {
 	// Validate:
-	//  (1) The inner transactions are meant to be included in an atomic transaction.
-	//	(2) The start point is the first inner transaction and there's only one start point.
+	//	(1) The inner transactions are not additional redundant atomic transactions wrappers.
+	//  (2) The inner transactions are meant to be included in an atomic transaction.
+	//	(3) The start point is the first inner transaction and there's only one start point.
 	// We also collect the atomic hash of each inner transaction here for convenience.
 	var atomicHashes []*BlockHash
 	for ii, innerTxn := range txnMeta.Txns {
+		// Validate this transaction is not another redundant atomic transaction.
+		if innerTxn.TxnMeta.GetTxnType() == TxnTypeAtomicTxns {
+			return RuleErrorAtomicTxnsHasAtomicTxnsInnerTxn
+		}
+
 		// Validate the inner transaction as meant to be included in an atomic transaction.
 		if !innerTxn.IsAtomicTxn() {
 			return RuleErrorAtomicTxnsHasNonAtomicInnerTxn
