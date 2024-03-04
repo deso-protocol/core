@@ -209,6 +209,9 @@ func (bav *UtxoView) _connectAtomicTxns(
 	}
 
 	// Verify the wrapper of the transaction. This does not verify the txn.TxnMeta contents.
+	// NOTE: The intentional lack of a _connectBasicTransfer or _connectBasicTransferWithExtraSpend
+	// 		 operation here skips a signature check on the wrapper. Each internal transaction
+	// 		 will have its signatures checked when it's connected via _connectTransaction below.
 	if err := _verifyAtomicTxnsWrapper(txn); err != nil {
 		return 0, 0, nil, errors.Wrap(err, "_connectAtomicTxns")
 	}
@@ -223,10 +226,10 @@ func (bav *UtxoView) _connectAtomicTxns(
 
 	// Connect the inner atomic transactions.
 	var innerUtxoOps [][]*UtxoOperation
-	var totalInput, totalOutput, totalFees uint64
+	var totalFees uint64
 	for _, innerTxn := range txMeta.Txns {
 		// TODO: Verify TxnTypeSubmitPost and TxnTypeUpdateProfile to ensure ignoreUtxos is always safe to set as false.
-		innerTxnUtxoOps, innerTxnInput, innerTxnOutput, txnFees, err := bav._connectTransaction(
+		innerTxnUtxoOps, _, _, txnFees, err := bav._connectTransaction(
 			innerTxn, txHash, blockHeight, blockTimestampNanoSecs, verifySignature, false)
 		if err != nil {
 			return 0, 0, nil, errors.Wrap(err, "_connectAtomicTxns")
@@ -235,7 +238,7 @@ func (bav *UtxoView) _connectAtomicTxns(
 		// Collect the inner txn utxo ops. We will use these if we ever disconnect.
 		innerUtxoOps = append(innerUtxoOps, innerTxnUtxoOps)
 
-		// Collect the input/output/fees to ensure fees are being paid properly.
+		// Collect the fees to ensure fees are being paid properly.
 		//
 		// NOTE: There's two design options that can be utilized here. The first
 		// involves checking that every transaction covers their own fees.
@@ -248,14 +251,6 @@ func (bav *UtxoView) _connectAtomicTxns(
 		//		without directly sending the user DESO (the no crypto faucet use cases). In effect,
 		//		the user can utilize apps without needing DESO if the app is willing to subsidize
 		// 		their transaction fees.
-		totalInput, err = SafeUint64().Add(totalInput, innerTxnInput)
-		if err != nil {
-			return 0, 0, nil, errors.Wrap(err, "_connectAtomicTxns")
-		}
-		totalOutput, err = SafeUint64().Add(totalOutput, innerTxnOutput)
-		if err != nil {
-			return 0, 0, nil, errors.Wrap(err, "_connectAtomicTxns")
-		}
 		totalFees, err = SafeUint64().Add(totalFees, txnFees)
 		if err != nil {
 			return 0, 0, nil, errors.Wrap(err, "_connectAtomicTxns")
@@ -268,18 +263,10 @@ func (bav *UtxoView) _connectAtomicTxns(
 		AtomicTxnsInnerUtxoOps: innerUtxoOps,
 	})
 
-	return totalInput, totalOutput, utxoOpsForTxn, nil
+	return 0, 0, utxoOpsForTxn, nil
 }
 
 func _verifyAtomicTxnsWrapper(txn *MsgDeSoTxn) error {
-	// An atomic transaction consists of two parts: (1) a 'wrapper' transaction and (2) a sequence of internal
-	// transactions that abide by the rules specified in AtomicTxnsMetadata. Both parts must be properly formed
-	// for the atomic transaction to be connected to the blockchain.
-
-	//
-	// (1) Validate the wrapper transaction.
-	//
-
 	// Since the wrapper does not require a public key nor a corresponding signature, we force both
 	// the transaction public key to be the ZeroPublicKey and the signature to be nil.
 	if !NewPublicKey(txn.PublicKey).IsZeroPublicKey() {
@@ -289,25 +276,51 @@ func _verifyAtomicTxnsWrapper(txn *MsgDeSoTxn) error {
 		return RuleErrorAtomicTxnsWrapperSignatureMustBeNil
 	}
 
-	// Since the transaction is "signed" by the ZeroPublicKey which has non-zero balance
-	// due to DESO burns, we must verify the transaction fees to be zero to ensure validators
-	// are not un-burning DESO via fees.
-	// TODO: Figure out and comment why TxOutputs must be zero
-	// TODO: Figure out and comment if TxInputs must also be zero
-	if txn.TxnFeeNanos != 0 {
-		return RuleErrorAtomicTxnsWrapperMustHaveZeroFee
+	// We force TxInputs on the wrapper to be empty for several reasons:
+	//	(1) This is consistent with the logic found in _connectBasicTransferWithExtraSpend()
+	//		that forces TxInputs to be empty following the balance model fork.
+	//	(2) Allowing TxInputs to not be empty would lead to an attack vector were the transaction
+	//		size may be bloated with random TxInputs that do nothing.
+	//	(3) Leads to consistent hashing for the same atomic transaction wrapper and its inner transactions.
+	//	(4) It's generally safer to be more restrictive on the transaction structure.
+	if len(txn.TxInputs) != 0 {
+		return RuleErrorAtomicTxnsWrapperMustHaveZeroInputs
 	}
+
+	// We force TxOutputs on the wrapper to be empty even though this field is still used post balance model fork.
+	// The reason is this transaction is effectively "signed" by the ZeroPublicKey which is a potential
+	// burn address. Hence, allowing TxOutputs to be populated would enable un-burning DESO which we do not want.
 	if len(txn.TxOutputs) != 0 {
 		return RuleErrorAtomicTxnsWrapperMustHaveZeroOutputs
 	}
 
-	// To ensure consistent hashing, we check that the
+	// There exists three design options for txn.TxnFeeNanos rules in atomic transaction wrappers:
+	//	(1) Force txn.TxnFeeNanos to equal zero.
+	//	(2) Force txn.TxnFeeNanos to equal the sum of the internal transaction's txn.TxnFeeNanos fields.
+	//	(3) Ignore txn.TxnFeeNanos entirely.
+	//
+	// Because txn.TxnFeeNanos gets used in several places for non-connection logic (e.g. BMF),
+	// it's important to use design option (2) to be consistent across core. This check as a result
+	// becomes extremely important in _connectAtomicTxns().
+	var totalInnerTxnFees uint64
+	var err error
+	for _, innerTxn := range txn.TxnMeta.(*AtomicTxnsMetadata).Txns {
+		totalInnerTxnFees, err = SafeUint64().Add(totalInnerTxnFees, innerTxn.TxnFeeNanos)
+		if err != nil {
+			return RuleErrorAtomicTxnsWrapperHasInteralFeeOverflow
+		}
+	}
+	if txn.TxnFeeNanos != totalInnerTxnFees {
+		return RuleErrorAtomicTxnsWrapperMustHaveEqualFeeToInternalTxns
+	}
+
+	// Technically, the txn.TxnNonce field could be
 	if txn.TxnNonce.ExpirationBlockHeight != 0 || txn.TxnNonce.PartialID != 0 {
 		return RuleErrorAtomicTxnsWrapperMustHaveZeroedNonce
 	}
 
-	// Since the wrapper is free, we check to ensure the associated ExtraData is empty to prevent
-	// free storage on the blockchain.
+	// Since the wrapper is free and modifiable by anyone, we check to ensure the
+	// associated ExtraData is empty to prevent free storage on the blockchain.
 	if len(txn.ExtraData) != 0 {
 		return RuleErrorAtomicTxnsWrapperMustHaveZeroExtraData
 	}
@@ -427,4 +440,6 @@ func (bav *UtxoView) _disconnectAtomicTxns(
 			return errors.Wrapf(err, "_disconnectAtomicTxns")
 		}
 	}
+
+	return nil
 }
