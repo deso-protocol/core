@@ -90,17 +90,3 @@ func (srv *Server) submitRegtestValidatorRegistrationTxns(block *MsgDeSoBlock) {
 		}
 	}
 }
-
-func (srv *Server) startRegtestFastHotStuffConsensus(block *MsgDeSoBlock) {
-	if block.Header.Height != uint64(srv.blockchain.params.ForkHeights.ProofOfStake2ConsensusCutoverBlockHeight-1) {
-		return
-	}
-
-	if srv.fastHotStuffConsensus == nil || srv.fastHotStuffConsensus.IsRunning() {
-		return
-	}
-
-	if err := srv.fastHotStuffConsensus.Start(); err != nil {
-		glog.Errorf(CLog(Yellow, "DeSoMiner._startThread: Error starting fast hotstuff consensus: %v"), err)
-	}
-}

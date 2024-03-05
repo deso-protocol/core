@@ -640,7 +640,6 @@ func NewServer(
 		// off the PoS consensus once the miner is done.
 		if _params.NetworkType == NetworkType_TESTNET && _miner != nil && _blockProducer != nil {
 			_miner.AddBlockMinedListener(srv.submitRegtestValidatorRegistrationTxns)
-			_miner.AddBlockMinedListener(srv.startRegtestFastHotStuffConsensus)
 		}
 	}
 
@@ -1708,12 +1707,6 @@ func (srv *Server) _startSync() {
 		"header tip height %v from peer %v", bestHeight, bestPeer)
 
 	srv.SyncPeer = bestPeer
-
-	// Initialize state syncer mempool job, if needed.
-	if srv.stateChangeSyncer != nil {
-		srv.stateChangeSyncer.StartMempoolSyncRoutine(srv)
-	}
-
 }
 
 func (srv *Server) HandleAcceptedPeer(rn *RemoteNode) {
@@ -2249,27 +2242,13 @@ func (srv *Server) _handleBlock(pp *Peer, blk *MsgDeSoBlock) {
 	// In this case we shoot a MEMPOOL message over to the peer to bootstrap the mempool.
 	srv._maybeRequestSync(pp)
 
-	///////////////////// PoS Validator Consensus Initialization /////////////////////
-
 	// Exit early if the chain isn't SyncStateFullyCurrent.
 	if srv.blockchain.chainState() != SyncStateFullyCurrent {
 		return
 	}
 
-	// Exit early if the current tip height is below the final PoW block's height. We are ready to
-	// enable the FastHotStuffConsensus once we reach the final block of the PoW protocol.
-	//
-	// Enable the FastHotStuffConsensus once the tipHeight >= ProofOfStake2ConsensusCutoverBlockHeight-1
-	tipHeight := uint64(srv.blockchain.blockTip().Height)
-	if tipHeight < srv.params.GetFinalPoWBlockHeight() {
-		return
-	}
-
-	// If the PoS validator FastHotStuffConsensus is initialized but not yet running, then
-	// we can start the validator consensus, and transition to it in the steady-state.
-	if srv.fastHotStuffConsensus != nil && !srv.fastHotStuffConsensus.IsRunning() {
-		srv.fastHotStuffConsensus.Start()
-	}
+	// If the chain is current, then try to transition to the FastHotStuff consensus.
+	srv.tryTransitionToFastHotStuffConsensus()
 }
 
 func (srv *Server) _handleInv(peer *Peer, msg *MsgDeSoInv) {
@@ -2671,6 +2650,12 @@ func (srv *Server) _startConsensus() {
 		}
 
 		select {
+		case <-srv._getFastHotStuffTransitionCheckInterval():
+			{
+				glog.V(2).Info("Server._startConsensus: Checking if FastHotStuffConsensus is ready to start")
+				srv.tryTransitionToFastHotStuffConsensus()
+			}
+
 		case consensusEvent := <-srv._getFastHotStuffConsensusEventChannel():
 			{
 				glog.V(2).Infof("Server._startConsensus: Received consensus event: %s", consensusEvent.ToString())
@@ -2813,11 +2798,68 @@ func (srv *Server) _startAddressRelayer() {
 	}
 }
 
+func (srv *Server) _getFastHotStuffTransitionCheckInterval() <-chan time.Time {
+	// If the FastHotStuffConsensus does not exist, then there is nothing to do.
+	if srv.fastHotStuffConsensus == nil {
+		return nil
+	}
+
+	// If the FastHotStuffConsensus is already running, then there is nothing to do.
+	if srv.fastHotStuffConsensus.IsRunning() {
+		return nil
+	}
+
+	// If the FastHotStuffConsensus is exists but isn't running, then we need to wait
+	// and see if it's ready to initialize.
+	return time.After(1 * time.Minute)
+}
+
 func (srv *Server) _getFastHotStuffConsensusEventChannel() chan *consensus.FastHotStuffEvent {
 	if srv.fastHotStuffConsensus == nil {
 		return nil
 	}
 	return srv.fastHotStuffConsensus.fastHotStuffEventLoop.GetEvents()
+}
+
+func (srv *Server) tryTransitionToFastHotStuffConsensus() {
+	// If the FastHotStuffConsensus does not exist, then there is nothing to do.
+	if srv.fastHotStuffConsensus == nil {
+		return
+	}
+
+	// If the FastHotStuffConsensus is already running, then there is nothing to do.
+	if srv.fastHotStuffConsensus.IsRunning() {
+		return
+	}
+
+	// Exit early if the current tip height is below the final PoW block's height. We are ready to
+	// enable the FastHotStuffConsensus once we reach the final block of the PoW protocol. The
+	// FastHotStuffConsensus can only be enabled once it's at or past the final block height of
+	// the PoW protocol.
+	tipHeight := uint64(srv.blockchain.blockTip().Height)
+	if tipHeight < srv.params.GetFinalPoWBlockHeight() {
+		return
+	}
+
+	// If the header's tip is not at the same height as the block tip, then we are still syncing
+	// and we should not transition to the FastHotStuffConsensus.
+	headerTipHeight := uint64(srv.blockchain.headerTip().Height)
+	if headerTipHeight != tipHeight {
+		return
+	}
+
+	// If we have a sync peer and have not reached the sync peer's starting block height, then
+	// we should sync all remaining blocks from the sync peer before transitioning to the
+	// FastHotStuffConsensus.
+	if srv.SyncPeer != nil && srv.SyncPeer.StartingBlockHeight() > tipHeight {
+		return
+	}
+
+	// At this point, we know that we have synced to the sync peer's tip or we don't have a sync
+	// peer. The header tip and the chain tip are also at the same height. We are ready to transition
+	// to the FastHotStuffConsensus.
+
+	srv.fastHotStuffConsensus.Start()
 }
 
 func (srv *Server) _startTransactionRelayer() {
@@ -2939,19 +2981,13 @@ func (srv *Server) Start() {
 		go srv.miner.Start()
 	}
 
-	srv.networkManager.Start()
-
-	// On testnet, if the node is configured to be a PoW block producer, and it is configured
-	// to be also a PoS validator, then we attach block mined listeners to the miner to kick
-	// off the PoS consensus once the miner is done.
-	if srv.params.NetworkType == NetworkType_TESTNET && srv.fastHotStuffConsensus != nil {
-		tipHeight := uint64(srv.blockchain.blockTip().Height)
-		if srv.params.IsFinalPoWBlockHeight(tipHeight) || srv.params.IsPoSBlockHeight(tipHeight) {
-			if err := srv.fastHotStuffConsensus.Start(); err != nil {
-				glog.Errorf("NewServer: Error starting fast hotstuff consensus %v", err)
-			}
-		}
+	// Initialize state syncer mempool job, if needed.
+	if srv.stateChangeSyncer != nil {
+		srv.stateChangeSyncer.StartMempoolSyncRoutine(srv)
 	}
+
+	// Start the network manager's internal event loop to open and close connections to peers.
+	srv.networkManager.Start()
 }
 
 // SyncPrefixProgress keeps track of sync progress on an individual prefix. It is used in
