@@ -1532,6 +1532,8 @@ func (srv *Server) _handleSnapshot(pp *Peer, msg *MsgDeSoSnapshotData) {
 		srv.blockchain.addNewBlockNodeToBlockIndex(currentNode)
 		srv.blockchain.bestChainMap[*currentNode.Hash] = currentNode
 		srv.blockchain.bestChain = append(srv.blockchain.bestChain, currentNode)
+		srv.blockchain.blockIndexByHash[*currentNode.Hash] = currentNode
+
 		blockNodeBatch = append(blockNodeBatch, currentNode)
 		if len(blockNodeBatch) < 10000 {
 			continue
