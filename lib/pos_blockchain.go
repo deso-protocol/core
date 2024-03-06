@@ -233,6 +233,7 @@ func (bc *Blockchain) processBlockPoS(block *MsgDeSoBlock, currentView uint64, v
 	if _, err := block.Hash(); err != nil {
 		return false, false, nil, errors.Wrapf(err, "processBlockPoS: Problem hashing block")
 	}
+
 	// Get all the blocks between the current block and the committed tip. If the block
 	// is an orphan, then we store it after performing basic validations.
 	// If the block extends from any committed block other than the committed tip,
@@ -282,6 +283,13 @@ func (bc *Blockchain) processBlockPoS(block *MsgDeSoBlock, currentView uint64, v
 	if !blockNode.IsValidated() {
 		return false, false, nil, errors.New(
 			"processBlockPoS: Block not validated after performing all validations.")
+	}
+
+	// At this point, we know that the block has passed all validations. The block may or may
+	// not be connected to the chain, but it has been accepted because it is known to be valid.
+	// We trigger a block accepted event to notify listeners.
+	if bc.eventManager != nil {
+		bc.eventManager.blockAccepted(&BlockEvent{Block: block})
 	}
 
 	// 4. Process the block's header and update the header chain. We call processHeaderPoS

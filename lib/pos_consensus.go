@@ -302,13 +302,6 @@ func (fc *FastHotStuffConsensus) handleBlockProposalEvent(
 		sendMessageToRemoteNodeAsync(validator, blockProposal)
 	}
 
-	// Broadcast the block to all inbound non-validator peers. This allows them to sync
-	// blocks from us.
-	nonValidators := fc.networkManager.GetNonValidatorInboundIndex().GetAll()
-	for _, nonValidator := range nonValidators {
-		sendMessageToRemoteNodeAsync(nonValidator, blockProposal)
-	}
-
 	fc.logBlockProposal(blockProposal, blockHash)
 	return nil
 }
