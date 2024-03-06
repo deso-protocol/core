@@ -25,7 +25,7 @@ type Mempool interface {
 	Start() error
 	Stop()
 	IsRunning() bool
-	AddTransaction(txn *MempoolTransaction, verifySignature bool) error
+	AddTransaction(txn *MempoolTransaction) error
 	RemoveTransaction(txnHash *BlockHash) error
 	GetTransaction(txnHash *BlockHash) *MempoolTransaction
 	GetTransactions() []*MempoolTransaction
@@ -115,9 +115,6 @@ type PosMempool struct {
 	// The persister runs on its dedicated thread and events are used to notify the persister thread whenever
 	// transactions are added/removed from the mempool. The persister thread then updates the database accordingly.
 	persister *MempoolPersister
-	// ledger is a simple data structure that keeps track of cumulative transaction fees in the mempool.
-	// The ledger keeps track of how much each user would have spent in fees across all their transactions in the mempool.
-	ledger *BalanceLedger
 	// nonceTracker is responsible for keeping track of a (public key, nonce) -> Txn index. The index is useful in
 	// facilitating a "replace by higher fee" feature. This feature gives users the ability to replace their existing
 	// mempool transaction with a new transaction having the same nonce but higher fee.
@@ -188,7 +185,6 @@ func NewPosMempool() *PosMempool {
 		status:       PosMempoolStatusNotInitialized,
 		txnRegister:  NewTransactionRegister(),
 		feeEstimator: NewPoSFeeEstimator(),
-		ledger:       NewBalanceLedger(),
 		nonceTracker: NewNonceTracker(),
 		quit:         make(chan interface{}),
 	}
@@ -256,7 +252,6 @@ func (mp *PosMempool) Start() error {
 	// Create the transaction register, the ledger, and the nonce tracker,
 	mp.txnRegister = NewTransactionRegister()
 	mp.txnRegister.Init(mp.globalParams)
-	mp.ledger = NewBalanceLedger()
 	mp.nonceTracker = NewNonceTracker()
 
 	// Setup the database and create the persister
@@ -370,7 +365,6 @@ func (mp *PosMempool) Stop() {
 
 	// Reset the transaction register, the ledger, and the nonce tracker.
 	mp.txnRegister.Reset()
-	mp.ledger.Reset()
 	mp.nonceTracker.Reset()
 	mp.feeEstimator = NewPoSFeeEstimator()
 	close(mp.quit)
@@ -472,7 +466,7 @@ func (mp *PosMempool) OnBlockDisconnected(block *MsgDeSoBlock) {
 // AddTransaction validates a MsgDeSoTxn transaction and adds it to the mempool if it is valid.
 // If the mempool overflows as a result of adding the transaction, the mempool is pruned. The
 // transaction signature verification can be skipped if verifySignature is passed as true.
-func (mp *PosMempool) AddTransaction(mtxn *MempoolTransaction, verifySignature bool) error {
+func (mp *PosMempool) AddTransaction(mtxn *MempoolTransaction) error {
 	if mtxn == nil || mtxn.GetTxn() == nil {
 		return fmt.Errorf("PosMempool.AddTransaction: Cannot add a nil transaction")
 	}
@@ -480,7 +474,7 @@ func (mp *PosMempool) AddTransaction(mtxn *MempoolTransaction, verifySignature b
 	// First, validate that the transaction is properly formatted according to BalanceModel. We acquire a read lock on
 	// the mempool. This allows multiple goroutines to safely perform transaction validation concurrently. In particular,
 	// transaction signature verification can be parallelized.
-	if err := mp.validateTransaction(mtxn.GetTxn(), verifySignature); err != nil {
+	if err := mp.validateTransaction(mtxn.GetTxn()); err != nil {
 		return errors.Wrapf(err, "PosMempool.AddTransaction: Problem verifying transaction")
 	}
 
@@ -511,7 +505,7 @@ func (mp *PosMempool) AddTransaction(mtxn *MempoolTransaction, verifySignature b
 	return nil
 }
 
-func (mp *PosMempool) validateTransaction(txn *MsgDeSoTxn, verifySignature bool) error {
+func (mp *PosMempool) validateTransaction(txn *MsgDeSoTxn) error {
 	mp.RLock()
 	defer mp.RUnlock()
 
@@ -527,32 +521,11 @@ func (mp *PosMempool) validateTransaction(txn *MsgDeSoTxn, verifySignature bool)
 		return errors.Wrapf(err, "PosMempool.AddTransaction: Problem validating transaction nonce")
 	}
 
-	if !verifySignature {
-		return nil
-	}
-
-	// Check transaction signature.
-	if _, err := mp.readOnlyLatestBlockView.VerifySignature(txn, uint32(mp.latestBlockHeight)); err != nil {
-		return errors.Wrapf(err, "PosMempool.AddTransaction: Signature validation failed")
-	}
-
 	return nil
 }
 
 func (mp *PosMempool) addTransactionNoLock(txn *MempoolTx, persistToDb bool) error {
 	userPk := NewPublicKey(txn.Tx.PublicKey)
-	txnFee := txn.Tx.TxnFeeNanos
-
-	// Validate that the user has enough balance to cover the transaction fees.
-	spendableBalanceNanos, err := mp.readOnlyLatestBlockView.GetSpendableDeSoBalanceNanosForPublicKey(userPk.ToBytes(),
-		uint32(mp.latestBlockHeight))
-	if err != nil {
-		return errors.Wrapf(err, "PosMempool.addTransactionNoLock: Problem getting spendable balance")
-	}
-	if err := mp.ledger.CanIncreaseEntryWithLimit(*userPk, txnFee, spendableBalanceNanos); err != nil {
-		return errors.Wrapf(err, "PosMempool.addTransactionNoLock: Problem checking balance increase for transaction with"+
-			"hash %v, fee %v", txn.Tx.Hash(), txnFee)
-	}
 
 	// Check the nonceTracker to see if this transaction is meant to replace an existing one.
 	existingTxn := mp.nonceTracker.GetTxnByPublicKeyNonce(*userPk, *txn.Tx.TxnNonce)
@@ -577,8 +550,7 @@ func (mp *PosMempool) addTransactionNoLock(txn *MempoolTx, persistToDb bool) err
 		}
 	}
 
-	// At this point the transaction is in the mempool. We can now update the ledger and nonce tracker.
-	mp.ledger.IncreaseEntry(*userPk, txnFee)
+	// At this point the transaction is in the mempool.
 	mp.nonceTracker.AddTxnByPublicKeyNonce(txn, *userPk, *txn.Tx.TxnNonce)
 
 	// Emit an event for the newly added transaction.
@@ -641,8 +613,7 @@ func (mp *PosMempool) removeTransactionNoLock(txn *MempoolTx, persistToDb bool) 
 		return errors.Wrapf(err, "PosMempool.removeTransactionNoLock: Problem removing txn from register")
 	}
 
-	// Remove the txn from the balance ledger and the nonce tracker.
-	mp.ledger.DecreaseEntry(*userPk, txn.Fee)
+	// Remove the txn from the nonce tracker.
 	mp.nonceTracker.RemoveTxnByPublicKeyNonce(*userPk, *txn.Tx.TxnNonce)
 
 	// Emit an event for the removed transaction.
@@ -769,7 +740,7 @@ func (mp *PosMempool) refreshNoLock() error {
 	txns := mp.getTransactionsNoLock()
 	for _, txn := range txns {
 		mtxn := NewMempoolTransaction(txn.Tx, txn.Added)
-		err := tempPool.AddTransaction(mtxn, false)
+		err := tempPool.AddTransaction(mtxn)
 		if err == nil {
 			continue
 		}

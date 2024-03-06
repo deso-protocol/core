@@ -1935,7 +1935,7 @@ func (srv *Server) _addNewTxn(
 	// Always add the txn to the PoS mempool. This should always succeed if the txn
 	// addition into the PoW mempool succeeded above.
 	mempoolTxn := NewMempoolTransaction(txn, time.Now())
-	if err := srv.posMempool.AddTransaction(mempoolTxn, true /*verifySignatures*/); err != nil {
+	if err := srv.posMempool.AddTransaction(mempoolTxn); err != nil {
 		return nil, errors.Wrapf(err, "Server._addNewTxn: problem adding txn to pos mempool")
 	}
 
@@ -2330,7 +2330,7 @@ func (srv *Server) ProcessSingleTxnWithChainLock(pp *Peer, txn *MsgDeSoTxn) ([]*
 	// Regardless of the consensus protocol we're running (PoW or PoS), we use the PoS mempool's to house all
 	// mempool txns. If a txn can't make it into the PoS mempool, which uses a looser unspent balance check for
 	// the the transactor, then it must be invalid.
-	if err := srv.posMempool.AddTransaction(NewMempoolTransaction(txn, time.Now()), true); err != nil {
+	if err := srv.posMempool.AddTransaction(NewMempoolTransaction(txn, time.Now())); err != nil {
 		return nil, errors.Wrapf(err, "Server.ProcessSingleTxnWithChainLock: Problem adding transaction to PoS mempool: ")
 	}
 

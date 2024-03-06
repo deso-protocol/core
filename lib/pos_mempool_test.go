@@ -301,7 +301,7 @@ func TestPosMempoolReplaceWithHigherFee(t *testing.T) {
 	_signTxn(t, txn2Low, m1Priv)
 	added2Low := time.Now()
 	mtxn2Low := NewMempoolTransaction(txn2Low, added2Low)
-	err = mempool.AddTransaction(mtxn2Low, true)
+	err = mempool.AddTransaction(mtxn2Low)
 	require.Contains(err.Error(), MempoolFailedReplaceByHigherFee)
 
 	// Now generate a proper new transaction for m1, with same nonce, and higher fee.
@@ -393,7 +393,7 @@ func _generateTestTxn(t *testing.T, rand *rand.Rand, feeMin uint64, feeMax uint6
 func _wrappedPosMempoolAddTransaction(t *testing.T, mp *PosMempool, txn *MsgDeSoTxn) {
 	added := time.Now()
 	mtxn := NewMempoolTransaction(txn, added)
-	require.NoError(t, mp.AddTransaction(mtxn, true))
+	require.NoError(t, mp.AddTransaction(mtxn))
 	require.Equal(t, true, _checkPosMempoolIntegrity(t, mp))
 }
 
@@ -425,27 +425,6 @@ func _checkPosMempoolIntegrity(t *testing.T, mp *PosMempool) bool {
 			return false
 		}
 		balances[*pk] += txn.TxnFeeNanos
-	}
-
-	if len(balances) > len(mp.ledger.balances) {
-		t.Errorf("PosMempool ledger is out of sync length balances (%v) > ledger (%v)", len(balances), len(mp.ledger.balances))
-		return false
-	}
-	activeBalances := 0
-	for pk, ledgerBalance := range mp.ledger.balances {
-		if ledgerBalance > 0 {
-			activeBalances++
-		} else {
-			continue
-		}
-		if balance, exists := balances[pk]; !exists || ledgerBalance != balance {
-			t.Errorf("PosMempool ledger is out of sync pk %v", PkToStringTestnet(pk.ToBytes()))
-			return false
-		}
-	}
-	if len(balances) != activeBalances {
-		t.Errorf("PosMempool ledger is out of sync length")
-		return false
 	}
 	return true
 }
