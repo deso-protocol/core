@@ -81,9 +81,9 @@ func (sl *simpleListener) start() {
 func (sl *simpleListener) stop() {
 	sl.ll.Close()
 	sl.closed = true
+	sl.stopGroup.Wait()
 	close(sl.exitChan)
 	close(sl.connectionChan)
-	sl.stopGroup.Wait()
 	fmt.Println("simpleListener.stop: stopped")
 }
 
