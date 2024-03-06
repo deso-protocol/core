@@ -924,12 +924,6 @@ func (srv *Server) _handleHeaderBundle(pp *Peer, msg *MsgDeSoHeaderBundle) {
 		len(msg.Headers), srv.blockchain.chainState(), pp,
 		srv.blockchain.headerTip().Header.Height, printHeight)))
 
-	// If the node is running a Fast-HotStuff validator and the consensus is running,
-	// in the steady-state, then it means that we don't sync the header chain separately.
-	if srv.fastHotStuffConsensus != nil && srv.fastHotStuffConsensus.IsRunning() {
-		return
-	}
-
 	// If we get here, it means that the node is not currently running a Fast-HotStuff
 	// validator or that the node is syncing. In either case, we sync headers according
 	// to the blocksync rules.
@@ -1231,16 +1225,6 @@ func (srv *Server) _handleGetSnapshot(pp *Peer, msg *MsgDeSoGetSnapshot) {
 // at current snapshot epoch. We will set these entries in our node's database as well as update the checksum.
 func (srv *Server) _handleSnapshot(pp *Peer, msg *MsgDeSoSnapshotData) {
 	srv.timer.End("Get Snapshot")
-
-	// If the node is running a Fast-HotStuff validator and the consensus is running,
-	// in the steady-state, then it means that we don't download and handle snapshots.
-	if srv.fastHotStuffConsensus != nil && srv.fastHotStuffConsensus.IsRunning() {
-		return
-	}
-
-	// If we get here, it means that the node is not currently running a Fast-HotStuff
-	// validator or that the node is syncing. In either case, we handle snapshots according
-	// to the Hypersync rules.
 
 	srv.timer.Start("Server._handleSnapshot Main")
 	// If there are no db entries in the msg, we should also disconnect the peer. There should always be
@@ -2069,20 +2053,8 @@ func (srv *Server) _handleBlock(pp *Peer, blk *MsgDeSoBlock) {
 	glog.Infof(CLog(Cyan, fmt.Sprintf("Server._handleBlock: Received block ( %v / %v ) from Peer %v",
 		blk.Header.Height, srv.blockchain.headerTip().Height, pp)))
 
-	// If the node is running a Fast-HotStuff validator and the consensus is running,
-	// in the steady-state, then we handle the block according to the consensus rules.
-	if srv.fastHotStuffConsensus != nil && srv.fastHotStuffConsensus.IsRunning() {
-		if err := srv.fastHotStuffConsensus.HandleBlock(pp, blk); err != nil {
-			glog.Errorf("Server._handleBlock: Problem handling block with FastHotStuffConsensus: %v", err)
-		}
-		return
-	}
-
-	// If we get here, it means that the node is not currently running a Fast-HotStuff
-	// validator or that the node is syncing. In either case, we handle the block
-	// according to the blocksync rules.
-
 	srv.timer.Start("Server._handleBlock: General")
+
 	// Pull out the header for easy access.
 	blockHeader := blk.Header
 	if blockHeader == nil {
@@ -2093,30 +2065,29 @@ func (srv *Server) _handleBlock(pp *Peer, blk *MsgDeSoBlock) {
 
 	// If we've set a maximum sync height and we've reached that height, then we will
 	// stop accepting new blocks.
-	if srv.blockchain.isTipMaxed(srv.blockchain.blockTip()) &&
-		blockHeader.Height > uint64(srv.blockchain.blockTip().Height) {
-
+	blockTip := srv.blockchain.blockTip()
+	if srv.blockchain.isTipMaxed(blockTip) && blockHeader.Height > uint64(blockTip.Height) {
 		glog.Infof("Server._handleBlock: Exiting because block tip is maxed out")
 		return
 	}
 
-	// Compute the hash of the block.
+	// Compute the hash of the block. If the hash computation fails, then we log an error and
+	// disconnect from the peer. The block is obviously bad.
 	blockHash, err := blk.Header.Hash()
 	if err != nil {
-		// This should never happen if we got this far but log the error, clear the
-		// requestedBlocks, disconnect from the peer and return just in case.
-		srv._logAndDisconnectPeer(
-			pp, blk, "Problem computing block hash")
+		srv._logAndDisconnectPeer(pp, blk, "Problem computing block hash")
 		return
 	}
 
-	// Log a warning if we receive a block we haven't requested yet. It is still possible to receive
-	// a block in this case if we're connected directly to the block producer and they send us a block
-	// directly.
-	if _, exists := pp.requestedBlocks[*blockHash]; !exists {
-		glog.Warningf("_handleBlock: Getting a block that we haven't requested before, "+
-			"block hash (%v)", *blockHash)
+	// Unless we're running a PoS validator, we should not expect to see a block that we did not request. If
+	// we see such a block then, we log an error and disconnect from the peer.
+	_, isRequestedBlock := pp.requestedBlocks[*blockHash]
+	if srv.fastHotStuffConsensus == nil && !isRequestedBlock {
+		srv._logAndDisconnectPeer(pp, blk, "Getting a block that we haven't requested before")
+		return
 	}
+
+	// Delete the block from the requested blocks map. We do this whether the block was requested or not.
 	delete(pp.requestedBlocks, *blockHash)
 
 	// Check that the mempool has not received a transaction that would forbid this block's signature pubkey.
@@ -2139,12 +2110,16 @@ func (srv *Server) _handleBlock(pp *Peer, blk *MsgDeSoBlock) {
 
 	// Only verify signatures for recent blocks.
 	var isOrphan bool
-	if srv.blockchain.isSyncing() {
+	if srv.fastHotStuffConsensus != nil && srv.fastHotStuffConsensus.IsRunning() {
+		// If the FastHotStuffConsensus has been initialized, then we pass the block to the new consensus
+		// which will validate the block, try to apply it, and handle the orphan case by requesting missing
+		// parents.
+		isOrphan, err = srv.fastHotStuffConsensus.HandleBlock(pp, blk)
+	} else if srv.blockchain.isSyncing() {
 		glog.V(1).Infof(CLog(Cyan, fmt.Sprintf("Server._handleBlock: Processing block %v WITHOUT "+
 			"signature checking because SyncState=%v for peer %v",
 			blk, srv.blockchain.chainState(), pp)))
 		_, isOrphan, _, err = srv.blockchain.ProcessBlock(blk, false)
-
 	} else {
 		// TODO: Signature checking slows things down because it acquires the ChainLock.
 		// The optimal solution is to check signatures in a way that doesn't acquire the
@@ -2181,8 +2156,7 @@ func (srv *Server) _handleBlock(pp *Peer, blk *MsgDeSoBlock) {
 		// It's possible to receive an orphan block if we're connected directly to the
 		// block producer, and they are broadcasting blocks in the steady state. We log
 		// a warning in this case and move on.
-		glog.Warningf("ERROR: Received orphan block with hash %v height %v. "+
-			"This should never happen", blockHash, blk.Header.Height)
+		glog.Warningf("ERROR: Received orphan block with hash %v height %v.", blockHash, blk.Header.Height)
 		return
 	}
 

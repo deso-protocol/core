@@ -530,14 +530,14 @@ func (fc *FastHotStuffConsensus) HandleValidatorTimeout(pp *Peer, msg *MsgDeSoVa
 	return nil
 }
 
-func (fc *FastHotStuffConsensus) HandleBlock(pp *Peer, msg *MsgDeSoBlock) error {
+func (fc *FastHotStuffConsensus) HandleBlock(pp *Peer, msg *MsgDeSoBlock) (_isOprhan bool, _err error) {
 	// Hold a lock on the consensus, because we will need to mutate the Blockchain
 	// and the FastHotStuffEventLoop data structures.
 	fc.lock.Lock()
 	defer fc.lock.Unlock()
 
 	if !fc.fastHotStuffEventLoop.IsRunning() {
-		return errors.Errorf("FastHotStuffConsensus.HandleBlock: FastHotStuffEventLoop is not running")
+		return false, errors.Errorf("FastHotStuffConsensus.HandleBlock: FastHotStuffEventLoop is not running")
 	}
 
 	// Hold the blockchain's write lock so that the chain cannot be mutated underneath us.
@@ -553,7 +553,7 @@ func (fc *FastHotStuffConsensus) HandleBlock(pp *Peer, msg *MsgDeSoBlock) error 
 	if err != nil {
 		// If we get an error here, it means something went wrong with the block processing algorithm.
 		// Nothing we can do to recover here.
-		return errors.Errorf("FastHotStuffConsensus.HandleBlock: Error processing block as new tip: %v", err)
+		return false, errors.Errorf("FastHotStuffConsensus.HandleBlock: Error processing block as new tip: %v", err)
 	}
 
 	// If there are missing block hashes, then we need to fetch the missing blocks from the network
@@ -567,12 +567,15 @@ func (fc *FastHotStuffConsensus) HandleBlock(pp *Peer, msg *MsgDeSoBlock) error 
 	if len(missingBlockHashes) > 0 {
 		remoteNode := fc.networkManager.GetRemoteNodeFromPeer(pp)
 		if remoteNode == nil {
-			return errors.Errorf("FastHotStuffConsensus.HandleBlock: RemoteNode not found for peer: %v", pp)
+			glog.Errorf("FastHotStuffConsensus.HandleBlock: RemoteNode not found for peer: %v", pp)
+		} else {
+			sendMessageToRemoteNodeAsync(remoteNode, &MsgDeSoGetBlocks{HashList: missingBlockHashes})
 		}
-		sendMessageToRemoteNodeAsync(remoteNode, &MsgDeSoGetBlocks{HashList: missingBlockHashes})
+		return true, nil
 	}
 
-	return nil
+	// Happy path. The block was processed successfully and applied as the new tip. Nothing left to do.
+	return false, nil
 }
 
 // tryProcessBlockAsNewTip tries to apply a new tip block to both the Blockchain and FastHotStuffEventLoop data
