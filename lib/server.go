@@ -2809,7 +2809,7 @@ func (srv *Server) _getFastHotStuffTransitionCheckInterval() <-chan time.Time {
 		return nil
 	}
 
-	// If the FastHotStuffConsensus is exists but isn't running, then we need to wait
+	// If the FastHotStuffConsensus exists but isn't running, then we need to wait
 	// and see if it's ready to initialize.
 	return time.After(1 * time.Minute)
 }
@@ -2836,14 +2836,18 @@ func (srv *Server) tryTransitionToFastHotStuffConsensus() {
 	// enable the FastHotStuffConsensus once we reach the final block of the PoW protocol. The
 	// FastHotStuffConsensus can only be enabled once it's at or past the final block height of
 	// the PoW protocol.
+	srv.blockchain.ChainLock.RLock()
 	tipHeight := uint64(srv.blockchain.blockTip().Height)
+	srv.blockchain.ChainLock.RUnlock()
 	if tipHeight < srv.params.GetFinalPoWBlockHeight() {
 		return
 	}
 
 	// If the header's tip is not at the same height as the block tip, then we are still syncing
 	// and we should not transition to the FastHotStuffConsensus.
+	srv.blockchain.ChainLock.RLock()
 	headerTipHeight := uint64(srv.blockchain.headerTip().Height)
+	srv.blockchain.ChainLock.RUnlock()
 	if headerTipHeight != tipHeight {
 		return
 	}
