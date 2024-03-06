@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/btcsuite/btcd/wire"
+	"github.com/deso-protocol/core/collections"
 	"github.com/deso-protocol/core/consensus"
 
 	"github.com/decred/dcrd/lru"
@@ -2806,23 +2807,36 @@ func (srv *Server) tryTransitionToFastHotStuffConsensus() {
 		return
 	}
 
+	// Get the tip height, header tip height, and sync state of the blockchain. We'll use them
+	// in a heuristic here to determine if we are ready to transition to the FastHotStuffConsensus,
+	// or should continue to try to sync.
+	srv.blockchain.ChainLock.RLock()
+	tipHeight := uint64(srv.blockchain.blockTip().Height)
+	headerTipHeight := uint64(srv.blockchain.headerTip().Height)
+	syncState := srv.blockchain.chainState()
+	srv.blockchain.ChainLock.RUnlock()
+
 	// Exit early if the current tip height is below the final PoW block's height. We are ready to
 	// enable the FastHotStuffConsensus once we reach the final block of the PoW protocol. The
 	// FastHotStuffConsensus can only be enabled once it's at or past the final block height of
 	// the PoW protocol.
-	srv.blockchain.ChainLock.RLock()
-	tipHeight := uint64(srv.blockchain.blockTip().Height)
-	srv.blockchain.ChainLock.RUnlock()
 	if tipHeight < srv.params.GetFinalPoWBlockHeight() {
 		return
 	}
 
 	// If the header's tip is not at the same height as the block tip, then we are still syncing
 	// and we should not transition to the FastHotStuffConsensus.
-	srv.blockchain.ChainLock.RLock()
-	headerTipHeight := uint64(srv.blockchain.headerTip().Height)
-	srv.blockchain.ChainLock.RUnlock()
 	if headerTipHeight != tipHeight {
+		return
+	}
+
+	// If we are still syncing, then we should not transition to the FastHotStuffConsensus.
+	// We intentionally exclude the SyncStateSyncingHeaders to account for the case where we
+	// do not have a sync peer and are stuck in the SyncStateSyncingHeaders state.
+	skippedSyncStates := []SyncState{
+		SyncStateSyncingSnapshot, SyncStateSyncingBlocks, SyncStateNeedBlocksss, SyncStateSyncingHistoricalBlocks,
+	}
+	if collections.Contains(skippedSyncStates, syncState) {
 		return
 	}
 
