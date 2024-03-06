@@ -2372,6 +2372,10 @@ func TestConnectFailingTransaction(t *testing.T) {
 		err = blockView.FlushToDb(uint64(blockHeight))
 		require.NoError(err)
 	}
+	{
+		// TODO: Test registering a derived key and then using it to sign a failing txn.
+		// TODO: Test that exceeding derived key spending limits results in a failing txn.
+	}
 }
 
 func _getBMFForTxn(txn *MsgDeSoTxn, gp *GlobalParamsEntry) (_burnFee uint64, _utilityFee uint64) {
