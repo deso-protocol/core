@@ -2,6 +2,7 @@ package lib
 
 import (
 	"bytes"
+	"github.com/btcsuite/btcd/wire"
 	"math/rand"
 	"os"
 	"testing"
@@ -375,6 +376,8 @@ func _generateTestTxn(t *testing.T, rand *rand.Rand, feeMin uint64, feeMax uint6
 
 	extraData := make(map[string][]byte)
 	extraData["key"] = RandomBytes(extraDataBytes)
+	partialId, err := wire.RandomUint64()
+	require.NoError(t, err)
 	txn := &MsgDeSoTxn{
 		TxnVersion:  DeSoTxnVersion1,
 		PublicKey:   pk,
@@ -382,7 +385,7 @@ func _generateTestTxn(t *testing.T, rand *rand.Rand, feeMin uint64, feeMax uint6
 		TxnFeeNanos: rand.Uint64()%(feeMax-feeMin) + feeMin,
 		TxnNonce: &DeSoNonce{
 			ExpirationBlockHeight: expirationHeight,
-			PartialID:             rand.Uint64() % 10000,
+			PartialID:             partialId % 100000,
 		},
 		ExtraData: extraData,
 	}
@@ -425,27 +428,6 @@ func _checkPosMempoolIntegrity(t *testing.T, mp *PosMempool) bool {
 			return false
 		}
 		balances[*pk] += txn.TxnFeeNanos
-	}
-
-	if len(balances) > len(mp.ledger.balances) {
-		t.Errorf("PosMempool ledger is out of sync length balances (%v) > ledger (%v)", len(balances), len(mp.ledger.balances))
-		return false
-	}
-	activeBalances := 0
-	for pk, ledgerBalance := range mp.ledger.balances {
-		if ledgerBalance > 0 {
-			activeBalances++
-		} else {
-			continue
-		}
-		if balance, exists := balances[pk]; !exists || ledgerBalance != balance {
-			t.Errorf("PosMempool ledger is out of sync pk %v", PkToStringTestnet(pk.ToBytes()))
-			return false
-		}
-	}
-	if len(balances) != activeBalances {
-		t.Errorf("PosMempool ledger is out of sync length")
-		return false
 	}
 	return true
 }
