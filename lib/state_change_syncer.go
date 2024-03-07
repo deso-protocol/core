@@ -387,11 +387,12 @@ func (stateChangeSyncer *StateChangeSyncer) _handleStateSyncerOperation(event *S
 	// Crate a block sync flush ID if one doesn't already exist.
 	if event.FlushId == uuid.Nil && stateChangeSyncer.BlockSyncFlushId == uuid.Nil {
 		stateChangeSyncer.BlockSyncFlushId = uuid.New()
+		fmt.Printf("SETTING NEW BLOCK SYNC FLUSH ID: %v\n", stateChangeSyncer.BlockSyncFlushId)
 	}
 
 	if event.IsMempoolTxn {
 		// Set the flushId to the mempool flush ID.
-		flushId = stateChangeSyncer.MempoolFlushId
+		flushId = stateChangeSyncer.BlockSyncFlushId
 
 		// The current state of the tracked mempool is stored in the MempoolSyncedKeyValueMap. If this entry is already in there
 		// then we don't need to re-write it to the state change file.
@@ -499,6 +500,13 @@ func (stateChangeSyncer *StateChangeSyncer) _handleStateSyncerFlush(event *State
 			// If any of the keys that the mempool is currently tracking weren't included in the flush, that entry
 			// needs to be reverted from the mempool.
 			if _, ok := stateChangeSyncer.MempoolFlushKeySet[key]; !ok {
+				// Confirm that the block sync ID hasn't shifted. If it has, bail now.
+				if cachedSCE.FlushId != stateChangeSyncer.BlockSyncFlushId {
+					fmt.Printf("The flush ID has changed, bailing now.\n")
+					//stateChangeSyncer.ResetMempool()
+					//return
+				}
+
 				cachedSCE.IsReverted = true
 
 				// Create a revert state change entry and add it to the queue. This will signal the state change
@@ -515,12 +523,14 @@ func (stateChangeSyncer *StateChangeSyncer) _handleStateSyncerFlush(event *State
 				delete(stateChangeSyncer.MempoolSyncedKeyValueMap, key)
 			}
 		}
-		fmt.Printf("\nFlush len: %d\n", len(stateChangeSyncer.MempoolFlushKeySet))
-		fmt.Printf("\nSynced len: %d\n", len(stateChangeSyncer.MempoolSyncedKeyValueMap))
+		//fmt.Printf("\nFlush len: %d\n", len(stateChangeSyncer.MempoolFlushKeySet))
+		//fmt.Printf("\nSynced len: %d\n", len(stateChangeSyncer.MempoolSyncedKeyValueMap))
 		// Reset the mempool flush set.
 		stateChangeSyncer.MempoolFlushKeySet = make(map[string]bool)
+	} else {
+		fmt.Printf("Here is the flush ID: %v\n", event.FlushId)
+		fmt.Printf("Here is the block sync flush ID: %v\n", event.BlockSyncFlushId)
 	}
-
 	err := stateChangeSyncer.FlushTransactionsToFile(event)
 	if err != nil {
 		glog.Errorf("StateChangeSyncer._handleStateSyncerFlush: Error flushing transactions to file: %v", err)
@@ -529,6 +539,7 @@ func (stateChangeSyncer *StateChangeSyncer) _handleStateSyncerFlush(event *State
 	if !event.IsMempoolFlush {
 		// After flushing blocksync transactions to file, reset the block sync flush ID, and reset the mempool.
 		stateChangeSyncer.BlockSyncFlushId = uuid.New()
+		fmt.Printf("Setting a new blocksync flush ID: %v\n", stateChangeSyncer.BlockSyncFlushId)
 		stateChangeSyncer.ResetMempool()
 	}
 }
@@ -665,6 +676,10 @@ func (stateChangeSyncer *StateChangeSyncer) SyncMempoolToStateSyncer(server *Ser
 
 	originalCommittedFlushId := stateChangeSyncer.BlockSyncFlushId
 
+	if originalCommittedFlushId == uuid.Nil {
+		return false, nil
+	}
+
 	if server.mempool.stopped {
 		return true, nil
 	}
@@ -791,7 +806,7 @@ func (stateChangeSyncer *StateChangeSyncer) StartMempoolSyncRoutine(server *Serv
 			time.Sleep(15000 * time.Millisecond)
 		}
 		if !stateChangeSyncer.BlocksyncCompleteEntriesFlushed && stateChangeSyncer.SyncType == NodeSyncTypeBlockSync {
-			fmt.Printf("Flushing to file")
+			fmt.Printf("Flushing to file\n")
 			err := stateChangeSyncer.FlushAllEntriesToFile(server)
 			if err != nil {
 				fmt.Printf("StateChangeSyncer.StartMempoolSyncRoutine: Error flushing all entries to file: %v", err)
@@ -800,15 +815,15 @@ func (stateChangeSyncer *StateChangeSyncer) StartMempoolSyncRoutine(server *Serv
 		mempoolClosed := server.mempool.stopped
 		for !mempoolClosed {
 			// Sleep for a short while to avoid a tight loop.
-			time.Sleep(1 * time.Millisecond)
+			time.Sleep(150 * time.Millisecond)
 			var err error
-			start := time.Now()
+			//start := time.Now()
 			// If the mempool is not empty, sync the mempool to the state syncer.
 			mempoolClosed, err = stateChangeSyncer.SyncMempoolToStateSyncer(server)
 			if err != nil {
 				glog.Errorf("StateChangeSyncer.StartMempoolSyncRoutine: Error syncing mempool to state syncer: %v", err)
 			}
-			fmt.Printf("Synced mempool in %v", time.Since(start))
+			//fmt.Printf("Synced mempool in %v\n", time.Since(start))
 		}
 	}()
 }
