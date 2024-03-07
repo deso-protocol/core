@@ -682,7 +682,7 @@ const (
 	OperationTypeStakeDistributionRestake      OperationType = 49
 	OperationTypeStakeDistributionPayToBalance OperationType = 50
 	OperationTypeSetValidatorLastActiveAtEpoch OperationType = 51
-	OperationTypeAtomicTxns                    OperationType = 52
+	OperationTypeAtomicTxnsWrapper             OperationType = 52
 	// NEXT_TAG = 53
 )
 

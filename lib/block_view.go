@@ -1362,6 +1362,17 @@ func (bav *UtxoView) _disconnectUpdateGlobalParams(
 
 func (bav *UtxoView) DisconnectTransaction(currentTxn *MsgDeSoTxn, txnHash *BlockHash,
 	utxoOpsForTxn []*UtxoOperation, blockHeight uint32) error {
+	// Atomic transactions must have their inner transactions disconnected in series, while the
+	// wrapper must skip the nonce resetting mentioned below.
+	if currentTxn.TxnMeta.GetTxnType() == TxnTypeAtomicTxnsWrapper {
+		return bav._disconnectAtomicTxnsWrapper(
+			OperationTypeAtomicTxnsWrapper,
+			currentTxn,
+			txnHash,
+			utxoOpsForTxn,
+			blockHeight,
+		)
+	}
 
 	// Start by resetting the expected nonce for this txn's public key.
 	if blockHeight >= bav.Params.ForkHeights.BalanceModelBlockHeight && currentTxn.TxnMeta.GetTxnType() != TxnTypeBlockReward {
@@ -1539,8 +1550,6 @@ func (bav *UtxoView) DisconnectTransaction(currentTxn *MsgDeSoTxn, txnHash *Bloc
 			OperationTypeCoinLockupTransfer, currentTxn, txnHash, utxoOpsForTxn, blockHeight)
 	case TxnTypeCoinUnlock:
 		return bav._disconnectCoinUnlock(OperationTypeCoinUnlock, currentTxn, txnHash, utxoOpsForTxn, blockHeight)
-	case TxnTypeAtomicTxns:
-		return bav._disconnectAtomicTxns(OperationTypeAtomicTxns, currentTxn, txnHash, utxoOpsForTxn, blockHeight)
 
 	}
 
@@ -3498,17 +3507,88 @@ func (bav *UtxoView) ValidateDiamondsAndGetNumDeSoNanos(
 }
 
 func (bav *UtxoView) ConnectTransaction(
-	txn *MsgDeSoTxn, txHash *BlockHash,
-	blockHeight uint32, blockTimestampNanoSecs int64, verifySignatures bool,
-	ignoreUtxos bool) (_utxoOps []*UtxoOperation, _totalInput uint64, _totalOutput uint64, _fees uint64, _err error) {
-	return bav._connectTransaction(txn, txHash, blockHeight, blockTimestampNanoSecs, verifySignatures, ignoreUtxos)
-
+	txn *MsgDeSoTxn,
+	txHash *BlockHash,
+	blockHeight uint32,
+	blockTimestampNanoSecs int64,
+	verifySignatures bool,
+	ignoreUtxos bool,
+) (
+	_utxoOps []*UtxoOperation,
+	_totalInput uint64,
+	_totalOutput uint64,
+	_fees uint64,
+	_err error,
+) {
+	return bav._connectTransaction(
+		txn,
+		txHash,
+		blockHeight,
+		blockTimestampNanoSecs,
+		verifySignatures,
+		ignoreUtxos,
+	)
 }
 
 func (bav *UtxoView) _connectTransaction(
-	txn *MsgDeSoTxn, txHash *BlockHash, blockHeight uint32,
-	blockTimestampNanoSecs int64, verifySignatures bool,
-	ignoreUtxos bool) (_utxoOps []*UtxoOperation, _totalInput uint64, _totalOutput uint64, _fees uint64, _err error) {
+	txn *MsgDeSoTxn,
+	txHash *BlockHash,
+	blockHeight uint32,
+	blockTimestampNanoSecs int64,
+	verifySignatures bool,
+	ignoreUtxos bool,
+) (
+	_utxoOps []*UtxoOperation,
+	_totalInput uint64,
+	_totalOutput uint64,
+	_fees uint64,
+	_err error,
+) {
+	// If the transaction is actually a series of atomic transactions, we process the transaction via
+	// _connectAtomicTransactionsWrapper which will recursively call each inner transaction as
+	// well as provide cumulative fee checking for the atomic transactions.
+	if txn.TxnMeta.GetTxnType() == TxnTypeAtomicTxnsWrapper {
+		return bav._connectAtomicTxnsWrapper(
+			txn,
+			txHash,
+			blockHeight,
+			blockTimestampNanoSecs,
+			verifySignatures,
+			ignoreUtxos,
+		)
+	}
+
+	// Check that we're not trying to commit a transaction meant to be part of a series of atomic transactions
+	// outside an atomic transactions wrapper.
+	if txn.IsAtomicTxnsInnerTxn() {
+		return nil, 0, 0, 0, RuleErrorAtomicTxnsRequiresWrapper
+	}
+
+	// By here, we should know the transaction to be non-atomic.
+	return bav._connectNonAtomicTransaction(
+		txn,
+		txHash,
+		blockHeight,
+		blockTimestampNanoSecs,
+		verifySignatures,
+		ignoreUtxos,
+	)
+}
+
+func (bav *UtxoView) _connectNonAtomicTransaction(
+	txn *MsgDeSoTxn,
+	txHash *BlockHash,
+	blockHeight uint32,
+	blockTimestampNanoSecs int64,
+	verifySignatures bool,
+	ignoreUtxos bool,
+) (
+	_utxoOps []*UtxoOperation,
+	_totalInput uint64,
+	_totalOutput uint64,
+	_fees uint64,
+	_err error,
+) {
 	// Do a quick sanity check before trying to connect.
 	if err := CheckTransactionSanity(txn, blockHeight, bav.Params); err != nil {
 		return nil, 0, 0, 0, errors.Wrapf(err, "_connectTransaction: ")
@@ -3755,8 +3835,6 @@ func (bav *UtxoView) _connectTransaction(
 		totalInput, totalOutput, utxoOpsForTxn, err = bav._connectCoinLockupTransfer(txn, txHash, blockHeight, verifySignatures)
 	case TxnTypeCoinUnlock:
 		totalInput, totalOutput, utxoOpsForTxn, err = bav._connectCoinUnlock(txn, txHash, blockHeight, blockTimestampNanoSecs, verifySignatures)
-	case TxnTypeAtomicTxns:
-		totalInput, totalOutput, utxoOpsForTxn, err = bav._connectAtomicTxns(txn, txHash, blockHeight, blockTimestampNanoSecs, verifySignatures)
 
 	default:
 		err = fmt.Errorf("ConnectTransaction: Unimplemented txn type %v", txn.TxnMeta.GetTxnType().String())

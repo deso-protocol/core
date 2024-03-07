@@ -538,6 +538,7 @@ const (
 	RuleErrorUpdateCoinLockupParamsUpdatingPermanentTransferRestriction RuleError = "RuleErrorUpdateCoinLockupParamsUpdatingPermanentTransferRestriction"
 
 	// Atomic Transactions
+	RuleErrorAtomicTxnsRequiresWrapper                       RuleError = "RuleErrorAtomicTxnsRequiresWrapper"
 	RuleErrorAtomicTxnBeforeBlockHeight                      RuleError = "RuleErrorAtomicTxnBeforeBlockHeight"
 	RuleErrorAtomicTxnsWrapperPublicKeyMustBeZero            RuleError = "RuleErrorAtomicTxnsWrapperPublicKeyMustBeZero"
 	RuleErrorAtomicTxnsWrapperMustHaveZeroInputs             RuleError = "RuleErrorAtomicTxnsWrapperMustHaveZeroInputs"
