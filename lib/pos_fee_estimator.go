@@ -6,12 +6,11 @@ import (
 	"sync"
 
 	"github.com/deso-protocol/core/collections"
-	"github.com/golang/glog"
 	"github.com/pkg/errors"
 )
 
 type PoSFeeEstimator struct {
-	// globalParams are the current GlobalParams used by the PoSFeeEstimator. The fee estimation uses
+	// globalParams is the latest GlobalParams used by the PoSFeeEstimator. The fee estimation uses
 	// this whenever the cached blocks are refreshed
 	globalParams *GlobalParamsEntry
 	// mempoolTransactionRegister is a pointer to the mempool's transaction register. The fee estimator
@@ -58,8 +57,10 @@ func (posFeeEstimator *PoSFeeEstimator) Init(
 ) error {
 	posFeeEstimator.globalParams = globalParams
 	posFeeEstimator.rwLock = &sync.RWMutex{}
+
 	posFeeEstimator.rwLock.Lock()
 	defer posFeeEstimator.rwLock.Unlock()
+
 	if mempoolTransactionRegister == nil {
 		return errors.New("PoSFeeEstimator.Init: mempoolTransactionRegister cannot be nil")
 	}
@@ -69,19 +70,20 @@ func (posFeeEstimator *PoSFeeEstimator) Init(
 	if numPastBlocks == 0 {
 		return errors.New("PoSFeeEstimator.Init: numPastBlocks cannot be zero")
 	}
-	if numPastBlocks < uint64(len(pastBlocks)) {
-		return errors.New("PoSFeeEstimator.Init: numPastBlocks must greater than or equal the number of pastBlocks")
-	}
-	// Sort the past blocks by height just to be safe.
-	sortedPastBlocks := collections.SortStable(pastBlocks, func(ii, jj *MsgDeSoBlock) bool {
-		return ii.Header.Height < jj.Header.Height
-	})
-	posFeeEstimator.mempoolTransactionRegister = mempoolTransactionRegister
+
+	// Store the num blocks params used to estimate fees.
 	posFeeEstimator.numMempoolBlocks = numMempoolBlocks
 	posFeeEstimator.numPastBlocks = numPastBlocks
+
+	// Store the mempool's transaction register.
+	posFeeEstimator.mempoolTransactionRegister = mempoolTransactionRegister
+
 	// Create a transaction register we can use to estimate fees for past blocks.
 	posFeeEstimator.pastBlocksTransactionRegister = NewTransactionRegister()
 	posFeeEstimator.pastBlocksTransactionRegister.Init(globalParams.Copy())
+
+	// Sort the past blocks by height just to be safe.
+	sortedPastBlocks := posFeeEstimator.cleanUpPastBlocks(pastBlocks)
 
 	// Add all the txns from the past blocks to the new pastBlocksTransactionRegister.
 	for _, block := range sortedPastBlocks {
@@ -89,6 +91,9 @@ func (posFeeEstimator *PoSFeeEstimator) Init(
 			return errors.Wrap(err, "PosFeeEstimator.Init: error adding block to pastBlocksMempool")
 		}
 	}
+
+	// Cache the past blocks.
+	posFeeEstimator.cachedBlocks = sortedPastBlocks
 	return nil
 }
 
@@ -99,28 +104,34 @@ func (posFeeEstimator *PoSFeeEstimator) Init(
 func (posFeeEstimator *PoSFeeEstimator) AddBlock(block *MsgDeSoBlock) error {
 	posFeeEstimator.rwLock.Lock()
 	defer posFeeEstimator.rwLock.Unlock()
+
 	if err := posFeeEstimator.addBlockNoLock(block); err != nil {
 		return errors.Wrap(err, "PoSFeeEstimator.AddBlock: error adding block to PoSFeeEstimator")
 	}
+
 	return nil
 }
 
 // addBlockNoLock is the same as AddBlock but assumes the caller has already acquired the rwLock.
 func (posFeeEstimator *PoSFeeEstimator) addBlockNoLock(block *MsgDeSoBlock) error {
-	// Cache the block
-	posFeeEstimator.cachedBlocks = append(posFeeEstimator.cachedBlocks, block)
-
-	// Deduplicate and sort the cached blocks to be safe
-	posFeeEstimator.cleanUpAndSortCachedBlocks()
+	// Create a new slice to house the new past blocks and add the new block to it.
+	newPastBlocks := append(posFeeEstimator.cachedBlocks, block)
+	newPastBlocks = posFeeEstimator.cleanUpPastBlocks(newPastBlocks)
 
 	// Create a clean transaction register to add the blocks' transactions.
-	posFeeEstimator.pastBlocksTransactionRegister = NewTransactionRegister()
-	posFeeEstimator.pastBlocksTransactionRegister.Init(posFeeEstimator.globalParams.Copy())
+	newTransactionRegister := NewTransactionRegister()
+	newTransactionRegister.Init(posFeeEstimator.globalParams.Copy())
 
 	// Add all transactions from the block to the pastBlocksTransactionRegister.
-	if err := addBlockToTransactionRegister(posFeeEstimator.pastBlocksTransactionRegister, block); err != nil {
-		return errors.Wrap(err, "PoSFeeEstimator.addBlockNoLock: error adding block to pastBlocksTransactionRegister")
+	for _, pastBlock := range newPastBlocks {
+		if err := addBlockToTransactionRegister(newTransactionRegister, pastBlock); err != nil {
+			return errors.Wrap(err, "PoSFeeEstimator.addBlockNoLock: error adding block to pastBlocksTransactionRegister")
+		}
 	}
+
+	// Update the cached blocks and pastBlocksTransactionRegister.
+	posFeeEstimator.cachedBlocks = newPastBlocks
+	posFeeEstimator.pastBlocksTransactionRegister = newTransactionRegister
 
 	return nil
 }
@@ -138,9 +149,11 @@ func addBlockToTransactionRegister(txnRegister *TransactionRegister, block *MsgD
 			return errors.Wrap(err, "PoSFeeEstimator.addBlockToTransactionRegister: error creating MempoolTx")
 		}
 		if err = txnRegister.AddTransaction(mtxn); err != nil {
-			glog.Errorf("PoSFeeEstimator.addBlockToTransactionRegister: error adding txn to pastBlocksTransactionRegister: %v", err)
+			return errors.Wrap(err,
+				"PoSFeeEstimator.addBlockToTransactionRegister: error adding txn to pastBlocksTransactionRegister")
 		}
 	}
+
 	return nil
 }
 
@@ -153,6 +166,7 @@ func (posFeeEstimator *PoSFeeEstimator) RemoveBlock(block *MsgDeSoBlock) error {
 	if err := posFeeEstimator.removeBlockNoLock(block); err != nil {
 		return errors.Wrap(err, "PoSFeeEstimator.RemoveBlock: error removing block from PoSFeeEstimator")
 	}
+
 	return nil
 }
 
@@ -163,8 +177,8 @@ func (posFeeEstimator *PoSFeeEstimator) removeBlockNoLock(block *MsgDeSoBlock) e
 		return errors.Wrap(err, "PoSFeeEstimator.removeBlockNoLock: error computing blockHash")
 	}
 
-	// Remove the block from the cached blocks.
-	posFeeEstimator.cachedBlocks = collections.Filter(posFeeEstimator.cachedBlocks, func(cachedBlock *MsgDeSoBlock) bool {
+	// Remove the block from the cached blocks, maintaining the relative ordering of all other blocks.
+	newPastBlocks := collections.Filter(posFeeEstimator.cachedBlocks, func(cachedBlock *MsgDeSoBlock) bool {
 		cachedBlockHash, err := cachedBlock.Hash()
 		if err != nil {
 			return false
@@ -173,13 +187,19 @@ func (posFeeEstimator *PoSFeeEstimator) removeBlockNoLock(block *MsgDeSoBlock) e
 	})
 
 	// Create a clean transaction register to add the blocks' transactions.
-	posFeeEstimator.pastBlocksTransactionRegister = NewTransactionRegister()
-	posFeeEstimator.pastBlocksTransactionRegister.Init(posFeeEstimator.globalParams.Copy())
+	newTransactionRegister := NewTransactionRegister()
+	newTransactionRegister.Init(posFeeEstimator.globalParams.Copy())
 
-	// Add all transactions from the block to the pastBlocksTransactionRegister.
-	if err := addBlockToTransactionRegister(posFeeEstimator.pastBlocksTransactionRegister, block); err != nil {
-		return errors.Wrap(err, "PoSFeeEstimator.removeBlockNoLock: error adding block to pastBlocksTransactionRegister")
+	// Add all transactions from the past blocks to the transaction register.
+	for _, pastBlock := range newPastBlocks {
+		if err := addBlockToTransactionRegister(newTransactionRegister, pastBlock); err != nil {
+			return errors.Wrap(err, "PoSFeeEstimator.removeBlockNoLock: error adding block to transaction register")
+		}
 	}
+
+	// Update the cached blocks and pastBlocksTransactionRegister.
+	posFeeEstimator.cachedBlocks = newPastBlocks
+	posFeeEstimator.pastBlocksTransactionRegister = newTransactionRegister
 
 	return nil
 }
@@ -194,6 +214,7 @@ func (posFeeEstimator *PoSFeeEstimator) UpdateGlobalParams(globalParams *GlobalP
 	// Create a temporary transaction register to test the new global params.
 	tempTransactionRegister := NewTransactionRegister()
 	tempTransactionRegister.Init(globalParams.Copy())
+
 	for _, block := range posFeeEstimator.cachedBlocks {
 		if err := addBlockToTransactionRegister(tempTransactionRegister, block); err != nil {
 			return errors.Wrap(err, "PosFeeEstimator.UpdateGlobalParams: error adding block to tempTransactionRegister")
@@ -204,30 +225,29 @@ func (posFeeEstimator *PoSFeeEstimator) UpdateGlobalParams(globalParams *GlobalP
 	return nil
 }
 
-// cleanUpAndSortCachedBlocks cleans up the cached blocks slice, pruning it, deduplicating it,
-// and sorting it by block height.
-func (posFeeEstimator *PoSFeeEstimator) cleanUpAndSortCachedBlocks() {
-	posFeeEstimator.deduplicateCachedBlocks()
-	posFeeEstimator.sortCachedBlocks()
-	posFeeEstimator.pruneCachedBlock()
+// cleanUpPastBlocks cleans up the input blocks slice, deduping, sorting, and pruning the blocks by height.
+func (posFeeEstimator *PoSFeeEstimator) cleanUpPastBlocks(blocks []*MsgDeSoBlock) []*MsgDeSoBlock {
+	dedupedBlocks := posFeeEstimator.dedupeBlocksByBlockHeight(blocks)
+	sortedBlocks := posFeeEstimator.sortBlocksByBlockHeightAndTstamp(dedupedBlocks)
+	return posFeeEstimator.pruneBlocksToMaxNumPastBlocks(sortedBlocks)
 }
 
-func (posFeeEstimator *PoSFeeEstimator) deduplicateCachedBlocks() {
-	// Deduplicate the cached blocks by block height. If multiple blocks
-	// have the same height, we keep the one with the highest view.
+// dedupeBlocksByBlockHeight deduplicates the blocks by block height. If multiple blocks have the same
+// height, it keeps the one with the highest view.
+func (posFeeEstimator *PoSFeeEstimator) dedupeBlocksByBlockHeight(blocks []*MsgDeSoBlock) []*MsgDeSoBlock {
 	blocksByBlockHeight := make(map[uint64]*MsgDeSoBlock)
-	for _, block := range posFeeEstimator.cachedBlocks {
+	for _, block := range blocks {
 		existingBlock, hasExitingBlock := blocksByBlockHeight[block.Header.Height]
 		if !hasExitingBlock || existingBlock.Header.GetView() < block.Header.GetView() {
 			blocksByBlockHeight[block.Header.Height] = block
 		}
 	}
-	posFeeEstimator.cachedBlocks = collections.MapValues(blocksByBlockHeight)
+	return collections.MapValues(blocksByBlockHeight)
 }
 
-// sortCachedBlocks sorts the cached blocks by height & tstamp just to be safe.
-func (posFeeEstimator *PoSFeeEstimator) sortCachedBlocks() {
-	posFeeEstimator.cachedBlocks = collections.SortStable(posFeeEstimator.cachedBlocks,
+// sortBlocksByBlockHeightAndTstamp sorts the blocks by height & tstamp just to be safe.
+func (posFeeEstimator *PoSFeeEstimator) sortBlocksByBlockHeightAndTstamp(blocks []*MsgDeSoBlock) []*MsgDeSoBlock {
+	return collections.SortStable(blocks,
 		func(ii, jj *MsgDeSoBlock) bool {
 			if ii.Header.Height != jj.Header.Height {
 				return ii.Header.Height < jj.Header.Height
@@ -247,16 +267,16 @@ func (posFeeEstimator *PoSFeeEstimator) sortCachedBlocks() {
 		})
 }
 
-// pruneCached reduces the number of cached blocks to the numPastBlocks param
-func (posFeeEstimator *PoSFeeEstimator) pruneCachedBlock() {
-	numCachedBlocks := uint64(len(posFeeEstimator.cachedBlocks))
+// pruneBlocksToMaxNumPastBlocks reduces the number of blocks to the numPastBlocks param
+func (posFeeEstimator *PoSFeeEstimator) pruneBlocksToMaxNumPastBlocks(blocks []*MsgDeSoBlock) []*MsgDeSoBlock {
+	numCachedBlocks := uint64(len(blocks))
 	if numCachedBlocks <= posFeeEstimator.numPastBlocks {
-		return
+		return blocks
 	}
 
-	// Prune the cached blocks with the lowest block heights. We do this by removing the
-	// first len(cachedBlocks) - numPastBlocks blocks from the cached blocks.
-	posFeeEstimator.cachedBlocks = posFeeEstimator.cachedBlocks[numCachedBlocks-posFeeEstimator.numPastBlocks:]
+	// Prune the blocks with the lowest block heights. We do this by removing the
+	// first len(blocks) - numPastBlocks blocks from the blocks slice.
+	return blocks[numCachedBlocks-posFeeEstimator.numPastBlocks:]
 }
 
 // EstimateFeeRateNanosPerKB estimates the fee rate in nanos per KB for the current mempool
