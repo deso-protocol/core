@@ -2080,7 +2080,7 @@ func (srv *Server) _handleBlock(pp *Peer, blk *MsgDeSoBlock) {
 	}
 
 	// Unless we're running a PoS validator, we should not expect to see a block that we did not request. If
-	// we see such a block then, we log an error and disconnect from the peer.
+	// we see such a block, then we log an error and disconnect from the peer.
 	_, isRequestedBlock := pp.requestedBlocks[*blockHash]
 	if srv.fastHotStuffConsensus == nil && !isRequestedBlock {
 		srv._logAndDisconnectPeer(pp, blk, "Getting a block that we haven't requested before")
