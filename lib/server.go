@@ -65,10 +65,10 @@ type Server struct {
 	TxIndex       *TXIndex
 	params        *DeSoParams
 
-	// fastHotStuffEventLoop consensus.FastHotStuffEventLoop
 	networkManager *NetworkManager
-	// posMempool *PosMemPool TODO: Add the mempool later
-	fastHotStuffConsensus *FastHotStuffConsensus
+
+	fastHotStuffConsensus                    *FastHotStuffConsensus
+	fastHotStuffConsensusTransitionCheckTime time.Time
 
 	// All messages received from peers get sent from the ConnectionManager to the
 	// Server through this channel.
@@ -2642,6 +2642,9 @@ func (srv *Server) _handleValidatorTimeout(pp *Peer, msg *MsgDeSoValidatorTimeou
 // - It listens to consensus events from the Fast HostStuff consensus engine. The consensus signals when
 // it's ready to vote, timeout, propose a block, or propose an empty block with a timeout QC.
 func (srv *Server) _startConsensus() {
+	// Initialize the FastHotStuffConsensus transition check time.
+	srv.resetFastHotStuffConsensusTransitionCheckTime()
+
 	for {
 		// This is used instead of the shouldQuit control message exist mechanism below. shouldQuit will be true only
 		// when all incoming messages have been processed, on the other hand this shutdown will quit immediately.
@@ -2650,13 +2653,13 @@ func (srv *Server) _startConsensus() {
 		}
 
 		select {
-		case <-srv._getFastHotStuffTransitionCheckInterval():
+		case <-srv.getFastHotStuffTransitionCheckTime():
 			{
 				glog.V(2).Info("Server._startConsensus: Checking if FastHotStuffConsensus is ready to start")
 				srv.tryTransitionToFastHotStuffConsensus()
 			}
 
-		case consensusEvent := <-srv._getFastHotStuffConsensusEventChannel():
+		case consensusEvent := <-srv.getFastHotStuffConsensusEventChannel():
 			{
 				glog.V(2).Infof("Server._startConsensus: Received consensus event: %s", consensusEvent.ToString())
 				srv._handleFastHostStuffConsensusEvent(consensusEvent)
@@ -2798,37 +2801,34 @@ func (srv *Server) _startAddressRelayer() {
 	}
 }
 
-func (srv *Server) _getFastHotStuffTransitionCheckInterval() <-chan time.Time {
-	// If the FastHotStuffConsensus does not exist, then there is nothing to do.
-	if srv.fastHotStuffConsensus == nil {
-		return nil
-	}
-
-	// If the FastHotStuffConsensus is already running, then there is nothing to do.
-	if srv.fastHotStuffConsensus.IsRunning() {
-		return nil
-	}
-
-	// If the FastHotStuffConsensus exists but isn't running, then we need to wait
-	// and see if it's ready to initialize.
-	return time.After(1 * time.Minute)
-}
-
-func (srv *Server) _getFastHotStuffConsensusEventChannel() chan *consensus.FastHotStuffEvent {
+func (srv *Server) getFastHotStuffConsensusEventChannel() chan *consensus.FastHotStuffEvent {
 	if srv.fastHotStuffConsensus == nil {
 		return nil
 	}
 	return srv.fastHotStuffConsensus.fastHotStuffEventLoop.GetEvents()
 }
 
-func (srv *Server) tryTransitionToFastHotStuffConsensus() {
-	// If the FastHotStuffConsensus does not exist, then there is nothing to do.
-	if srv.fastHotStuffConsensus == nil {
-		return
-	}
+func (srv *Server) resetFastHotStuffConsensusTransitionCheckTime() {
+	// Check once every 30 seconds if the FastHotStuffConsensus is ready to start.
+	srv.fastHotStuffConsensusTransitionCheckTime = time.Now().Add(30 * time.Second)
+}
 
-	// If the FastHotStuffConsensus is already running, then there is nothing to do.
-	if srv.fastHotStuffConsensus.IsRunning() {
+func (srv *Server) getFastHotStuffTransitionCheckTime() <-chan time.Time {
+	// If the FastHotStuffConsensus does not exist, or is already running, then
+	// we don't need this timer. We can exit early.
+	if srv.fastHotStuffConsensus == nil || srv.fastHotStuffConsensus.IsRunning() {
+		return nil
+	}
+	return time.After(time.Until(srv.fastHotStuffConsensusTransitionCheckTime))
+}
+
+func (srv *Server) tryTransitionToFastHotStuffConsensus() {
+	// Reset the transition check timer when this function exits.
+	defer srv.resetFastHotStuffConsensusTransitionCheckTime()
+
+	// If the FastHotStuffConsensus does not exist, or is already running, then
+	// there is nothing left to do. We can exit early.
+	if srv.fastHotStuffConsensus == nil || srv.fastHotStuffConsensus.IsRunning() {
 		return
 	}
 
