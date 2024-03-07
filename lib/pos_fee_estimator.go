@@ -6,10 +6,14 @@ import (
 	"sync"
 
 	"github.com/deso-protocol/core/collections"
+	"github.com/golang/glog"
 	"github.com/pkg/errors"
 )
 
 type PoSFeeEstimator struct {
+	// globalParams are the current GlobalParams used by the PoSFeeEstimator. The fee estimation uses
+	// this whenever the cached blocks are refreshed
+	globalParams *GlobalParamsEntry
 	// mempoolTransactionRegister is a pointer to the mempool's transaction register. The fee estimator
 	// uses this to estimate fees based on congestion in the mempool.
 	mempoolTransactionRegister *TransactionRegister
@@ -52,6 +56,7 @@ func (posFeeEstimator *PoSFeeEstimator) Init(
 	numPastBlocks uint64,
 	globalParams *GlobalParamsEntry,
 ) error {
+	posFeeEstimator.globalParams = globalParams
 	posFeeEstimator.rwLock = &sync.RWMutex{}
 	posFeeEstimator.rwLock.Lock()
 	defer posFeeEstimator.rwLock.Unlock()
@@ -102,19 +107,21 @@ func (posFeeEstimator *PoSFeeEstimator) AddBlock(block *MsgDeSoBlock) error {
 
 // addBlockNoLock is the same as AddBlock but assumes the caller has already acquired the rwLock.
 func (posFeeEstimator *PoSFeeEstimator) addBlockNoLock(block *MsgDeSoBlock) error {
+	// Cache the block
+	posFeeEstimator.cachedBlocks = append(posFeeEstimator.cachedBlocks, block)
+
+	// Deduplicate and sort the cached blocks to be safe
+	posFeeEstimator.cleanUpAndSortCachedBlocks()
+
+	// Create a clean transaction register to add the blocks' transactions.
+	posFeeEstimator.pastBlocksTransactionRegister = NewTransactionRegister()
+	posFeeEstimator.pastBlocksTransactionRegister.Init(posFeeEstimator.globalParams.Copy())
+
 	// Add all transactions from the block to the pastBlocksTransactionRegister.
 	if err := addBlockToTransactionRegister(posFeeEstimator.pastBlocksTransactionRegister, block); err != nil {
 		return errors.Wrap(err, "PoSFeeEstimator.addBlockNoLock: error adding block to pastBlocksTransactionRegister")
 	}
-	posFeeEstimator.cachedBlocks = append(posFeeEstimator.cachedBlocks, block)
-	// Sort the cached blocks by height & tstamp just to be safe.
-	posFeeEstimator.sortCachedBlocks()
-	if uint64(len(posFeeEstimator.cachedBlocks)) > posFeeEstimator.numPastBlocks {
-		// Remove the oldest block.
-		if err := posFeeEstimator.removeBlockNoLock(posFeeEstimator.cachedBlocks[0]); err != nil {
-			return errors.Wrap(err, "PoSFeeEstimator.addBlockNoLock: error removing block from PoSFeeEstimator")
-		}
-	}
+
 	return nil
 }
 
@@ -131,8 +138,7 @@ func addBlockToTransactionRegister(txnRegister *TransactionRegister, block *MsgD
 			return errors.Wrap(err, "PoSFeeEstimator.addBlockToTransactionRegister: error creating MempoolTx")
 		}
 		if err = txnRegister.AddTransaction(mtxn); err != nil {
-			return errors.Wrap(err,
-				"PoSFeeEstimator.addBlockToTransactionRegister: error adding txn to pastBlocksTransactionRegister")
+			glog.Errorf("PoSFeeEstimator.addBlockToTransactionRegister: error adding txn to pastBlocksTransactionRegister: %v", err)
 		}
 	}
 	return nil
@@ -152,39 +158,29 @@ func (posFeeEstimator *PoSFeeEstimator) RemoveBlock(block *MsgDeSoBlock) error {
 
 // removeBlockNoLock is the same as RemoveBlock but assumes the caller has already acquired the rwLock.
 func (posFeeEstimator *PoSFeeEstimator) removeBlockNoLock(block *MsgDeSoBlock) error {
-	// Remove all transaction from the block from the pastBlocksTransactionRegister.
-	for _, txn := range block.Txns {
-		// We explicitly exclude block reward transactions as they do not have fees.
-		// They were never added in the first place.
-		if txn.TxnMeta.GetTxnType() == TxnTypeBlockReward {
-			continue
-		}
-		mtxn, err := NewMempoolTx(txn, NanoSecondsToTime(block.Header.TstampNanoSecs), block.Header.Height)
-		if err != nil {
-			return errors.Wrap(err, "PoSFeeEstimator.RemoveBlock: error creating MempoolTx")
-		}
-		if err = posFeeEstimator.pastBlocksTransactionRegister.RemoveTransaction(mtxn); err != nil {
-			return errors.Wrap(err,
-				"PoSFeeEstimator.removeBlockNoLock: error removing txn from pastBlocksTransactionRegister")
-		}
-	}
 	blockHash, err := block.Hash()
 	if err != nil {
 		return errors.Wrap(err, "PoSFeeEstimator.removeBlockNoLock: error computing blockHash")
 	}
+
 	// Remove the block from the cached blocks.
-	newCachedBlocks := []*MsgDeSoBlock{}
-	for _, cachedBlock := range posFeeEstimator.cachedBlocks {
+	posFeeEstimator.cachedBlocks = collections.Filter(posFeeEstimator.cachedBlocks, func(cachedBlock *MsgDeSoBlock) bool {
 		cachedBlockHash, err := cachedBlock.Hash()
 		if err != nil {
-			return errors.Wrap(err, "PoSFeeEstimator.removeBlockNoLock: error computing cachedBlockHash")
+			return false
 		}
-		if blockHash.IsEqual(cachedBlockHash) {
-			continue
-		}
-		newCachedBlocks = append(newCachedBlocks, cachedBlock)
+		return !blockHash.IsEqual(cachedBlockHash)
+	})
+
+	// Create a clean transaction register to add the blocks' transactions.
+	posFeeEstimator.pastBlocksTransactionRegister = NewTransactionRegister()
+	posFeeEstimator.pastBlocksTransactionRegister.Init(posFeeEstimator.globalParams.Copy())
+
+	// Add all transactions from the block to the pastBlocksTransactionRegister.
+	if err := addBlockToTransactionRegister(posFeeEstimator.pastBlocksTransactionRegister, block); err != nil {
+		return errors.Wrap(err, "PoSFeeEstimator.removeBlockNoLock: error adding block to pastBlocksTransactionRegister")
 	}
-	posFeeEstimator.cachedBlocks = newCachedBlocks
+
 	return nil
 }
 
@@ -194,6 +190,8 @@ func (posFeeEstimator *PoSFeeEstimator) removeBlockNoLock(block *MsgDeSoBlock) e
 func (posFeeEstimator *PoSFeeEstimator) UpdateGlobalParams(globalParams *GlobalParamsEntry) error {
 	posFeeEstimator.rwLock.Lock()
 	defer posFeeEstimator.rwLock.Unlock()
+
+	// Create a temporary transaction register to test the new global params.
 	tempTransactionRegister := NewTransactionRegister()
 	tempTransactionRegister.Init(globalParams.Copy())
 	for _, block := range posFeeEstimator.cachedBlocks {
@@ -201,7 +199,30 @@ func (posFeeEstimator *PoSFeeEstimator) UpdateGlobalParams(globalParams *GlobalP
 			return errors.Wrap(err, "PosFeeEstimator.UpdateGlobalParams: error adding block to tempTransactionRegister")
 		}
 	}
+
+	posFeeEstimator.globalParams = globalParams
 	return nil
+}
+
+// cleanUpAndSortCachedBlocks cleans up the cached blocks slice, pruning it, deduplicating it,
+// and sorting it by block height.
+func (posFeeEstimator *PoSFeeEstimator) cleanUpAndSortCachedBlocks() {
+	posFeeEstimator.deduplicateCachedBlocks()
+	posFeeEstimator.sortCachedBlocks()
+	posFeeEstimator.pruneCachedBlock()
+}
+
+func (posFeeEstimator *PoSFeeEstimator) deduplicateCachedBlocks() {
+	// Deduplicate the cached blocks by block height. If multiple blocks
+	// have the same height, we keep the one with the highest view.
+	blocksByBlockHeight := make(map[uint64]*MsgDeSoBlock)
+	for _, block := range posFeeEstimator.cachedBlocks {
+		existingBlock, hasExitingBlock := blocksByBlockHeight[block.Header.Height]
+		if !hasExitingBlock || existingBlock.Header.GetView() < block.Header.GetView() {
+			blocksByBlockHeight[block.Header.Height] = block
+		}
+	}
+	posFeeEstimator.cachedBlocks = collections.MapValues(blocksByBlockHeight)
 }
 
 // sortCachedBlocks sorts the cached blocks by height & tstamp just to be safe.
@@ -224,6 +245,18 @@ func (posFeeEstimator *PoSFeeEstimator) sortCachedBlocks() {
 			}
 			return iiHash.String() < jjHash.String()
 		})
+}
+
+// pruneCached reduces the number of cached blocks to the numPastBlocks param
+func (posFeeEstimator *PoSFeeEstimator) pruneCachedBlock() {
+	numCachedBlocks := uint64(len(posFeeEstimator.cachedBlocks))
+	if numCachedBlocks <= posFeeEstimator.numPastBlocks {
+		return
+	}
+
+	// Prune the cached blocks with the lowest block heights. We do this by removing the
+	// first len(cachedBlocks) - numPastBlocks blocks from the cached blocks.
+	posFeeEstimator.cachedBlocks = posFeeEstimator.cachedBlocks[numCachedBlocks-posFeeEstimator.numPastBlocks:]
 }
 
 // EstimateFeeRateNanosPerKB estimates the fee rate in nanos per KB for the current mempool
