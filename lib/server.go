@@ -2042,7 +2042,7 @@ func (srv *Server) _handleBlockAccepted(event *BlockEvent) {
 		Hash: *blockHash,
 	}
 
-	// Iterate through all non-validator peers peers and relay the InvVect to them.
+	// Iterate through all non-validator peers and relay the InvVect to them.
 	// This will only actually be relayed if it's not already in the peer's knownInventory.
 	allNonValidators := srv.networkManager.GetAllNonValidators()
 	for _, remoteNode := range allNonValidators {
