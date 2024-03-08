@@ -1820,20 +1820,17 @@ func (srv *Server) _relayTransactions() {
 	// send them an inv.
 	allPeers := srv.cmgr.GetAllPeers()
 
-	srv.blockchain.ChainLock.RLock()
-	tipHeight := uint64(srv.blockchain.BlockTip().Height)
-	srv.blockchain.ChainLock.RUnlock()
+	// Get the current mempool. This can be the PoW or PoS mempool depending on the
+	// current block height.
+	mempool := srv.GetMempool()
 
-	// If we're on the PoW protocol, we need to wait for the mempool readOnlyView to regenerate.
-	if srv.params.IsPoWBlockHeight(tipHeight) {
-		glog.V(1).Infof("Server._relayTransactions: Waiting for mempool readOnlyView to regenerate")
-		srv.mempool.BlockUntilReadOnlyViewRegenerated()
-		glog.V(1).Infof("Server._relayTransactions: Mempool view has regenerated")
-	}
+	glog.V(1).Infof("Server._relayTransactions: Waiting for mempool readOnlyView to regenerate")
+	mempool.BlockUntilReadOnlyViewRegenerated()
+	glog.V(1).Infof("Server._relayTransactions: Mempool view has regenerated")
 
 	// We pull the transactions from either the PoW mempool or the PoS mempool depending
 	// on the current block height.
-	txnList := srv.GetMempool().GetTransactions()
+	txnList := mempool.GetTransactions()
 
 	for _, pp := range allPeers {
 		if !pp.canReceiveInvMessagess {
@@ -1855,6 +1852,10 @@ func (srv *Server) _relayTransactions() {
 				continue
 			}
 
+			// Add the transaction to the peer's known inventory. We do
+			// it here when we enqueue the message to the peers outgoing
+			// message queue so that we don't have remember to do it later.
+			pp.knownInventory.Add(*invVect)
 			invMsg.InvList = append(invMsg.InvList, invVect)
 		}
 		if len(invMsg.InvList) > 0 {
