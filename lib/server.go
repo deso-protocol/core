@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/hex"
 	"fmt"
+	"github.com/google/uuid"
 	"net"
 	"path/filepath"
 	"reflect"
@@ -385,7 +386,7 @@ func NewServer(
 		// Create the state change syncer to handle syncing state changes to disk, and assign some of its methods
 		// to the event manager.
 		stateChangeSyncer = NewStateChangeSyncer(_stateChangeDir, _syncType)
-		eventManager.OnStateSyncerOperation(stateChangeSyncer._handleStateSyncerOperation)
+		eventManager.OnStateSyncerOperation(stateChangeSyncer._handleStateSyncerOperation, uuid.Nil)
 		eventManager.OnStateSyncerFlushed(stateChangeSyncer._handleStateSyncerFlush)
 	}
 
