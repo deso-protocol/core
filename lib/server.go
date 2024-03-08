@@ -2032,9 +2032,9 @@ func (srv *Server) _handleBlockAccepted(event *BlockEvent) {
 	// This will only actually be relayed if it's not already in the peer's knownInventory.
 	allNonValidators := srv.networkManager.GetAllNonValidators()
 	for _, remoteNode := range allNonValidators {
-		remoteNode.GetPeer().AddDeSoMessage(&MsgDeSoInv{
+		remoteNode.sendMessage(&MsgDeSoInv{
 			InvList: []*InvVect{invVect},
-		}, false)
+		})
 	}
 }
 
