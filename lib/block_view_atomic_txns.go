@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"github.com/pkg/errors"
 	"io"
-	"reflect"
 )
 
 //
@@ -158,11 +157,6 @@ func (msg *MsgDeSoTxn) AtomicHash() (*BlockHash, error) {
 		return nil, errors.Wrap(err, "MsgDeSoTxn.AtomicHash: Cannot create duplicate transaction")
 	}
 
-	// Sanity check that the transaction includes the necessary extra data to be included in an atomic transaction.
-	if !msgDuplicate.IsAtomicTxnsInnerTxn() {
-		return nil, errors.New("MsgDeSoTxn.AtomicHash: Cannot compute atomic hash on non-atomic transaction")
-	}
-
 	// Delete the NextAtomicTxnPreHash and PreviousAtomicTxnPreHash from the ExtraData map.
 	delete(msgDuplicate.ExtraData, NextAtomicTxnPreHash)
 	delete(msgDuplicate.ExtraData, PreviousAtomicTxnPreHash)
@@ -224,7 +218,8 @@ func (bav *UtxoView) _connectAtomicTxnsWrapper(
 	// Verify the wrapper of the transaction. This does not verify the txn.TxnMeta contents, just that
 	// the wrapper is well formatted.
 	if err := _verifyAtomicTxnsWrapper(txn); err != nil {
-		return nil, 0, 0, 0, errors.Wrap(err, "_connectAtomicTxnsWrapper")
+		return nil, 0, 0, 0,
+			errors.Wrap(err, "_connectAtomicTxnsWrapper: failed to verify wrapper transaction")
 	}
 
 	// Extract the metadata from the transaction.
@@ -232,7 +227,8 @@ func (bav *UtxoView) _connectAtomicTxnsWrapper(
 
 	// Verify the chain of transactions as being not tampered with. This verifies the txn.TxnMeta contents.
 	if err := _verifyAtomicTxnsChain(txMeta); err != nil {
-		return nil, 0, 0, 0, errors.Wrap(err, "_connectAtomicTxnsWrapper")
+		return nil, 0, 0, 0,
+			errors.Wrap(err, "_connectAtomicTxnsWrapper: failed to verify transaction chain")
 	}
 
 	// Execute the internal transactions.
@@ -245,7 +241,7 @@ func (bav *UtxoView) _connectAtomicTxnsWrapper(
 			innerTxn, txHash, blockHeight, blockTimestampNanoSecs, verifySignatures, ignoreUtxos)
 		if err != nil {
 			return nil, 0, 0, 0,
-				errors.Wrap(err, "_connectAtomicTxnsWrapper")
+				errors.Wrap(err, "_connectAtomicTxnsWrapper: failed to connect non-atomic transaction")
 		}
 
 		// Collect the inner txn utxo ops. We will use these if we ever disconnect.
@@ -326,7 +322,7 @@ func _verifyAtomicTxnsWrapper(txn *MsgDeSoTxn) error {
 	//
 	// Because txn.TxnFeeNanos gets used in several places for non-connection logic (e.g. BMF),
 	// it's important to use design option (2) to be consistent across core. This check as a result
-	// becomes extremely important in _connectAtomicTxns().
+	// becomes extremely important in _connectAtomicTxnsWrapper().
 	var totalInnerTxnFees uint64
 	var err error
 	for _, innerTxn := range txn.TxnMeta.(*AtomicTxnsWrapperMetadata).Txns {
@@ -339,16 +335,16 @@ func _verifyAtomicTxnsWrapper(txn *MsgDeSoTxn) error {
 		return RuleErrorAtomicTxnsWrapperMustHaveEqualFeeToInternalTxns
 	}
 
-	// Technically, the txn.TxnNonce field could be
+	// Technically the txn.TxnNonce field could be anything but for consistent
+	// hashing we force all fields of the nonce to be zero. This also makes
+	// it more consistent with the rest of the rules regarding atomic transactions
+	// wrappers.
 	if txn.TxnNonce.ExpirationBlockHeight != 0 || txn.TxnNonce.PartialID != 0 {
 		return RuleErrorAtomicTxnsWrapperMustHaveZeroedNonce
 	}
 
-	// Since the wrapper is free and modifiable by anyone, we check to ensure the
-	// associated ExtraData is empty to prevent free storage on the blockchain.
-	if len(txn.ExtraData) != 0 {
-		return RuleErrorAtomicTxnsWrapperMustHaveZeroExtraData
-	}
+	// NOTE: We do not enforce rules on txn.ExtraData as it's both useful
+	// 		 for app developers and is being paid for via txn.TxnFeeNanos.
 
 	return nil
 }
@@ -373,7 +369,7 @@ func _verifyAtomicTxnsChain(txnMeta *AtomicTxnsWrapperMetadata) error {
 
 		// Validate the starting point of the atomic transactions chain.
 		_, keyExists := innerTxn.ExtraData[AtomicTxnsChainLength]
-		if keyExists && ii == 0 {
+		if !keyExists && ii == 0 {
 			return RuleErrorAtomicTxnsMustStartWithChainLength
 		}
 		if keyExists && ii > 0 {
@@ -414,16 +410,16 @@ func _verifyAtomicTxnsChain(txnMeta *AtomicTxnsWrapperMetadata) error {
 	// Validate the chain sequence specified.
 	for ii, innerTxn := range txnMeta.Txns {
 		// Check the next transaction.
-		if !reflect.DeepEqual(
+		if !bytes.Equal(
 			innerTxn.ExtraData[NextAtomicTxnPreHash],
-			atomicHashes[nextIndex(ii, len(txnMeta.Txns))]) {
+			atomicHashes[nextIndex(ii, len(txnMeta.Txns))].ToBytes()) {
 			return RuleErrorAtomicTxnsHasBrokenChain
 		}
 
 		// Check the previous transaction
-		if !reflect.DeepEqual(
+		if !bytes.Equal(
 			innerTxn.ExtraData[PreviousAtomicTxnPreHash],
-			atomicHashes[prevIndex(ii, len(txnMeta.Txns))]) {
+			atomicHashes[prevIndex(ii, len(txnMeta.Txns))].ToBytes()) {
 			return RuleErrorAtomicTxnsHasBrokenChain
 		}
 	}
