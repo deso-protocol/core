@@ -55,7 +55,7 @@ func (posFeeEstimator *PoSFeeEstimator) Init(
 	numPastBlocks uint64,
 	globalParams *GlobalParamsEntry,
 ) error {
-	posFeeEstimator.globalParams = globalParams
+	posFeeEstimator.globalParams = globalParams.Copy()
 	posFeeEstimator.rwLock = &sync.RWMutex{}
 
 	posFeeEstimator.rwLock.Lock()
@@ -228,7 +228,7 @@ func (posFeeEstimator *PoSFeeEstimator) UpdateGlobalParams(globalParams *GlobalP
 // cleanUpPastBlocks cleans up the input blocks slice, deduping, sorting, and pruning the blocks by height.
 func (posFeeEstimator *PoSFeeEstimator) cleanUpPastBlocks(blocks []*MsgDeSoBlock) []*MsgDeSoBlock {
 	dedupedBlocks := posFeeEstimator.dedupeBlocksByBlockHeight(blocks)
-	sortedBlocks := posFeeEstimator.sortBlocksByBlockHeightAndTstamp(dedupedBlocks)
+	sortedBlocks := posFeeEstimator.sortBlocksByBlockHeight(dedupedBlocks)
 	return posFeeEstimator.pruneBlocksToMaxNumPastBlocks(sortedBlocks)
 }
 
@@ -237,23 +237,23 @@ func (posFeeEstimator *PoSFeeEstimator) cleanUpPastBlocks(blocks []*MsgDeSoBlock
 func (posFeeEstimator *PoSFeeEstimator) dedupeBlocksByBlockHeight(blocks []*MsgDeSoBlock) []*MsgDeSoBlock {
 	blocksByBlockHeight := make(map[uint64]*MsgDeSoBlock)
 	for _, block := range blocks {
-		existingBlock, hasExitingBlock := blocksByBlockHeight[block.Header.Height]
-		if !hasExitingBlock || existingBlock.Header.GetView() < block.Header.GetView() {
+		existingBlock, hasExistingBlock := blocksByBlockHeight[block.Header.Height]
+		if !hasExistingBlock || existingBlock.Header.GetView() < block.Header.GetView() {
 			blocksByBlockHeight[block.Header.Height] = block
 		}
 	}
 	return collections.MapValues(blocksByBlockHeight)
 }
 
-// sortBlocksByBlockHeightAndTstamp sorts the blocks by height & tstamp just to be safe.
-func (posFeeEstimator *PoSFeeEstimator) sortBlocksByBlockHeightAndTstamp(blocks []*MsgDeSoBlock) []*MsgDeSoBlock {
+// sortBlocksByBlockHeightAndTstamp sorts the blocks by height.
+func (posFeeEstimator *PoSFeeEstimator) sortBlocksByBlockHeight(blocks []*MsgDeSoBlock) []*MsgDeSoBlock {
 	return collections.SortStable(blocks,
 		func(ii, jj *MsgDeSoBlock) bool {
 			if ii.Header.Height != jj.Header.Height {
 				return ii.Header.Height < jj.Header.Height
 			}
-			if ii.Header.TstampNanoSecs != jj.Header.TstampNanoSecs {
-				return ii.Header.TstampNanoSecs < jj.Header.TstampNanoSecs
+			if ii.Header.GetView() != jj.Header.GetView() {
+				return ii.Header.GetView() < jj.Header.GetView()
 			}
 			iiHash, err := ii.Hash()
 			if iiHash == nil || err != nil {
