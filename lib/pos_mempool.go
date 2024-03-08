@@ -414,6 +414,8 @@ func (mp *PosMempool) OnBlockConnected(block *MsgDeSoBlock) {
 		mp.removeTransactionNoLock(existingTxn, true)
 	}
 
+	mp.refreshNoLock()
+
 	// Add the block to the fee estimator. This is a best effort operation. If we fail to add the block
 	// to the fee estimator, we log an error and continue.
 	if err := mp.feeEstimator.AddBlock(block); err != nil {
@@ -457,6 +459,8 @@ func (mp *PosMempool) OnBlockDisconnected(block *MsgDeSoBlock) {
 			glog.Errorf("PosMempool.AddTransaction: Problem adding transaction to mempool: %v", err)
 		}
 	}
+
+	mp.refreshNoLock()
 
 	// This is a best effort operation. If we fail to prune the mempool, we log an error and continue.
 	if err := mp.pruneNoLock(); err != nil {
