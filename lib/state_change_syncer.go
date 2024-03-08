@@ -187,7 +187,8 @@ func (stateChangeEntry *StateChangeEntry) RawDecodeWithoutMetadata(blockHeight u
 	// Decode the block height.
 	entryBlockHeight, err := ReadUvarint(rr)
 	if err != nil {
-		return errors.Wrapf(err, "StateChangeEntry.RawDecodeWithoutMetadata: error decoding block height")
+		//return errors.Wrapf(err, "StateChangeEntry.RawDecodeWithoutMetadata: error decoding block height")
+		fmt.Printf("StateChangeEntry.RawDecodeWithoutMetadata: error decoding block height: %v\n", err)
 	}
 	stateChangeEntry.BlockHeight = entryBlockHeight
 
@@ -394,7 +395,7 @@ func (stateChangeSyncer *StateChangeSyncer) _handleStateSyncerOperation(event *S
 		// Set the flushId to the mempool flush ID.
 		//flushId = stateChangeSyncer.BlockSyncFlushId
 		if flushId == uuid.Nil {
-			fmt.Printf("\n\n***** FLUSH ID IS NIL *****\n\n")
+			flushId = stateChangeSyncer.MempoolFlushId
 		}
 
 		// The current state of the tracked mempool is stored in the MempoolSyncedKeyValueMap. If this entry is already in there
@@ -499,31 +500,33 @@ func (stateChangeSyncer *StateChangeSyncer) _handleStateSyncerFlush(event *State
 		// Key: c <- Revert this one
 		// Key: d
 
-		for key, cachedSCE := range stateChangeSyncer.MempoolSyncedKeyValueMap {
-			// If any of the keys that the mempool is currently tracking weren't included in the flush, that entry
-			// needs to be reverted from the mempool.
-			if _, ok := stateChangeSyncer.MempoolFlushKeySet[key]; !ok {
-				// Confirm that the block sync ID hasn't shifted. If it has, bail now.
-				if cachedSCE.FlushId != stateChangeSyncer.BlockSyncFlushId {
-					fmt.Printf("The flush ID has changed, bailing now.\n")
-					stateChangeSyncer.ResetMempool()
-					return
+		if event.Succeeded {
+			for key, cachedSCE := range stateChangeSyncer.MempoolSyncedKeyValueMap {
+				// If any of the keys that the mempool is currently tracking weren't included in the flush, that entry
+				// needs to be reverted from the mempool.
+				if _, ok := stateChangeSyncer.MempoolFlushKeySet[key]; !ok {
+					// Confirm that the block sync ID hasn't shifted. If it has, bail now.
+					if cachedSCE.FlushId != stateChangeSyncer.BlockSyncFlushId {
+						fmt.Printf("The flush ID has changed, bailing now.\n")
+						stateChangeSyncer.ResetMempool()
+						return
+					}
+
+					cachedSCE.IsReverted = true
+
+					// Create a revert state change entry and add it to the queue. This will signal the state change
+					// consumer to revert the synced entry.
+					entryBytes := EncodeToBytes(stateChangeSyncer.BlockHeight, cachedSCE, false)
+					writeBytes := EncodeByteArray(entryBytes)
+
+					fmt.Printf("Reverting entry %d\n", cachedSCE.EncoderType)
+
+					// Add the StateChangeEntry bytes to the queue of bytes to be written to the state change file upon Badger db flush.
+					stateChangeSyncer.addTransactionToQueue(cachedSCE.FlushId, writeBytes)
+
+					// Remove this entry from the synced map
+					delete(stateChangeSyncer.MempoolSyncedKeyValueMap, key)
 				}
-
-				cachedSCE.IsReverted = true
-
-				// Create a revert state change entry and add it to the queue. This will signal the state change
-				// consumer to revert the synced entry.
-				entryBytes := EncodeToBytes(stateChangeSyncer.BlockHeight, cachedSCE, false)
-				writeBytes := EncodeByteArray(entryBytes)
-
-				fmt.Printf("Reverting entry %d\n", cachedSCE.EncoderType)
-
-				// Add the StateChangeEntry bytes to the queue of bytes to be written to the state change file upon Badger db flush.
-				stateChangeSyncer.addTransactionToQueue(cachedSCE.FlushId, writeBytes)
-
-				// Remove this entry from the synced map
-				delete(stateChangeSyncer.MempoolSyncedKeyValueMap, key)
 			}
 		}
 		//fmt.Printf("\nFlush len: %d\n", len(stateChangeSyncer.MempoolFlushKeySet))
@@ -582,10 +585,10 @@ func (stateChangeSyncer *StateChangeSyncer) addTransactionToQueue(flushId uuid.U
 func (stateChangeSyncer *StateChangeSyncer) FlushTransactionsToFile(event *StateSyncerFlushedEvent) error {
 	flushId := event.FlushId
 
-	if event.IsMempoolFlush && event.FlushId != stateChangeSyncer.BlockSyncFlushId {
-		fmt.Printf("Bailing on mempool flush because the block sync flush ID has changed.\n")
-		return nil
-	}
+	//if event.IsMempoolFlush && event.FlushId != stateChangeSyncer.BlockSyncFlushId {
+	//	fmt.Printf("Bailing on mempool flush because the block sync flush ID has changed.\n")
+	//	return nil
+	//}
 
 	// Get the relevant global flush ID from the state change syncer if the flush ID is nil.
 	if event.FlushId == uuid.Nil {
@@ -710,9 +713,7 @@ func (stateChangeSyncer *StateChangeSyncer) SyncMempoolToStateSyncer(server *Ser
 	// Reset event manager handlers
 	mempoolEventManager.stateSyncerOperationHandlers = nil
 	mempoolEventManager.stateSyncerFlushedHandlers = nil
-	mempoolEventManager.stateSyncerOperationFlushIds = []uuid.UUID{}
-	// TODO: Just use the stateChangeSyncer MempoolFlushId rather than this mess.
-	mempoolEventManager.OnStateSyncerOperation(stateChangeSyncer._handleStateSyncerOperation, originalCommittedFlushId)
+	mempoolEventManager.OnStateSyncerOperation(stateChangeSyncer._handleStateSyncerOperation)
 	mempoolEventManager.OnStateSyncerFlushed(stateChangeSyncer._handleStateSyncerFlush)
 
 	mempoolEventManager.isMempoolManager = true
@@ -754,6 +755,11 @@ func (stateChangeSyncer *StateChangeSyncer) SyncMempoolToStateSyncer(server *Ser
 		utxoOpsForTxn, _, _, _, err := mempoolTxUtxoView.ConnectTransaction(
 			mempoolTx.Tx, mempoolTx.Hash, 0, uint32(blockHeight+1), false, false /*ignoreUtxos*/)
 		if err != nil {
+			mempoolUtxoView.EventManager.stateSyncerFlushed(&StateSyncerFlushedEvent{
+				FlushId:        originalCommittedFlushId,
+				Succeeded:      false,
+				IsMempoolFlush: true,
+			})
 			return false, errors.Wrapf(err, "StateChangeSyncer.SyncMempoolToStateSyncer ConnectTransaction: ")
 		}
 

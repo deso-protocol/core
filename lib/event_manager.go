@@ -55,7 +55,6 @@ type BlockEvent struct {
 type EventManager struct {
 	transactionConnectedHandlers []TransactionEventFunc
 	stateSyncerOperationHandlers []StateSyncerOperationEventFunc
-	stateSyncerOperationFlushIds []uuid.UUID
 	stateSyncerFlushedHandlers   []StateSyncerFlushedEventFunc
 	blockConnectedHandlers       []BlockEventFunc
 	blockDisconnectedHandlers    []BlockEventFunc
@@ -68,9 +67,8 @@ func NewEventManager() *EventManager {
 	return &EventManager{}
 }
 
-func (em *EventManager) OnStateSyncerOperation(handler StateSyncerOperationEventFunc, flushId uuid.UUID) {
+func (em *EventManager) OnStateSyncerOperation(handler StateSyncerOperationEventFunc) {
 	em.stateSyncerOperationHandlers = append(em.stateSyncerOperationHandlers, handler)
-	em.stateSyncerOperationFlushIds = append(em.stateSyncerOperationFlushIds, flushId)
 }
 
 func (em *EventManager) OnStateSyncerFlushed(handler StateSyncerFlushedEventFunc) {
@@ -78,10 +76,7 @@ func (em *EventManager) OnStateSyncerFlushed(handler StateSyncerFlushedEventFunc
 }
 
 func (em *EventManager) stateSyncerOperation(event *StateSyncerOperationEvent) {
-	for ii, handler := range em.stateSyncerOperationHandlers {
-		if len(em.stateSyncerOperationFlushIds) > ii && em.stateSyncerOperationFlushIds[ii] != uuid.Nil {
-			event.FlushId = em.stateSyncerOperationFlushIds[ii]
-		}
+	for _, handler := range em.stateSyncerOperationHandlers {
 		handler(event)
 	}
 }
