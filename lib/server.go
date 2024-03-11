@@ -406,6 +406,7 @@ func NewServer(
 	_mempoolBackupIntervalMillis uint64,
 	_mempoolFeeEstimatorNumMempoolBlocks uint64,
 	_mempoolFeeEstimatorNumPastBlocks uint64,
+	_mempoolMaxValidationViewConnects uint64,
 	_augmentedBlockViewRefreshIntervalMillis uint64,
 	_posBlockProductionIntervalMilliseconds uint64,
 	_posTimeoutBaseDurationMilliseconds uint64,
@@ -564,6 +565,7 @@ func NewServer(
 		_mempoolFeeEstimatorNumMempoolBlocks,
 		[]*MsgDeSoBlock{latestBlock},
 		_mempoolFeeEstimatorNumPastBlocks,
+		_mempoolMaxValidationViewConnects,
 		_augmentedBlockViewRefreshIntervalMillis,
 	)
 	if err != nil {

@@ -151,6 +151,8 @@ type PosMempool struct {
 	// based off the current state of the mempool and the most n recent blocks.
 	feeEstimator *PoSFeeEstimator
 
+	maxValidationViewConnects uint64
+
 	// augmentedBlockViewRefreshIntervalMillis is the frequency with which the augmentedLatestBlockView is updated.
 	augmentedBlockViewRefreshIntervalMillis uint64
 
@@ -207,6 +209,7 @@ func (mp *PosMempool) Init(
 	feeEstimatorNumMempoolBlocks uint64,
 	feeEstimatorPastBlocks []*MsgDeSoBlock,
 	feeEstimatorNumPastBlocks uint64,
+	maxValidationViewConnects uint64,
 	augmentedBlockViewRefreshIntervalMillis uint64,
 ) error {
 	if mp.status != PosMempoolStatusNotInitialized {
@@ -229,6 +232,7 @@ func (mp *PosMempool) Init(
 	mp.inMemoryOnly = inMemoryOnly
 	mp.maxMempoolPosSizeBytes = maxMempoolPosSizeBytes
 	mp.mempoolBackupIntervalMillis = mempoolBackupIntervalMillis
+	mp.maxValidationViewConnects = maxValidationViewConnects
 	mp.augmentedBlockViewRefreshIntervalMillis = augmentedBlockViewRefreshIntervalMillis
 
 	// TODO: parameterize num blocks. Also, how to pass in blocks.
@@ -533,7 +537,7 @@ func (mp *PosMempool) updateTransactionValidatedStatus(txnHash *BlockHash, valid
 	mp.Lock()
 	defer mp.Unlock()
 
-	if !mp.IsRunning() {
+	if !mp.IsRunning() || txnHash == nil {
 		return
 	}
 
@@ -716,56 +720,43 @@ func (mp *PosMempool) GetIterator() MempoolIterator {
 // the main mempool. The temp mempool will have the most up-to-date readOnlyLatestBlockView, Height, and globalParams. Any
 // transaction that fails to add to the temp mempool will be removed from the main mempool.
 func (mp *PosMempool) Refresh() error {
-	mp.Lock()
-	defer mp.Unlock()
-
+	mp.RLock()
 	if !mp.IsRunning() {
 		return nil
 	}
 
-	if err := mp.refreshNoLock(); err != nil {
-		return errors.Wrapf(err, "PosMempool.Refresh: Problem refreshing mempool")
-	}
-	return nil
-}
+	validationView := mp.readOnlyLatestBlockView
+	mempoolTxns := mp.getTransactionsNoLock()
+	mp.RUnlock()
 
-func (mp *PosMempool) refreshNoLock() error {
-	// Create the temporary in-memory mempool with the most up-to-date readOnlyLatestBlockView, Height, and globalParams.
-	tempPool := NewPosMempool()
-	err := tempPool.Init(
-		mp.params,
-		mp.globalParams,
-		mp.readOnlyLatestBlockView,
-		mp.latestBlockHeight,
-		"",
-		true,
-		mp.maxMempoolPosSizeBytes,
-		mp.mempoolBackupIntervalMillis,
-		mp.feeEstimator.numMempoolBlocks,
-		mp.feeEstimator.cachedBlocks,
-		mp.feeEstimator.numPastBlocks,
-		mp.augmentedBlockViewRefreshIntervalMillis,
-	)
+	var txns []*MsgDeSoTxn
+	var txHashes []*BlockHash
+	for _, txn := range mempoolTxns {
+		txns = append(txns, txn.Tx)
+		txHashes = append(txHashes, txn.Hash)
+	}
+	copyValidationView, err := validationView.CopyUtxoView()
 	if err != nil {
-		return errors.Wrapf(err, "PosMempool.refreshNoLock: Problem initializing temp pool")
+		return errors.Wrapf(err, "PosMempool.refreshNoLock: Problem copying utxo view")
 	}
-	if err := tempPool.Start(); err != nil {
-		return errors.Wrapf(err, "PosMempool.refreshNoLock: Problem starting temp pool")
+	_, _, _, _, successFlags, err := copyValidationView.ConnectTransactionsWithLimit(txns, txHashes, uint32(mp.latestBlockHeight)+1, time.Now().UnixNano(),
+		false, false, true, mp.maxValidationViewConnects)
+	if err != nil {
+		return errors.Wrapf(err, "PosMempool.refreshNoLock: Problem connecting transactions")
 	}
-	defer tempPool.Stop()
 
-	// Add all transactions from the main mempool to the temp mempool. Skip signature verification.
 	var txnsToRemove []*MempoolTx
-	txns := mp.getTransactionsNoLock()
-	for _, txn := range txns {
-		mtxn := NewMempoolTransaction(txn.Tx, txn.Added, txn.IsValidated())
-		err := tempPool.AddTransaction(mtxn)
-		if err == nil {
-			continue
+	for ii, successFlag := range successFlags {
+		if ii >= len(mempoolTxns) {
+			break
 		}
-
-		// If we've encountered an error while adding the transaction to the temp mempool, we add it to our txnsToRemove list.
-		txnsToRemove = append(txnsToRemove, txn)
+		if successFlag {
+			mp.Lock()
+			mp.updateTransactionValidatedStatus(mempoolTxns[ii].Hash, true)
+			mp.Unlock()
+		} else {
+			txnsToRemove = append(txnsToRemove, mempoolTxns[ii])
+		}
 	}
 
 	// Now remove all transactions from the txnsToRemove list from the main mempool.
@@ -834,9 +825,6 @@ func (mp *PosMempool) UpdateGlobalParams(globalParams *GlobalParamsEntry) {
 	}
 
 	mp.globalParams = globalParams
-	if err := mp.refreshNoLock(); err != nil {
-		glog.Errorf("PosMempool.UpdateGlobalParams: Problem refreshing mempool: %v", err)
-	}
 }
 
 // Implementation of the Mempool interface

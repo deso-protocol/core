@@ -53,6 +53,7 @@ type Config struct {
 	MaxMempoolPosSizeBytes                  uint64
 	MempoolFeeEstimatorNumMempoolBlocks     uint64
 	MempoolFeeEstimatorNumPastBlocks        uint64
+	MempoolMaxValidationViewConnects        uint64
 	AugmentedBlockViewRefreshIntervalMillis uint64
 
 	// Mining
@@ -131,6 +132,7 @@ func LoadConfig() *Config {
 	config.MaxMempoolPosSizeBytes = viper.GetUint64("max-mempool-pos-size-bytes")
 	config.MempoolFeeEstimatorNumMempoolBlocks = viper.GetUint64("mempool-fee-estimator-num-mempool-blocks")
 	config.MempoolFeeEstimatorNumPastBlocks = viper.GetUint64("mempool-fee-estimator-num-past-blocks")
+	config.MempoolMaxValidationViewConnects = viper.GetUint64("mempool-max-validation-view-connects")
 	config.AugmentedBlockViewRefreshIntervalMillis = viper.GetUint64("augmented-block-view-refresh-interval-millis")
 
 	// Peers
