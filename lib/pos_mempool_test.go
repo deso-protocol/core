@@ -300,7 +300,7 @@ func TestPosMempoolReplaceWithHigherFee(t *testing.T) {
 	*txn2Low.TxnNonce = *txn2.TxnNonce
 	_signTxn(t, txn2Low, m1Priv)
 	added2Low := time.Now()
-	mtxn2Low := NewMempoolTransaction(txn2Low, added2Low)
+	mtxn2Low := NewMempoolTransaction(txn2Low, added2Low, false)
 	err = mempool.AddTransaction(mtxn2Low)
 	require.Contains(err.Error(), MempoolFailedReplaceByHigherFee)
 
@@ -392,7 +392,7 @@ func _generateTestTxn(t *testing.T, rand *rand.Rand, feeMin uint64, feeMax uint6
 
 func _wrappedPosMempoolAddTransaction(t *testing.T, mp *PosMempool, txn *MsgDeSoTxn) {
 	added := time.Now()
-	mtxn := NewMempoolTransaction(txn, added)
+	mtxn := NewMempoolTransaction(txn, added, false)
 	require.NoError(t, mp.AddTransaction(mtxn))
 	require.Equal(t, true, _checkPosMempoolIntegrity(t, mp))
 }
