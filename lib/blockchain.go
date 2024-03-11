@@ -5840,6 +5840,9 @@ func (bc *Blockchain) CreateAtomicTxnsWrapper(
 		}
 
 		// Set the transaction extra data and append to the chained list.
+		if len(txnDuplicate.ExtraData) == 0 {
+			txnDuplicate.ExtraData = make(map[string][]byte)
+		}
 		txnDuplicate.ExtraData[NextAtomicTxnPreHash] = nextHash.ToBytes()
 		txnDuplicate.ExtraData[PreviousAtomicTxnPreHash] = prevHash.ToBytes()
 		chainedUnsignedTransactions = append(chainedUnsignedTransactions, txnDuplicate)

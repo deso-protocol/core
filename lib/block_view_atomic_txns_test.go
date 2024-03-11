@@ -10,6 +10,165 @@ import (
 	"testing"
 )
 
+func TestVerifyAtomicTxnsWrapperRuleErrors(t *testing.T) {
+	// Initialize test chain, miner, and testMeta.
+	testMeta := _setUpMinerAndTestMetaForAtomicTransactionTests(t)
+
+	// Initialize m0, m1, m2, m3, m4.
+	_setUpUsersForAtomicTransactionsTesting(testMeta)
+
+	// Generate 100 dependent atomic transactions.
+	atomicTxns := _generateDependentAtomicTransactions(testMeta, 100)
+
+	// Bundle the transactions together in a (valid) wrapper.
+	atomicTxnsWrapper, _, err := testMeta.chain.CreateAtomicTxnsWrapper(atomicTxns, nil)
+	require.NoError(t, err)
+
+	// Try to use a public key other than the zero public key in the wrapper.
+	// (This should fail -- RuleErrorAtomicTxnsWrapperPublicKeyMustBeZero)
+	atomicTxnsWrapperDuplicate, err := atomicTxnsWrapper.Copy()
+	require.NoError(t, err)
+	atomicTxnsWrapperDuplicate.PublicKey = m0PkBytes
+	_, err = _atomicTransactionsWrapperWithConnectTimestamp(
+		t, testMeta.chain, testMeta.db, testMeta.params, atomicTxnsWrapperDuplicate, 0)
+	require.Contains(t, err.Error(), RuleErrorAtomicTxnsWrapperPublicKeyMustBeZero)
+
+	// Try to sign the wrapper.
+	// (This should fail -- RuleErrorAtomicTxnsWrapperSignatureMustBeNil)
+	atomicTxnsWrapperDuplicate, err = atomicTxnsWrapper.Copy()
+	require.NoError(t, err)
+	_signTxn(t, atomicTxnsWrapperDuplicate, m0Priv)
+	_, err = _atomicTransactionsWrapperWithConnectTimestamp(
+		t, testMeta.chain, testMeta.db, testMeta.params, atomicTxnsWrapperDuplicate, 0)
+	require.Contains(t, err.Error(), RuleErrorAtomicTxnsWrapperSignatureMustBeNil)
+
+	// Try to add inputs to the wrapper.
+	// (This should fail -- RuleErrorAtomicTxnsWrapperMustHaveZeroInputs)
+	atomicTxnsWrapperDuplicate, err = atomicTxnsWrapper.Copy()
+	require.NoError(t, err)
+	atomicTxnsWrapperDuplicate.TxInputs = append(atomicTxnsWrapperDuplicate.TxInputs, &DeSoInput{
+		TxID:  ZeroBlockHash,
+		Index: 0,
+	})
+	_, err = _atomicTransactionsWrapperWithConnectTimestamp(
+		t, testMeta.chain, testMeta.db, testMeta.params, atomicTxnsWrapperDuplicate, 0)
+	require.Contains(t, err.Error(), RuleErrorAtomicTxnsWrapperMustHaveZeroInputs)
+
+	// Try to add outputs to the wrapper.
+	// (This should fail -- RuleErrorAtomicTxnsWrapperMustHaveZeroOutputs)
+	atomicTxnsWrapperDuplicate, err = atomicTxnsWrapper.Copy()
+	require.NoError(t, err)
+	atomicTxnsWrapperDuplicate.TxOutputs = append(atomicTxnsWrapperDuplicate.TxOutputs, &DeSoOutput{
+		PublicKey:   m0PkBytes,
+		AmountNanos: 10000,
+	})
+	_, err = _atomicTransactionsWrapperWithConnectTimestamp(
+		t, testMeta.chain, testMeta.db, testMeta.params, atomicTxnsWrapperDuplicate, 0)
+	require.Contains(t, err.Error(), RuleErrorAtomicTxnsWrapperMustHaveZeroOutputs)
+
+	// Try to trigger overflow when summing the inner transactions.
+	// (This should fail -- RuleErrorAtomicTxnsWrapperHasInternalFeeOverflow)
+	atomicTxnsWrapperDuplicate, err = atomicTxnsWrapper.Copy()
+	require.NoError(t, err)
+	atomicTxnsWrapperDuplicate.TxnMeta.(*AtomicTxnsWrapperMetadata).Txns[0].TxnFeeNanos = math.MaxUint64
+	_, err = _atomicTransactionsWrapperWithConnectTimestamp(
+		t, testMeta.chain, testMeta.db, testMeta.params, atomicTxnsWrapperDuplicate, 0)
+	require.Contains(t, err.Error(), RuleErrorAtomicTxnsWrapperHasInternalFeeOverflow)
+
+	// Try to mismatch the fees in the wrapper and the total fees of the atomic transactions.
+	// (This should fail -- RuleErrorAtomicTxnsWrapperMustHaveEqualFeeToInternalTxns)
+	atomicTxnsWrapperDuplicate, err = atomicTxnsWrapper.Copy()
+	require.NoError(t, err)
+	atomicTxnsWrapperDuplicate.TxnFeeNanos = atomicTxnsWrapperDuplicate.TxnFeeNanos - 1
+	_, err = _atomicTransactionsWrapperWithConnectTimestamp(
+		t, testMeta.chain, testMeta.db, testMeta.params, atomicTxnsWrapperDuplicate, 0)
+	require.Contains(t, err.Error(), RuleErrorAtomicTxnsWrapperMustHaveEqualFeeToInternalTxns)
+
+	// Try to use a non-zeroed nonce for the wrapper.
+	// (This should fail -- RuleErrorAtomicTxnsWrapperMustHaveZeroedNonce)
+	atomicTxnsWrapperDuplicate, err = atomicTxnsWrapper.Copy()
+	require.NoError(t, err)
+	atomicTxnsWrapperDuplicate.TxnNonce.ExpirationBlockHeight = 1
+	_, err = _atomicTransactionsWrapperWithConnectTimestamp(
+		t, testMeta.chain, testMeta.db, testMeta.params, atomicTxnsWrapperDuplicate, 0)
+	require.Contains(t, err.Error(), RuleErrorAtomicTxnsWrapperMustHaveZeroedNonce)
+}
+
+func TestVerifyAtomicTxnsChain(t *testing.T) {
+	// Initialize test chain, miner, and testMeta.
+	testMeta := _setUpMinerAndTestMetaForAtomicTransactionTests(t)
+
+	// Initialize m0, m1, m2, m3, m4.
+	_setUpUsersForAtomicTransactionsTesting(testMeta)
+
+	// Generate 100 dependent atomic transactions.
+	atomicTxns := _generateDependentAtomicTransactions(testMeta, 100)
+
+	// Bundle the transactions together in a (valid) wrapper.
+	atomicTxnsWrapper, _, err := testMeta.chain.CreateAtomicTxnsWrapper(atomicTxns, nil)
+	require.NoError(t, err)
+
+	// Try to put an atomic transaction wrapper INSIDE an atomic transaction wrapper.
+	// (This should fail -- RuleErrorAtomicTxnsHasAtomicTxnsInnerTxn)
+	atomicTxnsWrapperDuplicate, err := atomicTxnsWrapper.Copy()
+	require.NoError(t, err)
+	innerAtomicTxnsWrapper, _, err := testMeta.chain.CreateAtomicTxnsWrapper(atomicTxns[:100], nil)
+	require.NoError(t, err)
+	atomicTxnsWrapperDuplicate.TxnMeta.(*AtomicTxnsWrapperMetadata).Txns =
+		atomicTxnsWrapperDuplicate.TxnMeta.(*AtomicTxnsWrapperMetadata).Txns[100:]
+	atomicTxnsWrapperDuplicate.TxnMeta.(*AtomicTxnsWrapperMetadata).Txns =
+		append([]*MsgDeSoTxn{innerAtomicTxnsWrapper},
+			atomicTxnsWrapperDuplicate.TxnMeta.(*AtomicTxnsWrapperMetadata).Txns...)
+	_, err = _atomicTransactionsWrapperWithConnectTimestamp(
+		t, testMeta.chain, testMeta.db, testMeta.params, atomicTxnsWrapperDuplicate, 0)
+	require.Contains(t, err.Error(), RuleErrorAtomicTxnsHasAtomicTxnsInnerTxn)
+
+	// Try to have a transaction not meant for inclusion in an atomic transaction wrapper
+	// in the atomic transaction wrapper.
+	// (This should fail -- RuleErrorAtomicTxnsHasNonAtomicInnerTxn)
+	atomicTxnsWrapperDuplicate, err = atomicTxnsWrapper.Copy()
+	require.NoError(t, err)
+	atomicTxnsWrapperDuplicate.TxnMeta.(*AtomicTxnsWrapperMetadata).Txns[1].ExtraData = make(map[string][]byte)
+	_, err = _atomicTransactionsWrapperWithConnectTimestamp(
+		t, testMeta.chain, testMeta.db, testMeta.params, atomicTxnsWrapperDuplicate, 0)
+	require.Contains(t, err.Error(), RuleErrorAtomicTxnsHasNonAtomicInnerTxn)
+
+	// Remove the chain length starter pointer for the atomic transactions.
+	// (This should fail -- RuleErrorAtomicTxnsMustStartWithChainLength)
+	atomicTxnsWrapperDuplicate, err = atomicTxnsWrapper.Copy()
+	require.NoError(t, err)
+	delete(
+		atomicTxnsWrapperDuplicate.TxnMeta.(*AtomicTxnsWrapperMetadata).Txns[0].ExtraData,
+		AtomicTxnsChainLength)
+	_, err = _atomicTransactionsWrapperWithConnectTimestamp(
+		t, testMeta.chain, testMeta.db, testMeta.params, atomicTxnsWrapperDuplicate, 0)
+	require.Contains(t, err.Error(), RuleErrorAtomicTxnsMustStartWithChainLength)
+
+	// Add a second start point for the atomic transactions.
+	// (This should fail -- RuleErrorAtomicTxnsHasMoreThanOneStartPoint)
+	atomicTxnsWrapperDuplicate, err = atomicTxnsWrapper.Copy()
+	require.NoError(t, err)
+	atomicTxnsWrapperDuplicate.TxnMeta.(*AtomicTxnsWrapperMetadata).Txns[1].ExtraData[AtomicTxnsChainLength] =
+		atomicTxnsWrapperDuplicate.TxnMeta.(*AtomicTxnsWrapperMetadata).Txns[0].ExtraData[AtomicTxnsChainLength]
+	_, err = _atomicTransactionsWrapperWithConnectTimestamp(
+		t, testMeta.chain, testMeta.db, testMeta.params, atomicTxnsWrapperDuplicate, 0)
+	require.Contains(t, err.Error(), RuleErrorAtomicTxnsHasMoreThanOneStartPoint)
+
+	// Try to change the sequence of transactions, ultimately breaking the chain.
+	// (This should fail -- RuleErrorAtomicTxnsHasBrokenChain)
+	atomicTxnsWrapperDuplicate, err = atomicTxnsWrapper.Copy()
+	require.NoError(t, err)
+	txnCopy, err := atomicTxnsWrapperDuplicate.TxnMeta.(*AtomicTxnsWrapperMetadata).Txns[2].Copy()
+	require.NoError(t, err)
+	atomicTxnsWrapperDuplicate.TxnMeta.(*AtomicTxnsWrapperMetadata).Txns[2] =
+		atomicTxnsWrapperDuplicate.TxnMeta.(*AtomicTxnsWrapperMetadata).Txns[1]
+	atomicTxnsWrapperDuplicate.TxnMeta.(*AtomicTxnsWrapperMetadata).Txns[1] = txnCopy
+	_, err = _atomicTransactionsWrapperWithConnectTimestamp(
+		t, testMeta.chain, testMeta.db, testMeta.params, atomicTxnsWrapperDuplicate, 0)
+	require.Contains(t, err.Error(), RuleErrorAtomicTxnsHasBrokenChain)
+
+}
+
 func TestDependentAtomicTransactionGeneration(t *testing.T) {
 	// Initialize test chain, miner, and testMeta.
 	testMeta := _setUpMinerAndTestMetaForAtomicTransactionTests(t)
@@ -17,7 +176,7 @@ func TestDependentAtomicTransactionGeneration(t *testing.T) {
 	// Initialize m0, m1, m2, m3, m4.
 	_setUpUsersForAtomicTransactionsTesting(testMeta)
 
-	// Generate 1,000 dependent atomic transactions.
+	// Generate 100 dependent atomic transactions.
 	atomicTxns := _generateDependentAtomicTransactions(testMeta, 100)
 
 	// Construct a new view to connect the transactions to.
@@ -26,17 +185,28 @@ func TestDependentAtomicTransactionGeneration(t *testing.T) {
 	require.NoError(t, err)
 	blockHeight := testMeta.chain.BlockTip().Height + 1
 
+	// Get the initial balance for m0.
+	m0InitialBalanceNanos := _getBalance(t, testMeta.chain, testMeta.mempool, m0Pub)
+
 	// Connect the transactions to ensure they can actually be connected.
+	var totalFees uint64
 	for _, txn := range atomicTxns {
 		// Connect the transaction.
 		txHash := txn.Hash()
-		_, _, _, _, err := utxoView.ConnectTransaction(
+		_, _, _, fees, err := utxoView.ConnectTransaction(
 			txn, txHash, blockHeight, 0, true, false)
 		require.NoError(t, err)
+		totalFees += fees
 	}
 
 	// Flush the view to ensure everything is working properly.
 	require.NoError(t, utxoView.FlushToDb(uint64(blockHeight)))
+
+	// Get the final balance for m0.
+	m0FinalBalanceNanos := _getBalance(t, testMeta.chain, testMeta.mempool, m0Pub)
+
+	// Check that fees were paid.
+	require.Equal(t, m0InitialBalanceNanos-totalFees, m0FinalBalanceNanos)
 
 	//
 	// Now we test that the transactions are truly dependent on each-other by reorganizing them.
@@ -385,4 +555,36 @@ func _atomicTransactionsWithConnectTimestamp(
 	// Ensure the transaction can be flushed without issue.
 	require.NoError(utxoView.FlushToDb(uint64(blockHeight)))
 	return utxoOps, txn, blockHeight, nil
+}
+
+func _atomicTransactionsWrapperWithConnectTimestamp(
+	t *testing.T,
+	chain *Blockchain,
+	db *badger.DB,
+	params *DeSoParams,
+	atomicTransactionsWrapper *MsgDeSoTxn,
+	connectTimestamp int64,
+) (
+	_utxoOps []*UtxoOperation,
+	_err error,
+) {
+	assert := assert.New(t)
+	require := require.New(t)
+	_ = assert
+	_ = require
+
+	// Construct a new view to connect the transactions to.
+	utxoView, err := NewUtxoView(db, params, chain.postgres, chain.snapshot, nil)
+	require.NoError(err)
+
+	// Connect the transaction.
+	txHash := atomicTransactionsWrapper.Hash()
+	blockHeight := chain.BlockTip().Height + 1
+	utxoOps, _, _, _, err := utxoView.ConnectTransaction(
+		atomicTransactionsWrapper, txHash, blockHeight, connectTimestamp, true, false)
+	if err != nil {
+		return nil, err
+	}
+
+	return utxoOps, nil
 }

@@ -545,7 +545,6 @@ const (
 	RuleErrorAtomicTxnsWrapperMustHaveZeroOutputs            RuleError = "RuleErrorAtomicTxnsWrapperMustHaveZeroOutputs"
 	RuleErrorAtomicTxnsWrapperHasInternalFeeOverflow         RuleError = "RuleErrorAtomicTxnsWrapperHasInternalFeeOverflow"
 	RuleErrorAtomicTxnsWrapperMustHaveEqualFeeToInternalTxns RuleError = "RuleErrorAtomicTxnsWrapperMustHaveEqualFeeToInternalTxns"
-	RuleErrorAtomicTxnsWrapperMustHaveZeroExtraData          RuleError = "RuleErrorAtomicTxnsWrapperMustHaveZeroExtraData"
 	RuleErrorAtomicTxnsWrapperSignatureMustBeNil             RuleError = "RuleErrorAtomicTxnsWrapperSignatureMustBeNil"
 	RuleErrorAtomicTxnsWrapperMustHaveZeroedNonce            RuleError = "RuleErrorAtomicTxnsWrapperMustHaveZeroedNonce"
 	RuleErrorAtomicTxnsMustStartWithChainLength              RuleError = "RuleErrorAtomicTxnsMustStartWithChainLength"
