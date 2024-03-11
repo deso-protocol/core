@@ -98,6 +98,9 @@ func (mtxn *MempoolTransaction) IsValidated() bool {
 // by Fee-Time algorithm. More on the Fee-Time algorithm can be found in the documentation of TransactionRegister.
 type PosMempool struct {
 	sync.RWMutex
+	startGroup sync.WaitGroup
+	exitGroup  sync.WaitGroup
+
 	status PosMempoolStatus
 	// params of the blockchain
 	params *DeSoParams
@@ -156,6 +159,9 @@ type PosMempool struct {
 	// validation view. Transactions that will fail the validation view connection are not counted towards this limit.
 	maxValidationViewConnects uint64
 
+	// transactionValidationRoutineRefreshIntervalMillis is the frequency with which the transactionValidationRoutine is run.
+	transactionValidationRefreshIntervalMillis uint64
+
 	// augmentedBlockViewRefreshIntervalMillis is the frequency with which the augmentedLatestBlockView is updated.
 	augmentedBlockViewRefreshIntervalMillis uint64
 
@@ -213,6 +219,7 @@ func (mp *PosMempool) Init(
 	feeEstimatorPastBlocks []*MsgDeSoBlock,
 	feeEstimatorNumPastBlocks uint64,
 	maxValidationViewConnects uint64,
+	transactionValidationRefreshIntervalMillis uint64,
 	augmentedBlockViewRefreshIntervalMillis uint64,
 ) error {
 	if mp.status != PosMempoolStatusNotInitialized {
@@ -236,6 +243,7 @@ func (mp *PosMempool) Init(
 	mp.maxMempoolPosSizeBytes = maxMempoolPosSizeBytes
 	mp.mempoolBackupIntervalMillis = mempoolBackupIntervalMillis
 	mp.maxValidationViewConnects = maxValidationViewConnects
+	mp.transactionValidationRefreshIntervalMillis = transactionValidationRefreshIntervalMillis
 	mp.augmentedBlockViewRefreshIntervalMillis = augmentedBlockViewRefreshIntervalMillis
 
 	// TODO: parameterize num blocks. Also, how to pass in blocks.
@@ -284,14 +292,35 @@ func (mp *PosMempool) Start() error {
 			return errors.Wrapf(err, "PosMempool.Start: Problem loading persisted transactions")
 		}
 	}
+	mp.startGroup.Add(2)
+	mp.exitGroup.Add(2)
+	mp.startTransactionValidationRoutine()
 	mp.startAugmentedViewRefreshRoutine()
-
+	mp.startGroup.Wait()
 	mp.status = PosMempoolStatusRunning
 	return nil
 }
 
+func (mp *PosMempool) startTransactionValidationRoutine() {
+	go func() {
+		mp.startGroup.Done()
+		for {
+			select {
+			case <-time.After(time.Duration(mp.transactionValidationRefreshIntervalMillis) * time.Millisecond):
+				if err := mp.validateTransactions(); err != nil {
+					glog.Errorf("PosMempool.startTransactionValidationRoutine: Problem validating transactions: %v", err)
+				}
+			case <-mp.quit:
+				mp.exitGroup.Done()
+				return
+			}
+		}
+	}()
+}
+
 func (mp *PosMempool) startAugmentedViewRefreshRoutine() {
 	go func() {
+		mp.startGroup.Done()
 		for {
 			select {
 			case <-time.After(time.Duration(mp.augmentedBlockViewRefreshIntervalMillis) * time.Millisecond):
@@ -351,6 +380,7 @@ func (mp *PosMempool) startAugmentedViewRefreshRoutine() {
 				// Increment the augmentedLatestBlockViewSequenceNumber.
 				atomic.AddInt64(&mp.augmentedLatestBlockViewSequenceNumber, 1)
 			case <-mp.quit:
+				mp.exitGroup.Done()
 				return
 			}
 		}
@@ -380,6 +410,7 @@ func (mp *PosMempool) Stop() {
 	mp.nonceTracker.Reset()
 	mp.feeEstimator = NewPoSFeeEstimator()
 	close(mp.quit)
+	mp.exitGroup.Wait()
 	mp.status = PosMempoolStatusNotInitialized
 }
 
@@ -723,7 +754,7 @@ func (mp *PosMempool) GetIterator() MempoolIterator {
 // mempool transactions to the readOnlyLatestBlockView, creating a cumulative validationView. Transactions that fail to
 // connect to the validationView are removed from the mempool, as they would have also failed to connect during
 // block production. This function is thread-safe.
-func (mp *PosMempool) Refresh() error {
+func (mp *PosMempool) validateTransactions() error {
 	// We hold a read-lock on the mempool to get the transactions and the latest block view.
 	mp.RLock()
 	if !mp.IsRunning() {
