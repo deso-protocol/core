@@ -3920,6 +3920,89 @@ func (bav *UtxoView) _connectTransaction(
 	return utxoOpsForTxn, totalInput, totalOutput, fees, nil
 }
 
+func (bav *UtxoView) ConnectTransactions(
+	txns []*MsgDeSoTxn, txHashes []*BlockHash, blockHeight uint32, blockTimestampNanoSecs int64,
+	verifySignatures bool, ignoreUtxos bool, ignoreFailing bool) (
+	_combinedUtxoOps [][]*UtxoOperation, _totalInputs []uint64, _totalOutputs []uint64,
+	_fees []uint64, _successFlags []bool, _err error) {
+
+	return bav._connectTransactions(txns, txHashes, blockHeight, blockTimestampNanoSecs, verifySignatures,
+		ignoreUtxos, ignoreFailing, 0)
+}
+
+func (bav *UtxoView) ConnectTransactionsWithLimit(
+	txns []*MsgDeSoTxn, txHashes []*BlockHash, blockHeight uint32, blockTimestampNanoSecs int64,
+	verifySignatures bool, ignoreUtxos bool, ignoreFailing bool, transactionConnectLimit uint32) (
+	_combinedUtxoOps [][]*UtxoOperation, _totalInputs []uint64, _totalOutputs []uint64,
+	_fees []uint64, _successFlags []bool, _err error) {
+
+	return bav._connectTransactions(txns, txHashes, blockHeight, blockTimestampNanoSecs, verifySignatures,
+		ignoreUtxos, ignoreFailing, transactionConnectLimit)
+}
+
+func (bav *UtxoView) _connectTransactions(
+	txns []*MsgDeSoTxn, txHashes []*BlockHash, blockHeight uint32, blockTimestampNanoSecs int64,
+	verifySignatures bool, ignoreUtxos bool, ignoreFailing bool, transactionConnectLimit uint32) (
+	_combinedUtxoOps [][]*UtxoOperation, _totalInputs []uint64, _totalOutputs []uint64,
+	_fees []uint64, _successFlags []bool, _err error) {
+
+	var combinedUtxoOps [][]*UtxoOperation
+	var totalInputs []uint64
+	var totalOutputs []uint64
+	var fees []uint64
+	var successFlags []bool
+	var totalConnectedTxns uint32
+
+	updateValues := func(utxoOps []*UtxoOperation, totalInput uint64, totalOutput uint64, fee uint64, success bool) {
+		combinedUtxoOps = append(combinedUtxoOps, utxoOps)
+		totalInputs = append(totalInputs, totalInput)
+		totalOutputs = append(totalOutputs, totalOutput)
+		fees = append(fees, fee)
+		successFlags = append(successFlags, success)
+	}
+
+	// Connect the transactions in the order they are given.
+	for ii, txn := range txns {
+		// Create a copy of the view to connect the transactions to in the event we have a failing txn.
+		copiedView, err := bav.CopyUtxoView()
+		if err != nil {
+			return nil, nil, nil, nil, nil,
+				errors.Wrapf(err, "ConnectTransactions: Problem copying UtxoView")
+		}
+
+		// Connect the transaction.
+		utxoOpsForTxn, totalInput, totalOutput, fee, err := copiedView.ConnectTransaction(
+			txn, txHashes[ii], blockHeight, blockTimestampNanoSecs, verifySignatures, ignoreUtxos)
+		if err != nil && ignoreFailing {
+			glog.V(2).Infof("ConnectTransactions: Ignoring failing txn %d: %v", ii, err)
+			updateValues(nil, 0, 0, 0, false)
+			continue
+		} else if err != nil {
+			return nil, nil, nil, nil, nil,
+				errors.Wrapf(err, "ConnectTransactions: Problem connecting txn %d on copy view", ii)
+		}
+
+		utxoOpsForTxn, totalInput, totalOutput, fee, err = bav.ConnectTransaction(
+			txn, txHashes[ii], blockHeight, blockTimestampNanoSecs, verifySignatures, ignoreUtxos)
+		if err != nil {
+			return nil, nil, nil, nil, nil,
+				errors.Wrapf(err, "ConnectTransactions: Problem connecting txn %d", ii)
+		}
+		updateValues(utxoOpsForTxn, totalInput, totalOutput, fee, true)
+
+		if totalConnectedTxns == 0 {
+			continue
+		}
+
+		totalConnectedTxns++
+		if totalConnectedTxns >= transactionConnectLimit {
+			break
+		}
+	}
+
+	return combinedUtxoOps, totalInputs, totalOutputs, fees, successFlags, nil
+}
+
 func (bav *UtxoView) ValidateTransactionNonce(txn *MsgDeSoTxn, blockHeight uint64) error {
 	if txn == nil || txn.TxnNonce == nil {
 		return fmt.Errorf("ValidateTransactionNonce: Nonce or txn is nil for public key %v",
