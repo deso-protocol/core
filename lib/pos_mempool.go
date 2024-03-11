@@ -358,26 +358,6 @@ func (mp *PosMempool) startAugmentedViewRefreshRoutine() {
 					// and proceed to the next transaction.
 					if err == nil {
 						newView = copiedView
-						continue
-					}
-					// If the transaction failed to connect, we connect the transaction as a failed txn
-					// directly on newView.
-					if mp.params.IsPoSBlockHeight(mp.latestBlockHeight + 1) {
-						// Copy the view again in case we hit an error.
-						copiedView, err = newView.CopyUtxoView()
-						if err != nil {
-							glog.Errorf("PosMempool.startAugmentedViewRefreshRoutine: Problem copying utxo view inner: %v", err)
-							continue
-						}
-						// Try to connect as failing txn directly to newView
-						_, _, _, err = copiedView._connectFailingTransaction(
-							txn.GetTxn(), uint32(mp.latestBlockHeight+1), false)
-						if err != nil {
-							glog.Errorf(
-								"PosMempool.startAugmentedViewRefreshRoutine: Problem connecting transaction: %v", err)
-							continue
-						}
-						newView = copiedView
 					}
 				}
 				// Grab the augmentedLatestBlockViewMutex write lock and update the augmentedLatestBlockView.

@@ -142,12 +142,6 @@ func createTestBlockHeaderVersion2(t *testing.T, includeTimeoutQC bool) *MsgDeSo
 		0x54, 0x55, 0x56, 0x57, 0x58, 0x59, 0x60, 0x61, 0x62, 0x63,
 		0x64, 0x65,
 	}
-	testTxnConnectStatusByIndex := BlockHash{
-		0x00, 0x03, 0x04, 0x21, 0x06, 0x07, 0x08, 0x09, 0x10, 0x19,
-		0x12, 0x13, 0x14, 0x15, 0x44, 0x17, 0x18, 0x19, 0x20, 0x21,
-		0x02, 0x23, 0x24, 0x25, 0x26, 0x27, 0x33, 0x29, 0x30, 0x31,
-		0x32, 0x33,
-	}
 
 	testBitset := bitset.NewBitset().Set(0, true).Set(3, true)
 	testBLSPublicKey, testBLSSignature := _generateValidatorVotingPublicKeyAndSignature(t)
@@ -187,7 +181,6 @@ func createTestBlockHeaderVersion2(t *testing.T, includeTimeoutQC bool) *MsgDeSo
 		// Nonce and ExtraNonce are unused and set to 0 starting in version 2.
 		Nonce:                       uint64(0),
 		ExtraNonce:                  uint64(0),
-		TxnConnectStatusByIndexHash: &testTxnConnectStatusByIndex,
 		ProposerVotingPublicKey:     testBLSPublicKey,
 		ProposerRandomSeedSignature: testBLSSignature,
 		ProposedInView:              uint64(1432101234),
@@ -452,10 +445,6 @@ func createTestBlockVersion2(t *testing.T, includeTimeoutQC bool) *MsgDeSoBlock 
 
 	// Set V2 header.
 	block.Header = createTestBlockHeaderVersion2(t, includeTimeoutQC)
-
-	// Set the block's TxnConnectStatusByIndex and update its hash in the header.
-	block.TxnConnectStatusByIndex = bitset.NewBitset().Set(0, true).Set(3, true)
-	block.Header.TxnConnectStatusByIndexHash = HashBitset(block.TxnConnectStatusByIndex)
 
 	return &block
 }

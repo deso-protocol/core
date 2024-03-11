@@ -17,7 +17,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/deso-protocol/core/collections/bitset"
 	"github.com/golang/glog"
 
 	"github.com/decred/dcrd/dcrec/secp256k1/v4"
@@ -2081,14 +2080,6 @@ type MsgDeSoHeader struct {
 	// event that ASICs become powerful enough to have birthday problems in the future.
 	ExtraNonce uint64
 
-	// TransactionsConnectStatus is only used for Proof of Stake blocks, starting with
-	// MsgDeSoHeader version 2. For all earlier versions, this field will default to nil.
-	//
-	// The hash of the TxnConnectStatusByIndex field in MsgDeSoBlock. It is stored to ensure
-	// that the TxnConnectStatusByIndex is part of the header hash, which is signed by the
-	// proposer. The full index is stored in the block to offload space complexity.
-	TxnConnectStatusByIndexHash *BlockHash
-
 	// ProposerVotingPublicKey is only used for Proof of Stake blocks, starting with
 	// MsgDeSoHeader version 2. For all earlier versions, this field will default to nil.
 	//
@@ -2305,12 +2296,6 @@ func (msg *MsgDeSoHeader) EncodeHeaderVersion2(preSignature bool) ([]byte, error
 	// The Nonce and ExtraNonce fields are unused in version 2. We skip them
 	// during both encoding and decoding.
 
-	// TxnConnectStatusByIndexHash
-	if msg.TxnConnectStatusByIndexHash == nil {
-		return nil, fmt.Errorf("EncodeHeaderVersion2: TxnConnectStatusByIndexHash must be non-nil")
-	}
-	retBytes = append(retBytes, msg.TxnConnectStatusByIndexHash[:]...)
-
 	// ProposerVotingPublicKey
 	if msg.ProposerVotingPublicKey == nil {
 		return nil, fmt.Errorf("EncodeHeaderVersion2: ProposerVotingPublicKey must be non-nil")
@@ -2519,13 +2504,6 @@ func DecodeHeaderVersion2(rr io.Reader) (*MsgDeSoHeader, error) {
 	// during both encoding and decoding.
 	retHeader.Nonce = 0
 	retHeader.ExtraNonce = 0
-
-	// TxnConnectStatusByIndexHash
-	retHeader.TxnConnectStatusByIndexHash = &BlockHash{}
-	_, err = io.ReadFull(rr, retHeader.TxnConnectStatusByIndexHash[:])
-	if err != nil {
-		return nil, errors.Wrapf(err, "MsgDeSoHeader.FromBytes: Problem decoding TxnConnectStatusByIndexHash")
-	}
 
 	// ProposerVotingPublicKey
 	retHeader.ProposerVotingPublicKey, err = DecodeBLSPublicKey(rr)
@@ -2740,11 +2718,6 @@ type MsgDeSoBlock struct {
 	// entity, which can be useful for nodes that want to restrict who they accept blocks
 	// from.
 	BlockProducerInfo *BlockProducerInfo
-
-	// This bitset field stores information whether each transaction in the block passes
-	// or fails to connect. The bit at i-th position is set to 1 if the i-th transaction
-	// in the block passes connect, and 0 otherwise.
-	TxnConnectStatusByIndex *bitset.Bitset
 }
 
 func (msg *MsgDeSoBlock) EncodeBlockCommmon(preSignature bool) ([]byte, error) {
@@ -2797,29 +2770,12 @@ func (msg *MsgDeSoBlock) EncodeBlockVersion1(preSignature bool) ([]byte, error) 
 	return data, nil
 }
 
-func (msg *MsgDeSoBlock) EncodeBlockVersion2(preSignature bool) ([]byte, error) {
-	data, err := msg.EncodeBlockCommmon(preSignature)
-	if err != nil {
-		return nil, err
-	}
-
-	// TxnConnectStatusByIndex
-	if msg.TxnConnectStatusByIndex == nil {
-		return nil, fmt.Errorf("MsgDeSoBlock.EncodeBlockVersion2: TxnConnectStatusByIndex should not be nil")
-	}
-	data = append(data, EncodeBitset(msg.TxnConnectStatusByIndex)...)
-
-	return data, nil
-}
-
 func (msg *MsgDeSoBlock) ToBytes(preSignature bool) ([]byte, error) {
 	switch msg.Header.Version {
 	case HeaderVersion0:
 		return msg.EncodeBlockVersion0(preSignature)
 	case HeaderVersion1:
 		return msg.EncodeBlockVersion1(preSignature)
-	case HeaderVersion2:
-		return msg.EncodeBlockVersion2(preSignature)
 	default:
 		return nil, fmt.Errorf("MsgDeSoBlock.ToBytes: Error encoding version: %v", msg.Header.Version)
 	}
@@ -2909,14 +2865,6 @@ func (msg *MsgDeSoBlock) FromBytes(data []byte) error {
 				return errors.Wrapf(err, "MsgDeSoBlock.FromBytes: Error deserializing block producer info")
 			}
 			ret.BlockProducerInfo = blockProducerInfo
-		}
-	}
-
-	// Version 2 blocks have a TxnStatusConnectedIndex attached to them.
-	if ret.Header.Version == HeaderVersion2 {
-		ret.TxnConnectStatusByIndex, err = DecodeBitset(rr)
-		if err != nil {
-			return errors.Wrapf(err, "MsgDeSoBlock.FromBytes: Error decoding TxnConnectStatusByIndex")
 		}
 	}
 

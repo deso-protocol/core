@@ -77,10 +77,8 @@ func TestIsProperlyFormedBlockPoSAndIsBlockTimestampValidRelativeToParentPoS(t *
 			ProposerRandomSeedSignature: signature,
 			ProposerVotingPublicKey:     randomBLSPrivateKey.PublicKey(),
 			TransactionMerkleRoot:       merkleRoot,
-			TxnConnectStatusByIndexHash: HashBitset(bitset.NewBitset().Set(0, true)),
 		},
-		Txns:                    txns,
-		TxnConnectStatusByIndex: bitset.NewBitset().Set(0, true),
+		Txns: txns,
 	}
 
 	// Validate the block with a valid timeout QC and header.
@@ -182,23 +180,6 @@ func TestIsProperlyFormedBlockPoSAndIsBlockTimestampValidRelativeToParentPoS(t *
 			TxnMeta: &BlockRewardMetadataa{},
 		},
 	}
-
-	// TxnConnectStatusByIndex tests
-	// TxnConnectStatusByIndex must be non-nil
-	block.TxnConnectStatusByIndex = nil
-	err = bc.isProperlyFormedBlockPoS(block)
-	require.Equal(t, err, RuleErrorNilTxnConnectStatusByIndex)
-	// TxnConnectStatusByIndexHash must be non-nil
-	block.TxnConnectStatusByIndex = bitset.NewBitset().Set(0, true)
-	block.Header.TxnConnectStatusByIndexHash = nil
-	err = bc.isProperlyFormedBlockPoS(block)
-	require.Equal(t, err, RuleErrorNilTxnConnectStatusByIndexHash)
-	// The hashed version of TxnConnectStatusByIndex must match the actual TxnConnectStatusByIndexHash
-	block.Header.TxnConnectStatusByIndexHash = HashBitset(bitset.NewBitset().Set(0, false))
-	err = bc.isProperlyFormedBlockPoS(block)
-	require.Equal(t, err, RuleErrorTxnConnectStatusByIndexHashMismatch)
-	// Reset TxnConnectStatusByIndexHash
-	block.Header.TxnConnectStatusByIndexHash = HashBitset(block.TxnConnectStatusByIndex)
 
 	// Block must have valid proposer voting public key
 	block.Header.ProposerVotingPublicKey = nil
@@ -386,14 +367,12 @@ func TestUpsertBlockAndBlockNodeToDB(t *testing.T) {
 					SignersList: bitset.NewBitset(),
 				},
 			},
-			TxnConnectStatusByIndexHash: NewBlockHash(bitset.NewBitset().ToBytes()),
 		},
 		Txns: []*MsgDeSoTxn{
 			{
 				TxnMeta: &BlockRewardMetadataa{},
 			},
 		},
-		TxnConnectStatusByIndex: bitset.NewBitset(),
 	}
 	blockNode, err := bc.storeBlockInBlockIndex(block)
 	require.NoError(t, err)
@@ -1891,8 +1870,6 @@ func testProcessBlockPoS(t *testing.T, testMeta *TestMeta) {
 		var malformedOrphanBlock *MsgDeSoBlock
 		malformedOrphanBlock = _generateRealBlock(testMeta, 18, 18, 9273, testMeta.chain.BlockTip().Hash, false)
 		malformedOrphanBlock.Header.PrevBlockHash = randomHash
-		// Modify anything to make the block malformed, but make sure a hash can still be generated.
-		malformedOrphanBlock.Header.TxnConnectStatusByIndexHash = randomHash
 		// Resign the block.
 		updateProposerVotePartialSignatureForBlock(testMeta, malformedOrphanBlock)
 		malformedOrphanBlockHash, err := malformedOrphanBlock.Hash()
@@ -1909,7 +1886,6 @@ func testProcessBlockPoS(t *testing.T, testMeta *TestMeta) {
 		require.True(t, malformedOrphanBlockInIndex.IsStored())
 
 		// If a block can't be hashed, we expect to get an error.
-		malformedOrphanBlock.Header.TxnConnectStatusByIndexHash = nil
 		success, isOrphan, missingBlockHashes, err = testMeta.chain.ProcessBlockPoS(malformedOrphanBlock, 18, true)
 		require.False(t, success)
 		require.False(t, isOrphan)
@@ -1920,7 +1896,6 @@ func testProcessBlockPoS(t *testing.T, testMeta *TestMeta) {
 	{
 		var blockWithFailingTxn *MsgDeSoBlock
 		blockWithFailingTxn = _generateRealBlockWithFailingTxn(testMeta, 18, 18, 123722, orphanBlockHash, false, 1, 0)
-		require.Equal(t, blockWithFailingTxn.TxnConnectStatusByIndex.Get(len(blockWithFailingTxn.Txns)-1), false)
 		success, _, _, err := testMeta.chain.ProcessBlockPoS(blockWithFailingTxn, 18, true)
 		require.True(t, success)
 		blockWithFailingTxnHash, err = blockWithFailingTxn.Hash()
@@ -2595,9 +2570,8 @@ func _getVoteQC(testMeta *TestMeta, blockHeight uint64, qcBlockHash *BlockHash, 
 	return voteQC
 }
 
-// _getFullRealBlockTemplate is a helper function that generates a block template with a valid TxnConnectStatusByIndexHash
-// and a valid TxnConnectStatusByIndex, a valid vote or timeout QC, does all the required signing by validators,
-// and generates the proper ProposerVotePartialSignature.
+// _getFullRealBlockTemplate is a helper function that generates a block template with a valid vote or timeout QC,
+// does all the required signing by validators, and generates the proper ProposerVotePartialSignature.
 func _getFullRealBlockTemplate(
 	testMeta *TestMeta,
 	blockHeight uint64,
@@ -2610,7 +2584,6 @@ func _getFullRealBlockTemplate(
 		testMeta.posMempool.readOnlyLatestBlockView, blockHeight, view, seedSignature)
 	require.NoError(testMeta.t, err)
 	require.NotNil(testMeta.t, blockTemplate)
-	blockTemplate.Header.TxnConnectStatusByIndexHash = HashBitset(blockTemplate.TxnConnectStatusByIndex)
 
 	// Figure out who the leader is supposed to be.
 	leaderPublicKey, leaderPublicKeyBytes := getLeaderForBlockHeightAndView(testMeta, blockHeight, view)
@@ -2686,13 +2659,11 @@ func _getFullRealBlockTemplate(
 	return blockTemplate
 }
 
-// _getFullDummyBlockTemplate is a helper function that generates a block template with a dummy TxnConnectStatusByIndexHash
-// and a dummy ValidatorsVoteQC.
+// _getFullDummyBlockTemplate is a helper function that generates a block template with a dummy ValidatorsVoteQC.
 func _getFullDummyBlockTemplate(testMeta *TestMeta, latestBlockView *UtxoView, blockHeight uint64, view uint64, seedSignature *bls.Signature) BlockTemplate {
 	blockTemplate, err := testMeta.posBlockProducer.createBlockTemplate(latestBlockView, blockHeight, view, seedSignature)
 	require.NoError(testMeta.t, err)
 	require.NotNil(testMeta.t, blockTemplate)
-	blockTemplate.Header.TxnConnectStatusByIndexHash = HashBitset(blockTemplate.TxnConnectStatusByIndex)
 	// Add a dummy vote QC
 	proposerVotingPublicKey := _generateRandomBLSPrivateKey(testMeta.t)
 	dummySig, err := proposerVotingPublicKey.Sign(RandomBytes(32))
