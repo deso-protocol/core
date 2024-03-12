@@ -240,16 +240,16 @@ func (bc *Blockchain) processBlockPoS(block *MsgDeSoBlock, currentView uint64, v
 	// If the block extends from any committed block other than the committed tip,
 	// then we throw it away.
 	lineageFromCommittedTip, err := bc.getLineageFromCommittedTip(block.Header)
-	if err == RuleErrorDoesNotExtendCommittedTip ||
-		err == RuleErrorParentBlockHasViewGreaterOrEqualToChildBlock ||
-		err == RuleErrorParentBlockHeightNotSequentialWithChildBlockHeight ||
-		err == RuleErrorAncestorBlockValidationFailed {
+	if errors.Is(err, RuleErrorDoesNotExtendCommittedTip) ||
+		errors.Is(err, RuleErrorParentBlockHasViewGreaterOrEqualToChildBlock) ||
+		errors.Is(err, RuleErrorParentBlockHeightNotSequentialWithChildBlockHeight) ||
+		errors.Is(err, RuleErrorAncestorBlockValidationFailed) {
 		// In this case, the block extends a committed block that is NOT the tip
 		// block. We will never accept this block. To prevent spam, we do not
 		// store this block as validate failed. We just throw it away.
 		return false, false, nil, errors.Wrap(err, "processBlockPoS: ")
 	}
-	if err == RuleErrorMissingAncestorBlock {
+	if errors.Is(err, RuleErrorMissingAncestorBlock) {
 		// In this case, the block is an orphan that does not extend from any blocks
 		// on our best chain. Try to process the orphan by running basic validations.
 		// If it passes basic integrity checks, we'll store it with the hope that we
@@ -263,9 +263,18 @@ func (bc *Blockchain) processBlockPoS(block *MsgDeSoBlock, currentView uint64, v
 			"processBlockPoS: Unexpected problem getting lineage from committed tip: ")
 	}
 
+	// We expect the utxoView for the parent block to be valid because we check that all ancestor blocks have
+	// been validated.
+	utxoView, err := bc.getUtxoViewAtBlockHash(*block.Header.PrevBlockHash)
+	if err != nil {
+		// This should never happen. If the parent is validated and extends from the tip, then we should
+		// be able to build a UtxoView for it. This failure can only happen due to transient or badger issues.
+		// We return that validation didn't fail and the error.
+		return false, false, nil, errors.Wrap(err, "validateLeaderAndQC: Problem getting UtxoView")
+	}
 	// First, we perform a validation of the leader and the QC to prevent spam.
 	// If the block fails this check, we throw it away.
-	passedSpamPreventionCheck, err := bc.validateLeaderAndQC(block)
+	passedSpamPreventionCheck, err := bc.validateLeaderAndQC(block, utxoView)
 	if err != nil {
 		// If we hit an error, we can't store it since we're not sure if it passed the spam prevention check.
 		return false, false, nil, errors.Wrap(err, "processBlockPoS: Problem validating leader and QC")
@@ -276,7 +285,7 @@ func (bc *Blockchain) processBlockPoS(block *MsgDeSoBlock, currentView uint64, v
 	}
 
 	// Validate the block and store it in the block index. The block is guaranteed to not be an orphan.
-	blockNode, err := bc.validateAndIndexBlockPoS(block)
+	blockNode, err := bc.validateAndIndexBlockPoS(block, utxoView)
 	if err != nil {
 		return false, false, nil, errors.Wrap(err,
 			"processBlockPoS: Problem validating block: ")
@@ -559,16 +568,7 @@ func (bc *Blockchain) storeValidateFailedBlockWithWrappedError(block *MsgDeSoBlo
 	return blockNode, nil
 }
 
-func (bc *Blockchain) validateLeaderAndQC(block *MsgDeSoBlock) (_passedSpamPreventionCheck bool, _err error) {
-	// We expect the utxoView for the parent block to be valid because we check that all ancestor blocks have
-	// been validated.
-	utxoView, err := bc.getUtxoViewAtBlockHash(*block.Header.PrevBlockHash)
-	if err != nil {
-		// This should never happen. If the parent is validated and extends from the tip, then we should
-		// be able to build a UtxoView for it. This failure can only happen due to transient or badger issues.
-		// We return that validation didn't fail and the error.
-		return false, errors.Wrap(err, "validateLeaderAndQC: Problem getting UtxoView")
-	}
+func (bc *Blockchain) validateLeaderAndQC(block *MsgDeSoBlock, utxoView *UtxoView) (_passedSpamPreventionCheck bool, _err error) {
 	currentEpochEntry, err := utxoView.GetCurrentEpochEntry()
 	if err != nil {
 		return false, errors.Wrap(err,
@@ -643,7 +643,7 @@ func (bc *Blockchain) validateLeaderAndQC(block *MsgDeSoBlock) (_passedSpamPreve
 //     return the new BlockNode.
 //   - Error case: Something goes wrong that doesn't result in the block being marked VALIDATE or VALIDATE_FAILED. In
 //     this case, we will add the block to the block index with status STORED and return the BlockNode.
-func (bc *Blockchain) validateAndIndexBlockPoS(block *MsgDeSoBlock) (*BlockNode, error) {
+func (bc *Blockchain) validateAndIndexBlockPoS(block *MsgDeSoBlock, utxoView *UtxoView) (*BlockNode, error) {
 	blockHash, err := block.Header.Hash()
 	if err != nil {
 		return nil, errors.Wrapf(err, "validateAndIndexBlockPoS: Problem hashing block %v", block)
@@ -701,21 +701,6 @@ func (bc *Blockchain) validateAndIndexBlockPoS(block *MsgDeSoBlock) (*BlockNode,
 	}
 	if !isValidRandomSeedSignature {
 		return bc.storeValidateFailedBlockWithWrappedError(block, errors.New("invalid random seed signature"))
-	}
-
-	// We expect the utxoView for the parent block to be valid because we check that all ancestor blocks have
-	// been validated.
-	utxoView, err := bc.getUtxoViewAtBlockHash(*block.Header.PrevBlockHash)
-	if err != nil {
-		// This should never happen. If the parent is validated and extends from the tip, then we should
-		// be able to build a UtxoView for it. This failure can only happen due to transient or badger issues.
-		// We store the block and return an error.
-		var innerErr error
-		blockNode, innerErr = bc.storeBlockInBlockIndex(block)
-		if innerErr != nil {
-			return nil, errors.Wrapf(innerErr, "validateAndIndexBlockPoS: Problem adding block to block index: %v", err)
-		}
-		return blockNode, errors.Wrap(err, "validateAndIndexBlockPoS: Problem getting UtxoView")
 	}
 
 	// Check if the block is properly formed and passes all basic validations.
@@ -776,9 +761,16 @@ func (bc *Blockchain) validatePreviouslyIndexedBlockPoS(blockHash *BlockHash) (*
 		// provided the block was cached in the block index and stored in the DB first.
 		return nil, errors.Wrapf(err, "validatePreviouslyIndexedBlockPoS: Problem fetching block from DB")
 	}
+	// Build utxoView for the block's parent.
+	utxoView, err := bc.getUtxoViewAtBlockHash(*block.Header.PrevBlockHash)
+	if err != nil {
+		// This should never happen. If the parent is validated and extends from the tip, then we should
+		// be able to build a UtxoView for it. This failure can only happen due to transient or badger issues.
+		return nil, errors.Wrap(err, "validatePreviouslyIndexedBlockPoS: Problem getting UtxoView")
+	}
 
 	// If the block isn't validated or validate failed, we need to run the anti-spam checks on it.
-	passedSpamPreventionCheck, err := bc.validateLeaderAndQC(block)
+	passedSpamPreventionCheck, err := bc.validateLeaderAndQC(block, utxoView)
 	if err != nil {
 		// If we hit an error, that means there was an intermittent issue when trying to
 		// validate the QC or the leader.
@@ -796,7 +788,7 @@ func (bc *Blockchain) validatePreviouslyIndexedBlockPoS(blockHash *BlockHash) (*
 	}
 
 	// We run the full validation algorithm on the block.
-	return bc.validateAndIndexBlockPoS(block)
+	return bc.validateAndIndexBlockPoS(block, utxoView)
 }
 
 // isValidBlockPoS performs all basic block integrity checks. Any error
