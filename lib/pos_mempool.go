@@ -297,50 +297,40 @@ func (mp *PosMempool) startAugmentedViewRefreshRoutine() {
 				mp.RLock()
 				readOnlyViewPointer := mp.readOnlyLatestBlockView
 				mp.RUnlock()
-				newView, err := readOnlyViewPointer.CopyUtxoView()
+
+				cumulativeUtxoView, err := readOnlyViewPointer.CopyUtxoView()
 				if err != nil {
 					glog.Errorf("PosMempool.startAugmentedViewRefreshRoutine: Problem copying utxo view outer: %v", err)
 					continue
 				}
+
+				// Apply all the transactions in the mempool one by one to the newView.
 				for _, txn := range mp.GetTransactions() {
-					copiedView, err := newView.CopyUtxoView()
+					copiedView, err := cumulativeUtxoView.CopyUtxoView()
 					if err != nil {
 						glog.Errorf("PosMempool.startAugmentedViewRefreshRoutine: Problem copying utxo view: %v", err)
 						continue
 					}
+
 					_, _, _, _, err = copiedView.ConnectTransaction(
 						txn.GetTxn(), txn.Hash(), uint32(mp.latestBlockHeight)+1, time.Now().UnixNano(), false,
 						false)
-					// If the transaction successfully connects, we set the newView to the copiedView
-					// and proceed to the next transaction.
-					if err == nil {
-						newView = copiedView
+
+					// Sad path: the transaction failed to connect. We skip it.
+					if err != nil {
 						continue
 					}
-					// If the transaction failed to connect, we connect the transaction as a failed txn
-					// directly on newView.
-					if mp.params.IsPoSBlockHeight(mp.latestBlockHeight + 1) {
-						// Copy the view again in case we hit an error.
-						copiedView, err = newView.CopyUtxoView()
-						if err != nil {
-							glog.Errorf("PosMempool.startAugmentedViewRefreshRoutine: Problem copying utxo view inner: %v", err)
-							continue
-						}
-						// Try to connect as failing txn directly to newView
-						_, _, _, err = copiedView._connectFailingTransaction(
-							txn.GetTxn(), uint32(mp.latestBlockHeight+1), false)
-						if err != nil {
-							glog.Errorf(
-								"PosMempool.startAugmentedViewRefreshRoutine: Problem connecting transaction: %v", err)
-							continue
-						}
-						newView = copiedView
-					}
+
+					// Happy path: the transaction successfully connected. We set the newView to the copiedView
+					// and proceed to the next transaction.
+					cumulativeUtxoView = copiedView
 				}
+
 				// Grab the augmentedLatestBlockViewMutex write lock and update the augmentedLatestBlockView.
 				mp.augmentedReadOnlyLatestBlockViewMutex.Lock()
-				mp.augmentedReadOnlyLatestBlockView = newView
+				mp.augmentedReadOnlyLatestBlockView = cumulativeUtxoView
 				mp.augmentedReadOnlyLatestBlockViewMutex.Unlock()
+
 				// Increment the augmentedLatestBlockViewSequenceNumber.
 				atomic.AddInt64(&mp.augmentedLatestBlockViewSequenceNumber, 1)
 			case <-mp.quit:
