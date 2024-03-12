@@ -137,6 +137,9 @@ func (fc *FastHotStuffConsensus) Stop() {
 // construct a block at a certain block height. This function validates the block proposal signal,
 // constructs, processes locally, and then broadcasts the block.
 func (fc *FastHotStuffConsensus) HandleLocalBlockProposalEvent(event *consensus.FastHotStuffEvent) error {
+	glog.V(2).Infof("FastHotStuffConsensus.HandleLocalBlockProposalEvent: %s", event.ToString())
+	glog.V(2).Infof("FastHotStuffConsensus.HandleLocalBlockProposalEvent: %s", fc.fastHotStuffEventLoop.ToString())
+
 	// Hold a read and write lock on the consensus. This is because we need to check
 	// the current view of the consensus event loop, and to update the blockchain.
 	fc.lock.Lock()
@@ -165,6 +168,9 @@ func (fc *FastHotStuffConsensus) HandleLocalBlockProposalEvent(event *consensus.
 // construct a timeout block at a certain block height. This function validates the timeout block proposal
 // signal, constructs, processes locally, and then broadcasts the block.
 func (fc *FastHotStuffConsensus) HandleLocalTimeoutBlockProposalEvent(event *consensus.FastHotStuffEvent) error {
+	glog.V(2).Infof("FastHotStuffConsensus.HandleLocalTimeoutBlockProposalEvent: %s", event.ToString())
+	glog.V(2).Infof("FastHotStuffConsensus.HandleLocalTimeoutBlockProposalEvent: %s", fc.fastHotStuffEventLoop.ToString())
+
 	// Hold a read and write lock on the consensus. This is because we need to check
 	// the current view of the consensus event loop, and to update the blockchain.
 	fc.lock.Lock()
@@ -316,6 +322,9 @@ func (fc *FastHotStuffConsensus) handleBlockProposalEvent(
 // 3. Process the vote in the consensus module
 // 4. Broadcast the vote msg to the network
 func (fc *FastHotStuffConsensus) HandleLocalVoteEvent(event *consensus.FastHotStuffEvent) error {
+	glog.V(2).Infof("FastHotStuffConsensus.HandleLocalVoteEvent: %s", event.ToString())
+	glog.V(2).Infof("FastHotStuffConsensus.HandleLocalVoteEvent: %s", fc.fastHotStuffEventLoop.ToString())
+
 	// Hold a read lock on the consensus. This is because we need to check the
 	// current view and block height of the consensus module.
 	fc.lock.Lock()
@@ -377,7 +386,8 @@ func (fc *FastHotStuffConsensus) HandleLocalVoteEvent(event *consensus.FastHotSt
 // HandleValidatorVote is called when we receive a validator vote message from a peer. This function processes
 // the vote locally in the FastHotStuffEventLoop.
 func (fc *FastHotStuffConsensus) HandleValidatorVote(pp *Peer, msg *MsgDeSoValidatorVote) error {
-	glog.V(2).Infof("FastHotStuffConsensus.HandleValidatorVote: Received vote msg %s", msg.ToString())
+	glog.V(2).Infof("FastHotStuffConsensus.HandleValidatorVote: %s", msg.ToString())
+	glog.V(2).Infof("FastHotStuffConsensus.HandleValidatorVote: %s", fc.fastHotStuffEventLoop.ToString())
 
 	// No need to hold a lock on the consensus because this function is a pass-through
 	// for the FastHotStuffEventLoop which guarantees thread-safety for its callers
@@ -404,6 +414,9 @@ func (fc *FastHotStuffConsensus) HandleValidatorVote(pp *Peer, msg *MsgDeSoValid
 // 3. Process the timeout in the consensus module
 // 4. Broadcast the timeout msg to the network
 func (fc *FastHotStuffConsensus) HandleLocalTimeoutEvent(event *consensus.FastHotStuffEvent) error {
+	glog.V(2).Infof("FastHotStuffConsensus.HandleLocalTimeoutEvent: %s", event.ToString())
+	glog.V(2).Infof("FastHotStuffConsensus.HandleLocalTimeoutEvent: %s", fc.fastHotStuffEventLoop.ToString())
+
 	// Hold a read lock on the consensus. This is because we need to check the
 	// current view and block height of the consensus module.
 	fc.lock.Lock()
@@ -498,7 +511,8 @@ func (fc *FastHotStuffConsensus) HandleLocalTimeoutEvent(event *consensus.FastHo
 // HandleValidatorTimeout is called when we receive a validator timeout message from a peer. This function
 // processes the timeout locally in the FastHotStuffEventLoop.
 func (fc *FastHotStuffConsensus) HandleValidatorTimeout(pp *Peer, msg *MsgDeSoValidatorTimeout) error {
-	glog.V(2).Infof("FastHotStuffConsensus.HandleLocalTimeoutEvent: Received timeout msg: %s", msg.ToString())
+	glog.V(2).Infof("FastHotStuffConsensus.HandleValidatorTimeout: %s", msg.ToString())
+	glog.V(2).Infof("FastHotStuffConsensus.HandleValidatorTimeout: %s", fc.fastHotStuffEventLoop.ToString())
 
 	// Hold a write lock on the consensus, since we need to update the timeout message in the
 	// FastHotStuffEventLoop.
@@ -531,6 +545,9 @@ func (fc *FastHotStuffConsensus) HandleValidatorTimeout(pp *Peer, msg *MsgDeSoVa
 }
 
 func (fc *FastHotStuffConsensus) HandleBlock(pp *Peer, msg *MsgDeSoBlock) (_isOprhan bool, _err error) {
+	glog.V(2).Infof("FastHotStuffConsensus.HandleBlock: Received block: \n%s", msg.String())
+	glog.V(2).Infof("FastHotStuffConsensus.HandleBlock: %s", fc.fastHotStuffEventLoop.ToString())
+
 	// Hold a lock on the consensus, because we will need to mutate the Blockchain
 	// and the FastHotStuffEventLoop data structures.
 	fc.lock.Lock()

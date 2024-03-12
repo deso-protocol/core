@@ -63,3 +63,7 @@ func (fc *MockFastHotStuffEventLoop) IsInitialized() bool {
 func (fc *MockFastHotStuffEventLoop) IsRunning() bool {
 	return fc.OnIsRunning()
 }
+
+func (fc *MockFastHotStuffEventLoop) ToString() string {
+	return ""
+}
