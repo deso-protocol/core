@@ -1,6 +1,7 @@
 package consensus
 
 import (
+	"fmt"
 	"time"
 
 	"github.com/golang/glog"
@@ -531,6 +532,46 @@ func (fc *fastHotStuffEventLoop) IsRunning() bool {
 	defer fc.lock.RUnlock()
 
 	return fc.status == eventLoopStatusRunning
+}
+
+func (fc *fastHotStuffEventLoop) ToString() string {
+	fc.lock.RLock()
+	defer fc.lock.RUnlock()
+
+	if fc.status != eventLoopStatusRunning {
+		return "FastHotStuffEventLoop is not running"
+	}
+
+	// Get the Tip Block
+	tipBlock := fc.tip.block
+
+	// Get the votes for the tip
+	tipBlockVotePayload := GetVoteSignaturePayload(tipBlock.GetView(), tipBlock.GetBlockHash())
+	votesForTip := fc.votesSeenByBlockHash[tipBlockVotePayload]
+
+	// Get the timeouts for the current and previous view
+	timeoutsForCurrentView := fc.timeoutsSeenByView[fc.currentView]
+	timeoutsForPreviousView := fc.timeoutsSeenByView[fc.currentView-1]
+
+	return fmt.Sprintf(
+		"\n====================================== Printing FastHotStuffEventLoop State ======================================"+
+			"\n  Status: %d, CurrentView: %d"+
+			"\n  Tip Height: %d, Tip Hash: %v, Tip View: %d, Num Safe Blocks: %d"+
+			"\n  Crank Duration: %v, Timeout Interval: %v"+
+			"\n  Votes For Tip: %d, Timeouts For Current View: %d, Timeouts For Prev View: %d"+
+			"\n=================================================================================================================\n",
+		fc.status,
+		fc.currentView,
+		tipBlock.GetHeight(),
+		tipBlock.GetBlockHash(),
+		tipBlock.GetView(),
+		len(fc.safeBlocks),
+		fc.crankTimerTask.GetDuration(),
+		fc.nextTimeoutTask.GetDuration(),
+		len(votesForTip),
+		len(timeoutsForCurrentView),
+		len(timeoutsForPreviousView),
+	)
 }
 
 // resetScheduledTasks recomputes the nextBlockConstructionTimeStamp and nextTimeoutTimeStamp
