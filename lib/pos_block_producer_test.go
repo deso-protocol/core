@@ -200,8 +200,9 @@ func TestGetBlockTransactions(t *testing.T) {
 	_testProduceBlockNoSizeLimit(t, mempool, pbp, latestBlockView, 3,
 		len(passingTxns), 0, 0)
 
-	// Now test the case where we have a bunch of transactions that don't pass.
-	// A failing transaction will try to send an excessive balance in a basic transfer.
+	// Now test the case where we have a bunch of transactions that don't pass. A failing transaction will
+	// try to send an excessive balance in a basic transfer. The transaction will be added to the mempool,
+	// but it will not be included in the block.
 	failingTxns := []*MsgDeSoTxn{}
 	for ii := 0; ii < failingTransactions; ii++ {
 		failingTxn := _generateTestTxn(t, rand, feeMin, feeMax, m0PubBytes, m0Priv, 100, 20)
@@ -210,11 +211,10 @@ func TestGetBlockTransactions(t *testing.T) {
 			AmountNanos: 1e10,
 		})
 		_signTxn(t, failingTxn, m0Priv)
-		effectiveFee := failingTxn.TxnFeeNanos * globalParams.FailingTransactionBMFMultiplierBasisPoints / 10000
-		_, utilityFee := computeBMF(effectiveFee)
-		totalUtilityFee += utilityFee
-		failingTxns = append(failingTxns, failingTxn)
 		_wrappedPosMempoolAddTransaction(t, mempool, failingTxn)
+
+		// Add the txn to the failingTxns slice so we can check that it's not included in the block.
+		failingTxns = append(failingTxns, failingTxn)
 	}
 	_testProduceBlockNoSizeLimit(t, mempool, pbp, latestBlockView, 3,
 		len(passingTxns), len(failingTxns), 0)
@@ -234,12 +234,15 @@ func TestGetBlockTransactions(t *testing.T) {
 			AmountNanos: m1InitialBalance - invalidTxn.TxnFeeNanos - 1,
 		})
 		_signTxn(t, invalidTxn, m1Priv)
-		invalidTxns = append(invalidTxns, invalidTxn)
 		_wrappedPosMempoolAddTransaction(t, mempool, invalidTxn)
+
+		// Add the txn to the invalidTxns slice so we can check that it's not included in the block.
+		invalidTxns = append(invalidTxns, invalidTxn)
 	}
 
 	_testProduceBlockNoSizeLimit(t, mempool, pbp, latestBlockView, 3,
 		len(passingTxns)+1, len(failingTxns), len(invalidTxns)-1)
+
 	// Now test the case where we have too many transactions in the mempool compared to the max block size.
 	// In this case, some transactions should not make it into the block, despite being valid. The transactions
 	// that are rejected should have the lowest Fee-Time priority.
@@ -285,7 +288,7 @@ func _testProduceBlockNoSizeLimit(t *testing.T, mp *PosMempool, pbp *PosBlockPro
 	numPassing int, numFailing int, numInvalid int) (_txns []*MsgDeSoTxn, _txnConnectStatusByIndex *bitset.Bitset, _maxUtilityFee uint64) {
 	require := require.New(t)
 
-	totalAcceptedTxns := numPassing + numFailing
+	totalAcceptedTxns := numPassing
 	totalTxns := numPassing + numFailing + numInvalid
 	require.Equal(totalTxns, len(mp.GetTransactions()))
 

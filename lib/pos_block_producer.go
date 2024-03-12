@@ -175,15 +175,22 @@ func (pbp *PosBlockProducer) getBlockTransactions(
 	// Get Fee-Time ordered transactions from the mempool
 	feeTimeTxns := pbp.mp.GetTransactions()
 
-	// Try to connect transactions one by one.
+	// Output slice for the transactions in the order they will be included in the block.
 	blocksTxns := []*MsgDeSoTxn{}
+
+	// TODO: deprecate txnConnectStatusByIndex in a later PR.
 	txnConnectStatusByIndex := bitset.NewBitset()
+
 	maxUtilityFee := uint64(0)
 	currentBlockSize := uint64(0)
-	blockUtxoView, err := latestBlockView.CopyUtxoView()
+
+	// Create a new UtxoView to use a cumulative view for connecting transactions.
+	cumulativeBlockUtxoView, err := latestBlockView.CopyUtxoView()
 	if err != nil {
 		return nil, nil, 0, errors.Wrapf(err, "Error copying UtxoView: ")
 	}
+
+	// Try to connect transactions one by one.
 	for _, txn := range feeTimeTxns {
 		txnBytes, err := txn.ToBytes(false)
 		if err != nil {
@@ -195,63 +202,38 @@ func (pbp *PosBlockProducer) getBlockTransactions(
 			continue
 		}
 
-		blockUtxoViewCopy, err := blockUtxoView.CopyUtxoView()
-		if err != nil {
-			return nil, nil, 0, errors.Wrapf(err, "Error copying UtxoView: ")
-		}
-		_, _, _, fees, err := blockUtxoViewCopy._connectTransaction(
-			txn.GetTxn(), txn.Hash(), uint32(newBlockHeight), newBlockTimestampNanoSecs,
-			true, false)
-
-		// Check if the transaction connected.
-		if err == nil {
-			blockUtxoView = blockUtxoViewCopy
-			txnConnectStatusByIndex.Set(len(blocksTxns), true)
-			blocksTxns = append(blocksTxns, txn.GetTxn())
-			currentBlockSize += uint64(len(txnBytes))
-
-			// If the transactor is the block producer, then they won't receive the utility
-			// fee.
-			if blockProducerPublicKey.Equal(*NewPublicKey(txn.PublicKey)) {
-				continue
-			}
-
-			// Compute BMF for the transaction.
-			_, utilityFee := computeBMF(fees)
-			maxUtilityFee, err = SafeUint64().Add(maxUtilityFee, utilityFee)
-			if err != nil {
-				return nil, nil, 0, errors.Wrapf(err, "Error computing max utility fee: ")
-			}
-			continue
-		}
-
-		// If the transaction didn't connect, we will try to add it as a failing transaction.
-		blockUtxoViewCopy, err = blockUtxoView.CopyUtxoView()
+		// Create a temporary UtxoView to use for testing whether transactions connect
+		// or not.
+		tempBlockUtxoView, err := cumulativeBlockUtxoView.CopyUtxoView()
 		if err != nil {
 			return nil, nil, 0, errors.Wrapf(err, "Error copying UtxoView: ")
 		}
 
-		_, _, utilityFee, err := blockUtxoViewCopy._connectFailingTransaction(txn.GetTxn(), uint32(newBlockHeight), true)
+		// Check if the transaction connects.
+		_, _, _, fees, err := tempBlockUtxoView._connectTransaction(
+			txn.GetTxn(), txn.Hash(), uint32(newBlockHeight), newBlockTimestampNanoSecs, true, false,
+		)
+
+		// Sad path: the transaction did not connect. We skip it and move on to the next one.
 		if err != nil {
-			// If the transaction still doesn't connect, this means we encountered an invalid transaction. We will skip
-			// it and let some other process figure out what to do with it. Removing invalid transactions is a fast
-			// process, so we don't need to worry about it here.
 			continue
 		}
 
-		// If we get to this point, it means the transaction didn't connect but it was a valid transaction. We will
-		// add it to the block as a failing transaction.
-		blockUtxoView = blockUtxoViewCopy
-		txnConnectStatusByIndex.Set(len(blocksTxns), false)
+		// Happy path: the transaction connected. We update the cumulativeBlockUtxoView and add the transaction to the block.
+		cumulativeBlockUtxoView = tempBlockUtxoView
+
+		// TODO: deprecated txnConnectStatusByIndex in a later PR.
+		txnConnectStatusByIndex.Set(len(blocksTxns), true)
 		blocksTxns = append(blocksTxns, txn.GetTxn())
 		currentBlockSize += uint64(len(txnBytes))
 
-		// If the transactor is the block producer, then they won't receive the utility
-		// fee.
+		// If the transactor is the block producer, then they won't receive the utility fee.
 		if blockProducerPublicKey.Equal(*NewPublicKey(txn.PublicKey)) {
 			continue
 		}
 
+		// Compute BMF for the transaction.
+		_, utilityFee := computeBMF(fees)
 		maxUtilityFee, err = SafeUint64().Add(maxUtilityFee, utilityFee)
 		if err != nil {
 			return nil, nil, 0, errors.Wrapf(err, "Error computing max utility fee: ")
