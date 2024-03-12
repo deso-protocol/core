@@ -22,6 +22,7 @@ type FastHotStuffConsensus struct {
 	signer                              *BLSSigner
 	blockProductionIntervalMilliseconds uint64
 	timeoutBaseDurationMilliseconds     uint64
+	cachedValidatorsBySnapshotAtEpoch   map[uint64][]*ValidatorEntry
 }
 
 func NewFastHotStuffConsensus(
@@ -42,6 +43,7 @@ func NewFastHotStuffConsensus(
 		signer:                              signer,
 		blockProductionIntervalMilliseconds: blockProductionIntervalMilliseconds,
 		timeoutBaseDurationMilliseconds:     timeoutBaseDurationMilliseconds,
+		cachedValidatorsBySnapshotAtEpoch:   make(map[uint64][]*ValidatorEntry),
 	}
 }
 
@@ -809,7 +811,7 @@ func (fc *FastHotStuffConsensus) fetchValidatorListsForSafeBlocks(blocks []*MsgD
 		// Otherwise, fetch it from the UtxoView.
 		if validatorSetAtBlock, ok = validatorSetEntriesBySnapshotEpochNumber[snapshotEpochNumber]; !ok {
 			// We don't have the validator set for the block cached. Fetch it from the UtxoView.
-			validatorSetAtBlock, err = utxoView.GetAllSnapshotValidatorSetEntriesByStakeAtEpochNumber(snapshotEpochNumber)
+			validatorSetAtBlock, err = fc.getAllSnapshotValidatorSetEntriesByStakeAtEpochNumber(utxoView, snapshotEpochNumber)
 			if err != nil {
 				return nil, errors.Errorf("Error fetching validator set for block: %v", err)
 			}
@@ -866,11 +868,10 @@ func (fc *FastHotStuffConsensus) updateActiveValidatorConnections() error {
 	}
 
 	// Fetch the current snapshot epoch's validator set.
-	currentValidatorList, err := utxoView.GetAllSnapshotValidatorSetEntriesByStakeAtEpochNumber(snapshotEpochNumber)
+	currentValidatorList, err := fc.getAllSnapshotValidatorSetEntriesByStakeAtEpochNumber(utxoView, snapshotEpochNumber)
 	if err != nil {
-		return errors.Errorf("FastHotStuffConsensus.Start: Error fetching validator list: %v", err)
+		return errors.Errorf("FastHotStuffConsensus.Start: Error fetching current validator list: %v", err)
 	}
-
 	// Fetch the next snapshot epoch's validator set. This is useful when we're close to epoch transitions and
 	// allows us to pre-connect to the next epoch's validator set. In the event that there is a timeout at
 	// the epoch transition, reverting us to the previous epoch, this allows us to maintain connections to the
@@ -880,7 +881,7 @@ func (fc *FastHotStuffConsensus) updateActiveValidatorConnections() error {
 	// within 300 blocks of the next epoch. This way, we don't prematurely attempt connections to the next
 	// epoch's validators. In production, this will reduce the lead time with which we connect to the next epoch's
 	// validator set from 1 hour to 5 minutes.
-	nextValidatorList, err := utxoView.GetAllSnapshotValidatorSetEntriesByStakeAtEpochNumber(snapshotEpochNumber + 1)
+	nextValidatorList, err := fc.getAllSnapshotValidatorSetEntriesByStakeAtEpochNumber(utxoView, snapshotEpochNumber+1)
 	if err != nil {
 		return errors.Errorf("FastHotStuffConsensus.Start: Error fetching validator list: %v", err)
 	}
@@ -900,6 +901,25 @@ func (fc *FastHotStuffConsensus) updateActiveValidatorConnections() error {
 	fc.networkManager.SetActiveValidatorsMap(validatorsMap)
 
 	return nil
+}
+
+func (fc *FastHotStuffConsensus) getAllSnapshotValidatorSetEntriesByStakeAtEpochNumber(
+	utxoView *UtxoView, snapshotEpochNumber uint64,
+) ([]*ValidatorEntry, error) {
+	validatorList, exists := fc.cachedValidatorsBySnapshotAtEpoch[snapshotEpochNumber]
+	if exists {
+		return validatorList, nil
+	}
+	// Fetch the validator set for the snapshot epoch number
+	var err error
+	validatorList, err = utxoView.GetAllSnapshotValidatorSetEntriesByStakeAtEpochNumber(snapshotEpochNumber)
+	if err != nil {
+		return nil, errors.Errorf("FastHotStuffConsensus.Start: Error fetching validator list: %v", err)
+	}
+	// Cache the validator set for the snapshot epoch number
+	fc.cachedValidatorsBySnapshotAtEpoch[snapshotEpochNumber] = validatorList
+
+	return validatorList, nil
 }
 
 func (fc *FastHotStuffConsensus) trySendMessageToPeer(pp *Peer, msg DeSoMessage) {
