@@ -268,7 +268,7 @@ func TestIsValidSuperMajorityAggregateQuorumCertificate(t *testing.T) {
 		validator2TimeoutSignature, err := validatorPrivateKey2.Sign(validator2TimeoutPayload[:])
 		require.NoError(t, err)
 
-		// Validator 2 signs a timeout payload where its high QC view is lower than the aggQC's high QC view.
+		// Validator 3 signs a timeout payload where its high QC view is lower than the aggQC's high QC view.
 		validator3TimeoutPayload := GetTimeoutSignaturePayload(view+2, view-1)
 		validator3TimeoutSignature, err := validatorPrivateKey3.Sign(validator3TimeoutPayload[:])
 		require.NoError(t, err)
