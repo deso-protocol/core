@@ -811,7 +811,7 @@ func (fc *FastHotStuffConsensus) fetchValidatorListsForSafeBlocks(blocks []*MsgD
 		// Otherwise, fetch it from the UtxoView.
 		if validatorSetAtBlock, ok = validatorSetEntriesBySnapshotEpochNumber[snapshotEpochNumber]; !ok {
 			// We don't have the validator set for the block cached. Fetch it from the UtxoView.
-			validatorSetAtBlock, err = utxoView.GetAllSnapshotValidatorSetEntriesByStakeAtEpochNumber(snapshotEpochNumber)
+			validatorSetAtBlock, err = fc.blockchain.GetAllSnapshotValidatorSetEntriesByStakeAtEpochNumber(snapshotEpochNumber, utxoView)
 			if err != nil {
 				return nil, errors.Errorf("Error fetching validator set for block: %v", err)
 			}
@@ -868,7 +868,7 @@ func (fc *FastHotStuffConsensus) updateActiveValidatorConnections() error {
 	}
 
 	// Fetch the current snapshot epoch's validator set.
-	currentValidatorList, err := utxoView.GetAllSnapshotValidatorSetEntriesByStakeAtEpochNumber(snapshotEpochNumber)
+	currentValidatorList, err := fc.blockchain.GetAllSnapshotValidatorSetEntriesByStakeAtEpochNumber(snapshotEpochNumber, utxoView)
 	if err != nil {
 		return errors.Errorf("FastHotStuffConsensus.Start: Error fetching validator list: %v", err)
 	}
@@ -882,7 +882,7 @@ func (fc *FastHotStuffConsensus) updateActiveValidatorConnections() error {
 	// within 300 blocks of the next epoch. This way, we don't prematurely attempt connections to the next
 	// epoch's validators. In production, this will reduce the lead time with which we connect to the next epoch's
 	// validator set from 1 hour to 5 minutes.
-	nextValidatorList, err := utxoView.GetAllSnapshotValidatorSetEntriesByStakeAtEpochNumber(snapshotEpochNumber + 1)
+	nextValidatorList, err := fc.blockchain.GetAllSnapshotValidatorSetEntriesByStakeAtEpochNumber(snapshotEpochNumber+1, utxoView)
 	if err != nil {
 		return errors.Errorf("FastHotStuffConsensus.Start: Error fetching validator list: %v", err)
 	}

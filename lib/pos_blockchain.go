@@ -487,8 +487,7 @@ func (bc *Blockchain) processOrphanBlockPoS(block *MsgDeSoBlock) error {
 			// potential leaders. As a spam-prevention measure, we simply return nil and throw it away.
 			return nil
 		}
-		validatorsByStake, err = utxoView.GetAllSnapshotValidatorSetEntriesByStakeAtEpochNumber(
-			epochEntrySnapshotAtEpochNumber)
+		validatorsByStake, err = bc.GetAllSnapshotValidatorSetEntriesByStakeAtEpochNumber(epochEntrySnapshotAtEpochNumber, utxoView)
 		if err != nil {
 			return errors.Wrapf(err,
 				"processOrphanBlockPoS: Problem getting validator set at snapshot at epoch number %d",
@@ -595,7 +594,7 @@ func (bc *Blockchain) validateLeaderAndQC(block *MsgDeSoBlock, utxoView *UtxoVie
 		return false, nil
 	}
 	// 2. Validate QC
-	validatorsByStake, err := utxoView.GetAllSnapshotValidatorSetEntriesByStake()
+	validatorsByStake, err := bc.GetAllSnapshotValidatorSetEntriesByStake(utxoView)
 	if err != nil {
 		// This should never happen. If the parent is validated and extends from the tip, then we should
 		// be able to fetch the validator set at its block height for it. This failure can only happen due
@@ -1886,6 +1885,37 @@ func (bc *Blockchain) getUtxoViewAtBlockHash(blockHash BlockHash) (*UtxoView, er
 	}
 	bc.blockViewCache.Add(blockHash, copiedView)
 	return utxoView, nil
+}
+
+func (bc *Blockchain) AddSnapshotValidatorEntriesToCache(
+	snapshotAtEpochNumber uint64,
+	validatorEntries []*ValidatorEntry,
+) {
+	bc.cachedValidatorsBySnapshotAtEpoch.Add(snapshotAtEpochNumber, validatorEntries)
+}
+
+func (bc *Blockchain) GetAllSnapshotValidatorSetEntriesByStake(utxoView *UtxoView) ([]*ValidatorEntry, error) {
+	snapshotAtEpochNumber, err := utxoView.GetCurrentSnapshotEpochNumber()
+	if err != nil {
+		return nil, errors.Wrapf(err, "bc.GetAllSnapshotValidatorSetEntriesByStake: problem getting snapshotAtEpochNumber: ")
+	}
+	return bc.GetAllSnapshotValidatorSetEntriesByStakeAtEpochNumber(snapshotAtEpochNumber, utxoView)
+}
+
+func (bc *Blockchain) GetAllSnapshotValidatorSetEntriesByStakeAtEpochNumber(snapshotAtEpochNumber uint64, utxoView *UtxoView) (
+	[]*ValidatorEntry, error) {
+	validatorEntries, exists := bc.cachedValidatorsBySnapshotAtEpoch.Lookup(snapshotAtEpochNumber)
+	if exists {
+		return validatorEntries.([]*ValidatorEntry), nil
+	}
+	// Fetch the validator set for the snapshot epoch number
+	validatorList, err := utxoView.GetAllSnapshotValidatorSetEntriesByStakeAtEpochNumber(snapshotAtEpochNumber)
+	if err != nil {
+		return nil, errors.Errorf("bc.GetAllSnapshotValidatorSetEntriesByStakeAtEpochNumber: Error fetching validator list: %v", err)
+	}
+	// Cache the validator set for the snapshot epoch number
+	bc.AddSnapshotValidatorEntriesToCache(snapshotAtEpochNumber, validatorList)
+	return validatorList, nil
 }
 
 // GetCommittedTip returns the highest committed block and its index in the best chain.
