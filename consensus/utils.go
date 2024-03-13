@@ -109,7 +109,12 @@ func IsValidSuperMajorityAggregateQuorumCertificate(aggQC AggregateQuorumCertifi
 		signedPayloads = append(signedPayloads, payload[:])
 	}
 
-	// Validate the signers' aggregate signatures
+	// Validate the signers' aggregate signatures. At this point, the signedPayloads slice contains
+	// payloads for all signers that signed a timeout message for the timed out view. The signedPayloads
+	// list is ordered in the same way as the signers list. All missing validators have been filtered out.
+	//
+	// Ex: If the signerPublicKeys list is [A, B, C, D, E] and the high QC views are [5, 4, 0, 3, 0],
+	// then the it means that signer A has a highQC view of 5, signer B has a highQC view of 4,...
 	isValidSignature, err := bls.VerifyAggregateSignatureMultiplePayloads(
 		signerPublicKeys,
 		aggQC.GetAggregatedSignature().GetSignature(),
