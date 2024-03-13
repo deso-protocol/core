@@ -117,7 +117,7 @@ func TestIsValidSuperMajorityAggregateQuorumCertificate(t *testing.T) {
 
 	validator2 := validator{
 		publicKey:   validatorPrivateKey2.PublicKey(),
-		stakeAmount: uint256.NewInt().SetUint64(2),
+		stakeAmount: uint256.NewInt().SetUint64(1),
 	}
 
 	validator3 := validator{
@@ -134,9 +134,6 @@ func TestIsValidSuperMajorityAggregateQuorumCertificate(t *testing.T) {
 	// Compute the signature payload
 	signaturePayload := GetVoteSignaturePayload(view, dummyBlockHash)
 
-	// Compute the aggregate signature payload
-	timeoutPayload := GetTimeoutSignaturePayload(view+2, view)
-
 	validator1Signature, err := validatorPrivateKey1.Sign(signaturePayload[:])
 	require.NoError(t, err)
 	validator2Signature, err := validatorPrivateKey2.Sign(signaturePayload[:])
@@ -151,10 +148,17 @@ func TestIsValidSuperMajorityAggregateQuorumCertificate(t *testing.T) {
 		},
 	}
 
-	// Test with no super-majority stake
+	// Sad Path: Test 3/5 stake which is not a super-majority
 	{
-		validator1TimeoutSignature, err := validatorPrivateKey1.Sign(timeoutPayload[:])
+		// Validator 1 signs a timeout payload where its high QC view is equal to the aggQC's high QC view.
+		validator1TimeoutPayload := GetTimeoutSignaturePayload(view+2, view)
+		validator1TimeoutSignature, err := validatorPrivateKey1.Sign(validator1TimeoutPayload[:])
 		require.NoError(t, err)
+
+		// Validator 2 does not time out.
+
+		// Validator 3 does not time out.
+
 		qc := aggregateQuorumCertificate{
 			view:        view + 2,
 			highQC:      &highQC,
@@ -167,14 +171,47 @@ func TestIsValidSuperMajorityAggregateQuorumCertificate(t *testing.T) {
 		require.False(t, IsValidSuperMajorityAggregateQuorumCertificate(&qc, validators, validators))
 	}
 
-	// Test with 5/6 super-majority stake
+	// Sad Path: Test 4/5 stake but one of the validators has a higher view than the highQC view.
 	{
-		validator1TimeoutSignature, err := validatorPrivateKey1.Sign(timeoutPayload[:])
+		// Validator 1 signs a timeout payload where its high QC view is equal to the aggQC's high QC view.
+		validator1TimeoutPayload := GetTimeoutSignaturePayload(view+2, view)
+		validator1TimeoutSignature, err := validatorPrivateKey1.Sign(validator1TimeoutPayload[:])
 		require.NoError(t, err)
-		// For fun, let's have validator 2 sign a timeout payload where its high QC is further behind.
+
+		// Validator 2 signs a timeout payload where its high QC view is higher than the aggQC's high QC view.
+		validator2TimeoutPayload := GetTimeoutSignaturePayload(view+2, view+1)
+		validator2TimeoutSignature, err := validatorPrivateKey2.Sign(validator2TimeoutPayload[:])
+		require.NoError(t, err)
+
+		// Validator 3 does not time out.
+
+		timeoutAggSig, err := bls.AggregateSignatures([]*bls.Signature{validator1TimeoutSignature, validator2TimeoutSignature})
+		require.NoError(t, err)
+		qc := aggregateQuorumCertificate{
+			view:        view + 2,
+			highQC:      &highQC,
+			highQCViews: []uint64{view, view + 1},
+			aggregatedSignature: &aggregatedSignature{
+				signersList: bitset.NewBitset().FromBytes([]byte{0x3}), // 0b0011, which represents validators 1 and 2
+				signature:   timeoutAggSig,
+			},
+		}
+		require.False(t, IsValidSuperMajorityAggregateQuorumCertificate(&qc, validators, validators))
+	}
+
+	// Happy Path: Test with 4/5 super-majority stake
+	{
+		// Validator 1 signs a timeout payload where its high QC view is equal to the aggQC's high QC view.
+		validator1TimeoutPayload := GetTimeoutSignaturePayload(view+2, view)
+		validator1TimeoutSignature, err := validatorPrivateKey1.Sign(validator1TimeoutPayload[:])
+		require.NoError(t, err)
+
+		// Validator 2 signs a timeout payload where its high QC view is lower than the aggQC's high QC view.
 		validator2TimeoutPayload := GetTimeoutSignaturePayload(view+2, view-1)
 		validator2TimeoutSignature, err := validatorPrivateKey2.Sign(validator2TimeoutPayload[:])
 		require.NoError(t, err)
+
+		// Validator 3 does not time out.
 
 		timeoutAggSig, err := bls.AggregateSignatures([]*bls.Signature{validator1TimeoutSignature, validator2TimeoutSignature})
 		require.NoError(t, err)
@@ -190,29 +227,64 @@ func TestIsValidSuperMajorityAggregateQuorumCertificate(t *testing.T) {
 		require.True(t, IsValidSuperMajorityAggregateQuorumCertificate(&qc, validators, validators))
 	}
 
-	// Test highQC with view lower than the highest view in the highQCViews.
+	// Happy Path: Test with 4/5 super-majority stake, where the highQC views slice has a 0 due to validator 2
+	// not timing out.
 	{
-		// Compute the aggregate signature payload
-		validator1TimeoutPayload := GetTimeoutSignaturePayload(view+3, view)
+		// Validator 1 signs a timeout payload where its high QC view is equal to the aggQC's high QC view.
+		validator1TimeoutPayload := GetTimeoutSignaturePayload(view+2, view)
 		validator1TimeoutSignature, err := validatorPrivateKey1.Sign(validator1TimeoutPayload[:])
 		require.NoError(t, err)
-		// Let's have validator 2 sign a timeout payload where high QC is for higher view.
-		validator2TimeoutPayload := GetTimeoutSignaturePayload(view+3, view+1)
-		validator2TimeoutSignature, err := validatorPrivateKey2.Sign(validator2TimeoutPayload[:])
+
+		// Validator 2 does not time out.
+
+		// Validator 3 signs a timeout payload where its high QC view is lower than the aggQC's high QC view.
+		validator3TimeoutPayload := GetTimeoutSignaturePayload(view+2, view-1)
+		validator3TimeoutSignature, err := validatorPrivateKey3.Sign(validator3TimeoutPayload[:])
 		require.NoError(t, err)
 
-		timeoutAggSig, err := bls.AggregateSignatures([]*bls.Signature{validator1TimeoutSignature, validator2TimeoutSignature})
+		timeoutAggSig, err := bls.AggregateSignatures([]*bls.Signature{validator1TimeoutSignature, validator3TimeoutSignature})
 		require.NoError(t, err)
 		qc := aggregateQuorumCertificate{
-			view:        view + 3,
+			view:        view + 2,
 			highQC:      &highQC,
-			highQCViews: []uint64{view, view + 1},
+			highQCViews: []uint64{view, 0, view - 1}, // The 0 is due to validator 2 not timing out.
 			aggregatedSignature: &aggregatedSignature{
-				signersList: bitset.NewBitset().FromBytes([]byte{0x3}), // 0b0011, which represents validators 1 and 2
+				signersList: bitset.NewBitset().FromBytes([]byte{0x5}), // 0b0101, which represents validators 1 and 3
 				signature:   timeoutAggSig,
 			},
 		}
-		require.False(t, IsValidSuperMajorityAggregateQuorumCertificate(&qc, validators, validators))
+		require.True(t, IsValidSuperMajorityAggregateQuorumCertificate(&qc, validators, validators))
+	}
+
+	// Happy Path: Test with 5/5 super-majority stake where all validators time out.
+	{
+		// Validator 1 signs a timeout payload where its high QC view is equal to the aggQC's high QC view.
+		validator1TimeoutPayload := GetTimeoutSignaturePayload(view+2, view)
+		validator1TimeoutSignature, err := validatorPrivateKey1.Sign(validator1TimeoutPayload[:])
+		require.NoError(t, err)
+
+		// Validator 2 signs a timeout payload where its high QC view is lower than the aggQC's high QC view.
+		validator2TimeoutPayload := GetTimeoutSignaturePayload(view+2, view-2)
+		validator2TimeoutSignature, err := validatorPrivateKey2.Sign(validator2TimeoutPayload[:])
+		require.NoError(t, err)
+
+		// Validator 2 signs a timeout payload where its high QC view is lower than the aggQC's high QC view.
+		validator3TimeoutPayload := GetTimeoutSignaturePayload(view+2, view-1)
+		validator3TimeoutSignature, err := validatorPrivateKey3.Sign(validator3TimeoutPayload[:])
+		require.NoError(t, err)
+
+		timeoutAggSig, err := bls.AggregateSignatures([]*bls.Signature{validator1TimeoutSignature, validator2TimeoutSignature, validator3TimeoutSignature})
+		require.NoError(t, err)
+		qc := aggregateQuorumCertificate{
+			view:        view + 2,
+			highQC:      &highQC,
+			highQCViews: []uint64{view, view - 2, view - 1},
+			aggregatedSignature: &aggregatedSignature{
+				signersList: bitset.NewBitset().FromBytes([]byte{0x7}), // 0b0111, which represents validators 1, 2 and 3
+				signature:   timeoutAggSig,
+			},
+		}
+		require.True(t, IsValidSuperMajorityAggregateQuorumCertificate(&qc, validators, validators))
 	}
 }
 

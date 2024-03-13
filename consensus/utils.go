@@ -89,13 +89,22 @@ func IsValidSuperMajorityAggregateQuorumCertificate(aggQC AggregateQuorumCertifi
 		return false
 	}
 
-	// Compute the timeout payloads signed by each validator.
-	// Each validator should sign a payload with the pair (View, HighQCView).
-	// The ordering of the high QC views and validators in the aggregate signature
-	// will match the ordering of active validators in descending order of stake for
-	// the timed out view's epoch.
+	// Compute the timeout payloads signed by each validator. Each validator should sign a payload
+	// with the pair (View, HighQCView). The ordering of the high QC views and validators in the
+	// aggregate signature will match the ordering of active validators in descending order of stake
+	// for the timed out view's epoch.
+	//
+	// The highQC views slice may contain 0 values for validators that did not send a timeout message
+	// for the timed out view. The 0 values are kept in the slice to maintain the ordering of the signers
+	// in the highQC views identical to the ordering of the validators in the validator list and signers list.
 	signedPayloads := [][]byte{}
 	for _, highQCView := range aggQC.GetHighQCViews() {
+		// If we encounter a 0 value for the validator at the current index, then it means that the
+		// the validator did not send a timeout message for the timed out view. We skip this validator.
+		if highQCView == 0 {
+			continue
+		}
+
 		payload := GetTimeoutSignaturePayload(aggQC.GetView(), highQCView)
 		signedPayloads = append(signedPayloads, payload[:])
 	}
@@ -106,9 +115,11 @@ func IsValidSuperMajorityAggregateQuorumCertificate(aggQC AggregateQuorumCertifi
 		aggQC.GetAggregatedSignature().GetSignature(),
 		signedPayloads,
 	)
+
 	if err != nil || !isValidSignature {
 		return false
 	}
+
 	return true
 }
 
@@ -293,17 +304,15 @@ func isProperlyFormedAggregateQC(aggQC AggregateQuorumCertificate) bool {
 	}
 
 	// Verify that AggregateSignature's HighQC view is the highest view in the HighQCViews.
-	// Also validate that all of the high QC views are non-zero
 	highestView := uint64(0)
 	for _, highQCView := range aggQC.GetHighQCViews() {
-		if highQCView == 0 {
-			return false
-		}
 		if highQCView > highestView {
 			highestView = highQCView
 		}
 	}
-	if highestView != aggQC.GetHighQC().GetView() {
+
+	// The highest view in the high QC views must be non-zero and equal to the high QC's view.
+	if highestView == 0 || highestView != aggQC.GetHighQC().GetView() {
 		return false
 	}
 
