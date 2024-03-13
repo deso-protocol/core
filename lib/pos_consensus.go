@@ -157,6 +157,7 @@ func (fc *FastHotStuffConsensus) HandleLocalBlockProposalEvent(event *consensus.
 
 	// Handle the event as a block proposal event for a regular block
 	if err := fc.handleBlockProposalEvent(event, consensus.FastHotStuffEventTypeConstructVoteQC); err != nil {
+		glog.Errorf("FastHotStuffConsensus.HandleLocalBlockProposalEvent: Error proposing block: %v", err)
 		return errors.Wrapf(err, "FastHotStuffConsensus.HandleLocalBlockProposalEvent: ")
 	}
 
@@ -188,6 +189,7 @@ func (fc *FastHotStuffConsensus) HandleLocalTimeoutBlockProposalEvent(event *con
 
 	// Handle the event as a block proposal event for a timeout block
 	if err := fc.handleBlockProposalEvent(event, consensus.FastHotStuffEventTypeConstructTimeoutQC); err != nil {
+		glog.Errorf("FastHotStuffConsensus.HandleLocalTimeoutBlockProposalEvent: Error proposing block: %v", err)
 		return errors.Wrapf(err, "FastHotStuffConsensus.HandleLocalTimeoutBlockProposalEvent: ")
 	}
 

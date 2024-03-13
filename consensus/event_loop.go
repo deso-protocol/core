@@ -554,12 +554,11 @@ func (fc *fastHotStuffEventLoop) ToString() string {
 	timeoutsForPreviousView := fc.timeoutsSeenByView[fc.currentView-1]
 
 	return fmt.Sprintf(
-		"\n====================================== Printing FastHotStuffEventLoop State ======================================"+
+		"Printing FastHotStuffEventLoop state: "+
 			"\n  Status: %d, CurrentView: %d"+
 			"\n  Tip Height: %d, Tip Hash: %v, Tip View: %d, Num Safe Blocks: %d"+
 			"\n  Crank Duration: %v, Timeout Interval: %v"+
-			"\n  Votes For Tip: %d, Timeouts For Current View: %d, Timeouts For Prev View: %d"+
-			"\n=================================================================================================================\n",
+			"\n  Votes For Tip: %d, Timeouts For Current View: %d, Timeouts For Prev View: %d",
 		fc.status,
 		fc.currentView,
 		tipBlock.GetHeight(),

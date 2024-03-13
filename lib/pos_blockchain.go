@@ -1,6 +1,7 @@
 package lib
 
 import (
+	"encoding/hex"
 	"fmt"
 	"math"
 	"time"
@@ -1192,6 +1193,29 @@ func (bav *UtxoView) hasValidBlockProposerPoS(block *MsgDeSoBlock) (_isValidBloc
 	if leaderEntryFromVotingPublicKey == nil {
 		return false, nil
 	}
+
+	// Dump some debug info on the current block's proposer and the current view's leader.
+	glog.V(2).Infof(
+		"hasValidBlockProposerPoS: Printing block proposer debug info: "+
+			"\n  Epoch Num: %d, Block View: %d, Block Height: %d, Epoch Initial View: %d, Epoch Initial Block Height: %d"+
+			"\n  Leader Idx: %d, Num Leaders: %d"+
+			"\n  Expected Leader PKID: %v, Expected Leader Voting PK: %v"+
+			"\n  Expected Leader PKID from BLS Key Lookup: %v, Expected Leader Voting PK from BLS Key Lookup: %v"+
+			"\n  Block Proposer Voting PK: %v",
+		currentEpochEntry.EpochNumber,
+		block.Header.ProposedInView,
+		block.Header.Height,
+		currentEpochEntry.InitialView,
+		currentEpochEntry.InitialBlockHeight,
+		leaderIdx,
+		len(leaders),
+		hex.EncodeToString(leaderEntry.ValidatorPKID.ToBytes()),
+		leaderEntry.VotingPublicKey.ToAbbreviatedString(),
+		hex.EncodeToString(leaderEntryFromVotingPublicKey.ValidatorPKID.ToBytes()),
+		leaderEntryFromVotingPublicKey.VotingPublicKey.ToAbbreviatedString(),
+		block.Header.ProposerVotingPublicKey.ToAbbreviatedString(),
+	)
+
 	if !leaderEntry.VotingPublicKey.Eq(block.Header.ProposerVotingPublicKey) ||
 		!leaderEntry.ValidatorPKID.Eq(leaderEntryFromVotingPublicKey.ValidatorPKID) {
 		return false, nil
