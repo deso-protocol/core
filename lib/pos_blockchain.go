@@ -1808,6 +1808,13 @@ func (bc *Blockchain) GetUncommittedTipView() (*UtxoView, error) {
 // getUtxoViewAtBlockHash builds a UtxoView to the block provided. It does this by
 // identifying all uncommitted ancestors of this block and then connecting those blocks.
 func (bc *Blockchain) getUtxoViewAtBlockHash(blockHash BlockHash) (*UtxoView, error) {
+	if viewAtHash, exists := bc.blockViewCache.Lookup(blockHash); exists {
+		copiedView, err := viewAtHash.(*UtxoView).CopyUtxoView()
+		if err != nil {
+			return nil, errors.Wrapf(err, "getUtxoViewAtBlockHash: Problem copying UtxoView from cache")
+		}
+		return copiedView, nil
+	}
 	uncommittedAncestors := []*BlockNode{}
 	currentBlock := bc.blockIndexByHash[blockHash]
 	if currentBlock == nil {
@@ -1841,7 +1848,19 @@ func (bc *Blockchain) getUtxoViewAtBlockHash(blockHash BlockHash) (*UtxoView, er
 	if err != nil {
 		return nil, errors.Wrapf(err, "getUtxoViewAtBlockHash: Problem initializing UtxoView")
 	}
+	// TODO: there's another performance enhancement we can make here. If we have a view in the
+	// cache for one of the ancestors, we can skip fetching the block and connecting it by taking
+	// a copy of it and replacing the existing view.
 	for ii := len(uncommittedAncestors) - 1; ii >= 0; ii-- {
+		// For some reason this is slower than just connecting the blocks from badger.
+		//if ancestorView, exists := bc.blockViewCache.Lookup(*uncommittedAncestors[ii].Hash); exists {
+		//	copiedView, err := ancestorView.(*UtxoView).CopyUtxoView()
+		//	if err != nil {
+		//		return nil, errors.Wrapf(err, "getUtxoViewAtBlockHash: Problem copying UtxoView from cache")
+		//	}
+		//	utxoView = copiedView
+		//	continue
+		//}
 		// We need to get these blocks from badger
 		fullBlock, err := GetBlock(uncommittedAncestors[ii].Hash, bc.db, bc.snapshot)
 		if err != nil {
@@ -1860,6 +1879,12 @@ func (bc *Blockchain) getUtxoViewAtBlockHash(blockHash BlockHash) (*UtxoView, er
 	}
 	// Update the TipHash saved on the UtxoView to the blockHash provided.
 	utxoView.TipHash = &blockHash
+	// Save a copy of the UtxoView to the cache.
+	copiedView, err := utxoView.CopyUtxoView()
+	if err != nil {
+		return nil, errors.Wrapf(err, "getUtxoViewAtBlockHash: Problem copying UtxoView to store in cache")
+	}
+	bc.blockViewCache.Add(blockHash, copiedView)
 	return utxoView, nil
 }
 
