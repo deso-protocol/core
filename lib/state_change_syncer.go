@@ -712,6 +712,8 @@ func (stateChangeSyncer *StateChangeSyncer) SyncMempoolToStateSyncer(server *Ser
 
 	stateChangeSyncer.BlockHeight = blockHeight
 
+	fmt.Printf("Block height: %v\n", blockHeight)
+
 	stateChangeSyncer.MempoolFlushId = originalCommittedFlushId
 
 	fmt.Printf("Original committed flush ID: %v\n", originalCommittedFlushId)
@@ -720,6 +722,8 @@ func (stateChangeSyncer *StateChangeSyncer) SyncMempoolToStateSyncer(server *Ser
 	if err != nil {
 		return false, errors.Wrapf(err, "StateChangeSyncer.SyncMempoolToStateSyncer: ")
 	}
+
+	fmt.Printf("Mempool tip hash: %v\n", mempoolUtxoView.TipHash.String())
 
 	// Create a copy of the event manager, assign it to this utxo view.
 	mempoolEventManager := *mempoolUtxoView.EventManager
