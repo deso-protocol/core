@@ -473,11 +473,14 @@ func (stateChangeSyncer *StateChangeSyncer) _handleStateSyncerFlush(event *State
 	stateChangeSyncer.StateSyncerMutex.Lock()
 	defer stateChangeSyncer.StateSyncerMutex.Unlock()
 
+	fmt.Printf("Handling state syncer flush: %+v\n", event)
+
 	if event.IsMempoolFlush {
 		// If this is a mempool flush, make sure a block hasn't mined since the mempool entries were added to queue.
 		// If not, reset the mempool maps and file, and start from scratch. The consumer will revert the mempool transactions
 		// it currently has and sync from scratch.
 		if stateChangeSyncer.BlockSyncFlushId != event.BlockSyncFlushId || stateChangeSyncer.BlockSyncFlushId != event.FlushId {
+			fmt.Printf("The flush ID has changed, bailing now.\n")
 			stateChangeSyncer.ResetMempool()
 			return
 		}
@@ -507,7 +510,7 @@ func (stateChangeSyncer *StateChangeSyncer) _handleStateSyncerFlush(event *State
 				if _, ok := stateChangeSyncer.MempoolFlushKeySet[key]; !ok {
 					// Confirm that the block sync ID hasn't shifted. If it has, bail now.
 					if cachedSCE.FlushId != stateChangeSyncer.BlockSyncFlushId {
-						fmt.Printf("The flush ID has changed, bailing now.\n")
+						fmt.Printf("The flush ID has changed, inside key/value check, bailing now.\n")
 						stateChangeSyncer.ResetMempool()
 						return
 					}
@@ -551,6 +554,7 @@ func (stateChangeSyncer *StateChangeSyncer) _handleStateSyncerFlush(event *State
 }
 
 func (stateChangeSyncer *StateChangeSyncer) ResetMempool() {
+	fmt.Printf("Resetting mempool.\n")
 	stateChangeSyncer.MempoolSyncedKeyValueMap = make(map[string]*StateChangeEntry)
 	stateChangeSyncer.MempoolFlushKeySet = make(map[string]bool)
 	delete(stateChangeSyncer.UnflushedBytes, stateChangeSyncer.MempoolFlushId)
@@ -585,6 +589,8 @@ func (stateChangeSyncer *StateChangeSyncer) addTransactionToQueue(flushId uuid.U
 func (stateChangeSyncer *StateChangeSyncer) FlushTransactionsToFile(event *StateSyncerFlushedEvent) error {
 	flushId := event.FlushId
 
+	fmt.Printf("Flushing to file: %+v\n", event)
+
 	//if event.IsMempoolFlush && event.FlushId != stateChangeSyncer.BlockSyncFlushId {
 	//	fmt.Printf("Bailing on mempool flush because the block sync flush ID has changed.\n")
 	//	return nil
@@ -615,12 +621,18 @@ func (stateChangeSyncer *StateChangeSyncer) FlushTransactionsToFile(event *State
 	// If the flush failed, delete the unflushed bytes and associated metadata.
 	// Also delete any unconnected mempool txns from our cache.
 	if !event.Succeeded {
+		fmt.Printf("Deleting unflushed bytes for id: %s\n", flushId)
 		delete(stateChangeSyncer.UnflushedBytes, flushId)
+		if event.IsMempoolFlush {
+			stateChangeSyncer.ResetMempool()
+		}
+		return nil
 	}
 
 	unflushedBytes, exists := stateChangeSyncer.UnflushedBytes[flushId]
 
 	if !exists {
+		fmt.Printf("Unflushed bytes for flush ID doesn't exist: %s\n", flushId.String())
 		return nil
 	}
 
@@ -702,6 +714,8 @@ func (stateChangeSyncer *StateChangeSyncer) SyncMempoolToStateSyncer(server *Ser
 
 	stateChangeSyncer.MempoolFlushId = originalCommittedFlushId
 
+	fmt.Printf("Original committed flush ID: %v\n", originalCommittedFlushId)
+
 	mempoolUtxoView, err := server.GetMempool().GetAugmentedUniversalView()
 	if err != nil {
 		return false, errors.Wrapf(err, "StateChangeSyncer.SyncMempoolToStateSyncer: ")
@@ -730,10 +744,25 @@ func (stateChangeSyncer *StateChangeSyncer) SyncMempoolToStateSyncer(server *Ser
 	// more than once in the mempool transactions.
 	txn := server.blockchain.db.NewTransaction(true)
 	defer txn.Discard()
+	fmt.Printf("Mempool synced len before flush: %d\n", len(stateChangeSyncer.MempoolSyncedKeyValueMap))
+	fmt.Printf("Mempool flushed len before flush: %d\n", len(stateChangeSyncer.MempoolFlushKeySet))
 	err = mempoolUtxoView.FlushToDbWithTxn(txn, uint64(server.blockchain.bestChain[len(server.blockchain.bestChain)-1].Height))
+	if err != nil {
+		mempoolUtxoView.EventManager.stateSyncerFlushed(&StateSyncerFlushedEvent{
+			FlushId:        originalCommittedFlushId,
+			Succeeded:      false,
+			IsMempoolFlush: true,
+		})
+		return false, errors.Wrapf(err, "StateChangeSyncer.SyncMempoolToStateSyncer: FlushToDbWithTxn: ")
+	}
 
 	mempoolTxUtxoView, err := NewUtxoView(server.blockchain.db, server.blockchain.params, server.blockchain.postgres, nil, &mempoolEventManager)
 	if err != nil {
+		mempoolUtxoView.EventManager.stateSyncerFlushed(&StateSyncerFlushedEvent{
+			FlushId:        originalCommittedFlushId,
+			Succeeded:      false,
+			IsMempoolFlush: true,
+		})
 		return false, errors.Wrapf(err, "StateChangeSyncer.SyncMempoolToStateSyncer: CreateMempoolTxUtxoView: ")
 	}
 
@@ -748,13 +777,23 @@ func (stateChangeSyncer *StateChangeSyncer) SyncMempoolToStateSyncer(server *Ser
 			Succeeded:      false,
 			IsMempoolFlush: true,
 		})
+		fmt.Printf("After the mempool flush: %+v\n", &StateSyncerFlushedEvent{
+			FlushId:        originalCommittedFlushId,
+			Succeeded:      false,
+			IsMempoolFlush: true,
+		})
 		return false, errors.Wrapf(err, "StateChangeSyncer.SyncMempoolToStateSyncer: ")
 	}
 
+	if len(mempoolTxns) > 0 {
+		fmt.Printf("Mempool tx hash: %v\n", mempoolTxns[0].Hash.String())
+	}
+	fmt.Printf("Mempool synced len after flush: %d\n", len(stateChangeSyncer.MempoolSyncedKeyValueMap))
 	for _, mempoolTx := range mempoolTxns {
 		utxoOpsForTxn, _, _, _, err := mempoolTxUtxoView.ConnectTransaction(
 			mempoolTx.Tx, mempoolTx.Hash, 0, uint32(blockHeight+1), false, false /*ignoreUtxos*/)
 		if err != nil {
+			fmt.Printf("Right before the mempool flush error: %v\n", err)
 			mempoolUtxoView.EventManager.stateSyncerFlushed(&StateSyncerFlushedEvent{
 				FlushId:        originalCommittedFlushId,
 				Succeeded:      false,
@@ -794,6 +833,8 @@ func (stateChangeSyncer *StateChangeSyncer) SyncMempoolToStateSyncer(server *Ser
 			IsMempoolTxn: true,
 		})
 	}
+	fmt.Printf("Mempool flushed len: %d\n", len(stateChangeSyncer.MempoolFlushKeySet))
+	fmt.Printf("Mempool synced len after all: %d\n", len(stateChangeSyncer.MempoolSyncedKeyValueMap))
 
 	// Before flushing the mempool to the state change file, check if a block has mined. If so, abort the flush.
 	if err != nil || originalCommittedFlushId != stateChangeSyncer.BlockSyncFlushId {
@@ -822,7 +863,6 @@ func (stateChangeSyncer *StateChangeSyncer) StartMempoolSyncRoutine(server *Serv
 			time.Sleep(15000 * time.Millisecond)
 		}
 		if !stateChangeSyncer.BlocksyncCompleteEntriesFlushed && stateChangeSyncer.SyncType == NodeSyncTypeBlockSync {
-			fmt.Printf("Flushing to file\n")
 			err := stateChangeSyncer.FlushAllEntriesToFile(server)
 			if err != nil {
 				fmt.Printf("StateChangeSyncer.StartMempoolSyncRoutine: Error flushing all entries to file: %v", err)
