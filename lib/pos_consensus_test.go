@@ -206,13 +206,9 @@ func alwaysReturnTrue() bool {
 
 func _createMockNetworkManagerForConsensus() *NetworkManager {
 	return &NetworkManager{
-		rnManager: &RemoteNodeManager{
-			remoteNodeIndexer: &RemoteNodeIndexer{
-				AllRemoteNodes:            collections.NewConcurrentMap[RemoteNodeId, *RemoteNode](),
-				ValidatorIndex:            collections.NewConcurrentMap[bls.SerializedPublicKey, *RemoteNode](),
-				NonValidatorOutboundIndex: collections.NewConcurrentMap[RemoteNodeId, *RemoteNode](),
-				NonValidatorInboundIndex:  collections.NewConcurrentMap[RemoteNodeId, *RemoteNode](),
-			},
-		},
+		AllRemoteNodes:            collections.NewConcurrentMap[RemoteNodeId, *RemoteNode](),
+		ValidatorIndex:            collections.NewConcurrentMap[bls.SerializedPublicKey, *RemoteNode](),
+		NonValidatorOutboundIndex: collections.NewConcurrentMap[RemoteNodeId, *RemoteNode](),
+		NonValidatorInboundIndex:  collections.NewConcurrentMap[RemoteNodeId, *RemoteNode](),
 	}
 }

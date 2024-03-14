@@ -2,18 +2,20 @@ package lib
 
 import (
 	"fmt"
-	"net"
-	"strconv"
-	"sync"
-	"time"
-
 	"github.com/btcsuite/btcd/addrmgr"
 	"github.com/btcsuite/btcd/wire"
+	"github.com/decred/dcrd/lru"
 	"github.com/deso-protocol/core/bls"
 	"github.com/deso-protocol/core/collections"
 	"github.com/deso-protocol/core/consensus"
 	"github.com/golang/glog"
 	"github.com/pkg/errors"
+	"math"
+	"net"
+	"strconv"
+	"sync"
+	"sync/atomic"
+	"time"
 )
 
 // NetworkManager is a structure that oversees all connections to RemoteNodes. NetworkManager has the following
@@ -36,14 +38,33 @@ import (
 // The NetworkManager also runs an auxiliary goroutine that periodically cleans up RemoteNodes that may have timed out
 // the handshake process, or became invalid for some other reason.
 type NetworkManager struct {
+	mtx                  sync.Mutex
+	mtxHandshakeComplete sync.Mutex
+
 	// The parameters we are initialized with.
 	params *DeSoParams
 
-	cmgr        *ConnectionManager
-	blsKeystore *BLSKeystore
+	srv      *Server
+	bc       *Blockchain
+	cmgr     *ConnectionManager
+	keystore *BLSKeystore
 
-	handshake *HandshakeManager
-	rnManager *RemoteNodeManager
+	// configs
+	minTxFeeRateNanosPerKB uint64
+	nodeServices           ServiceFlag
+
+	// Used to set remote node ids. Must be incremented atomically.
+	remoteNodeIndex uint64
+	// AllRemoteNodes is a map storing all remote nodes by their IDs.
+	AllRemoteNodes *collections.ConcurrentMap[RemoteNodeId, *RemoteNode]
+
+	// Indices for various types of remote nodes.
+	ValidatorIndex            *collections.ConcurrentMap[bls.SerializedPublicKey, *RemoteNode]
+	NonValidatorOutboundIndex *collections.ConcurrentMap[RemoteNodeId, *RemoteNode]
+	NonValidatorInboundIndex  *collections.ConcurrentMap[RemoteNodeId, *RemoteNode]
+
+	// Cache of nonces used during handshake.
+	usedNonces lru.Cache
 
 	// The address manager keeps track of peer addresses we're aware of. When
 	// we need to connect to a new outbound peer, it chooses one of the addresses
@@ -77,18 +98,25 @@ type NetworkManager struct {
 	exitGroup  sync.WaitGroup
 }
 
-func NewNetworkManager(params *DeSoParams, cmgr *ConnectionManager, rnManager *RemoteNodeManager,
+func NewNetworkManager(params *DeSoParams, srv *Server, bc *Blockchain, cmgr *ConnectionManager,
 	blsKeystore *BLSKeystore, addrMgr *addrmgr.AddrManager, connectIps []string,
 	targetNonValidatorOutboundRemoteNodes uint32, targetNonValidatorInboundRemoteNodes uint32,
-	limitOneInboundConnectionPerIP bool) *NetworkManager {
+	limitOneInboundConnectionPerIP bool, minTxFeeRateNanosPerKB uint64, nodeServices ServiceFlag) *NetworkManager {
 
 	return &NetworkManager{
 		params:                                params,
+		srv:                                   srv,
+		bc:                                    bc,
 		cmgr:                                  cmgr,
-		blsKeystore:                           blsKeystore,
-		handshake:                             NewHandshakeController(rnManager),
-		rnManager:                             rnManager,
+		keystore:                              blsKeystore,
 		AddrMgr:                               addrMgr,
+		minTxFeeRateNanosPerKB:                minTxFeeRateNanosPerKB,
+		nodeServices:                          nodeServices,
+		AllRemoteNodes:                        collections.NewConcurrentMap[RemoteNodeId, *RemoteNode](),
+		ValidatorIndex:                        collections.NewConcurrentMap[bls.SerializedPublicKey, *RemoteNode](),
+		NonValidatorOutboundIndex:             collections.NewConcurrentMap[RemoteNodeId, *RemoteNode](),
+		NonValidatorInboundIndex:              collections.NewConcurrentMap[RemoteNodeId, *RemoteNode](),
+		usedNonces:                            lru.NewCache(1000),
 		connectIps:                            connectIps,
 		persistentIpToRemoteNodeIdsMap:        collections.NewConcurrentMap[string, RemoteNodeId](),
 		activeValidatorsMap:                   collections.NewConcurrentMap[bls.SerializedPublicKey, consensus.Validator](),
@@ -122,11 +150,7 @@ func (nm *NetworkManager) Stop() {
 		close(nm.exitChan)
 		nm.exitGroup.Wait()
 	}
-	nm.rnManager.DisconnectAll()
-}
-
-func (nm *NetworkManager) GetRemoteNodeManager() *RemoteNodeManager {
-	return nm.rnManager
+	nm.DisconnectAll()
 }
 
 func (nm *NetworkManager) SetTargetOutboundPeers(numPeers uint32) {
@@ -204,7 +228,7 @@ func (nm *NetworkManager) startRemoteNodeCleanup() {
 			nm.exitGroup.Done()
 			return
 		case <-time.After(1 * time.Second):
-			nm.rnManager.Cleanup()
+			nm.Cleanup()
 		}
 	}
 
@@ -214,16 +238,79 @@ func (nm *NetworkManager) startRemoteNodeCleanup() {
 // ## Handlers (Peer, DeSoMessage)
 // ###########################
 
-// _handleVersionMessage is called when a new version message is received. It is a wrapper around the handshake's
-// handleVersionMessage function.
+// _handleVersionMessage is called when a new version message is received.
 func (nm *NetworkManager) _handleVersionMessage(origin *Peer, desoMsg DeSoMessage) {
-	nm.handshake.handleVersionMessage(origin, desoMsg)
+	if desoMsg.GetMsgType() != MsgTypeVersion {
+		return
+	}
+
+	rn := nm.GetRemoteNodeFromPeer(origin)
+	if rn == nil {
+		// This should never happen.
+		return
+	}
+
+	var verMsg *MsgDeSoVersion
+	var ok bool
+	if verMsg, ok = desoMsg.(*MsgDeSoVersion); !ok {
+		glog.Errorf("NetworkManager.handleVersionMessage: Disconnecting RemoteNode with id: (%v) "+
+			"error casting version message", origin.ID)
+		nm.Disconnect(rn)
+		return
+	}
+
+	// If we've seen this nonce before then return an error since this is a connection from ourselves.
+	msgNonce := verMsg.Nonce
+	if nm.usedNonces.Contains(msgNonce) {
+		nm.usedNonces.Delete(msgNonce)
+		glog.Errorf("NetworkManager.handleVersionMessage: Disconnecting RemoteNode with id: (%v) "+
+			"nonce collision, nonce (%v)", origin.ID, msgNonce)
+		nm.Disconnect(rn)
+		return
+	}
+
+	// Call HandleVersionMessage on the RemoteNode.
+	responseNonce := uint64(RandInt64(math.MaxInt64))
+	if err := rn.HandleVersionMessage(verMsg, responseNonce); err != nil {
+		glog.Errorf("NetworkManager.handleVersionMessage: Requesting PeerDisconnect for id: (%v) "+
+			"error handling version message: %v", origin.ID, err)
+		nm.Disconnect(rn)
+		return
+
+	}
+	nm.usedNonces.Add(responseNonce)
 }
 
-// _handleVerackMessage is called when a new verack message is received. It is a wrapper around the handshake's
-// handleVerackMessage function.
+// _handleVerackMessage is called when a new verack message is received.
 func (nm *NetworkManager) _handleVerackMessage(origin *Peer, desoMsg DeSoMessage) {
-	nm.handshake.handleVerackMessage(origin, desoMsg)
+	if desoMsg.GetMsgType() != MsgTypeVerack {
+		return
+	}
+
+	rn := nm.GetRemoteNodeFromPeer(origin)
+	if rn == nil {
+		// This should never happen.
+		return
+	}
+
+	var vrkMsg *MsgDeSoVerack
+	var ok bool
+	if vrkMsg, ok = desoMsg.(*MsgDeSoVerack); !ok {
+		glog.Errorf("NetworkManager.handleVerackMessage: Disconnecting RemoteNode with id: (%v) "+
+			"error casting verack message", origin.ID)
+		nm.Disconnect(rn)
+		return
+	}
+
+	// Call HandleVerackMessage on the RemoteNode.
+	if err := rn.HandleVerackMessage(vrkMsg); err != nil {
+		glog.Errorf("NetworkManager.handleVerackMessage: Requesting PeerDisconnect for id: (%v) "+
+			"error handling verack message: %v", origin.ID, err)
+		nm.Disconnect(rn)
+		return
+	}
+
+	nm.handleHandshakeComplete(rn)
 }
 
 // _handleDisconnectedPeerMessage is called when a peer is disconnected. It is responsible for cleaning up the
@@ -235,7 +322,7 @@ func (nm *NetworkManager) _handleDisconnectedPeerMessage(origin *Peer, desoMsg D
 
 	glog.V(2).Infof("NetworkManager._handleDisconnectedPeerMessage: Handling disconnected peer message for "+
 		"id=%v", origin.ID)
-	nm.rnManager.DisconnectById(NewRemoteNodeId(origin.ID))
+	nm.DisconnectById(NewRemoteNodeId(origin.ID))
 	// Update the persistentIpToRemoteNodeIdsMap, in case the disconnected peer was a persistent peer.
 	ipRemoteNodeIdMap := nm.persistentIpToRemoteNodeIdsMap.ToMap()
 	for ip, id := range ipRemoteNodeIdMap {
@@ -278,7 +365,7 @@ func (nm *NetworkManager) _handleNewConnectionMessage(origin *Peer, desoMsg DeSo
 	}
 
 	// If we made it here, we have a valid remote node. We will now initiate the handshake.
-	nm.handshake.InitiateHandshake(remoteNode)
+	nm.InitiateHandshake(remoteNode)
 }
 
 // processInboundConnection is called when a new inbound connection is established. At this point, the connection is not validated,
@@ -306,7 +393,7 @@ func (nm *NetworkManager) processInboundConnection(conn Connection) (*RemoteNode
 			"ConvertIPStringToNetAddress for addr: (%s)", ic.connection.RemoteAddr().String())
 	}
 
-	remoteNode, err := nm.rnManager.AttachInboundConnection(ic.connection, na)
+	remoteNode, err := nm.AttachInboundConnection(ic.connection, na)
 	if remoteNode == nil || err != nil {
 		return nil, errors.Wrapf(err, "NetworkManager.handleInboundConnection: Problem calling "+
 			"AttachInboundConnection for addr: (%s)", ic.connection.RemoteAddr().String())
@@ -349,9 +436,9 @@ func (nm *NetworkManager) processOutboundConnection(conn Connection) (*RemoteNod
 	}
 
 	// Attach the connection before additional validation steps because it is already established.
-	remoteNode, err := nm.rnManager.AttachOutboundConnection(oc.connection, na, oc.attemptId, oc.isPersistent)
+	remoteNode, err := nm.AttachOutboundConnection(oc.connection, na, oc.attemptId, oc.isPersistent)
 	if remoteNode == nil || err != nil {
-		return nil, errors.Wrapf(err, "NetworkManager.handleOutboundConnection: Problem calling rnManager.AttachOutboundConnection "+
+		return nil, errors.Wrapf(err, "NetworkManager.handleOutboundConnection: Problem calling AttachOutboundConnection "+
 			"for addr: (%s)", oc.connection.RemoteAddr().String())
 	}
 
@@ -380,7 +467,7 @@ func (nm *NetworkManager) processOutboundConnection(conn Connection) (*RemoteNod
 func (nm *NetworkManager) cleanupFailedInboundConnection(remoteNode *RemoteNode, connection Connection) {
 	glog.V(2).Infof("NetworkManager.cleanupFailedInboundConnection: Cleaning up failed inbound connection")
 	if remoteNode != nil {
-		nm.rnManager.Disconnect(remoteNode)
+		nm.Disconnect(remoteNode)
 	}
 	connection.Close()
 }
@@ -397,9 +484,9 @@ func (nm *NetworkManager) cleanupFailedOutboundConnection(connection Connection)
 	// Find the RemoteNode associated with the connection. It should almost always exist, since we create the RemoteNode
 	// as we're attempting to connect to the address.
 	id := NewRemoteNodeId(oc.attemptId)
-	rn := nm.rnManager.GetRemoteNodeById(id)
+	rn := nm.GetRemoteNodeById(id)
 	if rn != nil {
-		nm.rnManager.Disconnect(rn)
+		nm.Disconnect(rn)
 	}
 	oc.Close()
 	nm.cmgr.RemoveAttemptedOutboundAddrs(oc.address)
@@ -456,17 +543,17 @@ func (nm *NetworkManager) refreshValidatorIndex(activeValidatorsMap *collections
 	// De-index inactive validators. We skip any checks regarding RemoteNodes connection status, nor do we verify whether
 	// de-indexing the validator would result in an excess number of outbound/inbound connections. Any excess connections
 	// will be cleaned up by the NonValidator connector.
-	validatorRemoteNodeMap := nm.rnManager.GetValidatorIndex().ToMap()
+	validatorRemoteNodeMap := nm.GetValidatorIndex().ToMap()
 	for pk, rn := range validatorRemoteNodeMap {
 		// If the validator is no longer active, de-index it.
 		if _, ok := activeValidatorsMap.Get(pk); !ok {
-			nm.rnManager.SetNonValidator(rn)
-			nm.rnManager.UnsetValidator(rn)
+			nm.SetNonValidator(rn)
+			nm.UnsetValidator(rn)
 		}
 	}
 
 	// Look for validators in our existing outbound / inbound connections.
-	allNonValidators := nm.rnManager.GetAllNonValidators()
+	allNonValidators := nm.GetAllNonValidators()
 	for _, rn := range allNonValidators {
 		// It is possible for a RemoteNode to be in the non-validator indices, and still have a public key. This can happen
 		// if the RemoteNode advertised support for the SFValidator service flag during handshake, and provided us
@@ -478,17 +565,17 @@ func (nm *NetworkManager) refreshValidatorIndex(activeValidatorsMap *collections
 		// It is possible that through unlikely concurrence, and malevolence, two non-validators happen to have the same
 		// public key, which goes undetected during handshake. To prevent this from affecting the indexing of the validator
 		// set, we check that the non-validator's public key is not already present in the validator index.
-		if _, ok := nm.rnManager.GetValidatorIndex().Get(pk.Serialize()); ok {
+		if _, ok := nm.GetValidatorIndex().Get(pk.Serialize()); ok {
 			glog.V(2).Infof("NetworkManager.refreshValidatorIndex: Disconnecting Validator RemoteNode "+
 				"(%v) has validator public key (%v) that is already present in validator index", rn, pk)
-			nm.rnManager.Disconnect(rn)
+			nm.Disconnect(rn)
 			continue
 		}
 
 		// If the RemoteNode turns out to be in the validator set, index it.
 		if _, ok := activeValidatorsMap.Get(pk.Serialize()); ok {
-			nm.rnManager.SetValidator(rn)
-			nm.rnManager.UnsetNonValidator(rn)
+			nm.SetValidator(rn)
+			nm.UnsetNonValidator(rn)
 		}
 	}
 }
@@ -497,19 +584,19 @@ func (nm *NetworkManager) refreshValidatorIndex(activeValidatorsMap *collections
 // periodically by the validator connector.
 func (nm *NetworkManager) connectValidators(activeValidatorsMap *collections.ConcurrentMap[bls.SerializedPublicKey, consensus.Validator]) {
 	// Look through the active validators and connect to any that we're not already connected to.
-	if nm.blsKeystore == nil {
+	if nm.keystore == nil {
 		return
 	}
 
 	validators := activeValidatorsMap.ToMap()
 	for pk, validator := range validators {
-		_, exists := nm.rnManager.GetValidatorIndex().Get(pk)
+		_, exists := nm.GetValidatorIndex().Get(pk)
 		// If we're already connected to the validator, continue.
 		if exists {
 			continue
 		}
 		// If the validator is our node, continue.
-		if nm.blsKeystore.GetSigner().GetPublicKey().Serialize() == pk {
+		if nm.keystore.GetSigner().GetPublicKey().Serialize() == pk {
 			continue
 		}
 
@@ -543,14 +630,14 @@ func (nm *NetworkManager) refreshNonValidatorOutboundIndex() {
 
 	// First let's run a quick check to see if the number of our non-validator remote nodes exceeds our target. Note that
 	// this number will include the persistent nodes.
-	numOutboundRemoteNodes := uint32(nm.rnManager.GetNonValidatorOutboundIndex().Count())
+	numOutboundRemoteNodes := uint32(nm.GetNonValidatorOutboundIndex().Count())
 	if numOutboundRemoteNodes <= nm.targetNonValidatorOutboundRemoteNodes {
 		return
 	}
 
 	// If we get here, it means that we should potentially disconnect some remote nodes. Let's first separate the
 	// attempted and connected remote nodes, ignoring the persistent ones.
-	allOutboundRemoteNodes := nm.rnManager.GetNonValidatorOutboundIndex().GetAll()
+	allOutboundRemoteNodes := nm.GetNonValidatorOutboundIndex().GetAll()
 	var attemptedOutboundRemoteNodes, connectedOutboundRemoteNodes []*RemoteNode
 	for _, rn := range allOutboundRemoteNodes {
 		if rn.IsPersistent() || rn.IsExpectedValidator() {
@@ -578,7 +665,7 @@ func (nm *NetworkManager) refreshNonValidatorOutboundIndex() {
 		}
 		glog.V(2).Infof("NetworkManager.refreshNonValidatorOutboundIndex: Disconnecting attempted remote "+
 			"node (id=%v) due to excess outbound RemoteNodes", rn.GetId())
-		nm.rnManager.Disconnect(rn)
+		nm.Disconnect(rn)
 		excessiveOutboundRemoteNodes--
 	}
 	// Now disconnect the connected remote nodes, if we still have too many remote nodes.
@@ -588,7 +675,7 @@ func (nm *NetworkManager) refreshNonValidatorOutboundIndex() {
 		}
 		glog.V(2).Infof("NetworkManager.refreshNonValidatorOutboundIndex: Disconnecting connected remote "+
 			"node (id=%v) due to excess outbound RemoteNodes", rn.GetId())
-		nm.rnManager.Disconnect(rn)
+		nm.Disconnect(rn)
 		excessiveOutboundRemoteNodes--
 	}
 }
@@ -597,13 +684,13 @@ func (nm *NetworkManager) refreshNonValidatorOutboundIndex() {
 // disconnecting excess inbound remote nodes.
 func (nm *NetworkManager) refreshNonValidatorInboundIndex() {
 	// First let's check if we have an excess number of inbound remote nodes. If we do, we'll disconnect some of them.
-	numConnectedInboundRemoteNodes := uint32(nm.rnManager.GetNonValidatorInboundIndex().Count())
+	numConnectedInboundRemoteNodes := uint32(nm.GetNonValidatorInboundIndex().Count())
 	if numConnectedInboundRemoteNodes <= nm.targetNonValidatorInboundRemoteNodes {
 		return
 	}
 
 	// Disconnect random inbound non-validators if we have too many of them.
-	inboundRemoteNodes := nm.rnManager.GetNonValidatorInboundIndex().GetAll()
+	inboundRemoteNodes := nm.GetNonValidatorInboundIndex().GetAll()
 	var connectedInboundRemoteNodes []*RemoteNode
 	for _, rn := range inboundRemoteNodes {
 		// We only want to disconnect remote nodes that have completed handshake. RemoteNodes that don't have the
@@ -628,7 +715,7 @@ func (nm *NetworkManager) refreshNonValidatorInboundIndex() {
 		}
 		glog.V(2).Infof("NetworkManager.refreshNonValidatorInboundIndex: Disconnecting inbound remote "+
 			"node (id=%v) due to excess inbound RemoteNodes", rn.GetId())
-		nm.rnManager.Disconnect(rn)
+		nm.Disconnect(rn)
 		excessiveInboundRemoteNodes--
 	}
 }
@@ -637,7 +724,7 @@ func (nm *NetworkManager) refreshNonValidatorInboundIndex() {
 // nonValidator connector.
 func (nm *NetworkManager) connectNonValidators() {
 	// First, find all nonValidator outbound remote nodes that are not persistent.
-	allOutboundRemoteNodes := nm.rnManager.GetNonValidatorOutboundIndex().GetAll()
+	allOutboundRemoteNodes := nm.GetNonValidatorOutboundIndex().GetAll()
 	var nonValidatorOutboundRemoteNodes []*RemoteNode
 	for _, rn := range allOutboundRemoteNodes {
 		if rn.IsPersistent() || rn.IsExpectedValidator() {
@@ -662,7 +749,7 @@ func (nm *NetworkManager) connectNonValidators() {
 		}
 		// Attempt to connect to the address.
 		nm.AddrMgr.Attempt(addr)
-		if err := nm.rnManager.CreateNonValidatorOutboundConnection(addr); err != nil {
+		if err := nm.createNonValidatorOutboundConnection(addr); err != nil {
 			glog.V(2).Infof("NetworkManager.connectNonValidators: Problem creating non-validator outbound "+
 				"connection to addr: %v; err: %v", addr, err)
 		}
@@ -698,7 +785,7 @@ func (nm *NetworkManager) getRandomUnconnectedAddress() *wire.NetAddress {
 }
 
 // ###########################
-// ## RemoteNode Dial Functions
+// ## Create RemoteNode Functions
 // ###########################
 
 func (nm *NetworkManager) CreateValidatorConnection(ipStr string, publicKey *bls.PublicKey) error {
@@ -706,7 +793,22 @@ func (nm *NetworkManager) CreateValidatorConnection(ipStr string, publicKey *bls
 	if err != nil {
 		return err
 	}
-	return nm.rnManager.CreateValidatorConnection(netAddr, publicKey)
+	if netAddr == nil || publicKey == nil {
+		return fmt.Errorf("NetworkManager.CreateValidatorConnection: netAddr or public key is nil")
+	}
+
+	if _, ok := nm.GetValidatorIndex().Get(publicKey.Serialize()); ok {
+		return fmt.Errorf("NetworkManager.CreateValidatorConnection: RemoteNode already exists for public key: %v", publicKey)
+	}
+
+	remoteNode := nm.newRemoteNode(publicKey, false)
+	if err := remoteNode.DialOutboundConnection(netAddr); err != nil {
+		return errors.Wrapf(err, "NetworkManager.CreateValidatorConnection: Problem calling DialPersistentOutboundConnection "+
+			"for addr: (%s:%v)", netAddr.IP.String(), netAddr.Port)
+	}
+	nm.setRemoteNode(remoteNode)
+	nm.GetValidatorIndex().Set(publicKey.Serialize(), remoteNode)
+	return nil
 }
 
 func (nm *NetworkManager) CreateNonValidatorPersistentOutboundConnection(ipStr string) (RemoteNodeId, error) {
@@ -714,7 +816,18 @@ func (nm *NetworkManager) CreateNonValidatorPersistentOutboundConnection(ipStr s
 	if err != nil {
 		return 0, err
 	}
-	return nm.rnManager.CreateNonValidatorPersistentOutboundConnection(netAddr)
+	if netAddr == nil {
+		return 0, fmt.Errorf("NetworkManager.CreateNonValidatorPersistentOutboundConnection: netAddr is nil")
+	}
+
+	remoteNode := nm.newRemoteNode(nil, true)
+	if err := remoteNode.DialPersistentOutboundConnection(netAddr); err != nil {
+		return 0, errors.Wrapf(err, "NetworkManager.CreateNonValidatorPersistentOutboundConnection: Problem calling DialPersistentOutboundConnection "+
+			"for addr: (%s:%v)", netAddr.IP.String(), netAddr.Port)
+	}
+	nm.setRemoteNode(remoteNode)
+	nm.GetNonValidatorOutboundIndex().Set(remoteNode.GetId(), remoteNode)
+	return remoteNode.GetId(), nil
 }
 
 func (nm *NetworkManager) CreateNonValidatorOutboundConnection(ipStr string) error {
@@ -722,7 +835,337 @@ func (nm *NetworkManager) CreateNonValidatorOutboundConnection(ipStr string) err
 	if err != nil {
 		return err
 	}
-	return nm.rnManager.CreateNonValidatorOutboundConnection(netAddr)
+	return nm.createNonValidatorOutboundConnection(netAddr)
+}
+
+func (nm *NetworkManager) createNonValidatorOutboundConnection(netAddr *wire.NetAddress) error {
+	if netAddr == nil {
+		return fmt.Errorf("NetworkManager.CreateNonValidatorOutboundConnection: netAddr is nil")
+	}
+
+	remoteNode := nm.newRemoteNode(nil, false)
+	if err := remoteNode.DialOutboundConnection(netAddr); err != nil {
+		return errors.Wrapf(err, "NetworkManager.CreateNonValidatorOutboundConnection: Problem calling DialOutboundConnection "+
+			"for addr: (%s:%v)", netAddr.IP.String(), netAddr.Port)
+	}
+	nm.setRemoteNode(remoteNode)
+	nm.GetNonValidatorOutboundIndex().Set(remoteNode.GetId(), remoteNode)
+	return nil
+}
+
+func (nm *NetworkManager) AttachInboundConnection(conn net.Conn,
+	na *wire.NetAddress) (*RemoteNode, error) {
+
+	remoteNode := nm.newRemoteNode(nil, false)
+	if err := remoteNode.AttachInboundConnection(conn, na); err != nil {
+		return remoteNode, errors.Wrapf(err, "NetworkManager.AttachInboundConnection: Problem calling AttachInboundConnection "+
+			"for addr: (%s)", conn.RemoteAddr().String())
+	}
+
+	nm.setRemoteNode(remoteNode)
+	return remoteNode, nil
+}
+
+func (nm *NetworkManager) AttachOutboundConnection(conn net.Conn, na *wire.NetAddress,
+	remoteNodeId uint64, isPersistent bool) (*RemoteNode, error) {
+
+	id := NewRemoteNodeId(remoteNodeId)
+	remoteNode := nm.GetRemoteNodeById(id)
+	if remoteNode == nil {
+		return nil, fmt.Errorf("NetworkManager.AttachOutboundConnection: Problem getting remote node by id (%d)",
+			id.ToUint64())
+	}
+
+	if err := remoteNode.AttachOutboundConnection(conn, na, isPersistent); err != nil {
+		nm.Disconnect(remoteNode)
+		return nil, errors.Wrapf(err, "NetworkManager.AttachOutboundConnection: Problem calling AttachOutboundConnection "+
+			"for addr: (%s). Disconnecting remote node (id=%v)", conn.RemoteAddr().String(), remoteNode.GetId())
+	}
+
+	return remoteNode, nil
+}
+
+// ###########################
+// ## RemoteNode Management
+// ###########################
+
+func (nm *NetworkManager) DisconnectAll() {
+	allRemoteNodes := nm.GetAllRemoteNodes().GetAll()
+	for _, rn := range allRemoteNodes {
+		glog.V(2).Infof("NetworkManager.DisconnectAll: Disconnecting from remote node (id=%v)", rn.GetId())
+		nm.Disconnect(rn)
+	}
+}
+
+func (nm *NetworkManager) newRemoteNode(validatorPublicKey *bls.PublicKey, isPersistent bool) *RemoteNode {
+	id := atomic.AddUint64(&nm.remoteNodeIndex, 1)
+	remoteNodeId := NewRemoteNodeId(id)
+	latestBlockHeight := uint64(nm.bc.BlockTip().Height)
+	return NewRemoteNode(remoteNodeId, validatorPublicKey, isPersistent, nm.srv, nm.cmgr, nm.keystore,
+		nm.params, nm.minTxFeeRateNanosPerKB, latestBlockHeight, nm.nodeServices)
+}
+
+func (nm *NetworkManager) ProcessCompletedHandshake(remoteNode *RemoteNode) {
+	if remoteNode == nil {
+		return
+	}
+
+	if remoteNode.IsValidator() {
+		nm.SetValidator(remoteNode)
+		nm.UnsetNonValidator(remoteNode)
+	} else {
+		nm.UnsetValidator(remoteNode)
+		nm.SetNonValidator(remoteNode)
+	}
+	nm.srv.HandleAcceptedPeer(remoteNode)
+	nm.srv.maybeRequestAddresses(remoteNode)
+}
+
+func (nm *NetworkManager) Disconnect(rn *RemoteNode) {
+	if rn == nil {
+		return
+	}
+	glog.V(2).Infof("NetworkManager.Disconnect: Disconnecting from remote node id=%v", rn.GetId())
+	rn.Disconnect()
+	nm.removeRemoteNodeFromIndexer(rn)
+}
+
+func (nm *NetworkManager) DisconnectById(id RemoteNodeId) {
+	rn := nm.GetRemoteNodeById(id)
+	if rn == nil {
+		return
+	}
+
+	nm.Disconnect(rn)
+}
+
+func (nm *NetworkManager) SendMessage(rn *RemoteNode, desoMessage DeSoMessage) error {
+	if rn == nil {
+		return fmt.Errorf("NetworkManager.SendMessage: RemoteNode is nil")
+	}
+
+	return rn.SendMessage(desoMessage)
+}
+
+func (nm *NetworkManager) removeRemoteNodeFromIndexer(rn *RemoteNode) {
+	nm.mtx.Lock()
+	defer nm.mtx.Unlock()
+
+	if rn == nil {
+		return
+	}
+
+	nm.GetAllRemoteNodes().Remove(rn.GetId())
+	nm.GetNonValidatorOutboundIndex().Remove(rn.GetId())
+	nm.GetNonValidatorInboundIndex().Remove(rn.GetId())
+
+	// Try to evict the remote node from the validator index. If the remote node is not a validator, then there is nothing to do.
+	if rn.GetValidatorPublicKey() == nil {
+		return
+	}
+	// Only remove from the validator index if the fetched remote node is the same as the one we are trying to remove.
+	// Otherwise, we could have a fun edge-case where a duplicated validator connection ends up removing an
+	// existing validator connection from the index.
+	fetchedRn, ok := nm.GetValidatorIndex().Get(rn.GetValidatorPublicKey().Serialize())
+	if ok && fetchedRn.GetId() == rn.GetId() {
+		nm.GetValidatorIndex().Remove(rn.GetValidatorPublicKey().Serialize())
+	}
+}
+
+func (nm *NetworkManager) Cleanup() {
+	allRemoteNodes := nm.GetAllRemoteNodes().GetAll()
+	for _, rn := range allRemoteNodes {
+		if rn.IsTimedOut() {
+			glog.V(2).Infof("NetworkManager.Cleanup: Disconnecting from remote node (id=%v)", rn.GetId())
+			nm.Disconnect(rn)
+		}
+	}
+}
+
+// ###########################
+// ## RemoteNode Setters
+// ###########################
+
+func (nm *NetworkManager) setRemoteNode(rn *RemoteNode) {
+	nm.mtx.Lock()
+	defer nm.mtx.Unlock()
+
+	if rn == nil || rn.IsTerminated() {
+		return
+	}
+
+	nm.GetAllRemoteNodes().Set(rn.GetId(), rn)
+}
+
+func (nm *NetworkManager) SetNonValidator(rn *RemoteNode) {
+	nm.mtx.Lock()
+	defer nm.mtx.Unlock()
+
+	if rn == nil || rn.IsTerminated() {
+		return
+	}
+
+	if rn.IsOutbound() {
+		nm.GetNonValidatorOutboundIndex().Set(rn.GetId(), rn)
+	} else {
+		nm.GetNonValidatorInboundIndex().Set(rn.GetId(), rn)
+	}
+}
+
+func (nm *NetworkManager) SetValidator(remoteNode *RemoteNode) {
+	nm.mtx.Lock()
+	defer nm.mtx.Unlock()
+
+	if remoteNode == nil || remoteNode.IsTerminated() {
+		return
+	}
+
+	pk := remoteNode.GetValidatorPublicKey()
+	if pk == nil {
+		return
+	}
+	nm.GetValidatorIndex().Set(pk.Serialize(), remoteNode)
+}
+
+func (nm *NetworkManager) UnsetValidator(remoteNode *RemoteNode) {
+	nm.mtx.Lock()
+	defer nm.mtx.Unlock()
+
+	if remoteNode == nil || remoteNode.IsTerminated() {
+		return
+	}
+
+	pk := remoteNode.GetValidatorPublicKey()
+	if pk == nil {
+		return
+	}
+	nm.GetValidatorIndex().Remove(pk.Serialize())
+}
+
+func (nm *NetworkManager) UnsetNonValidator(rn *RemoteNode) {
+	nm.mtx.Lock()
+	defer nm.mtx.Unlock()
+
+	if rn == nil || rn.IsTerminated() {
+		return
+	}
+
+	if rn.IsOutbound() {
+		nm.GetNonValidatorOutboundIndex().Remove(rn.GetId())
+	} else {
+		nm.GetNonValidatorInboundIndex().Remove(rn.GetId())
+	}
+}
+
+// ###########################
+// ## RemoteNode Getters
+// ###########################
+
+func (nm *NetworkManager) GetAllRemoteNodes() *collections.ConcurrentMap[RemoteNodeId, *RemoteNode] {
+	return nm.AllRemoteNodes
+}
+
+func (nm *NetworkManager) GetValidatorIndex() *collections.ConcurrentMap[bls.SerializedPublicKey, *RemoteNode] {
+	return nm.ValidatorIndex
+}
+
+func (nm *NetworkManager) GetNonValidatorOutboundIndex() *collections.ConcurrentMap[RemoteNodeId, *RemoteNode] {
+	return nm.NonValidatorOutboundIndex
+}
+
+func (nm *NetworkManager) GetNonValidatorInboundIndex() *collections.ConcurrentMap[RemoteNodeId, *RemoteNode] {
+	return nm.NonValidatorInboundIndex
+}
+
+func (nm *NetworkManager) GetRemoteNodeFromPeer(peer *Peer) *RemoteNode {
+	if peer == nil {
+		return nil
+	}
+	id := NewRemoteNodeId(peer.GetId())
+	rn, _ := nm.GetAllRemoteNodes().Get(id)
+	return rn
+}
+
+func (nm *NetworkManager) GetRemoteNodeById(id RemoteNodeId) *RemoteNode {
+	rn, ok := nm.GetAllRemoteNodes().Get(id)
+	if !ok {
+		return nil
+	}
+	return rn
+}
+
+func (nm *NetworkManager) GetAllNonValidators() []*RemoteNode {
+	outboundRemoteNodes := nm.GetNonValidatorOutboundIndex().GetAll()
+	inboundRemoteNodes := nm.GetNonValidatorInboundIndex().GetAll()
+	return append(outboundRemoteNodes, inboundRemoteNodes...)
+}
+
+// ###########################
+// ## RemoteNode Handshake
+// ###########################
+
+// InitiateHandshake kicks off handshake with a remote node.
+func (nm *NetworkManager) InitiateHandshake(rn *RemoteNode) {
+	nonce := uint64(RandInt64(math.MaxInt64))
+	if err := rn.InitiateHandshake(nonce); err != nil {
+		glog.Errorf("NetworkManager.InitiateHandshake: Error initiating handshake: %v", err)
+		nm.Disconnect(rn)
+	}
+	nm.usedNonces.Add(nonce)
+}
+
+// handleHandshakeComplete is called on a completed handshake with a RemoteNodes.
+func (nm *NetworkManager) handleHandshakeComplete(remoteNode *RemoteNode) {
+	// Prevent race conditions while handling handshake complete messages.
+	nm.mtxHandshakeComplete.Lock()
+	defer nm.mtxHandshakeComplete.Unlock()
+
+	// Get the handshake information of this peer.
+	if remoteNode == nil {
+		return
+	}
+
+	if remoteNode.GetNegotiatedProtocolVersion().Before(ProtocolVersion2) {
+		nm.ProcessCompletedHandshake(remoteNode)
+		return
+	}
+
+	if err := nm.handleHandshakeCompletePoSMessage(remoteNode); err != nil {
+		glog.Errorf("NetworkManager.handleHandshakeComplete: Error handling PoS handshake peer message: %v, "+
+			"remoteNodePk (%s)", err, remoteNode.GetValidatorPublicKey().Serialize())
+		nm.Disconnect(remoteNode)
+		return
+	}
+	nm.ProcessCompletedHandshake(remoteNode)
+}
+
+func (nm *NetworkManager) handleHandshakeCompletePoSMessage(remoteNode *RemoteNode) error {
+
+	validatorPk := remoteNode.GetValidatorPublicKey()
+	// If the remote node is not a potential validator, we don't need to do anything.
+	if validatorPk == nil {
+		return nil
+	}
+
+	// Lookup the validator in the ValidatorIndex with the same public key.
+	existingValidator, ok := nm.GetValidatorIndex().Get(validatorPk.Serialize())
+	// For inbound RemoteNodes, we should ensure that there isn't an existing validator connected with the same public key.
+	// Inbound nodes are not initiated by us, so we shouldn't have added the RemoteNode to the ValidatorIndex yet.
+	if remoteNode.IsInbound() && ok {
+		return fmt.Errorf("NetworkManager.handleHandshakeCompletePoSMessage: Inbound RemoteNode with duplicate validator public key")
+	}
+	// For outbound RemoteNodes, we have two possible scenarios. Either the RemoteNode has been initiated as a validator,
+	// in which case it should already be in the ValidatorIndex. Or the RemoteNode has been initiated as a regular node,
+	// in which case it should not be in the ValidatorIndex, but in the NonValidatorOutboundIndex. So to ensure there is
+	// no duplicate connection with the same public key, we only check whether there is a validator in the ValidatorIndex
+	// with the RemoteNode's public key. If there is one, we want to ensure that these two RemoteNodes have identical ids.
+	if remoteNode.IsOutbound() && ok {
+		if remoteNode.GetId() != existingValidator.GetId() {
+			return fmt.Errorf("NetworkManager.handleHandshakeCompletePoSMessage: Outbound RemoteNode with duplicate validator public key. "+
+				"Existing validator id: %v, new validator id: %v", existingValidator.GetId().ToUint64(), remoteNode.GetId().ToUint64())
+		}
+	}
+	return nil
 }
 
 // ###########################

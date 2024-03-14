@@ -86,6 +86,8 @@ func generateConfig(t *testing.T, port uint32, dataDir string, maxPeers uint32) 
 	config.MaxMempoolPosSizeBytes = 3000000000
 	config.MempoolFeeEstimatorNumMempoolBlocks = 1
 	config.MempoolFeeEstimatorNumPastBlocks = 50
+	config.MempoolMaxValidationViewConnects = 10000
+	config.TransactionValidationRefreshIntervalMillis = 10
 	config.AugmentedBlockViewRefreshIntervalMillis = 10
 	config.PosBlockProductionIntervalMilliseconds = 1500
 	config.PosTimeoutBaseDurationMilliseconds = 30000

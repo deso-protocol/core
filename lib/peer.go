@@ -180,7 +180,7 @@ func (pp *Peer) HandleGetTransactionsMsg(getTxnMsg *MsgDeSoGetTransactions) {
 		// If the transaction isn't in the pool, just continue without adding
 		// it. It is generally OK to respond with only a subset of the transactions
 		// that were requested.
-		if mempoolTx == nil {
+		if mempoolTx == nil || !mempoolTx.IsValidated() {
 			continue
 		}
 
@@ -312,7 +312,7 @@ func (pp *Peer) HelpHandleInv(msg *MsgDeSoInv) {
 			// For transactions, check that the transaction isn't in the
 			// mempool and that it isn't currently being requested.
 			_, requestIsInFlight := pp.srv.requestedTransactionsMap[currentHash]
-			if requestIsInFlight || pp.srv.mempool.IsTransactionInPool(&currentHash) {
+			if requestIsInFlight || pp.srv.GetMempool().GetTransaction(&currentHash) != nil {
 				continue
 			}
 
