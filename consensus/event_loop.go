@@ -345,7 +345,7 @@ func (fc *fastHotStuffEventLoop) ProcessValidatorVote(vote VoteMessage) error {
 	}
 
 	// Check if the vote is for the chain tip. If not, then there's nothing more to do.
-	if vote.GetBlockHash() != fc.tip.block.GetBlockHash() {
+	if !IsEqualBlockHash(vote.GetBlockHash(), fc.tip.block.GetBlockHash()) {
 		return nil
 	}
 
