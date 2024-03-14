@@ -10,6 +10,56 @@ import (
 	"testing"
 )
 
+func TestConnectAtomicTxnsWrapperRuleErrors(t *testing.T) {
+	// Initialize test chain, miner, and testMeta.
+	testMeta := _setUpMinerAndTestMetaForAtomicTransactionTests(t)
+
+	// Initialize m0, m1, m2, m3, m4.
+	_setUpUsersForAtomicTransactionsTesting(testMeta)
+
+	// Try and generate an atomic transaction wrapper larger than half the block size.
+	// For simplicity, we estimate a basic transfer at greater than 100 bytes.
+	// (This should fail -- RuleErrorTxnTooBig)
+	numTxnsToGenerate := testMeta.params.MaxBlockSizeBytes / 200
+	atomicTxns := _generateDependentAtomicTransactions(testMeta, int(numTxnsToGenerate))
+	atomicTxnsWrapper, _, err := testMeta.chain.CreateAtomicTxnsWrapper(atomicTxns, nil)
+	require.NoError(t, err)
+	_, err = _atomicTransactionsWrapperWithConnectTimestamp(
+		t, testMeta.chain, testMeta.db, testMeta.params, atomicTxnsWrapper, 0)
+	require.Contains(t, err.Error(), RuleErrorTxnTooBig)
+
+	// Update the network fees to test for fee rule error testing.
+	testMeta.params.ExtraRegtestParamUpdaterKeys[MakePkMapKey(paramUpdaterPkBytes)] = true
+	_updateGlobalParamsEntryWithTestMeta(
+		testMeta,
+		200,
+		paramUpdaterPub,
+		paramUpdaterPriv,
+		100,
+		100,
+		100,
+		100,
+		100,
+	)
+
+	// Try and cause overflow in the atomic transactions wrapper fee verification.
+	// (This should fail -- RuleErrorOverflowDetectedInFeeRateCalculation)
+	atomicTxns = _generateDependentAtomicTransactions(testMeta, int(100))
+	atomicTxnsWrapper, _, err = testMeta.chain.CreateAtomicTxnsWrapper(atomicTxns, nil)
+	require.NoError(t, err)
+	atomicTxnsWrapper.TxnFeeNanos = math.MaxUint64
+	_, err = _atomicTransactionsWrapperWithConnectTimestamp(
+		t, testMeta.chain, testMeta.db, testMeta.params, atomicTxnsWrapper, 0)
+	require.Contains(t, err.Error(), RuleErrorOverflowDetectedInFeeRateCalculation)
+
+	// Have a fee below the network minimum.
+	// (This should fail -- RuleErrorTxnFeeBelowNetworkMinimum)
+	atomicTxnsWrapper.TxnFeeNanos = 0
+	_, err = _atomicTransactionsWrapperWithConnectTimestamp(
+		t, testMeta.chain, testMeta.db, testMeta.params, atomicTxnsWrapper, 0)
+	require.Contains(t, err.Error(), RuleErrorTxnFeeBelowNetworkMinimum)
+}
+
 func TestVerifyAtomicTxnsWrapperRuleErrors(t *testing.T) {
 	// Initialize test chain, miner, and testMeta.
 	testMeta := _setUpMinerAndTestMetaForAtomicTransactionTests(t)
@@ -108,9 +158,19 @@ func TestVerifyAtomicTxnsChain(t *testing.T) {
 	atomicTxnsWrapper, _, err := testMeta.chain.CreateAtomicTxnsWrapper(atomicTxns, nil)
 	require.NoError(t, err)
 
+	// Try to remove all the inner transactions.
+	// (This should fail -- RuleErrorAtomicTxnsHasNoTransactions)
+	atomicTxnsWrapperDuplicate, err := atomicTxnsWrapper.Copy()
+	require.NoError(t, err)
+	atomicTxnsWrapperDuplicate.TxnMeta.(*AtomicTxnsWrapperMetadata).Txns = []*MsgDeSoTxn{}
+	atomicTxnsWrapperDuplicate.TxnFeeNanos = 0
+	_, err = _atomicTransactionsWrapperWithConnectTimestamp(
+		t, testMeta.chain, testMeta.db, testMeta.params, atomicTxnsWrapperDuplicate, 0)
+	require.Contains(t, err.Error(), RuleErrorAtomicTxnsHasNoTransactions)
+
 	// Try to put an atomic transaction wrapper INSIDE an atomic transaction wrapper.
 	// (This should fail -- RuleErrorAtomicTxnsHasAtomicTxnsInnerTxn)
-	atomicTxnsWrapperDuplicate, err := atomicTxnsWrapper.Copy()
+	atomicTxnsWrapperDuplicate, err = atomicTxnsWrapper.Copy()
 	require.NoError(t, err)
 	innerAtomicTxnsWrapper, _, err := testMeta.chain.CreateAtomicTxnsWrapper(atomicTxns[:100], nil)
 	require.NoError(t, err)
@@ -403,6 +463,7 @@ func _setUpUsersForAtomicTransactionsTesting(testMeta *TestMeta) {
 	_registerOrTransferWithTestMeta(testMeta, "m2", senderPkString, m2Pub, senderPrivString, 1e6)
 	_registerOrTransferWithTestMeta(testMeta, "m3", senderPkString, m3Pub, senderPrivString, 1e6)
 	_registerOrTransferWithTestMeta(testMeta, "m4", senderPkString, m4Pub, senderPrivString, 1e6)
+	_registerOrTransferWithTestMeta(testMeta, "", senderPkString, paramUpdaterPub, senderPrivString, 10000)
 
 	// Create profile for m0 and m1.
 	{

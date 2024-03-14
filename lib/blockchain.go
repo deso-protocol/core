@@ -5798,27 +5798,6 @@ func (bc *Blockchain) CreateAtomicTxnsWrapper(
 	// transaction extra data. We create a copy of the transactions to ensure we do not
 	// modify the caller's data.
 
-	// Construct special helper functions for circular doubly linked list indexing.
-	nextIndex := func(currentIndex int, chainLength int) int {
-		// Check for the special case of an atomic chain of length 1.
-		if chainLength == 1 {
-			return currentIndex
-		}
-		return (currentIndex + 1) % chainLength
-	}
-	prevIndex := func(currentIndex int, chainLength int) int {
-		// Check for the special case of an atomic chain of length 1.
-		if chainLength == 1 {
-			return currentIndex
-		}
-
-		// Check for the wrap around case.
-		if currentIndex == 0 {
-			return chainLength - 1
-		}
-		return currentIndex - 1
-	}
-
 	// Construct the chained transactions and keep track of the total fees paid.
 	var chainedUnsignedTransactions []*MsgDeSoTxn
 	var totalFees uint64
@@ -5830,11 +5809,13 @@ func (bc *Blockchain) CreateAtomicTxnsWrapper(
 		}
 
 		// Compute the atomic hashes.
-		nextHash, err := unsignedTransactions[nextIndex(ii, len(unsignedTransactions))].AtomicHash()
+		nextIndex := (ii + 1) % len(unsignedTransactions)
+		nextHash, err := unsignedTransactions[nextIndex].AtomicHash()
 		if err != nil {
 			return nil, 0, errors.Wrapf(err, "CreateAtomicTxnsWrapper: failed to compute next hash")
 		}
-		prevHash, err := unsignedTransactions[prevIndex(ii, len(unsignedTransactions))].AtomicHash()
+		prevIndex := (ii - 1 + len(unsignedTransactions)) % len(unsignedTransactions)
+		prevHash, err := unsignedTransactions[prevIndex].AtomicHash()
 		if err != nil {
 			return nil, 0, errors.Wrapf(err, "CreateAtomicTxnsWrapper: failed to copy prev hash")
 		}

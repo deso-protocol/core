@@ -215,6 +215,21 @@ func (bav *UtxoView) _connectAtomicTxnsWrapper(
 			fmt.Errorf("_connectAtomicTxnsWrapper: TxnMeta type: %v", txn.TxnMeta.GetTxnType().GetTxnString())
 	}
 
+	// Validate that the internal transactions cumulatively pay enough in fees to
+	// cover the atomic transactions AS WELL AS the wrapper. We validate this
+	// here to ensure we can test for these edge cases as they're also logically caught
+	// by _verifyAtomicTxnsWrapper.
+	if txnSizeBytes != 0 && bav.GlobalParamsEntry.MinimumNetworkFeeNanosPerKB != 0 {
+		// Make sure there isn't overflow in the fee.
+		if txn.TxnFeeNanos != ((txn.TxnFeeNanos * 1000) / 1000) {
+			return nil, 0, 0, 0, RuleErrorOverflowDetectedInFeeRateCalculation
+		}
+		// If the fee is less than the minimum network fee per KB, return an error.
+		if (txn.TxnFeeNanos*1000)/uint64(txnSizeBytes) < bav.GlobalParamsEntry.MinimumNetworkFeeNanosPerKB {
+			return nil, 0, 0, 0, RuleErrorTxnFeeBelowNetworkMinimum
+		}
+	}
+
 	// Verify the wrapper of the transaction. This does not verify the txn.TxnMeta contents, just that
 	// the wrapper is well formatted.
 	if err := _verifyAtomicTxnsWrapper(txn); err != nil {
@@ -262,19 +277,6 @@ func (bav *UtxoView) _connectAtomicTxnsWrapper(
 		if err != nil {
 			return nil, 0, 0, 0,
 				errors.Wrap(err, "_connectAtomicTxnsWrapper")
-		}
-	}
-
-	// Validate that the internal transactions cumulatively pay enough in fees to
-	// cover the atomic transactions AS WELL AS the wrapper.
-	if txnSizeBytes != 0 && bav.GlobalParamsEntry.MinimumNetworkFeeNanosPerKB != 0 {
-		// Make sure there isn't overflow in the fee.
-		if txn.TxnFeeNanos != ((txn.TxnFeeNanos * 1000) / 1000) {
-			return nil, 0, 0, 0, RuleErrorOverflowDetectedInFeeRateCalculation
-		}
-		// If the fee is less than the minimum network fee per KB, return an error.
-		if (txn.TxnFeeNanos*1000)/uint64(txnSizeBytes) < bav.GlobalParamsEntry.MinimumNetworkFeeNanosPerKB {
-			return nil, 0, 0, 0, RuleErrorTxnFeeBelowNetworkMinimum
 		}
 	}
 
@@ -350,6 +352,11 @@ func _verifyAtomicTxnsWrapper(txn *MsgDeSoTxn) error {
 }
 
 func _verifyAtomicTxnsChain(txnMeta *AtomicTxnsWrapperMetadata) error {
+	// Check that there's any transactions at all.
+	if len(txnMeta.Txns) == 0 {
+		return RuleErrorAtomicTxnsHasNoTransactions
+	}
+
 	// Validate:
 	//	(1) The inner transactions are not additional redundant atomic transactions wrappers.
 	//  (2) The inner transactions are meant to be included in an atomic transaction.
@@ -386,40 +393,21 @@ func _verifyAtomicTxnsChain(txnMeta *AtomicTxnsWrapperMetadata) error {
 		atomicHashes = append(atomicHashes, innerTxnAtomicHash)
 	}
 
-	// Construct special helper functions for circular doubly linked list indexing.
-	nextIndex := func(currentIndex int, chainLength int) int {
-		// Check for the special case of an atomic chain of length 1.
-		if chainLength == 1 {
-			return currentIndex
-		}
-		return (currentIndex + 1) % chainLength
-	}
-	prevIndex := func(currentIndex int, chainLength int) int {
-		// Check for the special case of an atomic chain of length 1.
-		if chainLength == 1 {
-			return currentIndex
-		}
-
-		// Check for the wrap around case.
-		if currentIndex == 0 {
-			return chainLength - 1
-		}
-		return currentIndex - 1
-	}
-
 	// Validate the chain sequence specified.
 	for ii, innerTxn := range txnMeta.Txns {
 		// Check the next transaction.
+		nextIndex := (ii + 1) % len(txnMeta.Txns)
 		if !bytes.Equal(
 			innerTxn.ExtraData[NextAtomicTxnPreHash],
-			atomicHashes[nextIndex(ii, len(txnMeta.Txns))].ToBytes()) {
+			atomicHashes[nextIndex].ToBytes()) {
 			return RuleErrorAtomicTxnsHasBrokenChain
 		}
 
 		// Check the previous transaction
+		prevIndex := (ii - 1 + len(txnMeta.Txns)) % len(txnMeta.Txns)
 		if !bytes.Equal(
 			innerTxn.ExtraData[PreviousAtomicTxnPreHash],
-			atomicHashes[prevIndex(ii, len(txnMeta.Txns))].ToBytes()) {
+			atomicHashes[prevIndex].ToBytes()) {
 			return RuleErrorAtomicTxnsHasBrokenChain
 		}
 	}
