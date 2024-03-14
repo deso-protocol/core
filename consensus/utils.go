@@ -608,6 +608,18 @@ func createDummyBlockHash() *blockHash {
 	}
 }
 
+func copyBlockHash(input BlockHash) *blockHash {
+	rawInputHash := input.GetValue()
+
+	byteArray := [32]byte{}
+	copy(byteArray[:], rawInputHash[:])
+
+	return &blockHash{
+		value: byteArray,
+	}
+
+}
+
 func generateRandomBytes(numBytes int) []byte {
 	randomBytes := make([]byte, numBytes)
 	rand.Read(randomBytes)

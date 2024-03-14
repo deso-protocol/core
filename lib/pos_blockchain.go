@@ -1,7 +1,6 @@
 package lib
 
 import (
-	"encoding/hex"
 	"fmt"
 	"math"
 	"time"
@@ -1209,9 +1208,9 @@ func (bav *UtxoView) hasValidBlockProposerPoS(block *MsgDeSoBlock) (_isValidBloc
 		currentEpochEntry.InitialBlockHeight,
 		leaderIdx,
 		len(leaders),
-		hex.EncodeToString(leaderEntry.ValidatorPKID.ToBytes()),
+		PkToString(leaderEntry.ValidatorPKID.ToBytes(), bav.Params),
 		leaderEntry.VotingPublicKey.ToAbbreviatedString(),
-		hex.EncodeToString(leaderEntryFromVotingPublicKey.ValidatorPKID.ToBytes()),
+		PkToString(leaderEntryFromVotingPublicKey.ValidatorPKID.ToBytes(), bav.Params),
 		leaderEntryFromVotingPublicKey.VotingPublicKey.ToAbbreviatedString(),
 		block.Header.ProposerVotingPublicKey.ToAbbreviatedString(),
 	)
