@@ -1,6 +1,7 @@
 package lib
 
 import (
+	"bytes"
 	"github.com/btcsuite/btcd/btcec"
 	"github.com/dgraph-io/badger/v3"
 	"github.com/pkg/errors"
@@ -10,6 +11,87 @@ import (
 	"testing"
 )
 
+func TestAtomicTxnsWrapperAtomicity(t *testing.T) {
+	// Initialize test chain, miner, and testMeta.
+	testMeta := _setUpMinerAndTestMetaForAtomicTransactionTests(t)
+
+	// Initialize m0, m1, m2, m3, m4.
+	_setUpUsersForAtomicTransactionsTesting(testMeta)
+
+	// Create a series of valid (unsigned) dependent transactions.
+	atomicTxns, signerPrivKeysBase58 := _generateUnsignedDependentAtomicTransactions(testMeta, int(100))
+
+	// Fetch all starting balances for affected public keys.
+	fetchTransactorBalances := func(transactions []*MsgDeSoTxn) []uint64 {
+		var balancesNanos []uint64
+		for _, txn := range transactions {
+			balancesNanos = append(balancesNanos,
+				_getBalance(testMeta.t, testMeta.chain, testMeta.mempool,
+					Base58CheckEncode(txn.PublicKey, false, testMeta.params)))
+		}
+		return balancesNanos
+	}
+	startingBalances := fetchTransactorBalances(atomicTxns)
+
+	// Wrap the transactions in an atomic wrapper.
+	// NOTE: This must be done before signing to ensure the extra data is present.
+	atomicTxnsWrapper, _, err := testMeta.chain.CreateAtomicTxnsWrapper(atomicTxns, nil)
+	require.NoError(t, err)
+
+	// Sign all but the final transaction, sign the last one incorrectly.
+	for ii := range atomicTxns {
+		// Sign the transaction.
+		if ii != len(atomicTxns)-1 {
+			_signTxn(t,
+				atomicTxnsWrapper.TxnMeta.(*AtomicTxnsWrapperMetadata).Txns[ii],
+				signerPrivKeysBase58[ii],
+			)
+		} else {
+			_signTxn(t,
+				atomicTxnsWrapper.TxnMeta.(*AtomicTxnsWrapperMetadata).Txns[ii],
+				signerPrivKeysBase58[(ii+1)%len(atomicTxns)],
+			)
+		}
+	}
+
+	// Try to connect the atomic transaction wrapper.
+	// This should fail on the final transaction as it's incorrectly signed.
+	_, err = _atomicTransactionsWrapperWithConnectTimestamp(
+		t, testMeta.chain, testMeta.db, testMeta.params, atomicTxnsWrapper, 0)
+	require.Contains(t, err.Error(), RuleErrorInvalidTransactionSignature)
+
+	// Check that the balances are not updated.
+	// This ensures that if a single transaction within the atomic transaction
+	// fails, the entire transaction as a whole fails.
+	failingBalances := fetchTransactorBalances(atomicTxns)
+	for ii, failingBalance := range failingBalances {
+		require.Equal(t, startingBalances[ii], failingBalance)
+	}
+
+	// Sign the final transaction and make a valid atomic transaction.
+	_signTxn(t,
+		atomicTxnsWrapper.TxnMeta.(*AtomicTxnsWrapperMetadata).Txns[len(atomicTxns)-1],
+		signerPrivKeysBase58[len(atomicTxns)-1],
+	)
+
+	// Try to connect the atomic transaction, this should now succeed.
+	_, err = _atomicTransactionsWrapperWithConnectTimestamp(
+		t, testMeta.chain, testMeta.db, testMeta.params, atomicTxnsWrapper, 0)
+	require.NoError(t, err)
+
+	// Validate that only M0's balance has changed by the total fees paid.
+	// This is the expected output from the artificially generated dependent transactions
+	// and shows the transactions were connected properly.
+	endingBalances := fetchTransactorBalances(atomicTxns)
+	for ii, endingBalance := range endingBalances {
+		if bytes.Equal(atomicTxns[ii].PublicKey, m0PkBytes) {
+			require.Equal(t, startingBalances[ii]-atomicTxnsWrapper.TxnFeeNanos, endingBalance)
+		} else {
+			require.Equal(t, uint64(0), endingBalance)
+		}
+	}
+}
+
 func TestAtomicTxnsSignatureFailure(t *testing.T) {
 	// Initialize test chain, miner, and testMeta.
 	testMeta := _setUpMinerAndTestMetaForAtomicTransactionTests(t)
@@ -18,7 +100,13 @@ func TestAtomicTxnsSignatureFailure(t *testing.T) {
 	_setUpUsersForAtomicTransactionsTesting(testMeta)
 
 	// Create a series of valid (unsigned) dependent transactions.
-	atomicTxns := _generateDependentAtomicTransactions(testMeta, int(100))
+	atomicTxns, signerPrivKeysBase58 := _generateUnsignedDependentAtomicTransactions(testMeta, int(100))
+
+	// Sign them incorrectly then make them atomic.
+	for ii, txn := range atomicTxns {
+		nextIndex := (ii + 1) % len(atomicTxns)
+		_signTxn(t, txn, signerPrivKeysBase58[nextIndex])
+	}
 	atomicTxnsWrapper, _, err := testMeta.chain.CreateAtomicTxnsWrapper(atomicTxns, nil)
 	require.NoError(t, err)
 
@@ -40,7 +128,7 @@ func TestConnectAtomicTxnsWrapperRuleErrors(t *testing.T) {
 	// For simplicity, we estimate a basic transfer at greater than 100 bytes.
 	// (This should fail -- RuleErrorTxnTooBig)
 	numTxnsToGenerate := testMeta.params.MaxBlockSizeBytes / 200
-	atomicTxns := _generateDependentAtomicTransactions(testMeta, int(numTxnsToGenerate))
+	atomicTxns, _ := _generateSignedDependentAtomicTransactions(testMeta, int(numTxnsToGenerate))
 	atomicTxnsWrapper, _, err := testMeta.chain.CreateAtomicTxnsWrapper(atomicTxns, nil)
 	require.NoError(t, err)
 	_, err = _atomicTransactionsWrapperWithConnectTimestamp(
@@ -63,7 +151,7 @@ func TestConnectAtomicTxnsWrapperRuleErrors(t *testing.T) {
 
 	// Try and cause overflow in the atomic transactions wrapper fee verification.
 	// (This should fail -- RuleErrorOverflowDetectedInFeeRateCalculation)
-	atomicTxns = _generateDependentAtomicTransactions(testMeta, int(100))
+	atomicTxns, _ = _generateSignedDependentAtomicTransactions(testMeta, int(100))
 	atomicTxnsWrapper, _, err = testMeta.chain.CreateAtomicTxnsWrapper(atomicTxns, nil)
 	require.NoError(t, err)
 	atomicTxnsWrapper.TxnFeeNanos = math.MaxUint64
@@ -87,7 +175,7 @@ func TestVerifyAtomicTxnsWrapperRuleErrors(t *testing.T) {
 	_setUpUsersForAtomicTransactionsTesting(testMeta)
 
 	// Generate 100 dependent atomic transactions.
-	atomicTxns := _generateDependentAtomicTransactions(testMeta, 100)
+	atomicTxns, _ := _generateSignedDependentAtomicTransactions(testMeta, 100)
 
 	// Bundle the transactions together in a (valid) wrapper.
 	atomicTxnsWrapper, _, err := testMeta.chain.CreateAtomicTxnsWrapper(atomicTxns, nil)
@@ -171,7 +259,7 @@ func TestVerifyAtomicTxnsChain(t *testing.T) {
 	_setUpUsersForAtomicTransactionsTesting(testMeta)
 
 	// Generate 100 dependent atomic transactions.
-	atomicTxns := _generateDependentAtomicTransactions(testMeta, 100)
+	atomicTxns, _ := _generateSignedDependentAtomicTransactions(testMeta, 100)
 
 	// Bundle the transactions together in a (valid) wrapper.
 	atomicTxnsWrapper, _, err := testMeta.chain.CreateAtomicTxnsWrapper(atomicTxns, nil)
@@ -256,7 +344,7 @@ func TestDependentAtomicTransactionGeneration(t *testing.T) {
 	_setUpUsersForAtomicTransactionsTesting(testMeta)
 
 	// Generate 100 dependent atomic transactions.
-	atomicTxns := _generateDependentAtomicTransactions(testMeta, 100)
+	atomicTxns, _ := _generateSignedDependentAtomicTransactions(testMeta, 100)
 
 	// Construct a new view to connect the transactions to.
 	utxoView, err := NewUtxoView(
@@ -324,7 +412,25 @@ func TestDependentAtomicTransactionGeneration(t *testing.T) {
 // (Testing) Atomic Transactions Setup Helper Functions
 //----------------------------------------------------------
 
-// The goal of _generateDependentAtomicTransactions is to generate
+func _generateSignedDependentAtomicTransactions(
+	testMeta *TestMeta,
+	numberOfTransactions int,
+) (
+	_atomicTransactions []*MsgDeSoTxn,
+	_signerPrivKeysBase58 []string,
+) {
+	// Generate unsigned transactions.
+	atomicTransactions, signerPrivKeysBase58 := _generateUnsignedDependentAtomicTransactions(
+		testMeta, numberOfTransactions)
+
+	// Sign transactions and return.
+	for ii, txn := range atomicTransactions {
+		_signTxn(testMeta.t, txn, signerPrivKeysBase58[ii])
+	}
+	return atomicTransactions, signerPrivKeysBase58
+}
+
+// The goal of _generateUnsignedDependentAtomicTransactions is to generate
 // a sequence of transactions who CANNOT be reordered meaning they
 // must be executed in the sequence returned. This mean transaction
 // with position ii in atomicTransactions CANNOT be placed in an
@@ -344,11 +450,12 @@ func TestDependentAtomicTransactionGeneration(t *testing.T) {
 // in any other order. Hence, these transactions are dependent on each other.
 //
 // The length of the returned list of transactions is specified by numberOfTransactions.
-func _generateDependentAtomicTransactions(
+func _generateUnsignedDependentAtomicTransactions(
 	testMeta *TestMeta,
 	numberOfTransactions int,
 ) (
 	_atomicTransactions []*MsgDeSoTxn,
+	_signerPrivKeysBase58 []string,
 ) {
 	var atomicTransactions []*MsgDeSoTxn
 	var receiverPublicKeysBase58 []string
@@ -372,21 +479,18 @@ func _generateDependentAtomicTransactions(
 
 		// Determine the sender.
 		var senderPubKeyBase58 string
-		var senderPrivKeyBase58 string
 		var senderBalanceNanos uint64
 		if ii == 0 {
 			senderPubKeyBase58 = m0Pub
-			senderPrivKeyBase58 = m0Priv
 			senderBalanceNanos = m0InitialBalanceNanos
 		} else {
 			senderPubKeyBase58 = receiverPublicKeysBase58[ii-1]
-			senderPrivKeyBase58 = receiverPrivateKeysBase58[ii-1]
 			senderBalanceNanos = receiverBalancesNanos[ii-1]
 		}
 
 		// Generate a max atomic transfer.
-		maxTransferTxn, receiverBalanceNanos, err := _generateMaxBasicTransfer(
-			testMeta, senderPubKeyBase58, senderPrivKeyBase58, senderBalanceNanos, receiverPublicKeysBase58[ii])
+		maxTransferTxn, receiverBalanceNanos, err := _generateUnsignedMaxBasicTransfer(
+			testMeta, senderPubKeyBase58, senderBalanceNanos, receiverPublicKeysBase58[ii])
 		require.NoError(testMeta.t, err)
 		atomicTransactions = append(atomicTransactions, maxTransferTxn)
 
@@ -395,22 +499,17 @@ func _generateDependentAtomicTransactions(
 	}
 
 	// Perform a max transfer back to m0.
-	maxTransferTxn, _, err := _generateMaxBasicTransfer(
-		testMeta,
-		receiverPublicKeysBase58[len(receiverPublicKeysBase58)-1],
-		receiverPrivateKeysBase58[len(receiverPrivateKeysBase58)-1],
-		receiverBalancesNanos[len(receiverBalancesNanos)-1],
-		m0Pub)
+	maxTransferTxn, _, err := _generateUnsignedMaxBasicTransfer(
+		testMeta, receiverPublicKeysBase58[len(receiverPublicKeysBase58)-1], receiverBalancesNanos[len(receiverBalancesNanos)-1], m0Pub)
 	require.NoError(testMeta.t, err)
 	atomicTransactions = append(atomicTransactions, maxTransferTxn)
 
-	return atomicTransactions
+	return atomicTransactions, append([]string{m0Priv}, receiverPrivateKeysBase58...)
 }
 
-func _generateMaxBasicTransfer(
+func _generateUnsignedMaxBasicTransfer(
 	testMeta *TestMeta,
 	senderPubKeyBase58 string,
-	senderPrivKeyBase58 string,
 	senderBalanceNanos uint64,
 	receiverPubKeyBase58 string,
 ) (
@@ -456,12 +555,11 @@ func _generateMaxBasicTransfer(
 	txn.TxnFeeNanos = EstimateMaxTxnFeeV1(txn, testMeta.feeRateNanosPerKb)
 	if txn.TxnFeeNanos > senderBalanceNanos {
 		return nil, 0,
-			errors.New("_generateMaxBasicTransfer: transaction fees more than sender balance.")
+			errors.New("_generateUnsignedMaxBasicTransfer: transaction fees more than sender balance.")
 	}
 	txn.TxOutputs[0].AmountNanos = senderBalanceNanos - txn.TxnFeeNanos
 
-	// Sign and return the transaction.
-	_signTxn(testMeta.t, txn, senderPrivKeyBase58)
+	// Return the transaction.
 	return txn, txn.TxOutputs[0].AmountNanos, nil
 }
 
@@ -561,82 +659,6 @@ func _setUpMinerAndTestMetaForAtomicTransactionTests(t *testing.T) *TestMeta {
 // (Testing) Atomic Transaction Connection Helper Functions
 //----------------------------------------------------------
 
-func _atomicTransactionsWithTestMeta(
-	testMeta *TestMeta,
-	atomicTransactions []*MsgDeSoTxn,
-	connectTimestamp int64,
-) {
-	// For atomic transaction sanity check reasons, save the ZeroPublicKey's balance.
-	testMeta.expectedSenderBalances =
-		append(testMeta.expectedSenderBalances,
-			_getBalance(testMeta.t, testMeta.chain, nil,
-				Base58CheckEncode(ZeroPublicKey.ToBytes(), false, testMeta.params)))
-
-	// Connect the transactions.
-	currentOps, currentTxn, _, err := _atomicTransactionsWithConnectTimestamp(
-		testMeta.t,
-		testMeta.chain,
-		testMeta.db,
-		testMeta.params,
-		atomicTransactions,
-		connectTimestamp)
-	require.NoError(testMeta.t, err)
-
-	// Append the transaction as well as the transaction ops.
-	testMeta.txnOps = append(testMeta.txnOps, currentOps)
-	testMeta.txns = append(testMeta.txns, currentTxn)
-}
-
-func _atomicTransactionsWithConnectTimestamp(
-	t *testing.T,
-	chain *Blockchain,
-	db *badger.DB,
-	params *DeSoParams,
-	atomicTransactions []*MsgDeSoTxn,
-	connectTimestamp int64,
-) (
-	_utxoOps []*UtxoOperation,
-	_txn *MsgDeSoTxn,
-	_height uint32,
-	_err error,
-) {
-	assert := assert.New(t)
-	require := require.New(t)
-	_ = assert
-	_ = require
-
-	// Construct a new view to connect the transactions to.
-	utxoView, err := NewUtxoView(db, params, chain.postgres, chain.snapshot, nil)
-	require.NoError(err)
-
-	// Create the atomic transaction wrapper.
-	txn, totalFees, err := chain.CreateAtomicTxnsWrapper(atomicTransactions, nil)
-	if err != nil {
-		return nil, nil, 0, err
-	}
-
-	// Connect the transaction.
-	txHash := txn.Hash()
-	blockHeight := chain.BlockTip().Height + 1
-	utxoOps, totalInput, _, fees, err := utxoView.ConnectTransaction(
-		txn, txHash, blockHeight, connectTimestamp, true, false)
-	if err != nil {
-		return nil, nil, 0, err
-	}
-
-	// Check that the total input reflected from the transaction connect equals the total fees.
-	require.Equal(totalInput, totalFees)
-	require.Equal(totalInput, fees)
-
-	// Check that the UtxoOps reflect those of an atomic transaction.
-	require.Equal(1, len(utxoOps))
-	require.Equal(OperationTypeAtomicTxnsWrapper, utxoOps[0].Type)
-
-	// Ensure the transaction can be flushed without issue.
-	require.NoError(utxoView.FlushToDb(uint64(blockHeight)))
-	return utxoOps, txn, blockHeight, nil
-}
-
 func _atomicTransactionsWrapperWithConnectTimestamp(
 	t *testing.T,
 	chain *Blockchain,
@@ -660,11 +682,20 @@ func _atomicTransactionsWrapperWithConnectTimestamp(
 	// Connect the transaction.
 	txHash := atomicTransactionsWrapper.Hash()
 	blockHeight := chain.BlockTip().Height + 1
-	utxoOps, _, _, _, err := utxoView.ConnectTransaction(
+	utxoOps, totalInput, totalOutput, totalFees, err := utxoView.ConnectTransaction(
 		atomicTransactionsWrapper, txHash, blockHeight, connectTimestamp, true, false)
 	if err != nil {
 		return nil, err
 	}
 
+	// Check that the total input reflected from the transaction connect equals the total fees.
+	require.Equal(totalInput, totalOutput+totalFees)
+
+	// Check that the UtxoOps reflect those of an atomic transaction.
+	require.Equal(1, len(utxoOps))
+	require.Equal(OperationTypeAtomicTxnsWrapper, utxoOps[0].Type)
+
+	// Ensure the transaction can be flushed without issue.
+	require.NoError(utxoView.FlushToDb(uint64(blockHeight)))
 	return utxoOps, nil
 }
