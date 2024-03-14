@@ -973,8 +973,9 @@ func (srv *Server) _handleHeaderBundle(pp *Peer, msg *MsgDeSoHeaderBundle) {
 		// TODO: Delete? This is redundant.
 		numNewHeaders++
 
-		// Process the header, as we haven't seen it before.
-		_, isOrphan, err := srv.blockchain.ProcessHeader(headerReceived, headerHash)
+		// Process the header, as we haven't seen it before, set verifySignatures to false
+		// if we're in the process of syncing.
+		_, isOrphan, err := srv.blockchain.ProcessHeader(headerReceived, headerHash, !srv.blockchain.isSyncing())
 
 		// If this header is an orphan or we encountered an error for any reason,
 		// disconnect from the peer. Because every header is sent in response to
