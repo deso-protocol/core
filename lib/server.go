@@ -921,9 +921,9 @@ func (srv *Server) _handleHeaderBundle(pp *Peer, msg *MsgDeSoHeaderBundle) {
 		printHeight = uint64(srv.blockchain.headerTip().Height)
 	}
 	glog.Infof(CLog(Yellow, fmt.Sprintf("Received header bundle with %v headers "+
-		"in state %s from peer %v. Downloaded ( %v / %v ) total headers. Current Chain State: %v",
+		"in state %s from peer %v. Downloaded ( %v / %v ) total headers.",
 		len(msg.Headers), srv.blockchain.chainState(), pp,
-		srv.blockchain.headerTip().Header.Height, printHeight, srv.blockchain.ChainState())))
+		srv.blockchain.headerTip().Header.Height, printHeight)))
 
 	// If we get here, it means that the node is not currently running a Fast-HotStuff
 	// validator or that the node is syncing. In either case, we sync headers according

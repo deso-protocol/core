@@ -392,7 +392,7 @@ func (bc *Blockchain) processBlockPoS(block *MsgDeSoBlock, currentView uint64, v
 // as validate failed.
 func (bc *Blockchain) processOrphanBlockPoS(block *MsgDeSoBlock) error {
 	// Construct a UtxoView, so we can perform the QC and leader checks.
-	utxoView, err := NewUtxoView(bc.db, bc.params, nil, bc.snapshot, nil)
+	utxoView, err := bc.GetCommittedTipView()
 	if err != nil {
 		// We can't validate the QC without a UtxoView. Return an error.
 		return errors.Wrap(err, "processOrphanBlockPoS: Problem initializing UtxoView")
@@ -877,12 +877,12 @@ func (bc *Blockchain) isBlockTimestampTooFarInFuturePoS(header *MsgDeSoHeader) (
 		return false, nil
 	}
 
-	// We use NewUtxoView here, which generates a UtxoView at the current committed tip. We can use the view
+	// We use GetCommittedTipView here, which generates a UtxoView at the current committed tip. We can use the view
 	// to fetch the snapshot global params for the previous epoch, current epoch, and next epoch. As long as
 	// the block's height is within 3600 blocks of the committed tip, this will always work. In practice,
 	// the incoming block never be more than 3600 blocks behind or ahead of the tip, while also failing the
 	// above header.TstampNanoSecs <= currentTstampNanoSecs check.
-	utxoView, err := NewUtxoView(bc.db, bc.params, nil, bc.snapshot, nil)
+	utxoView, err := bc.GetCommittedTipView()
 	if err != nil {
 		return false, errors.Wrap(err, "isBlockTimestampTooFarInFuturePoS: Problem initializing UtxoView")
 	}
@@ -1351,6 +1351,7 @@ func (bc *Blockchain) storeValidatedHeaderInBlockIndex(header *MsgDeSoHeader) (*
 		)
 	}
 	blockNode.Status |= StatusHeaderValidated
+	// TODO: this seems to be slowing down the sync process.
 	// If the DB update fails, then we should return an error.
 	if err = bc.upsertBlockNodeToDB(blockNode); err != nil {
 		return nil, errors.Wrapf(err, "storeValidatedHeaderInBlockIndex: Problem upserting block node to DB")
@@ -1765,6 +1766,16 @@ func (bc *Blockchain) commitBlockPoS(blockHash *BlockHash, verifySignatures bool
 			})
 		}
 	}
+	currentEpochNumber, err := utxoView.GetCurrentEpochNumber()
+	if err != nil {
+		return errors.Wrapf(err, "commitBlockPoS: Problem getting current epoch number")
+	}
+	snapshotEpochNumber, err := utxoView.GetCurrentSnapshotEpochNumber()
+	if err != nil {
+		return errors.Wrapf(err, "commitBlockPoS: Problem getting current snapshot epoch number")
+	}
+	bc.snapshotCache.LoadCacheAtSnapshotAtEpochNumber(
+		snapshotEpochNumber, currentEpochNumber, bc.db, bc.snapshot, bc.params)
 	// TODO: What else do we need to do in here?
 	return nil
 }
@@ -1810,7 +1821,7 @@ func (bc *Blockchain) GetUncommittedFullBlocks(tipHash *BlockHash) ([]*MsgDeSoBl
 
 // GetCommittedTipView builds a UtxoView to the committed tip.
 func (bc *Blockchain) GetCommittedTipView() (*UtxoView, error) {
-	return NewUtxoView(bc.db, bc.params, bc.postgres, bc.snapshot, nil)
+	return NewUtxoViewWithSnapshotCache(bc.db, bc.params, bc.postgres, bc.snapshot, nil, bc.snapshotCache)
 }
 
 // GetUncommittedTipView builds a UtxoView to the uncommitted tip.
@@ -1864,7 +1875,8 @@ func (bc *Blockchain) getUtxoViewAtBlockHash(blockHash BlockHash) (*UtxoView, er
 		return copiedView, nil
 	}
 	// Connect the uncommitted blocks to the tip so that we can validate subsequent blocks
-	utxoView, err := NewUtxoView(bc.db, bc.params, bc.postgres, bc.snapshot, bc.eventManager)
+	utxoView, err := NewUtxoViewWithSnapshotCache(bc.db, bc.params, bc.postgres, bc.snapshot, bc.eventManager,
+		bc.snapshotCache)
 	if err != nil {
 		return nil, errors.Wrapf(err, "getUtxoViewAtBlockHash: Problem initializing UtxoView")
 	}

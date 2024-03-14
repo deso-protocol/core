@@ -766,7 +766,7 @@ func (fc *FastHotStuffConsensus) fetchValidatorListsForSafeBlocks(blocks []*MsgD
 
 	// Create a UtxoView for the committed tip block. We will use this to fetch the validator set for
 	// all of the safe blocks.
-	utxoView, err := NewUtxoView(fc.blockchain.db, fc.params, fc.blockchain.postgres, fc.blockchain.snapshot, nil)
+	utxoView, err := fc.blockchain.GetCommittedTipView()
 	if err != nil {
 		return nil, errors.Errorf("Error creating UtxoView: %v", err)
 	}
@@ -810,7 +810,7 @@ func (fc *FastHotStuffConsensus) fetchValidatorListsForSafeBlocks(blocks []*MsgD
 		// If the validator set for the block is already cached by the snapshot epoch number, then use it.
 		// Otherwise, fetch it from the UtxoView.
 		if validatorSetAtBlock, ok = validatorSetEntriesBySnapshotEpochNumber[snapshotEpochNumber]; !ok {
-			// We don't have the validator set for the block cached. Fetch it from the UtxoView.
+			// We don't have the validator set for the block cached. Fetch it from the Snapshot Cache.
 			validatorSetAtBlock, err = utxoView.GetAllSnapshotValidatorSetEntriesByStakeAtEpochNumber(snapshotEpochNumber)
 			if err != nil {
 				return nil, errors.Errorf("Error fetching validator set for block: %v", err)
