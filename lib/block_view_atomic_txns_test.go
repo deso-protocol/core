@@ -10,6 +10,25 @@ import (
 	"testing"
 )
 
+func TestAtomicTxnsSignatureFailure(t *testing.T) {
+	// Initialize test chain, miner, and testMeta.
+	testMeta := _setUpMinerAndTestMetaForAtomicTransactionTests(t)
+
+	// Initialize m0, m1, m2, m3, m4.
+	_setUpUsersForAtomicTransactionsTesting(testMeta)
+
+	// Create a series of valid (unsigned) dependent transactions.
+	atomicTxns := _generateDependentAtomicTransactions(testMeta, int(100))
+	atomicTxnsWrapper, _, err := testMeta.chain.CreateAtomicTxnsWrapper(atomicTxns, nil)
+	require.NoError(t, err)
+
+	// Try to connect them atomically.
+	// (This should fail -- RuleErrorInvalidTransactionSignature)
+	_, err = _atomicTransactionsWrapperWithConnectTimestamp(
+		t, testMeta.chain, testMeta.db, testMeta.params, atomicTxnsWrapper, 0)
+	require.Contains(t, err.Error(), RuleErrorInvalidTransactionSignature)
+}
+
 func TestConnectAtomicTxnsWrapperRuleErrors(t *testing.T) {
 	// Initialize test chain, miner, and testMeta.
 	testMeta := _setUpMinerAndTestMetaForAtomicTransactionTests(t)

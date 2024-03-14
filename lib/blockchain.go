@@ -5798,45 +5798,51 @@ func (bc *Blockchain) CreateAtomicTxnsWrapper(
 	// transaction extra data. We create a copy of the transactions to ensure we do not
 	// modify the caller's data.
 
-	// Construct the chained transactions and keep track of the total fees paid.
+	// Create a copy of the transactions to prevent pointer reuse.
 	var chainedUnsignedTransactions []*MsgDeSoTxn
-	var totalFees uint64
-	for ii, txn := range unsignedTransactions {
-		// Copy the transaction to prevent pointer reuse.
+	for _, txn := range unsignedTransactions {
 		txnDuplicate, err := txn.Copy()
 		if err != nil {
 			return nil, 0, errors.Wrapf(err, "CreateAtomicTxnsWrapper: failed to copy transaction")
 		}
+		chainedUnsignedTransactions = append(chainedUnsignedTransactions, txnDuplicate)
+	}
 
+	// Set the starting point of the atomic transaction.
+	// We must do this first to ensure the atomic hash is properly computed for the first transaction.
+	if len(chainedUnsignedTransactions[0].ExtraData) == 0 {
+		chainedUnsignedTransactions[0].ExtraData = make(map[string][]byte)
+	}
+	chainedUnsignedTransactions[0].ExtraData[AtomicTxnsChainLength] = UintToBuf(uint64(len(unsignedTransactions)))
+
+	// Construct the chained transactions and keep track of the total fees paid.
+	var totalFees uint64
+	for ii, txn := range chainedUnsignedTransactions {
 		// Compute the atomic hashes.
-		nextIndex := (ii + 1) % len(unsignedTransactions)
-		nextHash, err := unsignedTransactions[nextIndex].AtomicHash()
+		nextIndex := (ii + 1) % len(chainedUnsignedTransactions)
+		nextHash, err := chainedUnsignedTransactions[nextIndex].AtomicHash()
 		if err != nil {
 			return nil, 0, errors.Wrapf(err, "CreateAtomicTxnsWrapper: failed to compute next hash")
 		}
-		prevIndex := (ii - 1 + len(unsignedTransactions)) % len(unsignedTransactions)
-		prevHash, err := unsignedTransactions[prevIndex].AtomicHash()
+		prevIndex := (ii - 1 + len(chainedUnsignedTransactions)) % len(chainedUnsignedTransactions)
+		prevHash, err := chainedUnsignedTransactions[prevIndex].AtomicHash()
 		if err != nil {
 			return nil, 0, errors.Wrapf(err, "CreateAtomicTxnsWrapper: failed to copy prev hash")
 		}
 
 		// Set the transaction extra data and append to the chained list.
-		if len(txnDuplicate.ExtraData) == 0 {
-			txnDuplicate.ExtraData = make(map[string][]byte)
+		if len(txn.ExtraData) == 0 {
+			txn.ExtraData = make(map[string][]byte)
 		}
-		txnDuplicate.ExtraData[NextAtomicTxnPreHash] = nextHash.ToBytes()
-		txnDuplicate.ExtraData[PreviousAtomicTxnPreHash] = prevHash.ToBytes()
-		chainedUnsignedTransactions = append(chainedUnsignedTransactions, txnDuplicate)
+		txn.ExtraData[NextAtomicTxnPreHash] = nextHash.ToBytes()
+		txn.ExtraData[PreviousAtomicTxnPreHash] = prevHash.ToBytes()
 
 		// Track the total fees paid.
-		totalFees, err = SafeUint64().Add(totalFees, txnDuplicate.TxnFeeNanos)
+		totalFees, err = SafeUint64().Add(totalFees, txn.TxnFeeNanos)
 		if err != nil {
 			return nil, 0, errors.Wrapf(err, "CreateAtomicTxnsWrapper: total fee overflow")
 		}
 	}
-
-	// Set the starting point for the atomic transactions.
-	chainedUnsignedTransactions[0].ExtraData[AtomicTxnsChainLength] = UintToBuf(uint64(len(unsignedTransactions)))
 
 	// Create an atomic transactions wrapper taking special care to the rules specified in _verifyAtomicTxnsWrapper.
 	// Because we do not call AddInputsAndChangeToTransaction on the wrapper, we must specify ALL fields exactly.
