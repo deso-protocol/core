@@ -107,6 +107,9 @@ type Server struct {
 	// point we can make the optimization.
 	SyncPeer *Peer
 
+	// When --connect-ips is set, we don't connect to anything from the addrmgr.
+	connectIps []string
+
 	// If we're syncing state using hypersync, we'll keep track of the progress using HyperSyncProgress.
 	// It stores information about all the prefixes that we're fetching. The way that HyperSyncProgress
 	// is organized allows for multi-peer state synchronization. In such case, we would assign prefixes
@@ -458,6 +461,7 @@ func NewServer(
 		forceChecksum:                _forceChecksum,
 		AddrMgr:                      _desoAddrMgr,
 		params:                       _params,
+		connectIps:                   _connectIps,
 	}
 
 	if stateChangeSyncer != nil {
@@ -1641,6 +1645,12 @@ func (srv *Server) _startSync() {
 	// Find a peer with StartingHeight bigger than our best header tip.
 	var bestPeer *Peer
 	for _, peer := range srv.cmgr.GetAllPeers() {
+		// If connectIps is set, only sync from persistent peers.
+		if len(srv.connectIps) > 0 && !peer.IsPersistent() {
+			glog.Infof("Server._startSync: Connect-ips is set, so non-persistent peer is not a "+
+				"sync candidate %v", peer)
+			continue
+		}
 
 		if !peer.IsSyncCandidate() {
 			glog.Infof("Peer is not sync candidate: %v (isOutbound: %v)", peer, peer.isOutbound)

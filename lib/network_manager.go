@@ -613,6 +613,7 @@ func (nm *NetworkManager) connectValidators(activeValidatorsMap *collections.Con
 			continue
 		}
 
+		// Choose a random domain from the validator's domain list.
 		randDomain, err := collections.RandomElement(validator.GetDomains())
 		if err != nil {
 			glog.V(2).Infof("NetworkManager.connectValidators: Problem getting random domain for "+
