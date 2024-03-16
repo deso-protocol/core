@@ -38,6 +38,9 @@ func TestConnectionControllerInitiatePersistentConnections(t *testing.T) {
 		node5.Listeners[0].Addr().String(),
 	}
 	node1 = startNode(t, node1)
+	// Let node1 connect to its connect-ips.
+	time.Sleep(1 * node1.Config.Params.NetworkManagerRefreshDuration)
+	// Now set the active validators to node4 and node5.
 	activeValidatorsMap := getActiveValidatorsMapWithValidatorNodes(t, node4, node5)
 	setActiveValidators(activeValidatorsMap, node1, node2, node3, node4, node5)
 	waitForNonValidatorOutboundConnection(t, node1, node2)
@@ -48,8 +51,10 @@ func TestConnectionControllerInitiatePersistentConnections(t *testing.T) {
 	waitForCountRemoteNodeIndexerHandshakeCompleted(t, node1, 4, 2, 2, 0)
 	waitForCountRemoteNodeIndexerHandshakeCompleted(t, node2, 1, 0, 0, 1)
 	waitForCountRemoteNodeIndexerHandshakeCompleted(t, node3, 1, 0, 0, 1)
-	waitForCountRemoteNodeIndexerHandshakeCompleted(t, node4, 2, 1, 0, 1)
-	waitForCountRemoteNodeIndexerHandshakeCompleted(t, node5, 2, 1, 0, 1)
+	// The allCount for node4 and node5 should be 3, since they'll both open an outbound connection to each other.
+	// Then the validatorCount should be 1, since the GetAllValidators call used de-duplicates RemoteNodes with the same public keys.
+	waitForCountRemoteNodeIndexerHandshakeCompleted(t, node4, 3, 1, 0, 1)
+	waitForCountRemoteNodeIndexerHandshakeCompleted(t, node5, 3, 1, 0, 1)
 	node1.Stop()
 	t.Logf("Test #1 passed | Successfully run non-validator node1 with --connect-ips set to node2, node3, node4, node5")
 
@@ -64,6 +69,8 @@ func TestConnectionControllerInitiatePersistentConnections(t *testing.T) {
 		node5.Listeners[0].Addr().String(),
 	}
 	node6 = startNode(t, node6)
+	// Let node6 connect to its connect-ips.
+	time.Sleep(1 * node1.Config.Params.NetworkManagerRefreshDuration)
 	activeValidatorsMap = getActiveValidatorsMapWithValidatorNodes(t, node4, node5, node6)
 	setActiveValidators(activeValidatorsMap, node1, node2, node3, node4, node5, node6)
 	waitForNonValidatorOutboundConnection(t, node6, node2)
@@ -71,11 +78,15 @@ func TestConnectionControllerInitiatePersistentConnections(t *testing.T) {
 	waitForValidatorConnection(t, node6, node4)
 	waitForValidatorConnection(t, node6, node5)
 	waitForValidatorConnection(t, node4, node5)
-	waitForCountRemoteNodeIndexerHandshakeCompleted(t, node6, 4, 2, 2, 0)
+	// The allCount for node6 should be 6, since it will have 4 validator (inbound+outbound) connections between node4 and node5.
+	// The validatorCount should be 2, since the GetAllValidators call used de-duplicates RemoteNodes with the same public keys.
+	waitForCountRemoteNodeIndexerHandshakeCompleted(t, node6, 6, 2, 2, 0)
 	waitForCountRemoteNodeIndexerHandshakeCompleted(t, node2, 1, 1, 0, 0)
 	waitForCountRemoteNodeIndexerHandshakeCompleted(t, node3, 1, 1, 0, 0)
-	waitForCountRemoteNodeIndexerHandshakeCompleted(t, node4, 2, 2, 0, 0)
-	waitForCountRemoteNodeIndexerHandshakeCompleted(t, node5, 2, 2, 0, 0)
+	// The allCount for node4 and node5 should be 4, since they'll both open an outbound connection to each other.
+	// The validatorCount should be 2, since the GetAllValidators call used de-duplicates RemoteNodes with the same public keys.
+	waitForCountRemoteNodeIndexerHandshakeCompleted(t, node4, 4, 2, 0, 0)
+	waitForCountRemoteNodeIndexerHandshakeCompleted(t, node5, 4, 2, 0, 0)
 	t.Logf("Test #2 passed | Successfully run validator node6 with --connect-ips set to node2, node3, node4, node5")
 }
 
@@ -91,6 +102,29 @@ func TestConnectionControllerNonValidatorCircularConnectIps(t *testing.T) {
 
 	waitForCountRemoteNodeIndexerHandshakeCompleted(t, node1, 2, 0, 1, 1)
 	waitForCountRemoteNodeIndexerHandshakeCompleted(t, node2, 2, 0, 1, 1)
+}
+
+func TestConnectionControllerValidatorCircularConnectIps(t *testing.T) {
+	blsSeedPhrase1, err := bip39.NewMnemonic(lib.RandomBytes(32))
+	require.NoError(t, err)
+	node1 := spawnValidatorNodeProtocol2(t, 18000, "node1", blsSeedPhrase1)
+	blsSeedPhrase2, err := bip39.NewMnemonic(lib.RandomBytes(32))
+	require.NoError(t, err)
+	node2 := spawnValidatorNodeProtocol2(t, 18001, "node2", blsSeedPhrase2)
+
+	node1.Config.ConnectIPs = []string{"127.0.0.1:18001"}
+	node2.Config.ConnectIPs = []string{"127.0.0.1:18000"}
+	node1 = startNode(t, node1)
+	node2 = startNode(t, node2)
+
+	time.Sleep(1 * node1.Config.Params.NetworkManagerRefreshDuration)
+	activeValidatorsMap := getActiveValidatorsMapWithValidatorNodes(t, node1, node2)
+	setActiveValidators(activeValidatorsMap, node1, node2)
+	// The allCount for node1 and node2 should be 2, as they should have an outbound and an inbound RemoteNode
+	// for each other. And the validatorCount should be 1, because the GetAllValidators call used de-duplicates
+	// RemoteNodes with the same public keys.
+	waitForCountRemoteNodeIndexerHandshakeCompleted(t, node1, 2, 1, 0, 0)
+	waitForCountRemoteNodeIndexerHandshakeCompleted(t, node2, 2, 1, 0, 0)
 }
 
 func TestNetworkManagerPersistentConnectorReconnect(t *testing.T) {
@@ -118,6 +152,8 @@ func TestNetworkManagerPersistentConnectorReconnect(t *testing.T) {
 		"127.0.0.1:18003",
 	}
 	node1 = startNode(t, node1)
+	// Let node1 connect to its connect-ips.
+	time.Sleep(1 * node1.Config.Params.NetworkManagerRefreshDuration)
 	activeValidatorsMap := getActiveValidatorsMapWithValidatorNodes(t, node3)
 	setActiveValidators(activeValidatorsMap, node1, node2, node3)
 
@@ -187,6 +223,8 @@ func TestConnectionControllerValidatorConnector(t *testing.T) {
 	node7.Config.ConnectIPs = node6.Config.ConnectIPs
 	node6 = startNode(t, node6)
 	node7 = startNode(t, node7)
+	// Let node6 and node7 connect to their connect-ips.
+	time.Sleep(1 * node1.Config.Params.NetworkManagerRefreshDuration)
 	activeValidatorsMap := getActiveValidatorsMapWithValidatorNodes(t, node1, node2, node3, node4, node5)
 	setActiveValidators(activeValidatorsMap, node1, node2, node3, node4, node5, node6, node7)
 
@@ -203,7 +241,9 @@ func TestConnectionControllerValidatorConnector(t *testing.T) {
 	}
 	// Verify connection counts of active validators.
 	for _, validator := range []*cmd.Node{node1, node2, node3, node4, node5} {
-		waitForMinNonValidatorCountRemoteNodeIndexer(t, validator, 6, 4, 0, 2)
+		// The allCount for each validator should be 10, since we'll have 8 validator connections total and 2 non-validator connections.
+		// Note this means only 4 unique validators, which is the expected validatorCount.
+		waitForMinNonValidatorCountRemoteNodeIndexer(t, validator, 10, 4, 0, 2)
 	}
 	// NOOP Verify connection counts of inactive validators.
 	// Verify connection counts of non-validators.
@@ -227,13 +267,16 @@ func TestConnectionControllerValidatorConnector(t *testing.T) {
 	}
 	// Verify connections of active validators.
 	for _, validator := range []*cmd.Node{node3, node4, node5} {
-		waitForNonValidatorInboundXOROutboundConnection(t, validator, node1)
-		waitForNonValidatorInboundXOROutboundConnection(t, validator, node2)
-		waitForMinNonValidatorCountRemoteNodeIndexer(t, validator, 6, 2, 0, 2)
+		waitForInactiveValidatorConnection(t, validator, node1)
+		waitForInactiveValidatorConnection(t, validator, node2)
+		// The allCount for each validator should remain at 10, since no connection should be dropped.
+		// The validatorCount of unique validators should be 2.
+		waitForMinNonValidatorCountRemoteNodeIndexer(t, validator, 10, 2, 0, 2)
 	}
 	// Verify connection counts of inactive validators.
-	for _, validator := range []*cmd.Node{node1, node2} {
-		waitForMinNonValidatorCountRemoteNodeIndexer(t, validator, 6, 3, 0, 2)
+	for _, inactiveValidator := range []*cmd.Node{node1, node2} {
+		// The validatorCount of unique validators should be 3, since inactiveValidator is connected to all validators.
+		waitForMinNonValidatorCountRemoteNodeIndexer(t, inactiveValidator, 10, 3, 0, 2)
 	}
 	// Verify connection counts of non-validators.
 	waitForCountRemoteNodeIndexerHandshakeCompleted(t, node6, 5, 3, 2, 0)
@@ -257,13 +300,17 @@ func TestConnectionControllerValidatorConnector(t *testing.T) {
 	}
 	// Verify connections of active validators.
 	for _, validator := range []*cmd.Node{node1, node4, node5} {
-		waitForNonValidatorInboundXOROutboundConnection(t, validator, node2)
-		waitForNonValidatorInboundXOROutboundConnection(t, validator, node3)
-		waitForMinNonValidatorCountRemoteNodeIndexer(t, validator, 6, 2, 0, 2)
+		waitForInactiveValidatorConnection(t, validator, node2)
+		waitForInactiveValidatorConnection(t, validator, node3)
+		// The allCount for each validator should remain at 10, since no connection should be dropped.
+		// The validatorCount of unique validators should be 2.
+		waitForMinNonValidatorCountRemoteNodeIndexer(t, validator, 10, 2, 0, 2)
 	}
 	// Verify connection counts of inactive validators.
-	for _, validator := range []*cmd.Node{node2, node3} {
-		waitForMinNonValidatorCountRemoteNodeIndexer(t, validator, 6, 3, 0, 2)
+	for _, inactiveValidator := range []*cmd.Node{node2, node3} {
+		// The allCount for each inactiveValidator should remain at 10, since no connection should be dropped.
+		// The validatorCount of unique validators should be 2.
+		waitForMinNonValidatorCountRemoteNodeIndexer(t, inactiveValidator, 10, 3, 0, 2)
 	}
 	// Verify connection counts of non-validators.
 	waitForCountRemoteNodeIndexerHandshakeCompleted(t, node6, 5, 3, 2, 0)
@@ -286,17 +333,17 @@ func TestConnectionControllerValidatorConnector(t *testing.T) {
 	inactiveValidators := []*cmd.Node{node1, node2, node3, node4, node5}
 	for ii := 0; ii < len(inactiveValidators); ii++ {
 		for jj := ii + 1; jj < len(inactiveValidators); jj++ {
-			waitForNonValidatorInboundXOROutboundConnection(t, inactiveValidators[ii], inactiveValidators[jj])
+			waitForInactiveValidatorConnection(t, inactiveValidators[ii], inactiveValidators[jj])
 		}
 	}
 	inactiveValidatorsRev := []*cmd.Node{node5, node4, node3, node2, node1}
 	for ii := 0; ii < len(inactiveValidatorsRev); ii++ {
 		for jj := ii + 1; jj < len(inactiveValidatorsRev); jj++ {
-			waitForNonValidatorInboundXOROutboundConnection(t, inactiveValidatorsRev[ii], inactiveValidatorsRev[jj])
+			waitForInactiveValidatorConnection(t, inactiveValidatorsRev[ii], inactiveValidatorsRev[jj])
 		}
 	}
 	for _, validator := range inactiveValidators {
-		waitForMinNonValidatorCountRemoteNodeIndexer(t, validator, 6, 0, 0, 2)
+		waitForMinNonValidatorCountRemoteNodeIndexer(t, validator, 10, 0, 0, 2)
 	}
 	// Verify connection counts of non-validators.
 	waitForCountRemoteNodeIndexerHandshakeCompleted(t, node6, 5, 0, 5, 0)
@@ -462,7 +509,9 @@ func TestConnectionControllerNonValidatorConnectorInbound(t *testing.T) {
 	waitForValidatorConnection(t, node1, node4)
 	waitForValidatorConnection(t, node1, node5)
 	waitForValidatorConnection(t, node1, node6)
-	waitForCountRemoteNodeIndexerHandshakeCompleted(t, node1, 6, 5, 0, 1)
+	// The allCount for node1 should be 11, since it will have 10 validator (inbound+outbound) connections.
+	// This means we expect validatorCount of unique validators to be 5. Also, expect 1 non-validator inbound connection.
+	waitForCountRemoteNodeIndexerHandshakeCompleted(t, node1, 11, 5, 0, 1)
 }
 
 func TestConnectionControllerNonValidatorConnectorAddressMgr(t *testing.T) {
@@ -535,16 +584,14 @@ func waitForValidatorConnectionOneWay(t *testing.T, n *cmd.Node, validators ...*
 	}
 }
 
-func waitForNonValidatorInboundXOROutboundConnection(t *testing.T, node1 *cmd.Node, node2 *cmd.Node) {
+func waitForInactiveValidatorConnection(t *testing.T, node1 *cmd.Node, node2 *cmd.Node) {
 	userAgentN1 := node1.Params.UserAgent
 	userAgentN2 := node2.Params.UserAgent
-	conditionInbound := conditionNonValidatorInboundConnectionDynamic(t, node1, node2, true)
-	conditionOutbound := conditionNonValidatorOutboundConnectionDynamic(t, node1, node2, true)
-	xorCondition := func() bool {
-		return conditionInbound() != conditionOutbound()
+	andCondition := func() bool {
+		return checkInactiveValidatorConnection(t, node1, node2)
 	}
-	waitForCondition(t, fmt.Sprintf("Waiting for Node (%s) to connect to inbound XOR outbound non-validator Node (%s)",
-		userAgentN1, userAgentN2), xorCondition)
+	waitForCondition(t, fmt.Sprintf("Waiting for Node (%s) to connect to inbound AND outbound non-validator Node (%s)",
+		userAgentN1, userAgentN2), andCondition)
 }
 
 func waitForMinNonValidatorCountRemoteNodeIndexer(t *testing.T, node *cmd.Node, allCount int, validatorCount int,
@@ -566,7 +613,7 @@ func checkRemoteNodeIndexerMinNonValidatorCount(manager *lib.NetworkManager, all
 	if allCount != manager.GetAllRemoteNodes().Count() {
 		return false
 	}
-	if validatorCount != manager.GetValidatorIndex().Count() {
+	if validatorCount != manager.GetAllValidators().Count() {
 		return false
 	}
 	if minNonValidatorOutboundCount > manager.GetNonValidatorOutboundIndex().Count() {
@@ -575,7 +622,8 @@ func checkRemoteNodeIndexerMinNonValidatorCount(manager *lib.NetworkManager, all
 	if minNonValidatorInboundCount > manager.GetNonValidatorInboundIndex().Count() {
 		return false
 	}
-	if allCount != manager.GetValidatorIndex().Count()+
+	if allCount != manager.GetValidatorOutboundIndex().Count()+
+		manager.GetValidatorInboundIndex().Count()+
 		manager.GetNonValidatorOutboundIndex().Count()+
 		manager.GetNonValidatorInboundIndex().Count() {
 		return false
