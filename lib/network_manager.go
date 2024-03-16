@@ -193,7 +193,7 @@ func (nm *NetworkManager) startValidatorConnector() {
 			return
 		case <-time.After(nm.params.NetworkManagerRefreshDuration):
 			activeValidatorsMap := nm.getActiveValidatorsMap()
-			nm.refreshValidatorIndex(activeValidatorsMap)
+			nm.refreshValidatorIndices(activeValidatorsMap)
 			nm.connectValidators(activeValidatorsMap)
 		}
 	}
@@ -539,15 +539,16 @@ func (nm *NetworkManager) getActiveValidatorsMap() *collections.ConcurrentMap[bl
 	return nm.activeValidatorsMap.Clone()
 }
 
-// refreshValidatorIndex re-indexes validators based on the activeValidatorsMap. It is called periodically by the
+// refreshValidatorIndices re-indexes validators based on the activeValidatorsMap. It is called periodically by the
 // validator connector.
-func (nm *NetworkManager) refreshValidatorIndex(activeValidatorsMap *collections.ConcurrentMap[bls.SerializedPublicKey, consensus.Validator]) {
+func (nm *NetworkManager) refreshValidatorIndices(activeValidatorsMap *collections.ConcurrentMap[bls.SerializedPublicKey, consensus.Validator]) {
 	// De-index inactive validators. We skip any checks regarding RemoteNodes connection status, nor do we verify whether
 	// de-indexing the validator would result in an excess number of outbound/inbound connections. Any excess connections
 	// will be cleaned up by the NonValidator connector.
-	// Note that the ValidatorIndex can change concurrently to the call below. This is fine, as the ValidatorIndex is
-	// a concurrent map, and here we make a copy of the map in a thread safe manner. If changes are made to the
-	// ValidatorIndex as this function is running, they will be used in the next iteration of refreshValidatorIndex.
+	// Note that the validator indices can change concurrently to the call below. This is fine, as the ValidatorOutboundIndex
+	// and ValidatorInboundIndex are concurrent maps, and here we make a copy of the map in a thread safe manner. If
+	// changes are made to these indices as this function is running, they will be used in the next iteration of
+	// refreshValidatorIndices. We first refresh the validator outbound index, and then the inbound index.
 	validatorOutboundMap := nm.GetValidatorOutboundIndex().ToMap()
 	for pk, rn := range validatorOutboundMap {
 		// If the validator is no longer active, de-index it.
@@ -577,17 +578,17 @@ func (nm *NetworkManager) refreshValidatorIndex(activeValidatorsMap *collections
 		}
 		// It is possible that through unlikely concurrence, and malevolence, two non-validators happen to have the same
 		// public key, which goes undetected during handshake. To prevent this from affecting the indexing of the validator
-		// set, we check that the non-validator's public key is not already present in the validator index.
+		// set, we check that the non-validator's public key is not already present in the validator indices.
 		if rn.IsOutbound() {
 			if _, ok := nm.GetValidatorOutboundIndex().Get(pk.Serialize()); ok {
-				glog.V(2).Infof("NetworkManager.refreshValidatorIndex: Disconnecting Validator RemoteNode "+
+				glog.V(2).Infof("NetworkManager.refreshValidatorIndices: Disconnecting Validator RemoteNode "+
 					"(%v) has validator public key (%v) that is already present in validator index", rn, pk)
 				nm.Disconnect(rn)
 				continue
 			}
 		} else {
 			if _, ok := nm.GetValidatorInboundIndex().Get(pk.Serialize()); ok {
-				glog.V(2).Infof("NetworkManager.refreshValidatorIndex: Disconnecting Validator RemoteNode "+
+				glog.V(2).Infof("NetworkManager.refreshValidatorIndices: Disconnecting Validator RemoteNode "+
 					"(%v) has validator public key (%v) that is already present in validator index", rn, pk)
 				nm.Disconnect(rn)
 				continue
@@ -613,6 +614,10 @@ func (nm *NetworkManager) connectValidators(activeValidatorsMap *collections.Con
 	validators := activeValidatorsMap.ToMap()
 	for pk, validator := range validators {
 		// Check if we've already dialed an outbound connection to this validator.
+		// It's worth noting that we look up the outbound index, instead of looking up a union of the outbound and
+		// inbound indices. This is because we want to allow nodes to create circular outbound/inbound validator
+		// connections with one another. Therefore, we only check the outbound index to see if we've already dialed
+		// this validator before ourselves.
 		_, exists := nm.GetValidatorOutboundIndex().Get(pk)
 		// If we're already connected to the validator, continue.
 		if exists {
@@ -1006,6 +1011,7 @@ func (nm *NetworkManager) removeRemoteNodeFromIndexer(rn *RemoteNode) {
 	// Only remove from the validator index if the fetched remote node is the same as the one we are trying to remove.
 	// Otherwise, we could have a fun edge-case where a duplicated validator connection ends up removing an
 	// existing validator connection from the index.
+	// First handle the outbound RemoteNode case.
 	if rn.IsOutbound() {
 		fetchedRn, ok := nm.GetValidatorOutboundIndex().Get(rn.GetValidatorPublicKey().Serialize())
 		if ok && fetchedRn.GetId() == rn.GetId() {
@@ -1013,6 +1019,8 @@ func (nm *NetworkManager) removeRemoteNodeFromIndexer(rn *RemoteNode) {
 		}
 		return
 	}
+
+	// If the node is inbound, perform a similar check.
 	fetchedRn, ok := nm.GetValidatorInboundIndex().Get(rn.GetValidatorPublicKey().Serialize())
 	if ok && fetchedRn.GetId() == rn.GetId() {
 		nm.GetValidatorInboundIndex().Remove(rn.GetValidatorPublicKey().Serialize())
@@ -1155,9 +1163,10 @@ func (nm *NetworkManager) GetRemoteNodeById(id RemoteNodeId) *RemoteNode {
 	return rn
 }
 
-// GetAllValidators returns a list of all currently connected validators with unique public keys. If there is an
+// GetAllValidators returns a map of all currently connected validators with unique public keys. If there is an
 // inbound and an outbound RemoteNode with the same public key, only the outbound RemoteNode is returned in the output.
 // This is because the outbound RemoteNode is the one that we initiated, so it's considered more reliable.
+// The returned RemoteNodes can be in any state, not necessarily having completed the handshake.
 func (nm *NetworkManager) GetAllValidators() *collections.ConcurrentMap[bls.SerializedPublicKey, *RemoteNode] {
 	allValidators := collections.NewConcurrentMap[bls.SerializedPublicKey, *RemoteNode]()
 	outboundValidatorsMap := nm.GetValidatorOutboundIndex().ToMap()
@@ -1176,6 +1185,8 @@ func (nm *NetworkManager) GetAllValidators() *collections.ConcurrentMap[bls.Seri
 	return allValidators
 }
 
+// GetConnectedValidators returns a list of all connected validators that have passed handshake. It is a sub-view of
+// the GetAllValidators map, with only the validators that have HandshakeCompleted status.
 func (nm *NetworkManager) GetConnectedValidators() []*RemoteNode {
 	var connectedValidators []*RemoteNode
 	allValidators := nm.GetAllValidators().ToMap()
@@ -1242,7 +1253,7 @@ func (nm *NetworkManager) handleHandshakeCompletePoSMessage(remoteNode *RemoteNo
 	}
 
 	// For inbound RemoteNodes, we should ensure that there isn't an existing validator connected with the same public key.
-	// Inbound nodes are not initiated by us, so we shouldn't have added the RemoteNode to the ValidatorIndex yet.
+	// Inbound nodes are not initiated by us, so we shouldn't have added the RemoteNode to the ValidatorInboundIndex yet.
 	if remoteNode.IsInbound() {
 		_, ok := nm.GetValidatorInboundIndex().Get(validatorPk.Serialize())
 		if ok {
@@ -1251,11 +1262,11 @@ func (nm *NetworkManager) handleHandshakeCompletePoSMessage(remoteNode *RemoteNo
 		return nil
 	}
 	// For outbound RemoteNodes, we have two possible scenarios. Either the RemoteNode has been initiated as a validator,
-	// in which case it should already be in the ValidatorIndex. Or the RemoteNode has been initiated as a regular node,
-	// in which case it should not be in the ValidatorIndex, but in the NonValidatorOutboundIndex. So to ensure there is
-	// no duplicate connection with the same public key, we only check whether there is a validator in the ValidatorIndex
+	// in which case it should already be in the ValidatorOutboundIndex. Or the RemoteNode has been initiated as a regular node,
+	// in which case it should not be in the ValidatorOutboundIndex, but in the NonValidatorOutboundIndex. So to ensure there is
+	// no duplicate connection with the same public key, we only check whether there is a validator in the ValidatorOutboundIndex
 	// with the RemoteNode's public key. If there is one, we want to ensure that these two RemoteNodes have identical ids.
-	// Lookup the validator in the ValidatorIndex with the same public key.
+	// Lookup the validator in the ValidatorOutboundIndex with the same public key.
 	existingValidator, ok := nm.GetValidatorOutboundIndex().Get(validatorPk.Serialize())
 	if ok && remoteNode.GetId() != existingValidator.GetId() {
 		if remoteNode.IsPersistent() && !existingValidator.IsPersistent() {
