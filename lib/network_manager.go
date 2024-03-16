@@ -59,7 +59,8 @@ type NetworkManager struct {
 	AllRemoteNodes *collections.ConcurrentMap[RemoteNodeId, *RemoteNode]
 
 	// Indices for various types of remote nodes.
-	ValidatorIndex            *collections.ConcurrentMap[bls.SerializedPublicKey, *RemoteNode]
+	ValidatorOutboundIndex    *collections.ConcurrentMap[bls.SerializedPublicKey, *RemoteNode]
+	ValidatorInboundIndex     *collections.ConcurrentMap[bls.SerializedPublicKey, *RemoteNode]
 	NonValidatorOutboundIndex *collections.ConcurrentMap[RemoteNodeId, *RemoteNode]
 	NonValidatorInboundIndex  *collections.ConcurrentMap[RemoteNodeId, *RemoteNode]
 
@@ -113,7 +114,8 @@ func NewNetworkManager(params *DeSoParams, srv *Server, bc *Blockchain, cmgr *Co
 		minTxFeeRateNanosPerKB:                minTxFeeRateNanosPerKB,
 		nodeServices:                          nodeServices,
 		AllRemoteNodes:                        collections.NewConcurrentMap[RemoteNodeId, *RemoteNode](),
-		ValidatorIndex:                        collections.NewConcurrentMap[bls.SerializedPublicKey, *RemoteNode](),
+		ValidatorInboundIndex:                 collections.NewConcurrentMap[bls.SerializedPublicKey, *RemoteNode](),
+		ValidatorOutboundIndex:                collections.NewConcurrentMap[bls.SerializedPublicKey, *RemoteNode](),
 		NonValidatorOutboundIndex:             collections.NewConcurrentMap[RemoteNodeId, *RemoteNode](),
 		NonValidatorInboundIndex:              collections.NewConcurrentMap[RemoteNodeId, *RemoteNode](),
 		usedNonces:                            lru.NewCache(1000),
@@ -546,8 +548,16 @@ func (nm *NetworkManager) refreshValidatorIndex(activeValidatorsMap *collections
 	// Note that the ValidatorIndex can change concurrently to the call below. This is fine, as the ValidatorIndex is
 	// a concurrent map, and here we make a copy of the map in a thread safe manner. If changes are made to the
 	// ValidatorIndex as this function is running, they will be used in the next iteration of refreshValidatorIndex.
-	validatorRemoteNodeMap := nm.GetValidatorIndex().ToMap()
-	for pk, rn := range validatorRemoteNodeMap {
+	validatorOutboundMap := nm.GetValidatorOutboundIndex().ToMap()
+	for pk, rn := range validatorOutboundMap {
+		// If the validator is no longer active, de-index it.
+		if _, ok := activeValidatorsMap.Get(pk); !ok {
+			nm.SetNonValidator(rn)
+			nm.UnsetValidator(rn)
+		}
+	}
+	validatorInboundMap := nm.GetValidatorInboundIndex().ToMap()
+	for pk, rn := range validatorInboundMap {
 		// If the validator is no longer active, de-index it.
 		if _, ok := activeValidatorsMap.Get(pk); !ok {
 			nm.SetNonValidator(rn)
@@ -568,11 +578,20 @@ func (nm *NetworkManager) refreshValidatorIndex(activeValidatorsMap *collections
 		// It is possible that through unlikely concurrence, and malevolence, two non-validators happen to have the same
 		// public key, which goes undetected during handshake. To prevent this from affecting the indexing of the validator
 		// set, we check that the non-validator's public key is not already present in the validator index.
-		if _, ok := nm.GetValidatorIndex().Get(pk.Serialize()); ok {
-			glog.V(2).Infof("NetworkManager.refreshValidatorIndex: Disconnecting Validator RemoteNode "+
-				"(%v) has validator public key (%v) that is already present in validator index", rn, pk)
-			nm.Disconnect(rn)
-			continue
+		if rn.IsOutbound() {
+			if _, ok := nm.GetValidatorOutboundIndex().Get(pk.Serialize()); ok {
+				glog.V(2).Infof("NetworkManager.refreshValidatorIndex: Disconnecting Validator RemoteNode "+
+					"(%v) has validator public key (%v) that is already present in validator index", rn, pk)
+				nm.Disconnect(rn)
+				continue
+			}
+		} else {
+			if _, ok := nm.GetValidatorInboundIndex().Get(pk.Serialize()); ok {
+				glog.V(2).Infof("NetworkManager.refreshValidatorIndex: Disconnecting Validator RemoteNode "+
+					"(%v) has validator public key (%v) that is already present in validator index", rn, pk)
+				nm.Disconnect(rn)
+				continue
+			}
 		}
 
 		// If the RemoteNode turns out to be in the validator set, index it.
@@ -593,7 +612,8 @@ func (nm *NetworkManager) connectValidators(activeValidatorsMap *collections.Con
 
 	validators := activeValidatorsMap.ToMap()
 	for pk, validator := range validators {
-		_, exists := nm.GetValidatorIndex().Get(pk)
+		// Check if we've already dialed an outbound connection to this validator.
+		_, exists := nm.GetValidatorOutboundIndex().Get(pk)
 		// If we're already connected to the validator, continue.
 		if exists {
 			continue
@@ -814,7 +834,8 @@ func (nm *NetworkManager) CreateValidatorConnection(ipStr string, publicKey *bls
 		return fmt.Errorf("NetworkManager.CreateValidatorConnection: netAddr or public key is nil")
 	}
 
-	if _, ok := nm.GetValidatorIndex().Get(publicKey.Serialize()); ok {
+	// Check if we've already dialed an outbound connection to this validator.
+	if _, ok := nm.GetValidatorOutboundIndex().Get(publicKey.Serialize()); ok {
 		return fmt.Errorf("NetworkManager.CreateValidatorConnection: RemoteNode already exists for public key: %v", publicKey)
 	}
 
@@ -824,7 +845,8 @@ func (nm *NetworkManager) CreateValidatorConnection(ipStr string, publicKey *bls
 			"for addr: (%s:%v)", netAddr.IP.String(), netAddr.Port)
 	}
 	nm.setRemoteNode(remoteNode)
-	nm.GetValidatorIndex().Set(publicKey.Serialize(), remoteNode)
+	// Since we're initiating this connection, add the RemoteNode to the outbound validator index.
+	nm.GetValidatorOutboundIndex().Set(publicKey.Serialize(), remoteNode)
 	return nil
 }
 
@@ -984,9 +1006,16 @@ func (nm *NetworkManager) removeRemoteNodeFromIndexer(rn *RemoteNode) {
 	// Only remove from the validator index if the fetched remote node is the same as the one we are trying to remove.
 	// Otherwise, we could have a fun edge-case where a duplicated validator connection ends up removing an
 	// existing validator connection from the index.
-	fetchedRn, ok := nm.GetValidatorIndex().Get(rn.GetValidatorPublicKey().Serialize())
+	if rn.IsOutbound() {
+		fetchedRn, ok := nm.GetValidatorOutboundIndex().Get(rn.GetValidatorPublicKey().Serialize())
+		if ok && fetchedRn.GetId() == rn.GetId() {
+			nm.GetValidatorOutboundIndex().Remove(rn.GetValidatorPublicKey().Serialize())
+		}
+		return
+	}
+	fetchedRn, ok := nm.GetValidatorInboundIndex().Get(rn.GetValidatorPublicKey().Serialize())
 	if ok && fetchedRn.GetId() == rn.GetId() {
-		nm.GetValidatorIndex().Remove(rn.GetValidatorPublicKey().Serialize())
+		nm.GetValidatorInboundIndex().Remove(rn.GetValidatorPublicKey().Serialize())
 	}
 }
 
@@ -1042,7 +1071,12 @@ func (nm *NetworkManager) SetValidator(remoteNode *RemoteNode) {
 	if pk == nil {
 		return
 	}
-	nm.GetValidatorIndex().Set(pk.Serialize(), remoteNode)
+
+	if remoteNode.IsOutbound() {
+		nm.GetValidatorOutboundIndex().Set(pk.Serialize(), remoteNode)
+	} else {
+		nm.GetValidatorInboundIndex().Set(pk.Serialize(), remoteNode)
+	}
 }
 
 func (nm *NetworkManager) UnsetValidator(remoteNode *RemoteNode) {
@@ -1057,7 +1091,12 @@ func (nm *NetworkManager) UnsetValidator(remoteNode *RemoteNode) {
 	if pk == nil {
 		return
 	}
-	nm.GetValidatorIndex().Remove(pk.Serialize())
+
+	if remoteNode.IsOutbound() {
+		nm.GetValidatorOutboundIndex().Remove(pk.Serialize())
+	} else {
+		nm.GetValidatorInboundIndex().Remove(pk.Serialize())
+	}
 }
 
 func (nm *NetworkManager) UnsetNonValidator(rn *RemoteNode) {
@@ -1083,8 +1122,12 @@ func (nm *NetworkManager) GetAllRemoteNodes() *collections.ConcurrentMap[RemoteN
 	return nm.AllRemoteNodes
 }
 
-func (nm *NetworkManager) GetValidatorIndex() *collections.ConcurrentMap[bls.SerializedPublicKey, *RemoteNode] {
-	return nm.ValidatorIndex
+func (nm *NetworkManager) GetValidatorOutboundIndex() *collections.ConcurrentMap[bls.SerializedPublicKey, *RemoteNode] {
+	return nm.ValidatorOutboundIndex
+}
+
+func (nm *NetworkManager) GetValidatorInboundIndex() *collections.ConcurrentMap[bls.SerializedPublicKey, *RemoteNode] {
+	return nm.ValidatorInboundIndex
 }
 
 func (nm *NetworkManager) GetNonValidatorOutboundIndex() *collections.ConcurrentMap[RemoteNodeId, *RemoteNode] {
@@ -1110,6 +1153,39 @@ func (nm *NetworkManager) GetRemoteNodeById(id RemoteNodeId) *RemoteNode {
 		return nil
 	}
 	return rn
+}
+
+// GetAllValidators returns a list of all currently connected validators with unique public keys. If there is an
+// inbound and an outbound RemoteNode with the same public key, only the outbound RemoteNode is returned in the output.
+// This is because the outbound RemoteNode is the one that we initiated, so it's considered more reliable.
+func (nm *NetworkManager) GetAllValidators() *collections.ConcurrentMap[bls.SerializedPublicKey, *RemoteNode] {
+	allValidators := collections.NewConcurrentMap[bls.SerializedPublicKey, *RemoteNode]()
+	outboundValidatorsMap := nm.GetValidatorOutboundIndex().ToMap()
+	inboundValidatorsMap := nm.GetValidatorInboundIndex().ToMap()
+
+	for pk, rn := range outboundValidatorsMap {
+		allValidators.Set(pk, rn)
+	}
+	for pk, rn := range inboundValidatorsMap {
+		// If the validator is not in the outbound index, we add it to the list of all validators.
+		// This de-duplicates circular validator connections, which are allowed by the protocol.
+		if _, ok := outboundValidatorsMap[pk]; !ok {
+			allValidators.Set(pk, rn)
+		}
+	}
+	return allValidators
+}
+
+func (nm *NetworkManager) GetConnectedValidators() []*RemoteNode {
+	var connectedValidators []*RemoteNode
+	allValidators := nm.GetAllValidators().ToMap()
+	for _, rn := range allValidators {
+		// Filter out validators that have not completed the handshake.
+		if rn.IsHandshakeCompleted() {
+			connectedValidators = append(connectedValidators, rn)
+		}
+	}
+	return connectedValidators
 }
 
 func (nm *NetworkManager) GetAllNonValidators() []*RemoteNode {
@@ -1165,23 +1241,29 @@ func (nm *NetworkManager) handleHandshakeCompletePoSMessage(remoteNode *RemoteNo
 		return nil
 	}
 
-	// Lookup the validator in the ValidatorIndex with the same public key.
-	existingValidator, ok := nm.GetValidatorIndex().Get(validatorPk.Serialize())
 	// For inbound RemoteNodes, we should ensure that there isn't an existing validator connected with the same public key.
 	// Inbound nodes are not initiated by us, so we shouldn't have added the RemoteNode to the ValidatorIndex yet.
-	if remoteNode.IsInbound() && ok {
-		return fmt.Errorf("NetworkManager.handleHandshakeCompletePoSMessage: Inbound RemoteNode with duplicate validator public key")
+	if remoteNode.IsInbound() {
+		_, ok := nm.GetValidatorInboundIndex().Get(validatorPk.Serialize())
+		if ok {
+			return fmt.Errorf("NetworkManager.handleHandshakeCompletePoSMessage: Inbound RemoteNode with duplicate validator public key")
+		}
+		return nil
 	}
 	// For outbound RemoteNodes, we have two possible scenarios. Either the RemoteNode has been initiated as a validator,
 	// in which case it should already be in the ValidatorIndex. Or the RemoteNode has been initiated as a regular node,
 	// in which case it should not be in the ValidatorIndex, but in the NonValidatorOutboundIndex. So to ensure there is
 	// no duplicate connection with the same public key, we only check whether there is a validator in the ValidatorIndex
 	// with the RemoteNode's public key. If there is one, we want to ensure that these two RemoteNodes have identical ids.
-	if remoteNode.IsOutbound() && ok {
-		if remoteNode.GetId() != existingValidator.GetId() {
-			return fmt.Errorf("NetworkManager.handleHandshakeCompletePoSMessage: Outbound RemoteNode with duplicate validator public key. "+
-				"Existing validator id: %v, new validator id: %v", existingValidator.GetId().ToUint64(), remoteNode.GetId().ToUint64())
+	// Lookup the validator in the ValidatorIndex with the same public key.
+	existingValidator, ok := nm.GetValidatorOutboundIndex().Get(validatorPk.Serialize())
+	if ok && remoteNode.GetId() != existingValidator.GetId() {
+		if remoteNode.IsPersistent() && !existingValidator.IsPersistent() {
+			nm.Disconnect(existingValidator)
+			return nil
 		}
+		return fmt.Errorf("NetworkManager.handleHandshakeCompletePoSMessage: Outbound RemoteNode with duplicate validator public key. "+
+			"Existing validator id: %v, new validator id: %v", existingValidator.GetId().ToUint64(), remoteNode.GetId().ToUint64())
 	}
 	return nil
 }

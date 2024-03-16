@@ -305,7 +305,7 @@ func (fc *FastHotStuffConsensus) handleBlockProposalEvent(
 	}
 
 	// Broadcast the block to the validator network
-	validators := fc.networkManager.GetValidatorIndex().GetAll()
+	validators := fc.networkManager.GetConnectedValidators()
 	for _, validator := range validators {
 		sendMessageToRemoteNodeAsync(validator, blockProposal)
 	}
@@ -377,7 +377,7 @@ func (fc *FastHotStuffConsensus) HandleLocalVoteEvent(event *consensus.FastHotSt
 	}
 
 	// Broadcast the block to the validator network
-	validators := fc.networkManager.GetValidatorIndex().GetAll()
+	validators := fc.networkManager.GetConnectedValidators()
 	for _, validator := range validators {
 		sendMessageToRemoteNodeAsync(validator, voteMsg)
 	}
@@ -502,7 +502,7 @@ func (fc *FastHotStuffConsensus) HandleLocalTimeoutEvent(event *consensus.FastHo
 	}
 
 	// Broadcast the block to the validator network
-	validators := fc.networkManager.GetValidatorIndex().GetAll()
+	validators := fc.networkManager.GetConnectedValidators()
 	for _, validator := range validators {
 		sendMessageToRemoteNodeAsync(validator, timeoutMsg)
 	}
