@@ -596,6 +596,9 @@ type DeSoParams struct {
 	// The amount of time we wait to receive a verack message from a peer.
 	VerackNegotiationTimeout time.Duration
 
+	// The amount of time it takes NetworkManager to refresh its routines.
+	NetworkManagerRefreshDuration time.Duration
+
 	// The maximum number of addresses to broadcast to peers.
 	MaxAddressesToBroadcast uint32
 
@@ -1119,9 +1122,10 @@ var DeSoMainnetParams = DeSoParams{
 	DefaultSocketPort:             uint16(17000),
 	DefaultJSONPort:               uint16(17001),
 
-	DialTimeout:               30 * time.Second,
-	VersionNegotiationTimeout: 30 * time.Second,
-	VerackNegotiationTimeout:  30 * time.Second,
+	DialTimeout:                   30 * time.Second,
+	VersionNegotiationTimeout:     30 * time.Second,
+	VerackNegotiationTimeout:      30 * time.Second,
+	NetworkManagerRefreshDuration: 1 * time.Second,
 
 	MaxAddressesToBroadcast: 10,
 
@@ -1410,9 +1414,10 @@ var DeSoTestnetParams = DeSoParams{
 	DefaultSocketPort: uint16(18000),
 	DefaultJSONPort:   uint16(18001),
 
-	DialTimeout:               30 * time.Second,
-	VersionNegotiationTimeout: 30 * time.Second,
-	VerackNegotiationTimeout:  30 * time.Second,
+	DialTimeout:                   30 * time.Second,
+	VersionNegotiationTimeout:     30 * time.Second,
+	VerackNegotiationTimeout:      30 * time.Second,
+	NetworkManagerRefreshDuration: 1 * time.Second,
 
 	MaxAddressesToBroadcast: 10,
 

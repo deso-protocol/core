@@ -171,7 +171,7 @@ func (nm *NetworkManager) startPersistentConnector() {
 		case <-nm.exitChan:
 			nm.exitGroup.Done()
 			return
-		case <-time.After(1 * time.Second):
+		case <-time.After(nm.params.NetworkManagerRefreshDuration):
 			nm.refreshConnectIps()
 		}
 	}
@@ -189,7 +189,7 @@ func (nm *NetworkManager) startValidatorConnector() {
 		case <-nm.exitChan:
 			nm.exitGroup.Done()
 			return
-		case <-time.After(1 * time.Second):
+		case <-time.After(nm.params.NetworkManagerRefreshDuration):
 			activeValidatorsMap := nm.getActiveValidatorsMap()
 			nm.refreshValidatorIndex(activeValidatorsMap)
 			nm.connectValidators(activeValidatorsMap)
@@ -209,7 +209,7 @@ func (nm *NetworkManager) startNonValidatorConnector() {
 		case <-nm.exitChan:
 			nm.exitGroup.Done()
 			return
-		case <-time.After(1 * time.Second):
+		case <-time.After(nm.params.NetworkManagerRefreshDuration):
 			nm.refreshNonValidatorOutboundIndex()
 			nm.refreshNonValidatorInboundIndex()
 			nm.connectNonValidators()
@@ -227,7 +227,7 @@ func (nm *NetworkManager) startRemoteNodeCleanup() {
 		case <-nm.exitChan:
 			nm.exitGroup.Done()
 			return
-		case <-time.After(1 * time.Second):
+		case <-time.After(nm.params.NetworkManagerRefreshDuration):
 			nm.Cleanup()
 		}
 	}
@@ -614,9 +614,10 @@ func (nm *NetworkManager) connectValidators(activeValidatorsMap *collections.Con
 		}
 
 		randDomain, err := collections.RandomElement(validator.GetDomains())
-		if err == nil {
+		if err != nil {
 			glog.V(2).Infof("NetworkManager.connectValidators: Problem getting random domain for "+
 				"validator (pk= %v): (error= %v)", validator.GetPublicKey().Serialize(), err)
+			continue
 		}
 		if err := nm.CreateValidatorConnection(string(randDomain), publicKey); err != nil {
 			glog.V(2).Infof("NetworkManager.connectValidators: Problem connecting to validator %v: %v",
@@ -732,6 +733,12 @@ func (nm *NetworkManager) refreshNonValidatorInboundIndex() {
 // connectNonValidators attempts to connect to new outbound nonValidator remote nodes. It is called periodically by the
 // nonValidator connector.
 func (nm *NetworkManager) connectNonValidators() {
+	// If the NetworkManager is configured with a list of connectIps, then we don't need to connect to any
+	// non-validators using the address manager. We will only connect to the connectIps, and potentially validators.
+	if len(nm.connectIps) != 0 {
+		return
+	}
+
 	// First, find all nonValidator outbound remote nodes that are not persistent.
 	allOutboundRemoteNodes := nm.GetNonValidatorOutboundIndex().GetAll()
 	var nonValidatorOutboundRemoteNodes []*RemoteNode
