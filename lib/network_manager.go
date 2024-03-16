@@ -543,9 +543,9 @@ func (nm *NetworkManager) refreshValidatorIndex(activeValidatorsMap *collections
 	// De-index inactive validators. We skip any checks regarding RemoteNodes connection status, nor do we verify whether
 	// de-indexing the validator would result in an excess number of outbound/inbound connections. Any excess connections
 	// will be cleaned up by the NonValidator connector.
-	// Note that the ValidatorIndex can change concurrently to the below call. This is fine, as the ValidatorIndex is
-	// a concurrent map, and the below call will make a copy of the map in a thread safe manner. If changes are made
-	// to the ValidatorIndex as this function is running, they will be reflected in the next call to refreshValidatorIndex.
+	// Note that the ValidatorIndex can change concurrently to the call below. This is fine, as the ValidatorIndex is
+	// a concurrent map, and here we make a copy of the map in a thread safe manner. If changes are made to the
+	// ValidatorIndex as this function is running, they will be used in the next iteration of refreshValidatorIndex.
 	validatorRemoteNodeMap := nm.GetValidatorIndex().ToMap()
 	for pk, rn := range validatorRemoteNodeMap {
 		// If the validator is no longer active, de-index it.
