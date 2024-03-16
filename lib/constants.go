@@ -577,7 +577,7 @@ type DeSoParams struct {
 	// network before checking for double-spends.
 	BitcoinDoubleSpendWaitSeconds float64
 
-	// ServerMessageChannelSize sets the minimum size of the server's message channel, handling incoming peer messages.
+	// ServerMessageChannelSize sets the minimum size of the server's incomingMessage channel, which handles peer messages.
 	ServerMessageChannelSize uint32
 
 	// This field allows us to set the amount purchased at genesis to a non-zero
