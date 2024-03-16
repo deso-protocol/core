@@ -54,7 +54,7 @@ type NetworkManager struct {
 	nodeServices           ServiceFlag
 
 	// Used to set remote node ids. Must be incremented atomically.
-	remoteNodeIndex uint64
+	remoteNodeNextId uint64
 	// AllRemoteNodes is a map storing all remote nodes by their IDs.
 	AllRemoteNodes *collections.ConcurrentMap[RemoteNodeId, *RemoteNode]
 
@@ -543,6 +543,9 @@ func (nm *NetworkManager) refreshValidatorIndex(activeValidatorsMap *collections
 	// De-index inactive validators. We skip any checks regarding RemoteNodes connection status, nor do we verify whether
 	// de-indexing the validator would result in an excess number of outbound/inbound connections. Any excess connections
 	// will be cleaned up by the NonValidator connector.
+	// Note that the ValidatorIndex can change concurrently to the below call. This is fine, as the ValidatorIndex is
+	// a concurrent map, and the below call will make a copy of the map in a thread safe manner. If changes are made
+	// to the ValidatorIndex as this function is running, they will be reflected in the next call to refreshValidatorIndex.
 	validatorRemoteNodeMap := nm.GetValidatorIndex().ToMap()
 	for pk, rn := range validatorRemoteNodeMap {
 		// If the validator is no longer active, de-index it.
@@ -609,9 +612,15 @@ func (nm *NetworkManager) connectValidators(activeValidatorsMap *collections.Con
 		if len(validator.GetDomains()) == 0 {
 			continue
 		}
-		address := string(validator.GetDomains()[0])
-		if err := nm.CreateValidatorConnection(address, publicKey); err != nil {
-			glog.V(2).Infof("NetworkManager.connectValidators: Problem connecting to validator %v: %v", address, err)
+
+		randDomain, err := collections.RandomElement(validator.GetDomains())
+		if err == nil {
+			glog.V(2).Infof("NetworkManager.connectValidators: Problem getting random domain for "+
+				"validator (pk= %v): (error= %v)", validator.GetPublicKey().Serialize(), err)
+		}
+		if err := nm.CreateValidatorConnection(string(randDomain), publicKey); err != nil {
+			glog.V(2).Infof("NetworkManager.connectValidators: Problem connecting to validator %v: %v",
+				string(randDomain), err)
 			continue
 		}
 	}
@@ -863,6 +872,7 @@ func (nm *NetworkManager) AttachInboundConnection(conn net.Conn,
 	}
 
 	nm.setRemoteNode(remoteNode)
+	nm.GetNonValidatorInboundIndex().Set(remoteNode.GetId(), remoteNode)
 	return remoteNode, nil
 }
 
@@ -898,7 +908,7 @@ func (nm *NetworkManager) DisconnectAll() {
 }
 
 func (nm *NetworkManager) newRemoteNode(validatorPublicKey *bls.PublicKey, isPersistent bool) *RemoteNode {
-	id := atomic.AddUint64(&nm.remoteNodeIndex, 1)
+	id := atomic.AddUint64(&nm.remoteNodeNextId, 1)
 	remoteNodeId := NewRemoteNodeId(id)
 	latestBlockHeight := uint64(nm.bc.BlockTip().Height)
 	return NewRemoteNode(remoteNodeId, validatorPublicKey, isPersistent, nm.srv, nm.cmgr, nm.keystore,
