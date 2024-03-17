@@ -3,6 +3,7 @@ package lib
 import (
 	"bytes"
 	"encoding/binary"
+	"encoding/json"
 	"fmt"
 	"github.com/deso-protocol/go-deadlock"
 	"github.com/golang/glog"
@@ -240,7 +241,8 @@ type StateChangeSyncer struct {
 	// we write the correct entries to the state change file.
 	// During blocksync, all flushes are synchronous, so we don't need to worry about this. As such, those flushes
 	// are given the uuid.Nil ID.
-	UnflushedBytes map[uuid.UUID]UnflushedStateSyncerBytes
+	UnflushedCommittedBytes map[uuid.UUID]UnflushedStateSyncerBytes
+	UnflushedMempoolBytes   map[uuid.UUID]UnflushedStateSyncerBytes
 
 	// This map is used to keep track of all the key and value pairs that state syncer is tracking (and therefore
 	// don't need to be re-emitted to the state change file).
@@ -337,7 +339,8 @@ func NewStateChangeSyncer(stateChangeDir string, nodeSyncType NodeSyncType) *Sta
 		StateChangeMempoolFile:          stateChangeMempoolFile,
 		StateChangeMempoolIndexFile:     stateChangeMempoolIndexFile,
 		StateChangeMempoolFileSize:      uint64(stateChangeMempoolFileInfo.Size()),
-		UnflushedBytes:                  make(map[uuid.UUID]UnflushedStateSyncerBytes),
+		UnflushedCommittedBytes:         make(map[uuid.UUID]UnflushedStateSyncerBytes),
+		UnflushedMempoolBytes:           make(map[uuid.UUID]UnflushedStateSyncerBytes),
 		MempoolSyncedKeyValueMap:        make(map[string]*StateChangeEntry),
 		MempoolFlushKeySet:              make(map[string]bool),
 		StateSyncerMutex:                &sync.Mutex{},
@@ -433,6 +436,20 @@ func (stateChangeSyncer *StateChangeSyncer) _handleStateSyncerOperation(event *S
 		}
 
 		encoderType = encoder.GetEncoderType()
+
+		if encoderType == EncoderTypePostEntry {
+			rr := bytes.NewReader(stateChangeEntry.EncoderBytes)
+			if exist, err := DecodeFromBytes(encoder, rr); exist && err == nil {
+				post := encoder.(*PostEntry)
+				if PkToString(post.PosterPublicKey, &DeSoMainnetParams) == "BC1YLiUs9hvLpLL679JMtvaueoBKPbqmrckGdv1GKK823fHrBM12YBR" {
+					fmt.Printf("Handling post entry for flush %v: %+v\n", flushId, event.StateChangeEntry)
+					fmt.Printf("Event: %+v\n", event)
+					var body DeSoBodySchema
+					json.Unmarshal(post.Body, &body)
+					fmt.Printf("Handling post entry body: %s\n", body.Body)
+				}
+			}
+		}
 	} else {
 		// If the value associated with the key is not an encoder, then we decode the encoder entirely from the key bytes.
 		// Examples of this are FollowEntry, LikeEntry, DeSoBalanceEntry, etc.
@@ -464,7 +481,7 @@ func (stateChangeSyncer *StateChangeSyncer) _handleStateSyncerOperation(event *S
 	writeBytes := EncodeByteArray(entryBytes)
 
 	// Add the StateChangeEntry bytes to the queue of bytes to be written to the state change file upon Badger db flush.
-	stateChangeSyncer.addTransactionToQueue(stateChangeEntry.FlushId, writeBytes)
+	stateChangeSyncer.addTransactionToQueue(stateChangeEntry.FlushId, writeBytes, event.IsMempoolTxn)
 }
 
 // _handleStateSyncerFlush is called when a Badger db flush takes place. It calls a helper function that takes the bytes that
@@ -525,7 +542,7 @@ func (stateChangeSyncer *StateChangeSyncer) _handleStateSyncerFlush(event *State
 					fmt.Printf("Reverting entry %d\n", cachedSCE.EncoderType)
 
 					// Add the StateChangeEntry bytes to the queue of bytes to be written to the state change file upon Badger db flush.
-					stateChangeSyncer.addTransactionToQueue(cachedSCE.FlushId, writeBytes)
+					stateChangeSyncer.addTransactionToQueue(cachedSCE.FlushId, writeBytes, true)
 
 					// Remove this entry from the synced map
 					delete(stateChangeSyncer.MempoolSyncedKeyValueMap, key)
@@ -557,7 +574,7 @@ func (stateChangeSyncer *StateChangeSyncer) ResetMempool() {
 	fmt.Printf("Resetting mempool.\n")
 	stateChangeSyncer.MempoolSyncedKeyValueMap = make(map[string]*StateChangeEntry)
 	stateChangeSyncer.MempoolFlushKeySet = make(map[string]bool)
-	delete(stateChangeSyncer.UnflushedBytes, stateChangeSyncer.MempoolFlushId)
+	delete(stateChangeSyncer.UnflushedMempoolBytes, stateChangeSyncer.MempoolFlushId)
 	stateChangeSyncer.MempoolFlushId = uuid.Nil
 	// Truncate the mempool files.
 	stateChangeSyncer.StateChangeMempoolFile.Truncate(0)
@@ -566,8 +583,17 @@ func (stateChangeSyncer *StateChangeSyncer) ResetMempool() {
 }
 
 // Add a transaction to the queue of transactions to be flushed to disk upon badger db flush.
-func (stateChangeSyncer *StateChangeSyncer) addTransactionToQueue(flushId uuid.UUID, writeBytes []byte) {
-	unflushedBytes, exists := stateChangeSyncer.UnflushedBytes[flushId]
+func (stateChangeSyncer *StateChangeSyncer) addTransactionToQueue(flushId uuid.UUID, writeBytes []byte, isMempool bool) {
+
+	var unflushedBytes UnflushedStateSyncerBytes
+	var exists bool
+
+	if isMempool {
+		unflushedBytes, exists = stateChangeSyncer.UnflushedMempoolBytes[flushId]
+	} else {
+		unflushedBytes, exists = stateChangeSyncer.UnflushedCommittedBytes[flushId]
+	}
+
 	if !exists {
 		unflushedBytes = UnflushedStateSyncerBytes{
 			StateChangeBytes:            []byte{},
@@ -582,7 +608,11 @@ func (stateChangeSyncer *StateChangeSyncer) addTransactionToQueue(flushId uuid.U
 
 	unflushedBytes.StateChangeBytes = append(unflushedBytes.StateChangeBytes, writeBytes...)
 
-	stateChangeSyncer.UnflushedBytes[flushId] = unflushedBytes
+	if isMempool {
+		stateChangeSyncer.UnflushedMempoolBytes[flushId] = unflushedBytes
+	} else {
+		stateChangeSyncer.UnflushedCommittedBytes[flushId] = unflushedBytes
+	}
 }
 
 // FlushTransactionsToFile writes the bytes that have been cached on the StateChangeSyncer to the state change file.
@@ -622,14 +652,22 @@ func (stateChangeSyncer *StateChangeSyncer) FlushTransactionsToFile(event *State
 	// Also delete any unconnected mempool txns from our cache.
 	if !event.Succeeded {
 		fmt.Printf("Deleting unflushed bytes for id: %s\n", flushId)
-		delete(stateChangeSyncer.UnflushedBytes, flushId)
 		if event.IsMempoolFlush {
+			delete(stateChangeSyncer.UnflushedMempoolBytes, flushId)
 			stateChangeSyncer.ResetMempool()
+		} else {
+			delete(stateChangeSyncer.UnflushedCommittedBytes, flushId)
 		}
 		return nil
 	}
 
-	unflushedBytes, exists := stateChangeSyncer.UnflushedBytes[flushId]
+	var unflushedBytes UnflushedStateSyncerBytes
+	var exists bool
+	if event.IsMempoolFlush {
+		unflushedBytes, exists = stateChangeSyncer.UnflushedMempoolBytes[flushId]
+	} else {
+		unflushedBytes, exists = stateChangeSyncer.UnflushedCommittedBytes[flushId]
+	}
 
 	if !exists {
 		fmt.Printf("Unflushed bytes for flush ID doesn't exist: %s\n", flushId.String())
@@ -685,7 +723,12 @@ func (stateChangeSyncer *StateChangeSyncer) FlushTransactionsToFile(event *State
 	}
 
 	// Update unflushed bytes map to remove the flushed bytes.
-	delete(stateChangeSyncer.UnflushedBytes, flushId)
+	if event.IsMempoolFlush {
+		delete(stateChangeSyncer.UnflushedMempoolBytes, flushId)
+	} else {
+		delete(stateChangeSyncer.UnflushedCommittedBytes, flushId)
+	}
+
 	return nil
 }
 
