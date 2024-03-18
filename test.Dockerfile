@@ -25,9 +25,7 @@ COPY scripts     scripts
 COPY test_data   test_data
 COPY main.go     .
 
-RUN ./scripts/install-relic.sh
-
 # build backend
 RUN GOOS=linux go build -mod=mod -a -installsuffix cgo -o bin/core main.go
 
-ENTRYPOINT ["go", "test", "-tags", "relic", "-v", "-failfast", "-p", "1", "github.com/deso-protocol/core/bls", "github.com/deso-protocol/core/collections", "github.com/deso-protocol/core/consensus", "github.com/deso-protocol/core/lib"]
+ENTRYPOINT ["go", "test", "-v", "-failfast", "-p", "1", "github.com/deso-protocol/core/bls", "github.com/deso-protocol/core/collections", "github.com/deso-protocol/core/consensus", "github.com/deso-protocol/core/lib"]

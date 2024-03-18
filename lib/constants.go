@@ -862,7 +862,7 @@ func (params *DeSoParams) EnableRegtest() {
 	params.TimeBetweenDifficultyRetargets = 6 * time.Second
 	// Make sure we don't care about blockchain tip age.
 	params.MaxTipAgePoW = 1000000 * time.Hour
-	params.MaxTipAgePoS = 1000000 * time.Hour
+	params.MaxTipAgePoS = 4 * time.Hour
 
 	// Allow block rewards to be spent instantly
 	params.BlockRewardMaturity = 0

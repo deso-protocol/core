@@ -1,5 +1,3 @@
-//go:build relic
-
 package bls
 
 import (
