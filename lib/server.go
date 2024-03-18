@@ -1520,14 +1520,18 @@ func (srv *Server) _handleSnapshot(pp *Peer, msg *MsgDeSoSnapshotData) {
 		if len(blockNodeBatch) < 10000 {
 			continue
 		}
-		err = srv.blockchain.db.Update(func(txn *badger.Txn) error {
-			return PutHeightHashToNodeInfoBatchWithTxn(txn, srv.snapshot, blockNodeBatch, false /*bitcoinNodes*/, srv.eventManager)
-		})
+		err = PutHeightHashToNodeInfoBatch(srv.blockchain.db, srv.snapshot, blockNodeBatch, false /*bitcoinNodes*/, srv.eventManager)
 		if err != nil {
 			glog.Errorf("Server._handleSnapshot: Problem updating snapshot block nodes, error: (%v)", err)
 			break
 		}
 		blockNodeBatch = []*BlockNode{}
+	}
+	if len(blockNodeBatch) > 0 {
+		err = PutHeightHashToNodeInfoBatch(srv.blockchain.db, srv.snapshot, blockNodeBatch, false /*bitcoinNodes*/, srv.eventManager)
+		if err != nil {
+			glog.Errorf("Server._handleSnapshot: Problem updating snapshot block nodes, error: (%v)", err)
+		}
 	}
 
 	err = PutBestHash(srv.blockchain.db, srv.snapshot, msg.SnapshotMetadata.CurrentEpochBlockHash, ChainTypeDeSoBlock, srv.eventManager)
