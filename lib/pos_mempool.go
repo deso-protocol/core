@@ -550,7 +550,7 @@ func (mp *PosMempool) addTransactionNoLock(txn *MempoolTx, persistToDb bool) err
 		}
 	}
 
-	// At this point the transaction is in the mempool.
+	// At this point the transaction is in the mempool. We can now update the nonce tracker.
 	mp.nonceTracker.AddTxnByPublicKeyNonce(txn, *userPk, *txn.Tx.TxnNonce)
 
 	// Emit an event for the newly added transaction.
