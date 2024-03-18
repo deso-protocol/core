@@ -3,8 +3,10 @@ package lib
 import (
 	"bytes"
 	"github.com/deso-protocol/core/bls"
-	"github.com/deso-protocol/core/collections"
 	"github.com/dgraph-io/badger/v3"
+	"github.com/hashicorp/golang-lru/v2"
+
+	"github.com/deso-protocol/core/collections"
 	"github.com/pkg/errors"
 	"math"
 	"sort"
@@ -340,4 +342,67 @@ func (sc *SnapshotCache) GetSnapshotValidatorEntryByPKID(
 		sc.cachedValidatorEntryByPKIDBySnapshotAtEpoch[keyForSnapshotValidatorEntryByPKID(snapshotAtEpoch, pkid)] = validatorEntry
 	}
 	return validatorEntry, nil
+}
+
+type BlockViewCacheItem struct {
+	blockView             *UtxoView
+	utxoOpsToConnectBlock [][]*UtxoOperation
+}
+
+type BlockViewCache struct {
+	// block view cache
+	cachedBlockViewAndUtxoOpsByBlockHash *lru.Cache[BlockHash, BlockViewCacheItem]
+}
+
+func NewBlockViewCache(
+	maxBlockViewCacheSize int,
+) *BlockViewCache {
+	_cachedBlockViewAndUtxoOpsByBlockHash, _ := lru.New[BlockHash, BlockViewCacheItem](maxBlockViewCacheSize)
+	return &BlockViewCache{
+		cachedBlockViewAndUtxoOpsByBlockHash: _cachedBlockViewAndUtxoOpsByBlockHash,
+	}
+}
+
+func (bc *BlockViewCache) GetBlockViewCacheItem(
+	blockHash BlockHash,
+) (*BlockViewCacheItem, bool) {
+	blockView, exists := bc.cachedBlockViewAndUtxoOpsByBlockHash.Get(blockHash)
+	if !exists {
+		return nil, false
+	}
+	return &blockView, true
+}
+
+func (bvc *BlockViewCache) GetBlockView(
+	blockHash BlockHash,
+) (*UtxoView, bool) {
+	blockViewCacheItem, exists := bvc.cachedBlockViewAndUtxoOpsByBlockHash.Get(blockHash)
+	if !exists {
+		return nil, false
+	}
+	return blockViewCacheItem.blockView, false
+}
+
+func (bvc *BlockViewCache) GetUtxoOpsForConnectBlock(
+	blockHash BlockHash,
+) ([][]*UtxoOperation, bool) {
+	blockViewCacheItem, exists := bvc.cachedBlockViewAndUtxoOpsByBlockHash.Get(blockHash)
+	if exists {
+		return blockViewCacheItem.utxoOpsToConnectBlock, true
+	}
+	return nil, false
+}
+
+func (bvc *BlockViewCache) AddBlockViewCacheItem(
+	blockHash BlockHash,
+	blockView *UtxoView,
+	utxoOpsToConnectBlock [][]*UtxoOperation,
+) {
+	copiedView, _ := blockView.CopyUtxoView()
+	bvc.cachedBlockViewAndUtxoOpsByBlockHash.Add(
+		blockHash,
+		BlockViewCacheItem{
+			blockView:             copiedView,
+			utxoOpsToConnectBlock: utxoOpsToConnectBlock,
+		})
 }

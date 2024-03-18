@@ -413,7 +413,7 @@ func (txi *TXIndex) Update() error {
 				"Update: Error initializing UtxoView: %v", err)
 		}
 		if blockToAttach.Header.PrevBlockHash != nil {
-			utxoView, err = txi.TXIndexChain.getUtxoViewAtBlockHash(*blockToAttach.Header.PrevBlockHash)
+			utxoView, _, err = txi.TXIndexChain.getUtxoViewAtBlockHash(*blockToAttach.Header.PrevBlockHash)
 			if err != nil {
 				return fmt.Errorf("Update: Problem getting UtxoView at block hash %v: %v",
 					blockToAttach.Header.PrevBlockHash, err)

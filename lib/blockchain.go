@@ -503,7 +503,7 @@ type Blockchain struct {
 	blockView *UtxoView
 
 	// cache block view for each block
-	blockViewCache lru.KVCache
+	blockViewCache *BlockViewCache
 
 	// snapshot cache
 	snapshotCache *SnapshotCache

@@ -696,7 +696,7 @@ func (fc *FastHotStuffConsensus) produceUnsignedBlockForBlockProposalEvent(
 	}
 
 	// Build a UtxoView at the parent block
-	utxoViewAtParent, err := fc.blockchain.getUtxoViewAtBlockHash(*parentBlockHash)
+	utxoViewAtParent, _, err := fc.blockchain.getUtxoViewAtBlockHash(*parentBlockHash)
 	if err != nil {
 		// This should never happen as long as the parent block is a descendant of the committed tip.
 		return nil, errors.Errorf("Error fetching UtxoView for parent block: %v", parentBlockHash)
