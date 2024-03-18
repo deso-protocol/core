@@ -727,6 +727,8 @@ func (bc *Blockchain) _applyUncommittedBlocksToBestChain() error {
 		}
 	}
 
+	////////////////////////// Update the bestChain in-memory data structures //////////////////////////
+
 	// Fetch the lineage of blocks from the committed tip through the uncommitted tip.
 	lineageFromCommittedTip, err := bc.getLineageFromCommittedTip(uncommittedTipBlockNode.Header)
 	if err != nil {
@@ -737,6 +739,16 @@ func (bc *Blockchain) _applyUncommittedBlocksToBestChain() error {
 	if _, _, _, err := bc.tryApplyNewTip(uncommittedTipBlockNode, 0, lineageFromCommittedTip); err != nil {
 		return errors.Wrapf(err, "_applyUncommittedBlocksToBestChain: ")
 	}
+
+	////////////////////////// Update the bestHeaderChain in-memory data structures //////////////////////////
+	currentHeaderTip := bc.headerTip()
+	_, blocksToDetach, blocksToAttach := GetReorgBlocks(currentHeaderTip, uncommittedTipBlockNode)
+	bc.bestHeaderChain, bc.bestHeaderChainMap = updateBestChainInMemory(
+		bc.bestHeaderChain,
+		bc.bestHeaderChainMap,
+		blocksToDetach,
+		blocksToAttach,
+	)
 
 	return nil
 }

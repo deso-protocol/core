@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/btcsuite/btcd/wire"
+	"github.com/deso-protocol/core/collections"
 	"github.com/deso-protocol/core/consensus"
 
 	"github.com/decred/dcrd/lru"
@@ -65,10 +66,10 @@ type Server struct {
 	TxIndex       *TXIndex
 	params        *DeSoParams
 
-	// fastHotStuffEventLoop consensus.FastHotStuffEventLoop
 	networkManager *NetworkManager
-	// posMempool *PosMemPool TODO: Add the mempool later
-	fastHotStuffConsensus *FastHotStuffConsensus
+
+	fastHotStuffConsensus                    *FastHotStuffConsensus
+	fastHotStuffConsensusTransitionCheckTime time.Time
 
 	// All messages received from peers get sent from the ConnectionManager to the
 	// Server through this channel.
@@ -525,9 +526,9 @@ func NewServer(
 	if _blsKeystore != nil {
 		nodeServices |= SFPosValidator
 	}
-	rnManager := NewRemoteNodeManager(srv, _chain, _cmgr, _blsKeystore, _params, _minFeeRateNanosPerKB, nodeServices)
-	srv.networkManager = NewNetworkManager(_params, _cmgr, rnManager, _blsKeystore, _desoAddrMgr,
-		_connectIps, _targetOutboundPeers, _maxInboundPeers, _limitOneInboundConnectionPerIP)
+	srv.networkManager = NewNetworkManager(_params, srv, _chain, _cmgr, _blsKeystore, _desoAddrMgr,
+		_connectIps, _targetOutboundPeers, _maxInboundPeers, _limitOneInboundConnectionPerIP,
+		_minFeeRateNanosPerKB, nodeServices)
 
 	if srv.stateChangeSyncer != nil {
 		srv.stateChangeSyncer.BlockHeight = uint64(_chain.headerTip().Height)
@@ -640,7 +641,6 @@ func NewServer(
 		// off the PoS consensus once the miner is done.
 		if _params.NetworkType == NetworkType_TESTNET && _miner != nil && _blockProducer != nil {
 			_miner.AddBlockMinedListener(srv.submitRegtestValidatorRegistrationTxns)
-			_miner.AddBlockMinedListener(srv.startRegtestFastHotStuffConsensus)
 		}
 	}
 
@@ -922,12 +922,6 @@ func (srv *Server) _handleHeaderBundle(pp *Peer, msg *MsgDeSoHeaderBundle) {
 		"in state %s from peer %v. Downloaded ( %v / %v ) total headers",
 		len(msg.Headers), srv.blockchain.chainState(), pp,
 		srv.blockchain.headerTip().Header.Height, printHeight)))
-
-	// If the node is running a Fast-HotStuff validator and the consensus is running,
-	// in the steady-state, then it means that we don't sync the header chain separately.
-	if srv.fastHotStuffConsensus != nil && srv.fastHotStuffConsensus.IsRunning() {
-		return
-	}
 
 	// If we get here, it means that the node is not currently running a Fast-HotStuff
 	// validator or that the node is syncing. In either case, we sync headers according
@@ -1233,16 +1227,6 @@ func (srv *Server) _handleGetSnapshot(pp *Peer, msg *MsgDeSoGetSnapshot) {
 // at current snapshot epoch. We will set these entries in our node's database as well as update the checksum.
 func (srv *Server) _handleSnapshot(pp *Peer, msg *MsgDeSoSnapshotData) {
 	srv.timer.End("Get Snapshot")
-
-	// If the node is running a Fast-HotStuff validator and the consensus is running,
-	// in the steady-state, then it means that we don't download and handle snapshots.
-	if srv.fastHotStuffConsensus != nil && srv.fastHotStuffConsensus.IsRunning() {
-		return
-	}
-
-	// If we get here, it means that the node is not currently running a Fast-HotStuff
-	// validator or that the node is syncing. In either case, we handle snapshots according
-	// to the Hypersync rules.
 
 	srv.timer.Start("Server._handleSnapshot Main")
 	// If there are no db entries in the msg, we should also disconnect the peer. There should always be
@@ -1718,12 +1702,6 @@ func (srv *Server) _startSync() {
 		"header tip height %v from peer %v", bestHeight, bestPeer)
 
 	srv.SyncPeer = bestPeer
-
-	// Initialize state syncer mempool job, if needed.
-	if srv.stateChangeSyncer != nil {
-		srv.stateChangeSyncer.StartMempoolSyncRoutine(srv)
-	}
-
 }
 
 func (srv *Server) HandleAcceptedPeer(rn *RemoteNode) {
@@ -1852,20 +1830,17 @@ func (srv *Server) _relayTransactions() {
 	// send them an inv.
 	allPeers := srv.cmgr.GetAllPeers()
 
-	srv.blockchain.ChainLock.RLock()
-	tipHeight := uint64(srv.blockchain.BlockTip().Height)
-	srv.blockchain.ChainLock.RUnlock()
+	// Get the current mempool. This can be the PoW or PoS mempool depending on the
+	// current block height.
+	mempool := srv.GetMempool()
 
-	// If we're on the PoW protocol, we need to wait for the mempool readOnlyView to regenerate.
-	if srv.params.IsPoWBlockHeight(tipHeight) {
-		glog.V(1).Infof("Server._relayTransactions: Waiting for mempool readOnlyView to regenerate")
-		srv.mempool.BlockUntilReadOnlyViewRegenerated()
-		glog.V(1).Infof("Server._relayTransactions: Mempool view has regenerated")
-	}
+	glog.V(1).Infof("Server._relayTransactions: Waiting for mempool readOnlyView to regenerate")
+	mempool.BlockUntilReadOnlyViewRegenerated()
+	glog.V(1).Infof("Server._relayTransactions: Mempool view has regenerated")
 
 	// We pull the transactions from either the PoW mempool or the PoS mempool depending
 	// on the current block height.
-	txnList := srv.GetMempool().GetTransactions()
+	txnList := mempool.GetTransactions()
 
 	for _, pp := range allPeers {
 		if !pp.canReceiveInvMessagess {
@@ -1887,6 +1862,10 @@ func (srv *Server) _relayTransactions() {
 				continue
 			}
 
+			// Add the transaction to the peer's known inventory. We do
+			// it here when we enqueue the message to the peers outgoing
+			// message queue so that we don't have remember to do it later.
+			pp.knownInventory.Add(*invVect)
 			invMsg.InvList = append(invMsg.InvList, invVect)
 		}
 		if len(invMsg.InvList) > 0 {
@@ -2059,13 +2038,13 @@ func (srv *Server) _handleBlockAccepted(event *BlockEvent) {
 		Hash: *blockHash,
 	}
 
-	// Iterate through all the peers and relay the InvVect to them. This will only
-	// actually be relayed if it's not already in the peer's knownInventory.
-	allPeers := srv.cmgr.GetAllPeers()
-	for _, pp := range allPeers {
-		pp.AddDeSoMessage(&MsgDeSoInv{
+	// Iterate through all non-validator peers and relay the InvVect to them.
+	// This will only actually be relayed if it's not already in the peer's knownInventory.
+	allNonValidators := srv.networkManager.GetAllNonValidators()
+	for _, remoteNode := range allNonValidators {
+		remoteNode.sendMessage(&MsgDeSoInv{
 			InvList: []*InvVect{invVect},
-		}, false)
+		})
 	}
 }
 
@@ -2086,20 +2065,8 @@ func (srv *Server) _handleBlock(pp *Peer, blk *MsgDeSoBlock) {
 	glog.Infof(CLog(Cyan, fmt.Sprintf("Server._handleBlock: Received block ( %v / %v ) from Peer %v",
 		blk.Header.Height, srv.blockchain.headerTip().Height, pp)))
 
-	// If the node is running a Fast-HotStuff validator and the consensus is running,
-	// in the steady-state, then we handle the block according to the consensus rules.
-	if srv.fastHotStuffConsensus != nil && srv.fastHotStuffConsensus.IsRunning() {
-		if err := srv.fastHotStuffConsensus.HandleBlock(pp, blk); err != nil {
-			glog.Errorf("Server._handleBlock: Problem handling block with FastHotStuffConsensus: %v", err)
-		}
-		return
-	}
-
-	// If we get here, it means that the node is not currently running a Fast-HotStuff
-	// validator or that the node is syncing. In either case, we handle the block
-	// according to the blocksync rules.
-
 	srv.timer.Start("Server._handleBlock: General")
+
 	// Pull out the header for easy access.
 	blockHeader := blk.Header
 	if blockHeader == nil {
@@ -2110,30 +2077,29 @@ func (srv *Server) _handleBlock(pp *Peer, blk *MsgDeSoBlock) {
 
 	// If we've set a maximum sync height and we've reached that height, then we will
 	// stop accepting new blocks.
-	if srv.blockchain.isTipMaxed(srv.blockchain.blockTip()) &&
-		blockHeader.Height > uint64(srv.blockchain.blockTip().Height) {
-
+	blockTip := srv.blockchain.blockTip()
+	if srv.blockchain.isTipMaxed(blockTip) && blockHeader.Height > uint64(blockTip.Height) {
 		glog.Infof("Server._handleBlock: Exiting because block tip is maxed out")
 		return
 	}
 
-	// Compute the hash of the block.
+	// Compute the hash of the block. If the hash computation fails, then we log an error and
+	// disconnect from the peer. The block is obviously bad.
 	blockHash, err := blk.Header.Hash()
 	if err != nil {
-		// This should never happen if we got this far but log the error, clear the
-		// requestedBlocks, disconnect from the peer and return just in case.
-		srv._logAndDisconnectPeer(
-			pp, blk, "Problem computing block hash")
+		srv._logAndDisconnectPeer(pp, blk, "Problem computing block hash")
 		return
 	}
 
-	// Log a warning if we receive a block we haven't requested yet. It is still possible to receive
-	// a block in this case if we're connected directly to the block producer and they send us a block
-	// directly.
-	if _, exists := pp.requestedBlocks[*blockHash]; !exists {
-		glog.Warningf("_handleBlock: Getting a block that we haven't requested before, "+
-			"block hash (%v)", *blockHash)
+	// Unless we're running a PoS validator, we should not expect to see a block that we did not request. If
+	// we see such a block, then we log an error and disconnect from the peer.
+	_, isRequestedBlock := pp.requestedBlocks[*blockHash]
+	if srv.fastHotStuffConsensus == nil && !isRequestedBlock {
+		srv._logAndDisconnectPeer(pp, blk, "Getting a block that we haven't requested before")
+		return
 	}
+
+	// Delete the block from the requested blocks map. We do this whether the block was requested or not.
 	delete(pp.requestedBlocks, *blockHash)
 
 	// Check that the mempool has not received a transaction that would forbid this block's signature pubkey.
@@ -2156,12 +2122,16 @@ func (srv *Server) _handleBlock(pp *Peer, blk *MsgDeSoBlock) {
 
 	// Only verify signatures for recent blocks.
 	var isOrphan bool
-	if srv.blockchain.isSyncing() {
+	if srv.fastHotStuffConsensus != nil && srv.fastHotStuffConsensus.IsRunning() {
+		// If the FastHotStuffConsensus has been initialized, then we pass the block to the new consensus
+		// which will validate the block, try to apply it, and handle the orphan case by requesting missing
+		// parents.
+		isOrphan, err = srv.fastHotStuffConsensus.HandleBlock(pp, blk)
+	} else if srv.blockchain.isSyncing() {
 		glog.V(1).Infof(CLog(Cyan, fmt.Sprintf("Server._handleBlock: Processing block %v WITHOUT "+
 			"signature checking because SyncState=%v for peer %v",
 			blk, srv.blockchain.chainState(), pp)))
 		_, isOrphan, _, err = srv.blockchain.ProcessBlock(blk, false)
-
 	} else {
 		// TODO: Signature checking slows things down because it acquires the ChainLock.
 		// The optimal solution is to check signatures in a way that doesn't acquire the
@@ -2198,8 +2168,7 @@ func (srv *Server) _handleBlock(pp *Peer, blk *MsgDeSoBlock) {
 		// It's possible to receive an orphan block if we're connected directly to the
 		// block producer, and they are broadcasting blocks in the steady state. We log
 		// a warning in this case and move on.
-		glog.Warningf("ERROR: Received orphan block with hash %v height %v. "+
-			"This should never happen", blockHash, blk.Header.Height)
+		glog.Warningf("ERROR: Received orphan block with hash %v height %v.", blockHash, blk.Header.Height)
 		return
 	}
 
@@ -2259,27 +2228,13 @@ func (srv *Server) _handleBlock(pp *Peer, blk *MsgDeSoBlock) {
 	// In this case we shoot a MEMPOOL message over to the peer to bootstrap the mempool.
 	srv._maybeRequestSync(pp)
 
-	///////////////////// PoS Validator Consensus Initialization /////////////////////
-
 	// Exit early if the chain isn't SyncStateFullyCurrent.
 	if srv.blockchain.chainState() != SyncStateFullyCurrent {
 		return
 	}
 
-	// Exit early if the current tip height is below the final PoW block's height. We are ready to
-	// enable the FastHotStuffConsensus once we reach the final block of the PoW protocol.
-	//
-	// Enable the FastHotStuffConsensus once the tipHeight >= ProofOfStake2ConsensusCutoverBlockHeight-1
-	tipHeight := uint64(srv.blockchain.blockTip().Height)
-	if tipHeight < srv.params.GetFinalPoWBlockHeight() {
-		return
-	}
-
-	// If the PoS validator FastHotStuffConsensus is initialized but not yet running, then
-	// we can start the validator consensus, and transition to it in the steady-state.
-	if srv.fastHotStuffConsensus != nil && !srv.fastHotStuffConsensus.IsRunning() {
-		srv.fastHotStuffConsensus.Start()
-	}
+	// If the chain is current, then try to transition to the FastHotStuff consensus.
+	srv.tryTransitionToFastHotStuffConsensus()
 }
 
 func (srv *Server) _handleInv(peer *Peer, msg *MsgDeSoInv) {
@@ -2453,7 +2408,7 @@ func (srv *Server) _handleAddrMessage(pp *Peer, desoMsg DeSoMessage) {
 	var ok bool
 	if msg, ok = desoMsg.(*MsgDeSoAddr); !ok {
 		glog.Errorf("Server._handleAddrMessage: Problem decoding MsgDeSoAddr: %v", spew.Sdump(desoMsg))
-		srv.networkManager.rnManager.DisconnectById(id)
+		srv.networkManager.DisconnectById(id)
 		return
 	}
 
@@ -2469,7 +2424,7 @@ func (srv *Server) _handleAddrMessage(pp *Peer, desoMsg DeSoMessage) {
 			"Peer id=%v for sending us an addr message with %d transactions, which exceeds "+
 			"the max allowed %d",
 			pp.ID, len(msg.AddrList), MaxAddrsPerAddrMsg))
-		srv.networkManager.rnManager.DisconnectById(id)
+		srv.networkManager.DisconnectById(id)
 		return
 	}
 
@@ -2520,7 +2475,7 @@ func (srv *Server) _handleGetAddrMessage(pp *Peer, desoMsg DeSoMessage) {
 	if _, ok := desoMsg.(*MsgDeSoGetAddr); !ok {
 		glog.Errorf("Server._handleAddrMessage: Problem decoding "+
 			"MsgDeSoAddr: %v", spew.Sdump(desoMsg))
-		srv.networkManager.rnManager.DisconnectById(id)
+		srv.networkManager.DisconnectById(id)
 		return
 	}
 
@@ -2546,10 +2501,10 @@ func (srv *Server) _handleGetAddrMessage(pp *Peer, desoMsg DeSoMessage) {
 		}
 		res.AddrList = append(res.AddrList, singleAddr)
 	}
-	rn := srv.networkManager.rnManager.GetRemoteNodeById(id)
-	if err := srv.networkManager.rnManager.SendMessage(rn, res); err != nil {
+	rn := srv.networkManager.GetRemoteNodeById(id)
+	if err := srv.networkManager.SendMessage(rn, res); err != nil {
 		glog.Errorf("Server._handleGetAddrMessage: Problem sending addr message to peer %v: %v", pp, err)
-		srv.networkManager.rnManager.DisconnectById(id)
+		srv.networkManager.DisconnectById(id)
 		return
 	}
 }
@@ -2673,6 +2628,9 @@ func (srv *Server) _handleValidatorTimeout(pp *Peer, msg *MsgDeSoValidatorTimeou
 // - It listens to consensus events from the Fast HostStuff consensus engine. The consensus signals when
 // it's ready to vote, timeout, propose a block, or propose an empty block with a timeout QC.
 func (srv *Server) _startConsensus() {
+	// Initialize the FastHotStuffConsensus transition check time.
+	srv.resetFastHotStuffConsensusTransitionCheckTime()
+
 	for {
 		// This is used instead of the shouldQuit control message exist mechanism below. shouldQuit will be true only
 		// when all incoming messages have been processed, on the other hand this shutdown will quit immediately.
@@ -2681,7 +2639,13 @@ func (srv *Server) _startConsensus() {
 		}
 
 		select {
-		case consensusEvent := <-srv._getFastHotStuffConsensusEventChannel():
+		case <-srv.getFastHotStuffTransitionCheckTime():
+			{
+				glog.V(2).Info("Server._startConsensus: Checking if FastHotStuffConsensus is ready to start")
+				srv.tryTransitionToFastHotStuffConsensus()
+			}
+
+		case consensusEvent := <-srv.getFastHotStuffConsensusEventChannel():
 			{
 				glog.V(2).Infof("Server._startConsensus: Received consensus event: %s", consensusEvent.ToString())
 				srv._handleFastHostStuffConsensusEvent(consensusEvent)
@@ -2762,7 +2726,7 @@ func (srv *Server) _startAddressRelayer() {
 		// For the first ten minutes after the connection controller starts, relay our address to all
 		// peers. After the first ten minutes, do it once every 24 hours.
 		glog.V(1).Infof("Server.startAddressRelayer: Relaying our own addr to peers")
-		remoteNodes := srv.networkManager.rnManager.GetAllRemoteNodes().GetAll()
+		remoteNodes := srv.networkManager.GetAllRemoteNodes().GetAll()
 		if numMinutesPassed < 10 || numMinutesPassed%(RebroadcastNodeAddrIntervalMinutes) == 0 {
 			for _, rn := range remoteNodes {
 				if !rn.IsHandshakeCompleted() {
@@ -2823,11 +2787,82 @@ func (srv *Server) _startAddressRelayer() {
 	}
 }
 
-func (srv *Server) _getFastHotStuffConsensusEventChannel() chan *consensus.FastHotStuffEvent {
+func (srv *Server) getFastHotStuffConsensusEventChannel() chan *consensus.FastHotStuffEvent {
 	if srv.fastHotStuffConsensus == nil {
 		return nil
 	}
 	return srv.fastHotStuffConsensus.fastHotStuffEventLoop.GetEvents()
+}
+
+func (srv *Server) resetFastHotStuffConsensusTransitionCheckTime() {
+	// Check once every 30 seconds if the FastHotStuffConsensus is ready to start.
+	srv.fastHotStuffConsensusTransitionCheckTime = time.Now().Add(30 * time.Second)
+}
+
+func (srv *Server) getFastHotStuffTransitionCheckTime() <-chan time.Time {
+	// If the FastHotStuffConsensus does not exist, or is already running, then
+	// we don't need this timer. We can exit early.
+	if srv.fastHotStuffConsensus == nil || srv.fastHotStuffConsensus.IsRunning() {
+		return nil
+	}
+	return time.After(time.Until(srv.fastHotStuffConsensusTransitionCheckTime))
+}
+
+func (srv *Server) tryTransitionToFastHotStuffConsensus() {
+	// Reset the transition check timer when this function exits.
+	defer srv.resetFastHotStuffConsensusTransitionCheckTime()
+
+	// If the FastHotStuffConsensus does not exist, or is already running, then
+	// there is nothing left to do. We can exit early.
+	if srv.fastHotStuffConsensus == nil || srv.fastHotStuffConsensus.IsRunning() {
+		return
+	}
+
+	// Get the tip height, header tip height, and sync state of the blockchain. We'll use them
+	// in a heuristic here to determine if we are ready to transition to the FastHotStuffConsensus,
+	// or should continue to try to sync.
+	srv.blockchain.ChainLock.RLock()
+	tipHeight := uint64(srv.blockchain.blockTip().Height)
+	headerTipHeight := uint64(srv.blockchain.headerTip().Height)
+	syncState := srv.blockchain.chainState()
+	srv.blockchain.ChainLock.RUnlock()
+
+	// Exit early if the current tip height is below the final PoW block's height. We are ready to
+	// enable the FastHotStuffConsensus once we reach the final block of the PoW protocol. The
+	// FastHotStuffConsensus can only be enabled once it's at or past the final block height of
+	// the PoW protocol.
+	if tipHeight < srv.params.GetFinalPoWBlockHeight() {
+		return
+	}
+
+	// If the header's tip is not at the same height as the block tip, then we are still syncing
+	// and we should not transition to the FastHotStuffConsensus.
+	if headerTipHeight != tipHeight {
+		return
+	}
+
+	// If we are still syncing, then we should not transition to the FastHotStuffConsensus.
+	// We intentionally exclude the SyncStateSyncingHeaders to account for the case where we
+	// do not have a sync peer and are stuck in the SyncStateSyncingHeaders state.
+	skippedSyncStates := []SyncState{
+		SyncStateSyncingSnapshot, SyncStateSyncingBlocks, SyncStateNeedBlocksss, SyncStateSyncingHistoricalBlocks,
+	}
+	if collections.Contains(skippedSyncStates, syncState) {
+		return
+	}
+
+	// If we have a sync peer and have not reached the sync peer's starting block height, then
+	// we should sync all remaining blocks from the sync peer before transitioning to the
+	// FastHotStuffConsensus.
+	if srv.SyncPeer != nil && srv.SyncPeer.StartingBlockHeight() > tipHeight {
+		return
+	}
+
+	// At this point, we know that we have synced to the sync peer's tip or we don't have a sync
+	// peer. The header tip and the chain tip are also at the same height. We are ready to transition
+	// to the FastHotStuffConsensus.
+
+	srv.fastHotStuffConsensus.Start()
 }
 
 func (srv *Server) _startTransactionRelayer() {
@@ -2949,19 +2984,13 @@ func (srv *Server) Start() {
 		go srv.miner.Start()
 	}
 
-	srv.networkManager.Start()
-
-	// On testnet, if the node is configured to be a PoW block producer, and it is configured
-	// to be also a PoS validator, then we attach block mined listeners to the miner to kick
-	// off the PoS consensus once the miner is done.
-	if srv.params.NetworkType == NetworkType_TESTNET && srv.fastHotStuffConsensus != nil {
-		tipHeight := uint64(srv.blockchain.blockTip().Height)
-		if srv.params.IsFinalPoWBlockHeight(tipHeight) || srv.params.IsPoSBlockHeight(tipHeight) {
-			if err := srv.fastHotStuffConsensus.Start(); err != nil {
-				glog.Errorf("NewServer: Error starting fast hotstuff consensus %v", err)
-			}
-		}
+	// Initialize state syncer mempool job, if needed.
+	if srv.stateChangeSyncer != nil {
+		srv.stateChangeSyncer.StartMempoolSyncRoutine(srv)
 	}
+
+	// Start the network manager's internal event loop to open and close connections to peers.
+	srv.networkManager.Start()
 }
 
 // SyncPrefixProgress keeps track of sync progress on an individual prefix. It is used in
