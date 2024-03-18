@@ -27,7 +27,7 @@ type MempoolTx struct {
 	Added time.Time
 
 	// Whether this transaction has been validated by the mempool
-	Validated bool
+	validated bool
 
 	// The block height when the txn was added to the pool. It's generally set
 	// to tip+1.
@@ -130,9 +130,9 @@ func (mempoolTx *MempoolTx) FromBytes(rr *bytes.Reader) error {
 }
 
 func (mempoolTx *MempoolTx) SetValidated(validated bool) {
-	mempoolTx.Validated = validated
+	mempoolTx.validated = validated
 }
 
 func (mempoolTx *MempoolTx) IsValidated() bool {
-	return mempoolTx.Validated
+	return mempoolTx.validated
 }
