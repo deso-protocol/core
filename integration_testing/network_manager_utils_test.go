@@ -239,6 +239,7 @@ func checkUserAgentInRemoteNodeList(userAgent string, rnList []*lib.RemoteNode) 
 			return true
 		}
 	}
+
 	return false
 }
 
