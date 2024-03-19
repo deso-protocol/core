@@ -241,7 +241,7 @@ func (mp *DeSoMempool) IsRunning() bool {
 	return !mp.stopped
 }
 
-func (mp *DeSoMempool) AddTransaction(txn *MempoolTransaction, verifySignature bool) error {
+func (mp *DeSoMempool) AddTransaction(txn *MempoolTransaction) error {
 	return errors.New("Not implemented")
 }
 
