@@ -5,6 +5,7 @@ import (
 	"container/list"
 	"encoding/hex"
 	"fmt"
+	"github.com/decred/dcrd/lru"
 	"math"
 	"math/big"
 	"reflect"
@@ -501,6 +502,9 @@ type Blockchain struct {
 	// We connect many blocks in the same view and flush every X number of blocks
 	blockView *UtxoView
 
+	// cache block view for each block
+	blockViewCache lru.KVCache
+
 	// State checksum is used to verify integrity of state data and when
 	// syncing from snapshot in the hyper sync protocol.
 	//
@@ -800,6 +804,8 @@ func NewBlockchain(
 		bestChainMap:       make(map[BlockHash]*BlockNode),
 
 		bestHeaderChainMap: make(map[BlockHash]*BlockNode),
+
+		blockViewCache: lru.NewKVCache(1000), // TODO: parameterize
 
 		orphanList: list.New(),
 		timer:      timer,
@@ -2431,7 +2437,7 @@ func (bc *Blockchain) processBlockPoW(desoBlock *MsgDeSoBlock, verifySignatures 
 		lastIndex := len(bc.bestChain) - 1
 		bestChainHash := bc.bestChain[lastIndex].Hash
 
-		if *bestChainHash != *nodeToValidate.Header.PrevBlockHash {
+		if !bestChainHash.IsEqual(nodeToValidate.Header.PrevBlockHash) {
 			return false, false, fmt.Errorf("ProcessBlock: Last block in bestChain "+
 				"data structure (%v) is not equal to parent hash of block being "+
 				"added to tip (%v)", bestChainHash, nodeToValidate.Header.PrevBlockHash)

@@ -2145,11 +2145,11 @@ func (srv *Server) _handleBlock(pp *Peer, blk *MsgDeSoBlock) {
 			// If the block fails the spam prevention check, then it must be signed by the
 			// bad block proposer signature or it has a bad QC. In either case, we should
 			// disconnect the peer.
-			srv._logAndDisconnectPeer(pp, blk, errors.Wrapf(err, "Error while processing block: ").Error())
+			srv._logAndDisconnectPeer(pp, blk, errors.Wrapf(err, "Error while processing block at height %v: ", blk.Header.Height).Error())
 			return
 		} else {
 			// For any other error, we log the error and continue.
-			glog.Errorf("Server._handleBlock: Error while processing block: %v", err)
+			glog.Errorf("Server._handleBlock: Error while processing block at height %v: %v", blk.Header.Height, err)
 			return
 		}
 	}
