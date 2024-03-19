@@ -260,6 +260,10 @@ type StateChangeSyncer struct {
 	// clear out any mempool entries that were ejected from the mempool.
 	MempoolFlushKeySet map[string]bool
 
+	// This cache stores the transactions and their associated utxo ops that are currently in the mempool.
+	// This allows us to reduce the number of connect transaction calls when syncing the mempool
+	MempoolCachedTxns map[string][]*StateChangeEntry
+
 	// Tracks the flush IDs of the last block sync flush and the last mempool flush.
 	// These are not used during hypersync, as many flushes are being processed asynchronously.
 	BlockSyncFlushId uuid.UUID
@@ -343,6 +347,7 @@ func NewStateChangeSyncer(stateChangeDir string, nodeSyncType NodeSyncType) *Sta
 		UnflushedMempoolBytes:           make(map[uuid.UUID]UnflushedStateSyncerBytes),
 		MempoolSyncedKeyValueMap:        make(map[string]*StateChangeEntry),
 		MempoolFlushKeySet:              make(map[string]bool),
+		MempoolCachedTxns:               make(map[string][]*StateChangeEntry),
 		StateSyncerMutex:                &sync.Mutex{},
 		SyncType:                        nodeSyncType,
 		BlocksyncCompleteEntriesFlushed: blocksyncCompleteEntriesFlushed,
@@ -576,6 +581,7 @@ func (stateChangeSyncer *StateChangeSyncer) ResetMempool() {
 	stateChangeSyncer.MempoolFlushKeySet = make(map[string]bool)
 	delete(stateChangeSyncer.UnflushedMempoolBytes, stateChangeSyncer.MempoolFlushId)
 	stateChangeSyncer.MempoolFlushId = uuid.Nil
+	stateChangeSyncer.MempoolCachedTxns = make(map[string][]*StateChangeEntry)
 	// Truncate the mempool files.
 	stateChangeSyncer.StateChangeMempoolFile.Truncate(0)
 	stateChangeSyncer.StateChangeMempoolIndexFile.Truncate(0)
@@ -837,47 +843,62 @@ func (stateChangeSyncer *StateChangeSyncer) SyncMempoolToStateSyncer(server *Ser
 	}
 	fmt.Printf("Mempool synced len after flush: %d\n", len(stateChangeSyncer.MempoolSyncedKeyValueMap))
 	for _, mempoolTx := range mempoolTxns {
-		utxoOpsForTxn, _, _, _, err := mempoolTxUtxoView.ConnectTransaction(
-			mempoolTx.Tx, mempoolTx.Hash, 0, uint32(blockHeight+1), false, false /*ignoreUtxos*/)
-		if err != nil {
-			fmt.Printf("Right before the mempool flush error: %v\n", err)
-			mempoolUtxoView.EventManager.stateSyncerFlushed(&StateSyncerFlushedEvent{
-				FlushId:        originalCommittedFlushId,
-				Succeeded:      false,
-				IsMempoolFlush: true,
-			})
-			return false, errors.Wrapf(err, "StateChangeSyncer.SyncMempoolToStateSyncer ConnectTransaction: ")
-		}
-
-		// Emit transaction state change.
-		mempoolUtxoView.EventManager.stateSyncerOperation(&StateSyncerOperationEvent{
-			StateChangeEntry: &StateChangeEntry{
+		var txnStateChangeEntry *StateChangeEntry
+		var utxoOpStateChangeEntry *StateChangeEntry
+		// Check if the transaction is already in the cache. If so, skip it.
+		txHash := mempoolTx.Hash.String()
+		if stateChangeEntries, ok := stateChangeSyncer.MempoolCachedTxns[txHash]; ok {
+			txnStateChangeEntry = stateChangeEntries[0]
+			utxoOpStateChangeEntry = stateChangeEntries[1]
+		} else {
+			utxoOpsForTxn, _, _, _, err := mempoolTxUtxoView.ConnectTransaction(
+				mempoolTx.Tx, mempoolTx.Hash, 0, uint32(blockHeight+1), false, false /*ignoreUtxos*/)
+			if err != nil {
+				fmt.Printf("Right before the mempool flush error: %v\n", err)
+				mempoolUtxoView.EventManager.stateSyncerFlushed(&StateSyncerFlushedEvent{
+					FlushId:        originalCommittedFlushId,
+					Succeeded:      false,
+					IsMempoolFlush: true,
+				})
+				return false, errors.Wrapf(err, "StateChangeSyncer.SyncMempoolToStateSyncer ConnectTransaction: ")
+			}
+			txnStateChangeEntry = &StateChangeEntry{
 				OperationType: DbOperationTypeUpsert,
 				KeyBytes:      TxnHashToTxnKey(mempoolTx.Hash),
 				EncoderBytes:  EncodeToBytes(blockHeight, mempoolTx.Tx, false),
 				IsReverted:    false,
-			},
-			FlushId:      originalCommittedFlushId,
-			IsMempoolTxn: true,
-		})
+			}
 
-		// Capture the utxo ops for the transaction in a UTXOOp bundle.
-		utxoOpBundle := &UtxoOperationBundle{
-			UtxoOpBundle: [][]*UtxoOperation{},
-		}
+			// Capture the utxo ops for the transaction in a UTXOOp bundle.
+			utxoOpBundle := &UtxoOperationBundle{
+				UtxoOpBundle: [][]*UtxoOperation{},
+			}
 
-		utxoOpBundle.UtxoOpBundle = append(utxoOpBundle.UtxoOpBundle, utxoOpsForTxn)
+			utxoOpBundle.UtxoOpBundle = append(utxoOpBundle.UtxoOpBundle, utxoOpsForTxn)
 
-		// Emit UTXOOp bundle event
-		mempoolUtxoView.EventManager.stateSyncerOperation(&StateSyncerOperationEvent{
-			StateChangeEntry: &StateChangeEntry{
+			utxoOpStateChangeEntry = &StateChangeEntry{
 				OperationType: DbOperationTypeUpsert,
 				KeyBytes:      _DbKeyForTxnUtxoOps(mempoolTx.Hash),
 				EncoderBytes:  EncodeToBytes(blockHeight, utxoOpBundle, false),
 				IsReverted:    false,
-			},
-			FlushId:      originalCommittedFlushId,
-			IsMempoolTxn: true,
+			}
+
+			// Add both state change entries to the mempool sync map.
+			stateChangeSyncer.MempoolCachedTxns[txHash] = []*StateChangeEntry{txnStateChangeEntry, utxoOpStateChangeEntry}
+		}
+
+		// Emit transaction state change.
+		mempoolUtxoView.EventManager.stateSyncerOperation(&StateSyncerOperationEvent{
+			StateChangeEntry: txnStateChangeEntry,
+			FlushId:          originalCommittedFlushId,
+			IsMempoolTxn:     true,
+		})
+
+		// Emit UTXOOp bundle event
+		mempoolUtxoView.EventManager.stateSyncerOperation(&StateSyncerOperationEvent{
+			StateChangeEntry: utxoOpStateChangeEntry,
+			FlushId:          originalCommittedFlushId,
+			IsMempoolTxn:     true,
 		})
 	}
 	fmt.Printf("Mempool flushed len: %d\n", len(stateChangeSyncer.MempoolFlushKeySet))
