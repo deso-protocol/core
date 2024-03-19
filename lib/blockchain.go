@@ -1972,7 +1972,7 @@ func (bc *Blockchain) processHeaderPoW(blockHeader *MsgDeSoHeader, headerHash *B
 }
 
 // ProcessHeader is a wrapper around processHeaderPoW and processHeaderPoS, which do the leg-work.
-func (bc *Blockchain) ProcessHeader(blockHeader *MsgDeSoHeader, headerHash *BlockHash) (_isMainChain bool, _isOrphan bool, _err error) {
+func (bc *Blockchain) ProcessHeader(blockHeader *MsgDeSoHeader, headerHash *BlockHash, verifySignatures bool) (_isMainChain bool, _isOrphan bool, _err error) {
 	bc.ChainLock.Lock()
 	defer bc.ChainLock.Unlock()
 
@@ -1984,7 +1984,7 @@ func (bc *Blockchain) ProcessHeader(blockHeader *MsgDeSoHeader, headerHash *Bloc
 	// If the header's height is after the PoS cut-over fork height, then we use the PoS header processing logic.
 	// Otherwise, fall back to the PoW logic.
 	if bc.params.IsPoSBlockHeight(blockHeader.Height) {
-		return bc.processHeaderPoS(blockHeader)
+		return bc.processHeaderPoS(blockHeader, verifySignatures)
 	}
 
 	return bc.processHeaderPoW(blockHeader, headerHash)
