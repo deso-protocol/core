@@ -121,19 +121,26 @@ func (bav *UtxoView) runEpochCompleteSnapshotGeneration(epochNumber uint64) erro
 	// Snapshot the current GlobalParamsEntry.
 	bav._setSnapshotGlobalParamsEntry(bav.GetCurrentGlobalParamsEntry(), epochNumber)
 
-	// Snapshot the current top m validators as the validator set.
-	validatorSet, err := bav.generateAndSnapshotValidatorSet(epochNumber)
+	currentGlobalParamsEntry := bav.GetCurrentGlobalParamsEntry()
+	maxValidatorsToFetch := currentGlobalParamsEntry.ValidatorSetMaxNumValidators
+	if currentGlobalParamsEntry.LeaderScheduleMaxNumValidators > maxValidatorsToFetch {
+		maxValidatorsToFetch = currentGlobalParamsEntry.LeaderScheduleMaxNumValidators
+	}
+	validatorEntries, err := bav.GetTopActiveValidatorsByStakeAmount(maxValidatorsToFetch)
 	if err != nil {
-		return errors.Wrapf(err, "runEpochCompleteSnapshotGeneration: problem snapshotting validator set: ")
+		return errors.Wrapf(err, "runEpochCompleteSnapshotGeneration: problem retrieving top ValidatorEntries: ")
 	}
 
+	// Snapshot the current top m validators as the validator set.
+	maxValidatorSet := bav.generateAndSnapshotValidatorSet(epochNumber, validatorEntries)
+
 	// Snapshot a randomly generated leader schedule.
-	if err = bav.generateAndSnapshotLeaderSchedule(epochNumber); err != nil {
+	if err = bav.generateAndSnapshotLeaderSchedule(epochNumber, maxValidatorSet); err != nil {
 		return errors.Wrapf(err, "runEpochCompleteSnapshotGeneration: problem snapshotting leader schedule: ")
 	}
 
 	// Snapshot the current top n stake entries as the stakes to reward.
-	if err = bav.generateAndSnapshotStakesToReward(epochNumber, validatorSet); err != nil {
+	if err = bav.generateAndSnapshotStakesToReward(epochNumber, maxValidatorSet); err != nil {
 		return errors.Wrapf(err, "runEpochCompleteSnapshotGeneration: problem snapshotting stakes to reward: ")
 	}
 
@@ -266,13 +273,15 @@ func (bav *UtxoView) runEpochCompleteEpochRollover(epochNumber uint64, blockHeig
 	return nil
 }
 
-func (bav *UtxoView) generateAndSnapshotValidatorSet(epochNumber uint64) ([]*ValidatorEntry, error) {
+func (bav *UtxoView) generateAndSnapshotValidatorSet(epochNumber uint64, maxValidatorSet []*ValidatorEntry,
+) []*ValidatorEntry {
 	// Snapshot the current top n active validators as the validator set.
-	validatorSet, err := bav.GetTopActiveValidatorsByStakeAmount(
-		bav.GetCurrentGlobalParamsEntry().ValidatorSetMaxNumValidators,
-	)
-	if err != nil {
-		return nil, errors.Wrapf(err, "generateAndSnapshotValidatorSet: error retrieving top ValidatorEntries: ")
+	validatorSetMaxNumValidators := bav.GetCurrentGlobalParamsEntry().ValidatorSetMaxNumValidators
+	var validatorSet []*ValidatorEntry
+	if len(maxValidatorSet) > int(validatorSetMaxNumValidators) {
+		validatorSet = maxValidatorSet[:validatorSetMaxNumValidators]
+	} else {
+		validatorSet = maxValidatorSet[:]
 	}
 	for _, validatorEntry := range validatorSet {
 		bav._setSnapshotValidatorSetEntry(validatorEntry, epochNumber)
@@ -283,12 +292,12 @@ func (bav *UtxoView) generateAndSnapshotValidatorSet(epochNumber uint64) ([]*Val
 	validatorSetTotalStakeAmountNanos := SumValidatorEntriesTotalStakeAmountNanos(validatorSet)
 	bav._setSnapshotValidatorSetTotalStakeAmountNanos(validatorSetTotalStakeAmountNanos, epochNumber)
 
-	return validatorSet, nil
+	return validatorSet
 }
 
-func (bav *UtxoView) generateAndSnapshotLeaderSchedule(epochNumber uint64) error {
+func (bav *UtxoView) generateAndSnapshotLeaderSchedule(epochNumber uint64, maxValidatorSet []*ValidatorEntry) error {
 	// Generate a random leader schedule and snapshot it.
-	leaderSchedule, err := bav.GenerateLeaderSchedule()
+	leaderSchedule, err := bav.GenerateLeaderSchedule(maxValidatorSet)
 	if err != nil {
 		return errors.Wrapf(err, "generateAndSnapshotLeaderSchedule: problem generating leader schedule: ")
 	}

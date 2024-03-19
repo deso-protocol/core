@@ -7,7 +7,7 @@ import (
 	"github.com/pkg/errors"
 )
 
-func (bav *UtxoView) GenerateLeaderSchedule() ([]*PKID, error) {
+func (bav *UtxoView) GenerateLeaderSchedule(maxValidatorSet []*ValidatorEntry) ([]*PKID, error) {
 	// Retrieve CurrentRandomSeedHash.
 	currentRandomSeedHash, err := bav.GetCurrentRandomSeedHash()
 	if err != nil {
@@ -19,10 +19,14 @@ func (bav *UtxoView) GenerateLeaderSchedule() ([]*PKID, error) {
 	// to snapshot the leader schedule.
 	currentGlobalParamsEntry := bav.GetCurrentGlobalParamsEntry()
 
-	// Retrieve top, active validators ordered by stake.
-	validatorEntries, err := bav.GetTopActiveValidatorsByStakeAmount(currentGlobalParamsEntry.LeaderScheduleMaxNumValidators)
-	if err != nil {
-		return nil, errors.Wrapf(err, "UtxoView.GenerateLeaderSchedule: error retrieving top ValidatorEntries: ")
+	var validatorEntries []*ValidatorEntry
+	// If the number of validators is less than the max number of validators, we can use all of them.
+	if uint64(len(maxValidatorSet)) <= currentGlobalParamsEntry.LeaderScheduleMaxNumValidators {
+		validatorEntries = maxValidatorSet[:]
+	} else {
+		// If the number of validators is greater than the max number of validators, we need to select the top
+		// maxLeaderScheduleNumValidators validators by stake.
+		validatorEntries = maxValidatorSet[:currentGlobalParamsEntry.LeaderScheduleMaxNumValidators]
 	}
 	if len(validatorEntries) == 0 {
 		return []*PKID{}, nil
