@@ -254,23 +254,18 @@ func (mp *DeSoMempool) GetTransaction(txnHash *BlockHash) *MempoolTransaction {
 	if !exists {
 		return nil
 	}
-	return NewMempoolTransaction(mempoolTx.Tx, mempoolTx.Added)
+	return NewMempoolTransaction(mempoolTx.Tx, mempoolTx.Added, true)
 }
 
 func (mp *DeSoMempool) GetTransactions() []*MempoolTransaction {
 	return collections.Transform(
 		mp.GetOrderedTransactions(), func(mempoolTx *MempoolTx) *MempoolTransaction {
-			return NewMempoolTransaction(mempoolTx.Tx, mempoolTx.Added)
+			return NewMempoolTransaction(mempoolTx.Tx, mempoolTx.Added, true)
 		},
 	)
 }
 
 func (mp *DeSoMempool) GetIterator() MempoolIterator {
-	//TODO implement me
-	panic("implement me")
-}
-
-func (mp *DeSoMempool) Refresh() error {
 	//TODO implement me
 	panic("implement me")
 }

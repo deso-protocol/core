@@ -271,7 +271,7 @@ func TestGetBlockTransactions(t *testing.T) {
 	currentTime := time.Now()
 	for ii, txn := range txns {
 		// Use the Simulated Transaction Timestamp.
-		mtxn := NewMempoolTransaction(txn, currentTime.Add(time.Duration(ii)*time.Microsecond))
+		mtxn := NewMempoolTransaction(txn, currentTime.Add(time.Duration(ii)*time.Microsecond), false)
 		require.NoError(testMempool.AddTransaction(mtxn))
 	}
 	newTxns := testMempool.GetTransactions()
