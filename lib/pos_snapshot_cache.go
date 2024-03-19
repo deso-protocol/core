@@ -2,11 +2,13 @@ package lib
 
 import (
 	"bytes"
+	"github.com/deso-protocol/core/bls"
 	"github.com/deso-protocol/core/collections"
 	"github.com/dgraph-io/badger/v3"
 	"github.com/pkg/errors"
 	"math"
 	"sort"
+	"strconv"
 	"sync"
 )
 
@@ -28,6 +30,16 @@ type SnapshotCache struct {
 	globalParamsRWLock                  sync.RWMutex
 
 	snapshotsCached map[uint64]bool
+
+	// snapshot leader schedule validator. Key is string(snapshotAtEpochNumber)+"L"+string(leaderIndex)
+	cachedLeaderScheduleValidatorBySnapshotAtEpoch map[string]*ValidatorEntry
+
+	// TODO: rename this to cachedValidatorBLSPublicKeyPKIDPairBySnapshotAtEpoch
+	// snapshot bls public key pkid pair entry by bls public key. Key is string(snapshotAtEpochNumber)+"V"+string(validatorPKID)
+	cachedValidatorEntryByBLSPublicKeyBySnapshotAtEpoch map[string]*BLSPublicKeyPKIDPairEntry
+
+	// snapshot validator entry by pkid
+	cachedValidatorEntryByPKIDBySnapshotAtEpoch map[string]*ValidatorEntry
 }
 
 func NewSnapshotCache() *SnapshotCache {
@@ -237,4 +249,95 @@ func (sc *SnapshotCache) GetSnapshotLeaderSchedule(
 		sc.leaderScheduleRWLock.Unlock()
 	}
 	return leaderPKIDs, nil
+}
+
+func keyForSnapshotLeaderScheduleValidator(snapshotAtEpoch uint64, leaderIndex uint16) string {
+	return strconv.FormatUint(snapshotAtEpoch, 10) + "L" + strconv.FormatUint(uint64(leaderIndex), 10)
+}
+
+func (sc *SnapshotCache) GetSnapshotLeaderScheduleValidator(
+	snapshotAtEpoch uint64,
+	leaderIndex uint16,
+	handle *badger.DB,
+	snapshot *Snapshot,
+) (*ValidatorEntry, error) {
+	if sc != nil {
+		leaderScheduleValidator, exists := sc.cachedLeaderScheduleValidatorBySnapshotAtEpoch[keyForSnapshotLeaderScheduleValidator(snapshotAtEpoch, leaderIndex)]
+		if exists {
+			return leaderScheduleValidator, nil
+		}
+	}
+
+	// Fetch the leader schedule for the snapshot epoch number
+	validatorEntry, err := DBGetSnapshotLeaderScheduleValidator(handle, snapshot, leaderIndex, snapshotAtEpoch)
+	if err != nil {
+		return nil, errors.Errorf(
+			"sc.GetSnapshotLeaderScheduleValidator: Error fetching leader schedule validator entry: %v", err)
+	}
+	if sc != nil {
+		// Cache the leader schedule for the snapshot epoch number
+		sc.cachedLeaderScheduleValidatorBySnapshotAtEpoch[keyForSnapshotLeaderScheduleValidator(snapshotAtEpoch, leaderIndex)] = validatorEntry
+	}
+	return validatorEntry, nil
+}
+
+func keyForSnapshotValidatorEntryByBLSPublicKey(snapshotAtEpoch uint64, blsPublicKey *bls.PublicKey) string {
+	return strconv.FormatUint(snapshotAtEpoch, 10) + "V" + blsPublicKey.ToString()
+}
+
+func (sc *SnapshotCache) GetSnapshotValidatorEntryByBLSPublicKey(
+	snapshotAtEpoch uint64,
+	blsPublicKey *bls.PublicKey,
+	handle *badger.DB,
+	snapshot *Snapshot,
+) (*BLSPublicKeyPKIDPairEntry, error) {
+	if sc != nil {
+		blsPublicKeyPKIDPairEntry, exists := sc.cachedValidatorEntryByBLSPublicKeyBySnapshotAtEpoch[keyForSnapshotValidatorEntryByBLSPublicKey(snapshotAtEpoch, blsPublicKey)]
+		if exists {
+			return blsPublicKeyPKIDPairEntry, nil
+		}
+	}
+
+	// Fetch the leader schedule for the snapshot epoch number
+	blsPublicKeyPKIDPairEntry, err := DBGetSnapshotValidatorBLSPublicKeyPKIDPairEntry(
+		handle, snapshot, blsPublicKey, snapshotAtEpoch)
+	if err != nil {
+		return nil, errors.Errorf(
+			"sc.GetSnapshotValidatorEntryByBLSPublicKey: Error fetching validator entry by BLS public key: %v", err)
+	}
+	if sc != nil {
+		// Cache the leader schedule for the snapshot epoch number
+		sc.cachedValidatorEntryByBLSPublicKeyBySnapshotAtEpoch[keyForSnapshotValidatorEntryByBLSPublicKey(snapshotAtEpoch, blsPublicKey)] = blsPublicKeyPKIDPairEntry
+	}
+	return blsPublicKeyPKIDPairEntry, nil
+}
+
+func keyForSnapshotValidatorEntryByPKID(snapshotAtEpoch uint64, pkid *PKID) string {
+	return strconv.FormatUint(snapshotAtEpoch, 10) + "P" + pkid.ToString()
+}
+
+func (sc *SnapshotCache) GetSnapshotValidatorEntryByPKID(
+	snapshotAtEpoch uint64,
+	pkid *PKID,
+	handle *badger.DB,
+	snapshot *Snapshot,
+) (*ValidatorEntry, error) {
+	if sc != nil {
+		validatorEntry, exists := sc.cachedValidatorEntryByPKIDBySnapshotAtEpoch[keyForSnapshotValidatorEntryByPKID(snapshotAtEpoch, pkid)]
+		if exists {
+			return validatorEntry, nil
+		}
+	}
+
+	// Fetch the leader schedule for the snapshot epoch number
+	validatorEntry, err := DBGetSnapshotValidatorSetEntryByPKID(handle, snapshot, pkid, snapshotAtEpoch)
+	if err != nil {
+		return nil, errors.Errorf(
+			"sc.GetSnapshotValidatorEntryByPKID: Error fetching validator entry by PKID: %v", err)
+	}
+	if sc != nil {
+		// Cache the leader schedule for the snapshot epoch number
+		sc.cachedValidatorEntryByPKIDBySnapshotAtEpoch[keyForSnapshotValidatorEntryByPKID(snapshotAtEpoch, pkid)] = validatorEntry
+	}
+	return validatorEntry, nil
 }

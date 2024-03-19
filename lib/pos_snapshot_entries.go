@@ -265,22 +265,9 @@ func (bav *UtxoView) GetCurrentSnapshotValidatorSetEntryByPKID(pkid *PKID) (*Val
 	return bav.GetSnapshotValidatorSetEntryByPKIDAtEpochNumber(pkid, snapshotAtEpochNumber)
 }
 func (bav *UtxoView) GetSnapshotValidatorSetEntryByPKIDAtEpochNumber(pkid *PKID, snapshotAtEpochNumber uint64) (*ValidatorEntry, error) {
-	// Check the UtxoView first.
-	mapKey := SnapshotValidatorSetMapKey{SnapshotAtEpochNumber: snapshotAtEpochNumber, ValidatorPKID: *pkid}
-	if validatorEntry, exists := bav.SnapshotValidatorSet[mapKey]; exists {
-		return validatorEntry, nil
-	}
-	// If we don't have it in the UtxoView, check the db.
-	validatorEntry, err := DBGetSnapshotValidatorSetEntryByPKID(bav.Handle, bav.Snapshot, pkid, snapshotAtEpochNumber)
+	validatorEntry, err := bav.SnapshotCache.GetSnapshotValidatorEntryByPKID(snapshotAtEpochNumber, pkid, bav.Handle, bav.Snapshot)
 	if err != nil {
-		return nil, errors.Wrapf(
-			err,
-			"GetSnapshotValidatorSetEntryByPKIDAtEpochNumber: problem retrieving ValidatorEntry from db: ",
-		)
-	}
-	if validatorEntry != nil {
-		// Cache the result in the UtxoView.
-		bav._setSnapshotValidatorSetEntry(validatorEntry, snapshotAtEpochNumber)
+		return nil, errors.Wrapf(err, "GetSnapshotValidatorSetEntryByPKIDAtEpochNumber: ")
 	}
 	return validatorEntry, nil
 }
@@ -674,29 +661,10 @@ func (bav *UtxoView) GetSnapshotValidatorEntryByBLSPublicKey(blsPublicKey *bls.P
 }
 
 func (bav *UtxoView) GetSnapshotValidatorBLSPublicKeyPKIDPairEntry(blsPublicKey *bls.PublicKey, snapshotAtEpochNumber uint64) (*BLSPublicKeyPKIDPairEntry, error) {
-	// Check the UtxoView first.
-	mapKey := SnapshotValidatorBLSPublicKeyMapKey{
-		SnapshotAtEpochNumber: snapshotAtEpochNumber, ValidatorBLSPublicKey: blsPublicKey.Serialize(),
-	}
-	if blsPublicKeyPKIDPairEntry, exists := bav.SnapshotValidatorBLSPublicKeyPKIDPairEntries[mapKey]; exists {
-		if blsPublicKeyPKIDPairEntry == nil || blsPublicKeyPKIDPairEntry.isDeleted {
-			return nil, nil
-		}
-		return blsPublicKeyPKIDPairEntry, nil
-	}
-
-	// If we don't have it in the UtxoView, check the db.
-	blsPublicKeyPKIDPairEntry, err := DBGetSnapshotValidatorBLSPublicKeyPKIDPairEntry(bav.Handle, bav.Snapshot, blsPublicKey, snapshotAtEpochNumber)
+	blsPublicKeyPKIDPairEntry, err := bav.SnapshotCache.GetSnapshotValidatorEntryByBLSPublicKey(
+		snapshotAtEpochNumber, blsPublicKey, bav.Handle, bav.Snapshot)
 	if err != nil {
-		return nil, errors.Wrap(
-			err,
-			"GetSnapshotValidatorBLSPublicKeyPKIDPairEntry: problem retrieving BLSPublicKeyPKIDPairEntry from db: ",
-		)
-	}
-
-	if blsPublicKeyPKIDPairEntry != nil {
-		// Cache the result in the UtxoView
-		bav._setSnapshotValidatorBLSPublicKeyPKIDPairEntry(blsPublicKeyPKIDPairEntry, snapshotAtEpochNumber)
+		return nil, errors.Wrapf(err, "GetSnapshotValidatorBLSPublicKeyPKIDPairEntry: ")
 	}
 	return blsPublicKeyPKIDPairEntry, nil
 }
@@ -1215,19 +1183,10 @@ func (bav *UtxoView) GetSnapshotLeaderScheduleValidator(leaderIndex uint16) (*Va
 	if err != nil {
 		return nil, errors.Wrapf(err, " GetSnapshotLeaderScheduleValidator: problem calculating SnapshotEpochNumber: ")
 	}
-	// First, check the UtxoView.
-	mapKey := SnapshotLeaderScheduleMapKey{SnapshotAtEpochNumber: snapshotAtEpochNumber, LeaderIndex: leaderIndex}
-	if validatorPKID, exists := bav.SnapshotLeaderSchedule[mapKey]; exists {
-		return bav.GetCurrentSnapshotValidatorSetEntryByPKID(validatorPKID)
-	}
-	// Next, check the db.
-	validatorEntry, err := DBGetSnapshotLeaderScheduleValidator(bav.Handle, bav.Snapshot, leaderIndex, snapshotAtEpochNumber)
+	validatorEntry, err := bav.SnapshotCache.GetSnapshotLeaderScheduleValidator(
+		snapshotAtEpochNumber, leaderIndex, bav.Handle, bav.Snapshot)
 	if err != nil {
-		return nil, errors.Wrapf(err, "GetSnapshotLeaderScheduleValidator: error retrieving ValidatorPKID: ")
-	}
-	if validatorEntry != nil {
-		// Cache the ValidatorPKID in the UtxoView.
-		bav._setSnapshotLeaderScheduleValidator(validatorEntry.ValidatorPKID, leaderIndex, snapshotAtEpochNumber)
+		return nil, errors.Wrapf(err, "GetSnapshotLeaderScheduleValidator: ")
 	}
 	return validatorEntry, nil
 }
