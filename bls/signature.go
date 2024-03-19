@@ -1,5 +1,3 @@
-//go:build relic
-
 package bls
 
 import (
@@ -11,8 +9,8 @@ import (
 	"fmt"
 	"strings"
 
-	flowCrypto "github.com/onflow/flow-go/crypto"
-	"github.com/onflow/flow-go/crypto/hash"
+	flowCrypto "github.com/onflow/crypto"
+	"github.com/onflow/crypto/hash"
 )
 
 // The signingAlgorithm for BLS keys is BLSBLS12381 which is BLS on the BLS 12-381 curve.

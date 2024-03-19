@@ -919,9 +919,9 @@ func (srv *Server) _handleHeaderBundle(pp *Peer, msg *MsgDeSoHeaderBundle) {
 		printHeight = uint64(srv.blockchain.headerTip().Height)
 	}
 	glog.Infof(CLog(Yellow, fmt.Sprintf("Received header bundle with %v headers "+
-		"in state %s from peer %v. Downloaded ( %v / %v ) total headers",
+		"in state %s from peer %v. Downloaded ( %v / %v ) total headers. Current Chain State: %v",
 		len(msg.Headers), srv.blockchain.chainState(), pp,
-		srv.blockchain.headerTip().Header.Height, printHeight)))
+		srv.blockchain.headerTip().Header.Height, printHeight, srv.blockchain.ChainState())))
 
 	// If we get here, it means that the node is not currently running a Fast-HotStuff
 	// validator or that the node is syncing. In either case, we sync headers according
@@ -971,8 +971,9 @@ func (srv *Server) _handleHeaderBundle(pp *Peer, msg *MsgDeSoHeaderBundle) {
 		// TODO: Delete? This is redundant.
 		numNewHeaders++
 
-		// Process the header, as we haven't seen it before.
-		_, isOrphan, err := srv.blockchain.ProcessHeader(headerReceived, headerHash)
+		// Process the header, as we haven't seen it before, set verifySignatures to false
+		// if we're in the process of syncing.
+		_, isOrphan, err := srv.blockchain.ProcessHeader(headerReceived, headerHash, !srv.blockchain.isSyncing())
 
 		// If this header is an orphan or we encountered an error for any reason,
 		// disconnect from the peer. Because every header is sent in response to
@@ -2159,11 +2160,11 @@ func (srv *Server) _handleBlock(pp *Peer, blk *MsgDeSoBlock) {
 			// If the block fails the spam prevention check, then it must be signed by the
 			// bad block proposer signature or it has a bad QC. In either case, we should
 			// disconnect the peer.
-			srv._logAndDisconnectPeer(pp, blk, errors.Wrapf(err, "Error while processing block: ").Error())
+			srv._logAndDisconnectPeer(pp, blk, errors.Wrapf(err, "Error while processing block at height %v: ", blk.Header.Height).Error())
 			return
 		} else {
 			// For any other error, we log the error and continue.
-			glog.Errorf("Server._handleBlock: Error while processing block: %v", err)
+			glog.Errorf("Server._handleBlock: Error while processing block at height %v: %v", blk.Header.Height, err)
 			return
 		}
 	}

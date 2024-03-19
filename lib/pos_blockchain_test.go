@@ -1,5 +1,3 @@
-//go:build relic
-
 package lib
 
 import (
@@ -1536,7 +1534,7 @@ func TestRunCommitRuleOnBestChain(t *testing.T) {
 	blockTemplate1 := _generateBlockAndAddToBestChain(testMeta, 12, 12, 887)
 	// Okay now try to run the commit rule. Nothing will happen.
 	// We expect the block to be uncommitted.
-	err := testMeta.chain.runCommitRuleOnBestChain()
+	err := testMeta.chain.runCommitRuleOnBestChain(true)
 	require.NoError(t, err)
 
 	blockHash1, err := blockTemplate1.Hash()
@@ -1549,7 +1547,7 @@ func TestRunCommitRuleOnBestChain(t *testing.T) {
 
 	// Run commit rule again. Nothing should happen.
 	// We expect both block 1 and block 2 to be uncommitted.
-	err = testMeta.chain.runCommitRuleOnBestChain()
+	err = testMeta.chain.runCommitRuleOnBestChain(true)
 	require.NoError(t, err)
 
 	blockHash2, err := blockTemplate2.Hash()
@@ -1561,7 +1559,7 @@ func TestRunCommitRuleOnBestChain(t *testing.T) {
 	blockTemplate3 := _generateBlockAndAddToBestChain(testMeta, 14, 14, 513)
 
 	// Run the commit rule again. This time we expect block 1 to be committed.
-	err = testMeta.chain.runCommitRuleOnBestChain()
+	err = testMeta.chain.runCommitRuleOnBestChain(true)
 	require.NoError(t, err)
 
 	blockHash3, err := blockTemplate3.Hash()
@@ -1573,7 +1571,7 @@ func TestRunCommitRuleOnBestChain(t *testing.T) {
 	// Add one more block to the best chain, but have the view be further in the future.
 	// this should trigger a commit on block 2.
 	blockTemplate4 := _generateBlockAndAddToBestChain(testMeta, 14, 20, 429)
-	err = testMeta.chain.runCommitRuleOnBestChain()
+	err = testMeta.chain.runCommitRuleOnBestChain(true)
 	require.NoError(t, err)
 
 	blockHash4, err := blockTemplate4.Hash()
@@ -1585,7 +1583,7 @@ func TestRunCommitRuleOnBestChain(t *testing.T) {
 	// Okay so add block 5 to the best chain. This should NOT trigger a commit on block 3
 	// as block 4 is not a direct child of block 3 based on its view.
 	blockTemplate5 := _generateBlockAndAddToBestChain(testMeta, 15, 21, 654)
-	err = testMeta.chain.runCommitRuleOnBestChain()
+	err = testMeta.chain.runCommitRuleOnBestChain(true)
 	require.NoError(t, err)
 
 	blockHash5, err := blockTemplate5.Hash()
@@ -1599,7 +1597,7 @@ func TestRunCommitRuleOnBestChain(t *testing.T) {
 	// we have a descendent of block 5.
 	blockTemplate6 := _generateBlockAndAddToBestChain(testMeta, 16, 22, 912)
 	require.NoError(t, err)
-	err = testMeta.chain.runCommitRuleOnBestChain()
+	err = testMeta.chain.runCommitRuleOnBestChain(true)
 	require.NoError(t, err)
 
 	blockHash6, err := blockTemplate6.Hash()
