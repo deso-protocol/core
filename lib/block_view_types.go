@@ -179,6 +179,7 @@ const (
 	EncoderTypeUpdateCoinLockupParamsTxindexMetadata EncoderType = 1000037
 	EncoderTypeCoinLockupTransferTxindexMetadata     EncoderType = 1000038
 	EncoderTypeCoinUnlockTxindexMetadata             EncoderType = 1000039
+	EncoderTypeAtomicTxnsWrapperTxindexMetadata      EncoderType = 1000040
 
 	// EncoderTypeEndTxIndex encoder type should be at the end and is used for automated tests.
 	EncoderTypeEndTxIndex EncoderType = 1000036
@@ -376,6 +377,8 @@ func (encoderType EncoderType) New() DeSoEncoder {
 		return &CoinLockupTransferTxindexMetadata{}
 	case EncoderTypeCoinUnlockTxindexMetadata:
 		return &CoinUnlockTxindexMetadata{}
+	case EncoderTypeAtomicTxnsWrapperTxindexMetadata:
+		return &AtomicTxnsWrapperTxindexMetadata{}
 	default:
 		return nil
 	}
@@ -790,6 +793,8 @@ func (op OperationType) String() string {
 		return "OperationTypeSetValidatorLastActiveAtEpoch"
 	case OperationTypeStakeDistributionPayToBalance:
 		return "OperationTypeStakeDistributionPayToBalance"
+	case OperationTypeAtomicTxnsWrapper:
+		return "OperationTypeAtomicTxnsWrapper"
 	}
 	return "OperationTypeUNKNOWN"
 }

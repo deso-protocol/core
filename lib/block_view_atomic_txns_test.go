@@ -379,22 +379,19 @@ func TestDependentAtomicTransactionGeneration(t *testing.T) {
 	// Now we test that the transactions are truly dependent on each-other by reorganizing them.
 	//
 
+	// Generate 100 new dependent atomic transactions.
+	atomicTxns, _ = _generateSignedDependentAtomicTransactions(testMeta, 100)
+
 	// Reorganize the transactions.
 	initialTxn := atomicTxns[0]
 	atomicTxns[0] = atomicTxns[len(atomicTxns)-1]
 	atomicTxns[0] = initialTxn
 
-	// Initialize test chain, miner, and testMeta for failing use.
-	testMetaFail := _setUpMinerAndTestMetaForAtomicTransactionTests(t)
-
-	// Initialize m0, m1, m2, m3, m4.
-	_setUpUsersForAtomicTransactionsTesting(testMetaFail)
-
 	// Construct a new view to connect the transactions to.
 	utxoView, err = NewUtxoView(
-		testMetaFail.db, testMetaFail.params, testMetaFail.chain.postgres, testMetaFail.chain.snapshot, nil)
+		testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot, nil)
 	require.NoError(t, err)
-	blockHeight = testMetaFail.chain.BlockTip().Height + 1
+	blockHeight = testMeta.chain.BlockTip().Height + 1
 
 	// Connect the transactions to ensure they can actually be connected.
 	for _, txn := range atomicTxns {
@@ -431,8 +428,8 @@ func _generateSignedDependentAtomicTransactions(
 }
 
 // The goal of _generateUnsignedDependentAtomicTransactions is to generate
-// a sequence of transactions who CANNOT be reordered meaning they
-// must be executed in the sequence returned. This mean transaction
+// a sequence of transactions which CANNOT be reordered meaning they
+// must be executed in the sequence returned. This means the transaction
 // with position ii in atomicTransactions CANNOT be placed in an
 // index jj of atomicTransactions such that jj < ii
 //
@@ -445,7 +442,7 @@ func _generateSignedDependentAtomicTransactions(
 //		(2b) Have pub_(ii-1) do a max DESO transfer to pub_ii. Use m0PkBytes as pub_(-1).
 //	(3) Have pub_numberOfTransactions perform a max transfer back to m0PkBytes
 //
-// Notice that because pub_ii only has DESO at following the transaction with
+// Notice that because pub_ii only has DESO following the transaction at
 // the iith index in numberOfTransactions, it's impossible to reorder the transactions
 // in any other order. Hence, these transactions are dependent on each other.
 //
@@ -568,11 +565,12 @@ func _generateUnsignedMaxBasicTransfer(
 // to be assigned the public key senderPkString. After running _setUpUsersForAtomicTransactionsTesting
 // we expect the following test state:
 //
-// m0Pub - 1e9 nDESO, m0 profile
-// m1Pub - 1e6 nDESO, m1 profile
+// m0Pub - 1e9 nDESO
+// m1Pub - 1e6 nDESO
 // m2Pub - 1e6 nDESO
 // m3Pub - 1e6 nDESO
 // m4Pub - 1e6 nDESO
+// paramUpdaterPub - 1e6 nDESO
 func _setUpUsersForAtomicTransactionsTesting(testMeta *TestMeta) {
 	// Create on-chain public keys with DESO sent from miner
 	_registerOrTransferWithTestMeta(testMeta, "m0", senderPkString, m0Pub, senderPrivString, 1e9)
@@ -580,39 +578,7 @@ func _setUpUsersForAtomicTransactionsTesting(testMeta *TestMeta) {
 	_registerOrTransferWithTestMeta(testMeta, "m2", senderPkString, m2Pub, senderPrivString, 1e6)
 	_registerOrTransferWithTestMeta(testMeta, "m3", senderPkString, m3Pub, senderPrivString, 1e6)
 	_registerOrTransferWithTestMeta(testMeta, "m4", senderPkString, m4Pub, senderPrivString, 1e6)
-	_registerOrTransferWithTestMeta(testMeta, "", senderPkString, paramUpdaterPub, senderPrivString, 10000)
-
-	// Create profile for m0 and m1.
-	{
-		_updateProfileWithTestMeta(
-			testMeta,
-			testMeta.feeRateNanosPerKb,
-			m0Pub,
-			m0Priv,
-			[]byte{},
-			"m0",
-			"i am the m0",
-			shortPic,
-			10*100,
-			1.25*100*100,
-			false,
-		)
-	}
-	{
-		_updateProfileWithTestMeta(
-			testMeta,
-			testMeta.feeRateNanosPerKb,
-			m1Pub,
-			m1Priv,
-			[]byte{},
-			"m1",
-			"i am the m1",
-			shortPic,
-			10*100,
-			1.25*100*100,
-			false,
-		)
-	}
+	_registerOrTransferWithTestMeta(testMeta, "", senderPkString, paramUpdaterPub, senderPrivString, 1e6)
 }
 
 func _setUpMinerAndTestMetaForAtomicTransactionTests(t *testing.T) *TestMeta {

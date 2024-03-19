@@ -138,9 +138,10 @@ func (txnData *AtomicTxnsWrapperMetadata) New() DeSoTxnMetadata {
 // HELPER FUNCTIONS: MsgDeSoTxn
 //
 
+// IsAtomicTxnsInnerTxn is used to determine if a MsgDeSoTxn is an inner tnx
+// of an atomic transaction. An atomic transaction is qualified by the existence
+// of the NextAtomicTxnPreHash and PreviousAtomicTxnPreHash keys in the ExtraData map.
 func (msg *MsgDeSoTxn) IsAtomicTxnsInnerTxn() bool {
-	// An atomic transaction is qualified by the existence of the NextAtomicTxnPreHash
-	// and PreviousAtomicTxnPreHash keys in the ExtraData map.
 	if _, keyExists := msg.ExtraData[NextAtomicTxnPreHash]; !keyExists {
 		return false
 	}
@@ -150,6 +151,17 @@ func (msg *MsgDeSoTxn) IsAtomicTxnsInnerTxn() bool {
 	return true
 }
 
+// AtomicHash calculates the "atomic" hash of a MsgDeSoTxn by removing the
+// NextAtomicTxnPreHash and PreviousAtomicTxnPreHash keys in the ExtraData
+// map as well as the transaction signature and computing the SHA256 double
+// hash of the resulting transaction.
+//
+// The atomic hash is only meant for use in validating the sequence of
+// a series of atomic transactions. Transactions are sequenced by
+// referencing each-other's atomic hashes in their ExtraData map under the
+// NextAtomicTxnPreHash and PreviousAtomicTxnPreHash. For a complete explanation
+// on how to create a series of atomic transactions, read the
+// AtomicTxnsWrapperMetadata comment.
 func (msg *MsgDeSoTxn) AtomicHash() (*BlockHash, error) {
 	// Create a duplicate of the transaction to ensure we don't edit the existing transaction.
 	msgDuplicate, err := msg.Copy()
@@ -162,8 +174,7 @@ func (msg *MsgDeSoTxn) AtomicHash() (*BlockHash, error) {
 	delete(msgDuplicate.ExtraData, PreviousAtomicTxnPreHash)
 
 	// Convert the transaction to bytes but do NOT encode the transaction signature.
-	preSignature := true
-	txBytes, err := msgDuplicate.ToBytes(preSignature)
+	txBytes, err := msgDuplicate.ToBytes(true)
 	if err != nil {
 		return nil, errors.Wrap(err, "MsgDeSoTxn.AtomicHash: cannot convert modified transaction to bytes")
 	}
@@ -192,17 +203,6 @@ func (bav *UtxoView) _connectAtomicTxnsWrapper(
 ) {
 	var utxoOpsForTxn []*UtxoOperation
 
-	// Don't allow the atomic transactions and the wrapper to take up more than half of the block.
-	txnBytes, err := txn.ToBytes(false)
-	if err != nil {
-		return nil, 0, 0, 0, errors.Wrapf(
-			err, "_connectTransaction: Problem serializing transaction: ")
-	}
-	txnSizeBytes := uint64(len(txnBytes))
-	if txnSizeBytes > bav.Params.MaxBlockSizeBytes/2 {
-		return nil, 0, 0, 0, RuleErrorTxnTooBig
-	}
-
 	// Validate the connecting block height.
 	if blockHeight < bav.Params.ForkHeights.ProofOfStake1StateSetupBlockHeight {
 		return nil, 0, 0, 0,
@@ -213,6 +213,17 @@ func (bav *UtxoView) _connectAtomicTxnsWrapper(
 	if txn.TxnMeta.GetTxnType() != TxnTypeAtomicTxnsWrapper {
 		return nil, 0, 0, 0,
 			fmt.Errorf("_connectAtomicTxnsWrapper: TxnMeta type: %v", txn.TxnMeta.GetTxnType().GetTxnString())
+	}
+
+	// Don't allow the atomic transactions and the wrapper to take up more than half of the block.
+	txnBytes, err := txn.ToBytes(false)
+	if err != nil {
+		return nil, 0, 0, 0, errors.Wrapf(
+			err, "_connectTransaction: Problem serializing transaction: ")
+	}
+	txnSizeBytes := uint64(len(txnBytes))
+	if txnSizeBytes > bav.Params.MaxBlockSizeBytes/2 {
+		return nil, 0, 0, 0, RuleErrorTxnTooBig
 	}
 
 	// Validate that the internal transactions cumulatively pay enough in fees to
@@ -250,9 +261,9 @@ func (bav *UtxoView) _connectAtomicTxnsWrapper(
 	var innerUtxoOps [][]*UtxoOperation
 	var totalInput, totalOutput, totalFees uint64
 	for _, innerTxn := range txMeta.Txns {
-		// NOTE: By recursively calling _connectNonAtomicTransaction, each inner transaction is checked that
+		// NOTE: By recursively calling _connectSingleTxn, each inner transaction is checked that
 		// it is capable of paying for its own fees as well as having a valid signature.
-		innerTxnUtxoOps, txnInput, txnOutput, txnFees, err := bav._connectNonAtomicTransaction(
+		innerTxnUtxoOps, txnInput, txnOutput, txnFees, err := bav._connectSingleTxn(
 			innerTxn, txHash, blockHeight, blockTimestampNanoSecs, verifySignatures, ignoreUtxos)
 		if err != nil {
 			return nil, 0, 0, 0,
@@ -346,7 +357,9 @@ func _verifyAtomicTxnsWrapper(txn *MsgDeSoTxn) error {
 	}
 
 	// NOTE: We do not enforce rules on txn.ExtraData as it's both useful
-	// 		 for app developers and is being paid for via txn.TxnFeeNanos.
+	// 		 for app developers and the bytes being taken up by the optional ExtraData
+	//		 is being paid for via by the cumulative transaction fees of all
+	//		 included atomic transactions.
 
 	return nil
 }
@@ -362,7 +375,7 @@ func _verifyAtomicTxnsChain(txnMeta *AtomicTxnsWrapperMetadata) error {
 	//  (2) The inner transactions are meant to be included in an atomic transaction.
 	//	(3) The start point is the first inner transaction and there's only one start point.
 	// We also collect the atomic hash of each inner transaction here for convenience.
-	var atomicHashes []*BlockHash
+	var atomicHashes [][]byte
 	for ii, innerTxn := range txnMeta.Txns {
 		// Validate this transaction is not another redundant atomic transaction.
 		if innerTxn.TxnMeta.GetTxnType() == TxnTypeAtomicTxnsWrapper {
@@ -386,11 +399,13 @@ func _verifyAtomicTxnsChain(txnMeta *AtomicTxnsWrapperMetadata) error {
 		// The error check in AtomicHash() is almost redundant, but we must keep it in the event
 		// that the byte buffer for the Sha256 hash fails to allocate. This should almost never
 		// occur, and there's more serious issues if it does.
+		// In addition, by calling AtomicHash here and storing the result we ensure that
+		// we compute the AtomicHash for each inner transaction once versus twice.
 		innerTxnAtomicHash, err := innerTxn.AtomicHash()
 		if err != nil {
 			return errors.Wrap(err, "_verifyAtomicTxnsChain")
 		}
-		atomicHashes = append(atomicHashes, innerTxnAtomicHash)
+		atomicHashes = append(atomicHashes, innerTxnAtomicHash.ToBytes())
 	}
 
 	// Validate the chain sequence specified.
@@ -399,7 +414,7 @@ func _verifyAtomicTxnsChain(txnMeta *AtomicTxnsWrapperMetadata) error {
 		nextIndex := (ii + 1) % len(txnMeta.Txns)
 		if !bytes.Equal(
 			innerTxn.ExtraData[NextAtomicTxnPreHash],
-			atomicHashes[nextIndex].ToBytes()) {
+			atomicHashes[nextIndex]) {
 			return RuleErrorAtomicTxnsHasBrokenChain
 		}
 
@@ -407,7 +422,7 @@ func _verifyAtomicTxnsChain(txnMeta *AtomicTxnsWrapperMetadata) error {
 		prevIndex := (ii - 1 + len(txnMeta.Txns)) % len(txnMeta.Txns)
 		if !bytes.Equal(
 			innerTxn.ExtraData[PreviousAtomicTxnPreHash],
-			atomicHashes[prevIndex].ToBytes()) {
+			atomicHashes[prevIndex]) {
 			return RuleErrorAtomicTxnsHasBrokenChain
 		}
 	}
@@ -457,4 +472,86 @@ func (bav *UtxoView) _disconnectAtomicTxnsWrapper(
 	}
 
 	return nil
+}
+
+//
+// TYPES: AtomicTxnsWrapperTxindexMetadata
+//
+
+type AtomicTxnsWrapperTxindexMetadata struct {
+	InnerTxnsTransactionMetadata []*TransactionMetadata
+}
+
+func (txindexMetadata *AtomicTxnsWrapperTxindexMetadata) RawEncodeWithoutMetadata(
+	blockHeight uint64,
+	skipMetadata ...bool,
+) []byte {
+	var data []byte
+	data = append(data, UintToBuf(uint64(len(txindexMetadata.InnerTxnsTransactionMetadata)))...)
+	for _, innerMetadata := range txindexMetadata.InnerTxnsTransactionMetadata {
+		txnBytes := innerMetadata.RawEncodeWithoutMetadata(blockHeight, skipMetadata...)
+		data = append(data, UintToBuf(uint64(len(txnBytes)))...)
+		data = append(data, txnBytes...)
+	}
+	return data
+}
+
+func (txindexMetadata *AtomicTxnsWrapperTxindexMetadata) RawDecodeWithoutMetadata(
+	blockHeight uint64,
+	rr *bytes.Reader,
+) error {
+	// Read the number of inner transactions.
+	numTxns, err := ReadUvarint(rr)
+	if err != nil {
+		return errors.Wrap(err,
+			"AtomicTxnsWrapperTxindexMetadata.RawDecodeWithoutMetadata: Problem reading numTxns")
+	}
+	txindexMetadata.InnerTxnsTransactionMetadata, err = SafeMakeSliceWithLength[*TransactionMetadata](numTxns)
+	if err != nil {
+		return errors.Wrap(err,
+			"AtomicTxnsWrapperTxindexMetadata.RawDecodeWithoutMetadata: "+
+				"Problem allocating InnerTxnsTransactionMetadata")
+	}
+
+	// Read the transactions.
+	for ii := uint64(0); ii < numTxns; ii++ {
+		txindexMetadata.InnerTxnsTransactionMetadata[ii] = &TransactionMetadata{}
+
+		// Figure out how many bytes are associated with the ith transaction metadata.
+		numTxnMetadataBytes, err := ReadUvarint(rr)
+		if err != nil {
+			return errors.Wrap(err,
+				"AtomicTxnsWrapperTxindexMetadata.RawDecodeWithoutMetadata: "+
+					"Problem reading number of bytes in transaction metadata")
+		}
+
+		// Allocate memory for the transaction metadata bytes to be read into.
+		txnMetadataBytes, err := SafeMakeSliceWithLength[byte](numTxnMetadataBytes)
+		if err != nil {
+			return errors.Wrap(err,
+				"AtomicTxnsWrapperTxindexMetadata.RawDecodeWithoutMetadata: "+
+					"Problem allocating bytes for transaction")
+		}
+
+		// Read the transaction metadata into the txnBytes memory buffer.
+		if _, err = io.ReadFull(rr, txnMetadataBytes); err != nil {
+			return errors.Wrap(err,
+				"AtomicTxnsWrapperTxindexMetadata.RawDecodeWithoutMetadata: Problem reading bytes for transaction")
+		}
+
+		// Convert the txnBytes buffer to a TransactionMetadata struct.
+		if err = txindexMetadata.InnerTxnsTransactionMetadata[ii].RawDecodeWithoutMetadata(blockHeight, rr); err != nil {
+			return errors.Wrap(err,
+				"AtomicTxnsWrapperTxindexMetadata.RawDecodeWithoutMetadata: Problem parsing transaction bytes")
+		}
+	}
+	return nil
+}
+
+func (txindexMetadata *AtomicTxnsWrapperTxindexMetadata) GetVersionByte(blockHeight uint64) byte {
+	return 0
+}
+
+func (txindexMetadata *AtomicTxnsWrapperTxindexMetadata) GetEncoderType() EncoderType {
+	return EncoderTypeAtomicTxnsWrapperTxindexMetadata
 }

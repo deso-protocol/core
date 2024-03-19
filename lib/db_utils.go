@@ -7038,6 +7038,7 @@ type TransactionMetadata struct {
 	UpdateCoinLockupParamsTxindexMetadata *UpdateCoinLockupParamsTxindexMetadata `json:",omitempty"`
 	CoinLockupTransferTxindexMetadata     *CoinLockupTransferTxindexMetadata     `json:",omitempty"`
 	CoinUnlockTxindexMetadata             *CoinUnlockTxindexMetadata             `json:",omitempty"`
+	AtomicTxnsWrapperTxindexMetadata      *AtomicTxnsWrapperTxindexMetadata      `json:",omitempty"`
 }
 
 func (txnMeta *TransactionMetadata) GetEncoderForTxType(txnType TxnType) DeSoEncoder {
@@ -7116,6 +7117,8 @@ func (txnMeta *TransactionMetadata) GetEncoderForTxType(txnType TxnType) DeSoEnc
 		return txnMeta.CoinLockupTransferTxindexMetadata
 	case TxnTypeCoinUnlock:
 		return txnMeta.CoinUnlockTxindexMetadata
+	case TxnTypeAtomicTxnsWrapper:
+		return txnMeta.AtomicTxnsWrapperTxindexMetadata
 	default:
 		return nil
 	}

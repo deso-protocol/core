@@ -3558,14 +3558,14 @@ func (bav *UtxoView) _connectTransaction(
 		)
 	}
 
-	// Check that we're not trying to commit a transaction meant to be part of a series of atomic transactions
+	// Check that we're not trying to connect a transaction meant to be part of a series of atomic transactions
 	// outside an atomic transactions wrapper.
 	if txn.IsAtomicTxnsInnerTxn() {
 		return nil, 0, 0, 0, RuleErrorAtomicTxnsRequiresWrapper
 	}
 
 	// By here, we should know the transaction to be non-atomic.
-	return bav._connectNonAtomicTransaction(
+	return bav._connectSingleTxn(
 		txn,
 		txHash,
 		blockHeight,
@@ -3575,7 +3575,7 @@ func (bav *UtxoView) _connectTransaction(
 	)
 }
 
-func (bav *UtxoView) _connectNonAtomicTransaction(
+func (bav *UtxoView) _connectSingleTxn(
 	txn *MsgDeSoTxn,
 	txHash *BlockHash,
 	blockHeight uint32,

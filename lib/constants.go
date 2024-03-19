@@ -1561,9 +1561,9 @@ const (
 	DiamondPostHashKey = "DiamondPostHash"
 
 	// Atomic Transaction Keys
-	AtomicTxnsChainLength    = "AtomicTxnsChainLength"
-	NextAtomicTxnPreHash     = "NextAtomicTxnPreHash"
-	PreviousAtomicTxnPreHash = "PreviousAtomicTxnPreHash"
+	AtomicTxnsChainLength    = "AtmcChnLen"
+	NextAtomicTxnPreHash     = "NxtAtmcHsh"
+	PreviousAtomicTxnPreHash = "PrvAtmcHsh"
 
 	// Key in transaction's extra data map containing the derived key used in signing the txn.
 	DerivedPublicKey = "DerivedPublicKey"
