@@ -3302,7 +3302,10 @@ func (bav *UtxoView) _connectUpdateGlobalParams(
 
 		// Cross-validate the new LeaderScheduleMaxNumValidators and ValidatorSetMaxNumValidators values. The size of the
 		// leader schedule must be less than or equal to the size of the validator set.
-		if newGlobalParamsEntry.ValidatorSetMaxNumValidators < newGlobalParamsEntry.LeaderScheduleMaxNumValidators {
+		// We must merge the defaults in the event that ValidatorSetMaxNumValidators is not set.
+		mergedGlobalParamsEntry := MergeGlobalParamEntryDefaults(&newGlobalParamsEntry, bav.Params)
+		if mergedGlobalParamsEntry.ValidatorSetMaxNumValidators <
+			mergedGlobalParamsEntry.LeaderScheduleMaxNumValidators {
 			return 0, 0, nil, RuleErrorLeaderScheduleExceedsValidatorSetMaxNumValidators
 		}
 
