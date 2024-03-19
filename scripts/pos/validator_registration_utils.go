@@ -1,5 +1,3 @@
-//go:build relic
-
 package main
 
 import (
@@ -19,9 +17,6 @@ func getBLSVotingAuthorizationAndPublicKey(blsKeyStore *lib.BLSKeystore, transac
 	return blsKeyStore.GetSigner().GetPublicKey(), votingAuthorization
 }
 
-// You must have relic installed to run this code.
-// To install relic, use the install-relic.sh script in the scripts directory.
-// go run -tags relic validator_registration_utils.go
 func main() {
 	// Replace with your own BIP39 Validator seed phrase
 	keystore, err := lib.NewBLSKeystore("...")
