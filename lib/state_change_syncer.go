@@ -501,8 +501,8 @@ func (stateChangeSyncer *StateChangeSyncer) _handleStateSyncerFlush(event *State
 		// If this is a mempool flush, make sure a block hasn't mined since the mempool entries were added to queue.
 		// If not, reset the mempool maps and file, and start from scratch. The consumer will revert the mempool transactions
 		// it currently has and sync from scratch.
-		if stateChangeSyncer.BlockSyncFlushId != event.BlockSyncFlushId || stateChangeSyncer.BlockSyncFlushId != event.FlushId {
-			fmt.Printf("The flush ID has changed, bailing now.\n")
+		if (stateChangeSyncer.BlockSyncFlushId != event.BlockSyncFlushId && event.BlockSyncFlushId != uuid.Nil) || stateChangeSyncer.BlockSyncFlushId != event.FlushId {
+			fmt.Printf("The flush ID has changed, bailing now. Event: %v, Event block sync: %v, Global block sync: %v\n", event.FlushId, event.BlockSyncFlushId, stateChangeSyncer.BlockSyncFlushId)
 			stateChangeSyncer.ResetMempool()
 			return
 		}
