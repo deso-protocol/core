@@ -1800,6 +1800,13 @@ func (bc *Blockchain) processHeaderPoW(blockHeader *MsgDeSoHeader, headerHash *B
 		return false, false, HeaderErrorBlockHeightAfterProofOfStakeCutover
 	}
 
+	// Only accept headers if the header chain is still in PoW. Once the header chain reaches the final height
+	// of the PoW protocol, it will transition to the PoS. We should not accept any more PoW headers as they can
+	// result in a fork.
+	if bc.headerTip().Header.Height >= bc.params.GetFinalPoWBlockHeight() {
+		return false, false, HeaderErrorBestChainIsAtProofOfStakeCutover
+	}
+
 	// Start by checking if the header already exists in our node
 	// index. If it does, then return an error. We should generally
 	// expect that processHeaderPoW will only be called on headers we
@@ -2013,6 +2020,13 @@ func (bc *Blockchain) processBlockPoW(desoBlock *MsgDeSoBlock, verifySignatures 
 	// Only accept the block if its height is below the PoS cutover height.
 	if !bc.params.IsPoWBlockHeight(desoBlock.Header.Height) {
 		return false, false, RuleErrorBlockHeightAfterProofOfStakeCutover
+	}
+
+	// Only accept blocks if the blockchain is still running PoW. Once the chain connects the final block of the
+	// PoW protocol, it will transition to the PoS. We should not accept any PoW blocks as they can result in a
+	// fork.
+	if bc.blockTip().Header.Height >= bc.params.GetFinalPoWBlockHeight() {
+		return false, false, RuleErrorBestChainIsAtProofOfStakeCutover
 	}
 
 	blockHeight := uint64(bc.BlockTip().Height + 1)
