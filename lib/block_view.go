@@ -1854,9 +1854,11 @@ func (bav *UtxoView) _verifySignature(txn *MsgDeSoTxn, blockHeight uint32) (_der
 			return nil, nil
 		}
 	} else {
-		// Look for a derived key entry in UtxoView and DB, check to make sure it exists and is not isDeleted.
-		if err := bav.ValidateDerivedKey(ownerPkBytes, derivedPkBytes, uint64(blockHeight)); err != nil {
-			return nil, err
+		if blockHeight < bav.Params.ForkHeights.ProofOfStake2ConsensusCutoverBlockHeight {
+			// Look for a derived key entry in UtxoView and DB, check to make sure it exists and is not isDeleted.
+			if err := bav.ValidateDerivedKey(ownerPkBytes, derivedPkBytes, uint64(blockHeight)); err != nil {
+				return nil, err
+			}
 		}
 
 		// All checks passed so we try to verify the signature. This step can be avoided for DeSo-DER signatures
