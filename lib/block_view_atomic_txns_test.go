@@ -8,8 +8,62 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"math"
+	"reflect"
 	"testing"
 )
+
+func TestAtomicTxnsWrapperTxIndexMetadataEncoder(t *testing.T) {
+	//
+	// (1) Construct some transactions from which we can construct transaction metadata.
+	//
+
+	// Initialize test chain, miner, and testMeta.
+	testMeta := _setUpMinerAndTestMetaForAtomicTransactionTests(t)
+
+	// Initialize m0, m1, m2, m3, m4.
+	_setUpUsersForAtomicTransactionsTesting(testMeta)
+
+	// Create a series of valid (unsigned) dependent transactions.
+	atomicTxns, signerPrivKeysBase58 := _generateUnsignedDependentAtomicTransactions(testMeta, int(100))
+
+	// Construct an atomic transaction.
+	atomicTxnsWrapper, _, err := testMeta.chain.CreateAtomicTxnsWrapper(atomicTxns, nil)
+	require.NoError(t, err)
+
+	// Sign the internal atomic transactions, making the atomic transaction valid.
+	for ii := range atomicTxns {
+		_signTxn(t,
+			atomicTxnsWrapper.TxnMeta.(*AtomicTxnsWrapperMetadata).Txns[ii],
+			signerPrivKeysBase58[ii],
+		)
+	}
+
+	// Compute the txindex metadata for the transaction and ensure its computed correctly.
+	utxoView, err := NewUtxoView(
+		testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot, nil)
+	require.NoError(t, err)
+	blockHeight := testMeta.chain.BlockTip().Height + 1
+	atomicTxnMetadata := ComputeTransactionMetadata(
+		atomicTxnsWrapper,
+		utxoView, nil, 0, 0, 0, 0,
+		0, 0, nil, uint64(blockHeight),
+	)
+
+	//
+	// (2) Attempt to encode and decode the computed transaction metadata without error.
+	//
+
+	encodedTxnMetadata := EncodeToBytes(uint64(blockHeight), atomicTxnMetadata)
+	reader := bytes.NewReader(encodedTxnMetadata)
+	decodedAtomicTxnMetadata, err := DecodeDeSoEncoder(&TransactionMetadata{}, reader)
+	require.NoError(t, err)
+
+	//
+	// (3) Ensure the original->encoded->decoded pathway results in the same struct.
+	//
+
+	require.True(t, reflect.DeepEqual(atomicTxnMetadata, decodedAtomicTxnMetadata))
+}
 
 func TestAtomicTxnsWrapperAtomicity(t *testing.T) {
 	// Initialize test chain, miner, and testMeta.

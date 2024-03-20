@@ -138,7 +138,7 @@ func (txnData *AtomicTxnsWrapperMetadata) New() DeSoTxnMetadata {
 // HELPER FUNCTIONS: MsgDeSoTxn
 //
 
-// IsAtomicTxnsInnerTxn is used to determine if a MsgDeSoTxn is an inner tnx
+// IsAtomicTxnsInnerTxn is used to determine if a MsgDeSoTxn is an inner txn
 // of an atomic transaction. An atomic transaction is qualified by the existence
 // of the NextAtomicTxnPreHash and PreviousAtomicTxnPreHash keys in the ExtraData map.
 func (msg *MsgDeSoTxn) IsAtomicTxnsInnerTxn() bool {
@@ -489,9 +489,7 @@ func (txindexMetadata *AtomicTxnsWrapperTxindexMetadata) RawEncodeWithoutMetadat
 	var data []byte
 	data = append(data, UintToBuf(uint64(len(txindexMetadata.InnerTxnsTransactionMetadata)))...)
 	for _, innerMetadata := range txindexMetadata.InnerTxnsTransactionMetadata {
-		txnBytes := innerMetadata.RawEncodeWithoutMetadata(blockHeight, skipMetadata...)
-		data = append(data, UintToBuf(uint64(len(txnBytes)))...)
-		data = append(data, txnBytes...)
+		data = append(data, EncodeToBytes(blockHeight, innerMetadata, skipMetadata...)...)
 	}
 	return data
 }
@@ -515,34 +513,11 @@ func (txindexMetadata *AtomicTxnsWrapperTxindexMetadata) RawDecodeWithoutMetadat
 
 	// Read the transactions.
 	for ii := uint64(0); ii < numTxns; ii++ {
-		txindexMetadata.InnerTxnsTransactionMetadata[ii] = &TransactionMetadata{}
+		if txindexMetadata.InnerTxnsTransactionMetadata[ii], err = DecodeDeSoEncoder(&TransactionMetadata{}, rr); err != nil {
+			return errors.Wrap(
+				err, "AtomicTxnsWrapperTxindexMetadata.RawDecodeWithoutMetadata: "+
+					"Problem decoding inner transaction bytes")
 
-		// Figure out how many bytes are associated with the ith transaction metadata.
-		numTxnMetadataBytes, err := ReadUvarint(rr)
-		if err != nil {
-			return errors.Wrap(err,
-				"AtomicTxnsWrapperTxindexMetadata.RawDecodeWithoutMetadata: "+
-					"Problem reading number of bytes in transaction metadata")
-		}
-
-		// Allocate memory for the transaction metadata bytes to be read into.
-		txnMetadataBytes, err := SafeMakeSliceWithLength[byte](numTxnMetadataBytes)
-		if err != nil {
-			return errors.Wrap(err,
-				"AtomicTxnsWrapperTxindexMetadata.RawDecodeWithoutMetadata: "+
-					"Problem allocating bytes for transaction")
-		}
-
-		// Read the transaction metadata into the txnBytes memory buffer.
-		if _, err = io.ReadFull(rr, txnMetadataBytes); err != nil {
-			return errors.Wrap(err,
-				"AtomicTxnsWrapperTxindexMetadata.RawDecodeWithoutMetadata: Problem reading bytes for transaction")
-		}
-
-		// Convert the txnBytes buffer to a TransactionMetadata struct.
-		if err = txindexMetadata.InnerTxnsTransactionMetadata[ii].RawDecodeWithoutMetadata(blockHeight, rr); err != nil {
-			return errors.Wrap(err,
-				"AtomicTxnsWrapperTxindexMetadata.RawDecodeWithoutMetadata: Problem parsing transaction bytes")
 		}
 	}
 	return nil

@@ -2019,6 +2019,7 @@ func ComputeTransactionMetadata(
 		txnMeta.AffectedPublicKeys = append(txnMeta.AffectedPublicKeys, affectedPublicKeys...)
 	case TxnTypeAtomicTxnsWrapper:
 		realTxMeta := txn.TxnMeta.(*AtomicTxnsWrapperMetadata)
+		txnMeta.AtomicTxnsWrapperTxindexMetadata = &AtomicTxnsWrapperTxindexMetadata{}
 		txnMeta.AtomicTxnsWrapperTxindexMetadata.InnerTxnsTransactionMetadata = []*TransactionMetadata{}
 		for _, innerTxn := range realTxMeta.Txns {
 			// Compute the transaction metadata for each inner transaction.

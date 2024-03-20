@@ -1057,7 +1057,7 @@ type UtxoOperation struct {
 	// NOTE: While it may seem erroneous to have a field within the UtxoOperation struct of
 	// type UtxoOperation, this is valid because the size of the pointer is always known at
 	// compile time. Hence, there's no circular dependency as is the case if we were to use
-	// [][]UtoOperation for this field instead. This could equivalently be a 2D array of
+	// [][]UtxoOperation for this field instead. This could equivalently be a 2D array of
 	// void pointers from the compiler's perspective. In addition, it may seem as though
 	// there's a recursive issue in RawEncodeWithoutMetadata resulting from cyclic dependencies,
 	// this is not the case as we only call RawEncodeWithoutMetadata if the length of the
