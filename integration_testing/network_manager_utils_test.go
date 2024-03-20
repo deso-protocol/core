@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"github.com/deso-protocol/core/cmd"
 	"github.com/deso-protocol/core/lib"
-	"os"
 	"testing"
 )
 
@@ -251,44 +250,4 @@ func getRemoteNodeWithUserAgent(node *cmd.Node, userAgent string) *lib.RemoteNod
 		}
 	}
 	return nil
-}
-
-func spawnNodeProtocol1(t *testing.T, port uint32, id string) *cmd.Node {
-	dbDir := getDirectory(t)
-	t.Cleanup(func() {
-		os.RemoveAll(dbDir)
-	})
-	config := generateConfig(t, port, dbDir, 10)
-	config.SyncType = lib.NodeSyncTypeBlockSync
-	node := cmd.NewNode(config)
-	node.Params.UserAgent = id
-	node.Params.ProtocolVersion = lib.ProtocolVersion1
-	return node
-}
-
-func spawnNonValidatorNodeProtocol2(t *testing.T, port uint32, id string) *cmd.Node {
-	dbDir := getDirectory(t)
-	t.Cleanup(func() {
-		os.RemoveAll(dbDir)
-	})
-	config := generateConfig(t, port, dbDir, 10)
-	config.SyncType = lib.NodeSyncTypeBlockSync
-	node := cmd.NewNode(config)
-	node.Params.UserAgent = id
-	node.Params.ProtocolVersion = lib.ProtocolVersion2
-	return node
-}
-
-func spawnValidatorNodeProtocol2(t *testing.T, port uint32, id string, blsSeedPhrase string) *cmd.Node {
-	dbDir := getDirectory(t)
-	t.Cleanup(func() {
-		os.RemoveAll(dbDir)
-	})
-	config := generateConfig(t, port, dbDir, 10)
-	config.SyncType = lib.NodeSyncTypeBlockSync
-	config.PosValidatorSeed = blsSeedPhrase
-	node := cmd.NewNode(config)
-	node.Params.UserAgent = id
-	node.Params.ProtocolVersion = lib.ProtocolVersion2
-	return node
 }
