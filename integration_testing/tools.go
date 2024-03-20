@@ -437,6 +437,7 @@ func computeNodeStateChecksum(t *testing.T, node *cmd.Node, blockHeight uint64) 
 	err := node.Server.GetBlockchain().DB().View(func(txn *badger.Txn) error {
 		opts := badger.DefaultIteratorOptions
 		for _, prefix := range prefixes {
+			opts.Prefix = prefix
 			it := txn.NewIterator(opts)
 			for it.Seek(prefix); it.ValidForPrefix(prefix); it.Next() {
 				item := it.Item()
