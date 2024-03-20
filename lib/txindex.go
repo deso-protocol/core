@@ -149,7 +149,11 @@ func NewTXIndex(coreChain *Blockchain, params *DeSoParams, dataDirectory string)
 }
 
 func (txi *TXIndex) FinishedSyncing() bool {
-	return txi.TXIndexChain.BlockTip().Height == txi.CoreChain.BlockTip().Height
+	committedTip, idx := txi.CoreChain.GetCommittedTip()
+	if idx == -1 {
+		return false
+	}
+	return txi.TXIndexChain.BlockTip().Height == committedTip.Height
 }
 
 func (txi *TXIndex) Start() {
@@ -224,7 +228,7 @@ func (txi *TXIndex) GetTxindexUpdateBlockNodes() (
 	txindexTipNode := blockIndexByHashCopy[*txindexTipHash.Hash]
 
 	// Get the committed tip.
-	committedTip, _ := txi.CoreChain.getCommittedTip()
+	committedTip, _ := txi.CoreChain.GetCommittedTip()
 	if txindexTipNode == nil {
 		glog.Info("GetTxindexUpdateBlockNodes: Txindex tip was not found; building txindex starting at genesis block")
 
@@ -408,10 +412,16 @@ func (txi *TXIndex) Update() error {
 			return fmt.Errorf(
 				"Update: Error initializing UtxoView: %v", err)
 		}
+		if blockToAttach.Header.PrevBlockHash != nil {
+			utxoView, err = txi.TXIndexChain.getUtxoViewAtBlockHash(*blockToAttach.Header.PrevBlockHash)
+			if err != nil {
+				return fmt.Errorf("Update: Problem getting UtxoView at block hash %v: %v",
+					blockToAttach.Header.PrevBlockHash, err)
+			}
+		}
 
 		// Do each block update in a single transaction so we're safe in case the node
 		// restarts.
-		blockHeight := uint64(txi.CoreChain.BlockTip().Height)
 		err = txi.TXIndexChain.DB().Update(func(dbTxn *badger.Txn) error {
 
 			// Iterate through each transaction in the block and do the following:
@@ -419,15 +429,27 @@ func (txi *TXIndex) Update() error {
 			// - Compute its mapping values, which may include custom metadata fields
 			// - add all its mappings to the db.
 			for txnIndexInBlock, txn := range blockMsg.Txns {
+				hasPoWBlockHeight := txi.Params.IsPoWBlockHeight(blockMsg.Header.Height)
+				// Also, the first transaction in the block, the block reward transaction, should always be a connecting transaction.
+				isBlockRewardTxn := (txnIndexInBlock == 0) && (txn.TxnMeta.GetTxnType() == TxnTypeBlockReward)
+				// Finally, if the transaction is not the first in the block, we check the TxnConnectStatusByIndex to see if
+				// it's marked by the block producer as a connecting transaction. PoS blocks should reflect this in TxnConnectStatusByIndex.
+				hasConnectingPoSTxnStatus := false
+				if txi.Params.IsPoSBlockHeight(blockMsg.Header.Height) && (txnIndexInBlock > 0) && (blockMsg.TxnConnectStatusByIndex != nil) {
+					// Note that TxnConnectStatusByIndex doesn't include the first block reward transaction.
+					hasConnectingPoSTxnStatus = blockMsg.TxnConnectStatusByIndex.Get(txnIndexInBlock - 1)
+				}
+				connects := hasPoWBlockHeight || isBlockRewardTxn || hasConnectingPoSTxnStatus
+
 				txnMeta, err := ConnectTxnAndComputeTransactionMetadata(
 					txn, utxoView, blockToAttach.Hash, blockToAttach.Height,
-					int64(blockToAttach.Header.TstampNanoSecs), uint64(txnIndexInBlock))
+					blockToAttach.Header.TstampNanoSecs, uint64(txnIndexInBlock), connects)
 				if err != nil {
 					return fmt.Errorf("Update: Problem connecting txn %v to txindex: %v",
 						txn, err)
 				}
 
-				err = DbPutTxindexTransactionMappingsWithTxn(dbTxn, nil, blockHeight,
+				err = DbPutTxindexTransactionMappingsWithTxn(dbTxn, nil, blockMsg.Header.Height,
 					txn, txi.Params, txnMeta, txi.CoreChain.eventManager)
 				if err != nil {
 					return fmt.Errorf("Update: Problem adding txn %v to txindex: %v",
@@ -453,4 +475,33 @@ func (txi *TXIndex) Update() error {
 		txi.TXIndexChain.BlockTip().Height, txi.TXIndexChain.BlockTip().Hash)
 
 	return nil
+}
+
+func ConnectTxnAndComputeTransactionMetadata(
+	txn *MsgDeSoTxn, utxoView *UtxoView, blockHash *BlockHash,
+	blockHeight uint32, blockTimestampNanoSecs int64, txnIndexInBlock uint64, connects bool) (*TransactionMetadata, error) {
+
+	totalNanosPurchasedBefore := utxoView.NanosPurchased
+	usdCentsPerBitcoinBefore := utxoView.GetCurrentUSDCentsPerBitcoin()
+
+	var utxoOps []*UtxoOperation
+	var totalInput, totalOutput, fees, burnFee, utilityFee uint64
+	var err error
+	if connects {
+		utxoOps, totalInput, totalOutput, fees, err = utxoView._connectTransaction(
+			txn, txn.Hash(), blockHeight, blockTimestampNanoSecs, false, false,
+		)
+	} else {
+		utxoOps, burnFee, utilityFee, err = utxoView._connectFailingTransaction(
+			txn, blockHeight, false)
+		fees = burnFee + utilityFee
+	}
+
+	if err != nil {
+		return nil, fmt.Errorf(
+			"UpdateTxindex: Error connecting txn to UtxoView: %v", err)
+	}
+
+	return ComputeTransactionMetadata(txn, utxoView, blockHash, totalNanosPurchasedBefore,
+		usdCentsPerBitcoinBefore, totalInput, totalOutput, fees, txnIndexInBlock, utxoOps, uint64(blockHeight)), nil
 }

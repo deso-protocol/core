@@ -27,12 +27,13 @@ import (
 )
 
 type Node struct {
-	Server   *lib.Server
-	ChainDB  *badger.DB
-	TXIndex  *lib.TXIndex
-	Params   *lib.DeSoParams
-	Config   *Config
-	Postgres *lib.Postgres
+	Server    *lib.Server
+	ChainDB   *badger.DB
+	TXIndex   *lib.TXIndex
+	Params    *lib.DeSoParams
+	Config    *Config
+	Postgres  *lib.Postgres
+	Listeners []net.Listener
 
 	// IsRunning is false when a NewNode is created, set to true on Start(), set to false
 	// after Stop() is called. Mainly used in testing.
@@ -117,8 +118,7 @@ func (node *Node) Start(exitChannels ...*chan struct{}) {
 
 	// This just gets localhost listening addresses on the protocol port.
 	// Such as [{127.0.0.1 18000 } {::1 18000 }], and associated listener structs.
-	listeningAddrs, listeners := GetAddrsToListenOn(node.Config.ProtocolPort)
-	_ = listeningAddrs
+	_, node.Listeners = GetAddrsToListenOn(node.Config.ProtocolPort)
 
 	// If --connect-ips is not passed, we will connect the addresses from
 	// --add-ips, DNSSeeds, and DNSSeedGenerators.
@@ -156,7 +156,11 @@ func (node *Node) Start(exitChannels ...*chan struct{}) {
 
 	// Check to see if this node has already been initialized with performance or default options.
 	// If so, we should continue to use those options.
-	// If not, it should be based on the sync type.
+	// If not and the db directory exists, we will use PerformanceOptions as the default. This is because
+	// prior to the use of default options for hypersync, all nodes were initialized with performance options.
+	// So all nodes that are upgrading will want to continue using performance options. Only nodes that are
+	// hypersyncing from scratch can use default options.
+	// If not, this means we have a clean data directory and it should be based on the sync type.
 	// The reason we do this check is because once a badger database is initialized with performance options,
 	// re-opening it with non-performance options results in a memory error panic. In order to prevent this transition
 	// from default -> performance -> default settings, we save the db options to a file. This takes the form of a
@@ -164,9 +168,20 @@ func (node *Node) Start(exitChannels ...*chan struct{}) {
 	// file exists, we use the same options. If the file does not exist, we use the options based on the sync type.
 	performanceOptions, err := lib.DbInitializedWithPerformanceOptions(node.Config.DataDirectory)
 
-	// If the db options haven't yet been saved, we should base the options on the sync type.
+	// We hardcode performanceOptions to true if we're not using a hypersync sync-type. This helps
+	// nodes recover that were running an older version that wrote the incorrect boolean to the file.
+	if node.Config.SyncType != lib.NodeSyncTypeHyperSync &&
+		node.Config.SyncType != lib.NodeSyncTypeHyperSyncArchival {
+		performanceOptions = true
+	}
+	// If the db options haven't yet been saved, we should base the options on the existence of the
+	// data directory and the sync type.
 	if os.IsNotExist(err) {
-		performanceOptions = !node.Config.HyperSync
+		// Check if the db directory exists.
+		_, err = os.Stat(dbDir)
+		isHypersync := node.Config.SyncType == lib.NodeSyncTypeHyperSync ||
+			node.Config.SyncType == lib.NodeSyncTypeHyperSyncArchival
+		performanceOptions = !os.IsNotExist(err) || !isHypersync
 		// Save the db options for future runs.
 		lib.SaveBoolToFile(lib.GetDbPerformanceOptionsFilePath(node.Config.DataDirectory), performanceOptions)
 	} else if err != nil {
@@ -238,7 +253,7 @@ func (node *Node) Start(exitChannels ...*chan struct{}) {
 	shouldRestart := false
 	node.Server, err, shouldRestart = lib.NewServer(
 		node.Params,
-		listeners,
+		node.Listeners,
 		desoAddrMgr,
 		node.Config.ConnectIPs,
 		node.ChainDB,
@@ -282,6 +297,7 @@ func (node *Node) Start(exitChannels ...*chan struct{}) {
 		node.Config.AugmentedBlockViewRefreshIntervalMillis,
 		node.Config.PosBlockProductionIntervalMilliseconds,
 		node.Config.PosTimeoutBaseDurationMilliseconds,
+		node.Config.StateSyncerMempoolTxnSyncLimit,
 	)
 	if err != nil {
 		// shouldRestart can be true if, on the previous run, we did not finish flushing all ancestral

@@ -24,10 +24,8 @@ COPY scripts     scripts
 COPY test_data   test_data
 COPY main.go     .
 
-RUN ./scripts/install-relic.sh
-
 # build backend
-RUN GOOS=linux go build -mod=mod -a -installsuffix cgo -o bin/core -tags=relic main.go
+RUN GOOS=linux go build -mod=mod -a -installsuffix cgo -o bin/core main.go
 
 # create tiny image
 FROM alpine:edge

@@ -595,7 +595,7 @@ type DBPrefixes struct {
 	// PrefixSnapshotValidatorBLSPublicKeyPKIDPairEntry: Retrieve a snapshotted BLSPublicKeyPKIDPairEntry
 	// by BLS Public Key and SnapshotAtEpochNumber.
 	// Prefix, <SnapshotAtEpochNumber uint64>, <BLSPublicKey []byte> -> *BLSPublicKeyPKIDPairEntry
-	PrefixSnapshotValidatorBLSPublicKeyPKIDPairEntry []byte `prefix_id:"[96]" is_state:"true"`
+	PrefixSnapshotValidatorBLSPublicKeyPKIDPairEntry []byte `prefix_id:"[96]" is_state:"true" core_state:"true"`
 
 	// NEXT_TAG: 97
 }

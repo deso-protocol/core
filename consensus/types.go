@@ -78,6 +78,7 @@ type FastHotStuffEventLoop interface {
 	Stop()
 	IsInitialized() bool
 	IsRunning() bool
+	ToString() string
 }
 
 // BlockHash is a 32-byte hash of a block used to uniquely identify a block. It's re-defined here
@@ -92,6 +93,7 @@ type BlockHash interface {
 type Validator interface {
 	GetPublicKey() *bls.PublicKey
 	GetStakeAmount() *uint256.Int
+	GetDomains() [][]byte
 }
 
 type AggregateQuorumCertificate interface {

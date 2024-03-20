@@ -4,6 +4,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"math"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -80,15 +81,26 @@ func NewDeSoBlockProducer(
 
 	var privKey *btcec.PrivateKey
 	if blockProducerSeed != "" {
-		seedBytes, err := bip39.NewSeedWithErrorChecking(blockProducerSeed, "")
-		if err != nil {
-			return nil, fmt.Errorf("NewDeSoBlockProducer: Error converting mnemonic: %+v", err)
-		}
+		// If a blockProducerSeed is provided then we use it to generate a private key.
+		// If the block producer seed beings with 0x, we treat it as a hex seed. Otherwise,
+		// we treat it as a seed phrase.
+		if strings.HasPrefix(blockProducerSeed, "0x") {
+			privKeyBytes, err := hex.DecodeString(blockProducerSeed[2:])
+			if err != nil {
+				return nil, fmt.Errorf("NewDeSoBlockProducer: Error decoding hex seed: %+v", err)
+			}
+			privKey, _ = btcec.PrivKeyFromBytes(btcec.S256(), privKeyBytes)
+		} else {
+			seedBytes, err := bip39.NewSeedWithErrorChecking(blockProducerSeed, "")
+			if err != nil {
+				return nil, fmt.Errorf("NewDeSoBlockProducer: Error converting mnemonic: %+v", err)
+			}
 
-		_, privKey, _, err = ComputeKeysFromSeed(seedBytes, 0, params)
-		if err != nil {
-			return nil, fmt.Errorf(
-				"NewDeSoBlockProducer: Error computing keys from seed: %+v", err)
+			_, privKey, _, err = ComputeKeysFromSeed(seedBytes, 0, params)
+			if err != nil {
+				return nil, fmt.Errorf(
+					"NewDeSoBlockProducer: Error computing keys from seed: %+v", err)
+			}
 		}
 	}
 

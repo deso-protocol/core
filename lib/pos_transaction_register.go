@@ -99,8 +99,11 @@ func (tr *TransactionRegister) addTransactionNoLock(txn *MempoolTx) error {
 		return fmt.Errorf("TransactionRegister.AddTransaction: Transaction or transaction hash is nil")
 	}
 
+	// If the transaction already exists in the register, then we can't add it. Rather than
+	// treating this as a no-op, we explicitly return an error to indicate that the add
+	// operation failed.
 	if _, ok := tr.txnMembership[*txn.Hash]; ok {
-		return nil
+		return errors.Errorf("TransactionRegister.AddTransaction: Transaction already exists: %v", txn.Hash)
 	}
 
 	// If the transaction is too large, reject it.

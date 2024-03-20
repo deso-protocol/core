@@ -51,6 +51,14 @@ type Mempool interface {
 		pastBlocksPriorityPercentileBasisPoints uint64,
 		maxBlockSize uint64,
 	) (uint64, error)
+	EstimateFeeRate(
+		minFeeRateNanosPerKB uint64,
+		mempoolCongestionFactorBasisPoints uint64,
+		mempoolPriorityPercentileBasisPoints uint64,
+		pastBlocksCongestionFactorBasisPoints uint64,
+		pastBlocksPriorityPercentileBasisPoints uint64,
+		maxBlockSize uint64,
+	) (uint64, error)
 }
 
 type MempoolIterator interface {
@@ -406,6 +414,8 @@ func (mp *PosMempool) OnBlockConnected(block *MsgDeSoBlock) {
 		mp.removeTransactionNoLock(existingTxn, true)
 	}
 
+	mp.refreshNoLock()
+
 	// Add the block to the fee estimator. This is a best effort operation. If we fail to add the block
 	// to the fee estimator, we log an error and continue.
 	if err := mp.feeEstimator.AddBlock(block); err != nil {
@@ -449,6 +459,8 @@ func (mp *PosMempool) OnBlockDisconnected(block *MsgDeSoBlock) {
 			glog.Errorf("PosMempool.AddTransaction: Problem adding transaction to mempool: %v", err)
 		}
 	}
+
+	mp.refreshNoLock()
 
 	// This is a best effort operation. If we fail to prune the mempool, we log an error and continue.
 	if err := mp.pruneNoLock(); err != nil {
@@ -911,8 +923,19 @@ func (mp *PosMempool) EstimateFee(txn *MsgDeSoTxn,
 	pastBlocksCongestionFactorBasisPoints uint64,
 	pastBlocksPriorityPercentileBasisPoints uint64,
 	maxBlockSize uint64) (uint64, error) {
-	// TODO: replace MaxBasisPoints with variables configured by flags.
 	return mp.feeEstimator.EstimateFee(
 		txn, mempoolCongestionFactorBasisPoints, mempoolPriorityPercentileBasisPoints,
+		pastBlocksCongestionFactorBasisPoints, pastBlocksPriorityPercentileBasisPoints, maxBlockSize)
+}
+
+func (mp *PosMempool) EstimateFeeRate(
+	_ uint64,
+	mempoolCongestionFactorBasisPoints uint64,
+	mempoolPriorityPercentileBasisPoints uint64,
+	pastBlocksCongestionFactorBasisPoints uint64,
+	pastBlocksPriorityPercentileBasisPoints uint64,
+	maxBlockSize uint64) (uint64, error) {
+	return mp.feeEstimator.EstimateFeeRateNanosPerKB(
+		mempoolCongestionFactorBasisPoints, mempoolPriorityPercentileBasisPoints,
 		pastBlocksCongestionFactorBasisPoints, pastBlocksPriorityPercentileBasisPoints, maxBlockSize)
 }

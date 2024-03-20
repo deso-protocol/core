@@ -82,6 +82,14 @@ func generateConfig(t *testing.T, port uint32, dataDir string, maxPeers uint32) 
 	config.SnapshotBlockHeightPeriod = HyperSyncSnapshotPeriod
 	config.MaxSyncBlockHeight = MaxSyncBlockHeight
 	config.SyncType = lib.NodeSyncTypeBlockSync
+	config.MempoolBackupIntervalMillis = 30000
+	config.MaxMempoolPosSizeBytes = 3000000000
+	config.MempoolFeeEstimatorNumMempoolBlocks = 1
+	config.MempoolFeeEstimatorNumPastBlocks = 50
+	config.AugmentedBlockViewRefreshIntervalMillis = 10
+	config.PosBlockProductionIntervalMilliseconds = 1500
+	config.PosTimeoutBaseDurationMilliseconds = 30000
+
 	//config.ArchivalMode = true
 
 	return config
@@ -150,7 +158,8 @@ func compareNodesByChecksum(t *testing.T, nodeA *cmd.Node, nodeB *cmd.Node) {
 // compareNodesByState will look through all state records in nodeA and nodeB databases and will compare them.
 // The nodes pass this comparison iff they have identical states.
 func compareNodesByState(t *testing.T, nodeA *cmd.Node, nodeB *cmd.Node, verbose int) {
-	compareNodesByStateWithPrefixList(t, nodeA.ChainDB, nodeB.ChainDB, lib.StatePrefixes.StatePrefixesList, verbose)
+	compareNodesByStateWithPrefixList(t, nodeA.Server.GetBlockchain().DB(), nodeB.Server.GetBlockchain().DB(),
+		lib.StatePrefixes.StatePrefixesList, verbose)
 }
 
 // compareNodesByDB will look through all records in nodeA and nodeB databases and will compare them.
@@ -164,7 +173,8 @@ func compareNodesByDB(t *testing.T, nodeA *cmd.Node, nodeB *cmd.Node, verbose in
 		}
 		prefixList = append(prefixList, []byte{prefix})
 	}
-	compareNodesByStateWithPrefixList(t, nodeA.ChainDB, nodeB.ChainDB, prefixList, verbose)
+	compareNodesByStateWithPrefixList(t, nodeA.Server.GetBlockchain().DB(), nodeB.Server.GetBlockchain().DB(),
+		prefixList, verbose)
 }
 
 // compareNodesByDB will look through all records in nodeA and nodeB txindex databases and will compare them.
@@ -386,25 +396,25 @@ func restartNode(t *testing.T, node *cmd.Node) *cmd.Node {
 }
 
 // listenForBlockHeight busy-waits until the node's block tip reaches provided height.
-func listenForBlockHeight(t *testing.T, node *cmd.Node, height uint32, signal chan<- bool) {
+func listenForBlockHeight(node *cmd.Node, height uint32) (_listener chan bool) {
+	listener := make(chan bool)
 	ticker := time.NewTicker(1 * time.Millisecond)
 	go func() {
 		for {
 			<-ticker.C
 			if node.Server.GetBlockchain().BlockTip().Height >= height {
-				signal <- true
+				listener <- true
 				break
 			}
 		}
 	}()
+	return listener
 }
 
 // disconnectAtBlockHeight busy-waits until the node's block tip reaches provided height, and then disconnects
 // from the provided bridge.
-func disconnectAtBlockHeight(t *testing.T, syncingNode *cmd.Node, bridge *ConnectionBridge, height uint32) {
-	listener := make(chan bool)
-	listenForBlockHeight(t, syncingNode, height, listener)
-	<-listener
+func disconnectAtBlockHeight(syncingNode *cmd.Node, bridge *ConnectionBridge, height uint32) {
+	<-listenForBlockHeight(syncingNode, height)
 	bridge.Disconnect()
 }
 
@@ -414,7 +424,7 @@ func restartAtHeightAndReconnectNode(t *testing.T, node *cmd.Node, source *cmd.N
 	height uint32) (_node *cmd.Node, _bridge *ConnectionBridge) {
 
 	require := require.New(t)
-	disconnectAtBlockHeight(t, node, currentBridge, height)
+	disconnectAtBlockHeight(node, currentBridge, height)
 	newNode := restartNode(t, node)
 	// Wait after the restart.
 	time.Sleep(1 * time.Second)
@@ -423,6 +433,16 @@ func restartAtHeightAndReconnectNode(t *testing.T, node *cmd.Node, source *cmd.N
 	bridge := NewConnectionBridge(newNode, source)
 	require.NoError(bridge.Start())
 	return newNode, bridge
+}
+
+func restartAtHeight(t *testing.T, node *cmd.Node, height uint32) *cmd.Node {
+	<-listenForBlockHeight(node, height)
+	return restartNode(t, node)
+}
+
+func shutdownAtHeight(t *testing.T, node *cmd.Node, height uint32) *cmd.Node {
+	<-listenForBlockHeight(node, height)
+	return shutdownNode(t, node)
 }
 
 // listenForSyncPrefix will wait until the node starts downloading the provided syncPrefix in hypersync, and then sends
@@ -468,10 +488,44 @@ func restartAtSyncPrefixAndReconnectNode(t *testing.T, node *cmd.Node, source *c
 	return newNode, bridge
 }
 
+func restartAtSyncPrefix(t *testing.T, node *cmd.Node, syncPrefix []byte) *cmd.Node {
+	listener := make(chan bool)
+	listenForSyncPrefix(t, node, syncPrefix, listener)
+	<-listener
+	return restartNode(t, node)
+}
+
+func shutdownAtSyncPrefix(t *testing.T, node *cmd.Node, syncPrefix []byte) *cmd.Node {
+	listener := make(chan bool)
+	listenForSyncPrefix(t, node, syncPrefix, listener)
+	<-listener
+	return shutdownNode(t, node)
+}
+
 func randomUint32Between(t *testing.T, min, max uint32) uint32 {
 	require := require.New(t)
 	randomNumber, err := wire.RandomUint64()
 	require.NoError(err)
 	randomHeight := uint32(randomNumber) % (max - min)
 	return randomHeight + min
+}
+
+func waitForCondition(t *testing.T, id string, condition func() bool) {
+	signalChan := make(chan struct{})
+	go func() {
+		for {
+			if condition() {
+				signalChan <- struct{}{}
+				return
+			}
+			time.Sleep(100 * time.Millisecond)
+		}
+	}()
+
+	select {
+	case <-signalChan:
+		return
+	case <-time.After(5 * time.Second):
+		t.Fatalf("Condition timed out | %s", id)
+	}
 }

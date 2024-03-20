@@ -2267,7 +2267,7 @@ func TestConnectFailingTransaction(t *testing.T) {
 		txn := _generateTestTxn(t, rand, feeMin, feeMax, m0PubBytes, m0Priv, 100, 0)
 		utxoOps, burnFee, utilityFee, err := blockView._connectFailingTransaction(txn, blockHeight, true)
 		require.NoError(err)
-		require.Equal(1, len(utxoOps))
+		require.Equal(2, len(utxoOps))
 		expectedBurnFee, expectedUtilityFee := _getBMFForTxn(txn, globalParams)
 		require.Equal(expectedBurnFee, burnFee)
 		require.Equal(expectedUtilityFee, utilityFee)
@@ -2303,7 +2303,7 @@ func TestConnectFailingTransaction(t *testing.T) {
 
 		utxoOps, burnFee, utilityFee, err := blockView._connectFailingTransaction(txn, blockHeight, true)
 		require.NoError(err)
-		require.Equal(1, len(utxoOps))
+		require.Equal(2, len(utxoOps))
 
 		// The final balance is m0's starting balance minus the failing txn fee paid.
 		finalBalance, err := blockView.GetDeSoBalanceNanosForPublicKey(m0PubBytes)
@@ -2351,7 +2351,7 @@ func TestConnectFailingTransaction(t *testing.T) {
 		txn := _generateTestTxn(t, rand, feeMin, feeMax, m0PubBytes, m0Priv, 100, 0)
 		utxoOps, burnFee, utilityFee, err := blockView._connectFailingTransaction(txn, blockHeight, true)
 		require.NoError(err)
-		require.Equal(1, len(utxoOps))
+		require.Equal(2, len(utxoOps))
 
 		// The final balance is m0's starting balance minus the failing txn fee paid.
 		finalBalance, err := blockView.GetDeSoBalanceNanosForPublicKey(m0PubBytes)

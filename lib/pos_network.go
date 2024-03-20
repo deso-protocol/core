@@ -123,6 +123,17 @@ func (msg *MsgDeSoValidatorVote) FromBytes(data []byte) error {
 	return nil
 }
 
+func (msg *MsgDeSoValidatorVote) ToString() string {
+	return fmt.Sprintf(
+		"{MsgVersion: %d, VotingPublicKey: %s, BlockHash: %v, ProposedInView: %d, VotePartialSignature: %v}",
+		msg.MsgVersion,
+		msg.VotingPublicKey.ToAbbreviatedString(),
+		msg.BlockHash,
+		msg.ProposedInView,
+		msg.VotePartialSignature.ToAbbreviatedString(),
+	)
+}
+
 // ==================================================================
 // Proof of Stake Timeout Message
 // ==================================================================
@@ -238,6 +249,18 @@ func (msg *MsgDeSoValidatorTimeout) FromBytes(data []byte) error {
 	}
 
 	return nil
+}
+
+func (msg *MsgDeSoValidatorTimeout) ToString() string {
+	return fmt.Sprintf(
+		"{MsgVersion: %d, VotingPublicKey: %s, TimedOutView: %d, HighQCView: %v, HighQCBlockHash: %v, TimeoutPartialSignature: %s}",
+		msg.MsgVersion,
+		msg.VotingPublicKey.ToAbbreviatedString(),
+		msg.TimedOutView,
+		msg.HighQC.ProposedInView,
+		msg.HighQC.BlockHash,
+		msg.TimeoutPartialSignature.ToAbbreviatedString(),
+	)
 }
 
 // A QuorumCertificate contains an aggregated signature from 2/3rds of the validators
