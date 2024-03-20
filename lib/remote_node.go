@@ -117,13 +117,8 @@ type HandshakeMetadata struct {
 	// negotiatedProtocolVersion is the protocol version negotiated between the peer and our node. This is the minimum
 	// of the advertised protocol version and our node's protocol version.
 	negotiatedProtocolVersion ProtocolVersionType
-	// timeConnected is the unix timestamp of the peer, measured when the peer sent their Version message.
-	timeConnected *time.Time
 	// versionNegotiated is true if the peer passed the version negotiation step.
 	versionNegotiated bool
-	// timeOffsetSecs is the time offset between our node and the peer, measured by taking the difference between the
-	// peer's unix timestamp and our node's unix timestamp.
-	timeOffsetSecs uint64
 
 	// ### The following fields are populated during the MsgDeSoVerack exchange.
 	// validatorPublicKey is the BLS public key of the peer, if the peer is a validator node.
@@ -302,6 +297,8 @@ func (rn *RemoteNode) AttachInboundConnection(conn net.Conn, na *wire.NetAddress
 	rn.mtx.Lock()
 	defer rn.mtx.Unlock()
 
+	// At this point, the RemoteNode must be in the NotConnected state. If the RemoteNode already progressed to
+	// another state, we return an error.
 	if !rn.IsNotConnected() {
 		return fmt.Errorf("RemoteNode.AttachInboundConnection: RemoteNode is not in the NotConnected state")
 	}
@@ -508,16 +505,6 @@ func (rn *RemoteNode) HandleVersionMessage(verMsg *MsgDeSoVersion, responseNonce
 			"RemoteNode has SFValidator service flag, but doesn't have ProtocolVersion2 or later", rn.id)
 	}
 
-	// Record the tstamp sent by the peer and calculate the time offset.
-	timeConnected := time.Unix(verMsg.TstampSecs, 0)
-	vMeta.timeConnected = &timeConnected
-	currentTime := time.Now().Unix()
-	if currentTime > verMsg.TstampSecs {
-		vMeta.timeOffsetSecs = uint64(currentTime - verMsg.TstampSecs)
-	} else {
-		vMeta.timeOffsetSecs = uint64(verMsg.TstampSecs - currentTime)
-	}
-
 	// Save the received version nonce so we can include it in our verack message.
 	vMeta.versionNonceReceived = verMsg.Nonce
 
@@ -544,7 +531,6 @@ func (rn *RemoteNode) HandleVersionMessage(verMsg *MsgDeSoVersion, responseNonce
 	}
 
 	// Update the timeSource now that we've gotten a version message from the peer.
-	rn.cmgr.AddTimeSample(rn.peer.Address(), timeConnected)
 	rn.setStatusVerackSent()
 	return nil
 }

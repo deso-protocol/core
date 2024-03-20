@@ -499,8 +499,12 @@ func GetEncoderMigrationHeightsList(forkHeights *ForkHeights) (
 type ProtocolVersionType uint64
 
 const (
+	// ProtocolVersion0 is the first version of the DeSo protocol, running Proof of Work.
 	ProtocolVersion0 ProtocolVersionType = 0
+	// ProtocolVersion1 nodes run Proof of Work, and new node services such as rosetta, hypersync.
+	// The version indicates that the node supports P2P features related to these new services.
 	ProtocolVersion1 ProtocolVersionType = 1
+	// ProtocolVersion2 is the latest version of the DeSo protocol, running Proof of Stake.
 	ProtocolVersion2 ProtocolVersionType = 2
 )
 
@@ -573,6 +577,9 @@ type DeSoParams struct {
 	// network before checking for double-spends.
 	BitcoinDoubleSpendWaitSeconds float64
 
+	// ServerMessageChannelSize sets the minimum size of the server's incomingMessage channel, which handles peer messages.
+	ServerMessageChannelSize uint32
+
 	// This field allows us to set the amount purchased at genesis to a non-zero
 	// value.
 	DeSoNanosPurchasedAtGenesis uint64
@@ -588,6 +595,9 @@ type DeSoParams struct {
 	VersionNegotiationTimeout time.Duration
 	// The amount of time we wait to receive a verack message from a peer.
 	VerackNegotiationTimeout time.Duration
+
+	// The amount of time it takes NetworkManager to refresh its routines.
+	NetworkManagerRefreshDuration time.Duration
 
 	// The maximum number of addresses to broadcast to peers.
 	MaxAddressesToBroadcast uint32
@@ -1107,13 +1117,15 @@ var DeSoMainnetParams = DeSoParams{
 
 	BitcoinExchangeFeeBasisPoints: 10,
 	BitcoinDoubleSpendWaitSeconds: 5.0,
+	ServerMessageChannelSize:      uint32(100),
 	DeSoNanosPurchasedAtGenesis:   uint64(6000000000000000),
 	DefaultSocketPort:             uint16(17000),
 	DefaultJSONPort:               uint16(17001),
 
-	DialTimeout:               30 * time.Second,
-	VersionNegotiationTimeout: 30 * time.Second,
-	VerackNegotiationTimeout:  30 * time.Second,
+	DialTimeout:                   30 * time.Second,
+	VersionNegotiationTimeout:     30 * time.Second,
+	VerackNegotiationTimeout:      30 * time.Second,
+	NetworkManagerRefreshDuration: 1 * time.Second,
 
 	MaxAddressesToBroadcast: 10,
 
@@ -1375,6 +1387,7 @@ var DeSoTestnetParams = DeSoParams{
 	BitcoinBurnAddress:            "mhziDsPWSMwUqvZkVdKY92CjesziGP3wHL",
 	BitcoinExchangeFeeBasisPoints: 10,
 	BitcoinDoubleSpendWaitSeconds: 5.0,
+	ServerMessageChannelSize:      uint32(100),
 	DeSoNanosPurchasedAtGenesis:   uint64(6000000000000000),
 
 	// See comment in mainnet config.
@@ -1401,9 +1414,10 @@ var DeSoTestnetParams = DeSoParams{
 	DefaultSocketPort: uint16(18000),
 	DefaultJSONPort:   uint16(18001),
 
-	DialTimeout:               30 * time.Second,
-	VersionNegotiationTimeout: 30 * time.Second,
-	VerackNegotiationTimeout:  30 * time.Second,
+	DialTimeout:                   30 * time.Second,
+	VersionNegotiationTimeout:     30 * time.Second,
+	VerackNegotiationTimeout:      30 * time.Second,
+	NetworkManagerRefreshDuration: 1 * time.Second,
 
 	MaxAddressesToBroadcast: 10,
 
