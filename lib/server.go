@@ -1839,9 +1839,9 @@ func (srv *Server) _relayTransactions() {
 	// current block height.
 	mempool := srv.GetMempool()
 
-	glog.V(1).Infof("Server._relayTransactions: Waiting for mempool readOnlyView to regenerate")
+	glog.V(3).Infof("Server._relayTransactions: Waiting for mempool readOnlyView to regenerate")
 	mempool.BlockUntilReadOnlyViewRegenerated()
-	glog.V(1).Infof("Server._relayTransactions: Mempool view has regenerated")
+	glog.V(3).Infof("Server._relayTransactions: Mempool view has regenerated")
 
 	// We pull the transactions from either the PoW mempool or the PoS mempool depending
 	// on the current block height.
@@ -1878,7 +1878,7 @@ func (srv *Server) _relayTransactions() {
 		}
 	}
 
-	glog.V(1).Infof("Server._relayTransactions: Relay to all peers is complete!")
+	glog.V(3).Infof("Server._relayTransactions: Relay to all peers is complete!")
 }
 
 func (srv *Server) _addNewTxn(

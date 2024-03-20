@@ -1407,7 +1407,8 @@ func (bc *Blockchain) isHyperSyncCondition() bool {
 
 	blockTip := bc.blockTip()
 	headerTip := bc.headerTip()
-	if uint64(headerTip.Height-blockTip.Height) >= SnapshotBlockHeightPeriod {
+	snapshotBlockHeightPeriod := bc.params.GetSnapshotBlockHeightPeriod(uint64(headerTip.Height), bc.Snapshot().GetSnapshotBlockHeightPeriod())
+	if uint64(headerTip.Height-blockTip.Height) >= snapshotBlockHeightPeriod {
 		return true
 	}
 	return false
@@ -2020,13 +2021,6 @@ func (bc *Blockchain) processBlockPoW(desoBlock *MsgDeSoBlock, verifySignatures 
 	// Only accept the block if its height is below the PoS cutover height.
 	if !bc.params.IsPoWBlockHeight(desoBlock.Header.Height) {
 		return false, false, RuleErrorBlockHeightAfterProofOfStakeCutover
-	}
-
-	// Only accept blocks if the blockchain is still running PoW. Once the chain connects the final block of the
-	// PoW protocol, it will transition to the PoS. We should not accept any PoW blocks as they can result in a
-	// fork.
-	if bc.blockTip().Header.Height >= bc.params.GetFinalPoWBlockHeight() {
-		return false, false, RuleErrorBestChainIsAtProofOfStakeCutover
 	}
 
 	blockHeight := uint64(bc.BlockTip().Height + 1)

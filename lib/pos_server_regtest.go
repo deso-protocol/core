@@ -24,8 +24,14 @@ func (srv *Server) submitRegtestValidatorRegistrationTxns(block *MsgDeSoBlock) {
 			panic(err)
 		}
 
+		var domain string
+		if len(srv.GetConnectionManager().listeners) == 0 {
+			domain = "http://localhost:18000"
+		}
+		domain = "http://" + srv.GetConnectionManager().listeners[0].Addr().String()
+
 		txnMeta := RegisterAsValidatorMetadata{
-			Domains:                             [][]byte{[]byte("http://localhost:18000")},
+			Domains:                             [][]byte{[]byte(domain)},
 			DisableDelegatedStake:               false,
 			DelegatedStakeCommissionBasisPoints: 100,
 			VotingPublicKey:                     blsSigner.GetPublicKey(),
@@ -62,7 +68,7 @@ func (srv *Server) submitRegtestValidatorRegistrationTxns(block *MsgDeSoBlock) {
 		stakeTxnMeta := StakeMetadata{
 			ValidatorPublicKey: NewPublicKey(transactorPubKey),
 			RewardMethod:       StakingRewardMethodPayToBalance,
-			StakeAmountNanos:   uint256.NewInt().SetUint64(10 * 1e9),
+			StakeAmountNanos:   uint256.NewInt().SetUint64(10 * 1e6),
 		}
 
 		stakeTxn, _, _, _, err := srv.blockProducer.chain.CreateStakeTxn(
