@@ -43,7 +43,6 @@ func TestPoSRegtestHypersyncArchival(t *testing.T) {
 	node1.Params.DefaultPoWSnapshotBlockHeightPeriod = 30
 	node1.Config.SnapshotBlockHeightPeriod = 60
 	node1.Config.HyperSync = true
-	node1.Config.GlogV = 0
 	node1 = startNode(t, node1)
 	condition := func() bool {
 		return node1.Server.GetBlockchain().BlockTip().Height >= 140
