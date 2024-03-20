@@ -544,6 +544,11 @@ func NewServer(
 		_minFeeRateNanosPerKB, _blockCypherAPIKey, _runReadOnlyUtxoViewUpdater, _dataDir,
 		_mempoolDumpDir, false)
 
+	// Initialize state syncer mempool job, if needed.
+	if srv.stateChangeSyncer != nil {
+		srv.stateChangeSyncer.StartMempoolSyncRoutine(srv)
+	}
+
 	// Initialize the PoS mempool. We need to initialize a best-effort UtxoView based on the current
 	// known state of the chain. This will all be overwritten as we process blocks later on.
 	currentUtxoView, err := _chain.GetUncommittedTipView()
