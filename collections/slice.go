@@ -1,6 +1,11 @@
 package collections
 
-import "sort"
+import (
+	"fmt"
+	"math/rand"
+	"sort"
+	"time"
+)
 
 func All[T any](slice []T, predicate func(T) bool) bool {
 	negatedPredicate := func(val T) bool {
@@ -30,6 +35,16 @@ func Transform[TInput any, TOutput any](slice []TInput, transformFn func(TInput)
 		result = append(result, transformFn(val))
 	}
 	return result
+}
+
+func RandomElement[T any](slice []T) (T, error) {
+	if len(slice) == 0 {
+		return *new(T), fmt.Errorf("RandomElement: input slice is empty")
+	}
+
+	src := rand.NewSource(time.Now().UnixNano())
+	index := src.Int63() % int64(len(slice))
+	return slice[index], nil
 }
 
 // SortStable wraps the built-in sort.SliceStable function to return a sorted slice

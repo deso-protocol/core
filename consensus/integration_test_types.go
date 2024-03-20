@@ -104,6 +104,10 @@ func (node *validatorNode) GetStakeAmount() *uint256.Int {
 	return node.stake
 }
 
+func (node *validatorNode) GetDomains() [][]byte {
+	return [][]byte{}
+}
+
 func (node *validatorNode) ProcessBlock(incomingBlock *block) {
 	node.lock.Lock()
 	defer node.lock.Unlock()

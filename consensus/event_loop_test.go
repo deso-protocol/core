@@ -1,5 +1,3 @@
-//go:build relic
-
 package consensus
 
 import (
@@ -782,6 +780,63 @@ func TestVoteQCConstructionSignal(t *testing.T) {
 		require.Equal(t, blockConstructionSignal.QC.GetBlockHash().GetValue(), block.GetBlockHash().GetValue())
 		require.Equal(t, blockConstructionSignal.QC.GetAggregatedSignature().GetSignersList().ToBytes(), bitset.NewBitset().Set(0, true).ToBytes())
 		require.Equal(t, blockConstructionSignal.QC.GetAggregatedSignature().GetSignature().ToBytes(), validator1Vote.ToBytes())
+	}
+
+	// Happy path, crank timer has elapsed the vote QC construction signal is triggered by an incoming vote
+	{
+		fe := NewFastHotStuffEventLoop()
+
+		// Init the event loop
+		err := fe.Init(
+			time.Hour,
+			time.Hour,
+			block.GetQC(), // genesisQC
+			BlockWithValidatorList{block, validatorList},     // tip
+			[]BlockWithValidatorList{{block, validatorList}}, // safeBlocks
+		)
+		require.NoError(t, err)
+
+		// Start the event loop
+		fe.Start()
+
+		// Manually trigger the crank timer to elapse. The crank timer's execution is a no-op because
+		// there are no votes.
+		fe.onCrankTimerTaskExecuted(fe.currentView)
+
+		// Process a vote from validator 1, which has enough stake to construct a QC
+		{
+			validator1VoteMsg := voteMessage{
+				view:      block.view,
+				blockHash: copyBlockHash(block.blockHash),
+				publicKey: validatorPrivateKey1.PublicKey(),
+				signature: validator1Vote,
+			}
+			err = fe.ProcessValidatorVote(&validator1VoteMsg)
+			require.NoError(t, err)
+		}
+
+		var blockConstructionSignal *FastHotStuffEvent
+
+		// Wait up to 100 milliseconds for a block construction signal to be sent
+		select {
+		case blockConstructionSignal = <-fe.Events:
+			// Do nothing
+		case <-time.After(100 * time.Millisecond):
+			require.Fail(t, "Did not receive a block construction signal when there were enough votes to construct a vote QC")
+		}
+
+		// Verify the block construction signal
+		require.Equal(t, blockConstructionSignal.EventType, FastHotStuffEventTypeConstructVoteQC)
+		require.Equal(t, blockConstructionSignal.View, block.GetView()+1)
+		require.Equal(t, blockConstructionSignal.TipBlockHash.GetValue(), block.GetBlockHash().GetValue())
+		require.Equal(t, blockConstructionSignal.TipBlockHeight, block.GetHeight())
+		require.Equal(t, blockConstructionSignal.QC.GetView(), block.GetView())
+		require.Equal(t, blockConstructionSignal.QC.GetBlockHash().GetValue(), block.GetBlockHash().GetValue())
+		require.Equal(t, blockConstructionSignal.QC.GetAggregatedSignature().GetSignersList().ToBytes(), bitset.NewBitset().Set(0, true).ToBytes())
+		require.Equal(t, blockConstructionSignal.QC.GetAggregatedSignature().GetSignature().ToBytes(), validator1Vote.ToBytes())
+
+		// Stop the event loop
+		fe.Stop()
 	}
 }
 

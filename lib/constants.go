@@ -496,6 +496,34 @@ func GetEncoderMigrationHeightsList(forkHeights *ForkHeights) (
 	return migrationHeightsList
 }
 
+type ProtocolVersionType uint64
+
+const (
+	// ProtocolVersion0 is the first version of the DeSo protocol, running Proof of Work.
+	ProtocolVersion0 ProtocolVersionType = 0
+	// ProtocolVersion1 nodes run Proof of Work, and new node services such as rosetta, hypersync.
+	// The version indicates that the node supports P2P features related to these new services.
+	ProtocolVersion1 ProtocolVersionType = 1
+	// ProtocolVersion2 is the latest version of the DeSo protocol, running Proof of Stake.
+	ProtocolVersion2 ProtocolVersionType = 2
+)
+
+func NewProtocolVersionType(version uint64) ProtocolVersionType {
+	return ProtocolVersionType(version)
+}
+
+func (pvt ProtocolVersionType) ToUint64() uint64 {
+	return uint64(pvt)
+}
+
+func (pvt ProtocolVersionType) Before(version ProtocolVersionType) bool {
+	return pvt.ToUint64() < version.ToUint64()
+}
+
+func (pvt ProtocolVersionType) After(version ProtocolVersionType) bool {
+	return pvt.ToUint64() > version.ToUint64()
+}
+
 // DeSoParams defines the full list of possible parameters for the
 // DeSo network.
 type DeSoParams struct {
@@ -504,7 +532,7 @@ type DeSoParams struct {
 	// Set to true when we're running in regtest mode. This is useful for testing.
 	ExtraRegtestParamUpdaterKeys map[PkMapKey]bool
 	// The current protocol version we're running.
-	ProtocolVersion uint64
+	ProtocolVersion ProtocolVersionType
 	// The minimum protocol version we'll allow a peer we connect to
 	// to have.
 	MinProtocolVersion uint64
@@ -549,6 +577,9 @@ type DeSoParams struct {
 	// network before checking for double-spends.
 	BitcoinDoubleSpendWaitSeconds float64
 
+	// ServerMessageChannelSize sets the minimum size of the server's incomingMessage channel, which handles peer messages.
+	ServerMessageChannelSize uint32
+
 	// This field allows us to set the amount purchased at genesis to a non-zero
 	// value.
 	DeSoNanosPurchasedAtGenesis uint64
@@ -562,6 +593,14 @@ type DeSoParams struct {
 	DialTimeout time.Duration
 	// The amount of time we wait to receive a version message from a peer.
 	VersionNegotiationTimeout time.Duration
+	// The amount of time we wait to receive a verack message from a peer.
+	VerackNegotiationTimeout time.Duration
+
+	// The amount of time it takes NetworkManager to refresh its routines.
+	NetworkManagerRefreshDuration time.Duration
+
+	// The maximum number of addresses to broadcast to peers.
+	MaxAddressesToBroadcast uint32
 
 	// The genesis block to use as the base of our chain.
 	GenesisBlock *MsgDeSoBlock
@@ -755,6 +794,12 @@ type DeSoParams struct {
 	// for a description of its usage.
 	DefaultMempoolFeeEstimatorNumPastBlocks uint64
 
+	// HandshakeTimeoutMicroSeconds is the timeout for the peer handshake certificate. The default value is 15 minutes.
+	HandshakeTimeoutMicroSeconds uint64
+
+	// DisableNetworkManagerRoutines is a testing flag that disables the network manager routines.
+	DisableNetworkManagerRoutines bool
+
 	ForkHeights ForkHeights
 
 	EncoderMigrationHeights     *EncoderMigrationHeights
@@ -819,12 +864,15 @@ func (params *DeSoParams) EnableRegtest() {
 	// Clear the seeds
 	params.DNSSeeds = []string{}
 
+	// Set the protocol version
+	params.ProtocolVersion = ProtocolVersion2
+
 	// Mine blocks incredibly quickly
 	params.TimeBetweenBlocks = 2 * time.Second
 	params.TimeBetweenDifficultyRetargets = 6 * time.Second
 	// Make sure we don't care about blockchain tip age.
 	params.MaxTipAgePoW = 1000000 * time.Hour
-	params.MaxTipAgePoS = 1000000 * time.Hour
+	params.MaxTipAgePoS = 4 * time.Hour
 
 	// Allow block rewards to be spent instantly
 	params.BlockRewardMaturity = 0
@@ -992,7 +1040,7 @@ var MainnetForkHeights = ForkHeights{
 // DeSoMainnetParams defines the DeSo parameters for the mainnet.
 var DeSoMainnetParams = DeSoParams{
 	NetworkType:        NetworkType_MAINNET,
-	ProtocolVersion:    1,
+	ProtocolVersion:    ProtocolVersion1,
 	MinProtocolVersion: 1,
 	UserAgent:          "Architect",
 	DNSSeeds: []string{
@@ -1069,12 +1117,17 @@ var DeSoMainnetParams = DeSoParams{
 
 	BitcoinExchangeFeeBasisPoints: 10,
 	BitcoinDoubleSpendWaitSeconds: 5.0,
+	ServerMessageChannelSize:      uint32(100),
 	DeSoNanosPurchasedAtGenesis:   uint64(6000000000000000),
 	DefaultSocketPort:             uint16(17000),
 	DefaultJSONPort:               uint16(17001),
 
-	DialTimeout:               30 * time.Second,
-	VersionNegotiationTimeout: 30 * time.Second,
+	DialTimeout:                   30 * time.Second,
+	VersionNegotiationTimeout:     30 * time.Second,
+	VerackNegotiationTimeout:      30 * time.Second,
+	NetworkManagerRefreshDuration: 1 * time.Second,
+
+	MaxAddressesToBroadcast: 10,
 
 	BlockRewardMaturity: time.Hour * 3,
 
@@ -1214,6 +1267,12 @@ var DeSoMainnetParams = DeSoParams{
 	// The number of past blocks to consider when estimating the mempool fee.
 	DefaultMempoolFeeEstimatorNumPastBlocks: 50,
 
+	// The peer handshake certificate timeout.
+	HandshakeTimeoutMicroSeconds: uint64(900000000),
+
+	// DisableNetworkManagerRoutines is a testing flag that disables the network manager routines.
+	DisableNetworkManagerRoutines: false,
+
 	ForkHeights:                 MainnetForkHeights,
 	EncoderMigrationHeights:     GetEncoderMigrationHeights(&MainnetForkHeights),
 	EncoderMigrationHeightsList: GetEncoderMigrationHeightsList(&MainnetForkHeights),
@@ -1313,7 +1372,7 @@ var TestnetForkHeights = ForkHeights{
 // DeSoTestnetParams defines the DeSo parameters for the testnet.
 var DeSoTestnetParams = DeSoParams{
 	NetworkType:        NetworkType_TESTNET,
-	ProtocolVersion:    0,
+	ProtocolVersion:    ProtocolVersion0,
 	MinProtocolVersion: 0,
 	UserAgent:          "Architect",
 	DNSSeeds: []string{
@@ -1328,6 +1387,7 @@ var DeSoTestnetParams = DeSoParams{
 	BitcoinBurnAddress:            "mhziDsPWSMwUqvZkVdKY92CjesziGP3wHL",
 	BitcoinExchangeFeeBasisPoints: 10,
 	BitcoinDoubleSpendWaitSeconds: 5.0,
+	ServerMessageChannelSize:      uint32(100),
 	DeSoNanosPurchasedAtGenesis:   uint64(6000000000000000),
 
 	// See comment in mainnet config.
@@ -1354,8 +1414,12 @@ var DeSoTestnetParams = DeSoParams{
 	DefaultSocketPort: uint16(18000),
 	DefaultJSONPort:   uint16(18001),
 
-	DialTimeout:               30 * time.Second,
-	VersionNegotiationTimeout: 30 * time.Second,
+	DialTimeout:                   30 * time.Second,
+	VersionNegotiationTimeout:     30 * time.Second,
+	VerackNegotiationTimeout:      30 * time.Second,
+	NetworkManagerRefreshDuration: 1 * time.Second,
+
+	MaxAddressesToBroadcast: 10,
 
 	GenesisBlock:        &GenesisBlock,
 	GenesisBlockHashHex: GenesisBlockHashHex,
@@ -1496,6 +1560,12 @@ var DeSoTestnetParams = DeSoParams{
 
 	// The number of past blocks to consider when estimating the mempool fee.
 	DefaultMempoolFeeEstimatorNumPastBlocks: 50,
+
+	// The peer handshake certificate timeout.
+	HandshakeTimeoutMicroSeconds: uint64(900000000),
+
+	// DisableNetworkManagerRoutines is a testing flag that disables the network manager routines.
+	DisableNetworkManagerRoutines: false,
 
 	ForkHeights:                 TestnetForkHeights,
 	EncoderMigrationHeights:     GetEncoderMigrationHeights(&TestnetForkHeights),

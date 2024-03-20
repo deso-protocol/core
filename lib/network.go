@@ -109,11 +109,12 @@ const (
 	// TODO: Should probably split these out into a separate channel in the server to
 	// make things more parallelized.
 
-	MsgTypeQuit                 MsgType = ControlMessagesStart
-	MsgTypeNewPeer              MsgType = ControlMessagesStart + 1
-	MsgTypeDonePeer             MsgType = ControlMessagesStart + 2
-	MsgTypeBlockAccepted        MsgType = ControlMessagesStart + 3
-	MsgTypeBitcoinManagerUpdate MsgType = ControlMessagesStart + 4 // Deprecated
+	MsgTypeQuit                  MsgType = ControlMessagesStart
+	MsgTypeDisconnectedPeer      MsgType = ControlMessagesStart + 1
+	MsgTypeBlockAccepted         MsgType = ControlMessagesStart + 2
+	MsgTypeBitcoinManagerUpdate  MsgType = ControlMessagesStart + 3 // Deprecated
+	MsgTypePeerHandshakeComplete MsgType = ControlMessagesStart + 4
+	MsgTypeNewConnection         MsgType = ControlMessagesStart + 5
 
 	// NEXT_TAG = 7
 )
@@ -171,14 +172,16 @@ func (msgType MsgType) String() string {
 		return "GET_ADDR"
 	case MsgTypeQuit:
 		return "QUIT"
-	case MsgTypeNewPeer:
-		return "NEW_PEER"
-	case MsgTypeDonePeer:
+	case MsgTypeDisconnectedPeer:
 		return "DONE_PEER"
 	case MsgTypeBlockAccepted:
 		return "BLOCK_ACCEPTED"
 	case MsgTypeBitcoinManagerUpdate:
 		return "BITCOIN_MANAGER_UPDATE"
+	case MsgTypePeerHandshakeComplete:
+		return "PEER_HANDSHAKE_COMPLETE"
+	case MsgTypeNewConnection:
+		return "NEW_CONNECTION"
 	case MsgTypeGetSnapshot:
 		return "GET_SNAPSHOT"
 	case MsgTypeSnapshotData:
@@ -835,34 +838,47 @@ func (msg *MsgDeSoQuit) FromBytes(data []byte) error {
 	return fmt.Errorf("MsgDeSoQuit.FromBytes not implemented")
 }
 
-type MsgDeSoNewPeer struct {
+type MsgDeSoDisconnectedPeer struct {
 }
 
-func (msg *MsgDeSoNewPeer) GetMsgType() MsgType {
-	return MsgTypeNewPeer
+func (msg *MsgDeSoDisconnectedPeer) GetMsgType() MsgType {
+	return MsgTypeDisconnectedPeer
 }
 
-func (msg *MsgDeSoNewPeer) ToBytes(preSignature bool) ([]byte, error) {
-	return nil, fmt.Errorf("MsgDeSoNewPeer.ToBytes: Not implemented")
+func (msg *MsgDeSoDisconnectedPeer) ToBytes(preSignature bool) ([]byte, error) {
+	return nil, fmt.Errorf("MsgDeSoDisconnectedPeer.ToBytes: Not implemented")
 }
 
-func (msg *MsgDeSoNewPeer) FromBytes(data []byte) error {
-	return fmt.Errorf("MsgDeSoNewPeer.FromBytes not implemented")
+func (msg *MsgDeSoDisconnectedPeer) FromBytes(data []byte) error {
+	return fmt.Errorf("MsgDeSoDisconnectedPeer.FromBytes not implemented")
 }
 
-type MsgDeSoDonePeer struct {
+type ConnectionType uint8
+
+const (
+	ConnectionTypeOutbound ConnectionType = iota
+	ConnectionTypeInbound
+)
+
+type Connection interface {
+	GetConnectionType() ConnectionType
+	Close()
 }
 
-func (msg *MsgDeSoDonePeer) GetMsgType() MsgType {
-	return MsgTypeDonePeer
+type MsgDeSoNewConnection struct {
+	Connection Connection
 }
 
-func (msg *MsgDeSoDonePeer) ToBytes(preSignature bool) ([]byte, error) {
-	return nil, fmt.Errorf("MsgDeSoDonePeer.ToBytes: Not implemented")
+func (msg *MsgDeSoNewConnection) GetMsgType() MsgType {
+	return MsgTypeNewConnection
 }
 
-func (msg *MsgDeSoDonePeer) FromBytes(data []byte) error {
-	return fmt.Errorf("MsgDeSoDonePeer.FromBytes not implemented")
+func (msg *MsgDeSoNewConnection) ToBytes(preSignature bool) ([]byte, error) {
+	return nil, fmt.Errorf("MsgDeSoNewConnection.ToBytes: Not implemented")
+}
+
+func (msg *MsgDeSoNewConnection) FromBytes(data []byte) error {
+	return fmt.Errorf("MsgDeSoNewConnection.FromBytes not implemented")
 }
 
 // ==================================================================
@@ -1509,15 +1525,20 @@ func (msg *MsgDeSoPong) FromBytes(data []byte) error {
 type ServiceFlag uint64
 
 const (
-	// SFFullNodeDeprecated is deprecated, and set on all nodes by default
-	// now. We basically split it into SFHyperSync and SFArchivalMode.
-	SFFullNodeDeprecated ServiceFlag = 1 << iota
+	// SFFullNodeDeprecated is deprecated, and set on all nodes by default now.
+	SFFullNodeDeprecated ServiceFlag = 1 << 0
 	// SFHyperSync is a flag used to indicate that the peer supports hyper sync.
-	SFHyperSync
+	SFHyperSync ServiceFlag = 1 << 1
 	// SFArchivalNode is a flag complementary to SFHyperSync. If node is a hypersync node then
 	// it might not be able to support block sync anymore, unless it has archival mode turned on.
-	SFArchivalNode
+	SFArchivalNode ServiceFlag = 1 << 2
+	// SFPosValidator is a flag used to indicate that the peer is running a PoS validator.
+	SFPosValidator ServiceFlag = 1 << 3
 )
+
+func (sf ServiceFlag) HasService(serviceFlag ServiceFlag) bool {
+	return sf&serviceFlag == serviceFlag
+}
 
 type MsgDeSoVersion struct {
 	// What is the current version we're on?
@@ -1542,8 +1563,7 @@ type MsgDeSoVersion struct {
 	// The height of the last block on the main chain for
 	// this node.
 	//
-	// TODO: We need to update this to uint64
-	StartBlockHeight uint32
+	LatestBlockHeight uint64
 
 	// MinFeeRateNanosPerKB is the minimum feerate that a peer will
 	// accept from other peers when validating transactions.
@@ -1575,11 +1595,11 @@ func (msg *MsgDeSoVersion) ToBytes(preSignature bool) ([]byte, error) {
 	retBytes = append(retBytes, UintToBuf(uint64(len(msg.UserAgent)))...)
 	retBytes = append(retBytes, msg.UserAgent...)
 
-	// StartBlockHeight
-	retBytes = append(retBytes, UintToBuf(uint64(msg.StartBlockHeight))...)
+	// LatestBlockHeight
+	retBytes = append(retBytes, UintToBuf(msg.LatestBlockHeight)...)
 
 	// MinFeeRateNanosPerKB
-	retBytes = append(retBytes, UintToBuf(uint64(msg.MinFeeRateNanosPerKB))...)
+	retBytes = append(retBytes, UintToBuf(msg.MinFeeRateNanosPerKB)...)
 
 	// JSONAPIPort - deprecated
 	retBytes = append(retBytes, UintToBuf(uint64(0))...)
@@ -1653,13 +1673,13 @@ func (msg *MsgDeSoVersion) FromBytes(data []byte) error {
 		retVer.UserAgent = string(userAgent)
 	}
 
-	// StartBlockHeight
+	// LatestBlockHeight
 	{
-		lastBlockHeight, err := ReadUvarint(rr)
-		if err != nil || lastBlockHeight > math.MaxUint32 {
+		latestBlockHeight, err := ReadUvarint(rr)
+		if err != nil || latestBlockHeight > math.MaxUint32 {
 			return errors.Wrapf(err, "MsgDeSoVersion.FromBytes: Problem converting msg.LatestBlockHeight")
 		}
-		retVer.StartBlockHeight = uint32(lastBlockHeight)
+		retVer.LatestBlockHeight = latestBlockHeight
 	}
 
 	// MinFeeRateNanosPerKB
@@ -1862,34 +1882,144 @@ func (msg *MsgDeSoGetAddr) GetMsgType() MsgType {
 // VERACK Message
 // ==================================================================
 
-// VERACK messages have no payload.
+type VerackVersion uint64
+
+func NewVerackVersion(version uint64) VerackVersion {
+	return VerackVersion(version)
+}
+
+const (
+	VerackVersion0 VerackVersion = 0
+	VerackVersion1 VerackVersion = 1
+)
+
+func (vv VerackVersion) ToUint64() uint64 {
+	return uint64(vv)
+}
+
 type MsgDeSoVerack struct {
-	// A verack message must contain the nonce the peer received in the
-	// initial version message. This ensures the peer that is communicating
-	// with us actually controls the address she says she does similar to
-	// "SYN Cookie" DDOS protection.
-	Nonce uint64
+	// The VerackVersion0 message contains only the NonceReceived field, which is the nonce the sender received in the
+	// initial version message from the peer. This ensures the sender controls the network address, similarly to the
+	// "SYN Cookie" DDOS protection. The Version field in the VerackVersion0 message is implied, based on the msg length.
+	//
+	// The VerackVersion1 message contains the tuple of <NonceReceived, NonceSent, TstampMicro> which correspond to the
+	// received and sent nonces in the version message from the sender's perspective, as well as a recent timestamp.
+	// The VerackVersion1 message is used in context of Proof of Stake, where validators register their BLS public keys
+	// as part of their validator entry. The sender of this message must be a registered validator, and he must attach
+	// their public key to the message, along with a BLS signature of the <NonceReceived, NonceSent, TstampMicro> tuple.
+	Version VerackVersion
+
+	NonceReceived uint64
+	NonceSent     uint64
+	TstampMicro   uint64
+
+	PublicKey *bls.PublicKey
+	Signature *bls.Signature
 }
 
 func (msg *MsgDeSoVerack) ToBytes(preSignature bool) ([]byte, error) {
+	switch msg.Version {
+	case VerackVersion0:
+		return msg.EncodeVerackV0()
+	case VerackVersion1:
+		return msg.EncodeVerackV1()
+	default:
+		return nil, fmt.Errorf("MsgDeSoVerack.ToBytes: Unrecognized version: %v", msg.Version)
+	}
+}
+
+func (msg *MsgDeSoVerack) EncodeVerackV0() ([]byte, error) {
 	retBytes := []byte{}
 
 	// Nonce
-	retBytes = append(retBytes, UintToBuf(msg.Nonce)...)
+	retBytes = append(retBytes, UintToBuf(msg.NonceReceived)...)
+	return retBytes, nil
+}
+
+func (msg *MsgDeSoVerack) EncodeVerackV1() ([]byte, error) {
+	retBytes := []byte{}
+
+	// Version
+	retBytes = append(retBytes, UintToBuf(msg.Version.ToUint64())...)
+	// Nonce Received
+	retBytes = append(retBytes, UintToBuf(msg.NonceReceived)...)
+	// Nonce Sent
+	retBytes = append(retBytes, UintToBuf(msg.NonceSent)...)
+	// Tstamp Micro
+	retBytes = append(retBytes, UintToBuf(msg.TstampMicro)...)
+	// PublicKey
+	retBytes = append(retBytes, EncodeBLSPublicKey(msg.PublicKey)...)
+	// Signature
+	retBytes = append(retBytes, EncodeBLSSignature(msg.Signature)...)
+
 	return retBytes, nil
 }
 
 func (msg *MsgDeSoVerack) FromBytes(data []byte) error {
 	rr := bytes.NewReader(data)
-	retMsg := NewMessage(MsgTypeVerack).(*MsgDeSoVerack)
-	{
-		nonce, err := ReadUvarint(rr)
-		if err != nil {
-			return errors.Wrapf(err, "MsgDeSoVerack.FromBytes: Problem reading Nonce")
-		}
-		retMsg.Nonce = nonce
+	// The V0 verack message is determined from the message length. The V0 message will only contain the NonceReceived field.
+	if len(data) <= MaxVarintLen64 {
+		return msg.FromBytesV0(data)
 	}
-	*msg = *retMsg
+
+	version, err := ReadUvarint(rr)
+	if err != nil {
+		return errors.Wrapf(err, "MsgDeSoVerack.FromBytes: Problem reading Version")
+	}
+	msg.Version = NewVerackVersion(version)
+	switch msg.Version {
+	case VerackVersion0:
+		return fmt.Errorf("MsgDeSoVerack.FromBytes: Outdated Version=0 used for new encoding")
+	case VerackVersion1:
+		return msg.FromBytesV1(data)
+	default:
+		return fmt.Errorf("MsgDeSoVerack.FromBytes: Unrecognized version: %v", msg.Version)
+	}
+}
+
+func (msg *MsgDeSoVerack) FromBytesV0(data []byte) error {
+	var err error
+	rr := bytes.NewReader(data)
+	msg.NonceReceived, err = ReadUvarint(rr)
+	if err != nil {
+		return errors.Wrapf(err, "MsgDeSoVerack.FromBytes: Problem reading Nonce")
+	}
+	return nil
+}
+
+func (msg *MsgDeSoVerack) FromBytesV1(data []byte) error {
+	var err error
+	rr := bytes.NewReader(data)
+	version, err := ReadUvarint(rr)
+	if err != nil {
+		return errors.Wrapf(err, "MsgDeSoVerack.FromBytes: Problem reading Version")
+	}
+	msg.Version = NewVerackVersion(version)
+
+	msg.NonceReceived, err = ReadUvarint(rr)
+	if err != nil {
+		return errors.Wrapf(err, "MsgDeSoVerack.FromBytes: Problem reading Nonce Received")
+	}
+
+	msg.NonceSent, err = ReadUvarint(rr)
+	if err != nil {
+		return errors.Wrapf(err, "MsgDeSoVerack.FromBytes: Problem reading Nonce Sent")
+	}
+
+	msg.TstampMicro, err = ReadUvarint(rr)
+	if err != nil {
+		return errors.Wrapf(err, "MsgDeSoVerack.FromBytes: Problem reading Tstamp Micro")
+	}
+
+	msg.PublicKey, err = DecodeBLSPublicKey(rr)
+	if err != nil {
+		return errors.Wrapf(err, "MsgDeSoVerack.FromBytes: Problem reading PublicKey")
+	}
+
+	msg.Signature, err = DecodeBLSSignature(rr)
+	if err != nil {
+		return errors.Wrapf(err, "MsgDeSoVerack.FromBytes: Problem reading Signature")
+	}
 	return nil
 }
 

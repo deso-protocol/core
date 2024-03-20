@@ -35,6 +35,10 @@ func (v *validator) GetStakeAmount() *uint256.Int {
 	return v.stakeAmount
 }
 
+func (v *validator) GetDomains() [][]byte {
+	return [][]byte{}
+}
+
 ////////////////////////////////////////////////////////////////////////
 // AggregateQuorumCertificate interface implementation for internal use.
 // We use this type for unit tests, and to construct timeout QCs for

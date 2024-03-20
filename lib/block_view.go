@@ -652,6 +652,8 @@ func (bav *UtxoView) CopyUtxoView() (*UtxoView, error) {
 		newView.SnapshotStakesToReward[mapKey] = snapshotStakeToReward.Copy()
 	}
 
+	newView.TipHash = bav.TipHash.NewBlockHash()
+
 	return newView, nil
 }
 
@@ -4037,6 +4039,7 @@ func (bav *UtxoView) _connectFailingTransaction(txn *MsgDeSoTxn, blockHeight uin
 			"spending balance")
 	}
 	utxoOps = append(utxoOps, feeUtxoOp)
+	utxoOps = append(utxoOps, &UtxoOperation{Type: OperationTypeFailingTxn})
 
 	// If verifySignatures is passed, we check transaction signature.
 	if verifySignatures {
@@ -4107,7 +4110,7 @@ func (bav *UtxoView) ConnectBlock(
 
 	// Check that the block being connected references the current tip. ConnectBlock
 	// can only add a block to the current tip. We do this to keep the API simple.
-	if *desoBlock.Header.PrevBlockHash != *bav.TipHash {
+	if !desoBlock.Header.PrevBlockHash.IsEqual(bav.TipHash) {
 		return nil, fmt.Errorf("ConnectBlock: Parent hash of block being connected does not match tip")
 	}
 

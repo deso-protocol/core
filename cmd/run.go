@@ -222,6 +222,8 @@ func SetupRunFlags(cmd *cobra.Command) {
 	cmd.PersistentFlags().Bool("time-events", false, "Enable simple event timer, helpful in hands-on performance testing")
 	cmd.PersistentFlags().String("state-change-dir", "", "The directory for state change logs. WARNING: Changing this "+
 		"from an empty string to a non-empty string (or from a non-empty string to the empty string) requires a resync.")
+	cmd.PersistentFlags().Uint("state-syncer-mempool-txn-sync-limit", 10000, "The maximum number of transactions to "+
+		"process in the mempool tx state syncer at a time.")
 	cmd.PersistentFlags().VisitAll(func(flag *pflag.Flag) {
 		viper.BindPFlag(flag.Name, flag)
 	})

@@ -80,7 +80,8 @@ type Config struct {
 	TimeEvents            bool
 
 	// State Syncer
-	StateChangeDir string
+	StateChangeDir                 string
+	StateSyncerMempoolTxnSyncLimit uint64
 }
 
 func LoadConfig() *Config {
@@ -176,6 +177,7 @@ func LoadConfig() *Config {
 
 	// State Syncer
 	config.StateChangeDir = viper.GetString("state-change-dir")
+	config.StateSyncerMempoolTxnSyncLimit = viper.GetUint64("state-syncer-mempool-txn-sync-limit")
 
 	return &config
 }

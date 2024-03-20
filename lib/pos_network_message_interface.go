@@ -155,6 +155,10 @@ func (validator *ValidatorEntry) GetStakeAmount() *uint256.Int {
 	return validator.TotalStakeAmountNanos
 }
 
+func (validator *ValidatorEntry) GetDomains() [][]byte {
+	return validator.Domains
+}
+
 func ValidatorEntriesToConsensusInterface(validatorEntries []*ValidatorEntry) []consensus.Validator {
 	validatorInterfaces := make([]consensus.Validator, len(validatorEntries))
 	for idx, validatorEntry := range validatorEntries {

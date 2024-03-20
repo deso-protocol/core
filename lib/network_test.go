@@ -1,10 +1,10 @@
-//go:build relic
-
 package lib
 
 import (
 	"bytes"
 	"encoding/hex"
+	"github.com/deso-protocol/core/bls"
+	"golang.org/x/crypto/sha3"
 	"math/big"
 	"math/rand"
 	"reflect"
@@ -41,7 +41,7 @@ var expectedVer = &MsgDeSoVersion{
 	TstampSecs:           2,
 	Nonce:                uint64(0xffffffffffffffff),
 	UserAgent:            "abcdef",
-	StartBlockHeight:     4,
+	LatestBlockHeight:    4,
 	MinFeeRateNanosPerKB: 10,
 }
 
@@ -68,7 +68,7 @@ func TestVersionConversion(t *testing.T) {
 			"works, add the new field to the test case, and fix this error.")
 }
 
-func TestVerack(t *testing.T) {
+func TestVerackV0(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 	_ = assert
@@ -78,13 +78,51 @@ func TestVerack(t *testing.T) {
 	var buf bytes.Buffer
 
 	nonce := uint64(12345678910)
-	_, err := WriteMessage(&buf, &MsgDeSoVerack{Nonce: nonce}, networkType)
+	_, err := WriteMessage(&buf, &MsgDeSoVerack{Version: VerackVersion0, NonceReceived: nonce}, networkType)
 	require.NoError(err)
 	verBytes := buf.Bytes()
 	testMsg, _, err := ReadMessage(bytes.NewReader(verBytes),
 		networkType)
 	require.NoError(err)
-	require.Equal(&MsgDeSoVerack{Nonce: nonce}, testMsg)
+	require.Equal(&MsgDeSoVerack{Version: VerackVersion0, NonceReceived: nonce}, testMsg)
+}
+
+func TestVerackV1(t *testing.T) {
+	require := require.New(t)
+
+	networkType := NetworkType_MAINNET
+	var buf1, buf2 bytes.Buffer
+
+	nonceReceived := uint64(12345678910)
+	nonceSent := nonceReceived + 1
+	tstamp := uint64(2345678910)
+	// First, test that nil public key and signature are allowed.
+	msg := &MsgDeSoVerack{
+		Version:       VerackVersion1,
+		NonceReceived: nonceReceived,
+		NonceSent:     nonceSent,
+		TstampMicro:   tstamp,
+		PublicKey:     nil,
+		Signature:     nil,
+	}
+	_, err := WriteMessage(&buf1, msg, networkType)
+	require.NoError(err)
+	payload := append(UintToBuf(nonceReceived), UintToBuf(nonceSent)...)
+	payload = append(payload, UintToBuf(tstamp)...)
+	hash := sha3.Sum256(payload)
+
+	priv, err := bls.NewPrivateKey()
+	require.NoError(err)
+	msg.PublicKey = priv.PublicKey()
+	msg.Signature, err = priv.Sign(hash[:])
+	require.NoError(err)
+	_, err = WriteMessage(&buf2, msg, networkType)
+	require.NoError(err)
+
+	verBytes := buf2.Bytes()
+	testMsg, _, err := ReadMessage(bytes.NewReader(verBytes), networkType)
+	require.NoError(err)
+	require.Equal(msg, testMsg)
 }
 
 // Creates fully formatted a PoS block header with random signatures
