@@ -2,6 +2,13 @@ package lib
 
 import (
 	"fmt"
+	"math"
+	"net"
+	"strconv"
+	"sync"
+	"sync/atomic"
+	"time"
+
 	"github.com/btcsuite/btcd/addrmgr"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/decred/dcrd/lru"
@@ -10,12 +17,6 @@ import (
 	"github.com/deso-protocol/core/consensus"
 	"github.com/golang/glog"
 	"github.com/pkg/errors"
-	"math"
-	"net"
-	"strconv"
-	"sync"
-	"sync/atomic"
-	"time"
 )
 
 // NetworkManager is a structure that oversees all connections to RemoteNodes. NetworkManager has the following
@@ -1185,18 +1186,30 @@ func (nm *NetworkManager) GetAllValidators() *collections.ConcurrentMap[bls.Seri
 	return allValidators
 }
 
-// GetConnectedValidators returns a list of all connected validators that have passed handshake. It is a sub-view of
-// the GetAllValidators map, with only the validators that have HandshakeCompleted status.
+// GetConnectedValidators returns a list of all connected validators that have passed handshake. It filters
+// for validators that have completed the handshake. If both an inbound and outbound connection exist to the
+// same validator, it prioritizes the outbound connection because that is the one we initiated.
 func (nm *NetworkManager) GetConnectedValidators() []*RemoteNode {
-	var connectedValidators []*RemoteNode
-	allValidators := nm.GetAllValidators().ToMap()
-	for _, rn := range allValidators {
-		// Filter out validators that have not completed the handshake.
+	connectedValidators := map[bls.SerializedPublicKey]*RemoteNode{}
+
+	inboundValidatorsMap := nm.GetValidatorInboundIndex().ToMap()
+	outboundValidatorsMap := nm.GetValidatorOutboundIndex().ToMap()
+
+	// Add all of the connected inbound validators first
+	for pk, rn := range inboundValidatorsMap {
 		if rn.IsHandshakeCompleted() {
-			connectedValidators = append(connectedValidators, rn)
+			connectedValidators[pk] = rn
 		}
 	}
-	return connectedValidators
+
+	// Add all of the connected outbound validators next, overriding any inbound validator connections
+	for pk, rn := range outboundValidatorsMap {
+		if rn.IsHandshakeCompleted() {
+			connectedValidators[pk] = rn
+		}
+	}
+
+	return collections.MapValues(connectedValidators)
 }
 
 func (nm *NetworkManager) GetAllNonValidators() []*RemoteNode {
