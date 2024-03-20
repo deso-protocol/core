@@ -544,11 +544,6 @@ func NewServer(
 		_minFeeRateNanosPerKB, _blockCypherAPIKey, _runReadOnlyUtxoViewUpdater, _dataDir,
 		_mempoolDumpDir, false)
 
-	// Initialize state syncer mempool job, if needed.
-	if srv.stateChangeSyncer != nil {
-		srv.stateChangeSyncer.StartMempoolSyncRoutine(srv)
-	}
-
 	// Initialize the PoS mempool. We need to initialize a best-effort UtxoView based on the current
 	// known state of the chain. This will all be overwritten as we process blocks later on.
 	currentUtxoView, err := _chain.GetUncommittedTipView()
@@ -686,10 +681,6 @@ func NewServer(
 	timer := &Timer{}
 	timer.Initialize()
 	srv.timer = timer
-
-	if srv.stateChangeSyncer != nil {
-		srv.stateChangeSyncer.StartMempoolSyncRoutine(srv)
-	}
 
 	// If shouldRestart is true, it means that the state checksum is likely corrupted, and we need to enter a recovery mode.
 	// This can happen if the node was terminated mid-operation last time it was running. The recovery process rolls back
