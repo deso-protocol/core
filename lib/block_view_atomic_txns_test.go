@@ -75,12 +75,18 @@ func TestAtomicTxnsWrapperAtomicity(t *testing.T) {
 	// Create a series of valid (unsigned) dependent transactions.
 	atomicTxns, signerPrivKeysBase58 := _generateUnsignedDependentAtomicTransactions(testMeta, int(100))
 
+	// Construct a UtxoView and block height for getting balances.
+	utxoView, err := NewUtxoView(
+		testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot, nil)
+	require.NoError(t, err)
+	blockHeight := testMeta.chain.BlockTip().Height + 1
+
 	// Fetch all starting balances for affected public keys.
 	fetchTransactorBalances := func(transactions []*MsgDeSoTxn) []uint64 {
 		var balancesNanos []uint64
 		for _, txn := range transactions {
 			balancesNanos = append(balancesNanos,
-				_getBalance(testMeta.t, testMeta.chain, testMeta.mempool,
+				_getBalanceWithView(testMeta.t, testMeta.chain, utxoView,
 					Base58CheckEncode(txn.PublicKey, false, testMeta.params)))
 		}
 		return balancesNanos
@@ -110,9 +116,16 @@ func TestAtomicTxnsWrapperAtomicity(t *testing.T) {
 
 	// Try to connect the atomic transaction wrapper.
 	// This should fail on the final transaction as it's incorrectly signed.
-	_, err = _atomicTransactionsWrapperWithConnectTimestamp(
-		t, testMeta.chain, testMeta.db, testMeta.params, atomicTxnsWrapper, 0)
+	_, _, _, _, err = utxoView.ConnectTransaction(
+		atomicTxnsWrapper, atomicTxnsWrapper.Hash(), blockHeight,
+		0, true, false)
 	require.Contains(t, err.Error(), RuleErrorInvalidTransactionSignature)
+
+	// Because the transaction fails, we must construct a new UtxoView as there's
+	// invalid data in the previous view.
+	utxoView, err = NewUtxoView(
+		testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot, nil)
+	require.NoError(t, err)
 
 	// Check that the balances are not updated.
 	// This ensures that if a single transaction within the atomic transaction
@@ -129,8 +142,9 @@ func TestAtomicTxnsWrapperAtomicity(t *testing.T) {
 	)
 
 	// Try to connect the atomic transaction, this should now succeed.
-	_, err = _atomicTransactionsWrapperWithConnectTimestamp(
-		t, testMeta.chain, testMeta.db, testMeta.params, atomicTxnsWrapper, 0)
+	_, _, _, _, err = utxoView.ConnectTransaction(
+		atomicTxnsWrapper, atomicTxnsWrapper.Hash(), blockHeight,
+		0, false, false)
 	require.NoError(t, err)
 
 	// Validate that only M0's balance has changed by the total fees paid.
@@ -144,6 +158,9 @@ func TestAtomicTxnsWrapperAtomicity(t *testing.T) {
 			require.Equal(t, uint64(0), endingBalance)
 		}
 	}
+
+	// Test disconnects.
+	_executeAllTestRollbackAndFlush(testMeta)
 }
 
 func TestAtomicTxnsSignatureFailure(t *testing.T) {
@@ -407,7 +424,7 @@ func TestDependentAtomicTransactionGeneration(t *testing.T) {
 	blockHeight := testMeta.chain.BlockTip().Height + 1
 
 	// Get the initial balance for m0.
-	m0InitialBalanceNanos := _getBalance(t, testMeta.chain, testMeta.mempool, m0Pub)
+	m0InitialBalanceNanos := _getBalanceWithView(t, testMeta.chain, utxoView, m0Pub)
 
 	// Connect the transactions to ensure they can actually be connected.
 	var totalFees uint64
@@ -420,11 +437,8 @@ func TestDependentAtomicTransactionGeneration(t *testing.T) {
 		totalFees += fees
 	}
 
-	// Flush the view to ensure everything is working properly.
-	require.NoError(t, utxoView.FlushToDb(uint64(blockHeight)))
-
 	// Get the final balance for m0.
-	m0FinalBalanceNanos := _getBalance(t, testMeta.chain, testMeta.mempool, m0Pub)
+	m0FinalBalanceNanos := _getBalanceWithView(t, testMeta.chain, utxoView, m0Pub)
 
 	// Check that fees were paid.
 	require.Equal(t, m0InitialBalanceNanos-totalFees, m0FinalBalanceNanos)
@@ -441,12 +455,6 @@ func TestDependentAtomicTransactionGeneration(t *testing.T) {
 	atomicTxns[0] = atomicTxns[len(atomicTxns)-1]
 	atomicTxns[0] = initialTxn
 
-	// Construct a new view to connect the transactions to.
-	utxoView, err = NewUtxoView(
-		testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot, nil)
-	require.NoError(t, err)
-	blockHeight = testMeta.chain.BlockTip().Height + 1
-
 	// Connect the transactions to ensure they can actually be connected.
 	for _, txn := range atomicTxns {
 		// Connect the transaction.
@@ -457,6 +465,9 @@ func TestDependentAtomicTransactionGeneration(t *testing.T) {
 			require.Contains(t, err.Error(), RuleErrorInsufficientBalance)
 		}
 	}
+
+	// Test disconnects.
+	_executeAllTestRollbackAndFlush(testMeta)
 }
 
 //----------------------------------------------------------
