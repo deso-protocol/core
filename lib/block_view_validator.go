@@ -748,7 +748,7 @@ func DBGetTopActiveValidatorsByStakeAmount(
 	// Retrieve top N active ValidatorEntry keys by stake.
 	key := append([]byte{}, Prefixes.PrefixValidatorByStatusAndStakeAmount...)
 	key = append(key, EncodeUint8(uint8(ValidatorStatusActive))...)
-	keysFound, _, err := EnumerateKeysForPrefixWithLimitOffsetOrderAndSkipFunc(
+	keysFound, err := EnumerateKeysOnlyForPrefixWithLimitOffsetOrderAndSkipFunc(
 		handle, key, int(limit), nil, true, canSkipValidatorInBadgerSeek,
 	)
 	if err != nil {
