@@ -26,12 +26,6 @@ type MsgDeSoValidatorVote struct {
 	// encode and decode the message.
 	MsgVersion MsgValidatorVoteVersion
 
-	// The ECDSA public key for the validator who constructed this vote message.
-	// Given the validator's ECDSA public key, we can look up their Validator PKID
-	// and their stake in consensus. This allows us to verify that the vote message
-	// was sent by a registered validator.
-	PublicKey *PublicKey
-
 	// The BLS voting public key for the validator who constructed this vote message.
 	// The BLS public key is included in the vote message because it allows us to
 	// easily verify if the BLS VotePartialSignature is correctly formed, without having
