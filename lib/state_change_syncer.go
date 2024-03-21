@@ -750,6 +750,9 @@ func (stateChangeSyncer *StateChangeSyncer) SyncMempoolToStateSyncer(server *Ser
 			// If the transaction successfully connected, we update mempoolTxUtxoView to the copied view.
 			if err == nil {
 				mempoolTxUtxoView = copiedView
+			} else {
+				glog.V(2).Infof("StateChangeSyncer.SyncMempoolToStateSyncer "+
+					"failed connecting mempool tx with (hash= %v): (err=%v)", mempoolTx.Hash, err)
 			}
 		} else {
 			// For PoW block heights, we can just connect the transaction to the mempool view.

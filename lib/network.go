@@ -2774,7 +2774,7 @@ func (msg *MsgDeSoBlock) ToBytes(preSignature bool) ([]byte, error) {
 	switch msg.Header.Version {
 	case HeaderVersion0:
 		return msg.EncodeBlockVersion0(preSignature)
-	case HeaderVersion1:
+	case HeaderVersion1, HeaderVersion2:
 		return msg.EncodeBlockVersion1(preSignature)
 	default:
 		return nil, fmt.Errorf("MsgDeSoBlock.ToBytes: Error encoding version: %v", msg.Header.Version)
