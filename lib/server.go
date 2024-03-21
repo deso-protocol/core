@@ -1871,6 +1871,10 @@ func (srv *Server) _relayTransactions() {
 		// for which the minimum fee is below what the Peer will allow.
 		invMsg := &MsgDeSoInv{}
 		for _, newTxn := range txnList {
+			if !newTxn.IsValidated() {
+				continue
+			}
+
 			invVect := &InvVect{
 				Type: InvTypeTx,
 				Hash: *newTxn.Hash(),

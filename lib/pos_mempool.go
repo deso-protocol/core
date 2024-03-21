@@ -913,6 +913,10 @@ func (mp *PosMempool) GetOrderedTransactions() []*MempoolTx {
 func (mp *PosMempool) IsTransactionInPool(txHash *BlockHash) bool {
 	mp.RLock()
 	defer mp.RUnlock()
+	if !mp.IsRunning() || txHash == nil {
+		return false
+	}
+
 	_, exists := mp.txnRegister.txnMembership[*txHash]
 	return exists
 }
@@ -920,6 +924,10 @@ func (mp *PosMempool) IsTransactionInPool(txHash *BlockHash) bool {
 func (mp *PosMempool) GetMempoolTx(txHash *BlockHash) *MempoolTx {
 	mp.RLock()
 	defer mp.RUnlock()
+	if !mp.IsRunning() || txHash == nil {
+		return nil
+	}
+
 	return mp.txnRegister.txnMembership[*txHash]
 }
 
