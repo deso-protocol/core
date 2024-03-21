@@ -101,12 +101,26 @@ func TestGenerateLeaderSchedule(t *testing.T) {
 		require.NoError(t, tmpUtxoView.FlushToDb(blockHeight))
 	}
 
+	getValidatorSet := func() []*ValidatorEntry {
+		utxoView := newUtxoView()
+		leaderScheduleMaxNumValidators := utxoView.GetCurrentGlobalParamsEntry().LeaderScheduleMaxNumValidators
+		maxValidatorSetSize := utxoView.GetCurrentGlobalParamsEntry().ValidatorSetMaxNumValidators
+		maxValidatorsToFetch := leaderScheduleMaxNumValidators
+		if maxValidatorsToFetch < maxValidatorSetSize {
+			maxValidatorsToFetch = maxValidatorSetSize
+		}
+		maxValidatorSet, err := utxoView.GetTopActiveValidatorsByStakeAmount(maxValidatorsToFetch)
+		require.NoError(t, err)
+		return maxValidatorSet
+	}
+
 	testGenerateLeaderSchedule := func(expectedOrder []*PKID) {
 		// We test that GenerateLeaderSchedule() is idempotent by running it 10 times.
 		// Given the same CurrentRandomSeedHash and the same stake-weighted validators,
 		// we verify that we generate the same leader schedule each time.
 		for ii := 0; ii < 10; ii++ {
-			leaderSchedule, err := newUtxoView().GenerateLeaderSchedule()
+			maxValidatorSet := getValidatorSet()
+			leaderSchedule, err := newUtxoView().GenerateLeaderSchedule(maxValidatorSet)
 			require.NoError(t, err)
 			require.Len(t, leaderSchedule, len(expectedOrder))
 
@@ -134,7 +148,7 @@ func TestGenerateLeaderSchedule(t *testing.T) {
 	}
 	{
 		// Test GenerateLeaderSchedule() edge case: no registered validators.
-		leaderSchedule, err := newUtxoView().GenerateLeaderSchedule()
+		leaderSchedule, err := newUtxoView().GenerateLeaderSchedule(nil)
 		require.NoError(t, err)
 		require.Empty(t, leaderSchedule)
 	}
@@ -144,7 +158,7 @@ func TestGenerateLeaderSchedule(t *testing.T) {
 	}
 	{
 		// Test GenerateLeaderSchedule() edge case: one registered validator with zero stake.
-		leaderSchedule, err := newUtxoView().GenerateLeaderSchedule()
+		leaderSchedule, err := newUtxoView().GenerateLeaderSchedule([]*ValidatorEntry{})
 		require.NoError(t, err)
 		require.Empty(t, leaderSchedule)
 	}
@@ -154,7 +168,7 @@ func TestGenerateLeaderSchedule(t *testing.T) {
 	}
 	{
 		// Test GenerateLeaderSchedule() edge case: one registered validator with non-zero stake.
-		leaderSchedule, err := newUtxoView().GenerateLeaderSchedule()
+		leaderSchedule, err := newUtxoView().GenerateLeaderSchedule(getValidatorSet())
 		require.NoError(t, err)
 		require.Len(t, leaderSchedule, 1)
 		require.Equal(t, leaderSchedule[0], m0PKID)
@@ -165,7 +179,7 @@ func TestGenerateLeaderSchedule(t *testing.T) {
 	}
 	{
 		// Test GenerateLeaderSchedule() edge case: two registered validators with non-zero stake.
-		leaderSchedule, err := newUtxoView().GenerateLeaderSchedule()
+		leaderSchedule, err := newUtxoView().GenerateLeaderSchedule(getValidatorSet())
 		require.NoError(t, err)
 		require.Len(t, leaderSchedule, 2)
 		require.Equal(t, leaderSchedule[0], m1PKID)
@@ -242,7 +256,7 @@ func TestGenerateLeaderSchedule(t *testing.T) {
 	{
 		// Test changing LeaderScheduleMaxNumValidators.
 		params.DefaultLeaderScheduleMaxNumValidators = 5
-		leaderSchedule, err := newUtxoView().GenerateLeaderSchedule()
+		leaderSchedule, err := newUtxoView().GenerateLeaderSchedule(getValidatorSet())
 		require.NoError(t, err)
 		require.Len(t, leaderSchedule, 5)
 	}
