@@ -109,7 +109,7 @@ func TestFeeEstimator(t *testing.T) {
 	}
 	dummyBlock := &MsgDeSoBlock{
 		Header: &MsgDeSoHeader{
-			Height: 10,
+			Height: 11,
 		},
 		Txns: pastBlocksTxns,
 	}

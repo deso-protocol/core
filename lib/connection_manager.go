@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/btcsuite/btcd/addrmgr"
-	chainlib "github.com/btcsuite/btcd/blockchain"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/decred/dcrd/lru"
 	"github.com/golang/glog"
@@ -101,10 +100,6 @@ type ConnectionManager struct {
 
 	serverMessageQueue chan *ServerMessage
 
-	// Keeps track of the network time, which is the median of all of our
-	// peers' time.
-	timeSource chainlib.MedianTimeSource
-
 	// peerDisconnectedChan is notified whenever a peer exits.
 	peerDisconnectedChan chan *Peer
 
@@ -120,7 +115,6 @@ type ConnectionManager struct {
 
 func NewConnectionManager(
 	_params *DeSoParams, _listeners []net.Listener,
-	_connectIps []string, _timeSource chainlib.MedianTimeSource,
 	_hyperSync bool,
 	_syncType NodeSyncType,
 	_stallTimeoutSeconds uint64,
@@ -137,7 +131,6 @@ func NewConnectionManager(
 		// We keep track of the last N nonces we've sent in order to detect
 		// self connections.
 		sentNonces: lru.NewCache(1000),
-		timeSource: _timeSource,
 		//newestBlock: _newestBlock,
 
 		// Initialize the peer data structures.
@@ -529,10 +522,6 @@ func (cmgr *ConnectionManager) _logOutboundPeerData() {
 	numInboundPeers := int(atomic.LoadUint32(&cmgr.numInboundPeers))
 	numPersistentPeers := int(atomic.LoadUint32(&cmgr.numPersistentPeers))
 	glog.V(1).Infof("Num peers: OUTBOUND(%d) INBOUND(%d) PERSISTENT(%d)", numOutboundPeers, numInboundPeers, numPersistentPeers)
-}
-
-func (cmgr *ConnectionManager) AddTimeSample(addrStr string, timeSample time.Time) {
-	cmgr.timeSource.AddTimeSample(addrStr, timeSample)
 }
 
 func (cmgr *ConnectionManager) GetNumInboundPeers() uint32 {

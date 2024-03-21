@@ -1,5 +1,3 @@
-//go:build relic
-
 package lib
 
 import (
@@ -207,7 +205,8 @@ func alwaysReturnTrue() bool {
 func _createMockNetworkManagerForConsensus() *NetworkManager {
 	return &NetworkManager{
 		AllRemoteNodes:            collections.NewConcurrentMap[RemoteNodeId, *RemoteNode](),
-		ValidatorIndex:            collections.NewConcurrentMap[bls.SerializedPublicKey, *RemoteNode](),
+		ValidatorOutboundIndex:    collections.NewConcurrentMap[bls.SerializedPublicKey, *RemoteNode](),
+		ValidatorInboundIndex:     collections.NewConcurrentMap[bls.SerializedPublicKey, *RemoteNode](),
 		NonValidatorOutboundIndex: collections.NewConcurrentMap[RemoteNodeId, *RemoteNode](),
 		NonValidatorInboundIndex:  collections.NewConcurrentMap[RemoteNodeId, *RemoteNode](),
 	}

@@ -62,6 +62,7 @@ const (
 	RuleErrorInvalidTransactionSignature          RuleError = "RuleErrorInvalidTransactionSignature"
 	RuleErrorBlockRewardTxnMustHaveOneOutput      RuleError = "RuleErrorBlockRewardTxnMustHaveOneOutput"
 	RuleErrorBlockHeightAfterProofOfStakeCutover  RuleError = "RuleErrorBlockHeightAfterProofOfStakeCutover"
+	RuleErrorBestChainIsAtProofOfStakeCutover     RuleError = "RuleErrorBestChainIsAtProofOfStakeCutover"
 
 	RuleErrorMissingBlockProducerSignature                      RuleError = "RuleErrorMissingBlockProducerSignature"
 	RuleErrorInvalidBlockProducerPublicKey                      RuleError = "RuleErrorInvalidBlockProducerPublicKey"
@@ -546,6 +547,7 @@ const (
 	HeaderErrorHeightInvalid                                                     RuleError = "HeaderErrorHeightInvalid"
 	HeaderErrorDifficultyBitsNotConsistentWithTargetDifficultyComputedFromParent RuleError = "HeaderErrorDifficultyBitsNotConsistentWithTargetDifficultyComputedFromParent"
 	HeaderErrorBlockHeightAfterProofOfStakeCutover                               RuleError = "HeaderErrorBlockHeightAfterProofOfStakeCutover"
+	HeaderErrorBestChainIsAtProofOfStakeCutover                                  RuleError = "HeaderErrorBestChainIsAtProofOfStakeCutover"
 
 	TxErrorTooLarge                                 RuleError = "TxErrorTooLarge"
 	TxErrorDuplicate                                RuleError = "TxErrorDuplicate"
