@@ -280,6 +280,7 @@ func (node *Node) Start(exitChannels ...*chan struct{}) {
 		node.Config.MempoolFeeEstimatorNumMempoolBlocks,
 		node.Config.MempoolFeeEstimatorNumPastBlocks,
 		node.Config.MempoolMaxValidationViewConnects,
+		node.Config.TransactionValidationRefreshIntervalMillis,
 		node.Config.AugmentedBlockViewRefreshIntervalMillis,
 		node.Config.PosBlockProductionIntervalMilliseconds,
 		node.Config.PosTimeoutBaseDurationMilliseconds,
