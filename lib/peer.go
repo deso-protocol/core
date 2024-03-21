@@ -177,9 +177,8 @@ func (pp *Peer) HandleGetTransactionsMsg(getTxnMsg *MsgDeSoGetTransactions) {
 	// whichever one is used for the consensus protocol at the current block height.
 	for _, txHash := range getTxnMsg.HashList {
 		mempoolTx := pp.srv.GetMempool().GetTransaction(txHash)
-		// If the transaction isn't in the pool, just continue without adding
-		// it. It is generally OK to respond with only a subset of the transactions
-		// that were requested.
+		// If the transaction isn't in the pool, or hasn't been validated, just continue without adding
+		// it. It is generally OK to respond with only a subset of the transactions that were requested.
 		if mempoolTx == nil || !mempoolTx.IsValidated() {
 			continue
 		}
