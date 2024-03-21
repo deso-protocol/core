@@ -3920,27 +3920,36 @@ func (bav *UtxoView) _connectTransaction(
 	return utxoOpsForTxn, totalInput, totalOutput, fees, nil
 }
 
-func (bav *UtxoView) ConnectTransactions(
+// ConnectTransactionsFailSafe connects a list of transactions to the view and returns the combined UtxoOperations,
+// total inputs, total outputs, fees, and success flags. If the ignoreFailing flag is set, the function will not return
+// an error when transactions fail to connect. Instead, a failed transaction will be skipped over, and the success flag
+// at the corresponding index will be set to false. If ignoreFailing is set to false, the function will return an error
+// if any of the transactions fail to connect. The other parameters have the same behavior as in ConnectTransaction.
+func (bav *UtxoView) ConnectTransactionsFailSafe(
 	txns []*MsgDeSoTxn, txHashes []*BlockHash, blockHeight uint32, blockTimestampNanoSecs int64,
 	verifySignatures bool, ignoreUtxos bool, ignoreFailing bool) (
 	_combinedUtxoOps [][]*UtxoOperation, _totalInputs []uint64, _totalOutputs []uint64,
 	_fees []uint64, _successFlags []bool, _err error) {
 
-	return bav._connectTransactions(txns, txHashes, blockHeight, blockTimestampNanoSecs, verifySignatures,
+	return bav._connectTransactionsFailSafe(txns, txHashes, blockHeight, blockTimestampNanoSecs, verifySignatures,
 		ignoreUtxos, ignoreFailing, 0)
 }
 
-func (bav *UtxoView) ConnectTransactionsWithLimit(
+// ConnectTransactionsFailSafeWithLimit works similarly to ConnectTransactionsFailSafe, but it limits the number of
+// transactions that can be connected to the view. If the transactionConnectLimit is set to 0, all transactions will be
+// connected. If the transactionConnectLimit is set to a positive number, the function will return after successfully
+// connecting the specified number of transactions. Failing transactions do not count towards the transactionConnectLimit.
+func (bav *UtxoView) ConnectTransactionsFailSafeWithLimit(
 	txns []*MsgDeSoTxn, txHashes []*BlockHash, blockHeight uint32, blockTimestampNanoSecs int64,
 	verifySignatures bool, ignoreUtxos bool, ignoreFailing bool, transactionConnectLimit uint32) (
 	_combinedUtxoOps [][]*UtxoOperation, _totalInputs []uint64, _totalOutputs []uint64,
 	_fees []uint64, _successFlags []bool, _err error) {
 
-	return bav._connectTransactions(txns, txHashes, blockHeight, blockTimestampNanoSecs, verifySignatures,
+	return bav._connectTransactionsFailSafe(txns, txHashes, blockHeight, blockTimestampNanoSecs, verifySignatures,
 		ignoreUtxos, ignoreFailing, transactionConnectLimit)
 }
 
-func (bav *UtxoView) _connectTransactions(
+func (bav *UtxoView) _connectTransactionsFailSafe(
 	txns []*MsgDeSoTxn, txHashes []*BlockHash, blockHeight uint32, blockTimestampNanoSecs int64,
 	verifySignatures bool, ignoreUtxos bool, ignoreFailing bool, transactionConnectLimit uint32) (
 	_combinedUtxoOps [][]*UtxoOperation, _totalInputs []uint64, _totalOutputs []uint64,
@@ -3967,33 +3976,38 @@ func (bav *UtxoView) _connectTransactions(
 		copiedView, err := bav.CopyUtxoView()
 		if err != nil {
 			return nil, nil, nil, nil, nil,
-				errors.Wrapf(err, "ConnectTransactions: Problem copying UtxoView")
+				errors.Wrapf(err, "_connectTransactionsFailSafe: Problem copying UtxoView")
 		}
 
-		// Connect the transaction.
+		// Connect the transaction to the copied view.
 		utxoOpsForTxn, totalInput, totalOutput, fee, err := copiedView.ConnectTransaction(
 			txn, txHashes[ii], blockHeight, blockTimestampNanoSecs, verifySignatures, ignoreUtxos)
 		if err != nil && ignoreFailing {
-			glog.V(2).Infof("ConnectTransactions: Ignoring failing txn %d: %v", ii, err)
+			// If ignoreFailing was set, we mark the transaction as failing and continue.
+			glog.V(2).Infof("_connectTransactionsFailSafe: Ignoring failing txn %d: %v", ii, err)
 			updateValues(nil, 0, 0, 0, false)
 			continue
 		} else if err != nil {
 			return nil, nil, nil, nil, nil,
-				errors.Wrapf(err, "ConnectTransactions: Problem connecting txn %d on copy view", ii)
+				errors.Wrapf(err, "_connectTransactionsFailSafe: Problem connecting txn %d on copy view", ii)
 		}
 
+		// At this point, we know the transaction will connect successfully, so we connect it to the main view.
 		utxoOpsForTxn, totalInput, totalOutput, fee, err = bav.ConnectTransaction(
 			txn, txHashes[ii], blockHeight, blockTimestampNanoSecs, verifySignatures, ignoreUtxos)
 		if err != nil {
 			return nil, nil, nil, nil, nil,
-				errors.Wrapf(err, "ConnectTransactions: Problem connecting txn %d", ii)
+				errors.Wrapf(err, "_connectTransactionsFailSafe: Problem connecting txn %d", ii)
 		}
 		updateValues(utxoOpsForTxn, totalInput, totalOutput, fee, true)
 
-		if totalConnectedTxns == 0 {
+		// If the transactionConnectLimit was set to 0, we will try to connect all the provided transactions.
+		if transactionConnectLimit == 0 {
 			continue
 		}
 
+		// Otherwise, if transactionConnectLimit is non-zero, we'll keep track of how many transactions we've
+		// successfully connected so far.
 		totalConnectedTxns++
 		if totalConnectedTxns >= transactionConnectLimit {
 			break
