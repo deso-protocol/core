@@ -236,6 +236,7 @@ const (
 	RuleErrorMaxTxnSizeBytesTooLow                             RuleError = "RuleErrorMaxTxnSizeBytesTooLow"
 	RuleErrorMaxTxnSizeBytesTooHigh                            RuleError = "RuleErrorMaxTxnSizeBytesTooHigh"
 	RuleErrorMaxTxnSizeBytesExceedsMaxBlockSizeBytes           RuleError = "RuleErrorMaxTxnSizeBytesExceedsMaxBlockSizeBytes"
+	RuleErrorFeeBucketSizeTooSmall                             RuleError = "RuleErrorFeeBucketSizeTooSmall"
 
 	// DeSo Diamonds
 	RuleErrorBasicTransferHasDiamondPostHashWithoutDiamondLevel   RuleError = "RuleErrorBasicTransferHasDiamondPostHashWithoutDiamondLevel"
