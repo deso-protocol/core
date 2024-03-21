@@ -2372,6 +2372,7 @@ func (migration *EncoderMigration) StartMigrations() error {
 		opts := badger.DefaultIteratorOptions
 		for _, prefix := range prefixes {
 			startedPrefix = prefix
+			opts.Prefix = prefix
 			it := txn.NewIterator(opts)
 			for it.Seek(prefix); it.ValidForPrefix(prefix); it.Next() {
 				item := it.Item()

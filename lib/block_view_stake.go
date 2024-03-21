@@ -877,7 +877,9 @@ func DBGetLockedStakeEntriesInRangeWithTxn(
 	})
 
 	// Create an iterator.
-	iterator := txn.NewIterator(badger.DefaultIteratorOptions)
+	opts := badger.DefaultIteratorOptions
+	opts.Prefix = prefixKey
+	iterator := txn.NewIterator(opts)
 	defer iterator.Close()
 
 	// Store matching LockedStakeEntries to return.
