@@ -751,22 +751,8 @@ func (stateChangeSyncer *StateChangeSyncer) SyncMempoolToStateSyncer(server *Ser
 			if err == nil {
 				mempoolTxUtxoView = copiedView
 			} else {
-				// If the transaction fails to connect, we need to reset the view to its original state
-				// and connect it as a failing transaction.
-				copiedView, err = mempoolTxUtxoView.CopyUtxoView()
-				if err != nil {
-					return false, errors.Wrapf(err, "StateChangeSyncer.SyncMempoolToStateSyncer CopyUtxoView: ")
-				}
-				utxoOpsForTxn, _, _, err = copiedView._connectFailingTransaction(
-					mempoolTx.Tx, uint32(blockHeight+1), false)
-				// If we fail to connect the transaction as a failing transaction, we just continue and the
-				// mempoolTxUtxoView is unmodified.
-				if err != nil {
-					glog.V(2).Infof("StateChangeSyncer.SyncMempoolToStateSyncer "+
-						"ConnectFailingTransaction for mempool tx: %v", err)
-					continue
-				}
-				mempoolTxUtxoView = copiedView
+				glog.V(2).Infof("StateChangeSyncer.SyncMempoolToStateSyncer "+
+					"failed connecting mempool tx with (hash= %v): (err=%v)", mempoolTx.Hash, err)
 			}
 		} else {
 			// For PoW block heights, we can just connect the transaction to the mempool view.

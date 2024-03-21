@@ -4049,104 +4049,6 @@ func (bav *UtxoView) ValidateTransactionNonce(txn *MsgDeSoTxn, blockHeight uint6
 	return nil
 }
 
-// _connectFailingTransaction is used to process the fee and burn associated with the user submitting a failing transaction.
-// A failing transaction is a txn that passes formatting validation, yet fails connecting to the UtxoView. This can happen for a
-// number of reasons, such as insufficient DESO balance, wrong public key, etc. With Revolution's Fee-Time block ordering, these
-// failing transactions are included in the blocks and their fees are burned. In addition, a major part of the effective
-// fees of this transaction is burned with BMF. This makes spam attacks economically disadvantageous. Attacker's funds
-// are burned, to the benefit of everyone else on the network. BMF algorithm also computes a utility fee, which is
-// distributed to the block producer.
-func (bav *UtxoView) _connectFailingTransaction(txn *MsgDeSoTxn, blockHeight uint32, verifySignatures bool) (
-	_utxoOps []*UtxoOperation, _burnFee uint64, _utilityFee uint64, _err error) {
-
-	// Failing transactions are only allowed after ProofOfStake2ConsensusCutoverBlockHeight.
-	if blockHeight < bav.Params.ForkHeights.ProofOfStake2ConsensusCutoverBlockHeight {
-		return nil, 0, 0, fmt.Errorf("_connectFailingTransaction: Failing transactions " +
-			"not allowed before ProofOfStake2ConsensusCutoverBlockHeight")
-	}
-
-	// Sanity check the transaction to make sure it is properly formatted.
-	if err := CheckTransactionSanity(txn, blockHeight, bav.Params); err != nil {
-		return nil, 0, 0, errors.Wrapf(err, "_connectFailingTransaction: "+
-			"Problem checking txn sanity")
-	}
-
-	if err := ValidateDeSoTxnSanityBalanceModel(txn, uint64(blockHeight), bav.Params, bav.GlobalParamsEntry); err != nil {
-		return nil, 0, 0, errors.Wrapf(err, "_connectFailingTransaction: "+
-			"Problem checking txn sanity under balance model")
-	}
-
-	if err := bav.ValidateTransactionNonce(txn, uint64(blockHeight)); err != nil {
-		return nil, 0, 0, errors.Wrapf(err, "_connectFailingTransaction: "+
-			"Problem validating transaction nonce")
-	}
-
-	// Get the FailingTransactionBMFMultiplierBasisPoints from the global params entry. We then compute the effective fee
-	// as: effectiveFee = txn.TxnFeeNanos * FailingTransactionBMFMultiplierBasisPoints / 10000
-	gp := bav.GetCurrentGlobalParamsEntry()
-
-	failingTransactionRate := uint256.NewInt().SetUint64(gp.FailingTransactionBMFMultiplierBasisPoints)
-	failingTransactionFee := uint256.NewInt().SetUint64(txn.TxnFeeNanos)
-	basisPointsAsUint256 := uint256.NewInt().SetUint64(MaxBasisPoints)
-
-	effectiveFeeU256 := uint256.NewInt()
-	if effectiveFeeU256.MulOverflow(failingTransactionRate, failingTransactionFee) {
-		return nil, 0, 0, fmt.Errorf("_connectFailingTransaction: Problem computing effective fee")
-	}
-	effectiveFeeU256.Div(effectiveFeeU256, basisPointsAsUint256)
-
-	// We should never overflow on the effective fee, since FailingTransactionBMFMultiplierBasisPoints is <= 10000.
-	// But if for some magical reason we do, we set the effective fee to the max uint64. We don't error, and
-	// instead let _spendBalance handle the overflow.
-	if !effectiveFeeU256.IsUint64() {
-		effectiveFeeU256.SetUint64(math.MaxUint64)
-	}
-	effectiveFee := effectiveFeeU256.Uint64()
-
-	// Serialize the transaction to bytes so we can compute its size.
-	txnBytes, err := txn.ToBytes(false)
-	if err != nil {
-		return nil, 0, 0, errors.Wrapf(err, "_connectFailingTransaction: Problem serializing transaction: ")
-	}
-	txnSizeBytes := uint64(len(txnBytes))
-
-	// If the effective fee rate per KB is less than the minimum network fee rate per KB, we set it to the minimum
-	// network fee rate per KB. We multiply by 1000 and divide by the txn bytes to convert the txn's total effective
-	// fee to a fee rate per KB.
-	//
-	// The effectiveFee * 1000 computation is guaranteed to not overflow because an overflow check is already
-	// performed in ValidateDeSoTxnSanityBalanceModel above.
-	effectiveFeeRateNanosPerKB := (effectiveFee * 1000) / txnSizeBytes
-	if effectiveFeeRateNanosPerKB < gp.MinimumNetworkFeeNanosPerKB {
-		// The minimum effective fee for the txn is the txn size * the minimum network fee rate per KB.
-		effectiveFee = (gp.MinimumNetworkFeeNanosPerKB * txnSizeBytes) / 1000
-	}
-
-	burnFee, utilityFee := computeBMF(effectiveFee)
-
-	var utxoOps []*UtxoOperation
-	// When spending balances, we need to check for immature block rewards. Since we don't have
-	// the block rewards yet for the current block, we subtract one from the current block height
-	// when spending balances.
-	feeUtxoOp, err := bav._spendBalance(effectiveFee, txn.PublicKey, blockHeight-1)
-	if err != nil {
-		return nil, 0, 0, errors.Wrapf(err, "_connectFailingTransaction: Problem "+
-			"spending balance")
-	}
-	utxoOps = append(utxoOps, feeUtxoOp)
-	utxoOps = append(utxoOps, &UtxoOperation{Type: OperationTypeFailingTxn})
-
-	// If verifySignatures is passed, we check transaction signature.
-	if verifySignatures {
-		if err := bav._verifyTxnSignature(txn, blockHeight); err != nil {
-			return nil, 0, 0, errors.Wrapf(err, "_connectFailingTransaction: Problem "+
-				"verifying signature")
-		}
-	}
-
-	return utxoOps, burnFee, utilityFee, nil
-}
-
 // computeBMF computes the burn fee and the utility fee for a given fee. The acronym stands for Burn Maximizing Fee, which
 // entails that the burn function is designed to maximize the amount of DESO burned, while providing the minimal viable
 // utility fee to the block producer. This is so that block producers have no advantage over other network participants
@@ -4254,66 +4156,24 @@ func (bav *UtxoView) ConnectBlock(
 	for txIndex, txn := range desoBlock.Txns {
 		txHash := txHashes[txIndex]
 
-		// PoS introduced a concept of a failing transaction, or transactions that fail UtxoView's ConnectTransaction.
-		// In PoS, these failing transactions are included in the block and their fees are burned.
-
-		// To determine if we're dealing with a connecting or failing transaction, we first check if we're on a PoS block
-		// height. Otherwise, the transaction is expected to connect.
-		hasPoWBlockHeight := bav.Params.IsPoWBlockHeight(blockHeight)
-		// Also, the first transaction in the block, the block reward transaction, should always be a connecting transaction.
-		isBlockRewardTxn := (txIndex == 0) && (txn.TxnMeta.GetTxnType() == TxnTypeBlockReward)
-		// Finally, if the transaction is not the first in the block, we check the TxnConnectStatusByIndex to see if
-		// it's marked by the block producer as a connecting transaction. PoS blocks should reflect this in TxnConnectStatusByIndex.
-		hasConnectingPoSTxnStatus := false
-		if bav.Params.IsPoSBlockHeight(blockHeight) && (txIndex > 0) && (desoBlock.TxnConnectStatusByIndex != nil) {
-			// Note that TxnConnectStatusByIndex doesn't include the first block reward transaction.
-			hasConnectingPoSTxnStatus = desoBlock.TxnConnectStatusByIndex.Get(txIndex - 1)
-		}
-		// Now, we can determine if the transaction is expected to connect.
-		txnConnects := hasPoWBlockHeight || isBlockRewardTxn || hasConnectingPoSTxnStatus
-
 		var utilityFee uint64
 		var utxoOpsForTxn []*UtxoOperation
 		var err error
 		var currentFees uint64
-		if txnConnects {
-			// ConnectTransaction validates all of the transactions in the block and
-			// is responsible for verifying signatures.
-			//
-			// TODO: We currently don't check that the min transaction fee is satisfied when
-			// connecting blocks. We skip this check because computing the transaction's size
-			// would slow down block processing significantly. We should figure out a way to
-			// enforce this check in the future, but for now the only attack vector is one in
-			// which a miner is trying to spam the network, which should generally never happen.
-			utxoOpsForTxn, _, _, currentFees, err = bav.ConnectTransaction(
-				txn, txHash, uint32(blockHeader.Height), blockHeader.TstampNanoSecs, verifySignatures, false)
-			if err != nil {
-				return nil, errors.Wrapf(err, "ConnectBlock: error connecting txn #%d", txIndex)
-			}
-			_, utilityFee = computeBMF(currentFees)
-		} else {
-			// If the transaction is not supposed to connect, we need to verify that it won't connect.
-			// We need to construct a copy of the view to verify that the transaction won't connect
-			// without side effects.
-			var utxoViewCopy *UtxoView
-			utxoViewCopy, err = bav.CopyUtxoView()
-			if err != nil {
-				return nil, errors.Wrapf(err, "ConnectBlock: error copying UtxoView")
-			}
-			_, _, _, _, err = utxoViewCopy.ConnectTransaction(
-				txn, txHash, uint32(blockHeader.Height), blockHeader.TstampNanoSecs, verifySignatures, false)
-			if err == nil {
-				return nil, errors.Errorf("ConnectBlock: txn #%d should not connect but err is nil", txIndex)
-			}
-			var burnFee uint64
-			// Connect the failing transaction to get the fees and utility fee.
-			utxoOpsForTxn, burnFee, utilityFee, err = bav._connectFailingTransaction(
-				txn, uint32(blockHeader.Height), verifySignatures)
-			if err != nil {
-				return nil, errors.Wrapf(err, "ConnectBlock: error connecting failing txn #%d", txIndex)
-			}
-			currentFees = burnFee + utilityFee
+		// ConnectTransaction validates all of the transactions in the block and
+		// is responsible for verifying signatures.
+		//
+		// TODO: We currently don't check that the min transaction fee is satisfied when
+		// connecting blocks. We skip this check because computing the transaction's size
+		// would slow down block processing significantly. We should figure out a way to
+		// enforce this check in the future, but for now the only attack vector is one in
+		// which a miner is trying to spam the network, which should generally never happen.
+		utxoOpsForTxn, _, _, currentFees, err = bav.ConnectTransaction(
+			txn, txHash, uint32(blockHeader.Height), blockHeader.TstampNanoSecs, verifySignatures, false)
+		if err != nil {
+			return nil, errors.Wrapf(err, "ConnectBlock: error connecting txn #%d", txIndex)
 		}
+		_, utilityFee = computeBMF(currentFees)
 
 		// After the block reward patch block height, we only include fees from transactions
 		// where the transactor is not the block reward output public key. This prevents
