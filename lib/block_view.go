@@ -3473,6 +3473,41 @@ func (bav *UtxoView) _connectUpdateGlobalParams(
 			}
 			newGlobalParamsEntry.MaxBlockSizeBytesPoS = val
 		}
+		if len(extraData[BlockProductionIntervalKey]) > 0 {
+			val, bytesRead := Uvarint(
+				extraData[BlockProductionIntervalKey],
+			)
+			if bytesRead <= 0 {
+				return 0, 0, nil, fmt.Errorf(
+					"_connectUpdateGlobalParams: unable to decode BlockProductionInterval as uint64",
+				)
+			}
+			if val < MinBlockProductionIntervalMilliseconds {
+				return 0, 0, nil, RuleErrorBlockProductionIntervalTooLow
+			}
+			if val > MaxBlockProductionIntervalMilliseconds {
+				return 0, 0, nil, RuleErrorBlockProductionIntervalTooHigh
+			}
+			newGlobalParamsEntry.BlockProductionIntervalMilliseconds = val
+		}
+
+		if len(extraData[TimeoutIntervalKey]) > 0 {
+			val, bytesRead := Uvarint(
+				extraData[TimeoutIntervalKey],
+			)
+			if bytesRead <= 0 {
+				return 0, 0, nil, fmt.Errorf(
+					"_connectUpdateGlobalParams: unable to decode TimeoutInterval as uint64",
+				)
+			}
+			if val < MinTimeoutIntervalMilliseconds {
+				return 0, 0, nil, RuleErrorTimeoutIntervalTooLow
+			}
+			if val > MaxTimeoutIntervalMilliseconds {
+				return 0, 0, nil, RuleErrorTimeoutIntervalTooHigh
+			}
+			newGlobalParamsEntry.TimeoutIntervalMilliseconds = val
+		}
 	}
 
 	var newForbiddenPubKeyEntry *ForbiddenPubKeyEntry

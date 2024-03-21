@@ -97,8 +97,6 @@ func _generateConfig(t *testing.T, config *cmd.Config, port uint32, dataDir stri
 	config.MempoolFeeEstimatorNumMempoolBlocks = 1
 	config.MempoolFeeEstimatorNumPastBlocks = 50
 	config.AugmentedBlockViewRefreshIntervalMillis = 10
-	config.PosBlockProductionIntervalMilliseconds = 1500
-	config.PosTimeoutBaseDurationMilliseconds = 30000
 
 	//config.ArchivalMode = true
 

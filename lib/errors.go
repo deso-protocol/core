@@ -231,6 +231,10 @@ const (
 	RuleErrorMaxBlockSizeBytesTooLow                           RuleError = "RuleErrorMaxBlockSizeBytesTooLow"
 	RuleErrorMaxBlockSizeBytesTooHigh                          RuleError = "RuleErrorMaxBlockSizeBytesTooHigh"
 	RuleErrorFeeBucketSizeTooSmall                             RuleError = "RuleErrorFeeBucketSizeTooSmall"
+	RuleErrorBlockProductionIntervalTooLow                     RuleError = "RuleErrorBlockProductionIntervalTooLow"
+	RuleErrorBlockProductionIntervalTooHigh                    RuleError = "RuleErrorBlockProductionIntervalTooHigh"
+	RuleErrorTimeoutIntervalTooLow                             RuleError = "RuleErrorTimeoutIntervalTooLow"
+	RuleErrorTimeoutIntervalTooHigh                            RuleError = "RuleErrorTimeoutIntervalTooHigh"
 
 	// DeSo Diamonds
 	RuleErrorBasicTransferHasDiamondPostHashWithoutDiamondLevel   RuleError = "RuleErrorBasicTransferHasDiamondPostHashWithoutDiamondLevel"
