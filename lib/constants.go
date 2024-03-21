@@ -668,6 +668,13 @@ type DeSoParams struct {
 
 	MiningIterationsPerCycle uint64
 
+	// Snapshot
+	// For PoW, we use a snapshot block height period of 1000 blocks. We record this value in the constants
+	// as it'll be used during the PoW -> PoS transition. Notably, this value is used to allow PoS nodes
+	// to hypersync from PoW nodes. In hypersync, knowing the snapshot block height period of the sync peer
+	// is necessary to determine the block height of the snapshot we're going to receive.
+	DefaultPoWSnapshotBlockHeightPeriod uint64
+
 	// deso
 	MaxUsernameLengthBytes        uint64
 	MaxUserDescriptionLengthBytes uint64
@@ -908,6 +915,13 @@ func (params *DeSoParams) GetFinalPoWBlockHeight() uint64 {
 
 func (params *DeSoParams) GetFirstPoSBlockHeight() uint64 {
 	return uint64(params.ForkHeights.ProofOfStake2ConsensusCutoverBlockHeight)
+}
+
+func (params *DeSoParams) GetSnapshotBlockHeightPeriod(blockHeight uint64, currentSnapshotBlockHeightPeriod uint64) uint64 {
+	if blockHeight < uint64(params.ForkHeights.ProofOfStake1StateSetupBlockHeight) {
+		return params.DefaultPoWSnapshotBlockHeightPeriod
+	}
+	return currentSnapshotBlockHeightPeriod
 }
 
 // GenesisBlock defines the genesis block used for the DeSo mainnet and testnet
@@ -1172,6 +1186,8 @@ var DeSoMainnetParams = DeSoParams{
 	// This takes about ten seconds on a reasonable CPU, which makes sense given
 	// a 10 minute block time.
 	MiningIterationsPerCycle: 95000,
+
+	DefaultPoWSnapshotBlockHeightPeriod: 1000,
 
 	MaxUsernameLengthBytes: MaxUsernameLengthBytes,
 
@@ -1465,6 +1481,7 @@ var DeSoTestnetParams = DeSoParams{
 
 	MiningIterationsPerCycle: 9500,
 
+	DefaultPoWSnapshotBlockHeightPeriod: 1000,
 	// deso
 	MaxUsernameLengthBytes: MaxUsernameLengthBytes,
 

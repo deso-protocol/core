@@ -69,6 +69,7 @@ func (sl *simpleListener) start() {
 					fmt.Println("simpleListener.start: ll.Accept:", err)
 					return
 				}
+				// We use this only to limit maximum number of connections, when channel limit is reached.
 				sl.connectionChan <- &inboundConnection{
 					connection: conn,
 				}

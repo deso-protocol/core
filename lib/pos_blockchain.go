@@ -237,6 +237,15 @@ func (bc *Blockchain) processBlockPoS(block *MsgDeSoBlock, currentView uint64, v
 		return false, false, nil, errors.Wrapf(err, "processBlockPoS: Problem hashing block")
 	}
 
+	// In hypersync archival mode, we may receive blocks that have already been processed and committed during state
+	// synchronization. However, we may want to store these blocks in the db for archival purposes. We check if the
+	// block we're dealing with is an archival block. If it is, we store it and return early.
+	if success, err := bc.checkAndStoreArchivalBlock(block); err != nil {
+		return false, false, nil, errors.Wrap(err, "processBlockPoS: Problem checking and storing archival block")
+	} else if success {
+		return true, false, nil, nil
+	}
+
 	// Get all the blocks between the current block and the committed tip. If the block
 	// is an orphan, then we store it after performing basic validations.
 	// If the block extends from any committed block other than the committed tip,
@@ -555,6 +564,30 @@ func (bc *Blockchain) processOrphanBlockPoS(block *MsgDeSoBlock) error {
 	// Add to blockIndexByHash with status STORED only as we are not sure if it's valid yet.
 	_, err = bc.storeBlockInBlockIndex(block)
 	return errors.Wrap(err, "processBlockPoS: Problem adding block to block index: ")
+}
+
+// checkAndStoreArchivalBlock is a helper function that takes in a block and checks if it's an archival block.
+// If it is, it stores the block in the db and returns true. If it's not, it returns false, or false and an error.
+func (bc *Blockchain) checkAndStoreArchivalBlock(block *MsgDeSoBlock) (_success bool, _err error) {
+	// First, get the block hash and lookup the block index.
+	blockHash, err := block.Hash()
+	if err != nil {
+		return false, errors.Wrap(err, "checkAndStoreArchivalBlock: Problem hashing block")
+	}
+	blockNode, exists := bc.blockIndexByHash[*blockHash]
+	// If the blockNode doesn't exist, or the block is not committed, or it's already stored, then we're not dealing
+	// with an archival block. Archival blocks must have an existing blockNode, be committed, and not be stored.
+	if !exists || !blockNode.IsCommitted() || blockNode.IsStored() {
+		return false, nil
+	}
+
+	// If we get to this point, we're dealing with an archival block, so we'll attempt to store it.
+	// This means, this block node is already marked as COMMITTED and VALIDATED, and we just need to store it.
+	_, err = bc.storeBlockInBlockIndex(block)
+	if err != nil {
+		return false, errors.Wrap(err, "checkAndStoreArchivalBlock: Problem storing block in block index")
+	}
+	return true, nil
 }
 
 // storeValidateFailedBlockWithWrappedError is a helper function that takes in a block and an error and
@@ -1475,11 +1508,6 @@ func (bc *Blockchain) upsertBlockAndBlockNodeToDB(block *MsgDeSoBlock, blockNode
 ) error {
 	// Store the block in badger
 	err := bc.db.Update(func(txn *badger.Txn) error {
-		if bc.snapshot != nil {
-			bc.snapshot.PrepareAncestralRecordsFlush()
-			defer bc.snapshot.StartAncestralRecordsFlush(true)
-			glog.V(2).Infof("upsertBlockAndBlockNodeToDB: Preparing snapshot flush")
-		}
 		if storeFullBlock {
 			if innerErr := PutBlockHashToBlockWithTxn(txn, bc.snapshot, block, bc.eventManager); innerErr != nil {
 				return errors.Wrapf(innerErr, "upsertBlockAndBlockNodeToDB: Problem calling PutBlockHashToBlockWithTxn")
@@ -1764,6 +1792,9 @@ func (bc *Blockchain) commitBlockPoS(blockHash *BlockHash, verifySignatures bool
 				Succeeded: true,
 			})
 		}
+	}
+	if bc.snapshot != nil {
+		bc.snapshot.FinishProcessBlock(blockNode)
 	}
 	// TODO: What else do we need to do in here?
 	return nil
