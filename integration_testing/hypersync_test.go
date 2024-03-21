@@ -35,6 +35,12 @@ func TestSimpleHyperSync(t *testing.T) {
 	t.Logf("Databases match!")
 }
 
+// TestPoSRegtestHypersyncArchival tests whether a node can successfully archival hypersync from another node after
+// the PoS transition. In the test, node1 will produce blocks until it creates a snapshot after the 2nd PoS fork height.
+// Then, we spawn node2, which will connect to node1 and hypersync from it. We then compare that the state dbs match.
+// This test takes a couple of minutes to run, and can potentially fail the db comparison if node1 produces a block
+// at the very end of the test, right before it stops, and node2 doesn't receive it in time. If this happens, rerun
+// the test, it should generally pass.
 func TestPoSRegtestHypersyncArchival(t *testing.T) {
 	node1 := simplePosNode(t, 18000, "node1", true)
 
