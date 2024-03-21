@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"github.com/deso-protocol/core/cmd"
 	"github.com/deso-protocol/core/lib"
+	"os"
 	"testing"
 )
 
@@ -101,6 +102,22 @@ func conditionNonValidatorInboundConnectionDynamic(t *testing.T, node1 *cmd.Node
 	}
 }
 
+func checkInactiveValidatorConnection(t *testing.T, node1 *cmd.Node, node2 *cmd.Node) bool {
+	userAgentN2 := node2.Params.UserAgent
+	nmN1 := node1.Server.GetNetworkManager()
+	if true != checkRemoteNodeIndexerUserAgent(nmN1, userAgentN2, false, true, true) {
+		return false
+	}
+	rnFromN2 := getRemoteNodeWithUserAgent(node1, userAgentN2)
+	if rnFromN2 == nil {
+		return false
+	}
+	if !rnFromN2.IsHandshakeCompleted() {
+		return false
+	}
+	return rnFromN2.GetValidatorPublicKey() != nil
+}
+
 func waitForEmptyRemoteNodeIndexer(t *testing.T, node1 *cmd.Node) {
 	userAgentN1 := node1.Params.UserAgent
 	nmN1 := node1.Server.GetNetworkManager()
@@ -145,7 +162,7 @@ func checkRemoteNodeIndexerUserAgent(manager *lib.NetworkManager, userAgent stri
 	if true != checkUserAgentInRemoteNodeList(userAgent, manager.GetAllRemoteNodes().GetAll()) {
 		return false
 	}
-	if validator != checkUserAgentInRemoteNodeList(userAgent, manager.GetValidatorIndex().GetAll()) {
+	if validator != checkUserAgentInRemoteNodeList(userAgent, manager.GetAllValidators().GetAll()) {
 		return false
 	}
 	if nonValidatorOutbound != checkUserAgentInRemoteNodeList(userAgent, manager.GetNonValidatorOutboundIndex().GetAll()) {
@@ -164,7 +181,7 @@ func checkRemoteNodeIndexerCount(manager *lib.NetworkManager, allCount int, vali
 	if allCount != manager.GetAllRemoteNodes().Count() {
 		return false
 	}
-	if validatorCount != manager.GetValidatorIndex().Count() {
+	if validatorCount != manager.GetAllValidators().Count() {
 		return false
 	}
 	if nonValidatorOutboundCount != manager.GetNonValidatorOutboundIndex().Count() {
@@ -183,10 +200,11 @@ func checkRemoteNodeIndexerCountHandshakeCompleted(manager *lib.NetworkManager, 
 	if allCount != manager.GetAllRemoteNodes().Count() {
 		return false
 	}
-	if validatorCount != manager.GetValidatorIndex().Count() {
+	allValidators := manager.GetAllValidators()
+	if validatorCount != allValidators.Count() {
 		return false
 	}
-	for _, rn := range manager.GetValidatorIndex().GetAll() {
+	for _, rn := range allValidators.GetAll() {
 		if !rn.IsHandshakeCompleted() {
 			return false
 		}
@@ -217,7 +235,7 @@ func checkRemoteNodeIndexerEmpty(manager *lib.NetworkManager) bool {
 	if manager.GetAllRemoteNodes().Count() != 0 {
 		return false
 	}
-	if manager.GetValidatorIndex().Count() != 0 {
+	if manager.GetAllValidators().Count() != 0 {
 		return false
 	}
 	if manager.GetNonValidatorOutboundIndex().Count() != 0 {

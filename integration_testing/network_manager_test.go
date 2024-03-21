@@ -282,13 +282,11 @@ func TestConnectionControllerValidatorDuplication(t *testing.T) {
 	waitForValidatorConnection(t, node1, node2)
 	waitForNonValidatorInboundConnection(t, node2, node1)
 
-	// Now create an outbound connection from Node3 to Node1, which should pass handshake, but then fail because
-	// Node1 already has a validator connection to Node2 with the same public key.
+	// Now create an outbound connection from Node1 to Node3, which should pass handshake.
 	nm3 := node3.Server.GetNetworkManager()
 	require.NoError(t, nm3.CreateNonValidatorOutboundConnection(node1.Listeners[0].Addr().String()))
-	waitForEmptyRemoteNodeIndexer(t, node3)
-	waitForCountRemoteNodeIndexer(t, node1, 1, 1, 0, 0)
-	t.Logf("Test #1 passed | Successfuly rejected duplicate validator connection with inbound/outbound validators")
+	waitForCountRemoteNodeIndexer(t, node1, 2, 1, 0, 0)
+	t.Logf("Test #1 passed | Successfuly connected to inbound/outbound validators")
 
 	node3.Stop()
 	node2.Stop()

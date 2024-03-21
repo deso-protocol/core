@@ -2023,6 +2023,13 @@ func (bc *Blockchain) processBlockPoW(desoBlock *MsgDeSoBlock, verifySignatures 
 		return false, false, RuleErrorBlockHeightAfterProofOfStakeCutover
 	}
 
+	// Only accept blocks if the blockchain is still running PoW. Once the chain connects the final block of the
+	// PoW protocol, it will transition to the PoS. We should not accept any PoW blocks as they can result in a
+	// fork.
+	if bc.blockTip().Header.Height >= bc.params.GetFinalPoWBlockHeight() {
+		return false, false, RuleErrorBestChainIsAtProofOfStakeCutover
+	}
+
 	blockHeight := uint64(bc.BlockTip().Height + 1)
 
 	bc.timer.Start("Blockchain.ProcessBlock: Initial")

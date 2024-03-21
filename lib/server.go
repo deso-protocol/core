@@ -107,6 +107,9 @@ type Server struct {
 	// point we can make the optimization.
 	SyncPeer *Peer
 
+	// When --connect-ips is set, we don't connect to anything from the addrmgr.
+	connectIps []string
+
 	// If we're syncing state using hypersync, we'll keep track of the progress using HyperSyncProgress.
 	// It stores information about all the prefixes that we're fetching. The way that HyperSyncProgress
 	// is organized allows for multi-peer state synchronization. In such case, we would assign prefixes
@@ -246,6 +249,7 @@ func (srv *Server) GetBlockProducer() *DeSoBlockProducer {
 	return srv.blockProducer
 }
 
+// TODO: The hallmark of a messy non-law-of-demeter-following interface...
 func (srv *Server) GetConnectionManager() *ConnectionManager {
 	return srv.cmgr
 }
@@ -457,6 +461,7 @@ func NewServer(
 		forceChecksum:                _forceChecksum,
 		AddrMgr:                      _desoAddrMgr,
 		params:                       _params,
+		connectIps:                   _connectIps,
 	}
 
 	if stateChangeSyncer != nil {
@@ -469,11 +474,10 @@ func NewServer(
 	timesource := chainlib.NewMedianTime()
 
 	// Create a new connection manager but note that it won't be initialized until Start().
-	_incomingMessages := make(chan *ServerMessage, 100+(_targetOutboundPeers+_maxInboundPeers)*3)
+	_incomingMessages := make(chan *ServerMessage, _params.ServerMessageChannelSize+(_targetOutboundPeers+_maxInboundPeers)*3)
 	_cmgr := NewConnectionManager(
-		_params, _listeners, _connectIps, timesource,
-		_hyperSync, _syncType, _stallTimeoutSeconds, _minFeeRateNanosPerKB,
-		_incomingMessages, srv)
+		_params, _listeners, _hyperSync, _syncType, _stallTimeoutSeconds,
+		_minFeeRateNanosPerKB, _incomingMessages, srv)
 
 	// Set up the blockchain data structure. This is responsible for accepting new
 	// blocks, keeping track of the best chain, and keeping all of that state up
@@ -678,10 +682,6 @@ func NewServer(
 	timer.Initialize()
 	srv.timer = timer
 
-	if srv.stateChangeSyncer != nil {
-		srv.stateChangeSyncer.StartMempoolSyncRoutine(srv)
-	}
-
 	// If shouldRestart is true, it means that the state checksum is likely corrupted, and we need to enter a recovery mode.
 	// This can happen if the node was terminated mid-operation last time it was running. The recovery process rolls back
 	// blocks to the beginning of the current snapshot epoch and resets to the state checksum to the epoch checksum.
@@ -805,18 +805,17 @@ func (srv *Server) GetSnapshot(pp *Peer) {
 			return
 		}
 	}
-	// If operationQueueSemaphore is full, we are already storing too many chunks in memory. Block the thread while
-	// we wait for the queue to clear up.
+	// As a pace-setting mechanism, we enqueue to the operationQueueSemaphore in a go routine. The request will be blocked
+	// if there are too many requests in memory.
 	go func() {
 		srv.snapshot.operationQueueSemaphore <- struct{}{}
 		// Now send a message to the peer to fetch the snapshot chunk.
+		glog.V(2).Infof("Server.GetSnapshot: Sending a GetSnapshot message to peer (%v) "+
+			"with Prefix (%v) and SnapshotStartEntry (%v)", pp, prefix, lastReceivedKey)
 		pp.AddDeSoMessage(&MsgDeSoGetSnapshot{
 			SnapshotStartKey: lastReceivedKey,
 		}, false)
 	}()
-
-	glog.V(2).Infof("Server.GetSnapshot: Sending a GetSnapshot message to peer (%v) "+
-		"with Prefix (%v) and SnapshotStartEntry (%v)", pp, prefix, lastReceivedKey)
 }
 
 // GetBlocksToStore is part of the archival mode, which makes the node download all historical blocks after completing
@@ -1657,6 +1656,12 @@ func (srv *Server) _startSync() {
 	// Find a peer with StartingHeight bigger than our best header tip.
 	var bestPeer *Peer
 	for _, peer := range srv.cmgr.GetAllPeers() {
+		// If connectIps is set, only sync from persistent peers.
+		if len(srv.connectIps) > 0 && !peer.IsPersistent() {
+			glog.Infof("Server._startSync: Connect-ips is set, so non-persistent peer is not a "+
+				"sync candidate %v", peer)
+			continue
+		}
 
 		if !peer.IsSyncCandidate() {
 			glog.Infof("Peer is not sync candidate: %v (isOutbound: %v)", peer, peer.isOutbound)
