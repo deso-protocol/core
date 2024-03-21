@@ -312,7 +312,7 @@ func (pp *Peer) HelpHandleInv(msg *MsgDeSoInv) {
 			// For transactions, check that the transaction isn't in the
 			// mempool and that it isn't currently being requested.
 			_, requestIsInFlight := pp.srv.requestedTransactionsMap[currentHash]
-			if requestIsInFlight || pp.srv.GetMempool().GetTransaction(&currentHash) != nil {
+			if requestIsInFlight || pp.srv.GetMempool().IsTransactionInPool(&currentHash) {
 				continue
 			}
 
