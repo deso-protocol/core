@@ -11834,34 +11834,6 @@ func EnumerateKeysForPrefixWithLimitOffsetOrder(
 	return keysFound, valsFound, nil
 }
 
-func EnumerateKeysForPrefixWithLimitOffsetOrderAndSkipFunc(
-	db *badger.DB,
-	prefix []byte,
-	limit int,
-	lastSeenKey []byte,
-	sortDescending bool,
-	canSkipKey func([]byte) bool,
-) ([][]byte, [][]byte, error) {
-	keysFound := [][]byte{}
-	valsFound := [][]byte{}
-
-	dbErr := db.View(func(txn *badger.Txn) error {
-		var err error
-		keysFound, valsFound, err = _enumerateKeysForPrefixWithLimitOffsetOrderWithTxn(
-			txn, prefix, limit, lastSeenKey, sortDescending, canSkipKey,
-		)
-		return err
-	})
-	if dbErr != nil {
-		return nil, nil, errors.Wrapf(
-			dbErr,
-			"EnumerateKeysForPrefixWithLimitOffsetOrderAndSkipFunc: problem fetching keys and values from db: ",
-		)
-	}
-
-	return keysFound, valsFound, nil
-}
-
 func _enumerateKeysForPrefixWithLimitOffsetOrderWithTxn(
 	txn *badger.Txn,
 	prefix []byte,
@@ -11892,6 +11864,7 @@ func _enumerateKeysForPrefixWithLimitOffsetOrderWithTxn(
 		opts.Reverse = true
 		startingKey = append(startingKey, 0xff)
 	}
+	opts.Prefix = prefix
 	nodeIterator := txn.NewIterator(opts)
 	defer nodeIterator.Close()
 
@@ -11927,6 +11900,95 @@ func _enumerateKeysForPrefixWithLimitOffsetOrderWithTxn(
 		valsFound = append(valsFound, valCopy)
 	}
 	return keysFound, valsFound, nil
+}
+
+func EnumerateKeysOnlyForPrefixWithLimitOffsetOrderAndSkipFunc(
+	db *badger.DB,
+	prefix []byte,
+	limit int,
+	lastSeenKey []byte,
+	sortDescending bool,
+	canSkipKey func([]byte) bool,
+) ([][]byte, error) {
+	keysFound := [][]byte{}
+
+	dbErr := db.View(func(txn *badger.Txn) error {
+		var err error
+		keysFound, err = _enumerateKeysOnlyForPrefixWithLimitOffsetOrderWithTxn(
+			txn, prefix, limit, lastSeenKey, sortDescending, canSkipKey,
+		)
+		return err
+	})
+	if dbErr != nil {
+		return nil, errors.Wrapf(
+			dbErr,
+			"EnumerateKeysOnlyForPrefixWithLimitOffsetOrderAndSkipFunc: problem fetching keys from db: ",
+		)
+	}
+
+	return keysFound, nil
+}
+
+func _enumerateKeysOnlyForPrefixWithLimitOffsetOrderWithTxn(
+	txn *badger.Txn,
+	prefix []byte,
+	limit int,
+	lastSeenKey []byte,
+	sortDescending bool,
+	canSkipKey func([]byte) bool,
+) ([][]byte, error) {
+	keysFound := [][]byte{}
+
+	// If provided, start at the last seen key.
+	startingKey := prefix
+	haveSeenLastSeenKey := true
+	if lastSeenKey != nil {
+		startingKey = lastSeenKey
+		haveSeenLastSeenKey = false
+		if limit > 0 {
+			// Need to increment limit by one (if non-zero) since
+			// we include the lastSeenKey/lastSeenValue.
+			limit += 1
+		}
+	}
+
+	opts := badger.DefaultIteratorOptions
+	// Search keys in reverse order if sort DESC.
+	if sortDescending {
+		opts.Reverse = true
+		startingKey = append(startingKey, 0xff)
+	}
+	opts.PrefetchValues = false
+	opts.Prefix = prefix
+	nodeIterator := txn.NewIterator(opts)
+	defer nodeIterator.Close()
+
+	for nodeIterator.Seek(startingKey); nodeIterator.ValidForPrefix(prefix); nodeIterator.Next() {
+		// Break if at or beyond limit.
+		if limit > 0 && len(keysFound) >= limit {
+			break
+		}
+		key := nodeIterator.Item().Key()
+		// Skip if key is before the last seen key. The caller
+		// needs to filter out the lastSeenKey in the view as
+		// we return any key >= the lastSeenKey.
+		if !haveSeenLastSeenKey {
+			if !bytes.Equal(key, lastSeenKey) {
+				continue
+			}
+			haveSeenLastSeenKey = true
+		}
+		// Skip if key can be skipped.
+		if canSkipKey(key) {
+			continue
+		}
+		// Copy key.
+		keyCopy := make([]byte, len(key))
+		copy(keyCopy[:], key[:])
+		// Append found entry to return slices.
+		keysFound = append(keysFound, keyCopy)
+	}
+	return keysFound, nil
 }
 
 // Check to see if the badger db has already been initialized with the performance options.

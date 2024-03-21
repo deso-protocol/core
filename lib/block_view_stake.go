@@ -719,7 +719,7 @@ func DBGetTopStakesForValidatorsByStakeAmount(
 
 	// Retrieve top N StakeEntry keys by stake amount.
 	key := append([]byte{}, Prefixes.PrefixStakeByStakeAmount...)
-	keysFound, _, err := EnumerateKeysForPrefixWithLimitOffsetOrderAndSkipFunc(
+	keysFound, err := EnumerateKeysOnlyForPrefixWithLimitOffsetOrderAndSkipFunc(
 		handle, key, int(limit), nil, true, canSkipValidatorPKIDAndStakerPKIDInBadgerSeek,
 	)
 	if err != nil {
