@@ -1777,6 +1777,10 @@ const (
 	// Min/MaxMaxBlockSizeBytes - Min/max value to which the max block size can be set.
 	MinMaxBlockSizeBytes = 1000     // 1kb TODO: Verify this is a sane value.
 	MaxMaxBlockSizeBytes = 16000000 // 16MB TODO: Verify this is a sane value.
+	// MinFeeBucketSize is the minimum size of a fee bucket that we'll allow global params to
+	// be configured to compute. This is a safety measure to prevent the fee bucket from being
+	// too small and causing issues with the mempool.
+	MinFeeBucketSize = 10
 
 	// DefaultMaxNonceExpirationBlockHeightOffset - default value to which the MaxNonceExpirationBlockHeightOffset
 	// is set to before specified by ParamUpdater.
