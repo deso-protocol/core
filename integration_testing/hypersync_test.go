@@ -64,7 +64,8 @@ func TestPoSRegtestHypersyncArchival(t *testing.T) {
 	node2.Config.SyncType = lib.NodeSyncTypeHyperSyncArchival
 	node2 = startNode(t, node2)
 	condition2 := func() bool {
-		return node2.Server.GetBlockchain().BlockTip().Height >= 140
+		return node2.Server.GetBlockchain().BlockTip().Height >= 140 &&
+			node2.Server.GetBlockchain().ChainState() == lib.SyncStateFullyCurrent
 	}
 	waitForConditionNoTimeout(t, "node2", condition2)
 
