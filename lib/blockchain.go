@@ -505,6 +505,9 @@ type Blockchain struct {
 	// cache block view for each block
 	blockViewCache lru.KVCache
 
+	// snapshot cache
+	snapshotCache *SnapshotCache
+
 	// State checksum is used to verify integrity of state data and when
 	// syncing from snapshot in the hyper sync protocol.
 	//
@@ -805,7 +808,8 @@ func NewBlockchain(
 
 		bestHeaderChainMap: make(map[BlockHash]*BlockNode),
 
-		blockViewCache: lru.NewKVCache(1000), // TODO: parameterize
+		blockViewCache: lru.NewKVCache(100), // TODO: parameterize
+		snapshotCache:  NewSnapshotCache(),
 
 		orphanList: list.New(),
 		timer:      timer,

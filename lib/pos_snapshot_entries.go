@@ -8,7 +8,6 @@ import (
 
 	"github.com/deso-protocol/core/bls"
 	"github.com/deso-protocol/core/collections"
-
 	"github.com/dgraph-io/badger/v3"
 	"github.com/golang/glog"
 	"github.com/holiman/uint256"
@@ -303,26 +302,33 @@ func (bav *UtxoView) GetSnapshotValidatorSetByStakeAmountAtEpochNumber(snapshotA
 			utxoViewValidatorEntries = append(utxoViewValidatorEntries, validatorEntry)
 		}
 	}
-	// Pull top N ValidatorEntries from the database (not present in the UtxoView).
-	// Note that we will skip validators that are present in the view because we pass
-	// utxoViewValidatorEntries to the function.
-	dbValidatorEntries, err := DBGetSnapshotValidatorSetByStakeAmount(
-		bav.Handle, bav.Snapshot, limit, snapshotAtEpochNumber, utxoViewValidatorEntries,
-	)
-	if err != nil {
-		return nil, errors.Wrapf(err, "GetSnapshotValidatorSetByStakeAmountAtEpochNumber: error retrieving entries from db: ")
-	}
-	// Cache top N active ValidatorEntries from the db in the UtxoView.
-	for _, validatorEntry := range dbValidatorEntries {
-		// We only pull ValidatorEntries from the db that are not present in the
-		// UtxoView. As a sanity check, we double-check that the ValidatorEntry
-		// is not already in the UtxoView here.
-		mapKey := SnapshotValidatorSetMapKey{
-			SnapshotAtEpochNumber: snapshotAtEpochNumber, ValidatorPKID: *validatorEntry.ValidatorPKID,
+	// If the view hasn't loaded the full set of validators for this snapshot, pull them from the db.
+	if !bav.HasFullSnapshotValidatorSetByEpoch[snapshotAtEpochNumber] {
+
+		// Pull top N ValidatorEntries from the database (not present in the UtxoView).
+		// Note that we will skip validators that are present in the view because we pass
+		// utxoViewValidatorEntries to the function.
+		dbValidatorEntries, err := DBGetSnapshotValidatorSetByStakeAmount(
+			bav.Handle, bav.Snapshot, limit, snapshotAtEpochNumber, utxoViewValidatorEntries,
+		)
+		if err != nil {
+			return nil, errors.Wrapf(
+				err, "GetSnapshotValidatorSetByStakeAmountAtEpochNumber: error retrieving entries from db: ")
 		}
-		if _, exists := bav.SnapshotValidatorSet[mapKey]; !exists {
-			bav._setSnapshotValidatorSetEntry(validatorEntry, snapshotAtEpochNumber)
+		// Cache top N active ValidatorEntries from the db in the UtxoView.
+		for _, validatorEntry := range dbValidatorEntries {
+			// We only pull ValidatorEntries from the db that are not present in the
+			// UtxoView. As a sanity check, we double-check that the ValidatorEntry
+			// is not already in the UtxoView here.
+			mapKey := SnapshotValidatorSetMapKey{
+				SnapshotAtEpochNumber: snapshotAtEpochNumber, ValidatorPKID: *validatorEntry.ValidatorPKID,
+			}
+			if _, exists := bav.SnapshotValidatorSet[mapKey]; !exists {
+				bav._setSnapshotValidatorSetEntry(validatorEntry, snapshotAtEpochNumber)
+			}
 		}
+		// Mark that we have the full set of validators for this snapshot in the view.
+		bav.HasFullSnapshotValidatorSetByEpoch[snapshotAtEpochNumber] = true
 	}
 	// Pull !isDeleted, active ValidatorEntries from the UtxoView with stake > 0.
 	var validatorEntries []*ValidatorEntry
@@ -1239,23 +1245,31 @@ func (bav *UtxoView) GetCurrentSnapshotLeaderSchedule() ([]*PKID, error) {
 	if err != nil {
 		return nil, errors.Wrapf(err, "GetCurrentSnapshotLeaderSchedule: problem calculating SnapshotEpochNumber: ")
 	}
-	return bav.GetSnapshotLeaderScheduleAtEpochNumber(snapshotAtEpochNumber)
+	snapshotLeaderSchedule, err := bav.GetSnapshotLeaderScheduleAtEpochNumber(snapshotAtEpochNumber)
+	if err != nil {
+		return nil, errors.Wrapf(err, "GetCurrentSnapshotLeaderSchedule: problem retrieving LeaderSchedule: ")
+	}
+	return snapshotLeaderSchedule, nil
 }
 func (bav *UtxoView) GetSnapshotLeaderScheduleAtEpochNumber(snapshotAtEpochNumber uint64) ([]*PKID, error) {
-	// Seek over DB prefix and merge into view.
-	leaderIdxToValidatorPKIDMap, err := DBSeekSnapshotLeaderSchedule(bav.Handle, snapshotAtEpochNumber)
-	if err != nil {
-		return nil, errors.Wrapf(err, "GetSnapshotLeaderScheduleAtEpochNumber: error retrieving ValidatorPKIDs: ")
-	}
-	// Merge the DB entries into the UtxoView.
-	for leaderIdx, validatorPKID := range leaderIdxToValidatorPKIDMap {
-		snapshotLeaderScheduleMapKey := SnapshotLeaderScheduleMapKey{
-			SnapshotAtEpochNumber: snapshotAtEpochNumber,
-			LeaderIndex:           leaderIdx,
+	if !bav.HasFullSnapshotLeaderScheduleByEpoch[snapshotAtEpochNumber] {
+		// Seek over DB prefix and merge into view.
+		leaderIdxToValidatorPKIDMap, err := DBSeekSnapshotLeaderSchedule(bav.Handle, snapshotAtEpochNumber)
+		if err != nil {
+			return nil, errors.Wrapf(err, "GetSnapshotLeaderScheduleAtEpochNumber: error retrieving ValidatorPKIDs: ")
 		}
-		if _, exists := bav.SnapshotLeaderSchedule[snapshotLeaderScheduleMapKey]; !exists {
-			bav._setSnapshotLeaderScheduleValidator(validatorPKID, leaderIdx, snapshotAtEpochNumber)
+		// Merge the DB entries into the UtxoView.
+		for leaderIdx, validatorPKID := range leaderIdxToValidatorPKIDMap {
+			snapshotLeaderScheduleMapKey := SnapshotLeaderScheduleMapKey{
+				SnapshotAtEpochNumber: snapshotAtEpochNumber,
+				LeaderIndex:           leaderIdx,
+			}
+			if _, exists := bav.SnapshotLeaderSchedule[snapshotLeaderScheduleMapKey]; !exists {
+				bav._setSnapshotLeaderScheduleValidator(validatorPKID, leaderIdx, snapshotAtEpochNumber)
+			}
 		}
+		// Mark that we have the full snapshot leader schedule for this epoch.
+		bav.HasFullSnapshotLeaderScheduleByEpoch[snapshotAtEpochNumber] = true
 	}
 
 	// First, check the UtxoView.
