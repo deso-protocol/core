@@ -3459,6 +3459,23 @@ func (bav *UtxoView) _connectUpdateGlobalParams(
 			}
 			newGlobalParamsEntry.MempoolFeeEstimatorNumPastBlocks = val
 		}
+		if len(extraData[MaxBlockSizeBytesPoSKey]) > 0 {
+			val, bytesRead := Uvarint(
+				extraData[MaxBlockSizeBytesPoSKey],
+			)
+			if bytesRead <= 0 {
+				return 0, 0, nil, fmt.Errorf(
+					"_connectUpdateGlobalParams: unable to decode MaxBlockSizeBytesPoS as uint64",
+				)
+			}
+			if val < MinMaxBlockSizeBytes {
+				return 0, 0, nil, RuleErrorMaxBlockSizeBytesTooLow
+			}
+			if val > MaxMaxBlockSizeBytes {
+				return 0, 0, nil, RuleErrorMaxBlockSizeBytesTooHigh
+			}
+			newGlobalParamsEntry.MaxBlockSizeBytesPoS = val
+		}
 	}
 
 	var newForbiddenPubKeyEntry *ForbiddenPubKeyEntry
@@ -3662,8 +3679,13 @@ func (bav *UtxoView) _connectSingleTxn(
 		return nil, 0, 0, 0, errors.Wrapf(
 			err, "_connectTransaction: Problem serializing transaction: ")
 	}
+	maxBlockSizeBytes := bav.Params.MaxBlockSizeBytesPoW
+	if bav.Params.IsPoSBlockHeight(uint64(blockHeight)) {
+		maxBlockSizeBytes = bav.GetMaxBlockSizeBytesPoS()
+	}
+
 	txnSizeBytes := uint64(len(txnBytes))
-	if txnSizeBytes > bav.Params.MaxBlockSizeBytes/2 {
+	if txnSizeBytes > maxBlockSizeBytes/2 {
 		return nil, 0, 0, 0, RuleErrorTxnTooBig
 	}
 
@@ -5054,4 +5076,8 @@ func mergeExtraData(oldMap map[string][]byte, newMap map[string][]byte) map[stri
 	}
 
 	return retMap
+}
+
+func (bav *UtxoView) GetMaxBlockSizeBytesPoS() uint64 {
+	return bav.GetCurrentGlobalParamsEntry().MaxBlockSizeBytesPoS
 }

@@ -1271,6 +1271,7 @@ func TestBalanceModelUpdateGlobalParams(t *testing.T) {
 	setBalanceModelBlockHeights(t)
 
 	TestUpdateGlobalParams(t)
+	TestUpdateGlobalParamsPoS(t)
 }
 
 func TestUpdateGlobalParams(t *testing.T) {
@@ -1479,6 +1480,88 @@ func TestUpdateGlobalParams(t *testing.T) {
 
 		// Check the balance of the updater after this txn
 		require.NotEqual(0, _getBalance(t, chain, nil, moneyPkString))
+	}
+}
+
+func TestUpdateGlobalParamsPoS(t *testing.T) {
+	// Set pos block heights
+	setPoSBlockHeights(t, 2, 1000)
+	// Set up a blockchain
+	assert := assert.New(t)
+	require := require.New(t)
+	_, _ = assert, require
+
+	chain, params, db := NewLowDifficultyBlockchain(t)
+	postgres := chain.postgres
+	mempool, miner := NewTestMiner(t, chain, params, true /*isSender*/)
+	_, _ = mempool, miner
+
+	// Set the founder equal to the moneyPk
+	params.ExtraRegtestParamUpdaterKeys = make(map[PkMapKey]bool)
+	params.ExtraRegtestParamUpdaterKeys[MakePkMapKey(MustBase58CheckDecode(moneyPkString))] = true
+
+	// Mine a few blocks
+	_, err := miner.MineAndProcessSingleBlock(0, mempool)
+	require.NoError(err)
+	_, err = miner.MineAndProcessSingleBlock(0, mempool)
+	require.NoError(err)
+	// MaxBlockSizeBytesPoS tests.
+	{
+		params.ForkHeights = GlobalDeSoParams.ForkHeights
+		params.EncoderMigrationHeights = GlobalDeSoParams.EncoderMigrationHeights
+		params.EncoderMigrationHeightsList = GlobalDeSoParams.EncoderMigrationHeightsList
+		mempool.bc.params = params
+		// Make sure setting max block size too low fails.
+		_, _, _, err := _updateGlobalParamsEntryWithMempool(t, chain, db, params, 200,
+			moneyPkString,
+			moneyPrivString,
+			-1,
+			-1,
+			-1,
+			-1,
+			-1,
+			-1,
+			map[string][]byte{
+				MaxBlockSizeBytesPoSKey: UintToBuf(MinMaxBlockSizeBytes - 1),
+			},
+			true,
+			mempool)
+		require.ErrorIs(err, RuleErrorMaxBlockSizeBytesTooLow)
+		// Make sure setting max block size too high fails.
+		_, _, _, err = _updateGlobalParamsEntryWithMempool(t, chain, db, params, 200,
+			moneyPkString,
+			moneyPrivString,
+			-1,
+			-1,
+			-1,
+			-1,
+			-1,
+			-1,
+			map[string][]byte{
+				MaxBlockSizeBytesPoSKey: UintToBuf(MaxMaxBlockSizeBytes + 1),
+			},
+			true,
+			mempool)
+		require.ErrorIs(err, RuleErrorMaxBlockSizeBytesTooHigh)
+		// Make sure setting max block size to a valid value works and updates global params.
+		_, _, _, err = _updateGlobalParamsEntryWithMempool(t, chain, db, params, 200,
+			moneyPkString,
+			moneyPrivString,
+			-1,
+			-1,
+			-1,
+			-1,
+			-1,
+			-1,
+			map[string][]byte{
+				MaxBlockSizeBytesPoSKey: UintToBuf(5000),
+			},
+			true,
+			mempool)
+		require.NoError(err)
+		utxoView, err := NewUtxoView(db, params, postgres, chain.snapshot, nil)
+		require.NoError(err)
+		require.Equal(utxoView.GetCurrentGlobalParamsEntry().MaxBlockSizeBytesPoS, uint64(5000))
 	}
 }
 

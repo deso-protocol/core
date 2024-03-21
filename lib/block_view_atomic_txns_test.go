@@ -198,7 +198,7 @@ func TestConnectAtomicTxnsWrapperRuleErrors(t *testing.T) {
 	// Try and generate an atomic transaction wrapper larger than half the block size.
 	// For simplicity, we estimate a basic transfer at greater than 100 bytes.
 	// (This should fail -- RuleErrorTxnTooBig)
-	numTxnsToGenerate := testMeta.params.MaxBlockSizeBytes / 200
+	numTxnsToGenerate := testMeta.params.MaxBlockSizeBytesPoW / 200
 	atomicTxns, _ := _generateSignedDependentAtomicTransactions(testMeta, int(numTxnsToGenerate))
 	atomicTxnsWrapper, _, err := testMeta.chain.CreateAtomicTxnsWrapper(atomicTxns, nil)
 	require.NoError(t, err)
