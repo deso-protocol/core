@@ -98,6 +98,10 @@ func (mtxn *MempoolTransaction) IsValidated() bool {
 // by Fee-Time algorithm. More on the Fee-Time algorithm can be found in the documentation of TransactionRegister.
 type PosMempool struct {
 	sync.RWMutex
+	// startGroup and exitGroup are concurrency control mechanisms used to ensure that all the PosMempool routines
+	// are started and stopped properly. The startGroup is used to wait for all the PosMempool routines to start before
+	// returning from the Start method. The exitGroup is used to wait for all the PosMempool routines to stop before
+	// returning from the Stop method.
 	startGroup sync.WaitGroup
 	exitGroup  sync.WaitGroup
 
@@ -155,8 +159,8 @@ type PosMempool struct {
 	feeEstimator *PoSFeeEstimator
 
 	// maxValidationViewConnects is the maximum number of transactions that the mempool will connect to the validation view
-	// during the Refresh operation. This limit applies to the number of transactions that successfully connect to the
-	// validation view. Transactions that will fail the validation view connection are not counted towards this limit.
+	// during the validateTransactions operation. This limit applies to the number of transactions that successfully connect
+	// to the validation view. Transactions that will fail the validation view connection are not counted towards this limit.
 	maxValidationViewConnects uint64
 
 	// transactionValidationRoutineRefreshIntervalMillis is the frequency with which the transactionValidationRoutine is run.
@@ -301,6 +305,9 @@ func (mp *PosMempool) Start() error {
 	return nil
 }
 
+// startTransactionValidationRoutine is responsible for validating transactions in the mempool. The routine runs every
+// transactionValidationRefreshIntervalMillis milliseconds. It uses the validateTransactions method to validate the
+// top Fee-Time ordered transactions in the mempool.
 func (mp *PosMempool) startTransactionValidationRoutine() {
 	go func() {
 		mp.startGroup.Done()
@@ -750,7 +757,7 @@ func (mp *PosMempool) GetIterator() MempoolIterator {
 	return NewPosMempoolIterator(mp.txnRegister.GetFeeTimeIterator())
 }
 
-// Refresh updates the validated status of transactions in the mempool. The function connects the Fee-Time ordered
+// validateTransactions updates the validated status of transactions in the mempool. The function connects the Fee-Time ordered
 // mempool transactions to the readOnlyLatestBlockView, creating a cumulative validationView. Transactions that fail to
 // connect to the validationView are removed from the mempool, as they would have also failed to connect during
 // block production. This function is thread-safe.
