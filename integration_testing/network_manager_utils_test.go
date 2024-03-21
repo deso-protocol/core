@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"github.com/deso-protocol/core/cmd"
 	"github.com/deso-protocol/core/lib"
-	"os"
 	"testing"
 )
 
