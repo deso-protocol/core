@@ -337,7 +337,7 @@ func NewSnapshot(mainDb *badger.DB, mainDbDirectory string, snapshotBlockHeightP
 	glog.Infof("Snapshot BadgerDB Dir: %v", snapshotOpts.Dir)
 	glog.Infof("Snapshot BadgerDB ValueDir: %v", snapshotOpts.ValueDir)
 	if snapshotBlockHeightPeriod == 0 {
-		snapshotBlockHeightPeriod = SnapshotBlockHeightPeriod
+		snapshotBlockHeightPeriod = params.DefaultPoWSnapshotBlockHeightPeriod
 	}
 	var snapshotDbMutex sync.Mutex
 
@@ -901,6 +901,10 @@ func (snap *Snapshot) GetAncestralRecordsKeyWithTxn(txn *badger.Txn, key []byte,
 
 	recordsKey := snap.GetAncestralRecordsKey(key, blockHeight)
 	return txn.Get(recordsKey)
+}
+
+func (snap *Snapshot) GetSnapshotBlockHeightPeriod() uint64 {
+	return snap.SnapshotBlockHeightPeriod
 }
 
 // DBSetAncestralRecordWithTxn sets a record corresponding to our ExistingRecordsMap.
