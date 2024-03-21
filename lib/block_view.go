@@ -3941,7 +3941,7 @@ func (bav *UtxoView) ConnectTransactionsFailSafe(
 // connecting the specified number of transactions. Failing transactions do not count towards the transactionConnectLimit.
 func (bav *UtxoView) ConnectTransactionsFailSafeWithLimit(
 	txns []*MsgDeSoTxn, txHashes []*BlockHash, blockHeight uint32, blockTimestampNanoSecs int64,
-	verifySignatures bool, ignoreUtxos bool, ignoreFailing bool, transactionConnectLimit uint32) (
+	verifySignatures bool, ignoreUtxos bool, ignoreFailing bool, transactionConnectLimit uint64) (
 	_combinedUtxoOps [][]*UtxoOperation, _totalInputs []uint64, _totalOutputs []uint64,
 	_fees []uint64, _successFlags []bool, _err error) {
 
@@ -3951,7 +3951,7 @@ func (bav *UtxoView) ConnectTransactionsFailSafeWithLimit(
 
 func (bav *UtxoView) _connectTransactionsFailSafe(
 	txns []*MsgDeSoTxn, txHashes []*BlockHash, blockHeight uint32, blockTimestampNanoSecs int64,
-	verifySignatures bool, ignoreUtxos bool, ignoreFailing bool, transactionConnectLimit uint32) (
+	verifySignatures bool, ignoreUtxos bool, ignoreFailing bool, transactionConnectLimit uint64) (
 	_combinedUtxoOps [][]*UtxoOperation, _totalInputs []uint64, _totalOutputs []uint64,
 	_fees []uint64, _successFlags []bool, _err error) {
 
@@ -3960,7 +3960,7 @@ func (bav *UtxoView) _connectTransactionsFailSafe(
 	var totalOutputs []uint64
 	var fees []uint64
 	var successFlags []bool
-	var totalConnectedTxns uint32
+	var totalConnectedTxns uint64
 
 	updateValues := func(utxoOps []*UtxoOperation, totalInput uint64, totalOutput uint64, fee uint64, success bool) {
 		combinedUtxoOps = append(combinedUtxoOps, utxoOps)

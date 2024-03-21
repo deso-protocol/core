@@ -151,6 +151,11 @@ type PosMempool struct {
 	// based off the current state of the mempool and the most n recent blocks.
 	feeEstimator *PoSFeeEstimator
 
+	// maxValidationViewConnects is the maximum number of transactions that the mempool will connect to the validation view
+	// during the Refresh operation. This limit applies to the number of transactions that successfully connect to the
+	// validation view. Transactions that will fail the validation view connection are not counted towards this limit.
+	maxValidationViewConnects uint64
+
 	// augmentedBlockViewRefreshIntervalMillis is the frequency with which the augmentedLatestBlockView is updated.
 	augmentedBlockViewRefreshIntervalMillis uint64
 
@@ -207,6 +212,7 @@ func (mp *PosMempool) Init(
 	feeEstimatorNumMempoolBlocks uint64,
 	feeEstimatorPastBlocks []*MsgDeSoBlock,
 	feeEstimatorNumPastBlocks uint64,
+	maxValidationViewConnects uint64,
 	augmentedBlockViewRefreshIntervalMillis uint64,
 ) error {
 	if mp.status != PosMempoolStatusNotInitialized {
@@ -229,6 +235,7 @@ func (mp *PosMempool) Init(
 	mp.inMemoryOnly = inMemoryOnly
 	mp.maxMempoolPosSizeBytes = maxMempoolPosSizeBytes
 	mp.mempoolBackupIntervalMillis = mempoolBackupIntervalMillis
+	mp.maxValidationViewConnects = maxValidationViewConnects
 	mp.augmentedBlockViewRefreshIntervalMillis = augmentedBlockViewRefreshIntervalMillis
 
 	// TODO: parameterize num blocks. Also, how to pass in blocks.
@@ -529,11 +536,12 @@ func (mp *PosMempool) checkTransactionSanity(txn *MsgDeSoTxn) error {
 	return nil
 }
 
+// updateTransactionValidatedStatus updates the validated status of a mempool transaction with the provided txnHash.
 func (mp *PosMempool) updateTransactionValidatedStatus(txnHash *BlockHash, validated bool) {
 	mp.Lock()
 	defer mp.Unlock()
 
-	if !mp.IsRunning() {
+	if !mp.IsRunning() || txnHash == nil {
 		return
 	}
 
@@ -711,61 +719,63 @@ func (mp *PosMempool) GetIterator() MempoolIterator {
 	return NewPosMempoolIterator(mp.txnRegister.GetFeeTimeIterator())
 }
 
-// Refresh can be used to evict stale transactions from the mempool. However, it is a bit expensive and should be used
-// sparingly. Upon being called, Refresh will create an in-memory temp PosMempool and populate it with transactions from
-// the main mempool. The temp mempool will have the most up-to-date readOnlyLatestBlockView, Height, and globalParams. Any
-// transaction that fails to add to the temp mempool will be removed from the main mempool.
+// Refresh updates the validated status of transactions in the mempool. The function connects the Fee-Time ordered
+// mempool transactions to the readOnlyLatestBlockView, creating a cumulative validationView. Transactions that fail to
+// connect to the validationView are removed from the mempool, as they would have also failed to connect during
+// block production. This function is thread-safe.
 func (mp *PosMempool) Refresh() error {
-	mp.Lock()
-	defer mp.Unlock()
-
+	// We hold a read-lock on the mempool to get the transactions and the latest block view.
+	mp.RLock()
 	if !mp.IsRunning() {
 		return nil
 	}
 
-	if err := mp.refreshNoLock(); err != nil {
-		return errors.Wrapf(err, "PosMempool.Refresh: Problem refreshing mempool")
-	}
-	return nil
-}
+	// We copy the reference to the readOnlyLatestBlockView. Since the utxoView is immutable, we don't need to copy the
+	// entire view while we hold the lock.
+	validationView := mp.readOnlyLatestBlockView
+	mempoolTxns := mp.getTransactionsNoLock()
+	mp.RUnlock()
 
-func (mp *PosMempool) refreshNoLock() error {
-	// Create the temporary in-memory mempool with the most up-to-date readOnlyLatestBlockView, Height, and globalParams.
-	tempPool := NewPosMempool()
-	err := tempPool.Init(
-		mp.params,
-		mp.globalParams,
-		mp.readOnlyLatestBlockView,
-		mp.latestBlockHeight,
-		"",
-		true,
-		mp.maxMempoolPosSizeBytes,
-		mp.mempoolBackupIntervalMillis,
-		mp.feeEstimator.numMempoolBlocks,
-		mp.feeEstimator.cachedBlocks,
-		mp.feeEstimator.numPastBlocks,
-		mp.augmentedBlockViewRefreshIntervalMillis,
-	)
+	// If the validation view is nil, there's nothing to do so we return early.
+	if validationView == nil {
+		return nil
+	}
+
+	// Convert the mempool transactions to the MsgDeSoTxn format, which we can use for connecting to the validation view.
+	var txns []*MsgDeSoTxn
+	var txHashes []*BlockHash
+	for _, txn := range mempoolTxns {
+		txns = append(txns, txn.Tx)
+		txHashes = append(txHashes, txn.Hash)
+	}
+	// Copy the validation view to avoid modifying the readOnlyLatestBlockView.
+	copyValidationView, err := validationView.CopyUtxoView()
 	if err != nil {
-		return errors.Wrapf(err, "PosMempool.refreshNoLock: Problem initializing temp pool")
+		return errors.Wrapf(err, "PosMempool.refreshNoLock: Problem copying utxo view")
 	}
-	if err := tempPool.Start(); err != nil {
-		return errors.Wrapf(err, "PosMempool.refreshNoLock: Problem starting temp pool")
+	// Connect the transactions to the validation view. We use the latest block height + 1 as the block height to connect
+	// the transactions. This is because the mempool contains transactions that we use for producing the next block.
+	_, _, _, _, successFlags, err := copyValidationView.ConnectTransactionsFailSafeWithLimit(txns, txHashes, uint32(mp.latestBlockHeight)+1,
+		time.Now().UnixNano(), false, false, true, mp.maxValidationViewConnects)
+	if err != nil {
+		return errors.Wrapf(err, "PosMempool.refreshNoLock: Problem connecting transactions")
 	}
-	defer tempPool.Stop()
 
-	// Add all transactions from the main mempool to the temp mempool. Skip signature verification.
+	// We iterate through the successFlags and update the validated status of the transactions in the mempool.
 	var txnsToRemove []*MempoolTx
-	txns := mp.getTransactionsNoLock()
-	for _, txn := range txns {
-		mtxn := NewMempoolTransaction(txn.Tx, txn.Added, txn.IsValidated())
-		err := tempPool.AddTransaction(mtxn)
-		if err == nil {
-			continue
+	for ii, successFlag := range successFlags {
+		if ii >= len(mempoolTxns) {
+			break
 		}
-
-		// If we've encountered an error while adding the transaction to the temp mempool, we add it to our txnsToRemove list.
-		txnsToRemove = append(txnsToRemove, txn)
+		// If the transaction successfully connected to the validation view, we update the validated status of the
+		// transaction in the mempool. If the transaction failed to connect to the validation view, we add it to the
+		// txnsToRemove list. Note that we don't need to hold a lock while updating the validated status of the
+		// transactions in the mempool, since the updateTransactionValidatedStatus already holds the lock.
+		if successFlag {
+			mp.updateTransactionValidatedStatus(mempoolTxns[ii].Hash, true)
+		} else {
+			txnsToRemove = append(txnsToRemove, mempoolTxns[ii])
+		}
 	}
 
 	// Now remove all transactions from the txnsToRemove list from the main mempool.
@@ -834,9 +844,6 @@ func (mp *PosMempool) UpdateGlobalParams(globalParams *GlobalParamsEntry) {
 	}
 
 	mp.globalParams = globalParams
-	if err := mp.refreshNoLock(); err != nil {
-		glog.Errorf("PosMempool.UpdateGlobalParams: Problem refreshing mempool: %v", err)
-	}
 }
 
 // Implementation of the Mempool interface

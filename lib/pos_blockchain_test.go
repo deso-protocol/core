@@ -2790,7 +2790,7 @@ func NewTestPoSBlockchainWithValidators(t *testing.T) *TestMeta {
 	mempool := NewPosMempool()
 	require.NoError(t, mempool.Init(
 		params, _testGetDefaultGlobalParams(), latestBlockView, 11, _dbDirSetup(t), false, maxMempoolPosSizeBytes,
-		mempoolBackupIntervalMillis, 1, nil, 1, 100,
+		mempoolBackupIntervalMillis, 1, nil, 1, 10000, 100,
 	))
 	require.NoError(t, mempool.Start())
 	require.True(t, mempool.IsRunning())
