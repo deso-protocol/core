@@ -2187,9 +2187,21 @@ func (srv *Server) _handleBlock(pp *Peer, blk *MsgDeSoBlock) {
 	srv.timer.Print("Server._handleBlock: General")
 	srv.timer.Print("Server._handleBlock: Process Block")
 
-	// We shouldn't be receiving blocks while syncing headers.
+	// We shouldn't be receiving blocks while syncing headers, but we can end up here
+	// if it took longer than MaxTipAge to sync blocks to this point. We'll revert to
+	// syncing headers and then resume syncing blocks once we're current again.
 	if srv.blockchain.chainState() == SyncStateSyncingHeaders {
 		glog.Warningf("Server._handleBlock: Received block while syncing headers: %v", blk)
+		glog.Infof("Requesting headers: %v", pp)
+
+		locator := srv.blockchain.LatestHeaderLocator()
+		pp.AddDeSoMessage(&MsgDeSoGetHeaders{
+			StopHash:     &BlockHash{},
+			BlockLocator: locator,
+		}, false)
+		glog.V(1).Infof("Server._handleHeaderBundle: *Syncing* headers for blocks starting at "+
+			"header tip %v from peer %v",
+			srv.blockchain.HeaderTip(), pp)
 		return
 	}
 
