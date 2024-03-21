@@ -237,6 +237,10 @@ const (
 	RuleErrorMaxTxnSizeBytesTooHigh                            RuleError = "RuleErrorMaxTxnSizeBytesTooHigh"
 	RuleErrorMaxTxnSizeBytesExceedsMaxBlockSizeBytes           RuleError = "RuleErrorMaxTxnSizeBytesExceedsMaxBlockSizeBytes"
 	RuleErrorFeeBucketSizeTooSmall                             RuleError = "RuleErrorFeeBucketSizeTooSmall"
+	RuleErrorBlockProductionIntervalPoSTooLow                  RuleError = "RuleErrorBlockProductionIntervalPoSTooLow"
+	RuleErrorBlockProductionIntervalPoSTooHigh                 RuleError = "RuleErrorBlockProductionIntervalPoSTooHigh"
+	RuleErrorTimeoutIntervalPoSTooLow                          RuleError = "RuleErrorTimeoutIntervalPoSTooLow"
+	RuleErrorTimeoutIntervalPoSTooHigh                         RuleError = "RuleErrorTimeoutIntervalPoSTooHigh"
 
 	// DeSo Diamonds
 	RuleErrorBasicTransferHasDiamondPostHashWithoutDiamondLevel   RuleError = "RuleErrorBasicTransferHasDiamondPostHashWithoutDiamondLevel"

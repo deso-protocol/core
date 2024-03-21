@@ -413,8 +413,6 @@ func NewServer(
 	_mempoolMaxValidationViewConnects uint64,
 	_transactionValidationRefreshIntervalMillis uint64,
 	_augmentedBlockViewRefreshIntervalMillis uint64,
-	_posBlockProductionIntervalMilliseconds uint64,
-	_posTimeoutBaseDurationMilliseconds uint64,
 	_stateSyncerMempoolTxnSyncLimit uint64,
 ) (
 	_srv *Server,
@@ -640,8 +638,6 @@ func NewServer(
 			_chain,
 			_posMempool,
 			_blsKeystore.GetSigner(),
-			_posBlockProductionIntervalMilliseconds,
-			_posTimeoutBaseDurationMilliseconds,
 		)
 		// On testnet, if the node is configured to be a PoW block producer, and it is configured
 		// to be also a PoS validator, then we attach block mined listeners to the miner to kick
