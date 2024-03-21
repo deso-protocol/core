@@ -35,15 +35,17 @@ func TestValidateDeSoTxnEncoding(t *testing.T) {
 	require := require.New(t)
 
 	params := DeSoTestnetParams
+	mergedGlobalParams := MergeGlobalParamEntryDefaults(&GlobalParamsEntry{}, &params)
 	txns := decodeTestTxns(t)
 
 	for _, txn := range txns {
-		require.NoError(ValidateDeSoTxnEncoding(txn, &params))
+		require.NoError(
+			ValidateDeSoTxnEncoding(txn, 1, mergedGlobalParams, &params), &params)
 	}
 
-	params.MaxBlockSizeBytes = 0
+	params.MaxBlockSizeBytesPoW = 0
 	for _, txn := range txns {
-		require.Contains(ValidateDeSoTxnEncoding(txn, &params).Error(), RuleErrorTxnTooBig)
+		require.Contains(ValidateDeSoTxnEncoding(txn, 1, mergedGlobalParams, &params).Error(), RuleErrorTxnTooBig)
 	}
 }
 

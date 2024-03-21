@@ -3448,6 +3448,23 @@ func (bav *UtxoView) _connectUpdateGlobalParams(
 			}
 			newGlobalParamsEntry.MempoolFeeEstimatorNumPastBlocks = val
 		}
+		if len(extraData[MaxBlockSizeBytesPoSKey]) > 0 {
+			val, bytesRead := Uvarint(
+				extraData[MaxBlockSizeBytesPoSKey],
+			)
+			if bytesRead <= 0 {
+				return 0, 0, nil, fmt.Errorf(
+					"_connectUpdateGlobalParams: unable to decode MaxBlockSizeBytesPoS as uint64",
+				)
+			}
+			if val < MinMaxBlockSizeBytes {
+				return 0, 0, nil, RuleErrorMaxBlockSizeBytesTooLow
+			}
+			if val > MaxMaxBlockSizeBytes {
+				return 0, 0, nil, RuleErrorMaxBlockSizeBytesTooHigh
+			}
+			newGlobalParamsEntry.MaxBlockSizeBytesPoS = val
+		}
 	}
 
 	var newForbiddenPubKeyEntry *ForbiddenPubKeyEntry
@@ -3580,8 +3597,13 @@ func (bav *UtxoView) _connectTransaction(
 		return nil, 0, 0, 0, errors.Wrapf(
 			err, "_connectTransaction: Problem serializing transaction: ")
 	}
+	maxBlockSizeBytes, err := bav.GetMaxBlockSizeBytes(uint64(blockHeight))
+	if err != nil {
+		return nil, 0, 0, 0, errors.Wrapf(
+			err, "_connectTransaction: Problem getting max block size bytes: ")
+	}
 	txnSizeBytes := uint64(len(txnBytes))
-	if txnSizeBytes > bav.Params.MaxBlockSizeBytes/2 {
+	if txnSizeBytes > maxBlockSizeBytes/2 {
 		return nil, 0, 0, 0, RuleErrorTxnTooBig
 	}
 
@@ -5015,4 +5037,23 @@ func mergeExtraData(oldMap map[string][]byte, newMap map[string][]byte) map[stri
 	}
 
 	return retMap
+}
+
+func (bav *UtxoView) GetMaxBlockSizeBytes(height uint64) (uint64, error) {
+	if bav.Params.IsPoSBlockHeight(height) {
+		epochEntry, err := bav.SimulateAdjacentEpochEntryForBlockHeight(height)
+		if err != nil {
+			return 0, errors.Wrapf(err, "GetMaxBlockSizeBytes: error getting adjacent epoch entry")
+		}
+		snapshotAtEpochNumber, err := bav.ComputeSnapshotEpochNumberForEpoch(epochEntry.EpochNumber)
+		if err != nil {
+			return 0, errors.Wrapf(err, "GetMaxBlockSizeBytes: error computing snapshot at epoch number")
+		}
+		snapshotGlobalParams, err := bav.GetSnapshotGlobalParamsEntryByEpochNumber(snapshotAtEpochNumber)
+		if err != nil {
+			return 0, errors.Wrapf(err, "GetMaxBlockSizeBytes: error getting current snapshot global params entry")
+		}
+		return snapshotGlobalParams.MaxBlockSizeBytesPoS, nil
+	}
+	return bav.Params.MaxBlockSizeBytesPoW, nil
 }

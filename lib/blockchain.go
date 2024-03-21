@@ -1509,7 +1509,9 @@ func (bc *Blockchain) _validateOrphanBlock(desoBlock *MsgDeSoBlock) error {
 	if err != nil {
 		return fmt.Errorf("_validateOrphanBlock: Could not serialize block")
 	}
-	if uint64(len(serializedBlock)) > bc.params.MaxBlockSizeBytes {
+	// TODO: seems like we don't use this function w/ PoS so it's safe to
+	// leave this as a direct access to MaxBlockSizeBytesPoW.
+	if uint64(len(serializedBlock)) > bc.params.MaxBlockSizeBytesPoW {
 		return RuleErrorBlockTooBig
 	}
 
@@ -2192,7 +2194,9 @@ func (bc *Blockchain) processBlockPoW(desoBlock *MsgDeSoBlock, verifySignatures 
 		// potentially a network issue not an issue with the actual block.
 		return false, false, fmt.Errorf("ProcessBlock: Problem serializing block")
 	}
-	if uint64(len(serializedBlock)) > bc.params.MaxBlockSizeBytes {
+	// Since this is a PoW-only function, it's safe to leave direct access
+	// to MaxBlockSizeBytesPoW through the params instead of using the GlobalParamsEntry.
+	if uint64(len(serializedBlock)) > bc.params.MaxBlockSizeBytesPoW {
 		bc.MarkBlockInvalid(nodeToValidate, RuleErrorBlockTooBig)
 		return false, false, RuleErrorBlockTooBig
 	}
@@ -4875,10 +4879,15 @@ func (bc *Blockchain) CreateMaxSpend(
 		for feeAmountNanos == 0 || feeAmountNanos != prevFeeAmountNanos {
 			prevFeeAmountNanos = feeAmountNanos
 			if !isInterfaceValueNil(mempool) {
+				maxBlockSizeBytes, err := utxoView.GetMaxBlockSizeBytes(uint64(bc.BlockTip().Height))
+				if err != nil {
+					return nil, 0, 0, 0, errors.Wrapf(
+						err,
+						"Blockchain.CreateMaxSpend: Problem getting max block size bytes: ")
+				}
 				// TODO: replace MaxBasisPoints with variables configured by flags.
 				feeAmountNanos, err = mempool.EstimateFee(txn, minFeeRateNanosPerKB,
-					MaxBasisPoints, MaxBasisPoints, MaxBasisPoints, MaxBasisPoints,
-					bc.params.MaxBlockSizeBytes)
+					MaxBasisPoints, MaxBasisPoints, MaxBasisPoints, MaxBasisPoints, maxBlockSizeBytes)
 				if err != nil {
 					return nil, 0, 0, 0, errors.Wrapf(err, "CreateMaxSpend: Problem estimating fee: ")
 				}
@@ -4913,7 +4922,10 @@ func (bc *Blockchain) CreateMaxSpend(
 		// than what AddInputsAndChangeToTransaction will allow because we want to leave
 		// some breathing room to avoid this transaction getting rejected.
 		currentTxnSize := _computeMaxTxSize(txn)
-		if currentTxnSize > bc.params.MaxBlockSizeBytes/3 {
+		// It is okay to directly use MaxBlockSizeBytesPoW here since the PoS fork
+		// comes after the balance model fork. The balance model fork ensures we do not hit
+		// this point.
+		if currentTxnSize > bc.params.MaxBlockSizeBytesPoW/3 {
 			if len(txn.TxInputs) > 0 {
 				// Cut off the last input if the transaction just became too large.
 				txn.TxInputs = txn.TxInputs[:len(txn.TxInputs)-1]
@@ -5009,9 +5021,15 @@ func (bc *Blockchain) AddInputsAndChangeToTransactionWithSubsidy(
 
 		if txArg.TxnMeta.GetTxnType() != TxnTypeBlockReward {
 			if !isInterfaceValueNil(mempool) {
+				maxBlockSizeBytes, err := utxoView.GetMaxBlockSizeBytes(uint64(bc.BlockTip().Height))
+				if err != nil {
+					return 0, 0, 0, 0, errors.Wrapf(
+						err,
+						"AddInputsAndChangeToTransaction: Problem getting max block size bytes: ")
+				}
 				// TODO: replace MaxBasisPoints with variables configured by flags.
 				txArg.TxnFeeNanos, err = mempool.EstimateFee(txArg, minFeeRateNanosPerKB, MaxBasisPoints,
-					MaxBasisPoints, MaxBasisPoints, MaxBasisPoints, bc.params.MaxBlockSizeBytes)
+					MaxBasisPoints, MaxBasisPoints, MaxBasisPoints, maxBlockSizeBytes)
 				if err != nil {
 					return 0, 0, 0, 0, errors.Wrapf(err,
 						"AddInputsAndChangeToTransaction: Problem estimating fee: ")
@@ -5149,10 +5167,13 @@ func (bc *Blockchain) AddInputsAndChangeToTransactionWithSubsidy(
 
 	// If the final transaction is absolutely huge, return an error.
 	finalTxnSize := _computeMaxTxSize(finalTxCopy)
-	if finalTxnSize > bc.params.MaxBlockSizeBytes/2 {
+	// It's fine to directly use MaxBlockSizeBytesPoW since the PoS fork
+	// will always be after the balance model fork. The balance model fork
+	// prevents the codebase from reaching this point.
+	if finalTxnSize > bc.params.MaxBlockSizeBytesPoW/2 {
 		return 0, 0, 0, 0, fmt.Errorf("AddInputsAndChangeToTransaction: "+
 			"Transaction size (%d bytes) exceeds the maximum sane amount "+
-			"allowed (%d bytes)", finalTxnSize, bc.params.MaxBlockSizeBytes/2)
+			"allowed (%d bytes)", finalTxnSize, bc.params.MaxBlockSizeBytesPoW/2)
 	}
 
 	// At this point, the inputs cover the (spend amount plus transaction fee)
@@ -5183,7 +5204,7 @@ func (bc *Blockchain) EstimateDefaultFeeRateNanosPerKB(
 		return minFeeRateNanosPerKB
 	}
 	numBytes := len(blockBytes)
-	if float64(numBytes)/float64(bc.params.MaxBlockSizeBytes) < medianThreshold {
+	if float64(numBytes)/float64(bc.params.MaxBlockSizeBytesPoW) < medianThreshold {
 		return minFeeRateNanosPerKB
 	}
 

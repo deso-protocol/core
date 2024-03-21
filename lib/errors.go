@@ -228,6 +228,8 @@ const (
 	RuleErrorUserNotAuthorizedToUpdateGlobalParams             RuleError = "RuleErrorUserNotAuthorizedToUpdateGlobalParams"
 	RuleErrorUserOutputMustBeNonzero                           RuleError = "RuleErrorUserOutputMustBeNonzero"
 	RuleErrorLeaderScheduleExceedsValidatorSetMaxNumValidators RuleError = "RuleErrorLeaderScheduleExceedsValidatorSetMaxNumValidators"
+	RuleErrorMaxBlockSizeBytesTooLow                           RuleError = "RuleErrorMaxBlockSizeBytesTooLow"
+	RuleErrorMaxBlockSizeBytesTooHigh                          RuleError = "RuleErrorMaxBlockSizeBytesTooHigh"
 
 	// DeSo Diamonds
 	RuleErrorBasicTransferHasDiamondPostHashWithoutDiamondLevel   RuleError = "RuleErrorBasicTransferHasDiamondPostHashWithoutDiamondLevel"

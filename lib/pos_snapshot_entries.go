@@ -160,6 +160,9 @@ func MergeGlobalParamEntryDefaults(globalParamsEntry *GlobalParamsEntry, params 
 	if globalParamsEntryCopy.MempoolFeeEstimatorNumPastBlocks == 0 {
 		globalParamsEntryCopy.MempoolFeeEstimatorNumPastBlocks = params.DefaultMempoolFeeEstimatorNumPastBlocks
 	}
+	if globalParamsEntryCopy.MaxBlockSizeBytesPoS == 0 {
+		globalParamsEntryCopy.MaxBlockSizeBytesPoS = params.DefaultMaxBlockSizeBytesPoS
+	}
 
 	// Return the merged result.
 	return globalParamsEntryCopy

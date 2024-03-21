@@ -90,6 +90,7 @@ func TestCreateBlockWithoutHeader(t *testing.T) {
 	blsPubKey, _ := _generateValidatorVotingPublicKeyAndSignature(t)
 	params, db := _posTestBlockchainSetupWithBalances(t, 200000, 200000)
 	params.ForkHeights.ProofOfStake2ConsensusCutoverBlockHeight = 1
+	params.DefaultMaxBlockSizeBytesPoS = params.MaxBlockSizeBytesPoW
 	maxMempoolPosSizeBytes := uint64(3000000000)
 	mempoolBackupIntervalMillis := uint64(30000)
 
