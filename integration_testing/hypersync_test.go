@@ -35,6 +35,44 @@ func TestSimpleHyperSync(t *testing.T) {
 	t.Logf("Databases match!")
 }
 
+// TestPoSRegtestHypersyncArchival tests whether a node can successfully archival hypersync from another node after
+// the PoS transition. In the test, node1 will produce blocks until it creates a snapshot after the 2nd PoS fork height.
+// Then, we spawn node2, which will connect to node1 and hypersync from it. We then compare that the state dbs match.
+// This test takes a couple of minutes to run, and can potentially fail the db comparison if node1 produces a block
+// at the very end of the test, right before it stops, and node2 doesn't receive it in time. If this happens, rerun
+// the test, it should generally pass.
+func TestPoSRegtestHypersyncArchival(t *testing.T) {
+	node1 := simplePosNode(t, 18000, "node1", true)
+
+	node1.Config.Params = node1.Params
+	node1.Config.SyncType = lib.NodeSyncTypeHyperSyncArchival
+	node1.Params.DefaultPoWSnapshotBlockHeightPeriod = 30
+	node1.Config.SnapshotBlockHeightPeriod = 60
+	node1.Config.HyperSync = true
+	node1 = startNode(t, node1)
+	condition := func() bool {
+		return node1.Server.GetBlockchain().BlockTip().Height >= 140
+	}
+	waitForConditionNoTimeout(t, "node1", condition)
+
+	node2 := simplePosNode(t, 18001, "node2", true)
+	node2.Config.MinerPublicKeys = []string{}
+	node2.Params.DefaultPoWSnapshotBlockHeightPeriod = 30
+	node2.Config.SnapshotBlockHeightPeriod = 60
+	node2.Config.ConnectIPs = []string{"127.0.0.1:18000"}
+	node2.Config.HyperSync = true
+	node2.Config.SyncType = lib.NodeSyncTypeHyperSyncArchival
+	node2 = startNode(t, node2)
+	condition2 := func() bool {
+		return node2.Server.GetBlockchain().BlockTip().Height >= 140
+	}
+	waitForConditionNoTimeout(t, "node2", condition2)
+
+	node1.Stop()
+	node2.Stop()
+	compareNodesByStateOffline(t, node1, node2, 0)
+}
+
 // TestHyperSyncFromHyperSyncedNode test if a node can successfully hypersync from another hypersynced node:
 //  1. Spawn three nodes node1, node2, node3 with max block height of MaxSyncBlockHeight blocks, and snapshot period of HyperSyncSnapshotPeriod
 //  2. node1 syncs MaxSyncBlockHeight blocks from the "deso-seed-2.io" generator and builds ancestral records.
