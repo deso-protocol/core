@@ -877,14 +877,14 @@ func (stateChangeSyncer *StateChangeSyncer) SyncMempoolToStateSyncer(server *Ser
 		utxoOpsForTxn, _, _, _, err := mempoolTxUtxoView.ConnectTransaction(
 			mempoolTx.Tx, mempoolTx.Hash, 0, uint32(blockHeight+1), false, false /*ignoreUtxos*/)
 		if err != nil {
-			fmt.Printf("Right before the mempool flush error: %v\n", err)
-			continue
-			//mempoolUtxoView.EventManager.stateSyncerFlushed(&StateSyncerFlushedEvent{
-			//	FlushId:        originalCommittedFlushId,
-			//	Succeeded:      false,
-			//	IsMempoolFlush: true,
-			//})
-			//return false, errors.Wrapf(err, "StateChangeSyncer.SyncMempoolToStateSyncer ConnectTransaction: ")
+			//fmt.Printf("Right before the mempool flush error: %v\n", err)
+			//continue
+			mempoolUtxoView.EventManager.stateSyncerFlushed(&StateSyncerFlushedEvent{
+				FlushId:        originalCommittedFlushId,
+				Succeeded:      false,
+				IsMempoolFlush: true,
+			})
+			return false, errors.Wrapf(err, "StateChangeSyncer.SyncMempoolToStateSyncer ConnectTransaction: ")
 		}
 		txnStateChangeEntry = &StateChangeEntry{
 			OperationType: DbOperationTypeUpsert,
