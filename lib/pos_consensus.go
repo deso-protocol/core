@@ -674,10 +674,11 @@ func (fc *FastHotStuffConsensus) tryProcessBlockAsNewTip(block *MsgDeSoBlock) ([
 		return nil, errors.Errorf("Error hashing tip block: %v", err)
 	}
 
-	utxoView, err := fc.blockchain.getUtxoViewAtBlockHash(*tipBlockHash)
+	utxoViewAndUtxoOps, err := fc.blockchain.getUtxoViewAndUtxoOpsAtBlockHash(*tipBlockHash)
 	if err != nil {
 		return nil, errors.Errorf("Error fetching UtxoView for tip block: %v", err)
 	}
+	utxoView := utxoViewAndUtxoOps.UtxoView
 	snapshotGlobalParams, err := utxoView.GetCurrentSnapshotGlobalParamsEntry()
 	if err != nil {
 		return nil, errors.Errorf("Error fetching snapshot global params: %v", err)
@@ -719,11 +720,13 @@ func (fc *FastHotStuffConsensus) produceUnsignedBlockForBlockProposalEvent(
 	}
 
 	// Build a UtxoView at the parent block
-	utxoViewAtParent, err := fc.blockchain.getUtxoViewAtBlockHash(*parentBlockHash)
+	parentUtxoViewAndUtxoOps, err := fc.blockchain.getUtxoViewAndUtxoOpsAtBlockHash(*parentBlockHash)
 	if err != nil {
 		// This should never happen as long as the parent block is a descendant of the committed tip.
 		return nil, errors.Errorf("Error fetching UtxoView for parent block: %v", parentBlockHash)
 	}
+
+	utxoViewAtParent := parentUtxoViewAndUtxoOps.UtxoView
 
 	// Dynamically create a new block producer at the current block height
 	blockProducer, err := fc.createBlockProducer(utxoViewAtParent, parentBlock.Header.TstampNanoSecs)
