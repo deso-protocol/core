@@ -5,7 +5,6 @@ import (
 	"container/list"
 	"encoding/hex"
 	"fmt"
-	"github.com/decred/dcrd/lru"
 	"math"
 	"math/big"
 	"reflect"
@@ -13,6 +12,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/decred/dcrd/lru"
 
 	"github.com/deso-protocol/core/collections"
 
@@ -975,11 +976,13 @@ func locateHeaders(locator []*BlockHash, stopHash *BlockHash, maxHeaders uint32,
 //     after the genesis block will be returned
 //
 // This function is safe for concurrent access.
-func (bc *Blockchain) LocateBestBlockChainHeaders(locator []*BlockHash, stopHash *BlockHash) []*MsgDeSoHeader {
+func (bc *Blockchain) LocateBestBlockChainHeaders(
+	locator []*BlockHash, stopHash *BlockHash, maxHeaders uint32) []*MsgDeSoHeader {
+
 	// TODO: Shouldn't we hold a ChainLock here? I think it's fine though because the place
 	// where it's currently called is single-threaded via a channel in server.go. Going to
 	// avoid messing with it for now.
-	headers := locateHeaders(locator, stopHash, MaxHeadersPerMsg,
+	headers := locateHeaders(locator, stopHash, maxHeaders,
 		bc.blockIndexByHash, bc.bestChain, bc.bestChainMap)
 
 	return headers

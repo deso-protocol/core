@@ -45,6 +45,12 @@ var MaxBlockRewardDataSizeBytes = 250
 // MaxHeadersPerMsg is the maximum numbers allowed in a GetHeaders response.
 var MaxHeadersPerMsg = uint32(2000)
 
+// With PoS we can afford to download more headers in each batch.
+//
+// TODO: I set this number really high because it's easier to lower it than it is
+// to increase it (increasing requires everyone to upgrade).
+var MaxHeadersPerMsgPos = uint32(200000)
+
 // MaxBitcoinHeadersPerMsg is the maximum number of headers Bitcoin allows in
 // a getheaders response. It is used to determine whether a node has more headers
 // to give us.
