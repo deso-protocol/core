@@ -471,6 +471,9 @@ func NewServer(
 	// manager. It just takes and keeps track of the median time among our peers so
 	// we can keep a consistent clock.
 	timesource := chainlib.NewMedianTime()
+	// We need to add an initial time sample or else it will return the zero time, which
+	// messes things up during initialization.
+	timesource.AddTimeSample("my-time", time.Now())
 
 	// Create a new connection manager but note that it won't be initialized until Start().
 	_incomingMessages := make(chan *ServerMessage, _params.ServerMessageChannelSize+(_targetOutboundPeers+_maxInboundPeers)*3)
@@ -720,7 +723,11 @@ func (srv *Server) _handleGetHeaders(pp *Peer, msg *MsgDeSoGetHeaders) {
 	// Use the block after the genesis block if no other blocks in the
 	// provided locator are known. This does mean the client will start
 	// over with the genesis block if unknown block locators are provided.
-	headers := srv.blockchain.LocateBestBlockChainHeaders(msg.BlockLocator, msg.StopHash)
+	maxHeadersPerMsg := MaxHeadersPerMsg
+	if pp.Params.ProtocolVersion >= ProtocolVersion2 {
+		maxHeadersPerMsg = MaxHeadersPerMsgPos
+	}
+	headers := srv.blockchain.LocateBestBlockChainHeaders(msg.BlockLocator, msg.StopHash, maxHeadersPerMsg)
 
 	// Send found headers to the requesting peer.
 	blockTip := srv.blockchain.blockTip()
@@ -1012,7 +1019,11 @@ func (srv *Server) _handleHeaderBundle(pp *Peer, msg *MsgDeSoHeaderBundle) {
 	// On the other hand, if the request contains MaxHeadersPerMsg, it is highly
 	// likely we have not hit the tip of our peer's chain, and so requesting more
 	// headers from the peer would likely be useful.
-	if uint32(len(msg.Headers)) < MaxHeadersPerMsg || srv.blockchain.isTipMaxed(srv.blockchain.headerTip()) {
+	maxHeadersPerMsg := MaxHeadersPerMsg
+	if pp.Params.ProtocolVersion >= ProtocolVersion2 {
+		maxHeadersPerMsg = MaxHeadersPerMsgPos
+	}
+	if uint32(len(msg.Headers)) < maxHeadersPerMsg || srv.blockchain.isTipMaxed(srv.blockchain.headerTip()) {
 		// If we have exhausted the peer's headers but our header chain still isn't
 		// current it means the peer we chose isn't current either. So disconnect
 		// from her and try to sync with someone else.
