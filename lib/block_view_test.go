@@ -14,7 +14,7 @@ import (
 
 	"github.com/btcsuite/btcd/btcec"
 	"github.com/decred/dcrd/lru"
-	"github.com/dgraph-io/badger/v3"
+	"github.com/dgraph-io/badger/v4"
 	embeddedpostgres "github.com/fergusstrange/embedded-postgres"
 	"github.com/golang/glog"
 	"github.com/stretchr/testify/assert"
