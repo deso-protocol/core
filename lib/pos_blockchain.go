@@ -960,16 +960,6 @@ func (bc *Blockchain) isProperlyFormedBlockPoS(block *MsgDeSoBlock) error {
 		return RuleErrorBlockWithNoTxns
 	}
 
-	// Make sure TxnConnectStatusByIndex is non-nil
-	if block.TxnConnectStatusByIndex == nil {
-		return RuleErrorNilTxnConnectStatusByIndex
-	}
-
-	// Make sure the TxnConnectStatusByIndex matches the TxnConnectStatusByIndexHash
-	if !(HashBitset(block.TxnConnectStatusByIndex).IsEqual(block.Header.TxnConnectStatusByIndexHash)) {
-		return RuleErrorTxnConnectStatusByIndexHashMismatch
-	}
-
 	// Make sure that the first txn in each block is a block reward txn.
 	if block.Txns[0].TxnMeta.GetTxnType() != TxnTypeBlockReward {
 		return RuleErrorBlockDoesNotStartWithRewardTxn
@@ -1008,11 +998,6 @@ func (bc *Blockchain) isProperlyFormedBlockHeaderPoS(header *MsgDeSoHeader) erro
 	// Header validation
 	if header.Version != HeaderVersion2 {
 		return RuleErrorInvalidPoSBlockHeaderVersion
-	}
-
-	// Must have TxnConnectStatusByIndexHash
-	if header.TxnConnectStatusByIndexHash == nil {
-		return RuleErrorNilTxnConnectStatusByIndexHash
 	}
 
 	// Require header to have either vote or timeout QC
@@ -2077,9 +2062,6 @@ const (
 	RuleErrorPoSBlockTstampNanoSecsTooOld                       RuleError = "RuleErrorPoSBlockTstampNanoSecsTooOld"
 	RuleErrorPoSBlockTstampNanoSecsInFuture                     RuleError = "RuleErrorPoSBlockTstampNanoSecsInFuture"
 	RuleErrorInvalidPoSBlockHeaderVersion                       RuleError = "RuleErrorInvalidPoSBlockHeaderVersion"
-	RuleErrorNilTxnConnectStatusByIndex                         RuleError = "RuleErrorNilTxnConnectStatusByIndex"
-	RuleErrorNilTxnConnectStatusByIndexHash                     RuleError = "RuleErrorNilTxnConnectStatusByIndexHash"
-	RuleErrorTxnConnectStatusByIndexHashMismatch                RuleError = "RuleErrorTxnConnectStatusByIndexHashMismatch"
 	RuleErrorNoTimeoutOrVoteQC                                  RuleError = "RuleErrorNoTimeoutOrVoteQC"
 	RuleErrorBothTimeoutAndVoteQC                               RuleError = "RuleErrorBothTimeoutAndVoteQC"
 	RuleErrorBlockWithNoTxns                                    RuleError = "RuleErrorBlockWithNoTxns"

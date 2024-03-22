@@ -7,7 +7,6 @@ import (
 	"github.com/btcsuite/btcd/wire"
 
 	"github.com/deso-protocol/core/bls"
-	"github.com/deso-protocol/core/collections/bitset"
 	"github.com/pkg/errors"
 )
 
@@ -109,8 +108,6 @@ func (pbp *PosBlockProducer) createBlockTemplate(latestBlockView *UtxoView, newB
 	block.Header.ProposerVotingPublicKey = pbp.proposerVotingPublicKey
 	block.Header.ProposerRandomSeedSignature = proposerRandomSeedSignature
 
-	// Hash the TxnConnectStatusByIndex
-	block.Header.TxnConnectStatusByIndexHash = HashBitset(block.TxnConnectStatusByIndex)
 	return block, nil
 }
 
@@ -139,7 +136,7 @@ func (pbp *PosBlockProducer) createBlockWithoutHeader(
 	}
 
 	// Get block transactions from the mempool.
-	feeTimeTxns, txnConnectStatusByIndex, maxUtilityFee, err := pbp.getBlockTransactions(
+	feeTimeTxns, maxUtilityFee, err := pbp.getBlockTransactions(
 		pbp.proposerPublicKey,
 		latestBlockView,
 		newBlockHeight,
@@ -155,7 +152,6 @@ func (pbp *PosBlockProducer) createBlockWithoutHeader(
 	block.Txns = append([]*MsgDeSoTxn{blockRewardTxn}, feeTimeTxns...)
 
 	// Set the RevolutionMetadata
-	block.TxnConnectStatusByIndex = txnConnectStatusByIndex
 	return block, nil
 }
 
@@ -168,7 +164,6 @@ func (pbp *PosBlockProducer) getBlockTransactions(
 	maxBlockSizeBytes uint64,
 ) (
 	_txns []*MsgDeSoTxn,
-	_txnConnectStatusByIndex *bitset.Bitset,
 	_maxUtilityFee uint64,
 	_err error,
 ) {
@@ -177,17 +172,16 @@ func (pbp *PosBlockProducer) getBlockTransactions(
 
 	// Try to connect transactions one by one.
 	blocksTxns := []*MsgDeSoTxn{}
-	txnConnectStatusByIndex := bitset.NewBitset()
 	maxUtilityFee := uint64(0)
 	currentBlockSize := uint64(0)
 	blockUtxoView, err := latestBlockView.CopyUtxoView()
 	if err != nil {
-		return nil, nil, 0, errors.Wrapf(err, "Error copying UtxoView: ")
+		return nil, 0, errors.Wrapf(err, "Error copying UtxoView: ")
 	}
 	for _, txn := range feeTimeTxns {
 		txnBytes, err := txn.ToBytes(false)
 		if err != nil {
-			return nil, nil, 0, errors.Wrapf(err, "Error getting transaction size: ")
+			return nil, 0, errors.Wrapf(err, "Error getting transaction size: ")
 		}
 
 		// Skip over transactions that are too big.
@@ -197,68 +191,34 @@ func (pbp *PosBlockProducer) getBlockTransactions(
 
 		blockUtxoViewCopy, err := blockUtxoView.CopyUtxoView()
 		if err != nil {
-			return nil, nil, 0, errors.Wrapf(err, "Error copying UtxoView: ")
+			return nil, 0, errors.Wrapf(err, "Error copying UtxoView: ")
 		}
 		_, _, _, fees, err := blockUtxoViewCopy._connectTransaction(
 			txn.GetTxn(), txn.Hash(), uint32(newBlockHeight), newBlockTimestampNanoSecs,
 			true, false)
 
 		// Check if the transaction connected.
-		if err == nil {
-			blockUtxoView = blockUtxoViewCopy
-			txnConnectStatusByIndex.Set(len(blocksTxns), true)
-			blocksTxns = append(blocksTxns, txn.GetTxn())
-			currentBlockSize += uint64(len(txnBytes))
-
-			// If the transactor is the block producer, then they won't receive the utility
-			// fee.
-			if blockProducerPublicKey.Equal(*NewPublicKey(txn.PublicKey)) {
-				continue
-			}
-
-			// Compute BMF for the transaction.
-			_, utilityFee := computeBMF(fees)
-			maxUtilityFee, err = SafeUint64().Add(maxUtilityFee, utilityFee)
-			if err != nil {
-				return nil, nil, 0, errors.Wrapf(err, "Error computing max utility fee: ")
-			}
+		if err != nil {
 			continue
 		}
-
-		// If the transaction didn't connect, we will try to add it as a failing transaction.
-		blockUtxoViewCopy, err = blockUtxoView.CopyUtxoView()
-		if err != nil {
-			return nil, nil, 0, errors.Wrapf(err, "Error copying UtxoView: ")
-		}
-
-		_, _, utilityFee, err := blockUtxoViewCopy._connectFailingTransaction(txn.GetTxn(), uint32(newBlockHeight), true)
-		if err != nil {
-			// If the transaction still doesn't connect, this means we encountered an invalid transaction. We will skip
-			// it and let some other process figure out what to do with it. Removing invalid transactions is a fast
-			// process, so we don't need to worry about it here.
-			continue
-		}
-
-		// If we get to this point, it means the transaction didn't connect but it was a valid transaction. We will
-		// add it to the block as a failing transaction.
 		blockUtxoView = blockUtxoViewCopy
-		txnConnectStatusByIndex.Set(len(blocksTxns), false)
 		blocksTxns = append(blocksTxns, txn.GetTxn())
 		currentBlockSize += uint64(len(txnBytes))
 
-		// If the transactor is the block producer, then they won't receive the utility
-		// fee.
+		// If the transactor is the block producer, then they won't receive the utility fee.
 		if blockProducerPublicKey.Equal(*NewPublicKey(txn.PublicKey)) {
 			continue
 		}
 
+		// Compute BMF for the transaction.
+		_, utilityFee := computeBMF(fees)
 		maxUtilityFee, err = SafeUint64().Add(maxUtilityFee, utilityFee)
 		if err != nil {
-			return nil, nil, 0, errors.Wrapf(err, "Error computing max utility fee: ")
+			return nil, 0, errors.Wrapf(err, "Error computing max utility fee: ")
 		}
 	}
 
-	return blocksTxns, txnConnectStatusByIndex, maxUtilityFee, nil
+	return blocksTxns, maxUtilityFee, nil
 }
 
 func _maxInt64(a, b int64) int64 {
