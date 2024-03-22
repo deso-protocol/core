@@ -241,7 +241,7 @@ func TestHeaderConversionAndReadWriteMessage(t *testing.T) {
 		require.NoError(err)
 		require.Equal(hdrPayload, data)
 
-		require.Equalf(14, reflect.TypeOf(expectedBlockHeader).Elem().NumField(),
+		require.Equalf(13, reflect.TypeOf(expectedBlockHeader).Elem().NumField(),
 			"Number of fields in HEADER message is different from expected. "+
 				"Did you add a new field? If so, make sure the serialization code "+
 				"works, add the new field to the test case, and fix this error.")

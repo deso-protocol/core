@@ -278,7 +278,7 @@ func _testProduceBlockNoSizeLimit(t *testing.T, mp *PosMempool, pbp *PosBlockPro
 	numPassing int, numFailing int, numInvalid int) (_txns []*MsgDeSoTxn, _maxUtilityFee uint64) {
 	require := require.New(t)
 
-	totalAcceptedTxns := numPassing + numFailing
+	totalAcceptedTxns := numPassing
 	totalTxns := numPassing + numFailing + numInvalid
 	require.Equal(totalTxns, len(mp.GetTransactions()))
 

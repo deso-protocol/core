@@ -1868,6 +1868,7 @@ func testProcessBlockPoS(t *testing.T, testMeta *TestMeta) {
 		var malformedOrphanBlock *MsgDeSoBlock
 		malformedOrphanBlock = _generateRealBlock(testMeta, 18, 18, 9273, testMeta.chain.BlockTip().Hash, false)
 		malformedOrphanBlock.Header.PrevBlockHash = randomHash
+		malformedOrphanBlock.Header.Version = 5
 		// Resign the block.
 		updateProposerVotePartialSignatureForBlock(testMeta, malformedOrphanBlock)
 		malformedOrphanBlockHash, err := malformedOrphanBlock.Hash()
@@ -1884,6 +1885,8 @@ func testProcessBlockPoS(t *testing.T, testMeta *TestMeta) {
 		require.True(t, malformedOrphanBlockInIndex.IsStored())
 
 		// If a block can't be hashed, we expect to get an error.
+		malformedOrphanBlock.Header.Version = HeaderVersion2
+		malformedOrphanBlock.Header.ProposerVotingPublicKey = nil
 		success, isOrphan, missingBlockHashes, err = testMeta.chain.ProcessBlockPoS(malformedOrphanBlock, 18, true)
 		require.False(t, success)
 		require.False(t, isOrphan)
