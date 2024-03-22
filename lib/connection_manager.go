@@ -114,7 +114,8 @@ type ConnectionManager struct {
 }
 
 func NewConnectionManager(
-	_params *DeSoParams, _listeners []net.Listener,
+	_params *DeSoParams,
+	_listeners []net.Listener,
 	_hyperSync bool,
 	_syncType NodeSyncType,
 	_stallTimeoutSeconds uint64,

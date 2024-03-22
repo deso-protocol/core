@@ -398,6 +398,7 @@ func (node *Node) Stop() {
 	// Databases
 	glog.Infof(lib.CLog(lib.Yellow, "Node.Stop: Closing all databases..."))
 	node.closeDb(node.ChainDB, "chain")
+	node.closeDb(node.Server.GetBlockchain().DB(), "blockchain DB")
 	node.stopWaitGroup.Wait()
 	glog.Infof(lib.CLog(lib.Yellow, "Node.Stop: Databases successfully closed."))
 

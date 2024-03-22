@@ -237,6 +237,15 @@ func (bc *Blockchain) processBlockPoS(block *MsgDeSoBlock, currentView uint64, v
 		return false, false, nil, errors.Wrapf(err, "processBlockPoS: Problem hashing block")
 	}
 
+	// In hypersync archival mode, we may receive blocks that have already been processed and committed during state
+	// synchronization. However, we may want to store these blocks in the db for archival purposes. We check if the
+	// block we're dealing with is an archival block. If it is, we store it and return early.
+	if success, err := bc.checkAndStoreArchivalBlock(block); err != nil {
+		return false, false, nil, errors.Wrap(err, "processBlockPoS: Problem checking and storing archival block")
+	} else if success {
+		return true, false, nil, nil
+	}
+
 	// Get all the blocks between the current block and the committed tip. If the block
 	// is an orphan, then we store it after performing basic validations.
 	// If the block extends from any committed block other than the committed tip,
@@ -392,7 +401,7 @@ func (bc *Blockchain) processBlockPoS(block *MsgDeSoBlock, currentView uint64, v
 // as validate failed.
 func (bc *Blockchain) processOrphanBlockPoS(block *MsgDeSoBlock) error {
 	// Construct a UtxoView, so we can perform the QC and leader checks.
-	utxoView, err := NewUtxoView(bc.db, bc.params, nil, bc.snapshot, nil)
+	utxoView, err := bc.GetCommittedTipView()
 	if err != nil {
 		// We can't validate the QC without a UtxoView. Return an error.
 		return errors.Wrap(err, "processOrphanBlockPoS: Problem initializing UtxoView")
@@ -555,6 +564,30 @@ func (bc *Blockchain) processOrphanBlockPoS(block *MsgDeSoBlock) error {
 	// Add to blockIndexByHash with status STORED only as we are not sure if it's valid yet.
 	_, err = bc.storeBlockInBlockIndex(block)
 	return errors.Wrap(err, "processBlockPoS: Problem adding block to block index: ")
+}
+
+// checkAndStoreArchivalBlock is a helper function that takes in a block and checks if it's an archival block.
+// If it is, it stores the block in the db and returns true. If it's not, it returns false, or false and an error.
+func (bc *Blockchain) checkAndStoreArchivalBlock(block *MsgDeSoBlock) (_success bool, _err error) {
+	// First, get the block hash and lookup the block index.
+	blockHash, err := block.Hash()
+	if err != nil {
+		return false, errors.Wrap(err, "checkAndStoreArchivalBlock: Problem hashing block")
+	}
+	blockNode, exists := bc.blockIndexByHash[*blockHash]
+	// If the blockNode doesn't exist, or the block is not committed, or it's already stored, then we're not dealing
+	// with an archival block. Archival blocks must have an existing blockNode, be committed, and not be stored.
+	if !exists || !blockNode.IsCommitted() || blockNode.IsStored() {
+		return false, nil
+	}
+
+	// If we get to this point, we're dealing with an archival block, so we'll attempt to store it.
+	// This means, this block node is already marked as COMMITTED and VALIDATED, and we just need to store it.
+	_, err = bc.storeBlockInBlockIndex(block)
+	if err != nil {
+		return false, errors.Wrap(err, "checkAndStoreArchivalBlock: Problem storing block in block index")
+	}
+	return true, nil
 }
 
 // storeValidateFailedBlockWithWrappedError is a helper function that takes in a block and an error and
@@ -877,12 +910,12 @@ func (bc *Blockchain) isBlockTimestampTooFarInFuturePoS(header *MsgDeSoHeader) (
 		return false, nil
 	}
 
-	// We use NewUtxoView here, which generates a UtxoView at the current committed tip. We can use the view
+	// We use GetCommittedTipView here, which generates a UtxoView at the current committed tip. We can use the view
 	// to fetch the snapshot global params for the previous epoch, current epoch, and next epoch. As long as
 	// the block's height is within 3600 blocks of the committed tip, this will always work. In practice,
 	// the incoming block never be more than 3600 blocks behind or ahead of the tip, while also failing the
 	// above header.TstampNanoSecs <= currentTstampNanoSecs check.
-	utxoView, err := NewUtxoView(bc.db, bc.params, nil, bc.snapshot, nil)
+	utxoView, err := bc.GetCommittedTipView()
 	if err != nil {
 		return false, errors.Wrap(err, "isBlockTimestampTooFarInFuturePoS: Problem initializing UtxoView")
 	}
@@ -1336,6 +1369,8 @@ func (bc *Blockchain) storeValidatedHeaderInBlockIndex(header *MsgDeSoHeader) (*
 		)
 	}
 	blockNode.Status |= StatusHeaderValidated
+
+	// TODO: this seems to be slowing down the sync process.
 	// If the DB update fails, then we should return an error.
 	if err = bc.upsertBlockNodeToDB(blockNode); err != nil {
 		return nil, errors.Wrapf(err, "storeValidatedHeaderInBlockIndex: Problem upserting block node to DB")
@@ -1460,11 +1495,6 @@ func (bc *Blockchain) upsertBlockAndBlockNodeToDB(block *MsgDeSoBlock, blockNode
 ) error {
 	// Store the block in badger
 	err := bc.db.Update(func(txn *badger.Txn) error {
-		if bc.snapshot != nil {
-			bc.snapshot.PrepareAncestralRecordsFlush()
-			defer bc.snapshot.StartAncestralRecordsFlush(true)
-			glog.V(2).Infof("upsertBlockAndBlockNodeToDB: Preparing snapshot flush")
-		}
 		if storeFullBlock {
 			if innerErr := PutBlockHashToBlockWithTxn(txn, bc.snapshot, block, bc.eventManager); innerErr != nil {
 				return errors.Wrapf(innerErr, "upsertBlockAndBlockNodeToDB: Problem calling PutBlockHashToBlockWithTxn")
@@ -1750,6 +1780,19 @@ func (bc *Blockchain) commitBlockPoS(blockHash *BlockHash, verifySignatures bool
 			})
 		}
 	}
+	if bc.snapshot != nil {
+		bc.snapshot.FinishProcessBlock(blockNode)
+	}
+	currentEpochNumber, err := utxoView.GetCurrentEpochNumber()
+	if err != nil {
+		return errors.Wrapf(err, "commitBlockPoS: Problem getting current epoch number")
+	}
+	snapshotEpochNumber, err := utxoView.GetCurrentSnapshotEpochNumber()
+	if err != nil {
+		return errors.Wrapf(err, "commitBlockPoS: Problem getting current snapshot epoch number")
+	}
+	bc.snapshotCache.LoadCacheAtSnapshotAtEpochNumber(
+		snapshotEpochNumber, currentEpochNumber, bc.db, bc.snapshot, bc.params)
 	// TODO: What else do we need to do in here?
 	return nil
 }
@@ -1795,7 +1838,7 @@ func (bc *Blockchain) GetUncommittedFullBlocks(tipHash *BlockHash) ([]*MsgDeSoBl
 
 // GetCommittedTipView builds a UtxoView to the committed tip.
 func (bc *Blockchain) GetCommittedTipView() (*UtxoView, error) {
-	return NewUtxoView(bc.db, bc.params, bc.postgres, bc.snapshot, nil)
+	return NewUtxoViewWithSnapshotCache(bc.db, bc.params, bc.postgres, bc.snapshot, nil, bc.snapshotCache)
 }
 
 // GetUncommittedTipView builds a UtxoView to the uncommitted tip.
@@ -1840,6 +1883,17 @@ func (bc *Blockchain) getUtxoViewAtBlockHash(blockHash BlockHash) (*UtxoView, er
 			return nil, errors.Errorf(
 				"getUtxoViewAtBlockHash: extends from a committed block that isn't the committed tip")
 		}
+		if currentBlock.IsCommitted() && !currentBlock.Hash.IsEqual(highestCommittedBlock.Hash) {
+			return nil, errors.Errorf(
+				"getUtxoViewAtBlockHash: extends from a committed block that isn't the committed tip")
+		}
+	}
+	if viewAtHash, exists := bc.blockViewCache.Lookup(blockHash); exists {
+		copiedView, err := viewAtHash.(*UtxoView).CopyUtxoView()
+		if err != nil {
+			return nil, errors.Wrapf(err, "getUtxoViewAtBlockHash: Problem copying UtxoView from cache")
+		}
+		return copiedView, nil
 	}
 	if viewAtHash, exists := bc.blockViewCache.Lookup(blockHash); exists {
 		copiedView, err := viewAtHash.(*UtxoView).CopyUtxoView()
@@ -1849,7 +1903,8 @@ func (bc *Blockchain) getUtxoViewAtBlockHash(blockHash BlockHash) (*UtxoView, er
 		return copiedView, nil
 	}
 	// Connect the uncommitted blocks to the tip so that we can validate subsequent blocks
-	utxoView, err := NewUtxoView(bc.db, bc.params, bc.postgres, bc.snapshot, bc.eventManager)
+	utxoView, err := NewUtxoViewWithSnapshotCache(bc.db, bc.params, bc.postgres, bc.snapshot, bc.eventManager,
+		bc.snapshotCache)
 	if err != nil {
 		return nil, errors.Wrapf(err, "getUtxoViewAtBlockHash: Problem initializing UtxoView")
 	}

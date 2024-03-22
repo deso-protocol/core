@@ -249,7 +249,6 @@ func (srv *Server) GetBlockProducer() *DeSoBlockProducer {
 	return srv.blockProducer
 }
 
-// TODO: The hallmark of a messy non-law-of-demeter-following interface...
 func (srv *Server) GetConnectionManager() *ConnectionManager {
 	return srv.cmgr
 }
@@ -695,9 +694,7 @@ func NewServer(
 		}
 		glog.Errorf(CLog(Red, "NewServer: Forcing a rollback to the last snapshot epoch because node was not closed "+
 			"properly last time"))
-		if err := _snapshot.ForceResetToLastSnapshot(_chain); err != nil {
-			return nil, errors.Wrapf(err, "NewServer: Problem in ForceResetToLastSnapshot"), true
-		}
+		return nil, errors.Wrapf(err, "NewServer: Restart required"), true
 	}
 
 	return srv, nil, shouldRestart
@@ -924,15 +921,15 @@ func (srv *Server) _handleHeaderBundle(pp *Peer, msg *MsgDeSoHeaderBundle) {
 		printHeight = uint64(srv.blockchain.headerTip().Height)
 	}
 	glog.Infof(CLog(Yellow, fmt.Sprintf("Received header bundle with %v headers "+
-		"in state %s from peer %v. Downloaded ( %v / %v ) total headers. Current Chain State: %v",
+		"in state %s from peer %v. Downloaded ( %v / %v ) total headers.",
 		len(msg.Headers), srv.blockchain.chainState(), pp,
-		srv.blockchain.headerTip().Header.Height, printHeight, srv.blockchain.ChainState())))
+		srv.blockchain.headerTip().Header.Height, printHeight)))
 
 	// If we get here, it means that the node is not currently running a Fast-HotStuff
 	// validator or that the node is syncing. In either case, we sync headers according
 	// to the blocksync rules.
 
-	// Start by processing all of the headers given to us. They should start
+	// Start by processing all the headers given to us. They should start
 	// right after the tip of our header chain ideally. While going through them
 	// tally up the number that we actually process.
 	numNewHeaders := 0
@@ -1042,7 +1039,10 @@ func (srv *Server) _handleHeaderBundle(pp *Peer, msg *MsgDeSoHeaderBundle) {
 			// If node is a hyper sync node and we haven't finished syncing state yet, we will kick off state sync.
 			if srv.cmgr.HyperSync {
 				bestHeaderHeight := uint64(srv.blockchain.headerTip().Height)
-				expectedSnapshotHeight := bestHeaderHeight - (bestHeaderHeight % srv.snapshot.SnapshotBlockHeightPeriod)
+				// The peer's snapshot block height period before the first PoS fork height is expected to be the
+				// PoW default value. After the fork height, it's expected to be the value defined in the params.
+				snapshotBlockHeightPeriod := srv.params.GetSnapshotBlockHeightPeriod(bestHeaderHeight, srv.snapshot.SnapshotBlockHeightPeriod)
+				expectedSnapshotHeight := bestHeaderHeight - (bestHeaderHeight % snapshotBlockHeightPeriod)
 				srv.blockchain.snapshot.Migrations.CleanupMigrations(expectedSnapshotHeight)
 
 				if len(srv.HyperSyncProgress.PrefixProgress) != 0 {
@@ -1506,27 +1506,40 @@ func (srv *Server) _handleSnapshot(pp *Peer, msg *MsgDeSoSnapshotData) {
 	// already synced all the state corresponding to the sub-blockchain ending at the snapshot
 	// height, we will now mark all these blocks as processed. To do so, we will iterate through
 	// the blockNodes in the header chain and set them in the blockchain data structures.
-	err = srv.blockchain.db.Update(func(txn *badger.Txn) error {
-		for ii := uint64(1); ii <= srv.HyperSyncProgress.SnapshotMetadata.SnapshotBlockHeight; ii++ {
-			currentNode := srv.blockchain.bestHeaderChain[ii]
-			// Do not set the StatusBlockStored flag, because we still need to download the past blocks.
-			currentNode.Status |= StatusBlockProcessed
-			currentNode.Status |= StatusBlockValidated
-			srv.blockchain.addNewBlockNodeToBlockIndex(currentNode)
-			srv.blockchain.bestChainMap[*currentNode.Hash] = currentNode
-			srv.blockchain.bestChain = append(srv.blockchain.bestChain, currentNode)
-			err = PutHeightHashToNodeInfoWithTxn(txn, srv.snapshot, currentNode, false /*bitcoinNodes*/, srv.eventManager)
-			if err != nil {
-				return err
-			}
+	//
+	// We split the db update into batches of 10,000 block nodes to avoid a single transaction
+	// being too large and possibly causing an error in badger.
+	var blockNodeBatch []*BlockNode
+	for ii := uint64(1); ii <= srv.HyperSyncProgress.SnapshotMetadata.SnapshotBlockHeight; ii++ {
+		currentNode := srv.blockchain.bestHeaderChain[ii]
+		// Do not set the StatusBlockStored flag, because we still need to download the past blocks.
+		currentNode.Status |= StatusBlockProcessed
+		currentNode.Status |= StatusBlockValidated
+		currentNode.Status |= StatusBlockCommitted
+		srv.blockchain.addNewBlockNodeToBlockIndex(currentNode)
+		srv.blockchain.bestChainMap[*currentNode.Hash] = currentNode
+		srv.blockchain.bestChain = append(srv.blockchain.bestChain, currentNode)
+		blockNodeBatch = append(blockNodeBatch, currentNode)
+		if len(blockNodeBatch) < 10000 {
+			continue
 		}
-		// We will also set the hash of the block at snapshot height as the best chain hash.
-		err = PutBestHashWithTxn(txn, srv.snapshot, msg.SnapshotMetadata.CurrentEpochBlockHash, ChainTypeDeSoBlock, srv.eventManager)
-		return err
-	})
+		err = PutHeightHashToNodeInfoBatch(srv.blockchain.db, srv.snapshot, blockNodeBatch, false /*bitcoinNodes*/, srv.eventManager)
+		if err != nil {
+			glog.Errorf("Server._handleSnapshot: Problem updating snapshot block nodes, error: (%v)", err)
+			break
+		}
+		blockNodeBatch = []*BlockNode{}
+	}
+	if len(blockNodeBatch) > 0 {
+		err = PutHeightHashToNodeInfoBatch(srv.blockchain.db, srv.snapshot, blockNodeBatch, false /*bitcoinNodes*/, srv.eventManager)
+		if err != nil {
+			glog.Errorf("Server._handleSnapshot: Problem updating snapshot block nodes, error: (%v)", err)
+		}
+	}
 
+	err = PutBestHash(srv.blockchain.db, srv.snapshot, msg.SnapshotMetadata.CurrentEpochBlockHash, ChainTypeDeSoBlock, srv.eventManager)
 	if err != nil {
-		glog.Errorf("Server._handleSnapshot: Problem updating snapshot blocknodes, error: (%v)", err)
+		glog.Errorf("Server._handleSnapshot: Problem updating best hash, error: (%v)", err)
 	}
 	// We also reset the in-memory snapshot cache, because it is populated with stale records after
 	// we've initialized the chain with seed transactions.
@@ -1834,9 +1847,9 @@ func (srv *Server) _relayTransactions() {
 	// current block height.
 	mempool := srv.GetMempool()
 
-	glog.V(1).Infof("Server._relayTransactions: Waiting for mempool readOnlyView to regenerate")
+	glog.V(3).Infof("Server._relayTransactions: Waiting for mempool readOnlyView to regenerate")
 	mempool.BlockUntilReadOnlyViewRegenerated()
-	glog.V(1).Infof("Server._relayTransactions: Mempool view has regenerated")
+	glog.V(3).Infof("Server._relayTransactions: Mempool view has regenerated")
 
 	// We pull the transactions from either the PoW mempool or the PoS mempool depending
 	// on the current block height.
@@ -1877,7 +1890,7 @@ func (srv *Server) _relayTransactions() {
 		}
 	}
 
-	glog.V(1).Infof("Server._relayTransactions: Relay to all peers is complete!")
+	glog.V(3).Infof("Server._relayTransactions: Relay to all peers is complete!")
 }
 
 func (srv *Server) _addNewTxn(
@@ -2181,9 +2194,21 @@ func (srv *Server) _handleBlock(pp *Peer, blk *MsgDeSoBlock) {
 	srv.timer.Print("Server._handleBlock: General")
 	srv.timer.Print("Server._handleBlock: Process Block")
 
-	// We shouldn't be receiving blocks while syncing headers.
+	// We shouldn't be receiving blocks while syncing headers, but we can end up here
+	// if it took longer than MaxTipAge to sync blocks to this point. We'll revert to
+	// syncing headers and then resume syncing blocks once we're current again.
 	if srv.blockchain.chainState() == SyncStateSyncingHeaders {
 		glog.Warningf("Server._handleBlock: Received block while syncing headers: %v", blk)
+		glog.Infof("Requesting headers: %v", pp)
+
+		locator := srv.blockchain.LatestHeaderLocator()
+		pp.AddDeSoMessage(&MsgDeSoGetHeaders{
+			StopHash:     &BlockHash{},
+			BlockLocator: locator,
+		}, false)
+		glog.V(1).Infof("Server._handleHeaderBundle: *Syncing* headers for blocks starting at "+
+			"header tip %v from peer %v",
+			srv.blockchain.HeaderTip(), pp)
 		return
 	}
 

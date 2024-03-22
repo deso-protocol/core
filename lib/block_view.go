@@ -155,6 +155,9 @@ type UtxoView struct {
 	// It contains the snapshot value of every ValidatorEntry that makes up the validator set at
 	// the given SnapshotAtEpochNumber.
 	SnapshotValidatorSet map[SnapshotValidatorSetMapKey]*ValidatorEntry
+	// HasFullSnapshotValidatorSetByEpoch is a map of SnapshotAtEpochNumber to a boolean. If all
+	// validator entries for a given epoch have been loaded from the DB, the value is true.
+	HasFullSnapshotValidatorSetByEpoch map[uint64]bool
 
 	// SnapshotValidatorBLSPublicKeyPKIDPairEntries is a map of <SnapshotAtEpochNumber, bls.SerializedPublicKey>
 	// to a BLSPublicKeyPKIDPairEntry. It contains the snapshot value of the BLSPublicKeyPKIDPairEntry
@@ -170,6 +173,9 @@ type UtxoView struct {
 	// It contains the PKID of the validator at the given index in the leader schedule
 	// generated at the given SnapshotAtEpochNumber.
 	SnapshotLeaderSchedule map[SnapshotLeaderScheduleMapKey]*PKID
+	// HasFullSnapshotLeaderScheduleByEpoch is a map of SnapshotAtEpochNumber to a boolean. If the leader schedule
+	// for a given epoch has been loaded from the DB, the value is true.
+	HasFullSnapshotLeaderScheduleByEpoch map[uint64]bool
 
 	// SnapshotStakesToReward is a map of <SnapshotAtEpochNumber, ValidatorPKID, StakerPKID>
 	// to a snapshotted StakeEntry for the ValidatorPKID and StakerPKID pair at a given SnapshotAtEpochNumber.
@@ -302,6 +308,7 @@ func (bav *UtxoView) _ResetViewMappingsAfterFlush() {
 
 	// SnapshotValidatorSet
 	bav.SnapshotValidatorSet = make(map[SnapshotValidatorSetMapKey]*ValidatorEntry)
+	bav.HasFullSnapshotValidatorSetByEpoch = make(map[uint64]bool)
 
 	// SnapshotValidatorBLSPublicKeyPKIDPairEntries
 	bav.SnapshotValidatorBLSPublicKeyPKIDPairEntries = make(map[SnapshotValidatorBLSPublicKeyMapKey]*BLSPublicKeyPKIDPairEntry)
@@ -311,6 +318,7 @@ func (bav *UtxoView) _ResetViewMappingsAfterFlush() {
 
 	// SnapshotLeaderSchedule
 	bav.SnapshotLeaderSchedule = make(map[SnapshotLeaderScheduleMapKey]*PKID)
+	bav.HasFullSnapshotLeaderScheduleByEpoch = make(map[uint64]bool)
 
 	// SnapshotStakesToReward
 	bav.SnapshotStakesToReward = make(map[SnapshotStakeMapKey]*StakeEntry)
@@ -633,6 +641,10 @@ func (bav *UtxoView) CopyUtxoView() (*UtxoView, error) {
 		newView.SnapshotValidatorSet[mapKey] = validatorEntry.Copy()
 	}
 
+	for mapKey, hasFullSnapshotValidatorSet := range bav.HasFullSnapshotValidatorSetByEpoch {
+		newView.HasFullSnapshotValidatorSetByEpoch[mapKey] = hasFullSnapshotValidatorSet
+	}
+
 	for mapKey, blsPublicKeyPKIDPairEntry := range bav.SnapshotValidatorBLSPublicKeyPKIDPairEntries {
 		newView.SnapshotValidatorBLSPublicKeyPKIDPairEntries[mapKey] = blsPublicKeyPKIDPairEntry.Copy()
 	}
@@ -646,6 +658,9 @@ func (bav *UtxoView) CopyUtxoView() (*UtxoView, error) {
 	for mapKey, validatorPKID := range bav.SnapshotLeaderSchedule {
 		newView.SnapshotLeaderSchedule[mapKey] = validatorPKID.NewPKID()
 	}
+	for mapKey, hasFullSnapshotLeaderSchedule := range bav.HasFullSnapshotLeaderScheduleByEpoch {
+		newView.HasFullSnapshotLeaderScheduleByEpoch[mapKey] = hasFullSnapshotLeaderSchedule
+	}
 
 	// Copy the SnapshotStakesToReward
 	for mapKey, snapshotStakeToReward := range bav.SnapshotStakesToReward {
@@ -655,6 +670,48 @@ func (bav *UtxoView) CopyUtxoView() (*UtxoView, error) {
 	newView.TipHash = bav.TipHash.NewBlockHash()
 
 	return newView, nil
+}
+
+func NewUtxoViewWithSnapshotCache(
+	_handle *badger.DB,
+	_params *DeSoParams,
+	_postgres *Postgres,
+	_snapshot *Snapshot,
+	_eventManager *EventManager,
+	_snapshotCache *SnapshotCache,
+) (*UtxoView, error) {
+	utxoView, err := NewUtxoView(_handle, _params, _postgres, _snapshot, _eventManager)
+	if err != nil {
+		return nil, err
+	}
+	if _snapshotCache != nil {
+		allValidatorSetEntries := _snapshotCache.GetAllCachedSnapshotValidatorSetEntries()
+		for snapshotAtEpochNumber, validatorSetEntries := range allValidatorSetEntries {
+			for _, validatorEntry := range validatorSetEntries {
+				utxoView.SnapshotValidatorSet[SnapshotValidatorSetMapKey{
+					SnapshotAtEpochNumber: snapshotAtEpochNumber,
+					ValidatorPKID:         *validatorEntry.ValidatorPKID,
+				}] = validatorEntry.Copy()
+			}
+			utxoView.HasFullSnapshotValidatorSetByEpoch[snapshotAtEpochNumber] = true
+		}
+
+		allLeaderScheduleEntries := _snapshotCache.GetAllCachedLeaderSchedules()
+		for snapshotAtEpochNumber, leaderSchedule := range allLeaderScheduleEntries {
+			for leaderIndex, validatorPKID := range leaderSchedule {
+				utxoView.SnapshotLeaderSchedule[SnapshotLeaderScheduleMapKey{
+					SnapshotAtEpochNumber: snapshotAtEpochNumber,
+					LeaderIndex:           uint16(leaderIndex),
+				}] = validatorPKID.NewPKID()
+			}
+			utxoView.HasFullSnapshotLeaderScheduleByEpoch[snapshotAtEpochNumber] = true
+		}
+		allGlobalParamsEntries := _snapshotCache.GetAllCachedSnapshotGlobalParams()
+		for snapshotAtEpochNumber, globalParamsEntry := range allGlobalParamsEntries {
+			utxoView.SnapshotGlobalParamEntries[snapshotAtEpochNumber] = globalParamsEntry.Copy()
+		}
+	}
+	return utxoView, nil
 }
 
 func NewUtxoView(
@@ -3245,7 +3302,10 @@ func (bav *UtxoView) _connectUpdateGlobalParams(
 
 		// Cross-validate the new LeaderScheduleMaxNumValidators and ValidatorSetMaxNumValidators values. The size of the
 		// leader schedule must be less than or equal to the size of the validator set.
-		if newGlobalParamsEntry.ValidatorSetMaxNumValidators < newGlobalParamsEntry.LeaderScheduleMaxNumValidators {
+		// We must merge the defaults in the event that ValidatorSetMaxNumValidators is not set.
+		mergedGlobalParamsEntry := MergeGlobalParamEntryDefaults(&newGlobalParamsEntry, bav.Params)
+		if mergedGlobalParamsEntry.ValidatorSetMaxNumValidators <
+			mergedGlobalParamsEntry.LeaderScheduleMaxNumValidators {
 			return 0, 0, nil, RuleErrorLeaderScheduleExceedsValidatorSetMaxNumValidators
 		}
 

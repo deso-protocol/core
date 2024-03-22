@@ -765,8 +765,8 @@ func (fc *FastHotStuffConsensus) fetchValidatorListsForSafeBlocks(blocks []*MsgD
 	validatorSetEntriesBySnapshotEpochNumber := make(map[uint64][]*ValidatorEntry)
 
 	// Create a UtxoView for the committed tip block. We will use this to fetch the validator set for
-	// all of the safe blocks.
-	utxoView, err := NewUtxoView(fc.blockchain.db, fc.params, fc.blockchain.postgres, fc.blockchain.snapshot, nil)
+	// all the safe blocks.
+	utxoView, err := fc.blockchain.GetCommittedTipView()
 	if err != nil {
 		return nil, errors.Errorf("Error creating UtxoView: %v", err)
 	}

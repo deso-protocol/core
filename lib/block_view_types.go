@@ -4094,12 +4094,13 @@ type GlobalParamsEntry struct {
 	ValidatorJailEpochDuration uint64
 
 	// LeaderScheduleMaxNumValidators is the maximum number of validators that
-	// are included when generating a new Proof-of-Stake leader schedule.
+	// are included when generating a new Proof-of-Stake leader schedule. This
+	// must be less than or equal to ValidatorSetMaxNumValidators.
 	LeaderScheduleMaxNumValidators uint64
 
 	// ValidatorSetMaxNumValidators is the maximum number of validators that
 	// are included in the active validator set every epoch in the Proof-of-Stake
-	// consensus.
+	// consensus. This must be greater than or equal to LeaderScheduleMaxNumValidators.
 	ValidatorSetMaxNumValidators uint64
 
 	// StakingRewardsMaxNumStakes is the maximum number of stake entries that are

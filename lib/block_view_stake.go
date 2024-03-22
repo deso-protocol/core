@@ -581,20 +581,18 @@ func DBKeyForStakeByStakeAmount(stakeEntry *StakeEntry) []byte {
 
 func GetValidatorPKIDFromDBKeyForStakeByStakeAmount(key []byte) (*PKID, error) {
 	validatorPKIDBytes := key[len(key)-(PublicKeyLenCompressed*2) : len(key)-PublicKeyLenCompressed]
-	validatorPKID := PKID{}
-	if err := validatorPKID.FromBytes(bytes.NewReader(validatorPKIDBytes)); err != nil {
-		return nil, errors.Wrapf(err, "GetValidatorPKIDFromDBKeyForStakeByStakeAmount: ")
+	if len(validatorPKIDBytes) != PublicKeyLenCompressed {
+		return nil, fmt.Errorf("GetValidatorPKIDFromDBKeyForStakeByStakeAmount: invalid key length")
 	}
-	return &validatorPKID, nil
+	return NewPKID(validatorPKIDBytes), nil
 }
 
 func GetStakerPKIDFromDBKeyForStakeByStakeAmount(key []byte) (*PKID, error) {
 	stakerPKIDBytes := key[len(key)-(PublicKeyLenCompressed):]
-	stakerPKID := PKID{}
-	if err := stakerPKID.FromBytes(bytes.NewReader(stakerPKIDBytes)); err != nil {
-		return nil, errors.Wrapf(err, "GetStakerPKIDFromDBKeyForStakeByStakeAmount: ")
+	if len(stakerPKIDBytes) != PublicKeyLenCompressed {
+		return nil, fmt.Errorf("GetStakerPKIDFromDBKeyForStakeByStakeAmount: invalid key length")
 	}
-	return &stakerPKID, nil
+	return NewPKID(stakerPKIDBytes), nil
 }
 
 func DBKeyForLockedStakeByValidatorAndStakerAndLockedAt(lockedStakeEntry *LockedStakeEntry) []byte {
@@ -721,7 +719,7 @@ func DBGetTopStakesForValidatorsByStakeAmount(
 
 	// Retrieve top N StakeEntry keys by stake amount.
 	key := append([]byte{}, Prefixes.PrefixStakeByStakeAmount...)
-	keysFound, _, err := EnumerateKeysForPrefixWithLimitOffsetOrderAndSkipFunc(
+	keysFound, err := EnumerateKeysOnlyForPrefixWithLimitOffsetOrderAndSkipFunc(
 		handle, key, int(limit), nil, true, canSkipValidatorPKIDAndStakerPKIDInBadgerSeek,
 	)
 	if err != nil {
@@ -879,7 +877,9 @@ func DBGetLockedStakeEntriesInRangeWithTxn(
 	})
 
 	// Create an iterator.
-	iterator := txn.NewIterator(badger.DefaultIteratorOptions)
+	opts := badger.DefaultIteratorOptions
+	opts.Prefix = prefixKey
+	iterator := txn.NewIterator(opts)
 	defer iterator.Close()
 
 	// Store matching LockedStakeEntries to return.

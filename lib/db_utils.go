@@ -1335,6 +1335,7 @@ func DBDeleteAllStateRecords(db *badger.DB) (_shouldErase bool, _error error) {
 				opts := badger.DefaultIteratorOptions
 				opts.AllVersions = false
 				opts.PrefetchValues = false
+				opts.Prefix = prefix
 				// Iterate over the prefix as long as there are valid keys in the DB.
 				it := txn.NewIterator(opts)
 				defer it.Close()
@@ -1507,18 +1508,18 @@ func DBDeletePKIDMappingsWithTxn(txn *badger.Txn, snap *Snapshot, publicKey []by
 	return nil
 }
 
-func EnumerateKeysForPrefix(db *badger.DB, dbPrefix []byte) (_keysFound [][]byte, _valsFound [][]byte) {
-	return _enumerateKeysForPrefix(db, dbPrefix)
+func EnumerateKeysForPrefix(db *badger.DB, dbPrefix []byte, keysOnly bool) (_keysFound [][]byte, _valsFound [][]byte) {
+	return _enumerateKeysForPrefix(db, dbPrefix, keysOnly)
 }
 
 // A helper function to enumerate all of the values for a particular prefix.
-func _enumerateKeysForPrefix(db *badger.DB, dbPrefix []byte) (_keysFound [][]byte, _valsFound [][]byte) {
+func _enumerateKeysForPrefix(db *badger.DB, dbPrefix []byte, keysOnly bool) (_keysFound [][]byte, _valsFound [][]byte) {
 	keysFound := [][]byte{}
 	valsFound := [][]byte{}
 
 	dbErr := db.View(func(txn *badger.Txn) error {
 		var err error
-		keysFound, valsFound, err = _enumerateKeysForPrefixWithTxn(txn, dbPrefix)
+		keysFound, valsFound, err = _enumerateKeysForPrefixWithTxn(txn, dbPrefix, keysOnly)
 		if err != nil {
 			return err
 		}
@@ -1532,11 +1533,15 @@ func _enumerateKeysForPrefix(db *badger.DB, dbPrefix []byte) (_keysFound [][]byt
 	return keysFound, valsFound
 }
 
-func _enumerateKeysForPrefixWithTxn(txn *badger.Txn, dbPrefix []byte) (_keysFound [][]byte, _valsFound [][]byte, _err error) {
+func _enumerateKeysForPrefixWithTxn(txn *badger.Txn, dbPrefix []byte, keysOnly bool) (_keysFound [][]byte, _valsFound [][]byte, _err error) {
 	keysFound := [][]byte{}
 	valsFound := [][]byte{}
 
 	opts := badger.DefaultIteratorOptions
+	if keysOnly {
+		opts.PrefetchValues = false
+	}
+	opts.Prefix = dbPrefix
 	nodeIterator := txn.NewIterator(opts)
 	defer nodeIterator.Close()
 	prefix := dbPrefix
@@ -1545,12 +1550,14 @@ func _enumerateKeysForPrefixWithTxn(txn *badger.Txn, dbPrefix []byte) (_keysFoun
 		keyCopy := make([]byte, len(key))
 		copy(keyCopy[:], key[:])
 
-		valCopy, err := nodeIterator.Item().ValueCopy(nil)
-		if err != nil {
-			return nil, nil, err
-		}
 		keysFound = append(keysFound, keyCopy)
-		valsFound = append(valsFound, valCopy)
+		if !keysOnly {
+			valCopy, err := nodeIterator.Item().ValueCopy(nil)
+			if err != nil {
+				return nil, nil, err
+			}
+			valsFound = append(valsFound, valCopy)
+		}
 	}
 	return keysFound, valsFound, nil
 }
@@ -1570,6 +1577,7 @@ func _enumeratePaginatedLimitedKeysForPrefixWithTxn(txn *badger.Txn, dbPrefix []
 
 	opts := badger.DefaultIteratorOptions
 	opts.PrefetchValues = false
+	opts.Prefix = dbPrefix
 
 	nodeIterator := txn.NewIterator(opts)
 	defer nodeIterator.Close()
@@ -1622,6 +1630,7 @@ func _enumerateLimitedKeysReversedForPrefixAndStartingKeyWithTxn(txn *badger.Txn
 
 	// Go in reverse order
 	opts.Reverse = true
+	opts.Prefix = dbPrefix
 
 	nodeIterator := txn.NewIterator(opts)
 	defer nodeIterator.Close()
@@ -1876,7 +1885,7 @@ func DBGetMessageEntriesForPublicKey(handle *badger.DB, publicKey []byte) (
 
 	// Goes backwards to get messages in time sorted order.
 	// Limit the number of keys to speed up load times.
-	_, valuesFound := _enumerateKeysForPrefix(handle, prefix)
+	_, valuesFound := _enumerateKeysForPrefix(handle, prefix, false)
 
 	privateMessages := []*MessageEntry{}
 	for _, valBytes := range valuesFound {
@@ -2097,7 +2106,7 @@ func DBGetMessagingGroupEntriesForOwnerWithTxn(txn *badger.Txn, ownerPublicKey *
 	// Setting the prefix to owner's public key will allow us to fetch all messaging keys
 	// for the user. We enumerate this prefix.
 	prefix := _dbSeekPrefixForMessagingGroupEntry(ownerPublicKey)
-	_, valuesFound, err := _enumerateKeysForPrefixWithTxn(txn, prefix)
+	_, valuesFound, err := _enumerateKeysForPrefixWithTxn(txn, prefix, false)
 	if err != nil {
 		return nil, errors.Wrapf(err, "DBGetMessagingGroupEntriesForOwnerWithTxn: "+
 			"problem enumerating messaging key entries for prefix (%v)", prefix)
@@ -3320,7 +3329,7 @@ func DBGetAllMessagingGroupEntriesForMemberWithTxn(txn *badger.Txn, ownerPublicK
 	// This function is used to fetch all messaging
 	var messagingGroupEntries []*MessagingGroupEntry
 	prefix := _dbSeekPrefixForMessagingGroupMember(ownerPublicKey)
-	_, valuesFound, err := _enumerateKeysForPrefixWithTxn(txn, prefix)
+	_, valuesFound, err := _enumerateKeysForPrefixWithTxn(txn, prefix, false)
 	if err != nil {
 		return nil, errors.Wrapf(err, "DBGetAllMessagingGroupEntriesForMemberWithTxn: "+
 			"problem enumerating messaging key entries for prefix (%v)", prefix)
@@ -3586,7 +3595,7 @@ func DbGetPostHashesYouLike(handle *badger.DB, yourPublicKey []byte) (
 	_postHashes []*BlockHash, _err error) {
 
 	prefix := _dbSeekPrefixForPostHashesYouLike(yourPublicKey)
-	keysFound, _ := _enumerateKeysForPrefix(handle, prefix)
+	keysFound, _ := _enumerateKeysForPrefix(handle, prefix, true)
 
 	postHashesYouLike := []*BlockHash{}
 	for _, keyBytes := range keysFound {
@@ -3603,7 +3612,7 @@ func DbGetLikerPubKeysLikingAPostHash(handle *badger.DB, likedPostHash BlockHash
 	_pubKeys [][]byte, _err error) {
 
 	prefix := _dbSeekPrefixForLikerPubKeysLikingAPostHash(likedPostHash)
-	keysFound, _ := _enumerateKeysForPrefix(handle, prefix)
+	keysFound, _ := _enumerateKeysForPrefix(handle, prefix, true)
 
 	userPubKeys := [][]byte{}
 	for _, keyBytes := range keysFound {
@@ -3716,7 +3725,7 @@ func DbGetReposterPubKeyRepostedPostHashToRepostEntryWithTxn(txn *badger.Txn,
 	snap *Snapshot, userPubKey []byte, repostedPostHash BlockHash) *RepostEntry {
 
 	key := _dbSeekKeyForReposterPubKeyRepostedPostHashToRepostPostHash(userPubKey, repostedPostHash)
-	keysFound, _, err := _enumerateKeysForPrefixWithTxn(txn, key)
+	keysFound, _, err := _enumerateKeysForPrefixWithTxn(txn, key, true)
 	if err != nil {
 		return nil
 	}
@@ -3764,7 +3773,7 @@ func DbDeleteRepostMappingsWithTxn(txn *badger.Txn, snap *Snapshot, repostEntry 
 func DbDeleteAllRepostMappingsWithTxn(txn *badger.Txn, snap *Snapshot, userPubKey []byte, repostedPostHash BlockHash, eventManager *EventManager, entryIsDeleted bool) error {
 
 	key := _dbSeekKeyForReposterPubKeyRepostedPostHashToRepostPostHash(userPubKey, repostedPostHash)
-	keysFound, _, err := _enumerateKeysForPrefixWithTxn(txn, key)
+	keysFound, _, err := _enumerateKeysForPrefixWithTxn(txn, key, true)
 	if err != nil {
 		return nil
 	}
@@ -3781,7 +3790,7 @@ func DbGetPostHashesYouRepost(handle *badger.DB, yourPublicKey []byte) (
 	_postHashes []*BlockHash, _err error) {
 
 	prefix := _dbSeekPrefixForPostHashesYouRepost(yourPublicKey)
-	keysFound, _ := _enumerateKeysForPrefix(handle, prefix)
+	keysFound, _ := _enumerateKeysForPrefix(handle, prefix, true)
 
 	postHashesYouRepost := []*BlockHash{}
 	for _, keyBytes := range keysFound {
@@ -3944,7 +3953,7 @@ func DbGetPKIDsYouFollow(handle *badger.DB, yourPKID *PKID) (
 	_pkids []*PKID, _err error) {
 
 	prefix := _dbSeekPrefixForPKIDsYouFollow(yourPKID)
-	keysFound, _ := _enumerateKeysForPrefix(handle, prefix)
+	keysFound, _ := _enumerateKeysForPrefix(handle, prefix, true)
 
 	pkidsYouFollow := []*PKID{}
 	for _, keyBytes := range keysFound {
@@ -3962,7 +3971,7 @@ func DbGetPKIDsFollowingYou(handle *badger.DB, yourPKID *PKID) (
 	_pkids []*PKID, _err error) {
 
 	prefix := _dbSeekPrefixForPKIDsFollowingYou(yourPKID)
-	keysFound, _ := _enumerateKeysForPrefix(handle, prefix)
+	keysFound, _ := _enumerateKeysForPrefix(handle, prefix, true)
 
 	pkidsFollowingYou := []*PKID{}
 	for _, keyBytes := range keysFound {
@@ -4221,7 +4230,7 @@ func DbGetPKIDsThatDiamondedYouMap(handle *badger.DB, yourPKID *PKID, fetchYouDi
 		diamondReceiverStartIdx = 1 + btcec.PubKeyBytesLenCompressed
 		diamondReceiverEndIdx = 1 + 2*btcec.PubKeyBytesLenCompressed
 	}
-	keysFound, valsFound := _enumerateKeysForPrefix(handle, prefix)
+	keysFound, valsFound := _enumerateKeysForPrefix(handle, prefix, false)
 
 	pkidsToDiamondEntryMap := make(map[PKID][]*DiamondEntry)
 	for ii, keyBytes := range keysFound {
@@ -4295,7 +4304,7 @@ func DbGetDiamondEntriesForSenderToReceiver(handle *badger.DB, receiverPKID *PKI
 	_diamondEntries []*DiamondEntry, _err error) {
 
 	prefix := _dbSeekPrefixForReceiverPKIDAndSenderPKID(receiverPKID, senderPKID)
-	keysFound, valsFound := _enumerateKeysForPrefix(handle, prefix)
+	keysFound, valsFound := _enumerateKeysForPrefix(handle, prefix, false)
 	var diamondEntries []*DiamondEntry
 	for ii, keyBytes := range keysFound {
 		// The DiamondEntry found must not be nil.
@@ -4385,7 +4394,7 @@ func DbDeleteBitcoinBurnTxIDWithTxn(txn *badger.Txn, snap *Snapshot, bitcoinBurn
 }
 
 func DbGetAllBitcoinBurnTxIDs(handle *badger.DB) (_bitcoinBurnTxIDs []*BlockHash) {
-	keysFound, _ := _enumerateKeysForPrefix(handle, Prefixes.PrefixBitcoinBurnTxIDs)
+	keysFound, _ := _enumerateKeysForPrefix(handle, Prefixes.PrefixBitcoinBurnTxIDs, true)
 	bitcoinBurnTxIDs := []*BlockHash{}
 	for _, key := range keysFound {
 		bbtxid := &BlockHash{}
@@ -5220,6 +5229,20 @@ func PutHeightHashToNodeInfoWithTxn(txn *badger.Txn, snap *Snapshot,
 	return nil
 }
 
+func PutHeightHashToNodeInfoBatch(handle *badger.DB, snap *Snapshot,
+	nodes []*BlockNode, bitcoinNodes bool, eventManager *EventManager) error {
+
+	err := handle.Update(func(txn *badger.Txn) error {
+		for _, node := range nodes {
+			if err := PutHeightHashToNodeInfoWithTxn(txn, snap, node, bitcoinNodes, eventManager); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	return err
+}
+
 func PutHeightHashToNodeInfo(handle *badger.DB, snap *Snapshot, node *BlockNode, bitcoinNodes bool, eventManager *EventManager) error {
 	err := handle.Update(func(txn *badger.Txn) error {
 		return PutHeightHashToNodeInfoWithTxn(txn, snap, node, bitcoinNodes, eventManager)
@@ -5613,7 +5636,7 @@ func DbTxindexPublicKeyIndexToTxnKey(publicKey []byte, index uint32) []byte {
 
 func DbGetTxindexTxnsForPublicKeyWithTxn(txn *badger.Txn, publicKey []byte) []*BlockHash {
 	txIDs := []*BlockHash{}
-	_, valsFound, err := _enumerateKeysForPrefixWithTxn(txn, DbTxindexPublicKeyPrefix(publicKey))
+	_, valsFound, err := _enumerateKeysForPrefixWithTxn(txn, DbTxindexPublicKeyPrefix(publicKey), false)
 	if err != nil {
 		return txIDs
 	}
@@ -5645,14 +5668,16 @@ func _DbGetTxindexNextIndexForPublicKeBySeekWithTxn(txn *badger.Txn, publicKey [
 	// Go in reverse order.
 	opts.Reverse = true
 
-	it := txn.NewIterator(opts)
-	defer it.Close()
 	// Since we iterate backwards, the prefix must be bigger than all possible
 	// counts that could actually exist. We use four bytes since the index is
 	// encoded as a 32-bit big-endian byte slice, which will be four bytes long.
 	maxBigEndianUint32Bytes := []byte{0xFF, 0xFF, 0xFF, 0xFF}
 	prefix := append([]byte{}, dbPrefixx...)
 	prefix = append(prefix, maxBigEndianUint32Bytes...)
+	opts.Prefix = prefix
+	opts.PrefetchValues = false
+	it := txn.NewIterator(opts)
+	defer it.Close()
 	for it.Seek(prefix); it.ValidForPrefix(dbPrefixx); it.Next() {
 		countKey := it.Item().Key()
 
@@ -8304,7 +8329,7 @@ func DBGetNFTEntriesForPostHash(handle *badger.DB, nftPostHash *BlockHash) (_nft
 	nftEntries := []*NFTEntry{}
 	prefix := append([]byte{}, Prefixes.PrefixPostHashSerialNumberToNFTEntry...)
 	keyPrefix := append(prefix, nftPostHash[:]...)
-	_, entryByteStringsFound := _enumerateKeysForPrefix(handle, keyPrefix)
+	_, entryByteStringsFound := _enumerateKeysForPrefix(handle, keyPrefix, false)
 	for _, byteString := range entryByteStringsFound {
 		currentEntry := &NFTEntry{}
 		rr := bytes.NewReader(byteString)
@@ -8351,7 +8376,7 @@ func DBGetNFTEntriesForPKID(handle *badger.DB, ownerPKID *PKID) (_nftEntries []*
 	var nftEntries []*NFTEntry
 	prefix := append([]byte{}, Prefixes.PrefixPKIDIsForSaleBidAmountNanosPostHashSerialNumberToNFTEntry...)
 	keyPrefix := append(prefix, ownerPKID[:]...)
-	_, entryByteStringsFound := _enumerateKeysForPrefix(handle, keyPrefix)
+	_, entryByteStringsFound := _enumerateKeysForPrefix(handle, keyPrefix, false)
 	for _, byteString := range entryByteStringsFound {
 		currentEntry := &NFTEntry{}
 		rr := bytes.NewReader(byteString)
@@ -8593,7 +8618,7 @@ func DBGetNFTBidEntriesForPKID(handle *badger.DB, bidderPKID *PKID) (_nftBidEntr
 	{
 		prefix := append([]byte{}, Prefixes.PrefixBidderPKIDPostHashSerialNumberToBidNanos...)
 		keyPrefix := append(prefix, bidderPKID[:]...)
-		keysFound, valuesFound := _enumerateKeysForPrefix(handle, keyPrefix)
+		keysFound, valuesFound := _enumerateKeysForPrefix(handle, keyPrefix, false)
 		bidderPKIDLength := len(bidderPKID[:])
 		for ii, keyFound := range keysFound {
 
@@ -8630,7 +8655,7 @@ func DBGetNFTBidEntries(handle *badger.DB, nftPostHash *BlockHash, serialNumber 
 		prefix := append([]byte{}, Prefixes.PrefixPostHashSerialNumberBidNanosBidderPKID...)
 		keyPrefix := append(prefix, nftPostHash[:]...)
 		keyPrefix = append(keyPrefix, EncodeUint64(serialNumber)...)
-		keysFound, _ := _enumerateKeysForPrefix(handle, keyPrefix)
+		keysFound, _ := _enumerateKeysForPrefix(handle, keyPrefix, true)
 		for _, keyFound := range keysFound {
 			bidAmountStartIdx := 1 + HashSizeBytes + 8 // The length of prefix + the post hash + the serial #.
 			bidAmountEndIdx := bidAmountStartIdx + 8   // Add the length of the bid amount (uint64).
@@ -8798,7 +8823,7 @@ func DBGetAllOwnerToDerivedKeyMappings(handle *badger.DB, ownerPublicKey PublicK
 	_entries []*DerivedKeyEntry, _err error) {
 
 	prefix := _dbSeekPrefixForDerivedKeyMappings(ownerPublicKey)
-	_, valsFound := _enumerateKeysForPrefix(handle, prefix)
+	_, valsFound := _enumerateKeysForPrefix(handle, prefix, false)
 
 	var derivedEntries []*DerivedKeyEntry
 	for _, keyBytes := range valsFound {
@@ -9266,7 +9291,7 @@ func DbGetBalanceEntriesYouHold(db *badger.DB, snap *Snapshot, pkid *PKID, filte
 	{
 		prefix := _dbGetPrefixForHODLerPKIDCreatorPKIDToBalanceEntry(isDAOCoin)
 		keyPrefix := append(prefix, pkid[:]...)
-		_, entryByteStringsFound := _enumerateKeysForPrefix(db, keyPrefix)
+		_, entryByteStringsFound := _enumerateKeysForPrefix(db, keyPrefix, false)
 		for _, byteString := range entryByteStringsFound {
 			currentEntry := &BalanceEntry{}
 			rr := bytes.NewReader(byteString)
@@ -9288,7 +9313,7 @@ func DbGetBalanceEntriesHodlingYou(db *badger.DB, snap *Snapshot, pkid *PKID, fi
 	{
 		prefix := _dbGetPrefixForCreatorPKIDHODLerPKIDToBalanceEntry(isDAOCoin)
 		keyPrefix := append(prefix, pkid[:]...)
-		_, entryByteStringsFound := _enumerateKeysForPrefix(db, keyPrefix)
+		_, entryByteStringsFound := _enumerateKeysForPrefix(db, keyPrefix, false)
 		for _, byteString := range entryByteStringsFound {
 			currentEntry := &BalanceEntry{}
 			rr := bytes.NewReader(byteString)
@@ -9789,7 +9814,7 @@ func DBGetAllDAOCoinLimitOrdersForThisTransactor(handle *badger.DB, transactorPK
 
 func _DBGetAllDAOCoinLimitOrdersByPrefix(handle *badger.DB, prefixKey []byte) ([]*DAOCoinLimitOrderEntry, error) {
 	// Get all DAO coin limit orders containing this prefix.
-	_, valsFound := _enumerateKeysForPrefix(handle, prefixKey)
+	_, valsFound := _enumerateKeysForPrefix(handle, prefixKey, false)
 	orders := []*DAOCoinLimitOrderEntry{}
 
 	// Cast resulting values from bytes to order entries.
@@ -9921,7 +9946,7 @@ func DbGetMempoolTxn(db *badger.DB, snap *Snapshot, mempoolTx *MempoolTx) *MsgDe
 }
 
 func DbGetAllMempoolTxnsSortedByTimeAdded(handle *badger.DB) (_mempoolTxns []*MsgDeSoTxn, _error error) {
-	_, valuesFound := _enumerateKeysForPrefix(handle, Prefixes.PrefixMempoolTxnHashToMsgDeSoTxn)
+	_, valuesFound := _enumerateKeysForPrefix(handle, Prefixes.PrefixMempoolTxnHashToMsgDeSoTxn, false)
 
 	mempoolTxns := []*MsgDeSoTxn{}
 	for _, mempoolTxnBytes := range valuesFound {
@@ -9940,7 +9965,7 @@ func DbGetAllMempoolTxnsSortedByTimeAdded(handle *badger.DB) (_mempoolTxns []*Ms
 }
 
 func DbDeleteAllMempoolTxnsWithTxn(txn *badger.Txn, snap *Snapshot, eventManager *EventManager, entryIsDeleted bool) error {
-	txnKeysFound, _, err := _enumerateKeysForPrefixWithTxn(txn, Prefixes.PrefixMempoolTxnHashToMsgDeSoTxn)
+	txnKeysFound, _, err := _enumerateKeysForPrefixWithTxn(txn, Prefixes.PrefixMempoolTxnHashToMsgDeSoTxn, true)
 	if err != nil {
 		return errors.Wrapf(err, "DbDeleteAllMempoolTxnsWithTxn: ")
 	}
@@ -10023,7 +10048,7 @@ func DbDeleteMempoolTxnKeyWithTxn(txn *badger.Txn, snap *Snapshot, txnKey []byte
 func LogDBSummarySnapshot(db *badger.DB) {
 	keyCountMap := make(map[byte]int)
 	for prefixByte := byte(0); prefixByte < byte(40); prefixByte++ {
-		keysForPrefix, _ := EnumerateKeysForPrefix(db, []byte{prefixByte})
+		keysForPrefix, _ := EnumerateKeysForPrefix(db, []byte{prefixByte}, true)
 		keyCountMap[prefixByte] = len(keysForPrefix)
 	}
 	glog.Info(spew.Printf("LogDBSummarySnapshot: Current DB summary snapshot: %v", keyCountMap))
@@ -11407,6 +11432,7 @@ func DBGetLimitedVestedLockedBalanceEntriesWithTxn(
 	// Create a backwards iterator.
 	backwardOpts := badger.DefaultIteratorOptions
 	backwardOpts.Reverse = true
+	backwardOpts.Prefix = prefixKey
 	backwardIterator := txn.NewIterator(backwardOpts)
 	defer backwardIterator.Close()
 
@@ -11446,6 +11472,7 @@ func DBGetLimitedVestedLockedBalanceEntriesWithTxn(
 
 	// Create a forward iterator. We will use t
 	forwardOpts := badger.DefaultIteratorOptions
+	forwardOpts.Prefix = prefixKey
 	forwardIterator := txn.NewIterator(forwardOpts)
 	defer forwardIterator.Close()
 
@@ -11597,6 +11624,7 @@ func DBGetAllYieldCurvePointsByProfilePKIDWithTxn(txn *badger.Txn, snap *Snapsho
 
 	// Create an iterator.
 	opts := badger.DefaultIteratorOptions
+	opts.Prefix = validKey
 	iterator := txn.NewIterator(opts)
 	defer iterator.Close()
 
@@ -11751,6 +11779,8 @@ func DbGetTransactorNonceEntriesToExpireAtBlockHeightWithTxn(txn *badger.Txn, bl
 	endPrefix := append([]byte{}, Prefixes.PrefixNoncePKIDIndex...)
 	opts := badger.DefaultIteratorOptions
 	opts.Reverse = true
+	opts.Prefix = endPrefix
+	opts.PrefetchValues = false
 	nodeIterator := txn.NewIterator(opts)
 	defer nodeIterator.Close()
 	var transactorNonceEntries []*TransactorNonceEntry
@@ -11762,7 +11792,7 @@ func DbGetTransactorNonceEntriesToExpireAtBlockHeightWithTxn(txn *badger.Txn, bl
 }
 
 func DbGetAllTransactorNonceEntries(handle *badger.DB) []*TransactorNonceEntry {
-	keys, _ := EnumerateKeysForPrefix(handle, Prefixes.PrefixNoncePKIDIndex)
+	keys, _ := EnumerateKeysForPrefix(handle, Prefixes.PrefixNoncePKIDIndex, true)
 	nonceEntries := []*TransactorNonceEntry{}
 	for _, key := range keys {
 		// Convert key to nonce entry.
@@ -11820,34 +11850,6 @@ func EnumerateKeysForPrefixWithLimitOffsetOrder(
 	return keysFound, valsFound, nil
 }
 
-func EnumerateKeysForPrefixWithLimitOffsetOrderAndSkipFunc(
-	db *badger.DB,
-	prefix []byte,
-	limit int,
-	lastSeenKey []byte,
-	sortDescending bool,
-	canSkipKey func([]byte) bool,
-) ([][]byte, [][]byte, error) {
-	keysFound := [][]byte{}
-	valsFound := [][]byte{}
-
-	dbErr := db.View(func(txn *badger.Txn) error {
-		var err error
-		keysFound, valsFound, err = _enumerateKeysForPrefixWithLimitOffsetOrderWithTxn(
-			txn, prefix, limit, lastSeenKey, sortDescending, canSkipKey,
-		)
-		return err
-	})
-	if dbErr != nil {
-		return nil, nil, errors.Wrapf(
-			dbErr,
-			"EnumerateKeysForPrefixWithLimitOffsetOrderAndSkipFunc: problem fetching keys and values from db: ",
-		)
-	}
-
-	return keysFound, valsFound, nil
-}
-
 func _enumerateKeysForPrefixWithLimitOffsetOrderWithTxn(
 	txn *badger.Txn,
 	prefix []byte,
@@ -11878,6 +11880,7 @@ func _enumerateKeysForPrefixWithLimitOffsetOrderWithTxn(
 		opts.Reverse = true
 		startingKey = append(startingKey, 0xff)
 	}
+	opts.Prefix = prefix
 	nodeIterator := txn.NewIterator(opts)
 	defer nodeIterator.Close()
 
@@ -11913,6 +11916,95 @@ func _enumerateKeysForPrefixWithLimitOffsetOrderWithTxn(
 		valsFound = append(valsFound, valCopy)
 	}
 	return keysFound, valsFound, nil
+}
+
+func EnumerateKeysOnlyForPrefixWithLimitOffsetOrderAndSkipFunc(
+	db *badger.DB,
+	prefix []byte,
+	limit int,
+	lastSeenKey []byte,
+	sortDescending bool,
+	canSkipKey func([]byte) bool,
+) ([][]byte, error) {
+	keysFound := [][]byte{}
+
+	dbErr := db.View(func(txn *badger.Txn) error {
+		var err error
+		keysFound, err = _enumerateKeysOnlyForPrefixWithLimitOffsetOrderWithTxn(
+			txn, prefix, limit, lastSeenKey, sortDescending, canSkipKey,
+		)
+		return err
+	})
+	if dbErr != nil {
+		return nil, errors.Wrapf(
+			dbErr,
+			"EnumerateKeysOnlyForPrefixWithLimitOffsetOrderAndSkipFunc: problem fetching keys from db: ",
+		)
+	}
+
+	return keysFound, nil
+}
+
+func _enumerateKeysOnlyForPrefixWithLimitOffsetOrderWithTxn(
+	txn *badger.Txn,
+	prefix []byte,
+	limit int,
+	lastSeenKey []byte,
+	sortDescending bool,
+	canSkipKey func([]byte) bool,
+) ([][]byte, error) {
+	keysFound := [][]byte{}
+
+	// If provided, start at the last seen key.
+	startingKey := prefix
+	haveSeenLastSeenKey := true
+	if lastSeenKey != nil {
+		startingKey = lastSeenKey
+		haveSeenLastSeenKey = false
+		if limit > 0 {
+			// Need to increment limit by one (if non-zero) since
+			// we include the lastSeenKey/lastSeenValue.
+			limit += 1
+		}
+	}
+
+	opts := badger.DefaultIteratorOptions
+	// Search keys in reverse order if sort DESC.
+	if sortDescending {
+		opts.Reverse = true
+		startingKey = append(startingKey, 0xff)
+	}
+	opts.PrefetchValues = false
+	opts.Prefix = prefix
+	nodeIterator := txn.NewIterator(opts)
+	defer nodeIterator.Close()
+
+	for nodeIterator.Seek(startingKey); nodeIterator.ValidForPrefix(prefix); nodeIterator.Next() {
+		// Break if at or beyond limit.
+		if limit > 0 && len(keysFound) >= limit {
+			break
+		}
+		key := nodeIterator.Item().Key()
+		// Skip if key is before the last seen key. The caller
+		// needs to filter out the lastSeenKey in the view as
+		// we return any key >= the lastSeenKey.
+		if !haveSeenLastSeenKey {
+			if !bytes.Equal(key, lastSeenKey) {
+				continue
+			}
+			haveSeenLastSeenKey = true
+		}
+		// Skip if key can be skipped.
+		if canSkipKey(key) {
+			continue
+		}
+		// Copy key.
+		keyCopy := make([]byte, len(key))
+		copy(keyCopy[:], key[:])
+		// Append found entry to return slices.
+		keysFound = append(keysFound, keyCopy)
+	}
+	return keysFound, nil
 }
 
 // Check to see if the badger db has already been initialized with the performance options.

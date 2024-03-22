@@ -674,11 +674,15 @@ func DBKeyForValidatorByStatusAndStakeAmount(validatorEntry *ValidatorEntry) []b
 
 func GetValidatorPKIDFromDBKeyForValidatorByStatusAndStakeAmount(key []byte) (*PKID, error) {
 	validatorPKIDBytes := key[len(key)-PublicKeyLenCompressed:]
-	validatorPKID := PKID{}
-	if err := validatorPKID.FromBytes(bytes.NewReader(validatorPKIDBytes)); err != nil {
-		return nil, errors.Wrapf(err, "GetValidatorPKIDFromDBKeyForValidatorByStatusAndStakeAmount: problem reading ValidatorPKID: ")
+	if len(validatorPKIDBytes) != PublicKeyLenCompressed {
+		return nil, fmt.Errorf(
+			"GetValidatorPKIDFromDBKeyForValidatorByStatusAndStakeAmount: Problem reading ValidatorPKID: "+
+				"Length of ValidatorPKIDBytes is %d but expected %d",
+			len(validatorPKIDBytes), PublicKeyLenCompressed,
+		)
+
 	}
-	return &validatorPKID, nil
+	return NewPKID(validatorPKIDBytes), nil
 }
 
 func DBGetValidatorByPKID(handle *badger.DB, snap *Snapshot, pkid *PKID) (*ValidatorEntry, error) {
@@ -744,7 +748,7 @@ func DBGetTopActiveValidatorsByStakeAmount(
 	// Retrieve top N active ValidatorEntry keys by stake.
 	key := append([]byte{}, Prefixes.PrefixValidatorByStatusAndStakeAmount...)
 	key = append(key, EncodeUint8(uint8(ValidatorStatusActive))...)
-	keysFound, _, err := EnumerateKeysForPrefixWithLimitOffsetOrderAndSkipFunc(
+	keysFound, err := EnumerateKeysOnlyForPrefixWithLimitOffsetOrderAndSkipFunc(
 		handle, key, int(limit), nil, true, canSkipValidatorInBadgerSeek,
 	)
 	if err != nil {
