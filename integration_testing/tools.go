@@ -3,20 +3,21 @@ package integration_testing
 import (
 	"encoding/hex"
 	"fmt"
-	"github.com/btcsuite/btcd/wire"
-	"github.com/deso-protocol/core/cmd"
-	"github.com/deso-protocol/core/lib"
-	"github.com/dgraph-io/badger/v3"
-	"github.com/golang/glog"
-	"github.com/pkg/errors"
-	"github.com/stretchr/testify/require"
-	"github.com/tyler-smith/go-bip39"
 	"io/ioutil"
 	"os"
 	"reflect"
 	"sort"
 	"testing"
 	"time"
+
+	"github.com/btcsuite/btcd/wire"
+	"github.com/deso-protocol/core/cmd"
+	"github.com/deso-protocol/core/lib"
+	"github.com/dgraph-io/badger/v4"
+	"github.com/golang/glog"
+	"github.com/pkg/errors"
+	"github.com/stretchr/testify/require"
+	"github.com/tyler-smith/go-bip39"
 )
 
 // This testing suite is the first serious attempt at making a comprehensive functional testing framework for DeSo nodes.

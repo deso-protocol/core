@@ -2,10 +2,11 @@ package lib
 
 import (
 	"fmt"
-	"github.com/dgraph-io/badger/v3"
+	"testing"
+
+	"github.com/dgraph-io/badger/v4"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"testing"
 )
 
 func _doFollowTxn(t *testing.T, chain *Blockchain, db *badger.DB,
