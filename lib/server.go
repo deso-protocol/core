@@ -884,7 +884,14 @@ func (srv *Server) GetBlocksToStore(pp *Peer) {
 // SyncStateSyncingHeaders.
 func (srv *Server) GetBlocks(pp *Peer, maxHeight int) {
 	// Fetch as many blocks as we can from this peer.
-	numBlocksToFetch := MaxBlocksInFlight - len(pp.requestedBlocks)
+	// If our peer is on PoS then we can safely request a lot more blocks from them in
+	// each flight.
+	maxBlocksInFlight := MaxBlocksInFlight
+	if pp.Params.ProtocolVersion >= ProtocolVersion2 {
+		maxBlocksInFlight = MaxBlocksInFlightPoS
+	}
+	numBlocksToFetch := maxBlocksInFlight - len(pp.requestedBlocks)
+
 	blockNodesToFetch := srv.blockchain.GetBlockNodesToFetch(
 		numBlocksToFetch, maxHeight, pp.requestedBlocks)
 	if len(blockNodesToFetch) == 0 {
@@ -2070,10 +2077,14 @@ func (srv *Server) _logAndDisconnectPeer(pp *Peer, blockMsg *MsgDeSoBlock, suffi
 	pp.Disconnect()
 }
 
-func (srv *Server) _handleBlock(pp *Peer, blk *MsgDeSoBlock) {
-	glog.Infof(CLog(Cyan, fmt.Sprintf("Server._handleBlock: Received block ( %v / %v ) from Peer %v",
-		blk.Header.Height, srv.blockchain.headerTip().Height, pp)))
-
+// This function handles a single block that we receive from our peer. Originally, we would receive blocks
+// one by one from our peer. However, now we receive a batch of blocks all at once via _handleBlockBundle,
+// which then calls this function to process them one by one on our side.
+//
+// isLastBlock indicates that this is the last block in the list of blocks we received back
+// via a MsgDeSoBlockBundle message. When we receive a single block, isLastBlock will automatically
+// be true, which will give it its old single-block behavior.
+func (srv *Server) _handleBlock(pp *Peer, blk *MsgDeSoBlock, isLastBlock bool) {
 	srv.timer.Start("Server._handleBlock: General")
 
 	// Pull out the header for easy access.
@@ -2186,6 +2197,13 @@ func (srv *Server) _handleBlock(pp *Peer, blk *MsgDeSoBlock) {
 	srv.timer.Print("Server._handleBlock: General")
 	srv.timer.Print("Server._handleBlock: Process Block")
 
+	// If we're not at the last block yet, then we're done. The rest of this code is only
+	// relevant after we've connected the last block, and it generally involves fetching
+	// more data from our peer.
+	if !isLastBlock {
+		return
+	}
+
 	// We shouldn't be receiving blocks while syncing headers, but we can end up here
 	// if it took longer than MaxTipAge to sync blocks to this point. We'll revert to
 	// syncing headers and then resume syncing blocks once we're current again.
@@ -2256,6 +2274,50 @@ func (srv *Server) _handleBlock(pp *Peer, blk *MsgDeSoBlock) {
 
 	// If the chain is current, then try to transition to the FastHotStuff consensus.
 	srv.tryTransitionToFastHotStuffConsensus()
+}
+
+func (srv *Server) _handleBlockBundle(pp *Peer, bundle *MsgDeSoBlockBundle) {
+	if len(bundle.Blocks) == 0 {
+		glog.Infof(CLog(Cyan, fmt.Sprintf("Server._handleBlockBundle: Received EMPTY block bundle "+
+			"at header height ( %v ) from Peer %v. Disconnecting peer since this should never happen.",
+			srv.blockchain.headerTip().Height, pp)))
+		pp.Disconnect()
+		return
+	}
+	glog.Infof(CLog(Cyan, fmt.Sprintf("Server._handleBlockBundle: Received blocks ( %v->%v / %v ) from Peer %v",
+		bundle.Blocks[0].Header.Height, bundle.Blocks[len(bundle.Blocks)-1].Header.Height,
+		srv.blockchain.headerTip().Height, pp)))
+
+	srv.timer.Start("Server._handleBlockBundle: General")
+
+	// TODO: We should fetch the next batch of blocks while we process this batch.
+	// This requires us to modify GetBlocks to take a start hash and a count
+	// of the number of blocks we want. Or we could make the existing GetBlocks
+	// take a start hash and the other node can just return as many blcoks as it
+	// can.
+
+	// Process each block in the bundle. Record our blocks per second.
+	blockProcessingStartTime := time.Now()
+	for ii, blk := range bundle.Blocks {
+		// TODO: We should make it so that we break out if one of the blocks errors. It's just that
+		// _handleBlock is a legacy function that doesn't support erroring out. It's not a big deal
+		// though as we'll just connect all the blocks after the failed one and those blocks will also
+		// gracefully fail.
+		srv._handleBlock(pp, blk, ii == len(bundle.Blocks)-1 /*isLastBlock*/)
+		numLogBlocks := 1000
+		if ii%numLogBlocks == 0 {
+			glog.Infof(CLog(Cyan, fmt.Sprintf("Server._handleBlockBundle: Processed block ( %v / %v ) = ( %v / %v ) from Peer %v",
+				bundle.Blocks[ii].Header.Height,
+				srv.blockchain.headerTip().Height,
+				ii+1, len(bundle.Blocks),
+				pp)))
+
+			elapsed := time.Since(blockProcessingStartTime)
+			if ii != 0 {
+				fmt.Printf("We are processing %v blocks per second\n", float64(ii)/(float64(elapsed)/1e9))
+			}
+		}
+	}
 }
 
 func (srv *Server) _handleInv(peer *Peer, msg *MsgDeSoInv) {
@@ -2557,10 +2619,13 @@ func (srv *Server) _handlePeerMessages(serverMessage *ServerMessage) {
 		srv._handleGetHeaders(serverMessage.Peer, msg)
 	case *MsgDeSoHeaderBundle:
 		srv._handleHeaderBundle(serverMessage.Peer, msg)
+	case *MsgDeSoBlockBundle:
+		srv._handleBlockBundle(serverMessage.Peer, msg)
 	case *MsgDeSoGetBlocks:
 		srv._handleGetBlocks(serverMessage.Peer, msg)
 	case *MsgDeSoBlock:
-		srv._handleBlock(serverMessage.Peer, msg)
+		// isLastBlock is always true when we get a legacy single-block message.
+		srv._handleBlock(serverMessage.Peer, msg, true)
 	case *MsgDeSoGetSnapshot:
 		srv._handleGetSnapshot(serverMessage.Peer, msg)
 	case *MsgDeSoSnapshotData:
