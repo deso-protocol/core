@@ -413,11 +413,13 @@ func (txi *TXIndex) Update() error {
 				"Update: Error initializing UtxoView: %v", err)
 		}
 		if blockToAttach.Header.PrevBlockHash != nil {
-			utxoView, err = txi.TXIndexChain.getUtxoViewAtBlockHash(*blockToAttach.Header.PrevBlockHash)
+			var utxoViewAndUtxoOps *BlockViewAndUtxoOps
+			utxoViewAndUtxoOps, err = txi.TXIndexChain.getUtxoViewAtBlockHash(*blockToAttach.Header.PrevBlockHash)
 			if err != nil {
 				return fmt.Errorf("Update: Problem getting UtxoView at block hash %v: %v",
 					blockToAttach.Header.PrevBlockHash, err)
 			}
+			utxoView = utxoViewAndUtxoOps.UtxoView
 		}
 
 		// Do each block update in a single transaction so we're safe in case the node

@@ -2413,8 +2413,9 @@ func _generateRealBlockWithFailingTxn(testMeta *TestMeta, blockHeight uint64, vi
 	prevBlock, exists := testMeta.chain.blockIndexByHash[*prevBlockHash]
 	require.True(testMeta.t, exists)
 	// Always update the testMeta latestBlockView
-	latestBlockView, err := testMeta.chain.getUtxoViewAtBlockHash(*prevBlockHash)
+	latestBlockViewAndUtxoOps, err := testMeta.chain.getUtxoViewAtBlockHash(*prevBlockHash)
 	require.NoError(testMeta.t, err)
+	latestBlockView := latestBlockViewAndUtxoOps.UtxoView
 	latestBlockHeight := testMeta.chain.blockIndexByHash[*prevBlockHash].Height
 	testMeta.posMempool.UpdateLatestBlock(latestBlockView, uint64(latestBlockHeight))
 	seedSignature := getRandomSeedSignature(testMeta, blockHeight, view, prevBlock.Header.ProposerRandomSeedSignature)
