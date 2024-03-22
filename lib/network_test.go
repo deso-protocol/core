@@ -3,8 +3,6 @@ package lib
 import (
 	"bytes"
 	"encoding/hex"
-	"github.com/deso-protocol/core/bls"
-	"golang.org/x/crypto/sha3"
 	"math/big"
 	"math/rand"
 	"reflect"
@@ -12,6 +10,9 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/deso-protocol/core/bls"
+	"golang.org/x/crypto/sha3"
 
 	"github.com/holiman/uint256"
 
@@ -615,6 +616,19 @@ func TestBlockSerialize(t *testing.T) {
 		require.Equal(*block, *testBlock)
 	}
 
+	// Also test MsgDeSoBlockBundle
+	bundle := &MsgDeSoBlockBundle{
+		Blocks: expectedBlocksToTest,
+		// Just fill any old data for these
+		TipHash:   expectedBlocksToTest[0].Header.PrevBlockHash,
+		TipHeight: expectedBlocksToTest[0].Header.Height,
+	}
+	bb, err := bundle.ToBytes(false)
+	require.NoError(err)
+	testBundle := &MsgDeSoBlockBundle{}
+	err = testBundle.FromBytes(bb)
+	require.NoError(err)
+	require.Equal(bundle, testBundle)
 }
 
 func TestBlockSerializeNoBlockProducerInfo(t *testing.T) {

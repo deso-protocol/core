@@ -76,6 +76,7 @@ const (
 	MsgTypeGetHeaders MsgType = 6
 	// MsgTypeHeaderBundle contains headers from a peer.
 	MsgTypeHeaderBundle    MsgType = 7
+	MsgTypeBlockBundle     MsgType = 22
 	MsgTypePing            MsgType = 8
 	MsgTypePong            MsgType = 9
 	MsgTypeInv             MsgType = 10
@@ -100,7 +101,7 @@ const (
 	MsgTypeValidatorVote    MsgType = 20
 	MsgTypeValidatorTimeout MsgType = 21
 
-	// NEXT_TAG = 22
+	// NEXT_TAG = 23
 
 	// Below are control messages used to signal to the Server from other parts of
 	// the code but not actually sent among peers.
@@ -145,6 +146,8 @@ func (msgType MsgType) String() string {
 		return "GET_HEADERS"
 	case MsgTypeHeaderBundle:
 		return "HEADER_BUNDLE"
+	case MsgTypeBlockBundle:
+		return "BLOCK_BUNDLE"
 	case MsgTypePing:
 		return "PING"
 	case MsgTypePong:
@@ -813,6 +816,8 @@ func NewMessage(msgType MsgType) DeSoMessage {
 		return &MsgDeSoGetHeaders{}
 	case MsgTypeHeaderBundle:
 		return &MsgDeSoHeaderBundle{}
+	case MsgTypeBlockBundle:
+		return &MsgDeSoBlockBundle{}
 	case MsgTypeAddr:
 		return &MsgDeSoAddr{}
 	case MsgTypeGetAddr:
@@ -1038,6 +1043,90 @@ func (msg *MsgDeSoHeaderBundle) String() string {
 }
 
 // ==================================================================
+// BLOCK_BUNDLE message
+// ==================================================================
+
+type MsgDeSoBlockBundle struct {
+	Blocks    []*MsgDeSoBlock
+	TipHash   *BlockHash
+	TipHeight uint64
+}
+
+func (msg *MsgDeSoBlockBundle) GetMsgType() MsgType {
+	return MsgTypeBlockBundle
+}
+
+func (msg *MsgDeSoBlockBundle) ToBytes(preSignature bool) ([]byte, error) {
+	data := []byte{}
+
+	// Encode the number of blocks in the bundle.
+	data = append(data, UintToBuf(uint64(len(msg.Blocks)))...)
+
+	// Encode all the blocks.
+	for _, block := range msg.Blocks {
+		blockBytes, err := block.ToBytes(preSignature)
+		if err != nil {
+			return nil, errors.Wrapf(err, "MsgDeSoBlockBundle.ToBytes: Problem encoding block")
+		}
+		data = append(data, EncodeByteArray(blockBytes)...)
+	}
+
+	// Encode the tip hash.
+	data = append(data, msg.TipHash[:]...)
+
+	// Encode the tip height.
+	data = append(data, UintToBuf(uint64(msg.TipHeight))...)
+
+	return data, nil
+}
+
+func (msg *MsgDeSoBlockBundle) FromBytes(data []byte) error {
+	rr := bytes.NewReader(data)
+	retBundle := NewMessage(MsgTypeBlockBundle).(*MsgDeSoBlockBundle)
+
+	// Read in the number of block in the bundle.
+	numBlocks, err := ReadUvarint(rr)
+	if err != nil {
+		return errors.Wrapf(err, "MsgDeSoBlockBundle.FromBytes: Problem decoding number of block")
+	}
+
+	// Read in all of the blocks.
+	for ii := uint64(0); ii < numBlocks; ii++ {
+		blockBytes, err := DecodeByteArray(rr)
+		if err != nil {
+			return errors.Wrapf(err, "MsgDeSoBlockBundle.FromBytes: Problem decoding block: ")
+		}
+		retBlock := &MsgDeSoBlock{}
+		if err := retBlock.FromBytes(blockBytes); err != nil {
+			return errors.Wrapf(err, "MsgDeSoBlock.FromBytes: ")
+		}
+
+		retBundle.Blocks = append(retBundle.Blocks, retBlock)
+	}
+
+	// Read in the tip hash.
+	retBundle.TipHash = &BlockHash{}
+	_, err = io.ReadFull(rr, retBundle.TipHash[:])
+	if err != nil {
+		return errors.Wrapf(err, "MsgDeSoBlockBundle.FromBytes:: Error reading TipHash: ")
+	}
+
+	// Read in the tip height.
+	tipHeight, err := ReadUvarint(rr)
+	if err != nil || tipHeight > math.MaxUint32 {
+		return fmt.Errorf("MsgDeSoBlockBundle.FromBytes: %v", err)
+	}
+	retBundle.TipHeight = tipHeight
+
+	*msg = *retBundle
+	return nil
+}
+
+func (msg *MsgDeSoBlockBundle) String() string {
+	return fmt.Sprintf("Num Blocks: %v, Tip Height: %v, Tip Hash: %v, Blocks: %v", len(msg.Blocks), msg.TipHeight, msg.TipHash, msg.Blocks)
+}
+
+// ==================================================================
 // GetBlocks Messages
 // ==================================================================
 
@@ -1052,9 +1141,11 @@ func (msg *MsgDeSoGetBlocks) GetMsgType() MsgType {
 func (msg *MsgDeSoGetBlocks) ToBytes(preSignature bool) ([]byte, error) {
 	data := []byte{}
 
-	if len(msg.HashList) > MaxBlocksInFlight {
+	// We can safely increase this without breaking backwards-compatibility because old
+	// nodes will never send us more hashes than this.
+	if len(msg.HashList) > MaxBlocksInFlightPoS {
 		return nil, fmt.Errorf("MsgDeSoGetBlocks.ToBytes: Blocks requested %d "+
-			"exceeds MaxBlocksInFlight %d", len(msg.HashList), MaxBlocksInFlight)
+			"exceeds MaxBlocksInFlightPoS %d", len(msg.HashList), MaxBlocksInFlightPoS)
 	}
 
 	// Encode the number of hashes.
@@ -1076,9 +1167,11 @@ func (msg *MsgDeSoGetBlocks) FromBytes(data []byte) error {
 		return errors.Wrapf(err, "MsgDeSoGetBlocks.FromBytes: Problem "+
 			"reading number of block hashes requested")
 	}
-	if numHashes > MaxBlocksInFlight {
+	// We can safely increase this without breaking backwards-compatibility because old
+	// nodes will never send us more hashes than this.
+	if numHashes > MaxBlocksInFlightPoS {
 		return fmt.Errorf("MsgDeSoGetBlocks.FromBytes: HashList length (%d) "+
-			"exceeds maximum allowed (%d)", numHashes, MaxBlocksInFlight)
+			"exceeds maximum allowed (%d)", numHashes, MaxBlocksInFlightPoS)
 	}
 
 	// Read in all the hashes.
@@ -1344,6 +1437,13 @@ const (
 	// MaxBlocksInFlight is the maximum number of blocks that can be requested
 	// from a peer.
 	MaxBlocksInFlight = 250
+	// After PoS, we have blocks every second rather than every five minutes, and blocks
+	// are smaller. As such, we can safely increase this limit.
+	//
+	// TODO: This is a pretty large value. Blocks were processing at ~80 blocks per second
+	// when I last ran it. If we can't get the blocks per second to a higher value, then
+	// we should probably decrease this value.
+	MaxBlocksInFlightPoS = 25000
 )
 
 // InvType represents the allowed types of inventory vectors. See InvVect.
