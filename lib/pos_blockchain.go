@@ -276,13 +276,14 @@ func (bc *Blockchain) processBlockPoS(block *MsgDeSoBlock, currentView uint64, v
 
 	// We expect the utxoView for the parent block to be valid because we check that all ancestor blocks have
 	// been validated.
-	parentUtxoView, err := bc.getUtxoViewAtBlockHash(*block.Header.PrevBlockHash)
+	parentUtxoViewAndUtxoOps, err := bc.getUtxoViewAtBlockHash(*block.Header.PrevBlockHash)
 	if err != nil {
 		// This should never happen. If the parent is validated and extends from the tip, then we should
 		// be able to build a UtxoView for it. This failure can only happen due to transient or badger issues.
 		// We return that validation didn't fail and the error.
 		return false, false, nil, errors.Wrap(err, "validateLeaderAndQC: Problem getting UtxoView")
 	}
+	parentUtxoView := parentUtxoViewAndUtxoOps.UtxoView
 	// First, we perform a validation of the leader and the QC to prevent spam.
 	// If the block fails this check, we throw it away.
 	passedSpamPreventionCheck, err := bc.validateLeaderAndQC(block, parentUtxoView, verifySignatures)
@@ -752,15 +753,11 @@ func (bc *Blockchain) validateAndIndexBlockPoS(block *MsgDeSoBlock, parentUtxoVi
 		return bc.storeValidateFailedBlockWithWrappedError(block, err)
 	}
 
-	// Connect this block to the parent block's UtxoView.
-	txHashes := collections.Transform(block.Txns, func(txn *MsgDeSoTxn) *BlockHash {
-		return txn.Hash()
-	})
-
 	// If we fail to connect the block, then it means the block is invalid. We should store it as ValidateFailed.
-	if _, err = parentUtxoView.ConnectBlock(block, txHashes, verifySignatures, nil, block.Header.Height); err != nil {
-		// If it doesn't connect, we want to mark it as ValidateFailed.
-		return bc.storeValidateFailedBlockWithWrappedError(block, err)
+	// TODO: check the error message for specific error for failure to connect block.
+	if _, err = bc.getUtxoViewAtBlockHashWithTipBlock(*blockHash, block); err != nil {
+		return bc.storeValidateFailedBlockWithWrappedError(block, errors.Wrap(
+			err, "validateAndIndexBlockPoS: Problem getting UtxoView"))
 	}
 
 	// If the block is too far in the future, we leave it as STORED and return early.
@@ -809,13 +806,14 @@ func (bc *Blockchain) validatePreviouslyIndexedBlockPoS(
 		return nil, errors.Wrapf(err, "validatePreviouslyIndexedBlockPoS: Problem fetching block from DB")
 	}
 	// Build utxoView for the block's parent.
-	parentUtxoView, err := bc.getUtxoViewAtBlockHash(*block.Header.PrevBlockHash)
+	parentUtxoViewAndUtxoOps, err := bc.getUtxoViewAtBlockHash(*block.Header.PrevBlockHash)
 	if err != nil {
 		// This should never happen. If the parent is validated and extends from the tip, then we should
 		// be able to build a UtxoView for it. This failure can only happen due to transient or badger issues.
 		return nil, errors.Wrap(err, "validatePreviouslyIndexedBlockPoS: Problem getting UtxoView")
 	}
 
+	parentUtxoView := parentUtxoViewAndUtxoOps.UtxoView
 	// If the block isn't validated or validate failed, we need to run the anti-spam checks on it.
 	passedSpamPreventionCheck, err := bc.validateLeaderAndQC(block, parentUtxoView, verifySignatures)
 	if err != nil {
@@ -1713,25 +1711,14 @@ func (bc *Blockchain) commitBlockPoS(blockHash *BlockHash, verifySignatures bool
 		// Can't commit a block that's already committed.
 		return errors.Errorf("commitBlockPoS: Block %v is already committed", blockHash.String())
 	}
-	block, err := GetBlock(blockHash, bc.db, bc.snapshot)
-	if err != nil {
-		return errors.Wrapf(err, "commitBlockPoS: Problem getting block from db %v", blockHash.String())
-	}
 	// Connect a view up to the parent of the block we are committing.
-	utxoView, err := bc.getUtxoViewAtBlockHash(*block.Header.PrevBlockHash)
+	utxoViewAndUtxoOps, err := bc.getUtxoViewAtBlockHash(*blockHash)
 	if err != nil {
 		return errors.Wrapf(err, "commitBlockPoS: Problem initializing UtxoView: ")
 	}
-	txHashes := collections.Transform(block.Txns, func(txn *MsgDeSoTxn) *BlockHash {
-		return txn.Hash()
-	})
-	// Connect the block to the view!
-	utxoOpsForBlock, err := utxoView.ConnectBlock(
-		block, txHashes, verifySignatures, bc.eventManager, block.Header.Height)
-	if err != nil {
-		// TODO: rule error handling? mark blocks invalid?
-		return errors.Wrapf(err, "commitBlockPoS: Problem connecting block to view: ")
-	}
+	utxoView := utxoViewAndUtxoOps.UtxoView
+	utxoOpsForBlock := utxoViewAndUtxoOps.UtxoOps
+	block := utxoViewAndUtxoOps.Block
 	// Put the block in the db
 	// Note: we're skipping postgres.
 	blockNode.Status |= StatusBlockCommitted
@@ -1740,12 +1727,6 @@ func (bc *Blockchain) commitBlockPoS(blockHash *BlockHash, verifySignatures bool
 			bc.snapshot.PrepareAncestralRecordsFlush()
 			defer bc.snapshot.StartAncestralRecordsFlush(true)
 			glog.V(2).Infof("commitBlockPoS: Preparing snapshot flush")
-		}
-		// Store the new block in the db under the
-		//   <blockHash> -> <serialized block>
-		// index.
-		if innerErr := PutBlockHashToBlockWithTxn(txn, bc.snapshot, block, bc.eventManager); innerErr != nil {
-			return errors.Wrapf(innerErr, "commitBlockPoS: Problem calling PutBlockHashToBlockWithTxn")
 		}
 
 		// Store the new block's node in our node index in the db under the
@@ -1856,22 +1837,81 @@ func (bc *Blockchain) GetCommittedTipView() (*UtxoView, error) {
 	return NewUtxoViewWithSnapshotCache(bc.db, bc.params, bc.postgres, bc.snapshot, nil, bc.snapshotCache)
 }
 
+// BlockViewAndUtxoOps is a struct that contains a UtxoView and the UtxoOperations
+// and a block that were used to build the UtxoView. This struct is only
+// used for Blockchain's blockViewCache, which is used to speed up repeated access
+// to a utxo view at an uncommitted block. Simply having a utxo view was insufficient
+// for all performance enhancements as the utxo operations are needed when committing
+// a block and the block is needed for the state syncer.
+type BlockViewAndUtxoOps struct {
+	UtxoView *UtxoView
+	UtxoOps  [][]*UtxoOperation
+	Block    *MsgDeSoBlock
+}
+
+func (viewAndUtxoOps *BlockViewAndUtxoOps) Copy() (*BlockViewAndUtxoOps, error) {
+	copiedView, err := viewAndUtxoOps.UtxoView.CopyUtxoView()
+	if err != nil {
+		return nil, errors.Wrapf(err, "BlockViewAndUtxoOps.Copy: Problem copying UtxoView")
+	}
+	return &BlockViewAndUtxoOps{
+		UtxoView: copiedView,
+		UtxoOps:  viewAndUtxoOps.UtxoOps,
+		Block:    viewAndUtxoOps.Block,
+	}, nil
+}
+
 // GetUncommittedTipView builds a UtxoView to the uncommitted tip.
 func (bc *Blockchain) GetUncommittedTipView() (*UtxoView, error) {
 	// Connect the uncommitted blocks to the tip so that we can validate subsequent blocks
-	return bc.getUtxoViewAtBlockHash(*bc.BlockTip().Hash)
+	blockViewAndUtxoOps, err := bc.getUtxoViewAtBlockHash(*bc.BlockTip().Hash)
+	if err != nil {
+		return nil, errors.Wrapf(err, "GetUncommittedTipView: Problem getting UtxoView at block hash")
+	}
+	return blockViewAndUtxoOps.UtxoView, nil
 }
 
-// getUtxoViewAtBlockHash builds a UtxoView to the block provided. It does this by
-// identifying all uncommitted ancestors of this block and then connecting those blocks.
-func (bc *Blockchain) getUtxoViewAtBlockHash(blockHash BlockHash) (*UtxoView, error) {
+// getUtxoViewAtBlockHash builds a UtxoView to the block provided and returns a BlockViewAndUtxoOps
+// struct by calling getUtxoViewAtBlockHashWithTipBlock with nil as the tipBlock param.
+func (bc *Blockchain) getUtxoViewAtBlockHash(blockHash BlockHash) (*BlockViewAndUtxoOps, error) {
+	return bc.getUtxoViewAtBlockHashWithTipBlock(blockHash, nil)
+}
+
+// getUtxoViewAtBlockHashWithTipBlock builds a UtxoView to the block provided and returns a BlockViewAndUtxoOps
+// struct containing UtxoView, the UtxoOperations that resulted from connecting the block, and the full
+// block (MsgDeSoBlock) for convenience. that came from connecting the block. TipBlock is a MsgDeSoBlock of the
+// blockHash provided and should only be provided if the block is not yet stored as is the case in
+// validateAndIndexBlockPoS. It does this by identifying all uncommitted ancestors of this block. Then it checks the
+// block view cache to see if we have already computed this view. If not, connecting the uncommitted ancestor blocks
+// and saving to the cache.
+func (bc *Blockchain) getUtxoViewAtBlockHashWithTipBlock(blockHash BlockHash, tipBlock *MsgDeSoBlock) (
+	*BlockViewAndUtxoOps, error) {
 	// Always fetch the lineage from the committed tip to the block provided first to
 	// ensure that a valid UtxoView is returned.
 	uncommittedAncestors := []*BlockNode{}
-	currentBlock := bc.blockIndexByHash[blockHash]
-	if currentBlock == nil {
-		return nil, errors.Errorf("getUtxoViewAtBlockHash: Block %v not found in block index", blockHash)
+	var currentBlock *BlockNode
+	if tipBlock == nil {
+		currentBlock = bc.blockIndexByHash[blockHash]
+		if currentBlock == nil {
+			return nil, errors.Errorf("getUtxoViewAtBlockHash: Block %v not found in block index", blockHash)
+		}
+	} else {
+		// Make sure the tipBlock's hash matches the blockHash provided.
+		tipBlockHash, err := tipBlock.Hash()
+		if err != nil {
+			return nil, errors.Wrapf(err, "getUtxoViewAtBlockHash: Problem getting tip block hash")
+		}
+		if !tipBlockHash.IsEqual(&blockHash) {
+			return nil, errors.Errorf(
+				"getUtxoViewAtBlockHash: tipBlock hash %v does not match provided blockHash %v",
+				tipBlockHash,
+				blockHash,
+			)
+		}
+		// Just mock a block node
+		currentBlock = NewBlockNode(nil, &blockHash, uint32(tipBlock.Header.Height), nil, nil, tipBlock.Header, StatusNone)
 	}
+
 	highestCommittedBlock, _ := bc.GetCommittedTip()
 	if highestCommittedBlock == nil {
 		return nil, errors.Errorf("getUtxoViewAtBlockHash: No committed blocks found")
@@ -1903,19 +1943,16 @@ func (bc *Blockchain) getUtxoViewAtBlockHash(blockHash BlockHash) (*UtxoView, er
 				"getUtxoViewAtBlockHash: extends from a committed block that isn't the committed tip")
 		}
 	}
-	if viewAtHash, exists := bc.blockViewCache.Lookup(blockHash); exists {
-		copiedView, err := viewAtHash.(*UtxoView).CopyUtxoView()
-		if err != nil {
-			return nil, errors.Wrapf(err, "getUtxoViewAtBlockHash: Problem copying UtxoView from cache")
+	if viewAndUtxoOpsAtHashItem, exists := bc.blockViewCache.Lookup(blockHash); exists {
+		viewAndUtxoOpsAtHash, ok := viewAndUtxoOpsAtHashItem.(*BlockViewAndUtxoOps)
+		if !ok {
+			return nil, errors.New("getUtxoViewAtBlockHash: Problem casting to BlockViewAndUtxoOps")
 		}
-		return copiedView, nil
-	}
-	if viewAtHash, exists := bc.blockViewCache.Lookup(blockHash); exists {
-		copiedView, err := viewAtHash.(*UtxoView).CopyUtxoView()
+		viewAndUtxoOps, err := viewAndUtxoOpsAtHash.Copy()
 		if err != nil {
-			return nil, errors.Wrapf(err, "getUtxoViewAtBlockHash: Problem copying UtxoView from cache")
+			return nil, errors.Wrapf(err, "getUtxoViewAtBlockHash: Problem copying BlockViewAndUtxoOps from cache")
 		}
-		return copiedView, nil
+		return viewAndUtxoOps, nil
 	}
 	// Connect the uncommitted blocks to the tip so that we can validate subsequent blocks
 	utxoView, err := NewUtxoViewWithSnapshotCache(bc.db, bc.params, bc.postgres, bc.snapshot, bc.eventManager,
@@ -1926,18 +1963,26 @@ func (bc *Blockchain) getUtxoViewAtBlockHash(blockHash BlockHash) (*UtxoView, er
 	// TODO: there's another performance enhancement we can make here. If we have a view in the
 	// cache for one of the ancestors, we can skip fetching the block and connecting it by taking
 	// a copy of it and replacing the existing view.
+	var utxoOps [][]*UtxoOperation
+	var fullBlock *MsgDeSoBlock
 	for ii := len(uncommittedAncestors) - 1; ii >= 0; ii-- {
-		// We need to get these blocks from badger
-		fullBlock, err := GetBlock(uncommittedAncestors[ii].Hash, bc.db, bc.snapshot)
-		if err != nil {
-			return nil, errors.Wrapf(err,
-				"GetUncommittedTipView: Error fetching Block %v not found in block index",
-				uncommittedAncestors[ii].Hash.String())
+		// If the block is the tip block, we can use the tip block provided if non-nil.
+		// This is useful for building a view based on a block that is not stored yet.
+		if uncommittedAncestors[ii].Hash.IsEqual(&blockHash) && tipBlock != nil {
+			fullBlock = tipBlock
+		} else {
+			// Get the full block from badger.
+			fullBlock, err = GetBlock(uncommittedAncestors[ii].Hash, bc.db, bc.snapshot)
+			if err != nil {
+				return nil, errors.Wrapf(err,
+					"GetUncommittedTipView: Error fetching Block %v not found in block index",
+					uncommittedAncestors[ii].Hash.String())
+			}
 		}
 		txnHashes := collections.Transform(fullBlock.Txns, func(txn *MsgDeSoTxn) *BlockHash {
 			return txn.Hash()
 		})
-		_, err = utxoView.ConnectBlock(fullBlock, txnHashes, false, nil, fullBlock.Header.Height)
+		utxoOps, err = utxoView.ConnectBlock(fullBlock, txnHashes, false, nil, fullBlock.Header.Height)
 		if err != nil {
 			hash, _ := fullBlock.Hash()
 			return nil, errors.Wrapf(err, "GetUncommittedTipView: Problem connecting block hash %v", hash.String())
@@ -1950,8 +1995,16 @@ func (bc *Blockchain) getUtxoViewAtBlockHash(blockHash BlockHash) (*UtxoView, er
 	if err != nil {
 		return nil, errors.Wrapf(err, "getUtxoViewAtBlockHash: Problem copying UtxoView to store in cache")
 	}
-	bc.blockViewCache.Add(blockHash, copiedView)
-	return utxoView, nil
+	bc.blockViewCache.Add(blockHash, &BlockViewAndUtxoOps{
+		UtxoView: copiedView,
+		UtxoOps:  utxoOps,
+		Block:    fullBlock,
+	})
+	return &BlockViewAndUtxoOps{
+		UtxoView: utxoView,
+		UtxoOps:  utxoOps,
+		Block:    fullBlock,
+	}, nil
 }
 
 // GetCommittedTip returns the highest committed block and its index in the best chain.
