@@ -375,13 +375,14 @@ func (mp *PosMempool) startAugmentedViewRefreshRoutine() {
 }
 
 func (mp *PosMempool) Stop() {
-	mp.Lock()
-	defer mp.Unlock()
-
 	if !mp.IsRunning() {
 		return
 	}
+	close(mp.quit)
+	mp.exitGroup.Wait()
 
+	mp.Lock()
+	defer mp.Unlock()
 	// Close the persister and stop the database.
 	if !mp.inMemoryOnly {
 		if err := mp.persister.Stop(); err != nil {
@@ -396,8 +397,6 @@ func (mp *PosMempool) Stop() {
 	mp.txnRegister.Reset()
 	mp.nonceTracker.Reset()
 	mp.feeEstimator = NewPoSFeeEstimator()
-	close(mp.quit)
-	mp.exitGroup.Wait()
 	mp.status = PosMempoolStatusNotInitialized
 }
 
@@ -746,12 +745,11 @@ func (mp *PosMempool) GetIterator() MempoolIterator {
 // connect to the validationView are removed from the mempool, as they would have also failed to connect during
 // block production. This function is thread-safe.
 func (mp *PosMempool) validateTransactions() error {
-	// We hold a read-lock on the mempool to get the transactions and the latest block view.
-	mp.RLock()
 	if !mp.IsRunning() {
 		return nil
 	}
-
+	// We hold a read-lock on the mempool to get the transactions and the latest block view.
+	mp.RLock()
 	// We copy the reference to the readOnlyLatestBlockView. Since the utxoView is immutable, we don't need to copy the
 	// entire view while we hold the lock.
 	validationView := mp.readOnlyLatestBlockView
@@ -773,14 +771,14 @@ func (mp *PosMempool) validateTransactions() error {
 	// Copy the validation view to avoid modifying the readOnlyLatestBlockView.
 	copyValidationView, err := validationView.CopyUtxoView()
 	if err != nil {
-		return errors.Wrapf(err, "PosMempool.refreshNoLock: Problem copying utxo view")
+		return errors.Wrapf(err, "PosMempool.validateTransactions: Problem copying utxo view")
 	}
 	// Connect the transactions to the validation view. We use the latest block height + 1 as the block height to connect
 	// the transactions. This is because the mempool contains transactions that we use for producing the next block.
 	_, _, _, _, successFlags, err := copyValidationView.ConnectTransactionsFailSafeWithLimit(txns, txHashes, uint32(mp.latestBlockHeight)+1,
-		time.Now().UnixNano(), false, false, true, mp.maxValidationViewConnects)
+		time.Now().UnixNano(), true, false, true, mp.maxValidationViewConnects)
 	if err != nil {
-		return errors.Wrapf(err, "PosMempool.refreshNoLock: Problem connecting transactions")
+		return errors.Wrapf(err, "PosMempool.validateTransactions: Problem connecting transactions")
 	}
 
 	// We iterate through the successFlags and update the validated status of the transactions in the mempool.
@@ -801,11 +799,13 @@ func (mp *PosMempool) validateTransactions() error {
 	}
 
 	// Now remove all transactions from the txnsToRemove list from the main mempool.
+	mp.Lock()
 	for _, txn := range txnsToRemove {
 		if err := mp.removeTransactionNoLock(txn, true); err != nil {
-			glog.Errorf("PosMempool.refreshNoLock: Problem removing transaction with hash (%v): %v", txn.Hash, err)
+			glog.Errorf("PosMempool.validateTransactions: Problem removing transaction with hash (%v): %v", txn.Hash, err)
 		}
 	}
+	mp.Unlock()
 
 	// Log the hashes for transactions that were removed.
 	if len(txnsToRemove) > 0 {
@@ -813,7 +813,7 @@ func (mp *PosMempool) validateTransactions() error {
 		for _, txn := range txnsToRemove {
 			removedTxnHashes = append(removedTxnHashes, txn.Hash.String())
 		}
-		glog.Infof("PosMempool.refreshNoLock: Transactions with the following hashes were removed: %v",
+		glog.V(1).Infof("PosMempool.validateTransactions: Transactions with the following hashes were removed: %v",
 			strings.Join(removedTxnHashes, ","))
 	}
 	return nil
@@ -877,7 +877,7 @@ func (mp *PosMempool) refreshNoLock() error {
 		for _, txn := range txnsToRemove {
 			removedTxnHashes = append(removedTxnHashes, txn.Hash.String())
 		}
-		glog.Infof("PosMempool.refreshNoLock: Transactions with the following hashes were removed: %v",
+		glog.V(1).Infof("PosMempool.refreshNoLock: Transactions with the following hashes were removed: %v",
 			strings.Join(removedTxnHashes, ","))
 	}
 	return nil

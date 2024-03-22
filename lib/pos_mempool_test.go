@@ -328,6 +328,89 @@ func TestPosMempoolReplaceWithHigherFee(t *testing.T) {
 	require.False(mempool.IsRunning())
 }
 
+func TestPosMempoolTransactionValidation(t *testing.T) {
+	seed := int64(1073)
+	rand := rand.New(rand.NewSource(seed))
+
+	globalParams := _testGetDefaultGlobalParams()
+	feeMin := globalParams.MinimumNetworkFeeNanosPerKB
+	feeMax := uint64(2000)
+	maxMempoolPosSizeBytes := uint64(3000000000)
+	mempoolBackupIntervalMillis := uint64(30000)
+
+	params, db := _posTestBlockchainSetup(t)
+	m0PubBytes, _, _ := Base58CheckDecode(m0Pub)
+	m1PubBytes, _, _ := Base58CheckDecode(m1Pub)
+	latestBlockView, err := NewUtxoView(db, params, nil, nil, nil)
+	require.NoError(t, err)
+	dir := _dbDirSetup(t)
+
+	mempool := NewPosMempool()
+	require.NoError(t, mempool.Init(
+		params, globalParams, latestBlockView, 2, dir, false, maxMempoolPosSizeBytes, mempoolBackupIntervalMillis, 1,
+		nil, 1, 5, 10, 10,
+	))
+	require.NoError(t, mempool.Start())
+	require.True(t, mempool.IsRunning())
+
+	// First, we'll try adding two transactions, one passing, one failing, and verify that the validation routine
+	// properly validates the passing transaction, and removes the failing transaction.
+	output := []*DeSoOutput{{
+		PublicKey:   m1PubBytes,
+		AmountNanos: 1000,
+	}}
+	txn1 := _generateTestTxnWithOutputs(t, rand, feeMin, feeMax, m0PubBytes, m0Priv, 100, 25, output)
+	// This should fail signature verification.
+	txn2 := _generateTestTxnWithOutputs(t, rand, feeMin, feeMax, m0PubBytes, m1Priv, 100, 25, output)
+	_wrappedPosMempoolAddTransaction(t, mempool, txn1)
+	_wrappedPosMempoolAddTransaction(t, mempool, txn2)
+	// Wait for the validation routine to finish.
+	time.Sleep(20 * time.Millisecond)
+	require.Equal(t, true, mempool.GetTransaction(txn1.Hash()).IsValidated())
+	require.Nil(t, mempool.GetTransaction(txn2.Hash()))
+	require.NoError(t, mempool.RemoveTransaction(txn1.Hash()))
+
+	// Now we'll try generating 10 passing transactions and 10 failing transactions, and verify that the validation
+	// routine properly validates up to 5, the maxValidationViewConnects, passing transactions, and possibly removes
+	// some of the failing transactions.
+	var passingTxns, failingTxns []*MsgDeSoTxn
+	for ii := 0; ii < 10; ii++ {
+		txn := _generateTestTxnWithOutputs(t, rand, feeMin, feeMax, m0PubBytes, m0Priv, 100, 25, output)
+		if ii > 0 {
+			// Make sure we add the transactions with increasing fees, otherwise we may validate more than 5 transactions,
+			// if the validation routine executes while we're adding transactions.
+			txn.TxnFeeNanos = passingTxns[ii-1].TxnFeeNanos + 1
+			_signTxn(t, txn, m0Priv)
+		}
+		passingTxns = append(passingTxns, txn)
+		_wrappedPosMempoolAddTransaction(t, mempool, txn)
+	}
+	for ii := 0; ii < 10; ii++ {
+		// Make sure the transaction fails the signature verification.
+		txn := _generateTestTxnWithOutputs(t, rand, feeMin, feeMax, m0PubBytes, m1Priv, 100, 25, output)
+		failingTxns = append(failingTxns, txn)
+		_wrappedPosMempoolAddTransaction(t, mempool, txn)
+	}
+	// Wait for the validation routine to finish.
+	time.Sleep(20 * time.Millisecond)
+	totalValidatedTxns := 0
+	for _, txn := range passingTxns {
+		if mempool.GetTransaction(txn.Hash()).IsValidated() {
+			totalValidatedTxns++
+		}
+	}
+	// Make sure that the number of validated transactions is equal to the maxValidationViewConnects.
+	require.Equal(t, 5, totalValidatedTxns)
+	// Now make sure that failing transactions were either removed, or remained unvalidated.
+	for _, txn := range failingTxns {
+		fetchedTxn := mempool.GetTransaction(txn.Hash())
+		if fetchedTxn != nil {
+			require.False(t, fetchedTxn.IsValidated())
+		}
+	}
+	mempool.Stop()
+}
+
 func _posTestBlockchainSetup(t *testing.T) (_params *DeSoParams, _db *badger.DB) {
 	return _posTestBlockchainSetupWithBalances(t, 200000, 200000)
 }
@@ -387,6 +470,15 @@ func _generateTestTxn(t *testing.T, rand *rand.Rand, feeMin uint64, feeMax uint6
 		},
 		ExtraData: extraData,
 	}
+	_signTxn(t, txn, priv)
+	return txn
+}
+
+func _generateTestTxnWithOutputs(t *testing.T, rand *rand.Rand, feeMin uint64, feeMax uint64, pk []byte, priv string, expirationHeight uint64,
+	extraDataBytes int32, outputs []*DeSoOutput) *MsgDeSoTxn {
+
+	txn := _generateTestTxn(t, rand, feeMin, feeMax, pk, priv, expirationHeight, extraDataBytes)
+	txn.TxOutputs = outputs
 	_signTxn(t, txn, priv)
 	return txn
 }
