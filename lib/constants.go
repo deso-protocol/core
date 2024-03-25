@@ -655,6 +655,11 @@ type DeSoParams struct {
 	// it significantly lower is a good way to avoid getting hit by spam blocks.
 	MinerMaxBlockSizeBytes uint64
 
+	// It's useful to set the pos block producer maximum block size to a little lower
+	// than the maximum pos block size in certain cases. For example, on initial launch,
+	// setting it significantly lower is a good way to avoid getting hit by spam blocks.
+	PosBlockProducerMaxBlockSizeBytes uint64
+
 	// In order to make public keys more human-readable, we convert
 	// them to base58. When we do that, we use a prefix that makes
 	// the public keys to become more identifiable. For example, all
@@ -1190,6 +1195,10 @@ var DeSoMainnetParams = DeSoParams{
 	// fee rates.
 	MinerMaxBlockSizeBytes: 2000000,
 
+	// We set this to be exactly the same as the DefaultMaxBlockSizeBytesPoS
+	// to avoid any confusion.
+	PosBlockProducerMaxBlockSizeBytes: 16000, // 16KB
+
 	// This takes about ten seconds on a reasonable CPU, which makes sense given
 	// a 10 minute block time.
 	MiningIterationsPerCycle: 95000,
@@ -1486,6 +1495,12 @@ var DeSoTestnetParams = DeSoParams{
 	// fee rates.
 	MinerMaxBlockSizeBytes: 1000000,
 
+	// We set this to be exactly the same as the DefaultMaxBlockSizeBytesPoS
+	// to avoid any confusion. However, if the global params are updated, this
+	// value will still be used as a cap on the maximum size of a block the
+	// block producer will make.
+	PosBlockProducerMaxBlockSizeBytes: 16000, // 16KB
+
 	Base58PrefixPublicKey:  [3]byte{0x11, 0xc2, 0x0},
 	Base58PrefixPrivateKey: [3]byte{0x4f, 0x6, 0x1b},
 
@@ -1589,7 +1604,7 @@ var DeSoTestnetParams = DeSoParams{
 	DefaultMempoolFeeEstimatorNumPastBlocks: 50,
 
 	// The maximum size of blocks for PoS.
-	DefaultMaxBlockSizeBytesPoS: 1600, // 16KB TODO: verify this is a sane value.
+	DefaultMaxBlockSizeBytesPoS: 16000, // 16KB TODO: verify this is a sane value.
 
 	// The peer handshake certificate timeout.
 	HandshakeTimeoutMicroSeconds: uint64(900000000),
