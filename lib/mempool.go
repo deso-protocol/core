@@ -6,8 +6,6 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"github.com/btcsuite/btcutil"
-	"github.com/gernest/mention"
 	"log"
 	"math"
 	"os"
@@ -17,6 +15,9 @@ import (
 	"strings"
 	"sync/atomic"
 	"time"
+
+	"github.com/btcsuite/btcutil"
+	"github.com/gernest/mention"
 
 	"github.com/dgraph-io/badger/v3"
 
