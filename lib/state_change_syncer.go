@@ -9,7 +9,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/deso-protocol/core/collections"
 	"github.com/deso-protocol/go-deadlock"
 	"github.com/golang/glog"
 	"github.com/google/uuid"
@@ -682,7 +681,7 @@ func (stateChangeSyncer *StateChangeSyncer) SyncMempoolToStateSyncer(server *Ser
 	mempoolTxns := server.GetMempool().GetOrderedTransactions()
 
 	// Get the uncommitted blocks from the chain.
-	uncommittedBlocks, err := server.blockchain.GetUncommittedFullBlocks(mempoolUtxoView.TipHash)
+	uncommittedBlocks, err := server.blockchain.GetUncommittedBlocks(mempoolUtxoView.TipHash)
 	if err != nil {
 		mempoolUtxoView.EventManager.stateSyncerFlushed(&StateSyncerFlushedEvent{
 			FlushId:        uuid.Nil,
@@ -694,17 +693,7 @@ func (stateChangeSyncer *StateChangeSyncer) SyncMempoolToStateSyncer(server *Ser
 
 	// First connect the uncommitted blocks to the mempool view.
 	for _, uncommittedBlock := range uncommittedBlocks {
-		var utxoOpsForBlock [][]*UtxoOperation
-		txHashes := collections.Transform(uncommittedBlock.Txns, func(txn *MsgDeSoTxn) *BlockHash {
-			return txn.Hash()
-		})
-		// TODO: there is a slight performance enhancement we could make here
-		// by rewriting the ConnectBlock logic to avoid unnecessary UtxoView copying
-		// for failing transactions. However, we'd also need to rewrite the end-of-epoch
-		// logic here which would make this function a bit long.
-		// Connect this block to the mempoolTxUtxoView so we can get the utxo ops.
-		utxoOpsForBlock, err = mempoolTxUtxoView.ConnectBlock(
-			uncommittedBlock, txHashes, false, nil, uncommittedBlock.Header.Height)
+		utxoViewAndOpsAtBlockHash, err := server.blockchain.getUtxoViewAndUtxoOpsAtBlockHash(*uncommittedBlock.Hash)
 		if err != nil {
 			mempoolUtxoView.EventManager.stateSyncerFlushed(&StateSyncerFlushedEvent{
 				FlushId:        uuid.Nil,
@@ -713,20 +702,24 @@ func (stateChangeSyncer *StateChangeSyncer) SyncMempoolToStateSyncer(server *Ser
 			})
 			return false, errors.Wrapf(err, "StateChangeSyncer.SyncMempoolToStateSyncer ConnectBlock uncommitted block: ")
 		}
-		blockHash, _ := uncommittedBlock.Hash()
 		// Emit the UtxoOps event.
 		mempoolUtxoView.EventManager.stateSyncerOperation(&StateSyncerOperationEvent{
 			StateChangeEntry: &StateChangeEntry{
 				OperationType: DbOperationTypeUpsert,
-				KeyBytes:      _DbKeyForUtxoOps(blockHash),
+				KeyBytes:      _DbKeyForUtxoOps(uncommittedBlock.Hash),
 				EncoderBytes: EncodeToBytes(blockHeight, &UtxoOperationBundle{
-					UtxoOpBundle: utxoOpsForBlock,
+					UtxoOpBundle: utxoViewAndOpsAtBlockHash.UtxoOps,
 				}, false),
-				Block: uncommittedBlock,
+				Block: utxoViewAndOpsAtBlockHash.Block,
 			},
 			FlushId:      uuid.Nil,
 			IsMempoolTxn: true,
 		})
+		// getUtxoViewAtBlockHash returns a copy of the view, so we
+		// set the mempoolTxUtxoView to the view at the block hash
+		// and update its event manager to match the mempoolEventManager.
+		mempoolTxUtxoView = utxoViewAndOpsAtBlockHash.UtxoView
+		mempoolTxUtxoView.EventManager = &mempoolEventManager
 	}
 
 	currentTimestamp := time.Now().UnixNano()
