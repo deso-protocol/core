@@ -3,12 +3,13 @@ package lib
 import (
 	"encoding/hex"
 	"fmt"
-	"github.com/btcsuite/btcd/wire"
-	"github.com/tyler-smith/go-bip39"
 	"math"
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/btcsuite/btcd/wire"
+	"github.com/tyler-smith/go-bip39"
 
 	"github.com/deso-protocol/go-deadlock"
 
@@ -582,6 +583,8 @@ func (desoBlockProducer *DeSoBlockProducer) SignBlock(blockFound *MsgDeSoBlock) 
 
 func (desoBlockProducer *DeSoBlockProducer) Start() {
 	// If we set up the max sync block height, we will not be running the block producer.
+	glog.V(1).Infof("DeSoBlockProducer.Start() called. MaxSyncBlockHeight: %v",
+		desoBlockProducer.chain.MaxSyncBlockHeight)
 	if desoBlockProducer.chain.MaxSyncBlockHeight > 0 {
 		glog.V(2).Infof("DeSoBlockProducer.Start() exiting because "+
 			"MaxSyncBlockHeight: %v is greater than 0", desoBlockProducer.chain.MaxSyncBlockHeight)
@@ -589,16 +592,19 @@ func (desoBlockProducer *DeSoBlockProducer) Start() {
 	}
 
 	// Set the time to a nil value so we run on the first iteration of the loop.
-	var lastBlockUpdate time.Time
+	lastBlockUpdate := time.Now()
 	desoBlockProducer.producerWaitGroup.Add(1)
 
 	for {
-		if atomic.LoadInt32(&desoBlockProducer.exit) >= 0 {
+		if atomic.LoadInt32(&desoBlockProducer.exit) > 0 {
 			desoBlockProducer.producerWaitGroup.Done()
+			glog.V(1).Infof("DeSoBlockProducer.Start() Are we returning in here?")
 			return
 		}
 
 		secondsLeft := float64(desoBlockProducer.minBlockUpdateIntervalSeconds) - time.Since(lastBlockUpdate).Seconds()
+		glog.V(1).Infof("DeSoBlockProducer.Start(): timings for next run: %v %v %v",
+			float64(desoBlockProducer.minBlockUpdateIntervalSeconds), time.Since(lastBlockUpdate).Seconds(), secondsLeft)
 		if !lastBlockUpdate.IsZero() && secondsLeft > 0 {
 			glog.V(1).Infof("Sleeping for %v seconds before producing next block template...", secondsLeft)
 			atomic.AddInt32(&desoBlockProducer.isAsleep, 1)
@@ -618,5 +624,6 @@ func (desoBlockProducer *DeSoBlockProducer) Start() {
 			glog.Errorf("Error producing block template: %v", err)
 			time.Sleep(time.Second)
 		}
+		glog.V(1).Infof("Block template produced successfully")
 	}
 }

@@ -5,8 +5,6 @@ import (
 	"container/list"
 	"encoding/hex"
 	"fmt"
-	"github.com/google/uuid"
-	"github.com/holiman/uint256"
 	"math"
 	"math/big"
 	"reflect"
@@ -14,6 +12,9 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/google/uuid"
+	"github.com/holiman/uint256"
 
 	btcdchain "github.com/btcsuite/btcd/blockchain"
 	chainlib "github.com/btcsuite/btcd/blockchain"
