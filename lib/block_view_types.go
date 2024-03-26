@@ -4189,6 +4189,12 @@ type GlobalParamsEntry struct {
 
 	// MaxBlockSizeBytesPoS is the maximum size of a block in bytes.
 	MaxBlockSizeBytesPoS uint64
+
+	// BlockProductionIntervalMilliseconds is the time in milliseconds to produce blocks.
+	BlockProductionIntervalMilliseconds uint64
+
+	// TimeoutIntervalMilliseconds is the time in milliseconds to wait before timing out a view.
+	TimeoutIntervalMilliseconds uint64
 }
 
 func (gp *GlobalParamsEntry) Copy() *GlobalParamsEntry {
@@ -4215,6 +4221,8 @@ func (gp *GlobalParamsEntry) Copy() *GlobalParamsEntry {
 		MempoolFeeEstimatorNumMempoolBlocks:            gp.MempoolFeeEstimatorNumMempoolBlocks,
 		MempoolFeeEstimatorNumPastBlocks:               gp.MempoolFeeEstimatorNumPastBlocks,
 		MaxBlockSizeBytesPoS:                           gp.MaxBlockSizeBytesPoS,
+		BlockProductionIntervalMilliseconds:            gp.BlockProductionIntervalMilliseconds,
+		TimeoutIntervalMilliseconds:                    gp.TimeoutIntervalMilliseconds,
 	}
 }
 
@@ -4246,6 +4254,8 @@ func (gp *GlobalParamsEntry) RawEncodeWithoutMetadata(blockHeight uint64, skipMe
 		data = append(data, UintToBuf(gp.MempoolFeeEstimatorNumMempoolBlocks)...)
 		data = append(data, UintToBuf(gp.MempoolFeeEstimatorNumPastBlocks)...)
 		data = append(data, UintToBuf(gp.MaxBlockSizeBytesPoS)...)
+		data = append(data, UintToBuf(gp.BlockProductionIntervalMilliseconds)...)
+		data = append(data, UintToBuf(gp.TimeoutIntervalMilliseconds)...)
 	}
 	return data
 }
@@ -4345,6 +4355,14 @@ func (gp *GlobalParamsEntry) RawDecodeWithoutMetadata(blockHeight uint64, rr *by
 		gp.MaxBlockSizeBytesPoS, err = ReadUvarint(rr)
 		if err != nil {
 			return errors.Wrapf(err, "GlobalParamsEntry.Decode: Problem reading MaxBlockSizeBytesPoW")
+		}
+		gp.BlockProductionIntervalMilliseconds, err = ReadUvarint(rr)
+		if err != nil {
+			return errors.Wrapf(err, "GlobalParamsEntry.Decode: Problem reading BlockProductionIntervalMilliseconds")
+		}
+		gp.TimeoutIntervalMilliseconds, err = ReadUvarint(rr)
+		if err != nil {
+			return errors.Wrapf(err, "GlobalParamsEntry.Decode: Problem reading TimeoutIntervalMilliseconds")
 		}
 	}
 	return nil

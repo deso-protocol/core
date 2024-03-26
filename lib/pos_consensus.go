@@ -664,8 +664,26 @@ func (fc *FastHotStuffConsensus) tryProcessBlockAsNewTip(block *MsgDeSoBlock) ([
 		return nil, errors.Errorf("Error fetching validator lists for tip block: %v", err)
 	}
 
+	tipBlockHash, err := tipBlock.Hash()
+	if err != nil {
+		return nil, errors.Errorf("Error hashing tip block: %v", err)
+	}
+
+	utxoView, err := fc.blockchain.getUtxoViewAtBlockHash(*tipBlockHash)
+	if err != nil {
+		return nil, errors.Errorf("Error fetching UtxoView for tip block: %v", err)
+	}
+	snapshotGlobalParams, err := utxoView.GetCurrentSnapshotGlobalParamsEntry()
+	if err != nil {
+		return nil, errors.Errorf("Error fetching snapshot global params: %v", err)
+	}
 	// Pass the new tip and safe blocks to the FastHotStuffEventLoop
-	if err = fc.fastHotStuffEventLoop.ProcessTipBlock(tipBlockWithValidators[0], safeBlocksWithValidators); err != nil {
+	if err = fc.fastHotStuffEventLoop.ProcessTipBlock(
+		tipBlockWithValidators[0],
+		safeBlocksWithValidators,
+		time.Millisecond*time.Duration(snapshotGlobalParams.BlockProductionIntervalMilliseconds),
+		time.Millisecond*time.Duration(snapshotGlobalParams.TimeoutIntervalMilliseconds),
+	); err != nil {
 		return nil, errors.Errorf("Error processing tip block locally: %v", err)
 	}
 

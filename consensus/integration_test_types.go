@@ -167,6 +167,9 @@ func (node *validatorNode) ProcessBlock(incomingBlock *block) {
 				return BlockWithValidatorList{bb, node.getValidators()}
 			},
 		),
+		// TODO: replace with values from snapshot global params
+		node.eventLoop.crankTimerInterval,
+		node.eventLoop.timeoutBaseDuration,
 	)
 }
 

@@ -810,6 +810,14 @@ type DeSoParams struct {
 	// This is the initial value for the maximum block size in bytes that we allow for PoS blocks.
 	DefaultMaxBlockSizeBytesPoS uint64
 
+	// DefaultBlockProductionIntervalMilliseconds is the default value for GlobalParamsEntry.BlockProductionIntervalMilliseconds.
+	// This is the initial value for the interval between producing blocks.
+	DefaultBlockProductionIntervalMilliseconds uint64
+
+	// DefaultTimeoutIntervalMilliseconds is the default value for GlobalParamsEntry.TimeoutIntervalMilliseconds.
+	// This is the initial value for the interval between timing out a view.
+	DefaultTimeoutIntervalMilliseconds uint64
+
 	// HandshakeTimeoutMicroSeconds is the timeout for the peer handshake certificate. The default value is 15 minutes.
 	HandshakeTimeoutMicroSeconds uint64
 
@@ -1302,6 +1310,12 @@ var DeSoMainnetParams = DeSoParams{
 	// The maximum size of blocks for PoS.
 	DefaultMaxBlockSizeBytesPoS: 16000, // 16KB TODO: verify this is a sane value.
 
+	// The interval between producing blocks.
+	DefaultBlockProductionIntervalMilliseconds: 1500, // 1.5s TODO: verify this is a sane value.
+
+	// The interval between timing out a view.
+	DefaultTimeoutIntervalMilliseconds: 30000, // 30s TODO: verify this is a sane value.
+
 	// The peer handshake certificate timeout.
 	HandshakeTimeoutMicroSeconds: uint64(900000000),
 
@@ -1606,6 +1620,12 @@ var DeSoTestnetParams = DeSoParams{
 	// The maximum size of blocks for PoS.
 	DefaultMaxBlockSizeBytesPoS: 16000, // 16KB TODO: verify this is a sane value.
 
+	// The interval between producing blocks.
+	DefaultBlockProductionIntervalMilliseconds: 1500, // 1.5s TODO: verify this is a sane value.
+
+	// The interval between timing out a view.
+	DefaultTimeoutIntervalMilliseconds: 30000, // 30s TODO: verify this is a sane value.
+
 	// The peer handshake certificate timeout.
 	HandshakeTimeoutMicroSeconds: uint64(900000000),
 
@@ -1672,6 +1692,8 @@ const (
 	MempoolFeeEstimatorNumMempoolBlocksKey            = "MempoolFeeEstimatorNumMempoolBlocks"
 	MempoolFeeEstimatorNumPastBlocksKey               = "MempoolFeeEstimatorNumPastBlocks"
 	MaxBlockSizeBytesPoSKey                           = "MaxBlockSizeBytesPoS"
+	BlockProductionIntervalKey                        = "BlockProductionInterval"
+	TimeoutIntervalKey                                = "TimeoutInterval"
 
 	DiamondLevelKey    = "DiamondLevel"
 	DiamondPostHashKey = "DiamondPostHash"
@@ -1781,6 +1803,12 @@ const (
 	// be configured to compute. This is a safety measure to prevent the fee bucket from being
 	// too small and causing issues with the mempool.
 	MinFeeBucketSize = 10
+	// Min/MaxBlockProductionIntervalMilliseconds - Min/max value to which the block production interval can be set.
+	MinBlockProductionIntervalMilliseconds = 1000  // 1s TODO: Verify this is a sane value.
+	MaxBlockProductionIntervalMilliseconds = 10000 // 10s TODO: Verify this is a sane value.
+	// Min/MaxTimeoutIntervalMilliseconds - Min/max value to which the timeout interval can be set.
+	MinTimeoutIntervalMilliseconds = 1000  // 1s TODO: Verify this is a sane value.
+	MaxTimeoutIntervalMilliseconds = 60000 // 60s TODO: Verify this is a sane value.
 
 	// DefaultMaxNonceExpirationBlockHeightOffset - default value to which the MaxNonceExpirationBlockHeightOffset
 	// is set to before specified by ParamUpdater.

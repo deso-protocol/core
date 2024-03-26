@@ -411,8 +411,6 @@ func NewServer(
 	_mempoolFeeEstimatorNumMempoolBlocks uint64,
 	_mempoolFeeEstimatorNumPastBlocks uint64,
 	_augmentedBlockViewRefreshIntervalMillis uint64,
-	_posBlockProductionIntervalMilliseconds uint64,
-	_posTimeoutBaseDurationMilliseconds uint64,
 	_stateSyncerMempoolTxnSyncLimit uint64,
 ) (
 	_srv *Server,
@@ -630,14 +628,18 @@ func NewServer(
 
 	// Only initialize the FastHotStuffConsensus if the node is a validator with a BLS keystore
 	if _blsKeystore != nil {
+		snapshotGlobalParamsEntry, err := currentUtxoView.GetCurrentSnapshotGlobalParamsEntry()
+		if err != nil {
+			return nil, errors.Wrapf(err, "NewServer: Problem getting current snapshot global params entry"), true
+		}
 		srv.fastHotStuffConsensus = NewFastHotStuffConsensus(
 			_params,
 			srv.networkManager,
 			_chain,
 			_posMempool,
 			_blsKeystore.GetSigner(),
-			_posBlockProductionIntervalMilliseconds,
-			_posTimeoutBaseDurationMilliseconds,
+			snapshotGlobalParamsEntry.BlockProductionIntervalMilliseconds,
+			snapshotGlobalParamsEntry.TimeoutIntervalMilliseconds,
 		)
 		// On testnet, if the node is configured to be a PoW block producer, and it is configured
 		// to be also a PoS validator, then we attach block mined listeners to the miner to kick
