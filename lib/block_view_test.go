@@ -1503,9 +1503,24 @@ func TestUpdateGlobalParamsPoS(t *testing.T) {
 	params.ExtraRegtestParamUpdaterKeys[MakePkMapKey(MustBase58CheckDecode(moneyPkString))] = true
 
 	// Mine a few blocks
-	_, err := miner.MineAndProcessSingleBlock(0, mempool)
-	require.NoError(err)
-	_, err = miner.MineAndProcessSingleBlock(0, mempool)
+	for ii := 0; ii < 10; ii++ {
+		_, err := miner.MineAndProcessSingleBlock(0, mempool)
+		require.NoError(err)
+	}
+
+	// Update min fee rate on global params to be 1000.
+	_, _, _, err := _updateGlobalParamsEntryWithMempool(t, chain, db, params, 1000,
+		moneyPkString,
+		moneyPrivString,
+		-1,
+		1000,
+		-1,
+		-1,
+		-1,
+		-1,
+		map[string][]byte{},
+		true,
+		mempool)
 	require.NoError(err)
 	// MaxBlockSizeBytesPoS tests.
 	{
@@ -1514,7 +1529,7 @@ func TestUpdateGlobalParamsPoS(t *testing.T) {
 		params.EncoderMigrationHeightsList = GlobalDeSoParams.EncoderMigrationHeightsList
 		mempool.bc.params = params
 		// Make sure setting max block size too low fails.
-		_, _, _, err := _updateGlobalParamsEntryWithMempool(t, chain, db, params, 200,
+		_, _, _, err := _updateGlobalParamsEntryWithMempool(t, chain, db, params, 1000,
 			moneyPkString,
 			moneyPrivString,
 			-1,
@@ -1530,7 +1545,7 @@ func TestUpdateGlobalParamsPoS(t *testing.T) {
 			mempool)
 		require.ErrorIs(err, RuleErrorMaxBlockSizeBytesTooLow)
 		// Make sure setting max block size too high fails.
-		_, _, _, err = _updateGlobalParamsEntryWithMempool(t, chain, db, params, 200,
+		_, _, _, err = _updateGlobalParamsEntryWithMempool(t, chain, db, params, 1000,
 			moneyPkString,
 			moneyPrivString,
 			-1,
@@ -1546,7 +1561,7 @@ func TestUpdateGlobalParamsPoS(t *testing.T) {
 			mempool)
 		require.ErrorIs(err, RuleErrorMaxBlockSizeBytesTooHigh)
 		// Make sure setting max block size to a valid value works and updates global params.
-		_, _, _, err = _updateGlobalParamsEntryWithMempool(t, chain, db, params, 200,
+		_, _, _, err = _updateGlobalParamsEntryWithMempool(t, chain, db, params, 1000,
 			moneyPkString,
 			moneyPrivString,
 			-1,
@@ -1564,6 +1579,61 @@ func TestUpdateGlobalParamsPoS(t *testing.T) {
 		utxoView, err := NewUtxoView(db, params, postgres, chain.snapshot, nil)
 		require.NoError(err)
 		require.Equal(utxoView.GetCurrentGlobalParamsEntry().MaxBlockSizeBytesPoS, uint64(5000))
+	}
+	// MinFeeBucket size tests.
+	{
+
+		utxoView, err := NewUtxoView(db, params, postgres, chain.snapshot, nil)
+		require.NoError(err)
+		require.Equal(utxoView.GetCurrentGlobalParamsEntry().MinimumNetworkFeeNanosPerKB, uint64(1000))
+		require.Equal(utxoView.GetCurrentGlobalParamsEntry().FeeBucketGrowthRateBasisPoints, uint64(1000))
+		// Make sure setting min fee bucket size too low fails. 1% of 1000 is 10, so anything less than that
+		// should fail.
+		_, _, _, err = _updateGlobalParamsEntryWithMempool(t, chain, db, params, 1000,
+			moneyPkString,
+			moneyPrivString,
+			-1,
+			-1,
+			-1,
+			-1,
+			-1,
+			-1,
+			map[string][]byte{
+				FeeBucketGrowthRateBasisPointsKey: UintToBuf(90),
+			},
+			true,
+			mempool)
+		require.ErrorIs(err, RuleErrorFeeBucketSizeTooSmall)
+		// Okay now set it to 1%
+		_, _, _, err = _updateGlobalParamsEntryWithMempool(t, chain, db, params, 1000,
+			moneyPkString,
+			moneyPrivString,
+			-1,
+			-1,
+			-1,
+			-1,
+			-1,
+			-1,
+			map[string][]byte{
+				FeeBucketGrowthRateBasisPointsKey: UintToBuf(100),
+			},
+			true,
+			mempool)
+		require.NoError(err)
+		// If we set the min fee rate nanos per kb to something lower than 1k, it should fail.
+		_, _, _, err = _updateGlobalParamsEntryWithMempool(t, chain, db, params, 1000,
+			moneyPkString,
+			moneyPrivString,
+			-1,
+			900,
+			-1,
+			-1,
+			-1,
+			-1,
+			nil,
+			true,
+			mempool)
+		require.ErrorIs(err, RuleErrorFeeBucketSizeTooSmall)
 	}
 }
 
