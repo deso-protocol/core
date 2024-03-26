@@ -2824,6 +2824,7 @@ func DBGetAccessGroupExistenceByAccessGroupIdWithTxn(txn *badger.Txn, snap *Snap
 	}
 
 	// Otherwise, we need to check the DB.
+	// FIXME: Should this use DbGetWithTxn?
 	_, err := txn.Get(prefix)
 	if err == badger.ErrKeyNotFound {
 		return false, nil
@@ -11745,6 +11746,7 @@ func _dbPrefixForNonceEntryIndexWithBlockHeight(blockHeight uint64) []byte {
 
 func DbGetTransactorNonceEntryWithTxn(txn *badger.Txn, nonce *DeSoNonce, pkid *PKID) (*TransactorNonceEntry, error) {
 	key := _dbKeyForTransactorNonceEntry(nonce, pkid)
+	// FIXME: Should this use DbGetWithTxn?
 	_, err := txn.Get(key)
 	if err == badger.ErrKeyNotFound {
 		return nil, nil

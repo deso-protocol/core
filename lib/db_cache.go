@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"github.com/dgraph-io/badger/v4"
-	"sort"
+	"log"
 )
 
 // This file came about as a result of encountering an extremely nasty degradation in BadgerDB
@@ -23,7 +23,7 @@ import (
 
 type DbCache struct {
 	PrefixesToCache map[byte]bool
-	KeyValueCache   map[string][]byte
+	KeyValueCache   *badger.DB
 }
 
 var DbCachePrefixes = map[byte]bool{
@@ -43,8 +43,9 @@ func DumpDbCacheSizes() {
 		InitDbCache()
 	}
 	fmt.Println("DbCache sizes:")
+	keys, _ := _enumerateKeysForPrefix(GlobalDeSoParams.DbCache.KeyValueCache, []byte{}, true)
 	mapOfSizes := map[byte]int{}
-	for kk, _ := range GlobalDeSoParams.DbCache.KeyValueCache {
+	for _, kk := range keys {
 		for pp, _ := range GlobalDeSoParams.DbCache.PrefixesToCache {
 			if kk[0] == pp {
 				mapOfSizes[pp] += 1
@@ -59,9 +60,19 @@ func DumpDbCacheSizes() {
 // FIXME: When we load up the NewDbCache, we need to read in all the existing kvs
 // that we care about from Badger or else everything will break.
 func NewDbCache(prefixesToCache map[byte]bool) *DbCache {
+	opts := badger.DefaultOptions("").WithInMemory(true)
+	// Open the DB with options
+	db, err := badger.Open(opts)
+	if err != nil {
+		log.Fatal(err)
+	}
+	// FIXME: Need to handle closing probably. But maybe not because it's just in-memory
+	// anyway.
+	// defer db.Close()
+
 	return &DbCache{
 		PrefixesToCache: prefixesToCache,
-		KeyValueCache:   make(map[string][]byte),
+		KeyValueCache:   db,
 	}
 }
 
@@ -76,21 +87,51 @@ func DbCacheGet(key []byte) ([]byte, error) {
 	if GlobalDeSoParams.DbCache == nil {
 		InitDbCache()
 	}
-	return GlobalDeSoParams.DbCache.Get(key)
+	var itemData []byte
+	err := GlobalDeSoParams.DbCache.KeyValueCache.View(func(txn *badger.Txn) error {
+		// If record doesn't exist in cache, we get it from the DB.
+		item, err := txn.Get(key)
+		if err != nil {
+			return err
+		}
+		itemData, err = item.ValueCopy(nil)
+		if err != nil {
+			return err
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return itemData, nil
 }
 
 func DbCacheSet(key []byte, value []byte) error {
 	if GlobalDeSoParams.DbCache == nil {
 		InitDbCache()
 	}
-	return GlobalDeSoParams.DbCache.Set(key, value)
+	// Set the item in badger
+	err := GlobalDeSoParams.DbCache.KeyValueCache.Update(func(txn *badger.Txn) error {
+		return txn.Set(key, value)
+	})
+	if err != nil {
+		return err
+	}
+	return nil
 }
 
 func DbCacheDelete(key []byte) error {
 	if GlobalDeSoParams.DbCache == nil {
 		InitDbCache()
 	}
-	return GlobalDeSoParams.DbCache.Delete(key)
+	// Delete the item from badger
+	err := GlobalDeSoParams.DbCache.KeyValueCache.Update(func(txn *badger.Txn) error {
+		return txn.Delete(key)
+	})
+	if err != nil {
+		return err
+	}
+	return nil
 }
 
 func DbCacheEnumerateKeysOnlyForPrefixWithLimitOffsetOrderWithTxn(
@@ -103,8 +144,10 @@ func DbCacheEnumerateKeysOnlyForPrefixWithLimitOffsetOrderWithTxn(
 	if GlobalDeSoParams.DbCache == nil {
 		InitDbCache()
 	}
-	return GlobalDeSoParams.DbCache.EnumerateKeysOnlyForPrefixWithLimitOffsetOrderWithTxn(
-		prefix, limit, lastSeenKey, sortDescending, canSkipKey)
+
+	keysFound, _, err := GlobalDeSoParams.DbCache.EnumerateKeysAndValuesForPrefixWithLimitOffsetOrder(
+		prefix, limit, lastSeenKey, sortDescending, canSkipKey, true)
+	return keysFound, err
 }
 
 func DbCacheEnumerateKeysForPrefixWithLimitOffsetOrder(
@@ -117,8 +160,8 @@ func DbCacheEnumerateKeysForPrefixWithLimitOffsetOrder(
 	if GlobalDeSoParams.DbCache == nil {
 		InitDbCache()
 	}
-	return GlobalDeSoParams.DbCache.EnumerateKeysForPrefixWithLimitOffsetOrder(
-		prefix, limit, lastSeenKey, sortDescending, canSkipKey)
+	return GlobalDeSoParams.DbCache.EnumerateKeysAndValuesForPrefixWithLimitOffsetOrder(
+		prefix, limit, lastSeenKey, sortDescending, canSkipKey, false)
 }
 
 func IsDbCachePrefix(prefix byte) bool {
@@ -132,164 +175,22 @@ func (dbCache *DbCache) IsPrefix(prefix byte) bool {
 	return dbCache.PrefixesToCache[prefix]
 }
 
-func (dbCache *DbCache) Get(key []byte) ([]byte, error) {
-	// If the key is empty, we have nothing to return.
-	if len(key) == 0 {
-		return nil, badger.ErrKeyNotFound
-	}
-	if dbCache.PrefixesToCache[key[0]] {
-		if value, exists := dbCache.KeyValueCache[string(key)]; exists {
-			return value, nil
-		}
-		// Returning a Badger error here to match the behavior of the real Badger.
-		return nil, badger.ErrKeyNotFound
-	}
-	// This function should never be called on a prefix it is not responsible for.
-	panic(fmt.Errorf("Get: The DbCache should never be called on a " +
-		"prefix it is not responsible for"))
-}
-
-func (dbCache *DbCache) Set(key []byte, value []byte) error {
-	if dbCache.PrefixesToCache[key[0]] {
-		dbCache.KeyValueCache[string(key)] = value
-	}
-	return nil
-}
-
-func (dbCache *DbCache) Delete(key []byte) error {
-	if dbCache.PrefixesToCache[key[0]] {
-		delete(dbCache.KeyValueCache, string(key))
-	}
-	return nil
-}
-
-func (dbCache *DbCache) EnumerateKeysOnlyForPrefixWithLimitOffsetOrderWithTxn(
+func (dbCache *DbCache) EnumerateKeysAndValuesForPrefixWithLimitOffsetOrder(
 	prefix []byte,
 	limit int,
 	lastSeenKey []byte,
 	sortDescending bool,
 	canSkipKey func([]byte) bool,
-) ([][]byte, error) {
-
-	if !dbCache.IsPrefix(prefix[0]) {
-		return nil, fmt.Errorf("EnumerateKeysOnlyForPrefixWithLimitOffsetOrderWithTxn: " +
-			"The DbCache should never be called on a prefix it is not responsible for")
-	}
-
-	// Extract the kvs as a slice
-	// TODO: This whole thing is inefficient.
-	type kv struct {
-		k []byte
-		v []byte
-	}
-	kvs := make([]kv, 0, len(dbCache.KeyValueCache))
-	for k, v := range dbCache.KeyValueCache {
-		// Only consider keys that have the prefix we're looking for.
-		if !bytes.HasPrefix([]byte(k), prefix) {
-			continue
-		}
-		kvs = append(kvs, kv{k: []byte(k), v: v})
-	}
-	// Sort the kvs lexicographically by their key
-	if sortDescending {
-		sort.Slice(kvs, func(i, j int) bool {
-			return bytes.Compare(kvs[i].k, kvs[j].k) > 0 // descending
-		})
-	} else {
-		sort.Slice(kvs, func(i, j int) bool {
-			return bytes.Compare(kvs[i].k, kvs[j].k) < 0 // ascending
-		})
-	}
-	// At this point, kvs is sorted lexicographically by the key in the order we want.
-
-	keysFound := [][]byte{}
-	// If provided, start at the last seen key.
-	startingKey := prefix
-	haveSeenLastSeenKey := true
-	if lastSeenKey != nil {
-		startingKey = lastSeenKey
-		haveSeenLastSeenKey = false
-		if limit > 0 {
-			// Need to increment limit by one (if non-zero) since
-			// we include the lastSeenKey/lastSeenValue.
-			limit += 1
-		}
-	}
-	for _, kv := range kvs {
-		// Don't start the iteration until we get to the startingKey
-		if !bytes.HasPrefix(kv.k, startingKey) {
-			continue
-		}
-		// The equivalent of ValidForPrefix
-		if !bytes.HasPrefix(kv.k, prefix) {
-			break
-		}
-		// Break if at or beyond limit.
-		if limit > 0 && len(keysFound) >= limit {
-			break
-		}
-		// Skip if key is before the last seen key. The caller
-		// needs to filter out the lastSeenKey in the view as
-		// we return any key >= the lastSeenKey.
-		if !haveSeenLastSeenKey {
-			if !bytes.Equal(kv.k, lastSeenKey) {
-				continue
-			}
-			haveSeenLastSeenKey = true
-		}
-		// Skip if key can be skipped.
-		if canSkipKey(kv.k) {
-			continue
-		}
-		// Copy key.
-		keyCopy := make([]byte, len(kv.k))
-		copy(keyCopy[:], kv.k[:])
-		// Append found entry to return slices.
-		keysFound = append(keysFound, keyCopy)
-	}
-	return keysFound, nil
-}
-
-func (dbCache *DbCache) EnumerateKeysForPrefixWithLimitOffsetOrder(
-	prefix []byte,
-	limit int,
-	lastSeenKey []byte,
-	sortDescending bool,
-	canSkipKey func([]byte) bool,
+	keysOnly bool,
 ) ([][]byte, [][]byte, error) {
 	if !dbCache.IsPrefix(prefix[0]) {
 		return nil, nil, fmt.Errorf("EnumerateKeysOnlyForPrefixWithLimitOffsetOrderWithTxn: " +
 			"The DbCache should never be called on a prefix it is not responsible for")
 	}
 
-	// Extract the kvs as a slice
-	// TODO: This whole thing is inefficient.
-	type kv struct {
-		k []byte
-		v []byte
-	}
-	kvs := make([]kv, 0, len(dbCache.KeyValueCache))
-	for k, v := range dbCache.KeyValueCache {
-		// Only consider keys that have the prefix we're looking for.
-		if !bytes.HasPrefix([]byte(k), prefix) {
-			continue
-		}
-		kvs = append(kvs, kv{k: []byte(k), v: v})
-	}
-	// Sort the kvs lexicographically by their key
-	if sortDescending {
-		sort.Slice(kvs, func(i, j int) bool {
-			return bytes.Compare(kvs[i].k, kvs[j].k) > 0 // descending
-		})
-	} else {
-		sort.Slice(kvs, func(i, j int) bool {
-			return bytes.Compare(kvs[i].k, kvs[j].k) < 0 // ascending
-		})
-	}
-	// At this point, kvs is sorted lexicographically by the key in the order we want.
-
 	keysFound := [][]byte{}
 	valsFound := [][]byte{}
+
 	// If provided, start at the last seen key.
 	startingKey := prefix
 	haveSeenLastSeenKey := true
@@ -302,38 +203,60 @@ func (dbCache *DbCache) EnumerateKeysForPrefixWithLimitOffsetOrder(
 			limit += 1
 		}
 	}
-	for _, kv := range kvs {
-		// Don't start the iteration until we get to the startingKey
-		if !bytes.HasPrefix(kv.k, startingKey) {
-			continue
-		}
-		// The equivalent of ValidForPrefix
-		if !bytes.HasPrefix(kv.k, prefix) {
-			break
-		}
-		// Break if at or beyond limit.
-		if limit > 0 && len(keysFound) >= limit {
-			break
-		}
-		// Skip if key is before the last seen key. The caller
-		// needs to filter out the lastSeenKey in the view as
-		// we return any key >= the lastSeenKey.
-		if !haveSeenLastSeenKey {
-			if !bytes.Equal(kv.k, lastSeenKey) {
+
+	opts := badger.DefaultIteratorOptions
+	// Search keys in reverse order if sort DESC.
+	if sortDescending {
+		opts.Reverse = true
+		startingKey = append(startingKey, 0xff)
+	}
+	if keysOnly {
+		opts.PrefetchValues = false
+	}
+	opts.Prefix = prefix
+	// Read in a badger view
+	err := dbCache.KeyValueCache.View(func(txn *badger.Txn) error {
+		nodeIterator := txn.NewIterator(opts)
+		defer nodeIterator.Close()
+
+		for nodeIterator.Seek(startingKey); nodeIterator.ValidForPrefix(prefix); nodeIterator.Next() {
+			// Break if at or beyond limit.
+			if limit > 0 && len(keysFound) >= limit {
+				break
+			}
+			key := nodeIterator.Item().Key()
+			// Skip if key is before the last seen key. The caller
+			// needs to filter out the lastSeenKey in the view as
+			// we return any key >= the lastSeenKey.
+			if !haveSeenLastSeenKey {
+				if !bytes.Equal(key, lastSeenKey) {
+					continue
+				}
+				haveSeenLastSeenKey = true
+			}
+			// Skip if key can be skipped.
+			if canSkipKey(key) {
 				continue
 			}
-			haveSeenLastSeenKey = true
+			// Copy key.
+			keyCopy := make([]byte, len(key))
+			copy(keyCopy[:], key[:])
+			// Append found entry to return slices.
+			keysFound = append(keysFound, keyCopy)
+
+			// Copy value.
+			if !keysOnly {
+				valCopy, err := nodeIterator.Item().ValueCopy(nil)
+				if err != nil {
+					return err
+				}
+				valsFound = append(valsFound, valCopy)
+			}
 		}
-		// Skip if key can be skipped.
-		if canSkipKey(kv.k) {
-			continue
-		}
-		// Copy key.
-		keyCopy := make([]byte, len(kv.k))
-		copy(keyCopy[:], kv.k[:])
-		// Append found entry to return slices.
-		keysFound = append(keysFound, keyCopy)
-		valsFound = append(valsFound, kv.v)
+		return nil
+	})
+	if err != nil {
+		return nil, nil, err
 	}
 	return keysFound, valsFound, nil
 }
