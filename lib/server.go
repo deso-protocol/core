@@ -4,10 +4,13 @@ import (
 	"bytes"
 	"encoding/hex"
 	"fmt"
+	"log"
 	"net"
+	"os"
 	"path/filepath"
 	"reflect"
 	"runtime"
+	"runtime/pprof"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -480,6 +483,10 @@ func NewServer(
 	_cmgr := NewConnectionManager(
 		_params, _listeners, _hyperSync, _syncType, _stallTimeoutSeconds,
 		_minFeeRateNanosPerKB, _incomingMessages, srv)
+
+	_db.Flatten(16)
+	_db.RunValueLogGC(0.9)
+	fmt.Println(_db.MaxVersion())
 
 	// Set up the blockchain data structure. This is responsible for accepting new
 	// blocks, keeping track of the best chain, and keeping all of that state up
@@ -2315,6 +2322,13 @@ func (srv *Server) _handleBlockBundle(pp *Peer, bundle *MsgDeSoBlockBundle) {
 	// take a start hash and the other node can just return as many blcoks as it
 	// can.
 
+	// Start a CPU profiler that writes to /tmp/cpu.prof
+	// Open a file to write the CPU profile.
+	cpuProfile, err := os.Create("/tmp/cpu.prof")
+	if err != nil {
+		log.Fatal("could not create CPU profile: ", err)
+	}
+
 	// Process each block in the bundle. Record our blocks per second.
 	blockProcessingStartTime := time.Now()
 	for ii, blk := range bundle.Blocks {
@@ -2334,6 +2348,19 @@ func (srv *Server) _handleBlockBundle(pp *Peer, bundle *MsgDeSoBlockBundle) {
 			elapsed := time.Since(blockProcessingStartTime)
 			if ii != 0 {
 				fmt.Printf("We are processing %v blocks per second\n", float64(ii)/(float64(elapsed)/1e9))
+				DumpDbCacheSizes()
+			}
+			if ii == 0 {
+				if err := pprof.StartCPUProfile(cpuProfile); err != nil {
+					log.Fatal("could not start CPU profile: ", err)
+				}
+			}
+			if ii == 3000 {
+				pprof.StopCPUProfile() // ensure that the profiler is stopped
+				if err := cpuProfile.Close(); err != nil {
+					log.Fatal("could not close CPU profile: ", err)
+				} // ensure that the file is closed when the function exits
+				fmt.Println("CPU profile written to /tmp/cpu.prof")
 			}
 		}
 	}

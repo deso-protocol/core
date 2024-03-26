@@ -811,6 +811,12 @@ type DeSoParams struct {
 
 	EncoderMigrationHeights     *EncoderMigrationHeights
 	EncoderMigrationHeightsList []*MigrationHeight
+
+	// TODO: This is an extremely dirty hack that we did in order to be able to access the dbcache in
+	// DBSetWithTxn and DBGetWithTxn without having to thread it through the hundreds of calling functions
+	// as an argument. Putting it here lets us access it from GlobalDeSoParams, which we can get from
+	// anywhere. We should clean this up at some point.
+	DbCache *DbCache
 }
 
 var RegtestForkHeights = ForkHeights{

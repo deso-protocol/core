@@ -1141,6 +1141,15 @@ func DBSetWithTxn(txn *badger.Txn, snap *Snapshot, key []byte, value []byte, eve
 		}
 	}
 
+	// If the key is a db cache prefix, we update the db cache as well. This will allow us to
+	// fetch the key from in-memory instead of doing a badger lookup, which can be slow.
+	if IsDbCachePrefix(key[0]) {
+		if err := DbCacheSet(key, value); err != nil {
+			return errors.Wrapf(err, "DBSetWithTxn: Problem setting record "+
+				"in DB cache with key: %v, value: %v", key, value)
+		}
+	}
+
 	// If we have an event manager, we fire off the on db transaction event.
 	if eventManager != nil {
 		eventManager.stateSyncerOperation(&StateSyncerOperationEvent{
@@ -1165,6 +1174,11 @@ func DBGetWithTxn(txn *badger.Txn, snap *Snapshot, key []byte) ([]byte, error) {
 	// We only cache / update ancestral records when we're dealing with state prefix.
 	isState := snap != nil && snap.isState(key)
 	keyString := hex.EncodeToString(key)
+
+	// If the DbCache is handling this prefix, then return from that.
+	if IsDbCachePrefix(key[0]) {
+		return DbCacheGet(key)
+	}
 
 	// Lookup the snapshot cache and check if we've already stored a value there.
 	if isState {
@@ -1242,6 +1256,15 @@ func DBDeleteWithTxn(txn *badger.Txn, snap *Snapshot, key []byte, eventManager *
 			snap.RemoveChecksumBytes(key, ancestralValue)
 		}
 	}
+
+	// Also delete it from the DbCache if needed
+	if IsDbCachePrefix(key[0]) {
+		if err := DbCacheDelete(key); err != nil {
+			return errors.Wrapf(err, "DBDeleteWithTxn: Problem deleting record "+
+				"from DB cache with key: %v", key)
+		}
+	}
+
 	// If we have an event manager, and the entry's isDeleted==true (i.e. it isn't going to be re-inserted later on in the
 	// same transaction), we fire off the on db transaction event.
 	if eventManager != nil && entryIsDeleted {
@@ -11830,6 +11853,11 @@ func EnumerateKeysForPrefixWithLimitOffsetOrder(
 	sortDescending bool,
 	skipKeys *Set[string],
 ) ([][]byte, [][]byte, error) {
+	if IsDbCachePrefix(prefix[0]) {
+		return DbCacheEnumerateKeysForPrefixWithLimitOffsetOrder(
+			prefix, limit, lastSeenKey, sortDescending, _setMembershipCheckFunc(skipKeys))
+	}
+
 	keysFound := [][]byte{}
 	valsFound := [][]byte{}
 
@@ -11926,6 +11954,11 @@ func EnumerateKeysOnlyForPrefixWithLimitOffsetOrderAndSkipFunc(
 	sortDescending bool,
 	canSkipKey func([]byte) bool,
 ) ([][]byte, error) {
+	if IsDbCachePrefix(prefix[0]) {
+		return DbCacheEnumerateKeysOnlyForPrefixWithLimitOffsetOrderWithTxn(
+			prefix, limit, lastSeenKey, sortDescending, canSkipKey)
+	}
+
 	keysFound := [][]byte{}
 
 	dbErr := db.View(func(txn *badger.Txn) error {

@@ -749,7 +749,7 @@ func DBGetTopActiveValidatorsByStakeAmount(
 	key := append([]byte{}, Prefixes.PrefixValidatorByStatusAndStakeAmount...)
 	key = append(key, EncodeUint8(uint8(ValidatorStatusActive))...)
 	keysFound, err := EnumerateKeysOnlyForPrefixWithLimitOffsetOrderAndSkipFunc(
-		handle, key, int(limit), nil, true, canSkipValidatorInBadgerSeek,
+		handle, key, int(limit), nil, false, canSkipValidatorInBadgerSeek,
 	)
 	if err != nil {
 		return nil, errors.Wrapf(err, "DBGetTopActiveValidatorsByStakeAmount: problem retrieving top validators: ")

@@ -196,6 +196,8 @@ func (node *Node) Start(exitChannels ...*chan struct{}) {
 	}
 
 	opts.ValueDir = dbDir
+	fmt.Println("Default: ", opts.NumVersionsToKeep)
+	opts.NumVersionsToKeep = 1
 	node.ChainDB, err = badger.Open(opts)
 	if err != nil {
 		panic(err)
