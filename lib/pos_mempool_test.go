@@ -335,6 +335,7 @@ func _posTestBlockchainSetupWithBalances(t *testing.T, m0Balance uint64, m1Balan
 	require := require.New(t)
 
 	chain, params, db := NewLowDifficultyBlockchain(t)
+	params.PosBlockProducerMaxBlockSizeBytes = params.MaxBlockSizeBytesPoW
 	params.ForkHeights.BalanceModelBlockHeight = 1
 	oldPool, miner := NewTestMiner(t, chain, params, true)
 	// Mine a few blocks to give the senderPkString some money.
