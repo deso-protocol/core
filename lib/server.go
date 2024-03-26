@@ -2350,12 +2350,12 @@ func (srv *Server) _handleBlockBundle(pp *Peer, bundle *MsgDeSoBlockBundle) {
 				fmt.Printf("We are processing %v blocks per second\n", float64(ii)/(float64(elapsed)/1e9))
 				DumpDbCacheSizes()
 			}
-			if ii == 0 {
+			if ii == 1000 {
 				if err := pprof.StartCPUProfile(cpuProfile); err != nil {
 					log.Fatal("could not start CPU profile: ", err)
 				}
 			}
-			if ii == 3000 {
+			if ii == 2000 {
 				pprof.StopCPUProfile() // ensure that the profiler is stopped
 				if err := cpuProfile.Close(); err != nil {
 					log.Fatal("could not close CPU profile: ", err)

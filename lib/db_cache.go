@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"fmt"
 	"github.com/dgraph-io/badger/v4"
+	"go.etcd.io/bbolt"
+	"io/ioutil"
 	"log"
 )
 
@@ -21,9 +23,13 @@ import (
 // fix Badger. For now, this bandaid should work fine, and we could consider using it for other
 // keys to increase performance even further.
 
+// Bolt has a layer above key/value pairs which is a bucket. We just throw everything into
+// the same bucket for convenience.
+var DbCacheBoltdbBucket = []byte("db_cache_bucket")
+
 type DbCache struct {
 	PrefixesToCache map[byte]bool
-	KeyValueCache   *badger.DB
+	KeyValueCache   *bbolt.DB
 }
 
 var DbCachePrefixes = map[byte]bool{
@@ -38,12 +44,52 @@ var DbCachePrefixes = map[byte]bool{
 	Prefixes.PrefixStakeByStakeAmount[0]:                        true,
 }
 
+func _enumerateBoltKeysForPrefix(db *bbolt.DB, dbPrefix []byte, keysOnly bool) (
+	_keysFound [][]byte, _valsFound [][]byte) {
+	// Initialize slices to hold the keys and values found
+	keysFound := [][]byte{}
+	valsFound := [][]byte{}
+
+	// View transaction
+	err := db.View(func(tx *bbolt.Tx) error {
+		// Get the bucket using the provided prefix
+		b := tx.Bucket(DbCacheBoltdbBucket)
+		if b == nil {
+			return nil // Return if the bucket doesn't exist
+		}
+
+		// Use a cursor to iterate over the keys
+		c := b.Cursor()
+		prefix := dbPrefix
+		for k, v := c.Seek(prefix); k != nil && bytes.HasPrefix(k, prefix); k, v = c.Next() {
+			// Copy the key
+			kCopy := make([]byte, len(k))
+			copy(kCopy, k)
+			keysFound = append(keysFound, kCopy)
+
+			if !keysOnly {
+				// Copy the value if keysOnly is false
+				vCopy := make([]byte, len(v))
+				copy(vCopy, v)
+				valsFound = append(valsFound, vCopy)
+			}
+		}
+
+		return nil
+	})
+	if err != nil {
+		log.Printf("Failed to enumerate keys for prefix: %v", err)
+	}
+
+	return keysFound, valsFound
+}
+
 func DumpDbCacheSizes() {
 	if GlobalDeSoParams.DbCache == nil {
 		InitDbCache()
 	}
 	fmt.Println("DbCache sizes:")
-	keys, _ := _enumerateKeysForPrefix(GlobalDeSoParams.DbCache.KeyValueCache, []byte{}, true)
+	keys, _ := _enumerateBoltKeysForPrefix(GlobalDeSoParams.DbCache.KeyValueCache, []byte{}, true)
 	mapOfSizes := map[byte]int{}
 	for _, kk := range keys {
 		for pp, _ := range GlobalDeSoParams.DbCache.PrefixesToCache {
@@ -60,15 +106,19 @@ func DumpDbCacheSizes() {
 // FIXME: When we load up the NewDbCache, we need to read in all the existing kvs
 // that we care about from Badger or else everything will break.
 func NewDbCache(prefixesToCache map[byte]bool) *DbCache {
-	opts := badger.DefaultOptions("").WithInMemory(true)
-	// Open the DB with options
-	db, err := badger.Open(opts)
+	// Create a temporary file
+	tmpfile, err := ioutil.TempFile("", "boltdb-*.db")
 	if err != nil {
 		log.Fatal(err)
 	}
-	// FIXME: Need to handle closing probably. But maybe not because it's just in-memory
-	// anyway.
-	// defer db.Close()
+	//defer os.Remove(tmpfile.Name()) // Clean up the file after we're done
+
+	// Open the BoltDB database on the temporary file
+	db, err := bbolt.Open(tmpfile.Name(), 0600, nil)
+	if err != nil {
+		log.Fatal(err)
+	}
+	//defer db.Close()
 
 	return &DbCache{
 		PrefixesToCache: prefixesToCache,
@@ -88,16 +138,24 @@ func DbCacheGet(key []byte) ([]byte, error) {
 		InitDbCache()
 	}
 	var itemData []byte
-	err := GlobalDeSoParams.DbCache.KeyValueCache.View(func(txn *badger.Txn) error {
-		// If record doesn't exist in cache, we get it from the DB.
-		item, err := txn.Get(key)
-		if err != nil {
-			return err
+	err := GlobalDeSoParams.DbCache.KeyValueCache.View(func(tx *bbolt.Tx) error {
+		// Get the bucket using the provided prefix
+		b := tx.Bucket(DbCacheBoltdbBucket)
+		if b == nil {
+			return nil // Return if the bucket doesn't exist
 		}
-		itemData, err = item.ValueCopy(nil)
-		if err != nil {
-			return err
+
+		// Attempt to retrieve the value for the given key
+		itemData = b.Get(key)
+		if itemData == nil {
+			return badger.ErrKeyNotFound
 		}
+
+		// Make a copy of the data to ensure it's safe to use outside the transaction
+		valCopy := make([]byte, len(itemData))
+		copy(valCopy, itemData)
+		itemData = valCopy
+
 		return nil
 	})
 	if err != nil {
@@ -110,9 +168,13 @@ func DbCacheSet(key []byte, value []byte) error {
 	if GlobalDeSoParams.DbCache == nil {
 		InitDbCache()
 	}
-	// Set the item in badger
-	err := GlobalDeSoParams.DbCache.KeyValueCache.Update(func(txn *badger.Txn) error {
-		return txn.Set(key, value)
+	// Set the item in bolt
+	err := GlobalDeSoParams.DbCache.KeyValueCache.Update(func(tx *bbolt.Tx) error {
+		b, err := tx.CreateBucketIfNotExists(DbCacheBoltdbBucket)
+		if err != nil {
+			return err
+		}
+		return b.Put(key, value)
 	})
 	if err != nil {
 		return err
@@ -124,9 +186,13 @@ func DbCacheDelete(key []byte) error {
 	if GlobalDeSoParams.DbCache == nil {
 		InitDbCache()
 	}
-	// Delete the item from badger
-	err := GlobalDeSoParams.DbCache.KeyValueCache.Update(func(txn *badger.Txn) error {
-		return txn.Delete(key)
+	// Delete the item from bolt
+	err := GlobalDeSoParams.DbCache.KeyValueCache.Update(func(tx *bbolt.Tx) error {
+		b := tx.Bucket(DbCacheBoltdbBucket)
+		if b == nil {
+			return nil // Return if the bucket doesn't exist
+		}
+		return b.Delete(key)
 	})
 	if err != nil {
 		return err
@@ -191,65 +257,42 @@ func (dbCache *DbCache) EnumerateKeysAndValuesForPrefixWithLimitOffsetOrder(
 	keysFound := [][]byte{}
 	valsFound := [][]byte{}
 
-	// If provided, start at the last seen key.
-	startingKey := prefix
-	haveSeenLastSeenKey := true
-	if lastSeenKey != nil {
-		startingKey = lastSeenKey
-		haveSeenLastSeenKey = false
-		if limit > 0 {
-			// Need to increment limit by one (if non-zero) since
-			// we include the lastSeenKey/lastSeenValue.
-			limit += 1
+	// Read in a BoltDB view
+	err := dbCache.KeyValueCache.View(func(tx *bbolt.Tx) error {
+		b := tx.Bucket(DbCacheBoltdbBucket)
+		if b == nil {
+			return nil
 		}
-	}
 
-	opts := badger.DefaultIteratorOptions
-	// Search keys in reverse order if sort DESC.
-	if sortDescending {
-		opts.Reverse = true
-		startingKey = append(startingKey, 0xff)
-	}
-	if keysOnly {
-		opts.PrefetchValues = false
-	}
-	opts.Prefix = prefix
-	// Read in a badger view
-	err := dbCache.KeyValueCache.View(func(txn *badger.Txn) error {
-		nodeIterator := txn.NewIterator(opts)
-		defer nodeIterator.Close()
+		c := b.Cursor()
 
-		for nodeIterator.Seek(startingKey); nodeIterator.ValidForPrefix(prefix); nodeIterator.Next() {
-			// Break if at or beyond limit.
+		var k, v []byte
+		if lastSeenKey != nil {
+			// Seek to the last seen key if provided
+			k, v = c.Seek(lastSeenKey)
+			if k != nil && bytes.Equal(k, lastSeenKey) {
+				// Move to the next key after last seen key
+				k, v = c.Next()
+			}
+		} else {
+			// Otherwise, seek to the first key that matches the prefix
+			k, v = c.Seek(prefix)
+		}
+
+		for ; k != nil && bytes.HasPrefix(k, prefix); k, v = c.Next() {
 			if limit > 0 && len(keysFound) >= limit {
 				break
 			}
-			key := nodeIterator.Item().Key()
-			// Skip if key is before the last seen key. The caller
-			// needs to filter out the lastSeenKey in the view as
-			// we return any key >= the lastSeenKey.
-			if !haveSeenLastSeenKey {
-				if !bytes.Equal(key, lastSeenKey) {
-					continue
-				}
-				haveSeenLastSeenKey = true
-			}
-			// Skip if key can be skipped.
-			if canSkipKey(key) {
+			if canSkipKey(k) {
 				continue
 			}
-			// Copy key.
-			keyCopy := make([]byte, len(key))
-			copy(keyCopy[:], key[:])
-			// Append found entry to return slices.
+			keyCopy := make([]byte, len(k))
+			copy(keyCopy, k)
 			keysFound = append(keysFound, keyCopy)
 
-			// Copy value.
 			if !keysOnly {
-				valCopy, err := nodeIterator.Item().ValueCopy(nil)
-				if err != nil {
-					return err
-				}
+				valCopy := make([]byte, len(v))
+				copy(valCopy, v)
 				valsFound = append(valsFound, valCopy)
 			}
 		}
