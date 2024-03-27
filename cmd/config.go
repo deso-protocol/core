@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"encoding/hex"
 	"os"
 	"path/filepath"
 
@@ -42,6 +43,9 @@ type Config struct {
 	SnapshotBlockHeightPeriod uint64
 	DisableEncoderMigrations  bool
 	HypersyncMaxQueueSize     uint32
+
+	// Checkpoint Syncing
+	CheckpointBlockHash *lib.BlockHash
 
 	// PoS Validator
 	PosValidatorSeed string
@@ -116,6 +120,17 @@ func LoadConfig() *Config {
 	config.ForceChecksum = viper.GetBool("force-checksum")
 	config.SyncType = lib.NodeSyncType(viper.GetString("sync-type"))
 	config.MaxSyncBlockHeight = viper.GetUint32("max-sync-block-height")
+	checkpointBlockHashHex := viper.GetString("checkpoint-block-hash")
+	if checkpointBlockHashHex != "" {
+		checkpointBlockHash, err := hex.DecodeString(checkpointBlockHashHex)
+		if err != nil {
+			glog.Fatalf("Invalid checkpoint block hash: %v", err)
+		}
+		if len(checkpointBlockHash) != lib.HashSizeBytes {
+			glog.Fatalf("Invalid checkpoint block hash length: %v", len(checkpointBlockHash))
+		}
+		config.CheckpointBlockHash = lib.NewBlockHash(checkpointBlockHash)
+	}
 	config.SnapshotBlockHeightPeriod = viper.GetUint64("snapshot-block-height-period")
 	config.DisableEncoderMigrations = viper.GetBool("disable-encoder-migrations")
 	config.HypersyncMaxQueueSize = viper.GetUint32("hypersync-max-queue-size")

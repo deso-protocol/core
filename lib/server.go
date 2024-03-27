@@ -420,6 +420,7 @@ func NewServer(
 	_mempoolMaxValidationViewConnects uint64,
 	_transactionValidationRefreshIntervalMillis uint64,
 	_stateSyncerMempoolTxnSyncLimit uint64,
+	_checkpointBlockHash *BlockHash,
 ) (
 	_srv *Server,
 	_err error,
@@ -505,7 +506,7 @@ func NewServer(
 
 	_chain, err := NewBlockchain(
 		_trustedBlockProducerPublicKeys, _trustedBlockProducerStartHeight, _maxSyncBlockHeight,
-		_params, timesource, _db, postgres, eventManager, _snapshot, archivalMode)
+		_params, timesource, _db, postgres, eventManager, _snapshot, archivalMode, _checkpointBlockHash)
 	if err != nil {
 		return nil, errors.Wrapf(err, "NewServer: Problem initializing blockchain"), true
 	}
@@ -988,9 +989,20 @@ func (srv *Server) _handleHeaderBundle(pp *Peer, msg *MsgDeSoHeaderBundle) {
 		// TODO: Delete? This is redundant.
 		numNewHeaders++
 
+		verifySignatures := true
+		hasSeenCheckpointBlockHash := false
+		if srv.blockchain.CheckpointBlockHash != nil {
+			_, hasSeenCheckpointBlockHash = srv.blockchain.bestHeaderChainMap[*srv.blockchain.CheckpointBlockHash]
+		}
+		if (!hasSeenCheckpointBlockHash &&
+			!headerHash.IsEqual(srv.blockchain.CheckpointBlockHash)) ||
+			srv.blockchain.isSyncing() {
+			verifySignatures = false
+		}
 		// Process the header, as we haven't seen it before, set verifySignatures to false
-		// if we're in the process of syncing.
-		_, isOrphan, err := srv.blockchain.ProcessHeader(headerReceived, headerHash, !srv.blockchain.isSyncing())
+		// if we're in the process of syncing or we haven't reached the checkpoint block hash yet
+		// and this block is not the checkpoint block hash.
+		_, isOrphan, err := srv.blockchain.ProcessHeader(headerReceived, headerHash, verifySignatures)
 
 		numLogHeaders := 2000
 		if ii%numLogHeaders == 0 {
@@ -2180,17 +2192,29 @@ func (srv *Server) _handleBlock(pp *Peer, blk *MsgDeSoBlock, isLastBlock bool) {
 	srv.timer.End("Server._handleBlock: General")
 	srv.timer.Start("Server._handleBlock: Process Block")
 
-	// Only verify signatures for recent blocks.
+	// Only verify signatures for recent blocks and only if checkpoint block hash has been seen.
+	verifySignatures := true
+	hasSeenCheckpointBlockHash := false
+	var checkpointBlockHashString string
+	if srv.blockchain.CheckpointBlockHash != nil {
+		_, hasSeenCheckpointBlockHash = srv.blockchain.bestChainMap[*srv.blockchain.CheckpointBlockHash]
+		checkpointBlockHashString = srv.blockchain.CheckpointBlockHash.String()
+	}
+	if (!hasSeenCheckpointBlockHash &&
+		!blockHash.IsEqual(srv.blockchain.CheckpointBlockHash)) ||
+		srv.blockchain.isSyncing() {
+		verifySignatures = false
+	}
 	var isOrphan bool
 	if srv.fastHotStuffConsensus != nil && srv.fastHotStuffConsensus.IsRunning() {
 		// If the FastHotStuffConsensus has been initialized, then we pass the block to the new consensus
 		// which will validate the block, try to apply it, and handle the orphan case by requesting missing
 		// parents.
 		isOrphan, err = srv.fastHotStuffConsensus.HandleBlock(pp, blk)
-	} else if srv.blockchain.isSyncing() {
+	} else if !verifySignatures {
 		glog.V(1).Infof(CLog(Cyan, fmt.Sprintf("Server._handleBlock: Processing block %v WITHOUT "+
-			"signature checking because SyncState=%v for peer %v",
-			blk, srv.blockchain.chainState(), pp)))
+			"signature checking because SyncState=%v for peer %v and checkpoint block hash %v has not been seen",
+			blk, srv.blockchain.chainState(), pp, checkpointBlockHashString)))
 		_, isOrphan, _, err = srv.blockchain.ProcessBlock(blk, false)
 	} else {
 		// TODO: Signature checking slows things down because it acquires the ChainLock.

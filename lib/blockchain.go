@@ -464,6 +464,7 @@ type Blockchain struct {
 	MaxSyncBlockHeight              uint32
 	params                          *DeSoParams
 	eventManager                    *EventManager
+	CheckpointBlockHash             *BlockHash
 
 	// Archival mode determines if we'll be downloading historical blocks after finishing hypersync.
 	// It is turned off by default, meaning we won't be downloading blocks prior to the first snapshot
@@ -777,6 +778,7 @@ func NewBlockchain(
 	eventManager *EventManager,
 	snapshot *Snapshot,
 	archivalMode bool,
+	checkpointBlockHash *BlockHash,
 ) (*Blockchain, error) {
 
 	trustedBlockProducerPublicKeys := make(map[PkMapKey]bool)
@@ -799,6 +801,7 @@ func NewBlockchain(
 		trustedBlockProducerPublicKeys:  trustedBlockProducerPublicKeys,
 		trustedBlockProducerStartHeight: trustedBlockProducerStartHeight,
 		MaxSyncBlockHeight:              maxSyncBlockHeight,
+		CheckpointBlockHash:             checkpointBlockHash,
 		params:                          params,
 		eventManager:                    eventManager,
 		archivalMode:                    archivalMode,
