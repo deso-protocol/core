@@ -188,6 +188,7 @@ func (stateChangeEntry *StateChangeEntry) RawDecodeWithoutMetadata(blockHeight u
 	// Decode the block height.
 	entryBlockHeight, err := ReadUvarint(rr)
 	if err != nil {
+		entryBlockHeight = DeSoMainnetParams.EncoderMigrationHeights.BalanceModel.Height
 		//return errors.Wrapf(err, "StateChangeEntry.RawDecodeWithoutMetadata: error decoding block height")
 		fmt.Printf("StateChangeEntry.RawDecodeWithoutMetadata: error decoding block height: %v\n", err)
 	}
