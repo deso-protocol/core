@@ -4241,6 +4241,9 @@ type GlobalParamsEntry struct {
 	// MempoolFeeEstimatorNumPastBlocks is the number of past blocks to reference txn fees from when estimating
 	// the fee for a new txn.
 	MempoolFeeEstimatorNumPastBlocks uint64
+
+	// MaxBlockSizeBytesPoS is the maximum size of a block in bytes.
+	MaxBlockSizeBytesPoS uint64
 }
 
 func (gp *GlobalParamsEntry) Copy() *GlobalParamsEntry {
@@ -4266,6 +4269,7 @@ func (gp *GlobalParamsEntry) Copy() *GlobalParamsEntry {
 		MempoolMaxSizeBytes:                            gp.MempoolMaxSizeBytes,
 		MempoolFeeEstimatorNumMempoolBlocks:            gp.MempoolFeeEstimatorNumMempoolBlocks,
 		MempoolFeeEstimatorNumPastBlocks:               gp.MempoolFeeEstimatorNumPastBlocks,
+		MaxBlockSizeBytesPoS:                           gp.MaxBlockSizeBytesPoS,
 	}
 }
 
@@ -4296,6 +4300,7 @@ func (gp *GlobalParamsEntry) RawEncodeWithoutMetadata(blockHeight uint64, skipMe
 		data = append(data, UintToBuf(gp.MempoolMaxSizeBytes)...)
 		data = append(data, UintToBuf(gp.MempoolFeeEstimatorNumMempoolBlocks)...)
 		data = append(data, UintToBuf(gp.MempoolFeeEstimatorNumPastBlocks)...)
+		data = append(data, UintToBuf(gp.MaxBlockSizeBytesPoS)...)
 	}
 	return data
 }
@@ -4391,6 +4396,10 @@ func (gp *GlobalParamsEntry) RawDecodeWithoutMetadata(blockHeight uint64, rr *by
 		gp.MempoolFeeEstimatorNumPastBlocks, err = ReadUvarint(rr)
 		if err != nil {
 			return errors.Wrapf(err, "GlobalParamsEntry.Decode: Problem reading MempoolFeeEstimatorNumPastBlocks")
+		}
+		gp.MaxBlockSizeBytesPoS, err = ReadUvarint(rr)
+		if err != nil {
+			return errors.Wrapf(err, "GlobalParamsEntry.Decode: Problem reading MaxBlockSizeBytesPoW")
 		}
 	}
 	return nil

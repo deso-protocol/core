@@ -138,13 +138,18 @@ func (pbp *PosBlockProducer) createBlockWithoutHeader(
 		return nil, errors.Wrapf(err, "Error computing block reward txn size: ")
 	}
 
+	maxBlockSizeBytes, err := latestBlockView.GetMaxBlockSizeBytes(newBlockHeight)
+	if err != nil {
+		return nil, errors.Wrapf(err, "Error computing max block size: ")
+	}
+
 	// Get block transactions from the mempool.
 	feeTimeTxns, txnConnectStatusByIndex, maxUtilityFee, err := pbp.getBlockTransactions(
 		pbp.proposerPublicKey,
 		latestBlockView,
 		newBlockHeight,
 		newBlockTimestampNanoSecs,
-		pbp.params.MinerMaxBlockSizeBytes-uint64(len(blockRewardTxnSizeBytes)),
+		maxBlockSizeBytes-uint64(len(blockRewardTxnSizeBytes)),
 	)
 	if err != nil {
 		return nil, errors.Wrapf(err, "PosBlockProducer.createBlockWithoutHeader: Problem retrieving block transactions: ")

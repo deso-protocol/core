@@ -83,6 +83,12 @@ func TestRunEpochCompleteHook(t *testing.T) {
 	blockHeight := uint64(testMeta.chain.blockTip().Height) + 1
 	incrBlockHeight := func() uint64 {
 		blockHeight += 1
+		// Update the saved height in the testMeta so that the calls to construct transactions use the
+		// correct block height.
+		testMeta.savedHeight = uint32(blockHeight)
+		// Put a dummy block in the chain so that the tip is updated. This
+		// make the calls to update global params work since they use the chain's tip as the block height.
+		testMeta.chain.addTipBlockToBestChain(&BlockNode{Height: uint32(blockHeight), Hash: NewBlockHash([]byte{byte(blockHeight)})})
 		return blockHeight
 	}
 	viewNumber := uint64(0)
