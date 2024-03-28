@@ -3,21 +3,22 @@ package lib
 import (
 	"bytes"
 	"fmt"
-	"github.com/dgraph-io/badger/v3"
-	"github.com/holiman/uint256"
-	"github.com/stretchr/testify/require"
 	"math"
 	"math/big"
 	"testing"
 	"time"
+
+	"github.com/dgraph-io/badger/v3"
+	"github.com/holiman/uint256"
+	"github.com/stretchr/testify/require"
 )
 
 func TestBalanceModelDAOCoinLimitOrders(t *testing.T) {
 	setBalanceModelBlockHeights(t)
 
-	TestZeroCostOrderEdgeCaseDAOCoinLimitOrder(t)
-	TestDAOCoinLimitOrder(t)
-	TestFlushingDAOCoinLimitOrders(t)
+	t.Run("TestZeroCostOrderEdgeCaseDAOCoinLimitOrder", TestZeroCostOrderEdgeCaseDAOCoinLimitOrder)
+	t.Run("TestDAOCoinLimitOrder", TestDAOCoinLimitOrder)
+	t.Run("TestFlushingDAOCoinLimitOrders", TestFlushingDAOCoinLimitOrders)
 }
 func TestZeroCostOrderEdgeCaseDAOCoinLimitOrder(t *testing.T) {
 	// -----------------------
@@ -4094,7 +4095,7 @@ func _connectDAOCoinLimitOrderTxn(
 	// Always use savedHeight (blockHeight+1) for validation since it's
 	// assumed the transaction will get mined into the next block.
 	utxoOps, totalInput, totalOutput, fees, err := currentUtxoView.ConnectTransaction(
-		txn, txn.Hash(), getTxnSize(*txn), testMeta.savedHeight, true, false)
+		txn, txn.Hash(), testMeta.savedHeight, 0, true, false)
 	if err != nil {
 		// If error, remove most-recent expected sender balance added for this txn.
 		testMeta.expectedSenderBalances = testMeta.expectedSenderBalances[:len(testMeta.expectedSenderBalances)-1]
@@ -4167,7 +4168,7 @@ func _doDAOCoinLimitOrderTxn(t *testing.T, chain *Blockchain, db *badger.DB,
 	// get mined into the next block.
 	blockHeight := chain.blockTip().Height + 1
 	utxoOps, totalInput, totalOutput, fees, err :=
-		utxoView.ConnectTransaction(txn, txHash, getTxnSize(*txn), blockHeight, true /*verifySignature*/, false /*ignoreUtxos*/)
+		utxoView.ConnectTransaction(txn, txHash, blockHeight, 0, true, false)
 	if err != nil {
 		return nil, nil, 0, err
 	}

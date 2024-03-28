@@ -6,8 +6,6 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"github.com/btcsuite/btcutil"
-	"github.com/gernest/mention"
 	"log"
 	"math"
 	"os"
@@ -18,9 +16,13 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/btcsuite/btcutil"
+	"github.com/gernest/mention"
+
 	"github.com/dgraph-io/badger/v3"
 
 	"github.com/btcsuite/btcd/btcec"
+	"github.com/deso-protocol/core/collections"
 	"github.com/deso-protocol/go-deadlock"
 	"github.com/golang/glog"
 	"github.com/pkg/errors"
@@ -61,38 +63,6 @@ var (
 	LowFeeTxLimitBytesPerTenMinutes = 150000 // Allow 150KB per minute in low-fee txns.
 )
 
-// MempoolTx contains a transaction along with additional metadata like the
-// fee and time added.
-type MempoolTx struct {
-	Tx *MsgDeSoTxn
-
-	// TxMeta is the transaction metadata
-	TxMeta *TransactionMetadata
-
-	// Hash is a hash of the transaction so we don't have to recompute
-	// it all the time.
-	Hash *BlockHash
-
-	// TxSizeBytes is the cached size of the transaction.
-	TxSizeBytes uint64
-
-	// The time when the txn was added to the pool
-	Added time.Time
-
-	// The block height when the txn was added to the pool. It's generally set
-	// to tip+1.
-	Height uint32
-
-	// The total fee the txn pays. Cached for efficiency reasons.
-	Fee uint64
-
-	// The fee rate of the transaction in nanos per KB.
-	FeePerKB uint64
-
-	// index is used by the heap logic to allow for modification in-place.
-	index int
-}
-
 // Summary stats for a set of transactions of a specific type in the mempool.
 type SummaryStats struct {
 	// Number of transactions of this type in the mempool.
@@ -100,10 +70,6 @@ type SummaryStats struct {
 
 	// Number of bytes for transactions of this type in the mempool.
 	TotalBytes uint64
-}
-
-func (mempoolTx *MempoolTx) String() string {
-	return fmt.Sprintf("< Added: %v, index: %d, Fee: %d, Type: %v, Hash: %v", mempoolTx.Added, mempoolTx.index, mempoolTx.Fee, mempoolTx.Tx.TxnMeta.GetTxnType(), mempoolTx.Hash)
 }
 
 // MempoolTxFeeMinHeap is a priority queue based on transaction fee rate
@@ -259,6 +225,71 @@ type DeSoMempool struct {
 	// set to true for tests. This lowers the memory requirements of the mempool
 	// by using DefaultBadgerOptions instead of PerformanceBadgerOptions.
 	useDefaultBadgerOptions bool
+}
+
+// Note that all these functions are stubbed out for now. We don't need them
+// but they are required to implement the Mempool interface, so we just
+// return errors for now to simplify the usage of DeSoMempool in the backend
+// repo. We'll eventually be deprecating DeSoMempool, so we're not particularly
+// concerned about this.
+
+func (mp *DeSoMempool) Start() error {
+	return errors.New("Not implemented")
+}
+
+func (mp *DeSoMempool) IsRunning() bool {
+	return !mp.stopped
+}
+
+func (mp *DeSoMempool) AddTransaction(txn *MempoolTransaction, verifySignature bool) error {
+	return errors.New("Not implemented")
+}
+
+func (mp *DeSoMempool) RemoveTransaction(txnHash *BlockHash) error {
+	return errors.New("Not implemented")
+}
+
+func (mp *DeSoMempool) GetTransaction(txnHash *BlockHash) *MempoolTransaction {
+	mempoolTx, exists := mp.readOnlyUniversalTransactionMap[*txnHash]
+	if !exists {
+		return nil
+	}
+	return NewMempoolTransaction(mempoolTx.Tx, mempoolTx.Added)
+}
+
+func (mp *DeSoMempool) GetTransactions() []*MempoolTransaction {
+	return collections.Transform(
+		mp.GetOrderedTransactions(), func(mempoolTx *MempoolTx) *MempoolTransaction {
+			return NewMempoolTransaction(mempoolTx.Tx, mempoolTx.Added)
+		},
+	)
+}
+
+func (mp *DeSoMempool) GetIterator() MempoolIterator {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (mp *DeSoMempool) Refresh() error {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (mp *DeSoMempool) UpdateLatestBlock(blockView *UtxoView, blockHeight uint64) {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (mp *DeSoMempool) UpdateGlobalParams(globalParams *GlobalParamsEntry) {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (mp *DeSoMempool) GetOrderedTransactions() []*MempoolTx {
+	mp.mtx.RLock()
+	defer mp.mtx.RUnlock()
+	orderedTxns, _, _ := mp.GetTransactionsOrderedByTimeAdded()
+	return orderedTxns
 }
 
 func (mp *DeSoMempool) getBadgerOptions(dir string) badger.Options {
@@ -580,7 +611,7 @@ func (mp *DeSoMempool) GetTransactionsOrderedByTimeAdded() (_poolTxns []*Mempool
 	return poolTxns, nil, nil
 }
 
-func (mp *DeSoMempool) GetTransaction(txId *BlockHash) (txn *MempoolTx) {
+func (mp *DeSoMempool) GetMempoolTx(txId *BlockHash) *MempoolTx {
 	return mp.readOnlyUniversalTransactionMap[*txId]
 }
 
@@ -818,7 +849,7 @@ func (mp *DeSoMempool) OpenTempDBAndDumpTxns() error {
 // only be called when one is sure that a transaction is valid. Otherwise, it could
 // mess up the UtxoViews that we store internally.
 func (mp *DeSoMempool) addTransaction(
-	tx *MsgDeSoTxn, height uint32, fee uint64, updateBackupView bool) (*MempoolTx, error) {
+	tx *MsgDeSoTxn, height uint32, timestamp int64, fee uint64, updateBackupView bool) (*MempoolTx, error) {
 
 	// Add the transaction to the pool and mark the referenced outpoints
 	// as spent by the pool.
@@ -875,8 +906,9 @@ func (mp *DeSoMempool) addTransaction(
 
 	// Add it to the universal view. We assume the txn was already added to the
 	// backup view.
-	_, _, _, _, err = mp.universalUtxoView._connectTransaction(mempoolTx.Tx, mempoolTx.Hash, int64(mempoolTx.TxSizeBytes), height,
-		false /*verifySignatures*/, false /*ignoreUtxos*/)
+	_, _, _, _, err = mp.universalUtxoView._connectTransaction(
+		mempoolTx.Tx, mempoolTx.Hash, height,
+		timestamp, false, false)
 	if err != nil {
 		return nil, errors.Wrap(err, "ERROR addTransaction: _connectTransaction "+
 			"failed on universalUtxoView; this is a HUGE problem and should never happen")
@@ -884,7 +916,8 @@ func (mp *DeSoMempool) addTransaction(
 	// Add it to the universalTransactionList if it made it through the view
 	mp.universalTransactionList = append(mp.universalTransactionList, mempoolTx)
 	if updateBackupView {
-		_, _, _, _, err = mp.backupUniversalUtxoView._connectTransaction(mempoolTx.Tx, mempoolTx.Hash, int64(mempoolTx.TxSizeBytes), height, false, false)
+		_, _, _, _, err = mp.backupUniversalUtxoView._connectTransaction(mempoolTx.Tx, mempoolTx.Hash,
+			height, timestamp, false, false)
 		if err != nil {
 			return nil, errors.Wrap(err, "ERROR addTransaction: _connectTransaction "+
 				"failed on backupUniversalUtxoView; this is a HUGE problem and should never happen")
@@ -964,7 +997,8 @@ func (mp *DeSoMempool) _quickCheckBitcoinExchangeTxn(
 	// transaction will only get this far once we are positive the BitcoinManager
 	// has the block corresponding to the transaction.
 	// We skip verifying txn size for bitcoin exchange transactions.
-	_, _, _, txFee, err := utxoView._connectTransaction(tx, txHash, 0, bestHeight, false, false)
+	_, _, _, txFee, err := utxoView._connectTransaction(
+		tx, txHash, bestHeight, 0, false, false)
 	if err != nil {
 		// Note this can happen in odd cases where a transaction's dependency was removed
 		// but the transaction depending on it was not. See the comment on
@@ -1055,8 +1089,9 @@ func (mp *DeSoMempool) tryAcceptTransaction(
 	totalNanosPurchasedBefore := mp.backupUniversalUtxoView.NanosPurchased
 	usdCentsPerBitcoinBefore := mp.backupUniversalUtxoView.GetCurrentUSDCentsPerBitcoin()
 	bestHeight := uint32(mp.bc.blockTip().Height + 1)
-	// We can skip verifying the transaction size as related to the minimum fee here.
-	utxoOps, totalInput, totalOutput, txFee, err := mp.backupUniversalUtxoView._connectTransaction(tx, txHash, 0, bestHeight, verifySignatures, false)
+	bestTimestamp := time.Now().UnixNano()
+	utxoOps, totalInput, totalOutput, txFee, err := mp.backupUniversalUtxoView._connectTransaction(
+		tx, txHash, bestHeight, bestTimestamp, verifySignatures, false)
 	if err != nil {
 		mp.rebuildBackupView()
 		return nil, nil, errors.Wrapf(err, "tryAcceptTransaction: Problem "+
@@ -1123,7 +1158,7 @@ func (mp *DeSoMempool) tryAcceptTransaction(
 
 	// Add to transaction pool. Don't update the backup view since the call above
 	// will have already done this.
-	mempoolTx, err := mp.addTransaction(tx, bestHeight, txFee, false /*updateBackupUniversalView*/)
+	mempoolTx, err := mp.addTransaction(tx, bestHeight, bestTimestamp, txFee, false /*updateBackupUniversalView*/)
 	if err != nil {
 		mp.rebuildBackupView()
 		return nil, nil, errors.Wrapf(err, "tryAcceptTransaction: ")
@@ -1139,9 +1174,19 @@ func (mp *DeSoMempool) tryAcceptTransaction(
 	return nil, mempoolTx, nil
 }
 
-func ComputeTransactionMetadata(txn *MsgDeSoTxn, utxoView *UtxoView, blockHash *BlockHash,
-	totalNanosPurchasedBefore uint64, usdCentsPerBitcoinBefore uint64, totalInput uint64, totalOutput uint64,
-	fees uint64, txnIndexInBlock uint64, utxoOps []*UtxoOperation, blockHeight uint64) *TransactionMetadata {
+func ComputeTransactionMetadata(
+	txn *MsgDeSoTxn,
+	utxoView *UtxoView,
+	blockHash *BlockHash,
+	totalNanosPurchasedBefore uint64,
+	usdCentsPerBitcoinBefore uint64,
+	totalInput uint64,
+	totalOutput uint64,
+	fees uint64,
+	txnIndexInBlock uint64,
+	utxoOps []*UtxoOperation,
+	blockHeight uint64,
+) *TransactionMetadata {
 
 	var err error
 	txnMeta := &TransactionMetadata{
@@ -1950,9 +1995,76 @@ func ComputeTransactionMetadata(txn *MsgDeSoTxn, utxoView *UtxoView, blockHash *
 			PublicKeyBase58Check: PkToString(realTxMeta.RecipientAccessGroupOwnerPublicKey.ToBytes(), utxoView.Params),
 			Metadata:             "NewMessageRecipientAccessGroupOwnerPublicKe",
 		})
+	case TxnTypeRegisterAsValidator:
+		txindexMetadata, affectedPublicKeys := utxoView.CreateRegisterAsValidatorTxindexMetadata(utxoOps[len(utxoOps)-1], txn)
+		txnMeta.RegisterAsValidatorTxindexMetadata = txindexMetadata
+		txnMeta.AffectedPublicKeys = append(txnMeta.AffectedPublicKeys, affectedPublicKeys...)
+	case TxnTypeUnregisterAsValidator:
+		txindexMetadata, affectedPublicKeys := utxoView.CreateUnregisterAsValidatorTxindexMetadata(utxoOps[len(utxoOps)-1], txn)
+		txnMeta.UnregisterAsValidatorTxindexMetadata = txindexMetadata
+		txnMeta.AffectedPublicKeys = append(txnMeta.AffectedPublicKeys, affectedPublicKeys...)
+	case TxnTypeStake:
+		txindexMetadata, affectedPublicKeys := utxoView.CreateStakeTxindexMetadata(utxoOps[len(utxoOps)-1], txn)
+		txnMeta.StakeTxindexMetadata = txindexMetadata
+		txnMeta.AffectedPublicKeys = append(txnMeta.AffectedPublicKeys, affectedPublicKeys...)
+	case TxnTypeUnstake:
+		txindexMetadata, affectedPublicKeys := utxoView.CreateUnstakeTxindexMetadata(utxoOps[len(utxoOps)-1], txn)
+		txnMeta.UnstakeTxindexMetadata = txindexMetadata
+		txnMeta.AffectedPublicKeys = append(txnMeta.AffectedPublicKeys, affectedPublicKeys...)
+	case TxnTypeUnlockStake:
+		txindexMetadata, affectedPublicKeys := utxoView.CreateUnlockStakeTxindexMetadata(utxoOps[len(utxoOps)-1], txn)
+		txnMeta.UnlockStakeTxindexMetadata = txindexMetadata
+		txnMeta.AffectedPublicKeys = append(txnMeta.AffectedPublicKeys, affectedPublicKeys...)
+	case TxnTypeUnjailValidator:
+		txindexMetadata, affectedPublicKeys := utxoView.CreateUnjailValidatorTxindexMetadata(utxoOps[len(utxoOps)-1], txn)
+		txnMeta.UnjailValidatorTxindexMetadata = txindexMetadata
+		txnMeta.AffectedPublicKeys = append(txnMeta.AffectedPublicKeys, affectedPublicKeys...)
+	case TxnTypeAtomicTxnsWrapper:
+		realTxMeta := txn.TxnMeta.(*AtomicTxnsWrapperMetadata)
+		txnMeta.AtomicTxnsWrapperTxindexMetadata = &AtomicTxnsWrapperTxindexMetadata{}
+		txnMeta.AtomicTxnsWrapperTxindexMetadata.InnerTxnsTransactionMetadata = []*TransactionMetadata{}
+		for _, innerTxn := range realTxMeta.Txns {
+			// Compute the transaction metadata for each inner transaction.
+			innerTxnsTxnMetadata := ComputeTransactionMetadata(
+				innerTxn,
+				utxoView,
+				blockHash,
+				totalNanosPurchasedBefore,
+				usdCentsPerBitcoinBefore,
+				totalInput,
+				totalOutput,
+				fees,
+				txnIndexInBlock,
+				utxoOps,
+				blockHeight,
+			)
+			txnMeta.AtomicTxnsWrapperTxindexMetadata.InnerTxnsTransactionMetadata = append(
+				txnMeta.AtomicTxnsWrapperTxindexMetadata.InnerTxnsTransactionMetadata, innerTxnsTxnMetadata)
+
+			// Create a global list of all affected public keys from each inner transaction.
+			txnMeta.AffectedPublicKeys = append(txnMeta.AffectedPublicKeys, innerTxnsTxnMetadata.AffectedPublicKeys...)
+		}
 	}
 	// Check if the transactor is an affected public key. If not, add them.
-	if txnMeta.TransactorPublicKeyBase58Check != "" {
+	// We skip this for atomic transactions as their transactor is the ZeroPublicKey.
+	if txnMeta.TransactorPublicKeyBase58Check != "" && txn.TxnMeta.GetTxnType() != TxnTypeAtomicTxnsWrapper {
+		transactorPublicKeyFound := false
+		for _, affectedPublicKey := range txnMeta.AffectedPublicKeys {
+			if affectedPublicKey.PublicKeyBase58Check == txnMeta.TransactorPublicKeyBase58Check {
+				transactorPublicKeyFound = true
+				break
+			}
+		}
+		if !transactorPublicKeyFound {
+			txnMeta.AffectedPublicKeys = append(txnMeta.AffectedPublicKeys, &AffectedPublicKey{
+				PublicKeyBase58Check: txnMeta.TransactorPublicKeyBase58Check,
+				Metadata:             "TransactorPublicKeyBase58Check",
+			})
+		}
+	}
+	// Check if the transactor is an affected public key. If not, add them.
+	// We skip this for atomic transactions as their transactor is the ZeroPublicKey.
+	if txnMeta.TransactorPublicKeyBase58Check != "" && txn.TxnMeta.GetTxnType() != TxnTypeAtomicTxnsWrapper {
 		transactorPublicKeyFound := false
 		for _, affectedPublicKey := range txnMeta.AffectedPublicKeys {
 			if affectedPublicKey.PublicKeyBase58Check == txnMeta.TransactorPublicKeyBase58Check {
@@ -2054,22 +2166,6 @@ func _computeBitcoinExchangeFields(params *DeSoParams,
 		NanosCreated:        nanosToCreate,
 		BitcoinTxnHash:      bitcoinTxHash.String(),
 	}, PkToString(publicKey.SerializeCompressed(), params), nil
-}
-
-func ConnectTxnAndComputeTransactionMetadata(
-	txn *MsgDeSoTxn, utxoView *UtxoView, blockHash *BlockHash,
-	blockHeight uint32, txnIndexInBlock uint64) (*TransactionMetadata, error) {
-
-	totalNanosPurchasedBefore := utxoView.NanosPurchased
-	usdCentsPerBitcoinBefore := utxoView.GetCurrentUSDCentsPerBitcoin()
-	utxoOps, totalInput, totalOutput, fees, err := utxoView._connectTransaction(txn, txn.Hash(), 0, blockHeight, false, false)
-	if err != nil {
-		return nil, fmt.Errorf(
-			"UpdateTxindex: Error connecting txn to UtxoView: %v", err)
-	}
-
-	return ComputeTransactionMetadata(txn, utxoView, blockHash, totalNanosPurchasedBefore,
-		usdCentsPerBitcoinBefore, totalInput, totalOutput, fees, txnIndexInBlock, utxoOps, uint64(blockHeight)), nil
 }
 
 // This is the main function used for adding a new txn to the pool. It will
@@ -2352,10 +2448,45 @@ func (mp *DeSoMempool) MempoolTxs() []*MempoolTx {
 }
 
 func (mp *DeSoMempool) GetMempoolSummaryStats() (_summaryStatsMap map[string]*SummaryStats) {
-	allTxns := mp.readOnlyUniversalTransactionList
+	return convertMempoolTxsToSummaryStats(mp.readOnlyUniversalTransactionList)
+}
 
+func EstimateMaxTxnFeeV1(txn *MsgDeSoTxn, minFeeRateNanosPerKB uint64) uint64 {
+	if minFeeRateNanosPerKB == 0 {
+		return 0
+	}
+	prevFeeAmountNanos := uint64(0)
+	feeAmountNanos := uint64(0)
+	for feeAmountNanos == 0 || feeAmountNanos != prevFeeAmountNanos {
+		prevFeeAmountNanos = feeAmountNanos
+		feeAmountNanos = _computeMaxTxV1Fee(txn, minFeeRateNanosPerKB)
+		txn.TxnFeeNanos = feeAmountNanos
+	}
+	return feeAmountNanos
+}
+
+func (mp *DeSoMempool) EstimateFee(txn *MsgDeSoTxn, minFeeRateNanosPerKB uint64,
+	_ uint64, _ uint64, _ uint64, _ uint64, _ uint64) (uint64, error) {
+	feeRate, _ := mp.EstimateFeeRate(minFeeRateNanosPerKB, 0, 0, 0, 0, 0)
+	return EstimateMaxTxnFeeV1(txn, feeRate), nil
+}
+
+func (mp *DeSoMempool) EstimateFeeRate(
+	minFeeRateNanosPerKB uint64,
+	_ uint64,
+	_ uint64,
+	_ uint64,
+	_ uint64,
+	_ uint64) (uint64, error) {
+	if minFeeRateNanosPerKB < mp.readOnlyUtxoView.GlobalParamsEntry.MinimumNetworkFeeNanosPerKB {
+		return mp.readOnlyUtxoView.GlobalParamsEntry.MinimumNetworkFeeNanosPerKB, nil
+	}
+	return minFeeRateNanosPerKB, nil
+}
+
+func convertMempoolTxsToSummaryStats(mempoolTxs []*MempoolTx) map[string]*SummaryStats {
 	transactionSummaryStats := make(map[string]*SummaryStats)
-	for _, mempoolTx := range allTxns {
+	for _, mempoolTx := range mempoolTxs {
 		// Update the mempool summary stats.
 		updatedSummaryStats := &SummaryStats{}
 		txnType := mempoolTx.Tx.TxnMeta.GetTxnType().String()

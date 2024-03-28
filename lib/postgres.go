@@ -6,14 +6,15 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"net/url"
+	"regexp"
+	"strings"
+
 	"github.com/dgraph-io/badger/v3"
 	"github.com/go-pg/pg/v10"
 	"github.com/go-pg/pg/v10/orm"
 	"github.com/golang/glog"
 	"github.com/holiman/uint256"
-	"net/url"
-	"regexp"
-	"strings"
 )
 
 type Postgres struct {
@@ -1288,7 +1289,7 @@ func (postgres *Postgres) UpsertBlockTx(tx *pg.Tx, blockNode *BlockNode) error {
 
 		TxMerkleRoot: blockNode.Header.TransactionMerkleRoot,
 		Version:      blockNode.Header.Version,
-		Timestamp:    blockNode.Header.TstampSecs,
+		Timestamp:    uint64(blockNode.Header.TstampNanoSecs),
 		Nonce:        blockNode.Header.Nonce,
 		ExtraNonce:   blockNode.Header.ExtraNonce,
 	}
@@ -1321,7 +1322,7 @@ func (postgres *Postgres) GetBlockIndex() (map[BlockHash]*BlockNode, error) {
 				Version:               block.Version,
 				PrevBlockHash:         block.ParentHash,
 				TransactionMerkleRoot: block.TxMerkleRoot,
-				TstampSecs:            block.Timestamp,
+				TstampNanoSecs:        int64(block.Timestamp),
 				Height:                block.Height,
 				Nonce:                 block.Nonce,
 				ExtraNonce:            block.ExtraNonce,

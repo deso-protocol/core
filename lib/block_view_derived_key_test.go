@@ -10,6 +10,7 @@ import (
 	"github.com/holiman/uint256"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"math"
 	"math/rand"
 	"testing"
 	"time"
@@ -91,8 +92,7 @@ func _derivedKeyBasicTransfer(t *testing.T, db *badger.DB, chain *Blockchain, pa
 	txHash := txn.Hash()
 	blockHeight := chain.blockTip().Height + 1
 	utxoOps, _, _, _, err :=
-		utxoView.ConnectTransaction(txn, txHash, getTxnSize(*txn), blockHeight,
-			true /*verifySignature*/, false /*ignoreUtxos*/)
+		utxoView.ConnectTransaction(txn, txHash, blockHeight, 0, true, false)
 	return utxoOps, txn, err
 }
 
@@ -457,6 +457,7 @@ func _doTxnWithBlockHeight(
 			minNetworkFeeNanosPerKB,
 			nil,
 			-1,
+			map[string][]byte{},
 			feeRateNanosPerKB,
 			testMeta.mempool,
 			nil,
@@ -518,7 +519,7 @@ func _doTxnWithBlockHeight(
 	txHash := txn.Hash()
 	blockHeight := chain.blockTip().Height + 1
 	utxoOps, totalInput, totalOutput, fees, err :=
-		utxoView.ConnectTransaction(txn, txHash, getTxnSize(*txn), blockHeight, true /*verifySignature*/, false /*ignoreUtxos*/)
+		utxoView.ConnectTransaction(txn, txHash, blockHeight, 0, true, false)
 	if err != nil {
 		return nil, nil, 0, err
 	}
@@ -832,11 +833,11 @@ func _doAuthorizeTxnWithExtraDataAndSpendingLimits(testMeta *TestMeta, utxoView 
 	// Sign the transaction now that its inputs are set up.
 	// We have to set the solution byte because we're signing
 	// the transaction with derived key on behalf of the owner.
-	_signTxnWithDerivedKey(t, txn, derivedPrivBase58Check)
+	_signTxnWithDerivedKeyAndType(t, txn, derivedPrivBase58Check, 1)
 
 	txHash := txn.Hash()
 	utxoOps, totalInput, totalOutput, fees, err :=
-		utxoView.ConnectTransaction(txn, txHash, getTxnSize(*txn), blockHeight, true /*verifySignature*/, false /*ignoreUtxos*/)
+		utxoView.ConnectTransaction(txn, txHash, blockHeight, 0, true, false)
 	// ConnectTransaction should treat the amount locked as contributing to the
 	// output.
 	if err != nil {
@@ -870,13 +871,16 @@ func _doAuthorizeTxnWithExtraDataAndSpendingLimits(testMeta *TestMeta, utxoView 
 func TestBalanceModelAuthorizeDerivedKey(t *testing.T) {
 	setBalanceModelBlockHeights(t)
 
-	TestAuthorizeDerivedKeyBasic(t)
-	TestAuthorizeDerivedKeyBasicWithTransactionLimits(t)
-	TestAuthorizedDerivedKeyWithTransactionLimitsHardcore(t)
-	// We need to set the block height here to 7 so that encoder migrations have the proper version and heights.
-	// Otherwise, the access groups and associations migrations do not run when encoding Utxo Operations.
-	DeSoTestnetParams.ForkHeights.BalanceModelBlockHeight = 7
-	TestAuthorizeDerivedKeyWithTransactionSpendingLimitsAccessGroups(t)
+	t.Run("TestAuthorizeDerivedKeyBasic", TestAuthorizeDerivedKeyBasic)
+	t.Run("TestAuthorizeDerivedKeyBasicWithTransactionLimits", TestAuthorizeDerivedKeyBasicWithTransactionLimits)
+	t.Run("TestAuthorizedDerivedKeyWithTransactionLimitsHardcore", TestAuthorizedDerivedKeyWithTransactionLimitsHardcore)
+	t.Run("TestAuthorizeDerivedKeyWithTransactionSpendingLimitsAccessGroups", func(t *testing.T) {
+		// We need to set the block height here to 7 so that encoder migrations have the proper version and heights.
+		// Otherwise, the access groups and associations migrations do not run when encoding Utxo Operations.
+		DeSoTestnetParams.ForkHeights.BalanceModelBlockHeight = 7
+		DeSoTestnetParams.ForkHeights.ProofOfStake1StateSetupBlockHeight = math.MaxUint32
+		TestAuthorizeDerivedKeyWithTransactionSpendingLimitsAccessGroups(t)
+	})
 }
 
 func TestAuthorizeDerivedKeyBasic(t *testing.T) {
@@ -1144,10 +1148,8 @@ func TestAuthorizeDerivedKeyBasic(t *testing.T) {
 		for testIndex, txn := range testTxns {
 			fmt.Printf("Applying test index: %v\n", testIndex)
 			blockHeight := chain.blockTip().Height + 1
-			txnSize := getTxnSize(*txn)
 			_, _, _, _, err :=
-				utxoView.ConnectTransaction(
-					txn, txn.Hash(), txnSize, blockHeight, true /*verifySignature*/, false /*ignoreUtxos*/)
+				utxoView.ConnectTransaction(txn, txn.Hash(), blockHeight, 0, true, false)
 			require.NoError(err)
 		}
 
@@ -1998,10 +2000,8 @@ func TestAuthorizeDerivedKeyBasicWithTransactionLimits(t *testing.T) {
 		for testIndex, txn := range testTxns {
 			fmt.Printf("Applying test index: %v\n", testIndex)
 			blockHeight := chain.blockTip().Height + 1
-			txnSize := getTxnSize(*txn)
 			_, _, _, _, err :=
-				utxoView.ConnectTransaction(
-					txn, txn.Hash(), txnSize, blockHeight, true /*verifySignature*/, false /*ignoreUtxos*/)
+				utxoView.ConnectTransaction(txn, txn.Hash(), blockHeight, 0, true, false)
 			require.NoError(err)
 		}
 

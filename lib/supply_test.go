@@ -39,36 +39,31 @@ func TestCalcBlockReward(t *testing.T) {
 
 	blocksPerYear := (time.Hour * 24 * 365 / DeSoMainnetParams.TimeBetweenBlocks)
 	require.Equal(int64(blocksPerYear), int64(BlocksPerYear))
+	setPoSBlockHeights(t, 1, 10*BlocksPerYear)
 
-	require.Equal(1*NanosPerUnit, CalcBlockRewardNanos(0))
-	require.Equal(1*NanosPerUnit, CalcBlockRewardNanos(1))
+	require.Equal(1*NanosPerUnit, CalcBlockRewardNanos(0, &GlobalDeSoParams))
+	require.Equal(1*NanosPerUnit, CalcBlockRewardNanos(1, &GlobalDeSoParams))
 
 	// .75
-	require.Equal(1*NanosPerUnit, CalcBlockRewardNanos(DeflationBombBlockRewardAdjustmentBlockHeight-1))
-	require.Equal(int64(float64(NanosPerUnit)*.75), int64(CalcBlockRewardNanos(DeflationBombBlockRewardAdjustmentBlockHeight)))
+	require.Equal(1*NanosPerUnit, CalcBlockRewardNanos(DeflationBombBlockRewardAdjustmentBlockHeight-1, &GlobalDeSoParams))
+	require.Equal(int64(float64(NanosPerUnit)*.75), int64(CalcBlockRewardNanos(DeflationBombBlockRewardAdjustmentBlockHeight, &GlobalDeSoParams)))
 	// .5
-	require.Equal(int64(float64(NanosPerUnit)*.75), int64(CalcBlockRewardNanos(DeflationBombBlockRewardAdjustmentBlockHeight+288-1)))
-	require.Equal(int64(float64(NanosPerUnit)*.5), int64(CalcBlockRewardNanos(DeflationBombBlockRewardAdjustmentBlockHeight+288)))
+	require.Equal(int64(float64(NanosPerUnit)*.75), int64(CalcBlockRewardNanos(DeflationBombBlockRewardAdjustmentBlockHeight+288-1, &GlobalDeSoParams)))
+	require.Equal(int64(float64(NanosPerUnit)*.5), int64(CalcBlockRewardNanos(DeflationBombBlockRewardAdjustmentBlockHeight+288, &GlobalDeSoParams)))
 	// .25
-	require.Equal(int64(float64(NanosPerUnit)*.5), int64(CalcBlockRewardNanos(DeflationBombBlockRewardAdjustmentBlockHeight+2*288-1)))
-	require.Equal(int64(float64(NanosPerUnit)*.25), int64(CalcBlockRewardNanos(DeflationBombBlockRewardAdjustmentBlockHeight+2*288)))
+	require.Equal(int64(float64(NanosPerUnit)*.5), int64(CalcBlockRewardNanos(DeflationBombBlockRewardAdjustmentBlockHeight+2*288-1, &GlobalDeSoParams)))
+	require.Equal(int64(float64(NanosPerUnit)*.25), int64(CalcBlockRewardNanos(DeflationBombBlockRewardAdjustmentBlockHeight+2*288, &GlobalDeSoParams)))
 	// .125
-	require.Equal(int64(float64(NanosPerUnit)*.25), int64(CalcBlockRewardNanos(DeflationBombBlockRewardAdjustmentBlockHeight+3*288-1)))
-	require.Equal(int64(float64(NanosPerUnit)*.125), int64(CalcBlockRewardNanos(DeflationBombBlockRewardAdjustmentBlockHeight+3*288)))
+	require.Equal(int64(float64(NanosPerUnit)*.25), int64(CalcBlockRewardNanos(DeflationBombBlockRewardAdjustmentBlockHeight+3*288-1, &GlobalDeSoParams)))
+	require.Equal(int64(float64(NanosPerUnit)*.125), int64(CalcBlockRewardNanos(DeflationBombBlockRewardAdjustmentBlockHeight+3*288, &GlobalDeSoParams)))
 	// .1
-	require.Equal(int64(float64(NanosPerUnit)*.125), int64(CalcBlockRewardNanos(DeflationBombBlockRewardAdjustmentBlockHeight+4*288-1)))
-	require.Equal(int64(float64(NanosPerUnit)*.1), int64(CalcBlockRewardNanos(DeflationBombBlockRewardAdjustmentBlockHeight+4*288)))
+	require.Equal(int64(float64(NanosPerUnit)*.125), int64(CalcBlockRewardNanos(DeflationBombBlockRewardAdjustmentBlockHeight+4*288-1, &GlobalDeSoParams)))
+	require.Equal(int64(float64(NanosPerUnit)*.1), int64(CalcBlockRewardNanos(DeflationBombBlockRewardAdjustmentBlockHeight+4*288, &GlobalDeSoParams)))
 
-	// .05
-	require.Equal(int64(1*NanosPerUnit/10), int64(CalcBlockRewardNanos(15*BlocksPerYear-1)))
-	require.Equal(NanosPerUnit/20, CalcBlockRewardNanos(15*BlocksPerYear))
-	require.Equal(NanosPerUnit/20, CalcBlockRewardNanos(15*BlocksPerYear+1))
-	// 0
-	require.Equal(NanosPerUnit/20, CalcBlockRewardNanos(32*BlocksPerYear-1))
-	require.Equal(uint64(0), CalcBlockRewardNanos(32*BlocksPerYear))
-	require.Equal(uint64(0), CalcBlockRewardNanos(32*BlocksPerYear+1))
-	require.Equal(uint64(0), CalcBlockRewardNanos(35*BlocksPerYear+1))
-	require.Equal(uint64(0), CalcBlockRewardNanos(math.MaxUint32))
+	// Once we move over to PoS, the block reward should be zero.
+	require.Equal(uint64(0), CalcBlockRewardNanos(10*BlocksPerYear, &GlobalDeSoParams))
+	require.Equal(uint64(0), CalcBlockRewardNanos(10*BlocksPerYear+1, &GlobalDeSoParams))
+	require.Equal(uint64(0), CalcBlockRewardNanos(math.MaxUint32, &GlobalDeSoParams))
 }
 
 func TestGetPrice(t *testing.T) {

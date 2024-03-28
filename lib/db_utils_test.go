@@ -1,10 +1,12 @@
 package lib
 
 import (
+	"bytes"
 	"fmt"
-	"io/ioutil"
 	"log"
+	"math"
 	"math/big"
+	"os"
 	"testing"
 	"time"
 
@@ -13,6 +15,27 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+var expectedBlockHeaderVersion1 = &MsgDeSoHeader{
+	Version: 1,
+	PrevBlockHash: &BlockHash{
+		0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x10, 0x11,
+		0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18, 0x19, 0x20, 0x21,
+		0x22, 0x23, 0x24, 0x25, 0x26, 0x27, 0x28, 0x29, 0x30, 0x31,
+		0x32, 0x33,
+	},
+	TransactionMerkleRoot: &BlockHash{
+		0x34, 0x35, 0x36, 0x37, 0x38, 0x39, 0x40, 0x41, 0x42, 0x43,
+		0x44, 0x45, 0x46, 0x47, 0x48, 0x49, 0x50, 0x51, 0x52, 0x53,
+		0x54, 0x55, 0x56, 0x57, 0x58, 0x59, 0x60, 0x61, 0x62, 0x63,
+		0x64, 0x65,
+	},
+	// Use full uint64 values to make sure serialization and de-serialization work
+	TstampNanoSecs: SecondsToNanoSeconds(1678943210),
+	Height:         uint64(1321012345),
+	Nonce:          uint64(12345678901234),
+	ExtraNonce:     uint64(101234123456789),
+}
 
 // Check that all state db prefixes have been correctly mapped to DeSoEncoder types via StatePrefixToDeSoEncoder
 func TestStatePrefixToDeSoEncoder(t *testing.T) {
@@ -62,7 +85,7 @@ func _GetTestBlockNode() *BlockNode {
 
 	// Header (make a copy)
 	bs.Header = NewMessage(MsgTypeHeader).(*MsgDeSoHeader)
-	headerBytes, _ := expectedBlockHeader.ToBytes(false)
+	headerBytes, _ := expectedBlockHeaderVersion1.ToBytes(false)
 	bs.Header.FromBytes(headerBytes)
 
 	// Status
@@ -72,7 +95,7 @@ func _GetTestBlockNode() *BlockNode {
 }
 
 func GetTestBadgerDb() (_db *badger.DB, _dir string) {
-	dir, err := ioutil.TempDir("", "badgerdb")
+	dir, err := os.MkdirTemp("", "badgerdb")
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -148,7 +171,7 @@ func TestBlockNodePutGet(t *testing.T) {
 	err = PutHeightHashToNodeInfo(db, nil, b4, false /*bitcoinNodes*/, nil)
 	require.NoError(err)
 
-	blockIndex, err := GetBlockIndex(db, false /*bitcoinNodes*/)
+	blockIndex, err := GetBlockIndex(db, false /*bitcoinNodes*/, &DeSoTestnetParams)
 	require.NoError(err)
 
 	require.Len(blockIndex, 4)
@@ -201,7 +224,7 @@ func TestInitDbWithGenesisBlock(t *testing.T) {
 	require.NoError(err)
 
 	// Check the block index.
-	blockIndex, err := GetBlockIndex(db, false /*bitcoinNodes*/)
+	blockIndex, err := GetBlockIndex(db, false /*bitcoinNodes*/, &DeSoTestnetParams)
 	require.NoError(err)
 	require.Len(blockIndex, 1)
 	genesisHash := *MustDecodeHexBlockHash(DeSoTestnetParams.GenesisBlockHashHex)
@@ -657,4 +680,34 @@ func TestDeleteExpiredTransactorNonceEntries(t *testing.T) {
 		require.Equal(3, len(nonceEntries))
 	}
 
+}
+
+func TestEncodeUint16(t *testing.T) {
+	for _, num := range []uint16{0, 5819, math.MaxUint16} {
+		// Encode to bytes.
+		encoded := EncodeUint16(num)
+		require.Len(t, encoded, 2)
+
+		// Decode from bytes.
+		decoded := DecodeUint16(encoded)
+		require.Equal(t, num, decoded)
+	}
+}
+
+func TestEncodeUint8(t *testing.T) {
+	for _, num := range []uint8{0, 95, math.MaxUint8} {
+		// Encode to bytes.
+		encoded := EncodeUint8(num)
+		require.Len(t, encoded, 1)
+
+		// Decode from bytes.
+		decoded := DecodeUint8(encoded)
+		require.Equal(t, num, decoded)
+
+		// Read from bytes.
+		rr := bytes.NewReader(encoded)
+		decoded2, err := ReadUint8(rr)
+		require.NoError(t, err)
+		require.Equal(t, num, decoded2)
+	}
 }

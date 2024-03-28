@@ -4,14 +4,15 @@ import (
 	"bytes"
 	"encoding/hex"
 	"fmt"
-	"github.com/dgraph-io/badger/v3"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 	"log"
 	"os"
 	"runtime/pprof"
 	"testing"
 	"time"
+
+	"github.com/dgraph-io/badger/v3"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func _swapIdentityWithTestMeta(
@@ -69,7 +70,7 @@ func _swapIdentity(t *testing.T, chain *Blockchain, db *badger.DB,
 	// get mined into the next block.
 	blockHeight := chain.blockTip().Height + 1
 	utxoOps, totalInput, totalOutput, fees, err :=
-		utxoView.ConnectTransaction(txn, txHash, getTxnSize(*txn), blockHeight, true /*verifySignature*/, false /*ignoreUtxos*/)
+		utxoView.ConnectTransaction(txn, txHash, blockHeight, 0, true, false)
 	// ConnectTransaction should treat the amount locked as contributing to the
 	// output.
 	if err != nil {
@@ -152,7 +153,7 @@ func _updateProfileWithExtraData(t *testing.T, chain *Blockchain, db *badger.DB,
 	// get mined into the next block.
 	blockHeight := chain.blockTip().Height + 1
 	utxoOps, totalInput, totalOutput, fees, err :=
-		utxoView.ConnectTransaction(txn, txHash, getTxnSize(*txn), blockHeight, true /*verifySignature*/, false /*ignoreUtxos*/)
+		utxoView.ConnectTransaction(txn, txHash, blockHeight, 0, true, false)
 	// ConnectTransaction should treat the amount locked as contributing to the
 	// output.
 	if err != nil {
@@ -219,19 +220,19 @@ const (
 func TestBalanceModelUpdateProfile(t *testing.T) {
 	setBalanceModelBlockHeights(t)
 
-	TestUpdateProfile(t)
-	TestSpamUpdateProfile(t)
-	TestUpdateProfileChangeBack(t)
+	t.Run("TestUpdateProfile", TestUpdateProfile)
+	t.Run("TestSpamUpdateProfile", TestSpamUpdateProfile)
+	t.Run("TestUpdateProfileChangeBack", TestUpdateProfileChangeBack)
 }
 
 func TestBalanceModelSwapIdentity(t *testing.T) {
 	setBalanceModelBlockHeights(t)
 
-	TestSwapIdentityNOOPCreatorCoinBuySimple(t)
-	TestSwapIdentityCreatorCoinBuySimple(t)
-	TestSwapIdentityFailureCases(t)
-	TestSwapIdentityMain(t)
-	TestSwapIdentityWithFollows(t)
+	t.Run("TestSwapIdentityNOOPCreatorCoinBuySimple", TestSwapIdentityNOOPCreatorCoinBuySimple)
+	t.Run("TestSwapIdentityCreatorCoinBuySimple", TestSwapIdentityCreatorCoinBuySimple)
+	t.Run("TestSwapIdentityFailureCases", TestSwapIdentityFailureCases)
+	t.Run("TestSwapIdentityMain", TestSwapIdentityMain)
+	t.Run("TestSwapIdentityWithFollows", TestSwapIdentityWithFollows)
 }
 
 func TestUpdateProfile(t *testing.T) {
@@ -1146,7 +1147,7 @@ func TestUpdateProfile(t *testing.T) {
 		txHash := txn.Hash()
 		blockHeight := chain.blockTip().Height + 1
 		_, _, _, _, err :=
-			utxoView.ConnectTransaction(txn, txHash, getTxnSize(*txn), blockHeight, true /*verifySignature*/, false /*ignoreUtxos*/)
+			utxoView.ConnectTransaction(txn, txHash, blockHeight, 0, true, false)
 		require.NoError(err)
 	}
 	// Flush the utxoView after having added all the transactions.
@@ -3409,8 +3410,7 @@ func TestUpdateProfileChangeBack(t *testing.T) {
 		// This ensure that the read-only version of the utxoView accurately reflects the current set of profile names taken.
 		utxoViewCopy, err := mempool.universalUtxoView.CopyUtxoView()
 		require.NoError(err)
-		txnSize := getTxnSize(*txn)
-		_, _, _, _, err = utxoViewCopy.ConnectTransaction(txn, txn.Hash(), txnSize, chain.blockTip().Height+1, false, false)
+		_, _, _, _, err = utxoViewCopy.ConnectTransaction(txn, txn.Hash(), chain.blockTip().Height+1, 0, false, false)
 		require.NoError(err)
 
 		mempoolTxsAdded, err := mempool.processTransaction(

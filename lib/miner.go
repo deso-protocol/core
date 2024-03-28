@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/btcsuite/btcd/wire"
+	"github.com/deso-protocol/core/collections"
 	"github.com/deso-protocol/core/desohash"
 
 	"github.com/btcsuite/btcd/btcec"
@@ -30,6 +31,8 @@ type DeSoMiner struct {
 	numThreads    uint32
 	BlockProducer *DeSoBlockProducer
 	params        *DeSoParams
+
+	blockMinedListeners *collections.ConcurrentList[func(*MsgDeSoBlock)]
 
 	stopping int32
 }
@@ -52,11 +55,16 @@ func NewDeSoMiner(_minerPublicKeys []string, _numThreads uint32,
 	}
 
 	return &DeSoMiner{
-		PublicKeys:    _pubKeys,
-		numThreads:    _numThreads,
-		BlockProducer: _blockProducer,
-		params:        _params,
+		PublicKeys:          _pubKeys,
+		numThreads:          _numThreads,
+		BlockProducer:       _blockProducer,
+		params:              _params,
+		blockMinedListeners: collections.NewConcurrentList[func(*MsgDeSoBlock)](),
 	}, nil
+}
+
+func (desoMiner *DeSoMiner) AddBlockMinedListener(ff func(*MsgDeSoBlock)) {
+	desoMiner.blockMinedListeners.Add(ff)
 }
 
 func (desoMiner *DeSoMiner) Stop() {
@@ -158,7 +166,7 @@ func (desoMiner *DeSoMiner) _mineSingleBlock(threadIndex uint32) (_diffTarget *B
 		// the header we were just mining on.
 		blockToMine.Txns[0].TxOutputs[0].PublicKey = publicKey
 		blockToMine.Txns[0].TxnMeta.(*BlockRewardMetadataa).ExtraData = UintToBuf(extraNonces[0])
-		blockToMine, err = RecomputeBlockRewardWithBlockRewardOutputPublicKey(blockToMine, publicKey)
+		blockToMine, err = RecomputeBlockRewardWithBlockRewardOutputPublicKey(blockToMine, publicKey, desoMiner.params)
 		if err != nil {
 			glog.Errorf("DeSoMiner._startThread: Error recomputing block reward: %v", err)
 			time.Sleep(1 * time.Second)
@@ -239,7 +247,7 @@ func (desoMiner *DeSoMiner) MineAndProcessSingleBlock(threadIndex uint32, mempoo
 	// will be informed about it. This will cause it to be relayed appropriately.
 	verifySignatures := true
 	// TODO(miner): Replace with a call to SubmitBlock.
-	isMainChain, isOrphan, err := desoMiner.BlockProducer.chain.ProcessBlock(
+	isMainChain, isOrphan, _, err := desoMiner.BlockProducer.chain.ProcessBlock(
 		blockToMine, verifySignatures)
 	glog.V(2).Infof("Called ProcessBlock: isMainChain=(%v), isOrphan=(%v), err=(%v)",
 		isMainChain, isOrphan, err)
@@ -281,13 +289,25 @@ func (desoMiner *DeSoMiner) _startThread(threadIndex uint32) {
 			continue
 		}
 
+		// Exit if blockchain has connected a block at the final PoW block height.
+		currentTip := desoMiner.BlockProducer.chain.blockTip()
+		if currentTip.Header.Height >= desoMiner.params.GetFinalPoWBlockHeight() {
+			return
+		}
+
 		newBlock, err := desoMiner.MineAndProcessSingleBlock(threadIndex, nil /*mempoolToUpdate*/)
 		if err != nil {
 			glog.Errorf(err.Error())
 		}
+
 		isFinished := (newBlock == nil)
 		if isFinished {
 			return
+		}
+
+		blockMinedListeners := desoMiner.blockMinedListeners.GetAll()
+		for _, listener := range blockMinedListeners {
+			listener(newBlock)
 		}
 	}
 }
@@ -299,8 +319,12 @@ func (desoMiner *DeSoMiner) Start() {
 			"start the miner")
 		return
 	}
-	glog.Infof("DeSoMiner.Start: Starting miner with difficulty target %s", desoMiner.params.MinDifficultyTargetHex)
 	blockTip := desoMiner.BlockProducer.chain.blockTip()
+	if desoMiner.params.IsPoSBlockHeight(blockTip.Header.Height) {
+		glog.Infof("DeSoMiner.Start: NOT starting miner because we are at a PoS block height %d", blockTip.Header.Height)
+		return
+	}
+	glog.Infof("DeSoMiner.Start: Starting miner with difficulty target %s", desoMiner.params.MinDifficultyTargetHex)
 	glog.Infof("DeSoMiner.Start: Block tip height %d, cum work %v, and difficulty %v",
 		blockTip.Header.Height, BigintToHash(blockTip.CumWork), blockTip.DifficultyTarget)
 	// Start a bunch of threads to mine for blocks.
@@ -382,6 +406,10 @@ func HashToBigint(hash *BlockHash) *big.Int {
 }
 
 func BigintToHash(bigint *big.Int) *BlockHash {
+	if bigint == nil {
+		glog.Errorf("BigintToHash: Bigint is nil")
+		return nil
+	}
 	hexStr := bigint.Text(16)
 	if len(hexStr)%2 != 0 {
 		// If we have an odd number of bytes add one to the beginning (remember
@@ -392,6 +420,7 @@ func BigintToHash(bigint *big.Int) *BlockHash {
 	if err != nil {
 		glog.Errorf("Failed in converting bigint (%#v) with hex "+
 			"string (%s) to hash.", bigint, hexStr)
+		return nil
 	}
 	if len(hexBytes) > HashSizeBytes {
 		glog.Errorf("BigintToHash: Bigint %v overflows the hash size %d", bigint, HashSizeBytes)

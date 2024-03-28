@@ -3,10 +3,11 @@ package lib
 import (
 	"bytes"
 	"fmt"
+	"testing"
+
 	"github.com/btcsuite/btcd/btcec"
 	"github.com/pkg/errors"
 	"github.com/stretchr/testify/require"
-	"testing"
 )
 
 type AccessGroupTestData struct {
@@ -35,7 +36,6 @@ func TestBalanceModelAccessGroups(t *testing.T) {
 	setBalanceModelBlockHeights(t)
 
 	TestAccessGroup(t)
-	TestAccessGroupTxnWithDerivedKey(t)
 }
 
 func TestAccessGroup(t *testing.T) {
@@ -460,7 +460,7 @@ func _customCreateAccessGroupTxn(
 	accessGroupKeyName []byte,
 	operationType AccessGroupOperationType,
 	extraData map[string][]byte,
-	minFeeRateNanosPerKB uint64, mempool *DeSoMempool, additionalOutputs []*DeSoOutput) (
+	minFeeRateNanosPerKB uint64, mempool Mempool, additionalOutputs []*DeSoOutput) (
 	_txn *MsgDeSoTxn, _totalInput uint64, _changeAmount uint64, _fees uint64, _err error) {
 
 	txn := &MsgDeSoTxn{
@@ -613,14 +613,8 @@ func TestAccessGroupTxnWithDerivedKey(t *testing.T) {
 		// Sign txn.
 		_signTxnWithDerivedKey(t, txn, derivedKeyPrivBase58Check)
 		// Connect txn.
-		utxoOps, _, _, _, err := utxoView.ConnectTransaction(
-			txn,
-			txn.Hash(),
-			getTxnSize(*txn),
-			testMeta.savedHeight,
-			true,
-			false,
-		)
+		utxoOps, _, _, _, err := utxoView.ConnectTransaction(txn, txn.Hash(), testMeta.savedHeight,
+			0, true, false)
 		if err != nil {
 			return err
 		}

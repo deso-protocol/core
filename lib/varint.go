@@ -119,10 +119,10 @@ func ReadUvarint(r io.Reader) (uint64, error) {
 			return x, err
 		}
 		b := buf[0]
+		if i == 9 && b > 1 {
+			return x, overflow
+		}
 		if b < 0x80 {
-			if i > 9 || i == 9 && b > 1 {
-				return x, overflow
-			}
 			return x | uint64(b)<<s, nil
 		}
 		x |= uint64(b&0x7f) << s

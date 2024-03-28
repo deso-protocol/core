@@ -3,11 +3,12 @@ package lib
 import (
 	"bytes"
 	"errors"
-	"github.com/btcsuite/btcd/btcec"
-	"github.com/stretchr/testify/require"
 	"math"
 	"sort"
 	"testing"
+
+	"github.com/btcsuite/btcd/btcec"
+	"github.com/stretchr/testify/require"
 )
 
 func TestBalanceModelAssociations(t *testing.T) {
@@ -19,9 +20,15 @@ func TestBalanceModelAssociations(t *testing.T) {
 func TestAssociations(t *testing.T) {
 	// Run all tests twice: once flushing all txns to the
 	// db, and once just keeping all txns in the mempool.
-	_testAssociations(t, true)
-	_testAssociations(t, false)
-	_testAssociationsWithDerivedKey(t)
+	t.Run("flushToDB=true", func(t *testing.T) {
+		_testAssociations(t, true)
+	})
+	t.Run("flushToDB=false", func(t *testing.T) {
+		_testAssociations(t, false)
+	})
+	t.Run("_testAssociationsWithDerivedKey", func(t *testing.T) {
+		_testAssociationsWithDerivedKey(t)
+	})
 }
 
 func _testAssociations(t *testing.T, flushToDB bool) {
@@ -2166,13 +2173,7 @@ func _submitAssociationTxn(
 
 	// Connect the transaction.
 	utxoOps, totalInput, totalOutput, fees, err := testMeta.mempool.universalUtxoView.ConnectTransaction(
-		txn,
-		txn.Hash(),
-		getTxnSize(*txn),
-		testMeta.savedHeight,
-		true,
-		false,
-	)
+		txn, txn.Hash(), testMeta.savedHeight, 0, true, false)
 	if err != nil {
 		return nil, nil, 0, err
 	}
@@ -2340,13 +2341,7 @@ func _testAssociationsWithDerivedKey(t *testing.T) {
 		_signTxnWithDerivedKey(t, txn, derivedKeyPrivBase58Check)
 		// Connect txn.
 		utxoOps, _, _, _, err := utxoView.ConnectTransaction(
-			txn,
-			txn.Hash(),
-			getTxnSize(*txn),
-			testMeta.savedHeight,
-			true,
-			false,
-		)
+			txn, txn.Hash(), testMeta.savedHeight, 0, true, false)
 		if err != nil {
 			return err
 		}

@@ -51,10 +51,10 @@ func (data *accessGroupMembersTestData) GetInputType() transactionTestInputType 
 func TestBalanceModelAccessGroupMembers(t *testing.T) {
 	setBalanceModelBlockHeights(t)
 
-	TestAccessGroupMembersAdd(t)
-	TestAccessGroupMembersUpdate(t)
-	TestAccessGroupMembersRemove(t)
-	TestAccessGroupMembersTxnWithDerivedKey(t)
+	t.Run("TestAccessGroupMembersAdd", TestAccessGroupMembersAdd)
+	t.Run("TestAccessGroupMembersUpdate", TestAccessGroupMembersUpdate)
+	t.Run("TestAccessGroupMembersRemove", TestAccessGroupMembersRemove)
+	t.Run("TestAccessGroupMembersTxnWithDerivedKey", TestAccessGroupMembersTxnWithDerivedKey)
 }
 
 func TestAccessGroupMembersAdd(t *testing.T) {
@@ -1764,14 +1764,8 @@ func TestAccessGroupMembersTxnWithDerivedKey(t *testing.T) {
 		// Sign txn.
 		_signTxnWithDerivedKey(t, txn, derivedKeyPrivBase58Check)
 		// Connect txn.
-		utxoOps, _, _, _, err := utxoView.ConnectTransaction(
-			txn,
-			txn.Hash(),
-			getTxnSize(*txn),
-			testMeta.savedHeight,
-			true,
-			false,
-		)
+		utxoOps, _, _, _, err := utxoView.ConnectTransaction(txn, txn.Hash(), testMeta.savedHeight,
+			0, true, false)
 		if err != nil {
 			return err
 		}

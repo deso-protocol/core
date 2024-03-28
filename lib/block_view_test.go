@@ -4,6 +4,16 @@ import (
 	"bytes"
 	"encoding/hex"
 	"fmt"
+	"math"
+	_ "net/http/pprof"
+	"reflect"
+	"sort"
+	"testing"
+
+	"github.com/deso-protocol/core/bls"
+
+	"math/rand"
+
 	"github.com/btcsuite/btcd/btcec"
 	"github.com/decred/dcrd/lru"
 	"github.com/dgraph-io/badger/v3"
@@ -11,10 +21,6 @@ import (
 	"github.com/golang/glog"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	_ "net/http/pprof"
-	"reflect"
-	"sort"
-	"testing"
 )
 
 func _strToPk(t *testing.T, pkStr string) []byte {
@@ -82,15 +88,31 @@ func setBalanceModelBlockHeights(t *testing.T) {
 }
 
 func resetBalanceModelBlockHeights() {
-	DeSoTestnetParams.ForkHeights.NFTTransferOrBurnAndDerivedKeysBlockHeight = 1000000
-	DeSoTestnetParams.ForkHeights.DerivedKeySetSpendingLimitsBlockHeight = 1000000
-	DeSoTestnetParams.ForkHeights.DerivedKeyTrackSpendingLimitsBlockHeight = 1000000
-	DeSoTestnetParams.ForkHeights.DerivedKeyEthSignatureCompatibilityBlockHeight = 1000000
-	DeSoTestnetParams.ForkHeights.ExtraDataOnEntriesBlockHeight = 1000000
-	DeSoTestnetParams.ForkHeights.AssociationsAndAccessGroupsBlockHeight = 1000000
-	DeSoTestnetParams.ForkHeights.BalanceModelBlockHeight = 1000000
+	DeSoTestnetParams.ForkHeights.NFTTransferOrBurnAndDerivedKeysBlockHeight = uint32(60743)
+	DeSoTestnetParams.ForkHeights.DerivedKeySetSpendingLimitsBlockHeight = uint32(304087)
+	DeSoTestnetParams.ForkHeights.DerivedKeyTrackSpendingLimitsBlockHeight = uint32(304087 + 18*60)
+	DeSoTestnetParams.ForkHeights.DerivedKeyEthSignatureCompatibilityBlockHeight = uint32(360584)
+	DeSoTestnetParams.ForkHeights.ExtraDataOnEntriesBlockHeight = uint32(304087)
+	DeSoTestnetParams.ForkHeights.AssociationsAndAccessGroupsBlockHeight = uint32(596555)
+	DeSoTestnetParams.ForkHeights.BalanceModelBlockHeight = uint32(683058)
 	DeSoTestnetParams.EncoderMigrationHeights = GetEncoderMigrationHeights(&DeSoTestnetParams.ForkHeights)
 	DeSoTestnetParams.EncoderMigrationHeightsList = GetEncoderMigrationHeightsList(&DeSoTestnetParams.ForkHeights)
+	GlobalDeSoParams = DeSoTestnetParams
+}
+
+func setPoSBlockHeights(t *testing.T, posSetupHeight uint32, posCutoverHeight uint32) {
+	DeSoTestnetParams.ForkHeights.ProofOfStake1StateSetupBlockHeight = posSetupHeight
+	DeSoTestnetParams.ForkHeights.ProofOfStake2ConsensusCutoverBlockHeight = posCutoverHeight
+	DeSoTestnetParams.EncoderMigrationHeights = GetEncoderMigrationHeights(&DeSoTestnetParams.ForkHeights)
+	DeSoTestnetParams.EncoderMigrationHeightsList = GetEncoderMigrationHeightsList(&DeSoTestnetParams.ForkHeights)
+	GlobalDeSoParams = DeSoTestnetParams
+
+	t.Cleanup(resetPoSBlockHeights)
+}
+
+func resetPoSBlockHeights() {
+	DeSoTestnetParams.ForkHeights.ProofOfStake1StateSetupBlockHeight = uint32(math.MaxUint32)
+	DeSoTestnetParams.ForkHeights.ProofOfStake2ConsensusCutoverBlockHeight = uint32(math.MaxUint32)
 	GlobalDeSoParams = DeSoTestnetParams
 }
 
@@ -303,16 +325,16 @@ func (tes *transactionTestSuite) Run() {
 	}
 }
 
-const TestDeSoEncoderRetries = 3
+const testDeSoEncoderRetries = 3
 
-func TestDeSoEncoderSetup(t *testing.T) {
+func setupTestDeSoEncoder(t *testing.T) {
 	EncodeToBytesImpl = func(blockHeight uint64, encoder DeSoEncoder, skipMetadata ...bool) []byte {
 		versionByte := encoder.GetVersionByte(blockHeight)
 		encodingBytes := encodeToBytes(blockHeight, encoder, skipMetadata...)
 		// Check for deterministic encoding, try re-encoding the same encoder a couple of times and compare it with
 		// the original bytes.
 		{
-			for ii := 0; ii < TestDeSoEncoderRetries; ii++ {
+			for ii := 0; ii < testDeSoEncoderRetries; ii++ {
 				newVersionByte := encoder.GetVersionByte(blockHeight)
 				reEncodingBytes := encodeToBytes(blockHeight, encoder, skipMetadata...)
 				if !bytes.Equal(encodingBytes, reEncodingBytes) {
@@ -329,7 +351,7 @@ func TestDeSoEncoderSetup(t *testing.T) {
 	}
 }
 
-func TestDeSoEncoderShutdown(t *testing.T) {
+func resetTestDeSoEncoder(t *testing.T) {
 	EncodeToBytesImpl = encodeToBytes
 }
 
@@ -871,7 +893,7 @@ func _doBasicTransferWithViewFlush(t *testing.T, chain *Blockchain, db *badger.D
 	txHash := txn.Hash()
 	blockHeight := chain.blockTip().Height + 1
 	utxoOps, totalInput, totalOutput, fees, err :=
-		utxoView.ConnectTransaction(txn, txHash, getTxnSize(*txn), blockHeight, true /*verifySignature*/, false /*ignoreUtxos*/)
+		utxoView.ConnectTransaction(txn, txHash, blockHeight, 0, true, false)
 	require.NoError(err)
 	require.GreaterOrEqual(totalOutput, amountNanos)
 	require.Equal(totalInput, totalOutput+fees)
@@ -921,7 +943,7 @@ func _updateGlobalParamsEntry(t *testing.T, chain *Blockchain, db *badger.DB,
 	_utxoOps []*UtxoOperation, _txn *MsgDeSoTxn, _height uint32, _err error) {
 	return _updateGlobalParamsEntryWithMempool(t, chain, db, params, feeRateNanosPerKB, updaterPkBase58Check,
 		updaterPrivBase58Check, usdCentsPerBitcoin, minimumNetworkFeesNanosPerKB, createProfileFeeNanos,
-		createNFTFeeNanos, maxCopiesPerNFT, -1, flushToDb, nil)
+		createNFTFeeNanos, maxCopiesPerNFT, -1, map[string][]byte{}, flushToDb, nil)
 }
 
 func _updateGlobalParamsEntryWithMaxNonceExpirationBlockHeightOffset(t *testing.T, chain *Blockchain, db *badger.DB,
@@ -931,14 +953,14 @@ func _updateGlobalParamsEntryWithMaxNonceExpirationBlockHeightOffset(t *testing.
 	_utxoOps []*UtxoOperation, _txn *MsgDeSoTxn, _height uint32, _err error) {
 	return _updateGlobalParamsEntryWithMempool(t, chain, db, params, feeRateNanosPerKB, updaterPkBase58Check,
 		updaterPrivBase58Check, usdCentsPerBitcoin, minimumNetworkFeesNanosPerKB, createProfileFeeNanos,
-		createNFTFeeNanos, maxCopiesPerNFT, maxNonceExpirationBlockHeightOffset, flushToDb, nil)
+		createNFTFeeNanos, maxCopiesPerNFT, maxNonceExpirationBlockHeightOffset, map[string][]byte{}, flushToDb, nil)
 }
 
 func _updateGlobalParamsEntryWithMempool(t *testing.T, chain *Blockchain, db *badger.DB,
 	params *DeSoParams, feeRateNanosPerKB uint64, updaterPkBase58Check string,
 	updaterPrivBase58Check string, usdCentsPerBitcoin int64, minimumNetworkFeesNanosPerKB int64,
 	createProfileFeeNanos int64, createNFTFeeNanos int64, maxCopiesPerNFT int64, maxNonceExpirationBlockHeightOffset int64,
-	flushToDb bool, mempool *DeSoMempool) (
+	extraData map[string][]byte, flushToDb bool, mempool *DeSoMempool) (
 	_utxoOps []*UtxoOperation, _txn *MsgDeSoTxn, _height uint32, _err error) {
 
 	assert := assert.New(t)
@@ -958,6 +980,7 @@ func _updateGlobalParamsEntryWithMempool(t *testing.T, chain *Blockchain, db *ba
 		minimumNetworkFeesNanosPerKB,
 		nil,
 		maxNonceExpirationBlockHeightOffset,
+		extraData,
 		feeRateNanosPerKB,
 		mempool,
 		[]*DeSoOutput{})
@@ -979,7 +1002,7 @@ func _updateGlobalParamsEntryWithMempool(t *testing.T, chain *Blockchain, db *ba
 	// get mined into the next block.
 	blockHeight := chain.blockTip().Height + 1
 	utxoOps, totalInput, totalOutput, fees, err :=
-		utxoView.ConnectTransaction(txn, txHash, getTxnSize(*txn), blockHeight, true /*verifySignature*/, false /*ignoreUtxos*/)
+		utxoView.ConnectTransaction(txn, txHash, blockHeight, 0, true, false)
 	// ConnectTransaction should treat the amount locked as contributing to the
 	// output.
 	if err != nil {
@@ -1018,7 +1041,6 @@ func _updateGlobalParamsEntryWithTestMeta(
 	createNFTFeeNanos int64,
 	maxCopiesPerNFT int64,
 ) {
-
 	testMeta.expectedSenderBalances = append(
 		testMeta.expectedSenderBalances,
 		_getBalance(testMeta.t, testMeta.chain, nil, updaterPkBase58Check))
@@ -1034,6 +1056,37 @@ func _updateGlobalParamsEntryWithTestMeta(
 		createNFTFeeNanos,
 		maxCopiesPerNFT,
 		-1,
+		map[string][]byte{},
+		true,
+		testMeta.mempool) /*flushToDB*/
+	require.NoError(testMeta.t, err)
+	testMeta.txnOps = append(testMeta.txnOps, currentOps)
+	testMeta.txns = append(testMeta.txns, currentTxn)
+}
+
+func _updateGlobalParamsEntryWithExtraData(
+	testMeta *TestMeta,
+	feeRateNanosPerKB uint64,
+	updaterPkBase58Check string,
+	updaterPrivBase58Check string,
+	extraData map[string][]byte,
+) {
+	testMeta.expectedSenderBalances = append(
+		testMeta.expectedSenderBalances,
+		_getBalance(testMeta.t, testMeta.chain, nil, updaterPkBase58Check))
+
+	currentOps, currentTxn, _, err := _updateGlobalParamsEntryWithMempool(
+		testMeta.t, testMeta.chain, testMeta.db, testMeta.params,
+		feeRateNanosPerKB,
+		updaterPkBase58Check,
+		updaterPrivBase58Check,
+		-1,
+		int64(feeRateNanosPerKB),
+		-1,
+		-1,
+		-1,
+		-1,
+		extraData,
 		true,
 		testMeta.mempool) /*flushToDB*/
 	require.NoError(testMeta.t, err)
@@ -1068,6 +1121,7 @@ func _updateGlobalParamsEntryWithMaxNonceExpirationBlockHeightOffsetAndTestMeta(
 		createNFTFeeNanos,
 		maxCopiesPerNFT,
 		maxNonceExpirationBlockHeightOffset,
+		map[string][]byte{},
 		true,
 		testMeta.mempool) /*flushToDB*/
 	require.NoError(testMeta.t, err)
@@ -1087,6 +1141,10 @@ type TestMeta struct {
 	expectedSenderBalances []uint64
 	savedHeight            uint32
 	feeRateNanosPerKb      uint64
+	posMempool             *PosMempool
+	posBlockProducer       *PosBlockProducer
+	pubKeyToBLSKeyMap      map[string]*bls.PrivateKey
+	blsPubKeyToBLSKeyMap   map[string]*bls.PrivateKey
 }
 
 func _executeAllTestRollbackAndFlush(testMeta *TestMeta) {
@@ -1154,7 +1212,7 @@ func _applyTestMetaTxnsToViewAndFlush(testMeta *TestMeta) {
 		txHash := txn.Hash()
 		blockHeight := testMeta.chain.blockTip().Height + 1
 		_, _, _, _, err =
-			utxoView.ConnectTransaction(txn, txHash, getTxnSize(*txn), blockHeight, true /*verifySignature*/, false /*ignoreUtxos*/)
+			utxoView.ConnectTransaction(txn, txHash, blockHeight, 0, true, false)
 		require.NoError(testMeta.t, err)
 	}
 	// Flush the utxoView after having added all the transactions.
@@ -1286,12 +1344,9 @@ func TestUpdateGlobalParams(t *testing.T) {
 
 		utxoView, err := NewUtxoView(db, params, postgres, chain.snapshot, chain.eventManager)
 		require.NoError(err)
-		txnSize := getTxnSize(*updateGlobalParamsTxn)
 		blockHeight := chain.blockTip().Height + 1
 		utxoOps, totalInput, totalOutput, fees, err :=
-			utxoView.ConnectTransaction(updateGlobalParamsTxn,
-				updateGlobalParamsTxn.Hash(), txnSize, blockHeight, true, /*verifySignature*/
-				false /*ignoreUtxos*/)
+			utxoView.ConnectTransaction(updateGlobalParamsTxn, updateGlobalParamsTxn.Hash(), blockHeight, 0, true, false)
 		require.NoError(err)
 		_, _, _, _ = utxoOps, totalInput, totalOutput, fees
 		require.NoError(utxoView.FlushToDb(0))
@@ -1432,9 +1487,9 @@ func TestUpdateGlobalParams(t *testing.T) {
 func TestBalanceModelBasicTransfers(t *testing.T) {
 	setBalanceModelBlockHeights(t)
 
-	TestBasicTransfer(t)
-	TestBasicTransferSignatures(t)
-	TestBlockRewardPatch(t)
+	t.Run("TestBasicTransfer", TestBasicTransfer)
+	t.Run("TestBasicTransferSignatures", TestBasicTransferSignatures)
+	t.Run("TestBlockRewardPatch", TestBlockRewardPatch)
 }
 
 func TestBasicTransfer(t *testing.T) {
@@ -1489,8 +1544,7 @@ func TestBasicTransfer(t *testing.T) {
 		txHash := txn.Hash()
 		blockHeight := chain.blockTip().Height + 1
 		_, _, _, _, err =
-			utxoView.ConnectTransaction(txn, txHash, getTxnSize(*txn), blockHeight,
-				true /*verifySignatures*/, false /*ignoreUtxos*/)
+			utxoView.ConnectTransaction(txn, txHash, blockHeight, 0, true, false)
 		require.Error(err)
 		if blockHeight < params.ForkHeights.BalanceModelBlockHeight {
 			require.Contains(err.Error(), RuleErrorInputWithPublicKeyDifferentFromTxnPublicKey)
@@ -1532,8 +1586,7 @@ func TestBasicTransfer(t *testing.T) {
 		_signTxn(t, txn, recipientPrivString)
 		txHash := txn.Hash()
 		_, _, _, _, err =
-			utxoView.ConnectTransaction(txn, txHash, getTxnSize(*txn), blockHeight,
-				true /*verifySignature*/, false /*ignoreUtxos*/)
+			utxoView.ConnectTransaction(txn, txHash, blockHeight, 0, true, false)
 		require.Error(err)
 		require.Contains(err.Error(), RuleErrorInvalidTransactionSignature)
 	}
@@ -1559,8 +1612,7 @@ func TestBasicTransfer(t *testing.T) {
 		txHash := txn.Hash()
 		blockHeight := chain.blockTip().Height + 1
 		_, _, _, _, err =
-			utxoView.ConnectTransaction(txn, txHash, getTxnSize(*txn), blockHeight,
-				true /*verifySignature*/, false /*ignoreUtxos*/)
+			utxoView.ConnectTransaction(txn, txHash, blockHeight, 0, true, false)
 		require.Error(err)
 		require.Contains(err.Error(), RuleErrorBlockRewardTxnNotAllowedToHaveSignature)
 	}
@@ -1594,8 +1646,7 @@ func TestBasicTransfer(t *testing.T) {
 		txHash := txn.Hash()
 		blockHeight := chain.blockTip().Height + 1
 		_, _, _, _, err =
-			utxoView.ConnectTransaction(txn, txHash, getTxnSize(*txn), blockHeight,
-				true /*verifySignature*/, false /*ignoreUtxos*/)
+			utxoView.ConnectTransaction(txn, txHash, blockHeight, 0, true, false)
 		require.Error(err)
 		if blockHeight < params.ForkHeights.BalanceModelBlockHeight {
 			require.Contains(err.Error(), RuleErrorBlockRewardTxnNotAllowedToHaveInputs)
@@ -1607,7 +1658,7 @@ func TestBasicTransfer(t *testing.T) {
 	}
 
 	// A block with too much block reward should fail.
-	allowedBlockReward := CalcBlockRewardNanos(chain.blockTip().Height)
+	allowedBlockReward := CalcBlockRewardNanos(chain.blockTip().Height, params)
 	assert.Equal(int64(allowedBlockReward), int64(1*NanosPerUnit))
 	blockToMine, _, _, err := miner._getBlockToMine(0 /*threadIndex*/)
 	require.NoError(err)
@@ -1684,8 +1735,7 @@ func TestBasicTransfer(t *testing.T) {
 		utxoView, _ := NewUtxoView(db, params, chain.postgres, chain.snapshot, nil)
 		txHash := txn.Hash()
 		_, _, _, _, err =
-			utxoView.ConnectTransaction(txn, txHash, getTxnSize(*txn), blockHeight,
-				true /*verifySignature*/, false /*ignoreUtxos*/)
+			utxoView.ConnectTransaction(txn, txHash, blockHeight, 0, true, false)
 		require.NoError(err)
 
 		senderBalance, _ := utxoView.GetDeSoBalanceNanosForPublicKey(senderPkBytes)
@@ -1714,20 +1764,23 @@ func TestBasicTransferSignatures(t *testing.T) {
 	require := require.New(t)
 	_ = require
 
-	chain, params, db := NewLowDifficultyBlockchain(t)
-	postgres := chain.postgres
-	params.ForkHeights.NFTTransferOrBurnAndDerivedKeysBlockHeight = uint32(0)
-	params.ForkHeights.DerivedKeySetSpendingLimitsBlockHeight = uint32(0)
-	params.ForkHeights.DerivedKeyTrackSpendingLimitsBlockHeight = uint32(0)
-	// Make sure encoder migrations are not triggered yet.
-	GlobalDeSoParams = *params
-	GlobalDeSoParams.ForkHeights.DeSoUnlimitedDerivedKeysBlockHeight = uint32(100)
-	for ii := range GlobalDeSoParams.EncoderMigrationHeightsList {
-		if GlobalDeSoParams.EncoderMigrationHeightsList[ii].Version == 0 {
+	// Set up block heights
+	DeSoTestnetParams.ForkHeights.NFTTransferOrBurnAndDerivedKeysBlockHeight = uint32(0)
+	DeSoTestnetParams.ForkHeights.DerivedKeySetSpendingLimitsBlockHeight = uint32(0)
+	DeSoTestnetParams.ForkHeights.DerivedKeyTrackSpendingLimitsBlockHeight = uint32(0)
+	DeSoTestnetParams.ForkHeights.DeSoUnlimitedDerivedKeysBlockHeight = uint32(100)
+	for ii := range DeSoTestnetParams.EncoderMigrationHeightsList {
+		if DeSoTestnetParams.EncoderMigrationHeightsList[ii].Version == 0 {
 			continue
 		}
-		GlobalDeSoParams.EncoderMigrationHeightsList[ii].Height = 100
+		DeSoTestnetParams.EncoderMigrationHeightsList[ii].Height = 100
 	}
+
+	// Make sure encoder migrations are not triggered yet.
+	GlobalDeSoParams = DeSoTestnetParams
+
+	chain, params, db := NewLowDifficultyBlockchain(t)
+	postgres := chain.postgres
 
 	_ = db
 	mempool, miner := NewTestMiner(t, chain, params, true /*isSender*/)
@@ -2138,7 +2191,7 @@ func TestBlockRewardPatch(t *testing.T) {
 		_signTxn(t, txn, senderPrivString)
 		utxoView, err := NewUtxoView(db, params, chain.postgres, chain.snapshot, nil)
 		require.NoError(t, err)
-		_, _, _, fees, err := utxoView._connectTransaction(txn, txn.Hash(), getTxnSize(*txn), chain.blockTip().Height+1, true, false)
+		_, _, _, fees, err := utxoView._connectTransaction(txn, txn.Hash(), chain.blockTip().Height+1, 0, true, false)
 		require.NoError(t, err)
 		blkToMine, _, _, err := miner._getBlockToMine(0)
 		require.NoError(t, err)
@@ -2163,4 +2216,167 @@ func TestBlockRewardPatch(t *testing.T) {
 		_, err = utxoView.ConnectBlock(blkToMine, txHashes, true, nil, uint64(chain.blockTip().Height+1))
 		require.NoError(t, err)
 	}
+}
+
+func TestConnectFailingTransaction(t *testing.T) {
+	setBalanceModelBlockHeights(t)
+	setPoSBlockHeights(t, 3, 3)
+	require := require.New(t)
+	seed := int64(1011)
+	rand := rand.New(rand.NewSource(seed))
+
+	globalParams := _testGetDefaultGlobalParams()
+	feeMin := globalParams.MinimumNetworkFeeNanosPerKB
+	feeMax := uint64(10000)
+
+	chain, params, db := NewLowDifficultyBlockchain(t)
+	mempool, miner := NewTestMiner(t, chain, params, true)
+	// Mine a few blocks to give the senderPkString some money.
+	_, err := miner.MineAndProcessSingleBlock(0 /*threadIndex*/, mempool)
+	require.NoError(err)
+	_, err = miner.MineAndProcessSingleBlock(0 /*threadIndex*/, mempool)
+	require.NoError(err)
+
+	m0PubBytes, _, _ := Base58CheckDecode(m0Pub)
+	m0PublicKeyBase58Check := Base58CheckEncode(m0PubBytes, false, params)
+
+	_, _, _ = _doBasicTransferWithViewFlush(
+		t, chain, db, params, senderPkString, m0PublicKeyBase58Check,
+		senderPrivString, 200000, 11)
+
+	blockHeight := chain.BlockTip().Height + 1
+
+	// Set up the test meta.
+	testMeta := &TestMeta{
+		t:                 t,
+		chain:             chain,
+		params:            params,
+		db:                db,
+		mempool:           mempool,
+		miner:             miner,
+		savedHeight:       blockHeight,
+		feeRateNanosPerKb: uint64(201),
+	}
+	// Allow m0 to update global params.
+	params.ExtraRegtestParamUpdaterKeys[MakePkMapKey(m0PubBytes)] = true
+
+	// Test failing txn with default global params
+	{
+		blockView, err := NewUtxoView(db, params, nil, nil, chain.eventManager)
+		require.NoError(err)
+		txn := _generateTestTxn(t, rand, feeMin, feeMax, m0PubBytes, m0Priv, 100, 0)
+		utxoOps, burnFee, utilityFee, err := blockView._connectFailingTransaction(txn, blockHeight, true)
+		require.NoError(err)
+		require.Equal(2, len(utxoOps))
+		expectedBurnFee, expectedUtilityFee := _getBMFForTxn(txn, globalParams)
+		require.Equal(expectedBurnFee, burnFee)
+		require.Equal(expectedUtilityFee, utilityFee)
+
+		err = blockView.FlushToDb(uint64(blockHeight))
+		require.NoError(err)
+	}
+
+	// Test case where the failing txn fee rate is applied as expected.
+	{
+
+		{
+			// Set FailingTransactionBMFMultiplierBasisPoints=7000 or 70%.
+			_updateGlobalParamsEntryWithExtraData(
+				testMeta,
+				testMeta.feeRateNanosPerKb,
+				m0Pub,
+				m0Priv,
+				map[string][]byte{FailingTransactionBMFMultiplierBasisPointsKey: UintToBuf(7000)},
+			)
+		}
+		blockView, err := NewUtxoView(db, params, nil, nil, chain.eventManager)
+		require.NoError(err)
+
+		newParams := blockView.GetCurrentGlobalParamsEntry()
+		require.Equal(uint64(7000), newParams.FailingTransactionBMFMultiplierBasisPoints)
+
+		startingBalance, err := blockView.GetDeSoBalanceNanosForPublicKey(m0PubBytes)
+		require.NoError(err)
+
+		// Try connecting another failing transaction, and make sure the burn and utility fees are computed accurately.
+		txn := _generateTestTxn(t, rand, feeMin, feeMax, m0PubBytes, m0Priv, 100, 0)
+
+		utxoOps, burnFee, utilityFee, err := blockView._connectFailingTransaction(txn, blockHeight, true)
+		require.NoError(err)
+		require.Equal(2, len(utxoOps))
+
+		// The final balance is m0's starting balance minus the failing txn fee paid.
+		finalBalance, err := blockView.GetDeSoBalanceNanosForPublicKey(m0PubBytes)
+		require.NoError(err)
+
+		// Recompute the failing txn fee, which is expected to use the minimum network fee rate because
+		// the failing txn fee rate is too low on its own.
+		expectedFailingTxnFee := txn.TxnFeeNanos * newParams.FailingTransactionBMFMultiplierBasisPoints / MaxBasisPoints
+		require.Equal(startingBalance, finalBalance+expectedFailingTxnFee)
+
+		expectedBurnFee, expectedUtilityFee := _getBMFForTxn(txn, newParams)
+		require.Equal(expectedBurnFee, burnFee)
+		require.Equal(expectedUtilityFee, utilityFee)
+
+		err = blockView.FlushToDb(uint64(blockHeight))
+		require.NoError(err)
+	}
+
+	// Test case where the failing txn fee rate is too low and replaced by the minimum network fee.
+	{
+		{
+			// Set FailingTransactionBMFMultiplierBasisPoints=1 or 0.01%.
+			_updateGlobalParamsEntryWithExtraData(
+				testMeta,
+				testMeta.feeRateNanosPerKb,
+				m0Pub,
+				m0Priv,
+				map[string][]byte{FailingTransactionBMFMultiplierBasisPointsKey: UintToBuf(1)},
+			)
+		}
+
+		// Set the txn fee to ~1000 nanos, which guarantees that the effective failing txn fee rate is too low.
+		feeMin := uint64(1000)
+		feeMax := uint64(1001)
+
+		blockView, err := NewUtxoView(db, params, nil, nil, chain.eventManager)
+		require.NoError(err)
+
+		newParams := blockView.GetCurrentGlobalParamsEntry()
+		require.Equal(uint64(1), newParams.FailingTransactionBMFMultiplierBasisPoints)
+
+		startingBalance, err := blockView.GetDeSoBalanceNanosForPublicKey(m0PubBytes)
+		require.NoError(err)
+
+		txn := _generateTestTxn(t, rand, feeMin, feeMax, m0PubBytes, m0Priv, 100, 0)
+		utxoOps, burnFee, utilityFee, err := blockView._connectFailingTransaction(txn, blockHeight, true)
+		require.NoError(err)
+		require.Equal(2, len(utxoOps))
+
+		// The final balance is m0's starting balance minus the failing txn fee paid.
+		finalBalance, err := blockView.GetDeSoBalanceNanosForPublicKey(m0PubBytes)
+		require.NoError(err)
+
+		txnBytes, err := txn.ToBytes(false)
+		require.NoError(err)
+
+		// Recompute the failing txn fee, which is expected to use the minimum network fee rate because
+		// the failing txn fee rate is too low on its own.
+		expectedFailingTxnFee := uint64(len(txnBytes)) * newParams.MinimumNetworkFeeNanosPerKB / 1000
+		require.Equal(startingBalance, finalBalance+expectedFailingTxnFee)
+
+		expectedBurnFee, expectedUtilityFee := computeBMF(expectedFailingTxnFee)
+		require.Equal(expectedBurnFee, burnFee)
+		require.Equal(expectedUtilityFee, utilityFee)
+
+		err = blockView.FlushToDb(uint64(blockHeight))
+		require.NoError(err)
+	}
+}
+
+func _getBMFForTxn(txn *MsgDeSoTxn, gp *GlobalParamsEntry) (_burnFee uint64, _utilityFee uint64) {
+	failingTransactionRate := NewFloat().SetUint64(gp.FailingTransactionBMFMultiplierBasisPoints)
+	failingTransactionRate.Quo(failingTransactionRate, NewFloat().SetUint64(10000))
+	failingTransactionFee, _ := NewFloat().Mul(failingTransactionRate, NewFloat().SetUint64(txn.TxnFeeNanos)).Uint64()
+	return computeBMF(failingTransactionFee)
 }

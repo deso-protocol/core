@@ -2,10 +2,11 @@ package lib
 
 import (
 	"fmt"
-	"github.com/btcsuite/btcd/btcec"
-	"github.com/holiman/uint256"
 	"math"
 	"math/big"
+
+	"github.com/btcsuite/btcd/btcec"
+	"github.com/holiman/uint256"
 )
 
 // This library implements basic float functions using big.Float objects.

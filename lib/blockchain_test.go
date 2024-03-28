@@ -4,15 +4,17 @@ import (
 	"encoding/hex"
 	"flag"
 	"fmt"
-	embeddedpostgres "github.com/fergusstrange/embedded-postgres"
-	"github.com/go-pg/pg/v10"
 	"log"
+	"math"
 	"math/big"
 	"math/rand"
 	"os"
 	"runtime"
 	"testing"
 	"time"
+
+	embeddedpostgres "github.com/fergusstrange/embedded-postgres"
+	"github.com/go-pg/pg/v10"
 
 	chainlib "github.com/btcsuite/btcd/blockchain"
 	"github.com/btcsuite/btcd/btcec"
@@ -211,7 +213,7 @@ func NewLowDifficultyBlockchainWithParams(t *testing.T, params *DeSoParams) (
 
 func NewLowDifficultyBlockchainWithParamsAndDb(t *testing.T, params *DeSoParams, usePostgres bool, postgresPort uint32, useProvidedParams bool) (
 	*Blockchain, *DeSoParams, *embeddedpostgres.EmbeddedPostgres) {
-	TestDeSoEncoderSetup(t)
+	setupTestDeSoEncoder(t)
 	AppendToMemLog(t, "START")
 
 	// Set the number of txns per view regeneration to one while creating the txns
@@ -252,14 +254,14 @@ func NewLowDifficultyBlockchainWithParamsAndDb(t *testing.T, params *DeSoParams,
 		}
 	}
 	chain, err := NewBlockchain([]string{blockSignerPk}, 0, 0,
-		&testParams, timesource, db, postgresDb, nil, snap, false)
+		&testParams, timesource, db, postgresDb, NewEventManager(), snap, false)
 	if err != nil {
 		log.Fatal(err)
 	}
 
 	t.Cleanup(func() {
 		AppendToMemLog(t, "CLEANUP_START")
-		TestDeSoEncoderShutdown(t)
+		resetTestDeSoEncoder(t)
 		if snap != nil {
 			snap.Stop()
 			CleanUpBadger(snap.SnapshotDb)
@@ -286,7 +288,7 @@ func NewTestParams(inputParams *DeSoParams) DeSoParams {
 			Version:               0,
 			PrevBlockHash:         mustDecodeHexBlockHash("0000000000000000000000000000000000000000000000000000000000000000"),
 			TransactionMerkleRoot: mustDecodeHexBlockHash("097158f0d27e6d10565c4dc696c784652c3380e0ff8382d3599a4d18b782e965"),
-			TstampSecs:            uint64(1560735050),
+			TstampNanoSecs:        SecondsToNanoSeconds(1560735050),
 			Height:                uint64(0),
 			Nonce:                 uint64(0),
 			// No ExtraNonce is set in the genesis block
@@ -357,6 +359,11 @@ func NewTestMiner(t *testing.T, chain *Blockchain, params *DeSoParams, isSender 
 		if !mempool.stopped {
 			mempool.Stop()
 		}
+		// The above Stop() calls are non-blocking so we need to wait a bit
+		// for them to finish. The alternative is to make them blocking but
+		// that would require a reasonable amount of refactoring that changes
+		// production behavior.
+		time.Sleep(100 * time.Millisecond)
 	})
 	return mempool, newMiner
 }
@@ -445,32 +452,35 @@ func _getBalanceWithView(t *testing.T, chain *Blockchain, utxoView *UtxoView, pk
 
 func TestBalanceModelBlockTests(t *testing.T) {
 	setBalanceModelBlockHeights(t)
+	// This test assumes we're using PoW blocks, and thus we need to set the PoS cut-over
+	// fork height to some distant future height
+	DeSoTestnetParams.ForkHeights.ProofOfStake2ConsensusCutoverBlockHeight = math.MaxUint32
+	t.Run("TestBasicTransferReorg", TestBasicTransferReorg)
+	t.Run("TestProcessBlockConnectBlocks", TestProcessBlockConnectBlocks)
+	t.Run("TestProcessHeaderskReorgBlocks", TestProcessHeaderskReorgBlocks)
+	t.Run("TestValidateBasicTransfer", TestValidateBasicTransfer)
 
-	TestBasicTransferReorg(t)
-	TestProcessBlockConnectBlocks(t)
-	TestProcessHeaderskReorgBlocks(t)
 	// The below two tests check utxos and need to be updated for balance model
 	//TestProcessBlockReorgBlocks(t)
 	//TestAddInputsAndChangeToTransaction(t)
-	TestValidateBasicTransfer(t)
 }
 
 func TestBalanceModelBlockTests2(t *testing.T) {
 	setBalanceModelBlockHeights(t)
 
-	TestCalcNextDifficultyTargetHalvingDoublingHitLimit(t)
-	TestCalcNextDifficultyTargetHittingLimitsSlow(t)
-	TestCalcNextDifficultyTargetHittingLimitsFast(t)
-	TestCalcNextDifficultyTargetJustRight(t)
+	t.Run("TestCalcNextDifficultyTargetHalvingDoublingHitLimit", TestCalcNextDifficultyTargetHalvingDoublingHitLimit)
+	t.Run("TestCalcNextDifficultyTargetHittingLimitsSlow", TestCalcNextDifficultyTargetHittingLimitsSlow)
+	t.Run("TestCalcNextDifficultyTargetHittingLimitsFast", TestCalcNextDifficultyTargetHittingLimitsFast)
+	t.Run("TestCalcNextDifficultyTargetJustRight", TestCalcNextDifficultyTargetJustRight)
 }
 
 func TestBalanceModelBlockTests3(t *testing.T) {
 	setBalanceModelBlockHeights(t)
 
-	TestCalcNextDifficultyTargetSlightlyOff(t)
-	TestBadMerkleRoot(t)
-	TestBadBlockSignature(t)
-	TestForbiddenBlockSignaturePubKey(t)
+	t.Run("TestCalcNextDifficultyTargetSlightlyOff", TestCalcNextDifficultyTargetSlightlyOff)
+	t.Run("TestBadMerkleRoot", TestBadMerkleRoot)
+	t.Run("TestBadBlockSignature", TestBadBlockSignature)
+	t.Run("TestForbiddenBlockSignaturePubKey", TestForbiddenBlockSignaturePubKey)
 }
 
 func TestBasicTransferReorg(t *testing.T) {
@@ -609,7 +619,7 @@ func TestBasicTransferReorg(t *testing.T) {
 	// Process all of the fork blocks on the original chain to make it
 	// experience a reorg.
 	for _, forkBlock := range forkBlocks {
-		_, _, err := chain1.ProcessBlock(forkBlock, true /*verifySignatures*/)
+		_, _, _, err := chain1.ProcessBlock(forkBlock, true /*verifySignatures*/)
 		require.NoError(err)
 	}
 
@@ -652,7 +662,7 @@ func _shouldConnectBlock(blk *MsgDeSoBlock, t *testing.T, chain *Blockchain) {
 	blockHash, _ := blk.Hash()
 
 	verifySignatures := true
-	isMainChain, isOrphan, err := chain.ProcessBlock(blk, verifySignatures)
+	isMainChain, isOrphan, _, err := chain.ProcessBlock(blk, verifySignatures)
 	require.NoError(err)
 	require.Falsef(isOrphan, "Block %v should not be an orphan", blockHash)
 	require.Truef(isMainChain, "Block %v should be on the main chain", blockHash)
@@ -698,7 +708,7 @@ func TestProcessHeaderskReorgBlocks(t *testing.T) {
 		require.Equal(uint64(1), GetUtxoNumEntries(db, chain.snapshot))
 		headerHash, err := blockA1.Header.Hash()
 		require.NoError(err)
-		isMainChain, isOrphan, err := chain.ProcessHeader(blockA1.Header, headerHash)
+		isMainChain, isOrphan, err := chain.ProcessHeader(blockA1.Header, headerHash, false)
 		require.NoError(err)
 		require.True(isMainChain)
 		require.False(isOrphan)
@@ -714,7 +724,7 @@ func TestProcessHeaderskReorgBlocks(t *testing.T) {
 		require.Equal(uint64(1), GetUtxoNumEntries(db, chain.snapshot))
 		headerHash, err := blockA2.Header.Hash()
 		require.NoError(err)
-		isMainChain, isOrphan, err := chain.ProcessHeader(blockA2.Header, headerHash)
+		isMainChain, isOrphan, err := chain.ProcessHeader(blockA2.Header, headerHash, false)
 		require.NoError(err)
 		require.True(isMainChain)
 		require.False(isOrphan)
@@ -730,7 +740,7 @@ func TestProcessHeaderskReorgBlocks(t *testing.T) {
 		require.Equal(uint64(1), GetUtxoNumEntries(db, chain.snapshot))
 		headerHash, err := blockB1.Header.Hash()
 		require.NoError(err)
-		isMainChain, isOrphan, err := chain.ProcessHeader(blockB1.Header, headerHash)
+		isMainChain, isOrphan, err := chain.ProcessHeader(blockB1.Header, headerHash, false)
 		require.NoError(err)
 		// Should not be main chain yet
 		require.False(isMainChain)
@@ -747,7 +757,7 @@ func TestProcessHeaderskReorgBlocks(t *testing.T) {
 		require.Equal(uint64(1), GetUtxoNumEntries(db, chain.snapshot))
 		headerHash, err := blockB2.Header.Hash()
 		require.NoError(err)
-		isMainChain, isOrphan, err := chain.ProcessHeader(blockB2.Header, headerHash)
+		isMainChain, isOrphan, err := chain.ProcessHeader(blockB2.Header, headerHash, false)
 		require.NoError(err)
 		// Should not be main chain yet
 		require.False(isMainChain)
@@ -764,7 +774,7 @@ func TestProcessHeaderskReorgBlocks(t *testing.T) {
 		require.Equal(uint64(1), GetUtxoNumEntries(db, chain.snapshot))
 		headerHash, err := blockB3.Header.Hash()
 		require.NoError(err)
-		isMainChain, isOrphan, err := chain.ProcessHeader(blockB3.Header, headerHash)
+		isMainChain, isOrphan, err := chain.ProcessHeader(blockB3.Header, headerHash, false)
 		require.NoError(err)
 		// Should not be main chain yet
 		require.True(isMainChain)
@@ -817,7 +827,7 @@ func TestProcessBlockReorgBlocks(t *testing.T) {
 		// Block b1
 		fmt.Println("Connecting block b1")
 		require.Equal(uint64(3), GetUtxoNumEntries(db, chain.snapshot))
-		isMainChain, isOrphan, err := chain.ProcessBlock(blockB1, verifySignatures)
+		isMainChain, isOrphan, _, err := chain.ProcessBlock(blockB1, verifySignatures)
 		require.NoError(err)
 		require.Falsef(isOrphan, "Block b1 should not be an orphan")
 		require.Falsef(isMainChain, "Block b1 should not be on the main chain")
@@ -833,7 +843,7 @@ func TestProcessBlockReorgBlocks(t *testing.T) {
 		// Block b2
 		fmt.Println("Connecting block b2")
 		require.Equal(uint64(3), GetUtxoNumEntries(db, chain.snapshot))
-		isMainChain, isOrphan, err := chain.ProcessBlock(blockB2, verifySignatures)
+		isMainChain, isOrphan, _, err := chain.ProcessBlock(blockB2, verifySignatures)
 		require.NoError(err)
 		require.Falsef(isOrphan, "Block b2 should not be an orphan")
 		require.Falsef(isMainChain, "Block b2 should not be on the main chain")
@@ -985,8 +995,7 @@ func TestAddInputsAndChangeToTransaction(t *testing.T) {
 	_ = assert
 	_ = require
 
-	chain, _, db := NewLowDifficultyBlockchain(t)
-	_ = db
+	chain, params, _ := NewLowDifficultyBlockchain(t)
 
 	_, _, blockB1, blockB2, blockB3, _, _ := getForkedChain(t)
 
@@ -1028,7 +1037,7 @@ func TestAddInputsAndChangeToTransaction(t *testing.T) {
 	}
 
 	// Save the block reward in the first block to use it for testing.
-	firstBlockReward := CalcBlockRewardNanos(1)
+	firstBlockReward := CalcBlockRewardNanos(1, params)
 
 	// Connect a block. The sender address should have mined some DeSo but
 	// it should be unspendable until the block after this one. See
@@ -1101,13 +1110,12 @@ func TestValidateBasicTransfer(t *testing.T) {
 	_ = assert
 	_ = require
 
-	chain, _, db := NewLowDifficultyBlockchain(t)
-	_ = db
+	chain, params, _ := NewLowDifficultyBlockchain(t)
 
 	_, _, blockB1, blockB2, _, _, _ := getForkedChain(t)
 
 	// Save the block reward in the first block to use it for testing.
-	firstBlockReward := CalcBlockRewardNanos(1)
+	firstBlockReward := CalcBlockRewardNanos(1, params)
 
 	// Connect a block. The sender address should have mined some DeSo but
 	// it should be unspendable until the block after this one. See
@@ -1240,7 +1248,7 @@ func TestCalcNextDifficultyTargetHalvingDoublingHitLimit(t *testing.T) {
 			nil,
 			&MsgDeSoHeader{
 				// Blocks generating every 1 second, which is 2x too fast.
-				TstampSecs: uint64(ii),
+				TstampNanoSecs: SecondsToNanoSeconds(int64(ii)),
 			},
 			StatusNone,
 		))
@@ -1277,7 +1285,7 @@ func TestCalcNextDifficultyTargetHalvingDoublingHitLimit(t *testing.T) {
 			nil,
 			&MsgDeSoHeader{
 				// Blocks generating every 4 second, which is 2x too slow.
-				TstampSecs: uint64(ii * 4),
+				TstampNanoSecs: SecondsToNanoSeconds(int64(ii * 4)),
 			},
 			StatusNone,
 		))
@@ -1336,7 +1344,7 @@ func TestCalcNextDifficultyTargetHittingLimitsSlow(t *testing.T) {
 			nil,
 			&MsgDeSoHeader{
 				// Blocks generating every 1 second, which is 2x too fast.
-				TstampSecs: uint64(ii),
+				TstampNanoSecs: SecondsToNanoSeconds(int64(ii)),
 			},
 			StatusNone,
 		))
@@ -1373,7 +1381,7 @@ func TestCalcNextDifficultyTargetHittingLimitsSlow(t *testing.T) {
 			nil,
 			&MsgDeSoHeader{
 				// Blocks generating every 8 second, which is >2x too slow.
-				TstampSecs: uint64(ii * 4),
+				TstampNanoSecs: SecondsToNanoSeconds(int64(ii * 4)),
 			},
 			StatusNone,
 		))
@@ -1432,7 +1440,7 @@ func TestCalcNextDifficultyTargetHittingLimitsFast(t *testing.T) {
 			nil,
 			&MsgDeSoHeader{
 				// Blocks generating all at once.
-				TstampSecs: uint64(0),
+				TstampNanoSecs: SecondsToNanoSeconds(0),
 			},
 			StatusNone,
 		))
@@ -1487,7 +1495,7 @@ func TestCalcNextDifficultyTargetJustRight(t *testing.T) {
 			nil,
 			&MsgDeSoHeader{
 				// Blocks generating every 2 second, which is under the limit.
-				TstampSecs: uint64(ii * 2),
+				TstampNanoSecs: SecondsToNanoSeconds(int64(ii * 2)),
 			},
 			StatusNone,
 		))
@@ -1542,7 +1550,7 @@ func TestCalcNextDifficultyTargetSlightlyOff(t *testing.T) {
 			nil,
 			&MsgDeSoHeader{
 				// Blocks generating every 1 second, which is 2x too fast.
-				TstampSecs: uint64(ii),
+				TstampNanoSecs: SecondsToNanoSeconds(int64(ii)),
 			},
 			StatusNone,
 		))
@@ -1579,7 +1587,7 @@ func TestCalcNextDifficultyTargetSlightlyOff(t *testing.T) {
 			nil,
 			&MsgDeSoHeader{
 				// Blocks generating every 3 seconds, which is slow but under the limit.
-				TstampSecs: uint64(float32(ii) * 3),
+				TstampNanoSecs: SecondsToNanoSeconds(int64(ii) * 3),
 			},
 			StatusNone,
 		))
@@ -1666,7 +1674,7 @@ func TestBadBlockSignature(t *testing.T) {
 
 	// A bad signature with the right public key should fail.
 	finalBlock1.BlockProducerInfo.PublicKey = senderPkBytes
-	_, _, err = chain.ProcessBlock(finalBlock1, true)
+	_, _, _, err = chain.ProcessBlock(finalBlock1, true)
 	require.Error(err)
 	require.Contains(err.Error(), RuleErrorInvalidBlockProducerSIgnature)
 
@@ -1675,20 +1683,20 @@ func TestBadBlockSignature(t *testing.T) {
 	require.NoError(err)
 	finalBlock1.BlockProducerInfo.PublicKey = blockSignerPkBytes
 	finalBlock1.BlockProducerInfo.Signature = nil
-	_, _, err = chain.ProcessBlock(finalBlock1, true)
+	_, _, _, err = chain.ProcessBlock(finalBlock1, true)
 	require.Error(err)
 	require.Contains(err.Error(), RuleErrorMissingBlockProducerSignature)
 
 	// If all the BlockProducerInfo is missing, things should fail
 	finalBlock1.BlockProducerInfo = nil
-	_, _, err = chain.ProcessBlock(finalBlock1, true)
+	_, _, _, err = chain.ProcessBlock(finalBlock1, true)
 	require.Error(err)
 	require.Contains(err.Error(), RuleErrorMissingBlockProducerSignature)
 
 	// Now let's add blockSignerPK to the map of trusted keys and confirm that the block processes.
 	chain.trustedBlockProducerPublicKeys[MakePkMapKey(blockSignerPkBytes)] = true
 	finalBlock1.BlockProducerInfo = blockProducerInfoCopy
-	_, _, err = chain.ProcessBlock(finalBlock1, true)
+	_, _, _, err = chain.ProcessBlock(finalBlock1, true)
 	require.NoError(err)
 
 	_, _ = finalBlock1, db
@@ -1720,7 +1728,7 @@ func TestForbiddenBlockSignaturePubKey(t *testing.T) {
 	blockSignerPkBytes, _, err := Base58CheckDecode(blockSignerPk)
 	require.NoError(err)
 	txn, _, _, _, err := chain.CreateUpdateGlobalParamsTxn(
-		senderPkBytes, -1, -1, -1, -1, -1, blockSignerPkBytes, -1, 100 /*feeRateNanosPerKB*/, nil, []*DeSoOutput{})
+		senderPkBytes, -1, -1, -1, -1, -1, blockSignerPkBytes, -1, map[string][]byte{}, 100 /*feeRateNanosPerKB*/, nil, []*DeSoOutput{})
 	require.NoError(err)
 
 	// Mine a few blocks to give the senderPkString some money.

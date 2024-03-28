@@ -3,11 +3,12 @@ package lib
 import (
 	"bytes"
 	"fmt"
-	"github.com/holiman/uint256"
-	"github.com/pkg/errors"
 	"io"
 	"reflect"
 	"sort"
+
+	"github.com/holiman/uint256"
+	"github.com/pkg/errors"
 )
 
 // A PKID is an ID associated with a public key. In the DB, various fields are
@@ -274,7 +275,11 @@ func ReadOptionalBlockHash(rr *bytes.Reader) (*BlockHash, error) {
 	return nil, nil
 }
 
-func EncodeOptionalUint256(val *uint256.Int) []byte {
+// FixedWidthEncodeUint256 guarantees fixed-width encoding which is useful
+// in BadgerDB keys. It is less space-efficient than VariableEncodeUint256,
+// which should be used elsewhere. Both VariableEncodeUint256 and
+// FixedWidthEncodeUint256 can handle nil inputs.
+func FixedWidthEncodeUint256(val *uint256.Int) []byte {
 	if val == nil {
 		return UintToBuf(uint64(0))
 	}
@@ -284,7 +289,7 @@ func EncodeOptionalUint256(val *uint256.Int) []byte {
 	return append(UintToBuf(uint64(len(encodedVal))), encodedVal...)
 }
 
-func ReadOptionalUint256(rr *bytes.Reader) (*uint256.Int, error) {
+func FixedWidthDecodeUint256(rr *bytes.Reader) (*uint256.Int, error) {
 	byteCount, err := ReadUvarint(rr)
 	if err != nil {
 		return nil, err

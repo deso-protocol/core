@@ -4,8 +4,10 @@ quick_testing
 dump_txns
 compare_blocks.go
 backend
+core
 
 .idea
+.vscode
 
 local_scripts/*
 lib/mem.log

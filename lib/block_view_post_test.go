@@ -4,14 +4,15 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"github.com/dgraph-io/badger/v3"
-	"github.com/pkg/errors"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 	"reflect"
 	"sort"
 	"testing"
 	"time"
+
+	"github.com/dgraph-io/badger/v3"
+	"github.com/pkg/errors"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func _submitPost(t *testing.T, chain *Blockchain, db *badger.DB,
@@ -71,7 +72,7 @@ func _submitPost(t *testing.T, chain *Blockchain, db *badger.DB,
 	blockHeight := chain.blockTip().Height + 1
 	utxoView.GlobalParamsEntry.MinimumNetworkFeeNanosPerKB = 1
 	utxoOps, totalInput, totalOutput, fees, err :=
-		utxoView.ConnectTransaction(txn, txHash, getTxnSize(*txn), blockHeight, true /*verifySignature*/, false /*ignoreUtxos*/)
+		utxoView.ConnectTransaction(txn, txHash, blockHeight, 0, true, false)
 	// ConnectTransaction should treat the amount locked as contributing to the
 	// output.
 	if err != nil {
@@ -169,7 +170,7 @@ func _giveDeSoDiamonds(t *testing.T, chain *Blockchain, db *badger.DB, params *D
 	// get mined into the next block.
 	blockHeight := chain.blockTip().Height + 1
 	utxoOps, totalInput, totalOutput, fees, err :=
-		utxoView.ConnectTransaction(txn, txHash, getTxnSize(*txn), blockHeight, true /*verifySignature*/, false /*ignoreUtxos*/)
+		utxoView.ConnectTransaction(txn, txHash, blockHeight, 0, true, false)
 	if err != nil {
 		return nil, nil, 0, err
 	}
@@ -265,7 +266,7 @@ func _doSubmitPostTxn(t *testing.T, chain *Blockchain, db *badger.DB,
 	// get mined into the next block.
 	blockHeight := chain.blockTip().Height + 1
 	utxoOps, totalInput, totalOutput, fees, err :=
-		utxoView.ConnectTransaction(txn, txHash, getTxnSize(*txn), blockHeight, true /*verifySignature*/, false /*ignoreUtxos*/)
+		utxoView.ConnectTransaction(txn, txHash, blockHeight, 0, true, false)
 	// ConnectTransaction should treat the amount locked as contributing to the
 	// output.
 	if err != nil {
@@ -295,10 +296,10 @@ func _doSubmitPostTxn(t *testing.T, chain *Blockchain, db *badger.DB,
 func TestBalanceModelSubmitPost(t *testing.T) {
 	setBalanceModelBlockHeights(t)
 
-	TestSubmitPost(t)
-	TestDeSoDiamonds(t)
-	TestDeSoDiamondErrorCases(t)
-	TestFreezingPosts(t)
+	t.Run("TestSubmitPost", TestSubmitPost)
+	t.Run("TestDeSoDiamonds", TestDeSoDiamonds)
+	t.Run("TestDeSoDiamondErrorCases", TestDeSoDiamondErrorCases)
+	t.Run("TestFreezingPosts", TestFreezingPosts)
 }
 
 func TestSubmitPost(t *testing.T) {
@@ -1551,7 +1552,7 @@ func TestSubmitPost(t *testing.T) {
 		txHash := txn.Hash()
 		blockHeight := chain.blockTip().Height + 1
 		_, _, _, _, err =
-			utxoView.ConnectTransaction(txn, txHash, getTxnSize(*txn), blockHeight, true /*verifySignature*/, false /*ignoreUtxos*/)
+			utxoView.ConnectTransaction(txn, txHash, blockHeight, 0, true, false)
 		require.NoError(err)
 
 		// Assert "after" comment counts are correct at a few different spots
@@ -1982,8 +1983,7 @@ func TestDeSoDiamondErrorCases(t *testing.T) {
 		// get mined into the next block.
 		blockHeight := chain.blockTip().Height + 1
 		utxoOps, totalInput, totalOutput, fees, err :=
-			utxoView.ConnectTransaction(
-				txn, txHash, getTxnSize(*txn), blockHeight, true /*verifySignature*/, false /*ignoreUtxos*/)
+			utxoView.ConnectTransaction(txn, txHash, blockHeight, 0, true, false)
 		if err != nil {
 			return err
 		}
@@ -2106,6 +2106,12 @@ func TestDeSoDiamondErrorCases(t *testing.T) {
 }
 
 func TestFreezingPosts(t *testing.T) {
+	// Set up block heights
+	DeSoTestnetParams.ForkHeights.AssociationsAndAccessGroupsBlockHeight = 1
+	DeSoTestnetParams.EncoderMigrationHeights = GetEncoderMigrationHeights(&DeSoTestnetParams.ForkHeights)
+	DeSoTestnetParams.EncoderMigrationHeightsList = GetEncoderMigrationHeightsList(&DeSoTestnetParams.ForkHeights)
+	GlobalDeSoParams = DeSoTestnetParams
+
 	// Initialize blockchain.
 	chain, params, db := NewLowDifficultyBlockchain(t)
 	defer func() {
@@ -2113,10 +2119,7 @@ func TestFreezingPosts(t *testing.T) {
 			require.NoError(t, ResetPostgres(chain.postgres))
 		}
 	}()
-	params.ForkHeights.AssociationsAndAccessGroupsBlockHeight = 1
-	params.EncoderMigrationHeights = GetEncoderMigrationHeights(&params.ForkHeights)
-	params.EncoderMigrationHeightsList = GetEncoderMigrationHeightsList(&params.ForkHeights)
-	GlobalDeSoParams = *params
+
 	mempool, miner := NewTestMiner(t, chain, params, true)
 
 	// Mine a few blocks to give the senderPkString some money.

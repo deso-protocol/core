@@ -65,7 +65,7 @@ func SetupRunFlags(cmd *cobra.Command) {
 	cmd.PersistentFlags().Bool("force-checksum", true, "When true, the node will panic if the "+
 		"local state checksum differs from the network checksum reported by its peers.")
 	// Snapshot
-	cmd.PersistentFlags().Uint64("snapshot-block-height-period", 1000, "Set the snapshot epoch period. Snapshots are taken at block heights divisible by the period.")
+	cmd.PersistentFlags().Uint64("snapshot-block-height-period", 600000, "Set the snapshot epoch period. Snapshots are taken at block heights divisible by the period.")
 	// Archival mode
 	cmd.PersistentFlags().Bool("archival-mode", true, "Download all historical blocks after finishing hypersync.")
 	// Disable encoder migrations
@@ -81,6 +81,30 @@ func SetupRunFlags(cmd *cobra.Command) {
 		  is true.
 		- hypersync: Will sync by downloading historical state, and will NOT
 		  download historical blocks. Can only be set if HyperSync is true.`)
+
+	// PoS Validator
+	cmd.PersistentFlags().String("pos-validator-seed", "", "A BIP39 seed phrase or seed hex used to generate the "+
+		"private key of the Proof of Stake validator. Setting this flag automatically makes the node run as a Proof "+
+		"of Stake Validator.")
+	cmd.PersistentFlags().Uint64("pos-block-production-interval-milliseconds", 1500, "The interval in milliseconds "+
+		"between blocks produced by the Proof of Stake block proposer. The default value is 1.5 seconds, or 1500 milliseconds.")
+	cmd.PersistentFlags().Uint64("pos-timeout-base-duration-milliseconds", 30000, "The base duration in milliseconds "+
+		"that the Proof of Stake block proposer waits before timing out and producing a block. The default value is "+
+		"30 seconds, or 30000 milliseconds.")
+
+	// Mempool
+	cmd.PersistentFlags().Uint64("mempool-backup-time-millis", 30000,
+		"The frequency in milliseconds with which the mempool will persist its state to disk. "+
+			"The default value is 30 seconds, or 30,000 milliseconds.")
+	cmd.PersistentFlags().Uint64("max-mempool-pos-size-bytes", 3000000000,
+		"The maximum size of the PoS mempool in bytes. The default value is 3GB.")
+	cmd.PersistentFlags().Uint64("mempool-fee-estimator-num-mempool-blocks", 1,
+		"The number of future blocks to break the PoS mempool into when estimating txn fee for the next block.")
+	cmd.PersistentFlags().Uint64("mempool-fee-estimator-num-past-blocks", 50,
+		"The number of past blocks to use when estimating txn fee for the next block from the PoS mempool.")
+	cmd.PersistentFlags().Uint64("augmented-block-view-refresh-interval-millis", 10,
+		"The frequency in milliseconds with which the augmented block view will be refreshed. "+
+			"The default value is 100 milliseconds.")
 
 	// Peers
 	cmd.PersistentFlags().StringSlice("connect-ips", []string{},
@@ -198,6 +222,8 @@ func SetupRunFlags(cmd *cobra.Command) {
 	cmd.PersistentFlags().Bool("time-events", false, "Enable simple event timer, helpful in hands-on performance testing")
 	cmd.PersistentFlags().String("state-change-dir", "", "The directory for state change logs. WARNING: Changing this "+
 		"from an empty string to a non-empty string (or from a non-empty string to the empty string) requires a resync.")
+	cmd.PersistentFlags().Uint("state-syncer-mempool-txn-sync-limit", 10000, "The maximum number of transactions to "+
+		"process in the mempool tx state syncer at a time.")
 	cmd.PersistentFlags().VisitAll(func(flag *pflag.Flag) {
 		viper.BindPFlag(flag.Name, flag)
 	})
