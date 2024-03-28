@@ -1174,9 +1174,19 @@ func (mp *DeSoMempool) tryAcceptTransaction(
 	return nil, mempoolTx, nil
 }
 
-func ComputeTransactionMetadata(txn *MsgDeSoTxn, utxoView *UtxoView, blockHash *BlockHash,
-	totalNanosPurchasedBefore uint64, usdCentsPerBitcoinBefore uint64, totalInput uint64, totalOutput uint64,
-	fees uint64, txnIndexInBlock uint64, utxoOps []*UtxoOperation, blockHeight uint64) *TransactionMetadata {
+func ComputeTransactionMetadata(
+	txn *MsgDeSoTxn,
+	utxoView *UtxoView,
+	blockHash *BlockHash,
+	totalNanosPurchasedBefore uint64,
+	usdCentsPerBitcoinBefore uint64,
+	totalInput uint64,
+	totalOutput uint64,
+	fees uint64,
+	txnIndexInBlock uint64,
+	utxoOps []*UtxoOperation,
+	blockHeight uint64,
+) *TransactionMetadata {
 
 	var err error
 	txnMeta := &TransactionMetadata{
@@ -2009,9 +2019,35 @@ func ComputeTransactionMetadata(txn *MsgDeSoTxn, utxoView *UtxoView, blockHash *
 		txindexMetadata, affectedPublicKeys := utxoView.CreateUnjailValidatorTxindexMetadata(utxoOps[len(utxoOps)-1], txn)
 		txnMeta.UnjailValidatorTxindexMetadata = txindexMetadata
 		txnMeta.AffectedPublicKeys = append(txnMeta.AffectedPublicKeys, affectedPublicKeys...)
+	case TxnTypeAtomicTxnsWrapper:
+		realTxMeta := txn.TxnMeta.(*AtomicTxnsWrapperMetadata)
+		txnMeta.AtomicTxnsWrapperTxindexMetadata = &AtomicTxnsWrapperTxindexMetadata{}
+		txnMeta.AtomicTxnsWrapperTxindexMetadata.InnerTxnsTransactionMetadata = []*TransactionMetadata{}
+		for _, innerTxn := range realTxMeta.Txns {
+			// Compute the transaction metadata for each inner transaction.
+			innerTxnsTxnMetadata := ComputeTransactionMetadata(
+				innerTxn,
+				utxoView,
+				blockHash,
+				totalNanosPurchasedBefore,
+				usdCentsPerBitcoinBefore,
+				totalInput,
+				totalOutput,
+				fees,
+				txnIndexInBlock,
+				utxoOps,
+				blockHeight,
+			)
+			txnMeta.AtomicTxnsWrapperTxindexMetadata.InnerTxnsTransactionMetadata = append(
+				txnMeta.AtomicTxnsWrapperTxindexMetadata.InnerTxnsTransactionMetadata, innerTxnsTxnMetadata)
+
+			// Create a global list of all affected public keys from each inner transaction.
+			txnMeta.AffectedPublicKeys = append(txnMeta.AffectedPublicKeys, innerTxnsTxnMetadata.AffectedPublicKeys...)
+		}
 	}
 	// Check if the transactor is an affected public key. If not, add them.
-	if txnMeta.TransactorPublicKeyBase58Check != "" {
+	// We skip this for atomic transactions as their transactor is the ZeroPublicKey.
+	if txnMeta.TransactorPublicKeyBase58Check != "" && txn.TxnMeta.GetTxnType() != TxnTypeAtomicTxnsWrapper {
 		transactorPublicKeyFound := false
 		for _, affectedPublicKey := range txnMeta.AffectedPublicKeys {
 			if affectedPublicKey.PublicKeyBase58Check == txnMeta.TransactorPublicKeyBase58Check {
@@ -2027,7 +2063,8 @@ func ComputeTransactionMetadata(txn *MsgDeSoTxn, utxoView *UtxoView, blockHash *
 		}
 	}
 	// Check if the transactor is an affected public key. If not, add them.
-	if txnMeta.TransactorPublicKeyBase58Check != "" {
+	// We skip this for atomic transactions as their transactor is the ZeroPublicKey.
+	if txnMeta.TransactorPublicKeyBase58Check != "" && txn.TxnMeta.GetTxnType() != TxnTypeAtomicTxnsWrapper {
 		transactorPublicKeyFound := false
 		for _, affectedPublicKey := range txnMeta.AffectedPublicKeys {
 			if affectedPublicKey.PublicKeyBase58Check == txnMeta.TransactorPublicKeyBase58Check {

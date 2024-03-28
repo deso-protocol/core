@@ -1647,6 +1647,11 @@ const (
 	DiamondLevelKey    = "DiamondLevel"
 	DiamondPostHashKey = "DiamondPostHash"
 
+	// Atomic Transaction Keys
+	AtomicTxnsChainLength    = "AtmcChnLen"
+	NextAtomicTxnPreHash     = "NxtAtmcHsh"
+	PreviousAtomicTxnPreHash = "PrvAtmcHsh"
+
 	// Key in transaction's extra data map containing the derived key used in signing the txn.
 	DerivedPublicKey = "DerivedPublicKey"
 

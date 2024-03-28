@@ -7063,6 +7063,7 @@ type TransactionMetadata struct {
 	UpdateCoinLockupParamsTxindexMetadata *UpdateCoinLockupParamsTxindexMetadata `json:",omitempty"`
 	CoinLockupTransferTxindexMetadata     *CoinLockupTransferTxindexMetadata     `json:",omitempty"`
 	CoinUnlockTxindexMetadata             *CoinUnlockTxindexMetadata             `json:",omitempty"`
+	AtomicTxnsWrapperTxindexMetadata      *AtomicTxnsWrapperTxindexMetadata      `json:",omitempty"`
 }
 
 func (txnMeta *TransactionMetadata) GetEncoderForTxType(txnType TxnType) DeSoEncoder {
@@ -7141,6 +7142,8 @@ func (txnMeta *TransactionMetadata) GetEncoderForTxType(txnType TxnType) DeSoEnc
 		return txnMeta.CoinLockupTransferTxindexMetadata
 	case TxnTypeCoinUnlock:
 		return txnMeta.CoinUnlockTxindexMetadata
+	case TxnTypeAtomicTxnsWrapper:
+		return txnMeta.AtomicTxnsWrapperTxindexMetadata
 	default:
 		return nil
 	}
@@ -7238,6 +7241,8 @@ func (txnMeta *TransactionMetadata) RawEncodeWithoutMetadata(blockHeight uint64,
 		data = append(data, EncodeToBytes(blockHeight, txnMeta.UnlockStakeTxindexMetadata, skipMetadata...)...)
 		// encoding UnjailValidatorTxindexMetadata
 		data = append(data, EncodeToBytes(blockHeight, txnMeta.UnjailValidatorTxindexMetadata, skipMetadata...)...)
+		// encoding AtomicTxnsWrapperTxindexMetadata
+		data = append(data, EncodeToBytes(blockHeight, txnMeta.AtomicTxnsWrapperTxindexMetadata, skipMetadata...)...)
 	}
 
 	return data
@@ -7439,28 +7444,28 @@ func (txnMeta *TransactionMetadata) RawDecodeWithoutMetadata(blockHeight uint64,
 		CopyCreateUserAssociationTxindexMetadata := &CreateUserAssociationTxindexMetadata{}
 		if exist, err := DecodeFromBytes(CopyCreateUserAssociationTxindexMetadata, rr); exist && err == nil {
 			txnMeta.CreateUserAssociationTxindexMetadata = CopyCreateUserAssociationTxindexMetadata
-		} else {
+		} else if err != nil {
 			return errors.Wrapf(err, "TransactionMetadata.Decode: Problem reading CreateUserAssociationTxindexMetadata")
 		}
 		// decoding DeleteUserAssociationTxindexMetadata
 		CopyDeleteUserAssociationTxindexMetadata := &DeleteUserAssociationTxindexMetadata{}
 		if exist, err := DecodeFromBytes(CopyDeleteUserAssociationTxindexMetadata, rr); exist && err == nil {
 			txnMeta.DeleteUserAssociationTxindexMetadata = CopyDeleteUserAssociationTxindexMetadata
-		} else {
+		} else if err != nil {
 			return errors.Wrapf(err, "TransactionMetadata.Decode: Problem reading DeleteUserAssociationTxindexMetadata")
 		}
 		// decoding CreatePostAssociationTxindexMetadata
 		CopyCreatePostAssociationTxindexMetadata := &CreatePostAssociationTxindexMetadata{}
 		if exist, err := DecodeFromBytes(CopyCreatePostAssociationTxindexMetadata, rr); exist && err == nil {
 			txnMeta.CreatePostAssociationTxindexMetadata = CopyCreatePostAssociationTxindexMetadata
-		} else {
+		} else if err != nil {
 			return errors.Wrapf(err, "TransactionMetadata.Decode: Problem reading CreatePostAssociationTxindexMetadata")
 		}
 		// decoding DeletePostAssociationTxindexMetadata
 		CopyDeletePostAssociationTxindexMetadata := &DeletePostAssociationTxindexMetadata{}
 		if exist, err := DecodeFromBytes(CopyDeletePostAssociationTxindexMetadata, rr); exist && err == nil {
 			txnMeta.DeletePostAssociationTxindexMetadata = CopyDeletePostAssociationTxindexMetadata
-		} else {
+		} else if err != nil {
 			return errors.Wrapf(err, "TransactionMetadata.Decode: Problem reading DeletePostAssociationTxindexMetadata")
 		}
 	}
@@ -7470,21 +7475,21 @@ func (txnMeta *TransactionMetadata) RawDecodeWithoutMetadata(blockHeight uint64,
 		CopyAccessGroupTxindexMetadata := &AccessGroupTxindexMetadata{}
 		if exist, err := DecodeFromBytes(CopyAccessGroupTxindexMetadata, rr); exist && err == nil {
 			txnMeta.AccessGroupTxindexMetadata = CopyAccessGroupTxindexMetadata
-		} else {
+		} else if err != nil {
 			return errors.Wrapf(err, "TransactionMetadata.Decode: Problem reading AccessGroupTxindexMetadata")
 		}
 		// decoding AccessGroupMembersTxindexMetadata
 		CopyAccessGroupMembersTxindexMetadata := &AccessGroupMembersTxindexMetadata{}
 		if exist, err := DecodeFromBytes(CopyAccessGroupMembersTxindexMetadata, rr); exist && err == nil {
 			txnMeta.AccessGroupMembersTxindexMetadata = CopyAccessGroupMembersTxindexMetadata
-		} else {
+		} else if err != nil {
 			return errors.Wrapf(err, "TransactionMetadata.Decode: Problem reading AccessGroupMembersTxindexMetadata")
 		}
 		// decoding NewMessageTxindexMetadata
 		CopyNewMessageTxindexMetadata := &NewMessageTxindexMetadata{}
 		if exist, err := DecodeFromBytes(CopyNewMessageTxindexMetadata, rr); exist && err == nil {
 			txnMeta.NewMessageTxindexMetadata = CopyNewMessageTxindexMetadata
-		} else {
+		} else if err != nil {
 			return errors.Wrapf(err, "TransactionMetadata.Decode: Problem reading NewMessageTxindexMetadata")
 		}
 	}
@@ -7513,6 +7518,10 @@ func (txnMeta *TransactionMetadata) RawDecodeWithoutMetadata(blockHeight uint64,
 		// decoding UnjailValidatorTxindexMetadata
 		if txnMeta.UnjailValidatorTxindexMetadata, err = DecodeDeSoEncoder(&UnjailValidatorTxindexMetadata{}, rr); err != nil {
 			return errors.Wrapf(err, "TransactionMetadata.Decode: Problem reading UnjailValidatorTxindexMetadata: ")
+		}
+		// decoding AtomicTxnsWrapperTxindexMetadata
+		if txnMeta.AtomicTxnsWrapperTxindexMetadata, err = DecodeDeSoEncoder(&AtomicTxnsWrapperTxindexMetadata{}, rr); err != nil {
+			return errors.Wrapf(err, "TransactionMetadata.Decode: Problem reading AtomicTxnsWrapperTxindexMetadata: ")
 		}
 	}
 

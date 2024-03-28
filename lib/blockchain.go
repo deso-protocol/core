@@ -5640,3 +5640,116 @@ func (bc *Blockchain) CreateCoinUnlockTxn(
 
 	return txn, totalInput, 0, fees, nil
 }
+
+// -------------------------------------------------
+// Atomic Transaction Creation Function
+// -------------------------------------------------
+
+// CreateAtomicTxnsWrapper is unlike other Create... transaction creation tools.
+// CreateAtomicTxnsWrapper is passed a list of UNSIGNED transactions who are then
+// chained together, wrapped, and converted into a single transaction of type
+// TxnTypeAtomicTxnsWrapper. It is then the responsibility of the calling parties
+// to verify the response and sign the transactions which now reside within the atomic
+// wrapper transaction.
+//
+// A full example can be used to illustrate how CreateAtomicTxnsWrapper is meant to
+// be used in a production application. Consider an application which wants
+// to subsidize all likes for users using atomic transactions. The following is
+// the step-by-step procedure by which the app can do so:
+//
+//	(1) The user creates an unsigned LIKE transaction as though they have DESO to pay for it.
+//		The LIKE transaction has no special metadata and is no different from an unsubsidized
+//		LIKE transaction up and to this point.
+//	(2) The user submits the unsigned LIKE transaction to the application to be subsidized
+//		as they cannot pay for the LIKE transaction themselves.
+//	(3) The application creates an unsigned BASIC_TRANSFER transaction to transfer the user enough
+//		DESO to cover their LIKE transaction. The transfer amount can be computed exactly
+//		using the TxnFeeNanos field of the provided LIKE transaction.
+//	(4) Rather than returning the BASIC_TRANSFER to the user, the application then calls
+//		CreateAtomicTxnsWrapper where unsignedTransactions = [BASIC_TRANSFER, LIKE]. This
+//		returns an atomic transaction that forces the user to use the BASIC_TRANSFER for this
+//		specific LIKE transaction. Note that this adds extra data to both the BASIC_TRANSFER
+//		and the LIKE transactions to ensure their atomic execution.
+//	(5) Before returning the atomic transaction to the user, the application now signs
+//		the BASIC_TRANSFER which resides within the atomic transaction wrapper on the server side.
+//		At this point, only the LIKE transaction remains unsigned within the atomic transaction.
+//	(6) The atomic transaction is returned to the user NOT the raw BASIC_TRANSFER transaction
+//		created in step 3.
+//	(7) The user signs the LIKE transaction using their private key on the client side.
+//		At this point, all transactions which reside within the AtomicTxns wrapper are signed.
+//	(8) The user submits the atomic transaction containing both the signed BASIC_TRANSFER
+//		transaction and the signed LIKE transaction to the blockchain.
+func (bc *Blockchain) CreateAtomicTxnsWrapper(
+	unsignedTransactions []*MsgDeSoTxn,
+	extraData map[string][]byte,
+) (
+	_txn *MsgDeSoTxn,
+	_fees uint64,
+	_err error,
+) {
+	// First we must convert the unsigned transactions into a doubly linked list via the
+	// transaction extra data. We create a copy of the transactions to ensure we do not
+	// modify the caller's data.
+
+	// Create a copy of the transactions to prevent pointer reuse.
+	var chainedUnsignedTransactions []*MsgDeSoTxn
+	for _, txn := range unsignedTransactions {
+		txnDuplicate, err := txn.Copy()
+		if err != nil {
+			return nil, 0, errors.Wrapf(err, "CreateAtomicTxnsWrapper: failed to copy transaction")
+		}
+		chainedUnsignedTransactions = append(chainedUnsignedTransactions, txnDuplicate)
+	}
+
+	// Set the starting point of the atomic transaction.
+	// We must do this first to ensure the atomic hash is properly computed for the first transaction.
+	if len(chainedUnsignedTransactions[0].ExtraData) == 0 {
+		chainedUnsignedTransactions[0].ExtraData = make(map[string][]byte)
+	}
+	chainedUnsignedTransactions[0].ExtraData[AtomicTxnsChainLength] = UintToBuf(uint64(len(unsignedTransactions)))
+
+	// Construct the chained transactions and keep track of the total fees paid.
+	var totalFees uint64
+	for ii, txn := range chainedUnsignedTransactions {
+		// Compute the atomic hashes.
+		nextIndex := (ii + 1) % len(chainedUnsignedTransactions)
+		nextHash, err := chainedUnsignedTransactions[nextIndex].AtomicHash()
+		if err != nil {
+			return nil, 0, errors.Wrapf(err, "CreateAtomicTxnsWrapper: failed to compute next hash")
+		}
+		prevIndex := (ii - 1 + len(chainedUnsignedTransactions)) % len(chainedUnsignedTransactions)
+		prevHash, err := chainedUnsignedTransactions[prevIndex].AtomicHash()
+		if err != nil {
+			return nil, 0, errors.Wrapf(err, "CreateAtomicTxnsWrapper: failed to copy prev hash")
+		}
+
+		// Set the transaction extra data and append to the chained list.
+		if len(txn.ExtraData) == 0 {
+			txn.ExtraData = make(map[string][]byte)
+		}
+		txn.ExtraData[NextAtomicTxnPreHash] = nextHash.ToBytes()
+		txn.ExtraData[PreviousAtomicTxnPreHash] = prevHash.ToBytes()
+
+		// Track the total fees paid.
+		totalFees, err = SafeUint64().Add(totalFees, txn.TxnFeeNanos)
+		if err != nil {
+			return nil, 0, errors.Wrapf(err, "CreateAtomicTxnsWrapper: total fee overflow")
+		}
+	}
+
+	// Create an atomic transactions wrapper taking special care to the rules specified in _verifyAtomicTxnsWrapper.
+	// Because we do not call AddInputsAndChangeToTransaction on the wrapper, we must specify ALL fields exactly.
+	txn := &MsgDeSoTxn{
+		TxnVersion:  1,
+		TxInputs:    nil,
+		TxOutputs:   nil,
+		TxnFeeNanos: totalFees,
+		TxnNonce:    &DeSoNonce{ExpirationBlockHeight: 0, PartialID: 0},
+		TxnMeta:     &AtomicTxnsWrapperMetadata{Txns: chainedUnsignedTransactions},
+		PublicKey:   ZeroPublicKey.ToBytes(),
+		ExtraData:   extraData,
+		Signature:   DeSoSignature{},
+	}
+
+	return txn, totalFees, nil
+}

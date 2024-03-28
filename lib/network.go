@@ -265,6 +265,7 @@ const (
 	TxnTypeUpdateCoinLockupParams       TxnType = 41
 	TxnTypeCoinLockupTransfer           TxnType = 42
 	TxnTypeCoinUnlock                   TxnType = 43
+	TxnTypeAtomicTxnsWrapper            TxnType = 44
 
 	// NEXT_ID = 44
 )
@@ -316,6 +317,7 @@ const (
 	TxnStringUpdateCoinLockupParams       TxnString = "UPDATE_COIN_LOCKUP_PARAMS"
 	TxnStringCoinLockupTransfer           TxnString = "COIN_LOCKUP_TRANSFER"
 	TxnStringCoinUnlock                   TxnString = "COIN_UNLOCK"
+	TxnStringAtomicTxnsWrapper            TxnString = "ATOMIC_TXNS_WRAPPER"
 )
 
 var (
@@ -330,6 +332,7 @@ var (
 		TxnTypeAccessGroup, TxnTypeAccessGroupMembers, TxnTypeNewMessage, TxnTypeRegisterAsValidator,
 		TxnTypeUnregisterAsValidator, TxnTypeStake, TxnTypeUnstake, TxnTypeUnlockStake, TxnTypeUnjailValidator,
 		TxnTypeCoinLockup, TxnTypeUpdateCoinLockupParams, TxnTypeCoinLockupTransfer, TxnTypeCoinUnlock,
+		TxnTypeAtomicTxnsWrapper,
 	}
 	AllTxnString = []TxnString{
 		TxnStringUnset, TxnStringBlockReward, TxnStringBasicTransfer, TxnStringBitcoinExchange, TxnStringPrivateMessage,
@@ -342,6 +345,7 @@ var (
 		TxnStringAccessGroup, TxnStringAccessGroupMembers, TxnStringNewMessage, TxnStringRegisterAsValidator,
 		TxnStringUnregisterAsValidator, TxnStringStake, TxnStringUnstake, TxnStringUnlockStake, TxnStringUnjailValidator,
 		TxnStringCoinLockup, TxnStringUpdateCoinLockupParams, TxnStringCoinLockupTransfer, TxnStringCoinUnlock,
+		TxnStringAtomicTxnsWrapper,
 	}
 )
 
@@ -441,6 +445,8 @@ func (txnType TxnType) GetTxnString() TxnString {
 		return TxnStringCoinLockupTransfer
 	case TxnTypeCoinUnlock:
 		return TxnStringCoinUnlock
+	case TxnTypeAtomicTxnsWrapper:
+		return TxnStringAtomicTxnsWrapper
 	default:
 		return TxnStringUndefined
 	}
@@ -534,6 +540,8 @@ func GetTxnTypeFromString(txnString TxnString) TxnType {
 		return TxnTypeCoinLockupTransfer
 	case TxnStringCoinUnlock:
 		return TxnTypeCoinUnlock
+	case TxnStringAtomicTxnsWrapper:
+		return TxnTypeAtomicTxnsWrapper
 	default:
 		// TxnTypeUnset means we couldn't find a matching txn type
 		return TxnTypeUnset
@@ -635,6 +643,8 @@ func NewTxnMetadata(txType TxnType) (DeSoTxnMetadata, error) {
 		return (&CoinLockupTransferMetadata{}).New(), nil
 	case TxnTypeCoinUnlock:
 		return (&CoinUnlockMetadata{}).New(), nil
+	case TxnTypeAtomicTxnsWrapper:
+		return (&AtomicTxnsWrapperMetadata{}).New(), nil
 	default:
 		return nil, fmt.Errorf("NewTxnMetadata: Unrecognized TxnType: %v; make sure you add the new type of transaction to NewTxnMetadata", txType)
 	}

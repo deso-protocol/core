@@ -538,6 +538,23 @@ const (
 	RuleErrorUpdateCoinLockupParamsUpdatingNonExistentProfile           RuleError = "RuleErrorUpdateCoinLockupParamsUpdatingNonExistentProfile"
 	RuleErrorUpdateCoinLockupParamsUpdatingPermanentTransferRestriction RuleError = "RuleErrorUpdateCoinLockupParamsUpdatingPermanentTransferRestriction"
 
+	// Atomic Transactions
+	RuleErrorAtomicTxnsRequiresWrapper                       RuleError = "RuleErrorAtomicTxnsRequiresWrapper"
+	RuleErrorAtomicTxnBeforeBlockHeight                      RuleError = "RuleErrorAtomicTxnBeforeBlockHeight"
+	RuleErrorAtomicTxnsWrapperPublicKeyMustBeZero            RuleError = "RuleErrorAtomicTxnsWrapperPublicKeyMustBeZero"
+	RuleErrorAtomicTxnsWrapperMustHaveZeroInputs             RuleError = "RuleErrorAtomicTxnsWrapperMustHaveZeroInputs"
+	RuleErrorAtomicTxnsWrapperMustHaveZeroOutputs            RuleError = "RuleErrorAtomicTxnsWrapperMustHaveZeroOutputs"
+	RuleErrorAtomicTxnsWrapperHasInternalFeeOverflow         RuleError = "RuleErrorAtomicTxnsWrapperHasInternalFeeOverflow"
+	RuleErrorAtomicTxnsWrapperMustHaveEqualFeeToInternalTxns RuleError = "RuleErrorAtomicTxnsWrapperMustHaveEqualFeeToInternalTxns"
+	RuleErrorAtomicTxnsWrapperSignatureMustBeNil             RuleError = "RuleErrorAtomicTxnsWrapperSignatureMustBeNil"
+	RuleErrorAtomicTxnsWrapperMustHaveZeroedNonce            RuleError = "RuleErrorAtomicTxnsWrapperMustHaveZeroedNonce"
+	RuleErrorAtomicTxnsHasNoTransactions                     RuleError = "RuleErrorAtomicTxnsHasNoTransactions"
+	RuleErrorAtomicTxnsMustStartWithChainLength              RuleError = "RuleErrorAtomicTxnsMustStartWithChainLength"
+	RuleErrorAtomicTxnsHasMoreThanOneStartPoint              RuleError = "RuleErrorAtomicTxnsHasMoreThanOneStartPoint"
+	RuleErrorAtomicTxnsHasAtomicTxnsInnerTxn                 RuleError = "RuleErrorAtomicTxnsHasAtomicTxnsInnerTxn"
+	RuleErrorAtomicTxnsHasNonAtomicInnerTxn                  RuleError = "RuleErrorAtomicTxnsHasNonAtomicInnerTxn"
+	RuleErrorAtomicTxnsHasBrokenChain                        RuleError = "RuleErrorAtomicTxnsHasBrokenChain"
+
 	HeaderErrorDuplicateHeader                                                   RuleError = "HeaderErrorDuplicateHeader"
 	HeaderErrorNilPrevHash                                                       RuleError = "HeaderErrorNilPrevHash"
 	HeaderErrorInvalidParent                                                     RuleError = "HeaderErrorInvalidParent"
