@@ -233,6 +233,9 @@ const (
 	RuleErrorSoftMaxBlockSizeBytesTooLow                       RuleError = "RuleErrorSoftMaxBlockSizeBytesTooLow"
 	RuleErrorSoftMaxBlockSizeBytesTooHigh                      RuleError = "RuleErrorSoftMaxBlockSizeBytesTooHigh"
 	RuleErrorSoftMaxBlockSizeBytesExceedsMaxBlockSizeBytes     RuleError = "RuleErrorSoftMaxBlockSizeBytesExceedsMaxBlockSizeBytes"
+	RuleErrorMaxTxnSizeBytesTooLow                             RuleError = "RuleErrorMaxTxnSizeBytesTooLow"
+	RuleErrorMaxTxnSizeBytesTooHigh                            RuleError = "RuleErrorMaxTxnSizeBytesTooHigh"
+	RuleErrorMaxTxnSizeBytesExceedsMaxBlockSizeBytes           RuleError = "RuleErrorMaxTxnSizeBytesExceedsMaxBlockSizeBytes"
 
 	// DeSo Diamonds
 	RuleErrorBasicTransferHasDiamondPostHashWithoutDiamondLevel   RuleError = "RuleErrorBasicTransferHasDiamondPostHashWithoutDiamondLevel"

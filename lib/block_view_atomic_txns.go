@@ -221,12 +221,12 @@ func (bav *UtxoView) _connectAtomicTxnsWrapper(
 		return nil, 0, 0, 0, errors.Wrapf(
 			err, "_connectTransaction: Problem serializing transaction: ")
 	}
-	maxBlockSizeBytes := bav.Params.MaxBlockSizeBytesPoW
+	maxTxnSizeBytes := bav.Params.MaxBlockSizeBytesPoW / 2
 	if bav.Params.IsPoSBlockHeight(uint64(blockHeight)) {
-		maxBlockSizeBytes = bav.GetMaxBlockSizeBytesPoS()
+		maxTxnSizeBytes = bav.GetMaxTxnSizeBytesPoS()
 	}
 	txnSizeBytes := uint64(len(txnBytes))
-	if txnSizeBytes > maxBlockSizeBytes/2 {
+	if txnSizeBytes > maxTxnSizeBytes {
 		return nil, 0, 0, 0, RuleErrorTxnTooBig
 	}
 
