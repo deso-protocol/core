@@ -135,8 +135,9 @@ func (pbp *PosBlockProducer) createBlockWithoutHeader(
 		return nil, errors.Wrapf(err, "Error computing block reward txn size: ")
 	}
 
-	// PoS Block Producer only uses the PoS MaxBlockSizeBytes.
-	maxBlockSizeBytes := latestBlockView.GetMaxBlockSizeBytesPoS()
+	// PoS Block producer only uses PoS, so we just directly fetch the soft max and hard max block sizes.
+	softMaxBlockSizeBytes := latestBlockView.GetSoftMaxBlockSizeBytesPoS()
+	hardMaxBlockSizeBytes := latestBlockView.GetMaxBlockSizeBytesPoS()
 
 	// Get block transactions from the mempool.
 	feeTimeTxns, maxUtilityFee, err := pbp.getBlockTransactions(
@@ -144,7 +145,8 @@ func (pbp *PosBlockProducer) createBlockWithoutHeader(
 		latestBlockView,
 		newBlockHeight,
 		newBlockTimestampNanoSecs,
-		maxBlockSizeBytes-uint64(len(blockRewardTxnSizeBytes)),
+		softMaxBlockSizeBytes-uint64(len(blockRewardTxnSizeBytes)),
+		hardMaxBlockSizeBytes-uint64(len(blockRewardTxnSizeBytes)),
 	)
 	if err != nil {
 		return nil, errors.Wrapf(err, "PosBlockProducer.createBlockWithoutHeader: Problem retrieving block transactions: ")
@@ -164,7 +166,8 @@ func (pbp *PosBlockProducer) getBlockTransactions(
 	latestBlockView *UtxoView,
 	newBlockHeight uint64,
 	newBlockTimestampNanoSecs int64,
-	maxBlockSizeBytes uint64,
+	softMaxBlockSizeBytes uint64,
+	hardMaxBlockSizeBytes uint64,
 ) (
 	_txns []*MsgDeSoTxn,
 	_maxUtilityFee uint64,
@@ -182,13 +185,19 @@ func (pbp *PosBlockProducer) getBlockTransactions(
 		return nil, 0, errors.Wrapf(err, "Error copying UtxoView: ")
 	}
 	for _, txn := range feeTimeTxns {
+		// If we've exceeded the soft max block size, we exit. We want to allow at least one txn that moves the
+		// cumulative block size past the soft max, but don't want to add more txns beyond that.
+		if currentBlockSize > softMaxBlockSizeBytes {
+			break
+		}
 		txnBytes, err := txn.ToBytes(false)
 		if err != nil {
 			return nil, 0, errors.Wrapf(err, "Error getting transaction size: ")
 		}
 
-		// Skip over transactions that are too big.
-		if currentBlockSize+uint64(len(txnBytes)) > maxBlockSizeBytes {
+		// Skip over transactions that are too big. The block would be too large
+		// to be accepted by the network.
+		if currentBlockSize+uint64(len(txnBytes)) > hardMaxBlockSizeBytes {
 			continue
 		}
 

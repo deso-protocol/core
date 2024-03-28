@@ -1563,6 +1563,78 @@ func TestUpdateGlobalParamsPoS(t *testing.T) {
 		require.NoError(err)
 		require.Equal(utxoView.GetCurrentGlobalParamsEntry().MaxBlockSizeBytesPoS, uint64(5000))
 	}
+	// SoftMaxBlockSizeBytesPoS tests.
+	{
+		// Make sure setting soft max block size too low fails.
+		_, _, _, err := _updateGlobalParamsEntryWithMempool(t, chain, db, params, 200,
+			moneyPkString,
+			moneyPrivString,
+			-1,
+			-1,
+			-1,
+			-1,
+			-1,
+			-1,
+			map[string][]byte{
+				SoftMaxBlockSizeBytesPoSKey: UintToBuf(MinSoftMaxBlockSizeBytes - 1),
+			},
+			true,
+			mempool)
+		require.ErrorIs(err, RuleErrorSoftMaxBlockSizeBytesTooLow)
+		// Make sure setting soft max block size too high fails.
+		_, _, _, err = _updateGlobalParamsEntryWithMempool(t, chain, db, params, 200,
+			moneyPkString,
+			moneyPrivString,
+			-1,
+			-1,
+			-1,
+			-1,
+			-1,
+			-1,
+			map[string][]byte{
+				SoftMaxBlockSizeBytesPoSKey: UintToBuf(MaxSoftMaxBlockSizeBytes + 1),
+			},
+			true,
+			mempool)
+		require.ErrorIs(err, RuleErrorSoftMaxBlockSizeBytesTooHigh)
+		// Make sure setting soft max block size to a value greater than max block size fails.
+		utxoView, err := NewUtxoView(db, params, postgres, chain.snapshot, nil)
+		require.NoError(err)
+		_, _, _, err = _updateGlobalParamsEntryWithMempool(t, chain, db, params, 200,
+			moneyPkString,
+			moneyPrivString,
+			-1,
+			-1,
+			-1,
+			-1,
+			-1,
+			-1,
+			map[string][]byte{
+				SoftMaxBlockSizeBytesPoSKey: UintToBuf(utxoView.GetCurrentGlobalParamsEntry().MaxBlockSizeBytesPoS + 1),
+			},
+			true,
+			mempool)
+		require.ErrorIs(err, RuleErrorSoftMaxBlockSizeBytesExceedsMaxBlockSizeBytes)
+		// Make sure setting max block size to a valid value works and updates global params.
+		_, _, _, err = _updateGlobalParamsEntryWithMempool(t, chain, db, params, 200,
+			moneyPkString,
+			moneyPrivString,
+			-1,
+			-1,
+			-1,
+			-1,
+			-1,
+			-1,
+			map[string][]byte{
+				SoftMaxBlockSizeBytesPoSKey: UintToBuf(4000),
+			},
+			true,
+			mempool)
+		require.NoError(err)
+		utxoView, err = NewUtxoView(db, params, postgres, chain.snapshot, nil)
+		require.NoError(err)
+		require.Equal(utxoView.GetCurrentGlobalParamsEntry().SoftMaxBlockSizeBytesPoS, uint64(4000))
+	}
 }
 
 func TestBalanceModelBasicTransfers(t *testing.T) {

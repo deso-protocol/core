@@ -120,7 +120,7 @@ func TestCreateBlockWithoutHeader(t *testing.T) {
 	{
 		pbp := NewPosBlockProducer(mempool, params, NewPublicKey(m0PubBytes), blsPubKey, time.Now().UnixNano())
 		txns, _, err := pbp.getBlockTransactions(
-			NewPublicKey(m0PubBytes), latestBlockView, 3, 0, 50000)
+			NewPublicKey(m0PubBytes), latestBlockView, 3, 0, 50000, 50000)
 		require.NoError(err)
 
 		blockTemplate, err := pbp.createBlockWithoutHeader(latestBlockView, 3, 0)
@@ -135,7 +135,7 @@ func TestCreateBlockWithoutHeader(t *testing.T) {
 	{
 		pbp := NewPosBlockProducer(mempool, params, NewPublicKey(m1PubBytes), blsPubKey, time.Now().UnixNano())
 		txns, maxUtilityFee, err := pbp.getBlockTransactions(
-			NewPublicKey(m1PubBytes), latestBlockView, 3, 0, 50000)
+			NewPublicKey(m1PubBytes), latestBlockView, 3, 0, 50000, 50000)
 		require.NoError(err)
 
 		blockTemplate, err := pbp.createBlockWithoutHeader(latestBlockView, 3, 0)
@@ -241,7 +241,7 @@ func TestGetBlockTransactions(t *testing.T) {
 
 	latestBlockViewCopy, err := latestBlockView.CopyUtxoView()
 	require.NoError(err)
-	txns, maxUtilityFee, err := pbp.getBlockTransactions(NewPublicKey(m1PubBytes), latestBlockView, 3, 0, 1000)
+	txns, maxUtilityFee, err := pbp.getBlockTransactions(NewPublicKey(m1PubBytes), latestBlockView, 3, 0, 1000, 1000)
 	require.NoError(err)
 	require.Equal(latestBlockViewCopy, latestBlockView)
 	require.Equal(true, len(passingTxns) > len(txns))
@@ -285,7 +285,7 @@ func _testProduceBlockNoSizeLimit(t *testing.T, mp *PosMempool, pbp *PosBlockPro
 
 	latestBlockViewCopy, err := latestBlockView.CopyUtxoView()
 	require.NoError(err)
-	txns, maxUtilityFee, err := pbp.getBlockTransactions(pbp.proposerPublicKey, latestBlockView, blockHeight, 0, math.MaxUint64)
+	txns, maxUtilityFee, err := pbp.getBlockTransactions(pbp.proposerPublicKey, latestBlockView, blockHeight, 0, math.MaxUint64, math.MaxUint64)
 	require.NoError(err)
 	require.Equal(latestBlockViewCopy, latestBlockView)
 	require.Equal(totalAcceptedTxns, len(txns))

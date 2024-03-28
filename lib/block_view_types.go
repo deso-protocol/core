@@ -4244,6 +4244,10 @@ type GlobalParamsEntry struct {
 
 	// MaxBlockSizeBytesPoS is the maximum size of a block in bytes.
 	MaxBlockSizeBytesPoS uint64
+
+	// SoftMaxBlockSizeBytesPoS is the ideal steady state size of a block in bytes.
+	// This value will be used to control size of block production and congestion in fee estimation.
+	SoftMaxBlockSizeBytesPoS uint64
 }
 
 func (gp *GlobalParamsEntry) Copy() *GlobalParamsEntry {
@@ -4270,6 +4274,7 @@ func (gp *GlobalParamsEntry) Copy() *GlobalParamsEntry {
 		MempoolFeeEstimatorNumMempoolBlocks:            gp.MempoolFeeEstimatorNumMempoolBlocks,
 		MempoolFeeEstimatorNumPastBlocks:               gp.MempoolFeeEstimatorNumPastBlocks,
 		MaxBlockSizeBytesPoS:                           gp.MaxBlockSizeBytesPoS,
+		SoftMaxBlockSizeBytesPoS:                       gp.SoftMaxBlockSizeBytesPoS,
 	}
 }
 
@@ -4301,6 +4306,7 @@ func (gp *GlobalParamsEntry) RawEncodeWithoutMetadata(blockHeight uint64, skipMe
 		data = append(data, UintToBuf(gp.MempoolFeeEstimatorNumMempoolBlocks)...)
 		data = append(data, UintToBuf(gp.MempoolFeeEstimatorNumPastBlocks)...)
 		data = append(data, UintToBuf(gp.MaxBlockSizeBytesPoS)...)
+		data = append(data, UintToBuf(gp.SoftMaxBlockSizeBytesPoS)...)
 	}
 	return data
 }
@@ -4399,7 +4405,11 @@ func (gp *GlobalParamsEntry) RawDecodeWithoutMetadata(blockHeight uint64, rr *by
 		}
 		gp.MaxBlockSizeBytesPoS, err = ReadUvarint(rr)
 		if err != nil {
-			return errors.Wrapf(err, "GlobalParamsEntry.Decode: Problem reading MaxBlockSizeBytesPoW")
+			return errors.Wrapf(err, "GlobalParamsEntry.Decode: Problem reading MaxBlockSizeBytesPoS")
+		}
+		gp.SoftMaxBlockSizeBytesPoS, err = ReadUvarint(rr)
+		if err != nil {
+			return errors.Wrapf(err, "GlobalParamsEntry.Decode: Problem reading SoftMaxBlockSizeBytesPoS")
 		}
 	}
 	return nil

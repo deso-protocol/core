@@ -3476,6 +3476,26 @@ func (bav *UtxoView) _connectUpdateGlobalParams(
 			}
 			newGlobalParamsEntry.MaxBlockSizeBytesPoS = val
 		}
+		if len(extraData[SoftMaxBlockSizeBytesPoSKey]) > 0 {
+			val, bytesRead := Uvarint(
+				extraData[SoftMaxBlockSizeBytesPoSKey],
+			)
+			if bytesRead <= 0 {
+				return 0, 0, nil, fmt.Errorf(
+					"_connectUpdateGlobalParams: unable to decode SoftMaxBlockSizeBytesPoS as uint64",
+				)
+			}
+			if val < MinSoftMaxBlockSizeBytes {
+				return 0, 0, nil, RuleErrorSoftMaxBlockSizeBytesTooLow
+			}
+			if val > MaxSoftMaxBlockSizeBytes {
+				return 0, 0, nil, RuleErrorSoftMaxBlockSizeBytesTooHigh
+			}
+			if MergeGlobalParamEntryDefaults(&newGlobalParamsEntry, bav.Params).MaxBlockSizeBytesPoS < val {
+				return 0, 0, nil, RuleErrorSoftMaxBlockSizeBytesExceedsMaxBlockSizeBytes
+			}
+			newGlobalParamsEntry.SoftMaxBlockSizeBytesPoS = val
+		}
 	}
 
 	var newForbiddenPubKeyEntry *ForbiddenPubKeyEntry
@@ -5080,4 +5100,8 @@ func mergeExtraData(oldMap map[string][]byte, newMap map[string][]byte) map[stri
 
 func (bav *UtxoView) GetMaxBlockSizeBytesPoS() uint64 {
 	return bav.GetCurrentGlobalParamsEntry().MaxBlockSizeBytesPoS
+}
+
+func (bav *UtxoView) GetSoftMaxBlockSizeBytesPoS() uint64 {
+	return bav.GetCurrentGlobalParamsEntry().SoftMaxBlockSizeBytesPoS
 }

@@ -4879,7 +4879,7 @@ func (bc *Blockchain) CreateMaxSpend(
 			if !isInterfaceValueNil(mempool) {
 				maxBlockSizeBytes := bc.params.MaxBlockSizeBytesPoW
 				if bc.params.IsPoSBlockHeight(uint64(bc.BlockTip().Height)) {
-					maxBlockSizeBytes = utxoView.GetMaxBlockSizeBytesPoS()
+					maxBlockSizeBytes = utxoView.GetSoftMaxBlockSizeBytesPoS()
 				}
 				// TODO: replace MaxBasisPoints with variables configured by flags.
 				feeAmountNanos, err = mempool.EstimateFee(txn, minFeeRateNanosPerKB,
@@ -5019,7 +5019,7 @@ func (bc *Blockchain) AddInputsAndChangeToTransactionWithSubsidy(
 			if !isInterfaceValueNil(mempool) {
 				maxBlockSizeBytes := bc.params.MaxBlockSizeBytesPoW
 				if bc.params.IsPoSBlockHeight(uint64(bc.BlockTip().Height)) {
-					maxBlockSizeBytes = utxoView.GetMaxBlockSizeBytesPoS()
+					maxBlockSizeBytes = utxoView.GetSoftMaxBlockSizeBytesPoS()
 				}
 				// TODO: replace MaxBasisPoints with variables configured by flags.
 				txArg.TxnFeeNanos, err = mempool.EstimateFee(txArg, minFeeRateNanosPerKB, MaxBasisPoints,

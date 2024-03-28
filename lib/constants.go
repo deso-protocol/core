@@ -805,6 +805,11 @@ type DeSoParams struct {
 	// This is the initial value for the maximum block size in bytes that we allow for PoS blocks.
 	DefaultMaxBlockSizeBytesPoS uint64
 
+	// DefaultSoftMaxBlockSizeBytesPoS is the default value for GlobalParamsEntry.SoftMaxBlockSizeBytesPoS
+	// This is the initial value for the ideal block size in bytes we aim for in block production and fee
+	// estimation.
+	DefaultSoftMaxBlockSizeBytesPoS uint64
+
 	// HandshakeTimeoutMicroSeconds is the timeout for the peer handshake certificate. The default value is 15 minutes.
 	HandshakeTimeoutMicroSeconds uint64
 
@@ -1293,6 +1298,9 @@ var DeSoMainnetParams = DeSoParams{
 	// The maximum size of blocks for PoS.
 	DefaultMaxBlockSizeBytesPoS: 32000, // 32KB TODO: verify this is a sane value.
 
+	// The soft maximum size of blocks for PoS.
+	DefaultSoftMaxBlockSizeBytesPoS: 16000, // 16KB TODO: verify this is a sane value.
+
 	// The peer handshake certificate timeout.
 	HandshakeTimeoutMicroSeconds: uint64(900000000),
 
@@ -1591,6 +1599,9 @@ var DeSoTestnetParams = DeSoParams{
 	// The maximum size of blocks for PoS.
 	DefaultMaxBlockSizeBytesPoS: 32000, // 32KB TODO: verify this is a sane value.
 
+	// The soft maximum size of blocks for PoS.
+	DefaultSoftMaxBlockSizeBytesPoS: 16000, // 16KB TODO: verify this is a sane value.
+
 	// The peer handshake certificate timeout.
 	HandshakeTimeoutMicroSeconds: uint64(900000000),
 
@@ -1657,6 +1668,7 @@ const (
 	MempoolFeeEstimatorNumMempoolBlocksKey            = "MempoolFeeEstimatorNumMempoolBlocks"
 	MempoolFeeEstimatorNumPastBlocksKey               = "MempoolFeeEstimatorNumPastBlocks"
 	MaxBlockSizeBytesPoSKey                           = "MaxBlockSizeBytesPoS"
+	SoftMaxBlockSizeBytesPoSKey                       = "SoftMaxBlockSizeBytesPoS"
 
 	DiamondLevelKey    = "DiamondLevel"
 	DiamondPostHashKey = "DiamondPostHash"
@@ -1767,6 +1779,9 @@ const (
 	// Min/MaxMaxBlockSizeBytes - Min/max value to which the max block size can be set.
 	MinMaxBlockSizeBytes = 1000     // 1kb TODO: Verify this is a sane value.
 	MaxMaxBlockSizeBytes = 16000000 // 16MB TODO: Verify this is a sane value.
+	// Min/MaxSoftMaxBlockSizeBytes - Min/max value to which the soft max block size can be set.
+	MinSoftMaxBlockSizeBytes = 1000     // 1kb TODO: Verify this is a sane value.
+	MaxSoftMaxBlockSizeBytes = 16000000 // 16MB TODO: Verify this is a sane value.
 
 	// DefaultMaxNonceExpirationBlockHeightOffset - default value to which the MaxNonceExpirationBlockHeightOffset
 	// is set to before specified by ParamUpdater.
