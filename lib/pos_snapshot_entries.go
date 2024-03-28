@@ -411,37 +411,26 @@ func (bav *UtxoView) _flushSnapshotValidatorSetToDbWithTxn(txn *badger.Txn, bloc
 				mapKey.SnapshotAtEpochNumber,
 			)
 		}
-		if err := DBDeleteSnapshotValidatorSetEntryWithTxn(
-			txn, bav.Snapshot, &mapKey.ValidatorPKID, mapKey.SnapshotAtEpochNumber, bav.EventManager, validatorEntry.isDeleted,
-		); err != nil {
-			return errors.Wrapf(
-				err,
-				"_flushSnapshotValidatorSetToDbWithTxn: problem deleting ValidatorEntry for EpochNumber %d: ",
-				mapKey.SnapshotAtEpochNumber,
-			)
-		}
-	}
-
-	// Put all !isDeleted SnapshotValidatorSet entry into the db from the UtxoView.
-	for mapKey, validatorEntry := range bav.SnapshotValidatorSet {
-		if validatorEntry == nil {
-			return fmt.Errorf(
-				"_flushSnapshotValidatorSetToDbWithTxn: found nil entry for EpochNumber %d, this should never happen",
-				mapKey.SnapshotAtEpochNumber,
-			)
-		}
 		if validatorEntry.isDeleted {
-			// Skip any deleted SnapshotValidatorSet.
-			continue
-		}
-		if err := DBPutSnapshotValidatorSetEntryWithTxn(
-			txn, bav.Snapshot, validatorEntry, mapKey.SnapshotAtEpochNumber, blockHeight, bav.EventManager,
-		); err != nil {
-			return errors.Wrapf(
-				err,
-				"_flushSnapshotValidatorSetToDbWithTxn: problem setting ValidatorEntry for EpochNumber %d: ",
-				mapKey.SnapshotAtEpochNumber,
-			)
+			if err := DBDeleteSnapshotValidatorSetEntryWithTxn(
+				txn, bav.Snapshot, &mapKey.ValidatorPKID, mapKey.SnapshotAtEpochNumber, bav.EventManager, validatorEntry.isDeleted,
+			); err != nil {
+				return errors.Wrapf(
+					err,
+					"_flushSnapshotValidatorSetToDbWithTxn: problem deleting ValidatorEntry for EpochNumber %d: ",
+					mapKey.SnapshotAtEpochNumber,
+				)
+			}
+		} else {
+			if err := DBUpdateSnapshotValidatorSetEntryWithTxn(
+				txn, bav.Snapshot, validatorEntry, mapKey.SnapshotAtEpochNumber, blockHeight, bav.EventManager,
+			); err != nil {
+				return errors.Wrapf(
+					err,
+					"_flushSnapshotValidatorSetToDbWithTxn: problem setting ValidatorEntry for EpochNumber %d: ",
+					mapKey.SnapshotAtEpochNumber,
+				)
+			}
 		}
 	}
 	return nil
@@ -544,7 +533,14 @@ func DBGetSnapshotValidatorSetByStakeAmount(
 	return validatorEntries, nil
 }
 
-func DBPutSnapshotValidatorSetEntryWithTxn(
+// In order to optimize the flush, we want to only write entries to the db that have changed.
+// On top of that, we add a further optimization to only update the
+// PrefixSnapshotValidatorSetByStakeAmount index if the stake amount has changed. Not doing this results
+// in a lot of writes to badger every epoch that eventually slow block processing to a crawl.
+// This is essentially a bug in badger when you repeatedly write to the same key, and we're
+// papering over it here in response to encountering the issue. In an ideal world, badger
+// would work as intended and this extra optimization wouldn't be necessary.
+func DBUpdateSnapshotValidatorSetEntryWithTxn(
 	txn *badger.Txn,
 	snap *Snapshot,
 	validatorEntry *ValidatorEntry,
@@ -554,7 +550,24 @@ func DBPutSnapshotValidatorSetEntryWithTxn(
 ) error {
 	if validatorEntry == nil {
 		// This should never happen but is a sanity check.
-		glog.Errorf("DBPutSnapshotValidatorSetEntryWithTxn: called with nil ValidatorEntry, this should never happen")
+		glog.Errorf("DBUpdateSnapshotValidatorSetEntryWithTxn: called with nil ValidatorEntry, this should never happen")
+		return nil
+	}
+
+	// Look up the existing entry
+	dbEntry, err := DBGetSnapshotValidatorSetEntryByPKIDWithTxn(
+		txn, snap, validatorEntry.ValidatorPKID, snapshotAtEpochNumber)
+	if err != nil {
+		return errors.Wrapf(
+			err, "DBUpdateSnapshotValidatorSetEntryWithTxn: problem retrieving ValidatorEntry for PKID %v: ",
+			validatorEntry.ValidatorPKID,
+		)
+	}
+	dbEntryBytes := EncodeToBytes(blockHeight, dbEntry)
+
+	entryToWriteBytes := EncodeToBytes(blockHeight, validatorEntry)
+	// If the entry in the db is the same as the entry we want to write, then no need to do anything.
+	if bytes.Equal(dbEntryBytes, entryToWriteBytes) {
 		return nil
 	}
 
@@ -563,19 +576,34 @@ func DBPutSnapshotValidatorSetEntryWithTxn(
 	if err := DBSetWithTxn(txn, snap, key, EncodeToBytes(blockHeight, validatorEntry), eventManager); err != nil {
 		return errors.Wrapf(
 			err,
-			"DBPutSnapshotValidatorSetEntryWithTxn: problem putting ValidatorEntry in the SnapshotValidatorByPKID index: ",
+			"DBUpdateSnapshotValidatorSetEntryWithTxn: problem putting ValidatorEntry in the SnapshotValidatorByPKID index: ",
 		)
 	}
 
-	// Put the ValidatorPKID in the SnapshotValidatorByStatusAndStakeAmount index.
-	key = DBKeyForSnapshotValidatorSetByStakeAmount(validatorEntry, snapshotAtEpochNumber)
-	if err := DBSetWithTxn(txn, snap, key, EncodeToBytes(blockHeight, validatorEntry.ValidatorPKID), eventManager); err != nil {
-		return errors.Wrapf(
-			err,
-			"DBPutSnapshotValidatorSetEntryWithTxn: problem putting ValidatorPKID in the SnapshotValidatorByStake index: ",
-		)
-	}
+	// Only update the PrefixSnapshotValidatorSetByStakeAmount index if the stake amount has changed.
+	if dbEntry == nil || dbEntry.TotalStakeAmountNanos.Cmp(validatorEntry.TotalStakeAmountNanos) != 0 {
+		// Delete the existing index value if it exists.
+		if dbEntry != nil {
+			key = DBKeyForSnapshotValidatorSetByStakeAmount(dbEntry, snapshotAtEpochNumber)
+			// Note we set isDeleted=false as a hint to the state syncer that we're about to
+			// update this value immediately after.
+			if err := DBDeleteWithTxn(txn, snap, key, eventManager, false); err != nil {
+				return errors.Wrapf(
+					err,
+					"DBUpdateSnapshotValidatorSetEntryWithTxn: problem deleting ValidatorPKID from the SnapshotValidatorByStake index: ",
+				)
+			}
+		}
 
+		// Put the ValidatorPKID in the SnapshotValidatorByStatusAndStakeAmount index.
+		key = DBKeyForSnapshotValidatorSetByStakeAmount(validatorEntry, snapshotAtEpochNumber)
+		if err := DBSetWithTxn(txn, snap, key, EncodeToBytes(blockHeight, validatorEntry.ValidatorPKID), eventManager); err != nil {
+			return errors.Wrapf(
+				err,
+				"DBUpdateSnapshotValidatorSetEntryWithTxn: problem putting ValidatorPKID in the SnapshotValidatorByStake index: ",
+			)
+		}
+	}
 	return nil
 }
 
