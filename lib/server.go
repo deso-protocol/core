@@ -2336,8 +2336,10 @@ func (srv *Server) _handleBlockBundle(pp *Peer, bundle *MsgDeSoBlockBundle) {
 				pp)))
 
 			elapsed := time.Since(blockProcessingStartTime)
+			// Reset the blockProcessingStartTime so that each 1k blocks is timed individually
+			blockProcessingStartTime = time.Now()
 			if ii != 0 {
-				fmt.Printf("We are processing %v blocks per second\n", float64(ii)/(float64(elapsed)/1e9))
+				fmt.Printf("We are processing %v blocks per second\n", float64(1000)/(float64(elapsed)/1e9))
 			}
 		}
 	}
