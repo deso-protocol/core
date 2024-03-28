@@ -1756,7 +1756,7 @@ func (bav *UtxoView) IsValidRegisterAsValidatorMetadata(
 	for _, domain := range metadata.Domains {
 		_, err := url.ParseRequestURI(string(domain))
 		if err != nil {
-			return fmt.Errorf("UtxoView.IsValidRegisterAsValidatorMetadata: %s: %v", RuleErrorValidatorInvalidDomain, domain)
+			return fmt.Errorf("UtxoView.IsValidRegisterAsValidatorMetadata: %s: %v", RuleErrorValidatorInvalidDomain, string(domain))
 		}
 		domainStrings = append(domainStrings, string(domain))
 	}
