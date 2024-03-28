@@ -5,17 +5,18 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"github.com/btcsuite/btcd/btcec"
-	"github.com/davecgh/go-spew/spew"
-	"github.com/dgraph-io/badger/v3"
-	"github.com/gernest/mention"
-	"github.com/golang/glog"
-	"github.com/pkg/errors"
 	"math"
 	"reflect"
 	"regexp"
 	"sort"
 	"strings"
+
+	"github.com/btcsuite/btcd/btcec"
+	"github.com/davecgh/go-spew/spew"
+	"github.com/dgraph-io/badger/v4"
+	"github.com/gernest/mention"
+	"github.com/golang/glog"
+	"github.com/pkg/errors"
 )
 
 func (bav *UtxoView) _getRepostEntryForRepostKey(repostKey *RepostKey) *RepostEntry {

@@ -2,11 +2,12 @@ package lib
 
 import (
 	"bytes"
-	"github.com/dgraph-io/badger/v3"
-	"github.com/golang/glog"
-	"github.com/pkg/errors"
 	"sync"
 	"time"
+
+	"github.com/dgraph-io/badger/v4"
+	"github.com/golang/glog"
+	"github.com/pkg/errors"
 )
 
 const (

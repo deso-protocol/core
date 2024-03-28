@@ -12,7 +12,7 @@ import (
 	"github.com/deso-protocol/core/consensus"
 
 	"github.com/deso-protocol/core/bls"
-	"github.com/dgraph-io/badger/v3"
+	"github.com/dgraph-io/badger/v4"
 	"github.com/golang/glog"
 	"github.com/holiman/uint256"
 	"github.com/pkg/errors"
