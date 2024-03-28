@@ -5452,7 +5452,7 @@ func GetBlockTipHeight(handle *badger.DB, bitcoinNodes bool) (uint64, error) {
 	return blockHeight, err
 }
 
-func GetBlockIndex(handle *badger.DB, bitcoinNodes bool) (map[BlockHash]*BlockNode, error) {
+func GetBlockIndex(handle *badger.DB, bitcoinNodes bool, params *DeSoParams) (map[BlockHash]*BlockNode, error) {
 	blockIndex := make(map[BlockHash]*BlockNode)
 
 	prefix := _heightHashToNodeIndexPrefix(bitcoinNodes)
@@ -5503,6 +5503,11 @@ func GetBlockIndex(handle *badger.DB, bitcoinNodes bool) (map[BlockHash]*BlockNo
 				// We found the parent node so connect it.
 				blockNode.Parent = parent
 			} else {
+				// If we're syncing a DeSo node and we hit a PoS block, we expect there to
+				// be orphan blocks in the block index. In this case, we don't throw an error.
+				if bitcoinNodes == false && params.IsPoSBlockHeight(uint64(blockNode.Height)) {
+					continue
+				}
 				// In this case we didn't find the parent so error. There shouldn't
 				// be any unconnectedTxns in our block index.
 				return fmt.Errorf("GetBlockIndex: Could not find parent for blockNode: %+v", blockNode)

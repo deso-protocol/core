@@ -171,7 +171,7 @@ func TestBlockNodePutGet(t *testing.T) {
 	err = PutHeightHashToNodeInfo(db, nil, b4, false /*bitcoinNodes*/, nil)
 	require.NoError(err)
 
-	blockIndex, err := GetBlockIndex(db, false /*bitcoinNodes*/)
+	blockIndex, err := GetBlockIndex(db, false /*bitcoinNodes*/, &DeSoTestnetParams)
 	require.NoError(err)
 
 	require.Len(blockIndex, 4)
@@ -224,7 +224,7 @@ func TestInitDbWithGenesisBlock(t *testing.T) {
 	require.NoError(err)
 
 	// Check the block index.
-	blockIndex, err := GetBlockIndex(db, false /*bitcoinNodes*/)
+	blockIndex, err := GetBlockIndex(db, false /*bitcoinNodes*/, &DeSoTestnetParams)
 	require.NoError(err)
 	require.Len(blockIndex, 1)
 	genesisHash := *MustDecodeHexBlockHash(DeSoTestnetParams.GenesisBlockHashHex)

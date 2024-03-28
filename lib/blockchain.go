@@ -656,7 +656,7 @@ func (bc *Blockchain) _initChain() error {
 	if bc.postgres != nil {
 		bc.blockIndexByHash, err = bc.postgres.GetBlockIndex()
 	} else {
-		bc.blockIndexByHash, err = GetBlockIndex(bc.db, false /*bitcoinNodes*/)
+		bc.blockIndexByHash, err = GetBlockIndex(bc.db, false /*bitcoinNodes*/, bc.params)
 	}
 	if err != nil {
 		return errors.Wrapf(err, "_initChain: Problem reading block index from db")
