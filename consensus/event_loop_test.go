@@ -156,7 +156,7 @@ func TestProcessTipBlock(t *testing.T) {
 	// Test ProcessTipBlock() function when event loop is not running
 	{
 		tipBlock := BlockWithValidatorList{createDummyBlock(2), createDummyValidatorList()}
-		err := fc.ProcessTipBlock(tipBlock, []BlockWithValidatorList{tipBlock})
+		err := fc.ProcessTipBlock(tipBlock, []BlockWithValidatorList{tipBlock}, oneHourInNanoSecs, oneHourInNanoSecs)
 		require.Error(t, err)
 	}
 
@@ -168,6 +168,8 @@ func TestProcessTipBlock(t *testing.T) {
 		err := fc.ProcessTipBlock(
 			BlockWithValidatorList{nil, createDummyValidatorList()},                     // tip
 			[]BlockWithValidatorList{{createDummyBlock(2), createDummyValidatorList()}}, // safeBlocks
+			oneHourInNanoSecs,
+			oneHourInNanoSecs,
 		)
 		require.Error(t, err)
 	}
@@ -177,6 +179,8 @@ func TestProcessTipBlock(t *testing.T) {
 		err := fc.ProcessTipBlock(
 			BlockWithValidatorList{createDummyBlock(2), nil},                            // tip
 			[]BlockWithValidatorList{{createDummyBlock(2), createDummyValidatorList()}}, // safeBlocks
+			oneHourInNanoSecs,
+			oneHourInNanoSecs,
 		)
 		require.Error(t, err)
 	}
@@ -186,6 +190,8 @@ func TestProcessTipBlock(t *testing.T) {
 		err := fc.ProcessTipBlock(
 			BlockWithValidatorList{createDummyBlock(2), createDummyValidatorList()}, // tip
 			[]BlockWithValidatorList{{nil, createDummyValidatorList()}},             // safeBlocks
+			oneHourInNanoSecs,
+			oneHourInNanoSecs,
 		)
 		require.Error(t, err)
 	}
@@ -195,6 +201,8 @@ func TestProcessTipBlock(t *testing.T) {
 		err := fc.ProcessTipBlock(
 			BlockWithValidatorList{createDummyBlock(2), createDummyValidatorList()}, // tip
 			[]BlockWithValidatorList{{createDummyBlock(2), nil}},                    // safeBlocks
+			oneHourInNanoSecs,
+			oneHourInNanoSecs,
 		)
 		require.Error(t, err)
 	}
@@ -252,7 +260,7 @@ func TestProcessTipBlock(t *testing.T) {
 
 		tipBlock := BlockWithValidatorList{nextBlock, createDummyValidatorList()}
 
-		err := fc.ProcessTipBlock(tipBlock, []BlockWithValidatorList{tipBlock})
+		err := fc.ProcessTipBlock(tipBlock, []BlockWithValidatorList{tipBlock}, oneHourInNanoSecs, oneHourInNanoSecs)
 		require.NoError(t, err)
 
 		require.Equal(t, nextBlock.GetBlockHash().GetValue(), fc.tip.block.GetBlockHash().GetValue())
