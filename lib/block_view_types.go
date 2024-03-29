@@ -179,6 +179,7 @@ const (
 	EncoderTypeUpdateCoinLockupParamsTxindexMetadata EncoderType = 1000037
 	EncoderTypeCoinLockupTransferTxindexMetadata     EncoderType = 1000038
 	EncoderTypeCoinUnlockTxindexMetadata             EncoderType = 1000039
+	EncoderTypeAtomicTxnsWrapperTxindexMetadata      EncoderType = 1000040
 
 	// EncoderTypeEndTxIndex encoder type should be at the end and is used for automated tests.
 	EncoderTypeEndTxIndex EncoderType = 1000036
@@ -376,6 +377,8 @@ func (encoderType EncoderType) New() DeSoEncoder {
 		return &CoinLockupTransferTxindexMetadata{}
 	case EncoderTypeCoinUnlockTxindexMetadata:
 		return &CoinUnlockTxindexMetadata{}
+	case EncoderTypeAtomicTxnsWrapperTxindexMetadata:
+		return &AtomicTxnsWrapperTxindexMetadata{}
 	default:
 		return nil
 	}
@@ -682,8 +685,9 @@ const (
 	OperationTypeStakeDistributionRestake      OperationType = 49
 	OperationTypeStakeDistributionPayToBalance OperationType = 50
 	OperationTypeSetValidatorLastActiveAtEpoch OperationType = 51
-	OperationTypeFailingTxn                    OperationType = 52
-	// NEXT_TAG = 53
+	OperationTypeAtomicTxnsWrapper             OperationType = 52
+	OperationTypeFailingTxn                    OperationType = 53
+	// NEXT_TAG = 54
 )
 
 func (op OperationType) String() string {
@@ -790,6 +794,8 @@ func (op OperationType) String() string {
 		return "OperationTypeSetValidatorLastActiveAtEpoch"
 	case OperationTypeStakeDistributionPayToBalance:
 		return "OperationTypeStakeDistributionPayToBalance"
+	case OperationTypeAtomicTxnsWrapper:
+		return "OperationTypeAtomicTxnsWrapper"
 	}
 	return "OperationTypeUNKNOWN"
 }
@@ -1044,6 +1050,21 @@ type UtxoOperation struct {
 	// transaction metadata itself doesn't specify the information we need to return to
 	// rosetta.
 	LockedAtEpochNumber uint64
+
+	// AtomicTxnInnerUtxoOps maintains a 2D slice of all UtxoOps collected from transactions
+	// who were executed atomically. The 2D array allows us to easily disconnect transactions
+	// who are part of an atomic transaction as we hold each of their UtxoOps separately.
+	//
+	// NOTE: While it may seem erroneous to have a field within the UtxoOperation struct of
+	// type UtxoOperation, this is valid because the size of the pointer is always known at
+	// compile time. Hence, there's no circular dependency as is the case if we were to use
+	// [][]UtxoOperation for this field instead. This could equivalently be a 2D array of
+	// void pointers from the compiler's perspective. In addition, it may seem as though
+	// there's a recursive issue in RawEncodeWithoutMetadata resulting from cyclic dependencies,
+	// this is not the case as we only call RawEncodeWithoutMetadata if the length of the
+	// AtomicTxnsInnerUtxoOps transaction is non-zero. This will always occur, meaning we
+	// can deterministically encode and decode AtomicTxnsInnerUtxoOps.
+	AtomicTxnsInnerUtxoOps [][]*UtxoOperation
 }
 
 // FIXME: This hackIsRunningStateSyncer() call is a hack to get around the fact that
@@ -1416,6 +1437,15 @@ func (op *UtxoOperation) RawEncodeWithoutMetadata(blockHeight uint64, skipMetada
 
 		// LockedAtEpochNumber
 		data = append(data, UintToBuf(op.LockedAtEpochNumber)...)
+
+		// AtomicTxnsInnerUtxoOps
+		data = append(data, UintToBuf(uint64(len(op.AtomicTxnsInnerUtxoOps)))...)
+		for _, entry := range op.AtomicTxnsInnerUtxoOps {
+			data = append(data, UintToBuf(uint64(len(entry)))...)
+			for _, utxoOps := range entry {
+				data = append(data, EncodeToBytes(blockHeight, utxoOps, skipMetadata...)...)
+			}
+		}
 	}
 
 	return data
@@ -2110,6 +2140,31 @@ func (op *UtxoOperation) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.
 		// LockedAtEpochNumber
 		if op.LockedAtEpochNumber, err = ReadUvarint(rr); err != nil {
 			return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading LockedAtEpochNumber: ")
+		}
+
+		// AtomicTxnsInnerUtxoOps
+		lenAtomicTnxInnerUtxoOps, err := ReadUvarint(rr)
+		if err != nil {
+			return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading len of AtomicTxnsInnerUtxoOps")
+		}
+		for ii := uint64(0); ii < lenAtomicTnxInnerUtxoOps; ii++ {
+			lenInnerOperations, err := ReadUvarint(rr)
+			if err != nil {
+				return errors.Wrapf(err,
+					"UtxoOperation.Decode: Problem reading len of AtomicTxnsInnerUtxoOps[%d]", ii)
+			}
+
+			var innerOperations []*UtxoOperation
+			for jj := uint64(0); jj < lenInnerOperations; jj++ {
+				innerOperation := &UtxoOperation{}
+				if exist, err := DecodeFromBytes(innerOperation, rr); exist && err == nil {
+					innerOperations = append(innerOperations, innerOperation)
+				} else {
+					return errors.Wrapf(err,
+						"UtxoOperation.Decode: Problem decoding AtomicTxnsInnerUtxoOps[%d][%d]", ii, jj)
+				}
+			}
+			op.AtomicTxnsInnerUtxoOps = append(op.AtomicTxnsInnerUtxoOps, innerOperations)
 		}
 	}
 
