@@ -757,6 +757,7 @@ func (stateChangeSyncer *StateChangeSyncer) SyncMempoolToStateSyncer(server *Ser
 					mempoolTx.Hash,
 					err,
 				)
+				// If the txn fails to connect, then we should not emit any state changes for it.
 				continue
 			}
 		} else {
