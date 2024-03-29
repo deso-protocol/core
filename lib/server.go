@@ -505,6 +505,7 @@ func NewServer(
 	// Initialize the BlockProducer
 	// TODO(miner): Should figure out a way to get this into main.
 	var _blockProducer *DeSoBlockProducer
+	glog.V(1).Infof("NewServer: Starting Block Producer: %d", _maxBlockTemplatesToCache)
 	if _maxBlockTemplatesToCache > 0 {
 		_blockProducer, err = NewDeSoBlockProducer(
 			_minBlockUpdateIntervalSeconds, _maxBlockTemplatesToCache,
@@ -514,6 +515,7 @@ func NewServer(
 		if err != nil {
 			panic(err)
 		}
+		glog.V(1).Infof("NewServer: Initiating block producer gofund")
 		go func() {
 			_blockProducer.Start()
 		}()
@@ -2045,10 +2047,25 @@ func (srv *Server) _processTransactions(pp *Peer, transactions []*MsgDeSoTxn) []
 	// a block. Doing something like this would make it so that if a transaction
 	// was initially rejected due to us not having its dependencies, then we
 	// will eventually add it as opposed to just forgetting about it.
-	glog.V(2).Infof("Server._processTransactions: Processing %d transactions from "+
+	glog.V(1).Infof("Server._processTransactions: Processing %d transactions from "+
 		"peer %v", len(transactions), pp)
 	transactionsToRelay := []*MempoolTx{}
-	for _, txn := range transactions {
+	for ii, txn := range transactions {
+		// Take some time to allow other threads to get the ChainLock if they need it
+		//
+		// TODO: It's not obvious how necessary this rest period is, and it's also not obvious if
+		// five seconds is the right amount. We added it during a mission-critical sprint
+		// to find and fix slow block production issue as one of several patches. It clearly doesn't
+		// hurt so we decided to leave it in for now.
+		if (ii+1)%1000 == 0 {
+			// Log
+			glog.V(1).Infof("Server._processTransactions: Taking a break to allow " +
+				"other services to grab the ChainLock")
+			time.Sleep(5000 * time.Millisecond)
+		}
+
+		glog.V(1).Infof("Server._processTransactions: Processing txn ( %d / %d ) from "+
+			"peer %v", ii, len(transactions), pp)
 		// Process the transaction with rate-limiting while allowing unconnectedTxns and
 		// verifying signatures.
 		newlyAcceptedTxns, err := srv.ProcessSingleTxnWithChainLock(pp, txn)
