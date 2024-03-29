@@ -3496,6 +3496,26 @@ func (bav *UtxoView) _connectUpdateGlobalParams(
 			}
 			newGlobalParamsEntry.SoftMaxBlockSizeBytesPoS = val
 		}
+		if len(extraData[MaxTxnSizeBytesPoSKey]) > 0 {
+			val, bytesRead := Uvarint(
+				extraData[MaxTxnSizeBytesPoSKey],
+			)
+			if bytesRead <= 0 {
+				return 0, 0, nil, fmt.Errorf(
+					"_connectUpdateGlobalParams: unable to decode MaxTxnSizeBytesPoS as uint64",
+				)
+			}
+			if val < MinMaxTxnSizeBytes {
+				return 0, 0, nil, RuleErrorMaxTxnSizeBytesTooLow
+			}
+			if val > MaxMaxTxnSizeBytes {
+				return 0, 0, nil, RuleErrorMaxTxnSizeBytesTooHigh
+			}
+			if MergeGlobalParamEntryDefaults(&newGlobalParamsEntry, bav.Params).MaxBlockSizeBytesPoS < val {
+				return 0, 0, nil, RuleErrorMaxTxnSizeBytesExceedsMaxBlockSizeBytes
+			}
+			newGlobalParamsEntry.MaxTxnSizeBytesPoS = val
+		}
 	}
 
 	var newForbiddenPubKeyEntry *ForbiddenPubKeyEntry
@@ -3699,13 +3719,14 @@ func (bav *UtxoView) _connectSingleTxn(
 		return nil, 0, 0, 0, errors.Wrapf(
 			err, "_connectTransaction: Problem serializing transaction: ")
 	}
-	maxBlockSizeBytes := bav.Params.MaxBlockSizeBytesPoW
+
+	maxTxnSizeBytes := bav.Params.MaxBlockSizeBytesPoW / 2
 	if bav.Params.IsPoSBlockHeight(uint64(blockHeight)) {
-		maxBlockSizeBytes = bav.GetMaxBlockSizeBytesPoS()
+		maxTxnSizeBytes = bav.GetMaxTxnSizeBytesPoS()
 	}
 
 	txnSizeBytes := uint64(len(txnBytes))
-	if txnSizeBytes > maxBlockSizeBytes/2 {
+	if txnSizeBytes > maxTxnSizeBytes {
 		return nil, 0, 0, 0, RuleErrorTxnTooBig
 	}
 
@@ -5104,4 +5125,8 @@ func (bav *UtxoView) GetMaxBlockSizeBytesPoS() uint64 {
 
 func (bav *UtxoView) GetSoftMaxBlockSizeBytesPoS() uint64 {
 	return bav.GetCurrentGlobalParamsEntry().SoftMaxBlockSizeBytesPoS
+}
+
+func (bav *UtxoView) GetMaxTxnSizeBytesPoS() uint64 {
+	return bav.GetCurrentGlobalParamsEntry().MaxTxnSizeBytesPoS
 }

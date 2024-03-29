@@ -810,6 +810,10 @@ type DeSoParams struct {
 	// estimation.
 	DefaultSoftMaxBlockSizeBytesPoS uint64
 
+	// DefaultMaxTxnSizeBytesPoS is the default value for GlobalParamsEntry.MaxTxnSizeBytesPoS.
+	// This is the initial value for the maximum txn size in bytes that we allow for txns in PoS blocks.
+	DefaultMaxTxnSizeBytesPoS uint64
+
 	// HandshakeTimeoutMicroSeconds is the timeout for the peer handshake certificate. The default value is 15 minutes.
 	HandshakeTimeoutMicroSeconds uint64
 
@@ -1301,6 +1305,9 @@ var DeSoMainnetParams = DeSoParams{
 	// The soft maximum size of blocks for PoS.
 	DefaultSoftMaxBlockSizeBytesPoS: 16000, // 16KB TODO: verify this is a sane value.
 
+	// The maximum size for a single txn in PoS.
+	DefaultMaxTxnSizeBytesPoS: 25000, // 25KB TODO: verify this is a sane value.
+
 	// The peer handshake certificate timeout.
 	HandshakeTimeoutMicroSeconds: uint64(900000000),
 
@@ -1602,6 +1609,9 @@ var DeSoTestnetParams = DeSoParams{
 	// The soft maximum size of blocks for PoS.
 	DefaultSoftMaxBlockSizeBytesPoS: 16000, // 16KB TODO: verify this is a sane value.
 
+	// The maximum size for a single txn in PoS.
+	DefaultMaxTxnSizeBytesPoS: 25000, // 25KB TODO: verify this is a sane value.
+
 	// The peer handshake certificate timeout.
 	HandshakeTimeoutMicroSeconds: uint64(900000000),
 
@@ -1669,6 +1679,7 @@ const (
 	MempoolFeeEstimatorNumPastBlocksKey               = "MempoolFeeEstimatorNumPastBlocks"
 	MaxBlockSizeBytesPoSKey                           = "MaxBlockSizeBytesPoS"
 	SoftMaxBlockSizeBytesPoSKey                       = "SoftMaxBlockSizeBytesPoS"
+	MaxTxnSizeBytesPoSKey                             = "MaxTxnSizeBytesPoS"
 
 	DiamondLevelKey    = "DiamondLevel"
 	DiamondPostHashKey = "DiamondPostHash"
@@ -1782,6 +1793,9 @@ const (
 	// Min/MaxSoftMaxBlockSizeBytes - Min/max value to which the soft max block size can be set.
 	MinSoftMaxBlockSizeBytes = 1000     // 1kb TODO: Verify this is a sane value.
 	MaxSoftMaxBlockSizeBytes = 16000000 // 16MB TODO: Verify this is a sane value.
+	// Min/MaxMaxTxnSizeBytes - Min/max value to which the max txn size can be set.
+	MinMaxTxnSizeBytes = 1000     // 1kb TODO: Verify this is a sane value.
+	MaxMaxTxnSizeBytes = 16000000 // 16MB TODO: Verify this is a sane value.
 
 	// DefaultMaxNonceExpirationBlockHeightOffset - default value to which the MaxNonceExpirationBlockHeightOffset
 	// is set to before specified by ParamUpdater.

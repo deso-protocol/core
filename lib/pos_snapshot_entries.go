@@ -166,6 +166,9 @@ func MergeGlobalParamEntryDefaults(globalParamsEntry *GlobalParamsEntry, params 
 	if globalParamsEntryCopy.SoftMaxBlockSizeBytesPoS == 0 {
 		globalParamsEntryCopy.SoftMaxBlockSizeBytesPoS = params.DefaultSoftMaxBlockSizeBytesPoS
 	}
+	if globalParamsEntryCopy.MaxTxnSizeBytesPoS == 0 {
+		globalParamsEntryCopy.MaxTxnSizeBytesPoS = params.DefaultMaxTxnSizeBytesPoS
+	}
 
 	// Return the merged result.
 	return globalParamsEntryCopy
