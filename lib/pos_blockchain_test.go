@@ -2207,7 +2207,9 @@ func TestProcessOrphanBlockPoS(t *testing.T) {
 		nextEpochEntry, err := utxoView.computeNextEpochEntry(currentEpochEntry.EpochNumber, currentEpochEntry.FinalBlockHeight, currentEpochEntry.FinalBlockHeight, 1)
 		require.NoError(t, err)
 		var twoEpochsInFutureBlock *MsgDeSoBlock
-		twoEpochsInFutureBlock = _generateRealBlock(testMeta, nextEpochEntry.FinalBlockHeight+1, nextEpochEntry.FinalBlockHeight+1, 17283, testMeta.chain.BlockTip().Hash, false)
+		twoEpochsInFutureBlock = _generateRealBlock(testMeta, nextEpochEntry.FinalBlockHeight, nextEpochEntry.FinalBlockHeight, 17283, testMeta.chain.BlockTip().Hash, false)
+		twoEpochsInFutureBlock.Header.Height += 1
+		twoEpochsInFutureBlock.Header.ProposedInView += 1
 		// Give the block a random parent, so it is truly an orphan.
 		twoEpochsInFutureBlock.Header.PrevBlockHash = NewBlockHash(RandomBytes(32))
 		updateProposerVotePartialSignatureForBlock(testMeta, twoEpochsInFutureBlock)

@@ -17,7 +17,7 @@ func ValidateDeSoTxnSanityBalanceModel(txn *MsgDeSoTxn, blockHeight uint64,
 	}
 
 	// Validate encoding
-	if err := ValidateDeSoTxnEncoding(txn, params); err != nil {
+	if err := ValidateDeSoTxnEncoding(txn, blockHeight, globalParams, params); err != nil {
 		return errors.Wrapf(err, "ValidateDeSoTxnSanityBalanceModel: ")
 	}
 	// Validate transaction metadata
@@ -44,7 +44,12 @@ func ValidateDeSoTxnSanityBalanceModel(txn *MsgDeSoTxn, blockHeight uint64,
 }
 
 // ValidateDeSoTxnEncoding validates that the transaction encoding works as expected.
-func ValidateDeSoTxnEncoding(txn *MsgDeSoTxn, params *DeSoParams) error {
+func ValidateDeSoTxnEncoding(
+	txn *MsgDeSoTxn,
+	blockHeight uint64,
+	globalParams *GlobalParamsEntry,
+	params *DeSoParams,
+) error {
 	if txn == nil || params == nil {
 		return fmt.Errorf("ValidateDeSoTxnEncoding: Transaction and params cannot be nil")
 	}
@@ -68,10 +73,14 @@ func ValidateDeSoTxnEncoding(txn *MsgDeSoTxn, params *DeSoParams) error {
 	}
 
 	// TODO: Do we want a separate parameter for transaction size? Should it be a part of GlobalDeSoParams?
+	maxBlockSizeBytes := params.MaxBlockSizeBytesPoW
+	if params.IsPoSBlockHeight(blockHeight) {
+		maxBlockSizeBytes = MergeGlobalParamEntryDefaults(globalParams, params).MaxBlockSizeBytesPoS
+	}
 	// Validate transaction size
-	if uint64(len(txnBytes)) > params.MaxBlockSizeBytes/2 {
+	if uint64(len(txnBytes)) > maxBlockSizeBytes/2 {
 		return errors.Wrapf(RuleErrorTxnTooBig, "ValidateDeSoTxnEncoding: Transaction size %d is greater than "+
-			"MaxBlockSizeBytes/2 %d", len(txnBytes), params.MaxBlockSizeBytes/2)
+			"MaxBlockSizeBytesPoW/2 %d", len(txnBytes), maxBlockSizeBytes/2)
 	}
 	return nil
 }

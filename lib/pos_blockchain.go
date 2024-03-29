@@ -747,6 +747,16 @@ func (bc *Blockchain) validateAndIndexBlockPoS(block *MsgDeSoBlock, parentUtxoVi
 		}
 	}
 
+	// Make sure the block isn't too big.
+	serializedBlock, err := block.ToBytes(false)
+	if err != nil {
+		return bc.storeValidateFailedBlockWithWrappedError(
+			block, errors.Wrap(err, "validateAndIndexBlockPoS: Problem serializing block"))
+	}
+	if uint64(len(serializedBlock)) > parentUtxoView.GetCurrentGlobalParamsEntry().MaxBlockSizeBytesPoS {
+		return bc.storeValidateFailedBlockWithWrappedError(block, RuleErrorBlockTooBig)
+	}
+
 	// Check if the block is properly formed and passes all basic validations.
 	if err = bc.isValidBlockPoS(block); err != nil {
 		return bc.storeValidateFailedBlockWithWrappedError(block, err)

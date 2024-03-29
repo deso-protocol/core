@@ -648,7 +648,7 @@ type DeSoParams struct {
 
 	// The maximum number of bytes that can be allocated to transactions in
 	// a block.
-	MaxBlockSizeBytes uint64
+	MaxBlockSizeBytesPoW uint64
 
 	// It's useful to set the miner maximum block size to a little lower than the
 	// maximum block size in certain cases. For example, on initial launch, setting
@@ -801,6 +801,10 @@ type DeSoParams struct {
 	// for a description of its usage.
 	DefaultMempoolFeeEstimatorNumPastBlocks uint64
 
+	// DefaultMaxBlockSizeBytesPoS is the default value for GlobalParamsEntry.MaxBlockSizeBytesPoS.
+	// This is the initial value for the maximum block size in bytes that we allow for PoS blocks.
+	DefaultMaxBlockSizeBytesPoS uint64
+
 	// HandshakeTimeoutMicroSeconds is the timeout for the peer handshake certificate. The default value is 15 minutes.
 	HandshakeTimeoutMicroSeconds uint64
 
@@ -888,6 +892,9 @@ func (params *DeSoParams) EnableRegtest() {
 	params.DefaultEpochDurationNumBlocks = 10
 	// Set the PoS default jail inactive validator grace period epochs to 3.
 	params.DefaultJailInactiveValidatorGracePeriodEpochs = 3
+	// Set the DefaultMaxBlockSizeBytesPoS to be the same as the MaxBlockSizeBytesPoW
+	// so existing regtest nodes don't break.
+	params.DefaultMaxBlockSizeBytesPoS = params.MaxBlockSizeBytesPoW
 
 	// In regtest, we start all the fork heights at zero. These can be adjusted
 	// for testing purposes to ensure that a transition does not cause issues.
@@ -1176,7 +1183,7 @@ var DeSoMainnetParams = DeSoParams{
 	// have to have a lot of space. This seems fine, however,
 	// because space is cheap and it's easy to spin up a cloud machine with
 	// tens of terabytes of space.
-	MaxBlockSizeBytes: 16000000,
+	MaxBlockSizeBytesPoW: 16000000,
 
 	// We set this to be lower initially to avoid winding up with really big
 	// spam blocks in the event someone tries to abuse the initially low min
@@ -1282,6 +1289,9 @@ var DeSoMainnetParams = DeSoParams{
 
 	// The number of past blocks to consider when estimating the mempool fee.
 	DefaultMempoolFeeEstimatorNumPastBlocks: 50,
+
+	// The maximum size of blocks for PoS.
+	DefaultMaxBlockSizeBytesPoS: 32000, // 32KB TODO: verify this is a sane value.
 
 	// The peer handshake certificate timeout.
 	HandshakeTimeoutMicroSeconds: uint64(900000000),
@@ -1469,7 +1479,7 @@ var DeSoTestnetParams = DeSoParams{
 
 	// We use a max block size of 1MB. This seems to work well for BTC and
 	// most of our data doesn't need to be stored on the blockchain anyway.
-	MaxBlockSizeBytes: 1000000,
+	MaxBlockSizeBytesPoW: 1000000,
 
 	// We set this to be lower initially to avoid winding up with really big
 	// spam blocks in the event someone tries to abuse the initially low min
@@ -1578,6 +1588,9 @@ var DeSoTestnetParams = DeSoParams{
 	// The number of past blocks to consider when estimating the mempool fee.
 	DefaultMempoolFeeEstimatorNumPastBlocks: 50,
 
+	// The maximum size of blocks for PoS.
+	DefaultMaxBlockSizeBytesPoS: 32000, // 32KB TODO: verify this is a sane value.
+
 	// The peer handshake certificate timeout.
 	HandshakeTimeoutMicroSeconds: uint64(900000000),
 
@@ -1643,6 +1656,7 @@ const (
 	MempoolMaxSizeBytesKey                            = "MempoolMaxSizeBytes"
 	MempoolFeeEstimatorNumMempoolBlocksKey            = "MempoolFeeEstimatorNumMempoolBlocks"
 	MempoolFeeEstimatorNumPastBlocksKey               = "MempoolFeeEstimatorNumPastBlocks"
+	MaxBlockSizeBytesPoSKey                           = "MaxBlockSizeBytesPoS"
 
 	DiamondLevelKey    = "DiamondLevel"
 	DiamondPostHashKey = "DiamondPostHash"
@@ -1750,6 +1764,9 @@ const (
 	// Access group key constants
 	MinAccessGroupKeyNameCharacters = 1
 	MaxAccessGroupKeyNameCharacters = 32
+	// Min/MaxMaxBlockSizeBytes - Min/max value to which the max block size can be set.
+	MinMaxBlockSizeBytes = 1000     // 1kb TODO: Verify this is a sane value.
+	MaxMaxBlockSizeBytes = 16000000 // 16MB TODO: Verify this is a sane value.
 
 	// DefaultMaxNonceExpirationBlockHeightOffset - default value to which the MaxNonceExpirationBlockHeightOffset
 	// is set to before specified by ParamUpdater.
