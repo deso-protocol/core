@@ -230,6 +230,9 @@ const (
 	RuleErrorLeaderScheduleExceedsValidatorSetMaxNumValidators RuleError = "RuleErrorLeaderScheduleExceedsValidatorSetMaxNumValidators"
 	RuleErrorMaxBlockSizeBytesTooLow                           RuleError = "RuleErrorMaxBlockSizeBytesTooLow"
 	RuleErrorMaxBlockSizeBytesTooHigh                          RuleError = "RuleErrorMaxBlockSizeBytesTooHigh"
+	RuleErrorSoftMaxBlockSizeBytesTooLow                       RuleError = "RuleErrorSoftMaxBlockSizeBytesTooLow"
+	RuleErrorSoftMaxBlockSizeBytesTooHigh                      RuleError = "RuleErrorSoftMaxBlockSizeBytesTooHigh"
+	RuleErrorSoftMaxBlockSizeBytesExceedsMaxBlockSizeBytes     RuleError = "RuleErrorSoftMaxBlockSizeBytesExceedsMaxBlockSizeBytes"
 
 	// DeSo Diamonds
 	RuleErrorBasicTransferHasDiamondPostHashWithoutDiamondLevel   RuleError = "RuleErrorBasicTransferHasDiamondPostHashWithoutDiamondLevel"
