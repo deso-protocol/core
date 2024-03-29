@@ -900,7 +900,6 @@ func (params *DeSoParams) EnableRegtest() {
 	params.TimeBetweenDifficultyRetargets = 6 * time.Second
 	// Make sure we don't care about blockchain tip age.
 	params.MaxTipAgePoW = 1000000 * time.Hour
-	params.MaxTipAgePoS = 4 * time.Hour
 
 	// Allow block rewards to be spent instantly
 	params.BlockRewardMaturity = 0
@@ -909,16 +908,13 @@ func (params *DeSoParams) EnableRegtest() {
 	params.DefaultEpochDurationNumBlocks = 10
 	// Set the PoS default jail inactive validator grace period epochs to 3.
 	params.DefaultJailInactiveValidatorGracePeriodEpochs = 3
-	// Set the DefaultMaxBlockSizeBytesPoS to be the same as the MaxBlockSizeBytesPoW
-	// so existing regtest nodes don't break.
-	params.DefaultMaxBlockSizeBytesPoS = params.MaxBlockSizeBytesPoW
 
 	// In regtest, we start all the fork heights at zero. These can be adjusted
 	// for testing purposes to ensure that a transition does not cause issues.
 	params.ForkHeights = RegtestForkHeights
 	params.EncoderMigrationHeights = GetEncoderMigrationHeights(&params.ForkHeights)
 	params.EncoderMigrationHeightsList = GetEncoderMigrationHeightsList(&params.ForkHeights)
-	params.DefaultStakingRewardsAPYBasisPoints = 10 * 100 // 10% for regtest
+	params.DefaultStakingRewardsAPYBasisPoints = 100000 * 100 // 100000% for regtest
 }
 
 func (params *DeSoParams) IsPoWBlockHeight(blockHeight uint64) bool {
