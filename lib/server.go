@@ -1930,12 +1930,23 @@ func (srv *Server) _addNewTxn(
 		return nil, err
 	}
 
-	if srv.blockchain.chainState() != SyncStateFullyCurrent {
+	srv.blockchain.ChainLock.RLock()
+	tipHeight := uint64(srv.blockchain.BlockTip().Height)
+	chainState := srv.blockchain.chainState()
+	srv.blockchain.ChainLock.RUnlock()
 
-		err := fmt.Errorf("Server._addNewTxnAndRelay: Cannot process txn "+
-			"from peer %v while syncing: %v %v", pp, srv.blockchain.chainState(), txn.Hash())
-		glog.Error(err)
-		return nil, err
+	if chainState != SyncStateFullyCurrent {
+		// We allow txn relay if chain is in a need blocks state and is running PoS.
+		// We will error in two cases:
+		// - the chainState is not need blocks state
+		// - the chainState is need blocks state but the chain is not on PoS.
+		if chainState != SyncStateNeedBlocksss ||
+			srv.blockchain.params.IsPoSBlockHeight(tipHeight) {
+			err := fmt.Errorf("Server._addNewTxnAndRelay: Cannot process txn "+
+				"from peer %v while syncing: %v %v", pp, srv.blockchain.chainState(), txn.Hash())
+			glog.Error(err)
+			return nil, err
+		}
 	}
 
 	glog.V(1).Infof("Server._addNewTxnAndRelay: txn: %v, peer: %v", txn, pp)
@@ -1946,8 +1957,9 @@ func (srv *Server) _addNewTxn(
 		peerID = pp.ID
 	}
 
+	// Refresh TipHeight.
 	srv.blockchain.ChainLock.RLock()
-	tipHeight := uint64(srv.blockchain.BlockTip().Height)
+	tipHeight = uint64(srv.blockchain.BlockTip().Height)
 	srv.blockchain.ChainLock.RUnlock()
 
 	// Only attempt to add the transaction to the PoW mempool if we're on the
