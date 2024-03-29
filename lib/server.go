@@ -2590,11 +2590,11 @@ func (srv *Server) _handlePeerMessages(serverMessage *ServerMessage) {
 	}
 }
 
-func (srv *Server) _handleFastHostStuffConsensusEvent(event *consensus.FastHotStuffEvent) {
+func (srv *Server) _handleFastHotStuffConsensusEvent(event *consensus.FastHotStuffEvent) {
 	// This should never happen. If the consensus message handler isn't defined, then something went
 	// wrong during the node initialization. We log it and return early to avoid panicking.
 	if srv.fastHotStuffConsensus == nil {
-		glog.Errorf("Server._handleFastHostStuffConsensusEvent: Consensus controller is nil")
+		glog.Errorf("Server._handleFastHotStuffConsensusEvent: Consensus controller is nil")
 		return
 	}
 
@@ -2673,7 +2673,7 @@ func (srv *Server) _startConsensus() {
 		case consensusEvent := <-srv.getFastHotStuffConsensusEventChannel():
 			{
 				glog.V(2).Infof("Server._startConsensus: Received consensus event: %s", consensusEvent.ToString())
-				srv._handleFastHostStuffConsensusEvent(consensusEvent)
+				srv._handleFastHotStuffConsensusEvent(consensusEvent)
 			}
 
 		case serverMessage := <-srv.incomingMessages:
