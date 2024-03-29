@@ -4,15 +4,16 @@ import (
 	"bytes"
 	"encoding/binary"
 	"fmt"
+	"os"
+	"path/filepath"
+	"sync"
+	"time"
+
 	"github.com/deso-protocol/core/collections"
 	"github.com/deso-protocol/go-deadlock"
 	"github.com/golang/glog"
 	"github.com/google/uuid"
 	"github.com/pkg/errors"
-	"os"
-	"path/filepath"
-	"sync"
-	"time"
 )
 
 // StateSyncerOperationType is an enum that represents the type of operation that should be performed on the
@@ -751,8 +752,13 @@ func (stateChangeSyncer *StateChangeSyncer) SyncMempoolToStateSyncer(server *Ser
 			if err == nil {
 				mempoolTxUtxoView = copiedView
 			} else {
-				glog.V(2).Infof("StateChangeSyncer.SyncMempoolToStateSyncer "+
-					"failed connecting mempool tx with (hash= %v): (err=%v)", mempoolTx.Hash, err)
+				glog.V(2).Infof(
+					"StateChangeSyncer.SyncMempoolToStateSyncer failed connecting mempool tx with (hash= %v): (err=%v)",
+					mempoolTx.Hash,
+					err,
+				)
+				// If the txn fails to connect, then we should not emit any state changes for it.
+				continue
 			}
 		} else {
 			// For PoW block heights, we can just connect the transaction to the mempool view.
