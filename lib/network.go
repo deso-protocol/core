@@ -1053,6 +1053,7 @@ func (msg *MsgDeSoHeaderBundle) String() string {
 // ==================================================================
 
 type MsgDeSoBlockBundle struct {
+	Version   uint8
 	Blocks    []*MsgDeSoBlock
 	TipHash   *BlockHash
 	TipHeight uint64
@@ -1064,6 +1065,9 @@ func (msg *MsgDeSoBlockBundle) GetMsgType() MsgType {
 
 func (msg *MsgDeSoBlockBundle) ToBytes(preSignature bool) ([]byte, error) {
 	data := []byte{}
+
+	// Encode the version of the bundle.
+	data = append(data, msg.Version)
 
 	// Encode the number of blocks in the bundle.
 	data = append(data, UintToBuf(uint64(len(msg.Blocks)))...)
@@ -1087,8 +1091,21 @@ func (msg *MsgDeSoBlockBundle) ToBytes(preSignature bool) ([]byte, error) {
 }
 
 func (msg *MsgDeSoBlockBundle) FromBytes(data []byte) error {
+	var err error
+
 	rr := bytes.NewReader(data)
 	retBundle := NewMessage(MsgTypeBlockBundle).(*MsgDeSoBlockBundle)
+
+	// Read the version of the bundle.
+	retBundle.Version, err = rr.ReadByte()
+	if err != nil {
+		return errors.Wrapf(err, "MsgDeSoBlockBundle.FromBytes: Problem decoding version")
+	}
+
+	// For now, only version is supported for the block bundle message type.
+	if retBundle.Version != 0 {
+		return fmt.Errorf("MsgDeSoBlockBundle.FromBytes: Unsupported version %d", retBundle.Version)
+	}
 
 	// Read in the number of block in the bundle.
 	numBlocks, err := ReadUvarint(rr)
