@@ -410,6 +410,8 @@ func NewServer(
 	_mempoolBackupIntervalMillis uint64,
 	_mempoolFeeEstimatorNumMempoolBlocks uint64,
 	_mempoolFeeEstimatorNumPastBlocks uint64,
+	_mempoolMaxValidationViewConnects uint64,
+	_transactionValidationRefreshIntervalMillis uint64,
 	_augmentedBlockViewRefreshIntervalMillis uint64,
 	_posBlockProductionIntervalMilliseconds uint64,
 	_posTimeoutBaseDurationMilliseconds uint64,
@@ -568,6 +570,8 @@ func NewServer(
 		_mempoolFeeEstimatorNumMempoolBlocks,
 		[]*MsgDeSoBlock{latestBlock},
 		_mempoolFeeEstimatorNumPastBlocks,
+		_mempoolMaxValidationViewConnects,
+		_transactionValidationRefreshIntervalMillis,
 		_augmentedBlockViewRefreshIntervalMillis,
 	)
 	if err != nil {
@@ -1861,6 +1865,10 @@ func (srv *Server) _relayTransactions() {
 		// for which the minimum fee is below what the Peer will allow.
 		invMsg := &MsgDeSoInv{}
 		for _, newTxn := range txnList {
+			if !newTxn.IsValidated() {
+				continue
+			}
+
 			invVect := &InvVect{
 				Type: InvTypeTx,
 				Hash: *newTxn.Hash(),
@@ -1918,7 +1926,7 @@ func (srv *Server) _addNewTxn(
 	// Only attempt to add the transaction to the PoW mempool if we're on the
 	// PoW protocol. If we're on the PoW protocol, then we use the PoW mempool's,
 	// txn validity checks to signal whether the txn has been added or not. The PoW
-	// mempool has stricter txn validity checks than the PoW mempool, so this works
+	// mempool has stricter txn validity checks than the PoS mempool, so this works
 	// out conveniently, as it allows us to always add a txn to the PoS mempool.
 	if srv.params.IsPoWBlockHeight(tipHeight) {
 		_, err := srv.mempool.ProcessTransaction(
@@ -1932,8 +1940,8 @@ func (srv *Server) _addNewTxn(
 
 	// Always add the txn to the PoS mempool. This should always succeed if the txn
 	// addition into the PoW mempool succeeded above.
-	mempoolTxn := NewMempoolTransaction(txn, time.Now())
-	if err := srv.posMempool.AddTransaction(mempoolTxn, true /*verifySignatures*/); err != nil {
+	mempoolTxn := NewMempoolTransaction(txn, time.Now(), false)
+	if err := srv.posMempool.AddTransaction(mempoolTxn); err != nil {
 		return nil, errors.Wrapf(err, "Server._addNewTxn: problem adding txn to pos mempool")
 	}
 
@@ -2316,7 +2324,7 @@ func (srv *Server) ProcessSingleTxnWithChainLock(pp *Peer, txn *MsgDeSoTxn) ([]*
 	// Regardless of the consensus protocol we're running (PoW or PoS), we use the PoS mempool's to house all
 	// mempool txns. If a txn can't make it into the PoS mempool, which uses a looser unspent balance check for
 	// the the transactor, then it must be invalid.
-	if err := srv.posMempool.AddTransaction(NewMempoolTransaction(txn, time.Now()), true); err != nil {
+	if err := srv.posMempool.AddTransaction(NewMempoolTransaction(txn, time.Now(), false)); err != nil {
 		return nil, errors.Wrapf(err, "Server.ProcessSingleTxnWithChainLock: Problem adding transaction to PoS mempool: ")
 	}
 
