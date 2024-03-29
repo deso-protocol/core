@@ -863,9 +863,9 @@ var RegtestForkHeights = ForkHeights{
 	BalanceModelBlockHeight:            uint32(1),
 	ProofOfStake1StateSetupBlockHeight: uint32(1),
 
-	// For convenience, we set the PoS cutover block height to 50
+	// For convenience, we set the PoS cutover block height to 100
 	// so that enough DESO is minted to allow for testing.
-	ProofOfStake2ConsensusCutoverBlockHeight: uint32(50),
+	ProofOfStake2ConsensusCutoverBlockHeight: uint32(100),
 
 	LockupsBlockHeight: uint32(1),
 
