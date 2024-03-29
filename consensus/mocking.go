@@ -7,7 +7,7 @@ type MockFastHotStuffEventLoop struct {
 	OnInit                    func(time.Duration, time.Duration, QuorumCertificate, BlockWithValidatorList, []BlockWithValidatorList) error
 	OnGetCurrentView          func() uint64
 	OnAdvanceViewOnTimeout    func() (uint64, error)
-	OnProcessTipBlock         func(BlockWithValidatorList, []BlockWithValidatorList) error
+	OnProcessTipBlock         func(BlockWithValidatorList, []BlockWithValidatorList, time.Duration, time.Duration) error
 	OnUpdateSafeBlocks        func([]BlockWithValidatorList) error
 	OnProcessValidatorVote    func(VoteMessage) error
 	OnProcessValidatorTimeout func(TimeoutMessage) error
@@ -32,8 +32,13 @@ func (fc *MockFastHotStuffEventLoop) AdvanceViewOnTimeout() (uint64, error) {
 	return fc.OnAdvanceViewOnTimeout()
 }
 
-func (fc *MockFastHotStuffEventLoop) ProcessTipBlock(tipBlock BlockWithValidatorList, safeBlocks []BlockWithValidatorList) error {
-	return fc.OnProcessTipBlock(tipBlock, safeBlocks)
+func (fc *MockFastHotStuffEventLoop) ProcessTipBlock(
+	tipBlock BlockWithValidatorList,
+	safeBlocks []BlockWithValidatorList,
+	crankTimerDuration time.Duration,
+	timeoutTimerDuration time.Duration,
+) error {
+	return fc.OnProcessTipBlock(tipBlock, safeBlocks, crankTimerDuration, timeoutTimerDuration)
 }
 
 func (fc *MockFastHotStuffEventLoop) UpdateSafeBlocks(safeBlocks []BlockWithValidatorList) error {

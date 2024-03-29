@@ -1763,6 +1763,114 @@ func TestUpdateGlobalParamsPoS(t *testing.T) {
 			mempool)
 		require.NoError(err)
 	}
+	{
+		// Block production global params test.
+		// Make sure setting block production interval too low fails.
+		_, _, _, err = _updateGlobalParamsEntryWithMempool(t, chain, db, params, 1000,
+			moneyPkString,
+			moneyPrivString,
+			-1,
+			-1,
+			-1,
+			-1,
+			-1,
+			-1,
+			map[string][]byte{
+				BlockProductionIntervalPoSKey: UintToBuf(MinBlockProductionIntervalMillisecondsPoS - 1),
+			},
+			true,
+			mempool)
+		require.ErrorIs(err, RuleErrorBlockProductionIntervalPoSTooLow)
+		// Make sure setting block production interval too high fails. Anything over the max allowed will fail.
+		_, _, _, err = _updateGlobalParamsEntryWithMempool(t, chain, db, params, 1000,
+			moneyPkString,
+			moneyPrivString,
+			-1,
+			-1,
+			-1,
+			-1,
+			-1,
+			-1,
+			map[string][]byte{
+				BlockProductionIntervalPoSKey: UintToBuf(MaxBlockProductionIntervalMillisecondsPoS + 1),
+			},
+			true,
+			mempool)
+		require.ErrorIs(err, RuleErrorBlockProductionIntervalPoSTooHigh)
+		// Make sure setting block timeout interval to a reasonable value works. Make it 5s
+		_, _, _, err = _updateGlobalParamsEntryWithMempool(t, chain, db, params, 1000,
+			moneyPkString,
+			moneyPrivString,
+			-1,
+			-1,
+			-1,
+			-1,
+			-1,
+			-1,
+			map[string][]byte{
+				BlockProductionIntervalPoSKey: UintToBuf(5000),
+			},
+			true,
+			mempool)
+		require.NoError(err)
+		utxoView, err := NewUtxoView(db, params, postgres, chain.snapshot, nil)
+		require.NoError(err)
+		require.Equal(utxoView.GetCurrentGlobalParamsEntry().BlockProductionIntervalMillisecondsPoS, uint64(5000))
+	}
+	{
+		// Timeout interval global params test
+		// Make sure setting timeout interval too low fails. Anything below min should fail
+		_, _, _, err = _updateGlobalParamsEntryWithMempool(t, chain, db, params, 1000,
+			moneyPkString,
+			moneyPrivString,
+			-1,
+			-1,
+			-1,
+			-1,
+			-1,
+			-1,
+			map[string][]byte{
+				TimeoutIntervalPoSKey: UintToBuf(MinTimeoutIntervalMillisecondsPoS - 1),
+			},
+			true,
+			mempool)
+		require.ErrorIs(err, RuleErrorTimeoutIntervalPoSTooLow)
+		// Make sure setting timeout interval too low fails. Anything above max should fail
+		_, _, _, err = _updateGlobalParamsEntryWithMempool(t, chain, db, params, 1000,
+			moneyPkString,
+			moneyPrivString,
+			-1,
+			-1,
+			-1,
+			-1,
+			-1,
+			-1,
+			map[string][]byte{
+				TimeoutIntervalPoSKey: UintToBuf(MaxTimeoutIntervalMillisecondsPoS + 1),
+			},
+			true,
+			mempool)
+		require.ErrorIs(err, RuleErrorTimeoutIntervalPoSTooHigh)
+		// Make sure setting timeout interval to a reasonable value works. Make it 5s
+		_, _, _, err = _updateGlobalParamsEntryWithMempool(t, chain, db, params, 1000,
+			moneyPkString,
+			moneyPrivString,
+			-1,
+			-1,
+			-1,
+			-1,
+			-1,
+			-1,
+			map[string][]byte{
+				TimeoutIntervalPoSKey: UintToBuf(5000),
+			},
+			true,
+			mempool)
+		require.NoError(err)
+		utxoView, err := NewUtxoView(db, params, postgres, chain.snapshot, nil)
+		require.NoError(err)
+		require.Equal(utxoView.GetCurrentGlobalParamsEntry().TimeoutIntervalMillisecondsPoS, uint64(5000))
+	}
 }
 
 func TestBalanceModelBasicTransfers(t *testing.T) {

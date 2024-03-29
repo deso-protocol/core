@@ -169,6 +169,12 @@ func MergeGlobalParamEntryDefaults(globalParamsEntry *GlobalParamsEntry, params 
 	if globalParamsEntryCopy.MaxTxnSizeBytesPoS == 0 {
 		globalParamsEntryCopy.MaxTxnSizeBytesPoS = params.DefaultMaxTxnSizeBytesPoS
 	}
+	if globalParamsEntryCopy.BlockProductionIntervalMillisecondsPoS == 0 {
+		globalParamsEntryCopy.BlockProductionIntervalMillisecondsPoS = params.DefaultBlockProductionIntervalMillisecondsPoS
+	}
+	if globalParamsEntryCopy.TimeoutIntervalMillisecondsPoS == 0 {
+		globalParamsEntryCopy.TimeoutIntervalMillisecondsPoS = params.DefaultTimeoutIntervalMillisecondsPoS
+	}
 
 	// Return the merged result.
 	return globalParamsEntryCopy

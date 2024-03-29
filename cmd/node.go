@@ -297,8 +297,6 @@ func (node *Node) Start(exitChannels ...*chan struct{}) {
 		node.Config.MempoolMaxValidationViewConnects,
 		node.Config.TransactionValidationRefreshIntervalMillis,
 		node.Config.AugmentedBlockViewRefreshIntervalMillis,
-		node.Config.PosBlockProductionIntervalMilliseconds,
-		node.Config.PosTimeoutBaseDurationMilliseconds,
 		node.Config.StateSyncerMempoolTxnSyncLimit,
 	)
 	if err != nil {
