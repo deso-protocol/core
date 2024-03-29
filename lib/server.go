@@ -2872,6 +2872,13 @@ func (srv *Server) tryTransitionToFastHotStuffConsensus() {
 		return
 	}
 
+	// If we have at least one sync peer configured but are not connected to any sync peers, then it
+	// means that we are still in the process of connecting to a sync peer. We can exit early and wait
+	// for the network manager to connect to a sync peer.
+	if len(srv.networkManager.connectIps) != 0 && srv.SyncPeer == nil {
+		return
+	}
+
 	// If we have a sync peer and have not reached the sync peer's starting block height, then
 	// we should sync all remaining blocks from the sync peer before transitioning to the
 	// FastHotStuffConsensus.
