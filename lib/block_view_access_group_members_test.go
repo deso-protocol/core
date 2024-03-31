@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/btcsuite/btcd/btcec"
+	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/golang/glog"
 	"github.com/pkg/errors"
 	"github.com/stretchr/testify/require"
@@ -67,7 +67,7 @@ func TestAccessGroupMembersAdd(t *testing.T) {
 	randomMemberPublicKeys := []*PublicKey{}
 	randomMemberGroupKeys := []*GroupKeyName{}
 	for ii := 0; ii < randomMemberCounter; ii++ {
-		privateKey, err := btcec.NewPrivateKey(btcec.S256())
+		privateKey, err := btcec.NewPrivateKey()
 		require.NoError(err)
 		privateKeyBase58Check := Base58CheckEncode(
 			privateKey.Serialize(), true, &DeSoTestnetParams)
@@ -113,16 +113,16 @@ func TestAccessGroupMembersAdd(t *testing.T) {
 		initChainCallback:          initChainCallback,
 	}
 
-	groupPriv1, err := btcec.NewPrivateKey(btcec.S256())
+	groupPriv1, err := btcec.NewPrivateKey()
 	require.NoError(err)
 	groupPk1 := groupPriv1.PubKey().SerializeCompressed()
 
-	groupPriv2, err := btcec.NewPrivateKey(btcec.S256())
+	groupPriv2, err := btcec.NewPrivateKey()
 	require.NoError(err)
 	groupPk2 := groupPriv2.PubKey().SerializeCompressed()
 	_ = groupPk2
 
-	groupPriv3, err := btcec.NewPrivateKey(btcec.S256())
+	groupPriv3, err := btcec.NewPrivateKey()
 	require.NoError(err)
 	groupPk3 := groupPriv3.PubKey().SerializeCompressed()
 	_ = groupPk3
@@ -416,7 +416,7 @@ func TestAccessGroupMembersRemove(t *testing.T) {
 	randomMemberPublicKeys1 := []*PublicKey{}
 	randomMemberPublicKeys2 := []*PublicKey{}
 	for ii := 0; ii < randomMemberCounter1; ii++ {
-		privateKey, err := btcec.NewPrivateKey(btcec.S256())
+		privateKey, err := btcec.NewPrivateKey()
 		require.NoError(err)
 		privateKeyBase58Check := Base58CheckEncode(
 			privateKey.Serialize(), true, &DeSoTestnetParams)
@@ -426,7 +426,7 @@ func TestAccessGroupMembersRemove(t *testing.T) {
 		randomMemberPublicKeys1 = append(randomMemberPublicKeys1, publicKey)
 	}
 	for ii := 0; ii < randomMemberCounter2; ii++ {
-		privateKey, err := btcec.NewPrivateKey(btcec.S256())
+		privateKey, err := btcec.NewPrivateKey()
 		require.NoError(err)
 		privateKeyBase58Check := Base58CheckEncode(
 			privateKey.Serialize(), true, &DeSoTestnetParams)
@@ -465,17 +465,17 @@ func TestAccessGroupMembersRemove(t *testing.T) {
 		initChainCallback:          initChainCallback,
 	}
 
-	groupPriv1, err := btcec.NewPrivateKey(btcec.S256())
+	groupPriv1, err := btcec.NewPrivateKey()
 	require.NoError(err)
 	groupPk1 := groupPriv1.PubKey().SerializeCompressed()
 	_ = groupPk1
 
-	groupPriv2, err := btcec.NewPrivateKey(btcec.S256())
+	groupPriv2, err := btcec.NewPrivateKey()
 	require.NoError(err)
 	groupPk2 := groupPriv2.PubKey().SerializeCompressed()
 	_ = groupPk2
 
-	groupPriv3, err := btcec.NewPrivateKey(btcec.S256())
+	groupPriv3, err := btcec.NewPrivateKey()
 	require.NoError(err)
 	groupPk3 := groupPriv3.PubKey().SerializeCompressed()
 	_ = groupPk3
@@ -913,17 +913,17 @@ func TestAccessGroupMembersUpdate(t *testing.T) {
 		initChainCallback:          initChainCallback,
 	}
 
-	groupPriv1, err := btcec.NewPrivateKey(btcec.S256())
+	groupPriv1, err := btcec.NewPrivateKey()
 	require.NoError(err)
 	groupPk1 := groupPriv1.PubKey().SerializeCompressed()
 	_ = groupPk1
 
-	groupPriv2, err := btcec.NewPrivateKey(btcec.S256())
+	groupPriv2, err := btcec.NewPrivateKey()
 	require.NoError(err)
 	groupPk2 := groupPriv2.PubKey().SerializeCompressed()
 	_ = groupPk2
 
-	groupPriv3, err := btcec.NewPrivateKey(btcec.S256())
+	groupPriv3, err := btcec.NewPrivateKey()
 	require.NoError(err)
 	groupPk3 := groupPriv3.PubKey().SerializeCompressed()
 	_ = groupPk3
@@ -1654,7 +1654,7 @@ func TestAccessGroupMembersTxnWithDerivedKey(t *testing.T) {
 	require.NoError(t, err)
 	senderPrivBytes, _, err := Base58CheckDecode(senderPrivString)
 	require.NoError(t, err)
-	senderPrivKey, _ := btcec.PrivKeyFromBytes(btcec.S256(), senderPrivBytes)
+	senderPrivKey, _ := btcec.PrivKeyFromBytes(senderPrivBytes)
 
 	// Helper funcs
 	_submitAuthorizeDerivedKeyTxn := func(

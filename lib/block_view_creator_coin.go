@@ -2,7 +2,7 @@ package lib
 
 import (
 	"fmt"
-	"github.com/btcsuite/btcd/btcec"
+	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/holiman/uint256"
 	"github.com/pkg/errors"
 	"math"
@@ -289,7 +289,7 @@ func (bav *UtxoView) _disconnectCreatorCoin(
 		creatorBalanceEntry = &BalanceEntry{
 			HODLerPKID:   creatorPKID,
 			CreatorPKID:  creatorPKID,
-			BalanceNanos: *uint256.NewInt(),
+			BalanceNanos: *uint256.NewInt(0),
 		}
 	}
 
@@ -785,7 +785,7 @@ func (bav *UtxoView) HelpConnectCreatorCoinBuy(
 			existingProfileEntry.CreatorCoinEntry.CoinsInCirculationNanos, creatorCoinToMintNanos)
 	}
 	// Setting the value in this way is guaranteed to not mess up the prevCoinEntry
-	existingProfileEntry.CreatorCoinEntry.CoinsInCirculationNanos = *uint256.NewInt().SetUint64(
+	existingProfileEntry.CreatorCoinEntry.CoinsInCirculationNanos = *uint256.NewInt(
 		existingProfileEntry.CreatorCoinEntry.CoinsInCirculationNanos.Uint64() + creatorCoinToMintNanos)
 
 	// Calculate the *Creator Coin nanos* to give as a founder reward.
@@ -873,7 +873,7 @@ func (bav *UtxoView) HelpConnectCreatorCoinBuy(
 			HODLerPKID: hodlerPKID,
 			// The creator is the owner of the profile that corresponds to the coin.
 			CreatorPKID:  creatorPKID,
-			BalanceNanos: *uint256.NewInt(),
+			BalanceNanos: *uint256.NewInt(0),
 		}
 	}
 
@@ -904,7 +904,7 @@ func (bav *UtxoView) HelpConnectCreatorCoinBuy(
 			creatorBalanceEntry = &BalanceEntry{
 				HODLerPKID:   hodlerPKID,
 				CreatorPKID:  creatorPKID,
-				BalanceNanos: *uint256.NewInt(),
+				BalanceNanos: *uint256.NewInt(0),
 			}
 		}
 	}
@@ -950,8 +950,8 @@ func (bav *UtxoView) HelpConnectCreatorCoinBuy(
 	}
 	// Finally increment the buyerBalanceEntry.BalanceNanos to reflect
 	// the purchased coinsBuyerGetsNanos. If coinsBuyerGetsNanos is greater than 0, we set HasPurchased to true.
-	buyerBalanceEntry.BalanceNanos = *uint256.NewInt().Add(
-		&buyerBalanceEntry.BalanceNanos, uint256.NewInt().SetUint64(coinsBuyerGetsNanos))
+	buyerBalanceEntry.BalanceNanos = *uint256.NewInt(0).Add(
+		&buyerBalanceEntry.BalanceNanos, uint256.NewInt(coinsBuyerGetsNanos))
 	buyerBalanceEntry.HasPurchased = true
 
 	// If the creator is buying their own coin, this will just be modifying
@@ -986,9 +986,9 @@ func (bav *UtxoView) HelpConnectCreatorCoinBuy(
 		bav._setProfileEntryMappings(existingProfileEntry)
 	}
 	// CreatorCoin balances can't exceed uint64
-	creatorBalanceEntry.BalanceNanos = *uint256.NewInt().Add(
+	creatorBalanceEntry.BalanceNanos = *uint256.NewInt(0).Add(
 		&creatorBalanceEntry.BalanceNanos,
-		uint256.NewInt().SetUint64(creatorCoinFounderRewardNanos))
+		uint256.NewInt(creatorCoinFounderRewardNanos))
 
 	// At this point the balances for the buyer and the creator should be correct
 	// so set the mappings in the view.
@@ -1241,7 +1241,7 @@ func (bav *UtxoView) HelpConnectCreatorCoinSell(
 			"is selling %v exceeds CreatorCoin nanos in circulation %v",
 			creatorCoinToSellNanos, existingProfileEntry.CreatorCoinEntry.CoinsInCirculationNanos)
 	}
-	existingProfileEntry.CreatorCoinEntry.CoinsInCirculationNanos = *uint256.NewInt().SetUint64(
+	existingProfileEntry.CreatorCoinEntry.CoinsInCirculationNanos = *uint256.NewInt(
 		existingProfileEntry.CreatorCoinEntry.CoinsInCirculationNanos.Uint64() - creatorCoinToSellNanos)
 
 	// Check if this is a complete sell of the seller's remaining creator coins
@@ -1256,7 +1256,7 @@ func (bav *UtxoView) HelpConnectCreatorCoinSell(
 	// It's okay to modify these values because they are saved in the PrevCoinEntry.
 	if existingProfileEntry.CreatorCoinEntry.NumberOfHolders == 0 {
 		existingProfileEntry.CreatorCoinEntry.DeSoLockedNanos = 0
-		existingProfileEntry.CreatorCoinEntry.CoinsInCirculationNanos = *uint256.NewInt()
+		existingProfileEntry.CreatorCoinEntry.CoinsInCirculationNanos = *uint256.NewInt(0)
 	}
 
 	// Save the seller's balance before we modify it. We don't need to save the
@@ -1271,9 +1271,9 @@ func (bav *UtxoView) HelpConnectCreatorCoinSell(
 	// below CreatorCoinAutoSellThresholdNanos.
 	//
 	// CreatorCoin balances can't exceed uint64
-	sellerBalanceEntry.BalanceNanos = *uint256.NewInt().Sub(
+	sellerBalanceEntry.BalanceNanos = *uint256.NewInt(0).Sub(
 		&sellerBalanceEntry.BalanceNanos,
-		uint256.NewInt().SetUint64(creatorCoinToSellNanos))
+		uint256.NewInt(creatorCoinToSellNanos))
 
 	// If the seller's balance will be zero after this transaction, set HasPurchased to false
 	//

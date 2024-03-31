@@ -83,10 +83,10 @@ func TestCurrentRandomSeedHash(t *testing.T) {
 
 	// Test RandomSeedHash.ToUint256(). Generates a valid uint256.
 	// Idempotent: generates the same uint256 each time.
-	require.True(t, randomSeedHash1.ToUint256().Cmp(uint256.NewInt()) > 0)
+	require.True(t, randomSeedHash1.ToUint256().Cmp(uint256.NewInt(0)) > 0)
 	require.True(t, randomSeedHash1.ToUint256().Cmp(MaxUint256) < 0)
 	require.True(t, randomSeedHash1.ToUint256().Eq(randomSeedHash1.ToUint256()))
-	require.True(t, randomSeedHash2.ToUint256().Cmp(uint256.NewInt()) > 0)
+	require.True(t, randomSeedHash2.ToUint256().Cmp(uint256.NewInt(0)) > 0)
 	require.True(t, randomSeedHash2.ToUint256().Cmp(MaxUint256) < 0)
 	require.True(t, randomSeedHash2.ToUint256().Eq(randomSeedHash2.ToUint256()))
 	require.False(t, randomSeedHash1.ToUint256().Eq(randomSeedHash2.ToUint256()))

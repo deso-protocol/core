@@ -228,7 +228,7 @@ func (rn *RemoteNode) GetUserAgent() string {
 	return rn.handshakeMetadata.userAgent
 }
 
-func (rn *RemoteNode) GetNetAddress() *wire.NetAddress {
+func (rn *RemoteNode) GetNetAddress() *wire.NetAddressV2 {
 	if !rn.IsHandshakeCompleted() || rn.GetPeer() == nil {
 		return nil
 	}
@@ -291,7 +291,7 @@ func (rn *RemoteNode) hasValidatorServiceFlag() bool {
 }
 
 // DialOutboundConnection dials an outbound connection to the provided netAddr.
-func (rn *RemoteNode) DialOutboundConnection(netAddr *wire.NetAddress) error {
+func (rn *RemoteNode) DialOutboundConnection(netAddr *wire.NetAddressV2) error {
 	rn.mtx.Lock()
 	defer rn.mtx.Unlock()
 
@@ -305,7 +305,7 @@ func (rn *RemoteNode) DialOutboundConnection(netAddr *wire.NetAddress) error {
 }
 
 // DialPersistentOutboundConnection dials a persistent outbound connection to the provided netAddr.
-func (rn *RemoteNode) DialPersistentOutboundConnection(netAddr *wire.NetAddress) error {
+func (rn *RemoteNode) DialPersistentOutboundConnection(netAddr *wire.NetAddressV2) error {
 	rn.mtx.Lock()
 	defer rn.mtx.Unlock()
 
@@ -319,7 +319,7 @@ func (rn *RemoteNode) DialPersistentOutboundConnection(netAddr *wire.NetAddress)
 }
 
 // AttachInboundConnection creates an inbound peer once a successful inbound connection has been established.
-func (rn *RemoteNode) AttachInboundConnection(conn net.Conn, na *wire.NetAddress) error {
+func (rn *RemoteNode) AttachInboundConnection(conn net.Conn, na *wire.NetAddressV2) error {
 	rn.mtx.Lock()
 	defer rn.mtx.Unlock()
 
@@ -338,7 +338,7 @@ func (rn *RemoteNode) AttachInboundConnection(conn net.Conn, na *wire.NetAddress
 }
 
 // AttachOutboundConnection creates an outbound peer once a successful outbound connection has been established.
-func (rn *RemoteNode) AttachOutboundConnection(conn net.Conn, na *wire.NetAddress, isPersistent bool) error {
+func (rn *RemoteNode) AttachOutboundConnection(conn net.Conn, na *wire.NetAddressV2, isPersistent bool) error {
 	rn.mtx.Lock()
 	defer rn.mtx.Unlock()
 

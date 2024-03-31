@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/btcsuite/btcd/btcec"
+	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/dgraph-io/badger/v4"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -250,15 +250,15 @@ func TestPrivateMessages(t *testing.T) {
 	db, _ := GetTestBadgerDb()
 	defer CleanUpBadger(db)
 
-	priv1, err := btcec.NewPrivateKey(btcec.S256())
+	priv1, err := btcec.NewPrivateKey()
 	require.NoError(err)
 	pk1 := priv1.PubKey().SerializeCompressed()
 
-	priv2, err := btcec.NewPrivateKey(btcec.S256())
+	priv2, err := btcec.NewPrivateKey()
 	require.NoError(err)
 	pk2 := priv2.PubKey().SerializeCompressed()
 
-	priv3, err := btcec.NewPrivateKey(btcec.S256())
+	priv3, err := btcec.NewPrivateKey()
 	require.NoError(err)
 	pk3 := priv3.PubKey().SerializeCompressed()
 
@@ -514,15 +514,15 @@ func TestFollows(t *testing.T) {
 	db, _ := GetTestBadgerDb()
 	defer CleanUpBadger(db)
 
-	priv1, err := btcec.NewPrivateKey(btcec.S256())
+	priv1, err := btcec.NewPrivateKey()
 	require.NoError(err)
 	pk1 := priv1.PubKey().SerializeCompressed()
 
-	priv2, err := btcec.NewPrivateKey(btcec.S256())
+	priv2, err := btcec.NewPrivateKey()
 	require.NoError(err)
 	pk2 := priv2.PubKey().SerializeCompressed()
 
-	priv3, err := btcec.NewPrivateKey(btcec.S256())
+	priv3, err := btcec.NewPrivateKey()
 	require.NoError(err)
 	pk3 := priv3.PubKey().SerializeCompressed()
 
