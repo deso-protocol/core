@@ -5,7 +5,7 @@ import (
 	"reflect"
 	"strings"
 
-	"github.com/btcsuite/btcd/btcec"
+	"github.com/btcsuite/btcd/btcec/v2"
 )
 
 // RuleError is an error type that specifies an error occurred during
@@ -619,7 +619,7 @@ func IsByteArrayValidPublicKey(bytes []byte) error {
 	if len(bytes) != btcec.PubKeyBytesLenCompressed {
 		return RuleErrorPubKeyLen
 	}
-	_, err := btcec.ParsePubKey(bytes, btcec.S256())
+	_, err := btcec.ParsePubKey(bytes)
 	if err != nil {
 		return RuleErrorParsePublicKey
 	}

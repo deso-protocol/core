@@ -1842,3 +1842,6 @@ const MaxBasisPoints = uint64(10000)                     // 1e4
 const NanoSecsPerYear = uint64(365) * 24 * 60 * 60 * 1e9 // 365 days * 24 hours * 60 minutes * 60 seconds * 1e9 nanoseconds
 
 const BytesPerKB = 1000
+
+// Constants that was removed from newer version of Btcec
+const BtcecPubKeyBytesLenUncompressed = 65

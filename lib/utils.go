@@ -5,9 +5,9 @@ import (
 	"bytes"
 	"encoding/hex"
 	"fmt"
-	"github.com/btcsuite/btcd/btcec"
+	"github.com/btcsuite/btcd/btcec/v2"
+	"github.com/btcsuite/btcd/btcutil/hdkeychain"
 	"github.com/btcsuite/btcd/chaincfg"
-	"github.com/btcsuite/btcutil/hdkeychain"
 	"github.com/pkg/errors"
 	"github.com/unrolled/secure"
 	"math/big"
@@ -94,23 +94,23 @@ func ComputeKeysFromSeedWithNet(seedBytes []byte, index uint32, isTestnet bool) 
 	// m/44'/0'/0'/0/0 also maps to the first
 	// address you'd get if you put the user's seed into most standard
 	// Bitcoin wallets (Mycelium, Electrum, Ledger, iancoleman, etc...).
-	purpose, err := masterKey.Child(hdkeychain.HardenedKeyStart + 44)
+	purpose, err := masterKey.Derive(hdkeychain.HardenedKeyStart + 44)
 	if err != nil {
 		return nil, nil, "", fmt.Errorf("ComputeKeyFromSeed: Error encountered generating 'purpose' from seed (%v)", err)
 	}
-	coinTypeKey, err := purpose.Child(hdkeychain.HardenedKeyStart + 0)
+	coinTypeKey, err := purpose.Derive(hdkeychain.HardenedKeyStart + 0)
 	if err != nil {
 		return nil, nil, "", fmt.Errorf("ComputeKeyFromSeed: Error encountered generating 'coinType' from seed (%v)", err)
 	}
-	accountKey, err := coinTypeKey.Child(hdkeychain.HardenedKeyStart + 0)
+	accountKey, err := coinTypeKey.Derive(hdkeychain.HardenedKeyStart + 0)
 	if err != nil {
 		return nil, nil, "", fmt.Errorf("ComputeKeyFromSeed: Error encountered generating 'accountKey' from seed (%v)", err)
 	}
-	changeKey, err := accountKey.Child(0)
+	changeKey, err := accountKey.Derive(0)
 	if err != nil {
 		return nil, nil, "", fmt.Errorf("ComputeKeyFromSeed: Error encountered generating 'changeKey' from seed (%v)", err)
 	}
-	addressKey, err := changeKey.Child(index)
+	addressKey, err := changeKey.Derive(index)
 	if err != nil {
 		return nil, nil, "", fmt.Errorf("ComputeKeyFromSeed: Error encountered generating 'addressKey' from seed (%v)", err)
 	}

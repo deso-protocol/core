@@ -27,17 +27,17 @@ func TestIsValidSuperMajorityQuorumCertificate(t *testing.T) {
 
 	validator1 := validator{
 		publicKey:   validatorPrivateKey1.PublicKey(),
-		stakeAmount: uint256.NewInt().SetUint64(3),
+		stakeAmount: uint256.NewInt(0).SetUint64(3),
 	}
 
 	validator2 := validator{
 		publicKey:   validatorPrivateKey2.PublicKey(),
-		stakeAmount: uint256.NewInt().SetUint64(2),
+		stakeAmount: uint256.NewInt(0).SetUint64(2),
 	}
 
 	validator3 := validator{
 		publicKey:   validatorPrivateKey3.PublicKey(),
-		stakeAmount: uint256.NewInt().SetUint64(1),
+		stakeAmount: uint256.NewInt(0).SetUint64(1),
 	}
 
 	validators := []Validator{&validator1, &validator2, &validator3}
@@ -110,17 +110,17 @@ func TestIsValidSuperMajorityAggregateQuorumCertificate(t *testing.T) {
 
 	validator1 := validator{
 		publicKey:   validatorPrivateKey1.PublicKey(),
-		stakeAmount: uint256.NewInt().SetUint64(3),
+		stakeAmount: uint256.NewInt(0).SetUint64(3),
 	}
 
 	validator2 := validator{
 		publicKey:   validatorPrivateKey2.PublicKey(),
-		stakeAmount: uint256.NewInt().SetUint64(1),
+		stakeAmount: uint256.NewInt(0).SetUint64(1),
 	}
 
 	validator3 := validator{
 		publicKey:   validatorPrivateKey3.PublicKey(),
-		stakeAmount: uint256.NewInt().SetUint64(1),
+		stakeAmount: uint256.NewInt(0).SetUint64(1),
 	}
 
 	validators := []Validator{&validator1, &validator2, &validator3}
@@ -357,7 +357,7 @@ func TestIsProperlyFormedValidatorSet(t *testing.T) {
 
 	// Test nil public key
 	{
-		validator := validator{publicKey: nil, stakeAmount: uint256.NewInt().SetUint64(1)}
+		validator := validator{publicKey: nil, stakeAmount: uint256.NewInt(0).SetUint64(1)}
 		require.False(t, isProperlyFormedValidatorSet([]Validator{&validator}))
 	}
 
@@ -369,13 +369,13 @@ func TestIsProperlyFormedValidatorSet(t *testing.T) {
 
 	// Test zero stake amount
 	{
-		validator := validator{publicKey: createDummyBLSPublicKey(), stakeAmount: uint256.NewInt()}
+		validator := validator{publicKey: createDummyBLSPublicKey(), stakeAmount: uint256.NewInt(0)}
 		require.False(t, isProperlyFormedValidatorSet([]Validator{&validator}))
 	}
 
 	// Test valid validator
 	{
-		validator := validator{publicKey: createDummyBLSPublicKey(), stakeAmount: uint256.NewInt().SetUint64(1)}
+		validator := validator{publicKey: createDummyBLSPublicKey(), stakeAmount: uint256.NewInt(0).SetUint64(1)}
 		require.True(t, isProperlyFormedValidatorSet([]Validator{&validator}))
 	}
 }
@@ -476,52 +476,52 @@ func TestIsSuperMajorityStake(t *testing.T) {
 
 	// Test zero values
 	{
-		require.False(t, isSuperMajorityStake(uint256.NewInt(), uint256.NewInt()))
+		require.False(t, isSuperMajorityStake(uint256.NewInt(0), uint256.NewInt(0)))
 	}
 
 	// Test stake amount greater than total stake
 	{
-		require.False(t, isSuperMajorityStake(uint256.NewInt().SetUint64(2), uint256.NewInt().SetUint64(1)))
+		require.False(t, isSuperMajorityStake(uint256.NewInt(0).SetUint64(2), uint256.NewInt(0).SetUint64(1)))
 	}
 
 	// Test stake amount much less than super majority
 	{
-		stake := uint256.NewInt().SetUint64(1)
-		totalStake := uint256.NewInt().SetUint64(1000)
+		stake := uint256.NewInt(0).SetUint64(1)
+		totalStake := uint256.NewInt(0).SetUint64(1000)
 		require.False(t, isSuperMajorityStake(stake, totalStake))
 	}
 
 	// Test stake amount less than super majority
 	{
-		stake := uint256.NewInt().SetUint64(666)
-		totalStake := uint256.NewInt().SetUint64(1000)
+		stake := uint256.NewInt(0).SetUint64(666)
+		totalStake := uint256.NewInt(0).SetUint64(1000)
 		require.False(t, isSuperMajorityStake(stake, totalStake))
 	}
 
 	// Test stake amount equal to super majority
 	{
-		stake := uint256.NewInt().SetUint64(667)
-		totalStake := uint256.NewInt().SetUint64(1000)
+		stake := uint256.NewInt(0).SetUint64(667)
+		totalStake := uint256.NewInt(0).SetUint64(1000)
 		require.True(t, isSuperMajorityStake(stake, totalStake))
 	}
 
 	// Test stake amount greater than super majority
 	{
-		stake := uint256.NewInt().SetUint64(668)
-		totalStake := uint256.NewInt().SetUint64(1000)
+		stake := uint256.NewInt(0).SetUint64(668)
+		totalStake := uint256.NewInt(0).SetUint64(1000)
 		require.True(t, isSuperMajorityStake(stake, totalStake))
 	}
 
 	// Test stake amount much greater than super majority
 	{
-		stake := uint256.NewInt().SetUint64(999)
-		totalStake := uint256.NewInt().SetUint64(1000)
+		stake := uint256.NewInt(0).SetUint64(999)
+		totalStake := uint256.NewInt(0).SetUint64(1000)
 		require.True(t, isSuperMajorityStake(stake, totalStake))
 	}
 
 	// Test stake amount equal to total stake
 	{
-		totalStake := uint256.NewInt().SetUint64(1000)
+		totalStake := uint256.NewInt(0).SetUint64(1000)
 		require.True(t, isSuperMajorityStake(totalStake, totalStake))
 	}
 }

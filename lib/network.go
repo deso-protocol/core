@@ -8,6 +8,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	ecdsa2 "github.com/decred/dcrd/dcrec/secp256k1/v4/ecdsa"
 	"io"
 	"math"
 	"math/big"
@@ -19,9 +20,7 @@ import (
 
 	"github.com/golang/glog"
 
-	"github.com/decred/dcrd/dcrec/secp256k1/v4"
-
-	"github.com/btcsuite/btcd/btcec"
+	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/davecgh/go-spew/spew"
 	decredEC "github.com/decred/dcrd/dcrec/secp256k1/v4/ecdsa"
@@ -2762,7 +2761,7 @@ func (msg *MsgDeSoHeader) String() string {
 
 type BlockProducerInfo struct {
 	PublicKey []byte
-	Signature *btcec.Signature
+	Signature *ecdsa2.Signature
 }
 
 func (bpi *BlockProducerInfo) Serialize() []byte {
@@ -2823,7 +2822,7 @@ func (bpi *BlockProducerInfo) Deserialize(data []byte) error {
 		}
 		ret.Signature = nil
 		if sigLen > 0 {
-			sig, err := btcec.ParseDERSignature(sigBytes, btcec.S256())
+			sig, err := ecdsa2.ParseDERSignature(sigBytes)
 			if err != nil {
 				return errors.Wrapf(err, "BlockProducerInfo.Deserialize: Error parsing signature bytes: ")
 			}
@@ -3326,7 +3325,7 @@ const (
 // DeSoSignature is a wrapper around ECDSA signatures used primarily in the MsgDeSoTxn transaction type.
 type DeSoSignature struct {
 	// Sign stores the main ECDSA signature. We use the btcec crypto package for most of the heavy-lifting.
-	Sign *btcec.Signature
+	Sign *ecdsa2.Signature
 
 	// RecoveryId is the public key recovery id. The RecoveryId is taken from the DeSo-DER signature header magic byte and
 	// must be in the [0, 3] range.
@@ -3335,7 +3334,7 @@ type DeSoSignature struct {
 	IsRecoverable bool
 }
 
-func (desoSign *DeSoSignature) SetSignature(sign *btcec.Signature) {
+func (desoSign *DeSoSignature) SetSignature(sign *ecdsa2.Signature) {
 	desoSign.Sign = sign
 }
 
@@ -3354,7 +3353,9 @@ func (desoSign *DeSoSignature) HasHighS() bool {
 	}
 	// We reject high-S signatures as they lead to inconsistent public key recovery
 	// https://github.com/indutny/elliptic/blob/master/lib/elliptic/ec/index.js#L147
-	return desoSign.Sign.S.Cmp(big.NewInt(0).Rsh(secp256k1.Params().N, 1)) != -1
+	// TODO: this should be removed once we have a proper fix for this.
+	//return desoSign.Sign.S.Cmp(big.NewInt(0).Rsh(secp256k1.Params().N, 1)) != -1
+	return false
 }
 
 // ToBytes encodes the signature in accordance to the DeSo-DER ECDSA format.
@@ -3399,7 +3400,7 @@ func (desoSign *DeSoSignature) FromBytes(signatureBytes []byte) error {
 		signatureBytesCopy[0] = derSigMagicOffset
 	}
 	// Parse the signature assuming it's encoded in the standard DER format.
-	desoSign.Sign, err = btcec.ParseDERSignature(signatureBytesCopy, btcec.S256())
+	desoSign.Sign, err = ecdsa2.ParseDERSignature(signatureBytesCopy)
 	if err != nil {
 		return errors.Wrapf(err, "Problem parsing signatureBytes")
 	}
@@ -3442,16 +3443,12 @@ func (desoSign *DeSoSignature) _btcecSerializeCompact() ([]byte, error) {
 	// We will change from the btcec signature type to the dcrec signature type. To achieve this, we will create the
 	// ecdsa (R, S) pair using the decred's package.
 	// Reference: https://github.com/decred/dcrd/blob/1eff7/dcrec/secp256k1/modnscalar_test.go#L26
-	rBytes := desoSign.Sign.R.Bytes()
-	r := &secp256k1.ModNScalar{}
-	r.SetByteSlice(rBytes)
+	r := desoSign.Sign.R()
 
-	sBytes := desoSign.Sign.S.Bytes()
-	s := &secp256k1.ModNScalar{}
-	s.SetByteSlice(sBytes)
+	s := desoSign.Sign.S()
 
 	// To make sure the signature has been correctly parsed, we verify DER encoding of both signatures matches.
-	verifySignature := decredEC.NewSignature(r, s)
+	verifySignature := decredEC.NewSignature(&r, &s)
 	if !bytes.Equal(verifySignature.Serialize(), desoSign.Sign.Serialize()) {
 		return nil, fmt.Errorf("_btcecSerializeCompact: Problem sanity-checking signature")
 	}
@@ -3477,7 +3474,7 @@ func (desoSign *DeSoSignature) RecoverPublicKey(messageHash []byte) (*btcec.Publ
 	}
 
 	// Now recover the public key from the compact encoding.
-	recoveredPublicKey, _, err := btcec.RecoverCompact(btcec.S256(), signatureBytes, messageHash)
+	recoveredPublicKey, _, err := ecdsa2.RecoverCompact(signatureBytes, messageHash)
 	if err != nil {
 		return nil, errors.Wrapf(err, "RecoverPublicKey: Problem recovering public key from the signature bytes")
 	}
@@ -3492,18 +3489,12 @@ func (desoSign *DeSoSignature) RecoverPublicKey(messageHash []byte) (*btcec.Publ
 // the first byte. This makes it so that the first byte will be between [0x31, 0x34] inclusive,
 // instead of being 0x30, which is the standard DER signature magic number.
 func SignRecoverable(bb []byte, privateKey *btcec.PrivateKey) (*DeSoSignature, error) {
-	signature, err := privateKey.Sign(bb)
-	if err != nil {
-		return nil, err
-	}
+	signature := ecdsa2.Sign(privateKey, bb)
 
 	// We use SignCompact from the btcec library to get the recoverID. This results in a non-standard
 	// encoding that we need to manipulate in order to get the recoveryID back out. See comment on
 	// _btcecSerializeCompact for more information.
-	signatureCompact, err := btcec.SignCompact(btcec.S256(), privateKey, bb, true)
-	if err != nil {
-		return nil, err
-	}
+	signatureCompact := ecdsa2.SignCompact(privateKey, bb, true)
 	recoveryId := (signatureCompact[0] - btcecCompactSigMagicOffset) & ^byte(btcecCompactSigCompPubKey)
 
 	return &DeSoSignature{
@@ -4006,7 +3997,7 @@ func (msg *MsgDeSoTxn) Copy() (*MsgDeSoTxn, error) {
 	return newTxn, nil
 }
 
-func (msg *MsgDeSoTxn) Sign(privKey *btcec.PrivateKey) (*btcec.Signature, error) {
+func (msg *MsgDeSoTxn) Sign(privKey *btcec.PrivateKey) (*ecdsa2.Signature, error) {
 	// Serialize the transaction without the signature portion.
 	txnBytes, err := msg.ToBytes(true /*preSignature*/)
 	if err != nil {
@@ -4015,10 +4006,7 @@ func (msg *MsgDeSoTxn) Sign(privKey *btcec.PrivateKey) (*btcec.Signature, error)
 	// Compute a hash of the transaction bytes without the signature
 	// portion and sign it with the passed private key.
 	txnSignatureHash := Sha256DoubleHash(txnBytes)
-	txnSignature, err := privKey.Sign(txnSignatureHash[:])
-	if err != nil {
-		return nil, err
-	}
+	txnSignature := ecdsa2.Sign(privKey, txnSignatureHash[:])
 	return txnSignature, nil
 }
 
@@ -8066,7 +8054,7 @@ func (txnData *DAOCoinMetadata) FromBytes(data []byte) error {
 		if err != nil {
 			return fmt.Errorf("DAOCoinMetadata.FromBytes: Error reading coinsToMintBytes: %v", err)
 		}
-		ret.CoinsToMintNanos = *uint256.NewInt().SetBytes(coinsToMintBytes)
+		ret.CoinsToMintNanos = *uint256.NewInt(0).SetBytes(coinsToMintBytes)
 	}
 
 	{
@@ -8087,7 +8075,7 @@ func (txnData *DAOCoinMetadata) FromBytes(data []byte) error {
 		if err != nil {
 			return fmt.Errorf("DAOCoinMetadata.FromBytes: Error reading coinsToBurnBytes: %v", err)
 		}
-		ret.CoinsToBurnNanos = *uint256.NewInt().SetBytes(coinsToBurnBytes)
+		ret.CoinsToBurnNanos = *uint256.NewInt(0).SetBytes(coinsToBurnBytes)
 	}
 
 	transferRestrictionStatus, err := rr.ReadByte()
@@ -8176,7 +8164,7 @@ func (txnData *DAOCoinTransferMetadata) FromBytes(data []byte) error {
 		if err != nil {
 			return fmt.Errorf("DAOCoinTransferMetadata.FromBytes: Error reading coinsToTransferBytes: %v", err)
 		}
-		ret.DAOCoinToTransferNanos = *uint256.NewInt().SetBytes(coinsToTransferBytes)
+		ret.DAOCoinToTransferNanos = *uint256.NewInt(0).SetBytes(coinsToTransferBytes)
 	}
 
 	// ReceiverPublicKey

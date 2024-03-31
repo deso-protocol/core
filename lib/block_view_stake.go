@@ -1629,7 +1629,7 @@ func (bav *UtxoView) _connectUnstake(
 	}
 	// 2. Create a currentStakeEntry, if updated StakeAmountNanos > 0.
 	var currentStakeEntry *StakeEntry
-	if stakeAmountNanos.Cmp(uint256.NewInt()) > 0 {
+	if stakeAmountNanos.Cmp(uint256.NewInt(0)) > 0 {
 		currentStakeEntry = prevStakeEntry.Copy()
 		currentStakeEntry.StakeAmountNanos = stakeAmountNanos.Clone()
 	}
@@ -1906,7 +1906,7 @@ func (bav *UtxoView) _connectUnlockStake(
 	}
 
 	// Calculate the TotalUnlockedAmountNanos and delete the PrevLockedStakeEntries.
-	totalUnlockedAmountNanos := uint256.NewInt()
+	totalUnlockedAmountNanos := uint256.NewInt(0)
 	for _, prevLockedStakeEntry := range prevLockedStakeEntries {
 		totalUnlockedAmountNanos, err = SafeUint256().Add(
 			totalUnlockedAmountNanos, prevLockedStakeEntry.LockedAmountNanos,
@@ -1994,7 +1994,7 @@ func (bav *UtxoView) _disconnectUnlockStake(
 	}
 
 	// Calculate the TotalUnlockedAmountNanos.
-	totalUnlockedAmountNanos := uint256.NewInt()
+	totalUnlockedAmountNanos := uint256.NewInt(0)
 	var err error
 	for _, prevLockedStakeEntry := range operationData.PrevLockedStakeEntries {
 		totalUnlockedAmountNanos, err = SafeUint256().Add(
@@ -2060,7 +2060,7 @@ func (bav *UtxoView) IsValidStakeMetadata(transactorPkBytes []byte, metadata *St
 	if err != nil {
 		return errors.Wrapf(err, "UtxoView.IsValidStakeMetadata: ")
 	}
-	if uint256.NewInt().SetUint64(transactorDeSoBalanceNanos).Cmp(metadata.StakeAmountNanos) < 0 {
+	if uint256.NewInt(transactorDeSoBalanceNanos).Cmp(metadata.StakeAmountNanos) < 0 {
 		return errors.Wrapf(RuleErrorInvalidStakeInsufficientBalance, "UtxoView.IsValidStakeMetadata: ")
 	}
 
@@ -2199,7 +2199,7 @@ func (bav *UtxoView) IsCorrectValidatorTotalStakeAmountNanos(validatorEntry *Val
 		}
 	}
 	// Calculate the total stake amount for the validator.
-	totalStakeAmountNanos := uint256.NewInt()
+	totalStakeAmountNanos := uint256.NewInt(0)
 	for _, stakeEntry := range stakeEntryMap {
 		// If an entry is deleted, we don't count it towards the total.
 		if stakeEntry.isDeleted {
@@ -2243,7 +2243,7 @@ func (bav *UtxoView) SanityCheckStakeTxn(
 	}
 
 	// Validate StakeEntry.StakeAmountNanos increase.
-	prevStakeEntry := &StakeEntry{StakeAmountNanos: uint256.NewInt()}
+	prevStakeEntry := &StakeEntry{StakeAmountNanos: uint256.NewInt(0)}
 	if len(utxoOp.PrevStakeEntries) == 1 {
 		prevStakeEntry = utxoOp.PrevStakeEntries[0]
 	}
@@ -2279,7 +2279,7 @@ func (bav *UtxoView) SanityCheckStakeTxn(
 	if err != nil {
 		return errors.Wrapf(err, "SanityCheckStakeTxn: error including fees in TransactorBalance decrease: ")
 	}
-	if !uint256.NewInt().SetUint64(transactorBalanceNanosDecrease).Eq(amountNanos) {
+	if !uint256.NewInt(transactorBalanceNanosDecrease).Eq(amountNanos) {
 		return errors.New("SanityCheckStakeTxn: TransactorBalance decrease does not match")
 	}
 
@@ -2331,7 +2331,7 @@ func (bav *UtxoView) SanityCheckUnstakeTxn(transactorPKID *PKID, utxoOp *UtxoOpe
 		return errors.Wrapf(err, "SanityCheckUnstakeTxn: error retrieving StakeEntry: ")
 	}
 	if currentStakeEntry == nil {
-		currentStakeEntry = &StakeEntry{StakeAmountNanos: uint256.NewInt()}
+		currentStakeEntry = &StakeEntry{StakeAmountNanos: uint256.NewInt(0)}
 	}
 	stakeEntryStakeAmountNanosDecrease, err := SafeUint256().Sub(
 		prevStakeEntry.StakeAmountNanos, currentStakeEntry.StakeAmountNanos,
@@ -2344,7 +2344,7 @@ func (bav *UtxoView) SanityCheckUnstakeTxn(transactorPKID *PKID, utxoOp *UtxoOpe
 	}
 
 	// Validate LockedStakeEntry.LockedAmountNanos increase.
-	prevLockedStakeEntry := &LockedStakeEntry{LockedAmountNanos: uint256.NewInt()}
+	prevLockedStakeEntry := &LockedStakeEntry{LockedAmountNanos: uint256.NewInt(0)}
 	if len(utxoOp.PrevLockedStakeEntries) == 1 {
 		prevLockedStakeEntry = utxoOp.PrevLockedStakeEntries[0]
 	}
@@ -2395,7 +2395,7 @@ func (bav *UtxoView) SanityCheckUnlockStakeTxn(
 	if utxoOp.PrevLockedStakeEntries == nil || len(utxoOp.PrevLockedStakeEntries) == 0 {
 		return errors.New("SanityCheckUnlockStakeTxn: PrevLockedStakeEntries is empty")
 	}
-	totalUnlockedAmountNanos := uint256.NewInt()
+	totalUnlockedAmountNanos := uint256.NewInt(0)
 	var err error
 	for _, prevLockedStakeEntry := range utxoOp.PrevLockedStakeEntries {
 		totalUnlockedAmountNanos, err = SafeUint256().Add(totalUnlockedAmountNanos, prevLockedStakeEntry.LockedAmountNanos)
@@ -2422,7 +2422,7 @@ func (bav *UtxoView) SanityCheckUnlockStakeTxn(
 	if err != nil {
 		return errors.Wrapf(err, "SanityCheckStakeTxn: error including fees in TransactorBalance decrease: ")
 	}
-	if !uint256.NewInt().SetUint64(transactorBalanceNanosIncrease).Eq(amountNanos) {
+	if !uint256.NewInt(transactorBalanceNanosIncrease).Eq(amountNanos) {
 		return errors.New("SanityCheckUnlockStakeTxn: TransactorBalance increase does not match")
 	}
 
@@ -2907,7 +2907,7 @@ func (bav *UtxoView) CreateUnlockStakeTxindexMetadata(utxoOp *UtxoOperation, txn
 	validatorPublicKeyBase58Check := PkToString(metadata.ValidatorPublicKey.ToBytes(), bav.Params)
 
 	// Calculate TotalUnlockedAmountNanos.
-	totalUnlockedAmountNanos := uint256.NewInt()
+	totalUnlockedAmountNanos := uint256.NewInt(0)
 	var err error
 	for _, prevLockedStakeEntry := range utxoOp.PrevLockedStakeEntries {
 		totalUnlockedAmountNanos, err = SafeUint256().Add(
@@ -2915,7 +2915,7 @@ func (bav *UtxoView) CreateUnlockStakeTxindexMetadata(utxoOp *UtxoOperation, txn
 		)
 		if err != nil {
 			glog.Errorf("CreateUnlockStakeTxindexMetadata: error calculating TotalUnlockedAmountNanos: %v", err)
-			totalUnlockedAmountNanos = uint256.NewInt()
+			totalUnlockedAmountNanos = uint256.NewInt(0)
 			break
 		}
 	}

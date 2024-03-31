@@ -569,20 +569,20 @@ func addIPsForHost(desoAddrMgr *addrmgr.AddrManager, host string, params *lib.De
 	glog.V(1).Infof("_addSeedAddrs: Adding seed IPs from seed %s: %v\n", host, ipAddrs)
 
 	// Convert addresses to NetAddress'es.
-	netAddrs, err := lib.SafeMakeSliceWithLength[*wire.NetAddress](uint64(len(ipAddrs)))
+	netAddrs, err := lib.SafeMakeSliceWithLength[*wire.NetAddressV2](uint64(len(ipAddrs)))
 	if err != nil {
 		glog.V(2).Infof("_addSeedAddrs: Problem creating netAddrs slice with length %d", len(ipAddrs))
 		return
 	}
 	for ii, ip := range ipAddrs {
-		netAddrs[ii] = wire.NewNetAddressTimestamp(
+		netAddrs[ii] = wire.NetAddressV2FromBytes(
 			// We initialize addresses with a
 			// randomly selected "last seen time" between 3
 			// and 7 days ago similar to what bitcoind does.
 			time.Now().Add(-1*time.Second*time.Duration(lib.SecondsIn3Days+
 				lib.RandInt32(lib.SecondsIn4Days))),
 			0,
-			ip,
+			ip[:],
 			params.DefaultSocketPort)
 	}
 	glog.V(1).Infof("_addSeedAddrs: Computed the following wire.NetAddress'es: %s", spew.Sdump(netAddrs))

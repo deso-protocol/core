@@ -1,14 +1,13 @@
 package lib
 
 import (
-	"reflect"
-	"testing"
-
-	"github.com/btcsuite/btcd/btcec"
+	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/dgraph-io/badger/v4"
 	"github.com/holiman/uint256"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"reflect"
+	"testing"
 )
 
 func _daoCoinTxn(t *testing.T, chain *Blockchain, db *badger.DB,
@@ -233,7 +232,7 @@ func TestDAOCoinBasic(t *testing.T) {
 		_, _, _, err = _daoCoinTxn(t, chain, db, params, 10, m0Pub, m0Priv, DAOCoinMetadata{
 			ProfilePublicKey: m0PkBytes,
 			OperationType:    DAOCoinOperationTypeMint,
-			CoinsToMintNanos: *uint256.NewInt().SetUint64(100),
+			CoinsToMintNanos: *uint256.NewInt(100),
 		})
 
 		require.Error(err)
@@ -266,7 +265,7 @@ func TestDAOCoinBasic(t *testing.T) {
 		_, _, _, err = _daoCoinTxn(t, chain, db, params, 10, m1Pub, m1Priv, DAOCoinMetadata{
 			ProfilePublicKey: m0PkBytes,
 			OperationType:    DAOCoinOperationTypeMint,
-			CoinsToMintNanos: *uint256.NewInt().SetUint64(100),
+			CoinsToMintNanos: *uint256.NewInt(100),
 		})
 		require.Error(err)
 		require.Contains(err.Error(), RuleErrorOnlyProfileOwnerCanMintDAOCoin)
@@ -287,7 +286,7 @@ func TestDAOCoinBasic(t *testing.T) {
 		_, _, _, err = _daoCoinTxn(t, chain, db, params, 10, m0Pub, m0Priv, DAOCoinMetadata{
 			ProfilePublicKey: m0PkBytes,
 			OperationType:    DAOCoinOperationTypeMint,
-			CoinsToMintNanos: *uint256.NewInt().SetUint64(0),
+			CoinsToMintNanos: *uint256.NewInt(0),
 		})
 		require.Error(err)
 		require.Contains(err.Error(), RuleErrorDAOCoinMustMintNonZeroDAOCoin)
@@ -302,7 +301,7 @@ func TestDAOCoinBasic(t *testing.T) {
 		_daoCoinTxnWithTestMeta(testMeta, 10, m0Pub, m0Priv, DAOCoinMetadata{
 			ProfilePublicKey: m0PkBytes,
 			OperationType:    DAOCoinOperationTypeMint,
-			CoinsToMintNanos: *uint256.NewInt().SetUint64(oneMCoins),
+			CoinsToMintNanos: *uint256.NewInt(oneMCoins),
 		},
 		)
 		daoBalanceEntry := DBGetBalanceEntryForHODLerAndCreatorPKIDs(
@@ -324,7 +323,7 @@ func TestDAOCoinBasic(t *testing.T) {
 		_daoCoinTxnWithTestMeta(testMeta, 10, m0Pub, m0Priv, DAOCoinMetadata{
 			ProfilePublicKey: m0PkBytes,
 			OperationType:    DAOCoinOperationTypeBurn,
-			CoinsToBurnNanos: *uint256.NewInt().SetUint64(hundredKCoins),
+			CoinsToBurnNanos: *uint256.NewInt(hundredKCoins),
 		})
 
 		daoBalanceEntry := DBGetBalanceEntryForHODLerAndCreatorPKIDs(
@@ -342,7 +341,7 @@ func TestDAOCoinBasic(t *testing.T) {
 		_, _, _, err = _daoCoinTxn(t, chain, db, params, 10, m1Pub, m1Priv, DAOCoinMetadata{
 			ProfilePublicKey: m0PkBytes,
 			OperationType:    DAOCoinOperationTypeBurn,
-			CoinsToBurnNanos: *uint256.NewInt().SetUint64(100),
+			CoinsToBurnNanos: *uint256.NewInt(100),
 		})
 		require.Error(err)
 		require.Contains(err.Error(), RuleErrorDAOCoinBurnInsufficientCoins)
@@ -358,7 +357,7 @@ func TestDAOCoinBasic(t *testing.T) {
 		_daoCoinTransferTxnWithTestMeta(testMeta, 10, m0Pub, m0Priv, DAOCoinTransferMetadata{
 			ProfilePublicKey:       m0PkBytes,
 			ReceiverPublicKey:      m1PkBytes,
-			DAOCoinToTransferNanos: *uint256.NewInt().SetUint64(tenKCoins),
+			DAOCoinToTransferNanos: *uint256.NewInt(tenKCoins),
 		})
 
 		daoBalanceEntry := DBGetBalanceEntryForHODLerAndCreatorPKIDs(
@@ -387,7 +386,7 @@ func TestDAOCoinBasic(t *testing.T) {
 		_daoCoinTxnWithTestMeta(testMeta, 10, m0Pub, m0Priv, DAOCoinMetadata{
 			ProfilePublicKey: m0PkBytes,
 			OperationType:    DAOCoinOperationTypeBurn,
-			CoinsToBurnNanos: *uint256.NewInt().SetUint64(tenKCoins),
+			CoinsToBurnNanos: *uint256.NewInt(tenKCoins),
 		})
 
 		daoBalanceEntry := DBGetBalanceEntryForHODLerAndCreatorPKIDs(
@@ -402,7 +401,7 @@ func TestDAOCoinBasic(t *testing.T) {
 		_daoCoinTxnWithTestMeta(testMeta, 10, m0Pub, m0Priv, DAOCoinMetadata{
 			ProfilePublicKey: m0PkBytes,
 			OperationType:    DAOCoinOperationTypeMint,
-			CoinsToMintNanos: *uint256.NewInt().SetUint64(tenKCoins),
+			CoinsToMintNanos: *uint256.NewInt(tenKCoins),
 		})
 		daoBalanceEntry = DBGetBalanceEntryForHODLerAndCreatorPKIDs(
 			db, chain.snapshot, m0PKID.PKID, m0PKID.PKID, true)
@@ -426,7 +425,7 @@ func TestDAOCoinBasic(t *testing.T) {
 		_daoCoinTxnWithTestMeta(testMeta, 10, m1Pub, m1Priv, DAOCoinMetadata{
 			ProfilePublicKey: m0PkBytes,
 			OperationType:    DAOCoinOperationTypeBurn,
-			CoinsToBurnNanos: *uint256.NewInt().SetUint64(oneKCoins),
+			CoinsToBurnNanos: *uint256.NewInt(oneKCoins),
 		})
 
 		m1DAOBalanceEntry := DBGetBalanceEntryForHODLerAndCreatorPKIDs(
@@ -457,7 +456,7 @@ func TestDAOCoinBasic(t *testing.T) {
 		_, _, _, err = _daoCoinTxn(t, chain, db, params, 10, m0Pub, m0Priv, DAOCoinMetadata{
 			ProfilePublicKey: m0PkBytes,
 			OperationType:    DAOCoinOperationTypeMint,
-			CoinsToMintNanos: *uint256.NewInt().SetUint64(100),
+			CoinsToMintNanos: *uint256.NewInt(100),
 		})
 		require.Error(err)
 		require.Contains(err.Error(), RuleErrorDAOCoinCannotMintIfMintingIsDisabled)
@@ -477,7 +476,7 @@ func TestDAOCoinBasic(t *testing.T) {
 	{
 		_, _, _, err = _daoCoinTransferTxn(t, chain, db, params, 10, m0Pub, m0Priv, DAOCoinTransferMetadata{
 			ProfilePublicKey:       m0PkBytes,
-			DAOCoinToTransferNanos: *uint256.NewInt().SetUint64(oneMCoins),
+			DAOCoinToTransferNanos: *uint256.NewInt(oneMCoins),
 			ReceiverPublicKey:      m2PkBytes,
 		})
 		require.Error(err)
@@ -488,7 +487,7 @@ func TestDAOCoinBasic(t *testing.T) {
 	{
 		_, _, _, err = _daoCoinTransferTxn(t, chain, db, params, 10, m0Pub, m0Priv, DAOCoinTransferMetadata{
 			ProfilePublicKey:       m0PkBytes,
-			DAOCoinToTransferNanos: *uint256.NewInt().SetUint64(oneKCoins),
+			DAOCoinToTransferNanos: *uint256.NewInt(oneKCoins),
 			ReceiverPublicKey:      m0PkBytes,
 		})
 		require.Error(err)
@@ -499,7 +498,7 @@ func TestDAOCoinBasic(t *testing.T) {
 	{
 		_, _, _, err = _daoCoinTransferTxn(t, chain, db, params, 10, m2Pub, m2Priv, DAOCoinTransferMetadata{
 			ProfilePublicKey:       m0PkBytes,
-			DAOCoinToTransferNanos: *uint256.NewInt().SetUint64(1),
+			DAOCoinToTransferNanos: *uint256.NewInt(1),
 			ReceiverPublicKey:      m0PkBytes,
 		})
 		require.Error(err)
@@ -510,7 +509,7 @@ func TestDAOCoinBasic(t *testing.T) {
 	{
 		_, _, _, err = _daoCoinTransferTxn(t, chain, db, params, 10, m0Pub, m0Priv, DAOCoinTransferMetadata{
 			ProfilePublicKey:       m2PkBytes,
-			DAOCoinToTransferNanos: *uint256.NewInt().SetUint64(oneMCoins),
+			DAOCoinToTransferNanos: *uint256.NewInt(oneMCoins),
 			ReceiverPublicKey:      m2PkBytes,
 		})
 		require.Error(err)
@@ -521,7 +520,7 @@ func TestDAOCoinBasic(t *testing.T) {
 	{
 		_, _, _, err = _daoCoinTransferTxn(t, chain, db, params, 10, m0Pub, m0Priv, DAOCoinTransferMetadata{
 			ProfilePublicKey:       m0PkBytes,
-			DAOCoinToTransferNanos: *uint256.NewInt().SetUint64(oneMCoins),
+			DAOCoinToTransferNanos: *uint256.NewInt(oneMCoins),
 			ReceiverPublicKey:      m2PkBytes[:10],
 		})
 		require.Error(err)
@@ -532,7 +531,7 @@ func TestDAOCoinBasic(t *testing.T) {
 	{
 		_, _, _, err = _daoCoinTransferTxn(t, chain, db, params, 10, m0Pub, m0Priv, DAOCoinTransferMetadata{
 			ProfilePublicKey:       m0PkBytes[:10],
-			DAOCoinToTransferNanos: *uint256.NewInt().SetUint64(oneMCoins),
+			DAOCoinToTransferNanos: *uint256.NewInt(oneMCoins),
 			ReceiverPublicKey:      m2PkBytes,
 		})
 		require.Error(err)
@@ -544,7 +543,7 @@ func TestDAOCoinBasic(t *testing.T) {
 		_, _, _, err = _daoCoinTxn(t, chain, db, params, 10, m0Pub, m0Priv, DAOCoinMetadata{
 			ProfilePublicKey: m0PkBytes,
 			OperationType:    DAOCoinOperationTypeBurn,
-			CoinsToBurnNanos: *uint256.NewInt().SetUint64(oneMCoins),
+			CoinsToBurnNanos: *uint256.NewInt(oneMCoins),
 		})
 		require.Error(err)
 		require.Contains(err.Error(), RuleErrorDAOCoinBurnInsufficientCoins)
@@ -561,7 +560,7 @@ func TestDAOCoinBasic(t *testing.T) {
 		_daoCoinTransferTxnWithTestMeta(testMeta, 10, m1Pub, m1Priv, DAOCoinTransferMetadata{
 			ProfilePublicKey:       m0PkBytes,
 			ReceiverPublicKey:      m0PkBytes,
-			DAOCoinToTransferNanos: *uint256.NewInt().SetUint64(tenKCoins - oneKCoins),
+			DAOCoinToTransferNanos: *uint256.NewInt(tenKCoins - oneKCoins),
 		})
 
 		daoBalanceEntry := DBGetBalanceEntryForHODLerAndCreatorPKIDs(
@@ -571,7 +570,7 @@ func TestDAOCoinBasic(t *testing.T) {
 		m1DAOBalanceEntry := DBGetBalanceEntryForHODLerAndCreatorPKIDs(
 			db, chain.snapshot, m1PKID.PKID, m0PKID.PKID, true)
 		// M1's balance entry is deleted because they have nothing
-		require.Equal(true, m1DAOBalanceEntry.BalanceNanos.Eq(uint256.NewInt()))
+		require.Equal(true, m1DAOBalanceEntry.BalanceNanos.Eq(uint256.NewInt(0)))
 
 		profileEntry := DBGetProfileEntryForPKID(db, chain.snapshot, m0PKID.PKID)
 		require.Equal(profileEntry.DAOCoinEntry.CoinsInCirculationNanos.Uint64(), oneMCoins-hundredKCoins-oneKCoins)
@@ -589,7 +588,7 @@ func TestDAOCoinBasic(t *testing.T) {
 		_daoCoinTransferTxnWithTestMeta(testMeta, 10, m0Pub, m0Priv, DAOCoinTransferMetadata{
 			ProfilePublicKey:       m0PkBytes,
 			ReceiverPublicKey:      m2PkBytes,
-			DAOCoinToTransferNanos: *uint256.NewInt().SetUint64(tenKCoins),
+			DAOCoinToTransferNanos: *uint256.NewInt(tenKCoins),
 		})
 
 		daoBalanceEntry := DBGetBalanceEntryForHODLerAndCreatorPKIDs(
@@ -639,7 +638,7 @@ func TestDAOCoinBasic(t *testing.T) {
 
 		// M0 shouldn't own any M3 DAO Coin
 		m0DAOBalanceEntry := DBGetBalanceEntryForHODLerAndCreatorPKIDs(db, chain.snapshot, m0PKID.PKID, m3PKID.PKID, true)
-		require.Equal(true, m0DAOBalanceEntry.BalanceNanos.Eq(uint256.NewInt()))
+		require.Equal(true, m0DAOBalanceEntry.BalanceNanos.Eq(uint256.NewInt(0)))
 
 		// M3's DAO Balance entry should be what M0's was prior to the swap
 		m3DAOBalanceEntry := DBGetBalanceEntryForHODLerAndCreatorPKIDs(db, chain.snapshot, m3PKID.PKID, m3PKID.PKID, true)
@@ -677,7 +676,7 @@ func TestDAOCoinBasic(t *testing.T) {
 	{
 		_, _, _, err = _daoCoinTransferTxn(t, chain, db, params, 10, m2Pub, m2Priv, DAOCoinTransferMetadata{
 			ProfilePublicKey:       m3PkBytes,
-			DAOCoinToTransferNanos: *uint256.NewInt().SetUint64(1),
+			DAOCoinToTransferNanos: *uint256.NewInt(1),
 			ReceiverPublicKey:      m1PkBytes,
 		})
 		require.Error(err)
@@ -695,7 +694,7 @@ func TestDAOCoinBasic(t *testing.T) {
 		_daoCoinTransferTxnWithTestMeta(testMeta, 10, m2Pub, m2Priv, DAOCoinTransferMetadata{
 			ProfilePublicKey:       m3PkBytes,
 			ReceiverPublicKey:      m3PkBytes,
-			DAOCoinToTransferNanos: *uint256.NewInt().SetUint64(oneKCoins),
+			DAOCoinToTransferNanos: *uint256.NewInt(oneKCoins),
 		})
 
 		daoBalanceEntry := DBGetBalanceEntryForHODLerAndCreatorPKIDs(
@@ -724,7 +723,7 @@ func TestDAOCoinBasic(t *testing.T) {
 		_daoCoinTransferTxnWithTestMeta(testMeta, 10, m3Pub, m3Priv, DAOCoinTransferMetadata{
 			ProfilePublicKey:       m3PkBytes,
 			ReceiverPublicKey:      m1PkBytes,
-			DAOCoinToTransferNanos: *uint256.NewInt().SetUint64(oneKCoins),
+			DAOCoinToTransferNanos: *uint256.NewInt(oneKCoins),
 		})
 
 		daoBalanceEntry := DBGetBalanceEntryForHODLerAndCreatorPKIDs(
@@ -758,7 +757,7 @@ func TestDAOCoinBasic(t *testing.T) {
 		_, _, _, err = _daoCoinTransferTxn(t, chain, db, params, 10, m1Pub, m1Priv, DAOCoinTransferMetadata{
 			ProfilePublicKey:       m3PkBytes,
 			ReceiverPublicKey:      m4PkBytes,
-			DAOCoinToTransferNanos: *uint256.NewInt().SetUint64(100),
+			DAOCoinToTransferNanos: *uint256.NewInt(100),
 		})
 
 		require.Error(err)
@@ -778,7 +777,7 @@ func TestDAOCoinBasic(t *testing.T) {
 		_daoCoinTransferTxnWithTestMeta(testMeta, 10, m1Pub, m1Priv, DAOCoinTransferMetadata{
 			ProfilePublicKey:       m3PkBytes,
 			ReceiverPublicKey:      m2PkBytes,
-			DAOCoinToTransferNanos: *uint256.NewInt().SetUint64(hundredCoins),
+			DAOCoinToTransferNanos: *uint256.NewInt(hundredCoins),
 		})
 
 		m1DAOBalanceEntry := DBGetBalanceEntryForHODLerAndCreatorPKIDs(
@@ -810,7 +809,7 @@ func TestDAOCoinBasic(t *testing.T) {
 		_daoCoinTransferTxnWithTestMeta(testMeta, 10, m3Pub, m3Priv, DAOCoinTransferMetadata{
 			ProfilePublicKey:       m3PkBytes,
 			ReceiverPublicKey:      m4PkBytes,
-			DAOCoinToTransferNanos: *uint256.NewInt().SetUint64(hundredCoins),
+			DAOCoinToTransferNanos: *uint256.NewInt(hundredCoins),
 		})
 
 		m3DAOBalanceEntry := DBGetBalanceEntryForHODLerAndCreatorPKIDs(
@@ -842,7 +841,7 @@ func TestDAOCoinBasic(t *testing.T) {
 		_daoCoinTransferTxnWithTestMeta(testMeta, 10, m1Pub, m1Priv, DAOCoinTransferMetadata{
 			ProfilePublicKey:       m3PkBytes,
 			ReceiverPublicKey:      m4PkBytes,
-			DAOCoinToTransferNanos: *uint256.NewInt().SetUint64(hundredCoins),
+			DAOCoinToTransferNanos: *uint256.NewInt(hundredCoins),
 		})
 
 		m1DAOBalanceEntry := DBGetBalanceEntryForHODLerAndCreatorPKIDs(
@@ -864,7 +863,7 @@ func TestDAOCoinBasic(t *testing.T) {
 		_, _, _, err = _daoCoinTransferTxn(t, chain, db, params, 10, m1Pub, m1Priv, DAOCoinTransferMetadata{
 			ProfilePublicKey:       m3PkBytes,
 			ReceiverPublicKey:      m0PkBytes,
-			DAOCoinToTransferNanos: *uint256.NewInt().SetUint64(100),
+			DAOCoinToTransferNanos: *uint256.NewInt(100),
 		})
 
 		require.Error(err)
@@ -912,7 +911,7 @@ func TestDAOCoinBasic(t *testing.T) {
 		_daoCoinTransferTxnWithTestMeta(testMeta, 10, m1Pub, m1Priv, DAOCoinTransferMetadata{
 			ProfilePublicKey:       m3PkBytes,
 			ReceiverPublicKey:      m0PkBytes,
-			DAOCoinToTransferNanos: *uint256.NewInt().SetUint64(hundredCoins),
+			DAOCoinToTransferNanos: *uint256.NewInt(hundredCoins),
 		})
 
 		m1DAOBalanceEntry := DBGetBalanceEntryForHODLerAndCreatorPKIDs(
@@ -945,12 +944,12 @@ func TestDAOCoinBasic(t *testing.T) {
 		_daoCoinTransferTxnWithTestMeta(testMeta, 10, m3Pub, m3Priv, DAOCoinTransferMetadata{
 			ProfilePublicKey:       m3PkBytes,
 			ReceiverPublicKey:      m2PkBytes,
-			DAOCoinToTransferNanos: *uint256.NewInt().SetUint64(oneMCoins - hundredKCoins - tenKCoins - oneKCoins - hundredCoins),
+			DAOCoinToTransferNanos: *uint256.NewInt(oneMCoins - hundredKCoins - tenKCoins - oneKCoins - hundredCoins),
 		})
 
 		daoBalanceEntry := DBGetBalanceEntryForHODLerAndCreatorPKIDs(
 			db, chain.snapshot, m3PKID.PKID, m3PKID.PKID, true)
-		require.Equal(true, daoBalanceEntry.BalanceNanos.Eq(uint256.NewInt()))
+		require.Equal(true, daoBalanceEntry.BalanceNanos.Eq(uint256.NewInt(0)))
 
 		m2DAOBalanceEntry := DBGetBalanceEntryForHODLerAndCreatorPKIDs(
 			db, chain.snapshot, m2PKID.PKID, m3PKID.PKID, true)
@@ -977,12 +976,12 @@ func TestDAOCoinBasic(t *testing.T) {
 		_daoCoinTxnWithTestMeta(testMeta, 10, m2Pub, m2Priv, DAOCoinMetadata{
 			ProfilePublicKey: m3PkBytes,
 			OperationType:    DAOCoinOperationTypeBurn,
-			CoinsToBurnNanos: *uint256.NewInt().SetUint64(oneMCoins - hundredKCoins - oneKCoins - oneKCoins),
+			CoinsToBurnNanos: *uint256.NewInt(oneMCoins - hundredKCoins - oneKCoins - oneKCoins),
 		})
 
 		m2DAOBalanceEntry := DBGetBalanceEntryForHODLerAndCreatorPKIDs(
 			db, chain.snapshot, m2PKID.PKID, m3PKID.PKID, true)
-		require.Equal(true, m2DAOBalanceEntry.BalanceNanos.Eq(uint256.NewInt()))
+		require.Equal(true, m2DAOBalanceEntry.BalanceNanos.Eq(uint256.NewInt(0)))
 
 		profileEntry := DBGetProfileEntryForPKID(db, chain.snapshot, m3PKID.PKID)
 		require.Equal(profileEntry.DAOCoinEntry.CoinsInCirculationNanos.Uint64(), oneKCoins)
@@ -1014,7 +1013,7 @@ func TestDAOCoinBasic(t *testing.T) {
 		// - nobody has any
 		// M2 DAO cap table after:
 		// - M2: max-1k
-		maxMinus1k := uint256.NewInt().Sub(MaxUint256, uint256.NewInt().SetUint64(1000))
+		maxMinus1k := uint256.NewInt(0).Sub(MaxUint256, uint256.NewInt(1000))
 		{
 			_daoCoinTxnWithTestMeta(testMeta, 10, m2Pub, m2Priv, DAOCoinMetadata{
 				ProfilePublicKey: m2PkBytes,
@@ -1036,7 +1035,7 @@ func TestDAOCoinBasic(t *testing.T) {
 			_, _, _, err = _daoCoinTxn(t, chain, db, params, 10, m2Pub, m2Priv, DAOCoinMetadata{
 				ProfilePublicKey: m2PkBytes,
 				OperationType:    DAOCoinOperationTypeMint,
-				CoinsToMintNanos: *uint256.NewInt().SetUint64(1001),
+				CoinsToMintNanos: *uint256.NewInt(1001),
 			})
 			require.Error(err)
 			require.Contains(err.Error(), RuleErrorOverflowWhileMintingDAOCoins)
@@ -1048,10 +1047,10 @@ func TestDAOCoinBasic(t *testing.T) {
 		// M2 DAO cap table after:
 		// - M1: (max-1k) / 2
 		// - M2: (max-1k) / 2 + 1
-		maxMinus1kDiv2 := uint256.NewInt().Div(maxMinus1k, uint256.NewInt().SetUint64(2))
-		maxMinus1kDiv2PlusOne := uint256.NewInt().Add(
+		maxMinus1kDiv2 := uint256.NewInt(0).Div(maxMinus1k, uint256.NewInt(2))
+		maxMinus1kDiv2PlusOne := uint256.NewInt(0).Add(
 			maxMinus1kDiv2,
-			uint256.NewInt().SetUint64(1))
+			uint256.NewInt(1))
 		{
 			_daoCoinTransferTxnWithTestMeta(testMeta, 10, m2Pub, m2Priv, DAOCoinTransferMetadata{
 				ProfilePublicKey:       m2PkBytes,
@@ -1081,7 +1080,7 @@ func TestDAOCoinBasic(t *testing.T) {
 			_, _, _, err = _daoCoinTxn(t, chain, db, params, 10, m2Pub, m2Priv, DAOCoinMetadata{
 				ProfilePublicKey: m2PkBytes,
 				OperationType:    DAOCoinOperationTypeMint,
-				CoinsToMintNanos: *uint256.NewInt().SetUint64(1001),
+				CoinsToMintNanos: *uint256.NewInt(1001),
 			})
 			require.Error(err)
 			require.Contains(err.Error(), RuleErrorOverflowWhileMintingDAOCoins)
@@ -1094,13 +1093,13 @@ func TestDAOCoinBasic(t *testing.T) {
 		// M2 DAO cap table after:
 		// - M1: (max-1k)/2
 		// - M2: (max-1k)/2 + 1k + 1
-		maxMinus1kDiv2Plus1kPlusOne := uint256.NewInt().Add(
-			maxMinus1kDiv2, uint256.NewInt().SetUint64(1001))
+		maxMinus1kDiv2Plus1kPlusOne := uint256.NewInt(0).Add(
+			maxMinus1kDiv2, uint256.NewInt(1001))
 		{
 			_daoCoinTxnWithTestMeta(testMeta, 10, m2Pub, m2Priv, DAOCoinMetadata{
 				ProfilePublicKey: m2PkBytes,
 				OperationType:    DAOCoinOperationTypeMint,
-				CoinsToMintNanos: *uint256.NewInt().SetUint64(1000),
+				CoinsToMintNanos: *uint256.NewInt(1000),
 			})
 
 			{
@@ -1127,16 +1126,16 @@ func TestDAOCoinBasic(t *testing.T) {
 		// M2 DAO cap table after:
 		// - M1: (max-1k)/2 - 2k
 		// - M2: (max-1k)/2 + 1k + 1
-		maxMinus1kDiv2Minus2k := uint256.NewInt().Sub(
-			maxMinus1kDiv2, uint256.NewInt().SetUint64(2000))
-		maxMinus1kDiv2Minus1kPlus1 := uint256.NewInt().Add(
+		maxMinus1kDiv2Minus2k := uint256.NewInt(0).Sub(
+			maxMinus1kDiv2, uint256.NewInt(2000))
+		maxMinus1kDiv2Minus1kPlus1 := uint256.NewInt(0).Add(
 			maxMinus1kDiv2Minus2k,
 			maxMinus1kDiv2Plus1kPlusOne)
 		{
 			_daoCoinTxnWithTestMeta(testMeta, 10, m1Pub, m1Priv, DAOCoinMetadata{
 				ProfilePublicKey: m2PkBytes,
 				OperationType:    DAOCoinOperationTypeBurn,
-				CoinsToBurnNanos: *uint256.NewInt().SetUint64(2000),
+				CoinsToBurnNanos: *uint256.NewInt(2000),
 			})
 
 			{
@@ -1163,15 +1162,15 @@ func TestDAOCoinBasic(t *testing.T) {
 		// M2 DAO cap table after:
 		// - M1: (max-1k)/2 - 2k
 		// - M2: (max-1k)/2 + 2k + 1
-		maxMinus1kDiv2Plus2k := uint256.NewInt().Add(
-			maxMinus1kDiv2, uint256.NewInt().SetUint64(2000))
-		maxMinus1kDiv2Plus2kPlus1 := uint256.NewInt().Add(
-			maxMinus1kDiv2Plus2k, uint256.NewInt().SetUint64(1))
+		maxMinus1kDiv2Plus2k := uint256.NewInt(0).Add(
+			maxMinus1kDiv2, uint256.NewInt(2000))
+		maxMinus1kDiv2Plus2kPlus1 := uint256.NewInt(0).Add(
+			maxMinus1kDiv2Plus2k, uint256.NewInt(1))
 		{
 			_daoCoinTxnWithTestMeta(testMeta, 10, m2Pub, m2Priv, DAOCoinMetadata{
 				ProfilePublicKey: m2PkBytes,
 				OperationType:    DAOCoinOperationTypeMint,
-				CoinsToMintNanos: *uint256.NewInt().SetUint64(1000),
+				CoinsToMintNanos: *uint256.NewInt(1000),
 			})
 
 			{
@@ -1196,7 +1195,7 @@ func TestDAOCoinBasic(t *testing.T) {
 			_, _, _, err = _daoCoinTxn(t, chain, db, params, 10, m2Pub, m2Priv, DAOCoinMetadata{
 				ProfilePublicKey: m2PkBytes,
 				OperationType:    DAOCoinOperationTypeMint,
-				CoinsToMintNanos: *uint256.NewInt().SetUint64(1001),
+				CoinsToMintNanos: *uint256.NewInt(1001),
 			})
 			require.Error(err)
 			require.Contains(err.Error(), RuleErrorOverflowWhileMintingDAOCoins)

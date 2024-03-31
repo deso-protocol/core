@@ -16,11 +16,12 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/btcsuite/btcutil"
-	"github.com/dgraph-io/badger/v4"
+	"github.com/btcsuite/btcd/btcutil"
 	"github.com/gernest/mention"
 
-	"github.com/btcsuite/btcd/btcec"
+	"github.com/dgraph-io/badger/v4"
+
+	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/deso-protocol/core/collections"
 	"github.com/deso-protocol/go-deadlock"
 	"github.com/golang/glog"
