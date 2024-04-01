@@ -24,7 +24,7 @@ import (
 	chainlib "github.com/btcsuite/btcd/blockchain"
 	"github.com/davecgh/go-spew/spew"
 	"github.com/deso-protocol/go-deadlock"
-	"github.com/dgraph-io/badger/v3"
+	"github.com/dgraph-io/badger/v4"
 	"github.com/golang/glog"
 	"github.com/pkg/errors"
 )
@@ -943,7 +943,7 @@ func (srv *Server) _handleHeaderBundle(pp *Peer, msg *MsgDeSoHeaderBundle) {
 	// right after the tip of our header chain ideally. While going through them
 	// tally up the number that we actually process.
 	numNewHeaders := 0
-	for _, headerReceived := range msg.Headers {
+	for ii, headerReceived := range msg.Headers {
 		// If we've set a maximum height for node sync and we've reached it,
 		// then we will not process any more headers.
 		if srv.blockchain.isTipMaxed(srv.blockchain.headerTip()) {
@@ -986,6 +986,14 @@ func (srv *Server) _handleHeaderBundle(pp *Peer, msg *MsgDeSoHeaderBundle) {
 		// Process the header, as we haven't seen it before, set verifySignatures to false
 		// if we're in the process of syncing.
 		_, isOrphan, err := srv.blockchain.ProcessHeader(headerReceived, headerHash, !srv.blockchain.isSyncing())
+
+		numLogHeaders := 2000
+		if ii%numLogHeaders == 0 {
+			glog.Infof(CLog(Cyan, fmt.Sprintf("Server._handleHeaderBundle: Processed header ( %v / %v ) from Peer %v",
+				headerReceived.Height,
+				msg.Headers[len(msg.Headers)-1].Height,
+				pp)))
+		}
 
 		// If this header is an orphan or we encountered an error for any reason,
 		// disconnect from the peer. Because every header is sent in response to
