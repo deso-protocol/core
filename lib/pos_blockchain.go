@@ -1792,11 +1792,10 @@ func (bc *Blockchain) commitBlockPoS(blockHash *BlockHash, verifySignatures bool
 	return nil
 }
 
-// GetUncommittedFullBlocks is a helper that the state syncer uses to fetch all uncommitted
-// blocks, so it can flush them just like we would with mempool transactions. It returns
-// all uncommitted blocks from the specified tip to the last uncommitted block.
-// Note: it would be more efficient if we cached these results.
-func (bc *Blockchain) GetUncommittedFullBlocks(tipHash *BlockHash) ([]*MsgDeSoBlock, error) {
+// GetUncommittedBlocks is a helper that the state syncer uses to fetch all uncommitted
+// block nodes, so it can flush them just like we would with mempool transactions. It returns
+// all uncommitted block nodes from the specified tip to the last uncommitted block.
+func (bc *Blockchain) GetUncommittedBlocks(tipHash *BlockHash) ([]*BlockNode, error) {
 	if tipHash == nil {
 		tipHash = bc.BlockTip().Hash
 	}
@@ -1804,31 +1803,26 @@ func (bc *Blockchain) GetUncommittedFullBlocks(tipHash *BlockHash) ([]*MsgDeSoBl
 	defer bc.ChainLock.RUnlock()
 	tipBlock, exists := bc.bestChainMap[*tipHash]
 	if !exists {
-		return nil, errors.Errorf("GetUncommittedFullBlocks: Block %v not found in best chain map", tipHash.String())
+		return nil, errors.Errorf("GetUncommittedBlocks: Block %v not found in best chain map", tipHash.String())
 	}
 	// If the tip block is committed, we can't get uncommitted blocks from it so we return an empty slice.
 	if tipBlock.IsCommitted() {
-		return []*MsgDeSoBlock{}, nil
+		return []*BlockNode{}, nil
 	}
-	var uncommittedBlocks []*MsgDeSoBlock
+	var uncommittedBlockNodes []*BlockNode
 	currentBlock := tipBlock
 	for !currentBlock.IsCommitted() {
-		fullBlock, err := GetBlock(currentBlock.Hash, bc.db, bc.snapshot)
-		if err != nil {
-			return nil, errors.Wrapf(err, "GetUncommittedFullBlocks: Problem fetching block %v",
-				currentBlock.Hash.String())
-		}
-		uncommittedBlocks = append(uncommittedBlocks, fullBlock)
+		uncommittedBlockNodes = append(uncommittedBlockNodes, currentBlock)
 		currentParentHash := currentBlock.Header.PrevBlockHash
 		if currentParentHash == nil {
-			return nil, errors.Errorf("GetUncommittedFullBlocks: Block %v has nil PrevBlockHash", currentBlock.Hash)
+			return nil, errors.Errorf("GetUncommittedBlocks: Block %v has nil PrevBlockHash", currentBlock.Hash)
 		}
 		currentBlock = bc.blockIndexByHash[*currentParentHash]
 		if currentBlock == nil {
-			return nil, errors.Errorf("GetUncommittedFullBlocks: Block %v not found in block index", currentBlock.Hash)
+			return nil, errors.Errorf("GetUncommittedBlocks: Block %v not found in block index", currentBlock.Hash)
 		}
 	}
-	return collections.Reverse(uncommittedBlocks), nil
+	return collections.Reverse(uncommittedBlockNodes), nil
 }
 
 // GetCommittedTipView builds a UtxoView to the committed tip.
