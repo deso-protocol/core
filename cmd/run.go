@@ -107,9 +107,6 @@ func SetupRunFlags(cmd *cobra.Command) {
 	cmd.PersistentFlags().Uint64("transaction-validation-refresh-interval-millis", 10,
 		"The frequency in milliseconds with which the transaction validation routine is run in mempool. "+
 			"The default value is 10 milliseconds.")
-	cmd.PersistentFlags().Uint64("augmented-block-view-refresh-interval-millis", 10,
-		"The frequency in milliseconds with which the augmented block view will be refreshed. "+
-			"The default value is 10 milliseconds.")
 
 	// Peers
 	cmd.PersistentFlags().StringSlice("connect-ips", []string{},

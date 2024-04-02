@@ -99,7 +99,6 @@ func _generateConfig(t *testing.T, config *cmd.Config, port uint32, dataDir stri
 	config.MempoolFeeEstimatorNumPastBlocks = 50
 	config.MempoolMaxValidationViewConnects = 10000
 	config.TransactionValidationRefreshIntervalMillis = 10
-	config.AugmentedBlockViewRefreshIntervalMillis = 10
 
 	//config.ArchivalMode = true
 

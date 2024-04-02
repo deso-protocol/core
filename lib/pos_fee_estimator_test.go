@@ -26,7 +26,7 @@ func TestFeeEstimator(t *testing.T) {
 	mempool := NewPosMempool()
 	err = mempool.Init(
 		params, globalParams, latestBlockView, 2, dir, false, maxMempoolPosSizeBytes, mempoolBackupIntervalMillis, 1,
-		nil, 1, 10000, 100, 100,
+		nil, 1, 10000, 100,
 	)
 	require.NoError(t, err)
 	require.NoError(t, mempool.Start())

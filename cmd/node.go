@@ -296,7 +296,6 @@ func (node *Node) Start(exitChannels ...*chan struct{}) {
 		node.Config.MempoolFeeEstimatorNumPastBlocks,
 		node.Config.MempoolMaxValidationViewConnects,
 		node.Config.TransactionValidationRefreshIntervalMillis,
-		node.Config.AugmentedBlockViewRefreshIntervalMillis,
 		node.Config.StateSyncerMempoolTxnSyncLimit,
 	)
 	if err != nil {
