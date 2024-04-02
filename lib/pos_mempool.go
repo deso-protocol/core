@@ -464,6 +464,10 @@ func (mp *PosMempool) AddTransaction(mtxn *MempoolTransaction) error {
 		return fmt.Errorf("PosMempool.AddTransaction: Cannot add a nil transaction")
 	}
 
+	// Acquire the mempool lock for all operations related to adding the transaction
+	mp.Lock()
+	defer mp.Unlock()
+
 	// First, validate that the transaction is properly formatted according to BalanceModel. We acquire a read lock on
 	// the mempool. This allows multiple goroutines to safely perform transaction validation concurrently. In particular,
 	// transaction signature verification can be parallelized.
@@ -472,10 +476,6 @@ func (mp *PosMempool) AddTransaction(mtxn *MempoolTransaction) error {
 	}
 
 	// If we get this far, it means that the transaction is valid. We can now add it to the mempool.
-	// We lock the mempool to ensure that no other thread is modifying it while we add the transaction.
-	mp.Lock()
-	defer mp.Unlock()
-
 	if !mp.IsRunning() {
 		return errors.Wrapf(MempoolErrorNotRunning, "PosMempool.AddTransaction: ")
 	}
@@ -510,9 +510,6 @@ func (mp *PosMempool) isTxnHashInRecentBlockCache(txnHash BlockHash) bool {
 }
 
 func (mp *PosMempool) checkTransactionSanity(txn *MsgDeSoTxn) error {
-	mp.RLock()
-	defer mp.RUnlock()
-
 	if err := CheckTransactionSanity(txn, uint32(mp.latestBlockHeight), mp.params); err != nil {
 		return errors.Wrapf(err, "PosMempool.AddTransaction: Problem validating transaction sanity")
 	}
