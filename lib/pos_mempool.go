@@ -2,6 +2,7 @@ package lib
 
 import (
 	"fmt"
+	"github.com/decred/dcrd/lru"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -36,6 +37,7 @@ type Mempool interface {
 	GetAugmentedUniversalView() (*UtxoView, error)
 	GetAugmentedUtxoViewForPublicKey(pk []byte, optionalTx *MsgDeSoTxn) (*UtxoView, error)
 	BlockUntilReadOnlyViewRegenerated()
+	WaitForTxnValidation(txHash *BlockHash) bool
 	CheckSpend(op UtxoKey) *MsgDeSoTxn
 	GetOrderedTransactions() []*MempoolTx
 	IsTransactionInPool(txHash *BlockHash) bool
@@ -166,10 +168,15 @@ type PosMempool struct {
 	// transactionValidationRoutineRefreshIntervalMillis is the frequency with which the transactionValidationRoutine is run.
 	transactionValidationRefreshIntervalMillis uint64
 
-	// augmentedLatestBlockViewSequenceNumber is the sequence number of the readOnlyLatestBlockView. It is incremented
+	// augmentedLatestBlockViewSequenceNumber is the sequence number of the augmentedLatestBlockView. It is incremented
 	// every time augmentedLatestBlockView is updated. It can be used by obtainers of the augmentedLatestBlockView to
 	// wait until a particular transaction has been connected.
 	augmentedLatestBlockViewSequenceNumber int64
+
+	// recentBlockTxnCache is an LRU KV cache used to track the transaction that have been included in blocks.
+	// This cache is used to power logic that waits for a transaction to either be validated in the mempool
+	// or be included in a block.
+	recentBlockTxnCache lru.KVCache
 }
 
 // PosMempoolIterator is a wrapper around FeeTimeIterator, modified to return MsgDeSoTxn instead of MempoolTx.
@@ -244,6 +251,7 @@ func (mp *PosMempool) Init(
 	mp.mempoolBackupIntervalMillis = mempoolBackupIntervalMillis
 	mp.maxValidationViewConnects = maxValidationViewConnects
 	mp.transactionValidationRefreshIntervalMillis = transactionValidationRefreshIntervalMillis
+	mp.recentBlockTxnCache = lru.NewKVCache(100000) // cache 100K latest txns from blocks.
 
 	// TODO: parameterize num blocks. Also, how to pass in blocks.
 	err = mp.feeEstimator.Init(
@@ -379,6 +387,10 @@ func (mp *PosMempool) OnBlockConnected(block *MsgDeSoBlock) {
 			continue
 		}
 
+		// Add the transaction to the recentBlockTxnCache.
+		mp.addTxnHashToRecentBlockCache(*txnHash)
+
+		// Remove the transaction from the mempool.
 		mp.removeTransactionNoLock(existingTxn, true)
 	}
 
@@ -405,7 +417,7 @@ func (mp *PosMempool) OnBlockDisconnected(block *MsgDeSoBlock) {
 		return
 	}
 
-	// Remove all transactions in the block from the mempool.
+	// Add all transactions from the block to the mempool.
 	for _, txn := range block.Txns {
 		txnHash := txn.Hash()
 
@@ -421,6 +433,9 @@ func (mp *PosMempool) OnBlockDisconnected(block *MsgDeSoBlock) {
 		if err != nil {
 			continue
 		}
+
+		// Remove the transaction from the recentBlockTxnCache.
+		mp.deleteTxnHashFromRecentBlockCache(*txnHash)
 
 		// Add the transaction to the mempool and then prune if needed.
 		if err := mp.addTransactionNoLock(mempoolTx, true); err != nil {
@@ -481,6 +496,17 @@ func (mp *PosMempool) AddTransaction(mtxn *MempoolTransaction) error {
 	}
 
 	return nil
+}
+
+func (mp *PosMempool) addTxnHashToRecentBlockCache(txnHash BlockHash) {
+	mp.recentBlockTxnCache.Add(txnHash, nil)
+}
+
+func (mp *PosMempool) deleteTxnHashFromRecentBlockCache(txnHash BlockHash) {
+	mp.recentBlockTxnCache.Delete(txnHash)
+}
+func (mp *PosMempool) isTxnHashInRecentBlockCache(txnHash BlockHash) bool {
+	return mp.recentBlockTxnCache.Contains(txnHash)
 }
 
 func (mp *PosMempool) checkTransactionSanity(txn *MsgDeSoTxn) error {
@@ -915,6 +941,27 @@ func (mp *PosMempool) BlockUntilReadOnlyViewRegenerated() {
 	for newSeqNum == oldSeqNum {
 		time.Sleep(time.Duration(checkIntervalMillis) * time.Millisecond)
 		newSeqNum = atomic.LoadInt64(&mp.augmentedLatestBlockViewSequenceNumber)
+	}
+}
+
+// WaitForTxnValidation blocks until the transaction with the given hash is either validated in the mempool,
+// in a recent block, or no longer in the mempool.
+func (mp *PosMempool) WaitForTxnValidation(txHash *BlockHash) bool {
+	// Check fairly often. Not too often.
+	checkIntervalMillis := mp.transactionValidationRefreshIntervalMillis / 5
+	if checkIntervalMillis == 0 {
+		checkIntervalMillis = 1
+	}
+	for {
+		mtxn := mp.GetTransaction(txHash)
+		if mtxn.IsValidated() {
+			return true
+		}
+		if mtxn == nil {
+			return mp.isTxnHashInRecentBlockCache(*txHash)
+		}
+		// Sleep for a bit and then check again.
+		time.Sleep(time.Duration(checkIntervalMillis) * time.Millisecond)
 	}
 }
 

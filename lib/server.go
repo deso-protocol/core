@@ -259,6 +259,10 @@ func (srv *Server) GetMiner() *DeSoMiner {
 }
 
 func (srv *Server) BroadcastTransaction(txn *MsgDeSoTxn) ([]*MsgDeSoTxn, error) {
+	txnHash := txn.Hash()
+	if txnHash == nil {
+		return nil, fmt.Errorf("BroadcastTransaction: Txn hash is nil")
+	}
 	// Use the backendServer to add the transaction to the mempool and
 	// relay it to peers. When a transaction is created by the user there
 	// is no need to consider a rateLimit and also no need to verifySignatures
@@ -270,7 +274,10 @@ func (srv *Server) BroadcastTransaction(txn *MsgDeSoTxn) ([]*MsgDeSoTxn, error) 
 
 	// At this point, we know the transaction has been run through the mempool.
 	// Now wait for an update of the ReadOnlyUtxoView so we don't break anything.
-	srv.GetMempool().BlockUntilReadOnlyViewRegenerated()
+	isValidated := srv.GetMempool().WaitForTxnValidation(txnHash)
+	if !isValidated {
+		return nil, fmt.Errorf("BroadcastTransaction: Transaction %v was not validated", txnHash)
+	}
 
 	return mempoolTxs, nil
 }
