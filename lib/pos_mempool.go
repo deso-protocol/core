@@ -166,9 +166,6 @@ type PosMempool struct {
 	// transactionValidationRoutineRefreshIntervalMillis is the frequency with which the transactionValidationRoutine is run.
 	transactionValidationRefreshIntervalMillis uint64
 
-	// augmentedBlockViewRefreshIntervalMillis is the frequency with which the augmentedLatestBlockView is updated.
-	augmentedBlockViewRefreshIntervalMillis uint64
-
 	// augmentedLatestBlockViewSequenceNumber is the sequence number of the readOnlyLatestBlockView. It is incremented
 	// every time augmentedLatestBlockView is updated. It can be used by obtainers of the augmentedLatestBlockView to
 	// wait until a particular transaction has been connected.
@@ -224,7 +221,6 @@ func (mp *PosMempool) Init(
 	feeEstimatorNumPastBlocks uint64,
 	maxValidationViewConnects uint64,
 	transactionValidationRefreshIntervalMillis uint64,
-	augmentedBlockViewRefreshIntervalMillis uint64,
 ) error {
 	if mp.status != PosMempoolStatusNotInitialized {
 		return errors.New("PosMempool.Init: PosMempool already initialized")
@@ -248,7 +244,6 @@ func (mp *PosMempool) Init(
 	mp.mempoolBackupIntervalMillis = mempoolBackupIntervalMillis
 	mp.maxValidationViewConnects = maxValidationViewConnects
 	mp.transactionValidationRefreshIntervalMillis = transactionValidationRefreshIntervalMillis
-	mp.augmentedBlockViewRefreshIntervalMillis = augmentedBlockViewRefreshIntervalMillis
 
 	// TODO: parameterize num blocks. Also, how to pass in blocks.
 	err = mp.feeEstimator.Init(
@@ -299,7 +294,6 @@ func (mp *PosMempool) Start() error {
 	mp.startGroup.Add(2)
 	mp.exitGroup.Add(2)
 	mp.startTransactionValidationRoutine()
-	mp.startAugmentedViewRefreshRoutine()
 	mp.startGroup.Wait()
 	mp.status = PosMempoolStatusRunning
 	return nil
@@ -317,55 +311,6 @@ func (mp *PosMempool) startTransactionValidationRoutine() {
 				if err := mp.validateTransactions(); err != nil {
 					glog.Errorf("PosMempool.startTransactionValidationRoutine: Problem validating transactions: %v", err)
 				}
-			case <-mp.quit:
-				mp.exitGroup.Done()
-				return
-			}
-		}
-	}()
-}
-
-func (mp *PosMempool) startAugmentedViewRefreshRoutine() {
-	go func() {
-		mp.startGroup.Done()
-		for {
-			select {
-			case <-time.After(time.Duration(mp.augmentedBlockViewRefreshIntervalMillis) * time.Millisecond):
-				// If we're not within 10 blocks of the PoS cutover, we don't need to update the
-				// augmentedLatestBlockView.
-				if mp.latestBlockHeight+10 < uint64(mp.params.ForkHeights.ProofOfStake2ConsensusCutoverBlockHeight) {
-					continue
-				}
-				// Update the augmentedLatestBlockView with the latest block view.
-				mp.RLock()
-				readOnlyViewPointer := mp.readOnlyLatestBlockView
-				mp.RUnlock()
-				newView, err := readOnlyViewPointer.CopyUtxoView()
-				if err != nil {
-					glog.Errorf("PosMempool.startAugmentedViewRefreshRoutine: Problem copying utxo view outer: %v", err)
-					continue
-				}
-				for _, txn := range mp.GetTransactions() {
-					copiedView, err := newView.CopyUtxoView()
-					if err != nil {
-						glog.Errorf("PosMempool.startAugmentedViewRefreshRoutine: Problem copying utxo view: %v", err)
-						continue
-					}
-					_, _, _, _, err = copiedView.ConnectTransaction(
-						txn.GetTxn(), txn.Hash(), uint32(mp.latestBlockHeight)+1, time.Now().UnixNano(), false,
-						false)
-					// If the transaction successfully connects, we set the newView to the copiedView
-					// and proceed to the next transaction.
-					if err == nil {
-						newView = copiedView
-					}
-				}
-				// Grab the augmentedLatestBlockViewMutex write lock and update the augmentedLatestBlockView.
-				mp.augmentedReadOnlyLatestBlockViewMutex.Lock()
-				mp.augmentedReadOnlyLatestBlockView = newView
-				mp.augmentedReadOnlyLatestBlockViewMutex.Unlock()
-				// Increment the augmentedLatestBlockViewSequenceNumber.
-				atomic.AddInt64(&mp.augmentedLatestBlockViewSequenceNumber, 1)
 			case <-mp.quit:
 				mp.exitGroup.Done()
 				return
@@ -806,6 +751,12 @@ func (mp *PosMempool) validateTransactions() error {
 		}
 	}
 	mp.Unlock()
+	// We also update the augmentedLatestBlockView with the view after the transactions have been connected.
+	mp.augmentedReadOnlyLatestBlockViewMutex.Lock()
+	mp.augmentedReadOnlyLatestBlockView = copyValidationView
+	mp.augmentedReadOnlyLatestBlockViewMutex.Unlock()
+	// Increment the augmentedLatestBlockViewSequenceNumber.
+	atomic.AddInt64(&mp.augmentedLatestBlockViewSequenceNumber, 1)
 
 	// Log the hashes for transactions that were removed.
 	if len(txnsToRemove) > 0 {
@@ -840,7 +791,6 @@ func (mp *PosMempool) refreshNoLock() error {
 		mp.feeEstimator.numPastBlocks,
 		mp.maxValidationViewConnects,
 		mp.transactionValidationRefreshIntervalMillis,
-		mp.augmentedBlockViewRefreshIntervalMillis,
 	)
 	if err != nil {
 		return errors.Wrapf(err, "PosMempool.refreshNoLock: Problem initializing temp pool")
@@ -958,7 +908,7 @@ func (mp *PosMempool) BlockUntilReadOnlyViewRegenerated() {
 	oldSeqNum := atomic.LoadInt64(&mp.augmentedLatestBlockViewSequenceNumber)
 	newSeqNum := oldSeqNum
 	// Check fairly often. Not too often.
-	checkIntervalMillis := mp.augmentedBlockViewRefreshIntervalMillis / 5
+	checkIntervalMillis := mp.transactionValidationRefreshIntervalMillis / 5
 	if checkIntervalMillis == 0 {
 		checkIntervalMillis = 1
 	}
@@ -967,6 +917,7 @@ func (mp *PosMempool) BlockUntilReadOnlyViewRegenerated() {
 		newSeqNum = atomic.LoadInt64(&mp.augmentedLatestBlockViewSequenceNumber)
 	}
 }
+
 func (mp *PosMempool) CheckSpend(op UtxoKey) *MsgDeSoTxn {
 	panic("implement me")
 }

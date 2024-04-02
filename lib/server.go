@@ -412,7 +412,6 @@ func NewServer(
 	_mempoolFeeEstimatorNumPastBlocks uint64,
 	_mempoolMaxValidationViewConnects uint64,
 	_transactionValidationRefreshIntervalMillis uint64,
-	_augmentedBlockViewRefreshIntervalMillis uint64,
 	_stateSyncerMempoolTxnSyncLimit uint64,
 ) (
 	_srv *Server,
@@ -573,7 +572,6 @@ func NewServer(
 		_mempoolFeeEstimatorNumPastBlocks,
 		_mempoolMaxValidationViewConnects,
 		_transactionValidationRefreshIntervalMillis,
-		_augmentedBlockViewRefreshIntervalMillis,
 	)
 	if err != nil {
 		return nil, errors.Wrapf(err, "NewServer: Problem initializing PoS mempool"), true
