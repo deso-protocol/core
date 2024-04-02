@@ -775,6 +775,7 @@ func createMempoolTxKey(keyBytes []byte) string {
 // utxo ops and adds them to the mempool state change file.
 func (stateChangeSyncer *StateChangeSyncer) SyncMempoolToStateSyncer(server *Server) (bool, error) {
 
+	startTime := time.Now()
 	originalCommittedFlushId := stateChangeSyncer.BlockSyncFlushId
 
 	if originalCommittedFlushId == uuid.Nil {
@@ -823,6 +824,8 @@ func (stateChangeSyncer *StateChangeSyncer) SyncMempoolToStateSyncer(server *Ser
 	defer txn.Discard()
 	//fmt.Printf("Mempool synced len before flush: %d\n", len(stateChangeSyncer.MempoolSyncedKeyValueMap))
 	//fmt.Printf("Mempool flushed len before flush: %d\n", len(stateChangeSyncer.MempoolFlushKeySet))
+	fmt.Printf("Time since mempool sync start: %v\n", time.Since(startTime))
+	startTime = time.Now()
 	err = mempoolUtxoView.FlushToDbWithTxn(txn, uint64(server.blockchain.bestChain[len(server.blockchain.bestChain)-1].Height))
 	if err != nil {
 		mempoolUtxoView.EventManager.stateSyncerFlushed(&StateSyncerFlushedEvent{
@@ -832,7 +835,8 @@ func (stateChangeSyncer *StateChangeSyncer) SyncMempoolToStateSyncer(server *Ser
 		})
 		return false, errors.Wrapf(err, "StateChangeSyncer.SyncMempoolToStateSyncer: FlushToDbWithTxn: ")
 	}
-
+	fmt.Printf("Time since db flush: %v\n", time.Since(startTime))
+	startTime = time.Now()
 	mempoolTxUtxoView, err := NewUtxoView(server.blockchain.db, server.blockchain.params, server.blockchain.postgres, nil, &mempoolEventManager)
 	if err != nil {
 		mempoolUtxoView.EventManager.stateSyncerFlushed(&StateSyncerFlushedEvent{
@@ -842,7 +846,8 @@ func (stateChangeSyncer *StateChangeSyncer) SyncMempoolToStateSyncer(server *Ser
 		})
 		return false, errors.Wrapf(err, "StateChangeSyncer.SyncMempoolToStateSyncer: CreateMempoolTxUtxoView: ")
 	}
-
+	fmt.Printf("Time since utxo view: %v\n", time.Since(startTime))
+	startTime = time.Now()
 	// Loop through all the transactions in the mempool and connect them and their utxo ops to the mempool view.
 	server.mempool.mtx.RLock()
 	mempoolTxns, _, err := server.mempool._getTransactionsOrderedByTimeAdded()
@@ -861,7 +866,8 @@ func (stateChangeSyncer *StateChangeSyncer) SyncMempoolToStateSyncer(server *Ser
 		})
 		return false, errors.Wrapf(err, "StateChangeSyncer.SyncMempoolToStateSyncer: ")
 	}
-
+	fmt.Printf("Time since getting transactions: %v\n", time.Since(startTime))
+	startTime = time.Now()
 	if len(mempoolTxns) > 0 {
 		//fmt.Printf("Mempool tx hash: %v\n", mempoolTxns[0].Hash.String())
 	}
@@ -926,6 +932,8 @@ func (stateChangeSyncer *StateChangeSyncer) SyncMempoolToStateSyncer(server *Ser
 			IsMempoolTxn:     true,
 		})
 	}
+	fmt.Printf("Time to connect all txns: %v\n", time.Since(startTime))
+	startTime = time.Now()
 	//fmt.Printf("Mempool flushed len: %d\n", len(stateChangeSyncer.MempoolFlushKeySet))
 	//fmt.Printf("Mempool synced len after all: %d\n", len(stateChangeSyncer.MempoolSyncedKeyValueMap))
 
@@ -945,6 +953,7 @@ func (stateChangeSyncer *StateChangeSyncer) SyncMempoolToStateSyncer(server *Ser
 		IsMempoolFlush:   true,
 		BlockSyncFlushId: originalCommittedFlushId,
 	})
+	fmt.Printf("Time to flush: %v\n", time.Since(startTime))
 
 	return false, nil
 }
