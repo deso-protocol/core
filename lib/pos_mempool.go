@@ -299,8 +299,8 @@ func (mp *PosMempool) Start() error {
 			return errors.Wrapf(err, "PosMempool.Start: Problem loading persisted transactions")
 		}
 	}
-	mp.startGroup.Add(2)
-	mp.exitGroup.Add(2)
+	mp.startGroup.Add(1)
+	mp.exitGroup.Add(1)
 	mp.startTransactionValidationRoutine()
 	mp.startGroup.Wait()
 	mp.status = PosMempoolStatusRunning
