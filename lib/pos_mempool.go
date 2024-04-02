@@ -460,7 +460,7 @@ func (mp *PosMempool) OnBlockDisconnected(block *MsgDeSoBlock) {
 		return
 	}
 
-	// Remove all transactions in the block from the mempool.
+	// Add all transactions in the block to the mempool.
 	for _, txn := range block.Txns {
 		txnHash := txn.Hash()
 
@@ -962,7 +962,7 @@ func (mp *PosMempool) BlockUntilReadOnlyViewRegenerated() {
 	if checkIntervalMillis == 0 {
 		checkIntervalMillis = 1
 	}
-	for newSeqNum == oldSeqNum {
+	for newSeqNum == oldSeqNum || newSeqNum == oldSeqNum+1 {
 		time.Sleep(time.Duration(checkIntervalMillis) * time.Millisecond)
 		newSeqNum = atomic.LoadInt64(&mp.augmentedLatestBlockViewSequenceNumber)
 	}
