@@ -39,6 +39,7 @@ type Mempool interface {
 	CheckSpend(op UtxoKey) *MsgDeSoTxn
 	GetOrderedTransactions() []*MempoolTx
 	IsTransactionInPool(txHash *BlockHash) bool
+	GetMempoolTipBlockHeight() uint64
 	GetMempoolTx(txHash *BlockHash) *MempoolTx
 	GetMempoolSummaryStats() map[string]*SummaryStats
 	EstimateFee(
@@ -80,8 +81,6 @@ type Mempool interface {
 // in any block that can be connected yet.
 func GetAugmentedUniversalViewWithAdditionalTransactions(
 	mempool Mempool,
-	optionalTxnsBlockHeight uint32,
-	optionalTxnsTimestampNanoSecs int64,
 	optionalTxns []*MsgDeSoTxn,
 ) (
 	*UtxoView,
@@ -94,13 +93,14 @@ func GetAugmentedUniversalViewWithAdditionalTransactions(
 	}
 
 	// Connect optional txns (if any).
+	currentTimestampNanoSecs := time.Now().UnixNano()
 	if optionalTxns != nil && len(optionalTxns) > 0 {
 		for ii, txn := range optionalTxns {
 			_, _, _, _, err := newView.ConnectTransaction(
 				txn,
 				txn.Hash(),
-				optionalTxnsBlockHeight,
-				optionalTxnsTimestampNanoSecs,
+				uint32(mempool.GetMempoolTipBlockHeight()+1),
+				currentTimestampNanoSecs,
 				false,
 				true,
 			)
@@ -1044,6 +1044,15 @@ func (mp *PosMempool) IsTransactionInPool(txHash *BlockHash) bool {
 
 	_, exists := mp.txnRegister.txnMembership[*txHash]
 	return exists
+}
+
+func (mp *PosMempool) GetMempoolTipBlockHeight() uint64 {
+	mp.RLock()
+	defer mp.RUnlock()
+	if !mp.IsRunning() {
+		return 0
+	}
+	return mp.latestBlockHeight
 }
 
 func (mp *PosMempool) GetMempoolTx(txHash *BlockHash) *MempoolTx {
