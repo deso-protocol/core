@@ -881,6 +881,7 @@ func (stateChangeSyncer *StateChangeSyncer) SyncMempoolToStateSyncer(server *Ser
 			// has changed since the last cache, and we need to reset it.
 			stateChangeSyncer.MempoolCachedTxns = make(map[string][]*StateChangeEntry)
 			stateChangeSyncer.MempoolCachedUtxoView = nil
+			fmt.Printf("Txn not in cache, resetting")
 			break
 		}
 		// Once we're past the number of cached txns, we have confirmed that nothing in our cache is out of date and can break.
@@ -889,6 +890,7 @@ func (stateChangeSyncer *StateChangeSyncer) SyncMempoolToStateSyncer(server *Ser
 				// If we know that all our transactions are good, set the state of the utxo view to the cached one, and exit.
 				mempoolUtxoView = stateChangeSyncer.MempoolCachedUtxoView
 			}
+			fmt.Printf("All txns match, continueing: %v\n", ii)
 			break
 		}
 	}
