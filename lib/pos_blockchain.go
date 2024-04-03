@@ -1158,23 +1158,35 @@ func (bc *Blockchain) hasValidBlockProposerPoS(block *MsgDeSoBlock, utxoView *Ut
 		return false, nil
 	}
 
+	// Fetch the number timeouts that took place at the final block height of the previous epoch. We need to
+	// compute this number because a timeout at the start of the current epoch would regress the chain to
+	// the previous epoch, which would count the timeout as part of the previous epoch.
 	numTimeoutsBeforeEpochTransition, err := bc.getNumTimeoutsBeforeEpochTransition(block, currentEpochEntry)
 	if err != nil {
 		return false, errors.Wrapf(err, "hasValidBlockProposerPoS: Problem getting num timeouts before epoch transition")
 	}
 
 	// We compute the current index in the leader schedule as follows:
-	// [(block.View - currentEpoch.InitialView) - (block.Height - currentEpoch.InitialHeight)] % len(leaders)
-	// The number of views that have elapsed since the start of the epoch is block.View - currentEpoch.InitialView.
-	// The number of blocks that have been added to the chain since the start of the epoch is
-	// block.Height - currentEpoch.InitialHeight. The difference between these two numbers is the number of timeouts
-	// that have occurred in this epoch. For each timeout, we need to go to the next leader in the schedule.
-	// If we have more timeouts than leaders in the schedule, we start from the top of the schedule again,
-	// which is why we take the modulo of the length of the leader schedule.
-	// A quick example: If we have 3 leaders in the schedule and the epoch started at height 10 and view 11,
-	// and the current block is at height 15 and view 17, then the number of timeouts that have occurred is
-	// (17 - 11) - (15 - 10) = 1. This means this block should be proposed by the 2nd leader in the schedule,
-	// which is at index 1.
+	// - [(block.View - currentEpoch.InitialView) - (block.Height - currentEpoch.InitialHeight) + numTimeoutsBeforeEpochTransition] % len(leaders)
+	// - The number of views that have elapsed since the start of the epoch is block.View - currentEpoch.InitialView.
+	// - The number of blocks that have been added to the chain since the start of the epoch is
+	//   block.Height - currentEpoch.InitialHeight.
+	// - The difference between the above two numbers is the number of timeouts that have occurred in this epoch.
+	// - The numTimeoutsBeforeEpochTransition is the number of epochs that have occurred during the epoch transition
+	//   and are counted as part of the previous epoch.
+	//
+	// For each timeout, we skip one leader in the in the schedule. If we have more timeouts than leaders in
+	// the schedule, we start from the top of the schedule again, which is why we take the modulo of the length
+	// of the leader schedule.
+	//
+	// A quick example:
+	// - Say we have 3 leaders in the schedule
+	// - The epoch started at height 10 and view 11
+	// - The current block is at height 15 and view 17
+	// - There were 6 timeouts at the epoch transition
+	// - Then the number of timeouts that have occurred is (17 - 11) - (15 - 10) + 6 = 7.
+	// - The leader index is 7 % 3 = 1.
+	// - This means this block should be proposed by the 2nd leader in the schedule, which is at index 1.
 	leaderIdxUint64 := (viewDiff + numTimeoutsBeforeEpochTransition - heightDiff) % uint64(len(leaders))
 	if leaderIdxUint64 > math.MaxUint16 {
 		return false, nil
