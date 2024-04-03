@@ -4514,7 +4514,8 @@ func (bav *UtxoView) ConnectBlock(
 	// after connecting all transactions in the block. These operations
 	// are always the last utxo operation in a given block.
 	var blockLevelUtxoOps []*UtxoOperation
-	if blockHeight >= uint64(bav.Params.ForkHeights.BalanceModelBlockHeight) {
+	if blockHeight >= uint64(bav.Params.ForkHeights.BalanceModelBlockHeight) &&
+		!bav.Params.IsPoSBlockHeight(blockHeight) {
 		prevNonces := bav.GetTransactorNonceEntriesToDeleteAtBlockHeight(blockHeight)
 		blockLevelUtxoOps = append(blockLevelUtxoOps, &UtxoOperation{
 			Type:             OperationTypeDeleteExpiredNonces,
