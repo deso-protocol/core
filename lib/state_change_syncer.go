@@ -885,8 +885,10 @@ func (stateChangeSyncer *StateChangeSyncer) SyncMempoolToStateSyncer(server *Ser
 		}
 		// Once we're past the number of cached txns, we have confirmed that nothing in our cache is out of date and can break.
 		if ii >= len(stateChangeSyncer.MempoolCachedTxns)-1 {
-			// If we know that all our transactions are good, set the state of the utxo view to the cached one, and exit.
-			mempoolUtxoView = stateChangeSyncer.MempoolCachedUtxoView
+			if stateChangeSyncer.MempoolCachedUtxoView != nil {
+				// If we know that all our transactions are good, set the state of the utxo view to the cached one, and exit.
+				mempoolUtxoView = stateChangeSyncer.MempoolCachedUtxoView
+			}
 			break
 		}
 	}
@@ -935,8 +937,6 @@ func (stateChangeSyncer *StateChangeSyncer) SyncMempoolToStateSyncer(server *Ser
 
 			// Add both state change entries to the mempool sync map.
 			stateChangeSyncer.MempoolCachedTxns[txHash] = []*StateChangeEntry{txnStateChangeEntry, utxoOpStateChangeEntry}
-			// Update the cached utxo view to represent the new cached state.
-			stateChangeSyncer.MempoolCachedUtxoView = mempoolTxUtxoView
 		}
 
 		// Emit transaction state change.
@@ -953,6 +953,12 @@ func (stateChangeSyncer *StateChangeSyncer) SyncMempoolToStateSyncer(server *Ser
 			IsMempoolTxn:     true,
 		})
 	}
+	// Update the cached utxo view to represent the new cached state.
+	stateChangeSyncer.MempoolCachedUtxoView, err = mempoolTxUtxoView.CopyUtxoView()
+	if err != nil {
+		return false, errors.Wrapf(err, "StateChangeSyncer.SyncMempoolToStateSyncer: Error copying cached utxo view: ")
+	}
+
 	fmt.Printf("Time to connect all txns: %v\n", time.Since(startTime))
 	startTime = time.Now()
 	//fmt.Printf("Mempool flushed len: %d\n", len(stateChangeSyncer.MempoolFlushKeySet))
