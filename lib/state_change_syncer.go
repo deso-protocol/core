@@ -413,30 +413,6 @@ func (stateChangeSyncer *StateChangeSyncer) _handleStateSyncerOperation(event *S
 			flushId = stateChangeSyncer.MempoolFlushId
 		}
 
-		// The current state of the tracked mempool is stored in the MempoolSyncedKeyValueMap. If this entry is already in there
-		// then we don't need to re-write it to the state change file.
-		// Create key for op + key map
-		txKey := createMempoolTxKey(stateChangeEntry.KeyBytes)
-
-		// Track the key in the MempoolFlushKeySet.
-		stateChangeSyncer.MempoolFlushKeySet[txKey] = true
-
-		// Check to see if the key is in the map, and if the value is the same as the value in the event.
-		if cachedSCE, ok := stateChangeSyncer.MempoolSyncedKeyValueMap[txKey]; ok && bytes.Equal(cachedSCE.EncoderBytes, event.StateChangeEntry.EncoderBytes) && cachedSCE.OperationType == event.StateChangeEntry.OperationType {
-			// If the key is in the map, and the entry bytes are the same as those that are already tracked by state syncer,
-			// then we don't need to write the state change entry to the state change file - it's already being tracked.
-			return
-		} else if ok {
-			// If the key is in the map, and the entry bytes are different, then we need to track the new entry.
-			// Skip if the entry is already being tracked as a new flush.
-			if _, newFlushExists := stateChangeSyncer.MempoolNewlyFlushedTxns[txKey]; !newFlushExists {
-				// If the key is in the map, and the entry bytes are different, then we need to track the new entry.
-				stateChangeSyncer.MempoolNewlyFlushedTxns[txKey] = cachedSCE
-			}
-		} else {
-			// If the key is not in the map, then we need to track the new entry.
-			stateChangeSyncer.MempoolNewlyFlushedTxns[txKey] = nil
-		}
 	} else {
 		// If the flush ID is nil, then we need to use the global block sync flush ID.
 		if flushId == uuid.Nil {
@@ -491,7 +467,30 @@ func (stateChangeSyncer *StateChangeSyncer) _handleStateSyncerOperation(event *S
 	stateChangeEntry.FlushId = flushId
 
 	if event.IsMempoolTxn {
+		// The current state of the tracked mempool is stored in the MempoolSyncedKeyValueMap. If this entry is already in there
+		// then we don't need to re-write it to the state change file.
+		// Create key for op + key map
 		txKey := createMempoolTxKey(stateChangeEntry.KeyBytes)
+
+		// Track the key in the MempoolFlushKeySet.
+		stateChangeSyncer.MempoolFlushKeySet[txKey] = true
+
+		// Check to see if the key is in the map, and if the value is the same as the value in the event.
+		if cachedSCE, ok := stateChangeSyncer.MempoolSyncedKeyValueMap[txKey]; ok && bytes.Equal(cachedSCE.EncoderBytes, event.StateChangeEntry.EncoderBytes) && cachedSCE.OperationType == event.StateChangeEntry.OperationType {
+			// If the key is in the map, and the entry bytes are the same as those that are already tracked by state syncer,
+			// then we don't need to write the state change entry to the state change file - it's already being tracked.
+			return
+		} else if ok {
+			// If the key is in the map, and the entry bytes are different, then we need to track the new entry.
+			// Skip if the entry is already being tracked as a new flush.
+			if _, newFlushExists := stateChangeSyncer.MempoolNewlyFlushedTxns[txKey]; !newFlushExists {
+				// If the key is in the map, and the entry bytes are different, then we need to track the new entry.
+				stateChangeSyncer.MempoolNewlyFlushedTxns[txKey] = cachedSCE
+			}
+		} else {
+			// If the key is not in the map, then we need to track the new entry.
+			stateChangeSyncer.MempoolNewlyFlushedTxns[txKey] = nil
+		}
 
 		// Track the key and value if this is a new entry to the mempool, or if the encoder bytes or operation type
 		// changed since it was last synced.
