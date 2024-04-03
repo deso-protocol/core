@@ -872,51 +872,72 @@ func (stateChangeSyncer *StateChangeSyncer) SyncMempoolToStateSyncer(server *Ser
 		//fmt.Printf("Mempool tx hash: %v\n", mempoolTxns[0].Hash.String())
 	}
 	//fmt.Printf("Mempool synced len after flush: %d\n", len(stateChangeSyncer.MempoolSyncedKeyValueMap))
+
+	// Check to see if every txn hash in our cached txns is in the first n txns in the mempool.
+	// N represents the length of our cached txn map.
+	for ii, mempoolTx := range mempoolTxns {
+		if _, ok := stateChangeSyncer.MempoolCachedTxns[mempoolTx.Hash.String()]; !ok {
+			// If any of the transaction hashes in the first n transactions don't line up with our cache map, the mempool
+			// has changed since the last cache, and we need to reset it.
+			stateChangeSyncer.MempoolCachedTxns = make(map[string][]*StateChangeEntry)
+			stateChangeSyncer.MempoolCachedUtxoView = nil
+			break
+		}
+		// Once we're past the number of cached txns, we have confirmed that nothing in our cache is out of date and can break.
+		if ii >= len(stateChangeSyncer.MempoolCachedTxns)-1 {
+			// If we know that all our transactions are good, set the state of the utxo view to the cached one, and exit.
+			mempoolUtxoView = stateChangeSyncer.MempoolCachedUtxoView
+			break
+		}
+	}
+
 	for _, mempoolTx := range mempoolTxns {
 		var txnStateChangeEntry *StateChangeEntry
 		var utxoOpStateChangeEntry *StateChangeEntry
 		// Check if the transaction is already in the cache. If so, skip it.
 		txHash := mempoolTx.Hash.String()
-		//if stateChangeEntries, ok := stateChangeSyncer.MempoolCachedTxns[txHash]; ok {
-		//	txnStateChangeEntry = stateChangeEntries[0]
-		//	utxoOpStateChangeEntry = stateChangeEntries[1]
-		//} else {
-		utxoOpsForTxn, _, _, _, err := mempoolTxUtxoView.ConnectTransaction(
-			mempoolTx.Tx, mempoolTx.Hash, 0, uint32(blockHeight+1), false, false /*ignoreUtxos*/)
-		if err != nil {
-			//fmt.Printf("Right before the mempool flush error: %v\n", err)
-			//continue
-			mempoolUtxoView.EventManager.stateSyncerFlushed(&StateSyncerFlushedEvent{
-				FlushId:        originalCommittedFlushId,
-				Succeeded:      false,
-				IsMempoolFlush: true,
-			})
-			return false, errors.Wrapf(err, "StateChangeSyncer.SyncMempoolToStateSyncer ConnectTransaction: ")
-		}
-		txnStateChangeEntry = &StateChangeEntry{
-			OperationType: DbOperationTypeUpsert,
-			KeyBytes:      TxnHashToTxnKey(mempoolTx.Hash),
-			EncoderBytes:  EncodeToBytes(blockHeight, mempoolTx.Tx, false),
-			IsReverted:    false,
-		}
+		if stateChangeEntries, ok := stateChangeSyncer.MempoolCachedTxns[txHash]; ok {
+			txnStateChangeEntry = stateChangeEntries[0]
+			utxoOpStateChangeEntry = stateChangeEntries[1]
+		} else {
+			utxoOpsForTxn, _, _, _, err := mempoolTxUtxoView.ConnectTransaction(
+				mempoolTx.Tx, mempoolTx.Hash, 0, uint32(blockHeight+1), false, false /*ignoreUtxos*/)
+			if err != nil {
+				//fmt.Printf("Right before the mempool flush error: %v\n", err)
+				//continue
+				mempoolUtxoView.EventManager.stateSyncerFlushed(&StateSyncerFlushedEvent{
+					FlushId:        originalCommittedFlushId,
+					Succeeded:      false,
+					IsMempoolFlush: true,
+				})
+				return false, errors.Wrapf(err, "StateChangeSyncer.SyncMempoolToStateSyncer ConnectTransaction: ")
+			}
+			txnStateChangeEntry = &StateChangeEntry{
+				OperationType: DbOperationTypeUpsert,
+				KeyBytes:      TxnHashToTxnKey(mempoolTx.Hash),
+				EncoderBytes:  EncodeToBytes(blockHeight, mempoolTx.Tx, false),
+				IsReverted:    false,
+			}
 
-		// Capture the utxo ops for the transaction in a UTXOOp bundle.
-		utxoOpBundle := &UtxoOperationBundle{
-			UtxoOpBundle: [][]*UtxoOperation{},
+			// Capture the utxo ops for the transaction in a UTXOOp bundle.
+			utxoOpBundle := &UtxoOperationBundle{
+				UtxoOpBundle: [][]*UtxoOperation{},
+			}
+
+			utxoOpBundle.UtxoOpBundle = append(utxoOpBundle.UtxoOpBundle, utxoOpsForTxn)
+
+			utxoOpStateChangeEntry = &StateChangeEntry{
+				OperationType: DbOperationTypeUpsert,
+				KeyBytes:      _DbKeyForTxnUtxoOps(mempoolTx.Hash),
+				EncoderBytes:  EncodeToBytes(blockHeight, utxoOpBundle, false),
+				IsReverted:    false,
+			}
+
+			// Add both state change entries to the mempool sync map.
+			stateChangeSyncer.MempoolCachedTxns[txHash] = []*StateChangeEntry{txnStateChangeEntry, utxoOpStateChangeEntry}
+			// Update the cached utxo view to represent the new cached state.
+			stateChangeSyncer.MempoolCachedUtxoView = mempoolTxUtxoView
 		}
-
-		utxoOpBundle.UtxoOpBundle = append(utxoOpBundle.UtxoOpBundle, utxoOpsForTxn)
-
-		utxoOpStateChangeEntry = &StateChangeEntry{
-			OperationType: DbOperationTypeUpsert,
-			KeyBytes:      _DbKeyForTxnUtxoOps(mempoolTx.Hash),
-			EncoderBytes:  EncodeToBytes(blockHeight, utxoOpBundle, false),
-			IsReverted:    false,
-		}
-
-		// Add both state change entries to the mempool sync map.
-		stateChangeSyncer.MempoolCachedTxns[txHash] = []*StateChangeEntry{txnStateChangeEntry, utxoOpStateChangeEntry}
-		//}
 
 		// Emit transaction state change.
 		mempoolUtxoView.EventManager.stateSyncerOperation(&StateSyncerOperationEvent{
