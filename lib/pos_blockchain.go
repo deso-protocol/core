@@ -1134,12 +1134,12 @@ func (bav *UtxoView) hasValidProposerPartialSignaturePoS(block *MsgDeSoBlock, sn
 // block height + view number pair. It returns a bool indicating whether
 // we confirmed that the leader is valid. If we receive an error, we are unsure
 // if the leader is invalid or not, so we return false.
-func (bc *Blockchain) hasValidBlockProposerPoS(block *MsgDeSoBlock, utxoView *UtxoView) (_isValidBlockProposer bool, _err error) {
-	currentEpochEntry, err := utxoView.GetCurrentEpochEntry()
+func (bc *Blockchain) hasValidBlockProposerPoS(block *MsgDeSoBlock, parentUtxoView *UtxoView) (_isValidBlockProposer bool, _err error) {
+	currentEpochEntry, err := parentUtxoView.GetCurrentEpochEntry()
 	if err != nil {
 		return false, errors.Wrapf(err, "hasValidBlockProposerPoS: Problem getting current epoch entry")
 	}
-	leaders, err := utxoView.GetCurrentSnapshotLeaderSchedule()
+	leaders, err := parentUtxoView.GetCurrentSnapshotLeaderSchedule()
 	if err != nil {
 		return false, errors.Wrapf(err, "hasValidBlockProposerPoS: Problem getting leader schedule")
 	}
@@ -1172,7 +1172,7 @@ func (bc *Blockchain) hasValidBlockProposerPoS(block *MsgDeSoBlock, utxoView *Ut
 	// - The number of blocks that have been added to the chain since the start of the epoch is
 	//   block.Height - currentEpoch.InitialHeight.
 	// - The difference between the above two numbers is the number of timeouts that have occurred in this epoch.
-	// - The numTimeoutsBeforeEpochTransition is the number of epochs that have occurred during the epoch transition
+	// - The numTimeoutsBeforeEpochTransition is the number of timeouts that have occurred during the epoch transition
 	//   and are counted as part of the previous epoch.
 	//
 	// For each timeout, we skip one leader in the in the schedule. If we have more timeouts than leaders in
@@ -1192,17 +1192,17 @@ func (bc *Blockchain) hasValidBlockProposerPoS(block *MsgDeSoBlock, utxoView *Ut
 		return false, nil
 	}
 	leaderIdx := uint16(leaderIdxUint64)
-	leaderEntry, err := utxoView.GetSnapshotLeaderScheduleValidator(leaderIdx)
+	leaderEntry, err := parentUtxoView.GetSnapshotLeaderScheduleValidator(leaderIdx)
 	if err != nil {
 		return false, errors.Wrapf(err, "hasValidBlockProposerPoS: Problem getting leader schedule validator")
 	}
-	snapshotAtEpochNumber, err := utxoView.ComputeSnapshotEpochNumberForEpoch(currentEpochEntry.EpochNumber)
+	snapshotAtEpochNumber, err := parentUtxoView.ComputeSnapshotEpochNumberForEpoch(currentEpochEntry.EpochNumber)
 	if err != nil {
 		return false, errors.Wrapf(err,
 			"hasValidBlockProposerPoS: Problem getting snapshot epoch number for epoch #%d",
 			currentEpochEntry.EpochNumber)
 	}
-	leaderEntryFromVotingPublicKey, err := utxoView.GetSnapshotValidatorEntryByBLSPublicKey(
+	leaderEntryFromVotingPublicKey, err := parentUtxoView.GetSnapshotValidatorEntryByBLSPublicKey(
 		block.Header.ProposerVotingPublicKey,
 		snapshotAtEpochNumber)
 	if err != nil {
