@@ -914,6 +914,8 @@ func (stateChangeSyncer *StateChangeSyncer) SyncMempoolToStateSyncer(server *Ser
 					Succeeded:      false,
 					IsMempoolFlush: true,
 				})
+				stateChangeSyncer.MempoolCachedTxns = make(map[string][]*StateChangeEntry)
+				stateChangeSyncer.MempoolCachedUtxoView = nil
 				return false, errors.Wrapf(err, "StateChangeSyncer.SyncMempoolToStateSyncer ConnectTransaction: ")
 			}
 			txnStateChangeEntry = &StateChangeEntry{
