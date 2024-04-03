@@ -2032,8 +2032,8 @@ func TestProcessOrphanBlockPoS(t *testing.T) {
 		require.True(t, blockNode.IsValidateFailed())
 		require.False(t, blockNode.IsValidated())
 	}
-	// Generate a real block in this epoch and change the block proposer. This should fail the spam prevention check
-	// and the block will not be in the block index.
+	// Generate a real block in this epoch and make the block proposer any public key that is not in the
+	// leader schedule. This should fail the spam prevention check and the block will not be in the block index.
 	{
 		var realBlock *MsgDeSoBlock
 		realBlock = _generateRealBlock(testMeta, 12, 12, 1273, testMeta.chain.BlockTip().Hash, false)
@@ -2044,7 +2044,7 @@ func TestProcessOrphanBlockPoS(t *testing.T) {
 		currentEpochEntry, err := utxoView.GetCurrentEpochEntry()
 		require.NoError(t, err)
 		require.True(t, currentEpochEntry.ContainsBlockHeight(12))
-		// Change the block proposer to some any other validator's public key.
+		// Change the block proposer to any other validator's public key.
 		realBlock.Header.ProposerVotingPublicKey = _generateRandomBLSPrivateKey(t).PublicKey()
 		updateProposerVotePartialSignatureForBlock(testMeta, realBlock)
 		// There should be no error, but the block should be marked as ValidateFailed.
