@@ -45,7 +45,10 @@ func AggregateSignatures(signatures []*Signature) (*Signature, error) {
 // true if every bls.PublicKey in the slice signed the payload. The input bls.Signature is the aggregate
 // signature of each of their respective bls.Signatures for that payload.
 func VerifyAggregateSignatureSinglePayload(publicKeys []*PublicKey, signature *Signature, payloadBytes []byte) (bool, error) {
-	flowPublicKeys := extractFlowPublicKeys(publicKeys)
+	flowPublicKeys, err := extractFlowPublicKeys(publicKeys)
+	if err != nil {
+		return false, err
+	}
 	return flowCrypto.VerifyBLSSignatureOneMessage(flowPublicKeys, signature.flowSignature, payloadBytes, hashingAlgorithm)
 }
 
@@ -57,7 +60,10 @@ func VerifyAggregateSignatureMultiplePayloads(publicKeys []*PublicKey, signature
 		return false, fmt.Errorf("number of public keys %d does not equal number of payloads %d", len(publicKeys), len(payloadsBytes))
 	}
 
-	flowPublicKeys := extractFlowPublicKeys(publicKeys)
+	flowPublicKeys, err := extractFlowPublicKeys(publicKeys)
+	if err != nil {
+		return false, err
+	}
 
 	var hashingAlgorithms []hash.Hasher
 	for ii := 0; ii < len(publicKeys); ii++ {
@@ -103,7 +109,8 @@ func (privateKey *PrivateKey) PublicKey() *PublicKey {
 	if privateKey == nil || privateKey.flowPrivateKey == nil {
 		return nil
 	}
-	return &PublicKey{flowPublicKey: privateKey.flowPrivateKey.PublicKey()}
+	publicKey := privateKey.flowPrivateKey.PublicKey()
+	return &PublicKey{flowPublicKey: publicKey, flowPublicKeyBytes: publicKey.Encode()}
 }
 
 func (privateKey *PrivateKey) ToString() string {
@@ -175,38 +182,46 @@ func (privateKey *PrivateKey) Eq(other *PrivateKey) bool {
 //
 
 type PublicKey struct {
-	flowPublicKey flowCrypto.PublicKey
+	flowPublicKeyBytes []byte
+	flowPublicKey      flowCrypto.PublicKey
+}
+
+func (publicKey *PublicKey) loadFlowPublicKey() error {
+	if publicKey.flowPublicKey == nil && len(publicKey.flowPublicKeyBytes) > 0 {
+		var err error
+		publicKey.flowPublicKey, err = flowCrypto.DecodePublicKey(signingAlgorithm, publicKey.flowPublicKeyBytes)
+		return err
+	}
+	return nil
 }
 
 func (publicKey *PublicKey) Verify(signature *Signature, input []byte) (bool, error) {
-	if publicKey == nil || publicKey.flowPublicKey == nil {
+	if publicKey == nil || len(publicKey.flowPublicKeyBytes) == 0 {
 		return false, errors.New("bls.PublicKey is nil")
+	}
+	if publicKey.loadFlowPublicKey() != nil {
+		return false, errors.New("failed to load flowPublicKey")
 	}
 	return publicKey.flowPublicKey.Verify(signature.flowSignature, input, hashingAlgorithm)
 }
 
 func (publicKey *PublicKey) ToBytes() []byte {
-	var publicKeyBytes []byte
-	if publicKey != nil && publicKey.flowPublicKey != nil {
-		publicKeyBytes = publicKey.flowPublicKey.Encode()
-	}
-	return publicKeyBytes
+	return publicKey.flowPublicKeyBytes
 }
 
 func (publicKey *PublicKey) FromBytes(publicKeyBytes []byte) (*PublicKey, error) {
 	if publicKey == nil || len(publicKeyBytes) == 0 {
 		return nil, nil
 	}
-	var err error
-	publicKey.flowPublicKey, err = flowCrypto.DecodePublicKey(signingAlgorithm, publicKeyBytes)
-	return publicKey, err
+	publicKey.flowPublicKeyBytes = publicKeyBytes
+	return publicKey, nil
 }
 
 func (publicKey *PublicKey) ToString() string {
-	if publicKey == nil || publicKey.flowPublicKey == nil {
+	if publicKey == nil || len(publicKey.flowPublicKeyBytes) == 0 {
 		return ""
 	}
-	return publicKey.flowPublicKey.String()
+	return "0x" + hex.EncodeToString(publicKey.flowPublicKeyBytes)
 }
 
 func (publicKey *PublicKey) FromString(publicKeyString string) (*PublicKey, error) {
@@ -220,8 +235,7 @@ func (publicKey *PublicKey) FromString(publicKeyString string) (*PublicKey, erro
 	if err != nil {
 		return nil, err
 	}
-	// Convert from byte slice to bls.PublicKey.
-	publicKey.flowPublicKey, err = flowCrypto.DecodePublicKey(signingAlgorithm, publicKeyBytes)
+	publicKey.flowPublicKeyBytes = publicKeyBytes
 	return publicKey, err
 }
 
@@ -254,10 +268,10 @@ func (publicKey *PublicKey) UnmarshalJSON(data []byte) error {
 }
 
 func (publicKey *PublicKey) Eq(other *PublicKey) bool {
-	if publicKey == nil || publicKey.flowPublicKey == nil || other == nil {
+	if publicKey == nil || publicKey.flowPublicKeyBytes == nil || other == nil {
 		return false
 	}
-	return publicKey.flowPublicKey.Equals(other.flowPublicKey)
+	return bytes.Equal(publicKey.flowPublicKeyBytes, other.flowPublicKeyBytes)
 }
 
 func (publicKey *PublicKey) Copy() *PublicKey {
@@ -265,12 +279,13 @@ func (publicKey *PublicKey) Copy() *PublicKey {
 		return nil
 	}
 	return &PublicKey{
-		flowPublicKey: publicKey.flowPublicKey,
+		flowPublicKeyBytes: publicKey.flowPublicKeyBytes,
+		flowPublicKey:      publicKey.flowPublicKey,
 	}
 }
 
 func (publicKey *PublicKey) IsEmpty() bool {
-	return publicKey == nil || publicKey.flowPublicKey == nil
+	return publicKey == nil || publicKey.flowPublicKeyBytes == nil
 }
 
 type SerializedPublicKey string
@@ -381,10 +396,13 @@ func (signature *Signature) IsEmpty() bool {
 	return signature == nil || signature.flowSignature == nil
 }
 
-func extractFlowPublicKeys(publicKeys []*PublicKey) []flowCrypto.PublicKey {
+func extractFlowPublicKeys(publicKeys []*PublicKey) ([]flowCrypto.PublicKey, error) {
 	flowPublicKeys := make([]flowCrypto.PublicKey, len(publicKeys))
 	for i, publicKey := range publicKeys {
+		if err := publicKey.loadFlowPublicKey(); err != nil {
+			return nil, err
+		}
 		flowPublicKeys[i] = publicKey.flowPublicKey
 	}
-	return flowPublicKeys
+	return flowPublicKeys, nil
 }

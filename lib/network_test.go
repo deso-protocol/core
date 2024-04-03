@@ -117,6 +117,9 @@ func TestVerackV1(t *testing.T) {
 	msg.PublicKey = priv.PublicKey()
 	msg.Signature, err = priv.Sign(hash[:])
 	require.NoError(err)
+	// Reset the bls public key so that it only contains the bytes.
+	msg.PublicKey, err = (&bls.PublicKey{}).FromBytes(priv.PublicKey().ToBytes())
+	require.NoError(err)
 	_, err = WriteMessage(&buf2, msg, networkType)
 	require.NoError(err)
 
