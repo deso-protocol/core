@@ -1259,6 +1259,46 @@ func (bav *UtxoView) hasValidBlockProposerPoS(block *MsgDeSoBlock) (_isValidBloc
 	return true, nil
 }
 
+func (bc *Blockchain) getNumTimeoutsBeforeEpochTransition(block *MsgDeSoBlock, epochEntry *EpochEntry) (uint64, error) {
+	if !epochEntry.ContainsBlockHeight(block.Header.Height) {
+		return 0, errors.New("getNumTimeoutsBeforeEpochTransition: Block height not in epoch")
+	}
+
+	// Fetch the previous epoch's final block height.
+	prevEpochFinalBlockHeight := epochEntry.InitialBlockHeight - 1
+
+	// Fetch the previous epoch's final block that is an ancestor of the given block. This operation is O(n)
+	// where n is the number of blocks between the given block and the previous epoch's final block. The worst
+	// case is O(3600) since we only need to go back 3600 blocks to find the previous epoch's final block.
+	prevEpochFinalBlockHeader := block.Header
+	for prevEpochFinalBlockHeader.Height > prevEpochFinalBlockHeight {
+		blockNode, exists := bc.blockIndexByHash[*prevEpochFinalBlockHeader.PrevBlockHash]
+		if !exists {
+			return 0, errors.New("getNumTimeoutsBeforeEpochTransition: Missing ancestor block")
+		}
+		prevEpochFinalBlockHeader = blockNode.Header
+	}
+
+	// Fetch the previous epoch's 2nd to last block that is an ancestor of the given block.
+	prevEpochSecondToLastBlockNode, ok := bc.blockIndexByHash[*prevEpochFinalBlockHeader.PrevBlockHash]
+	if !ok {
+		return 0, errors.New("getNumTimeoutsBeforeEpochTransition: Missing ancestor block")
+	}
+
+	// Ensure that the previous epoch's final two blocks have increasing views
+	if prevEpochFinalBlockHeader.GetView() <= prevEpochSecondToLastBlockNode.Header.GetView() {
+		return 0, errors.New("getNumTimeoutsBeforeEpochTransition: Final block view not greater than 2nd to last block view")
+	}
+
+	// Ensure that the previous epoch's final two blocks have sequential heights
+	if prevEpochSecondToLastBlockNode.Header.Height != prevEpochFinalBlockHeader.Height-1 {
+		return 0, errors.New("getNumTimeoutsBeforeEpochTransition: Final block height not sequential with 2nd to last block height")
+	}
+
+	// Compute the number of timeouts at the end of the previous epoch
+	return (prevEpochFinalBlockHeader.GetView() - prevEpochSecondToLastBlockNode.Header.GetView() - 1) / 2, nil
+}
+
 // isValidPoSQuorumCertificate validates that the QC of this block is valid, meaning a super majority
 // of the validator set has voted (or timed out). It special cases the first block after the PoS cutover
 // by overriding the validator set used to validate the high QC in the first block after the PoS cutover.
