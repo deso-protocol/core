@@ -1941,7 +1941,7 @@ func (srv *Server) _addNewTxn(
 		// - the chainState is not need blocks state
 		// - the chainState is need blocks state but the chain is not on PoS.
 		if chainState != SyncStateNeedBlocksss ||
-			srv.blockchain.params.IsPoSBlockHeight(tipHeight) {
+			!srv.blockchain.params.IsPoSBlockHeight(tipHeight) {
 			err := fmt.Errorf("Server._addNewTxnAndRelay: Cannot process txn "+
 				"from peer %v while syncing: %v %v", pp, srv.blockchain.chainState(), txn.Hash())
 			glog.Error(err)
