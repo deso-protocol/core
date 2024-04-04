@@ -1274,7 +1274,7 @@ var DeSoMainnetParams = DeSoParams{
 
 	// The number of blocks in one epoch. This number is tuned to result in roughly 10 epochs
 	// per day given a 10-minute block time on mainnet when running PoW. The number is tuned
-	// for PoW because epoch transitions begin on PoS before the chain transitions to PoS.
+	// for PoW because epoch transitions begin on PoW before the chain transitions to PoS.
 	DefaultEpochDurationNumBlocks: uint64(144),
 
 	// The number of epochs before an inactive validator is jailed
@@ -1583,7 +1583,7 @@ var DeSoTestnetParams = DeSoParams{
 
 	// The number of blocks in one epoch. This number is tuned to result in roughly 10 epochs
 	// per day given a 10-minute block time on testnet when running PoW. The number is tuned
-	// for PoW because epoch transitions begin on PoS before the chain transitions to PoS.
+	// for PoW because epoch transitions begin on PoW before the chain transitions to PoS.
 	DefaultEpochDurationNumBlocks: uint64(144),
 
 	// The number of epochs before an inactive validator is jailed
