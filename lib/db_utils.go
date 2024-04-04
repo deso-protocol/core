@@ -11789,18 +11789,19 @@ func DbGetTransactorNonceEntriesToExpireAtBlockHeight(handle *badger.DB, blockHe
 }
 
 func DbGetTransactorNonceEntriesToExpireAtBlockHeightWithTxn(txn *badger.Txn, blockHeight uint64) []*TransactorNonceEntry {
-	startPrefix := _dbKeyForTransactorNonceEntry(&DeSoNonce{ExpirationBlockHeight: blockHeight, PartialID: math.MaxUint64}, &MaxPKID)
 	endPrefix := append([]byte{}, Prefixes.PrefixNoncePKIDIndex...)
 	opts := badger.DefaultIteratorOptions
-	opts.Reverse = true
 	opts.Prefix = endPrefix
 	opts.PrefetchValues = false
 	nodeIterator := txn.NewIterator(opts)
 	defer nodeIterator.Close()
 	var transactorNonceEntries []*TransactorNonceEntry
-	for nodeIterator.Seek(startPrefix); nodeIterator.ValidForPrefix(endPrefix); nodeIterator.Next() {
-		transactorNonceEntries = append(transactorNonceEntries,
-			TransactorNonceKeyToTransactorNonceEntry(nodeIterator.Item().Key()))
+	for nodeIterator.Seek(endPrefix); nodeIterator.ValidForPrefix(endPrefix); nodeIterator.Next() {
+		transactorNonceEntry := TransactorNonceKeyToTransactorNonceEntry(nodeIterator.Item().Key())
+		if transactorNonceEntry.Nonce.ExpirationBlockHeight > blockHeight {
+			break
+		}
+		transactorNonceEntries = append(transactorNonceEntries, transactorNonceEntry)
 	}
 	return transactorNonceEntries
 }

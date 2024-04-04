@@ -649,7 +649,7 @@ func TestDeleteExpiredTransactorNonceEntries(t *testing.T) {
 			-1,
 			1,
 		)
-		// There should be once nonce in the db.
+		// There should be three nonces in the db.
 		nonceEntries := DbGetAllTransactorNonceEntries(testMeta.db)
 		require.Equal(3, len(nonceEntries))
 		globalParamsEntry := DbGetGlobalParamsEntry(db, chain.snapshot)
