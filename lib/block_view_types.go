@@ -4221,11 +4221,6 @@ type GlobalParamsEntry struct {
 	// be [1210, 1330], etc.
 	FeeBucketGrowthRateBasisPoints uint64
 
-	// FailingTransactionBMFMultiplierBasisPoints is the factor of the transaction fee that is used for the computation
-	// BMF. The value is expressed in basis points. For example a value of 2500 means that 25% of the fee will be
-	// failing transaction fee will be used in the BMF algorithm.
-	FailingTransactionBMFMultiplierBasisPoints uint64
-
 	// BlockTimestampDriftNanoSecs is the maximum number of nanoseconds from the current timestamp that
 	// we will allow a PoS block to be submitted.
 	BlockTimestampDriftNanoSecs int64
@@ -4276,7 +4271,6 @@ func (gp *GlobalParamsEntry) Copy() *GlobalParamsEntry {
 		JailInactiveValidatorGracePeriodEpochs:         gp.JailInactiveValidatorGracePeriodEpochs,
 		MaximumVestedIntersectionsPerLockupTransaction: gp.MaximumVestedIntersectionsPerLockupTransaction,
 		FeeBucketGrowthRateBasisPoints:                 gp.FeeBucketGrowthRateBasisPoints,
-		FailingTransactionBMFMultiplierBasisPoints:     gp.FailingTransactionBMFMultiplierBasisPoints,
 		BlockTimestampDriftNanoSecs:                    gp.BlockTimestampDriftNanoSecs,
 		MempoolMaxSizeBytes:                            gp.MempoolMaxSizeBytes,
 		MempoolFeeEstimatorNumMempoolBlocks:            gp.MempoolFeeEstimatorNumMempoolBlocks,
@@ -4311,7 +4305,6 @@ func (gp *GlobalParamsEntry) RawEncodeWithoutMetadata(blockHeight uint64, skipMe
 		data = append(data, UintToBuf(gp.JailInactiveValidatorGracePeriodEpochs)...)
 		data = append(data, IntToBuf(int64(gp.MaximumVestedIntersectionsPerLockupTransaction))...)
 		data = append(data, UintToBuf(gp.FeeBucketGrowthRateBasisPoints)...)
-		data = append(data, UintToBuf(gp.FailingTransactionBMFMultiplierBasisPoints)...)
 		data = append(data, IntToBuf(gp.BlockTimestampDriftNanoSecs)...)
 		data = append(data, UintToBuf(gp.MempoolMaxSizeBytes)...)
 		data = append(data, UintToBuf(gp.MempoolFeeEstimatorNumMempoolBlocks)...)
@@ -4396,10 +4389,6 @@ func (gp *GlobalParamsEntry) RawDecodeWithoutMetadata(blockHeight uint64, rr *by
 		gp.FeeBucketGrowthRateBasisPoints, err = ReadUvarint(rr)
 		if err != nil {
 			return errors.Wrapf(err, "GlobalParamsEntry.Decode: Problem reading FeeBucketGrowthRateBasisPoints")
-		}
-		gp.FailingTransactionBMFMultiplierBasisPoints, err = ReadUvarint(rr)
-		if err != nil {
-			return errors.Wrapf(err, "GlobalParamsEntry.Decode: Problem reading FailingTransactionBMFMultiplierBasisPoints")
 		}
 		gp.BlockTimestampDriftNanoSecs, err = ReadVarint(rr)
 		if err != nil {

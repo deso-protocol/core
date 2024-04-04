@@ -141,9 +141,6 @@ func MergeGlobalParamEntryDefaults(globalParamsEntry *GlobalParamsEntry, params 
 	if globalParamsEntryCopy.FeeBucketGrowthRateBasisPoints == 0 {
 		globalParamsEntryCopy.FeeBucketGrowthRateBasisPoints = params.DefaultFeeBucketGrowthRateBasisPoints
 	}
-	if globalParamsEntryCopy.FailingTransactionBMFMultiplierBasisPoints == 0 {
-		globalParamsEntryCopy.FailingTransactionBMFMultiplierBasisPoints = params.DefaultFailingTransactionBMFMultiplierBasisPoints
-	}
 	if globalParamsEntryCopy.MaximumVestedIntersectionsPerLockupTransaction == 0 {
 		globalParamsEntryCopy.MaximumVestedIntersectionsPerLockupTransaction =
 			params.DefaultMaximumVestedIntersectionsPerLockupTransaction
