@@ -777,11 +777,6 @@ type DeSoParams struct {
 	// as basis points. For example a value of 1000 means that the fee bucket ranges will grow by 10% each time.
 	DefaultFeeBucketGrowthRateBasisPoints uint64
 
-	// DefaultFailingTransactionBMFMultiplierBasisPoints is the default rate for failing transaction fees, in basis points,
-	// used in BMF calculations. E.g. a value of 2500 means that 25% of the failing transaction's fee is used
-	// in BMF calculations.
-	DefaultFailingTransactionBMFMultiplierBasisPoints uint64
-
 	// DefaultMaximumVestedIntersectionsPerLockupTransaction is the default value for
 	// GlobalParamsEntry.MaximumVestedIntersectionsPerLockupTransaction. See the comment
 	// in GlobalParamsEntry for a detailed description of its usage.
@@ -1288,9 +1283,6 @@ var DeSoMainnetParams = DeSoParams{
 	// The rate of growth of the fee bucket ranges.
 	DefaultFeeBucketGrowthRateBasisPoints: uint64(1000),
 
-	// The rate of the failing transaction's fee used in BMF calculations.
-	DefaultFailingTransactionBMFMultiplierBasisPoints: uint64(2500),
-
 	// The maximum number of vested lockup intersections in a lockup transaction.
 	DefaultMaximumVestedIntersectionsPerLockupTransaction: 1000,
 
@@ -1598,9 +1590,6 @@ var DeSoTestnetParams = DeSoParams{
 	// The rate of growth of the fee bucket ranges.
 	DefaultFeeBucketGrowthRateBasisPoints: uint64(1000),
 
-	// The rate of the failing transaction's fee used in BMF calculations.
-	DefaultFailingTransactionBMFMultiplierBasisPoints: uint64(2500),
-
 	// The maximum number of vested lockup intersections in a lockup transaction.
 	DefaultMaximumVestedIntersectionsPerLockupTransaction: 1000,
 
@@ -1688,7 +1677,6 @@ const (
 	JailInactiveValidatorGracePeriodEpochsKey         = "JailInactiveValidatorGracePeriodEpochs"
 	MaximumVestedIntersectionsPerLockupTransactionKey = "MaximumVestedIntersectionsPerLockupTransaction"
 	FeeBucketGrowthRateBasisPointsKey                 = "FeeBucketGrowthRateBasisPointsKey"
-	FailingTransactionBMFMultiplierBasisPointsKey     = "FailingTransactionBMFMultiplierBasisPoints"
 	BlockTimestampDriftNanoSecsKey                    = "BlockTimestampDriftNanoSecs"
 	MempoolMaxSizeBytesKey                            = "MempoolMaxSizeBytes"
 	MempoolFeeEstimatorNumMempoolBlocksKey            = "MempoolFeeEstimatorNumMempoolBlocks"
@@ -1778,8 +1766,6 @@ var (
 		MaxCopiesPerNFT:   0,
 		// We initialize the FeeBucketGrowthRateBasisPoints to 1000, or equivalently, a multiplier of 1.1x.
 		FeeBucketGrowthRateBasisPoints: 1000,
-		// We initialize the FailingTransactionBMFMultiplierBasisPoints to 2500, or equivalently, a rate of 0.25.
-		FailingTransactionBMFMultiplierBasisPoints: 2500,
 	}
 )
 

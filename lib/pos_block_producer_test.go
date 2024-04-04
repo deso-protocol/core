@@ -182,12 +182,9 @@ func TestGetBlockTransactions(t *testing.T) {
 
 	// First test happy path with a bunch of passing transactions.
 	passingTxns := []*MsgDeSoTxn{}
-	totalUtilityFee := uint64(0)
 	for ii := 0; ii < passingTransactions; ii++ {
 		txn := _generateTestTxn(t, rand, feeMin, feeMax, m0PubBytes, m0Priv, 100, 20)
 		passingTxns = append(passingTxns, txn)
-		_, utilityFee := computeBMF(txn.TxnFeeNanos)
-		totalUtilityFee += utilityFee
 		_wrappedPosMempoolAddTransaction(t, mempool, txn)
 	}
 
@@ -205,9 +202,6 @@ func TestGetBlockTransactions(t *testing.T) {
 			AmountNanos: 1e10,
 		})
 		_signTxn(t, failingTxn, m0Priv)
-		effectiveFee := failingTxn.TxnFeeNanos * globalParams.FailingTransactionBMFMultiplierBasisPoints / 10000
-		_, utilityFee := computeBMF(effectiveFee)
-		totalUtilityFee += utilityFee
 		failingTxns = append(failingTxns, failingTxn)
 		_wrappedPosMempoolAddTransaction(t, mempool, failingTxn)
 	}
@@ -245,7 +239,7 @@ func TestGetBlockTransactions(t *testing.T) {
 	require.NoError(err)
 	require.Equal(latestBlockViewCopy, latestBlockView)
 	require.Equal(true, len(passingTxns) > len(txns))
-	totalUtilityFee = 0
+	totalUtilityFee := uint64(0)
 	for _, txn := range txns {
 		_, utilityFee := computeBMF(txn.TxnFeeNanos)
 		totalUtilityFee += utilityFee

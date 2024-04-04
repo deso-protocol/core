@@ -3377,6 +3377,7 @@ func (bav *UtxoView) _connectUpdateGlobalParams(
 				)
 			}
 		}
+
 		// Validate that the minimum fee bucket size is greater than the minimum allowed.
 		mergedGlobalParams := MergeGlobalParamEntryDefaults(&newGlobalParamsEntry, bav.Params)
 		minFeeRateNanosPerKB, feeBucketMultiplier := mergedGlobalParams.
@@ -3385,24 +3386,7 @@ func (bav *UtxoView) _connectUpdateGlobalParams(
 		if nextFeeBucketMin < mergedGlobalParams.MinimumNetworkFeeNanosPerKB+MinFeeBucketSize {
 			return 0, 0, nil, RuleErrorFeeBucketSizeTooSmall
 		}
-		if len(extraData[FailingTransactionBMFMultiplierBasisPointsKey]) > 0 {
-			val, bytesRead := Uvarint(
-				extraData[FailingTransactionBMFMultiplierBasisPointsKey],
-			)
-			if val > MaxBasisPoints {
-				return 0, 0, nil, fmt.Errorf(
-					"_connectUpdateGlobalParams: FailingTransactionBMFMultiplierBasisPoints must be <= %d",
-					MaxBasisPoints,
-				)
-			}
-			newGlobalParamsEntry.FailingTransactionBMFMultiplierBasisPoints = val
 
-			if bytesRead <= 0 {
-				return 0, 0, nil, fmt.Errorf(
-					"_connectUpdateGlobalParams: unable to decode FailingTransactionBMFMultiplierBasisPoints as uint64",
-				)
-			}
-		}
 		if len(extraData[BlockTimestampDriftNanoSecsKey]) > 0 {
 			val, bytesRead := Varint(
 				extraData[BlockTimestampDriftNanoSecsKey],
