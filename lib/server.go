@@ -381,6 +381,7 @@ func NewServer(
 
 	// Only initialize state change syncer if the directories are defined.
 	var stateChangeSyncer *StateChangeSyncer
+	fmt.Printf("State Change Dir: %v\n", _stateChangeDir)
 	if _stateChangeDir != "" {
 		// Create the state change syncer to handle syncing state changes to disk, and assign some of its methods
 		// to the event manager.
@@ -469,12 +470,14 @@ func NewServer(
 		srv.stateChangeSyncer.BlockHeight = uint64(_chain.headerTip().Height)
 	}
 
+	fmt.Printf("Before mempool\n")
 	// Create a mempool to store transactions until they're ready to be mined into
 	// blocks.
 	_mempool := NewDeSoMempool(_chain, _rateLimitFeerateNanosPerKB,
 		_minFeeRateNanosPerKB, _blockCypherAPIKey, _runReadOnlyUtxoViewUpdater, _dataDir,
 		_mempoolDumpDir, false)
 
+	fmt.Printf("After mempool\n")
 	// Initialize state syncer mempool job, if needed.
 	if srv.stateChangeSyncer != nil {
 		srv.stateChangeSyncer.StartMempoolSyncRoutine(srv)

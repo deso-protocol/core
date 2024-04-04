@@ -993,6 +993,8 @@ func (stateChangeSyncer *StateChangeSyncer) StartMempoolSyncRoutine(server *Serv
 		// Wait for mempool to be initialized.
 		for server.mempool == nil || server.blockchain.chainState() != SyncStateFullyCurrent {
 			time.Sleep(15000 * time.Millisecond)
+			fmt.Printf("Mempool: %v\n", server.mempool)
+			fmt.Printf("Chain state: %v\n", server.blockchain.chainState())
 		}
 		if !stateChangeSyncer.BlocksyncCompleteEntriesFlushed && stateChangeSyncer.SyncType == NodeSyncTypeBlockSync {
 			err := stateChangeSyncer.FlushAllEntriesToFile(server)
