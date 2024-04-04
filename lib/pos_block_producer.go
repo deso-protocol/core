@@ -26,6 +26,7 @@ type PosBlockProducer struct {
 	proposerPublicKey              *PublicKey
 	proposerVotingPublicKey        *bls.PublicKey
 	previousBlockTimestampNanoSecs int64
+	mockBlockSignature             *bls.Signature
 }
 
 func NewPosBlockProducer(
@@ -50,8 +51,20 @@ func NewPosBlockProducer(
 func (pbp *PosBlockProducer) CreateUnsignedBlock(latestBlockView *UtxoView, newBlockHeight uint64, view uint64,
 	proposerRandomSeedSignature *bls.Signature, validatorsVoteQC *QuorumCertificate) (BlockTemplate, error) {
 
+	headerSizeEstimate, err := pbp.estimateHeaderSize(
+		latestBlockView,
+		newBlockHeight,
+		view,
+		proposerRandomSeedSignature,
+		validatorsVoteQC,
+		nil,
+	)
+	if err != nil {
+		return nil, errors.Wrapf(err, "PosBlockProducer.CreateUnsignedBlock: Problem creating mock header")
+	}
 	// Create the block template.
-	block, err := pbp.createBlockTemplate(latestBlockView, newBlockHeight, view, proposerRandomSeedSignature)
+	block, err := pbp.createBlockTemplate(
+		latestBlockView, newBlockHeight, view, proposerRandomSeedSignature, headerSizeEstimate)
 	if err != nil {
 		return nil, errors.Wrapf(err, "PosBlockProducer.CreateUnsignedTimeoutBlock: Problem creating block template")
 	}
@@ -64,11 +77,27 @@ func (pbp *PosBlockProducer) CreateUnsignedBlock(latestBlockView *UtxoView, newB
 // CreateUnsignedTimeoutBlock constructs an unsigned, PoS block with Fee-Time ordered transactions. This function should be used
 // during a timeout in consensus when a validators timeout aggregate QC has been assembled. The block is unsigned,
 // and so is returned as a BlockTemplate.
-func (pbp *PosBlockProducer) CreateUnsignedTimeoutBlock(latestBlockView *UtxoView, newBlockHeight uint64, view uint64,
-	proposerRandomSeedSignature *bls.Signature, validatorsTimeoutAggregateQC *TimeoutAggregateQuorumCertificate) (BlockTemplate, error) {
-
+func (pbp *PosBlockProducer) CreateUnsignedTimeoutBlock(
+	latestBlockView *UtxoView,
+	newBlockHeight uint64,
+	view uint64,
+	proposerRandomSeedSignature *bls.Signature,
+	validatorsTimeoutAggregateQC *TimeoutAggregateQuorumCertificate,
+) (BlockTemplate, error) {
+	headerSizeEstimate, err := pbp.estimateHeaderSize(
+		latestBlockView,
+		newBlockHeight,
+		view,
+		proposerRandomSeedSignature,
+		nil,
+		validatorsTimeoutAggregateQC,
+	)
+	if err != nil {
+		return nil, errors.Wrapf(err, "PosBlockProducer.CreateUnsignedTimeoutBlock: Problem creating mock header")
+	}
 	// Create the block template.
-	block, err := pbp.createBlockTemplate(latestBlockView, newBlockHeight, view, proposerRandomSeedSignature)
+	block, err := pbp.createBlockTemplate(
+		latestBlockView, newBlockHeight, view, proposerRandomSeedSignature, headerSizeEstimate)
 	if err != nil {
 		return nil, errors.Wrapf(err, "PosBlockProducer.CreateUnsignedTimeoutBlock: Problem creating block template")
 	}
@@ -81,11 +110,16 @@ func (pbp *PosBlockProducer) CreateUnsignedTimeoutBlock(latestBlockView *UtxoVie
 // createBlockTemplate is a helper function used by CreateUnsignedBlock and CreateUnsignedTimeoutBlock. It constructs
 // a partially filled out block with Fee-Time ordered transactions. The returned block is complete except for
 // the qc / aggregateQc fields, and the signature.
-func (pbp *PosBlockProducer) createBlockTemplate(latestBlockView *UtxoView, newBlockHeight uint64, view uint64,
-	proposerRandomSeedSignature *bls.Signature) (BlockTemplate, error) {
+func (pbp *PosBlockProducer) createBlockTemplate(
+	latestBlockView *UtxoView,
+	newBlockHeight uint64,
+	view uint64,
+	proposerRandomSeedSignature *bls.Signature,
+	headerSizeEstimate uint64,
+) (BlockTemplate, error) {
 	// First get the block without the header.
 	currentTimestamp := _maxInt64(time.Now().UnixNano(), pbp.previousBlockTimestampNanoSecs+1)
-	block, err := pbp.createBlockWithoutHeader(latestBlockView, newBlockHeight, currentTimestamp)
+	block, err := pbp.createBlockWithoutHeader(latestBlockView, newBlockHeight, currentTimestamp, headerSizeEstimate)
 	if err != nil {
 		return nil, errors.Wrapf(err, "PosBlockProducer.CreateBlockTemplate: Problem creating block without header")
 	}
@@ -111,10 +145,81 @@ func (pbp *PosBlockProducer) createBlockTemplate(latestBlockView *UtxoView, newB
 	return block, nil
 }
 
+func (pbp *PosBlockProducer) getMockBlockSignature() (*bls.Signature, error) {
+	if pbp.mockBlockSignature != nil {
+		return pbp.mockBlockSignature, nil
+	}
+	mockBLSPrivateKey, err := bls.NewPrivateKey()
+	if err != nil {
+		return nil, errors.Wrap(err, "Error creating mock BLS private key")
+	}
+	mockBLSSigner, err := NewBLSSigner(mockBLSPrivateKey)
+	if err != nil {
+		return nil, errors.Wrap(err, "Error creating mock BLSSigner")
+	}
+	mockBlockSignature, err := mockBLSSigner.SignBlockProposal(math.MaxUint64, NewBlockHash(RandomBytes(32)))
+	if err != nil {
+		return nil, errors.Wrap(err, "Error creating mock block signature")
+	}
+	pbp.mockBlockSignature = mockBlockSignature
+	return mockBlockSignature, nil
+}
+
+func (pbp *PosBlockProducer) estimateHeaderSize(
+	latestBlockView *UtxoView,
+	newBlockHeight uint64,
+	view uint64,
+	proposerRandomSeedSignature *bls.Signature,
+	validatorsVoteQC *QuorumCertificate,
+	validatorTimeoutAggregateQC *TimeoutAggregateQuorumCertificate,
+) (uint64, error) {
+	if validatorsVoteQC == nil && validatorTimeoutAggregateQC == nil {
+		return 0, errors.New(
+			"PosBlockProducer.mockHeader: both validatorsVoteQC and validatorTimeoutAggregateQC are nil")
+	}
+	if validatorsVoteQC != nil && validatorTimeoutAggregateQC != nil {
+		return 0, errors.New(
+			"PosBlockProducer.mockHeader: both validatorsVoteQC and validatorTimeoutAggregateQC are not nil")
+	}
+	if proposerRandomSeedSignature == nil {
+		return 0, errors.New("PosBlockProducer.mockHeader: proposerRandomSeedSignature is nil")
+	}
+	mockHeader := &MsgDeSoHeader{}
+	mockHeader.Version = HeaderVersion2
+	mockHeader.PrevBlockHash = latestBlockView.TipHash
+	randomBlockHash := NewBlockHash(RandomBytes(32))
+	// Any random block hash is fine here.
+	mockHeader.TransactionMerkleRoot = randomBlockHash
+	mockHeader.TstampNanoSecs = _maxInt64(time.Now().UnixNano(), pbp.previousBlockTimestampNanoSecs+1)
+	mockHeader.Height = newBlockHeight
+	mockHeader.ProposedInView = view
+	mockHeader.ProposerVotingPublicKey = pbp.proposerVotingPublicKey
+	mockHeader.ProposerRandomSeedSignature = proposerRandomSeedSignature
+	if validatorsVoteQC != nil {
+		mockHeader.ValidatorsVoteQC = validatorsVoteQC
+	} else {
+		mockHeader.ValidatorsTimeoutAggregateQC = validatorTimeoutAggregateQC
+	}
+	var err error
+	mockHeader.ProposerVotePartialSignature, err = pbp.getMockBlockSignature()
+	if err != nil {
+		return 0, errors.Wrap(err, "PosBlockProducer.mockHeader: Problem getting mock block signature")
+	}
+	headerBytes, err := mockHeader.ToBytes(false)
+	if err != nil {
+		return 0, errors.Wrap(err, "PosBlockProducer.mockHeader: Problem getting header size")
+	}
+	return uint64(len(headerBytes)), nil
+}
+
 // createBlockWithoutHeader is a helper function used by createBlockTemplate. It constructs a partially filled out
 // block with Fee-Time ordered transactions. The returned block all its contents filled, except for the header.
 func (pbp *PosBlockProducer) createBlockWithoutHeader(
-	latestBlockView *UtxoView, newBlockHeight uint64, newBlockTimestampNanoSecs int64) (BlockTemplate, error) {
+	latestBlockView *UtxoView,
+	newBlockHeight uint64,
+	newBlockTimestampNanoSecs int64,
+	headerSizeEstimate uint64,
+) (BlockTemplate, error) {
 	block := NewMessage(MsgTypeBlock).(*MsgDeSoBlock)
 
 	// Create the block reward transaction.
@@ -134,10 +239,26 @@ func (pbp *PosBlockProducer) createBlockWithoutHeader(
 	if err != nil {
 		return nil, errors.Wrapf(err, "Error computing block reward txn size: ")
 	}
+	blockRewardTxnSize := uint64(len(blockRewardTxnSizeBytes))
 
 	// PoS Block producer only uses PoS, so we just directly fetch the soft max and hard max block sizes.
 	softMaxBlockSizeBytes := latestBlockView.GetSoftMaxBlockSizeBytesPoS()
 	hardMaxBlockSizeBytes := latestBlockView.GetMaxBlockSizeBytesPoS()
+
+	numBytesForHeaderAndBlockRewardTxn, err := SafeUint64().Add(headerSizeEstimate, blockRewardTxnSize)
+	if err != nil {
+		return nil, errors.Wrapf(err, "Error computing block reward txn size + mock header size: ")
+	}
+
+	softMaxTxnSizeBytes, err := SafeUint64().Sub(softMaxBlockSizeBytes, numBytesForHeaderAndBlockRewardTxn)
+	if err != nil {
+		return nil, errors.Wrapf(err, "Error computing soft max txn size: ")
+	}
+
+	hardMaxTxnSizeBytes, err := SafeUint64().Sub(hardMaxBlockSizeBytes, numBytesForHeaderAndBlockRewardTxn)
+	if err != nil {
+		return nil, errors.Wrapf(err, "Error computing hard max txn size: ")
+	}
 
 	// Get block transactions from the mempool.
 	feeTimeTxns, maxUtilityFee, err := pbp.getBlockTransactions(
@@ -145,8 +266,8 @@ func (pbp *PosBlockProducer) createBlockWithoutHeader(
 		latestBlockView,
 		newBlockHeight,
 		newBlockTimestampNanoSecs,
-		softMaxBlockSizeBytes-uint64(len(blockRewardTxnSizeBytes)),
-		hardMaxBlockSizeBytes-uint64(len(blockRewardTxnSizeBytes)),
+		softMaxTxnSizeBytes,
+		hardMaxTxnSizeBytes,
 	)
 	if err != nil {
 		return nil, errors.Wrapf(err, "PosBlockProducer.createBlockWithoutHeader: Problem retrieving block transactions: ")

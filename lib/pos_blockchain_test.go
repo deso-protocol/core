@@ -2587,8 +2587,19 @@ func _getFullRealBlockTemplate(
 	isTimeout bool,
 	blockTimestampOffset time.Duration,
 ) BlockTemplate {
+	mockQC := &QuorumCertificate{
+		BlockHash:      NewBlockHash(RandomBytes(32)),
+		ProposedInView: 1,
+		ValidatorsVoteAggregatedSignature: &AggregatedBLSSignature{
+			Signature:   &bls.Signature{},
+			SignersList: bitset.NewBitset(),
+		},
+	}
+	headerSizeEstimate, err := testMeta.posBlockProducer.estimateHeaderSize(
+		testMeta.posMempool.readOnlyLatestBlockView, 3, 10, &bls.Signature{}, mockQC, nil)
+	require.NoError(testMeta.t, err)
 	blockTemplate, err := testMeta.posBlockProducer.createBlockTemplate(
-		testMeta.posMempool.readOnlyLatestBlockView, blockHeight, view, seedSignature)
+		testMeta.posMempool.readOnlyLatestBlockView, blockHeight, view, seedSignature, headerSizeEstimate)
 	require.NoError(testMeta.t, err)
 	require.NotNil(testMeta.t, blockTemplate)
 
@@ -2668,7 +2679,19 @@ func _getFullRealBlockTemplate(
 
 // _getFullDummyBlockTemplate is a helper function that generates a block template with a dummy ValidatorsVoteQC.
 func _getFullDummyBlockTemplate(testMeta *TestMeta, latestBlockView *UtxoView, blockHeight uint64, view uint64, seedSignature *bls.Signature) BlockTemplate {
-	blockTemplate, err := testMeta.posBlockProducer.createBlockTemplate(latestBlockView, blockHeight, view, seedSignature)
+	mockQC := &QuorumCertificate{
+		BlockHash:      NewBlockHash(RandomBytes(32)),
+		ProposedInView: 1,
+		ValidatorsVoteAggregatedSignature: &AggregatedBLSSignature{
+			Signature:   &bls.Signature{},
+			SignersList: bitset.NewBitset(),
+		},
+	}
+	headerSizeEstimate, err := testMeta.posBlockProducer.estimateHeaderSize(
+		testMeta.posMempool.readOnlyLatestBlockView, 3, 10, &bls.Signature{}, mockQC, nil)
+	require.NoError(testMeta.t, err)
+	blockTemplate, err := testMeta.posBlockProducer.createBlockTemplate(
+		latestBlockView, blockHeight, view, seedSignature, headerSizeEstimate)
 	require.NoError(testMeta.t, err)
 	require.NotNil(testMeta.t, blockTemplate)
 	// Add a dummy vote QC

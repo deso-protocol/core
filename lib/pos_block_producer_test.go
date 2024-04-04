@@ -1,6 +1,7 @@
 package lib
 
 import (
+	"github.com/deso-protocol/core/collections/bitset"
 	"math"
 	"math/rand"
 	"testing"
@@ -58,8 +59,18 @@ func TestCreateBlockTemplate(t *testing.T) {
 	require.NoError(err)
 	m0Pk := NewPublicKey(m0PubBytes)
 	pbp := NewPosBlockProducer(mempool, params, m0Pk, pub, time.Now().UnixNano())
-
-	blockTemplate, err := pbp.createBlockTemplate(latestBlockView, 3, 10, seedSignature)
+	mockQC := &QuorumCertificate{
+		BlockHash:      NewBlockHash(RandomBytes(32)),
+		ProposedInView: 1,
+		ValidatorsVoteAggregatedSignature: &AggregatedBLSSignature{
+			Signature:   &bls.Signature{},
+			SignersList: bitset.NewBitset(),
+		},
+	}
+	headerSizeEstimate, err := pbp.estimateHeaderSize(
+		latestBlockView, 3, 10, seedSignature, mockQC, nil)
+	require.NoError(err)
+	blockTemplate, err := pbp.createBlockTemplate(latestBlockView, 3, 10, seedSignature, headerSizeEstimate)
 	require.NoError(err)
 	require.NotNil(blockTemplate)
 	require.NotNil(blockTemplate.Header)
@@ -123,7 +134,18 @@ func TestCreateBlockWithoutHeader(t *testing.T) {
 			NewPublicKey(m0PubBytes), latestBlockView, 3, 0, 50000, 50000)
 		require.NoError(err)
 
-		blockTemplate, err := pbp.createBlockWithoutHeader(latestBlockView, 3, 0)
+		mockQC := &QuorumCertificate{
+			BlockHash:      NewBlockHash(RandomBytes(32)),
+			ProposedInView: 1,
+			ValidatorsVoteAggregatedSignature: &AggregatedBLSSignature{
+				Signature:   &bls.Signature{},
+				SignersList: bitset.NewBitset(),
+			},
+		}
+		headerSizeEstimate, err := pbp.estimateHeaderSize(
+			latestBlockView, 3, 10, &bls.Signature{}, mockQC, nil)
+		require.NoError(err)
+		blockTemplate, err := pbp.createBlockWithoutHeader(latestBlockView, 3, 0, headerSizeEstimate)
 		require.NoError(err)
 		require.Equal(txns, blockTemplate.Txns[1:])
 		require.Equal(uint64(0), blockTemplate.Txns[0].TxOutputs[0].AmountNanos)
@@ -137,8 +159,17 @@ func TestCreateBlockWithoutHeader(t *testing.T) {
 		txns, maxUtilityFee, err := pbp.getBlockTransactions(
 			NewPublicKey(m1PubBytes), latestBlockView, 3, 0, 50000, 50000)
 		require.NoError(err)
-
-		blockTemplate, err := pbp.createBlockWithoutHeader(latestBlockView, 3, 0)
+		mockQC := &QuorumCertificate{
+			BlockHash:      NewBlockHash(RandomBytes(32)),
+			ProposedInView: 1,
+			ValidatorsVoteAggregatedSignature: &AggregatedBLSSignature{
+				Signature:   &bls.Signature{},
+				SignersList: bitset.NewBitset(),
+			},
+		}
+		headerSizeEstimate, err := pbp.estimateHeaderSize(
+			latestBlockView, 3, 10, &bls.Signature{}, mockQC, nil)
+		blockTemplate, err := pbp.createBlockWithoutHeader(latestBlockView, 3, 0, headerSizeEstimate)
 		require.NoError(err)
 		require.Equal(txns, blockTemplate.Txns[1:])
 		require.Equal(maxUtilityFee, blockTemplate.Txns[0].TxOutputs[0].AmountNanos)
