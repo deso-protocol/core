@@ -858,9 +858,12 @@ var RegtestForkHeights = ForkHeights{
 	BalanceModelBlockHeight:            uint32(1),
 	ProofOfStake1StateSetupBlockHeight: uint32(1),
 
-	// For convenience, we set the PoS cutover block height to 100
-	// so that enough DESO is minted to allow for testing.
-	ProofOfStake2ConsensusCutoverBlockHeight: uint32(100),
+	// For convenience, we set the PoS cutover block height to 300 so that
+	// enough DESO is minted to allow for testing. The 300 number is tuned
+	// to allow for 144 blocks/epoch * 2 epochs = 288 blocks to be mined
+	// before the chain transitions to PoS. Two epoch transitions must take
+	// place for the chain to set up the validator set to run PoS.
+	ProofOfStake2ConsensusCutoverBlockHeight: uint32(300),
 
 	LockupsBlockHeight: uint32(1),
 
@@ -899,8 +902,6 @@ func (params *DeSoParams) EnableRegtest() {
 	// Allow block rewards to be spent instantly
 	params.BlockRewardMaturity = 0
 
-	// Set the PoS epoch duration to 10 blocks
-	params.DefaultEpochDurationNumBlocks = 10
 	// Set the PoS default jail inactive validator grace period epochs to 3.
 	params.DefaultJailInactiveValidatorGracePeriodEpochs = 3
 
@@ -1271,8 +1272,10 @@ var DeSoMainnetParams = DeSoParams{
 	// Staking reward APY is defaulted to 0% to be safe.
 	DefaultStakingRewardsAPYBasisPoints: uint64(0),
 
-	// The number of blocks in one epoch
-	DefaultEpochDurationNumBlocks: uint64(3600),
+	// The number of blocks in one epoch. This number is tuned to result in roughly 10 epochs
+	// per day given a 10-minute block time on mainnet when running PoW. The number is tuned
+	// for PoW because epoch transitions begin on PoW before the chain transitions to PoS.
+	DefaultEpochDurationNumBlocks: uint64(144),
 
 	// The number of epochs before an inactive validator is jailed
 	DefaultJailInactiveValidatorGracePeriodEpochs: uint64(48),
@@ -1578,8 +1581,10 @@ var DeSoTestnetParams = DeSoParams{
 	// Staking reward APY is defaulted to 0% to be safe.
 	DefaultStakingRewardsAPYBasisPoints: uint64(0),
 
-	// The number of blocks in one epoch
-	DefaultEpochDurationNumBlocks: uint64(3600),
+	// The number of blocks in one epoch. This number is tuned to result in roughly 10 epochs
+	// per day given a 10-minute block time on testnet when running PoW. The number is tuned
+	// for PoW because epoch transitions begin on PoW before the chain transitions to PoS.
+	DefaultEpochDurationNumBlocks: uint64(144),
 
 	// The number of epochs before an inactive validator is jailed
 	DefaultJailInactiveValidatorGracePeriodEpochs: uint64(48),
