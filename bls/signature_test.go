@@ -161,7 +161,7 @@ func TestVerifyingBLSSignatures(t *testing.T) {
 	// Test bls.PublicKey.Copy().
 	blsPublicKey1Copy := blsPublicKey1.Copy()
 	require.True(t, blsPublicKey1.Eq(blsPublicKey1Copy))
-	blsPublicKey1Copy.flowPublicKey = _generateRandomBLSPrivateKey(t).PublicKey().flowPublicKey
+	blsPublicKey1Copy.flowPublicKeyBytes = _generateRandomBLSPrivateKey(t).PublicKey().ToBytes()
 	require.False(t, blsPublicKey1.Eq(blsPublicKey1Copy))
 
 	// Test bls.Signature.Copy().
