@@ -283,6 +283,7 @@ func (posFeeEstimator *PoSFeeEstimator) pruneBlocksToMaxNumPastBlocks(blocks []*
 // and past blocks using the congestionFactorBasisPoints, priorityPercentileBasisPoints, and
 // maxBlockSize params.
 func (posFeeEstimator *PoSFeeEstimator) EstimateFeeRateNanosPerKB(
+	minFeeRateNanosPerKB uint64,
 	mempoolCongestionFactorBasisPoints uint64,
 	mempoolPriorityPercentileBasisPoints uint64,
 	pastBlocksCongestionFactorBasisPoints uint64,
@@ -311,6 +312,9 @@ func (posFeeEstimator *PoSFeeEstimator) EstimateFeeRateNanosPerKB(
 	if err != nil {
 		return 0, errors.Wrap(err, "EstimateFeeRateNanosPerKB: Problem computing mempool fee rate")
 	}
+	if minFeeRateNanosPerKB > pastBlockFeeRate && minFeeRateNanosPerKB > mempoolFeeRate {
+		return minFeeRateNanosPerKB, nil
+	}
 	if pastBlockFeeRate < mempoolFeeRate {
 		return mempoolFeeRate, nil
 	}
@@ -321,6 +325,7 @@ func (posFeeEstimator *PoSFeeEstimator) EstimateFeeRateNanosPerKB(
 // max of the mempoolFeeEstimate and pastBlocksFeeEstimate.
 func (posFeeEstimator *PoSFeeEstimator) EstimateFee(
 	txn *MsgDeSoTxn,
+	minFeeRateNanosPerKB uint64,
 	mempoolCongestionFactorBasisPoints uint64,
 	mempoolPriorityPercentileBasisPoints uint64,
 	pastBlocksCongestionFactorBasisPoints uint64,
@@ -346,6 +351,10 @@ func (posFeeEstimator *PoSFeeEstimator) EstimateFee(
 	)
 	if err != nil {
 		return 0, errors.Wrap(err, "PoSFeeEstimator.EstimateFee: Problem computing past blocks fee estimate")
+	}
+	minFeeRateEstimate, err := computeFeeGivenTxnAndFeeRate(txn, minFeeRateNanosPerKB)
+	if minFeeRateEstimate > mempoolFeeEstimate && minFeeRateEstimate > pastBlocksFeeEstimate {
+		return minFeeRateNanosPerKB, nil
 	}
 	if mempoolFeeEstimate < pastBlocksFeeEstimate {
 		return pastBlocksFeeEstimate, nil
