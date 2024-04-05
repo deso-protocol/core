@@ -3,14 +3,15 @@ package lib
 import (
 	"encoding/binary"
 	"fmt"
+	"net"
+	"sync"
+	"time"
+
 	"github.com/btcsuite/btcd/wire"
 	"github.com/deso-protocol/core/bls"
 	"github.com/golang/glog"
 	"github.com/pkg/errors"
 	"golang.org/x/crypto/sha3"
-	"net"
-	"sync"
-	"time"
 )
 
 type RemoteNodeStatus int
@@ -253,7 +254,7 @@ func (rn *RemoteNode) IsValidator() bool {
 	if !rn.IsHandshakeCompleted() {
 		return false
 	}
-	return rn.hasValidatorServiceFlag()
+	return rn.hasValidatorServiceFlag() && rn.validatorPublicKey != nil
 }
 
 func (rn *RemoteNode) IsExpectedValidator() bool {
