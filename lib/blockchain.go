@@ -5705,6 +5705,7 @@ func (bc *Blockchain) CreateCoinUnlockTxn(
 func (bc *Blockchain) CreateAtomicTxnsWrapper(
 	unsignedTransactions []*MsgDeSoTxn,
 	extraData map[string][]byte,
+	mempool Mempool,
 ) (
 	_txn *MsgDeSoTxn,
 	_fees uint64,
@@ -5730,6 +5731,33 @@ func (bc *Blockchain) CreateAtomicTxnsWrapper(
 		chainedUnsignedTransactions[0].ExtraData = make(map[string][]byte)
 	}
 	chainedUnsignedTransactions[0].ExtraData[AtomicTxnsChainLength] = UintToBuf(uint64(len(unsignedTransactions)))
+
+	utxoView, err := bc.GetUncommittedTipView()
+	if err != nil {
+		return nil, 0, errors.Wrapf(err, "CreateAtomicTxnsWrapper: failed to get uncommitted tip view")
+	}
+	maxBlockSizeBytes := bc.params.MaxBlockSizeBytesPoW
+	if bc.params.IsPoSBlockHeight(uint64(bc.BlockTip().Height)) {
+		maxBlockSizeBytes = utxoView.GetSoftMaxBlockSizeBytesPoS()
+	}
+	// First iterate over the transactions, giving them a dummy value for the atomic hash and update the fee nanos.
+	// If the newly computed fee nanos is less than the original fee nanos, we do not update the fees.
+	dummyAtomicHashBytes := RandomBytes(32)
+	for _, txn := range chainedUnsignedTransactions {
+		if len(txn.ExtraData) == 0 {
+			txn.ExtraData = make(map[string][]byte)
+		}
+		txn.ExtraData[NextAtomicTxnPreHash] = dummyAtomicHashBytes
+		txn.ExtraData[PreviousAtomicTxnPreHash] = dummyAtomicHashBytes
+		newFeeEstimate, err := mempool.EstimateFee(
+			txn, 0, MaxBasisPoints, MaxBasisPoints, MaxBasisPoints, MaxBasisPoints, maxBlockSizeBytes)
+		if err != nil {
+			return nil, 0, errors.Wrapf(err, "CreateAtomicTxnsWrapper: failed to recompute fee estimate")
+		}
+		if txn.TxnFeeNanos < newFeeEstimate {
+			txn.TxnFeeNanos = newFeeEstimate
+		}
+	}
 
 	// Construct the chained transactions and keep track of the total fees paid.
 	var totalFees uint64
