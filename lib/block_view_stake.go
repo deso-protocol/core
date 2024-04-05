@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"sort"
 
-	"github.com/dgraph-io/badger/v3"
+	"github.com/dgraph-io/badger/v4"
 	"github.com/golang/glog"
 	"github.com/holiman/uint256"
 	"github.com/pkg/errors"
@@ -912,7 +912,14 @@ func DBGetLockedStakeEntriesInRangeWithTxn(
 	return lockedStakeEntries, nil
 }
 
-func DBPutStakeEntryWithTxn(
+// In order to optimize the flush, we want to only write entries to the db that have changed.
+// On top of that, we add a further optimization to only update the
+// PrefixStakeByStakeAmount index if the stake amount has changed. Not doing this results
+// in a lot of writes to badger every epoch that eventually slow block processing to a crawl.
+// This is essentially a bug in badger when you repeatedly write to the same key, and we're
+// papering over it here in response to encountering the issue. In an ideal world, badger
+// would work as intended and this extra optimization wouldn't be necessary.
+func DBUpdateStakeEntryWithTxn(
 	txn *badger.Txn,
 	snap *Snapshot,
 	stakeEntry *StakeEntry,
@@ -923,20 +930,50 @@ func DBPutStakeEntryWithTxn(
 		return nil
 	}
 
-	// Set StakeEntry in PrefixStakeByValidatorByStaker.
+	// Fetch the existing entry from the db so we can potentially avoid an update
+	dbEntry, err := DBGetStakeEntryWithTxn(
+		txn, snap, stakeEntry.ValidatorPKID, stakeEntry.StakerPKID)
+	if err != nil {
+		return errors.Wrapf(err, "_flushStakeEntriesToDbWithTxn: ")
+	}
+	dbEntryBytes := EncodeToBytes(blockHeight, dbEntry)
+	// Serialize the entry to bytes
+	entryToWriteBytes := EncodeToBytes(blockHeight, stakeEntry)
+	// If the entry we're about to write is the exact same as what's already in the db then
+	// don't write it.
+	if bytes.Equal(dbEntryBytes, entryToWriteBytes) {
+		return nil
+	}
+
+	// Set StakeEntry in PrefixStakeByValidatorByStaker. This should gracefully overwrite an existing entry
+	// if one exists so no need to delete before adding it.
 	stakeByValidatorAndStakerKey := DBKeyForStakeByValidatorAndStaker(stakeEntry.ValidatorPKID, stakeEntry.StakerPKID)
 	if err := DBSetWithTxn(txn, snap, stakeByValidatorAndStakerKey, EncodeToBytes(blockHeight, stakeEntry), eventManager); err != nil {
 		return errors.Wrapf(
-			err, "DBPutStakeEntryWithTxn: problem storing StakeEntry in index PrefixStakeByValidatorByStaker: ",
+			err, "DBUpdateStakeEntryWithTxn: problem storing StakeEntry in index PrefixStakeByValidatorByStaker: ",
 		)
 	}
 
-	// Set StakeEntry in PrefixStakeByStakeAmount.
-	stakeByStakeAmountKey := DBKeyForStakeByStakeAmount(stakeEntry)
-	if err := DBSetWithTxn(txn, snap, stakeByStakeAmountKey, nil, eventManager); err != nil {
-		return errors.Wrapf(
-			err, "DBPutStakeEntryWithTxn: problem storing StakeEntry in index PrefixStakeByStakeAmount: ",
-		)
+	// Set StakeEntry in PrefixStakeByStakeAmount but only if the amount has changed.
+	if dbEntry == nil || dbEntry.StakeAmountNanos.Cmp(stakeEntry.StakeAmountNanos) != 0 {
+		// Delete the existing entry in the db index if one exists
+		if dbEntry != nil {
+			dbStakeByStakeAmountKey := DBKeyForStakeByStakeAmount(dbEntry)
+			// Note we set isDeleted=false as a hint to the state syncer that we're about to
+			// update this value immediately after.
+			if err := DBDeleteWithTxn(txn, snap, dbStakeByStakeAmountKey, eventManager, false); err != nil {
+				return errors.Wrapf(
+					err, "DBDeleteStakeEntryWithTxn: problem deleting StakeEntry from index PrefixStakeByStakeAmount: ",
+				)
+			}
+		}
+
+		stakeByStakeAmountKey := DBKeyForStakeByStakeAmount(stakeEntry)
+		if err := DBSetWithTxn(txn, snap, stakeByStakeAmountKey, nil, eventManager); err != nil {
+			return errors.Wrapf(
+				err, "DBUpdateStakeEntryWithTxn: problem storing StakeEntry in index PrefixStakeByStakeAmount: ",
+			)
+		}
 	}
 
 	return nil
@@ -2719,7 +2756,8 @@ func (bav *UtxoView) _deleteLockedStakeEntryMappings(lockedStakeEntry *LockedSta
 }
 
 func (bav *UtxoView) _flushStakeEntriesToDbWithTxn(txn *badger.Txn, blockHeight uint64) error {
-	// Delete all entries in the UtxoView map.
+	// Iterate through all the entries in the view. Delete the entries that have isDeleted=true
+	// and update the entries that don't.
 	for mapKeyIter, entryIter := range bav.StakeMapKeyToStakeEntry {
 		// Make a copy of the iterators since we make references to them below.
 		mapKey := mapKeyIter
@@ -2737,21 +2775,12 @@ func (bav *UtxoView) _flushStakeEntriesToDbWithTxn(txn *badger.Txn, blockHeight 
 
 		// Delete the existing mappings in the db for this MapKey. They will be
 		// re-added if the corresponding entry in-memory has isDeleted=false.
-		if err := DBDeleteStakeEntryWithTxn(txn, bav.Snapshot, entry.ValidatorPKID, entry.StakerPKID, blockHeight, bav.EventManager, entry.isDeleted); err != nil {
-			return errors.Wrapf(err, "_flushStakeEntriesToDbWithTxn: ")
-		}
-	}
-
-	// Set any !isDeleted entries in the UtxoView map.
-	for _, entryIter := range bav.StakeMapKeyToStakeEntry {
-		entry := *entryIter
 		if entry.isDeleted {
-			// If isDeleted then there's nothing to do because
-			// we already deleted the entry above.
+			if err := DBDeleteStakeEntryWithTxn(txn, bav.Snapshot, entry.ValidatorPKID, entry.StakerPKID, blockHeight, bav.EventManager, entry.isDeleted); err != nil {
+				return errors.Wrapf(err, "_flushStakeEntriesToDbWithTxn: ")
+			}
 		} else {
-			// If !isDeleted then we put the corresponding
-			// mappings for it into the db.
-			if err := DBPutStakeEntryWithTxn(txn, bav.Snapshot, &entry, blockHeight, bav.EventManager); err != nil {
+			if err := DBUpdateStakeEntryWithTxn(txn, bav.Snapshot, &entry, blockHeight, bav.EventManager); err != nil {
 				return errors.Wrapf(err, "_flushStakeEntriesToDbWithTxn: ")
 			}
 		}

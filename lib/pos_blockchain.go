@@ -9,7 +9,7 @@ import (
 
 	"github.com/deso-protocol/core/collections"
 	"github.com/deso-protocol/core/consensus"
-	"github.com/dgraph-io/badger/v3"
+	"github.com/dgraph-io/badger/v4"
 	"github.com/golang/glog"
 	"github.com/pkg/errors"
 )
@@ -276,13 +276,14 @@ func (bc *Blockchain) processBlockPoS(block *MsgDeSoBlock, currentView uint64, v
 
 	// We expect the utxoView for the parent block to be valid because we check that all ancestor blocks have
 	// been validated.
-	parentUtxoView, err := bc.getUtxoViewAtBlockHash(*block.Header.PrevBlockHash)
+	parentUtxoViewAndUtxoOps, err := bc.getUtxoViewAndUtxoOpsAtBlockHash(*block.Header.PrevBlockHash)
 	if err != nil {
 		// This should never happen. If the parent is validated and extends from the tip, then we should
 		// be able to build a UtxoView for it. This failure can only happen due to transient or badger issues.
 		// We return that validation didn't fail and the error.
 		return false, false, nil, errors.Wrap(err, "validateLeaderAndQC: Problem getting UtxoView")
 	}
+	parentUtxoView := parentUtxoViewAndUtxoOps.UtxoView
 	// First, we perform a validation of the leader and the QC to prevent spam.
 	// If the block fails this check, we throw it away.
 	passedSpamPreventionCheck, err := bc.validateLeaderAndQC(block, parentUtxoView, verifySignatures)
@@ -406,26 +407,26 @@ func (bc *Blockchain) processOrphanBlockPoS(block *MsgDeSoBlock) error {
 		// We can't validate the QC without a UtxoView. Return an error.
 		return errors.Wrap(err, "processOrphanBlockPoS: Problem initializing UtxoView")
 	}
-	currentEpochEntry, err := utxoView.GetCurrentEpochEntry()
+
+	epochEntry, err := utxoView.GetCurrentEpochEntry()
 	if err != nil {
 		// We can't validate the QC without getting the current epoch entry.
 		return errors.Wrap(err, "processOrphanBlockPoS: Problem getting current epoch entry")
 	}
-	var validatorsByStake []*ValidatorEntry
+
 	// If the block is in a previous or future epoch, we need to compute the
 	// proper validator set for the block. We do this by computing the prev/next
 	// epoch entry and then fetching the validator set at the snapshot of the
 	// epoch number of the prev/next epoch entry.
-	if !currentEpochEntry.ContainsBlockHeight(block.Header.Height) {
+	if !epochEntry.ContainsBlockHeight(block.Header.Height) {
 		// Get the epoch entry based on the block height. The logic is the same
 		// regardless of whether the block is in a previous or future epoch.
 		// Note that the InitialView cannot be properly computed.
-		var epochEntry *EpochEntry
-		usePrevEpoch := block.Header.Height < currentEpochEntry.InitialBlockHeight
+		usePrevEpoch := block.Header.Height < epochEntry.InitialBlockHeight
 		// If it's in a previous epoch, we compute the prev epoch entry.
 		if usePrevEpoch {
-			epochEntry, err = utxoView.simulatePrevEpochEntry(currentEpochEntry.EpochNumber,
-				currentEpochEntry.InitialBlockHeight)
+			epochEntry, err = utxoView.simulatePrevEpochEntry(epochEntry.EpochNumber,
+				epochEntry.InitialBlockHeight)
 			if err != nil {
 				return errors.Wrap(err, "processOrphanBlockPoS: Problem computing prev epoch entry")
 			}
@@ -434,8 +435,8 @@ func (bc *Blockchain) processOrphanBlockPoS(block *MsgDeSoBlock) error {
 			// the next epoch entry and check if it is in that epoch. If it's in a future epoch, we just throw it away.
 			// We supply 0 for the view and 0 for the block timestamp as we don't know what those values should be, and
 			// we will ignore these values.
-			epochEntry, err = utxoView.computeNextEpochEntry(currentEpochEntry.EpochNumber,
-				currentEpochEntry.FinalBlockHeight, 0, 0)
+			epochEntry, err = utxoView.computeNextEpochEntry(epochEntry.EpochNumber,
+				epochEntry.FinalBlockHeight, 0, 0)
 			if err != nil {
 				return errors.Wrap(err, "processOrphanBlockPoS: Problem computing next epoch entry")
 			}
@@ -450,99 +451,64 @@ func (bc *Blockchain) processOrphanBlockPoS(block *MsgDeSoBlock) error {
 			return fmt.Errorf("processOrphanBlockPoS: Block height %d is too far in the %v",
 				block.Header.Height, errSuffix)
 		}
-		var epochEntrySnapshotAtEpochNumber uint64
-		epochEntrySnapshotAtEpochNumber, err = utxoView.ComputeSnapshotEpochNumberForEpoch(epochEntry.EpochNumber)
-		if err != nil {
-			return errors.Wrapf(err,
-				"processOrphanBlockPoS: Problem getting snapshot at epoch number for poch entry at epoch #%d",
-				epochEntry.EpochNumber)
-		}
-		// Okay now that we've gotten the SnapshotAtEpochNumber for the prev/next epoch, we can make sure that the
-		// proposer of the block is within the set of potential block proposers for the prev/next epoch based on
-		// the VotingPublicKey.
-		// First, we get the snapshot validator entry based on the BLS public key in the header.
-		snapshotBLSPublicKeyPKIDEntry, err := utxoView.GetSnapshotValidatorBLSPublicKeyPKIDPairEntry(
-			block.Header.ProposerVotingPublicKey, epochEntrySnapshotAtEpochNumber)
-		if err != nil {
-			return errors.Wrapf(err,
-				"processOrphanBlockPoS: Problem getting snapshot validator entry for block proposer %v",
-				block.Header.ProposerVotingPublicKey)
-		}
-		// If no snapshot BLSPublicKeyPKIDEntry exists, we'll never accept this block as
-		// its block proposer is not in the validator set as we did not snapshot its BLS Public key.
-		// This is a spam prevention measure, so we just throw away the block.
-		if snapshotBLSPublicKeyPKIDEntry == nil {
-			return nil
-		}
-		// Fetch the snapshot leader PKIDs
-		snapshotLeaderPKIDs, err := utxoView.GetSnapshotLeaderScheduleAtEpochNumber(epochEntrySnapshotAtEpochNumber)
-		if err != nil {
-			return errors.Wrapf(err,
-				"processOrphanBlockPoS: Problem getting snapshot leader schedule at snapshot at epoch number %d",
-				epochEntrySnapshotAtEpochNumber)
-		}
-		// Get the PKID for the block proposer from the snapshot validator entry.
-		blockProposerPKID := snapshotBLSPublicKeyPKIDEntry.PKID
-		// TODO: Replace w/ collections.Any for simplicity. There is an issue with this version
-		// of Go's compiler that is preventing us from using collections.Any here.
-		// We can now check if the block proposer is in the set of snapshot leader PKIDs.
-		blockProposerSeen := false
-		for _, snapshotLeaderPKID := range snapshotLeaderPKIDs {
-			if snapshotLeaderPKID.Eq(blockProposerPKID) {
-				blockProposerSeen = true
-				break
-			}
-		}
-		if !blockProposerSeen {
-			// We'll never accept this block as its block proposer is not in the set of
-			// potential leaders. As a spam-prevention measure, we simply return nil and throw it away.
-			return nil
-		}
-		validatorsByStake, err = utxoView.GetAllSnapshotValidatorSetEntriesByStakeAtEpochNumber(
+	}
+
+	var epochEntrySnapshotAtEpochNumber uint64
+	epochEntrySnapshotAtEpochNumber, err = utxoView.ComputeSnapshotEpochNumberForEpoch(epochEntry.EpochNumber)
+	if err != nil {
+		return errors.Wrapf(err,
+			"processOrphanBlockPoS: Problem getting snapshot at epoch number for poch entry at epoch #%d",
+			epochEntry.EpochNumber)
+	}
+	// Okay now that we've gotten the SnapshotAtEpochNumber for the prev/next epoch, we can make sure that the
+	// proposer of the block is within the set of potential block proposers for the prev/next epoch based on
+	// the VotingPublicKey.
+	// First, we get the snapshot validator entry based on the BLS public key in the header.
+	snapshotBLSPublicKeyPKIDEntry, err := utxoView.GetSnapshotValidatorBLSPublicKeyPKIDPairEntry(
+		block.Header.ProposerVotingPublicKey, epochEntrySnapshotAtEpochNumber)
+	if err != nil {
+		return errors.Wrapf(err,
+			"processOrphanBlockPoS: Problem getting snapshot validator entry for block proposer %v",
+			block.Header.ProposerVotingPublicKey)
+	}
+	// If no snapshot BLSPublicKeyPKIDEntry exists, we'll never accept this block as
+	// its block proposer is not in the validator set as we did not snapshot its BLS Public key.
+	// This is a spam prevention measure, so we just throw away the block.
+	if snapshotBLSPublicKeyPKIDEntry == nil {
+		return nil
+	}
+	// Fetch the snapshot leader PKIDs
+	snapshotLeaderPKIDs, err := utxoView.GetSnapshotLeaderScheduleAtEpochNumber(epochEntrySnapshotAtEpochNumber)
+	if err != nil {
+		return errors.Wrapf(err,
+			"processOrphanBlockPoS: Problem getting snapshot leader schedule at snapshot at epoch number %d",
 			epochEntrySnapshotAtEpochNumber)
-		if err != nil {
-			return errors.Wrapf(err,
-				"processOrphanBlockPoS: Problem getting validator set at snapshot at epoch number %d",
-				epochEntrySnapshotAtEpochNumber)
-		}
-	} else {
-		// This block is in the current epoch!
-		// First we validate the proposer vote partial signature
-		snapshotAtEpochNumber, err := utxoView.GetCurrentSnapshotEpochNumber()
-		if err != nil {
-			return errors.Wrap(err, "processOrphanBlockPoS: Problem getting current snapshot epoch number")
-		}
-		// Validate the proposer partial sig.
-		isValidPartialSig, err := utxoView.hasValidProposerPartialSignaturePoS(block, snapshotAtEpochNumber)
-		if err != nil {
-			return errors.Wrap(err, "processOrphanBlockPoS: Problem validating proposer partial sig")
-		}
-		if !isValidPartialSig {
-			// We'll never accept this block since it has an invalid leader signature.
-			// As a spam-prevention measure, we just throw away this block
-			// and don't store it.
-			return nil
-		}
-		// Next we validate that the leader is correct. We can only do this if the block
-		// is in the current epoch since we need the current epoch entry's initial view
-		// to compute the proper leader.
-		var isBlockProposerValid bool
-		isBlockProposerValid, err = utxoView.hasValidBlockProposerPoS(block)
-		if err != nil {
-			return errors.Wrapf(err, "processOrphanBlockPoS: Problem validating block proposer")
-		}
-		if !isBlockProposerValid {
-			// If the block proposer isn't valid, we'll never accept this block. As a spam-prevention
-			// measure, we just throw away this block and don't store it.
-			return nil
-		}
-		// If we get here, we know we have the correct block proposer. We now fetch the validators ordered by
-		// stake, so we can validate the QC.
-		validatorsByStake, err = utxoView.GetAllSnapshotValidatorSetEntriesByStake()
-		if err != nil {
-			return errors.Wrap(err, "processOrphanBlockPoS: Problem getting validator set")
+	}
+	// Get the PKID for the block proposer from the snapshot validator entry.
+	blockProposerPKID := snapshotBLSPublicKeyPKIDEntry.PKID
+	// TODO: Replace w/ collections.Any for simplicity. There is an issue with this version
+	// of Go's compiler that is preventing us from using collections.Any here.
+	// We can now check if the block proposer is in the set of snapshot leader PKIDs.
+	blockProposerSeen := false
+	for _, snapshotLeaderPKID := range snapshotLeaderPKIDs {
+		if snapshotLeaderPKID.Eq(blockProposerPKID) {
+			blockProposerSeen = true
+			break
 		}
 	}
+	if !blockProposerSeen {
+		// We'll never accept this block as its block proposer is not in the set of
+		// potential leaders. As a spam-prevention measure, we simply return nil and throw it away.
+		return nil
+	}
+	validatorsByStake, err := utxoView.GetAllSnapshotValidatorSetEntriesByStakeAtEpochNumber(
+		epochEntrySnapshotAtEpochNumber)
+	if err != nil {
+		return errors.Wrapf(err,
+			"processOrphanBlockPoS: Problem getting validator set at snapshot at epoch number %d",
+			epochEntrySnapshotAtEpochNumber)
+	}
+
 	// Okay now we have the validator set ordered by stake, we can validate the QC.
 	if err = bc.isValidPoSQuorumCertificate(block, validatorsByStake); err != nil {
 		// If we hit an error, we know that the QC is invalid, and we'll never accept this block,
@@ -649,7 +615,7 @@ func (bc *Blockchain) validateLeaderAndQC(
 		}
 	}
 
-	isBlockProposerValid, err := parentUtxoView.hasValidBlockProposerPoS(block)
+	isBlockProposerValid, err := bc.hasValidBlockProposerPoS(block, parentUtxoView)
 	if err != nil {
 		return false, errors.Wrapf(err,
 			"validateAndIndexBlockPoS: Problem validating block proposer")
@@ -747,6 +713,16 @@ func (bc *Blockchain) validateAndIndexBlockPoS(block *MsgDeSoBlock, parentUtxoVi
 		}
 	}
 
+	// Make sure the block isn't too big.
+	serializedBlock, err := block.ToBytes(false)
+	if err != nil {
+		return bc.storeValidateFailedBlockWithWrappedError(
+			block, errors.Wrap(err, "validateAndIndexBlockPoS: Problem serializing block"))
+	}
+	if uint64(len(serializedBlock)) > parentUtxoView.GetCurrentGlobalParamsEntry().MaxBlockSizeBytesPoS {
+		return bc.storeValidateFailedBlockWithWrappedError(block, RuleErrorBlockTooBig)
+	}
+
 	// Check if the block is properly formed and passes all basic validations.
 	if err = bc.isValidBlockPoS(block); err != nil {
 		return bc.storeValidateFailedBlockWithWrappedError(block, err)
@@ -809,13 +785,14 @@ func (bc *Blockchain) validatePreviouslyIndexedBlockPoS(
 		return nil, errors.Wrapf(err, "validatePreviouslyIndexedBlockPoS: Problem fetching block from DB")
 	}
 	// Build utxoView for the block's parent.
-	parentUtxoView, err := bc.getUtxoViewAtBlockHash(*block.Header.PrevBlockHash)
+	parentUtxoViewAndUtxoOps, err := bc.getUtxoViewAndUtxoOpsAtBlockHash(*block.Header.PrevBlockHash)
 	if err != nil {
 		// This should never happen. If the parent is validated and extends from the tip, then we should
 		// be able to build a UtxoView for it. This failure can only happen due to transient or badger issues.
 		return nil, errors.Wrap(err, "validatePreviouslyIndexedBlockPoS: Problem getting UtxoView")
 	}
 
+	parentUtxoView := parentUtxoViewAndUtxoOps.UtxoView
 	// If the block isn't validated or validate failed, we need to run the anti-spam checks on it.
 	passedSpamPreventionCheck, err := bc.validateLeaderAndQC(block, parentUtxoView, verifySignatures)
 	if err != nil {
@@ -960,16 +937,6 @@ func (bc *Blockchain) isProperlyFormedBlockPoS(block *MsgDeSoBlock) error {
 		return RuleErrorBlockWithNoTxns
 	}
 
-	// Make sure TxnConnectStatusByIndex is non-nil
-	if block.TxnConnectStatusByIndex == nil {
-		return RuleErrorNilTxnConnectStatusByIndex
-	}
-
-	// Make sure the TxnConnectStatusByIndex matches the TxnConnectStatusByIndexHash
-	if !(HashBitset(block.TxnConnectStatusByIndex).IsEqual(block.Header.TxnConnectStatusByIndexHash)) {
-		return RuleErrorTxnConnectStatusByIndexHashMismatch
-	}
-
 	// Make sure that the first txn in each block is a block reward txn.
 	if block.Txns[0].TxnMeta.GetTxnType() != TxnTypeBlockReward {
 		return RuleErrorBlockDoesNotStartWithRewardTxn
@@ -1008,11 +975,6 @@ func (bc *Blockchain) isProperlyFormedBlockHeaderPoS(header *MsgDeSoHeader) erro
 	// Header validation
 	if header.Version != HeaderVersion2 {
 		return RuleErrorInvalidPoSBlockHeaderVersion
-	}
-
-	// Must have TxnConnectStatusByIndexHash
-	if header.TxnConnectStatusByIndexHash == nil {
-		return RuleErrorNilTxnConnectStatusByIndexHash
 	}
 
 	// Require header to have either vote or timeout QC
@@ -1172,12 +1134,12 @@ func (bav *UtxoView) hasValidProposerPartialSignaturePoS(block *MsgDeSoBlock, sn
 // block height + view number pair. It returns a bool indicating whether
 // we confirmed that the leader is valid. If we receive an error, we are unsure
 // if the leader is invalid or not, so we return false.
-func (bav *UtxoView) hasValidBlockProposerPoS(block *MsgDeSoBlock) (_isValidBlockProposer bool, _err error) {
-	currentEpochEntry, err := bav.GetCurrentEpochEntry()
+func (bc *Blockchain) hasValidBlockProposerPoS(block *MsgDeSoBlock, parentUtxoView *UtxoView) (_isValidBlockProposer bool, _err error) {
+	currentEpochEntry, err := parentUtxoView.GetCurrentEpochEntry()
 	if err != nil {
 		return false, errors.Wrapf(err, "hasValidBlockProposerPoS: Problem getting current epoch entry")
 	}
-	leaders, err := bav.GetCurrentSnapshotLeaderSchedule()
+	leaders, err := parentUtxoView.GetCurrentSnapshotLeaderSchedule()
 	if err != nil {
 		return false, errors.Wrapf(err, "hasValidBlockProposerPoS: Problem getting leader schedule")
 	}
@@ -1195,34 +1157,52 @@ func (bav *UtxoView) hasValidBlockProposerPoS(block *MsgDeSoBlock) (_isValidBloc
 	if viewDiff < heightDiff {
 		return false, nil
 	}
+
+	// Fetch the number timeouts that took place at the final block height of the previous epoch. We need to
+	// compute this number because a timeout at the start of the current epoch would regress the chain to
+	// the previous epoch, which would count the timeout as part of the previous epoch.
+	numTimeoutsBeforeEpochTransition, err := bc.getNumTimeoutsBeforeEpochTransition(block, currentEpochEntry)
+	if err != nil {
+		return false, errors.Wrapf(err, "hasValidBlockProposerPoS: Problem getting num timeouts before epoch transition")
+	}
+
 	// We compute the current index in the leader schedule as follows:
-	// [(block.View - currentEpoch.InitialView) - (block.Height - currentEpoch.InitialHeight)] % len(leaders)
-	// The number of views that have elapsed since the start of the epoch is block.View - currentEpoch.InitialView.
-	// The number of blocks that have been added to the chain since the start of the epoch is
-	// block.Height - currentEpoch.InitialHeight. The difference between these two numbers is the number of timeouts
-	// that have occurred in this epoch. For each timeout, we need to go to the next leader in the schedule.
-	// If we have more timeouts than leaders in the schedule, we start from the top of the schedule again,
-	// which is why we take the modulo of the length of the leader schedule.
-	// A quick example: If we have 3 leaders in the schedule and the epoch started at height 10 and view 11,
-	// and the current block is at height 15 and view 17, then the number of timeouts that have occurred is
-	// (17 - 11) - (15 - 10) = 1. This means this block should be proposed by the 2nd leader in the schedule,
-	// which is at index 1.
-	leaderIdxUint64 := (viewDiff - heightDiff) % uint64(len(leaders))
+	// - [(block.View - currentEpoch.InitialView) - (block.Height - currentEpoch.InitialHeight) + numTimeoutsBeforeEpochTransition] % len(leaders)
+	// - The number of views that have elapsed since the start of the epoch is block.View - currentEpoch.InitialView.
+	// - The number of blocks that have been added to the chain since the start of the epoch is
+	//   block.Height - currentEpoch.InitialHeight.
+	// - The difference between the above two numbers is the number of timeouts that have occurred in this epoch.
+	// - The numTimeoutsBeforeEpochTransition is the number of timeouts that have occurred during the epoch transition
+	//   and are counted as part of the previous epoch.
+	//
+	// For each timeout, we skip one leader in the in the schedule. If we have more timeouts than leaders in
+	// the schedule, we start from the top of the schedule again, which is why we take the modulo of the length
+	// of the leader schedule.
+	//
+	// A quick example:
+	// - Say we have 3 leaders in the schedule
+	// - The epoch started at height 10 and view 11
+	// - The current block is at height 15 and view 17
+	// - There were 6 timeouts at the epoch transition
+	// - Then the number of timeouts that have occurred is (17 - 11) - (15 - 10) + 6 = 7.
+	// - The leader index is 7 % 3 = 1.
+	// - This means this block should be proposed by the 2nd leader in the schedule, which is at index 1.
+	leaderIdxUint64 := (viewDiff + numTimeoutsBeforeEpochTransition - heightDiff) % uint64(len(leaders))
 	if leaderIdxUint64 > math.MaxUint16 {
 		return false, nil
 	}
 	leaderIdx := uint16(leaderIdxUint64)
-	leaderEntry, err := bav.GetSnapshotLeaderScheduleValidator(leaderIdx)
+	leaderEntry, err := parentUtxoView.GetSnapshotLeaderScheduleValidator(leaderIdx)
 	if err != nil {
 		return false, errors.Wrapf(err, "hasValidBlockProposerPoS: Problem getting leader schedule validator")
 	}
-	snapshotAtEpochNumber, err := bav.ComputeSnapshotEpochNumberForEpoch(currentEpochEntry.EpochNumber)
+	snapshotAtEpochNumber, err := parentUtxoView.ComputeSnapshotEpochNumberForEpoch(currentEpochEntry.EpochNumber)
 	if err != nil {
 		return false, errors.Wrapf(err,
 			"hasValidBlockProposerPoS: Problem getting snapshot epoch number for epoch #%d",
 			currentEpochEntry.EpochNumber)
 	}
-	leaderEntryFromVotingPublicKey, err := bav.GetSnapshotValidatorEntryByBLSPublicKey(
+	leaderEntryFromVotingPublicKey, err := parentUtxoView.GetSnapshotValidatorEntryByBLSPublicKey(
 		block.Header.ProposerVotingPublicKey,
 		snapshotAtEpochNumber)
 	if err != nil {
@@ -1248,9 +1228,9 @@ func (bav *UtxoView) hasValidBlockProposerPoS(block *MsgDeSoBlock) (_isValidBloc
 		currentEpochEntry.InitialBlockHeight,
 		leaderIdx,
 		len(leaders),
-		PkToString(leaderEntry.ValidatorPKID.ToBytes(), bav.Params),
+		PkToString(leaderEntry.ValidatorPKID.ToBytes(), bc.params),
 		leaderEntry.VotingPublicKey.ToAbbreviatedString(),
-		PkToString(leaderEntryFromVotingPublicKey.ValidatorPKID.ToBytes(), bav.Params),
+		PkToString(leaderEntryFromVotingPublicKey.ValidatorPKID.ToBytes(), bc.params),
 		leaderEntryFromVotingPublicKey.VotingPublicKey.ToAbbreviatedString(),
 		block.Header.ProposerVotingPublicKey.ToAbbreviatedString(),
 	)
@@ -1260,6 +1240,46 @@ func (bav *UtxoView) hasValidBlockProposerPoS(block *MsgDeSoBlock) (_isValidBloc
 		return false, nil
 	}
 	return true, nil
+}
+
+func (bc *Blockchain) getNumTimeoutsBeforeEpochTransition(block *MsgDeSoBlock, epochEntry *EpochEntry) (uint64, error) {
+	if !epochEntry.ContainsBlockHeight(block.Header.Height) {
+		return 0, errors.New("getNumTimeoutsBeforeEpochTransition: Block height not in epoch")
+	}
+
+	// Fetch the previous epoch's final block height.
+	prevEpochFinalBlockHeight := epochEntry.InitialBlockHeight - 1
+
+	// Fetch the previous epoch's final block that is an ancestor of the given block. This operation is O(n)
+	// where n is the number of blocks between the given block and the previous epoch's final block. The worst
+	// case is O(3600) since we only need to go back 3600 blocks to find the previous epoch's final block.
+	prevEpochFinalBlockHeader := block.Header
+	for prevEpochFinalBlockHeader.Height > prevEpochFinalBlockHeight {
+		blockNode, exists := bc.blockIndexByHash[*prevEpochFinalBlockHeader.PrevBlockHash]
+		if !exists {
+			return 0, errors.New("getNumTimeoutsBeforeEpochTransition: Missing ancestor block")
+		}
+		prevEpochFinalBlockHeader = blockNode.Header
+	}
+
+	// Fetch the previous epoch's 2nd to last block that is an ancestor of the given block.
+	prevEpochSecondToLastBlockNode, ok := bc.blockIndexByHash[*prevEpochFinalBlockHeader.PrevBlockHash]
+	if !ok {
+		return 0, errors.New("getNumTimeoutsBeforeEpochTransition: Missing ancestor block")
+	}
+
+	// Ensure that the previous epoch's final two blocks have increasing views
+	if prevEpochFinalBlockHeader.GetView() <= prevEpochSecondToLastBlockNode.Header.GetView() {
+		return 0, errors.New("getNumTimeoutsBeforeEpochTransition: Final block view not greater than 2nd to last block view")
+	}
+
+	// Ensure that the previous epoch's final two blocks have sequential heights
+	if prevEpochSecondToLastBlockNode.Header.Height != prevEpochFinalBlockHeader.Height-1 {
+		return 0, errors.New("getNumTimeoutsBeforeEpochTransition: Final block height not sequential with 2nd to last block height")
+	}
+
+	// Compute the number of timeouts at the end of the previous epoch
+	return (prevEpochFinalBlockHeader.GetView() - prevEpochSecondToLastBlockNode.Header.GetView() - 1) / 2, nil
 }
 
 // isValidPoSQuorumCertificate validates that the QC of this block is valid, meaning a super majority
@@ -1713,25 +1733,14 @@ func (bc *Blockchain) commitBlockPoS(blockHash *BlockHash, verifySignatures bool
 		// Can't commit a block that's already committed.
 		return errors.Errorf("commitBlockPoS: Block %v is already committed", blockHash.String())
 	}
-	block, err := GetBlock(blockHash, bc.db, bc.snapshot)
-	if err != nil {
-		return errors.Wrapf(err, "commitBlockPoS: Problem getting block from db %v", blockHash.String())
-	}
-	// Connect a view up to the parent of the block we are committing.
-	utxoView, err := bc.getUtxoViewAtBlockHash(*block.Header.PrevBlockHash)
+	// Connect a view up to block we are committing.
+	utxoViewAndUtxoOps, err := bc.getUtxoViewAndUtxoOpsAtBlockHash(*blockHash)
 	if err != nil {
 		return errors.Wrapf(err, "commitBlockPoS: Problem initializing UtxoView: ")
 	}
-	txHashes := collections.Transform(block.Txns, func(txn *MsgDeSoTxn) *BlockHash {
-		return txn.Hash()
-	})
-	// Connect the block to the view!
-	utxoOpsForBlock, err := utxoView.ConnectBlock(
-		block, txHashes, verifySignatures, bc.eventManager, block.Header.Height)
-	if err != nil {
-		// TODO: rule error handling? mark blocks invalid?
-		return errors.Wrapf(err, "commitBlockPoS: Problem connecting block to view: ")
-	}
+	utxoView := utxoViewAndUtxoOps.UtxoView
+	utxoOps := utxoViewAndUtxoOps.UtxoOps
+	block := utxoViewAndUtxoOps.Block
 	// Put the block in the db
 	// Note: we're skipping postgres.
 	blockNode.Status |= StatusBlockCommitted
@@ -1740,12 +1749,6 @@ func (bc *Blockchain) commitBlockPoS(blockHash *BlockHash, verifySignatures bool
 			bc.snapshot.PrepareAncestralRecordsFlush()
 			defer bc.snapshot.StartAncestralRecordsFlush(true)
 			glog.V(2).Infof("commitBlockPoS: Preparing snapshot flush")
-		}
-		// Store the new block in the db under the
-		//   <blockHash> -> <serialized block>
-		// index.
-		if innerErr := PutBlockHashToBlockWithTxn(txn, bc.snapshot, block, bc.eventManager); innerErr != nil {
-			return errors.Wrapf(innerErr, "commitBlockPoS: Problem calling PutBlockHashToBlockWithTxn")
 		}
 
 		// Store the new block's node in our node index in the db under the
@@ -1765,7 +1768,7 @@ func (bc *Blockchain) commitBlockPoS(blockHash *BlockHash, verifySignatures bool
 		// Write the utxo operations for this block to the db, so we can have the
 		// ability to roll it back in the future.
 		if innerErr := PutUtxoOperationsForBlockWithTxn(
-			txn, bc.snapshot, uint64(blockNode.Height), blockNode.Hash, utxoOpsForBlock, bc.eventManager,
+			txn, bc.snapshot, uint64(blockNode.Height), blockNode.Hash, utxoOps, bc.eventManager,
 		); innerErr != nil {
 			return errors.Wrapf(innerErr, "commitBlockPoS: Problem writing utxo operations to db on simple add to tip")
 		}
@@ -1783,7 +1786,7 @@ func (bc *Blockchain) commitBlockPoS(blockHash *BlockHash, verifySignatures bool
 		bc.eventManager.blockConnected(&BlockEvent{
 			Block:    block,
 			UtxoView: utxoView,
-			UtxoOps:  utxoOpsForBlock,
+			UtxoOps:  utxoOps,
 		})
 		// TODO: check w/ Z if this is right....
 		// Signal the state syncer that we've flushed to the DB so state syncer
@@ -1812,11 +1815,10 @@ func (bc *Blockchain) commitBlockPoS(blockHash *BlockHash, verifySignatures bool
 	return nil
 }
 
-// GetUncommittedFullBlocks is a helper that the state syncer uses to fetch all uncommitted
-// blocks, so it can flush them just like we would with mempool transactions. It returns
-// all uncommitted blocks from the specified tip to the last uncommitted block.
-// Note: it would be more efficient if we cached these results.
-func (bc *Blockchain) GetUncommittedFullBlocks(tipHash *BlockHash) ([]*MsgDeSoBlock, error) {
+// GetUncommittedBlocks is a helper that the state syncer uses to fetch all uncommitted
+// block nodes, so it can flush them just like we would with mempool transactions. It returns
+// all uncommitted block nodes from the specified tip to the last uncommitted block.
+func (bc *Blockchain) GetUncommittedBlocks(tipHash *BlockHash) ([]*BlockNode, error) {
 	if tipHash == nil {
 		tipHash = bc.BlockTip().Hash
 	}
@@ -1824,31 +1826,26 @@ func (bc *Blockchain) GetUncommittedFullBlocks(tipHash *BlockHash) ([]*MsgDeSoBl
 	defer bc.ChainLock.RUnlock()
 	tipBlock, exists := bc.bestChainMap[*tipHash]
 	if !exists {
-		return nil, errors.Errorf("GetUncommittedFullBlocks: Block %v not found in best chain map", tipHash.String())
+		return nil, errors.Errorf("GetUncommittedBlocks: Block %v not found in best chain map", tipHash.String())
 	}
 	// If the tip block is committed, we can't get uncommitted blocks from it so we return an empty slice.
 	if tipBlock.IsCommitted() {
-		return []*MsgDeSoBlock{}, nil
+		return []*BlockNode{}, nil
 	}
-	var uncommittedBlocks []*MsgDeSoBlock
+	var uncommittedBlockNodes []*BlockNode
 	currentBlock := tipBlock
 	for !currentBlock.IsCommitted() {
-		fullBlock, err := GetBlock(currentBlock.Hash, bc.db, bc.snapshot)
-		if err != nil {
-			return nil, errors.Wrapf(err, "GetUncommittedFullBlocks: Problem fetching block %v",
-				currentBlock.Hash.String())
-		}
-		uncommittedBlocks = append(uncommittedBlocks, fullBlock)
+		uncommittedBlockNodes = append(uncommittedBlockNodes, currentBlock)
 		currentParentHash := currentBlock.Header.PrevBlockHash
 		if currentParentHash == nil {
-			return nil, errors.Errorf("GetUncommittedFullBlocks: Block %v has nil PrevBlockHash", currentBlock.Hash)
+			return nil, errors.Errorf("GetUncommittedBlocks: Block %v has nil PrevBlockHash", currentBlock.Hash)
 		}
 		currentBlock = bc.blockIndexByHash[*currentParentHash]
 		if currentBlock == nil {
-			return nil, errors.Errorf("GetUncommittedFullBlocks: Block %v not found in block index", currentBlock.Hash)
+			return nil, errors.Errorf("GetUncommittedBlocks: Block %v not found in block index", currentBlock.Hash)
 		}
 	}
-	return collections.Reverse(uncommittedBlocks), nil
+	return collections.Reverse(uncommittedBlockNodes), nil
 }
 
 // GetCommittedTipView builds a UtxoView to the committed tip.
@@ -1856,79 +1853,124 @@ func (bc *Blockchain) GetCommittedTipView() (*UtxoView, error) {
 	return NewUtxoViewWithSnapshotCache(bc.db, bc.params, bc.postgres, bc.snapshot, nil, bc.snapshotCache)
 }
 
+// BlockViewAndUtxoOps is a struct that contains a UtxoView and the UtxoOperations
+// and a block that were used to build the UtxoView. This struct is only
+// used for Blockchain's blockViewCache, which is used to speed up repeated access
+// to a utxo view at an uncommitted block. Simply having a utxo view was insufficient
+// for all performance enhancements as the utxo operations are needed when committing
+// a block and the block is needed for the state syncer.
+type BlockViewAndUtxoOps struct {
+	UtxoView *UtxoView
+	UtxoOps  [][]*UtxoOperation
+	Block    *MsgDeSoBlock
+}
+
+func (viewAndUtxoOps *BlockViewAndUtxoOps) Copy() (*BlockViewAndUtxoOps, error) {
+	copiedView, err := viewAndUtxoOps.UtxoView.CopyUtxoView()
+	if err != nil {
+		return nil, errors.Wrapf(err, "BlockViewAndUtxoOps.Copy: Problem copying UtxoView")
+	}
+	return &BlockViewAndUtxoOps{
+		UtxoView: copiedView,
+		UtxoOps:  viewAndUtxoOps.UtxoOps,
+		Block:    viewAndUtxoOps.Block,
+	}, nil
+}
+
 // GetUncommittedTipView builds a UtxoView to the uncommitted tip.
 func (bc *Blockchain) GetUncommittedTipView() (*UtxoView, error) {
 	// Connect the uncommitted blocks to the tip so that we can validate subsequent blocks
-	return bc.getUtxoViewAtBlockHash(*bc.BlockTip().Hash)
+	blockViewAndUtxoOps, err := bc.getUtxoViewAndUtxoOpsAtBlockHash(*bc.BlockTip().Hash)
+	if err != nil {
+		return nil, errors.Wrapf(err, "GetUncommittedTipView: Problem getting UtxoView at block hash")
+	}
+	return blockViewAndUtxoOps.UtxoView, nil
 }
 
-// getUtxoViewAtBlockHash builds a UtxoView to the block provided. It does this by
-// identifying all uncommitted ancestors of this block and then connecting those blocks.
-func (bc *Blockchain) getUtxoViewAtBlockHash(blockHash BlockHash) (*UtxoView, error) {
+func (bc *Blockchain) getCachedBlockViewAndUtxoOps(blockHash BlockHash) (*BlockViewAndUtxoOps, error, bool) {
+	if viewAndUtxoOpsAtHashItem, exists := bc.blockViewCache.Lookup(blockHash); exists {
+		viewAndUtxoOpsAtHash, ok := viewAndUtxoOpsAtHashItem.(*BlockViewAndUtxoOps)
+		if !ok {
+			glog.Errorf("getCachedBlockViewAndUtxoOps: Problem casting to BlockViewAndUtxoOps")
+			return nil, fmt.Errorf("getCachedBlockViewAndUtxoOps: Problem casting to BlockViewAndUtxoOps"), false
+		}
+		return viewAndUtxoOpsAtHash, nil, true
+	}
+	return nil, nil, false
+}
+
+// getUtxoViewAndUtxoOpsAtBlockHash builds a UtxoView to the block provided and returns a BlockViewAndUtxoOps
+// struct containing UtxoView, the UtxoOperations that resulted from connecting the block, and the full
+// block (MsgDeSoBlock) for convenience that came from connecting the block. It does this by identifying
+// all uncommitted ancestors of this block. Then it checks the block view cache to see if we have already
+// computed this view. If not, connecting the uncommitted ancestor blocks and saving to the cache. The
+// returned UtxoOps and FullBlock should NOT be modified.
+func (bc *Blockchain) getUtxoViewAndUtxoOpsAtBlockHash(blockHash BlockHash) (
+	*BlockViewAndUtxoOps, error) {
 	// Always fetch the lineage from the committed tip to the block provided first to
 	// ensure that a valid UtxoView is returned.
 	uncommittedAncestors := []*BlockNode{}
 	currentBlock := bc.blockIndexByHash[blockHash]
 	if currentBlock == nil {
-		return nil, errors.Errorf("getUtxoViewAtBlockHash: Block %v not found in block index", blockHash)
+		return nil, errors.Errorf("getUtxoViewAndUtxoOpsAtBlockHash: Block %v not found in block index", blockHash)
 	}
+
 	highestCommittedBlock, _ := bc.GetCommittedTip()
 	if highestCommittedBlock == nil {
-		return nil, errors.Errorf("getUtxoViewAtBlockHash: No committed blocks found")
+		return nil, errors.Errorf("getUtxoViewAndUtxoOpsAtBlockHash: No committed blocks found")
 	}
 	// If the provided block is committed, we need to make sure it's the committed tip.
 	// Otherwise, we return an error.
 	if currentBlock.IsCommitted() {
 		if !highestCommittedBlock.Hash.IsEqual(&blockHash) {
 			return nil, errors.Errorf(
-				"getUtxoViewAtBlockHash: Block %v is committed but not the committed tip", blockHash)
+				"getUtxoViewAndUtxoOpsAtBlockHash: Block %v is committed but not the committed tip", blockHash)
 		}
 	}
 	for !currentBlock.IsCommitted() {
 		uncommittedAncestors = append(uncommittedAncestors, currentBlock)
 		currentParentHash := currentBlock.Header.PrevBlockHash
 		if currentParentHash == nil {
-			return nil, errors.Errorf("getUtxoViewAtBlockHash: Block %v has nil PrevBlockHash", currentBlock.Hash)
+			return nil, errors.Errorf("getUtxoViewAndUtxoOpsAtBlockHash: Block %v has nil PrevBlockHash", currentBlock.Hash)
 		}
 		currentBlock = bc.blockIndexByHash[*currentParentHash]
 		if currentBlock == nil {
-			return nil, errors.Errorf("getUtxoViewAtBlockHash: Block %v not found in block index", currentParentHash)
+			return nil, errors.Errorf("getUtxoViewAndUtxoOpsAtBlockHash: Block %v not found in block index", currentParentHash)
 		}
 		if currentBlock.IsCommitted() && !currentBlock.Hash.IsEqual(highestCommittedBlock.Hash) {
 			return nil, errors.Errorf(
-				"getUtxoViewAtBlockHash: extends from a committed block that isn't the committed tip")
+				"getUtxoViewAndUtxoOpsAtBlockHash: extends from a committed block that isn't the committed tip")
 		}
 		if currentBlock.IsCommitted() && !currentBlock.Hash.IsEqual(highestCommittedBlock.Hash) {
 			return nil, errors.Errorf(
-				"getUtxoViewAtBlockHash: extends from a committed block that isn't the committed tip")
+				"getUtxoViewAndUtxoOpsAtBlockHash: extends from a committed block that isn't the committed tip")
 		}
 	}
-	if viewAtHash, exists := bc.blockViewCache.Lookup(blockHash); exists {
-		copiedView, err := viewAtHash.(*UtxoView).CopyUtxoView()
-		if err != nil {
-			return nil, errors.Wrapf(err, "getUtxoViewAtBlockHash: Problem copying UtxoView from cache")
-		}
-		return copiedView, nil
+	viewAndUtxoOpsAtHash, err, exists := bc.getCachedBlockViewAndUtxoOps(blockHash)
+	if err != nil {
+		return nil, errors.Wrapf(err, "getUtxoViewAndUtxoOpsAtBlockHash: Problem getting cached BlockViewAndUtxoOps")
 	}
-	if viewAtHash, exists := bc.blockViewCache.Lookup(blockHash); exists {
-		copiedView, err := viewAtHash.(*UtxoView).CopyUtxoView()
+	if exists {
+		viewAndUtxoOpsCopy, err := viewAndUtxoOpsAtHash.Copy()
 		if err != nil {
-			return nil, errors.Wrapf(err, "getUtxoViewAtBlockHash: Problem copying UtxoView from cache")
+			return nil, errors.Wrapf(err, "getUtxoViewAndUtxoOpsAtBlockHash: Problem copying BlockViewAndUtxoOps from cache")
 		}
-		return copiedView, nil
+		return viewAndUtxoOpsCopy, nil
 	}
 	// Connect the uncommitted blocks to the tip so that we can validate subsequent blocks
 	utxoView, err := NewUtxoViewWithSnapshotCache(bc.db, bc.params, bc.postgres, bc.snapshot, bc.eventManager,
 		bc.snapshotCache)
 	if err != nil {
-		return nil, errors.Wrapf(err, "getUtxoViewAtBlockHash: Problem initializing UtxoView")
+		return nil, errors.Wrapf(err, "getUtxoViewAndUtxoOpsAtBlockHash: Problem initializing UtxoView")
 	}
 	// TODO: there's another performance enhancement we can make here. If we have a view in the
 	// cache for one of the ancestors, we can skip fetching the block and connecting it by taking
 	// a copy of it and replacing the existing view.
+	var utxoOps [][]*UtxoOperation
+	var fullBlock *MsgDeSoBlock
 	for ii := len(uncommittedAncestors) - 1; ii >= 0; ii-- {
 		// We need to get these blocks from badger
-		fullBlock, err := GetBlock(uncommittedAncestors[ii].Hash, bc.db, bc.snapshot)
+		fullBlock, err = GetBlock(uncommittedAncestors[ii].Hash, bc.db, bc.snapshot)
 		if err != nil {
 			return nil, errors.Wrapf(err,
 				"GetUncommittedTipView: Error fetching Block %v not found in block index",
@@ -1937,7 +1979,7 @@ func (bc *Blockchain) getUtxoViewAtBlockHash(blockHash BlockHash) (*UtxoView, er
 		txnHashes := collections.Transform(fullBlock.Txns, func(txn *MsgDeSoTxn) *BlockHash {
 			return txn.Hash()
 		})
-		_, err = utxoView.ConnectBlock(fullBlock, txnHashes, false, nil, fullBlock.Header.Height)
+		utxoOps, err = utxoView.ConnectBlock(fullBlock, txnHashes, false, nil, fullBlock.Header.Height)
 		if err != nil {
 			hash, _ := fullBlock.Hash()
 			return nil, errors.Wrapf(err, "GetUncommittedTipView: Problem connecting block hash %v", hash.String())
@@ -1948,10 +1990,18 @@ func (bc *Blockchain) getUtxoViewAtBlockHash(blockHash BlockHash) (*UtxoView, er
 	// Save a copy of the UtxoView to the cache.
 	copiedView, err := utxoView.CopyUtxoView()
 	if err != nil {
-		return nil, errors.Wrapf(err, "getUtxoViewAtBlockHash: Problem copying UtxoView to store in cache")
+		return nil, errors.Wrapf(err, "getUtxoViewAndUtxoOpsAtBlockHash: Problem copying UtxoView to store in cache")
 	}
-	bc.blockViewCache.Add(blockHash, copiedView)
-	return utxoView, nil
+	bc.blockViewCache.Add(blockHash, &BlockViewAndUtxoOps{
+		UtxoView: copiedView,
+		UtxoOps:  utxoOps,
+		Block:    fullBlock,
+	})
+	return &BlockViewAndUtxoOps{
+		UtxoView: utxoView,
+		UtxoOps:  utxoOps,
+		Block:    fullBlock,
+	}, nil
 }
 
 // GetCommittedTip returns the highest committed block and its index in the best chain.
@@ -2077,9 +2127,6 @@ const (
 	RuleErrorPoSBlockTstampNanoSecsTooOld                       RuleError = "RuleErrorPoSBlockTstampNanoSecsTooOld"
 	RuleErrorPoSBlockTstampNanoSecsInFuture                     RuleError = "RuleErrorPoSBlockTstampNanoSecsInFuture"
 	RuleErrorInvalidPoSBlockHeaderVersion                       RuleError = "RuleErrorInvalidPoSBlockHeaderVersion"
-	RuleErrorNilTxnConnectStatusByIndex                         RuleError = "RuleErrorNilTxnConnectStatusByIndex"
-	RuleErrorNilTxnConnectStatusByIndexHash                     RuleError = "RuleErrorNilTxnConnectStatusByIndexHash"
-	RuleErrorTxnConnectStatusByIndexHashMismatch                RuleError = "RuleErrorTxnConnectStatusByIndexHashMismatch"
 	RuleErrorNoTimeoutOrVoteQC                                  RuleError = "RuleErrorNoTimeoutOrVoteQC"
 	RuleErrorBothTimeoutAndVoteQC                               RuleError = "RuleErrorBothTimeoutAndVoteQC"
 	RuleErrorBlockWithNoTxns                                    RuleError = "RuleErrorBlockWithNoTxns"

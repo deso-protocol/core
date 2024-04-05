@@ -1,9 +1,10 @@
 package lib
 
 import (
-	"github.com/dgraph-io/badger/v3"
-	"github.com/pkg/errors"
 	"sync"
+
+	"github.com/dgraph-io/badger/v4"
+	"github.com/pkg/errors"
 )
 
 // SnapshotCache is a struct that holds cached versions of the end-of-epoch

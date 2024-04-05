@@ -541,7 +541,7 @@ func (bav *UtxoView) extractAdditionalRoyaltyMap(
 func (bav *UtxoView) _connectCreateNFT(
 	txn *MsgDeSoTxn, txHash *BlockHash, blockHeight uint32, verifySignatures bool) (
 	_totalInput uint64, _totalOutput uint64, _utxoOps []*UtxoOperation, _err error) {
-	if bav.GlobalParamsEntry.MaxCopiesPerNFT == 0 {
+	if bav.GetCurrentGlobalParamsEntry().MaxCopiesPerNFT == 0 {
 		return 0, 0, nil, fmt.Errorf("_connectCreateNFT: called with zero MaxCopiesPerNFT")
 	}
 
@@ -574,7 +574,7 @@ func (bav *UtxoView) _connectCreateNFT(
 	}
 
 	// Validate the txMeta.
-	if txMeta.NumCopies > bav.GlobalParamsEntry.MaxCopiesPerNFT {
+	if txMeta.NumCopies > bav.GetCurrentGlobalParamsEntry().MaxCopiesPerNFT {
 		return 0, 0, nil, RuleErrorTooManyNFTCopies
 	}
 	if txMeta.NumCopies == 0 {
@@ -658,7 +658,7 @@ func (bav *UtxoView) _connectCreateNFT(
 	// Since issuing N copies of an NFT multiplies the downstream processing overhead by N,
 	// we charge a fee for each additional copy minted.
 	// We do not need to check for overflow as these values are managed by the ParamUpdater.
-	nftFee, err := SafeUint64().Mul(txMeta.NumCopies, bav.GlobalParamsEntry.CreateNFTFeeNanos)
+	nftFee, err := SafeUint64().Mul(txMeta.NumCopies, bav.GetCurrentGlobalParamsEntry().CreateNFTFeeNanos)
 	if err != nil {
 		return 0, 0, nil, errors.Wrapf(
 			err, "_connectCreateNFT: error computing NFT fee")
@@ -757,7 +757,7 @@ func (bav *UtxoView) _connectCreateNFT(
 func (bav *UtxoView) _connectUpdateNFT(
 	txn *MsgDeSoTxn, txHash *BlockHash, blockHeight uint32, verifySignatures bool) (
 	_totalInput uint64, _totalOutput uint64, _utxoOps []*UtxoOperation, _err error) {
-	if bav.GlobalParamsEntry.MaxCopiesPerNFT == 0 {
+	if bav.GetCurrentGlobalParamsEntry().MaxCopiesPerNFT == 0 {
 		return 0, 0, nil, fmt.Errorf("_connectUpdateNFT: called with zero MaxCopiesPerNFT")
 	}
 
@@ -923,7 +923,7 @@ func (bav *UtxoView) _connectUpdateNFT(
 func (bav *UtxoView) _connectAcceptNFTBid(
 	txn *MsgDeSoTxn, txHash *BlockHash, blockHeight uint32, verifySignatures bool) (
 	_totalInput uint64, _totalOutput uint64, _utxoOps []*UtxoOperation, _err error) {
-	if bav.GlobalParamsEntry.MaxCopiesPerNFT == 0 {
+	if bav.GetCurrentGlobalParamsEntry().MaxCopiesPerNFT == 0 {
 		return 0, 0, nil, fmt.Errorf("_connectAcceptNFTBid: called with zero MaxCopiesPerNFT")
 	}
 
@@ -1678,7 +1678,7 @@ func (bav *UtxoView) _helpConnectNFTSold(args HelpConnectNFTSoldStruct) (
 func (bav *UtxoView) _connectNFTBid(
 	txn *MsgDeSoTxn, txHash *BlockHash, blockHeight uint32, verifySignatures bool) (
 	_totalInput uint64, _totalOutput uint64, _utxoOps []*UtxoOperation, _err error) {
-	if bav.GlobalParamsEntry.MaxCopiesPerNFT == 0 {
+	if bav.GetCurrentGlobalParamsEntry().MaxCopiesPerNFT == 0 {
 		return 0, 0, nil, fmt.Errorf("_connectNFTBid: called with zero MaxCopiesPerNFT")
 	}
 

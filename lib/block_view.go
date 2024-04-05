@@ -19,7 +19,7 @@ import (
 	"github.com/davecgh/go-spew/spew"
 
 	"github.com/btcsuite/btcd/btcec"
-	"github.com/dgraph-io/badger/v3"
+	"github.com/dgraph-io/badger/v4"
 	"github.com/golang/glog"
 	"github.com/pkg/errors"
 )
@@ -1421,6 +1421,17 @@ func (bav *UtxoView) _disconnectUpdateGlobalParams(
 
 func (bav *UtxoView) DisconnectTransaction(currentTxn *MsgDeSoTxn, txnHash *BlockHash,
 	utxoOpsForTxn []*UtxoOperation, blockHeight uint32) error {
+	// Atomic transactions must have their inner transactions disconnected in series, while the
+	// wrapper must skip the nonce resetting mentioned below.
+	if currentTxn.TxnMeta.GetTxnType() == TxnTypeAtomicTxnsWrapper {
+		return bav._disconnectAtomicTxnsWrapper(
+			OperationTypeAtomicTxnsWrapper,
+			currentTxn,
+			txnHash,
+			utxoOpsForTxn,
+			blockHeight,
+		)
+	}
 
 	// Start by resetting the expected nonce for this txn's public key.
 	if blockHeight >= bav.Params.ForkHeights.BalanceModelBlockHeight && currentTxn.TxnMeta.GetTxnType() != TxnTypeBlockReward {
@@ -3366,24 +3377,16 @@ func (bav *UtxoView) _connectUpdateGlobalParams(
 				)
 			}
 		}
-		if len(extraData[FailingTransactionBMFMultiplierBasisPointsKey]) > 0 {
-			val, bytesRead := Uvarint(
-				extraData[FailingTransactionBMFMultiplierBasisPointsKey],
-			)
-			if val > MaxBasisPoints {
-				return 0, 0, nil, fmt.Errorf(
-					"_connectUpdateGlobalParams: FailingTransactionBMFMultiplierBasisPoints must be <= %d",
-					MaxBasisPoints,
-				)
-			}
-			newGlobalParamsEntry.FailingTransactionBMFMultiplierBasisPoints = val
 
-			if bytesRead <= 0 {
-				return 0, 0, nil, fmt.Errorf(
-					"_connectUpdateGlobalParams: unable to decode FailingTransactionBMFMultiplierBasisPoints as uint64",
-				)
-			}
+		// Validate that the minimum fee bucket size is greater than the minimum allowed.
+		mergedGlobalParams := MergeGlobalParamEntryDefaults(&newGlobalParamsEntry, bav.Params)
+		minFeeRateNanosPerKB, feeBucketMultiplier := mergedGlobalParams.
+			ComputeFeeTimeBucketMinimumFeeAndMultiplier()
+		nextFeeBucketMin := computeFeeTimeBucketMinFromExponent(1, minFeeRateNanosPerKB, feeBucketMultiplier)
+		if nextFeeBucketMin < mergedGlobalParams.MinimumNetworkFeeNanosPerKB+MinFeeBucketSize {
+			return 0, 0, nil, RuleErrorFeeBucketSizeTooSmall
 		}
+
 		if len(extraData[BlockTimestampDriftNanoSecsKey]) > 0 {
 			val, bytesRead := Varint(
 				extraData[BlockTimestampDriftNanoSecsKey],
@@ -3447,6 +3450,98 @@ func (bav *UtxoView) _connectUpdateGlobalParams(
 				)
 			}
 			newGlobalParamsEntry.MempoolFeeEstimatorNumPastBlocks = val
+		}
+		if len(extraData[MaxBlockSizeBytesPoSKey]) > 0 {
+			val, bytesRead := Uvarint(
+				extraData[MaxBlockSizeBytesPoSKey],
+			)
+			if bytesRead <= 0 {
+				return 0, 0, nil, fmt.Errorf(
+					"_connectUpdateGlobalParams: unable to decode MaxBlockSizeBytesPoS as uint64",
+				)
+			}
+			if val < MinMaxBlockSizeBytes {
+				return 0, 0, nil, RuleErrorMaxBlockSizeBytesTooLow
+			}
+			if val > MaxMaxBlockSizeBytes {
+				return 0, 0, nil, RuleErrorMaxBlockSizeBytesTooHigh
+			}
+			newGlobalParamsEntry.MaxBlockSizeBytesPoS = val
+		}
+		if len(extraData[SoftMaxBlockSizeBytesPoSKey]) > 0 {
+			val, bytesRead := Uvarint(
+				extraData[SoftMaxBlockSizeBytesPoSKey],
+			)
+			if bytesRead <= 0 {
+				return 0, 0, nil, fmt.Errorf(
+					"_connectUpdateGlobalParams: unable to decode SoftMaxBlockSizeBytesPoS as uint64",
+				)
+			}
+			if val < MinSoftMaxBlockSizeBytes {
+				return 0, 0, nil, RuleErrorSoftMaxBlockSizeBytesTooLow
+			}
+			if val > MaxSoftMaxBlockSizeBytes {
+				return 0, 0, nil, RuleErrorSoftMaxBlockSizeBytesTooHigh
+			}
+			if MergeGlobalParamEntryDefaults(&newGlobalParamsEntry, bav.Params).MaxBlockSizeBytesPoS < val {
+				return 0, 0, nil, RuleErrorSoftMaxBlockSizeBytesExceedsMaxBlockSizeBytes
+			}
+			newGlobalParamsEntry.SoftMaxBlockSizeBytesPoS = val
+		}
+		if len(extraData[MaxTxnSizeBytesPoSKey]) > 0 {
+			val, bytesRead := Uvarint(
+				extraData[MaxTxnSizeBytesPoSKey],
+			)
+			if bytesRead <= 0 {
+				return 0, 0, nil, fmt.Errorf(
+					"_connectUpdateGlobalParams: unable to decode MaxTxnSizeBytesPoS as uint64",
+				)
+			}
+			if val < MinMaxTxnSizeBytes {
+				return 0, 0, nil, RuleErrorMaxTxnSizeBytesTooLow
+			}
+			if val > MaxMaxTxnSizeBytes {
+				return 0, 0, nil, RuleErrorMaxTxnSizeBytesTooHigh
+			}
+			if MergeGlobalParamEntryDefaults(&newGlobalParamsEntry, bav.Params).MaxBlockSizeBytesPoS < val {
+				return 0, 0, nil, RuleErrorMaxTxnSizeBytesExceedsMaxBlockSizeBytes
+			}
+			newGlobalParamsEntry.MaxTxnSizeBytesPoS = val
+		}
+		if len(extraData[BlockProductionIntervalPoSKey]) > 0 {
+			val, bytesRead := Uvarint(
+				extraData[BlockProductionIntervalPoSKey],
+			)
+			if bytesRead <= 0 {
+				return 0, 0, nil, fmt.Errorf(
+					"_connectUpdateGlobalParams: unable to decode BlockProductionIntervalPoS as uint64",
+				)
+			}
+			if val < MinBlockProductionIntervalMillisecondsPoS {
+				return 0, 0, nil, RuleErrorBlockProductionIntervalPoSTooLow
+			}
+			if val > MaxBlockProductionIntervalMillisecondsPoS {
+				return 0, 0, nil, RuleErrorBlockProductionIntervalPoSTooHigh
+			}
+			newGlobalParamsEntry.BlockProductionIntervalMillisecondsPoS = val
+		}
+
+		if len(extraData[TimeoutIntervalPoSKey]) > 0 {
+			val, bytesRead := Uvarint(
+				extraData[TimeoutIntervalPoSKey],
+			)
+			if bytesRead <= 0 {
+				return 0, 0, nil, fmt.Errorf(
+					"_connectUpdateGlobalParams: unable to decode TimeoutIntervalPoS as uint64",
+				)
+			}
+			if val < MinTimeoutIntervalMillisecondsPoS {
+				return 0, 0, nil, RuleErrorTimeoutIntervalPoSTooLow
+			}
+			if val > MaxTimeoutIntervalMillisecondsPoS {
+				return 0, 0, nil, RuleErrorTimeoutIntervalPoSTooHigh
+			}
+			newGlobalParamsEntry.TimeoutIntervalMillisecondsPoS = val
 		}
 	}
 
@@ -3558,17 +3653,88 @@ func (bav *UtxoView) ValidateDiamondsAndGetNumDeSoNanos(
 }
 
 func (bav *UtxoView) ConnectTransaction(
-	txn *MsgDeSoTxn, txHash *BlockHash,
-	blockHeight uint32, blockTimestampNanoSecs int64, verifySignatures bool,
-	ignoreUtxos bool) (_utxoOps []*UtxoOperation, _totalInput uint64, _totalOutput uint64, _fees uint64, _err error) {
-	return bav._connectTransaction(txn, txHash, blockHeight, blockTimestampNanoSecs, verifySignatures, ignoreUtxos)
-
+	txn *MsgDeSoTxn,
+	txHash *BlockHash,
+	blockHeight uint32,
+	blockTimestampNanoSecs int64,
+	verifySignatures bool,
+	ignoreUtxos bool,
+) (
+	_utxoOps []*UtxoOperation,
+	_totalInput uint64,
+	_totalOutput uint64,
+	_fees uint64,
+	_err error,
+) {
+	return bav._connectTransaction(
+		txn,
+		txHash,
+		blockHeight,
+		blockTimestampNanoSecs,
+		verifySignatures,
+		ignoreUtxos,
+	)
 }
 
 func (bav *UtxoView) _connectTransaction(
-	txn *MsgDeSoTxn, txHash *BlockHash, blockHeight uint32,
-	blockTimestampNanoSecs int64, verifySignatures bool,
-	ignoreUtxos bool) (_utxoOps []*UtxoOperation, _totalInput uint64, _totalOutput uint64, _fees uint64, _err error) {
+	txn *MsgDeSoTxn,
+	txHash *BlockHash,
+	blockHeight uint32,
+	blockTimestampNanoSecs int64,
+	verifySignatures bool,
+	ignoreUtxos bool,
+) (
+	_utxoOps []*UtxoOperation,
+	_totalInput uint64,
+	_totalOutput uint64,
+	_fees uint64,
+	_err error,
+) {
+	// If the transaction is actually a series of atomic transactions, we process the transaction via
+	// _connectAtomicTransactionsWrapper which will recursively call each inner transaction as
+	// well as provide cumulative fee checking for the atomic transactions.
+	if txn.TxnMeta.GetTxnType() == TxnTypeAtomicTxnsWrapper {
+		return bav._connectAtomicTxnsWrapper(
+			txn,
+			txHash,
+			blockHeight,
+			blockTimestampNanoSecs,
+			verifySignatures,
+			ignoreUtxos,
+		)
+	}
+
+	// Check that we're not trying to connect a transaction meant to be part of a series of atomic transactions
+	// outside an atomic transactions wrapper.
+	if blockHeight >= bav.Params.ForkHeights.ProofOfStake1StateSetupBlockHeight && txn.IsAtomicTxnsInnerTxn() {
+		return nil, 0, 0, 0, RuleErrorAtomicTxnsRequiresWrapper
+	}
+
+	// By here, we should know the transaction to be non-atomic.
+	return bav._connectSingleTxn(
+		txn,
+		txHash,
+		blockHeight,
+		blockTimestampNanoSecs,
+		verifySignatures,
+		ignoreUtxos,
+	)
+}
+
+func (bav *UtxoView) _connectSingleTxn(
+	txn *MsgDeSoTxn,
+	txHash *BlockHash,
+	blockHeight uint32,
+	blockTimestampNanoSecs int64,
+	verifySignatures bool,
+	ignoreUtxos bool,
+) (
+	_utxoOps []*UtxoOperation,
+	_totalInput uint64,
+	_totalOutput uint64,
+	_fees uint64,
+	_err error,
+) {
 	// Do a quick sanity check before trying to connect.
 	if err := CheckTransactionSanity(txn, blockHeight, bav.Params); err != nil {
 		return nil, 0, 0, 0, errors.Wrapf(err, "_connectTransaction: ")
@@ -3580,8 +3746,14 @@ func (bav *UtxoView) _connectTransaction(
 		return nil, 0, 0, 0, errors.Wrapf(
 			err, "_connectTransaction: Problem serializing transaction: ")
 	}
+
+	maxTxnSizeBytes := bav.Params.MaxBlockSizeBytesPoW / 2
+	if bav.Params.IsPoSBlockHeight(uint64(blockHeight)) {
+		maxTxnSizeBytes = bav.GetMaxTxnSizeBytesPoS()
+	}
+
 	txnSizeBytes := uint64(len(txnBytes))
-	if txnSizeBytes > bav.Params.MaxBlockSizeBytes/2 {
+	if txnSizeBytes > maxTxnSizeBytes {
 		return nil, 0, 0, 0, RuleErrorTxnTooBig
 	}
 
@@ -3854,13 +4026,13 @@ func (bav *UtxoView) _connectTransaction(
 	// If the current minimum network fee per kb is set to 0, that indicates we should not assess a minimum fee.
 	// Similarly, BlockReward transactions do not require a fee.
 	isFeeExempt := txn.TxnMeta.GetTxnType() == TxnTypeBitcoinExchange || txn.TxnMeta.GetTxnType() == TxnTypeBlockReward
-	if !isFeeExempt && txnSizeBytes != 0 && bav.GlobalParamsEntry.MinimumNetworkFeeNanosPerKB != 0 {
+	if !isFeeExempt && txnSizeBytes != 0 && bav.GetCurrentGlobalParamsEntry().MinimumNetworkFeeNanosPerKB != 0 {
 		// Make sure there isn't overflow in the fee.
 		if fees != ((fees * 1000) / 1000) {
 			return nil, 0, 0, 0, RuleErrorOverflowDetectedInFeeRateCalculation
 		}
 		// If the fee is less than the minimum network fee per KB, return an error.
-		if (fees*1000)/uint64(txnSizeBytes) < bav.GlobalParamsEntry.MinimumNetworkFeeNanosPerKB {
+		if (fees*1000)/uint64(txnSizeBytes) < bav.GetCurrentGlobalParamsEntry().MinimumNetworkFeeNanosPerKB {
 			return nil, 0, 0, 0, RuleErrorTxnFeeBelowNetworkMinimum
 		}
 	}
@@ -3982,6 +4154,103 @@ func (bav *UtxoView) _connectTransaction(
 	return utxoOpsForTxn, totalInput, totalOutput, fees, nil
 }
 
+// ConnectTransactionsFailSafe connects a list of transactions to the view and returns the combined UtxoOperations,
+// total inputs, total outputs, fees, and success flags. If the ignoreFailing flag is set, the function will not return
+// an error when transactions fail to connect. Instead, a failed transaction will be skipped over, and the success flag
+// at the corresponding index will be set to false. If ignoreFailing is set to false, the function will return an error
+// if any of the transactions fail to connect. The other parameters have the same behavior as in ConnectTransaction.
+func (bav *UtxoView) ConnectTransactionsFailSafe(
+	txns []*MsgDeSoTxn, txHashes []*BlockHash, blockHeight uint32, blockTimestampNanoSecs int64,
+	verifySignatures bool, ignoreUtxos bool, ignoreFailing bool) (
+	_combinedUtxoOps [][]*UtxoOperation, _totalInputs []uint64, _totalOutputs []uint64,
+	_fees []uint64, _successFlags []bool, _err error) {
+
+	return bav._connectTransactionsFailSafe(txns, txHashes, blockHeight, blockTimestampNanoSecs, verifySignatures,
+		ignoreUtxos, ignoreFailing, 0)
+}
+
+// ConnectTransactionsFailSafeWithLimit works similarly to ConnectTransactionsFailSafe, but it limits the number of
+// transactions that can be connected to the view. If the transactionConnectLimit is set to 0, all transactions will be
+// connected. If the transactionConnectLimit is set to a positive number, the function will return after successfully
+// connecting the specified number of transactions. Failing transactions do not count towards the transactionConnectLimit.
+func (bav *UtxoView) ConnectTransactionsFailSafeWithLimit(
+	txns []*MsgDeSoTxn, txHashes []*BlockHash, blockHeight uint32, blockTimestampNanoSecs int64,
+	verifySignatures bool, ignoreUtxos bool, ignoreFailing bool, transactionConnectLimit uint64) (
+	_combinedUtxoOps [][]*UtxoOperation, _totalInputs []uint64, _totalOutputs []uint64,
+	_fees []uint64, _successFlags []bool, _err error) {
+
+	return bav._connectTransactionsFailSafe(txns, txHashes, blockHeight, blockTimestampNanoSecs, verifySignatures,
+		ignoreUtxos, ignoreFailing, transactionConnectLimit)
+}
+
+func (bav *UtxoView) _connectTransactionsFailSafe(
+	txns []*MsgDeSoTxn, txHashes []*BlockHash, blockHeight uint32, blockTimestampNanoSecs int64,
+	verifySignatures bool, ignoreUtxos bool, ignoreFailing bool, transactionConnectLimit uint64) (
+	_combinedUtxoOps [][]*UtxoOperation, _totalInputs []uint64, _totalOutputs []uint64,
+	_fees []uint64, _successFlags []bool, _err error) {
+
+	var combinedUtxoOps [][]*UtxoOperation
+	var totalInputs []uint64
+	var totalOutputs []uint64
+	var fees []uint64
+	var successFlags []bool
+	var totalConnectedTxns uint64
+
+	updateValues := func(utxoOps []*UtxoOperation, totalInput uint64, totalOutput uint64, fee uint64, success bool) {
+		combinedUtxoOps = append(combinedUtxoOps, utxoOps)
+		totalInputs = append(totalInputs, totalInput)
+		totalOutputs = append(totalOutputs, totalOutput)
+		fees = append(fees, fee)
+		successFlags = append(successFlags, success)
+	}
+
+	// Connect the transactions in the order they are given.
+	for ii, txn := range txns {
+		// Create a copy of the view to connect the transactions to in the event we have a failing txn.
+		copiedView, err := bav.CopyUtxoView()
+		if err != nil {
+			return nil, nil, nil, nil, nil,
+				errors.Wrapf(err, "_connectTransactionsFailSafe: Problem copying UtxoView")
+		}
+
+		// Connect the transaction to the copied view.
+		utxoOpsForTxn, totalInput, totalOutput, fee, err := copiedView.ConnectTransaction(
+			txn, txHashes[ii], blockHeight, blockTimestampNanoSecs, verifySignatures, ignoreUtxos)
+		if err != nil && ignoreFailing {
+			// If ignoreFailing was set, we mark the transaction as failing and continue.
+			glog.V(2).Infof("_connectTransactionsFailSafe: Ignoring failing txn %d: %v", ii, err)
+			updateValues(nil, 0, 0, 0, false)
+			continue
+		} else if err != nil {
+			return nil, nil, nil, nil, nil,
+				errors.Wrapf(err, "_connectTransactionsFailSafe: Problem connecting txn %d on copy view", ii)
+		}
+
+		// At this point, we know the transaction will connect successfully, so we connect it to the main view.
+		utxoOpsForTxn, totalInput, totalOutput, fee, err = bav.ConnectTransaction(
+			txn, txHashes[ii], blockHeight, blockTimestampNanoSecs, verifySignatures, ignoreUtxos)
+		if err != nil {
+			return nil, nil, nil, nil, nil,
+				errors.Wrapf(err, "_connectTransactionsFailSafe: Problem connecting txn %d", ii)
+		}
+		updateValues(utxoOpsForTxn, totalInput, totalOutput, fee, true)
+
+		// If the transactionConnectLimit was set to 0, we will try to connect all the provided transactions.
+		if transactionConnectLimit == 0 {
+			continue
+		}
+
+		// Otherwise, if transactionConnectLimit is non-zero, we'll keep track of how many transactions we've
+		// successfully connected so far.
+		totalConnectedTxns++
+		if totalConnectedTxns >= transactionConnectLimit {
+			break
+		}
+	}
+
+	return combinedUtxoOps, totalInputs, totalOutputs, fees, successFlags, nil
+}
+
 func (bav *UtxoView) ValidateTransactionNonce(txn *MsgDeSoTxn, blockHeight uint64) error {
 	if txn == nil || txn.TxnNonce == nil {
 		return fmt.Errorf("ValidateTransactionNonce: Nonce or txn is nil for public key %v",
@@ -4012,104 +4281,6 @@ func (bav *UtxoView) ValidateTransactionNonce(txn *MsgDeSoTxn, blockHeight uint6
 			txn.TxnNonce.String(), pkidEntry.PKID)
 	}
 	return nil
-}
-
-// _connectFailingTransaction is used to process the fee and burn associated with the user submitting a failing transaction.
-// A failing transaction is a txn that passes formatting validation, yet fails connecting to the UtxoView. This can happen for a
-// number of reasons, such as insufficient DESO balance, wrong public key, etc. With Revolution's Fee-Time block ordering, these
-// failing transactions are included in the blocks and their fees are burned. In addition, a major part of the effective
-// fees of this transaction is burned with BMF. This makes spam attacks economically disadvantageous. Attacker's funds
-// are burned, to the benefit of everyone else on the network. BMF algorithm also computes a utility fee, which is
-// distributed to the block producer.
-func (bav *UtxoView) _connectFailingTransaction(txn *MsgDeSoTxn, blockHeight uint32, verifySignatures bool) (
-	_utxoOps []*UtxoOperation, _burnFee uint64, _utilityFee uint64, _err error) {
-
-	// Failing transactions are only allowed after ProofOfStake2ConsensusCutoverBlockHeight.
-	if blockHeight < bav.Params.ForkHeights.ProofOfStake2ConsensusCutoverBlockHeight {
-		return nil, 0, 0, fmt.Errorf("_connectFailingTransaction: Failing transactions " +
-			"not allowed before ProofOfStake2ConsensusCutoverBlockHeight")
-	}
-
-	// Sanity check the transaction to make sure it is properly formatted.
-	if err := CheckTransactionSanity(txn, blockHeight, bav.Params); err != nil {
-		return nil, 0, 0, errors.Wrapf(err, "_connectFailingTransaction: "+
-			"Problem checking txn sanity")
-	}
-
-	if err := ValidateDeSoTxnSanityBalanceModel(txn, uint64(blockHeight), bav.Params, bav.GlobalParamsEntry); err != nil {
-		return nil, 0, 0, errors.Wrapf(err, "_connectFailingTransaction: "+
-			"Problem checking txn sanity under balance model")
-	}
-
-	if err := bav.ValidateTransactionNonce(txn, uint64(blockHeight)); err != nil {
-		return nil, 0, 0, errors.Wrapf(err, "_connectFailingTransaction: "+
-			"Problem validating transaction nonce")
-	}
-
-	// Get the FailingTransactionBMFMultiplierBasisPoints from the global params entry. We then compute the effective fee
-	// as: effectiveFee = txn.TxnFeeNanos * FailingTransactionBMFMultiplierBasisPoints / 10000
-	gp := bav.GetCurrentGlobalParamsEntry()
-
-	failingTransactionRate := uint256.NewInt().SetUint64(gp.FailingTransactionBMFMultiplierBasisPoints)
-	failingTransactionFee := uint256.NewInt().SetUint64(txn.TxnFeeNanos)
-	basisPointsAsUint256 := uint256.NewInt().SetUint64(MaxBasisPoints)
-
-	effectiveFeeU256 := uint256.NewInt()
-	if effectiveFeeU256.MulOverflow(failingTransactionRate, failingTransactionFee) {
-		return nil, 0, 0, fmt.Errorf("_connectFailingTransaction: Problem computing effective fee")
-	}
-	effectiveFeeU256.Div(effectiveFeeU256, basisPointsAsUint256)
-
-	// We should never overflow on the effective fee, since FailingTransactionBMFMultiplierBasisPoints is <= 10000.
-	// But if for some magical reason we do, we set the effective fee to the max uint64. We don't error, and
-	// instead let _spendBalance handle the overflow.
-	if !effectiveFeeU256.IsUint64() {
-		effectiveFeeU256.SetUint64(math.MaxUint64)
-	}
-	effectiveFee := effectiveFeeU256.Uint64()
-
-	// Serialize the transaction to bytes so we can compute its size.
-	txnBytes, err := txn.ToBytes(false)
-	if err != nil {
-		return nil, 0, 0, errors.Wrapf(err, "_connectFailingTransaction: Problem serializing transaction: ")
-	}
-	txnSizeBytes := uint64(len(txnBytes))
-
-	// If the effective fee rate per KB is less than the minimum network fee rate per KB, we set it to the minimum
-	// network fee rate per KB. We multiply by 1000 and divide by the txn bytes to convert the txn's total effective
-	// fee to a fee rate per KB.
-	//
-	// The effectiveFee * 1000 computation is guaranteed to not overflow because an overflow check is already
-	// performed in ValidateDeSoTxnSanityBalanceModel above.
-	effectiveFeeRateNanosPerKB := (effectiveFee * 1000) / txnSizeBytes
-	if effectiveFeeRateNanosPerKB < gp.MinimumNetworkFeeNanosPerKB {
-		// The minimum effective fee for the txn is the txn size * the minimum network fee rate per KB.
-		effectiveFee = (gp.MinimumNetworkFeeNanosPerKB * txnSizeBytes) / 1000
-	}
-
-	burnFee, utilityFee := computeBMF(effectiveFee)
-
-	var utxoOps []*UtxoOperation
-	// When spending balances, we need to check for immature block rewards. Since we don't have
-	// the block rewards yet for the current block, we subtract one from the current block height
-	// when spending balances.
-	feeUtxoOp, err := bav._spendBalance(effectiveFee, txn.PublicKey, blockHeight-1)
-	if err != nil {
-		return nil, 0, 0, errors.Wrapf(err, "_connectFailingTransaction: Problem "+
-			"spending balance")
-	}
-	utxoOps = append(utxoOps, feeUtxoOp)
-	utxoOps = append(utxoOps, &UtxoOperation{Type: OperationTypeFailingTxn})
-
-	// If verifySignatures is passed, we check transaction signature.
-	if verifySignatures {
-		if err := bav._verifyTxnSignature(txn, blockHeight); err != nil {
-			return nil, 0, 0, errors.Wrapf(err, "_connectFailingTransaction: Problem "+
-				"verifying signature")
-		}
-	}
-
-	return utxoOps, burnFee, utilityFee, nil
 }
 
 // computeBMF computes the burn fee and the utility fee for a given fee. The acronym stands for Burn Maximizing Fee, which
@@ -4219,66 +4390,24 @@ func (bav *UtxoView) ConnectBlock(
 	for txIndex, txn := range desoBlock.Txns {
 		txHash := txHashes[txIndex]
 
-		// PoS introduced a concept of a failing transaction, or transactions that fail UtxoView's ConnectTransaction.
-		// In PoS, these failing transactions are included in the block and their fees are burned.
-
-		// To determine if we're dealing with a connecting or failing transaction, we first check if we're on a PoS block
-		// height. Otherwise, the transaction is expected to connect.
-		hasPoWBlockHeight := bav.Params.IsPoWBlockHeight(blockHeight)
-		// Also, the first transaction in the block, the block reward transaction, should always be a connecting transaction.
-		isBlockRewardTxn := (txIndex == 0) && (txn.TxnMeta.GetTxnType() == TxnTypeBlockReward)
-		// Finally, if the transaction is not the first in the block, we check the TxnConnectStatusByIndex to see if
-		// it's marked by the block producer as a connecting transaction. PoS blocks should reflect this in TxnConnectStatusByIndex.
-		hasConnectingPoSTxnStatus := false
-		if bav.Params.IsPoSBlockHeight(blockHeight) && (txIndex > 0) && (desoBlock.TxnConnectStatusByIndex != nil) {
-			// Note that TxnConnectStatusByIndex doesn't include the first block reward transaction.
-			hasConnectingPoSTxnStatus = desoBlock.TxnConnectStatusByIndex.Get(txIndex - 1)
-		}
-		// Now, we can determine if the transaction is expected to connect.
-		txnConnects := hasPoWBlockHeight || isBlockRewardTxn || hasConnectingPoSTxnStatus
-
 		var utilityFee uint64
 		var utxoOpsForTxn []*UtxoOperation
 		var err error
 		var currentFees uint64
-		if txnConnects {
-			// ConnectTransaction validates all of the transactions in the block and
-			// is responsible for verifying signatures.
-			//
-			// TODO: We currently don't check that the min transaction fee is satisfied when
-			// connecting blocks. We skip this check because computing the transaction's size
-			// would slow down block processing significantly. We should figure out a way to
-			// enforce this check in the future, but for now the only attack vector is one in
-			// which a miner is trying to spam the network, which should generally never happen.
-			utxoOpsForTxn, _, _, currentFees, err = bav.ConnectTransaction(
-				txn, txHash, uint32(blockHeader.Height), blockHeader.TstampNanoSecs, verifySignatures, false)
-			if err != nil {
-				return nil, errors.Wrapf(err, "ConnectBlock: error connecting txn #%d", txIndex)
-			}
-			_, utilityFee = computeBMF(currentFees)
-		} else {
-			// If the transaction is not supposed to connect, we need to verify that it won't connect.
-			// We need to construct a copy of the view to verify that the transaction won't connect
-			// without side effects.
-			var utxoViewCopy *UtxoView
-			utxoViewCopy, err = bav.CopyUtxoView()
-			if err != nil {
-				return nil, errors.Wrapf(err, "ConnectBlock: error copying UtxoView")
-			}
-			_, _, _, _, err = utxoViewCopy.ConnectTransaction(
-				txn, txHash, uint32(blockHeader.Height), blockHeader.TstampNanoSecs, verifySignatures, false)
-			if err == nil {
-				return nil, errors.Errorf("ConnectBlock: txn #%d should not connect but err is nil", txIndex)
-			}
-			var burnFee uint64
-			// Connect the failing transaction to get the fees and utility fee.
-			utxoOpsForTxn, burnFee, utilityFee, err = bav._connectFailingTransaction(
-				txn, uint32(blockHeader.Height), verifySignatures)
-			if err != nil {
-				return nil, errors.Wrapf(err, "ConnectBlock: error connecting failing txn #%d", txIndex)
-			}
-			currentFees = burnFee + utilityFee
+		// ConnectTransaction validates all of the transactions in the block and
+		// is responsible for verifying signatures.
+		//
+		// TODO: We currently don't check that the min transaction fee is satisfied when
+		// connecting blocks. We skip this check because computing the transaction's size
+		// would slow down block processing significantly. We should figure out a way to
+		// enforce this check in the future, but for now the only attack vector is one in
+		// which a miner is trying to spam the network, which should generally never happen.
+		utxoOpsForTxn, _, _, currentFees, err = bav.ConnectTransaction(
+			txn, txHash, uint32(blockHeader.Height), blockHeader.TstampNanoSecs, verifySignatures, false)
+		if err != nil {
+			return nil, errors.Wrapf(err, "ConnectBlock: error connecting txn #%d", txIndex)
 		}
+		_, utilityFee = computeBMF(currentFees)
 
 		// After the block reward patch block height, we only include fees from transactions
 		// where the transactor is not the block reward output public key. This prevents
@@ -4369,7 +4498,8 @@ func (bav *UtxoView) ConnectBlock(
 	// after connecting all transactions in the block. These operations
 	// are always the last utxo operation in a given block.
 	var blockLevelUtxoOps []*UtxoOperation
-	if blockHeight >= uint64(bav.Params.ForkHeights.BalanceModelBlockHeight) {
+	if blockHeight >= uint64(bav.Params.ForkHeights.BalanceModelBlockHeight) &&
+		!bav.Params.IsPoSBlockHeight(blockHeight) {
 		prevNonces := bav.GetTransactorNonceEntriesToDeleteAtBlockHeight(blockHeight)
 		blockLevelUtxoOps = append(blockLevelUtxoOps, &UtxoOperation{
 			Type:             OperationTypeDeleteExpiredNonces,
@@ -4803,8 +4933,8 @@ func (bav *UtxoView) ConstructNonceForPublicKey(publicKey []byte, blockHeight ui
 func (bav *UtxoView) ConstructNonceForPKID(pkid *PKID, blockHeight uint64) (*DeSoNonce, error) {
 	// construct nonce
 	expirationBuffer := uint64(DefaultMaxNonceExpirationBlockHeightOffset)
-	if bav.GlobalParamsEntry != nil && bav.GlobalParamsEntry.MaxNonceExpirationBlockHeightOffset != 0 {
-		expirationBuffer = bav.GlobalParamsEntry.MaxNonceExpirationBlockHeightOffset
+	if bav.GetCurrentGlobalParamsEntry() != nil && bav.GetCurrentGlobalParamsEntry().MaxNonceExpirationBlockHeightOffset != 0 {
+		expirationBuffer = bav.GetCurrentGlobalParamsEntry().MaxNonceExpirationBlockHeightOffset
 	}
 	// Some tests use a very low expiration buffer to test
 	// that expired nonces get deleted. We don't want to
@@ -5015,4 +5145,16 @@ func mergeExtraData(oldMap map[string][]byte, newMap map[string][]byte) map[stri
 	}
 
 	return retMap
+}
+
+func (bav *UtxoView) GetMaxBlockSizeBytesPoS() uint64 {
+	return bav.GetCurrentGlobalParamsEntry().MaxBlockSizeBytesPoS
+}
+
+func (bav *UtxoView) GetSoftMaxBlockSizeBytesPoS() uint64 {
+	return bav.GetCurrentGlobalParamsEntry().SoftMaxBlockSizeBytesPoS
+}
+
+func (bav *UtxoView) GetMaxTxnSizeBytesPoS() uint64 {
+	return bav.GetCurrentGlobalParamsEntry().MaxTxnSizeBytesPoS
 }

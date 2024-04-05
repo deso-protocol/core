@@ -70,7 +70,7 @@ type FastHotStuffEventLoop interface {
 	Init(time.Duration, time.Duration, QuorumCertificate, BlockWithValidatorList, []BlockWithValidatorList) error
 	GetCurrentView() uint64
 	AdvanceViewOnTimeout() (uint64, error)
-	ProcessTipBlock(BlockWithValidatorList, []BlockWithValidatorList) error
+	ProcessTipBlock(BlockWithValidatorList, []BlockWithValidatorList, time.Duration, time.Duration) error
 	UpdateSafeBlocks([]BlockWithValidatorList) error
 	ProcessValidatorVote(VoteMessage) error
 	ProcessValidatorTimeout(TimeoutMessage) error

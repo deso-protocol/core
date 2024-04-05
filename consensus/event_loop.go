@@ -145,7 +145,12 @@ func (fc *fastHotStuffEventLoop) AdvanceViewOnTimeout() (uint64, error) {
 //     all ancestors of the uncommitted tip that are safe to extend from, and all blocks from forks
 //     that are safe to extend from. This function does not validate the collection of blocks. It
 //     expects the server to know and decide what blocks are safe to extend from.
-func (fc *fastHotStuffEventLoop) ProcessTipBlock(tip BlockWithValidatorList, safeBlocks []BlockWithValidatorList) error {
+func (fc *fastHotStuffEventLoop) ProcessTipBlock(
+	tip BlockWithValidatorList,
+	safeBlocks []BlockWithValidatorList,
+	crankTimerDuration time.Duration,
+	timeoutTimerDuration time.Duration,
+) error {
 	// Grab the event loop's lock
 	fc.lock.Lock()
 	defer fc.lock.Unlock()
@@ -160,12 +165,22 @@ func (fc *fastHotStuffEventLoop) ProcessTipBlock(tip BlockWithValidatorList, saf
 		return errors.Wrap(err, "FastHotStuffEventLoop.ProcessTipBlock: ")
 	}
 
+	// Validate the scheduled task durations
+	if crankTimerDuration <= 0 {
+		return errors.New("FastHotStuffEventLoop.ProcessTipBlock: Crank timer interval must be > 0")
+	}
+	if timeoutTimerDuration <= 0 {
+		return errors.New("FastHotStuffEventLoop.ProcessTipBlock: Timeout base duration must be > 0")
+	}
+
 	// We track the current view here so we know which view to time out on later on.
 	fc.currentView = fc.tip.block.GetView() + 1
 
 	// Reset QC construction status for the current view
 	fc.hasCrankTimerRunForCurrentView = false
 	fc.hasConstructedQCInCurrentView = false
+	fc.crankTimerInterval = crankTimerDuration
+	fc.timeoutBaseDuration = timeoutTimerDuration
 
 	// Evict all stale votes and timeouts
 	fc.evictStaleVotesAndTimeouts()
@@ -213,7 +228,7 @@ func (fc *fastHotStuffEventLoop) UpdateSafeBlocks(safeBlocks []BlockWithValidato
 
 	// Validate the safe blocks and validator lists, and store them
 	if err := fc.storeBlocks(tipBlock, safeBlocks); err != nil {
-		return errors.Wrap(err, "FastHotStuffEventLoop.ProcessTipBlock: ")
+		return errors.Wrap(err, "FastHotStuffEventLoop.UpdateSafeBlocks: ")
 	}
 
 	// Happy path. There's no need to reschedule the crank timer or timeout scheduled tasks here.

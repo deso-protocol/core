@@ -44,16 +44,15 @@ type Config struct {
 	HypersyncMaxQueueSize     uint32
 
 	// PoS Validator
-	PosValidatorSeed                       string
-	PosBlockProductionIntervalMilliseconds uint64
-	PosTimeoutBaseDurationMilliseconds     uint64
+	PosValidatorSeed string
 
 	// Mempool
-	MempoolBackupIntervalMillis             uint64
-	MaxMempoolPosSizeBytes                  uint64
-	MempoolFeeEstimatorNumMempoolBlocks     uint64
-	MempoolFeeEstimatorNumPastBlocks        uint64
-	AugmentedBlockViewRefreshIntervalMillis uint64
+	MempoolBackupIntervalMillis                uint64
+	MaxMempoolPosSizeBytes                     uint64
+	MempoolFeeEstimatorNumMempoolBlocks        uint64
+	MempoolFeeEstimatorNumPastBlocks           uint64
+	MempoolMaxValidationViewConnects           uint64
+	TransactionValidationRefreshIntervalMillis uint64
 
 	// Mining
 	MinerPublicKeys  []string
@@ -123,15 +122,14 @@ func LoadConfig() *Config {
 
 	// PoS Validator
 	config.PosValidatorSeed = viper.GetString("pos-validator-seed")
-	config.PosBlockProductionIntervalMilliseconds = viper.GetUint64("pos-block-production-interval-milliseconds")
-	config.PosTimeoutBaseDurationMilliseconds = viper.GetUint64("pos-timeout-base-duration-milliseconds")
 
 	// Mempool
 	config.MempoolBackupIntervalMillis = viper.GetUint64("mempool-backup-time-millis")
 	config.MaxMempoolPosSizeBytes = viper.GetUint64("max-mempool-pos-size-bytes")
 	config.MempoolFeeEstimatorNumMempoolBlocks = viper.GetUint64("mempool-fee-estimator-num-mempool-blocks")
 	config.MempoolFeeEstimatorNumPastBlocks = viper.GetUint64("mempool-fee-estimator-num-past-blocks")
-	config.AugmentedBlockViewRefreshIntervalMillis = viper.GetUint64("augmented-block-view-refresh-interval-millis")
+	config.MempoolMaxValidationViewConnects = viper.GetUint64("mempool-max-validation-view-connects")
+	config.TransactionValidationRefreshIntervalMillis = viper.GetUint64("transaction-validation-refresh-interval-millis")
 
 	// Peers
 	config.ConnectIPs = viper.GetStringSlice("connect-ips")

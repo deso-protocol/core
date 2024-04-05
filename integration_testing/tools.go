@@ -3,20 +3,21 @@ package integration_testing
 import (
 	"encoding/hex"
 	"fmt"
-	"github.com/btcsuite/btcd/wire"
-	"github.com/deso-protocol/core/cmd"
-	"github.com/deso-protocol/core/lib"
-	"github.com/dgraph-io/badger/v3"
-	"github.com/golang/glog"
-	"github.com/pkg/errors"
-	"github.com/stretchr/testify/require"
-	"github.com/tyler-smith/go-bip39"
 	"io/ioutil"
 	"os"
 	"reflect"
 	"sort"
 	"testing"
 	"time"
+
+	"github.com/btcsuite/btcd/wire"
+	"github.com/deso-protocol/core/cmd"
+	"github.com/deso-protocol/core/lib"
+	"github.com/dgraph-io/badger/v4"
+	"github.com/golang/glog"
+	"github.com/pkg/errors"
+	"github.com/stretchr/testify/require"
+	"github.com/tyler-smith/go-bip39"
 )
 
 // This testing suite is the first serious attempt at making a comprehensive functional testing framework for DeSo nodes.
@@ -96,9 +97,8 @@ func _generateConfig(t *testing.T, config *cmd.Config, port uint32, dataDir stri
 	config.MaxMempoolPosSizeBytes = 3000000000
 	config.MempoolFeeEstimatorNumMempoolBlocks = 1
 	config.MempoolFeeEstimatorNumPastBlocks = 50
-	config.AugmentedBlockViewRefreshIntervalMillis = 10
-	config.PosBlockProductionIntervalMilliseconds = 1500
-	config.PosTimeoutBaseDurationMilliseconds = 30000
+	config.MempoolMaxValidationViewConnects = 10000
+	config.TransactionValidationRefreshIntervalMillis = 10
 
 	//config.ArchivalMode = true
 

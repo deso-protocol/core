@@ -4,15 +4,14 @@ import (
 	"bytes"
 	"crypto/sha256"
 	"fmt"
+	"github.com/deso-protocol/core/consensus"
 	"io"
 	"math"
 	"net/url"
 	"sort"
 
-	"github.com/deso-protocol/core/consensus"
-
 	"github.com/deso-protocol/core/bls"
-	"github.com/dgraph-io/badger/v3"
+	"github.com/dgraph-io/badger/v4"
 	"github.com/golang/glog"
 	"github.com/holiman/uint256"
 	"github.com/pkg/errors"
@@ -773,7 +772,15 @@ func DBGetTopActiveValidatorsByStakeAmount(
 	return validatorEntries, nil
 }
 
-func DBPutValidatorWithTxn(
+// In order to optimize the flush, we want to only write entries to the db that have changed.
+// On top of that, we add a further optimization to only update the
+// PrefixValidatorByStatusAndStakeAmount index if the stake amount or status has changed in the
+// validator. Not doing this results in a lot of writes to badger
+// every epoch that eventually slow block processing to a crawl. This is essentially a bug in
+// badger when you repeatedly write to the same key, and we're papering over it here in response
+// to encountering the issue. In an ideal world, badger would work as intended and this extra
+// optimization wouldn't be necessary.
+func DBUpdateValidatorWithTxn(
 	txn *badger.Txn,
 	snap *Snapshot,
 	validatorEntry *ValidatorEntry,
@@ -786,7 +793,28 @@ func DBPutValidatorWithTxn(
 		return nil
 	}
 
-	// Set ValidatorEntry in PrefixValidatorByPKID.
+	// Look up the existing ValidatorEntry from the db
+	dbEntry, err := DBGetValidatorByPKIDWithTxn(txn, snap, validatorEntry.ValidatorPKID)
+	if err != nil {
+		return errors.Wrapf(err, "DBUpdateValidatorWithTxn: ")
+	}
+	dbEntryBytes := EncodeToBytes(blockHeight, dbEntry)
+
+	entryToWriteBytes := EncodeToBytes(blockHeight, validatorEntry)
+	// If the entry we're about to write is the exact same as what's already in the db then
+	// don't write it.
+	//
+	// In 99%+ of cases, the entries will be identical so we save a lot from
+	// this optimization, and it significantly speeds up block processing ot have it. When they
+	// differ, typically it's only because of LastActiveAtEpochNumber. For this reason, we have
+	// a secondary optimization to only update the PrefixValidatorByStatusAndStakeAmount index
+	// when absolutely necessary.
+	if bytes.Equal(dbEntryBytes, entryToWriteBytes) {
+		return nil
+	}
+
+	// Set ValidatorEntry in PrefixValidatorByPKID. This should gracefully overwrite an existing entry
+	// if one exists.
 	key := DBKeyForValidatorByPKID(validatorEntry)
 	if err := DBSetWithTxn(txn, snap, key, EncodeToBytes(blockHeight, validatorEntry), eventManager); err != nil {
 		return errors.Wrapf(
@@ -794,13 +822,33 @@ func DBPutValidatorWithTxn(
 		)
 	}
 
-	// Set ValidatorEntry key in PrefixValidatorByStatusAndStakeAmount. The value should be nil.
-	// We parse the ValidatorPKID from the key for this index.
-	key = DBKeyForValidatorByStatusAndStakeAmount(validatorEntry)
-	if err := DBSetWithTxn(txn, snap, key, nil, eventManager); err != nil {
-		return errors.Wrapf(
-			err, "DBPutValidatorWithTxn: problem storing ValidatorEntry in index PrefixValidatorByStatusAndStakeAmount",
-		)
+	// If the entry we're about to write has the exact same stake amount and the exact same status,
+	// then there is no need to update PrefixValidatorByStatusAndStakeAmount. This saves us a lot in terms
+	// of block processing time due to the aforementioned badger bug.
+	if dbEntry == nil || validatorEntry.TotalStakeAmountNanos.Cmp(dbEntry.TotalStakeAmountNanos) != 0 ||
+		validatorEntry.Status() != dbEntry.Status() {
+
+		// Here we need to delete the existing value in the index first
+		if dbEntry != nil {
+			key = DBKeyForValidatorByStatusAndStakeAmount(dbEntry)
+			// Note we set isDeleted=false as a hint to the state syncer that we're about to
+			// update this value immediately after.
+			if err := DBDeleteWithTxn(txn, snap, key, eventManager, false); err != nil {
+				return errors.Wrapf(
+					err, "DBUpdateValidatorWithTxn: problem deleting ValidatorEntry from index "+
+						"PrefixValidatorByStatusAndStakeAmount",
+				)
+			}
+		}
+
+		// Set ValidatorEntry key in PrefixValidatorByStatusAndStakeAmount. The value should be nil.
+		// We parse the ValidatorPKID from the key for this index.
+		key = DBKeyForValidatorByStatusAndStakeAmount(validatorEntry)
+		if err := DBSetWithTxn(txn, snap, key, nil, eventManager); err != nil {
+			return errors.Wrapf(
+				err, "DBUpdateValidatorWithTxn: problem storing ValidatorEntry in index PrefixValidatorByStatusAndStakeAmount",
+			)
+		}
 	}
 
 	return nil
@@ -1756,7 +1804,7 @@ func (bav *UtxoView) IsValidRegisterAsValidatorMetadata(
 	for _, domain := range metadata.Domains {
 		_, err := url.ParseRequestURI(string(domain))
 		if err != nil {
-			return fmt.Errorf("UtxoView.IsValidRegisterAsValidatorMetadata: %s: %v", RuleErrorValidatorInvalidDomain, domain)
+			return fmt.Errorf("UtxoView.IsValidRegisterAsValidatorMetadata: %s: %v", RuleErrorValidatorInvalidDomain, string(domain))
 		}
 		domainStrings = append(domainStrings, string(domain))
 	}
@@ -2231,7 +2279,8 @@ func (bav *UtxoView) _deleteValidatorEntryMappings(validatorEntry *ValidatorEntr
 }
 
 func (bav *UtxoView) _flushValidatorEntriesToDbWithTxn(txn *badger.Txn, blockHeight uint64) error {
-	// Delete all entries in the ValidatorMapKeyToValidatorEntry UtxoView map.
+	// Iterate through all the entries and either delete or update them depending on their
+	// isDeleted status.
 	for validatorMapKeyIter, validatorEntryIter := range bav.ValidatorPKIDToValidatorEntry {
 		// Make a copy of the iterators since we make references to them below.
 		validatorMapKey := validatorMapKeyIter
@@ -2247,28 +2296,17 @@ func (bav *UtxoView) _flushValidatorEntriesToDbWithTxn(txn *badger.Txn, blockHei
 			)
 		}
 
-		// Delete the existing mappings in the db for this ValidatorMapKey. They
-		// will be re-added if the corresponding entry in memory has isDeleted=false.
-		if err := DBDeleteValidatorWithTxn(txn, bav.Snapshot, &validatorMapKey, bav.EventManager, validatorEntry.isDeleted); err != nil {
-			return errors.Wrapf(err, "_flushValidatorEntriesToDbWithTxn: ")
-		}
-	}
-
-	// Set any !isDeleted ValidatorEntries in the ValidatorMapKeyToValidatorEntry UtxoView map.
-	for _, validatorEntryIter := range bav.ValidatorPKIDToValidatorEntry {
-		validatorEntry := *validatorEntryIter
+		// Delete entries if they have isDeleted=true
 		if validatorEntry.isDeleted {
-			// If ValidatorEntry.isDeleted then there's nothing to
-			// do because we already deleted the entry above.
+			if err := DBDeleteValidatorWithTxn(txn, bav.Snapshot, &validatorMapKey, bav.EventManager, validatorEntry.isDeleted); err != nil {
+				return errors.Wrapf(err, "_flushValidatorEntriesToDbWithTxn: ")
+			}
 		} else {
-			// If !ValidatorEntry.isDeleted then we put the
-			// corresponding mappings for it into the db.
-			if err := DBPutValidatorWithTxn(txn, bav.Snapshot, &validatorEntry, blockHeight, bav.EventManager); err != nil {
+			if err := DBUpdateValidatorWithTxn(txn, bav.Snapshot, &validatorEntry, blockHeight, bav.EventManager); err != nil {
 				return errors.Wrapf(err, "_flushValidatorEntriesToDbWithTxn: ")
 			}
 		}
 	}
-
 	return nil
 }
 

@@ -4,15 +4,15 @@ import (
 	"bytes"
 	"encoding/binary"
 	"fmt"
-	"github.com/deso-protocol/core/collections"
-	"github.com/deso-protocol/go-deadlock"
-	"github.com/golang/glog"
-	"github.com/google/uuid"
-	"github.com/pkg/errors"
 	"os"
 	"path/filepath"
 	"sync"
 	"time"
+
+	"github.com/deso-protocol/go-deadlock"
+	"github.com/golang/glog"
+	"github.com/google/uuid"
+	"github.com/pkg/errors"
 )
 
 // StateSyncerOperationType is an enum that represents the type of operation that should be performed on the
@@ -681,7 +681,7 @@ func (stateChangeSyncer *StateChangeSyncer) SyncMempoolToStateSyncer(server *Ser
 	mempoolTxns := server.GetMempool().GetOrderedTransactions()
 
 	// Get the uncommitted blocks from the chain.
-	uncommittedBlocks, err := server.blockchain.GetUncommittedFullBlocks(mempoolUtxoView.TipHash)
+	uncommittedBlocks, err := server.blockchain.GetUncommittedBlocks(mempoolUtxoView.TipHash)
 	if err != nil {
 		mempoolUtxoView.EventManager.stateSyncerFlushed(&StateSyncerFlushedEvent{
 			FlushId:        uuid.Nil,
@@ -693,17 +693,7 @@ func (stateChangeSyncer *StateChangeSyncer) SyncMempoolToStateSyncer(server *Ser
 
 	// First connect the uncommitted blocks to the mempool view.
 	for _, uncommittedBlock := range uncommittedBlocks {
-		var utxoOpsForBlock [][]*UtxoOperation
-		txHashes := collections.Transform(uncommittedBlock.Txns, func(txn *MsgDeSoTxn) *BlockHash {
-			return txn.Hash()
-		})
-		// TODO: there is a slight performance enhancement we could make here
-		// by rewriting the ConnectBlock logic to avoid unnecessary UtxoView copying
-		// for failing transactions. However, we'd also need to rewrite the end-of-epoch
-		// logic here which would make this function a bit long.
-		// Connect this block to the mempoolTxUtxoView so we can get the utxo ops.
-		utxoOpsForBlock, err = mempoolTxUtxoView.ConnectBlock(
-			uncommittedBlock, txHashes, false, nil, uncommittedBlock.Header.Height)
+		utxoViewAndOpsAtBlockHash, err := server.blockchain.getUtxoViewAndUtxoOpsAtBlockHash(*uncommittedBlock.Hash)
 		if err != nil {
 			mempoolUtxoView.EventManager.stateSyncerFlushed(&StateSyncerFlushedEvent{
 				FlushId:        uuid.Nil,
@@ -712,20 +702,24 @@ func (stateChangeSyncer *StateChangeSyncer) SyncMempoolToStateSyncer(server *Ser
 			})
 			return false, errors.Wrapf(err, "StateChangeSyncer.SyncMempoolToStateSyncer ConnectBlock uncommitted block: ")
 		}
-		blockHash, _ := uncommittedBlock.Hash()
 		// Emit the UtxoOps event.
 		mempoolUtxoView.EventManager.stateSyncerOperation(&StateSyncerOperationEvent{
 			StateChangeEntry: &StateChangeEntry{
 				OperationType: DbOperationTypeUpsert,
-				KeyBytes:      _DbKeyForUtxoOps(blockHash),
+				KeyBytes:      _DbKeyForUtxoOps(uncommittedBlock.Hash),
 				EncoderBytes: EncodeToBytes(blockHeight, &UtxoOperationBundle{
-					UtxoOpBundle: utxoOpsForBlock,
+					UtxoOpBundle: utxoViewAndOpsAtBlockHash.UtxoOps,
 				}, false),
-				Block: uncommittedBlock,
+				Block: utxoViewAndOpsAtBlockHash.Block,
 			},
 			FlushId:      uuid.Nil,
 			IsMempoolTxn: true,
 		})
+		// getUtxoViewAtBlockHash returns a copy of the view, so we
+		// set the mempoolTxUtxoView to the view at the block hash
+		// and update its event manager to match the mempoolEventManager.
+		mempoolTxUtxoView = utxoViewAndOpsAtBlockHash.UtxoView
+		mempoolTxUtxoView.EventManager = &mempoolEventManager
 	}
 
 	currentTimestamp := time.Now().UnixNano()
@@ -751,22 +745,13 @@ func (stateChangeSyncer *StateChangeSyncer) SyncMempoolToStateSyncer(server *Ser
 			if err == nil {
 				mempoolTxUtxoView = copiedView
 			} else {
-				// If the transaction fails to connect, we need to reset the view to its original state
-				// and connect it as a failing transaction.
-				copiedView, err = mempoolTxUtxoView.CopyUtxoView()
-				if err != nil {
-					return false, errors.Wrapf(err, "StateChangeSyncer.SyncMempoolToStateSyncer CopyUtxoView: ")
-				}
-				utxoOpsForTxn, _, _, err = copiedView._connectFailingTransaction(
-					mempoolTx.Tx, uint32(blockHeight+1), false)
-				// If we fail to connect the transaction as a failing transaction, we just continue and the
-				// mempoolTxUtxoView is unmodified.
-				if err != nil {
-					glog.V(2).Infof("StateChangeSyncer.SyncMempoolToStateSyncer "+
-						"ConnectFailingTransaction for mempool tx: %v", err)
-					continue
-				}
-				mempoolTxUtxoView = copiedView
+				glog.V(2).Infof(
+					"StateChangeSyncer.SyncMempoolToStateSyncer failed connecting mempool tx with (hash= %v): (err=%v)",
+					mempoolTx.Hash,
+					err,
+				)
+				// If the txn fails to connect, then we should not emit any state changes for it.
+				continue
 			}
 		} else {
 			// For PoW block heights, we can just connect the transaction to the mempool view.

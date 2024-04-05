@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/dgraph-io/badger/v3"
+	"github.com/dgraph-io/badger/v4"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -23,11 +23,12 @@ func TestPosMempoolStart(t *testing.T) {
 
 	mempool := NewPosMempool()
 	require.NoError(mempool.Init(
-		&params, globalParams, nil, 0, dir, false, maxMempoolPosSizeBytes, mempoolBackupIntervalMillis, 1, nil, 1, 100,
+		&params, globalParams, nil, 0, dir, false, maxMempoolPosSizeBytes,
+		mempoolBackupIntervalMillis, 1, nil, 1, 1000, 100,
 	))
 	require.NoError(mempool.Start())
 	require.True(mempool.IsRunning())
-	require.NoError(mempool.Refresh())
+	require.NoError(mempool.validateTransactions())
 	mempool.Stop()
 	require.False(mempool.IsRunning())
 }
@@ -53,7 +54,7 @@ func TestPosMempoolRestartWithTransactions(t *testing.T) {
 	mempool := NewPosMempool()
 	require.NoError(mempool.Init(
 		params, globalParams, latestBlockView, 2, dir, false, maxMempoolPosSizeBytes, mempoolBackupIntervalMillis, 1,
-		nil, 1, 100,
+		nil, 1, 1000, 100,
 	))
 	require.NoError(mempool.Start())
 	require.True(mempool.IsRunning())
@@ -65,20 +66,20 @@ func TestPosMempoolRestartWithTransactions(t *testing.T) {
 
 	poolTxns := mempool.GetTransactions()
 	require.Equal(2, len(poolTxns))
-	require.NoError(mempool.Refresh())
+	require.NoError(mempool.validateTransactions())
 	require.Equal(2, len(mempool.GetTransactions()))
 	mempool.Stop()
 	require.False(mempool.IsRunning())
 
 	newPool := NewPosMempool()
 	require.NoError(newPool.Init(params, globalParams, latestBlockView, 2, dir, false, maxMempoolPosSizeBytes,
-		mempoolBackupIntervalMillis, 1, nil, 1, 100))
+		mempoolBackupIntervalMillis, 1, nil, 1, 1000, 100))
 	require.NoError(newPool.Start())
 	require.True(newPool.IsRunning())
 	newPoolTxns := newPool.GetTransactions()
 	require.Equal(2, len(newPoolTxns))
 	require.Equal(len(newPool.GetTransactions()), len(newPool.nonceTracker.nonceMap))
-	require.NoError(newPool.Refresh())
+	require.NoError(newPool.validateTransactions())
 	require.Equal(2, len(newPool.GetTransactions()))
 	_wrappedPosMempoolRemoveTransaction(t, newPool, txn1.Hash())
 	_wrappedPosMempoolRemoveTransaction(t, newPool, txn2.Hash())
@@ -108,7 +109,7 @@ func TestPosMempoolPrune(t *testing.T) {
 	mempool := NewPosMempool()
 	require.NoError(mempool.Init(
 		params, globalParams, latestBlockView, 2, dir, false, maxMempoolPosSizeBytes, mempoolBackupIntervalMillis, 1,
-		nil, 1, 100,
+		nil, 1, 1000, 100,
 	))
 	require.NoError(mempool.Start())
 	require.True(mempool.IsRunning())
@@ -137,7 +138,7 @@ func TestPosMempoolPrune(t *testing.T) {
 
 	// Remove one transaction.
 	_wrappedPosMempoolRemoveTransaction(t, mempool, fetchedTxns[0].Hash())
-	require.NoError(mempool.Refresh())
+	require.NoError(mempool.validateTransactions())
 	require.Equal(2, len(mempool.GetTransactions()))
 	mempool.Stop()
 	require.False(mempool.IsRunning())
@@ -145,7 +146,7 @@ func TestPosMempoolPrune(t *testing.T) {
 	newPool := NewPosMempool()
 	require.NoError(newPool.Init(
 		params, globalParams, latestBlockView, 2, dir, false, maxMempoolPosSizeBytes, mempoolBackupIntervalMillis, 1,
-		nil, 1, 100,
+		nil, 1, 1000, 100,
 	))
 	require.NoError(newPool.Start())
 	require.True(newPool.IsRunning())
@@ -174,7 +175,7 @@ func TestPosMempoolPrune(t *testing.T) {
 		index++
 	}
 	require.Equal(len(newPool.GetTransactions()), len(newPool.nonceTracker.nonceMap))
-	require.NoError(newPool.Refresh())
+	require.NoError(newPool.validateTransactions())
 	newTxns := newPool.GetTransactions()
 	require.Equal(3, len(newTxns))
 	for _, txn := range newTxns {
@@ -206,7 +207,7 @@ func TestPosMempoolUpdateGlobalParams(t *testing.T) {
 	mempool := NewPosMempool()
 	require.NoError(mempool.Init(
 		params, globalParams, latestBlockView, 2, dir, false, maxMempoolPosSizeBytes, mempoolBackupIntervalMillis, 1,
-		nil, 1, 100,
+		nil, 1, 1000, 100,
 	))
 	require.NoError(mempool.Start())
 	require.True(mempool.IsRunning())
@@ -235,7 +236,7 @@ func TestPosMempoolUpdateGlobalParams(t *testing.T) {
 	newPool := NewPosMempool()
 	require.NoError(newPool.Init(
 		params, newGlobalParams, latestBlockView, 2, dir, false, maxMempoolPosSizeBytes, mempoolBackupIntervalMillis, 1,
-		nil, 1, 100,
+		nil, 1, 1000, 100,
 	))
 	require.NoError(newPool.Start())
 	require.True(newPool.IsRunning())
@@ -268,7 +269,7 @@ func TestPosMempoolReplaceWithHigherFee(t *testing.T) {
 	mempool := NewPosMempool()
 	require.NoError(mempool.Init(
 		params, globalParams, latestBlockView, 2, dir, false, maxMempoolPosSizeBytes, mempoolBackupIntervalMillis, 1,
-		nil, 1, 100,
+		nil, 1, 1000, 100,
 	))
 	require.NoError(mempool.Start())
 	require.True(mempool.IsRunning())
@@ -300,8 +301,8 @@ func TestPosMempoolReplaceWithHigherFee(t *testing.T) {
 	*txn2Low.TxnNonce = *txn2.TxnNonce
 	_signTxn(t, txn2Low, m1Priv)
 	added2Low := time.Now()
-	mtxn2Low := NewMempoolTransaction(txn2Low, added2Low)
-	err = mempool.AddTransaction(mtxn2Low, true)
+	mtxn2Low := NewMempoolTransaction(txn2Low, added2Low, false)
+	err = mempool.AddTransaction(mtxn2Low)
 	require.Contains(err.Error(), MempoolFailedReplaceByHigherFee)
 
 	// Now generate a proper new transaction for m1, with same nonce, and higher fee.
@@ -321,10 +322,93 @@ func TestPosMempoolReplaceWithHigherFee(t *testing.T) {
 	require.Equal(txn1New, mempool.GetTransactions()[1].GetTxn())
 
 	require.Equal(len(mempool.GetTransactions()), len(mempool.nonceTracker.nonceMap))
-	require.NoError(mempool.Refresh())
+	require.NoError(mempool.validateTransactions())
 	require.Equal(2, len(mempool.GetTransactions()))
 	mempool.Stop()
 	require.False(mempool.IsRunning())
+}
+
+func TestPosMempoolTransactionValidation(t *testing.T) {
+	seed := int64(1073)
+	rand := rand.New(rand.NewSource(seed))
+
+	globalParams := _testGetDefaultGlobalParams()
+	feeMin := globalParams.MinimumNetworkFeeNanosPerKB
+	feeMax := uint64(2000)
+	maxMempoolPosSizeBytes := uint64(3000000000)
+	mempoolBackupIntervalMillis := uint64(30000)
+
+	params, db := _posTestBlockchainSetup(t)
+	m0PubBytes, _, _ := Base58CheckDecode(m0Pub)
+	m1PubBytes, _, _ := Base58CheckDecode(m1Pub)
+	latestBlockView, err := NewUtxoView(db, params, nil, nil, nil)
+	require.NoError(t, err)
+	dir := _dbDirSetup(t)
+
+	mempool := NewPosMempool()
+	require.NoError(t, mempool.Init(
+		params, globalParams, latestBlockView, 2, dir, false, maxMempoolPosSizeBytes, mempoolBackupIntervalMillis, 1,
+		nil, 1, 5, 10,
+	))
+	require.NoError(t, mempool.Start())
+	require.True(t, mempool.IsRunning())
+
+	// First, we'll try adding two transactions, one passing, one failing, and verify that the validation routine
+	// properly validates the passing transaction, and removes the failing transaction.
+	output := []*DeSoOutput{{
+		PublicKey:   m1PubBytes,
+		AmountNanos: 1000,
+	}}
+	txn1 := _generateTestTxnWithOutputs(t, rand, feeMin, feeMax, m0PubBytes, m0Priv, 100, 25, output)
+	// This should fail signature verification.
+	txn2 := _generateTestTxnWithOutputs(t, rand, feeMin, feeMax, m0PubBytes, m1Priv, 100, 25, output)
+	_wrappedPosMempoolAddTransaction(t, mempool, txn1)
+	_wrappedPosMempoolAddTransaction(t, mempool, txn2)
+	// Wait for the validation routine to finish.
+	time.Sleep(20 * time.Millisecond)
+	require.Equal(t, true, mempool.GetTransaction(txn1.Hash()).IsValidated())
+	require.Nil(t, mempool.GetTransaction(txn2.Hash()))
+	require.NoError(t, mempool.RemoveTransaction(txn1.Hash()))
+
+	// Now we'll try generating 10 passing transactions and 10 failing transactions, and verify that the validation
+	// routine properly validates up to 5, the maxValidationViewConnects, passing transactions, and possibly removes
+	// some of the failing transactions.
+	var passingTxns, failingTxns []*MsgDeSoTxn
+	for ii := 0; ii < 10; ii++ {
+		txn := _generateTestTxnWithOutputs(t, rand, feeMin, feeMax, m0PubBytes, m0Priv, 100, 25, output)
+		if ii > 0 {
+			// Make sure we add the transactions with increasing fees, otherwise we may validate more than 5 transactions,
+			// if the validation routine executes while we're adding transactions.
+			txn.TxnFeeNanos = passingTxns[ii-1].TxnFeeNanos + 1
+			_signTxn(t, txn, m0Priv)
+		}
+		passingTxns = append(passingTxns, txn)
+		_wrappedPosMempoolAddTransaction(t, mempool, txn)
+	}
+	for ii := 0; ii < 10; ii++ {
+		// Make sure the transaction fails the signature verification.
+		txn := _generateTestTxnWithOutputs(t, rand, feeMin, feeMax, m0PubBytes, m1Priv, 100, 25, output)
+		failingTxns = append(failingTxns, txn)
+		_wrappedPosMempoolAddTransaction(t, mempool, txn)
+	}
+	// Wait for the validation routine to finish.
+	time.Sleep(20 * time.Millisecond)
+	totalValidatedTxns := 0
+	for _, txn := range passingTxns {
+		if mempool.GetTransaction(txn.Hash()).IsValidated() {
+			totalValidatedTxns++
+		}
+	}
+	// Make sure that the number of validated transactions is equal to the maxValidationViewConnects.
+	require.Equal(t, 5, totalValidatedTxns)
+	// Now make sure that failing transactions were either removed, or remained unvalidated.
+	for _, txn := range failingTxns {
+		fetchedTxn := mempool.GetTransaction(txn.Hash())
+		if fetchedTxn != nil {
+			require.False(t, fetchedTxn.IsValidated())
+		}
+	}
+	mempool.Stop()
 }
 
 func _posTestBlockchainSetup(t *testing.T) (_params *DeSoParams, _db *badger.DB) {
@@ -390,10 +474,19 @@ func _generateTestTxn(t *testing.T, rand *rand.Rand, feeMin uint64, feeMax uint6
 	return txn
 }
 
+func _generateTestTxnWithOutputs(t *testing.T, rand *rand.Rand, feeMin uint64, feeMax uint64, pk []byte, priv string, expirationHeight uint64,
+	extraDataBytes int32, outputs []*DeSoOutput) *MsgDeSoTxn {
+
+	txn := _generateTestTxn(t, rand, feeMin, feeMax, pk, priv, expirationHeight, extraDataBytes)
+	txn.TxOutputs = outputs
+	_signTxn(t, txn, priv)
+	return txn
+}
+
 func _wrappedPosMempoolAddTransaction(t *testing.T, mp *PosMempool, txn *MsgDeSoTxn) {
 	added := time.Now()
-	mtxn := NewMempoolTransaction(txn, added)
-	require.NoError(t, mp.AddTransaction(mtxn, true))
+	mtxn := NewMempoolTransaction(txn, added, false)
+	require.NoError(t, mp.AddTransaction(mtxn))
 	require.Equal(t, true, _checkPosMempoolIntegrity(t, mp))
 }
 
@@ -425,27 +518,6 @@ func _checkPosMempoolIntegrity(t *testing.T, mp *PosMempool) bool {
 			return false
 		}
 		balances[*pk] += txn.TxnFeeNanos
-	}
-
-	if len(balances) > len(mp.ledger.balances) {
-		t.Errorf("PosMempool ledger is out of sync length balances (%v) > ledger (%v)", len(balances), len(mp.ledger.balances))
-		return false
-	}
-	activeBalances := 0
-	for pk, ledgerBalance := range mp.ledger.balances {
-		if ledgerBalance > 0 {
-			activeBalances++
-		} else {
-			continue
-		}
-		if balance, exists := balances[pk]; !exists || ledgerBalance != balance {
-			t.Errorf("PosMempool ledger is out of sync pk %v", PkToStringTestnet(pk.ToBytes()))
-			return false
-		}
-	}
-	if len(balances) != activeBalances {
-		t.Errorf("PosMempool ledger is out of sync length")
-		return false
 	}
 	return true
 }

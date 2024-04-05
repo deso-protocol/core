@@ -113,6 +113,16 @@ func (bav *UtxoView) runEpochCompleteStateTransition(blockHeight uint64, blockTi
 		return nil, errors.Wrapf(err, "runEpochCompleteStateTransition: problem rewarding snapshot stakes: ")
 	}
 
+	// Delete expired nonces
+	prevNonces := bav.GetTransactorNonceEntriesToDeleteAtBlockHeight(blockHeight)
+	utxoOperations = append(utxoOperations, &UtxoOperation{
+		Type:             OperationTypeDeleteExpiredNonces,
+		PrevNonceEntries: prevNonces,
+	})
+	for _, prevNonceEntry := range prevNonces {
+		bav.DeleteTransactorNonceEntry(prevNonceEntry)
+	}
+
 	return utxoOperations, nil
 }
 

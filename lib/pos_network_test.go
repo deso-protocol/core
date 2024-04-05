@@ -92,5 +92,7 @@ func _generateValidatorVotingPublicKeyAndSignature(t *testing.T) (*bls.PublicKey
 	blsPublicKey := blsPrivateKey.PublicKey()
 	blsSignature, err := blsPrivateKey.Sign([]byte{0x01, 0x02, 0x03})
 	require.NoError(t, err)
+	blsPublicKey, err = (&bls.PublicKey{}).FromBytes(blsPublicKey.ToBytes())
+	require.NoError(t, err)
 	return blsPublicKey, blsSignature
 }

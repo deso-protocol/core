@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/dgraph-io/badger/v3"
+	"github.com/dgraph-io/badger/v4"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -172,7 +172,7 @@ func _updateProfileWithExtraData(t *testing.T, chain *Blockchain, db *badger.DB,
 	} else {
 		require.GreaterOrEqual(totalInput, totalInputMake)
 		if totalInput != totalInputMake {
-			require.Equal(totalInput, totalInputMake+utxoView.GlobalParamsEntry.CreateProfileFeeNanos)
+			require.Equal(totalInput, totalInputMake+utxoView.GetCurrentGlobalParamsEntry().CreateProfileFeeNanos)
 		}
 		require.Equal(OperationTypeSpendBalance, utxoOps[0].Type)
 	}

@@ -2,12 +2,13 @@ package lib
 
 import (
 	"fmt"
-	"github.com/decred/dcrd/lru"
 	"net"
 	"sort"
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/decred/dcrd/lru"
 
 	"github.com/btcsuite/btcd/wire"
 	"github.com/deso-protocol/go-deadlock"
@@ -177,10 +178,9 @@ func (pp *Peer) HandleGetTransactionsMsg(getTxnMsg *MsgDeSoGetTransactions) {
 	// whichever one is used for the consensus protocol at the current block height.
 	for _, txHash := range getTxnMsg.HashList {
 		mempoolTx := pp.srv.GetMempool().GetTransaction(txHash)
-		// If the transaction isn't in the pool, just continue without adding
-		// it. It is generally OK to respond with only a subset of the transactions
-		// that were requested.
-		if mempoolTx == nil {
+		// If the transaction isn't in the pool, or hasn't been validated, just continue without adding
+		// it. It is generally OK to respond with only a subset of the transactions that were requested.
+		if mempoolTx == nil || !mempoolTx.IsValidated() {
 			continue
 		}
 
@@ -312,7 +312,7 @@ func (pp *Peer) HelpHandleInv(msg *MsgDeSoInv) {
 			// For transactions, check that the transaction isn't in the
 			// mempool and that it isn't currently being requested.
 			_, requestIsInFlight := pp.srv.requestedTransactionsMap[currentHash]
-			if requestIsInFlight || pp.srv.mempool.IsTransactionInPool(&currentHash) {
+			if requestIsInFlight || pp.srv.GetMempool().IsTransactionInPool(&currentHash) {
 				continue
 			}
 
@@ -395,29 +395,52 @@ func (pp *Peer) HandleGetBlocks(msg *MsgDeSoGetBlocks) {
 		return
 	}
 
-	// For each block the Peer has requested, fetch it and queue it to
-	// be sent. It takes some time to fetch the blocks which is why we
-	// do it in a goroutine. This might also block if the Peer's send
-	// queue is full.
-	//
-	// Note that the requester should generally ask for the blocks in the
-	// order they'd like to receive them as we will typically honor this
-	// ordering.
-	//
-	// With HyperSync there is a potential that a node will request blocks that we haven't yet stored, although we're
-	// fully synced. This can happen to archival nodes that haven't yet downloaded all historical blocks. If a GetBlock
-	// is sent to a non-archival node for blocks that we don't have, then the peer is misbehaving and should be disconnected.
-	for _, hashToSend := range msg.HashList {
-		blockToSend := pp.srv.blockchain.GetBlock(hashToSend)
-		if blockToSend == nil {
-			// Don't ask us for blocks before verifying that we have them with a
-			// GetHeaders request.
-			glog.Errorf("Server._handleGetBlocks: Disconnecting peer %v because "+
-				"she asked for a block with hash %v that we don't have", pp, msg.HashList[0])
-			pp.Disconnect()
-			return
+	// Before Version2 we would send each block in a single message, which was quite
+	// slow. Now when we receive a GetBlocks message we will send the blocks in large
+	// batches, which is much faster.
+	if pp.Params.ProtocolVersion == ProtocolVersion2 {
+		allBlocks := MsgDeSoBlockBundle{}
+		for _, hashToSend := range msg.HashList {
+			blockToSend := pp.srv.blockchain.GetBlock(hashToSend)
+			if blockToSend == nil {
+				// Don't ask us for blocks before verifying that we have them with a
+				// GetHeaders request.
+				glog.Errorf("Server._handleGetBlocks: Disconnecting peer %v because "+
+					"she asked for a block with hash %v that we don't have", pp, msg.HashList[0])
+				pp.Disconnect()
+				return
+			}
+			allBlocks.Blocks = append(allBlocks.Blocks, blockToSend)
 		}
-		pp.AddDeSoMessage(blockToSend, false)
+		allBlocks.TipHash = pp.srv.blockchain.blockTip().Hash
+		allBlocks.TipHeight = uint64(pp.srv.blockchain.blockTip().Height)
+		pp.AddDeSoMessage(&allBlocks, false)
+
+	} else {
+		// For each block the Peer has requested, fetch it and queue it to
+		// be sent. It takes some time to fetch the blocks which is why we
+		// do it in a goroutine. This might also block if the Peer's send
+		// queue is full.
+		//
+		// Note that the requester should generally ask for the blocks in the
+		// order they'd like to receive them as we will typically honor this
+		// ordering.
+		//
+		// With HyperSync there is a potential that a node will request blocks that we haven't yet stored, although we're
+		// fully synced. This can happen to archival nodes that haven't yet downloaded all historical blocks. If a GetBlock
+		// is sent to a non-archival node for blocks that we don't have, then the peer is misbehaving and should be disconnected.
+		for _, hashToSend := range msg.HashList {
+			blockToSend := pp.srv.blockchain.GetBlock(hashToSend)
+			if blockToSend == nil {
+				// Don't ask us for blocks before verifying that we have them with a
+				// GetHeaders request.
+				glog.Errorf("Server._handleGetBlocks: Disconnecting peer %v because "+
+					"she asked for a block with hash %v that we don't have", pp, msg.HashList[0])
+				pp.Disconnect()
+				return
+			}
+			pp.AddDeSoMessage(blockToSend, false)
+		}
 	}
 }
 
@@ -1008,11 +1031,14 @@ func (pp *Peer) _maybeAddBlocksToSend(msg DeSoMessage) error {
 
 	// If the peer has exceeded the number of blocks she is allowed to request
 	// then disconnect her.
-	if len(pp.blocksToSend) > MaxBlocksInFlight {
+	//
+	// We can safely increase this without breaking backwards-compatibility because old
+	// nodes will never send us more hashes than this.
+	if len(pp.blocksToSend) > MaxBlocksInFlightPoS {
 		pp.Disconnect()
 		return fmt.Errorf("_maybeAddBlocksToSend: Disconnecting peer %v because she requested %d "+
 			"blocks, which is more than the %d blocks allowed "+
-			"in flight", pp, len(pp.blocksToSend), MaxBlocksInFlight)
+			"in flight", pp, len(pp.blocksToSend), MaxBlocksInFlightPoS)
 	}
 
 	return nil

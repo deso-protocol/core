@@ -5,15 +5,16 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"github.com/btcsuite/btcd/btcec"
-	"github.com/dgraph-io/badger/v3"
-	"github.com/holiman/uint256"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 	"math"
 	"math/rand"
 	"testing"
 	"time"
+
+	"github.com/btcsuite/btcd/btcec"
+	"github.com/dgraph-io/badger/v4"
+	"github.com/holiman/uint256"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 const (
@@ -281,7 +282,7 @@ func _doTxnWithBlockHeight(
 			realTxMeta.HasUnlockable,
 			realTxMeta.IsForSale,
 			realTxMeta.MinBidAmountNanos,
-			utxoView.GlobalParamsEntry.CreateNFTFeeNanos*uint64(realTxMeta.NumCopies),
+			utxoView.GetCurrentGlobalParamsEntry().CreateNFTFeeNanos*uint64(realTxMeta.NumCopies),
 			realTxMeta.NFTRoyaltyToCreatorBasisPoints,
 			realTxMeta.NFTRoyaltyToCoinBasisPoints,
 			isBuyNow,

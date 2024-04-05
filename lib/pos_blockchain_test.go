@@ -75,10 +75,8 @@ func TestIsProperlyFormedBlockPoSAndIsBlockTimestampValidRelativeToParentPoS(t *
 			ProposerRandomSeedSignature: signature,
 			ProposerVotingPublicKey:     randomBLSPrivateKey.PublicKey(),
 			TransactionMerkleRoot:       merkleRoot,
-			TxnConnectStatusByIndexHash: HashBitset(bitset.NewBitset().Set(0, true)),
 		},
-		Txns:                    txns,
-		TxnConnectStatusByIndex: bitset.NewBitset().Set(0, true),
+		Txns: txns,
 	}
 
 	// Validate the block with a valid timeout QC and header.
@@ -180,23 +178,6 @@ func TestIsProperlyFormedBlockPoSAndIsBlockTimestampValidRelativeToParentPoS(t *
 			TxnMeta: &BlockRewardMetadataa{},
 		},
 	}
-
-	// TxnConnectStatusByIndex tests
-	// TxnConnectStatusByIndex must be non-nil
-	block.TxnConnectStatusByIndex = nil
-	err = bc.isProperlyFormedBlockPoS(block)
-	require.Equal(t, err, RuleErrorNilTxnConnectStatusByIndex)
-	// TxnConnectStatusByIndexHash must be non-nil
-	block.TxnConnectStatusByIndex = bitset.NewBitset().Set(0, true)
-	block.Header.TxnConnectStatusByIndexHash = nil
-	err = bc.isProperlyFormedBlockPoS(block)
-	require.Equal(t, err, RuleErrorNilTxnConnectStatusByIndexHash)
-	// The hashed version of TxnConnectStatusByIndex must match the actual TxnConnectStatusByIndexHash
-	block.Header.TxnConnectStatusByIndexHash = HashBitset(bitset.NewBitset().Set(0, false))
-	err = bc.isProperlyFormedBlockPoS(block)
-	require.Equal(t, err, RuleErrorTxnConnectStatusByIndexHashMismatch)
-	// Reset TxnConnectStatusByIndexHash
-	block.Header.TxnConnectStatusByIndexHash = HashBitset(block.TxnConnectStatusByIndex)
 
 	// Block must have valid proposer voting public key
 	block.Header.ProposerVotingPublicKey = nil
@@ -384,14 +365,12 @@ func TestUpsertBlockAndBlockNodeToDB(t *testing.T) {
 					SignersList: bitset.NewBitset(),
 				},
 			},
-			TxnConnectStatusByIndexHash: NewBlockHash(bitset.NewBitset().ToBytes()),
 		},
 		Txns: []*MsgDeSoTxn{
 			{
 				TxnMeta: &BlockRewardMetadataa{},
 			},
 		},
-		TxnConnectStatusByIndex: bitset.NewBitset(),
 	}
 	blockNode, err := bc.storeBlockInBlockIndex(block)
 	require.NoError(t, err)
@@ -606,6 +585,9 @@ func TestHasValidBlockProposerPoS(t *testing.T) {
 		return viewNumber
 	}
 
+	// Get a pointer to the blockchain instance
+	bc := testMeta.chain
+
 	// Seed a CurrentEpochEntry.
 	tmpUtxoView := _newUtxoView(testMeta)
 	tmpUtxoView._setCurrentEpochEntry(&EpochEntry{EpochNumber: 0, FinalBlockHeight: blockHeight + 1})
@@ -698,14 +680,14 @@ func TestHasValidBlockProposerPoS(t *testing.T) {
 				ProposerVotingPublicKey: leader0Entry.VotingPublicKey,
 			},
 		}
-		isBlockProposerValid, err = utxoView.hasValidBlockProposerPoS(dummyBlock)
+		isBlockProposerValid, err = bc.hasValidBlockProposerPoS(dummyBlock, utxoView)
 		require.NoError(t, err)
 		require.True(t, isBlockProposerValid)
 
 		// If we have a different proposer public key, we will have an error
 		leader1Entry := validatorPKIDToValidatorEntryMap[*leaderSchedule[1]]
 		dummyBlock.Header.ProposerVotingPublicKey = leader1Entry.VotingPublicKey.Copy()
-		isBlockProposerValid, err = utxoView.hasValidBlockProposerPoS(dummyBlock)
+		isBlockProposerValid, err = bc.hasValidBlockProposerPoS(dummyBlock, utxoView)
 		require.NoError(t, err)
 		require.False(t, isBlockProposerValid)
 
@@ -713,7 +695,7 @@ func TestHasValidBlockProposerPoS(t *testing.T) {
 		// we move to leader 1.
 		dummyBlock.Header.ProposedInView = viewNumber + 2
 		dummyBlock.Header.ProposerVotingPublicKey = leader1Entry.VotingPublicKey
-		isBlockProposerValid, err = utxoView.hasValidBlockProposerPoS(dummyBlock)
+		isBlockProposerValid, err = bc.hasValidBlockProposerPoS(dummyBlock, utxoView)
 		require.NoError(t, err)
 		require.True(t, isBlockProposerValid)
 
@@ -722,27 +704,27 @@ func TestHasValidBlockProposerPoS(t *testing.T) {
 		dummyBlock.Header.ProposedInView = viewNumber + 5
 		leader4Entry := validatorPKIDToValidatorEntryMap[*leaderSchedule[4]]
 		dummyBlock.Header.ProposerVotingPublicKey = leader4Entry.VotingPublicKey
-		isBlockProposerValid, err = utxoView.hasValidBlockProposerPoS(dummyBlock)
+		isBlockProposerValid, err = bc.hasValidBlockProposerPoS(dummyBlock, utxoView)
 		require.NoError(t, err)
 		require.True(t, isBlockProposerValid)
 
 		// If we have 7 timeouts, we know everybody timed out, so we go back to leader 0.
 		dummyBlock.Header.ProposedInView = viewNumber + 8
 		dummyBlock.Header.ProposerVotingPublicKey = leader0Entry.VotingPublicKey
-		isBlockProposerValid, err = utxoView.hasValidBlockProposerPoS(dummyBlock)
+		isBlockProposerValid, err = bc.hasValidBlockProposerPoS(dummyBlock, utxoView)
 		require.NoError(t, err)
 		require.True(t, isBlockProposerValid)
 
 		// If the block view is less than the epoch's initial view, this is an error.
 		dummyBlock.Header.ProposedInView = viewNumber
-		isBlockProposerValid, err = utxoView.hasValidBlockProposerPoS(dummyBlock)
+		isBlockProposerValid, err = bc.hasValidBlockProposerPoS(dummyBlock, utxoView)
 		require.NoError(t, err)
 		require.False(t, isBlockProposerValid)
 
 		// If the block height is less than epoch's initial block height, this is an error.
 		dummyBlock.Header.ProposedInView = viewNumber + 1
 		dummyBlock.Header.Height = blockHeight
-		isBlockProposerValid, err = utxoView.hasValidBlockProposerPoS(dummyBlock)
+		isBlockProposerValid, err = bc.hasValidBlockProposerPoS(dummyBlock, utxoView)
 		require.NoError(t, err)
 		require.False(t, isBlockProposerValid)
 
@@ -751,7 +733,7 @@ func TestHasValidBlockProposerPoS(t *testing.T) {
 		// This would imply that we've had more blocks than views, which is not possible.
 		dummyBlock.Header.ProposedInView = viewNumber + 1
 		dummyBlock.Header.Height = blockHeight + 2
-		isBlockProposerValid, err = utxoView.hasValidBlockProposerPoS(dummyBlock)
+		isBlockProposerValid, err = bc.hasValidBlockProposerPoS(dummyBlock, utxoView)
 		require.NoError(t, err)
 		require.False(t, isBlockProposerValid)
 	}
@@ -1889,8 +1871,7 @@ func testProcessBlockPoS(t *testing.T, testMeta *TestMeta) {
 		var malformedOrphanBlock *MsgDeSoBlock
 		malformedOrphanBlock = _generateRealBlock(testMeta, 18, 18, 9273, testMeta.chain.BlockTip().Hash, false)
 		malformedOrphanBlock.Header.PrevBlockHash = randomHash
-		// Modify anything to make the block malformed, but make sure a hash can still be generated.
-		malformedOrphanBlock.Header.TxnConnectStatusByIndexHash = randomHash
+		malformedOrphanBlock.Header.Version = 5
 		// Resign the block.
 		updateProposerVotePartialSignatureForBlock(testMeta, malformedOrphanBlock)
 		malformedOrphanBlockHash, err := malformedOrphanBlock.Hash()
@@ -1907,7 +1888,8 @@ func testProcessBlockPoS(t *testing.T, testMeta *TestMeta) {
 		require.True(t, malformedOrphanBlockInIndex.IsStored())
 
 		// If a block can't be hashed, we expect to get an error.
-		malformedOrphanBlock.Header.TxnConnectStatusByIndexHash = nil
+		malformedOrphanBlock.Header.Version = HeaderVersion2
+		malformedOrphanBlock.Header.ProposerVotingPublicKey = nil
 		success, isOrphan, missingBlockHashes, err = testMeta.chain.ProcessBlockPoS(malformedOrphanBlock, 18, true)
 		require.False(t, success)
 		require.False(t, isOrphan)
@@ -1918,7 +1900,6 @@ func testProcessBlockPoS(t *testing.T, testMeta *TestMeta) {
 	{
 		var blockWithFailingTxn *MsgDeSoBlock
 		blockWithFailingTxn = _generateRealBlockWithFailingTxn(testMeta, 18, 18, 123722, orphanBlockHash, false, 1, 0)
-		require.Equal(t, blockWithFailingTxn.TxnConnectStatusByIndex.Get(len(blockWithFailingTxn.Txns)-1), false)
 		success, _, _, err := testMeta.chain.ProcessBlockPoS(blockWithFailingTxn, 18, true)
 		require.True(t, success)
 		blockWithFailingTxnHash, err = blockWithFailingTxn.Hash()
@@ -2051,8 +2032,8 @@ func TestProcessOrphanBlockPoS(t *testing.T) {
 		require.True(t, blockNode.IsValidateFailed())
 		require.False(t, blockNode.IsValidated())
 	}
-	// Generate a real block in this epoch and change the block proposer. This should fail the spam prevention check
-	// and the block will not be in the block index.
+	// Generate a real block in this epoch and make the block proposer any public key that is not in the
+	// leader schedule. This should fail the spam prevention check and the block will not be in the block index.
 	{
 		var realBlock *MsgDeSoBlock
 		realBlock = _generateRealBlock(testMeta, 12, 12, 1273, testMeta.chain.BlockTip().Hash, false)
@@ -2063,7 +2044,7 @@ func TestProcessOrphanBlockPoS(t *testing.T) {
 		currentEpochEntry, err := utxoView.GetCurrentEpochEntry()
 		require.NoError(t, err)
 		require.True(t, currentEpochEntry.ContainsBlockHeight(12))
-		// Change the block proposer to some any other validator's public key.
+		// Change the block proposer to any other validator's public key.
 		realBlock.Header.ProposerVotingPublicKey = _generateRandomBLSPrivateKey(t).PublicKey()
 		updateProposerVotePartialSignatureForBlock(testMeta, realBlock)
 		// There should be no error, but the block should be marked as ValidateFailed.
@@ -2229,7 +2210,9 @@ func TestProcessOrphanBlockPoS(t *testing.T) {
 		nextEpochEntry, err := utxoView.computeNextEpochEntry(currentEpochEntry.EpochNumber, currentEpochEntry.FinalBlockHeight, currentEpochEntry.FinalBlockHeight, 1)
 		require.NoError(t, err)
 		var twoEpochsInFutureBlock *MsgDeSoBlock
-		twoEpochsInFutureBlock = _generateRealBlock(testMeta, nextEpochEntry.FinalBlockHeight+1, nextEpochEntry.FinalBlockHeight+1, 17283, testMeta.chain.BlockTip().Hash, false)
+		twoEpochsInFutureBlock = _generateRealBlock(testMeta, nextEpochEntry.FinalBlockHeight, nextEpochEntry.FinalBlockHeight, 17283, testMeta.chain.BlockTip().Hash, false)
+		twoEpochsInFutureBlock.Header.Height += 1
+		twoEpochsInFutureBlock.Header.ProposedInView += 1
 		// Give the block a random parent, so it is truly an orphan.
 		twoEpochsInFutureBlock.Header.PrevBlockHash = NewBlockHash(RandomBytes(32))
 		updateProposerVotePartialSignatureForBlock(testMeta, twoEpochsInFutureBlock)
@@ -2413,8 +2396,9 @@ func _generateRealBlockWithFailingTxn(testMeta *TestMeta, blockHeight uint64, vi
 	prevBlock, exists := testMeta.chain.blockIndexByHash[*prevBlockHash]
 	require.True(testMeta.t, exists)
 	// Always update the testMeta latestBlockView
-	latestBlockView, err := testMeta.chain.getUtxoViewAtBlockHash(*prevBlockHash)
+	latestBlockViewAndUtxoOps, err := testMeta.chain.getUtxoViewAndUtxoOpsAtBlockHash(*prevBlockHash)
 	require.NoError(testMeta.t, err)
+	latestBlockView := latestBlockViewAndUtxoOps.UtxoView
 	latestBlockHeight := testMeta.chain.blockIndexByHash[*prevBlockHash].Height
 	testMeta.posMempool.UpdateLatestBlock(latestBlockView, uint64(latestBlockHeight))
 	seedSignature := getRandomSeedSignature(testMeta, blockHeight, view, prevBlock.Header.ProposerRandomSeedSignature)
@@ -2593,9 +2577,8 @@ func _getVoteQC(testMeta *TestMeta, blockHeight uint64, qcBlockHash *BlockHash, 
 	return voteQC
 }
 
-// _getFullRealBlockTemplate is a helper function that generates a block template with a valid TxnConnectStatusByIndexHash
-// and a valid TxnConnectStatusByIndex, a valid vote or timeout QC, does all the required signing by validators,
-// and generates the proper ProposerVotePartialSignature.
+// _getFullRealBlockTemplate is a helper function that generates a block template with a valid vote or timeout QC,
+// does all the required signing by validators, and generates the proper ProposerVotePartialSignature.
 func _getFullRealBlockTemplate(
 	testMeta *TestMeta,
 	blockHeight uint64,
@@ -2604,11 +2587,21 @@ func _getFullRealBlockTemplate(
 	isTimeout bool,
 	blockTimestampOffset time.Duration,
 ) BlockTemplate {
+	mockQC := &QuorumCertificate{
+		BlockHash:      NewBlockHash(RandomBytes(32)),
+		ProposedInView: 1,
+		ValidatorsVoteAggregatedSignature: &AggregatedBLSSignature{
+			Signature:   &bls.Signature{},
+			SignersList: bitset.NewBitset(),
+		},
+	}
+	headerSizeEstimate, err := testMeta.posBlockProducer.estimateHeaderSize(
+		testMeta.posMempool.readOnlyLatestBlockView, 3, 10, &bls.Signature{}, mockQC, nil)
+	require.NoError(testMeta.t, err)
 	blockTemplate, err := testMeta.posBlockProducer.createBlockTemplate(
-		testMeta.posMempool.readOnlyLatestBlockView, blockHeight, view, seedSignature)
+		testMeta.posMempool.readOnlyLatestBlockView, blockHeight, view, seedSignature, headerSizeEstimate)
 	require.NoError(testMeta.t, err)
 	require.NotNil(testMeta.t, blockTemplate)
-	blockTemplate.Header.TxnConnectStatusByIndexHash = HashBitset(blockTemplate.TxnConnectStatusByIndex)
 
 	// Figure out who the leader is supposed to be.
 	leaderPublicKey, leaderPublicKeyBytes := getLeaderForBlockHeightAndView(testMeta, blockHeight, view)
@@ -2684,13 +2677,23 @@ func _getFullRealBlockTemplate(
 	return blockTemplate
 }
 
-// _getFullDummyBlockTemplate is a helper function that generates a block template with a dummy TxnConnectStatusByIndexHash
-// and a dummy ValidatorsVoteQC.
+// _getFullDummyBlockTemplate is a helper function that generates a block template with a dummy ValidatorsVoteQC.
 func _getFullDummyBlockTemplate(testMeta *TestMeta, latestBlockView *UtxoView, blockHeight uint64, view uint64, seedSignature *bls.Signature) BlockTemplate {
-	blockTemplate, err := testMeta.posBlockProducer.createBlockTemplate(latestBlockView, blockHeight, view, seedSignature)
+	mockQC := &QuorumCertificate{
+		BlockHash:      NewBlockHash(RandomBytes(32)),
+		ProposedInView: 1,
+		ValidatorsVoteAggregatedSignature: &AggregatedBLSSignature{
+			Signature:   &bls.Signature{},
+			SignersList: bitset.NewBitset(),
+		},
+	}
+	headerSizeEstimate, err := testMeta.posBlockProducer.estimateHeaderSize(
+		testMeta.posMempool.readOnlyLatestBlockView, 3, 10, &bls.Signature{}, mockQC, nil)
+	require.NoError(testMeta.t, err)
+	blockTemplate, err := testMeta.posBlockProducer.createBlockTemplate(
+		latestBlockView, blockHeight, view, seedSignature, headerSizeEstimate)
 	require.NoError(testMeta.t, err)
 	require.NotNil(testMeta.t, blockTemplate)
-	blockTemplate.Header.TxnConnectStatusByIndexHash = HashBitset(blockTemplate.TxnConnectStatusByIndex)
 	// Add a dummy vote QC
 	proposerVotingPublicKey := _generateRandomBLSPrivateKey(testMeta.t)
 	dummySig, err := proposerVotingPublicKey.Sign(RandomBytes(32))
@@ -2788,7 +2791,7 @@ func NewTestPoSBlockchainWithValidators(t *testing.T) *TestMeta {
 	mempool := NewPosMempool()
 	require.NoError(t, mempool.Init(
 		params, _testGetDefaultGlobalParams(), latestBlockView, 11, _dbDirSetup(t), false, maxMempoolPosSizeBytes,
-		mempoolBackupIntervalMillis, 1, nil, 1, 100,
+		mempoolBackupIntervalMillis, 1, nil, 1, 10000, 100,
 	))
 	require.NoError(t, mempool.Start())
 	require.True(t, mempool.IsRunning())

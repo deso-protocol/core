@@ -3,11 +3,12 @@ package lib
 import (
 	"encoding/hex"
 	"fmt"
-	"github.com/dgraph-io/badger/v3"
 	"path/filepath"
 	"reflect"
 	"sync"
 	"time"
+
+	"github.com/dgraph-io/badger/v4"
 
 	chainlib "github.com/btcsuite/btcd/blockchain"
 	"github.com/deso-protocol/go-deadlock"
@@ -413,11 +414,13 @@ func (txi *TXIndex) Update() error {
 				"Update: Error initializing UtxoView: %v", err)
 		}
 		if blockToAttach.Header.PrevBlockHash != nil {
-			utxoView, err = txi.TXIndexChain.getUtxoViewAtBlockHash(*blockToAttach.Header.PrevBlockHash)
+			var utxoViewAndUtxoOps *BlockViewAndUtxoOps
+			utxoViewAndUtxoOps, err = txi.TXIndexChain.getUtxoViewAndUtxoOpsAtBlockHash(*blockToAttach.Header.PrevBlockHash)
 			if err != nil {
 				return fmt.Errorf("Update: Problem getting UtxoView at block hash %v: %v",
 					blockToAttach.Header.PrevBlockHash, err)
 			}
+			utxoView = utxoViewAndUtxoOps.UtxoView
 		}
 
 		// Do each block update in a single transaction so we're safe in case the node
@@ -429,21 +432,9 @@ func (txi *TXIndex) Update() error {
 			// - Compute its mapping values, which may include custom metadata fields
 			// - add all its mappings to the db.
 			for txnIndexInBlock, txn := range blockMsg.Txns {
-				hasPoWBlockHeight := txi.Params.IsPoWBlockHeight(blockMsg.Header.Height)
-				// Also, the first transaction in the block, the block reward transaction, should always be a connecting transaction.
-				isBlockRewardTxn := (txnIndexInBlock == 0) && (txn.TxnMeta.GetTxnType() == TxnTypeBlockReward)
-				// Finally, if the transaction is not the first in the block, we check the TxnConnectStatusByIndex to see if
-				// it's marked by the block producer as a connecting transaction. PoS blocks should reflect this in TxnConnectStatusByIndex.
-				hasConnectingPoSTxnStatus := false
-				if txi.Params.IsPoSBlockHeight(blockMsg.Header.Height) && (txnIndexInBlock > 0) && (blockMsg.TxnConnectStatusByIndex != nil) {
-					// Note that TxnConnectStatusByIndex doesn't include the first block reward transaction.
-					hasConnectingPoSTxnStatus = blockMsg.TxnConnectStatusByIndex.Get(txnIndexInBlock - 1)
-				}
-				connects := hasPoWBlockHeight || isBlockRewardTxn || hasConnectingPoSTxnStatus
-
 				txnMeta, err := ConnectTxnAndComputeTransactionMetadata(
 					txn, utxoView, blockToAttach.Hash, blockToAttach.Height,
-					blockToAttach.Header.TstampNanoSecs, uint64(txnIndexInBlock), connects)
+					blockToAttach.Header.TstampNanoSecs, uint64(txnIndexInBlock))
 				if err != nil {
 					return fmt.Errorf("Update: Problem connecting txn %v to txindex: %v",
 						txn, err)
@@ -479,23 +470,17 @@ func (txi *TXIndex) Update() error {
 
 func ConnectTxnAndComputeTransactionMetadata(
 	txn *MsgDeSoTxn, utxoView *UtxoView, blockHash *BlockHash,
-	blockHeight uint32, blockTimestampNanoSecs int64, txnIndexInBlock uint64, connects bool) (*TransactionMetadata, error) {
+	blockHeight uint32, blockTimestampNanoSecs int64, txnIndexInBlock uint64) (*TransactionMetadata, error) {
 
 	totalNanosPurchasedBefore := utxoView.NanosPurchased
 	usdCentsPerBitcoinBefore := utxoView.GetCurrentUSDCentsPerBitcoin()
 
 	var utxoOps []*UtxoOperation
-	var totalInput, totalOutput, fees, burnFee, utilityFee uint64
+	var totalInput, totalOutput, fees uint64
 	var err error
-	if connects {
-		utxoOps, totalInput, totalOutput, fees, err = utxoView._connectTransaction(
-			txn, txn.Hash(), blockHeight, blockTimestampNanoSecs, false, false,
-		)
-	} else {
-		utxoOps, burnFee, utilityFee, err = utxoView._connectFailingTransaction(
-			txn, blockHeight, false)
-		fees = burnFee + utilityFee
-	}
+	utxoOps, totalInput, totalOutput, fees, err = utxoView._connectTransaction(
+		txn, txn.Hash(), blockHeight, blockTimestampNanoSecs, false, false,
+	)
 
 	if err != nil {
 		return nil, fmt.Errorf(

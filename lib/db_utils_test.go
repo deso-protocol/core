@@ -11,7 +11,7 @@ import (
 	"time"
 
 	"github.com/btcsuite/btcd/btcec"
-	"github.com/dgraph-io/badger/v3"
+	"github.com/dgraph-io/badger/v4"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -171,7 +171,7 @@ func TestBlockNodePutGet(t *testing.T) {
 	err = PutHeightHashToNodeInfo(db, nil, b4, false /*bitcoinNodes*/, nil)
 	require.NoError(err)
 
-	blockIndex, err := GetBlockIndex(db, false /*bitcoinNodes*/)
+	blockIndex, err := GetBlockIndex(db, false /*bitcoinNodes*/, &DeSoTestnetParams)
 	require.NoError(err)
 
 	require.Len(blockIndex, 4)
@@ -224,7 +224,7 @@ func TestInitDbWithGenesisBlock(t *testing.T) {
 	require.NoError(err)
 
 	// Check the block index.
-	blockIndex, err := GetBlockIndex(db, false /*bitcoinNodes*/)
+	blockIndex, err := GetBlockIndex(db, false /*bitcoinNodes*/, &DeSoTestnetParams)
 	require.NoError(err)
 	require.Len(blockIndex, 1)
 	genesisHash := *MustDecodeHexBlockHash(DeSoTestnetParams.GenesisBlockHashHex)
@@ -649,7 +649,7 @@ func TestDeleteExpiredTransactorNonceEntries(t *testing.T) {
 			-1,
 			1,
 		)
-		// There should be once nonce in the db.
+		// There should be three nonces in the db.
 		nonceEntries := DbGetAllTransactorNonceEntries(testMeta.db)
 		require.Equal(3, len(nonceEntries))
 		globalParamsEntry := DbGetGlobalParamsEntry(db, chain.snapshot)

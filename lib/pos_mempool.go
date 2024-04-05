@@ -2,13 +2,14 @@ package lib
 
 import (
 	"fmt"
+	"github.com/decred/dcrd/lru"
 	"path/filepath"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
 
-	"github.com/dgraph-io/badger/v3"
+	"github.com/dgraph-io/badger/v4"
 	"github.com/golang/glog"
 	"github.com/pkg/errors"
 )
@@ -25,18 +26,18 @@ type Mempool interface {
 	Start() error
 	Stop()
 	IsRunning() bool
-	AddTransaction(txn *MempoolTransaction, verifySignature bool) error
+	AddTransaction(txn *MempoolTransaction) error
 	RemoveTransaction(txnHash *BlockHash) error
 	GetTransaction(txnHash *BlockHash) *MempoolTransaction
 	GetTransactions() []*MempoolTransaction
 	GetIterator() MempoolIterator
-	Refresh() error
 	UpdateLatestBlock(blockView *UtxoView, blockHeight uint64)
 	UpdateGlobalParams(globalParams *GlobalParamsEntry)
 
 	GetAugmentedUniversalView() (*UtxoView, error)
 	GetAugmentedUtxoViewForPublicKey(pk []byte, optionalTx *MsgDeSoTxn) (*UtxoView, error)
 	BlockUntilReadOnlyViewRegenerated()
+	WaitForTxnValidation(txHash *BlockHash) bool
 	CheckSpend(op UtxoKey) *MsgDeSoTxn
 	GetOrderedTransactions() []*MempoolTx
 	IsTransactionInPool(txHash *BlockHash) bool
@@ -71,12 +72,14 @@ type MempoolIterator interface {
 type MempoolTransaction struct {
 	*MsgDeSoTxn
 	TimestampUnixMicro time.Time
+	Validated          bool
 }
 
-func NewMempoolTransaction(txn *MsgDeSoTxn, timestamp time.Time) *MempoolTransaction {
+func NewMempoolTransaction(txn *MsgDeSoTxn, timestamp time.Time, validated bool) *MempoolTransaction {
 	return &MempoolTransaction{
 		MsgDeSoTxn:         txn,
 		TimestampUnixMicro: timestamp,
+		Validated:          validated,
 	}
 }
 
@@ -88,11 +91,22 @@ func (mtxn *MempoolTransaction) GetTimestamp() time.Time {
 	return mtxn.TimestampUnixMicro
 }
 
+func (mtxn *MempoolTransaction) IsValidated() bool {
+	return mtxn.Validated
+}
+
 // PosMempool is used by the node to keep track of uncommitted transactions. The main responsibilities of the PosMempool
 // include addition/removal of transactions, back up of transaction to database, and retrieval of transactions ordered
 // by Fee-Time algorithm. More on the Fee-Time algorithm can be found in the documentation of TransactionRegister.
 type PosMempool struct {
 	sync.RWMutex
+	// startGroup and exitGroup are concurrency control mechanisms used to ensure that all the PosMempool routines
+	// are started and stopped properly. The startGroup is used to wait for all the PosMempool routines to start before
+	// returning from the Start method. The exitGroup is used to wait for all the PosMempool routines to stop before
+	// returning from the Stop method.
+	startGroup sync.WaitGroup
+	exitGroup  sync.WaitGroup
+
 	status PosMempoolStatus
 	// params of the blockchain
 	params *DeSoParams
@@ -115,9 +129,6 @@ type PosMempool struct {
 	// The persister runs on its dedicated thread and events are used to notify the persister thread whenever
 	// transactions are added/removed from the mempool. The persister thread then updates the database accordingly.
 	persister *MempoolPersister
-	// ledger is a simple data structure that keeps track of cumulative transaction fees in the mempool.
-	// The ledger keeps track of how much each user would have spent in fees across all their transactions in the mempool.
-	ledger *BalanceLedger
 	// nonceTracker is responsible for keeping track of a (public key, nonce) -> Txn index. The index is useful in
 	// facilitating a "replace by higher fee" feature. This feature gives users the ability to replace their existing
 	// mempool transaction with a new transaction having the same nonce but higher fee.
@@ -149,13 +160,23 @@ type PosMempool struct {
 	// based off the current state of the mempool and the most n recent blocks.
 	feeEstimator *PoSFeeEstimator
 
-	// augmentedBlockViewRefreshIntervalMillis is the frequency with which the augmentedLatestBlockView is updated.
-	augmentedBlockViewRefreshIntervalMillis uint64
+	// maxValidationViewConnects is the maximum number of transactions that the mempool will connect to the validation view
+	// during the validateTransactions operation. This limit applies to the number of transactions that successfully connect
+	// to the validation view. Transactions that will fail the validation view connection are not counted towards this limit.
+	maxValidationViewConnects uint64
 
-	// augmentedLatestBlockViewSequenceNumber is the sequence number of the readOnlyLatestBlockView. It is incremented
+	// transactionValidationRoutineRefreshIntervalMillis is the frequency with which the transactionValidationRoutine is run.
+	transactionValidationRefreshIntervalMillis uint64
+
+	// augmentedLatestBlockViewSequenceNumber is the sequence number of the augmentedLatestBlockView. It is incremented
 	// every time augmentedLatestBlockView is updated. It can be used by obtainers of the augmentedLatestBlockView to
 	// wait until a particular transaction has been connected.
 	augmentedLatestBlockViewSequenceNumber int64
+
+	// recentBlockTxnCache is an LRU KV cache used to track the transaction that have been included in blocks.
+	// This cache is used to power logic that waits for a transaction to either be validated in the mempool
+	// or be included in a block.
+	recentBlockTxnCache lru.KVCache
 }
 
 // PosMempoolIterator is a wrapper around FeeTimeIterator, modified to return MsgDeSoTxn instead of MempoolTx.
@@ -172,7 +193,7 @@ func (it *PosMempoolIterator) Value() (*MempoolTransaction, bool) {
 	if txn == nil || txn.Tx == nil {
 		return nil, ok
 	}
-	return NewMempoolTransaction(txn.Tx, txn.Added), ok
+	return NewMempoolTransaction(txn.Tx, txn.Added, txn.IsValidated()), ok
 }
 
 func (it *PosMempoolIterator) Initialized() bool {
@@ -188,7 +209,6 @@ func NewPosMempool() *PosMempool {
 		status:       PosMempoolStatusNotInitialized,
 		txnRegister:  NewTransactionRegister(),
 		feeEstimator: NewPoSFeeEstimator(),
-		ledger:       NewBalanceLedger(),
 		nonceTracker: NewNonceTracker(),
 		quit:         make(chan interface{}),
 	}
@@ -206,7 +226,8 @@ func (mp *PosMempool) Init(
 	feeEstimatorNumMempoolBlocks uint64,
 	feeEstimatorPastBlocks []*MsgDeSoBlock,
 	feeEstimatorNumPastBlocks uint64,
-	augmentedBlockViewRefreshIntervalMillis uint64,
+	maxValidationViewConnects uint64,
+	transactionValidationRefreshIntervalMillis uint64,
 ) error {
 	if mp.status != PosMempoolStatusNotInitialized {
 		return errors.New("PosMempool.Init: PosMempool already initialized")
@@ -228,7 +249,9 @@ func (mp *PosMempool) Init(
 	mp.inMemoryOnly = inMemoryOnly
 	mp.maxMempoolPosSizeBytes = maxMempoolPosSizeBytes
 	mp.mempoolBackupIntervalMillis = mempoolBackupIntervalMillis
-	mp.augmentedBlockViewRefreshIntervalMillis = augmentedBlockViewRefreshIntervalMillis
+	mp.maxValidationViewConnects = maxValidationViewConnects
+	mp.transactionValidationRefreshIntervalMillis = transactionValidationRefreshIntervalMillis
+	mp.recentBlockTxnCache = lru.NewKVCache(100000) // cache 100K latest txns from blocks.
 
 	// TODO: parameterize num blocks. Also, how to pass in blocks.
 	err = mp.feeEstimator.Init(
@@ -256,7 +279,6 @@ func (mp *PosMempool) Start() error {
 	// Create the transaction register, the ledger, and the nonce tracker,
 	mp.txnRegister = NewTransactionRegister()
 	mp.txnRegister.Init(mp.globalParams)
-	mp.ledger = NewBalanceLedger()
 	mp.nonceTracker = NewNonceTracker()
 
 	// Setup the database and create the persister
@@ -277,73 +299,28 @@ func (mp *PosMempool) Start() error {
 			return errors.Wrapf(err, "PosMempool.Start: Problem loading persisted transactions")
 		}
 	}
-	mp.startAugmentedViewRefreshRoutine()
-
+	mp.startGroup.Add(1)
+	mp.exitGroup.Add(1)
+	mp.startTransactionValidationRoutine()
+	mp.startGroup.Wait()
 	mp.status = PosMempoolStatusRunning
 	return nil
 }
 
-func (mp *PosMempool) startAugmentedViewRefreshRoutine() {
+// startTransactionValidationRoutine is responsible for validating transactions in the mempool. The routine runs every
+// transactionValidationRefreshIntervalMillis milliseconds. It uses the validateTransactions method to validate the
+// top Fee-Time ordered transactions in the mempool.
+func (mp *PosMempool) startTransactionValidationRoutine() {
 	go func() {
+		mp.startGroup.Done()
 		for {
 			select {
-			case <-time.After(time.Duration(mp.augmentedBlockViewRefreshIntervalMillis) * time.Millisecond):
-				// If we're not within 10 blocks of the PoS cutover, we don't need to update the
-				// augmentedLatestBlockView.
-				if mp.latestBlockHeight+10 < uint64(mp.params.ForkHeights.ProofOfStake2ConsensusCutoverBlockHeight) {
-					continue
+			case <-time.After(time.Duration(mp.transactionValidationRefreshIntervalMillis) * time.Millisecond):
+				if err := mp.validateTransactions(); err != nil {
+					glog.Errorf("PosMempool.startTransactionValidationRoutine: Problem validating transactions: %v", err)
 				}
-				// Update the augmentedLatestBlockView with the latest block view.
-				mp.RLock()
-				readOnlyViewPointer := mp.readOnlyLatestBlockView
-				mp.RUnlock()
-				newView, err := readOnlyViewPointer.CopyUtxoView()
-				if err != nil {
-					glog.Errorf("PosMempool.startAugmentedViewRefreshRoutine: Problem copying utxo view outer: %v", err)
-					continue
-				}
-				for _, txn := range mp.GetTransactions() {
-					copiedView, err := newView.CopyUtxoView()
-					if err != nil {
-						glog.Errorf("PosMempool.startAugmentedViewRefreshRoutine: Problem copying utxo view: %v", err)
-						continue
-					}
-					_, _, _, _, err = copiedView.ConnectTransaction(
-						txn.GetTxn(), txn.Hash(), uint32(mp.latestBlockHeight)+1, time.Now().UnixNano(), false,
-						false)
-					// If the transaction successfully connects, we set the newView to the copiedView
-					// and proceed to the next transaction.
-					if err == nil {
-						newView = copiedView
-						continue
-					}
-					// If the transaction failed to connect, we connect the transaction as a failed txn
-					// directly on newView.
-					if mp.params.IsPoSBlockHeight(mp.latestBlockHeight + 1) {
-						// Copy the view again in case we hit an error.
-						copiedView, err = newView.CopyUtxoView()
-						if err != nil {
-							glog.Errorf("PosMempool.startAugmentedViewRefreshRoutine: Problem copying utxo view inner: %v", err)
-							continue
-						}
-						// Try to connect as failing txn directly to newView
-						_, _, _, err = copiedView._connectFailingTransaction(
-							txn.GetTxn(), uint32(mp.latestBlockHeight+1), false)
-						if err != nil {
-							glog.Errorf(
-								"PosMempool.startAugmentedViewRefreshRoutine: Problem connecting transaction: %v", err)
-							continue
-						}
-						newView = copiedView
-					}
-				}
-				// Grab the augmentedLatestBlockViewMutex write lock and update the augmentedLatestBlockView.
-				mp.augmentedReadOnlyLatestBlockViewMutex.Lock()
-				mp.augmentedReadOnlyLatestBlockView = newView
-				mp.augmentedReadOnlyLatestBlockViewMutex.Unlock()
-				// Increment the augmentedLatestBlockViewSequenceNumber.
-				atomic.AddInt64(&mp.augmentedLatestBlockViewSequenceNumber, 1)
 			case <-mp.quit:
+				mp.exitGroup.Done()
 				return
 			}
 		}
@@ -351,13 +328,14 @@ func (mp *PosMempool) startAugmentedViewRefreshRoutine() {
 }
 
 func (mp *PosMempool) Stop() {
-	mp.Lock()
-	defer mp.Unlock()
-
 	if !mp.IsRunning() {
 		return
 	}
+	close(mp.quit)
+	mp.exitGroup.Wait()
 
+	mp.Lock()
+	defer mp.Unlock()
 	// Close the persister and stop the database.
 	if !mp.inMemoryOnly {
 		if err := mp.persister.Stop(); err != nil {
@@ -370,10 +348,8 @@ func (mp *PosMempool) Stop() {
 
 	// Reset the transaction register, the ledger, and the nonce tracker.
 	mp.txnRegister.Reset()
-	mp.ledger.Reset()
 	mp.nonceTracker.Reset()
 	mp.feeEstimator = NewPoSFeeEstimator()
-	close(mp.quit)
 	mp.status = PosMempoolStatusNotInitialized
 }
 
@@ -411,6 +387,10 @@ func (mp *PosMempool) OnBlockConnected(block *MsgDeSoBlock) {
 			continue
 		}
 
+		// Add the transaction to the recentBlockTxnCache.
+		mp.addTxnHashToRecentBlockCache(*txnHash)
+
+		// Remove the transaction from the mempool.
 		mp.removeTransactionNoLock(existingTxn, true)
 	}
 
@@ -437,7 +417,7 @@ func (mp *PosMempool) OnBlockDisconnected(block *MsgDeSoBlock) {
 		return
 	}
 
-	// Remove all transactions in the block from the mempool.
+	// Add all transactions from the block to the mempool.
 	for _, txn := range block.Txns {
 		txnHash := txn.Hash()
 
@@ -453,6 +433,9 @@ func (mp *PosMempool) OnBlockDisconnected(block *MsgDeSoBlock) {
 		if err != nil {
 			continue
 		}
+
+		// Remove the transaction from the recentBlockTxnCache.
+		mp.deleteTxnHashFromRecentBlockCache(*txnHash)
 
 		// Add the transaction to the mempool and then prune if needed.
 		if err := mp.addTransactionNoLock(mempoolTx, true); err != nil {
@@ -476,23 +459,23 @@ func (mp *PosMempool) OnBlockDisconnected(block *MsgDeSoBlock) {
 // AddTransaction validates a MsgDeSoTxn transaction and adds it to the mempool if it is valid.
 // If the mempool overflows as a result of adding the transaction, the mempool is pruned. The
 // transaction signature verification can be skipped if verifySignature is passed as true.
-func (mp *PosMempool) AddTransaction(mtxn *MempoolTransaction, verifySignature bool) error {
+func (mp *PosMempool) AddTransaction(mtxn *MempoolTransaction) error {
 	if mtxn == nil || mtxn.GetTxn() == nil {
 		return fmt.Errorf("PosMempool.AddTransaction: Cannot add a nil transaction")
 	}
 
+	// Acquire the mempool lock for all operations related to adding the transaction
+	mp.Lock()
+	defer mp.Unlock()
+
 	// First, validate that the transaction is properly formatted according to BalanceModel. We acquire a read lock on
 	// the mempool. This allows multiple goroutines to safely perform transaction validation concurrently. In particular,
 	// transaction signature verification can be parallelized.
-	if err := mp.validateTransaction(mtxn.GetTxn(), verifySignature); err != nil {
+	if err := mp.checkTransactionSanity(mtxn.GetTxn()); err != nil {
 		return errors.Wrapf(err, "PosMempool.AddTransaction: Problem verifying transaction")
 	}
 
 	// If we get this far, it means that the transaction is valid. We can now add it to the mempool.
-	// We lock the mempool to ensure that no other thread is modifying it while we add the transaction.
-	mp.Lock()
-	defer mp.Unlock()
-
 	if !mp.IsRunning() {
 		return errors.Wrapf(MempoolErrorNotRunning, "PosMempool.AddTransaction: ")
 	}
@@ -515,10 +498,18 @@ func (mp *PosMempool) AddTransaction(mtxn *MempoolTransaction, verifySignature b
 	return nil
 }
 
-func (mp *PosMempool) validateTransaction(txn *MsgDeSoTxn, verifySignature bool) error {
-	mp.RLock()
-	defer mp.RUnlock()
+func (mp *PosMempool) addTxnHashToRecentBlockCache(txnHash BlockHash) {
+	mp.recentBlockTxnCache.Add(txnHash, nil)
+}
 
+func (mp *PosMempool) deleteTxnHashFromRecentBlockCache(txnHash BlockHash) {
+	mp.recentBlockTxnCache.Delete(txnHash)
+}
+func (mp *PosMempool) isTxnHashInRecentBlockCache(txnHash BlockHash) bool {
+	return mp.recentBlockTxnCache.Contains(txnHash)
+}
+
+func (mp *PosMempool) checkTransactionSanity(txn *MsgDeSoTxn) error {
 	if err := CheckTransactionSanity(txn, uint32(mp.latestBlockHeight), mp.params); err != nil {
 		return errors.Wrapf(err, "PosMempool.AddTransaction: Problem validating transaction sanity")
 	}
@@ -531,32 +522,28 @@ func (mp *PosMempool) validateTransaction(txn *MsgDeSoTxn, verifySignature bool)
 		return errors.Wrapf(err, "PosMempool.AddTransaction: Problem validating transaction nonce")
 	}
 
-	if !verifySignature {
-		return nil
-	}
-
-	// Check transaction signature.
-	if _, err := mp.readOnlyLatestBlockView.VerifySignature(txn, uint32(mp.latestBlockHeight)); err != nil {
-		return errors.Wrapf(err, "PosMempool.AddTransaction: Signature validation failed")
-	}
-
 	return nil
+}
+
+// updateTransactionValidatedStatus updates the validated status of a mempool transaction with the provided txnHash.
+func (mp *PosMempool) updateTransactionValidatedStatus(txnHash *BlockHash, validated bool) {
+	mp.Lock()
+	defer mp.Unlock()
+
+	if !mp.IsRunning() || txnHash == nil {
+		return
+	}
+
+	txn := mp.txnRegister.GetTransaction(txnHash)
+	if txn == nil {
+		return
+	}
+
+	txn.SetValidated(validated)
 }
 
 func (mp *PosMempool) addTransactionNoLock(txn *MempoolTx, persistToDb bool) error {
 	userPk := NewPublicKey(txn.Tx.PublicKey)
-	txnFee := txn.Tx.TxnFeeNanos
-
-	// Validate that the user has enough balance to cover the transaction fees.
-	spendableBalanceNanos, err := mp.readOnlyLatestBlockView.GetSpendableDeSoBalanceNanosForPublicKey(userPk.ToBytes(),
-		uint32(mp.latestBlockHeight))
-	if err != nil {
-		return errors.Wrapf(err, "PosMempool.addTransactionNoLock: Problem getting spendable balance")
-	}
-	if err := mp.ledger.CanIncreaseEntryWithLimit(*userPk, txnFee, spendableBalanceNanos); err != nil {
-		return errors.Wrapf(err, "PosMempool.addTransactionNoLock: Problem checking balance increase for transaction with"+
-			"hash %v, fee %v", txn.Tx.Hash(), txnFee)
-	}
 
 	// Check the nonceTracker to see if this transaction is meant to replace an existing one.
 	existingTxn := mp.nonceTracker.GetTxnByPublicKeyNonce(*userPk, *txn.Tx.TxnNonce)
@@ -565,9 +552,7 @@ func (mp *PosMempool) addTransactionNoLock(txn *MempoolTx, persistToDb bool) err
 			"by higher fee failed. New transaction has lower fee.")
 	}
 
-	// If we get here, it means that the transaction's sender has enough balance to cover transaction fees. Moreover, if
-	// this transaction is meant to replace an existing one, at this point we know the new txn has a sufficient fee to
-	// do so. We can now add the transaction to mempool.
+	// We can now add the transaction to the mempool.
 	if err := mp.txnRegister.AddTransaction(txn); err != nil {
 		return errors.Wrapf(err, "PosMempool.addTransactionNoLock: Problem adding txn to register")
 	}
@@ -581,8 +566,7 @@ func (mp *PosMempool) addTransactionNoLock(txn *MempoolTx, persistToDb bool) err
 		}
 	}
 
-	// At this point the transaction is in the mempool. We can now update the ledger and nonce tracker.
-	mp.ledger.IncreaseEntry(*userPk, txnFee)
+	// At this point the transaction is in the mempool. We can now update the nonce tracker.
 	mp.nonceTracker.AddTxnByPublicKeyNonce(txn, *userPk, *txn.Tx.TxnNonce)
 
 	// Emit an event for the newly added transaction.
@@ -645,8 +629,7 @@ func (mp *PosMempool) removeTransactionNoLock(txn *MempoolTx, persistToDb bool) 
 		return errors.Wrapf(err, "PosMempool.removeTransactionNoLock: Problem removing txn from register")
 	}
 
-	// Remove the txn from the balance ledger and the nonce tracker.
-	mp.ledger.DecreaseEntry(*userPk, txn.Fee)
+	// Remove the txn from the nonce tracker.
 	mp.nonceTracker.RemoveTxnByPublicKeyNonce(*userPk, *txn.Tx.TxnNonce)
 
 	// Emit an event for the removed transaction.
@@ -675,7 +658,7 @@ func (mp *PosMempool) GetTransaction(txnHash *BlockHash) *MempoolTransaction {
 		return nil
 	}
 
-	return NewMempoolTransaction(txn.Tx, txn.Added)
+	return NewMempoolTransaction(txn.Tx, txn.Added, txn.IsValidated())
 }
 
 // GetTransactions returns all transactions in the mempool ordered by the Fee-Time algorithm. This function is thread-safe.
@@ -694,7 +677,7 @@ func (mp *PosMempool) GetTransactions() []*MempoolTransaction {
 			continue
 		}
 
-		mtxn := NewMempoolTransaction(txn.Tx, txn.Added)
+		mtxn := NewMempoolTransaction(txn.Tx, txn.Added, txn.IsValidated())
 		mempoolTxns = append(mempoolTxns, mtxn)
 	}
 	return mempoolTxns
@@ -725,24 +708,95 @@ func (mp *PosMempool) GetIterator() MempoolIterator {
 	return NewPosMempoolIterator(mp.txnRegister.GetFeeTimeIterator())
 }
 
-// Refresh can be used to evict stale transactions from the mempool. However, it is a bit expensive and should be used
-// sparingly. Upon being called, Refresh will create an in-memory temp PosMempool and populate it with transactions from
-// the main mempool. The temp mempool will have the most up-to-date readOnlyLatestBlockView, Height, and globalParams. Any
-// transaction that fails to add to the temp mempool will be removed from the main mempool.
-func (mp *PosMempool) Refresh() error {
-	mp.Lock()
-	defer mp.Unlock()
-
+// validateTransactions updates the validated status of transactions in the mempool. The function connects the Fee-Time ordered
+// mempool transactions to the readOnlyLatestBlockView, creating a cumulative validationView. Transactions that fail to
+// connect to the validationView are removed from the mempool, as they would have also failed to connect during
+// block production. This function is thread-safe.
+func (mp *PosMempool) validateTransactions() error {
 	if !mp.IsRunning() {
 		return nil
 	}
+	// We hold a read-lock on the mempool to get the transactions and the latest block view.
+	mp.RLock()
+	// We copy the reference to the readOnlyLatestBlockView. Since the utxoView is immutable, we don't need to copy the
+	// entire view while we hold the lock.
+	validationView := mp.readOnlyLatestBlockView
+	mempoolTxns := mp.getTransactionsNoLock()
+	mp.RUnlock()
 
-	if err := mp.refreshNoLock(); err != nil {
-		return errors.Wrapf(err, "PosMempool.Refresh: Problem refreshing mempool")
+	// If the validation view is nil, there's nothing to do so we return early.
+	if validationView == nil {
+		return nil
+	}
+
+	// Convert the mempool transactions to the MsgDeSoTxn format, which we can use for connecting to the validation view.
+	var txns []*MsgDeSoTxn
+	var txHashes []*BlockHash
+	for _, txn := range mempoolTxns {
+		txns = append(txns, txn.Tx)
+		txHashes = append(txHashes, txn.Hash)
+	}
+	// Copy the validation view to avoid modifying the readOnlyLatestBlockView.
+	copyValidationView, err := validationView.CopyUtxoView()
+	if err != nil {
+		return errors.Wrapf(err, "PosMempool.validateTransactions: Problem copying utxo view")
+	}
+	// Connect the transactions to the validation view. We use the latest block height + 1 as the block height to connect
+	// the transactions. This is because the mempool contains transactions that we use for producing the next block.
+	_, _, _, _, successFlags, err := copyValidationView.ConnectTransactionsFailSafeWithLimit(txns, txHashes, uint32(mp.latestBlockHeight)+1,
+		time.Now().UnixNano(), true, false, true, mp.maxValidationViewConnects)
+	if err != nil {
+		return errors.Wrapf(err, "PosMempool.validateTransactions: Problem connecting transactions")
+	}
+
+	// We iterate through the successFlags and update the validated status of the transactions in the mempool.
+	var txnsToRemove []*MempoolTx
+	for ii, successFlag := range successFlags {
+		if ii >= len(mempoolTxns) {
+			break
+		}
+		// If the transaction successfully connected to the validation view, we update the validated status of the
+		// transaction in the mempool. If the transaction failed to connect to the validation view, we add it to the
+		// txnsToRemove list. Note that we don't need to hold a lock while updating the validated status of the
+		// transactions in the mempool, since the updateTransactionValidatedStatus already holds the lock.
+		if successFlag {
+			mp.updateTransactionValidatedStatus(mempoolTxns[ii].Hash, true)
+		} else {
+			txnsToRemove = append(txnsToRemove, mempoolTxns[ii])
+		}
+	}
+
+	// Now remove all transactions from the txnsToRemove list from the main mempool.
+	mp.Lock()
+	for _, txn := range txnsToRemove {
+		if err := mp.removeTransactionNoLock(txn, true); err != nil {
+			glog.Errorf("PosMempool.validateTransactions: Problem removing transaction with hash (%v): %v", txn.Hash, err)
+		}
+	}
+	mp.Unlock()
+	// We also update the augmentedLatestBlockView with the view after the transactions have been connected.
+	mp.augmentedReadOnlyLatestBlockViewMutex.Lock()
+	mp.augmentedReadOnlyLatestBlockView = copyValidationView
+	mp.augmentedReadOnlyLatestBlockViewMutex.Unlock()
+	// Increment the augmentedLatestBlockViewSequenceNumber.
+	atomic.AddInt64(&mp.augmentedLatestBlockViewSequenceNumber, 1)
+
+	// Log the hashes for transactions that were removed.
+	if len(txnsToRemove) > 0 {
+		var removedTxnHashes []string
+		for _, txn := range txnsToRemove {
+			removedTxnHashes = append(removedTxnHashes, txn.Hash.String())
+		}
+		glog.V(1).Infof("PosMempool.validateTransactions: Transactions with the following hashes were removed: %v",
+			strings.Join(removedTxnHashes, ","))
 	}
 	return nil
 }
 
+// refreshNoLock can be used to evict stale transactions from the mempool. However, it is a bit expensive and should be used
+// sparingly. Upon being called, refreshNoLock will create an in-memory temp PosMempool and populate it with transactions from
+// the main mempool. The temp mempool will have the most up-to-date readOnlyLatestBlockView, Height, and globalParams. Any
+// transaction that fails to add to the temp mempool will be removed from the main mempool.
 func (mp *PosMempool) refreshNoLock() error {
 	// Create the temporary in-memory mempool with the most up-to-date readOnlyLatestBlockView, Height, and globalParams.
 	tempPool := NewPosMempool()
@@ -758,7 +812,8 @@ func (mp *PosMempool) refreshNoLock() error {
 		mp.feeEstimator.numMempoolBlocks,
 		mp.feeEstimator.cachedBlocks,
 		mp.feeEstimator.numPastBlocks,
-		mp.augmentedBlockViewRefreshIntervalMillis,
+		mp.maxValidationViewConnects,
+		mp.transactionValidationRefreshIntervalMillis,
 	)
 	if err != nil {
 		return errors.Wrapf(err, "PosMempool.refreshNoLock: Problem initializing temp pool")
@@ -772,8 +827,8 @@ func (mp *PosMempool) refreshNoLock() error {
 	var txnsToRemove []*MempoolTx
 	txns := mp.getTransactionsNoLock()
 	for _, txn := range txns {
-		mtxn := NewMempoolTransaction(txn.Tx, txn.Added)
-		err := tempPool.AddTransaction(mtxn, false)
+		mtxn := NewMempoolTransaction(txn.Tx, txn.Added, txn.IsValidated())
+		err := tempPool.AddTransaction(mtxn)
 		if err == nil {
 			continue
 		}
@@ -795,7 +850,7 @@ func (mp *PosMempool) refreshNoLock() error {
 		for _, txn := range txnsToRemove {
 			removedTxnHashes = append(removedTxnHashes, txn.Hash.String())
 		}
-		glog.Infof("PosMempool.refreshNoLock: Transactions with the following hashes were removed: %v",
+		glog.V(1).Infof("PosMempool.refreshNoLock: Transactions with the following hashes were removed: %v",
 			strings.Join(removedTxnHashes, ","))
 	}
 	return nil
@@ -876,7 +931,7 @@ func (mp *PosMempool) BlockUntilReadOnlyViewRegenerated() {
 	oldSeqNum := atomic.LoadInt64(&mp.augmentedLatestBlockViewSequenceNumber)
 	newSeqNum := oldSeqNum
 	// Check fairly often. Not too often.
-	checkIntervalMillis := mp.augmentedBlockViewRefreshIntervalMillis / 5
+	checkIntervalMillis := mp.transactionValidationRefreshIntervalMillis / 5
 	if checkIntervalMillis == 0 {
 		checkIntervalMillis = 1
 	}
@@ -885,6 +940,28 @@ func (mp *PosMempool) BlockUntilReadOnlyViewRegenerated() {
 		newSeqNum = atomic.LoadInt64(&mp.augmentedLatestBlockViewSequenceNumber)
 	}
 }
+
+// WaitForTxnValidation blocks until the transaction with the given hash is either validated in the mempool,
+// in a recent block, or no longer in the mempool.
+func (mp *PosMempool) WaitForTxnValidation(txHash *BlockHash) bool {
+	// Check fairly often. Not too often.
+	checkIntervalMillis := mp.transactionValidationRefreshIntervalMillis / 5
+	if checkIntervalMillis == 0 {
+		checkIntervalMillis = 1
+	}
+	for {
+		mtxn := mp.GetTransaction(txHash)
+		if mtxn.IsValidated() {
+			return true
+		}
+		if mtxn == nil {
+			return mp.isTxnHashInRecentBlockCache(*txHash)
+		}
+		// Sleep for a bit and then check again.
+		time.Sleep(time.Duration(checkIntervalMillis) * time.Millisecond)
+	}
+}
+
 func (mp *PosMempool) CheckSpend(op UtxoKey) *MsgDeSoTxn {
 	panic("implement me")
 }
@@ -902,6 +979,10 @@ func (mp *PosMempool) GetOrderedTransactions() []*MempoolTx {
 func (mp *PosMempool) IsTransactionInPool(txHash *BlockHash) bool {
 	mp.RLock()
 	defer mp.RUnlock()
+	if !mp.IsRunning() || txHash == nil {
+		return false
+	}
+
 	_, exists := mp.txnRegister.txnMembership[*txHash]
 	return exists
 }
@@ -909,6 +990,10 @@ func (mp *PosMempool) IsTransactionInPool(txHash *BlockHash) bool {
 func (mp *PosMempool) GetMempoolTx(txHash *BlockHash) *MempoolTx {
 	mp.RLock()
 	defer mp.RUnlock()
+	if !mp.IsRunning() || txHash == nil {
+		return nil
+	}
+
 	return mp.txnRegister.txnMembership[*txHash]
 }
 
@@ -916,26 +1001,28 @@ func (mp *PosMempool) GetMempoolSummaryStats() map[string]*SummaryStats {
 	return convertMempoolTxsToSummaryStats(mp.txnRegister.GetFeeTimeTransactions())
 }
 
-func (mp *PosMempool) EstimateFee(txn *MsgDeSoTxn,
-	_ uint64,
+func (mp *PosMempool) EstimateFee(
+	txn *MsgDeSoTxn,
+	minFeeRateNanosPerKB uint64,
 	mempoolCongestionFactorBasisPoints uint64,
 	mempoolPriorityPercentileBasisPoints uint64,
 	pastBlocksCongestionFactorBasisPoints uint64,
 	pastBlocksPriorityPercentileBasisPoints uint64,
-	maxBlockSize uint64) (uint64, error) {
+	maxBlockSize uint64,
+) (uint64, error) {
 	return mp.feeEstimator.EstimateFee(
-		txn, mempoolCongestionFactorBasisPoints, mempoolPriorityPercentileBasisPoints,
+		txn, minFeeRateNanosPerKB, mempoolCongestionFactorBasisPoints, mempoolPriorityPercentileBasisPoints,
 		pastBlocksCongestionFactorBasisPoints, pastBlocksPriorityPercentileBasisPoints, maxBlockSize)
 }
 
 func (mp *PosMempool) EstimateFeeRate(
-	_ uint64,
+	minFeeRateNanosPerKB uint64,
 	mempoolCongestionFactorBasisPoints uint64,
 	mempoolPriorityPercentileBasisPoints uint64,
 	pastBlocksCongestionFactorBasisPoints uint64,
 	pastBlocksPriorityPercentileBasisPoints uint64,
 	maxBlockSize uint64) (uint64, error) {
 	return mp.feeEstimator.EstimateFeeRateNanosPerKB(
-		mempoolCongestionFactorBasisPoints, mempoolPriorityPercentileBasisPoints,
+		minFeeRateNanosPerKB, mempoolCongestionFactorBasisPoints, mempoolPriorityPercentileBasisPoints,
 		pastBlocksCongestionFactorBasisPoints, pastBlocksPriorityPercentileBasisPoints, maxBlockSize)
 }

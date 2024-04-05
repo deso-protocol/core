@@ -17,8 +17,8 @@ import (
 // UPDATE_GLOBAL_PARAMS txn.
 func (bav *UtxoView) GetCurrentUSDCentsPerBitcoin() uint64 {
 	usdCentsPerBitcoin := bav.USDCentsPerBitcoin
-	if bav.GlobalParamsEntry.USDCentsPerBitcoin != 0 {
-		usdCentsPerBitcoin = bav.GlobalParamsEntry.USDCentsPerBitcoin
+	if bav.GetCurrentGlobalParamsEntry().USDCentsPerBitcoin != 0 {
+		usdCentsPerBitcoin = bav.GetCurrentGlobalParamsEntry().USDCentsPerBitcoin
 	}
 	return usdCentsPerBitcoin
 }

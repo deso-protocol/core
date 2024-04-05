@@ -26,6 +26,9 @@ type MempoolTx struct {
 	// The time when the txn was added to the pool
 	Added time.Time
 
+	// Whether this transaction has been validated by the mempool
+	validated bool
+
 	// The block height when the txn was added to the pool. It's generally set
 	// to tip+1.
 	Height uint32
@@ -124,4 +127,12 @@ func (mempoolTx *MempoolTx) FromBytes(rr *bytes.Reader) error {
 	newTxn, err := NewMempoolTx(txn, time.UnixMicro(int64(timestampUnixMicro)), height)
 	*mempoolTx = *newTxn
 	return nil
+}
+
+func (mempoolTx *MempoolTx) SetValidated(validated bool) {
+	mempoolTx.validated = validated
+}
+
+func (mempoolTx *MempoolTx) IsValidated() bool {
+	return mempoolTx.validated
 }

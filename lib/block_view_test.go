@@ -12,11 +12,9 @@ import (
 
 	"github.com/deso-protocol/core/bls"
 
-	"math/rand"
-
 	"github.com/btcsuite/btcd/btcec"
 	"github.com/decred/dcrd/lru"
-	"github.com/dgraph-io/badger/v3"
+	"github.com/dgraph-io/badger/v4"
 	embeddedpostgres "github.com/fergusstrange/embedded-postgres"
 	"github.com/golang/glog"
 	"github.com/stretchr/testify/assert"
@@ -1273,6 +1271,7 @@ func TestBalanceModelUpdateGlobalParams(t *testing.T) {
 	setBalanceModelBlockHeights(t)
 
 	TestUpdateGlobalParams(t)
+	TestUpdateGlobalParamsPoS(t)
 }
 
 func TestUpdateGlobalParams(t *testing.T) {
@@ -1481,6 +1480,396 @@ func TestUpdateGlobalParams(t *testing.T) {
 
 		// Check the balance of the updater after this txn
 		require.NotEqual(0, _getBalance(t, chain, nil, moneyPkString))
+	}
+}
+
+func TestUpdateGlobalParamsPoS(t *testing.T) {
+	// Set pos block heights
+	setPoSBlockHeights(t, 2, 1000)
+	// Set up a blockchain
+	assert := assert.New(t)
+	require := require.New(t)
+	_, _ = assert, require
+
+	chain, params, db := NewLowDifficultyBlockchain(t)
+	postgres := chain.postgres
+	mempool, miner := NewTestMiner(t, chain, params, true /*isSender*/)
+	_, _ = mempool, miner
+
+	// Set the founder equal to the moneyPk
+	params.ExtraRegtestParamUpdaterKeys = make(map[PkMapKey]bool)
+	params.ExtraRegtestParamUpdaterKeys[MakePkMapKey(MustBase58CheckDecode(moneyPkString))] = true
+
+	// Mine a few blocks
+	for ii := 0; ii < 10; ii++ {
+		_, err := miner.MineAndProcessSingleBlock(0, mempool)
+		require.NoError(err)
+	}
+
+	// Update min fee rate on global params to be 1000.
+	_, _, _, err := _updateGlobalParamsEntryWithMempool(t, chain, db, params, 1000,
+		moneyPkString,
+		moneyPrivString,
+		-1,
+		1000,
+		-1,
+		-1,
+		-1,
+		-1,
+		map[string][]byte{},
+		true,
+		mempool)
+	require.NoError(err)
+	// MaxBlockSizeBytesPoS tests.
+	{
+		params.ForkHeights = GlobalDeSoParams.ForkHeights
+		params.EncoderMigrationHeights = GlobalDeSoParams.EncoderMigrationHeights
+		params.EncoderMigrationHeightsList = GlobalDeSoParams.EncoderMigrationHeightsList
+		mempool.bc.params = params
+		// Make sure setting max block size too low fails.
+		_, _, _, err := _updateGlobalParamsEntryWithMempool(t, chain, db, params, 1000,
+			moneyPkString,
+			moneyPrivString,
+			-1,
+			-1,
+			-1,
+			-1,
+			-1,
+			-1,
+			map[string][]byte{
+				MaxBlockSizeBytesPoSKey: UintToBuf(MinMaxBlockSizeBytes - 1),
+			},
+			true,
+			mempool)
+		require.ErrorIs(err, RuleErrorMaxBlockSizeBytesTooLow)
+		// Make sure setting max block size too high fails.
+		_, _, _, err = _updateGlobalParamsEntryWithMempool(t, chain, db, params, 1000,
+			moneyPkString,
+			moneyPrivString,
+			-1,
+			-1,
+			-1,
+			-1,
+			-1,
+			-1,
+			map[string][]byte{
+				MaxBlockSizeBytesPoSKey: UintToBuf(MaxMaxBlockSizeBytes + 1),
+			},
+			true,
+			mempool)
+		require.ErrorIs(err, RuleErrorMaxBlockSizeBytesTooHigh)
+		// Make sure setting max block size to a valid value works and updates global params.
+		_, _, _, err = _updateGlobalParamsEntryWithMempool(t, chain, db, params, 1000,
+			moneyPkString,
+			moneyPrivString,
+			-1,
+			-1,
+			-1,
+			-1,
+			-1,
+			-1,
+			map[string][]byte{
+				MaxBlockSizeBytesPoSKey: UintToBuf(5000),
+			},
+			true,
+			mempool)
+		require.NoError(err)
+		utxoView, err := NewUtxoView(db, params, postgres, chain.snapshot, nil)
+		require.NoError(err)
+		require.Equal(utxoView.GetCurrentGlobalParamsEntry().MaxBlockSizeBytesPoS, uint64(5000))
+	}
+	// SoftMaxBlockSizeBytesPoS tests.
+	{
+		// Make sure setting soft max block size too low fails.
+		_, _, _, err := _updateGlobalParamsEntryWithMempool(t, chain, db, params, 1000,
+			moneyPkString,
+			moneyPrivString,
+			-1,
+			-1,
+			-1,
+			-1,
+			-1,
+			-1,
+			map[string][]byte{
+				SoftMaxBlockSizeBytesPoSKey: UintToBuf(MinSoftMaxBlockSizeBytes - 1),
+			},
+			true,
+			mempool)
+		require.ErrorIs(err, RuleErrorSoftMaxBlockSizeBytesTooLow)
+		// Make sure setting soft max block size too high fails.
+		_, _, _, err = _updateGlobalParamsEntryWithMempool(t, chain, db, params, 1000,
+			moneyPkString,
+			moneyPrivString,
+			-1,
+			-1,
+			-1,
+			-1,
+			-1,
+			-1,
+			map[string][]byte{
+				SoftMaxBlockSizeBytesPoSKey: UintToBuf(MaxSoftMaxBlockSizeBytes + 1),
+			},
+			true,
+			mempool)
+		require.ErrorIs(err, RuleErrorSoftMaxBlockSizeBytesTooHigh)
+		// Make sure setting soft max block size to a value greater than max block size fails.
+		utxoView, err := NewUtxoView(db, params, postgres, chain.snapshot, nil)
+		require.NoError(err)
+		_, _, _, err = _updateGlobalParamsEntryWithMempool(t, chain, db, params, 1000,
+			moneyPkString,
+			moneyPrivString,
+			-1,
+			-1,
+			-1,
+			-1,
+			-1,
+			-1,
+			map[string][]byte{
+				SoftMaxBlockSizeBytesPoSKey: UintToBuf(utxoView.GetCurrentGlobalParamsEntry().MaxBlockSizeBytesPoS + 1),
+			},
+			true,
+			mempool)
+		require.ErrorIs(err, RuleErrorSoftMaxBlockSizeBytesExceedsMaxBlockSizeBytes)
+		// Make sure setting max block size to a valid value works and updates global params.
+		_, _, _, err = _updateGlobalParamsEntryWithMempool(t, chain, db, params, 1000,
+			moneyPkString,
+			moneyPrivString,
+			-1,
+			-1,
+			-1,
+			-1,
+			-1,
+			-1,
+			map[string][]byte{
+				SoftMaxBlockSizeBytesPoSKey: UintToBuf(4000),
+			},
+			true,
+			mempool)
+		require.NoError(err)
+		utxoView, err = NewUtxoView(db, params, postgres, chain.snapshot, nil)
+		require.NoError(err)
+		require.Equal(utxoView.GetCurrentGlobalParamsEntry().SoftMaxBlockSizeBytesPoS, uint64(4000))
+	}
+	// MaxTxnSizeBytesPoS tests.
+	{
+		// Make sure setting max txn size too low fails.
+		_, _, _, err := _updateGlobalParamsEntryWithMempool(t, chain, db, params, 1000,
+			moneyPkString,
+			moneyPrivString,
+			-1,
+			-1,
+			-1,
+			-1,
+			-1,
+			-1,
+			map[string][]byte{
+				MaxTxnSizeBytesPoSKey: UintToBuf(MinMaxTxnSizeBytes - 1),
+			},
+			true,
+			mempool)
+		require.ErrorIs(err, RuleErrorMaxTxnSizeBytesTooLow)
+		// Make sure setting max txn size too high fails.
+		_, _, _, err = _updateGlobalParamsEntryWithMempool(t, chain, db, params, 1000,
+			moneyPkString,
+			moneyPrivString,
+			-1,
+			-1,
+			-1,
+			-1,
+			-1,
+			-1,
+			map[string][]byte{
+				MaxTxnSizeBytesPoSKey: UintToBuf(MaxMaxTxnSizeBytes + 1),
+			},
+			true,
+			mempool)
+		require.ErrorIs(err, RuleErrorMaxTxnSizeBytesTooHigh)
+		// Make sure setting max txn size to a value greater than max block size fails.
+		utxoView, err := NewUtxoView(db, params, postgres, chain.snapshot, nil)
+		require.NoError(err)
+		_, _, _, err = _updateGlobalParamsEntryWithMempool(t, chain, db, params, 1000,
+			moneyPkString,
+			moneyPrivString,
+			-1,
+			-1,
+			-1,
+			-1,
+			-1,
+			-1,
+			map[string][]byte{
+				MaxTxnSizeBytesPoSKey: UintToBuf(utxoView.GetCurrentGlobalParamsEntry().MaxBlockSizeBytesPoS + 1),
+			},
+			true,
+			mempool)
+		require.ErrorIs(err, RuleErrorMaxTxnSizeBytesExceedsMaxBlockSizeBytes)
+		// Make sure setting max txn size to a valid value works and updates global params.
+		_, _, _, err = _updateGlobalParamsEntryWithMempool(t, chain, db, params, 1000,
+			moneyPkString,
+			moneyPrivString,
+			-1,
+			-1,
+			-1,
+			-1,
+			-1,
+			-1,
+			map[string][]byte{
+				MaxTxnSizeBytesPoSKey: UintToBuf(4000),
+			},
+			true,
+			mempool)
+		require.NoError(err)
+		utxoView, err = NewUtxoView(db, params, postgres, chain.snapshot, nil)
+		require.NoError(err)
+		require.Equal(utxoView.GetCurrentGlobalParamsEntry().MaxTxnSizeBytesPoS, uint64(4000))
+	}
+	// MinFeeBucket size tests.
+	{
+
+		utxoView, err := NewUtxoView(db, params, postgres, chain.snapshot, nil)
+		require.NoError(err)
+		require.Equal(utxoView.GetCurrentGlobalParamsEntry().MinimumNetworkFeeNanosPerKB, uint64(1000))
+		require.Equal(utxoView.GetCurrentGlobalParamsEntry().FeeBucketGrowthRateBasisPoints, uint64(1000))
+		// Make sure setting min fee bucket size too low fails. 1% of 1000 is 10, so anything less than that
+		// should fail.
+		_, _, _, err = _updateGlobalParamsEntryWithMempool(t, chain, db, params, 1000,
+			moneyPkString,
+			moneyPrivString,
+			-1,
+			-1,
+			-1,
+			-1,
+			-1,
+			-1,
+			map[string][]byte{
+				FeeBucketGrowthRateBasisPointsKey: UintToBuf(90),
+			},
+			true,
+			mempool)
+		require.ErrorIs(err, RuleErrorFeeBucketSizeTooSmall)
+		// Okay now set it to 1%
+		_, _, _, err = _updateGlobalParamsEntryWithMempool(t, chain, db, params, 1000,
+			moneyPkString,
+			moneyPrivString,
+			-1,
+			-1,
+			-1,
+			-1,
+			-1,
+			-1,
+			map[string][]byte{
+				FeeBucketGrowthRateBasisPointsKey: UintToBuf(100),
+			},
+			true,
+			mempool)
+		require.NoError(err)
+	}
+	{
+		// Block production global params test.
+		// Make sure setting block production interval too low fails.
+		_, _, _, err = _updateGlobalParamsEntryWithMempool(t, chain, db, params, 1000,
+			moneyPkString,
+			moneyPrivString,
+			-1,
+			-1,
+			-1,
+			-1,
+			-1,
+			-1,
+			map[string][]byte{
+				BlockProductionIntervalPoSKey: UintToBuf(MinBlockProductionIntervalMillisecondsPoS - 1),
+			},
+			true,
+			mempool)
+		require.ErrorIs(err, RuleErrorBlockProductionIntervalPoSTooLow)
+		// Make sure setting block production interval too high fails. Anything over the max allowed will fail.
+		_, _, _, err = _updateGlobalParamsEntryWithMempool(t, chain, db, params, 1000,
+			moneyPkString,
+			moneyPrivString,
+			-1,
+			-1,
+			-1,
+			-1,
+			-1,
+			-1,
+			map[string][]byte{
+				BlockProductionIntervalPoSKey: UintToBuf(MaxBlockProductionIntervalMillisecondsPoS + 1),
+			},
+			true,
+			mempool)
+		require.ErrorIs(err, RuleErrorBlockProductionIntervalPoSTooHigh)
+		// Make sure setting block timeout interval to a reasonable value works. Make it 5s
+		_, _, _, err = _updateGlobalParamsEntryWithMempool(t, chain, db, params, 1000,
+			moneyPkString,
+			moneyPrivString,
+			-1,
+			-1,
+			-1,
+			-1,
+			-1,
+			-1,
+			map[string][]byte{
+				BlockProductionIntervalPoSKey: UintToBuf(5000),
+			},
+			true,
+			mempool)
+		require.NoError(err)
+		utxoView, err := NewUtxoView(db, params, postgres, chain.snapshot, nil)
+		require.NoError(err)
+		require.Equal(utxoView.GetCurrentGlobalParamsEntry().BlockProductionIntervalMillisecondsPoS, uint64(5000))
+	}
+	{
+		// Timeout interval global params test
+		// Make sure setting timeout interval too low fails. Anything below min should fail
+		_, _, _, err = _updateGlobalParamsEntryWithMempool(t, chain, db, params, 1000,
+			moneyPkString,
+			moneyPrivString,
+			-1,
+			-1,
+			-1,
+			-1,
+			-1,
+			-1,
+			map[string][]byte{
+				TimeoutIntervalPoSKey: UintToBuf(MinTimeoutIntervalMillisecondsPoS - 1),
+			},
+			true,
+			mempool)
+		require.ErrorIs(err, RuleErrorTimeoutIntervalPoSTooLow)
+		// Make sure setting timeout interval too low fails. Anything above max should fail
+		_, _, _, err = _updateGlobalParamsEntryWithMempool(t, chain, db, params, 1000,
+			moneyPkString,
+			moneyPrivString,
+			-1,
+			-1,
+			-1,
+			-1,
+			-1,
+			-1,
+			map[string][]byte{
+				TimeoutIntervalPoSKey: UintToBuf(MaxTimeoutIntervalMillisecondsPoS + 1),
+			},
+			true,
+			mempool)
+		require.ErrorIs(err, RuleErrorTimeoutIntervalPoSTooHigh)
+		// Make sure setting timeout interval to a reasonable value works. Make it 5s
+		_, _, _, err = _updateGlobalParamsEntryWithMempool(t, chain, db, params, 1000,
+			moneyPkString,
+			moneyPrivString,
+			-1,
+			-1,
+			-1,
+			-1,
+			-1,
+			-1,
+			map[string][]byte{
+				TimeoutIntervalPoSKey: UintToBuf(5000),
+			},
+			true,
+			mempool)
+		require.NoError(err)
+		utxoView, err := NewUtxoView(db, params, postgres, chain.snapshot, nil)
+		require.NoError(err)
+		require.Equal(utxoView.GetCurrentGlobalParamsEntry().TimeoutIntervalMillisecondsPoS, uint64(5000))
 	}
 }
 
@@ -2216,167 +2605,4 @@ func TestBlockRewardPatch(t *testing.T) {
 		_, err = utxoView.ConnectBlock(blkToMine, txHashes, true, nil, uint64(chain.blockTip().Height+1))
 		require.NoError(t, err)
 	}
-}
-
-func TestConnectFailingTransaction(t *testing.T) {
-	setBalanceModelBlockHeights(t)
-	setPoSBlockHeights(t, 3, 3)
-	require := require.New(t)
-	seed := int64(1011)
-	rand := rand.New(rand.NewSource(seed))
-
-	globalParams := _testGetDefaultGlobalParams()
-	feeMin := globalParams.MinimumNetworkFeeNanosPerKB
-	feeMax := uint64(10000)
-
-	chain, params, db := NewLowDifficultyBlockchain(t)
-	mempool, miner := NewTestMiner(t, chain, params, true)
-	// Mine a few blocks to give the senderPkString some money.
-	_, err := miner.MineAndProcessSingleBlock(0 /*threadIndex*/, mempool)
-	require.NoError(err)
-	_, err = miner.MineAndProcessSingleBlock(0 /*threadIndex*/, mempool)
-	require.NoError(err)
-
-	m0PubBytes, _, _ := Base58CheckDecode(m0Pub)
-	m0PublicKeyBase58Check := Base58CheckEncode(m0PubBytes, false, params)
-
-	_, _, _ = _doBasicTransferWithViewFlush(
-		t, chain, db, params, senderPkString, m0PublicKeyBase58Check,
-		senderPrivString, 200000, 11)
-
-	blockHeight := chain.BlockTip().Height + 1
-
-	// Set up the test meta.
-	testMeta := &TestMeta{
-		t:                 t,
-		chain:             chain,
-		params:            params,
-		db:                db,
-		mempool:           mempool,
-		miner:             miner,
-		savedHeight:       blockHeight,
-		feeRateNanosPerKb: uint64(201),
-	}
-	// Allow m0 to update global params.
-	params.ExtraRegtestParamUpdaterKeys[MakePkMapKey(m0PubBytes)] = true
-
-	// Test failing txn with default global params
-	{
-		blockView, err := NewUtxoView(db, params, nil, nil, chain.eventManager)
-		require.NoError(err)
-		txn := _generateTestTxn(t, rand, feeMin, feeMax, m0PubBytes, m0Priv, 100, 0)
-		utxoOps, burnFee, utilityFee, err := blockView._connectFailingTransaction(txn, blockHeight, true)
-		require.NoError(err)
-		require.Equal(2, len(utxoOps))
-		expectedBurnFee, expectedUtilityFee := _getBMFForTxn(txn, globalParams)
-		require.Equal(expectedBurnFee, burnFee)
-		require.Equal(expectedUtilityFee, utilityFee)
-
-		err = blockView.FlushToDb(uint64(blockHeight))
-		require.NoError(err)
-	}
-
-	// Test case where the failing txn fee rate is applied as expected.
-	{
-
-		{
-			// Set FailingTransactionBMFMultiplierBasisPoints=7000 or 70%.
-			_updateGlobalParamsEntryWithExtraData(
-				testMeta,
-				testMeta.feeRateNanosPerKb,
-				m0Pub,
-				m0Priv,
-				map[string][]byte{FailingTransactionBMFMultiplierBasisPointsKey: UintToBuf(7000)},
-			)
-		}
-		blockView, err := NewUtxoView(db, params, nil, nil, chain.eventManager)
-		require.NoError(err)
-
-		newParams := blockView.GetCurrentGlobalParamsEntry()
-		require.Equal(uint64(7000), newParams.FailingTransactionBMFMultiplierBasisPoints)
-
-		startingBalance, err := blockView.GetDeSoBalanceNanosForPublicKey(m0PubBytes)
-		require.NoError(err)
-
-		// Try connecting another failing transaction, and make sure the burn and utility fees are computed accurately.
-		txn := _generateTestTxn(t, rand, feeMin, feeMax, m0PubBytes, m0Priv, 100, 0)
-
-		utxoOps, burnFee, utilityFee, err := blockView._connectFailingTransaction(txn, blockHeight, true)
-		require.NoError(err)
-		require.Equal(2, len(utxoOps))
-
-		// The final balance is m0's starting balance minus the failing txn fee paid.
-		finalBalance, err := blockView.GetDeSoBalanceNanosForPublicKey(m0PubBytes)
-		require.NoError(err)
-
-		// Recompute the failing txn fee, which is expected to use the minimum network fee rate because
-		// the failing txn fee rate is too low on its own.
-		expectedFailingTxnFee := txn.TxnFeeNanos * newParams.FailingTransactionBMFMultiplierBasisPoints / MaxBasisPoints
-		require.Equal(startingBalance, finalBalance+expectedFailingTxnFee)
-
-		expectedBurnFee, expectedUtilityFee := _getBMFForTxn(txn, newParams)
-		require.Equal(expectedBurnFee, burnFee)
-		require.Equal(expectedUtilityFee, utilityFee)
-
-		err = blockView.FlushToDb(uint64(blockHeight))
-		require.NoError(err)
-	}
-
-	// Test case where the failing txn fee rate is too low and replaced by the minimum network fee.
-	{
-		{
-			// Set FailingTransactionBMFMultiplierBasisPoints=1 or 0.01%.
-			_updateGlobalParamsEntryWithExtraData(
-				testMeta,
-				testMeta.feeRateNanosPerKb,
-				m0Pub,
-				m0Priv,
-				map[string][]byte{FailingTransactionBMFMultiplierBasisPointsKey: UintToBuf(1)},
-			)
-		}
-
-		// Set the txn fee to ~1000 nanos, which guarantees that the effective failing txn fee rate is too low.
-		feeMin := uint64(1000)
-		feeMax := uint64(1001)
-
-		blockView, err := NewUtxoView(db, params, nil, nil, chain.eventManager)
-		require.NoError(err)
-
-		newParams := blockView.GetCurrentGlobalParamsEntry()
-		require.Equal(uint64(1), newParams.FailingTransactionBMFMultiplierBasisPoints)
-
-		startingBalance, err := blockView.GetDeSoBalanceNanosForPublicKey(m0PubBytes)
-		require.NoError(err)
-
-		txn := _generateTestTxn(t, rand, feeMin, feeMax, m0PubBytes, m0Priv, 100, 0)
-		utxoOps, burnFee, utilityFee, err := blockView._connectFailingTransaction(txn, blockHeight, true)
-		require.NoError(err)
-		require.Equal(2, len(utxoOps))
-
-		// The final balance is m0's starting balance minus the failing txn fee paid.
-		finalBalance, err := blockView.GetDeSoBalanceNanosForPublicKey(m0PubBytes)
-		require.NoError(err)
-
-		txnBytes, err := txn.ToBytes(false)
-		require.NoError(err)
-
-		// Recompute the failing txn fee, which is expected to use the minimum network fee rate because
-		// the failing txn fee rate is too low on its own.
-		expectedFailingTxnFee := uint64(len(txnBytes)) * newParams.MinimumNetworkFeeNanosPerKB / 1000
-		require.Equal(startingBalance, finalBalance+expectedFailingTxnFee)
-
-		expectedBurnFee, expectedUtilityFee := computeBMF(expectedFailingTxnFee)
-		require.Equal(expectedBurnFee, burnFee)
-		require.Equal(expectedUtilityFee, utilityFee)
-
-		err = blockView.FlushToDb(uint64(blockHeight))
-		require.NoError(err)
-	}
-}
-
-func _getBMFForTxn(txn *MsgDeSoTxn, gp *GlobalParamsEntry) (_burnFee uint64, _utilityFee uint64) {
-	failingTransactionRate := NewFloat().SetUint64(gp.FailingTransactionBMFMultiplierBasisPoints)
-	failingTransactionRate.Quo(failingTransactionRate, NewFloat().SetUint64(10000))
-	failingTransactionFee, _ := NewFloat().Mul(failingTransactionRate, NewFloat().SetUint64(txn.TxnFeeNanos)).Uint64()
-	return computeBMF(failingTransactionFee)
 }

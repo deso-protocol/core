@@ -102,9 +102,11 @@ func SetupRunFlags(cmd *cobra.Command) {
 		"The number of future blocks to break the PoS mempool into when estimating txn fee for the next block.")
 	cmd.PersistentFlags().Uint64("mempool-fee-estimator-num-past-blocks", 50,
 		"The number of past blocks to use when estimating txn fee for the next block from the PoS mempool.")
-	cmd.PersistentFlags().Uint64("augmented-block-view-refresh-interval-millis", 10,
-		"The frequency in milliseconds with which the augmented block view will be refreshed. "+
-			"The default value is 100 milliseconds.")
+	cmd.PersistentFlags().Uint64("mempool-max-validation-view-connects", 10000,
+		"The maximum number of connects that the PoS mempool transaction validation routine will perform.")
+	cmd.PersistentFlags().Uint64("transaction-validation-refresh-interval-millis", 10,
+		"The frequency in milliseconds with which the transaction validation routine is run in mempool. "+
+			"The default value is 10 milliseconds.")
 
 	// Peers
 	cmd.PersistentFlags().StringSlice("connect-ips", []string{},

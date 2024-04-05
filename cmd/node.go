@@ -18,7 +18,7 @@ import (
 	"github.com/deso-protocol/core/lib"
 	"github.com/deso-protocol/core/migrate"
 	"github.com/deso-protocol/go-deadlock"
-	"github.com/dgraph-io/badger/v3"
+	"github.com/dgraph-io/badger/v4"
 	"github.com/go-pg/pg/v10"
 	"github.com/golang/glog"
 	migrations "github.com/robinjoseph08/go-pg-migrations/v3"
@@ -294,9 +294,8 @@ func (node *Node) Start(exitChannels ...*chan struct{}) {
 		node.Config.MempoolBackupIntervalMillis,
 		node.Config.MempoolFeeEstimatorNumMempoolBlocks,
 		node.Config.MempoolFeeEstimatorNumPastBlocks,
-		node.Config.AugmentedBlockViewRefreshIntervalMillis,
-		node.Config.PosBlockProductionIntervalMilliseconds,
-		node.Config.PosTimeoutBaseDurationMilliseconds,
+		node.Config.MempoolMaxValidationViewConnects,
+		node.Config.TransactionValidationRefreshIntervalMillis,
 		node.Config.StateSyncerMempoolTxnSyncLimit,
 	)
 	if err != nil {

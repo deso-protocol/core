@@ -13,15 +13,13 @@ import (
 )
 
 type FastHotStuffConsensus struct {
-	lock                                sync.RWMutex
-	networkManager                      *NetworkManager
-	blockchain                          *Blockchain
-	fastHotStuffEventLoop               consensus.FastHotStuffEventLoop
-	mempool                             Mempool
-	params                              *DeSoParams
-	signer                              *BLSSigner
-	blockProductionIntervalMilliseconds uint64
-	timeoutBaseDurationMilliseconds     uint64
+	lock                  sync.RWMutex
+	networkManager        *NetworkManager
+	blockchain            *Blockchain
+	fastHotStuffEventLoop consensus.FastHotStuffEventLoop
+	mempool               Mempool
+	params                *DeSoParams
+	signer                *BLSSigner
 }
 
 func NewFastHotStuffConsensus(
@@ -30,18 +28,14 @@ func NewFastHotStuffConsensus(
 	blockchain *Blockchain,
 	mempool Mempool,
 	signer *BLSSigner,
-	blockProductionIntervalMilliseconds uint64,
-	timeoutBaseDurationMilliseconds uint64,
 ) *FastHotStuffConsensus {
 	return &FastHotStuffConsensus{
-		networkManager:                      networkManager,
-		blockchain:                          blockchain,
-		fastHotStuffEventLoop:               consensus.NewFastHotStuffEventLoop(),
-		mempool:                             mempool,
-		params:                              params,
-		signer:                              signer,
-		blockProductionIntervalMilliseconds: blockProductionIntervalMilliseconds,
-		timeoutBaseDurationMilliseconds:     timeoutBaseDurationMilliseconds,
+		networkManager:        networkManager,
+		blockchain:            blockchain,
+		fastHotStuffEventLoop: consensus.NewFastHotStuffEventLoop(),
+		mempool:               mempool,
+		params:                params,
+		signer:                signer,
 	}
 }
 
@@ -98,9 +92,20 @@ func (fc *FastHotStuffConsensus) Start() error {
 		return errors.Errorf("FastHotStuffConsensus.Start: Error fetching validator lists for safe blocks: %v", err)
 	}
 
+	uncommittedTipView, err := fc.blockchain.GetUncommittedTipView()
+	if err != nil {
+		return errors.Errorf("FastHotStuffConsensus.Start: Error fetching uncommitted tip view: %v", err)
+	}
+
+	currentSnapshotGlobalParams, err := uncommittedTipView.GetCurrentSnapshotGlobalParamsEntry()
+	if err != nil {
+		return errors.Errorf("FastHotStuffConsensus.Start: Error fetching current snapshot global params: %v", err)
+	}
+
 	// Compute the block production internal and timeout base duration as time.Duration
-	blockProductionInterval := time.Millisecond * time.Duration(fc.blockProductionIntervalMilliseconds)
-	timeoutBaseDuration := time.Millisecond * time.Duration(fc.timeoutBaseDurationMilliseconds)
+	blockProductionInterval := time.Millisecond *
+		time.Duration(currentSnapshotGlobalParams.BlockProductionIntervalMillisecondsPoS)
+	timeoutBaseDuration := time.Millisecond * time.Duration(currentSnapshotGlobalParams.TimeoutIntervalMillisecondsPoS)
 
 	// Initialize the event loop. This should never fail. If it does, we return the error to the caller.
 	// The caller handle the error and decide when to retry.
@@ -664,8 +669,27 @@ func (fc *FastHotStuffConsensus) tryProcessBlockAsNewTip(block *MsgDeSoBlock) ([
 		return nil, errors.Errorf("Error fetching validator lists for tip block: %v", err)
 	}
 
+	tipBlockHash, err := tipBlock.Hash()
+	if err != nil {
+		return nil, errors.Errorf("Error hashing tip block: %v", err)
+	}
+
+	utxoViewAndUtxoOps, err := fc.blockchain.getUtxoViewAndUtxoOpsAtBlockHash(*tipBlockHash)
+	if err != nil {
+		return nil, errors.Errorf("Error fetching UtxoView for tip block: %v", err)
+	}
+	utxoView := utxoViewAndUtxoOps.UtxoView
+	snapshotGlobalParams, err := utxoView.GetCurrentSnapshotGlobalParamsEntry()
+	if err != nil {
+		return nil, errors.Errorf("Error fetching snapshot global params: %v", err)
+	}
 	// Pass the new tip and safe blocks to the FastHotStuffEventLoop
-	if err = fc.fastHotStuffEventLoop.ProcessTipBlock(tipBlockWithValidators[0], safeBlocksWithValidators); err != nil {
+	if err = fc.fastHotStuffEventLoop.ProcessTipBlock(
+		tipBlockWithValidators[0],
+		safeBlocksWithValidators,
+		time.Millisecond*time.Duration(snapshotGlobalParams.BlockProductionIntervalMillisecondsPoS),
+		time.Millisecond*time.Duration(snapshotGlobalParams.TimeoutIntervalMillisecondsPoS),
+	); err != nil {
 		return nil, errors.Errorf("Error processing tip block locally: %v", err)
 	}
 
@@ -696,11 +720,13 @@ func (fc *FastHotStuffConsensus) produceUnsignedBlockForBlockProposalEvent(
 	}
 
 	// Build a UtxoView at the parent block
-	utxoViewAtParent, err := fc.blockchain.getUtxoViewAtBlockHash(*parentBlockHash)
+	parentUtxoViewAndUtxoOps, err := fc.blockchain.getUtxoViewAndUtxoOpsAtBlockHash(*parentBlockHash)
 	if err != nil {
 		// This should never happen as long as the parent block is a descendant of the committed tip.
 		return nil, errors.Errorf("Error fetching UtxoView for parent block: %v", parentBlockHash)
 	}
+
+	utxoViewAtParent := parentUtxoViewAndUtxoOps.UtxoView
 
 	// Dynamically create a new block producer at the current block height
 	blockProducer, err := fc.createBlockProducer(utxoViewAtParent, parentBlock.Header.TstampNanoSecs)

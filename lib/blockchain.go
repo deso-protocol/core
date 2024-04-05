@@ -5,7 +5,6 @@ import (
 	"container/list"
 	"encoding/hex"
 	"fmt"
-	"github.com/decred/dcrd/lru"
 	"math"
 	"math/big"
 	"reflect"
@@ -13,6 +12,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/decred/dcrd/lru"
 
 	"github.com/deso-protocol/core/collections"
 
@@ -27,7 +28,7 @@ import (
 	"github.com/davecgh/go-spew/spew"
 	"github.com/deso-protocol/go-deadlock"
 	merkletree "github.com/deso-protocol/go-merkle-tree"
-	"github.com/dgraph-io/badger/v3"
+	"github.com/dgraph-io/badger/v4"
 	"github.com/golang/glog"
 	"github.com/pkg/errors"
 )
@@ -656,7 +657,7 @@ func (bc *Blockchain) _initChain() error {
 	if bc.postgres != nil {
 		bc.blockIndexByHash, err = bc.postgres.GetBlockIndex()
 	} else {
-		bc.blockIndexByHash, err = GetBlockIndex(bc.db, false /*bitcoinNodes*/)
+		bc.blockIndexByHash, err = GetBlockIndex(bc.db, false /*bitcoinNodes*/, bc.params)
 	}
 	if err != nil {
 		return errors.Wrapf(err, "_initChain: Problem reading block index from db")
@@ -975,11 +976,13 @@ func locateHeaders(locator []*BlockHash, stopHash *BlockHash, maxHeaders uint32,
 //     after the genesis block will be returned
 //
 // This function is safe for concurrent access.
-func (bc *Blockchain) LocateBestBlockChainHeaders(locator []*BlockHash, stopHash *BlockHash) []*MsgDeSoHeader {
+func (bc *Blockchain) LocateBestBlockChainHeaders(
+	locator []*BlockHash, stopHash *BlockHash, maxHeaders uint32) []*MsgDeSoHeader {
+
 	// TODO: Shouldn't we hold a ChainLock here? I think it's fine though because the place
 	// where it's currently called is single-threaded via a channel in server.go. Going to
 	// avoid messing with it for now.
-	headers := locateHeaders(locator, stopHash, MaxHeadersPerMsg,
+	headers := locateHeaders(locator, stopHash, maxHeaders,
 		bc.blockIndexByHash, bc.bestChain, bc.bestChainMap)
 
 	return headers
@@ -1491,15 +1494,14 @@ func (bc *Blockchain) SetBestChainMap(bestChain []*BlockNode, bestChainMap map[B
 	bc.blockIndexByHeight = blockIndexByHeight
 }
 
-// TODO: update to support validating orphan PoS Blocks
-func (bc *Blockchain) _validateOrphanBlock(desoBlock *MsgDeSoBlock) error {
+func (bc *Blockchain) _validateOrphanBlockPoW(desoBlock *MsgDeSoBlock) error {
 	// Error if the block is missing a parent hash or header.
 	if desoBlock.Header == nil {
-		return fmt.Errorf("_validateOrphanBlock: Block is missing header")
+		return fmt.Errorf("_validateOrphanBlockPoW: Block is missing header")
 	}
 	parentHash := desoBlock.Header.PrevBlockHash
 	if parentHash == nil {
-		return fmt.Errorf("_validateOrphanBlock: Block is missing parent hash")
+		return fmt.Errorf("_validateOrphanBlockPoW: Block is missing parent hash")
 	}
 
 	// Check that the block size isn't bigger than the max allowed. This prevents
@@ -1507,9 +1509,10 @@ func (bc *Blockchain) _validateOrphanBlock(desoBlock *MsgDeSoBlock) error {
 	// an attempt to exhaust our memory.
 	serializedBlock, err := desoBlock.ToBytes(false)
 	if err != nil {
-		return fmt.Errorf("_validateOrphanBlock: Could not serialize block")
+		return fmt.Errorf("_validateOrphanBlockPoW: Could not serialize block")
 	}
-	if uint64(len(serializedBlock)) > bc.params.MaxBlockSizeBytes {
+	// It's safe to leave this as a direct access to MaxBlockSizeBytesPoW since this is a PoW only function.
+	if uint64(len(serializedBlock)) > bc.params.MaxBlockSizeBytesPoW {
 		return RuleErrorBlockTooBig
 	}
 
@@ -1539,7 +1542,7 @@ func (bc *Blockchain) _validateOrphanBlock(desoBlock *MsgDeSoBlock) error {
 // is wasteful of resources. Better would be to clean up orphan blocks once they're
 // too old or something like that.
 func (bc *Blockchain) ProcessOrphanBlock(desoBlock *MsgDeSoBlock, blockHash *BlockHash) error {
-	err := bc._validateOrphanBlock(desoBlock)
+	err := bc._validateOrphanBlockPoW(desoBlock)
 	if err != nil {
 		return errors.Wrapf(err, "ProcessOrphanBlock: Problem validating orphan block")
 	}
@@ -2192,7 +2195,9 @@ func (bc *Blockchain) processBlockPoW(desoBlock *MsgDeSoBlock, verifySignatures 
 		// potentially a network issue not an issue with the actual block.
 		return false, false, fmt.Errorf("ProcessBlock: Problem serializing block")
 	}
-	if uint64(len(serializedBlock)) > bc.params.MaxBlockSizeBytes {
+	// Since this is a PoW-only function, it's safe to leave direct access
+	// to MaxBlockSizeBytesPoW through the params instead of using the GlobalParamsEntry.
+	if uint64(len(serializedBlock)) > bc.params.MaxBlockSizeBytesPoW {
 		bc.MarkBlockInvalid(nodeToValidate, RuleErrorBlockTooBig)
 		return false, false, RuleErrorBlockTooBig
 	}
@@ -4875,10 +4880,13 @@ func (bc *Blockchain) CreateMaxSpend(
 		for feeAmountNanos == 0 || feeAmountNanos != prevFeeAmountNanos {
 			prevFeeAmountNanos = feeAmountNanos
 			if !isInterfaceValueNil(mempool) {
+				maxBlockSizeBytes := bc.params.MaxBlockSizeBytesPoW
+				if bc.params.IsPoSBlockHeight(uint64(bc.BlockTip().Height)) {
+					maxBlockSizeBytes = utxoView.GetSoftMaxBlockSizeBytesPoS()
+				}
 				// TODO: replace MaxBasisPoints with variables configured by flags.
 				feeAmountNanos, err = mempool.EstimateFee(txn, minFeeRateNanosPerKB,
-					MaxBasisPoints, MaxBasisPoints, MaxBasisPoints, MaxBasisPoints,
-					bc.params.MaxBlockSizeBytes)
+					MaxBasisPoints, MaxBasisPoints, MaxBasisPoints, MaxBasisPoints, maxBlockSizeBytes)
 				if err != nil {
 					return nil, 0, 0, 0, errors.Wrapf(err, "CreateMaxSpend: Problem estimating fee: ")
 				}
@@ -4913,7 +4921,10 @@ func (bc *Blockchain) CreateMaxSpend(
 		// than what AddInputsAndChangeToTransaction will allow because we want to leave
 		// some breathing room to avoid this transaction getting rejected.
 		currentTxnSize := _computeMaxTxSize(txn)
-		if currentTxnSize > bc.params.MaxBlockSizeBytes/3 {
+		// It is okay to directly use MaxBlockSizeBytesPoW here since the PoS fork
+		// comes after the balance model fork. The balance model fork ensures we do not hit
+		// this point.
+		if currentTxnSize > bc.params.MaxBlockSizeBytesPoW/3 {
 			if len(txn.TxInputs) > 0 {
 				// Cut off the last input if the transaction just became too large.
 				txn.TxInputs = txn.TxInputs[:len(txn.TxInputs)-1]
@@ -5009,9 +5020,13 @@ func (bc *Blockchain) AddInputsAndChangeToTransactionWithSubsidy(
 
 		if txArg.TxnMeta.GetTxnType() != TxnTypeBlockReward {
 			if !isInterfaceValueNil(mempool) {
+				maxBlockSizeBytes := bc.params.MaxBlockSizeBytesPoW
+				if bc.params.IsPoSBlockHeight(uint64(bc.BlockTip().Height)) {
+					maxBlockSizeBytes = utxoView.GetSoftMaxBlockSizeBytesPoS()
+				}
 				// TODO: replace MaxBasisPoints with variables configured by flags.
 				txArg.TxnFeeNanos, err = mempool.EstimateFee(txArg, minFeeRateNanosPerKB, MaxBasisPoints,
-					MaxBasisPoints, MaxBasisPoints, MaxBasisPoints, bc.params.MaxBlockSizeBytes)
+					MaxBasisPoints, MaxBasisPoints, MaxBasisPoints, maxBlockSizeBytes)
 				if err != nil {
 					return 0, 0, 0, 0, errors.Wrapf(err,
 						"AddInputsAndChangeToTransaction: Problem estimating fee: ")
@@ -5149,10 +5164,13 @@ func (bc *Blockchain) AddInputsAndChangeToTransactionWithSubsidy(
 
 	// If the final transaction is absolutely huge, return an error.
 	finalTxnSize := _computeMaxTxSize(finalTxCopy)
-	if finalTxnSize > bc.params.MaxBlockSizeBytes/2 {
+	// It's fine to directly use MaxBlockSizeBytesPoW since the PoS fork
+	// will always be after the balance model fork. The balance model fork
+	// prevents the codebase from reaching this point.
+	if finalTxnSize > bc.params.MaxBlockSizeBytesPoW/2 {
 		return 0, 0, 0, 0, fmt.Errorf("AddInputsAndChangeToTransaction: "+
 			"Transaction size (%d bytes) exceeds the maximum sane amount "+
-			"allowed (%d bytes)", finalTxnSize, bc.params.MaxBlockSizeBytes/2)
+			"allowed (%d bytes)", finalTxnSize, bc.params.MaxBlockSizeBytesPoW/2)
 	}
 
 	// At this point, the inputs cover the (spend amount plus transaction fee)
@@ -5183,7 +5201,7 @@ func (bc *Blockchain) EstimateDefaultFeeRateNanosPerKB(
 		return minFeeRateNanosPerKB
 	}
 	numBytes := len(blockBytes)
-	if float64(numBytes)/float64(bc.params.MaxBlockSizeBytes) < medianThreshold {
+	if float64(numBytes)/float64(bc.params.MaxBlockSizeBytesPoW) < medianThreshold {
 		return minFeeRateNanosPerKB
 	}
 
@@ -5639,4 +5657,117 @@ func (bc *Blockchain) CreateCoinUnlockTxn(
 	//       lockup transactions to be after the transition to balance model.
 
 	return txn, totalInput, 0, fees, nil
+}
+
+// -------------------------------------------------
+// Atomic Transaction Creation Function
+// -------------------------------------------------
+
+// CreateAtomicTxnsWrapper is unlike other Create... transaction creation tools.
+// CreateAtomicTxnsWrapper is passed a list of UNSIGNED transactions who are then
+// chained together, wrapped, and converted into a single transaction of type
+// TxnTypeAtomicTxnsWrapper. It is then the responsibility of the calling parties
+// to verify the response and sign the transactions which now reside within the atomic
+// wrapper transaction.
+//
+// A full example can be used to illustrate how CreateAtomicTxnsWrapper is meant to
+// be used in a production application. Consider an application which wants
+// to subsidize all likes for users using atomic transactions. The following is
+// the step-by-step procedure by which the app can do so:
+//
+//	(1) The user creates an unsigned LIKE transaction as though they have DESO to pay for it.
+//		The LIKE transaction has no special metadata and is no different from an unsubsidized
+//		LIKE transaction up and to this point.
+//	(2) The user submits the unsigned LIKE transaction to the application to be subsidized
+//		as they cannot pay for the LIKE transaction themselves.
+//	(3) The application creates an unsigned BASIC_TRANSFER transaction to transfer the user enough
+//		DESO to cover their LIKE transaction. The transfer amount can be computed exactly
+//		using the TxnFeeNanos field of the provided LIKE transaction.
+//	(4) Rather than returning the BASIC_TRANSFER to the user, the application then calls
+//		CreateAtomicTxnsWrapper where unsignedTransactions = [BASIC_TRANSFER, LIKE]. This
+//		returns an atomic transaction that forces the user to use the BASIC_TRANSFER for this
+//		specific LIKE transaction. Note that this adds extra data to both the BASIC_TRANSFER
+//		and the LIKE transactions to ensure their atomic execution.
+//	(5) Before returning the atomic transaction to the user, the application now signs
+//		the BASIC_TRANSFER which resides within the atomic transaction wrapper on the server side.
+//		At this point, only the LIKE transaction remains unsigned within the atomic transaction.
+//	(6) The atomic transaction is returned to the user NOT the raw BASIC_TRANSFER transaction
+//		created in step 3.
+//	(7) The user signs the LIKE transaction using their private key on the client side.
+//		At this point, all transactions which reside within the AtomicTxns wrapper are signed.
+//	(8) The user submits the atomic transaction containing both the signed BASIC_TRANSFER
+//		transaction and the signed LIKE transaction to the blockchain.
+func (bc *Blockchain) CreateAtomicTxnsWrapper(
+	unsignedTransactions []*MsgDeSoTxn,
+	extraData map[string][]byte,
+) (
+	_txn *MsgDeSoTxn,
+	_fees uint64,
+	_err error,
+) {
+	// First we must convert the unsigned transactions into a doubly linked list via the
+	// transaction extra data. We create a copy of the transactions to ensure we do not
+	// modify the caller's data.
+
+	// Create a copy of the transactions to prevent pointer reuse.
+	var chainedUnsignedTransactions []*MsgDeSoTxn
+	for _, txn := range unsignedTransactions {
+		txnDuplicate, err := txn.Copy()
+		if err != nil {
+			return nil, 0, errors.Wrapf(err, "CreateAtomicTxnsWrapper: failed to copy transaction")
+		}
+		chainedUnsignedTransactions = append(chainedUnsignedTransactions, txnDuplicate)
+	}
+
+	// Set the starting point of the atomic transaction.
+	// We must do this first to ensure the atomic hash is properly computed for the first transaction.
+	if len(chainedUnsignedTransactions[0].ExtraData) == 0 {
+		chainedUnsignedTransactions[0].ExtraData = make(map[string][]byte)
+	}
+	chainedUnsignedTransactions[0].ExtraData[AtomicTxnsChainLength] = UintToBuf(uint64(len(unsignedTransactions)))
+
+	// Construct the chained transactions and keep track of the total fees paid.
+	var totalFees uint64
+	for ii, txn := range chainedUnsignedTransactions {
+		// Compute the atomic hashes.
+		nextIndex := (ii + 1) % len(chainedUnsignedTransactions)
+		nextHash, err := chainedUnsignedTransactions[nextIndex].AtomicHash()
+		if err != nil {
+			return nil, 0, errors.Wrapf(err, "CreateAtomicTxnsWrapper: failed to compute next hash")
+		}
+		prevIndex := (ii - 1 + len(chainedUnsignedTransactions)) % len(chainedUnsignedTransactions)
+		prevHash, err := chainedUnsignedTransactions[prevIndex].AtomicHash()
+		if err != nil {
+			return nil, 0, errors.Wrapf(err, "CreateAtomicTxnsWrapper: failed to copy prev hash")
+		}
+
+		// Set the transaction extra data and append to the chained list.
+		if len(txn.ExtraData) == 0 {
+			txn.ExtraData = make(map[string][]byte)
+		}
+		txn.ExtraData[NextAtomicTxnPreHash] = nextHash.ToBytes()
+		txn.ExtraData[PreviousAtomicTxnPreHash] = prevHash.ToBytes()
+
+		// Track the total fees paid.
+		totalFees, err = SafeUint64().Add(totalFees, txn.TxnFeeNanos)
+		if err != nil {
+			return nil, 0, errors.Wrapf(err, "CreateAtomicTxnsWrapper: total fee overflow")
+		}
+	}
+
+	// Create an atomic transactions wrapper taking special care to the rules specified in _verifyAtomicTxnsWrapper.
+	// Because we do not call AddInputsAndChangeToTransaction on the wrapper, we must specify ALL fields exactly.
+	txn := &MsgDeSoTxn{
+		TxnVersion:  1,
+		TxInputs:    nil,
+		TxOutputs:   nil,
+		TxnFeeNanos: totalFees,
+		TxnNonce:    &DeSoNonce{ExpirationBlockHeight: 0, PartialID: 0},
+		TxnMeta:     &AtomicTxnsWrapperMetadata{Txns: chainedUnsignedTransactions},
+		PublicKey:   ZeroPublicKey.ToBytes(),
+		ExtraData:   extraData,
+		Signature:   DeSoSignature{},
+	}
+
+	return txn, totalFees, nil
 }
