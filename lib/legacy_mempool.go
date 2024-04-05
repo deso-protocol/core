@@ -2651,9 +2651,9 @@ func (mp *DeSoMempool) BlockUntilReadOnlyViewRegenerated() {
 // WaitForTxnValidation is a blocking call that waits for a transaction to be validated.
 // The legacy mempool doesn't validate transactions, so this function always returns true
 // after BlockUntilReadOnlyViewRegenerated is called.
-func (mp *DeSoMempool) WaitForTxnValidation(_ *BlockHash) bool {
+func (mp *DeSoMempool) WaitForTxnValidation(_ *BlockHash) error {
 	mp.BlockUntilReadOnlyViewRegenerated()
-	return true
+	return nil
 }
 
 func (mp *DeSoMempool) StartMempoolDBDumper() {
