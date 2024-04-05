@@ -64,7 +64,7 @@ func TestFeeEstimator(t *testing.T) {
 	require.NoError(t, err)
 	validateTxnFee(t, txn, computedFee, baseFeeRate)
 	// Hybrid estimator will also return the base fee rate * number of bytes.
-	computedFee, err = posFeeEstimator.EstimateFee(txn, 10000, 10000, 1000, 10000, 1000)
+	computedFee, err = posFeeEstimator.EstimateFee(txn, 0, 10000, 10000, 1000, 10000, 1000)
 	require.NoError(t, err)
 	validateTxnFee(t, txn, computedFee, baseFeeRate)
 
@@ -166,7 +166,7 @@ func TestFeeEstimator(t *testing.T) {
 
 		// And the hybrid estimator is just the max, but for completeness, we check it.
 		estimatedHybridFee, err = posFeeEstimator.EstimateFee(
-			txn, congestionFactor, priorityPercentileBasisPoints, congestionFactor, priorityPercentileBasisPoints,
+			txn, 0, congestionFactor, priorityPercentileBasisPoints, congestionFactor, priorityPercentileBasisPoints,
 			maxBlockSizeHybrid)
 		require.NoError(t, err)
 		require.Equal(t, estimatedMempoolFee, estimatedHybridFee)
@@ -213,7 +213,7 @@ func TestFeeEstimator(t *testing.T) {
 
 		// And the hybrid estimator is just the max, but for completeness, we check it.
 		estimatedHybridFee, err = posFeeEstimator.EstimateFee(
-			txn, congestionFactor, priorityPercentileBasisPoints, congestionFactor, priorityPercentileBasisPoints,
+			txn, 0, congestionFactor, priorityPercentileBasisPoints, congestionFactor, priorityPercentileBasisPoints,
 			maxBlockSizeHybrid)
 		require.NoError(t, err)
 		require.Equal(t, estimatedMempoolFee, estimatedHybridFee)
@@ -260,7 +260,7 @@ func TestFeeEstimator(t *testing.T) {
 
 		// And the hybrid estimator is just the max, but for completeness, we check it.
 		estimatedHybridFee, err = posFeeEstimator.EstimateFee(
-			txn, congestionFactor, priorityPercentileBasisPoints, congestionFactor, priorityPercentileBasisPoints,
+			txn, 0, congestionFactor, priorityPercentileBasisPoints, congestionFactor, priorityPercentileBasisPoints,
 			maxBlockSizeHybrid)
 		require.NoError(t, err)
 		require.Equal(t, estimatedMempoolFee, estimatedHybridFee)
@@ -307,7 +307,7 @@ func TestFeeEstimator(t *testing.T) {
 
 		// And the hybrid estimator is just the max, but for completeness, we check it.
 		estimatedHybridFee, err = posFeeEstimator.EstimateFee(
-			txn, congestionFactor, priorityPercentileBasisPoints, congestionFactor, priorityPercentileBasisPoints,
+			txn, 0, congestionFactor, priorityPercentileBasisPoints, congestionFactor, priorityPercentileBasisPoints,
 			maxBlockSizeHybrid)
 		require.NoError(t, err)
 		require.Equal(t, estimatedMempoolFee, estimatedHybridFee)

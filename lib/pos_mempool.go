@@ -1001,26 +1001,28 @@ func (mp *PosMempool) GetMempoolSummaryStats() map[string]*SummaryStats {
 	return convertMempoolTxsToSummaryStats(mp.txnRegister.GetFeeTimeTransactions())
 }
 
-func (mp *PosMempool) EstimateFee(txn *MsgDeSoTxn,
-	_ uint64,
+func (mp *PosMempool) EstimateFee(
+	txn *MsgDeSoTxn,
+	minFeeRateNanosPerKB uint64,
 	mempoolCongestionFactorBasisPoints uint64,
 	mempoolPriorityPercentileBasisPoints uint64,
 	pastBlocksCongestionFactorBasisPoints uint64,
 	pastBlocksPriorityPercentileBasisPoints uint64,
-	maxBlockSize uint64) (uint64, error) {
+	maxBlockSize uint64,
+) (uint64, error) {
 	return mp.feeEstimator.EstimateFee(
-		txn, mempoolCongestionFactorBasisPoints, mempoolPriorityPercentileBasisPoints,
+		txn, minFeeRateNanosPerKB, mempoolCongestionFactorBasisPoints, mempoolPriorityPercentileBasisPoints,
 		pastBlocksCongestionFactorBasisPoints, pastBlocksPriorityPercentileBasisPoints, maxBlockSize)
 }
 
 func (mp *PosMempool) EstimateFeeRate(
-	_ uint64,
+	minFeeRateNanosPerKB uint64,
 	mempoolCongestionFactorBasisPoints uint64,
 	mempoolPriorityPercentileBasisPoints uint64,
 	pastBlocksCongestionFactorBasisPoints uint64,
 	pastBlocksPriorityPercentileBasisPoints uint64,
 	maxBlockSize uint64) (uint64, error) {
 	return mp.feeEstimator.EstimateFeeRateNanosPerKB(
-		mempoolCongestionFactorBasisPoints, mempoolPriorityPercentileBasisPoints,
+		minFeeRateNanosPerKB, mempoolCongestionFactorBasisPoints, mempoolPriorityPercentileBasisPoints,
 		pastBlocksCongestionFactorBasisPoints, pastBlocksPriorityPercentileBasisPoints, maxBlockSize)
 }
