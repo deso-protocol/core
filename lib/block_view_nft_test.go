@@ -1282,7 +1282,7 @@ func TestNFTBasic(t *testing.T) {
 		require.NoError(err)
 
 		numCopies := uint64(10)
-		nftFee := utxoView.GlobalParamsEntry.CreateNFTFeeNanos * numCopies
+		nftFee := utxoView.GetCurrentGlobalParamsEntry().CreateNFTFeeNanos * numCopies
 
 		m0BalBeforeNFT := _getBalance(testMeta.t, testMeta.chain, nil, m0Pub)
 		require.Equal(getConditionalBalance(24, 24), m0BalBeforeNFT)

@@ -4026,13 +4026,13 @@ func (bav *UtxoView) _connectSingleTxn(
 	// If the current minimum network fee per kb is set to 0, that indicates we should not assess a minimum fee.
 	// Similarly, BlockReward transactions do not require a fee.
 	isFeeExempt := txn.TxnMeta.GetTxnType() == TxnTypeBitcoinExchange || txn.TxnMeta.GetTxnType() == TxnTypeBlockReward
-	if !isFeeExempt && txnSizeBytes != 0 && bav.GlobalParamsEntry.MinimumNetworkFeeNanosPerKB != 0 {
+	if !isFeeExempt && txnSizeBytes != 0 && bav.GetCurrentGlobalParamsEntry().MinimumNetworkFeeNanosPerKB != 0 {
 		// Make sure there isn't overflow in the fee.
 		if fees != ((fees * 1000) / 1000) {
 			return nil, 0, 0, 0, RuleErrorOverflowDetectedInFeeRateCalculation
 		}
 		// If the fee is less than the minimum network fee per KB, return an error.
-		if (fees*1000)/uint64(txnSizeBytes) < bav.GlobalParamsEntry.MinimumNetworkFeeNanosPerKB {
+		if (fees*1000)/uint64(txnSizeBytes) < bav.GetCurrentGlobalParamsEntry().MinimumNetworkFeeNanosPerKB {
 			return nil, 0, 0, 0, RuleErrorTxnFeeBelowNetworkMinimum
 		}
 	}
@@ -4933,8 +4933,8 @@ func (bav *UtxoView) ConstructNonceForPublicKey(publicKey []byte, blockHeight ui
 func (bav *UtxoView) ConstructNonceForPKID(pkid *PKID, blockHeight uint64) (*DeSoNonce, error) {
 	// construct nonce
 	expirationBuffer := uint64(DefaultMaxNonceExpirationBlockHeightOffset)
-	if bav.GlobalParamsEntry != nil && bav.GlobalParamsEntry.MaxNonceExpirationBlockHeightOffset != 0 {
-		expirationBuffer = bav.GlobalParamsEntry.MaxNonceExpirationBlockHeightOffset
+	if bav.GetCurrentGlobalParamsEntry() != nil && bav.GetCurrentGlobalParamsEntry().MaxNonceExpirationBlockHeightOffset != 0 {
+		expirationBuffer = bav.GetCurrentGlobalParamsEntry().MaxNonceExpirationBlockHeightOffset
 	}
 	// Some tests use a very low expiration buffer to test
 	// that expired nonces get deleted. We don't want to

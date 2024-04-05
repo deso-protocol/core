@@ -282,7 +282,7 @@ func _doTxnWithBlockHeight(
 			realTxMeta.HasUnlockable,
 			realTxMeta.IsForSale,
 			realTxMeta.MinBidAmountNanos,
-			utxoView.GlobalParamsEntry.CreateNFTFeeNanos*uint64(realTxMeta.NumCopies),
+			utxoView.GetCurrentGlobalParamsEntry().CreateNFTFeeNanos*uint64(realTxMeta.NumCopies),
 			realTxMeta.NFTRoyaltyToCreatorBasisPoints,
 			realTxMeta.NFTRoyaltyToCoinBasisPoints,
 			isBuyNow,

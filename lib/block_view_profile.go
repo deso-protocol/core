@@ -613,7 +613,7 @@ func (bav *UtxoView) _connectUpdateProfile(
 	existingProfileEntry := bav.GetProfileEntryForPublicKey(profilePublicKey)
 	var extraSpend uint64
 	if existingProfileEntry == nil || existingProfileEntry.isDeleted {
-		extraSpend = bav.GlobalParamsEntry.CreateProfileFeeNanos
+		extraSpend = bav.GetCurrentGlobalParamsEntry().CreateProfileFeeNanos
 	}
 
 	// Connect basic txn to get the total input and the total output without
@@ -641,7 +641,7 @@ func (bav *UtxoView) _connectUpdateProfile(
 
 	// If we are creating a profile for the first time, assess the create profile fee.
 	if existingProfileEntry == nil {
-		createProfileFeeNanos := bav.GlobalParamsEntry.CreateProfileFeeNanos
+		createProfileFeeNanos := bav.GetCurrentGlobalParamsEntry().CreateProfileFeeNanos
 		totalOutput += createProfileFeeNanos
 		if totalInput < totalOutput {
 			return 0, 0, nil, RuleErrorCreateProfileTxnOutputExceedsInput
