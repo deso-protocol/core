@@ -226,6 +226,11 @@ func SetupRunFlags(cmd *cobra.Command) {
 		"from an empty string to a non-empty string (or from a non-empty string to the empty string) requires a resync.")
 	cmd.PersistentFlags().Uint("state-syncer-mempool-txn-sync-limit", 10000, "The maximum number of transactions to "+
 		"process in the mempool tx state syncer at a time.")
+
+	// PoS Checkpoint Syncing
+	// TODO: a default value is a little tricky here since we don't know what network we're using.
+	cmd.PersistentFlags().StringSlice("checkpoint-syncing-providers", []string{}, "A comma-separated list of URLs that "+
+		"support the committed tip block info endpoint to be used for checkpoint syncing.")
 	cmd.PersistentFlags().VisitAll(func(flag *pflag.Flag) {
 		viper.BindPFlag(flag.Name, flag)
 	})
