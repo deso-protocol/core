@@ -4219,7 +4219,7 @@ func (bav *UtxoView) _connectTransactionsFailSafe(
 		if err != nil && ignoreFailing {
 			// If ignoreFailing was set, we mark the transaction as failing and continue.
 			glog.V(2).Infof("_connectTransactionsFailSafe: Ignoring failing txn %d: %v", ii, err)
-			updateValues(nil, 0, 0, 0, false)
+			updateValues(nil, 0, 0, 0, err)
 			continue
 		} else if err != nil {
 			return nil, nil, nil, nil, nil,
