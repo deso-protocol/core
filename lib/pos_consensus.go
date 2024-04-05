@@ -43,6 +43,8 @@ func NewFastHotStuffConsensus(
 // blockchain state. This should only be called once the blockchain has synced, the node is
 // ready to join the validator network, and the node is able to validate blocks in the steady state.
 func (fc *FastHotStuffConsensus) Start() error {
+	glog.V(2).Infof("FastHotStuffConsensus.Start: Started running FastHotStuffConsensus.")
+
 	// Hold the consensus' write lock for thread-safety.
 	fc.lock.Lock()
 	defer fc.lock.Unlock()
@@ -122,6 +124,8 @@ func (fc *FastHotStuffConsensus) Start() error {
 	if err = fc.updateActiveValidatorConnections(); err != nil {
 		glog.Errorf("FastHotStuffConsensus.tryProcessBlockAsNewTip: Error updating validator connections: %v", err)
 	}
+
+	glog.V(2).Infof("FastHotStuffConsensus.Start: Successfully started running FastHotStuffConsensus.")
 
 	return nil
 }
