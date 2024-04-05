@@ -1035,8 +1035,8 @@ func (mp *DeSoMempool) tryAcceptTransaction(
 		if tx.TxnNonce.ExpirationBlockHeight < blockHeight {
 			return nil, nil, TxErrorNonceExpired
 		}
-		if mp.universalUtxoView.GlobalParamsEntry.MaxNonceExpirationBlockHeightOffset != 0 &&
-			tx.TxnNonce.ExpirationBlockHeight > blockHeight+mp.universalUtxoView.GlobalParamsEntry.MaxNonceExpirationBlockHeightOffset {
+		if mp.universalUtxoView.GetCurrentGlobalParamsEntry().MaxNonceExpirationBlockHeightOffset != 0 &&
+			tx.TxnNonce.ExpirationBlockHeight > blockHeight+mp.universalUtxoView.GetCurrentGlobalParamsEntry().MaxNonceExpirationBlockHeightOffset {
 			return nil, nil, TxErrorNonceExpirationBlockHeightOffsetExceeded
 		}
 	}
@@ -2472,8 +2472,8 @@ func (mp *DeSoMempool) EstimateFeeRate(
 	_ uint64,
 	_ uint64,
 	_ uint64) (uint64, error) {
-	if minFeeRateNanosPerKB < mp.readOnlyUtxoView.GlobalParamsEntry.MinimumNetworkFeeNanosPerKB {
-		return mp.readOnlyUtxoView.GlobalParamsEntry.MinimumNetworkFeeNanosPerKB, nil
+	if minFeeRateNanosPerKB < mp.readOnlyUtxoView.GetCurrentGlobalParamsEntry().MinimumNetworkFeeNanosPerKB {
+		return mp.readOnlyUtxoView.GetCurrentGlobalParamsEntry().MinimumNetworkFeeNanosPerKB, nil
 	}
 	return minFeeRateNanosPerKB, nil
 }

@@ -234,13 +234,13 @@ func (bav *UtxoView) _connectAtomicTxnsWrapper(
 	// cover the atomic transactions AS WELL AS the wrapper. We validate this
 	// here to ensure we can test for these edge cases as they're also logically caught
 	// by _verifyAtomicTxnsWrapper.
-	if txnSizeBytes != 0 && bav.GlobalParamsEntry.MinimumNetworkFeeNanosPerKB != 0 {
+	if txnSizeBytes != 0 && bav.GetCurrentGlobalParamsEntry().MinimumNetworkFeeNanosPerKB != 0 {
 		// Make sure there isn't overflow in the fee.
 		if txn.TxnFeeNanos != ((txn.TxnFeeNanos * 1000) / 1000) {
 			return nil, 0, 0, 0, RuleErrorOverflowDetectedInFeeRateCalculation
 		}
 		// If the fee is less than the minimum network fee per KB, return an error.
-		if (txn.TxnFeeNanos*1000)/uint64(txnSizeBytes) < bav.GlobalParamsEntry.MinimumNetworkFeeNanosPerKB {
+		if (txn.TxnFeeNanos*1000)/txnSizeBytes < bav.GetCurrentGlobalParamsEntry().MinimumNetworkFeeNanosPerKB {
 			return nil, 0, 0, 0, RuleErrorTxnFeeBelowNetworkMinimum
 		}
 	}

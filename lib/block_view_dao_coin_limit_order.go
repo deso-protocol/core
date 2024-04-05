@@ -272,7 +272,7 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 	if (txMeta.FeeNanos * 1000) <= txMeta.FeeNanos {
 		return 0, 0, nil, RuleErrorDAOCoinLimitOrderFeeNanosOverflow
 	}
-	if (txMeta.FeeNanos*1000)/uint64(len(txnBytes)) < bav.GlobalParamsEntry.MinimumNetworkFeeNanosPerKB ||
+	if (txMeta.FeeNanos*1000)/uint64(len(txnBytes)) < bav.GetCurrentGlobalParamsEntry().MinimumNetworkFeeNanosPerKB ||
 		txMeta.FeeNanos == 0 {
 		return 0, 0, nil, RuleErrorDAOCoinLimitOrderFeeNanosBelowMinTxFee
 	}
