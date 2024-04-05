@@ -193,9 +193,8 @@ func (nm *NetworkManager) startValidatorConnector() {
 			nm.exitGroup.Done()
 			return
 		case <-time.After(nm.params.NetworkManagerRefreshDuration):
-			activeValidatorsMap := nm.getActiveValidatorsMap()
-			nm.refreshValidatorIndices(activeValidatorsMap)
-			nm.connectValidators(activeValidatorsMap)
+			nm.refreshValidatorIndices()
+			nm.connectValidators()
 		}
 	}
 }
@@ -540,9 +539,14 @@ func (nm *NetworkManager) getActiveValidatorsMap() *collections.ConcurrentMap[bl
 	return nm.activeValidatorsMap.Clone()
 }
 
+func (nm *NetworkManager) isActiveValidator(pk bls.SerializedPublicKey) bool {
+	_, ok := nm.activeValidatorsMap.Get(pk)
+	return ok
+}
+
 // refreshValidatorIndices re-indexes validators based on the activeValidatorsMap. It is called periodically by the
 // validator connector.
-func (nm *NetworkManager) refreshValidatorIndices(activeValidatorsMap *collections.ConcurrentMap[bls.SerializedPublicKey, consensus.Validator]) {
+func (nm *NetworkManager) refreshValidatorIndices() {
 	// De-index inactive validators. We skip any checks regarding RemoteNodes connection status, nor do we verify whether
 	// de-indexing the validator would result in an excess number of outbound/inbound connections. Any excess connections
 	// will be cleaned up by the NonValidator connector.
@@ -553,17 +557,17 @@ func (nm *NetworkManager) refreshValidatorIndices(activeValidatorsMap *collectio
 	validatorOutboundMap := nm.GetValidatorOutboundIndex().ToMap()
 	for pk, rn := range validatorOutboundMap {
 		// If the validator is no longer active, de-index it.
-		if _, ok := activeValidatorsMap.Get(pk); !ok {
-			nm.SetNonValidator(rn)
+		if !nm.isActiveValidator(pk) {
 			nm.UnsetValidator(rn)
+			nm.SetNonValidator(rn)
 		}
 	}
 	validatorInboundMap := nm.GetValidatorInboundIndex().ToMap()
 	for pk, rn := range validatorInboundMap {
 		// If the validator is no longer active, de-index it.
-		if _, ok := activeValidatorsMap.Get(pk); !ok {
-			nm.SetNonValidator(rn)
+		if !nm.isActiveValidator(pk) {
 			nm.UnsetValidator(rn)
+			nm.SetNonValidator(rn)
 		}
 	}
 
@@ -597,22 +601,22 @@ func (nm *NetworkManager) refreshValidatorIndices(activeValidatorsMap *collectio
 		}
 
 		// If the RemoteNode turns out to be in the validator set, index it.
-		if _, ok := activeValidatorsMap.Get(pk.Serialize()); ok {
-			nm.SetValidator(rn)
+		if nm.isActiveValidator(pk.Serialize()) {
 			nm.UnsetNonValidator(rn)
+			nm.SetValidator(rn)
 		}
 	}
 }
 
 // connectValidators attempts to connect to all active validators that are not already connected. It is called
 // periodically by the validator connector.
-func (nm *NetworkManager) connectValidators(activeValidatorsMap *collections.ConcurrentMap[bls.SerializedPublicKey, consensus.Validator]) {
+func (nm *NetworkManager) connectValidators() {
 	// Look through the active validators and connect to any that we're not already connected to.
 	if nm.keystore == nil {
 		return
 	}
 
-	validators := activeValidatorsMap.ToMap()
+	validators := nm.getActiveValidatorsMap().ToMap()
 	for pk, validator := range validators {
 		// Check if we've already dialed an outbound connection to this validator.
 		// It's worth noting that we look up the outbound index, instead of looking up a union of the outbound and
@@ -956,9 +960,12 @@ func (nm *NetworkManager) ProcessCompletedHandshake(remoteNode *RemoteNode) {
 		return
 	}
 
-	if remoteNode.IsValidator() {
-		nm.SetValidator(remoteNode)
+	// A remote node is a validator from our POV if three things are true:
+	// - It has the validator service flag set, and performed the handshake with a BLS public key
+	// - Its BLS public key is in the active validator set.
+	if remoteNode.IsValidator() && nm.isActiveValidator(remoteNode.GetValidatorPublicKey().Serialize()) {
 		nm.UnsetNonValidator(remoteNode)
+		nm.SetValidator(remoteNode)
 	} else {
 		nm.UnsetValidator(remoteNode)
 		nm.SetNonValidator(remoteNode)
