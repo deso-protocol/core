@@ -557,7 +557,7 @@ func (nm *NetworkManager) refreshValidatorIndices() {
 	validatorOutboundMap := nm.GetValidatorOutboundIndex().ToMap()
 	for pk, rn := range validatorOutboundMap {
 		// If the validator is no longer active, de-index it.
-		if nm.isActiveValidator(pk) {
+		if !nm.isActiveValidator(pk) {
 			nm.UnsetValidator(rn)
 			nm.SetNonValidator(rn)
 		}
@@ -565,7 +565,7 @@ func (nm *NetworkManager) refreshValidatorIndices() {
 	validatorInboundMap := nm.GetValidatorInboundIndex().ToMap()
 	for pk, rn := range validatorInboundMap {
 		// If the validator is no longer active, de-index it.
-		if nm.isActiveValidator(pk) {
+		if !nm.isActiveValidator(pk) {
 			nm.UnsetValidator(rn)
 			nm.SetNonValidator(rn)
 		}
