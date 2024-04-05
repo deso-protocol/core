@@ -267,8 +267,9 @@ func (bav *UtxoView) _connectAtomicTxnsWrapper(
 	for _, innerTxn := range txMeta.Txns {
 		// NOTE: By recursively calling _connectSingleTxn, each inner transaction is checked that
 		// it is capable of paying for its own fees as well as having a valid signature.
+		innerTxnHash := innerTxn.Hash()
 		innerTxnUtxoOps, txnInput, txnOutput, txnFees, err := bav._connectSingleTxn(
-			innerTxn, txHash, blockHeight, blockTimestampNanoSecs, verifySignatures, ignoreUtxos)
+			innerTxn, innerTxnHash, blockHeight, blockTimestampNanoSecs, verifySignatures, ignoreUtxos)
 		if err != nil {
 			return nil, 0, 0, 0,
 				errors.Wrap(err, "_connectAtomicTxnsWrapper: failed to connect non-atomic transaction")
