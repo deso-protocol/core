@@ -3357,6 +3357,12 @@ func (bav *UtxoView) _connectUpdateGlobalParams(
 					"_connectUpdateGlobalParams: " +
 						"unable to decode MaximumVestedIntersectionsPerLockupTransaction as uint64")
 			}
+			if maximumVestedIntersectionsPerLockupTransaction > math.MaxInt {
+				return 0, 0, nil, fmt.Errorf(
+					"_connectUpdateGlobalParams: MaximumVestedIntersectionsPerLockupTransaction must be <= %d",
+					math.MaxInt,
+				)
+			}
 			newGlobalParamsEntry.MaximumVestedIntersectionsPerLockupTransaction =
 				int(maximumVestedIntersectionsPerLockupTransaction)
 		}
