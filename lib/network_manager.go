@@ -650,6 +650,14 @@ func (nm *NetworkManager) connectValidators() {
 				"validator (pk= %v): (error= %v)", validator.GetPublicKey().Serialize(), err)
 			continue
 		}
+
+		// Log the connection attempt
+		glog.V(2).Infof(
+			"NetworkManager.connectValidators: Connecting to validator (pk= %v) (domain=%v)",
+			validator.GetPublicKey().Serialize(),
+			string(randDomain),
+		)
+
 		if err := nm.CreateValidatorConnection(string(randDomain), publicKey); err != nil {
 			glog.V(2).Infof("NetworkManager.connectValidators: Problem connecting to validator %v: %v",
 				string(randDomain), err)
