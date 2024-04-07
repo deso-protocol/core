@@ -1732,11 +1732,6 @@ func CheckTransactionSanity(txn *MsgDeSoTxn, blockHeight uint32, params *DeSoPar
 		existingInputs[*txin] = true
 	}
 
-	// Make sure the transaction has a signature.
-	if txn.TxnMeta.GetTxnType() != TxnTypeBitcoinExchange && txn.Signature.Sign == nil {
-		return RuleErrorTransactionHasNoSignature
-	}
-
 	return nil
 }
 
@@ -3857,6 +3852,8 @@ func (bc *Blockchain) CreateDAOCoinLimitOrderTxn(
 			"CreateDAOCoinLimitOrderTxn: Problem adding inputs: ")
 	}
 	// Set fee to its actual value now that we've added inputs and outputs.
+	// Note: This should not be necessary after the PoS fork because EstimateFee correctly
+	// sets this. But we set it here anyway just to be safe.
 	txn.TxnMeta.(*DAOCoinLimitOrderMetadata).FeeNanos = fees
 
 	// We want our transaction to have at least one input, even if it all
@@ -4898,7 +4895,7 @@ func (bc *Blockchain) CreateMaxSpend(
 			} else {
 				feeAmountNanos = _computeMaxTxV1Fee(txn, minFeeRateNanosPerKB)
 			}
-			txn.TxnFeeNanos = feeAmountNanos
+			UpdateTxnFee(txn, feeAmountNanos)
 			txn.TxOutputs[len(txn.TxOutputs)-1].AmountNanos = spendableBalance - feeAmountNanos
 		}
 
@@ -5021,7 +5018,7 @@ func (bc *Blockchain) AddInputsAndChangeToTransactionWithSubsidy(
 		}
 
 		// Initialize to 0.
-		txArg.TxnFeeNanos = 0
+		UpdateTxnFee(txArg, 0)
 
 		if txArg.TxnMeta.GetTxnType() != TxnTypeBlockReward {
 			if !isInterfaceValueNil(mempool) {
@@ -5030,14 +5027,16 @@ func (bc *Blockchain) AddInputsAndChangeToTransactionWithSubsidy(
 					maxBlockSizeBytes = utxoView.GetSoftMaxBlockSizeBytesPoS()
 				}
 				// TODO: replace MaxBasisPoints with variables configured by flags.
-				txArg.TxnFeeNanos, err = mempool.EstimateFee(txArg, minFeeRateNanosPerKB, MaxBasisPoints,
+				newTxFee, err := mempool.EstimateFee(txArg, minFeeRateNanosPerKB, MaxBasisPoints,
 					MaxBasisPoints, MaxBasisPoints, MaxBasisPoints, maxBlockSizeBytes)
+				UpdateTxnFee(txArg, newTxFee)
 				if err != nil {
 					return 0, 0, 0, 0, errors.Wrapf(err,
 						"AddInputsAndChangeToTransaction: Problem estimating fee: ")
 				}
 			} else {
-				txArg.TxnFeeNanos = EstimateMaxTxnFeeV1(txArg, minFeeRateNanosPerKB)
+				newTxFee := EstimateMaxTxnFeeV1(txArg, minFeeRateNanosPerKB)
+				UpdateTxnFee(txArg, newTxFee)
 			}
 		}
 
@@ -5755,52 +5754,105 @@ func (bc *Blockchain) CreateAtomicTxnsWrapper(
 			return nil, 0, errors.Wrapf(err, "CreateAtomicTxnsWrapper: failed to recompute fee estimate")
 		}
 		if txn.TxnFeeNanos < newFeeEstimate {
-			txn.TxnFeeNanos = newFeeEstimate
+			UpdateTxnFee(txn, newFeeEstimate)
 		}
 	}
 
-	// Construct the chained transactions and keep track of the total fees paid.
-	var totalFees uint64
-	for ii, txn := range chainedUnsignedTransactions {
-		// Compute the atomic hashes.
-		nextIndex := (ii + 1) % len(chainedUnsignedTransactions)
-		nextHash, err := chainedUnsignedTransactions[nextIndex].AtomicHash()
-		if err != nil {
-			return nil, 0, errors.Wrapf(err, "CreateAtomicTxnsWrapper: failed to compute next hash")
-		}
-		prevIndex := (ii - 1 + len(chainedUnsignedTransactions)) % len(chainedUnsignedTransactions)
-		prevHash, err := chainedUnsignedTransactions[prevIndex].AtomicHash()
-		if err != nil {
-			return nil, 0, errors.Wrapf(err, "CreateAtomicTxnsWrapper: failed to copy prev hash")
+	// We break the assembly of the atomic txn into a function so we can call it in a
+	// loop afterward.
+	assembleAtomicTxn := func() (*MsgDeSoTxn, error) {
+		// Construct the chained transactions and keep track of the total fees paid.
+		var totalFees uint64
+		for ii, txn := range chainedUnsignedTransactions {
+			// Compute the atomic hashes.
+			nextIndex := (ii + 1) % len(chainedUnsignedTransactions)
+			nextHash, err := chainedUnsignedTransactions[nextIndex].AtomicHash()
+			if err != nil {
+				return nil, errors.Wrapf(err, "CreateAtomicTxnsWrapper: failed to compute next hash")
+			}
+			prevIndex := (ii - 1 + len(chainedUnsignedTransactions)) % len(chainedUnsignedTransactions)
+			prevHash, err := chainedUnsignedTransactions[prevIndex].AtomicHash()
+			if err != nil {
+				return nil, errors.Wrapf(err, "CreateAtomicTxnsWrapper: failed to copy prev hash")
+			}
+
+			// Set the transaction extra data and append to the chained list.
+			if len(txn.ExtraData) == 0 {
+				txn.ExtraData = make(map[string][]byte)
+			}
+			txn.ExtraData[NextAtomicTxnPreHash] = nextHash.ToBytes()
+			txn.ExtraData[PreviousAtomicTxnPreHash] = prevHash.ToBytes()
+
+			// Track the total fees paid.
+			newTotalFees, err := SafeUint64().Add(totalFees, txn.TxnFeeNanos)
+			if err != nil {
+				return nil, errors.Wrapf(err, "CreateAtomicTxnsWrapper: total fee "+
+					"overflow: %v + %v", totalFees, txn.TxnFeeNanos)
+			}
+			totalFees = newTotalFees
 		}
 
-		// Set the transaction extra data and append to the chained list.
-		if len(txn.ExtraData) == 0 {
-			txn.ExtraData = make(map[string][]byte)
+		// Create an atomic transactions wrapper taking special care to the rules specified in _verifyAtomicTxnsWrapper.
+		// Because we do not call AddInputsAndChangeToTransaction on the wrapper, we must specify ALL fields exactly.
+		txn := &MsgDeSoTxn{
+			TxnVersion: 1,
+			TxInputs:   nil,
+			TxOutputs:  nil,
+			TxnNonce:   &DeSoNonce{ExpirationBlockHeight: 0, PartialID: 0},
+			TxnMeta:    &AtomicTxnsWrapperMetadata{Txns: chainedUnsignedTransactions},
+			PublicKey:  ZeroPublicKey.ToBytes(),
+			ExtraData:  extraData,
+			Signature:  DeSoSignature{},
 		}
-		txn.ExtraData[NextAtomicTxnPreHash] = nextHash.ToBytes()
-		txn.ExtraData[PreviousAtomicTxnPreHash] = prevHash.ToBytes()
+		// Start by simply setting the fee on this txn to the sum of all the fees in our
+		// inner txns.
+		UpdateTxnFee(txn, totalFees)
 
-		// Track the total fees paid.
-		totalFees, err = SafeUint64().Add(totalFees, txn.TxnFeeNanos)
-		if err != nil {
-			return nil, 0, errors.Wrapf(err, "CreateAtomicTxnsWrapper: total fee overflow")
-		}
+		return txn, nil
 	}
 
-	// Create an atomic transactions wrapper taking special care to the rules specified in _verifyAtomicTxnsWrapper.
-	// Because we do not call AddInputsAndChangeToTransaction on the wrapper, we must specify ALL fields exactly.
-	txn := &MsgDeSoTxn{
-		TxnVersion:  1,
-		TxInputs:    nil,
-		TxOutputs:   nil,
-		TxnFeeNanos: totalFees,
-		TxnNonce:    &DeSoNonce{ExpirationBlockHeight: 0, PartialID: 0},
-		TxnMeta:     &AtomicTxnsWrapperMetadata{Txns: chainedUnsignedTransactions},
-		PublicKey:   ZeroPublicKey.ToBytes(),
-		ExtraData:   extraData,
-		Signature:   DeSoSignature{},
-	}
+	// Below we assemble the atomic txn, update the fee, and repeat until the fee
+	// is consistent. There are multiple reasons why we have to do this:
+	//
+	// 1. In order to account for the wrapper txn, we need to call EstimateFee on the
+	//    fully assembled txn and then add the fee delta to one of the inner txns so
+	//    that it's covered.
+	//
+	// 2. When we update the fee on an inner txn, we also need to update the AtomicHash
+	//    chain because changing the fee in a txn changes its AtomicHash.
+	//
+	// 3. Increasing the fee on the inner txn and the outer txn can result also in the txn
+	//    becoming larger (never smaller) because we encode the fee as a varint. So we
+	//    may need an extra iteration or two after we adjust the fee on the inner txn
+	//    for the overall txn size to stabilize.
+	for {
+		atomicTxn, err := assembleAtomicTxn()
+		if err != nil {
+			return nil, 0, errors.Wrapf(err, "CreateAtomicTxnsWrapper: failed to assemble atomic txn: ")
+		}
+		previousFeeEstimate := atomicTxn.TxnFeeNanos
 
-	return txn, totalFees, nil
+		// Use EstimateFee to set the fee INCLUDING the wrapper. Note that this fee should generally be a bit
+		// higher than the totalFee computed above because the atomic wrapper adds overhead.
+		newFeeEstimate, err := mempool.EstimateFee(
+			atomicTxn, 0, MaxBasisPoints, MaxBasisPoints, MaxBasisPoints, MaxBasisPoints, maxBlockSizeBytes)
+		if err != nil {
+			return nil, 0, errors.Wrapf(err, "CreateAtomicTxnsWrapper: failed to compute "+
+				"fee on full txn")
+		}
+		// We know we're done when the fee computed by EstimateFee is <= the totalFee
+		// that we computed by summing all the fees on the inner txns, which is computed
+		// by previousFeeEstimate.
+		if newFeeEstimate <= previousFeeEstimate {
+			return atomicTxn, newFeeEstimate, nil
+		}
+		// If the fees we currently have set in all of our txns come up short, then
+		// add the extra we need to the first txn. After we do this, we also need to
+		// adjust the AtomicHash chain because changing the fee in a txn also changes
+		// its AtomicHash. To do this, we just loop over again.
+		feeDelta := newFeeEstimate - previousFeeEstimate
+		UpdateTxnFee(
+			chainedUnsignedTransactions[0],
+			chainedUnsignedTransactions[0].TxnFeeNanos+feeDelta)
+	}
 }

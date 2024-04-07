@@ -2458,7 +2458,7 @@ func EstimateMaxTxnFeeV1(txn *MsgDeSoTxn, minFeeRateNanosPerKB uint64) uint64 {
 	for feeAmountNanos == 0 || feeAmountNanos != prevFeeAmountNanos {
 		prevFeeAmountNanos = feeAmountNanos
 		feeAmountNanos = _computeMaxTxV1Fee(txn, minFeeRateNanosPerKB)
-		txn.TxnFeeNanos = feeAmountNanos
+		UpdateTxnFee(txn, feeAmountNanos)
 	}
 	return feeAmountNanos
 }

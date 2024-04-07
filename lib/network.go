@@ -4157,21 +4157,23 @@ func (txn *MsgDeSoTxn) ComputeFeeRatePerKBNanos() (uint64, error) {
 		return 0, fmt.Errorf("ComputeFeeRatePerKBNanos: Cannot compute fee rate for unsigned txn")
 	}
 
+	var err error
 	txBytes, err := txn.ToBytes(false)
 	if err != nil {
 		return 0, errors.Wrapf(err, "ComputeFeeRatePerKBNanos: Problem converting txn to bytes")
 	}
+	totalFees := txn.TxnFeeNanos
+	if totalFees != ((totalFees * 1000) / 1000) {
+		return 0, errors.Wrapf(RuleErrorOverflowDetectedInFeeRateCalculation,
+			"ComputeFeeRatePerKBNanos: Overflow detected in fee rate calculation")
+	}
+
 	serializedLen := uint64(len(txBytes))
 	if serializedLen == 0 {
 		return 0, fmt.Errorf("ComputeFeeRatePerKBNanos: Txn has zero length")
 	}
 
-	fees := txn.TxnFeeNanos
-	if fees != ((fees * 1000) / 1000) {
-		return 0, errors.Wrapf(RuleErrorOverflowDetectedInFeeRateCalculation, "ComputeFeeRatePerKBNanos: Overflow detected in fee rate calculation")
-	}
-
-	return (fees * 1000) / serializedLen, nil
+	return (totalFees * 1000) / serializedLen, nil
 }
 
 // ==================================================================
@@ -8222,6 +8224,10 @@ type DAOCoinLimitOrderMetadata struct {
 	// utxo inputs that can be used to immediately execute this trade.
 	BidderInputs []*DeSoInputsByTransactor
 
+	// DEPRECATED: This field was needed when we were on a UTXO model but
+	// it is redundant now that we have switched to a balance model because
+	// we embed the fee directly into the top level of the txn.
+	//
 	// Since a DAO Coin Limit Order may spend DESO or yield DESO to the
 	// transactor, we specify FeeNanos in the transaction metadata in
 	// order to ensure the transactor pays the standard fee rate for the size

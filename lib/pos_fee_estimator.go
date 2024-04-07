@@ -421,20 +421,34 @@ func computeFeeGivenTxnAndFeeRate(txn *MsgDeSoTxn, feeRateNanosPerKB uint64) (ui
 			PartialID:             math.MaxUint64,
 		}
 	}
-	if txnClone.TxnNonce.ExpirationBlockHeight == 0 {
-		txnClone.TxnNonce.ExpirationBlockHeight = math.MaxUint64
-	}
-	if txnClone.TxnNonce.PartialID == 0 {
-		txnClone.TxnNonce.PartialID = math.MaxUint64
+	// Account for the possible size of the nonce. If we're dealing with an atomic txn,
+	// the nonce values are intentionally set to zero so this is a special case.
+	if txnClone.TxnMeta.GetTxnType() != TxnTypeAtomicTxnsWrapper {
+		if txnClone.TxnNonce.ExpirationBlockHeight == 0 {
+			txnClone.TxnNonce.ExpirationBlockHeight = math.MaxUint64
+		}
+		if txnClone.TxnNonce.PartialID == 0 {
+			txnClone.TxnNonce.PartialID = math.MaxUint64
+		}
 	}
 
 	// Set the TxnFeeNanos to the maximum value.
-	txnClone.TxnFeeNanos = math.MaxUint64
+	UpdateTxnFee(txnClone, math.MaxUint64)
 	txnFeeNanos, err := computeFeeRecursive(txnClone, feeRateNanosPerKB)
 	if err != nil {
 		return 0, errors.Wrap(err, "computeFeeGivenTxnAndFeeRate: Problem computing fee rate recursively")
 	}
 	return txnFeeNanos, nil
+}
+
+func UpdateTxnFee(txn *MsgDeSoTxn, newFee uint64) {
+	txn.TxnFeeNanos = newFee
+	// There is a special case if the txn is a DAOCoinLimitOrder whereby we need to set
+	// the fee in the TxnMeta as well. This field is deprecated and should be removed in
+	// the future but for now we set it to maximize the accuracy of the fee estimation.
+	if txn.TxnMeta.GetTxnType() == TxnTypeDAOCoinLimitOrder {
+		txn.TxnMeta.(*DAOCoinLimitOrderMetadata).FeeNanos = newFee
+	}
 }
 
 // computeFeeRecursive computes the fee in nanos for the provided transaction and fee rate
@@ -459,8 +473,20 @@ func computeFeeRecursive(txn *MsgDeSoTxn, feeRateNanosPerKB uint64) (uint64, err
 	if err != nil {
 		return 0, errors.Wrap(err, "computeFeeRecursive: Problem serializing txn")
 	}
+	// We need to add a buffer for the signature. The maximum DER signature length is 74 bytes.
 	const MaxDERSigLen = 74
-	txnBytesLen := uint64(len(txnBytesNoSignature)) + MaxDERSigLen
+	var txnBytesLen uint64
+	if txn.TxnMeta.GetTxnType() == TxnTypeAtomicTxnsWrapper {
+		// If we're dealing with an atomic txn, then we need to add a buffer
+		// for a signature on *each* of the inner txns. Note we shouldn't ever see an overflow
+		// here because the size of the txn is capped.
+		atomicTxnMeta := txn.TxnMeta.(*AtomicTxnsWrapperMetadata)
+		txnBytesLen = uint64(len(txnBytesNoSignature)) + uint64(len(atomicTxnMeta.Txns))*MaxDERSigLen
+	} else {
+		// If we're here, we're dealing with a typical txn that only requires one signature's
+		// worth of buffer to be added.
+		txnBytesLen = uint64(len(txnBytesNoSignature)) + MaxDERSigLen
+	}
 
 	// Compute the new txn fee. If the computed fee is a decimal, we round up to the
 	// next integer value. We define the math as follows:
@@ -469,7 +495,7 @@ func computeFeeRecursive(txn *MsgDeSoTxn, feeRateNanosPerKB uint64) (uint64, err
 	// Ref: https://stackoverflow.com/questions/17944/how-to-round-up-the-result-of-integer-division
 	txnFeeNanos := (txnBytesLen*feeRateNanosPerKB + BytesPerKB - 1) / BytesPerKB
 	if txnFeeNanos < txn.TxnFeeNanos {
-		txn.TxnFeeNanos = txnFeeNanos
+		UpdateTxnFee(txn, txnFeeNanos)
 		return computeFeeRecursive(txn, feeRateNanosPerKB)
 	}
 	return txnFeeNanos, nil

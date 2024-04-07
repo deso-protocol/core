@@ -450,10 +450,14 @@ func (mp *PosMempool) OnBlockConnected(block *MsgDeSoBlock) {
 		mp.addTxnHashToRecentBlockCache(*txnHash)
 
 		// Remove the transaction from the mempool.
-		mp.removeTransactionNoLock(existingTxn, true)
+		if err := mp.removeTransactionNoLock(existingTxn, true); err != nil {
+			glog.Errorf("PosMempool.OnBlockConnected: Problem removing transaction from mempool: %v", err)
+		}
 	}
 
-	mp.refreshNoLock()
+	if err := mp.refreshNoLock(); err != nil {
+		glog.Errorf("PosMempool.OnBlockConnected: Problem refreshing mempool: %v", err)
+	}
 
 	// Add the block to the fee estimator. This is a best effort operation. If we fail to add the block
 	// to the fee estimator, we log an error and continue.
@@ -524,6 +528,8 @@ func (mp *PosMempool) AddTransaction(mtxn *MempoolTransaction) error {
 	}
 
 	// Acquire the mempool lock for all operations related to adding the transaction
+	// TODO: Do we need to wrap all of our validation logic in a write-lock? We should revisit
+	// this later and try to pull as much as we can out of the critical section here.
 	mp.Lock()
 	defer mp.Unlock()
 
@@ -568,7 +574,7 @@ func (mp *PosMempool) isTxnHashInRecentBlockCache(txnHash BlockHash) bool {
 	return mp.recentBlockTxnCache.Contains(txnHash)
 }
 
-func (mp *PosMempool) checkTransactionSanity(txn *MsgDeSoTxn, isInnerAtomicTxn bool) error {
+func (mp *PosMempool) checkTransactionSanity(txn *MsgDeSoTxn, expectInnerAtomicTxn bool) error {
 	// If the txn is an atomic, we need to check the transaction sanity for each txn as well as verify the wrapper.
 	if txn.TxnMeta.GetTxnType() == TxnTypeAtomicTxnsWrapper {
 		// First verify the wrapper.
@@ -603,12 +609,12 @@ func (mp *PosMempool) checkTransactionSanity(txn *MsgDeSoTxn, isInnerAtomicTxn b
 	// If the txn is supposed to be an inner txn in an atomic wrapper, we need to make sure it is properly formed.
 	// If the txn is NOT supposed to an inner txn in an atomic wrapper, we need to make sure it does not have
 	// the extra data fields that are only allowed in atomic txns.
-	isAtomicTxn := txn.IsAtomicTxnsInnerTxn()
-	if isAtomicTxn != isInnerAtomicTxn {
+	isInnerAtomicTxn := txn.IsAtomicTxnsInnerTxn()
+	if isInnerAtomicTxn != expectInnerAtomicTxn {
 		return fmt.Errorf(
 			"PosMempool.AddTransaction: expected txn to be atomic: %v, got: %v",
+			expectInnerAtomicTxn,
 			isInnerAtomicTxn,
-			isAtomicTxn,
 		)
 	}
 
@@ -685,6 +691,11 @@ func (mp *PosMempool) addTransactionNoLock(txn *MempoolTx, persistToDb bool) err
 	// Special handling for atomic txns. For atomic txns, the mempool will ignore the nonce for the wrapper txn
 	// and only track nonces for the inner txns. Additionally, only the wrapper txn will be added to the transaction
 	// register.
+	//
+	// TODO: We should allow replace-by-fee for atomic txns. To accomplish this, we can compute a "derived nonce"
+	// for the atomic txn that has {lowest block height, hash(inner txn partial ids)) as its nonce. This would
+	// allow one to replace an atomic txn with a new one paying a higher fee as long as they keep the nonces of
+	// the inner txns the same.
 	if txn.Tx.TxnMeta.GetTxnType() == TxnTypeAtomicTxnsWrapper {
 		// If the txn is an atomic txn, we need to add each txn individually.
 		atomicTxnsWrapper, ok := txn.Tx.TxnMeta.(*AtomicTxnsWrapperMetadata)
@@ -905,6 +916,7 @@ func (mp *PosMempool) validateTransactions() error {
 	mp.RLock()
 	// We copy the reference to the readOnlyLatestBlockView. Since the utxoView is immutable, we don't need to copy the
 	// entire view while we hold the lock.
+	// We hold a read-lock on the mempool to get the transactions and the latest block view.
 	validationView := mp.readOnlyLatestBlockView
 	mempoolTxns := mp.getTransactionsNoLock()
 	mp.RUnlock()
