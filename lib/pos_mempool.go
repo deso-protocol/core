@@ -529,7 +529,11 @@ func (mp *PosMempool) AddTransaction(mtxn *MempoolTransaction) error {
 
 	// Acquire the mempool lock for all operations related to adding the transaction
 	// TODO: Do we need to wrap all of our validation logic in a write-lock? We should revisit
-	// this later and try to pull as much as we can out of the critical section here.
+	// this later and try to pull as much as we can out of the critical section here. The reason
+	// we added this lock is because checkTransactionSanity was calling ValidateTransactionNonce
+	// on the readOnly view, which was causing a modification of the view's PKID map at the same
+	// time as another thread was reading from it. This lock solves the issue but may not be the
+	// most optimal.
 	mp.Lock()
 	defer mp.Unlock()
 

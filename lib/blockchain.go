@@ -1732,6 +1732,13 @@ func CheckTransactionSanity(txn *MsgDeSoTxn, blockHeight uint32, params *DeSoPar
 		existingInputs[*txin] = true
 	}
 
+	// Make sure the transaction has a signature.
+	if txn.TxnMeta.GetTxnType() != TxnTypeBitcoinExchange &&
+		txn.TxnMeta.GetTxnType() != TxnTypeAtomicTxnsWrapper &&
+		txn.Signature.Sign == nil {
+		return RuleErrorTransactionHasNoSignature
+	}
+
 	return nil
 }
 
