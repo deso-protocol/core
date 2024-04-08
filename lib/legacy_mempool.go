@@ -605,6 +605,10 @@ func (mp *DeSoMempool) GetTransactionsOrderedByTimeAdded() (_poolTxns []*Mempool
 	return poolTxns, nil, nil
 }
 
+func (mp *DeSoMempool) GetMempoolTipBlockHeight() uint64 {
+	return uint64(mp.bc.blockTip().Height)
+}
+
 func (mp *DeSoMempool) GetMempoolTx(txId *BlockHash) *MempoolTx {
 	return mp.readOnlyUniversalTransactionMap[*txId]
 }

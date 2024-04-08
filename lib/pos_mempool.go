@@ -41,6 +41,7 @@ type Mempool interface {
 	CheckSpend(op UtxoKey) *MsgDeSoTxn
 	GetOrderedTransactions() []*MempoolTx
 	IsTransactionInPool(txHash *BlockHash) bool
+	GetMempoolTipBlockHeight() uint64
 	GetMempoolTx(txHash *BlockHash) *MempoolTx
 	GetMempoolSummaryStats() map[string]*SummaryStats
 	EstimateFee(
@@ -60,6 +61,59 @@ type Mempool interface {
 		pastBlocksPriorityPercentileBasisPoints uint64,
 		maxBlockSize uint64,
 	) (uint64, error)
+}
+
+// GetAugmentedUniversalViewWithAdditionalTransactions is meant as a helper function
+// for backend APIs to better construct atomic transactions while maintaining various
+// transactional sanity checks. It SHOULD NOT be used for consensus critical tasks
+// as it does not validate signatures, does not validate fees, and would likely lead
+// to a nonsensical state of the blockchain.
+//
+// In the case of atomic transactions it's likely that a user will have a series of
+// dependent transactions (transactions that MUST be submitted together in a specific order)
+// that they plan to submit as a single atomic transaction. However, functions like
+// GetAugmentedUniversalView may not have access to this series of transactions meaning
+// backend APIs using GetAugmentedUniversalView will generate errors unnecessarily in the case
+// of certain atomic transaction workflows. To deal with this, we can use
+// GetAugmentedUniversalViewWithAdditionalTransactions which will create a
+// view that has connected a set of transactions (specified by optionalTxns).
+//
+// NOTE: GetAugmentedUniversalViewWithAdditionalTransactions DOES NOT validate fees
+// as fees are computed in UtxoView.ConnectBlock and optionalTxns are not included
+// in any block that can be connected yet.
+func GetAugmentedUniversalViewWithAdditionalTransactions(
+	mempool Mempool,
+	optionalTxns []*MsgDeSoTxn,
+) (
+	*UtxoView,
+	error,
+) {
+	// Generate an augmented view.
+	newView, err := mempool.GetAugmentedUniversalView()
+	if err != nil {
+		return nil, errors.Wrap(err, "GetAugmentedUniversalViewWithAdditionalTransactions")
+	}
+
+	// Connect optional txns (if any).
+	currentTimestampNanoSecs := time.Now().UnixNano()
+	if optionalTxns != nil && len(optionalTxns) > 0 {
+		for ii, txn := range optionalTxns {
+			_, _, _, _, err := newView.ConnectTransaction(
+				txn,
+				txn.Hash(),
+				uint32(mempool.GetMempoolTipBlockHeight()+1),
+				currentTimestampNanoSecs,
+				false,
+				true,
+			)
+			if err != nil {
+				return nil, errors.Wrapf(err,
+					"GetAugmentedUniversalViewWithAdditionalTransactions failed connecting transaction %d of %d",
+					ii, len(optionalTxns))
+			}
+		}
+	}
+	return newView, nil
 }
 
 type MempoolIterator interface {
@@ -985,6 +1039,15 @@ func (mp *PosMempool) IsTransactionInPool(txHash *BlockHash) bool {
 
 	_, exists := mp.txnRegister.txnMembership[*txHash]
 	return exists
+}
+
+func (mp *PosMempool) GetMempoolTipBlockHeight() uint64 {
+	mp.RLock()
+	defer mp.RUnlock()
+	if !mp.IsRunning() {
+		return 0
+	}
+	return mp.latestBlockHeight
 }
 
 func (mp *PosMempool) GetMempoolTx(txHash *BlockHash) *MempoolTx {
