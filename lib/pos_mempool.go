@@ -729,6 +729,9 @@ func (mp *PosMempool) addTransactionNoLock(txn *MempoolTx, persistToDb bool) err
 		}
 		// Only add the wrapper transaction to the transaction register.
 		if err := mp.txnRegister.AddTransaction(txn); err != nil {
+			// If we failed to add the transaction to the txn register, we need to remove the inner txns'
+			// nonces from the nonce tracker.
+			mp.removeNonces(innerTxnsWithNoncesAdded)
 			return errors.Wrapf(err, "PosMempool.addTransactionNoLock: Problem adding txn to register")
 		}
 		// Emit a persist event only for the wrapper transaction.
