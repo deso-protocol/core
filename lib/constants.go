@@ -1155,7 +1155,7 @@ var DeSoMainnetParams = DeSoParams{
 	DialTimeout:                   30 * time.Second,
 	VersionNegotiationTimeout:     30 * time.Second,
 	VerackNegotiationTimeout:      30 * time.Second,
-	NetworkManagerRefreshDuration: 1 * time.Second,
+	NetworkManagerRefreshDuration: 10 * time.Second,
 
 	MaxAddressesToBroadcast: 10,
 
