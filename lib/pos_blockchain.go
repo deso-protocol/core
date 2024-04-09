@@ -1725,6 +1725,9 @@ func (bc *Blockchain) commitBlockPoS(blockHash *BlockHash, verifySignatures bool
 		return errors.Wrapf(err, "commitBlockPoS: Problem putting block in db: ")
 	}
 
+	if bc.snapshot != nil {
+		bc.snapshot.FinishProcessBlock(blockNode)
+	}
 	if bc.eventManager != nil {
 		bc.eventManager.blockCommitted(&BlockEvent{
 			Block:    block,
@@ -1740,9 +1743,6 @@ func (bc *Blockchain) commitBlockPoS(blockHash *BlockHash, verifySignatures bool
 				Succeeded: true,
 			})
 		}
-	}
-	if bc.snapshot != nil {
-		bc.snapshot.FinishProcessBlock(blockNode)
 	}
 	currentEpochNumber, err := utxoView.GetCurrentEpochNumber()
 	if err != nil {
