@@ -193,6 +193,7 @@ func (nm *NetworkManager) startValidatorConnector() {
 			nm.exitGroup.Done()
 			return
 		case <-time.After(nm.params.NetworkManagerRefreshDuration):
+			nm.logValidatorIndices()
 			nm.refreshValidatorIndices()
 			nm.connectValidators()
 		}
@@ -535,6 +536,32 @@ func (nm *NetworkManager) getActiveValidatorsMap() *collections.ConcurrentMap[bl
 func (nm *NetworkManager) isActiveValidator(pk bls.SerializedPublicKey) bool {
 	_, ok := nm.activeValidatorsMap.Get(pk)
 	return ok
+}
+
+func (nm *NetworkManager) logValidatorIndices() {
+	// Log the outbound validators
+	validatorOutboundMap := nm.GetValidatorOutboundIndex().ToMap()
+	outboundValidatorString := ""
+	for pk, rn := range validatorOutboundMap {
+		outboundValidatorString += fmt.Sprintf("  PublicKey (%v) Domain (%v) Status (%v)\n", pk, rn.peer.addrStr, rn.connectionStatus)
+	}
+	glog.V(2).Infof("NetworkManager.logValidatorIndices: Outbound Validators:\n%v", outboundValidatorString)
+
+	// Log the inbound validators
+	validatorInboundMap := nm.GetValidatorInboundIndex().ToMap()
+	inboundValidatorString := ""
+	for pk, rn := range validatorInboundMap {
+		inboundValidatorString += fmt.Sprintf("  PublicKey (%v) Domain (%v) Status (%v)\n", pk, rn.peer.addrStr, rn.connectionStatus)
+	}
+	glog.V(2).Infof("NetworkManager.logValidatorIndices: Inbound Validators:\n%v", inboundValidatorString)
+
+	// Log the active validators
+	activeValidatorsMap := nm.getActiveValidatorsMap().ToMap()
+	activeValidatorsString := ""
+	for pk, validator := range activeValidatorsMap {
+		activeValidatorsString += fmt.Sprintf("  PublicKey (%v) Domain(%v)\n", pk, string(validator.GetDomains()[0]))
+	}
+	glog.V(2).Infof("NetworkManager.logValidatorIndices: Active Validators:\n%v", activeValidatorsString)
 }
 
 // refreshValidatorIndices re-indexes validators based on the activeValidatorsMap. It is called periodically by the
