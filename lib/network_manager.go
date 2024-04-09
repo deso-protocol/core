@@ -424,13 +424,6 @@ func (nm *NetworkManager) processOutboundConnection(conn Connection) (*RemoteNod
 		nm.AddrMgr.Good(oc.address)
 	}
 
-	// If this is a non-persistent outbound peer and the group key overlaps with another peer we're already connected to then
-	// abort mission. We only connect to one peer per IP group in order to prevent Sybil attacks.
-	if !oc.isPersistent && nm.cmgr.IsFromRedundantOutboundIPAddress(oc.address) {
-		return nil, fmt.Errorf("NetworkManager.handleOutboundConnection: Rejecting OUTBOUND NON-PERSISTENT "+
-			"connection with redundant group key (%s).", addrmgr.GroupKey(oc.address))
-	}
-
 	na, err := nm.ConvertIPStringToNetAddress(oc.connection.RemoteAddr().String())
 	if err != nil {
 		return nil, errors.Wrapf(err, "NetworkManager.handleOutboundConnection: Problem calling ipToNetAddr "+
