@@ -37,7 +37,7 @@ type Mempool interface {
 	GetAugmentedUniversalView() (*UtxoView, error)
 	GetAugmentedUtxoViewForPublicKey(pk []byte, optionalTx *MsgDeSoTxn) (*UtxoView, error)
 	BlockUntilReadOnlyViewRegenerated()
-	WaitForTxnValidation(txHash *BlockHash) bool
+	WaitForTxnValidation(txHash *BlockHash) error
 	CheckSpend(op UtxoKey) *MsgDeSoTxn
 	GetOrderedTransactions() []*MempoolTx
 	IsTransactionInPool(txHash *BlockHash) bool
@@ -231,6 +231,10 @@ type PosMempool struct {
 	// This cache is used to power logic that waits for a transaction to either be validated in the mempool
 	// or be included in a block.
 	recentBlockTxnCache lru.KVCache
+
+	// recentRejectedTxnCache is a cache to store the txns that were recently rejected so that we can return better
+	// errors for them.
+	recentRejectedTxnCache lru.KVCache
 }
 
 // PosMempoolIterator is a wrapper around FeeTimeIterator, modified to return MsgDeSoTxn instead of MempoolTx.
@@ -305,7 +309,8 @@ func (mp *PosMempool) Init(
 	mp.mempoolBackupIntervalMillis = mempoolBackupIntervalMillis
 	mp.maxValidationViewConnects = maxValidationViewConnects
 	mp.transactionValidationRefreshIntervalMillis = transactionValidationRefreshIntervalMillis
-	mp.recentBlockTxnCache = lru.NewKVCache(100000) // cache 100K latest txns from blocks.
+	mp.recentBlockTxnCache = lru.NewKVCache(100000)    // cache 100K latest txns from blocks.
+	mp.recentRejectedTxnCache = lru.NewKVCache(100000) // cache 100K rejected txns.
 
 	// TODO: parameterize num blocks. Also, how to pass in blocks.
 	err = mp.feeEstimator.Init(
@@ -445,10 +450,14 @@ func (mp *PosMempool) OnBlockConnected(block *MsgDeSoBlock) {
 		mp.addTxnHashToRecentBlockCache(*txnHash)
 
 		// Remove the transaction from the mempool.
-		mp.removeTransactionNoLock(existingTxn, true)
+		if err := mp.removeTransactionNoLock(existingTxn, true); err != nil {
+			glog.Errorf("PosMempool.OnBlockConnected: Problem removing transaction from mempool: %v", err)
+		}
 	}
 
-	mp.refreshNoLock()
+	if err := mp.refreshNoLock(); err != nil {
+		glog.Errorf("PosMempool.OnBlockConnected: Problem refreshing mempool: %v", err)
+	}
 
 	// Add the block to the fee estimator. This is a best effort operation. If we fail to add the block
 	// to the fee estimator, we log an error and continue.
@@ -519,6 +528,12 @@ func (mp *PosMempool) AddTransaction(mtxn *MempoolTransaction) error {
 	}
 
 	// Acquire the mempool lock for all operations related to adding the transaction
+	// TODO: Do we need to wrap all of our validation logic in a write-lock? We should revisit
+	// this later and try to pull as much as we can out of the critical section here. The reason
+	// we added this lock is because checkTransactionSanity was calling ValidateTransactionNonce
+	// on the readOnly view, which was causing a modification of the view's PKID map at the same
+	// time as another thread was reading from it. This lock solves the issue but may not be the
+	// most optimal.
 	mp.Lock()
 	defer mp.Unlock()
 
@@ -563,7 +578,7 @@ func (mp *PosMempool) isTxnHashInRecentBlockCache(txnHash BlockHash) bool {
 	return mp.recentBlockTxnCache.Contains(txnHash)
 }
 
-func (mp *PosMempool) checkTransactionSanity(txn *MsgDeSoTxn, isInnerAtomicTxn bool) error {
+func (mp *PosMempool) checkTransactionSanity(txn *MsgDeSoTxn, expectInnerAtomicTxn bool) error {
 	// If the txn is an atomic, we need to check the transaction sanity for each txn as well as verify the wrapper.
 	if txn.TxnMeta.GetTxnType() == TxnTypeAtomicTxnsWrapper {
 		// First verify the wrapper.
@@ -598,12 +613,12 @@ func (mp *PosMempool) checkTransactionSanity(txn *MsgDeSoTxn, isInnerAtomicTxn b
 	// If the txn is supposed to be an inner txn in an atomic wrapper, we need to make sure it is properly formed.
 	// If the txn is NOT supposed to an inner txn in an atomic wrapper, we need to make sure it does not have
 	// the extra data fields that are only allowed in atomic txns.
-	isAtomicTxn := txn.IsAtomicTxnsInnerTxn()
-	if isAtomicTxn != isInnerAtomicTxn {
+	isInnerAtomicTxn := txn.IsAtomicTxnsInnerTxn()
+	if isInnerAtomicTxn != expectInnerAtomicTxn {
 		return fmt.Errorf(
 			"PosMempool.AddTransaction: expected txn to be atomic: %v, got: %v",
+			expectInnerAtomicTxn,
 			isInnerAtomicTxn,
-			isAtomicTxn,
 		)
 	}
 
@@ -680,6 +695,11 @@ func (mp *PosMempool) addTransactionNoLock(txn *MempoolTx, persistToDb bool) err
 	// Special handling for atomic txns. For atomic txns, the mempool will ignore the nonce for the wrapper txn
 	// and only track nonces for the inner txns. Additionally, only the wrapper txn will be added to the transaction
 	// register.
+	//
+	// TODO: We should allow replace-by-fee for atomic txns. To accomplish this, we can compute a "derived nonce"
+	// for the atomic txn that has {lowest block height, hash(inner txn partial ids)) as its nonce. This would
+	// allow one to replace an atomic txn with a new one paying a higher fee as long as they keep the nonces of
+	// the inner txns the same.
 	if txn.Tx.TxnMeta.GetTxnType() == TxnTypeAtomicTxnsWrapper {
 		// If the txn is an atomic txn, we need to add each txn individually.
 		atomicTxnsWrapper, ok := txn.Tx.TxnMeta.(*AtomicTxnsWrapperMetadata)
@@ -713,6 +733,9 @@ func (mp *PosMempool) addTransactionNoLock(txn *MempoolTx, persistToDb bool) err
 		}
 		// Only add the wrapper transaction to the transaction register.
 		if err := mp.txnRegister.AddTransaction(txn); err != nil {
+			// If we failed to add the transaction to the txn register, we need to remove the inner txns'
+			// nonces from the nonce tracker.
+			mp.removeNonces(innerTxnsWithNoncesAdded)
 			return errors.Wrapf(err, "PosMempool.addTransactionNoLock: Problem adding txn to register")
 		}
 		// Emit a persist event only for the wrapper transaction.
@@ -900,6 +923,7 @@ func (mp *PosMempool) validateTransactions() error {
 	mp.RLock()
 	// We copy the reference to the readOnlyLatestBlockView. Since the utxoView is immutable, we don't need to copy the
 	// entire view while we hold the lock.
+	// We hold a read-lock on the mempool to get the transactions and the latest block view.
 	validationView := mp.readOnlyLatestBlockView
 	mempoolTxns := mp.getTransactionsNoLock()
 	mp.RUnlock()
@@ -923,7 +947,8 @@ func (mp *PosMempool) validateTransactions() error {
 	}
 	// Connect the transactions to the validation view. We use the latest block height + 1 as the block height to connect
 	// the transactions. This is because the mempool contains transactions that we use for producing the next block.
-	_, _, _, _, successFlags, err := copyValidationView.ConnectTransactionsFailSafeWithLimit(txns, txHashes, uint32(mp.latestBlockHeight)+1,
+	_, _, _, _, errorsFound, err := copyValidationView.ConnectTransactionsFailSafeWithLimit(
+		txns, txHashes, uint32(mp.latestBlockHeight)+1,
 		time.Now().UnixNano(), true, false, true, mp.maxValidationViewConnects)
 	if err != nil {
 		return errors.Wrapf(err, "PosMempool.validateTransactions: Problem connecting transactions")
@@ -931,7 +956,7 @@ func (mp *PosMempool) validateTransactions() error {
 
 	// We iterate through the successFlags and update the validated status of the transactions in the mempool.
 	var txnsToRemove []*MempoolTx
-	for ii, successFlag := range successFlags {
+	for ii, errFound := range errorsFound {
 		if ii >= len(mempoolTxns) {
 			break
 		}
@@ -939,10 +964,13 @@ func (mp *PosMempool) validateTransactions() error {
 		// transaction in the mempool. If the transaction failed to connect to the validation view, we add it to the
 		// txnsToRemove list. Note that we don't need to hold a lock while updating the validated status of the
 		// transactions in the mempool, since the updateTransactionValidatedStatus already holds the lock.
-		if successFlag {
+		if errFound == nil {
 			mp.updateTransactionValidatedStatus(mempoolTxns[ii].Hash, true)
 		} else {
 			txnsToRemove = append(txnsToRemove, mempoolTxns[ii])
+			// Add an error for the txn to our cache so we can return it to the user if they
+			// ask for it later.
+			mp.recentRejectedTxnCache.Add(*mempoolTxns[ii].Hash, errFound)
 		}
 	}
 
@@ -1123,19 +1151,27 @@ func (mp *PosMempool) BlockUntilReadOnlyViewRegenerated() {
 
 // WaitForTxnValidation blocks until the transaction with the given hash is either validated in the mempool,
 // in a recent block, or no longer in the mempool.
-func (mp *PosMempool) WaitForTxnValidation(txHash *BlockHash) bool {
+func (mp *PosMempool) WaitForTxnValidation(txHash *BlockHash) error {
 	// Check fairly often. Not too often.
 	checkIntervalMillis := mp.transactionValidationRefreshIntervalMillis / 5
 	if checkIntervalMillis == 0 {
 		checkIntervalMillis = 1
 	}
 	for {
-		mtxn := mp.GetTransaction(txHash)
-		if mtxn.IsValidated() {
-			return true
+		rejectionErr, wasRejected := mp.recentRejectedTxnCache.Lookup(*txHash)
+		if wasRejected {
+			return rejectionErr.(error)
 		}
+		mtxn := mp.GetTransaction(txHash)
 		if mtxn == nil {
-			return mp.isTxnHashInRecentBlockCache(*txHash)
+			if mp.isTxnHashInRecentBlockCache(*txHash) {
+				return nil
+			} else {
+				return fmt.Errorf("Txn was never received or it was " +
+					"rejected for an unknown reason")
+			}
+		} else if mtxn.IsValidated() {
+			return nil
 		}
 		// Sleep for a bit and then check again.
 		time.Sleep(time.Duration(checkIntervalMillis) * time.Millisecond)

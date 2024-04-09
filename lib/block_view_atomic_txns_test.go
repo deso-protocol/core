@@ -27,7 +27,7 @@ func TestAtomicTxnsWrapperTxIndexMetadataEncoder(t *testing.T) {
 	atomicTxns, signerPrivKeysBase58 := _generateUnsignedDependentAtomicTransactions(testMeta, int(100))
 
 	// Construct an atomic transaction.
-	atomicTxnsWrapper, _, err := testMeta.chain.CreateAtomicTxnsWrapper(atomicTxns, nil)
+	atomicTxnsWrapper, _, err := testMeta.chain.CreateAtomicTxnsWrapper(atomicTxns, nil, testMeta.mempool)
 	require.NoError(t, err)
 
 	// Sign the internal atomic transactions, making the atomic transaction valid.
@@ -95,7 +95,7 @@ func TestAtomicTxnsWrapperAtomicity(t *testing.T) {
 
 	// Wrap the transactions in an atomic wrapper.
 	// NOTE: This must be done before signing to ensure the extra data is present.
-	atomicTxnsWrapper, _, err := testMeta.chain.CreateAtomicTxnsWrapper(atomicTxns, nil)
+	atomicTxnsWrapper, _, err := testMeta.chain.CreateAtomicTxnsWrapper(atomicTxns, nil, testMeta.mempool)
 	require.NoError(t, err)
 
 	// Sign all but the final transaction, sign the last one incorrectly.
@@ -178,7 +178,7 @@ func TestAtomicTxnsSignatureFailure(t *testing.T) {
 		nextIndex := (ii + 1) % len(atomicTxns)
 		_signTxn(t, txn, signerPrivKeysBase58[nextIndex])
 	}
-	atomicTxnsWrapper, _, err := testMeta.chain.CreateAtomicTxnsWrapper(atomicTxns, nil)
+	atomicTxnsWrapper, _, err := testMeta.chain.CreateAtomicTxnsWrapper(atomicTxns, nil, testMeta.mempool)
 	require.NoError(t, err)
 
 	// Try to connect them atomically.
@@ -200,7 +200,7 @@ func TestConnectAtomicTxnsWrapperRuleErrors(t *testing.T) {
 	// (This should fail -- RuleErrorTxnTooBig)
 	numTxnsToGenerate := testMeta.params.MaxBlockSizeBytesPoW / 200
 	atomicTxns, _ := _generateSignedDependentAtomicTransactions(testMeta, int(numTxnsToGenerate))
-	atomicTxnsWrapper, _, err := testMeta.chain.CreateAtomicTxnsWrapper(atomicTxns, nil)
+	atomicTxnsWrapper, _, err := testMeta.chain.CreateAtomicTxnsWrapper(atomicTxns, nil, testMeta.mempool)
 	require.NoError(t, err)
 	_, err = _atomicTransactionsWrapperWithConnectTimestamp(
 		t, testMeta.chain, testMeta.db, testMeta.params, atomicTxnsWrapper, 0)
@@ -223,7 +223,7 @@ func TestConnectAtomicTxnsWrapperRuleErrors(t *testing.T) {
 	// Try and cause overflow in the atomic transactions wrapper fee verification.
 	// (This should fail -- RuleErrorOverflowDetectedInFeeRateCalculation)
 	atomicTxns, _ = _generateSignedDependentAtomicTransactions(testMeta, int(100))
-	atomicTxnsWrapper, _, err = testMeta.chain.CreateAtomicTxnsWrapper(atomicTxns, nil)
+	atomicTxnsWrapper, _, err = testMeta.chain.CreateAtomicTxnsWrapper(atomicTxns, nil, testMeta.mempool)
 	require.NoError(t, err)
 	atomicTxnsWrapper.TxnFeeNanos = math.MaxUint64
 	_, err = _atomicTransactionsWrapperWithConnectTimestamp(
@@ -249,7 +249,7 @@ func TestVerifyAtomicTxnsWrapperRuleErrors(t *testing.T) {
 	atomicTxns, _ := _generateSignedDependentAtomicTransactions(testMeta, 100)
 
 	// Bundle the transactions together in a (valid) wrapper.
-	atomicTxnsWrapper, _, err := testMeta.chain.CreateAtomicTxnsWrapper(atomicTxns, nil)
+	atomicTxnsWrapper, _, err := testMeta.chain.CreateAtomicTxnsWrapper(atomicTxns, nil, testMeta.mempool)
 	require.NoError(t, err)
 
 	// Try to use a public key other than the zero public key in the wrapper.
@@ -333,7 +333,7 @@ func TestVerifyAtomicTxnsChain(t *testing.T) {
 	atomicTxns, _ := _generateSignedDependentAtomicTransactions(testMeta, 100)
 
 	// Bundle the transactions together in a (valid) wrapper.
-	atomicTxnsWrapper, _, err := testMeta.chain.CreateAtomicTxnsWrapper(atomicTxns, nil)
+	atomicTxnsWrapper, _, err := testMeta.chain.CreateAtomicTxnsWrapper(atomicTxns, nil, testMeta.mempool)
 	require.NoError(t, err)
 
 	// Try to remove all the inner transactions.
@@ -350,7 +350,7 @@ func TestVerifyAtomicTxnsChain(t *testing.T) {
 	// (This should fail -- RuleErrorAtomicTxnsHasAtomicTxnsInnerTxn)
 	atomicTxnsWrapperDuplicate, err = atomicTxnsWrapper.Copy()
 	require.NoError(t, err)
-	innerAtomicTxnsWrapper, _, err := testMeta.chain.CreateAtomicTxnsWrapper(atomicTxns[:100], nil)
+	innerAtomicTxnsWrapper, _, err := testMeta.chain.CreateAtomicTxnsWrapper(atomicTxns[:100], nil, testMeta.mempool)
 	require.NoError(t, err)
 	atomicTxnsWrapperDuplicate.TxnMeta.(*AtomicTxnsWrapperMetadata).Txns =
 		atomicTxnsWrapperDuplicate.TxnMeta.(*AtomicTxnsWrapperMetadata).Txns[100:]
