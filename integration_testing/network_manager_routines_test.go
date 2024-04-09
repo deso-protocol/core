@@ -2,6 +2,9 @@ package integration_testing
 
 import (
 	"fmt"
+	"testing"
+	"time"
+
 	"github.com/deso-protocol/core/bls"
 	"github.com/deso-protocol/core/cmd"
 	"github.com/deso-protocol/core/collections"
@@ -9,8 +12,6 @@ import (
 	"github.com/deso-protocol/core/lib"
 	"github.com/stretchr/testify/require"
 	"github.com/tyler-smith/go-bip39"
-	"testing"
-	"time"
 )
 
 func TestConnectionControllerInitiatePersistentConnections(t *testing.T) {
@@ -39,7 +40,7 @@ func TestConnectionControllerInitiatePersistentConnections(t *testing.T) {
 	}
 	node1 = startNode(t, node1)
 	// Let node1 connect to its connect-ips.
-	time.Sleep(1 * node1.Config.Params.NetworkManagerRefreshDuration)
+	time.Sleep(10 * time.Second)
 	// Now set the active validators to node4 and node5.
 	activeValidatorsMap := getActiveValidatorsMapWithValidatorNodes(t, node4, node5)
 	setActiveValidators(activeValidatorsMap, node1, node2, node3, node4, node5)
@@ -70,7 +71,7 @@ func TestConnectionControllerInitiatePersistentConnections(t *testing.T) {
 	}
 	node6 = startNode(t, node6)
 	// Let node6 connect to its connect-ips.
-	time.Sleep(1 * node1.Config.Params.NetworkManagerRefreshDuration)
+	time.Sleep(10 * time.Second)
 	activeValidatorsMap = getActiveValidatorsMapWithValidatorNodes(t, node4, node5, node6)
 	setActiveValidators(activeValidatorsMap, node1, node2, node3, node4, node5, node6)
 	waitForNonValidatorOutboundConnection(t, node6, node2)
@@ -117,7 +118,7 @@ func TestConnectionControllerValidatorCircularConnectIps(t *testing.T) {
 	node1 = startNode(t, node1)
 	node2 = startNode(t, node2)
 
-	time.Sleep(1 * node1.Config.Params.NetworkManagerRefreshDuration)
+	time.Sleep(10 * time.Second)
 	activeValidatorsMap := getActiveValidatorsMapWithValidatorNodes(t, node1, node2)
 	setActiveValidators(activeValidatorsMap, node1, node2)
 	// The allCount for node1 and node2 should be 2, as they should have an outbound and an inbound RemoteNode
@@ -153,7 +154,7 @@ func TestNetworkManagerPersistentConnectorReconnect(t *testing.T) {
 	}
 	node1 = startNode(t, node1)
 	// Let node1 connect to its connect-ips.
-	time.Sleep(1 * node1.Config.Params.NetworkManagerRefreshDuration)
+	time.Sleep(10 * time.Second)
 	activeValidatorsMap := getActiveValidatorsMapWithValidatorNodes(t, node3)
 	setActiveValidators(activeValidatorsMap, node1, node2, node3)
 
@@ -224,7 +225,7 @@ func TestConnectionControllerValidatorConnector(t *testing.T) {
 	node6 = startNode(t, node6)
 	node7 = startNode(t, node7)
 	// Let node6 and node7 connect to their connect-ips.
-	time.Sleep(1 * node1.Config.Params.NetworkManagerRefreshDuration)
+	time.Sleep(10 * time.Second)
 	activeValidatorsMap := getActiveValidatorsMapWithValidatorNodes(t, node1, node2, node3, node4, node5)
 	setActiveValidators(activeValidatorsMap, node1, node2, node3, node4, node5, node6, node7)
 

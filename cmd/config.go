@@ -35,6 +35,9 @@ type Config struct {
 	MaxInboundPeers   uint32
 	OneInboundPerIp   bool
 
+	// NetworkingManager config
+	PeerConnectionRefreshIntervalMillis uint64
+
 	// Snapshot
 	HyperSync                 bool
 	ForceChecksum             bool
@@ -149,6 +152,9 @@ func LoadConfig() *Config {
 	config.IgnoreInboundInvs = viper.GetBool("ignore-inbound-invs")
 	config.MaxInboundPeers = viper.GetUint32("max-inbound-peers")
 	config.OneInboundPerIp = viper.GetBool("one-inbound-per-ip")
+
+	// NetworkManager config
+	config.PeerConnectionRefreshIntervalMillis = viper.GetUint64("peer-connection-refresh-interval-millis")
 
 	// Mining + Admin
 	config.MinerPublicKeys = viper.GetStringSlice("miner-public-keys")

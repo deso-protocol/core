@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"fmt"
+
 	"github.com/deso-protocol/core/lib"
 	"github.com/golang/glog"
 	"github.com/spf13/cobra"
@@ -143,6 +144,11 @@ func SetupRunFlags(cmd *cobra.Command) {
 			"our connections and potentially make onerous requests as well. Useful to "+
 			"disable this flag when testing locally to allow multiple inbound connections "+
 			"from test servers")
+
+	cmd.PersistentFlags().Uint64("peer-connection-refresh-interval-millis", 10000,
+		"The frequency in milliseconds with which the node will refresh its peer connections. This applies to"+
+			"both outbound validators and outbound persistent non-validators",
+	)
 
 	// Listeners
 	cmd.PersistentFlags().Uint64("protocol-port", 0,
