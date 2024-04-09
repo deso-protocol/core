@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"fmt"
 	"github.com/deso-protocol/core/lib"
 	"github.com/golang/glog"
 	"github.com/spf13/cobra"
@@ -229,8 +230,10 @@ func SetupRunFlags(cmd *cobra.Command) {
 
 	// PoS Checkpoint Syncing
 	// TODO: a default value is a little tricky here since we don't know what network we're using.
-	cmd.PersistentFlags().StringSlice("checkpoint-syncing-providers", []string{}, "A comma-separated list of URLs that "+
-		"support the committed tip block info endpoint to be used for checkpoint syncing.")
+	cmd.PersistentFlags().StringSlice("checkpoint-syncing-providers", []string{}, fmt.Sprintf("A comma-separated list of URLs that "+
+		"supports the committed tip block info endpoint to be used for checkpoint syncing. "+
+		"If unset, the field will default to %v on mainnet and %v on testnet",
+		lib.DefaultMainnetCheckpointProvider, lib.DefaultTestnetCheckpointProvider))
 	cmd.PersistentFlags().VisitAll(func(flag *pflag.Flag) {
 		viper.BindPFlag(flag.Name, flag)
 	})

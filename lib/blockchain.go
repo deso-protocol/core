@@ -546,6 +546,8 @@ type Blockchain struct {
 	// checkpointBlockInfo is the latest checkpoint block info that we have received from the checkpoint syncing
 	// providers.
 	checkpointBlockInfo *CheckpointBlockInfo
+	//
+	checkpointBlockInfoLock sync.RWMutex
 
 	timer *Timer
 }
@@ -555,14 +557,10 @@ func (bc *Blockchain) updateCheckpointBlockInfo() {
 		glog.V(2).Info("updateCheckpointBlockInfo: No checkpoint syncing providers set. Skipping update.")
 		return
 	}
-	var wg sync.WaitGroup
 	ch := make(chan *CheckpointBlockInfoAndError, len(bc.checkpointSyncingProviders))
 	for _, provider := range bc.checkpointSyncingProviders {
-		wg.Add(1)
-		go getCheckpointBlockInfoFromProvider(provider, ch, &wg)
+		go getCheckpointBlockInfoFromProvider(provider, ch)
 	}
-
-	wg.Wait()
 
 	// Collect the results from the channel
 	checkpointBlockInfos := make([]*CheckpointBlockInfoAndError, len(bc.checkpointSyncingProviders))
@@ -587,45 +585,52 @@ func (bc *Blockchain) updateCheckpointBlockInfo() {
 		return
 	}
 	glog.V(2).Infof("updateCheckpointBlockInfo: Setting checkpoint block info to: %v", highestHeightCheckpointBlockInfo)
+	bc.checkpointBlockInfoLock.Lock()
 	bc.checkpointBlockInfo = highestHeightCheckpointBlockInfo
+	bc.checkpointBlockInfoLock.Unlock()
 }
 
-func getCheckpointBlockInfoFromProvider(provider string, ch chan<- *CheckpointBlockInfoAndError, wg *sync.WaitGroup) {
-	defer wg.Done()
+func (bc *Blockchain) GetCheckpointBlockInfo() *CheckpointBlockInfo {
+	bc.checkpointBlockInfoLock.RLock()
+	defer bc.checkpointBlockInfoLock.RUnlock()
+	return bc.checkpointBlockInfo
+}
+
+func getCheckpointBlockInfoFromProvider(provider string, ch chan<- *CheckpointBlockInfoAndError) {
+	ch <- getCheckpointBlockInfoFromProviderHelper(provider)
+}
+
+func getCheckpointBlockInfoFromProviderHelper(provider string) *CheckpointBlockInfoAndError {
 	url := fmt.Sprintf("%s%s", provider, RoutePathGetCommittedTipBlockInfo)
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
-		ch <- &CheckpointBlockInfoAndError{
+		return &CheckpointBlockInfoAndError{
 			Error: errors.Wrapf(err, "getCheckpointBlockInfoFromProvider: Problem creating HTTP request"),
 		}
-		return
 	}
 	client := &http.Client{}
 	resp, err := client.Do(req)
 	if err != nil {
-		ch <- &CheckpointBlockInfoAndError{
+		return &CheckpointBlockInfoAndError{
 			Error: errors.Wrapf(err, "getCheckpointBlockInfoFromProvider: Problem sending HTTP request"),
 		}
-		return
 	}
 	if resp.StatusCode != 200 {
-		ch <- &CheckpointBlockInfoAndError{
+		return &CheckpointBlockInfoAndError{
 			Error: fmt.Errorf(
 				"getCheckpointBlockInfoFromProvider: Problem getting checkpoint block info from provider: %s",
 				provider,
 			),
 		}
-		return
 	}
 	defer resp.Body.Close()
 	responseData := &CheckpointBlockInfo{}
 	if err = json.NewDecoder(resp.Body).Decode(responseData); err != nil {
-		ch <- &CheckpointBlockInfoAndError{
+		return &CheckpointBlockInfoAndError{
 			Error: errors.Wrapf(err, "getCheckpointBlockInfoFromProvider: Problem decoding response data"),
 		}
-		return
 	}
-	ch <- &CheckpointBlockInfoAndError{
+	return &CheckpointBlockInfoAndError{
 		CheckpointBlockInfo: responseData,
 	}
 }

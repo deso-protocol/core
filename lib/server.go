@@ -953,41 +953,53 @@ func (srv *Server) shouldVerifySignatures(header *MsgDeSoHeader, isHeaderChain b
 	}
 	// For PoS blocks, we check if we've seen the checkpoint block.
 	// If we don't have a check point block info, we return true so that we verify signatures.
-	if srv.blockchain.checkpointBlockInfo == nil {
+	checkpointBlockInfo := srv.blockchain.GetCheckpointBlockInfo()
+	if checkpointBlockInfo == nil {
 		return true, false
 	}
 	var hasSeenCheckpointBlockHash bool
 	var checkpointBlockNode *BlockNode
 	if isHeaderChain {
-		checkpointBlockNode, hasSeenCheckpointBlockHash = srv.blockchain.bestHeaderChainMap[*srv.blockchain.checkpointBlockInfo.Hash]
+		checkpointBlockNode, hasSeenCheckpointBlockHash = srv.blockchain.bestHeaderChainMap[*checkpointBlockInfo.Hash]
 	} else {
-		checkpointBlockNode, hasSeenCheckpointBlockHash = srv.blockchain.bestChainMap[*srv.blockchain.checkpointBlockInfo.Hash]
+		checkpointBlockNode, hasSeenCheckpointBlockHash = srv.blockchain.bestChainMap[*checkpointBlockInfo.Hash]
 	}
 	// If we haven't seen the checkpoint block hash yet, we skip signature verification.
 	if !hasSeenCheckpointBlockHash {
+		// If we're past the checkpoint height and we haven't seen the checkpoint block, we should
+		// disconnect from the peer.
+		if header.Height > checkpointBlockInfo.Height {
+			return true, true
+		}
+		return false, false
+	}
+	// If the current header has a height below the checkpoint block height, we should skip signature verification
+	// even if we've seen the checkpoint block hash.
+	if header.Height < checkpointBlockInfo.Height {
 		return false, false
 	}
 	// Make sure that the header in the best chain map has the correct height, otherwise we need to disconnect this peer.
-	if uint64(checkpointBlockNode.Height) != srv.blockchain.checkpointBlockInfo.Height {
+	if uint64(checkpointBlockNode.Height) != checkpointBlockInfo.Height {
 		return true, true
 	}
 	return true, false
 }
 
 func (srv *Server) getCheckpointSyncingStatus(isHeaders bool) string {
-	if srv.blockchain.checkpointBlockInfo == nil {
+	checkpointBlockInfo := srv.blockchain.GetCheckpointBlockInfo()
+	if checkpointBlockInfo == nil {
 		return "<No checkpoint block info>"
 	}
 	hasSeenCheckPointBlockHash := false
 	if isHeaders {
-		_, hasSeenCheckPointBlockHash = srv.blockchain.bestHeaderChainMap[*srv.blockchain.checkpointBlockInfo.Hash]
+		_, hasSeenCheckPointBlockHash = srv.blockchain.bestHeaderChainMap[*checkpointBlockInfo.Hash]
 	} else {
-		_, hasSeenCheckPointBlockHash = srv.blockchain.bestChainMap[*srv.blockchain.checkpointBlockInfo.Hash]
+		_, hasSeenCheckPointBlockHash = srv.blockchain.bestChainMap[*checkpointBlockInfo.Hash]
 	}
 	if !hasSeenCheckPointBlockHash {
-		return fmt.Sprintf("<Checkpoint block %v not seen yet>", srv.blockchain.checkpointBlockInfo.String())
+		return fmt.Sprintf("<Checkpoint block %v not seen yet>", checkpointBlockInfo.String())
 	}
-	return fmt.Sprintf("<Checkpoint block %v seen>", srv.blockchain.checkpointBlockInfo.String())
+	return fmt.Sprintf("<Checkpoint block %v seen>", checkpointBlockInfo.String())
 }
 
 func (srv *Server) _handleHeaderBundle(pp *Peer, msg *MsgDeSoHeaderBundle) {
@@ -1050,7 +1062,7 @@ func (srv *Server) _handleHeaderBundle(pp *Peer, msg *MsgDeSoHeaderBundle) {
 			glog.Errorf("Server._handleHeaderBundle: Disconnecting peer %v in state %s because a mismatch was "+
 				"found between the received header height %v does not match the checkpoint block info %v",
 				pp, srv.blockchain.chainState(), headerReceived.Height,
-				srv.blockchain.checkpointBlockInfo.String())
+				srv.blockchain.GetCheckpointBlockInfo().String())
 			pp.Disconnect()
 			return
 		}
@@ -1229,6 +1241,7 @@ func (srv *Server) _handleHeaderBundle(pp *Peer, msg *MsgDeSoHeaderBundle) {
 				"height %d out of %d from peer %v",
 				blockTip.Header.Height+1, msg.TipHeight, pp)
 			maxHeight := -1
+			srv.blockchain.updateCheckpointBlockInfo()
 			srv.GetBlocks(pp, maxHeight)
 			return
 		}
@@ -2253,7 +2266,7 @@ func (srv *Server) _handleBlock(pp *Peer, blk *MsgDeSoBlock, isLastBlock bool) {
 		glog.Errorf("Server._handleHeaderBundle: Disconnecting peer %v in state %s because a mismatch was "+
 			"found between the received header height %v does not match the checkpoint block info %v",
 			pp, srv.blockchain.chainState(), blk.Header.Height,
-			srv.blockchain.checkpointBlockInfo.Hash.String())
+			srv.blockchain.GetCheckpointBlockInfo().Hash.String())
 		pp.Disconnect()
 		return
 	}
