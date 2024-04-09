@@ -4150,9 +4150,10 @@ func (msg *MsgDeSoTxn) UnmarshalJSON(data []byte) error {
 }
 
 // ComputeFeeRatePerKBNanos computes the fee rate per KB for a signed transaction. This function should not be used for
-// unsigned transactions because the fee rate will not be accurate.
+// unsigned transactions because the fee rate will not be accurate. However, we allow unsigned Atomic txn wrappers
+// since there will never be a signature for the wrapper transactions.
 func (txn *MsgDeSoTxn) ComputeFeeRatePerKBNanos() (uint64, error) {
-	if txn.Signature.Sign == nil {
+	if txn.Signature.Sign == nil && txn.TxnMeta.GetTxnType() != TxnTypeAtomicTxnsWrapper {
 		return 0, fmt.Errorf("ComputeFeeRatePerKBNanos: Cannot compute fee rate for unsigned txn")
 	}
 

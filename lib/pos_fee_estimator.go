@@ -354,7 +354,7 @@ func (posFeeEstimator *PoSFeeEstimator) EstimateFee(
 	}
 	minFeeRateEstimate, err := computeFeeGivenTxnAndFeeRate(txn, minFeeRateNanosPerKB)
 	if minFeeRateEstimate > mempoolFeeEstimate && minFeeRateEstimate > pastBlocksFeeEstimate {
-		return minFeeRateNanosPerKB, nil
+		return minFeeRateEstimate, nil
 	}
 	if mempoolFeeEstimate < pastBlocksFeeEstimate {
 		return pastBlocksFeeEstimate, nil

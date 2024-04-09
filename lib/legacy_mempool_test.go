@@ -83,6 +83,7 @@ func TestMempoolLongChainOfDependencies(t *testing.T) {
 			},
 			TxnMeta:   &BasicTransferMetadata{},
 			PublicKey: recipientPkBytes,
+			Signature: txn1.Signature, // Dummy signature.
 		}
 		//_signTxn(t, newTxn, false [>isSender is false since this is the recipient<])
 
@@ -170,6 +171,7 @@ func TestMempoolRateLimit(t *testing.T) {
 			},
 			TxnMeta:   &BasicTransferMetadata{},
 			PublicKey: recipientPkBytes,
+			Signature: txn1.Signature, // Dummy signature.
 		}
 		//_signTxn(t, newTxn, false [>isSender is false since this is the recipient<])
 

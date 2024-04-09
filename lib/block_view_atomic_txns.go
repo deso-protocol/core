@@ -215,34 +215,9 @@ func (bav *UtxoView) _connectAtomicTxnsWrapper(
 			fmt.Errorf("_connectAtomicTxnsWrapper: TxnMeta type: %v", txn.TxnMeta.GetTxnType().GetTxnString())
 	}
 
-	// Don't allow the atomic transactions and the wrapper to take up more than half of the block.
-	txnBytes, err := txn.ToBytes(false)
-	if err != nil {
-		return nil, 0, 0, 0, errors.Wrapf(
-			err, "_connectTransaction: Problem serializing transaction: ")
-	}
-	maxTxnSizeBytes := bav.Params.MaxBlockSizeBytesPoW / 2
-	if bav.Params.IsPoSBlockHeight(uint64(blockHeight)) {
-		maxTxnSizeBytes = bav.GetMaxTxnSizeBytesPoS()
-	}
-	txnSizeBytes := uint64(len(txnBytes))
-	if txnSizeBytes > maxTxnSizeBytes {
-		return nil, 0, 0, 0, RuleErrorTxnTooBig
-	}
-
-	// Validate that the internal transactions cumulatively pay enough in fees to
-	// cover the atomic transactions AS WELL AS the wrapper. We validate this
-	// here to ensure we can test for these edge cases as they're also logically caught
-	// by _verifyAtomicTxnsWrapper.
-	if txnSizeBytes != 0 && bav.GetCurrentGlobalParamsEntry().MinimumNetworkFeeNanosPerKB != 0 {
-		// Make sure there isn't overflow in the fee.
-		if txn.TxnFeeNanos != ((txn.TxnFeeNanos * 1000) / 1000) {
-			return nil, 0, 0, 0, RuleErrorOverflowDetectedInFeeRateCalculation
-		}
-		// If the fee is less than the minimum network fee per KB, return an error.
-		if (txn.TxnFeeNanos*1000)/txnSizeBytes < bav.GetCurrentGlobalParamsEntry().MinimumNetworkFeeNanosPerKB {
-			return nil, 0, 0, 0, RuleErrorTxnFeeBelowNetworkMinimum
-		}
+	if err := bav._verifyAtomicTxnsSize(txn, uint64(blockHeight)); err != nil {
+		return nil, 0, 0, 0,
+			errors.Wrap(err, "_connectAtomicTxnsWrapper: failed to verify atomic transaction size")
 	}
 
 	// Verify the wrapper of the transaction. This does not verify the txn.TxnMeta contents, just that
@@ -303,6 +278,40 @@ func (bav *UtxoView) _connectAtomicTxnsWrapper(
 	})
 
 	return utxoOpsForTxn, totalInput, totalOutput, totalFees, nil
+}
+
+func (bav *UtxoView) _verifyAtomicTxnsSize(txn *MsgDeSoTxn, blockHeight uint64) error {
+	// Don't allow the atomic transactions and the wrapper to take up more than half of the block.
+	txnBytes, err := txn.ToBytes(false)
+	if err != nil {
+		return errors.Wrapf(
+			err, "_connectTransaction: Problem serializing transaction: ")
+	}
+
+	maxTxnSizeBytes := bav.Params.MaxBlockSizeBytesPoW / 2
+	if bav.Params.IsPoSBlockHeight(blockHeight) {
+		maxTxnSizeBytes = bav.GetMaxTxnSizeBytesPoS()
+	}
+	txnSizeBytes := uint64(len(txnBytes))
+	if txnSizeBytes > maxTxnSizeBytes {
+		return RuleErrorTxnTooBig
+	}
+
+	// Validate that the internal transactions cumulatively pay enough in fees to
+	// cover the atomic transactions AS WELL AS the wrapper. We validate this
+	// here to ensure we can test for these edge cases as they're also logically caught
+	// by _verifyAtomicTxnsWrapper.
+	if txnSizeBytes != 0 && bav.GetCurrentGlobalParamsEntry().MinimumNetworkFeeNanosPerKB != 0 {
+		// Make sure there isn't overflow in the fee.
+		if txn.TxnFeeNanos != ((txn.TxnFeeNanos * 1000) / 1000) {
+			return RuleErrorOverflowDetectedInFeeRateCalculation
+		}
+		// If the fee is less than the minimum network fee per KB, return an error.
+		if (txn.TxnFeeNanos*1000)/txnSizeBytes < bav.GetCurrentGlobalParamsEntry().MinimumNetworkFeeNanosPerKB {
+			return RuleErrorTxnFeeBelowNetworkMinimum
+		}
+	}
+	return nil
 }
 
 func _verifyAtomicTxnsWrapper(txn *MsgDeSoTxn) error {

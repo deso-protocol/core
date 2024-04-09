@@ -63,6 +63,7 @@ const (
 	RuleErrorBlockRewardTxnMustHaveOneOutput      RuleError = "RuleErrorBlockRewardTxnMustHaveOneOutput"
 	RuleErrorBlockHeightAfterProofOfStakeCutover  RuleError = "RuleErrorBlockHeightAfterProofOfStakeCutover"
 	RuleErrorBestChainIsAtProofOfStakeCutover     RuleError = "RuleErrorBestChainIsAtProofOfStakeCutover"
+	RuleErrorTransactionHasNoSignature            RuleError = "RuleErrorTransactionHasNoSignature"
 
 	RuleErrorMissingBlockProducerSignature                      RuleError = "RuleErrorMissingBlockProducerSignature"
 	RuleErrorInvalidBlockProducerPublicKey                      RuleError = "RuleErrorInvalidBlockProducerPublicKey"

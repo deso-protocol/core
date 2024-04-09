@@ -471,7 +471,7 @@ func (mp *PosMempool) OnBlockDisconnected(block *MsgDeSoBlock) {
 		return
 	}
 
-	// Add all transactions from the block to the mempool.
+	// Add all transactions in the block to the mempool.
 	for _, txn := range block.Txns {
 		txnHash := txn.Hash()
 
@@ -525,7 +525,7 @@ func (mp *PosMempool) AddTransaction(mtxn *MempoolTransaction) error {
 	// First, validate that the transaction is properly formatted according to BalanceModel. We acquire a read lock on
 	// the mempool. This allows multiple goroutines to safely perform transaction validation concurrently. In particular,
 	// transaction signature verification can be parallelized.
-	if err := mp.checkTransactionSanity(mtxn.GetTxn()); err != nil {
+	if err := mp.checkTransactionSanity(mtxn.GetTxn(), false); err != nil {
 		return errors.Wrapf(err, "PosMempool.AddTransaction: Problem verifying transaction")
 	}
 
@@ -563,7 +563,50 @@ func (mp *PosMempool) isTxnHashInRecentBlockCache(txnHash BlockHash) bool {
 	return mp.recentBlockTxnCache.Contains(txnHash)
 }
 
-func (mp *PosMempool) checkTransactionSanity(txn *MsgDeSoTxn) error {
+func (mp *PosMempool) checkTransactionSanity(txn *MsgDeSoTxn, isInnerAtomicTxn bool) error {
+	// If the txn is an atomic, we need to check the transaction sanity for each txn as well as verify the wrapper.
+	if txn.TxnMeta.GetTxnType() == TxnTypeAtomicTxnsWrapper {
+		// First verify the wrapper.
+		atomicTxnsWrapper, ok := txn.TxnMeta.(*AtomicTxnsWrapperMetadata)
+		if !ok {
+			return fmt.Errorf(
+				"PosMempool.AddTransaction: Problem verifying atomic txn wrapper - casting metadata failed")
+		}
+		// Verify the size
+		if err := mp.readOnlyLatestBlockView._verifyAtomicTxnsSize(txn, mp.latestBlockHeight); err != nil {
+			return errors.Wrapf(err, "PosMempool.AddTransaction: Problem verifying atomic txn size")
+		}
+		// Verify the wrapper.
+		if err := _verifyAtomicTxnsWrapper(txn); err != nil {
+			return errors.Wrapf(err, "PosMempool.AddTransaction: Problem verifying atomic txn wrapper")
+		}
+
+		// Verify the chain of transactions to make sure they are not tampered with.
+		if err := _verifyAtomicTxnsChain(atomicTxnsWrapper); err != nil {
+			return errors.Wrapf(err, "PosMempool.AddTransaction: Problem verifying atomic txn chain")
+		}
+		// Okay we've verified the wrapper and the chain of transactions. Now we need to verify each transaction.
+		for _, innerTxn := range atomicTxnsWrapper.Txns {
+			if err := mp.checkTransactionSanity(innerTxn, true); err != nil {
+				return errors.Wrapf(err, "PosMempool.AddTransaction: Problem validating transaction sanity")
+			}
+		}
+		// Return early so we do not assess the rest of the validation checks on the wrapper.
+		return nil
+	}
+
+	// If the txn is supposed to be an inner txn in an atomic wrapper, we need to make sure it is properly formed.
+	// If the txn is NOT supposed to an inner txn in an atomic wrapper, we need to make sure it does not have
+	// the extra data fields that are only allowed in atomic txns.
+	isAtomicTxn := txn.IsAtomicTxnsInnerTxn()
+	if isAtomicTxn != isInnerAtomicTxn {
+		return fmt.Errorf(
+			"PosMempool.AddTransaction: expected txn to be atomic: %v, got: %v",
+			isInnerAtomicTxn,
+			isAtomicTxn,
+		)
+	}
+
 	if err := CheckTransactionSanity(txn, uint32(mp.latestBlockHeight), mp.params); err != nil {
 		return errors.Wrapf(err, "PosMempool.AddTransaction: Problem validating transaction sanity")
 	}
@@ -596,24 +639,101 @@ func (mp *PosMempool) updateTransactionValidatedStatus(txnHash *BlockHash, valid
 	txn.SetValidated(validated)
 }
 
-func (mp *PosMempool) addTransactionNoLock(txn *MempoolTx, persistToDb bool) error {
-	userPk := NewPublicKey(txn.Tx.PublicKey)
+func (mp *PosMempool) checkNonceTracker(txn *MempoolTx, userPk *PublicKey) (*MempoolTx, error) {
 
 	// Check the nonceTracker to see if this transaction is meant to replace an existing one.
 	existingTxn := mp.nonceTracker.GetTxnByPublicKeyNonce(*userPk, *txn.Tx.TxnNonce)
 	if existingTxn != nil && existingTxn.FeePerKB > txn.FeePerKB {
-		return errors.Wrapf(MempoolFailedReplaceByHigherFee, "PosMempool.AddTransaction: Problem replacing transaction "+
+		return nil, errors.Wrapf(MempoolFailedReplaceByHigherFee, "PosMempool.AddTransaction: Problem replacing transaction "+
 			"by higher fee failed. New transaction has lower fee.")
 	}
 
+	// TODO: is it okay to allow if the incoming tx is an inner atomic txn?
+	if existingTxn != nil && existingTxn.Tx.IsAtomicTxnsInnerTxn() {
+		return nil, errors.Wrapf(MempoolFailedReplaceByHigherFee, "PosMempool.AddTransaction: Cannot replace txn that is"+
+			"an inner atomic txn.")
+	}
+	return existingTxn, nil
+}
+
+func (mp *PosMempool) removeNonces(txns []*MsgDeSoTxn) {
+	for _, txn := range txns {
+		userPk := NewPublicKey(txn.PublicKey)
+		mp.nonceTracker.RemoveTxnByPublicKeyNonce(*userPk, *txn.TxnNonce)
+	}
+}
+
+func (mp *PosMempool) persistMempoolAddEvent(txn *MempoolTx, persistToDb bool) {
+	// Emit an event for the newly added transaction.
+	if persistToDb && !mp.inMemoryOnly {
+		event := &MempoolEvent{
+			Txn:  txn,
+			Type: MempoolEventAdd,
+		}
+		mp.persister.EnqueueEvent(event)
+	}
+}
+
+func (mp *PosMempool) addTransactionNoLock(txn *MempoolTx, persistToDb bool) error {
+	userPk := NewPublicKey(txn.Tx.PublicKey)
+
+	// Special handling for atomic txns. For atomic txns, the mempool will ignore the nonce for the wrapper txn
+	// and only track nonces for the inner txns. Additionally, only the wrapper txn will be added to the transaction
+	// register.
+	if txn.Tx.TxnMeta.GetTxnType() == TxnTypeAtomicTxnsWrapper {
+		// If the txn is an atomic txn, we need to add each txn individually.
+		atomicTxnsWrapper, ok := txn.Tx.TxnMeta.(*AtomicTxnsWrapperMetadata)
+		if !ok {
+			return fmt.Errorf(
+				"PosMempool.AddTransaction: Problem adding atomic txn - casting metadata failed")
+		}
+		var innerMempoolTxs []*MempoolTx
+		for _, innerTxn := range atomicTxnsWrapper.Txns {
+			newInnerMempoolTx, err := NewMempoolTx(innerTxn, txn.Added, uint64(txn.Height))
+			if err != nil {
+				return errors.Wrapf(err, "PosMempool.AddTransaction: Problem creating MempoolTx from inner atomic txn")
+			}
+			innerMempoolTxs = append(innerMempoolTxs, newInnerMempoolTx)
+		}
+		// We need to track the inners txns for which we've added nonces in the event that
+		// we need to remove them. We don't want to remove nonces for txns that were never added
+		// as it is possible the nonce tracker returned an error because the nonce is already used
+		// and removing it would effectively remove a different transaction from the nonce tracker.
+		var innerTxnsWithNoncesAdded []*MsgDeSoTxn
+		for _, innerMempoolTx := range innerMempoolTxs {
+			innerUserPk := NewPublicKey(innerMempoolTx.Tx.PublicKey)
+			if _, err := mp.checkNonceTracker(innerMempoolTx, innerUserPk); err != nil {
+				// if we hit an error, we need to remove all the nonces from the nonce tracker.
+				mp.removeNonces(innerTxnsWithNoncesAdded)
+				return errors.Wrapf(err, "PosMempool.AddTransaction: Problem checking nonce tracker")
+			}
+			// At this point the transaction is in the mempool. We can now update the nonce tracker.
+			mp.nonceTracker.AddTxnByPublicKeyNonce(txn, *userPk, *txn.Tx.TxnNonce)
+			innerTxnsWithNoncesAdded = append(innerTxnsWithNoncesAdded, innerMempoolTx.Tx)
+		}
+		// Only add the wrapper transaction to the transaction register.
+		if err := mp.txnRegister.AddTransaction(txn); err != nil {
+			return errors.Wrapf(err, "PosMempool.addTransactionNoLock: Problem adding txn to register")
+		}
+		// Emit a persist event only for the wrapper transaction.
+		mp.persistMempoolAddEvent(txn, persistToDb)
+		return nil
+	}
+
+	// Get the existing txn and check that the incoming txn can replace it (if applicable).
+	existingTxn, err := mp.checkNonceTracker(txn, userPk)
+	if err != nil {
+		return errors.Wrapf(err, "PosMempool.AddTransaction: Problem checking nonce tracker")
+	}
+
 	// We can now add the transaction to the mempool.
-	if err := mp.txnRegister.AddTransaction(txn); err != nil {
+	if err = mp.txnRegister.AddTransaction(txn); err != nil {
 		return errors.Wrapf(err, "PosMempool.addTransactionNoLock: Problem adding txn to register")
 	}
 
 	// If we've determined that this transaction is meant to replace an existing one, we remove the existing transaction now.
 	if existingTxn != nil {
-		if err := mp.removeTransactionNoLock(existingTxn, true); err != nil {
+		if err = mp.removeTransactionNoLock(existingTxn, true); err != nil {
 			recoveryErr := mp.txnRegister.RemoveTransaction(txn)
 			return errors.Wrapf(err, "PosMempool.AddTransaction: Problem removing old transaction from mempool during "+
 				"replacement with higher fee. Recovery error: %v", recoveryErr)
@@ -624,13 +744,7 @@ func (mp *PosMempool) addTransactionNoLock(txn *MempoolTx, persistToDb bool) err
 	mp.nonceTracker.AddTxnByPublicKeyNonce(txn, *userPk, *txn.Tx.TxnNonce)
 
 	// Emit an event for the newly added transaction.
-	if persistToDb && !mp.inMemoryOnly {
-		event := &MempoolEvent{
-			Txn:  txn,
-			Type: MempoolEventAdd,
-		}
-		mp.persister.EnqueueEvent(event)
-	}
+	mp.persistMempoolAddEvent(txn, persistToDb)
 
 	return nil
 }
@@ -683,8 +797,20 @@ func (mp *PosMempool) removeTransactionNoLock(txn *MempoolTx, persistToDb bool) 
 		return errors.Wrapf(err, "PosMempool.removeTransactionNoLock: Problem removing txn from register")
 	}
 
-	// Remove the txn from the nonce tracker.
-	mp.nonceTracker.RemoveTxnByPublicKeyNonce(*userPk, *txn.Tx.TxnNonce)
+	if txn.Tx.TxnMeta.GetTxnType() == TxnTypeAtomicTxnsWrapper {
+		// For atomic transactions, we remove the nonces of the inner txns, but not the wrapper txn.
+		atomicTxnsWrapper, ok := txn.Tx.TxnMeta.(*AtomicTxnsWrapperMetadata)
+		if !ok {
+			return fmt.Errorf(
+				"PosMempool.RemoveTransaction: Problem removing atomic txn - casting metadata failed")
+		}
+		// Remove nonces for all inner txns.
+		mp.removeNonces(atomicTxnsWrapper.Txns)
+	} else {
+		// For non-atomic transactions, we just remove the nonce from the nonce tracker.
+		// Remove the transaction from the nonce tracker.
+		mp.nonceTracker.RemoveTxnByPublicKeyNonce(*userPk, *txn.Tx.TxnNonce)
+	}
 
 	// Emit an event for the removed transaction.
 	if persistToDb && !mp.inMemoryOnly {
