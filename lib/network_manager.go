@@ -543,7 +543,11 @@ func (nm *NetworkManager) logValidatorIndices() {
 	validatorOutboundMap := nm.GetValidatorOutboundIndex().ToMap()
 	outboundValidatorString := ""
 	for pk, rn := range validatorOutboundMap {
-		outboundValidatorString += fmt.Sprintf("  Id (%v) PublicKey (%v) Domain (%v) Status (%v)\n", rn.id, pk, rn.peer.addrStr, rn.connectionStatus)
+		addr := "<nil>"
+		if rn.peer != nil {
+			addr = rn.peer.addrStr
+		}
+		outboundValidatorString += fmt.Sprintf("  Id (%v) PublicKey (%v) Domain (%v) Status (%v)\n", rn.id, pk, addr, rn.connectionStatus)
 	}
 	glog.V(2).Infof("NetworkManager.logValidatorIndices: Outbound Validators:\n%v", outboundValidatorString)
 
@@ -551,7 +555,11 @@ func (nm *NetworkManager) logValidatorIndices() {
 	validatorInboundMap := nm.GetValidatorInboundIndex().ToMap()
 	inboundValidatorString := ""
 	for pk, rn := range validatorInboundMap {
-		inboundValidatorString += fmt.Sprintf("  Id (%v) PublicKey (%v) Domain (%v) Status (%v)\n", rn.id, pk, rn.peer.addrStr, rn.connectionStatus)
+		addr := "<nil>"
+		if rn.peer != nil {
+			addr = rn.peer.addrStr
+		}
+		inboundValidatorString += fmt.Sprintf("  Id (%v) PublicKey (%v) Domain (%v) Status (%v)\n", rn.id, pk, addr, rn.connectionStatus)
 	}
 	glog.V(2).Infof("NetworkManager.logValidatorIndices: Inbound Validators:\n%v", inboundValidatorString)
 
