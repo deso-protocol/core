@@ -4,13 +4,16 @@ import (
 	"bytes"
 	"container/list"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"math"
 	"math/big"
+	"net/http"
 	"reflect"
 	"runtime/debug"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/decred/dcrd/lru"
@@ -454,6 +457,24 @@ type OrphanBlock struct {
 	Hash  *BlockHash
 }
 
+type CheckpointBlockInfo struct {
+	Height  uint64
+	Hash    *BlockHash
+	HashHex string
+}
+
+func (checkpointBlockInfo *CheckpointBlockInfo) String() string {
+	if checkpointBlockInfo == nil {
+		return "<nil>"
+	}
+	return fmt.Sprintf("< Height: %d, Hash: %v >", checkpointBlockInfo.Height, checkpointBlockInfo.HashHex)
+}
+
+type CheckpointBlockInfoAndError struct {
+	CheckpointBlockInfo *CheckpointBlockInfo
+	Error               error
+}
+
 type Blockchain struct {
 	db                              *badger.DB
 	postgres                        *Postgres
@@ -517,7 +538,101 @@ type Blockchain struct {
 	syncingState                bool
 	downloadingHistoricalBlocks bool
 
+	// checkpointSyncingProviders is a list of providers from which we will request the committed tip block info
+	// when syncing. The committed tip block info is used to designate a checkpoint before which signature
+	// verification will be skipped. These checkpoint providers should be trusted and should be able to provide
+	// the committed tip block info for the chain we are syncing.
+	checkpointSyncingProviders []string
+	// checkpointBlockInfo is the latest checkpoint block info that we have received from the checkpoint syncing
+	// providers.
+	checkpointBlockInfo *CheckpointBlockInfo
+	//
+	checkpointBlockInfoLock sync.RWMutex
+
 	timer *Timer
+}
+
+func (bc *Blockchain) updateCheckpointBlockInfo() {
+	if len(bc.checkpointSyncingProviders) == 0 {
+		glog.V(2).Info("updateCheckpointBlockInfo: No checkpoint syncing providers set. Skipping update.")
+		return
+	}
+	ch := make(chan *CheckpointBlockInfoAndError, len(bc.checkpointSyncingProviders))
+	for _, provider := range bc.checkpointSyncingProviders {
+		go getCheckpointBlockInfoFromProvider(provider, ch)
+	}
+
+	// Collect the results from the channel
+	checkpointBlockInfos := make([]*CheckpointBlockInfoAndError, len(bc.checkpointSyncingProviders))
+	for ii := range bc.checkpointSyncingProviders {
+		checkpointBlockInfos[ii] = <-ch
+	}
+
+	// Find the checkpoint block info with the highest height.
+	var highestHeightCheckpointBlockInfo *CheckpointBlockInfo
+	for _, checkpointBlockInfo := range checkpointBlockInfos {
+		if checkpointBlockInfo.Error != nil {
+			glog.Errorf("updateCheckpointBlockInfo: Error getting checkpoint block info: %v", checkpointBlockInfo.Error)
+			continue
+		}
+		if highestHeightCheckpointBlockInfo == nil ||
+			checkpointBlockInfo.CheckpointBlockInfo.Height > highestHeightCheckpointBlockInfo.Height {
+			highestHeightCheckpointBlockInfo = checkpointBlockInfo.CheckpointBlockInfo
+		}
+	}
+	if highestHeightCheckpointBlockInfo == nil {
+		glog.Errorf("updateCheckpointBlockInfo: No valid checkpoint block info found.")
+		return
+	}
+	glog.V(2).Infof("updateCheckpointBlockInfo: Setting checkpoint block info to: %v", highestHeightCheckpointBlockInfo)
+	bc.checkpointBlockInfoLock.Lock()
+	bc.checkpointBlockInfo = highestHeightCheckpointBlockInfo
+	bc.checkpointBlockInfoLock.Unlock()
+}
+
+func (bc *Blockchain) GetCheckpointBlockInfo() *CheckpointBlockInfo {
+	bc.checkpointBlockInfoLock.RLock()
+	defer bc.checkpointBlockInfoLock.RUnlock()
+	return bc.checkpointBlockInfo
+}
+
+func getCheckpointBlockInfoFromProvider(provider string, ch chan<- *CheckpointBlockInfoAndError) {
+	ch <- getCheckpointBlockInfoFromProviderHelper(provider)
+}
+
+func getCheckpointBlockInfoFromProviderHelper(provider string) *CheckpointBlockInfoAndError {
+	url := fmt.Sprintf("%s%s", provider, RoutePathGetCommittedTipBlockInfo)
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return &CheckpointBlockInfoAndError{
+			Error: errors.Wrapf(err, "getCheckpointBlockInfoFromProvider: Problem creating HTTP request"),
+		}
+	}
+	client := &http.Client{}
+	resp, err := client.Do(req)
+	if err != nil {
+		return &CheckpointBlockInfoAndError{
+			Error: errors.Wrapf(err, "getCheckpointBlockInfoFromProvider: Problem sending HTTP request"),
+		}
+	}
+	if resp.StatusCode != 200 {
+		return &CheckpointBlockInfoAndError{
+			Error: fmt.Errorf(
+				"getCheckpointBlockInfoFromProvider: Problem getting checkpoint block info from provider: %s",
+				provider,
+			),
+		}
+	}
+	defer resp.Body.Close()
+	responseData := &CheckpointBlockInfo{}
+	if err = json.NewDecoder(resp.Body).Decode(responseData); err != nil {
+		return &CheckpointBlockInfoAndError{
+			Error: errors.Wrapf(err, "getCheckpointBlockInfoFromProvider: Problem decoding response data"),
+		}
+	}
+	return &CheckpointBlockInfoAndError{
+		CheckpointBlockInfo: responseData,
+	}
 }
 
 func (bc *Blockchain) addNewBlockNodeToBlockIndex(blockNode *BlockNode) {
@@ -777,6 +892,7 @@ func NewBlockchain(
 	eventManager *EventManager,
 	snapshot *Snapshot,
 	archivalMode bool,
+	checkpointSyncingProviders []string,
 ) (*Blockchain, error) {
 
 	trustedBlockProducerPublicKeys := make(map[PkMapKey]bool)
@@ -812,6 +928,8 @@ func NewBlockchain(
 		blockViewCache: lru.NewKVCache(100), // TODO: parameterize
 		snapshotCache:  NewSnapshotCache(),
 
+		checkpointSyncingProviders: checkpointSyncingProviders,
+
 		orphanList: list.New(),
 		timer:      timer,
 	}
@@ -831,6 +949,9 @@ func NewBlockchain(
 	if err := bc._applyUncommittedBlocksToBestChain(); err != nil {
 		return nil, errors.Wrapf(err, "NewBlockchain: ")
 	}
+
+	// always update the checkpoint block info when creating a new blockchain
+	bc.updateCheckpointBlockInfo()
 
 	return bc, nil
 }

@@ -421,6 +421,7 @@ func NewServer(
 	_mempoolMaxValidationViewConnects uint64,
 	_transactionValidationRefreshIntervalMillis uint64,
 	_stateSyncerMempoolTxnSyncLimit uint64,
+	_checkpointSyncingProviders []string,
 ) (
 	_srv *Server,
 	_err error,
@@ -506,7 +507,7 @@ func NewServer(
 
 	_chain, err := NewBlockchain(
 		_trustedBlockProducerPublicKeys, _trustedBlockProducerStartHeight, _maxSyncBlockHeight,
-		_params, timesource, _db, postgres, eventManager, _snapshot, archivalMode)
+		_params, timesource, _db, postgres, eventManager, _snapshot, archivalMode, _checkpointSyncingProviders)
 	if err != nil {
 		return nil, errors.Wrapf(err, "NewServer: Problem initializing blockchain"), true
 	}
@@ -931,15 +932,85 @@ func (srv *Server) GetBlocks(pp *Peer, maxHeight int) {
 		pp)
 }
 
+// shouldVerifySignatures determines if we should verify signatures for headers or not.
+// For PoW headers, this always returns true because there are no signatures to verify and there is
+// no impact on syncing.
+// For PoW blocks, we verify signatures if we're not syncing.
+// For PoS headers and blocks, we check if we've seen the checkpoint block.
+// If the checkpoint block info is nil, we return true so that we verify signatures.
+// If we haven't seen the checkpoint block yet, we skip signature verification.
+// If the header height does not match the checkpoint block height, we should disconnect the peer.
+// Otherwise, return true.
+func (srv *Server) shouldVerifySignatures(header *MsgDeSoHeader, isHeaderChain bool) (_verifySignatures bool, _shouldDisconnect bool) {
+	// For PoW headers, there is no signature to verify in the header, so we return true
+	// just to be safe, but it has no impact on the syncing.
+	// For PoW blocks, we verify signatures if we're not syncing.
+	if srv.params.IsPoWBlockHeight(header.Height) {
+		if !isHeaderChain {
+			return !srv.blockchain.isSyncing(), false
+		}
+		return true, false
+	}
+	// For PoS blocks, we check if we've seen the checkpoint block.
+	// If we don't have a check point block info, we return true so that we verify signatures.
+	checkpointBlockInfo := srv.blockchain.GetCheckpointBlockInfo()
+	if checkpointBlockInfo == nil {
+		return true, false
+	}
+	var hasSeenCheckpointBlockHash bool
+	var checkpointBlockNode *BlockNode
+	if isHeaderChain {
+		checkpointBlockNode, hasSeenCheckpointBlockHash = srv.blockchain.bestHeaderChainMap[*checkpointBlockInfo.Hash]
+	} else {
+		checkpointBlockNode, hasSeenCheckpointBlockHash = srv.blockchain.bestChainMap[*checkpointBlockInfo.Hash]
+	}
+	// If we haven't seen the checkpoint block hash yet, we skip signature verification.
+	if !hasSeenCheckpointBlockHash {
+		// If we're past the checkpoint height and we haven't seen the checkpoint block, we should
+		// disconnect from the peer.
+		if header.Height > checkpointBlockInfo.Height {
+			return true, true
+		}
+		return false, false
+	}
+	// If the current header has a height below the checkpoint block height, we should skip signature verification
+	// even if we've seen the checkpoint block hash.
+	if header.Height < checkpointBlockInfo.Height {
+		return false, false
+	}
+	// Make sure that the header in the best chain map has the correct height, otherwise we need to disconnect this peer.
+	if uint64(checkpointBlockNode.Height) != checkpointBlockInfo.Height {
+		return true, true
+	}
+	return true, false
+}
+
+func (srv *Server) getCheckpointSyncingStatus(isHeaders bool) string {
+	checkpointBlockInfo := srv.blockchain.GetCheckpointBlockInfo()
+	if checkpointBlockInfo == nil {
+		return "<No checkpoint block info>"
+	}
+	hasSeenCheckPointBlockHash := false
+	if isHeaders {
+		_, hasSeenCheckPointBlockHash = srv.blockchain.bestHeaderChainMap[*checkpointBlockInfo.Hash]
+	} else {
+		_, hasSeenCheckPointBlockHash = srv.blockchain.bestChainMap[*checkpointBlockInfo.Hash]
+	}
+	if !hasSeenCheckPointBlockHash {
+		return fmt.Sprintf("<Checkpoint block %v not seen yet>", checkpointBlockInfo.String())
+	}
+	return fmt.Sprintf("<Checkpoint block %v seen>", checkpointBlockInfo.String())
+}
+
 func (srv *Server) _handleHeaderBundle(pp *Peer, msg *MsgDeSoHeaderBundle) {
 	printHeight := pp.StartingBlockHeight()
 	if uint64(srv.blockchain.headerTip().Height) > printHeight {
 		printHeight = uint64(srv.blockchain.headerTip().Height)
 	}
 	glog.Infof(CLog(Yellow, fmt.Sprintf("Received header bundle with %v headers "+
-		"in state %s from peer %v. Downloaded ( %v / %v ) total headers.",
+		"in state %s from peer %v. Downloaded ( %v / %v ) total headers. Checkpoint syncing status: %v",
 		len(msg.Headers), srv.blockchain.chainState(), pp,
-		srv.blockchain.headerTip().Header.Height, printHeight)))
+		srv.blockchain.headerTip().Header.Height, printHeight, srv.getCheckpointSyncingStatus(true))))
 
 	// If we get here, it means that the node is not currently running a Fast-HotStuff
 	// validator or that the node is syncing. In either case, we sync headers according
@@ -948,7 +1019,6 @@ func (srv *Server) _handleHeaderBundle(pp *Peer, msg *MsgDeSoHeaderBundle) {
 	// Start by processing all the headers given to us. They should start
 	// right after the tip of our header chain ideally. While going through them
 	// tally up the number that we actually process.
-	numNewHeaders := 0
 	for ii, headerReceived := range msg.Headers {
 		// If we've set a maximum height for node sync and we've reached it,
 		// then we will not process any more headers.
@@ -986,12 +1056,20 @@ func (srv *Server) _handleHeaderBundle(pp *Peer, msg *MsgDeSoHeaderBundle) {
 		}
 
 		// If we get here then we have a header we haven't seen before.
-		// TODO: Delete? This is redundant.
-		numNewHeaders++
+		// check if we need to verify signatures
+		verifySignatures, shouldDisconnect := srv.shouldVerifySignatures(headerReceived, true)
+		if shouldDisconnect {
+			glog.Errorf("Server._handleHeaderBundle: Disconnecting peer %v in state %s because a mismatch was "+
+				"found between the received header height %v does not match the checkpoint block info %v",
+				pp, srv.blockchain.chainState(), headerReceived.Height,
+				srv.blockchain.GetCheckpointBlockInfo().String())
+			pp.Disconnect()
+			return
+		}
 
 		// Process the header, as we haven't seen it before, set verifySignatures to false
 		// if we're in the process of syncing.
-		_, isOrphan, err := srv.blockchain.ProcessHeader(headerReceived, headerHash, !srv.blockchain.isSyncing())
+		_, isOrphan, err := srv.blockchain.ProcessHeader(headerReceived, headerHash, verifySignatures)
 
 		numLogHeaders := 2000
 		if ii%numLogHeaders == 0 {
@@ -1163,6 +1241,7 @@ func (srv *Server) _handleHeaderBundle(pp *Peer, msg *MsgDeSoHeaderBundle) {
 				"height %d out of %d from peer %v",
 				blockTip.Header.Height+1, msg.TipHeight, pp)
 			maxHeight := -1
+			srv.blockchain.updateCheckpointBlockInfo()
 			srv.GetBlocks(pp, maxHeight)
 			return
 		}
@@ -2181,6 +2260,17 @@ func (srv *Server) _handleBlock(pp *Peer, blk *MsgDeSoBlock, isLastBlock bool) {
 	srv.timer.End("Server._handleBlock: General")
 	srv.timer.Start("Server._handleBlock: Process Block")
 
+	// check if we should verify signatures or not.
+	verifySignatures, shouldDisconnect := srv.shouldVerifySignatures(blk.Header, false)
+	if shouldDisconnect {
+		glog.Errorf("Server._handleHeaderBundle: Disconnecting peer %v in state %s because a mismatch was "+
+			"found between the received header height %v does not match the checkpoint block info %v",
+			pp, srv.blockchain.chainState(), blk.Header.Height,
+			srv.blockchain.GetCheckpointBlockInfo().Hash.String())
+		pp.Disconnect()
+		return
+	}
+
 	// Only verify signatures for recent blocks.
 	var isOrphan bool
 	if srv.fastHotStuffConsensus != nil && srv.fastHotStuffConsensus.IsRunning() {
@@ -2188,7 +2278,7 @@ func (srv *Server) _handleBlock(pp *Peer, blk *MsgDeSoBlock, isLastBlock bool) {
 		// which will validate the block, try to apply it, and handle the orphan case by requesting missing
 		// parents.
 		isOrphan, err = srv.fastHotStuffConsensus.HandleBlock(pp, blk)
-	} else if srv.blockchain.isSyncing() {
+	} else if !verifySignatures {
 		glog.V(1).Infof(CLog(Cyan, fmt.Sprintf("Server._handleBlock: Processing block %v WITHOUT "+
 			"signature checking because SyncState=%v for peer %v",
 			blk, srv.blockchain.chainState(), pp)))
@@ -2325,9 +2415,10 @@ func (srv *Server) _handleBlockBundle(pp *Peer, bundle *MsgDeSoBlockBundle) {
 		pp.Disconnect()
 		return
 	}
-	glog.Infof(CLog(Cyan, fmt.Sprintf("Server._handleBlockBundle: Received blocks ( %v->%v / %v ) from Peer %v",
+	glog.Infof(CLog(Cyan, fmt.Sprintf("Server._handleBlockBundle: Received blocks ( %v->%v / %v ) from Peer %v. "+
+		"Checkpoint syncing status: %v",
 		bundle.Blocks[0].Header.Height, bundle.Blocks[len(bundle.Blocks)-1].Header.Height,
-		srv.blockchain.headerTip().Height, pp)))
+		srv.blockchain.headerTip().Height, pp, srv.getCheckpointSyncingStatus(false))))
 
 	srv.timer.Start("Server._handleBlockBundle: General")
 

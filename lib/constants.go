@@ -1842,3 +1842,8 @@ const MaxBasisPoints = uint64(10000)                     // 1e4
 const NanoSecsPerYear = uint64(365) * 24 * 60 * 60 * 1e9 // 365 days * 24 hours * 60 minutes * 60 seconds * 1e9 nanoseconds
 
 const BytesPerKB = 1000
+
+const DefaultMainnetCheckpointProvider = "https://node.deso.org"
+const DefaultTestnetCheckpointProvider = "https://test.deso.org"
+
+const RoutePathGetCommittedTipBlockInfo = "/api/v0/get-committed-tip-block-info"

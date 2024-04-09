@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"net/url"
 	"os"
 	"path/filepath"
 
@@ -81,6 +82,9 @@ type Config struct {
 	// State Syncer
 	StateChangeDir                 string
 	StateSyncerMempoolTxnSyncLimit uint64
+
+	// PoS Checkpoint Syncing
+	CheckpointSyncingProviders []string
 }
 
 func LoadConfig() *Config {
@@ -176,6 +180,29 @@ func LoadConfig() *Config {
 	// State Syncer
 	config.StateChangeDir = viper.GetString("state-change-dir")
 	config.StateSyncerMempoolTxnSyncLimit = viper.GetUint64("state-syncer-mempool-txn-sync-limit")
+
+	// PoS Checkpoint Syncing
+	config.CheckpointSyncingProviders = viper.GetStringSlice("checkpoint-syncing-providers")
+	for _, provider := range config.CheckpointSyncingProviders {
+		if _, err := url.ParseRequestURI(provider); err != nil {
+			glog.Fatalf("Invalid checkpoint syncing provider URL: %v", provider)
+		}
+		// TODO: do we want to make a request to the checkpoint syncing provider to ensure it's valid?
+	}
+	// TODO: add default provider here based on network. However, if someone wants to sync w/o checkpoint
+	// syncing, they should be able to do so. How do we support this? another flag I guess.
+	if len(config.CheckpointSyncingProviders) == 0 && !config.Regtest {
+		if testnet {
+			config.CheckpointSyncingProviders = []string{lib.DefaultTestnetCheckpointProvider}
+		} else {
+			config.CheckpointSyncingProviders = []string{lib.DefaultMainnetCheckpointProvider}
+		}
+	}
+
+	if len(config.CheckpointSyncingProviders) == 0 && config.Regtest {
+		glog.Warningln("No checkpoint syncing providers specified. Syncing will require verification of signatures" +
+			" on all blocks, which may be slow. Consider specifying a checkpoint syncing provider.")
+	}
 
 	return &config
 }
