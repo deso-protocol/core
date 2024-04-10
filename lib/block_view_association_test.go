@@ -2259,8 +2259,7 @@ func _testAssociationsWithDerivedKey(t *testing.T) {
 
 	// Helper funcs
 	_submitAuthorizeDerivedKeyTxn := func(txnType TxnType, associationLimitKey AssociationLimitKey, count int) (string, error) {
-		utxoView, err := NewUtxoView(db, params, chain.postgres, chain.snapshot, nil)
-		require.NoError(t, err)
+		utxoView := NewUtxoView(db, params, chain.postgres, chain.snapshot, nil)
 
 		txnSpendingLimit := &TransactionSpendingLimit{
 			GlobalDESOLimit: NanosPerUnit, // 1 $DESO spending limit
@@ -2307,8 +2306,7 @@ func _testAssociationsWithDerivedKey(t *testing.T) {
 	_submitAssociationTxnWithDerivedKey := func(
 		transactorPkBytes []byte, derivedKeyPrivBase58Check string, inputTxn MsgDeSoTxn,
 	) error {
-		utxoView, err := NewUtxoView(db, params, chain.postgres, chain.snapshot, nil)
-		require.NoError(t, err)
+		utxoView := NewUtxoView(db, params, chain.postgres, chain.snapshot, nil)
 		var txn *MsgDeSoTxn
 
 		switch inputTxn.TxnMeta.GetTxnType() {
@@ -2505,8 +2503,7 @@ func _testAssociationsWithDerivedKey(t *testing.T) {
 			AssociationType:  []byte("ENDORSEMENT"),
 			AssociationValue: []byte("Python"),
 		}
-		utxoView, err := NewUtxoView(db, params, chain.postgres, chain.snapshot, nil)
-		require.NoError(t, err)
+		utxoView := NewUtxoView(db, params, chain.postgres, chain.snapshot, nil)
 		userAssociationEntries, err := utxoView.GetUserAssociationsByAttributes(userAssociationQuery)
 		require.NoError(t, err)
 		require.Len(t, userAssociationEntries, 1)

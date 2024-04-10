@@ -1100,13 +1100,9 @@ func (bc *Blockchain) CreateStakeTxn(
 
 	// Create a new UtxoView. If we have access to a mempool object, use
 	// it to get an augmented view that factors in pending transactions.
-	utxoView, err := NewUtxoView(bc.db, bc.params, bc.postgres, bc.snapshot, bc.eventManager)
-	if err != nil {
-		return nil, 0, 0, 0, errors.Wrap(
-			err, "Blockchain.CreateStakeTxn: problem creating new utxo view: ",
-		)
-	}
+	utxoView := NewUtxoView(bc.db, bc.params, bc.postgres, bc.snapshot, bc.eventManager)
 	if !isInterfaceValueNil(mempool) {
+		var err error
 		utxoView, err = mempool.GetAugmentedUniversalView()
 		if err != nil {
 			return nil, 0, 0, 0, errors.Wrapf(
@@ -1117,7 +1113,7 @@ func (bc *Blockchain) CreateStakeTxn(
 
 	// Validate txn metadata.
 	blockHeight := bc.blockTip().Height + 1
-	if err = utxoView.IsValidStakeMetadata(transactorPublicKey, metadata, blockHeight); err != nil {
+	if err := utxoView.IsValidStakeMetadata(transactorPublicKey, metadata, blockHeight); err != nil {
 		return nil, 0, 0, 0, errors.Wrapf(
 			err, "Blockchain.CreateStakeTxn: invalid txn metadata: ",
 		)
@@ -1177,13 +1173,9 @@ func (bc *Blockchain) CreateUnstakeTxn(
 
 	// Create a new UtxoView. If we have access to a mempool object, use
 	// it to get an augmented view that factors in pending transactions.
-	utxoView, err := NewUtxoView(bc.db, bc.params, bc.postgres, bc.snapshot, bc.eventManager)
-	if err != nil {
-		return nil, 0, 0, 0, errors.Wrap(
-			err, "Blockchain.CreateUnstakeTxn: problem creating new utxo view: ",
-		)
-	}
+	utxoView := NewUtxoView(bc.db, bc.params, bc.postgres, bc.snapshot, bc.eventManager)
 	if !isInterfaceValueNil(mempool) {
+		var err error
 		utxoView, err = mempool.GetAugmentedUniversalView()
 		if err != nil {
 			return nil, 0, 0, 0, errors.Wrapf(
@@ -1193,7 +1185,7 @@ func (bc *Blockchain) CreateUnstakeTxn(
 	}
 
 	// Validate txn metadata.
-	if err = utxoView.IsValidUnstakeMetadata(transactorPublicKey, metadata); err != nil {
+	if err := utxoView.IsValidUnstakeMetadata(transactorPublicKey, metadata); err != nil {
 		return nil, 0, 0, 0, errors.Wrapf(
 			err, "Blockchain.CreateUnstakeTxn: invalid txn metadata: ",
 		)
@@ -1253,13 +1245,9 @@ func (bc *Blockchain) CreateUnlockStakeTxn(
 
 	// Create a new UtxoView. If we have access to a mempool object, use
 	// it to get an augmented view that factors in pending transactions.
-	utxoView, err := NewUtxoView(bc.db, bc.params, bc.postgres, bc.snapshot, bc.eventManager)
-	if err != nil {
-		return nil, 0, 0, 0, errors.Wrap(
-			err, "Blockchain.CreateUnlockStakeTxn: problem creating new utxo view: ",
-		)
-	}
+	utxoView := NewUtxoView(bc.db, bc.params, bc.postgres, bc.snapshot, bc.eventManager)
 	if !isInterfaceValueNil(mempool) {
+		var err error
 		utxoView, err = mempool.GetAugmentedUniversalView()
 		if err != nil {
 			return nil, 0, 0, 0, errors.Wrapf(
@@ -1269,7 +1257,7 @@ func (bc *Blockchain) CreateUnlockStakeTxn(
 	}
 
 	// Validate txn metadata.
-	if err = utxoView.IsValidUnlockStakeMetadata(transactorPublicKey, metadata); err != nil {
+	if err := utxoView.IsValidUnlockStakeMetadata(transactorPublicKey, metadata); err != nil {
 		return nil, 0, 0, 0, errors.Wrapf(
 			err, "Blockchain.CreateUnlockStakeTxn: invalid txn metadata: ",
 		)

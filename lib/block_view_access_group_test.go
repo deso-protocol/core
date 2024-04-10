@@ -241,15 +241,13 @@ func TestAccessGroup(t *testing.T) {
 		tv13, tv14, tv15, tv16, tv17, tv18, tv19, tv20}
 
 	tvbConnectCallback := func(tvb *transactionTestVectorBlock, tm *transactionTestMeta) {
-		utxoView, err := NewUtxoView(tm.db, tm.params, tm.pg, tm.chain.snapshot, nil)
-		require.NoError(err)
+		utxoView := NewUtxoView(tm.db, tm.params, tm.pg, tm.chain.snapshot, nil)
 		tv15.connectCallback(tv15, tm, utxoView)
 	}
 	tvbDisconnectCallback := func(tvb *transactionTestVectorBlock, tm *transactionTestMeta) {
 		// Reset the ForkHeight for access groups
 		tm.params.ForkHeights.AssociationsAndAccessGroupsBlockHeight = uint32(1000)
-		utxoView, err := NewUtxoView(tm.db, tm.params, tm.pg, tm.chain.snapshot, nil)
-		require.NoError(err)
+		utxoView := NewUtxoView(tm.db, tm.params, tm.pg, tm.chain.snapshot, nil)
 		_verifyGroupIdsForUser(t, m0PubBytes, utxoView, []*AccessGroupId{groupM0B}, []*AccessGroupId{})
 		_verifyGroupIdsForUser(t, m1PubBytes, utxoView, []*AccessGroupId{groupM1B}, []*AccessGroupId{})
 		_verifyGroupIdsForUser(t, m2PubBytes, utxoView, []*AccessGroupId{groupM2B}, []*AccessGroupId{})
@@ -528,8 +526,7 @@ func TestAccessGroupTxnWithDerivedKey(t *testing.T) {
 
 	// Helper funcs
 	_submitAuthorizeDerivedKeyTxn := func(accessGroupLimitKey AccessGroupLimitKey, count int) string {
-		utxoView, err := NewUtxoView(db, params, chain.postgres, chain.snapshot, nil)
-		require.NoError(t, err)
+		utxoView := NewUtxoView(db, params, chain.postgres, chain.snapshot, nil)
 
 		fillerAccessGroupLimitKey := AccessGroupLimitKey{
 			AccessGroupOwnerPublicKey: accessGroupLimitKey.AccessGroupOwnerPublicKey,
@@ -592,8 +589,7 @@ func TestAccessGroupTxnWithDerivedKey(t *testing.T) {
 		operationType AccessGroupOperationType,
 		derivedKeyPrivBase58Check string,
 	) error {
-		utxoView, err := NewUtxoView(db, params, chain.postgres, chain.snapshot, nil)
-		require.NoError(t, err)
+		utxoView := NewUtxoView(db, params, chain.postgres, chain.snapshot, nil)
 
 		// Construct txn.
 		var txn *MsgDeSoTxn

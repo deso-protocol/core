@@ -379,8 +379,7 @@ func _getBalance(t *testing.T, chain *Blockchain, mempool *DeSoMempool, pkStr st
 		utxoView, err = mempool.GetAugmentedUniversalView()
 		require.NoError(t, err)
 	} else {
-		utxoView, err = NewUtxoView(chain.db, chain.params, chain.postgres, chain.snapshot, nil)
-		require.NoError(t, err)
+		utxoView = NewUtxoView(chain.db, chain.params, chain.postgres, chain.snapshot, nil)
 	}
 
 	balanceNanos, err := utxoView.GetSpendableDeSoBalanceNanosForPublicKey(
@@ -414,7 +413,7 @@ func _getCreatorCoinInfo(t *testing.T, chain *Blockchain, params *DeSoParams, pk
 	pkBytes, _, err := Base58CheckDecode(pkStr)
 	require.NoError(t, err)
 
-	utxoView, _ := NewUtxoView(chain.db, params, nil, chain.snapshot, chain.eventManager)
+	utxoView := NewUtxoView(chain.db, params, nil, chain.snapshot, chain.eventManager)
 
 	// Profile fields
 	creatorProfile := utxoView.GetProfileEntryForPublicKey(pkBytes)

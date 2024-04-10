@@ -19,12 +19,11 @@ func TestFeeEstimator(t *testing.T) {
 	m0PubBytes, _, _ := Base58CheckDecode(m0Pub)
 	m1PubBytes, _, _ := Base58CheckDecode(m1Pub)
 
-	latestBlockView, err := NewUtxoView(db, params, nil, nil, nil)
-	require.NoError(t, err)
+	latestBlockView := NewUtxoView(db, params, nil, nil, nil)
 	dir := _dbDirSetup(t)
 
 	mempool := NewPosMempool()
-	err = mempool.Init(
+	err := mempool.Init(
 		params, globalParams, latestBlockView, 2, dir, false, maxMempoolPosSizeBytes, mempoolBackupIntervalMillis, 1,
 		nil, 1, 10000, 100,
 	)

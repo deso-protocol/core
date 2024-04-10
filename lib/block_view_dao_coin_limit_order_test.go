@@ -38,12 +38,11 @@ func TestZeroCostOrderEdgeCaseDAOCoinLimitOrder(t *testing.T) {
 	params.ForkHeights.OrderBookDBFetchOptimizationBlockHeight = uint32(0)
 	params.BlockRewardMaturity = time.Second
 
-	utxoView, err := NewUtxoView(db, params, chain.postgres, chain.snapshot, chain.eventManager)
-	require.NoError(err)
+	utxoView := NewUtxoView(db, params, chain.postgres, chain.snapshot, chain.eventManager)
 	dbAdapter := utxoView.GetDbAdapter()
 
 	// Mine a few blocks to give the senderPkString some money.
-	_, err = miner.MineAndProcessSingleBlock(0, mempool)
+	_, err := miner.MineAndProcessSingleBlock(0, mempool)
 	require.NoError(err)
 	_, err = miner.MineAndProcessSingleBlock(0, mempool)
 	require.NoError(err)
@@ -629,12 +628,11 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 	params.ForkHeights.OrderBookDBFetchOptimizationBlockHeight = uint32(0)
 	params.BlockRewardMaturity = time.Second
 
-	utxoView, err := NewUtxoView(db, params, chain.postgres, chain.snapshot, chain.eventManager)
-	require.NoError(err)
+	utxoView := NewUtxoView(db, params, chain.postgres, chain.snapshot, chain.eventManager)
 	dbAdapter := utxoView.GetDbAdapter()
 
 	// Mine a few blocks to give the senderPkString some money.
-	_, err = miner.MineAndProcessSingleBlock(0, mempool)
+	_, err := miner.MineAndProcessSingleBlock(0, mempool)
 	require.NoError(err)
 	_, err = miner.MineAndProcessSingleBlock(0, mempool)
 	require.NoError(err)
@@ -2462,8 +2460,7 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		require.NotEmpty(utxoEntriesM0) // Unspent UTXOs exist for m0.
 
 		// Spend m0's existing UTXO.
-		tempUtxoView, err := NewUtxoView(db, params, chain.postgres, chain.snapshot, chain.eventManager)
-		require.NoError(err)
+		tempUtxoView := NewUtxoView(db, params, chain.postgres, chain.snapshot, chain.eventManager)
 		utxoOp, err := tempUtxoView._spendUtxo(utxoEntriesM0[0].UtxoKey)
 		require.NoError(err)
 		err = tempUtxoView.FlushToDb(0)
@@ -4088,8 +4085,7 @@ func _connectDAOCoinLimitOrderTxn(
 	require := require.New(testMeta.t)
 	testMeta.expectedSenderBalances = append(
 		testMeta.expectedSenderBalances, _getBalance(testMeta.t, testMeta.chain, nil, publicKey))
-	currentUtxoView, err := NewUtxoView(testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot, testMeta.chain.eventManager)
-	require.NoError(err)
+	currentUtxoView := NewUtxoView(testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot, testMeta.chain.eventManager)
 	// Sign the transaction now that its inputs are set up.
 	_signTxn(testMeta.t, txn, privateKey)
 	// Always use savedHeight (blockHeight+1) for validation since it's
@@ -4142,8 +4138,7 @@ func _doDAOCoinLimitOrderTxn(t *testing.T, chain *Blockchain, db *badger.DB,
 	updaterPkBytes, _, err := Base58CheckDecode(TransactorPublicKeyBase58Check)
 	require.NoError(err)
 
-	utxoView, err := NewUtxoView(db, params, chain.postgres, chain.snapshot, chain.eventManager)
-	require.NoError(err)
+	utxoView := NewUtxoView(db, params, chain.postgres, chain.snapshot, chain.eventManager)
 
 	txn, totalInputMake, changeAmountMake, feesMake, err := chain.CreateDAOCoinLimitOrderTxn(
 		updaterPkBytes,

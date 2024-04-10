@@ -5339,11 +5339,7 @@ func InitDbWithDeSoGenesisBlock(params *DeSoParams, handle *badger.DB,
 	// think things are initialized because we set the best block hash at the
 	// top. We should fix this at some point so that an error in this step
 	// wipes out the best hash.
-	utxoView, err := NewUtxoView(handle, params, postgres, snap, eventManager)
-	if err != nil {
-		return fmt.Errorf(
-			"InitDbWithDeSoGenesisBlock: Error initializing UtxoView")
-	}
+	utxoView := NewUtxoView(handle, params, postgres, snap, eventManager)
 
 	// Add the seed balances to the view.
 	for index, txOutput := range params.SeedBalances {
@@ -5361,7 +5357,7 @@ func InitDbWithDeSoGenesisBlock(params *DeSoParams, handle *badger.DB,
 			UtxoKey:  &outputKey,
 		}
 
-		if _, err = utxoView._addDESO(txOutput.AmountNanos, txOutput.PublicKey, &utxoEntry, 0); err != nil {
+		if _, err := utxoView._addDESO(txOutput.AmountNanos, txOutput.PublicKey, &utxoEntry, 0); err != nil {
 			return fmt.Errorf("InitDbWithDeSoGenesisBlock: Error adding "+
 				"seed balance at index %v ; output: %v: %v", index, txOutput, err)
 		}
@@ -5409,7 +5405,7 @@ func InitDbWithDeSoGenesisBlock(params *DeSoParams, handle *badger.DB,
 		})
 	}
 	// Flush all the data in the view.
-	err = utxoView.FlushToDb(0)
+	err := utxoView.FlushToDb(0)
 	if err != nil {
 		return fmt.Errorf(
 			"InitDbWithDeSoGenesisBlock: Error flushing seed txns to DB: %v", err)

@@ -720,8 +720,7 @@ func (tes *transactionTestSuite) testDisconnectBlock(tm *transactionTestMeta, te
 
 	// Disconnect the block on a dummy UtxoView using DisconnectBlock to run all sanity-checks on the block.
 	{
-		utxoView, err := NewUtxoView(tm.db, tm.params, tm.pg, nil, nil)
-		require.NoError(err)
+		utxoView := NewUtxoView(tm.db, tm.params, tm.pg, nil, nil)
 		txHashes, err := ComputeTransactionHashes(lastBlock.Txns)
 		require.NoError(err)
 		err = utxoView.DisconnectBlock(lastBlock, txHashes, utxoOps, blockHeight)
@@ -729,8 +728,7 @@ func (tes *transactionTestSuite) testDisconnectBlock(tm *transactionTestMeta, te
 	}
 
 	// Disconnect the block transaction by transaction using DisconnectTransaction.
-	utxoView, err := NewUtxoView(tm.db, tm.params, tm.pg, tm.chain.snapshot, nil)
-	require.NoError(err)
+	utxoView := NewUtxoView(tm.db, tm.params, tm.pg, tm.chain.snapshot, nil)
 	for ii := len(lastBlock.Txns) - 1; ii >= 0; ii-- {
 		currentTxn := lastBlock.Txns[ii]
 		txnHash := currentTxn.Hash()
@@ -883,8 +881,7 @@ func _doBasicTransferWithViewFlush(t *testing.T, chain *Blockchain, db *badger.D
 	txn := _assembleBasicTransferTxnFullySigned(
 		t, chain, amountNanos, feeRateNanosPerKB, pkSenderStr, pkReceiverStr, privStr, nil)
 
-	utxoView, err := NewUtxoView(db, params, chain.postgres, chain.snapshot, chain.eventManager)
-	require.NoError(err)
+	utxoView := NewUtxoView(db, params, chain.postgres, chain.snapshot, chain.eventManager)
 
 	// Always use height+1 for validation since it's assumed the transaction will
 	// get mined into the next block.
@@ -991,9 +988,7 @@ func _updateGlobalParamsEntryWithMempool(t *testing.T, chain *Blockchain, db *ba
 	// Sign the transaction now that its inputs are set up.
 	_signTxn(t, txn, updaterPrivBase58Check)
 
-	utxoView, err := NewUtxoView(db, params, chain.postgres, chain.snapshot, chain.eventManager)
-
-	require.NoError(err)
+	utxoView := NewUtxoView(db, params, chain.postgres, chain.snapshot, chain.eventManager)
 
 	txHash := txn.Hash()
 	// Always use height+1 for validation since it's assumed the transaction will
@@ -1162,11 +1157,10 @@ func _rollBackTestMetaTxnsAndFlush(testMeta *TestMeta) {
 		fmt.Printf(
 			"Disconnecting transaction with type %v index %d (going backwards)\n",
 			currentTxn.TxnMeta.GetTxnType(), backwardIter)
-		utxoView, err := NewUtxoView(testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot, nil)
-		require.NoError(testMeta.t, err)
+		utxoView := NewUtxoView(testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot, nil)
 
 		currentHash := currentTxn.Hash()
-		err = utxoView.DisconnectTransaction(currentTxn, currentHash, currentOps, testMeta.savedHeight)
+		err := utxoView.DisconnectTransaction(currentTxn, currentHash, currentOps, testMeta.savedHeight)
 		require.NoError(testMeta.t, err)
 
 		blockHeight := uint64(testMeta.chain.BlockTip().Height)
@@ -1200,8 +1194,7 @@ func _applyTestMetaTxnsToMempool(testMeta *TestMeta) {
 
 func _applyTestMetaTxnsToViewAndFlush(testMeta *TestMeta) {
 	// Apply all the transactions to a view and flush the view to the db.
-	utxoView, err := NewUtxoView(testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot, testMeta.chain.eventManager)
-	require.NoError(testMeta.t, err)
+	utxoView := NewUtxoView(testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot, testMeta.chain.eventManager)
 	for ii, txn := range testMeta.txns {
 		fmt.Printf("Adding txn %v of type %v to UtxoView\n", ii, txn.TxnMeta.GetTxnType())
 
@@ -1209,7 +1202,7 @@ func _applyTestMetaTxnsToViewAndFlush(testMeta *TestMeta) {
 		// get mined into the next block.
 		txHash := txn.Hash()
 		blockHeight := testMeta.chain.blockTip().Height + 1
-		_, _, _, _, err =
+		_, _, _, _, err :=
 			utxoView.ConnectTransaction(txn, txHash, blockHeight, 0, true, false)
 		require.NoError(testMeta.t, err)
 	}
@@ -1221,8 +1214,7 @@ func _applyTestMetaTxnsToViewAndFlush(testMeta *TestMeta) {
 func _disconnectTestMetaTxnsFromViewAndFlush(testMeta *TestMeta) {
 	// Disonnect the transactions from a single view in the same way as above
 	// i.e. without flushing each time.
-	utxoView, err := NewUtxoView(testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot, testMeta.chain.eventManager)
-	require.NoError(testMeta.t, err)
+	utxoView := NewUtxoView(testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot, testMeta.chain.eventManager)
 	for ii := 0; ii < len(testMeta.txnOps); ii++ {
 		backwardIter := len(testMeta.txnOps) - 1 - ii
 		fmt.Printf("Disconnecting transaction with index %d (going backwards)\n", backwardIter)
@@ -1230,7 +1222,7 @@ func _disconnectTestMetaTxnsFromViewAndFlush(testMeta *TestMeta) {
 		currentTxn := testMeta.txns[backwardIter]
 
 		currentHash := currentTxn.Hash()
-		err = utxoView.DisconnectTransaction(currentTxn, currentHash, currentOps, testMeta.savedHeight)
+		err := utxoView.DisconnectTransaction(currentTxn, currentHash, currentOps, testMeta.savedHeight)
 		require.NoError(testMeta.t, err)
 	}
 	blockHeight := uint64(testMeta.chain.BlockTip().Height)
@@ -1246,8 +1238,7 @@ func _connectBlockThenDisconnectBlockAndFlush(testMeta *TestMeta) {
 
 	// Roll back the block and make sure we don't hit any errors.
 	{
-		utxoView, err := NewUtxoView(testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot, testMeta.chain.eventManager)
-		require.NoError(testMeta.t, err)
+		utxoView := NewUtxoView(testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot, testMeta.chain.eventManager)
 
 		// Fetch the utxo operations for the block we're detaching. We need these
 		// in order to be able to detach the block.
@@ -1341,8 +1332,7 @@ func TestUpdateGlobalParams(t *testing.T) {
 			false)
 		require.NoError(err)
 
-		utxoView, err := NewUtxoView(db, params, postgres, chain.snapshot, chain.eventManager)
-		require.NoError(err)
+		utxoView := NewUtxoView(db, params, postgres, chain.snapshot, chain.eventManager)
 		blockHeight := chain.blockTip().Height + 1
 		utxoOps, totalInput, totalOutput, fees, err :=
 			utxoView.ConnectTransaction(updateGlobalParamsTxn, updateGlobalParamsTxn.Hash(), blockHeight, 0, true, false)
@@ -1401,8 +1391,7 @@ func TestUpdateGlobalParams(t *testing.T) {
 		require.Equal(DbGetGlobalParamsEntry(db, chain.snapshot), expectedGlobalParams)
 
 		// Now let's do a disconnect and make sure the values reflect the previous entry.
-		utxoView, err := NewUtxoView(db, params, postgres, chain.snapshot, chain.eventManager)
-		require.NoError(err)
+		utxoView := NewUtxoView(db, params, postgres, chain.snapshot, chain.eventManager)
 		blockHeight := chain.blockTip().Height + 1
 		utxoView.DisconnectTransaction(
 			updateGlobalParamsTxn, updateGlobalParamsTxn.Hash(), utxoOps, blockHeight)
@@ -1467,8 +1456,7 @@ func TestUpdateGlobalParams(t *testing.T) {
 		require.Contains(err.Error(), TxErrorNonceExpired)
 
 		// Now let's do a disconnect and make sure the values reflect the previous entry.
-		utxoView, err := NewUtxoView(db, params, postgres, chain.snapshot, nil)
-		require.NoError(err)
+		utxoView := NewUtxoView(db, params, postgres, chain.snapshot, nil)
 		blockHeight := chain.blockTip().Height + 1
 		utxoView.DisconnectTransaction(
 			updateGlobalParamsTxn, updateGlobalParamsTxn.Hash(), utxoOps, blockHeight)
@@ -1574,8 +1562,7 @@ func TestUpdateGlobalParamsPoS(t *testing.T) {
 			true,
 			mempool)
 		require.NoError(err)
-		utxoView, err := NewUtxoView(db, params, postgres, chain.snapshot, nil)
-		require.NoError(err)
+		utxoView := NewUtxoView(db, params, postgres, chain.snapshot, nil)
 		require.Equal(utxoView.GetCurrentGlobalParamsEntry().MaxBlockSizeBytesPoS, uint64(5000))
 	}
 	// SoftMaxBlockSizeBytesPoS tests.
@@ -1613,8 +1600,7 @@ func TestUpdateGlobalParamsPoS(t *testing.T) {
 			mempool)
 		require.ErrorIs(err, RuleErrorSoftMaxBlockSizeBytesTooHigh)
 		// Make sure setting soft max block size to a value greater than max block size fails.
-		utxoView, err := NewUtxoView(db, params, postgres, chain.snapshot, nil)
-		require.NoError(err)
+		utxoView := NewUtxoView(db, params, postgres, chain.snapshot, nil)
 		_, _, _, err = _updateGlobalParamsEntryWithMempool(t, chain, db, params, 1000,
 			moneyPkString,
 			moneyPrivString,
@@ -1646,8 +1632,7 @@ func TestUpdateGlobalParamsPoS(t *testing.T) {
 			true,
 			mempool)
 		require.NoError(err)
-		utxoView, err = NewUtxoView(db, params, postgres, chain.snapshot, nil)
-		require.NoError(err)
+		utxoView = NewUtxoView(db, params, postgres, chain.snapshot, nil)
 		require.Equal(utxoView.GetCurrentGlobalParamsEntry().SoftMaxBlockSizeBytesPoS, uint64(4000))
 	}
 	// MaxTxnSizeBytesPoS tests.
@@ -1685,8 +1670,7 @@ func TestUpdateGlobalParamsPoS(t *testing.T) {
 			mempool)
 		require.ErrorIs(err, RuleErrorMaxTxnSizeBytesTooHigh)
 		// Make sure setting max txn size to a value greater than max block size fails.
-		utxoView, err := NewUtxoView(db, params, postgres, chain.snapshot, nil)
-		require.NoError(err)
+		utxoView := NewUtxoView(db, params, postgres, chain.snapshot, nil)
 		_, _, _, err = _updateGlobalParamsEntryWithMempool(t, chain, db, params, 1000,
 			moneyPkString,
 			moneyPrivString,
@@ -1718,15 +1702,13 @@ func TestUpdateGlobalParamsPoS(t *testing.T) {
 			true,
 			mempool)
 		require.NoError(err)
-		utxoView, err = NewUtxoView(db, params, postgres, chain.snapshot, nil)
-		require.NoError(err)
+		utxoView = NewUtxoView(db, params, postgres, chain.snapshot, nil)
 		require.Equal(utxoView.GetCurrentGlobalParamsEntry().MaxTxnSizeBytesPoS, uint64(4000))
 	}
 	// MinFeeBucket size tests.
 	{
 
-		utxoView, err := NewUtxoView(db, params, postgres, chain.snapshot, nil)
-		require.NoError(err)
+		utxoView := NewUtxoView(db, params, postgres, chain.snapshot, nil)
 		require.Equal(utxoView.GetCurrentGlobalParamsEntry().MinimumNetworkFeeNanosPerKB, uint64(1000))
 		require.Equal(utxoView.GetCurrentGlobalParamsEntry().FeeBucketGrowthRateBasisPoints, uint64(1000))
 		// Make sure setting min fee bucket size too low fails. 1% of 1000 is 10, so anything less than that
@@ -1813,8 +1795,7 @@ func TestUpdateGlobalParamsPoS(t *testing.T) {
 			true,
 			mempool)
 		require.NoError(err)
-		utxoView, err := NewUtxoView(db, params, postgres, chain.snapshot, nil)
-		require.NoError(err)
+		utxoView := NewUtxoView(db, params, postgres, chain.snapshot, nil)
 		require.Equal(utxoView.GetCurrentGlobalParamsEntry().BlockProductionIntervalMillisecondsPoS, uint64(5000))
 	}
 	{
@@ -1867,8 +1848,7 @@ func TestUpdateGlobalParamsPoS(t *testing.T) {
 			true,
 			mempool)
 		require.NoError(err)
-		utxoView, err := NewUtxoView(db, params, postgres, chain.snapshot, nil)
-		require.NoError(err)
+		utxoView := NewUtxoView(db, params, postgres, chain.snapshot, nil)
 		require.Equal(utxoView.GetCurrentGlobalParamsEntry().TimeoutIntervalMillisecondsPoS, uint64(5000))
 	}
 }
@@ -1929,7 +1909,7 @@ func TestBasicTransfer(t *testing.T) {
 		txn.PublicKey = recipientPkBytes
 
 		_signTxn(t, txn, recipientPrivString)
-		utxoView, _ := NewUtxoView(db, params, postgres, chain.snapshot, chain.eventManager)
+		utxoView := NewUtxoView(db, params, postgres, chain.snapshot, chain.eventManager)
 		txHash := txn.Hash()
 		blockHeight := chain.blockTip().Height + 1
 		_, _, _, _, err =
@@ -1958,7 +1938,7 @@ func TestBasicTransfer(t *testing.T) {
 		}
 
 		blockHeight := chain.blockTip().Height + 1
-		utxoView, _ := NewUtxoView(db, params, postgres, chain.snapshot, nil)
+		utxoView := NewUtxoView(db, params, postgres, chain.snapshot, nil)
 		if blockHeight < params.ForkHeights.BalanceModelBlockHeight {
 			totalInput, spendAmount, changeAmount, fees, err :=
 				chain.AddInputsAndChangeToTransaction(txn, 10, nil)
@@ -1997,7 +1977,7 @@ func TestBasicTransfer(t *testing.T) {
 			},
 		}
 		_signTxn(t, txn, senderPrivString)
-		utxoView, _ := NewUtxoView(db, params, postgres, chain.snapshot, chain.eventManager)
+		utxoView := NewUtxoView(db, params, postgres, chain.snapshot, chain.eventManager)
 		txHash := txn.Hash()
 		blockHeight := chain.blockTip().Height + 1
 		_, _, _, _, err =
@@ -2031,7 +2011,7 @@ func TestBasicTransfer(t *testing.T) {
 		require.Greater(totalInput, uint64(0))
 
 		_signTxn(t, txn, senderPrivString)
-		utxoView, _ := NewUtxoView(db, params, postgres, chain.snapshot, chain.eventManager)
+		utxoView := NewUtxoView(db, params, postgres, chain.snapshot, chain.eventManager)
 		txHash := txn.Hash()
 		blockHeight := chain.blockTip().Height + 1
 		_, _, _, _, err =
@@ -2060,7 +2040,7 @@ func TestBasicTransfer(t *testing.T) {
 
 		txHashes, err := ComputeTransactionHashes(blockToMine.Txns)
 		require.NoError(err)
-		utxoView, _ := NewUtxoView(db, params, postgres, chain.snapshot, chain.eventManager)
+		utxoView := NewUtxoView(db, params, postgres, chain.snapshot, chain.eventManager)
 		_, err = utxoView.ConnectBlock(blockToMine, txHashes, true /*verifySignatures*/, nil, 0)
 		require.Error(err)
 		require.Contains(err.Error(), RuleErrorBlockRewardExceedsMaxAllowed)
@@ -2069,7 +2049,7 @@ func TestBasicTransfer(t *testing.T) {
 	// A block with less than the max block reward should be OK.
 	{
 
-		utxoView, _ := NewUtxoView(db, params, chain.postgres, chain.snapshot, nil)
+		utxoView := NewUtxoView(db, params, chain.postgres, chain.snapshot, nil)
 		minerBalanceBefore, _ := utxoView.GetDeSoBalanceNanosForPublicKey(senderPkBytes)
 
 		blockToMine.Txns[0].TxOutputs[0].AmountNanos = allowedBlockReward - 1
@@ -2080,7 +2060,7 @@ func TestBasicTransfer(t *testing.T) {
 
 		txHashes, err := ComputeTransactionHashes(blockToMine.Txns)
 		require.NoError(err)
-		utxoView, _ = NewUtxoView(db, params, postgres, chain.snapshot, nil)
+		utxoView = NewUtxoView(db, params, postgres, chain.snapshot, nil)
 		_, err = utxoView.ConnectBlock(blockToMine, txHashes, true /*verifySignatures*/, nil, 0)
 		require.NoError(err)
 
@@ -2121,7 +2101,7 @@ func TestBasicTransfer(t *testing.T) {
 		require.Greater(totalInput, uint64(0))
 
 		_signTxn(t, txn, senderPrivString)
-		utxoView, _ := NewUtxoView(db, params, chain.postgres, chain.snapshot, nil)
+		utxoView := NewUtxoView(db, params, chain.postgres, chain.snapshot, nil)
 		txHash := txn.Hash()
 		_, _, _, _, err =
 			utxoView.ConnectTransaction(txn, txHash, blockHeight, 0, true, false)
@@ -2556,7 +2536,7 @@ func TestBlockRewardPatch(t *testing.T) {
 		txHashes, err := ComputeTransactionHashes(blkToMine.Txns)
 		require.NoError(t, err)
 		blkToMine.Header.Nonce = bestNonce
-		utxoView, _ := NewUtxoView(db, params, chain.postgres, chain.snapshot, nil)
+		utxoView := NewUtxoView(db, params, chain.postgres, chain.snapshot, nil)
 		_, err = utxoView.ConnectBlock(blkToMine, txHashes, true, nil, uint64(chain.blockTip().Height+1))
 		require.Error(t, err)
 		require.Contains(t, err.Error(), RuleErrorBlockRewardTxnMustHaveOneOutput)
@@ -2590,8 +2570,7 @@ func TestBlockRewardPatch(t *testing.T) {
 			chain.AddInputsAndChangeToTransaction(txn, testMeta.feeRateNanosPerKb, nil)
 		require.NoError(t, err)
 		_signTxn(t, txn, senderPrivString)
-		utxoView, err := NewUtxoView(db, params, chain.postgres, chain.snapshot, nil)
-		require.NoError(t, err)
+		utxoView := NewUtxoView(db, params, chain.postgres, chain.snapshot, nil)
 		_, _, _, fees, err := utxoView._connectTransaction(txn, txn.Hash(), chain.blockTip().Height+1, 0, true, false)
 		require.NoError(t, err)
 		blkToMine, _, _, err := miner._getBlockToMine(0)
@@ -2605,13 +2584,11 @@ func TestBlockRewardPatch(t *testing.T) {
 		txHashes, err := ComputeTransactionHashes(blkToMine.Txns)
 		require.NoError(t, err)
 		blkToMine.Header.Nonce = bestNonce
-		utxoView, err = NewUtxoView(db, params, chain.postgres, chain.snapshot, nil)
-		require.NoError(t, err)
+		utxoView = NewUtxoView(db, params, chain.postgres, chain.snapshot, nil)
 		_, err = utxoView.ConnectBlock(blkToMine, txHashes, true, nil, uint64(chain.blockTip().Height+1))
 		require.Contains(t, err.Error(), RuleErrorBlockRewardExceedsMaxAllowed)
 
-		utxoView, err = NewUtxoView(db, params, chain.postgres, chain.snapshot, nil)
-		require.NoError(t, err)
+		utxoView = NewUtxoView(db, params, chain.postgres, chain.snapshot, nil)
 		// Reduce fees and try again, should succeed.
 		blkToMine.Txns[0].TxOutputs[0].AmountNanos -= fees
 		_, err = utxoView.ConnectBlock(blkToMine, txHashes, true, nil, uint64(chain.blockTip().Height+1))

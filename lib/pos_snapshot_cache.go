@@ -90,10 +90,7 @@ func (sc *SnapshotCache) GetSnapshotValidatorSetEntriesByStakeAtEpochNumber(
 		return validatorEntries, nil
 	}
 	// If not found in the cache, create a new view and use it to fetch the validator entries.
-	tempView, err := NewUtxoView(handle, params, nil, snapshot, nil)
-	if err != nil {
-		return nil, errors.Wrap(err, "sc.GetSnapshotLeaderSchedule: Error creating new UtxoView: ")
-	}
+	tempView := NewUtxoView(handle, params, nil, snapshot, nil)
 	// Get the snapshot global params so we know how many validators to fetch.
 	snapshotGlobalParams, err := sc.GetSnapshotGlobalParams(snapshotAtEpochNumber, handle, snapshot, params)
 	if err != nil {
@@ -137,10 +134,8 @@ func (sc *SnapshotCache) GetSnapshotGlobalParams(
 		return globalParams, nil
 	}
 	// If not found in the cache, create a new view and use it to fetch the global params.
-	tempView, err := NewUtxoView(handle, params, nil, snapshot, nil)
-	if err != nil {
-		return nil, errors.Wrap(err, "sc.GetSnapshotLeaderSchedule: Error creating new UtxoView: ")
-	}
+	tempView := NewUtxoView(handle, params, nil, snapshot, nil)
+	var err error
 	globalParams, err = tempView.GetSnapshotGlobalParamsEntryByEpochNumber(snapshotAtEpoch)
 	if err != nil {
 		return nil, errors.Wrap(err, "sc.GetSnapshotGlobalParams: Error fetching global params: ")
@@ -176,10 +171,7 @@ func (sc *SnapshotCache) GetSnapshotLeaderSchedule(
 	}
 
 	// Fetch the leader schedule for the snapshot epoch number
-	tempView, err := NewUtxoView(handle, params, nil, snapshot, nil)
-	if err != nil {
-		return nil, errors.Wrap(err, "sc.GetSnapshotLeaderSchedule: Error creating new UtxoView: ")
-	}
+	tempView := NewUtxoView(handle, params, nil, snapshot, nil)
 	leaderPKIDs, err := tempView.GetSnapshotLeaderScheduleAtEpochNumber(snapshotAtEpoch)
 	if err != nil {
 		return nil, errors.Wrap(err, "sc.GetSnapshotLeaderSchedule: Error fetching leader schedule: ")

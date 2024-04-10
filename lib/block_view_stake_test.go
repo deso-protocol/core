@@ -76,8 +76,7 @@ func _testStaking(t *testing.T, flushToDB bool) {
 	}
 
 	// Seed a CurrentEpochEntry.
-	epochUtxoView, err := NewUtxoView(db, params, chain.postgres, chain.snapshot, chain.eventManager)
-	require.NoError(t, err)
+	epochUtxoView := NewUtxoView(db, params, chain.postgres, chain.snapshot, chain.eventManager)
 	epochUtxoView._setCurrentEpochEntry(&EpochEntry{EpochNumber: 1, FinalBlockHeight: blockHeight + 10})
 	require.NoError(t, epochUtxoView.FlushToDb(blockHeight))
 	currentEpochNumber, err := utxoView().GetCurrentEpochNumber()
@@ -820,8 +819,7 @@ func TestStakingWithDerivedKey(t *testing.T) {
 	senderPKID := DBGetPKIDEntryForPublicKey(db, chain.snapshot, senderPkBytes).PKID
 
 	newUtxoView := func() *UtxoView {
-		utxoView, err := NewUtxoView(db, params, chain.postgres, chain.snapshot, chain.eventManager)
-		require.NoError(t, err)
+		utxoView := NewUtxoView(db, params, chain.postgres, chain.snapshot, chain.eventManager)
 		return utxoView
 	}
 
@@ -1763,8 +1761,7 @@ func TestGetLockedStakeEntriesInRange(t *testing.T) {
 
 	// Initialize test chain and UtxoView.
 	chain, params, db := NewLowDifficultyBlockchain(t)
-	utxoView, err := NewUtxoView(db, params, chain.postgres, chain.snapshot, chain.eventManager)
-	require.NoError(t, err)
+	utxoView := NewUtxoView(db, params, chain.postgres, chain.snapshot, chain.eventManager)
 	blockHeight := uint64(chain.blockTip().Height + 1)
 
 	m0PKID := DBGetPKIDEntryForPublicKey(db, chain.snapshot, m0PkBytes).PKID
@@ -1780,6 +1777,7 @@ func TestGetLockedStakeEntriesInRange(t *testing.T) {
 	require.NoError(t, utxoView.FlushToDb(blockHeight))
 
 	// Verify LockedStakeEntry is in the db.
+	var err error
 	lockedStakeEntry, err = DBGetLockedStakeEntry(db, chain.snapshot, m0PKID, m0PKID, 1)
 	require.NoError(t, err)
 	require.NotNil(t, lockedStakeEntry)
@@ -1913,8 +1911,7 @@ func TestStakeLockupEpochDuration(t *testing.T) {
 	m0PKID := DBGetPKIDEntryForPublicKey(db, chain.snapshot, m0PkBytes).PKID
 
 	newUtxoView := func() *UtxoView {
-		utxoView, err := NewUtxoView(db, params, chain.postgres, chain.snapshot, chain.eventManager)
-		require.NoError(t, err)
+		utxoView := NewUtxoView(db, params, chain.postgres, chain.snapshot, chain.eventManager)
 		return utxoView
 	}
 
@@ -2097,8 +2094,7 @@ func testStakingToJailedValidator(t *testing.T, flushToDB bool) {
 		require.NoError(t, err)
 
 		// Jail the validator.
-		tmpUtxoView, err := NewUtxoView(db, params, chain.postgres, chain.snapshot, chain.eventManager)
-		require.NoError(t, err)
+		tmpUtxoView := NewUtxoView(db, params, chain.postgres, chain.snapshot, chain.eventManager)
 		require.NoError(t, tmpUtxoView.JailValidator(validatorEntry))
 		require.NoError(t, tmpUtxoView.FlushToDb(blockHeight))
 

@@ -1004,13 +1004,9 @@ func (bc *Blockchain) CreateRegisterAsValidatorTxn(
 
 	// Create a new UtxoView. If we have access to a mempool object, use
 	// it to get an augmented view that factors in pending transactions.
-	utxoView, err := NewUtxoView(bc.db, bc.params, bc.postgres, bc.snapshot, bc.eventManager)
-	if err != nil {
-		return nil, 0, 0, 0, errors.Wrap(
-			err, "Blockchain.CreateRegisterAsValidatorTxn: problem creating new utxo view: ",
-		)
-	}
+	utxoView := NewUtxoView(bc.db, bc.params, bc.postgres, bc.snapshot, bc.eventManager)
 	if !isInterfaceValueNil(mempool) {
+		var err error
 		utxoView, err = mempool.GetAugmentedUniversalView()
 		if err != nil {
 			return nil, 0, 0, 0, errors.Wrapf(
@@ -1021,7 +1017,7 @@ func (bc *Blockchain) CreateRegisterAsValidatorTxn(
 
 	// Validate txn metadata.
 	blockHeight := uint64(bc.blockTip().Height) + 1
-	if err = utxoView.IsValidRegisterAsValidatorMetadata(transactorPublicKey, metadata, blockHeight); err != nil {
+	if err := utxoView.IsValidRegisterAsValidatorMetadata(transactorPublicKey, metadata, blockHeight); err != nil {
 		return nil, 0, 0, 0, errors.Wrapf(
 			err, "Blockchain.CreateRegisterAsValidatorTxn: invalid txn metadata: ",
 		)
@@ -1081,13 +1077,9 @@ func (bc *Blockchain) CreateUnregisterAsValidatorTxn(
 
 	// Create a new UtxoView. If we have access to a mempool object, use
 	// it to get an augmented view that factors in pending transactions.
-	utxoView, err := NewUtxoView(bc.db, bc.params, bc.postgres, bc.snapshot, bc.eventManager)
-	if err != nil {
-		return nil, 0, 0, 0, errors.Wrap(
-			err, "Blockchain.CreateUnregisterAsValidatorTxn: problem creating new utxo view: ",
-		)
-	}
+	utxoView := NewUtxoView(bc.db, bc.params, bc.postgres, bc.snapshot, bc.eventManager)
 	if !isInterfaceValueNil(mempool) {
+		var err error
 		utxoView, err = mempool.GetAugmentedUniversalView()
 		if err != nil {
 			return nil, 0, 0, 0, errors.Wrapf(
@@ -1097,7 +1089,7 @@ func (bc *Blockchain) CreateUnregisterAsValidatorTxn(
 	}
 
 	// Validate txn metadata.
-	if err = utxoView.IsValidUnregisterAsValidatorMetadata(transactorPublicKey); err != nil {
+	if err := utxoView.IsValidUnregisterAsValidatorMetadata(transactorPublicKey); err != nil {
 		return nil, 0, 0, 0, errors.Wrapf(
 			err, "Blockchain.CreateUnregisterAsValidatorTxn: invalid txn metadata: ",
 		)
@@ -1157,13 +1149,9 @@ func (bc *Blockchain) CreateUnjailValidatorTxn(
 
 	// Create a new UtxoView. If we have access to a mempool object, use
 	// it to get an augmented view that factors in pending transactions.
-	utxoView, err := NewUtxoView(bc.db, bc.params, bc.postgres, bc.snapshot, bc.eventManager)
-	if err != nil {
-		return nil, 0, 0, 0, errors.Wrap(
-			err, "Blockchain.CreateUnjailValidatorTxn: problem creating new utxo view: ",
-		)
-	}
+	utxoView := NewUtxoView(bc.db, bc.params, bc.postgres, bc.snapshot, bc.eventManager)
 	if !isInterfaceValueNil(mempool) {
+		var err error
 		utxoView, err = mempool.GetAugmentedUniversalView()
 		if err != nil {
 			return nil, 0, 0, 0, errors.Wrapf(
@@ -1173,7 +1161,7 @@ func (bc *Blockchain) CreateUnjailValidatorTxn(
 	}
 
 	// Validate txn metadata.
-	if err = utxoView.IsValidUnjailValidatorMetadata(transactorPublicKey); err != nil {
+	if err := utxoView.IsValidUnjailValidatorMetadata(transactorPublicKey); err != nil {
 		return nil, 0, 0, 0, errors.Wrapf(
 			err, "Blockchain.CreateUnjailValidatorTxn: invalid txn metadata: ",
 		)

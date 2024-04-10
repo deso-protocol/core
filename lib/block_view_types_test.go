@@ -351,8 +351,7 @@ func TestUtxoEntryEncodeDecode(t *testing.T) {
 	// in the middle.
 	utxoOpsList := [][]*UtxoOperation{}
 	{
-		utxoView, err := NewUtxoView(db, paramsCopy, nil, chain.snapshot, nil)
-		require.NoError(err)
+		utxoView := NewUtxoView(db, paramsCopy, nil, chain.snapshot, nil)
 
 		// Add a placeholder where the rate update is going to be
 		fff := append([]*MsgDeSoTxn{}, bitcoinExchangeTxns[:rateUpdateIndex]...)
@@ -396,6 +395,7 @@ func TestUtxoEntryEncodeDecode(t *testing.T) {
 			utxoOpsList = append(utxoOpsList, utxoOps)
 		}
 		utxoEntries, err := chain.GetSpendableUtxosForPublicKey(pkBytes1, nil, utxoView)
+		require.NoError(err)
 		for _, entry := range utxoEntries {
 			entryBytes := EncodeToBytes(0, entry)
 			newEntry := &UtxoEntry{}

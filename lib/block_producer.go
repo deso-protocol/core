@@ -215,12 +215,8 @@ func (desoBlockProducer *DeSoBlockProducer) _getBlockTemplate(publicKey []byte) 
 		currentBlockSize := uint64(len(blockBytes) + MaxVarintLen64)
 
 		// Create a new view object.
-		utxoView, err := NewUtxoView(desoBlockProducer.chain.db, desoBlockProducer.params,
+		utxoView := NewUtxoView(desoBlockProducer.chain.db, desoBlockProducer.params,
 			desoBlockProducer.postgres, desoBlockProducer.chain.snapshot, nil)
-		if err != nil {
-			return nil, nil, nil, errors.Wrapf(err,
-				"DeSoBlockProducer._getBlockTemplate: Error generating checker UtxoView: ")
-		}
 
 		txnsAddedToBlock := make(map[BlockHash]bool)
 		for ii, mempoolTx := range txnsOrderedByTimeAdded {
@@ -290,12 +286,8 @@ func (desoBlockProducer *DeSoBlockProducer) _getBlockTemplate(publicKey []byte) 
 
 	// Compute the total fee the BlockProducer should get.
 	totalFeeNanos := uint64(0)
-	feesUtxoView, err := NewUtxoView(desoBlockProducer.chain.db, desoBlockProducer.params,
+	feesUtxoView := NewUtxoView(desoBlockProducer.chain.db, desoBlockProducer.params,
 		desoBlockProducer.postgres, desoBlockProducer.chain.snapshot, nil)
-	if err != nil {
-		return nil, nil, nil, fmt.Errorf(
-			"DeSoBlockProducer._getBlockTemplate: Error generating UtxoView to compute txn fees: %v", err)
-	}
 
 	// Parse the public key that should be used for the block reward.
 	blockRewardOutputPublicKey, err := btcec.ParsePubKey(blockRewardOutput.PublicKey)

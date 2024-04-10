@@ -27,8 +27,7 @@ func TestCreateBlockTemplate(t *testing.T) {
 
 	params, db := _posTestBlockchainSetupWithBalances(t, 200000, 200000)
 	params.ForkHeights.ProofOfStake2ConsensusCutoverBlockHeight = 1
-	latestBlockView, err := NewUtxoView(db, params, nil, nil, nil)
-	require.NoError(err)
+	latestBlockView := NewUtxoView(db, params, nil, nil, nil)
 	dir := _dbDirSetup(t)
 
 	mempool := NewPosMempool()
@@ -103,8 +102,7 @@ func TestCreateBlockWithoutHeader(t *testing.T) {
 	maxMempoolPosSizeBytes := uint64(3000000000)
 	mempoolBackupIntervalMillis := uint64(30000)
 
-	latestBlockView, err := NewUtxoView(db, params, nil, nil, nil)
-	require.NoError(err)
+	latestBlockView := NewUtxoView(db, params, nil, nil, nil)
 	dir := _dbDirSetup(t)
 
 	mempool := NewPosMempool()
@@ -198,8 +196,7 @@ func TestGetBlockTransactions(t *testing.T) {
 	m0PubBytes, _, _ := Base58CheckDecode(m0Pub)
 	m1PubBytes, _, _ := Base58CheckDecode(m1Pub)
 
-	latestBlockView, err := NewUtxoView(db, params, nil, nil, nil)
-	require.NoError(err)
+	latestBlockView := NewUtxoView(db, params, nil, nil, nil)
 	dir := _dbDirSetup(t)
 
 	mempool := NewPosMempool()

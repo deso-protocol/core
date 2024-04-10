@@ -2839,8 +2839,7 @@ func NewTestPoSBlockchainWithValidators(t *testing.T) *TestMeta {
 	require.NoError(t, err)
 	oldPool.Stop()
 	miner.Stop()
-	latestBlockView, err := NewUtxoView(db, params, nil, nil, nil)
-	require.NoError(t, err)
+	latestBlockView := NewUtxoView(db, params, nil, nil, nil)
 
 	maxMempoolPosSizeBytes := uint64(1024 * 1024 * 1000)
 	mempoolBackupIntervalMillis := uint64(30000)

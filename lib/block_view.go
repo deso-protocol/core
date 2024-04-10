@@ -325,10 +325,7 @@ func (bav *UtxoView) _ResetViewMappingsAfterFlush() {
 }
 
 func (bav *UtxoView) CopyUtxoView() (*UtxoView, error) {
-	newView, err := NewUtxoView(bav.Handle, bav.Params, bav.Postgres, bav.Snapshot, bav.EventManager)
-	if err != nil {
-		return nil, err
-	}
+	newView := NewUtxoView(bav.Handle, bav.Params, bav.Postgres, bav.Snapshot, bav.EventManager)
 
 	// Copy the UtxoEntry data
 	// Note that using _setUtxoMappings is dangerous because the Pos within
@@ -679,11 +676,8 @@ func NewUtxoViewWithSnapshotCache(
 	_snapshot *Snapshot,
 	_eventManager *EventManager,
 	_snapshotCache *SnapshotCache,
-) (*UtxoView, error) {
-	utxoView, err := NewUtxoView(_handle, _params, _postgres, _snapshot, _eventManager)
-	if err != nil {
-		return nil, err
-	}
+) *UtxoView {
+	utxoView := NewUtxoView(_handle, _params, _postgres, _snapshot, _eventManager)
 	if _snapshotCache != nil {
 		allValidatorSetEntries := _snapshotCache.GetAllCachedSnapshotValidatorSetEntries()
 		for snapshotAtEpochNumber, validatorSetEntries := range allValidatorSetEntries {
@@ -711,7 +705,7 @@ func NewUtxoViewWithSnapshotCache(
 			utxoView.SnapshotGlobalParamEntries[snapshotAtEpochNumber] = globalParamsEntry.Copy()
 		}
 	}
-	return utxoView, nil
+	return utxoView
 }
 
 func NewUtxoView(
@@ -720,7 +714,7 @@ func NewUtxoView(
 	_postgres *Postgres,
 	_snapshot *Snapshot,
 	_eventManager *EventManager,
-) (*UtxoView, error) {
+) *UtxoView {
 
 	view := UtxoView{
 		Handle: _handle,
@@ -757,7 +751,7 @@ func NewUtxoView(
 	// but we can use it here to initialize the mappings.
 	view._ResetViewMappingsAfterFlush()
 
-	return &view, nil
+	return &view
 }
 
 func (bav *UtxoView) _deleteUtxoMappings(utxoEntry *UtxoEntry) error {
