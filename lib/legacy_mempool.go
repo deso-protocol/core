@@ -951,10 +951,7 @@ func (mp *DeSoMempool) GetAugmentedUniversalView() (*UtxoView, error) {
 	if mp.stopped {
 		return nil, fmt.Errorf("GetAugmentedUniversalView: Problem getting UtxoView, Mempool is closed")
 	}
-	newView, err := mp.readOnlyUtxoView.CopyUtxoView()
-	if err != nil {
-		return nil, err
-	}
+	newView := mp.readOnlyUtxoView.CopyUtxoView()
 	return newView, nil
 }
 
@@ -1008,12 +1005,7 @@ func (mp *DeSoMempool) _quickCheckBitcoinExchangeTxn(
 
 func (mp *DeSoMempool) rebuildBackupView() {
 	// We need to rebuild the backup view since the _connectTransaction broke it.
-	var copyErr error
-	mp.backupUniversalUtxoView, copyErr = mp.universalUtxoView.CopyUtxoView()
-	if copyErr != nil {
-		glog.Errorf("ERROR tryAcceptTransaction: Problem copying "+
-			"view. This should NEVER happen: %v", copyErr)
-	}
+	mp.backupUniversalUtxoView = mp.universalUtxoView.CopyUtxoView()
 }
 
 // See TryAcceptTransaction. The write lock must be held when calling this function.
@@ -2604,10 +2596,7 @@ func (mp *DeSoMempool) StartReadOnlyUtxoViewRegenerator() {
 }
 
 func (mp *DeSoMempool) regenerateReadOnlyView() error {
-	newView, err := mp.universalUtxoView.CopyUtxoView()
-	if err != nil {
-		return fmt.Errorf("Error generating readOnlyUtxoView: %v", err)
-	}
+	newView := mp.universalUtxoView.CopyUtxoView()
 
 	// Update the view and bump the sequence number. This is how callers will
 	// know that the view was updated.

@@ -734,10 +734,7 @@ func (stateChangeSyncer *StateChangeSyncer) SyncMempoolToStateSyncer(server *Ser
 			// and try to connect it as a failing transaction. If that fails as well, we just continue
 			// and the mempoolTxUtxoView is unmodified.
 			var copiedView *UtxoView
-			copiedView, err = mempoolTxUtxoView.CopyUtxoView()
-			if err != nil {
-				return false, errors.Wrapf(err, "StateChangeSyncer.SyncMempoolToStateSyncer CopyUtxoView: ")
-			}
+			copiedView = mempoolTxUtxoView.CopyUtxoView()
 			utxoOpsForTxn, _, _, _, err = copiedView.ConnectTransaction(
 				mempoolTx.Tx, mempoolTx.Hash, uint32(blockHeight+1),
 				currentTimestamp, false, false /*ignoreUtxos*/)

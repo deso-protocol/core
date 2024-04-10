@@ -796,10 +796,7 @@ func (fc *FastHotStuffConsensus) fetchValidatorListsForSafeBlocks(blocks []*MsgD
 
 	// Create a UtxoView for the committed tip block. We will use this to fetch the validator set for
 	// all the safe blocks.
-	utxoView, err := fc.blockchain.GetCommittedTipView()
-	if err != nil {
-		return nil, errors.Errorf("Error creating UtxoView: %v", err)
-	}
+	utxoView := fc.blockchain.GetCommittedTipView()
 
 	// Fetch the current epoch entry for the committed tip
 	epochEntryAtCommittedTip, err := utxoView.GetCurrentEpochEntry()
@@ -884,10 +881,7 @@ func (fc *FastHotStuffConsensus) createBlockProducer(bav *UtxoView, previousBloc
 func (fc *FastHotStuffConsensus) updateActiveValidatorConnections() error {
 	// Fetch the committed tip view. This ends up being as good as using the uncommitted tip view
 	// but without the overhead of connecting at least two blocks' worth of txns to the view.
-	utxoView, err := fc.blockchain.GetCommittedTipView()
-	if err != nil {
-		return errors.Errorf("FastHotStuffConsensus.Start: Error fetching uncommitted tip view: %v", err)
-	}
+	utxoView := fc.blockchain.GetCommittedTipView()
 
 	// Get the current snapshot epoch number from the committed tip. This will be behind the uncommitted tip
 	// by up to two blocks, but this is fine since we fetch both the current epoch's and next epoch's validator

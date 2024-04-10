@@ -402,11 +402,7 @@ func (bc *Blockchain) processBlockPoS(block *MsgDeSoBlock, currentView uint64, v
 // as validate failed.
 func (bc *Blockchain) processOrphanBlockPoS(block *MsgDeSoBlock) error {
 	// Construct a UtxoView, so we can perform the QC and leader checks.
-	utxoView, err := bc.GetCommittedTipView()
-	if err != nil {
-		// We can't validate the QC without a UtxoView. Return an error.
-		return errors.Wrap(err, "processOrphanBlockPoS: Problem initializing UtxoView")
-	}
+	utxoView := bc.GetCommittedTipView()
 
 	epochEntry, err := utxoView.GetCurrentEpochEntry()
 	if err != nil {
@@ -891,10 +887,7 @@ func (bc *Blockchain) isBlockTimestampTooFarInFuturePoS(header *MsgDeSoHeader) (
 	// the block's height is within 3600 blocks of the committed tip, this will always work. In practice,
 	// the incoming block never be more than 3600 blocks behind or ahead of the tip, while also failing the
 	// above header.TstampNanoSecs <= currentTstampNanoSecs check.
-	utxoView, err := bc.GetCommittedTipView()
-	if err != nil {
-		return false, errors.Wrap(err, "isBlockTimestampTooFarInFuturePoS: Problem initializing UtxoView")
-	}
+	utxoView := bc.GetCommittedTipView()
 
 	simulatedEpochEntryForBlock, err := utxoView.SimulateAdjacentEpochEntryForBlockHeight(header.Height)
 	if err != nil {
@@ -1799,8 +1792,8 @@ func (bc *Blockchain) GetUncommittedBlocks(tipHash *BlockHash) ([]*BlockNode, er
 }
 
 // GetCommittedTipView builds a UtxoView to the committed tip.
-func (bc *Blockchain) GetCommittedTipView() (*UtxoView, error) {
-	return NewUtxoViewWithSnapshotCache(bc.db, bc.params, bc.postgres, bc.snapshot, nil, bc.snapshotCache), nil
+func (bc *Blockchain) GetCommittedTipView() *UtxoView {
+	return NewUtxoViewWithSnapshotCache(bc.db, bc.params, bc.postgres, bc.snapshot, nil, bc.snapshotCache)
 }
 
 // BlockViewAndUtxoOps is a struct that contains a UtxoView and the UtxoOperations
@@ -1815,16 +1808,13 @@ type BlockViewAndUtxoOps struct {
 	Block    *MsgDeSoBlock
 }
 
-func (viewAndUtxoOps *BlockViewAndUtxoOps) Copy() (*BlockViewAndUtxoOps, error) {
-	copiedView, err := viewAndUtxoOps.UtxoView.CopyUtxoView()
-	if err != nil {
-		return nil, errors.Wrapf(err, "BlockViewAndUtxoOps.Copy: Problem copying UtxoView")
-	}
+func (viewAndUtxoOps *BlockViewAndUtxoOps) Copy() *BlockViewAndUtxoOps {
+	copiedView := viewAndUtxoOps.UtxoView.CopyUtxoView()
 	return &BlockViewAndUtxoOps{
 		UtxoView: copiedView,
 		UtxoOps:  viewAndUtxoOps.UtxoOps,
 		Block:    viewAndUtxoOps.Block,
-	}, nil
+	}
 }
 
 // GetUncommittedTipView builds a UtxoView to the uncommitted tip.
@@ -1901,10 +1891,7 @@ func (bc *Blockchain) getUtxoViewAndUtxoOpsAtBlockHash(blockHash BlockHash) (
 		return nil, errors.Wrapf(err, "getUtxoViewAndUtxoOpsAtBlockHash: Problem getting cached BlockViewAndUtxoOps")
 	}
 	if exists {
-		viewAndUtxoOpsCopy, err := viewAndUtxoOpsAtHash.Copy()
-		if err != nil {
-			return nil, errors.Wrapf(err, "getUtxoViewAndUtxoOpsAtBlockHash: Problem copying BlockViewAndUtxoOps from cache")
-		}
+		viewAndUtxoOpsCopy := viewAndUtxoOpsAtHash.Copy()
 		return viewAndUtxoOpsCopy, nil
 	}
 	// Connect the uncommitted blocks to the tip so that we can validate subsequent blocks
@@ -1935,10 +1922,7 @@ func (bc *Blockchain) getUtxoViewAndUtxoOpsAtBlockHash(blockHash BlockHash) (
 	// Update the TipHash saved on the UtxoView to the blockHash provided.
 	utxoView.TipHash = &blockHash
 	// Save a copy of the UtxoView to the cache.
-	copiedView, err := utxoView.CopyUtxoView()
-	if err != nil {
-		return nil, errors.Wrapf(err, "getUtxoViewAndUtxoOpsAtBlockHash: Problem copying UtxoView to store in cache")
-	}
+	copiedView := utxoView.CopyUtxoView()
 	bc.blockViewCache.Add(blockHash, &BlockViewAndUtxoOps{
 		UtxoView: copiedView,
 		UtxoOps:  utxoOps,
