@@ -435,8 +435,7 @@ func (bc *Blockchain) processOrphanBlockPoS(block *MsgDeSoBlock) error {
 			// the next epoch entry and check if it is in that epoch. If it's in a future epoch, we just throw it away.
 			// We supply 0 for the view and 0 for the block timestamp as we don't know what those values should be, and
 			// we will ignore these values.
-			epochEntry, err = utxoView.computeNextEpochEntry(epochEntry.EpochNumber,
-				epochEntry.FinalBlockHeight, 0, 0)
+			epochEntry, err = utxoView.simulateNextEpochEntry(epochEntry.EpochNumber, epochEntry.FinalBlockHeight)
 			if err != nil {
 				return errors.Wrap(err, "processOrphanBlockPoS: Problem computing next epoch entry")
 			}
