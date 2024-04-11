@@ -387,6 +387,7 @@ func NewServer(
 	_minerPublicKeys []string,
 	_numMiningThreads uint64,
 	_limitOneInboundConnectionPerIP bool,
+	_peerConnectionRefreshIntervalMillis uint64,
 	_hyperSync bool,
 	_syncType NodeSyncType,
 	_maxSyncBlockHeight uint32,
@@ -542,7 +543,7 @@ func NewServer(
 	}
 	srv.networkManager = NewNetworkManager(_params, srv, _chain, _cmgr, _blsKeystore, _desoAddrMgr,
 		_connectIps, _targetOutboundPeers, _maxInboundPeers, _limitOneInboundConnectionPerIP,
-		_minFeeRateNanosPerKB, nodeServices)
+		_peerConnectionRefreshIntervalMillis, _minFeeRateNanosPerKB, nodeServices)
 
 	if srv.stateChangeSyncer != nil {
 		srv.stateChangeSyncer.BlockHeight = uint64(_chain.headerTip().Height)

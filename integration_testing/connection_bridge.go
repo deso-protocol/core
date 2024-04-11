@@ -2,15 +2,16 @@ package integration_testing
 
 import (
 	"fmt"
-	"github.com/btcsuite/btcd/addrmgr"
-	"github.com/deso-protocol/core/cmd"
-	"github.com/deso-protocol/core/lib"
-	"github.com/golang/glog"
 	"math"
 	"net"
 	"strconv"
 	"sync"
 	"time"
+
+	"github.com/btcsuite/btcd/addrmgr"
+	"github.com/deso-protocol/core/cmd"
+	"github.com/deso-protocol/core/lib"
+	"github.com/golang/glog"
 )
 
 // TODO: DEPRECATE
@@ -101,8 +102,14 @@ func (bridge *ConnectionBridge) createInboundConnection(node *cmd.Node) *lib.Pee
 	if err != nil {
 		panic(err)
 	}
+
+	ip, _, err := net.ParseCIDR(netAddress.Addr.String())
+	if err != nil {
+		panic(err)
+	}
+
 	netAddress2 := net.TCPAddr{
-		IP:   netAddress.IP,
+		IP:   ip,
 		Port: int(netAddress.Port),
 	}
 	// Dial/connect to the node.

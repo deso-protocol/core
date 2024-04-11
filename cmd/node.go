@@ -263,6 +263,7 @@ func (node *Node) Start(exitChannels ...*chan struct{}) {
 		node.Config.MinerPublicKeys,
 		node.Config.NumMiningThreads,
 		node.Config.OneInboundPerIp,
+		node.Config.PeerConnectionRefreshIntervalMillis,
 		node.Config.HyperSync,
 		node.Config.SyncType,
 		node.Config.MaxSyncBlockHeight,

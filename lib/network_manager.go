@@ -95,15 +95,29 @@ type NetworkManager struct {
 	// among other things.
 	limitOneInboundRemoteNodePerIP bool
 
+	// The frequency at which the NetworkManager goroutines should run.
+	peerConnectionRefreshIntervalMillis time.Duration
+
 	startGroup sync.WaitGroup
 	exitChan   chan struct{}
 	exitGroup  sync.WaitGroup
 }
 
-func NewNetworkManager(params *DeSoParams, srv *Server, bc *Blockchain, cmgr *ConnectionManager,
-	blsKeystore *BLSKeystore, addrMgr *addrmgr.AddrManager, connectIps []string,
-	targetNonValidatorOutboundRemoteNodes uint32, targetNonValidatorInboundRemoteNodes uint32,
-	limitOneInboundConnectionPerIP bool, minTxFeeRateNanosPerKB uint64, nodeServices ServiceFlag) *NetworkManager {
+func NewNetworkManager(
+	params *DeSoParams,
+	srv *Server,
+	bc *Blockchain,
+	cmgr *ConnectionManager,
+	blsKeystore *BLSKeystore,
+	addrMgr *addrmgr.AddrManager,
+	connectIps []string,
+	targetNonValidatorOutboundRemoteNodes uint32,
+	targetNonValidatorInboundRemoteNodes uint32,
+	limitOneInboundConnectionPerIP bool,
+	peerConnectionRefreshIntervalMillis uint64,
+	minTxFeeRateNanosPerKB uint64,
+	nodeServices ServiceFlag,
+) *NetworkManager {
 
 	return &NetworkManager{
 		params:                                params,
@@ -126,6 +140,7 @@ func NewNetworkManager(params *DeSoParams, srv *Server, bc *Blockchain, cmgr *Co
 		targetNonValidatorOutboundRemoteNodes: targetNonValidatorOutboundRemoteNodes,
 		targetNonValidatorInboundRemoteNodes:  targetNonValidatorInboundRemoteNodes,
 		limitOneInboundRemoteNodePerIP:        limitOneInboundConnectionPerIP,
+		peerConnectionRefreshIntervalMillis:   time.Duration(peerConnectionRefreshIntervalMillis) * time.Millisecond,
 		exitChan:                              make(chan struct{}),
 	}
 }
@@ -174,7 +189,7 @@ func (nm *NetworkManager) startPersistentConnector() {
 		case <-nm.exitChan:
 			nm.exitGroup.Done()
 			return
-		case <-time.After(nm.params.NetworkManagerRefreshDuration):
+		case <-time.After(nm.peerConnectionRefreshIntervalMillis):
 			nm.refreshConnectIps()
 		}
 	}
@@ -192,7 +207,7 @@ func (nm *NetworkManager) startValidatorConnector() {
 		case <-nm.exitChan:
 			nm.exitGroup.Done()
 			return
-		case <-time.After(nm.params.NetworkManagerRefreshDuration):
+		case <-time.After(nm.peerConnectionRefreshIntervalMillis):
 			nm.logValidatorIndices()
 			nm.refreshValidatorIndices()
 			nm.connectValidators()
@@ -212,7 +227,7 @@ func (nm *NetworkManager) startNonValidatorConnector() {
 		case <-nm.exitChan:
 			nm.exitGroup.Done()
 			return
-		case <-time.After(nm.params.NetworkManagerRefreshDuration):
+		case <-time.After(nm.peerConnectionRefreshIntervalMillis):
 			nm.refreshNonValidatorOutboundIndex()
 			nm.refreshNonValidatorInboundIndex()
 			nm.connectNonValidators()
@@ -230,7 +245,7 @@ func (nm *NetworkManager) startRemoteNodeCleanup() {
 		case <-nm.exitChan:
 			nm.exitGroup.Done()
 			return
-		case <-time.After(nm.params.NetworkManagerRefreshDuration):
+		case <-time.After(nm.peerConnectionRefreshIntervalMillis):
 			nm.Cleanup()
 		}
 	}
