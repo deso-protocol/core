@@ -1158,10 +1158,10 @@ func (bav *UtxoView) hasValidBlockProposerPoS(block *MsgDeSoBlock) (_isValidBloc
 	}
 
 	// We compute the current index in the leader schedule as follows:
-	// - [(block.View - currentEpoch.InitialView) - (block.Height - currentEpoch.InitialHeight) + numTimeoutsBeforeEpochTransition] % len(leaders)
+	// - [currentEpoch.InitialLeaderIndexOffset + (block.View - currentEpoch.InitialView) - (block.Height - currentEpoch.InitialHeight)] % len(leaders)
+	// - The pseudo-random offset for the leader schedule is currentEpoch.InitialLeaderIndexOffset.
 	// - The number of views that have elapsed since the start of the epoch is block.View - currentEpoch.InitialView.
-	// - The number of blocks that have been added to the chain since the start of the epoch is
-	//   block.Height - currentEpoch.InitialHeight.
+	// - The number of blocks that have been added to the chain since the start of the epoch is block.Height - currentEpoch.InitialHeight.
 	// - The difference between the above two numbers is the number of timeouts that have occurred in this epoch.
 	//
 	// For each timeout, we skip one leader in the in the schedule. If we have more timeouts than leaders in
@@ -1170,12 +1170,13 @@ func (bav *UtxoView) hasValidBlockProposerPoS(block *MsgDeSoBlock) (_isValidBloc
 	//
 	// A quick example:
 	// - Say we have 3 leaders in the schedule
+	// - The initial leader index offset is 3
 	// - The epoch started at height 10 and view 11
 	// - The current block is at height 15 and view 17
-	// - Then the number of timeouts that have occurred is (17 - 11) - (15 - 10) = 1.
-	// - The leader index is 1 % 3 = 1.
+	// - Then the number of timeouts that have occurred is 3 + (17 - 11) - (15 - 10) = 4.
+	// - The leader index is 4 % 3 = 1.
 	// - This means this block should be proposed by the 2nd leader in the schedule, which is at index 1.
-	leaderIdxUint64 := (viewDiff - heightDiff) % uint64(len(leaders))
+	leaderIdxUint64 := (currentEpochEntry.InitialLeaderIndexOffset + viewDiff - heightDiff) % uint64(len(leaders))
 	if leaderIdxUint64 > math.MaxUint16 {
 		return false, nil
 	}
@@ -1204,7 +1205,7 @@ func (bav *UtxoView) hasValidBlockProposerPoS(block *MsgDeSoBlock) (_isValidBloc
 	// Dump some debug info on the current block's proposer and the current view's leader.
 	glog.V(2).Infof(
 		"hasValidBlockProposerPoS: Printing block proposer debug info: "+
-			"\n  Epoch Num: %d, Block View: %d, Block Height: %d, Epoch Initial View: %d, Epoch Initial Block Height: %d"+
+			"\n  Epoch Num: %d, Block View: %d, Block Height: %d, Epoch Initial View: %d, Epoch Initial Block Height: %d, Epoch Initial Leader Index Offset: %d"+
 			"\n  Leader Idx: %d, Num Leaders: %d"+
 			"\n  Expected Leader PKID: %v, Expected Leader Voting PK: %v"+
 			"\n  Expected Leader PKID from BLS Key Lookup: %v, Expected Leader Voting PK from BLS Key Lookup: %v"+
@@ -1214,6 +1215,7 @@ func (bav *UtxoView) hasValidBlockProposerPoS(block *MsgDeSoBlock) (_isValidBloc
 		block.Header.Height,
 		currentEpochEntry.InitialView,
 		currentEpochEntry.InitialBlockHeight,
+		currentEpochEntry.InitialLeaderIndexOffset,
 		leaderIdx,
 		len(leaders),
 		PkToString(leaderEntry.ValidatorPKID.ToBytes(), bav.Params),
