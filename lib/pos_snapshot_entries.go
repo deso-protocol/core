@@ -908,7 +908,7 @@ func (bav *UtxoView) GetSnapshotValidatorSetTotalStakeAmountNanos() (*uint256.In
 		)
 	}
 	if globalActiveStakeAmountNanos == nil {
-		globalActiveStakeAmountNanos = uint256.NewInt()
+		globalActiveStakeAmountNanos = uint256.NewInt(0)
 	}
 	// Cache the result in the UtxoView.
 	bav._setSnapshotValidatorSetTotalStakeAmountNanos(globalActiveStakeAmountNanos, snapshotAtEpochNumber)

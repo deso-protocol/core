@@ -11,7 +11,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/btcsuite/btcd/btcec"
+	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/wire"
 	merkletree "github.com/deso-protocol/go-merkle-tree"
 	"github.com/dgraph-io/badger/v4"
@@ -163,7 +163,7 @@ func _privStringToKeys(t *testing.T, privString string) (*btcec.PrivateKey, *btc
 	result, _, err := Base58CheckDecodePrefix(privString, 1)
 	require.NoError(err)
 	result = result[:len(result)-1]
-	return btcec.PrivKeyFromBytes(btcec.S256(), result)
+	return btcec.PrivKeyFromBytes(result)
 }
 
 func _updateUSDCentsPerBitcoinExchangeRate(t *testing.T, chain *Blockchain, db *badger.DB,

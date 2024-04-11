@@ -9,7 +9,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/btcsuite/btcd/btcec"
+	"github.com/btcsuite/btcd/btcec/v2"
+	"github.com/btcsuite/btcd/btcec/v2/ecdsa"
 	"github.com/dgraph-io/badger/v4"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -19,20 +20,19 @@ func TestBasePointSignature(t *testing.T) {
 	require := require.New(t)
 	// Retrieve the base point bytes and parse them to a public key.
 	basePointBytes := GetS256BasePointCompressed()
-	basePoint, err := btcec.ParsePubKey(basePointBytes, btcec.S256())
+	basePoint, err := btcec.ParsePubKey(basePointBytes)
 	require.NoError(err)
 
 	// Verify that k = 1 is the correct private key for the secp256k1 base point
 	priveKeyBytes := []byte{1}
-	priveKey, publicKey := btcec.PrivKeyFromBytes(btcec.S256(), priveKeyBytes)
+	priveKey, publicKey := btcec.PrivKeyFromBytes(priveKeyBytes)
 	require.Equal(basePointBytes, publicKey.SerializeCompressed())
 	require.Equal(basePoint.SerializeCompressed(), publicKey.SerializeCompressed())
 
 	// Now test signing messages with the private key of the base point k = 1.
 	message := []byte("Test message")
 	messageHash := Sha256DoubleHash(message)
-	messageSignature, err := priveKey.Sign(messageHash[:])
-	require.NoError(err)
+	messageSignature := ecdsa.Sign(priveKey, messageHash[:])
 
 	// Now make sure the base point passes signature verification.
 	require.Equal(true, messageSignature.Verify(messageHash[:], basePoint))
@@ -333,7 +333,7 @@ func TestPrivateMessage(t *testing.T) {
 		require.Equal(messageEntry.RecipientPublicKey[:], _strToPk(t, m1Pub))
 		require.Equal(messageEntry.TstampNanos, tstamp1)
 		require.Equal(messageEntry.isDeleted, false)
-		priv, _ := btcec.PrivKeyFromBytes(btcec.S256(), _strToPk(t, m1Priv))
+		priv, _ := btcec.PrivKeyFromBytes(_strToPk(t, m1Priv))
 		decryptedBytes, err := DecryptBytesWithPrivateKey(messageEntry.EncryptedText, priv.ToECDSA())
 		require.NoError(err)
 		require.Equal(message1, string(decryptedBytes))
@@ -623,13 +623,13 @@ func TestPrivateMessage(t *testing.T) {
 func _generateMessagingKey(senderPub []byte, senderPriv []byte, keyName []byte) (
 	priv *btcec.PrivateKey, sign []byte, messagingKeyEntry *MessagingGroupEntry) {
 
-	senderPrivKey, _ := btcec.PrivKeyFromBytes(btcec.S256(), senderPriv)
+	senderPrivKey, _ := btcec.PrivKeyFromBytes(senderPriv)
 
-	priv, _ = btcec.NewPrivateKey(btcec.S256())
+	priv, _ = btcec.NewPrivateKey()
 	pub := priv.PubKey().SerializeCompressed()
 
 	payload := append(pub, keyName...)
-	signature, _ := senderPrivKey.Sign(Sha256DoubleHash(payload)[:])
+	signature := ecdsa.Sign(senderPrivKey, Sha256DoubleHash(payload)[:])
 
 	return priv, signature.Serialize(), _initMessagingKey(senderPub, pub, keyName)
 }
@@ -1469,7 +1469,7 @@ func TestMessagingKeys(t *testing.T) {
 			nil)
 		// The DB entry should have the messaging public key derived deterministically from the group key name.
 		// Compute the public key and compare it with the DB entry.
-		_, groupPkBytes := btcec.PrivKeyFromBytes(btcec.S256(), Sha256DoubleHash(groupKeyName)[:])
+		_, groupPkBytes := btcec.PrivKeyFromBytes(Sha256DoubleHash(groupKeyName)[:])
 		groupPk := NewPublicKey(groupPkBytes.SerializeCompressed())
 		expectedEntry := &MessagingGroupEntry{}
 		rr := bytes.NewReader(EncodeToBytes(0, entry))
@@ -2276,7 +2276,7 @@ func TestGroupMessages(t *testing.T) {
 
 		// Define helper functions for encryption/decryption so that we can do some real crypto.
 		encrypt := func(plain, recipient []byte) []byte {
-			recipientPk, err := btcec.ParsePubKey(recipient, btcec.S256())
+			recipientPk, err := btcec.ParsePubKey(recipient)
 			if err != nil {
 				return nil
 			}
@@ -2288,7 +2288,7 @@ func TestGroupMessages(t *testing.T) {
 			return encryptedMessageBytes
 		}
 		decrypt := func(cipher, recipientPrivKey []byte) []byte {
-			recipientPriv, _ := btcec.PrivKeyFromBytes(btcec.S256(), recipientPrivKey)
+			recipientPriv, _ := btcec.PrivKeyFromBytes(recipientPrivKey)
 			plain, err := DecryptBytesWithPrivateKey(cipher, recipientPriv.ToECDSA())
 			if err != nil {
 				fmt.Println(err)

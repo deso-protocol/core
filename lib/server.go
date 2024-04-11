@@ -2646,9 +2646,10 @@ func (srv *Server) _handleAddrMessage(pp *Peer, desoMsg DeSoMessage) {
 	}
 
 	// Add all the addresses we received to the addrmgr.
-	netAddrsReceived := []*wire.NetAddress{}
+	netAddrsReceived := []*wire.NetAddressV2{}
 	for _, addr := range msg.AddrList {
-		addrAsNetAddr := wire.NewNetAddressIPPort(addr.IP, addr.Port, (wire.ServiceFlag)(addr.Services))
+		addrAsNetAddr := wire.NetAddressV2FromBytes(
+			addr.Timestamp, (wire.ServiceFlag)(addr.Services), addr.IP[:], addr.Port)
 		if !addrmgr.IsRoutable(addrAsNetAddr) {
 			glog.V(1).Infof("Server._handleAddrMessage: Dropping address %v from peer %v because it is not routable", addr, pp)
 			continue
@@ -2665,7 +2666,7 @@ func (srv *Server) _handleAddrMessage(pp *Peer, desoMsg DeSoMessage) {
 			"peer %v", len(msg.AddrList), pp)
 		sourceAddr := &SingleAddr{
 			Timestamp: time.Now(),
-			IP:        pp.netAddr.IP,
+			IP:        pp.netAddr.ToLegacy().IP,
 			Port:      pp.netAddr.Port,
 			Services:  pp.serviceFlags,
 		}
@@ -2712,7 +2713,7 @@ func (srv *Server) _handleGetAddrMessage(pp *Peer, desoMsg DeSoMessage) {
 	for _, netAddr := range netAddrsFound {
 		singleAddr := &SingleAddr{
 			Timestamp: time.Now(),
-			IP:        netAddr.IP,
+			IP:        netAddr.ToLegacy().IP,
 			Port:      netAddr.Port,
 			Services:  (ServiceFlag)(netAddr.Services),
 		}
@@ -2959,12 +2960,12 @@ func (srv *Server) _startAddressRelayer() {
 				bestAddress := srv.AddrMgr.GetBestLocalAddress(netAddr)
 				if bestAddress != nil {
 					glog.V(2).Infof("Server.startAddressRelayer: Relaying address %v to "+
-						"RemoteNode (id= %v)", bestAddress.IP.String(), rn.GetId())
+						"RemoteNode (id= %v)", bestAddress.Addr.String(), rn.GetId())
 					addrMsg := &MsgDeSoAddr{
 						AddrList: []*SingleAddr{
 							{
 								Timestamp: time.Now(),
-								IP:        bestAddress.IP,
+								IP:        bestAddress.ToLegacy().IP,
 								Port:      bestAddress.Port,
 								Services:  (ServiceFlag)(bestAddress.Services),
 							},

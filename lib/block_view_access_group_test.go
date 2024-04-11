@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/btcsuite/btcd/btcec"
+	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/pkg/errors"
 	"github.com/stretchr/testify/require"
 )
@@ -71,16 +71,16 @@ func TestAccessGroup(t *testing.T) {
 		initChainCallback:          initChainCallback,
 	}
 
-	groupPriv1, err := btcec.NewPrivateKey(btcec.S256())
+	groupPriv1, err := btcec.NewPrivateKey()
 	require.NoError(err)
 	groupPk1 := groupPriv1.PubKey().SerializeCompressed()
 
-	groupPriv2, err := btcec.NewPrivateKey(btcec.S256())
+	groupPriv2, err := btcec.NewPrivateKey()
 	require.NoError(err)
 	groupPk2 := groupPriv2.PubKey().SerializeCompressed()
 	_ = groupPk2
 
-	groupPriv3, err := btcec.NewPrivateKey(btcec.S256())
+	groupPriv3, err := btcec.NewPrivateKey()
 	require.NoError(err)
 	groupPk3 := groupPriv3.PubKey().SerializeCompressed()
 	_ = groupPk3
@@ -524,7 +524,7 @@ func TestAccessGroupTxnWithDerivedKey(t *testing.T) {
 	require.NoError(t, err)
 	senderPrivBytes, _, err := Base58CheckDecode(senderPrivString)
 	require.NoError(t, err)
-	senderPrivKey, _ := btcec.PrivKeyFromBytes(btcec.S256(), senderPrivBytes)
+	senderPrivKey, _ := btcec.PrivKeyFromBytes(senderPrivBytes)
 
 	// Helper funcs
 	_submitAuthorizeDerivedKeyTxn := func(accessGroupLimitKey AccessGroupLimitKey, count int) string {

@@ -10,7 +10,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/btcsuite/btcd/btcec"
+	"github.com/btcsuite/btcd/btcec/v2"
+	"github.com/btcsuite/btcd/btcec/v2/ecdsa"
 	"github.com/dgraph-io/badger/v4"
 	"github.com/holiman/uint256"
 	"github.com/stretchr/testify/assert"
@@ -545,7 +546,7 @@ func _doTxnWithBlockHeight(
 		// ====== Access Group Fork ======
 		// We will only have utxoop expectation if spending limit contains CC, DAO, or NFT spending limits.
 		transactorPrivBytes, _, err := Base58CheckDecode(TransactorPrivKeyBase58Check)
-		_, transactorPub := btcec.PrivKeyFromBytes(btcec.S256(), transactorPrivBytes)
+		_, transactorPub := btcec.PrivKeyFromBytes(transactorPrivBytes)
 		transactorPubBytes := transactorPub.SerializeCompressed()
 		require.NoError(err)
 		if !utxoView.GetDerivedKeyMappingForOwner(txn.PublicKey, transactorPubBytes).TransactionSpendingLimitTracker.IsUnlimited {
@@ -650,15 +651,14 @@ func _getAuthorizeDerivedKeyMetadata(
 	require := require.New(t)
 
 	// Generate a random derived key pair
-	derivedPrivateKey, err := btcec.NewPrivateKey(btcec.S256())
+	derivedPrivateKey, err := btcec.NewPrivateKey()
 	require.NoError(err, "_getAuthorizeDerivedKeyMetadata: Error generating a derived key pair")
 	derivedPublicKey := derivedPrivateKey.PubKey().SerializeCompressed()
 
 	// Create access signature
 	expirationBlockByte := EncodeUint64(expirationBlock)
 	accessBytes := append(derivedPublicKey, expirationBlockByte[:]...)
-	accessSignature, err := ownerPrivateKey.Sign(Sha256DoubleHash(accessBytes)[:])
-	require.NoError(err, "_getAuthorizeDerivedKeyMetadata: Error creating access signature")
+	accessSignature := ecdsa.Sign(ownerPrivateKey, Sha256DoubleHash(accessBytes)[:])
 
 	// Determine operation type
 	var operationType AuthorizeDerivedKeyOperationType
@@ -686,7 +686,7 @@ func _getAuthorizeDerivedKeyMetadataWithTransactionSpendingLimit(
 	require := require.New(t)
 
 	// Generate a random derived key pair
-	derivedPrivateKey, err := btcec.NewPrivateKey(btcec.S256())
+	derivedPrivateKey, err := btcec.NewPrivateKey()
 	require.NoError(err, "_getAuthorizeDerivedKeyMetadataWithTransactionSpendingLimit: Error generating a derived key pair")
 	derivedPublicKey := derivedPrivateKey.PubKey().SerializeCompressed()
 
@@ -714,9 +714,8 @@ func _getAuthorizeDerivedKeyMetadataWithTransactionSpendingLimit(
 		accessBytes = AssembleAccessBytesWithMetamaskStrings(derivedPublicKey, expirationBlock,
 			transactionSpendingLimit, &DeSoTestnetParams)
 	}
-	signature, err := ownerPrivateKey.Sign(Sha256DoubleHash(accessBytes)[:])
+	signature := ecdsa.Sign(ownerPrivateKey, Sha256DoubleHash(accessBytes)[:])
 	accessSignature := signature.Serialize()
-	require.NoError(err, "_getAuthorizeDerivedKeyMetadataWithTransactionSpendingLimit: Error creating access signature")
 
 	return &AuthorizeDerivedKeyMetadata{
 		derivedPublicKey,
@@ -746,8 +745,7 @@ func _getAuthorizeDerivedKeyMetadataWithTransactionSpendingLimitAndDerivedPrivat
 	require.NoError(err, "_getAuthorizeDerivedKeyMetadataWithTransactionSpendingLimit: Error in transaction spending limit to bytes")
 	accessBytes = append(accessBytes, transactionSpendingLimitBytes[:]...)
 
-	accessSignature, err := ownerPrivateKey.Sign(Sha256DoubleHash(accessBytes)[:])
-	require.NoError(err, "_getAuthorizeDerivedKeyMetadataWithTransactionSpendingLimit: Error creating access signature")
+	accessSignature := ecdsa.Sign(ownerPrivateKey, Sha256DoubleHash(accessBytes)[:])
 
 	// Determine operation type
 	var operationType AuthorizeDerivedKeyOperationType
@@ -777,10 +775,7 @@ func _getAccessSignature(
 		return nil, err
 	}
 	accessBytes = append(accessBytes, transactionSpendingLimitBytes...)
-	accessSignature, err := ownerPrivateKey.Sign(Sha256DoubleHash(accessBytes)[:])
-	if err != nil {
-		return nil, err
-	}
+	accessSignature := ecdsa.Sign(ownerPrivateKey, Sha256DoubleHash(accessBytes)[:])
 	return accessSignature.Serialize(), nil
 }
 
@@ -924,7 +919,7 @@ func TestAuthorizeDerivedKeyBasic(t *testing.T) {
 	require.NoError(err)
 
 	// Get AuthorizeDerivedKey txn metadata with expiration at block 6
-	senderPriv, _ := btcec.PrivKeyFromBytes(btcec.S256(), senderPrivBytes)
+	senderPriv, _ := btcec.PrivKeyFromBytes(senderPrivBytes)
 	var transactionSpendingLimit *TransactionSpendingLimit
 	authTxnMeta, derivedPriv := _getAuthorizeDerivedKeyMetadata(t, senderPriv, 6, false)
 	derivedPrivBase58Check := Base58CheckEncode(derivedPriv.Serialize(), true, params)
@@ -953,7 +948,7 @@ func TestAuthorizeDerivedKeyBasic(t *testing.T) {
 	{
 		utxoView, err := NewUtxoView(db, params, chain.postgres, chain.snapshot, chain.eventManager)
 		require.NoError(err)
-		randomPrivateKey, err := btcec.NewPrivateKey(btcec.S256())
+		randomPrivateKey, err := btcec.NewPrivateKey()
 		require.NoError(err)
 		randomPrivBase58Check := Base58CheckEncode(randomPrivateKey.Serialize(), true, params)
 		_, _, _, err = _doAuthorizeTxn(
@@ -980,11 +975,11 @@ func TestAuthorizeDerivedKeyBasic(t *testing.T) {
 	{
 		utxoView, err := NewUtxoView(db, params, chain.postgres, chain.snapshot, chain.eventManager)
 		require.NoError(err)
-		randomPrivateKey, err := btcec.NewPrivateKey(btcec.S256())
+		randomPrivateKey, err := btcec.NewPrivateKey()
 		require.NoError(err)
 		expirationBlockByte := UintToBuf(authTxnMeta.ExpirationBlock)
 		accessBytes := append(authTxnMeta.DerivedPublicKey, expirationBlockByte[:]...)
-		accessSignatureRandom, err := randomPrivateKey.Sign(Sha256DoubleHash(accessBytes)[:])
+		accessSignatureRandom := ecdsa.Sign(randomPrivateKey, Sha256DoubleHash(accessBytes)[:])
 		require.NoError(err)
 		_, _, _, err = _doAuthorizeTxn(
 			testMeta,
@@ -1090,7 +1085,7 @@ func TestAuthorizeDerivedKeyBasic(t *testing.T) {
 	// Should fail. Well... theoretically, it could pass in a distant future.
 	{
 		// Generate a random key pair
-		randomPrivateKey, err := btcec.NewPrivateKey(btcec.S256())
+		randomPrivateKey, err := btcec.NewPrivateKey()
 		require.NoError(err)
 		randomPrivBase58Check := Base58CheckEncode(randomPrivateKey.Serialize(), true, params)
 		utxoView, err := NewUtxoView(db, params, chain.postgres, chain.snapshot, chain.eventManager)
@@ -1166,7 +1161,7 @@ func TestAuthorizeDerivedKeyBasic(t *testing.T) {
 	// Should fail.
 	{
 		// Generate a random key pair
-		randomPrivateKey, err := btcec.NewPrivateKey(btcec.S256())
+		randomPrivateKey, err := btcec.NewPrivateKey()
 		require.NoError(err)
 		randomPrivBase58Check := Base58CheckEncode(randomPrivateKey.Serialize(), true, params)
 		utxoView, err := NewUtxoView(db, params, chain.postgres, chain.snapshot, chain.eventManager)
@@ -1220,7 +1215,7 @@ func TestAuthorizeDerivedKeyBasic(t *testing.T) {
 	// Should fail.
 	{
 		// Generate a random key pair
-		randomPrivateKey, err := btcec.NewPrivateKey(btcec.S256())
+		randomPrivateKey, err := btcec.NewPrivateKey()
 		require.NoError(err)
 		randomPrivBase58Check := Base58CheckEncode(randomPrivateKey.Serialize(), true, params)
 		_, _, err = _derivedKeyBasicTransfer(t, db, chain, params, senderPkBytes, recipientPkBytes,
@@ -1316,7 +1311,7 @@ func TestAuthorizeDerivedKeyBasic(t *testing.T) {
 	// Should fail.
 	{
 		// Generate a random key pair
-		randomPrivateKey, err := btcec.NewPrivateKey(btcec.S256())
+		randomPrivateKey, err := btcec.NewPrivateKey()
 		require.NoError(err)
 		randomPrivBase58Check := Base58CheckEncode(randomPrivateKey.Serialize(), true, params)
 		utxoView, err := NewUtxoView(db, params, chain.postgres, chain.snapshot, chain.eventManager)
@@ -1767,7 +1762,7 @@ func TestAuthorizeDerivedKeyBasicWithTransactionLimits(t *testing.T) {
 	require.NoError(err)
 
 	// Get AuthorizeDerivedKey txn metadata with expiration at block 6
-	senderPriv, _ := btcec.PrivKeyFromBytes(btcec.S256(), senderPrivBytes)
+	senderPriv, _ := btcec.PrivKeyFromBytes(senderPrivBytes)
 	transactionCountLimitMap := make(map[TxnType]uint64)
 	transactionCountLimitMap[TxnTypeAuthorizeDerivedKey] = 1
 	transactionCountLimitMap[TxnTypeBasicTransfer] = 1
@@ -1805,7 +1800,7 @@ func TestAuthorizeDerivedKeyBasicWithTransactionLimits(t *testing.T) {
 	{
 		utxoView, err := NewUtxoView(db, params, chain.postgres, chain.snapshot, chain.eventManager)
 		require.NoError(err)
-		randomPrivateKey, err := btcec.NewPrivateKey(btcec.S256())
+		randomPrivateKey, err := btcec.NewPrivateKey()
 		require.NoError(err)
 		randomPrivBase58Check := Base58CheckEncode(randomPrivateKey.Serialize(), true, params)
 		_, _, _, err = _doAuthorizeTxn(
@@ -1832,11 +1827,11 @@ func TestAuthorizeDerivedKeyBasicWithTransactionLimits(t *testing.T) {
 	{
 		utxoView, err := NewUtxoView(db, params, chain.postgres, chain.snapshot, chain.eventManager)
 		require.NoError(err)
-		randomPrivateKey, err := btcec.NewPrivateKey(btcec.S256())
+		randomPrivateKey, err := btcec.NewPrivateKey()
 		require.NoError(err)
 		expirationBlockByte := UintToBuf(authTxnMeta.ExpirationBlock)
 		accessBytes := append(authTxnMeta.DerivedPublicKey, expirationBlockByte[:]...)
-		accessSignatureRandom, err := randomPrivateKey.Sign(Sha256DoubleHash(accessBytes)[:])
+		accessSignatureRandom := ecdsa.Sign(randomPrivateKey, Sha256DoubleHash(accessBytes)[:])
 		require.NoError(err)
 		_, _, _, err = _doAuthorizeTxn(
 			testMeta,
@@ -1942,7 +1937,7 @@ func TestAuthorizeDerivedKeyBasicWithTransactionLimits(t *testing.T) {
 	// Should fail. Well... theoretically, it could pass in a distant future.
 	{
 		// Generate a random key pair
-		randomPrivateKey, err := btcec.NewPrivateKey(btcec.S256())
+		randomPrivateKey, err := btcec.NewPrivateKey()
 		require.NoError(err)
 		randomPrivBase58Check := Base58CheckEncode(randomPrivateKey.Serialize(), true, params)
 		utxoView, err := NewUtxoView(db, params, chain.postgres, chain.snapshot, chain.eventManager)
@@ -2018,7 +2013,7 @@ func TestAuthorizeDerivedKeyBasicWithTransactionLimits(t *testing.T) {
 	// Should fail.
 	{
 		// Generate a random key pair
-		randomPrivateKey, err := btcec.NewPrivateKey(btcec.S256())
+		randomPrivateKey, err := btcec.NewPrivateKey()
 		require.NoError(err)
 		randomPrivBase58Check := Base58CheckEncode(randomPrivateKey.Serialize(), true, params)
 		utxoView, err := NewUtxoView(db, params, chain.postgres, chain.snapshot, chain.eventManager)
@@ -2072,7 +2067,7 @@ func TestAuthorizeDerivedKeyBasicWithTransactionLimits(t *testing.T) {
 	// Should fail.
 	{
 		// Generate a random key pair
-		randomPrivateKey, err := btcec.NewPrivateKey(btcec.S256())
+		randomPrivateKey, err := btcec.NewPrivateKey()
 		require.NoError(err)
 		randomPrivBase58Check := Base58CheckEncode(randomPrivateKey.Serialize(), true, params)
 		_, _, err = _derivedKeyBasicTransfer(t, db, chain, params, senderPkBytes, recipientPkBytes,
@@ -2200,7 +2195,7 @@ func TestAuthorizeDerivedKeyBasicWithTransactionLimits(t *testing.T) {
 	// Should fail.
 	{
 		// Generate a random key pair
-		randomPrivateKey, err := btcec.NewPrivateKey(btcec.S256())
+		randomPrivateKey, err := btcec.NewPrivateKey()
 		require.NoError(err)
 		randomPrivBase58Check := Base58CheckEncode(randomPrivateKey.Serialize(), true, params)
 		utxoView, err := NewUtxoView(db, params, chain.postgres, chain.snapshot, chain.eventManager)
@@ -2735,7 +2730,7 @@ REPEAT:
 	utxoView, err := mempool.GetAugmentedUniversalView()
 	require.NoError(err)
 	m1PrivKeyBytes, _, err := Base58CheckDecode(m1Priv)
-	m1PrivateKey, _ := btcec.PrivKeyFromBytes(btcec.S256(), m1PrivKeyBytes)
+	m1PrivateKey, _ := btcec.PrivKeyFromBytes(m1PrivKeyBytes)
 	m1PKID := utxoView.GetPKIDForPublicKey(m1PkBytes).PKID
 	transactionSpendingLimit := &TransactionSpendingLimit{
 		GlobalDESOLimit:              100,
@@ -2789,8 +2784,8 @@ REPEAT:
 			&DAOCoinMetadata{
 				ProfilePublicKey: m1PkBytes,
 				OperationType:    DAOCoinOperationTypeMint,
-				CoinsToMintNanos: *uint256.NewInt().SetUint64(100 * NanosPerUnit),
-				CoinsToBurnNanos: *uint256.NewInt(),
+				CoinsToMintNanos: *uint256.NewInt(100 * NanosPerUnit),
+				CoinsToBurnNanos: *uint256.NewInt(0),
 			},
 			nil,
 			blockHeight+1,
@@ -2807,8 +2802,8 @@ REPEAT:
 			&DAOCoinMetadata{
 				ProfilePublicKey: m1PkBytes,
 				OperationType:    DAOCoinOperationTypeMint,
-				CoinsToMintNanos: *uint256.NewInt().SetUint64(100 * NanosPerUnit),
-				CoinsToBurnNanos: *uint256.NewInt(),
+				CoinsToMintNanos: *uint256.NewInt(100 * NanosPerUnit),
+				CoinsToBurnNanos: *uint256.NewInt(0),
 			},
 			nil,
 			blockHeight+1,
@@ -2830,7 +2825,7 @@ REPEAT:
 			&DAOCoinTransferMetadata{
 				ProfilePublicKey:       m1PkBytes,
 				ReceiverPublicKey:      m0PkBytes,
-				DAOCoinToTransferNanos: *uint256.NewInt().SetUint64(10 * NanosPerUnit),
+				DAOCoinToTransferNanos: *uint256.NewInt(10 * NanosPerUnit),
 			},
 			nil,
 			blockHeight+1,
@@ -2847,7 +2842,7 @@ REPEAT:
 			&DAOCoinTransferMetadata{
 				ProfilePublicKey:       m1PkBytes,
 				ReceiverPublicKey:      m0PkBytes,
-				DAOCoinToTransferNanos: *uint256.NewInt().SetUint64(10 * NanosPerUnit),
+				DAOCoinToTransferNanos: *uint256.NewInt(10 * NanosPerUnit),
 			},
 			nil,
 			blockHeight+1,
@@ -2861,7 +2856,7 @@ REPEAT:
 		utxoView, err := mempool.GetAugmentedUniversalView()
 		require.NoError(err)
 		derivedPrivBytes, _, err := Base58CheckDecode(derivedPrivBase58Check)
-		_, derivedPub := btcec.PrivKeyFromBytes(btcec.S256(), derivedPrivBytes)
+		_, derivedPub := btcec.PrivKeyFromBytes(derivedPrivBytes)
 		derivedPubBytes := derivedPub.SerializeCompressed()
 		require.NoError(err)
 
@@ -2922,7 +2917,7 @@ REPEAT:
 			&DAOCoinTransferMetadata{
 				ProfilePublicKey:       m1PkBytes,
 				ReceiverPublicKey:      m0PkBytes,
-				DAOCoinToTransferNanos: *uint256.NewInt().SetUint64(10 * NanosPerUnit),
+				DAOCoinToTransferNanos: *uint256.NewInt(10 * NanosPerUnit),
 			},
 			nil,
 			blockHeight+1,
@@ -2947,8 +2942,8 @@ REPEAT:
 			&DAOCoinMetadata{
 				ProfilePublicKey: m1PkBytes,
 				OperationType:    DAOCoinOperationTypeMint,
-				CoinsToMintNanos: *uint256.NewInt().SetUint64(100 * NanosPerUnit),
-				CoinsToBurnNanos: *uint256.NewInt(),
+				CoinsToMintNanos: *uint256.NewInt(100 * NanosPerUnit),
+				CoinsToBurnNanos: *uint256.NewInt(0),
 			},
 			nil,
 			blockHeight+1,
@@ -3079,7 +3074,7 @@ REPEAT:
 			&DAOCoinMetadata{
 				ProfilePublicKey: m1PkBytes,
 				OperationType:    DAOCoinOperationTypeBurn,
-				CoinsToBurnNanos: *uint256.NewInt().SetUint64(10 * NanosPerUnit),
+				CoinsToBurnNanos: *uint256.NewInt(10 * NanosPerUnit),
 			},
 			nil,
 			blockHeight+1,
@@ -3095,7 +3090,7 @@ REPEAT:
 	}
 
 	m0PrivKeyBytes, _, err := Base58CheckDecode(m0Priv)
-	m0PrivateKey, _ := btcec.PrivKeyFromBytes(btcec.S256(), m0PrivKeyBytes)
+	m0PrivateKey, _ := btcec.PrivKeyFromBytes(m0PrivKeyBytes)
 	blockHeight, err = GetBlockTipHeight(db, false)
 	require.NoError(err)
 	m0AuthTxnMeta, derived0Priv := _getAuthorizeDerivedKeyMetadataWithTransactionSpendingLimit(
@@ -3689,7 +3684,7 @@ REPEAT:
 			BuyingDAOCoinCreatorPublicKey:             NewPublicKey(m1PkBytes),
 			SellingDAOCoinCreatorPublicKey:            &ZeroPublicKey,
 			ScaledExchangeRateCoinsToSellPerCoinToBuy: exchangeRate,
-			QuantityToFillInBaseUnits:                 uint256.NewInt().SetUint64(100),
+			QuantityToFillInBaseUnits:                 uint256.NewInt(100),
 			OperationType:                             DAOCoinLimitOrderOperationTypeBID,
 			FillType:                                  DAOCoinLimitOrderFillTypeGoodTillCancelled,
 		}
@@ -3965,11 +3960,11 @@ func TestAuthorizeDerivedKeyWithTransactionSpendingLimitsAccessGroups(t *testing
 	//
 	// For each spending limit, we will submit a bunch of txns to make sure the limit works properly.
 	// We will also try updating a spending limit.
-	groupPriv1, err := btcec.NewPrivateKey(btcec.S256())
+	groupPriv1, err := btcec.NewPrivateKey()
 	require.NoError(err)
 	groupPk1 := groupPriv1.PubKey().SerializeCompressed()
 	_ = groupPk1
-	derivedPriv1, err := btcec.NewPrivateKey(btcec.S256())
+	derivedPriv1, err := btcec.NewPrivateKey()
 	require.NoError(err)
 	groupKeyName1 := NewGroupKeyName([]byte("group 1"))
 	groupKeyName2 := NewGroupKeyName([]byte("group 2"))
@@ -3988,7 +3983,7 @@ func TestAuthorizeDerivedKeyWithTransactionSpendingLimitsAccessGroups(t *testing
 		"test vector for m0PublicKey before the block height authorizing access group transaction", m0Priv, m0PubBytes,
 		derivedPriv1, tv1SpendingLimit, []byte{}, false, AuthorizeDerivedKeyOperationValid, 100,
 		nil, nil)
-	derivedPriv2, err := btcec.NewPrivateKey(btcec.S256())
+	derivedPriv2, err := btcec.NewPrivateKey()
 	tv2SpendingLimit := TransactionSpendingLimit{
 		GlobalDESOLimit: 10,
 		AccessGroupMemberMap: map[AccessGroupMemberLimitKey]uint64{
@@ -4003,7 +3998,7 @@ func TestAuthorizeDerivedKeyWithTransactionSpendingLimitsAccessGroups(t *testing
 		"test vector for m0PublicKey before the block height authorizing access group member transaction", m0Priv, m0PubBytes,
 		derivedPriv2, tv2SpendingLimit, []byte{}, false, AuthorizeDerivedKeyOperationValid, 100,
 		nil, nil)
-	derivedPriv3, err := btcec.NewPrivateKey(btcec.S256())
+	derivedPriv3, err := btcec.NewPrivateKey()
 	tv3SpendingLimit := TransactionSpendingLimit{
 		GlobalDESOLimit:      10,
 		AccessGroupMap:       tv1SpendingLimit.AccessGroupMap,
@@ -4013,7 +4008,7 @@ func TestAuthorizeDerivedKeyWithTransactionSpendingLimitsAccessGroups(t *testing
 		"test vector for m0PublicKey before the block height authorizing access group and access group member transactions",
 		m0Priv, m0PubBytes, derivedPriv3, tv3SpendingLimit, []byte{}, false, AuthorizeDerivedKeyOperationValid, 100,
 		nil, nil)
-	derivedPriv4, err := btcec.NewPrivateKey(btcec.S256())
+	derivedPriv4, err := btcec.NewPrivateKey()
 	tv4SpendingLimit := TransactionSpendingLimit{
 		GlobalDESOLimit: 10,
 		TransactionCountLimitMap: map[TxnType]uint64{
@@ -4025,7 +4020,7 @@ func TestAuthorizeDerivedKeyWithTransactionSpendingLimitsAccessGroups(t *testing
 		derivedPriv4, tv4SpendingLimit, []byte{}, false, AuthorizeDerivedKeyOperationValid, 100,
 		nil, nil)
 
-	derivedPriv4p5, err := btcec.NewPrivateKey(btcec.S256())
+	derivedPriv4p5, err := btcec.NewPrivateKey()
 	tv4p5SpendingLimit := TransactionSpendingLimit{
 		IsUnlimited: true,
 	}
@@ -4159,7 +4154,7 @@ func _getDerivedKeyMetadata(t *testing.T, ownerPrivateKeyString string, derivedP
 
 	ownerPriv, _, err := Base58CheckDecode(ownerPrivateKeyString)
 	require.NoError(err)
-	ownerPrivKey, _ := btcec.PrivKeyFromBytes(btcec.S256(), ownerPriv)
+	ownerPrivKey, _ := btcec.PrivKeyFromBytes(ownerPriv)
 	spendingLimit := limit
 	accessSignature, err := _getAccessSignature(
 		derivedPublicKey, expirationBlock, &spendingLimit, ownerPrivKey, blockHeight)

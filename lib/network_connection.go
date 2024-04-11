@@ -16,7 +16,7 @@ type outboundConnection struct {
 	terminated bool
 
 	attemptId    uint64
-	address      *wire.NetAddress
+	address      *wire.NetAddressV2
 	connection   net.Conn
 	isPersistent bool
 	failed       bool
@@ -76,7 +76,7 @@ type OutboundConnectionAttempt struct {
 	attemptId uint64
 
 	// netAddr is the address of the peer we are attempting to connect to.
-	netAddr *wire.NetAddress
+	netAddr *wire.NetAddressV2
 	// isPersistent is used to indicate whether we should retry connecting to the peer if the connection attempt fails.
 	// If isPersistent is true, we will retry connecting to the peer until we are successful. Each time such connection
 	// fails, we will sleep according to exponential backoff. Otherwise, we will only attempt to connect to the peer once.
@@ -104,7 +104,7 @@ const (
 	outboundConnectionAttemptTerminated  outboundConnectionAttemptStatus = 2
 )
 
-func NewOutboundConnectionAttempt(attemptId uint64, netAddr *wire.NetAddress, isPersistent bool,
+func NewOutboundConnectionAttempt(attemptId uint64, netAddr *wire.NetAddressV2, isPersistent bool,
 	dialTimeout time.Duration, connectionChan chan *outboundConnection) *OutboundConnectionAttempt {
 
 	return &OutboundConnectionAttempt{
@@ -202,11 +202,11 @@ func (oca *OutboundConnectionAttempt) SetTimeoutUnit(timeoutUnit time.Duration) 
 // Otherwise, it will return nil.
 func (oca *OutboundConnectionAttempt) attemptOutboundConnection() net.Conn {
 	// If the peer is not persistent, update the addrmgr.
-	glog.V(1).Infof("Attempting to connect to addr: %v:%v", oca.netAddr.IP.String(), oca.netAddr.Port)
+	glog.V(1).Infof("Attempting to connect to addr: %v:%v", oca.netAddr.Addr.String(), oca.netAddr.Port)
 
 	var err error
 	tcpAddr := net.TCPAddr{
-		IP:   oca.netAddr.IP,
+		IP:   oca.netAddr.ToLegacy().IP,
 		Port: int(oca.netAddr.Port),
 	}
 	conn, err := net.DialTimeout(tcpAddr.Network(), tcpAddr.String(), oca.dialTimeout)
