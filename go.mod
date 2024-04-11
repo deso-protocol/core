@@ -1,6 +1,6 @@
 module github.com/deso-protocol/core
 
-go 1.20
+go 1.22
 
 require (
 	github.com/DataDog/datadog-go v4.5.0+incompatible
