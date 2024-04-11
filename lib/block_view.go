@@ -4574,13 +4574,18 @@ func (bav *UtxoView) ConnectBlock(
 			return nil, errors.Wrapf(err, "ConnectBlock: error checking if block is last in epoch")
 		}
 		if isLastBlockInEpoch {
+			// By default, assume that the previous block has a consecutive view with the current
+			// block. This will always be true for PoW block.
+			previousBlockViewNumber := blockHeader.GetView() - 1
+
+			// If the current block is PoS block, then we can extract the previous block's view
+			// from the QC.
+			if bav.Params.IsPoSBlockHeight(blockHeight) {
+				previousBlockViewNumber = blockHeader.GetQC().GetView()
+			}
+
 			var utxoOperations []*UtxoOperation
-			utxoOperations, err = bav.RunEpochCompleteHook(
-				blockHeight,
-				blockHeader.GetView(),
-				blockHeader.GetQC().GetView(),
-				blockHeader.TstampNanoSecs,
-			)
+			utxoOperations, err = bav.RunEpochCompleteHook(blockHeight, blockHeader.GetView(), previousBlockViewNumber, blockHeader.TstampNanoSecs)
 			if err != nil {
 				return nil, errors.Wrapf(err, "ConnectBlock: error running epoch complete hook")
 			}
