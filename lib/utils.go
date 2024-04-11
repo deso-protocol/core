@@ -5,16 +5,18 @@ import (
 	"bytes"
 	"encoding/hex"
 	"fmt"
-	"github.com/btcsuite/btcd/btcec"
-	"github.com/btcsuite/btcd/chaincfg"
-	"github.com/btcsuite/btcutil/hdkeychain"
-	"github.com/pkg/errors"
-	"github.com/unrolled/secure"
 	"math/big"
 	"os"
 	"reflect"
 	"sort"
 	"strings"
+
+	"github.com/btcsuite/btcd/btcec"
+	"github.com/btcsuite/btcd/chaincfg"
+	"github.com/btcsuite/btcutil/hdkeychain"
+	"github.com/pkg/errors"
+	"github.com/unrolled/secure"
+	"golang.org/x/crypto/sha3"
 )
 
 const SECURE_MIDDLEWARE_RESTRICTIVE_CONTENT_SECURITY_POLICY = "default-src 'self'"
@@ -323,4 +325,17 @@ func ReadBoolFromFile(filename string) (bool, error) {
 	}
 
 	return false, nil // Return false if there's no content to read
+}
+
+// hashUint64ToUint64 hashes a uint64 to a uint64 using SHA3-256. It's a useful pseudorandom
+// function that can be used to deterministically map a uint64 to another uint64.
+func hashUint64ToUint64(value uint64) uint64 {
+	// Convert the input value to binary using big-endian encoding.
+	binaryValue := EncodeUint64(value)
+
+	// Hash the binary value using SHA3-256.
+	hash := sha3.Sum256(binaryValue)
+
+	// Convert the lowest eight bytes of the hash to a uint64.
+	return DecodeUint64(hash[:])
 }
