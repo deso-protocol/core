@@ -614,7 +614,7 @@ func (bc *Blockchain) validateLeaderAndQC(
 		}
 	}
 
-	isBlockProposerValid, err := bc.hasValidBlockProposerPoS(block, parentUtxoView)
+	isBlockProposerValid, err := parentUtxoView.hasValidBlockProposerPoS(block)
 	if err != nil {
 		return false, errors.Wrapf(err,
 			"validateAndIndexBlockPoS: Problem validating block proposer")
@@ -1133,12 +1133,12 @@ func (bav *UtxoView) hasValidProposerPartialSignaturePoS(block *MsgDeSoBlock, sn
 // block height + view number pair. It returns a bool indicating whether
 // we confirmed that the leader is valid. If we receive an error, we are unsure
 // if the leader is invalid or not, so we return false.
-func (bc *Blockchain) hasValidBlockProposerPoS(block *MsgDeSoBlock, parentUtxoView *UtxoView) (_isValidBlockProposer bool, _err error) {
-	currentEpochEntry, err := parentUtxoView.GetCurrentEpochEntry()
+func (bav *UtxoView) hasValidBlockProposerPoS(block *MsgDeSoBlock) (_isValidBlockProposer bool, _err error) {
+	currentEpochEntry, err := bav.GetCurrentEpochEntry()
 	if err != nil {
 		return false, errors.Wrapf(err, "hasValidBlockProposerPoS: Problem getting current epoch entry")
 	}
-	leaders, err := parentUtxoView.GetCurrentSnapshotLeaderSchedule()
+	leaders, err := bav.GetCurrentSnapshotLeaderSchedule()
 	if err != nil {
 		return false, errors.Wrapf(err, "hasValidBlockProposerPoS: Problem getting leader schedule")
 	}
@@ -1157,22 +1157,12 @@ func (bc *Blockchain) hasValidBlockProposerPoS(block *MsgDeSoBlock, parentUtxoVi
 		return false, nil
 	}
 
-	// Fetch the number timeouts that took place at the final block height of the previous epoch. We need to
-	// compute this number because a timeout at the start of the current epoch would regress the chain to
-	// the previous epoch, which would count the timeout as part of the previous epoch.
-	numTimeoutsBeforeEpochTransition, err := bc.getNumTimeoutsBeforeEpochTransition(block, currentEpochEntry)
-	if err != nil {
-		return false, errors.Wrapf(err, "hasValidBlockProposerPoS: Problem getting num timeouts before epoch transition")
-	}
-
 	// We compute the current index in the leader schedule as follows:
 	// - [(block.View - currentEpoch.InitialView) - (block.Height - currentEpoch.InitialHeight) + numTimeoutsBeforeEpochTransition] % len(leaders)
 	// - The number of views that have elapsed since the start of the epoch is block.View - currentEpoch.InitialView.
 	// - The number of blocks that have been added to the chain since the start of the epoch is
 	//   block.Height - currentEpoch.InitialHeight.
 	// - The difference between the above two numbers is the number of timeouts that have occurred in this epoch.
-	// - The numTimeoutsBeforeEpochTransition is the number of timeouts that have occurred during the epoch transition
-	//   and are counted as part of the previous epoch.
 	//
 	// For each timeout, we skip one leader in the in the schedule. If we have more timeouts than leaders in
 	// the schedule, we start from the top of the schedule again, which is why we take the modulo of the length
@@ -1182,26 +1172,25 @@ func (bc *Blockchain) hasValidBlockProposerPoS(block *MsgDeSoBlock, parentUtxoVi
 	// - Say we have 3 leaders in the schedule
 	// - The epoch started at height 10 and view 11
 	// - The current block is at height 15 and view 17
-	// - There were 6 timeouts at the epoch transition
-	// - Then the number of timeouts that have occurred is (17 - 11) - (15 - 10) + 6 = 7.
-	// - The leader index is 7 % 3 = 1.
+	// - Then the number of timeouts that have occurred is (17 - 11) - (15 - 10) = 1.
+	// - The leader index is 1 % 3 = 1.
 	// - This means this block should be proposed by the 2nd leader in the schedule, which is at index 1.
-	leaderIdxUint64 := (viewDiff + numTimeoutsBeforeEpochTransition - heightDiff) % uint64(len(leaders))
+	leaderIdxUint64 := (viewDiff - heightDiff) % uint64(len(leaders))
 	if leaderIdxUint64 > math.MaxUint16 {
 		return false, nil
 	}
 	leaderIdx := uint16(leaderIdxUint64)
-	leaderEntry, err := parentUtxoView.GetSnapshotLeaderScheduleValidator(leaderIdx)
+	leaderEntry, err := bav.GetSnapshotLeaderScheduleValidator(leaderIdx)
 	if err != nil {
 		return false, errors.Wrapf(err, "hasValidBlockProposerPoS: Problem getting leader schedule validator")
 	}
-	snapshotAtEpochNumber, err := parentUtxoView.ComputeSnapshotEpochNumberForEpoch(currentEpochEntry.EpochNumber)
+	snapshotAtEpochNumber, err := bav.ComputeSnapshotEpochNumberForEpoch(currentEpochEntry.EpochNumber)
 	if err != nil {
 		return false, errors.Wrapf(err,
 			"hasValidBlockProposerPoS: Problem getting snapshot epoch number for epoch #%d",
 			currentEpochEntry.EpochNumber)
 	}
-	leaderEntryFromVotingPublicKey, err := parentUtxoView.GetSnapshotValidatorEntryByBLSPublicKey(
+	leaderEntryFromVotingPublicKey, err := bav.GetSnapshotValidatorEntryByBLSPublicKey(
 		block.Header.ProposerVotingPublicKey,
 		snapshotAtEpochNumber)
 	if err != nil {
@@ -1227,9 +1216,9 @@ func (bc *Blockchain) hasValidBlockProposerPoS(block *MsgDeSoBlock, parentUtxoVi
 		currentEpochEntry.InitialBlockHeight,
 		leaderIdx,
 		len(leaders),
-		PkToString(leaderEntry.ValidatorPKID.ToBytes(), bc.params),
+		PkToString(leaderEntry.ValidatorPKID.ToBytes(), bav.Params),
 		leaderEntry.VotingPublicKey.ToAbbreviatedString(),
-		PkToString(leaderEntryFromVotingPublicKey.ValidatorPKID.ToBytes(), bc.params),
+		PkToString(leaderEntryFromVotingPublicKey.ValidatorPKID.ToBytes(), bav.Params),
 		leaderEntryFromVotingPublicKey.VotingPublicKey.ToAbbreviatedString(),
 		block.Header.ProposerVotingPublicKey.ToAbbreviatedString(),
 	)
@@ -1239,46 +1228,6 @@ func (bc *Blockchain) hasValidBlockProposerPoS(block *MsgDeSoBlock, parentUtxoVi
 		return false, nil
 	}
 	return true, nil
-}
-
-func (bc *Blockchain) getNumTimeoutsBeforeEpochTransition(block *MsgDeSoBlock, epochEntry *EpochEntry) (uint64, error) {
-	if !epochEntry.ContainsBlockHeight(block.Header.Height) {
-		return 0, errors.New("getNumTimeoutsBeforeEpochTransition: Block height not in epoch")
-	}
-
-	// Fetch the previous epoch's final block height.
-	prevEpochFinalBlockHeight := epochEntry.InitialBlockHeight - 1
-
-	// Fetch the previous epoch's final block that is an ancestor of the given block. This operation is O(n)
-	// where n is the number of blocks between the given block and the previous epoch's final block. The worst
-	// case is O(3600) since we only need to go back 3600 blocks to find the previous epoch's final block.
-	prevEpochFinalBlockHeader := block.Header
-	for prevEpochFinalBlockHeader.Height > prevEpochFinalBlockHeight {
-		blockNode, exists := bc.blockIndexByHash[*prevEpochFinalBlockHeader.PrevBlockHash]
-		if !exists {
-			return 0, errors.New("getNumTimeoutsBeforeEpochTransition: Missing ancestor block")
-		}
-		prevEpochFinalBlockHeader = blockNode.Header
-	}
-
-	// Fetch the previous epoch's 2nd to last block that is an ancestor of the given block.
-	prevEpochSecondToLastBlockNode, ok := bc.blockIndexByHash[*prevEpochFinalBlockHeader.PrevBlockHash]
-	if !ok {
-		return 0, errors.New("getNumTimeoutsBeforeEpochTransition: Missing ancestor block")
-	}
-
-	// Ensure that the previous epoch's final two blocks have increasing views
-	if prevEpochFinalBlockHeader.GetView() <= prevEpochSecondToLastBlockNode.Header.GetView() {
-		return 0, errors.New("getNumTimeoutsBeforeEpochTransition: Final block view not greater than 2nd to last block view")
-	}
-
-	// Ensure that the previous epoch's final two blocks have sequential heights
-	if prevEpochSecondToLastBlockNode.Header.Height != prevEpochFinalBlockHeader.Height-1 {
-		return 0, errors.New("getNumTimeoutsBeforeEpochTransition: Final block height not sequential with 2nd to last block height")
-	}
-
-	// Compute the number of timeouts at the end of the previous epoch
-	return (prevEpochFinalBlockHeader.GetView() - prevEpochSecondToLastBlockNode.Header.GetView() - 1) / 2, nil
 }
 
 // isValidPoSQuorumCertificate validates that the QC of this block is valid, meaning a super majority

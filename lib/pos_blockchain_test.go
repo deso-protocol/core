@@ -585,9 +585,6 @@ func TestHasValidBlockProposerPoS(t *testing.T) {
 		return viewNumber
 	}
 
-	// Get a pointer to the blockchain instance
-	bc := testMeta.chain
-
 	// Seed a CurrentEpochEntry.
 	tmpUtxoView := _newUtxoView(testMeta)
 	tmpUtxoView._setCurrentEpochEntry(&EpochEntry{EpochNumber: 0, FinalBlockHeight: blockHeight + 1})
@@ -597,7 +594,6 @@ func TestHasValidBlockProposerPoS(t *testing.T) {
 	testMeta.params.DefaultEpochDurationNumBlocks = uint64(1)
 
 	{
-
 		// We need to reset the UniversalUtxoView since the RegisterAsValidator and Stake
 		// txn test helper utils use and flush the UniversalUtxoView. Otherwise, the
 		// updated GlobalParamsEntry will be overwritten by the default one cached in
@@ -681,14 +677,14 @@ func TestHasValidBlockProposerPoS(t *testing.T) {
 				ProposerVotingPublicKey: leader0Entry.VotingPublicKey,
 			},
 		}
-		isBlockProposerValid, err = bc.hasValidBlockProposerPoS(dummyBlock, utxoView)
+		isBlockProposerValid, err = utxoView.hasValidBlockProposerPoS(dummyBlock)
 		require.NoError(t, err)
 		require.True(t, isBlockProposerValid)
 
 		// If we have a different proposer public key, we will have an error
 		leader1Entry := validatorPKIDToValidatorEntryMap[*leaderSchedule[1]]
 		dummyBlock.Header.ProposerVotingPublicKey = leader1Entry.VotingPublicKey.Copy()
-		isBlockProposerValid, err = bc.hasValidBlockProposerPoS(dummyBlock, utxoView)
+		isBlockProposerValid, err = utxoView.hasValidBlockProposerPoS(dummyBlock)
 		require.NoError(t, err)
 		require.False(t, isBlockProposerValid)
 
@@ -696,7 +692,7 @@ func TestHasValidBlockProposerPoS(t *testing.T) {
 		// we move to leader 1.
 		dummyBlock.Header.ProposedInView = viewNumber + 2
 		dummyBlock.Header.ProposerVotingPublicKey = leader1Entry.VotingPublicKey
-		isBlockProposerValid, err = bc.hasValidBlockProposerPoS(dummyBlock, utxoView)
+		isBlockProposerValid, err = utxoView.hasValidBlockProposerPoS(dummyBlock)
 		require.NoError(t, err)
 		require.True(t, isBlockProposerValid)
 
@@ -705,27 +701,27 @@ func TestHasValidBlockProposerPoS(t *testing.T) {
 		dummyBlock.Header.ProposedInView = viewNumber + 5
 		leader4Entry := validatorPKIDToValidatorEntryMap[*leaderSchedule[4]]
 		dummyBlock.Header.ProposerVotingPublicKey = leader4Entry.VotingPublicKey
-		isBlockProposerValid, err = bc.hasValidBlockProposerPoS(dummyBlock, utxoView)
+		isBlockProposerValid, err = utxoView.hasValidBlockProposerPoS(dummyBlock)
 		require.NoError(t, err)
 		require.True(t, isBlockProposerValid)
 
 		// If we have 7 timeouts, we know everybody timed out, so we go back to leader 0.
 		dummyBlock.Header.ProposedInView = viewNumber + 8
 		dummyBlock.Header.ProposerVotingPublicKey = leader0Entry.VotingPublicKey
-		isBlockProposerValid, err = bc.hasValidBlockProposerPoS(dummyBlock, utxoView)
+		isBlockProposerValid, err = utxoView.hasValidBlockProposerPoS(dummyBlock)
 		require.NoError(t, err)
 		require.True(t, isBlockProposerValid)
 
 		// If the block view is less than the epoch's initial view, this is an error.
 		dummyBlock.Header.ProposedInView = viewNumber
-		isBlockProposerValid, err = bc.hasValidBlockProposerPoS(dummyBlock, utxoView)
+		isBlockProposerValid, err = utxoView.hasValidBlockProposerPoS(dummyBlock)
 		require.NoError(t, err)
 		require.False(t, isBlockProposerValid)
 
 		// If the block height is less than epoch's initial block height, this is an error.
 		dummyBlock.Header.ProposedInView = viewNumber + 1
 		dummyBlock.Header.Height = blockHeight
-		isBlockProposerValid, err = bc.hasValidBlockProposerPoS(dummyBlock, utxoView)
+		isBlockProposerValid, err = utxoView.hasValidBlockProposerPoS(dummyBlock)
 		require.NoError(t, err)
 		require.False(t, isBlockProposerValid)
 
@@ -734,7 +730,7 @@ func TestHasValidBlockProposerPoS(t *testing.T) {
 		// This would imply that we've had more blocks than views, which is not possible.
 		dummyBlock.Header.ProposedInView = viewNumber + 1
 		dummyBlock.Header.Height = blockHeight + 2
-		isBlockProposerValid, err = bc.hasValidBlockProposerPoS(dummyBlock, utxoView)
+		isBlockProposerValid, err = utxoView.hasValidBlockProposerPoS(dummyBlock)
 		require.NoError(t, err)
 		require.False(t, isBlockProposerValid)
 	}
