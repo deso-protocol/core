@@ -1133,12 +1133,12 @@ func (bav *UtxoView) hasValidProposerPartialSignaturePoS(block *MsgDeSoBlock, sn
 // block height + view number pair. It returns a bool indicating whether
 // we confirmed that the leader is valid. If we receive an error, we are unsure
 // if the leader is invalid or not, so we return false.
-func (utxoView *UtxoView) hasValidBlockProposerPoS(block *MsgDeSoBlock) (_isValidBlockProposer bool, _err error) {
-	currentEpochEntry, err := utxoView.GetCurrentEpochEntry()
+func (bav *UtxoView) hasValidBlockProposerPoS(block *MsgDeSoBlock) (_isValidBlockProposer bool, _err error) {
+	currentEpochEntry, err := bav.GetCurrentEpochEntry()
 	if err != nil {
 		return false, errors.Wrapf(err, "hasValidBlockProposerPoS: Problem getting current epoch entry")
 	}
-	leaders, err := utxoView.GetCurrentSnapshotLeaderSchedule()
+	leaders, err := bav.GetCurrentSnapshotLeaderSchedule()
 	if err != nil {
 		return false, errors.Wrapf(err, "hasValidBlockProposerPoS: Problem getting leader schedule")
 	}
@@ -1180,17 +1180,17 @@ func (utxoView *UtxoView) hasValidBlockProposerPoS(block *MsgDeSoBlock) (_isVali
 		return false, nil
 	}
 	leaderIdx := uint16(leaderIdxUint64)
-	leaderEntry, err := utxoView.GetSnapshotLeaderScheduleValidator(leaderIdx)
+	leaderEntry, err := bav.GetSnapshotLeaderScheduleValidator(leaderIdx)
 	if err != nil {
 		return false, errors.Wrapf(err, "hasValidBlockProposerPoS: Problem getting leader schedule validator")
 	}
-	snapshotAtEpochNumber, err := utxoView.ComputeSnapshotEpochNumberForEpoch(currentEpochEntry.EpochNumber)
+	snapshotAtEpochNumber, err := bav.ComputeSnapshotEpochNumberForEpoch(currentEpochEntry.EpochNumber)
 	if err != nil {
 		return false, errors.Wrapf(err,
 			"hasValidBlockProposerPoS: Problem getting snapshot epoch number for epoch #%d",
 			currentEpochEntry.EpochNumber)
 	}
-	leaderEntryFromVotingPublicKey, err := utxoView.GetSnapshotValidatorEntryByBLSPublicKey(
+	leaderEntryFromVotingPublicKey, err := bav.GetSnapshotValidatorEntryByBLSPublicKey(
 		block.Header.ProposerVotingPublicKey,
 		snapshotAtEpochNumber)
 	if err != nil {
@@ -1216,9 +1216,9 @@ func (utxoView *UtxoView) hasValidBlockProposerPoS(block *MsgDeSoBlock) (_isVali
 		currentEpochEntry.InitialBlockHeight,
 		leaderIdx,
 		len(leaders),
-		PkToString(leaderEntry.ValidatorPKID.ToBytes(), utxoView.Params),
+		PkToString(leaderEntry.ValidatorPKID.ToBytes(), bav.Params),
 		leaderEntry.VotingPublicKey.ToAbbreviatedString(),
-		PkToString(leaderEntryFromVotingPublicKey.ValidatorPKID.ToBytes(), utxoView.Params),
+		PkToString(leaderEntryFromVotingPublicKey.ValidatorPKID.ToBytes(), bav.Params),
 		leaderEntryFromVotingPublicKey.VotingPublicKey.ToAbbreviatedString(),
 		block.Header.ProposerVotingPublicKey.ToAbbreviatedString(),
 	)
