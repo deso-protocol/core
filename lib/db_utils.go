@@ -460,7 +460,7 @@ type DBPrefixes struct {
 	// The Minor/Major distinction is used to deterministically map the two accessGroupIds of message's sender/recipient
 	// into a single pair based on the lexicographical ordering of the two accessGroupIds. This is done to ensure that
 	// both sides of the conversation have the same key for the same conversation, and we can store just a single message.
-	PrefixDmMessagesIndex []byte `prefix_id:"[75]" is_state:"true"`
+	PrefixDmMessagesIndex []byte `prefix_id:"[75]" is_state:"true" core_state:"true"`
 
 	// PrefixDmThreadIndex is modified by the NewMessage transaction and is used to store a DmThreadEntry
 	// for each existing dm thread. It answers the question: "Give me all the threads for a particular user."
