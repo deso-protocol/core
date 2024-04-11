@@ -26,6 +26,27 @@ const (
 	RemoteNodeStatus_Terminated         RemoteNodeStatus = 6
 )
 
+func (remodeNodeStatus RemoteNodeStatus) String() string {
+	switch remodeNodeStatus {
+	case RemoteNodeStatus_NotConnected:
+		return "NotConnected"
+	case RemoteNodeStatus_Connected:
+		return "Connected"
+	case RemoteNodeStatus_VersionSent:
+		return "VersionSent"
+	case RemoteNodeStatus_VerackSent:
+		return "VerackSent"
+	case RemoteNodeStatus_HandshakeCompleted:
+		return "HandshakeCompleted"
+	case RemoteNodeStatus_Attempted:
+		return "Attempted"
+	case RemoteNodeStatus_Terminated:
+		return "Terminated"
+	default:
+		return "Unknown"
+	}
+}
+
 type RemoteNodeId uint64
 
 func NewRemoteNodeId(id uint64) RemoteNodeId {
@@ -248,6 +269,10 @@ func (rn *RemoteNode) IsHandshakeCompleted() bool {
 
 func (rn *RemoteNode) IsTerminated() bool {
 	return rn.connectionStatus == RemoteNodeStatus_Terminated
+}
+
+func (rn *RemoteNode) GetStatus() RemoteNodeStatus {
+	return rn.connectionStatus
 }
 
 func (rn *RemoteNode) IsValidator() bool {

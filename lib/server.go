@@ -3297,3 +3297,7 @@ func (progress *SyncProgress) PrintLoop() {
 		}
 	}
 }
+
+func (srv *Server) GetNetworkManagerConnections() []*RemoteNode {
+	return srv.networkManager.GetAllRemoteNodes().GetAll()
+}
