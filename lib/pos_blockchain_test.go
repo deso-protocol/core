@@ -735,6 +735,59 @@ func TestHasValidBlockProposerPoS(t *testing.T) {
 		require.False(t, isBlockProposerValid)
 	}
 
+	// Test varying InitialLeaderIndexOffset values.
+	{
+		utxoView := _newUtxoView(testMeta)
+		epochEntry, err := utxoView.GetCurrentEpochEntry()
+		require.NoError(t, err)
+
+		// Set the InitialLeaderIndexOffset to 3.
+		epochEntry.InitialLeaderIndexOffset = 3
+		utxoView._setCurrentEpochEntry(epochEntry)
+
+		// Construct a dummy block with leader 0 as the leader.
+		leader0PKID := leaderSchedule[0]
+		leader0Entry := validatorPKIDToValidatorEntryMap[*leader0PKID]
+		dummyBlock := &MsgDeSoBlock{
+			Header: &MsgDeSoHeader{
+				PrevBlockHash:           testMeta.chain.BlockTip().Hash,
+				ProposedInView:          viewNumber + 1,
+				Height:                  blockHeight + 1,
+				ProposerVotingPublicKey: leader0Entry.VotingPublicKey,
+			},
+		}
+
+		// The block proposer is invalid because the InitialLeaderIndexOffset is 3.
+		isBlockProposerValid, err = utxoView.hasValidBlockProposerPoS(dummyBlock)
+		require.NoError(t, err)
+		require.False(t, isBlockProposerValid)
+
+		// Set the leader at index 3 as the block proposer
+		leader3Entry := validatorPKIDToValidatorEntryMap[*leaderSchedule[3]]
+		dummyBlock.Header.ProposerVotingPublicKey = leader3Entry.VotingPublicKey
+
+		// The block proposer is valid now.
+		isBlockProposerValid, err = utxoView.hasValidBlockProposerPoS(dummyBlock)
+		require.NoError(t, err)
+		require.True(t, isBlockProposerValid)
+
+		// Increase the block's view number to simulate 2 timeouts.
+		dummyBlock.Header.ProposedInView = dummyBlock.Header.ProposedInView + 2
+
+		// The block proposer at index 3 is invalid now because there have been two timeouts.
+		isBlockProposerValid, err = utxoView.hasValidBlockProposerPoS(dummyBlock)
+		require.NoError(t, err)
+		require.False(t, isBlockProposerValid)
+
+		// Set the leader at index 5 as the block proposer
+		leader5Entry := validatorPKIDToValidatorEntryMap[*leaderSchedule[5]]
+		dummyBlock.Header.ProposerVotingPublicKey = leader5Entry.VotingPublicKey
+
+		// The block proposer is valid now.
+		isBlockProposerValid, err = utxoView.hasValidBlockProposerPoS(dummyBlock)
+		require.NoError(t, err)
+		require.True(t, isBlockProposerValid)
+	}
 }
 
 // TestGetLineageFromCommittedTip tests that getLineageFromCommittedTip works as expected.
