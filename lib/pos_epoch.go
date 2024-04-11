@@ -22,8 +22,8 @@ type EpochEntry struct {
 	// epoch.
 	// - This value is set to 0 if there were no timeouts at the epoch transition during
 	//   the final two block heights of the previous epoch
-	// - This value is non-zero if there was at least timeout at the epoch transition during
-	//   the final two block heights of the previous epoch
+	// - This value is non-zero if there was at least one timeout at the epoch transition
+	//   during the final two block heights of the previous epoch
 	InitialLeaderIndexOffset uint64
 
 	// This captures the on-chain timestamp when this epoch entry was created. This does not
