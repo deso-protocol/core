@@ -620,7 +620,8 @@ func TestHasValidBlockProposerPoS(t *testing.T) {
 	require.NoError(t, err)
 
 	// Run the epoch complete hook
-	_runOnEpochCompleteHook(testMeta, incrBlockHeight(), incrViewNumber())
+	incrViewNumber()
+	_runOnEpochCompleteHook(testMeta, incrBlockHeight(), viewNumber, viewNumber-1)
 
 	// Get leader schedule from DB
 	leaderSchedule, err := DBSeekSnapshotLeaderSchedule(testMeta.db, currentEpochNumber)

@@ -4575,7 +4575,12 @@ func (bav *UtxoView) ConnectBlock(
 		}
 		if isLastBlockInEpoch {
 			var utxoOperations []*UtxoOperation
-			utxoOperations, err = bav.RunEpochCompleteHook(blockHeight, blockHeader.GetView(), blockHeader.TstampNanoSecs)
+			utxoOperations, err = bav.RunEpochCompleteHook(
+				blockHeight,
+				blockHeader.GetView(),
+				blockHeader.GetQC().GetView(),
+				blockHeader.TstampNanoSecs,
+			)
 			if err != nil {
 				return nil, errors.Wrapf(err, "ConnectBlock: error running epoch complete hook")
 			}

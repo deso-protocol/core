@@ -50,7 +50,12 @@ func (bav *UtxoView) IsLastBlockInCurrentEpoch(blockHeight uint64) (bool, error)
 // - Compute the start block height and view number for the next epoch.
 // - Compute the final block height for the next epoch.
 // - Update CurrentEpochEntry to the next epoch's.
-func (bav *UtxoView) RunEpochCompleteHook(blockHeight uint64, view uint64, blockTimestampNanoSecs int64) ([]*UtxoOperation, error) {
+func (bav *UtxoView) RunEpochCompleteHook(
+	blockHeight uint64, // the final block height of the epoch
+	view uint64, // the view from the final block of the epoch
+	previousView uint64, // the view from the penultimate block of the epoch
+	blockTimestampNanoSecs int64, // the timestamp of the final block of the epoch
+) ([]*UtxoOperation, error) {
 	// Sanity-check that the current block is the last block in the current epoch.
 	//
 	// Note that this will also return true if we're currently at the ProofOfStake1StateSetupBlockHeight
