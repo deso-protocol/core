@@ -18,6 +18,14 @@ type EpochEntry struct {
 	InitialView        uint64
 	FinalBlockHeight   uint64
 
+	// This captures an offset used to index into the leader schedule at the start of the
+	// epoch.
+	// - This value is set to 0 if there were no timeouts at the epoch transition during
+	//   the final two block heights of the previous epoch
+	// - This value is non-zero if there was at least timeout at the epoch transition during
+	//   the final two block heights of the previous epoch
+	InitialLeaderIndexOffset uint64
+
 	// This captures the on-chain timestamp when this epoch entry was created. This does not
 	// represent the timestamp for first block of the epoch, but rather when this epoch entry
 	// was created during that epoch transition at the end of the previous epoch.
@@ -30,6 +38,7 @@ func (epochEntry *EpochEntry) Copy() *EpochEntry {
 		InitialBlockHeight:              epochEntry.InitialBlockHeight,
 		InitialView:                     epochEntry.InitialView,
 		FinalBlockHeight:                epochEntry.FinalBlockHeight,
+		InitialLeaderIndexOffset:        epochEntry.InitialLeaderIndexOffset,
 		CreatedAtBlockTimestampNanoSecs: epochEntry.CreatedAtBlockTimestampNanoSecs,
 	}
 }
@@ -40,6 +49,7 @@ func (epochEntry *EpochEntry) RawEncodeWithoutMetadata(blockHeight uint64, skipM
 	data = append(data, UintToBuf(epochEntry.InitialBlockHeight)...)
 	data = append(data, UintToBuf(epochEntry.InitialView)...)
 	data = append(data, UintToBuf(epochEntry.FinalBlockHeight)...)
+	data = append(data, UintToBuf(epochEntry.InitialLeaderIndexOffset)...)
 	data = append(data, IntToBuf(epochEntry.CreatedAtBlockTimestampNanoSecs)...)
 	return data
 }
@@ -69,6 +79,12 @@ func (epochEntry *EpochEntry) RawDecodeWithoutMetadata(blockHeight uint64, rr *b
 	epochEntry.FinalBlockHeight, err = ReadUvarint(rr)
 	if err != nil {
 		return errors.Wrapf(err, "EpochEntry.Decode: Problem reading FinalBlockHeight: ")
+	}
+
+	// InitialLeaderIndexOffset
+	epochEntry.InitialLeaderIndexOffset, err = ReadUvarint(rr)
+	if err != nil {
+		return errors.Wrapf(err, "EpochEntry.Decode: Problem reading InitialLeaderIndexOffset: ")
 	}
 
 	// CreatedAtBlockTimestampNanoSecs
@@ -124,6 +140,7 @@ func (bav *UtxoView) GetCurrentEpochEntry() (*EpochEntry, error) {
 		InitialBlockHeight:              0,
 		InitialView:                     0,
 		FinalBlockHeight:                uint64(bav.Params.ForkHeights.ProofOfStake1StateSetupBlockHeight),
+		InitialLeaderIndexOffset:        0,
 		CreatedAtBlockTimestampNanoSecs: 0,
 	}
 	return genesisEpochEntry, nil

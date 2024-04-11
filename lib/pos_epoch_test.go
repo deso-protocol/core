@@ -38,6 +38,7 @@ func TestCurrentEpoch(t *testing.T) {
 		InitialBlockHeight:              blockHeight + 1,
 		InitialView:                     1,
 		FinalBlockHeight:                blockHeight + 5,
+		InitialLeaderIndexOffset:        2,
 		CreatedAtBlockTimestampNanoSecs: blockTimestampNanoSecs + 5*1e9,
 	}
 	utxoView._setCurrentEpochEntry(epochEntry)
@@ -51,6 +52,7 @@ func TestCurrentEpoch(t *testing.T) {
 	require.Equal(t, epochEntry.InitialBlockHeight, blockHeight+1)
 	require.Equal(t, epochEntry.InitialView, uint64(1))
 	require.Equal(t, epochEntry.FinalBlockHeight, blockHeight+5)
+	require.Equal(t, epochEntry.InitialLeaderIndexOffset, uint64(2))
 	require.Equal(t, epochEntry.CreatedAtBlockTimestampNanoSecs, blockTimestampNanoSecs+5*1e9)
 
 	// Test that the CurrentEpoch is flushed from the UtxoView.
@@ -64,6 +66,7 @@ func TestCurrentEpoch(t *testing.T) {
 	require.Equal(t, epochEntry.InitialBlockHeight, blockHeight+1)
 	require.Equal(t, epochEntry.InitialView, uint64(1))
 	require.Equal(t, epochEntry.FinalBlockHeight, blockHeight+5)
+	require.Equal(t, epochEntry.InitialLeaderIndexOffset, uint64(2))
 	require.Equal(t, epochEntry.CreatedAtBlockTimestampNanoSecs, blockTimestampNanoSecs+5*1e9)
 
 	// Test that the CurrentEpoch is set in the UtxoView.
@@ -73,6 +76,7 @@ func TestCurrentEpoch(t *testing.T) {
 	require.Equal(t, epochEntry.InitialBlockHeight, blockHeight+1)
 	require.Equal(t, epochEntry.InitialView, uint64(1))
 	require.Equal(t, epochEntry.FinalBlockHeight, blockHeight+5)
+	require.Equal(t, epochEntry.InitialLeaderIndexOffset, uint64(2))
 	require.Equal(t, epochEntry.CreatedAtBlockTimestampNanoSecs, blockTimestampNanoSecs+5*1e9)
 
 	// Delete CurrentEpoch from the UtxoView.
