@@ -217,6 +217,8 @@ func TestRunEpochCompleteHook(t *testing.T) {
 		require.NotNil(t, currentEpoch)
 		require.Equal(t, currentEpoch.InitialBlockHeight, uint64(14))
 		require.Equal(t, currentEpoch.InitialView, uint64(3))
+		require.Equal(t, currentEpoch.FinalBlockHeight, uint64(14))
+		require.Equal(t, currentEpoch.InitialLeaderIndexOffset, uint64(0))
 
 		// Test SnapshotGlobalParamsEntry is populated.
 		snapshotGlobalParamsEntry, err := _newUtxoView(testMeta).GetCurrentSnapshotGlobalParamsEntry()
@@ -231,8 +233,12 @@ func TestRunEpochCompleteHook(t *testing.T) {
 	}
 	{
 		// Test RunOnEpochCompleteHook().
+
+		// Increment the view number twice to simulate one timeout
 		incrViewNumber()
-		_runOnEpochCompleteHook(testMeta, incrBlockHeight(), viewNumber, viewNumber-1)
+		incrViewNumber()
+
+		_runOnEpochCompleteHook(testMeta, incrBlockHeight(), viewNumber, viewNumber-2)
 	}
 	{
 		// Test CurrentEpochNumber.
@@ -245,7 +251,15 @@ func TestRunEpochCompleteHook(t *testing.T) {
 		require.NoError(t, err)
 		require.NotNil(t, currentEpoch)
 		require.Equal(t, currentEpoch.InitialBlockHeight, uint64(15))
-		require.Equal(t, currentEpoch.InitialView, uint64(4))
+		require.Equal(t, currentEpoch.InitialView, uint64(5))
+		require.Equal(t, currentEpoch.FinalBlockHeight, uint64(15))
+		// InitialLeaderIndexOffset is non-zero because the final two views of the previous epoch were not consecutive.
+		//
+		// InitialLeaderIndexOffset = hashUint64ToUint64(currentEpochFinalView) % uint64(len(nextSnapshotLeaderSchedule))
+		//                          = hashUint64ToUint64(4) % 7
+		//                          = 0xeb667cfa9fe822a % 7
+		//                          = 5
+		require.Equal(t, currentEpoch.InitialLeaderIndexOffset, uint64(5))
 
 		// Test SnapshotGlobalParamsEntry is populated.
 		snapshotGlobalParamsEntry, err := _newUtxoView(testMeta).GetCurrentSnapshotGlobalParamsEntry()

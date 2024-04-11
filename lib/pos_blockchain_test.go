@@ -2208,7 +2208,13 @@ func TestProcessOrphanBlockPoS(t *testing.T) {
 		utxoView := _newUtxoView(testMeta)
 		currentEpochEntry, err := utxoView.GetCurrentEpochEntry()
 		require.NoError(t, err)
-		nextEpochEntry, err := utxoView.computeNextEpochEntry(currentEpochEntry.EpochNumber, currentEpochEntry.FinalBlockHeight, currentEpochEntry.FinalBlockHeight, 1)
+		nextEpochEntry, err := utxoView.computeNextEpochEntry(
+			currentEpochEntry.EpochNumber,
+			currentEpochEntry.FinalBlockHeight,
+			currentEpochEntry.FinalBlockHeight,
+			currentEpochEntry.FinalBlockHeight-1,
+			1,
+		)
 		require.NoError(t, err)
 		var twoEpochsInFutureBlock *MsgDeSoBlock
 		twoEpochsInFutureBlock = _generateRealBlock(testMeta, nextEpochEntry.FinalBlockHeight, nextEpochEntry.FinalBlockHeight, 17283, testMeta.chain.BlockTip().Hash, false)

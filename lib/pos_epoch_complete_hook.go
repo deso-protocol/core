@@ -91,7 +91,7 @@ func (bav *UtxoView) RunEpochCompleteHook(
 	// TODO: Evict old snapshots when safe to do so.
 
 	// Step 3: Roll Over to The Next Epoch
-	if err = bav.runEpochCompleteEpochRollover(currentEpochEntry.EpochNumber, blockHeight, view, blockTimestampNanoSecs); err != nil {
+	if err = bav.runEpochCompleteEpochRollover(currentEpochEntry.EpochNumber, blockHeight, view, previousView, blockTimestampNanoSecs); err != nil {
 		return nil, errors.Wrapf(err, "RunEpochCompleteHook: ")
 	}
 
@@ -204,15 +204,16 @@ func (bav *UtxoView) SimulateAdjacentEpochEntryForBlockHeight(blockHeight uint64
 // We use this function to simulate the next epoch's entry so we can predict the leader schedule and validator set
 // for the next epoch before the current epoch is over. This is useful for validating orphan blocks.
 func (bav *UtxoView) simulateNextEpochEntry(currentEpochNumber uint64, currentEpochFinalBlockHeight uint64) (*EpochEntry, error) {
-	return bav.computeNextEpochEntry(
-		currentEpochNumber,
-		currentEpochFinalBlockHeight,
-		0,
-		0,
-	)
+	return bav.computeNextEpochEntry(currentEpochNumber, currentEpochFinalBlockHeight, 0, 0, 0)
 }
 
-func (bav *UtxoView) computeNextEpochEntry(currentEpochNumber uint64, currentEpochFinalBlockHeight uint64, currentEpochFinalView uint64, nextEpochBlockTimestampNanoSecs int64) (*EpochEntry, error) {
+func (bav *UtxoView) computeNextEpochEntry(
+	currentEpochNumber uint64,
+	currentEpochFinalBlockHeight uint64,
+	currentEpochFinalView uint64,
+	currentEpochPenultimateView uint64,
+	nextEpochBlockTimestampNanoSecs int64,
+) (*EpochEntry, error) {
 	// Retrieve the SnapshotGlobalParamsEntry to determine the next epoch's final block height. We use the
 	// snapshot global params here because the next epoch begin immediately, and its length is used in the PoS
 	// consensus. The validator set for the next epoch needs to be in agreement on the length of the epoch
@@ -232,12 +233,37 @@ func (bav *UtxoView) computeNextEpochEntry(currentEpochNumber uint64, currentEpo
 		return nil, errors.Wrapf(err, "computeNextEpochEntry: problem calculating NextEpochFinalBlockHeight: ")
 	}
 
+	// Calculate InitialLeaderIndexOffset
+	initialLeaderIndexOffset := uint64(0)
+	if currentEpochPenultimateView+1 < currentEpochFinalView {
+		// The initialLeaderIndexOffset is set to non-zero only if there was a timeout between the final two
+		// blocks of the current epoch. This can be determined by checking if the final two views of the
+		// current epoch are not consecutive.
+
+		// Fetch the next snapshot epoch number so we can fetch the snapshotted leader schedule for the next epoch
+		nextSnapshotEpochNumber, err := bav.ComputeSnapshotEpochNumberForEpoch(currentEpochNumber + 1)
+		if err != nil {
+			return nil, errors.Wrapf(err, "computeNextEpochEntry: problem computing snapshot epoch number: ")
+		}
+
+		// Fetch the snapshotted leader schedule for the next epoch.
+		nextSnapshotLeaderSchedule, err := bav.GetSnapshotLeaderScheduleAtEpochNumber(nextSnapshotEpochNumber)
+		if err != nil {
+			return nil, errors.Wrapf(err, "computeNextEpochEntry: problem retrieving next snapshot leader schedule: ")
+		}
+
+		// The initialLeaderIndexOffset is set to a pseudo-random value used to index into the leader schedule. It's
+		// simply computed as a hash of the current epoch's final view and the next epoch's leader schedule size.
+		initialLeaderIndexOffset = hashUint64ToUint64(currentEpochFinalView) % uint64(len(nextSnapshotLeaderSchedule))
+	}
+
 	// Roll-over a new epoch by setting a new CurrentEpochEntry.
 	nextEpochEntry := &EpochEntry{
 		EpochNumber:                     currentEpochNumber + 1,
 		InitialBlockHeight:              currentEpochFinalBlockHeight + 1,
 		InitialView:                     currentEpochFinalView + 1,
 		FinalBlockHeight:                nextEpochFinalBlockHeight,
+		InitialLeaderIndexOffset:        initialLeaderIndexOffset,
 		CreatedAtBlockTimestampNanoSecs: nextEpochBlockTimestampNanoSecs,
 	}
 	return nextEpochEntry, nil
@@ -269,14 +295,21 @@ func (bav *UtxoView) simulatePrevEpochEntry(currentEpochNumber uint64, currentEp
 		InitialBlockHeight:              prevEpochInitialBlockHeight,
 		InitialView:                     0,
 		FinalBlockHeight:                currentEpochInitialBlockHeight - 1,
+		InitialLeaderIndexOffset:        0,
 		CreatedAtBlockTimestampNanoSecs: 0,
 	}
 	return prevEpochEntry, nil
 }
 
 // Updates the currentEpochEntry to the next epoch's.
-func (bav *UtxoView) runEpochCompleteEpochRollover(epochNumber uint64, blockHeight uint64, view uint64, blockTimestampNanoSecs int64) error {
-	nextEpochEntry, err := bav.computeNextEpochEntry(epochNumber, blockHeight, view, blockTimestampNanoSecs)
+func (bav *UtxoView) runEpochCompleteEpochRollover(
+	epochNumber uint64,
+	blockHeight uint64,
+	view uint64,
+	previousView uint64,
+	blockTimestampNanoSecs int64,
+) error {
+	nextEpochEntry, err := bav.computeNextEpochEntry(epochNumber, blockHeight, view, previousView, blockTimestampNanoSecs)
 	if err != nil {
 		return errors.Wrap(err, "runEpochCompleteEpochRollover: ")
 	}
