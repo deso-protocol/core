@@ -3,7 +3,6 @@ package lib
 import (
 	"bufio"
 	"bytes"
-	"encoding/binary"
 	"encoding/hex"
 	"fmt"
 	"math/big"
@@ -332,13 +331,11 @@ func ReadBoolFromFile(filename string) (bool, error) {
 // function that can be used to deterministically map a uint64 to another uint64.
 func hashUint64ToUint64(value uint64) uint64 {
 	// Convert the input value to binary using big-endian encoding.
-	binaryValue := make([]byte, 8)
-	binary.BigEndian.PutUint64(binaryValue, value)
+	binaryValue := EncodeUint64(value)
 
 	// Hash the binary value using SHA3-256.
 	hash := sha3.Sum256(binaryValue)
 
-	// Convert the final eight bytes of the hash to a uint64.
-	finalEightBytes := hash[24:]
-	return binary.BigEndian.Uint64(finalEightBytes)
+	// Convert the lowest eight bytes of the hash to a uint64.
+	return DecodeUint64(hash[:])
 }
