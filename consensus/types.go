@@ -67,7 +67,7 @@ type BlockHashValue = [32]byte
 type FastHotStuffEventLoop interface {
 	GetEvents() chan *FastHotStuffEvent
 
-	Init(time.Duration, time.Duration, QuorumCertificate, BlockWithValidatorList, []BlockWithValidatorList) error
+	Init(time.Duration, time.Duration, QuorumCertificate, BlockWithValidatorList, []BlockWithValidatorList, uint64) error
 	GetCurrentView() uint64
 	AdvanceViewOnTimeout() (uint64, error)
 	ProcessTipBlock(BlockWithValidatorList, []BlockWithValidatorList, time.Duration, time.Duration) error

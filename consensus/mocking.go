@@ -20,7 +20,7 @@ type MockFastHotStuffEventLoop struct {
 func (fc *MockFastHotStuffEventLoop) GetEvents() chan *FastHotStuffEvent {
 	return fc.OnGetEvents()
 }
-func (fc *MockFastHotStuffEventLoop) Init(crankTimerInterval time.Duration, timeoutBaseDuration time.Duration, genesisQC QuorumCertificate, tip BlockWithValidatorList, safeBlocks []BlockWithValidatorList) error {
+func (fc *MockFastHotStuffEventLoop) Init(crankTimerInterval time.Duration, timeoutBaseDuration time.Duration, genesisQC QuorumCertificate, tip BlockWithValidatorList, safeBlocks []BlockWithValidatorList, _ uint64) error {
 	return fc.OnInit(crankTimerInterval, timeoutBaseDuration, genesisQC, tip, safeBlocks)
 }
 

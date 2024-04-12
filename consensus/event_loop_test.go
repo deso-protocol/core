@@ -27,6 +27,7 @@ func TestInit(t *testing.T) {
 			genesisBlock.GetQC(), // genesisQC
 			BlockWithValidatorList{genesisBlock, createDummyValidatorList()},     // tip
 			[]BlockWithValidatorList{{genesisBlock, createDummyValidatorList()}}, // safeBlocks
+			genesisBlock.GetView()+1,
 		)
 		require.Error(t, err)
 	}
@@ -39,6 +40,7 @@ func TestInit(t *testing.T) {
 			genesisBlock.GetQC(), // genesisQC
 			BlockWithValidatorList{genesisBlock, createDummyValidatorList()},     // tip
 			[]BlockWithValidatorList{{genesisBlock, createDummyValidatorList()}}, // safeBlocks
+			genesisBlock.GetView()+1,
 		)
 		require.Error(t, err)
 	}
@@ -52,6 +54,7 @@ func TestInit(t *testing.T) {
 			fakeGenesisBlock.GetQC(), // genesisQC
 			BlockWithValidatorList{genesisBlock, createDummyValidatorList()},     // tip
 			[]BlockWithValidatorList{{genesisBlock, createDummyValidatorList()}}, // safeBlocks
+			genesisBlock.GetView()+1,
 		)
 		require.Error(t, err)
 	}
@@ -64,6 +67,7 @@ func TestInit(t *testing.T) {
 			genesisBlock.GetQC(), // genesisQC
 			BlockWithValidatorList{nil, createDummyValidatorList()},              // tip
 			[]BlockWithValidatorList{{genesisBlock, createDummyValidatorList()}}, // safeBlocks
+			genesisBlock.GetView()+1,
 		)
 		require.Error(t, err)
 	}
@@ -76,6 +80,7 @@ func TestInit(t *testing.T) {
 			genesisBlock.GetQC(),                                                 // genesisQC
 			BlockWithValidatorList{genesisBlock, nil},                            // tip
 			[]BlockWithValidatorList{{genesisBlock, createDummyValidatorList()}}, // safeBlocks
+			genesisBlock.GetView()+1,
 		)
 		require.Error(t, err)
 	}
@@ -88,6 +93,7 @@ func TestInit(t *testing.T) {
 			genesisBlock.GetQC(), // genesisQC
 			BlockWithValidatorList{genesisBlock, createDummyValidatorList()}, // tip
 			[]BlockWithValidatorList{{nil, createDummyValidatorList()}},      // safeBlocks
+			genesisBlock.GetView()+1,
 		)
 		require.Error(t, err)
 	}
@@ -100,6 +106,7 @@ func TestInit(t *testing.T) {
 			genesisBlock.GetQC(), // genesisQC
 			BlockWithValidatorList{genesisBlock, createDummyValidatorList()}, // tip
 			[]BlockWithValidatorList{{genesisBlock, nil}},                    // safeBlocks
+			genesisBlock.GetView()+1,
 		)
 		require.Error(t, err)
 	}
@@ -112,6 +119,7 @@ func TestInit(t *testing.T) {
 			genesisBlock.GetQC(), // genesisQC
 			BlockWithValidatorList{genesisBlock, createDummyValidatorList()},     // tip
 			[]BlockWithValidatorList{{genesisBlock, createDummyValidatorList()}}, // safeBlocks
+			genesisBlock.GetView()+1,
 		)
 		require.NoError(t, err)
 
@@ -149,7 +157,14 @@ func TestProcessTipBlock(t *testing.T) {
 	{
 		genesisBlock := createDummyBlock(2)
 		tipBlock := BlockWithValidatorList{genesisBlock, createDummyValidatorList()}
-		err := fc.Init(oneHourInNanoSecs, oneHourInNanoSecs, genesisBlock.GetQC(), tipBlock, []BlockWithValidatorList{tipBlock})
+		err := fc.Init(
+			oneHourInNanoSecs,
+			oneHourInNanoSecs,
+			genesisBlock.GetQC(),
+			tipBlock,
+			[]BlockWithValidatorList{tipBlock},
+			tipBlock.Block.GetView()+1,
+		)
 		require.NoError(t, err)
 	}
 
@@ -291,7 +306,14 @@ func TestAdvanceViewOnTimeout(t *testing.T) {
 		// BlockHeight = 1, Current View = 3
 		genesisBlock := createDummyBlock(2)
 		tipBlock := BlockWithValidatorList{genesisBlock, createDummyValidatorList()}
-		err := fc.Init(oneHourInNanoSecs, oneHourInNanoSecs, genesisBlock.GetQC(), tipBlock, []BlockWithValidatorList{tipBlock})
+		err := fc.Init(
+			oneHourInNanoSecs,
+			oneHourInNanoSecs,
+			genesisBlock.GetQC(),
+			tipBlock,
+			[]BlockWithValidatorList{tipBlock},
+			tipBlock.Block.GetView()+1,
+		)
 		require.NoError(t, err)
 	}
 
@@ -383,7 +405,14 @@ func TestProcessValidatorVote(t *testing.T) {
 		// BlockHeight = 1, Current View = 3
 		genesisBlock := createDummyBlock(2)
 		tipBlock := BlockWithValidatorList{genesisBlock, createDummyValidatorList()}
-		err := fc.Init(oneHourInNanoSecs, oneHourInNanoSecs, genesisBlock.GetQC(), tipBlock, []BlockWithValidatorList{tipBlock})
+		err := fc.Init(
+			oneHourInNanoSecs,
+			oneHourInNanoSecs,
+			genesisBlock.GetQC(),
+			tipBlock,
+			[]BlockWithValidatorList{tipBlock},
+			tipBlock.Block.GetView()+1,
+		)
 		require.NoError(t, err)
 	}
 
@@ -482,6 +511,7 @@ func TestProcessValidatorTimeout(t *testing.T) {
 			genesisBlock.GetQC(),
 			tipBlock,
 			[]BlockWithValidatorList{tipBlock, {genesisBlock, validatorList}},
+			tipBlock.Block.GetView()+1,
 		)
 		require.NoError(t, err)
 	}
@@ -596,6 +626,7 @@ func TestTimeoutScheduledTaskExecuted(t *testing.T) {
 		dummyBlock.GetQC(), // genesisQC
 		BlockWithValidatorList{dummyBlock, createDummyValidatorList()},     // tip
 		[]BlockWithValidatorList{{dummyBlock, createDummyValidatorList()}}, // safeBlocks
+		dummyBlock.GetView()+1,
 	)
 	require.NoError(t, err)
 
@@ -639,7 +670,14 @@ func TestResetEventLoopSignal(t *testing.T) {
 	// Init the event loop
 	genesisBlock := createDummyBlock(2)
 	tipBlock := BlockWithValidatorList{genesisBlock, createDummyValidatorList()}
-	err := fc.Init(oneHourInNanoSecs, 2*oneHourInNanoSecs, genesisBlock.GetQC(), tipBlock, []BlockWithValidatorList{tipBlock})
+	err := fc.Init(
+		oneHourInNanoSecs,
+		2*oneHourInNanoSecs,
+		genesisBlock.GetQC(),
+		tipBlock,
+		[]BlockWithValidatorList{tipBlock},
+		tipBlock.Block.GetView()+1,
+	)
 	require.NoError(t, err)
 
 	// Start the event loop
@@ -709,6 +747,7 @@ func TestVoteQCConstructionSignal(t *testing.T) {
 			block.GetQC(), // genesisQC
 			BlockWithValidatorList{block, validatorList},     // tip
 			[]BlockWithValidatorList{{block, validatorList}}, // safeBlocks
+			block.GetView()+1,
 		)
 		require.NoError(t, err)
 
@@ -747,6 +786,7 @@ func TestVoteQCConstructionSignal(t *testing.T) {
 			block.GetQC(), // genesisQC
 			BlockWithValidatorList{block, validatorList},     // tip
 			[]BlockWithValidatorList{{block, validatorList}}, // safeBlocks
+			block.GetView()+1,
 		)
 		require.NoError(t, err)
 
@@ -801,6 +841,7 @@ func TestVoteQCConstructionSignal(t *testing.T) {
 			block.GetQC(), // genesisQC
 			BlockWithValidatorList{block, validatorList},     // tip
 			[]BlockWithValidatorList{{block, validatorList}}, // safeBlocks
+			block.GetView()+1,
 		)
 		require.NoError(t, err)
 
@@ -893,6 +934,7 @@ func TestTimeoutQCConstructionSignal(t *testing.T) {
 				{block1, validatorList},
 				{block2, validatorList},
 			},
+			block2.GetView()+1,
 		)
 		require.NoError(t, err)
 
@@ -937,6 +979,7 @@ func TestTimeoutQCConstructionSignal(t *testing.T) {
 				{block1, validatorList},
 				{block2, validatorList},
 			},
+			block2.GetView()+1,
 		)
 		require.NoError(t, err)
 
@@ -1016,7 +1059,14 @@ func TestFastHotStuffEventLoopStartStop(t *testing.T) {
 	// Init the event loop
 	genesisBlock := createDummyBlock(2)
 	tipBlock := BlockWithValidatorList{genesisBlock, createDummyValidatorList()}
-	err := fc.Init(oneHourInNanoSecs, 2*oneHourInNanoSecs, genesisBlock.GetQC(), tipBlock, []BlockWithValidatorList{tipBlock})
+	err := fc.Init(
+		oneHourInNanoSecs,
+		2*oneHourInNanoSecs,
+		genesisBlock.GetQC(),
+		tipBlock,
+		[]BlockWithValidatorList{tipBlock},
+		tipBlock.Block.GetView()+1,
+	)
 	require.NoError(t, err)
 
 	// Start the event loop

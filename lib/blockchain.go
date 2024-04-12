@@ -458,16 +458,21 @@ type OrphanBlock struct {
 }
 
 type CheckpointBlockInfo struct {
-	Height  uint64
-	Hash    *BlockHash
-	HashHex string
+	Height     uint64
+	Hash       *BlockHash
+	HashHex    string
+	LatestView uint64
 }
 
 func (checkpointBlockInfo *CheckpointBlockInfo) String() string {
 	if checkpointBlockInfo == nil {
 		return "<nil>"
 	}
-	return fmt.Sprintf("< Height: %d, Hash: %v >", checkpointBlockInfo.Height, checkpointBlockInfo.HashHex)
+	return fmt.Sprintf(
+		"< Height: %d, Hash: %v, Latest View: %v >",
+		checkpointBlockInfo.Height,
+		checkpointBlockInfo.HashHex,
+		checkpointBlockInfo.LatestView)
 }
 
 type CheckpointBlockInfoAndError struct {
@@ -568,8 +573,11 @@ func (bc *Blockchain) updateCheckpointBlockInfo() {
 		checkpointBlockInfos[ii] = <-ch
 	}
 
-	// Find the checkpoint block info with the highest height.
+	// Find the checkpoint block info with the highest height and find the highest view reported
+	// from the checkpoint syncing providers. We'll combine these two pieces of information to
+	// form the final checkpoint block info.
 	var highestHeightCheckpointBlockInfo *CheckpointBlockInfo
+	highestView := uint64(0)
 	for _, checkpointBlockInfo := range checkpointBlockInfos {
 		if checkpointBlockInfo.Error != nil {
 			glog.Errorf("updateCheckpointBlockInfo: Error getting checkpoint block info: %v", checkpointBlockInfo.Error)
@@ -579,6 +587,9 @@ func (bc *Blockchain) updateCheckpointBlockInfo() {
 			checkpointBlockInfo.CheckpointBlockInfo.Height > highestHeightCheckpointBlockInfo.Height {
 			highestHeightCheckpointBlockInfo = checkpointBlockInfo.CheckpointBlockInfo
 		}
+		if highestView < checkpointBlockInfo.CheckpointBlockInfo.LatestView {
+			highestView = checkpointBlockInfo.CheckpointBlockInfo.LatestView
+		}
 	}
 	if highestHeightCheckpointBlockInfo == nil {
 		glog.Errorf("updateCheckpointBlockInfo: No valid checkpoint block info found.")
@@ -587,6 +598,7 @@ func (bc *Blockchain) updateCheckpointBlockInfo() {
 	glog.V(2).Infof("updateCheckpointBlockInfo: Setting checkpoint block info to: %v", highestHeightCheckpointBlockInfo)
 	bc.checkpointBlockInfoLock.Lock()
 	bc.checkpointBlockInfo = highestHeightCheckpointBlockInfo
+	bc.checkpointBlockInfo.LatestView = highestView
 	bc.checkpointBlockInfoLock.Unlock()
 }
 

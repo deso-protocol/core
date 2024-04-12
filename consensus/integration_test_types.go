@@ -67,6 +67,7 @@ func (node *validatorNode) Init(
 		[]BlockWithValidatorList{
 			{genesisBlock, node.getValidators()},
 		},
+		genesisBlock.GetView()+1,
 	)
 }
 
@@ -87,6 +88,7 @@ func (node *validatorNode) Resync(genesisBlock *block, tipBlock *block, safeBloc
 		collections.Transform(safeBlocks, func(bb *block) BlockWithValidatorList {
 			return BlockWithValidatorList{bb, node.getValidators()}
 		}),
+		genesisBlock.GetView()+1,
 	)
 }
 
