@@ -2,12 +2,13 @@ package lib
 
 import (
 	"fmt"
-	"github.com/decred/dcrd/lru"
 	"path/filepath"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/decred/dcrd/lru"
 
 	"github.com/dgraph-io/badger/v4"
 	"github.com/golang/glog"
@@ -457,10 +458,6 @@ func (mp *PosMempool) OnBlockConnected(block *MsgDeSoBlock) {
 		}
 	}
 
-	if err := mp.refreshNoLock(); err != nil {
-		glog.Errorf("PosMempool.OnBlockConnected: Problem refreshing mempool: %v", err)
-	}
-
 	// Add the block to the fee estimator. This is a best effort operation. If we fail to add the block
 	// to the fee estimator, we log an error and continue.
 	if err := mp.feeEstimator.AddBlock(block); err != nil {
@@ -507,8 +504,6 @@ func (mp *PosMempool) OnBlockDisconnected(block *MsgDeSoBlock) {
 			glog.Errorf("PosMempool.AddTransaction: Problem adding transaction to mempool: %v", err)
 		}
 	}
-
-	mp.refreshNoLock()
 
 	// This is a best effort operation. If we fail to prune the mempool, we log an error and continue.
 	if err := mp.pruneNoLock(); err != nil {
@@ -1000,69 +995,6 @@ func (mp *PosMempool) validateTransactions() error {
 	return nil
 }
 
-// refreshNoLock can be used to evict stale transactions from the mempool. However, it is a bit expensive and should be used
-// sparingly. Upon being called, refreshNoLock will create an in-memory temp PosMempool and populate it with transactions from
-// the main mempool. The temp mempool will have the most up-to-date readOnlyLatestBlockView, Height, and globalParams. Any
-// transaction that fails to add to the temp mempool will be removed from the main mempool.
-func (mp *PosMempool) refreshNoLock() error {
-	// Create the temporary in-memory mempool with the most up-to-date readOnlyLatestBlockView, Height, and globalParams.
-	tempPool := NewPosMempool()
-	err := tempPool.Init(
-		mp.params,
-		mp.globalParams,
-		mp.readOnlyLatestBlockView,
-		mp.latestBlockHeight,
-		"",
-		true,
-		mp.maxMempoolPosSizeBytes,
-		mp.mempoolBackupIntervalMillis,
-		mp.feeEstimator.numMempoolBlocks,
-		mp.feeEstimator.cachedBlocks,
-		mp.feeEstimator.numPastBlocks,
-		mp.maxValidationViewConnects,
-		mp.transactionValidationRefreshIntervalMillis,
-	)
-	if err != nil {
-		return errors.Wrapf(err, "PosMempool.refreshNoLock: Problem initializing temp pool")
-	}
-	if err := tempPool.Start(); err != nil {
-		return errors.Wrapf(err, "PosMempool.refreshNoLock: Problem starting temp pool")
-	}
-	defer tempPool.Stop()
-
-	// Add all transactions from the main mempool to the temp mempool. Skip signature verification.
-	var txnsToRemove []*MempoolTx
-	txns := mp.getTransactionsNoLock()
-	for _, txn := range txns {
-		mtxn := NewMempoolTransaction(txn.Tx, txn.Added, txn.IsValidated())
-		err := tempPool.AddTransaction(mtxn)
-		if err == nil {
-			continue
-		}
-
-		// If we've encountered an error while adding the transaction to the temp mempool, we add it to our txnsToRemove list.
-		txnsToRemove = append(txnsToRemove, txn)
-	}
-
-	// Now remove all transactions from the txnsToRemove list from the main mempool.
-	for _, txn := range txnsToRemove {
-		if err := mp.removeTransactionNoLock(txn, true); err != nil {
-			glog.Errorf("PosMempool.refreshNoLock: Problem removing transaction with hash (%v): %v", txn.Hash, err)
-		}
-	}
-
-	// Log the hashes for transactions that were removed.
-	if len(txnsToRemove) > 0 {
-		var removedTxnHashes []string
-		for _, txn := range txnsToRemove {
-			removedTxnHashes = append(removedTxnHashes, txn.Hash.String())
-		}
-		glog.V(1).Infof("PosMempool.refreshNoLock: Transactions with the following hashes were removed: %v",
-			strings.Join(removedTxnHashes, ","))
-	}
-	return nil
-}
-
 // pruneNoLock removes transactions from the mempool until the mempool size is below the maximum allowed size. The transactions
 // are removed in lowest to highest Fee-Time priority, i.e. opposite way that transactions are ordered in
 // GetTransactions().
@@ -1113,9 +1045,12 @@ func (mp *PosMempool) UpdateGlobalParams(globalParams *GlobalParamsEntry) {
 	}
 
 	mp.globalParams = globalParams
-	if err := mp.refreshNoLock(); err != nil {
-		glog.Errorf("PosMempool.UpdateGlobalParams: Problem refreshing mempool: %v", err)
-	}
+
+	// TODO: Trim the mempool size
+
+	// TODO: Update the fee bucketing parameters
+
+	// TODO: Update the fee estimator
 }
 
 // Implementation of the Mempool interface
