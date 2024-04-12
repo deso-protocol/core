@@ -56,6 +56,7 @@ type EventManager struct {
 	stateSyncerFlushedHandlers   []StateSyncerFlushedEventFunc
 	blockConnectedHandlers       []BlockEventFunc
 	blockDisconnectedHandlers    []BlockEventFunc
+	blockCommittedHandlers       []BlockEventFunc
 	blockAcceptedHandlers        []BlockEventFunc
 	snapshotCompletedHandlers    []SnapshotCompletedEventFunc
 	isMempoolManager             bool
@@ -91,6 +92,16 @@ func (em *EventManager) OnTransactionConnected(handler TransactionEventFunc) {
 
 func (em *EventManager) transactionConnected(event *TransactionEvent) {
 	for _, handler := range em.transactionConnectedHandlers {
+		handler(event)
+	}
+}
+
+func (em *EventManager) OnBlockCommitted(handler BlockEventFunc) {
+	em.blockCommittedHandlers = append(em.blockCommittedHandlers, handler)
+}
+
+func (em *EventManager) blockCommitted(event *BlockEvent) {
+	for _, handler := range em.blockCommittedHandlers {
 		handler(event)
 	}
 }
