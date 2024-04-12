@@ -1008,6 +1008,32 @@ func (mp *DeSoMempool) rebuildBackupView() {
 	mp.backupUniversalUtxoView = mp.universalUtxoView.CopyUtxoView()
 }
 
+// tryAcceptSingleTransactionNonce is similar to _connectSingleTxn in that
+// it's meant to be used with non-atomic transactions. Here, we check that
+// given a mempool and a block height a nonce is logically consistent with the
+// current state of the chain. Possible errors are no nonce being set or
+// the transaction nonce being expired.
+//
+// NOTE: Because atomic transaction wrappers do not have a functional nonce,
+// this function should not be used for them.
+func (mp *DeSoMempool) tryAcceptSingleTransactionNonce(
+	tx *MsgDeSoTxn,
+	blockHeight uint64,
+) error {
+	if tx.TxnNonce == nil {
+		return TxErrorNoNonceAfterBalanceModelBlockHeight
+	}
+	if tx.TxnNonce.ExpirationBlockHeight < blockHeight {
+		return TxErrorNonceExpired
+	}
+	if mp.universalUtxoView.GetCurrentGlobalParamsEntry().MaxNonceExpirationBlockHeightOffset != 0 &&
+		tx.TxnNonce.ExpirationBlockHeight >
+			blockHeight+mp.universalUtxoView.GetCurrentGlobalParamsEntry().MaxNonceExpirationBlockHeightOffset {
+		return TxErrorNonceExpirationBlockHeightOffsetExceeded
+	}
+	return nil
+}
+
 // See TryAcceptTransaction. The write lock must be held when calling this function.
 //
 // TODO: Allow replacing a transaction with a higher fee.
@@ -1021,16 +1047,18 @@ func (mp *DeSoMempool) tryAcceptTransaction(
 		return nil, nil, TxErrorIndividualBlockReward
 	}
 
-	if blockHeight >= uint64(mp.bc.params.ForkHeights.BalanceModelBlockHeight) {
-		if tx.TxnNonce == nil {
-			return nil, nil, TxErrorNoNonceAfterBalanceModelBlockHeight
+	// Try accepting the nonce.
+	if blockHeight >= uint64(mp.bc.params.ForkHeights.BalanceModelBlockHeight) &&
+		tx.TxnMeta.GetTxnType() == TxnTypeAtomicTxnsWrapper {
+		for _, innerTxn := range tx.TxnMeta.(*AtomicTxnsWrapperMetadata).Txns {
+			if err := mp.tryAcceptSingleTransactionNonce(innerTxn, blockHeight); err != nil {
+				return nil, nil, err
+			}
 		}
-		if tx.TxnNonce.ExpirationBlockHeight < blockHeight {
-			return nil, nil, TxErrorNonceExpired
-		}
-		if mp.universalUtxoView.GetCurrentGlobalParamsEntry().MaxNonceExpirationBlockHeightOffset != 0 &&
-			tx.TxnNonce.ExpirationBlockHeight > blockHeight+mp.universalUtxoView.GetCurrentGlobalParamsEntry().MaxNonceExpirationBlockHeightOffset {
-			return nil, nil, TxErrorNonceExpirationBlockHeightOffsetExceeded
+	} else if blockHeight >= uint64(mp.bc.params.ForkHeights.BalanceModelBlockHeight) &&
+		tx.TxnMeta.GetTxnType() != TxnTypeAtomicTxnsWrapper {
+		if err := mp.tryAcceptSingleTransactionNonce(tx, blockHeight); err != nil {
+			return nil, nil, err
 		}
 	}
 
