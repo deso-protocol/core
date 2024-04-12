@@ -865,7 +865,7 @@ func (nm *NetworkManager) CreateValidatorConnection(ipStr string, publicKey *bls
 		return fmt.Errorf("NetworkManager.CreateValidatorConnection: RemoteNode already exists for public key: %v", publicKey)
 	}
 
-	remoteNode := nm.newRemoteNode(publicKey, false)
+	remoteNode := nm.newRemoteNode(publicKey, true, false)
 	if err := remoteNode.DialOutboundConnection(netAddr); err != nil {
 		return errors.Wrapf(err, "NetworkManager.CreateValidatorConnection: Problem calling DialPersistentOutboundConnection "+
 			"for addr: (%s:%v)", netAddr.Addr.String(), netAddr.Port)
@@ -885,7 +885,7 @@ func (nm *NetworkManager) CreateNonValidatorPersistentOutboundConnection(ipStr s
 		return 0, fmt.Errorf("NetworkManager.CreateNonValidatorPersistentOutboundConnection: netAddr is nil")
 	}
 
-	remoteNode := nm.newRemoteNode(nil, true)
+	remoteNode := nm.newRemoteNode(nil, true, true)
 	if err := remoteNode.DialPersistentOutboundConnection(netAddr); err != nil {
 		return 0, errors.Wrapf(err, "NetworkManager.CreateNonValidatorPersistentOutboundConnection: Problem calling DialPersistentOutboundConnection "+
 			"for addr: (%s:%v)", netAddr.Addr.String(), netAddr.Port)
@@ -908,7 +908,7 @@ func (nm *NetworkManager) createNonValidatorOutboundConnection(netAddr *wire.Net
 		return fmt.Errorf("NetworkManager.CreateNonValidatorOutboundConnection: netAddr is nil")
 	}
 
-	remoteNode := nm.newRemoteNode(nil, false)
+	remoteNode := nm.newRemoteNode(nil, true, false)
 	if err := remoteNode.DialOutboundConnection(netAddr); err != nil {
 		return errors.Wrapf(err, "NetworkManager.CreateNonValidatorOutboundConnection: Problem calling DialOutboundConnection "+
 			"for addr: (%s:%v)", netAddr.Addr.String(), netAddr.Port)
@@ -918,10 +918,9 @@ func (nm *NetworkManager) createNonValidatorOutboundConnection(netAddr *wire.Net
 	return nil
 }
 
-func (nm *NetworkManager) AttachInboundConnection(conn net.Conn,
-	na *wire.NetAddressV2) (*RemoteNode, error) {
+func (nm *NetworkManager) AttachInboundConnection(conn net.Conn, na *wire.NetAddressV2) (*RemoteNode, error) {
 
-	remoteNode := nm.newRemoteNode(nil, false)
+	remoteNode := nm.newRemoteNode(nil, false, false)
 	if err := remoteNode.AttachInboundConnection(conn, na); err != nil {
 		return remoteNode, errors.Wrapf(err, "NetworkManager.AttachInboundConnection: Problem calling AttachInboundConnection "+
 			"for addr: (%s)", conn.RemoteAddr().String())
@@ -932,8 +931,9 @@ func (nm *NetworkManager) AttachInboundConnection(conn net.Conn,
 	return remoteNode, nil
 }
 
-func (nm *NetworkManager) AttachOutboundConnection(conn net.Conn, na *wire.NetAddressV2,
-	remoteNodeId uint64, isPersistent bool) (*RemoteNode, error) {
+func (nm *NetworkManager) AttachOutboundConnection(
+	conn net.Conn, na *wire.NetAddressV2, remoteNodeId uint64, isPersistent bool,
+) (*RemoteNode, error) {
 
 	id := NewRemoteNodeId(remoteNodeId)
 	remoteNode := nm.GetRemoteNodeById(id)
@@ -963,12 +963,23 @@ func (nm *NetworkManager) DisconnectAll() {
 	}
 }
 
-func (nm *NetworkManager) newRemoteNode(validatorPublicKey *bls.PublicKey, isPersistent bool) *RemoteNode {
+func (nm *NetworkManager) newRemoteNode(validatorPublicKey *bls.PublicKey, isOutbound bool, isPersistent bool) *RemoteNode {
 	id := atomic.AddUint64(&nm.remoteNodeNextId, 1)
 	remoteNodeId := NewRemoteNodeId(id)
 	latestBlockHeight := uint64(nm.bc.BlockTip().Height)
-	return NewRemoteNode(remoteNodeId, validatorPublicKey, isPersistent, nm.srv, nm.cmgr, nm.keystore,
-		nm.params, nm.minTxFeeRateNanosPerKB, latestBlockHeight, nm.nodeServices)
+	return NewRemoteNode(
+		remoteNodeId,
+		validatorPublicKey,
+		isPersistent,
+		isOutbound,
+		nm.srv,
+		nm.cmgr,
+		nm.keystore,
+		nm.params,
+		nm.minTxFeeRateNanosPerKB,
+		latestBlockHeight,
+		nm.nodeServices,
+	)
 }
 
 func (nm *NetworkManager) ProcessCompletedHandshake(remoteNode *RemoteNode) {
