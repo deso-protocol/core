@@ -5403,6 +5403,11 @@ func InitDbWithDeSoGenesisBlock(params *DeSoParams, handle *badger.DB,
 			UtxoView: utxoView,
 			UtxoOps:  utxoOpsForBlock,
 		})
+		eventManager.blockCommitted(&BlockEvent{
+			Block:    genesisBlock,
+			UtxoView: utxoView,
+			UtxoOps:  utxoOpsForBlock,
+		})
 	}
 	// Flush all the data in the view.
 	err := utxoView.FlushToDb(0)

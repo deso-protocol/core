@@ -1726,7 +1726,7 @@ func (bc *Blockchain) commitBlockPoS(blockHash *BlockHash, verifySignatures bool
 	}
 
 	if bc.eventManager != nil {
-		bc.eventManager.blockConnected(&BlockEvent{
+		bc.eventManager.blockCommitted(&BlockEvent{
 			Block:    block,
 			UtxoView: utxoView,
 			UtxoOps:  utxoOps,

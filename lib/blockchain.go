@@ -2629,6 +2629,11 @@ func (bc *Blockchain) processBlockPoW(desoBlock *MsgDeSoBlock, verifySignatures 
 				UtxoView: bc.blockView,
 				UtxoOps:  utxoOpsForBlock,
 			})
+			bc.eventManager.blockCommitted(&BlockEvent{
+				Block:    desoBlock,
+				UtxoView: bc.blockView,
+				UtxoOps:  utxoOpsForBlock,
+			})
 		}
 
 		bc.blockView = nil
@@ -2903,6 +2908,7 @@ func (bc *Blockchain) processBlockPoW(desoBlock *MsgDeSoBlock, verifySignatures 
 				// FIXME: We need to add the UtxoOps here to handle reorgs properly in Rosetta
 				// For now it's fine because reorgs are virtually impossible.
 				bc.eventManager.blockConnected(&BlockEvent{Block: blockToAttach})
+				bc.eventManager.blockCommitted(&BlockEvent{Block: blockToAttach})
 			}
 		}
 	}
