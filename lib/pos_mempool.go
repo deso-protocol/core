@@ -300,19 +300,9 @@ func (mp *PosMempool) Init(
 	mp.globalParams = globalParams
 	var err error
 	if readOnlyLatestBlockView != nil {
-		mp.readOnlyLatestBlockView, err = readOnlyLatestBlockView.CopyUtxoView()
-		if err != nil {
-			return errors.Wrapf(err, "PosMempool.Init: Problem copying utxo view to readOnlyLatestBlockView")
-		}
-		mp.augmentedReadOnlyLatestBlockView, err = readOnlyLatestBlockView.CopyUtxoView()
-		if err != nil {
-			return errors.Wrapf(err, "PosMempool.Init: Problem copying utxo view to augmentedReadOnlyLatestBlockView")
-		}
-		mp.validateTransactionsReadOnlyLatestBlockView, err = readOnlyLatestBlockView.CopyUtxoView()
-		if err != nil {
-			return errors.Wrapf(err,
-				"PosMempool.Init: Problem copying utxo view to validateTransactionsReadOnlyLatestBlockView")
-		}
+		mp.readOnlyLatestBlockView = readOnlyLatestBlockView.CopyUtxoView()
+		mp.augmentedReadOnlyLatestBlockView = readOnlyLatestBlockView.CopyUtxoView()
+		mp.validateTransactionsReadOnlyLatestBlockView = readOnlyLatestBlockView.CopyUtxoView()
 	}
 	mp.latestBlockHeight = latestBlockHeight
 	mp.dir = dir
@@ -953,10 +943,7 @@ func (mp *PosMempool) validateTransactions() error {
 		txHashes = append(txHashes, txn.Hash)
 	}
 	// Copy the validation view to avoid modifying the readOnlyLatestBlockView.
-	copyValidationView, err := validationView.CopyUtxoView()
-	if err != nil {
-		return errors.Wrapf(err, "PosMempool.validateTransactions: Problem copying utxo view")
-	}
+	copyValidationView := validationView.CopyUtxoView()
 	// Connect the transactions to the validation view. We use the latest block height + 1 as the block height to connect
 	// the transactions. This is because the mempool contains transactions that we use for producing the next block.
 	_, _, _, _, errorsFound, err := copyValidationView.ConnectTransactionsFailSafeWithLimit(
@@ -1107,15 +1094,8 @@ func (mp *PosMempool) UpdateLatestBlock(blockView *UtxoView, blockHeight uint64)
 	}
 
 	if blockView != nil {
-		var err error
-		mp.readOnlyLatestBlockView, err = blockView.CopyUtxoView()
-		if err != nil {
-			glog.Errorf("PosMempool.UpdateLatestBlock: Problem copying utxo view: %v", err)
-		}
-		mp.validateTransactionsReadOnlyLatestBlockView, err = blockView.CopyUtxoView()
-		if err != nil {
-			glog.Errorf("PosMempool.UpdateLatestBlock: Problem copying utxo view: %v", err)
-		}
+		mp.readOnlyLatestBlockView = blockView.CopyUtxoView()
+		mp.validateTransactionsReadOnlyLatestBlockView = blockView.CopyUtxoView()
 	}
 	mp.latestBlockHeight = blockHeight
 }
@@ -1148,10 +1128,7 @@ func (mp *PosMempool) GetAugmentedUniversalView() (*UtxoView, error) {
 	mp.augmentedReadOnlyLatestBlockViewMutex.RLock()
 	readOnlyViewPointer := mp.augmentedReadOnlyLatestBlockView
 	mp.augmentedReadOnlyLatestBlockViewMutex.RUnlock()
-	newView, err := readOnlyViewPointer.CopyUtxoView()
-	if err != nil {
-		return nil, errors.Wrapf(err, "PosMempool.GetAugmentedUniversalView: Problem copying utxo view")
-	}
+	newView := readOnlyViewPointer.CopyUtxoView()
 	return newView, nil
 }
 func (mp *PosMempool) GetAugmentedUtxoViewForPublicKey(pk []byte, optionalTx *MsgDeSoTxn) (*UtxoView, error) {

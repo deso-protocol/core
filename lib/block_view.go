@@ -324,7 +324,7 @@ func (bav *UtxoView) _ResetViewMappingsAfterFlush() {
 	bav.SnapshotStakesToReward = make(map[SnapshotStakeMapKey]*StakeEntry)
 }
 
-func (bav *UtxoView) CopyUtxoView() (*UtxoView, error) {
+func (bav *UtxoView) CopyUtxoView() *UtxoView {
 	newView := NewUtxoView(bav.Handle, bav.Params, bav.Postgres, bav.Snapshot, bav.EventManager)
 
 	// Copy the UtxoEntry data
@@ -666,7 +666,7 @@ func (bav *UtxoView) CopyUtxoView() (*UtxoView, error) {
 
 	newView.TipHash = bav.TipHash.NewBlockHash()
 
-	return newView, nil
+	return newView
 }
 
 func NewUtxoViewWithSnapshotCache(
@@ -4207,11 +4207,7 @@ func (bav *UtxoView) _connectTransactionsFailSafe(
 	// Connect the transactions in the order they are given.
 	for ii, txn := range txns {
 		// Create a copy of the view to connect the transactions to in the event we have a failing txn.
-		copiedView, err := bav.CopyUtxoView()
-		if err != nil {
-			return nil, nil, nil, nil, nil,
-				errors.Wrapf(err, "_connectTransactionsFailSafe: Problem copying UtxoView")
-		}
+		copiedView := bav.CopyUtxoView()
 
 		// Connect the transaction to the copied view.
 		utxoOpsForTxn, totalInput, totalOutput, fee, err := copiedView.ConnectTransaction(

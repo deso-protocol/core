@@ -3398,8 +3398,7 @@ func TestUpdateProfileChangeBack(t *testing.T) {
 		require.NoError(err)
 
 		// This ensure that the read-only version of the utxoView accurately reflects the current set of profile names taken.
-		utxoViewCopy, err := mempool.universalUtxoView.CopyUtxoView()
-		require.NoError(err)
+		utxoViewCopy := mempool.universalUtxoView.CopyUtxoView()
 		_, _, _, _, err = utxoViewCopy.ConnectTransaction(txn, txn.Hash(), chain.blockTip().Height+1, 0, false, false)
 		require.NoError(err)
 

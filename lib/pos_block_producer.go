@@ -301,10 +301,7 @@ func (pbp *PosBlockProducer) getBlockTransactions(
 	blocksTxns := []*MsgDeSoTxn{}
 	maxUtilityFee := uint64(0)
 	currentBlockSize := uint64(0)
-	blockUtxoView, err := latestBlockView.CopyUtxoView()
-	if err != nil {
-		return nil, 0, errors.Wrapf(err, "Error copying UtxoView: ")
-	}
+	blockUtxoView := latestBlockView.CopyUtxoView()
 	for _, txn := range feeTimeTxns {
 		// If we've exceeded the soft max block size, we exit. We want to allow at least one txn that moves the
 		// cumulative block size past the soft max, but don't want to add more txns beyond that.
@@ -322,10 +319,7 @@ func (pbp *PosBlockProducer) getBlockTransactions(
 			continue
 		}
 
-		blockUtxoViewCopy, err := blockUtxoView.CopyUtxoView()
-		if err != nil {
-			return nil, 0, errors.Wrapf(err, "Error copying UtxoView: ")
-		}
+		blockUtxoViewCopy := blockUtxoView.CopyUtxoView()
 		_, _, _, fees, err := blockUtxoViewCopy._connectTransaction(
 			txn.GetTxn(), txn.Hash(), uint32(newBlockHeight), newBlockTimestampNanoSecs,
 			true, false)

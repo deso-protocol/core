@@ -230,10 +230,7 @@ func (desoBlockProducer *DeSoBlockProducer) _getBlockTemplate(publicKey []byte) 
 			// integrity of the view.
 			// TODO: This is inefficient but we're doing it short-term to fix a bug. Also PoS is
 			// coming soon anyway.
-			utxoViewCopy, err := utxoView.CopyUtxoView()
-			if err != nil {
-				return nil, nil, nil, errors.Wrapf(err, "Error copying UtxoView: ")
-			}
+			utxoViewCopy := utxoView.CopyUtxoView()
 			_, _, _, _, err = utxoViewCopy._connectTransaction(mempoolTx.Tx, mempoolTx.Hash,
 				uint32(blockRet.Header.Height), int64(blockRet.Header.TstampNanoSecs), true, false)
 			if err != nil {
