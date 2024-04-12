@@ -2544,6 +2544,8 @@ func (srv *Server) _processTransactions(pp *Peer, transactions []*MsgDeSoTxn) []
 		// verifying signatures.
 		newlyAcceptedTxns, err := srv.ProcessSingleTxnWithChainLock(pp, txn)
 		if err != nil {
+			glog.V(4).Info(fmt.Sprintf("Server._handleTransactionBundle: Rejected "+
+				"transaction %v from peer %v from mempool: %v", txn, pp, err))
 			// A peer should know better than to send us a transaction that's below
 			// our min feerate, which they see when we send them a version message.
 			if err == TxErrorInsufficientFeeMinFee {
