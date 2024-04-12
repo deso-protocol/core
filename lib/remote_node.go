@@ -80,6 +80,7 @@ type RemoteNode struct {
 	// attemptId of the OutboundConnectionAttempt, and the subsequent id of the outbound peer. For inbound connections,
 	// the id will be the same as the inbound peer's id.
 	id RemoteNodeId
+
 	// validatorPublicKey is the BLS public key of the validator node. This is only set for validator nodes. For
 	// non-validator nodes, this will be nil. For outbound validators nodes, the validatorPublicKey will be set when
 	// the RemoteNode is instantiated. And for inbound validator nodes, the validatorPublicKey will be set when the
@@ -91,6 +92,10 @@ type RemoteNode struct {
 	// non-persistent RemoteNode is terminated after the first failed dial, while a persistent RemoteNode will keep
 	// trying to dial the peer indefinitely until the connection is established, or the node stops.
 	isPersistent bool
+	// isOutbound identifies whether the RemoteNode is an outbound or inbound connection. This property is stored
+	// here in addition to being stored in the peer object because the RemoteNode object can be initialized before
+	// the peer object is initialized.
+	isOutbound bool
 
 	connectionStatus RemoteNodeStatus
 
@@ -151,13 +156,24 @@ func NewHandshakeMetadata() *HandshakeMetadata {
 	return &HandshakeMetadata{}
 }
 
-func NewRemoteNode(id RemoteNodeId, validatorPublicKey *bls.PublicKey, isPersistent bool, srv *Server,
-	cmgr *ConnectionManager, keystore *BLSKeystore, params *DeSoParams, minTxFeeRateNanosPerKB uint64,
-	latestBlockHeight uint64, nodeServices ServiceFlag) *RemoteNode {
+func NewRemoteNode(
+	id RemoteNodeId,
+	validatorPublicKey *bls.PublicKey,
+	isPersistent bool,
+	isOutbound bool,
+	srv *Server,
+	cmgr *ConnectionManager,
+	keystore *BLSKeystore,
+	params *DeSoParams,
+	minTxFeeRateNanosPerKB uint64,
+	latestBlockHeight uint64,
+	nodeServices ServiceFlag,
+) *RemoteNode {
 	return &RemoteNode{
 		id:                     id,
 		validatorPublicKey:     validatorPublicKey,
 		isPersistent:           isPersistent,
+		isOutbound:             isOutbound,
 		connectionStatus:       RemoteNodeStatus_NotConnected,
 		handshakeMetadata:      NewHandshakeMetadata(),
 		srv:                    srv,
@@ -236,11 +252,11 @@ func (rn *RemoteNode) GetNetAddress() *wire.NetAddressV2 {
 }
 
 func (rn *RemoteNode) IsInbound() bool {
-	return rn.peer != nil && !rn.peer.IsOutbound()
+	return !rn.isOutbound
 }
 
 func (rn *RemoteNode) IsOutbound() bool {
-	return rn.peer != nil && rn.peer.IsOutbound()
+	return rn.isOutbound
 }
 
 func (rn *RemoteNode) IsPersistent() bool {
@@ -283,7 +299,7 @@ func (rn *RemoteNode) IsValidator() bool {
 }
 
 func (rn *RemoteNode) IsExpectedValidator() bool {
-	return rn.GetValidatorPublicKey() != nil
+	return rn.validatorPublicKey != nil
 }
 
 func (rn *RemoteNode) hasValidatorServiceFlag() bool {
@@ -323,6 +339,11 @@ func (rn *RemoteNode) AttachInboundConnection(conn net.Conn, na *wire.NetAddress
 	rn.mtx.Lock()
 	defer rn.mtx.Unlock()
 
+	// It should not be possible to attach an inbound connection to an outbound RemoteNode.
+	if rn.isOutbound {
+		return fmt.Errorf("RemoteNode.AttachInboundConnection: RemoteNode is not an inbound connection")
+	}
+
 	// At this point, the RemoteNode must be in the NotConnected state. If the RemoteNode already progressed to
 	// another state, we return an error.
 	if !rn.IsNotConnected() {
@@ -338,16 +359,21 @@ func (rn *RemoteNode) AttachInboundConnection(conn net.Conn, na *wire.NetAddress
 }
 
 // AttachOutboundConnection creates an outbound peer once a successful outbound connection has been established.
-func (rn *RemoteNode) AttachOutboundConnection(conn net.Conn, na *wire.NetAddressV2, isPersistent bool) error {
+func (rn *RemoteNode) AttachOutboundConnection(conn net.Conn, na *wire.NetAddressV2) error {
 	rn.mtx.Lock()
 	defer rn.mtx.Unlock()
+
+	// It should not be possible to attach an outbound connection to an inbound RemoteNode.
+	if !rn.isOutbound {
+		return fmt.Errorf("RemoteNode.AttachOutboundConnection: RemoteNode is not an outbound connection")
+	}
 
 	if rn.connectionStatus != RemoteNodeStatus_Attempted {
 		return fmt.Errorf("RemoteNode.AttachOutboundConnection: RemoteNode is not in the Attempted state")
 	}
 
 	id := rn.GetId().ToUint64()
-	rn.peer = rn.cmgr.ConnectPeer(id, conn, na, true, isPersistent)
+	rn.peer = rn.cmgr.ConnectPeer(id, conn, na, true, rn.isPersistent)
 	versionTimeExpected := time.Now().Add(rn.params.VersionNegotiationTimeout)
 	rn.versionTimeExpected = &versionTimeExpected
 	rn.setStatusConnected()
