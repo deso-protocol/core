@@ -28,7 +28,7 @@ COPY main.go     .
 RUN GOOS=linux go build -mod=mod -a -installsuffix cgo -o bin/core main.go
 
 # create tiny image
-FROM alpine:edge
+FROM alpine:latest
 
 RUN apk add --update vips-dev
 
