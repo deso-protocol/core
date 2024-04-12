@@ -1045,6 +1045,12 @@ func (mp *PosMempool) UpdateGlobalParams(globalParams *GlobalParamsEntry) {
 	}
 
 	mp.globalParams = globalParams
+
+	// TODO: Trim the mempool size
+
+	// TODO: Update the fee bucketing parameters
+
+	// TODO: Update the fee estimator
 }
 
 // Implementation of the Mempool interface
