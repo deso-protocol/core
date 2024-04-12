@@ -45,6 +45,7 @@ func (fc *fastHotStuffEventLoop) Init(
 	genesisQC QuorumCertificate,
 	tip BlockWithValidatorList,
 	safeBlocks []BlockWithValidatorList,
+	currentView uint64,
 ) error {
 	// Grab the event loop's lock
 	fc.lock.Lock()
@@ -71,8 +72,11 @@ func (fc *fastHotStuffEventLoop) Init(
 		return errors.Wrap(err, "FastHotStuffEventLoop.Init: ")
 	}
 
-	// We track the current view here so we know which view to time out on later on.
-	fc.currentView = tip.Block.GetView() + 1
+	// The currentView must be higher than the tip block's current view
+	if currentView < tip.Block.GetView()+1 {
+		return errors.New("FastHotStuffEventLoop.Init: currentView is lower than the tip block's view")
+	}
+	fc.currentView = currentView
 
 	// Reset QC construction status for the current view
 	fc.hasCrankTimerRunForCurrentView = false

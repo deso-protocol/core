@@ -109,9 +109,24 @@ func (fc *FastHotStuffConsensus) Start() error {
 		time.Duration(currentSnapshotGlobalParams.BlockProductionIntervalMillisecondsPoS)
 	timeoutBaseDuration := time.Millisecond * time.Duration(currentSnapshotGlobalParams.TimeoutIntervalMillisecondsPoS)
 
+	// Refresh the checkpoint block info, so we can get tha latest view.
+	fc.blockchain.updateCheckpointBlockInfo()
+	checkpointBlockInfo := fc.blockchain.GetCheckpointBlockInfo()
+	currentView := tipBlock.Header.GetView() + 1
+	if checkpointBlockInfo != nil && checkpointBlockInfo.LatestView > currentView {
+		currentView = checkpointBlockInfo.LatestView
+	}
+
 	// Initialize the event loop. This should never fail. If it does, we return the error to the caller.
 	// The caller handle the error and decide when to retry.
-	err = fc.fastHotStuffEventLoop.Init(blockProductionInterval, timeoutBaseDuration, genesisQC, tipBlockWithValidators[0], safeBlocksWithValidators)
+	err = fc.fastHotStuffEventLoop.Init(
+		blockProductionInterval,
+		timeoutBaseDuration,
+		genesisQC,
+		tipBlockWithValidators[0],
+		safeBlocksWithValidators,
+		currentView,
+	)
 	if err != nil {
 		return errors.Errorf("FastHotStuffConsensus.Start: Error initializing FastHotStuffEventLoop: %v", err)
 	}

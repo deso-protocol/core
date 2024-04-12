@@ -3309,3 +3309,14 @@ func (progress *SyncProgress) PrintLoop() {
 func (srv *Server) GetNetworkManagerConnections() []*RemoteNode {
 	return srv.networkManager.GetAllRemoteNodes().GetAll()
 }
+
+func (srv *Server) GetLatestView() uint64 {
+	if srv.fastHotStuffConsensus == nil || !srv.fastHotStuffConsensus.IsRunning() {
+		return 0
+	}
+	if srv.fastHotStuffConsensus.fastHotStuffEventLoop == nil ||
+		!srv.fastHotStuffConsensus.fastHotStuffEventLoop.IsRunning() {
+		return 0
+	}
+	return srv.fastHotStuffConsensus.fastHotStuffEventLoop.GetCurrentView()
+}
