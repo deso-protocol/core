@@ -40,9 +40,8 @@ func TestAtomicTxnsWrapperTxIndexMetadataEncoder(t *testing.T) {
 	}
 
 	// Compute the txindex metadata for the transaction and ensure its computed correctly.
-	utxoView, err := NewUtxoView(
+	utxoView := NewUtxoView(
 		testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot, nil)
-	require.NoError(t, err)
 	blockHeight := testMeta.chain.BlockTip().Height + 1
 	atomicTxnMetadata := ComputeTransactionMetadata(
 		atomicTxnsWrapper,
@@ -77,9 +76,8 @@ func TestAtomicTxnsWrapperAtomicity(t *testing.T) {
 	atomicTxns, signerPrivKeysBase58 := _generateUnsignedDependentAtomicTransactions(testMeta, int(100))
 
 	// Construct a UtxoView and block height for getting balances.
-	utxoView, err := NewUtxoView(
+	utxoView := NewUtxoView(
 		testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot, nil)
-	require.NoError(t, err)
 	blockHeight := testMeta.chain.BlockTip().Height + 1
 
 	// Fetch all starting balances for affected public keys.
@@ -124,9 +122,8 @@ func TestAtomicTxnsWrapperAtomicity(t *testing.T) {
 
 	// Because the transaction fails, we must construct a new UtxoView as there's
 	// invalid data in the previous view.
-	utxoView, err = NewUtxoView(
+	utxoView = NewUtxoView(
 		testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot, nil)
-	require.NoError(t, err)
 
 	// Check that the balances are not updated.
 	// This ensures that if a single transaction within the atomic transaction
@@ -419,9 +416,8 @@ func TestDependentAtomicTransactionGeneration(t *testing.T) {
 	atomicTxns, _ := _generateSignedDependentAtomicTransactions(testMeta, 100)
 
 	// Construct a new view to connect the transactions to.
-	utxoView, err := NewUtxoView(
+	utxoView := NewUtxoView(
 		testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot, nil)
-	require.NoError(t, err)
 	blockHeight := testMeta.chain.BlockTip().Height + 1
 
 	// Get the initial balance for m0.
@@ -591,9 +587,8 @@ func _generateUnsignedMaxBasicTransfer(
 	}
 
 	// Construct a UtxoView for fetching state.
-	utxoView, err := NewUtxoView(
+	utxoView := NewUtxoView(
 		testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot, nil)
-	require.NoError(testMeta.t, err)
 
 	// Construct a transfer template.
 	// NOTE: Because of variable encoding of txn.TxOutputs[0].AmountNanos, we use MaxUint64 to ensure
@@ -708,8 +703,7 @@ func _atomicTransactionsWrapperWithConnectTimestamp(
 	_ = require
 
 	// Construct a new view to connect the transactions to.
-	utxoView, err := NewUtxoView(db, params, chain.postgres, chain.snapshot, nil)
-	require.NoError(err)
+	utxoView := NewUtxoView(db, params, chain.postgres, chain.snapshot, nil)
 
 	// Connect the transaction.
 	txHash := atomicTransactionsWrapper.Hash()

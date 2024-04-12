@@ -979,11 +979,7 @@ func (mp *DeSoMempool) _quickCheckBitcoinExchangeTxn(
 	// Note that it is safe to use this because we expect that the blockchain
 	// lock is held for the duration of this function call so there shouldn't
 	// be any shifting of the db happening beneath our fee.
-	utxoView, err := NewUtxoView(mp.bc.db, mp.bc.params, mp.bc.postgres, mp.bc.snapshot, mp.bc.eventManager)
-	if err != nil {
-		return 0, errors.Wrapf(err,
-			"_helpConnectDepsAndFinalTxn: Problem initializing UtxoView")
-	}
+	utxoView := NewUtxoView(mp.bc.db, mp.bc.params, mp.bc.postgres, mp.bc.snapshot, mp.bc.eventManager)
 
 	// Connnect all of this transaction's dependencies to the UtxoView in order. Note
 	// that we can do this because _findMempoolDependencies returns the transactions in
@@ -2740,9 +2736,9 @@ func NewDeSoMempool(_bc *Blockchain, _rateLimitFeerateNanosPerKB uint64,
 	_minFeerateNanosPerKB uint64, _blockCypherAPIKey string,
 	_runReadOnlyViewUpdater bool, _dataDir string, _mempoolDumpDir string, useDefaultBadgerOptions bool) *DeSoMempool {
 
-	utxoView, _ := NewUtxoView(_bc.db, _bc.params, _bc.postgres, _bc.snapshot, _bc.eventManager)
-	backupUtxoView, _ := NewUtxoView(_bc.db, _bc.params, _bc.postgres, _bc.snapshot, _bc.eventManager)
-	readOnlyUtxoView, _ := NewUtxoView(_bc.db, _bc.params, _bc.postgres, _bc.snapshot, _bc.eventManager)
+	utxoView := NewUtxoView(_bc.db, _bc.params, _bc.postgres, _bc.snapshot, _bc.eventManager)
+	backupUtxoView := NewUtxoView(_bc.db, _bc.params, _bc.postgres, _bc.snapshot, _bc.eventManager)
+	readOnlyUtxoView := NewUtxoView(_bc.db, _bc.params, _bc.postgres, _bc.snapshot, _bc.eventManager)
 	newPool := &DeSoMempool{
 		quit:                            make(chan struct{}),
 		bc:                              _bc,

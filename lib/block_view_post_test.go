@@ -33,8 +33,7 @@ func _submitPost(t *testing.T, chain *Blockchain, db *badger.DB,
 	updaterPkBytes, _, err := Base58CheckDecode(updaterPkBase58Check)
 	require.NoError(err)
 
-	utxoView, err := NewUtxoView(db, params, chain.postgres, chain.snapshot, nil)
-	require.NoError(err)
+	utxoView := NewUtxoView(db, params, chain.postgres, chain.snapshot, nil)
 
 	body, err := json.Marshal(bodyObj)
 	require.NoError(err)
@@ -140,8 +139,7 @@ func _giveDeSoDiamonds(t *testing.T, chain *Blockchain, db *badger.DB, params *D
 	senderPkBytes, _, err := Base58CheckDecode(senderPkBase58Check)
 	require.NoError(t, err)
 
-	utxoView, err := NewUtxoView(db, params, nil, chain.snapshot, nil)
-	require.NoError(t, err)
+	utxoView := NewUtxoView(db, params, nil, chain.snapshot, nil)
 
 	txn, totalInputMake, spendAmount, changeAmountMake, feesMake, err := chain.CreateBasicTransferTxnWithDiamonds(
 		senderPkBytes,
@@ -238,8 +236,7 @@ func _doSubmitPostTxn(t *testing.T, chain *Blockchain, db *badger.DB,
 	updaterPkBytes, _, err := Base58CheckDecode(UpdaterPublicKeyBase58Check)
 	require.NoError(err)
 
-	utxoView, err := NewUtxoView(db, params, chain.postgres, chain.snapshot, nil)
-	require.NoError(err)
+	utxoView := NewUtxoView(db, params, chain.postgres, chain.snapshot, nil)
 
 	txn, totalInputMake, _, _, err := chain.CreateSubmitPostTxn(
 		updaterPkBytes,
@@ -359,8 +356,7 @@ func TestSubmitPost(t *testing.T) {
 	registerOrTransfer("", senderPkString, m3Pub, senderPrivString)
 
 	checkPostsDeleted := func() {
-		utxoView, err := NewUtxoView(db, params, nil, chain.snapshot, nil)
-		require.NoError(err)
+		utxoView := NewUtxoView(db, params, nil, chain.snapshot, nil)
 		corePosts, commentsByPostHash, err := utxoView.GetAllPosts()
 		require.NoError(err)
 		require.Equal(4, len(corePosts))
@@ -1252,8 +1248,7 @@ func TestSubmitPost(t *testing.T) {
 	}
 
 	checkPostsExist := func() {
-		utxoView, err := NewUtxoView(db, params, nil, chain.snapshot, nil)
-		require.NoError(err)
+		utxoView := NewUtxoView(db, params, nil, chain.snapshot, nil)
 		corePosts, commentsByPostHash, err := utxoView.GetAllPosts()
 		require.NoError(err)
 		// 4 posts from seed txns
@@ -1498,8 +1493,7 @@ func TestSubmitPost(t *testing.T) {
 		currentTxn := txns[backwardIter]
 		fmt.Printf("Disconnecting transaction with type %v index %d (going backwards)\n", currentTxn.TxnMeta.GetTxnType(), backwardIter)
 
-		utxoView, err := NewUtxoView(db, params, nil, chain.snapshot, nil)
-		require.NoError(err)
+		utxoView := NewUtxoView(db, params, nil, chain.snapshot, nil)
 
 		currentHash := currentTxn.Hash()
 		err = utxoView.DisconnectTransaction(currentTxn, currentHash, currentOps, savedHeight)
@@ -1528,8 +1522,7 @@ func TestSubmitPost(t *testing.T) {
 	}
 
 	// Apply all the transactions to a view and flush the view to the db.
-	utxoView, err := NewUtxoView(db, params, nil, chain.snapshot, nil)
-	require.NoError(err)
+	utxoView := NewUtxoView(db, params, nil, chain.snapshot, nil)
 	for ii, txn := range txns {
 		fmt.Printf("Adding txn %v of type %v to UtxoView\n", ii, txn.TxnMeta.GetTxnType())
 
@@ -1577,8 +1570,7 @@ func TestSubmitPost(t *testing.T) {
 
 	// Disonnect the transactions from a single view in the same way as above
 	// i.e. without flushing each time.
-	utxoView2, err := NewUtxoView(db, params, nil, chain.snapshot, nil)
-	require.NoError(err)
+	utxoView2 := NewUtxoView(db, params, nil, chain.snapshot, nil)
 	for ii := 0; ii < len(txnOps); ii++ {
 		backwardIter := len(txnOps) - 1 - ii
 		fmt.Printf("Disconnecting transaction with index %d (going backwards)\n", backwardIter)
@@ -1632,8 +1624,7 @@ func TestSubmitPost(t *testing.T) {
 
 	// Roll back the block and make sure we don't hit any errors.
 	{
-		utxoView, err := NewUtxoView(db, params, nil, chain.snapshot, nil)
-		require.NoError(err)
+		utxoView := NewUtxoView(db, params, nil, chain.snapshot, nil)
 
 		// Fetch the utxo operations for the block we're detaching. We need these
 		// in order to be able to detach the block.
@@ -1935,8 +1926,7 @@ func TestDeSoDiamondErrorCases(t *testing.T) {
 		receiverPkBytes, _, err := Base58CheckDecode(receiverPkBase58Check)
 		require.NoError(err)
 
-		utxoView, err := NewUtxoView(db, params, nil, chain.snapshot, nil)
-		require.NoError(err)
+		utxoView := NewUtxoView(db, params, nil, chain.snapshot, nil)
 
 		// Build the basic transfer txn.
 		txn := &MsgDeSoTxn{
@@ -2148,8 +2138,7 @@ func TestFreezingPosts(t *testing.T) {
 		// The UTXO view in these tests differs from the UTXO view used to connect
 		// transactions. To avoid retrieving stale data in the UTXO view used in
 		// these tests, we re-create a new UTXO view each time we need one.
-		newUtxoView, err := NewUtxoView(db, params, chain.postgres, chain.snapshot, nil)
-		require.NoError(t, err)
+		newUtxoView := NewUtxoView(db, params, chain.postgres, chain.snapshot, nil)
 		return newUtxoView
 	}
 

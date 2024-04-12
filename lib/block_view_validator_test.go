@@ -489,8 +489,7 @@ func TestValidatorRegistrationWithDerivedKey(t *testing.T) {
 	senderPKID := DBGetPKIDEntryForPublicKey(db, chain.snapshot, senderPkBytes).PKID
 
 	newUtxoView := func() *UtxoView {
-		utxoView, err := NewUtxoView(db, params, chain.postgres, chain.snapshot, chain.eventManager)
-		require.NoError(t, err)
+		utxoView := NewUtxoView(db, params, chain.postgres, chain.snapshot, chain.eventManager)
 		return utxoView
 	}
 
@@ -626,8 +625,7 @@ func TestValidatorRegistrationWithDerivedKey(t *testing.T) {
 		require.NoError(t, err)
 
 		// Validate the ValidatorEntry exists.
-		utxoView, err := NewUtxoView(db, params, chain.postgres, chain.snapshot, chain.eventManager)
-		require.NoError(t, err)
+		utxoView := NewUtxoView(db, params, chain.postgres, chain.snapshot, chain.eventManager)
 		validatorEntry, err := utxoView.GetValidatorByPKID(senderPKID)
 		require.NoError(t, err)
 		require.NotNil(t, validatorEntry)
@@ -664,8 +662,7 @@ func TestValidatorRegistrationWithDerivedKey(t *testing.T) {
 		require.NoError(t, err)
 
 		// Validate the ValidatorEntry no longer exists.
-		utxoView, err := NewUtxoView(db, params, chain.postgres, chain.snapshot, chain.eventManager)
-		require.NoError(t, err)
+		utxoView := NewUtxoView(db, params, chain.postgres, chain.snapshot, chain.eventManager)
 		validatorEntry, err := utxoView.GetValidatorByPKID(senderPKID)
 		require.NoError(t, err)
 		require.Nil(t, validatorEntry)
@@ -959,8 +956,7 @@ func TestGetTopActiveValidatorsByStakeMergingDbAndUtxoView(t *testing.T) {
 
 	// Initialize test chain and UtxoView.
 	chain, params, db := NewLowDifficultyBlockchain(t)
-	utxoView, err := NewUtxoView(db, params, chain.postgres, chain.snapshot, chain.eventManager)
-	require.NoError(t, err)
+	utxoView := NewUtxoView(db, params, chain.postgres, chain.snapshot, chain.eventManager)
 	blockHeight := uint64(chain.blockTip().Height + 1)
 
 	// m0 will be stored in the db with Stake=100.
@@ -988,6 +984,7 @@ func TestGetTopActiveValidatorsByStakeMergingDbAndUtxoView(t *testing.T) {
 	require.NoError(t, utxoView.FlushToDb(blockHeight))
 
 	// Verify m0 is stored in the db.
+	var err error
 	validatorEntry, err = DBGetValidatorByPKID(db, chain.snapshot, m0PKID)
 	require.NoError(t, err)
 	require.NotNil(t, validatorEntry)
@@ -1559,8 +1556,7 @@ func _testUnjailValidator(t *testing.T, flushToDB bool) {
 	m1PKID := DBGetPKIDEntryForPublicKey(db, chain.snapshot, m1PkBytes).PKID
 
 	// Seed a CurrentEpochEntry.
-	epochUtxoView, err := NewUtxoView(db, params, chain.postgres, chain.snapshot, chain.eventManager)
-	require.NoError(t, err)
+	epochUtxoView := NewUtxoView(db, params, chain.postgres, chain.snapshot, chain.eventManager)
 	epochUtxoView._setCurrentEpochEntry(&EpochEntry{EpochNumber: 1, FinalBlockHeight: blockHeight + 10})
 	require.NoError(t, epochUtxoView.FlushToDb(blockHeight))
 	currentEpochNumber, err := utxoView().GetCurrentEpochNumber()
@@ -1606,8 +1602,7 @@ func _testUnjailValidator(t *testing.T, flushToDB bool) {
 		// trying to unjail himself, but he was never jailed.
 
 		// Jail m0.
-		tmpUtxoView, err := NewUtxoView(db, params, chain.postgres, chain.snapshot, chain.eventManager)
-		require.NoError(t, err)
+		tmpUtxoView := NewUtxoView(db, params, chain.postgres, chain.snapshot, chain.eventManager)
 		require.NoError(t, tmpUtxoView.JailValidator(validatorEntry))
 		require.NoError(t, tmpUtxoView.FlushToDb(blockHeight))
 
@@ -1671,8 +1666,7 @@ func _testUnjailValidator(t *testing.T, flushToDB bool) {
 		mempool.readOnlyUtxoView.CurrentEpochEntry = nil
 
 		// Store a new CurrentEpochEntry in the db.
-		epochUtxoView, err = NewUtxoView(db, params, chain.postgres, chain.snapshot, chain.eventManager)
-		require.NoError(t, err)
+		epochUtxoView = NewUtxoView(db, params, chain.postgres, chain.snapshot, chain.eventManager)
 		epochUtxoView._setCurrentEpochEntry(
 			&EpochEntry{EpochNumber: currentEpochNumber + 3, FinalBlockHeight: blockHeight + 10},
 		)
@@ -1767,8 +1761,7 @@ func TestUnjailValidatorWithDerivedKey(t *testing.T) {
 	senderPKID := DBGetPKIDEntryForPublicKey(db, chain.snapshot, senderPkBytes).PKID
 
 	newUtxoView := func() *UtxoView {
-		utxoView, err := NewUtxoView(db, params, chain.postgres, chain.snapshot, chain.eventManager)
-		require.NoError(t, err)
+		utxoView := NewUtxoView(db, params, chain.postgres, chain.snapshot, chain.eventManager)
 		return utxoView
 	}
 
@@ -1892,8 +1885,7 @@ func TestUnjailValidatorWithDerivedKey(t *testing.T) {
 		// trying to unjail himself, but he was never jailed.
 
 		// Jail the sender.
-		tmpUtxoView, err := NewUtxoView(db, params, chain.postgres, chain.snapshot, chain.eventManager)
-		require.NoError(t, err)
+		tmpUtxoView := NewUtxoView(db, params, chain.postgres, chain.snapshot, chain.eventManager)
 		require.NoError(t, tmpUtxoView.JailValidator(validatorEntry))
 		require.NoError(t, tmpUtxoView.FlushToDb(blockHeight))
 
@@ -1926,8 +1918,7 @@ func TestUnjailValidatorWithDerivedKey(t *testing.T) {
 		mempool.readOnlyUtxoView.CurrentEpochEntry = nil
 
 		// Store a new CurrentEpochEntry in the db.
-		epochUtxoView, err = NewUtxoView(db, params, chain.postgres, chain.snapshot, chain.eventManager)
-		require.NoError(t, err)
+		epochUtxoView = NewUtxoView(db, params, chain.postgres, chain.snapshot, chain.eventManager)
 		epochUtxoView._setCurrentEpochEntry(
 			&EpochEntry{EpochNumber: currentEpochNumber + 3, FinalBlockHeight: blockHeight + 10},
 		)

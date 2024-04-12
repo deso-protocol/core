@@ -27,8 +27,7 @@ func _daoCoinTxn(t *testing.T, chain *Blockchain, db *badger.DB,
 	profilePkBytes := metadata.ProfilePublicKey
 	assert.Len(profilePkBytes, btcec.PubKeyBytesLenCompressed)
 
-	utxoView, err := NewUtxoView(db, params, chain.postgres, chain.snapshot, chain.eventManager)
-	require.NoError(err)
+	utxoView := NewUtxoView(db, params, chain.postgres, chain.snapshot, chain.eventManager)
 
 	txn, totalInputMake, changeAmountMake, feesMake, err := chain.CreateDAOCoinTxn(
 		updaterPkBytes,
@@ -108,8 +107,7 @@ func _daoCoinTransferTxn(t *testing.T, chain *Blockchain, db *badger.DB,
 	updaterPkBytes, _, err := Base58CheckDecode(TransactorPublicKeyBase58Check)
 	require.NoError(err)
 
-	utxoView, err := NewUtxoView(db, params, chain.postgres, chain.snapshot, chain.eventManager)
-	require.NoError(err)
+	utxoView := NewUtxoView(db, params, chain.postgres, chain.snapshot, chain.eventManager)
 
 	txn, totalInputMake, changeAmountMake, feesMake, err := chain.CreateDAOCoinTransferTxn(
 		updaterPkBytes,

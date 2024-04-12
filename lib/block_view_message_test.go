@@ -67,8 +67,7 @@ func _privateMessageWithExtraData(t *testing.T, chain *Blockchain, db *badger.DB
 	recipientPkBytes, _, err := Base58CheckDecode(recipientPkBase58Check)
 	require.NoError(err)
 
-	utxoView, err := NewUtxoView(db, params, nil, chain.snapshot, nil)
-	require.NoError(err)
+	utxoView := NewUtxoView(db, params, nil, chain.snapshot, nil)
 
 	txn, totalInputMake, changeAmountMake, feesMake, err := chain.CreatePrivateMessageTxn(
 		senderPkBytes, recipientPkBytes, unencryptedMessageText, "",
@@ -404,8 +403,7 @@ func TestPrivateMessage(t *testing.T) {
 		currentTxn := txns[backwardIter]
 		fmt.Printf("Disconnecting transaction with type %v index %d (going backwards)\n", currentTxn.TxnMeta.GetTxnType(), backwardIter)
 
-		utxoView, err := NewUtxoView(db, params, nil, chain.snapshot, nil)
-		require.NoError(err)
+		utxoView := NewUtxoView(db, params, nil, chain.snapshot, nil)
 
 		currentHash := currentTxn.Hash()
 		err = utxoView.DisconnectTransaction(currentTxn, currentHash, currentOps, savedHeight)
@@ -466,8 +464,7 @@ func TestPrivateMessage(t *testing.T) {
 	}
 
 	// Apply all the transactions to a view and flush the view to the db.
-	utxoView, err := NewUtxoView(db, params, nil, chain.snapshot, nil)
-	require.NoError(err)
+	utxoView := NewUtxoView(db, params, nil, chain.snapshot, nil)
 	for ii, txn := range txns {
 		fmt.Printf("Adding txn %v of type %v to UtxoView\n", ii, txn.TxnMeta.GetTxnType())
 
@@ -484,8 +481,7 @@ func TestPrivateMessage(t *testing.T) {
 
 	// Disonnect the transactions from a single view in the same way as above
 	// i.e. without flushing each time.
-	utxoView2, err := NewUtxoView(db, params, nil, chain.snapshot, nil)
-	require.NoError(err)
+	utxoView2 := NewUtxoView(db, params, nil, chain.snapshot, nil)
 	for ii := 0; ii < len(txnOps); ii++ {
 		backwardIter := len(txnOps) - 1 - ii
 		fmt.Printf("Disconnecting transaction with index %d (going backwards)\n", backwardIter)
@@ -567,8 +563,7 @@ func TestPrivateMessage(t *testing.T) {
 
 	// Roll back the block and make sure we don't hit any errors.
 	{
-		utxoView, err := NewUtxoView(db, params, nil, chain.snapshot, nil)
-		require.NoError(err)
+		utxoView := NewUtxoView(db, params, nil, chain.snapshot, nil)
 
 		// Fetch the utxo operations for the block we're detaching. We need these
 		// in order to be able to detach the block.
@@ -653,8 +648,7 @@ func _messagingKeyWithExtraData(t *testing.T, chain *Blockchain, db *badger.DB, 
 	require.NoError(err)
 	require.Equal(totalInputMake, changeAmountMake+feesMake)
 
-	utxoView, err := NewUtxoView(db, params, nil, chain.snapshot, nil)
-	require.NoError(err)
+	utxoView := NewUtxoView(db, params, nil, chain.snapshot, nil)
 	_signTxn(t, txn, signerPriv)
 	txHash := txn.Hash()
 	blockHeight := chain.blockTip().Height + 1
@@ -719,10 +713,8 @@ func _messagingKeyWithExtraDataWithTestMeta(testMeta *TestMeta, senderPk []byte,
 func _verifyMessagingKey(testMeta *TestMeta, publicKey *PublicKey, entry *MessagingGroupEntry) bool {
 	var utxoMessagingEntry *MessagingGroupEntry
 
-	require := require.New(testMeta.t)
 	messagingKey := NewMessagingGroupKey(publicKey, entry.MessagingGroupKeyName[:])
-	utxoView, err := NewUtxoView(testMeta.db, testMeta.params, nil, testMeta.chain.snapshot, nil)
-	require.NoError(err)
+	utxoView := NewUtxoView(testMeta.db, testMeta.params, nil, testMeta.chain.snapshot, nil)
 	utxoMessagingEntry = utxoView.GetMessagingGroupKeyToMessagingGroupEntryMapping(messagingKey)
 
 	if utxoMessagingEntry == nil || utxoMessagingEntry.isDeleted {
@@ -1685,7 +1677,7 @@ func _connectPrivateMessageWithPartyWithExtraData(testMeta *TestMeta, senderPkBy
 	txHash := txn.Hash()
 	// Always use height+1 for validation since it's assumed the transaction will
 	// get mined into the next block.
-	utxoView, err := NewUtxoView(testMeta.db, testMeta.params, nil, testMeta.chain.snapshot, nil)
+	utxoView := NewUtxoView(testMeta.db, testMeta.params, nil, testMeta.chain.snapshot, nil)
 	blockHeight := testMeta.chain.blockTip().Height + 1
 	utxoOps, totalInput, totalOutput, fees, err :=
 		utxoView.ConnectTransaction(txn, txHash, blockHeight, 0, true, false)
@@ -1731,11 +1723,8 @@ func _helpConnectPrivateMessageWithParty(testMeta *TestMeta, senderPrivBase58 st
 func _verifyMessageParty(testMeta *TestMeta, expectedMessageEntries map[PublicKey][]MessageEntry,
 	expectedEntry MessageEntry, groupOwner bool) bool {
 
-	require := require.New(testMeta.t)
-
 	// First validate that the expected entry was properly added to the UtxoView.
-	utxoView, err := NewUtxoView(testMeta.db, testMeta.params, nil, testMeta.chain.snapshot, nil)
-	require.NoError(err)
+	utxoView := NewUtxoView(testMeta.db, testMeta.params, nil, testMeta.chain.snapshot, nil)
 	messageKey := MakeMessageKey(expectedEntry.SenderMessagingPublicKey[:], expectedEntry.TstampNanos)
 	messageEntrySender := utxoView._getMessageEntryForMessageKey(&messageKey)
 	if messageEntrySender == nil || messageEntrySender.isDeleted {
@@ -1787,8 +1776,7 @@ func _verifyMessages(testMeta *TestMeta, expectedMessageEntries map[PublicKey][]
 	require := require.New(testMeta.t)
 	assert := assert.New(testMeta.t)
 
-	utxoView, err := NewUtxoView(testMeta.db, testMeta.params, nil, testMeta.chain.snapshot, nil)
-	require.NoError(err)
+	utxoView := NewUtxoView(testMeta.db, testMeta.params, nil, testMeta.chain.snapshot, nil)
 
 	for key, messageEntries := range expectedMessageEntries {
 		dbMessageEntries, _, err := utxoView.GetLimitedMessagesForUser(key[:], 100)
@@ -1953,8 +1941,7 @@ func TestGroupMessages(t *testing.T) {
 
 		_verifyMessages(testMeta, expectedMessageEntries)
 		// Just to sanity-check, verify that the number of messages is as intended.
-		utxoView, err := NewUtxoView(db, params, nil, chain.snapshot, nil)
-		require.NoError(err)
+		utxoView := NewUtxoView(db, params, nil, chain.snapshot, nil)
 		messages, _, err := utxoView.GetMessagesForUser(senderPkBytes)
 		require.NoError(err)
 		assert.Equal(1, len(messages))
@@ -2065,8 +2052,7 @@ func TestGroupMessages(t *testing.T) {
 		// Verify that all the messages are correct.
 		_verifyMessages(testMeta, expectedMessageEntries)
 		// Just to sanity-check, verify that the number of messages is as intended.
-		utxoView, err := NewUtxoView(db, params, nil, chain.snapshot, nil)
-		require.NoError(err)
+		utxoView := NewUtxoView(db, params, nil, chain.snapshot, nil)
 		messages, _, err := utxoView.GetMessagesForUser(senderPkBytes)
 		require.NoError(err)
 		assert.Equal(5, len(messages))
@@ -2121,9 +2107,9 @@ func TestGroupMessages(t *testing.T) {
 		require.Equal(true, _verifyMessageParty(testMeta, expectedMessageEntries, messageEntry1, true))
 
 		_verifyMessages(testMeta, expectedMessageEntries)
-		utxoView, err := NewUtxoView(db, params, nil, chain.snapshot, nil)
-		require.NoError(err)
+		utxoView := NewUtxoView(db, params, nil, chain.snapshot, nil)
 		messages, _, err := utxoView.GetMessagesForUser(m1PubKey)
+		require.NoError(err)
 		assert.Equal(1, len(messages))
 	}
 
@@ -2218,8 +2204,7 @@ func TestGroupMessages(t *testing.T) {
 		// To add some entropy, the message will be sent by recipient and through default key.
 		tstampNanos3 := uint64(time.Now().UnixNano())
 		testMessage3 := []byte{1, 2, 5, 4, 5, 6, 7, 8, 15, 22, 27}
-		utxoView, err := NewUtxoView(db, params, nil, chain.snapshot, nil)
-		require.NoError(err)
+		utxoView := NewUtxoView(db, params, nil, chain.snapshot, nil)
 		messagingKey := utxoView.GetMessagingGroupKeyToMessagingGroupEntryMapping(&MessagingGroupKey{
 			*recipientPublicKey,
 			*DefaultGroupKeyName(),
@@ -2254,8 +2239,7 @@ func TestGroupMessages(t *testing.T) {
 		// Verify all messages.
 		_verifyMessages(testMeta, expectedMessageEntries)
 		// Just to sanity-check, verify that the number of messages is as intended.
-		utxoView, err = NewUtxoView(db, params, nil, chain.snapshot, nil)
-		require.NoError(err)
+		utxoView = NewUtxoView(db, params, nil, chain.snapshot, nil)
 		messages, _, err := utxoView.GetMessagesForUser(recipientPkBytes)
 		require.NoError(err)
 		assert.Equal(6, len(messages))
@@ -2330,8 +2314,7 @@ func TestGroupMessages(t *testing.T) {
 
 		// Now let's have m0 send the first message to the group chat.
 		// We will fetch the encrypted messaging key from m0, decrypt it, and use it to make the message.
-		utxoView, err := NewUtxoView(db, params, nil, chain.snapshot, nil)
-		require.NoError(err)
+		utxoView := NewUtxoView(db, params, nil, chain.snapshot, nil)
 		messagingGroupEntries, err := utxoView.GetMessagingGroupEntriesForUser(m0PubKey)
 		require.NoError(err)
 		require.NotNil(messagingGroupEntries)
@@ -2377,8 +2360,7 @@ func TestGroupMessages(t *testing.T) {
 		// Verify the messages.
 		_verifyMessages(testMeta, expectedMessageEntries)
 		// Just to sanity-check, verify that the number of messages is as intended.
-		utxoView, err = NewUtxoView(db, params, nil, chain.snapshot, nil)
-		require.NoError(err)
+		utxoView = NewUtxoView(db, params, nil, chain.snapshot, nil)
 		messages, _, err := utxoView.GetMessagesForUser(senderPkBytes)
 		require.NoError(err)
 		assert.Equal(6, len(messages))
@@ -2439,8 +2421,7 @@ func TestGroupMessages(t *testing.T) {
 	_connectBlockThenDisconnectBlockAndFlush(testMeta)
 
 	// Sanity-check that all entries were reverted from the DB.
-	utxoView, err := NewUtxoView(db, params, nil, chain.snapshot, nil)
-	require.NoError(err)
+	utxoView := NewUtxoView(db, params, nil, chain.snapshot, nil)
 	messages, _, err := utxoView.GetMessagesForUser(senderPkBytes)
 	require.NoError(err)
 	assert.Equal(0, len(messages))

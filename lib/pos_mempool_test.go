@@ -47,8 +47,7 @@ func TestPosMempoolRestartWithTransactions(t *testing.T) {
 	params, db := _posTestBlockchainSetup(t)
 	m0PubBytes, _, _ := Base58CheckDecode(m0Pub)
 	m1PubBytes, _, _ := Base58CheckDecode(m1Pub)
-	latestBlockView, err := NewUtxoView(db, params, nil, nil, nil)
-	require.NoError(err)
+	latestBlockView := NewUtxoView(db, params, nil, nil, nil)
 	dir := _dbDirSetup(t)
 
 	mempool := NewPosMempool()
@@ -102,8 +101,7 @@ func TestPosMempoolPrune(t *testing.T) {
 	m0PubBytes, _, _ := Base58CheckDecode(m0Pub)
 	m1PubBytes, _, _ := Base58CheckDecode(m1Pub)
 
-	latestBlockView, err := NewUtxoView(db, params, nil, nil, nil)
-	require.NoError(err)
+	latestBlockView := NewUtxoView(db, params, nil, nil, nil)
 	dir := _dbDirSetup(t)
 
 	mempool := NewPosMempool()
@@ -200,8 +198,7 @@ func TestPosMempoolUpdateGlobalParams(t *testing.T) {
 	m0PubBytes, _, _ := Base58CheckDecode(m0Pub)
 	m1PubBytes, _, _ := Base58CheckDecode(m1Pub)
 
-	latestBlockView, err := NewUtxoView(db, params, nil, nil, nil)
-	require.NoError(err)
+	latestBlockView := NewUtxoView(db, params, nil, nil, nil)
 	dir := _dbDirSetup(t)
 
 	mempool := NewPosMempool()
@@ -262,8 +259,7 @@ func TestPosMempoolReplaceWithHigherFee(t *testing.T) {
 	m0PubBytes, _, _ := Base58CheckDecode(m0Pub)
 	m1PubBytes, _, _ := Base58CheckDecode(m1Pub)
 
-	latestBlockView, err := NewUtxoView(db, params, nil, nil, nil)
-	require.NoError(err)
+	latestBlockView := NewUtxoView(db, params, nil, nil, nil)
 	dir := _dbDirSetup(t)
 
 	mempool := NewPosMempool()
@@ -302,7 +298,7 @@ func TestPosMempoolReplaceWithHigherFee(t *testing.T) {
 	_signTxn(t, txn2Low, m1Priv)
 	added2Low := time.Now()
 	mtxn2Low := NewMempoolTransaction(txn2Low, added2Low, false)
-	err = mempool.AddTransaction(mtxn2Low)
+	err := mempool.AddTransaction(mtxn2Low)
 	require.Contains(err.Error(), MempoolFailedReplaceByHigherFee)
 
 	// Now generate a proper new transaction for m1, with same nonce, and higher fee.
@@ -341,8 +337,7 @@ func TestPosMempoolTransactionValidation(t *testing.T) {
 	params, db := _posTestBlockchainSetup(t)
 	m0PubBytes, _, _ := Base58CheckDecode(m0Pub)
 	m1PubBytes, _, _ := Base58CheckDecode(m1Pub)
-	latestBlockView, err := NewUtxoView(db, params, nil, nil, nil)
-	require.NoError(t, err)
+	latestBlockView := NewUtxoView(db, params, nil, nil, nil)
 	dir := _dbDirSetup(t)
 
 	mempool := NewPosMempool()

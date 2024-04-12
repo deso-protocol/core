@@ -25,10 +25,10 @@ func TestIsLastBlockInCurrentEpoch(t *testing.T) {
 	GlobalDeSoParams.EncoderMigrationHeights = GetEncoderMigrationHeights(&params.ForkHeights)
 	GlobalDeSoParams.EncoderMigrationHeightsList = GetEncoderMigrationHeightsList(&params.ForkHeights)
 
-	utxoView, err := NewUtxoView(db, params, chain.postgres, chain.snapshot, chain.eventManager)
-	require.NoError(t, err)
+	utxoView := NewUtxoView(db, params, chain.postgres, chain.snapshot, chain.eventManager)
 
 	// The BlockHeight is before the PoS snapshotting fork height.
+	var err error
 	isLastBlockInCurrentEpoch, err = utxoView.IsLastBlockInCurrentEpoch(0)
 	require.NoError(t, err)
 	require.False(t, isLastBlockInCurrentEpoch)
@@ -928,8 +928,7 @@ func _stakeToValidator(
 }
 
 func _newUtxoView(testMeta *TestMeta) *UtxoView {
-	newUtxoView, err := NewUtxoView(testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot, testMeta.chain.eventManager)
-	require.NoError(testMeta.t, err)
+	newUtxoView := NewUtxoView(testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot, testMeta.chain.eventManager)
 	return newUtxoView
 }
 

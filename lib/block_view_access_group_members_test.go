@@ -173,13 +173,11 @@ func TestAccessGroupMembersAdd(t *testing.T) {
 	// Place the above transactions into a block.
 	tvv1 := []*transactionTestVector{tv1, tv2, tv3, tv4, tv4p5}
 	blockConnectCallback := func(tvb *transactionTestVectorBlock, tm *transactionTestMeta) {
-		utxoView, err := NewUtxoView(tm.db, tm.params, tm.pg, tm.chain.snapshot, nil)
-		require.NoError(err)
+		utxoView := NewUtxoView(tm.db, tm.params, tm.pg, tm.chain.snapshot, nil)
 		_verifyMembersList(tm, utxoView, m0PublicKey, NewGroupKeyName(groupName1), []*PublicKey{m0PublicKey, m4PublicKey})
 	}
 	blockDisconnectCallback := func(tvb *transactionTestVectorBlock, tm *transactionTestMeta) {
-		utxoView, err := NewUtxoView(tm.db, tm.params, tm.pg, tm.chain.snapshot, nil)
-		require.NoError(err)
+		utxoView := NewUtxoView(tm.db, tm.params, tm.pg, tm.chain.snapshot, nil)
 		_verifyMembersList(tm, utxoView, m0PublicKey, NewGroupKeyName(groupName1), []*PublicKey{})
 	}
 	tvb1 := NewTransactionTestVectorBlock(tvv1, blockConnectCallback, blockDisconnectCallback)
@@ -330,16 +328,14 @@ func TestAccessGroupMembersAdd(t *testing.T) {
 	// Mine all the above transactions into a new block.
 	tvv2 := []*transactionTestVector{tv5, tv6, tv7, tv8, tv9, tv10, tv11, tv12, tv13, tv14, tv15, tv16, tv17, tv18, tv19}
 	block2ConnectCallback := func(tvb *transactionTestVectorBlock, tm *transactionTestMeta) {
-		utxoView, err := NewUtxoView(tm.db, tm.params, tm.pg, tm.chain.snapshot, nil)
-		require.NoError(err)
+		utxoView := NewUtxoView(tm.db, tm.params, tm.pg, tm.chain.snapshot, nil)
 		_verifyMembersList(tm, utxoView, m0PublicKey, NewGroupKeyName(groupName1), []*PublicKey{m0PublicKey, m1PublicKey, m4PublicKey})
 		_verifyMembersList(tm, utxoView, m0PublicKey, NewGroupKeyName(groupName2), []*PublicKey{m0PublicKey})
 		_verifyMembersList(tm, utxoView, m1PublicKey, NewGroupKeyName(groupName3), []*PublicKey{})
 		_verifyMembersList(tm, utxoView, m2PublicKey, NewGroupKeyName(groupName4), []*PublicKey{m0PublicKey, m1PublicKey, m2PublicKey})
 	}
 	block2DisconnectCallback := func(tvb *transactionTestVectorBlock, tm *transactionTestMeta) {
-		utxoView, err := NewUtxoView(tm.db, tm.params, tm.pg, tm.chain.snapshot, nil)
-		require.NoError(err)
+		utxoView := NewUtxoView(tm.db, tm.params, tm.pg, tm.chain.snapshot, nil)
 		_verifyMembersList(tm, utxoView, m0PublicKey, NewGroupKeyName(groupName1), []*PublicKey{m0PublicKey, m4PublicKey})
 		_verifyMembersList(tm, utxoView, m0PublicKey, NewGroupKeyName(groupName2), []*PublicKey{})
 		_verifyMembersList(tm, utxoView, m1PublicKey, NewGroupKeyName(groupName3), []*PublicKey{})
@@ -382,16 +378,14 @@ func TestAccessGroupMembersAdd(t *testing.T) {
 
 	// Mine all the above transactions into a new block.
 	block3ConnectCallback := func(tvb *transactionTestVectorBlock, tm *transactionTestMeta) {
-		utxoView, err := NewUtxoView(tm.db, tm.params, tm.pg, tm.chain.snapshot, nil)
-		require.NoError(err)
+		utxoView := NewUtxoView(tm.db, tm.params, tm.pg, tm.chain.snapshot, nil)
 		_verifyMembersList(tm, utxoView, m0PublicKey, NewGroupKeyName(groupName1), []*PublicKey{m0PublicKey, m1PublicKey, m4PublicKey})
 		_verifyMembersList(tm, utxoView, m0PublicKey, NewGroupKeyName(groupName2), []*PublicKey{m0PublicKey})
 		_verifyMembersList(tm, utxoView, m1PublicKey, NewGroupKeyName(groupName3), []*PublicKey{})
 		_verifyMembersList(tm, utxoView, m2PublicKey, NewGroupKeyName(groupName4), totalMembers)
 	}
 	block3DisconnectCallback := func(tvb *transactionTestVectorBlock, tm *transactionTestMeta) {
-		utxoView, err := NewUtxoView(tm.db, tm.params, tm.pg, tm.chain.snapshot, nil)
-		require.NoError(err)
+		utxoView := NewUtxoView(tm.db, tm.params, tm.pg, tm.chain.snapshot, nil)
 		_verifyMembersList(tm, utxoView, m0PublicKey, NewGroupKeyName(groupName1), []*PublicKey{m0PublicKey, m1PublicKey, m4PublicKey})
 		_verifyMembersList(tm, utxoView, m0PublicKey, NewGroupKeyName(groupName2), []*PublicKey{m0PublicKey})
 		_verifyMembersList(tm, utxoView, m1PublicKey, NewGroupKeyName(groupName3), []*PublicKey{})
@@ -655,13 +649,11 @@ func TestAccessGroupMembersRemove(t *testing.T) {
 	// Mine all above transactions into a block.
 	tvv1 := []*transactionTestVector{tv1, tv2, tv3, tv3p5, tv4, tv5, tv6, tv7, tv8, tv9, tv10, tv11}
 	tvb1ConnectCallback := func(tvb *transactionTestVectorBlock, tm *transactionTestMeta) {
-		utxoView, err := NewUtxoView(tm.db, tm.params, tm.pg, tm.chain.snapshot, nil)
-		require.NoError(err)
+		utxoView := NewUtxoView(tm.db, tm.params, tm.pg, tm.chain.snapshot, nil)
 		tv11.connectCallback(tv11, tm, utxoView)
 	}
 	tvb1DisconnectCallback := func(tvb *transactionTestVectorBlock, tm *transactionTestMeta) {
-		utxoView, err := NewUtxoView(tm.db, tm.params, tm.pg, tm.chain.snapshot, nil)
-		require.NoError(err)
+		utxoView := NewUtxoView(tm.db, tm.params, tm.pg, tm.chain.snapshot, nil)
 		_verifyMembersList(tm, utxoView, m0PublicKey, NewGroupKeyName(groupName1), []*PublicKey{})
 		_verifyMembersList(tm, utxoView, m1PublicKey, NewGroupKeyName(groupName2), []*PublicKey{})
 	}
@@ -808,8 +800,7 @@ func TestAccessGroupMembersRemove(t *testing.T) {
 	// Mine all above transactions into a block.
 	tvv2 := []*transactionTestVector{tv12, tv13, tv14, tv15}
 	tvb2ConnectCallback := func(tvb *transactionTestVectorBlock, tm *transactionTestMeta) {
-		utxoView, err := NewUtxoView(tm.db, tm.params, tm.pg, tm.chain.snapshot, nil)
-		require.NoError(err)
+		utxoView := NewUtxoView(tm.db, tm.params, tm.pg, tm.chain.snapshot, nil)
 		tv15.connectCallback(tv15, tm, utxoView)
 	}
 	tvb2DisconnectCallback := tvb1ConnectCallback
@@ -868,8 +859,7 @@ func TestAccessGroupMembersRemove(t *testing.T) {
 	// Mine the above transactions into a block.
 	tvv3 := []*transactionTestVector{tv16, tv17}
 	tvb3ConnectCallback := func(tvb *transactionTestVectorBlock, tm *transactionTestMeta) {
-		utxoView, err := NewUtxoView(tm.db, tm.params, tm.pg, tm.chain.snapshot, nil)
-		require.NoError(err)
+		utxoView := NewUtxoView(tm.db, tm.params, tm.pg, tm.chain.snapshot, nil)
 		tv17.connectCallback(tv17, tm, utxoView)
 	}
 	tvb3DisconnectCallback := tvb2ConnectCallback
@@ -1044,13 +1034,11 @@ func TestAccessGroupMembersUpdate(t *testing.T) {
 	// Mine the above transactions into a block.
 	tvv1 := []*transactionTestVector{tv1, tv2, tv3, tv4, tv5, tv6, tv7, tv8}
 	tvb1ConnectCallback := func(tvb *transactionTestVectorBlock, tm *transactionTestMeta) {
-		utxoView, err := NewUtxoView(tm.db, tm.params, tm.pg, tm.chain.snapshot, nil)
-		require.NoError(err)
+		utxoView := NewUtxoView(tm.db, tm.params, tm.pg, tm.chain.snapshot, nil)
 		tv8.connectCallback(tv8, tm, utxoView)
 	}
 	tvb1DisconnectCallback := func(tvb *transactionTestVectorBlock, tm *transactionTestMeta) {
-		utxoView, err := NewUtxoView(tm.db, tm.params, tm.pg, tm.chain.snapshot, nil)
-		require.NoError(err)
+		utxoView := NewUtxoView(tm.db, tm.params, tm.pg, tm.chain.snapshot, nil)
 		_verifyMembersList(tm, utxoView, m2PublicKey, NewGroupKeyName(groupName1), []*PublicKey{})
 	}
 	tvb1 := NewTransactionTestVectorBlock(tvv1, tvb1ConnectCallback, tvb1DisconnectCallback)
@@ -1264,8 +1252,7 @@ func TestAccessGroupMembersUpdate(t *testing.T) {
 	tv17.disconnectCallback = tv16.connectCallback
 	tvv2 := []*transactionTestVector{tv9, tv10, tv11, tv12, tv13, tv14, tv15, tv16, tv17}
 	tvb2ConnectCallback := func(tvb *transactionTestVectorBlock, tm *transactionTestMeta) {
-		utxoView, err := NewUtxoView(tm.db, tm.params, tm.pg, tm.chain.snapshot, nil)
-		require.NoError(err)
+		utxoView := NewUtxoView(tm.db, tm.params, tm.pg, tm.chain.snapshot, nil)
 		tv17.connectCallback(tv17, tm, utxoView)
 		_verifyMembersList(tm, utxoView, m0PublicKey, NewGroupKeyName(groupName4), []*PublicKey{})
 		_verifyMembersList(tm, utxoView, m1PublicKey, NewGroupKeyName(groupName3), []*PublicKey{})
@@ -1662,8 +1649,7 @@ func TestAccessGroupMembersTxnWithDerivedKey(t *testing.T) {
 		accessGroupMemberLimitKey *AccessGroupMemberLimitKey,
 		count int,
 	) string {
-		utxoView, err := NewUtxoView(db, params, chain.postgres, chain.snapshot, nil)
-		require.NoError(t, err)
+		utxoView := NewUtxoView(db, params, chain.postgres, chain.snapshot, nil)
 
 		txnSpendingLimit := &TransactionSpendingLimit{
 			GlobalDESOLimit: NanosPerUnit, // 1 $DESO spending limit
@@ -1759,8 +1745,7 @@ func TestAccessGroupMembersTxnWithDerivedKey(t *testing.T) {
 		derivedKeyPrivBase58Check string,
 	) error {
 		// Get UTXO view.
-		utxoView, err := NewUtxoView(db, params, chain.postgres, chain.snapshot, nil)
-		require.NoError(t, err)
+		utxoView := NewUtxoView(db, params, chain.postgres, chain.snapshot, nil)
 		// Sign txn.
 		_signTxnWithDerivedKey(t, txn, derivedKeyPrivBase58Check)
 		// Connect txn.

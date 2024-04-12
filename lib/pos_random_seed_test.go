@@ -10,8 +10,7 @@ import (
 
 func TestCurrentRandomSeedHash(t *testing.T) {
 	chain, params, db := NewLowDifficultyBlockchain(t)
-	utxoView, err := NewUtxoView(db, params, chain.postgres, chain.snapshot, chain.eventManager)
-	require.NoError(t, err)
+	utxoView := NewUtxoView(db, params, chain.postgres, chain.snapshot, chain.eventManager)
 	blockHeight := uint64(0)
 
 	// Generate two BLS public + private key pairs.

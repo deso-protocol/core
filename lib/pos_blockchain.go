@@ -1800,7 +1800,7 @@ func (bc *Blockchain) GetUncommittedBlocks(tipHash *BlockHash) ([]*BlockNode, er
 
 // GetCommittedTipView builds a UtxoView to the committed tip.
 func (bc *Blockchain) GetCommittedTipView() (*UtxoView, error) {
-	return NewUtxoViewWithSnapshotCache(bc.db, bc.params, bc.postgres, bc.snapshot, nil, bc.snapshotCache)
+	return NewUtxoViewWithSnapshotCache(bc.db, bc.params, bc.postgres, bc.snapshot, nil, bc.snapshotCache), nil
 }
 
 // BlockViewAndUtxoOps is a struct that contains a UtxoView and the UtxoOperations
@@ -1908,11 +1908,8 @@ func (bc *Blockchain) getUtxoViewAndUtxoOpsAtBlockHash(blockHash BlockHash) (
 		return viewAndUtxoOpsCopy, nil
 	}
 	// Connect the uncommitted blocks to the tip so that we can validate subsequent blocks
-	utxoView, err := NewUtxoViewWithSnapshotCache(bc.db, bc.params, bc.postgres, bc.snapshot, bc.eventManager,
+	utxoView := NewUtxoViewWithSnapshotCache(bc.db, bc.params, bc.postgres, bc.snapshot, bc.eventManager,
 		bc.snapshotCache)
-	if err != nil {
-		return nil, errors.Wrapf(err, "getUtxoViewAndUtxoOpsAtBlockHash: Problem initializing UtxoView")
-	}
 	// TODO: there's another performance enhancement we can make here. If we have a view in the
 	// cache for one of the ancestors, we can skip fetching the block and connecting it by taking
 	// a copy of it and replacing the existing view.

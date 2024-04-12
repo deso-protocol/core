@@ -2463,12 +2463,7 @@ func (bc *Blockchain) processBlockPoW(desoBlock *MsgDeSoBlock, verifySignatures 
 		// almost certainly be more efficient than doing a separate db call for each input
 		// and output.
 		if bc.blockView == nil {
-			utxoView, err := NewUtxoView(bc.db, bc.params, bc.postgres, bc.snapshot, bc.eventManager)
-			if err != nil {
-				return false, false, errors.Wrapf(err, "ProcessBlock: Problem initializing UtxoView in simple connect to tip")
-			}
-
-			bc.blockView = utxoView
+			bc.blockView = NewUtxoView(bc.db, bc.params, bc.postgres, bc.snapshot, bc.eventManager)
 		}
 
 		// Preload the view with almost all of the data it will need to connect the block
@@ -2664,7 +2659,7 @@ func (bc *Blockchain) processBlockPoW(desoBlock *MsgDeSoBlock, verifySignatures 
 		// the txns to account for txns that spend previous txns in the block, but it would
 		// almost certainly be more efficient than doing a separate db call for each input
 		// and output
-		utxoView, err := NewUtxoView(bc.db, bc.params, bc.postgres, bc.snapshot, bc.eventManager)
+		utxoView := NewUtxoView(bc.db, bc.params, bc.postgres, bc.snapshot, bc.eventManager)
 		if err != nil {
 			return false, false, errors.Wrapf(err, "processblock: Problem initializing UtxoView in reorg")
 		}
@@ -2940,11 +2935,10 @@ func (bc *Blockchain) ValidateTransaction(
 
 	// Create a new UtxoView. If we have access to a mempool object, use it to
 	// get an augmented view that factors in pending transactions.
-	utxoView, err := NewUtxoView(bc.db, bc.params, bc.postgres, bc.snapshot, bc.eventManager)
-	if err != nil {
-		return errors.Wrapf(err, "ValidateTransaction: Problem Problem creating new utxo view: ")
-	}
+	utxoView := NewUtxoView(bc.db, bc.params, bc.postgres, bc.snapshot, bc.eventManager)
+
 	if !isInterfaceValueNil(mempool) {
+		var err error
 		utxoView, err = mempool.GetAugmentedUtxoViewForPublicKey(txnMsg.PublicKey, txnMsg)
 		if err != nil {
 			return errors.Wrapf(err, "ValidateTransaction: Problem getting augmented UtxoView from mempool: ")
@@ -2954,7 +2948,7 @@ func (bc *Blockchain) ValidateTransaction(
 	// Hash the transaction.
 	txHash := txnMsg.Hash()
 	// We don't care about the utxoOps or the fee it returns.
-	_, _, _, _, err = utxoView._connectTransaction(
+	_, _, _, _, err := utxoView._connectTransaction(
 		txnMsg, txHash, blockHeight, time.Now().UnixNano(), verifySignatures, false,
 	)
 	if err != nil {
@@ -3041,16 +3035,14 @@ func ComputeMerkleRoot(txns []*MsgDeSoTxn) (_merkle *BlockHash, _txHashes []*Blo
 func (bc *Blockchain) GetSpendableUtxosForPublicKey(spendPublicKeyBytes []byte, mempool Mempool, referenceUtxoView *UtxoView) ([]*UtxoEntry, error) {
 	// If we have access to a mempool, use it to account for utxos we might not
 	// get otherwise.
-	utxoView, err := NewUtxoView(bc.db, bc.params, bc.postgres, bc.snapshot, bc.eventManager)
-	if err != nil {
-		return nil, errors.Wrapf(err, "Blockchain.GetSpendableUtxosForPublicKey: Problem initializing UtxoView: ")
-	}
+	utxoView := NewUtxoView(bc.db, bc.params, bc.postgres, bc.snapshot, bc.eventManager)
 	// Use the reference UtxoView if provided. Otherwise try to get one from the mempool.
 	// This improves efficiency when we have a UtxoView already handy.
 	if referenceUtxoView != nil {
 		utxoView = referenceUtxoView
 	} else {
 		if !isInterfaceValueNil(mempool) {
+			var err error
 			utxoView, err = mempool.GetAugmentedUtxoViewForPublicKey(spendPublicKeyBytes, nil)
 			if err != nil {
 				return nil, errors.Wrapf(err, "Blockchain.GetSpendableUtxosForPublicKey: Problem getting augmented UtxoView from mempool: ")
@@ -3823,11 +3815,8 @@ func (bc *Blockchain) CreateDAOCoinLimitOrderTxn(
 
 	// Create a new UtxoView. If we have access to a mempool object, use it to
 	// get an augmented view that factors in pending transactions.
-	utxoView, err := NewUtxoView(bc.db, bc.params, bc.postgres, bc.snapshot, bc.eventManager)
-	if err != nil {
-		return nil, 0, 0, 0, errors.Wrapf(err,
-			"Blockchain.CreateDAOCoinLimitOrderTxn: Problem creating new utxo view: ")
-	}
+	utxoView := NewUtxoView(bc.db, bc.params, bc.postgres, bc.snapshot, bc.eventManager)
+	var err error
 	if !isInterfaceValueNil(mempool) {
 		utxoView, err = mempool.GetAugmentedUniversalView()
 		if err != nil {
@@ -4162,7 +4151,7 @@ func (bc *Blockchain) CreateNFTBidTxn(
 				"CreateNFTBidTxn: Problem getting augmented universal view: ")
 		}
 	} else {
-		utxoView, err = NewUtxoView(bc.db, bc.params, bc.postgres, bc.snapshot, bc.eventManager)
+		utxoView = NewUtxoView(bc.db, bc.params, bc.postgres, bc.snapshot, bc.eventManager)
 		if err != nil {
 			return nil, 0, 0, 0, errors.Wrapf(err,
 				"CreateNFTBidTxn: Problem creating new utxo view: ")
@@ -4333,11 +4322,8 @@ func (bc *Blockchain) CreateAcceptNFTBidTxn(
 
 	// Create a new UtxoView. If we have access to a mempool object, use it to
 	// get an augmented view that factors in pending transactions.
-	utxoView, err := NewUtxoView(bc.db, bc.params, bc.postgres, bc.snapshot, bc.eventManager)
-	if err != nil {
-		return nil, 0, 0, 0, errors.Wrapf(err,
-			"Blockchain.CreateAcceptNFTBidTxn: Problem creating new utxo view: ")
-	}
+	utxoView := NewUtxoView(bc.db, bc.params, bc.postgres, bc.snapshot, bc.eventManager)
+	var err error
 	if !isInterfaceValueNil(mempool) {
 		utxoView, err = mempool.GetAugmentedUniversalView()
 		if err != nil {
@@ -4645,12 +4631,8 @@ func (bc *Blockchain) CreateCreatorCoinTransferTxnWithDiamonds(
 
 	// Create a new UtxoView. If we have access to a mempool object, use it to
 	// get an augmented view that factors in pending transactions.
-	utxoView, err := NewUtxoView(bc.db, bc.params, bc.postgres, bc.snapshot, bc.eventManager)
-	if err != nil {
-		return nil, 0, 0, 0, errors.Wrapf(err,
-			"Blockchain.CreateCreatorCoinTransferTxnWithDiamonds: "+
-				"Problem creating new utxo view: ")
-	}
+	utxoView := NewUtxoView(bc.db, bc.params, bc.postgres, bc.snapshot, bc.eventManager)
+	var err error
 	if !isInterfaceValueNil(mempool) {
 		utxoView, err = mempool.GetAugmentedUniversalView()
 		if err != nil {
@@ -4873,12 +4855,8 @@ func (bc *Blockchain) CreateBasicTransferTxnWithDiamonds(
 
 	// Create a new UtxoView. If we have access to a mempool object, use it to
 	// get an augmented view that factors in pending transactions.
-	utxoView, err := NewUtxoView(bc.db, bc.params, bc.postgres, bc.snapshot, bc.eventManager)
-	if err != nil {
-		return nil, 0, 0, 0, 0, errors.Wrapf(err,
-			"Blockchain.CreateBasicTransferTxnWithDiamonds: "+
-				"Problem creating new utxo view: ")
-	}
+	utxoView := NewUtxoView(bc.db, bc.params, bc.postgres, bc.snapshot, bc.eventManager)
+	var err error
 	if !isInterfaceValueNil(mempool) {
 		utxoView, err = mempool.GetAugmentedUniversalView()
 		if err != nil {
@@ -4985,7 +4963,7 @@ func (bc *Blockchain) CreateMaxSpend(
 					"Blockchain.CreateMaxSpend: Problem getting augmented UtxoView from mempool: ")
 			}
 		} else {
-			utxoView, err = NewUtxoView(bc.db, bc.params, bc.postgres, bc.snapshot, bc.eventManager)
+			utxoView = NewUtxoView(bc.db, bc.params, bc.postgres, bc.snapshot, bc.eventManager)
 			if err != nil {
 				return nil, 0, 0, 0, errors.Wrapf(err,
 					"Blockchain.CreateMaxSpend: Problem getting UtxoView: ")
@@ -5132,11 +5110,8 @@ func (bc *Blockchain) AddInputsAndChangeToTransactionWithSubsidy(
 
 		txArg.TxnVersion = 1
 
-		utxoView, err := NewUtxoView(bc.db, bc.params, bc.postgres, bc.snapshot, bc.eventManager)
-		if err != nil {
-			return 0, 0, 0, 0, errors.Wrapf(err,
-				"AddInputsAndChangeToTransaction: Problem getting UtxoView: ")
-		}
+		utxoView := NewUtxoView(bc.db, bc.params, bc.postgres, bc.snapshot, bc.eventManager)
+		var err error
 		txArg.TxnNonce, err = utxoView.ConstructNonceForPublicKey(txArg.PublicKey, uint64(blockHeight))
 		if err != nil {
 			return 0, 0, 0, 0, errors.Wrapf(err,
@@ -5339,10 +5314,7 @@ func (bc *Blockchain) EstimateDefaultFeeRateNanosPerKB(
 
 	// If the block is more than X% full, use the maximum between the min
 	// fee rate and the median fees of all the transactions in the block.
-	utxoView, err := NewUtxoView(bc.db, bc.params, bc.postgres, bc.snapshot, bc.eventManager)
-	if err != nil {
-		return minFeeRateNanosPerKB
-	}
+	utxoView := NewUtxoView(bc.db, bc.params, bc.postgres, bc.snapshot, bc.eventManager)
 	utxoOps, err := GetUtxoOperationsForBlock(bc.db, bc.snapshot, tipNode.Hash)
 	if err != nil {
 		return minFeeRateNanosPerKB
@@ -5525,12 +5497,8 @@ func (bc *Blockchain) _createAssociationTxn(
 ) {
 	// Create a new UtxoView. If we have access to a mempool object, use
 	// it to get an augmented view that factors in pending transactions.
-	utxoView, err := NewUtxoView(bc.db, bc.params, bc.postgres, bc.snapshot, bc.eventManager)
-	if err != nil {
-		return nil, 0, 0, 0, fmt.Errorf(
-			"%s: problem creating new utxo view: %v", callingFuncName, err,
-		)
-	}
+	utxoView := NewUtxoView(bc.db, bc.params, bc.postgres, bc.snapshot, bc.eventManager)
+	var err error
 	if !isInterfaceValueNil(mempool) {
 		utxoView, err = mempool.GetAugmentedUniversalView()
 		if err != nil {
