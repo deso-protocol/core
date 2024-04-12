@@ -309,3 +309,39 @@ func (safeUint64 *_SafeUint64) Div(x uint64, y uint64) (uint64, error) {
 
 	return x / y, nil
 }
+
+type _SafeInt64 struct{}
+
+func SafeInt64() *_SafeInt64 {
+	return &_SafeInt64{}
+}
+
+func (safeInt64 *_SafeInt64) Add(x int64, y int64) (int64, error) {
+	if y > 0 && x > math.MaxInt64-y {
+		return 0, fmt.Errorf("addition overflows int64")
+	}
+	if y < 0 && x < math.MinInt64-y {
+		return 0, fmt.Errorf("addition underflows int64")
+	}
+
+	return x + y, nil
+}
+
+func (safeInt64 *_SafeInt64) Sub(x int64, y int64) (int64, error) {
+	if y < 0 && x > math.MaxInt64+y {
+		return 0, fmt.Errorf("subtraction overflows int64")
+	}
+	if y > 0 && x < math.MinInt64+y {
+		return 0, fmt.Errorf("subtraction underflows int64")
+	}
+
+	return x - y, nil
+}
+
+func (safeInt64 *_SafeInt64) FromUint64(x uint64) (int64, error) {
+	if x > math.MaxInt64 {
+		return 0, fmt.Errorf("conversion overflows int64")
+	}
+
+	return int64(x), nil
+}

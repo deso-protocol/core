@@ -5,7 +5,6 @@ import (
 	"encoding/hex"
 	"fmt"
 	"math"
-	"math/big"
 	"reflect"
 	"strings"
 	"time"
@@ -4042,19 +4041,30 @@ func (bav *UtxoView) _connectSingleTxn(
 	if txn.TxnMeta.GetTxnType() != TxnTypeBlockReward &&
 		txn.TxnMeta.GetTxnType() != TxnTypeBitcoinExchange &&
 		blockHeight >= bav.Params.ForkHeights.BalanceModelBlockHeight {
-		balanceDelta, _, err := bav._compareBalancesToSnapshot(balanceSnapshot)
+		balanceDelta, err := bav._compareBalancesToSnapshot(balanceSnapshot)
 		if err != nil {
 			return nil, 0, 0, 0, errors.Wrapf(err, "ConnectTransaction: error comparing current balances to snapshot")
 		}
-		desoLockedDelta := big.NewInt(0)
+		desoLockedDelta := int64(0)
 		if txn.TxnMeta.GetTxnType() == TxnTypeCreatorCoin {
 			ccMeta := txn.TxnMeta.(*CreatorCoinMetadataa)
 			creatorProfile := bav.GetProfileEntryForPublicKey(ccMeta.ProfilePublicKey)
 			if creatorProfile == nil || creatorProfile.IsDeleted() {
 				return nil, 0, 0, 0, fmt.Errorf("ConnectTransaction: Profile for CreatorCoin being sold does not exist")
 			}
-			desoLockedDelta = big.NewInt(0).Sub(big.NewInt(0).SetUint64(creatorProfile.CreatorCoinEntry.DeSoLockedNanos),
-				big.NewInt(0).SetUint64(creatorCoinSnapshot.DeSoLockedNanos))
+			if creatorProfile.CreatorCoinEntry.DeSoLockedNanos > math.MaxInt64 {
+				return nil, 0, 0, 0, fmt.Errorf("ConnectTransaction: CreatorCoinEntry.DeSoLockedNanos overflows int64")
+			}
+			if creatorCoinSnapshot == nil {
+				return nil, 0, 0, 0, fmt.Errorf("ConnectTransaction: creatorCoinSnapshot is nil")
+			}
+			if creatorCoinSnapshot.DeSoLockedNanos > math.MaxInt64 {
+				return nil, 0, 0, 0, fmt.Errorf("ConnectTransaction: creatorCoinSnapshot.DeSoLockedNanos overflows int64")
+			}
+			desoLockedDelta, err = SafeInt64().Sub(
+				int64(creatorProfile.CreatorCoinEntry.DeSoLockedNanos),
+				int64(creatorCoinSnapshot.DeSoLockedNanos),
+			)
 		}
 		if txn.TxnMeta.GetTxnType() == TxnTypeAcceptNFTBid ||
 			txn.TxnMeta.GetTxnType() == TxnTypeNFTBid {
@@ -4064,11 +4074,22 @@ func (bav *UtxoView) _connectSingleTxn(
 				if creatorProfile == nil || creatorProfile.IsDeleted() {
 					return nil, 0, 0, 0, fmt.Errorf("ConnectTransaction: Profile for NFT being sold does not exist")
 				}
-				desoLockedDelta = desoLockedDelta.Sub(desoLockedDelta,
-					big.NewInt(0).Sub(
-						big.NewInt(0).SetUint64(creatorProfile.CreatorCoinEntry.DeSoLockedNanos),
-						big.NewInt(0).SetUint64(coinEntry.DeSoLockedNanos)),
-				)
+				if creatorProfile.CreatorCoinEntry.DeSoLockedNanos > math.MaxInt64 {
+					return nil, 0, 0, 0, fmt.Errorf("ConnectTransaction: CreatorCoinEntry.DeSoLockedNanos overflows int64")
+				}
+				if coinEntry.DeSoLockedNanos > math.MaxInt64 {
+					return nil, 0, 0, 0, fmt.Errorf("ConnectTransaction: coinEntry.DeSoLockedNanos overflows int64")
+				}
+				creatorLockedDelta, err := SafeInt64().Sub(
+					int64(creatorProfile.CreatorCoinEntry.DeSoLockedNanos),
+					int64(coinEntry.DeSoLockedNanos))
+				if err != nil {
+					return nil, 0, 0, 0, errors.Wrapf(err, "ConnectTransaction: error computing creatorLockedDelta: ")
+				}
+				desoLockedDelta, err = SafeInt64().Sub(desoLockedDelta, creatorLockedDelta)
+				if err != nil {
+					return nil, 0, 0, 0, errors.Wrapf(err, "ConnectTransaction: error computing desoLockedDelta: ")
+				}
 			}
 		}
 		if txn.TxnMeta.GetTxnType() == TxnTypeUnlockStake {
@@ -4092,7 +4113,14 @@ func (bav *UtxoView) _connectSingleTxn(
 					return nil, 0, 0, 0, errors.Wrapf(err, "ConnectTransaction: error computing TotalLockedAmountNanos: ")
 				}
 			}
-			desoLockedDelta = big.NewInt(0).Neg(totalLockedAmountNanos.ToBig())
+			if !totalLockedAmountNanos.IsUint64() {
+				return nil, 0, 0, 0, errors.Errorf("ConnectTransaction: totalLockedAmountNanos overflows uint64")
+			}
+			totalLockedAmountNanosInt64, err := SafeInt64().FromUint64(totalLockedAmountNanos.Uint64())
+			if err != nil {
+				return nil, 0, 0, 0, errors.Wrapf(err, "ConnectTransaction: error converting totalLockedAmountNanos to int64: ")
+			}
+			desoLockedDelta = -1 * totalLockedAmountNanosInt64
 		}
 		if txn.TxnMeta.GetTxnType() == TxnTypeCoinUnlock {
 			if len(utxoOpsForTxn) == 0 {
@@ -4123,10 +4151,17 @@ func (bav *UtxoView) _connectSingleTxn(
 							errors.Errorf("ConnectTransaction: totalLockedDESOAmountNanos overflows uint64")
 					}
 				}
-				desoLockedDelta = big.NewInt(0).Neg(totalLockedDESOAmountNanos.ToBig())
+				if !totalLockedDESOAmountNanos.IsUint64() {
+					return nil, 0, 0, 0, errors.Errorf("ConnectTransaction: totalLockedDESOAmountNanos overflows uint64")
+				}
+				totalLockedDESOAmountNanosInt64, err := SafeInt64().FromUint64(totalLockedDESOAmountNanos.Uint64())
+				if err != nil {
+					return nil, 0, 0, 0, errors.Wrapf(err, "ConnectTransaction: error converting totalLockedAmountNanos to int64: ")
+				}
+				desoLockedDelta = -1 * totalLockedDESOAmountNanosInt64
 			}
 		}
-		if big.NewInt(0).Add(balanceDelta, desoLockedDelta).Sign() > 0 {
+		if balanceDelta > desoLockedDelta {
 			return nil, 0, 0, 0, RuleErrorBalanceChangeGreaterThanZero
 		}
 	}
@@ -4247,26 +4282,36 @@ func computeBMF(fee uint64) (_burnFee uint64, _utilityFee uint64) {
 }
 
 func (bav *UtxoView) _compareBalancesToSnapshot(balanceSnapshot map[PublicKey]uint64) (
-	*big.Int, map[PublicKey]*big.Int, error) {
-	runningTotal := big.NewInt(0)
-	balanceDeltasMap := make(map[PublicKey]*big.Int)
+	int64, error) {
+	runningTotal := int64(0)
 	for publicKey, balance := range bav.PublicKeyToDeSoBalanceNanos {
 		snapshotBalance, exists := balanceSnapshot[publicKey]
 		if !exists {
 			// Get it from the DB
 			dbBalance, err := bav.GetDbAdapter().GetDeSoBalanceForPublicKey(publicKey.ToBytes())
 			if err != nil {
-				return nil, nil, err
+				return 0, err
 			}
 			snapshotBalance = dbBalance
 			balanceSnapshot[publicKey] = snapshotBalance
 		}
-		// New - Old
-		delta := big.NewInt(0).Sub(big.NewInt(0).SetUint64(balance), big.NewInt(0).SetUint64(snapshotBalance))
-		balanceDeltasMap[publicKey] = delta
-		runningTotal = big.NewInt(0).Add(runningTotal, delta)
+		// First check that we won't overflow or underflow int64
+		if balance > math.MaxInt64 {
+			return 0, fmt.Errorf("balance overflows int64")
+		}
+		if snapshotBalance > math.MaxInt64 {
+			return 0, fmt.Errorf("snapshotBalance overflows int64")
+		}
+		delta, err := SafeInt64().Sub(int64(balance), int64(snapshotBalance))
+		if err != nil {
+			return 0, errors.Wrapf(err, "_compareBalancesToSnapshot: Problem computing delta")
+		}
+		runningTotal, err = SafeInt64().Add(runningTotal, delta)
+		if err != nil {
+			return 0, errors.Wrapf(err, "_compareBalancesToSnapshot: Problem computing running total")
+		}
 	}
-	return runningTotal, balanceDeltasMap, nil
+	return runningTotal, nil
 }
 
 func (bav *UtxoView) ConnectBlock(
