@@ -359,13 +359,18 @@ func (rn *RemoteNode) AttachInboundConnection(conn net.Conn, na *wire.NetAddress
 }
 
 // AttachOutboundConnection creates an outbound peer once a successful outbound connection has been established.
-func (rn *RemoteNode) AttachOutboundConnection(conn net.Conn, na *wire.NetAddressV2) error {
+func (rn *RemoteNode) AttachOutboundConnection(conn net.Conn, na *wire.NetAddressV2, isPersistent bool) error {
 	rn.mtx.Lock()
 	defer rn.mtx.Unlock()
 
 	// It should not be possible to attach an outbound connection to an inbound RemoteNode.
 	if !rn.isOutbound {
 		return fmt.Errorf("RemoteNode.AttachOutboundConnection: RemoteNode is not an outbound connection")
+	}
+
+	// It should not be possible to attach an outbound persistent connection to a non-persistent RemoteNode.
+	if rn.isPersistent != isPersistent {
+		return fmt.Errorf("RemoteNode.AttachOutboundConnection: RemoteNode is not persistent")
 	}
 
 	if rn.connectionStatus != RemoteNodeStatus_Attempted {

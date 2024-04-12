@@ -931,8 +931,9 @@ func (nm *NetworkManager) AttachInboundConnection(conn net.Conn, na *wire.NetAdd
 	return remoteNode, nil
 }
 
-func (nm *NetworkManager) AttachOutboundConnection(conn net.Conn, na *wire.NetAddressV2,
-	remoteNodeId uint64, isPersistent bool) (*RemoteNode, error) {
+func (nm *NetworkManager) AttachOutboundConnection(
+	conn net.Conn, na *wire.NetAddressV2, remoteNodeId uint64, isPersistent bool,
+) (*RemoteNode, error) {
 
 	id := NewRemoteNodeId(remoteNodeId)
 	remoteNode := nm.GetRemoteNodeById(id)
