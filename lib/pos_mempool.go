@@ -524,6 +524,11 @@ func (mp *PosMempool) AddTransaction(mtxn *MempoolTransaction) error {
 		return fmt.Errorf("PosMempool.AddTransaction: Cannot add a nil transaction")
 	}
 
+	// If the transaction is already in the transaction register, then we return an error.
+	if mp.txnRegister.GetTransaction(mtxn.GetTxn().Hash()) != nil {
+		return errors.New("PosMempool.AddTransaction: Transaction already in mempool")
+	}
+
 	// Acquire the mempool lock for all operations related to adding the transaction
 	// TODO: Do we need to wrap all of our validation logic in a write-lock? We should revisit
 	// this later and try to pull as much as we can out of the critical section here. The reason
