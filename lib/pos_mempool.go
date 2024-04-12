@@ -194,6 +194,10 @@ type PosMempool struct {
 	// PosMempool only needs read-access to the block view. It isn't necessary to copy the block view before passing it
 	// to the mempool.
 	readOnlyLatestBlockView *UtxoView
+	// validateTransactionsReadOnlyLatestBlockView is the same as the readOnlyLatestBlockView but is exclusively for use
+	// in the validateTransactions routine. The validateTransactions routine is a routine that validates the top Fee-Time
+	// ordered transactions in the mempool.
+	validateTransactionsReadOnlyLatestBlockView *UtxoView
 	// augmentedReadOnlyLatestBlockView is a copy of the latest block view with all the transactions in the mempool applied to
 	// it. This allows the backend to display the current state of the blockchain including the mempool.
 	// The augmentedReadOnlyLatestBlockView is updated every 10 milliseconds to reflect the latest state of the mempool.
@@ -294,12 +298,20 @@ func (mp *PosMempool) Init(
 	// Initialize the parametrized fields.
 	mp.params = params
 	mp.globalParams = globalParams
-	mp.readOnlyLatestBlockView = readOnlyLatestBlockView
 	var err error
 	if readOnlyLatestBlockView != nil {
+		mp.readOnlyLatestBlockView, err = readOnlyLatestBlockView.CopyUtxoView()
+		if err != nil {
+			return errors.Wrapf(err, "PosMempool.Init: Problem copying utxo view to readOnlyLatestBlockView")
+		}
 		mp.augmentedReadOnlyLatestBlockView, err = readOnlyLatestBlockView.CopyUtxoView()
 		if err != nil {
-			return errors.Wrapf(err, "PosMempool.Init: Problem copying utxo view")
+			return errors.Wrapf(err, "PosMempool.Init: Problem copying utxo view to augmentedReadOnlyLatestBlockView")
+		}
+		mp.validateTransactionsReadOnlyLatestBlockView, err = readOnlyLatestBlockView.CopyUtxoView()
+		if err != nil {
+			return errors.Wrapf(err,
+				"PosMempool.Init: Problem copying utxo view to validateTransactionsReadOnlyLatestBlockView")
 		}
 	}
 	mp.latestBlockHeight = latestBlockHeight
@@ -924,7 +936,7 @@ func (mp *PosMempool) validateTransactions() error {
 	// We copy the reference to the readOnlyLatestBlockView. Since the utxoView is immutable, we don't need to copy the
 	// entire view while we hold the lock.
 	// We hold a read-lock on the mempool to get the transactions and the latest block view.
-	validationView := mp.readOnlyLatestBlockView
+	validationView := mp.validateTransactionsReadOnlyLatestBlockView
 	mempoolTxns := mp.getTransactionsNoLock()
 	mp.RUnlock()
 
@@ -1094,7 +1106,17 @@ func (mp *PosMempool) UpdateLatestBlock(blockView *UtxoView, blockHeight uint64)
 		return
 	}
 
-	mp.readOnlyLatestBlockView = blockView
+	if blockView != nil {
+		var err error
+		mp.readOnlyLatestBlockView, err = blockView.CopyUtxoView()
+		if err != nil {
+			glog.Errorf("PosMempool.UpdateLatestBlock: Problem copying utxo view: %v", err)
+		}
+		mp.validateTransactionsReadOnlyLatestBlockView, err = blockView.CopyUtxoView()
+		if err != nil {
+			glog.Errorf("PosMempool.UpdateLatestBlock: Problem copying utxo view: %v", err)
+		}
+	}
 	mp.latestBlockHeight = blockHeight
 }
 
