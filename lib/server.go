@@ -847,7 +847,12 @@ func (srv *Server) GetBlocksToStore(pp *Peer) {
 	for _, blockNode := range srv.blockchain.bestChain {
 		// We find the first block that's not stored and get ready to download blocks starting from this block onwards.
 		if blockNode.Status&StatusBlockStored == 0 {
-			numBlocksToFetch := MaxBlocksInFlight - len(pp.requestedBlocks)
+			maxBlocksInFlight := MaxBlocksInFlight
+			if pp.Params.ProtocolVersion >= ProtocolVersion2 &&
+				srv.params.IsPoSBlockHeight(uint64(blockNode.Height)) {
+				maxBlocksInFlight = MaxBlocksInFlightPoS
+			}
+			numBlocksToFetch := maxBlocksInFlight - len(pp.requestedBlocks)
 			currentHeight := int(blockNode.Height)
 			blockNodesToFetch := []*BlockNode{}
 			// In case there are blocks at tip that are already stored (which shouldn't really happen), we'll not download them.
@@ -902,7 +907,8 @@ func (srv *Server) GetBlocks(pp *Peer, maxHeight int) {
 	// If our peer is on PoS then we can safely request a lot more blocks from them in
 	// each flight.
 	maxBlocksInFlight := MaxBlocksInFlight
-	if pp.Params.ProtocolVersion >= ProtocolVersion2 {
+	if pp.Params.ProtocolVersion >= ProtocolVersion2 &&
+		srv.params.IsPoSBlockHeight(uint64(srv.blockchain.blockTip().Height)) {
 		maxBlocksInFlight = MaxBlocksInFlightPoS
 	}
 	numBlocksToFetch := maxBlocksInFlight - len(pp.requestedBlocks)
