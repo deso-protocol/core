@@ -56,12 +56,15 @@ type NetworkManager struct {
 
 	// Used to set remote node ids. Must be incremented atomically.
 	remoteNodeNextId uint64
+
 	// AllRemoteNodes is a map storing all remote nodes by their IDs.
 	AllRemoteNodes *collections.ConcurrentMap[RemoteNodeId, *RemoteNode]
 
-	// Indices for various types of remote nodes.
-	ValidatorOutboundIndex    *collections.ConcurrentMap[bls.SerializedPublicKey, *RemoteNode]
-	ValidatorInboundIndex     *collections.ConcurrentMap[bls.SerializedPublicKey, *RemoteNode]
+	// Indices for validator remote nodes
+	ValidatorOutboundIndex *collections.ConcurrentMap[bls.SerializedPublicKey, *RemoteNode]
+	ValidatorInboundIndex  *collections.ConcurrentMap[bls.SerializedPublicKey, *RemoteNode]
+
+	// Indices for non-validator remote nodes
 	NonValidatorOutboundIndex *collections.ConcurrentMap[RemoteNodeId, *RemoteNode]
 	NonValidatorInboundIndex  *collections.ConcurrentMap[RemoteNodeId, *RemoteNode]
 
@@ -96,7 +99,7 @@ type NetworkManager struct {
 	limitOneInboundRemoteNodePerIP bool
 
 	// The frequency at which the NetworkManager goroutines should run.
-	peerConnectionRefreshIntervalMillis time.Duration
+	peerConnectionRefreshInterval time.Duration
 
 	startGroup sync.WaitGroup
 	exitChan   chan struct{}
@@ -140,7 +143,7 @@ func NewNetworkManager(
 		targetNonValidatorOutboundRemoteNodes: targetNonValidatorOutboundRemoteNodes,
 		targetNonValidatorInboundRemoteNodes:  targetNonValidatorInboundRemoteNodes,
 		limitOneInboundRemoteNodePerIP:        limitOneInboundConnectionPerIP,
-		peerConnectionRefreshIntervalMillis:   time.Duration(peerConnectionRefreshIntervalMillis) * time.Millisecond,
+		peerConnectionRefreshInterval:         time.Duration(peerConnectionRefreshIntervalMillis) * time.Millisecond,
 		exitChan:                              make(chan struct{}),
 	}
 }
@@ -153,8 +156,7 @@ func (nm *NetworkManager) Start() {
 
 	// Start the NetworkManager goroutines. The startGroup is used to ensure that all goroutines have started before
 	// exiting the context of this function.
-	nm.startGroup.Add(4)
-	go nm.startPersistentConnector()
+	nm.startGroup.Add(3)
 	go nm.startValidatorConnector()
 	go nm.startNonValidatorConnector()
 	go nm.startRemoteNodeCleanup()
@@ -164,36 +166,16 @@ func (nm *NetworkManager) Start() {
 
 func (nm *NetworkManager) Stop() {
 	if !nm.params.DisableNetworkManagerRoutines {
-		nm.exitGroup.Add(4)
+		nm.exitGroup.Add(3)
 		close(nm.exitChan)
 		nm.exitGroup.Wait()
 	}
 	nm.DisconnectAll()
 }
 
-func (nm *NetworkManager) SetTargetOutboundPeers(numPeers uint32) {
-	nm.targetNonValidatorOutboundRemoteNodes = numPeers
-}
-
 // ###########################
 // ## NetworkManager Routines
 // ###########################
-
-// startPersistentConnector is responsible for ensuring that the node is connected to all persistent IP addresses. It
-// does this by periodically checking the persistentIpToRemoteNodeIdsMap, and connecting to any persistent IP addresses
-// that are not already connected.
-func (nm *NetworkManager) startPersistentConnector() {
-	nm.startGroup.Done()
-	for {
-		select {
-		case <-nm.exitChan:
-			nm.exitGroup.Done()
-			return
-		case <-time.After(nm.peerConnectionRefreshIntervalMillis):
-			nm.refreshConnectIps()
-		}
-	}
-}
 
 // startValidatorConnector is responsible for ensuring that the node is connected to all active validators. It does
 // this in two steps. First, it looks through the already established connections and checks if any of these connections
@@ -207,7 +189,7 @@ func (nm *NetworkManager) startValidatorConnector() {
 		case <-nm.exitChan:
 			nm.exitGroup.Done()
 			return
-		case <-time.After(nm.peerConnectionRefreshIntervalMillis):
+		case <-time.After(nm.peerConnectionRefreshInterval):
 			nm.refreshValidatorIndices()
 			nm.connectValidators()
 		}
@@ -226,7 +208,7 @@ func (nm *NetworkManager) startNonValidatorConnector() {
 		case <-nm.exitChan:
 			nm.exitGroup.Done()
 			return
-		case <-time.After(nm.peerConnectionRefreshIntervalMillis):
+		case <-time.After(nm.peerConnectionRefreshInterval):
 			nm.refreshNonValidatorOutboundIndex()
 			nm.refreshNonValidatorInboundIndex()
 			nm.connectNonValidators()
@@ -244,7 +226,7 @@ func (nm *NetworkManager) startRemoteNodeCleanup() {
 		case <-nm.exitChan:
 			nm.exitGroup.Done()
 			return
-		case <-time.After(nm.peerConnectionRefreshIntervalMillis):
+		case <-time.After(nm.peerConnectionRefreshInterval):
 			nm.Cleanup()
 		}
 	}
@@ -780,6 +762,24 @@ func (nm *NetworkManager) refreshNonValidatorInboundIndex() {
 // connectNonValidators attempts to connect to new outbound nonValidator remote nodes. It is called periodically by the
 // nonValidator connector.
 func (nm *NetworkManager) connectNonValidators() {
+	// Connect to addresses passed via the --connect-ips flag. These addresses are persistent in the sense that if we
+	// disconnect from one, we will try to reconnect to the same one.
+	for _, connectIp := range nm.connectIps {
+		if _, ok := nm.persistentIpToRemoteNodeIdsMap.Get(connectIp); ok {
+			continue
+		}
+
+		glog.Infof("NetworkManager.initiatePersistentConnections: Connecting to connectIp: %v", connectIp)
+		id, err := nm.CreateNonValidatorPersistentOutboundConnection(connectIp)
+		if err != nil {
+			glog.Errorf("NetworkManager.initiatePersistentConnections: Problem connecting "+
+				"to connectIp %v: %v", connectIp, err)
+			continue
+		}
+
+		nm.persistentIpToRemoteNodeIdsMap.Set(connectIp, id)
+	}
+
 	// If the NetworkManager is configured with a list of connectIps, then we don't need to connect to any
 	// non-validators using the address manager. We will only connect to the connectIps, and potentially validators.
 	if len(nm.connectIps) != 0 {
