@@ -87,6 +87,7 @@ func _generateConfig(t *testing.T, config *cmd.Config, port uint32, dataDir stri
 	config.StallTimeoutSeconds = 900
 	config.MinFeerate = 1000
 	config.OneInboundPerIp = false
+	config.PeerConnectionRefreshIntervalMillis = 1000
 	config.MaxBlockTemplatesCache = 100
 	config.MaxSyncBlockHeight = 100
 	config.MinBlockUpdateInterval = 10
