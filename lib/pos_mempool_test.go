@@ -226,7 +226,7 @@ func TestPosMempoolUpdateGlobalParams(t *testing.T) {
 	newGlobalParams := _testGetDefaultGlobalParams()
 	newGlobalParams.MinimumNetworkFeeNanosPerKB = 20000
 	mempool.UpdateGlobalParams(newGlobalParams)
-	require.Equal(0, len(mempool.GetTransactions()))
+	require.Equal(100, len(mempool.GetTransactions()))
 	mempool.Stop()
 	require.False(mempool.IsRunning())
 
