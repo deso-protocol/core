@@ -939,8 +939,6 @@ func (mp *PosMempool) validateTransactions() error {
 		// connect if the transaction has already previously been validated and been found to have a valid
 		// signature. This optimizes the connect by not repeating signature verification on a transaction
 		// more than once.
-		//
-		// TODO: Nina to confirm the signature validation assumption.
 		resultingUtxoView, _, _, _, _, err := validationView.ConnectTransactionIntoNewUtxoView(
 			txn.Tx, txn.Hash, uint32(nextBlockHeight), nextBlockTimestamp, !txn.IsValidated(), false,
 		)
