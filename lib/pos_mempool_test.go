@@ -380,12 +380,14 @@ func TestPosMempoolTransactionValidation(t *testing.T) {
 		passingTxns = append(passingTxns, txn)
 		_wrappedPosMempoolAddTransaction(t, mempool, txn)
 	}
+
 	for ii := 0; ii < 10; ii++ {
 		// Make sure the transaction fails the signature verification.
 		txn := _generateTestTxnWithOutputs(t, rand, feeMin, feeMax, m0PubBytes, m1Priv, 100, 25, output)
 		failingTxns = append(failingTxns, txn)
 		_wrappedPosMempoolAddTransaction(t, mempool, txn)
 	}
+
 	// Wait for the validation routine to finish.
 	time.Sleep(20 * time.Millisecond)
 	totalValidatedTxns := 0
@@ -394,8 +396,10 @@ func TestPosMempoolTransactionValidation(t *testing.T) {
 			totalValidatedTxns++
 		}
 	}
+
 	// Make sure that the number of validated transactions is equal to the maxValidationViewConnects.
-	require.Equal(t, 5, totalValidatedTxns)
+	require.Equal(t, 4, totalValidatedTxns)
+
 	// Now make sure that failing transactions were either removed, or remained unvalidated.
 	for _, txn := range failingTxns {
 		fetchedTxn := mempool.GetTransaction(txn.Hash())
@@ -403,6 +407,7 @@ func TestPosMempoolTransactionValidation(t *testing.T) {
 			require.False(t, fetchedTxn.IsValidated())
 		}
 	}
+
 	mempool.Stop()
 }
 

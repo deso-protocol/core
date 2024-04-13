@@ -3,7 +3,6 @@ package lib
 import (
 	"fmt"
 	"path/filepath"
-	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -639,23 +638,6 @@ func (mp *PosMempool) checkTransactionSanity(txn *MsgDeSoTxn, expectInnerAtomicT
 	return nil
 }
 
-// updateTransactionValidatedStatus updates the validated status of a mempool transaction with the provided txnHash.
-func (mp *PosMempool) updateTransactionValidatedStatus(txnHash *BlockHash, validated bool) {
-	mp.Lock()
-	defer mp.Unlock()
-
-	if !mp.IsRunning() || txnHash == nil {
-		return
-	}
-
-	txn := mp.txnRegister.GetTransaction(txnHash)
-	if txn == nil {
-		return
-	}
-
-	txn.SetValidated(validated)
-}
-
 func (mp *PosMempool) checkNonceTracker(txn *MempoolTx, userPk *PublicKey) (*MempoolTx, error) {
 
 	// Check the nonceTracker to see if this transaction is meant to replace an existing one.
@@ -813,6 +795,13 @@ func (mp *PosMempool) RemoveTransaction(txnHash *BlockHash) error {
 	return mp.removeTransactionNoLock(txn, true)
 }
 
+func (mp *PosMempool) removeTransaction(txn *MempoolTx, persistToDb bool) error {
+	mp.Lock()
+	defer mp.Unlock()
+
+	return mp.removeTransactionNoLock(txn, persistToDb)
+}
+
 func (mp *PosMempool) removeTransactionNoLock(txn *MempoolTx, persistToDb bool) error {
 	// First, sanity check our reserved balance.
 	userPk := NewPublicKey(txn.Tx.PublicKey)
@@ -921,13 +910,17 @@ func (mp *PosMempool) validateTransactions() error {
 	if !mp.IsRunning() {
 		return nil
 	}
+
 	// We hold a read-lock on the mempool to get the transactions and the latest block view.
 	mp.RLock()
-	// We copy the reference to the readOnlyLatestBlockView. Since the utxoView is immutable, we don't need to copy the
-	// entire view while we hold the lock.
-	// We hold a read-lock on the mempool to get the transactions and the latest block view.
+
+	// It's fine to create a copy of the pointer to the readOnlyLatestBlockView. Since the
+	// utxoView is immutable, we don't need to copy the entire view while we hold the lock.
 	validationView := mp.validateTransactionsReadOnlyLatestBlockView
 	mempoolTxns := mp.getTransactionsNoLock()
+	nextBlockHeight := mp.latestBlockHeight + 1
+	nextBlockTimestamp := time.Now().UnixNano()
+
 	mp.RUnlock()
 
 	// If the validation view is nil, there's nothing to do so we return early.
@@ -935,68 +928,55 @@ func (mp *PosMempool) validateTransactions() error {
 		return nil
 	}
 
-	// Convert the mempool transactions to the MsgDeSoTxn format, which we can use for connecting to the validation view.
-	var txns []*MsgDeSoTxn
-	var txHashes []*BlockHash
-	for _, txn := range mempoolTxns {
-		txns = append(txns, txn.Tx)
-		txHashes = append(txHashes, txn.Hash)
-	}
-	// Copy the validation view to avoid modifying the readOnlyLatestBlockView.
-	copyValidationView := validationView.CopyUtxoView()
-	// Connect the transactions to the validation view. We use the latest block height + 1 as the block height to connect
-	// the transactions. This is because the mempool contains transactions that we use for producing the next block.
-	_, _, _, _, errorsFound, err := copyValidationView.ConnectTransactionsFailSafeWithLimit(
-		txns, txHashes, uint32(mp.latestBlockHeight)+1,
-		time.Now().UnixNano(), true, false, true, mp.maxValidationViewConnects)
-	if err != nil {
-		return errors.Wrapf(err, "PosMempool.validateTransactions: Problem connecting transactions")
-	}
-
-	// We iterate through the successFlags and update the validated status of the transactions in the mempool.
-	var txnsToRemove []*MempoolTx
-	for ii, errFound := range errorsFound {
-		if ii >= len(mempoolTxns) {
+	// Iterate through all the transactions in the mempool and connect them to copies of the validation view.
+	for ii, txn := range mempoolTxns {
+		// Break out if we've attempted to connect the maximum number of txns to the view
+		if uint64(ii) >= mp.maxValidationViewConnects {
 			break
 		}
-		// If the transaction successfully connected to the validation view, we update the validated status of the
-		// transaction in the mempool. If the transaction failed to connect to the validation view, we add it to the
-		// txnsToRemove list. Note that we don't need to hold a lock while updating the validated status of the
-		// transactions in the mempool, since the updateTransactionValidatedStatus already holds the lock.
-		if errFound == nil {
-			mp.updateTransactionValidatedStatus(mempoolTxns[ii].Hash, true)
-		} else {
-			txnsToRemove = append(txnsToRemove, mempoolTxns[ii])
-			// Add an error for the txn to our cache so we can return it to the user if they
-			// ask for it later.
-			mp.recentRejectedTxnCache.Add(*mempoolTxns[ii].Hash, errFound)
+
+		// Connect the transaction to a copy of the validation view. We can skip signatures on the transaction
+		// connect if the transaction has already previously been validated and been found to have a valid
+		// signature. This optimizes the connect by not repeating signature verification on a transaction
+		// more than once.
+		//
+		// TODO: Nina to confirm the signature validation assumption.
+		resultingUtxoView, _, _, _, _, err := validationView.ConnectTransactionIntoNewUtxoView(
+			txn.Tx, txn.Hash, uint32(nextBlockHeight), nextBlockTimestamp, !txn.IsValidated(), false,
+		)
+
+		// If the txn fails to connect, then we set its validated status to false and remove it from the
+		// mempool. We also mark it as having been rejected so that it can't get re-submitted to the mempool.
+		if err != nil {
+			// Try to remove the transaction with a lock.
+			mp.removeTransaction(txn, true)
+
+			// Mark the txn as invalid and add an error to the cache so we can return it to the user if they
+			// try to resubmit it.
+			txn.SetValidated(false)
+			mp.recentRejectedTxnCache.Add(*mempoolTxns[ii].Hash, err)
+
+			continue
 		}
+
+		// The txn successfully connected. We set its validated status to true.
+		txn.SetValidated(true)
+
+		// We do a simple pointer update on the validation view here because the txn has already been
+		// connected to the resulting UtxoView. This allows us to avoid performing a second
+		// UtxoView.ConnectTransaction  operation.
+		validationView = resultingUtxoView
 	}
 
-	// Now remove all transactions from the txnsToRemove list from the main mempool.
-	mp.Lock()
-	for _, txn := range txnsToRemove {
-		if err := mp.removeTransactionNoLock(txn, true); err != nil {
-			glog.Errorf("PosMempool.validateTransactions: Problem removing transaction with hash (%v): %v", txn.Hash, err)
-		}
-	}
-	mp.Unlock()
-	// We also update the augmentedLatestBlockView with the view after the transactions have been connected.
+	// Update the augmentedLatestBlockView with the latest validationView after the transactions
+	// have been connected.
 	mp.augmentedReadOnlyLatestBlockViewMutex.Lock()
-	mp.augmentedReadOnlyLatestBlockView = copyValidationView
+	mp.augmentedReadOnlyLatestBlockView = validationView
 	mp.augmentedReadOnlyLatestBlockViewMutex.Unlock()
+
 	// Increment the augmentedLatestBlockViewSequenceNumber.
 	atomic.AddInt64(&mp.augmentedLatestBlockViewSequenceNumber, 1)
 
-	// Log the hashes for transactions that were removed.
-	if len(txnsToRemove) > 0 {
-		var removedTxnHashes []string
-		for _, txn := range txnsToRemove {
-			removedTxnHashes = append(removedTxnHashes, txn.Hash.String())
-		}
-		glog.V(1).Infof("PosMempool.validateTransactions: Transactions with the following hashes were removed: %v",
-			strings.Join(removedTxnHashes, ","))
-	}
 	return nil
 }
 
@@ -1071,9 +1051,11 @@ func (mp *PosMempool) GetAugmentedUniversalView() (*UtxoView, error) {
 	newView := readOnlyViewPointer.CopyUtxoView()
 	return newView, nil
 }
+
 func (mp *PosMempool) GetAugmentedUtxoViewForPublicKey(pk []byte, optionalTx *MsgDeSoTxn) (*UtxoView, error) {
 	return mp.GetAugmentedUniversalView()
 }
+
 func (mp *PosMempool) BlockUntilReadOnlyViewRegenerated() {
 	oldSeqNum := atomic.LoadInt64(&mp.augmentedLatestBlockViewSequenceNumber)
 	newSeqNum := oldSeqNum
