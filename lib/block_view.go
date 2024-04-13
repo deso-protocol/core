@@ -4,13 +4,14 @@ import (
 	"bytes"
 	"encoding/hex"
 	"fmt"
-	"github.com/btcsuite/btcd/btcec/v2"
-	"github.com/dgraph-io/badger/v4"
 	"math"
 	"math/big"
 	"reflect"
 	"strings"
 	"time"
+
+	"github.com/btcsuite/btcd/btcec/v2"
+	"github.com/dgraph-io/badger/v4"
 
 	"github.com/deso-protocol/core/bls"
 	"github.com/deso-protocol/core/collections/bitset"
@@ -4152,6 +4153,38 @@ func (bav *UtxoView) _connectSingleTxn(
 	}
 
 	return utxoOpsForTxn, totalInput, totalOutput, fees, nil
+}
+
+// ConnectTransactionIntoNewUtxoView is a fail safe way to connect a transaction to a view. It connects the transaction
+// to a copy of the view and returns the new view, the UtxoOperations, total inputs, total outputs, fees, and an error if
+// one occurred. The function does not modify the original view. The function is useful when you want to connect a
+// transaction to a view without modifying the original view through unintended side effects.
+func (bav *UtxoView) ConnectTransactionIntoNewUtxoView(
+	txn *MsgDeSoTxn,
+	txHash *BlockHash,
+	blockHeight uint32,
+	blockTimestampNanoSecs int64,
+	verifySignatures bool,
+	ignoreUtxos bool,
+) (
+	_finalUtxoView *UtxoView, // The new view with the transaction connected.
+	_utxoOps []*UtxoOperation,
+	_totalInput uint64,
+	_totalOutput uint64,
+	_fees uint64,
+	_err error,
+) {
+	// Copy the view so we can try connecting the transaction without modifying the original view.
+	copiedView := bav.CopyUtxoView()
+
+	// Connect the transaction to the copied view.
+	utxoOpsForTxn, totalInput, totalOutput, fees, err := copiedView.ConnectTransaction(
+		txn, txHash, blockHeight, blockTimestampNanoSecs, verifySignatures, ignoreUtxos)
+	if err != nil {
+		return nil, nil, 0, 0, 0, errors.Wrapf(err, "TryConnectTransaction: Problem connecting txn on copy view")
+	}
+
+	return copiedView, utxoOpsForTxn, totalInput, totalOutput, fees, nil
 }
 
 // ConnectTransactionsFailSafe connects a list of transactions to the view and returns the combined UtxoOperations,
