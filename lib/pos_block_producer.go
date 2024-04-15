@@ -341,17 +341,20 @@ func (pbp *PosBlockProducer) getBlockTransactions(
 		} else {
 			txnMeta, ok := txn.GetTxn().TxnMeta.(*AtomicTxnsWrapperMetadata)
 			if !ok {
-				return nil, 0, errors.New("Error casting txn meta to AtomicSwapMetadata")
+				return nil, 0,
+					errors.New("Error casting txn meta to AtomicSwapMetadata")
 			}
 			blockProducerPublicKeyBtcec, err := btcec.ParsePubKey(blockProducerPublicKey.ToBytes())
 			if err != nil {
-				return nil, 0, errors.Wrapf(err, "Error parsing block producer public key: ")
+				return nil, 0,
+					errors.Wrapf(err, "Error parsing block producer public key: ")
 			}
 			// Set fees to the sum of fees paid by public keys other than the block producer.
 			fees, err = filterOutBlockRewardRecipientFees(
 				txnMeta.Txns, blockProducerPublicKeyBtcec)
 			if err != nil {
-				return nil, 0, errors.Wrapf(err, "error filtering out block reward recipient fees")
+				return nil, 0,
+					errors.Wrapf(err, "error filtering out block reward recipient fees")
 			}
 		}
 		// Compute BMF for the transaction.

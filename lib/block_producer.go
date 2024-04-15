@@ -323,14 +323,16 @@ func (desoBlockProducer *DeSoBlockProducer) _getBlockTemplate(publicKey []byte) 
 				if !ok {
 					return nil, nil, nil,
 						errors.Wrapf(err,
-							"DeSoBlockProducer._getBlockTemplate: problem casting txn metadata to AtomicTxnsWrapperMetadata: ")
+							"DeSoBlockProducer._getBlockTemplate: "+
+								"problem casting txn metadata to AtomicTxnsWrapperMetadata: ")
 				}
 				feeNanos, err = filterOutBlockRewardRecipientFees(
 					txnMeta.Txns, blockRewardOutputPublicKey)
 				if err != nil {
 					return nil, nil, nil,
 						errors.Wrapf(err,
-							"DeSoBlockProducer._getBlockTemplate: problem filtering out block reward recipient fees: ")
+							"DeSoBlockProducer._getBlockTemplate: "+
+								"problem filtering out block reward recipient fees: ")
 				}
 			}
 		}
