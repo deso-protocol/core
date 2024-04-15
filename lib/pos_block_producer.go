@@ -1,6 +1,7 @@
 package lib
 
 import (
+	"github.com/btcsuite/btcd/btcec/v2"
 	"math"
 	"time"
 
@@ -332,11 +333,27 @@ func (pbp *PosBlockProducer) getBlockTransactions(
 		blocksTxns = append(blocksTxns, txn.GetTxn())
 		currentBlockSize += uint64(len(txnBytes))
 
-		// If the transactor is the block producer, then they won't receive the utility fee.
-		if blockProducerPublicKey.Equal(*NewPublicKey(txn.PublicKey)) {
-			continue
+		if txn.GetTxn().TxnMeta.GetTxnType() != TxnTypeAtomicTxnsWrapper {
+			// If the transactor is the block producer, then they won't receive the utility fee.
+			if blockProducerPublicKey.Equal(*NewPublicKey(txn.PublicKey)) {
+				continue
+			}
+		} else {
+			txnMeta, ok := txn.GetTxn().TxnMeta.(*AtomicTxnsWrapperMetadata)
+			if !ok {
+				return nil, 0, errors.New("Error casting txn meta to AtomicSwapMetadata")
+			}
+			blockProducerPublicKeyBtcec, err := btcec.ParsePubKey(blockProducerPublicKey.ToBytes())
+			if err != nil {
+				return nil, 0, errors.Wrapf(err, "Error parsing block producer public key: ")
+			}
+			// Set fees to the sum of fees paid by public keys other than the block producer.
+			fees, err = filterOutBlockRewardRecipientFees(
+				txnMeta.Txns, blockProducerPublicKeyBtcec)
+			if err != nil {
+				return nil, 0, errors.Wrapf(err, "error filtering out block reward recipient fees")
+			}
 		}
-
 		// Compute BMF for the transaction.
 		_, utilityFee := computeBMF(fees)
 		maxUtilityFee, err = SafeUint64().Add(maxUtilityFee, utilityFee)
