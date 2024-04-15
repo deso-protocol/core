@@ -622,11 +622,7 @@ func (posFeeEstimator *PoSFeeEstimator) estimateFeeRateNanosPerKBGivenTransactio
 		if !ok {
 			break
 		}
-		txnBytes, err := tx.Tx.ToBytes(false)
-		if err != nil {
-			return 0, errors.Wrap(err, "estimateFeeRateNanosPerKBGivenTransactionRegister: Problem serializing txn")
-		}
-		totalTxnsSize += uint64(len(txnBytes))
+		totalTxnsSize += tx.TxSizeBytes
 		txns = append(txns, tx)
 		// TODO: I think we want to include the txn that puts us over the limit, but
 		// we can just move this check up a few lines if that's wrong.
