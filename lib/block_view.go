@@ -4381,31 +4381,25 @@ func (bav *UtxoView) ConnectBlock(
 						"ConnectBlock: error computing maxUtilityFee: %v", err)
 				}
 			} else {
-				for _, innerTxn := range txn.TxnMeta.(*AtomicTxnsWrapperMetadata).Txns {
-					// Skip and ignore these fees if the transactor is the block reward output key.
-					transactorPubKey, err := btcec.ParsePubKey(innerTxn.PublicKey)
-					if err != nil {
-						return nil, fmt.Errorf("ConnectBlock: Problem parsing transactor public key: %v", err)
-					}
-					if transactorPubKey.IsEqual(blockRewardOutputPublicKey) {
-						continue
-					}
-
-					// Compute the BMF given the current fees paid in the block.
-					_, utilityFee = computeBMF(currentFees)
-
-					// Increment based on the fees paid by the INNER transaction.
-					if totalFees > (math.MaxUint64 - innerTxn.TxnFeeNanos) {
-						return nil, RuleErrorTxnOutputWithInvalidAmount
-					}
-					totalFees += innerTxn.TxnFeeNanos
-
-					// Increment the PoS total based on the utility fee based on this INNER transaction.
-					maxUtilityFee, err = SafeUint64().Add(maxUtilityFee, utilityFee)
-					if err != nil {
-						return nil, errors.Wrapf(RuleErrorPoSBlockRewardWithInvalidAmount,
-							"ConnectBlock: error computing maxUtilityFee: %v", err)
-					}
+				txnMeta, ok := txn.TxnMeta.(*AtomicTxnsWrapperMetadata)
+				if !ok {
+					return nil, fmt.Errorf("ConnectBlock: AtomicTxnsWrapperMetadata type assertion failed")
+				}
+				nonBlockRewardRecipientFees, err := filterOutBlockRewardRecipientFees(
+					txnMeta.Txns, blockRewardOutputPublicKey)
+				if err != nil {
+					return nil, errors.Wrapf(err, "ConnectBlock: error filtering out block reward recipient fees")
+				}
+				totalFees, err = SafeUint64().Add(totalFees, nonBlockRewardRecipientFees)
+				if err != nil {
+					return nil, errors.Wrap(
+						err, "ConnectBlock: error adding non-block-reward recipient fees from atomic transaction")
+				}
+				_, utilityFee = computeBMF(nonBlockRewardRecipientFees)
+				maxUtilityFee, err = SafeUint64().Add(maxUtilityFee, utilityFee)
+				if err != nil {
+					return nil, errors.Wrap(err,
+						"ConnectBlock: error computing maxUtilityFee: %v")
 				}
 			}
 		}

@@ -3,6 +3,7 @@ package lib
 import (
 	"bytes"
 	"fmt"
+	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/pkg/errors"
 	"io"
 )
@@ -441,6 +442,26 @@ func _verifyAtomicTxnsChain(txnMeta *AtomicTxnsWrapperMetadata) error {
 		}
 	}
 	return nil
+}
+
+func filterOutBlockRewardRecipientFees(txns []*MsgDeSoTxn, publicRewardPublicKey *btcec.PublicKey) (uint64, error) {
+	var nonBlockRewardRecipientFees uint64
+	for _, txn := range txns {
+		// If the transaction is performed by any public key other than block reward recipient transaction,
+		// add the fees to the total.
+		transactorPublicKey, err := btcec.ParsePubKey(txn.PublicKey)
+		if err != nil {
+			return 0, errors.Wrap(err, "filterBlockRewardRecipientFees: failed to parse public key")
+		}
+		if transactorPublicKey.IsEqual(publicRewardPublicKey) {
+			continue
+		}
+		nonBlockRewardRecipientFees, err = SafeUint64().Add(nonBlockRewardRecipientFees, txn.TxnFeeNanos)
+		if err != nil {
+			return 0, errors.Wrap(err, "filterBlockRewardRecipientFees: failed to add fees")
+		}
+	}
+	return nonBlockRewardRecipientFees, nil
 }
 
 func (bav *UtxoView) _disconnectAtomicTxnsWrapper(
