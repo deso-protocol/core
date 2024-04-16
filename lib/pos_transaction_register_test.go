@@ -371,6 +371,8 @@ func _testGetDefaultGlobalParams() *GlobalParamsEntry {
 	globalParams := InitialGlobalParamsEntry
 	globalParams.MinimumNetworkFeeNanosPerKB = 1000
 	globalParams.FeeBucketGrowthRateBasisPoints = 1000
+	globalParams.MempoolFeeEstimatorNumMempoolBlocks = 1
+	globalParams.MempoolFeeEstimatorNumPastBlocks = 1
 
 	return &globalParams
 }

@@ -40,9 +40,11 @@ func TestFeeEstimator(t *testing.T) {
 	// Construct a FeeEstimator with no transactions in it. We should get the minimum fee bucket.
 	// We make some dummy block to get around validations.
 	posFeeEstimator := &PoSFeeEstimator{}
-	err = posFeeEstimator.Init(mempool.txnRegister, 1, []*MsgDeSoBlock{{
-		Header: &MsgDeSoHeader{Height: 10},
-	}}, 1, mempool.globalParams)
+	err = posFeeEstimator.Init(
+		mempool.txnRegister,
+		[]*MsgDeSoBlock{{Header: &MsgDeSoHeader{Height: 10}}},
+		mempool.globalParams,
+	)
 	require.NoError(t, err)
 	// When there's nothing in the mempool, we return the global minimum fee rate.
 	baseFeeRate := posFeeEstimator.estimateFeeRateNanosPerKBGivenTransactionRegister(

@@ -314,14 +314,7 @@ func (mp *PosMempool) Init(
 	mp.recentBlockTxnCache = lru.NewKVCache(100000)    // cache 100K latest txns from blocks.
 	mp.recentRejectedTxnCache = lru.NewKVCache(100000) // cache 100K rejected txns.
 
-	// TODO: parameterize num blocks. Also, how to pass in blocks.
-	err = mp.feeEstimator.Init(
-		mp.txnRegister,
-		feeEstimatorNumMempoolBlocks,
-		feeEstimatorPastBlocks,
-		feeEstimatorNumPastBlocks,
-		mp.globalParams,
-	)
+	err = mp.feeEstimator.Init(mp.txnRegister, feeEstimatorPastBlocks, mp.globalParams)
 	if err != nil {
 		return errors.Wrapf(err, "PosMempool.Start: Problem initializing fee estimator")
 	}
@@ -1002,7 +995,7 @@ func (mp *PosMempool) pruneNoLock() error {
 func (mp *PosMempool) rebucketTransactionRegisterNoLock() error {
 	// Check if the global params haven't changed in a way that requires rebucketing the
 	// transaction register
-	if mp.txnRegister.HasGlobalParamChange(mp.globalParams) {
+	if !mp.txnRegister.HasGlobalParamChange(mp.globalParams) {
 		return nil
 	}
 
@@ -1063,7 +1056,11 @@ func (mp *PosMempool) UpdateGlobalParams(globalParams *GlobalParamsEntry) {
 		return
 	}
 
-	// TODO: Update the fee estimator
+	// Update the fee estimator's global params
+	if err := mp.feeEstimator.UpdateGlobalParams(mp.globalParams); err != nil {
+		glog.Errorf("PosMempool.UpdateGlobalParams: Problem updating fee estimator global params: %v", err)
+		return
+	}
 }
 
 // Implementation of the Mempool interface
