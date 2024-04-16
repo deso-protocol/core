@@ -1005,6 +1005,13 @@ func (mp *PosMempool) rebucketTransactionRegisterNoLock() error {
 		return errors.Wrapf(err, "PosMempool.rebucketTransactionRegisterNoLock: Problem rebucketing transaction register")
 	}
 
+	for _, txn := range mp.txnRegister.GetFeeTimeTransactions() {
+		txnInNewRegister := newTxnRegister.GetTransaction(txn.Hash)
+		if txnInNewRegister == nil {
+			mp.removeTransactionNoLock(txn, true)
+		}
+	}
+
 	// Swap the transaction register with the new transaction register
 	mp.txnRegister = newTxnRegister
 
