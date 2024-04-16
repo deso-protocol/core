@@ -82,9 +82,7 @@ func (tr *TransactionRegister) CopyWithNewGlobalParams(globalParams *GlobalParam
 
 	// Re-bucket all transactions in the new register.
 	for _, txn := range tr.GetFeeTimeTransactions() {
-		if err := newRegister.addTransactionNoLock(txn); err != nil {
-			return nil, errors.Wrapf(err, "TransactionRegister.CopyWithNewGlobalParams: Error adding transaction to new register")
-		}
+		newRegister.addTransactionNoLock(txn)
 	}
 
 	return newRegister, nil
