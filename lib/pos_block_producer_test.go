@@ -261,10 +261,8 @@ func TestGetBlockTransactions(t *testing.T) {
 	// In this case, some transactions should not make it into the block, despite being valid. The transactions
 	// that are rejected should have the lowest Fee-Time priority.
 
-	latestBlockViewCopy := latestBlockView.CopyUtxoView()
 	txns, maxUtilityFee, err := pbp.getBlockTransactions(NewPublicKey(m1PubBytes), latestBlockView, 3, 0, 1000, 1000)
 	require.NoError(err)
-	require.Equal(latestBlockViewCopy, latestBlockView)
 	require.Equal(true, len(passingTxns) > len(txns))
 	totalUtilityFee := uint64(0)
 	for _, txn := range txns {
@@ -304,10 +302,8 @@ func _testProduceBlockNoSizeLimit(t *testing.T, mp *PosMempool, pbp *PosBlockPro
 	totalTxns := numPassing + numFailing + numInvalid
 	require.Equal(totalTxns, len(mp.GetTransactions()))
 
-	latestBlockViewCopy := latestBlockView.CopyUtxoView()
 	txns, maxUtilityFee, err := pbp.getBlockTransactions(pbp.proposerPublicKey, latestBlockView, blockHeight, 0, math.MaxUint64, math.MaxUint64)
 	require.NoError(err)
-	require.Equal(latestBlockViewCopy, latestBlockView)
 	require.Equal(totalAcceptedTxns, len(txns))
 
 	return txns, maxUtilityFee

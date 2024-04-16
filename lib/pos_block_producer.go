@@ -297,7 +297,6 @@ func (pbp *PosBlockProducer) getBlockTransactions(
 ) {
 	// Get Fee-Time ordered transactions from the mempool
 	feeTimeTxns := pbp.mp.GetTransactions()
-
 	// Try to connect transactions one by one.
 	blocksTxns := []*MsgDeSoTxn{}
 	maxUtilityFee := uint64(0)
