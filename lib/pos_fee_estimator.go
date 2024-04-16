@@ -11,27 +11,27 @@ import (
 
 type PoSFeeEstimator struct {
 	// globalParams is the latest GlobalParams used by the PoSFeeEstimator. The fee estimation uses
-	// this whenever the cached blocks are refreshed
-	globalParams *GlobalParamsEntry
-	// mempoolTransactionRegister is a pointer to the mempool's transaction register. The fee estimator
-	// uses this to estimate fees based on congestion in the mempool.
-	mempoolTransactionRegister *TransactionRegister
-	// numMempoolBlocks is a parameter to manage how many blocks in the future we're willing to wait
+	// this whenever the cached blocks are refreshed. The global params contain two relevant params:
+	//
+	// 1. NumMempoolBlocks is a parameter to manage how many blocks in the future we're willing to wait
 	// to have our block included in the chain. This will most likely be set to 1, meaning that we
 	// want to estimate a fee such that the transaction will be included in the next block.
-	numMempoolBlocks uint64
-	// pastBlocksTransactionRegister is an internal transaction register to the fee estimator that
-	// is used to estimate fees based on congestion in the past blocks. The caller is responsible
-	// for calling AddBlock to add blocks to this transaction register whenever a new block is added
-	// to the best chain.
-	pastBlocksTransactionRegister *TransactionRegister
-	// numPastBlocks is a parameter to manage how many blocks in the past we're willing to look at
+	//
+	// 2. NumPastBlocks is a parameter to manage how many blocks in the past we're willing to look at
 	// to estimate fees. This will most likely be set to 60, meaning that we want to estimate a fee
 	// such that it would have been included in the past 60 blocks (assuming 1 block per second, this
 	// means the past minute of blocks). This parameter also controls how many blocks we store in
 	// cachedBlocks. When AddBlock is called and we have more than numPastBlocks, we remove the
 	// oldest block from cachedBlocks and pastBlocksTransactionRegister.
-	numPastBlocks uint64
+	globalParams *GlobalParamsEntry
+	// mempoolTransactionRegister is a pointer to the mempool's transaction register. The fee estimator
+	// uses this to estimate fees based on congestion in the mempool.
+	mempoolTransactionRegister *TransactionRegister
+	// pastBlocksTransactionRegister is an internal transaction register to the fee estimator that
+	// is used to estimate fees based on congestion in the past blocks. The caller is responsible
+	// for calling AddBlock to add blocks to this transaction register whenever a new block is added
+	// to the best chain.
+	pastBlocksTransactionRegister *TransactionRegister
 	// cachedBlocks is a cache of the past blocks that we use to estimate fees. This is used to
 	// avoid having to recompute the fee buckets for all the past blocks every time we want to
 	// estimate a fee.
@@ -50,9 +50,7 @@ func NewPoSFeeEstimator() *PoSFeeEstimator {
 // and cache the initial past blocks.
 func (posFeeEstimator *PoSFeeEstimator) Init(
 	mempoolTransactionRegister *TransactionRegister,
-	numMempoolBlocks uint64,
 	pastBlocks []*MsgDeSoBlock,
-	numPastBlocks uint64,
 	globalParams *GlobalParamsEntry,
 ) error {
 	posFeeEstimator.globalParams = globalParams.Copy()
@@ -64,16 +62,12 @@ func (posFeeEstimator *PoSFeeEstimator) Init(
 	if mempoolTransactionRegister == nil {
 		return errors.New("PoSFeeEstimator.Init: mempoolTransactionRegister cannot be nil")
 	}
-	if numMempoolBlocks == 0 {
+	if globalParams.MempoolFeeEstimatorNumMempoolBlocks == 0 {
 		return errors.New("PoSFeeEstimator.Init: numMempoolBlocks cannot be zero")
 	}
-	if numPastBlocks == 0 {
+	if globalParams.MempoolFeeEstimatorNumPastBlocks == 0 {
 		return errors.New("PoSFeeEstimator.Init: numPastBlocks cannot be zero")
 	}
-
-	// Store the num blocks params used to estimate fees.
-	posFeeEstimator.numMempoolBlocks = numMempoolBlocks
-	posFeeEstimator.numPastBlocks = numPastBlocks
 
 	// Store the mempool's transaction register.
 	posFeeEstimator.mempoolTransactionRegister = mempoolTransactionRegister
@@ -124,19 +118,27 @@ func (posFeeEstimator *PoSFeeEstimator) addBlockNoLock(block *MsgDeSoBlock) erro
 	newPastBlocks := append(posFeeEstimator.cachedBlocks, block)
 	newPastBlocks = posFeeEstimator.cleanUpPastBlocks(newPastBlocks)
 
+	if err := posFeeEstimator.updatePastBlocksTransactionRegister(newPastBlocks); err != nil {
+		return errors.Wrap(err, "PoSFeeEstimator.addBlockNoLock: error updating pastBlocksTransactionRegister")
+	}
+
+	return nil
+}
+
+func (posFeeEstimator *PoSFeeEstimator) updatePastBlocksTransactionRegister(pastBlocks []*MsgDeSoBlock) error {
 	// Create a clean transaction register to add the blocks' transactions.
 	newTransactionRegister := NewTransactionRegister()
 	newTransactionRegister.Init(posFeeEstimator.globalParams.Copy())
 
 	// Add all transactions from the block to the pastBlocksTransactionRegister.
-	for _, pastBlock := range newPastBlocks {
+	for _, pastBlock := range pastBlocks {
 		if err := addBlockToTransactionRegister(newTransactionRegister, pastBlock); err != nil {
-			return errors.Wrap(err, "PoSFeeEstimator.addBlockNoLock: error adding block to pastBlocksTransactionRegister")
+			return errors.Wrap(err, "error adding block to pastBlocksTransactionRegister")
 		}
 	}
 
 	// Update the cached blocks and pastBlocksTransactionRegister.
-	posFeeEstimator.cachedBlocks = newPastBlocks
+	posFeeEstimator.cachedBlocks = pastBlocks
 	posFeeEstimator.pastBlocksTransactionRegister = newTransactionRegister
 
 	return nil
@@ -192,20 +194,9 @@ func (posFeeEstimator *PoSFeeEstimator) removeBlockNoLock(block *MsgDeSoBlock) e
 		return !blockHash.IsEqual(cachedBlockHash)
 	})
 
-	// Create a clean transaction register to add the blocks' transactions.
-	newTransactionRegister := NewTransactionRegister()
-	newTransactionRegister.Init(posFeeEstimator.globalParams.Copy())
-
-	// Add all transactions from the past blocks to the transaction register.
-	for _, pastBlock := range newPastBlocks {
-		if err := addBlockToTransactionRegister(newTransactionRegister, pastBlock); err != nil {
-			return errors.Wrap(err, "PoSFeeEstimator.removeBlockNoLock: error adding block to transaction register")
-		}
+	if err := posFeeEstimator.updatePastBlocksTransactionRegister(newPastBlocks); err != nil {
+		return errors.Wrap(err, "PoSFeeEstimator.removeBlockNoLock: error updating pastBlocksTransactionRegister")
 	}
-
-	// Update the cached blocks and pastBlocksTransactionRegister.
-	posFeeEstimator.cachedBlocks = newPastBlocks
-	posFeeEstimator.pastBlocksTransactionRegister = newTransactionRegister
 
 	return nil
 }
@@ -217,17 +208,27 @@ func (posFeeEstimator *PoSFeeEstimator) UpdateGlobalParams(globalParams *GlobalP
 	posFeeEstimator.rwLock.Lock()
 	defer posFeeEstimator.rwLock.Unlock()
 
-	// Create a temporary transaction register to test the new global params.
-	tempTransactionRegister := NewTransactionRegister()
-	tempTransactionRegister.Init(globalParams.Copy())
+	// Check if the fee bucketing or the num past blocks params have changed have changed. If so, we need to
+	// rebucket the past blocks transaction register
+	hasPastBlocksParamChange := posFeeEstimator.pastBlocksTransactionRegister.HasGlobalParamChange(globalParams) ||
+		posFeeEstimator.globalParams.MempoolFeeEstimatorNumPastBlocks != globalParams.MempoolFeeEstimatorNumPastBlocks
 
-	for _, block := range posFeeEstimator.cachedBlocks {
-		if err := addBlockToTransactionRegister(tempTransactionRegister, block); err != nil {
-			return errors.Wrap(err, "PosFeeEstimator.UpdateGlobalParams: error adding block to tempTransactionRegister")
-		}
+	// Now that we've check if the global params have changed, we can update the global params.
+	posFeeEstimator.globalParams = globalParams
+
+	// If the global params haven't changed in a way to require a reconstruction of the past blocks transaction
+	// register, we can simply update the global params and return.
+	if !hasPastBlocksParamChange {
+		return nil
 	}
 
-	posFeeEstimator.globalParams = globalParams
+	// At this point, we know we need to reconstruct the past blocks transaction register.
+	pastBlocks := posFeeEstimator.pruneBlocksToMaxNumPastBlocks(posFeeEstimator.cachedBlocks)
+
+	if err := posFeeEstimator.updatePastBlocksTransactionRegister(pastBlocks); err != nil {
+		return errors.Wrap(err, "PoSFeeEstimator.UpdateGlobalParams: error updating pastBlocksTransactionRegister")
+	}
+
 	return nil
 }
 
@@ -276,13 +277,13 @@ func (posFeeEstimator *PoSFeeEstimator) sortBlocksByBlockHeight(blocks []*MsgDeS
 // pruneBlocksToMaxNumPastBlocks reduces the number of blocks to the numPastBlocks param
 func (posFeeEstimator *PoSFeeEstimator) pruneBlocksToMaxNumPastBlocks(blocks []*MsgDeSoBlock) []*MsgDeSoBlock {
 	numCachedBlocks := uint64(len(blocks))
-	if numCachedBlocks <= posFeeEstimator.numPastBlocks {
+	if numCachedBlocks <= posFeeEstimator.globalParams.MempoolFeeEstimatorNumPastBlocks {
 		return blocks
 	}
 
 	// Prune the blocks with the lowest block heights. We do this by removing the
 	// first len(blocks) - numPastBlocks blocks from the blocks slice.
-	return blocks[numCachedBlocks-posFeeEstimator.numPastBlocks:]
+	return blocks[numCachedBlocks-posFeeEstimator.globalParams.MempoolFeeEstimatorNumPastBlocks:]
 }
 
 // EstimateFeeRateNanosPerKB estimates the fee rate in nanos per KB for the current mempool
@@ -302,14 +303,14 @@ func (posFeeEstimator *PoSFeeEstimator) EstimateFeeRateNanosPerKB(
 		posFeeEstimator.pastBlocksTransactionRegister,
 		pastBlocksCongestionFactorBasisPoints,
 		pastBlocksPriorityPercentileBasisPoints,
-		posFeeEstimator.numPastBlocks,
+		posFeeEstimator.globalParams.MempoolFeeEstimatorNumPastBlocks,
 		maxBlockSize,
 	)
 	mempoolFeeRate := posFeeEstimator.estimateFeeRateNanosPerKBGivenTransactionRegister(
 		posFeeEstimator.mempoolTransactionRegister,
 		mempoolCongestionFactorBasisPoints,
 		mempoolPriorityPercentileBasisPoints,
-		posFeeEstimator.numMempoolBlocks,
+		posFeeEstimator.globalParams.MempoolFeeEstimatorNumMempoolBlocks,
 		maxBlockSize,
 	)
 	if minFeeRateNanosPerKB > pastBlockFeeRate && minFeeRateNanosPerKB > mempoolFeeRate {
@@ -375,7 +376,7 @@ func (posFeeEstimator *PoSFeeEstimator) pastBlocksFeeEstimate(
 		posFeeEstimator.pastBlocksTransactionRegister,
 		congestionFactorBasisPoints,
 		priorityPercentileBasisPoints,
-		posFeeEstimator.numPastBlocks,
+		posFeeEstimator.globalParams.MempoolFeeEstimatorNumPastBlocks,
 		maxBlockSize,
 	)
 	if err != nil {
@@ -397,7 +398,7 @@ func (posFeeEstimator *PoSFeeEstimator) mempoolFeeEstimate(
 		posFeeEstimator.mempoolTransactionRegister,
 		congestionFactorBasisPoints,
 		priorityPercentileBasisPoints,
-		posFeeEstimator.numMempoolBlocks,
+		posFeeEstimator.globalParams.MempoolFeeEstimatorNumMempoolBlocks,
 		maxBlockSize,
 	)
 	if err != nil {
