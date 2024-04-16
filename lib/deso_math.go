@@ -55,6 +55,15 @@ func IntAdd(a *big.Int, b *big.Int) *big.Int {
 	return big.NewInt(0).Add(a, b)
 }
 
+// BigIntFromUint64 returns a big.Int from a uint64. It is 20x faster to
+// simply cast a uint64 to a big.Int than to use big.NewInt(0).SetUint64().
+func BigIntFromUint64(x uint64) *big.Int {
+	if x < math.MaxInt64 {
+		return big.NewInt(int64(x))
+	}
+	return big.NewInt(0).SetUint64(x)
+}
+
 func Sub(a *big.Float, b *big.Float) *big.Float {
 	// TODO(performance): This code currently calls NewFloat() too often. It
 	// does this in order to make the code easier to read but if it ever becomes

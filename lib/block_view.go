@@ -4042,7 +4042,7 @@ func (bav *UtxoView) _connectSingleTxn(
 	if txn.TxnMeta.GetTxnType() != TxnTypeBlockReward &&
 		txn.TxnMeta.GetTxnType() != TxnTypeBitcoinExchange &&
 		blockHeight >= bav.Params.ForkHeights.BalanceModelBlockHeight {
-		balanceDelta, _, err := bav._compareBalancesToSnapshot(balanceSnapshot)
+		balanceDelta, err := bav._compareBalancesToSnapshot(balanceSnapshot)
 		if err != nil {
 			return nil, 0, 0, 0, errors.Wrapf(err, "ConnectTransaction: error comparing current balances to snapshot")
 		}
@@ -4053,8 +4053,8 @@ func (bav *UtxoView) _connectSingleTxn(
 			if creatorProfile == nil || creatorProfile.IsDeleted() {
 				return nil, 0, 0, 0, fmt.Errorf("ConnectTransaction: Profile for CreatorCoin being sold does not exist")
 			}
-			desoLockedDelta = big.NewInt(0).Sub(big.NewInt(0).SetUint64(creatorProfile.CreatorCoinEntry.DeSoLockedNanos),
-				big.NewInt(0).SetUint64(creatorCoinSnapshot.DeSoLockedNanos))
+			desoLockedDelta = big.NewInt(0).Sub(BigIntFromUint64(creatorProfile.CreatorCoinEntry.DeSoLockedNanos),
+				BigIntFromUint64(creatorCoinSnapshot.DeSoLockedNanos))
 		}
 		if txn.TxnMeta.GetTxnType() == TxnTypeAcceptNFTBid ||
 			txn.TxnMeta.GetTxnType() == TxnTypeNFTBid {
@@ -4066,8 +4066,8 @@ func (bav *UtxoView) _connectSingleTxn(
 				}
 				desoLockedDelta = desoLockedDelta.Sub(desoLockedDelta,
 					big.NewInt(0).Sub(
-						big.NewInt(0).SetUint64(creatorProfile.CreatorCoinEntry.DeSoLockedNanos),
-						big.NewInt(0).SetUint64(coinEntry.DeSoLockedNanos)),
+						BigIntFromUint64(creatorProfile.CreatorCoinEntry.DeSoLockedNanos),
+						BigIntFromUint64(coinEntry.DeSoLockedNanos)),
 				)
 			}
 		}
@@ -4247,26 +4247,24 @@ func computeBMF(fee uint64) (_burnFee uint64, _utilityFee uint64) {
 }
 
 func (bav *UtxoView) _compareBalancesToSnapshot(balanceSnapshot map[PublicKey]uint64) (
-	*big.Int, map[PublicKey]*big.Int, error) {
+	*big.Int, error) {
 	runningTotal := big.NewInt(0)
-	balanceDeltasMap := make(map[PublicKey]*big.Int)
 	for publicKey, balance := range bav.PublicKeyToDeSoBalanceNanos {
 		snapshotBalance, exists := balanceSnapshot[publicKey]
 		if !exists {
 			// Get it from the DB
 			dbBalance, err := bav.GetDbAdapter().GetDeSoBalanceForPublicKey(publicKey.ToBytes())
 			if err != nil {
-				return nil, nil, err
+				return nil, err
 			}
 			snapshotBalance = dbBalance
 			balanceSnapshot[publicKey] = snapshotBalance
 		}
 		// New - Old
-		delta := big.NewInt(0).Sub(big.NewInt(0).SetUint64(balance), big.NewInt(0).SetUint64(snapshotBalance))
-		balanceDeltasMap[publicKey] = delta
+		delta := big.NewInt(0).Sub(BigIntFromUint64(balance), BigIntFromUint64(snapshotBalance))
 		runningTotal = big.NewInt(0).Add(runningTotal, delta)
 	}
-	return runningTotal, balanceDeltasMap, nil
+	return runningTotal, nil
 }
 
 func (bav *UtxoView) ConnectBlock(

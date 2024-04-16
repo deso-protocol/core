@@ -1654,7 +1654,7 @@ func TestSpendingLimitMetamaskString(t *testing.T) {
 			encoding := spendingLimit.ToMetamaskString(params)
 			if tsl.GlobalDESOLimit > 0 {
 				if !strings.Contains(encoding, FormatScaledUint256AsDecimalString(
-					big.NewInt(0).SetUint64(tsl.GlobalDESOLimit), big.NewInt(int64(NanosPerUnit)))) {
+					BigIntFromUint64(tsl.GlobalDESOLimit), big.NewInt(int64(NanosPerUnit)))) {
 					return false
 				}
 			}

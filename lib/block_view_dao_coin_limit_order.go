@@ -814,7 +814,7 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 				pubKey := bav.GetPublicKeyForPKID(&userPKID)
 				desoSurplus := desoAllowedToSpendByPublicKey[*NewPublicKey(pubKey)]
 				newDESOSurplus := big.NewInt(0).Add(
-					delta, big.NewInt(0).SetUint64(desoSurplus))
+					delta, BigIntFromUint64(desoSurplus))
 
 				// If the current delta is for the transactor, we need
 				// to deduct the fees specified in the metadata from the output
@@ -823,7 +823,7 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 				if blockHeight < bav.Params.ForkHeights.BalanceModelBlockHeight &&
 					transactorPKIDEntry.PKID.Eq(&userPKID) {
 
-					newDESOSurplus = big.NewInt(0).Sub(newDESOSurplus, big.NewInt(0).SetUint64(txMeta.FeeNanos))
+					newDESOSurplus = big.NewInt(0).Sub(newDESOSurplus, BigIntFromUint64(txMeta.FeeNanos))
 				}
 
 				if blockHeight >= bav.Params.ForkHeights.BalanceModelBlockHeight {
@@ -1975,7 +1975,7 @@ func ScaleFloatFormatStringToUint256(floatStr string, scaleFactor *uint256.Int) 
 	}
 	newWholePart := big.NewInt(0).Mul(wholePart, scaleFactor.ToBig())
 	newDecimalPart := big.NewInt(0).Mul(decimalPart, big.NewInt(0).Exp(
-		big.NewInt(0).SetUint64(10), big.NewInt(0).SetUint64(uint64(decimalExponent)), nil))
+		big.NewInt(10), big.NewInt(int64(decimalExponent)), nil))
 
 	sumBig := big.NewInt(0).Add(newWholePart, newDecimalPart)
 	ret, overflow := uint256.FromBig(sumBig)
