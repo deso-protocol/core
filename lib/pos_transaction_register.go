@@ -64,6 +64,32 @@ func (tr *TransactionRegister) Init(globalParams *GlobalParamsEntry) {
 	tr.feeBucketGrowthRateBasisPoints = bucketMultiplier
 }
 
+func (tr *TransactionRegister) HasGlobalParamChange(globalParams *GlobalParamsEntry) bool {
+	tr.Lock()
+	defer tr.Unlock()
+
+	minNetworkFee, bucketMultiplier := globalParams.ComputeFeeTimeBucketMinimumFeeAndMultiplier()
+
+	return minNetworkFee.Cmp(tr.minimumNetworkFeeNanosPerKB) != 0 || bucketMultiplier.Cmp(tr.feeBucketGrowthRateBasisPoints) != 0
+}
+
+func (tr *TransactionRegister) CopyWithNewGlobalParams(globalParams *GlobalParamsEntry) (*TransactionRegister, error) {
+	tr.RLock()
+	defer tr.RUnlock()
+
+	newRegister := NewTransactionRegister()
+	newRegister.Init(globalParams)
+
+	// Re-bucket all transactions in the new register.
+	for _, txn := range tr.GetFeeTimeTransactions() {
+		if err := newRegister.addTransactionNoLock(txn); err != nil {
+			return nil, errors.Wrapf(err, "TransactionRegister.CopyWithNewGlobalParams: Error adding transaction to new register")
+		}
+	}
+
+	return newRegister, nil
+}
+
 // feeTimeBucketComparator is a comparator function for FeeTimeBucket objects. It is used to order FeeTimeBucket objects
 // in the TransactionRegister's feeTimeBucketSet based on fee ranges (higher fee ranges are ordered first).
 func feeTimeBucketComparator(a, b interface{}) int {

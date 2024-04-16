@@ -2,12 +2,13 @@ package lib
 
 import (
 	"bytes"
-	ecdsa2 "github.com/decred/dcrd/dcrec/secp256k1/v4/ecdsa"
 	"math"
 	"math/rand"
 	"sort"
 	"testing"
 	"time"
+
+	ecdsa2 "github.com/decred/dcrd/dcrec/secp256k1/v4/ecdsa"
 
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/stretchr/testify/require"
@@ -556,4 +557,65 @@ func TestComputeFeeBucketWithFee(t *testing.T) {
 		n := computeFeeTimeBucketExponentFromFeeNanosPerKB(ii, baseRate, bucketMultiplier)
 		require.True(verifyFeeBucket(n, ii))
 	}
+}
+
+func TestHasGlobalParamChange(t *testing.T) {
+	// Create the transaction register.
+	globalParams := _testGetDefaultGlobalParams()
+	tr := NewTransactionRegister()
+	tr.Init(globalParams)
+
+	// Test with no changes.
+	unchangedGlobalParams := _testGetDefaultGlobalParams()
+	require.False(t, tr.HasGlobalParamChange(unchangedGlobalParams))
+
+	// Test with MinimumNetworkFeeNanosPerKB change.
+	globalParamsWithNewFeeRate := _testGetDefaultGlobalParams()
+	globalParamsWithNewFeeRate.MinimumNetworkFeeNanosPerKB = 2000
+	require.True(t, tr.HasGlobalParamChange(globalParamsWithNewFeeRate))
+
+	// Test with FeeBucketGrowthRateBasisPoints change.
+	globalParamsWithNewGrowthRate := _testGetDefaultGlobalParams()
+	globalParamsWithNewGrowthRate.FeeBucketGrowthRateBasisPoints = 2000
+	require.True(t, tr.HasGlobalParamChange(globalParamsWithNewGrowthRate))
+}
+
+func TestCopyWithNewGlobalParams(t *testing.T) {
+	// Create the transaction register.
+	globalParams := _testGetDefaultGlobalParams()
+	tr := NewTransactionRegister()
+	tr.Init(globalParams)
+
+	seed := int64(44)
+	testCases := 1000
+	exponentRange := 100
+	timestampRange := uint64(10000)
+
+	rand := rand.New(rand.NewSource(seed))
+	randomExponent := uint32(rand.Intn(exponentRange))
+	baseRate, bucketMultiplier := globalParams.ComputeFeeTimeBucketMinimumFeeAndMultiplier()
+	feeMin, feeMax := computeFeeTimeBucketRangeFromExponent(randomExponent, baseRate, bucketMultiplier)
+
+	// Create the txns
+	txnPool := _testGetRandomMempoolTxns(rand, feeMin, feeMax, 1000, timestampRange, testCases)
+
+	// Add the txns to the transaction register.
+	for _, txn := range txnPool {
+		err := tr.AddTransaction(txn)
+		require.Nil(t, err)
+	}
+
+	// Copy the transaction register with new global params.
+	newGlobalParams := _testGetDefaultGlobalParams()
+	newGlobalParams.MinimumNetworkFeeNanosPerKB = 500
+
+	newTr, err := tr.CopyWithNewGlobalParams(newGlobalParams)
+	require.Nil(t, err)
+	require.NotNil(t, newTr)
+
+	originalTxns := tr.GetFeeTimeTransactions()
+	rebucketedTxns := newTr.GetFeeTimeTransactions()
+
+	// Make sure the number of txns is the same.
+	require.Equal(t, len(originalTxns), len(rebucketedTxns))
 }
