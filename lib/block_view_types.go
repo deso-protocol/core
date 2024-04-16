@@ -1064,6 +1064,12 @@ type UtxoOperation struct {
 	// AtomicTxnsInnerUtxoOps transaction is non-zero. This will always occur, meaning we
 	// can deterministically encode and decode AtomicTxnsInnerUtxoOps.
 	AtomicTxnsInnerUtxoOps [][]*UtxoOperation
+
+	// AtomicTxnsInnerTotalInput is an array of the total input amount for each inner txn in an atomic transaction.
+	AtomicTxnsInnerTotalInput []uint64
+
+	// AtomicTxnsInnerTotalOutput is an array of the total output amount for each inner txn in an atomic transaction.
+	AtomicTxnsInnerTotalOutput []uint64
 }
 
 // FIXME: This hackIsRunningStateSyncer() call is a hack to get around the fact that
@@ -1444,6 +1450,18 @@ func (op *UtxoOperation) RawEncodeWithoutMetadata(blockHeight uint64, skipMetada
 			for _, utxoOps := range entry {
 				data = append(data, EncodeToBytes(blockHeight, utxoOps, skipMetadata...)...)
 			}
+		}
+
+		// AtomicTxnsInnerTotalInput
+		data = append(data, UintToBuf(uint64(len(op.AtomicTxnsInnerTotalInput)))...)
+		for _, input := range op.AtomicTxnsInnerTotalInput {
+			data = append(data, UintToBuf(input)...)
+		}
+
+		// AtomicTxnsInnerTotalOutput
+		data = append(data, UintToBuf(uint64(len(op.AtomicTxnsInnerTotalOutput)))...)
+		for _, output := range op.AtomicTxnsInnerTotalOutput {
+			data = append(data, UintToBuf(output)...)
 		}
 	}
 
@@ -2142,11 +2160,11 @@ func (op *UtxoOperation) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.
 		}
 
 		// AtomicTxnsInnerUtxoOps
-		lenAtomicTnxInnerUtxoOps, err := ReadUvarint(rr)
+		lenAtomicTxnInnerUtxoOps, err := ReadUvarint(rr)
 		if err != nil {
 			return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading len of AtomicTxnsInnerUtxoOps")
 		}
-		for ii := uint64(0); ii < lenAtomicTnxInnerUtxoOps; ii++ {
+		for ii := uint64(0); ii < lenAtomicTxnInnerUtxoOps; ii++ {
 			lenInnerOperations, err := ReadUvarint(rr)
 			if err != nil {
 				return errors.Wrapf(err,
@@ -2164,6 +2182,34 @@ func (op *UtxoOperation) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.
 				}
 			}
 			op.AtomicTxnsInnerUtxoOps = append(op.AtomicTxnsInnerUtxoOps, innerOperations)
+		}
+
+		// AtomicTxnsInnerTotalInput
+		lenAtomicTnxInnerTotalInput, err := ReadUvarint(rr)
+		if err != nil {
+			return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading len of AtomicTxnsInnerTotalInput")
+		}
+		for ii := uint64(0); ii < lenAtomicTnxInnerTotalInput; ii++ {
+			innerTotalInput, err := ReadUvarint(rr)
+			if err != nil {
+				return errors.Wrapf(err,
+					"UtxoOperation.Decode: Problem reading len of AtomicTxnsInnerTotalInput[%d]", ii)
+			}
+			op.AtomicTxnsInnerTotalInput = append(op.AtomicTxnsInnerTotalInput, innerTotalInput)
+		}
+
+		// AtomicTxnsInnerTotalOutput
+		lenAtomicTnxInnerTotalOutput, err := ReadUvarint(rr)
+		if err != nil {
+			return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading len of AtomicTxnsInnerTotalOutput")
+		}
+		for ii := uint64(0); ii < lenAtomicTnxInnerTotalOutput; ii++ {
+			innerTotalOutput, err := ReadUvarint(rr)
+			if err != nil {
+				return errors.Wrapf(err,
+					"UtxoOperation.Decode: Problem reading len of AtomicTxnsInnerTotalOutput[%d]", ii)
+			}
+			op.AtomicTxnsInnerTotalOutput = append(op.AtomicTxnsInnerTotalOutput, innerTotalOutput)
 		}
 	}
 
