@@ -1029,7 +1029,7 @@ func (mp *PosMempool) UpdateGlobalParams(globalParams *GlobalParamsEntry) {
 
 	mp.globalParams = globalParams
 
-	// TODO: Trim the mempool size
+	// Trim the mempool size to the new maximum size.
 
 	// TODO: Update the fee bucketing parameters
 
