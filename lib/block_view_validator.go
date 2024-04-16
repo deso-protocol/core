@@ -1524,12 +1524,22 @@ func (bav *UtxoView) _connectUnregisterAsValidator(
 		)
 	}
 
+	// Compute map of staker PKIDs to public key base58check for  state change entry.
+	stakerPKIDToPublicKeyBase58CheckMap := make(map[PKID]string)
+	for _, stakerPKID := range prevStakeEntries {
+		stakerPKIDToPublicKeyBase58CheckMap[*stakerPKID.StakerPKID] = PkToString(
+			bav.GetPublicKeyForPKID(stakerPKID.StakerPKID), bav.Params)
+	}
+
 	// Create a UTXO operation.
 	utxoOpForTxn := &UtxoOperation{
 		Type:                   OperationTypeUnregisterAsValidator,
 		PrevValidatorEntry:     prevValidatorEntry,
 		PrevStakeEntries:       prevStakeEntries,
 		PrevLockedStakeEntries: prevLockedStakeEntries,
+		StateChangeMetadata: &UnregisterAsValidatorStateChangeMetadata{
+			StakerPKIDToPublicKeyBase58CheckMap: stakerPKIDToPublicKeyBase58CheckMap,
+		},
 	}
 	if err = bav.SanityCheckUnregisterAsValidatorTxn(transactorPKIDEntry.PKID, utxoOpForTxn, totalUnstakedAmountNanos); err != nil {
 		return 0, 0, nil, errors.Wrapf(err, "_connectUnregisterAsValidator: ")
