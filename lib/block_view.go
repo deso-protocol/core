@@ -4343,7 +4343,6 @@ func (bav *UtxoView) ConnectBlock(
 		if err != nil {
 			return nil, errors.Wrapf(err, "ConnectBlock: error connecting txn #%d", txIndex)
 		}
-		_, utilityFee = computeBMF(currentFees)
 
 		// After the block reward patch block height, we only include fees from transactions
 		// where the transactor is not the block reward output public key. This prevents
@@ -4351,7 +4350,8 @@ func (bav *UtxoView) ConnectBlock(
 		// included in blocks for free.
 		includeFeesInBlockReward := true
 		if blockHeight >= uint64(bav.Params.ForkHeights.BlockRewardPatchBlockHeight) &&
-			txn.TxnMeta.GetTxnType() != TxnTypeBlockReward {
+			txn.TxnMeta.GetTxnType() != TxnTypeBlockReward &&
+			txn.TxnMeta.GetTxnType() != TxnTypeAtomicTxnsWrapper {
 			transactorPubKey, err := btcec.ParsePubKey(txn.PublicKey)
 			if err != nil {
 				return nil, fmt.Errorf("ConnectBlock: Problem parsing transactor public key: %v", err)
@@ -4360,21 +4360,47 @@ func (bav *UtxoView) ConnectBlock(
 		}
 
 		if includeFeesInBlockReward {
-			// Add the fees from this txn to the total fees. If any overflow occurs
-			// mark the block as invalid and return a rule error. Note that block reward
-			// txns should count as having zero fees.
-			if totalFees > (math.MaxUint64 - currentFees) {
-				return nil, RuleErrorTxnOutputWithInvalidAmount
-			}
-			totalFees += currentFees
+			if txn.TxnMeta.GetTxnType() != TxnTypeAtomicTxnsWrapper {
+				// Compute the BMF given the current fees paid in the block.
+				_, utilityFee = computeBMF(currentFees)
 
-			// For PoS, the maximum block reward is based on the maximum utility fee.
-			// Add the utility fees to the max utility fees. If any overflow
-			// occurs mark the block as invalid and return a rule error.
-			maxUtilityFee, err = SafeUint64().Add(maxUtilityFee, utilityFee)
-			if err != nil {
-				return nil, errors.Wrapf(RuleErrorPoSBlockRewardWithInvalidAmount,
-					"ConnectBlock: error computing maxUtilityFee: %v", err)
+				// Add the fees from this txn to the total fees. If any overflow occurs
+				// mark the block as invalid and return a rule error. Note that block reward
+				// txns should count as having zero fees.
+				if totalFees > (math.MaxUint64 - currentFees) {
+					return nil, RuleErrorTxnOutputWithInvalidAmount
+				}
+				totalFees += currentFees
+
+				// For PoS, the maximum block reward is based on the maximum utility fee.
+				// Add the utility fees to the max utility fees. If any overflow
+				// occurs mark the block as invalid and return a rule error.
+				maxUtilityFee, err = SafeUint64().Add(maxUtilityFee, utilityFee)
+				if err != nil {
+					return nil, errors.Wrapf(RuleErrorPoSBlockRewardWithInvalidAmount,
+						"ConnectBlock: error computing maxUtilityFee: %v", err)
+				}
+			} else {
+				txnMeta, ok := txn.TxnMeta.(*AtomicTxnsWrapperMetadata)
+				if !ok {
+					return nil, fmt.Errorf("ConnectBlock: AtomicTxnsWrapperMetadata type assertion failed")
+				}
+				nonBlockRewardRecipientFees, err := filterOutBlockRewardRecipientFees(
+					txnMeta.Txns, blockRewardOutputPublicKey)
+				if err != nil {
+					return nil, errors.Wrapf(err, "ConnectBlock: error filtering out block reward recipient fees")
+				}
+				totalFees, err = SafeUint64().Add(totalFees, nonBlockRewardRecipientFees)
+				if err != nil {
+					return nil, errors.Wrap(
+						err, "ConnectBlock: error adding non-block-reward recipient fees from atomic transaction")
+				}
+				_, utilityFee = computeBMF(nonBlockRewardRecipientFees)
+				maxUtilityFee, err = SafeUint64().Add(maxUtilityFee, utilityFee)
+				if err != nil {
+					return nil, errors.Wrap(err,
+						"ConnectBlock: error computing maxUtilityFee: %v")
+				}
 			}
 		}
 

@@ -305,12 +305,36 @@ func (desoBlockProducer *DeSoBlockProducer) _getBlockTemplate(publicKey []byte) 
 
 		includeFeesInBlockReward := true
 		if blockRet.Header.Height >= uint64(desoBlockProducer.params.ForkHeights.BlockRewardPatchBlockHeight) {
-			// Parse the transactor's public key to compare with the block reward output public key.
-			transactorPublicKey, err := btcec.ParsePubKey(txnInBlock.PublicKey)
-			if err != nil {
-				return nil, nil, nil, errors.Wrapf(err, "DeSoBlockProducer._getBlockTemplate: problem parsing transactor public key: ")
+			if txnInBlock.TxnMeta.GetTxnType() != TxnTypeAtomicTxnsWrapper {
+				// Parse the transactor's public key to compare with the block reward output public key.
+				transactorPublicKey, err := btcec.ParsePubKey(txnInBlock.PublicKey)
+				if err != nil {
+					return nil, nil, nil,
+						errors.Wrapf(err,
+							"DeSoBlockProducer._getBlockTemplate: problem parsing transactor public key: ")
+				}
+				includeFeesInBlockReward = !transactorPublicKey.IsEqual(blockRewardOutputPublicKey)
+			} else {
+				// In the case of atomic transaction wrappers, we must parse and process each inner transaction
+				// independently. We let includeFeesInBlockRewards remain true but decrement feeNanos whenever
+				// transactor public key equals block reward output public key. In effect, we ignore
+				// fees in atomic transactions where the transactor is equivalent to the block producer.
+				txnMeta, ok := txnInBlock.TxnMeta.(*AtomicTxnsWrapperMetadata)
+				if !ok {
+					return nil, nil, nil,
+						errors.Wrapf(err,
+							"DeSoBlockProducer._getBlockTemplate: "+
+								"problem casting txn metadata to AtomicTxnsWrapperMetadata: ")
+				}
+				feeNanos, err = filterOutBlockRewardRecipientFees(
+					txnMeta.Txns, blockRewardOutputPublicKey)
+				if err != nil {
+					return nil, nil, nil,
+						errors.Wrapf(err,
+							"DeSoBlockProducer._getBlockTemplate: "+
+								"problem filtering out block reward recipient fees: ")
+				}
 			}
-			includeFeesInBlockReward = !transactorPublicKey.IsEqual(blockRewardOutputPublicKey)
 		}
 
 		// If the transactor is not the block reward output (or we're before the BlockRewardPatchBlockHeight),
@@ -321,7 +345,8 @@ func (desoBlockProducer *DeSoBlockProducer) _getBlockTemplate(publicKey []byte) 
 		if includeFeesInBlockReward {
 			// Check for overflow
 			if totalFeeNanos > math.MaxUint64-feeNanos {
-				return nil, nil, nil, fmt.Errorf("DeSoBlockProducer._getBlockTemplate: Total fee overflowed uint64")
+				return nil, nil, nil,
+					fmt.Errorf("DeSoBlockProducer._getBlockTemplate: Total fee overflowed uint64")
 			}
 			// Add the fee to the block reward output as we go. Note this has some risk of
 			// increasing the size of the block by one byte, but it seems like this is an
@@ -452,13 +477,32 @@ func RecomputeBlockRewardWithBlockRewardOutputPublicKey(
 	// and sum fees to calculate the block reward
 	totalFees := uint64(0)
 	for _, txn := range block.Txns[1:] {
-		transactorPublicKey, err := btcec.ParsePubKey(txn.PublicKey)
-		if err != nil {
-			glog.Errorf("DeSoMiner._startThread: Error parsing transactor public key: %v", err)
-			continue
-		}
-		if !transactorPublicKey.IsEqual(blockRewardOutputPublicKey) {
+		if txn.TxnMeta.GetTxnType() != TxnTypeAtomicTxnsWrapper {
+			transactorPublicKey, err := btcec.ParsePubKey(txn.PublicKey)
+			if err != nil {
+				glog.Errorf("DeSoMiner._startThread: Error parsing transactor public key: %v", err)
+				continue
+			}
+			if transactorPublicKey.IsEqual(blockRewardOutputPublicKey) {
+				continue
+			}
 			totalFees, err = SafeUint64().Add(totalFees, txn.TxnFeeNanos)
+			if err != nil {
+				glog.Errorf("DeSoMiner._startThread: Error adding txn fee: %v", err)
+				continue
+			}
+		} else {
+			txnMeta, ok := txn.TxnMeta.(*AtomicTxnsWrapperMetadata)
+			if !ok {
+				glog.Errorf("DeSoMiner._startThread: Error casting txn metadata to AtomicTxnsWrapperMetadata")
+				continue
+			}
+			nonBlockRewardRecipientFees, err := filterOutBlockRewardRecipientFees(txnMeta.Txns, blockRewardOutputPublicKey)
+			if err != nil {
+				glog.Errorf("DeSoMiner._startThread: Error filtering out block reward recipient fees: %v", err)
+				continue
+			}
+			totalFees, err = SafeUint64().Add(totalFees, nonBlockRewardRecipientFees)
 			if err != nil {
 				glog.Errorf("DeSoMiner._startThread: Error adding txn fee: %v", err)
 				continue
