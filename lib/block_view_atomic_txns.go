@@ -239,6 +239,8 @@ func (bav *UtxoView) _connectAtomicTxnsWrapper(
 
 	// Execute the internal transactions.
 	var innerUtxoOps [][]*UtxoOperation
+	var innerTotalInputs []uint64
+	var innerTotalOutputs []uint64
 	var totalInput, totalOutput, totalFees uint64
 	for _, innerTxn := range txMeta.Txns {
 		// NOTE: By recursively calling _connectSingleTxn, each inner transaction is checked that
@@ -253,6 +255,10 @@ func (bav *UtxoView) _connectAtomicTxnsWrapper(
 
 		// Collect the inner txn utxo ops. We will use these if we ever disconnect.
 		innerUtxoOps = append(innerUtxoOps, innerTxnUtxoOps)
+
+		// Collect the input/output so we can add them to the utxo ops.
+		innerTotalInputs = append(innerTotalInputs, txnInput)
+		innerTotalOutputs = append(innerTotalOutputs, txnOutput)
 
 		// Collect the input/output/fees to ensure fees are being paid properly.
 		totalInput, err = SafeUint64().Add(totalInput, txnInput)
@@ -274,8 +280,10 @@ func (bav *UtxoView) _connectAtomicTxnsWrapper(
 
 	// Construct a UtxoOp for the atomic transactions wrapper.
 	utxoOpsForTxn = append(utxoOpsForTxn, &UtxoOperation{
-		Type:                   OperationTypeAtomicTxnsWrapper,
-		AtomicTxnsInnerUtxoOps: innerUtxoOps,
+		Type:                       OperationTypeAtomicTxnsWrapper,
+		AtomicTxnsInnerUtxoOps:     innerUtxoOps,
+		AtomicTxnsInnerTotalInput:  innerTotalInputs,
+		AtomicTxnsInnerTotalOutput: innerTotalOutputs,
 	})
 
 	return utxoOpsForTxn, totalInput, totalOutput, totalFees, nil

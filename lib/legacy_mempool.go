@@ -2091,6 +2091,16 @@ func ComputeTransactionMetadata(
 			glog.V(2).Infof("UpdateTxIndex: Number of inner utxo ops does not match number of inner txns")
 			return txnMeta
 		}
+		innerTotalInputs := atomicWrapperUtxoOp.AtomicTxnsInnerTotalInput
+		if len(innerTotalInputs) != len(realTxMeta.Txns) {
+			glog.V(2).Infof("UpdateTxIndex: Number of inner total inputs does not match number of inner txns")
+			return txnMeta
+		}
+		innerTotalOutputs := atomicWrapperUtxoOp.AtomicTxnsInnerTotalOutput
+		if len(innerTotalOutputs) != len(realTxMeta.Txns) {
+			glog.V(2).Infof("UpdateTxIndex: Number of inner total outputs does not match number of inner txns")
+			return txnMeta
+		}
 		for ii, innerTxn := range realTxMeta.Txns {
 			// Compute the transaction metadata for each inner transaction.
 			innerTxnsTxnMetadata := ComputeTransactionMetadata(
@@ -2099,8 +2109,8 @@ func ComputeTransactionMetadata(
 				blockHash,
 				totalNanosPurchasedBefore,
 				usdCentsPerBitcoinBefore,
-				totalInput,  // TODO: this value is incorrect for inner atomic transactions
-				totalOutput, // TODO: this value is incorrect for inner atomic transactions
+				innerTotalInputs[ii],
+				innerTotalOutputs[ii],
 				innerTxn.TxnFeeNanos,
 				txnIndexInBlock,
 				innerUtxoOps[ii],
