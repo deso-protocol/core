@@ -2482,7 +2482,7 @@ func EstimateMaxTxnFeeV1(txn *MsgDeSoTxn, minFeeRateNanosPerKB uint64) uint64 {
 
 func (mp *DeSoMempool) EstimateFee(txn *MsgDeSoTxn, minFeeRateNanosPerKB uint64,
 	_ uint64, _ uint64, _ uint64, _ uint64, _ uint64) (uint64, error) {
-	feeRate, _ := mp.EstimateFeeRate(minFeeRateNanosPerKB, 0, 0, 0, 0, 0)
+	feeRate := mp.EstimateFeeRate(minFeeRateNanosPerKB, 0, 0, 0, 0, 0)
 	return EstimateMaxTxnFeeV1(txn, feeRate), nil
 }
 
@@ -2492,11 +2492,11 @@ func (mp *DeSoMempool) EstimateFeeRate(
 	_ uint64,
 	_ uint64,
 	_ uint64,
-	_ uint64) (uint64, error) {
+	_ uint64) uint64 {
 	if minFeeRateNanosPerKB < mp.readOnlyUtxoView.GetCurrentGlobalParamsEntry().MinimumNetworkFeeNanosPerKB {
-		return mp.readOnlyUtxoView.GetCurrentGlobalParamsEntry().MinimumNetworkFeeNanosPerKB, nil
+		return mp.readOnlyUtxoView.GetCurrentGlobalParamsEntry().MinimumNetworkFeeNanosPerKB
 	}
-	return minFeeRateNanosPerKB, nil
+	return minFeeRateNanosPerKB
 }
 
 func convertMempoolTxsToSummaryStats(mempoolTxs []*MempoolTx) map[string]*SummaryStats {

@@ -60,7 +60,7 @@ type Mempool interface {
 		pastBlocksCongestionFactorBasisPoints uint64,
 		pastBlocksPriorityPercentileBasisPoints uint64,
 		maxBlockSize uint64,
-	) (uint64, error)
+	) uint64
 }
 
 // GetAugmentedUniversalViewWithAdditionalTransactions is meant as a helper function
@@ -1165,7 +1165,7 @@ func (mp *PosMempool) EstimateFeeRate(
 	mempoolPriorityPercentileBasisPoints uint64,
 	pastBlocksCongestionFactorBasisPoints uint64,
 	pastBlocksPriorityPercentileBasisPoints uint64,
-	maxBlockSize uint64) (uint64, error) {
+	maxBlockSize uint64) uint64 {
 	return mp.feeEstimator.EstimateFeeRateNanosPerKB(
 		minFeeRateNanosPerKB, mempoolCongestionFactorBasisPoints, mempoolPriorityPercentileBasisPoints,
 		pastBlocksCongestionFactorBasisPoints, pastBlocksPriorityPercentileBasisPoints, maxBlockSize)

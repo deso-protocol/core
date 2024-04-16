@@ -289,36 +289,30 @@ func (posFeeEstimator *PoSFeeEstimator) EstimateFeeRateNanosPerKB(
 	pastBlocksCongestionFactorBasisPoints uint64,
 	pastBlocksPriorityPercentileBasisPoints uint64,
 	maxBlockSize uint64,
-) (uint64, error) {
+) uint64 {
 	posFeeEstimator.rwLock.RLock()
 	defer posFeeEstimator.rwLock.RUnlock()
-	pastBlockFeeRate, err := posFeeEstimator.estimateFeeRateNanosPerKBGivenTransactionRegister(
+	pastBlockFeeRate := posFeeEstimator.estimateFeeRateNanosPerKBGivenTransactionRegister(
 		posFeeEstimator.pastBlocksTransactionRegister,
 		pastBlocksCongestionFactorBasisPoints,
 		pastBlocksPriorityPercentileBasisPoints,
 		posFeeEstimator.numPastBlocks,
 		maxBlockSize,
 	)
-	if err != nil {
-		return 0, errors.Wrap(err, "EstimateFeeRateNanosPerKB: Problem computing past block fee rate")
-	}
-	mempoolFeeRate, err := posFeeEstimator.estimateFeeRateNanosPerKBGivenTransactionRegister(
+	mempoolFeeRate := posFeeEstimator.estimateFeeRateNanosPerKBGivenTransactionRegister(
 		posFeeEstimator.mempoolTransactionRegister,
 		mempoolCongestionFactorBasisPoints,
 		mempoolPriorityPercentileBasisPoints,
 		posFeeEstimator.numMempoolBlocks,
 		maxBlockSize,
 	)
-	if err != nil {
-		return 0, errors.Wrap(err, "EstimateFeeRateNanosPerKB: Problem computing mempool fee rate")
-	}
 	if minFeeRateNanosPerKB > pastBlockFeeRate && minFeeRateNanosPerKB > mempoolFeeRate {
-		return minFeeRateNanosPerKB, nil
+		return minFeeRateNanosPerKB
 	}
 	if pastBlockFeeRate < mempoolFeeRate {
-		return mempoolFeeRate, nil
+		return mempoolFeeRate
 	}
-	return pastBlockFeeRate, nil
+	return pastBlockFeeRate
 }
 
 // EstimateFee estimates the fee in nanos for the provided transaction by taking the
@@ -513,16 +507,13 @@ func (posFeeEstimator *PoSFeeEstimator) estimateTxnFeeGivenTransactionRegister(
 	numBlocks uint64,
 	maxBlockSize uint64,
 ) (uint64, error) {
-	feeRateNanosPerKB, err := posFeeEstimator.estimateFeeRateNanosPerKBGivenTransactionRegister(
+	feeRateNanosPerKB := posFeeEstimator.estimateFeeRateNanosPerKBGivenTransactionRegister(
 		txnRegister,
 		congestionFactorBasisPoints,
 		priorityPercentileBasisPoints,
 		numBlocks,
 		maxBlockSize,
 	)
-	if err != nil {
-		return 0, errors.Wrap(err, "estimateTxnFeeGivenTransactionRegister: Problem computing fee rate")
-	}
 	txnFee, err := computeFeeGivenTxnAndFeeRate(txn, feeRateNanosPerKB)
 	if err != nil {
 		return 0, errors.Wrap(err, "estimateTxnFeeGivenTransactionRegister: Problem computing txn fee")
@@ -610,7 +601,7 @@ func (posFeeEstimator *PoSFeeEstimator) estimateFeeRateNanosPerKBGivenTransactio
 	priorityPercentileBasisPoints uint64,
 	numBlocks uint64,
 	maxBlockSize uint64,
-) (uint64, error) {
+) uint64 {
 	txnRegister.RLock()
 	defer txnRegister.RUnlock()
 	it := txnRegister.GetFeeTimeIterator()
@@ -633,7 +624,7 @@ func (posFeeEstimator *PoSFeeEstimator) estimateFeeRateNanosPerKBGivenTransactio
 	globalMinFeeRate, _ := txnRegister.minimumNetworkFeeNanosPerKB.Uint64()
 	if len(txns) == 0 {
 		// If there are no txns in the transaction register, we simply return the minimum network fee.
-		return globalMinFeeRate, nil
+		return globalMinFeeRate
 	}
 
 	bucketMinFee, bucketMaxFee := getPriorityFeeBucketFromTxns(
@@ -643,7 +634,7 @@ func (posFeeEstimator *PoSFeeEstimator) estimateFeeRateNanosPerKBGivenTransactio
 		txnRegister.feeBucketGrowthRateBasisPoints)
 	// If the bucketMinFee is less than or equal to the global min fee rate, we return the global min fee rate.
 	if bucketMinFee <= globalMinFeeRate {
-		return globalMinFeeRate, nil
+		return globalMinFeeRate
 	}
 
 	// Compute the congestion threshold. If our congestion factor is 100% (or 10,000 bps),
@@ -657,10 +648,10 @@ func (posFeeEstimator *PoSFeeEstimator) estimateFeeRateNanosPerKBGivenTransactio
 		bucketExponent := computeFeeTimeBucketExponentFromFeeNanosPerKB(
 			bucketMinFee, txnRegister.minimumNetworkFeeNanosPerKB, txnRegister.feeBucketGrowthRateBasisPoints)
 		return computeFeeTimeBucketMinFromExponent(
-			bucketExponent-1, txnRegister.minimumNetworkFeeNanosPerKB, txnRegister.feeBucketGrowthRateBasisPoints), nil
+			bucketExponent-1, txnRegister.minimumNetworkFeeNanosPerKB, txnRegister.feeBucketGrowthRateBasisPoints)
 	}
 	// Otherwise, we return one bucket higher than Priority fee
-	return bucketMaxFee + 1, nil
+	return bucketMaxFee + 1
 }
 
 // getPriorityFeeBucketFromTxns computes the priority fee bucket for the given transactions using the
