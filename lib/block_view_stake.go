@@ -1617,7 +1617,7 @@ func (bav *UtxoView) _connectUnstake(
 	}
 	// 2. Create a currentStakeEntry, if updated StakeAmountNanos > 0.
 	var currentStakeEntry *StakeEntry
-	if stakeAmountNanos.Cmp(uint256.NewInt(0)) > 0 {
+	if stakeAmountNanos.Sign() > 0 {
 		currentStakeEntry = prevStakeEntry.Copy()
 		currentStakeEntry.StakeAmountNanos = stakeAmountNanos.Clone()
 	}
