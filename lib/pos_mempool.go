@@ -999,7 +999,7 @@ func (mp *PosMempool) pruneNoLock() error {
 	return nil
 }
 
-func (mp *PosMempool) rebucketTransactionRegister() error {
+func (mp *PosMempool) rebucketTransactionRegisterNoLock() error {
 	// Check if the global params haven't changed in a way that requires rebucketing the
 	// transaction register
 	if mp.txnRegister.HasGlobalParamChange(mp.globalParams) {
@@ -1009,7 +1009,7 @@ func (mp *PosMempool) rebucketTransactionRegister() error {
 	// Rebucket the transaction register
 	newTxnRegister, err := mp.txnRegister.CopyWithNewGlobalParams(mp.globalParams)
 	if err != nil {
-		return errors.Wrapf(err, "PosMempool.rebucketTransactionRegister: Problem rebucketing transaction register")
+		return errors.Wrapf(err, "PosMempool.rebucketTransactionRegisterNoLock: Problem rebucketing transaction register")
 	}
 
 	// Swap the transaction register with the new transaction register
@@ -1058,7 +1058,7 @@ func (mp *PosMempool) UpdateGlobalParams(globalParams *GlobalParamsEntry) {
 	}
 
 	// Update the fee bucketing in the transaction register
-	if err := mp.rebucketTransactionRegister(); err != nil {
+	if err := mp.rebucketTransactionRegisterNoLock(); err != nil {
 		glog.Errorf("PosMempool.UpdateGlobalParams: Problem rebucketing transaction register: %v", err)
 		return
 	}
