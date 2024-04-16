@@ -999,6 +999,28 @@ func (mp *PosMempool) pruneNoLock() error {
 	return nil
 }
 
+func (mp *PosMempool) rebucketTransactionRegisterNoLock() error {
+	// Check if the global params haven't changed in a way that requires rebucketing the
+	// transaction register
+	if mp.txnRegister.HasGlobalParamChange(mp.globalParams) {
+		return nil
+	}
+
+	// Rebucket the transaction register
+	newTxnRegister, err := mp.txnRegister.CopyWithNewGlobalParams(mp.globalParams)
+	if err != nil {
+		return errors.Wrapf(err, "PosMempool.rebucketTransactionRegisterNoLock: Problem rebucketing transaction register")
+	}
+
+	// Swap the transaction register with the new transaction register
+	mp.txnRegister = newTxnRegister
+
+	// Update the fee estimator's transaction register
+	mp.feeEstimator.SetMempoolTransactionRegister(mp.txnRegister)
+
+	return nil
+}
+
 // UpdateLatestBlock updates the latest block view and latest block node in the mempool.
 func (mp *PosMempool) UpdateLatestBlock(blockView *UtxoView, blockHeight uint64) {
 	mp.Lock()
@@ -1030,8 +1052,16 @@ func (mp *PosMempool) UpdateGlobalParams(globalParams *GlobalParamsEntry) {
 	mp.globalParams = globalParams
 
 	// Trim the mempool size to the new maximum size.
+	if err := mp.pruneNoLock(); err != nil {
+		glog.Errorf("PosMempool.UpdateGlobalParams: Problem pruning mempool: %v", err)
+		return
+	}
 
-	// TODO: Update the fee bucketing parameters
+	// Update the fee bucketing in the transaction register
+	if err := mp.rebucketTransactionRegisterNoLock(); err != nil {
+		glog.Errorf("PosMempool.UpdateGlobalParams: Problem rebucketing transaction register: %v", err)
+		return
+	}
 
 	// TODO: Update the fee estimator
 }

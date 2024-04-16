@@ -97,6 +97,12 @@ func (posFeeEstimator *PoSFeeEstimator) Init(
 	return nil
 }
 
+func (posFeeEstimator *PoSFeeEstimator) SetMempoolTransactionRegister(mempoolTransactionRegister *TransactionRegister) {
+	posFeeEstimator.rwLock.Lock()
+	defer posFeeEstimator.rwLock.Unlock()
+	posFeeEstimator.mempoolTransactionRegister = mempoolTransactionRegister
+}
+
 // AddBlock adds a block to the PoSFeeEstimator. This will add all the transactions from the block
 // to the pastBlocksTransactionRegister and cache the block. If there are now more blocks cached
 // than the numPastBlocks param provided to Init, the oldest block will be removed from the cache
