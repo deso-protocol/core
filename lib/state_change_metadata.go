@@ -2,6 +2,7 @@ package lib
 
 import (
 	"bytes"
+	"github.com/deso-protocol/core/collections"
 	"github.com/pkg/errors"
 )
 
@@ -23,6 +24,7 @@ const (
 	EncoderTypeDeletePostAssociationStateChangeMetadata EncoderType = 2000014
 	EncoderTypeStakeRewardStateChangeMetadata           EncoderType = 2000015
 	EncoderTypeUnjailValidatorStateChangeMetadata       EncoderType = 2000016
+	EncoderTypeUnregisterAsValidatorStateChangeMetadata EncoderType = 2000017
 )
 
 func GetStateChangeMetadataFromOpType(opType OperationType) DeSoEncoder {
@@ -61,6 +63,8 @@ func GetStateChangeMetadataFromOpType(opType OperationType) DeSoEncoder {
 		return &StakeRewardStateChangeMetadata{}
 	case OperationTypeUnjailValidator:
 		return &UnjailValidatorStateChangeMetadata{}
+	case OperationTypeUnregisterAsValidator:
+		return &UnregisterAsValidatorStateChangeMetadata{}
 	default:
 		return nil
 	}
@@ -635,4 +639,56 @@ func (metadata *UnjailValidatorStateChangeMetadata) GetVersionByte(blockHeight u
 
 func (metadata *UnjailValidatorStateChangeMetadata) GetEncoderType() EncoderType {
 	return EncoderTypeUnjailValidatorStateChangeMetadata
+}
+
+type UnregisterAsValidatorStateChangeMetadata struct {
+	StakerPKIDToPublicKeyBase58CheckMap map[PKID]string
+}
+
+func (metadata *UnregisterAsValidatorStateChangeMetadata) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte {
+	var data []byte
+	// Sort the map by key so that the encoding is deterministic.
+	keys := make([]PKID, 0)
+	for key := range metadata.StakerPKIDToPublicKeyBase58CheckMap {
+		keys = append(keys, key)
+	}
+	sortedKeys := collections.SortStable(keys, func(ii, jj PKID) bool {
+		return bytes.Compare(ii.ToBytes(), jj.ToBytes()) < 0
+	})
+	data = append(data, UintToBuf(uint64(len(sortedKeys)))...)
+	for _, key := range sortedKeys {
+		data = append(data, key.ToBytes()...)
+		data = append(data, EncodeByteArray([]byte(metadata.StakerPKIDToPublicKeyBase58CheckMap[key]))...)
+	}
+	return data
+}
+
+func (metadata *UnregisterAsValidatorStateChangeMetadata) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.Reader) error {
+	var err error
+	numEntries, err := ReadUvarint(rr)
+	if err != nil {
+		return errors.Wrapf(err, "UnregisterAsValidatorStateChangeMetadata.Decode: Problem reading numEntries")
+	}
+	metadata.StakerPKIDToPublicKeyBase58CheckMap = make(map[PKID]string)
+	for ii := uint64(0); ii < numEntries; ii++ {
+		pkid := PKID{}
+		if err := pkid.FromBytes(rr); err != nil {
+			return errors.Wrapf(err, "UnregisterAsValidatorStateChangeMetadata.Decode: Problem reading PKID")
+		}
+		publicKeyBase58Check, err := DecodeByteArray(rr)
+		if err != nil {
+			return errors.Wrapf(err, "UnregisterAsValidatorStateChangeMetadata.Decode: Problem reading PublicKeyBase58Check")
+		}
+		metadata.StakerPKIDToPublicKeyBase58CheckMap[pkid] = string(publicKeyBase58Check)
+
+	}
+	return nil
+}
+
+func (metadata *UnregisterAsValidatorStateChangeMetadata) GetVersionByte(blockHeight uint64) byte {
+	return 0
+}
+
+func (metadata *UnregisterAsValidatorStateChangeMetadata) GetEncoderType() EncoderType {
+	return EncoderTypeUnregisterAsValidatorStateChangeMetadata
 }
