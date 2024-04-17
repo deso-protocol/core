@@ -346,7 +346,7 @@ func TestPosMempoolTransactionValidation(t *testing.T) {
 	mempool := NewPosMempool()
 	require.NoError(t, mempool.Init(
 		params, globalParams, latestBlockView, 2, dir, false, maxMempoolPosSizeBytes, mempoolBackupIntervalMillis, 1,
-		nil, 1, 5, 10,
+		nil, 1, 100, 10,
 	))
 	require.NoError(t, mempool.Start())
 	require.True(t, mempool.IsRunning())
@@ -362,8 +362,11 @@ func TestPosMempoolTransactionValidation(t *testing.T) {
 	txn2 := _generateTestTxnWithOutputs(t, rand, feeMin, feeMax, m0PubBytes, m1Priv, 100, 25, output)
 	_wrappedPosMempoolAddTransaction(t, mempool, txn1)
 	_wrappedPosMempoolAddTransaction(t, mempool, txn2)
+
 	// Wait for the validation routine to finish.
-	time.Sleep(20 * time.Millisecond)
+	mempool.BlockUntilReadOnlyViewRegenerated()
+	mempool.BlockUntilReadOnlyViewRegenerated()
+
 	require.Equal(t, true, mempool.GetTransaction(txn1.Hash()).IsValidated())
 	require.Nil(t, mempool.GetTransaction(txn2.Hash()))
 	require.NoError(t, mempool.RemoveTransaction(txn1.Hash()))
@@ -392,7 +395,8 @@ func TestPosMempoolTransactionValidation(t *testing.T) {
 	}
 
 	// Wait for the validation routine to finish.
-	time.Sleep(20 * time.Millisecond)
+	_ = mempool.WaitForTxnValidation(failingTxns[len(failingTxns)-1].Hash())
+
 	totalValidatedTxns := 0
 	for _, txn := range passingTxns {
 		if mempool.GetTransaction(txn.Hash()).IsValidated() {
@@ -401,7 +405,7 @@ func TestPosMempoolTransactionValidation(t *testing.T) {
 	}
 
 	// Make sure that the number of validated transactions is equal to the maxValidationViewConnects.
-	require.Equal(t, 4, totalValidatedTxns)
+	require.Equal(t, 10, totalValidatedTxns)
 
 	// Now make sure that failing transactions were either removed, or remained unvalidated.
 	for _, txn := range failingTxns {
