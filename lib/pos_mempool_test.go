@@ -363,7 +363,8 @@ func TestPosMempoolTransactionValidation(t *testing.T) {
 	_wrappedPosMempoolAddTransaction(t, mempool, txn1)
 	_wrappedPosMempoolAddTransaction(t, mempool, txn2)
 	// Wait for the validation routine to finish.
-	time.Sleep(20 * time.Millisecond)
+	mempool.BlockUntilReadOnlyViewRegenerated()
+	mempool.BlockUntilReadOnlyViewRegenerated()
 	require.Equal(t, true, mempool.GetTransaction(txn1.Hash()).IsValidated())
 	require.Nil(t, mempool.GetTransaction(txn2.Hash()))
 	require.NoError(t, mempool.RemoveTransaction(txn1.Hash()))
@@ -392,7 +393,8 @@ func TestPosMempoolTransactionValidation(t *testing.T) {
 	}
 
 	// Wait for the validation routine to finish.
-	time.Sleep(20 * time.Millisecond)
+	mempool.BlockUntilReadOnlyViewRegenerated()
+	mempool.BlockUntilReadOnlyViewRegenerated()
 	totalValidatedTxns := 0
 	for _, txn := range passingTxns {
 		if mempool.GetTransaction(txn.Hash()).IsValidated() {

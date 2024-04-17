@@ -945,7 +945,7 @@ func (mp *PosMempool) validateTransactions() error {
 			// Mark the txn as invalid and add an error to the cache so we can return it to the user if they
 			// try to resubmit it.
 			txn.SetValidated(false)
-			mp.recentRejectedTxnCache.Add(*mempoolTxns[ii].Hash, err)
+			mp.recentRejectedTxnCache.Add(*txn.Hash, err)
 
 			continue
 		}

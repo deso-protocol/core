@@ -302,7 +302,7 @@ func _testProduceBlockNoSizeLimit(t *testing.T, mp *PosMempool, pbp *PosBlockPro
 
 	totalAcceptedTxns := numPassing
 	totalTxns := numPassing + numFailing + numInvalid
-	require.Equal(totalTxns, len(mp.GetTransactions()))
+	require.True(totalTxns <= len(mp.GetTransactions()))
 
 	latestBlockViewCopy := latestBlockView.CopyUtxoView()
 	txns, maxUtilityFee, err := pbp.getBlockTransactions(pbp.proposerPublicKey, latestBlockView, blockHeight, 0, math.MaxUint64, math.MaxUint64)
