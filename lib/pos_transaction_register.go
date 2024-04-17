@@ -69,6 +69,9 @@ func (tr *TransactionRegister) HasGlobalParamChange(globalParams *GlobalParamsEn
 	defer tr.RUnlock()
 
 	minNetworkFee, bucketMultiplier := globalParams.ComputeFeeTimeBucketMinimumFeeAndMultiplier()
+	if !_isValidMinimumFeeAndMultiplier(minNetworkFee, bucketMultiplier) {
+		minNetworkFee, bucketMultiplier = _getFallbackSafeMinimumFeeAndMultiplier()
+	}
 
 	return minNetworkFee.Cmp(tr.minimumNetworkFeeNanosPerKB) != 0 || bucketMultiplier.Cmp(tr.feeBucketGrowthRateBasisPoints) != 0
 }
