@@ -2038,7 +2038,24 @@ func ComputeTransactionMetadata(
 		realTxMeta := txn.TxnMeta.(*AtomicTxnsWrapperMetadata)
 		txnMeta.AtomicTxnsWrapperTxindexMetadata = &AtomicTxnsWrapperTxindexMetadata{}
 		txnMeta.AtomicTxnsWrapperTxindexMetadata.InnerTxnsTransactionMetadata = []*TransactionMetadata{}
-		for _, innerTxn := range realTxMeta.Txns {
+		// Find the utxo op for the atomic txn wrapper
+		var atomicWrapperUtxoOp *UtxoOperation
+		for _, utxoOp := range utxoOps {
+			if utxoOp.Type == OperationTypeAtomicTxnsWrapper {
+				atomicWrapperUtxoOp = utxoOp
+			}
+		}
+		// This should never happen.
+		if atomicWrapperUtxoOp == nil {
+			glog.V(2).Info("UpdateTxIndex: Could not find utxo op for atomic txn wrapper")
+			return txnMeta
+		}
+		innerUtxoOps := atomicWrapperUtxoOp.AtomicTxnsInnerUtxoOps
+		if len(innerUtxoOps) != len(realTxMeta.Txns) {
+			glog.V(2).Infof("UpdateTxIndex: Number of inner utxo ops does not match number of inner txns")
+			return txnMeta
+		}
+		for ii, innerTxn := range realTxMeta.Txns {
 			// Compute the transaction metadata for each inner transaction.
 			innerTxnsTxnMetadata := ComputeTransactionMetadata(
 				innerTxn,
@@ -2046,11 +2063,11 @@ func ComputeTransactionMetadata(
 				blockHash,
 				totalNanosPurchasedBefore,
 				usdCentsPerBitcoinBefore,
-				totalInput,
-				totalOutput,
-				fees,
+				totalInput,  // TODO: this value is incorrect for inner atomic transactions
+				totalOutput, // TODO: this value is incorrect for inner atomic transactions
+				innerTxn.TxnFeeNanos,
 				txnIndexInBlock,
-				utxoOps,
+				innerUtxoOps[ii],
 				blockHeight,
 			)
 			txnMeta.AtomicTxnsWrapperTxindexMetadata.InnerTxnsTransactionMetadata = append(
@@ -2058,23 +2075,6 @@ func ComputeTransactionMetadata(
 
 			// Create a global list of all affected public keys from each inner transaction.
 			txnMeta.AffectedPublicKeys = append(txnMeta.AffectedPublicKeys, innerTxnsTxnMetadata.AffectedPublicKeys...)
-		}
-	}
-	// Check if the transactor is an affected public key. If not, add them.
-	// We skip this for atomic transactions as their transactor is the ZeroPublicKey.
-	if txnMeta.TransactorPublicKeyBase58Check != "" && txn.TxnMeta.GetTxnType() != TxnTypeAtomicTxnsWrapper {
-		transactorPublicKeyFound := false
-		for _, affectedPublicKey := range txnMeta.AffectedPublicKeys {
-			if affectedPublicKey.PublicKeyBase58Check == txnMeta.TransactorPublicKeyBase58Check {
-				transactorPublicKeyFound = true
-				break
-			}
-		}
-		if !transactorPublicKeyFound {
-			txnMeta.AffectedPublicKeys = append(txnMeta.AffectedPublicKeys, &AffectedPublicKey{
-				PublicKeyBase58Check: txnMeta.TransactorPublicKeyBase58Check,
-				Metadata:             "TransactorPublicKeyBase58Check",
-			})
 		}
 	}
 	// Check if the transactor is an affected public key. If not, add them.
