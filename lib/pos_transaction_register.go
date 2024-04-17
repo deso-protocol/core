@@ -274,12 +274,10 @@ func (tr *TransactionRegister) Reset() {
 	tr.totalTxnsSizeBytes = 0
 }
 
-// GetFeeTimeIterator returns an iterator over the transactions in the register. The iterator goes through all transactions
-// as ordered by Fee-Time.
+// GetFeeTimeIterator returns an iterator over the transactions in the register. The iterator goes through all
+// transactions as ordered by Fee-Time. The caller must hold a read lock on the transaction register before
+// calling this function and while iterating over the transactions.
 func (tr *TransactionRegister) GetFeeTimeIterator() *FeeTimeIterator {
-	tr.RLock()
-	defer tr.RUnlock()
-
 	return &FeeTimeIterator{
 		bucketIterator:    tr.feeTimeBucketSet.Iterator(),
 		mempoolTxIterator: nil,
