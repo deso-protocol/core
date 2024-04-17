@@ -393,8 +393,7 @@ func TestPosMempoolTransactionValidation(t *testing.T) {
 	}
 
 	// Wait for the validation routine to finish.
-	mempool.BlockUntilReadOnlyViewRegenerated()
-	mempool.BlockUntilReadOnlyViewRegenerated()
+	_ = mempool.WaitForTxnValidation(failingTxns[len(failingTxns)-1].Hash())
 	totalValidatedTxns := 0
 	for _, txn := range passingTxns {
 		if mempool.GetTransaction(txn.Hash()).IsValidated() {
