@@ -939,13 +939,13 @@ func (mp *PosMempool) validateTransactions() error {
 		// If the txn fails to connect, then we set its validated status to false and remove it from the
 		// mempool. We also mark it as having been rejected so that it can't get re-submitted to the mempool.
 		if err != nil {
-			// Try to remove the transaction with a lock.
-			mp.removeTransaction(txn, true)
-
 			// Mark the txn as invalid and add an error to the cache so we can return it to the user if they
 			// try to resubmit it.
 			txn.SetValidated(false)
-			mp.recentRejectedTxnCache.Add(*mempoolTxns[ii].Hash, err)
+			mp.recentRejectedTxnCache.Add(*txn.Hash, err)
+
+			// Try to remove the transaction with a lock.
+			mp.removeTransaction(txn, true)
 
 			continue
 		}
