@@ -2034,6 +2034,42 @@ func ComputeTransactionMetadata(
 		txindexMetadata, affectedPublicKeys := utxoView.CreateUnjailValidatorTxindexMetadata(utxoOps[len(utxoOps)-1], txn)
 		txnMeta.UnjailValidatorTxindexMetadata = txindexMetadata
 		txnMeta.AffectedPublicKeys = append(txnMeta.AffectedPublicKeys, affectedPublicKeys...)
+	case TxnTypeCoinLockup:
+		realTxMeta := txn.TxnMeta.(*CoinLockupMetadata)
+		profilePublicKey := realTxMeta.ProfilePublicKey.ToBytes()
+		recipientPublicKey := realTxMeta.RecipientPublicKey.ToBytes()
+		txnMeta.AffectedPublicKeys = append(txnMeta.AffectedPublicKeys, &AffectedPublicKey{
+			PublicKeyBase58Check: PkToString(profilePublicKey, utxoView.Params),
+			Metadata:             "CoinLockupProfilePublicKeyBase58Check",
+		})
+		txnMeta.AffectedPublicKeys = append(txnMeta.AffectedPublicKeys, &AffectedPublicKey{
+			PublicKeyBase58Check: PkToString(recipientPublicKey, utxoView.Params),
+			Metadata:             "CoinLockupRecipientPublicKeyBase58Check",
+		})
+	case TxnTypeUpdateCoinLockupParams:
+		txnMeta.AffectedPublicKeys = append(txnMeta.AffectedPublicKeys, &AffectedPublicKey{
+			PublicKeyBase58Check: PkToString(txn.PublicKey, utxoView.Params),
+			Metadata:             "UpdateCoinLockupParamsPublicKeyBase58Check",
+		})
+	case TxnTypeCoinLockupTransfer:
+		realTxMeta := txn.TxnMeta.(*CoinLockupTransferMetadata)
+		profilePublicKey := realTxMeta.ProfilePublicKey.ToBytes()
+		recipientPublicKey := realTxMeta.RecipientPublicKey.ToBytes()
+		txnMeta.AffectedPublicKeys = append(txnMeta.AffectedPublicKeys, &AffectedPublicKey{
+			PublicKeyBase58Check: PkToString(profilePublicKey, utxoView.Params),
+			Metadata:             "CoinLockupTransferProfilePublicKeyBase58Check",
+		})
+		txnMeta.AffectedPublicKeys = append(txnMeta.AffectedPublicKeys, &AffectedPublicKey{
+			PublicKeyBase58Check: PkToString(recipientPublicKey, utxoView.Params),
+			Metadata:             "CoinLockupTransferRecipientPublicKeyBase58Check",
+		})
+	case TxnTypeCoinUnlock:
+		realTxMeta := txn.TxnMeta.(*CoinUnlockMetadata)
+		profilePublicKey := realTxMeta.ProfilePublicKey.ToBytes()
+		txnMeta.AffectedPublicKeys = append(txnMeta.AffectedPublicKeys, &AffectedPublicKey{
+			PublicKeyBase58Check: PkToString(profilePublicKey, utxoView.Params),
+			Metadata:             "CoinUnlockProfilePublicKeyBase58Check",
+		})
 	case TxnTypeAtomicTxnsWrapper:
 		realTxMeta := txn.TxnMeta.(*AtomicTxnsWrapperMetadata)
 		txnMeta.AtomicTxnsWrapperTxindexMetadata = &AtomicTxnsWrapperTxindexMetadata{}
