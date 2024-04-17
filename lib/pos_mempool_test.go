@@ -164,13 +164,9 @@ func TestPosMempoolPrune(t *testing.T) {
 	require.Equal(3, len(newPool.GetTransactions()))
 
 	// Iterate through the transactions.
-	it := newPool.GetIterator()
-	index := 0
-	for it.Next() {
-		tx, ok := it.Value()
-		require.True(ok)
-		require.True(bytes.Equal(tx.Hash().ToBytes(), fetchedTxns[index].Hash().ToBytes()))
-		index++
+	newPoolTxns := newPool.GetTransactions()
+	for ii, tx := range newPoolTxns {
+		require.True(bytes.Equal(tx.Hash().ToBytes(), fetchedTxns[ii].Hash().ToBytes()))
 	}
 	require.Equal(len(newPool.GetTransactions()), len(newPool.nonceTracker.nonceMap))
 	require.NoError(newPool.validateTransactions())
