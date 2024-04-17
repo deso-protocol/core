@@ -265,11 +265,6 @@ func (mp *DeSoMempool) GetTransactions() []*MempoolTransaction {
 	)
 }
 
-func (mp *DeSoMempool) GetIterator() MempoolIterator {
-	//TODO implement me
-	panic("implement me")
-}
-
 func (mp *DeSoMempool) UpdateLatestBlock(blockView *UtxoView, blockHeight uint64) {
 	//TODO implement me
 	panic("implement me")

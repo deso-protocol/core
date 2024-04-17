@@ -30,7 +30,6 @@ type Mempool interface {
 	RemoveTransaction(txnHash *BlockHash) error
 	GetTransaction(txnHash *BlockHash) *MempoolTransaction
 	GetTransactions() []*MempoolTransaction
-	GetIterator() MempoolIterator
 	UpdateLatestBlock(blockView *UtxoView, blockHeight uint64)
 	UpdateGlobalParams(globalParams *GlobalParamsEntry)
 
@@ -114,12 +113,6 @@ func GetAugmentedUniversalViewWithAdditionalTransactions(
 		}
 	}
 	return newView, nil
-}
-
-type MempoolIterator interface {
-	Next() bool
-	Value() (*MempoolTransaction, bool)
-	Initialized() bool
 }
 
 // MempoolTransaction is a simple wrapper around MsgDeSoTxn that adds a timestamp field.
@@ -239,31 +232,6 @@ type PosMempool struct {
 	// recentRejectedTxnCache is a cache to store the txns that were recently rejected so that we can return better
 	// errors for them.
 	recentRejectedTxnCache lru.KVCache
-}
-
-// PosMempoolIterator is a wrapper around FeeTimeIterator, modified to return MsgDeSoTxn instead of MempoolTx.
-type PosMempoolIterator struct {
-	it *FeeTimeIterator
-}
-
-func (it *PosMempoolIterator) Next() bool {
-	return it.it.Next()
-}
-
-func (it *PosMempoolIterator) Value() (*MempoolTransaction, bool) {
-	txn, ok := it.it.Value()
-	if txn == nil || txn.Tx == nil {
-		return nil, ok
-	}
-	return NewMempoolTransaction(txn.Tx, txn.Added, txn.IsValidated()), ok
-}
-
-func (it *PosMempoolIterator) Initialized() bool {
-	return it.it.Initialized()
-}
-
-func NewPosMempoolIterator(it *FeeTimeIterator) *PosMempoolIterator {
-	return &PosMempoolIterator{it: it}
 }
 
 func NewPosMempool() *PosMempool {
@@ -874,27 +842,6 @@ func (mp *PosMempool) getTransactionsNoLock() []*MempoolTx {
 	return mp.txnRegister.GetFeeTimeTransactions()
 }
 
-// GetIterator returns an iterator for the mempool transactions. The iterator can be used to peek transactions in the
-// mempool ordered by the Fee-Time algorithm. Transactions can be fetched with the following pattern:
-//
-//	for it.Next() {
-//		if txn, ok := it.Value(); ok {
-//			// Do something with txn.
-//		}
-//	}
-//
-// Note that the iteration pattern is not thread-safe. Another lock should be used to ensure thread-safety.
-func (mp *PosMempool) GetIterator() MempoolIterator {
-	mp.RLock()
-	defer mp.RUnlock()
-
-	if !mp.IsRunning() {
-		return nil
-	}
-
-	return NewPosMempoolIterator(mp.txnRegister.GetFeeTimeIterator())
-}
-
 // validateTransactions updates the validated status of transactions in the mempool. The function connects the Fee-Time ordered
 // mempool transactions to the readOnlyLatestBlockView, creating a cumulative validationView. Transactions that fail to
 // connect to the validationView are removed from the mempool, as they would have also failed to connect during
@@ -1016,7 +963,7 @@ func (mp *PosMempool) rebucketTransactionRegisterNoLock() error {
 	mp.txnRegister = newTxnRegister
 
 	// Update the fee estimator's transaction register
-	mp.feeEstimator.SetMempoolTransactionRegister(mp.txnRegister)
+	mp.feeEstimator.SetMempoolTransactionRegister(newTxnRegister)
 
 	return nil
 }

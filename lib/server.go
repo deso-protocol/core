@@ -2143,9 +2143,11 @@ func (srv *Server) _updatePosMempoolAfterTipChange() error {
 	if err != nil {
 		return err
 	}
+
 	currentGlobalParams := currentUtxoView.GetCurrentGlobalParamsEntry()
 	srv.posMempool.UpdateLatestBlock(currentUtxoView, uint64(currentBlockHeight))
 	srv.posMempool.UpdateGlobalParams(currentGlobalParams)
+
 	return nil
 }
 

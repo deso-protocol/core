@@ -94,6 +94,7 @@ func (posFeeEstimator *PoSFeeEstimator) Init(
 func (posFeeEstimator *PoSFeeEstimator) SetMempoolTransactionRegister(mempoolTransactionRegister *TransactionRegister) {
 	posFeeEstimator.rwLock.Lock()
 	defer posFeeEstimator.rwLock.Unlock()
+
 	posFeeEstimator.mempoolTransactionRegister = mempoolTransactionRegister
 }
 
@@ -299,6 +300,7 @@ func (posFeeEstimator *PoSFeeEstimator) EstimateFeeRateNanosPerKB(
 ) uint64 {
 	posFeeEstimator.rwLock.RLock()
 	defer posFeeEstimator.rwLock.RUnlock()
+
 	pastBlockFeeRate := posFeeEstimator.estimateFeeRateNanosPerKBGivenTransactionRegister(
 		posFeeEstimator.pastBlocksTransactionRegister,
 		pastBlocksCongestionFactorBasisPoints,
@@ -306,6 +308,7 @@ func (posFeeEstimator *PoSFeeEstimator) EstimateFeeRateNanosPerKB(
 		posFeeEstimator.globalParams.MempoolFeeEstimatorNumPastBlocks,
 		maxBlockSize,
 	)
+
 	mempoolFeeRate := posFeeEstimator.estimateFeeRateNanosPerKBGivenTransactionRegister(
 		posFeeEstimator.mempoolTransactionRegister,
 		mempoolCongestionFactorBasisPoints,
@@ -313,12 +316,15 @@ func (posFeeEstimator *PoSFeeEstimator) EstimateFeeRateNanosPerKB(
 		posFeeEstimator.globalParams.MempoolFeeEstimatorNumMempoolBlocks,
 		maxBlockSize,
 	)
+
 	if minFeeRateNanosPerKB > pastBlockFeeRate && minFeeRateNanosPerKB > mempoolFeeRate {
 		return minFeeRateNanosPerKB
 	}
+
 	if pastBlockFeeRate < mempoolFeeRate {
 		return mempoolFeeRate
 	}
+
 	return pastBlockFeeRate
 }
 
@@ -335,6 +341,7 @@ func (posFeeEstimator *PoSFeeEstimator) EstimateFee(
 ) (uint64, error) {
 	posFeeEstimator.rwLock.RLock()
 	defer posFeeEstimator.rwLock.RUnlock()
+
 	mempoolFeeEstimate, err := posFeeEstimator.mempoolFeeEstimate(
 		txn,
 		mempoolCongestionFactorBasisPoints,
@@ -344,6 +351,7 @@ func (posFeeEstimator *PoSFeeEstimator) EstimateFee(
 	if err != nil {
 		return 0, errors.Wrap(err, "PoSFeeEstimator.EstimateFee: Problem computing mempool fee estimate")
 	}
+
 	pastBlocksFeeEstimate, err := posFeeEstimator.pastBlocksFeeEstimate(
 		txn,
 		pastBlocksCongestionFactorBasisPoints,
@@ -353,13 +361,16 @@ func (posFeeEstimator *PoSFeeEstimator) EstimateFee(
 	if err != nil {
 		return 0, errors.Wrap(err, "PoSFeeEstimator.EstimateFee: Problem computing past blocks fee estimate")
 	}
+
 	minFeeRateEstimate, err := computeFeeGivenTxnAndFeeRate(txn, minFeeRateNanosPerKB)
 	if minFeeRateEstimate > mempoolFeeEstimate && minFeeRateEstimate > pastBlocksFeeEstimate {
 		return minFeeRateEstimate, nil
 	}
+
 	if mempoolFeeEstimate < pastBlocksFeeEstimate {
 		return pastBlocksFeeEstimate, nil
 	}
+
 	return mempoolFeeEstimate, nil
 }
 
@@ -382,6 +393,7 @@ func (posFeeEstimator *PoSFeeEstimator) pastBlocksFeeEstimate(
 	if err != nil {
 		return 0, errors.Wrap(err, "pastBlocksFeeEstimate: Problem computing txn fee")
 	}
+
 	return txnFee, nil
 }
 
@@ -404,6 +416,7 @@ func (posFeeEstimator *PoSFeeEstimator) mempoolFeeEstimate(
 	if err != nil {
 		return 0, errors.Wrap(err, "mempoolFeeEstimate: Problem computing txn fee")
 	}
+
 	return txnFee, nil
 }
 
@@ -415,6 +428,7 @@ func computeFeeGivenTxnAndFeeRate(txn *MsgDeSoTxn, feeRateNanosPerKB uint64) (ui
 	if err != nil {
 		return 0, errors.Wrap(err, "computeFeeGivenTxnAndFeeRate: Problem copying txn")
 	}
+
 	// Set the nonce to the maximum value if it's not already set.
 	if txnClone.TxnNonce == nil {
 		txnClone.TxnNonce = &DeSoNonce{
@@ -422,6 +436,7 @@ func computeFeeGivenTxnAndFeeRate(txn *MsgDeSoTxn, feeRateNanosPerKB uint64) (ui
 			PartialID:             math.MaxUint64,
 		}
 	}
+
 	// Account for the possible size of the nonce. If we're dealing with an atomic txn,
 	// the nonce values are intentionally set to zero so this is a special case.
 	if txnClone.TxnMeta.GetTxnType() != TxnTypeAtomicTxnsWrapper {
@@ -439,6 +454,7 @@ func computeFeeGivenTxnAndFeeRate(txn *MsgDeSoTxn, feeRateNanosPerKB uint64) (ui
 	if err != nil {
 		return 0, errors.Wrap(err, "computeFeeGivenTxnAndFeeRate: Problem computing fee rate recursively")
 	}
+
 	return txnFeeNanos, nil
 }
 
@@ -474,6 +490,7 @@ func computeFeeRecursive(txn *MsgDeSoTxn, feeRateNanosPerKB uint64) (uint64, err
 	if err != nil {
 		return 0, errors.Wrap(err, "computeFeeRecursive: Problem serializing txn")
 	}
+
 	// We need to add a buffer for the signature. The maximum DER signature length is 74 bytes.
 	const MaxDERSigLen = 74
 	var txnBytesLen uint64
@@ -499,6 +516,7 @@ func computeFeeRecursive(txn *MsgDeSoTxn, feeRateNanosPerKB uint64) (uint64, err
 		UpdateTxnFee(txn, txnFeeNanos)
 		return computeFeeRecursive(txn, feeRateNanosPerKB)
 	}
+
 	return txnFeeNanos, nil
 }
 
@@ -521,10 +539,12 @@ func (posFeeEstimator *PoSFeeEstimator) estimateTxnFeeGivenTransactionRegister(
 		numBlocks,
 		maxBlockSize,
 	)
+
 	txnFee, err := computeFeeGivenTxnAndFeeRate(txn, feeRateNanosPerKB)
 	if err != nil {
 		return 0, errors.Wrap(err, "estimateTxnFeeGivenTransactionRegister: Problem computing txn fee")
 	}
+
 	return txnFee, nil
 }
 
@@ -611,10 +631,13 @@ func (posFeeEstimator *PoSFeeEstimator) estimateFeeRateNanosPerKBGivenTransactio
 ) uint64 {
 	txnRegister.RLock()
 	defer txnRegister.RUnlock()
+
 	it := txnRegister.GetFeeTimeIterator()
 	maxSizeOfNumBlocks := maxBlockSize * numBlocks
 	totalTxnsSize := uint64(0)
+
 	var txns []*MempoolTx
+
 	for it.Next() {
 		tx, ok := it.Value()
 		if !ok {
@@ -638,7 +661,8 @@ func (posFeeEstimator *PoSFeeEstimator) estimateFeeRateNanosPerKBGivenTransactio
 		txns,
 		priorityPercentileBasisPoints,
 		txnRegister.minimumNetworkFeeNanosPerKB,
-		txnRegister.feeBucketGrowthRateBasisPoints)
+		txnRegister.feeBucketGrowthRateBasisPoints,
+	)
 	// If the bucketMinFee is less than or equal to the global min fee rate, we return the global min fee rate.
 	if bucketMinFee <= globalMinFeeRate {
 		return globalMinFeeRate
@@ -657,6 +681,7 @@ func (posFeeEstimator *PoSFeeEstimator) estimateFeeRateNanosPerKBGivenTransactio
 		return computeFeeTimeBucketMinFromExponent(
 			bucketExponent-1, txnRegister.minimumNetworkFeeNanosPerKB, txnRegister.feeBucketGrowthRateBasisPoints)
 	}
+
 	// Otherwise, we return one bucket higher than Priority fee
 	return bucketMaxFee + 1
 }
@@ -674,15 +699,18 @@ func getPriorityFeeBucketFromTxns(
 ) (uint64, uint64) {
 	percentilePosition := uint64(
 		len(feeTimeOrderedTxns)) - ((priorityPercentileBasisPoints * uint64(len(feeTimeOrderedTxns))) / MaxBasisPoints)
+
 	// The percentile position should never be greater than the length of feeTimeOrderedTxns, but may be equal to
 	// it if priorityPercentileBasisPoints is 0. In this case, we simply return the last txn's fee bucket range.
 	if percentilePosition >= uint64(len(feeTimeOrderedTxns)) {
 		percentilePosition = uint64(len(feeTimeOrderedTxns)) - 1
 	}
+
 	bucketMin, bucketMax := computeFeeTimeBucketRangeFromFeeNanosPerKB(
 		feeTimeOrderedTxns[percentilePosition].FeePerKB,
 		minimumNetworkFeeNanosPerKB,
 		feeBucketGrowthRateBasisPoints,
 	)
+
 	return bucketMin, bucketMax
 }

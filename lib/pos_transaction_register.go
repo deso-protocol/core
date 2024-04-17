@@ -65,8 +65,8 @@ func (tr *TransactionRegister) Init(globalParams *GlobalParamsEntry) {
 }
 
 func (tr *TransactionRegister) HasGlobalParamChange(globalParams *GlobalParamsEntry) bool {
-	tr.Lock()
-	defer tr.Unlock()
+	tr.RLock()
+	defer tr.RUnlock()
 
 	minNetworkFee, bucketMultiplier := globalParams.ComputeFeeTimeBucketMinimumFeeAndMultiplier()
 
