@@ -363,6 +363,10 @@ func (posFeeEstimator *PoSFeeEstimator) EstimateFee(
 	}
 
 	minFeeRateEstimate, err := computeFeeGivenTxnAndFeeRate(txn, minFeeRateNanosPerKB)
+	if err != nil {
+		return 0, errors.Wrap(err, "PoSFeeEstimator.EstimateFee: Problem computing min fee rate estimate")
+	}
+
 	if minFeeRateEstimate > mempoolFeeEstimate && minFeeRateEstimate > pastBlocksFeeEstimate {
 		return minFeeRateEstimate, nil
 	}
