@@ -326,7 +326,13 @@ func (bav *UtxoView) _ResetViewMappingsAfterFlush() {
 }
 
 func (bav *UtxoView) CopyUtxoView() *UtxoView {
-	newView := NewUtxoView(bav.Handle, bav.Params, bav.Postgres, bav.Snapshot, bav.EventManager)
+	newView := initNewUtxoView(bav.Handle, bav.Params, bav.Postgres, bav.Snapshot, bav.EventManager)
+
+	// Handle items loaded from DB with _ResetViewMappingsAfterFlush
+	newView.NumUtxoEntries = bav.NumUtxoEntries
+	newView.NanosPurchased = bav.NanosPurchased
+	newView.USDCentsPerBitcoin = bav.USDCentsPerBitcoin
+	newView.GlobalParamsEntry = bav.GlobalParamsEntry.Copy()
 
 	// Copy the UtxoEntry data
 	// Note that using _setUtxoMappings is dangerous because the Pos within
@@ -355,6 +361,17 @@ func (bav *UtxoView) CopyUtxoView() *UtxoView {
 	// Copy the GlobalParamsEntry
 	newGlobalParamsEntry := *bav.GlobalParamsEntry
 	newView.GlobalParamsEntry = &newGlobalParamsEntry
+
+	// Copy the forbidden public keys map
+	newView.ForbiddenPubKeyToForbiddenPubKeyEntry = make(
+		map[PkMapKey]*ForbiddenPubKeyEntry, len(bav.ForbiddenPubKeyToForbiddenPubKeyEntry))
+	for pkMapKey, forbiddenPubKeyEntry := range bav.ForbiddenPubKeyToForbiddenPubKeyEntry {
+		if forbiddenPubKeyEntry == nil {
+			continue
+		}
+		newForbiddenPubKeyEntry := *forbiddenPubKeyEntry
+		newView.ForbiddenPubKeyToForbiddenPubKeyEntry[pkMapKey] = &newForbiddenPubKeyEntry
+	}
 
 	// Copy the post data
 	newView.PostHashToPostEntry = make(map[BlockHash]*PostEntry, len(bav.PostHashToPostEntry))
@@ -630,37 +647,50 @@ func (bav *UtxoView) CopyUtxoView() *UtxoView {
 	}
 
 	// Copy the SnapshotGlobalParamEntries
+	newView.SnapshotGlobalParamEntries = make(map[uint64]*GlobalParamsEntry, len(bav.SnapshotGlobalParamEntries))
 	for epochNumber, globalParamsEntry := range bav.SnapshotGlobalParamEntries {
 		newView.SnapshotGlobalParamEntries[epochNumber] = globalParamsEntry.Copy()
 	}
 
 	// Copy the SnapshotValidatorSet
+	newView.SnapshotValidatorSet = make(map[SnapshotValidatorSetMapKey]*ValidatorEntry, len(bav.SnapshotValidatorSet))
 	for mapKey, validatorEntry := range bav.SnapshotValidatorSet {
 		newView.SnapshotValidatorSet[mapKey] = validatorEntry.Copy()
 	}
 
+	newView.HasFullSnapshotValidatorSetByEpoch = make(map[uint64]bool, len(bav.HasFullSnapshotValidatorSetByEpoch))
 	for mapKey, hasFullSnapshotValidatorSet := range bav.HasFullSnapshotValidatorSetByEpoch {
 		newView.HasFullSnapshotValidatorSetByEpoch[mapKey] = hasFullSnapshotValidatorSet
 	}
 
+	newView.SnapshotValidatorBLSPublicKeyPKIDPairEntries = make(
+		map[SnapshotValidatorBLSPublicKeyMapKey]*BLSPublicKeyPKIDPairEntry,
+		len(bav.SnapshotValidatorBLSPublicKeyPKIDPairEntries),
+	)
 	for mapKey, blsPublicKeyPKIDPairEntry := range bav.SnapshotValidatorBLSPublicKeyPKIDPairEntries {
 		newView.SnapshotValidatorBLSPublicKeyPKIDPairEntries[mapKey] = blsPublicKeyPKIDPairEntry.Copy()
 	}
 
 	// Copy the SnapshotValidatorSetTotalStakeAmountNanos
+	newView.SnapshotValidatorSetTotalStakeAmountNanos = make(map[uint64]*uint256.Int,
+		len(bav.SnapshotValidatorSetTotalStakeAmountNanos),
+	)
 	for epochNumber, totalStakeAmountNanos := range bav.SnapshotValidatorSetTotalStakeAmountNanos {
 		newView.SnapshotValidatorSetTotalStakeAmountNanos[epochNumber] = totalStakeAmountNanos.Clone()
 	}
 
 	// Copy the SnapshotLeaderSchedule
+	newView.SnapshotLeaderSchedule = make(map[SnapshotLeaderScheduleMapKey]*PKID, len(bav.SnapshotLeaderSchedule))
 	for mapKey, validatorPKID := range bav.SnapshotLeaderSchedule {
 		newView.SnapshotLeaderSchedule[mapKey] = validatorPKID.NewPKID()
 	}
+	newView.HasFullSnapshotLeaderScheduleByEpoch = make(map[uint64]bool, len(bav.HasFullSnapshotLeaderScheduleByEpoch))
 	for mapKey, hasFullSnapshotLeaderSchedule := range bav.HasFullSnapshotLeaderScheduleByEpoch {
 		newView.HasFullSnapshotLeaderScheduleByEpoch[mapKey] = hasFullSnapshotLeaderSchedule
 	}
 
 	// Copy the SnapshotStakesToReward
+	newView.SnapshotStakesToReward = make(map[SnapshotStakeMapKey]*StakeEntry, len(bav.SnapshotStakesToReward))
 	for mapKey, snapshotStakeToReward := range bav.SnapshotStakesToReward {
 		newView.SnapshotStakesToReward[mapKey] = snapshotStakeToReward.Copy()
 	}
@@ -709,15 +739,14 @@ func NewUtxoViewWithSnapshotCache(
 	return utxoView
 }
 
-func NewUtxoView(
+func initNewUtxoView(
 	_handle *badger.DB,
 	_params *DeSoParams,
 	_postgres *Postgres,
 	_snapshot *Snapshot,
 	_eventManager *EventManager,
 ) *UtxoView {
-
-	view := UtxoView{
+	return &UtxoView{
 		Handle: _handle,
 		Params: _params,
 		// Note that the TipHash does not get reset as part of
@@ -732,6 +761,17 @@ func NewUtxoView(
 		EventManager: _eventManager,
 		// Set everything else in _ResetViewMappings()
 	}
+}
+
+func NewUtxoView(
+	_handle *badger.DB,
+	_params *DeSoParams,
+	_postgres *Postgres,
+	_snapshot *Snapshot,
+	_eventManager *EventManager,
+) *UtxoView {
+
+	view := initNewUtxoView(_handle, _params, _postgres, _snapshot, _eventManager)
 
 	// Note that the TipHash does not get reset as part of
 	// _ResetViewMappingsAfterFlush because it is not something that is affected by a
@@ -752,7 +792,7 @@ func NewUtxoView(
 	// but we can use it here to initialize the mappings.
 	view._ResetViewMappingsAfterFlush()
 
-	return &view
+	return view
 }
 
 func (bav *UtxoView) _deleteUtxoMappings(utxoEntry *UtxoEntry) error {
