@@ -868,6 +868,9 @@ func (mp *PosMempool) validateTransactions() error {
 		return nil
 	}
 
+	// Create a SafeUtxoView instance to connect the transactions into.
+	safeUtxoView := NewSafeUtxoView(validationView)
+
 	// Iterate through all the transactions in the mempool and connect them to copies of the validation view.
 	for ii, txn := range mempoolTxns {
 		// Break out if we've attempted to connect the maximum number of txns to the view
@@ -875,11 +878,11 @@ func (mp *PosMempool) validateTransactions() error {
 			break
 		}
 
-		// Connect the transaction to a copy of the validation view. We can skip signatures on the transaction
+		// Connect the transaction into the SafeUtxoView. We can skip signatures on the transaction
 		// connect if the transaction has already previously been validated and been found to have a valid
 		// signature. This optimizes the connect by not repeating signature verification on a transaction
 		// more than once.
-		resultingUtxoView, _, _, _, _, err := validationView.ConnectTransactionIntoNewUtxoView(
+		_, _, _, _, err := safeUtxoView.ConnectTransaction(
 			txn.Tx, txn.Hash, uint32(nextBlockHeight), nextBlockTimestamp, !txn.IsValidated(), false,
 		)
 
@@ -899,12 +902,10 @@ func (mp *PosMempool) validateTransactions() error {
 
 		// The txn successfully connected. We set its validated status to true.
 		txn.SetValidated(true)
-
-		// We do a simple pointer update on the validation view here because the txn has already been
-		// connected to the resulting UtxoView. This allows us to avoid performing a second
-		// UtxoView.ConnectTransaction  operation.
-		validationView = resultingUtxoView
 	}
+
+	// Get the final UtxoView from the SafeUtxoView.
+	validationView = safeUtxoView.GetUtxoView()
 
 	// Update the augmentedLatestBlockView with the latest validationView after the transactions
 	// have been connected.
