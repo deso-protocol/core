@@ -65,3 +65,8 @@ func (safeUtxoView *SafeUtxoView) ConnectTransaction(
 	// Return the result from connecting the transaction to the primary view.
 	return utxoOpsForTxn, totalInput, totalOutput, fees, nil
 }
+
+// GetUtxoView returns a copy of the primary view that is safe to be used and mutated by the caller.
+func (safeUtxoView *SafeUtxoView) GetUtxoView() *UtxoView {
+	return safeUtxoView.primaryView.CopyUtxoView()
+}
