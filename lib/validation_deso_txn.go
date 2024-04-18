@@ -9,11 +9,23 @@ import (
 // ValidateDeSoTxnSanityBalanceModel performs a variety of sanity checks to ensure transaction is correctly formatted
 // under the balance model. The test checks pretty much everything, except validating the transaction's signature or
 // that the transaction is valid given a BlockView.
-func ValidateDeSoTxnSanityBalanceModel(txn *MsgDeSoTxn, blockHeight uint64,
-	params *DeSoParams, globalParams *GlobalParamsEntry) error {
+func ValidateDeSoTxnSanityBalanceModel(
+	txn *MsgDeSoTxn,
+	blockHeight uint64,
+	params *DeSoParams,
+	globalParams *GlobalParamsEntry,
+) error {
 
 	if txn == nil || params == nil || globalParams == nil {
 		return fmt.Errorf("ValidateDeSoTxnSanityBalanceModel: Transaction, params, and globalParams cannot be nil")
+	}
+
+	// Make sure the transaction has a signature.
+	if txn.TxnMeta.GetTxnType() != TxnTypeBitcoinExchange &&
+		txn.TxnMeta.GetTxnType() != TxnTypeAtomicTxnsWrapper &&
+		txn.Signature.Sign == nil {
+		return errors.Wrap(
+			RuleErrorTransactionHasNoSignature, "ValidateDeSoTxnSanityBalanceModel: Transaction has no signature")
 	}
 
 	// Validate encoding
