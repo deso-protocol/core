@@ -131,7 +131,6 @@ func (stateChangeEntry *StateChangeEntry) RawEncodeWithoutMetadata(blockHeight u
 		// We do this to simplify the decode logic and avoid an encoder migration.
 		data = append(data, EncodeToBytes(blockHeight, nil)...)
 	}
-
 	return data
 }
 
