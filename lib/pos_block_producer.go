@@ -1,9 +1,10 @@
 package lib
 
 import (
-	"github.com/btcsuite/btcd/btcec/v2"
 	"math"
 	"time"
+
+	"github.com/btcsuite/btcd/btcec/v2"
 
 	"github.com/btcsuite/btcd/wire"
 
@@ -301,7 +302,10 @@ func (pbp *PosBlockProducer) getBlockTransactions(
 	blocksTxns := []*MsgDeSoTxn{}
 	maxUtilityFee := uint64(0)
 	currentBlockSize := uint64(0)
-	blockUtxoView := latestBlockView.CopyUtxoView()
+
+	// Create an instance of SafeUtxoView to connect transactions to.
+	safeUtxoView := NewSafeUtxoView(latestBlockView)
+
 	for _, txn := range feeTimeTxns {
 		// If we've exceeded the soft max block size, we exit. We want to allow at least one txn that moves the
 		// cumulative block size past the soft max, but don't want to add more txns beyond that.
@@ -319,16 +323,16 @@ func (pbp *PosBlockProducer) getBlockTransactions(
 			continue
 		}
 
-		blockUtxoViewCopy := blockUtxoView.CopyUtxoView()
-		_, _, _, fees, err := blockUtxoViewCopy._connectTransaction(
-			txn.GetTxn(), txn.Hash(), uint32(newBlockHeight), newBlockTimestampNanoSecs,
-			true, false)
+		// Connect the transaction to the SafeUtxoView to test if it connects.
+		_, _, _, fees, err := safeUtxoView.ConnectTransaction(
+			txn.GetTxn(), txn.Hash(), uint32(newBlockHeight), newBlockTimestampNanoSecs, true, false,
+		)
 
-		// Check if the transaction connected.
+		// If the transaction fails to connect, then we skip it.
 		if err != nil {
 			continue
 		}
-		blockUtxoView = blockUtxoViewCopy
+
 		blocksTxns = append(blocksTxns, txn.GetTxn())
 		currentBlockSize += uint64(len(txnBytes))
 
