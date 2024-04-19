@@ -1175,6 +1175,7 @@ func (snap *Snapshot) SetSnapshotChunk(mainDb *badger.DB, mainDbMutex *deadlock.
 						OperationType: DbOperationTypeInsert,
 						KeyBytes:      dbEntry.Key,
 						EncoderBytes:  dbEntry.Value,
+						IsReverted:    false,
 					},
 					FlushId: dbFlushId,
 				})
