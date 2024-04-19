@@ -8,6 +8,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"github.com/decred/dcrd/dcrec/secp256k1/v4"
 	ecdsa2 "github.com/decred/dcrd/dcrec/secp256k1/v4/ecdsa"
 	"io"
 	"math"
@@ -3502,6 +3503,72 @@ func SignRecoverable(bb []byte, privateKey *btcec.PrivateKey) (*DeSoSignature, e
 		RecoveryId:    recoveryId,
 		IsRecoverable: true,
 	}, nil
+}
+
+// We define this struct to support JSON encoding of DeSoSignature. We didn't need this
+// initially, but then at some point we upgraded our signature from btcec.Signature to
+// ecdsa2.Signature, and the latter keeps its R and S values *private* rather than public, which
+// then breaks the ability to naively JSON-serialize the signature of a txn. To workaround this
+// we define this legacy struct that makes R and S *public*, we copy the ecdsa2.Signature
+// into it, and then JSON serialize it. To deserialize, we do the reverse: read the bytes into
+// the legacy struct and then convert them into the ecdsa2.Signature.
+type legacySigStruct struct {
+	R [32]byte
+	S [32]byte
+}
+
+// See comment on legacySigStruct for why we need this
+func (sig DeSoSignature) MarshalJSON() ([]byte, error) {
+	var legacySig *legacySigStruct
+	if sig.Sign != nil {
+		r := sig.Sign.R()
+		rr := &r
+
+		s := sig.Sign.S()
+		ss := &s
+
+		legacySig = &legacySigStruct{
+			R: rr.Bytes(),
+			S: ss.Bytes(),
+		}
+	}
+
+	return json.Marshal(struct {
+		Sign          *legacySigStruct
+		RecoveryId    byte
+		IsRecoverable bool
+	}{
+		Sign:          legacySig,
+		RecoveryId:    sig.RecoveryId,
+		IsRecoverable: sig.IsRecoverable,
+	})
+}
+
+// See comment on legacySigStruct for why we need this
+func (sig *DeSoSignature) UnmarshalJSON(data []byte) error {
+	aux := struct {
+		Sign          *legacySigStruct
+		RecoveryId    byte
+		IsRecoverable bool
+	}{}
+
+	if err := json.Unmarshal(data, &aux); err != nil {
+		return err
+	}
+	if aux.Sign != nil {
+		r := secp256k1.ModNScalar{}
+		rr := aux.Sign.R
+		r.SetBytes(&rr)
+		s := secp256k1.ModNScalar{}
+		ss := aux.Sign.S
+		s.SetBytes(&ss)
+
+		sig.Sign = ecdsa2.NewSignature(&r, &s)
+	}
+	sig.RecoveryId = aux.RecoveryId
+	sig.IsRecoverable = aux.IsRecoverable
+
+	return nil
 }
 
 // DeSoNonce is a nonce that can be used to prevent replay attacks. It is used in the DeSo protocol
