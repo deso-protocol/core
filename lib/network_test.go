@@ -3,6 +3,7 @@ package lib
 import (
 	"bytes"
 	"encoding/hex"
+	"encoding/json"
 	ecdsa2 "github.com/decred/dcrd/dcrec/secp256k1/v4/ecdsa"
 	"math/big"
 	"math/rand"
@@ -1798,5 +1799,46 @@ func TestDeSoSignature_SerializeCompact(t *testing.T) {
 			recoveredPublicKeyBytes := recoveredPublicKey.SerializeCompressed()
 			require.Equal(true, reflect.DeepEqual(publicKeyBytes, recoveredPublicKeyBytes))
 		}
+	}
+}
+
+func TestTxnJsonEncodeDecode(t *testing.T) {
+	priv, err := btcec.NewPrivateKey()
+	require.NoError(t, err)
+
+	// We want to test with v0 and v1 txns.
+	for _, includeV1Txns := range []bool{true, false} {
+		// The case without a signature can fail with a nil pointer so we
+		// want to make sure we test it explicitly.
+		for _, withSignature := range []bool{true, false} {
+			for _, txn := range expectedTransactions(includeV1Txns) {
+				// Copy the txn
+				txnCopy, err := txn.Copy()
+				require.NoError(t, err)
+
+				// Sign the txn
+				txBytes, err := txn.ToBytes(true /*preSignature*/)
+				require.NoError(t, err)
+				txHash := Sha256DoubleHash(txBytes)[:]
+				desoSignature, err := SignRecoverable(txHash, priv)
+				require.NoError(t, err)
+				if withSignature {
+					txnCopy.Signature = *desoSignature
+				}
+
+				// Serialize the txn using json encoding
+				txnJson, err := json.Marshal(txnCopy)
+				require.NoError(t, err)
+
+				// Deserialize the txn using json decoding
+				txn2 := MsgDeSoTxn{}
+				err = json.Unmarshal(txnJson, &txn2)
+				require.NoError(t, err)
+
+				// Make sure it's the same
+				require.Equal(t, txnCopy, &txn2)
+			}
+		}
+
 	}
 }
