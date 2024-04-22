@@ -1464,14 +1464,14 @@ var TestnetForkHeights = ForkHeights{
 	// Tues May 23 2023 @ 9am PT
 	BlockRewardPatchBlockHeight: uint32(729753),
 
-	// FIXME: set to real block height when ready
-	ProofOfStake1StateSetupBlockHeight: uint32(math.MaxUint32),
+	// Wed May 1 2024 @ 12pm PT
+	ProofOfStake1StateSetupBlockHeight: uint32(1113866),
 
-	// FIXME: set to real block height when ready
-	ProofOfStake2ConsensusCutoverBlockHeight: uint32(math.MaxUint32),
+	// Mon May 6 2024 @ 12pm PT
+	ProofOfStake2ConsensusCutoverBlockHeight: uint32(1119482),
 
-	// FIXME: set to real block height when ready
-	LockupsBlockHeight: uint32(math.MaxUint32),
+	// Wed May 1 2024 @ 12pm PT
+	LockupsBlockHeight: uint32(1113866),
 
 	// Be sure to update EncoderMigrationHeights as well via
 	// GetEncoderMigrationHeights if you're modifying schema.
