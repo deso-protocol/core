@@ -332,13 +332,27 @@ func (posFeeEstimator *PoSFeeEstimator) EstimateFeeRateNanosPerKB(
 // max of the mempoolFeeEstimate and pastBlocksFeeEstimate.
 func (posFeeEstimator *PoSFeeEstimator) EstimateFee(
 	txn *MsgDeSoTxn,
-	minFeeRateNanosPerKB uint64,
+	overrideFeeRateNanosPerKB uint64,
 	mempoolCongestionFactorBasisPoints uint64,
 	mempoolPriorityPercentileBasisPoints uint64,
 	pastBlocksCongestionFactorBasisPoints uint64,
 	pastBlocksPriorityPercentileBasisPoints uint64,
 	maxBlockSize uint64,
 ) (uint64, error) {
+	// If overrideFeeRateNanosPerKB is specified, we use that to compute the txn fee. Otherwise,
+	// we'll use our fee estimation logic to compute the fee rate to use. This allows the developer
+	// to override the fee estimation logic if they need to for special circumstances.
+	//
+	// Note that it may make sense to change the name of this to overrideFeeRateNanosPerKB, but we'd
+	// have to change it in a lot of places so I don't think it's worth it.
+	if overrideFeeRateNanosPerKB != 0 {
+		minFeeRateEstimate, err := computeFeeGivenTxnAndFeeRate(txn, overrideFeeRateNanosPerKB)
+		if err != nil {
+			return 0, errors.Wrap(err, "PoSFeeEstimator.EstimateFee: Problem computing min fee rate estimate")
+		}
+		return minFeeRateEstimate, nil
+	}
+
 	posFeeEstimator.rwLock.RLock()
 	defer posFeeEstimator.rwLock.RUnlock()
 
@@ -360,15 +374,6 @@ func (posFeeEstimator *PoSFeeEstimator) EstimateFee(
 	)
 	if err != nil {
 		return 0, errors.Wrap(err, "PoSFeeEstimator.EstimateFee: Problem computing past blocks fee estimate")
-	}
-
-	minFeeRateEstimate, err := computeFeeGivenTxnAndFeeRate(txn, minFeeRateNanosPerKB)
-	if err != nil {
-		return 0, errors.Wrap(err, "PoSFeeEstimator.EstimateFee: Problem computing min fee rate estimate")
-	}
-
-	if minFeeRateEstimate > mempoolFeeEstimate && minFeeRateEstimate > pastBlocksFeeEstimate {
-		return minFeeRateEstimate, nil
 	}
 
 	if mempoolFeeEstimate < pastBlocksFeeEstimate {
