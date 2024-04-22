@@ -3508,22 +3508,22 @@ func (bav *UtxoView) _connectUpdateGlobalParams(
 			}
 			newGlobalParamsEntry.MempoolCongestionFactorBasisPoints = val
 		}
-		if len(extraData[PastBlocksCongestionFactorBasisPointsKey]) > 0 {
+		if len(extraData[MempoolPastBlocksCongestionFactorBasisPointsKey]) > 0 {
 			val, bytesRead := Uvarint(
-				extraData[PastBlocksCongestionFactorBasisPointsKey],
+				extraData[MempoolPastBlocksCongestionFactorBasisPointsKey],
 			)
 			if val > MaxBasisPoints {
 				return 0, 0, nil, fmt.Errorf(
-					"_connectUpdateGlobalParams: PastBlocksCongestionFactorBasisPoints must be <= %d",
+					"_connectUpdateGlobalParams: MempoolPastBlocksCongestionFactorBasisPoints must be <= %d",
 					MaxBasisPoints,
 				)
 			}
 			if bytesRead <= 0 {
 				return 0, 0, nil, fmt.Errorf(
-					"_connectUpdateGlobalParams: unable to decode PastBlocksCongestionFactorBasisPoints as uint64",
+					"_connectUpdateGlobalParams: unable to decode MempoolPastBlocksCongestionFactorBasisPoints as uint64",
 				)
 			}
-			newGlobalParamsEntry.PastBlocksCongestionFactorBasisPoints = val
+			newGlobalParamsEntry.MempoolPastBlocksCongestionFactorBasisPoints = val
 		}
 		if len(extraData[MempoolPriorityPercentileBasisPointsKey]) > 0 {
 			val, bytesRead := Uvarint(
@@ -3542,22 +3542,22 @@ func (bav *UtxoView) _connectUpdateGlobalParams(
 			}
 			newGlobalParamsEntry.MempoolPriorityPercentileBasisPoints = val
 		}
-		if len(extraData[PastBlocksPriorityPercentileBasisPointsKey]) > 0 {
+		if len(extraData[MempoolPastBlocksPriorityPercentileBasisPointsKey]) > 0 {
 			val, bytesRead := Uvarint(
-				extraData[PastBlocksPriorityPercentileBasisPointsKey],
+				extraData[MempoolPastBlocksPriorityPercentileBasisPointsKey],
 			)
 			if val > MaxBasisPoints {
 				return 0, 0, nil, fmt.Errorf(
-					"_connectUpdateGlobalParams: PastBlocksPriorityPercentileBasisPoints must be <= %d",
+					"_connectUpdateGlobalParams: MempoolPastBlocksPriorityPercentileBasisPoints must be <= %d",
 					MaxBasisPoints,
 				)
 			}
 			if bytesRead <= 0 {
 				return 0, 0, nil, fmt.Errorf(
-					"_connectUpdateGlobalParams: unable to decode PastBlocksPriorityPercentileBasisPoints as uint64",
+					"_connectUpdateGlobalParams: unable to decode MempoolPastBlocksPriorityPercentileBasisPoints as uint64",
 				)
 			}
-			newGlobalParamsEntry.PastBlocksPriorityPercentileBasisPoints = val
+			newGlobalParamsEntry.MempoolPastBlocksPriorityPercentileBasisPoints = val
 		}
 		if len(extraData[MaxBlockSizeBytesPoSKey]) > 0 {
 			val, bytesRead := Uvarint(
