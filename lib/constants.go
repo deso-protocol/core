@@ -794,6 +794,18 @@ type DeSoParams struct {
 	// this setting.
 	DefaultMempoolFeeEstimatorNumPastBlocks uint64
 
+	// DefaultMempoolCongestionFactorBasisPoints and DefaultPastBlocksCongestionFactorBasisPoints are the default values
+	// for GlobalParams.MempoolCongestionFactorBasisPoints and GlobalParams.DefaultPastBlocksCongestionFactorBasisPoints.
+	/// See comments in GlobalParamsEntry for a description of their usage.
+	DefaultMempoolCongestionFactorBasisPoints    uint64
+	DefaultPastBlocksCongestionFactorBasisPoints uint64
+
+	// DefaultMempoolPriorityPercentileBasisPoints and DefaultPastBlocksPriorityPercentileBasisPoints are the default values
+	// for GlobalParams.DefaultMempoolPriorityPercentileBasisPoints and GlobalParams.DefaultPastBlocksPriorityPercentileBasisPoints.
+	// See comments in GlobalParamsEntry for a description of their usage.
+	DefaultMempoolPriorityPercentileBasisPoints    uint64
+	DefaultPastBlocksPriorityPercentileBasisPoints uint64
+
 	// DefaultMaxBlockSizeBytesPoS is the default value for GlobalParamsEntry.MaxBlockSizeBytesPoS.
 	// This is the initial value for the maximum block size in bytes that we allow for PoS blocks.
 	DefaultMaxBlockSizeBytesPoS uint64
@@ -822,12 +834,6 @@ type DeSoParams struct {
 	DisableNetworkManagerRoutines bool
 
 	ForkHeights ForkHeights
-
-	// See comment on the DeSoMainnetParams settings of these values
-	MempoolCongestionFactorBasisPoints      uint64
-	MempoolPriorityPercentileBasisPoints    uint64
-	PastBlocksCongestionFactorBasisPoints   uint64
-	PastBlocksPriorityPercentileBasisPoints uint64
 
 	EncoderMigrationHeights     *EncoderMigrationHeights
 	EncoderMigrationHeightsList []*MigrationHeight
@@ -1362,8 +1368,8 @@ var DeSoMainnetParams = DeSoParams{
 	// Using the 90th percentile allows the fee market to be aggressive, but it's better than using
 	// 100% because that can have some rounding issues. For example, if you use 100% and blocks are
 	// 99% full, the fee market won't adapt. So it's better to have a little slack.
-	MempoolCongestionFactorBasisPoints:    uint64(9000),
-	PastBlocksCongestionFactorBasisPoints: uint64(9000),
+	DefaultMempoolCongestionFactorBasisPoints:    uint64(9000),
+	DefaultPastBlocksCongestionFactorBasisPoints: uint64(9000),
 	// The priority percentile determines what benchmark we use to increase the fee we're paying. For
 	// past blocks, we set a percentile of 90%, which means we'll take the fee paid by the 90th percentile
 	// txn in the past N blocks and increase it by one fee bucket. This works nicely with N=50 blocks
@@ -1372,8 +1378,8 @@ var DeSoMainnetParams = DeSoParams{
 	// the highest 1 block's worth of txns in the mempool. We use a lower percentile here because the mempool
 	// has a much tighter window of a single block, and so by outbidding *anybody* in that block, you're
 	// already highly likely to get in.
-	MempoolPriorityPercentileBasisPoints:    uint64(1000),
-	PastBlocksPriorityPercentileBasisPoints: uint64(9000),
+	DefaultMempoolPriorityPercentileBasisPoints:    uint64(1000),
+	DefaultPastBlocksPriorityPercentileBasisPoints: uint64(9000),
 
 	ForkHeights:                 MainnetForkHeights,
 	EncoderMigrationHeights:     GetEncoderMigrationHeights(&MainnetForkHeights),
@@ -1684,10 +1690,10 @@ var DeSoTestnetParams = DeSoParams{
 	DisableNetworkManagerRoutines: false,
 
 	// See comment on DeSoMainnetParams
-	MempoolCongestionFactorBasisPoints:      uint64(9000),
-	PastBlocksCongestionFactorBasisPoints:   uint64(9000),
-	MempoolPriorityPercentileBasisPoints:    uint64(1000),
-	PastBlocksPriorityPercentileBasisPoints: uint64(9000),
+	DefaultMempoolCongestionFactorBasisPoints:      uint64(9000),
+	DefaultPastBlocksCongestionFactorBasisPoints:   uint64(9000),
+	DefaultMempoolPriorityPercentileBasisPoints:    uint64(1000),
+	DefaultPastBlocksPriorityPercentileBasisPoints: uint64(9000),
 
 	ForkHeights:                 TestnetForkHeights,
 	EncoderMigrationHeights:     GetEncoderMigrationHeights(&TestnetForkHeights),
