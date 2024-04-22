@@ -4255,15 +4255,15 @@ func TestCreatorCoinBigBigBuyBigSell(t *testing.T) {
 			desoToSellNanos, 0, &DeSoMainnetParams)
 
 		// Sell half of the CC
-		desoReturnedNanos := CalculateDeSoToReturn(
+		desoReturnedNanos, err := CalculateDeSoToReturn(
 			polyMintedCCNanos/2, polyMintedCCNanos,
 			desoToSellNanos, &DeSoMainnetParams)
-
+		require.NoError(err)
 		// Sell the other half of the CC
-		desoReturned2Nanos := CalculateDeSoToReturn(
+		desoReturned2Nanos, err := CalculateDeSoToReturn(
 			polyMintedCCNanos-polyMintedCCNanos/2, polyMintedCCNanos-polyMintedCCNanos/2,
 			desoToSellNanos-desoReturnedNanos, &DeSoMainnetParams)
-
+		require.NoError(err)
 		// Should get back the amount of DeSo we put in.
 		require.Equal(desoToSellNanos, desoReturnedNanos+desoReturned2Nanos)
 	}
@@ -4277,16 +4277,16 @@ func TestCreatorCoinBigBigBuyBigSell(t *testing.T) {
 			desoToSellNanos, initialCCNanos, 1, &DeSoMainnetParams)
 
 		// Sell half of the CC
-		desoReturnedNanos := CalculateDeSoToReturn(
+		desoReturnedNanos, err := CalculateDeSoToReturn(
 			bancorMintedCCNanos/2, bancorMintedCCNanos+initialCCNanos,
 			desoToSellNanos+1, &DeSoMainnetParams)
-
+		require.NoError(err)
 		// Sell the other half of the CC
-		desoReturned2Nanos := CalculateDeSoToReturn(
+		desoReturned2Nanos, err := CalculateDeSoToReturn(
 			bancorMintedCCNanos-bancorMintedCCNanos/2,
 			bancorMintedCCNanos-bancorMintedCCNanos/2+initialCCNanos,
 			desoToSellNanos-desoReturnedNanos+1, &DeSoMainnetParams)
-
+		require.NoError(err)
 		// Should get back the amount of DeSo we put in.
 		require.Equal(int64(desoToSellNanos), int64(desoReturnedNanos+desoReturned2Nanos))
 	}
