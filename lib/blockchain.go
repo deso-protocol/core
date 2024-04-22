@@ -5016,8 +5016,8 @@ func (bc *Blockchain) CreateMaxSpend(
 					// TODO: Make these flags or GlobalParams
 					bc.params.DefaultMempoolCongestionFactorBasisPoints,
 					bc.params.DefaultMempoolPriorityPercentileBasisPoints,
-					bc.params.DefaultPastBlocksCongestionFactorBasisPoints,
-					bc.params.DefaultPastBlocksPriorityPercentileBasisPoints,
+					bc.params.DefaultMempoolPastBlocksCongestionFactorBasisPoints,
+					bc.params.DefaultMempoolPastBlocksPriorityPercentileBasisPoints,
 					maxBlockSizeBytes)
 				if err != nil {
 					return nil, 0, 0, 0, errors.Wrapf(err, "CreateMaxSpend: Problem estimating fee: ")
@@ -5159,8 +5159,8 @@ func (bc *Blockchain) AddInputsAndChangeToTransactionWithSubsidy(
 					// TODO: Make these flags or GlobalParams
 					bc.params.DefaultMempoolCongestionFactorBasisPoints,
 					bc.params.DefaultMempoolPriorityPercentileBasisPoints,
-					bc.params.DefaultPastBlocksCongestionFactorBasisPoints,
-					bc.params.DefaultPastBlocksPriorityPercentileBasisPoints,
+					bc.params.DefaultMempoolPastBlocksCongestionFactorBasisPoints,
+					bc.params.DefaultMempoolPastBlocksPriorityPercentileBasisPoints,
 					maxBlockSizeBytes)
 				UpdateTxnFee(txArg, newTxFee)
 				if err != nil {
@@ -5881,8 +5881,8 @@ func (bc *Blockchain) CreateAtomicTxnsWrapper(
 			// TODO: Make these flags or GlobalParams
 			bc.params.DefaultMempoolCongestionFactorBasisPoints,
 			bc.params.DefaultMempoolPriorityPercentileBasisPoints,
-			bc.params.DefaultPastBlocksCongestionFactorBasisPoints,
-			bc.params.DefaultPastBlocksPriorityPercentileBasisPoints,
+			bc.params.DefaultMempoolPastBlocksCongestionFactorBasisPoints,
+			bc.params.DefaultMempoolPastBlocksPriorityPercentileBasisPoints,
 			maxBlockSizeBytes)
 		if err != nil {
 			return nil, 0, errors.Wrapf(err, "CreateAtomicTxnsWrapper: failed to recompute fee estimate")
@@ -5974,8 +5974,8 @@ func (bc *Blockchain) CreateAtomicTxnsWrapper(
 			// TODO: Make these flags or GlobalParams
 			bc.params.DefaultMempoolCongestionFactorBasisPoints,
 			bc.params.DefaultMempoolPriorityPercentileBasisPoints,
-			bc.params.DefaultPastBlocksCongestionFactorBasisPoints,
-			bc.params.DefaultPastBlocksPriorityPercentileBasisPoints,
+			bc.params.DefaultMempoolPastBlocksCongestionFactorBasisPoints,
+			bc.params.DefaultMempoolPastBlocksPriorityPercentileBasisPoints,
 			maxBlockSizeBytes)
 		if err != nil {
 			return nil, 0, errors.Wrapf(err, "CreateAtomicTxnsWrapper: failed to compute "+
