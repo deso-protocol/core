@@ -5831,6 +5831,7 @@ func (bc *Blockchain) CreateAtomicTxnsWrapper(
 	unsignedTransactions []*MsgDeSoTxn,
 	extraData map[string][]byte,
 	mempool Mempool,
+	minFeeRateNanosPerKB uint64,
 ) (
 	_txn *MsgDeSoTxn,
 	_fees uint64,
@@ -5876,8 +5877,7 @@ func (bc *Blockchain) CreateAtomicTxnsWrapper(
 		txn.ExtraData[PreviousAtomicTxnPreHash] = dummyAtomicHashBytes
 		newFeeEstimate, err := mempool.EstimateFee(
 			txn,
-			// TODO: Allow the caller to specify minFeeRateNanosPerKB
-			0,
+			minFeeRateNanosPerKB,
 			// TODO: Make these flags or GlobalParams
 			bc.params.MempoolCongestionFactorBasisPoints,
 			bc.params.MempoolPriorityPercentileBasisPoints,
