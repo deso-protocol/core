@@ -63,7 +63,7 @@ func TestFeeEstimator(t *testing.T) {
 	require.NoError(t, err)
 	validateTxnFee(t, txn, computedFee, baseFeeRate)
 	// Hybrid estimator will also return the base fee rate * number of bytes.
-	computedFee, err = posFeeEstimator.EstimateFee(txn, 0, 1000)
+	computedFee, err = posFeeEstimator.EstimateFee(txn, 0)
 	require.NoError(t, err)
 	validateTxnFee(t, txn, computedFee, baseFeeRate)
 
@@ -167,10 +167,11 @@ func TestFeeEstimator(t *testing.T) {
 		globalParams.MempoolPastBlocksCongestionFactorBasisPoints = congestionFactor
 		globalParams.MempoolPriorityPercentileBasisPoints = priorityPercentileBasisPoints
 		globalParams.MempoolPastBlocksPriorityPercentileBasisPoints = priorityPercentileBasisPoints
+		globalParams.SoftMaxBlockSizeBytesPoS = maxBlockSizeHybrid
 		posFeeEstimator.UpdateGlobalParams(globalParams)
 
 		// And the hybrid estimator is just the max, but for completeness, we check it.
-		estimatedHybridFee, err = posFeeEstimator.EstimateFee(txn, 0, maxBlockSizeHybrid)
+		estimatedHybridFee, err = posFeeEstimator.EstimateFee(txn, 0)
 		require.NoError(t, err)
 		require.Equal(t, estimatedMempoolFee, estimatedHybridFee)
 		require.Equal(t, estimatedPastBlocksFee, estimatedHybridFee)
@@ -218,10 +219,11 @@ func TestFeeEstimator(t *testing.T) {
 		globalParams.MempoolPastBlocksCongestionFactorBasisPoints = congestionFactor
 		globalParams.MempoolPriorityPercentileBasisPoints = priorityPercentileBasisPoints
 		globalParams.MempoolPastBlocksPriorityPercentileBasisPoints = priorityPercentileBasisPoints
+		globalParams.SoftMaxBlockSizeBytesPoS = maxBlockSizeHybrid
 		posFeeEstimator.UpdateGlobalParams(globalParams)
 
 		// And the hybrid estimator is just the max, but for completeness, we check it.
-		estimatedHybridFee, err = posFeeEstimator.EstimateFee(txn, 0, maxBlockSizeHybrid)
+		estimatedHybridFee, err = posFeeEstimator.EstimateFee(txn, 0)
 		require.NoError(t, err)
 		require.Equal(t, estimatedMempoolFee, estimatedHybridFee)
 		require.Equal(t, estimatedPastBlocksFee, estimatedHybridFee)
@@ -269,10 +271,11 @@ func TestFeeEstimator(t *testing.T) {
 		globalParams.MempoolPastBlocksCongestionFactorBasisPoints = congestionFactor
 		globalParams.MempoolPriorityPercentileBasisPoints = priorityPercentileBasisPoints
 		globalParams.MempoolPastBlocksPriorityPercentileBasisPoints = priorityPercentileBasisPoints
+		globalParams.SoftMaxBlockSizeBytesPoS = maxBlockSizeHybrid
 		posFeeEstimator.UpdateGlobalParams(globalParams)
 
 		// And the hybrid estimator is just the max, but for completeness, we check it.
-		estimatedHybridFee, err = posFeeEstimator.EstimateFee(txn, 0, maxBlockSizeHybrid)
+		estimatedHybridFee, err = posFeeEstimator.EstimateFee(txn, 0)
 		require.NoError(t, err)
 		require.Equal(t, estimatedMempoolFee, estimatedHybridFee)
 		require.Equal(t, estimatedPastBlocksFee, estimatedHybridFee)
@@ -320,10 +323,11 @@ func TestFeeEstimator(t *testing.T) {
 		globalParams.MempoolPastBlocksCongestionFactorBasisPoints = congestionFactor
 		globalParams.MempoolPriorityPercentileBasisPoints = priorityPercentileBasisPoints
 		globalParams.MempoolPastBlocksPriorityPercentileBasisPoints = priorityPercentileBasisPoints
+		globalParams.SoftMaxBlockSizeBytesPoS = maxBlockSizeHybrid
 		posFeeEstimator.UpdateGlobalParams(globalParams)
 
 		// And the hybrid estimator is just the max, but for completeness, we check it.
-		estimatedHybridFee, err = posFeeEstimator.EstimateFee(txn, 0, maxBlockSizeHybrid)
+		estimatedHybridFee, err = posFeeEstimator.EstimateFee(txn, 0)
 		require.NoError(t, err)
 		require.Equal(t, estimatedMempoolFee, estimatedHybridFee)
 		require.Equal(t, estimatedPastBlocksFee, estimatedHybridFee)

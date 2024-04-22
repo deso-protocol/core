@@ -380,6 +380,8 @@ func _testGetDefaultGlobalParams() *GlobalParamsEntry {
 	globalParams.MempoolPriorityPercentileBasisPoints = 10000
 	globalParams.MempoolPastBlocksPriorityPercentileBasisPoints = 10000
 
+	globalParams.SoftMaxBlockSizeBytesPoS = 1000
+
 	return &globalParams
 }
 
