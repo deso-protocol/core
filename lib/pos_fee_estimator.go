@@ -299,7 +299,7 @@ func (posFeeEstimator *PoSFeeEstimator) EstimateFeeRateNanosPerKB(minFeeRateNano
 	pastBlocksCongestionFactorBasisPoints := posFeeEstimator.globalParams.MempoolPastBlocksCongestionFactorBasisPoints
 	pastBlocksPriorityPercentileBasisPoints := posFeeEstimator.globalParams.MempoolPastBlocksPriorityPercentileBasisPoints
 
-	maxBlockSize := posFeeEstimator.globalParams.MaxBlockSizeBytesPoS
+	maxBlockSize := posFeeEstimator.globalParams.SoftMaxBlockSizeBytesPoS
 
 	pastBlockFeeRate := posFeeEstimator.estimateFeeRateNanosPerKBGivenTransactionRegister(
 		posFeeEstimator.pastBlocksTransactionRegister,
@@ -339,7 +339,7 @@ func (posFeeEstimator *PoSFeeEstimator) EstimateFee(txn *MsgDeSoTxn, minFeeRateN
 	pastBlocksCongestionFactorBasisPoints := posFeeEstimator.globalParams.MempoolPastBlocksCongestionFactorBasisPoints
 	pastBlocksPriorityPercentileBasisPoints := posFeeEstimator.globalParams.MempoolPastBlocksPriorityPercentileBasisPoints
 
-	maxBlockSize := posFeeEstimator.globalParams.MaxBlockSizeBytesPoS
+	maxBlockSize := posFeeEstimator.globalParams.SoftMaxBlockSizeBytesPoS
 
 	mempoolFeeEstimate, err := posFeeEstimator.mempoolFeeEstimate(
 		txn,
