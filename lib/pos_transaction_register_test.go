@@ -147,7 +147,7 @@ func TestTransactionRegisterPrune(t *testing.T) {
 	txnRegister.Init(globalParams)
 	totalSize := uint64(0)
 	for _, tx := range txnPool {
-		require.Nil(txnRegister.AddTransaction(tx))
+		require.NoError(txnRegister.AddTransaction(tx))
 		totalSize += tx.TxSizeBytes
 	}
 
@@ -229,7 +229,7 @@ func TestTransactionRegisterPrune(t *testing.T) {
 	// Re-add all transactions
 	totalSize = 0
 	for _, tx := range txnPool {
-		require.Nil(txnRegister.AddTransaction(tx))
+		require.NoError(txnRegister.AddTransaction(tx))
 		totalSize += tx.TxSizeBytes
 	}
 	require.Equal(totalSize, txnRegister.totalTxnsSizeBytes)
@@ -244,7 +244,7 @@ func TestTransactionRegisterPrune(t *testing.T) {
 	// Re-add all transactions again
 	totalSize = 0
 	for _, tx := range txnPool {
-		require.Nil(txnRegister.AddTransaction(tx))
+		require.NoError(txnRegister.AddTransaction(tx))
 		totalSize += tx.TxSizeBytes
 	}
 
@@ -270,7 +270,7 @@ func TestTransactionRegisterWithRemoves(t *testing.T) {
 	txnRegister.Init(globalParams)
 	_testBucketStandardRemoveTest(t, txnPool, globalParams, false,
 		func(tx *MempoolTx) {
-			require.Nil(txnRegister.AddTransaction(tx))
+			require.NoError(txnRegister.AddTransaction(tx))
 		},
 		func(tx *MempoolTx) {
 			txnRegister.RemoveTransaction(tx)
@@ -299,7 +299,7 @@ func TestTransactionRegisterBasic(t *testing.T) {
 	txnRegister.Init(globalParams)
 	_testBucketStandardAddTest(t, txnPool, globalParams, false,
 		func(tx *MempoolTx) {
-			require.Nil(txnRegister.AddTransaction(tx))
+			require.NoError(txnRegister.AddTransaction(tx))
 		},
 		func() []*MempoolTx {
 			return txnRegister.GetFeeTimeTransactions()
