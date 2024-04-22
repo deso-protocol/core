@@ -5010,9 +5010,15 @@ func (bc *Blockchain) CreateMaxSpend(
 				if bc.params.IsPoSBlockHeight(uint64(bc.BlockTip().Height)) {
 					maxBlockSizeBytes = utxoView.GetSoftMaxBlockSizeBytesPoS()
 				}
-				// TODO: replace MaxBasisPoints with variables configured by flags.
-				feeAmountNanos, err = mempool.EstimateFee(txn, minFeeRateNanosPerKB,
-					MaxBasisPoints, MaxBasisPoints, MaxBasisPoints, MaxBasisPoints, maxBlockSizeBytes)
+				feeAmountNanos, err = mempool.EstimateFee(
+					txn,
+					minFeeRateNanosPerKB,
+					// TODO: Make these flags or GlobalParams
+					bc.params.MempoolCongestionFactorBasisPoints,
+					bc.params.MempoolPriorityPercentileBasisPoints,
+					bc.params.PastBlocksCongestionFactorBasisPoints,
+					bc.params.PastBlocksPriorityPercentileBasisPoints,
+					maxBlockSizeBytes)
 				if err != nil {
 					return nil, 0, 0, 0, errors.Wrapf(err, "CreateMaxSpend: Problem estimating fee: ")
 				}
@@ -5147,9 +5153,15 @@ func (bc *Blockchain) AddInputsAndChangeToTransactionWithSubsidy(
 				if bc.params.IsPoSBlockHeight(uint64(bc.BlockTip().Height)) {
 					maxBlockSizeBytes = utxoView.GetSoftMaxBlockSizeBytesPoS()
 				}
-				// TODO: replace MaxBasisPoints with variables configured by flags.
-				newTxFee, err := mempool.EstimateFee(txArg, minFeeRateNanosPerKB, MaxBasisPoints,
-					MaxBasisPoints, MaxBasisPoints, MaxBasisPoints, maxBlockSizeBytes)
+				newTxFee, err := mempool.EstimateFee(
+					txArg,
+					minFeeRateNanosPerKB,
+					// TODO: Make these flags or GlobalParams
+					bc.params.MempoolCongestionFactorBasisPoints,
+					bc.params.MempoolPriorityPercentileBasisPoints,
+					bc.params.PastBlocksCongestionFactorBasisPoints,
+					bc.params.PastBlocksPriorityPercentileBasisPoints,
+					maxBlockSizeBytes)
 				UpdateTxnFee(txArg, newTxFee)
 				if err != nil {
 					return 0, 0, 0, 0, errors.Wrapf(err,
@@ -5863,7 +5875,15 @@ func (bc *Blockchain) CreateAtomicTxnsWrapper(
 		txn.ExtraData[NextAtomicTxnPreHash] = dummyAtomicHashBytes
 		txn.ExtraData[PreviousAtomicTxnPreHash] = dummyAtomicHashBytes
 		newFeeEstimate, err := mempool.EstimateFee(
-			txn, 0, MaxBasisPoints, MaxBasisPoints, MaxBasisPoints, MaxBasisPoints, maxBlockSizeBytes)
+			txn,
+			// TODO: Allow the caller to specify minFeeRateNanosPerKB
+			0,
+			// TODO: Make these flags or GlobalParams
+			bc.params.MempoolCongestionFactorBasisPoints,
+			bc.params.MempoolPriorityPercentileBasisPoints,
+			bc.params.PastBlocksCongestionFactorBasisPoints,
+			bc.params.PastBlocksPriorityPercentileBasisPoints,
+			maxBlockSizeBytes)
 		if err != nil {
 			return nil, 0, errors.Wrapf(err, "CreateAtomicTxnsWrapper: failed to recompute fee estimate")
 		}
@@ -5949,7 +5969,14 @@ func (bc *Blockchain) CreateAtomicTxnsWrapper(
 		// Use EstimateFee to set the fee INCLUDING the wrapper. Note that this fee should generally be a bit
 		// higher than the totalFee computed above because the atomic wrapper adds overhead.
 		newFeeEstimate, err := mempool.EstimateFee(
-			atomicTxn, 0, MaxBasisPoints, MaxBasisPoints, MaxBasisPoints, MaxBasisPoints, maxBlockSizeBytes)
+			atomicTxn,
+			0,
+			// TODO: Make these flags or GlobalParams
+			bc.params.MempoolCongestionFactorBasisPoints,
+			bc.params.MempoolPriorityPercentileBasisPoints,
+			bc.params.PastBlocksCongestionFactorBasisPoints,
+			bc.params.PastBlocksPriorityPercentileBasisPoints,
+			maxBlockSizeBytes)
 		if err != nil {
 			return nil, 0, errors.Wrapf(err, "CreateAtomicTxnsWrapper: failed to compute "+
 				"fee on full txn")

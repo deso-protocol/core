@@ -42,7 +42,7 @@ type TransactionRegister struct {
 
 func NewTransactionRegister() *TransactionRegister {
 	feeTimeBucketSet := treeset.NewWith(feeTimeBucketComparator)
-	minimumNetworkFeeNanosPerKB, feeBucketMultiplier := _getFallbackSafeMinimumFeeAndMultiplier()
+	minimumNetworkFeeNanosPerKB, feeBucketGrowthRateBasisPoints := _getFallbackSafeMinimumFeeAndGrowthRateBasisPoints()
 	return &TransactionRegister{
 		feeTimeBucketSet:          feeTimeBucketSet,
 		feeTimeBucketsByMinFeeMap: make(map[uint64]*FeeTimeBucket),
@@ -50,30 +50,36 @@ func NewTransactionRegister() *TransactionRegister {
 		totalTxnsSizeBytes:        0,
 		// Set default values for the uninitialized fields. This is safe because any transactions
 		// added to the register will be re-bucketed once the params are updated.
-		minimumNetworkFeeNanosPerKB:    minimumNetworkFeeNanosPerKB, // Default to 100 nanos per KB
-		feeBucketGrowthRateBasisPoints: feeBucketMultiplier,         // Default to 10%
+		minimumNetworkFeeNanosPerKB:    minimumNetworkFeeNanosPerKB,    // Default to 100 nanos per KB
+		feeBucketGrowthRateBasisPoints: feeBucketGrowthRateBasisPoints, // Default to 10%
 	}
 }
 
 func (tr *TransactionRegister) Init(globalParams *GlobalParamsEntry) {
-	minNetworkFee, bucketMultiplier := globalParams.ComputeFeeTimeBucketMinimumFeeAndMultiplier()
-	if !_isValidMinimumFeeAndMultiplier(minNetworkFee, bucketMultiplier) {
-		minNetworkFee, bucketMultiplier = _getFallbackSafeMinimumFeeAndMultiplier()
+	tr.Lock()
+	defer tr.Unlock()
+
+	minNetworkFee, growthRateBasisPoints := globalParams.GetFeeTimeBucketMinimumFeeAndGrowthRateBasisPoints()
+
+	if !_isValidMinimumFeeAndGrowthRate(minNetworkFee, growthRateBasisPoints) {
+		minNetworkFee, growthRateBasisPoints = _getFallbackSafeMinimumFeeAndGrowthRateBasisPoints()
 	}
+
 	tr.minimumNetworkFeeNanosPerKB = minNetworkFee
-	tr.feeBucketGrowthRateBasisPoints = bucketMultiplier
+	tr.feeBucketGrowthRateBasisPoints = growthRateBasisPoints
 }
 
 func (tr *TransactionRegister) HasGlobalParamChange(globalParams *GlobalParamsEntry) bool {
 	tr.RLock()
 	defer tr.RUnlock()
 
-	minNetworkFee, bucketMultiplier := globalParams.ComputeFeeTimeBucketMinimumFeeAndMultiplier()
-	if !_isValidMinimumFeeAndMultiplier(minNetworkFee, bucketMultiplier) {
-		minNetworkFee, bucketMultiplier = _getFallbackSafeMinimumFeeAndMultiplier()
+	minNetworkFee, growthRateBasisPoints := globalParams.GetFeeTimeBucketMinimumFeeAndGrowthRateBasisPoints()
+
+	if !_isValidMinimumFeeAndGrowthRate(minNetworkFee, growthRateBasisPoints) {
+		minNetworkFee, growthRateBasisPoints = _getFallbackSafeMinimumFeeAndGrowthRateBasisPoints()
 	}
 
-	return minNetworkFee.Cmp(tr.minimumNetworkFeeNanosPerKB) != 0 || bucketMultiplier.Cmp(tr.feeBucketGrowthRateBasisPoints) != 0
+	return minNetworkFee.Cmp(tr.minimumNetworkFeeNanosPerKB) != 0 || growthRateBasisPoints.Cmp(tr.feeBucketGrowthRateBasisPoints) != 0
 }
 
 func (tr *TransactionRegister) CopyWithNewGlobalParams(globalParams *GlobalParamsEntry) (*TransactionRegister, error) {
@@ -627,11 +633,22 @@ func (tb *FeeTimeBucket) Clear() {
 //	Fee-Time Bucket Math
 //============================================
 
+func ComputeMultiplierFromGrowthRateBasisPoints(growthRateBasisPoints *big.Float) *big.Float {
+	return NewFloat().Quo(
+		NewFloat().Add(
+			NewFloat().SetUint64(10000),
+			growthRateBasisPoints,
+		),
+		NewFloat().SetUint64(10000),
+	)
+}
+
 // computeFeeTimeBucketRangeFromFeeNanosPerKB takes a fee rate, minimumNetworkFeeNanosPerKB, and feeBucketMultiplier,
 // and returns the [minFeeNanosPerKB, maxFeeNanosPerKB] of the fee range.
 func computeFeeTimeBucketRangeFromFeeNanosPerKB(feeNanosPerKB uint64, minimumNetworkFeeNanosPerKB *big.Float,
-	feeBucketMultiplier *big.Float) (uint64, uint64) {
+	feeBucketGrowthRateBasisPoints *big.Float) (uint64, uint64) {
 
+	feeBucketMultiplier := ComputeMultiplierFromGrowthRateBasisPoints(feeBucketGrowthRateBasisPoints)
 	bucketExponent := computeFeeTimeBucketExponentFromFeeNanosPerKB(feeNanosPerKB, minimumNetworkFeeNanosPerKB, feeBucketMultiplier)
 	return computeFeeTimeBucketRangeFromExponent(bucketExponent, minimumNetworkFeeNanosPerKB, feeBucketMultiplier)
 }
@@ -642,7 +659,12 @@ func computeFeeTimeBucketRangeFromExponent(exponent uint32, minimumNetworkFeeNan
 	_minFeeNanosPerKB uint64, _maxFeeNanosPerKB uint64) {
 
 	minFeeNanosPerKB := computeFeeTimeBucketMinFromExponent(exponent, minimumNetworkFeeNanosPerKB, feeBucketMultiplier)
-	maxFeeNanosPerKB := computeFeeTimeBucketMinFromExponent(exponent+1, minimumNetworkFeeNanosPerKB, feeBucketMultiplier) - 1
+	maxFeeNanosPerKB := computeFeeTimeBucketMinFromExponent(exponent+1, minimumNetworkFeeNanosPerKB, feeBucketMultiplier)
+	if maxFeeNanosPerKB != minFeeNanosPerKB {
+		// These two should generally never be equal, and if they are it likely means the fee bucket growth
+		// rate is too small and the fee bucketing won't work right. But we guard against it just in case.
+		maxFeeNanosPerKB--
+	}
 	return minFeeNanosPerKB, maxFeeNanosPerKB
 }
 
@@ -707,20 +729,20 @@ func computeFeeTimeBucketExponentFromFeeNanosPerKB(feeNanosPerKB uint64, minimum
 	return feeTimeBucketExponent
 }
 
-func _isValidMinimumFeeAndMultiplier(minimumNetworkFeeNanosPerKB *big.Float, feeBucketMultiplier *big.Float) bool {
-	if minimumNetworkFeeNanosPerKB == nil || feeBucketMultiplier == nil {
+func _isValidMinimumFeeAndGrowthRate(minimumNetworkFeeNanosPerKB *big.Float, feeBucketGrowthRateBasisPoints *big.Float) bool {
+	if minimumNetworkFeeNanosPerKB == nil || feeBucketGrowthRateBasisPoints == nil {
 		return false
 	}
 
-	if minimumNetworkFeeNanosPerKB.Sign() <= 0 || feeBucketMultiplier.Sign() <= 0 {
+	if minimumNetworkFeeNanosPerKB.Sign() <= 0 || feeBucketGrowthRateBasisPoints.Sign() <= 0 {
 		return false
 	}
 
 	return true
 }
 
-func _getFallbackSafeMinimumFeeAndMultiplier() (*big.Float, *big.Float) {
-	minimumNetworkFeeNanosPerKB := big.NewFloat(100) // Default to 100 nanos per KB
-	feeBucketMultiplier := big.NewFloat(1000)        // Default to 10%
-	return minimumNetworkFeeNanosPerKB, feeBucketMultiplier
+func _getFallbackSafeMinimumFeeAndGrowthRateBasisPoints() (*big.Float, *big.Float) {
+	minimumNetworkFeeNanosPerKB := big.NewFloat(100)     // Default to 100 nanos per KB
+	feeBucketGrowthRateBasisPoints := big.NewFloat(1000) // Default to 10%
+	return minimumNetworkFeeNanosPerKB, feeBucketGrowthRateBasisPoints
 }

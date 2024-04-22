@@ -667,26 +667,32 @@ func (posFeeEstimator *PoSFeeEstimator) estimateFeeRateNanosPerKBGivenTransactio
 		txnRegister.minimumNetworkFeeNanosPerKB,
 		txnRegister.feeBucketGrowthRateBasisPoints,
 	)
-	// If the bucketMinFee is less than or equal to the global min fee rate, we return the global min fee rate.
-	if bucketMinFee <= globalMinFeeRate {
-		return globalMinFeeRate
-	}
 
 	// Compute the congestion threshold. If our congestion factor is 100% (or 10,000 bps),
 	// then congestion threshold is simply max block size * numPastBlocks
-	// TODO: I don't know if I like this name really.
 	congestionThreshold := (congestionFactorBasisPoints * maxSizeOfNumBlocks) / MaxBasisPoints
 	// If the total size of the txns in the transaction register is less than the computed congestion threshold,
 	// we return one bucket lower than the Priority fee.
 	if totalTxnsSize <= congestionThreshold {
+		// When we're below the congestion threshold, we want to suggest one fee bucket *lower*
+		// than the Priority fee we got in the previous step. This mechanism allows fees to drop
+		// dynamically during times of low congestion.
+		if bucketMinFee <= globalMinFeeRate {
+			// If the Priority fee we got from the previous step is <= the global min, then we *can't* suggest
+			// a lower fee, so just return the global min.
+			return globalMinFeeRate
+		}
 		// Return one bucket lower than Priority fee
+		feeBucketMultiplier := ComputeMultiplierFromGrowthRateBasisPoints(txnRegister.feeBucketGrowthRateBasisPoints)
 		bucketExponent := computeFeeTimeBucketExponentFromFeeNanosPerKB(
-			bucketMinFee, txnRegister.minimumNetworkFeeNanosPerKB, txnRegister.feeBucketGrowthRateBasisPoints)
+			bucketMinFee, txnRegister.minimumNetworkFeeNanosPerKB, feeBucketMultiplier)
 		return computeFeeTimeBucketMinFromExponent(
-			bucketExponent-1, txnRegister.minimumNetworkFeeNanosPerKB, txnRegister.feeBucketGrowthRateBasisPoints)
+			bucketExponent-1, txnRegister.minimumNetworkFeeNanosPerKB, feeBucketMultiplier)
 	}
 
-	// Otherwise, we return one bucket higher than Priority fee
+	// Otherwise, if we're above the congestion threshold, we return one bucket higher than
+	// the Priority fee. This mechanism allows fees to rise dynamically during times of high
+	// congestion.
 	return bucketMaxFee + 1
 }
 

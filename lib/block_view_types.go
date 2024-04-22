@@ -4438,15 +4438,26 @@ func (gp *GlobalParamsEntry) GetEncoderType() EncoderType {
 	return EncoderTypeGlobalParamsEntry
 }
 
-// ComputeFeeTimeBucketMinimumFeeAndMultiplier takes the MinimumNetworkFeeNanosPerKB and FeeBucketGrowthRateBasisPoints for
-// the GlobalParamsEntry, and returns them as big.Floats.
+// ComputeFeeTimeBucketMinimumFeeAndMultiplier takes the MinimumNetworkFeeNanosPerKB and FeeBucketGrowthRateBasisPoints,
+// scales the growth rate into a multiplier, and returns the result as big.Floats.
 func (gp *GlobalParamsEntry) ComputeFeeTimeBucketMinimumFeeAndMultiplier() (
-	_minimumRate *big.Float, _bucketMultiplier *big.Float) {
+	_minimumRate *big.Float,
+	_bucketMultiplier *big.Float,
+) {
+	minimumNetworkFeeNanosPerKB, growthRateBasisPoints := gp.GetFeeTimeBucketMinimumFeeAndGrowthRateBasisPoints()
+	return minimumNetworkFeeNanosPerKB, ComputeMultiplierFromGrowthRateBasisPoints(growthRateBasisPoints)
+}
 
+// GetFeeTimeBucketMinimumFeeAndGrowthRateBasisPoints returns the the MinimumNetworkFeeNanosPerKB and
+// FeeBucketGrowthRateBasisPoints params as returns them as big.Floats.
+func (gp *GlobalParamsEntry) GetFeeTimeBucketMinimumFeeAndGrowthRateBasisPoints() (
+	_minimumRate *big.Float,
+	_bucketMultiplier *big.Float,
+) {
 	minimumNetworkFeeNanosPerKB := NewFloat().SetUint64(gp.MinimumNetworkFeeNanosPerKB)
-	feeBucketMultiplier := NewFloat().SetUint64(10000 + gp.FeeBucketGrowthRateBasisPoints)
-	feeBucketMultiplier.Quo(feeBucketMultiplier, NewFloat().SetUint64(10000))
-	return minimumNetworkFeeNanosPerKB, feeBucketMultiplier
+	growthRateBasisPoints := NewFloat().SetUint64(gp.FeeBucketGrowthRateBasisPoints)
+
+	return minimumNetworkFeeNanosPerKB, growthRateBasisPoints
 }
 
 // This struct holds info on a readers interactions (e.g. likes) with a post.
