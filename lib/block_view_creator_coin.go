@@ -100,7 +100,7 @@ func CalculateCreatorCoinToMintBancor(
 
 func CalculateDeSoToReturn(
 	deltaCreatorCoinNanos uint64, currentCreatorCoinSupplyNanos uint64,
-	currentDeSoLockedNanos uint64, params *DeSoParams) uint64 {
+	currentDeSoLockedNanos uint64, params *DeSoParams) (uint64, error) {
 	// The values our equations take are generally in whole units rather than
 	// nanos, so the first step is to convert the nano amounts into floats
 	// representing full coin units.
@@ -124,13 +124,17 @@ func CalculateDeSoToReturn(
 	//     RR = params.CreatorCoinReserveRatio
 	//
 	// Sorry the code for the equation is so hard to read.
+	dSOverS0 := Div(bigDeltaCreatorCoin, bigCurrentCreatorCoinSupply)
+	if dSOverS0.Cmp(bigOne) > 0 {
+		return 0, errors.New("CalculateDeSoToReturn: dSOverS0 > 1")
+	}
 	bigRet := Mul(bigCurrentDeSoLocked, (Sub(bigOne, BigFloatPow((Sub(bigOne,
 		Div(bigDeltaCreatorCoin, bigCurrentCreatorCoinSupply))), (Div(bigOne,
 		params.CreatorCoinReserveRatio))))))
 	// The value we get is generally a number of whole creator coins, and so we
 	// need to convert it to "nanos" as a last step.
 	retNanos, _ := Mul(bigRet, bigNanosPerUnit).Uint64()
-	return retNanos
+	return retNanos, nil
 }
 
 func CalculateCreatorCoinToMint(
@@ -1163,10 +1167,12 @@ func (bav *UtxoView) HelpConnectCreatorCoinSell(
 			//
 			// For CreatorCoins it's OK to cast to Uint64() because we check for their
 			// exceeding this everywhere.
-			desoBeforeFeesNanos = CalculateDeSoToReturn(
+			desoBeforeFeesNanos, err = CalculateDeSoToReturn(
 				creatorCoinToSellNanos, existingProfileEntry.CreatorCoinEntry.CoinsInCirculationNanos.Uint64(),
 				existingProfileEntry.CreatorCoinEntry.DeSoLockedNanos, bav.Params)
-
+			if err != nil {
+				return 0, 0, 0, nil, errors.Wrapf(err, "_connectCreatorCoin: Problem calculating DeSo to return")
+			}
 			// If the amount the formula is offering is more than what is locked in the
 			// profile, then truncate it down. This addresses an edge case where our
 			// equations may return *too much* DeSo due to rounding errors.
@@ -1179,10 +1185,12 @@ func (bav *UtxoView) HelpConnectCreatorCoinSell(
 			//
 			// For CreatorCoins it's OK to cast to Uint64() because we check for their
 			// exceeding this everywhere.
-			desoBeforeFeesNanos = CalculateDeSoToReturn(
+			desoBeforeFeesNanos, err = CalculateDeSoToReturn(
 				creatorCoinToSellNanos, existingProfileEntry.CreatorCoinEntry.CoinsInCirculationNanos.Uint64(),
 				existingProfileEntry.CreatorCoinEntry.DeSoLockedNanos, bav.Params)
-
+			if err != nil {
+				return 0, 0, 0, nil, errors.Wrapf(err, "_connectCreatorCoin: Problem calculating DeSo to return")
+			}
 			// If the amount the formula is offering is more than what is locked in the
 			// profile, then truncate it down. This addresses an edge case where our
 			// equations may return *too much* DeSo due to rounding errors.
@@ -1202,10 +1210,12 @@ func (bav *UtxoView) HelpConnectCreatorCoinSell(
 			desoBeforeFeesNanos = existingProfileEntry.CreatorCoinEntry.DeSoLockedNanos
 		} else {
 			// Calculate the amount to return based on the Bancor Curve.
-			desoBeforeFeesNanos = CalculateDeSoToReturn(
+			desoBeforeFeesNanos, err = CalculateDeSoToReturn(
 				creatorCoinToSellNanos, existingProfileEntry.CreatorCoinEntry.CoinsInCirculationNanos.Uint64(),
 				existingProfileEntry.CreatorCoinEntry.DeSoLockedNanos, bav.Params)
-
+			if err != nil {
+				return 0, 0, 0, nil, errors.Wrapf(err, "_connectCreatorCoin: Problem calculating DeSo to return")
+			}
 			// If the amount the formula is offering is more than what is locked in the
 			// profile, then truncate it down. This addresses an edge case where our
 			// equations may return *too much* DeSo due to rounding errors.

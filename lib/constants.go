@@ -1193,7 +1193,7 @@ var DeSoMainnetParams = DeSoParams{
 	// We set this to be lower initially to avoid winding up with really big
 	// spam blocks in the event someone tries to abuse the initially low min
 	// fee rates.
-	MinerMaxBlockSizeBytes: 2000000,
+	MinerMaxBlockSizeBytes: 500000,
 
 	// This takes about ten seconds on a reasonable CPU, which makes sense given
 	// a 10 minute block time.

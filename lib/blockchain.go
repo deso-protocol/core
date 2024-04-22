@@ -21,7 +21,6 @@ import (
 	"github.com/deso-protocol/core/collections"
 
 	"github.com/google/uuid"
-
 	"github.com/holiman/uint256"
 
 	btcdchain "github.com/btcsuite/btcd/blockchain"

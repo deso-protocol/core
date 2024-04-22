@@ -4311,12 +4311,15 @@ func (bav *UtxoView) ConnectBlock(
 	desoBlock *MsgDeSoBlock, txHashes []*BlockHash, verifySignatures bool, eventManager *EventManager, blockHeight uint64) (
 	[][]*UtxoOperation, error) {
 
-	glog.V(1).Infof("ConnectBlock: Connecting block %v", desoBlock)
+	glog.V(1).Infof("ConnectBlock: Connecting block %v with %v txns", desoBlock, len(desoBlock.Txns))
 
 	// Check that the block being connected references the current tip. ConnectBlock
 	// can only add a block to the current tip. We do this to keep the API simple.
 	if !desoBlock.Header.PrevBlockHash.IsEqual(bav.TipHash) {
-		return nil, fmt.Errorf("ConnectBlock: Parent hash of block being connected does not match tip")
+		errorMsg := fmt.Sprintf("ConnectBlock: Parent hash of block being connected does not match tip: %v vs %v",
+			hex.EncodeToString(desoBlock.Header.PrevBlockHash[:]), hex.EncodeToString(bav.TipHash[:]))
+		glog.V(1).Infof("ConnectBlock: Parent hash of block being connected does not match tip: %v", errorMsg)
+		return nil, errors.New(errorMsg)
 	}
 
 	// If the block height is past the Proof of Stake cutover, then we update the random seed hash.

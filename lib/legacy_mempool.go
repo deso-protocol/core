@@ -16,7 +16,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/btcsuite/btcd/btcutil"
+	"github.com/btcsuite/btcutil"
 	"github.com/gernest/mention"
 
 	"github.com/dgraph-io/badger/v4"
