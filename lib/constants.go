@@ -796,13 +796,13 @@ type DeSoParams struct {
 
 	// DefaultMempoolCongestionFactorBasisPoints and DefaultPastBlocksCongestionFactorBasisPoints are the default values
 	// for GlobalParams.MempoolCongestionFactorBasisPoints and GlobalParams.DefaultPastBlocksCongestionFactorBasisPoints.
-	/// See comments in GlobalParamsEntry for a description of their usage.
+	/// See comments in DeSoMainnetParams for a description of their usage.
 	DefaultMempoolCongestionFactorBasisPoints    uint64
 	DefaultPastBlocksCongestionFactorBasisPoints uint64
 
 	// DefaultMempoolPriorityPercentileBasisPoints and DefaultPastBlocksPriorityPercentileBasisPoints are the default values
 	// for GlobalParams.DefaultMempoolPriorityPercentileBasisPoints and GlobalParams.DefaultPastBlocksPriorityPercentileBasisPoints.
-	// See comments in GlobalParamsEntry for a description of their usage.
+	// See comments in DeSoMainnetParams for a description of their usage.
 	DefaultMempoolPriorityPercentileBasisPoints    uint64
 	DefaultPastBlocksPriorityPercentileBasisPoints uint64
 
