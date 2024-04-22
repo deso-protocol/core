@@ -4325,6 +4325,10 @@ func (gp *GlobalParamsEntry) RawEncodeWithoutMetadata(blockHeight uint64, skipMe
 		data = append(data, UintToBuf(gp.MempoolMaxSizeBytes)...)
 		data = append(data, UintToBuf(gp.MempoolFeeEstimatorNumMempoolBlocks)...)
 		data = append(data, UintToBuf(gp.MempoolFeeEstimatorNumPastBlocks)...)
+		data = append(data, UintToBuf(gp.MempoolCongestionFactorBasisPoints)...)
+		data = append(data, UintToBuf(gp.PastBlocksCongestionFactorBasisPoints)...)
+		data = append(data, UintToBuf(gp.MempoolPriorityPercentileBasisPoints)...)
+		data = append(data, UintToBuf(gp.PastBlocksPriorityPercentileBasisPoints)...)
 		data = append(data, UintToBuf(gp.MaxBlockSizeBytesPoS)...)
 		data = append(data, UintToBuf(gp.SoftMaxBlockSizeBytesPoS)...)
 		data = append(data, UintToBuf(gp.MaxTxnSizeBytesPoS)...)
@@ -4421,6 +4425,22 @@ func (gp *GlobalParamsEntry) RawDecodeWithoutMetadata(blockHeight uint64, rr *by
 		gp.MempoolFeeEstimatorNumPastBlocks, err = ReadUvarint(rr)
 		if err != nil {
 			return errors.Wrapf(err, "GlobalParamsEntry.Decode: Problem reading MempoolFeeEstimatorNumPastBlocks")
+		}
+		gp.MempoolCongestionFactorBasisPoints, err = ReadUvarint(rr)
+		if err != nil {
+			return errors.Wrapf(err, "GlobalParamsEntry.Decode: Problem reading MempoolCongestionFactorBasisPoints")
+		}
+		gp.PastBlocksCongestionFactorBasisPoints, err = ReadUvarint(rr)
+		if err != nil {
+			return errors.Wrapf(err, "GlobalParamsEntry.Decode: Problem reading PastBlocksCongestionFactorBasisPoints")
+		}
+		gp.MempoolPriorityPercentileBasisPoints, err = ReadUvarint(rr)
+		if err != nil {
+			return errors.Wrapf(err, "GlobalParamsEntry.Decode: Problem reading MempoolPriorityPercentileBasisPoints")
+		}
+		gp.PastBlocksPriorityPercentileBasisPoints, err = ReadUvarint(rr)
+		if err != nil {
+			return errors.Wrapf(err, "GlobalParamsEntry.Decode: Problem reading PastBlocksPriorityPercentileBasisPoints")
 		}
 		gp.MaxBlockSizeBytesPoS, err = ReadUvarint(rr)
 		if err != nil {
