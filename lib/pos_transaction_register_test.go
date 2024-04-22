@@ -374,6 +374,12 @@ func _testGetDefaultGlobalParams() *GlobalParamsEntry {
 	globalParams.MempoolFeeEstimatorNumMempoolBlocks = 1
 	globalParams.MempoolFeeEstimatorNumPastBlocks = 1
 
+	globalParams.MempoolCongestionFactorBasisPoints = 10000
+	globalParams.MempoolPastBlocksCongestionFactorBasisPoints = 10000
+
+	globalParams.MempoolPriorityPercentileBasisPoints = 10000
+	globalParams.MempoolPastBlocksPriorityPercentileBasisPoints = 10000
+
 	return &globalParams
 }
 

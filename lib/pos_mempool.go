@@ -43,23 +43,8 @@ type Mempool interface {
 	GetMempoolTipBlockHeight() uint64
 	GetMempoolTx(txHash *BlockHash) *MempoolTx
 	GetMempoolSummaryStats() map[string]*SummaryStats
-	EstimateFee(
-		txn *MsgDeSoTxn,
-		minFeeRateNanosPerKB uint64,
-		mempoolCongestionFactorBasisPoints uint64,
-		mempoolPriorityPercentileBasisPoints uint64,
-		pastBlocksCongestionFactorBasisPoints uint64,
-		pastBlocksPriorityPercentileBasisPoints uint64,
-		maxBlockSize uint64,
-	) (uint64, error)
-	EstimateFeeRate(
-		minFeeRateNanosPerKB uint64,
-		mempoolCongestionFactorBasisPoints uint64,
-		mempoolPriorityPercentileBasisPoints uint64,
-		pastBlocksCongestionFactorBasisPoints uint64,
-		pastBlocksPriorityPercentileBasisPoints uint64,
-		maxBlockSize uint64,
-	) uint64
+	EstimateFee(txn *MsgDeSoTxn, minFeeRateNanosPerKB uint64, maxBlockSize uint64) (uint64, error)
+	EstimateFeeRate(minFeeRateNanosPerKB uint64, maxBlockSize uint64) uint64
 }
 
 // GetAugmentedUniversalViewWithAdditionalTransactions is meant as a helper function
@@ -1133,28 +1118,10 @@ func (mp *PosMempool) GetMempoolSummaryStats() map[string]*SummaryStats {
 	return convertMempoolTxsToSummaryStats(mp.txnRegister.GetFeeTimeTransactions())
 }
 
-func (mp *PosMempool) EstimateFee(
-	txn *MsgDeSoTxn,
-	minFeeRateNanosPerKB uint64,
-	mempoolCongestionFactorBasisPoints uint64,
-	mempoolPriorityPercentileBasisPoints uint64,
-	pastBlocksCongestionFactorBasisPoints uint64,
-	pastBlocksPriorityPercentileBasisPoints uint64,
-	maxBlockSize uint64,
-) (uint64, error) {
-	return mp.feeEstimator.EstimateFee(
-		txn, minFeeRateNanosPerKB, mempoolCongestionFactorBasisPoints, mempoolPriorityPercentileBasisPoints,
-		pastBlocksCongestionFactorBasisPoints, pastBlocksPriorityPercentileBasisPoints, maxBlockSize)
+func (mp *PosMempool) EstimateFee(txn *MsgDeSoTxn, minFeeRateNanosPerKB uint64, maxBlockSize uint64) (uint64, error) {
+	return mp.feeEstimator.EstimateFee(txn, minFeeRateNanosPerKB, maxBlockSize)
 }
 
-func (mp *PosMempool) EstimateFeeRate(
-	minFeeRateNanosPerKB uint64,
-	mempoolCongestionFactorBasisPoints uint64,
-	mempoolPriorityPercentileBasisPoints uint64,
-	pastBlocksCongestionFactorBasisPoints uint64,
-	pastBlocksPriorityPercentileBasisPoints uint64,
-	maxBlockSize uint64) uint64 {
-	return mp.feeEstimator.EstimateFeeRateNanosPerKB(
-		minFeeRateNanosPerKB, mempoolCongestionFactorBasisPoints, mempoolPriorityPercentileBasisPoints,
-		pastBlocksCongestionFactorBasisPoints, pastBlocksPriorityPercentileBasisPoints, maxBlockSize)
+func (mp *PosMempool) EstimateFeeRate(minFeeRateNanosPerKB uint64, maxBlockSize uint64) uint64 {
+	return mp.feeEstimator.EstimateFeeRateNanosPerKB(minFeeRateNanosPerKB, maxBlockSize)
 }
