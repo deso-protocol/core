@@ -4236,6 +4236,18 @@ type GlobalParamsEntry struct {
 	// the fee for a new txn.
 	MempoolFeeEstimatorNumPastBlocks uint64
 
+	// DefaultMempoolCongestionFactorBasisPoints and DefaultPastBlocksCongestionFactorBasisPoints are the default values
+	// for GlobalParams.MempoolCongestionFactorBasisPoints and GlobalParams.DefaultPastBlocksCongestionFactorBasisPoints.
+	/// See comments in GlobalParamsEntry for a description of their usage.
+	MempoolCongestionFactorBasisPoints    uint64
+	PastBlocksCongestionFactorBasisPoints uint64
+
+	// MempoolPriorityPercentileBasisPoints and PastBlocksPriorityPercentileBasisPoints are the default values
+	// for GlobalParams.DefaultMempoolPriorityPercentileBasisPoints and GlobalParams.DefaultPastBlocksPriorityPercentileBasisPoints.
+	// See comments in GlobalParamsEntry for a description of their usage.
+	MempoolPriorityPercentileBasisPoints    uint64
+	PastBlocksPriorityPercentileBasisPoints uint64
+
 	// MaxBlockSizeBytesPoS is the maximum size of a block in bytes.
 	MaxBlockSizeBytesPoS uint64
 
@@ -4275,6 +4287,10 @@ func (gp *GlobalParamsEntry) Copy() *GlobalParamsEntry {
 		MempoolMaxSizeBytes:                            gp.MempoolMaxSizeBytes,
 		MempoolFeeEstimatorNumMempoolBlocks:            gp.MempoolFeeEstimatorNumMempoolBlocks,
 		MempoolFeeEstimatorNumPastBlocks:               gp.MempoolFeeEstimatorNumPastBlocks,
+		MempoolCongestionFactorBasisPoints:             gp.MempoolCongestionFactorBasisPoints,
+		PastBlocksCongestionFactorBasisPoints:          gp.PastBlocksCongestionFactorBasisPoints,
+		MempoolPriorityPercentileBasisPoints:           gp.MempoolPriorityPercentileBasisPoints,
+		PastBlocksPriorityPercentileBasisPoints:        gp.PastBlocksPriorityPercentileBasisPoints,
 		MaxBlockSizeBytesPoS:                           gp.MaxBlockSizeBytesPoS,
 		SoftMaxBlockSizeBytesPoS:                       gp.SoftMaxBlockSizeBytesPoS,
 		MaxTxnSizeBytesPoS:                             gp.MaxTxnSizeBytesPoS,
