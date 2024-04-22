@@ -3421,8 +3421,7 @@ func (bav *UtxoView) _connectUpdateGlobalParams(
 
 		// Validate that the minimum fee bucket size is greater than the minimum allowed.
 		mergedGlobalParams := MergeGlobalParamEntryDefaults(&newGlobalParamsEntry, bav.Params)
-		minFeeRateNanosPerKB, feeBucketMultiplier := mergedGlobalParams.
-			ComputeFeeTimeBucketMinimumFeeAndMultiplier()
+		minFeeRateNanosPerKB, feeBucketMultiplier := mergedGlobalParams.ComputeFeeTimeBucketMinimumFeeAndMultiplier()
 		nextFeeBucketMin := computeFeeTimeBucketMinFromExponent(1, minFeeRateNanosPerKB, feeBucketMultiplier)
 		if nextFeeBucketMin < mergedGlobalParams.MinimumNetworkFeeNanosPerKB+MinFeeBucketSize {
 			return 0, 0, nil, RuleErrorFeeBucketSizeTooSmall

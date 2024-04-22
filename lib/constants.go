@@ -785,12 +785,13 @@ type DeSoParams struct {
 
 	// DefaultMempoolFeeEstimatorNumMempoolBlocks is the default value for
 	// GlobalParamsEntry.MempoolFeeEstimatorNumMempoolBlocks. See the comment in GlobalParamsEntry
-	// for a description of its usage.
+	// for a description of its usage. Also see the comment on the setting in DeSoMainnetParams
 	DefaultMempoolFeeEstimatorNumMempoolBlocks uint64
 
 	// DefaultMempoolFeeEstimatorNumPastBlocks is the default value for
 	// GlobalParamsEntry.MempoolFeeEstimatorNumPastBlocks. See the comment in GlobalParamsEntry
-	// for a description of its usage.
+	// for a description of its usage. Also see the comment on the DeSoMainnetParams value of
+	// this setting.
 	DefaultMempoolFeeEstimatorNumPastBlocks uint64
 
 	// DefaultMaxBlockSizeBytesPoS is the default value for GlobalParamsEntry.MaxBlockSizeBytesPoS.
@@ -821,6 +822,12 @@ type DeSoParams struct {
 	DisableNetworkManagerRoutines bool
 
 	ForkHeights ForkHeights
+
+	// See comment on the DeSoMainnetParams settings of these values
+	MempoolCongestionFactorBasisPoints      uint64
+	MempoolPriorityPercentileBasisPoints    uint64
+	PastBlocksCongestionFactorBasisPoints   uint64
+	PastBlocksPriorityPercentileBasisPoints uint64
 
 	EncoderMigrationHeights     *EncoderMigrationHeights
 	EncoderMigrationHeightsList []*MigrationHeight
@@ -1288,10 +1295,39 @@ var DeSoMainnetParams = DeSoParams{
 	// The maximum size of the mempool in bytes.
 	DefaultMempoolMaxSizeBytes: 3 * 1024 * 1024 * 1024, // 3GB
 
-	// The number of future blocks to consider when estimating the mempool fee.
+	// The number of future blocks to consider when estimating the mempool fee. Setting this
+	// value to 1 means we will start to increase fees if the mempool has 1 block's worth of
+	// txns in it, and decrease them if it has less. Note that a setting of 1 is somewhat
+	// aggresive, but it's good because it ensures that the typical fee estimate we give will
+	// be highly likely to get one's transaction included in the next block.
+	//
+	// Note that if you are *blasting* txns at the mempool, then having this value set to 1 may
+	// cause the fee estimator to report a higher and higher fee as you're constructing and
+	// submitting txns (assuming you are sending txns faster than they are going into blocks).
+	// This can cause txns that you submit later to have higher fees, which will cause them to
+	// sort to the *front* of the mempool, potentially causing dependency issues for you. If you
+	// absolutely need txns to run in a specific order, you have several options:
+	//
+	// 1. Query the fee estimator for the fee you should use for your txns *before* you construct
+	//    them, and then construct your txns by explicitly specifying that fee. As long as you use
+	//    the same fee for all of your txns, and as long as you submit them directly to the current leader,
+	//    you should be guaranteed to have them go into the next blocks in order. This is because the
+	//    mempool uses a smart fee bucketing approach, whereby txns that pay similar fees are ordered
+	//    by time (within a fee bucket). Alternatively, you can just set a fee above the minimum
+	//    manually, which will get your txn included in the blocks eventually. At the time of this
+	//    writing, a fee of 1,000 nanos per kb was well above what was needed to get into the next
+	//    block but still quite cheap (1/10,000th of a cent).
+	//
+	// 2. Use an atomic txn to submit all of your txns at once. This will ensure that they either
+	//    all go through or all fail together.
+	//
+	// 3. Slow down your txn submission to ensure that txns are going into blocks before
+	//    their dependencies are submitted.
 	DefaultMempoolFeeEstimatorNumMempoolBlocks: 1,
 
-	// The number of past blocks to consider when estimating the mempool fee.
+	// The number of past blocks to consider when estimating the mempool fee. This is
+	// means that we will increase or decrease fees based on the past minute's worth of
+	// blocks dynamically.
 	DefaultMempoolFeeEstimatorNumPastBlocks: 50,
 
 	// The maximum size of blocks for PoS.
@@ -1314,6 +1350,30 @@ var DeSoMainnetParams = DeSoParams{
 
 	// DisableNetworkManagerRoutines is a testing flag that disables the network manager routines.
 	DisableNetworkManagerRoutines: false,
+
+	// The congestion factor determines when we will start to increase or decrease fees.
+	// We set the congestion factor to 90% for past blocks and mempool. This makes it so that we will
+	// start to increase fees when the past N blocks (DefaultMempoolFeeEstimatorNumPastBlocks) are
+	// 90% full on average or the mempool has 90% of 1 block's worth of txns in it (actually 90% of
+	// DefaultMempoolFeeEstimatorNumMempoolBlocks). This is good because it ensures that the typical
+	// fee estimate we give will be highly likely to get one's transaction included in the next block
+	// or, at worst, a block within about a minute (for N=50).
+	//
+	// Using the 90th percentile allows the fee market to be aggressive, but it's better than using
+	// 100% because that can have some rounding issues. For example, if you use 100% and blocks are
+	// 99% full, the fee market won't adapt. So it's better to have a little slack.
+	MempoolCongestionFactorBasisPoints:    uint64(9000),
+	PastBlocksCongestionFactorBasisPoints: uint64(9000),
+	// The priority percentile determines what benchmark we use to increase the fee we're paying. For
+	// past blocks, we set a percentile of 90%, which means we'll take the fee paid by the 90th percentile
+	// txn in the past N blocks and increase it by one fee bucket. This works nicely with N=50 blocks
+	// because the 90th percentile will be within 5 blocks if you sorted all txns by their fees. For the
+	// mempool, we set a percentile of 10%, which means we use the fee paid by the 10th percentile txn in
+	// the highest 1 block's worth of txns in the mempool. We use a lower percentile here because the mempool
+	// has a much tighter window of a single block, and so by outbidding *anybody* in that block, you're
+	// already highly likely to get in.
+	MempoolPriorityPercentileBasisPoints:    uint64(1000),
+	PastBlocksPriorityPercentileBasisPoints: uint64(9000),
 
 	ForkHeights:                 MainnetForkHeights,
 	EncoderMigrationHeights:     GetEncoderMigrationHeights(&MainnetForkHeights),
@@ -1622,6 +1682,12 @@ var DeSoTestnetParams = DeSoParams{
 
 	// DisableNetworkManagerRoutines is a testing flag that disables the network manager routines.
 	DisableNetworkManagerRoutines: false,
+
+	// See comment on DeSoMainnetParams
+	MempoolCongestionFactorBasisPoints:      uint64(9000),
+	PastBlocksCongestionFactorBasisPoints:   uint64(9000),
+	MempoolPriorityPercentileBasisPoints:    uint64(1000),
+	PastBlocksPriorityPercentileBasisPoints: uint64(9000),
 
 	ForkHeights:                 TestnetForkHeights,
 	EncoderMigrationHeights:     GetEncoderMigrationHeights(&TestnetForkHeights),

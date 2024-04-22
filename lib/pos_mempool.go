@@ -259,6 +259,9 @@ func (mp *PosMempool) Init(
 	maxValidationViewConnects uint64,
 	transactionValidationRefreshIntervalMillis uint64,
 ) error {
+	mp.Lock()
+	defer mp.Unlock()
+
 	if mp.status != PosMempoolStatusNotInitialized {
 		return errors.New("PosMempool.Init: PosMempool already initialized")
 	}
@@ -282,6 +285,12 @@ func (mp *PosMempool) Init(
 	mp.recentBlockTxnCache = lru.NewKVCache(100000)    // cache 100K latest txns from blocks.
 	mp.recentRejectedTxnCache = lru.NewKVCache(100000) // cache 100K rejected txns.
 
+	// Recreate and initialize the transaction register and the nonce tracker.
+	mp.txnRegister = NewTransactionRegister()
+	mp.txnRegister.Init(mp.globalParams)
+	mp.nonceTracker = NewNonceTracker()
+
+	// Initialize the fee estimator
 	err = mp.feeEstimator.Init(mp.txnRegister, feeEstimatorPastBlocks, mp.globalParams)
 	if err != nil {
 		return errors.Wrapf(err, "PosMempool.Start: Problem initializing fee estimator")
@@ -297,11 +306,6 @@ func (mp *PosMempool) Start() error {
 	if mp.status != PosMempoolStatusInitialized {
 		return errors.New("PosMempool.Start: PosMempool not initialized")
 	}
-
-	// Create the transaction register, the ledger, and the nonce tracker,
-	mp.txnRegister = NewTransactionRegister()
-	mp.txnRegister.Init(mp.globalParams)
-	mp.nonceTracker = NewNonceTracker()
 
 	// Setup the database and create the persister
 	if !mp.inMemoryOnly {
@@ -321,11 +325,13 @@ func (mp *PosMempool) Start() error {
 			return errors.Wrapf(err, "PosMempool.Start: Problem loading persisted transactions")
 		}
 	}
+
 	mp.startGroup.Add(1)
 	mp.exitGroup.Add(1)
 	mp.startTransactionValidationRoutine()
 	mp.startGroup.Wait()
 	mp.status = PosMempoolStatusRunning
+
 	return nil
 }
 
