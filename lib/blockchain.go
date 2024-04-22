@@ -5928,7 +5928,7 @@ func (bc *Blockchain) CreateAtomicTxnsWrapper(
 
 		// Use EstimateFee to set the fee INCLUDING the wrapper. Note that this fee should generally be a bit
 		// higher than the totalFee computed above because the atomic wrapper adds overhead.
-		newFeeEstimate, err := mempool.EstimateFee(atomicTxn, minFeeRateNanosPerKB)
+		newFeeEstimate, err := mempool.EstimateFee(atomicTxn, 0)
 		if err != nil {
 			return nil, 0, errors.Wrapf(err, "CreateAtomicTxnsWrapper: failed to compute "+
 				"fee on full txn")
