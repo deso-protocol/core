@@ -713,14 +713,6 @@ func (srv *Server) _handleGetHeaders(pp *Peer, msg *MsgDeSoGetHeaders) {
 	glog.V(1).Infof("Server._handleGetHeadersMessage: called with locator: (%v), "+
 		"stopHash: (%v) from Peer %v", msg.BlockLocator, msg.StopHash, pp)
 
-	// Ignore GetHeaders requests we're still syncing.
-	if srv.blockchain.isSyncing() {
-		chainState := srv.blockchain.chainState()
-		glog.V(1).Infof("Server._handleGetHeadersMessage: Ignoring GetHeaders from Peer %v"+
-			"because node is syncing with ChainState (%v)", pp, chainState)
-		return
-	}
-
 	// Find the most recent known block in the best block chain based
 	// on the block locator and fetch all of the headers after it until either
 	// MaxHeadersPerMsg have been fetched or the provided stop
