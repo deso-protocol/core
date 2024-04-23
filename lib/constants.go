@@ -1359,7 +1359,7 @@ var DeSoMainnetParams = DeSoParams{
 
 	// The congestion factor determines when we will start to increase or decrease fees.
 	// We set the congestion factor to 90% for past blocks and mempool. This makes it so that we will
-	// start to increase fees when the past N blocks (DefaultMempoolPastBlocksCongestionFactorBasisPoints) are
+	// start to increase fees when the past N blocks (DefaultMempoolFeeEstimatorNumPastBlocks) are
 	// 90% full on average or the mempool has 90% of 1 block's worth of txns in it (actually 90% of
 	// DefaultMempoolFeeEstimatorNumMempoolBlocks). This is good because it ensures that the typical
 	// fee estimate we give will be highly likely to get one's transaction included in the next block

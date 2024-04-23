@@ -5928,7 +5928,7 @@ func (bc *Blockchain) CreateAtomicTxnsWrapper(
 
 		// Use EstimateFee to set the fee INCLUDING the wrapper. Note that this fee should generally be a bit
 		// higher than the totalFee computed above because the atomic wrapper adds overhead.
-		newFeeEstimate, err := mempool.EstimateFee(atomicTxn, 0)
+		newFeeEstimate, err := mempool.EstimateFee(atomicTxn, minFeeRateNanosPerKB)
 		if err != nil {
 			return nil, 0, errors.Wrapf(err, "CreateAtomicTxnsWrapper: failed to compute "+
 				"fee on full txn")
@@ -5937,7 +5937,12 @@ func (bc *Blockchain) CreateAtomicTxnsWrapper(
 		// that we computed by summing all the fees on the inner txns, which is computed
 		// by previousFeeEstimate.
 		if newFeeEstimate <= previousFeeEstimate {
-			return atomicTxn, newFeeEstimate, nil
+			// We explicitly set the fee on the atomic txn to the fee we computed
+			// before so that it matches the sum of the fees on the inner txns
+			// in the event that the fee we computed is less than the sum of the
+			// fees on the inner txns.
+			atomicTxn.TxnFeeNanos = previousFeeEstimate
+			return atomicTxn, previousFeeEstimate, nil
 		}
 		// If the fees we currently have set in all of our txns come up short, then
 		// add the extra we need to the first txn. After we do this, we also need to
@@ -5946,6 +5951,7 @@ func (bc *Blockchain) CreateAtomicTxnsWrapper(
 		feeDelta := newFeeEstimate - previousFeeEstimate
 		UpdateTxnFee(
 			chainedUnsignedTransactions[0],
-			chainedUnsignedTransactions[0].TxnFeeNanos+feeDelta)
+			chainedUnsignedTransactions[0].TxnFeeNanos+feeDelta,
+		)
 	}
 }
