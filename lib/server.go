@@ -3021,8 +3021,8 @@ func (srv *Server) getFastHotStuffConsensusEventChannel() chan *consensus.FastHo
 }
 
 func (srv *Server) resetFastHotStuffConsensusTransitionCheckTime() {
-	// Check once every 30 seconds if the FastHotStuffConsensus is ready to start.
-	srv.fastHotStuffConsensusTransitionCheckTime = time.Now().Add(30 * time.Second)
+	// Check once every 60 seconds if the FastHotStuffConsensus is ready to start.
+	srv.fastHotStuffConsensusTransitionCheckTime = time.Now().Add(60 * time.Second)
 }
 
 func (srv *Server) getFastHotStuffTransitionCheckTime() <-chan time.Time {
@@ -3074,13 +3074,6 @@ func (srv *Server) tryTransitionToFastHotStuffConsensus() {
 		SyncStateSyncingSnapshot, SyncStateSyncingBlocks, SyncStateNeedBlocksss, SyncStateSyncingHistoricalBlocks,
 	}
 	if collections.Contains(skippedSyncStates, syncState) {
-		return
-	}
-
-	// If we have at least one sync peer configured but are not connected to any sync peers, then it
-	// means that we are still in the process of connecting to a sync peer. We can exit early and wait
-	// for the network manager to connect to a sync peer.
-	if len(srv.networkManager.connectIps) != 0 && srv.SyncPeer == nil {
 		return
 	}
 
