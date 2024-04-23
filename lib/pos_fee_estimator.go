@@ -290,7 +290,7 @@ func (posFeeEstimator *PoSFeeEstimator) pruneBlocksToMaxNumPastBlocks(blocks []*
 // EstimateFeeRateNanosPerKB estimates the fee rate in nanos per KB for the current mempool
 // and past blocks using the congestionFactorBasisPoints, priorityPercentileBasisPoints, and
 // maxBlockSize params.
-func (posFeeEstimator *PoSFeeEstimator) EstimateFeeRateNanosPerKB(minFeeRateNanosPerKB uint64, maxBlockSize uint64) uint64 {
+func (posFeeEstimator *PoSFeeEstimator) EstimateFeeRateNanosPerKB(minFeeRateNanosPerKB uint64) uint64 {
 	posFeeEstimator.rwLock.RLock()
 	defer posFeeEstimator.rwLock.RUnlock()
 
@@ -298,6 +298,8 @@ func (posFeeEstimator *PoSFeeEstimator) EstimateFeeRateNanosPerKB(minFeeRateNano
 	mempoolPriorityPercentileBasisPoints := posFeeEstimator.globalParams.MempoolPriorityPercentileBasisPoints
 	pastBlocksCongestionFactorBasisPoints := posFeeEstimator.globalParams.MempoolPastBlocksCongestionFactorBasisPoints
 	pastBlocksPriorityPercentileBasisPoints := posFeeEstimator.globalParams.MempoolPastBlocksPriorityPercentileBasisPoints
+
+	maxBlockSize := posFeeEstimator.globalParams.SoftMaxBlockSizeBytesPoS
 
 	pastBlockFeeRate := posFeeEstimator.estimateFeeRateNanosPerKBGivenTransactionRegister(
 		posFeeEstimator.pastBlocksTransactionRegister,
@@ -328,11 +330,7 @@ func (posFeeEstimator *PoSFeeEstimator) EstimateFeeRateNanosPerKB(minFeeRateNano
 
 // EstimateFee estimates the fee in nanos for the provided transaction by taking the
 // max of the mempoolFeeEstimate and pastBlocksFeeEstimate.
-func (posFeeEstimator *PoSFeeEstimator) EstimateFee(
-	txn *MsgDeSoTxn,
-	minFeeRateNanosPerKB uint64,
-	maxBlockSize uint64,
-) (uint64, error) {
+func (posFeeEstimator *PoSFeeEstimator) EstimateFee(txn *MsgDeSoTxn, minFeeRateNanosPerKB uint64) (uint64, error) {
 	posFeeEstimator.rwLock.RLock()
 	defer posFeeEstimator.rwLock.RUnlock()
 
@@ -340,6 +338,8 @@ func (posFeeEstimator *PoSFeeEstimator) EstimateFee(
 	mempoolPriorityPercentileBasisPoints := posFeeEstimator.globalParams.MempoolPriorityPercentileBasisPoints
 	pastBlocksCongestionFactorBasisPoints := posFeeEstimator.globalParams.MempoolPastBlocksCongestionFactorBasisPoints
 	pastBlocksPriorityPercentileBasisPoints := posFeeEstimator.globalParams.MempoolPastBlocksPriorityPercentileBasisPoints
+
+	maxBlockSize := posFeeEstimator.globalParams.SoftMaxBlockSizeBytesPoS
 
 	mempoolFeeEstimate, err := posFeeEstimator.mempoolFeeEstimate(
 		txn,

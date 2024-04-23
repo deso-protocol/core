@@ -2511,12 +2511,12 @@ func EstimateMaxTxnFeeV1(txn *MsgDeSoTxn, minFeeRateNanosPerKB uint64) uint64 {
 	return feeAmountNanos
 }
 
-func (mp *DeSoMempool) EstimateFee(txn *MsgDeSoTxn, minFeeRateNanosPerKB uint64, _ uint64) (uint64, error) {
-	feeRate := mp.EstimateFeeRate(minFeeRateNanosPerKB, 0)
+func (mp *DeSoMempool) EstimateFee(txn *MsgDeSoTxn, minFeeRateNanosPerKB uint64) (uint64, error) {
+	feeRate := mp.EstimateFeeRate(minFeeRateNanosPerKB)
 	return EstimateMaxTxnFeeV1(txn, feeRate), nil
 }
 
-func (mp *DeSoMempool) EstimateFeeRate(minFeeRateNanosPerKB uint64, _ uint64) uint64 {
+func (mp *DeSoMempool) EstimateFeeRate(minFeeRateNanosPerKB uint64) uint64 {
 	if minFeeRateNanosPerKB < mp.readOnlyUtxoView.GetCurrentGlobalParamsEntry().MinimumNetworkFeeNanosPerKB {
 		return mp.readOnlyUtxoView.GetCurrentGlobalParamsEntry().MinimumNetworkFeeNanosPerKB
 	}
