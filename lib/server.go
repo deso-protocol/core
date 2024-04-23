@@ -1117,19 +1117,6 @@ func (srv *Server) _handleHeaderBundle(pp *Peer, msg *MsgDeSoHeaderBundle) {
 		maxHeadersPerMsg = MaxHeadersPerMsgPos
 	}
 	if uint32(len(msg.Headers)) < maxHeadersPerMsg || srv.blockchain.isTipMaxed(srv.blockchain.headerTip()) {
-		// If we have exhausted the peer's headers but our header chain still isn't
-		// current it means the peer we chose isn't current either. So disconnect
-		// from her and try to sync with someone else.
-		if srv.blockchain.chainState() == SyncStateSyncingHeaders {
-			glog.V(1).Infof("Server._handleHeaderBundle: Disconnecting from peer %v because "+
-				"we have exhausted their headers but our tip is still only "+
-				"at time=%v height=%d", pp,
-				time.Unix(int64(srv.blockchain.headerTip().Header.GetTstampSecs()), 0),
-				srv.blockchain.headerTip().Header.Height)
-			pp.Disconnect()
-			return
-		}
-
 		// If we get here it means that we've just finished syncing headers and we will proceed to
 		// syncing state either through hyper sync or block sync. First let's check if the peer
 		// supports hypersync and if our block tip is old enough so that it makes sense to sync state.
