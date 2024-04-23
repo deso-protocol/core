@@ -4236,6 +4236,18 @@ type GlobalParamsEntry struct {
 	// the fee for a new txn.
 	MempoolFeeEstimatorNumPastBlocks uint64
 
+	// DefaultMempoolCongestionFactorBasisPoints and DefaultMempoolPastBlocksCongestionFactorBasisPoints are the default values
+	// for GlobalParams.MempoolCongestionFactorBasisPoints and GlobalParams.DefaultMempoolPastBlocksCongestionFactorBasisPoints.
+	/// See comments in GlobalParamsEntry for a description of their usage.
+	MempoolCongestionFactorBasisPoints           uint64
+	MempoolPastBlocksCongestionFactorBasisPoints uint64
+
+	// MempoolPriorityPercentileBasisPoints and MempoolPastBlocksPriorityPercentileBasisPoints are the default values
+	// for GlobalParams.DefaultMempoolPriorityPercentileBasisPoints and GlobalParams.DefaultMempoolPastBlocksPriorityPercentileBasisPoints.
+	// See comments in GlobalParamsEntry for a description of their usage.
+	MempoolPriorityPercentileBasisPoints           uint64
+	MempoolPastBlocksPriorityPercentileBasisPoints uint64
+
 	// MaxBlockSizeBytesPoS is the maximum size of a block in bytes.
 	MaxBlockSizeBytesPoS uint64
 
@@ -4275,6 +4287,10 @@ func (gp *GlobalParamsEntry) Copy() *GlobalParamsEntry {
 		MempoolMaxSizeBytes:                            gp.MempoolMaxSizeBytes,
 		MempoolFeeEstimatorNumMempoolBlocks:            gp.MempoolFeeEstimatorNumMempoolBlocks,
 		MempoolFeeEstimatorNumPastBlocks:               gp.MempoolFeeEstimatorNumPastBlocks,
+		MempoolCongestionFactorBasisPoints:             gp.MempoolCongestionFactorBasisPoints,
+		MempoolPastBlocksCongestionFactorBasisPoints:   gp.MempoolPastBlocksCongestionFactorBasisPoints,
+		MempoolPriorityPercentileBasisPoints:           gp.MempoolPriorityPercentileBasisPoints,
+		MempoolPastBlocksPriorityPercentileBasisPoints: gp.MempoolPastBlocksPriorityPercentileBasisPoints,
 		MaxBlockSizeBytesPoS:                           gp.MaxBlockSizeBytesPoS,
 		SoftMaxBlockSizeBytesPoS:                       gp.SoftMaxBlockSizeBytesPoS,
 		MaxTxnSizeBytesPoS:                             gp.MaxTxnSizeBytesPoS,
@@ -4309,6 +4325,10 @@ func (gp *GlobalParamsEntry) RawEncodeWithoutMetadata(blockHeight uint64, skipMe
 		data = append(data, UintToBuf(gp.MempoolMaxSizeBytes)...)
 		data = append(data, UintToBuf(gp.MempoolFeeEstimatorNumMempoolBlocks)...)
 		data = append(data, UintToBuf(gp.MempoolFeeEstimatorNumPastBlocks)...)
+		data = append(data, UintToBuf(gp.MempoolCongestionFactorBasisPoints)...)
+		data = append(data, UintToBuf(gp.MempoolPastBlocksCongestionFactorBasisPoints)...)
+		data = append(data, UintToBuf(gp.MempoolPriorityPercentileBasisPoints)...)
+		data = append(data, UintToBuf(gp.MempoolPastBlocksPriorityPercentileBasisPoints)...)
 		data = append(data, UintToBuf(gp.MaxBlockSizeBytesPoS)...)
 		data = append(data, UintToBuf(gp.SoftMaxBlockSizeBytesPoS)...)
 		data = append(data, UintToBuf(gp.MaxTxnSizeBytesPoS)...)
@@ -4405,6 +4425,22 @@ func (gp *GlobalParamsEntry) RawDecodeWithoutMetadata(blockHeight uint64, rr *by
 		gp.MempoolFeeEstimatorNumPastBlocks, err = ReadUvarint(rr)
 		if err != nil {
 			return errors.Wrapf(err, "GlobalParamsEntry.Decode: Problem reading MempoolFeeEstimatorNumPastBlocks")
+		}
+		gp.MempoolCongestionFactorBasisPoints, err = ReadUvarint(rr)
+		if err != nil {
+			return errors.Wrapf(err, "GlobalParamsEntry.Decode: Problem reading MempoolCongestionFactorBasisPoints")
+		}
+		gp.MempoolPastBlocksCongestionFactorBasisPoints, err = ReadUvarint(rr)
+		if err != nil {
+			return errors.Wrapf(err, "GlobalParamsEntry.Decode: Problem reading MempoolPastBlocksCongestionFactorBasisPoints")
+		}
+		gp.MempoolPriorityPercentileBasisPoints, err = ReadUvarint(rr)
+		if err != nil {
+			return errors.Wrapf(err, "GlobalParamsEntry.Decode: Problem reading MempoolPriorityPercentileBasisPoints")
+		}
+		gp.MempoolPastBlocksPriorityPercentileBasisPoints, err = ReadUvarint(rr)
+		if err != nil {
+			return errors.Wrapf(err, "GlobalParamsEntry.Decode: Problem reading MempoolPastBlocksPriorityPercentileBasisPoints")
 		}
 		gp.MaxBlockSizeBytesPoS, err = ReadUvarint(rr)
 		if err != nil {
