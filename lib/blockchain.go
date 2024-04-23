@@ -436,6 +436,10 @@ func CalcNextDifficultyTarget(
 		clippedTimeDiffSecs = maxRetargetTimeSecs
 	}
 
+	if lastNode.DifficultyTarget == nil {
+		return nil, fmt.Errorf("CalcNextDifficultyTarget: Difficulty target for last node is nil")
+	}
+
 	numerator := new(big.Int).Mul(
 		HashToBigint(lastNode.DifficultyTarget),
 		big.NewInt(clippedTimeDiffSecs))

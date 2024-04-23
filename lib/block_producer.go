@@ -652,6 +652,15 @@ func (desoBlockProducer *DeSoBlockProducer) Start() {
 			return
 		}
 
+		// Stop the block producer if we're past the pos cutover or if the tip block is the last pow block.
+		blockHeight := uint64(desoBlockProducer.chain.blockTip().Height)
+		if blockHeight >= desoBlockProducer.params.GetFinalPoWBlockHeight() {
+			desoBlockProducer.Stop()
+			glog.V(1).Infof("DeSoBlockProducer.Start() Stopping block producer because we're past the PoS cutover" +
+				" or the last PoW block.")
+			return
+		}
+
 		secondsLeft := float64(desoBlockProducer.minBlockUpdateIntervalSeconds) - time.Since(lastBlockUpdate).Seconds()
 		glog.V(1).Infof("DeSoBlockProducer.Start(): timings for next run: %v %v %v",
 			float64(desoBlockProducer.minBlockUpdateIntervalSeconds), time.Since(lastBlockUpdate).Seconds(), secondsLeft)
