@@ -157,6 +157,18 @@ func MergeGlobalParamEntryDefaults(globalParamsEntry *GlobalParamsEntry, params 
 	if globalParamsEntryCopy.MempoolFeeEstimatorNumPastBlocks == 0 {
 		globalParamsEntryCopy.MempoolFeeEstimatorNumPastBlocks = params.DefaultMempoolFeeEstimatorNumPastBlocks
 	}
+	if globalParamsEntryCopy.MempoolCongestionFactorBasisPoints == 0 {
+		globalParamsEntryCopy.MempoolCongestionFactorBasisPoints = params.DefaultMempoolCongestionFactorBasisPoints
+	}
+	if globalParamsEntryCopy.MempoolPastBlocksCongestionFactorBasisPoints == 0 {
+		globalParamsEntryCopy.MempoolPastBlocksCongestionFactorBasisPoints = params.DefaultMempoolPastBlocksCongestionFactorBasisPoints
+	}
+	if globalParamsEntryCopy.MempoolPriorityPercentileBasisPoints == 0 {
+		globalParamsEntryCopy.MempoolPriorityPercentileBasisPoints = params.DefaultMempoolPriorityPercentileBasisPoints
+	}
+	if globalParamsEntryCopy.MempoolPastBlocksPriorityPercentileBasisPoints == 0 {
+		globalParamsEntryCopy.MempoolPastBlocksPriorityPercentileBasisPoints = params.DefaultMempoolPastBlocksPriorityPercentileBasisPoints
+	}
 	if globalParamsEntryCopy.MaxBlockSizeBytesPoS == 0 {
 		globalParamsEntryCopy.MaxBlockSizeBytesPoS = params.DefaultMaxBlockSizeBytesPoS
 	}

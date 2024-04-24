@@ -295,8 +295,9 @@ func (posFeeEstimator *PoSFeeEstimator) EstimateFeeRateNanosPerKB(minFeeRateNano
 	defer posFeeEstimator.rwLock.RUnlock()
 
 	mempoolCongestionFactorBasisPoints := posFeeEstimator.globalParams.MempoolCongestionFactorBasisPoints
-	mempoolPriorityPercentileBasisPoints := posFeeEstimator.globalParams.MempoolPriorityPercentileBasisPoints
 	pastBlocksCongestionFactorBasisPoints := posFeeEstimator.globalParams.MempoolPastBlocksCongestionFactorBasisPoints
+
+	mempoolPriorityPercentileBasisPoints := posFeeEstimator.globalParams.MempoolPriorityPercentileBasisPoints
 	pastBlocksPriorityPercentileBasisPoints := posFeeEstimator.globalParams.MempoolPastBlocksPriorityPercentileBasisPoints
 
 	maxBlockSize := posFeeEstimator.globalParams.SoftMaxBlockSizeBytesPoS
@@ -335,8 +336,9 @@ func (posFeeEstimator *PoSFeeEstimator) EstimateFee(txn *MsgDeSoTxn, minFeeRateN
 	defer posFeeEstimator.rwLock.RUnlock()
 
 	mempoolCongestionFactorBasisPoints := posFeeEstimator.globalParams.MempoolCongestionFactorBasisPoints
-	mempoolPriorityPercentileBasisPoints := posFeeEstimator.globalParams.MempoolPriorityPercentileBasisPoints
 	pastBlocksCongestionFactorBasisPoints := posFeeEstimator.globalParams.MempoolPastBlocksCongestionFactorBasisPoints
+
+	mempoolPriorityPercentileBasisPoints := posFeeEstimator.globalParams.MempoolPriorityPercentileBasisPoints
 	pastBlocksPriorityPercentileBasisPoints := posFeeEstimator.globalParams.MempoolPastBlocksPriorityPercentileBasisPoints
 
 	maxBlockSize := posFeeEstimator.globalParams.SoftMaxBlockSizeBytesPoS
