@@ -7,7 +7,6 @@ import (
 	"io"
 	"math"
 	"net"
-	"net/url"
 	"sort"
 	"strconv"
 
@@ -1803,7 +1802,7 @@ func (bav *UtxoView) IsValidRegisterAsValidatorMetadata(
 	}
 	var domainStrings []string
 	for _, domain := range metadata.Domains {
-		_, err := url.ParseRequestURI(string(domain))
+		_, _, err := ParseValidatorDomain(string(domain))
 		if err != nil {
 			return fmt.Errorf("UtxoView.IsValidRegisterAsValidatorMetadata: %s: %v", RuleErrorValidatorInvalidDomain, string(domain))
 		}
