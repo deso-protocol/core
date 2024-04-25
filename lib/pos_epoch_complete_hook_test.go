@@ -890,7 +890,7 @@ func _registerValidatorAndStake(
 	testMeta.pubKeyToBLSKeyMap[publicKey] = votingPrivateKey
 	testMeta.blsPubKeyToBLSKeyMap[votingPublicKey.ToString()] = votingPrivateKey
 	registerMetadata := &RegisterAsValidatorMetadata{
-		Domains:                             [][]byte{[]byte(fmt.Sprintf("https://%s.com", publicKey))},
+		Domains:                             [][]byte{[]byte(fmt.Sprintf("%s.com:18000", publicKey))},
 		VotingPublicKey:                     votingPublicKey,
 		DelegatedStakeCommissionBasisPoints: commissionBasisPoints,
 		VotingAuthorization:                 votingAuthorization,

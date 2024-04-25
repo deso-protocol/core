@@ -101,7 +101,7 @@ func _testStaking(t *testing.T, flushToDB bool) {
 
 		votingPublicKey, votingAuthorization := _generateVotingPublicKeyAndAuthorization(t, m0PkBytes)
 		registerAsValidatorMetadata := &RegisterAsValidatorMetadata{
-			Domains:             [][]byte{[]byte("https://example.com")},
+			Domains:             [][]byte{[]byte("example.com:18000")},
 			VotingPublicKey:     votingPublicKey,
 			VotingAuthorization: votingAuthorization,
 		}
@@ -112,7 +112,7 @@ func _testStaking(t *testing.T, flushToDB bool) {
 		require.NoError(t, err)
 		require.NotNil(t, validatorEntry)
 		require.Len(t, validatorEntry.Domains, 1)
-		require.Equal(t, validatorEntry.Domains[0], []byte("https://example.com"))
+		require.Equal(t, validatorEntry.Domains[0], []byte("example.com:18000"))
 		require.True(t, validatorEntry.TotalStakeAmountNanos.IsZero())
 	}
 	//
@@ -945,7 +945,7 @@ func TestStakingWithDerivedKey(t *testing.T) {
 		// m0 registers as a validator.
 		votingPublicKey, votingAuthorization := _generateVotingPublicKeyAndAuthorization(t, m0PkBytes)
 		registerAsValidatorMetadata := &RegisterAsValidatorMetadata{
-			Domains:             [][]byte{[]byte("https://example1.com")},
+			Domains:             [][]byte{[]byte("example1.com:18000")},
 			VotingPublicKey:     votingPublicKey,
 			VotingAuthorization: votingAuthorization,
 		}
@@ -956,7 +956,7 @@ func TestStakingWithDerivedKey(t *testing.T) {
 		// m1 registers as a validator.
 		votingPublicKey, votingAuthorization := _generateVotingPublicKeyAndAuthorization(t, m1PkBytes)
 		registerAsValidatorMetadata := &RegisterAsValidatorMetadata{
-			Domains:             [][]byte{[]byte("https://example2.com")},
+			Domains:             [][]byte{[]byte("example2.com:18000")},
 			VotingPublicKey:     votingPublicKey,
 			VotingAuthorization: votingAuthorization,
 		}
@@ -1672,8 +1672,8 @@ func _testGetTopStakesByStakeAmount(t *testing.T, flushToDB bool) {
 
 	{
 		// m0 and m1 register as validators.
-		constructAndSubmitRegisterValidatorTxn(m0Pub, m0Priv, m0PkBytes, "https://example.com")
-		constructAndSubmitRegisterValidatorTxn(m1Pub, m1Priv, m1PkBytes, "https://example2.com")
+		constructAndSubmitRegisterValidatorTxn(m0Pub, m0Priv, m0PkBytes, "example.com:18000")
+		constructAndSubmitRegisterValidatorTxn(m1Pub, m1Priv, m1PkBytes, "example2.com:18000")
 	}
 
 	// Cache the validator set for easy access.
@@ -1937,7 +1937,7 @@ func TestStakeLockupEpochDuration(t *testing.T) {
 		// m0 registers as a validator.
 		votingPublicKey, votingAuthorization := _generateVotingPublicKeyAndAuthorization(t, m0PkBytes)
 		registerMetadata := &RegisterAsValidatorMetadata{
-			Domains:             [][]byte{[]byte("https://m1.com")},
+			Domains:             [][]byte{[]byte("m1.com:18000")},
 			VotingPublicKey:     votingPublicKey,
 			VotingAuthorization: votingAuthorization,
 		}
@@ -2124,7 +2124,7 @@ func testStakingToJailedValidator(t *testing.T, flushToDB bool) {
 		// m0 registers as a validator.
 		votingPublicKey, votingAuthorization := _generateVotingPublicKeyAndAuthorization(t, m0PkBytes)
 		registerMetadata := &RegisterAsValidatorMetadata{
-			Domains:             [][]byte{[]byte("https://m0.example.com")},
+			Domains:             [][]byte{[]byte("m0.example.com:18000")},
 			VotingPublicKey:     votingPublicKey,
 			VotingAuthorization: votingAuthorization,
 		}
