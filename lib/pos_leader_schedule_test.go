@@ -72,7 +72,7 @@ func TestGenerateLeaderSchedule(t *testing.T) {
 		// Validator registers.
 		votingPublicKey, votingAuthorization := _generateVotingPublicKeyAndAuthorization(t, pkBytes)
 		registerMetadata := &RegisterAsValidatorMetadata{
-			Domains:             [][]byte{[]byte(fmt.Sprintf("https://%s.com", publicKey))},
+			Domains:             [][]byte{[]byte(fmt.Sprintf("%s.com:18000", publicKey))},
 			VotingPublicKey:     votingPublicKey,
 			VotingAuthorization: votingAuthorization,
 		}

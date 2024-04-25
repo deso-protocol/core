@@ -91,7 +91,7 @@ func _testValidatorRegistration(t *testing.T, flushToDB bool) {
 
 		votingPublicKey, votingAuthorization := _generateVotingPublicKeyAndAuthorization(t, m0PkBytes)
 		registerMetadata = &RegisterAsValidatorMetadata{
-			Domains:               [][]byte{[]byte("https://example.com")},
+			Domains:               [][]byte{[]byte("example.com:18000")},
 			DisableDelegatedStake: false,
 			VotingPublicKey:       votingPublicKey,
 			VotingAuthorization:   votingAuthorization,
@@ -108,7 +108,7 @@ func _testValidatorRegistration(t *testing.T, flushToDB bool) {
 		// RuleErrorValidatorInvalidCommissionBasisPoints
 		votingPublicKey, votingAuthorization := _generateVotingPublicKeyAndAuthorization(t, m0PkBytes)
 		registerMetadata = &RegisterAsValidatorMetadata{
-			Domains:                             [][]byte{[]byte("https://example.com")},
+			Domains:                             [][]byte{[]byte("example.com:18000")},
 			DisableDelegatedStake:               true,
 			DelegatedStakeCommissionBasisPoints: MaxDelegatedStakeCommissionBasisPoints + 1,
 			VotingPublicKey:                     votingPublicKey,
@@ -132,7 +132,7 @@ func _testValidatorRegistration(t *testing.T, flushToDB bool) {
 		// RuleErrorValidatorTooManyDomains
 		var domains [][]byte
 		for ii := 0; ii <= MaxValidatorNumDomains+1; ii++ {
-			domains = append(domains, []byte(fmt.Sprintf("https://example.com/%d", ii)))
+			domains = append(domains, []byte(fmt.Sprintf("example.com:18000/%d", ii)))
 		}
 		registerMetadata = &RegisterAsValidatorMetadata{
 			Domains:               domains,
@@ -155,7 +155,7 @@ func _testValidatorRegistration(t *testing.T, flushToDB bool) {
 	{
 		// RuleErrorValidatorDuplicateDomains
 		registerMetadata = &RegisterAsValidatorMetadata{
-			Domains:               [][]byte{[]byte("https://example.com"), []byte("https://example.com")},
+			Domains:               [][]byte{[]byte("example.com:18000"), []byte("example.com:18000")},
 			DisableDelegatedStake: false,
 		}
 		_, err = _submitRegisterAsValidatorTxn(testMeta, m0Pub, m0Priv, registerMetadata, nil, flushToDB)
@@ -165,7 +165,7 @@ func _testValidatorRegistration(t *testing.T, flushToDB bool) {
 	{
 		// RuleErrorValidatorMissingVotingPublicKey
 		registerMetadata = &RegisterAsValidatorMetadata{
-			Domains: [][]byte{[]byte("https://example.com")},
+			Domains: [][]byte{[]byte("example.com:18000")},
 		}
 		_, err = _submitRegisterAsValidatorTxn(
 			testMeta, m0Pub, m0Priv, registerMetadata, nil, flushToDB,
@@ -177,7 +177,7 @@ func _testValidatorRegistration(t *testing.T, flushToDB bool) {
 		// RuleErrorValidatorMissingVotingAuthorization
 		votingPublicKey, _ := _generateVotingPublicKeyAndAuthorization(t, m0PkBytes)
 		registerMetadata = &RegisterAsValidatorMetadata{
-			Domains:         [][]byte{[]byte("https://example.com")},
+			Domains:         [][]byte{[]byte("example.com:18000")},
 			VotingPublicKey: votingPublicKey,
 		}
 		_, err = _submitRegisterAsValidatorTxn(
@@ -190,7 +190,7 @@ func _testValidatorRegistration(t *testing.T, flushToDB bool) {
 		// RuleErrorValidatorInvalidVotingAuthorization: invalid TransactorPkBytes
 		votingPublicKey, votingAuthorization := _generateVotingPublicKeyAndAuthorization(t, m1PkBytes)
 		registerMetadata = &RegisterAsValidatorMetadata{
-			Domains:             [][]byte{[]byte("https://example.com")},
+			Domains:             [][]byte{[]byte("example.com:18000")},
 			VotingPublicKey:     votingPublicKey,
 			VotingAuthorization: votingAuthorization,
 		}
@@ -205,7 +205,7 @@ func _testValidatorRegistration(t *testing.T, flushToDB bool) {
 		votingPublicKey, _ := _generateVotingPublicKeyAndAuthorization(t, m0PkBytes)
 		_, votingAuthorization := _generateVotingPublicKeyAndAuthorization(t, m0PkBytes)
 		registerMetadata = &RegisterAsValidatorMetadata{
-			Domains:             [][]byte{[]byte("https://example.com")},
+			Domains:             [][]byte{[]byte("example.com:18000")},
 			VotingPublicKey:     votingPublicKey,
 			VotingAuthorization: votingAuthorization,
 		}
@@ -219,7 +219,7 @@ func _testValidatorRegistration(t *testing.T, flushToDB bool) {
 		// Happy path: register a validator
 		votingPublicKey, votingAuthorization := _generateVotingPublicKeyAndAuthorization(t, m0PkBytes)
 		registerMetadata = &RegisterAsValidatorMetadata{
-			Domains:               [][]byte{[]byte("https://example.com")},
+			Domains:               [][]byte{[]byte("example.com:18000")},
 			DisableDelegatedStake: false,
 			VotingPublicKey:       votingPublicKey,
 			VotingAuthorization:   votingAuthorization,
@@ -235,7 +235,7 @@ func _testValidatorRegistration(t *testing.T, flushToDB bool) {
 		require.NoError(t, err)
 		require.Equal(t, validatorEntry.ValidatorPKID, m0PKID)
 		require.Len(t, validatorEntry.Domains, 1)
-		require.Equal(t, string(validatorEntry.Domains[0]), "https://example.com")
+		require.Equal(t, string(validatorEntry.Domains[0]), "example.com:18000")
 		require.False(t, validatorEntry.DisableDelegatedStake)
 		require.Equal(t, string(validatorEntry.ExtraData["TestKey"]), "TestValue1")
 
@@ -256,7 +256,7 @@ func _testValidatorRegistration(t *testing.T, flushToDB bool) {
 		// Happy path: update a validator
 		votingPrivateKey, votingPublicKey, votingAuthorization := _generateVotingPrivateKeyPublicKeyAndAuthorization(t, m0PkBytes)
 		registerMetadata = &RegisterAsValidatorMetadata{
-			Domains:               [][]byte{[]byte("https://example1.com"), []byte("https://example2.com")},
+			Domains:               [][]byte{[]byte("example1.com:18000"), []byte("example2.com:18000")},
 			DisableDelegatedStake: false,
 			VotingPublicKey:       votingPublicKey,
 			VotingAuthorization:   votingAuthorization,
@@ -273,8 +273,8 @@ func _testValidatorRegistration(t *testing.T, flushToDB bool) {
 		require.NoError(t, err)
 		require.Equal(t, validatorEntry.ValidatorPKID, m0PKID)
 		require.Len(t, validatorEntry.Domains, 2)
-		require.Equal(t, string(validatorEntry.Domains[0]), "https://example1.com")
-		require.Equal(t, string(validatorEntry.Domains[1]), "https://example2.com")
+		require.Equal(t, string(validatorEntry.Domains[0]), "example1.com:18000")
+		require.Equal(t, string(validatorEntry.Domains[1]), "example2.com:18000")
 		require.False(t, validatorEntry.DisableDelegatedStake)
 		require.Equal(t, string(validatorEntry.ExtraData["TestKey"]), "TestValue2")
 
@@ -291,7 +291,7 @@ func _testValidatorRegistration(t *testing.T, flushToDB bool) {
 		votingAuthorization, err = prevBLSPrivateKey.Sign(CreateValidatorVotingAuthorizationPayload(m1PkBytes))
 		require.NoError(t, err)
 		registerMetadata = &RegisterAsValidatorMetadata{
-			Domains:               [][]byte{[]byte("https://example.com")},
+			Domains:               [][]byte{[]byte("example.com:18000")},
 			DisableDelegatedStake: false,
 			VotingPublicKey:       prevBLSPublicKey,
 			VotingAuthorization:   votingAuthorization,
@@ -615,7 +615,7 @@ func TestValidatorRegistrationWithDerivedKey(t *testing.T) {
 
 		// Perform a RegisterAsValidator txn. No error expected.
 		registerAsValidatorMetadata := &RegisterAsValidatorMetadata{
-			Domains:             [][]byte{[]byte("https://example.com")},
+			Domains:             [][]byte{[]byte("example.com:18000")},
 			VotingPublicKey:     votingPublicKey,
 			VotingAuthorization: votingAuthorization,
 		}
@@ -630,7 +630,7 @@ func TestValidatorRegistrationWithDerivedKey(t *testing.T) {
 		require.NoError(t, err)
 		require.NotNil(t, validatorEntry)
 		require.Len(t, validatorEntry.Domains, 1)
-		require.Equal(t, validatorEntry.Domains[0], []byte("https://example.com"))
+		require.Equal(t, validatorEntry.Domains[0], []byte("example.com:18000"))
 
 		// Perform a second RegisterAsValidator txn. Error expected.
 		err = _submitValidatorTxnWithDerivedKey(
@@ -679,7 +679,7 @@ func TestValidatorRegistrationWithDerivedKey(t *testing.T) {
 
 		// Perform a RegisterAsValidator txn. Error expected.
 		registerAsValidatorMetadata := &RegisterAsValidatorMetadata{
-			Domains:             [][]byte{[]byte("https://example.com")},
+			Domains:             [][]byte{[]byte("example.com:18000")},
 			VotingPublicKey:     votingPublicKey,
 			VotingAuthorization: votingAuthorization,
 		}
@@ -772,7 +772,7 @@ func _testGetTopActiveValidatorsByStakeAmount(t *testing.T, flushToDB bool) {
 		// m0 registers as a validator.
 		votingPublicKey, votingAuthorization := _generateVotingPublicKeyAndAuthorization(t, m0PkBytes)
 		registerMetadata := &RegisterAsValidatorMetadata{
-			Domains:             [][]byte{[]byte("https://m0.com")},
+			Domains:             [][]byte{[]byte("m0.com:1800")},
 			VotingPublicKey:     votingPublicKey,
 			VotingAuthorization: votingAuthorization,
 		}
@@ -788,7 +788,7 @@ func _testGetTopActiveValidatorsByStakeAmount(t *testing.T, flushToDB bool) {
 		// m1 registers as a validator.
 		votingPublicKey, votingAuthorization := _generateVotingPublicKeyAndAuthorization(t, m1PkBytes)
 		registerMetadata := &RegisterAsValidatorMetadata{
-			Domains:             [][]byte{[]byte("https://m1.com")},
+			Domains:             [][]byte{[]byte("m1.com:1800")},
 			VotingPublicKey:     votingPublicKey,
 			VotingAuthorization: votingAuthorization,
 		}
@@ -804,7 +804,7 @@ func _testGetTopActiveValidatorsByStakeAmount(t *testing.T, flushToDB bool) {
 		// m2 registers as a validator.
 		votingPublicKey, votingAuthorization := _generateVotingPublicKeyAndAuthorization(t, m2PkBytes)
 		registerMetadata := &RegisterAsValidatorMetadata{
-			Domains:             [][]byte{[]byte("https://m2.com")},
+			Domains:             [][]byte{[]byte("m2.com:18000")},
 			VotingPublicKey:     votingPublicKey,
 			VotingAuthorization: votingAuthorization,
 		}
@@ -1203,7 +1203,7 @@ func _testUpdatingValidatorDisableDelegatedStake(t *testing.T, flushToDB bool) {
 		// m0 registers as a validator with DisableDelegatedStake = FALSE.
 		votingPublicKey, votingAuthorization := _generateVotingPublicKeyAndAuthorization(t, m0PkBytes)
 		registerMetadata := &RegisterAsValidatorMetadata{
-			Domains:               [][]byte{[]byte("https://m0.com")},
+			Domains:               [][]byte{[]byte("m0.com:1800")},
 			DisableDelegatedStake: false,
 			VotingPublicKey:       votingPublicKey,
 			VotingAuthorization:   votingAuthorization,
@@ -1224,7 +1224,7 @@ func _testUpdatingValidatorDisableDelegatedStake(t *testing.T, flushToDB bool) {
 		// m0 updates DisableDelegatedStake = TRUE.
 		votingPublicKey, votingAuthorization := _generateVotingPublicKeyAndAuthorization(t, m0PkBytes)
 		registerMetadata := &RegisterAsValidatorMetadata{
-			Domains:               [][]byte{[]byte("https://m0.com")},
+			Domains:               [][]byte{[]byte("m0.com:18000")},
 			DisableDelegatedStake: true,
 			VotingPublicKey:       votingPublicKey,
 			VotingAuthorization:   votingAuthorization,
@@ -1269,7 +1269,7 @@ func _testUpdatingValidatorDisableDelegatedStake(t *testing.T, flushToDB bool) {
 		// m0 updates DisableDelegatedStake = FALSE.
 		votingPublicKey, votingAuthorization := _generateVotingPublicKeyAndAuthorization(t, m0PkBytes)
 		registerMetadata := &RegisterAsValidatorMetadata{
-			Domains:               [][]byte{[]byte("https://m0.com")},
+			Domains:               [][]byte{[]byte("m0.com:18000")},
 			DisableDelegatedStake: false,
 			VotingPublicKey:       votingPublicKey,
 			VotingAuthorization:   votingAuthorization,
@@ -1301,7 +1301,7 @@ func _testUpdatingValidatorDisableDelegatedStake(t *testing.T, flushToDB bool) {
 		// m0 tries to update DisableDelegateStake = TRUE. Errors.
 		votingPublicKey, votingAuthorization := _generateVotingPublicKeyAndAuthorization(t, m0PkBytes)
 		registerMetadata := &RegisterAsValidatorMetadata{
-			Domains:               [][]byte{[]byte("https://m0.com")},
+			Domains:               [][]byte{[]byte("m0.com:18000")},
 			DisableDelegatedStake: true,
 			VotingPublicKey:       votingPublicKey,
 			VotingAuthorization:   votingAuthorization,
@@ -1394,7 +1394,7 @@ func _testUnregisterAsValidator(t *testing.T, flushToDB bool) {
 		// m0 registers as a validator.
 		votingPublicKey, votingAuthorization := _generateVotingPublicKeyAndAuthorization(t, m0PkBytes)
 		registerMetadata := &RegisterAsValidatorMetadata{
-			Domains:             [][]byte{[]byte("https://m0.com")},
+			Domains:             [][]byte{[]byte("m0.com:18000")},
 			VotingPublicKey:     votingPublicKey,
 			VotingAuthorization: votingAuthorization,
 		}
@@ -1577,7 +1577,7 @@ func _testUnjailValidator(t *testing.T, flushToDB bool) {
 		// m0 registers as a validator.
 		votingPublicKey, votingAuthorization := _generateVotingPublicKeyAndAuthorization(t, m0PkBytes)
 		registerMetadata := &RegisterAsValidatorMetadata{
-			Domains:             [][]byte{[]byte("https://example.com")},
+			Domains:             [][]byte{[]byte("example.com:18000")},
 			VotingPublicKey:     votingPublicKey,
 			VotingAuthorization: votingAuthorization,
 		}
@@ -1868,7 +1868,7 @@ func TestUnjailValidatorWithDerivedKey(t *testing.T) {
 		// sender registers as a validator.
 		votingPublicKey, votingAuthorization := _generateVotingPublicKeyAndAuthorization(t, senderPkBytes)
 		registerMetadata := &RegisterAsValidatorMetadata{
-			Domains:             [][]byte{[]byte("https://example.com")},
+			Domains:             [][]byte{[]byte("example.com:18000")},
 			VotingPublicKey:     votingPublicKey,
 			VotingAuthorization: votingAuthorization,
 		}
