@@ -1951,6 +1951,68 @@ func TestUnjailValidatorWithDerivedKey(t *testing.T) {
 	}
 }
 
+func TestParseValidatorDomain(t *testing.T) {
+	// Sad path. Test invalid domain with an http scheme
+	{
+		domain := "https://example.com"
+		_, _, err := ParseValidatorDomain(domain)
+		require.Error(t, err)
+	}
+
+	// Sad path. Test invalid domain with an http scheme and port number
+	{
+		domain := "https://example.com:8080"
+		_, _, err := ParseValidatorDomain(domain)
+		require.Error(t, err)
+	}
+
+	// Sad path. Test invalid domain with a path but no scheme
+	{
+		domain := "example.com/path"
+		_, _, err := ParseValidatorDomain(domain)
+		require.Error(t, err)
+	}
+
+	// Sad path. Test invalid domain with a path, a port, but no scheme
+	{
+		domain := "example.com:18000/path"
+		_, _, err := ParseValidatorDomain(domain)
+		require.Error(t, err)
+	}
+
+	// Sad path. Test invalid domain with no scheme, no path, and no port
+	{
+		domain := "example.com"
+		_, _, err := ParseValidatorDomain(domain)
+		require.Error(t, err)
+	}
+
+	// Sad path. Test invalid IP address with a port
+	{
+		domain := "127.0.0.1"
+		_, _, err := ParseValidatorDomain(domain)
+		require.Error(t, err)
+	}
+
+	// Happy path. Test valid domain with a port, but no scheme and no path
+	{
+		domain := "example.com:18000"
+		host, port, err := ParseValidatorDomain(domain)
+		require.NoError(t, err)
+		require.Equal(t, host, "example.com")
+		require.Equal(t, port, uint64(18000))
+	}
+
+	// Happy path. Test valid IP address with a port
+	{
+		domain := "127.0.0.1:18000"
+		host, port, err := ParseValidatorDomain(domain)
+		require.NoError(t, err)
+		require.Equal(t, host, "127.0.0.1")
+		require.Equal(t, port, uint64(18000))
+	}
+}
+
 func _submitUnjailValidatorTxn(
 	testMeta *TestMeta,
 	transactorPublicKeyBase58Check string,

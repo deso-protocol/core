@@ -4,11 +4,14 @@ import (
 	"bytes"
 	"crypto/sha256"
 	"fmt"
-	"github.com/deso-protocol/core/consensus"
 	"io"
 	"math"
+	"net"
 	"net/url"
 	"sort"
+	"strconv"
+
+	"github.com/deso-protocol/core/consensus"
 
 	"github.com/deso-protocol/core/bls"
 	"github.com/dgraph-io/badger/v4"
@@ -2475,6 +2478,29 @@ func SumValidatorEntriesTotalStakeAmountNanos(validatorEntries []*ValidatorEntry
 		totalStakeAmountNanos.Add(totalStakeAmountNanos, validatorEntry.TotalStakeAmountNanos)
 	}
 	return totalStakeAmountNanos
+}
+
+// ParseValidatorDomain expects a domain string in the format "host:port" and returns the host and port.
+// If the domain is not in the expected format, it returns an error.
+func ParseValidatorDomain(domain string) (_host string, _port uint64, _err error) {
+	// Split the domain into host and port.
+	hostStr, portStr, err := net.SplitHostPort(domain)
+	if err != nil {
+		return "", 0, errors.Wrapf(err, "error splitting host and port %s", domain)
+	}
+
+	// The host should not be empty.
+	if hostStr == "" {
+		return "", 0, errors.Errorf("invalid host %s", hostStr)
+	}
+
+	// The port should parse into an unsigned integer
+	port, err := strconv.ParseUint(portStr, 10, 0)
+	if err != nil {
+		return "", 0, errors.Wrapf(err, "invalid port %s", portStr)
+	}
+
+	return hostStr, port, nil
 }
 
 //
