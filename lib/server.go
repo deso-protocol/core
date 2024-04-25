@@ -1924,10 +1924,11 @@ func (srv *Server) _handleDisconnectedPeerMessage(pp *Peer) {
 
 	srv._cleanupDonePeerState(pp)
 
-	// Attempt to find a new peer to sync from if the quitting peer is the
-	// sync peer and if our blockchain isn't current.
-	if srv.SyncPeer == pp && srv.blockchain.isSyncing() {
-
+	// Attempt to find a new peer to sync from if the quitting peer is the sync peer.
+	// We need to refresh the sync peer regardless of whether we're syncing or not.
+	// In the event that we fall behind, this allows us to switch to a peer allows us
+	// to continue syncing.
+	if srv.SyncPeer != nil && srv.SyncPeer.ID == pp.ID {
 		srv.SyncPeer = nil
 		srv._startSync()
 	}
