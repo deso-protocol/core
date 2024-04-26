@@ -2925,7 +2925,7 @@ func (bc *Blockchain) processBlockPoW(desoBlock *MsgDeSoBlock, verifySignatures 
 		// state syncer maintains a consistent view of the blockchain.
 		// Note: We ignore the mempool manager here, as that process handles state syncer flush events itself.
 		if !bc.eventManager.isMempoolManager {
-			fmt.Printf("Emitting state syncer flushed event for synced block\n")
+			glog.V(3).Info("Emitting state syncer flushed event for synced block\n")
 			bc.eventManager.stateSyncerFlushed(&StateSyncerFlushedEvent{
 				FlushId:   uuid.Nil,
 				Succeeded: true,
