@@ -71,18 +71,18 @@ const (
 	// don't store orphan headers and therefore any header that we do
 	// have in our node index will be known definitively to be valid or
 	// invalid one way or the other.
-	StatusHeaderValidated      = 1 << 0
-	StatusHeaderValidateFailed = 1 << 1
+	StatusHeaderValidated      = 1 << 1
+	StatusHeaderValidateFailed = 1 << 2
 
-	StatusBlockProcessed      = 1 << 2 // Process means that the block is not an orphan and has been processed. This helps prevent us from reprocessing a block that we've already attempted to validate and add to the block index.
-	StatusBlockStored         = 1 << 3 // Stored means that the block has been added to the block index and stored in the DB.
-	StatusBlockValidated      = 1 << 4 // Validated means that the block has passed validations and is eligible to be part of the best chain.
-	StatusBlockValidateFailed = 1 << 5 // Validate Failed means that the block did not pass validations and will never be part of the best chain.
+	StatusBlockProcessed      = 1 << 3 // Process means that the block is not an orphan and has been processed. This helps prevent us from reprocessing a block that we've already attempted to validate and add to the block index.
+	StatusBlockStored         = 1 << 4 // Stored means that the block has been added to the block index and stored in the DB.
+	StatusBlockValidated      = 1 << 5 // Validated means that the block has passed validations and is eligible to be part of the best chain.
+	StatusBlockValidateFailed = 1 << 6 // Validate Failed means that the block did not pass validations and will never be part of the best chain.
 
-	StatusBitcoinHeaderValidated      = 1 << 6 // Deprecated
-	StatusBitcoinHeaderValidateFailed = 1 << 7 // Deprecated
+	StatusBitcoinHeaderValidated      = 1 << 7 // Deprecated
+	StatusBitcoinHeaderValidateFailed = 1 << 8 // Deprecated
 
-	StatusBlockCommitted = 1 << 8 // Committed means that the block has been committed to the blockchain according to the Fast HotStuff commit rule. Only set on blocks after the cutover for PoS
+	StatusBlockCommitted = 1 << 9 // Committed means that the block has been committed to the blockchain according to the Fast HotStuff commit rule. Only set on blocks after the cutover for PoS
 )
 
 // IsHeaderValidated returns true if a BlockNode has passed all the block header integrity checks.
