@@ -4,6 +4,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"log"
+	"math"
 	"math/big"
 	"os"
 	"path/filepath"
@@ -274,6 +275,8 @@ type ForkHeights struct {
 	// the recipient of the block reward from paying nothing for their transactions
 	// that are in the block.
 	BlockRewardPatchBlockHeight uint32
+
+	FixOrderBookSkipInvalidMatchesBlockHeight uint32
 
 	// Be sure to update EncoderMigrationHeights as well via
 	// GetEncoderMigrationHeights if you're modifying schema.
@@ -622,7 +625,8 @@ var RegtestForkHeights = ForkHeights{
 	// genesis block was created using the utxo model.
 	BalanceModelBlockHeight: uint32(1),
 
-	BlockRewardPatchBlockHeight: uint32(0),
+	BlockRewardPatchBlockHeight:               uint32(0),
+	FixOrderBookSkipInvalidMatchesBlockHeight: uint32(0),
 
 	// Be sure to update EncoderMigrationHeights as well via
 	// GetEncoderMigrationHeights if you're modifying schema.
@@ -777,6 +781,9 @@ var MainnetForkHeights = ForkHeights{
 
 	// Tues May 23 2023 @ 9am PST
 	BlockRewardPatchBlockHeight: uint32(235134),
+
+	// TODO: Supply real height
+	FixOrderBookSkipInvalidMatchesBlockHeight: math.MaxUint32,
 
 	// Be sure to update EncoderMigrationHeights as well via
 	// GetEncoderMigrationHeights if you're modifying schema.
@@ -1043,6 +1050,9 @@ var TestnetForkHeights = ForkHeights{
 
 	// Tues May 23 2023 @ 9am PT
 	BlockRewardPatchBlockHeight: uint32(729753),
+
+	// TODO: Supply real height
+	FixOrderBookSkipInvalidMatchesBlockHeight: math.MaxUint32,
 
 	// Be sure to update EncoderMigrationHeights as well via
 	// GetEncoderMigrationHeights if you're modifying schema.
