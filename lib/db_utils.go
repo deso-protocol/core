@@ -9822,10 +9822,23 @@ func DBGetAllDAOCoinLimitOrdersForThisDAOCoinPair(
 	return _DBGetAllDAOCoinLimitOrdersByPrefix(handle, key)
 }
 
-func DBGetAllDAOCoinLimitOrdersForThisTransactor(handle *badger.DB, transactorPKID *PKID) ([]*DAOCoinLimitOrderEntry, error) {
-	// Get all DAO coin limit orders for this transactor.
+func DBGetAllDAOCoinLimitOrdersForThisTransactor(
+	handle *badger.DB,
+	transactorPKID *PKID,
+	buyingCoinPKID *PKID,
+	sellingCoinPKID *PKID,
+) (
+	[]*DAOCoinLimitOrderEntry,
+	error,
+) {
+	// Get all DAO coin limit orders for this transactor. Potentially filter by the
+	// buying/selling coin pkids if provided
 	key := append([]byte{}, Prefixes.PrefixDAOCoinLimitOrderByTransactorPKID...)
 	key = append(key, transactorPKID[:]...)
+	if buyingCoinPKID != nil && sellingCoinPKID != nil {
+		key = append(key, buyingCoinPKID[:]...)
+		key = append(key, sellingCoinPKID[:]...)
+	}
 	return _DBGetAllDAOCoinLimitOrdersByPrefix(handle, key)
 }
 

@@ -2504,7 +2504,7 @@ func (bav *UtxoView) _checkAndUpdateDerivedKeySpendingLimit(
 		var buyingCoinPublicKey []byte
 		var sellingCoinPublicKey []byte
 		if txnMeta.CancelOrderID != nil {
-			orderEntry, err := bav._getDAOCoinLimitOrderEntry(txnMeta.CancelOrderID)
+			orderEntry, err := bav.GetDAOCoinLimitOrderEntry(txnMeta.CancelOrderID)
 			if err != nil || orderEntry == nil {
 				return utxoOpsForTxn, errors.Wrapf(
 					RuleErrorDerivedKeyInvalidDAOCoinLimitOrderOrderID,
