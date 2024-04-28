@@ -9831,6 +9831,13 @@ func DBGetAllDAOCoinLimitOrdersForThisTransactor(
 	[]*DAOCoinLimitOrderEntry,
 	error,
 ) {
+	if buyingCoinPKID != nil && sellingCoinPKID == nil ||
+		buyingCoinPKID == nil && sellingCoinPKID != nil {
+
+		return nil, errors.New("GetAllDAOCoinLimitOrdersForThisTransactor: Must specify " +
+			"NONE or BOTH buying and selling coin PKIDs")
+	}
+
 	// Get all DAO coin limit orders for this transactor. Potentially filter by the
 	// buying/selling coin pkids if provided
 	key := append([]byte{}, Prefixes.PrefixDAOCoinLimitOrderByTransactorPKID...)
