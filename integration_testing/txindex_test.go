@@ -2,11 +2,12 @@ package integration_testing
 
 import (
 	"fmt"
+	"os"
+	"testing"
+
 	"github.com/deso-protocol/core/cmd"
 	"github.com/deso-protocol/core/lib"
 	"github.com/stretchr/testify/require"
-	"os"
-	"testing"
 )
 
 // TestSimpleTxIndex test if a node can successfully build txindex after block syncing from another node:

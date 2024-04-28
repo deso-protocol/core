@@ -1,12 +1,13 @@
 package integration_testing
 
 import (
-	"github.com/deso-protocol/core/cmd"
-	"github.com/deso-protocol/core/lib"
-	"github.com/stretchr/testify/require"
 	"os"
 	"reflect"
 	"testing"
+
+	"github.com/deso-protocol/core/cmd"
+	"github.com/deso-protocol/core/lib"
+	"github.com/stretchr/testify/require"
 )
 
 // Start blocks to height 5000 and then disconnect
