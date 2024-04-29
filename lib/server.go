@@ -289,15 +289,17 @@ func (srv *Server) VerifyAndBroadcastTransaction(txn *MsgDeSoTxn) error {
 	tipHeight := srv.blockchain.BlockTip().Height
 	srv.blockchain.ChainLock.RUnlock()
 
-	// Only add the txn to the PoW mempool if we are below the PoS cutover height.
-	if srv.params.IsPoWBlockHeight(uint64(tipHeight)) {
+	// Only add the txn to the PoW mempool if we are below the PoS cutover height. The
+	// final block height of the PoW chain is the cut-off point for PoW transactions.
+	if uint64(tipHeight) < srv.params.GetFinalPoWBlockHeight() {
 		err := srv.blockchain.ValidateTransaction(
 			txn,
 			// blockHeight is set to the next block since that's where this
 			// transaction will be mined at the earliest.
 			tipHeight+1,
 			true,
-			srv.mempool)
+			srv.mempool,
+		)
 		if err != nil {
 			return fmt.Errorf("VerifyAndBroadcastTransaction: Problem validating txn: %v", err)
 		}
@@ -2009,8 +2011,7 @@ func (srv *Server) _addNewTxn(
 		// We will error in two cases:
 		// - the chainState is not need blocks state
 		// - the chainState is need blocks state but the chain is not on PoS.
-		if chainState != SyncStateNeedBlocksss ||
-			!srv.blockchain.params.IsPoSBlockHeight(tipHeight) {
+		if chainState != SyncStateNeedBlocksss || !srv.blockchain.params.IsPoSBlockHeight(tipHeight) {
 			err := fmt.Errorf("Server._addNewTxnAndRelay: Cannot process txn "+
 				"from peer %v while syncing: %v %v", pp, srv.blockchain.chainState(), txn.Hash())
 			glog.Error(err)
@@ -2033,12 +2034,9 @@ func (srv *Server) _addNewTxn(
 
 	// Only attempt to add the transaction to the PoW mempool if we're on the
 	// PoW protocol. If we're on the PoW protocol, then we use the PoW mempool's,
-	// txn validity checks to signal whether the txn has been added or not. The PoW
-	// mempool has stricter txn validity checks than the PoS mempool, so this works
-	// out conveniently, as it allows us to always add a txn to the PoS mempool.
-	if srv.params.IsPoWBlockHeight(tipHeight) {
-		_, err := srv.mempool.ProcessTransaction(
-			txn, true /*allowUnconnectedTxn*/, rateLimit, peerID, verifySignatures)
+	// txn validity checks to signal whether the txn has been added or not.
+	if uint64(tipHeight) < srv.params.GetFinalPoWBlockHeight() {
+		_, err := srv.mempool.ProcessTransaction(txn, true, rateLimit, peerID, verifySignatures)
 		if err != nil {
 			return nil, errors.Wrapf(err, "Server._addNewTxn: Problem adding transaction to mempool: ")
 		}
@@ -2046,11 +2044,18 @@ func (srv *Server) _addNewTxn(
 		glog.V(1).Infof("Server._addNewTxn: newly accepted txn: %v, Peer: %v", txn, pp)
 	}
 
-	// Always add the txn to the PoS mempool. This should always succeed if the txn
-	// addition into the PoW mempool succeeded above.
+	// Always add the txn to the PoS mempool. This will usually succeed if the txn
+	// addition into the PoW mempool succeeded above. However, we only return an error
+	// here if the block height is at or above the final PoW block height. In the event
+	// of an edge case where txns in the mempool are reordered, it is possible for the
+	// txn addition into the PoW mempool to succeed, while the addition into the PoS
+	// mempool fails. This error handling catches that and gives the user the correct
+	// feedback on the txn addition's success.
 	mempoolTxn := NewMempoolTransaction(txn, time.Now(), false)
 	if err := srv.posMempool.AddTransaction(mempoolTxn); err != nil {
-		return nil, errors.Wrapf(err, "Server._addNewTxn: problem adding txn to pos mempool")
+		if uint64(tipHeight) >= srv.params.GetFinalPoWBlockHeight() {
+			return nil, errors.Wrapf(err, "Server._addNewTxn: problem adding txn to pos mempool")
+		}
 	}
 
 	return []*MsgDeSoTxn{txn}, nil
@@ -2484,7 +2489,7 @@ func (srv *Server) ProcessSingleTxnWithChainLock(pp *Peer, txn *MsgDeSoTxn) ([]*
 	// mempool has stricter txn validity checks than the PoS mempool, so this works
 	// out conveniently, as it allows us to always add a txn to the PoS mempool.
 	tipHeight := uint64(srv.blockchain.blockTip().Height)
-	if srv.params.IsPoWBlockHeight(tipHeight) {
+	if uint64(tipHeight) < srv.params.GetFinalPoWBlockHeight() {
 		_, err := srv.mempool.ProcessTransaction(
 			txn,
 			true,  /*allowUnconnectedTxn*/
@@ -2500,11 +2505,18 @@ func (srv *Server) ProcessSingleTxnWithChainLock(pp *Peer, txn *MsgDeSoTxn) ([]*
 		}
 	}
 
-	// Regardless of the consensus protocol we're running (PoW or PoS), we use the PoS mempool's to house all
-	// mempool txns. If a txn can't make it into the PoS mempool, which uses a looser unspent balance check for
-	// the the transactor, then it must be invalid.
-	if err := srv.posMempool.AddTransaction(NewMempoolTransaction(txn, time.Now(), false)); err != nil {
-		return nil, errors.Wrapf(err, "Server.ProcessSingleTxnWithChainLock: Problem adding transaction to PoS mempool: ")
+	// Always add the txn to the PoS mempool. This will usually succeed if the txn
+	// addition into the PoW mempool succeeded above. However, we only return an error
+	// here if the block height is at or above the final PoW block height. In the event
+	// of an edge case where txns in the mempool are reordered, it is possible for the
+	// txn addition into the PoW mempool to succeed, while the addition into the PoS
+	// mempool fails. This error handling catches that and gives the user the correct
+	// feedback on the txn addition's success.
+	mempoolTxn := NewMempoolTransaction(txn, time.Now(), false)
+	if err := srv.posMempool.AddTransaction(mempoolTxn); err != nil {
+		if uint64(tipHeight) >= srv.params.GetFinalPoWBlockHeight() {
+			return nil, errors.Wrapf(err, "Server._addNewTxn: problem adding txn to pos mempool")
+		}
 	}
 
 	// Happy path, the txn was successfully added to the PoS (and optionally PoW) mempool.
