@@ -294,7 +294,7 @@ func (mp *PosMempool) Start() error {
 
 	// Setup the database and create the persister
 	if !mp.inMemoryOnly {
-		mempoolDirectory := filepath.Join(mp.dir, "mempool")
+		mempoolDirectory := filepath.Join(mp.dir, "pos_mempool")
 		opts := DefaultBadgerOptions(mempoolDirectory)
 		db, err := badger.Open(opts)
 		if err != nil {
