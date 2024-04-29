@@ -550,7 +550,7 @@ type DBPrefixes struct {
 	// PrefixSnapshotValidatorSetByPKID: Retrieve a ValidatorEntry from a snapshot validator set by
 	// <SnapshotAtEpochNumber, PKID>.
 	// Prefix, <SnapshotAtEpochNumber uint64>, <ValidatorPKID [33]byte> -> *ValidatorEntry
-	PrefixSnapshotValidatorSetByPKID []byte `prefix_id:"[88]" is_state:"true"`
+	PrefixSnapshotValidatorSetByPKID []byte `prefix_id:"[88]" is_state:"true" core_state:"true"`
 
 	// PrefixSnapshotValidatorSetByStakeAmount: Retrieve stake-ordered ValidatorEntries from a snapshot validator set
 	// by SnapshotAtEpochNumber.
