@@ -5747,6 +5747,10 @@ type DAOCoinLimitOrderEntry struct {
 	isDeleted bool
 }
 
+func (order *DAOCoinLimitOrderEntry) IsDeleted() bool {
+	return order.isDeleted
+}
+
 type DAOCoinLimitOrderOperationType uint8
 
 const (

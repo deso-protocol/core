@@ -287,7 +287,7 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 		}
 
 		// Search for an existing order by OrderID.
-		existingTransactorOrder, err := bav._getDAOCoinLimitOrderEntry(txMeta.CancelOrderID)
+		existingTransactorOrder, err := bav.GetDAOCoinLimitOrderEntry(txMeta.CancelOrderID)
 		if err != nil {
 			return 0, 0, nil, err
 		}
@@ -1490,10 +1490,10 @@ func _calculateDAOCoinsTransferredInLimitOrderMatch(
 // ## API Getter Functions
 // ###########################
 
-func (bav *UtxoView) _getDAOCoinLimitOrderEntry(orderID *BlockHash) (*DAOCoinLimitOrderEntry, error) {
+func (bav *UtxoView) GetDAOCoinLimitOrderEntry(orderID *BlockHash) (*DAOCoinLimitOrderEntry, error) {
 	// This function shouldn't be called with nil.
 	if orderID == nil {
-		return nil, errors.Errorf("_getDAOCoinLimitOrderEntry: Called with nil orderID; this should never happen")
+		return nil, errors.Errorf("GetDAOCoinLimitOrderEntry: Called with nil orderID; this should never happen")
 	}
 
 	// First check if we have the order entry in the UTXO view.
@@ -1583,10 +1583,18 @@ func (bav *UtxoView) GetAllDAOCoinLimitOrdersForThisDAOCoinPair(
 	return outputEntries, nil
 }
 
-func (bav *UtxoView) GetAllDAOCoinLimitOrdersForThisTransactor(transactorPKID *PKID) ([]*DAOCoinLimitOrderEntry, error) {
+func (bav *UtxoView) GetAllDAOCoinLimitOrdersForThisTransactor(
+	transactorPKID *PKID,
+	buyingCoinPkid *PKID,
+	sellingCoinPkid *PKID,
+) (
+	[]*DAOCoinLimitOrderEntry,
+	error,
+) {
 	// This function is used by the API to construct all open orders for the input transactor.
 	if transactorPKID == nil {
-		return nil, errors.Errorf("GetAllDAOCoinLimitOrdersForThisTransactor: Called with nil transactor PKID; this should never happen")
+		return nil, errors.Errorf("GetAllDAOCoinLimitOrdersForThisTransactor: Called with nil " +
+			"transactor PKID; this should never happen")
 	}
 
 	outputEntries := []*DAOCoinLimitOrderEntry{}
@@ -1594,7 +1602,8 @@ func (bav *UtxoView) GetAllDAOCoinLimitOrdersForThisTransactor(transactorPKID *P
 	// Iterate over matching database orders and add them to the
 	// UTXO view if they are not already there. This dedups orders
 	// from the database + orders from the UTXO view as well.
-	dbOrderEntries, err := bav.GetDbAdapter().GetAllDAOCoinLimitOrdersForThisTransactor(transactorPKID)
+	dbOrderEntries, err := bav.GetDbAdapter().GetAllDAOCoinLimitOrdersForThisTransactor(
+		transactorPKID, buyingCoinPkid, sellingCoinPkid)
 	if err != nil {
 		return nil, err
 	}
@@ -1609,9 +1618,16 @@ func (bav *UtxoView) GetAllDAOCoinLimitOrdersForThisTransactor(transactorPKID *P
 
 	// Get matching orders from the UTXO view.
 	//   + TransactorPKID should match.
+	//   + buying/selling pkids should match if they're specified
 	//   + orderEntry is not deleted.
 	for _, orderEntry := range bav.DAOCoinLimitOrderMapKeyToDAOCoinLimitOrderEntry {
 		if !orderEntry.isDeleted && transactorPKID.Eq(orderEntry.TransactorPKID) {
+			if buyingCoinPkid != nil && !buyingCoinPkid.Eq(orderEntry.BuyingDAOCoinCreatorPKID) {
+				continue
+			}
+			if sellingCoinPkid != nil && !sellingCoinPkid.Eq(orderEntry.SellingDAOCoinCreatorPKID) {
+				continue
+			}
 			outputEntries = append(outputEntries, orderEntry)
 		}
 	}

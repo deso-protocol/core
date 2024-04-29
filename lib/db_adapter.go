@@ -253,13 +253,22 @@ func (adapter *DbAdapter) GetAllDAOCoinLimitOrdersForThisDAOCoinPair(buyingDAOCo
 	return DBGetAllDAOCoinLimitOrdersForThisDAOCoinPair(adapter.badgerDb, buyingDAOCoinCreatorPKID, sellingDAOCoinCreatorPKID)
 }
 
-func (adapter *DbAdapter) GetAllDAOCoinLimitOrdersForThisTransactor(transactorPKID *PKID) ([]*DAOCoinLimitOrderEntry, error) {
+func (adapter *DbAdapter) GetAllDAOCoinLimitOrdersForThisTransactor(
+	transactorPKID *PKID,
+	buyingCoinPkid *PKID,
+	sellingCoinPkid *PKID,
+) (
+	[]*DAOCoinLimitOrderEntry,
+	error,
+) {
+
 	// Temporarily use badger to support DAO Coin limit order DB operations
 	//if adapter.postgresDb != nil {
 	//	return adapter.postgresDb.GetAllDAOCoinLimitOrdersForThisTransactor(transactorPKID)
 	//}
 
-	return DBGetAllDAOCoinLimitOrdersForThisTransactor(adapter.badgerDb, transactorPKID)
+	return DBGetAllDAOCoinLimitOrdersForThisTransactor(
+		adapter.badgerDb, transactorPKID, buyingCoinPkid, sellingCoinPkid)
 }
 
 func (adapter *DbAdapter) GetMatchingDAOCoinLimitOrders(inputOrder *DAOCoinLimitOrderEntry, lastSeenOrder *DAOCoinLimitOrderEntry, orderEntriesInView map[DAOCoinLimitOrderMapKey]bool) ([]*DAOCoinLimitOrderEntry, error) {
