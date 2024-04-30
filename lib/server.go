@@ -284,27 +284,9 @@ func (srv *Server) BroadcastTransaction(txn *MsgDeSoTxn) ([]*MsgDeSoTxn, error) 
 }
 
 func (srv *Server) VerifyAndBroadcastTransaction(txn *MsgDeSoTxn) error {
-	// Grab the block tip and use it as the height for validation.
-	srv.blockchain.ChainLock.RLock()
-	tipHeight := srv.blockchain.BlockTip().Height
-	srv.blockchain.ChainLock.RUnlock()
-
-	// Only add the txn to the PoW mempool if we are below the PoS cutover height. The
-	// final block height of the PoW chain is the cut-off point for PoW transactions.
-	if uint64(tipHeight) < srv.params.GetFinalPoWBlockHeight() {
-		err := srv.blockchain.ValidateTransaction(
-			txn,
-			// blockHeight is set to the next block since that's where this
-			// transaction will be mined at the earliest.
-			tipHeight+1,
-			true,
-			srv.mempool,
-		)
-		if err != nil {
-			return fmt.Errorf("VerifyAndBroadcastTransaction: Problem validating txn: %v", err)
-		}
-	}
-
+	// The BroadcastTransaction call validates the transaction internally according to the
+	// mempool txn addition rules. If the transaction is valid, it will broadcast the txn to
+	// peers. Otherwise, it returns an error.
 	if _, err := srv.BroadcastTransaction(txn); err != nil {
 		return fmt.Errorf("VerifyAndBroadcastTransaction: Problem broadcasting txn: %v", err)
 	}
