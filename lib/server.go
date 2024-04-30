@@ -284,9 +284,9 @@ func (srv *Server) BroadcastTransaction(txn *MsgDeSoTxn) ([]*MsgDeSoTxn, error) 
 }
 
 func (srv *Server) VerifyAndBroadcastTransaction(txn *MsgDeSoTxn) error {
-	// The BroadcastTransaction call validates the transaction internally, according to the
-	// mempool txn addition rules. If the transaction is valid, it will broadcast it to peers.
-	// Otherwise, we return an error.
+	// The BroadcastTransaction call validates the transaction internally according to the
+	// mempool txn addition rules. If the transaction is valid, it will broadcast the txn to
+	// peers. Otherwise, it returns an error.
 	if _, err := srv.BroadcastTransaction(txn); err != nil {
 		return fmt.Errorf("VerifyAndBroadcastTransaction: Problem broadcasting txn: %v", err)
 	}
