@@ -10,9 +10,12 @@ func (srv *Server) submitRegtestValidatorRegistrationTxns(block *MsgDeSoBlock) {
 		return
 	}
 
-	// If we're not the block producer and are not running the FastHotStuffConsensus, then we don't need to
-	// register as a validator.
-	if srv.fastHotStuffConsensus == nil || srv.blockProducer == nil || srv.blockProducer.blockProducerPrivateKey == nil {
+	// If we're not the block producer and are not running the FastHotStuffConsensus, then
+	// we don't need to register as a validator.
+	if srv.fastHotStuffConsensus == nil ||
+		srv.fastHotStuffConsensus.signer == nil ||
+		srv.blockProducer == nil ||
+		srv.blockProducer.blockProducerPrivateKey == nil {
 		return
 	}
 
