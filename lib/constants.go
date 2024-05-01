@@ -900,9 +900,6 @@ func (params *DeSoParams) EnableRegtest() {
 	// Clear the seeds
 	params.DNSSeeds = []string{}
 
-	// Set the protocol version
-	params.ProtocolVersion = ProtocolVersion2
-
 	// Mine blocks incredibly quickly
 	params.TimeBetweenBlocks = 2 * time.Second
 	params.TimeBetweenDifficultyRetargets = 6 * time.Second
@@ -1080,7 +1077,7 @@ var MainnetForkHeights = ForkHeights{
 // DeSoMainnetParams defines the DeSo parameters for the mainnet.
 var DeSoMainnetParams = DeSoParams{
 	NetworkType:        NetworkType_MAINNET,
-	ProtocolVersion:    ProtocolVersion1,
+	ProtocolVersion:    ProtocolVersion2,
 	MinProtocolVersion: 1,
 	UserAgent:          "Architect",
 	DNSSeeds: []string{
@@ -1480,7 +1477,7 @@ var TestnetForkHeights = ForkHeights{
 // DeSoTestnetParams defines the DeSo parameters for the testnet.
 var DeSoTestnetParams = DeSoParams{
 	NetworkType:        NetworkType_TESTNET,
-	ProtocolVersion:    ProtocolVersion0,
+	ProtocolVersion:    ProtocolVersion2,
 	MinProtocolVersion: 0,
 	UserAgent:          "Architect",
 	DNSSeeds: []string{
