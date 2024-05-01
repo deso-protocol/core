@@ -10,6 +10,12 @@ func (srv *Server) submitRegtestValidatorRegistrationTxns(block *MsgDeSoBlock) {
 		return
 	}
 
+	// If we're not the block producer and are not running the FastHotStuffConsensus, then we don't need to
+	// register as a validator.
+	if srv.fastHotStuffConsensus == nil || srv.blockProducer == nil || srv.blockProducer.blockProducerPrivateKey == nil {
+		return
+	}
+
 	glog.Infof(CLog(Yellow, "Reached ProofOfStake1StateSetupMigration.Height. Setting Up PoS Validator"))
 
 	blsSigner := srv.fastHotStuffConsensus.signer
