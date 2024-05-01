@@ -361,6 +361,7 @@ func ValidateHyperSyncFlags(isHypersync bool, syncType NodeSyncType) {
 // TODO: Refactor all these arguments into a config object or something.
 func NewServer(
 	_params *DeSoParams,
+	_isRegtest bool,
 	_listeners []net.Listener,
 	_desoAddrMgr *addrmgr.AddrManager,
 	_connectIps []string,
@@ -639,7 +640,7 @@ func NewServer(
 		// On testnet, if the node is configured to be a PoW block producer, and it is configured
 		// to be also a PoS validator, then we attach block mined listeners to the miner to kick
 		// off the PoS consensus once the miner is done.
-		if _params.NetworkType == NetworkType_TESTNET && _miner != nil && _blockProducer != nil {
+		if _isRegtest && _params.NetworkType == NetworkType_TESTNET && _miner != nil && _blockProducer != nil {
 			_miner.AddBlockMinedListener(srv.submitRegtestValidatorRegistrationTxns)
 		}
 	}
