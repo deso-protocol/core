@@ -879,7 +879,7 @@ func (stateChangeSyncer *StateChangeSyncer) SyncMempoolToStateSyncer(server *Ser
 			// has changed since the last cache, and we need to reset it.
 			stateChangeSyncer.MempoolCachedTxns = make(map[string][]*StateChangeEntry)
 			stateChangeSyncer.MempoolCachedUtxoView = nil
-			fmt.Printf("Txn not in cache, resetting\n")
+			glog.V(2).Info("Txn not in cache, resetting\n")
 			break
 		}
 
@@ -889,7 +889,7 @@ func (stateChangeSyncer *StateChangeSyncer) SyncMempoolToStateSyncer(server *Ser
 				// If we know that all our transactions are good, set the state of the utxo view to the cached one, and exit.
 				mempoolUtxoView = stateChangeSyncer.MempoolCachedUtxoView
 			}
-			fmt.Printf("All txns match, continueing: %v\n", ii)
+			glog.V(2).Infof("All txns match, continuing: %v\n", ii)
 			break
 		}
 	}
@@ -996,7 +996,7 @@ func (stateChangeSyncer *StateChangeSyncer) StartMempoolSyncRoutine(server *Serv
 		if !stateChangeSyncer.BlocksyncCompleteEntriesFlushed && stateChangeSyncer.SyncType == NodeSyncTypeBlockSync {
 			err := stateChangeSyncer.FlushAllEntriesToFile(server)
 			if err != nil {
-				fmt.Printf("StateChangeSyncer.StartMempoolSyncRoutine: Error flushing all entries to file: %v", err)
+				glog.Errorf("StateChangeSyncer.StartMempoolSyncRoutine: Error flushing all entries to file: %v", err)
 			}
 		}
 		mempoolClosed := !server.GetMempool().IsRunning()
@@ -1046,7 +1046,7 @@ func (stateChangeSyncer *StateChangeSyncer) FlushAllEntriesToFile(server *Server
 
 		// Loop through all the batches of entries for the prefix until we get a non-full chunk.
 		for chunkFull {
-			fmt.Printf("Processing chunk for prefix: %+v\n", prefix)
+			glog.V(2).Infof("Processing chunk for prefix: %+v\n", prefix)
 			// Create a flush ID for this chunk.
 			dbFlushId := uuid.New()
 			// Fetch the batch from main DB records with a batch size of about snap.BatchSize.
