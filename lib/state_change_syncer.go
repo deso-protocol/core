@@ -124,7 +124,8 @@ func (stateChangeEntry *StateChangeEntry) RawEncodeWithoutMetadata(blockHeight u
 	data = append(data, UintToBuf(blockHeight)...)
 
 	// Encode the block, only for utxo operations.
-	if stateChangeEntry.EncoderType == EncoderTypeUtxoOperation {
+	if stateChangeEntry.EncoderType == EncoderTypeUtxoOperation ||
+		stateChangeEntry.EncoderType == EncoderTypeUtxoOperationBundle {
 		data = append(data, EncodeToBytes(blockHeight, stateChangeEntry.Block)...)
 	} else {
 		// If the encoder type is not a utxo operation, encode a nil value.
