@@ -1122,6 +1122,10 @@ func (srv *Server) _handleHeaderBundle(pp *Peer, msg *MsgDeSoHeaderBundle) {
 				// PoW default value. After the fork height, it's expected to be the value defined in the params.
 				snapshotBlockHeightPeriod := srv.params.GetSnapshotBlockHeightPeriod(bestHeaderHeight, srv.snapshot.SnapshotBlockHeightPeriod)
 				expectedSnapshotHeight := bestHeaderHeight - (bestHeaderHeight % snapshotBlockHeightPeriod)
+				posSetupForkHeight := uint64(srv.params.ForkHeights.ProofOfStake1StateSetupBlockHeight)
+				if expectedSnapshotHeight < posSetupForkHeight {
+					expectedSnapshotHeight = posSetupForkHeight - (posSetupForkHeight % srv.params.DefaultPoWSnapshotBlockHeightPeriod)
+				}
 				srv.blockchain.snapshot.Migrations.CleanupMigrations(expectedSnapshotHeight)
 
 				if len(srv.HyperSyncProgress.PrefixProgress) != 0 {
