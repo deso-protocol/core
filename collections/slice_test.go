@@ -185,3 +185,89 @@ func TestFilter(t *testing.T) {
 		require.Equal(t, []int{1, 2, 3, 4, 5}, result)
 	}
 }
+
+func TestContains(t *testing.T) {
+	slice := []int{-1, -2, -3, -4, -5}
+	require.False(t, Contains(slice, 0))
+	require.True(t, Contains(slice, -1))
+}
+
+func TestTransform(t *testing.T) {
+	// Transform all values to their square
+	transform := func(val int) int {
+		return val * val
+	}
+
+	slice := []int{1, 2, 3, 4, 5}
+	result := Transform(slice, transform)
+	require.Equal(t, []int{1, 4, 9, 16, 25}, result)
+}
+
+func TestRandomElement(t *testing.T) {
+	// Test sad path where slice is empty
+	slice := []int{}
+	_, err := RandomElement(slice)
+	require.Error(t, err)
+
+	// Test happy path where slice has elements.
+	slice = []int{1, 2, 3, 4, 5}
+	result, err := RandomElement(slice)
+	require.NoError(t, err)
+	require.True(t, Contains(slice, result))
+}
+
+func TestSortStable(t *testing.T) {
+	// Test sorting a slice of integers
+	{
+		slice := []int{1, 5, 4, 3, 2, 1}
+		sorted := SortStable(slice, func(i, j int) bool {
+			return i < j
+		})
+		// Make sure sorted is a new slice and slice is not modified
+		require.Equal(t, []int{1, 1, 2, 3, 4, 5}, sorted)
+		require.NotEqual(t, slice, sorted)
+	}
+
+	// Test sorting a struct by a field
+	{
+		type testStruct struct {
+			Value int
+			Key   string
+		}
+		slice := []testStruct{
+			{Value: 1, Key: "a"},
+			{Value: 5, Key: "b"},
+			{Value: 4, Key: "c"},
+			{Value: 3, Key: "d"},
+			{Value: 1, Key: "e"},
+		}
+		sorted := SortStable(slice, func(i, j testStruct) bool {
+			return i.Value < j.Value
+		})
+		// Make sure sorted is a new slice and slice is not modified
+		require.Equal(t, []testStruct{
+			{Value: 1, Key: "a"},
+			{Value: 1, Key: "e"},
+			{Value: 3, Key: "d"},
+			{Value: 4, Key: "c"},
+			{Value: 5, Key: "b"},
+		}, sorted)
+		require.NotEqual(t, slice, sorted)
+	}
+}
+
+func TestReverse(t *testing.T) {
+	// Test reversing a slice of integers
+	{
+		slice := []int{1, 2, 3, 4, 5}
+		reversed := Reverse(slice)
+		require.Equal(t, []int{5, 4, 3, 2, 1}, reversed)
+	}
+
+	// Test reversing a slice of strings
+	{
+		slice := []string{"a", "b", "c", "d", "e"}
+		reversed := Reverse(slice)
+		require.Equal(t, []string{"e", "d", "c", "b", "a"}, reversed)
+	}
+}

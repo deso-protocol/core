@@ -64,7 +64,7 @@ func SetupRunFlags(cmd *cobra.Command) {
 		"Max sync block height")
 	// Hyper Sync
 	cmd.PersistentFlags().Bool("hypersync", true, "Use hyper sync protocol for faster block syncing")
-	cmd.PersistentFlags().Bool("force-checksum", true, "When true, the node will panic if the "+
+	cmd.PersistentFlags().Bool("force-checksum", false, "When true, the node will panic if the "+
 		"local state checksum differs from the network checksum reported by its peers.")
 	// Snapshot
 	cmd.PersistentFlags().Uint64("snapshot-block-height-period", 600000, "Set the snapshot epoch period. Snapshots are taken at block heights divisible by the period.")
@@ -229,7 +229,6 @@ func SetupRunFlags(cmd *cobra.Command) {
 		"process in the mempool tx state syncer at a time.")
 
 	// PoS Checkpoint Syncing
-	// TODO: a default value is a little tricky here since we don't know what network we're using.
 	cmd.PersistentFlags().StringSlice("checkpoint-syncing-providers", []string{}, fmt.Sprintf("A comma-separated list of URLs that "+
 		"supports the committed tip block info endpoint to be used for checkpoint syncing. "+
 		"If unset, the field will default to %v on mainnet and %v on testnet",

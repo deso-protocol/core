@@ -187,10 +187,10 @@ func LoadConfig() *Config {
 		if _, err := url.ParseRequestURI(provider); err != nil {
 			glog.Fatalf("Invalid checkpoint syncing provider URL: %v", provider)
 		}
-		// TODO: do we want to make a request to the checkpoint syncing provider to ensure it's valid?
 	}
-	// TODO: add default provider here based on network. However, if someone wants to sync w/o checkpoint
-	// syncing, they should be able to do so. How do we support this? another flag I guess.
+	// TODO: If someone wants to sync w/o checkpoint syncing, they should be able to do so.
+	// How do we support this? another flag I guess or they just provide an invalid value
+	// to the checkpoint-syncing-providers flag.
 	if len(config.CheckpointSyncingProviders) == 0 && !config.Regtest {
 		if testnet {
 			config.CheckpointSyncingProviders = []string{lib.DefaultTestnetCheckpointProvider}

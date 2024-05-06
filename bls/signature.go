@@ -187,7 +187,9 @@ type PublicKey struct {
 }
 
 func (publicKey *PublicKey) loadFlowPublicKey() error {
-	if publicKey.flowPublicKey == nil && len(publicKey.flowPublicKeyBytes) > 0 {
+	if publicKey != nil &&
+		publicKey.flowPublicKey == nil &&
+		len(publicKey.flowPublicKeyBytes) > 0 {
 		var err error
 		publicKey.flowPublicKey, err = flowCrypto.DecodePublicKey(signingAlgorithm, publicKey.flowPublicKeyBytes)
 		return err
