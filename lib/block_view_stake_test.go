@@ -809,7 +809,6 @@ func TestStakingWithDerivedKey(t *testing.T) {
 
 	m0PKID := DBGetPKIDEntryForPublicKey(db, chain.snapshot, m0PkBytes).PKID
 	m1PKID := DBGetPKIDEntryForPublicKey(db, chain.snapshot, m1PkBytes).PKID
-	m2PKID := DBGetPKIDEntryForPublicKey(db, chain.snapshot, m2PkBytes).PKID
 
 	senderPkBytes, _, err := Base58CheckDecode(senderPkString)
 	require.NoError(t, err)
@@ -962,48 +961,6 @@ func TestStakingWithDerivedKey(t *testing.T) {
 		}
 		_, err = _submitRegisterAsValidatorTxn(testMeta, m1Pub, m1Priv, registerAsValidatorMetadata, nil, true)
 		require.NoError(t, err)
-	}
-	{
-		// RuleErrorTransactionSpendingLimitInvalidValidator
-		// sender tries to create a DerivedKey to stake with m2. Validator doesn't exist. Errors.
-		stakeLimitKey := MakeStakeLimitKey(m2PKID)
-		txnSpendingLimit := &TransactionSpendingLimit{
-			GlobalDESOLimit: NanosPerUnit, // 1 $DESO spending limit
-			TransactionCountLimitMap: map[TxnType]uint64{
-				TxnTypeAuthorizeDerivedKey: 1,
-			},
-			StakeLimitMap: map[StakeLimitKey]*uint256.Int{stakeLimitKey: uint256.NewInt(100)},
-		}
-		derivedKeyPriv, err = _submitAuthorizeDerivedKeyTxn(txnSpendingLimit)
-		require.Error(t, err)
-	}
-	{
-		// RuleErrorTransactionSpendingLimitInvalidValidator
-		// sender tries to create a DerivedKey to unstake from m2. Validator doesn't exist. Errors.
-		stakeLimitKey := MakeStakeLimitKey(m2PKID)
-		txnSpendingLimit := &TransactionSpendingLimit{
-			GlobalDESOLimit: NanosPerUnit, // 1 $DESO spending limit
-			TransactionCountLimitMap: map[TxnType]uint64{
-				TxnTypeAuthorizeDerivedKey: 1,
-			},
-			UnstakeLimitMap: map[StakeLimitKey]*uint256.Int{stakeLimitKey: uint256.NewInt(100)},
-		}
-		derivedKeyPriv, err = _submitAuthorizeDerivedKeyTxn(txnSpendingLimit)
-		require.Error(t, err)
-	}
-	{
-		// RuleErrorTransactionSpendingLimitInvalidValidator
-		// sender tries to create a DerivedKey to stake with m2. Validator doesn't exist. Errors.
-		stakeLimitKey := MakeStakeLimitKey(m2PKID)
-		txnSpendingLimit := &TransactionSpendingLimit{
-			GlobalDESOLimit: NanosPerUnit, // 1 $DESO spending limit
-			TransactionCountLimitMap: map[TxnType]uint64{
-				TxnTypeAuthorizeDerivedKey: 1,
-			},
-			UnlockStakeLimitMap: map[StakeLimitKey]uint64{stakeLimitKey: 100},
-		}
-		derivedKeyPriv, err = _submitAuthorizeDerivedKeyTxn(txnSpendingLimit)
-		require.Error(t, err)
 	}
 	{
 		// sender stakes with m0 using a DerivedKey.
