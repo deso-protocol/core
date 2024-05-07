@@ -45,6 +45,10 @@ func (bav *UtxoView) DistributeStakingRewardsToSnapshotStakes(blockHeight uint64
 	// As long as the scaled interest rate is > 0, the converted float is guaranteed to be non-zero as well.
 	apy := convertAPYBasisPointsToFloat(apyBasisPoints)
 
+	// Compute the growth multiplier for the staking rewards. The growth multiplier is computed as:
+	// e ^ (apy * elapsedTime / 1 year)
+	growthMultiplier := computeGrowthMultiplier(apy, elapsedFractionOfYear)
+
 	// We reward all snapshotted stakes from the current snapshot validator set. This is an O(n) operation
 	// that loops through all of the snapshotted stakes and rewards them one by one.
 	snapshotStakesToReward, err := bav.GetAllSnapshotStakesToReward()
@@ -69,7 +73,7 @@ func (bav *UtxoView) DistributeStakingRewardsToSnapshotStakes(blockHeight uint64
 
 		// Compute the staker's portion of the staking reward, and the validator's commission.
 		stakerRewardNanos, validatorCommissionNanos, err := bav.computeStakerRewardAndValidatorCommission(
-			snapshotStakeEntry, elapsedFractionOfYear, apy,
+			snapshotStakeEntry, growthMultiplier,
 		)
 		if err != nil {
 			return nil, errors.Wrapf(
@@ -111,8 +115,7 @@ func (bav *UtxoView) DistributeStakingRewardsToSnapshotStakes(blockHeight uint64
 
 func (bav *UtxoView) computeStakerRewardAndValidatorCommission(
 	snapshotStakeEntry *StakeEntry,
-	elapsedFractionOfYear *big.Float,
-	apy *big.Float,
+	growthMultiplier *big.Float,
 ) (
 	_stakerRewardNanos uint64,
 	_validatorCommissionNanos uint64,
@@ -122,7 +125,7 @@ func (bav *UtxoView) computeStakerRewardAndValidatorCommission(
 	// so we can do the remainder of the math using integer operations. This is the only operation where
 	// we need float math.
 	stakerRewardNanos := convertBigFloatToBigInt(
-		computeStakingReward(snapshotStakeEntry.StakeAmountNanos, elapsedFractionOfYear, apy),
+		computeStakingReward(snapshotStakeEntry.StakeAmountNanos, growthMultiplier),
 	)
 
 	// If the reward is 0, then there's nothing to be done. In practice, the reward should never be < 0
@@ -293,14 +296,18 @@ func computeFractionOfYearAsFloat(nanoSecs int64) *big.Float {
 	return NewFloat().Quo(nanoSecsAsFloat, _nanoSecsPerYearAsFloat)
 }
 
+func computeGrowthMultiplier(apy *big.Float, elapsedTimeFractionOfYear *big.Float) *big.Float {
+	growthExponent := NewFloat().Mul(apy, elapsedTimeFractionOfYear) // apy * elapsedTime / 1 year
+	return BigFloatExp(growthExponent)                               // e ^ (apy * elapsedTime / 1 year)
+}
+
 // computeStakingReward uses float math to compute the compound interest on the stake amounts based on the
-// elapsed time since the last staking reward distribution and the APY.
+// elapsed time since the last staking reward distribution and the APY. The growthMultiplier is computed as:
+// e ^ (apy * elapsedTime / 1 year)
 //
 // It produces the result for: stakeAmount * [e ^ (apy * elapsedTime / 1 year) - 1]
-func computeStakingReward(stakeAmountNanos *uint256.Int, elapsedFractionOfYear *big.Float, apy *big.Float) *big.Float {
+func computeStakingReward(stakeAmountNanos *uint256.Int, growthMultiplier *big.Float) *big.Float {
 	stakeAmountFloat := NewFloat().SetInt(stakeAmountNanos.ToBig())
-	growthExponent := NewFloat().Mul(elapsedFractionOfYear, apy)                 // apy * elapsedTime / 1 year
-	growthMultiplier := BigFloatExp(growthExponent)                              // e ^ (apy * elapsedTime / 1 year)
 	finalStakeAmountNanos := NewFloat().Mul(stakeAmountFloat, growthMultiplier)  // stakeAmount * [e ^ (apy * elapsedTime / 1 year)]
 	rewardAmountNanos := NewFloat().Sub(finalStakeAmountNanos, stakeAmountFloat) // stakeAmount * [e ^ (apy * elapsedTime / 1 year) - 1]
 	if rewardAmountNanos.Sign() < 0 {
