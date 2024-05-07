@@ -400,10 +400,7 @@ func NewServer(
 	_stateChangeDir string,
 	_hypersyncMaxQueueSize uint32,
 	_blsKeystore *BLSKeystore,
-	_maxMempoolPosSizeBytes uint64,
 	_mempoolBackupIntervalMillis uint64,
-	_mempoolFeeEstimatorNumMempoolBlocks uint64,
-	_mempoolFeeEstimatorNumPastBlocks uint64,
 	_mempoolMaxValidationViewConnects uint64,
 	_transactionValidationRefreshIntervalMillis uint64,
 	_stateSyncerMempoolTxnSyncLimit uint64,
@@ -560,11 +557,8 @@ func NewServer(
 		uint64(_chain.blockTip().Height),
 		_mempoolDumpDir,
 		_mempoolDumpDir == "", // If no mempool dump dir is set, then the mempool will be in memory only
-		_maxMempoolPosSizeBytes,
 		_mempoolBackupIntervalMillis,
-		_mempoolFeeEstimatorNumMempoolBlocks,
 		[]*MsgDeSoBlock{latestBlock},
-		_mempoolFeeEstimatorNumPastBlocks,
 		_mempoolMaxValidationViewConnects,
 		_transactionValidationRefreshIntervalMillis,
 	)
