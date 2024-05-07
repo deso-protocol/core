@@ -85,14 +85,14 @@ func ValidateDeSoTxnEncoding(
 	}
 
 	// TODO: Do we want a separate parameter for transaction size? Should it be a part of GlobalDeSoParams?
-	maxBlockSizeBytes := params.MaxBlockSizeBytesPoW
+	maxTxnSizeBytes := params.MaxBlockSizeBytesPoW / 2
 	if params.IsPoSBlockHeight(blockHeight) {
-		maxBlockSizeBytes = MergeGlobalParamEntryDefaults(globalParams, params).MaxBlockSizeBytesPoS
+		maxTxnSizeBytes = MergeGlobalParamEntryDefaults(globalParams, params).MaxTxnSizeBytesPoS
 	}
 	// Validate transaction size
-	if uint64(len(txnBytes)) > maxBlockSizeBytes/2 {
+	if uint64(len(txnBytes)) > maxTxnSizeBytes {
 		return errors.Wrapf(RuleErrorTxnTooBig, "ValidateDeSoTxnEncoding: Transaction size %d is greater than "+
-			"MaxBlockSizeBytesPoW/2 %d", len(txnBytes), maxBlockSizeBytes/2)
+			"max txn size allowed %d", len(txnBytes), maxTxnSizeBytes)
 	}
 	return nil
 }
