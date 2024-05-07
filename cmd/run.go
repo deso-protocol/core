@@ -88,11 +88,6 @@ func SetupRunFlags(cmd *cobra.Command) {
 	cmd.PersistentFlags().String("pos-validator-seed", "", "A BIP39 seed phrase or seed hex used to generate the "+
 		"private key of the Proof of Stake validator. Setting this flag automatically makes the node run as a Proof "+
 		"of Stake Validator.")
-	cmd.PersistentFlags().Uint64("pos-block-production-interval-milliseconds", 1500, "The interval in milliseconds "+
-		"between blocks produced by the Proof of Stake block proposer. The default value is 1.5 seconds, or 1500 milliseconds.")
-	cmd.PersistentFlags().Uint64("pos-timeout-base-duration-milliseconds", 30000, "The base duration in milliseconds "+
-		"that the Proof of Stake block proposer waits before timing out and producing a block. The default value is "+
-		"30 seconds, or 30000 milliseconds.")
 
 	// Mempool
 	cmd.PersistentFlags().Uint64("mempool-backup-time-millis", 30000,
