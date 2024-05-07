@@ -125,10 +125,14 @@ func (signer *BLSSigner) SignRandomSeedHash(randomSeedHash *RandomSeedHash) (*bl
 	return SignRandomSeedHash(signer.privateKey, randomSeedHash)
 }
 
+func getPoSValidatorHandshakePayload(nonceSent uint64, nonceReceived uint64, tstampMicro uint64) []byte {
+	payload := append(UintToBuf(nonceSent), UintToBuf(nonceReceived)...)
+	payload = append(payload, UintToBuf(tstampMicro)...)
+	return payload
+}
+
 func (signer *BLSSigner) SignPoSValidatorHandshake(nonceSent uint64, nonceReceived uint64, tstampMicro uint64) (*bls.Signature, error) {
-	// FIXME
-	payload := []byte{}
-	return signer.privateKey.Sign(payload[:])
+	return signer.privateKey.Sign(getPoSValidatorHandshakePayload(nonceSent, nonceReceived, tstampMicro))
 }
 
 //////////////////////////////////////////////////////////
@@ -156,7 +160,6 @@ func BLSVerifyPoSValidatorHandshake(
 	signature *bls.Signature,
 	publicKey *bls.PublicKey,
 ) (bool, error) {
-	// FIXME
-	payload := []byte{}
+	payload := getPoSValidatorHandshakePayload(nonceSent, nonceReceived, tstampMicro)
 	return _blsVerify(payload[:], signature, publicKey)
 }
