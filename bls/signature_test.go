@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"crypto/rand"
 	"encoding/json"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -16,6 +17,10 @@ func TestVerifyingBLSSignatures(t *testing.T) {
 
 	blsPrivateKey2 := _generateRandomBLSPrivateKey(t)
 	blsPublicKey2 := blsPrivateKey2.PublicKey()
+
+	malformedBlsPublicKey := &PublicKey{
+		flowPublicKeyBytes: _generateRandomBytes(t, 12),
+	}
 
 	// Test bls.PrivateKey.Sign() and bls.PublicKey.Verify().
 	// 1. PrivateKey1 signs a random payload.
@@ -43,6 +48,13 @@ func TestVerifyingBLSSignatures(t *testing.T) {
 	isVerified, err = blsPublicKey2.Verify(blsSignature2, randomPayload2)
 	require.NoError(t, err)
 	require.True(t, isVerified)
+	// 7. Malformed public key fails to verify with an error.
+	isVerified, err = malformedBlsPublicKey.Verify(blsSignature2, randomPayload2)
+	require.Error(t, err)
+
+	// Aggregating empty list of signatures fails.
+	_, err = AggregateSignatures([]*Signature{})
+	require.Error(t, err)
 
 	// Test AggregateSignatures() and VerifyAggregateSignatureSinglePayload().
 	// 1. PrivateKey1 signs a random payload.
@@ -75,6 +87,12 @@ func TestVerifyingBLSSignatures(t *testing.T) {
 	)
 	require.NoError(t, err)
 	require.False(t, isVerified)
+
+	// VerifyAggregateSignatureSinglePayload fails if a public key is malformed.
+	isVerified, err = VerifyAggregateSignatureSinglePayload(
+		[]*PublicKey{blsPublicKey1, malformedBlsPublicKey}, aggregateSignature, randomPayload3,
+	)
+	require.Error(t, err)
 
 	// Test AggregateSignatures() and VerifyMultiPayloadAggregateSignature() on different payloads.
 	// 1. PrivateKey1 signs a random payload.
@@ -112,11 +130,28 @@ func TestVerifyingBLSSignatures(t *testing.T) {
 	)
 	require.NoError(t, err)
 	require.False(t, isVerified)
+	// 8. Verify the AggregateSignature doesn't work if the number of public keys doesn't match the number of payloads.
+	isVerified, err = VerifyAggregateSignatureMultiplePayloads(
+		[]*PublicKey{blsPublicKey1}, aggregateSignature, [][]byte{randomPayload4, randomPayload5},
+	)
+	require.Error(t, err)
+
+	// 9. Verify the AggregateSignature doesn't work if a public key is malformed.
+	isVerified, err = VerifyAggregateSignatureMultiplePayloads(
+		[]*PublicKey{blsPublicKey1, malformedBlsPublicKey}, aggregateSignature, [][]byte{randomPayload4, randomPayload5},
+	)
+	require.Error(t, err)
 
 	// Test bls.PrivateKey.Eq().
 	require.True(t, blsPrivateKey1.Eq(blsPrivateKey1))
 	require.True(t, blsPrivateKey2.Eq(blsPrivateKey2))
 	require.False(t, blsPrivateKey1.Eq(blsPrivateKey2))
+
+	// Test bls.PrivateKey.FromSeed
+	seed := _generateRandomBytes(t, 64)
+	testBlsPrivateKey, err := (&PrivateKey{}).FromSeed(seed)
+	require.NoError(t, err)
+	require.NotNil(t, testBlsPrivateKey)
 
 	// Test bls.PrivateKey.ToString() and bls.PrivateKey.FromString().
 	blsPrivateKeyString := blsPrivateKey1.ToString()
@@ -141,6 +176,13 @@ func TestVerifyingBLSSignatures(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, blsPublicKey1.Eq(copyBLSPublicKey1))
 
+	// Test bls.PublicKey.ToAbbreviatedString
+	abbrString := blsPublicKey1.ToAbbreviatedString()
+	require.True(t, strings.HasPrefix(abbrString, blsPublicKeyString[:5]))
+	require.True(t, strings.HasSuffix(abbrString, blsPublicKeyString[len(blsPublicKeyString)-5:]))
+	_, err = (&PublicKey{}).FromString(abbrString)
+	require.Error(t, err)
+
 	// Test bls.Signature.Eq().
 	require.True(t, blsSignature1.Eq(blsSignature1))
 	require.True(t, blsSignature2.Eq(blsSignature2))
@@ -157,6 +199,13 @@ func TestVerifyingBLSSignatures(t *testing.T) {
 	copyBLSSignature, err = (&Signature{}).FromString(blsSignatureString)
 	require.NoError(t, err)
 	require.True(t, blsSignature1.Eq(copyBLSSignature))
+
+	// Test bls.Signature.ToAbbreviatedString()
+	abbrString = blsSignature1.ToAbbreviatedString()
+	require.True(t, strings.HasPrefix(abbrString, blsSignatureString[:5]))
+	require.True(t, strings.HasSuffix(abbrString, blsSignatureString[len(blsSignatureString)-5:]))
+	_, err = (&Signature{}).FromString(abbrString)
+	require.Error(t, err)
 
 	// Test bls.PublicKey.Copy().
 	blsPublicKey1Copy := blsPublicKey1.Copy()
@@ -185,6 +234,9 @@ func TestVerifyingBLSSignatures(t *testing.T) {
 	blsPrivateKey, err := (&PrivateKey{}).FromString("")
 	require.NoError(t, err)
 	require.Nil(t, blsPrivateKey)
+	// FromString malfored formed.
+	blsPrivateKey, err = (&PrivateKey{}).FromString("malformed")
+	require.Error(t, err)
 	// Eq()
 	require.False(t, (&PrivateKey{}).Eq(nil))
 	require.False(t, (&PrivateKey{}).Eq(&PrivateKey{}))
@@ -192,6 +244,11 @@ func TestVerifyingBLSSignatures(t *testing.T) {
 	require.False(t, _generateRandomBLSPrivateKey(t).Eq(nil))
 	require.False(t, _generateRandomBLSPrivateKey(t).Eq(&PrivateKey{}))
 	require.False(t, _generateRandomBLSPrivateKey(t).Eq(_generateRandomBLSPrivateKey(t)))
+
+	var nilPrivateKey *PrivateKey
+	privKey, err := nilPrivateKey.FromSeed(nil)
+	require.NoError(t, err)
+	require.Nil(t, privKey)
 
 	// Test nil bls.PublicKey edge cases.
 	// Verify()
@@ -209,6 +266,8 @@ func TestVerifyingBLSSignatures(t *testing.T) {
 	require.Nil(t, blsPublicKey)
 	// ToString()
 	require.Equal(t, (&PublicKey{}).ToString(), "")
+	// ToAbbreviatedString()
+	require.Equal(t, (&PublicKey{}).ToAbbreviatedString(), "")
 	// FromString()
 	blsPublicKey, err = (&PublicKey{}).FromString("")
 	require.NoError(t, err)
@@ -222,6 +281,19 @@ func TestVerifyingBLSSignatures(t *testing.T) {
 	require.False(t, _generateRandomBLSPrivateKey(t).PublicKey().Eq(_generateRandomBLSPrivateKey(t).PublicKey()))
 	// Copy()
 	require.Nil(t, (&PublicKey{}).Copy().flowPublicKey)
+	var nilPublicKey *PublicKey
+	require.Nil(t, nilPublicKey.Copy())
+	// IsEmpty
+	require.True(t, (&PublicKey{}).IsEmpty())
+
+	// Test SerializedPublicKey
+	serializedPublicKey := blsPublicKey1.Serialize()
+	require.NotNil(t, serializedPublicKey)
+	require.True(t, len(serializedPublicKey) > 0)
+	// DeserializePublicKey
+	deserializedPublicKey, err := serializedPublicKey.Deserialize()
+	require.NoError(t, err)
+	require.True(t, blsPublicKey1.Eq(deserializedPublicKey))
 
 	// Test nil bls.Signature edge cases.
 	// ToBytes()
@@ -247,6 +319,15 @@ func TestVerifyingBLSSignatures(t *testing.T) {
 	require.False(t, blsSignature1.Eq(&Signature{}))
 	// Copy()
 	require.Nil(t, (&Signature{}).Copy().flowSignature)
+	var nilSignature *Signature
+	require.Nil(t, nilSignature.Copy())
+	// FromString with malformed signature.
+	blsSignature, err = (&Signature{}).FromString("malformed")
+	require.Error(t, err)
+	// ToAbbreviatedString
+	require.Equal(t, (&Signature{}).ToAbbreviatedString(), "")
+	// IsEmpty
+	require.True(t, (&Signature{}).IsEmpty())
 }
 
 func TestJsonMarshalingBLSKeys(t *testing.T) {

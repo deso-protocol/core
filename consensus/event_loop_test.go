@@ -1,6 +1,7 @@
 package consensus
 
 import (
+	"strings"
 	"testing"
 	"time"
 
@@ -16,7 +17,11 @@ func TestInit(t *testing.T) {
 	{
 		fc := NewFastHotStuffEventLoop()
 		require.Equal(t, eventLoopStatusNotInitialized, fc.status)
-		require.NotPanics(t, fc.Stop) // Calling Stop() on an uninitialized instance should be a no-op
+		require.NotPanics(t, fc.Stop)  // Calling Stop() on an uninitialized instance should be a no-op
+		require.NotPanics(t, fc.Start) // Calling Start() on an uninitialized instance should be a no-op
+		require.False(t, fc.IsInitialized())
+		require.False(t, fc.IsRunning())
+		require.Equal(t, fc.ToString(), "FastHotStuffEventLoop is not running")
 	}
 
 	// Test Init() function with invalid block construction interval
@@ -145,7 +150,36 @@ func TestInit(t *testing.T) {
 		require.Equal(t, fc.safeBlocks[0].block.GetHeight(), uint64(2))
 		require.Equal(t, len(fc.safeBlocks[0].validatorList), 2)
 		require.Equal(t, len(fc.safeBlocks[0].validatorLookup), 2)
+		require.True(t, fc.IsInitialized())
+		require.False(t, fc.IsRunning())
+
+		// Test init on already running event loop. Should error.
+		fc.Start()
+		require.True(t, fc.IsInitialized())
+		require.True(t, fc.IsRunning())
+		require.True(t, strings.HasPrefix(fc.ToString(), "Printing FastHotStuffEventLoop state: "))
+		err = fc.Init(100, 101,
+			genesisBlock.GetQC(), // genesisQC
+			BlockWithValidatorList{genesisBlock, createDummyValidatorList()},     // tip
+			[]BlockWithValidatorList{{genesisBlock, createDummyValidatorList()}}, // safeBlocks
+			genesisBlock.GetView()+1,
+		)
+		require.Error(t, err)
 	}
+}
+
+func TestGetEventsAndCurrentView(t *testing.T) {
+	fc := NewFastHotStuffEventLoop()
+	genesisBlock := createDummyBlock(2)
+	err := fc.Init(100, 101,
+		genesisBlock.GetQC(), // genesisQC
+		BlockWithValidatorList{genesisBlock, createDummyValidatorList()},     // tip
+		[]BlockWithValidatorList{{genesisBlock, createDummyValidatorList()}}, // safeBlocks
+		genesisBlock.GetView()+1,
+	)
+	require.NoError(t, err)
+	require.Len(t, fc.GetEvents(), 0)
+	require.Equal(t, fc.GetCurrentView(), genesisBlock.GetView()+1)
 }
 
 func TestProcessTipBlock(t *testing.T) {
@@ -177,6 +211,28 @@ func TestProcessTipBlock(t *testing.T) {
 
 	// Start the event loop
 	fc.Start()
+
+	// Sad path: crankTimerDuration <= 0
+	{
+		err := fc.ProcessTipBlock(
+			BlockWithValidatorList{nil, createDummyValidatorList()},                     // tip
+			[]BlockWithValidatorList{{createDummyBlock(2), createDummyValidatorList()}}, // safeBlocks
+			0,
+			oneHourInNanoSecs,
+		)
+		require.Error(t, err)
+	}
+
+	// Sad path: timeoutTimerDuration <= 0
+	{
+		err := fc.ProcessTipBlock(
+			BlockWithValidatorList{nil, createDummyValidatorList()},                     // tip
+			[]BlockWithValidatorList{{createDummyBlock(2), createDummyValidatorList()}}, // safeBlocks
+			oneHourInNanoSecs,
+			0,
+		)
+		require.Error(t, err)
+	}
 
 	// Test ProcessTipBlock() function with malformed tip block
 	{
@@ -294,6 +350,74 @@ func TestProcessTipBlock(t *testing.T) {
 
 	// Stop the event loop
 	fc.Stop()
+}
+
+func TestUpdateSafeBlocks(t *testing.T) {
+	oneHourInNanoSecs := time.Duration(3600000000000)
+
+	fc := NewFastHotStuffEventLoop()
+	genesisBlock := createDummyBlock(2)
+	tipBlock := BlockWithValidatorList{genesisBlock, createDummyValidatorList()}
+	// Initialize the event loop
+	{
+		err := fc.Init(
+			oneHourInNanoSecs,
+			oneHourInNanoSecs,
+			genesisBlock.GetQC(),
+			tipBlock,
+			[]BlockWithValidatorList{tipBlock},
+			tipBlock.Block.GetView()+1,
+		)
+		require.NoError(t, err)
+	}
+
+	// Test UpdateSafeBlocks() function when event loop is not running
+	{
+		tipBlock := BlockWithValidatorList{createDummyBlock(2), createDummyValidatorList()}
+		err := fc.UpdateSafeBlocks([]BlockWithValidatorList{tipBlock})
+		require.Error(t, err)
+	}
+
+	// Start the event loop
+	fc.Start()
+
+	// Test UpdateSafeBlocks() function with malformed tip block
+	{
+		err := fc.UpdateSafeBlocks(
+			[]BlockWithValidatorList{{nil, createDummyValidatorList()}},
+		)
+		require.Error(t, err)
+	}
+
+	// Test UpdateSafeBlocks() function with no blocks.
+	{
+		err := fc.UpdateSafeBlocks([]BlockWithValidatorList{})
+		require.Error(t, err)
+	}
+
+	// Test UpdateSafeBlocks() function with a block with a view less than the genesis view.
+	{
+		err := fc.UpdateSafeBlocks(
+			[]BlockWithValidatorList{{createDummyBlock(0), createDummyValidatorList()}},
+		)
+		require.Error(t, err)
+	}
+
+	// Test UpdateSafeBlocks() function without tip block.
+	{
+		err := fc.UpdateSafeBlocks(
+			[]BlockWithValidatorList{{createDummyBlock(3), createDummyValidatorList()}},
+		)
+		require.Error(t, err)
+	}
+
+	// Test UpdateSafeBlocks() function with tip block.
+	{
+		err := fc.UpdateSafeBlocks(
+			[]BlockWithValidatorList{tipBlock, {createDummyBlock(3), createDummyValidatorList()}},
+		)
+		require.NoError(t, err)
+	}
 }
 
 func TestAdvanceViewOnTimeout(t *testing.T) {
@@ -416,6 +540,12 @@ func TestProcessValidatorVote(t *testing.T) {
 		require.NoError(t, err)
 	}
 
+	// Test ProcessValidatorVote when event loop is not running
+	{
+		err := fc.ProcessValidatorVote(createDummyVoteMessage(4))
+		require.Error(t, err)
+	}
+
 	// Start the event loop
 	fc.Start()
 
@@ -477,6 +607,14 @@ func TestProcessValidatorVote(t *testing.T) {
 		require.Contains(t, err.Error(), "has already timed out for view")
 	}
 
+	// Test vote on non-tip block hash.
+	{
+		vote := createDummyVoteMessage(4)
+		vote.blockHash = createDummyBlockHash()
+		err := fc.ProcessValidatorVote(vote)
+		require.Error(t, err)
+	}
+
 	// Test happy path
 	{
 		vote := createDummyVoteMessage(4)
@@ -514,6 +652,12 @@ func TestProcessValidatorTimeout(t *testing.T) {
 			tipBlock.Block.GetView()+1,
 		)
 		require.NoError(t, err)
+	}
+
+	// Test ProcessValidatorTimeout when event loop is not running
+	{
+		err := fc.ProcessValidatorTimeout(createDummyTimeoutMessage(4))
+		require.Error(t, err)
 	}
 
 	// Start the event loop
@@ -602,6 +746,13 @@ func TestProcessValidatorTimeout(t *testing.T) {
 		err := fc.ProcessValidatorTimeout(timeout)
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "Invalid high QC")
+	}
+
+	// Test view is not equal to current view - 1.
+	{
+		timeout := createTimeoutMessageWithPrivateKeyAndHighQC(3, validatorPrivateKey1, fc.tip.block.(*block).GetQC())
+		err := fc.ProcessValidatorTimeout(timeout)
+		require.Error(t, err)
 	}
 
 	// Test happy path
@@ -763,6 +914,11 @@ func TestVoteQCConstructionSignal(t *testing.T) {
 		fc.votesSeenByBlockHash[voteSignaturePayload] = map[string]VoteMessage{
 			vote.publicKey.ToString(): &vote,
 		}
+
+		// Test onCrankTimerTaskExecuted on non-running event loop.
+		fc.onCrankTimerTaskExecuted(fc.currentView)
+		// Make sure it doesn't set hasCrankTimerRunForCurrentView
+		require.False(t, fc.hasCrankTimerRunForCurrentView)
 
 		// Start the event loop
 		fc.Start()

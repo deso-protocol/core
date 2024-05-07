@@ -29,21 +29,32 @@ func TestConcurrentMap(t *testing.T) {
 		delete(control, key)
 	}
 
+	// test remove not exists
+	m.Remove("not exists")
+
 	for key, val := range control {
 		if mVal, ok := m.Get(key); !ok || mVal != val {
 			t.Errorf("Expected %d, got %d", val, m.m[key])
 		}
 	}
 
-	// test copy
-	copy := m.ToMap()
+	// test Clone
+	mClone := m.Clone()
 	for key, val := range control {
-		if mVal, ok := copy[key]; !ok || mVal != val {
+		if mVal, ok := mClone.Get(key); !ok || mVal != val {
 			t.Errorf("Expected %d, got %d", val, m.m[key])
 		}
 	}
-	if len(copy) != len(control) {
-		t.Errorf("Expected %d, got %d", len(control), len(copy))
+
+	// test toMap
+	mapCopy := m.ToMap()
+	for key, val := range control {
+		if mVal, ok := mapCopy[key]; !ok || mVal != val {
+			t.Errorf("Expected %d, got %d", val, m.m[key])
+		}
+	}
+	if len(mapCopy) != len(control) {
+		t.Errorf("Expected %d, got %d", len(control), len(mapCopy))
 	}
 
 	// test get all

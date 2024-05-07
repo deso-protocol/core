@@ -1,6 +1,7 @@
 package bitset
 
 import (
+	"bytes"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -102,6 +103,9 @@ func TestEquality(t *testing.T) {
 		var bitset2 *Bitset
 
 		require.False(t, bitset1.Eq(bitset2))
+
+		require.True(t, bytes.Equal(bitset1.ToBytes(), []byte{}))
+		require.Zero(t, (&Bitset{}).FromBytes(nil).Size())
 	}
 
 	// Test one nil and one non-nil bitset
