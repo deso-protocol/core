@@ -95,9 +95,6 @@ func _generateConfig(t *testing.T, config *cmd.Config, port uint32, dataDir stri
 	config.MaxSyncBlockHeight = MaxSyncBlockHeight
 	config.SyncType = lib.NodeSyncTypeBlockSync
 	config.MempoolBackupIntervalMillis = 30000
-	config.MaxMempoolPosSizeBytes = 3000000000
-	config.MempoolFeeEstimatorNumMempoolBlocks = 1
-	config.MempoolFeeEstimatorNumPastBlocks = 50
 	config.MempoolMaxValidationViewConnects = 10000
 	config.TransactionValidationRefreshIntervalMillis = 10
 
