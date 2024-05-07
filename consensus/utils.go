@@ -396,11 +396,11 @@ func isSuperMajorityStake(stake *uint256.Int, totalStake *uint256.Int) bool {
 	}
 
 	// Compute 3Cq
-	honestStakeComponent := uint256.NewInt(0).Mul(stake, uint256.NewInt(0).SetUint64(3))
+	honestStakeComponent := uint256.NewInt(0).Mul(stake, uint256.NewInt(3))
 
 	// Compute 2N + 1
-	totalStakeComponent := uint256.NewInt(0).Mul(totalStake, uint256.NewInt(0).SetUint64(2))
-	totalStakeComponent = uint256.NewInt(0).Add(totalStakeComponent, uint256.NewInt(0).SetUint64(1))
+	totalStakeComponent := uint256.NewInt(0).Mul(totalStake, uint256.NewInt(2))
+	totalStakeComponent = uint256.NewInt(0).Add(totalStakeComponent, uint256.NewInt(1))
 
 	// Check if 3Cq >= 2N + 1
 	return honestStakeComponent.Cmp(totalStakeComponent) >= 0
@@ -454,11 +454,11 @@ func createValidatorListForPrivateKeys(pk1 *bls.PrivateKey, pk2 *bls.PrivateKey)
 	validators := []*validator{
 		{
 			publicKey:   pk1.PublicKey(),
-			stakeAmount: uint256.NewInt(0).SetUint64(100),
+			stakeAmount: uint256.NewInt(100),
 		},
 		{
 			publicKey:   pk2.PublicKey(),
-			stakeAmount: uint256.NewInt(0).SetUint64(50),
+			stakeAmount: uint256.NewInt(50),
 		},
 	}
 	// Cast the slice of concrete structs []*validators to a slice of interfaces []Validator
