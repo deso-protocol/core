@@ -135,19 +135,29 @@ func (posFeeEstimator *PoSFeeEstimator) AddBlock(block *MsgDeSoBlock) error {
 
 func blockToCachedBlock(block *MsgDeSoBlock) (*CachedBlock, error) {
 	// Convert txns to MempoolTx.
-	txns := make([]*MempoolTx, len(block.Txns))
-	for ii, txn := range block.Txns {
+	txns := []*MempoolTx{}
+
+	// Add all non-nil and non-block reward txns to the txns slice. This filters out malformed txns
+	// txns and the genesis block block reward txn.
+	for _, txn := range block.Txns {
+		if txn == nil || txn.TxnMeta.GetTxnType() == TxnTypeBlockReward {
+			continue
+		}
+
 		mtxn, err := NewMempoolTx(txn, NanoSecondsToTime(block.Header.TstampNanoSecs), block.Header.Height)
 		if err != nil {
 			return nil, errors.Wrap(err, "blockToCachedBlock: error creating MempoolTx")
 		}
-		txns[ii] = mtxn
+
+		txns = append(txns, mtxn)
 	}
+
 	// Get the block hash
 	blockHash, err := block.Hash()
 	if err != nil {
 		return nil, errors.Wrap(err, "blockToCachedBlock: error computing blockHash")
 	}
+
 	if blockHash == nil {
 		return nil, errors.New("blockToCachedBlock: blockHash is nil")
 	}
@@ -200,6 +210,7 @@ func addBlockToTransactionRegister(txnRegister *TransactionRegister, block *Cach
 		if txn.Tx.TxnMeta.GetTxnType() == TxnTypeBlockReward {
 			continue
 		}
+
 		if err := txnRegister.AddTransaction(txn); err != nil {
 			return errors.Wrap(err,
 				"PoSFeeEstimator.addBlockToTransactionRegister: error adding txn to pastBlocksTransactionRegister")
