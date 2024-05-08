@@ -1705,13 +1705,6 @@ func (srv *Server) dirtyHackUpdateDbOpts(opts badger.Options) {
 	srv.mempool.bc.db = srv.blockchain.db
 	srv.mempool.backupUniversalUtxoView.Handle = srv.blockchain.db
 	srv.mempool.universalUtxoView.Handle = srv.blockchain.db
-	srv.posMempool.db = srv.blockchain.db
-	if srv.posMempool.readOnlyLatestBlockView != nil {
-		srv.posMempool.readOnlyLatestBlockView.Handle = srv.blockchain.db
-	}
-	if srv.posMempool.augmentedReadOnlyLatestBlockView != nil {
-		srv.posMempool.augmentedReadOnlyLatestBlockView.Handle = srv.blockchain.db
-	}
 
 	// Save the new options to the DB so that we know what to use if the node restarts.
 	isPerformanceOptions := DbOptsArePerformance(&opts)
