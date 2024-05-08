@@ -501,7 +501,6 @@ func (pp *Peer) HandleGetSnapshot(msg *MsgDeSoGetSnapshot) {
 	// to the main DB or the ancestral records DB, and we don't want to slow down any of these updates.
 	// Because of that, we will detect whenever concurrent access takes place with the concurrencyFault
 	// variable. If concurrency is detected, we will re-queue the GetSnapshot message.
-	var concurrencyFault bool
 	var err error
 
 	snapshotDataMsg := &MsgDeSoSnapshotData{
@@ -509,8 +508,8 @@ func (pp *Peer) HandleGetSnapshot(msg *MsgDeSoGetSnapshot) {
 		SnapshotMetadata: pp.srv.snapshot.CurrentEpochSnapshotMetadata,
 	}
 	if isStateKey(msg.GetPrefix()) {
-		snapshotDataMsg.SnapshotChunk, snapshotDataMsg.SnapshotChunkFull, concurrencyFault, err =
-			pp.srv.snapshot.GetSnapshotChunk(pp.srv.blockchain.db, msg.GetPrefix(), msg.SnapshotStartKey)
+		snapshotDataMsg.SnapshotChunk, snapshotDataMsg.SnapshotChunkFull, err =
+			pp.srv.snapshot.GetSnapshotChunk(msg.GetPrefix(), msg.SnapshotStartKey)
 	} else {
 		// If the received prefix is not a state key, then it is likely that the peer has newer code.
 		// A peer would be requesting state data for the newly added state prefix, though this node
@@ -523,15 +522,6 @@ func (pp *Peer) HandleGetSnapshot(msg *MsgDeSoGetSnapshot) {
 	if err != nil {
 		glog.Errorf("Peer.HandleGetSnapshot: something went wrong during fetching "+
 			"snapshot chunk for peer (%v), error (%v)", pp, err)
-		return
-	}
-	// When concurrencyFault occurs, we will wait a bit and then enqueue the message again.
-	if concurrencyFault {
-		glog.Errorf("Peer.HandleGetSnapshot: concurrency fault occurred so we enqueue the msg again to peer (%v)", pp)
-		go func() {
-			time.Sleep(GetSnapshotTimeout)
-			pp.AddDeSoMessage(msg, true)
-		}()
 		return
 	}
 
@@ -1045,11 +1035,11 @@ func (pp *Peer) _maybeAddBlocksToSend(msg DeSoMessage) error {
 	//
 	// We can safely increase this without breaking backwards-compatibility because old
 	// nodes will never send us more hashes than this.
-	if len(pp.blocksToSend) > MaxBlocksInFlightPoS {
+	if len(pp.blocksToSend) > MaxBlocksInFlightPoS + MaxHistoricalBlocksInFlight {
 		pp.Disconnect()
 		return fmt.Errorf("_maybeAddBlocksToSend: Disconnecting peer %v because she requested %d "+
 			"blocks, which is more than the %d blocks allowed "+
-			"in flight", pp, len(pp.blocksToSend), MaxBlocksInFlightPoS)
+			"in flight", pp, len(pp.blocksToSend), MaxBlocksInFlightPoS + MaxHistoricalBlocksInFlight)
 	}
 
 	return nil

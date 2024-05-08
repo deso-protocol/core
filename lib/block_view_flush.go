@@ -44,10 +44,9 @@ func (bav *UtxoView) FlushToDbWithTxn(txn *badger.Txn, blockHeight uint64) error
 	// This function prepares the data structures in the snapshot.
 	if bav.Snapshot != nil {
 		bav.Snapshot.PrepareAncestralRecordsFlush()
-
 		// When we finish flushing to the main DB, we'll also flush to ancestral records.
 		// This happens concurrently, which is why we have the 2-phase prepare-flush happening for snapshot.
-		defer bav.Snapshot.StartAncestralRecordsFlush(true)
+		defer bav.Snapshot.FlushAncestralRecordsWithTxn(txn)
 	}
 
 	return bav.FlushToDBWithoutAncestralRecordsFlushWithTxn(txn, blockHeight)
