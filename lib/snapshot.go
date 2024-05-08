@@ -1037,35 +1037,69 @@ func (snap *Snapshot) String() string {
 		snap.CurrentEpochSnapshotMetadata.SnapshotBlockHeight)
 }
 
+type DBIterateResult struct {
+	entries []*DBEntry
+	filled  bool
+	err     error
+}
+
+func dbIteratePrefixAsync(
+	db *badger.DB,
+	prefix []byte,
+	startKey []byte,
+) <-chan DBIterateResult {
+	resultChan := make(chan DBIterateResult, 1)
+	go func() {
+		entries, filled, err := DBIteratePrefixKeys(db, prefix, startKey, SnapshotBatchSize)
+		resultChan <- DBIterateResult{
+			entries: entries,
+			filled:  filled,
+			err:     err,
+		}
+	}()
+	return resultChan
+}
+
 // GetSnapshotChunk fetches a batch of records from the nodes DB that match the provided prefix and
 // have a key at least equal to the startKey lexicographically. The function will also fetch ancestral
 // records and combine them with the DB records so that the batch reflects an ancestral block.
 func (snap *Snapshot) GetSnapshotChunk(mainDb *badger.DB, prefix []byte, startKey []byte) (
-	_snapshotEntriesBatch []*DBEntry, _snapshotEntriesFilled bool, _concurrencyFault bool, _err error) {
-
-	// Check if we're flushing to the main db or to the ancestral records. If a flush is currently
-	// taking place, we will return a concurrencyFault error because the records are getting modified.
-	mainDBSemaphoreBefore, ancestralDBSemaphoreBefore := snap.Status.GetSemaphores()
-	if snap.Status.IsFlushing() {
-		return nil, false, true, nil
-	}
+	_snapshotEntriesBatch []*DBEntry, _snapshotEntriesFilled bool, _err error) {
 
 	// This the list of fetched DB entries.
 	var snapshotEntriesBatch []*DBEntry
 	blockHeight := snap.CurrentEpochSnapshotMetadata.SnapshotBlockHeight
 
-	// Fetch the batch from main DB records with a batch size of about snap.BatchSize.
-	mainDbBatchEntries, mainDbFilled, err := DBIteratePrefixKeys(mainDb, prefix, startKey, SnapshotBatchSize)
-	if err != nil {
-		return nil, false, false, errors.Wrapf(err, "Snapshot.GetSnapshotChunk: Problem fetching main Db records: ")
-	}
-	// Fetch the batch from the ancestral DB records with a batch size of about snap.BatchSize.
-	ancestralDbBatchEntries, ancestralDbFilled, err := DBIteratePrefixKeys(snap.SnapshotDb,
-		snap.GetAncestralRecordsKey(prefix, blockHeight), snap.GetAncestralRecordsKey(startKey, blockHeight), SnapshotBatchSize)
-	if err != nil {
-		return nil, false, false, errors.Wrapf(err, "Snapshot.GetSnapshotChunk: Problem fetching main Db records: ")
-	}
+	// We use go funcs to simulate having a single transaction over both the main and ancestral DBs
+	// even though we're using two separate transactions. This is because we want to fetch the records
+	// at the same point in time and by firing off two go funcs at the same time, we're able to do that.
+	ancestralRecordsPrefix := snap.GetAncestralRecordsKey(prefix, blockHeight)
+	ancestralRecordsStartKey := snap.GetAncestralRecordsKey(startKey, blockHeight)
 
+	// Fetch the batch from main DB records with a batch size of about snap.BatchSize.
+	mainDbResultsChan := dbIteratePrefixAsync(mainDb, prefix, startKey)
+	// Fetch the batch from the ancestral DB records with a batch size of about snap.BatchSize.
+	ancestralDbResultsChan := dbIteratePrefixAsync(snap.SnapshotDb, ancestralRecordsPrefix, ancestralRecordsStartKey)
+
+	mainDbIterateResults := <-mainDbResultsChan
+	ancestralDbIterateResults := <-ancestralDbResultsChan
+
+	if mainDbIterateResults.err != nil {
+		return nil, false, errors.Wrapf(
+			mainDbIterateResults.err,
+			"Snapshot.GetSnapshotChunk: Problem fetching main Db records: ",
+		)
+	}
+	if ancestralDbIterateResults.err != nil {
+		return nil, false, errors.Wrapf(
+			ancestralDbIterateResults.err,
+			"Snapshot.GetSnapshotChunk: Problem fetching main Db records: ",
+		)
+	}
+	mainDbBatchEntries := mainDbIterateResults.entries
+	mainDbFilled := mainDbIterateResults.filled
+	ancestralDbBatchEntries := ancestralDbIterateResults.entries
+	ancestralDbFilled := ancestralDbIterateResults.filled
 	// To combine the main DB entries and the ancestral records DB entries, we iterate through the ancestral records and
 	// for each key we add all the main DB keys that are smaller than the currently processed key. The ancestral records
 	// entries have priority over the main DB entries, so whenever there are entries with the same key among the two DBs,
@@ -1081,9 +1115,10 @@ func (snap *Snapshot) GetSnapshotChunk(mainDb *badger.DB, prefix []byte, startKe
 		dbEntry := snap.AncestralRecordToDBEntry(ancestralEntry)
 
 		for jj := indexChunk; jj < len(mainDbBatchEntries); {
-			if bytes.Compare(mainDbBatchEntries[jj].Key, dbEntry.Key) == -1 {
+			byteCompare := bytes.Compare(mainDbBatchEntries[jj].Key, dbEntry.Key)
+			if byteCompare == -1 {
 				snapshotEntriesBatch = append(snapshotEntriesBatch, mainDbBatchEntries[jj])
-			} else if bytes.Compare(mainDbBatchEntries[jj].Key, dbEntry.Key) == 1 {
+			} else if byteCompare == 1 {
 				break
 			}
 			// if keys are equal we just skip
@@ -1121,22 +1156,12 @@ func (snap *Snapshot) GetSnapshotChunk(mainDb *badger.DB, prefix []byte, startKe
 			return snap.GetSnapshotChunk(mainDb, prefix, dbEntry.Key)
 		} else {
 			snapshotEntriesBatch = append(snapshotEntriesBatch, EmptyDBEntry())
-			return snapshotEntriesBatch, false, false, nil
+			return snapshotEntriesBatch, false, nil
 		}
 	}
 
-	// Check if the semaphores have changed as we were fetching the snapshot chunk. It could happen
-	// that a flush was taking place right when we were reading records from the database. To detect
-	// such edge-case, we compare the current semaphore counters with the ones we've copied when
-	// we started retrieving the database chunk.
-	mainDBSemaphoreAfter, ancestralDBSemaphoreAfter := snap.Status.GetSemaphores()
-	if ancestralDBSemaphoreBefore != ancestralDBSemaphoreAfter ||
-		mainDBSemaphoreBefore != mainDBSemaphoreAfter {
-		return nil, false, true, nil
-	}
-
 	// If either of the chunks is full, we should return true.
-	return snapshotEntriesBatch, mainDbFilled || ancestralDbFilled, false, nil
+	return snapshotEntriesBatch, mainDbFilled || ancestralDbFilled, nil
 }
 
 // SetSnapshotChunk is called to put the snapshot chunk that we've got from a peer in the database.
