@@ -11,3 +11,5 @@ core
 
 local_scripts/*
 lib/mem.log
+
+cover.out

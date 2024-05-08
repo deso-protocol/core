@@ -335,48 +335,14 @@ func (posFeeEstimator *PoSFeeEstimator) EstimateFee(txn *MsgDeSoTxn, minFeeRateN
 	posFeeEstimator.rwLock.RLock()
 	defer posFeeEstimator.rwLock.RUnlock()
 
-	mempoolCongestionFactorBasisPoints := posFeeEstimator.globalParams.MempoolCongestionFactorBasisPoints
-	pastBlocksCongestionFactorBasisPoints := posFeeEstimator.globalParams.MempoolPastBlocksCongestionFactorBasisPoints
+	feeRateEstimate := posFeeEstimator.EstimateFeeRateNanosPerKB(minFeeRateNanosPerKB)
 
-	mempoolPriorityPercentileBasisPoints := posFeeEstimator.globalParams.MempoolPriorityPercentileBasisPoints
-	pastBlocksPriorityPercentileBasisPoints := posFeeEstimator.globalParams.MempoolPastBlocksPriorityPercentileBasisPoints
-
-	maxBlockSize := posFeeEstimator.globalParams.SoftMaxBlockSizeBytesPoS
-
-	mempoolFeeEstimate, err := posFeeEstimator.mempoolFeeEstimate(
-		txn,
-		mempoolCongestionFactorBasisPoints,
-		mempoolPriorityPercentileBasisPoints,
-		maxBlockSize,
-	)
+	feeEstimate, err := computeFeeGivenTxnAndFeeRate(txn, feeRateEstimate)
 	if err != nil {
-		return 0, errors.Wrap(err, "PoSFeeEstimator.EstimateFee: Problem computing mempool fee estimate")
+		return 0, errors.Wrap(err, "PoSFeeEstimator.EstimateFee: Problem computing fee")
 	}
 
-	pastBlocksFeeEstimate, err := posFeeEstimator.pastBlocksFeeEstimate(
-		txn,
-		pastBlocksCongestionFactorBasisPoints,
-		pastBlocksPriorityPercentileBasisPoints,
-		maxBlockSize,
-	)
-	if err != nil {
-		return 0, errors.Wrap(err, "PoSFeeEstimator.EstimateFee: Problem computing past blocks fee estimate")
-	}
-
-	minFeeRateEstimate, err := computeFeeGivenTxnAndFeeRate(txn, minFeeRateNanosPerKB)
-	if err != nil {
-		return 0, errors.Wrap(err, "PoSFeeEstimator.EstimateFee: Problem computing min fee rate estimate")
-	}
-
-	if minFeeRateEstimate > mempoolFeeEstimate && minFeeRateEstimate > pastBlocksFeeEstimate {
-		return minFeeRateEstimate, nil
-	}
-
-	if mempoolFeeEstimate < pastBlocksFeeEstimate {
-		return pastBlocksFeeEstimate, nil
-	}
-
-	return mempoolFeeEstimate, nil
+	return feeEstimate, nil
 }
 
 // pastBlocksFeeEstimate estimates the fee in nanos for the provided transaction using the
