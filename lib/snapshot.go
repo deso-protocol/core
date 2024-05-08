@@ -6,7 +6,6 @@ import (
 	"encoding/hex"
 	"fmt"
 	"math"
-	"path/filepath"
 	"reflect"
 	"runtime"
 	"sort"
@@ -55,10 +54,16 @@ var (
 	_prefixMigrationStatus = []byte{5}
 )
 
+func getMainDbPrefix(prefix []byte) []byte {
+	return append(Prefixes.PrefixHypersyncSnapshotDBPrefix, prefix...)
+}
+
 const (
 	// Default value for limiting the number of items stored in the OperationChannel. Because the snapshot chunks are
 	// 100MB each, this limits the number of operations stored at one time to 2GB
 	HypersyncDefaultMaxQueueSize = 20
+	// Default value for snapshot epoch period for PoS
+	DefaultSnapshotEpochPeriodPoS = 600000
 )
 
 // -------------------------------------------------------------------------------------
@@ -254,8 +259,8 @@ const (
 //   - managing the state checksum
 //   - serving snapshot chunks to syncing nodes.
 type Snapshot struct {
-	// SnapshotDb is used to store snapshot-related records.
-	SnapshotDb      *badger.DB
+	// We keep this mutex around even though we got rid of the snapshot DB. This lock
+	// was used to keep concurrent operations in line, so keeping it around for now.
 	SnapshotDbMutex *sync.Mutex
 	// AncestralMemory stores information about the ancestral records that should be flushed into the db.
 	// We use a concurrency-safe deque which allows us to push objects to the end of the AncestralMemory
@@ -271,8 +276,8 @@ type Snapshot struct {
 	// AncestralFlushCounter is used to offset ancestral records flush to occur only after x blocks.
 	AncestralFlushCounter uint64
 
-	// SnapshotBlockHeightPeriod is the constant height offset between individual snapshot epochs.
-	SnapshotBlockHeightPeriod uint64
+	// snapshotBlockHeightPeriod is the constant height offset between individual snapshot epochs.
+	snapshotBlockHeightPeriod uint64
 
 	// OperationChannel is used to enqueue actions to the main snapshot Run loop. It is used to
 	// schedule actions such as ancestral records updates, checksum computation, snapshot operations.
@@ -290,7 +295,7 @@ type Snapshot struct {
 	Migrations *EncoderMigration
 
 	// CurrentEpochSnapshotMetadata is the information about the currently stored complete snapshot, which
-	// reflects the state of the blockchain at the largest height divisible by SnapshotBlockHeightPeriod.
+	// reflects the state of the blockchain at the largest height divisible by snapshotBlockHeightPeriod.
 	// The metadata includes the block height and its block hash of when the snapshot was taken, and the
 	// state checksum.
 	CurrentEpochSnapshotMetadata *SnapshotEpochMetadata
@@ -305,9 +310,7 @@ type Snapshot struct {
 
 	// mainDb is the main database that contains consensus state.
 	mainDb *badger.DB
-	// mainDbDirectory is the directory where the main db is stored.
-	mainDbDirectory string
-	params          *DeSoParams
+	params *DeSoParams
 
 	isTxIndex       bool
 	disableChecksum bool
@@ -324,22 +327,20 @@ type Snapshot struct {
 }
 
 // NewSnapshot creates a new snapshot instance.
-func NewSnapshot(mainDb *badger.DB, mainDbDirectory string, snapshotBlockHeightPeriod uint64, isTxIndex bool,
-	disableChecksum bool, params *DeSoParams, disableMigrations bool, hypersyncMaxQueueSize uint32, eventManager *EventManager) (_snap *Snapshot, _err error, _shouldRestart bool) {
-
-	// Initialize the ancestral records database
-	snapshotDirectory := filepath.Join(GetBadgerDbPath(mainDbDirectory), "snapshot")
-	snapshotOpts := DefaultBadgerOptions(snapshotDirectory)
-	snapshotOpts.ValueDir = GetBadgerDbPath(snapshotDirectory)
-	snapshotDb, err := badger.Open(snapshotOpts)
-	if err != nil {
-		return nil, errors.Wrapf(err, "NewSnapshot: Problem creating SnapshotDb"), true
-	}
-	glog.Infof("Snapshot BadgerDB Dir: %v", snapshotOpts.Dir)
-	glog.Infof("Snapshot BadgerDB ValueDir: %v", snapshotOpts.ValueDir)
-	if snapshotBlockHeightPeriod == 0 {
-		snapshotBlockHeightPeriod = params.DefaultPoWSnapshotBlockHeightPeriod
-	}
+func NewSnapshot(
+	mainDb *badger.DB,
+	snapshotBlockHeightPeriod uint64,
+	isTxIndex bool,
+	disableChecksum bool,
+	params *DeSoParams,
+	disableMigrations bool,
+	hypersyncMaxQueueSize uint32,
+	eventManager *EventManager,
+) (
+	_snap *Snapshot,
+	_err error,
+	_shouldRestart bool,
+) {
 	var snapshotDbMutex sync.Mutex
 
 	// If the max queue size is unset, use the default.
@@ -349,32 +350,38 @@ func NewSnapshot(mainDb *badger.DB, mainDbDirectory string, snapshotBlockHeightP
 
 	// Retrieve and initialize the checksum.
 	checksum := &StateChecksum{}
-	if err := checksum.Initialize(snapshotDb, &snapshotDbMutex); err != nil {
+	if err := checksum.Initialize(mainDb, &snapshotDbMutex); err != nil {
 		return nil, errors.Wrapf(err, "NewSnapshot: Problem reading Checksum"), true
 	}
 
 	// Retrieve the snapshot epoch metadata from the snapshot db.
 	metadata := &SnapshotEpochMetadata{}
-	if err := metadata.Initialize(snapshotDb, &snapshotDbMutex); err != nil {
+	if err := metadata.Initialize(mainDb, &snapshotDbMutex); err != nil {
 		return nil, errors.Wrapf(err, "NewSnapshot: Problem reading SnapshotEpochMetadata"), true
 	}
 
 	operationChannel := &SnapshotOperationChannel{}
-	// Initialize the SnapshotOperationChannel. We don't set any of the handlers yet because we don't have a snapshot instance yet.
-	if err := operationChannel.Initialize(snapshotDb, &snapshotDbMutex, nil, nil); err != nil {
+	// Initialize the SnapshotOperationChannel. We don't set any of the handlers yet because we don't have a
+	// snapshot instance yet.
+	if err := operationChannel.Initialize(mainDb, &snapshotDbMutex, nil, nil); err != nil {
 		return nil, errors.Wrapf(err, "NewSnapshot: Problem reading SnapshotOperationChannel"), true
 	}
 
 	// Retrieve and initialize the snapshot status.
 	status := &SnapshotStatus{}
-	if err := status.Initialize(snapshotDb, &snapshotDbMutex); err != nil {
+	if err := status.Initialize(mainDb, &snapshotDbMutex); err != nil {
 		return nil, errors.Wrapf(err, "NewSnapshot: Problem reading SnapshotStatus"), true
 	}
 
 	// Retrieve and initialize snapshot migrations.
 	migrations := &EncoderMigration{}
 	if err := migrations.Initialize(
-		mainDb, snapshotDb, &snapshotDbMutex, status.CurrentBlockHeight, params, disableMigrations); err != nil {
+		mainDb,
+		&snapshotDbMutex,
+		status.CurrentBlockHeight,
+		params,
+		disableMigrations,
+	); err != nil {
 		return nil, errors.Wrapf(err, "NewSnapshot: Problem reading EncoderMigration"), true
 	}
 
@@ -394,10 +401,8 @@ func NewSnapshot(mainDb *badger.DB, mainDbDirectory string, snapshotBlockHeightP
 	//   Either way, it means our snapshot was compromised and we need to recompute it as described
 	//   in the previous bullet.
 	shouldRestart := false
-	if operationChannel.StateSemaphore > 0 || status.IsFlushing() {
+	if operationChannel.StateSemaphore > 0 {
 		operationChannel.StateSemaphore = 0
-		status.MainDBSemaphore = 0
-		status.AncestralDBSemaphore = 0
 		glog.Errorf(CLog(Red, fmt.Sprintf("NewSnapshot: Node didn't shut down properly last time. Entering a "+
 			"recovery mode. The node will roll back to last snapshot epoch block height (%v) and hash (%v), then restart.",
 			metadata.SnapshotBlockHeight, metadata.CurrentEpochBlockHash)))
@@ -415,14 +420,22 @@ func NewSnapshot(mainDb *badger.DB, mainDbDirectory string, snapshotBlockHeightP
 	timer := &Timer{}
 	timer.Initialize()
 
+	if snapshotBlockHeightPeriod == 0 {
+		snapshotBlockHeightPeriod = DefaultSnapshotEpochPeriodPoS
+	}
+
+	if snapshotBlockHeightPeriod != DefaultSnapshotEpochPeriodPoS {
+		glog.Warning("NewSnapshot: snapshotBlockHeightPeriod is not set to the default value. " +
+			"This may lead to unexpected behavior.")
+	}
+
 	// Set the snapshot.
 	snap := &Snapshot{
-		mainDbDirectory:              mainDbDirectory,
-		SnapshotDb:                   snapshotDb,
+		mainDb:                       mainDb,
 		SnapshotDbMutex:              &snapshotDbMutex,
 		DatabaseCache:                lru.NewKVCache(DatabaseCacheSize),
 		AncestralFlushCounter:        uint64(0),
-		SnapshotBlockHeightPeriod:    snapshotBlockHeightPeriod,
+		snapshotBlockHeightPeriod:    snapshotBlockHeightPeriod,
 		OperationChannel:             operationChannel,
 		operationQueueSemaphore:      make(chan struct{}, hypersyncMaxQueueSize),
 		Checksum:                     checksum,
@@ -454,13 +467,10 @@ func (snap *Snapshot) Run() {
 		operation := snap.OperationChannel.DequeueOperationStateless()
 		switch operation.operationType {
 		case SnapshotOperationFlush:
-			glog.V(2).Infof("Snapshot.Run: Flushing ancestral records with counter")
-			snap.FlushAncestralRecords()
+			glog.Error("Snapshot.Run: SnapshotOperationFlush is deprecated")
 
 		case SnapshotOperationProcessBlock:
-			glog.V(2).Infof("Snapshot.Run: Getting into the process block with height (%v)",
-				operation.blockNode.Height)
-			snap.SnapshotProcessBlock(operation.blockNode)
+			glog.Errorf("Snapshot.Run: SnapshotOperationProcessBlock is deprecated")
 
 		case SnapshotOperationProcessChunk:
 			glog.V(1).Infof("Snapshot.Run: Number of operations in the operation channel (%v)",
@@ -526,24 +536,10 @@ func (snap *Snapshot) Stop() {
 //
 // See comment at the top of this file to understand how to use this function to generate
 // ancestral records needed to support hypersync.
-func (snap *Snapshot) StartAncestralRecordsFlush(shouldIncrement bool) {
-	// If snapshot is broken then there's nothing to do.
-	glog.V(2).Infof("Snapshot.StartAncestralRecordsFlush: Initiated the flush, shouldIncrement: (%v)", shouldIncrement)
-
-	// Signal that the main db update has finished by incrementing the main semaphore.
-	// Also signal that the ancestral db write started by increasing the ancestral semaphore.
-	if shouldIncrement {
-		snap.Status.MemoryLock.Lock()
-		snap.Status.IncrementMainDbSemaphoreMemoryLockRequired()
-		snap.Status.IncrementAncestralDBSemaphoreMemoryLockRequired()
-		snap.Status.MemoryLock.Unlock()
-	}
-	glog.V(2).Infof("Snapshot.StartAncestralRecordsFlush: Sending counter (%v) to the CounterChannel", snap.AncestralFlushCounter)
-	// We send the flush counter to the counter to indicate that a flush should take place.
-	snap.OperationChannel.EnqueueOperation(&SnapshotOperation{
-		operationType: SnapshotOperationFlush,
-	})
-}
+//func (snap *Snapshot) StartAncestralRecordsFlush() {
+//	glog.V(2).Infof("Snapshot.StartAncestralRecordsFlush: Flushing Ancestral Records")
+//	snap.FlushAncestralRecords()
+//}
 
 func (snap *Snapshot) PersistChecksumAndMigration() error {
 	if err := snap.Checksum.SaveChecksum(); err != nil {
@@ -572,7 +568,7 @@ func (snap *Snapshot) FinishProcessBlock(blockNode *BlockNode) {
 	// If the block height is divisible by the snapshot block height period, we update the snapshot metadata.
 	// For PoW blocks, until the first PoS fork height, we use the default snapshot block height period of 1000.
 	// For blocks after the first PoS fork height, we use the snapshot block height period defined in the params.
-	snapshotBlockHeightPeriod := snap.params.GetSnapshotBlockHeightPeriod(uint64(blockNode.Height), snap.SnapshotBlockHeightPeriod)
+	snapshotBlockHeightPeriod := snap.params.GetSnapshotBlockHeightPeriod(uint64(blockNode.Height), snap.GetSnapshotBlockHeightPeriod())
 
 	if uint64(blockNode.Height)%snapshotBlockHeightPeriod == 0 &&
 		uint64(blockNode.Height) > snap.CurrentEpochSnapshotMetadata.SnapshotBlockHeight {
@@ -581,10 +577,7 @@ func (snap *Snapshot) FinishProcessBlock(blockNode *BlockNode) {
 		snap.CurrentEpochSnapshotMetadata.CurrentEpochBlockHash = blockNode.Hash
 	}
 
-	snap.OperationChannel.EnqueueOperation(&SnapshotOperation{
-		operationType: SnapshotOperationProcessBlock,
-		blockNode:     blockNode,
-	})
+	snap.snapshotProcessBlockNoLock(blockNode)
 }
 
 func (snap *Snapshot) ProcessSnapshotChunk(mainDb *badger.DB, mainDbMutex *deadlock.RWMutex,
@@ -663,17 +656,6 @@ func (snap *Snapshot) WaitForAllOperationsToFinish() {
 // See comment at the top of this file to understand how to use this function to generate
 // ancestral records needed to support hypersync.
 func (snap *Snapshot) PrepareAncestralRecordsFlush() {
-	// Signal that the main db update has started by holding the MemoryLock and incrementing the MainDBSemaphore.
-	snap.Status.MemoryLock.Lock()
-	// If at this point we're flushing to the main DB, i.e. the MainDBSemaphore is odd, then it means we're nesting
-	// calls to PrepareAncestralRecordsFlush()
-	if snap.Status.IsFlushingToMainDBMemoryLockRequired() {
-		glog.Fatalf("Nested calls to PrepareAncestralRecordsFlush() " +
-			"detected. Make sure you call StartAncestralRecordsFlush before " +
-			"calling PrepareAncestralRecordsFlush() again")
-	}
-	snap.Status.IncrementMainDbSemaphoreMemoryLockRequired()
-	snap.Status.MemoryLock.Unlock()
 
 	// Add an entry to the ancestral memory.
 	snap.AncestralFlushCounter += 1
@@ -719,8 +701,8 @@ func (snap *Snapshot) PrepareAncestralRecord(key string, value []byte, existed b
 
 // FlushAncestralRecords updates the ancestral records after a UtxoView flush.
 // This function should be called in a go-routine after all UtxoView flushes.
-func (snap *Snapshot) FlushAncestralRecords() {
-	glog.V(2).Infof("Snapshot.StartAncestralRecordsFlush: Initiated the flush")
+func (snap *Snapshot) FlushAncestralRecordsWithTxn(txn *badger.Txn) {
+	glog.V(2).Infof("Snapshot.FlushAncestralRecords: Initiated the flush")
 
 	// Make sure we've finished all checksum computation before we proceed with the flush.
 	// Since this gets called after all snapshot operations are enqueued after the main db
@@ -728,9 +710,10 @@ func (snap *Snapshot) FlushAncestralRecords() {
 	// snapshot worker threads running so we want to wait until they're done.
 	err := snap.Checksum.Wait()
 	if err != nil {
-		glog.Errorf("Snapshot.StartAncestralRecordsFlush: Error while waiting "+
+		glog.Errorf("Snapshot.FlushAncestralRecords: Error while waiting "+
 			"for checksum: (%v)", err)
-		snap.StartAncestralRecordsFlush(false)
+		// TODO: do we need this still?
+		snap.FlushAncestralRecordsWithTxn(txn)
 		return
 	}
 
@@ -739,15 +722,9 @@ func (snap *Snapshot) FlushAncestralRecords() {
 
 	blockHeight := oldestAncestralCache.blockHeight
 	if blockHeight != snap.CurrentEpochSnapshotMetadata.SnapshotBlockHeight {
-		glog.Infof("Snapshot.StartAncestralRecordsFlush: AncestralMemory blockHeight (%v) doesn't match current "+
+		glog.Infof("Snapshot.FlushAncestralRecords: AncestralMemory blockHeight (%v) doesn't match current "+
 			"metadata blockHeight (%v), number of operations in operationChannel (%v)", blockHeight,
 			snap.CurrentEpochSnapshotMetadata.SnapshotBlockHeight, len(snap.OperationChannel.OperationChannel))
-		// Signal that the ancestral db write has finished by incrementing the semaphore.
-		snap.Status.MemoryLock.Lock()
-		snap.Status.IncrementAncestralDBSemaphoreMemoryLockRequired()
-		snap.Status.MemoryLock.Unlock()
-
-		snap.AncestralMemory.Shift()
 		return
 	}
 	// First sort the keys so that we write to BadgerDB in order.
@@ -756,80 +733,82 @@ func (snap *Snapshot) FlushAncestralRecords() {
 		recordsKeyList = append(recordsKeyList, kk)
 	}
 	sort.Strings(recordsKeyList)
-	glog.V(2).Infof("Snapshot.StartAncestralRecordsFlush: Finished sorting map keys")
+	glog.V(2).Infof("Snapshot.FlushAncestralRecords: Finished sorting map keys")
 
 	// We launch a new read-write transaction to set the records.
 	snap.SnapshotDbMutex.Lock()
-	err = snap.SnapshotDb.Update(func(txn *badger.Txn) error {
-		// This update is called after a change to the main db records and so the current checksum reflects the state of
-		// the main db. In case we restart the node, we want to be able to retrieve the most recent checksum and resume
-		// from it when adding new records. Therefore, we save the current checksum bytes in the db.
-		currentChecksum, err := snap.Checksum.ToBytes()
-		if err != nil {
-			return errors.Wrapf(err, "Snapshot.StartAncestralRecordsFlush: Problem getting checksum bytes")
-		}
-		err = txn.Set(_prefixSnapshotChecksum, currentChecksum)
-		if err != nil {
-			return errors.Wrapf(err, "Snapshot.StartAncestralRecordsFlush: Problem flushing checksum bytes")
-		}
-		// Iterate through all now-sorted keys.
-		glog.V(2).Infof("Snapshot.StartAncestralRecordsFlush: Adding (%v) new records", len(recordsKeyList))
-		glog.V(2).Infof("Snapshot.StartAncestralRecordsFlush: Adding (%v) ancestral records", len(oldestAncestralCache.AncestralRecordsMap))
-		for _, key := range recordsKeyList {
-			// We store keys as strings because they're easier to store and sort this way.
-			keyBytes, err := hex.DecodeString(key)
-			if err != nil {
-				return errors.Wrapf(err, "Snapshot.StartAncestralRecordsFlush: Problem "+
-					"decoding copyMapKeyList key: %v", key)
-			}
-
-			// We check whether this record is already present in ancestral records,
-			// if so then there's nothing to do. What we want is err == badger.ErrKeyNotFound
-			_, err = snap.GetAncestralRecordsKeyWithTxn(txn, keyBytes, blockHeight)
-			if err != badger.ErrKeyNotFound {
-				if err != nil {
-					// In this case, we hit a real error with Badger, so we should return.
-					return errors.Wrapf(err, "Snapshot.StartAncestralRecordsFlush: Problem "+
-						"reading exsiting record in the DB at key: %v", key)
-				} else {
-					// In this case, there was no error, which means the key already exists.
-					// No need to set it in that case.
-					continue
-				}
-			}
-
-			// If we get here, it means that no record existed in ancestral records at key,
-			// so we set it here.
-			value, exists := oldestAncestralCache.AncestralRecordsMap[key]
-			if !exists {
-				return fmt.Errorf("Snapshot.StartAncestralRecordsFlush: Error, key is not " +
-					"in AncestralRecordsMap. This should never happen")
-			}
-			err = snap.DBSetAncestralRecordWithTxn(txn, blockHeight, keyBytes, value)
-			if err != nil {
-				return errors.Wrapf(err, "Snapshot.StartAncestralRecordsFlush: Problem "+
-					"flushing a record from copyAncestralMap at key %v:", key)
-			}
-		}
-		return nil
-	})
+	err = snap.flushAncestralRecordsHelper(txn, recordsKeyList, oldestAncestralCache, blockHeight)
 	snap.SnapshotDbMutex.Unlock()
 	if err != nil {
 		// If any error occurred, then we should redo this memory write. During the restart, we will re-write all
 		// entries. If the error happened during a partial write, e.g. we didn't write all records in recordsKeyList,
 		// we'll redo them in the next write of this ancestralCache. The only scenario where that wouldn't happen
 		// is if the node stopped suddenly. We can detect that via comparing semaphore counters on boot.
-		glog.Errorf("Snapshot.StartAncestralRecordsFlush: Problem flushing snapshot, error %v", err)
-		snap.StartAncestralRecordsFlush(false)
+		glog.Errorf("Snapshot.FlushAncestralRecords: Problem flushing snapshot, error %v", err)
+		// TODO: do we need this still?
+		snap.FlushAncestralRecordsWithTxn(txn)
 		return
 	}
 
-	// Signal that the ancestral db write has finished by incrementing the semaphore.
-	snap.Status.MemoryLock.Lock()
-	snap.Status.IncrementAncestralDBSemaphoreMemoryLockRequired()
-	snap.Status.MemoryLock.Unlock()
-
 	snap.AncestralMemory.Shift()
+}
+
+func (snap *Snapshot) flushAncestralRecordsHelper(
+	txn *badger.Txn,
+	recordsKeyList []string,
+	oldestAncestralCache *AncestralCache,
+	blockHeight uint64) error {
+	// This update is called after a change to the main db records and so the current checksum reflects the state of
+	// the main db. In case we restart the node, we want to be able to retrieve the most recent checksum and resume
+	// from it when adding new records. Therefore, we save the current checksum bytes in the db.
+	currentChecksum, err := snap.Checksum.ToBytes()
+	if err != nil {
+		return errors.Wrapf(err, "Snapshot.FlushAncestralRecords: Problem getting checksum bytes")
+	}
+	err = txn.Set(getMainDbPrefix(_prefixSnapshotChecksum), currentChecksum)
+	if err != nil {
+		return errors.Wrapf(err, "Snapshot.FlushAncestralRecords: Problem flushing checksum bytes")
+	}
+	// Iterate through all now-sorted keys.
+	glog.V(2).Infof("Snapshot.FlushAncestralRecords: Adding (%v) new records", len(recordsKeyList))
+	glog.V(2).Infof("Snapshot.FlushAncestralRecords: Adding (%v) ancestral records", len(oldestAncestralCache.AncestralRecordsMap))
+	for _, key := range recordsKeyList {
+		var keyBytes []byte
+		// We store keys as strings because they're easier to store and sort this way.
+		keyBytes, err = hex.DecodeString(key)
+		if err != nil {
+			return errors.Wrapf(err, "Snapshot.FlushAncestralRecords: Problem "+
+				"decoding copyMapKeyList key: %v", key)
+		}
+
+		// We check whether this record is already present in ancestral records,
+		// if so then there's nothing to do. What we want is err == badger.ErrKeyNotFound
+		_, err = snap.GetAncestralRecordsKeyWithTxn(txn, keyBytes, blockHeight)
+		if err == nil {
+			// In this case, there was no error, which means the key already exists.
+			// No need to set it in that case.
+			continue
+		}
+		if !errors.Is(err, badger.ErrKeyNotFound) {
+			// In this case, we hit a real error with Badger, so we should return.
+			return errors.Wrapf(err, "Snapshot.FlushAncestralRecords: Problem "+
+				"reading exsiting record in the DB at key: %v", key)
+		}
+
+		// If we get here, it means that no record existed in ancestral records at key,
+		// so we set it here.
+		value, exists := oldestAncestralCache.AncestralRecordsMap[key]
+		if !exists {
+			return fmt.Errorf("Snapshot.FlushAncestralRecords: Error, key is not " +
+				"in AncestralRecordsMap. This should never happen")
+		}
+		err = snap.DBSetAncestralRecordWithTxn(txn, blockHeight, keyBytes, value)
+		if err != nil {
+			return errors.Wrapf(err, "Snapshot.FlushAncestralRecords: Problem "+
+				"flushing a record from copyAncestralMap at key %v:", key)
+		}
+	}
+	return nil
 }
 
 // DeleteAncestralRecords is used to delete ancestral records for the provided height.
@@ -838,14 +817,15 @@ func (snap *Snapshot) DeleteAncestralRecords(height uint64) error {
 
 	snap.timer.Start("Snapshot.DeleteAncestralRecords")
 	var prefix []byte
-	prefix = append(prefix, _prefixAncestralRecord...)
+	prefix = append(prefix, getMainDbPrefix(_prefixAncestralRecord)...)
 	prefix = append(prefix, EncodeUint64(height)...)
 
 	snap.SnapshotDbMutex.Lock()
 	defer snap.SnapshotDbMutex.Unlock()
 
+	// TODO: why two transactions? Can we do this in one?
 	var keys [][]byte
-	err := snap.SnapshotDb.View(func(txn *badger.Txn) error {
+	err := snap.mainDb.View(func(txn *badger.Txn) error {
 		opts := badger.DefaultIteratorOptions
 		opts.AllVersions = false
 		opts.PrefetchValues = false
@@ -862,7 +842,7 @@ func (snap *Snapshot) DeleteAncestralRecords(height uint64) error {
 	if err != nil {
 		return errors.Wrapf(err, "DeleteAncestralRecords: Problem iterating through the height")
 	}
-	err = snap.SnapshotDb.Update(func(txn *badger.Txn) error {
+	err = snap.mainDb.Update(func(txn *badger.Txn) error {
 		for _, key := range keys {
 			err := txn.Delete(key)
 			if err != nil {
@@ -886,7 +866,7 @@ func (snap *Snapshot) GetAncestralRecordsKey(key []byte, blockHeight uint64) []b
 	var prefix []byte
 
 	// Append the ancestral records prefix.
-	prefix = append(prefix, _prefixAncestralRecord...)
+	prefix = append(prefix, getMainDbPrefix(_prefixAncestralRecord)...)
 
 	// Append block height, which is the current snapshot identifier.
 	prefix = append(prefix, EncodeUint64(blockHeight)...)
@@ -905,7 +885,7 @@ func (snap *Snapshot) GetAncestralRecordsKeyWithTxn(txn *badger.Txn, key []byte,
 }
 
 func (snap *Snapshot) GetSnapshotBlockHeightPeriod() uint64 {
-	return snap.SnapshotBlockHeightPeriod
+	return snap.snapshotBlockHeightPeriod
 }
 
 // DBSetAncestralRecordWithTxn sets a record corresponding to our ExistingRecordsMap.
@@ -926,14 +906,14 @@ func (snap *Snapshot) DBSetAncestralRecordWithTxn(
 // AncestralRecordToDBEntry is used to translate the <ancestral_key, ancestral_value> pairs into
 // the actual <key, value> pairs. Ancestral records have the format:
 //
-//	<prefix [1]byte, block height [8]byte, key []byte> -> <value []byte, existence_byte [1]byte>
+//	<mainDbPrefix [1]byte, prefix [1]byte, block height [8]byte, key []byte> -> <value []byte, existence_byte [1]byte>
 //
 // So we need to trim the first 9 bytes off of the ancestral_key to get the actual key.
 // And we need to trim the last 1 byte off of the ancestral_value to get the actual value.
 func (snap *Snapshot) AncestralRecordToDBEntry(ancestralEntry *DBEntry) *DBEntry {
 	var dbKey, dbVal []byte
 	// Trim the prefix and the block height from the ancestral record key.
-	dbKey = ancestralEntry.Key[9:]
+	dbKey = ancestralEntry.Key[10:]
 
 	// Trim the existence_byte from the ancestral record value.
 	if len(ancestralEntry.Value) > 0 {
@@ -953,8 +933,8 @@ func (snap *Snapshot) CheckAnceststralRecordExistenceByte(value []byte) bool {
 	return false
 }
 
-// SnapshotProcessBlock updates the snapshot information after a block has been added.
-func (snap *Snapshot) SnapshotProcessBlock(blockNode *BlockNode) {
+// snapshotProcessBlock updates the snapshot information after a block has been added.
+func (snap *Snapshot) snapshotProcessBlockNoLock(blockNode *BlockNode) {
 	height := uint64(blockNode.Height)
 	if height > snap.Status.CurrentBlockHeight {
 		snap.Status.CurrentBlockHeight = height
@@ -979,8 +959,6 @@ func (snap *Snapshot) SnapshotProcessBlock(blockNode *BlockNode) {
 		}
 	}
 
-	snap.CurrentEpochSnapshotMetadata.updateMutex.Lock()
-	defer snap.CurrentEpochSnapshotMetadata.updateMutex.Unlock()
 	if height == snap.CurrentEpochSnapshotMetadata.SnapshotBlockHeight {
 		var err error
 		// Delete the previous blockHeight, it is not useful anymore.
@@ -998,8 +976,8 @@ func (snap *Snapshot) SnapshotProcessBlock(blockNode *BlockNode) {
 				continue
 			}
 			snap.SnapshotDbMutex.Lock()
-			err = snap.SnapshotDb.Update(func(txn *badger.Txn) error {
-				return txn.Set(_prefixLastEpochMetadata, snap.CurrentEpochSnapshotMetadata.ToBytes())
+			err = snap.mainDb.Update(func(txn *badger.Txn) error {
+				return txn.Set(getMainDbPrefix(_prefixLastEpochMetadata), snap.CurrentEpochSnapshotMetadata.ToBytes())
 			})
 			snap.SnapshotDbMutex.Unlock()
 			if err != nil {
@@ -1040,30 +1018,32 @@ func (snap *Snapshot) String() string {
 // GetSnapshotChunk fetches a batch of records from the nodes DB that match the provided prefix and
 // have a key at least equal to the startKey lexicographically. The function will also fetch ancestral
 // records and combine them with the DB records so that the batch reflects an ancestral block.
-func (snap *Snapshot) GetSnapshotChunk(mainDb *badger.DB, prefix []byte, startKey []byte) (
-	_snapshotEntriesBatch []*DBEntry, _snapshotEntriesFilled bool, _concurrencyFault bool, _err error) {
-
-	// Check if we're flushing to the main db or to the ancestral records. If a flush is currently
-	// taking place, we will return a concurrencyFault error because the records are getting modified.
-	mainDBSemaphoreBefore, ancestralDBSemaphoreBefore := snap.Status.GetSemaphores()
-	if snap.Status.IsFlushing() {
-		return nil, false, true, nil
-	}
+func (snap *Snapshot) GetSnapshotChunk(prefix []byte, startKey []byte) (
+	_snapshotEntriesBatch []*DBEntry, _snapshotEntriesFilled bool, _err error) {
 
 	// This the list of fetched DB entries.
 	var snapshotEntriesBatch []*DBEntry
 	blockHeight := snap.CurrentEpochSnapshotMetadata.SnapshotBlockHeight
 
-	// Fetch the batch from main DB records with a batch size of about snap.BatchSize.
-	mainDbBatchEntries, mainDbFilled, err := DBIteratePrefixKeys(mainDb, prefix, startKey, SnapshotBatchSize)
+	var mainDbBatchEntries, ancestralDbBatchEntries []*DBEntry
+	var mainDbFilled, ancestralDbFilled bool
+	err := snap.mainDb.View(func(txn *badger.Txn) error {
+		var innerErr error
+		// Fetch the batch from main DB records with a batch size of about snap.BatchSize.
+		mainDbBatchEntries, mainDbFilled, innerErr = DBIteratePrefixKeys(snap.mainDb, prefix, startKey, SnapshotBatchSize)
+		if innerErr != nil {
+			return errors.Wrapf(innerErr, "Snapshot.GetSnapshotChunk: Problem fetching main Db records: ")
+		}
+		// Fetch the batch from the ancestral DB records with a batch size of about snap.BatchSize.
+		ancestralDbBatchEntries, ancestralDbFilled, innerErr = DBIteratePrefixKeys(snap.mainDb,
+			snap.GetAncestralRecordsKey(prefix, blockHeight), snap.GetAncestralRecordsKey(startKey, blockHeight), SnapshotBatchSize)
+		if innerErr != nil {
+			return errors.Wrapf(innerErr, "Snapshot.GetSnapshotChunk: Problem fetching main Db records: ")
+		}
+		return nil
+	})
 	if err != nil {
-		return nil, false, false, errors.Wrapf(err, "Snapshot.GetSnapshotChunk: Problem fetching main Db records: ")
-	}
-	// Fetch the batch from the ancestral DB records with a batch size of about snap.BatchSize.
-	ancestralDbBatchEntries, ancestralDbFilled, err := DBIteratePrefixKeys(snap.SnapshotDb,
-		snap.GetAncestralRecordsKey(prefix, blockHeight), snap.GetAncestralRecordsKey(startKey, blockHeight), SnapshotBatchSize)
-	if err != nil {
-		return nil, false, false, errors.Wrapf(err, "Snapshot.GetSnapshotChunk: Problem fetching main Db records: ")
+		return nil, false, err
 	}
 
 	// To combine the main DB entries and the ancestral records DB entries, we iterate through the ancestral records and
@@ -1118,25 +1098,15 @@ func (snap *Snapshot) GetSnapshotChunk(mainDb *badger.DB, prefix []byte, startKe
 			// no record from the main DB was added.
 			lastAncestralEntry := ancestralDbBatchEntries[len(ancestralDbBatchEntries)-1]
 			dbEntry := snap.AncestralRecordToDBEntry(lastAncestralEntry)
-			return snap.GetSnapshotChunk(mainDb, prefix, dbEntry.Key)
+			return snap.GetSnapshotChunk(prefix, dbEntry.Key)
 		} else {
 			snapshotEntriesBatch = append(snapshotEntriesBatch, EmptyDBEntry())
-			return snapshotEntriesBatch, false, false, nil
+			return snapshotEntriesBatch, false, nil
 		}
 	}
 
-	// Check if the semaphores have changed as we were fetching the snapshot chunk. It could happen
-	// that a flush was taking place right when we were reading records from the database. To detect
-	// such edge-case, we compare the current semaphore counters with the ones we've copied when
-	// we started retrieving the database chunk.
-	mainDBSemaphoreAfter, ancestralDBSemaphoreAfter := snap.Status.GetSemaphores()
-	if ancestralDBSemaphoreBefore != ancestralDBSemaphoreAfter ||
-		mainDBSemaphoreBefore != mainDBSemaphoreAfter {
-		return nil, false, true, nil
-	}
-
 	// If either of the chunks is full, we should return true.
-	return snapshotEntriesBatch, mainDbFilled || ancestralDbFilled, false, nil
+	return snapshotEntriesBatch, mainDbFilled || ancestralDbFilled, nil
 }
 
 // SetSnapshotChunk is called to put the snapshot chunk that we've got from a peer in the database.
@@ -1337,12 +1307,12 @@ type StateChecksum struct {
 	// maxWorkers is the maximum number of workers we can have in the worker pool.
 	maxWorkers int64
 
-	snapshotDb      *badger.DB
+	mainDb          *badger.DB
 	snapshotDbMutex *sync.Mutex
 }
 
 // Initialize starts the state checksum by initializing it to the identity element.
-func (sc *StateChecksum) Initialize(snapshotDb *badger.DB, snapshotDbMutex *sync.Mutex) error {
+func (sc *StateChecksum) Initialize(mainDb *badger.DB, snapshotDbMutex *sync.Mutex) error {
 	// Set the elliptic curve group to Ristretto255 and initialize checksum as identity.
 	sc.curve = group.Ristretto255
 	sc.checksum = sc.curve.Identity()
@@ -1359,19 +1329,20 @@ func (sc *StateChecksum) Initialize(snapshotDb *badger.DB, snapshotDbMutex *sync
 	sc.semaphore = semaphore.NewWeighted(sc.maxWorkers)
 	sc.ctx = context.Background()
 
-	sc.snapshotDb = snapshotDb
+	sc.mainDb = mainDb
 	sc.snapshotDbMutex = snapshotDbMutex
 
-	if snapshotDb == nil || snapshotDbMutex == nil {
+	if mainDb == nil || snapshotDbMutex == nil {
 		sc.snapshotDbMutex = &sync.Mutex{}
 		return nil
 	}
+
 	sc.snapshotDbMutex.Lock()
 	defer sc.snapshotDbMutex.Unlock()
 
 	// Get snapshot checksum from the db.
-	err := sc.snapshotDb.View(func(txn *badger.Txn) error {
-		item, err := txn.Get(_prefixSnapshotChecksum)
+	err := sc.mainDb.View(func(txn *badger.Txn) error {
+		item, err := txn.Get(getMainDbPrefix(_prefixSnapshotChecksum))
 		if err != nil {
 			return err
 		}
@@ -1382,7 +1353,7 @@ func (sc *StateChecksum) Initialize(snapshotDb *badger.DB, snapshotDbMutex *sync
 		// If we get here, it means we've saved a checksum in the db, so we will set it to the checksum.
 		return sc.FromBytes(value)
 	})
-	if err != nil && err != badger.ErrKeyNotFound {
+	if err != nil && !errors.Is(err, badger.ErrKeyNotFound) {
 		return errors.Wrapf(err, "StateChecksum.Initialize: Problem reading checksum from the db")
 	}
 	return nil
@@ -1392,12 +1363,12 @@ func (sc *StateChecksum) SaveChecksum() error {
 	sc.snapshotDbMutex.Lock()
 	defer sc.snapshotDbMutex.Unlock()
 
-	return sc.snapshotDb.Update(func(txn *badger.Txn) error {
+	return sc.mainDb.Update(func(txn *badger.Txn) error {
 		checksumBytes, err := sc.ToBytes()
 		if err != nil {
 			return errors.Wrapf(err, "StateChecksum.SaveChecksum: Problem getting checksum bytes")
 		}
-		return txn.Set(_prefixSnapshotChecksum, checksumBytes)
+		return txn.Set(getMainDbPrefix(_prefixSnapshotChecksum), checksumBytes)
 	})
 }
 
@@ -1637,29 +1608,29 @@ type SnapshotEpochMetadata struct {
 
 	updateMutex sync.Mutex
 
-	snapshotDb      *badger.DB
+	mainDb          *badger.DB
 	snapshotDbMutex *sync.Mutex
 }
 
-func (metadata *SnapshotEpochMetadata) Initialize(snapshotDb *badger.DB, snapshotDbMutex *sync.Mutex) error {
+func (metadata *SnapshotEpochMetadata) Initialize(mainDb *badger.DB, snapshotDbMutex *sync.Mutex) error {
 	metadata.SnapshotBlockHeight = uint64(0)
 	metadata.FirstSnapshotBlockHeight = uint64(0)
 	metadata.CurrentEpochChecksumBytes = []byte{}
 	metadata.CurrentEpochBlockHash = NewBlockHash([]byte{})
 
-	metadata.snapshotDb = snapshotDb
+	metadata.mainDb = mainDb
 	metadata.snapshotDbMutex = snapshotDbMutex
 
-	if snapshotDb == nil || snapshotDbMutex == nil {
+	if mainDb == nil || snapshotDbMutex == nil {
 		metadata.snapshotDbMutex = &sync.Mutex{}
 		return nil
 	}
 	metadata.snapshotDbMutex.Lock()
 	defer metadata.snapshotDbMutex.Unlock()
 
-	err := snapshotDb.View(func(txn *badger.Txn) error {
+	err := mainDb.View(func(txn *badger.Txn) error {
 		// Now get the last epoch metadata.
-		item, err := txn.Get(_prefixLastEpochMetadata)
+		item, err := txn.Get(getMainDbPrefix(_prefixLastEpochMetadata))
 		if err != nil {
 			return err
 		}
@@ -1672,7 +1643,7 @@ func (metadata *SnapshotEpochMetadata) Initialize(snapshotDb *badger.DB, snapsho
 	})
 	// If we're starting the hyper sync node for the first time, then there will be no snapshot saved
 	// and we'll get ErrKeyNotFound error. That's why we don't error when it happens.
-	if err != nil && err != badger.ErrKeyNotFound {
+	if err != nil && !errors.Is(err, badger.ErrKeyNotFound) {
 		return errors.Wrapf(err, "Snapshot.NewSnapshot: Problem retrieving snapshot information from db")
 	}
 	return nil
@@ -1781,9 +1752,9 @@ type SnapshotOperationType uint8
 
 const (
 	// SnapshotOperationFlush operation enqueues a flush to the ancestral records.
-	SnapshotOperationFlush SnapshotOperationType = iota
+	SnapshotOperationFlush SnapshotOperationType = iota // deprecated
 	// SnapshotOperationProcessBlock operation signals that a new block has been added to the blockchain.
-	SnapshotOperationProcessBlock
+	SnapshotOperationProcessBlock // deprecated
 	// SnapshotOperationProcessChunk operation is enqueued when we receive a snapshot chunk during syncing.
 	SnapshotOperationProcessChunk
 	// SnapshotOperationChecksumAdd operation is enqueued when we want to add bytes to the state checksum.
@@ -1839,32 +1810,36 @@ type SnapshotOperationChannel struct {
 	StateSemaphore     int32
 	StateSemaphoreLock sync.Mutex
 
-	snapshotDb      *badger.DB
+	mainDb          *badger.DB
 	snapshotDbMutex *sync.Mutex
 
 	startOperationHandler      func(op *SnapshotOperation) error
 	finishAllOperationsHandler func() error
 }
 
-func (opChan *SnapshotOperationChannel) Initialize(snapshotDb *badger.DB, snapshotDbMutex *sync.Mutex,
-	startOperationHandler func(op *SnapshotOperation) error, finishAllOperationsHandler func() error) error {
+func (opChan *SnapshotOperationChannel) Initialize(
+	mainDb *badger.DB,
+	snapshotDbMutex *sync.Mutex,
+	startOperationHandler func(op *SnapshotOperation) error,
+	finishAllOperationsHandler func() error,
+) error {
 	opChan.OperationChannel = make(chan *SnapshotOperation, 100000)
 	opChan.StateSemaphore = 0
 
-	opChan.snapshotDb = snapshotDb
+	opChan.mainDb = mainDb
 	opChan.snapshotDbMutex = snapshotDbMutex
 
 	opChan.startOperationHandler = startOperationHandler
 	opChan.finishAllOperationsHandler = finishAllOperationsHandler
 
-	if snapshotDb == nil || snapshotDbMutex == nil {
+	if mainDb == nil || snapshotDbMutex == nil {
 		opChan.snapshotDbMutex = &sync.Mutex{}
 		return nil
 	}
 	opChan.snapshotDbMutex.Lock()
 	defer opChan.snapshotDbMutex.Unlock()
-	err := snapshotDb.View(func(txn *badger.Txn) error {
-		item, err := txn.Get(_prefixOperationChannelStatus)
+	err := mainDb.View(func(txn *badger.Txn) error {
+		item, err := txn.Get(getMainDbPrefix(_prefixOperationChannelStatus))
 		if err != nil {
 			return err
 		}
@@ -1880,7 +1855,7 @@ func (opChan *SnapshotOperationChannel) Initialize(snapshotDb *badger.DB, snapsh
 		opChan.StateSemaphore = int32(stateSemaphore)
 		return nil
 	})
-	if err != nil && err != badger.ErrKeyNotFound {
+	if err != nil && !errors.Is(err, badger.ErrKeyNotFound) {
 		return errors.Wrapf(err, "SnapshotOperationChannel.Initialize: Problem reading StateSemaphore from db")
 	}
 
@@ -1899,8 +1874,8 @@ func (opChan *SnapshotOperationChannel) SaveOperationChannel() error {
 	opChan.snapshotDbMutex.Lock()
 	defer opChan.snapshotDbMutex.Unlock()
 
-	return opChan.snapshotDb.Update(func(txn *badger.Txn) error {
-		return txn.Set(_prefixOperationChannelStatus, UintToBuf(uint64(opChan.StateSemaphore)))
+	return opChan.mainDb.Update(func(txn *badger.Txn) error {
+		return txn.Set(getMainDbPrefix(_prefixOperationChannelStatus), UintToBuf(uint64(opChan.StateSemaphore)))
 	})
 }
 
@@ -1958,13 +1933,6 @@ func (opChan *SnapshotOperationChannel) GetStatus() int32 {
 // -------------------------------------------------------------------------------------
 
 type SnapshotStatus struct {
-	// MainDBSemaphore and AncestralDBSemaphore are atomically accessed counter semaphores that will be
-	// used to control race conditions between main db and ancestral records. They basically manage the concurrency
-	// between writes to the main and ancestral dbs.
-	//
-	// See the comment at the top of snapshot.go for detailed information on how these semaphores work.
-	MainDBSemaphore      uint64
-	AncestralDBSemaphore uint64
 
 	// CurrentBlockHeight is the blockheight of the blockchain tip.
 	CurrentBlockHeight uint64
@@ -1974,20 +1942,18 @@ type SnapshotStatus struct {
 	// SnapshotStatus is called concurrently by the Server and Snapshot threads. And badger cannot handle
 	// concurrent writes to the database. To make sure this concurrency doesn't affect general performance,
 	// we use a custom badger.DB to save SnapshotStatus.
-	snapshotDb *badger.DB
+	mainDb *badger.DB
 
 	// snapshotDbMutex is held whenever we modify snapshotDb.
 	snapshotDbMutex *sync.Mutex
 }
 
-func (status *SnapshotStatus) Initialize(snapshotDb *badger.DB, snapshotDbMutex *sync.Mutex) error {
-	status.MainDBSemaphore = uint64(0)
-	status.AncestralDBSemaphore = uint64(0)
+func (status *SnapshotStatus) Initialize(mainDb *badger.DB, snapshotDbMutex *sync.Mutex) error {
 
-	status.snapshotDb = snapshotDb
+	status.mainDb = mainDb
 	status.snapshotDbMutex = snapshotDbMutex
 
-	if snapshotDb == nil || snapshotDbMutex == nil {
+	if mainDb == nil || snapshotDbMutex == nil {
 		status.snapshotDbMutex = &sync.Mutex{}
 		return nil
 	}
@@ -2000,8 +1966,8 @@ func (status *SnapshotStatus) Initialize(snapshotDb *badger.DB, snapshotDbMutex 
 
 func (status *SnapshotStatus) ToBytes() []byte {
 	var data []byte
-	data = append(data, UintToBuf(status.MainDBSemaphore)...)
-	data = append(data, UintToBuf(status.AncestralDBSemaphore)...)
+	data = append(data, UintToBuf(0)...) // Formerly status.MainDBSemaphore
+	data = append(data, UintToBuf(0)...) // Formerly status.AncestralDBSemaphore)
 	data = append(data, UintToBuf(status.CurrentBlockHeight)...)
 
 	return data
@@ -2009,12 +1975,12 @@ func (status *SnapshotStatus) ToBytes() []byte {
 
 func (status *SnapshotStatus) FromBytes(rr *bytes.Reader) error {
 	var err error
-	status.MainDBSemaphore, err = ReadUvarint(rr)
+	_, err = ReadUvarint(rr) // Formerly status.MainDBSemaphore
 	if err != nil {
 		return errors.Wrapf(err, "SnapshotStatus: Problem reading MainDBSemaphore")
 	}
 
-	status.AncestralDBSemaphore, err = ReadUvarint(rr)
+	_, err = ReadUvarint(rr) // Formerly status.AncestralDBSemaphore
 	if err != nil {
 		return errors.Wrapf(err, "SnapshotStatus: Problem reading AncestralDBSemaphore")
 	}
@@ -2029,9 +1995,8 @@ func (status *SnapshotStatus) FromBytes(rr *bytes.Reader) error {
 func (status *SnapshotStatus) SaveStatus() {
 	status.snapshotDbMutex.Lock()
 	defer status.snapshotDbMutex.Unlock()
-
-	err := status.snapshotDb.Update(func(txn *badger.Txn) error {
-		return txn.Set(_prefixSnapshotStatus, status.ToBytes())
+	err := status.mainDb.Update(func(txn *badger.Txn) error {
+		return txn.Set(getMainDbPrefix(_prefixSnapshotStatus), status.ToBytes())
 	})
 	if err != nil {
 		glog.Fatalf("SnapshotStatus.SaveStatus: problem writing snapshot status error (%v)", err)
@@ -2041,9 +2006,8 @@ func (status *SnapshotStatus) SaveStatus() {
 func (status *SnapshotStatus) ReadStatus() error {
 	status.snapshotDbMutex.Lock()
 	defer status.snapshotDbMutex.Unlock()
-
-	err := status.snapshotDb.View(func(txn *badger.Txn) error {
-		item, err := txn.Get(_prefixSnapshotStatus)
+	err := status.mainDb.View(func(txn *badger.Txn) error {
+		item, err := txn.Get(getMainDbPrefix(_prefixSnapshotStatus))
 		if err != nil {
 			return err
 		}
@@ -2054,57 +2018,10 @@ func (status *SnapshotStatus) ReadStatus() error {
 		rr := bytes.NewReader(statusBytes)
 		return status.FromBytes(rr)
 	})
-	if err != nil && err != badger.ErrKeyNotFound {
+	if err != nil && !errors.Is(err, badger.ErrKeyNotFound) {
 		return errors.Wrapf(err, "SnapshotStatus.ReadStatus: Problem reading status from db")
 	}
 	return nil
-}
-
-// IncrementMainDbSemaphoreMemoryLockRequired increments the MainDBSemaphore by one, it should be called with MemoryLock.
-func (status *SnapshotStatus) IncrementMainDbSemaphoreMemoryLockRequired() {
-	status.MainDBSemaphore++
-	status.SaveStatus()
-}
-
-// IncrementAncestralDBSemaphoreMemoryLockRequired increments the AncestralDBSemaphore by one, it should be called with MemoryLock.
-func (status *SnapshotStatus) IncrementAncestralDBSemaphoreMemoryLockRequired() {
-	status.AncestralDBSemaphore++
-	status.SaveStatus()
-}
-
-// IsFlushingToMainDBMemoryLockRequired checks if a flush to MainDB takes place. This should be called with MemoryLock.
-func (status *SnapshotStatus) IsFlushingToMainDBMemoryLockRequired() bool {
-	return status.MainDBSemaphore%2 == 1
-}
-
-// IsFlushingToAncestralMemoryLockRequired checks if a flush to AncestralDB takes place. This should be called with MemoryLock.
-func (status *SnapshotStatus) IsFlushingToAncestralMemoryLockRequired() bool {
-	return status.AncestralDBSemaphore%2 == 1
-}
-
-// IsFlushing checks whether a main DB flush or ancestral record flush is taking place.
-func (status *SnapshotStatus) IsFlushing() bool {
-	// We retrieve the ancestral record and main db semaphores.
-	status.MemoryLock.Lock()
-	defer status.MemoryLock.Unlock()
-
-	return status.IsFlushingWithoutLock()
-}
-
-func (status *SnapshotStatus) IsFlushingWithoutLock() bool {
-	// Flush is taking place if the semaphores have different counters or if they are odd.
-	// We increment each semaphore whenever we start the flush and when we end it so they are always
-	// even when the DB is not being updated.
-	return status.MainDBSemaphore != status.AncestralDBSemaphore ||
-		(status.MainDBSemaphore|status.AncestralDBSemaphore)%2 == 1
-}
-
-// GetSemaphores retrieves main and ancestral db semaphores.
-func (status *SnapshotStatus) GetSemaphores() (_mainDbSemaphore uint64, _ancestralDBSemaphore uint64) {
-	status.MemoryLock.Lock()
-	defer status.MemoryLock.Unlock()
-
-	return status.MainDBSemaphore, status.AncestralDBSemaphore
 }
 
 // -------------------------------------------------------------------------------------
@@ -2125,21 +2042,24 @@ type EncoderMigration struct {
 	currentBlockHeight uint64
 
 	mainDb          *badger.DB
-	snapshotDb      *badger.DB
 	snapshotDbMutex *sync.Mutex
 	params          *DeSoParams
 }
 
-func (migration *EncoderMigration) Initialize(mainDb *badger.DB, snapshotDb *badger.DB,
-	snapshotDbMutex *sync.Mutex, blockHeight uint64, params *DeSoParams, disabled bool) error {
+func (migration *EncoderMigration) Initialize(
+	mainDb *badger.DB,
+	snapshotDbMutex *sync.Mutex,
+	blockHeight uint64,
+	params *DeSoParams,
+	disabled bool,
+) error {
 
 	migration.mainDb = mainDb
-	migration.snapshotDb = snapshotDb
 	migration.snapshotDbMutex = snapshotDbMutex
 	migration.currentBlockHeight = blockHeight
 	migration.params = params
 
-	if snapshotDb == nil || snapshotDbMutex == nil {
+	if mainDb == nil || snapshotDbMutex == nil {
 		migration.snapshotDbMutex = &sync.Mutex{}
 		return nil
 	}
@@ -2153,8 +2073,8 @@ func (migration *EncoderMigration) Initialize(mainDb *badger.DB, snapshotDb *bad
 	}
 
 	// Retrieve all migrations from the snapshot Db.
-	err := migration.snapshotDb.View(func(txn *badger.Txn) error {
-		item, err := txn.Get(_prefixMigrationStatus)
+	err := migration.mainDb.View(func(txn *badger.Txn) error {
+		item, err := txn.Get(getMainDbPrefix(_prefixMigrationStatus))
 		if err != nil {
 			return err
 		}
@@ -2174,7 +2094,9 @@ func (migration *EncoderMigration) Initialize(mainDb *badger.DB, snapshotDb *bad
 			migrationChecksum := &EncoderMigrationChecksum{}
 			// Initialize an empty checksum struct. We use it to parse checksum bytes.
 			migrationChecksum.Checksum = &StateChecksum{}
-			migrationChecksum.Checksum.Initialize(nil, nil)
+			if err = migrationChecksum.Checksum.Initialize(nil, nil); err != nil {
+				return err
+			}
 
 			checksumBytes, err := DecodeByteArray(rr)
 			if err != nil {
@@ -2212,7 +2134,7 @@ func (migration *EncoderMigration) Initialize(mainDb *badger.DB, snapshotDb *bad
 		migration.migrationChecksums = migrationChecksums
 		return nil
 	})
-	if err != nil && err != badger.ErrKeyNotFound {
+	if err != nil && !errors.Is(err, badger.ErrKeyNotFound) {
 		return errors.Wrapf(err, "EncoderMigrationChecksum.Initialize: Problem reading migration from db")
 	}
 
@@ -2248,12 +2170,15 @@ func (migration *EncoderMigration) Initialize(mainDb *badger.DB, snapshotDb *bad
 	return nil
 }
 
-func (migration *EncoderMigration) InitializeSingleHeight(mainDb *badger.DB, snapshotDb *badger.DB,
-	snapshotDbMutex *sync.Mutex, blockHeight uint64, params *DeSoParams) {
+func (migration *EncoderMigration) InitializeSingleHeight(
+	mainDb *badger.DB,
+	snapshotDbMutex *sync.Mutex,
+	blockHeight uint64,
+	params *DeSoParams,
+) {
 
 	migration.currentBlockHeight = blockHeight
 	migration.mainDb = mainDb
-	migration.snapshotDb = snapshotDb
 	migration.snapshotDbMutex = snapshotDbMutex
 	migration.params = params
 
@@ -2286,8 +2211,8 @@ func (migration *EncoderMigration) SaveMigrations() error {
 	}
 	data = append(data, BoolToByte(migration.completed))
 
-	return migration.snapshotDb.Update(func(txn *badger.Txn) error {
-		return txn.Set(_prefixMigrationStatus, data)
+	return migration.mainDb.Update(func(txn *badger.Txn) error {
+		return txn.Set(getMainDbPrefix(_prefixMigrationStatus), data)
 	})
 }
 

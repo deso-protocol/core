@@ -1690,7 +1690,7 @@ func (bc *Blockchain) commitBlockPoS(blockHash *BlockHash, verifySignatures bool
 	err = bc.db.Update(func(txn *badger.Txn) error {
 		if bc.snapshot != nil {
 			bc.snapshot.PrepareAncestralRecordsFlush()
-			defer bc.snapshot.StartAncestralRecordsFlush(true)
+			defer bc.snapshot.FlushAncestralRecordsWithTxn(txn)
 			glog.V(2).Infof("commitBlockPoS: Preparing snapshot flush")
 		}
 

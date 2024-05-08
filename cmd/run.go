@@ -67,7 +67,7 @@ func SetupRunFlags(cmd *cobra.Command) {
 	cmd.PersistentFlags().Bool("force-checksum", false, "When true, the node will panic if the "+
 		"local state checksum differs from the network checksum reported by its peers.")
 	// Snapshot
-	cmd.PersistentFlags().Uint64("snapshot-block-height-period", 600000, "Set the snapshot epoch period. Snapshots are taken at block heights divisible by the period.")
+	cmd.PersistentFlags().Uint64("snapshot-block-height-period", lib.DefaultSnapshotEpochPeriodPoS, "Set the snapshot epoch period. Snapshots are taken at block heights divisible by the period.")
 	// Archival mode
 	cmd.PersistentFlags().Bool("archival-mode", true, "Download all historical blocks after finishing hypersync.")
 	// Disable encoder migrations
