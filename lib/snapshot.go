@@ -453,6 +453,9 @@ func (snap *Snapshot) Run() {
 	for {
 		operation := snap.OperationChannel.DequeueOperationStateless()
 		switch operation.operationType {
+		case SnapshotOperationFlush:
+			glog.V(2).Infof("Snapshot.Run: Flushing ancestral records with counter")
+			snap.FlushAncestralRecords()
 
 		case SnapshotOperationProcessBlock:
 			glog.V(2).Infof("Snapshot.Run: Getting into the process block with height (%v)",
@@ -493,9 +496,6 @@ func (snap *Snapshot) Run() {
 			}
 			snap.OperationChannel.FinishOperation()
 			snap.updateWaitGroup.Done()
-			return
-		default:
-			glog.Errorf("Snapshot.Run: Unknown operation type (%v)", operation.operationType)
 			return
 		}
 		snap.OperationChannel.FinishOperation()
@@ -540,7 +540,9 @@ func (snap *Snapshot) StartAncestralRecordsFlush(shouldIncrement bool) {
 	}
 	glog.V(2).Infof("Snapshot.StartAncestralRecordsFlush: Sending counter (%v) to the CounterChannel", snap.AncestralFlushCounter)
 	// We send the flush counter to the counter to indicate that a flush should take place.
-	snap.FlushAncestralRecords()
+	snap.OperationChannel.EnqueueOperation(&SnapshotOperation{
+		operationType: SnapshotOperationFlush,
+	})
 }
 
 func (snap *Snapshot) PersistChecksumAndMigration() error {
@@ -1779,18 +1781,19 @@ type SnapshotOperationType uint8
 
 const (
 	// SnapshotOperationFlush operation enqueues a flush to the ancestral records.
+	SnapshotOperationFlush SnapshotOperationType = iota
 	// SnapshotOperationProcessBlock operation signals that a new block has been added to the blockchain.
-	SnapshotOperationProcessBlock = 1
+	SnapshotOperationProcessBlock
 	// SnapshotOperationProcessChunk operation is enqueued when we receive a snapshot chunk during syncing.
-	SnapshotOperationProcessChunk = 2
+	SnapshotOperationProcessChunk
 	// SnapshotOperationChecksumAdd operation is enqueued when we want to add bytes to the state checksum.
-	SnapshotOperationChecksumAdd = 3
+	SnapshotOperationChecksumAdd
 	// SnapshotOperationChecksumRemove operation is enqueued when we want to remove bytes to the state checksum.
-	SnapshotOperationChecksumRemove = 4
+	SnapshotOperationChecksumRemove
 	// SnapshotOperationChecksumPrint is called when we want to print the state checksum.
-	SnapshotOperationChecksumPrint = 5
+	SnapshotOperationChecksumPrint
 	// SnapshotOperationExit is used to quit the snapshot loop
-	SnapshotOperationExit = 6
+	SnapshotOperationExit
 )
 
 // SnapshotOperation is passed in the snapshot's OperationChannel.
