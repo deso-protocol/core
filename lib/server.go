@@ -1709,6 +1709,9 @@ func (srv *Server) dirtyHackUpdateDbOpts(opts badger.Options) {
 	if srv.posMempool.readOnlyLatestBlockView != nil {
 		srv.posMempool.readOnlyLatestBlockView.Handle = srv.blockchain.db
 	}
+	if srv.posMempool.validateTransactionsReadOnlyLatestBlockView != nil {
+		srv.posMempool.validateTransactionsReadOnlyLatestBlockView.Handle = srv.blockchain.db
+	}
 	if srv.posMempool.augmentedReadOnlyLatestBlockView != nil {
 		srv.posMempool.augmentedReadOnlyLatestBlockView.Handle = srv.blockchain.db
 	}
