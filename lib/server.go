@@ -825,7 +825,7 @@ func (srv *Server) GetBlocksToStore(pp *Peer) {
 			maxBlocksInFlight := MaxBlocksInFlight
 			if pp.Params.ProtocolVersion >= ProtocolVersion2 &&
 				srv.params.IsPoSBlockHeight(uint64(blockNode.Height)) {
-				maxBlocksInFlight = MaxHistoricalBlocksInFlight
+				maxBlocksInFlight = MaxBlocksInFlightPoS
 			}
 			numBlocksToFetch := maxBlocksInFlight - len(pp.requestedBlocks)
 			currentHeight := int(blockNode.Height)
@@ -1157,7 +1157,7 @@ func (srv *Server) _handleHeaderBundle(pp *Peer, msg *MsgDeSoHeaderBundle) {
 				}
 
 				// We set the expected height and hash of the snapshot from our header chain. The snapshots should be
-				// taken on a regular basis every snapshotBlockHeightPeriod number of blocks. This means we can calculate the
+				// taken on a regular basis every SnapshotBlockHeightPeriod number of blocks. This means we can calculate the
 				// expected height at which the snapshot should be taking place. We do this to make sure that the
 				// snapshot we receive from the peer is up-to-date.
 				// TODO: error handle if the hash doesn't exist for some reason.
@@ -1174,12 +1174,12 @@ func (srv *Server) _handleHeaderBundle(pp *Peer, msg *MsgDeSoHeaderBundle) {
 				// Initialize the snapshot checksum so that it's reset. It got modified during chain initialization
 				// when processing seed transaction from the genesis block. So we need to clear it.
 				srv.snapshot.Checksum.ResetChecksum()
-				if err := srv.snapshot.Checksum.SaveChecksum(); err != nil {
+				if err = srv.snapshot.Checksum.SaveChecksum(); err != nil {
 					glog.Errorf("Server._handleHeaderBundle: Problem saving snapshot to database, error (%v)", err)
 				}
 				// Reset the migrations along with the main checksum.
 				srv.snapshot.Migrations.ResetChecksums()
-				if err := srv.snapshot.Migrations.SaveMigrations(); err != nil {
+				if err = srv.snapshot.Migrations.SaveMigrations(); err != nil {
 					glog.Errorf("Server._handleHeaderBundle: Problem saving migration checksums to database, error (%v)", err)
 				}
 
@@ -1634,9 +1634,11 @@ func (srv *Server) _handleSnapshot(pp *Peer, msg *MsgDeSoSnapshotData) {
 
 	// Update the snapshot epoch metadata in the snapshot DB.
 	for ii := 0; ii < MetadataRetryCount; ii++ {
+		srv.snapshot.SnapshotDbMutex.Lock()
 		err = srv.snapshot.mainDb.Update(func(txn *badger.Txn) error {
 			return txn.Set(getMainDbPrefix(_prefixLastEpochMetadata), srv.snapshot.CurrentEpochSnapshotMetadata.ToBytes())
 		})
+		srv.snapshot.SnapshotDbMutex.Unlock()
 		if err != nil {
 			glog.Errorf("server._handleSnapshot: Problem setting snapshot epoch metadata in snapshot db, error (%v)", err)
 			time.Sleep(1 * time.Second)

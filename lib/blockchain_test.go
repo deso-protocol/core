@@ -264,14 +264,14 @@ func NewLowDifficultyBlockchainWithParamsAndDb(t *testing.T, params *DeSoParams,
 	t.Cleanup(func() {
 		AppendToMemLog(t, "CLEANUP_START")
 		resetTestDeSoEncoder(t)
+		if snap != nil {
+			snap.Stop()
+		}
 		if embpg != nil {
 			err = embpg.Stop()
 			if err != nil {
 				glog.Errorf("Error stopping embedded pg: %v", err)
 			}
-		}
-		if snap != nil {
-			snap.Stop()
 		}
 		CleanUpBadger(db)
 		AppendToMemLog(t, "CLEANUP_END")

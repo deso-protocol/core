@@ -44,28 +44,27 @@ func TestSimpleHyperSync(t *testing.T) {
 func TestPoSRegtestHypersyncArchival(t *testing.T) {
 	node1 := simplePosNode(t, 18000, "node1", true)
 
-	// TODO: revert changes in this file.
 	node1.Config.Params = node1.Params
 	node1.Config.SyncType = lib.NodeSyncTypeHyperSyncArchival
-	node1.Params.DefaultPoWSnapshotBlockHeightPeriod = 10
-	node1.Config.SnapshotBlockHeightPeriod = 10
+	node1.Params.DefaultPoWSnapshotBlockHeightPeriod = 30
+	node1.Config.SnapshotBlockHeightPeriod = 60
 	node1.Config.HyperSync = true
 	node1 = startNode(t, node1)
 	condition := func() bool {
-		return node1.Server.GetBlockchain().BlockTip().Height >= 70
+		return node1.Server.GetBlockchain().BlockTip().Height >= 140
 	}
 	waitForConditionNoTimeout(t, "node1", condition)
 
 	node2 := simplePosNode(t, 18001, "node2", true)
 	node2.Config.MinerPublicKeys = []string{}
-	node2.Params.DefaultPoWSnapshotBlockHeightPeriod = 10
-	node2.Config.SnapshotBlockHeightPeriod = 10
+	node2.Params.DefaultPoWSnapshotBlockHeightPeriod = 30
+	node2.Config.SnapshotBlockHeightPeriod = 60
 	node2.Config.ConnectIPs = []string{"127.0.0.1:18000"}
 	node2.Config.HyperSync = true
 	node2.Config.SyncType = lib.NodeSyncTypeHyperSyncArchival
 	node2 = startNode(t, node2)
 	condition2 := func() bool {
-		return node2.Server.GetBlockchain().BlockTip().Height >= 70 &&
+		return node2.Server.GetBlockchain().BlockTip().Height >= 140 &&
 			node2.Server.GetBlockchain().ChainState() == lib.SyncStateFullyCurrent
 	}
 	waitForConditionNoTimeout(t, "node2", condition2)

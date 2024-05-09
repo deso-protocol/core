@@ -501,6 +501,12 @@ func (pp *Peer) HandleGetSnapshot(msg *MsgDeSoGetSnapshot) {
 	// to the main DB or the ancestral records DB, and we don't want to slow down any of these updates.
 	// Because of that, we will detect whenever concurrent access takes place with the concurrencyFault
 	// variable. If concurrency is detected, we will re-queue the GetSnapshot message.
+
+	// 05/09/2024: Leaving the above comment around for posterity. The concurrencyFault variable is no longer
+	// used because we performant all snapshot operations in a synchronous manner that blocks until the operation
+	// is completed, so badger is guaranteed to have the snapshot db prefix populated with the most
+	// up-to-date data based on the most recently committed block. For more information and rationale on the change
+	// to make the snapshot operations synchronous, read the long comment in snapshot.go.
 	var err error
 
 	snapshotDataMsg := &MsgDeSoSnapshotData{
@@ -1035,11 +1041,11 @@ func (pp *Peer) _maybeAddBlocksToSend(msg DeSoMessage) error {
 	//
 	// We can safely increase this without breaking backwards-compatibility because old
 	// nodes will never send us more hashes than this.
-	if len(pp.blocksToSend) > MaxBlocksInFlightPoS + MaxHistoricalBlocksInFlight {
+	if len(pp.blocksToSend) > MaxBlocksInFlightPoS {
 		pp.Disconnect()
 		return fmt.Errorf("_maybeAddBlocksToSend: Disconnecting peer %v because she requested %d "+
 			"blocks, which is more than the %d blocks allowed "+
-			"in flight", pp, len(pp.blocksToSend), MaxBlocksInFlightPoS + MaxHistoricalBlocksInFlight)
+			"in flight", pp, len(pp.blocksToSend), MaxBlocksInFlightPoS)
 	}
 
 	return nil

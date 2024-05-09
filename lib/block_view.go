@@ -4568,17 +4568,11 @@ func (bav *UtxoView) ConnectBlock(
 	// after connecting all transactions in the block. These operations
 	// are always the last utxo operation in a given block.
 	var blockLevelUtxoOps []*UtxoOperation
-	if blockHeight >= uint64(bav.Params.ForkHeights.BalanceModelBlockHeight) &&
-		!bav.Params.IsPoSBlockHeight(blockHeight) {
-		prevNonces := bav.GetTransactorNonceEntriesToDeleteAtBlockHeight(blockHeight)
-		blockLevelUtxoOps = append(blockLevelUtxoOps, &UtxoOperation{
-			Type:             OperationTypeDeleteExpiredNonces,
-			PrevNonceEntries: prevNonces,
-		})
-		for _, prevNonceEntry := range prevNonces {
-			bav.DeleteTransactorNonceEntry(prevNonceEntry)
-		}
-	}
+
+	// TODO: To prevent the state from bloating, we should delete nonces periodically.
+	// We used to do that here but it was causing badger seeks to be slow due to a bug
+	// in badger whereby deleting keys slows down seeks. Eventually, we should go back
+	// to deleting txn nonces if we fix that badger bug or find a workaround.
 
 	// If we're past the PoS cutover, we need to track which validators were active.
 	if blockHeight >= uint64(bav.Params.ForkHeights.ProofOfStake2ConsensusCutoverBlockHeight) {

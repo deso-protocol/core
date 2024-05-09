@@ -598,7 +598,10 @@ type DBPrefixes struct {
 	PrefixSnapshotValidatorBLSPublicKeyPKIDPairEntry []byte `prefix_id:"[96]" is_state:"true" core_state:"true"`
 
 	// PrefixHypersyncSnapshotDBPrefix is used to store all the prefixes that are used in the hypersync snapshot logic.
-	// TODO: more comments
+	// This migrates the old snapshot DB logic into the same badger instance and adds a single byte before the old
+	// prefix. To get the new prefix, you'll use getMainDbPrefix and then supply one of the prefixes specified at
+	// the top of snapshot.go. Only the hypersync snapshot logic will use this prefix and should write data here.
+	// When reading and writing data to this prefixes, please acquire the snapshotDbMutex in the snapshot.
 	PrefixHypersyncSnapshotDBPrefix []byte `prefix_id:"[97]"`
 
 	// NEXT_TAG: 98
@@ -1110,7 +1113,7 @@ func DBSetWithTxn(txn *badger.Txn, snap *Snapshot, key []byte, value []byte, eve
 		ancestralValue, getError = DBGetWithTxn(txn, snap, key)
 
 		// If there is some error with the DB read, other than non-existent key, we return.
-		if getError != nil && getError != badger.ErrKeyNotFound {
+		if getError != nil && !errors.Is(getError, badger.ErrKeyNotFound) {
 			return errors.Wrapf(getError, "DBSetWithTxn: problem reading record "+
 				"from DB with key: %v", key)
 		}
@@ -1128,7 +1131,8 @@ func DBSetWithTxn(txn *badger.Txn, snap *Snapshot, key []byte, value []byte, eve
 		keyString := hex.EncodeToString(key)
 
 		// Update ancestral record structures depending on the existing DB record.
-		if err := snap.PrepareAncestralRecord(keyString, ancestralValue, getError != badger.ErrKeyNotFound); err != nil {
+		if err = snap.PrepareAncestralRecord(
+			keyString, ancestralValue, !errors.Is(getError, badger.ErrKeyNotFound)); err != nil {
 			return errors.Wrapf(err, "DBSetWithTxn: Problem preparing ancestral record")
 		}
 		// Now save the newest record to cache.
@@ -1188,7 +1192,10 @@ func DBGetWithTxn(txn *badger.Txn, snap *Snapshot, key []byte) ([]byte, error) {
 		return nil, err
 	}
 
-	// If a flush takes place, we don't update cache. It will be updated in DBSetWithTxn.
+	// TODO: Do we want to update the database cache when performing GETs? I think it would be
+	// safer to ONLY update the cache when performing SETs. This way, we can avoid the possibility
+	// of the cache getting out of sync with the database when a badger view transaction is started
+	// before a badger update transaction begins.
 	if isState {
 		snap.DatabaseCache.Add(keyString, itemData)
 	}
@@ -1264,7 +1271,8 @@ func DBDeleteWithTxn(txn *badger.Txn, snap *Snapshot, key []byte, eventManager *
 // and beginning with the provided startKey. The chunk will have a total size of at least targetBytes.
 // If the startKey is a valid key in the db, it will be the first entry in the returned dbEntries.
 // If we have exhausted all entries for a prefix then _isChunkFull will be set as false, and true otherwise,
-// when there are more entries in the db at the prefix.
+// when there are more entries in the db at the prefix. This function calls DBIteratePrefixKeysWithTxn
+// with a new transaction.
 func DBIteratePrefixKeys(db *badger.DB, prefix []byte, startKey []byte, targetBytes uint32) (
 	_dbEntries []*DBEntry, _isChunkFull bool, _err error) {
 	var dbEntries []*DBEntry
@@ -1277,6 +1285,7 @@ func DBIteratePrefixKeys(db *badger.DB, prefix []byte, startKey []byte, targetBy
 	return dbEntries, isChunkFull, err
 }
 
+// DBIteratePrefixKeysWithTxn performs the same operation as DBIteratePrefixKeys but with a provided transaction.
 func DBIteratePrefixKeysWithTxn(txn *badger.Txn, prefix []byte, startKey []byte, targetBytes uint32) (
 	_dbEntries []*DBEntry, _isChunkFull bool, _err error) {
 	var dbEntries []*DBEntry

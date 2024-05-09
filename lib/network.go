@@ -1467,11 +1467,6 @@ const (
 	// when I last ran it. If we can't get the blocks per second to a higher value, then
 	// we should probably decrease this value.
 	MaxBlocksInFlightPoS = 25000
-
-	// MaxHistoricalBlocksInFlight is the maximum number of historical blocks that can be requested
-	// from a peer. We need to account for the fact that historical blocks are synced at the same
-	// time as a node is keeping current with the main chain.
-	MaxHistoricalBlocksInFlight = 5000
 )
 
 // InvType represents the allowed types of inventory vectors. See InvVect.
