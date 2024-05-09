@@ -1174,12 +1174,12 @@ func (srv *Server) _handleHeaderBundle(pp *Peer, msg *MsgDeSoHeaderBundle) {
 				// Initialize the snapshot checksum so that it's reset. It got modified during chain initialization
 				// when processing seed transaction from the genesis block. So we need to clear it.
 				srv.snapshot.Checksum.ResetChecksum()
-				if err := srv.snapshot.Checksum.SaveChecksum(); err != nil {
+				if err = srv.snapshot.Checksum.SaveChecksum(); err != nil {
 					glog.Errorf("Server._handleHeaderBundle: Problem saving snapshot to database, error (%v)", err)
 				}
 				// Reset the migrations along with the main checksum.
 				srv.snapshot.Migrations.ResetChecksums()
-				if err := srv.snapshot.Migrations.SaveMigrations(); err != nil {
+				if err = srv.snapshot.Migrations.SaveMigrations(); err != nil {
 					glog.Errorf("Server._handleHeaderBundle: Problem saving migration checksums to database, error (%v)", err)
 				}
 

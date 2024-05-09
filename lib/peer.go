@@ -957,6 +957,15 @@ out:
 				pp.blocksToSendMtx.Unlock()
 			}
 
+			if msg.GetMsgType() == MsgTypeBlockBundle {
+				pp.blocksToSendMtx.Lock()
+				for _, block := range msg.(*MsgDeSoBlockBundle).Blocks {
+					hash, _ := block.Hash()
+					delete(pp.blocksToSend, *hash)
+				}
+				pp.blocksToSendMtx.Unlock()
+			}
+
 			// Before we send an addr message to the peer, filter out the addresses
 			// the peer is already aware of.
 			if msg.GetMsgType() == MsgTypeAddr {
@@ -1024,11 +1033,11 @@ func (pp *Peer) _maybeAddBlocksToSend(msg DeSoMessage) error {
 	//
 	// We can safely increase this without breaking backwards-compatibility because old
 	// nodes will never send us more hashes than this.
-	if len(pp.blocksToSend) > MaxBlocksInFlightPoS + MaxHistoricalBlocksInFlight {
+	if len(pp.blocksToSend) > MaxBlocksInFlightPoS+MaxHistoricalBlocksInFlight {
 		pp.Disconnect()
 		return fmt.Errorf("_maybeAddBlocksToSend: Disconnecting peer %v because she requested %d "+
 			"blocks, which is more than the %d blocks allowed "+
-			"in flight", pp, len(pp.blocksToSend), MaxBlocksInFlightPoS + MaxHistoricalBlocksInFlight)
+			"in flight", pp, len(pp.blocksToSend), MaxBlocksInFlightPoS+MaxHistoricalBlocksInFlight)
 	}
 
 	return nil

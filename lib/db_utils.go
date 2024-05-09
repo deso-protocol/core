@@ -1110,7 +1110,7 @@ func DBSetWithTxn(txn *badger.Txn, snap *Snapshot, key []byte, value []byte, eve
 		ancestralValue, getError = DBGetWithTxn(txn, snap, key)
 
 		// If there is some error with the DB read, other than non-existent key, we return.
-		if getError != nil && getError != badger.ErrKeyNotFound {
+		if getError != nil && !errors.Is(getError, badger.ErrKeyNotFound) {
 			return errors.Wrapf(getError, "DBSetWithTxn: problem reading record "+
 				"from DB with key: %v", key)
 		}
@@ -1128,7 +1128,8 @@ func DBSetWithTxn(txn *badger.Txn, snap *Snapshot, key []byte, value []byte, eve
 		keyString := hex.EncodeToString(key)
 
 		// Update ancestral record structures depending on the existing DB record.
-		if err := snap.PrepareAncestralRecord(keyString, ancestralValue, getError != badger.ErrKeyNotFound); err != nil {
+		if err = snap.PrepareAncestralRecord(
+			keyString, ancestralValue, !errors.Is(getError, badger.ErrKeyNotFound)); err != nil {
 			return errors.Wrapf(err, "DBSetWithTxn: Problem preparing ancestral record")
 		}
 		// Now save the newest record to cache.
