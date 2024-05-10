@@ -967,6 +967,17 @@ out:
 				pp.blocksToSendMtx.Unlock()
 			}
 
+			// If we're sending a block bundle, remove all the blocks from our blocksToSend
+			// to allow the peer to request more blocks after receiving this bundle.
+			if msg.GetMsgType() == MsgTypeBlockBundle {
+				pp.blocksToSendMtx.Lock()
+				for _, block := range msg.(*MsgDeSoBlockBundle).Blocks {
+					hash, _ := block.Hash()
+					delete(pp.blocksToSend, *hash)
+				}
+				pp.blocksToSendMtx.Unlock()
+			}
+
 			// Before we send an addr message to the peer, filter out the addresses
 			// the peer is already aware of.
 			if msg.GetMsgType() == MsgTypeAddr {
