@@ -1684,7 +1684,6 @@ func (bc *Blockchain) commitBlockPoS(blockHash *BlockHash, verifySignatures bool
 	err = bc.db.Update(func(txn *badger.Txn) error {
 		if bc.snapshot != nil {
 			bc.snapshot.PrepareAncestralRecordsFlush()
-			defer bc.snapshot.FlushAncestralRecordsWithTxn(txn)
 			glog.V(2).Infof("commitBlockPoS: Preparing snapshot flush")
 		}
 
@@ -1712,6 +1711,13 @@ func (bc *Blockchain) commitBlockPoS(blockHash *BlockHash, verifySignatures bool
 		if innerErr := utxoView.FlushToDBWithoutAncestralRecordsFlushWithTxn(
 			txn, uint64(blockNode.Height)); innerErr != nil {
 			return errors.Wrapf(innerErr, "commitBlockPoS: Problem flushing UtxoView to db")
+		}
+		// We can exit early if we're not using a snapshot.
+		if bc.snapshot == nil {
+			return nil
+		}
+		if innerErr := bc.snapshot.FlushAncestralRecordsWithTxn(txn); innerErr != nil {
+			return errors.Wrapf(innerErr, "commitBlockPoS: Problem flushing ancestral records")
 		}
 		return nil
 	})

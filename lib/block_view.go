@@ -4930,7 +4930,7 @@ func (bav *UtxoView) GetTransactorNonceEntry(nonce *DeSoNonce, pkid *PKID) (*Tra
 		return nonceEntry, nil
 	}
 	var err error
-	nonceEntry, err = DbGetTransactorNonceEntry(bav.Handle, nonce, pkid)
+	nonceEntry, err = DbGetTransactorNonceEntry(bav.Handle, bav.Snapshot, nonce, pkid)
 	if err != nil {
 		return nil, err
 	}

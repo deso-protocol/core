@@ -767,10 +767,10 @@ func (snap *Snapshot) PrepareAncestralRecord(key string, value []byte, existed b
 // FlushAncestralRecordsWithTxn updates the ancestral records after a UtxoView flush.
 // This function should be called in the same badger transaction at the end of UtxoView
 // flushes.
-func (snap *Snapshot) FlushAncestralRecordsWithTxn(txn *badger.Txn) {
+func (snap *Snapshot) FlushAncestralRecordsWithTxn(txn *badger.Txn) error {
 	// If we haven't hit the first snapshot block height yet, don't bother.
 	if !snap.shouldPerformSnapshotOperations() {
-		return
+		return nil
 	}
 	glog.V(2).Infof("Snapshot.FlushAncestralRecords: Initiated the flush")
 
@@ -780,11 +780,9 @@ func (snap *Snapshot) FlushAncestralRecordsWithTxn(txn *badger.Txn) {
 	// snapshot worker threads running so we want to wait until they're done.
 	err := snap.Checksum.Wait()
 	if err != nil {
-		glog.Errorf("Snapshot.FlushAncestralRecords: Error while waiting "+
-			"for checksum: (%v)", err)
-		// TODO: do we need this still?
-		snap.FlushAncestralRecordsWithTxn(txn)
-		return
+		errMsg := fmt.Sprintf("Snapshot.FlushAncestralRecords: Error while waiting for checksum: (%v)", err)
+		glog.Errorf(errMsg)
+		return errors.New(errMsg)
 	}
 
 	// Pull items off of the deque for writing. We say "last" as in oldest, i.e. the first element of AncestralMemory.
@@ -792,10 +790,11 @@ func (snap *Snapshot) FlushAncestralRecordsWithTxn(txn *badger.Txn) {
 
 	blockHeight := oldestAncestralCache.blockHeight
 	if blockHeight != snap.CurrentEpochSnapshotMetadata.SnapshotBlockHeight {
-		glog.Infof("Snapshot.FlushAncestralRecords: AncestralMemory blockHeight (%v) doesn't match current "+
+		errMsg := fmt.Sprintf("Snapshot.FlushAncestralRecords: AncestralMemory blockHeight (%v) doesn't match current "+
 			"metadata blockHeight (%v), number of operations in operationChannel (%v)", blockHeight,
 			snap.CurrentEpochSnapshotMetadata.SnapshotBlockHeight, len(snap.OperationChannel.OperationChannel))
-		return
+		glog.Errorf(errMsg)
+		return errors.New(errMsg)
 	}
 	// First sort the keys so that we write to BadgerDB in order.
 	recordsKeyList := make([]string, 0, len(oldestAncestralCache.AncestralRecordsMap))
@@ -810,18 +809,13 @@ func (snap *Snapshot) FlushAncestralRecordsWithTxn(txn *badger.Txn) {
 	err = snap.flushAncestralRecordsHelper(txn, recordsKeyList, oldestAncestralCache, blockHeight)
 	snap.SnapshotDbMutex.Unlock()
 	if err != nil {
-		// If any error occurred, then we should redo this memory write. During the restart, we will re-write all
-		// entries. If the error happened during a partial write, e.g. we didn't write all records in recordsKeyList,
-		// we'll redo them in the next write of this ancestralCache. The only scenario where that wouldn't happen
-		// is if the node stopped suddenly. We can detect that via comparing semaphore counters on boot.
-		glog.Errorf("Snapshot.FlushAncestralRecords: Problem flushing snapshot, error %v", err)
-		// TODO: @diamondhands - do we need this still? Before this would queue up another operation
-		// but just calling it recursively seems like a bad idea.
-		snap.FlushAncestralRecordsWithTxn(txn)
-		return
+		errMsg := fmt.Sprintf("Snapshot.FlushAncestralRecords: Problem flushing snapshot, error %v", err)
+		glog.Error(errMsg)
+		return errors.New(errMsg)
 	}
 
 	snap.AncestralMemory.Shift()
+	return nil
 }
 
 func (snap *Snapshot) flushAncestralRecordsHelper(
