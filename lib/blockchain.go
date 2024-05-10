@@ -1550,7 +1550,10 @@ func (bc *Blockchain) isHyperSyncCondition() bool {
 
 	blockTip := bc.blockTip()
 	headerTip := bc.headerTip()
-	snapshotBlockHeightPeriod := bc.params.GetSnapshotBlockHeightPeriod(uint64(headerTip.Height), bc.Snapshot().GetSnapshotBlockHeightPeriod())
+	snapshotBlockHeightPeriod := bc.params.GetSnapshotBlockHeightPeriod(
+		uint64(headerTip.Height),
+		bc.Snapshot().GetSnapshotBlockHeightPeriod(),
+	)
 	if uint64(headerTip.Height-blockTip.Height) >= snapshotBlockHeightPeriod {
 		return true
 	}
@@ -2415,7 +2418,7 @@ func (bc *Blockchain) processBlockPoW(desoBlock *MsgDeSoBlock, verifySignatures 
 		err = bc.db.Update(func(txn *badger.Txn) error {
 			if bc.snapshot != nil {
 				bc.snapshot.PrepareAncestralRecordsFlush()
-				defer bc.snapshot.StartAncestralRecordsFlush(true)
+				defer bc.snapshot.FlushAncestralRecordsWithTxn(txn)
 				glog.V(2).Infof("ProcessBlock: Preparing snapshot flush")
 			}
 			// Store the new block in the db under the
@@ -2425,14 +2428,20 @@ func (bc *Blockchain) processBlockPoW(desoBlock *MsgDeSoBlock, verifySignatures 
 			// 	set in PutBlockWithTxn. Block rewards are part of the state, and they should be identical to the ones
 			// 	we've fetched during Hypersync. Is there an edge-case where for some reason they're not identical? Or
 			// 	somehow ancestral records get corrupted?
-			if err := PutBlockWithTxn(txn, bc.snapshot, desoBlock, bc.eventManager); err != nil {
+			if innerErr := PutBlockWithTxn(txn, bc.snapshot, desoBlock, bc.eventManager); innerErr != nil {
 				return errors.Wrapf(err, "ProcessBlock: Problem calling PutBlock")
 			}
 
 			// Store the new block's node in our node index in the db under the
 			//   <height uin32, blockhash BlockHash> -> <node info>
 			// index.
-			if err := PutHeightHashToNodeInfoWithTxn(txn, bc.snapshot, nodeToValidate, false /*bitcoinNodes*/, bc.eventManager); err != nil {
+			if innerErr := PutHeightHashToNodeInfoWithTxn(
+				txn,
+				bc.snapshot,
+				nodeToValidate,
+				false, /*bitcoinNodes*/
+				bc.eventManager,
+			); innerErr != nil {
 				return errors.Wrapf(err, "ProcessBlock: Problem calling PutHeightHashToNodeInfo before validation")
 			}
 

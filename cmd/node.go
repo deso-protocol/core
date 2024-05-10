@@ -380,7 +380,6 @@ func (node *Node) Stop() {
 	if snap != nil {
 		glog.Infof(lib.CLog(lib.Yellow, "Node.Stop: Stopping snapshot..."))
 		snap.Stop()
-		node.closeDb(snap.SnapshotDb, "snapshot")
 		glog.Infof(lib.CLog(lib.Yellow, "Node.Stop: Snapshot successfully stopped."))
 	}
 

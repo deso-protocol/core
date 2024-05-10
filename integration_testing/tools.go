@@ -7,6 +7,7 @@ import (
 	"os"
 	"reflect"
 	"sort"
+	"sync"
 	"testing"
 	"time"
 
@@ -442,7 +443,7 @@ func computeNodeStateChecksum(t *testing.T, node *cmd.Node, blockHeight uint64) 
 				key := item.Key()
 				err := item.Value(func(value []byte) error {
 					return carrierChecksum.AddOrRemoveBytesWithMigrations(key, value, blockHeight,
-						nil, true)
+						nil, &sync.RWMutex{}, true)
 				})
 				if err != nil {
 					return err

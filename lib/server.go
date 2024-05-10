@@ -56,6 +56,7 @@ type ServerReply struct {
 type Server struct {
 	cmgr          *ConnectionManager
 	blockchain    *Blockchain
+	datadir       string
 	snapshot      *Snapshot
 	forceChecksum bool
 	mempool       *DeSoMempool
@@ -428,8 +429,8 @@ func NewServer(
 	shouldRestart := false
 	archivalMode := false
 	if _hyperSync {
-		_snapshot, err, shouldRestart = NewSnapshot(_db, _dataDir, _snapshotBlockHeightPeriod,
-			false, false, _params, _disableEncoderMigrations, _hypersyncMaxQueueSize, eventManager)
+		_snapshot, err, shouldRestart = NewSnapshot(_db, _snapshotBlockHeightPeriod, false, false, _params,
+			_disableEncoderMigrations, _hypersyncMaxQueueSize, eventManager)
 		if err != nil {
 			panic(err)
 		}
@@ -452,6 +453,7 @@ func NewServer(
 		AddrMgr:                      _desoAddrMgr,
 		params:                       _params,
 		connectIps:                   _connectIps,
+		datadir:                      _dataDir,
 	}
 
 	if stateChangeSyncer != nil {
@@ -1114,7 +1116,10 @@ func (srv *Server) _handleHeaderBundle(pp *Peer, msg *MsgDeSoHeaderBundle) {
 				bestHeaderHeight := uint64(srv.blockchain.headerTip().Height)
 				// The peer's snapshot block height period before the first PoS fork height is expected to be the
 				// PoW default value. After the fork height, it's expected to be the value defined in the params.
-				snapshotBlockHeightPeriod := srv.params.GetSnapshotBlockHeightPeriod(bestHeaderHeight, srv.snapshot.SnapshotBlockHeightPeriod)
+				snapshotBlockHeightPeriod := srv.params.GetSnapshotBlockHeightPeriod(
+					bestHeaderHeight,
+					srv.snapshot.GetSnapshotBlockHeightPeriod(),
+				)
 				expectedSnapshotHeight := bestHeaderHeight - (bestHeaderHeight % snapshotBlockHeightPeriod)
 				posSetupForkHeight := uint64(srv.params.ForkHeights.ProofOfStake1StateSetupBlockHeight)
 				if expectedSnapshotHeight < posSetupForkHeight {
@@ -1169,12 +1174,12 @@ func (srv *Server) _handleHeaderBundle(pp *Peer, msg *MsgDeSoHeaderBundle) {
 				// Initialize the snapshot checksum so that it's reset. It got modified during chain initialization
 				// when processing seed transaction from the genesis block. So we need to clear it.
 				srv.snapshot.Checksum.ResetChecksum()
-				if err := srv.snapshot.Checksum.SaveChecksum(); err != nil {
+				if err = srv.snapshot.Checksum.SaveChecksum(); err != nil {
 					glog.Errorf("Server._handleHeaderBundle: Problem saving snapshot to database, error (%v)", err)
 				}
 				// Reset the migrations along with the main checksum.
 				srv.snapshot.Migrations.ResetChecksums()
-				if err := srv.snapshot.Migrations.SaveMigrations(); err != nil {
+				if err = srv.snapshot.Migrations.SaveMigrations(); err != nil {
 					glog.Errorf("Server._handleHeaderBundle: Problem saving migration checksums to database, error (%v)", err)
 				}
 
@@ -1574,7 +1579,7 @@ func (srv *Server) _handleSnapshot(pp *Peer, msg *MsgDeSoSnapshotData) {
 	// and re-opening it with the new options.
 	// This is necessary because the blocksync process syncs indexes with records that are too large for the default
 	// badger options. The large records overflow the default setting value log size and cause the DB to crash.
-	dbDir := GetBadgerDbPath(srv.snapshot.mainDbDirectory)
+	dbDir := GetBadgerDbPath(srv.datadir)
 	opts := PerformanceBadgerOptions(dbDir)
 	opts.ValueDir = dbDir
 	srv.dirtyHackUpdateDbOpts(opts)
@@ -1630,8 +1635,8 @@ func (srv *Server) _handleSnapshot(pp *Peer, msg *MsgDeSoSnapshotData) {
 	// Update the snapshot epoch metadata in the snapshot DB.
 	for ii := 0; ii < MetadataRetryCount; ii++ {
 		srv.snapshot.SnapshotDbMutex.Lock()
-		err = srv.snapshot.SnapshotDb.Update(func(txn *badger.Txn) error {
-			return txn.Set(_prefixLastEpochMetadata, srv.snapshot.CurrentEpochSnapshotMetadata.ToBytes())
+		err = srv.snapshot.mainDb.Update(func(txn *badger.Txn) error {
+			return txn.Set(getMainDbPrefix(_prefixLastEpochMetadata), srv.snapshot.CurrentEpochSnapshotMetadata.ToBytes())
 		})
 		srv.snapshot.SnapshotDbMutex.Unlock()
 		if err != nil {
@@ -1691,6 +1696,8 @@ func (srv *Server) dirtyHackUpdateDbOpts(opts badger.Options) {
 	defer srv.posMempool.Unlock()
 	srv.posMempool.augmentedReadOnlyLatestBlockViewMutex.Lock()
 	defer srv.posMempool.augmentedReadOnlyLatestBlockViewMutex.Unlock()
+	srv.snapshot.SnapshotDbMutex.Lock()
+	defer srv.snapshot.SnapshotDbMutex.Unlock()
 	// Make sure that a server process doesn't try to access the DB while we're closing and re-opening it.
 	srv.DbMutex.Lock()
 	defer srv.DbMutex.Unlock()
@@ -1702,6 +1709,11 @@ func (srv *Server) dirtyHackUpdateDbOpts(opts badger.Options) {
 	}
 	srv.blockchain.db = db
 	srv.snapshot.mainDb = srv.blockchain.db
+	srv.snapshot.CurrentEpochSnapshotMetadata.mainDb = srv.blockchain.db
+	srv.snapshot.Status.mainDb = srv.blockchain.db
+	srv.snapshot.Checksum.mainDb = srv.blockchain.db
+	srv.snapshot.Migrations.mainDb = srv.blockchain.db
+	srv.snapshot.OperationChannel.mainDb = srv.blockchain.db
 	srv.mempool.bc.db = srv.blockchain.db
 	srv.mempool.backupUniversalUtxoView.Handle = srv.blockchain.db
 	srv.mempool.universalUtxoView.Handle = srv.blockchain.db
@@ -1715,7 +1727,6 @@ func (srv *Server) dirtyHackUpdateDbOpts(opts badger.Options) {
 	if srv.posMempool.augmentedReadOnlyLatestBlockView != nil {
 		srv.posMempool.augmentedReadOnlyLatestBlockView.Handle = srv.blockchain.db
 	}
-
 	// Save the new options to the DB so that we know what to use if the node restarts.
 	isPerformanceOptions := DbOptsArePerformance(&opts)
 	err = SaveBoolToFile(GetDbPerformanceOptionsFilePath(filepath.Dir(opts.ValueDir)), isPerformanceOptions)
@@ -2417,6 +2428,9 @@ func (srv *Server) _handleBlockBundle(pp *Peer, bundle *MsgDeSoBlockBundle) {
 		// gracefully fail.
 		srv._handleBlock(pp, blk, ii == len(bundle.Blocks)-1 /*isLastBlock*/)
 		numLogBlocks := 1000
+		if srv.params.IsPoWBlockHeight(blk.Header.Height) {
+			numLogBlocks = 25
+		}
 		if ii%numLogBlocks == 0 {
 			glog.Infof(CLog(Cyan, fmt.Sprintf("Server._handleBlockBundle: Processed block ( %v / %v ) = ( %v / %v ) from Peer %v",
 				bundle.Blocks[ii].Header.Height,
@@ -2428,7 +2442,7 @@ func (srv *Server) _handleBlockBundle(pp *Peer, bundle *MsgDeSoBlockBundle) {
 			// Reset the blockProcessingStartTime so that each 1k blocks is timed individually
 			blockProcessingStartTime = time.Now()
 			if ii != 0 {
-				fmt.Printf("We are processing %v blocks per second\n", float64(1000)/(float64(elapsed)/1e9))
+				fmt.Printf("We are processing %v blocks per second\n", float64(numLogBlocks)/(float64(elapsed)/1e9))
 			}
 		}
 	}

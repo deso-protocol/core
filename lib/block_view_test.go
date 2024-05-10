@@ -215,7 +215,6 @@ func (tm *transactionTestMeta) Quit() {
 
 	if tm.chain.snapshot != nil {
 		tm.chain.snapshot.Stop()
-		require.NoError(tm.chain.snapshot.SnapshotDb.Close())
 	}
 
 	if tm.chain.db != nil {

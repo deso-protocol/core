@@ -118,15 +118,10 @@ func (bav *UtxoView) runEpochCompleteStateTransition(blockHeight uint64, blockTi
 		return nil, errors.Wrapf(err, "runEpochCompleteStateTransition: problem rewarding snapshot stakes: ")
 	}
 
-	// Delete expired nonces
-	prevNonces := bav.GetTransactorNonceEntriesToDeleteAtBlockHeight(blockHeight)
-	utxoOperations = append(utxoOperations, &UtxoOperation{
-		Type:             OperationTypeDeleteExpiredNonces,
-		PrevNonceEntries: prevNonces,
-	})
-	for _, prevNonceEntry := range prevNonces {
-		bav.DeleteTransactorNonceEntry(prevNonceEntry)
-	}
+	// TODO: To prevent the state from bloating, we should delete nonces periodically.
+	// We used to do that here but it was causing badger seeks to be slow due to a bug
+	// in badger whereby deleting keys slows down seeks. Eventually, we should go back
+	// to deleting txn nonces if we fix that badger bug or find a workaround.
 
 	return utxoOperations, nil
 }

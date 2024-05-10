@@ -225,7 +225,7 @@ func NewLowDifficultyBlockchainWithParamsAndDb(t *testing.T, params *DeSoParams,
 	var embpg *embeddedpostgres.EmbeddedPostgres
 	var err error
 
-	db, dbDir := GetTestBadgerDb()
+	db, _ := GetTestBadgerDb()
 	if usePostgres {
 		if len(os.Getenv("POSTGRES_URI")) > 0 {
 			glog.Infof("NewLowDifficultyBlockchainWithParamsAndDb: Using Postgres DB from provided POSTGRES_URI")
@@ -250,7 +250,7 @@ func NewLowDifficultyBlockchainWithParamsAndDb(t *testing.T, params *DeSoParams,
 	// key have some DeSo
 	var snap *Snapshot
 	if !usePostgres {
-		snap, err, _ = NewSnapshot(db, dbDir, SnapshotBlockHeightPeriod, false, false, &testParams, false, HypersyncDefaultMaxQueueSize, nil)
+		snap, err, _ = NewSnapshot(db, SnapshotBlockHeightPeriod, false, false, &testParams, false, HypersyncDefaultMaxQueueSize, nil)
 		if err != nil {
 			log.Fatal(err)
 		}
@@ -266,7 +266,6 @@ func NewLowDifficultyBlockchainWithParamsAndDb(t *testing.T, params *DeSoParams,
 		resetTestDeSoEncoder(t)
 		if snap != nil {
 			snap.Stop()
-			CleanUpBadger(snap.SnapshotDb)
 		}
 		if embpg != nil {
 			err = embpg.Stop()

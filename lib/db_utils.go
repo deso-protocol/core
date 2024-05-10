@@ -597,7 +597,14 @@ type DBPrefixes struct {
 	// Prefix, <SnapshotAtEpochNumber uint64>, <BLSPublicKey []byte> -> *BLSPublicKeyPKIDPairEntry
 	PrefixSnapshotValidatorBLSPublicKeyPKIDPairEntry []byte `prefix_id:"[96]" is_state:"true" core_state:"true"`
 
-	// NEXT_TAG: 97
+	// PrefixHypersyncSnapshotDBPrefix is used to store all the prefixes that are used in the hypersync snapshot logic.
+	// This migrates the old snapshot DB logic into the same badger instance and adds a single byte before the old
+	// prefix. To get the new prefix, you'll use getMainDbPrefix and then supply one of the prefixes specified at
+	// the top of snapshot.go. Only the hypersync snapshot logic will use this prefix and should write data here.
+	// When reading and writing data to this prefixes, please acquire the snapshotDbMutex in the snapshot.
+	PrefixHypersyncSnapshotDBPrefix []byte `prefix_id:"[97]"`
+
+	// NEXT_TAG: 98
 }
 
 // DecodeStateKey decodes a state key into a DeSoEncoder type. This is useful for encoders which don't have a stored
@@ -1106,7 +1113,7 @@ func DBSetWithTxn(txn *badger.Txn, snap *Snapshot, key []byte, value []byte, eve
 		ancestralValue, getError = DBGetWithTxn(txn, snap, key)
 
 		// If there is some error with the DB read, other than non-existent key, we return.
-		if getError != nil && getError != badger.ErrKeyNotFound {
+		if getError != nil && !errors.Is(getError, badger.ErrKeyNotFound) {
 			return errors.Wrapf(getError, "DBSetWithTxn: problem reading record "+
 				"from DB with key: %v", key)
 		}
@@ -1124,7 +1131,8 @@ func DBSetWithTxn(txn *badger.Txn, snap *Snapshot, key []byte, value []byte, eve
 		keyString := hex.EncodeToString(key)
 
 		// Update ancestral record structures depending on the existing DB record.
-		if err := snap.PrepareAncestralRecord(keyString, ancestralValue, getError != badger.ErrKeyNotFound); err != nil {
+		if err = snap.PrepareAncestralRecord(
+			keyString, ancestralValue, !errors.Is(getError, badger.ErrKeyNotFound)); err != nil {
 			return errors.Wrapf(err, "DBSetWithTxn: Problem preparing ancestral record")
 		}
 		// Now save the newest record to cache.
@@ -1184,14 +1192,12 @@ func DBGetWithTxn(txn *badger.Txn, snap *Snapshot, key []byte) ([]byte, error) {
 		return nil, err
 	}
 
-	// If a flush takes place, we don't update cache. It will be updated in DBSetWithTxn.
+	// TODO: Do we want to update the database cache when performing GETs? I think it would be
+	// safer to ONLY update the cache when performing SETs. This way, we can avoid the possibility
+	// of the cache getting out of sync with the database when a badger view transaction is started
+	// before a badger update transaction begins.
 	if isState {
-		// Hold the snapshot memory lock just to be e
-		snap.Status.MemoryLock.Lock()
-		defer snap.Status.MemoryLock.Unlock()
-		if !snap.Status.IsFlushingWithoutLock() {
-			snap.DatabaseCache.Add(keyString, itemData)
-		}
+		snap.DatabaseCache.Add(keyString, itemData)
 	}
 	return itemData, nil
 }
@@ -1265,42 +1271,50 @@ func DBDeleteWithTxn(txn *badger.Txn, snap *Snapshot, key []byte, eventManager *
 // and beginning with the provided startKey. The chunk will have a total size of at least targetBytes.
 // If the startKey is a valid key in the db, it will be the first entry in the returned dbEntries.
 // If we have exhausted all entries for a prefix then _isChunkFull will be set as false, and true otherwise,
-// when there are more entries in the db at the prefix.
+// when there are more entries in the db at the prefix. This function calls DBIteratePrefixKeysWithTxn
+// with a new transaction.
 func DBIteratePrefixKeys(db *badger.DB, prefix []byte, startKey []byte, targetBytes uint32) (
+	_dbEntries []*DBEntry, _isChunkFull bool, _err error) {
+	var dbEntries []*DBEntry
+	var isChunkFull bool
+	err := db.View(func(txn *badger.Txn) error {
+		var innerErr error
+		dbEntries, isChunkFull, innerErr = DBIteratePrefixKeysWithTxn(txn, prefix, startKey, targetBytes)
+		return innerErr
+	})
+	return dbEntries, isChunkFull, err
+}
+
+// DBIteratePrefixKeysWithTxn performs the same operation as DBIteratePrefixKeys but with a provided transaction.
+func DBIteratePrefixKeysWithTxn(txn *badger.Txn, prefix []byte, startKey []byte, targetBytes uint32) (
 	_dbEntries []*DBEntry, _isChunkFull bool, _err error) {
 	var dbEntries []*DBEntry
 	var totalBytes int
 	var isChunkFull bool
 
-	err := db.View(func(txn *badger.Txn) error {
-		opts := badger.DefaultIteratorOptions
+	opts := badger.DefaultIteratorOptions
 
-		// Iterate over the prefix as long as there are valid keys in the DB.
-		it := txn.NewIterator(opts)
-		defer it.Close()
-		for it.Seek(startKey); it.ValidForPrefix(prefix) && !isChunkFull; it.Next() {
-			item := it.Item()
-			key := item.Key()
-			// Add the key, value pair to our dbEntries list.
-			err := item.Value(func(value []byte) error {
-				dbEntries = append(dbEntries, KeyValueToDBEntry(key, value))
-				// If total amount of bytes in the dbEntries exceeds the target bytes size, we set the chunk as full.
-				totalBytes += len(key) + len(value)
-				if totalBytes > int(targetBytes) && len(dbEntries) > 1 {
-					isChunkFull = true
-				}
-				return nil
-			})
-			if err != nil {
-				return err
+	// Iterate over the prefix as long as there are valid keys in the DB.
+	it := txn.NewIterator(opts)
+	defer it.Close()
+	for it.Seek(startKey); it.ValidForPrefix(prefix) && !isChunkFull; it.Next() {
+		item := it.Item()
+		key := item.Key()
+		// Add the key, value pair to our dbEntries list.
+		err := item.Value(func(value []byte) error {
+			dbEntries = append(dbEntries, KeyValueToDBEntry(key, value))
+			// If total amount of bytes in the dbEntries exceeds the target bytes size, we set the chunk as full.
+			totalBytes += len(key) + len(value)
+			if totalBytes > int(targetBytes) && len(dbEntries) > 1 {
+				isChunkFull = true
 			}
+			return nil
+		})
+		if err != nil {
+			// Return false for _isChunkFull to indicate that we shouldn't query this prefix again because
+			// something is wrong.
+			return nil, false, err
 		}
-		return nil
-	})
-	if err != nil {
-		// Return false for _isChunkFull to indicate that we shouldn't query this prefix again because
-		// something is wrong.
-		return nil, false, err
 	}
 	return dbEntries, isChunkFull, nil
 }
@@ -5306,30 +5320,31 @@ func InitDbWithDeSoGenesisBlock(params *DeSoParams, handle *badger.DB,
 	// Set the best hash to the genesis block in the db since its the only node
 	// we're currently aware of. Set it for both the header chain and the block
 	// chain.
-	if snap != nil {
-		snap.PrepareAncestralRecordsFlush()
-	}
-
-	if err := PutBestHash(handle, snap, blockHash, ChainTypeDeSoBlock, eventManager); err != nil {
-		return errors.Wrapf(err, "InitDbWithGenesisBlock: Problem putting genesis block hash into db for block chain")
-	}
-	// Add the genesis block to the (hash -> block) index.
-	if err := PutBlock(handle, snap, genesisBlock, eventManager); err != nil {
-		return errors.Wrapf(err, "InitDbWithGenesisBlock: Problem putting genesis block into db")
-	}
-	// Add the genesis block to the (height, hash -> node info) index in the db.
-	if err := PutHeightHashToNodeInfo(handle, snap, genesisNode, false /*bitcoinNodes*/, eventManager); err != nil {
-		return errors.Wrapf(err, "InitDbWithGenesisBlock: Problem putting (height, hash -> node) in db")
-	}
-	if err := DbPutNanosPurchased(handle, snap, params.DeSoNanosPurchasedAtGenesis, eventManager); err != nil {
-		return errors.Wrapf(err, "InitDbWithGenesisBlock: Problem putting genesis block hash into db for block chain")
-	}
-	if err := DbPutGlobalParamsEntry(handle, snap, 0, InitialGlobalParamsEntry, eventManager); err != nil {
-		return errors.Wrapf(err, "InitDbWithGenesisBlock: Problem putting GlobalParamsEntry into db for block chain")
-	}
-
-	if snap != nil {
-		snap.StartAncestralRecordsFlush(true)
+	if err := handle.Update(func(txn *badger.Txn) error {
+		if snap != nil {
+			snap.PrepareAncestralRecordsFlush()
+			defer snap.FlushAncestralRecordsWithTxn(txn)
+		}
+		if err := PutBestHashWithTxn(txn, snap, blockHash, ChainTypeDeSoBlock, eventManager); err != nil {
+			return errors.Wrapf(err, "InitDbWithGenesisBlock: Problem putting genesis block hash into db for block chain")
+		}
+		// Add the genesis block to the (hash -> block) index.
+		if err := PutBlockWithTxn(txn, snap, genesisBlock, eventManager); err != nil {
+			return errors.Wrapf(err, "InitDbWithGenesisBlock: Problem putting genesis block into db")
+		}
+		// Add the genesis block to the (height, hash -> node info) index in the db.
+		if err := PutHeightHashToNodeInfoWithTxn(txn, snap, genesisNode, false /*bitcoinNodes*/, eventManager); err != nil {
+			return errors.Wrapf(err, "InitDbWithGenesisBlock: Problem putting (height, hash -> node) in db")
+		}
+		if err := DbPutNanosPurchasedWithTxn(txn, snap, params.DeSoNanosPurchasedAtGenesis, eventManager); err != nil {
+			return errors.Wrapf(err, "InitDbWithGenesisBlock: Problem putting genesis block hash into db for block chain")
+		}
+		if err := DbPutGlobalParamsEntryWithTxn(txn, snap, 0, InitialGlobalParamsEntry, eventManager); err != nil {
+			return errors.Wrapf(err, "InitDbWithGenesisBlock: Problem putting GlobalParamsEntry into db for block chain")
+		}
+		return nil
+	}); err != nil {
+		return err
 	}
 
 	// We apply seed transactions here. This step is useful for setting
@@ -5412,8 +5427,7 @@ func InitDbWithDeSoGenesisBlock(params *DeSoParams, handle *badger.DB,
 		})
 	}
 	// Flush all the data in the view.
-	err := utxoView.FlushToDb(0)
-	if err != nil {
+	if err := utxoView.FlushToDb(0); err != nil {
 		return fmt.Errorf(
 			"InitDbWithDeSoGenesisBlock: Error flushing seed txns to DB: %v", err)
 	}
