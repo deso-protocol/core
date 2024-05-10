@@ -123,6 +123,16 @@ func (bav *UtxoView) runEpochCompleteStateTransition(blockHeight uint64, blockTi
 	// in badger whereby deleting keys slows down seeks. Eventually, we should go back
 	// to deleting txn nonces if we fix that badger bug or find a workaround.
 
+	// Delete expired nonces
+	prevNonces := bav.GetTransactorNonceEntriesToDeleteAtBlockHeight(blockHeight)
+	utxoOperations = append(utxoOperations, &UtxoOperation{
+		Type:             OperationTypeDeleteExpiredNonces,
+		PrevNonceEntries: prevNonces,
+	})
+	for _, prevNonceEntry := range prevNonces {
+		bav.DeleteTransactorNonceEntry(prevNonceEntry)
+	}
+
 	return utxoOperations, nil
 }
 
