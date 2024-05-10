@@ -823,8 +823,7 @@ func (srv *Server) GetBlocksToStore(pp *Peer) {
 		// We find the first block that's not stored and get ready to download blocks starting from this block onwards.
 		if blockNode.Status&StatusBlockStored == 0 {
 			maxBlocksInFlight := MaxBlocksInFlight
-			if pp.Params.ProtocolVersion >= ProtocolVersion2 &&
-				srv.params.IsPoSBlockHeight(uint64(blockNode.Height)) {
+			if pp.Params.ProtocolVersion >= ProtocolVersion2 {
 				maxBlocksInFlight = MaxBlocksInFlightPoS
 			}
 			numBlocksToFetch := maxBlocksInFlight - len(pp.requestedBlocks)
@@ -882,8 +881,7 @@ func (srv *Server) GetBlocks(pp *Peer, maxHeight int) {
 	// If our peer is on PoS then we can safely request a lot more blocks from them in
 	// each flight.
 	maxBlocksInFlight := MaxBlocksInFlight
-	if pp.Params.ProtocolVersion >= ProtocolVersion2 &&
-		srv.params.IsPoSBlockHeight(uint64(srv.blockchain.blockTip().Height)) {
+	if pp.Params.ProtocolVersion >= ProtocolVersion2 {
 		maxBlocksInFlight = MaxBlocksInFlightPoS
 	}
 	numBlocksToFetch := maxBlocksInFlight - len(pp.requestedBlocks)
@@ -2428,9 +2426,6 @@ func (srv *Server) _handleBlockBundle(pp *Peer, bundle *MsgDeSoBlockBundle) {
 		// gracefully fail.
 		srv._handleBlock(pp, blk, ii == len(bundle.Blocks)-1 /*isLastBlock*/)
 		numLogBlocks := 1000
-		if srv.params.IsPoWBlockHeight(blk.Header.Height) {
-			numLogBlocks = 25
-		}
 		if ii%numLogBlocks == 0 {
 			glog.Infof(CLog(Cyan, fmt.Sprintf("Server._handleBlockBundle: Processed block ( %v / %v ) = ( %v / %v ) from Peer %v",
 				bundle.Blocks[ii].Header.Height,
