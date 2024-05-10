@@ -1331,6 +1331,8 @@ func (bc *Blockchain) getOrCreateBlockNodeFromBlockIndex(block *MsgDeSoBlock) (*
 	return newBlockNode, nil
 }
 
+// storeBlockInBlockIndex upserts the blocks into the in-memory block index & badger and updates its status to
+// StatusBlockStored. It also writes the block to the block index in badger
 func (bc *Blockchain) storeValidatedHeaderInBlockIndex(header *MsgDeSoHeader) (*BlockNode, error) {
 	blockNode, err := bc.getOrCreateBlockNodeFromBlockIndex(&MsgDeSoBlock{Header: header})
 	if err != nil {
@@ -1347,12 +1349,6 @@ func (bc *Blockchain) storeValidatedHeaderInBlockIndex(header *MsgDeSoHeader) (*
 		)
 	}
 	blockNode.Status |= StatusHeaderValidated
-
-	// TODO: this seems to be slowing down the sync process.
-	// If the DB update fails, then we should return an error.
-	if err = bc.upsertBlockNodeToDB(blockNode); err != nil {
-		return nil, errors.Wrapf(err, "storeValidatedHeaderInBlockIndex: Problem upserting block node to DB")
-	}
 	return blockNode, nil
 }
 
@@ -1363,6 +1359,8 @@ func (bc *Blockchain) storeValidateFailedHeaderInBlockIndexWithWrapperError(head
 	return wrapperError
 }
 
+// storeValidateFailedHeaderInBlockIndex stores the header in the block index only and sets its status to
+// StatusHeaderValidateFailed. It does not write the header to the DB.
 func (bc *Blockchain) storeValidateFailedHeaderInBlockIndex(header *MsgDeSoHeader) (*BlockNode, error) {
 	blockNode, err := bc.getOrCreateBlockNodeFromBlockIndex(&MsgDeSoBlock{Header: header})
 	if err != nil {
@@ -1378,15 +1376,11 @@ func (bc *Blockchain) storeValidateFailedHeaderInBlockIndex(header *MsgDeSoHeade
 			"storeValidatedHeaderInBlockIndex: can't set block node to header validate failed after it's already been set to validated",
 		)
 	}
-	blockNode.Status |= StatusHeaderValidated
-	// If the DB update fails, then we should return an error.
-	if err = bc.upsertBlockNodeToDB(blockNode); err != nil {
-		return nil, errors.Wrapf(err, "storeValidateFailedHeaderInBlockIndex: Problem upserting block node to DB")
-	}
+	blockNode.Status |= StatusHeaderValidateFailed
 	return blockNode, nil
 }
 
-// storeBlockInBlockIndex upserts the blocks into the in-memory block index and updates its status to
+// storeBlockInBlockIndex upserts the blocks into the in-memory block index & badger and updates its status to
 // StatusBlockStored. It also writes the block to the block index in badger
 // by calling upsertBlockAndBlockNodeToDB.
 func (bc *Blockchain) storeBlockInBlockIndex(block *MsgDeSoBlock) (*BlockNode, error) {
@@ -1406,10 +1400,10 @@ func (bc *Blockchain) storeBlockInBlockIndex(block *MsgDeSoBlock) (*BlockNode, e
 	return blockNode, nil
 }
 
-// storeValidatedBlockInBlockIndex upserts the blocks into the in-memory block index and updates its status to
-// StatusBlockValidated. If it does not have the status StatusBlockStored already, we add that as we will
-// store the block in the DB after updating its status.  It also writes the block to the block index in badger
-// by calling upsertBlockAndBlockNodeToDB.
+// storeValidatedBlockInBlockIndex upserts the blocks into the in-memory block index & badger and updates its
+// status to StatusBlockValidated. If it does not have the status StatusBlockStored already, we add that as we
+// will store the block in the DB after updating its status.  It also writes the block to the block index in
+// badger by calling upsertBlockAndBlockNodeToDB.
 func (bc *Blockchain) storeValidatedBlockInBlockIndex(block *MsgDeSoBlock) (*BlockNode, error) {
 	blockNode, err := bc.getOrCreateBlockNodeFromBlockIndex(block)
 	if err != nil {
@@ -1436,9 +1430,9 @@ func (bc *Blockchain) storeValidatedBlockInBlockIndex(block *MsgDeSoBlock) (*Blo
 	return blockNode, nil
 }
 
-// storeValidateFailedBlockInBlockIndex upserts the blocks into the in-memory block index and updates its status to
-// StatusBlockValidateFailed. If it does not have the status StatusBlockStored already, we add that as we will
-// store the block in the DB after updating its status.  It also writes the block to the block index in badger
+// storeValidateFailedBlockInBlockIndex upserts the blocks into the in-memory block index & badger and updates its
+// status to StatusBlockValidateFailed. If it does not have the status StatusBlockStored already, we add that as we
+// will store the block in the DB after updating its status.  It also writes the block to the block index in badger
 // by calling upsertBlockAndBlockNodeToDB.
 func (bc *Blockchain) storeValidateFailedBlockInBlockIndex(block *MsgDeSoBlock) (*BlockNode, error) {
 	blockNode, err := bc.getOrCreateBlockNodeFromBlockIndex(block)
