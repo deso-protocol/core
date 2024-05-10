@@ -2418,7 +2418,6 @@ func (bc *Blockchain) processBlockPoW(desoBlock *MsgDeSoBlock, verifySignatures 
 		err = bc.db.Update(func(txn *badger.Txn) error {
 			if bc.snapshot != nil {
 				bc.snapshot.PrepareAncestralRecordsFlush()
-				defer bc.snapshot.FlushAncestralRecordsWithTxn(txn)
 				glog.V(2).Infof("ProcessBlock: Preparing snapshot flush")
 			}
 			// Store the new block in the db under the
@@ -2444,7 +2443,15 @@ func (bc *Blockchain) processBlockPoW(desoBlock *MsgDeSoBlock, verifySignatures 
 			); innerErr != nil {
 				return errors.Wrapf(err, "ProcessBlock: Problem calling PutHeightHashToNodeInfo before validation")
 			}
-
+			// We can exit early if we're not using a snapshot.
+			if bc.snapshot == nil {
+				return nil
+			}
+			glog.V(2).Infof("ProcessBlock: Flushing ancestral records")
+			innerErr := bc.snapshot.FlushAncestralRecordsWithTxn(txn)
+			if innerErr != nil {
+				return innerErr
+			}
 			return nil
 		})
 	}
