@@ -11771,10 +11771,15 @@ func _dbPrefixForNonceEntryIndexWithBlockHeight(blockHeight uint64) []byte {
 	return append(prefixCopy, EncodeUint64(blockHeight)...)
 }
 
-func DbGetTransactorNonceEntryWithTxn(txn *badger.Txn, nonce *DeSoNonce, pkid *PKID) (*TransactorNonceEntry, error) {
+func DbGetTransactorNonceEntryWithTxn(
+	txn *badger.Txn,
+	snap *Snapshot,
+	nonce *DeSoNonce,
+	pkid *PKID,
+) (*TransactorNonceEntry, error) {
 	key := _dbKeyForTransactorNonceEntry(nonce, pkid)
-	_, err := txn.Get(key)
-	if err == badger.ErrKeyNotFound {
+	_, err := DBGetWithTxn(txn, snap, key)
+	if errors.Is(err, badger.ErrKeyNotFound) {
 		return nil, nil
 	}
 	if err != nil {
@@ -11786,11 +11791,16 @@ func DbGetTransactorNonceEntryWithTxn(txn *badger.Txn, nonce *DeSoNonce, pkid *P
 	}, nil
 }
 
-func DbGetTransactorNonceEntry(db *badger.DB, nonce *DeSoNonce, pkid *PKID) (*TransactorNonceEntry, error) {
+func DbGetTransactorNonceEntry(
+	db *badger.DB,
+	snap *Snapshot,
+	nonce *DeSoNonce,
+	pkid *PKID,
+) (*TransactorNonceEntry, error) {
 	var ret *TransactorNonceEntry
 	dbErr := db.View(func(txn *badger.Txn) error {
 		var err error
-		ret, err = DbGetTransactorNonceEntryWithTxn(txn, nonce, pkid)
+		ret, err = DbGetTransactorNonceEntryWithTxn(txn, snap, nonce, pkid)
 		return errors.Wrap(err, "DbGetTransactorNonceEntry: ")
 	})
 	if dbErr != nil {
