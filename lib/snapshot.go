@@ -547,7 +547,7 @@ func (snap *Snapshot) Run() {
 			if err != nil {
 				glog.Errorf("Snapshot.Run: Problem getting checksum bytes (%v)", err)
 			}
-			glog.V(2).Infof("Snapshot.Run: PrintText (%s) Current checksum (%v)", operation.printText, stateChecksum)
+			glog.V(0).Infof("Snapshot.Run: PrintText (%s) Current checksum (%v)", operation.printText, stateChecksum)
 
 		case SnapshotOperationExit:
 			glog.V(2).Infof("Snapshot.Run: Exiting the operation loop")
@@ -664,10 +664,6 @@ func (snap *Snapshot) RemoveChecksumBytes(key []byte, value []byte) {
 // WaitForAllOperationsToFinish will busy-wait for the snapshot channel to process all
 // current operations. Spinlocks are undesired but it's the easiest solution in this case,
 func (snap *Snapshot) WaitForAllOperationsToFinish() {
-	// If we haven't hit the first snapshot block height yet, don't bother.
-	if !snap.shouldPerformSnapshotOperations() {
-		return
-	}
 	// Define some helper variables so that the node prints nice logs.
 	initialLen := int(snap.OperationChannel.GetStatus())
 	printMap := make(map[int]bool)
@@ -1036,12 +1032,27 @@ func (snap *Snapshot) snapshotProcessBlockNoLock(blockNode *BlockNode) {
 
 		// Update the snapshot epoch metadata in the snapshot DB.
 		for ii := 0; ii < MetadataRetryCount; ii++ {
+			// We have to wait for the checksum threads to finish or else we'll set a stale checksum for
+			// our snapshot height.
+			glog.V(1).Infof("Snapshot.SnapshotProcessBlock: Waiting for checksum to finish updating...")
+			if localErr := snap.Checksum.Wait(); localErr != nil {
+				glog.Errorf("Snapshot.SetSnapshotChunk: Problem waiting for the checksum: %v", localErr)
+				time.Sleep(1 * time.Second)
+				continue
+			}
+			// For good measure, let's also wait for the operation queue to empty. This will ensure
+			// that any pending checksum operations are processed before we proceed.
+			glog.V(1).Infof("Snapshot.SnapshotProcessBlock: Waiting for all operations to " +
+				"clear so we can update snapshot checksum...")
+			snap.WaitForAllOperationsToFinish()
 			snap.CurrentEpochSnapshotMetadata.CurrentEpochChecksumBytes, err = snap.Checksum.ToBytes()
 			if err != nil {
 				glog.Errorf("Snapshot.SnapshotProcessBlock: Problem getting checksum bytes: Error (%v)", err)
 				time.Sleep(1 * time.Second)
 				continue
 			}
+			glog.V(1).Infof("Set snapshot checksum at snapshot height %v to %v. Delete this...\n",
+				height, snap.CurrentEpochSnapshotMetadata.CurrentEpochChecksumBytes)
 			snap.SnapshotDbMutex.Lock()
 			err = snap.mainDb.Update(func(txn *badger.Txn) error {
 				return txn.Set(getMainDbPrefix(_prefixLastEpochMetadata), snap.CurrentEpochSnapshotMetadata.ToBytes())
