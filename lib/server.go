@@ -824,7 +824,9 @@ func (srv *Server) GetBlocksToStore(pp *Peer) {
 		if blockNode.Status&StatusBlockStored == 0 {
 			maxBlocksInFlight := MaxBlocksInFlight
 			if pp.Params.ProtocolVersion >= ProtocolVersion2 &&
-				srv.params.IsPoSBlockHeight(uint64(blockNode.Height)) {
+				(srv.params.IsPoSBlockHeight(uint64(blockNode.Height)) ||
+					srv.params.NetworkType == NetworkType_TESTNET) {
+
 				maxBlocksInFlight = MaxBlocksInFlightPoS
 			}
 			numBlocksToFetch := maxBlocksInFlight - len(pp.requestedBlocks)
@@ -883,7 +885,8 @@ func (srv *Server) GetBlocks(pp *Peer, maxHeight int) {
 	// each flight.
 	maxBlocksInFlight := MaxBlocksInFlight
 	if pp.Params.ProtocolVersion >= ProtocolVersion2 &&
-		srv.params.IsPoSBlockHeight(uint64(srv.blockchain.blockTip().Height)) {
+		(srv.params.IsPoSBlockHeight(uint64(srv.blockchain.blockTip().Height)) ||
+			srv.params.NetworkType == NetworkType_TESTNET) {
 		maxBlocksInFlight = MaxBlocksInFlightPoS
 	}
 	numBlocksToFetch := maxBlocksInFlight - len(pp.requestedBlocks)
@@ -2439,10 +2442,12 @@ func (srv *Server) _handleBlockBundle(pp *Peer, bundle *MsgDeSoBlockBundle) {
 		// though as we'll just connect all the blocks after the failed one and those blocks will also
 		// gracefully fail.
 		srv._handleBlock(pp, blk, ii == len(bundle.Blocks)-1 /*isLastBlock*/)
-		numLogBlocks := 1000
-		if srv.params.IsPoWBlockHeight(blk.Header.Height) {
-			numLogBlocks = 100
+		numLogBlocks := 100
+		if srv.params.IsPoWBlockHeight(blk.Header.Height) ||
+			srv.params.NetworkType == NetworkType_TESTNET {
+			numLogBlocks = 1000
 		}
+
 		if ii%numLogBlocks == 0 {
 			glog.Infof(CLog(Cyan, fmt.Sprintf("Server._handleBlockBundle: Processed block ( %v / %v ) = ( %v / %v ) from Peer %v",
 				bundle.Blocks[ii].Header.Height,
