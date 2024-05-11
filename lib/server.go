@@ -2443,7 +2443,7 @@ func (srv *Server) _handleBlockBundle(pp *Peer, bundle *MsgDeSoBlockBundle) {
 		// gracefully fail.
 		srv._handleBlock(pp, blk, ii == len(bundle.Blocks)-1 /*isLastBlock*/)
 		numLogBlocks := 100
-		if srv.params.IsPoWBlockHeight(blk.Header.Height) ||
+		if srv.params.IsPoSBlockHeight(blk.Header.Height) ||
 			srv.params.NetworkType == NetworkType_TESTNET {
 			numLogBlocks = 1000
 		}
