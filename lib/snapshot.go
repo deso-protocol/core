@@ -2307,7 +2307,6 @@ func (migration *EncoderMigration) SaveMigrations() error {
 func (migration *EncoderMigration) StartMigrations() error {
 
 	migration.migrationChecksumLock.Lock()
-	defer migration.migrationChecksumLock.Unlock()
 	var outstandingChecksums []*EncoderMigrationChecksum
 
 	// Look for any outstanding encoder migrations. These migrations are going to be set to not completed and their checksums
@@ -2323,6 +2322,7 @@ func (migration *EncoderMigration) StartMigrations() error {
 	if len(outstandingChecksums) == 0 {
 		return nil
 	}
+	migration.migrationChecksumLock.Unlock()
 
 	// If we get to this point, it means there are some new migrations that we need to process.
 	glog.Infof(CLog(Yellow, fmt.Sprintf("EncoderMigration: Found %v outstanding migrations. Proceeding to scan through the "+
