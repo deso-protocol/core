@@ -5,6 +5,14 @@ import (
 	"context"
 	"encoding/hex"
 	"fmt"
+	"math"
+	"path/filepath"
+	"reflect"
+	"runtime"
+	"sort"
+	"sync"
+	"time"
+
 	"github.com/cloudflare/circl/group"
 	"github.com/decred/dcrd/lru"
 	"github.com/deso-protocol/go-deadlock"
@@ -15,13 +23,6 @@ import (
 	"github.com/oleiade/lane"
 	"github.com/pkg/errors"
 	"golang.org/x/sync/semaphore"
-	"math"
-	"path/filepath"
-	"reflect"
-	"runtime"
-	"sort"
-	"sync"
-	"time"
 )
 
 var (
@@ -328,7 +329,7 @@ func NewSnapshot(mainDb *badger.DB, mainDbDirectory string, snapshotBlockHeightP
 
 	// Initialize the ancestral records database
 	snapshotDirectory := filepath.Join(GetBadgerDbPath(mainDbDirectory), "snapshot")
-	snapshotOpts := DefaultBadgerOptions(snapshotDirectory)
+	snapshotOpts := PerformanceBadgerOptions(snapshotDirectory)
 	snapshotOpts.ValueDir = GetBadgerDbPath(snapshotDirectory)
 	snapshotDb, err := badger.Open(snapshotOpts)
 	if err != nil {
