@@ -1,13 +1,12 @@
 package cmd
 
 import (
-	"net/url"
-	"os"
-	"path/filepath"
-
 	"github.com/deso-protocol/core/lib"
 	"github.com/golang/glog"
 	"github.com/spf13/viper"
+	"net/url"
+	"os"
+	"path/filepath"
 )
 
 type Config struct {
