@@ -3518,13 +3518,13 @@ type legacySigStruct struct {
 }
 
 // See comment on legacySigStruct for why we need this
-func (sig DeSoSignature) MarshalJSON() ([]byte, error) {
+func (desoSign *DeSoSignature) MarshalJSON() ([]byte, error) {
 	var legacySig *legacySigStruct
-	if sig.Sign != nil {
-		r := sig.Sign.R()
+	if desoSign.Sign != nil {
+		r := desoSign.Sign.R()
 		rr := &r
 
-		s := sig.Sign.S()
+		s := desoSign.Sign.S()
 		ss := &s
 
 		legacySig = &legacySigStruct{
@@ -3539,13 +3539,13 @@ func (sig DeSoSignature) MarshalJSON() ([]byte, error) {
 		IsRecoverable bool
 	}{
 		Sign:          legacySig,
-		RecoveryId:    sig.RecoveryId,
-		IsRecoverable: sig.IsRecoverable,
+		RecoveryId:    desoSign.RecoveryId,
+		IsRecoverable: desoSign.IsRecoverable,
 	})
 }
 
 // See comment on legacySigStruct for why we need this
-func (sig *DeSoSignature) UnmarshalJSON(data []byte) error {
+func (desoSign *DeSoSignature) UnmarshalJSON(data []byte) error {
 	aux := struct {
 		Sign          *legacySigStruct
 		RecoveryId    byte
@@ -3563,10 +3563,10 @@ func (sig *DeSoSignature) UnmarshalJSON(data []byte) error {
 		ss := aux.Sign.S
 		s.SetBytes(&ss)
 
-		sig.Sign = ecdsa2.NewSignature(&r, &s)
+		desoSign.Sign = ecdsa2.NewSignature(&r, &s)
 	}
-	sig.RecoveryId = aux.RecoveryId
-	sig.IsRecoverable = aux.IsRecoverable
+	desoSign.RecoveryId = aux.RecoveryId
+	desoSign.IsRecoverable = aux.IsRecoverable
 
 	return nil
 }
