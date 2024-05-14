@@ -10,7 +10,6 @@ import (
 	"github.com/deso-protocol/core/collections"
 	"github.com/dgraph-io/badger/v4"
 	"github.com/golang/glog"
-	"github.com/holiman/uint256"
 	"github.com/pkg/errors"
 )
 
@@ -895,120 +894,6 @@ func (bav *UtxoView) _flushSnapshotValidatorBLSPublicKeyPKIDPairEntryToDbWithTxn
 		}
 	}
 	return nil
-}
-
-//
-// SnapshotValidatorSetTotalStakeAmountNanos
-//
-
-func (bav *UtxoView) GetSnapshotValidatorSetTotalStakeAmountNanos() (*uint256.Int, error) {
-	// Calculate the SnapshotEpochNumber.
-	snapshotAtEpochNumber, err := bav.GetCurrentSnapshotEpochNumber()
-	if err != nil {
-		return nil, errors.Wrapf(err, "GetSnapshotValidatorSetTotalStakeAmountNanos: problem calculating SnapshotEpochNumber: ")
-	}
-	// Check the UtxoView first.
-	if globalActiveStakeAmountNanos, exists := bav.SnapshotValidatorSetTotalStakeAmountNanos[snapshotAtEpochNumber]; exists {
-		return globalActiveStakeAmountNanos.Clone(), nil
-	}
-	// If we don't have it in the UtxoView, check the db.
-	globalActiveStakeAmountNanos, err := DBGetSnapshotValidatorSetTotalStakeAmountNanos(bav.Handle, bav.Snapshot, snapshotAtEpochNumber)
-	if err != nil {
-		return nil, errors.Wrapf(
-			err,
-			"GetSnapshotValidatorSetTotalStakeAmountNanos: problem retrieving SnapshotValidatorSetTotalStakeAmountNanos from db: ",
-		)
-	}
-	if globalActiveStakeAmountNanos == nil {
-		globalActiveStakeAmountNanos = uint256.NewInt(0)
-	}
-	// Cache the result in the UtxoView.
-	bav._setSnapshotValidatorSetTotalStakeAmountNanos(globalActiveStakeAmountNanos, snapshotAtEpochNumber)
-	return globalActiveStakeAmountNanos, nil
-}
-
-func (bav *UtxoView) _setSnapshotValidatorSetTotalStakeAmountNanos(globalActiveStakeAmountNanos *uint256.Int, snapshotAtEpochNumber uint64) {
-	if globalActiveStakeAmountNanos == nil {
-		glog.Errorf("_setSnapshotValidatorSetTotalStakeAmountNanos: called with nil entry, this should never happen")
-		return
-	}
-	bav.SnapshotValidatorSetTotalStakeAmountNanos[snapshotAtEpochNumber] = globalActiveStakeAmountNanos.Clone()
-}
-
-func (bav *UtxoView) _flushSnapshotValidatorSetTotalStakeAmountNanosToDbWithTxn(txn *badger.Txn, blockHeight uint64) error {
-	for snapshotAtEpochNumber, globalActiveStakeAmountNanos := range bav.SnapshotValidatorSetTotalStakeAmountNanos {
-		if globalActiveStakeAmountNanos == nil {
-			return fmt.Errorf(
-				"_flushSnapshotValidatorSetTotalStakeAmountNanosToDbWithTxn: found nil entry for EpochNumber %d, this should never happen",
-				snapshotAtEpochNumber,
-			)
-		}
-		if err := DBPutSnapshotValidatorSetTotalStakeAmountNanosWithTxn(
-			txn, bav.Snapshot, globalActiveStakeAmountNanos, snapshotAtEpochNumber, blockHeight, bav.EventManager,
-		); err != nil {
-			return errors.Wrapf(
-				err,
-				"_flushSnapshotValidatorSetTotalStakeAmountNanosToDbWithTxn: problem setting SnapshotValidatorSetTotalStake for EpochNumber %d: ",
-				snapshotAtEpochNumber,
-			)
-		}
-	}
-	return nil
-}
-
-func DBKeyForSnapshotValidatorSetTotalStakeAmountNanos(snapshotAtEpochNumber uint64) []byte {
-	key := append([]byte{}, Prefixes.PrefixSnapshotValidatorSetTotalStakeAmountNanos...)
-	key = append(key, EncodeUint64(snapshotAtEpochNumber)...)
-	return key
-}
-
-func DBGetSnapshotValidatorSetTotalStakeAmountNanos(handle *badger.DB, snap *Snapshot, snapshotAtEpochNumber uint64) (*uint256.Int, error) {
-	var ret *uint256.Int
-	err := handle.View(func(txn *badger.Txn) error {
-		var innerErr error
-		ret, innerErr = DBGetSnapshotValidatorSetTotalStakeAmountNanosWithTxn(txn, snap, snapshotAtEpochNumber)
-		return innerErr
-	})
-	return ret, err
-}
-
-func DBGetSnapshotValidatorSetTotalStakeAmountNanosWithTxn(txn *badger.Txn, snap *Snapshot, snapshotAtEpochNumber uint64) (*uint256.Int, error) {
-	// Retrieve from db.
-	key := DBKeyForSnapshotValidatorSetTotalStakeAmountNanos(snapshotAtEpochNumber)
-	globalActiveStakeAmountNanosBytes, err := DBGetWithTxn(txn, snap, key)
-	if err != nil {
-		// We don't want to error if the key isn't found. Instead, return nil.
-		if err == badger.ErrKeyNotFound {
-			return nil, nil
-		}
-		return nil, errors.Wrapf(err, "DBGetSnapshotValidatorSetTotalStakeAmountNanosWithTxn: problem retrieving value")
-	}
-
-	// Decode from bytes.
-	var globalActiveStakeAmountNanos *uint256.Int
-	rr := bytes.NewReader(globalActiveStakeAmountNanosBytes)
-	globalActiveStakeAmountNanos, err = VariableDecodeUint256(rr)
-	if err != nil {
-		return nil, errors.Wrapf(err, "DBGetSnapshotValidatorSetTotalStakeAmountNanosWithTxn: problem decoding value")
-	}
-	return globalActiveStakeAmountNanos, nil
-}
-
-func DBPutSnapshotValidatorSetTotalStakeAmountNanosWithTxn(
-	txn *badger.Txn,
-	snap *Snapshot,
-	globalActiveStakeAmountNanos *uint256.Int,
-	snapshotAtEpochNumber uint64,
-	blockHeight uint64,
-	eventManager *EventManager,
-) error {
-	if globalActiveStakeAmountNanos == nil {
-		// This should never happen but is a sanity check.
-		glog.Errorf("DBPutSnapshotValidatorSetTotalStakeAmountNanosWithTxn: called with nil GlobalActiveStake, this should never happen")
-		return nil
-	}
-	key := DBKeyForSnapshotValidatorSetTotalStakeAmountNanos(snapshotAtEpochNumber)
-	return DBSetWithTxn(txn, snap, key, VariableEncodeUint256(globalActiveStakeAmountNanos), eventManager)
 }
 
 //

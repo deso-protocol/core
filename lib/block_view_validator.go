@@ -2478,14 +2478,6 @@ func (bav *UtxoView) CreateUnjailValidatorTxindexMetadata(
 	return &UnjailValidatorTxindexMetadata{}, affectedPublicKeys
 }
 
-func SumValidatorEntriesTotalStakeAmountNanos(validatorEntries []*ValidatorEntry) *uint256.Int {
-	totalStakeAmountNanos := uint256.NewInt(0)
-	for _, validatorEntry := range validatorEntries {
-		totalStakeAmountNanos.Add(totalStakeAmountNanos, validatorEntry.TotalStakeAmountNanos)
-	}
-	return totalStakeAmountNanos
-}
-
 // ParseValidatorDomain expects a domain string in the format "host:port" and returns the host and port.
 // If the domain is not in the expected format, it returns an error.
 func ParseValidatorDomain(domain string) (_host string, _port uint64, _err error) {
