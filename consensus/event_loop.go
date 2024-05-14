@@ -39,7 +39,7 @@ func NewFastHotStuffEventLoop() *fastHotStuffEventLoop {
 //
 // Given the above, This function updates the tip internally, stores the safe blocks, and re-initializes
 // all internal data structures that are used to track incoming votes and timeout messages for QC construction.
-func (fc *fastHotStuffEventLoop) Init(
+func (fe *fastHotStuffEventLoop) Init(
 	crankTimerInterval time.Duration,
 	timeoutBaseDuration time.Duration,
 	genesisQC QuorumCertificate,
@@ -48,11 +48,11 @@ func (fc *fastHotStuffEventLoop) Init(
 	currentView uint64,
 ) error {
 	// Grab the event loop's lock
-	fc.lock.Lock()
-	defer fc.lock.Unlock()
+	fe.lock.Lock()
+	defer fe.lock.Unlock()
 
 	// Ensure the event loop is not already running
-	if fc.status == eventLoopStatusRunning {
+	if fe.status == eventLoopStatusRunning {
 		return errors.New("FastHotStuffEventLoop.Init: event loop is already running")
 	}
 
@@ -65,10 +65,10 @@ func (fc *fastHotStuffEventLoop) Init(
 	}
 
 	// Store the genesis QC
-	fc.genesisQC = genesisQC
+	fe.genesisQC = genesisQC
 
 	// Validate the safe blocks and validator lists, and store them
-	if err := fc.storeBlocks(tip, safeBlocks); err != nil {
+	if err := fe.storeBlocks(tip, safeBlocks); err != nil {
 		return errors.Wrap(err, "FastHotStuffEventLoop.Init: ")
 	}
 
@@ -76,66 +76,66 @@ func (fc *fastHotStuffEventLoop) Init(
 	if currentView < tip.Block.GetView()+1 {
 		return errors.New("FastHotStuffEventLoop.Init: currentView is lower than the tip block's view")
 	}
-	fc.currentView = currentView
+	fe.currentView = currentView
 
 	// Reset QC construction status for the current view
-	fc.hasCrankTimerRunForCurrentView = false
-	fc.hasConstructedQCInCurrentView = false
+	fe.hasCrankTimerRunForCurrentView = false
+	fe.hasConstructedQCInCurrentView = false
 
 	// Reset all internal data structures for votes and timeouts
-	fc.votesSeenByBlockHash = make(map[BlockHashValue]map[string]VoteMessage)
-	fc.timeoutsSeenByView = make(map[uint64]map[string]TimeoutMessage)
+	fe.votesSeenByBlockHash = make(map[BlockHashValue]map[string]VoteMessage)
+	fe.timeoutsSeenByView = make(map[uint64]map[string]TimeoutMessage)
 
 	// Set the crank timer interval and timeout base duration
-	fc.crankTimerInterval = crankTimerInterval
-	fc.timeoutBaseDuration = timeoutBaseDuration
+	fe.crankTimerInterval = crankTimerInterval
+	fe.timeoutBaseDuration = timeoutBaseDuration
 
 	// Update the event loop's status
-	fc.status = eventLoopStatusInitialized
+	fe.status = eventLoopStatusInitialized
 
 	return nil
 }
 
 // GetEvents returns the event loop's external channel for signaling. We need a getter function
 // to ensure that this struct implements the FastHotStuffEventLoop interface type.
-func (fc *fastHotStuffEventLoop) GetEvents() chan *FastHotStuffEvent {
-	return fc.Events
+func (fe *fastHotStuffEventLoop) GetEvents() chan *FastHotStuffEvent {
+	return fe.Events
 }
 
 // GetCurrentView is a simple getter that returns the event loop's current view. It does not need
 // to be thread-safe. The caller is expected to use it in a thread-safe manner, at a time when
 // the view is guaranteed to not change.
-func (fc *fastHotStuffEventLoop) GetCurrentView() uint64 {
-	return fc.currentView
+func (fe *fastHotStuffEventLoop) GetCurrentView() uint64 {
+	return fe.currentView
 }
 
 // AdvanceViewOnTimeout is called when the tip has not changed but the event loop has timed out. This
 // function advances the view and resets the crank timer and timeout scheduled tasks.
-func (fc *fastHotStuffEventLoop) AdvanceViewOnTimeout() (uint64, error) {
+func (fe *fastHotStuffEventLoop) AdvanceViewOnTimeout() (uint64, error) {
 	// Grab the event loop's lock
-	fc.lock.Lock()
-	defer fc.lock.Unlock()
+	fe.lock.Lock()
+	defer fe.lock.Unlock()
 
 	// Ensure the event loop is running. This guarantees that the chain tip and validator list
 	// have already been set.
-	if fc.status != eventLoopStatusRunning {
+	if fe.status != eventLoopStatusRunning {
 		return 0, errors.New("FastHotStuffEventLoop.AdvanceViewOnTimeout: Event loop is not running")
 	}
 
 	// Advance the view
-	fc.currentView++
+	fe.currentView++
 
 	// Reset QC construction status for the current view
-	fc.hasCrankTimerRunForCurrentView = false
-	fc.hasConstructedQCInCurrentView = false
+	fe.hasCrankTimerRunForCurrentView = false
+	fe.hasConstructedQCInCurrentView = false
 
 	// Evict all stale votes and timeouts
-	fc.evictStaleVotesAndTimeouts()
+	fe.evictStaleVotesAndTimeouts()
 
 	// Schedule the next crank timer and timeout scheduled tasks
-	fc.resetScheduledTasks()
+	fe.resetScheduledTasks()
 
-	return fc.currentView, nil
+	return fe.currentView, nil
 }
 
 // ProcessTipBlock must only be called when the server has accepted a new block, connected it
@@ -149,23 +149,23 @@ func (fc *fastHotStuffEventLoop) AdvanceViewOnTimeout() (uint64, error) {
 //     all ancestors of the uncommitted tip that are safe to extend from, and all blocks from forks
 //     that are safe to extend from. This function does not validate the collection of blocks. It
 //     expects the server to know and decide what blocks are safe to extend from.
-func (fc *fastHotStuffEventLoop) ProcessTipBlock(
+func (fe *fastHotStuffEventLoop) ProcessTipBlock(
 	tip BlockWithValidatorList,
 	safeBlocks []BlockWithValidatorList,
 	crankTimerDuration time.Duration,
 	timeoutTimerDuration time.Duration,
 ) error {
 	// Grab the event loop's lock
-	fc.lock.Lock()
-	defer fc.lock.Unlock()
+	fe.lock.Lock()
+	defer fe.lock.Unlock()
 
 	// Ensure the event loop is running
-	if fc.status != eventLoopStatusRunning {
+	if fe.status != eventLoopStatusRunning {
 		return errors.New("FastHotStuffEventLoop.ProcessTipBlock: Event loop is not running")
 	}
 
 	// Validate the safe blocks and validator lists, and store them
-	if err := fc.storeBlocks(tip, safeBlocks); err != nil {
+	if err := fe.storeBlocks(tip, safeBlocks); err != nil {
 		return errors.Wrap(err, "FastHotStuffEventLoop.ProcessTipBlock: ")
 	}
 
@@ -178,28 +178,28 @@ func (fc *fastHotStuffEventLoop) ProcessTipBlock(
 	}
 
 	// We track the current view here so we know which view to time out on later on.
-	fc.currentView = fc.tip.block.GetView() + 1
+	fe.currentView = fe.tip.block.GetView() + 1
 
 	// Reset QC construction status for the current view
-	fc.hasCrankTimerRunForCurrentView = false
-	fc.hasConstructedQCInCurrentView = false
-	fc.crankTimerInterval = crankTimerDuration
-	fc.timeoutBaseDuration = timeoutTimerDuration
+	fe.hasCrankTimerRunForCurrentView = false
+	fe.hasConstructedQCInCurrentView = false
+	fe.crankTimerInterval = crankTimerDuration
+	fe.timeoutBaseDuration = timeoutTimerDuration
 
 	// Evict all stale votes and timeouts
-	fc.evictStaleVotesAndTimeouts()
+	fe.evictStaleVotesAndTimeouts()
 
 	// Signal the server that we can vote for the block. The server will decide whether to construct and
 	// broadcast the vote.
-	fc.emitEvent(&FastHotStuffEvent{
+	fe.emitEvent(&FastHotStuffEvent{
 		EventType:      FastHotStuffEventTypeVote,
-		TipBlockHash:   fc.tip.block.GetBlockHash(),
-		TipBlockHeight: fc.tip.block.GetHeight(),
-		View:           fc.tip.block.GetView(),
+		TipBlockHash:   fe.tip.block.GetBlockHash(),
+		TipBlockHeight: fe.tip.block.GetHeight(),
+		View:           fe.tip.block.GetView(),
 	})
 
 	// Schedule the next crank timer and timeout scheduled tasks
-	fc.resetScheduledTasks()
+	fe.resetScheduledTasks()
 
 	return nil
 }
@@ -214,24 +214,24 @@ func (fc *fastHotStuffEventLoop) ProcessTipBlock(
 //     all ancestors of the uncommitted tip that are safe to extend from, and all blocks from forks
 //     that are safe to extend from. This function does not validate the collection of blocks. It
 //     expects the server to know and decide what blocks are safe to extend from.
-func (fc *fastHotStuffEventLoop) UpdateSafeBlocks(safeBlocks []BlockWithValidatorList) error {
+func (fe *fastHotStuffEventLoop) UpdateSafeBlocks(safeBlocks []BlockWithValidatorList) error {
 	// Grab the event loop's lock
-	fc.lock.Lock()
-	defer fc.lock.Unlock()
+	fe.lock.Lock()
+	defer fe.lock.Unlock()
 
 	// Ensure the event loop is running
-	if fc.status != eventLoopStatusRunning {
+	if fe.status != eventLoopStatusRunning {
 		return errors.New("FastHotStuffEventLoop.UpdateSafeBlocks: Event loop is not running")
 	}
 
 	// Fetch the current tip block
 	tipBlock := BlockWithValidatorList{
-		Block:         fc.tip.block,
-		ValidatorList: fc.tip.validatorList,
+		Block:         fe.tip.block,
+		ValidatorList: fe.tip.validatorList,
 	}
 
 	// Validate the safe blocks and validator lists, and store them
-	if err := fc.storeBlocks(tipBlock, safeBlocks); err != nil {
+	if err := fe.storeBlocks(tipBlock, safeBlocks); err != nil {
 		return errors.Wrap(err, "FastHotStuffEventLoop.UpdateSafeBlocks: ")
 	}
 
@@ -241,7 +241,7 @@ func (fc *fastHotStuffEventLoop) UpdateSafeBlocks(safeBlocks []BlockWithValidato
 
 // storeBlocks is a helper function that validates the provided blocks, validator lists, and stores them.
 // It must be called while holding the event loop's lock.
-func (fc *fastHotStuffEventLoop) storeBlocks(tip BlockWithValidatorList, safeBlocks []BlockWithValidatorList) error {
+func (fe *fastHotStuffEventLoop) storeBlocks(tip BlockWithValidatorList, safeBlocks []BlockWithValidatorList) error {
 	// Do a basic integrity check on the tip block and validator list
 	if !isProperlyFormedBlockWithValidatorList(tip) {
 		return errors.New("Invalid tip block or validator list")
@@ -256,12 +256,12 @@ func (fc *fastHotStuffEventLoop) storeBlocks(tip BlockWithValidatorList, safeBlo
 	}
 
 	// Sanity check: the tip block and safe blocks must not have lower views than the genesis QC's view.
-	if tip.Block.GetView() < fc.genesisQC.GetView() {
+	if tip.Block.GetView() < fe.genesisQC.GetView() {
 		return errors.New("Tip block view must be greater than or equal to the genesis QC view")
 	}
 
 	for _, block := range safeBlocks {
-		if block.Block.GetView() < fc.genesisQC.GetView() {
+		if block.Block.GetView() < fe.genesisQC.GetView() {
 			return errors.New("Safe block view must be greater than or equal to the genesis QC view")
 		}
 	}
@@ -276,14 +276,14 @@ func (fc *fastHotStuffEventLoop) storeBlocks(tip BlockWithValidatorList, safeBlo
 	}
 
 	// Store the tip block and validator list
-	fc.tip = blockWithValidatorLookup{
+	fe.tip = blockWithValidatorLookup{
 		block:           tip.Block,
 		validatorList:   tip.ValidatorList,
 		validatorLookup: collections.ToMap(tip.ValidatorList, validatorToPublicKeyString),
 	}
 
 	// Store the blocks and validator lists
-	fc.safeBlocks = collections.Transform(safeBlocks, func(block BlockWithValidatorList) blockWithValidatorLookup {
+	fe.safeBlocks = collections.Transform(safeBlocks, func(block BlockWithValidatorList) blockWithValidatorLookup {
 		return blockWithValidatorLookup{
 			block:           block.Block,
 			validatorList:   block.ValidatorList,
@@ -305,14 +305,14 @@ func (fc *fastHotStuffEventLoop) storeBlocks(tip BlockWithValidatorList, safeBlo
 //
 // Reference implementation:
 // https://github.com/deso-protocol/hotstuff_pseudocode/blob/6409b51c3a9a953b383e90619076887e9cebf38d/fast_hotstuff_bls.go#L756
-func (fc *fastHotStuffEventLoop) ProcessValidatorVote(vote VoteMessage) error {
+func (fe *fastHotStuffEventLoop) ProcessValidatorVote(vote VoteMessage) error {
 	// Grab the event loop's lock
-	fc.lock.Lock()
-	defer fc.lock.Unlock()
+	fe.lock.Lock()
+	defer fe.lock.Unlock()
 
 	// Ensure the event loop is running. This guarantees that the chain tip and validator list
 	// have already been set.
-	if fc.status != eventLoopStatusRunning {
+	if fe.status != eventLoopStatusRunning {
 		return errors.New("FastHotStuffEventLoop.ProcessValidatorVote: Event loop is not running")
 	}
 
@@ -322,13 +322,13 @@ func (fc *fastHotStuffEventLoop) ProcessValidatorVote(vote VoteMessage) error {
 	}
 
 	// Check if the vote is stale
-	if isStaleView(fc.currentView, vote.GetView()) {
+	if isStaleView(fe.currentView, vote.GetView()) {
 		return errors.Errorf("FastHotStuffEventLoop.ProcessValidatorVote: Vote has a stale view %d", vote.GetView())
 	}
 
 	// Check if the public key has already voted for this view. The protocol does not allow
 	// a validator to vote for more than one block in a given view.
-	if fc.hasVotedForView(vote.GetPublicKey(), vote.GetView()) {
+	if fe.hasVotedForView(vote.GetPublicKey(), vote.GetView()) {
 		return errors.Errorf(
 			"FastHotStuffEventLoop.ProcessValidatorVote: validator %s has already voted for view %d",
 			vote.GetPublicKey().ToString(),
@@ -338,7 +338,7 @@ func (fc *fastHotStuffEventLoop) ProcessValidatorVote(vote VoteMessage) error {
 
 	// Check if the public key has already timed out for this view. The protocol does not allow
 	// for a validator to vote for a block in a view that it has already timed out for.
-	if fc.hasTimedOutForView(vote.GetPublicKey(), vote.GetView()) {
+	if fe.hasTimedOutForView(vote.GetPublicKey(), vote.GetView()) {
 		return errors.Errorf(
 			"FastHotStuffEventLoop.ProcessValidatorVote: validator %s has already timed out for view %d",
 			vote.GetPublicKey().ToString(),
@@ -355,25 +355,25 @@ func (fc *fastHotStuffEventLoop) ProcessValidatorVote(vote VoteMessage) error {
 	}
 
 	// Cache the vote in case we need it for later
-	fc.storeVote(voteSignaturePayload, vote)
+	fe.storeVote(voteSignaturePayload, vote)
 
 	// Check if the crank timer has elapsed or the event loop has constructed a QC in the current view.
 	// If so, then there's nothing more to do.
-	if !fc.hasCrankTimerRunForCurrentView || fc.hasConstructedQCInCurrentView {
+	if !fe.hasCrankTimerRunForCurrentView || fe.hasConstructedQCInCurrentView {
 		return nil
 	}
 
 	// Check if the vote is for the chain tip. If not, then there's nothing more to do.
-	if !IsEqualBlockHash(vote.GetBlockHash(), fc.tip.block.GetBlockHash()) {
+	if !IsEqualBlockHash(vote.GetBlockHash(), fe.tip.block.GetBlockHash()) {
 		return nil
 	}
 
 	// Check if we have a super-majority vote for the chain tip.
-	if voteQCEvent := fc.tryConstructVoteQCInCurrentView(); voteQCEvent != nil {
+	if voteQCEvent := fe.tryConstructVoteQCInCurrentView(); voteQCEvent != nil {
 		// Signal the server that we can construct a QC for the chain tip, and mark that we have
 		// constructed a QC for the current view.
-		fc.hasConstructedQCInCurrentView = true
-		fc.emitEvent(voteQCEvent)
+		fe.hasConstructedQCInCurrentView = true
+		fe.emitEvent(voteQCEvent)
 	}
 
 	return nil
@@ -390,14 +390,14 @@ func (fc *fastHotStuffEventLoop) ProcessValidatorVote(vote VoteMessage) error {
 //
 // Reference implementation:
 // https://github.com/deso-protocol/hotstuff_pseudocode/blob/6409b51c3a9a953b383e90619076887e9cebf38d/fast_hotstuff_bls.go#L958
-func (fc *fastHotStuffEventLoop) ProcessValidatorTimeout(timeout TimeoutMessage) error {
+func (fe *fastHotStuffEventLoop) ProcessValidatorTimeout(timeout TimeoutMessage) error {
 	// Grab the event loop's lock
-	fc.lock.Lock()
-	defer fc.lock.Unlock()
+	fe.lock.Lock()
+	defer fe.lock.Unlock()
 
 	// Ensure the event loop is running. This guarantees that the chain tip and validator list
 	// have already been set.
-	if fc.status != eventLoopStatusRunning {
+	if fe.status != eventLoopStatusRunning {
 		return errors.New("FastHotStuffEventLoop.ProcessValidatorTimeout: Event loop is not running")
 	}
 
@@ -407,13 +407,13 @@ func (fc *fastHotStuffEventLoop) ProcessValidatorTimeout(timeout TimeoutMessage)
 	}
 
 	// Check if the timeout is stale
-	if isStaleView(fc.currentView, timeout.GetView()) {
+	if isStaleView(fe.currentView, timeout.GetView()) {
 		return errors.Errorf("FastHotStuffEventLoop.ProcessValidatorTimeout: Timeout has a stale view %d", timeout.GetView())
 	}
 
 	// Check if the public key has already voted for this view. The protocol does not allow
 	// a validator to time out for a view it has already voted on.
-	if fc.hasVotedForView(timeout.GetPublicKey(), timeout.GetView()) {
+	if fe.hasVotedForView(timeout.GetPublicKey(), timeout.GetView()) {
 		return errors.Errorf(
 			"FastHotStuffEventLoop.ProcessValidatorTimeout: validator %s has already voted for view %d",
 			timeout.GetPublicKey().ToString(),
@@ -423,7 +423,7 @@ func (fc *fastHotStuffEventLoop) ProcessValidatorTimeout(timeout TimeoutMessage)
 
 	// Check if the public key has already timed out for this view. The protocol does not allow
 	// for a validator to time out more than once for the same view.
-	if fc.hasTimedOutForView(timeout.GetPublicKey(), timeout.GetView()) {
+	if fe.hasTimedOutForView(timeout.GetPublicKey(), timeout.GetView()) {
 		return errors.Errorf(
 			"FastHotStuffEventLoop.ProcessValidatorTimeout: validator %s has already timed out for view %d",
 			timeout.GetPublicKey().ToString(),
@@ -437,7 +437,7 @@ func (fc *fastHotStuffEventLoop) ProcessValidatorTimeout(timeout TimeoutMessage)
 	//   This can happen if the timeout's creator is malicious, or if our node is far enough behind the
 	//   blockchain to not have seen the high QC before other nodes have timed out. In either case, the
 	//   simple and safe option is to reject the timeout and move on.
-	isSafeBlock, _, validatorList, validatorLookup := fc.fetchSafeBlockInfo(timeout.GetHighQC().GetBlockHash())
+	isSafeBlock, _, validatorList, validatorLookup := fe.fetchSafeBlockInfo(timeout.GetHighQC().GetBlockHash())
 	if !isSafeBlock {
 		return errors.Errorf(
 			"FastHotStuffEventLoop.ProcessValidatorTimeout: Timeout from public key %s has an unknown high QC with view %d",
@@ -469,7 +469,7 @@ func (fc *fastHotStuffEventLoop) ProcessValidatorTimeout(timeout TimeoutMessage)
 
 	// Verify the high QC in the timeout message. The highQC is valid if it exactly matches the genesis QC or it is a
 	// valid QC signed by a super-majority of validators for a safe block.
-	if !IsEqualQC(timeout.GetHighQC(), fc.genesisQC) && !IsValidSuperMajorityQuorumCertificate(timeout.GetHighQC(), validatorList) {
+	if !IsEqualQC(timeout.GetHighQC(), fe.genesisQC) && !IsValidSuperMajorityQuorumCertificate(timeout.GetHighQC(), validatorList) {
 		return errors.Errorf(
 			"FastHotStuffEventLoop.ProcessValidatorTimeout: Invalid high QC received in timeout message from validator %s for view %d",
 			timeout.GetPublicKey().ToString(),
@@ -478,99 +478,99 @@ func (fc *fastHotStuffEventLoop) ProcessValidatorTimeout(timeout TimeoutMessage)
 	}
 
 	// Cache the timeout message in case we need it for later
-	fc.storeTimeout(timeout)
+	fe.storeTimeout(timeout)
 
 	// Check if the crank timer has elapsed or the event loop has constructed a QC in the current view.
 	// If so, then there's nothing more to do.
-	if !fc.hasCrankTimerRunForCurrentView || fc.hasConstructedQCInCurrentView {
+	if !fe.hasCrankTimerRunForCurrentView || fe.hasConstructedQCInCurrentView {
 		return nil
 	}
 
 	// Check if the timeout is not for the previous view. If not, then there's nothing more to do.
-	if timeout.GetView() != fc.currentView-1 {
+	if timeout.GetView() != fe.currentView-1 {
 		return nil
 	}
 
 	// Check if we have a super-majority of stake has timed out of the previous view. If so, we signal
 	// the server that we can construct a timeoutQC in the current view.
-	if timeoutQCEvent := fc.tryConstructTimeoutQCInCurrentView(); timeoutQCEvent != nil {
+	if timeoutQCEvent := fe.tryConstructTimeoutQCInCurrentView(); timeoutQCEvent != nil {
 		// Signal the server that we can construct a timeout QC for the current view, and mark
 		// that we have constructed a QC for the current view.
-		fc.hasConstructedQCInCurrentView = true
-		fc.emitEvent(timeoutQCEvent)
+		fe.hasConstructedQCInCurrentView = true
+		fe.emitEvent(timeoutQCEvent)
 	}
 
 	return nil
 }
 
 // Sets the initial times for the crank timer and timeouts and starts scheduled tasks.
-func (fc *fastHotStuffEventLoop) Start() {
-	fc.lock.Lock()
-	defer fc.lock.Unlock()
+func (fe *fastHotStuffEventLoop) Start() {
+	fe.lock.Lock()
+	defer fe.lock.Unlock()
 
 	// Check if the event loop is either running or uninitialized.
 	// If it's running or uninitialized, then there's nothing to do here.
-	if fc.status != eventLoopStatusInitialized {
+	if fe.status != eventLoopStatusInitialized {
 		return
 	}
 
 	// Update the event loop's status to mark it as running.
-	fc.status = eventLoopStatusRunning
+	fe.status = eventLoopStatusRunning
 
 	// Set the initial crank timer and timeout scheduled tasks
-	fc.resetScheduledTasks()
+	fe.resetScheduledTasks()
 }
 
-func (fc *fastHotStuffEventLoop) Stop() {
-	fc.lock.Lock()
-	defer fc.lock.Unlock()
+func (fe *fastHotStuffEventLoop) Stop() {
+	fe.lock.Lock()
+	defer fe.lock.Unlock()
 
 	// Check if the event loop is no longer running. If it's not running
 	// we can simply return here.
-	if fc.status != eventLoopStatusRunning {
+	if fe.status != eventLoopStatusRunning {
 		return
 	}
 
 	// Cancel the crank timer and timeout scheduled tasks, if any.
-	fc.crankTimerTask.Cancel()
-	fc.nextTimeoutTask.Cancel()
+	fe.crankTimerTask.Cancel()
+	fe.nextTimeoutTask.Cancel()
 
 	// Update the event loop's status so it is no longer marked as running.
-	fc.status = eventLoopStatusInitialized
+	fe.status = eventLoopStatusInitialized
 }
 
-func (fc *fastHotStuffEventLoop) IsInitialized() bool {
-	fc.lock.RLock()
-	defer fc.lock.RUnlock()
+func (fe *fastHotStuffEventLoop) IsInitialized() bool {
+	fe.lock.RLock()
+	defer fe.lock.RUnlock()
 
-	return fc.status != eventLoopStatusNotInitialized
+	return fe.status != eventLoopStatusNotInitialized
 }
 
-func (fc *fastHotStuffEventLoop) IsRunning() bool {
-	fc.lock.RLock()
-	defer fc.lock.RUnlock()
+func (fe *fastHotStuffEventLoop) IsRunning() bool {
+	fe.lock.RLock()
+	defer fe.lock.RUnlock()
 
-	return fc.status == eventLoopStatusRunning
+	return fe.status == eventLoopStatusRunning
 }
 
-func (fc *fastHotStuffEventLoop) ToString() string {
-	fc.lock.RLock()
-	defer fc.lock.RUnlock()
+func (fe *fastHotStuffEventLoop) ToString() string {
+	fe.lock.RLock()
+	defer fe.lock.RUnlock()
 
-	if fc.status != eventLoopStatusRunning {
+	if fe.status != eventLoopStatusRunning {
 		return "FastHotStuffEventLoop is not running"
 	}
 
 	// Get the Tip Block
-	tipBlock := fc.tip.block
+	tipBlock := fe.tip.block
 
 	// Get the votes for the tip
 	tipBlockVotePayload := GetVoteSignaturePayload(tipBlock.GetView(), tipBlock.GetBlockHash())
-	votesForTip := fc.votesSeenByBlockHash[tipBlockVotePayload]
+	votesForTip := fe.votesSeenByBlockHash[tipBlockVotePayload]
 
 	// Get the timeouts for the current and previous view
-	timeoutsForCurrentView := fc.timeoutsSeenByView[fc.currentView]
-	timeoutsForPreviousView := fc.timeoutsSeenByView[fc.currentView-1]
+	timeoutsForCurrentView := fe.timeoutsSeenByView[fe.currentView]
+	timeoutsForPreviousView := fe.timeoutsSeenByView[fe.currentView-1]
 
 	return fmt.Sprintf(
 		"Printing FastHotStuffEventLoop state: "+
@@ -578,14 +578,14 @@ func (fc *fastHotStuffEventLoop) ToString() string {
 			"\n  Tip Height: %d, Tip Hash: %v, Tip View: %d, Num Safe Blocks: %d"+
 			"\n  Crank Duration: %v, Timeout Interval: %v"+
 			"\n  Votes For Tip: %d, Timeouts For Current View: %d, Timeouts For Prev View: %d",
-		fc.status,
-		fc.currentView,
+		fe.status,
+		fe.currentView,
 		tipBlock.GetHeight(),
 		tipBlock.GetBlockHash(),
 		tipBlock.GetView(),
-		len(fc.safeBlocks),
-		fc.crankTimerTask.GetDuration(),
-		fc.nextTimeoutTask.GetDuration(),
+		len(fe.safeBlocks),
+		fe.crankTimerTask.GetDuration(),
+		fe.nextTimeoutTask.GetDuration(),
 		len(votesForTip),
 		len(timeoutsForCurrentView),
 		len(timeoutsForPreviousView),
@@ -594,71 +594,71 @@ func (fc *fastHotStuffEventLoop) ToString() string {
 
 // resetScheduledTasks recomputes the nextBlockConstructionTimeStamp and nextTimeoutTimeStamp
 // values, and reschedules the crank timer and timeout tasks.
-func (fc *fastHotStuffEventLoop) resetScheduledTasks() {
+func (fe *fastHotStuffEventLoop) resetScheduledTasks() {
 	// Compute the next timeout ETA. We use exponential back-off for timeouts when there are
 	// multiple consecutive timeouts. We use the difference between the current view and the
 	// chain tip's view to determine this. The current view can only drift from the chain tip's
 	// view as a result of timeouts. This guarantees that the number of consecutive timeouts is
 	// always: max(currentView - tip.block.GetView() - 1, 0).
 
-	timeoutDuration := fc.timeoutBaseDuration
+	timeoutDuration := fe.timeoutBaseDuration
 
-	// Check if we have timed out at for the last n views. If so, we apply exponential
+	// Check if we have timed out for the last n views. If so, we apply exponential
 	// back-off to the timeout base duration.
-	if fc.tip.block.GetView() < fc.currentView-1 {
+	if fe.tip.block.GetView() < fe.currentView-1 {
 		// Note, there is no risk of underflow here because the following is guaranteed:
 		// currentView > tip.block.GetView() + 1.
-		numTimeouts := fc.currentView - fc.tip.block.GetView() - 1
+		numTimeouts := fe.currentView - fe.tip.block.GetView() - 1
 
 		// Compute the exponential back-off: nextTimeoutDuration * 2^numTimeouts
-		timeoutDuration = fc.timeoutBaseDuration * time.Duration(powerOfTwo(numTimeouts, maxConsecutiveTimeouts))
+		timeoutDuration = fe.timeoutBaseDuration * time.Duration(powerOfTwo(numTimeouts, maxConsecutiveTimeouts))
 	}
 
 	// Schedule the next crank timer task. This will run with currentView param.
-	fc.crankTimerTask.Schedule(fc.crankTimerInterval, fc.currentView, fc.onCrankTimerTaskExecuted)
+	fe.crankTimerTask.Schedule(fe.crankTimerInterval, fe.currentView, fe.onCrankTimerTaskExecuted)
 
 	// Schedule the next timeout task. This will run with currentView param.
-	fc.nextTimeoutTask.Schedule(timeoutDuration, fc.currentView, fc.onTimeoutScheduledTaskExecuted)
+	fe.nextTimeoutTask.Schedule(timeoutDuration, fe.currentView, fe.onTimeoutScheduledTaskExecuted)
 }
 
 // When this function is triggered, it means that we have reached the crank timer
 // time ETA for blockConstructionView. If we have a QC or timeout QC for the view, then we
 // signal the server.
-func (fc *fastHotStuffEventLoop) onCrankTimerTaskExecuted(blockConstructionView uint64) {
-	fc.lock.Lock()
-	defer fc.lock.Unlock()
+func (fe *fastHotStuffEventLoop) onCrankTimerTaskExecuted(blockConstructionView uint64) {
+	fe.lock.Lock()
+	defer fe.lock.Unlock()
 
 	// Check if the event loop is running. If it's not running, then there's nothing
 	// to do here.
-	if fc.status != eventLoopStatusRunning {
+	if fe.status != eventLoopStatusRunning {
 		return
 	}
 
 	// Check for race conditions where the view advanced at the exact moment this task began
 	// or we have already signaled for this view. If so, then there's nothing to do here.
-	if fc.currentView != blockConstructionView {
+	if fe.currentView != blockConstructionView {
 		return
 	}
 
 	// Mark that the crank timer has elapsed
-	fc.hasCrankTimerRunForCurrentView = true
+	fe.hasCrankTimerRunForCurrentView = true
 
 	// Check if the conditions are met to construct a QC from votes for the chain tip. If so,
 	// we send a signal to the server and cancel the crank timer task. The server will
 	// reschedule the task when it advances the view.
-	if voteQCEvent := fc.tryConstructVoteQCInCurrentView(); voteQCEvent != nil {
+	if voteQCEvent := fe.tryConstructVoteQCInCurrentView(); voteQCEvent != nil {
 		// Signal the server that we can construct a QC for the chain tip
-		fc.hasConstructedQCInCurrentView = true
-		fc.emitEvent(voteQCEvent)
+		fe.hasConstructedQCInCurrentView = true
+		fe.emitEvent(voteQCEvent)
 		return
 	}
 
 	// Check if we have enough timeouts to build an aggregate QC for the previous view. If so,
 	// we send a signal to the server and cancel all scheduled tasks.
-	if timeoutQCEvent := fc.tryConstructTimeoutQCInCurrentView(); timeoutQCEvent != nil {
+	if timeoutQCEvent := fe.tryConstructTimeoutQCInCurrentView(); timeoutQCEvent != nil {
 		// Signal the server that we can construct a timeout QC for the current view
-		fc.hasConstructedQCInCurrentView = true
-		fc.emitEvent(timeoutQCEvent)
+		fe.hasConstructedQCInCurrentView = true
+		fe.emitEvent(timeoutQCEvent)
 		return
 	}
 }
@@ -669,22 +669,22 @@ func (fc *fastHotStuffEventLoop) onCrankTimerTaskExecuted(blockConstructionView 
 // the signers list and aggregate signature that can be used to construct the QC.
 //
 // This function must be called while holding the event loop's lock.
-func (fc *fastHotStuffEventLoop) tryConstructVoteQCInCurrentView() *FastHotStuffEvent {
+func (fe *fastHotStuffEventLoop) tryConstructVoteQCInCurrentView() *FastHotStuffEvent {
 	// If currentView != tipBlock.View + 1, then we have timed out at some point, and can no longer
 	// construct a block with a QC of votes for the tip block.
-	tipBlock := fc.tip.block
-	if fc.currentView != tipBlock.GetView()+1 {
+	tipBlock := fe.tip.block
+	if fe.currentView != tipBlock.GetView()+1 {
 		return nil
 	}
 
 	// Fetch the validator list at the tip.
-	validatorList := fc.tip.validatorList
+	validatorList := fe.tip.validatorList
 
 	// Compute the chain tip's signature payload.
 	voteSignaturePayload := GetVoteSignaturePayload(tipBlock.GetView(), tipBlock.GetBlockHash())
 
 	// Fetch the validator votes for the tip block.
-	votesByValidator := fc.votesSeenByBlockHash[voteSignaturePayload]
+	votesByValidator := fe.votesSeenByBlockHash[voteSignaturePayload]
 
 	// Compute the total stake and total stake with votes
 	totalStake := uint256.NewInt(0)
@@ -733,12 +733,12 @@ func (fc *fastHotStuffEventLoop) tryConstructVoteQCInCurrentView() *FastHotStuff
 	// Happy path. Construct the QC and return as an event to signal to the server.
 	return &FastHotStuffEvent{
 		EventType:      FastHotStuffEventTypeConstructVoteQC, // The event type
-		View:           fc.currentView,                       // The current view in which we can construct a block
-		TipBlockHash:   fc.tip.block.GetBlockHash(),          // Block hash for the tip, which we are extending from
-		TipBlockHeight: fc.tip.block.GetHeight(),             // Block height for the tip, which we are extending from
+		View:           fe.currentView,                       // The current view in which we can construct a block
+		TipBlockHash:   fe.tip.block.GetBlockHash(),          // Block hash for the tip, which we are extending from
+		TipBlockHeight: fe.tip.block.GetHeight(),             // Block height for the tip, which we are extending from
 		QC: &quorumCertificate{
-			blockHash: fc.tip.block.GetBlockHash(), // Block hash for the tip, which we are extending from
-			view:      fc.tip.block.GetView(),      // The view from the tip block. This is always fc.currentView - 1
+			blockHash: fe.tip.block.GetBlockHash(), // Block hash for the tip, which we are extending from
+			view:      fe.tip.block.GetView(),      // The view from the tip block. This is always fe.currentView - 1
 			aggregatedSignature: &aggregatedSignature{
 				signersList: signersList,        // The signers list who voted on the tip block
 				signature:   aggregateSignature, // Aggregated signature from votes on the tip block
@@ -755,12 +755,12 @@ func (fc *fastHotStuffEventLoop) tryConstructVoteQCInCurrentView() *FastHotStuff
 // to construct the timeout QC.
 //
 // This function must be called while holding the consensus instance's lock.
-func (fc *fastHotStuffEventLoop) tryConstructTimeoutQCInCurrentView() *FastHotStuffEvent {
+func (fe *fastHotStuffEventLoop) tryConstructTimeoutQCInCurrentView() *FastHotStuffEvent {
 
 	// Fetch all timeouts for the previous view. All timeout messages for a view are aggregated and
 	// proposed in the next view. So if we want to propose a timeout QC in the current view, we need
 	// to aggregate timeouts from the previous one.
-	timeoutsByValidator := fc.timeoutsSeenByView[fc.currentView-1]
+	timeoutsByValidator := fe.timeoutsSeenByView[fe.currentView-1]
 
 	// Tracks the highQC from validators as we go along.
 	var validatorsHighQC QuorumCertificate
@@ -772,7 +772,7 @@ func (fc *fastHotStuffEventLoop) tryConstructTimeoutQCInCurrentView() *FastHotSt
 		// happen, but may be possible in the event we receive a timeout message at the same time the block
 		// becomes unsafe to extend from (ex: it's part of an stale reorg). We check for the edge case here to
 		// be 100% safe.
-		isSafeBlock, _, _, validatorLookup := fc.fetchSafeBlockInfo(timeout.GetHighQC().GetBlockHash())
+		isSafeBlock, _, _, validatorLookup := fe.fetchSafeBlockInfo(timeout.GetHighQC().GetBlockHash())
 		if !isSafeBlock {
 			continue
 		}
@@ -795,7 +795,7 @@ func (fc *fastHotStuffEventLoop) tryConstructTimeoutQCInCurrentView() *FastHotSt
 
 	// Fetch the validator list for the block height of the high QC. This lookup is guaranteed to succeed
 	// because it succeeded above.
-	ok, safeBlock, validatorList, _ := fc.fetchSafeBlockInfo(validatorsHighQC.GetBlockHash())
+	ok, safeBlock, validatorList, _ := fe.fetchSafeBlockInfo(validatorsHighQC.GetBlockHash())
 	if !ok {
 		return nil
 	}
@@ -854,12 +854,12 @@ func (fc *fastHotStuffEventLoop) tryConstructTimeoutQCInCurrentView() *FastHotSt
 	// Happy path
 	return &FastHotStuffEvent{
 		EventType:      FastHotStuffEventTypeConstructTimeoutQC, // The event type
-		View:           fc.currentView,                          // The view that the timeout QC is proposed in
+		View:           fe.currentView,                          // The view that the timeout QC is proposed in
 		TipBlockHash:   validatorsHighQC.GetBlockHash(),         // The block hash that we extend from
 		TipBlockHeight: safeBlock.GetHeight(),                   // The block height that we extend from
 		QC:             validatorsHighQC,                        // The high QC aggregated from the timeout messages
 		AggregateQC: &aggregateQuorumCertificate{
-			view:        fc.currentView - 1, // The timed out view is always the previous view
+			view:        fe.currentView - 1, // The timed out view is always the previous view
 			highQC:      validatorsHighQC,   // The high QC aggregated from the timeout messages
 			highQCViews: highQCViews,        // The high view for each validator who timed out
 			aggregatedSignature: &aggregatedSignature{
@@ -873,33 +873,33 @@ func (fc *fastHotStuffEventLoop) tryConstructTimeoutQCInCurrentView() *FastHotSt
 // When this function is triggered, it means that we have reached out the timeout ETA for the
 // timedOutView. In the event of a timeout, we signal the server that we are ready to time out
 // and cancel the timeout task.
-func (fc *fastHotStuffEventLoop) onTimeoutScheduledTaskExecuted(timedOutView uint64) {
-	fc.lock.Lock()
-	defer fc.lock.Unlock()
+func (fe *fastHotStuffEventLoop) onTimeoutScheduledTaskExecuted(timedOutView uint64) {
+	fe.lock.Lock()
+	defer fe.lock.Unlock()
 
 	// Check if the event loop is running. If it's not running, then there's nothing
 	// to do here.
-	if fc.status != eventLoopStatusRunning {
+	if fe.status != eventLoopStatusRunning {
 		return
 	}
 
 	// Check if the timed out view is stale. If it's stale, then there's nothing to do here.
 	// The view may be stale in the race condition where the view advanced at the exact moment
 	// this task began to execute and wait for the event loop's lock at the top of this function.
-	if fc.currentView != timedOutView {
+	if fe.currentView != timedOutView {
 		return
 	}
 
 	// Signal the server that we are ready to time out
-	fc.emitEvent(&FastHotStuffEvent{
+	fe.emitEvent(&FastHotStuffEvent{
 		EventType:      FastHotStuffEventTypeTimeout, // The timeout event type
 		View:           timedOutView,                 // The view we timed out
-		TipBlockHash:   fc.tip.block.GetBlockHash(),  // The last block we saw
-		TipBlockHeight: fc.tip.block.GetHeight(),     // The last block we saw
+		TipBlockHash:   fe.tip.block.GetBlockHash(),  // The last block we saw
+		TipBlockHeight: fe.tip.block.GetHeight(),     // The last block we saw
 	})
 
 	// Cancel the timeout task. The server will reschedule it when it advances the view.
-	fc.nextTimeoutTask.Cancel()
+	fe.nextTimeoutTask.Cancel()
 }
 
 // Evict all locally stored votes and timeout messages with stale views. We can safely use the current
@@ -913,40 +913,40 @@ func (fc *fastHotStuffEventLoop) onTimeoutScheduledTaskExecuted(timedOutView uin
 //
 // Any votes or timeouts with a view that's less than currentView - 1 are stale because they cannot
 // be used in the next block or any future blocks.
-func (fc *fastHotStuffEventLoop) evictStaleVotesAndTimeouts() {
+func (fe *fastHotStuffEventLoop) evictStaleVotesAndTimeouts() {
 	// Evict stale vote messages
-	for blockHash, voters := range fc.votesSeenByBlockHash {
+	for blockHash, voters := range fe.votesSeenByBlockHash {
 		for _, vote := range voters {
-			if isStaleView(fc.currentView, vote.GetView()) {
+			if isStaleView(fe.currentView, vote.GetView()) {
 				// Each block is proposed at a known view, and has an immutable block hash. Votes are signed on the
 				// tuple (blockhash, view). So, if any vote message for the blockhash has a view that satisfies this
 				// condition, then it's guaranteed that all votes for the same block hash have satisfy this condition.
 				// We can safely evict all votes for this block hash.
-				delete(fc.votesSeenByBlockHash, blockHash)
+				delete(fe.votesSeenByBlockHash, blockHash)
 				break
 			}
 		}
 	}
 
 	// Evict stale timeout messages
-	for view := range fc.timeoutsSeenByView {
-		if isStaleView(fc.currentView, view) {
-			delete(fc.timeoutsSeenByView, view)
+	for view := range fe.timeoutsSeenByView {
+		if isStaleView(fe.currentView, view) {
+			delete(fe.timeoutsSeenByView, view)
 		}
 	}
 }
 
-func (fc *fastHotStuffEventLoop) storeVote(signaturePayload [32]byte, vote VoteMessage) {
-	votesForBlockHash, ok := fc.votesSeenByBlockHash[signaturePayload]
+func (fe *fastHotStuffEventLoop) storeVote(signaturePayload [32]byte, vote VoteMessage) {
+	votesForBlockHash, ok := fe.votesSeenByBlockHash[signaturePayload]
 	if !ok {
 		votesForBlockHash = make(map[string]VoteMessage)
-		fc.votesSeenByBlockHash[signaturePayload] = votesForBlockHash
+		fe.votesSeenByBlockHash[signaturePayload] = votesForBlockHash
 	}
 
 	votesForBlockHash[vote.GetPublicKey().ToString()] = vote
 }
 
-func (fc *fastHotStuffEventLoop) hasVotedForView(publicKey *bls.PublicKey, view uint64) bool {
+func (fe *fastHotStuffEventLoop) hasVotedForView(publicKey *bls.PublicKey, view uint64) bool {
 	// This is an O(n) operation that scales with the number of block hashes that we have stored
 	// votes for. In practice, n will be very small because we evict stale votes, and server.go
 	// will be smart about not processing votes for views we won't be the block proposer for.
@@ -958,7 +958,7 @@ func (fc *fastHotStuffEventLoop) hasVotedForView(publicKey *bls.PublicKey, view 
 	publicKeyString := publicKey.ToString()
 
 	// Search for the public key's votes across all existing block hashes
-	for _, votesForBlock := range fc.votesSeenByBlockHash {
+	for _, votesForBlock := range fe.votesSeenByBlockHash {
 		vote, ok := votesForBlock[publicKeyString]
 		if ok && vote.GetView() == view {
 			return true
@@ -968,18 +968,18 @@ func (fc *fastHotStuffEventLoop) hasVotedForView(publicKey *bls.PublicKey, view 
 	return false
 }
 
-func (fc *fastHotStuffEventLoop) storeTimeout(timeout TimeoutMessage) {
-	timeoutsForView, ok := fc.timeoutsSeenByView[timeout.GetView()]
+func (fe *fastHotStuffEventLoop) storeTimeout(timeout TimeoutMessage) {
+	timeoutsForView, ok := fe.timeoutsSeenByView[timeout.GetView()]
 	if !ok {
 		timeoutsForView = make(map[string]TimeoutMessage)
-		fc.timeoutsSeenByView[timeout.GetView()] = timeoutsForView
+		fe.timeoutsSeenByView[timeout.GetView()] = timeoutsForView
 	}
 
 	timeoutsForView[timeout.GetPublicKey().ToString()] = timeout
 }
 
-func (fc *fastHotStuffEventLoop) hasTimedOutForView(publicKey *bls.PublicKey, view uint64) bool {
-	timeoutsForView, ok := fc.timeoutsSeenByView[view]
+func (fe *fastHotStuffEventLoop) hasTimedOutForView(publicKey *bls.PublicKey, view uint64) bool {
+	timeoutsForView, ok := fe.timeoutsSeenByView[view]
 	if !ok {
 		return false
 	}
@@ -990,7 +990,7 @@ func (fc *fastHotStuffEventLoop) hasTimedOutForView(publicKey *bls.PublicKey, vi
 	return ok
 }
 
-func (fc *fastHotStuffEventLoop) fetchSafeBlockInfo(blockHash BlockHash) (
+func (fe *fastHotStuffEventLoop) fetchSafeBlockInfo(blockHash BlockHash) (
 	_isSafeBlock bool,
 	_safeBlock Block,
 	_validatorList []Validator,
@@ -1000,7 +1000,7 @@ func (fc *fastHotStuffEventLoop) fetchSafeBlockInfo(blockHash BlockHash) (
 	// number of uncommitted blocks in the blockchain. During steady stake, it will have a size of 3 blocks
 	// (one committed, two uncommitted). In the worse case, where the network has an unlucky series of
 	// timeout -> block -> timeout -> block,... it can still be expected to have < 10 blocks.
-	for _, block := range fc.safeBlocks {
+	for _, block := range fe.safeBlocks {
 		if IsEqualBlockHash(block.block.GetBlockHash(), blockHash) {
 			return true, block.block, block.validatorList, block.validatorLookup
 		}
@@ -1014,8 +1014,8 @@ func (fc *fastHotStuffEventLoop) fetchSafeBlockInfo(blockHash BlockHash) (
 // deadlock when a thread holding the event loop's lock is blocked from emitting an event because another
 // thread that needs to read an emitted event is blocked from doing so because it needs to first operate
 // on the event loop.
-func (fc *fastHotStuffEventLoop) emitEvent(event *FastHotStuffEvent) {
-	go func() { fc.Events <- event }()
+func (fe *fastHotStuffEventLoop) emitEvent(event *FastHotStuffEvent) {
+	go func() { fe.Events <- event }()
 }
 
 func isStaleView(currentView uint64, testView uint64) bool {
