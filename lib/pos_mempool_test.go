@@ -124,15 +124,15 @@ func TestPosMempoolPrune(t *testing.T) {
 
 	fetchedTxns := mempool.GetTransactions()
 	require.Equal(3, len(fetchedTxns))
-	require.Equal(uint64(1974), fetchedTxns[0].TxnFeeNanos)
-	require.Equal(uint64(1931), fetchedTxns[1].TxnFeeNanos)
-	require.Equal(uint64(1776), fetchedTxns[2].TxnFeeNanos)
-	require.Equal(uint64(1974), mempool.GetTransaction(fetchedTxns[0].Hash()).TxnFeeNanos)
-	require.Equal(uint64(1931), mempool.GetTransaction(fetchedTxns[1].Hash()).TxnFeeNanos)
-	require.Equal(uint64(1776), mempool.GetTransaction(fetchedTxns[2].Hash()).TxnFeeNanos)
+	require.Equal(uint64(1974), fetchedTxns[0].FeePerKB)
+	require.Equal(uint64(1931), fetchedTxns[1].FeePerKB)
+	require.Equal(uint64(1776), fetchedTxns[2].FeePerKB)
+	require.Equal(uint64(1974), mempool.GetTransaction(fetchedTxns[0].Hash).Tx.TxnFeeNanos)
+	require.Equal(uint64(1931), mempool.GetTransaction(fetchedTxns[1].Hash).Tx.TxnFeeNanos)
+	require.Equal(uint64(1776), mempool.GetTransaction(fetchedTxns[2].Hash).Tx.TxnFeeNanos)
 
 	// Remove one transaction.
-	_wrappedPosMempoolRemoveTransaction(t, mempool, fetchedTxns[0].Hash())
+	_wrappedPosMempoolRemoveTransaction(t, mempool, fetchedTxns[0].Hash)
 	require.NoError(mempool.validateTransactions())
 	require.Equal(2, len(mempool.GetTransactions()))
 	mempool.Stop()
@@ -147,29 +147,29 @@ func TestPosMempoolPrune(t *testing.T) {
 	require.Equal(2, len(newPool.GetTransactions()))
 
 	// Remove the other transactions.
-	_wrappedPosMempoolRemoveTransaction(t, newPool, fetchedTxns[1].Hash())
-	_wrappedPosMempoolRemoveTransaction(t, newPool, fetchedTxns[2].Hash())
+	_wrappedPosMempoolRemoveTransaction(t, newPool, fetchedTxns[1].Hash)
+	_wrappedPosMempoolRemoveTransaction(t, newPool, fetchedTxns[2].Hash)
 	// Remove the same transaction twice
-	_wrappedPosMempoolRemoveTransaction(t, newPool, fetchedTxns[1].Hash())
+	_wrappedPosMempoolRemoveTransaction(t, newPool, fetchedTxns[1].Hash)
 	require.Equal(0, len(newPool.GetTransactions()))
 
 	// Add the transactions back.
 	for _, txn := range fetchedTxns {
-		_wrappedPosMempoolAddTransaction(t, newPool, txn.GetTxn())
+		_wrappedPosMempoolAddTransaction(t, newPool, txn.Tx)
 	}
 	require.Equal(3, len(newPool.GetTransactions()))
 
 	// Iterate through the transactions.
 	newPoolTxns := newPool.GetTransactions()
 	for ii, tx := range newPoolTxns {
-		require.True(bytes.Equal(tx.Hash().ToBytes(), fetchedTxns[ii].Hash().ToBytes()))
+		require.True(bytes.Equal(tx.Hash.ToBytes(), fetchedTxns[ii].Hash.ToBytes()))
 	}
 	require.Equal(len(newPool.GetTransactions()), len(newPool.nonceTracker.nonceMap))
 	require.NoError(newPool.validateTransactions())
 	newTxns := newPool.GetTransactions()
 	require.Equal(3, len(newTxns))
 	for _, txn := range newTxns {
-		_wrappedPosMempoolRemoveTransaction(t, newPool, txn.Hash())
+		_wrappedPosMempoolRemoveTransaction(t, newPool, txn.Hash)
 	}
 	newPool.Stop()
 	require.False(newPool.IsRunning())
@@ -276,7 +276,7 @@ func TestPosMempoolReplaceWithHigherFee(t *testing.T) {
 	_signTxn(t, txn1New, m0Priv)
 	_wrappedPosMempoolAddTransaction(t, mempool, txn1New)
 	require.Equal(1, len(mempool.GetTransactions()))
-	require.Equal(txn1New.TxnNonce, mempool.GetTransactions()[0].TxnNonce)
+	require.Equal(txn1New.TxnNonce, mempool.GetTransactions()[0].Tx.TxnNonce)
 
 	// Now generate a transaction coming from m1
 	txn2 := _generateTestTxn(t, rand, feeMin, feeMax, m1PubBytes, m1Priv, 100, 25)
@@ -289,8 +289,7 @@ func TestPosMempoolReplaceWithHigherFee(t *testing.T) {
 	*txn2Low.TxnNonce = *txn2.TxnNonce
 	_signTxn(t, txn2Low, m1Priv)
 	added2Low := time.Now()
-	mtxn2Low := NewMempoolTransaction(txn2Low, added2Low, false)
-	err := mempool.AddTransaction(mtxn2Low)
+	err := mempool.AddTransaction(txn2Low, added2Low)
 	require.Contains(err.Error(), MempoolFailedReplaceByHigherFee)
 
 	// Now generate a proper new transaction for m1, with same nonce, and higher fee.
@@ -303,11 +302,11 @@ func TestPosMempoolReplaceWithHigherFee(t *testing.T) {
 
 	// Verify that only the correct transactions are present in the mempool. Notice that on this seed, txn2 is positioned
 	// as first in the mempool's GetTransactions.
-	require.NotEqual(txn2, mempool.GetTransactions()[0].GetTxn())
-	require.NotEqual(txn2Low, mempool.GetTransactions()[0].GetTxn())
-	require.Equal(txn2New, mempool.GetTransactions()[0].GetTxn())
-	require.NotEqual(txn1, mempool.GetTransactions()[1].GetTxn())
-	require.Equal(txn1New, mempool.GetTransactions()[1].GetTxn())
+	require.NotEqual(txn2, mempool.GetTransactions()[0].Tx)
+	require.NotEqual(txn2Low, mempool.GetTransactions()[0].Tx)
+	require.Equal(txn2New, mempool.GetTransactions()[0].Tx)
+	require.NotEqual(txn1, mempool.GetTransactions()[1].Tx)
+	require.Equal(txn1New, mempool.GetTransactions()[1].Tx)
 
 	require.Equal(len(mempool.GetTransactions()), len(mempool.nonceTracker.nonceMap))
 	require.NoError(mempool.validateTransactions())
@@ -480,8 +479,7 @@ func _generateTestTxnWithOutputs(t *testing.T, rand *rand.Rand, feeMin uint64, f
 
 func _wrappedPosMempoolAddTransaction(t *testing.T, mp *PosMempool, txn *MsgDeSoTxn) {
 	added := time.Now()
-	mtxn := NewMempoolTransaction(txn, added, false)
-	require.NoError(t, mp.AddTransaction(mtxn))
+	require.NoError(t, mp.AddTransaction(txn, added))
 	require.Equal(t, true, _checkPosMempoolIntegrity(t, mp))
 }
 
@@ -503,16 +501,16 @@ func _checkPosMempoolIntegrity(t *testing.T, mp *PosMempool) bool {
 	balances := make(map[PublicKey]uint64)
 	txns := mp.GetTransactions()
 	for _, txn := range txns {
-		if txn.TxnNonce == nil {
+		if txn.Tx.TxnNonce == nil {
 			t.Errorf("PosMempool transaction has nil nonce")
 			return false
 		}
-		pk := NewPublicKey(txn.PublicKey)
-		if txnNt := mp.nonceTracker.GetTxnByPublicKeyNonce(*pk, *txn.TxnNonce); !assert.Equal(t, txn.GetTxn(), txnNt.Tx) {
+		pk := NewPublicKey(txn.Tx.PublicKey)
+		if txnNt := mp.nonceTracker.GetTxnByPublicKeyNonce(*pk, *txn.Tx.TxnNonce); !assert.Equal(t, txn.Tx, txnNt.Tx) {
 			t.Errorf("PosMempool nonceTracker and transactions are out of sync")
 			return false
 		}
-		balances[*pk] += txn.TxnFeeNanos
+		balances[*pk] += txn.Tx.TxnFeeNanos
 	}
 	return true
 }

@@ -312,7 +312,7 @@ func (pbp *PosBlockProducer) getBlockTransactions(
 		if currentBlockSize > softMaxBlockSizeBytes {
 			break
 		}
-		txnBytes, err := txn.ToBytes(false)
+		txnBytes, err := txn.Tx.ToBytes(false)
 		if err != nil {
 			return nil, 0, errors.Wrapf(err, "Error getting transaction size: ")
 		}
@@ -325,7 +325,7 @@ func (pbp *PosBlockProducer) getBlockTransactions(
 
 		// Connect the transaction to the SafeUtxoView to test if it connects.
 		_, _, _, fees, err := safeUtxoView.ConnectTransaction(
-			txn.GetTxn(), txn.Hash(), uint32(newBlockHeight), newBlockTimestampNanoSecs, true, false,
+			txn.Tx, txn.Hash, uint32(newBlockHeight), newBlockTimestampNanoSecs, true, false,
 		)
 
 		// If the transaction fails to connect, then we skip it.
@@ -333,16 +333,16 @@ func (pbp *PosBlockProducer) getBlockTransactions(
 			continue
 		}
 
-		blocksTxns = append(blocksTxns, txn.GetTxn())
+		blocksTxns = append(blocksTxns, txn.Tx)
 		currentBlockSize += uint64(len(txnBytes))
 
-		if txn.GetTxn().TxnMeta.GetTxnType() != TxnTypeAtomicTxnsWrapper {
+		if txn.Tx.TxnMeta.GetTxnType() != TxnTypeAtomicTxnsWrapper {
 			// If the transactor is the block producer, then they won't receive the utility fee.
-			if blockProducerPublicKey.Equal(*NewPublicKey(txn.PublicKey)) {
+			if blockProducerPublicKey.Equal(*NewPublicKey(txn.Tx.PublicKey)) {
 				continue
 			}
 		} else {
-			txnMeta, ok := txn.GetTxn().TxnMeta.(*AtomicTxnsWrapperMetadata)
+			txnMeta, ok := txn.Tx.TxnMeta.(*AtomicTxnsWrapperMetadata)
 			if !ok {
 				return nil, 0,
 					errors.New("Error casting txn meta to AtomicSwapMetadata")

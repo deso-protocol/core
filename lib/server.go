@@ -1979,7 +1979,7 @@ func (srv *Server) _relayTransactions() {
 
 			invVect := &InvVect{
 				Type: InvTypeTx,
-				Hash: *newTxn.Hash(),
+				Hash: *newTxn.Hash,
 			}
 
 			// If the peer has this txn already then skip it.
@@ -2061,8 +2061,7 @@ func (srv *Server) _addNewTxn(
 	// txn addition into the PoW mempool to succeed, while the addition into the PoS
 	// mempool fails. This error handling catches that and gives the user the correct
 	// feedback on the txn addition's success.
-	mempoolTxn := NewMempoolTransaction(txn, time.Now(), false)
-	if err := srv.posMempool.AddTransaction(mempoolTxn); err != nil {
+	if err := srv.posMempool.AddTransaction(txn, time.Now()); err != nil {
 		if uint64(tipHeight) >= srv.params.GetFinalPoWBlockHeight() {
 			return nil, errors.Wrapf(err, "Server._addNewTxn: problem adding txn to pos mempool")
 		}
@@ -2527,8 +2526,7 @@ func (srv *Server) ProcessSingleTxnWithChainLock(pp *Peer, txn *MsgDeSoTxn) ([]*
 	// txn addition into the PoW mempool to succeed, while the addition into the PoS
 	// mempool fails. This error handling catches that and gives the user the correct
 	// feedback on the txn addition's success.
-	mempoolTxn := NewMempoolTransaction(txn, time.Now(), false)
-	if err := srv.posMempool.AddTransaction(mempoolTxn); err != nil {
+	if err := srv.posMempool.AddTransaction(txn, time.Now()); err != nil {
 		if uint64(tipHeight) >= srv.params.GetFinalPoWBlockHeight() {
 			return nil, errors.Wrapf(err, "Server._addNewTxn: problem adding txn to pos mempool")
 		}

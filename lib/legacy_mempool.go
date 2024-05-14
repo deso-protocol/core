@@ -22,7 +22,6 @@ import (
 	"github.com/dgraph-io/badger/v4"
 
 	"github.com/btcsuite/btcd/btcec/v2"
-	"github.com/deso-protocol/core/collections"
 	"github.com/deso-protocol/go-deadlock"
 	"github.com/golang/glog"
 	"github.com/pkg/errors"
@@ -241,7 +240,7 @@ func (mp *DeSoMempool) IsRunning() bool {
 	return !mp.stopped
 }
 
-func (mp *DeSoMempool) AddTransaction(txn *MempoolTransaction) error {
+func (mp *DeSoMempool) AddTransaction(txn *MsgDeSoTxn, txnTimestamp time.Time) error {
 	return errors.New("Not implemented")
 }
 
@@ -249,20 +248,16 @@ func (mp *DeSoMempool) RemoveTransaction(txnHash *BlockHash) error {
 	return errors.New("Not implemented")
 }
 
-func (mp *DeSoMempool) GetTransaction(txnHash *BlockHash) *MempoolTransaction {
+func (mp *DeSoMempool) GetTransaction(txnHash *BlockHash) *MempoolTx {
 	mempoolTx, exists := mp.readOnlyUniversalTransactionMap[*txnHash]
 	if !exists {
 		return nil
 	}
-	return NewMempoolTransaction(mempoolTx.Tx, mempoolTx.Added, true)
+	return mempoolTx
 }
 
-func (mp *DeSoMempool) GetTransactions() []*MempoolTransaction {
-	return collections.Transform(
-		mp.GetOrderedTransactions(), func(mempoolTx *MempoolTx) *MempoolTransaction {
-			return NewMempoolTransaction(mempoolTx.Tx, mempoolTx.Added, true)
-		},
-	)
+func (mp *DeSoMempool) GetTransactions() []*MempoolTx {
+	return mp.GetOrderedTransactions()
 }
 
 func (mp *DeSoMempool) UpdateLatestBlock(blockView *UtxoView, blockHeight uint64) {
