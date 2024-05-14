@@ -661,7 +661,7 @@ func (fc *FastHotStuffConsensus) tryProcessBlockAsNewTip(block *MsgDeSoBlock) ([
 		return nil, errors.Errorf("error fetching validator lists for safe blocks: %v", err)
 	}
 
-	// If the block was processed successfully but was not applied as the new tip, we need up date the safe
+	// If the block was processed successfully but was not applied as the new tip, we need update the safe
 	// blocks in the FastHotStuffEventLoop. This is because the new block may be safe to extend even though
 	// it did not result in a new tip.
 	if !successfullyAppliedNewTip {
@@ -698,7 +698,7 @@ func (fc *FastHotStuffConsensus) tryProcessBlockAsNewTip(block *MsgDeSoBlock) ([
 		return nil, errors.Errorf("Error fetching UtxoView for tip block: %v", err)
 	}
 	utxoView := utxoViewAndUtxoOps.UtxoView
-	snapshotGlobalParams, err := utxoView.GetCurrentSnapshotGlobalParamsEntry()
+	globalParams, err := utxoView.GetCurrentSnapshotGlobalParamsEntry()
 	if err != nil {
 		return nil, errors.Errorf("Error fetching snapshot global params: %v", err)
 	}
@@ -706,8 +706,8 @@ func (fc *FastHotStuffConsensus) tryProcessBlockAsNewTip(block *MsgDeSoBlock) ([
 	if err = fc.fastHotStuffEventLoop.ProcessTipBlock(
 		tipBlockWithValidators[0],
 		safeBlocksWithValidators,
-		time.Millisecond*time.Duration(snapshotGlobalParams.BlockProductionIntervalMillisecondsPoS),
-		time.Millisecond*time.Duration(snapshotGlobalParams.TimeoutIntervalMillisecondsPoS),
+		time.Millisecond*time.Duration(globalParams.BlockProductionIntervalMillisecondsPoS),
+		time.Millisecond*time.Duration(globalParams.TimeoutIntervalMillisecondsPoS),
 	); err != nil {
 		return nil, errors.Errorf("Error processing tip block locally: %v", err)
 	}

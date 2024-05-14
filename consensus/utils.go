@@ -14,39 +14,35 @@ import (
 )
 
 func IsProperlyFormedConstructVoteQCEvent(event *FastHotStuffEvent) bool {
-	return event != nil && // Event non-nil
+	return isProperlyFormedGenericEvent(event) &&
 		event.EventType == FastHotStuffEventTypeConstructVoteQC && // Event type is QC construction
-		event.View > 0 && // The view the block was proposed in is non-zero
-		event.TipBlockHeight > 0 && // Tip block height is non-zero
-		!isInterfaceNil(event.TipBlockHash) && // Tip block hash is non-nil
 		!isInterfaceNil(event.QC) // The high QC is non-nil
 }
 
 func IsProperlyFormedConstructTimeoutQCEvent(event *FastHotStuffEvent) bool {
-	return event != nil && // Event non-nil
+	return isProperlyFormedGenericEvent(event) &&
 		event.EventType == FastHotStuffEventTypeConstructTimeoutQC && // Event type is timeout QC construction
-		event.View > 0 && // The view the block was proposed in is non-zero
-		event.TipBlockHeight > 0 && // Tip block height is non-zero
-		!isInterfaceNil(event.TipBlockHash) && // Tip block hash is non-nil
 		isProperlyFormedAggregateQC(event.AggregateQC) // The high QC is properly formed
 }
 
 func IsProperlyFormedVoteEvent(event *FastHotStuffEvent) bool {
-	return event != nil && // Event non-nil
+	return isProperlyFormedGenericEvent(event) &&
 		event.EventType == FastHotStuffEventTypeVote && // Event type is vote
-		event.View > 0 && // The view the tip block was proposed in is non-zero
-		event.TipBlockHeight > 0 && // Tip block height voted on is non-zero
-		!isInterfaceNil(event.TipBlockHash) && // Tip block hash voted on is non-nil
 		isInterfaceNil(event.QC) // The high QC is nil
 }
 
 func IsProperlyFormedTimeoutEvent(event *FastHotStuffEvent) bool {
-	return event != nil && // Event non-nil
+	return isProperlyFormedGenericEvent(event) &&
 		event.EventType == FastHotStuffEventTypeTimeout && // Event type is timeout
-		event.View > 0 && // The view that was timed out is non-zero
-		event.TipBlockHeight > 0 && // Tip block height is non-zero
-		!isInterfaceNil(event.TipBlockHash) && // Tip block hash is non-nil
 		isInterfaceNil(event.QC) // The high QC is nil. The receiver will determine their own high QC.
+}
+
+// isProperlyFormedGenericEvent performs the common fields that all event types must populate.
+func isProperlyFormedGenericEvent(event *FastHotStuffEvent) bool {
+	return event != nil && // Event non-nil
+		event.View > 0 && // The view the block was proposed in is non-zero
+		event.TipBlockHeight > 0 && // Tip block height is non-zero
+		!isInterfaceNil(event.TipBlockHash) // Tip block hash is non-nil
 }
 
 // Given a QC and a sorted validator list, this function returns true if the QC contains a valid
