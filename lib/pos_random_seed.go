@@ -2,7 +2,6 @@ package lib
 
 import (
 	"bytes"
-	"io"
 
 	"golang.org/x/crypto/sha3"
 
@@ -43,22 +42,6 @@ func (randomSeedHash *RandomSeedHash) FromBytes(randomSeedHashBytes []byte) (*Ra
 	}
 	copy(randomSeedHash[:], randomSeedHashBytes)
 	return randomSeedHash, nil
-}
-
-func EncodeRandomSeedHash(randomSeedHash *RandomSeedHash) []byte {
-	return EncodeByteArray(randomSeedHash.ToBytes())
-}
-
-func DecodeRandomSeedHash(rr io.Reader) (*RandomSeedHash, error) {
-	randomSeedHashBytes, err := DecodeByteArray(rr)
-	if err != nil {
-		return nil, errors.Wrapf(err, "DecodeRandomSeedHash: problem reading RandomSeedHash from bytes: ")
-	}
-	return (&RandomSeedHash{}).FromBytes(randomSeedHashBytes)
-}
-
-func (randomSeedHash *RandomSeedHash) isEmpty() bool {
-	return randomSeedHash == nil || randomSeedHash.Eq(&RandomSeedHash{})
 }
 
 func GenerateNextRandomSeedSignature(currentRandomSeedHash *RandomSeedHash, signerPrivateKey *bls.PrivateKey) (*bls.Signature, error) {

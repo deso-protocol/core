@@ -796,7 +796,7 @@ type DeSoParams struct {
 
 	// DefaultMempoolCongestionFactorBasisPoints and DefaultMempoolPastBlocksCongestionFactorBasisPoints are the default values
 	// for GlobalParams.MempoolCongestionFactorBasisPoints and GlobalParams.DefaultMempoolPastBlocksCongestionFactorBasisPoints.
-	/// See comments in DeSoMainnetParams for a description of their usage.
+	// See comments in DeSoMainnetParams for a description of their usage.
 	DefaultMempoolCongestionFactorBasisPoints           uint64
 	DefaultMempoolPastBlocksCongestionFactorBasisPoints uint64
 
@@ -1334,19 +1334,19 @@ var DeSoMainnetParams = DeSoParams{
 	DefaultMempoolFeeEstimatorNumPastBlocks: 50,
 
 	// The maximum size of blocks for PoS.
-	DefaultMaxBlockSizeBytesPoS: 32000, // 32KB TODO: verify this is a sane value.
+	DefaultMaxBlockSizeBytesPoS: 32000,
 
 	// The soft maximum size of blocks for PoS.
-	DefaultSoftMaxBlockSizeBytesPoS: 16000, // 16KB TODO: verify this is a sane value.
+	DefaultSoftMaxBlockSizeBytesPoS: 16000,
 
 	// The maximum size for a single txn in PoS.
-	DefaultMaxTxnSizeBytesPoS: 25000, // 25KB TODO: verify this is a sane value.
+	DefaultMaxTxnSizeBytesPoS: 25000,
 
 	// The interval between producing blocks.
-	DefaultBlockProductionIntervalMillisecondsPoS: 1500, // 1.5s TODO: verify this is a sane value.
+	DefaultBlockProductionIntervalMillisecondsPoS: 1500,
 
 	// The interval between timing out a view.
-	DefaultTimeoutIntervalMillisecondsPoS: 30000, // 30s TODO: verify this is a sane value.
+	DefaultTimeoutIntervalMillisecondsPoS: 30000,
 
 	// The peer handshake certificate timeout.
 	HandshakeTimeoutMicroSeconds: uint64(900000000),
