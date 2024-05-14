@@ -17,9 +17,9 @@ import (
 type PosMempoolStatus int
 
 const (
-	PosMempoolStatusNotInitialized PosMempoolStatus = iota
-	PosMempoolStatusInitialized
-	PosMempoolStatusRunning
+	PosMempoolStatusNotInitialized PosMempoolStatus = 0
+	PosMempoolStatusInitialized    PosMempoolStatus = 1
+	PosMempoolStatusRunning        PosMempoolStatus = 2
 )
 
 type Mempool interface {
@@ -166,8 +166,7 @@ type PosMempool struct {
 	// mempool transaction with a new transaction having the same nonce but higher fee.
 	nonceTracker *NonceTracker
 
-	// readOnlyLatestBlockView is used to check if a transaction is valid before being added to the mempool. The readOnlyLatestBlockView
-	// checks if the transaction has a valid signature and if the transaction's sender has enough funds to cover the fee.
+	// readOnlyLatestBlockView is used to check if a transaction has a valid nonce before being added to the mempool.
 	// The readOnlyLatestBlockView should be updated whenever a new block is added to the blockchain via UpdateLatestBlock.
 	// PosMempool only needs read-access to the block view. It isn't necessary to copy the block view before passing it
 	// to the mempool.
@@ -462,8 +461,7 @@ func (mp *PosMempool) OnBlockDisconnected(block *MsgDeSoBlock) {
 }
 
 // AddTransaction validates a MsgDeSoTxn transaction and adds it to the mempool if it is valid.
-// If the mempool overflows as a result of adding the transaction, the mempool is pruned. The
-// transaction signature verification can be skipped if verifySignature is passed as true.
+// If the mempool overflows as a result of adding the transaction, the mempool is pruned.
 func (mp *PosMempool) AddTransaction(mtxn *MempoolTransaction) error {
 	if mtxn == nil || mtxn.GetTxn() == nil {
 		return fmt.Errorf("PosMempool.AddTransaction: Cannot add a nil transaction")
@@ -485,8 +483,7 @@ func (mp *PosMempool) AddTransaction(mtxn *MempoolTransaction) error {
 	defer mp.Unlock()
 
 	// First, validate that the transaction is properly formatted according to BalanceModel. We acquire a read lock on
-	// the mempool. This allows multiple goroutines to safely perform transaction validation concurrently. In particular,
-	// transaction signature verification can be parallelized.
+	// the mempool. This allows multiple goroutines to safely perform transaction validation concurrently.
 	if err := mp.checkTransactionSanity(mtxn.GetTxn(), false); err != nil {
 		return errors.Wrapf(err, "PosMempool.AddTransaction: Problem verifying transaction")
 	}
