@@ -148,12 +148,8 @@ type BlockWithValidatorList struct {
 	ValidatorList []Validator
 }
 
-// We want a large buffer for the signal channels to ensure threads don't block when trying to push new
-// signals.
-//
-// TODO: is a size of 10000 enough? If we want to bullet-proof this, we could back it by a slice as a
-// secondary buffer. That seems unnecessary since every channel will only have signals pushed by a single
-// producer thread.
+// Any large number is sufficient to hold the backlog of signals to be sent to the server. In practice there will
+// be 0 0 - 2 signals at most in this buffer at any given time.
 const signalChannelBufferSize = 10000
 
 // An instance of FastHotStuffEventLoop is a self-contained module that represents a single node running
