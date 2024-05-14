@@ -705,11 +705,6 @@ func (fe *fastHotStuffEventLoop) tryConstructVoteQCInCurrentView() *FastHotStuff
 			continue
 		}
 
-		// Verify the vote signature
-		if !isValidSignatureSinglePublicKey(vote.GetPublicKey(), vote.GetSignature(), voteSignaturePayload[:]) {
-			continue
-		}
-
 		// Track the vote's signature, stake, and place in the validator list
 		totalVotingStake = uint256.NewInt(0).Add(totalVotingStake, validator.GetStakeAmount())
 		signersList.Set(ii, true)
@@ -822,14 +817,6 @@ func (fe *fastHotStuffEventLoop) tryConstructTimeoutQCInCurrentView() *FastHotSt
 		// Skip the validator if it hasn't timed out for the previous view
 		timeout, hasTimedOut := timeoutsByValidator[validator.GetPublicKey().ToString()]
 		if !hasTimedOut {
-			continue
-		}
-
-		// Compute the signature payload that the validator should have signed
-		signaturePayload := GetTimeoutSignaturePayload(timeout.GetView(), timeout.GetHighQC().GetView())
-
-		// Verify the timeout signature
-		if !isValidSignatureSinglePublicKey(timeout.GetPublicKey(), timeout.GetSignature(), signaturePayload[:]) {
 			continue
 		}
 
