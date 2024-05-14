@@ -138,6 +138,9 @@ type Block interface {
 	GetBlockHash() BlockHash
 	GetHeight() uint64
 	GetView() uint64
+	// The QC field is intentionally excluded from the Block interface to minimize the number of assumptions
+	// and validation the event loop has to make on incoming blocks. This is especially important for the
+	// PoW -> PoS cutover blocks that do not have QCs.
 }
 
 type BlockWithValidatorList struct {
