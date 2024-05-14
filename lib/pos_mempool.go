@@ -26,10 +26,10 @@ type Mempool interface {
 	Start() error
 	Stop()
 	IsRunning() bool
-	AddTransaction(txn *MempoolTransaction) error
+	AddTransaction(txn *MsgDeSoTxn, txnTimestamp time.Time) error
 	RemoveTransaction(txnHash *BlockHash) error
-	GetTransaction(txnHash *BlockHash) *MempoolTransaction
-	GetTransactions() []*MempoolTransaction
+	GetTransaction(txnHash *BlockHash) *MempoolTx
+	GetTransactions() []*MempoolTx
 	UpdateLatestBlock(blockView *UtxoView, blockHeight uint64)
 	UpdateGlobalParams(globalParams *GlobalParamsEntry)
 
@@ -98,33 +98,6 @@ func GetAugmentedUniversalViewWithAdditionalTransactions(
 		}
 	}
 	return newView, nil
-}
-
-// MempoolTransaction is a simple wrapper around MsgDeSoTxn that adds a timestamp field.
-type MempoolTransaction struct {
-	*MsgDeSoTxn
-	TimestampUnixMicro time.Time
-	Validated          bool
-}
-
-func NewMempoolTransaction(txn *MsgDeSoTxn, timestamp time.Time, validated bool) *MempoolTransaction {
-	return &MempoolTransaction{
-		MsgDeSoTxn:         txn,
-		TimestampUnixMicro: timestamp,
-		Validated:          validated,
-	}
-}
-
-func (mtxn *MempoolTransaction) GetTxn() *MsgDeSoTxn {
-	return mtxn.MsgDeSoTxn
-}
-
-func (mtxn *MempoolTransaction) GetTimestamp() time.Time {
-	return mtxn.TimestampUnixMicro
-}
-
-func (mtxn *MempoolTransaction) IsValidated() bool {
-	return mtxn.Validated
 }
 
 // PosMempool is used by the node to keep track of uncommitted transactions. The main responsibilities of the PosMempool
@@ -462,13 +435,13 @@ func (mp *PosMempool) OnBlockDisconnected(block *MsgDeSoBlock) {
 
 // AddTransaction validates a MsgDeSoTxn transaction and adds it to the mempool if it is valid.
 // If the mempool overflows as a result of adding the transaction, the mempool is pruned.
-func (mp *PosMempool) AddTransaction(mtxn *MempoolTransaction) error {
-	if mtxn == nil || mtxn.GetTxn() == nil {
+func (mp *PosMempool) AddTransaction(txn *MsgDeSoTxn, txnTimestamp time.Time) error {
+	if txn == nil {
 		return fmt.Errorf("PosMempool.AddTransaction: Cannot add a nil transaction")
 	}
 
 	// If the transaction is already in the transaction register, then we return an error.
-	if mp.txnRegister.GetTransaction(mtxn.GetTxn().Hash()) != nil {
+	if mp.txnRegister.GetTransaction(txn.Hash()) != nil {
 		return errors.New("PosMempool.AddTransaction: Transaction already in mempool")
 	}
 
@@ -484,7 +457,7 @@ func (mp *PosMempool) AddTransaction(mtxn *MempoolTransaction) error {
 
 	// First, validate that the transaction is properly formatted according to BalanceModel. We acquire a read lock on
 	// the mempool. This allows multiple goroutines to safely perform transaction validation concurrently.
-	if err := mp.checkTransactionSanity(mtxn.GetTxn(), false); err != nil {
+	if err := mp.checkTransactionSanity(txn, false); err != nil {
 		return errors.Wrapf(err, "PosMempool.AddTransaction: Problem verifying transaction")
 	}
 
@@ -494,7 +467,7 @@ func (mp *PosMempool) AddTransaction(mtxn *MempoolTransaction) error {
 	}
 
 	// Construct the MempoolTx from the MsgDeSoTxn.
-	mempoolTx, err := NewMempoolTx(mtxn.GetTxn(), mtxn.GetTimestamp(), mp.latestBlockHeight)
+	mempoolTx, err := NewMempoolTx(txn, txnTimestamp, mp.latestBlockHeight)
 	if err != nil {
 		return errors.Wrapf(err, "PosMempool.AddTransaction: Problem constructing MempoolTx")
 	}
@@ -782,7 +755,7 @@ func (mp *PosMempool) removeTransactionNoLock(txn *MempoolTx, persistToDb bool) 
 }
 
 // GetTransaction returns the transaction with the given hash if it exists in the mempool. This function is thread-safe.
-func (mp *PosMempool) GetTransaction(txnHash *BlockHash) *MempoolTransaction {
+func (mp *PosMempool) GetTransaction(txnHash *BlockHash) *MempoolTx {
 	mp.RLock()
 	defer mp.RUnlock()
 
@@ -795,11 +768,11 @@ func (mp *PosMempool) GetTransaction(txnHash *BlockHash) *MempoolTransaction {
 		return nil
 	}
 
-	return NewMempoolTransaction(txn.Tx, txn.Added, txn.IsValidated())
+	return txn
 }
 
 // GetTransactions returns all transactions in the mempool ordered by the Fee-Time algorithm. This function is thread-safe.
-func (mp *PosMempool) GetTransactions() []*MempoolTransaction {
+func (mp *PosMempool) GetTransactions() []*MempoolTx {
 	mp.RLock()
 	defer mp.RUnlock()
 
@@ -807,15 +780,14 @@ func (mp *PosMempool) GetTransactions() []*MempoolTransaction {
 		return nil
 	}
 
-	var mempoolTxns []*MempoolTransaction
+	var mempoolTxns []*MempoolTx
 	poolTxns := mp.getTransactionsNoLock()
 	for _, txn := range poolTxns {
 		if txn == nil || txn.Tx == nil {
 			continue
 		}
 
-		mtxn := NewMempoolTransaction(txn.Tx, txn.Added, txn.IsValidated())
-		mempoolTxns = append(mempoolTxns, mtxn)
+		mempoolTxns = append(mempoolTxns, txn)
 	}
 	return mempoolTxns
 }

@@ -172,7 +172,7 @@ func (pp *Peer) HandleGetTransactionsMsg(getTxnMsg *MsgDeSoGetTransactions) {
 		"MsgDeSoGetTransactions message with %v txns from peer %v",
 		len(getTxnMsg.HashList), pp)
 
-	mempoolTxs := []*MempoolTransaction{}
+	mempoolTxs := []*MempoolTx{}
 
 	// We fetch the requested txns from either the PoW mempool or the PoS mempool
 	// whichever one is used for the consensus protocol at the current block height.
@@ -191,13 +191,13 @@ func (pp *Peer) HandleGetTransactionsMsg(getTxnMsg *MsgDeSoGetTransactions) {
 	// Doing this helps the Peer when they go to add the transactions by reducing
 	// unconnectedTxns and transactions being rejected due to missing dependencies.
 	sort.Slice(mempoolTxs, func(ii, jj int) bool {
-		return mempoolTxs[ii].TimestampUnixMicro.Before(mempoolTxs[jj].TimestampUnixMicro)
+		return mempoolTxs[ii].GetTimestamp() < mempoolTxs[jj].GetTimestamp()
 	})
 
 	// Create a list of the fetched transactions to a response.
 	txnList := []*MsgDeSoTxn{}
 	for _, mempoolTx := range mempoolTxs {
-		txnList = append(txnList, mempoolTx.MsgDeSoTxn)
+		txnList = append(txnList, mempoolTx.Tx)
 	}
 
 	// At this point the txnList should have all of the transactions that

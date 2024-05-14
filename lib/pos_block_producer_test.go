@@ -1,11 +1,12 @@
 package lib
 
 import (
-	"github.com/deso-protocol/core/collections/bitset"
 	"math"
 	"math/rand"
 	"testing"
 	"time"
+
+	"github.com/deso-protocol/core/collections/bitset"
 
 	"github.com/deso-protocol/core/bls"
 	"github.com/stretchr/testify/require"
@@ -278,13 +279,12 @@ func TestGetBlockTransactions(t *testing.T) {
 	currentTime := time.Now()
 	for ii, txn := range txns {
 		// Use the Simulated Transaction Timestamp.
-		mtxn := NewMempoolTransaction(txn, currentTime.Add(time.Duration(ii)*time.Microsecond), false)
-		require.NoError(testMempool.AddTransaction(mtxn))
+		require.NoError(testMempool.AddTransaction(txn, currentTime.Add(time.Duration(ii)*time.Microsecond)))
 	}
 	newTxns := testMempool.GetTransactions()
 	require.Equal(len(txns), len(newTxns))
 	for ii := 0; ii < len(txns); ii++ {
-		require.Equal(txns[ii], newTxns[ii].GetTxn())
+		require.Equal(txns[ii], newTxns[ii].Tx)
 	}
 }
 
