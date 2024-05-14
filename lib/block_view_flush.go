@@ -192,9 +192,6 @@ func (bav *UtxoView) FlushToDBWithoutAncestralRecordsFlushWithTxn(txn *badger.Tx
 	if err := bav._flushSnapshotValidatorSetToDbWithTxn(txn, blockHeight); err != nil {
 		return err
 	}
-	if err := bav._flushSnapshotValidatorSetTotalStakeAmountNanosToDbWithTxn(txn, blockHeight); err != nil {
-		return err
-	}
 	if err := bav._flushSnapshotLeaderScheduleToDbWithTxn(txn, blockHeight); err != nil {
 		return err
 	}

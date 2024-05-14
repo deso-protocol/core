@@ -289,11 +289,6 @@ func TestRunEpochCompleteHook(t *testing.T) {
 		require.Equal(t, validatorEntries[0].TotalStakeAmountNanos, uint256.NewInt(700))
 		require.Equal(t, validatorEntries[6].TotalStakeAmountNanos, uint256.NewInt(100))
 
-		// Test SnapshotValidatorSetTotalStakeAmountNanos is populated.
-		snapshotValidatorSetTotalStakeAmountNanos, err := _newUtxoView(testMeta).GetSnapshotValidatorSetTotalStakeAmountNanos()
-		require.NoError(t, err)
-		require.Equal(t, snapshotValidatorSetTotalStakeAmountNanos, uint256.NewInt(2800))
-
 		// Test SnapshotLeaderSchedule is populated.
 		for index := range validatorPKIDs {
 			snapshotLeaderScheduleValidator, err := _newUtxoView(testMeta).GetSnapshotLeaderScheduleValidator(uint16(index))
@@ -947,11 +942,6 @@ func _assertEmptyValidatorSnapshots(testMeta *TestMeta) {
 	validatorEntries, err := _newUtxoView(testMeta).GetSnapshotValidatorSetByStakeAmount(100)
 	require.NoError(testMeta.t, err)
 	require.Empty(testMeta.t, validatorEntries)
-
-	// Test SnapshotValidatorSetTotalStakeAmountNanos is zero.
-	snapshotValidatorSetTotalStakeAmountNanos, err := _newUtxoView(testMeta).GetSnapshotValidatorSetTotalStakeAmountNanos()
-	require.NoError(testMeta.t, err)
-	require.True(testMeta.t, snapshotValidatorSetTotalStakeAmountNanos.IsZero())
 
 	// Test SnapshotLeaderSchedule is nil.
 	for index := range validatorEntries {

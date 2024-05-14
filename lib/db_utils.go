@@ -558,10 +558,9 @@ type DBPrefixes struct {
 	// Note: we parse the ValidatorPKID from the key and the value is nil to save space.
 	PrefixSnapshotValidatorSetByStakeAmount []byte `prefix_id:"[89]" is_state:"true"`
 
-	// PrefixSnapshotValidatorSetTotalStakeAmountNanos: Retrieve a snapshot of the validator set's total amount of
-	// staked DESO by SnapshotAtEpochNumber.
-	// Prefix, <SnapshotAtEpochNumber uint64> -> *uint256.Int
-	PrefixSnapshotValidatorSetTotalStakeAmountNanos []byte `prefix_id:"[90]" is_state:"true"`
+	// Prefix 90 is deprecated. It was previously used for the PrefixSnapshotValidatorSetTotalStakeAmountNanos
+	// prefix. The data stored in this prefix was never used in consensus and just lead to unnecessary data
+	// in the DB, slowing down hypersync and encoder migrations.
 
 	// PrefixSnapshotLeaderSchedule: Retrieve a ValidatorPKID by <SnapshotAtEpochNumber, LeaderIndex>.
 	// Prefix, <SnapshotAtEpochNumber uint64>, <LeaderIndex uint16> -> ValidatorPKID
@@ -880,9 +879,9 @@ func StatePrefixToDeSoEncoder(prefix []byte) (_isEncoder bool, _encoder DeSoEnco
 	} else if bytes.Equal(prefix, Prefixes.PrefixSnapshotValidatorSetByStakeAmount) {
 		// prefix_id:"[89]"
 		return false, nil
-	} else if bytes.Equal(prefix, Prefixes.PrefixSnapshotValidatorSetTotalStakeAmountNanos) {
-		// prefix_id:"[90]"
-		return false, nil
+		// prefix_id:"[90]" is deprecated. It was previously used for the PrefixSnapshotValidatorSetTotalStakeAmountNanos
+		// prefix. The data stored in this prefix was never used in consensus and just lead to unnecessary data
+		// in the DB, slowing down hypersync and encoder migrations.
 	} else if bytes.Equal(prefix, Prefixes.PrefixSnapshotLeaderSchedule) {
 		// prefix_id:"[91]"
 		return true, &PKID{}

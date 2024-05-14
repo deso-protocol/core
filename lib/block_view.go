@@ -165,11 +165,6 @@ type UtxoView struct {
 	// of every validator that makes up the validator set at the given SnapshotAtEpochNumber.
 	SnapshotValidatorBLSPublicKeyPKIDPairEntries map[SnapshotValidatorBLSPublicKeyMapKey]*BLSPublicKeyPKIDPairEntry
 
-	// SnapshotValidatorSetTotalStakeAmountNanos is a map of SnapshotAtEpochNumber to the sum TotalStakeAmountNanos
-	// for the validator set of for an epoch.
-	// It contains the snapshot value of the GlobalActiveStakeAmountNanos at the given SnapshotAtEpochNumber.
-	SnapshotValidatorSetTotalStakeAmountNanos map[uint64]*uint256.Int
-
 	// SnapshotLeaderSchedule is a map of <SnapshotAtEpochNumber, LeaderIndex> to a ValidatorPKID.
 	// It contains the PKID of the validator at the given index in the leader schedule
 	// generated at the given SnapshotAtEpochNumber.
@@ -313,9 +308,6 @@ func (bav *UtxoView) _ResetViewMappingsAfterFlush() {
 
 	// SnapshotValidatorBLSPublicKeyPKIDPairEntries
 	bav.SnapshotValidatorBLSPublicKeyPKIDPairEntries = make(map[SnapshotValidatorBLSPublicKeyMapKey]*BLSPublicKeyPKIDPairEntry)
-
-	// SnapshotValidatorSetTotalStakeAmountNanos
-	bav.SnapshotValidatorSetTotalStakeAmountNanos = make(map[uint64]*uint256.Int)
 
 	// SnapshotLeaderSchedule
 	bav.SnapshotLeaderSchedule = make(map[SnapshotLeaderScheduleMapKey]*PKID)
@@ -669,14 +661,6 @@ func (bav *UtxoView) CopyUtxoView() *UtxoView {
 	)
 	for mapKey, blsPublicKeyPKIDPairEntry := range bav.SnapshotValidatorBLSPublicKeyPKIDPairEntries {
 		newView.SnapshotValidatorBLSPublicKeyPKIDPairEntries[mapKey] = blsPublicKeyPKIDPairEntry.Copy()
-	}
-
-	// Copy the SnapshotValidatorSetTotalStakeAmountNanos
-	newView.SnapshotValidatorSetTotalStakeAmountNanos = make(map[uint64]*uint256.Int,
-		len(bav.SnapshotValidatorSetTotalStakeAmountNanos),
-	)
-	for epochNumber, totalStakeAmountNanos := range bav.SnapshotValidatorSetTotalStakeAmountNanos {
-		newView.SnapshotValidatorSetTotalStakeAmountNanos[epochNumber] = totalStakeAmountNanos.Clone()
 	}
 
 	// Copy the SnapshotLeaderSchedule

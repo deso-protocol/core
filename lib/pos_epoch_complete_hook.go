@@ -319,11 +319,6 @@ func (bav *UtxoView) generateAndSnapshotValidatorSet(epochNumber uint64, validat
 	for _, validatorEntry := range validatorSet {
 		bav._setSnapshotValidatorSetEntry(validatorEntry, epochNumber)
 	}
-
-	// Snapshot the current validator set's total stake. Note, the validator set is already filtered to the top n
-	// active validators for the epoch. The total stake is the sum of all of the active validators' stakes.
-	validatorSetTotalStakeAmountNanos := SumValidatorEntriesTotalStakeAmountNanos(validatorSet)
-	bav._setSnapshotValidatorSetTotalStakeAmountNanos(validatorSetTotalStakeAmountNanos, epochNumber)
 }
 
 func (bav *UtxoView) generateAndSnapshotLeaderSchedule(epochNumber uint64, validatorSet []*ValidatorEntry) error {
