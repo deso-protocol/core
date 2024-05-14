@@ -2319,10 +2319,11 @@ func (migration *EncoderMigration) StartMigrations() error {
 		migrationChecksum.Checksum.ResetChecksum()
 		outstandingChecksums = append(outstandingChecksums, migrationChecksum)
 	}
+	migration.migrationChecksumLock.Unlock()
+
 	if len(outstandingChecksums) == 0 {
 		return nil
 	}
-	migration.migrationChecksumLock.Unlock()
 
 	// If we get to this point, it means there are some new migrations that we need to process.
 	glog.Infof(CLog(Yellow, fmt.Sprintf("EncoderMigration: Found %v outstanding migrations. Proceeding to scan through the "+
