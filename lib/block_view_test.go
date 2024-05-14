@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/hex"
 	"fmt"
+	ecdsa2 "github.com/decred/dcrd/dcrec/secp256k1/v4/ecdsa"
 	"math"
 	_ "net/http/pprof"
 	"reflect"
@@ -1957,6 +1958,25 @@ func TestBasicTransfer(t *testing.T) {
 			utxoView.ConnectTransaction(txn, txHash, blockHeight, 0, true, false)
 		require.Error(err)
 		require.Contains(err.Error(), RuleErrorInvalidTransactionSignature)
+
+		utxoView = NewUtxoView(db, params, postgres, chain.snapshot, chain.eventManager)
+
+		// Sign the transaction with the sender's key, but then make S have
+		// a high value.
+		_signTxn(t, txn, senderPrivString)
+		r := txn.Signature.Sign.R()
+		s := txn.Signature.Sign.S()
+		txn.Signature.SetSignature(ecdsa2.NewSignature(&r, s.Negate()))
+
+		txHash = txn.Hash()
+		_, _, _, _, err =
+			utxoView.ConnectTransaction(txn, txHash, blockHeight, 0, true, false)
+		if blockHeight < params.ForkHeights.BalanceModelBlockHeight {
+			require.NoError(err)
+		} else {
+			require.Error(err)
+			require.Contains(err.Error(), RuleErrorTxnSigHasHighS)
+		}
 	}
 
 	// A block reward with a bad signature should fail.

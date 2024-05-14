@@ -3354,9 +3354,9 @@ func (desoSign *DeSoSignature) HasHighS() bool {
 	}
 	// We reject high-S signatures as they lead to inconsistent public key recovery
 	// https://github.com/indutny/elliptic/blob/master/lib/elliptic/ec/index.js#L147
-	// TODO: this should be removed once we have a proper fix for this.
-	//return desoSign.Sign.S.Cmp(big.NewInt(0).Rsh(secp256k1.Params().N, 1)) != -1
-	return false
+	s := desoSign.Sign.S()
+	sBytes := (&s).Bytes()
+	return big.NewInt(0).SetBytes(sBytes[:]).Cmp(big.NewInt(0).Rsh(secp256k1.Params().N, 1)) != -1
 }
 
 // ToBytes encodes the signature in accordance to the DeSo-DER ECDSA format.
