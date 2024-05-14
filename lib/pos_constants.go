@@ -23,6 +23,14 @@ func BuildProofOfStakeCutoverValidatorBLSPrivateKey() (*bls.PrivateKey, error) {
 	return (&bls.PrivateKey{}).FromString(proofOfStakeCutoverValidatorBLSPrivateKeyHex)
 }
 
+func BuildProofOfStakeCutoverValidatorBLSPublicKey() (*bls.PublicKey, error) {
+	privateKey, err := BuildProofOfStakeCutoverValidatorBLSPrivateKey()
+	if err != nil {
+		return nil, errors.Wrapf(err, "BuildProofOfStakeCutoverValidatorBLSPublicKey: Problem parsing BLS private key")
+	}
+	return privateKey.PublicKey(), nil
+}
+
 func BuildProofOfStakeCutoverValidator() (consensus.Validator, error) {
 	// Parse the BLS private key
 	blsPrivateKey, err := BuildProofOfStakeCutoverValidatorBLSPrivateKey()
