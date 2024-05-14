@@ -124,9 +124,9 @@ func TestPosMempoolPrune(t *testing.T) {
 
 	fetchedTxns := mempool.GetTransactions()
 	require.Equal(3, len(fetchedTxns))
-	require.Equal(uint64(1974), fetchedTxns[0].FeePerKB)
-	require.Equal(uint64(1931), fetchedTxns[1].FeePerKB)
-	require.Equal(uint64(1776), fetchedTxns[2].FeePerKB)
+	require.Equal(uint64(1974), fetchedTxns[0].Tx.TxnFeeNanos)
+	require.Equal(uint64(1931), fetchedTxns[1].Tx.TxnFeeNanos)
+	require.Equal(uint64(1776), fetchedTxns[2].Tx.TxnFeeNanos)
 	require.Equal(uint64(1974), mempool.GetTransaction(fetchedTxns[0].Hash).Tx.TxnFeeNanos)
 	require.Equal(uint64(1931), mempool.GetTransaction(fetchedTxns[1].Hash).Tx.TxnFeeNanos)
 	require.Equal(uint64(1776), mempool.GetTransaction(fetchedTxns[2].Hash).Tx.TxnFeeNanos)
