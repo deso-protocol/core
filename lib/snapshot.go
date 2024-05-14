@@ -2286,6 +2286,7 @@ func (migration *EncoderMigration) SaveMigrations() error {
 	for ii := range migration.migrationChecksums {
 		checksumBytes, err := migration.migrationChecksums[ii].Checksum.ToBytes()
 		if err != nil {
+			migration.migrationChecksumLock.RUnlock()
 			return errors.Wrapf(err, "EncoderMigration.SaveMigrations: Problem getting migration checksum "+
 				"bytes, ii = (%v)", ii)
 		}
