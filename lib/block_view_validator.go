@@ -1821,6 +1821,13 @@ func (bav *UtxoView) IsValidRegisterAsValidatorMetadata(
 	if metadata.VotingPublicKey == nil {
 		return errors.Wrapf(RuleErrorValidatorMissingVotingPublicKey, "UtxoView.IsValidRegisterAsValidatorMetadata: ")
 	}
+	cutoverValidator, err := BuildProofOfStakeCutoverValidatorBLSPublicKey()
+	if err != nil {
+		return errors.Wrapf(err, "UtxoView.IsValidRegisterAsValidatorMetadata: error building cutover validator for validation: ")
+	}
+	if metadata.VotingPublicKey.Eq(cutoverValidator) {
+		return errors.Wrapf(RuleErrorValidatorInvalidVotingPublicKey, "UtxoView.IsValidRegisterAsValidatorMetadata: ")
+	}
 
 	// Validate VotingAuthorization.
 	if metadata.VotingAuthorization == nil {
@@ -2610,6 +2617,7 @@ const RuleErrorValidatorInvalidCommissionBasisPoints RuleError = "RuleErrorValid
 const RuleErrorValidatorNotFound RuleError = "RuleErrorValidatorNotFound"
 const RuleErrorValidatorBLSPublicKeyPKIDPairEntryNotFound RuleError = "RuleErrorValidatorBLSPublicKeyPKIDPairEntryNotFound"
 const RuleErrorValidatorMissingVotingPublicKey RuleError = "RuleErrorValidatorMissingVotingPublicKey"
+const RuleErrorValidatorInvalidVotingPublicKey RuleError = "RuleErrorValidatorInvalidVotingPublicKey"
 const RuleErrorValidatorMissingVotingAuthorization RuleError = "RuleErrorValidatorMissingVotingAuthorization"
 const RuleErrorValidatorInvalidVotingAuthorization RuleError = "RuleErrorValidatorInvalidVotingAuthorization"
 const RuleErrorValidatorDisablingExistingDelegatedStakers RuleError = "RuleErrorValidatorDisablingExistingDelegatedStakers"

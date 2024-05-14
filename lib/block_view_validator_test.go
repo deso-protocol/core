@@ -187,6 +187,22 @@ func _testValidatorRegistration(t *testing.T, flushToDB bool) {
 		require.Contains(t, err.Error(), RuleErrorValidatorMissingVotingAuthorization)
 	}
 	{
+		// RuleErrorValidatorInvalidVotingPublicKey
+		votingPrivateKey, err := BuildProofOfStakeCutoverValidatorBLSPrivateKey()
+		require.NoError(t, err)
+		votingPublicKey := votingPrivateKey.PublicKey()
+		votingAuthorization := _generateVotingAuthorization(t, votingPrivateKey, m0PkBytes)
+		registerMetadata = &RegisterAsValidatorMetadata{
+			Domains:               [][]byte{[]byte("example.com:18000")},
+			DisableDelegatedStake: false,
+			VotingPublicKey:       votingPublicKey,
+			VotingAuthorization:   votingAuthorization,
+		}
+		_, err = _submitRegisterAsValidatorTxn(testMeta, m0Pub, m0Priv, registerMetadata, nil, flushToDB)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), RuleErrorValidatorInvalidVotingPublicKey)
+	}
+	{
 		// RuleErrorValidatorInvalidVotingAuthorization: invalid TransactorPkBytes
 		votingPublicKey, votingAuthorization := _generateVotingPublicKeyAndAuthorization(t, m1PkBytes)
 		registerMetadata = &RegisterAsValidatorMetadata{
@@ -2069,10 +2085,15 @@ func _generateVotingPublicKeyAndAuthorization(t *testing.T, transactorPkBytes []
 	blsPrivateKey, err := bls.NewPrivateKey()
 	require.NoError(t, err)
 	votingPublicKey := blsPrivateKey.PublicKey()
+	votingAuthorization := _generateVotingAuthorization(t, blsPrivateKey, transactorPkBytes)
+	return votingPublicKey, votingAuthorization
+}
+
+func _generateVotingAuthorization(t *testing.T, blsPrivateKey *bls.PrivateKey, transactorPkBytes []byte) *bls.Signature {
 	votingAuthorizationPayload := CreateValidatorVotingAuthorizationPayload(transactorPkBytes)
 	votingAuthorization, err := blsPrivateKey.Sign(votingAuthorizationPayload)
 	require.NoError(t, err)
-	return votingPublicKey, votingAuthorization
+	return votingAuthorization
 }
 
 func _generateVotingPrivateKeyPublicKeyAndAuthorization(t *testing.T, transactorPkBytes []byte) (*bls.PrivateKey, *bls.PublicKey, *bls.Signature) {
