@@ -200,7 +200,7 @@ func _testValidatorRegistration(t *testing.T, flushToDB bool) {
 		}
 		_, err = _submitRegisterAsValidatorTxn(testMeta, m0Pub, m0Priv, registerMetadata, nil, flushToDB)
 		require.Error(t, err)
-		require.Contains(t, err.Error(), RuleErrorValidatorMissingVotingAuthorization)
+		require.Contains(t, err.Error(), RuleErrorValidatorInvalidVotingPublicKey)
 	}
 	{
 		// RuleErrorValidatorInvalidVotingAuthorization: invalid TransactorPkBytes
