@@ -570,7 +570,7 @@ func (fc *FastHotStuffConsensus) HandleValidatorTimeout(pp *Peer, msg *MsgDeSoVa
 	return nil
 }
 
-func (fc *FastHotStuffConsensus) HandleBlock(pp *Peer, msg *MsgDeSoBlock) (_isOprhan bool, _err error) {
+func (fc *FastHotStuffConsensus) HandleBlock(pp *Peer, msg *MsgDeSoBlock) (missingBlockHashes []*BlockHash, _err error) {
 	glog.V(2).Infof("FastHotStuffConsensus.HandleBlock: Received block: \n%s", msg.String())
 	glog.V(2).Infof("FastHotStuffConsensus.HandleBlock: %s", fc.fastHotStuffEventLoop.ToString())
 
@@ -580,7 +580,7 @@ func (fc *FastHotStuffConsensus) HandleBlock(pp *Peer, msg *MsgDeSoBlock) (_isOp
 	defer fc.lock.Unlock()
 
 	if !fc.fastHotStuffEventLoop.IsRunning() {
-		return false, errors.Errorf("FastHotStuffConsensus.HandleBlock: FastHotStuffEventLoop is not running")
+		return nil, errors.Errorf("FastHotStuffConsensus.HandleBlock: FastHotStuffEventLoop is not running")
 	}
 
 	// Hold the blockchain's write lock so that the chain cannot be mutated underneath us.
@@ -596,11 +596,12 @@ func (fc *FastHotStuffConsensus) HandleBlock(pp *Peer, msg *MsgDeSoBlock) (_isOp
 	if err != nil {
 		// If we get an error here, it means something went wrong with the block processing algorithm.
 		// Nothing we can do to recover here.
-		return false, errors.Errorf("FastHotStuffConsensus.HandleBlock: Error processing block as new tip: %v", err)
+		return nil, errors.Errorf("FastHotStuffConsensus.HandleBlock: Error processing block as new tip: %v", err)
 	}
 
 	// If there are missing block hashes, then we need to fetch the missing blocks from the network
-	// and retry processing the block as a new tip. We'll request the blocks from the same peer.
+	// and retry processing the block as a new tip. We'll return the missing block hashes so that
+	// the server can request them from the same peer in a standardized manner.
 	//
 	// If we need to optimize this in the future, we can additionally send the block hash of our
 	// current committed tip. The peer can then send us all of the blocks that are missing starting
@@ -611,14 +612,12 @@ func (fc *FastHotStuffConsensus) HandleBlock(pp *Peer, msg *MsgDeSoBlock) (_isOp
 		remoteNode := fc.networkManager.GetRemoteNodeFromPeer(pp)
 		if remoteNode == nil {
 			glog.Errorf("FastHotStuffConsensus.HandleBlock: RemoteNode not found for peer: %v", pp)
-		} else {
-			sendMessageToRemoteNodeAsync(remoteNode, &MsgDeSoGetBlocks{HashList: missingBlockHashes})
 		}
-		return true, nil
+		return missingBlockHashes, nil
 	}
 
 	// Happy path. The block was processed successfully and applied as the new tip. Nothing left to do.
-	return false, nil
+	return nil, nil
 }
 
 // tryProcessBlockAsNewTip tries to apply a new tip block to both the Blockchain and FastHotStuffEventLoop data
