@@ -1104,26 +1104,16 @@ func (srv *Server) _handleHeaderBundle(pp *Peer, msg *MsgDeSoHeaderBundle) {
 		// If we get here it means that we've just finished syncing headers and we will proceed to
 		// syncing state either through hyper sync or block sync. First let's check if the peer
 		// supports hypersync and if our block tip is old enough so that it makes sense to sync state.
+
 		if NodeCanHypersyncState(srv.cmgr.SyncType) && srv.blockchain.isHyperSyncCondition() {
 			// If hypersync conditions are satisfied, we will be syncing state. This assignment results
 			// in srv.blockchain.chainState() to be equal to SyncStateSyncingSnapshot
 			srv.blockchain.syncingState = true
 		}
 
-		// Regardless of whether we are going to hypersync from the peer, we want to compute the
-		// expectedSnapshotHeight.
-		bestHeaderHeight := uint64(srv.blockchain.headerTip().Height)
-		// The peer's snapshot block height period before the first PoS fork height is expected to be the
-		// PoW default value. After the fork height, it's expected to be the value defined in the params.
-		snapshotBlockHeightPeriod := srv.params.GetSnapshotBlockHeightPeriod(
-			bestHeaderHeight,
-			srv.snapshot.GetSnapshotBlockHeightPeriod(),
-		)
-		expectedSnapshotHeight := bestHeaderHeight - (bestHeaderHeight % snapshotBlockHeightPeriod)
-		posSetupForkHeight := uint64(srv.params.ForkHeights.ProofOfStake1StateSetupBlockHeight)
-		if expectedSnapshotHeight < posSetupForkHeight {
-			expectedSnapshotHeight = posSetupForkHeight - (posSetupForkHeight % srv.params.DefaultPoWSnapshotBlockHeightPeriod)
-		}
+		// Fetch the header tip height once before we do anything in case we need it to compute the expected
+		// snapshot height.
+		currentHeaderTipHeight := uint64(srv.blockchain.headerTip().Height)
 
 		if srv.blockchain.chainState() == SyncStateSyncingSnapshot {
 			glog.V(1).Infof("Server._handleHeaderBundle: *Syncing* state starting at "+
@@ -1131,6 +1121,7 @@ func (srv *Server) _handleHeaderBundle(pp *Peer, msg *MsgDeSoHeaderBundle) {
 
 			// If node is a hyper sync node and we haven't finished syncing state yet, we will kick off state sync.
 			if srv.cmgr.HyperSync {
+				expectedSnapshotHeight := srv.computeExpectedSnapshotHeight(currentHeaderTipHeight)
 				srv.blockchain.snapshot.Migrations.CleanupMigrations(expectedSnapshotHeight)
 
 				if len(srv.HyperSyncProgress.PrefixProgress) != 0 {
@@ -1214,12 +1205,12 @@ func (srv *Server) _handleHeaderBundle(pp *Peer, msg *MsgDeSoHeaderBundle) {
 		// If we have exhausted the peer's headers but our blocks aren't current,
 		// send a GetBlocks message to the peer for as many blocks as we can get.
 		if srv.blockchain.chainState() == SyncStateSyncingBlocks {
-			// Regardless of whether we're hypersyncing, we need to ensure that the
-			// FirstSnapshotBlockHeight is set correctly. This ensures that we won't do unnecessary
-			// hypersync computations until we absolutely have to.
-			if srv.snapshot != nil &&
-				srv.snapshot.CurrentEpochSnapshotMetadata != nil &&
-				srv.snapshot.CurrentEpochSnapshotMetadata.FirstSnapshotBlockHeight == 0 {
+			// Regardless of whether we're hypersyncing, we need to ensure that the/ FirstSnapshotBlockHeight
+			// is set correctly. This ensures that we won't do unnecessary hypersync computations until we
+			// absolutely have to. We
+			hasSnapshotMetadata := srv.snapshot != nil && srv.snapshot.CurrentEpochSnapshotMetadata != nil
+			if hasSnapshotMetadata && srv.snapshot.CurrentEpochSnapshotMetadata.FirstSnapshotBlockHeight == 0 {
+				expectedSnapshotHeight := srv.computeExpectedSnapshotHeight(currentHeaderTipHeight)
 				srv.snapshot.CurrentEpochSnapshotMetadata.FirstSnapshotBlockHeight = expectedSnapshotHeight
 			}
 
@@ -1321,6 +1312,25 @@ func (srv *Server) _handleGetSnapshot(pp *Peer, msg *MsgDeSoGetSnapshot) {
 	// Let the peer handle this. We will delegate this message to the peer's queue of inbound messages, because
 	// fetching a snapshot chunk is an expensive operation.
 	pp.AddDeSoMessage(msg, true /*inbound*/)
+}
+
+// computeExpectedSnapshotHeight computes the highest expected Hypersync snapshot height based on the
+// a header tips height. The returned value is a block height < headerTipHeight that represents the
+// highest block height that we expect the network to have produced a snapshot for.
+func (srv *Server) computeExpectedSnapshotHeight(headerTipHeight uint64) uint64 {
+	// The peer's snapshot block height period before the first PoS fork height is expected to be the
+	// PoW default value. After the fork height, it's expected to be the value defined in the params.
+	snapshotBlockHeightPeriod := srv.params.GetSnapshotBlockHeightPeriod(
+		headerTipHeight,
+		srv.snapshot.GetSnapshotBlockHeightPeriod(),
+	)
+	expectedSnapshotHeight := headerTipHeight - (headerTipHeight % snapshotBlockHeightPeriod)
+	posSetupForkHeight := uint64(srv.params.ForkHeights.ProofOfStake1StateSetupBlockHeight)
+	if expectedSnapshotHeight < posSetupForkHeight {
+		expectedSnapshotHeight = posSetupForkHeight - (posSetupForkHeight % srv.params.DefaultPoWSnapshotBlockHeightPeriod)
+	}
+
+	return expectedSnapshotHeight
 }
 
 // _handleSnapshot gets called when we receive a SnapshotData message from a peer. The message contains
