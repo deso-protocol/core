@@ -2159,7 +2159,7 @@ func (srv *Server) _tryRequestMempoolFromPeer(pp *Peer) {
 		return
 	}
 
-	// If we hve already requested the mempool from the peer, then there's nothing to do.
+	// If we have already requested the mempool from the peer, then there's nothing to do.
 	if pp.hasReceivedMempoolMessage {
 		glog.V(1).Infof(
 			"Server._tryRequestMempoolFromPeer: NOT sending mempool message because we have already sent one: %v", pp,
