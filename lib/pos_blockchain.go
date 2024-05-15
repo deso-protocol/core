@@ -74,7 +74,7 @@ func (bc *Blockchain) processHeaderPoS(header *MsgDeSoHeader, verifySignatures b
 
 	// Now that we know we have a valid header, we check the block index for it any orphan children for it
 	// and heal the parent pointers for all of them.
-	bc.healOrphanPointersForChildren(blockNode)
+	bc.healPointersForOrphanChildren(blockNode)
 
 	// Exit early if the header is an orphan.
 	if isOrphan {
@@ -102,13 +102,13 @@ func (bc *Blockchain) processHeaderPoS(header *MsgDeSoHeader, verifySignatures b
 	return true, false, nil
 }
 
-// healOrphanPointersForChildren fixes an inconsistency in the block index that may have
+// healPointersForOrphanChildren fixes an inconsistency in the block index that may have
 // occurred as a result of a node restart. In cases where we have an orphan node that we store in the
 // DB, then on restart, that node's parent will not be in the block index. When processing the parent
 // later on, we not only need to store the parent in the block index but also need to update the
 // pointer from the orphan block's BlockNode to the parent. We do that dynamically here as we
 // process headers.
-func (bc *Blockchain) healOrphanPointersForChildren(blockNode *BlockNode) {
+func (bc *Blockchain) healPointersForOrphanChildren(blockNode *BlockNode) {
 	// Fetch all potential children of this blockNode from the block index.
 	blockNodesAtNextHeight, exists := bc.blockIndexByHeight[blockNode.Header.Height+1]
 	if !exists {
