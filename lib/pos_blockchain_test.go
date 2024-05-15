@@ -822,15 +822,18 @@ func TestGetLineageFromCommittedTip(t *testing.T) {
 		},
 	}
 	// If parent is committed tip, we'll have 0 ancestors.
-	ancestors, err := bc.getLineageFromCommittedTip(block.Header)
+	ancestors, missingBlockHashes, err := bc.getStoredLineageFromCommittedTip(block.Header)
 	require.NoError(t, err)
 	require.Len(t, ancestors, 0)
+	require.Len(t, missingBlockHashes, 0)
 
 	// If parent block is not in block index, we should get an error
 	block.Header.PrevBlockHash = NewBlockHash(RandomBytes(32))
-	ancestors, err = bc.getLineageFromCommittedTip(block.Header)
+	ancestors, missingBlockHashes, err = bc.getStoredLineageFromCommittedTip(block.Header)
 	require.Error(t, err)
 	require.Equal(t, err, RuleErrorMissingAncestorBlock)
+	require.Len(t, missingBlockHashes, 1)
+	require.True(t, missingBlockHashes[0].IsEqual(block.Header.PrevBlockHash))
 	require.Nil(t, ancestors)
 
 	// If this block extends from a committed block that is not the tip, we should get an error.
@@ -845,38 +848,44 @@ func TestGetLineageFromCommittedTip(t *testing.T) {
 	}, StatusBlockStored|StatusBlockValidated|StatusBlockCommitted)
 	bc.bestChain = append(bc.bestChain, block2)
 	bc.blockIndexByHash[*hash2] = block2
-	ancestors, err = bc.getLineageFromCommittedTip(block.Header)
+	ancestors, missingBlockHashes, err = bc.getStoredLineageFromCommittedTip(block.Header)
 	require.Error(t, err)
 	require.Equal(t, err, RuleErrorDoesNotExtendCommittedTip)
+	require.Len(t, missingBlockHashes, 0)
 
 	// update block to be uncommitted
 	block2.Status = StatusBlockStored | StatusBlockValidated
 	// set new block's parent as block 2.
 	block.Header.PrevBlockHash = hash2
-	ancestors, err = bc.getLineageFromCommittedTip(block.Header)
+	ancestors, missingBlockHashes, err = bc.getStoredLineageFromCommittedTip(block.Header)
 	require.NoError(t, err)
 	require.Len(t, ancestors, 1)
+	require.Len(t, missingBlockHashes, 0)
 
 	// Testing error cases
 	// Set block 2 to be ValidateFailed
 	block2.Status = StatusBlockStored | StatusBlockValidateFailed
-	ancestors, err = bc.getLineageFromCommittedTip(block.Header)
+	ancestors, missingBlockHashes, err = bc.getStoredLineageFromCommittedTip(block.Header)
 	require.Error(t, err)
 	require.Equal(t, err, RuleErrorAncestorBlockValidationFailed)
+	require.Len(t, missingBlockHashes, 0)
 
 	// Revert block 2 status.
 	block2.Status = StatusBlockStored | StatusBlockValidated
 	// Set block's height to be <= block2's height
 	block.Header.Height = 2
-	ancestors, err = bc.getLineageFromCommittedTip(block.Header)
+	ancestors, missingBlockHashes, err = bc.getStoredLineageFromCommittedTip(block.Header)
 	require.Error(t, err)
 	require.Equal(t, err, RuleErrorParentBlockHeightNotSequentialWithChildBlockHeight)
+	require.Len(t, missingBlockHashes, 0)
+
 	// Revert block 2's height and set block's view to be <= block2's view
 	block.Header.Height = 3
 	block.Header.ProposedInView = 2
-	ancestors, err = bc.getLineageFromCommittedTip(block.Header)
+	ancestors, missingBlockHashes, err = bc.getStoredLineageFromCommittedTip(block.Header)
 	require.Error(t, err)
 	require.Equal(t, err, RuleErrorParentBlockHasViewGreaterOrEqualToChildBlock)
+	require.Len(t, missingBlockHashes, 0)
 }
 
 // TestIsValidPoSQuorumCertificate tests that isValidPoSQuorumCertificate works as expected.
@@ -1325,7 +1334,7 @@ func TestTryApplyNewTip(t *testing.T) {
 	newBlockHash, err := newBlock.Hash()
 	require.NoError(t, err)
 
-	ancestors, err := bc.getLineageFromCommittedTip(newBlock.Header)
+	ancestors, _, err := bc.getStoredLineageFromCommittedTip(newBlock.Header)
 	require.NoError(t, err)
 	checkBestChainForHash := func(hash *BlockHash) bool {
 		return collections.Any(bc.bestChain, func(bn *BlockNode) bool {
@@ -1403,7 +1412,7 @@ func TestTryApplyNewTip(t *testing.T) {
 	newBlockNode.Header.Height = 7
 	newBlockNode.Height = 7
 	require.NoError(t, err)
-	ancestors, err = bc.getLineageFromCommittedTip(newBlock.Header)
+	ancestors, _, err = bc.getStoredLineageFromCommittedTip(newBlock.Header)
 	require.NoError(t, err)
 
 	// Try to apply newBlock as tip.
@@ -1462,7 +1471,7 @@ func TestTryApplyNewTip(t *testing.T) {
 	newBlockNode.Header.Height = 5
 	newBlockNode.Height = 5
 	require.NoError(t, err)
-	ancestors, err = bc.getLineageFromCommittedTip(newBlock.Header)
+	ancestors, _, err = bc.getStoredLineageFromCommittedTip(newBlock.Header)
 	require.NoError(t, err)
 	appliedNewTip, connectedBlockHashes, disconnectedBlockHashes, err = bc.tryApplyNewTip(newBlockNode, 6, ancestors)
 	require.True(t, appliedNewTip)

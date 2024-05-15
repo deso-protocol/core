@@ -250,7 +250,7 @@ func (bc *Blockchain) processBlockPoS(block *MsgDeSoBlock, currentView uint64, v
 	// is an orphan, then we store it after performing basic validations.
 	// If the block extends from any committed block other than the committed tip,
 	// then we throw it away.
-	lineageFromCommittedTip, err := bc.getLineageFromCommittedTip(block.Header)
+	lineageFromCommittedTip, missingBlockHashes, err := bc.getStoredLineageFromCommittedTip(block.Header)
 	if errors.Is(err, RuleErrorDoesNotExtendCommittedTip) ||
 		errors.Is(err, RuleErrorParentBlockHasViewGreaterOrEqualToChildBlock) ||
 		errors.Is(err, RuleErrorParentBlockHeightNotSequentialWithChildBlockHeight) ||
@@ -265,7 +265,6 @@ func (bc *Blockchain) processBlockPoS(block *MsgDeSoBlock, currentView uint64, v
 		// on our best chain. Try to process the orphan by running basic validations.
 		// If it passes basic integrity checks, we'll store it with the hope that we
 		// will eventually get a parent that connects to our best chain.
-		missingBlockHashes := []*BlockHash{block.Header.PrevBlockHash}
 		return false, true, missingBlockHashes, bc.processOrphanBlockPoS(block)
 	}
 
@@ -1270,13 +1269,19 @@ func (bc *Blockchain) isValidPoSQuorumCertificate(block *MsgDeSoBlock, validator
 	return nil
 }
 
-// getLineageFromCommittedTip returns the ancestors of the block provided up to, but not
+// getStoredLineageFromCommittedTip returns the ancestors of the block provided up to, but not
 // including the committed tip. The first block in the returned slice is the first uncommitted
-// ancestor.
-func (bc *Blockchain) getLineageFromCommittedTip(header *MsgDeSoHeader) ([]*BlockNode, error) {
+// ancestor. if a valid lineage is returned, it means that we have all of the blocks in the
+// lineage stored and that we are able to build the state of the chain up to the parent of the
+// given header.
+func (bc *Blockchain) getStoredLineageFromCommittedTip(header *MsgDeSoHeader) (
+	_lineageFromCommittedTip []*BlockNode,
+	_missingBlockHashes []*BlockHash,
+	_err error,
+) {
 	highestCommittedBlock, idx := bc.GetCommittedTip()
 	if idx == -1 || highestCommittedBlock == nil {
-		return nil, errors.New("getLineageFromCommittedTip: No committed blocks found")
+		return nil, nil, errors.New("getStoredLineageFromCommittedTip: No committed blocks found")
 	}
 	currentHash := header.PrevBlockHash.NewBlockHash()
 	ancestors := []*BlockNode{}
@@ -1285,29 +1290,38 @@ func (bc *Blockchain) getLineageFromCommittedTip(header *MsgDeSoHeader) ([]*Bloc
 	for {
 		currentBlock, exists := bc.blockIndexByHash[*currentHash]
 		if !exists {
-			return nil, RuleErrorMissingAncestorBlock
+			return nil, []*BlockHash{currentHash}, RuleErrorMissingAncestorBlock
 		}
 		if currentBlock.Hash.IsEqual(highestCommittedBlock.Hash) {
 			break
 		}
 		if currentBlock.IsCommitted() {
-			return nil, RuleErrorDoesNotExtendCommittedTip
+			return nil, nil, RuleErrorDoesNotExtendCommittedTip
 		}
 		if currentBlock.IsValidateFailed() {
-			return nil, RuleErrorAncestorBlockValidationFailed
+			return nil, nil, RuleErrorAncestorBlockValidationFailed
 		}
 		if uint64(currentBlock.Header.Height)+1 != prevHeight {
-			return nil, RuleErrorParentBlockHeightNotSequentialWithChildBlockHeight
+			return nil, nil, RuleErrorParentBlockHeightNotSequentialWithChildBlockHeight
 		}
 		if currentBlock.Header.GetView() >= prevView {
-			return nil, RuleErrorParentBlockHasViewGreaterOrEqualToChildBlock
+			return nil, nil, RuleErrorParentBlockHasViewGreaterOrEqualToChildBlock
 		}
+
+		// If the current block is not market as ValidateFailed but is also noted Stored,
+		// then it means we have never seen it before. We have it in the block index because
+		// we previously saw its header. We need to request the block again from a peer and
+		// consider it to be missing.
+		if !currentBlock.IsStored() {
+			return nil, []*BlockHash{currentHash}, RuleErrorMissingAncestorBlock
+		}
+
 		ancestors = append(ancestors, currentBlock)
 		currentHash = currentBlock.Header.PrevBlockHash
 		prevHeight = currentBlock.Header.Height
 		prevView = currentBlock.Header.GetView()
 	}
-	return collections.Reverse(ancestors), nil
+	return collections.Reverse(ancestors), nil, nil
 }
 
 // getOrCreateBlockNodeFromBlockIndex returns the block node from the block index if it exists.

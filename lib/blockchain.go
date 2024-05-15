@@ -868,7 +868,7 @@ func (bc *Blockchain) _applyUncommittedBlocksToBestChain() error {
 	////////////////////////// Update the bestChain in-memory data structures //////////////////////////
 
 	// Fetch the lineage of blocks from the committed tip through the uncommitted tip.
-	lineageFromCommittedTip, err := bc.getLineageFromCommittedTip(uncommittedTipBlockNode.Header)
+	lineageFromCommittedTip, _, err := bc.getStoredLineageFromCommittedTip(uncommittedTipBlockNode.Header)
 	if err != nil {
 		return errors.Wrapf(err, "_applyUncommittedBlocksToBestChain: ")
 	}
