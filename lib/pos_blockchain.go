@@ -72,6 +72,10 @@ func (bc *Blockchain) processHeaderPoS(header *MsgDeSoHeader, verifySignatures b
 		return false, false, errors.Wrapf(err, "processHeaderPoS: Problem validating and indexing header: ")
 	}
 
+	// Now that we know we have a valid header, we check the block index for it any orphan children for it
+	// and heal the parent pointers for all of them.
+	bc.healOrphanPointersForChildren(blockNode)
+
 	// Exit early if the header is an orphan.
 	if isOrphan {
 		return false, true, nil
@@ -85,7 +89,7 @@ func (bc *Blockchain) processHeaderPoS(header *MsgDeSoHeader, verifySignatures b
 	}
 
 	// The header is not an orphan and has a higher view than the current tip. We reorg the header chain
-	// and apply the incoming header is the new tip.
+	// and apply the incoming header as the new tip.
 	_, blocksToDetach, blocksToAttach := GetReorgBlocks(currentTip, blockNode)
 	bc.bestHeaderChain, bc.bestHeaderChainMap = updateBestChainInMemory(
 		bc.bestHeaderChain,
@@ -96,6 +100,37 @@ func (bc *Blockchain) processHeaderPoS(header *MsgDeSoHeader, verifySignatures b
 
 	// Success. The header is at the tip of the best header chain.
 	return true, false, nil
+}
+
+// healOrphanPointersForChildren fixes an inconsistency in the block index that may have
+// occurred as a result of a node restart. In cases where we have an orphan node that we store in the
+// DB, then on restart, that node's parent will not be in the block index. When processing the parent
+// later on, we not only need to store the parent in the block index but also need to update the
+// pointer from the orphan block's BlockNode to the parent. We do that dynamically here as we
+// process headers.
+func (bc *Blockchain) healOrphanPointersForChildren(blockNode *BlockNode) {
+	// Fetch all potential children of this blockNode from the block index.
+	blockNodesAtNextHeight, exists := bc.blockIndexByHeight[blockNode.Header.Height+1]
+	if !exists {
+		// No children of this blockNode exist in the block index. Exit early.
+		return
+	}
+
+	// Iterate through all block nodes at the next block height and update their parent pointers.
+	for _, blockNodeAtNextHeight := range blockNodesAtNextHeight {
+		// Check if it's a child of the parent block node.
+		if !blockNodeAtNextHeight.Header.PrevBlockHash.IsEqual(blockNode.Hash) {
+			continue
+		}
+
+		// Check if it has its parent pointer set. If it does, then we exit early.
+		if blockNodeAtNextHeight.Parent != nil {
+			continue
+		}
+
+		// If the parent block node is not set, then we set it to the parent block node.
+		blockNodeAtNextHeight.Parent = blockNode
+	}
 }
 
 func (bc *Blockchain) validateAndIndexHeaderPoS(header *MsgDeSoHeader, headerHash *BlockHash, verifySignatures bool) (
