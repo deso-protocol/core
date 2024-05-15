@@ -672,7 +672,7 @@ func (bc *Blockchain) CopyBlockIndexes() (_blockIndexByHash map[BlockHash]*Block
 	return newBlockIndexByHash, newBlockIndexByHeight
 }
 
-func (bc *Blockchain) ConstructBlockIndexByHeight() map[uint64]map[BlockHash]*BlockNode {
+func (bc *Blockchain) constructBlockIndexByHeight() map[uint64]map[BlockHash]*BlockNode {
 	newBlockIndex := make(map[uint64]map[BlockHash]*BlockNode)
 	for _, blockNode := range bc.blockIndexByHash {
 		blockHeight := uint64(blockNode.Height)
@@ -792,7 +792,7 @@ func (bc *Blockchain) _initChain() error {
 	if err != nil {
 		return errors.Wrapf(err, "_initChain: Problem reading block index from db")
 	}
-	bc.blockIndexByHeight = bc.ConstructBlockIndexByHeight()
+	bc.blockIndexByHeight = bc.constructBlockIndexByHeight()
 
 	// At this point the blockIndexByHash should contain a full node tree with all
 	// nodes pointing to valid parent nodes.

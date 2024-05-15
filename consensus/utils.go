@@ -154,8 +154,8 @@ func isSuperMajorityStakeSignersList(signersList *bitset.Bitset, validators []Va
 	return true, validatorPublicKeysInQC
 }
 
-// When voting on a block, validators sign the payload sha3-256(View, BlockHash) with their BLS
-// private key. This hash guarantees that the view and block hash fields in a VoteMessage
+// When voting on a block, validators sign the payload sha3-256(ViewOpCode, View, BlockHash) with
+// their BLS private key. This hash guarantees that the view and block hash fields in a VoteMessage
 // have not been tampered with, while maintaining all existing guarantees that the validator
 // has voted for a given block.
 //
@@ -173,8 +173,8 @@ func GetVoteSignaturePayload(view uint64, blockHash BlockHash) [32]byte {
 	return sha3.Sum256(payload)
 }
 
-// When timing out for a view, validators sign the payload sha3-256(View, HighQCView) with their BLS
-// private key. This hash guarantees that the view and high QC view fields in a TimeoutMessage
+// When timing out for a view, validators sign the payload sha3-256(TimeoutOpCode, View, HighQCView) with
+// their BLS private key. This hash guarantees that the view and high QC view fields in a TimeoutMessage
 // have not been tampered with.
 func GetTimeoutSignaturePayload(view uint64, highQCView uint64) [32]byte {
 	viewBytes := make([]byte, 8)

@@ -169,7 +169,7 @@ type UtxoView struct {
 	// It contains the PKID of the validator at the given index in the leader schedule
 	// generated at the given SnapshotAtEpochNumber.
 	SnapshotLeaderSchedule map[SnapshotLeaderScheduleMapKey]*PKID
-	// HasFullSnapshotLeaderScheduleByEpoch is a map of SnapshotAtEpochNumber to a boolean. If the leader schedule
+	// HasFullSnapshotLeaderScheduleByEpoch is a map of SnapshotAtEpochNumber to a boolean. If the leader entire schedule
 	// for a given epoch has been loaded from the DB, the value is true.
 	HasFullSnapshotLeaderScheduleByEpoch map[uint64]bool
 
@@ -3479,15 +3479,15 @@ func (bav *UtxoView) _connectUpdateGlobalParams(
 			val, bytesRead := Uvarint(
 				extraData[MempoolCongestionFactorBasisPointsKey],
 			)
+			if bytesRead <= 0 {
+				return 0, 0, nil, fmt.Errorf(
+					"_connectUpdateGlobalParams: unable to decode MempoolCongestionFactorBasisPoints as uint64",
+				)
+			}
 			if val > MaxBasisPoints {
 				return 0, 0, nil, fmt.Errorf(
 					"_connectUpdateGlobalParams: MempoolCongestionFactorBasisPoints must be <= %d",
 					MaxBasisPoints,
-				)
-			}
-			if bytesRead <= 0 {
-				return 0, 0, nil, fmt.Errorf(
-					"_connectUpdateGlobalParams: unable to decode MempoolCongestionFactorBasisPoints as uint64",
 				)
 			}
 			newGlobalParamsEntry.MempoolCongestionFactorBasisPoints = val
@@ -3496,15 +3496,15 @@ func (bav *UtxoView) _connectUpdateGlobalParams(
 			val, bytesRead := Uvarint(
 				extraData[MempoolPastBlocksCongestionFactorBasisPointsKey],
 			)
+			if bytesRead <= 0 {
+				return 0, 0, nil, fmt.Errorf(
+					"_connectUpdateGlobalParams: unable to decode MempoolPastBlocksCongestionFactorBasisPoints as uint64",
+				)
+			}
 			if val > MaxBasisPoints {
 				return 0, 0, nil, fmt.Errorf(
 					"_connectUpdateGlobalParams: MempoolPastBlocksCongestionFactorBasisPoints must be <= %d",
 					MaxBasisPoints,
-				)
-			}
-			if bytesRead <= 0 {
-				return 0, 0, nil, fmt.Errorf(
-					"_connectUpdateGlobalParams: unable to decode MempoolPastBlocksCongestionFactorBasisPoints as uint64",
 				)
 			}
 			newGlobalParamsEntry.MempoolPastBlocksCongestionFactorBasisPoints = val
@@ -3513,15 +3513,15 @@ func (bav *UtxoView) _connectUpdateGlobalParams(
 			val, bytesRead := Uvarint(
 				extraData[MempoolPriorityPercentileBasisPointsKey],
 			)
+			if bytesRead <= 0 {
+				return 0, 0, nil, fmt.Errorf(
+					"_connectUpdateGlobalParams: unable to decode MempoolPriorityPercentileBasisPoints as uint64",
+				)
+			}
 			if val > MaxBasisPoints {
 				return 0, 0, nil, fmt.Errorf(
 					"_connectUpdateGlobalParams: MempoolPriorityPercentileBasisPoints must be <= %d",
 					MaxBasisPoints,
-				)
-			}
-			if bytesRead <= 0 {
-				return 0, 0, nil, fmt.Errorf(
-					"_connectUpdateGlobalParams: unable to decode MempoolPriorityPercentileBasisPoints as uint64",
 				)
 			}
 			newGlobalParamsEntry.MempoolPriorityPercentileBasisPoints = val
@@ -3530,15 +3530,15 @@ func (bav *UtxoView) _connectUpdateGlobalParams(
 			val, bytesRead := Uvarint(
 				extraData[MempoolPastBlocksPriorityPercentileBasisPointsKey],
 			)
+			if bytesRead <= 0 {
+				return 0, 0, nil, fmt.Errorf(
+					"_connectUpdateGlobalParams: unable to decode MempoolPastBlocksPriorityPercentileBasisPoints as uint64",
+				)
+			}
 			if val > MaxBasisPoints {
 				return 0, 0, nil, fmt.Errorf(
 					"_connectUpdateGlobalParams: MempoolPastBlocksPriorityPercentileBasisPoints must be <= %d",
 					MaxBasisPoints,
-				)
-			}
-			if bytesRead <= 0 {
-				return 0, 0, nil, fmt.Errorf(
-					"_connectUpdateGlobalParams: unable to decode MempoolPastBlocksPriorityPercentileBasisPoints as uint64",
 				)
 			}
 			newGlobalParamsEntry.MempoolPastBlocksPriorityPercentileBasisPoints = val
@@ -4244,38 +4244,6 @@ func (bav *UtxoView) _connectSingleTxn(
 	}
 
 	return utxoOpsForTxn, totalInput, totalOutput, fees, nil
-}
-
-// ConnectTransactionIntoNewUtxoView is a fail safe way to connect a transaction to a view. It connects the transaction
-// to a copy of the view and returns the new view, the UtxoOperations, total inputs, total outputs, fees, and an error if
-// one occurred. The function does not modify the original view. The function is useful when you want to connect a
-// transaction to a view without modifying the original view through unintended side effects.
-func (bav *UtxoView) ConnectTransactionIntoNewUtxoView(
-	txn *MsgDeSoTxn,
-	txHash *BlockHash,
-	blockHeight uint32,
-	blockTimestampNanoSecs int64,
-	verifySignatures bool,
-	ignoreUtxos bool,
-) (
-	_finalUtxoView *UtxoView, // The new view with the transaction connected.
-	_utxoOps []*UtxoOperation,
-	_totalInput uint64,
-	_totalOutput uint64,
-	_fees uint64,
-	_err error,
-) {
-	// Copy the view so we can try connecting the transaction without modifying the original view.
-	copiedView := bav.CopyUtxoView()
-
-	// Connect the transaction to the copied view.
-	utxoOpsForTxn, totalInput, totalOutput, fees, err := copiedView.ConnectTransaction(
-		txn, txHash, blockHeight, blockTimestampNanoSecs, verifySignatures, ignoreUtxos)
-	if err != nil {
-		return nil, nil, 0, 0, 0, errors.Wrapf(err, "TryConnectTransaction: Problem connecting txn on copy view")
-	}
-
-	return copiedView, utxoOpsForTxn, totalInput, totalOutput, fees, nil
 }
 
 func (bav *UtxoView) ValidateTransactionNonce(txn *MsgDeSoTxn, blockHeight uint64) error {

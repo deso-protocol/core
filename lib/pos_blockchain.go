@@ -1229,8 +1229,8 @@ func (bav *UtxoView) hasValidBlockProposerPoS(block *MsgDeSoBlock) (_isValidBloc
 // of the validator set has voted (or timed out). It special cases the first block after the PoS cutover
 // by overriding the validator set used to validate the high QC in the first block after the PoS cutover.
 func (bc *Blockchain) isValidPoSQuorumCertificate(block *MsgDeSoBlock, validatorSet []*ValidatorEntry) error {
-	voteQCValidators := toConsensusValidators(validatorSet)
-	aggregateQCValidators := voteQCValidators
+	highQCValidators := toConsensusValidators(validatorSet)
+	aggregateQCValidators := highQCValidators
 
 	voteQC := block.Header.ValidatorsVoteQC
 	timeoutAggregateQC := block.Header.ValidatorsTimeoutAggregateQC
@@ -1250,20 +1250,20 @@ func (bc *Blockchain) isValidPoSQuorumCertificate(block *MsgDeSoBlock, validator
 			if err != nil {
 				return errors.Wrapf(err, "isValidPoSQuorumCertificate: Problem building PoS cutover validator")
 			}
-			voteQCValidators = []consensus.Validator{posCutoverValidator}
+			highQCValidators = []consensus.Validator{posCutoverValidator}
 		}
 	}
 
 	// Validate the timeout aggregate QC.
 	if !timeoutAggregateQC.isEmpty() {
-		if !consensus.IsValidSuperMajorityAggregateQuorumCertificate(timeoutAggregateQC, aggregateQCValidators, voteQCValidators) {
+		if !consensus.IsValidSuperMajorityAggregateQuorumCertificate(timeoutAggregateQC, aggregateQCValidators, highQCValidators) {
 			return RuleErrorInvalidTimeoutQC
 		}
 		return nil
 	}
 
 	// Validate the vote QC.
-	if !consensus.IsValidSuperMajorityQuorumCertificate(voteQC, voteQCValidators) {
+	if !consensus.IsValidSuperMajorityQuorumCertificate(voteQC, highQCValidators) {
 		return RuleErrorInvalidVoteQC
 	}
 

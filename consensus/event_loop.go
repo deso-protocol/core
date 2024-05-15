@@ -699,7 +699,7 @@ func (fe *fastHotStuffEventLoop) tryConstructVoteQCInCurrentView() *FastHotStuff
 	for ii, validator := range validatorList {
 		totalStake = uint256.NewInt(0).Add(totalStake, validator.GetStakeAmount())
 
-		// Skip the validator if it hasn't voted for the the block
+		// Skip the validator if it hasn't voted for the block
 		vote, hasVoted := votesByValidator[validator.GetPublicKey().ToString()]
 		if !hasVoted {
 			continue
