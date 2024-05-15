@@ -108,7 +108,10 @@ type Peer struct {
 
 	// Whether the peer is ready to receive INV messages. For a peer that
 	// still needs a mempool download, this is false.
-	canReceiveInvMessagess bool
+	canReceiveInvMessages bool
+	// Whether we have sent a MEMPOOL message to the peer to request INV messages.
+	// This makes sure that we only ever send one MEMPOOL message to the peer.
+	hasReceivedMempoolMessage bool
 
 	// We process GetTransaction requests in a separate loop. This allows us
 	// to ensure that the responses are ordered.
@@ -952,6 +955,11 @@ out:
 				for _, invVect := range invMsg.InvList {
 					pp.knownInventory.Add(*invVect)
 				}
+			}
+
+			// if we're sending a MEMPOOL message, then we
+			if msg.GetMsgType() == MsgTypeMempool {
+				pp.hasReceivedMempoolMessage = true
 			}
 
 			// If we're sending a block, remove it from our blocksToSend map to allow
