@@ -937,17 +937,6 @@ func (fc *FastHotStuffConsensus) updateActiveValidatorConnections() error {
 	return nil
 }
 
-func (fc *FastHotStuffConsensus) trySendMessageToPeer(pp *Peer, msg DeSoMessage) {
-	remoteNode := fc.networkManager.GetRemoteNodeFromPeer(pp)
-	if remoteNode == nil {
-		glog.Errorf("FastHotStuffConsensus.trySendMessageToPeer: RemoteNode not found for peer: %v", pp)
-		return
-	}
-
-	// Send the message to the peer
-	remoteNode.SendMessage(msg)
-}
-
 // Finds the epoch entry for the block and returns the epoch number.
 func getEpochEntryForBlockHeight(blockHeight uint64, epochEntries []*EpochEntry) (*EpochEntry, error) {
 	for _, epochEntry := range epochEntries {
