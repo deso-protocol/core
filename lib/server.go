@@ -2160,7 +2160,7 @@ func (srv *Server) _tryRequestMempoolFromPeer(pp *Peer) {
 	}
 
 	// If the node was only configured to sync to a certain block height, then there's nothing to do.
-	if srv.blockchain.MaxSyncBlockHeight == 0 {
+	if srv.blockchain.MaxSyncBlockHeight != 0 {
 		return
 	}
 
