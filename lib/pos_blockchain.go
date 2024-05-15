@@ -1308,8 +1308,8 @@ func (bc *Blockchain) getStoredLineageFromCommittedTip(header *MsgDeSoHeader) (
 			return nil, nil, RuleErrorParentBlockHasViewGreaterOrEqualToChildBlock
 		}
 
-		// If the current block is not market as ValidateFailed but is also noted Stored,
-		// then it means we have never seen it before. We have it in the block index because
+		// If the current block is not marked as ValidateFailed but is also not Stored, it
+		// means we have never seen the block before. We have it in the block index because
 		// we previously saw its header. We need to request the block again from a peer and
 		// consider it to be missing.
 		if !currentBlock.IsStored() {
