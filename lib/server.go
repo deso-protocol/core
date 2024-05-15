@@ -1085,7 +1085,7 @@ func (srv *Server) _handleHeaderBundle(pp *Peer, msg *MsgDeSoHeaderBundle) {
 	// its initial state is fully current we'll always bootstrap our mempools with a
 	// mempool request. The alternative is that our state is not fully current
 	// when we boot up, and we cover this second case in the _handleBlock function.
-	srv._maybeRequestSync(pp)
+	srv._tryRequestMempoolFromPeer(pp)
 
 	// At this point we should have processed all the headers. Now we will
 	// make a decision on whether to request more headers from this peer based
@@ -1828,6 +1828,7 @@ func (srv *Server) HandleAcceptedPeer(rn *RemoteNode) {
 	if rn == nil || rn.GetPeer() == nil {
 		return
 	}
+
 	pp := rn.GetPeer()
 	pp.SetServiceFlag(rn.GetServiceFlag())
 	pp.SetLatestBlockHeight(rn.GetLatestBlockHeight())
@@ -1839,13 +1840,14 @@ func (srv *Server) HandleAcceptedPeer(rn *RemoteNode) {
 		"syncPeerIsNil=(%v), IsSyncing=(%v), ChainState=(%v)",
 		pp, isSyncCandidate, (srv.SyncPeer == nil), isSyncing, chainState)
 
-	// Request a sync if we're ready
-	srv._maybeRequestSync(pp)
+	// Request a mempool sync if we're ready
+	srv._tryRequestMempoolFromPeer(pp)
 
 	// Start syncing by choosing the best candidate.
 	if isSyncCandidate && srv.SyncPeer == nil {
 		srv._startSync()
 	}
+
 	if !isSyncCandidate {
 		glog.Infof("Peer is not sync candidate: %v (isOutbound: %v)", pp, pp.isOutbound)
 	}
@@ -2147,20 +2149,35 @@ func (srv *Server) _updatePosMempoolAfterTipChange() error {
 	return nil
 }
 
-func (srv *Server) _maybeRequestSync(pp *Peer) {
-	// Send the mempool message if DeSo and Bitcoin are fully current
-	if srv.blockchain.chainState() == SyncStateFullyCurrent {
-		// If peer is not nil and we haven't set a max sync blockheight, we will
-		if pp != nil && srv.blockchain.MaxSyncBlockHeight == 0 {
-			glog.V(1).Infof("Server._maybeRequestSync: Sending mempool message: %v", pp)
-			pp.AddDeSoMessage(&MsgDeSoMempool{}, false)
-		} else {
-			glog.V(1).Infof("Server._maybeRequestSync: NOT sending mempool message because peer is nil: %v", pp)
-		}
+// _tryRequestMempoolFromPeer checks if the blockchain is current or in the steady state. If so,
+// it sends a MsgDeSoMempool to request the peer's mempool. After this point, the peer will send
+// us inv messages for transactions that we don't have in our mempool.
+func (srv *Server) _tryRequestMempoolFromPeer(pp *Peer) {
+	// If the peer is nil, then there's nothing to do.
+	if pp == nil {
+		glog.V(1).Infof("Server._tryRequestMempoolFromPeer: NOT sending mempool message because peer is nil: %v", pp)
+		return
+	}
+
+	// If the node was only configured to sync to a certain block height, then there's nothing to do.
+	if srv.blockchain.MaxSyncBlockHeight == 0 {
+		return
+	}
+
+	// We are OK to request the peer's mempool as long as the chain is current or we are running the
+	// FastHotStuffConsensus in the steady state.
+	isChainCurrent := srv.blockchain.chainState() == SyncStateFullyCurrent
+	isRunningFastHotStuffConsensus := srv.fastHotStuffConsensus != nil && srv.fastHotStuffConsensus.IsRunning()
+
+	if isChainCurrent || isRunningFastHotStuffConsensus {
+		glog.V(1).Infof("Server._tryRequestMempoolFromPeer: Sending mempool message: %v", pp)
+		pp.AddDeSoMessage(&MsgDeSoMempool{}, false)
 	} else {
-		glog.V(1).Infof("Server._maybeRequestSync: NOT sending mempool message because not current: %v, %v",
+		glog.V(1).Infof(
+			"Server._tryRequestMempoolFromPeer: NOT sending mempool message. The node is still syncing: %v, %v",
 			srv.blockchain.chainState(),
-			pp)
+			pp,
+		)
 	}
 }
 
@@ -2401,7 +2418,7 @@ func (srv *Server) _handleBlock(pp *Peer, blk *MsgDeSoBlock, isLastBlock bool) {
 
 	// If we get here, it means we're in SyncStateFullyCurrent, which is great.
 	// In this case we shoot a MEMPOOL message over to the peer to bootstrap the mempool.
-	srv._maybeRequestSync(pp)
+	srv._tryRequestMempoolFromPeer(pp)
 
 	// Exit early if the chain isn't SyncStateFullyCurrent.
 	if srv.blockchain.chainState() != SyncStateFullyCurrent {
