@@ -1966,9 +1966,9 @@ func (srv *Server) _relayTransactions() {
 	txnList := mempool.GetTransactions()
 
 	for _, pp := range allPeers {
-		if !pp.canReceiveInvMessagess {
+		if !pp.canReceiveInvMessages {
 			glog.V(1).Infof("Skipping invs for peer %v because not ready "+
-				"yet: %v", pp, pp.canReceiveInvMessagess)
+				"yet: %v", pp, pp.canReceiveInvMessages)
 			continue
 		}
 		// For each peer construct an inventory message that excludes transactions
@@ -2156,6 +2156,14 @@ func (srv *Server) _tryRequestMempoolFromPeer(pp *Peer) {
 	// If the peer is nil, then there's nothing to do.
 	if pp == nil {
 		glog.V(1).Infof("Server._tryRequestMempoolFromPeer: NOT sending mempool message because peer is nil: %v", pp)
+		return
+	}
+
+	// If we hve already requested the mempool from the peer, then there's nothing to do.
+	if pp.hasReceivedMempoolMessage {
+		glog.V(1).Infof(
+			"Server._tryRequestMempoolFromPeer: NOT sending mempool message because we have already sent one: %v", pp,
+		)
 		return
 	}
 
@@ -2630,7 +2638,7 @@ func (srv *Server) _handleTransactionBundleV2(pp *Peer, msg *MsgDeSoTransactionB
 func (srv *Server) _handleMempool(pp *Peer, msg *MsgDeSoMempool) {
 	glog.V(1).Infof("Server._handleMempool: Received Mempool message from Peer %v", pp)
 
-	pp.canReceiveInvMessagess = true
+	pp.canReceiveInvMessages = true
 }
 
 func (srv *Server) StartStatsdReporter() {
