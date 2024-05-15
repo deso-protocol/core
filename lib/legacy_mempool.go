@@ -873,6 +873,7 @@ func (mp *DeSoMempool) addTransaction(
 		Height:      height,
 		Fee:         fee,
 		FeePerKB:    fee * 1000 / serializedLen,
+		validated:   true,
 		// index will be set by the heap code.
 	}
 

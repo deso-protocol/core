@@ -816,10 +816,6 @@ func (stateChangeSyncer *StateChangeSyncer) SyncMempoolToStateSyncer(server *Ser
 	glog.V(2).Infof("Time since db flush: %v", time.Since(startTime))
 	mempoolTxUtxoView := NewUtxoView(server.blockchain.db, server.blockchain.params, server.blockchain.postgres, nil, &mempoolEventManager)
 	glog.V(2).Infof("Time since utxo view: %v", time.Since(startTime))
-	startTime = time.Now()
-
-	// Loop through all the transactions in the mempool and connect them and their utxo ops to the mempool view.
-	mempoolTxns := server.GetMempool().GetOrderedTransactions()
 
 	// Get the uncommitted blocks from the chain.
 	uncommittedBlocks, err := server.blockchain.GetUncommittedBlocks(mempoolUtxoView.TipHash)
@@ -836,9 +832,6 @@ func (stateChangeSyncer *StateChangeSyncer) SyncMempoolToStateSyncer(server *Ser
 		})
 		return false, errors.Wrapf(err, "StateChangeSyncer.SyncMempoolToStateSyncer: ")
 	}
-	glog.V(2).Infof("Time since getting transactions: %v", time.Since(startTime))
-	startTime = time.Now()
-	glog.V(2).Infof("Mempool synced len after flush: %d", len(stateChangeSyncer.MempoolSyncedKeyValueMap))
 
 	// TODO: Have Z look at if we need to do some caching in the uncommitted blocks logic.
 	// First connect the uncommitted blocks to the mempool view.
@@ -871,6 +864,11 @@ func (stateChangeSyncer *StateChangeSyncer) SyncMempoolToStateSyncer(server *Ser
 		mempoolTxUtxoView = utxoViewAndOpsAtBlockHash.UtxoView
 		mempoolTxUtxoView.EventManager = &mempoolEventManager
 	}
+
+	// Loop through all the transactions in the mempool and connect them and their utxo ops to the mempool view.
+	mempoolTxns := server.GetMempool().GetOrderedTransactions()
+	startTime = time.Now()
+	glog.V(2).Infof("Mempool synced len after flush: %d", len(stateChangeSyncer.MempoolSyncedKeyValueMap))
 
 	//Check to see if every txn hash in our cached txns is in the first n txns in the mempool.
 	//N represents the length of our cached txn map.
@@ -905,6 +903,9 @@ func (stateChangeSyncer *StateChangeSyncer) SyncMempoolToStateSyncer(server *Ser
 			txnStateChangeEntry = stateChangeEntries[0]
 			utxoOpStateChangeEntry = stateChangeEntries[1]
 		} else {
+			if !mempoolTx.validated {
+				continue
+			}
 			utxoOpsForTxn, _, _, _, err := mempoolTxUtxoView.ConnectTransaction(
 				mempoolTx.Tx, mempoolTx.Hash, uint32(blockHeight+1), currentTimestamp, false, false /*ignoreUtxos*/)
 			if err != nil {
