@@ -2410,7 +2410,7 @@ func (srv *Server) _handleBlock(pp *Peer, blk *MsgDeSoBlock, isLastBlock bool) {
 		// It's possible to receive an orphan block from the peer for a variety of reasons. If we
 		// see an orphan block, we do one of two things:
 		// 1. With the PoS protocol where it is possible to receive an orphan from the block producer
-		//    any number of reasons, the ProcessBlockPoS returns a non-empty blockHashesToRequest list
+		//    for any number of reasons, the ProcessBlockPoS returns a non-empty blockHashesToRequest list
 		//    for us to request from the peer.
 		// 2. With the PoW protocol where we do not expect to ever receive an orphan block due to how
 		//    we request header first before requesting blocks, we disconnect from the peer.
