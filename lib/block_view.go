@@ -361,8 +361,7 @@ func (bav *UtxoView) CopyUtxoView() *UtxoView {
 		if forbiddenPubKeyEntry == nil {
 			continue
 		}
-		newForbiddenPubKeyEntry := *forbiddenPubKeyEntry
-		newView.ForbiddenPubKeyToForbiddenPubKeyEntry[pkMapKey] = &newForbiddenPubKeyEntry
+		newView.ForbiddenPubKeyToForbiddenPubKeyEntry[pkMapKey] = forbiddenPubKeyEntry.Copy()
 	}
 
 	// Copy the post data
