@@ -434,7 +434,7 @@ func (bav *UtxoView) HelpConnectCoinTransfer(
 	bav._deleteBalanceEntryMappings(receiverBalanceEntry, receiverPublicKey, profilePublicKey, isDAOCoin)
 
 	bav._setBalanceEntryMappings(receiverBalanceEntry, isDAOCoin)
-	if !senderBalanceEntry.BalanceNanos.IsZero() {
+	if senderBalanceEntry.BalanceNanos.Sign() > 0 {
 		bav._setBalanceEntryMappings(senderBalanceEntry, isDAOCoin)
 	}
 
