@@ -2952,8 +2952,14 @@ func (srv *Server) _handleValidatorTimeout(pp *Peer, msg *MsgDeSoValidatorTimeou
 		return
 	}
 
-	if err := srv.fastHotStuffConsensus.HandleValidatorTimeout(pp, msg); err != nil {
+	missingBlockHashes, err := srv.fastHotStuffConsensus.HandleValidatorTimeout(pp, msg)
+	if err != nil {
 		glog.Errorf("Server._handleValidatorTimeout: Error handling timeout message from peer: %v", err)
+	}
+
+	// If we have missing blocks to request, then we send a GetBlocks message to the peer.
+	if len(missingBlockHashes) > 0 {
+		srv.RequestBlocksByHash(pp, missingBlockHashes)
 	}
 }
 

@@ -536,7 +536,7 @@ func (fc *FastHotStuffConsensus) HandleLocalTimeoutEvent(event *consensus.FastHo
 
 // HandleValidatorTimeout is called when we receive a validator timeout message from a peer. This function
 // processes the timeout locally in the FastHotStuffEventLoop.
-func (fc *FastHotStuffConsensus) HandleValidatorTimeout(pp *Peer, msg *MsgDeSoValidatorTimeout) error {
+func (fc *FastHotStuffConsensus) HandleValidatorTimeout(pp *Peer, msg *MsgDeSoValidatorTimeout) ([]*BlockHash, error) {
 	glog.V(2).Infof("FastHotStuffConsensus.HandleValidatorTimeout: %s", msg.ToString())
 	glog.V(2).Infof("FastHotStuffConsensus.HandleValidatorTimeout: %s", fc.fastHotStuffEventLoop.ToString())
 
@@ -546,16 +546,15 @@ func (fc *FastHotStuffConsensus) HandleValidatorTimeout(pp *Peer, msg *MsgDeSoVa
 	defer fc.lock.Unlock()
 
 	if !fc.fastHotStuffEventLoop.IsRunning() {
-		return errors.Errorf("FastHotStuffConsensus.HandleValidatorTimeout: FastHotStuffEventLoop is not running")
+		return nil, errors.Errorf("FastHotStuffConsensus.HandleValidatorTimeout: FastHotStuffEventLoop is not running")
 	}
 
 	// If we don't have the highQC's block on hand, then we need to request it from the peer. We do
 	// that first before storing the timeout message locally in the FastHotStuffEventLoop. This
 	// prevents spamming of timeout messages by peers.
 	if !fc.blockchain.HasBlockInBlockIndex(msg.HighQC.BlockHash) {
-		fc.trySendMessageToPeer(pp, &MsgDeSoGetBlocks{HashList: []*BlockHash{msg.HighQC.BlockHash}})
-		glog.Errorf("FastHotStuffConsensus.HandleValidatorTimeout: Requesting missing highQC's block: %v", msg.HighQC.BlockHash)
-		return errors.Errorf("FastHotStuffConsensus.HandleValidatorTimeout: Missing highQC's block: %v", msg.HighQC.BlockHash)
+		err := errors.Errorf("FastHotStuffConsensus.HandleValidatorTimeout: Missing highQC's block: %v", msg.HighQC.BlockHash)
+		return []*BlockHash{msg.HighQC.BlockHash}, err
 	}
 
 	// Process the timeout message locally in the FastHotStuffEventLoop
@@ -563,11 +562,11 @@ func (fc *FastHotStuffConsensus) HandleValidatorTimeout(pp *Peer, msg *MsgDeSoVa
 		// If we can't process the timeout locally, then it must somehow be malformed, stale,
 		// or a duplicate vote/timeout for the same view.
 		glog.Errorf("FastHotStuffConsensus.HandleValidatorTimeout: Error processing timeout msg: %v", err)
-		return errors.Wrapf(err, "FastHotStuffConsensus.HandleValidatorTimeout: Error processing timeout msg: ")
+		return nil, errors.Wrapf(err, "FastHotStuffConsensus.HandleValidatorTimeout: Error processing timeout msg: ")
 	}
 
 	// Happy path
-	return nil
+	return nil, nil
 }
 
 func (fc *FastHotStuffConsensus) HandleBlock(pp *Peer, msg *MsgDeSoBlock) (missingBlockHashes []*BlockHash, _err error) {
@@ -936,17 +935,6 @@ func (fc *FastHotStuffConsensus) updateActiveValidatorConnections() error {
 	fc.networkManager.SetActiveValidatorsMap(validatorsMap)
 
 	return nil
-}
-
-func (fc *FastHotStuffConsensus) trySendMessageToPeer(pp *Peer, msg DeSoMessage) {
-	remoteNode := fc.networkManager.GetRemoteNodeFromPeer(pp)
-	if remoteNode == nil {
-		glog.Errorf("FastHotStuffConsensus.trySendMessageToPeer: RemoteNode not found for peer: %v", pp)
-		return
-	}
-
-	// Send the message to the peer
-	remoteNode.SendMessage(msg)
 }
 
 // Finds the epoch entry for the block and returns the epoch number.
