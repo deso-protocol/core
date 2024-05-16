@@ -3342,6 +3342,15 @@ type ForbiddenPubKeyEntry struct {
 	isDeleted bool
 }
 
+func (entry *ForbiddenPubKeyEntry) Copy() *ForbiddenPubKeyEntry {
+	pubKeyCopy := make([]byte, len(entry.PubKey))
+	copy(pubKeyCopy, entry.PubKey)
+	return &ForbiddenPubKeyEntry{
+		PubKey:    pubKeyCopy,
+		isDeleted: entry.isDeleted,
+	}
+}
+
 func (entry *ForbiddenPubKeyEntry) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte {
 	var data []byte
 	data = append(data, EncodeByteArray(entry.PubKey)...)

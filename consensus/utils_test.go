@@ -9,6 +9,157 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestIsProperlyFormedConstructVoteQCEvent(t *testing.T) {
+	testIsProperlyFormedGenericEvent(t)
+
+	// Test wrong event type
+	{
+		event := FastHotStuffEvent{
+			View: 1, TipBlockHeight: 1, TipBlockHash: createDummyBlockHash(), EventType: FastHotStuffEventTypeTimeout,
+		}
+		require.False(t, IsProperlyFormedConstructVoteQCEvent(&event))
+	}
+
+	// Test nil QC
+	{
+		event := FastHotStuffEvent{
+			View: 1, TipBlockHeight: 1, TipBlockHash: createDummyBlockHash(),
+			EventType: FastHotStuffEventTypeConstructVoteQC, QC: nil,
+		}
+		require.False(t, IsProperlyFormedConstructVoteQCEvent(&event))
+	}
+
+	// Test properly formed vote QC event
+	{
+		event := FastHotStuffEvent{
+			View: 1, TipBlockHeight: 1, TipBlockHash: createDummyBlockHash(),
+			EventType: FastHotStuffEventTypeConstructVoteQC, QC: createDummyQC(3, createDummyBlockHash()),
+		}
+		require.True(t, IsProperlyFormedConstructVoteQCEvent(&event))
+	}
+}
+
+func TestIsProperlyFormedConstructTimeoutQCEvent(t *testing.T) {
+	testIsProperlyFormedGenericEvent(t)
+
+	// Test wrong event type
+	{
+		event := FastHotStuffEvent{
+			View: 1, TipBlockHeight: 1, TipBlockHash: createDummyBlockHash(), EventType: FastHotStuffEventTypeTimeout,
+		}
+		require.False(t, IsProperlyFormedConstructTimeoutQCEvent(&event))
+	}
+
+	// Test nil AggregateQC
+	{
+		event := FastHotStuffEvent{
+			View: 1, TipBlockHeight: 1, TipBlockHash: createDummyBlockHash(),
+			EventType: FastHotStuffEventTypeConstructTimeoutQC, AggregateQC: nil,
+		}
+		require.False(t, IsProperlyFormedConstructTimeoutQCEvent(&event))
+	}
+
+	// Test properly formed timeout QC event
+	{
+		event := FastHotStuffEvent{
+			View: 1, TipBlockHeight: 1, TipBlockHash: createDummyBlockHash(),
+			EventType: FastHotStuffEventTypeConstructTimeoutQC, AggregateQC: createDummyAggQc(3, 2),
+		}
+		require.True(t, IsProperlyFormedConstructTimeoutQCEvent(&event))
+	}
+}
+
+func TestIsProperlyFormedVoteEvent(t *testing.T) {
+	testIsProperlyFormedGenericEvent(t)
+
+	// Test wrong event type
+	{
+		event := FastHotStuffEvent{
+			View: 1, TipBlockHeight: 1, TipBlockHash: createDummyBlockHash(), EventType: FastHotStuffEventTypeTimeout,
+		}
+		require.False(t, IsProperlyFormedVoteEvent(&event))
+	}
+
+	// Test non-nil QC
+	{
+		event := FastHotStuffEvent{
+			View: 1, TipBlockHeight: 1, TipBlockHash: createDummyBlockHash(),
+			EventType: FastHotStuffEventTypeVote, QC: createDummyQC(2, createDummyBlockHash()),
+		}
+		require.False(t, IsProperlyFormedVoteEvent(&event))
+	}
+
+	// Test properly formed vote event
+	{
+		event := FastHotStuffEvent{
+			View: 1, TipBlockHeight: 1, TipBlockHash: createDummyBlockHash(),
+			EventType: FastHotStuffEventTypeVote, QC: nil,
+		}
+		require.True(t, IsProperlyFormedVoteEvent(&event))
+	}
+}
+
+func TestIsProperlyFormedTimeoutEvent(t *testing.T) {
+	testIsProperlyFormedGenericEvent(t)
+
+	// Test wrong event type
+	{
+		event := FastHotStuffEvent{
+			View: 1, TipBlockHeight: 1, TipBlockHash: createDummyBlockHash(), EventType: FastHotStuffEventTypeVote,
+		}
+		require.False(t, IsProperlyFormedTimeoutEvent(&event))
+	}
+
+	// Test non-nil QC
+	{
+		event := FastHotStuffEvent{
+			View: 1, TipBlockHeight: 1, TipBlockHash: createDummyBlockHash(),
+			EventType: FastHotStuffEventTypeTimeout, QC: createDummyQC(2, createDummyBlockHash()),
+		}
+		require.False(t, IsProperlyFormedTimeoutEvent(&event))
+	}
+
+	// Test properly formed timeout event
+	{
+		event := FastHotStuffEvent{
+			View: 1, TipBlockHeight: 1, TipBlockHash: createDummyBlockHash(),
+			EventType: FastHotStuffEventTypeTimeout, QC: nil,
+		}
+		require.True(t, IsProperlyFormedTimeoutEvent(&event))
+	}
+}
+
+func testIsProperlyFormedGenericEvent(t *testing.T) {
+	// Test nil event
+	{
+		require.False(t, isProperlyFormedGenericEvent(nil))
+	}
+
+	// Test 0 view
+	{
+		event := FastHotStuffEvent{View: 0}
+		require.False(t, isProperlyFormedGenericEvent(&event))
+	}
+
+	// Test 0 tip height
+	{
+		event := FastHotStuffEvent{View: 1, TipBlockHeight: 0}
+		require.False(t, isProperlyFormedGenericEvent(&event))
+	}
+
+	// Test nil tip hash
+	{
+		event := FastHotStuffEvent{View: 1, TipBlockHeight: 1, TipBlockHash: nil}
+		require.False(t, isProperlyFormedGenericEvent(&event))
+	}
+
+	// Test properly formed generic event
+	{
+		event := FastHotStuffEvent{View: 1, TipBlockHeight: 1, TipBlockHash: createDummyBlockHash()}
+		require.True(t, isProperlyFormedGenericEvent(&event))
+	}
+}
+
 func TestIsValidSuperMajorityQuorumCertificate(t *testing.T) {
 	// Test malformed QC
 	{
