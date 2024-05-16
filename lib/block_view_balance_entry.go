@@ -2,11 +2,12 @@ package lib
 
 import (
 	"fmt"
+	"reflect"
+
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/golang/glog"
 	"github.com/holiman/uint256"
 	"github.com/pkg/errors"
-	"reflect"
 )
 
 func (bav *UtxoView) _getBalanceEntryForHODLerPKIDAndCreatorPKID(
@@ -433,7 +434,7 @@ func (bav *UtxoView) HelpConnectCoinTransfer(
 	bav._deleteBalanceEntryMappings(receiverBalanceEntry, receiverPublicKey, profilePublicKey, isDAOCoin)
 
 	bav._setBalanceEntryMappings(receiverBalanceEntry, isDAOCoin)
-	if senderBalanceEntry.BalanceNanos.Gt(uint256.NewInt(0)) {
+	if senderBalanceEntry.BalanceNanos.IsZero() {
 		bav._setBalanceEntryMappings(senderBalanceEntry, isDAOCoin)
 	}
 

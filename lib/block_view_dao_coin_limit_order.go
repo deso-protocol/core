@@ -3,13 +3,14 @@ package lib
 import (
 	"bytes"
 	"fmt"
+	"math/big"
+	"sort"
+	"strings"
+
 	"github.com/davecgh/go-spew/spew"
 	"github.com/golang/glog"
 	"github.com/holiman/uint256"
 	"github.com/pkg/errors"
-	"math/big"
-	"sort"
-	"strings"
 )
 
 func adjustBalance(
@@ -1784,7 +1785,7 @@ func (bav *UtxoView) IsValidDAOCoinLimitOrder(order *DAOCoinLimitOrderEntry) err
 	if err != nil {
 		return err
 	}
-	if baseUnitsToBuy.Eq(uint256.NewInt(0)) {
+	if baseUnitsToBuy.IsZero() {
 		return errors.Wrapf(RuleErrorDAOCoinLimitOrderTotalCostIsLessThanOneNano, "baseUnitsToBuy: ")
 	}
 	// If buying $DESO, validate that qty to buy is less than the max uint64.
@@ -1797,7 +1798,7 @@ func (bav *UtxoView) IsValidDAOCoinLimitOrder(order *DAOCoinLimitOrderEntry) err
 	if err != nil {
 		return err
 	}
-	if baseUnitsToSell.Eq(uint256.NewInt(0)) {
+	if baseUnitsToSell.IsZero() {
 		return errors.Wrapf(RuleErrorDAOCoinLimitOrderTotalCostIsLessThanOneNano, "baseUnitsToSell: ")
 	}
 
