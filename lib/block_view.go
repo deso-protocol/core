@@ -320,6 +320,7 @@ func (bav *UtxoView) _ResetViewMappingsAfterFlush() {
 func (bav *UtxoView) CopyUtxoView() *UtxoView {
 	newView := initNewUtxoView(bav.Handle, bav.Params, bav.Postgres, bav.Snapshot, bav.EventManager)
 
+	newView.TipHash = bav.TipHash.NewBlockHash()
 	// Handle items loaded from DB with _ResetViewMappingsAfterFlush
 	newView.NumUtxoEntries = bav.NumUtxoEntries
 	newView.NanosPurchased = bav.NanosPurchased
@@ -730,15 +731,8 @@ func initNewUtxoView(
 	_eventManager *EventManager,
 ) *UtxoView {
 	return &UtxoView{
-		Handle: _handle,
-		Params: _params,
-		// Note that the TipHash does not get reset as part of
-		// _ResetViewMappingsAfterFlush because it is not something that is affected by a
-		// flush operation. Moreover, its value is consistent with the view regardless of
-		// whether the view is flushed or not. Additionally, the utxo view does not concern
-		// itself with the header chain (see comment on GetBestHash for more info on that).
-		TipHash: DbGetBestHash(_handle, _snapshot, ChainTypeDeSoBlock /* don't get the header chain */),
-
+		Handle:       _handle,
+		Params:       _params,
 		Postgres:     _postgres,
 		Snapshot:     _snapshot,
 		EventManager: _eventManager,
