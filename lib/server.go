@@ -879,20 +879,11 @@ func (srv *Server) GetBlocksToStore(pp *Peer) {
 // GetBlocks computes what blocks we need to fetch and asks for them from the
 // corresponding peer. It is typically called after we have exited
 // SyncStateSyncingHeaders.
-func (srv *Server) GetBlocks(pp *Peer, maxHeight int) {
-	// Fetch as many blocks as we can from this peer.
-	// If our peer is on PoS then we can safely request a lot more blocks from them in
-	// each flight.
-	maxBlocksInFlight := MaxBlocksInFlight
-	if pp.Params.ProtocolVersion >= ProtocolVersion2 &&
-		(srv.params.IsPoSBlockHeight(uint64(srv.blockchain.blockTip().Height)) ||
-			srv.params.NetworkType == NetworkType_TESTNET) {
-		maxBlocksInFlight = MaxBlocksInFlightPoS
-	}
-	numBlocksToFetch := maxBlocksInFlight - len(pp.requestedBlocks)
-
+func (srv *Server) RequestBlocksUpToHeight(pp *Peer, maxHeight int) {
+	numBlocksToFetch := srv.getMaxBlocksInFlight(pp) - len(pp.requestedBlocks)
 	blockNodesToFetch := srv.blockchain.GetBlockNodesToFetch(
-		numBlocksToFetch, maxHeight, pp.requestedBlocks)
+		numBlocksToFetch, maxHeight, pp.requestedBlocks,
+	)
 	if len(blockNodesToFetch) == 0 {
 		// This can happen if, for example, we're already requesting the maximum
 		// number of blocks we can. Just return in this case.
@@ -903,18 +894,55 @@ func (srv *Server) GetBlocks(pp *Peer, maxHeight int) {
 	hashList := []*BlockHash{}
 	for _, node := range blockNodesToFetch {
 		hashList = append(hashList, node.Hash)
-
 		pp.requestedBlocks[*node.Hash] = true
 	}
-	pp.AddDeSoMessage(&MsgDeSoGetBlocks{
-		HashList: hashList,
-	}, false)
+
+	pp.AddDeSoMessage(&MsgDeSoGetBlocks{HashList: hashList}, false)
 
 	glog.V(1).Infof("GetBlocks: Downloading %d blocks from header %v to header %v from peer %v",
 		len(blockNodesToFetch),
 		blockNodesToFetch[0].Header,
 		blockNodesToFetch[len(blockNodesToFetch)-1].Header,
-		pp)
+		pp,
+	)
+}
+
+// RequestBlocksByHash requests the exact blocks specified by the block hashes from the peer.
+func (srv *Server) RequestBlocksByHash(pp *Peer, blockHashes []*BlockHash) {
+	numBlocksToFetch := srv.getMaxBlocksInFlight(pp) - len(pp.requestedBlocks)
+	if numBlocksToFetch <= 0 {
+		return
+	}
+
+	// We will only request the blocks that we haven't already requested.
+	blocksToRequest := []*BlockHash{}
+	for _, blockHash := range blockHashes {
+		if pp.requestedBlocks[*blockHash] {
+			continue
+		}
+		blocksToRequest = append(blocksToRequest, blockHash)
+		pp.requestedBlocks[*blockHash] = true
+	}
+
+	if len(blocksToRequest) == 0 {
+		return
+	}
+
+	pp.AddDeSoMessage(&MsgDeSoGetBlocks{HashList: blocksToRequest}, false)
+
+	glog.V(1).Infof("GetBlockByHash: Downloading %d blocks from peer %v", len(blocksToRequest), pp)
+}
+
+func (srv *Server) getMaxBlocksInFlight(pp *Peer) int {
+	// Fetch as many blocks as we can from this peer. If our peer is on PoS
+	// then we can safely request a lot more blocks from them in each flight.
+	maxBlocksInFlight := MaxBlocksInFlight
+	if pp.Params.ProtocolVersion >= ProtocolVersion2 &&
+		(srv.params.IsPoSBlockHeight(uint64(srv.blockchain.blockTip().Height)) ||
+			srv.params.NetworkType == NetworkType_TESTNET) {
+		maxBlocksInFlight = MaxBlocksInFlightPoS
+	}
+	return maxBlocksInFlight
 }
 
 // shouldVerifySignatures determines if we should verify signatures for headers or not.
@@ -1224,7 +1252,7 @@ func (srv *Server) _handleHeaderBundle(pp *Peer, msg *MsgDeSoHeaderBundle) {
 				blockTip.Header.Height+1, msg.TipHeight, pp)
 			maxHeight := -1
 			srv.blockchain.updateCheckpointBlockInfo()
-			srv.GetBlocks(pp, maxHeight)
+			srv.RequestBlocksUpToHeight(pp, maxHeight)
 			return
 		}
 
@@ -1255,7 +1283,7 @@ func (srv *Server) _handleHeaderBundle(pp *Peer, msg *MsgDeSoHeaderBundle) {
 			glog.V(1).Infof("Server._handleHeaderBundle: *Downloading* blocks starting at "+
 				"block tip %v out of %d from peer %v",
 				blockTip.Header, msg.TipHeight, pp)
-			srv.GetBlocks(pp, int(msg.TipHeight))
+			srv.RequestBlocksUpToHeight(pp, int(msg.TipHeight))
 			return
 		}
 
@@ -1691,7 +1719,7 @@ func (srv *Server) _handleSnapshot(pp *Peer, msg *MsgDeSoSnapshotData) {
 	}
 
 	headerTip := srv.blockchain.headerTip()
-	srv.GetBlocks(pp, int(headerTip.Height))
+	srv.RequestBlocksUpToHeight(pp, int(headerTip.Height))
 }
 
 // dirtyHackUpdateDbOpts closes the current badger DB instance and re-opens it with the provided options.
@@ -2171,7 +2199,7 @@ func (srv *Server) _tryRequestMempoolFromPeer(pp *Peer) {
 
 	// If we have already requested the mempool from the peer, then there's nothing to do.
 	if pp.hasReceivedMempoolMessage {
-		glog.V(1).Infof(
+		glog.V(2).Infof(
 			"Server._tryRequestMempoolFromPeer: NOT sending mempool message because we have already sent one: %v", pp,
 		)
 		return
@@ -2311,26 +2339,37 @@ func (srv *Server) _handleBlock(pp *Peer, blk *MsgDeSoBlock, isLastBlock bool) {
 		return
 	}
 
-	// Only verify signatures for recent blocks.
 	var isOrphan bool
+	var blockHashesToRequest []*BlockHash
+
+	// Process the block using the FastHotStuffConsensus or through the blockchain directly. If we're in the
+	// PoS steady state, we pass the block to the FastHotStuffConsensus to handle the block. If we're still
+	// syncing, then we pass the block to the blockchain to handle the block with signature verification on or off.
 	if srv.fastHotStuffConsensus != nil && srv.fastHotStuffConsensus.IsRunning() {
 		// If the FastHotStuffConsensus has been initialized, then we pass the block to the new consensus
 		// which will validate the block, try to apply it, and handle the orphan case by requesting missing
 		// parents.
-		isOrphan, err = srv.fastHotStuffConsensus.HandleBlock(pp, blk)
+		glog.V(1).Infof(CLog(Cyan, fmt.Sprintf(
+			"Server._handleBlock: Processing block %v with FastHotStuffConsensus with SyncState=%v for peer %v",
+			blk, srv.blockchain.chainState(), pp,
+		)))
+		blockHashesToRequest, err = srv.fastHotStuffConsensus.HandleBlock(pp, blk)
+		isOrphan = len(blockHashesToRequest) > 0
 	} else if !verifySignatures {
-		glog.V(1).Infof(CLog(Cyan, fmt.Sprintf("Server._handleBlock: Processing block %v WITHOUT "+
-			"signature checking because SyncState=%v for peer %v",
-			blk, srv.blockchain.chainState(), pp)))
-		_, isOrphan, _, err = srv.blockchain.ProcessBlock(blk, false)
+		glog.V(1).Infof(CLog(Cyan, fmt.Sprintf(
+			"Server._handleBlock: Processing block %v WITHOUT signature checking because SyncState=%v for peer %v",
+			blk, srv.blockchain.chainState(), pp,
+		)))
+		_, isOrphan, blockHashesToRequest, err = srv.blockchain.ProcessBlock(blk, false)
 	} else {
 		// TODO: Signature checking slows things down because it acquires the ChainLock.
 		// The optimal solution is to check signatures in a way that doesn't acquire the
 		// ChainLock, which is what Bitcoin Core does.
-		glog.V(1).Infof(CLog(Cyan, fmt.Sprintf("Server._handleBlock: Processing block %v WITH "+
-			"signature checking because SyncState=%v for peer %v",
-			blk, srv.blockchain.chainState(), pp)))
-		_, isOrphan, _, err = srv.blockchain.ProcessBlock(blk, true)
+		glog.V(1).Infof(CLog(Cyan, fmt.Sprintf(
+			"Server._handleBlock: Processing block %v WITH signature checking because SyncState=%v for peer %v",
+			blk, srv.blockchain.chainState(), pp,
+		)))
+		_, isOrphan, blockHashesToRequest, err = srv.blockchain.ProcessBlock(blk, true)
 	}
 
 	// If we hit an error then abort mission entirely. We should generally never
@@ -2355,14 +2394,6 @@ func (srv *Server) _handleBlock(pp *Peer, blk *MsgDeSoBlock, isLastBlock bool) {
 		}
 	}
 
-	if isOrphan {
-		// It's possible to receive an orphan block if we're connected directly to the
-		// block producer, and they are broadcasting blocks in the steady state. We log
-		// a warning in this case and move on.
-		glog.Warningf("ERROR: Received orphan block with hash %v height %v.", blockHash, blk.Header.Height)
-		return
-	}
-
 	srv.timer.End("Server._handleBlock: Process Block")
 
 	srv.timer.Print("Server._handleBlock: General")
@@ -2372,6 +2403,34 @@ func (srv *Server) _handleBlock(pp *Peer, blk *MsgDeSoBlock, isLastBlock bool) {
 	// relevant after we've connected the last block, and it generally involves fetching
 	// more data from our peer.
 	if !isLastBlock {
+		return
+	}
+
+	if isOrphan {
+		// It's possible to receive an orphan block from the peer for a variety of reasons. If we
+		// see an orphan block, we do one of two things:
+		// 1. With the PoS protocol where it is possible to receive an orphan from the block producer
+		//    for any number of reasons, the ProcessBlockPoS returns a non-empty blockHashesToRequest list
+		//    for us to request from the peer.
+		// 2. With the PoW protocol where we do not expect to ever receive an orphan block due to how
+		//    we request header first before requesting blocks, we disconnect from the peer.
+
+		glog.Warningf("ERROR: Received orphan block with hash %v height %v.", blockHash, blk.Header.Height)
+
+		// Request the missing blocks from the peer if needed.
+		if len(blockHashesToRequest) > 0 {
+			glog.Warningf(
+				"Server._handleBlock: Orphan block %v at height %d. Requesting missing ancestors from peer: %v",
+				blockHash,
+				blk.Header.Height,
+				pp,
+			)
+			srv.RequestBlocksByHash(pp, blockHashesToRequest)
+		} else {
+			// If we don't have any blocks to request, then we disconnect from the peer.
+			srv._logAndDisconnectPeer(pp, blk, "Received orphan block")
+		}
+
 		return
 	}
 
@@ -2409,7 +2468,7 @@ func (srv *Server) _handleBlock(pp *Peer, blk *MsgDeSoBlock, isLastBlock bool) {
 		// peer, which is OK because we can assume the peer has all of them when
 		// we're syncing.
 		maxHeight := -1
-		srv.GetBlocks(pp, maxHeight)
+		srv.RequestBlocksUpToHeight(pp, maxHeight)
 		return
 	}
 
