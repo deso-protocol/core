@@ -330,7 +330,7 @@ func (bav *UtxoView) _connectAuthorizeDerivedKey(
 						}
 						// StakeLimitMap
 						for stakeLimitKey, stakingLimit := range transactionSpendingLimit.StakeLimitMap {
-							if err = bav.IsValidStakeLimitKey(txn.PublicKey, stakeLimitKey); err != nil {
+							if err = bav.IsValidStakeLimitKey(txn.PublicKey); err != nil {
 								return 0, 0, nil, err
 							}
 							if stakingLimit.IsZero() {
@@ -341,7 +341,7 @@ func (bav *UtxoView) _connectAuthorizeDerivedKey(
 						}
 						// UnstakeLimitMap
 						for unstakeLimitKey, unstakingLimit := range transactionSpendingLimit.UnstakeLimitMap {
-							if err = bav.IsValidStakeLimitKey(txn.PublicKey, unstakeLimitKey); err != nil {
+							if err = bav.IsValidStakeLimitKey(txn.PublicKey); err != nil {
 								return 0, 0, nil, err
 							}
 							if unstakingLimit.IsZero() {
@@ -352,7 +352,7 @@ func (bav *UtxoView) _connectAuthorizeDerivedKey(
 						}
 						// UnlockStakeLimitMap
 						for unlockStakeLimitKey, transactionCount := range transactionSpendingLimit.UnlockStakeLimitMap {
-							if err = bav.IsValidStakeLimitKey(txn.PublicKey, unlockStakeLimitKey); err != nil {
+							if err = bav.IsValidStakeLimitKey(txn.PublicKey); err != nil {
 								return 0, 0, nil, err
 							}
 							if transactionCount == 0 {

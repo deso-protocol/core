@@ -3147,29 +3147,11 @@ func (bav *UtxoView) _checkUnlockStakeTxnSpendingLimitAndUpdateDerivedKey(
 	return derivedKeyEntry, errors.Wrapf(RuleErrorUnlockStakeTransactionSpendingLimitNotFound, "UtxoView._checkUnlockStakeTxnSpendingLimitAndUpdateDerivedKey: ")
 }
 
-func (bav *UtxoView) IsValidStakeLimitKey(transactorPublicKeyBytes []byte, stakeLimitKey StakeLimitKey) error {
+func (bav *UtxoView) IsValidStakeLimitKey(transactorPublicKeyBytes []byte) error {
 	// Convert TransactorPublicKeyBytes to TransactorPKID.
 	transactorPKIDEntry := bav.GetPKIDForPublicKey(transactorPublicKeyBytes)
 	if transactorPKIDEntry == nil || transactorPKIDEntry.isDeleted {
 		return errors.Wrapf(RuleErrorTransactionSpendingLimitInvalidStaker, "UtxoView.IsValidStakeLimitKey: ")
-	}
-
-	// Verify ValidatorEntry.
-	if stakeLimitKey.ValidatorPKID.IsZeroPKID() {
-		// The ZeroPKID is a special case that indicates that the spending limit
-		// applies to any validator. In this case, we don't need to check that the
-		// validator exists, as there is no validator registered for the ZeroPKID.
-		return nil
-	}
-	validatorEntry, err := bav.GetValidatorByPKID(&stakeLimitKey.ValidatorPKID)
-	if err != nil {
-		return errors.Wrapf(err, "IsValidStakeLimitKey: ")
-	}
-	if validatorEntry == nil || validatorEntry.isDeleted {
-		return errors.Wrapf(RuleErrorTransactionSpendingLimitInvalidValidator, "UtxoView.IsValidStakeLimitKey: ")
-	}
-	if !transactorPKIDEntry.PKID.Eq(&stakeLimitKey.ValidatorPKID) && validatorEntry.DisableDelegatedStake {
-		return errors.Wrapf(RuleErrorTransactionSpendingLimitValidatorDisabledDelegatedStake, "UtxoView.IsValidStakeLimitKey: ")
 	}
 
 	return nil
