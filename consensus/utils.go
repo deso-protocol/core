@@ -16,7 +16,7 @@ import (
 func IsProperlyFormedConstructVoteQCEvent(event *FastHotStuffEvent) bool {
 	return isProperlyFormedGenericEvent(event) &&
 		event.EventType == FastHotStuffEventTypeConstructVoteQC && // Event type is QC construction
-		!isInterfaceNil(event.QC) // The high QC is non-nil
+		isProperlyFormedQC(event.QC) // The high QC is properly formed
 }
 
 func IsProperlyFormedConstructTimeoutQCEvent(event *FastHotStuffEvent) bool {
