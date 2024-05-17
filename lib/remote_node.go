@@ -546,7 +546,12 @@ func (rn *RemoteNode) HandleVersionMessage(verMsg *MsgDeSoVersion, responseNonce
 		negotiatedVersion = NewProtocolVersionType(verMsg.Version)
 	}
 
+	// TODO: everywhere we update the negotiated protocol version on the handshake metadata, we also update
+	// the value in the peer object. The two should be merged to reduce duplication of data in the future.
 	vMeta.negotiatedProtocolVersion = negotiatedVersion
+	if rn.peer != nil {
+		rn.peer.SetNegotiatedProtocolVersion(negotiatedVersion)
+	}
 
 	// Record the services the peer is advertising.
 	vMeta.serviceFlag = verMsg.Services
