@@ -1354,7 +1354,7 @@ func (srv *Server) computeExpectedSnapshotHeight(headerTipHeight uint64) uint64 
 	)
 	expectedSnapshotHeight := headerTipHeight - (headerTipHeight % snapshotBlockHeightPeriod)
 	posSetupForkHeight := uint64(srv.params.ForkHeights.ProofOfStake1StateSetupBlockHeight)
-	if expectedSnapshotHeight < posSetupForkHeight {
+	if headerTipHeight > posSetupForkHeight && expectedSnapshotHeight < posSetupForkHeight {
 		expectedSnapshotHeight = posSetupForkHeight - (posSetupForkHeight % srv.params.DefaultPoWSnapshotBlockHeightPeriod)
 	}
 
