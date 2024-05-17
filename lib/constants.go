@@ -1061,6 +1061,9 @@ var MainnetForkHeights = ForkHeights{
 	// Mon Apr 24 2023 @ 9am PST
 	BalanceModelBlockHeight: uint32(226839),
 
+	// Tues May 23 2023 @ 9am PST
+	BlockRewardPatchBlockHeight: uint32(235134),
+
 	// FIXME: set to real block height when ready
 	ProofOfStake1StateSetupBlockHeight: uint32(math.MaxUint32),
 
