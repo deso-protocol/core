@@ -550,7 +550,7 @@ func (rn *RemoteNode) HandleVersionMessage(verMsg *MsgDeSoVersion, responseNonce
 	// the value in the peer object. The two should be merged to reduce duplication of data in the future.
 	vMeta.negotiatedProtocolVersion = negotiatedVersion
 	if rn.peer != nil {
-		rn.peer.SetNegotiatedVersion(negotiatedVersion)
+		rn.peer.SetNegotiatedProtocolVersion(negotiatedVersion)
 	}
 
 	// Record the services the peer is advertising.

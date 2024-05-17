@@ -39,7 +39,7 @@ type DeSoMessageMeta struct {
 // queue of messages to send to the other node.
 type Peer struct {
 	// TODO: Remove this and merge it with the RemoteNode.HandshakeMetaData type
-	NegotiatedVersion ProtocolVersionType
+	NegotiatedProtocolVersion ProtocolVersionType
 
 	// These stats should be accessed atomically.
 	bytesReceived uint64
@@ -404,7 +404,7 @@ func (pp *Peer) HandleGetBlocks(msg *MsgDeSoGetBlocks) {
 	// Before Version2 we would send each block in a single message, which was quite
 	// slow. Now when we receive a GetBlocks message we will send the blocks in large
 	// batches, which is much faster.
-	if pp.NegotiatedVersion == ProtocolVersion2 {
+	if pp.NegotiatedProtocolVersion == ProtocolVersion2 {
 		allBlocks := MsgDeSoBlockBundle{}
 		for _, hashToSend := range msg.HashList {
 			blockToSend := pp.srv.blockchain.GetBlock(hashToSend)
@@ -934,11 +934,11 @@ func (pp *Peer) SetServiceFlag(sf ServiceFlag) {
 	pp.serviceFlags = sf
 }
 
-func (pp *Peer) SetNegotiatedVersion(negotiatedVersion ProtocolVersionType) {
+func (pp *Peer) SetNegotiatedProtocolVersion(negotiatedProtocolVersion ProtocolVersionType) {
 	pp.PeerInfoMtx.Lock()
 	defer pp.PeerInfoMtx.Unlock()
 
-	pp.NegotiatedVersion = negotiatedVersion
+	pp.NegotiatedProtocolVersion = negotiatedProtocolVersion
 }
 
 func (pp *Peer) outHandler() {
