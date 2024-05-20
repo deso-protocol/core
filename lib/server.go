@@ -5,7 +5,6 @@ import (
 	"encoding/hex"
 	"fmt"
 	"net"
-	"path/filepath"
 	"reflect"
 	"runtime"
 	"strings"
@@ -1628,15 +1627,6 @@ func (srv *Server) _handleSnapshot(pp *Peer, msg *MsgDeSoSnapshotData) {
 		}
 	}
 
-	// Reset the badger DB options to the performance options. This is done by closing the current DB instance
-	// and re-opening it with the new options.
-	// This is necessary because the blocksync process syncs indexes with records that are too large for the default
-	// badger options. The large records overflow the default setting value log size and cause the DB to crash.
-	dbDir := GetBadgerDbPath(srv.datadir)
-	opts := PerformanceBadgerOptions(dbDir)
-	opts.ValueDir = dbDir
-	srv.dirtyHackUpdateDbOpts(opts)
-
 	// After syncing state from a snapshot, we will sync remaining blocks. To do so, we will
 	// start downloading blocks from the snapshot height up to the blockchain tip. Since we
 	// already synced all the state corresponding to the sub-blockchain ending at the snapshot
@@ -1720,72 +1710,6 @@ func (srv *Server) _handleSnapshot(pp *Peer, msg *MsgDeSoSnapshotData) {
 
 	headerTip := srv.blockchain.headerTip()
 	srv.RequestBlocksUpToHeight(pp, int(headerTip.Height))
-}
-
-// dirtyHackUpdateDbOpts closes the current badger DB instance and re-opens it with the provided options.
-//
-// FIXME: This is a dirty hack that we did in order to decrease memory usage. The reason why we needed it is
-// as follows:
-//   - When we run a node with --hypersync or --hypersync-archival, using PerformanceOptions the whole way
-//     through causes it to use too much memory.
-//   - The problem is that if we use DefaultOptions, then the block sync after HyperSync is complete will fail
-//     because it writes really big entries in a single transaction to the PrefixBlockHashToUtxoOperations
-//     index.
-//   - So, in order to keep memory usage reasonable, we need to use DefaultOptions during the HyperSync portion
-//     and then *switch over* to PerformanceOptions once the HyperSync is complete. That is what this function
-//     is used for.
-//   - Running a node with --blocksync requires that we use PerformanceOptions the whole way through, but we
-//     are moving away from syncing nodes that way, so we don't need to worry too much about that case right now.
-//
-// The long-term solution is to break the writing of the PrefixBlockHashToUtxoOperations index into chunks,
-// or to remove it entirely. We don't want to do that work right now, but we want to reduce the memory usage
-// for the "common" case, which is why we're doing this dirty hack for now.
-func (srv *Server) dirtyHackUpdateDbOpts(opts badger.Options) {
-	// Make sure that a mempool process doesn't try to access the DB while we're closing and re-opening it.
-	srv.mempool.mtx.Lock()
-	defer srv.mempool.mtx.Unlock()
-	// Make sure that the pos mempool process doesn't try to access the DB while we're closing and re-opening it.
-	srv.posMempool.Lock()
-	defer srv.posMempool.Unlock()
-	srv.posMempool.augmentedReadOnlyLatestBlockViewMutex.Lock()
-	defer srv.posMempool.augmentedReadOnlyLatestBlockViewMutex.Unlock()
-	srv.snapshot.SnapshotDbMutex.Lock()
-	defer srv.snapshot.SnapshotDbMutex.Unlock()
-	// Make sure that a server process doesn't try to access the DB while we're closing and re-opening it.
-	srv.DbMutex.Lock()
-	defer srv.DbMutex.Unlock()
-	srv.blockchain.db.Close()
-	db, err := badger.Open(opts)
-	if err != nil {
-		// If we can't open the DB with the new options, we need to exit the process.
-		glog.Fatalf("Server._handleSnapshot: Problem switching badger db to performance opts, error: (%v)", err)
-	}
-	srv.blockchain.db = db
-	srv.snapshot.mainDb = srv.blockchain.db
-	srv.snapshot.CurrentEpochSnapshotMetadata.mainDb = srv.blockchain.db
-	srv.snapshot.Status.mainDb = srv.blockchain.db
-	srv.snapshot.Checksum.mainDb = srv.blockchain.db
-	srv.snapshot.Migrations.mainDb = srv.blockchain.db
-	srv.snapshot.OperationChannel.mainDb = srv.blockchain.db
-	srv.mempool.bc.db = srv.blockchain.db
-	srv.mempool.backupUniversalUtxoView.Handle = srv.blockchain.db
-	srv.mempool.universalUtxoView.Handle = srv.blockchain.db
-
-	if srv.posMempool.readOnlyLatestBlockView != nil {
-		srv.posMempool.readOnlyLatestBlockView.Handle = srv.blockchain.db
-	}
-	if srv.posMempool.validateTransactionsReadOnlyLatestBlockView != nil {
-		srv.posMempool.validateTransactionsReadOnlyLatestBlockView.Handle = srv.blockchain.db
-	}
-	if srv.posMempool.augmentedReadOnlyLatestBlockView != nil {
-		srv.posMempool.augmentedReadOnlyLatestBlockView.Handle = srv.blockchain.db
-	}
-	// Save the new options to the DB so that we know what to use if the node restarts.
-	isPerformanceOptions := DbOptsArePerformance(&opts)
-	err = SaveBoolToFile(GetDbPerformanceOptionsFilePath(filepath.Dir(opts.ValueDir)), isPerformanceOptions)
-	if err != nil {
-		glog.Errorf("Server._handleSnapshot: Problem saving performance options to file, error: (%v)", err)
-	}
 }
 
 func (srv *Server) _startSync() {
