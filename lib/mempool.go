@@ -2449,7 +2449,7 @@ func (mp *DeSoMempool) StartReadOnlyUtxoViewRegenerator() {
 	out:
 		for {
 			select {
-			case <-time.After(time.Duration(ReadOnlyUtxoViewRegenerationIntervalSeconds) * time.Second):
+			case <-time.After(5 * time.Millisecond):
 				if mp.bc.chainState() == SyncStateSyncingSnapshot {
 					continue
 				}
@@ -2514,7 +2514,7 @@ func (mp *DeSoMempool) BlockUntilReadOnlyViewRegenerated() {
 	newSeqNum := oldSeqNum
 	for newSeqNum == oldSeqNum {
 		// Check fairly often. Not too often.
-		time.Sleep(100 * time.Millisecond)
+		time.Sleep(5 * time.Millisecond)
 
 		newSeqNum = atomic.LoadInt64(&mp.readOnlyUtxoViewSequenceNumber)
 	}
