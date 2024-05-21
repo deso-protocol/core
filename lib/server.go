@@ -1705,13 +1705,13 @@ func (srv *Server) _addNewTxn(
 		return nil, err
 	}
 
-	if srv.blockchain.chainState() != SyncStateFullyCurrent {
+	// if srv.blockchain.chainState() != SyncStateFullyCurrent {
 
-		err := fmt.Errorf("Server._addNewTxnAndRelay: Cannot process txn "+
-			"from peer %v while syncing: %v %v", pp, srv.blockchain.chainState(), txn.Hash())
-		glog.Error(err)
-		return nil, err
-	}
+	// 	err := fmt.Errorf("Server._addNewTxnAndRelay: Cannot process txn "+
+	// 		"from peer %v while syncing: %v %v", pp, srv.blockchain.chainState(), txn.Hash())
+	// 	glog.Error(err)
+	// 	return nil, err
+	// }
 
 	glog.V(1).Infof("Server._addNewTxnAndRelay: txn: %v, peer: %v", txn, pp)
 
