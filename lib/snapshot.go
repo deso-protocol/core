@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"github.com/cloudflare/circl/group"
 	"github.com/decred/dcrd/lru"
-	"github.com/deso-protocol/go-deadlock"
 	"github.com/dgraph-io/badger/v3"
 	"github.com/fatih/color"
 	"github.com/golang/glog"
@@ -681,7 +680,7 @@ func (snap *Snapshot) FinishProcessBlock(blockNode *BlockNode) {
 	})
 }
 
-func (snap *Snapshot) ProcessSnapshotChunk(mainDb *badger.DB, mainDbMutex *deadlock.RWMutex,
+func (snap *Snapshot) ProcessSnapshotChunk(mainDb *badger.DB, mainDbMutex *sync.RWMutex,
 	snapshotChunk []*DBEntry, blockHeight uint64) {
 	snap.OperationChannel.EnqueueOperation(&SnapshotOperation{
 		operationType: SnapshotOperationProcessChunk,
@@ -1230,7 +1229,7 @@ func (snap *Snapshot) GetSnapshotChunk(mainDb *badger.DB, prefix []byte, startKe
 }
 
 // SetSnapshotChunk is called to put the snapshot chunk that we've got from a peer in the database.
-func (snap *Snapshot) SetSnapshotChunk(mainDb *badger.DB, mainDbMutex *deadlock.RWMutex,
+func (snap *Snapshot) SetSnapshotChunk(mainDb *badger.DB, mainDbMutex *sync.RWMutex,
 	chunk []*DBEntry, blockHeight uint64) error {
 
 	var err error
@@ -1956,7 +1955,7 @@ type SnapshotOperation struct {
 	/* SnapshotOperationProcessChunk */
 	// mainDb is the main db instance.
 	mainDb      *badger.DB
-	mainDbMutex *deadlock.RWMutex
+	mainDbMutex *sync.RWMutex
 	// snapshotChunk is the snapshot chunk received from the peer.
 	snapshotChunk []*DBEntry
 	// snapshot epoch block height.

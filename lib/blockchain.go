@@ -11,6 +11,7 @@ import (
 	"runtime/debug"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
@@ -21,7 +22,6 @@ import (
 	"github.com/btcsuite/btcd/btcec"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/davecgh/go-spew/spew"
-	"github.com/deso-protocol/go-deadlock"
 	merkletree "github.com/deso-protocol/go-merkle-tree"
 	"github.com/dgraph-io/badger/v3"
 	"github.com/golang/glog"
@@ -426,7 +426,7 @@ type Blockchain struct {
 	isInitialized bool
 
 	// Protects most of the fields below this point.
-	ChainLock deadlock.RWMutex
+	ChainLock sync.RWMutex
 
 	// These should only be accessed after acquiring the ChainLock.
 	//
