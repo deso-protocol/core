@@ -197,6 +197,11 @@ func (stateChangeEntry *StateChangeEntry) RawDecodeWithoutMetadata(blockHeight u
 	}
 	stateChangeEntry.BlockHeight = entryBlockHeight
 
+	// Don't decode the block if the encoder type is not a utxo operation.
+	if stateChangeEntry.EncoderType != EncoderTypeUtxoOperation && stateChangeEntry.EncoderType != EncoderTypeUtxoOperationBundle {
+		return nil
+	}
+
 	block := &MsgDeSoBlock{}
 	if exist, err := DecodeFromBytes(block, rr); exist && err == nil {
 		stateChangeEntry.Block = block
@@ -509,6 +514,7 @@ func (stateChangeSyncer *StateChangeSyncer) _handleStateSyncerFlush(event *State
 			glog.V(2).Infof(
 				"The flush ID has changed, bailing now. Event: %v, Event block sync: %v, Global block sync: %v\n",
 				event.FlushId, event.BlockSyncFlushId, stateChangeSyncer.BlockSyncFlushId)
+			fmt.Printf("Handle flush reset.\n")
 			stateChangeSyncer.ResetMempool()
 			return
 		}
@@ -539,6 +545,7 @@ func (stateChangeSyncer *StateChangeSyncer) _handleStateSyncerFlush(event *State
 					// Confirm that the block sync ID hasn't shifted. If it has, bail now.
 					if cachedSCE.FlushId != stateChangeSyncer.BlockSyncFlushId {
 						glog.V(2).Infof("The flush ID has changed, inside key/value check, bailing now.\n")
+						fmt.Printf("Flush ID Changed. Bailing now.\n")
 						stateChangeSyncer.ResetMempool()
 						return
 					}
@@ -577,11 +584,13 @@ func (stateChangeSyncer *StateChangeSyncer) _handleStateSyncerFlush(event *State
 		// After flushing blocksync transactions to file, reset the block sync flush ID, and reset the mempool.
 		stateChangeSyncer.BlockSyncFlushId = uuid.New()
 		glog.V(2).Infof("Setting a new blocksync flush ID: %v\n", stateChangeSyncer.BlockSyncFlushId)
+		fmt.Printf("Setting a new blocksync flush ID: %v\n", stateChangeSyncer.BlockSyncFlushId)
 		stateChangeSyncer.ResetMempool()
 	}
 }
 
 func (stateChangeSyncer *StateChangeSyncer) ResetMempool() {
+	fmt.Printf("Resetting mempool.\n")
 	glog.V(2).Info("Resetting mempool.\n")
 	stateChangeSyncer.MempoolSyncedKeyValueMap = make(map[string]*StateChangeEntry)
 	stateChangeSyncer.MempoolNewlyFlushedTxns = make(map[string]*StateChangeEntry)
@@ -696,6 +705,8 @@ func (stateChangeSyncer *StateChangeSyncer) FlushTransactionsToFile(event *State
 	if len(unflushedBytes.StateChangeBytes) == 0 || len(unflushedBytes.StateChangeOperationIndexes) == 0 {
 		return fmt.Errorf("Error flushing to %s state change file: FlushId %v has nil bytes\n", stateChangeType, flushId)
 	}
+
+	fmt.Printf("Writing bytes to %v file: %+v\n", event.IsMempoolFlush, unflushedBytes)
 
 	// Write the encoded StateChangeEntry bytes to the state changer file.
 	_, err := flushFile.Write(unflushedBytes.StateChangeBytes)
