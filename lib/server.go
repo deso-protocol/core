@@ -5,6 +5,8 @@ import (
 	"encoding/hex"
 	"fmt"
 	"net"
+	"os"
+	"path/filepath"
 	"reflect"
 	"runtime"
 	"strings"
@@ -335,6 +337,9 @@ func ValidateHyperSyncFlags(isHypersync bool, syncType NodeSyncType) {
 	}
 }
 
+var dbDifferFile *os.File
+var dbDifferFileName string
+
 // NewServer initializes all of the internal data structures. Right now this basically
 // looks as follows:
 //   - ConnectionManager starts and keeps track of peers.
@@ -410,6 +415,13 @@ func NewServer(
 	_err error,
 	_shouldRestart bool,
 ) {
+
+	// Setup db differ file
+	dbDifferFileName = filepath.Join(_dataDir, "db_differ.txt")
+	dbDifferFile, _err = os.OpenFile(dbDifferFileName, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if _err != nil {
+		return nil, errors.Wrapf(_err, "NewServer: Problem creating db differ file"), false
+	}
 
 	var err error
 
@@ -2273,14 +2285,14 @@ func (srv *Server) _handleBlock(pp *Peer, blk *MsgDeSoBlock, isLastBlock bool) {
 		// If the FastHotStuffConsensus has been initialized, then we pass the block to the new consensus
 		// which will validate the block, try to apply it, and handle the orphan case by requesting missing
 		// parents.
-		glog.V(1).Infof(CLog(Cyan, fmt.Sprintf(
+		glog.V(0).Infof(CLog(Cyan, fmt.Sprintf(
 			"Server._handleBlock: Processing block %v with FastHotStuffConsensus with SyncState=%v for peer %v",
 			blk, srv.blockchain.chainState(), pp,
 		)))
 		blockHashesToRequest, err = srv.fastHotStuffConsensus.HandleBlock(pp, blk)
 		isOrphan = len(blockHashesToRequest) > 0
 	} else if !verifySignatures {
-		glog.V(1).Infof(CLog(Cyan, fmt.Sprintf(
+		glog.V(0).Infof(CLog(Cyan, fmt.Sprintf(
 			"Server._handleBlock: Processing block %v WITHOUT signature checking because SyncState=%v for peer %v",
 			blk, srv.blockchain.chainState(), pp,
 		)))
@@ -2289,7 +2301,7 @@ func (srv *Server) _handleBlock(pp *Peer, blk *MsgDeSoBlock, isLastBlock bool) {
 		// TODO: Signature checking slows things down because it acquires the ChainLock.
 		// The optimal solution is to check signatures in a way that doesn't acquire the
 		// ChainLock, which is what Bitcoin Core does.
-		glog.V(1).Infof(CLog(Cyan, fmt.Sprintf(
+		glog.V(0).Infof(CLog(Cyan, fmt.Sprintf(
 			"Server._handleBlock: Processing block %v WITH signature checking because SyncState=%v for peer %v",
 			blk, srv.blockchain.chainState(), pp,
 		)))
@@ -3210,6 +3222,11 @@ func (srv *Server) Stop() {
 			srv.blockProducer.Stop()
 		}
 		glog.Infof(CLog(Yellow, "Server.Stop: Closed BlockProducer"))
+	}
+
+	// Close the differ file.
+	if dbDifferFile != nil {
+		dbDifferFile.Close()
 	}
 
 	// This will signal any goroutines to quit. Note that enqueing this after stopping
