@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"net"
+	"os"
 	"path/filepath"
 	"reflect"
 	"runtime"
@@ -313,6 +314,9 @@ func ValidateHyperSyncFlags(isHypersync bool, syncType NodeSyncType) {
 	}
 }
 
+var dbDifferFile *os.File
+var dbDifferFileName string
+
 // NewServer initializes all of the internal data structures. Right now this basically
 // looks as follows:
 //   - ConnectionManager starts and keeps track of peers.
@@ -377,6 +381,12 @@ func NewServer(
 	_hypersyncMaxQueueSize uint32) (
 	_srv *Server, _err error, _shouldRestart bool) {
 
+	// Setup db differ file
+	dbDifferFileName = filepath.Join(_dataDir, "db_differ.txt")
+	dbDifferFile, _err = os.OpenFile(dbDifferFileName, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if _err != nil {
+		return nil, errors.Wrapf(_err, "NewServer: Problem creating db differ file"), false
+	}
 	var err error
 
 	// Only initialize state change syncer if the directories are defined.
@@ -2450,6 +2460,11 @@ func (srv *Server) Stop() {
 			srv.blockProducer.Stop()
 		}
 		glog.Infof(CLog(Yellow, "Server.Stop: Closed BlockProducer"))
+	}
+
+	// Close the differ file.
+	if dbDifferFile != nil {
+		dbDifferFile.Close()
 	}
 
 	// This will signal any goroutines to quit. Note that enqueing this after stopping

@@ -929,6 +929,20 @@ func EncodeKeyAndValueForChecksum(key []byte, value []byte, blockHeight uint64) 
 	return EncodeKeyValue(key, checksumValue)
 }
 
+type setOrDelete string
+
+const (
+	setOp    setOrDelete = "set"
+	deleteOp setOrDelete = "delete"
+)
+
+type dbDifferItem struct {
+	Operation setOrDelete
+	Prefix    uint8
+	Key       string
+	Value     string
+}
+
 // DBSetWithTxn is a wrapper around BadgerDB Set function which allows us to add computation
 // prior to DB writes. In particular, we use it to maintain a dynamic LRU cache, compute the
 // state checksum, and to build DB snapshots with ancestral records.
@@ -957,6 +971,17 @@ func DBSetWithTxn(txn *badger.Txn, snap *Snapshot, key []byte, value []byte, eve
 	if err != nil {
 		return errors.Wrapf(err, "DBSetWithTxn: Problem setting record "+
 			"in DB with key: %v, value: %v", key, value)
+	}
+
+	dbDifferEncoder := json.NewEncoder(dbDifferFile)
+	dbDifferElem := dbDifferItem{
+		Operation: setOp,
+		Prefix:    key[0],
+		Key:       hex.EncodeToString(key),
+		Value:     hex.EncodeToString(value),
+	}
+	if err = dbDifferEncoder.Encode(dbDifferElem); err != nil {
+		return errors.Wrapf(err, "DBSetWithTxn: Problem writing to dbDifferFile")
 	}
 
 	// After a successful DB write, we update the snapshot.
@@ -1064,6 +1089,16 @@ func DBDeleteWithTxn(txn *badger.Txn, snap *Snapshot, key []byte, eventManager *
 	if err != nil {
 		return errors.Wrapf(err, "DBDeleteWithTxn: Problem deleting record "+
 			"from DB with key: %v", key)
+	}
+
+	dbDifferEncoder := json.NewEncoder(dbDifferFile)
+	dbDifferElem := dbDifferItem{
+		Operation: deleteOp,
+		Prefix:    key[0],
+		Key:       hex.EncodeToString(key),
+	}
+	if err = dbDifferEncoder.Encode(dbDifferElem); err != nil {
+		return errors.Wrapf(err, "DBDeleteWithTxn: Problem writing to dbDifferFile")
 	}
 
 	// After a successful DB delete, we update the snapshot.
