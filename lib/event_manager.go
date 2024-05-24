@@ -1,6 +1,8 @@
 package lib
 
-import "github.com/google/uuid"
+import (
+	"github.com/google/uuid"
+)
 
 type TransactionEventFunc func(event *TransactionEvent)
 type StateSyncerOperationEventFunc func(event *StateSyncerOperationEvent)
