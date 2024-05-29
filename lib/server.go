@@ -707,7 +707,7 @@ func (srv *Server) _handleGetHeaders(pp *Peer, msg *MsgDeSoGetHeaders) {
 	// provided locator are known. This does mean the client will start
 	// over with the genesis block if unknown block locators are provided.
 	maxHeadersPerMsg := MaxHeadersPerMsg
-	if pp.Params.ProtocolVersion >= ProtocolVersion2 {
+	if pp.NegotiatedProtocolVersion >= ProtocolVersion2 {
 		maxHeadersPerMsg = MaxHeadersPerMsgPos
 	}
 	headers := srv.blockchain.LocateBestBlockChainHeaders(msg.BlockLocator, msg.StopHash, maxHeadersPerMsg)
@@ -823,7 +823,7 @@ func (srv *Server) GetBlocksToStore(pp *Peer) {
 		// We find the first block that's not stored and get ready to download blocks starting from this block onwards.
 		if blockNode.Status&StatusBlockStored == 0 {
 			maxBlocksInFlight := MaxBlocksInFlight
-			if pp.Params.ProtocolVersion >= ProtocolVersion2 &&
+			if pp.NegotiatedProtocolVersion >= ProtocolVersion2 &&
 				(srv.params.IsPoSBlockHeight(uint64(blockNode.Height)) ||
 					srv.params.NetworkType == NetworkType_TESTNET) {
 
@@ -937,7 +937,7 @@ func (srv *Server) getMaxBlocksInFlight(pp *Peer) int {
 	// Fetch as many blocks as we can from this peer. If our peer is on PoS
 	// then we can safely request a lot more blocks from them in each flight.
 	maxBlocksInFlight := MaxBlocksInFlight
-	if pp.Params.ProtocolVersion >= ProtocolVersion2 &&
+	if pp.NegotiatedProtocolVersion >= ProtocolVersion2 &&
 		(srv.params.IsPoSBlockHeight(uint64(srv.blockchain.blockTip().Height)) ||
 			srv.params.NetworkType == NetworkType_TESTNET) {
 		maxBlocksInFlight = MaxBlocksInFlightPoS
@@ -1125,7 +1125,7 @@ func (srv *Server) _handleHeaderBundle(pp *Peer, msg *MsgDeSoHeaderBundle) {
 	// likely we have not hit the tip of our peer's chain, and so requesting more
 	// headers from the peer would likely be useful.
 	maxHeadersPerMsg := MaxHeadersPerMsg
-	if pp.Params.ProtocolVersion >= ProtocolVersion2 {
+	if pp.NegotiatedProtocolVersion >= ProtocolVersion2 {
 		maxHeadersPerMsg = MaxHeadersPerMsgPos
 	}
 	if uint32(len(msg.Headers)) < maxHeadersPerMsg || srv.blockchain.isTipMaxed(srv.blockchain.headerTip()) {
