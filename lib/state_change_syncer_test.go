@@ -28,6 +28,7 @@ func TestStateChangeEntryEncoder(t *testing.T) {
 	}
 
 	bodyBytes, err := json.Marshal(postBody)
+	require.NoError(t, err)
 
 	currentTimeNanos := time.Now()
 

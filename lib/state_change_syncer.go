@@ -127,10 +127,6 @@ func (stateChangeEntry *StateChangeEntry) RawEncodeWithoutMetadata(blockHeight u
 	if stateChangeEntry.EncoderType == EncoderTypeUtxoOperation ||
 		stateChangeEntry.EncoderType == EncoderTypeUtxoOperationBundle {
 		data = append(data, EncodeToBytes(blockHeight, stateChangeEntry.Block)...)
-	} else {
-		// If the encoder type is not a utxo operation, encode a nil value.
-		// We do this to simplify the decode logic and avoid an encoder migration.
-		data = append(data, EncodeToBytes(blockHeight, nil)...)
 	}
 
 	return data
@@ -189,6 +185,9 @@ func (stateChangeEntry *StateChangeEntry) RawDecodeWithoutMetadata(blockHeight u
 		return errors.Wrapf(err, "StateChangeEntry.RawDecodeWithoutMetadata: error decoding flush UUID")
 	}
 	stateChangeEntry.FlushId, err = uuid.FromBytes(flushIdBytes)
+	if err != nil {
+		return errors.Wrapf(err, "StateChangeEntry.RawDecodeWithoutMetadata: error decoding flush UUID")
+	}
 
 	// Decode the block height.
 	entryBlockHeight, err := ReadUvarint(rr)
@@ -196,6 +195,11 @@ func (stateChangeEntry *StateChangeEntry) RawDecodeWithoutMetadata(blockHeight u
 		return errors.Wrapf(err, "StateChangeEntry.RawDecodeWithoutMetadata: error decoding block height")
 	}
 	stateChangeEntry.BlockHeight = entryBlockHeight
+
+	// Don't decode the block if the encoder type is not a utxo operation.
+	if stateChangeEntry.EncoderType != EncoderTypeUtxoOperation && stateChangeEntry.EncoderType != EncoderTypeUtxoOperationBundle {
+		return nil
+	}
 
 	block := &MsgDeSoBlock{}
 	if exist, err := DecodeFromBytes(block, rr); exist && err == nil {
@@ -321,6 +325,9 @@ func NewStateChangeSyncer(stateChangeDir string, nodeSyncType NodeSyncType, memp
 		glog.Fatalf("Error opening stateChangeIndexFile: %v", err)
 	}
 	stateChangeMempoolFile, err := openOrCreateLogFile(stateChangeMempoolFilePath)
+	if err != nil {
+		glog.Fatalf("Error opening stateChangeMempoolFile: %v", err)
+	}
 	stateChangeFileInfo, err := stateChangeFile.Stat()
 	if err != nil {
 		glog.Fatalf("Error getting stateChangeFileInfo: %v", err)
@@ -909,8 +916,6 @@ func (stateChangeSyncer *StateChangeSyncer) SyncMempoolToStateSyncer(server *Ser
 			utxoOpsForTxn, _, _, _, err := mempoolTxUtxoView.ConnectTransaction(
 				mempoolTx.Tx, mempoolTx.Hash, uint32(blockHeight+1), currentTimestamp, false, false /*ignoreUtxos*/)
 			if err != nil {
-				//fmt.Printf("Right before the mempool flush error: %v\n", err)
-				//continue
 				mempoolUtxoView.EventManager.stateSyncerFlushed(&StateSyncerFlushedEvent{
 					FlushId:        originalCommittedFlushId,
 					Succeeded:      false,
