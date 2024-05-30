@@ -185,6 +185,9 @@ func (stateChangeEntry *StateChangeEntry) RawDecodeWithoutMetadata(blockHeight u
 		return errors.Wrapf(err, "StateChangeEntry.RawDecodeWithoutMetadata: error decoding flush UUID")
 	}
 	stateChangeEntry.FlushId, err = uuid.FromBytes(flushIdBytes)
+	if err != nil {
+		return errors.Wrapf(err, "StateChangeEntry.RawDecodeWithoutMetadata: error decoding flush UUID")
+	}
 
 	// Decode the block height.
 	entryBlockHeight, err := ReadUvarint(rr)
@@ -322,6 +325,9 @@ func NewStateChangeSyncer(stateChangeDir string, nodeSyncType NodeSyncType, memp
 		glog.Fatalf("Error opening stateChangeIndexFile: %v", err)
 	}
 	stateChangeMempoolFile, err := openOrCreateLogFile(stateChangeMempoolFilePath)
+	if err != nil {
+		glog.Fatalf("Error opening stateChangeMempoolFile: %v", err)
+	}
 	stateChangeFileInfo, err := stateChangeFile.Stat()
 	if err != nil {
 		glog.Fatalf("Error getting stateChangeFileInfo: %v", err)
