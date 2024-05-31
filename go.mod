@@ -18,13 +18,13 @@ require (
 	github.com/deso-protocol/go-merkle-tree v1.0.0
 	github.com/dgraph-io/badger/v4 v4.2.0
 	github.com/emirpasic/gods v1.18.1
-	github.com/ethereum/go-ethereum v1.13.14
+	github.com/ethereum/go-ethereum v1.13.5
 	github.com/fatih/color v1.16.0
 	github.com/gernest/mention v2.0.0+incompatible
 	github.com/go-pg/pg/v10 v10.12.0
 	github.com/golang/glog v1.2.1
 	github.com/google/uuid v1.6.0
-	github.com/holiman/uint256 v1.2.4
+	github.com/holiman/uint256 v1.2.3
 	github.com/mitchellh/go-homedir v1.1.0
 	github.com/oleiade/lane v1.0.1
 	github.com/onflow/crypto v0.25.1
