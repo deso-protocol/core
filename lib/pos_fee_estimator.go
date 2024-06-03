@@ -140,7 +140,19 @@ func blockToCachedBlock(block *MsgDeSoBlock) (*CachedBlock, error) {
 	// Add all non-nil and non-block reward txns to the txns slice. This filters out malformed txns
 	// txns and the genesis block block reward txn.
 	for _, txn := range block.Txns {
-		if txn == nil || txn.TxnMeta.GetTxnType() == TxnTypeBlockReward {
+		if txn == nil {
+			continue
+		}
+
+		// Always skip block reward txns because they are not counted as part of the block size during
+		// fee estimation.
+		if txn.TxnMeta.GetTxnType() == TxnTypeBlockReward {
+			continue
+		}
+
+		// Catch-all check for any txns with no fees or txns with utxos. Only balance model txns are
+		// supported in PoS.
+		if txn.TxnFeeNanos == 0 || len(txn.TxInputs) > 0 {
 			continue
 		}
 
