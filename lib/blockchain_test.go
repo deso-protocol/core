@@ -4,7 +4,6 @@ import (
 	"encoding/hex"
 	"flag"
 	"fmt"
-	ecdsa2 "github.com/decred/dcrd/dcrec/secp256k1/v4/ecdsa"
 	"log"
 	"math"
 	"math/big"
@@ -18,8 +17,7 @@ import (
 	"github.com/go-pg/pg/v10"
 
 	chainlib "github.com/btcsuite/btcd/blockchain"
-
-	"github.com/btcsuite/btcd/btcec/v2"
+	"github.com/btcsuite/btcd/btcec"
 	"github.com/dgraph-io/badger/v4"
 	"github.com/golang/glog"
 	"github.com/stretchr/testify/assert"
@@ -907,7 +905,7 @@ func _signTxn(t *testing.T, txn *MsgDeSoTxn, privKeyStrArg string) {
 
 	privKeyBytes, _, err := Base58CheckDecode(privKeyStrArg)
 	require.NoError(err)
-	privKey, _ := btcec.PrivKeyFromBytes(privKeyBytes)
+	privKey, _ := btcec.PrivKeyFromBytes(btcec.S256(), privKeyBytes)
 	txnSignature, err := txn.Sign(privKey)
 	require.NoError(err)
 	txn.Signature.SetSignature(txnSignature)
@@ -925,7 +923,7 @@ func _signTxnWithDerivedKeyAndType(t *testing.T, txn *MsgDeSoTxn, privKeyStrBase
 
 	privKeyBytes, _, err := Base58CheckDecode(privKeyStrBase58Check)
 	require.NoError(err)
-	privateKey, publicKey := btcec.PrivKeyFromBytes(privKeyBytes)
+	privateKey, publicKey := btcec.PrivKeyFromBytes(btcec.S256(), privKeyBytes)
 
 	// We will randomly sign with the standard DER encoding + ExtraData, or with the DeSo-DER encoding.
 	if signatureType == 0 {
@@ -1668,7 +1666,7 @@ func TestBadBlockSignature(t *testing.T) {
 
 	// Since MineAndProcesssSingleBlock returns a valid block above, we can play with its
 	// signature and re-process the block to see what happens.
-	blockProducerInfoCopy := &BlockProducerInfo{Signature: &ecdsa2.Signature{}}
+	blockProducerInfoCopy := &BlockProducerInfo{Signature: &btcec.Signature{}}
 	blockProducerInfoCopy.PublicKey = append([]byte{}, finalBlock1.BlockProducerInfo.PublicKey...)
 	*blockProducerInfoCopy.Signature = *finalBlock1.BlockProducerInfo.Signature
 

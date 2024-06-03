@@ -30,7 +30,7 @@ func (bav *UtxoView) GenerateLeaderSchedule(validatorSet []*ValidatorEntry) ([]*
 	}
 
 	// Sum TotalStakeAmountNanos.
-	totalStakeAmountNanos := uint256.NewInt(0)
+	totalStakeAmountNanos := uint256.NewInt()
 	for _, validatorEntry := range validatorEntries {
 		totalStakeAmountNanos, err = SafeUint256().Add(totalStakeAmountNanos, validatorEntry.TotalStakeAmountNanos)
 		if err != nil {
@@ -66,10 +66,10 @@ func (bav *UtxoView) GenerateLeaderSchedule(validatorSet []*ValidatorEntry) ([]*
 		}
 
 		// Take RandomUint256 % TotalStakeAmountNanos.
-		randomUint256 := uint256.NewInt(0).Mod(currentRandomSeedHash.ToUint256(), totalStakeAmountNanos)
+		randomUint256 := uint256.NewInt().Mod(currentRandomSeedHash.ToUint256(), totalStakeAmountNanos)
 
 		// Keep track of the stake seen so far in this loop.
-		sumStakeAmountNanos := uint256.NewInt(0)
+		sumStakeAmountNanos := uint256.NewInt()
 
 		for _, validatorEntry := range validatorEntries {
 			// Skip if ValidatorEntry has already been added to the leader schedule.

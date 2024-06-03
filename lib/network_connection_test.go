@@ -14,7 +14,7 @@ import (
 type simpleListener struct {
 	t      *testing.T
 	ll     net.Listener
-	addr   *wire.NetAddressV2
+	addr   *wire.NetAddress
 	closed bool
 
 	connectionChan chan Connection
@@ -102,9 +102,9 @@ func verifyOutboundConnection(t *testing.T, conn *outboundConnection, sl *simple
 		return
 	}
 
-	require.Equal(conn.address.ToLegacy().IP.String(), sl.getTCPAddr().IP.String())
+	require.Equal(conn.address.IP.String(), sl.getTCPAddr().IP.String())
 	require.Equal(conn.address.Port, uint16(sl.getTCPAddr().Port))
-	require.Equal(conn.address.ToLegacy().IP.String(), sl.getTCPAddr().IP.String())
+	require.Equal(conn.address.IP.String(), sl.getTCPAddr().IP.String())
 	require.Equal(conn.address.Port, uint16(sl.getTCPAddr().Port))
 }
 

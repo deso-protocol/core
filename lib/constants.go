@@ -1918,6 +1918,3 @@ const DefaultMainnetCheckpointProvider = "https://node.deso.org"
 const DefaultTestnetCheckpointProvider = "https://test.deso.org"
 
 const RoutePathGetCommittedTipBlockInfo = "/api/v0/get-committed-tip-block-info"
-
-// Constants that was removed from newer version of Btcec
-const BtcecPubKeyBytesLenUncompressed = 65

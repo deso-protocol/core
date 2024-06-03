@@ -2,7 +2,7 @@ package lib
 
 import (
 	"fmt"
-	"github.com/btcsuite/btcd/btcec/v2"
+	"github.com/btcsuite/btcd/btcec"
 	"github.com/golang/glog"
 	"github.com/pkg/errors"
 	"reflect"
@@ -207,7 +207,7 @@ func (bav *UtxoView) _connectFollow(
 	}
 
 	// TODO: This check feels unnecessary and is expensive
-	//_, err := btcec.ParsePubKey(txMeta.FollowedPublicKey)
+	//_, err := btcec.ParsePubKey(txMeta.FollowedPublicKey, btcec.S256())
 	//if err != nil {
 	//	return 0, 0, nil, errors.Wrapf(
 	//		RuleErrorFollowParsePubKeyError, "_connectFollow: Parse error: %v", err)

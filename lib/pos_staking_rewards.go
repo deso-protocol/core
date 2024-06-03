@@ -225,9 +225,9 @@ func (bav *UtxoView) distributeStakingReward(
 				IsValidatorCommission: isValidatorCommission,
 			},
 		}
-		stakeEntry.StakeAmountNanos = uint256.NewInt(0).Add(stakeEntry.StakeAmountNanos, uint256.NewInt(rewardNanos))
+		stakeEntry.StakeAmountNanos = uint256.NewInt().Add(stakeEntry.StakeAmountNanos, uint256.NewInt().SetUint64(rewardNanos))
 		bav._setStakeEntryMappings(stakeEntry)
-		validatorEntry.TotalStakeAmountNanos = uint256.NewInt(0).Add(validatorEntry.TotalStakeAmountNanos, uint256.NewInt(rewardNanos))
+		validatorEntry.TotalStakeAmountNanos = uint256.NewInt().Add(validatorEntry.TotalStakeAmountNanos, uint256.NewInt().SetUint64(rewardNanos))
 		bav._setValidatorEntryMappings(validatorEntry)
 		return utxoOperation, nil
 	}

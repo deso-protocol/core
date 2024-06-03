@@ -720,7 +720,7 @@ func (balance *PGCreatorCoinBalance) NewBalanceEntry() *BalanceEntry {
 		HODLerPKID:  balance.HolderPKID,
 		CreatorPKID: balance.CreatorPKID,
 		// FIXME: This will break if the value exceeds uint256
-		BalanceNanos: *uint256.NewInt(balance.BalanceNanos),
+		BalanceNanos: *uint256.NewInt().SetUint64(balance.BalanceNanos),
 		HasPurchased: balance.HasPurchased,
 	}
 }
@@ -1093,14 +1093,14 @@ func (messageEntry *PGNewMessageGroupChatThreadEntry) ToAccessGroupId() AccessGr
 }
 
 func HexToUint256(input string) *uint256.Int {
-	output := uint256.NewInt(0)
+	output := uint256.NewInt()
 
 	if input != "" {
 		var err error
 		output, err = uint256.FromHex(input)
 
 		if err != nil {
-			output = uint256.NewInt(0)
+			output = uint256.NewInt()
 		}
 	}
 
@@ -1439,12 +1439,8 @@ func (postgres *Postgres) InsertTransactionsTx(tx *pg.Tx, desoTxns []*MsgDeSoTxn
 		}
 
 		if txn.Signature.Sign != nil {
-			r := txn.Signature.Sign.R()
-			s := txn.Signature.Sign.S()
-			rBytes := (&r).Bytes()
-			sBytes := (&s).Bytes()
-			transaction.R = NewBlockHash(rBytes[:])
-			transaction.S = NewBlockHash(sBytes[:])
+			transaction.R = BigintToHash(txn.Signature.Sign.R)
+			transaction.S = BigintToHash(txn.Signature.Sign.S)
 			transaction.RecoveryId = uint32(txn.Signature.RecoveryId)
 			transaction.IsRecoverable = txn.Signature.IsRecoverable
 		}

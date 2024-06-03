@@ -1268,7 +1268,7 @@ func (bav *UtxoView) _connectRegisterAsValidator(
 	}
 
 	// Calculate TotalStakeAmountNanos.
-	totalStakeAmountNanos := uint256.NewInt(0)
+	totalStakeAmountNanos := uint256.NewInt()
 	if prevValidatorEntry != nil {
 		totalStakeAmountNanos = prevValidatorEntry.TotalStakeAmountNanos.Clone()
 	}
@@ -1449,7 +1449,7 @@ func (bav *UtxoView) _connectUnregisterAsValidator(
 
 	// Delete each StakeEntry and create or update the corresponding LockedStakeEntry.
 	// Track TotalUnstakedAmountNanos and PrevLockedStakeEntries.
-	totalUnstakedAmountNanos := uint256.NewInt(0)
+	totalUnstakedAmountNanos := uint256.NewInt()
 	var prevLockedStakeEntries []*LockedStakeEntry
 
 	for _, prevStakeEntry := range prevStakeEntries {
@@ -1989,7 +1989,7 @@ func (bav *UtxoView) SanityCheckUnregisterAsValidatorTxn(
 	}
 
 	// Sanity check the deleted StakeEntries.
-	totalUnstakedAmountNanos := uint256.NewInt(0)
+	totalUnstakedAmountNanos := uint256.NewInt()
 	for _, stakeEntry := range utxoOp.PrevStakeEntries {
 		totalUnstakedAmountNanos, err = SafeUint256().Add(totalUnstakedAmountNanos, stakeEntry.StakeAmountNanos)
 		if err != nil {

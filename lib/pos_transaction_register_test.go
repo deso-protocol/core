@@ -8,9 +8,7 @@ import (
 	"testing"
 	"time"
 
-	ecdsa2 "github.com/decred/dcrd/dcrec/secp256k1/v4/ecdsa"
-
-	"github.com/btcsuite/btcd/btcec/v2"
+	"github.com/btcsuite/btcd/btcec"
 	"github.com/stretchr/testify/require"
 )
 
@@ -388,9 +386,9 @@ func _testGetDefaultGlobalParams() *GlobalParamsEntry {
 func _testGetRandomMempoolTxns(rand *rand.Rand, feeMin uint64, feeMax uint64, sizeMax uint64, timestampRange uint64, numTxns int) []*MempoolTx {
 	txnPool := []*MempoolTx{}
 	for ii := 0; ii < numTxns; ii++ {
-		randPriv, _ := btcec.NewPrivateKey()
+		randPriv, _ := btcec.NewPrivateKey(btcec.S256())
 		randMsg := RandomBytes(32)
-		randSig := ecdsa2.Sign(randPriv, randMsg)
+		randSig, _ := randPriv.Sign(randMsg)
 		fee := rand.Uint64()%(feeMax-feeMin) + feeMin
 
 		txnPool = append(txnPool, &MempoolTx{

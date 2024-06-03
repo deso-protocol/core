@@ -75,7 +75,7 @@ type Peer struct {
 	serviceFlags           ServiceFlag
 	latestHeight           uint64
 	addrStr                string
-	netAddr                *wire.NetAddressV2
+	netAddr                *wire.NetAddress
 	minTxFeeRateNanosPerKB uint64
 	// Messages for which we are expecting a reply within a fixed
 	// amount of time. This list is always sorted by ExpectedTime,
@@ -627,7 +627,7 @@ func (pp *Peer) StartDeSoMessageProcessor() {
 }
 
 // NewPeer creates a new Peer object.
-func NewPeer(_id uint64, _conn net.Conn, _isOutbound bool, _netAddr *wire.NetAddressV2,
+func NewPeer(_id uint64, _conn net.Conn, _isOutbound bool, _netAddr *wire.NetAddress,
 	_isPersistent bool, _stallTimeoutSeconds uint64,
 	_minFeeRateNanosPerKB uint64,
 	params *DeSoParams,
@@ -801,12 +801,12 @@ func (pp *Peer) Address() string {
 	return pp.addrStr
 }
 
-func (pp *Peer) NetAddress() *wire.NetAddressV2 {
+func (pp *Peer) NetAddress() *wire.NetAddress {
 	return pp.netAddr
 }
 
 func (pp *Peer) IP() string {
-	return pp.netAddr.ToLegacy().IP.String()
+	return pp.netAddr.IP.String()
 }
 
 func (pp *Peer) Port() uint16 {

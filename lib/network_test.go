@@ -3,8 +3,6 @@ package lib
 import (
 	"bytes"
 	"encoding/hex"
-	"encoding/json"
-	ecdsa2 "github.com/decred/dcrd/dcrec/secp256k1/v4/ecdsa"
 	"math/big"
 	"math/rand"
 	"reflect"
@@ -18,7 +16,7 @@ import (
 
 	"github.com/holiman/uint256"
 
-	"github.com/btcsuite/btcd/btcec/v2"
+	"github.com/btcsuite/btcd/btcec"
 
 	"github.com/btcsuite/btcd/wire"
 	"github.com/bxcodec/faker"
@@ -436,9 +434,10 @@ func createTestBlockVersion1(t *testing.T) *MsgDeSoBlock {
 	newBlockV1 := *expectedBlock
 
 	// Add a signature to the block V1
-	priv, err := btcec.NewPrivateKey()
+	priv, err := btcec.NewPrivateKey(btcec.S256())
 	require.NoError(err)
-	newBlockV1.BlockProducerInfo.Signature = ecdsa2.Sign(priv, []byte{0x01, 0x02, 0x03})
+	newBlockV1.BlockProducerInfo.Signature, err = priv.Sign([]byte{0x01, 0x02, 0x03})
+	require.NoError(err)
 	return &newBlockV1
 }
 
@@ -1317,7 +1316,7 @@ func TestDAOCoin(t *testing.T) {
 			0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09,
 			0x00, 0x01, 0x02}
 		txMeta.OperationType = DAOCoinOperationTypeMint
-		txMeta.CoinsToMintNanos = *uint256.NewInt(100)
+		txMeta.CoinsToMintNanos = *uint256.NewInt().SetUint64(100)
 
 		data, err := txMeta.ToBytes(false)
 		require.NoError(err)
@@ -1337,7 +1336,7 @@ func TestDAOCoin(t *testing.T) {
 			0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09,
 			0x00, 0x01, 0x02}
 		txMeta.OperationType = DAOCoinOperationTypeBurn
-		txMeta.CoinsToBurnNanos = *uint256.NewInt(100)
+		txMeta.CoinsToBurnNanos = *uint256.NewInt().SetUint64(100)
 
 		data, err := txMeta.ToBytes(false)
 		require.NoError(err)
@@ -1406,7 +1405,7 @@ func TestDAOCoinTransfer(t *testing.T) {
 		0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09,
 		0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09,
 		0x00, 0x01, 0x02}
-	txMeta.DAOCoinToTransferNanos = *uint256.NewInt(100)
+	txMeta.DAOCoinToTransferNanos = *uint256.NewInt().SetUint64(100)
 
 	data, err := txMeta.ToBytes(false)
 	require.NoError(err)
@@ -1424,9 +1423,10 @@ func TestMessagingKey(t *testing.T) {
 	m0PrivBytes, _, err := Base58CheckDecode(m0Priv)
 	require.NoError(err)
 
-	privKey, pubKey := btcec.PrivKeyFromBytes(m0PrivBytes)
+	privKey, pubKey := btcec.PrivKeyFromBytes(btcec.S256(), m0PrivBytes)
 	hash := Sha256DoubleHash([]byte{0x00, 0x01})
-	signature := ecdsa2.Sign(privKey, hash[:])
+	signature, err := privKey.Sign(hash[:])
+	require.NoError(err)
 
 	encrypted, err := EncryptBytesWithPublicKey(hash[:], pubKey.ToECDSA())
 	require.NoError(err)
@@ -1771,7 +1771,7 @@ func TestDeSoSignature_SerializeCompact(t *testing.T) {
 
 	for ; numTestCases > 0; numTestCases-- {
 		// Generate a random (private, public) keypair.
-		privateKey, err := btcec.NewPrivateKey()
+		privateKey, err := btcec.NewPrivateKey(btcec.S256())
 		require.NoError(err)
 		publicKeyBytes := privateKey.PubKey().SerializeCompressed()
 
@@ -1783,7 +1783,8 @@ func TestDeSoSignature_SerializeCompact(t *testing.T) {
 			require.NoError(err)
 
 			// Verify that the compact signature is equal to what we serialized.
-			signatureCompact := ecdsa2.SignCompact(privateKey, messageHash, true)
+			signatureCompact, err := btcec.SignCompact(btcec.S256(), privateKey, messageHash, true)
+			require.NoError(err)
 
 			// Use the DeSoSignature.SerializeCompact encoding.
 			signatureCompactCustom, err := desoSignature._btcecSerializeCompact()
@@ -1792,53 +1793,12 @@ func TestDeSoSignature_SerializeCompact(t *testing.T) {
 			require.Equal(true, reflect.DeepEqual(signatureCompact, signatureCompactCustom))
 
 			// Recover the public key from our custom encoding.
-			recoveredPublicKey, _, err := ecdsa2.RecoverCompact(signatureCompactCustom, messageHash)
+			recoveredPublicKey, _, err := btcec.RecoverCompact(btcec.S256(), signatureCompactCustom, messageHash)
 			require.NoError(err)
 
 			// Verify that the recovered public key matches the original public key.
 			recoveredPublicKeyBytes := recoveredPublicKey.SerializeCompressed()
 			require.Equal(true, reflect.DeepEqual(publicKeyBytes, recoveredPublicKeyBytes))
 		}
-	}
-}
-
-func TestTxnJsonEncodeDecode(t *testing.T) {
-	priv, err := btcec.NewPrivateKey()
-	require.NoError(t, err)
-
-	// We want to test with v0 and v1 txns.
-	for _, includeV1Txns := range []bool{true, false} {
-		// The case without a signature can fail with a nil pointer so we
-		// want to make sure we test it explicitly.
-		for _, withSignature := range []bool{true, false} {
-			for _, txn := range expectedTransactions(includeV1Txns) {
-				// Copy the txn
-				txnCopy, err := txn.Copy()
-				require.NoError(t, err)
-
-				// Sign the txn
-				txBytes, err := txn.ToBytes(true /*preSignature*/)
-				require.NoError(t, err)
-				txHash := Sha256DoubleHash(txBytes)[:]
-				desoSignature, err := SignRecoverable(txHash, priv)
-				require.NoError(t, err)
-				if withSignature {
-					txnCopy.Signature = *desoSignature
-				}
-
-				// Serialize the txn using json encoding
-				txnJson, err := json.Marshal(txnCopy)
-				require.NoError(t, err)
-
-				// Deserialize the txn using json decoding
-				txn2 := MsgDeSoTxn{}
-				err = json.Unmarshal(txnJson, &txn2)
-				require.NoError(t, err)
-
-				// Make sure it's the same
-				require.Equal(t, txnCopy, &txn2)
-			}
-		}
-
 	}
 }

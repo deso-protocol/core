@@ -19,7 +19,7 @@ import (
 type RandomSeedHash [32]byte
 
 func (randomSeedHash *RandomSeedHash) ToUint256() *uint256.Int {
-	return uint256.NewInt(0).SetBytes(randomSeedHash.ToBytes())
+	return uint256.NewInt().SetBytes(randomSeedHash.ToBytes())
 }
 
 func (randomSeedHash *RandomSeedHash) Copy() *RandomSeedHash {

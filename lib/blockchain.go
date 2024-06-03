@@ -25,7 +25,7 @@ import (
 
 	btcdchain "github.com/btcsuite/btcd/blockchain"
 	chainlib "github.com/btcsuite/btcd/blockchain"
-	"github.com/btcsuite/btcd/btcec/v2"
+	"github.com/btcsuite/btcd/btcec"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/davecgh/go-spew/spew"
 	"github.com/deso-protocol/go-deadlock"
@@ -2226,7 +2226,7 @@ func (bc *Blockchain) processBlockPoW(desoBlock *MsgDeSoBlock, verifySignatures 
 			// trusted.
 
 			signature := desoBlock.BlockProducerInfo.Signature
-			pkObj, err := btcec.ParsePubKey(publicKey)
+			pkObj, err := btcec.ParsePubKey(publicKey, btcec.S256())
 			if err != nil {
 				return false, false, errors.Wrapf(err,
 					"ProcessBlock: Error parsing block producer public key: %v.",
@@ -3243,7 +3243,7 @@ func (bc *Blockchain) CreatePrivateMessageTxn(
 		// Encrypt the passed-in message text with the recipient's public key.
 		//
 		// Parse the recipient public key.
-		recipientPk, err := btcec.ParsePubKey(recipientPublicKey)
+		recipientPk, err := btcec.ParsePubKey(recipientPublicKey, btcec.S256())
 		if err != nil {
 			return nil, 0, 0, 0, errors.Wrapf(err, "CreatePrivateMessageTxn: Problem parsing "+
 				"recipient public key: ")
