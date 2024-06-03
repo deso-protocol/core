@@ -119,13 +119,10 @@ func ReadUvarint(r io.Reader) (uint64, error) {
 			return x, err
 		}
 		b := buf[0]
-		// The Uvarint encoding should cap out at 8 bytes. If it extends beyond that,
-		// then the encoded value is too large to fit into a uint64. The encoded value
-		// is not valid.
-		if i == 9 && b > 1 {
-			return x, overflow
-		}
 		if b < 0x80 {
+			if i > 9 || i == 9 && b > 1 {
+				return x, overflow
+			}
 			return x | uint64(b)<<s, nil
 		}
 		x |= uint64(b&0x7f) << s
