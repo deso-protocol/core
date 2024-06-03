@@ -983,27 +983,35 @@ var (
 	GenesisBlockHash    = mustDecodeHexBlockHash(GenesisBlockHashHex)
 )
 
+var beforeParamUpdaterRefactorBlockHeight = map[PkMapKey]bool{
+	// 19Hg2mAJUTKFac2F2BBpSEm7BcpkgimrmD
+	MakePkMapKey(MustBase58CheckDecode(ArchitectPubKeyBase58Check)):                                true,
+	MakePkMapKey(MustBase58CheckDecode("BC1YLiXwGTte8oXEEVzm4zqtDpGRx44Y4rqbeFeAs5MnzsmqT5RcqkW")): true,
+	MakePkMapKey(MustBase58CheckDecode("BC1YLgGLKjuHUFZZQcNYrdWRrHsDKUofd9MSxDq4NY53x7vGt4H32oZ")): true,
+	MakePkMapKey(MustBase58CheckDecode("BC1YLj8UkNMbCsmTUTx5Z2bhtp8q86csDthRmK6zbYstjjbS5eHoGkr")): true,
+	MakePkMapKey(MustBase58CheckDecode("BC1YLgD1f7yw7Ue8qQiW7QMBSm6J7fsieK5rRtyxmWqL2Ypra2BAToc")): true,
+	MakePkMapKey(MustBase58CheckDecode("BC1YLfz4GH3Gfj6dCtBi8bNdNTbTdcibk8iCZS75toUn4UKZaTJnz9y")): true,
+	MakePkMapKey(MustBase58CheckDecode("BC1YLfoSyJWKjHGnj5ZqbSokC3LPDNBMDwHX3ehZDCA3HVkFNiPY5cQ")): true,
+}
+
+var afterParamUpdaterRefactorBlockHeight = map[PkMapKey]bool{
+	MakePkMapKey(MustBase58CheckDecode("BC1YLgKBcYwyWCqnBHKoJY2HX1sc38A7JuA2jMNEmEXfcRpc7D6Hyiu")): true,
+	MakePkMapKey(MustBase58CheckDecode("BC1YLfrtYZs4mCeSALnjTUZMdcwsWNHoNaG5gWWD5WyvRrWNTGWWq1q")): true,
+	MakePkMapKey(MustBase58CheckDecode("BC1YLiABrQ1P5pKXdm8S1vj1annx6D8Asku5CXX477dpwYXDamprpWd")): true,
+	MakePkMapKey(MustBase58CheckDecode("BC1YLfqYyePuSYPVFB2mdh9Dss7PJ9j5vJts87b9zGbVJhQDjCJNdjb")): true,
+	MakePkMapKey(MustBase58CheckDecode("BC1YLjDmDtymghnMgAPmTCyykqhcNR19sgSS7pWNd36FXTZpUZNHypj")): true,
+}
+
 func GetParamUpdaterPublicKeys(blockHeight uint32, params *DeSoParams) map[PkMapKey]bool {
 	// We use legacy paramUpdater values before this block height
-	var paramUpdaterKeys map[PkMapKey]bool
+	paramUpdaterKeys := make(map[PkMapKey]bool)
 	if blockHeight < params.ForkHeights.ParamUpdaterRefactorBlockHeight {
-		paramUpdaterKeys = map[PkMapKey]bool{
-			// 19Hg2mAJUTKFac2F2BBpSEm7BcpkgimrmD
-			MakePkMapKey(MustBase58CheckDecode(ArchitectPubKeyBase58Check)):                                true,
-			MakePkMapKey(MustBase58CheckDecode("BC1YLiXwGTte8oXEEVzm4zqtDpGRx44Y4rqbeFeAs5MnzsmqT5RcqkW")): true,
-			MakePkMapKey(MustBase58CheckDecode("BC1YLgGLKjuHUFZZQcNYrdWRrHsDKUofd9MSxDq4NY53x7vGt4H32oZ")): true,
-			MakePkMapKey(MustBase58CheckDecode("BC1YLj8UkNMbCsmTUTx5Z2bhtp8q86csDthRmK6zbYstjjbS5eHoGkr")): true,
-			MakePkMapKey(MustBase58CheckDecode("BC1YLgD1f7yw7Ue8qQiW7QMBSm6J7fsieK5rRtyxmWqL2Ypra2BAToc")): true,
-			MakePkMapKey(MustBase58CheckDecode("BC1YLfz4GH3Gfj6dCtBi8bNdNTbTdcibk8iCZS75toUn4UKZaTJnz9y")): true,
-			MakePkMapKey(MustBase58CheckDecode("BC1YLfoSyJWKjHGnj5ZqbSokC3LPDNBMDwHX3ehZDCA3HVkFNiPY5cQ")): true,
+		for kk, vv := range beforeParamUpdaterRefactorBlockHeight {
+			paramUpdaterKeys[kk] = vv
 		}
 	} else {
-		paramUpdaterKeys = map[PkMapKey]bool{
-			MakePkMapKey(MustBase58CheckDecode("BC1YLgKBcYwyWCqnBHKoJY2HX1sc38A7JuA2jMNEmEXfcRpc7D6Hyiu")): true,
-			MakePkMapKey(MustBase58CheckDecode("BC1YLfrtYZs4mCeSALnjTUZMdcwsWNHoNaG5gWWD5WyvRrWNTGWWq1q")): true,
-			MakePkMapKey(MustBase58CheckDecode("BC1YLiABrQ1P5pKXdm8S1vj1annx6D8Asku5CXX477dpwYXDamprpWd")): true,
-			MakePkMapKey(MustBase58CheckDecode("BC1YLfqYyePuSYPVFB2mdh9Dss7PJ9j5vJts87b9zGbVJhQDjCJNdjb")): true,
-			MakePkMapKey(MustBase58CheckDecode("BC1YLjDmDtymghnMgAPmTCyykqhcNR19sgSS7pWNd36FXTZpUZNHypj")): true,
+		for kk, vv := range afterParamUpdaterRefactorBlockHeight {
+			paramUpdaterKeys[kk] = vv
 		}
 	}
 
