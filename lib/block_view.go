@@ -4376,6 +4376,7 @@ func (bav *UtxoView) ConnectBlock(
 	var totalFees uint64
 	utxoOps := [][]*UtxoOperation{}
 	var maxUtilityFee uint64
+	computeMaxUtilityFee := bav.Params.IsPoSBlockHeight(blockHeight)
 	for txIndex, txn := range desoBlock.Txns {
 		txHash := txHashes[txIndex]
 
@@ -4414,8 +4415,19 @@ func (bav *UtxoView) ConnectBlock(
 
 		if includeFeesInBlockReward {
 			if txn.TxnMeta.GetTxnType() != TxnTypeAtomicTxnsWrapper {
-				// Compute the BMF given the current fees paid in the block.
-				_, utilityFee = computeBMF(currentFees)
+				if computeMaxUtilityFee {
+					// Compute the BMF given the current fees paid in the block.
+					_, utilityFee = computeBMF(currentFees)
+
+					// For PoS, the maximum block reward is based on the maximum utility fee.
+					// Add the utility fees to the max utility fees. If any overflow
+					// occurs mark the block as invalid and return a rule error.
+					maxUtilityFee, err = SafeUint64().Add(maxUtilityFee, utilityFee)
+					if err != nil {
+						return nil, errors.Wrapf(RuleErrorPoSBlockRewardWithInvalidAmount,
+							"ConnectBlock: error computing maxUtilityFee: %v", err)
+					}
+				}
 
 				// Add the fees from this txn to the total fees. If any overflow occurs
 				// mark the block as invalid and return a rule error. Note that block reward
@@ -4425,14 +4437,6 @@ func (bav *UtxoView) ConnectBlock(
 				}
 				totalFees += currentFees
 
-				// For PoS, the maximum block reward is based on the maximum utility fee.
-				// Add the utility fees to the max utility fees. If any overflow
-				// occurs mark the block as invalid and return a rule error.
-				maxUtilityFee, err = SafeUint64().Add(maxUtilityFee, utilityFee)
-				if err != nil {
-					return nil, errors.Wrapf(RuleErrorPoSBlockRewardWithInvalidAmount,
-						"ConnectBlock: error computing maxUtilityFee: %v", err)
-				}
 			} else {
 				txnMeta, ok := txn.TxnMeta.(*AtomicTxnsWrapperMetadata)
 				if !ok {
@@ -4448,11 +4452,13 @@ func (bav *UtxoView) ConnectBlock(
 					return nil, errors.Wrap(
 						err, "ConnectBlock: error adding non-block-reward recipient fees from atomic transaction")
 				}
-				_, utilityFee = computeBMF(nonBlockRewardRecipientFees)
-				maxUtilityFee, err = SafeUint64().Add(maxUtilityFee, utilityFee)
-				if err != nil {
-					return nil, errors.Wrap(err,
-						"ConnectBlock: error computing maxUtilityFee: %v")
+				if computeMaxUtilityFee {
+					_, utilityFee = computeBMF(nonBlockRewardRecipientFees)
+					maxUtilityFee, err = SafeUint64().Add(maxUtilityFee, utilityFee)
+					if err != nil {
+						return nil, errors.Wrap(err,
+							"ConnectBlock: error computing maxUtilityFee: %v")
+					}
 				}
 			}
 		}
