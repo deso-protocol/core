@@ -150,9 +150,9 @@ func blockToCachedBlock(block *MsgDeSoBlock) (*CachedBlock, error) {
 			continue
 		}
 
-		// Catch-all check for any txns with no fees or txns with utxos. Only balance model txns are
-		// supported in PoS.
-		if txn.TxnFeeNanos == 0 || len(txn.TxInputs) > 0 {
+		// Catch-all check for any txns with no fees or utxo model txns. PoS only supports balance
+		// model txns, which have version 1 and above.
+		if txn.TxnFeeNanos == 0 || txn.TxnVersion == DeSoTxnVersion0 {
 			continue
 		}
 
