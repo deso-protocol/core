@@ -5,6 +5,8 @@ import (
 	"github.com/dgraph-io/badger/v3"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"math"
+	"math/rand"
 	"strconv"
 	"testing"
 )
@@ -4292,7 +4294,8 @@ func TestCreatorCoinBigBigBuyBigSell(t *testing.T) {
 	}
 }
 
-func _creatorCoinTxn(t *testing.T, chain *Blockchain, db *badger.DB,
+func _creatorCoinTxnOptionalFlush(
+	t *testing.T, chain *Blockchain, db *badger.DB,
 	params *DeSoParams, feeRateNanosPerKB uint64,
 	UpdaterPublicKeyBase58Check string,
 	UpdaterPrivateKeyBase58Check string,
@@ -4303,7 +4306,10 @@ func _creatorCoinTxn(t *testing.T, chain *Blockchain, db *badger.DB,
 	CreatorCoinToSellNanos uint64,
 	DeSoToAddNanos uint64,
 	MinDeSoExpectedNanos uint64,
-	MinCreatorCoinExpectedNanos uint64) (
+	MinCreatorCoinExpectedNanos uint64,
+	utxoView *UtxoView,
+	mempool *DeSoMempool,
+	shouldFlush bool) (
 	_utxoOps []*UtxoOperation, _txn *MsgDeSoTxn, _height uint32, _err error) {
 
 	assert := assert.New(t)
@@ -4317,8 +4323,10 @@ func _creatorCoinTxn(t *testing.T, chain *Blockchain, db *badger.DB,
 	profilePkBytes, _, err := Base58CheckDecode(ProfilePublicKeyBase58Check)
 	require.NoError(err)
 
-	utxoView, err := NewUtxoView(db, params, nil, chain.snapshot, chain.eventManager)
-	require.NoError(err)
+	if utxoView == nil {
+		utxoView, err = NewUtxoView(db, params, nil, chain.snapshot, chain.eventManager)
+		require.NoError(err)
+	}
 
 	txn, totalInputMake, changeAmountMake, feesMake, err := chain.CreateCreatorCoinTxn(
 		updaterPkBytes,
@@ -4330,7 +4338,7 @@ func _creatorCoinTxn(t *testing.T, chain *Blockchain, db *badger.DB,
 		MinDeSoExpectedNanos,
 		MinCreatorCoinExpectedNanos,
 		feeRateNanosPerKB,
-		nil, /*mempool*/
+		mempool, /*mempool*/
 		[]*DeSoOutput{})
 
 	if err != nil {
@@ -4380,9 +4388,33 @@ func _creatorCoinTxn(t *testing.T, chain *Blockchain, db *badger.DB,
 	}
 	require.Equal(OperationTypeCreatorCoin, utxoOps[numOps-1].Type)
 
-	require.NoError(utxoView.FlushToDb(0))
+	if shouldFlush {
+		require.NoError(utxoView.FlushToDb(0))
+	}
 
 	return utxoOps, txn, blockHeight, nil
+}
+
+func _creatorCoinTxn(t *testing.T, chain *Blockchain, db *badger.DB,
+	params *DeSoParams, feeRateNanosPerKB uint64,
+	UpdaterPublicKeyBase58Check string,
+	UpdaterPrivateKeyBase58Check string,
+	// See CreatorCoinMetadataa for an explanation of these fields.
+	ProfilePublicKeyBase58Check string,
+	OperationType CreatorCoinOperationType,
+	DeSoToSellNanos uint64,
+	CreatorCoinToSellNanos uint64,
+	DeSoToAddNanos uint64,
+	MinDeSoExpectedNanos uint64,
+	MinCreatorCoinExpectedNanos uint64) (
+	_utxoOps []*UtxoOperation, _txn *MsgDeSoTxn, _height uint32, _err error) {
+
+	return _creatorCoinTxnOptionalFlush(
+		t, chain, db, params, feeRateNanosPerKB,
+		UpdaterPublicKeyBase58Check, UpdaterPrivateKeyBase58Check,
+		ProfilePublicKeyBase58Check, OperationType,
+		DeSoToSellNanos, CreatorCoinToSellNanos, DeSoToAddNanos,
+		MinDeSoExpectedNanos, MinCreatorCoinExpectedNanos, nil, nil, true)
 }
 
 func _creatorCoinTxnWithTestMeta(
@@ -4552,4 +4584,226 @@ func _doCreatorCoinTransferTxn(t *testing.T, chain *Blockchain, db *badger.DB,
 	require.NoError(utxoView.FlushToDb(0))
 
 	return utxoOps, txn, blockHeight, nil
+}
+
+func TestCreatorCoinConnectAlot(t *testing.T) {
+	// Set up a blockchain
+	assert := assert.New(t)
+	require := require.New(t)
+	_, _ = assert, require
+
+	chain, params, db := NewLowDifficultyBlockchain(t)
+	mempool, miner := NewTestMiner(t, chain, params, true /*isSender*/)
+	feeRateNanosPerKB := uint64(11)
+	_, _ = mempool, miner
+
+	// Create a paramUpdater for this test
+	params.ExtraRegtestParamUpdaterKeys[MakePkMapKey(paramUpdaterPkBytes)] = true
+
+	// These are block heights where deso forked.
+	params.ForkHeights.SalomonFixBlockHeight = math.MaxUint32
+	params.ForkHeights.BuyCreatorCoinAfterDeletedBalanceEntryFixBlockHeight = 0
+	params.ForkHeights.DeSoFounderRewardBlockHeight = 0
+	// Mine a block
+	var err error
+	finalBlock1, err := miner.MineAndProcessSingleBlock(0, mempool)
+	require.NoError(err)
+	_ = finalBlock1
+
+	// Give paramUpdater some money
+	_, _, _ = _doBasicTransferWithViewFlush(
+		t, chain, db, params, moneyPkString, paramUpdaterPub,
+		moneyPrivString, 6*NanosPerUnit /*amount to send*/, feeRateNanosPerKB /*feerate*/)
+
+	// Send money to people from moneyPk
+	_, _, _ = _doBasicTransferWithViewFlush(
+		t, chain, db, params, moneyPkString, m0Pub,
+		moneyPrivString, 6*NanosPerUnit /*amount to send*/, feeRateNanosPerKB /*feerate*/)
+	_, _, _ = _doBasicTransferWithViewFlush(
+		t, chain, db, params, moneyPkString, m1Pub,
+		moneyPrivString, 600*NanosPerUnit /*amount to send*/, feeRateNanosPerKB /*feerate*/)
+	_, _, _ = _doBasicTransferWithViewFlush(
+		t, chain, db, params, moneyPkString, m2Pub,
+		moneyPrivString, 600*NanosPerUnit /*amount to send*/, feeRateNanosPerKB /*feerate*/)
+	_, _, _ = _doBasicTransferWithViewFlush(
+		t, chain, db, params, moneyPkString, m3Pub,
+		moneyPrivString, 6*NanosPerUnit /*amount to send*/, feeRateNanosPerKB /*feerate*/)
+	_, _, _ = _doBasicTransferWithViewFlush(
+		t, chain, db, params, moneyPkString, m4Pub,
+		moneyPrivString, 6*NanosPerUnit /*amount to send*/, feeRateNanosPerKB /*feerate*/)
+	_, _, _ = _doBasicTransferWithViewFlush(
+		t, chain, db, params, moneyPkString, m5Pub,
+		moneyPrivString, 6*NanosPerUnit /*amount to send*/, feeRateNanosPerKB /*feerate*/)
+	_, _, _ = _doBasicTransferWithViewFlush(
+		t, chain, db, params, moneyPkString, m6Pub,
+		moneyPrivString, 6*NanosPerUnit /*amount to send*/, feeRateNanosPerKB /*feerate*/)
+
+	m0StartNanos := _getBalance(t, chain, nil, m0Pub)
+	m1StartNanos := _getBalance(t, chain, nil, m1Pub)
+	m2StartNanos := _getBalance(t, chain, nil, m2Pub)
+	m3StartNanos := _getBalance(t, chain, nil, m3Pub)
+	m4StartNanos := _getBalance(t, chain, nil, m4Pub)
+	m5StartNanos := _getBalance(t, chain, nil, m5Pub)
+	m6StartNanos := _getBalance(t, chain, nil, m6Pub)
+
+	// Create a profile using the testData params
+	profilePub := m0Pub
+	profilePriv := m0Priv
+	profilePkBytes, _, _ := Base58CheckDecode(profilePub)
+	username := "m0"
+	desc := "m0 description"
+	creatorBasisPoitns := uint64(1000)
+	utxoOps, txn, _, err := _updateProfile(
+		t, chain, db, params,
+		feeRateNanosPerKB /*feerate*/, profilePub,
+		profilePriv, profilePkBytes, username,
+		desc, "",
+		creatorBasisPoitns, /*CreatorBasisPoints*/
+		12500 /*stakeMultipleBasisPoints*/, false /*isHidden*/)
+	require.NoError(err)
+
+	_, _ = utxoOps, txn
+	_, _, _, _, _, _, _ = m0StartNanos, m1StartNanos, m2StartNanos, m3StartNanos, m4StartNanos, m5StartNanos, m6StartNanos
+
+	rand.Seed(0)
+	utxoView, err := NewUtxoView(db, params, nil, nil, nil)
+	require.NoError(err)
+	for ii := 0; ii < 10000; ii++ {
+		// Choose m1 or m2 with 50% probability
+		transactorPub := m1Pub
+		transactorPriv := m1Priv
+		transactorPkBytes := m1PkBytes
+		transactorUsername := "m1"
+		if rand.Float64() < 0.5 {
+			transactorPub = m2Pub
+			transactorPriv = m2Priv
+			transactorPkBytes = m2PkBytes
+			transactorUsername = "m2"
+		}
+
+		// Choose buy or sell with 50% probability
+		operation := CreatorCoinOperationTypeBuy
+		if rand.Float64() < 0.5 {
+			operation = CreatorCoinOperationTypeSell
+		}
+
+		// Get the user's creator coin balance for m0Pub
+		viewBalance, _, _ := utxoView.GetCreatorCoinBalanceEntryForHODLerPubKeyAndCreatorPubKey(
+			transactorPkBytes, m0PkBytes)
+		mempoolView, err := mempool.GetAugmentedUniversalView()
+		require.NoError(err)
+		mempoolCcBalance, _, _ := mempoolView.GetCreatorCoinBalanceEntryForHODLerPubKeyAndCreatorPubKey(
+			transactorPkBytes, m0PkBytes)
+		ccBalance := viewBalance
+		if mempoolCcBalance.BalanceNanos.Uint64() < viewBalance.BalanceNanos.Uint64() {
+			ccBalance = mempoolCcBalance
+		}
+		fmt.Println(viewBalance.BalanceNanos.Uint64(), mempoolCcBalance.BalanceNanos.Uint64())
+		desoBalance := _getBalance(t, chain, mempool, transactorPub)
+
+		desoToSell := uint64(0)
+		ccToSell := uint64(0)
+		typeStr := ""
+		if operation == CreatorCoinOperationTypeBuy {
+			if desoBalance < 10000 {
+				fmt.Println("Skipping buy because balance too low")
+				continue
+			}
+			ff := rand.Float64()
+			if ff <= 0.05 {
+				if desoBalance < 10000 {
+					fmt.Println("Skipping max buy because balance too low")
+					continue
+				}
+				// 25% chance we buy the max amount. Leave a little for fees
+				desoToSell = uint64(float64(desoBalance) * 0.8)
+				typeStr = "max"
+			} else if ff > 0.25 && ff < 0.5 {
+				// 25% chance we buy the min amount. Do >1 otherwise it could
+				// round down after fees
+				desoToSell = uint64(50)
+				typeStr = "min"
+			} else {
+				// 50% chance we do a random amount
+				rr := rand.Float64()
+				desoToSell = uint64(float64(desoBalance) * 0.1 * rr)
+				typeStr = fmt.Sprintf("rand(%.02f)", rr)
+				if desoToSell < 50 {
+					fmt.Println("Skipping random buy because amount too low")
+					continue
+				}
+				if desoBalance-desoToSell < 10000 {
+					fmt.Println("Skipping random buy because balance too low")
+					continue
+				}
+			}
+			if desoToSell == 0 || desoBalance == 0 {
+				fmt.Println("Zero deso continuing...")
+				continue
+			}
+		} else {
+			m0Profile := utxoView.GetProfileEntryForPublicKey(m0PkBytes)
+			if m0Profile.CreatorCoinEntry.DeSoLockedNanos == 0 {
+				fmt.Println("Skipping sell because no locked deso")
+				continue
+			}
+			ff := rand.Float64()
+			if ff <= 0.25 {
+				// 25% chance we buy the max amount. No need to provision for fees here
+				ccToSell = ccBalance.BalanceNanos.Uint64()
+				typeStr = "max"
+			} else if ff > 0.25 && ff < 0.5 {
+				// 25% chance we buy the min amount
+				ccToSell = uint64(2)
+				typeStr = "min"
+				if m0Profile.CreatorCoinEntry.CoinsInCirculationNanos.Uint64() < 50 {
+					fmt.Println("Skipping min sell because not enough in coin")
+					continue
+				}
+			} else {
+				// 50% chance we do a random amount
+				rr := rand.Float64()
+				ccToSell = uint64(float64(ccBalance.BalanceNanos.Uint64()) * rr)
+				typeStr = fmt.Sprintf("rand(%.02f)", rr)
+			}
+			if ccToSell > ccBalance.BalanceNanos.Uint64() {
+				fmt.Println("Skipping sell because amount too high")
+				continue
+			}
+
+			if ccBalance.BalanceNanos.IsZero() || ccToSell == 0 {
+				fmt.Println("Zero cc continuing...")
+				continue
+			}
+		}
+
+		opStr := "buy"
+		if operation == CreatorCoinOperationTypeSell {
+			opStr = "sell"
+		}
+		fmt.Printf("%v: %v %v %v D: (%v / %v) CC: (%v / %v)\n", ii, transactorUsername, opStr, typeStr, desoToSell, desoBalance, ccToSell, ccBalance.BalanceNanos.Uint64())
+
+		// Apply the txn according to the test spec
+		profile := m0Pub
+		utxoOps, txn, _, err = _creatorCoinTxnOptionalFlush(
+			t, chain, db, params, feeRateNanosPerKB,
+			transactorPub, transactorPriv, /*updater*/
+			profile,    /*profile*/
+			operation,  /*buy/sell*/
+			desoToSell, /*DeSoToSellNanos*/
+			ccToSell,   /*CreatorCoinToSellNanos*/
+			uint64(0),  /*DeSoToAddNanos*/
+			uint64(0),  /*MinDeSoExpectedNanos*/
+			uint64(0),  /*MinCreatorCoinExpectedNanos*/
+			utxoView,
+			mempool,
+			false)
+		require.NoError(err)
+
+		mempoolTxsAdded, err := mempool.processTransaction(
+			txn, false /*allowUnconnectedTxn*/, false /*rateLimit*/, 0, /*peerID*/
+			true /*verifySignatures*/)
+		require.NoError(err)
+		require.NotZero(len(mempoolTxsAdded))
+	}
 }

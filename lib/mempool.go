@@ -1053,6 +1053,7 @@ func (mp *DeSoMempool) tryAcceptTransaction(
 
 	// Attempt to add the transaction to the backup view. If it fails, reconstruct the backup
 	// view and return an error.
+	fmt.Println("connecting...")
 	totalNanosPurchasedBefore := mp.backupUniversalUtxoView.NanosPurchased
 	usdCentsPerBitcoinBefore := mp.backupUniversalUtxoView.GetCurrentUSDCentsPerBitcoin()
 	bestHeight := uint32(mp.bc.blockTip().Height + 1)
