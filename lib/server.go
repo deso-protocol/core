@@ -2273,14 +2273,14 @@ func (srv *Server) _handleBlock(pp *Peer, blk *MsgDeSoBlock, isLastBlock bool) {
 		// If the FastHotStuffConsensus has been initialized, then we pass the block to the new consensus
 		// which will validate the block, try to apply it, and handle the orphan case by requesting missing
 		// parents.
-		glog.V(1).Infof(CLog(Cyan, fmt.Sprintf(
+		glog.V(0).Infof(CLog(Cyan, fmt.Sprintf(
 			"Server._handleBlock: Processing block %v with FastHotStuffConsensus with SyncState=%v for peer %v",
 			blk, srv.blockchain.chainState(), pp,
 		)))
 		blockHashesToRequest, err = srv.fastHotStuffConsensus.HandleBlock(pp, blk)
 		isOrphan = len(blockHashesToRequest) > 0
 	} else if !verifySignatures {
-		glog.V(1).Infof(CLog(Cyan, fmt.Sprintf(
+		glog.V(0).Infof(CLog(Cyan, fmt.Sprintf(
 			"Server._handleBlock: Processing block %v WITHOUT signature checking because SyncState=%v for peer %v",
 			blk, srv.blockchain.chainState(), pp,
 		)))
@@ -2289,7 +2289,7 @@ func (srv *Server) _handleBlock(pp *Peer, blk *MsgDeSoBlock, isLastBlock bool) {
 		// TODO: Signature checking slows things down because it acquires the ChainLock.
 		// The optimal solution is to check signatures in a way that doesn't acquire the
 		// ChainLock, which is what Bitcoin Core does.
-		glog.V(1).Infof(CLog(Cyan, fmt.Sprintf(
+		glog.V(0).Infof(CLog(Cyan, fmt.Sprintf(
 			"Server._handleBlock: Processing block %v WITH signature checking because SyncState=%v for peer %v",
 			blk, srv.blockchain.chainState(), pp,
 		)))
