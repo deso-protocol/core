@@ -1138,6 +1138,7 @@ func DBSetWithTxn(txn *badger.Txn, snap *Snapshot, key []byte, value []byte, eve
 		return errors.Wrapf(err, "DBSetWithTxn: Problem setting record "+
 			"in DB with key: %v, value: %v", key, value)
 	}
+
 	dbDifferEncoder := json.NewEncoder(dbDifferFile)
 	dbDifferElem := dbDifferItem{
 		Operation: setOp,

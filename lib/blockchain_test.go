@@ -10,6 +10,7 @@ import (
 	"math/big"
 	"math/rand"
 	"os"
+	"path/filepath"
 	"runtime"
 	"testing"
 	"time"
@@ -225,7 +226,14 @@ func NewLowDifficultyBlockchainWithParamsAndDb(t *testing.T, params *DeSoParams,
 	var embpg *embeddedpostgres.EmbeddedPostgres
 	var err error
 
-	db, _ := GetTestBadgerDb()
+	db, datadir := GetTestBadgerDb()
+	if dbDifferFile == nil {
+		dbDifferFileName = filepath.Join(datadir, "db_differ.txt")
+		dbDifferFile, err = os.OpenFile(dbDifferFileName, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+		if err != nil {
+			panic(err)
+		}
+	}
 	if usePostgres {
 		if len(os.Getenv("POSTGRES_URI")) > 0 {
 			glog.Infof("NewLowDifficultyBlockchainWithParamsAndDb: Using Postgres DB from provided POSTGRES_URI")
@@ -258,7 +266,7 @@ func NewLowDifficultyBlockchainWithParamsAndDb(t *testing.T, params *DeSoParams,
 	chain, err := NewBlockchain([]string{blockSignerPk}, 0, 0,
 		&testParams, timesource, db, postgresDb, NewEventManager(), snap, false, nil)
 	if err != nil {
-		log.Fatal(err)
+		panic(err)
 	}
 
 	t.Cleanup(func() {
