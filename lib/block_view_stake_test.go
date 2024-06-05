@@ -6,7 +6,7 @@ import (
 	"math"
 	"testing"
 
-	"github.com/btcsuite/btcd/btcec/v2"
+	"github.com/btcsuite/btcd/btcec"
 	"github.com/holiman/uint256"
 	"github.com/stretchr/testify/require"
 )
@@ -127,7 +127,7 @@ func _testStaking(t *testing.T, flushToDB bool) {
 		stakeMetadata := &StakeMetadata{
 			ValidatorPublicKey: NewPublicKey(m0PkBytes),
 			RewardMethod:       StakingRewardMethodPayToBalance,
-			StakeAmountNanos:   uint256.NewInt(100),
+			StakeAmountNanos:   uint256.NewInt().SetUint64(100),
 		}
 		_, err = _submitStakeTxn(
 			testMeta, m1Pub, m1Priv, stakeMetadata, nil, flushToDB,
@@ -144,7 +144,7 @@ func _testStaking(t *testing.T, flushToDB bool) {
 		stakeMetadata := &StakeMetadata{
 			ValidatorPublicKey: NewPublicKey(m2PkBytes),
 			RewardMethod:       StakingRewardMethodPayToBalance,
-			StakeAmountNanos:   uint256.NewInt(0),
+			StakeAmountNanos:   uint256.NewInt(),
 		}
 		_, err = _submitStakeTxn(
 			testMeta, m1Pub, m1Priv, stakeMetadata, nil, flushToDB,
@@ -157,7 +157,7 @@ func _testStaking(t *testing.T, flushToDB bool) {
 		stakeMetadata := &StakeMetadata{
 			ValidatorPublicKey: NewPublicKey(m0PkBytes),
 			RewardMethod:       99,
-			StakeAmountNanos:   uint256.NewInt(1),
+			StakeAmountNanos:   uint256.NewInt().SetUint64(1),
 		}
 		_, err = _submitStakeTxn(
 			testMeta, m1Pub, m1Priv, stakeMetadata, nil, flushToDB,
@@ -183,7 +183,7 @@ func _testStaking(t *testing.T, flushToDB bool) {
 		stakeMetadata := &StakeMetadata{
 			ValidatorPublicKey: NewPublicKey(m0PkBytes),
 			RewardMethod:       StakingRewardMethodPayToBalance,
-			StakeAmountNanos:   uint256.NewInt(0),
+			StakeAmountNanos:   uint256.NewInt(),
 		}
 		_, err = _submitStakeTxn(
 			testMeta, m1Pub, m1Priv, stakeMetadata, nil, flushToDB,
@@ -209,7 +209,7 @@ func _testStaking(t *testing.T, flushToDB bool) {
 		stakeMetadata := &StakeMetadata{
 			ValidatorPublicKey: NewPublicKey(m0PkBytes),
 			RewardMethod:       StakingRewardMethodPayToBalance,
-			StakeAmountNanos:   uint256.NewInt(math.MaxUint64),
+			StakeAmountNanos:   uint256.NewInt().SetUint64(math.MaxUint64),
 		}
 		_, err = _submitStakeTxn(
 			testMeta, m1Pub, m1Priv, stakeMetadata, nil, flushToDB,
@@ -223,7 +223,7 @@ func _testStaking(t *testing.T, flushToDB bool) {
 		stakeMetadata := &StakeMetadata{
 			ValidatorPublicKey: NewPublicKey(m0PkBytes),
 			RewardMethod:       StakingRewardMethodPayToBalance,
-			StakeAmountNanos:   uint256.NewInt(100),
+			StakeAmountNanos:   uint256.NewInt().SetUint64(100),
 		}
 		extraData := map[string][]byte{"TestKey": []byte("TestValue")}
 		feeNanos, err := _submitStakeTxn(
@@ -236,14 +236,14 @@ func _testStaking(t *testing.T, flushToDB bool) {
 		require.NoError(t, err)
 		require.NotNil(t, stakeEntry)
 		require.Equal(t, stakeEntry.RewardMethod, StakingRewardMethodPayToBalance)
-		require.Equal(t, stakeEntry.StakeAmountNanos, uint256.NewInt(100))
+		require.Equal(t, stakeEntry.StakeAmountNanos, uint256.NewInt().SetUint64(100))
 		require.Equal(t, stakeEntry.ExtraData["TestKey"], []byte("TestValue"))
 
 		// Verify ValidatorEntry.TotalStakeAmountNanos.
 		validatorEntry, err := utxoView().GetValidatorByPKID(m0PKID)
 		require.NoError(t, err)
 		require.NotNil(t, validatorEntry)
-		require.Equal(t, validatorEntry.TotalStakeAmountNanos, uint256.NewInt(100))
+		require.Equal(t, validatorEntry.TotalStakeAmountNanos, uint256.NewInt().SetUint64(100))
 
 		// Verify m1's DESO balance decreases by StakeAmountNanos (net of fees).
 		m1NewDESOBalanceNanos := getDESOBalanceNanos(m1PkBytes)
@@ -255,7 +255,7 @@ func _testStaking(t *testing.T, flushToDB bool) {
 		stakeMetadata := &StakeMetadata{
 			ValidatorPublicKey: NewPublicKey(m0PkBytes),
 			RewardMethod:       StakingRewardMethodPayToBalance,
-			StakeAmountNanos:   uint256.NewInt(50),
+			StakeAmountNanos:   uint256.NewInt().SetUint64(50),
 		}
 		extraData := map[string][]byte{"TestKey": []byte("TestValue2")}
 		feeNanos, err := _submitStakeTxn(
@@ -268,14 +268,14 @@ func _testStaking(t *testing.T, flushToDB bool) {
 		require.NoError(t, err)
 		require.NotNil(t, stakeEntry)
 		require.Equal(t, stakeEntry.RewardMethod, StakingRewardMethodPayToBalance)
-		require.Equal(t, stakeEntry.StakeAmountNanos, uint256.NewInt(150))
+		require.Equal(t, stakeEntry.StakeAmountNanos, uint256.NewInt().SetUint64(150))
 		require.Equal(t, stakeEntry.ExtraData["TestKey"], []byte("TestValue2"))
 
 		// Verify ValidatorEntry.TotalStakeAmountNanos.
 		validatorEntry, err := utxoView().GetValidatorByPKID(m0PKID)
 		require.NoError(t, err)
 		require.NotNil(t, validatorEntry)
-		require.Equal(t, validatorEntry.TotalStakeAmountNanos, uint256.NewInt(150))
+		require.Equal(t, validatorEntry.TotalStakeAmountNanos, uint256.NewInt().SetUint64(150))
 
 		// Verify m1's DESO balance decreases by StakeAmountNanos (net of fees).
 		m1NewDESOBalanceNanos := getDESOBalanceNanos(m1PkBytes)
@@ -287,7 +287,7 @@ func _testStaking(t *testing.T, flushToDB bool) {
 		stakeMetadata := &StakeMetadata{
 			ValidatorPublicKey: NewPublicKey(m0PkBytes),
 			RewardMethod:       StakingRewardMethodRestake,
-			StakeAmountNanos:   uint256.NewInt(0),
+			StakeAmountNanos:   uint256.NewInt(),
 		}
 		extraData := map[string][]byte{"TestKey": []byte("TestValue2")}
 		feeNanos, err := _submitStakeTxn(
@@ -299,7 +299,7 @@ func _testStaking(t *testing.T, flushToDB bool) {
 		stakeEntry, err := utxoView().GetStakeEntry(m0PKID, m1PKID)
 		require.NoError(t, err)
 		require.NotNil(t, stakeEntry)
-		require.Equal(t, stakeEntry.StakeAmountNanos, uint256.NewInt(150))
+		require.Equal(t, stakeEntry.StakeAmountNanos, uint256.NewInt().SetUint64(150))
 		require.Equal(t, stakeEntry.ExtraData["TestKey"], []byte("TestValue2"))
 
 		// Verify the StakeEntry.RewardMethod has changed to StakingRewardMethodRestake.
@@ -309,7 +309,7 @@ func _testStaking(t *testing.T, flushToDB bool) {
 		validatorEntry, err := utxoView().GetValidatorByPKID(m0PKID)
 		require.NoError(t, err)
 		require.NotNil(t, validatorEntry)
-		require.Equal(t, validatorEntry.TotalStakeAmountNanos, uint256.NewInt(150))
+		require.Equal(t, validatorEntry.TotalStakeAmountNanos, uint256.NewInt().SetUint64(150))
 
 		// Verify m1's DESO balance decreases by StakeAmountNanos (net of fees).
 		m1NewDESOBalanceNanos := getDESOBalanceNanos(m1PkBytes)
@@ -326,7 +326,7 @@ func _testStaking(t *testing.T, flushToDB bool) {
 
 		unstakeMetadata := &UnstakeMetadata{
 			ValidatorPublicKey: NewPublicKey(m0PkBytes),
-			UnstakeAmountNanos: uint256.NewInt(40),
+			UnstakeAmountNanos: uint256.NewInt().SetUint64(40),
 		}
 		_, err = _submitUnstakeTxn(
 			testMeta, m1Pub, m1Priv, unstakeMetadata, nil, flushToDB,
@@ -342,7 +342,7 @@ func _testStaking(t *testing.T, flushToDB bool) {
 		// RuleErrorInvalidValidatorPKID
 		unstakeMetadata := &UnstakeMetadata{
 			ValidatorPublicKey: NewPublicKey(m2PkBytes),
-			UnstakeAmountNanos: uint256.NewInt(40),
+			UnstakeAmountNanos: uint256.NewInt().SetUint64(40),
 		}
 		_, err = _submitUnstakeTxn(
 			testMeta, m1Pub, m1Priv, unstakeMetadata, nil, flushToDB,
@@ -354,7 +354,7 @@ func _testStaking(t *testing.T, flushToDB bool) {
 		// RuleErrorInvalidUnstakeNoStakeFound
 		unstakeMetadata := &UnstakeMetadata{
 			ValidatorPublicKey: NewPublicKey(m0PkBytes),
-			UnstakeAmountNanos: uint256.NewInt(40),
+			UnstakeAmountNanos: uint256.NewInt().SetUint64(40),
 		}
 		_, err = _submitUnstakeTxn(
 			testMeta, m2Pub, m2Priv, unstakeMetadata, nil, flushToDB,
@@ -378,7 +378,7 @@ func _testStaking(t *testing.T, flushToDB bool) {
 		// RuleErrorInvalidUnstakeAmountNanos
 		unstakeMetadata := &UnstakeMetadata{
 			ValidatorPublicKey: NewPublicKey(m0PkBytes),
-			UnstakeAmountNanos: uint256.NewInt(0),
+			UnstakeAmountNanos: uint256.NewInt(),
 		}
 		_, err = _submitUnstakeTxn(
 			testMeta, m1Pub, m1Priv, unstakeMetadata, nil, flushToDB,
@@ -403,7 +403,7 @@ func _testStaking(t *testing.T, flushToDB bool) {
 		m1OldDESOBalanceNanos := getDESOBalanceNanos(m1PkBytes)
 		unstakeMetadata := &UnstakeMetadata{
 			ValidatorPublicKey: NewPublicKey(m0PkBytes),
-			UnstakeAmountNanos: uint256.NewInt(40),
+			UnstakeAmountNanos: uint256.NewInt().SetUint64(40),
 		}
 		extraData := map[string][]byte{"TestKey": []byte("TestValue")}
 		feeNanos, err := _submitUnstakeTxn(
@@ -414,17 +414,17 @@ func _testStaking(t *testing.T, flushToDB bool) {
 		// Verify StakeEntry.StakeAmountNanos.
 		stakeEntry, err := utxoView().GetStakeEntry(m0PKID, m1PKID)
 		require.NoError(t, err)
-		require.Equal(t, stakeEntry.StakeAmountNanos, uint256.NewInt(110))
+		require.Equal(t, stakeEntry.StakeAmountNanos, uint256.NewInt().SetUint64(110))
 
 		// Verify ValidatorEntry.TotalStakeAmountNanos.
 		validatorEntry, err := utxoView().GetValidatorByPKID(m0PKID)
 		require.NoError(t, err)
-		require.Equal(t, validatorEntry.TotalStakeAmountNanos, uint256.NewInt(110))
+		require.Equal(t, validatorEntry.TotalStakeAmountNanos, uint256.NewInt().SetUint64(110))
 
 		// Verify LockedStakeEntry.UnstakeAmountNanos.
 		lockedStakeEntry, err := utxoView().GetLockedStakeEntry(m0PKID, m1PKID, currentEpochNumber)
 		require.NoError(t, err)
-		require.Equal(t, lockedStakeEntry.LockedAmountNanos, uint256.NewInt(40))
+		require.Equal(t, lockedStakeEntry.LockedAmountNanos, uint256.NewInt().SetUint64(40))
 		require.Equal(t, lockedStakeEntry.ExtraData["TestKey"], []byte("TestValue"))
 
 		// Verify m1's balance stays the same (net of fees).
@@ -436,7 +436,7 @@ func _testStaking(t *testing.T, flushToDB bool) {
 		m1OldDESOBalanceNanos := getDESOBalanceNanos(m1PkBytes)
 		unstakeMetadata := &UnstakeMetadata{
 			ValidatorPublicKey: NewPublicKey(m0PkBytes),
-			UnstakeAmountNanos: uint256.NewInt(30),
+			UnstakeAmountNanos: uint256.NewInt().SetUint64(30),
 		}
 		extraData := map[string][]byte{"TestKey": []byte("TestValue2")}
 		feeNanos, err := _submitUnstakeTxn(
@@ -447,17 +447,17 @@ func _testStaking(t *testing.T, flushToDB bool) {
 		// Verify StakeEntry.StakeAmountNanos.
 		stakeEntry, err := utxoView().GetStakeEntry(m0PKID, m1PKID)
 		require.NoError(t, err)
-		require.Equal(t, stakeEntry.StakeAmountNanos, uint256.NewInt(80))
+		require.Equal(t, stakeEntry.StakeAmountNanos, uint256.NewInt().SetUint64(80))
 
 		// Verify ValidatorEntry.TotalStakeAmountNanos.
 		validatorEntry, err := utxoView().GetValidatorByPKID(m0PKID)
 		require.NoError(t, err)
-		require.Equal(t, validatorEntry.TotalStakeAmountNanos, uint256.NewInt(80))
+		require.Equal(t, validatorEntry.TotalStakeAmountNanos, uint256.NewInt().SetUint64(80))
 
 		// Verify LockedStakeEntry.UnstakeAmountNanos.
 		lockedStakeEntry, err := utxoView().GetLockedStakeEntry(m0PKID, m1PKID, currentEpochNumber)
 		require.NoError(t, err)
-		require.Equal(t, lockedStakeEntry.LockedAmountNanos, uint256.NewInt(70))
+		require.Equal(t, lockedStakeEntry.LockedAmountNanos, uint256.NewInt().SetUint64(70))
 		require.Equal(t, lockedStakeEntry.ExtraData["TestKey"], []byte("TestValue2"))
 
 		// Verify m1's balance stays the same (net of fees).
@@ -469,7 +469,7 @@ func _testStaking(t *testing.T, flushToDB bool) {
 		m1OldDESOBalanceNanos := getDESOBalanceNanos(m1PkBytes)
 		unstakeMetadata := &UnstakeMetadata{
 			ValidatorPublicKey: NewPublicKey(m0PkBytes),
-			UnstakeAmountNanos: uint256.NewInt(80),
+			UnstakeAmountNanos: uint256.NewInt().SetUint64(80),
 		}
 		feeNanos, err := _submitUnstakeTxn(
 			testMeta, m1Pub, m1Priv, unstakeMetadata, nil, flushToDB,
@@ -484,12 +484,12 @@ func _testStaking(t *testing.T, flushToDB bool) {
 		// Verify ValidatorEntry.TotalStakeAmountNanos.
 		validatorEntry, err := utxoView().GetValidatorByPKID(m0PKID)
 		require.NoError(t, err)
-		require.Equal(t, validatorEntry.TotalStakeAmountNanos, uint256.NewInt(0))
+		require.Equal(t, validatorEntry.TotalStakeAmountNanos, uint256.NewInt())
 
 		// Verify LockedStakeEntry.UnstakeAmountNanos.
 		lockedStakeEntry, err := utxoView().GetLockedStakeEntry(m0PKID, m1PKID, currentEpochNumber)
 		require.NoError(t, err)
-		require.Equal(t, lockedStakeEntry.LockedAmountNanos, uint256.NewInt(150))
+		require.Equal(t, lockedStakeEntry.LockedAmountNanos, uint256.NewInt().SetUint64(150))
 		require.Equal(t, lockedStakeEntry.ExtraData["TestKey"], []byte("TestValue2"))
 
 		// Verify m1's balance stays the same (net of fees).
@@ -566,7 +566,7 @@ func _testStaking(t *testing.T, flushToDB bool) {
 		)
 		require.NoError(t, err)
 		require.Equal(t, len(lockedStakeEntries), 1)
-		require.Equal(t, lockedStakeEntries[0].LockedAmountNanos, uint256.NewInt(150))
+		require.Equal(t, lockedStakeEntries[0].LockedAmountNanos, uint256.NewInt().SetUint64(150))
 
 		m1OldDESOBalanceNanos := getDESOBalanceNanos(m1PkBytes)
 		unlockStakeMetadata := &UnlockStakeMetadata{
@@ -587,7 +587,7 @@ func _testStaking(t *testing.T, flushToDB bool) {
 		// Verify ValidatorEntry.TotalStakeAmountNanos.
 		validatorEntry, err := utxoView().GetValidatorByPKID(m0PKID)
 		require.NoError(t, err)
-		require.Equal(t, validatorEntry.TotalStakeAmountNanos, uint256.NewInt(0))
+		require.Equal(t, validatorEntry.TotalStakeAmountNanos, uint256.NewInt())
 
 		// Verify LockedStakeEntry.isDeleted.
 		lockedStakeEntry, err := utxoView().GetLockedStakeEntry(m0PKID, m1PKID, currentEpochNumber)
@@ -814,7 +814,7 @@ func TestStakingWithDerivedKey(t *testing.T) {
 	require.NoError(t, err)
 	senderPrivBytes, _, err := Base58CheckDecode(senderPrivString)
 	require.NoError(t, err)
-	senderPrivKey, _ := btcec.PrivKeyFromBytes(senderPrivBytes)
+	senderPrivKey, _ := btcec.PrivKeyFromBytes(btcec.S256(), senderPrivBytes)
 	senderPKID := DBGetPKIDEntryForPublicKey(db, chain.snapshot, senderPkBytes).PKID
 
 	newUtxoView := func() *UtxoView {
@@ -972,7 +972,7 @@ func TestStakingWithDerivedKey(t *testing.T) {
 			TransactionCountLimitMap: map[TxnType]uint64{
 				TxnTypeAuthorizeDerivedKey: 1,
 			},
-			StakeLimitMap: map[StakeLimitKey]*uint256.Int{stakeLimitKey: uint256.NewInt(100)},
+			StakeLimitMap: map[StakeLimitKey]*uint256.Int{stakeLimitKey: uint256.NewInt().SetUint64(100)},
 		}
 		derivedKeyPriv, err = _submitAuthorizeDerivedKeyTxn(txnSpendingLimit)
 		require.NoError(t, err)
@@ -980,7 +980,7 @@ func TestStakingWithDerivedKey(t *testing.T) {
 		// sender tries to stake 100 $DESO nanos with m1 using the DerivedKey. Errors.
 		stakeMetadata := &StakeMetadata{
 			ValidatorPublicKey: NewPublicKey(m1PkBytes),
-			StakeAmountNanos:   uint256.NewInt(100),
+			StakeAmountNanos:   uint256.NewInt().SetUint64(100),
 		}
 		_, err = _submitStakeTxnWithDerivedKey(
 			senderPkBytes, derivedKeyPriv, MsgDeSoTxn{TxnMeta: stakeMetadata},
@@ -991,7 +991,7 @@ func TestStakingWithDerivedKey(t *testing.T) {
 		// sender tries to stake 200 $DESO nanos with m0 using the DerivedKey. Errors.
 		stakeMetadata = &StakeMetadata{
 			ValidatorPublicKey: NewPublicKey(m0PkBytes),
-			StakeAmountNanos:   uint256.NewInt(200),
+			StakeAmountNanos:   uint256.NewInt().SetUint64(200),
 		}
 		_, err = _submitStakeTxnWithDerivedKey(
 			senderPkBytes, derivedKeyPriv, MsgDeSoTxn{TxnMeta: stakeMetadata},
@@ -1003,7 +1003,7 @@ func TestStakingWithDerivedKey(t *testing.T) {
 		senderOldDESOBalanceNanos := getDESOBalanceNanos(senderPkBytes)
 		stakeMetadata = &StakeMetadata{
 			ValidatorPublicKey: NewPublicKey(m0PkBytes),
-			StakeAmountNanos:   uint256.NewInt(100),
+			StakeAmountNanos:   uint256.NewInt().SetUint64(100),
 		}
 		feeNanos, err := _submitStakeTxnWithDerivedKey(
 			senderPkBytes, derivedKeyPriv, MsgDeSoTxn{TxnMeta: stakeMetadata},
@@ -1014,7 +1014,7 @@ func TestStakingWithDerivedKey(t *testing.T) {
 		stakeEntry, err := newUtxoView().GetStakeEntry(m0PKID, senderPKID)
 		require.NoError(t, err)
 		require.NotNil(t, stakeEntry)
-		require.Equal(t, stakeEntry.StakeAmountNanos, uint256.NewInt(100))
+		require.Equal(t, stakeEntry.StakeAmountNanos, uint256.NewInt().SetUint64(100))
 
 		// Verify sender's DESO balance is reduced by StakeAmountNanos (net of fees).
 		senderNewDESOBalanceNanos := getDESOBalanceNanos(senderPkBytes)
@@ -1030,7 +1030,7 @@ func TestStakingWithDerivedKey(t *testing.T) {
 			TransactionCountLimitMap: map[TxnType]uint64{
 				TxnTypeAuthorizeDerivedKey: 1,
 			},
-			UnstakeLimitMap: map[StakeLimitKey]*uint256.Int{stakeLimitKey: uint256.NewInt(50)},
+			UnstakeLimitMap: map[StakeLimitKey]*uint256.Int{stakeLimitKey: uint256.NewInt().SetUint64(50)},
 		}
 		derivedKeyPriv, err = _submitAuthorizeDerivedKeyTxn(txnSpendingLimit)
 		require.NoError(t, err)
@@ -1038,7 +1038,7 @@ func TestStakingWithDerivedKey(t *testing.T) {
 		// sender tries to unstake 50 $DESO nanos from m1 using the DerivedKey. Errors.
 		unstakeMetadata := &UnstakeMetadata{
 			ValidatorPublicKey: NewPublicKey(m1PkBytes),
-			UnstakeAmountNanos: uint256.NewInt(50),
+			UnstakeAmountNanos: uint256.NewInt().SetUint64(50),
 		}
 		_, err = _submitStakeTxnWithDerivedKey(
 			senderPkBytes, derivedKeyPriv, MsgDeSoTxn{TxnMeta: unstakeMetadata},
@@ -1049,7 +1049,7 @@ func TestStakingWithDerivedKey(t *testing.T) {
 		// sender stakes 50 $DESO nanos with m1.
 		stakeMetadata := &StakeMetadata{
 			ValidatorPublicKey: NewPublicKey(m1PkBytes),
-			StakeAmountNanos:   uint256.NewInt(50),
+			StakeAmountNanos:   uint256.NewInt().SetUint64(50),
 		}
 		_, err = _submitStakeTxn(
 			testMeta, senderPkString, senderPrivString, stakeMetadata, nil, true,
@@ -1059,7 +1059,7 @@ func TestStakingWithDerivedKey(t *testing.T) {
 		// sender tries to unstake 50 $DESO nanos from m1 using the DerivedKey. Errors.
 		unstakeMetadata = &UnstakeMetadata{
 			ValidatorPublicKey: NewPublicKey(m1PkBytes),
-			UnstakeAmountNanos: uint256.NewInt(50),
+			UnstakeAmountNanos: uint256.NewInt().SetUint64(50),
 		}
 		_, err = _submitStakeTxnWithDerivedKey(
 			senderPkBytes, derivedKeyPriv, MsgDeSoTxn{TxnMeta: unstakeMetadata},
@@ -1070,7 +1070,7 @@ func TestStakingWithDerivedKey(t *testing.T) {
 		// sender tries to unstake 200 $DESO nanos from m0 using the DerivedKey. Errors.
 		unstakeMetadata = &UnstakeMetadata{
 			ValidatorPublicKey: NewPublicKey(m0PkBytes),
-			UnstakeAmountNanos: uint256.NewInt(200),
+			UnstakeAmountNanos: uint256.NewInt().SetUint64(200),
 		}
 		_, err = _submitStakeTxnWithDerivedKey(
 			senderPkBytes, derivedKeyPriv, MsgDeSoTxn{TxnMeta: unstakeMetadata},
@@ -1081,7 +1081,7 @@ func TestStakingWithDerivedKey(t *testing.T) {
 		// sender tries to unstake 100 $DESO nanos from m0 using the DerivedKey. Errors.
 		unstakeMetadata = &UnstakeMetadata{
 			ValidatorPublicKey: NewPublicKey(m0PkBytes),
-			UnstakeAmountNanos: uint256.NewInt(100),
+			UnstakeAmountNanos: uint256.NewInt().SetUint64(100),
 		}
 		_, err = _submitStakeTxnWithDerivedKey(
 			senderPkBytes, derivedKeyPriv, MsgDeSoTxn{TxnMeta: unstakeMetadata},
@@ -1092,7 +1092,7 @@ func TestStakingWithDerivedKey(t *testing.T) {
 		// sender unstakes 50 $DESO nanos from m0 using the DerivedKey. Succeeds.
 		unstakeMetadata = &UnstakeMetadata{
 			ValidatorPublicKey: NewPublicKey(m0PkBytes),
-			UnstakeAmountNanos: uint256.NewInt(50),
+			UnstakeAmountNanos: uint256.NewInt().SetUint64(50),
 		}
 		_, err = _submitStakeTxnWithDerivedKey(
 			senderPkBytes, derivedKeyPriv, MsgDeSoTxn{TxnMeta: unstakeMetadata},
@@ -1103,13 +1103,13 @@ func TestStakingWithDerivedKey(t *testing.T) {
 		stakeEntry, err := newUtxoView().GetStakeEntry(m0PKID, senderPKID)
 		require.NoError(t, err)
 		require.NotNil(t, stakeEntry)
-		require.Equal(t, stakeEntry.StakeAmountNanos, uint256.NewInt(50))
+		require.Equal(t, stakeEntry.StakeAmountNanos, uint256.NewInt().SetUint64(50))
 
 		// LockedStakeEntry was created.
 		lockedStakeEntry, err := newUtxoView().GetLockedStakeEntry(m0PKID, senderPKID, currentEpochNumber)
 		require.NoError(t, err)
 		require.NotNil(t, lockedStakeEntry)
-		require.Equal(t, lockedStakeEntry.LockedAmountNanos, uint256.NewInt(50))
+		require.Equal(t, lockedStakeEntry.LockedAmountNanos, uint256.NewInt().SetUint64(50))
 	}
 	{
 		// sender unlocks stake using a DerivedKey.
@@ -1141,7 +1141,7 @@ func TestStakingWithDerivedKey(t *testing.T) {
 		// sender unstakes 50 $DESO nanos from m1.
 		unstakeMetadata := &UnstakeMetadata{
 			ValidatorPublicKey: NewPublicKey(m1PkBytes),
-			UnstakeAmountNanos: uint256.NewInt(50),
+			UnstakeAmountNanos: uint256.NewInt().SetUint64(50),
 		}
 		_, err = _submitUnstakeTxn(
 			testMeta, senderPkString, senderPrivString, unstakeMetadata, nil, true,
@@ -1184,7 +1184,7 @@ func TestStakingWithDerivedKey(t *testing.T) {
 		// sender stakes + unstakes 50 $DESO nanos with m0.
 		stakeMetadata := &StakeMetadata{
 			ValidatorPublicKey: NewPublicKey(m0PkBytes),
-			StakeAmountNanos:   uint256.NewInt(50),
+			StakeAmountNanos:   uint256.NewInt().SetUint64(50),
 		}
 		_, err = _submitStakeTxn(
 			testMeta, senderPkString, senderPrivString, stakeMetadata, nil, true,
@@ -1192,7 +1192,7 @@ func TestStakingWithDerivedKey(t *testing.T) {
 		require.NoError(t, err)
 		unstakeMetadata = &UnstakeMetadata{
 			ValidatorPublicKey: NewPublicKey(m0PkBytes),
-			UnstakeAmountNanos: uint256.NewInt(50),
+			UnstakeAmountNanos: uint256.NewInt().SetUint64(50),
 		}
 		_, err = _submitUnstakeTxn(
 			testMeta, senderPkString, senderPrivString, unstakeMetadata, nil, true,
@@ -1221,8 +1221,8 @@ func TestStakingWithDerivedKey(t *testing.T) {
 			TransactionCountLimitMap: map[TxnType]uint64{
 				TxnTypeAuthorizeDerivedKey: 1,
 			},
-			StakeLimitMap:       map[StakeLimitKey]*uint256.Int{stakeLimitKey: uint256.NewInt(50)},
-			UnstakeLimitMap:     map[StakeLimitKey]*uint256.Int{stakeLimitKey: uint256.NewInt(50)},
+			StakeLimitMap:       map[StakeLimitKey]*uint256.Int{stakeLimitKey: uint256.NewInt().SetUint64(50)},
+			UnstakeLimitMap:     map[StakeLimitKey]*uint256.Int{stakeLimitKey: uint256.NewInt().SetUint64(50)},
 			UnlockStakeLimitMap: map[StakeLimitKey]uint64{stakeLimitKey: 2},
 		}
 		derivedKeyPriv, err = _submitAuthorizeDerivedKeyTxn(txnSpendingLimit)
@@ -1231,7 +1231,7 @@ func TestStakingWithDerivedKey(t *testing.T) {
 		// sender stakes with m0 using the DerivedKey.
 		stakeMetadata := &StakeMetadata{
 			ValidatorPublicKey: NewPublicKey(m0PkBytes),
-			StakeAmountNanos:   uint256.NewInt(25),
+			StakeAmountNanos:   uint256.NewInt().SetUint64(25),
 		}
 		_, err = _submitStakeTxn(
 			testMeta, senderPkString, senderPrivString, stakeMetadata, nil, true,
@@ -1241,7 +1241,7 @@ func TestStakingWithDerivedKey(t *testing.T) {
 		// sender stakes with m1 using the DerivedKey.
 		stakeMetadata = &StakeMetadata{
 			ValidatorPublicKey: NewPublicKey(m1PkBytes),
-			StakeAmountNanos:   uint256.NewInt(25),
+			StakeAmountNanos:   uint256.NewInt().SetUint64(25),
 		}
 		_, err = _submitStakeTxn(
 			testMeta, senderPkString, senderPrivString, stakeMetadata, nil, true,
@@ -1251,7 +1251,7 @@ func TestStakingWithDerivedKey(t *testing.T) {
 		// sender unstakes from m0 using the DerivedKey.
 		unstakeMetadata := &UnstakeMetadata{
 			ValidatorPublicKey: NewPublicKey(m0PkBytes),
-			UnstakeAmountNanos: uint256.NewInt(25),
+			UnstakeAmountNanos: uint256.NewInt().SetUint64(25),
 		}
 		_, err = _submitUnstakeTxn(
 			testMeta, senderPkString, senderPrivString, unstakeMetadata, nil, true,
@@ -1261,7 +1261,7 @@ func TestStakingWithDerivedKey(t *testing.T) {
 		// sender unstakes from m1 using the DerivedKey.
 		unstakeMetadata = &UnstakeMetadata{
 			ValidatorPublicKey: NewPublicKey(m1PkBytes),
-			UnstakeAmountNanos: uint256.NewInt(25),
+			UnstakeAmountNanos: uint256.NewInt().SetUint64(25),
 		}
 		_, err = _submitUnstakeTxn(
 			testMeta, senderPkString, senderPrivString, unstakeMetadata, nil, true,
@@ -1304,7 +1304,7 @@ func TestStakingWithDerivedKey(t *testing.T) {
 		// sender stakes with m0 using the DerivedKey.
 		stakeMetadata := &StakeMetadata{
 			ValidatorPublicKey: NewPublicKey(m0PkBytes),
-			StakeAmountNanos:   uint256.NewInt(25),
+			StakeAmountNanos:   uint256.NewInt().SetUint64(25),
 		}
 		_, err = _submitStakeTxn(
 			testMeta, senderPkString, senderPrivString, stakeMetadata, nil, true,
@@ -1314,7 +1314,7 @@ func TestStakingWithDerivedKey(t *testing.T) {
 		// sender stakes with m1 using the DerivedKey.
 		stakeMetadata = &StakeMetadata{
 			ValidatorPublicKey: NewPublicKey(m1PkBytes),
-			StakeAmountNanos:   uint256.NewInt(25),
+			StakeAmountNanos:   uint256.NewInt().SetUint64(25),
 		}
 		_, err = _submitStakeTxn(
 			testMeta, senderPkString, senderPrivString, stakeMetadata, nil, true,
@@ -1324,7 +1324,7 @@ func TestStakingWithDerivedKey(t *testing.T) {
 		// sender unstakes from m0 using the DerivedKey.
 		unstakeMetadata := &UnstakeMetadata{
 			ValidatorPublicKey: NewPublicKey(m0PkBytes),
-			UnstakeAmountNanos: uint256.NewInt(25),
+			UnstakeAmountNanos: uint256.NewInt().SetUint64(25),
 		}
 		_, err = _submitUnstakeTxn(
 			testMeta, senderPkString, senderPrivString, unstakeMetadata, nil, true,
@@ -1334,7 +1334,7 @@ func TestStakingWithDerivedKey(t *testing.T) {
 		// sender unstakes from m1 using the DerivedKey.
 		unstakeMetadata = &UnstakeMetadata{
 			ValidatorPublicKey: NewPublicKey(m1PkBytes),
-			UnstakeAmountNanos: uint256.NewInt(25),
+			UnstakeAmountNanos: uint256.NewInt().SetUint64(25),
 		}
 		_, err = _submitUnstakeTxn(
 			testMeta, senderPkString, senderPrivString, unstakeMetadata, nil, true,
@@ -1377,12 +1377,12 @@ func TestStakingWithDerivedKey(t *testing.T) {
 				TxnTypeAuthorizeDerivedKey: 1,
 			},
 			StakeLimitMap: map[StakeLimitKey]*uint256.Int{
-				scopedStakeLimitKey: uint256.NewInt(100),
-				globalStakeLimitKey: uint256.NewInt(200),
+				scopedStakeLimitKey: uint256.NewInt().SetUint64(100),
+				globalStakeLimitKey: uint256.NewInt().SetUint64(200),
 			},
 			UnstakeLimitMap: map[StakeLimitKey]*uint256.Int{
-				scopedStakeLimitKey: uint256.NewInt(100),
-				globalStakeLimitKey: uint256.NewInt(200),
+				scopedStakeLimitKey: uint256.NewInt().SetUint64(100),
+				globalStakeLimitKey: uint256.NewInt().SetUint64(200),
 			},
 			UnlockStakeLimitMap: map[StakeLimitKey]uint64{scopedStakeLimitKey: 1, globalStakeLimitKey: 1},
 		}
@@ -1392,7 +1392,7 @@ func TestStakingWithDerivedKey(t *testing.T) {
 		// sender stakes with m1 using the global TransactionSpendingLimit.
 		stakeMetadata := &StakeMetadata{
 			ValidatorPublicKey: NewPublicKey(m1PkBytes),
-			StakeAmountNanos:   uint256.NewInt(200),
+			StakeAmountNanos:   uint256.NewInt().SetUint64(200),
 		}
 		_, err = _submitStakeTxnWithDerivedKey(
 			senderPkBytes, derivedKeyPriv, MsgDeSoTxn{TxnMeta: stakeMetadata},
@@ -1402,7 +1402,7 @@ func TestStakingWithDerivedKey(t *testing.T) {
 		// sender unstakes from m1 using the global TransactionSpendingLimit.
 		unstakeMetadata := &UnstakeMetadata{
 			ValidatorPublicKey: NewPublicKey(m1PkBytes),
-			UnstakeAmountNanos: uint256.NewInt(200),
+			UnstakeAmountNanos: uint256.NewInt().SetUint64(200),
 		}
 		_, err = _submitStakeTxnWithDerivedKey(
 			senderPkBytes, derivedKeyPriv, MsgDeSoTxn{TxnMeta: unstakeMetadata},
@@ -1423,7 +1423,7 @@ func TestStakingWithDerivedKey(t *testing.T) {
 		// sender stakes with m1 using the scoped TransactionSpendingLimit.
 		stakeMetadata = &StakeMetadata{
 			ValidatorPublicKey: NewPublicKey(m1PkBytes),
-			StakeAmountNanos:   uint256.NewInt(100),
+			StakeAmountNanos:   uint256.NewInt().SetUint64(100),
 		}
 		_, err = _submitStakeTxnWithDerivedKey(
 			senderPkBytes, derivedKeyPriv, MsgDeSoTxn{TxnMeta: stakeMetadata},
@@ -1433,7 +1433,7 @@ func TestStakingWithDerivedKey(t *testing.T) {
 		// sender unstakes from m1 using the scoped TransactionSpendingLimit.
 		unstakeMetadata = &UnstakeMetadata{
 			ValidatorPublicKey: NewPublicKey(m1PkBytes),
-			UnstakeAmountNanos: uint256.NewInt(100),
+			UnstakeAmountNanos: uint256.NewInt().SetUint64(100),
 		}
 		_, err = _submitStakeTxnWithDerivedKey(
 			senderPkBytes, derivedKeyPriv, MsgDeSoTxn{TxnMeta: unstakeMetadata},
@@ -1461,11 +1461,11 @@ func TestStakingWithDerivedKey(t *testing.T) {
 				TxnTypeAuthorizeDerivedKey: 1,
 			},
 			StakeLimitMap: map[StakeLimitKey]*uint256.Int{
-				stakeLimitKey1: uint256.NewInt(uint64(1.5 * float64(NanosPerUnit))),
-				stakeLimitKey2: uint256.NewInt(uint64(2.0 * float64(NanosPerUnit))),
+				stakeLimitKey1: uint256.NewInt().SetUint64(uint64(1.5 * float64(NanosPerUnit))),
+				stakeLimitKey2: uint256.NewInt().SetUint64(uint64(2.0 * float64(NanosPerUnit))),
 			},
 			UnstakeLimitMap: map[StakeLimitKey]*uint256.Int{
-				stakeLimitKey1: uint256.NewInt(uint64(3.25 * float64(NanosPerUnit))),
+				stakeLimitKey1: uint256.NewInt().SetUint64(uint64(3.25 * float64(NanosPerUnit))),
 			},
 			UnlockStakeLimitMap: map[StakeLimitKey]uint64{stakeLimitKey1: 2, stakeLimitKey2: 3},
 		}
@@ -1509,10 +1509,10 @@ func TestStakingWithDerivedKey(t *testing.T) {
 				TxnTypeAuthorizeDerivedKey: 1,
 			},
 			StakeLimitMap: map[StakeLimitKey]*uint256.Int{
-				stakeLimitKey: uint256.NewInt(uint64(0.65 * float64(NanosPerUnit))),
+				stakeLimitKey: uint256.NewInt().SetUint64(uint64(0.65 * float64(NanosPerUnit))),
 			},
 			UnstakeLimitMap: map[StakeLimitKey]*uint256.Int{
-				stakeLimitKey: uint256.NewInt(uint64(2.1 * float64(NanosPerUnit))),
+				stakeLimitKey: uint256.NewInt().SetUint64(uint64(2.1 * float64(NanosPerUnit))),
 			},
 			UnlockStakeLimitMap: map[StakeLimitKey]uint64{stakeLimitKey: 1},
 		}
@@ -1621,7 +1621,7 @@ func _testGetTopStakesByStakeAmount(t *testing.T, flushToDB bool) {
 		stakeMetadata := &StakeMetadata{
 			ValidatorPublicKey: NewPublicKey(validatorPkBytes),
 			RewardMethod:       StakingRewardMethodPayToBalance,
-			StakeAmountNanos:   uint256.NewInt(amountNanos),
+			StakeAmountNanos:   uint256.NewInt().SetUint64(amountNanos),
 		}
 		_, err := _submitStakeTxn(testMeta, stakerPk, stakerPriv, stakeMetadata, nil, flushToDB)
 		require.NoError(t, err)
@@ -1909,7 +1909,7 @@ func TestStakeLockupEpochDuration(t *testing.T) {
 		// m0 stakes with himself.
 		stakeMetadata := &StakeMetadata{
 			ValidatorPublicKey: NewPublicKey(m0PkBytes),
-			StakeAmountNanos:   uint256.NewInt(100),
+			StakeAmountNanos:   uint256.NewInt().SetUint64(100),
 		}
 		_, err = _submitStakeTxn(testMeta, m0Pub, m0Priv, stakeMetadata, nil, true)
 		require.NoError(t, err)
@@ -1917,13 +1917,13 @@ func TestStakeLockupEpochDuration(t *testing.T) {
 		stakeEntry, err := newUtxoView().GetStakeEntry(m0PKID, m0PKID)
 		require.NoError(t, err)
 		require.NotNil(t, stakeEntry)
-		require.Equal(t, stakeEntry.StakeAmountNanos, uint256.NewInt(100))
+		require.Equal(t, stakeEntry.StakeAmountNanos, uint256.NewInt().SetUint64(100))
 	}
 	{
 		// m0 unstakes from himself.
 		unstakeMetadata := &UnstakeMetadata{
 			ValidatorPublicKey: NewPublicKey(m0PkBytes),
-			UnstakeAmountNanos: uint256.NewInt(100),
+			UnstakeAmountNanos: uint256.NewInt().SetUint64(100),
 		}
 		_, err = _submitUnstakeTxn(testMeta, m0Pub, m0Priv, unstakeMetadata, nil, true)
 		require.NoError(t, err)
@@ -1935,7 +1935,7 @@ func TestStakeLockupEpochDuration(t *testing.T) {
 		lockedStakeEntry, err := newUtxoView().GetLockedStakeEntry(m0PKID, m0PKID, currentEpochNumber)
 		require.NoError(t, err)
 		require.NotNil(t, lockedStakeEntry)
-		require.Equal(t, lockedStakeEntry.LockedAmountNanos, uint256.NewInt(100))
+		require.Equal(t, lockedStakeEntry.LockedAmountNanos, uint256.NewInt().SetUint64(100))
 	}
 	{
 		// RuleErrorInvalidUnlockStakeMustWaitLockupDuration
@@ -2092,7 +2092,7 @@ func testStakingToJailedValidator(t *testing.T, flushToDB bool) {
 		// m1 stakes with m0. m0 is active.
 		stakeMetadata := &StakeMetadata{
 			ValidatorPublicKey: NewPublicKey(m0PkBytes),
-			StakeAmountNanos:   uint256.NewInt(150),
+			StakeAmountNanos:   uint256.NewInt().SetUint64(150),
 		}
 		_, err = _submitStakeTxn(testMeta, m1Pub, m1Priv, stakeMetadata, nil, flushToDB)
 		require.NoError(t, err)
@@ -2100,13 +2100,13 @@ func testStakingToJailedValidator(t *testing.T, flushToDB bool) {
 		// m0 TotalStakeAmountNanos increases.
 		validatorEntry, err := utxoView().GetValidatorByPKID(m0PKID)
 		require.NoError(t, err)
-		require.Equal(t, validatorEntry.TotalStakeAmountNanos, uint256.NewInt(150))
+		require.Equal(t, validatorEntry.TotalStakeAmountNanos, uint256.NewInt().SetUint64(150))
 	}
 	{
 		// m1 unstakes some from m0. m0 is active.
 		unstakeMetadata := &UnstakeMetadata{
 			ValidatorPublicKey: NewPublicKey(m0PkBytes),
-			UnstakeAmountNanos: uint256.NewInt(50),
+			UnstakeAmountNanos: uint256.NewInt().SetUint64(50),
 		}
 		_, err = _submitUnstakeTxn(testMeta, m1Pub, m1Priv, unstakeMetadata, nil, flushToDB)
 		require.NoError(t, err)
@@ -2114,7 +2114,7 @@ func testStakingToJailedValidator(t *testing.T, flushToDB bool) {
 		// m0 TotalStakeAmountNanos decreases.
 		validatorEntry, err := utxoView().GetValidatorByPKID(m0PKID)
 		require.NoError(t, err)
-		require.Equal(t, validatorEntry.TotalStakeAmountNanos, uint256.NewInt(100))
+		require.Equal(t, validatorEntry.TotalStakeAmountNanos, uint256.NewInt().SetUint64(100))
 	}
 	{
 		// Jail m0. Since this update takes place outside a transaction,
@@ -2129,13 +2129,13 @@ func testStakingToJailedValidator(t *testing.T, flushToDB bool) {
 		require.Equal(t, validatorEntry.Status(), ValidatorStatusJailed)
 
 		// m0 TotalStakeAmountNanos stays the same.
-		require.Equal(t, validatorEntry.TotalStakeAmountNanos, uint256.NewInt(100))
+		require.Equal(t, validatorEntry.TotalStakeAmountNanos, uint256.NewInt().SetUint64(100))
 	}
 	{
 		// m1 stakes more with m0. m0 is jailed.
 		stakeMetadata := &StakeMetadata{
 			ValidatorPublicKey: NewPublicKey(m0PkBytes),
-			StakeAmountNanos:   uint256.NewInt(50),
+			StakeAmountNanos:   uint256.NewInt().SetUint64(50),
 		}
 		_, err = _submitStakeTxn(testMeta, m1Pub, m1Priv, stakeMetadata, nil, flushToDB)
 		require.NoError(t, err)
@@ -2143,13 +2143,13 @@ func testStakingToJailedValidator(t *testing.T, flushToDB bool) {
 		// m0 TotalStakeAmountNanos increases.
 		validatorEntry, err := utxoView().GetValidatorByPKID(m0PKID)
 		require.NoError(t, err)
-		require.Equal(t, validatorEntry.TotalStakeAmountNanos, uint256.NewInt(150))
+		require.Equal(t, validatorEntry.TotalStakeAmountNanos, uint256.NewInt().SetUint64(150))
 	}
 	{
 		// m1 unstakes some from m0. m0 is jailed.
 		unstakeMetadata := &UnstakeMetadata{
 			ValidatorPublicKey: NewPublicKey(m0PkBytes),
-			UnstakeAmountNanos: uint256.NewInt(50),
+			UnstakeAmountNanos: uint256.NewInt().SetUint64(50),
 		}
 		_, err = _submitUnstakeTxn(testMeta, m1Pub, m1Priv, unstakeMetadata, nil, flushToDB)
 		require.NoError(t, err)
@@ -2157,7 +2157,7 @@ func testStakingToJailedValidator(t *testing.T, flushToDB bool) {
 		// m0 TotalStakeAmountNanos decreases.
 		validatorEntry, err := utxoView().GetValidatorByPKID(m0PKID)
 		require.NoError(t, err)
-		require.Equal(t, validatorEntry.TotalStakeAmountNanos, uint256.NewInt(100))
+		require.Equal(t, validatorEntry.TotalStakeAmountNanos, uint256.NewInt().SetUint64(100))
 	}
 	{
 		// m0 unjails himself.
@@ -2167,13 +2167,13 @@ func testStakingToJailedValidator(t *testing.T, flushToDB bool) {
 		// m0 TotalStakeAmountNanos stays the same.
 		validatorEntry, err := utxoView().GetValidatorByPKID(m0PKID)
 		require.NoError(t, err)
-		require.Equal(t, validatorEntry.TotalStakeAmountNanos, uint256.NewInt(100))
+		require.Equal(t, validatorEntry.TotalStakeAmountNanos, uint256.NewInt().SetUint64(100))
 	}
 	{
 		// m1 stakes more with m0. m0 is active.
 		stakeMetadata := &StakeMetadata{
 			ValidatorPublicKey: NewPublicKey(m0PkBytes),
-			StakeAmountNanos:   uint256.NewInt(50),
+			StakeAmountNanos:   uint256.NewInt().SetUint64(50),
 		}
 		_, err = _submitStakeTxn(testMeta, m1Pub, m1Priv, stakeMetadata, nil, flushToDB)
 		require.NoError(t, err)
@@ -2181,13 +2181,13 @@ func testStakingToJailedValidator(t *testing.T, flushToDB bool) {
 		// m0 TotalStakeAmountNanos increases.
 		validatorEntry, err := utxoView().GetValidatorByPKID(m0PKID)
 		require.NoError(t, err)
-		require.Equal(t, validatorEntry.TotalStakeAmountNanos, uint256.NewInt(150))
+		require.Equal(t, validatorEntry.TotalStakeAmountNanos, uint256.NewInt().SetUint64(150))
 	}
 	{
 		// m1 unstakes some from m0. m0 is active.
 		unstakeMetadata := &UnstakeMetadata{
 			ValidatorPublicKey: NewPublicKey(m0PkBytes),
-			UnstakeAmountNanos: uint256.NewInt(50),
+			UnstakeAmountNanos: uint256.NewInt().SetUint64(50),
 		}
 		_, err = _submitUnstakeTxn(testMeta, m1Pub, m1Priv, unstakeMetadata, nil, flushToDB)
 		require.NoError(t, err)
@@ -2195,7 +2195,7 @@ func testStakingToJailedValidator(t *testing.T, flushToDB bool) {
 		// m0 TotalStakeAmountNanos decreases.
 		validatorEntry, err := utxoView().GetValidatorByPKID(m0PKID)
 		require.NoError(t, err)
-		require.Equal(t, validatorEntry.TotalStakeAmountNanos, uint256.NewInt(100))
+		require.Equal(t, validatorEntry.TotalStakeAmountNanos, uint256.NewInt().SetUint64(100))
 	}
 	{
 		// Jail m0 again. Since this update takes place outside a transaction,
@@ -2206,7 +2206,7 @@ func testStakingToJailedValidator(t *testing.T, flushToDB bool) {
 		// m0 TotalStakeAmountNanos stays the same.
 		validatorEntry, err := utxoView().GetValidatorByPKID(m0PKID)
 		require.NoError(t, err)
-		require.Equal(t, validatorEntry.TotalStakeAmountNanos, uint256.NewInt(100))
+		require.Equal(t, validatorEntry.TotalStakeAmountNanos, uint256.NewInt().SetUint64(100))
 	}
 	{
 		// m0 unregisters as a validator.

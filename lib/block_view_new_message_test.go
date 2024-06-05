@@ -3,7 +3,7 @@ package lib
 import (
 	"bytes"
 	"fmt"
-	"github.com/btcsuite/btcd/btcec/v2"
+	"github.com/btcsuite/btcd/btcec"
 	"github.com/pkg/errors"
 	"github.com/stretchr/testify/require"
 	"math"
@@ -91,17 +91,17 @@ func TestNewMessage(t *testing.T) {
 		initChainCallback:          initChainCallback,
 	}
 
-	groupPriv1, err := btcec.NewPrivateKey()
+	groupPriv1, err := btcec.NewPrivateKey(btcec.S256())
 	require.NoError(err)
 	groupPk1 := groupPriv1.PubKey().SerializeCompressed()
 	_ = groupPk1
 
-	groupPriv2, err := btcec.NewPrivateKey()
+	groupPriv2, err := btcec.NewPrivateKey(btcec.S256())
 	require.NoError(err)
 	groupPk2 := groupPriv2.PubKey().SerializeCompressed()
 	_ = groupPk2
 
-	groupPriv3, err := btcec.NewPrivateKey()
+	groupPriv3, err := btcec.NewPrivateKey(btcec.S256())
 	require.NoError(err)
 	groupPk3 := groupPriv3.PubKey().SerializeCompressed()
 	_ = groupPk3
@@ -376,13 +376,13 @@ func TestNewMessage(t *testing.T) {
 	// (m0, defaultKey) ->
 	// (m1, defaultKey) ->
 	// (m3, defaultKey) ->
-	m0DefaultKeyPriv, err := btcec.NewPrivateKey()
+	m0DefaultKeyPriv, err := btcec.NewPrivateKey(btcec.S256())
 	require.NoError(err)
 	m0DefaultKeyPk := NewPublicKey(m0DefaultKeyPriv.PubKey().SerializeCompressed())
-	m1DefaultKeyPriv, err := btcec.NewPrivateKey()
+	m1DefaultKeyPriv, err := btcec.NewPrivateKey(btcec.S256())
 	require.NoError(err)
 	m1DefaultKeyPk := NewPublicKey(m1DefaultKeyPriv.PubKey().SerializeCompressed())
-	m3DefaultKeyPriv, err := btcec.NewPrivateKey()
+	m3DefaultKeyPriv, err := btcec.NewPrivateKey(btcec.S256())
 	require.NoError(err)
 	m3DefaultKeyPk := NewPublicKey(m3DefaultKeyPriv.PubKey().SerializeCompressed())
 
@@ -406,7 +406,7 @@ func TestNewMessage(t *testing.T) {
 	// (m3, groupName3) ->
 	//      (m3, defaultKey)
 	// 		(m0, defaultKey)
-	groupName3SharedPriv, err := btcec.NewPrivateKey()
+	groupName3SharedPriv, err := btcec.NewPrivateKey(btcec.S256())
 	require.NoError(err)
 	groupName3SharedPk := NewPublicKey(groupName3SharedPriv.PubKey().SerializeCompressed())
 	groupName3SharedPk_EncryptedTo_m0DefaultPk := _encryptBytes(groupName3SharedPriv.Serialize(), *m0DefaultKeyPk)
@@ -1155,7 +1155,7 @@ func _verifyGroupMessageEntriesDecryption(t *testing.T, utxoView *UtxoView, grou
 	require.NoError(err)
 	require.NotNil(memberAccessGroupEntry)
 	require.Equal(false, memberAccessGroupEntry.isDeleted)
-	_, memberAccessGroupPublicKeyFromPriv := btcec.PrivKeyFromBytes(memberAccessGroupPrivateKey)
+	_, memberAccessGroupPublicKeyFromPriv := btcec.PrivKeyFromBytes(btcec.S256(), memberAccessGroupPrivateKey)
 	require.Equal(true, bytes.Equal(memberAccessGroupEntry.AccessGroupPublicKey.ToBytes(), memberAccessGroupPublicKeyFromPriv.SerializeCompressed()))
 	// Decrypt the EncryptedKey present in the memberEntry to get the message encryption/decryption key.
 	decryptionKey := _decryptBytes(memberEntry.EncryptedKey, memberAccessGroupPrivateKey)
@@ -1179,7 +1179,7 @@ func _verifyEqualMessageEntries(t *testing.T, messageEntryA *NewMessageEntry, me
 }
 
 func _encryptBytes(plainText []byte, publicKey PublicKey) []byte {
-	pk, err := btcec.ParsePubKey(publicKey.ToBytes())
+	pk, err := btcec.ParsePubKey(publicKey.ToBytes(), btcec.S256())
 	if err != nil {
 		return nil
 	}
@@ -1192,7 +1192,7 @@ func _encryptBytes(plainText []byte, publicKey PublicKey) []byte {
 }
 
 func _decryptBytes(cipherText []byte, privateKey []byte) []byte {
-	recipientPriv, _ := btcec.PrivKeyFromBytes(privateKey)
+	recipientPriv, _ := btcec.PrivKeyFromBytes(btcec.S256(), privateKey)
 	plain, err := DecryptBytesWithPrivateKey(cipherText, recipientPriv.ToECDSA())
 	if err != nil {
 		fmt.Println(err)

@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"encoding/hex"
 	"fmt"
-	"github.com/btcsuite/btcd/btcec/v2"
+	"github.com/btcsuite/btcd/btcec"
 	"github.com/golang/glog"
 	"github.com/pkg/errors"
 	"math"
@@ -814,7 +814,7 @@ func (bav *UtxoView) _connectMessagingGroup(
 	var messagingPublicKey *PublicKey
 	if reflect.DeepEqual(txMeta.MessagingPublicKey, GetS256BasePointCompressed()) {
 		messagingGroupKey = NewMessagingGroupKey(NewPublicKey(GetS256BasePointCompressed()), txMeta.MessagingGroupKeyName)
-		_, keyPublic := btcec.PrivKeyFromBytes(Sha256DoubleHash(txMeta.MessagingGroupKeyName)[:])
+		_, keyPublic := btcec.PrivKeyFromBytes(btcec.S256(), Sha256DoubleHash(txMeta.MessagingGroupKeyName)[:])
 		messagingPublicKey = NewPublicKey(keyPublic.SerializeCompressed())
 	} else {
 		messagingGroupKey = NewMessagingGroupKey(NewPublicKey(txn.PublicKey), txMeta.MessagingGroupKeyName)

@@ -3,7 +3,7 @@ package lib
 import (
 	"crypto/sha256"
 	"fmt"
-	"github.com/btcsuite/btcd/btcutil/base58"
+	"github.com/btcsuite/btcutil/base58"
 	"github.com/golang/glog"
 	"github.com/pkg/errors"
 )

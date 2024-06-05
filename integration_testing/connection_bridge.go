@@ -103,7 +103,7 @@ func (bridge *ConnectionBridge) createInboundConnection(node *cmd.Node) *lib.Pee
 		panic(err)
 	}
 
-	ip, _, err := net.ParseCIDR(netAddress.Addr.String())
+	ip, _, err := net.ParseCIDR(netAddress.IP.String())
 	if err != nil {
 		panic(err)
 	}

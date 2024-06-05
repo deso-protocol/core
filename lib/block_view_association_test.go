@@ -7,7 +7,7 @@ import (
 	"sort"
 	"testing"
 
-	"github.com/btcsuite/btcd/btcec/v2"
+	"github.com/btcsuite/btcd/btcec"
 	"github.com/stretchr/testify/require"
 )
 
@@ -2255,7 +2255,7 @@ func _testAssociationsWithDerivedKey(t *testing.T) {
 	require.NoError(t, err)
 	senderPrivBytes, _, err := Base58CheckDecode(senderPrivString)
 	require.NoError(t, err)
-	senderPrivKey, _ := btcec.PrivKeyFromBytes(senderPrivBytes)
+	senderPrivKey, _ := btcec.PrivKeyFromBytes(btcec.S256(), senderPrivBytes)
 
 	// Helper funcs
 	_submitAuthorizeDerivedKeyTxn := func(txnType TxnType, associationLimitKey AssociationLimitKey, count int) (string, error) {

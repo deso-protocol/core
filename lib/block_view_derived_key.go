@@ -3,7 +3,7 @@ package lib
 import (
 	"bytes"
 	"fmt"
-	"github.com/btcsuite/btcd/btcec/v2"
+	"github.com/btcsuite/btcd/btcec"
 	"github.com/holiman/uint256"
 	"github.com/pkg/errors"
 	"reflect"
@@ -129,7 +129,7 @@ func (bav *UtxoView) _connectAuthorizeDerivedKey(
 	if len(ownerPublicKey) != btcec.PubKeyBytesLenCompressed {
 		return 0, 0, nil, RuleErrorAuthorizeDerivedKeyInvalidOwnerPublicKey
 	}
-	if _, err := btcec.ParsePubKey(ownerPublicKey); err != nil {
+	if _, err := btcec.ParsePubKey(ownerPublicKey, btcec.S256()); err != nil {
 		return 0, 0, nil, errors.Wrap(
 			RuleErrorAuthorizeDerivedKeyInvalidOwnerPublicKey, err.Error())
 	}
@@ -489,7 +489,7 @@ func (bav *UtxoView) _disconnectAuthorizeDerivedKey(
 	if len(currentTxn.PublicKey) != btcec.PubKeyBytesLenCompressed {
 		return fmt.Errorf("_disconnectAuthorizeDerivedKey invalid public key: %v", currentTxn.PublicKey)
 	}
-	_, err := btcec.ParsePubKey(currentTxn.PublicKey)
+	_, err := btcec.ParsePubKey(currentTxn.PublicKey, btcec.S256())
 	if err != nil {
 		return fmt.Errorf("_disconnectAuthorizeDerivedKey invalid public key: %v", err)
 	}
@@ -500,7 +500,7 @@ func (bav *UtxoView) _disconnectAuthorizeDerivedKey(
 	if len(txMeta.DerivedPublicKey) != btcec.PubKeyBytesLenCompressed {
 		return fmt.Errorf("_disconnectAuthorizeDerivedKey invalid derived key: %v", txMeta.DerivedPublicKey)
 	}
-	_, err = btcec.ParsePubKey(txMeta.DerivedPublicKey)
+	_, err = btcec.ParsePubKey(txMeta.DerivedPublicKey, btcec.S256())
 	if err != nil {
 		return fmt.Errorf("_disconnectAuthorizeDerivedKey invalid derived key: %v", err)
 	}

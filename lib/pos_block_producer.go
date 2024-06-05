@@ -4,7 +4,7 @@ import (
 	"math"
 	"time"
 
-	"github.com/btcsuite/btcd/btcec/v2"
+	"github.com/btcsuite/btcd/btcec"
 
 	"github.com/btcsuite/btcd/wire"
 
@@ -347,7 +347,7 @@ func (pbp *PosBlockProducer) getBlockTransactions(
 				return nil, 0,
 					errors.New("Error casting txn meta to AtomicSwapMetadata")
 			}
-			blockProducerPublicKeyBtcec, err := btcec.ParsePubKey(blockProducerPublicKey.ToBytes())
+			blockProducerPublicKeyBtcec, err := btcec.ParsePubKey(blockProducerPublicKey.ToBytes(), btcec.S256())
 			if err != nil {
 				return nil, 0,
 					errors.Wrapf(err, "Error parsing block producer public key: ")

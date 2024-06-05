@@ -17,7 +17,7 @@ import (
 	"github.com/deso-protocol/core/collections"
 	"github.com/deso-protocol/core/desohash"
 
-	"github.com/btcsuite/btcd/btcec/v2"
+	"github.com/btcsuite/btcd/btcec"
 	"github.com/davecgh/go-spew/spew"
 	merkletree "github.com/deso-protocol/go-merkle-tree"
 	"github.com/golang/glog"
@@ -47,7 +47,7 @@ func NewDeSoMiner(_minerPublicKeys []string, _numThreads uint32,
 		if err != nil {
 			return nil, errors.Wrapf(err, "NewDeSoMiner: ")
 		}
-		pkObj, err := btcec.ParsePubKey(pkBytes)
+		pkObj, err := btcec.ParsePubKey(pkBytes, btcec.S256())
 		if err != nil {
 			return nil, errors.Wrapf(err, "NewDeSoMiner: ")
 		}

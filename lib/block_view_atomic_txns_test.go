@@ -2,8 +2,7 @@ package lib
 
 import (
 	"bytes"
-
-	"github.com/btcsuite/btcd/btcec/v2"
+	"github.com/btcsuite/btcd/btcec"
 	"github.com/dgraph-io/badger/v4"
 	"github.com/pkg/errors"
 	"github.com/stretchr/testify/assert"
@@ -568,7 +567,7 @@ func _generateUnsignedDependentAtomicTransactions(
 	// Generate the atomic transactions.
 	for ii := 0; ii < numberOfTransactions-1; ii++ {
 		// Generate a new public/private key pair.
-		privKey_ii, err := btcec.NewPrivateKey()
+		privKey_ii, err := btcec.NewPrivateKey(btcec.S256())
 		require.NoError(testMeta.t, err)
 		pubKey_ii := privKey_ii.PubKey()
 		receiverPrivateKeysBase58 = append(receiverPrivateKeysBase58, Base58CheckEncode(

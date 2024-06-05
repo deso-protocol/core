@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"encoding/hex"
 	"fmt"
-	"github.com/btcsuite/btcd/btcec/v2"
+	"github.com/btcsuite/btcd/btcec"
 	"github.com/golang/glog"
 	"github.com/pkg/errors"
 	"math"
@@ -506,7 +506,7 @@ func (bav *UtxoView) extractAdditionalRoyaltyMap(
 			pkBytess := pkBytesIter
 
 			// Validate the public key
-			if _, err = btcec.ParsePubKey(pkBytess[:]); err != nil {
+			if _, err = btcec.ParsePubKey(pkBytess[:], btcec.S256()); err != nil {
 				return nil, 0, errors.Wrapf(
 					RuleErrorAdditionalRoyaltyPubKeyMustBeValid,
 					"Error parsing public key: %v, %v", PkToStringBoth(pkBytess[:]), err)
@@ -1286,7 +1286,7 @@ func (bav *UtxoView) _helpConnectNFTSold(args HelpConnectNFTSoldStruct) (
 				return 0, nil, fmt.Errorf(
 					"_helpConnectNFTSold: invalid public key found for pkid in additional DESO royalty map")
 			}
-			if _, err = btcec.ParsePubKey(pkBytes); err != nil {
+			if _, err = btcec.ParsePubKey(pkBytes, btcec.S256()); err != nil {
 				return 0, nil, errors.Wrapf(err, "Unable to parse public key")
 			}
 
