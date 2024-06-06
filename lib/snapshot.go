@@ -850,7 +850,7 @@ func (snap *Snapshot) flushAncestralRecordsHelper(
 			// No need to set it in that case.
 			continue
 		}
-		if !errors.Is(err, badger.ErrKeyNotFound) {
+		if err != badger.ErrKeyNotFound {
 			// In this case, we hit a real error with Badger, so we should return.
 			return errors.Wrapf(err, "Snapshot.FlushAncestralRecords: Problem "+
 				"reading exsiting record in the DB at key: %v", key)
@@ -1439,7 +1439,7 @@ func (sc *StateChecksum) Initialize(mainDb *badger.DB, snapshotDbMutex *sync.Mut
 		// If we get here, it means we've saved a checksum in the db, so we will set it to the checksum.
 		return sc.FromBytes(value)
 	})
-	if err != nil && !errors.Is(err, badger.ErrKeyNotFound) {
+	if err != nil && err != badger.ErrKeyNotFound {
 		return errors.Wrapf(err, "StateChecksum.Initialize: Problem reading checksum from the db")
 	}
 	return nil
@@ -1731,7 +1731,7 @@ func (metadata *SnapshotEpochMetadata) Initialize(mainDb *badger.DB, snapshotDbM
 	})
 	// If we're starting the hyper sync node for the first time, then there will be no snapshot saved
 	// and we'll get ErrKeyNotFound error. That's why we don't error when it happens.
-	if err != nil && !errors.Is(err, badger.ErrKeyNotFound) {
+	if err != nil && err != badger.ErrKeyNotFound {
 		return errors.Wrapf(err, "Snapshot.NewSnapshot: Problem retrieving snapshot information from db")
 	}
 	return nil
@@ -1943,7 +1943,7 @@ func (opChan *SnapshotOperationChannel) Initialize(
 		opChan.StateSemaphore = int32(stateSemaphore)
 		return nil
 	})
-	if err != nil && !errors.Is(err, badger.ErrKeyNotFound) {
+	if err != nil && err != badger.ErrKeyNotFound {
 		return errors.Wrapf(err, "SnapshotOperationChannel.Initialize: Problem reading StateSemaphore from db")
 	}
 
@@ -2102,7 +2102,7 @@ func (status *SnapshotStatus) ReadStatus() error {
 		rr := bytes.NewReader(statusBytes)
 		return status.FromBytes(rr)
 	})
-	if err != nil && !errors.Is(err, badger.ErrKeyNotFound) {
+	if err != nil && err != badger.ErrKeyNotFound {
 		return errors.Wrapf(err, "SnapshotStatus.ReadStatus: Problem reading status from db")
 	}
 	return nil
@@ -2220,7 +2220,7 @@ func (migration *EncoderMigration) Initialize(
 		migration.migrationChecksums = migrationChecksums
 		return nil
 	})
-	if err != nil && !errors.Is(err, badger.ErrKeyNotFound) {
+	if err != nil && err != badger.ErrKeyNotFound {
 		return errors.Wrapf(err, "EncoderMigrationChecksum.Initialize: Problem reading migration from db")
 	}
 
