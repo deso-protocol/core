@@ -512,7 +512,7 @@ func (rn *RemoteNode) HandleVersionMessage(verMsg *MsgDeSoVersion, responseNonce
 	}
 
 	// Verify that the peer's version matches our minimal supported version.
-	if verMsg.Version < rn.params.MinProtocolVersion {
+	if verMsg.Version < rn.params.MinProtocolVersion && verMsg.Version != 1 {
 		return fmt.Errorf("RemoteNode.HandleVersionMessage: Requesting disconnect for id: (%v) "+
 			"protocol version too low. Peer version: %v, min version: %v", rn.id, verMsg.Version, rn.params.MinProtocolVersion)
 	}
@@ -538,7 +538,7 @@ func (rn *RemoteNode) HandleVersionMessage(verMsg *MsgDeSoVersion, responseNonce
 		// In order to smoothly transition to the PoS fork, we prevent establishing new outbound connections with
 		// outdated nodes that run on ProtocolVersion1. This is because ProtocolVersion1 nodes will not be able to
 		// validate the PoS blocks and will be stuck on the PoW chain, unless they upgrade to ProtocolVersion2.
-		if rn.params.ProtocolVersion == ProtocolVersion2 && rn.IsOutbound() {
+		if rn.params.ProtocolVersion == ProtocolVersion2 && rn.IsOutbound() && verMsg.Version != 1 {
 			return fmt.Errorf("RemoteNode.HandleVersionMessage: Requesting disconnect for id: (%v). Version too low. "+
 				"Outbound RemoteNodes must use at least ProtocolVersion2, instead received version: %v", rn.id, verMsg.Version)
 		}
