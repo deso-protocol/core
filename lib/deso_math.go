@@ -200,7 +200,7 @@ func BigFloatPow(z *big.Float, w *big.Float) *big.Float {
 	if z.Sign() < 0 {
 		panic("Pow: negative base")
 	}
-	if z.Sign() == 0 {
+	if z.Cmp(bigZero) == 0 {
 		return bigZero
 	}
 
