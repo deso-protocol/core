@@ -7,7 +7,7 @@ import (
 	"sort"
 
 	"github.com/btcsuite/btcd/btcec"
-	"github.com/dgraph-io/badger/v4"
+	"github.com/dgraph-io/badger/v3"
 	"github.com/golang/glog"
 	"github.com/holiman/uint256"
 	"github.com/pkg/errors"
