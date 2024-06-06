@@ -6,7 +6,6 @@ require (
 	github.com/DataDog/datadog-go v4.5.0+incompatible
 	github.com/brianvoe/gofakeit v3.18.0+incompatible
 	github.com/btcsuite/btcd v0.21.0-beta
-	github.com/btcsuite/btcd/btcec/v2 v2.2.1
 	github.com/btcsuite/btcutil v1.0.2
 	github.com/bxcodec/faker v2.0.1+incompatible
 	github.com/cloudflare/circl v1.1.0
@@ -15,7 +14,7 @@ require (
 	github.com/decred/dcrd/lru v1.1.1
 	github.com/deso-protocol/go-deadlock v1.0.0
 	github.com/deso-protocol/go-merkle-tree v1.0.0
-	github.com/dgraph-io/badger/v4 v4.2.0
+	github.com/dgraph-io/badger/v3 v3.2103.5
 	github.com/emirpasic/gods v1.18.1
 	github.com/ethereum/go-ethereum v1.9.25
 	github.com/fatih/color v1.13.0
@@ -50,8 +49,10 @@ require (
 
 require (
 	github.com/Microsoft/go-winio v0.4.16 // indirect
+	github.com/btcsuite/btcd/btcec/v2 v2.2.1 // indirect
 	github.com/btcsuite/btclog v0.0.0-20170628155309-84c8d2346e9f // indirect
 	github.com/bwesterb/go-ristretto v1.2.0 // indirect
+	github.com/cespare/xxhash v1.1.0 // indirect
 	github.com/cespare/xxhash/v2 v2.2.0 // indirect
 	github.com/cpuguy83/go-md2man/v2 v2.0.0 // indirect
 	github.com/dgraph-io/ristretto v0.1.1 // indirect

@@ -9,7 +9,7 @@ import (
 
 	"github.com/deso-protocol/core/collections"
 	"github.com/deso-protocol/core/consensus"
-	"github.com/dgraph-io/badger/v4"
+	"github.com/dgraph-io/badger/v3"
 	"github.com/golang/glog"
 	"github.com/pkg/errors"
 )

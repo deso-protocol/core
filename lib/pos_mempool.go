@@ -9,7 +9,7 @@ import (
 
 	"github.com/decred/dcrd/lru"
 
-	"github.com/dgraph-io/badger/v4"
+	"github.com/dgraph-io/badger/v3"
 	"github.com/golang/glog"
 	"github.com/pkg/errors"
 )
