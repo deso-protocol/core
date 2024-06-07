@@ -325,10 +325,6 @@ func (txi *TXIndex) Update() error {
 		// Now that all the transactions have been deleted from our txindex,
 		// it's safe to disconnect the block from our txindex chain.
 		utxoView := NewUtxoView(txi.TXIndexChain.DB(), txi.Params, nil, nil, txi.CoreChain.eventManager)
-		if err != nil {
-			return fmt.Errorf(
-				"Update: Error initializing UtxoView: %v", err)
-		}
 		utxoOps, err := GetUtxoOperationsForBlock(
 			txi.TXIndexChain.DB(), nil, blockToDetach.Hash)
 		if err != nil {
@@ -409,10 +405,6 @@ func (txi *TXIndex) Update() error {
 		//
 		// Only set a BitcoinManager if we have one. This makes some tests pass.
 		utxoView := NewUtxoView(txi.TXIndexChain.DB(), txi.Params, nil, nil, txi.CoreChain.eventManager)
-		if err != nil {
-			return fmt.Errorf(
-				"Update: Error initializing UtxoView: %v", err)
-		}
 		if blockToAttach.Header.PrevBlockHash != nil {
 			var utxoViewAndUtxoOps *BlockViewAndUtxoOps
 			utxoViewAndUtxoOps, err = txi.TXIndexChain.getUtxoViewAndUtxoOpsAtBlockHash(*blockToAttach.Header.PrevBlockHash)

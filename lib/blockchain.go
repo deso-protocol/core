@@ -2687,9 +2687,7 @@ func (bc *Blockchain) processBlockPoW(desoBlock *MsgDeSoBlock, verifySignatures 
 		// almost certainly be more efficient than doing a separate db call for each input
 		// and output
 		utxoView := NewUtxoView(bc.db, bc.params, bc.postgres, bc.snapshot, bc.eventManager)
-		if err != nil {
-			return false, false, errors.Wrapf(err, "processblock: Problem initializing UtxoView in reorg")
-		}
+
 		// Verify that the utxo view is pointing to the current tip.
 		if *utxoView.TipHash != *currentTip.Hash {
 			return false, false, fmt.Errorf("ProcessBlock: Tip hash for utxo view (%v) is "+
@@ -4190,10 +4188,6 @@ func (bc *Blockchain) CreateNFTBidTxn(
 		}
 	} else {
 		utxoView = NewUtxoView(bc.db, bc.params, bc.postgres, bc.snapshot, bc.eventManager)
-		if err != nil {
-			return nil, 0, 0, 0, errors.Wrapf(err,
-				"CreateNFTBidTxn: Problem creating new utxo view: ")
-		}
 	}
 
 	nftKey := MakeNFTKey(NFTPostHash, SerialNumber)
@@ -5002,10 +4996,6 @@ func (bc *Blockchain) CreateMaxSpend(
 			}
 		} else {
 			utxoView = NewUtxoView(bc.db, bc.params, bc.postgres, bc.snapshot, bc.eventManager)
-			if err != nil {
-				return nil, 0, 0, 0, errors.Wrapf(err,
-					"Blockchain.CreateMaxSpend: Problem getting UtxoView: ")
-			}
 		}
 		spendableBalance, err := utxoView.GetSpendableDeSoBalanceNanosForPublicKey(
 			senderPkBytes, bc.BlockTip().Height)
