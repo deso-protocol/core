@@ -13,8 +13,10 @@ import (
 	"math/big"
 	"path/filepath"
 	"reflect"
+	"runtime/debug"
 	"sort"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/google/uuid"
@@ -1098,7 +1100,17 @@ func EncodeKeyAndValueForChecksum(key []byte, value []byte, blockHeight uint64) 
 // DBSetWithTxn is a wrapper around BadgerDB Set function which allows us to add computation
 // prior to DB writes. In particular, we use it to maintain a dynamic LRU cache, compute the
 // state checksum, and to build DB snapshots with ancestral records.
+var DBSetWithTxnConcurrentCalls int64
+
 func DBSetWithTxn(txn *badger.Txn, snap *Snapshot, key []byte, value []byte, eventManager *EventManager) error {
+	// Atomically increment the counter when entering the function
+	atomic.AddInt64(&DBSetWithTxnConcurrentCalls, 1)
+	defer atomic.AddInt64(&DBSetWithTxnConcurrentCalls, -1)
+	if atomic.LoadInt64(&DBSetWithTxnConcurrentCalls) > 1 {
+		fmt.Println("Concurrent SET call detected!")
+		debug.PrintStack()
+	}
+
 	// We only cache / update ancestral records when we're dealing with state prefix.
 	isState := snap != nil && snap.isState(key)
 	var ancestralValue []byte
@@ -1168,7 +1180,17 @@ func DBSetWithTxn(txn *badger.Txn, snap *Snapshot, key []byte, value []byte, eve
 // the DB entry associated with the given key and handles the logic around the LRU cache.
 // Whenever we read/write records in the DB, we place a copy in the LRU cache to save
 // us lookup time.
+var DbGetWithTxnConcurrentCalls int64
+
 func DBGetWithTxn(txn *badger.Txn, snap *Snapshot, key []byte) ([]byte, error) {
+	// Check if we're calling DBGetWithTxn concurrently ever
+	atomic.AddInt64(&DbGetWithTxnConcurrentCalls, 1)
+	defer atomic.AddInt64(&DbGetWithTxnConcurrentCalls, -1)
+	if atomic.LoadInt64(&DbGetWithTxnConcurrentCalls) > 1 {
+		fmt.Println("Concurrent GET call detected!")
+		debug.PrintStack()
+	}
+
 	// We only cache / update ancestral records when we're dealing with state prefix.
 	isState := snap != nil && snap.isState(key)
 	keyString := hex.EncodeToString(key)
@@ -1202,7 +1224,17 @@ func DBGetWithTxn(txn *badger.Txn, snap *Snapshot, key []byte) ([]byte, error) {
 
 // DBDeleteWithTxn is a wrapper function around BadgerDB delete function.
 // It allows us to update the snapshot LRU cache, checksum, and ancestral records.
+var DBDeleteWithTxnConcurrentCalls int64
+
 func DBDeleteWithTxn(txn *badger.Txn, snap *Snapshot, key []byte, eventManager *EventManager, entryIsDeleted bool) error {
+	// Atomically increment the counter when entering the function
+	atomic.AddInt64(&DBDeleteWithTxnConcurrentCalls, 1)
+	defer atomic.AddInt64(&DBDeleteWithTxnConcurrentCalls, -1)
+	if atomic.LoadInt64(&DBDeleteWithTxnConcurrentCalls) > 1 {
+		fmt.Println("Concurrent DELETE call detected!")
+		debug.PrintStack()
+	}
+
 	var ancestralValue []byte
 	var getError error
 	isState := snap != nil && snap.isState(key)
