@@ -410,6 +410,7 @@ func NewServer(
 	_err error,
 	_shouldRestart bool,
 ) {
+	fmt.Println("DELETEME: DONT UPDATE CACHE ON GET")
 
 	var err error
 
