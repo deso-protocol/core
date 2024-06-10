@@ -1190,13 +1190,6 @@ func DBGetWithTxn(txn *badger.Txn, snap *Snapshot, key []byte) ([]byte, error) {
 		return nil, err
 	}
 
-	// TODO: Do we want to update the database cache when performing GETs? I think it would be
-	// safer to ONLY update the cache when performing SETs. This way, we can avoid the possibility
-	// of the cache getting out of sync with the database when a badger view transaction is started
-	// before a badger update transaction begins.
-	if isState {
-		snap.DatabaseCache.Add(keyString, itemData)
-	}
 	return itemData, nil
 }
 
