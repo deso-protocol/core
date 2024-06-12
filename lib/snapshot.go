@@ -997,6 +997,7 @@ func (snap *Snapshot) snapshotProcessBlockNoLock(blockNode *BlockNode) {
 	height := uint64(blockNode.Height)
 	if height > snap.Status.CurrentBlockHeight {
 		snap.Status.CurrentBlockHeight = height
+		snap.Status.SaveStatus()
 		// If we haven't hit the first snapshot block height yet, don't bother.
 		if !snap.shouldPerformSnapshotOperations() {
 			return
