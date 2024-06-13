@@ -1123,7 +1123,7 @@ func (bav *UtxoView) _connectSubmitPost(txn *MsgDeSoTxn, txHash *BlockHash, bloc
 
 	// Create metadata object to store in the db alongside the transaction.
 	stateChangeMetadata := &SubmitPostStateChangeMetadata{
-		PostEntry:         newPostEntry,
+		ParentPostEntry:   newParentPostEntry,
 		ProfilesMentioned: profilesMentioned,
 		RepostPostEntry:   newRepostedPostEntry,
 	}

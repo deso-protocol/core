@@ -126,14 +126,14 @@ func (ccTransferSCM *CCTransferStateChangeMetadata) GetEncoderType() EncoderType
 }
 
 type SubmitPostStateChangeMetadata struct {
-	PostEntry         *PostEntry
+	ParentPostEntry   *PostEntry
 	ProfilesMentioned []*ProfileEntry
 	RepostPostEntry   *PostEntry
 }
 
 func (submitPostSCM *SubmitPostStateChangeMetadata) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte {
 	var data []byte
-	data = append(data, EncodeToBytes(blockHeight, submitPostSCM.PostEntry, skipMetadata...)...)
+	data = append(data, EncodeToBytes(blockHeight, submitPostSCM.ParentPostEntry, skipMetadata...)...)
 	data = append(data, EncodeToBytes(blockHeight, submitPostSCM.RepostPostEntry, skipMetadata...)...)
 
 	data = append(data, EncodeDeSoEncoderSlice(submitPostSCM.ProfilesMentioned, blockHeight, skipMetadata...)...)
@@ -144,7 +144,7 @@ func (submitPostSCM *SubmitPostStateChangeMetadata) RawEncodeWithoutMetadata(blo
 func (submitPostSCM *SubmitPostStateChangeMetadata) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.Reader) error {
 	var err error
 
-	if submitPostSCM.PostEntry, err = DecodeDeSoEncoder(&PostEntry{}, rr); err != nil {
+	if submitPostSCM.ParentPostEntry, err = DecodeDeSoEncoder(&PostEntry{}, rr); err != nil {
 		return errors.Wrapf(err, "SubmitPostStateChangeMetadata.Decode: Problem reading PostEntry")
 	}
 
