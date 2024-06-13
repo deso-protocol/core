@@ -1570,8 +1570,8 @@ func (sc *StateChecksum) AddOrRemoveBytesWithMigrations(keyInput []byte, valueIn
 
 		// We add the current key, value encoding and encodings for all migrations.
 		encodings = append(encodings, EncodeKeyAndValueForChecksum(key, value, blockHeight))
-		checksumLock.Lock()
-		defer checksumLock.Unlock()
+		checksumLock.RLock()
+		defer checksumLock.RUnlock()
 		for _, migration := range encoderMigrationChecksums {
 			added := false
 			migrationEncoding := EncodeKeyAndValueForChecksum(key, value, migration.BlockHeight)
