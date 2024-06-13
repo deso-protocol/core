@@ -997,6 +997,7 @@ func (snap *Snapshot) snapshotProcessBlockNoLock(blockNode *BlockNode) {
 	height := uint64(blockNode.Height)
 	if height > snap.Status.CurrentBlockHeight {
 		snap.Status.CurrentBlockHeight = height
+		snap.Status.SaveStatus()
 		// If we haven't hit the first snapshot block height yet, don't bother.
 		if !snap.shouldPerformSnapshotOperations() {
 			return
@@ -1569,8 +1570,8 @@ func (sc *StateChecksum) AddOrRemoveBytesWithMigrations(keyInput []byte, valueIn
 
 		// We add the current key, value encoding and encodings for all migrations.
 		encodings = append(encodings, EncodeKeyAndValueForChecksum(key, value, blockHeight))
-		checksumLock.Lock()
-		defer checksumLock.Unlock()
+		checksumLock.RLock()
+		defer checksumLock.RUnlock()
 		for _, migration := range encoderMigrationChecksums {
 			added := false
 			migrationEncoding := EncodeKeyAndValueForChecksum(key, value, migration.BlockHeight)
